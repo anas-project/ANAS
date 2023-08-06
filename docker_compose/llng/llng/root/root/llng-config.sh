@@ -19,12 +19,17 @@ lemonldap_ng_cli_set="sudo -u $NGINX_USER /usr/share/lemonldap-ng/bin/lemonldap-
 lemonldap_ng_cli_addkey="sudo -u $NGINX_USER /usr/share/lemonldap-ng/bin/lemonldap-ng-cli -yes 1 -force 1 addKey"
 lemonldap_ng_cli_delkey="sudo -u $NGINX_USER /usr/share/lemonldap-ng/bin/lemonldap-ng-cli -yes 1 -force 1 delKey"
 
-# SAML
-public_key=$(printf '%b\n' "${LLNG_SAML_SERVICE_PUBLIC_KEY//\"/}")
-private_key=$(printf '%b\n' "${LLNG_SAML_SERVICE_PRIVATE_KEY//\"/}")
+# SAML & OIDC
+saml_private_key=$(printf '%b\n' "${LLNG_SAML_SERVICE_PRIVATE_KEY//\"/}")
+saml_public_key=$(printf '%b\n' "${LLNG_SAML_SERVICE_PUBLIC_KEY//\"/}")
+oidc_private_key=$(printf '%b\n' "${LLNG_OIDC_SERVICE_PRIVATE_KEY//\"/}")
+oidc_public_key=$(printf '%b\n' "${LLNG_OIDC_SERVICE_PUBLIC_KEY//\"/}")
 $lemonldap_ng_cli_set \
-        samlServicePrivateKeySig "$private_key" \
-        samlServicePublicKeySig "$public_key"
+        samlServicePrivateKeySig "$saml_private_key" \
+        samlServicePublicKeySig "$saml_public_key" \ 
+        oidcServicePrivateKeySig "$oidc_private_key" \
+        oidcServicePublicKeySig "$oidc_public_key" \ 
+        oidcServiceKeyIdSig "$LLNG_OIDC_SERVICE_KEY_ID"
         # samlNameIDFormatMapEmail mail \
         # samlNameIDFormatMapX509 mail \
         # samlNameIDFormatMapKerberos uid \

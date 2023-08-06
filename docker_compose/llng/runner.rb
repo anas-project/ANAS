@@ -61,7 +61,7 @@ module Anas
       new_envs['LLNG_LDAP_AUTH_FILTER'] = "(&#{new_envs['SAMBA_DC_USER_CLASS_FILTER']}#{envs['SAMBA_DC_USER_ENABLED_FILTER']}(#{envs['SAMBA_DC_USER_NAME']}=$user))"
       new_envs['LLNG_LDAP_MAIL_FILTER'] = "(&#{new_envs['SAMBA_DC_USER_CLASS_FILTER']}#{envs['SAMBA_DC_USER_ENABLED_FILTER']}(#{envs['SAMBA_DC_USER_EMAIL']}=$mail))"
       
-      # SAML service Signature
+      # SAML &OIDC service Signature
       rsa_key = OpenSSL::PKey::RSA.new(2048)
       cert = OpenSSL::X509::Certificate.new
       cert.version = 2
@@ -73,6 +73,9 @@ module Anas
       cert.sign(rsa_key, OpenSSL::Digest::SHA256.new)
       new_envs['LLNG_SAML_SERVICE_PRIVATE_KEY'] = rsa_key.to_pem.inspect
       new_envs['LLNG_SAML_SERVICE_PUBLIC_KEY'] = cert.to_pem.inspect
+      new_envs['LLNG_OIDC_SERVICE_PRIVATE_KEY'] = rsa_key.to_pem.inspect
+      new_envs['LLNG_OIDC_SERVICE_PUBLIC_KEY'] = cert.to_pem.inspect
+      new_envs['LLNG_OIDC_SERVICE_KEY_ID'] = String.random(12)
 
       # SAML URI
       new_envs['LLNG_SAML_IDP_ENTITY_ID'] = "#{new_envs['LLNG_DOMAIN_FULL']}/saml/metadata"

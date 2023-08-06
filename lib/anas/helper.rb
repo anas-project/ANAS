@@ -107,6 +107,10 @@ class String
   def self.random_password(length=10)
     CHARS.sort_by { rand }.join[0...length]
   end
+
+  def self.random(length=10)
+    CHARS.sort_by { rand }.join[0...length]
+  end
 end
 
 class IPAddr

@@ -95,6 +95,9 @@
   "issuerDBSAMLActivation": 1,
   "issuerDBSAMLPath": "^/saml/",
   "issuerDBSAMLRule": 1,
+  "issuerDBOpenIDConnectActivation": 1,
+  "issuerDBOpenIDConnectPath": "^/oauth2/",
+  "issuerDBOpenIDConnectRule": 1,
   "samlEntityID": "#PORTAL#/saml/metadata",
   "samlIDPSSODescriptorWantAuthnRequestsSigned": 0,
   "samlIDPSSODescriptorSingleSignOnServiceHTTPPost": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST;#PORTAL#/saml/singleSignOn;",
@@ -106,6 +109,7 @@
   "samlOrganizationURL": "{{TRAEFIK_DOMAIN_FULL}}",
   "samlServiceUseCertificateInResponse": 1,
   "samlServiceSignatureMethod": "RSA_SHA256",
+  "oidcServiceAllowAuthorizationCodeFlow": 1,
   "globalStorage": "{{browseable_db_config}}",
   "globalStorageOptions": {
     "DataSource": "{{db_config}}",
