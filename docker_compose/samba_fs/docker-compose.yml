@@ -1,7 +1,7 @@
 version: "3.5"
 
 services:
-  samba_fs:
+  anas_samba_fs:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     build:
       context: ./${MODULE_NAME}

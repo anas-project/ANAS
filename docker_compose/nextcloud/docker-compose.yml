@@ -1,7 +1,7 @@
 version: "3.5"
 
 services:
-  nextcloud:
+  anas_nextcloud:
     build: ./nextcloud
     image: ${IMAGE_PREFIX}nextcloud:latest
     container_name: ${CONTAINER_PREFIX}nextcloud
@@ -49,7 +49,7 @@ services:
       - db
       - traefik
 
-  imaginary:
+  anas_imaginary:
     build: ./imaginary
     image: ${IMAGE_PREFIX}nextcloud_imaginary:latest
     restart: unless-stopped
@@ -60,7 +60,7 @@ services:
       - nextcloud
       - traefik
 
-  nextcloud_redis:
+  anas_nextcloud-redis:
     container_name: ${CONTAINER_PREFIX}nextcloud_redis
     image: redis:7.2-rc-alpine
     restart: unless-stopped
@@ -71,7 +71,7 @@ services:
     networks:
       - nextcloud
   
-  talk:
+  anas_talk:
     build: ./talk
     image: ${IMAGE_PREFIX}nextcloud_talk:latest
     container_name: ${CONTAINER_PREFIX}nextcloud_talk

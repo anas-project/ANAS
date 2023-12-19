@@ -217,9 +217,9 @@ module Anas
         # result = system("#{@docker_compose_cmd} build", exception: true)
         slist = services_list_string
         Log.info("Building services #{slist}")
-        ENV.update(@envs)
+        # ENV.update(@envs)
         Log.info("Exec `#{@docker_compose_cmd} build #{slist}`")
-        result = %x(#{@docker_compose_cmd} build #{slist})
+        system(@envs, "#{@docker_compose_cmd} build #{slist}", exception: true)
       rescue => exception
         Log.error("Building #{@mod_name} ERROR #{exception}")
         raise exception

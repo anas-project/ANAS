@@ -1,7 +1,7 @@
 version: "3.5"
 
 services:
-  phpldapadmin:
+  anas_phpldapadmin:
     build: ./phpldapadmin
     image: ${IMAGE_PREFIX}phpldapadmin:latest
     container_name: ${CONTAINER_PREFIX}phpldapadmin

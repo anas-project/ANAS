@@ -1,7 +1,7 @@
 version: "3.5"
 
 services:
-  mariadb:
+  anas_mariadb:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
     build: ./${MODULE_NAME}
@@ -13,7 +13,7 @@ services:
     networks:
       - mariadb
 
-  mariadb_adminer:
+  anas_mariadb_adminer:
     image: adminer
     container_name: ${CONTAINER_PREFIX}mariadb_adminer
     restart: unless-stopped

@@ -1,6 +1,6 @@
 version: "3.7"
 services:
-  ddns-updater:
+  anas_ddns-updater:
     image: qmcgaw/ddns-updater
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     restart: unless-stopped

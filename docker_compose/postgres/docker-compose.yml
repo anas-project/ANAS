@@ -1,7 +1,7 @@
 version: "3.5"
 
 services:
-  postgres:
+  anas_postgres:
     container_name: ${CONTAINER_PREFIX}postgres
     image: postgres:15.3-alpine
     restart: unless-stopped
@@ -12,7 +12,7 @@ services:
     networks:
       - postgres
 
-  postgres_adminer:
+  anas_postgres-adminer:
     image: adminer
     container_name: ${CONTAINER_PREFIX}postgres_adminer
     restart: unless-stopped
@@ -26,16 +26,12 @@ services:
       - "traefik.http.services.adminer.loadbalancer.server.port=8080"
     networks:
       - postgres
-      <% if envs['POSTGRES_ADMINER_ENABLED'] == 'true' %>
       - traefik
-      <% end %>
 
 networks:
   postgres:
     driver: bridge
     name: postgres
-<% if envs['POSTGRES_ADMINER_ENABLED'] == 'true' %>
   traefik:
     name: traefik
     external: true
-<% end %>

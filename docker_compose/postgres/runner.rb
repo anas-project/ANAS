@@ -20,7 +20,7 @@ module Anas
       new_envs = envs
       new_envs['POSTGRES_PASSWORD'] = envs['DEFAULT_SERVICE_ROOT_PASSWORD'] unless envs.has_key?('POSTGRES_PASSWORD')
       new_envs['POSTGRES_USER'] = new_envs['POSTGRES_USERNAME']
-      new_envs['POSTGRES_HOST'] = 'postgres'
+      new_envs['POSTGRES_HOST'] = "#{new_envs['CONTAINER_PREFIX']}postgres.postgres"
       new_envs['POSTGRES_PORT'] = '5432'
       new_envs['POSTGRES_HOST_PORT'] = "#{new_envs['POSTGRES_HOST']}:#{new_envs['POSTGRES_PORT']}"
 

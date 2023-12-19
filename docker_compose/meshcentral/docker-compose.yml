@@ -1,7 +1,7 @@
 version: "3.5"
 
 services:
-  meshcentral:
+  anas_meshcentral:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
     build: ./${MODULE_NAME}
