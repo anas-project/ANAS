@@ -1,9 +1,5 @@
 {
   "applicationList": {
-    "1apps": {
-      "catname": "Applications",
-      "type": "category"
-    },
     "98admin": {
       "catname": "Administration",
       "type": "category",
@@ -41,15 +37,6 @@
         "type": "application"
       },
       "type": "category"
-    }
-  },
-  "locationRules": {
-    "{{LLNG_MANAGER_DOMAIN}}": {
-      "default": "inGroup(\"{{SAMBA_DC_ADMIN_GROUP_NAME}}\")"
-    },
-    "{{LLNG_DOMAIN}}": {
-      "(?#checkUser)^/checkuser": "inGroup(\"{{SAMBA_DC_ADMIN_GROUP_NAME}}\")",
-      "default": "accept"
     }
   },
   "cookieName": "lemonldap",

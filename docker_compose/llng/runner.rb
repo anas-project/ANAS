@@ -17,7 +17,7 @@ module Anas
       @default_envs = {
         'LLNG_DOMAIN_PREFIX' => 'auth', 'LLNG_MANAGER_DOMAIN_PREFIX' => 'auth-manager',
         'LLNG_TEST_DOMAIN_PREFIX' => 'auth-test',
-        'LLNG_LOG_LEVEL' => 'warn', 'LLNG_DB_TYPE' => 'mariadb', 'LLNG_DB_NAME' => 'lemonldap-ng',
+        'LLNG_LOG_LEVEL' => 'warn', 'LLNG_DB_NAME' => 'lemonldap-ng',
         'LLNG_ENABLE_TEST' => true,
       }
     end
@@ -61,7 +61,7 @@ module Anas
       new_envs['LLNG_LDAP_AUTH_FILTER'] = "(&#{new_envs['SAMBA_DC_USER_CLASS_FILTER']}#{envs['SAMBA_DC_USER_ENABLED_FILTER']}(#{envs['SAMBA_DC_USER_NAME']}=$user))"
       new_envs['LLNG_LDAP_MAIL_FILTER'] = "(&#{new_envs['SAMBA_DC_USER_CLASS_FILTER']}#{envs['SAMBA_DC_USER_ENABLED_FILTER']}(#{envs['SAMBA_DC_USER_EMAIL']}=$mail))"
       
-      # SAML &OIDC service Signature
+      # SAML & OIDC service Signature
       rsa_key = OpenSSL::PKey::RSA.new(2048)
       cert = OpenSSL::X509::Certificate.new
       cert.version = 2

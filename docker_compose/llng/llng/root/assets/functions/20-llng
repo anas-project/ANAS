@@ -94,6 +94,8 @@ init_lmConf() {
 
 configure_lmConf() {
     print_debug "Configuring lmConf"
+    local db_config=$1
+    local browseable_db_config=$2
     cp_template /root/lmConf.json \
                 /root/new_lmConf.json \
                   LLNG_MANAGER_DOMAIN_FULL \
@@ -168,7 +170,7 @@ protection = manager
 languages    = zh, en, fr, it, vi, ar, tr, pl, zh_TW, es, he, pt_BR, de, pt
 enabledModules = conf, sessions, notifications, 2ndFA
 staticPrefix = /static
-templateDir = /usr/share/lemonldap-ng/manager/htdocs/templates
+templateDir = /usr/share/lemonldap-ng/manager/templates
 
 EOF
   )
@@ -220,14 +222,15 @@ waiting_port() { # $1 url, $2 port
 
 waiting_url() { # $1 url
   url=$1
-  while [ $http_status -ne 200 ]; do
+  http_status=0
+  while [ "$http_status" -ne "200" ]; do
     response=$(curl -s -o /dev/null -w "%{http_code}" $url)
     http_status=$response
 
-    if [ $http_status -eq 200 ]; then
+    if [ "$http_status" -eq "200" ]; then
       echo "URL is accessible: $url"
     else
-      echo "URL is not accessible yet (Status code: $http_status). Retrying..."
+      echo "URL: $url, is not accessible yet (Status code: $http_status). Retrying..."
       sleep 3 
     fi
   done

@@ -1,20 +1,23 @@
-CREATE DATABASE IF NOT EXISTS `{{LLNG_DB_NAME}}` CHARACTER SET utf8;
-use {{LLNG_DB_NAME}}
+-- create database if not exist
+SELECT 'CREATE DATABASE "{{LLNG_DB_NAME}}"'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{LLNG_DB_NAME}}')\gexec
+
+\c "{{LLNG_DB_NAME}}"
 
 -- config
 CREATE TABLE IF NOT EXISTS lmConfig (
     cfgNum int not null primary key,
-    data longtext
+    data text
 );
 
 -- Notification
 CREATE TABLE IF NOT EXISTS notifications (
-  date datetime NOT NULL,
+  date timestamp NOT NULL,
   uid varchar(255) NOT NULL,
   ref varchar(255) NOT NULL,
   cond varchar(255) DEFAULT NULL,
-  xml longblob NOT NULL,
-  done datetime DEFAULT NULL,
+  xml bytea NOT NULL,
+  done timestamp DEFAULT NULL,
   PRIMARY KEY (date, uid,ref)
 );
 

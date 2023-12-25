@@ -18,20 +18,19 @@ waiting_port $DB_HOST $DB_POST
 # config nginx & nginx log
 HANDLER_SOCKET="127.0.0.1:${LLNG_HANDLER_SOCKET_PORT}"
 
-if [ ! -d "/usr/share/lemonldap-ng/portal/htdocs/javascript" ]; then
-  ln -s /usr/share/javascript /usr/share/lemonldap-ng/portal/htdocs/javascript
-fi
-if [ ! -d "/usr/share/lemonldap-ng/manager/htdocs/javascript" ]; then
-  ln -s /usr/share/javascript /usr/share/lemonldap-ng/manager/htdocs/javascript
-fi
-if [ ! -d "/usr/share/lemonldap-ng/manager/htdocs/doc" ]; then
-  ln -s /usr/share/doc/lemonldap-ng /usr/share/lemonldap-ng/manager/htdocs/doc
-fi
+# if [ ! -d "/usr/share/lemonldap-ng/portal/htdocs/javascript" ]; then
+#   ln -s /usr/share/javascript /usr/share/lemonldap-ng/portal/htdocs/javascript
+# fi
+# if [ ! -d "/usr/share/lemonldap-ng/manager/htdocs/javascript" ]; then
+#   ln -s /usr/share/javascript /usr/share/lemonldap-ng/manager/htdocs/javascript
+# fi
+# if [ ! -d "/usr/share/lemonldap-ng/manager/htdocs/doc" ]; then
+#   ln -s /usr/share/doc/lemonldap-ng /usr/share/lemonldap-ng/manager/htdocs/doc
+# fi
 
 chown -R "${NGINX_USER}":"${NGINX_GROUP}" /etc/lemonldap-ng \
                                           /var/lib/lemonldap-ng \
                                           /www/logs/lemonldap/ \
-                                          /usr/share/javascript/ \
                                           /root/llng-config.sh \
                                           /root/lmConf-1.json \
                                           /root/lmConf.json
@@ -46,7 +45,7 @@ configure_portal
 configure_test
 configure_webserver
 init_lmConf
-configure_lmConf
+# configure_lmConf
 
 create_zabbix llng
 custom_files "${CONTAINER_CUSTOM_PATH}" /usr/share/lemonldap-ng "${NGINX_USER}" "${NGINX_GROUP}"
