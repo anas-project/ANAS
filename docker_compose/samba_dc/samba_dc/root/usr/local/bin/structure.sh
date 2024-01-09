@@ -83,8 +83,8 @@ if [ $SAMBA_DC_CREATE_STRUCTURE == "true" ]; then
   APP_BASE="OU=Role,OU=Groups"
 
   echo "Create Group Admins"
-  create_group "Admins" $APP_BASE "The Administrators use by apps"
-  add_to_group "Administrators" "Admins"
+  create_group "$SAMBA_DC_ADMIN_GROUP_NAME" $APP_BASE "The Administrators use by apps"
+  add_to_group "Administrators" "$SAMBA_DC_ADMIN_GROUP_NAME"
 
   echo "Create Group Unix Admins"
   create_group "Unix Admins" $APP_BASE "Unix Admins"

@@ -31,7 +31,7 @@ module Anas
 
     def cal_envs(envs)
       new_envs = envs
-      new_envs['NEXTCLOUD_HOSTNAME'] = 'nextcloud'
+      new_envs['NEXTCLOUD_HOSTNAME'] = "#{new_envs['CONTAINER_PREFIX']}nextcloud"
       new_envs['NEXTCLOUD_BASE_PATH'] = "#{envs['DATA_PATH']}/nextcloud" unless envs.has_key?('NEXTCLOUD_BASE_PATH')
       new_envs['NEXTCLOUD_DOMAIN'] = "#{envs['NEXTCLOUD_DOMAIN_PREFIX']}.#{envs['BASE_DOMAIN']}"
       new_envs['NEXTCLOUD_DOMAIN_PORT'] = "#{envs['NEXTCLOUD_DOMAIN']}:#{envs['TRAEFIK_BASE_PORT']}"
@@ -40,7 +40,7 @@ module Anas
       new_envs['NEXTCLOUD_TALK_TURN_DOMAIN_PORT'] = "#{envs['NEXTCLOUD_DOMAIN']}:#{envs['NEXTCLOUD_TALK_TURN_PORT']}"
       new_envs['NEXTCLOUD_TALK_SIGNALING_DOMAIN_FULL'] = "#{envs['NEXTCLOUD_DOMAIN_FULL']}/talk"
 
-      new_envs['NEXTCLOUD_REDIS_HOSTNAME'] = 'nextcloud_redis'
+      new_envs['NEXTCLOUD_REDIS_HOSTNAME'] = "#{new_envs['CONTAINER_PREFIX']}nextcloud_redis"
       new_envs['NEXTCLOUD_REDIS_PORT'] = 6379
       unless envs.has_key?('NEXTCLOUD_DB_TYPE')
         if envs.has_key?('POSTGRES_HOST')
@@ -58,20 +58,20 @@ module Anas
         new_envs['NEXTCLOUD_NETWORK_DB'] = 'postgres'
       end
 
-      new_envs['NEXTCLOUD_IMAGINARY_HOSTNAME'] = 'imaginary'
+      new_envs['NEXTCLOUD_IMAGINARY_HOSTNAME'] = "#{new_envs['CONTAINER_PREFIX']}imaginary"
       # avoid conflit with samba admin user
       # TODO: change name
       new_envs['NEXTCLOUD_ADMIN_USERNAME'] = "#{envs['SAMBA_DC_ADMIN_NAME']}_nc" unless envs.has_key?('NEXTCLOUD_ADMIN_USERNAME')
       new_envs['NEXTCLOUD_ADMIN_PASSWORD'] = envs['SAMBA_DC_ADMIN_PASSWORD'] unless envs.has_key?('NEXTCLOUD_ADMIN_PASSWORD')
       if envs['SAMBA_DC_APP_FILTER'] == 'true'
-        new_envs['NEXTCLOUD_USER_FILTER'] = "(&#{envs['SAMBA_DC_USER_CLASS_FILTER']}(|(memberOf=CN=APP_nextcloud,#{envs['SAMBA_DC_BASE_APP_DN']})(memberOf=#{envs['SAMBA_DC_APP_ALL_DN']})))"
+        new_envs['NEXTCLOUD_USER_FILTER'] = "(&#{envs['SAMBA_DC_USER_CLASS_FILTER']}(|(memberOf=CN=APP_nextcloud,#{envs['SAMBA_DC_BASE_APP_DN']})(memberOf=#{envs['SAMBA_DC_APP_ALL_DN']})(memberOf=#{envs['SAMBA_DC_ADMIN_GROUP_DN']})))"
       else
         new_envs['NEXTCLOUD_USER_FILTER'] = "(&#{envs['SAMBA_DC_USER_CLASS_FILTER']})"
       end
       unless envs['NEXTCLOUD_USER_LOGIN_FILTER']
         attrs = envs['SAMBA_DC_USER_LOGIN_ATTRS'].split(',').append('objectGUID')
         uid_filter = "(|#{(attrs.map { |attr| "(#{attr}=%uid)"}).join})"
-        new_envs['NEXTCLOUD_USER_LOGIN_FILTER'] = "(&#{new_envs['NEXTCLOUD_USER_FILTER']}#{envs['SAMBA_DC_USER_ENABLED_FILTER']}#{uid_filter})"
+        new_envs['NEXTCLOUD_USER_LOGIN_FILTER'] = "(&#{new_envs['NEXTCLOUD_USER_FILTER']}#{envs['SAMBA_DC_USER_ENABLED_FILTER']}#{uid_filter})" # don't need $NEXTCLOUD_USER_FILTER ?
       end
 
       unless envs['NEXTCLOUD_USER_COMPLEX_PASS']
@@ -160,7 +160,7 @@ module Anas
         new_envs['DB_HOST'] = envs['POSTGRES_HOST_PORT']
         new_envs['DB_USER'] = envs['POSTGRES_USERNAME']
         new_envs['DB_PASSWORD'] = envs['POSTGRES_PASSWORD']
-        new_envs['DB_TYPE'] = envs['NEXTCLOUD_DB_TYPE']
+        new_envs['DB_TYPE'] = 'pgsql'
       elsif envs['NEXTCLOUD_DB_TYPE'] == 'mariadb'
         new_envs['DB_HOST'] = envs['MARIADB_HOST_PORT']
         new_envs['DB_USER'] = envs['MARIADB_USERNAME']

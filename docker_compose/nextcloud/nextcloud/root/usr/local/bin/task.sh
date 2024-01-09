@@ -18,10 +18,15 @@ user_app_path='/var/www/userapps'
 install_and_enable_app() { # $1 app name
   if ! [ -d "$user_app_path/$1" ]; then
       occ app:install $1
-  elif [ "$(occ config:app:get $1 enabled)" != "yes" ]; then
-      occ app:enable $1
-  elif [ "$SKIP_UPDATE" != 1 ]; then
-      occ app:update $1
+  fi
+  if [ "$SKIP_UPDATE" != 1 ]; then
+    occ app:update $1
+  fi
+  if [ "$(occ config:app:get $1 enabled)" != "yes" ]; then
+    occ app:enable $1
+    if [ "$(occ config:app:get $1 enabled)" != "yes" ]; then\
+      echo -e "Error\n$1 app enable failed"
+    fi
   fi
 }
 
@@ -166,6 +171,7 @@ config_imaginary=$(cat <<EOF
 }
 EOF
 )
+
 config_imaginary_provides=$(echo '
 {
   "system": {
@@ -188,6 +194,7 @@ config_imaginary_provides=$(echo '
 }
 '
 )
+
 config_imaginary=$(echo "$config_imaginary" "$config_imaginary_provides" | jq -s '.[0] * .[1]')
 import_occ "$config_imaginary"
 
@@ -297,6 +304,12 @@ fi
 echo "Install SAML authentication"
 app_name='user_saml'
 install_and_enable_app $app_name
+
+# line_count=$(occ saml:config:get 1 | wc -l)
+# if [ "$line_count" -eq 1 ]; then
+#     occ saml:config:create
+# fi
+occ config:app:set user_saml type --value="saml"
 occ saml:config:set 1 \
     --general-idp0_display_name="SSO Login" \
     --general-uid_mapping="sAMAccountName" \
@@ -322,6 +335,8 @@ occ saml:config:set 1 \
     --security-wantNameId=0 \
     --security-wantNameIdEncrypted=0 \
     --security-signatureAlgorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+occ config:app:set user_saml general-use_saml_auth_for_desktop --value=1
+occ config:app:set user_saml general-require_provisioned_account --value=0
 
 # config openid connect
 # config_oidc=$(cat <<EOF
