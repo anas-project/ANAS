@@ -183,7 +183,7 @@ module Anas
       return ['samba_dc', 'postgres', 'mariadb']
     end
 
-    def services_list
+    def docker_services_list
       list = super
       if @envs['NEXTCLOUD_TALK_ENABLED'] == 'true'
         return list

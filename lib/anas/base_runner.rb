@@ -80,7 +80,7 @@ module Anas
       @envs = append_module_env(new_envs)
     end
 
-    def services_list
+    def docker_services_list
       result = %x(#{@docker_compose_cmd} config --services)
       return result.split("\n")
     end
@@ -88,8 +88,8 @@ module Anas
     # return the services list base on @envs
     # 
     # @return String the list of services
-    def services_list_string
-      return services_list.join(' ')
+    def docker_services_list_string
+      return docker_services_list.join(' ')
     end
 
     # Get the docker-compose.yml file path
@@ -215,7 +215,7 @@ module Anas
         Log.debug("Entry @working_path #{the_path}")
         Dir.chdir(the_path)
         # result = system("#{@docker_compose_cmd} build", exception: true)
-        slist = services_list_string
+        slist = docker_services_list_string
         Log.info("Building services #{slist}")
         # ENV.update(@envs)
         Log.info("Exec `#{@docker_compose_cmd} build #{slist}`")
@@ -238,7 +238,7 @@ module Anas
         Log.debug("Entry @working_path #{the_path}")
         Dir.chdir(the_path)
         # result = system("#{@docker_compose_cmd} up -d", exception: true)
-        slist = services_list_string
+        slist = docker_services_list_string
         Log.info("Starting services #{slist}")
         ENV.update(@envs)
         Log.info("Exec `#{@docker_compose_cmd} up #{slist} -d`")

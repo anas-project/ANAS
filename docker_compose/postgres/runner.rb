@@ -43,7 +43,7 @@ module Anas
       return ['traefik']
     end
 
-    def services_list
+    def docker_services_list
       list = super
       if @envs['POSTGRES_ADMINER_ENABLED'] == 'true'
         return list

@@ -14,13 +14,13 @@ module Anas
       ]
       @default_envs = {
         'COLLABORA_DOMAIN_PREFIX' => 'collabora', 'COLLABORA_LOG_LEVEL' => 'warning',
-        'COLLABORA_INTERFACE' => 'default', 'COLLABORA_HOSTNAME' => 'collabora',
-        'COLLABORA_AUTO_SAVE' => '60',
+        'COLLABORA_INTERFACE' => 'default', 'COLLABORA_AUTO_SAVE' => '60',
       }
     end
 
     def cal_envs(envs)
       new_envs = envs
+      new_envs['COLLABORA_HOSTNAME'] = "#{new_envs['CONTAINER_PREFIX']}collabora"
       new_envs['COLLABORA_DOMAIN'] = "#{envs['COLLABORA_DOMAIN_PREFIX']}.#{envs['BASE_DOMAIN']}"
       new_envs['COLLABORA_DOMAIN_PORT'] = "#{new_envs['COLLABORA_DOMAIN']}:#{new_envs['TRAEFIK_BASE_PORT']}"
       new_envs['COLLABORA_DOMAIN_FULL'] = "https://#{new_envs['COLLABORA_DOMAIN_PORT']}"

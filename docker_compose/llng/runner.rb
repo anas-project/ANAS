@@ -125,7 +125,7 @@ module Anas
       end
     end
 
-    def services_list
+    def docker_services_list
       list = super
       if @envs['LLNG_ADMINER_ENABLED'] == 'true'
         return list
