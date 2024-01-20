@@ -1,4 +1,4 @@
-# $LOAD_PATH << '../docker-compose'
+# $LOAD_PATH << '../casks/mods'
 # lib = File.expand_path('../lib', __FILE__)
 require 'anas/version'
 require 'anas/commands'

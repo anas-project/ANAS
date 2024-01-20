@@ -91,9 +91,6 @@ services:
       - "traefik.http.services.nextcloud-talk-signaling.loadbalancer.server.port=8081"
       - "traefik.http.middlewares.nextcloud-talk-signaling_stripprefix.stripprefix.prefixes=/talk"
       - "traefik.docker.network=traefik"
-    ports:
-      - "${NEXTCLOUD_TALK_TURN_PORT}:${NEXTCLOUD_TALK_TURN_PORT}/tcp"
-      - "${NEXTCLOUD_TALK_TURN_PORT}:${NEXTCLOUD_TALK_TURN_PORT}/udp"
     networks:
       - traefik
 

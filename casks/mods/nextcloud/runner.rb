@@ -16,16 +16,16 @@ module Anas
         # 'NEXTCLOUD_USER_MIN_PASS_LENGTH', 'NEXTCLOUD_USER_COMPLEX_PASS', 'NEXTCLOUD_USER_MAX_PASS_AGE', 
         'NEXTCLOUD_RM_SKELETON_FILES',
         'NEXTCLOUD_LOG_LEVEL', 'NEXTCLOUD_MEMORY_LIMIT', 'NEXTCLOUD_UPLOAD_MAX_SIZE',
-        'NEXTCLOUD_DEBUG', 'NEXTCLOUD_TALK_TURN_PORT', 'NEXTCLOUD_TALK_ENABLED',
-        'NEXTCLOUD_MEMORIES_ENABLED',
+        'NEXTCLOUD_DEBUG', 'NEXTCLOUD_TALK_ENABLED',
+        'NEXTCLOUD_MEMORIES_ENABLED', 'NEXTCLOUD_TALK_INTERNAL_SECRET',
       ]
       @default_envs = {
         'NEXTCLOUD_DOMAIN_PREFIX' => 'nc', 'NEXTCLOUD_DB_NAME' => 'nextcloud',
         'NEXTCLOUD_PHONE_REGION' => 'CN', 'NEXTCLOUD_RM_SKELETON_FILES' => false,
         'NEXTCLOUD_LOG_LEVEL' => '2', 'NEXTCLOUD_MEMORY_LIMIT' => '1G',
         'NEXTCLOUD_UPLOAD_MAX_SIZE' => '16G', 'NEXTCLOUD_DEBUG' => false,
-        'NEXTCLOUD_TALK_TURN_PORT' => 3478, 'NEXTCLOUD_TALK_ENABLED' => true,
-        'NEXTCLOUD_MEMORIES_ENABLED' => true,
+        'NEXTCLOUD_TALK_ENABLED' => true,
+        'NEXTCLOUD_MEMORIES_ENABLED' => true
       }
     end
 
@@ -37,7 +37,6 @@ module Anas
       new_envs['NEXTCLOUD_DOMAIN_PORT'] = "#{envs['NEXTCLOUD_DOMAIN']}:#{envs['TRAEFIK_BASE_PORT']}"
       new_envs['NEXTCLOUD_DOMAIN_FULL'] = "https://#{envs['NEXTCLOUD_DOMAIN_PORT']}"
       
-      new_envs['NEXTCLOUD_TALK_TURN_DOMAIN_PORT'] = "#{envs['NEXTCLOUD_DOMAIN']}:#{envs['NEXTCLOUD_TALK_TURN_PORT']}"
       new_envs['NEXTCLOUD_TALK_SIGNALING_DOMAIN_FULL'] = "#{envs['NEXTCLOUD_DOMAIN_FULL']}/talk"
 
       new_envs['NEXTCLOUD_REDIS_HOSTNAME'] = "#{new_envs['CONTAINER_PREFIX']}nextcloud_redis"
@@ -131,6 +130,8 @@ module Anas
       new_envs['APPS_LIST__NEXTCLOUD__DOMAIN'] = new_envs['NEXTCLOUD_DOMAIN']
       new_envs['APPS_LIST__NEXTCLOUD__DOMAIN'] = new_envs['NEXTCLOUD_DOMAIN']
       new_envs['APPS_LIST__NEXTCLOUD__ALLOW_GROUPS'] = allow_groups
+
+      new_envs['NEXTCLOUD_TALK_INTERNAL_SECRET'] = String.random_password(32)
       return new_envs
     end
 
@@ -169,15 +170,18 @@ module Anas
       end
       new_envs['DB_NAME'] = envs['NEXTCLOUD_DB_NAME']
 
-      new_envs['TALK_TURN_SECRET'] = String.random_password(32)
       new_envs['TALK_SIGNALING_SECRET'] = String.random_password(32)
 
       return new_envs
     end
 
     def self.dependent_mods(base_envs)
-      return ['traefik']
+      return ['traefik', 'eturnal']
     end
+
+    # def self.dependent_services(base_envs)
+    #   return ['turn']
+    # end
 
     def run_after_mods(envs)
       return ['samba_dc', 'postgres', 'mariadb']

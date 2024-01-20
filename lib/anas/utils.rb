@@ -14,6 +14,7 @@ module Anas
   class EnvError < StandardError; end
   class NetworkError < StandardError; end
   class UnknownError < StandardError; end
+  class ModConflictError < StandardError; end
 
   # Loggers, default level is `info`
   Log = Logger.new(STDOUT)

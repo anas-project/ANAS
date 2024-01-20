@@ -97,7 +97,7 @@ module Anas
     # @return [String] the module path
     def get_docker_compose_path
       root_path = File.expand_path('../../..', __FILE__)
-      return File.join(root_path, 'docker_compose', @mod_name)
+      return File.join(root_path, 'casks/mods', @mod_name)
     end
     
     # Copy all file to working path, render all erb files
@@ -172,8 +172,10 @@ module Anas
     def append_module_env(envs)
       # Add module related env
       new_envs = module_envs(envs)
-      new_envs['MODULE_NAME'] = @mod_name
-      return new_envs
+      envs_clone = new_envs.clone
+      envs_clone.value_to_string!
+      envs_clone['MODULE_NAME'] = @mod_name
+      return envs_clone
     end
 
     def gen_files(envs)

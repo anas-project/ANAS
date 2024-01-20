@@ -135,9 +135,9 @@ if [ "$NEXTCLOUD_TALK_ENABLED" == "true" ]; then
   install_and_enable_app $app_name
   talk_config='{}'
   occ config:app:set spreed stun_servers --value "[]"
-  occ talk:stun:add "$NEXTCLOUD_TALK_TURN_DOMAIN_PORT"
+  occ talk:stun:add "$TURN_DOMAIN_PORT"
   occ config:app:set spreed turn_servers --value "[]"
-  occ talk:turn:add "turn" "$NEXTCLOUD_TALK_TURN_DOMAIN_PORT" "udp,tcp" --secret="$TALK_TURN_SECRET"
+  occ talk:turn:add "turn" "$TURN_DOMAIN_PORT" "udp,tcp" --secret="$TURN_SECRET"
   occ config:app:set spreed signaling_servers --value "{}"
   occ talk:signaling:add "$NEXTCLOUD_TALK_SIGNALING_DOMAIN_FULL" "$TALK_SIGNALING_SECRET" --verify
 else

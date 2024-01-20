@@ -22,7 +22,7 @@ Gem::Specification.new do |spec|
   end
   spec.bindir        = "bin"
   spec.executables   = ["anas", "setup"]
-  spec.require_paths = ["lib", 'docker_compose']
+  spec.require_paths = ["lib", 'casks/mods']
 
   spec.add_dependency 'commander', '~> 4.5'
   spec.add_dependency 'htauth', '~> 2.1'
