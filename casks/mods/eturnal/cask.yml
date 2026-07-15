@@ -1,0 +1,30 @@
+api_version: anas.dev/v1
+kind: Cask
+name: eturnal
+version: 1.12.0
+abi:
+  supports:
+    - anas.cask/v1
+title: Eturnal TURN
+description: TURN service used by realtime communication modules.
+category: communication
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  before:
+    - core
+config:
+  env_prefix: TURN
+  defaults:
+    port: "3478"
+    domain_prefix: turn
+features:
+  generated_secrets: true
+  domain: true
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

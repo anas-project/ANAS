@@ -23,4 +23,10 @@ fi
 
 waiting_notify_push
 
-/var/www/userapps/notify_push/bin/$CPU_ARCH/notify_push /var/www/config/config.php --port 7867
+notify_push_options=()
+if [ "${NEXTCLOUD_NOTIFY_PUSH_ALLOW_SELF_SIGNED:-false}" = "true" ]; then
+  notify_push_options+=(--allow-self-signed)
+fi
+
+exec /var/www/userapps/notify_push/bin/$CPU_ARCH/notify_push \
+  /var/www/config/config.php --port 7867 "${notify_push_options[@]}"

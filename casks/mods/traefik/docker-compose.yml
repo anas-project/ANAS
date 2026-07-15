@@ -9,7 +9,7 @@ services:
       - --entrypoints.https.address=:${TRAEFIK_BASE_PORT}
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
-      - --providers.docker.network=traefik
+      - --providers.docker.network=${NETWORK_PREFIX}traefik
       - --api.dashboard=true
       - --providers.file.filename=/cert.yml
     restart: unless-stopped
@@ -18,7 +18,7 @@ services:
     ports:
       - "${TRAEFIK_BASE_PORT}:${TRAEFIK_BASE_PORT}"
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro"
       - "${LEGO_CERTS_PATH}:/certs:ro"
     labels:
       - "traefik.http.routers.api.entrypoints=https"
@@ -28,9 +28,9 @@ services:
       - "traefik.http.middlewares.auth.basicauth.users=${BASICAUTH_HTPASSWD}"
       - "traefik.http.routers.api.tls=true"
       - "traefik.enable=true"
-      - "traefik.docker.network=traefik"
+      - "traefik.docker.network=${NETWORK_PREFIX}traefik"
 
 networks:
   default:
     driver: bridge
-    name: traefik
+    name: ${NETWORK_PREFIX}traefik

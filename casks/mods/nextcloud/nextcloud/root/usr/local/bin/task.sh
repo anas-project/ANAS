@@ -8,6 +8,8 @@ if [ "$SIDECAR_CRON" = "1" ] || [ "$SIDECAR_PREVIEWGEN" = "1" ] || [ "$SIDECAR_N
   exit 0
 fi
 
+rm -f /run/nextcloud-tasks.ready
+
 if [ "$NEXTCLOUD_RM_SKELETON_FILES" == "true" ]; then 
   rm -rf /var/www/core/skeleton/*
   mkdir /var/www/core/skeleton/Documents
@@ -15,19 +17,224 @@ if [ "$NEXTCLOUD_RM_SKELETON_FILES" == "true" ]; then
 fi
 
 user_app_path='/var/www/userapps'
+retry_occ() {
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if "$@"; then
+      return 0
+    fi
+    echo "Command failed (attempt $attempt/5): $*"
+    sleep 5
+  done
+  return 1
+}
+
+install_app_once() {
+  local app_name="$1"
+  local output status github_url archive proxy_prefix
+
+  output=$(occ app:install "$app_name" 2>&1)
+  status=$?
+  printf '%s\n' "$output"
+  if [ "$status" -eq 0 ]; then
+    return 0
+  fi
+
+  if [ "$CHINESE_SPEEDUP" != "true" ]; then
+    return "$status"
+  fi
+  github_url=$(printf '%s\n' "$output" | \
+    sed -n 's#.*\(https://github\.com/[^ ]*\.tar\.gz\).*#\1#p' | head -n 1)
+  if [ -z "$github_url" ]; then
+    return "$status"
+  fi
+
+  proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-https://gh-proxy.com/}"
+  archive=$(mktemp)
+  echo "Direct GitHub download failed; retrying $app_name through the configured mirror"
+  if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 \
+    "$proxy_prefix$github_url" -o "$archive"; then
+    rm -f "$archive"
+    return "$status"
+  fi
+  if ! tar -xzf "$archive" -C "$user_app_path"; then
+    rm -f "$archive"
+    return "$status"
+  fi
+  rm -f "$archive"
+  [ -d "$user_app_path/$app_name" ]
+}
+
+app_version_pin() {
+  case "$1" in
+    previewgenerator) printf '%s' "${NEXTCLOUD_PREVIEWGENERATOR_VERSION:-}" ;;
+  esac
+}
+
+restore_memories_places_source() {
+  local places_file backup proxy_prefix
+  places_file="$user_app_path/memories/lib/Service/Places.php"
+  backup="/data/.anas-backups/memories-Places.php"
+  [ -f "$places_file" ] || return 0
+  if [ -f "$backup" ]; then
+    cp -p "$backup" "$places_file"
+    return
+  fi
+  proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-https://gh-proxy.com/}"
+  sed -i \
+    "s#${proxy_prefix}https://github.com/pulsejet/memories-assets/#https://github.com/pulsejet/memories-assets/#" \
+    "$places_file"
+}
+
+install_app_from_store_mirror() {
+  local app_name="$1"
+  local version version_pin appstore_cache download_url proxy_prefix archive
+
+  version=$(occ status --output=json | jq -r '.versionstring')
+  version_pin=$(app_version_pin "$app_name")
+  appstore_cache="/tmp/nextcloud-appstore-$version.json"
+  if [ ! -s "$appstore_cache" ]; then
+    curl -fsSL --retry 3 --connect-timeout 15 --max-time 120 \
+      "https://apps.nextcloud.com/api/v1/platform/$version/apps.json" \
+      -o "$appstore_cache" || return 1
+  fi
+  download_url=$(jq -r --arg app "$app_name" --arg pin "$version_pin" '
+    map(select(.id == $app))[0].releases
+    | map(select(.version | test("-") | not))
+    | if $pin == "" then
+        sort_by(.version | split(".") | map(tonumber)) | last
+      else
+        map(select(.version == $pin)) | last
+      end
+    | .download // empty
+  ' "$appstore_cache")
+  if [ -z "$download_url" ]; then
+    return 1
+  fi
+
+  case "$download_url" in
+    https://github.com/*)
+      proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-https://gh-proxy.com/}"
+      download_url="$proxy_prefix$download_url"
+      ;;
+  esac
+  archive=$(mktemp)
+  echo "Installing $app_name from the Nextcloud app store through the configured mirror"
+  if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 \
+    "$download_url" -o "$archive"; then
+    rm -f "$archive"
+    return 1
+  fi
+  if ! tar -xzf "$archive" -C "$user_app_path"; then
+    rm -f "$archive"
+    return 1
+  fi
+  rm -f "$archive"
+  [ -d "$user_app_path/$app_name" ]
+}
+
+retry_install_app() {
+  local app_name="$1"
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if [ "$CHINESE_SPEEDUP" = "true" ] && \
+      install_app_from_store_mirror "$app_name"; then
+      return 0
+    fi
+    if install_app_once "$app_name"; then
+      return 0
+    fi
+    echo "App install failed (attempt $attempt/5): $app_name"
+    sleep 5
+  done
+  return 1
+}
+
 install_and_enable_app() { # $1 app name
-  if ! [ -d "$user_app_path/$1" ]; then
-      occ app:install $1
-  fi
-  if [ "$SKIP_UPDATE" != 1 ]; then
-    occ app:update $1
-  fi
-  if [ "$(occ config:app:get $1 enabled)" != "yes" ]; then
-    occ app:enable $1
-    if [ "$(occ config:app:get $1 enabled)" != "yes" ]; then\
-      echo -e "Error\n$1 app enable failed"
+  local installed_now=0 version_pin installed_version
+  version_pin=$(app_version_pin "$1")
+  if [ -d "$user_app_path/$1" ] && [ -n "$version_pin" ]; then
+    installed_version=$(awk -F'[<>]' '/<version>/{print $3; exit}' "$user_app_path/$1/appinfo/info.xml")
+    if [ "$installed_version" != "$version_pin" ]; then
+      echo "Replacing $1 $installed_version with pinned compatible version $version_pin"
+      occ app:disable "$1" || true
+      rm -rf "$user_app_path/$1"
     fi
   fi
+  if ! [ -d "$user_app_path/$1" ]; then
+    retry_install_app "$1" || {
+      echo "Unable to install required Nextcloud app: $1"
+      exit 1
+    }
+    installed_now=1
+  fi
+  if [ "$SKIP_UPDATE" != 1 ] && [ "$installed_now" -eq 0 ] && [ -z "$version_pin" ]; then
+    retry_occ occ app:update "$1" || {
+      echo "Unable to update required Nextcloud app: $1"
+      exit 1
+    }
+  fi
+  if [ "$(occ config:app:get $1 enabled)" != "yes" ]; then
+    retry_occ occ app:enable "$1" || {
+      echo "Unable to enable required Nextcloud app: $1"
+      exit 1
+    }
+    if [ "$(occ config:app:get $1 enabled)" != "yes" ]; then\
+      echo -e "Error\n$1 app enable failed"
+      exit 1
+    fi
+  fi
+  if [ "$1" = "memories" ]; then
+    restore_memories_places_source
+  fi
+  if ! occ integrity:check-app "$1" >/dev/null; then
+    echo "Integrity check failed for required Nextcloud app: $1"
+    exit 1
+  fi
+}
+
+setup_memories_places() {
+  local places_file backup marker proxy_prefix status
+
+  marker="/data/.anas-state/memories-places.ready"
+  if [ -f "$marker" ]; then
+    echo "Memories places data is already initialized"
+    return 0
+  fi
+
+  if [ "$CHINESE_SPEEDUP" != "true" ]; then
+    occ memories:places-setup --force \
+      --transaction-size "${NEXTCLOUD_MEMORIES_PLACES_TRANSACTION_SIZE:-10000}"
+    status=$?
+    if [ "$status" -eq 0 ]; then
+      mkdir -p "$(dirname "$marker")"
+      touch "$marker"
+    fi
+    return "$status"
+  fi
+
+  places_file="$user_app_path/memories/lib/Service/Places.php"
+  backup="/data/.anas-backups/memories-Places.php"
+  mkdir -p "$(dirname "$backup")"
+  restore_memories_places_source
+  cp -p "$places_file" "$backup"
+  proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-https://gh-proxy.com/}"
+  sed -i \
+    "s#https://github.com/pulsejet/memories-assets/#${proxy_prefix}https://github.com/pulsejet/memories-assets/#" \
+    "$places_file"
+  occ memories:places-setup --force \
+    --transaction-size "${NEXTCLOUD_MEMORIES_PLACES_TRANSACTION_SIZE:-10000}"
+  status=$?
+  cp -p "$backup" "$places_file"
+  if ! occ integrity:check-app memories >/dev/null; then
+    echo "Integrity check failed after Memories places setup"
+    return 1
+  fi
+  if [ "$status" -eq 0 ]; then
+    mkdir -p "$(dirname "$marker")"
+    touch "$marker"
+  fi
+  return "$status"
 }
 
 disable_app() { # $1 app name
@@ -212,7 +419,12 @@ LDAP_CONFIG_NAME="s01"
 LDAP_CMD="occ ldap:set-config $LDAP_CONFIG_NAME"
 
 IFS=',' read -ra attrs_array <<< "$SAMBA_DC_USER_LOGIN_ATTRS"
-attrs=$(printf '%s\\n' "${attrs_array[@]}")
+attrs=""
+for attr in "${attrs_array[@]}"; do
+  [ -z "${attr//[[:space:]]/}" ] && continue
+  [ -n "$attrs" ] && attrs="${attrs}\\n"
+  attrs="${attrs}${attr}"
+done
 config_ldap=$(cat <<EOF
 {
   "apps": {
@@ -298,7 +510,12 @@ if [ "$NEXTCLOUD_MEMORIES_ENABLED" == "true" ]; then
 EOF
 )
   import_occ "$config_memories"
-  occ memories:places-setup
+  if [ "${NEXTCLOUD_MEMORIES_PLACES_ENABLED:-true}" = "true" ]; then
+    if ! setup_memories_places; then
+      echo "Unable to initialize required Memories places data"
+      exit 1
+    fi
+  fi
 fi
 
 echo "Install SAML authentication"
@@ -364,3 +581,4 @@ occ config:app:set user_saml general-require_provisioned_account --value=0
 # import_occ "$config_oidc"
 
 echo "Nextcloud tasks execute completed"
+touch /run/nextcloud-tasks.ready

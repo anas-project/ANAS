@@ -1,6 +1,10 @@
 FROM ldapaccountmanager/lam:7.8
-RUN apt-get update \
-  && apt-get upgrade -y \
+RUN sed -i \
+      -e 's|http://deb.debian.org/debian|http://archive.debian.org/debian|g' \
+      -e 's|http://security.debian.org/debian-security|http://archive.debian.org/debian-security|g' \
+      /etc/apt/sources.list \
+  && printf 'Acquire::Check-Valid-Until "false";\n' >/etc/apt/apt.conf.d/99archive \
+  && apt-get update \
   && apt-get install --no-install-recommends -y gettext \
   && rm -rf /var/cache/apt /var/lib/apt/lists/* 
 

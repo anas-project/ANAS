@@ -1,0 +1,36 @@
+version: "3.5"
+
+services:
+  anas_traefik:
+    image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
+    build: ./traefik
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
+    command:
+      - --entrypoints.https.address=:${TRAEFIK_BASE_PORT}
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=traefik
+      - --api.dashboard=true
+      - --providers.file.filename=/cert.yml
+    restart: unless-stopped
+    environment:
+      - LEGO_CERT_PATH
+    ports:
+      - "${TRAEFIK_BASE_PORT}:${TRAEFIK_BASE_PORT}"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "${LEGO_CERTS_PATH}:/certs:ro"
+    labels:
+      - "traefik.http.routers.api.entrypoints=https"
+      - "traefik.http.routers.api.rule=Host(`${TRAEFIK_DOMAIN}`)"
+      - "traefik.http.routers.api.service=api@internal"
+      - "traefik.http.routers.api.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=${BASICAUTH_HTPASSWD}"
+      - "traefik.http.routers.api.tls=true"
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+
+networks:
+  default:
+    driver: bridge
+    name: ${NETWORK_PREFIX}traefik

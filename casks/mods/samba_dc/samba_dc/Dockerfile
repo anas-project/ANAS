@@ -1,12 +1,13 @@
-FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy
+FROM ghcr.io/linuxserver/baseimage-ubuntu:noble
 LABEL maintainer="Hailong"
 
-ENV DEBIAN_FRONTEND noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 
 ARG CHINESE_SPEEDUP
 RUN if [ "$CHINESE_SPEEDUP" = "true" ] ; then  \
   sed -i "s/archive.ubuntu.com/mirrors.aliyun.com/g" /etc/apt/sources.list; \
   fi
+
 RUN apt-get update \
   && apt-get install -y \
   samba \
@@ -21,7 +22,7 @@ RUN apt-get update \
   ldb-tools \
   gettext \
   openssh-server \
-  netcat \
+  netcat-openbsd \
   && apt-get clean \
   && rm -rf \
   /tmp/* \
@@ -30,6 +31,14 @@ RUN apt-get update \
   /var/log/*
 
 COPY root/ /
+
+RUN chmod +x \
+  /etc/services.d/samba_dc/run \
+  /etc/services.d/sshd/run \
+  /usr/local/bin/structure.sh \
+  /usr/local/bin/anas_zone.sh \
+  /etc/cont-init.d/11-samba_dc.sh \
+  /etc/cont-init.d/12-ssh.sh
 
 VOLUME /var/lib/samba
 EXPOSE 88 88/udp 135 137-138/udp 139 389 389/udp 445 464 464/udp 636 3268-3269 49152-65535 \

@@ -1,0 +1,56 @@
+api_version: anas.dev/v1
+casks:
+  core:
+    version: 0.0.0
+    source: casks/mods/core
+  lego:
+    version: 4.10.0
+    source: casks/mods/lego
+  bind:
+    version: 20.03.0
+    source: casks/mods/bind
+  samba_dc:
+    version: 24.03.0
+    source: casks/mods/samba_dc
+  samba_fs:
+    version: 22.03.0
+    source: casks/mods/samba_fs
+  traefik:
+    version: 2.5.0
+    source: casks/mods/traefik
+  keycloak:
+    version: 23.0.5-0
+    source: casks/mods/keycloak
+  llng:
+    version: 2.0.63
+    source: casks/mods/llng
+  mariadb:
+    version: 10.11.3
+    source: casks/mods/mariadb
+  postgres:
+    version: 15.2.0
+    source: casks/mods/postgres
+  eturnal:
+    version: 1.11.0
+    source: casks/mods/eturnal
+  nextcloud:
+    version: 29.0.0
+    source: casks/mods/nextcloud
+  collabora:
+    version: 23.05.0-1
+    source: casks/mods/collabora
+  meshcentral:
+    version: 1.1.4
+    source: casks/mods/meshcentral
+  netbird:
+    version: 0.25.4
+    source: casks/mods/netbird
+  lam:
+    version: 7.7.0
+    source: casks/mods/lam
+  ddns:
+    version: 0.0.0
+    source: casks/mods/ddns
+  freeradius:
+    version: 4.3.0
+    source: casks/mods/freeradius

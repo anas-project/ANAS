@@ -1,17 +1,23 @@
 version: "3.5"
 
 services:
-  anas_lego:
-    build: ./lego
-    container_name: ${CONTAINER_PREFIX}lego
-    image: ${IMAGE_PREFIX}lego:latest
+  anas_freeradius:
+    build: ./freeradius
+    container_name: ${CONTAINER_PREFIX}freeradius
+    image: ${IMAGE_PREFIX}freeradius:latest
     restart: unless-stopped
-    volumes:
-      - "${LEGO_DATA_PATH}:/certs"
+    ports:
+      - "1812:1812/udp"
+      - "1813:1813/udp"
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD", "freeradius", "-XC"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   default:
     driver: bridge
-    name: lego
+    name: ${NETWORK_PREFIX}freeradius

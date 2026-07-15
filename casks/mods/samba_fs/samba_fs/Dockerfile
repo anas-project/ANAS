@@ -33,6 +33,11 @@ RUN apt-get update \
 
 COPY root/ /
 
+RUN chmod 0755 \
+  /etc/cont-init.d/*.sh \
+  /etc/services.d/*/run \
+  /usr/local/bin/*.sh
+
 EXPOSE 139 445
 
 

@@ -1,0 +1,40 @@
+api_version: anas.dev/v1
+kind: Cask
+name: samba_dc
+version: 24.04.0
+abi:
+  supports:
+    - anas.cask/v1
+title: Samba domain controller
+description: Active Directory compatible domain controller and LDAP source.
+category: identity
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  before:
+    - lego
+    - bind
+config:
+  defaults:
+    app_filter: "false"
+    create_structure: "true"
+    admin_name: admin
+    template_shell: /bin/false
+    template_homedir: /home/%D/%U
+    domain_users_gid_number: "10000"
+    user_complex_pass: "true"
+    user_max_pass_age: "70"
+    user_min_pass_length: "7"
+    log_level: "1"
+features:
+  ldap_provider: true
+  kerberos_env: true
+  special_files:
+    - samba_dc/root/root/.ssh/authorized_keys
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

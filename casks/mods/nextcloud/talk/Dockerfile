@@ -3,8 +3,14 @@ FROM strukturag/nextcloud-spreed-signaling:1.2.2 as signaling
 FROM alpine:3.18.5 as janus
 
 ARG JANUS_VERSION=v0.14.1
+ARG CHINESE_SPEEDUP
 WORKDIR /src
 RUN set -ex; \
+  janus_repo=https://github.com/meetecho/janus-gateway; \
+  if [ "$CHINESE_SPEEDUP" = "true" ]; then \
+    sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories; \
+    janus_repo=https://ghfast.top/https://github.com/meetecho/janus-gateway.git; \
+  fi; \
   apk add --no-cache \
   ca-certificates \
   git \
@@ -24,7 +30,7 @@ RUN set -ex; \
   libusrsctp-dev \
   gengetopt-dev \
   libwebsockets-dev; \
-  git clone --recursive https://github.com/meetecho/janus-gateway --depth=1 --single-branch --branch "$JANUS_VERSION" /src; \
+  git clone --recursive "$janus_repo" --depth=1 --single-branch --branch "$JANUS_VERSION" /src; \
   /src/autogen.sh; \
   /src/configure --disable-rabbitmq --disable-mqtt --disable-boringssl; \
   make; \
@@ -33,6 +39,7 @@ RUN set -ex; \
   rename -v ".jcfg.sample" ".jcfg" /usr/local/etc/janus/*.jcfg.sample
 
 FROM alpine:3.18.5
+ARG CHINESE_SPEEDUP
 COPY --from=janus     --chmod=777 --chown=1000:1000 /usr/local                          /usr/local
 COPY --from=nats      --chmod=777 --chown=1000:1000 /nats-server                        /usr/local/bin/nats-server
 COPY --from=signaling --chmod=777 --chown=1000:1000 /usr/bin/nextcloud-spreed-signaling /usr/local/bin/nextcloud-spreed-signaling
@@ -42,6 +49,7 @@ COPY --chmod=775 healthcheck.sh /healthcheck.sh
 COPY --chmod=664 supervisord.conf /supervisord.conf
 
 RUN set -ex; \
+  if [ "$CHINESE_SPEEDUP" = "true" ]; then sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories; fi; \
   apk add --no-cache \
   ca-certificates \
   tzdata \

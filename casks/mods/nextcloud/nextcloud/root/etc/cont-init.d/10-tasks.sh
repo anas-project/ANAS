@@ -42,8 +42,12 @@ chmod +x /usr/local/bin/running.sh /usr/local/bin/task.sh
 
 if [ "$(occ status --no-ansi | grep 'installed: true')" == "" ]; then
   echo "Nextcloud not installed"
+  # DB_HOST holds the host only and DB_PORT the port (tiredofit/nextcloud
+  # expects them separately). Still tolerate a legacy host:port DB_HOST by
+  # using the embedded port when present, otherwise fall back to DB_PORT.
   host=$(echo "$DB_HOST" | cut -d ":" -f 1)
-  port=$(echo "$DB_HOST" | cut -d ":" -f 2)
+  port=$(echo "$DB_HOST" | cut -d ":" -s -f 2)
+  port="${port:-${DB_PORT:-5432}}"
   waiting_port $host $port
   sleep 5
   echo "Init Nextcloud, username => $NEXTCLOUD_ADMIN_USERNAME, admin password => ****"

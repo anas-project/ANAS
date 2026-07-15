@@ -14,6 +14,12 @@ services:
       - CAP_NET_ADMIN
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD", "wbinfo", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 90s
     volumes:
       # - "${LEGO_CERTS_PATH}:/certs:ro"
       - "${USERDATA_PATH}:/${USERDATA_NAME}"

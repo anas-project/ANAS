@@ -30,6 +30,14 @@ if [ "$NEXTCLOUD_TALK_ENABLED" == "true" ]; then
   turn_ip=$( ping $TURN_HOSTNAME -c 1 | sed '1{s/[^(]*(//;s/).*//;q}' )
   set_host $TURN_DOMAIN $turn_ip
 fi
+if [ -n "$LLNG_DOMAIN" ]; then
+  set_host $LLNG_DOMAIN $traefik_ip
+fi
+
+if [ -n "$SAMBA_DC_HOST" ]; then
+  set_host $SAMBA_DC_HOST ${SAMBA_DC_HOST_IP:-$HOST_IP}
+fi
+
 # sed -i 's/^pm.max_spare_servers =.*/pm.max_spare_servers = 3/' /etc/php/php-fpm.d/www.conf; \
 # php speed up
 sed -i 's/^pm.max_children =.*/pm.max_children = 100/' /etc/php/php-fpm.d/www.conf; 

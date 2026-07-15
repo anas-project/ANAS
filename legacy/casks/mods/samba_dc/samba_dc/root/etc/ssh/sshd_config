@@ -1,0 +1,9 @@
+Port 22000
+
+AuthorizedKeysFile      .ssh/authorized_keys
+AllowTcpForwarding no
+GatewayPorts no
+X11Forwarding no
+MaxStartups 50
+
+Subsystem       sftp    internal-sftp

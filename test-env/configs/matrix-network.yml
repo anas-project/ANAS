@@ -1,0 +1,19 @@
+modules:
+  - traefik
+  - lego
+  - bind
+  - ddns
+  - eturnal
+  - netbird
+  - freeradius
+
+global:
+  domain: nas.test
+  email: admin@nas.test
+  data_path: ./.anas-test/data
+  timezone: Asia/Shanghai
+  dns_provider: manual
+  default_root_password: change-me-now
+
+env:
+  BASICAUTH_USER: admin

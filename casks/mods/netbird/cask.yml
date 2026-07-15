@@ -1,0 +1,34 @@
+api_version: anas.dev/v1
+kind: Cask
+name: netbird
+version: 0.25.5
+abi:
+  supports:
+    - anas.cask/v1
+title: NetBird
+description: WireGuard-based overlay network management integrated with SSO.
+category: network
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  before:
+    - core
+config:
+  defaults:
+    domain_prefix: netbird
+    adminer_enabled: "false"
+features:
+  sso_client: true
+  generated_secrets: true
+  domain: true
+services:
+  optional:
+    - name: NETBIRD_adminer
+      enabled_by: adminer_enabled
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

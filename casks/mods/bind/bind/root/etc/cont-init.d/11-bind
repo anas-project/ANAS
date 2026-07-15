@@ -110,6 +110,10 @@ if [[ "$ALL_MODS_NAME" == *"samba_dc"* ]]; then
   # dns.keytab
   chmod 640 /var/lib/samba/private/dns.keytab
   chown $exec_user:$exec_user /var/lib/samba/private/dns.keytab
+
+  # The Samba DC updates its AD DNS database locally. Starting named only
+  # after that update avoids unsafe DLZ writes through the SSHFS mount.
+  waiting_file "/var/lib/samba/.anas-zone-ready"
 fi
 
 # exec samba-tool dns zonecreate whls 199.168.192.in-addr.arpa -U admin

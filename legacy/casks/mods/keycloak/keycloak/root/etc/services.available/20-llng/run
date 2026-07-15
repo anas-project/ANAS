@@ -1,0 +1,19 @@
+#!/command/with-contenv bash
+
+source /assets/functions/00-container
+prepare_service defaults
+PROCESS_NAME="lemonldap-ng-handler"
+
+check_container_initialized
+check_service_initialized init
+
+liftoff
+
+/root/llng-config.sh &
+
+HANDLER_PROCESSES=7
+print_start "Starting (${HANDLER_PROCESSES}) LemonLDAP FastCGI Server ${LEMONLDAP_VERSION} Handlers"
+exec sudo -u $NGINX_USER /usr/sbin/llng-fastcgi-server \
+                                        -l 0.0.0.0:${LLNG_HANDLER_SOCKET_PORT} \
+                                        -n ${HANDLER_PROCESSES} \
+                                        -foreground

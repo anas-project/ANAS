@@ -2,8 +2,8 @@
 
 sleep 2
 
-echo "nohup bash -c "/usr/local/bin/fix_perm.sh &""
-nohup bash -c "/usr/local/bin/fix_perm.sh &"
+echo "/usr/local/bin/fix_perm.sh &"
+/usr/local/bin/fix_perm.sh &
 
 echo "smbd --foreground --no-process-group"
 exec smbd --foreground --no-process-group

@@ -1,0 +1,27 @@
+version: "3.5"
+
+services:
+  anas_keycloak:
+    container_name: ${CONTAINER_PREFIX}keycloak
+    image: ${IMAGE_PREFIX}keycloak:latest
+    build: ./keycloak
+    restart: unless-stopped
+    env_file:
+      - .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.keycloak.entrypoints=https"
+      - "traefik.http.routers.keycloak.rule=Host(`${KEYCLOAK_DOMAIN}`)"
+      - "traefik.http.routers.keycloak.tls=true"
+      - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
+    networks:
+      - traefik
+      - db
+
+networks:
+  db:
+    name: $LLNG_NETWORK_DB
+    external: true
+  traefik:
+    name: ${NETWORK_PREFIX}traefik
+    external: true

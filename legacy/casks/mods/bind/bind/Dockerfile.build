@@ -1,0 +1,131 @@
+FROM ghcr.io/linuxserver/baseimage-ubuntu:focal
+
+ARG BIND_VERSION=9.16.27
+ARG SAMBA_VERSION=4.16.0
+ENV DEBIAN_FRONTEND noninteractive
+
+RUN \
+  echo "**** install packages ****" && \
+  apt-get update && \
+  apt-get install -y \
+  acl \
+  apt-utils \
+  attr \
+  autoconf \
+  bind9utils \
+  binutils \
+  bison \
+  build-essential \
+  ccache \
+  chrpath \
+  curl \
+  debhelper \
+  dnsutils \
+  docbook-xml \
+  docbook-xsl \
+  flex \
+  gcc \
+  gdb \
+  git \
+  glusterfs-common \
+  gzip \
+  heimdal-multidev \
+  hostname \
+  htop \
+  krb5-config \
+  krb5-kdc \
+  krb5-user \
+  language-pack-en \
+  lcov \
+  libacl1-dev \
+  libarchive-dev \
+  libattr1-dev \
+  libavahi-common-dev \
+  libblkid-dev \
+  libbsd-dev \
+  libcap-dev \
+  libcephfs-dev \
+  libcups2-dev \
+  libdbus-1-dev \
+  libglib2.0-dev \
+  libgnutls28-dev \
+  libgpgme11-dev \
+  libicu-dev \
+  libjansson-dev \
+  libjs-jquery \
+  libjson-perl \
+  libkrb5-dev \
+  libldap2-dev \
+  liblmdb-dev \
+  libncurses5-dev \
+  libpam0g-dev \
+  libparse-yapp-perl \
+  libpcap-dev \
+  libpopt-dev \
+  libreadline-dev \
+  libsystemd-dev \
+  libtasn1-bin \
+  libtasn1-dev \
+  libtracker-sparql-2.0-dev \
+  libunwind-dev \
+  lmdb-utils \
+  locales \
+  lsb-release \
+  make \
+  mawk \
+  mingw-w64 \
+  patch \
+  perl \
+  perl-modules \
+  pkg-config \
+  procps \
+  psmisc \
+  python3 \
+  python3-cryptography \
+  python3-dbg \
+  python3-dev \
+  python3-dnspython \
+  python3-gpg \
+  python3-iso8601 \
+  python3-markdown \
+  python3-matplotlib \
+  python3-pexpect \
+  python3-pyasn1 \
+  python3-setproctitle \
+  rng-tools \
+  rsync \
+  sed \
+  sudo \
+  tar \
+  tree \
+  uuid-dev \
+  wget \
+  xfslibs-dev \
+  xsltproc \
+  zlib1g-dev \
+  && wget -O /tmp/samba-$SAMBA_VERSION.tar.gz https://download.samba.org/pub/samba/stable/samba-$SAMBA_VERSION.tar.gz \
+  && tar -xf /tmp/samba-$SAMBA_VERSION.tar.gz -C /tmp \
+  && cd /tmp/samba-$SAMBA_VERSION \
+  && ./configure --sysconfdir=/etc/samba/ --enable-debug  \
+  && make -j 2 \
+  && make install 
+
+RUN apt-get update && apt-get install -y \
+  libuv \
+  wget gcc make build-essential libssl1.0-dev libkrb5-dev \
+  && wget -O /tmp/bind-$BIND_VERSION.tar.gz https://downloads.isc.org/isc/bind9/$BIND_VERSION/bind-$BIND_VERSION.tar.xz \
+  && tar -xf /tmp/bind-$BIND_VERSION.tar.gz -C /tmp \
+  && cd /tmp/bind-$BIND_VERSION \
+  && ./configure --prefix /usr/local/bind9 --sysconfdir /etc/bind\
+  -with-openssl=/usr --with-gssapi=/usr/include/gssapi --with-libtool --with-dlopen=yes --enable-largefile \
+  --with-gnu-ld  --with-dlz-filesystem=yes  --with-dlz-ldap --with-dlz-stub --with-dlz-mysql --with-dlz-bdb \
+  --enable-static --with-libxml2 --with-libtool --enable-rrl  --enable-full-report \
+  && make install
+
+RUN apt-get install -y \
+  sshfs 
+# RUN apt-get -y autoremove \
+#   && apt-get -y autoclean \
+#   && apt-get -y clean
+
+EXPOSE 53 53/udp

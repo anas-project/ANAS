@@ -21,10 +21,10 @@
 	template shell = ${SAMBA_DC_TEMPLATE_SHELL}
 	template homedir = ${SAMBA_DC_TEMPLATE_HOMEDIR}
 	
-	tls enabled  = yes
-	tls keyfile  = /certs/${LEGO_KEY_NAME}
-	tls certfile = /certs/${LEGO_CERT_NAME}
-	tls cafile   = /certs/${LEGO_CA_CERT_NAME}
+	tls enabled  = ${SAMBA_DC_TLS_ENABLED}
+	tls keyfile  = ${SAMBA_DC_TLS_KEYFILE}
+	tls certfile = ${SAMBA_DC_TLS_CERTFILE}
+	tls cafile   = ${SAMBA_DC_TLS_CAFILE}
 
 [netlogon]
 	path = /var/lib/samba/sysvol/${SAMBA_DC_REALM}/scripts

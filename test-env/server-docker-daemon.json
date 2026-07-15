@@ -1,0 +1,13 @@
+{
+  "registry-mirrors": [
+    "https://sk-docker.bengbu.cc.cd/",
+    "https://sk-ghcr.bengbu.cc.cd/"
+  ],
+  "allow-nondistributable-artifacts": [
+    "ghcr.io"
+  ],
+  "log-opts": {
+    "max-size": "100m",
+    "max-file": "3"
+  }
+}

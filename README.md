@@ -1,40 +1,194 @@
 # ANAS
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/anas`. To experiment with that code, run `bin/console` for an interactive prompt.
+ANAS is a Go-based NAS service launcher built around composable casks. Each
+cask owns its Docker Compose assets and declares its launcher metadata in
+`cask.yml`.
 
-TODO: Delete this and the text above, and describe your gem
+Current cask runtime ABI: `anas.cask/v1`.
 
-## Installation
+## Commands
 
-Add this line to your application's Gemfile:
-
-```ruby
-gem 'anas'
+```sh
+go run ./cmd/anas plan   -c config.example.yml
+go run ./cmd/anas render -c config.example.yml -b ./.runtime
+go run ./cmd/anas build  -c config.example.yml -b ~/.anas
+go run ./cmd/anas start  -c config.example.yml -b ~/.anas
+go run ./cmd/anas stop   -b ~/.anas
 ```
 
-And then execute:
+`start --build` runs build first, then starts the rendered release.
 
-    $ bundle install
+The launcher locates casks from `--root`, `ANAS_ROOT`, the current directory,
+or the installation directory. Use `--root` when the binary and casks are
+installed separately. `plan` is read-only: it does not inspect host networking,
+run cask hooks, or create runtime state.
 
-Or install it yourself as:
+## Configuration
 
-    $ gem install anas
+Only the structured YAML format is supported:
 
-## Usage
+```yaml
+modules:
+  - traefik
 
-TODO: Write usage instructions here
+global:
+  domain: nas.example.com
+  email: admin@example.com
+  data_path: ./data
+  timezone: Asia/Shanghai
+  dns_provider: manual
+  default_root_password: change-me-now
 
-## Development
+env:
+  BASICAUTH_USER: admin
+```
 
-After checking out the repo, run `bin/setup` to install dependencies. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+Legacy Ruby keys such as `mods` and `envs` are intentionally rejected.
+Per-service overrides live under `services`:
 
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and tags, and push the `.gem` file to [rubygems.org](https://rubygems.org).
+```yaml
+services:
+  nextcloud:
+    enabled: true
+    env:
+      domain_prefix: cloud
+      upload_max_size: 32G
+```
 
-## Contributing
+Service env keys are automatically converted to the service prefix. The example
+above becomes `NEXTCLOUD_DOMAIN_PREFIX` and `NEXTCLOUD_UPLOAD_MAX_SIZE`.
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/[USERNAME]/anas. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [code of conduct](https://github.com/[USERNAME]/anas/blob/master/CODE_OF_CONDUCT.md).
+Use top-level `env` only for explicit raw environment variables that do not fit
+the structured `global`, `secrets`, or `services` sections.
 
+Set `services.<name>.enabled: false` to exclude a module listed under
+`modules`. Disabling a module required by another enabled module is an error.
 
-## Code of Conduct
+## Generated State
 
-Everyone interacting in the Anas project's codebases, issue trackers, chat rooms and mailing lists is expected to follow the [code of conduct](https://github.com/[USERNAME]/anas/blob/master/CODE_OF_CONDUCT.md).
+Runtime files are written below the selected base path:
+
+- `release/`: the active rendered Compose projects.
+- `tmp/`: temporary render/build directory before atomic promotion.
+- `secrets.generated.yml`: persistent generated secrets such as SSH keys,
+  TURN secrets, OIDC client secrets, and SAML/OIDC signing keys.
+- `cask.lock.yml`: installed cask versions and source paths used for upgrade
+  checks.
+- `go-build-cache/`: Go build cache used when running cask hooks.
+
+Do not commit runtime directories or generated secrets. The runtime base and
+generated `.env` files are owner-only because they contain service credentials.
+
+## Current Scope
+
+The launcher covers:
+
+- manifest-based cask discovery from `casks/mods/*/cask.yml`
+- cask ABI validation with `anas.cask/v1`
+- semantic cask versions, dependency version constraints, upgrade checks, and a
+  persisted cask lock file
+- module dependency ordering
+- structured YAML config loading
+- default env generation and cask hook based derived env generation
+- cask hook phases for calculation, render-time env/files, optional service
+  filtering, and after-start copy operations
+- ERB template rendering used by current modules
+- per-module `.env` generation
+- Docker Compose detection and execution
+- build/start/restart/stop/render/plan commands
+- persistent generated secrets
+- Samba SSH helper files
+- LLNG/Keycloak SAML/OIDC material generation
+- Nextcloud, Netbird, Meshcentral, LDAP app integration variables
+- macvlan setup for modules that require host LAN
+- current cask manifests under `casks/mods/*/cask.yml`
+
+Current casks provide:
+
+- base runtime defaults and host network discovery through `core`
+- ACME certificate files through `lego`
+- HTTPS routing through `traefik`
+- local DNS and Samba AD support through `bind` and `samba_dc`
+- domain-joined file sharing through `samba_fs`
+- PostgreSQL and MariaDB data stores with optional Adminer UIs
+- TURN support through `eturnal`
+- Nextcloud with Redis, Imaginary, optional Talk signaling, LDAP, SAML, and app
+  launcher integration
+- Collabora as the Nextcloud office backend
+- LemonLDAP::NG as the current SSO portal and SAML/OIDC provider
+- Keycloak as an identity cask scaffold using the current LLNG integration
+  assets
+- LDAP Account Manager and MeshCentral with Samba/LDAP integration
+- DDNS config generation for DNSPod when selected
+- NetBird dashboard, signal, and management services with OIDC integration
+- FreeRADIUS as an experimental scaffold, not a complete RADIUS deployment yet
+
+## Cask Layout
+
+Each cask directory follows this rule:
+
+```text
+casks/mods/<name>/
+  cask.yml
+  hook/
+    main.go
+  docker-compose.yml
+  <service build contexts, templates, assets>
+```
+
+Each cask declares the runner ABI it supports:
+
+```yaml
+abi:
+  supports:
+    - anas.cask/v1
+```
+
+Use lower snake_case for cask parameters in `cask.yml`. The runner maps them to
+the environment variables consumed by existing templates, using the cask
+`config.env_prefix` or the cask name as the prefix. For example,
+`domain_prefix` in the `nextcloud` cask becomes `NEXTCLOUD_DOMAIN_PREFIX`.
+
+Per-cask logic is executed through `logic.hook.command`. The runner sends a
+JSON request using the cask ABI and applies the returned env patch, generated
+secrets, files, service filters, and after-start copy operations. Runner code
+does not contain cask-specific calculation functions.
+
+`runner.rb` files are not part of the Go rules and should not be added. The
+previous Ruby implementation is retained under `legacy/` for reference.
+
+Before releasing changes, run render/build/start against real NAS configuration
+and verify each enabled module.
+
+## Developer Docs
+
+See [docs/ai-design.md](docs/ai-design.md) for the project structure, cask
+structure, and rules for designing new casks.
+
+See [docs/test-server-deployment-2026-06-30.md](docs/test-server-deployment-2026-06-30.md)
+for the test-server deployment procedure, verification results, fixes, and
+remaining full-stack test constraints.
+
+See [docs/test-server-deployment-2026-07-03.md](docs/test-server-deployment-2026-07-03.md)
+for the isolated Docker findings, PostgreSQL persistence verification, and the
+remaining blockers for a full-stack availability claim.
+
+See [docs/test-server-deployment-2026-07-04.md](docs/test-server-deployment-2026-07-04.md)
+for the server-buildable image builds and the initial smoke-start of the full
+stack.
+
+See [docs/test-server-deployment-2026-07-05.md](docs/test-server-deployment-2026-07-05.md)
+for the current record: per-container runtime verification that exposed three
+crash-loop defects (postgres per-service database provisioning, the NetBird
+dashboard `set -e` bootstrap, and the Nextcloud DB-wait host/port split), the
+fixes and their re-verification, and why the earlier smoke pass was a false
+green.
+
+See [docs/test-server-deployment-2026-07-13.md](docs/test-server-deployment-2026-07-13.md)
+for the latest deployment attempt, the fixed smoke-test false-green check, the
+local regression results, and the current SSH entry-point blocker.
+
+See [docs/test-server-deployment-2026-07-13-finance.md](docs/test-server-deployment-2026-07-13-finance.md)
+for the completed isolated deployment on `finance.hlong.wang`, the runtime bugs
+fixed there, service and persistence probes, and the remaining product-scope
+limitations.

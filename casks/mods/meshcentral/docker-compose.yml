@@ -4,7 +4,10 @@ services:
   anas_meshcentral:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
-    build: ./${MODULE_NAME}
+    build:
+      context: ./${MODULE_NAME}
+      args:
+        CHINESE_SPEEDUP: ${CHINESE_SPEEDUP:-false}
     restart: unless-stopped
     dns:
       - ${LOCAL_DNS_SERVER}
@@ -28,12 +31,9 @@ services:
       - mariadb
       - traefik
 networks:
-  default:
-    driver: bridge
-    name: meshcentral
   mariadb:
-    name: mariadb
+    name: ${NETWORK_PREFIX}mariadb
     external: true
   traefik:
-    name: traefik
+    name: ${NETWORK_PREFIX}traefik
     external: true

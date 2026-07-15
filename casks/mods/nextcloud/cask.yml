@@ -1,0 +1,48 @@
+api_version: anas.dev/v1
+kind: Cask
+name: nextcloud
+version: 30.0.1
+abi:
+  supports:
+    - anas.cask/v1
+title: Nextcloud
+description: File sync, sharing, office integration, memories, and Talk.
+category: app
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  before:
+    - traefik
+    - eturnal
+  after:
+    - samba_dc
+    - postgres
+    - mariadb
+config:
+  defaults:
+    domain_prefix: nc
+    db_name: nextcloud
+    phone_region: CN
+    rm_skeleton_files: "false"
+    log_level: "2"
+    memory_limit: 1G
+    upload_max_size: 16G
+    debug: "false"
+    talk_enabled: "true"
+    memories_enabled: "true"
+features:
+  ldap_client: true
+  sso_client: true
+  generated_secrets: true
+  domain: true
+services:
+  optional:
+    - name: talk
+      enabled_by: talk_enabled
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

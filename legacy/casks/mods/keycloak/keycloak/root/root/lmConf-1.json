@@ -1,0 +1,59 @@
+{
+  "applicationList": {
+    "1apps": {
+      "catname": "Applications",
+      "type": "category"
+    },
+    "98admin": {
+      "catname": "Administration",
+      "type": "category"
+    },
+    "99doc": {
+      "catname": "Documentation",
+      "localdoc": {
+        "options": {
+          "description": "Documentation supplied with LemonLDAP::NG",
+          "display": "on",
+          "logo": "help.png",
+          "name": "Local documentation",
+          "uri": "{{LLNG_MANAGER_DOMAIN_FULL}}/doc/"
+        },
+        "type": "application"
+      },
+      "officialwebsite": {
+        "options": {
+          "description": "Official LemonLDAP::NG Website",
+          "display": "on",
+          "logo": "network.png",
+          "name": "Official Website",
+          "uri": "https://lemonldap-ng.org/"
+        },
+        "type": "application"
+      },
+      "type": "category"
+    }
+  },
+  "cfgAuthor": "{{SERVER_NAME}}",
+  "cfgDate": "{{TIMESTAMP}}",
+  "cfgNum": 1,
+  "cfgVersion": "{{LEMONLDAP_VERSION}}",
+  "exportedHeaders": {},
+  "exportedVars": {},
+  "groups": {},
+  "localSessionStorage": "Cache::FileCache",
+  "localSessionStorageOptions": {
+    "cache_depth": 3,
+    "cache_root": "/var/lib/lemonldap-ng/cache",
+    "default_expires_in": 600,
+    "directory_umask": "007",
+    "namespace": "lemonldap-ng-sessions"
+  },
+  "locationRules": {},
+  "loginHistoryEnabled": 1,
+  "notification": 1,
+  "oidcServiceIgnoreScopeForClaims": 1,
+  "portalSkin": "bootstrap",
+  "portalSkinBackground": "1280px-Cedar_Breaks_National_Monument_partially.jpg",
+  "sessionDataToRemember": {},
+  "timeout": 72000
+}

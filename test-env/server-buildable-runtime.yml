@@ -1,0 +1,30 @@
+modules:
+  - samba_dc
+  - samba_fs
+  - postgres
+  - mariadb
+  - keycloak
+  - nextcloud
+  - meshcentral
+  - netbird
+  - lam
+  - bind
+  - ddns
+  - eturnal
+  - freeradius
+
+global:
+  domain: nas.test
+  email: admin@nas.test
+  data_path: /data/anas-refactor-test/data
+  timezone: Asia/Shanghai
+  dns_provider: manual
+  default_root_password: change-me-now
+
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_test_
+  IMAGE_PREFIX: anas_
+  NETWORK_PREFIX: anas_test_
+  CHINESE_SPEEDUP: "true"
+  DOCKER_SOCKET_PATH: /run/anas-docker-test.sock

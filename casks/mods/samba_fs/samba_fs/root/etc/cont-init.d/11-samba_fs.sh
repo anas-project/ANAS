@@ -94,7 +94,7 @@ echo "$HOST_IP  $fs_hostname.$SAMBA_DC_DOMAIN  $fs_hostname" >> /etc/hosts
 # dns
 echo "Setting DNS resolv.conf"
 : > /etc/resolv.conf
-echo "nameserver $BIND_HOST_IP" >> /etc/resolv.conf
+echo "nameserver ${SAMBA_FS_DNS_SERVER:-$BIND_HOST_IP}" >> /etc/resolv.conf
 for dns in $(echo $HOST_DNS_SERVER | tr " " "\n")
 do
   echo "nameserver $dns" >> /etc/resolv.conf

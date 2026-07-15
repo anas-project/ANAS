@@ -9,10 +9,11 @@ services:
       - .env
     volumes:
       - "${DATA_PATH}/postgres:/var/lib/postgresql/data"
+      - "./initdb:/docker-entrypoint-initdb.d:ro"
     networks:
       - postgres
 
-  anas_postgres-adminer:
+  anas_postgres_adminer:
     image: adminer
     container_name: ${CONTAINER_PREFIX}postgres_adminer
     restart: unless-stopped
@@ -31,7 +32,7 @@ services:
 networks:
   postgres:
     driver: bridge
-    name: postgres
+    name: ${POSTGRES_NETWORK_NAME}
   traefik:
-    name: traefik
+    name: ${NETWORK_PREFIX}traefik
     external: true

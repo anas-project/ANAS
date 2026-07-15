@@ -1,0 +1,16 @@
+modules:
+  - postgres
+
+global:
+  domain: nas.test
+  email: admin@nas.test
+  data_path: /home/whl/anas-refactor-test/.anas-test/server-data
+  timezone: Asia/Shanghai
+  dns_provider: manual
+  default_root_password: change-me-now
+
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_test_
+  IMAGE_PREFIX: anas_test_
+  NETWORK_PREFIX: anas_test_

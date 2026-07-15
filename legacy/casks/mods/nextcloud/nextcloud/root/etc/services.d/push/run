@@ -1,0 +1,26 @@
+#!/usr/bin/with-contenv bash
+
+waiting_notify_push() {
+  while :
+  do
+    if [ -d "/var/www/userapps/notify_push" ]; then
+      echo "notify_push installed"
+      return 
+    fi
+    echo "Waiting notify_push install"
+    sleep 60
+  done
+}
+
+CPU_ARCH="$(uname -m)"
+export CPU_ARCH
+if [ -z "$CPU_ARCH" ]; then
+    echo "Could not get processor architecture. Exiting."
+    exit 0
+elif [ "$CPU_ARCH" != "x86_64" ]; then
+    export CPU_ARCH="aarch64"
+fi
+
+waiting_notify_push
+
+/var/www/userapps/notify_push/bin/$CPU_ARCH/notify_push /var/www/config/config.php --port 7867

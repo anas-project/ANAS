@@ -1,0 +1,43 @@
+api_version: anas.dev/v1
+kind: Cask
+name: llng
+version: 2.0.64
+abi:
+  supports:
+    - anas.cask/v1
+title: LemonLDAP::NG
+description: SSO portal, SAML/OIDC identity provider, and app launcher.
+category: identity
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  before:
+    - core
+  after:
+    - traefik
+    - postgres
+    - mariadb
+config:
+  defaults:
+    domain_prefix: auth
+    manager_domain_prefix: auth-manager
+    test_domain_prefix: auth-test
+    log_level: warn
+    db_name: lemonldap-ng
+    enable_test: "true"
+    adminer_enabled: "false"
+features:
+  sso_provider: true
+  generated_secrets: true
+  after_start: copy_portal_logos
+services:
+  optional:
+    - name: LLNG_adminer
+      enabled_by: adminer_enabled
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

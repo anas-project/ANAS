@@ -1,0 +1,14 @@
+$TTL 3D
+
+$ORIGIN localhost.
+
+@       1D      IN     SOA     @       root (
+                       2013050101      ; serial
+                       8H              ; refresh
+                       2H              ; retry
+                       4W              ; expiry
+                       1D              ; minimum
+                       )
+
+@       IN      NS      @
+        IN      A       127.0.0.1

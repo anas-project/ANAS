@@ -1,0 +1,13 @@
+modules:
+  - traefik
+
+global:
+  domain: nas.example.com
+  email: admin@example.com
+  data_path: ./data
+  timezone: Asia/Shanghai
+  dns_provider: manual
+  default_root_password: change-me-now
+
+env:
+  BASICAUTH_USER: admin

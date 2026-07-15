@@ -2,7 +2,10 @@ version: "3.5"
 
 services:
   anas_nextcloud:
-    build: ./nextcloud
+    build:
+      context: ./nextcloud
+      args:
+        - CHINESE_SPEEDUP
     image: ${IMAGE_PREFIX}nextcloud:latest
     container_name: ${CONTAINER_PREFIX}nextcloud
     volumes:
@@ -40,17 +43,27 @@ services:
       - "traefik.http.routers.nextcloud-push.middlewares=nextcloud-push_stripprefix"
       - "traefik.http.middlewares.nextcloud-push_stripprefix.stripprefix.prefixes=/push"
       - "traefik.http.services.nextcloud-push.loadbalancer.server.port=7867"
-      - "traefik.docker.network=traefik"
+      - "traefik.docker.network=${NETWORK_PREFIX}traefik"
     env_file:
       - .env
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /run/nextcloud-tasks.ready && curl -fsS http://127.0.0.1:12345/ping >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
     networks:
       - nextcloud
       - db
       - traefik
 
   anas_imaginary:
-    build: ./imaginary
+    build:
+      context: ./imaginary
+      args:
+        - CHINESE_SPEEDUP
+        - GOPROXY
     image: ${IMAGE_PREFIX}nextcloud_imaginary:latest
     restart: unless-stopped
     container_name: ${CONTAINER_PREFIX}nextcloud_imaginary
@@ -62,7 +75,7 @@ services:
 
   anas_nextcloud-redis:
     container_name: ${CONTAINER_PREFIX}nextcloud_redis
-    image: redis:7.2-rc-alpine
+    image: redis:7.4-alpine
     restart: unless-stopped
     volumes:
       - "${NEXTCLOUD_BASE_PATH}/redis:/data"
@@ -70,9 +83,12 @@ services:
       - .env
     networks:
       - nextcloud
-  
+
   anas_talk:
-    build: ./talk
+    build:
+      context: ./talk
+      args:
+        - CHINESE_SPEEDUP
     image: ${IMAGE_PREFIX}nextcloud_talk:latest
     container_name: ${CONTAINER_PREFIX}nextcloud_talk
     restart: unless-stopped
@@ -90,14 +106,14 @@ services:
       - "traefik.http.routers.nextcloud-talk-signaling.middlewares=nextcloud-talk-signaling_stripprefix"
       - "traefik.http.services.nextcloud-talk-signaling.loadbalancer.server.port=8081"
       - "traefik.http.middlewares.nextcloud-talk-signaling_stripprefix.stripprefix.prefixes=/talk"
-      - "traefik.docker.network=traefik"
+      - "traefik.docker.network=${NETWORK_PREFIX}traefik"
     networks:
       - traefik
 
 networks:
   nextcloud:
     driver: bridge
-    name: nextcloud
+    name: ${NETWORK_PREFIX}nextcloud
     # enable_ipv6: true
     # driver_opts:
     #   com.docker.network.enable_ipv6: "true"
@@ -105,5 +121,5 @@ networks:
     name: ${NEXTCLOUD_NETWORK_DB}
     external: true
   traefik:
-    name: traefik
+    name: ${NETWORK_PREFIX}traefik
     external: true

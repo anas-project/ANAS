@@ -1,0 +1,7 @@
+#!/usr/bin/with-contenv bash
+
+sleep 6
+
+echo "winbindd --foreground --no-process-group --debuglevel=$SAMBA_FS_LOG_LEVEL"
+
+exec winbindd --foreground --no-process-group --debuglevel=$SAMBA_FS_LOG_LEVEL

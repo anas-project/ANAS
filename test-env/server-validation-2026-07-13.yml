@@ -1,0 +1,42 @@
+modules:
+  - samba_dc
+  - samba_fs
+  - postgres
+  - mariadb
+  - keycloak
+  - nextcloud
+  - meshcentral
+  - netbird
+  - lam
+  - bind
+  - ddns
+  - eturnal
+  - freeradius
+
+global:
+  domain: nas.test
+  email: admin@nas.test
+  data_path: /data/anas-refactor-test/validation-2026-07-13-v14/data
+  timezone: Asia/Shanghai
+  dns_provider: manual
+  default_root_password: change-me-now
+
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_test_
+  IMAGE_PREFIX: anas_
+  NETWORK_PREFIX: anas_test_
+  CHINESE_SPEEDUP: "true"
+  GITHUB_DOWNLOAD_PROXY_PREFIX: https://gh-proxy.com/
+  NEXTCLOUD_NOTIFY_PUSH_ALLOW_SELF_SIGNED: "true"
+  LDAPTLS_REQCERT: never
+  DOCKER_SOCKET_PATH: /run/anas-docker-test.sock
+  NETWORK_NAMESPACE_PATH: /run/netns/anas-test
+  HOST_IP: 10.254.0.2
+  INTERFACE: anas-test-peer
+  DEFAULT_GATEWAY_IP: 10.254.0.1
+  HOST_SUBNET_MASK: "24"
+  LOCAL_DNS_SERVER: 10.254.0.1
+  SAMBA_DC_HOST_IP: 10.254.0.1
+  SAMBA_DC_INTERFACES: anas-test-host
+  SAMBA_FS_DNS_SERVER: 10.254.0.1

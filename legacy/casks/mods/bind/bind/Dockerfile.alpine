@@ -1,0 +1,24 @@
+FROM ghcr.io/linuxserver/baseimage-alpine:3.15
+
+LABEL maintainer="Hailong"
+
+ARG BIND_VERSION=9.16.27-r0
+
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
+RUN apk add --update --no-cache \
+  ldb-tools \
+  samba-dc \
+  samba-winbind-clients \
+  bind=$BIND_VERSION \
+  bind-libs \
+  bind-tools \
+  krb5 \
+  libcrypto1.1 \
+  libxml2 \
+  tzdata \
+  sshfs \
+  gettext
+
+EXPOSE 53 53/udp
+
+COPY root/ /

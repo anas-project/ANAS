@@ -1,0 +1,32 @@
+api_version: anas.dev/v1
+kind: Cask
+name: meshcentral
+version: 1.1.5
+abi:
+  supports:
+    - anas.cask/v1
+title: MeshCentral
+description: Remote device management service using LDAP authentication.
+category: app
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  before:
+    - traefik
+    - mariadb
+  after:
+    - samba_dc
+config:
+  defaults:
+    domain_prefix: meshcentral
+    mps_port: "4433"
+features:
+  ldap_client: true
+  domain: true
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

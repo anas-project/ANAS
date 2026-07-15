@@ -1,0 +1,29 @@
+api_version: anas.dev/v1
+kind: Cask
+name: samba_fs
+version: 22.04.0
+abi:
+  supports:
+    - anas.cask/v1
+title: Samba file server
+description: File sharing service joined to the Samba domain.
+category: storage
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  after:
+    - samba_dc
+config:
+  defaults:
+    log_level: "1"
+    wsdd_log_level: "0"
+    hostname: SambaFS
+features:
+  host_lan: required
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

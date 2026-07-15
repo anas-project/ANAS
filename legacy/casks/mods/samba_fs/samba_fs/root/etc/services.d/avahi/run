@@ -1,0 +1,5 @@
+#!/usr/bin/with-contenv bash
+
+echo "avahi-daemon --no-rlimits"
+
+exec avahi-daemon --no-rlimits

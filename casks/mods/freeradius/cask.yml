@@ -1,0 +1,17 @@
+api_version: anas.dev/v1
+kind: Cask
+name: freeradius
+version: 4.4.0
+abi:
+  supports:
+    - anas.cask/v1
+title: FreeRADIUS
+description: RADIUS server cask scaffold.
+category: network
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  before:
+    - lego
+status: experimental
