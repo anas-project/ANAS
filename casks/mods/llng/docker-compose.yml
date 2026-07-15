@@ -12,6 +12,7 @@ services:
       - .env
     labels:
       - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
       - "traefik.http.routers.llng.entrypoints=https"
       - "traefik.http.routers.llng.rule=Host(`${LLNG_DOMAIN}`) || Host(`${LLNG_MANAGER_DOMAIN}`) || Host(`${LLNG_TEST_DOMAIN}`)"
       - "traefik.http.routers.llng.tls=true"

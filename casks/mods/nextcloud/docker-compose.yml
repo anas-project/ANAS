@@ -16,6 +16,7 @@ services:
       - ${LOCAL_DNS_SERVER}
     labels:
       - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
       - "traefik.http.routers.nextcloud.entrypoints=https"
       - "traefik.http.routers.nextcloud.rule=Host(`${NEXTCLOUD_DOMAIN}`)"
       - "traefik.http.routers.nextcloud.middlewares=nextcloud-dav,nextcloud-webfinger,nextcloud-regex,nextcloud-header"
@@ -99,6 +100,7 @@ services:
         target: /var/lib/coturn
     labels:
       - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
       - "traefik.http.routers.nextcloud-talk-signaling.entrypoints=https"
       - "traefik.http.routers.nextcloud-talk-signaling.tls=true"
       - "traefik.http.routers.nextcloud-talk-signaling.rule=Host(`${NEXTCLOUD_DOMAIN}`) && PathPrefix(`/talk`)"

@@ -21,6 +21,7 @@ services:
       KC_HOSTNAME_PORT: ${TRAEFIK_BASE_PORT}
     labels:
       - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
       - "traefik.http.routers.keycloak.entrypoints=https"
       - "traefik.http.routers.keycloak.rule=Host(`${KEYCLOAK_DOMAIN}`)"
       - "traefik.http.routers.keycloak.tls=true"

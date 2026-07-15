@@ -10,6 +10,7 @@ services:
       - .env
     labels:
       - traefik.enable=true
+      - anas.traefik.instance=${NETWORK_PREFIX}traefik
       - traefik.http.routers.netbird-dashboard.rule=Host(`${NETBIRD_DOMAIN}`)
       - traefik.http.routers.netbird-dashboard.tls=true
       - traefik.http.services.netbird-dashboard.loadbalancer.server.port=80
@@ -25,6 +26,7 @@ services:
       - .env
     labels:
       - traefik.enable=true
+      - anas.traefik.instance=${NETWORK_PREFIX}traefik
       - traefik.http.routers.netbird-signal.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/signalexchange.SignalExchange/`)
       - traefik.http.routers.netbird-signal.tls=true
       - traefik.http.services.netbird-signal.loadbalancer.server.port=80
@@ -42,6 +44,7 @@ services:
       - .env
     labels:
       - traefik.enable=true
+      - anas.traefik.instance=${NETWORK_PREFIX}traefik
       - traefik.http.routers.netbird-api.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/api`)
       - traefik.http.routers.netbird-api.service=netbird-api
       - traefik.http.routers.netbird-api.tls=true

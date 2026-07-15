@@ -11,6 +11,7 @@ services:
       - NET_ADMIN
     labels:
       - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
       - "traefik.http.routers.collabora.entrypoints=https"
       - "traefik.http.routers.collabora.rule=Host(`${COLLABORA_DOMAIN}`)"
       - "traefik.http.routers.collabora.tls=true"

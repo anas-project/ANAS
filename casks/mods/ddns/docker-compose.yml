@@ -35,6 +35,7 @@ services:
       - GID=${PGID}
     labels:
       - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
       - "traefik.http.routers.ddns.entrypoints=https"
       - "traefik.http.routers.ddns.rule=Host(`${DDNS_DOMAIN}`)"
       - "traefik.http.routers.ddns.tls=true"

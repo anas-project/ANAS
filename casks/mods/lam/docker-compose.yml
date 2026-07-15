@@ -10,6 +10,7 @@ services:
       - ${LOCAL_DNS_SERVER}
     labels:
       - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
       - "traefik.http.routers.lam.entrypoints=https"
       - "traefik.http.routers.lam.rule=Host(`${LAM_DOMAIN}`)"
       - "traefik.http.routers.lam.tls=true"

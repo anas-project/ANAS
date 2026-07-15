@@ -23,6 +23,7 @@ services:
       - "${DATA_PATH}/meshcentral/meshcentral-backups:/opt/meshcentral/meshcentral-backups"
     labels:
       - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
       - "traefik.http.routers.meshcentral.entrypoints=https"
       - "traefik.http.routers.meshcentral.rule=Host(`${MESHCENTRAL_DOMAIN}`)"
       - "traefik.http.routers.meshcentral.tls=true"

@@ -10,6 +10,7 @@ services:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=${NETWORK_PREFIX}traefik
+      - --providers.docker.constraints=Label(`anas.traefik.instance`,`${NETWORK_PREFIX}traefik`)
       - --api.dashboard=true
       - --providers.file.filename=/cert.yml
     restart: unless-stopped
@@ -28,6 +29,7 @@ services:
       - "traefik.http.middlewares.auth.basicauth.users=${BASICAUTH_HTPASSWD}"
       - "traefik.http.routers.api.tls=true"
       - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
       - "traefik.docker.network=${NETWORK_PREFIX}traefik"
 
 networks:
