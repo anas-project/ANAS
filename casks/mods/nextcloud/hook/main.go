@@ -222,6 +222,20 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) er
 		}
 		e["TALK_SIGNALING_SECRET"] = v
 	}
+	if e["TALK_HASH_KEY"] == "" {
+		v, err := secrets.Ensure("TALK_HASH_KEY", func() (string, error) { return randomHexErr(16) })
+		if err != nil {
+			return err
+		}
+		e["TALK_HASH_KEY"] = v
+	}
+	if e["TALK_BLOCK_KEY"] == "" {
+		v, err := secrets.Ensure("TALK_BLOCK_KEY", func() (string, error) { return randomHexErr(16) })
+		if err != nil {
+			return err
+		}
+		e["TALK_BLOCK_KEY"] = v
+	}
 	return nil
 }
 func moduleNextcloud(e map[string]string, _ string) error {

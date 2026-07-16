@@ -10,6 +10,30 @@ services:
     volumes:
       - "${DATA_PATH}/postgres:/var/lib/postgresql/data"
       - "./initdb:/docker-entrypoint-initdb.d:ro"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_USERNAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - postgres
+
+  anas_postgres_reconcile:
+    image: postgres:15.3-alpine
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      PGHOST: ${POSTGRES_HOST}
+      PGPORT: ${POSTGRES_PORT}
+      PGUSER: ${POSTGRES_USERNAME}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint: ["/bin/sh", "/scripts/10-anas-create-databases.sh"]
+    volumes:
+      - "./initdb:/scripts:ro"
+    depends_on:
+      anas_postgres:
+        condition: service_healthy
     networks:
       - postgres
 

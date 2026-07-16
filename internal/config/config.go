@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -28,7 +29,6 @@ type Global struct {
 	HostIP                     string `yaml:"host_ip"`
 	DNSProvider                string `yaml:"dns_provider"`
 	DNSServer                  string `yaml:"dns_server"`
-	DefaultRootPassword        string `yaml:"default_root_password"`
 	DefaultServiceRootPassword string `yaml:"default_service_root_password"`
 }
 
@@ -61,6 +61,9 @@ func Load(path string) (*File, error) {
 	if len(cfg.Modules) == 0 {
 		return nil, fmt.Errorf("missing modules")
 	}
+	if utf8.RuneCountInString(cfg.Global.DefaultServiceRootPassword) < 8 {
+		return nil, fmt.Errorf("global.default_service_root_password must be at least 8 characters")
+	}
 	return &cfg, nil
 }
 
@@ -81,7 +84,6 @@ func (f *File) BaseEnv() map[string]string {
 	set("HOST_IP", f.Global.HostIP)
 	set("DNS_PROVIDER", f.Global.DNSProvider)
 	set("DNS_SERVER", f.Global.DNSServer)
-	set("DEFAULT_ROOT_PASSWORD", f.Global.DefaultRootPassword)
 	set("DEFAULT_SERVICE_ROOT_PASSWORD", f.Global.DefaultServiceRootPassword)
 	for k, v := range f.Secrets {
 		env[EnvKey(k)] = Scalar(v)
@@ -98,9 +100,6 @@ func (f *File) BaseEnv() map[string]string {
 			}
 			env[key] = Scalar(v)
 		}
-	}
-	if env["DEFAULT_SERVICE_ROOT_PASSWORD"] == "" {
-		env["DEFAULT_SERVICE_ROOT_PASSWORD"] = env["DEFAULT_ROOT_PASSWORD"]
 	}
 	return env
 }

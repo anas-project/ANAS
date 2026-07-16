@@ -39,6 +39,8 @@ func Main(args []string) error {
 	switch args[0] {
 	case "start", "build", "restart", "stop", "render", "plan":
 		return run(args[0], args[1:])
+	case "config":
+		return runConfig(args[1:])
 	case "help", "-h", "--help":
 		usage()
 		return nil
@@ -57,6 +59,9 @@ Usage:
   anas plan    [-c config.yml] [--root project-dir]
   anas restart [-b ~/.anas]
   anas stop    [-b ~/.anas]
+  anas config set     [-c config.yml] <module.parameter> <value>
+  anas config explain <module.parameter>
+  anas config plan    [-c config.yml] [-b ~/.anas]
 
 Cask ABI:
   %s
@@ -148,6 +153,11 @@ func (a *app) execute(actions []string) error {
 	}
 	if contains(actions, "stop") {
 		return a.stopRelease(release)
+	}
+	if contains(actions, "start") {
+		if err := validateOrdinaryStartChanges(a.base, cfgPath, a.reg); err != nil {
+			return err
+		}
 	}
 	if err := os.MkdirAll(a.base, 0700); err != nil {
 		return err
@@ -249,6 +259,11 @@ func (a *app) execute(actions []string) error {
 	if contains(actions, "build") || contains(actions, "start") {
 		a.updateCaskLock(a.lock)
 		if err := a.lock.Save(a.base); err != nil {
+			return err
+		}
+	}
+	if contains(actions, "start") || contains(actions, "restart") {
+		if err := saveAppliedConfig(a.base, cfgPath); err != nil {
 			return err
 		}
 	}

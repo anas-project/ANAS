@@ -15,7 +15,7 @@ config:
   required:
     - domain
     - email
-    - default_root_password
+    - default_service_root_password
   defaults:
     data_path: ~/data
     timezone: Asia/Hong_Kong
@@ -35,6 +35,36 @@ config:
     userdata_name: userdata
     share_access_mode: all_read_group_write
     share_guest_read_only: "No"
+  changes:
+    domain:
+      effect: immutable
+      apply: migrate-domain
+      description: Samba realm, SSO issuers, certificates, and application URLs depend on it.
+    data_path:
+      effect: data_migrate
+      apply: migrate-storage
+      description: Moving the path requires an offline copy, verification, and rollback plan.
+    timezone:
+      effect: container_recreate
+      apply: recreate-affected-containers
+      description: Containers receive the timezone through their environment.
+    default_service_root_password:
+      effect: credential_rotate
+      apply: rotate-human-admin-passwords
+      sensitive: true
+      description: This is a template for human-facing administrator accounts, not an automatic live password change.
+    share_access_mode:
+      effect: reconcile
+      apply: reconcile-samba-share-acl
+      description: Samba configuration and root/default ACLs must be reconciled.
+    share_guest_read_only:
+      effect: reconcile
+      apply: reconcile-samba-guest-acl
+      description: A state marker prevents recursive ACL work when the value is unchanged.
+    dns_server:
+      effect: container_recreate
+      apply: recreate-affected-containers
+      description: DNS settings are injected when containers are created.
 features:
   generated_secrets: true
   host_network_discovery: true

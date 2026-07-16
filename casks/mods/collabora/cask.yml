@@ -20,6 +20,15 @@ config:
     log_level: warning
     interface: default
     auto_save: "60"
+  changes:
+    domain_prefix:
+      effect: container_recreate
+      apply: recreate-collabora
+      description: The proxy route and Collabora hostname change.
+    log_level:
+      effect: container_recreate
+      apply: recreate-collabora
+      description: The value is injected into the container environment.
 features:
   domain: true
 logic:

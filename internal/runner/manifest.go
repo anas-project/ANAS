@@ -69,9 +69,17 @@ type manifestUpgrade struct {
 }
 
 type manifestConfig struct {
-	EnvPrefix string         `yaml:"env_prefix"`
-	Required  []string       `yaml:"required"`
-	Defaults  map[string]any `yaml:"defaults"`
+	EnvPrefix string                          `yaml:"env_prefix"`
+	Required  []string                        `yaml:"required"`
+	Defaults  map[string]any                  `yaml:"defaults"`
+	Changes   map[string]manifestChangePolicy `yaml:"changes"`
+}
+
+type manifestChangePolicy struct {
+	Effect      string `yaml:"effect"`
+	Apply       string `yaml:"apply"`
+	Description string `yaml:"description"`
+	Sensitive   bool   `yaml:"sensitive"`
 }
 
 type manifestFeatures struct {
@@ -155,6 +163,16 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if manifest.Runtime.Type != "builtin" && manifest.Runtime.Type != "compose" {
 		return Module{}, fmt.Errorf("cask %q has unsupported runtime type %q", dirname, manifest.Runtime.Type)
 	}
+	changes := map[string]ChangePolicy{}
+	for key, policy := range manifest.Config.Changes {
+		if !validChangeEffect(policy.Effect) {
+			return Module{}, fmt.Errorf("cask %q config.changes.%s has invalid effect %q", dirname, key, policy.Effect)
+		}
+		changes[strings.ToLower(strings.TrimSpace(key))] = ChangePolicy{
+			Effect: policy.Effect, Apply: policy.Apply,
+			Description: policy.Description, Sensitive: policy.Sensitive,
+		}
+	}
 	composeFile := strings.TrimSpace(manifest.Runtime.ComposeFile)
 	if manifest.Runtime.Type == "compose" {
 		if composeFile == "" {
@@ -185,6 +203,7 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		EnvPrefix:   envPrefix,
 		Defaults:    normalizeDefaults(manifest.Name, envPrefix, manifest.Config.Defaults),
 		Required:    normalizeRequired(manifest.Name, envPrefix, manifest.Config.Required),
+		Changes:     changes,
 		Deps:        append([]string{}, manifest.Dependencies.Before...),
 		Requires:    normalizeManifestDependencies(manifest.Dependencies.Requires),
 		RunAfter:    append([]string{}, manifest.Dependencies.After...),
@@ -195,6 +214,15 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		ComposeFile: composeFile,
 	}
 	return mod, nil
+}
+
+func validChangeEffect(effect string) bool {
+	switch effect {
+	case "hot_reload", "process_restart", "container_restart", "container_recreate", "reconcile", "credential_rotate", "data_migrate", "immutable":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeManifestDependencies(in []manifestDependency) []Dependency {

@@ -18,6 +18,15 @@ config:
   defaults:
     base_port: "9000"
     domain_prefix: traefik
+  changes:
+    base_port:
+      effect: container_recreate
+      apply: recreate-traefik-and-routes
+      description: Published ports and derived application URLs change.
+    domain_prefix:
+      effect: container_recreate
+      apply: recreate-traefik
+      description: The router rule is a Compose label.
 features:
   domain: true
 logic:

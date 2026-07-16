@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -183,10 +185,14 @@ func disabledServices(module string, env map[string]string) []string {
 	if module != "postgres" {
 		return nil
 	}
+	disabled := []string{}
 	if env["POSTGRES_ADMINER_ENABLED"] != "true" {
-		return []string{"postgres_adminer", "anas_postgres_adminer"}
+		disabled = append(disabled, "postgres_adminer", "anas_postgres_adminer")
 	}
-	return nil
+	if len(dependentDatabases(env)) == 0 {
+		disabled = append(disabled, "postgres_reconcile", "anas_postgres_reconcile")
+	}
+	return disabled
 }
 func afterStart(module string, env map[string]string) []dockerCopy {
 	if module != "postgres" {
@@ -210,9 +216,15 @@ func changed(old, cur map[string]string) map[string]string {
 	}
 	return out
 }
-func calcPostgres(e map[string]string, _ string, _ *secretStore) error {
+func calcPostgres(e map[string]string, _ string, secrets *secretStore) error {
 	e["POSTGRES_NETWORK_NAME"] = defaultValue(e["POSTGRES_NETWORK_NAME"], e["NETWORK_PREFIX"]+"postgres")
-	e["POSTGRES_PASSWORD"] = defaultValue(e["POSTGRES_PASSWORD"], e["DEFAULT_SERVICE_ROOT_PASSWORD"])
+	if e["POSTGRES_PASSWORD"] == "" {
+		password, err := ensureRandomPassword("POSTGRES_PASSWORD", secrets)
+		if err != nil {
+			return err
+		}
+		e["POSTGRES_PASSWORD"] = password
+	}
 	e["POSTGRES_USER"] = e["POSTGRES_USERNAME"]
 	e["POSTGRES_HOST"] = e["CONTAINER_PREFIX"] + "postgres"
 	e["POSTGRES_PORT"] = "5432"
@@ -220,6 +232,19 @@ func calcPostgres(e map[string]string, _ string, _ *secretStore) error {
 	e["POSTGRES_ADMINER_DOMAIN_PREFIX"] = defaultValue(e["POSTGRES_ADMINER_DOMAIN_PREFIX"], "postgres_adminer")
 	e["POSTGRES_ADMINER_DOMAIN"] = e["POSTGRES_ADMINER_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
 	return nil
+}
+
+func ensureRandomPassword(key string, secrets *secretStore) (string, error) {
+	if secrets == nil {
+		return "", fmt.Errorf("secret store is required to generate %s", key)
+	}
+	return secrets.Ensure(key, func() (string, error) {
+		buf := make([]byte, 24)
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		return "Aa1!" + hex.EncodeToString(buf), nil
+	})
 }
 func defaultValue(v, d string) string {
 	if v == "" {

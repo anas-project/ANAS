@@ -41,8 +41,9 @@ func TestCasksUseManifestRule(t *testing.T) {
 				ComposeFile string `yaml:"compose_file"`
 			} `yaml:"runtime"`
 			Config struct {
-				Required []string       `yaml:"required"`
-				Defaults map[string]any `yaml:"defaults"`
+				Required []string                        `yaml:"required"`
+				Defaults map[string]any                  `yaml:"defaults"`
+				Changes  map[string]manifestChangePolicy `yaml:"changes"`
 			} `yaml:"config"`
 			Services struct {
 				Optional []struct {
@@ -89,6 +90,14 @@ func TestCasksUseManifestRule(t *testing.T) {
 		for key := range manifest.Config.Defaults {
 			if looksLikeEnvParam(key) {
 				t.Fatalf("%s default parameter %q should use lower snake_case", entry.Name(), key)
+			}
+		}
+		for key, policy := range manifest.Config.Changes {
+			if looksLikeEnvParam(key) {
+				t.Fatalf("%s change parameter %q should use lower snake_case", entry.Name(), key)
+			}
+			if !validChangeEffect(policy.Effect) {
+				t.Fatalf("%s change parameter %q has invalid effect %q", entry.Name(), key, policy.Effect)
 			}
 		}
 		for _, svc := range manifest.Services.Optional {

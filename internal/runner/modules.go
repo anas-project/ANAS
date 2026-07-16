@@ -13,6 +13,7 @@ type Module struct {
 	EnvPrefix   string
 	Defaults    map[string]string
 	Required    []string
+	Changes     map[string]ChangePolicy
 	Deps        []string
 	Requires    []Dependency
 	RunAfter    []string
@@ -21,6 +22,13 @@ type Module struct {
 	Hook        HookConfig
 	RuntimeType string
 	ComposeFile string
+}
+
+type ChangePolicy struct {
+	Effect      string
+	Apply       string
+	Description string
+	Sensitive   bool
 }
 
 type Dependency struct {

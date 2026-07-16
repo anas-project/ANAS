@@ -4,7 +4,7 @@
 
 ## 结论
 
-当前 runner 已经能持久保存随机生成的密钥，但还没有保存“应用实际采用了什么配置”，也没有为配置声明生命周期。因此，配置文件变化、生成的 `.env` 变化和应用内部状态变化之间没有可靠的对应关系。
+runner 现在已经能持久保存随机生成的密钥、声明部分配置的变更生命周期，并在成功启动后保存不含明文的配置哈希快照。应用内部 observed state 和各模块的实际迁移器仍需继续补齐。
 
 建议采用三个核心机制：
 
@@ -35,10 +35,10 @@
 | `llng` | `${DATA_PATH}/llng/conf` 加外部数据库 | conf 和数据库都是关键状态；`lmConf-1.json` 是首次初始化标记。签名密钥在 generated secrets。 |
 | `mariadb` | `${DATA_PATH}/mariadb:/config` | 关键数据库状态；root 密码在空数据目录初始化后不会因 env 变化自动更新。 |
 | `meshcentral` | data、files、web、backups 四个目录，加外部数据库 | data、files、backups 和数据库为关键状态；web 通常可重建，但当前也被持久化。证书软链接每次启动重建。 |
-| `netbird` | **当前没有任何持久卷** | **高风险缺口**。模板使用 jsonfile 和 `/var/lib/netbird/`，账户、Peer、策略、setup key、DataStoreEncryptionKey 会随容器重建丢失。必须挂载 `${DATA_PATH}/netbird:/var/lib/netbird`。 |
-| `nextcloud` | `${NEXTCLOUD_BASE_PATH}/nextcloud`、Redis 数据、外部数据库、`.anas-state` 标记 | Nextcloud 数据目录和数据库必须一致备份；Redis 可重建；Memories 标记正确地跟随数据卷。Talk 的 signaling `hashkey/blockkey` 当前每次启动随机生成，会使现有会话失效，建议改为 generated secrets。 |
-| `postgres` | `${DATA_PATH}/postgres` | 关键数据库状态；`docker-entrypoint-initdb.d` 只在空目录执行，后续新增数据库不会自动创建。 |
-| `samba_dc` | `${DATA_PATH}/samba_dc/var`、generated secrets | AD 数据库、域 SID、机器账户、GPO、用户/组、内部 TLS 是关键状态。`/etc/ssh` 未挂载，容器重建会更换 SSH host key，建议持久化或由 generated secrets 渲染。 |
+| `netbird` | 当前没有任何持久卷 | 功能尚未完成，已标记为 experimental 并从完整示例移除。本阶段不补持久化；正式恢复前必须先决定保留还是删除。 |
+| `nextcloud` | `${NEXTCLOUD_BASE_PATH}/nextcloud`、Redis 数据、外部数据库、`.anas-state` 标记 | Nextcloud 数据目录和数据库必须一致备份；Redis 可重建；Memories 标记正确地跟随数据卷。Talk 的 signaling `hashkey/blockkey` 已改为 generated secrets。 |
+| `postgres` | `${DATA_PATH}/postgres` | 关键数据库状态；首次初始化脚本保留，同时增加一次性在线 reconciler，后续新增模块也能幂等创建数据库。 |
+| `samba_dc` | `${DATA_PATH}/samba_dc/var`、generated secrets | AD 数据库、域 SID、机器账户、GPO、用户/组、内部 TLS 是关键状态。按当前产品边界忽略 SSH host key，不纳入持久状态管理。 |
 | `samba_fs` | `${USERDATA_PATH}`、`${DATA_PATH}/samba_fs/var`、guest ACL 状态文件 | 用户文件是关键数据；member join 状态可重建但应持久化；guest ACL 标记与 userdata 同卷，可避免每次启动递归扫描，当前方向正确。 |
 | `traefik` | 无；只读使用 lego 证书 | 路由配置可重建，无独立关键状态。 |
 
@@ -53,7 +53,7 @@
 | `release/config.yml` | 当前 desired config 副本 | 建议，但不得包含明文生产密钥 |
 | `release/*/.env` | 含派生凭据的渲染产物 | 不作为权威备份；保持 `0600` |
 | `tmp/`、`go-build-cache/` | 临时/缓存 | 不需要 |
-| 建议新增 `state/applied.yml` | 已应用状态、迁移和操作记录 | 必须，不保存密钥明文 |
+| `state/config-applied.yml` | 最近一次成功启动时的配置路径及 SHA-256 | 建议；当前不保存配置值或密钥明文 |
 
 ## 只在首次初始化生效或不能靠 env 直接修改的设置
 
@@ -64,7 +64,7 @@
 | 存储根目录 | `DATA_PATH`、`USERDATA_PATH`、`NEXTCLOUD_BASE_PATH`、`LEGO_DATA_PATH` | 修改后指向另一套目录，常表现为“全新实例”，不会搬迁旧数据 | `migrate-storage`，校验容量、停止写入、复制、校验、切换、回滚 |
 | PostgreSQL | `POSTGRES_USERNAME`、`POSTGRES_PASSWORD` | 官方 entrypoint 只对空 PGDATA 初始化；后改 env 不会改数据库角色密码 | `rotate-credential` 或 SQL reconciler |
 | PostgreSQL | 依赖模块的 `*_DB_NAME` | 生成的 initdb 脚本只在空 PGDATA 执行；数据库已运行后新增模块不会得到新库 | 在线、幂等的 `ensure-databases` reconciler |
-| MariaDB | `MARIADB_ROOT_PASSWORD`/`DEFAULT_SERVICE_ROOT_PASSWORD` | `/config` 首次初始化后，改 env 不会自动改现存 root 密码 | 数据库内轮换后，再原子更新消费者凭据 |
+| MariaDB | `MARIADB_ROOT_PASSWORD` | `/config` 首次初始化后，改 env 不会自动改现存 root 密码 | 数据库内轮换后，再原子更新消费者凭据 |
 | Samba DC | `BASE_DOMAIN`、`SAMBA_DC_REALM`、`WORKGROUP`、`NETBIOS_NAME`、provision/join 模式 | `/var/lib/samba/registry.tdb` 存在后不再 provision；这些值构成域身份 | 默认 immutable；只能执行受控域迁移或重建恢复 |
 | Samba DC | `SAMBA_DC_ADMINISTRATOR_PASSWORD` | 只传给首次 `samba-tool domain provision/join` | `samba-tool user setpassword` 轮换 |
 | Samba DC | admin、LDAP bind、password bind 的名称和密码 | 用户不存在时才创建；改密码 env 不会更新 AD；改名称会新建账户并留下旧账户 | 显式 `rename-account`/`rotate-credential`，更新消费者后禁用旧账户 |
@@ -73,7 +73,7 @@
 | Keycloak | `KEYCLOAK_ADMIN_PASSWORD` | bootstrap admin 只在首次创建时有效 | Keycloak 管理 API/CLI 轮换 |
 | Keycloak/LLNG/Nextcloud | SSO entity、issuer、redirect URI 与域名 | 部分配置能重渲染，但已有客户端/元数据/外部信任不会自动整体迁移 | 跨模块 reconcile，保留过渡地址和签名验证窗口 |
 | LLNG | 首份 `lmConf-1.json` | 文件不存在时才从模板初始化；后续只能通过配置合并/管理接口修改 | 用版本化 reconciler 更新现有配置，不覆盖整份文件 |
-| NetBird | `/var/lib/netbird` 数据和 DataStoreEncryptionKey | 当前无卷，容器重建相当于重新初始化 | 先补持久卷；以后密钥只能通过官方迁移流程轮换 |
+| NetBird | `/var/lib/netbird` 数据和 DataStoreEncryptionKey | 当前功能未完成且默认不部署 | 恢复开发时先决定持久模型，否则删除此 cask |
 | MeshCentral | 数据库选择和持久数据身份 | 改 env 不会搬迁数据库或文件状态 | 专用备份/迁移流程 |
 
 密码策略、Samba OU/组、应用访问组、Samba share 模式、Traefik 路由和多数资源限制适合做幂等 reconcile，可在每次启动检查并更新；它们不应混入“首次初始化”脚本。
@@ -92,15 +92,17 @@
 - LLNG/Keycloak 的 SAML/OIDC 私钥、证书和 key ID；
 - NetBird OIDC client secret；
 - Nextcloud Talk 的 internal/signaling secret；
-- Samba admin、Administrator、LDAP bind、password bind 密码。
+- PostgreSQL/MariaDB 密码；
+- Samba LDAP bind、password bind 密码。
 
 第二类中风险最高的是：
 
-- PostgreSQL/MariaDB 密码继承 `DEFAULT_SERVICE_ROOT_PASSWORD`；
 - Keycloak/LLNG 密码继承 `DEFAULT_SERVICE_ROOT_PASSWORD`；
-- Nextcloud 初始管理员密码继承 Samba admin 密码；
+- Samba admin、Administrator、Nextcloud、LAM、Collabora、Keycloak/LLNG 等人工登录管理员继承 `DEFAULT_SERVICE_ROOT_PASSWORD`；
 - DB 类型根据当前已启用的数据库自动选择；
 - 各服务域名根据 `BASE_DOMAIN` 和 prefix 自动生成。
+
+`DEFAULT_SERVICE_ROOT_PASSWORD` 现在是唯一的人工管理员默认密码，配置校验要求至少 8 位；旧的 `DEFAULT_ROOT_PASSWORD` 已移除。数据库 root、LDAP bind、密码修改 bind 等非交互账户不继承它。
 
 通用规则应改为：
 
@@ -183,7 +185,7 @@ state:
 
 ## applied state 格式
 
-建议新增 `${base}/state/applied.yml`，示意如下：
+第一阶段已经新增 `${base}/state/config-applied.yml`，仅保存显式配置路径的 SHA-256 和成功启动时间。完整 observed state 后续可扩展为 `${base}/state/applied.yml`，示意如下：
 
 ```yaml
 schema: anas.state/v1
@@ -229,11 +231,11 @@ anas migrate nextcloud --target-db postgres
 
 ### P0：先消除数据丢失和静默漂移
 
-1. 为 NetBird `/var/lib/netbird` 增加持久卷并做重建测试。
-2. 将 Nextcloud Talk `hashkey/blockkey` 纳入 generated secrets。
-3. 持久化或稳定生成 Samba DC SSH host keys。
-4. 对 DB 密码、Nextcloud 初始管理员密码、Samba 域身份变更做启动前阻断提示。
-5. 把 PostgreSQL 创建依赖数据库从 initdb-only 改为在线幂等 reconciler。
+1. 对 DB 密码、Nextcloud 初始管理员密码、Samba 域身份变更做启动前阻断提示（第一阶段已完成）。
+2. 将 Nextcloud Talk `hashkey/blockkey` 纳入 generated secrets（已完成）。
+3. 把 PostgreSQL 创建依赖数据库从 initdb-only 改为在线幂等 reconciler（已完成）。
+4. NetBird 保持 experimental 且不进入推荐部署，恢复开发时再决定持久化或删除。
+5. Samba DC SSH host key 按产品决定忽略，不纳入此方案。
 
 ### P1：建立状态模型
 

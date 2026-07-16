@@ -172,9 +172,6 @@ func calcCore(e map[string]string, _ string, secrets *secretStore) error {
 	} else {
 		e["SERVER_NAME"] = strings.ToUpper(e["SERVER_NAME"])
 	}
-	if e["DEFAULT_SERVICE_ROOT_PASSWORD"] == "" {
-		e["DEFAULT_SERVICE_ROOT_PASSWORD"] = e["DEFAULT_ROOT_PASSWORD"]
-	}
 	if e["BASICAUTH_HTPASSWD"] == "" {
 		pass := e["BASICAUTH_PASSWD"]
 		if pass == "" {

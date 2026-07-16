@@ -14,6 +14,9 @@ go run ./cmd/anas render -c config.example.yml -b ./.runtime
 go run ./cmd/anas build  -c config.example.yml -b ~/.anas
 go run ./cmd/anas start  -c config.example.yml -b ~/.anas
 go run ./cmd/anas stop   -b ~/.anas
+go run ./cmd/anas config explain samba_dc.user_min_pass_length
+go run ./cmd/anas config set -c config.yml samba_dc.user_min_pass_length 10
+go run ./cmd/anas config plan -c config.yml -b ~/.anas
 ```
 
 `start --build` runs build first, then starts the rendered release.
@@ -37,7 +40,8 @@ global:
   data_path: ./data
   timezone: Asia/Shanghai
   dns_provider: manual
-  default_root_password: change-me-now
+  # Human-facing administrator accounts inherit this value.
+  default_service_root_password: ChangeMe1!
 
 env:
   BASICAUTH_USER: admin
@@ -74,6 +78,8 @@ Runtime files are written below the selected base path:
   TURN secrets, OIDC client secrets, and SAML/OIDC signing keys.
 - `cask.lock.yml`: installed cask versions and source paths used for upgrade
   checks.
+- `state/config-applied.yml`: hashes of explicit settings from the last
+  successful start; it contains no plaintext configuration values.
 - `go-build-cache/`: Go build cache used when running cask hooks.
 
 Do not commit runtime directories or generated secrets. The runtime base and
@@ -120,7 +126,7 @@ Current casks provide:
   assets
 - LDAP Account Manager and MeshCentral with Samba/LDAP integration
 - DDNS config generation for DNSPod when selected
-- NetBird dashboard, signal, and management services with OIDC integration
+- NetBird as an incomplete experimental scaffold excluded from the full example
 - FreeRADIUS as an experimental scaffold, not a complete RADIUS deployment yet
 
 ## Cask Layout
@@ -168,6 +174,10 @@ structure, and rules for designing new casks.
 See [docs/config-state-lifecycle.md](docs/config-state-lifecycle.md) for the
 current persistent-state audit, first-start-only settings, and the proposed
 configuration lifecycle and reconciliation model.
+
+See [docs/config-cli-lifecycle.md](docs/config-cli-lifecycle.md) for CLI config
+editing, change-effect classification, start guards, and the apply/rotation/
+migration command design.
 
 See [docs/test-server-deployment-2026-06-30.md](docs/test-server-deployment-2026-06-30.md)
 for the test-server deployment procedure, verification results, fixes, and

@@ -19,6 +19,15 @@ config:
     log_level: "1"
     wsdd_log_level: "0"
     hostname: SambaFS
+  changes:
+    hostname:
+      effect: data_migrate
+      apply: rejoin-samba-member
+      description: The AD machine account and member join must be changed together.
+    log_level:
+      effect: container_recreate
+      apply: recreate-samba-fs
+      description: The generated smb.conf is installed during container initialization.
 features:
   host_lan: required
 logic:

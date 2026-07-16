@@ -22,8 +22,8 @@ listen = 0.0.0.0:8081
 debug = false
 
 [sessions]
-hashkey = $(openssl rand -hex 16)
-blockkey = $(openssl rand -hex 16)
+hashkey = ${TALK_HASH_KEY}
+blockkey = ${TALK_BLOCK_KEY}
 
 [clients]
 internalsecret = ${NEXTCLOUD_TALK_INTERNAL_SECRET}

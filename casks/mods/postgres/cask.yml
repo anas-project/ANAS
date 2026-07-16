@@ -20,6 +20,20 @@ config:
   defaults:
     username: postgres
     adminer_enabled: "false"
+  changes:
+    username:
+      effect: data_migrate
+      apply: migrate-postgres-owner
+      description: POSTGRES_USER only initializes an empty data directory.
+    password:
+      effect: credential_rotate
+      apply: rotate-postgres-password
+      sensitive: true
+      description: Change the database role and consumers before recreating containers.
+    adminer_enabled:
+      effect: container_recreate
+      apply: recreate-postgres-project
+      description: The optional Compose service set changes.
 services:
   optional:
     - name: postgres_adminer

@@ -62,7 +62,7 @@ global:
   data_path: /srv/anas
   timezone: Asia/Shanghai
   dns_provider: manual
-  default_root_password: change-me
+  default_service_root_password: ChangeMe1!
 
 secrets:
   dnspod_api_key: token-value
@@ -257,7 +257,7 @@ added implicitly for non-core casks.
 | `lam` | identity | Runs LDAP Account Manager, derives domain/language/admin password, and connects to Samba LDAP env. | Requires `traefik`; starts after `samba_dc` when both are enabled. |
 | `meshcentral` | app | Runs MeshCentral with Traefik routing, LDAP auth filters, app-filter aware user restrictions, and configurable MPS port. | Requires `traefik` and `mariadb`; starts after `samba_dc` when present. |
 | `ddns` | network | Runs qmcgaw/ddns-updater and generates DNSPod settings for base-domain and wildcard IPv4/IPv6 records when `DNS_PROVIDER=dnspod`. | Requires `traefik` for dashboard routing and `global.dns_provider`. |
-| `netbird` | network | Runs NetBird dashboard, signal, and management services. Registers an OIDC RP, persists client secret, derives management/signal endpoints, and adds app launcher metadata. | Requires SSO provider env such as LLNG OIDC endpoints for full login flow. Optional Adminer flag exists in the manifest. |
+| `netbird` | network | Incomplete experimental dashboard, signal, and management scaffold; excluded from the full example. | Persistence and the complete login/management flow must be designed before it is restored to recommended deployments. |
 | `freeradius` | network | Experimental FreeRADIUS manifest scaffold only. The current compose file still mirrors the Lego scaffold and is not a complete RADIUS deployment. | Status `experimental`; do not treat as production-ready. |
 
 Current limitations:

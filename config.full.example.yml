@@ -6,7 +6,6 @@ modules:
   - nextcloud
   - collabora
   - meshcentral
-  - netbird
   - lam
 
 global:
@@ -15,7 +14,8 @@ global:
   data_path: ./data
   timezone: Asia/Shanghai
   dns_provider: manual
-  default_root_password: change-me-now
+  # Password inherited by administrator accounts that people log in with.
+  default_service_root_password: ChangeMe1!
 
 env:
   BASICAUTH_USER: admin

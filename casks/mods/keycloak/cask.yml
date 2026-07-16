@@ -28,6 +28,20 @@ config:
     db_name: keycloak
     enable_test: "true"
     adminer_enabled: "false"
+  changes:
+    password:
+      effect: credential_rotate
+      apply: rotate-keycloak-admin-password
+      sensitive: true
+      description: The bootstrap password does not update an existing Keycloak administrator.
+    db_type:
+      effect: data_migrate
+      apply: migrate-keycloak-database
+      description: Existing Keycloak data must be migrated explicitly.
+    domain_prefix:
+      effect: reconcile
+      apply: reconcile-keycloak-domain
+      description: Issuer, redirect URIs, and proxy routes must change together.
 features:
   sso_provider: true
   generated_secrets: true

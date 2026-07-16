@@ -6,8 +6,9 @@ abi:
   supports:
     - anas.cask/v1
 title: NetBird
-description: WireGuard-based overlay network management integrated with SSO.
+description: Incomplete WireGuard overlay network scaffold; excluded from recommended deployments.
 category: network
+status: experimental
 runtime:
   type: compose
   compose_file: docker-compose.yml

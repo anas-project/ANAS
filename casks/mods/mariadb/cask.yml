@@ -19,6 +19,16 @@ dependencies:
 config:
   defaults:
     adminer_enabled: "false"
+  changes:
+    root_password:
+      effect: credential_rotate
+      apply: rotate-mariadb-root-password
+      sensitive: true
+      description: MYSQL_ROOT_PASSWORD only initializes an empty data directory.
+    adminer_enabled:
+      effect: container_recreate
+      apply: recreate-mariadb-project
+      description: The optional Compose service set changes.
 services:
   optional:
     - name: mariadb_adminer

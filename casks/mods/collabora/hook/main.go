@@ -156,7 +156,7 @@ func moduleCollabora(e map[string]string, _ string) error {
 	e["TIMEZONE"] = e["TZ"]
 	e["CONTAINER_NAME"] = e["CONTAINER_PREFIX"] + "collabora"
 	e["ADMIN_USER"] = e["SAMBA_DC_ADMIN_NAME"]
-	e["ADMIN_PASS"] = e["DEFAULT_ROOT_PASSWORD"]
+	e["ADMIN_PASS"] = e["DEFAULT_SERVICE_ROOT_PASSWORD"]
 	e["ALLOWED_HOSTS"] = e["NEXTCLOUD_DOMAIN_FULL"]
 	e["INTERFACE"] = e["COLLABORA_INTERFACE"]
 	e["LOG_TYPE"] = "CONSOLE"

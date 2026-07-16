@@ -33,6 +33,71 @@ config:
     ldap_bind_name: svc_ldap
     password_bind_name: svc_password
     log_level: "1"
+  changes:
+    realm:
+      effect: immutable
+      apply: migrate-domain
+      description: The realm is part of the provisioned AD identity.
+    netbios_name:
+      effect: immutable
+      apply: replace-domain-controller
+      description: Changing the DC machine identity requires a controlled replacement.
+    admin_password:
+      effect: credential_rotate
+      apply: rotate-samba-admin-password
+      sensitive: true
+      description: The existing AD account must be updated explicitly.
+    administrator_password:
+      effect: credential_rotate
+      apply: rotate-samba-administrator-password
+      sensitive: true
+      description: The provision password is not reapplied after initialization.
+    ldap_bind_password:
+      effect: credential_rotate
+      apply: rotate-ldap-bind-password
+      sensitive: true
+      description: Update AD and all LDAP consumers as one transaction.
+    password_bind_password:
+      effect: credential_rotate
+      apply: rotate-password-bind-password
+      sensitive: true
+      description: Update AD and password-capable applications as one transaction.
+    user_complex_pass:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the domain policy without restarting Samba.
+    user_min_pass_length:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the domain policy without restarting Samba.
+    user_password_history:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the domain policy without restarting Samba.
+    user_max_pass_age:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the domain policy without restarting Samba.
+    user_min_pass_age:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the domain policy without restarting Samba.
+    user_lockout_threshold:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the domain policy without restarting Samba.
+    user_lockout_duration:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the domain policy without restarting Samba.
+    user_lockout_reset_after:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the domain policy without restarting Samba.
+    log_level:
+      effect: container_recreate
+      apply: recreate-samba-dc
+      description: The generated smb.conf is installed during container initialization.
 features:
   ldap_provider: true
   kerberos_env: true

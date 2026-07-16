@@ -27,6 +27,20 @@ config:
     db_name: lemonldap-ng
     enable_test: "true"
     adminer_enabled: "false"
+  changes:
+    password:
+      effect: credential_rotate
+      apply: rotate-llng-admin-password
+      sensitive: true
+      description: Update the existing manager authentication state explicitly.
+    db_type:
+      effect: data_migrate
+      apply: migrate-llng-database
+      description: Existing LLNG data must be migrated explicitly.
+    domain_prefix:
+      effect: reconcile
+      apply: reconcile-llng-domain
+      description: SAML/OIDC metadata, clients, and proxy routes must change together.
 features:
   sso_provider: true
   generated_secrets: true

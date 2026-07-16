@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -148,9 +150,15 @@ func changed(old, cur map[string]string) map[string]string {
 	}
 	return out
 }
-func calcMariaDB(e map[string]string, _ string, _ *secretStore) error {
+func calcMariaDB(e map[string]string, _ string, secrets *secretStore) error {
 	e["MARIADB_NETWORK_NAME"] = defaultValue(e["MARIADB_NETWORK_NAME"], e["NETWORK_PREFIX"]+"mariadb")
-	e["MARIADB_ROOT_PASSWORD"] = defaultValue(e["MARIADB_ROOT_PASSWORD"], e["DEFAULT_SERVICE_ROOT_PASSWORD"])
+	if e["MARIADB_ROOT_PASSWORD"] == "" {
+		password, err := ensureRandomPassword("MARIADB_ROOT_PASSWORD", secrets)
+		if err != nil {
+			return err
+		}
+		e["MARIADB_ROOT_PASSWORD"] = password
+	}
 	e["MARIADB_PASSWORD"] = e["MARIADB_ROOT_PASSWORD"]
 	e["MARIADB_USERNAME"] = "root"
 	e["MARIADB_HOST"] = e["CONTAINER_PREFIX"] + "mariadb"
@@ -163,6 +171,19 @@ func calcMariaDB(e map[string]string, _ string, _ *secretStore) error {
 	e["MARIADB_ADMINER_DOMAIN_PREFIX"] = defaultValue(e["MARIADB_ADMINER_DOMAIN_PREFIX"], "mariadb_adminer")
 	e["MARIADB_ADMINER_DOMAIN"] = e["MARIADB_ADMINER_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
 	return nil
+}
+
+func ensureRandomPassword(key string, secrets *secretStore) (string, error) {
+	if secrets == nil {
+		return "", fmt.Errorf("secret store is required to generate %s", key)
+	}
+	return secrets.Ensure(key, func() (string, error) {
+		buf := make([]byte, 24)
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		return "Aa1!" + hex.EncodeToString(buf), nil
+	})
 }
 func defaultValue(v, d string) string {
 	if v == "" {

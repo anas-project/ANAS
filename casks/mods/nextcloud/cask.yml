@@ -31,6 +31,40 @@ config:
     debug: "false"
     talk_enabled: "true"
     memories_enabled: "true"
+  changes:
+    db_type:
+      effect: data_migrate
+      apply: migrate-nextcloud-database
+      description: Changing the environment does not migrate an installed Nextcloud database.
+    db_name:
+      effect: data_migrate
+      apply: migrate-nextcloud-database
+      description: The database name is materialized during installation.
+    admin_password:
+      effect: credential_rotate
+      apply: rotate-nextcloud-admin-password
+      sensitive: true
+      description: maintenance:install does not update an existing administrator password.
+    domain_prefix:
+      effect: reconcile
+      apply: reconcile-nextcloud-domain
+      description: Trusted domains, SSO metadata, and proxy routes must be updated together.
+    upload_max_size:
+      effect: container_recreate
+      apply: recreate-nextcloud
+      description: The limit is injected into the container environment.
+    memory_limit:
+      effect: container_recreate
+      apply: recreate-nextcloud
+      description: The limit is injected into the container environment.
+    talk_enabled:
+      effect: container_recreate
+      apply: recreate-nextcloud-project
+      description: The optional Compose service set changes.
+    memories_enabled:
+      effect: reconcile
+      apply: reconcile-nextcloud-apps
+      description: The app can be enabled or disabled through occ without restarting the container.
 features:
   ldap_client: true
   sso_client: true

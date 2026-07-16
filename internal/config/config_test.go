@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -14,7 +15,7 @@ func TestLoadStructuredConfig(t *testing.T) {
 global:
   domain: nas.example.com
   email: admin@example.com
-  default_root_password: change-me
+  default_service_root_password: change-me
 env:
   basicauth_user: admin
 `), 0644); err != nil {
@@ -44,7 +45,7 @@ func TestLowercaseServiceEnvIsNormalized(t *testing.T) {
 global:
   domain: nas.example.com
   email: admin@example.com
-  default_root_password: change-me
+  default_service_root_password: change-me
 services:
   nextcloud:
     env:
@@ -83,5 +84,55 @@ envs:
 	}
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected legacy config keys to be rejected")
+	}
+}
+
+func TestLoadRejectsShortDefaultServicePassword(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(path, []byte(`modules: [traefik]
+global:
+  domain: nas.example.com
+  email: admin@example.com
+  default_service_root_password: short
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected a password length validation error")
+	}
+}
+
+func TestSetScalarPreservesCommentsAndAddsServiceOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(path, []byte(`modules:
+  - samba_dc
+global:
+  domain: nas.example.com
+  email: admin@example.com
+  default_service_root_password: change-me
+# keep this operator note
+env:
+  SHARE_GUEST_READ_ONLY: "No"
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetScalar(path, []string{"services", "samba_dc", "env", "user_min_pass_length"}, "10"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "# keep this operator note") {
+		t.Fatal("existing comment was lost")
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.BaseEnv()["SAMBA_DC_USER_MIN_PASS_LENGTH"]; got != "10" {
+		t.Fatalf("service override = %q", got)
 	}
 }

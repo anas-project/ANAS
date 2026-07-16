@@ -19,6 +19,16 @@ dependencies:
 config:
   defaults:
     domain_prefix: lam
+  changes:
+    admin_password:
+      effect: container_recreate
+      apply: recreate-lam
+      sensitive: true
+      description: LAM configuration is generated when the container starts.
+    domain_prefix:
+      effect: container_recreate
+      apply: recreate-lam
+      description: The proxy route is generated from the domain.
 features:
   ldap_client: true
   domain: true
