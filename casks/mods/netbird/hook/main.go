@@ -156,7 +156,7 @@ func calcNetbird(e map[string]string, workdir string, secrets *secretStore) erro
 	e["NETBIRD_DOMAIN_FULL"] = "https://" + e["NETBIRD_DOMAIN_PORT"]
 	allowGroups := ""
 	if e["SAMBA_DC_APP_FILTER"] == "true" {
-		allowGroups = "APP_netbird"
+		allowGroups = "APP_netbird,APP_all,Admins"
 	}
 	e["OIDC_RP_APPS"] = addCSV(e["OIDC_RP_APPS"], "netbird")
 	e["OIDC_RP__NETBIRD__ATTR01"] = "cn,cn,1"

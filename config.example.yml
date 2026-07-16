@@ -11,3 +11,8 @@ global:
 
 env:
   BASICAUTH_USER: admin
+  # all_rw: all authenticated domain users can write.
+  # all_read_group_write: all authenticated users can read; FS Share RW can write.
+  SHARE_ACCESS_MODE: all_read_group_write
+  # Set to "Yes" to allow unauthenticated read-only access to the Share directory.
+  SHARE_GUEST_READ_ONLY: "No"

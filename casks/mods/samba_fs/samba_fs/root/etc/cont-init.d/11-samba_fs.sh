@@ -1,6 +1,10 @@
 #!/usr/bin/with-contenv bash
 
 join_domain() {
+  if net ads testjoin >/dev/null 2>&1; then
+    echo "Existing AD membership is valid"
+    return
+  fi
   while :
   do
     echo "Joining AD $SAMBA_DC_DOMAIN ..."
@@ -103,8 +107,6 @@ echo "search $SAMBA_DC_DNS_SEARCH" >> /etc/resolv.conf
 
 join_domain
 
-mkdir -p /shares/homes/
-mkdir -p /shares/alice/
 mkdir -p /var/log/samba/
 
 echo "Create share"

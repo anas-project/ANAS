@@ -52,6 +52,45 @@ https://www.samba.org/samba/docs/current/man-html/smb.conf.5.html#idm410
 
 在使用`ad ID mapping`的时候，如果要将`Administrator`用户映射为`root`用户，不要设置`Administrator`用户的`uidNumber`，否则会覆盖`root`用户为`0`的`UID`
 
+### 默认用户、组与文件权限
+
+ANAS 将身份目录和文件服务分开：
+
+- Samba DC 数据、SYSVOL 和域数据库存放在`${DATA_PATH}/samba_dc/var`。
+- Samba FS 的域成员状态存放在`${DATA_PATH}/samba_fs/var`。
+- 用户文件存放在`${USERDATA_PATH}`，默认是`${DATA_PATH}/userdata`。
+- 用户私有目录为`Home/<用户名>`，首次访问时创建，权限为`0700`。
+- 公共共享目录为`Share`，默认不允许匿名访问。设置`SHARE_GUEST_READ_ONLY=Yes`后，guest映射为本地`nobody`，并递归获得`r-X` ACL，所以可以浏览目录和读取文件，但不能写入。guest ACL状态保存在`${USERDATA_PATH}/.anas-share-guest-acl-state`；只有开关变化时才递归扫描Share，普通容器重启不会遍历全部文件。首次切换大型目录时仍会产生一次较高的元数据I/O。
+
+目录结构中的组分为三类：
+
+- `Groups/Role`：业务或管理角色，例如`Admins`。`Admins`只表示应用管理员，不自动获得域管理员权限。
+- `Groups/Access`：资源权限，包括`FS Admins`和`FS Share RW`。
+- `Groups/Apps`：应用登录权限，包括`APP_all`和每个应用自己的`APP_<应用名>`。
+
+公共共享由`SHARE_ACCESS_MODE`控制：
+
+- `all_rw`：所有已认证的`Domain Users`都可以读写。
+- `all_read_group_write`：所有已认证的`Domain Users`都可以读取；只有`FS Share RW`和`FS Admins`可以写入。这是默认模式。
+
+应用访问仍通过组成员关系授权，例如：
+
+```bash
+samba-tool group addmembers "FS Share RW" alice
+samba-tool group addmembers "APP_nextcloud" alice
+```
+
+`FS Admins`在文件服务器上具有等同root的文件操作能力，只能授予专用文件服务器管理员。不要把`Domain Admins`、`Enterprise Admins`或日常使用账户加入该组。
+
+只读LDAP集成应用使用`svc_ldap`查询目录，不再使用内置`Administrator`。需要修改密码的应用使用通用的`svc_password`账户；该账户只在`OU=People`中继承“重置密码”权限，因此Nextcloud、LLNG等应用可以修改普通用户的AD密码，但不能创建、删除用户或管理管理员和服务账户。AD用户的创建、删除和组管理仍应通过LAM或Samba管理工具完成。
+
+两个服务账户的随机密码保存在运行目录的`secrets.generated.yml`中，并写入各模块的`.env`供容器使用；两个文件权限均为`0600`。密码是权限保护的明文，不是加密密文，因此运行目录、Docker管理权限和备份必须按秘密数据保护。
+
+普通用户和管理员密码的最小长度均为8位，密码历史为4次，复杂度保持启用。管理员通过`pso_privileged`应用独立策略。
+
+文件服务器使用确定性的`idmap_rid`映射，因此不读取AD对象上的`uidNumber`和`gidNumber`。已存放数据后不要直接切换到`idmap_ad`或修改映射范围，否则文件的Unix所有者可能发生变化。
+
+
 ### 参考
 <div id="refer-anchor-1">
 
@@ -65,4 +104,3 @@ https://www.samba.org/samba/docs/current/man-html/smb.conf.5.html#idm410
 
 3. [Active Directory Best Practices - Ten Years Later - PDF](http://download.microsoft.com/download/e/a/7/ea75457b-65d0-481c-b53b-d7ca2ae7ee08/s2b%20-%209.pdf)
 </div>
-

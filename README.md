@@ -165,6 +165,10 @@ and verify each enabled module.
 See [docs/ai-design.md](docs/ai-design.md) for the project structure, cask
 structure, and rules for designing new casks.
 
+See [docs/config-state-lifecycle.md](docs/config-state-lifecycle.md) for the
+current persistent-state audit, first-start-only settings, and the proposed
+configuration lifecycle and reconciliation model.
+
 See [docs/test-server-deployment-2026-06-30.md](docs/test-server-deployment-2026-06-30.md)
 for the test-server deployment procedure, verification results, fixes, and
 remaining full-stack test constraints.

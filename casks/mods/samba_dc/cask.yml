@@ -17,15 +17,21 @@ dependencies:
     - bind
 config:
   defaults:
-    app_filter: "false"
+    app_filter: "true"
     create_structure: "true"
     admin_name: admin
     template_shell: /bin/false
     template_homedir: /home/%D/%U
-    domain_users_gid_number: "10000"
     user_complex_pass: "true"
-    user_max_pass_age: "70"
-    user_min_pass_length: "7"
+    user_max_pass_age: "90"
+    user_min_pass_age: "1"
+    user_min_pass_length: "8"
+    user_password_history: "4"
+    user_lockout_threshold: "10"
+    user_lockout_duration: "30"
+    user_lockout_reset_after: "30"
+    ldap_bind_name: svc_ldap
+    password_bind_name: svc_password
     log_level: "1"
 features:
   ldap_provider: true

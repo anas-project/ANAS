@@ -1,11 +1,17 @@
 #!/usr/bin/with-contenv bash
+set -euo pipefail
 
-echo "User login $2"
-if [ ! -e "$1/$2" ]; then
-  echo "Create user home dir $2"
-  mkdir -p "$1/$2"
+base_dir=${1:?home base directory is required}
+user=${2:?user name is required}
+
+if [ "$user" != "$(basename "$user")" ] || ! getent passwd "$user" >/dev/null; then
+  echo "Invalid or unknown AD user: $user" >&2
+  exit 1
 fi
 
-chown "$2:$2" "$1/$2"
-chmod -R 700 "$1/$2"
-exit 0
+home_dir="$base_dir/$user"
+echo "User login $user"
+if [ ! -d "$home_dir" ]; then
+  echo "Create user home dir $user"
+  install -d -m 0700 -o "$user" -g "Domain Users" "$home_dir"
+fi

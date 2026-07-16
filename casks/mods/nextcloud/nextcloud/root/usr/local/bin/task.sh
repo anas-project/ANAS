@@ -432,7 +432,7 @@ config_ldap=$(cat <<EOF
       "types": "authentication",
       "s01ldap_configuration_active": "1",
       "s01ldap_port": $SAMBA_DC_LDAPS_PORT,
-      "s01ldap_dn": "$SAMBA_DC_ADMINISTRATOR_DN",
+      "s01ldap_dn": "$SAMBA_DC_PASSWORD_BIND_DN",
       "s01ldap_base": "$SAMBA_DC_BASE_DN",
       "s01ldap_base_groups": "$SAMBA_DC_BASE_GROUPS_ROLE_DN",
       "s01ldap_base_users": "$SAMBA_DC_BASE_USERS_DN",
@@ -467,15 +467,15 @@ if [ -n "$NEXTCLOUD_DEFAULT_QUOTA" ]; then
 fi
 
 import_occ "$config_ldap"
-$LDAP_CMD ldapAgentPassword "$SAMBA_DC_ADMINISTRATOR_PASSWORD"
+$LDAP_CMD ldapAgentPassword "$SAMBA_DC_PASSWORD_BIND_PASSWORD"
 
 echo "occ ldap:test-config s01"
 occ ldap:test-config s01
 
-app_name='ldap_write_support'
-install_and_enable_app $app_name
-template=`echo -e "dn: CN={UID},{BASE}\nobjectClass: user\nsAMAccountName: {UID}\nuserPrincipalName: {UID}@$SAMBA_DC_USER_PRINCIPAL_NAME_BASE_DOMAIN\ncn: {UID}\nuserAccountControl: 512"`
-occ config:app:set $app_name 'template.user' --value "$template"
+# Password changes are handled by Nextcloud's LDAP backend through the
+# narrowly delegated svc_password account. Broader LDAP writes and domain
+# user creation remain disabled.
+occ app:disable ldap_write_support >/dev/null 2>&1 || true
 
 # add ldap user admin to admin group
 waiting_admin() {

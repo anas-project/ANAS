@@ -33,7 +33,8 @@ config:
     dns_server: 223.5.5.5
     share_dir_name: Share
     userdata_name: userdata
-    share_guest_ok: "Yes"
+    share_access_mode: all_read_group_write
+    share_guest_read_only: "No"
 features:
   generated_secrets: true
   host_network_discovery: true

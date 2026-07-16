@@ -148,6 +148,25 @@ func calcSambaFS(e map[string]string, _ string, _ *secretStore) error {
 	e["SAMBA_FS_USE_DEFAULT_DOMAIN"] = defaultValue(e["SAMBA_FS_USE_DEFAULT_DOMAIN"], e["USE_DEFAULT_DOMAIN"])
 	e["SAMBA_FS_NETBIOS_NAME"] = strings.ToUpper(defaultValue(e["SAMBA_FS_NETBIOS_NAME"], e["SAMBA_FS_HOSTNAME"]))
 	e["SAMBA_FS_DNS_SERVER"] = defaultValue(e["SAMBA_FS_DNS_SERVER"], e["VLAN_BRIDGE_IP"])
+	mode := strings.ToLower(defaultValue(e["SHARE_ACCESS_MODE"], "all_read_group_write"))
+	domainGroup := func(name string) string {
+		return `@"` + e["SAMBA_DC_WORKGROUP"] + `\` + name + `"`
+	}
+	admins := domainGroup(e["SAMBA_DC_FS_ADMIN_GROUP_NAME"])
+	writers := domainGroup(e["SAMBA_DC_FS_SHARE_RW_GROUP_NAME"])
+	domainUsers := domainGroup("Domain Users")
+	e["SAMBA_FS_SHARE_VALID_USERS"] = "nobody, " + domainUsers + ", " + admins + ", " + writers
+	switch mode {
+	case "all_rw":
+		e["SAMBA_FS_SHARE_WRITE_LIST"] = admins + ", " + writers + ", " + domainUsers
+		e["SAMBA_FS_SHARE_DOMAIN_USERS_ACL"] = "rwx"
+	case "all_read_group_write":
+		e["SAMBA_FS_SHARE_WRITE_LIST"] = admins + ", " + writers
+		e["SAMBA_FS_SHARE_DOMAIN_USERS_ACL"] = "r-x"
+	default:
+		return fmt.Errorf("unsupported SHARE_ACCESS_MODE %q: use all_rw or all_read_group_write", mode)
+	}
+	e["SHARE_ACCESS_MODE"] = mode
 	return nil
 }
 func defaultValue(v, d string) string {

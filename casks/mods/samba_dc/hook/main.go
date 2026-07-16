@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -149,7 +151,7 @@ func changed(old, cur map[string]string) map[string]string {
 	}
 	return out
 }
-func calcSambaDC(e map[string]string, _ string, _ *secretStore) error {
+func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	domain := e["BASE_DOMAIN"]
 	e["SAMBA_DC_DOMAIN"] = domain
 	e["SAMBA_DC_DNS_SEARCH"] = domain
@@ -159,8 +161,16 @@ func calcSambaDC(e map[string]string, _ string, _ *secretStore) error {
 	e["SAMBA_DC_DC_DOMAIN"] = e["SAMBA_DC_DC_NAME"] + "." + domain
 	e["SAMBA_DC_ADMINISTRATOR_NAME"] = "Administrator"
 	e["SAMBA_DC_ADMIN_DISPLAY_NAME"] = "Administrator"
-	e["SAMBA_DC_ADMIN_PASSWORD"] = defaultValue(e["SAMBA_DC_ADMIN_PASSWORD"], e["DEFAULT_ROOT_PASSWORD"])
-	e["SAMBA_DC_ADMINISTRATOR_PASSWORD"] = defaultValue(e["SAMBA_DC_ADMINISTRATOR_PASSWORD"], e["DEFAULT_ROOT_PASSWORD"])
+	adminPassword, err := ensurePassword(e["SAMBA_DC_ADMIN_PASSWORD"], "SAMBA_DC_ADMIN_PASSWORD", secrets)
+	if err != nil {
+		return err
+	}
+	e["SAMBA_DC_ADMIN_PASSWORD"] = adminPassword
+	administratorPassword, err := ensurePassword(e["SAMBA_DC_ADMINISTRATOR_PASSWORD"], "SAMBA_DC_ADMINISTRATOR_PASSWORD", secrets)
+	if err != nil {
+		return err
+	}
+	e["SAMBA_DC_ADMINISTRATOR_PASSWORD"] = administratorPassword
 	e["SAMBA_DC_LDAPS_SERVER_URL"] = defaultValue(e["SAMBA_DC_LDAPS_SERVER_URL"], "ldaps://"+domain)
 	e["SAMBA_DC_HOST"] = domain
 	e["SAMBA_DC_HOST_IP"] = defaultValue(e["SAMBA_DC_HOST_IP"], e["HOST_IP"])
@@ -175,13 +185,31 @@ func calcSambaDC(e map[string]string, _ string, _ *secretStore) error {
 	e["SAMBA_DC_BASE_USERS_DN_NAME"] = "People"
 	e["SAMBA_DC_BASE_USERS_DN_PREFIX"] = "OU=" + e["SAMBA_DC_BASE_USERS_DN_NAME"]
 	e["SAMBA_DC_BASE_USERS_DN"] = e["SAMBA_DC_BASE_USERS_DN_PREFIX"] + "," + baseDN
+	e["SAMBA_DC_BASE_ADMINS_DN"] = "OU=Admins," + baseDN
+	e["SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN"] = "OU=Service Accounts," + baseDN
 	e["SAMBA_DC_BASE_APP_DN"] = "OU=Apps," + e["SAMBA_DC_BASE_GROUPS_DN"]
 	e["SAMBA_DC_APP_ALL_NAME"] = "APP_all"
 	e["SAMBA_DC_APP_ALL_DN"] = "CN=" + e["SAMBA_DC_APP_ALL_NAME"] + "," + e["SAMBA_DC_BASE_APP_DN"]
 	e["SAMBA_DC_ADMINISTRATOR_DN"] = "CN=Administrator,CN=Users," + baseDN
-	e["SAMBA_DC_ADMIN_DN"] = "CN=" + e["SAMBA_DC_ADMIN_NAME"] + "," + e["SAMBA_DC_BASE_USERS_DN"]
+	e["SAMBA_DC_ADMIN_DN"] = "CN=" + e["SAMBA_DC_ADMIN_NAME"] + "," + e["SAMBA_DC_BASE_ADMINS_DN"]
 	e["SAMBA_DC_ADMIN_GROUP_NAME"] = "Admins"
 	e["SAMBA_DC_ADMIN_GROUP_DN"] = "CN=Admins," + e["SAMBA_DC_BASE_GROUPS_ROLE_DN"]
+	e["SAMBA_DC_FS_ADMIN_GROUP_NAME"] = "FS Admins"
+	e["SAMBA_DC_FS_SHARE_RW_GROUP_NAME"] = "FS Share RW"
+	e["SAMBA_DC_LDAP_BIND_DN"] = "CN=" + e["SAMBA_DC_LDAP_BIND_NAME"] + "," + e["SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN"]
+	ldapBindPassword, err := ensurePassword(e["SAMBA_DC_LDAP_BIND_PASSWORD"], "SAMBA_DC_LDAP_BIND_PASSWORD", secrets)
+	if err != nil {
+		return err
+	}
+	e["SAMBA_DC_LDAP_BIND_PASSWORD"] = ldapBindPassword
+	e["SAMBA_DC_PASSWORD_BIND_DN"] = "CN=" + e["SAMBA_DC_PASSWORD_BIND_NAME"] + "," + e["SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN"]
+	if e["SAMBA_DC_PASSWORD_BIND_PASSWORD"] == "" {
+		password, err := ensurePassword(e["SAMBA_DC_PASSWORD_BIND_PASSWORD"], "SAMBA_DC_PASSWORD_BIND_PASSWORD", secrets)
+		if err != nil {
+			return err
+		}
+		e["SAMBA_DC_PASSWORD_BIND_PASSWORD"] = password
+	}
 	e["SAMBA_DC_GROUP_CLASS_NAME"] = "group"
 	e["SAMBA_DC_GROUP_CLASS_FILTER"] = "(objectClass=group)"
 	e["SAMBA_DC_USER_CLASS_NAME"] = "user"
@@ -198,6 +226,23 @@ func calcSambaDC(e map[string]string, _ string, _ *secretStore) error {
 	return nil
 }
 func krb5Env(e map[string]string, _ string) error { e["KRB5RCACHETYPE"] = "none"; return nil }
+
+func ensurePassword(explicit, key string, secrets *secretStore) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	if secrets == nil {
+		return "", fmt.Errorf("secret store is required to generate %s", key)
+	}
+	return secrets.Ensure(key, func() (string, error) {
+		buf := make([]byte, 24)
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		return "Aa1!" + hex.EncodeToString(buf), nil
+	})
+}
+
 func defaultValue(v, d string) string {
 	if v == "" {
 		return d

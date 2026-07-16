@@ -21,8 +21,8 @@ services:
       retries: 6
       start_period: 90s
     volumes:
-      # - "${LEGO_CERTS_PATH}:/certs:ro"
       - "${USERDATA_PATH}:/${USERDATA_NAME}"
+      - "${DATA_PATH}/samba_fs/var:/var/lib/samba"
     # ports:
     #   - 445:445
 

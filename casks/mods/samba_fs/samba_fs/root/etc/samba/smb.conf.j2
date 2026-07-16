@@ -19,8 +19,8 @@
 
   socket options = TCP_NODELAY IPTOS_LOWDELAY SO_RCVBUF=524288 SO_SNDBUF=524288
   
-  winbind enum groups = Yes
-  winbind enum users = Yes
+  winbind enum groups = No
+  winbind enum users = No
   winbind refresh tickets = Yes
   winbind separator = +
   winbind use default domain = ${SAMBA_FS_USE_DEFAULT_DOMAIN}
@@ -40,7 +40,8 @@
   vfs objects = acl_xattr ${GLOBAL_RECYCLE}
   map acl inherit = Yes
 
-  usershare allow guests = Yes
+  usershare allow guests = No
+  guest account = nobody
   acl allow execute always = Yes
   map to guest = Bad User
 
@@ -56,7 +57,7 @@
 #  fruit:advertise_fullsync = true
 #  fruit:aapl = yes
 
-  admin users = @${SAMBA_DC_WORKGROUP}\Domain Admins, @${SAMBA_DC_WORKGROUP}\Enterprise Admins, ${SAMBA_DC_ADMIN_NAME}
+  admin users = @"${SAMBA_DC_WORKGROUP}\${SAMBA_DC_FS_ADMIN_GROUP_NAME}"
 
 [Home]
   comment = "User's personal files"
@@ -64,11 +65,14 @@
   guest ok = No
   read only = No
   browseable = Yes
+  valid users = %U
   root preexec = /usr/local/bin/samba_create_user_dir.sh /${USERDATA_NAME}/Home %U
 
 [${SHARE_DIR_NAME}]
   comment = "User shares"
   path = /${USERDATA_NAME}/${SHARE_DIR_NAME}
-  guest ok = ${SHARE_GUEST_OK}
-  read only = No
+  guest ok = ${SHARE_GUEST_READ_ONLY}
+  read only = Yes
   browseable = Yes
+  valid users = ${SAMBA_FS_SHARE_VALID_USERS}
+  write list = ${SAMBA_FS_SHARE_WRITE_LIST}

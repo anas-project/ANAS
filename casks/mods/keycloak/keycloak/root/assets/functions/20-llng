@@ -106,8 +106,8 @@ configure_lmConf() {
                   LLNG_DOMAIN_FULL \
                   SAMBA_DC_LDAPS_SERVER_URL \
                   SAMBA_DC_LDAPS_PORT \
-                  SAMBA_DC_ADMINISTRATOR_DN \
-                  SAMBA_DC_ADMINISTRATOR_PASSWORD \
+                  SAMBA_DC_PASSWORD_BIND_DN \
+                  SAMBA_DC_PASSWORD_BIND_PASSWORD \
                   SAMBA_DC_BASE_USERS_DN \
                   SAMBA_DC_BASE_GROUPS_ROLE_DN \
                   SAMBA_DC_BASE_GROUPS_DN \
