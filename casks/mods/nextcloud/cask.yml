@@ -12,13 +12,17 @@ runtime:
   type: compose
   compose_file: docker-compose.yml
 dependencies:
-  before:
+  requires:
     - traefik
     - eturnal
-  after:
     - samba_dc
-    - postgres
-    - mariadb
+  requires_one:
+    - capability: relational_database
+      selected_by: db_type
+      providers:
+        - postgres
+        - mariadb
+      default: postgres
 config:
   defaults:
     domain_prefix: nc
@@ -31,6 +35,7 @@ config:
     debug: "false"
     talk_enabled: "true"
     memories_enabled: "true"
+    db_type: auto
   changes:
     db_type:
       effect: data_migrate

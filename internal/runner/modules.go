@@ -14,14 +14,21 @@ type Module struct {
 	Defaults    map[string]string
 	Required    []string
 	Changes     map[string]ChangePolicy
-	Deps        []string
 	Requires    []Dependency
+	RequiresOne []AlternativeDependency
 	RunAfter    []string
 	UseLDAP     bool
 	UseHostLAN  string
 	Hook        HookConfig
 	RuntimeType string
 	ComposeFile string
+}
+
+type AlternativeDependency struct {
+	Capability string
+	SelectedBy string
+	Providers  []string
+	Default    string
 }
 
 type ChangePolicy struct {

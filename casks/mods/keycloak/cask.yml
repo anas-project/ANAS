@@ -12,12 +12,16 @@ runtime:
   type: compose
   compose_file: docker-compose.yml
 dependencies:
-  before:
-    - core
-  after:
+  requires:
     - traefik
-    - postgres
-    - mariadb
+    - samba_dc
+  requires_one:
+    - capability: relational_database
+      selected_by: db_type
+      providers:
+        - postgres
+        - mariadb
+      default: postgres
 config:
   defaults:
     domain_prefix: auth
@@ -28,6 +32,7 @@ config:
     db_name: keycloak
     enable_test: "true"
     adminer_enabled: "false"
+    db_type: auto
   changes:
     password:
       effect: credential_rotate

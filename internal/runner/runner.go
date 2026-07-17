@@ -18,18 +18,19 @@ import (
 )
 
 type app struct {
-	root    string
-	base    string
-	cfgPath string
-	verbose bool
-	yes     bool
-	compose compose.CLI
-	reg     map[string]Module
-	cfg     *config.File
-	env     map[string]string
-	order   []string
-	secrets *secretStore
-	lock    *caskLock
+	root             string
+	base             string
+	cfgPath          string
+	verbose          bool
+	yes              bool
+	compose          compose.CLI
+	reg              map[string]Module
+	cfg              *config.File
+	env              map[string]string
+	order            []string
+	secrets          *secretStore
+	lock             *caskLock
+	resolvedBindings map[string]map[string]string
 }
 
 func Main(args []string) error {
@@ -96,7 +97,7 @@ func run(action string, args []string) error {
 	if err != nil {
 		return err
 	}
-	a := &app{root: root, base: *base, cfgPath: *cfgPath, verbose: *verbose, yes: *yes, reg: reg}
+	a := &app{root: root, base: *base, cfgPath: *cfgPath, verbose: *verbose, yes: *yes, reg: reg, resolvedBindings: map[string]map[string]string{}}
 	if action != "plan" && action != "render" {
 		cli, err := compose.Detect()
 		if err != nil {
@@ -256,8 +257,8 @@ func (a *app) execute(actions []string) error {
 			return err
 		}
 	}
-	if contains(actions, "build") || contains(actions, "start") {
-		a.updateCaskLock(a.lock)
+	if contains(actions, "build") || contains(actions, "start") || contains(actions, "restart") {
+		a.updateCaskLock(a.lock, contains(actions, "start") || contains(actions, "restart"))
 		if err := a.lock.Save(a.base); err != nil {
 			return err
 		}
@@ -308,6 +309,7 @@ func (a *app) hostLANRequired() bool {
 func (a *app) resolveOrder(mods []string) ([]string, error) {
 	seen := map[string]bool{}
 	temp := map[string]bool{}
+	resolvedDeps := map[string][]string{}
 	var out []string
 	var visit func(string) error
 	visit = func(name string) error {
@@ -328,11 +330,18 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 			return err
 		}
 		temp[name] = true
-		deps := append([]string{}, mod.Deps...)
+		deps := []string{}
 		for _, dep := range mod.Requires {
 			if !dep.Optional {
 				deps = append(deps, dep.Name)
 			}
+		}
+		for _, dep := range mod.RequiresOne {
+			provider, err := a.resolveAlternativeDependency(name, mod, dep)
+			if err != nil {
+				return err
+			}
+			deps = append(deps, provider)
 		}
 		if name != "core" && !contains(deps, "core") {
 			deps = append([]string{"core"}, deps...)
@@ -340,11 +349,13 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 		if svc, ok := a.cfg.Services[name]; ok {
 			deps = append(deps, svc.DependsOn...)
 		}
+		deps = uniqueStrings(deps)
 		for _, dep := range deps {
 			if err := visit(dep); err != nil {
 				return err
 			}
 		}
+		resolvedDeps[name] = deps
 		temp[name] = false
 		seen[name] = true
 		out = append(out, name)
@@ -358,14 +369,117 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 			return nil, err
 		}
 	}
-	for _, name := range append([]string{}, out...) {
-		for _, after := range a.reg[name].RunAfter {
-			if seen[after] && index(out, after) > index(out, name) {
-				out = moveAfter(out, name, after)
+	return stableModuleOrder(out, resolvedDeps, a.reg)
+}
+
+func stableModuleOrder(initial []string, dependencies map[string][]string, reg map[string]Module) ([]string, error) {
+	selected := map[string]bool{}
+	position := map[string]int{}
+	indegree := map[string]int{}
+	next := map[string][]string{}
+	for i, name := range initial {
+		selected[name] = true
+		position[name] = i
+		indegree[name] = 0
+	}
+	addEdge := func(before, after string) {
+		if !selected[before] || !selected[after] || contains(next[before], after) {
+			return
+		}
+		next[before] = append(next[before], after)
+		indegree[after]++
+	}
+	for name, deps := range dependencies {
+		for _, dep := range deps {
+			addEdge(dep, name)
+		}
+	}
+	for _, name := range initial {
+		for _, after := range reg[name].RunAfter {
+			addEdge(after, name)
+		}
+	}
+	ready := []string{}
+	for _, name := range initial {
+		if indegree[name] == 0 {
+			ready = append(ready, name)
+		}
+	}
+	ordered := make([]string, 0, len(initial))
+	for len(ready) > 0 {
+		name := ready[0]
+		ready = ready[1:]
+		ordered = append(ordered, name)
+		for _, dependent := range next[name] {
+			indegree[dependent]--
+			if indegree[dependent] == 0 {
+				ready = append(ready, dependent)
+				sort.SliceStable(ready, func(i, j int) bool { return position[ready[i]] < position[ready[j]] })
 			}
 		}
 	}
-	return out, nil
+	if len(ordered) != len(initial) {
+		blocked := []string{}
+		for _, name := range initial {
+			if indegree[name] > 0 {
+				blocked = append(blocked, name)
+			}
+		}
+		return nil, fmt.Errorf("dependency ordering cycle among: %s", strings.Join(blocked, ", "))
+	}
+	return ordered, nil
+}
+
+func uniqueStrings(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, item := range in {
+		if item != "" && !contains(out, item) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func (a *app) resolveAlternativeDependency(moduleName string, mod Module, dep AlternativeDependency) (string, error) {
+	key := paramEnvKey(moduleName, mod.EnvPrefix, dep.SelectedBy)
+	requested := strings.ToLower(strings.TrimSpace(a.env[key]))
+	provider := requested
+	if provider == "" || provider == "auto" {
+		provider = dep.Default
+		if a.lock != nil && contains(dep.Providers, a.lock.Bindings[moduleName][dep.Capability]) {
+			provider = a.lock.Bindings[moduleName][dep.Capability]
+		} else if configured := a.configuredProviders(dep.Providers); len(configured) == 1 {
+			provider = configured[0]
+		}
+	}
+	if !contains(dep.Providers, provider) {
+		return "", fmt.Errorf("%s.%s must be auto or one of %s, got %q", moduleName, dep.SelectedBy, strings.Join(dep.Providers, ", "), requested)
+	}
+	if _, ok := a.reg[provider]; !ok {
+		return "", fmt.Errorf("%s requires unknown %s provider %q", moduleName, dep.Capability, provider)
+	}
+	a.env[key] = provider
+	if a.resolvedBindings == nil {
+		a.resolvedBindings = map[string]map[string]string{}
+	}
+	if a.resolvedBindings[moduleName] == nil {
+		a.resolvedBindings[moduleName] = map[string]string{}
+	}
+	a.resolvedBindings[moduleName][dep.Capability] = provider
+	return provider, nil
+}
+
+func (a *app) configuredProviders(providers []string) []string {
+	out := []string{}
+	if a.cfg == nil {
+		return out
+	}
+	for _, name := range a.cfg.Modules {
+		if contains(providers, name) && a.moduleEnabled(name) && !contains(out, name) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 func (a *app) requireCaskManifest(name string) error {

@@ -7,6 +7,7 @@ func TestTalkSessionKeysAreStableGeneratedSecrets(t *testing.T) {
 	base := map[string]string{
 		"DATA_PATH": "./data", "CONTAINER_PREFIX": "anas_", "NETWORK_PREFIX": "anas_",
 		"NEXTCLOUD_DOMAIN_PREFIX": "nc", "BASE_DOMAIN": "nas.test", "TRAEFIK_BASE_PORT": "9000",
+		"NEXTCLOUD_DB_TYPE": "postgres", "POSTGRES_NETWORK_NAME": "anas_postgres",
 	}
 	first := cloneMap(base)
 	if err := calcNextcloud(first, "", secrets); err != nil {

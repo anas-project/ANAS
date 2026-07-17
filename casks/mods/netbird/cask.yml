@@ -13,12 +13,25 @@ runtime:
   type: compose
   compose_file: docker-compose.yml
 dependencies:
-  before:
-    - core
+  requires:
+    - traefik
+  requires_one:
+    - capability: sso_provider
+      selected_by: sso_provider
+      providers:
+        - keycloak
+        - llng
+      default: keycloak
 config:
   defaults:
     domain_prefix: netbird
     adminer_enabled: "false"
+    sso_provider: auto
+  changes:
+    sso_provider:
+      effect: container_recreate
+      apply: recreate-netbird
+      description: The OIDC issuer and client configuration change together.
 features:
   sso_client: true
   generated_secrets: true

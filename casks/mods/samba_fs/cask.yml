@@ -12,7 +12,7 @@ runtime:
   type: compose
   compose_file: docker-compose.yml
 dependencies:
-  after:
+  requires:
     - samba_dc
 config:
   defaults:

@@ -12,6 +12,6 @@ runtime:
   type: compose
   compose_file: docker-compose.yml
 dependencies:
-  before:
+  requires:
     - lego
 status: experimental

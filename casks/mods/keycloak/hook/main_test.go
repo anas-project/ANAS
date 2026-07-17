@@ -11,6 +11,8 @@ func TestCalcKeycloakUsesRealmDiscoveryEndpoint(t *testing.T) {
 		"KEYCLOAK_DOMAIN_PREFIX": "auth",
 		"BASE_DOMAIN":            "nas.test",
 		"TRAEFIK_BASE_PORT":      "9000",
+		"KEYCLOAK_DB_TYPE":       "postgres",
+		"POSTGRES_NETWORK_NAME":  "anas_postgres",
 	}
 	secrets := &secretStore{values: map[string]string{}}
 	if err := calcKeycloak(env, "", secrets); err != nil {

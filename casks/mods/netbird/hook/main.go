@@ -194,10 +194,14 @@ func moduleNetbird(e map[string]string, _ string) error {
 	e["NETBIRD_SIGNAL_PORT"] = e["TRAEFIK_BASE_PORT"]
 	e["AUTH_REDIRECT_URI"] = "/auth"
 	e["AUTH_SILENT_REDIRECT_URI"] = "/silent-auth"
-	// Prefer the SSO provider that is actually loaded: keycloak > llng.
-	oidcEndpoint := e["KEYCLOAK_OIDC_CONFIGURATION_ENDPOINT"]
-	if oidcEndpoint == "" {
+	var oidcEndpoint string
+	switch e["NETBIRD_SSO_PROVIDER"] {
+	case "keycloak":
+		oidcEndpoint = e["KEYCLOAK_OIDC_CONFIGURATION_ENDPOINT"]
+	case "llng":
 		oidcEndpoint = e["LLNG_OIDC_CONFIGURATION_ENDPOINT"]
+	default:
+		return fmt.Errorf("NETBIRD_SSO_PROVIDER must be resolved to keycloak or llng")
 	}
 	e["NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT"] = oidcEndpoint
 	e["AUTH_SUPPORTED_SCOPES"] = "openid profile email"

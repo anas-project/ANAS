@@ -44,11 +44,234 @@ func TestDisabledRequiredModuleIsRejected(t *testing.T) {
 	a := &app{
 		cfg: &config.File{Services: map[string]config.Service{"database": {Enabled: &disabled}}},
 		reg: map[string]Module{
-			"core": {Name: "core"}, "app": {Name: "app", Deps: []string{"database"}}, "database": {Name: "database"},
+			"core": {Name: "core"}, "app": {Name: "app", Requires: []Dependency{{Name: "database"}}}, "database": {Name: "database"},
 		},
 	}
 	if _, err := a.resolveOrder([]string{"app"}); err == nil {
 		t.Fatal("expected disabled dependency error")
+	}
+}
+
+func TestAlternativeDependencyDefaultsToPostgresAndUsesLockedBinding(t *testing.T) {
+	dep := AlternativeDependency{
+		Capability: "relational_database", SelectedBy: "db_type",
+		Providers: []string{"postgres", "mariadb"}, Default: "postgres",
+	}
+	mod := Module{Name: "app", EnvPrefix: "APP"}
+	a := &app{
+		env:  map[string]string{"APP_DB_TYPE": "auto"},
+		reg:  map[string]Module{"postgres": {Name: "postgres"}, "mariadb": {Name: "mariadb"}},
+		lock: &caskLock{Bindings: map[string]map[string]string{}},
+	}
+	provider, err := a.resolveAlternativeDependency("app", mod, dep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider != "postgres" || a.env["APP_DB_TYPE"] != "postgres" {
+		t.Fatalf("provider = %q, env = %q; want postgres", provider, a.env["APP_DB_TYPE"])
+	}
+
+	a.env["APP_DB_TYPE"] = "auto"
+	a.lock.Bindings["app"] = map[string]string{"relational_database": "mariadb"}
+	provider, err = a.resolveAlternativeDependency("app", mod, dep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider != "mariadb" || a.env["APP_DB_TYPE"] != "mariadb" {
+		t.Fatalf("provider = %q, env = %q; want locked mariadb", provider, a.env["APP_DB_TYPE"])
+	}
+}
+
+func TestAlternativeDependencyRejectsUnknownSelection(t *testing.T) {
+	a := &app{
+		env: map[string]string{"APP_DB_TYPE": "sqlite"},
+		reg: map[string]Module{"postgres": {Name: "postgres"}, "mariadb": {Name: "mariadb"}},
+	}
+	_, err := a.resolveAlternativeDependency("app", Module{Name: "app", EnvPrefix: "APP"}, AlternativeDependency{
+		Capability: "relational_database", SelectedBy: "db_type",
+		Providers: []string{"postgres", "mariadb"}, Default: "postgres",
+	})
+	if err == nil {
+		t.Fatal("expected unsupported provider error")
+	}
+}
+
+func TestStableModuleOrderPreservesHardDependencyWhenProviderRunsAfterProxy(t *testing.T) {
+	initial := []string{"core", "postgres", "app", "traefik"}
+	deps := map[string][]string{
+		"postgres": {"core"},
+		"app":      {"core", "postgres"},
+		"traefik":  {"core"},
+	}
+	reg := map[string]Module{
+		"core":     {Name: "core"},
+		"postgres": {Name: "postgres", RunAfter: []string{"traefik"}},
+		"app":      {Name: "app", RunAfter: []string{"traefik"}},
+		"traefik":  {Name: "traefik"},
+	}
+	order, err := stableModuleOrder(initial, deps, reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index(order, "traefik") > index(order, "postgres") || index(order, "postgres") > index(order, "app") {
+		t.Fatalf("order = %v, want traefik before postgres before app", order)
+	}
+}
+
+func TestNextcloudAutoAddsAndLocksOneDatabaseProvider(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	reg, err := loadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newApp := func(binding string) *app {
+		lock := &caskLock{Bindings: map[string]map[string]string{}}
+		if binding != "" {
+			lock.Bindings["nextcloud"] = map[string]string{"relational_database": binding}
+		}
+		return &app{
+			cfg: &config.File{Modules: []string{"nextcloud"}, Services: map[string]config.Service{}}, reg: reg,
+			env: map[string]string{"NEXTCLOUD_DB_TYPE": "auto"}, lock: lock,
+		}
+	}
+
+	a := newApp("")
+	order, err := a.resolveOrder([]string{"nextcloud"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(order, "postgres") || contains(order, "mariadb") || index(order, "postgres") > index(order, "nextcloud") {
+		t.Fatalf("default order = %v, want only postgres before nextcloud", order)
+	}
+
+	a = newApp("mariadb")
+	order, err = a.resolveOrder([]string{"nextcloud"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(order, "mariadb") || contains(order, "postgres") || index(order, "mariadb") > index(order, "nextcloud") {
+		t.Fatalf("locked order = %v, want only mariadb before nextcloud", order)
+	}
+
+	a = newApp("")
+	a.cfg.Modules = []string{"mariadb", "nextcloud"}
+	order, err = a.resolveOrder(a.cfg.Modules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(order, "mariadb") || contains(order, "postgres") {
+		t.Fatalf("configured order = %v, want the only configured provider mariadb", order)
+	}
+}
+
+func TestNetbirdAutoAddsOneSSOProvider(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	reg, err := loadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &app{
+		cfg:  &config.File{Modules: []string{"netbird"}, Services: map[string]config.Service{}},
+		reg:  reg,
+		env:  map[string]string{"NETBIRD_SSO_PROVIDER": "auto"},
+		lock: &caskLock{Bindings: map[string]map[string]string{}},
+	}
+	order, err := a.resolveOrder(a.cfg.Modules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(order, "keycloak") || contains(order, "llng") || index(order, "keycloak") > index(order, "netbird") {
+		t.Fatalf("order = %v, want only keycloak before netbird", order)
+	}
+	for _, required := range []string{"traefik", "samba_dc", "postgres"} {
+		if !contains(order, required) {
+			t.Fatalf("order = %v, missing transitive dependency %s", order, required)
+		}
+	}
+}
+
+func TestEveryCaskResolvesAsAStandaloneSelection(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	reg, err := loadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range reg {
+		t.Run(name, func(t *testing.T) {
+			a := &app{
+				cfg:  &config.File{Modules: []string{name}, Services: map[string]config.Service{}},
+				reg:  reg,
+				env:  map[string]string{},
+				lock: &caskLock{Bindings: map[string]map[string]string{}},
+			}
+			order, err := a.resolveOrder(a.cfg.Modules)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(order) == 0 || order[len(order)-1] != name {
+				t.Fatalf("order = %v, want selected cask %s last", order, name)
+			}
+		})
+	}
+}
+
+func TestBuiltInHardDependencyClosure(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	reg, err := loadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string][]string{
+		"traefik":     {"lego"},
+		"samba_dc":    {"lego"},
+		"samba_fs":    {"samba_dc"},
+		"postgres":    {"traefik"},
+		"mariadb":     {"traefik"},
+		"eturnal":     {"traefik"},
+		"ddns":        {"traefik"},
+		"keycloak":    {"traefik", "samba_dc", "postgres"},
+		"llng":        {"traefik", "samba_dc", "postgres"},
+		"nextcloud":   {"traefik", "eturnal", "samba_dc", "postgres"},
+		"collabora":   {"nextcloud"},
+		"meshcentral": {"traefik", "mariadb", "samba_dc"},
+		"lam":         {"traefik", "samba_dc"},
+		"netbird":     {"traefik", "keycloak"},
+		"freeradius":  {"lego"},
+	}
+	for name, dependencies := range expected {
+		t.Run(name, func(t *testing.T) {
+			a := &app{
+				cfg:  &config.File{Modules: []string{name}, Services: map[string]config.Service{}},
+				reg:  reg,
+				env:  map[string]string{},
+				lock: &caskLock{Bindings: map[string]map[string]string{}},
+			}
+			order, err := a.resolveOrder(a.cfg.Modules)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, dependency := range dependencies {
+				if !contains(order, dependency) || index(order, dependency) > index(order, name) {
+					t.Fatalf("order = %v, want %s before %s", order, dependency, name)
+				}
+			}
+		})
 	}
 }
 

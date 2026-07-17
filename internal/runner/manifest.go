@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,19 +18,22 @@ type manifestABI struct {
 }
 
 type caskManifest struct {
-	APIVersion   string                 `yaml:"api_version"`
-	Kind         string                 `yaml:"kind"`
-	Name         string                 `yaml:"name"`
-	Version      string                 `yaml:"version"`
-	ABI          manifestABI            `yaml:"abi"`
-	Runtime      manifestRuntime        `yaml:"runtime"`
-	Dependencies manifestDependencies   `yaml:"dependencies"`
-	Upgrade      manifestUpgrade        `yaml:"upgrade"`
-	Config       manifestConfig         `yaml:"config"`
-	Features     manifestFeatures       `yaml:"features"`
-	Logic        manifestLogic          `yaml:"logic"`
-	Status       string                 `yaml:"status"`
-	Extra        map[string]interface{} `yaml:",inline"`
+	APIVersion   string               `yaml:"api_version"`
+	Kind         string               `yaml:"kind"`
+	Name         string               `yaml:"name"`
+	Version      string               `yaml:"version"`
+	ABI          manifestABI          `yaml:"abi"`
+	Title        string               `yaml:"title"`
+	Description  string               `yaml:"description"`
+	Category     string               `yaml:"category"`
+	Runtime      manifestRuntime      `yaml:"runtime"`
+	Dependencies manifestDependencies `yaml:"dependencies"`
+	Upgrade      manifestUpgrade      `yaml:"upgrade"`
+	Config       manifestConfig       `yaml:"config"`
+	Features     manifestFeatures     `yaml:"features"`
+	Services     manifestServices     `yaml:"services"`
+	Logic        manifestLogic        `yaml:"logic"`
+	Status       string               `yaml:"status"`
 }
 
 type manifestRuntime struct {
@@ -39,9 +43,16 @@ type manifestRuntime struct {
 }
 
 type manifestDependencies struct {
-	Before   []string             `yaml:"before"`
-	Requires []manifestDependency `yaml:"requires"`
-	After    []string             `yaml:"after"`
+	Requires    []manifestDependency            `yaml:"requires"`
+	RequiresOne []manifestAlternativeDependency `yaml:"requires_one"`
+	After       []string                        `yaml:"after"`
+}
+
+type manifestAlternativeDependency struct {
+	Capability string   `yaml:"capability"`
+	SelectedBy string   `yaml:"selected_by"`
+	Providers  []string `yaml:"providers"`
+	Default    string   `yaml:"default"`
 }
 
 type manifestDependency struct {
@@ -83,10 +94,26 @@ type manifestChangePolicy struct {
 }
 
 type manifestFeatures struct {
-	LDAPClient bool     `yaml:"ldap_client"`
-	HostLAN    string   `yaml:"host_lan"`
-	AfterStart string   `yaml:"after_start"`
-	Special    []string `yaml:"special_files"`
+	LDAPClient           bool     `yaml:"ldap_client"`
+	LDAPProvider         bool     `yaml:"ldap_provider"`
+	SSOClient            bool     `yaml:"sso_client"`
+	SSOProvider          bool     `yaml:"sso_provider"`
+	GeneratedSecrets     bool     `yaml:"generated_secrets"`
+	Domain               bool     `yaml:"domain"`
+	HostLAN              string   `yaml:"host_lan"`
+	HostNetworkDiscovery bool     `yaml:"host_network_discovery"`
+	KerberosEnv          bool     `yaml:"kerberos_env"`
+	AfterStart           string   `yaml:"after_start"`
+	Special              []string `yaml:"special_files"`
+}
+
+type manifestServices struct {
+	Optional []manifestOptionalService `yaml:"optional"`
+}
+
+type manifestOptionalService struct {
+	Name      string `yaml:"name"`
+	EnabledBy string `yaml:"enabled_by"`
 }
 
 type manifestLogic struct {
@@ -124,7 +151,9 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		return Module{}, err
 	}
 	var manifest caskManifest
-	if err := yaml.Unmarshal(b, &manifest); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
+	if err := dec.Decode(&manifest); err != nil {
 		return Module{}, fmt.Errorf("%s: %w", path, err)
 	}
 	if manifest.APIVersion != "anas.dev/v1" {
@@ -154,6 +183,25 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		if dep.Version != "" {
 			if _, err := parseVersionConstraint(dep.Version); err != nil {
 				return Module{}, fmt.Errorf("cask %q dependency %q version %q is invalid: %w", dirname, dep.Name, dep.Version, err)
+			}
+		}
+	}
+	for _, dep := range manifest.Dependencies.RequiresOne {
+		if strings.TrimSpace(dep.Capability) == "" {
+			return Module{}, fmt.Errorf("cask %q has requires_one dependency without capability", dirname)
+		}
+		if strings.TrimSpace(dep.SelectedBy) == "" {
+			return Module{}, fmt.Errorf("cask %q requires_one %q has no selected_by parameter", dirname, dep.Capability)
+		}
+		if len(dep.Providers) == 0 {
+			return Module{}, fmt.Errorf("cask %q requires_one %q has no providers", dirname, dep.Capability)
+		}
+		if !contains(dep.Providers, dep.Default) {
+			return Module{}, fmt.Errorf("cask %q requires_one %q default %q is not a provider", dirname, dep.Capability, dep.Default)
+		}
+		for _, provider := range dep.Providers {
+			if strings.TrimSpace(provider) == "" {
+				return Module{}, fmt.Errorf("cask %q requires_one %q contains an empty provider", dirname, dep.Capability)
 			}
 		}
 	}
@@ -204,8 +252,8 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		Defaults:    normalizeDefaults(manifest.Name, envPrefix, manifest.Config.Defaults),
 		Required:    normalizeRequired(manifest.Name, envPrefix, manifest.Config.Required),
 		Changes:     changes,
-		Deps:        append([]string{}, manifest.Dependencies.Before...),
 		Requires:    normalizeManifestDependencies(manifest.Dependencies.Requires),
+		RequiresOne: normalizeAlternativeDependencies(manifest.Dependencies.RequiresOne),
 		RunAfter:    append([]string{}, manifest.Dependencies.After...),
 		UseLDAP:     manifest.Features.LDAPClient,
 		UseHostLAN:  manifest.Features.HostLAN,
@@ -214,6 +262,23 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		ComposeFile: composeFile,
 	}
 	return mod, nil
+}
+
+func normalizeAlternativeDependencies(in []manifestAlternativeDependency) []AlternativeDependency {
+	out := []AlternativeDependency{}
+	for _, dep := range in {
+		providers := make([]string, 0, len(dep.Providers))
+		for _, provider := range dep.Providers {
+			providers = append(providers, strings.TrimSpace(provider))
+		}
+		out = append(out, AlternativeDependency{
+			Capability: strings.TrimSpace(dep.Capability),
+			SelectedBy: strings.TrimSpace(dep.SelectedBy),
+			Providers:  providers,
+			Default:    strings.TrimSpace(dep.Default),
+		})
+	}
+	return out
 }
 
 func validChangeEffect(effect string) bool {

@@ -162,17 +162,13 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) er
 	// Preview Generator 5.12.x declares Nextcloud 30 compatibility but uses a
 	// Symfony Console signature that is incompatible with the bundled runtime.
 	e["NEXTCLOUD_PREVIEWGENERATOR_VERSION"] = defaultValue(e["NEXTCLOUD_PREVIEWGENERATOR_VERSION"], "5.7.0")
-	if e["NEXTCLOUD_DB_TYPE"] == "" {
-		if e["POSTGRES_HOST"] != "" {
-			e["NEXTCLOUD_DB_TYPE"] = "postgres"
-		} else if e["MARIADB_HOST"] != "" {
-			e["NEXTCLOUD_DB_TYPE"] = "mariadb"
-		}
-	}
-	if e["NEXTCLOUD_DB_TYPE"] == "mariadb" {
+	switch e["NEXTCLOUD_DB_TYPE"] {
+	case "mariadb":
 		e["NEXTCLOUD_NETWORK_DB"] = e["MARIADB_NETWORK_NAME"]
-	} else {
+	case "postgres":
 		e["NEXTCLOUD_NETWORK_DB"] = e["POSTGRES_NETWORK_NAME"]
+	default:
+		return fmt.Errorf("NEXTCLOUD_DB_TYPE must be resolved to postgres or mariadb")
 	}
 	e["NEXTCLOUD_IMAGINARY_HOSTNAME"] = e["CONTAINER_PREFIX"] + "imaginary"
 	e["NEXTCLOUD_ADMIN_USERNAME"] = defaultValue(e["NEXTCLOUD_ADMIN_USERNAME"], e["SAMBA_DC_ADMIN_NAME"]+"_nc")

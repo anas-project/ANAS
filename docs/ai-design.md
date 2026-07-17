@@ -141,15 +141,13 @@ dependencies:
   requires:
     - name: traefik
       version: ">=0.1.0 <1.0.0"
-  before:
-    - traefik
   after:
     - samba_dc
 config:
   required:
-    - EXAMPLE_TOKEN
+    - token
   defaults:
-    EXAMPLE_DOMAIN_PREFIX: example
+    domain_prefix: example
 features:
   ldap_client: true
   domain: true
@@ -182,10 +180,17 @@ Manifest fields:
 - `runtime.compose_file`: `docker-compose.yml` for compose casks.
 - `dependencies.requires`: casks that must be present before this cask, with an
   optional semantic version constraint such as `^1.2.0` or `>=1.0.0 <2.0.0`.
-- `dependencies.before`: required casks that must be present before this cask.
-  Current migrated casks still use this field. Prefer `dependencies.requires`
-  for new casks when version constraints matter.
-- `dependencies.after`: ordering-only dependencies when both casks are present.
+  Required casks are selected automatically and are calculated, rendered, and
+  started before the dependent cask.
+- `dependencies.after`: soft ordering only. The named cask is not selected
+  automatically; when both casks are selected, it is ordered before this cask.
+- `dependencies.requires_one`: a provider choice for a capability. Each entry
+  declares `capability`, the lower-snake-case `selected_by` parameter, the
+  allowed `providers`, and a `default`. The parameter may be `auto` on first
+  deployment; the runner resolves it to one provider and persists that binding
+  in `cask.lock.yml`. A later provider change must use the parameter's declared
+  `data_migrate` operation.
+
 - `config.env_prefix`: optional environment prefix when it differs from the
   cask name, for example `eturnal` uses `TURN`.
 - `config.required`: lower snake_case parameters that must exist after config
@@ -196,6 +201,32 @@ Manifest fields:
 - `logic.hook.command`: command executed from the cask directory for
   `calculate`, `render_env`, `services`, and `after_start` phases.
 - `status`: optional; use `experimental` or `inactive` for unfinished casks.
+
+Dependency order guarantees that the upstream Compose project is created first;
+it does not by itself mean every upstream process is healthy. Runtime consumers
+must retain bounded connection retries. Casks that need a strict readiness gate
+should expose a healthcheck so a future readiness policy can wait explicitly
+without overloading dependency selection semantics.
+
+The built-in dependency graph is intentionally summarized as follows:
+
+| Cask | Hard dependencies |
+| --- | --- |
+| `traefik`, `samba_dc`, `freeradius` | `lego` |
+| `samba_fs` | `samba_dc` |
+| `postgres`, `mariadb`, `eturnal`, `ddns` | `traefik` |
+| `keycloak`, `llng` | `traefik`, `samba_dc`, one relational database |
+| `nextcloud` | `traefik`, `eturnal`, `samba_dc`, one relational database |
+| `collabora` | `nextcloud` |
+| `meshcentral` | `traefik`, `mariadb`, `samba_dc` |
+| `lam` | `traefik`, `samba_dc` |
+| `netbird` | `traefik`, one SSO provider (`keycloak` or `llng`) |
+
+Nextcloud's selected database is already a hard `requires_one` edge, so
+duplicating both database names under `after` would incorrectly order it after
+an unused provider. SSO integration is also not represented as a readiness
+edge: the provider and service finish cross-configuration after their containers
+are created, and forcing either side to become healthy first could deadlock.
 
 The manifest is metadata, policy, and hook selection. Runner code should not
 contain a hard-coded cask registry or cask-specific calculation functions.
@@ -236,8 +267,8 @@ cask functionality is:
 ## Current Casks
 
 Current cask functionality is summarized below. Dependency names listed here are
-the user-visible effect of manifest `before` and `after` rules; `core` is also
-added implicitly for non-core casks.
+the user-visible effect of manifest `requires`, `requires_one`, and `after`
+rules; `core` is also added implicitly for non-core casks.
 
 | Cask | Category | Current functionality | Dependencies and notes |
 | --- | --- | --- | --- |
@@ -245,26 +276,24 @@ added implicitly for non-core casks.
 | `lego` | certificate | Prepares ACME certificate paths, email, certificate names, and certificate storage used by web and domain services. | Requires DNS provider config through `global.dns_provider`; currently ordered after `core`. |
 | `traefik` | network | Builds and runs the HTTPS reverse proxy, dashboard, TLS routing, and basic-auth protected API. Generates service domain env from `domain_prefix`. | Requires `lego`; exposes the shared `traefik` Docker network. |
 | `samba_dc` | identity | Runs an AD-compatible Samba domain controller and BIND9-DLZ DNS in one container; derives DNS forwarders, realm, base DN, LDAP filters, admin DN, app group DN, LDAPS endpoints, and Kerberos settings. | Requires `lego`. Acts as the DNS and LDAP provider for dependent casks. |
-| `samba_fs` | storage | Runs a Samba file server joined to the domain and derives NetBIOS/default-domain settings. | Starts after `samba_dc` when both are enabled. Requires host LAN/macvlan. |
-| `postgres` | database | Runs PostgreSQL, derives host/port/network/password env, and optionally exposes Adminer through Traefik. | Starts after `traefik` when Adminer is used. Optional Adminer is controlled by `adminer_enabled`. |
-| `mariadb` | database | Runs MariaDB, derives root/user/password/mysql compatibility env, and optionally exposes Adminer through Traefik. | Starts after `traefik` when Adminer is used. Optional Adminer is controlled by `adminer_enabled`. |
-| `eturnal` | communication | Runs TURN, derives TURN host/domain/port env, and persists the TURN shared secret. | Required by `nextcloud` for Talk. |
-| `nextcloud` | app | Runs Nextcloud with Redis and Imaginary, optional Talk signaling, database auto-selection, LDAP filters, SAML SP registration, app launcher metadata, upload/memory defaults, and Talk secrets. | Requires `traefik` and `eturnal`; starts after Samba and database casks when present. Optional Talk is controlled by `talk_enabled`. |
-| `collabora` | app | Runs Collabora Online as an office editing backend and derives Traefik domain env. | Requires `traefik`. |
-| `llng` | identity | Runs LemonLDAP::NG as the current SSO portal, SAML IdP, OIDC provider, and app launcher. Generates SAML/OIDC signing material and copies app logos after start. | Starts after `traefik`. Can use PostgreSQL or MariaDB env when present. Optional Adminer is controlled by `adminer_enabled`. |
-| `keycloak` | identity | Identity cask scaffold based on current LLNG integration assets. Derives Keycloak-prefixed SAML/OIDC fields and database env, but the service assets still mirror LLNG-style integration. | Starts after `traefik`. Treat as scaffold until service-specific assets are completed. |
-| `lam` | identity | Runs LDAP Account Manager, derives domain/language/admin password, and connects to Samba LDAP env. | Requires `traefik`; starts after `samba_dc` when both are enabled. |
-| `meshcentral` | app | Runs MeshCentral with Traefik routing, LDAP auth filters, app-filter aware user restrictions, and configurable MPS port. | Requires `traefik` and `mariadb`; starts after `samba_dc` when present. |
+| `samba_fs` | storage | Runs a Samba file server joined to the domain and derives NetBIOS/default-domain settings. | Requires `samba_dc` and host LAN/macvlan. |
+| `postgres` | database | Runs PostgreSQL, derives host/port/network/password env, and optionally exposes Adminer through Traefik. | Requires `traefik`. Optional Adminer is controlled by `adminer_enabled`. |
+| `mariadb` | database | Runs MariaDB, derives root/user/password/mysql compatibility env, and optionally exposes Adminer through Traefik. | Requires `traefik`. Optional Adminer is controlled by `adminer_enabled`. |
+| `eturnal` | communication | Runs TURN, derives TURN host/domain/port env, and persists the TURN shared secret. | Requires `traefik`; required by `nextcloud` for Talk. |
+| `nextcloud` | app | Runs Nextcloud with Redis and Imaginary, optional Talk signaling, database auto-selection, LDAP filters, SAML SP registration, app launcher metadata, upload/memory defaults, and Talk secrets. | Requires `traefik`, `eturnal`, `samba_dc`, and one relational database. Optional Talk is controlled by `talk_enabled`. |
+| `collabora` | app | Runs Collabora Online as an office editing backend and derives Traefik domain env. | Requires `nextcloud`, which provides its transitive Traefik and Samba dependencies. |
+| `llng` | identity | Runs LemonLDAP::NG as the current SSO portal, SAML IdP, OIDC provider, and app launcher. Generates SAML/OIDC signing material and copies app logos after start. | Requires `traefik`, `samba_dc`, and one relational database. Optional Adminer is controlled by `adminer_enabled`. |
+| `keycloak` | identity | Identity cask scaffold based on current LLNG integration assets. Derives Keycloak-prefixed SAML/OIDC fields and database env, but the service assets still mirror LLNG-style integration. | Requires `traefik`, `samba_dc`, and one relational database. Treat as scaffold until service-specific assets are completed. |
+| `lam` | identity | Runs LDAP Account Manager, derives domain/language/admin password, and connects to Samba LDAP env. | Requires `traefik` and `samba_dc`. |
+| `meshcentral` | app | Runs MeshCentral with Traefik routing, LDAP auth filters, app-filter aware user restrictions, and configurable MPS port. | Requires `traefik`, `mariadb`, and `samba_dc`. |
 | `ddns` | network | Runs qmcgaw/ddns-updater and generates DNSPod settings for base-domain and wildcard IPv4/IPv6 records when `DNS_PROVIDER=dnspod`. | Requires `traefik` for dashboard routing and `global.dns_provider`. |
-| `netbird` | network | Incomplete experimental dashboard, signal, and management scaffold; excluded from the full example. | Persistence and the complete login/management flow must be designed before it is restored to recommended deployments. |
-| `freeradius` | network | Experimental FreeRADIUS manifest scaffold only. The current compose file still mirrors the Lego scaffold and is not a complete RADIUS deployment. | Status `experimental`; do not treat as production-ready. |
+| `netbird` | network | Incomplete experimental dashboard, signal, and management scaffold; excluded from the full example. | Requires `traefik` and one SSO provider (`keycloak` or `llng`). Persistence and the complete management flow still need work. |
+| `freeradius` | network | Experimental FreeRADIUS manifest scaffold only. The current compose file still mirrors the Lego scaffold and is not a complete RADIUS deployment. | Requires `lego`; status `experimental`. |
 
 Current limitations:
 
 - Root-level Ruby casks still exist in the repository, but they are legacy and
   outside the Go cask rules.
-- Current migrated casks mostly use `dependencies.before`; new casks should use
-  `dependencies.requires` when version constraints are needed.
 - `keycloak` and `freeradius` are scaffolds and need service-specific cleanup
   before production use.
 - The runner does not execute arbitrary Ruby template code. Complex rendering

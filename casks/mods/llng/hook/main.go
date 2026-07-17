@@ -190,17 +190,13 @@ func identityCalc(prefix string) func(map[string]string, *secretStore) error {
 			e[keyPrefix+"_DOMAIN_PORT"] = e[keyPrefix+"_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
 			e[keyPrefix+"_DOMAIN_FULL"] = "https://" + e[keyPrefix+"_DOMAIN_PORT"]
 		}
-		if e[prefix+"_DB_TYPE"] == "" {
-			if e["POSTGRES_HOST"] != "" {
-				e[prefix+"_DB_TYPE"] = "postgres"
-			} else if e["MARIADB_HOST"] != "" {
-				e[prefix+"_DB_TYPE"] = "mariadb"
-			}
-		}
-		if e[prefix+"_DB_TYPE"] == "mariadb" {
+		switch e[prefix+"_DB_TYPE"] {
+		case "mariadb":
 			e[prefix+"_NETWORK_DB"] = e["MARIADB_NETWORK_NAME"]
-		} else {
+		case "postgres":
 			e[prefix+"_NETWORK_DB"] = e["POSTGRES_NETWORK_NAME"]
+		default:
+			return fmt.Errorf("%s_DB_TYPE must be resolved to postgres or mariadb", prefix)
 		}
 		e[prefix+"_HOST"] = "llng"
 		e[prefix+"_HANDLER_SOCKET_PORT"] = "9000"

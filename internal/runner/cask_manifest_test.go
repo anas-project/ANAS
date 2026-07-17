@@ -40,6 +40,11 @@ func TestCasksUseManifestRule(t *testing.T) {
 				Type        string `yaml:"type"`
 				ComposeFile string `yaml:"compose_file"`
 			} `yaml:"runtime"`
+			Dependencies struct {
+				Requires    []manifestDependency            `yaml:"requires"`
+				RequiresOne []manifestAlternativeDependency `yaml:"requires_one"`
+				After       []string                        `yaml:"after"`
+			} `yaml:"dependencies"`
 			Config struct {
 				Required []string                        `yaml:"required"`
 				Defaults map[string]any                  `yaml:"defaults"`
@@ -82,6 +87,11 @@ func TestCasksUseManifestRule(t *testing.T) {
 		if manifest.Runtime.Type == "compose" && manifest.Runtime.ComposeFile == "" {
 			t.Fatalf("%s compose runtime is missing compose_file", entry.Name())
 		}
+		for _, dep := range manifest.Dependencies.RequiresOne {
+			if looksLikeEnvParam(dep.SelectedBy) {
+				t.Fatalf("%s requires_one selected_by %q should use lower snake_case", entry.Name(), dep.SelectedBy)
+			}
+		}
 		for _, key := range manifest.Config.Required {
 			if looksLikeEnvParam(key) {
 				t.Fatalf("%s required parameter %q should use lower snake_case", entry.Name(), key)
@@ -123,6 +133,31 @@ func TestCasksUseManifestRule(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no casks checked")
+	}
+}
+
+func TestManifestRejectsRemovedBeforeDependencyField(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "example")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `api_version: anas.dev/v1
+kind: Cask
+name: example
+version: 1.0.0
+abi:
+  supports: [anas.cask/v1]
+runtime:
+  type: builtin
+dependencies:
+  before: [core]
+`
+	if err := os.WriteFile(filepath.Join(dir, "cask.yml"), []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadModuleManifest(dir, "example")
+	if err == nil || !strings.Contains(err.Error(), "field before not found") {
+		t.Fatalf("error = %v, want strict rejection of dependencies.before", err)
 	}
 }
 

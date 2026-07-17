@@ -12,8 +12,8 @@ runtime:
   type: compose
   compose_file: docker-compose.yml
 dependencies:
-  before:
-    - core
+  requires:
+    - traefik
 config:
   env_prefix: TURN
   defaults:

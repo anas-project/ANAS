@@ -11,9 +11,6 @@ category: certificate
 runtime:
   type: compose
   compose_file: docker-compose.yml
-dependencies:
-  before:
-    - core
 config:
   required:
     - global.dns_provider

@@ -12,10 +12,9 @@ runtime:
   type: compose
   compose_file: docker-compose.yml
 dependencies:
-  before:
+  requires:
     - traefik
     - mariadb
-  after:
     - samba_dc
 config:
   defaults:

@@ -57,6 +57,8 @@ services:
     env:
       domain_prefix: cloud
       upload_max_size: 32G
+      # Advanced override: auto, postgres, or mariadb.
+      db_type: auto
 ```
 
 Service env keys are automatically converted to the service prefix. The example
@@ -68,6 +70,11 @@ the structured `global`, `secrets`, or `services` sections.
 Set `services.<name>.enabled: false` to exclude a module listed under
 `modules`. Disabling a module required by another enabled module is an error.
 
+Cask dependency semantics are explicit: `requires` selects and orders a hard
+dependency, `requires_one` selects exactly one capability provider, and `after`
+only orders two casks when both were selected. Unknown or obsolete manifest
+fields are rejected instead of being ignored.
+
 ## Generated State
 
 Runtime files are written below the selected base path:
@@ -76,8 +83,8 @@ Runtime files are written below the selected base path:
 - `tmp/`: temporary render/build directory before atomic promotion.
 - `secrets.generated.yml`: persistent generated secrets such as SSH keys,
   TURN secrets, OIDC client secrets, and SAML/OIDC signing keys.
-- `cask.lock.yml`: installed cask versions and source paths used for upgrade
-  checks.
+- `cask.lock.yml`: installed cask versions, source paths, and resolved capability
+  provider bindings used for upgrades and stable restarts.
 - `state/config-applied.yml`: hashes of explicit settings from the last
   successful start; it contains no plaintext configuration values.
 - `go-build-cache/`: Go build cache used when running cask hooks.
@@ -93,6 +100,8 @@ The launcher covers:
 - cask ABI validation with `anas.cask/v1`
 - semantic cask versions, dependency version constraints, upgrade checks, and a
   persisted cask lock file
+- alternative capability providers with stable lock-file bindings (for example,
+  PostgreSQL or MariaDB for application casks)
 - module dependency ordering
 - structured YAML config loading
 - default env generation and cask hook based derived env generation

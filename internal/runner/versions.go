@@ -28,8 +28,9 @@ func parseVersionConstraint(raw string) (*semver.Constraints, error) {
 }
 
 type caskLock struct {
-	APIVersion string                    `yaml:"api_version"`
-	Casks      map[string]caskLockRecord `yaml:"casks"`
+	APIVersion string                       `yaml:"api_version"`
+	Casks      map[string]caskLockRecord    `yaml:"casks"`
+	Bindings   map[string]map[string]string `yaml:"bindings,omitempty"`
 }
 
 type caskLockRecord struct {
@@ -58,6 +59,9 @@ func loadCaskLock(base string) (*caskLock, error) {
 	if lock.Casks == nil {
 		lock.Casks = map[string]caskLockRecord{}
 	}
+	if lock.Bindings == nil {
+		lock.Bindings = map[string]map[string]string{}
+	}
 	return &lock, nil
 }
 
@@ -67,6 +71,9 @@ func (l *caskLock) Save(base string) error {
 	}
 	if l.Casks == nil {
 		l.Casks = map[string]caskLockRecord{}
+	}
+	if l.Bindings == nil {
+		l.Bindings = map[string]map[string]string{}
 	}
 	b, err := yaml.Marshal(l)
 	if err != nil {
@@ -158,18 +165,32 @@ func validateDependencyVersion(owner string, dep Dependency, actual string) erro
 	return nil
 }
 
-func (a *app) updateCaskLock(lock *caskLock) {
+func (a *app) updateCaskLock(lock *caskLock, persistBindings bool) {
 	if lock.APIVersion == "" {
 		lock.APIVersion = "anas.dev/v1"
 	}
 	if lock.Casks == nil {
 		lock.Casks = map[string]caskLockRecord{}
 	}
+	if lock.Bindings == nil {
+		lock.Bindings = map[string]map[string]string{}
+	}
 	for _, name := range a.order {
 		mod := a.reg[name]
 		lock.Casks[name] = caskLockRecord{
 			Version: mod.Version,
 			Source:  filepath.ToSlash(filepath.Join("casks", "mods", name)),
+		}
+	}
+	if !persistBindings {
+		return
+	}
+	for module, bindings := range a.resolvedBindings {
+		if lock.Bindings[module] == nil {
+			lock.Bindings[module] = map[string]string{}
+		}
+		for capability, provider := range bindings {
+			lock.Bindings[module][capability] = provider
 		}
 	}
 }

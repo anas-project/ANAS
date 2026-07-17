@@ -1,6 +1,9 @@
 package runner
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestVersionConstraintHyphenRange(t *testing.T) {
 	constraint, err := parseVersionConstraint("1.0.1 - 1.5.1")
@@ -60,5 +63,24 @@ func TestDependencyVersionConstraints(t *testing.T) {
 		if !tt.wantErr && err != nil {
 			t.Fatalf("%s: %v", tt.name, err)
 		}
+	}
+}
+
+func TestCaskLockPersistsResolvedBindings(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "runtime")
+	lock := &caskLock{
+		APIVersion: "anas.dev/v1",
+		Casks:      map[string]caskLockRecord{"nextcloud": {Version: "30.0.1"}},
+		Bindings:   map[string]map[string]string{"nextcloud": {"relational_database": "mariadb"}},
+	}
+	if err := lock.Save(base); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadCaskLock(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.Bindings["nextcloud"]["relational_database"]; got != "mariadb" {
+		t.Fatalf("binding = %q, want mariadb", got)
 	}
 }
