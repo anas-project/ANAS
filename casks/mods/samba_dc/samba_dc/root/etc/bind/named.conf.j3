@@ -1,0 +1,39 @@
+acl trusted-networks {
+    127.0.0.0/8;
+    ::1;
+    ${SAMBA_DC_DNS_ALLOWED_NETWORKS}
+};
+
+options {
+    directory "/var/cache/bind";
+    listen-on port 53 { 127.0.0.1; ${SAMBA_DC_DNS_SERVER}; };
+    listen-on-v6 { any; };
+    auth-nxdomain no;
+    recursion yes;
+    allow-query { trusted-networks; };
+    allow-query-cache { trusted-networks; };
+    allow-recursion { trusted-networks; };
+    allow-transfer { none; };
+    // Secure AD dynamic updates are authorized by the Samba DLZ module.
+    forwarders {
+        ${SAMBA_DC_DNS_FORWARDERS}
+    };
+    dnssec-validation auto;
+    empty-zones-enable no;
+    minimal-responses yes;
+    pid-file "/run/named/named.pid";
+    session-keyfile "/run/named/session.key";
+    tkey-gssapi-keytab "/var/lib/samba/private/dns.keytab";
+};
+
+zone "localhost" {
+    type primary;
+    file "master/localhost.zone";
+};
+
+zone "0.0.127.in-addr.arpa" {
+    type primary;
+    file "master/0.0.127.zone";
+};
+
+include "/var/lib/samba/bind-dns/named.conf";

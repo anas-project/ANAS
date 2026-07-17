@@ -6,9 +6,6 @@ casks:
   lego:
     version: 4.10.0
     source: casks/mods/lego
-  bind:
-    version: 20.03.0
-    source: casks/mods/bind
   samba_dc:
     version: 24.03.0
     source: casks/mods/samba_dc

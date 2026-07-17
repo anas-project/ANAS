@@ -10,7 +10,6 @@ modules:
   - meshcentral
   - netbird
   - lam
-  - bind
   - ddns
   - eturnal
   - freeradius
@@ -21,7 +20,7 @@ global:
   data_path: /data/anas-refactor-test/data
   timezone: Asia/Shanghai
   dns_provider: manual
-  default_root_password: change-me-now
+  default_service_root_password: change-me-now
 
 env:
   BASICAUTH_USER: admin

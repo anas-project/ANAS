@@ -46,7 +46,7 @@ for label in nas traefik auth nc meshcentral netbird lam ddns; do
   printf '%s.%s=%s\n' "$label" "$domain" "$result"
   test "$result" = "$entry_ip"
 done
-named_count=$($docker_cmd exec "$(container bind)" sh -c 'pgrep -x named | wc -l')
+named_count=$($docker_cmd exec "$(container samba_dc)" sh -c 'pgrep -x named | wc -l')
 printf 'named_processes=%s\n' "$named_count"
 test "$named_count" -eq 1
 

@@ -7,7 +7,7 @@ global:
   data_path: /home/whl/anas-refactor-test/.anas-test/server-data
   timezone: Asia/Shanghai
   dns_provider: manual
-  default_root_password: change-me-now
+  default_service_root_password: change-me-now
 
 env:
   BASICAUTH_USER: admin

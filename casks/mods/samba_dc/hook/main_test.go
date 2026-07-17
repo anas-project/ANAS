@@ -7,15 +7,38 @@ import (
 
 func TestCalcSambaDCHostIPDefaultsToHostIP(t *testing.T) {
 	env := map[string]string{
-		"BASE_DOMAIN": "nas.test",
-		"SERVER_NAME": "fengoffice",
-		"HOST_IP":     "192.0.2.10",
+		"BASE_DOMAIN":      "nas.test",
+		"SERVER_NAME":      "fengoffice",
+		"HOST_IP":          "192.0.2.10",
+		"HOST_SUBNET_MASK": "24",
+		"HOST_DNS_SERVER":  "192.0.2.1 1.1.1.1",
 	}
 	if err := calcSambaDC(env, "", &secretStore{values: map[string]string{}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := env["SAMBA_DC_HOST_IP"]; got != "192.0.2.10" {
 		t.Fatalf("SAMBA_DC_HOST_IP = %q", got)
+	}
+	if got := env["SAMBA_DC_DNS_SERVER"]; got != "192.0.2.10" {
+		t.Fatalf("SAMBA_DC_DNS_SERVER = %q", got)
+	}
+	if got := env["SAMBA_DC_DNS_FORWARDERS"]; got != "192.0.2.1; 1.1.1.1;" {
+		t.Fatalf("SAMBA_DC_DNS_FORWARDERS = %q", got)
+	}
+	if got := env["SAMBA_DC_DNS_ALLOWED_NETWORKS"]; got != "192.0.2.0/24;" {
+		t.Fatalf("SAMBA_DC_DNS_ALLOWED_NETWORKS = %q", got)
+	}
+}
+
+func TestHostNetworkCIDRNormalizesHostAddress(t *testing.T) {
+	if got, want := hostNetworkCIDR("192.168.127.117", "24"), "192.168.127.0/24"; got != want {
+		t.Fatalf("hostNetworkCIDR() = %q, want %q", got, want)
+	}
+}
+
+func TestDNSListAcceptsCommonSeparators(t *testing.T) {
+	if got, want := dnsList("1.1.1.1;8.8.8.8, 9.9.9.9"), "1.1.1.1; 8.8.8.8; 9.9.9.9;"; got != want {
+		t.Fatalf("dnsList() = %q, want %q", got, want)
 	}
 }
 

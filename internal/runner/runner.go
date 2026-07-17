@@ -540,9 +540,6 @@ func writeEnv(path string, env map[string]string) error {
 	sort.Strings(keys)
 	w := bufio.NewWriter(f)
 	for _, k := range keys {
-		if internalEnv(k) {
-			continue
-		}
 		fmt.Fprintf(w, "%s=%s\n", k, quoteEnv(env[k]))
 	}
 	return w.Flush()
@@ -600,15 +597,6 @@ func promoteRelease(staging, release string) error {
 		return err
 	}
 	return os.RemoveAll(backup)
-}
-
-func internalEnv(k string) bool {
-	switch k {
-	case "SSH_PRIVATE_KEY_PEM", "SSH_RSA_PRIVATE":
-		return true
-	default:
-		return false
-	}
 }
 
 func quoteEnv(v string) string {

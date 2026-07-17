@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -120,7 +122,6 @@ func renderEnv(module string, env map[string]string, workdir string) (map[string
 	if err := krb5Env(env, workdir); err != nil {
 		return nil, err
 	}
-	files["samba_dc/root/root/.ssh/authorized_keys"] = env["SSH_RSA_PRIVATE"]
 	return files, nil
 }
 func disabledServices(module string, env map[string]string) []string {
@@ -168,6 +169,9 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_LDAPS_SERVER_URL"] = defaultValue(e["SAMBA_DC_LDAPS_SERVER_URL"], "ldaps://"+domain)
 	e["SAMBA_DC_HOST"] = domain
 	e["SAMBA_DC_HOST_IP"] = defaultValue(e["SAMBA_DC_HOST_IP"], e["HOST_IP"])
+	e["SAMBA_DC_DNS_SERVER"] = e["SAMBA_DC_HOST_IP"]
+	e["SAMBA_DC_DNS_FORWARDERS"] = dnsList(defaultValue(e["SAMBA_DC_DNS_FORWARDERS"], e["HOST_DNS_SERVER"]))
+	e["SAMBA_DC_DNS_ALLOWED_NETWORKS"] = dnsList(defaultValue(e["SAMBA_DC_DNS_ALLOWED_NETWORKS"], hostNetworkCIDR(e["HOST_IP"], e["HOST_SUBNET_MASK"])))
 	e["SAMBA_DC_LDAPS_PORT"] = "636"
 	e["SAMBA_DC_LDAPS_SERVER_URL_PORT"] = e["SAMBA_DC_LDAPS_SERVER_URL"] + ":" + e["SAMBA_DC_LDAPS_PORT"]
 	e["SAMBA_DC_WORKGROUP"] = strings.ToUpper(defaultValue(e["SAMBA_DC_WORKGROUP"], strings.Split(domain, ".")[0]))
@@ -220,6 +224,28 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	return nil
 }
 func krb5Env(e map[string]string, _ string) error { e["KRB5RCACHETYPE"] = "none"; return nil }
+
+func dnsList(value string) string {
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == ',' || r == ';'
+	})
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.Join(fields, "; ") + ";"
+}
+
+func hostNetworkCIDR(address, prefix string) string {
+	prefixLength, err := strconv.Atoi(prefix)
+	if err != nil || prefixLength < 0 || prefixLength > 32 {
+		return ""
+	}
+	_, network, err := net.ParseCIDR(address + "/" + strconv.Itoa(prefixLength))
+	if err != nil {
+		return ""
+	}
+	return network.String()
+}
 
 func ensurePassword(explicit, key string, secrets *secretStore) (string, error) {
 	if explicit != "" {

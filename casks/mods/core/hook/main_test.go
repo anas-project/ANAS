@@ -1,9 +1,6 @@
 package main
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestCalcVLANAcceptsSlash28(t *testing.T) {
 	env, err := calcVLAN("192.0.2.2", "28")
@@ -46,8 +43,5 @@ func TestCalcCoreUsesExplicitHostNetwork(t *testing.T) {
 	}
 	if env["LOCAL_DNS_SERVER"] != "10.254.0.1" {
 		t.Fatalf("LOCAL_DNS_SERVER = %q", env["LOCAL_DNS_SERVER"])
-	}
-	if !strings.HasPrefix(env["SSH_RSA_PRIVATE"], "ssh-rsa ") {
-		t.Fatal("expected generated SSH public key")
 	}
 }

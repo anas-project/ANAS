@@ -1,7 +1,6 @@
 modules:
   - samba_dc
   - samba_fs
-  - bind
 
 global:
   domain: nas.test
@@ -9,7 +8,7 @@ global:
   data_path: ./.anas-test/data
   timezone: Asia/Shanghai
   dns_provider: manual
-  default_root_password: change-me-now
+  default_service_root_password: change-me-now
 
 env:
   BASICAUTH_USER: admin

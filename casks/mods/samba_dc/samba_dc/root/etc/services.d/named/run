@@ -1,0 +1,14 @@
+#!/usr/bin/with-contenv bash
+set -euo pipefail
+
+while [ ! -f /var/lib/samba/.anas-zone-ready ]; do
+  echo "Waiting for the initial AD DNS records..."
+  sleep 2
+done
+
+args=(-u bind -g)
+if [ "${SAMBA_DC_DNS_DEBUG:-false}" = "true" ]; then
+  args+=(-d 5)
+fi
+
+exec named "${args[@]}"

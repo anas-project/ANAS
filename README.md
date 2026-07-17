@@ -103,7 +103,6 @@ The launcher covers:
 - Docker Compose detection and execution
 - build/start/restart/stop/render/plan commands
 - persistent generated secrets
-- Samba SSH helper files
 - LLNG/Keycloak SAML/OIDC material generation
 - Nextcloud, Netbird, Meshcentral, LDAP app integration variables
 - macvlan setup for modules that require host LAN
@@ -114,7 +113,7 @@ Current casks provide:
 - base runtime defaults and host network discovery through `core`
 - ACME certificate files through `lego`
 - HTTPS routing through `traefik`
-- local DNS and Samba AD support through `bind` and `samba_dc`
+- local BIND9-DLZ DNS and Samba AD support through `samba_dc`
 - domain-joined file sharing through `samba_fs`
 - PostgreSQL and MariaDB data stores with optional Adminer UIs
 - TURN support through `eturnal`

@@ -68,8 +68,8 @@ do
   fi
 done
 
-# BIND reads the Samba database through SSHFS.  Writing the database through
-# the DLZ mount is unsafe, so publish only after all local updates are complete.
+# Publish the local AD database only after the initial application records have
+# been reconciled. The named service uses this marker as its startup gate.
 touch /var/lib/samba/.anas-zone-ready
 waiting_dns
 printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf

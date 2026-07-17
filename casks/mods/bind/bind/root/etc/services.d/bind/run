@@ -1,9 +1,0 @@
-#!/usr/bin/with-contenv bash
-
-source /usr/local/bin/envs.sh
-
-if [ $BIND_DEBUG == "true" ]; then
-  exec named -u $exec_user -g -d 5 2>&1 | tee /tmp/named.log # Debug
-else
-  exec named -u $exec_user -g
-fi

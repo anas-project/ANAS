@@ -241,11 +241,10 @@ added implicitly for non-core casks.
 
 | Cask | Category | Current functionality | Dependencies and notes |
 | --- | --- | --- | --- |
-| `core` | system | Provides shared defaults, host and gateway discovery, basic auth hash generation, SSH key generation, data path variables, DNS defaults, and VLAN/macvlan env values. | Required implicitly by every non-core cask. |
+| `core` | system | Provides shared defaults, host and gateway discovery, basic auth hash generation, data path variables, DNS defaults, and VLAN/macvlan env values. | Required implicitly by every non-core cask. |
 | `lego` | certificate | Prepares ACME certificate paths, email, certificate names, and certificate storage used by web and domain services. | Requires DNS provider config through `global.dns_provider`; currently ordered after `core`. |
 | `traefik` | network | Builds and runs the HTTPS reverse proxy, dashboard, TLS routing, and basic-auth protected API. Generates service domain env from `domain_prefix`. | Requires `lego`; exposes the shared `traefik` Docker network. |
-| `bind` | network | Runs local DNS, derives forwarders from host DNS, exports host IP, and sets Kerberos cache env for Samba integrations. | Requires `core`; used with `samba_dc`. |
-| `samba_dc` | identity | Runs an AD-compatible Samba domain controller, derives realm, base DN, LDAP filters, admin DN, app group DN, LDAPS endpoints, and Kerberos settings. | Requires `lego` and `bind`. Acts as the LDAP provider for LDAP-aware casks. |
+| `samba_dc` | identity | Runs an AD-compatible Samba domain controller and BIND9-DLZ DNS in one container; derives DNS forwarders, realm, base DN, LDAP filters, admin DN, app group DN, LDAPS endpoints, and Kerberos settings. | Requires `lego`. Acts as the DNS and LDAP provider for dependent casks. |
 | `samba_fs` | storage | Runs a Samba file server joined to the domain and derives NetBIOS/default-domain settings. | Starts after `samba_dc` when both are enabled. Requires host LAN/macvlan. |
 | `postgres` | database | Runs PostgreSQL, derives host/port/network/password env, and optionally exposes Adminer through Traefik. | Starts after `traefik` when Adminer is used. Optional Adminer is controlled by `adminer_enabled`. |
 | `mariadb` | database | Runs MariaDB, derives root/user/password/mysql compatibility env, and optionally exposes Adminer through Traefik. | Starts after `traefik` when Adminer is used. Optional Adminer is controlled by `adminer_enabled`. |

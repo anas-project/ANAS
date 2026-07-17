@@ -1,17 +1,12 @@
 package main
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha1"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"os"
 	"os/exec"
@@ -163,7 +158,7 @@ func changed(old, cur map[string]string) map[string]string {
 	}
 	return out
 }
-func calcCore(e map[string]string, _ string, secrets *secretStore) error {
+func calcCore(e map[string]string, _ string, _ *secretStore) error {
 	e["DOCKER_ALPINE_VERSION"] = "3.15"
 	if e["SERVER_NAME"] == "" {
 		if h, err := os.Hostname(); err == nil {
@@ -213,12 +208,6 @@ func calcCore(e map[string]string, _ string, secrets *secretStore) error {
 			e[k] = v
 		}
 	}
-	priv, pub, err := ensureSSHKey(secrets)
-	if err != nil {
-		return err
-	}
-	e["SSH_PRIVATE_KEY_PEM"] = priv
-	e["SSH_RSA_PRIVATE"] = pub
 	e["LOCAL_DNS_SERVER"] = defaultValue(e["LOCAL_DNS_SERVER"], e["HOST_IP"])
 	e["USERDATA_PATH"] = defaultValue(e["USERDATA_PATH"], filepath.Join(e["DATA_PATH"], e["USERDATA_NAME"]))
 	e["DOWNLOAD_DIR_NAME"] = defaultValue(e["DOWNLOAD_DIR_NAME"], "Downloads")
@@ -231,50 +220,6 @@ func defaultValue(v, d string) string {
 		return d
 	}
 	return v
-}
-func ensureSSHKey(secrets *secretStore) (string, string, error) {
-	priv, err := secrets.Ensure("SSH_PRIVATE_KEY_PEM", func() (string, error) {
-		key, err := rsa.GenerateKey(rand.Reader, 2048)
-		if err != nil {
-			return "", err
-		}
-		return string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})), nil
-	})
-	if err != nil {
-		return "", "", err
-	}
-	pub, err := secrets.Ensure("SSH_RSA_PUBLIC_KEY", func() (string, error) {
-		block, _ := pem.Decode([]byte(priv))
-		if block == nil {
-			return "", fmt.Errorf("invalid generated ssh private key")
-		}
-		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-		if err != nil {
-			return "", err
-		}
-		return authorizedKey(&key.PublicKey), nil
-	})
-	return priv, pub, err
-}
-func authorizedKey(pub *rsa.PublicKey) string {
-	parts := []byte{}
-	parts = appendSSHString(parts, []byte("ssh-rsa"))
-	parts = appendMPInt(parts, big.NewInt(int64(pub.E)))
-	parts = appendMPInt(parts, pub.N)
-	return "ssh-rsa " + base64.StdEncoding.EncodeToString(parts) + " anas"
-}
-func appendSSHString(dst, b []byte) []byte {
-	var l [4]byte
-	binary.BigEndian.PutUint32(l[:], uint32(len(b)))
-	dst = append(dst, l[:]...)
-	return append(dst, b...)
-}
-func appendMPInt(dst []byte, n *big.Int) []byte {
-	b := n.Bytes()
-	if len(b) > 0 && b[0]&0x80 != 0 {
-		b = append([]byte{0}, b...)
-	}
-	return appendSSHString(dst, b)
 }
 func detectHostNetwork(preferred string) (hostNetwork, error) {
 	gateway, ifaceName := defaultRoute()

@@ -5,8 +5,8 @@ version: 24.04.0
 abi:
   supports:
     - anas.cask/v1
-title: Samba domain controller
-description: Active Directory compatible domain controller and LDAP source.
+title: Samba domain controller and DNS
+description: Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server.
 category: identity
 runtime:
   type: compose
@@ -14,7 +14,6 @@ runtime:
 dependencies:
   before:
     - lego
-    - bind
 config:
   defaults:
     app_filter: "true"
@@ -32,6 +31,9 @@ config:
     user_lockout_reset_after: "30"
     ldap_bind_name: svc_ldap
     password_bind_name: svc_password
+    dns_debug: "false"
+    dns_forwarders: ""
+    dns_allowed_networks: ""
     log_level: "1"
   changes:
     realm:
@@ -98,11 +100,21 @@ config:
       effect: container_recreate
       apply: recreate-samba-dc
       description: The generated smb.conf is installed during container initialization.
+    dns_debug:
+      effect: container_recreate
+      apply: recreate-samba-dc
+      description: The named process debug level is selected when the container starts.
+    dns_forwarders:
+      effect: container_recreate
+      apply: recreate-samba-dc
+      description: The generated BIND configuration is installed during container initialization.
+    dns_allowed_networks:
+      effect: container_recreate
+      apply: recreate-samba-dc
+      description: BIND recursion and cache access are restricted to these networks.
 features:
   ldap_provider: true
   kerberos_env: true
-  special_files:
-    - samba_dc/root/root/.ssh/authorized_keys
 logic:
   hook:
     command:

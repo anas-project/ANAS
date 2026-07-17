@@ -24,7 +24,6 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 | 模块 | 当前持久状态 | 判断与处理建议 |
 | --- | --- | --- |
 | `core` | `${base}/secrets.generated.yml`、`cask.lock.yml`、`release/` | generated secrets 是关键状态；lock 是升级元数据；release 可重建。新增 applied state。 |
-| `bind` | 无独立卷；SSH 私钥来自 generated secrets | DNS 主数据实际由 Samba AD 保存。渲染配置可重建。 |
 | `collabora` | 无 | 无关键本地状态。 |
 | `ddns` | `/updater/data` 未挂载 | 当前主要损失是历史/缓存；若启用备份或依赖更新历史，应挂载为可选运行状态。 |
 | `eturnal` | `TURN_SECRET` 在 generated secrets | 已满足稳定密钥要求，无业务卷。 |
@@ -38,7 +37,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 | `netbird` | 当前没有任何持久卷 | 功能尚未完成，已标记为 experimental 并从完整示例移除。本阶段不补持久化；正式恢复前必须先决定保留还是删除。 |
 | `nextcloud` | `${NEXTCLOUD_BASE_PATH}/nextcloud`、Redis 数据、外部数据库、`.anas-state` 标记 | Nextcloud 数据目录和数据库必须一致备份；Redis 可重建；Memories 标记正确地跟随数据卷。Talk 的 signaling `hashkey/blockkey` 已改为 generated secrets。 |
 | `postgres` | `${DATA_PATH}/postgres` | 关键数据库状态；首次初始化脚本保留，同时增加一次性在线 reconciler，后续新增模块也能幂等创建数据库。 |
-| `samba_dc` | `${DATA_PATH}/samba_dc/var`、generated secrets | AD 数据库、域 SID、机器账户、GPO、用户/组、内部 TLS 是关键状态。按当前产品边界忽略 SSH host key，不纳入持久状态管理。 |
+| `samba_dc` | `${DATA_PATH}/samba_dc/var`、generated secrets | AD 数据库、BIND9-DLZ DNS、域 SID、机器账户、GPO、用户/组、内部 TLS 是关键状态；BIND 配置和缓存可由 cask 重建。 |
 | `samba_fs` | `${USERDATA_PATH}`、`${DATA_PATH}/samba_fs/var`、guest ACL 状态文件 | 用户文件是关键数据；member join 状态可重建但应持久化；guest ACL 标记与 userdata 同卷，可避免每次启动递归扫描，当前方向正确。 |
 | `traefik` | 无；只读使用 lego 证书 | 路由配置可重建，无独立关键状态。 |
 

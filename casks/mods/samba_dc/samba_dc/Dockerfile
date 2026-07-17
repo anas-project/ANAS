@@ -17,11 +17,12 @@ RUN apt-get update \
   libnss-winbind \
   krb5-kdc \
   libpam-krb5 \
+  bind9 \
+  bind9-utils \
   iproute2 \
   dnsutils \
   ldb-tools \
   gettext \
-  openssh-server \
   netcat-openbsd \
   && apt-get clean \
   && rm -rf \
@@ -34,12 +35,11 @@ COPY root/ /
 
 RUN chmod +x \
   /etc/services.d/samba_dc/run \
-  /etc/services.d/sshd/run \
+  /etc/services.d/named/run \
   /usr/local/bin/structure.sh \
   /usr/local/bin/anas_zone.sh \
   /etc/cont-init.d/11-samba_dc.sh \
-  /etc/cont-init.d/12-ssh.sh
+  /etc/cont-init.d/12-bind.sh
 
 VOLUME /var/lib/samba
-EXPOSE 88 88/udp 135 137-138/udp 139 389 389/udp 445 464 464/udp 636 3268-3269 49152-65535 \
-  2049
+EXPOSE 53 53/udp 88 88/udp 135 137-138/udp 139 389 389/udp 445 464 464/udp 636 3268-3269 49152-65535

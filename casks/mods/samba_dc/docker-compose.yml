@@ -10,12 +10,10 @@ services:
     image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
     restart: unless-stopped
     network_mode: host
-    cap_add:
-      - SYS_ADMIN
     env_file:
       - .env
     healthcheck:
-      test: ["CMD-SHELL", "test -f /run/anas-zone.ready && samba-tool domain level show >/dev/null && samba-tool user show \"$$SAMBA_DC_ADMIN_NAME\" >/dev/null && nc -z 127.0.0.1 88 && nc -z 127.0.0.1 389 && nc -z 127.0.0.1 636 && host \"$$SAMBA_DC_DC_DOMAIN\" 127.0.0.1 >/dev/null"]
+      test: ["CMD-SHELL", "test -f /run/anas-zone.ready && pgrep -x named >/dev/null && samba-tool domain level show >/dev/null && samba-tool user show \"$$SAMBA_DC_ADMIN_NAME\" >/dev/null && nc -z 127.0.0.1 53 && nc -z 127.0.0.1 88 && nc -z 127.0.0.1 389 && nc -z 127.0.0.1 636 && host \"$$SAMBA_DC_DC_DOMAIN\" 127.0.0.1 >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 6
