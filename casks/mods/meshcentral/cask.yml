@@ -20,6 +20,11 @@ config:
   defaults:
     domain_prefix: meshcentral
     mps_port: "4433"
+  # The container connects to MariaDB and binds to LDAP with these real
+  # credentials directly (config.json.erb).
+  consumes:
+    - MYSQL_PASSWORD
+    - SAMBA_DC_LDAP_BIND_PASSWORD
 features:
   ldap_client: true
   domain: true

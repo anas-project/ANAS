@@ -19,6 +19,9 @@ config:
     - global.dns_provider
   defaults:
     domain_prefix: ddns
+  # DNS provider credentials from the user secrets section.
+  consumes:
+    - DNSPOD_API_KEY
 features:
   domain: true
 logic:

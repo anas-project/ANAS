@@ -8,11 +8,14 @@ import (
 type Module struct {
 	Name        string
 	Version     string
+	AppVersion  string
 	UpgradeFrom string
 	SourceDir   string
 	EnvPrefix   string
 	Defaults    map[string]string
 	Required    []string
+	Consumes    []string
+	Exports     []string
 	Changes     map[string]ChangePolicy
 	Requires    []Dependency
 	RequiresOne []AlternativeDependency

@@ -2,6 +2,7 @@ api_version: anas.dev/v1
 kind: Cask
 name: llng
 version: 2.0.64
+app_version: 2.0.64
 abi:
   supports:
     - anas.cask/v1
@@ -32,6 +33,15 @@ config:
     enable_test: "true"
     adminer_enabled: "false"
     db_type: auto
+  # The portal renders SAML SP registrations, OIDC RP clients, and the app
+  # launcher published by application casks, and connects to its resolved
+  # database backend with that backend's real password.
+  consumes:
+    - SMAL_SP_*
+    - OIDC_RP_*
+    - APPS_LIST*
+    - POSTGRES_PASSWORD
+    - MARIADB_PASSWORD
   changes:
     password:
       effect: credential_rotate

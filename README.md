@@ -14,12 +14,23 @@ go run ./cmd/anas render -c config.example.yml -b ./.runtime
 go run ./cmd/anas build  -c config.example.yml -b ~/.anas
 go run ./cmd/anas start  -c config.example.yml -b ~/.anas
 go run ./cmd/anas stop   -b ~/.anas
+go run ./cmd/anas rollback -b ~/.anas
 go run ./cmd/anas config explain samba_dc.user_min_pass_length
 go run ./cmd/anas config set -c config.yml samba_dc.user_min_pass_length 10
 go run ./cmd/anas config plan -c config.yml -b ~/.anas
+go run ./cmd/anas config secret list -b ~/.anas
 ```
 
 `start --build` runs build first, then starts the rendered release.
+
+Starting with a config file renders into `tmp/`, reconciles running compose
+projects against the new render (`up -d` per cask plus an explicit `down` for
+casks removed from the config), and atomically promotes the render to
+`release/`. `start` and `restart` without `-c` treat the existing release as
+an immutable artifact: nothing is recalculated or re-rendered, and the frozen
+per-cask environments and hook binaries are used as-is. `rollback` swaps
+`release/` with `release.previous/`, restores the matching cask lock, and
+starts the restored artifact.
 
 The launcher locates casks from `--root`, `ANAS_ROOT`, the current directory,
 or the installation directory. Use `--root` when the binary and casks are
@@ -40,7 +51,8 @@ global:
   data_path: ./data
   timezone: Asia/Shanghai
   dns_provider: manual
-  # Human-facing administrator accounts inherit this value.
+  # Optional shared administrator password. When omitted, every cask gets its
+  # own generated root password; read them with `anas config secret get`.
   default_service_root_password: ChangeMe1!
 
 env:
@@ -80,6 +92,8 @@ fields are rejected instead of being ignored.
 Runtime files are written below the selected base path:
 
 - `release/`: the active rendered Compose projects.
+- `release.previous/`: the previously promoted release kept for `rollback`,
+  including a `.cask.lock.snapshot` of the matching cask lock.
 - `tmp/`: temporary render/build directory before atomic promotion.
 - `secrets.generated.yml`: persistent generated secrets such as SSH keys,
   TURN secrets, OIDC client secrets, and SAML/OIDC signing keys.
@@ -87,7 +101,15 @@ Runtime files are written below the selected base path:
   provider bindings used for upgrades and stable restarts.
 - `state/config-applied.yml`: hashes of explicit settings from the last
   successful start; it contains no plaintext configuration values.
-- `go-build-cache/`: Go build cache used when running cask hooks.
+- `hook-bin/`: hook binaries compiled once per run; each rendered cask also
+  carries its frozen copy as `.hook.bin`, so artifact starts need no Go
+  toolchain.
+- `go-build-cache/`: Go build cache used when compiling cask hooks.
+
+Each rendered cask's `.env` is scoped: it contains only global values, the
+cask's own and its dependency closure's keys, and keys the cask claims via
+manifest `config.consumes`. One cask (or its containers) never receives the
+credentials of unrelated casks.
 
 Do not commit runtime directories or generated secrets. The runtime base and
 generated `.env` files are owner-only because they contain service credentials.
@@ -178,6 +200,10 @@ and verify each enabled module.
 
 See [docs/ai-design.md](docs/ai-design.md) for the project structure, cask
 structure, and rules for designing new casks.
+
+See [docs/iam-capability-design.md](docs/iam-capability-design.md) for the
+proposed provider-neutral IAM capability model, OIDC/SAML negotiation,
+environment contract, provider selection, and migration plan.
 
 See [docs/config-state-lifecycle.md](docs/config-state-lifecycle.md) for the
 current persistent-state audit, first-start-only settings, and the proposed

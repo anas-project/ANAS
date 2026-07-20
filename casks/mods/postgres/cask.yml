@@ -2,6 +2,7 @@ api_version: anas.dev/v1
 kind: Cask
 name: postgres
 version: 15.3.0
+app_version: 15.3.0
 abi:
   supports:
     - anas.cask/v1
@@ -18,6 +19,11 @@ config:
   defaults:
     username: postgres
     adminer_enabled: "false"
+  # The provisioning script scans consumer casks' database declarations.
+  consumes:
+    - "*_DB_NAME"
+    - "*_DB_HOST"
+    - "*_NETWORK_DB"
   changes:
     username:
       effect: data_migrate

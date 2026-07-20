@@ -2,4 +2,4 @@
 set -eu
 
 repo_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-exec go run "$repo_dir/cmd/anas" "$@"
+ANAS_ROOT="${ANAS_ROOT:-$repo_dir}" exec go run "$repo_dir/cmd/anas" "$@"

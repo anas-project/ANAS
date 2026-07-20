@@ -22,6 +22,7 @@ type caskManifest struct {
 	Kind         string               `yaml:"kind"`
 	Name         string               `yaml:"name"`
 	Version      string               `yaml:"version"`
+	AppVersion   string               `yaml:"app_version"`
 	ABI          manifestABI          `yaml:"abi"`
 	Title        string               `yaml:"title"`
 	Description  string               `yaml:"description"`
@@ -84,6 +85,12 @@ type manifestConfig struct {
 	Required  []string                        `yaml:"required"`
 	Defaults  map[string]any                  `yaml:"defaults"`
 	Changes   map[string]manifestChangePolicy `yaml:"changes"`
+	// Consumes lists env keys (exact or trailing-* glob) produced outside this
+	// cask's dependency closure that its rendering and hooks may read.
+	Consumes []string `yaml:"consumes"`
+	// Exports lists env keys (exact or trailing-* glob) outside the cask's own
+	// prefix that its calculate hook is allowed to publish.
+	Exports []string `yaml:"exports"`
 }
 
 type manifestChangePolicy struct {
@@ -243,14 +250,25 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if envPrefix == "" {
 		envPrefix = defaultEnvPrefix(manifest.Name)
 	}
+	consumes, err := normalizeEnvPatterns(dirname, "consumes", manifest.Config.Consumes)
+	if err != nil {
+		return Module{}, err
+	}
+	exports, err := normalizeEnvPatterns(dirname, "exports", manifest.Config.Exports)
+	if err != nil {
+		return Module{}, err
+	}
 	mod := Module{
 		Name:        manifest.Name,
 		Version:     manifest.Version,
+		AppVersion:  strings.TrimSpace(manifest.AppVersion),
 		UpgradeFrom: manifest.Upgrade.From,
 		SourceDir:   dir,
 		EnvPrefix:   envPrefix,
 		Defaults:    normalizeDefaults(manifest.Name, envPrefix, manifest.Config.Defaults),
 		Required:    normalizeRequired(manifest.Name, envPrefix, manifest.Config.Required),
+		Consumes:    consumes,
+		Exports:     exports,
 		Changes:     changes,
 		Requires:    normalizeManifestDependencies(manifest.Dependencies.Requires),
 		RequiresOne: normalizeAlternativeDependencies(manifest.Dependencies.RequiresOne),
@@ -320,6 +338,46 @@ func normalizeRequired(module, prefix string, in []string) []string {
 
 func defaultEnvPrefix(module string) string {
 	return strings.ToUpper(strings.ReplaceAll(module, "-", "_"))
+}
+
+// normalizeEnvPatterns validates consumes/exports entries: an exact env key,
+// a prefix glob such as APPS_LIST__*, or a suffix glob such as *_DB_NAME used
+// by capability providers that scan their consumers' declarations.
+func normalizeEnvPatterns(cask, field string, in []string) ([]string, error) {
+	out := []string{}
+	for _, raw := range in {
+		pattern := strings.TrimSpace(raw)
+		if pattern == "" {
+			return nil, fmt.Errorf("cask %q config.%s contains an empty pattern", cask, field)
+		}
+		if stars := strings.Count(pattern, "*"); stars > 1 ||
+			(stars == 1 && !strings.HasSuffix(pattern, "*") && !strings.HasPrefix(pattern, "*")) {
+			return nil, fmt.Errorf("cask %q config.%s pattern %q may only have one leading or trailing *", cask, field, pattern)
+		}
+		out = append(out, pattern)
+	}
+	return out, nil
+}
+
+func matchEnvPattern(patterns []string, key string) bool {
+	for _, pattern := range patterns {
+		if prefix, ok := strings.CutSuffix(pattern, "*"); ok {
+			if strings.HasPrefix(key, prefix) {
+				return true
+			}
+			continue
+		}
+		if suffix, ok := strings.CutPrefix(pattern, "*"); ok {
+			if strings.HasSuffix(key, suffix) {
+				return true
+			}
+			continue
+		}
+		if key == pattern {
+			return true
+		}
+	}
+	return false
 }
 
 func paramEnvKey(module, prefix, key string) string {

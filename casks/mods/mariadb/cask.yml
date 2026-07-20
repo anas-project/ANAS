@@ -2,6 +2,7 @@ api_version: anas.dev/v1
 kind: Cask
 name: mariadb
 version: 10.11.4
+app_version: 10.11.4
 abi:
   supports:
     - anas.cask/v1
@@ -17,6 +18,9 @@ dependencies:
 config:
   defaults:
     adminer_enabled: "false"
+  # MySQL-compatibility aliases published for consumers that expect MYSQL_*.
+  exports:
+    - MYSQL_*
   changes:
     root_password:
       effect: credential_rotate

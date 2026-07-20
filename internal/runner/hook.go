@@ -29,6 +29,9 @@ type hookResponse struct {
 	Files           map[string]string `json:"files"`
 	DisableServices []string          `json:"disable_services"`
 	DockerCopies    []dockerCopy      `json:"docker_copies"`
+	// InternalEnv lists env keys from this response that templates may use but
+	// that must not be written into the rendered .env file.
+	InternalEnv []string `json:"internal_env"`
 }
 
 type dockerCopy struct {
@@ -41,19 +44,29 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	if len(mod.Hook.Command) == 0 {
 		return hookResponse{}, nil
 	}
+	secrets := a.secrets.clone()
+	if phase != "calculate" {
+		// Only the calculate phase is a privileged derivation stage; the other
+		// phases receive the cask-scoped view.
+		secrets = a.scopedSecrets(mod.Name)
+	}
 	req := hookRequest{
 		ABI:     currentCaskABI,
 		Phase:   phase,
 		Module:  mod.Name,
 		Workdir: workdir,
 		Env:     env,
-		Secrets: a.secrets.clone(),
+		Secrets: secrets,
 	}
 	in, err := json.Marshal(req)
 	if err != nil {
 		return hookResponse{}, err
 	}
-	cmd := exec.Command(mod.Hook.Command[0], mod.Hook.Command[1:]...)
+	command, err := a.hookCommand(mod, workdir)
+	if err != nil {
+		return hookResponse{}, err
+	}
+	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Dir = mod.SourceDir
 	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
 	if err != nil {
@@ -78,6 +91,79 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 		return hookResponse{}, fmt.Errorf("%s hook %s returned invalid JSON: %w", mod.Name, phase, err)
 	}
 	return resp, nil
+}
+
+// hookCommand resolves the command used to execute a cask hook. Hooks
+// declared as `go run <pkg>` are compiled once per run and executed as a
+// binary instead of re-compiling for every phase. Artifact starts prefer the
+// binary frozen into the rendered cask so no Go toolchain is needed; render
+// runs always compile from the current source so a stale frozen binary can
+// never leak into a new release.
+func (a *app) hookCommand(mod Module, workdir string) ([]string, error) {
+	command := mod.Hook.Command
+	if len(command) < 3 || command[0] != "go" || command[1] != "run" {
+		return command, nil
+	}
+	if a.useFrozenHooks {
+		if bin, err := filepath.Abs(filepath.Join(workdir, hookBinaryName)); err == nil && exists(bin) {
+			return append([]string{bin}, command[3:]...), nil
+		}
+	}
+	bin, err := a.ensureHookBinary(mod, command[2])
+	if err != nil {
+		return nil, err
+	}
+	return append([]string{bin}, command[3:]...), nil
+}
+
+const hookBinaryName = ".hook.bin"
+
+func (a *app) ensureHookBinary(mod Module, pkg string) (string, error) {
+	if bin, ok := a.hookBins[mod.Name]; ok {
+		return bin, nil
+	}
+	dir, err := filepath.Abs(filepath.Join(a.base, "hook-bin"))
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	bin := filepath.Join(dir, mod.Name)
+	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
+	if err != nil {
+		return "", err
+	}
+	build := exec.Command("go", "build", "-o", bin, pkg)
+	build.Dir = mod.SourceDir
+	build.Env = append(os.Environ(), "GOCACHE="+cacheDir)
+	var stderr bytes.Buffer
+	build.Stderr = &stderr
+	if err := build.Run(); err != nil {
+		if stderr.Len() > 0 {
+			return "", fmt.Errorf("%s hook build: %w: %s", mod.Name, err, stderr.String())
+		}
+		return "", fmt.Errorf("%s hook build: %w", mod.Name, err)
+	}
+	if a.hookBins == nil {
+		a.hookBins = map[string]string{}
+	}
+	a.hookBins[mod.Name] = bin
+	return bin, nil
+}
+
+// freezeHookBinary copies the compiled hook binary into the rendered cask so
+// the release stays runnable without a Go toolchain.
+func (a *app) freezeHookBinary(mod Module, dir string) error {
+	command := mod.Hook.Command
+	if len(command) < 3 || command[0] != "go" || command[1] != "run" {
+		return nil
+	}
+	bin, err := a.ensureHookBinary(mod, command[2])
+	if err != nil {
+		return err
+	}
+	return copyFileMode(bin, filepath.Join(dir, hookBinaryName), 0755)
 }
 
 func applyHookEnv(env map[string]string, patch map[string]string) {

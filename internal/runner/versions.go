@@ -35,7 +35,10 @@ type caskLock struct {
 
 type caskLockRecord struct {
 	Version string `yaml:"version"`
-	Source  string `yaml:"source,omitempty"`
+	// AppVersion records the upstream application/image version separately
+	// from the cask packaging version used for constraints and upgrades.
+	AppVersion string `yaml:"app_version,omitempty"`
+	Source     string `yaml:"source,omitempty"`
 }
 
 func loadCaskLock(base string) (*caskLock, error) {
@@ -178,8 +181,9 @@ func (a *app) updateCaskLock(lock *caskLock, persistBindings bool) {
 	for _, name := range a.order {
 		mod := a.reg[name]
 		lock.Casks[name] = caskLockRecord{
-			Version: mod.Version,
-			Source:  filepath.ToSlash(filepath.Join("casks", "mods", name)),
+			Version:    mod.Version,
+			AppVersion: mod.AppVersion,
+			Source:     filepath.ToSlash(filepath.Join("casks", "mods", name)),
 		}
 	}
 	if !persistBindings {

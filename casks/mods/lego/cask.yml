@@ -16,6 +16,10 @@ config:
     - global.dns_provider
   defaults:
     dns_server: 223.5.5.5
+  # DNS provider credentials from the user secrets section for the ACME
+  # DNS-01 challenge.
+  consumes:
+    - DNSPOD_API_KEY
 logic:
   hook:
     command:

@@ -2,6 +2,7 @@ api_version: anas.dev/v1
 kind: Cask
 name: nextcloud
 version: 30.0.1
+app_version: 30.0.1
 abi:
   supports:
     - anas.cask/v1
@@ -36,6 +37,20 @@ config:
     talk_enabled: "true"
     memories_enabled: "true"
     db_type: auto
+  # SAML SP registration, app-launcher metadata, and Talk service settings
+  # published for the IAM portal and the bundled Talk containers.
+  exports:
+    - SMAL_SP_*
+    - APPS_LIST*
+    - TALK_*
+  # SAML IdP endpoints and signing material read by the container init
+  # scripts when LLNG is deployed (absent keys simply disable the SP setup),
+  # and the resolved database backend's real connection password.
+  consumes:
+    - LLNG_DOMAIN
+    - LLNG_SAML_*
+    - POSTGRES_PASSWORD
+    - MARIADB_PASSWORD
   changes:
     db_type:
       effect: data_migrate

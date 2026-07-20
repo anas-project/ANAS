@@ -1,12 +1,29 @@
 package runner
 
 import (
+	"crypto/rand"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
 
 	"gopkg.in/yaml.v3"
 )
+
+// randomPassword returns an alphanumeric password safe to embed in service
+// configuration files.
+func randomPassword(length int) (string, error) {
+	const charset = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	out := make([]byte, length)
+	for i := range out {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			return "", err
+		}
+		out[i] = charset[n.Int64()]
+	}
+	return string(out), nil
+}
 
 type secretStore struct {
 	path   string

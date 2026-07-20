@@ -162,11 +162,16 @@ Manifest fields:
 - `api_version`: currently `anas.dev/v1`.
 - `kind`: always `Cask`.
 - `name`: directory name and module id.
-- `version`: cask package version using semantic versioning
-  (`MAJOR.MINOR.PATCH`). By default it follows the cask's primary service image
-  version. For build-based casks, use the primary Dockerfile `FROM` image
-  version. Use `0.0.0` only for builtin casks or unpinned `latest` images whose
-  upstream version cannot be tracked from the manifest.
+- `version`: the cask packaging version using semantic versioning
+  (`MAJOR.MINOR.PATCH`). Dependency constraints, `upgrade.from`, and the
+  downgrade check operate on this field only. Bump it when the cask's assets,
+  templates, hook, or manifest change in a way consumers can observe.
+- `app_version`: optional upstream application/image version, recorded in the
+  lock file for humans and tooling. Track the primary service image version
+  here (for build-based casks, the primary Dockerfile `FROM` version). An
+  image bump changes `app_version` and needs only a minor/patch bump of
+  `version` unless the packaging contract also changed. Existing casks carry
+  their historical image-derived `version` as the packaging baseline.
 - `abi.supports`: cask runtime ABI versions supported by this cask. The current
   runner ABI is `anas.cask/v1`.
 - `upgrade.from`: optional semantic version constraint for supported source
@@ -196,6 +201,14 @@ Manifest fields:
 - `config.required`: lower snake_case parameters that must exist after config
   flattening. Use `global.<name>` for global parameters.
 - `config.defaults`: lower snake_case default parameters and values.
+- `config.consumes`: env keys produced outside the cask's dependency closure
+  that its rendering and hooks may read. Entries are exact keys or single
+  leading/trailing-star globs, for example `APPS_LIST*` or `*_DB_NAME` for a
+  capability provider that scans its consumers' declarations. User secrets
+  must always be claimed here (or match a closure prefix) to be visible.
+- `config.exports`: env keys outside the cask's own prefixes that its
+  calculate hook publishes, for example `SMAL_SP_*` for SAML SP registration
+  or `MYSQL_*` compatibility aliases. Undeclared cross-prefix writes fail.
 - `features`: capabilities used by humans and future tooling.
 - `services.optional`: compose services filtered by env flags.
 - `logic.hook.command`: command executed from the cask directory for
@@ -247,20 +260,29 @@ cask functionality is:
   as `NEXTCLOUD_DOMAIN_PREFIX`.
 - Validate required config keys before running each cask's calculation hook.
 - Run cask hooks through the `anas.cask/v1` JSON protocol. Supported phases are
-  `calculate`, `render_env`, `services`, and `after_start`.
+  `calculate`, `render_env`, `services`, and `after_start`. Hooks declared as
+  `go run <pkg>` are compiled once per run and frozen into the rendered cask
+  as `.hook.bin`, so starting an existing release needs no Go toolchain.
 - Accept hook responses for env patches, generated secrets, files written under
-  the rendered cask directory, disabled Compose services, and after-start
-  `docker cp` operations.
+  the rendered cask directory, disabled Compose services, render-only
+  `internal_env` keys, and after-start `docker cp` operations. Calculate
+  patches are validated against the cask's prefixes and `config.exports`.
 - Persist generated secrets in `secrets.generated.yml` and reuse them on later
-  runs.
+  runs. Non-calculate hook phases receive only the cask-scoped secrets.
 - Render cask assets into the runtime work directory, process the supported
-  ERB-like template syntax, and write a per-cask `.env`.
-- Detect Docker Compose and run per-cask `build`, `up -d`, and `down` with
-  project names like `anas_nextcloud`.
+  ERB-like template syntax strictly (missing keys and unrendered markers fail
+  the render), and write a scoped per-cask `.env`.
+- Detect Docker Compose and reconcile per cask with `build`, `up -d
+  --remove-orphans`, and `down` using project names like `anas_nextcloud`.
+  A config-driven start downs casks removed from the config instead of
+  stopping the whole stack; `start`/`restart` without a config run the
+  promoted release as an immutable artifact.
 - Query Compose services and remove hook-disabled optional services before
   build/start.
-- Maintain `cask.lock.yml` with installed cask versions and reject unsupported
-  downgrades or upgrades outside a cask's `upgrade.from` constraint.
+- Maintain `cask.lock.yml` with installed cask versions (and upstream
+  `app_version`), reject unsupported downgrades or upgrades outside a cask's
+  `upgrade.from` constraint, keep the demoted release plus a lock snapshot as
+  `release.previous`, and restore both with `anas rollback`.
 - Create a host macvlan bridge and Docker macvlan network when an enabled cask
   declares required host LAN access.
 
@@ -314,7 +336,7 @@ When designing a cask, follow this order:
 9. Add dependencies:
    - prefer `requires` for required casks, especially when a version constraint
      is needed
-   - use `before` only when maintaining the current migrated manifest style
+   - use `requires_one` for a capability with alternative providers
    - use `after` for order-only relationships
 10. Add optional service filtering if a compose service is controlled by an env
    flag.
@@ -341,7 +363,19 @@ Prefer this priority:
 Do not generate a new secret during every render. Use `secretStore.Ensure`.
 
 Do not store internal helper values such as SSH private keys in module `.env`
-files. Use `internalEnv` filtering in `runner.go` for render-only values.
+files. A hook that returns render-only values must list those keys in the
+`internal_env` field of its `render_env` response; the runner keeps them
+available for template rendering but excludes them from the written `.env`.
+
+Environment access is scoped. A cask's rendered `.env`, its template
+rendering, and its `render_env`/`services`/`after_start` hook input contain
+only: global and core-derived keys, keys owned by the cask itself or its
+dependency closure, keys matching those casks' env prefixes, and keys claimed
+in manifest `config.consumes`. User secrets from the config `secrets` section
+are only distributed to casks that claim them. The `calculate` phase is the
+privileged derivation stage: it sees the full accumulating environment, but
+its env patch may only publish keys under the cask's own prefixes or patterns
+declared in manifest `config.exports`; anything else fails the run.
 
 ## Compose Design Rules
 

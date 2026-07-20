@@ -1,15 +1,12 @@
 package runner
 
 import (
-	"bufio"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -23,13 +20,19 @@ type app struct {
 	cfgPath          string
 	verbose          bool
 	yes              bool
+	skipStartGuard   bool
+	useFrozenHooks   bool
 	compose          compose.CLI
 	reg              map[string]Module
 	cfg              *config.File
 	env              map[string]string
+	envOwner         map[string]string
+	deps             map[string][]string
 	order            []string
 	secrets          *secretStore
 	lock             *caskLock
+	hookBins         map[string]string
+	sensitiveKeys    map[string]bool
 	resolvedBindings map[string]map[string]string
 }
 
@@ -40,6 +43,8 @@ func Main(args []string) error {
 	switch args[0] {
 	case "start", "build", "restart", "stop", "render", "plan":
 		return run(args[0], args[1:])
+	case "rollback":
+		return runRollback(args[1:])
 	case "config":
 		return runConfig(args[1:])
 	case "help", "-h", "--help":
@@ -60,9 +65,11 @@ Usage:
   anas plan    [-c config.yml] [--root project-dir]
   anas restart [-b ~/.anas]
   anas stop    [-b ~/.anas]
+  anas rollback [-b ~/.anas]
   anas config set     [-c config.yml] <module.parameter> <value>
   anas config explain <module.parameter>
   anas config plan    [-c config.yml] [-b ~/.anas]
+  anas config secret  list | get <KEY>   [-b ~/.anas]
 
 Cask ABI:
   %s
@@ -113,12 +120,92 @@ func run(action string, args []string) error {
 	return a.execute(actions)
 }
 
+// runRollback swaps the release with release.previous, restores the matching
+// cask lock snapshot, and starts the restored artifact without re-rendering.
+func runRollback(args []string) error {
+	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
+	base := fs.String("b", "", "runtime base path")
+	fs.StringVar(base, "base", "", "runtime base path")
+	verbose := fs.Bool("verbose", false, "debug logging")
+	rootFlag := fs.String("root", "", "project root containing casks/mods")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	root, err := locateRoot(*rootFlag)
+	if err != nil {
+		return err
+	}
+	if *base == "" {
+		home, _ := os.UserHomeDir()
+		*base = filepath.Join(home, ".anas")
+	}
+	reg, err := loadRegistry(root)
+	if err != nil {
+		return err
+	}
+	release := filepath.Join(*base, "release")
+	previous := release + ".previous"
+	if !exists(filepath.Join(previous, "config.yml")) {
+		return fmt.Errorf("no previous release to roll back to at %s", previous)
+	}
+	cli, err := compose.Detect()
+	if err != nil {
+		return err
+	}
+	newApp := func() *app {
+		return &app{root: root, base: *base, verbose: *verbose, reg: reg, compose: cli, resolvedBindings: map[string]map[string]string{}}
+	}
+	// Stop the current release while its rendered directories still exist.
+	if exists(filepath.Join(release, "config.yml")) {
+		if err := newApp().execute([]string{"stop"}); err != nil {
+			return fmt.Errorf("stop current release: %w", err)
+		}
+	}
+	// Swap the directories; the demoted release becomes the new .previous so
+	// a mistaken rollback can be rolled forward again.
+	swap := release + ".rollback-tmp"
+	if err := os.RemoveAll(swap); err != nil {
+		return err
+	}
+	hadRelease := exists(release)
+	if hadRelease {
+		if err := os.Rename(release, swap); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(previous, release); err != nil {
+		if hadRelease {
+			_ = os.Rename(swap, release)
+		}
+		return err
+	}
+	if hadRelease {
+		if err := os.Rename(swap, previous); err != nil {
+			return err
+		}
+	}
+	if snapshot := filepath.Join(release, ".cask.lock.snapshot"); exists(snapshot) {
+		if err := copyFile(snapshot, caskLockPath(*base)); err != nil {
+			return err
+		}
+	}
+	startApp := newApp()
+	startApp.skipStartGuard = true
+	if err := startApp.execute([]string{"start"}); err != nil {
+		return err
+	}
+	return saveAppliedConfig(*base, filepath.Join(release, "config.yml"))
+}
+
 func (a *app) execute(actions []string) error {
 	release := filepath.Join(a.base, "release")
 	tmp := filepath.Join(a.base, "tmp")
-	useTmp := contains(actions, "build") || contains(actions, "render") || (contains(actions, "start") && a.cfgPath != "")
+	// A config file means a new render pipeline through tmp with an atomic
+	// promotion. Without one, start/restart run the existing release as an
+	// immutable artifact: no recalculation, no re-render.
+	renders := contains(actions, "build") || contains(actions, "render") || (contains(actions, "start") && a.cfgPath != "")
 	work := release
-	if useTmp {
+	if renders {
 		work = tmp
 	}
 	cfgPath := a.cfgPath
@@ -126,6 +213,9 @@ func (a *app) execute(actions []string) error {
 		if contains(actions, "build") {
 			cfgPath = "config.yml"
 		} else {
+			if !exists(filepath.Join(release, "config.yml")) && !contains(actions, "plan") {
+				return fmt.Errorf("no rendered release at %s; run `anas start -c config.yml` first", release)
+			}
 			cfgPath = filepath.Join(release, "config.yml")
 		}
 	}
@@ -139,13 +229,15 @@ func (a *app) execute(actions []string) error {
 	}
 	a.lock = lock
 	a.cfg = cfg
-	a.env = cfg.BaseEnv()
+	a.env, a.envOwner = cfg.BaseEnvWithOwners()
 	a.order, err = a.resolveOrder(cfg.Modules)
 	if err != nil {
 		return err
 	}
-	if err := a.validateVersions(lock); err != nil {
-		return err
+	if renders || contains(actions, "plan") {
+		if err := a.validateVersions(lock); err != nil {
+			return err
+		}
 	}
 	a.applyModuleDefaults()
 	if contains(actions, "plan") {
@@ -153,9 +245,10 @@ func (a *app) execute(actions []string) error {
 		return nil
 	}
 	if contains(actions, "stop") {
+		a.adoptReleaseEnv(release)
 		return a.stopRelease(release)
 	}
-	if contains(actions, "start") {
+	if contains(actions, "start") && !a.skipStartGuard {
 		if err := validateOrdinaryStartChanges(a.base, cfgPath, a.reg); err != nil {
 			return err
 		}
@@ -171,20 +264,35 @@ func (a *app) execute(actions []string) error {
 		return err
 	}
 	a.secrets = secrets
-	if useTmp {
+	if renders {
 		if err := os.RemoveAll(tmp); err != nil {
 			return err
 		}
-	}
-	if err := a.calculate(work); err != nil {
-		return err
-	}
-	if err := a.secrets.Save(); err != nil {
-		return err
-	}
-
-	if err := a.renderAll(work); err != nil {
-		return err
+		if err := a.calculate(); err != nil {
+			return err
+		}
+		if err := a.secrets.Save(); err != nil {
+			return err
+		}
+		if err := a.renderAll(work); err != nil {
+			return err
+		}
+	} else {
+		// Artifact start/restart: the rendered per-cask environments and
+		// frozen hook binaries are the contract. Refuse to guess when a
+		// release predates the current format instead of starting with
+		// incomplete values.
+		a.useFrozenHooks = true
+		a.adoptReleaseEnv(release)
+		for _, name := range a.order {
+			envPath := filepath.Join(release, name, ".env")
+			if !exists(envPath) {
+				return fmt.Errorf("release cask %s has no rendered .env; re-render with `anas start -c <config>`", name)
+			}
+			if _, err := parseEnvFile(envPath); err != nil {
+				return fmt.Errorf("release cask %s was rendered by an older anas (%v); re-render with `anas start -c <config>`", name, err)
+			}
+		}
 	}
 	if contains(actions, "render") {
 		if err := copyFile(cfgPath, filepath.Join(work, "config.yml")); err != nil {
@@ -193,63 +301,41 @@ func (a *app) execute(actions []string) error {
 		return promoteRelease(tmp, release)
 	}
 	if contains(actions, "build") {
-		if err := a.each(work, func(mod Module, dir string, services []string) error {
-			if mod.Name == "core" {
+		if err := a.each(work, func(run caskRun) error {
+			if run.mod.Name == "core" {
 				return nil
 			}
-			args := append([]string{"build"}, services...)
-			return a.compose.RunFile(dir, "anas_"+mod.Name, mod.ComposeFile, a.env, args...)
-		}); err != nil {
-			return err
-		}
-	}
-	if contains(actions, "start") {
-		if useTmp && exists(release) {
-			_ = a.stopRelease(release)
-		}
-		if err := a.ensureHostLAN(); err != nil {
-			return err
-		}
-		if err := a.each(work, func(mod Module, dir string, services []string) error {
-			if mod.Name == "core" {
-				return nil
-			}
-			args := append([]string{"up", "-d"}, services...)
-			if err := a.compose.RunFile(dir, "anas_"+mod.Name, mod.ComposeFile, a.env, args...); err != nil {
-				return err
-			}
-			resp, err := a.runHook(mod, "after_start", dir, a.env)
-			if err != nil {
-				return err
-			}
-			return runDockerCopies(resp.DockerCopies)
+			args := append([]string{"build"}, run.services...)
+			return a.compose.RunFile(run.dir, "anas_"+run.mod.Name, run.mod.ComposeFile, run.env, args...)
 		}); err != nil {
 			return err
 		}
 	}
 	if contains(actions, "restart") {
-		_ = a.stopRelease(release)
+		if err := a.stopRelease(release); err != nil {
+			return err
+		}
+	}
+	if contains(actions, "start") || contains(actions, "restart") {
+		if contains(actions, "start") && renders {
+			if err := a.stopRemoved(release); err != nil {
+				return err
+			}
+		}
 		if err := a.ensureHostLAN(); err != nil {
 			return err
 		}
-		if err := a.each(work, func(mod Module, dir string, services []string) error {
-			if mod.Name == "core" {
+		if err := a.each(work, func(run caskRun) error {
+			if run.mod.Name == "core" {
 				return nil
 			}
-			args := append([]string{"up", "-d"}, services...)
-			if err := a.compose.RunFile(dir, "anas_"+mod.Name, mod.ComposeFile, a.env, args...); err != nil {
-				return err
-			}
-			resp, err := a.runHook(mod, "after_start", dir, a.env)
-			if err != nil {
-				return err
-			}
-			return runDockerCopies(resp.DockerCopies)
+			args := append([]string{"up", "-d", "--remove-orphans"}, run.services...)
+			return a.compose.RunFile(run.dir, "anas_"+run.mod.Name, run.mod.ComposeFile, run.env, args...)
 		}); err != nil {
 			return err
 		}
 	}
-	if useTmp {
+	if renders {
 		if err := copyFile(cfgPath, filepath.Join(work, "config.yml")); err != nil {
 			return err
 		}
@@ -257,39 +343,156 @@ func (a *app) execute(actions []string) error {
 			return err
 		}
 	}
-	if contains(actions, "build") || contains(actions, "start") || contains(actions, "restart") {
-		a.updateCaskLock(a.lock, contains(actions, "start") || contains(actions, "restart"))
-		if err := a.lock.Save(a.base); err != nil {
+	// after_start hooks run against the promoted release so paths derived
+	// from the hook workdir stay valid for later artifact starts.
+	if contains(actions, "start") || contains(actions, "restart") {
+		if err := a.runAfterStart(release); err != nil {
 			return err
 		}
 	}
-	if contains(actions, "start") || contains(actions, "restart") {
-		if err := saveAppliedConfig(a.base, cfgPath); err != nil {
+	if renders {
+		if contains(actions, "build") || contains(actions, "start") {
+			if err := snapshotCaskLock(a.base, release+".previous"); err != nil {
+				return err
+			}
+			a.updateCaskLock(a.lock, contains(actions, "start"))
+			if err := a.lock.Save(a.base); err != nil {
+				return err
+			}
+		}
+		if contains(actions, "start") {
+			if err := saveAppliedConfig(a.base, cfgPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (a *app) runAfterStart(release string) error {
+	for _, name := range a.order {
+		if name == "core" {
+			continue
+		}
+		mod := a.reg[name]
+		dir := filepath.Join(release, name)
+		resp, err := a.runHook(mod, "after_start", dir, a.caskEnv(dir))
+		if err != nil {
+			return err
+		}
+		if err := runDockerCopies(resp.DockerCopies); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// releaseDirFor returns the absolute path a cask occupies once promoted. Hook
+// requests always carry this stable path, so any value a hook derives from
+// its workdir stays valid after promotion and across artifact starts.
+func (a *app) releaseDirFor(name string) string {
+	path := filepath.Join(a.base, "release", name)
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
+}
+
+// adoptReleaseEnv replaces the config-derived base env with the environment
+// rendered into the release's core cask, so artifact start/stop/restart use
+// the values the release was actually built with.
+func (a *app) adoptReleaseEnv(release string) {
+	env, err := parseEnvFile(filepath.Join(release, "core", ".env"))
+	if err != nil {
+		return
+	}
+	for k, v := range env {
+		a.env[k] = v
+	}
+}
+
 func (a *app) stopRelease(release string) error {
 	if !exists(release) {
 		return nil
 	}
+	modules := a.releaseModules(release)
 	var stopErrors []error
-	for i := len(a.order) - 1; i >= 0; i-- {
-		name := a.order[i]
-		if name == "core" {
-			continue
-		}
+	for i := len(modules) - 1; i >= 0; i-- {
+		name := modules[i]
 		dir := filepath.Join(release, name)
-		if !exists(dir) {
-			continue
-		}
-		if err := a.compose.RunFile(dir, "anas_"+name, a.reg[name].ComposeFile, a.env, "down"); err != nil {
+		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.caskEnv(dir), "down"); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("stop %s: %w", name, err))
 		}
 	}
 	if a.hostLANRequired() {
+		if err := removeMacvlan(a.env, a.base); err != nil {
+			stopErrors = append(stopErrors, err)
+		}
+	}
+	return errors.Join(stopErrors...)
+}
+
+// releaseModules lists the compose casks physically present in a rendered
+// release. Casks selected by the current config keep their dependency order;
+// casks that are no longer selected are appended, so iterating the reversed
+// slice stops removed casks first.
+func (a *app) releaseModules(release string) []string {
+	entries, err := os.ReadDir(release)
+	if err != nil {
+		return nil
+	}
+	present := map[string]bool{}
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == "core" {
+			continue
+		}
+		name := entry.Name()
+		if mod, ok := a.reg[name]; ok && mod.RuntimeType != "compose" {
+			continue
+		}
+		if exists(filepath.Join(release, name, a.releaseComposeFile(name))) {
+			present[name] = true
+		}
+	}
+	ordered := []string{}
+	for _, name := range a.order {
+		if present[name] {
+			ordered = append(ordered, name)
+			delete(present, name)
+		}
+	}
+	extras := make([]string, 0, len(present))
+	for name := range present {
+		extras = append(extras, name)
+	}
+	sort.Strings(extras)
+	return append(ordered, extras...)
+}
+
+func (a *app) releaseComposeFile(name string) string {
+	if mod, ok := a.reg[name]; ok && mod.ComposeFile != "" {
+		return mod.ComposeFile
+	}
+	return "docker-compose.yml"
+}
+
+// stopRemoved downs release casks that the new configuration no longer
+// selects, so a config change cannot leave orphaned compose projects behind.
+func (a *app) stopRemoved(release string) error {
+	var stopErrors []error
+	stoppedAny := false
+	for _, name := range a.releaseModules(release) {
+		if contains(a.order, name) {
+			continue
+		}
+		dir := filepath.Join(release, name)
+		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.caskEnv(dir), "down"); err != nil {
+			stopErrors = append(stopErrors, fmt.Errorf("stop removed cask %s: %w", name, err))
+			continue
+		}
+		stoppedAny = true
+	}
+	if stoppedAny && len(stopErrors) == 0 && !a.hostLANRequired() {
 		if err := removeMacvlan(a.env, a.base); err != nil {
 			stopErrors = append(stopErrors, err)
 		}
@@ -369,6 +572,7 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 			return nil, err
 		}
 	}
+	a.deps = resolvedDeps
 	return stableModuleOrder(out, resolvedDeps, a.reg)
 }
 
@@ -504,10 +708,15 @@ func (a *app) requireCaskManifest(name string) error {
 
 func (a *app) applyModuleDefaults() {
 	for _, name := range a.order {
+		owner := name
+		if name == "core" {
+			owner = "core"
+		}
 		for k, v := range a.reg[name].Defaults {
 			if a.env[k] == "" {
 				a.env[k] = v
 			}
+			a.setEnvOwner(k, owner)
 		}
 	}
 	a.env["ALL_MODS_NAME"] = strings.Join(a.order, ",")
@@ -531,17 +740,22 @@ func (a *app) applyModuleDefaults() {
 	a.env["USE_HOST_LAN_OPTIONAL_MODS_NAME"] = strings.Join(hostOpt, ",")
 }
 
-func (a *app) calculate(work string) error {
+func (a *app) calculate() error {
 	for _, name := range a.order {
 		mod := a.reg[name]
+		if err := a.applyCaskRootPassword(a.env, name); err != nil {
+			return err
+		}
 		if err := requireKeys(a.env, mod.Required); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
-		resp, err := a.runHook(mod, "calculate", filepath.Join(work, name), a.env)
+		resp, err := a.runHook(mod, "calculate", a.releaseDirFor(name), a.env)
 		if err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
-		applyHookEnv(a.env, resp.Env)
+		if err := a.applyCalculatePatch(mod, resp.Env); err != nil {
+			return err
+		}
 		a.secrets.Merge(resp.Secrets)
 	}
 	domains := []string{}
@@ -552,6 +766,7 @@ func (a *app) calculate(work string) error {
 		}
 	}
 	a.env["DOMAINS"] = strings.Join(domains, ",")
+	a.setEnvOwner("DOMAINS", "core")
 	return nil
 }
 
@@ -567,12 +782,18 @@ func (a *app) renderAll(work string) error {
 			if err := copyDir(src, dir); err != nil {
 				return err
 			}
+			if err := a.freezeHookBinary(mod, dir); err != nil {
+				return err
+			}
 		} else if err := os.MkdirAll(dir, 0755); err != nil {
 			return err
 		}
-		env := cloneMap(a.env)
+		env := a.scopedEnv(name)
 		env["MODULE_NAME"] = name
-		resp, err := a.runHook(mod, "render_env", dir, env)
+		if err := a.applyCaskRootPassword(env, name); err != nil {
+			return err
+		}
+		resp, err := a.runHook(mod, "render_env", a.releaseDirFor(name), env)
 		if err != nil {
 			return err
 		}
@@ -583,7 +804,14 @@ func (a *app) renderAll(work string) error {
 		if err := renderERBFiles(dir, env); err != nil {
 			return err
 		}
-		if err := writeEnv(filepath.Join(dir, ".env"), env); err != nil {
+		fileEnv := env
+		if len(resp.InternalEnv) > 0 {
+			fileEnv = cloneMap(env)
+			for _, key := range resp.InternalEnv {
+				delete(fileEnv, key)
+			}
+		}
+		if err := writeEnv(filepath.Join(dir, ".env"), fileEnv); err != nil {
 			return err
 		}
 	}
@@ -597,34 +825,52 @@ func (a *app) ensureHostLAN() error {
 	return ensureMacvlan(a.env, a.base, a.compose)
 }
 
-func (a *app) each(work string, fn func(Module, string, []string) error) error {
+type caskRun struct {
+	mod      Module
+	dir      string
+	env      map[string]string
+	services []string
+}
+
+func (a *app) each(work string, fn func(caskRun) error) error {
 	for _, name := range a.order {
 		mod := a.reg[name]
 		dir := filepath.Join(work, name)
+		env := a.caskEnv(dir)
 		if name == "core" {
-			if err := fn(mod, dir, nil); err != nil {
+			if err := fn(caskRun{mod: mod, dir: dir, env: env}); err != nil {
 				return err
 			}
 			continue
 		}
-		services, err := a.services(mod, dir)
+		services, err := a.services(mod, dir, env)
 		if err != nil {
 			return err
 		}
-		if err := fn(mod, dir, services); err != nil {
+		if err := fn(caskRun{mod: mod, dir: dir, env: env, services: services}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (a *app) services(mod Module, dir string) ([]string, error) {
-	out, err := a.compose.OutputFile(dir, "anas_"+mod.Name, mod.ComposeFile, a.env, "config", "--services")
+// caskEnv returns the environment for operating one rendered cask. The
+// rendered .env is authoritative when it exists; the in-memory environment is
+// only a fallback for directories that were never rendered.
+func (a *app) caskEnv(dir string) map[string]string {
+	if env, err := parseEnvFile(filepath.Join(dir, ".env")); err == nil {
+		return env
+	}
+	return a.env
+}
+
+func (a *app) services(mod Module, dir string, env map[string]string) ([]string, error) {
+	out, err := a.compose.OutputFile(dir, "anas_"+mod.Name, mod.ComposeFile, env, "config", "--services")
 	if err != nil {
 		return nil, err
 	}
 	services := fieldsLines(out)
-	resp, err := a.runHook(mod, "services", dir, a.env)
+	resp, err := a.runHook(mod, "services", dir, env)
 	if err != nil {
 		return nil, err
 	}
@@ -633,30 +879,6 @@ func (a *app) services(mod Module, dir string) ([]string, error) {
 	}
 	sort.Strings(services)
 	return services, nil
-}
-
-func writeEnv(path string, env map[string]string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if err := f.Chmod(0600); err != nil {
-		return err
-	}
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	w := bufio.NewWriter(f)
-	for _, k := range keys {
-		fmt.Fprintf(w, "%s=%s\n", k, quoteEnv(env[k]))
-	}
-	return w.Flush()
 }
 
 func (a *app) moduleEnabled(name string) bool {
@@ -671,9 +893,6 @@ func locateRoot(explicit string) (string, error) {
 	}
 	if exe, err := os.Executable(); err == nil {
 		candidates = append(candidates, filepath.Dir(exe), filepath.Dir(filepath.Dir(exe)))
-	}
-	if _, file, _, ok := runtime.Caller(0); ok {
-		candidates = append(candidates, filepath.Join(filepath.Dir(file), "..", ".."))
 	}
 	seen := map[string]bool{}
 	for _, candidate := range candidates {
@@ -693,6 +912,9 @@ func locateRoot(explicit string) (string, error) {
 	return "", fmt.Errorf("could not locate project root containing casks/mods; use --root or ANAS_ROOT")
 }
 
+// promoteRelease atomically replaces the release with the staged render. The
+// demoted release is kept as `release.previous` until the next promotion so
+// `anas rollback` has an artifact to return to.
 func promoteRelease(staging, release string) error {
 	backup := release + ".previous"
 	if err := os.RemoveAll(backup); err != nil {
@@ -710,56 +932,18 @@ func promoteRelease(staging, release string) error {
 		}
 		return err
 	}
-	return os.RemoveAll(backup)
+	return nil
 }
 
-func quoteEnv(v string) string {
-	if v == "" {
-		return "''"
+// snapshotCaskLock copies the pre-upgrade lock file into the demoted release
+// so a rollback restores cask versions and capability bindings together with
+// the rendered artifact.
+func snapshotCaskLock(base, backup string) error {
+	lockPath := caskLockPath(base)
+	if !exists(lockPath) || !exists(backup) {
+		return nil
 	}
-	if strings.ContainsAny(v, " \t\n\r'\"#$`\\") {
-		return "'" + strings.ReplaceAll(v, "'", "'\"'\"'") + "'"
-	}
-	return v
-}
-
-var erbExpr = regexp.MustCompile(`<%=\s*(?:envs\[['"]([^'"]+)['"]\]|"#\{envs\[['"]([^'"]+)['"]\]\}")\s*%>`)
-var erbIf = regexp.MustCompile(`(?s)<%\s*if\s+envs\[['"]([^'"]+)['"]\]\s*==\s*['"]([^'"]+)['"]\s*%>(.*?)<%\s*end\s*%>`)
-
-func renderERBFiles(root string, env map[string]string) error {
-	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !strings.HasSuffix(path, ".erb") {
-			return nil
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		s := string(b)
-		s = erbIf.ReplaceAllStringFunc(s, func(m string) string {
-			g := erbIf.FindStringSubmatch(m)
-			if len(g) == 4 && env[g[1]] == g[2] {
-				return g[3]
-			}
-			return ""
-		})
-		s = erbExpr.ReplaceAllStringFunc(s, func(m string) string {
-			g := erbExpr.FindStringSubmatch(m)
-			key := g[1]
-			if key == "" {
-				key = g[2]
-			}
-			return env[key]
-		})
-		dst := strings.TrimSuffix(path, ".erb")
-		if err := os.WriteFile(dst, []byte(s), 0644); err != nil {
-			return err
-		}
-		return os.Remove(path)
-	})
+	return copyFile(lockPath, filepath.Join(backup, ".cask.lock.snapshot"))
 }
 
 func copyDir(src, dst string) error {
@@ -853,17 +1037,3 @@ func index(items []string, item string) int {
 	return -1
 }
 
-func moveAfter(items []string, item, after string) []string {
-	out := []string{}
-	for _, v := range items {
-		if v != item {
-			out = append(out, v)
-		}
-	}
-	i := index(out, after)
-	if i < 0 {
-		return append(out, item)
-	}
-	out = append(out[:i+1], append([]string{item}, out[i+1:]...)...)
-	return out
-}

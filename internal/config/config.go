@@ -61,17 +61,35 @@ func Load(path string) (*File, error) {
 	if len(cfg.Modules) == 0 {
 		return nil, fmt.Errorf("missing modules")
 	}
-	if utf8.RuneCountInString(cfg.Global.DefaultServiceRootPassword) < 8 {
+	// The shared administrator password is optional: when it is absent every
+	// cask receives its own generated root password instead. When set it must
+	// still meet the minimum length.
+	if pw := cfg.Global.DefaultServiceRootPassword; pw != "" && utf8.RuneCountInString(pw) < 8 {
 		return nil, fmt.Errorf("global.default_service_root_password must be at least 8 characters")
 	}
 	return &cfg, nil
 }
 
+// Owner markers used in the ownership map returned by BaseEnvWithOwners.
+// The empty string marks a globally scoped key; OwnerUserSecret marks a
+// user-provided secret that is only distributed to casks that claim it.
+const OwnerUserSecret = "!user-secret"
+
 func (f *File) BaseEnv() map[string]string {
+	env, _ := f.BaseEnvWithOwners()
+	return env
+}
+
+// BaseEnvWithOwners flattens the config into environment values and reports
+// which config section introduced each key: "" for global sections,
+// OwnerUserSecret for user secrets, and the service name for service env.
+func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
 	env := map[string]string{}
+	owners := map[string]string{}
 	set := func(key, value string) {
 		if strings.TrimSpace(value) != "" {
 			env[key] = value
+			owners[key] = ""
 		}
 	}
 	set("BASE_DOMAIN", f.Global.Domain)
@@ -86,10 +104,14 @@ func (f *File) BaseEnv() map[string]string {
 	set("DNS_SERVER", f.Global.DNSServer)
 	set("DEFAULT_SERVICE_ROOT_PASSWORD", f.Global.DefaultServiceRootPassword)
 	for k, v := range f.Secrets {
-		env[EnvKey(k)] = Scalar(v)
+		key := EnvKey(k)
+		env[key] = Scalar(v)
+		owners[key] = OwnerUserSecret
 	}
 	for k, v := range f.Env {
-		env[EnvKey(k)] = Scalar(v)
+		key := EnvKey(k)
+		env[key] = Scalar(v)
+		owners[key] = ""
 	}
 	for name, service := range f.Services {
 		prefix := strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
@@ -99,9 +121,10 @@ func (f *File) BaseEnv() map[string]string {
 				key = prefix + "_" + key
 			}
 			env[key] = Scalar(v)
+			owners[key] = name
 		}
 	}
-	return env
+	return env, owners
 }
 
 func EnvKey(key string) string {

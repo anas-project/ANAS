@@ -27,6 +27,10 @@ config:
     domain_prefix: netbird
     adminer_enabled: "false"
     sso_provider: auto
+  # OIDC client registration and app-launcher metadata published to the IAM.
+  exports:
+    - OIDC_RP_*
+    - APPS_LIST*
   changes:
     sso_provider:
       effect: container_recreate

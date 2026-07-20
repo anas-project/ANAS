@@ -19,6 +19,13 @@ config:
     log_level: "1"
     wsdd_log_level: "0"
     hostname: SambaFS
+  # The normalized share access mode is published without a cask prefix for
+  # the file-sharing templates.
+  exports:
+    - SHARE_ACCESS_MODE
+  consumes:
+    - SHARE_ACCESS_MODE
+    - USE_DEFAULT_DOMAIN
   changes:
     hostname:
       effect: data_migrate

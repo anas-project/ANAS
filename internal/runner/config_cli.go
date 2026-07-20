@@ -20,7 +20,7 @@ type configTarget struct {
 
 func runConfig(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("config requires set, explain, or plan")
+		return fmt.Errorf("config requires set, explain, plan, or secret")
 	}
 	subcommand := args[0]
 	fs := flag.NewFlagSet("config "+subcommand, flag.ContinueOnError)
@@ -82,6 +82,32 @@ func runConfig(args []string) error {
 			return fmt.Errorf("usage: anas config plan [-c config.yml] [-b ~/.anas]")
 		}
 		return printConfigPlan(*cfgPath, *base, reg)
+	case "secret":
+		store, err := loadSecretStore(*base)
+		if err != nil {
+			return err
+		}
+		switch {
+		case fs.NArg() == 1 && fs.Arg(0) == "list":
+			keys := make([]string, 0, len(store.values))
+			for key := range store.values {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				fmt.Println(key)
+			}
+			return nil
+		case fs.NArg() == 2 && fs.Arg(0) == "get":
+			value, ok := store.values[fs.Arg(1)]
+			if !ok {
+				return fmt.Errorf("no generated secret %q; use `anas config secret list`", fs.Arg(1))
+			}
+			fmt.Println(value)
+			return nil
+		default:
+			return fmt.Errorf("usage: anas config secret list | anas config secret get <KEY>")
+		}
 	default:
 		return fmt.Errorf("unknown config command %q", subcommand)
 	}
@@ -105,7 +131,10 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 		if len(parts) != 2 {
 			return configTarget{}, fmt.Errorf("raw env config path must have two components")
 		}
-		module, parameter := policyOwnerForEnv(parts[1], reg)
+		module, parameter, err := policyOwnerForEnv(parts[1], reg)
+		if err != nil {
+			return configTarget{}, err
+		}
 		return configTarget{YAMLPath: parts, Display: strings.Join(parts, "."), Module: module, Parameter: parameter}, nil
 	}
 	if parts[0] == "services" {
@@ -148,15 +177,39 @@ func isGlobalParameter(parameter string) bool {
 	}
 }
 
-func policyOwnerForEnv(key string, reg map[string]Module) (string, string) {
-	for name, mod := range reg {
+func policyOwnerForEnv(key string, reg map[string]Module) (string, string, error) {
+	type owner struct{ module, parameter string }
+	matches := []owner{}
+	names := make([]string, 0, len(reg))
+	for name := range reg {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		mod := reg[name]
+		parameters := make([]string, 0, len(mod.Changes))
 		for parameter := range mod.Changes {
+			parameters = append(parameters, parameter)
+		}
+		sort.Strings(parameters)
+		for _, parameter := range parameters {
 			if strings.EqualFold(paramEnvKey(name, mod.EnvPrefix, parameter), key) {
-				return name, parameter
+				matches = append(matches, owner{name, parameter})
 			}
 		}
 	}
-	return "core", strings.ToLower(key)
+	switch len(matches) {
+	case 0:
+		return "core", strings.ToLower(key), nil
+	case 1:
+		return matches[0].module, matches[0].parameter, nil
+	default:
+		owners := make([]string, 0, len(matches))
+		for _, m := range matches {
+			owners = append(owners, m.module+"."+m.parameter)
+		}
+		return "", "", fmt.Errorf("env key %q maps to multiple module parameters (%s); use the module path instead", key, strings.Join(owners, ", "))
+	}
 }
 
 func policyForTarget(target configTarget, reg map[string]Module) ChangePolicy {

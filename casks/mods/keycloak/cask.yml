@@ -33,6 +33,16 @@ config:
     enable_test: "true"
     adminer_enabled: "false"
     db_type: auto
+  # Mirrors the LLNG integration assets: SAML SP registrations, OIDC RP
+  # clients, and the app launcher published by application casks, and
+  # connects to its resolved database backend with that backend's real
+  # password.
+  consumes:
+    - SMAL_SP_*
+    - OIDC_RP_*
+    - APPS_LIST*
+    - POSTGRES_PASSWORD
+    - MARIADB_PASSWORD
   changes:
     password:
       effect: credential_rotate

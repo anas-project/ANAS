@@ -14,7 +14,9 @@ global:
   data_path: ./data
   timezone: Asia/Shanghai
   dns_provider: manual
-  # Password inherited by administrator accounts that people log in with.
+  # Optional shared password for administrator accounts that people log in
+  # with. When omitted, each cask gets its own generated root password; list
+  # them with `anas config secret list`.
   default_service_root_password: ChangeMe1!
 
 env:
