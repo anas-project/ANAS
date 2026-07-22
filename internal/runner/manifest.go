@@ -128,7 +128,14 @@ type manifestLogic struct {
 }
 
 func loadRegistry(root string) (map[string]Module, error) {
-	casksRoot := filepath.Join(root, "casks", "mods")
+	return loadRegistryDir(filepath.Join(root, "casks", "mods"))
+}
+
+// loadRegistryDir loads independent cask bundles from a directory whose
+// immediate children each contain cask.yml. The runner only needs this while
+// resolving or materializing a deployment; artifact lifecycle commands read
+// the frozen deployment manifest and do not need a cask source tree.
+func loadRegistryDir(casksRoot string) (map[string]Module, error) {
 	entries, err := os.ReadDir(casksRoot)
 	if err != nil {
 		return nil, err
@@ -149,6 +156,44 @@ func loadRegistry(root string) (map[string]Module, error) {
 		return nil, fmt.Errorf("missing core cask")
 	}
 	return reg, nil
+}
+
+func locateCaskRoot(explicit string) (string, error) {
+	candidates := []string{explicit, os.Getenv("ANAS_CASK_ROOT")}
+	if root := os.Getenv("ANAS_ROOT"); root != "" {
+		candidates = append(candidates, filepath.Join(root, "casks", "mods"))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, filepath.Join(cwd, "casks", "mods"))
+	}
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(dir, "casks", "mods"),
+			filepath.Join(filepath.Dir(dir), "casks", "mods"))
+	}
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		if strings.TrimSpace(candidate) == "" {
+			continue
+		}
+		candidate, _ = filepath.Abs(candidate)
+		candidate = filepath.Clean(candidate)
+		if seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		entries, err := os.ReadDir(candidate)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() && exists(filepath.Join(candidate, entry.Name(), "cask.yml")) {
+				return candidate, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("could not locate cask bundle directory; use --cask-root or ANAS_CASK_ROOT")
 }
 
 func loadModuleManifest(dir, dirname string) (Module, error) {

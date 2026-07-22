@@ -12,10 +12,10 @@ started=1
 
 cleanup() {
   if [ "$started" -eq 1 ]; then
-    if [ -f "$runtime/release/config.yml" ]; then
+    if [ -f "$runtime/state/active.yml" ]; then
       run_anas stop -b "$runtime" >>"$REPORT_DIR/smoke-stop.log" 2>&1 || true
     else
-      find "$runtime/tmp" -mindepth 2 -maxdepth 2 -name docker-compose.yml 2>/dev/null | sort -r | while read -r compose_file; do
+      find "$runtime/deployments" -name docker-compose.yml 2>/dev/null | sort -r | while read -r compose_file; do
         module_dir=$(dirname "$compose_file")
         docker compose -f "$compose_file" --env-file "$module_dir/.env" down --remove-orphans >>"$REPORT_DIR/smoke-stop.log" 2>&1 || true
       done
@@ -25,7 +25,10 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if run_anas start --build -c "$config" -b "$runtime" >"$REPORT_DIR/smoke-start.log" 2>&1; then
+mkdir -p "$runtime"
+runtime_config="$runtime/config.yml"
+cp "$config" "$runtime_config"
+if run_anas apply --build -c "$runtime_config" -b "$runtime" --update-lock >"$REPORT_DIR/smoke-start.log" 2>&1; then
   cat "$REPORT_DIR/smoke-start.log"
 else
   status=$?
@@ -59,7 +62,8 @@ done
 
 failed=0
 compose_list="$REPORT_DIR/smoke-compose-files.txt"
-find "$runtime/release" -mindepth 2 -maxdepth 2 -name docker-compose.yml | sort >"$compose_list"
+active_id=$(sed -n 's/^active_deployment: //p' "$runtime/state/active.yml")
+find "$runtime/deployments/$active_id/casks" -mindepth 2 -maxdepth 2 -name docker-compose.yml | sort >"$compose_list"
 
 while read -r compose_file; do
   module_dir=$(dirname "$compose_file")

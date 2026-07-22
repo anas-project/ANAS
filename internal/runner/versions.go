@@ -2,9 +2,13 @@ package runner
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	semver "github.com/Masterminds/semver/v3"
@@ -39,10 +43,14 @@ type caskLockRecord struct {
 	// from the cask packaging version used for constraints and upgrades.
 	AppVersion string `yaml:"app_version,omitempty"`
 	Source     string `yaml:"source,omitempty"`
+	Digest     string `yaml:"digest"`
 }
 
 func loadCaskLock(base string) (*caskLock, error) {
-	path := caskLockPath(base)
+	return loadCaskLockFile(caskLockPath(base))
+}
+
+func loadCaskLockFile(path string) (*caskLock, error) {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return &caskLock{APIVersion: "anas.dev/v1", Casks: map[string]caskLockRecord{}}, nil
@@ -69,6 +77,10 @@ func loadCaskLock(base string) (*caskLock, error) {
 }
 
 func (l *caskLock) Save(base string) error {
+	return saveCaskLockFile(caskLockPath(base), l)
+}
+
+func saveCaskLockFile(path string, l *caskLock) error {
 	if l.APIVersion == "" {
 		l.APIVersion = "anas.dev/v1"
 	}
@@ -82,11 +94,14 @@ func (l *caskLock) Save(base string) error {
 	if err != nil {
 		return err
 	}
-	path := caskLockPath(base)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func caskLockPath(base string) string {
@@ -168,7 +183,7 @@ func validateDependencyVersion(owner string, dep Dependency, actual string) erro
 	return nil
 }
 
-func (a *app) updateCaskLock(lock *caskLock, persistBindings bool) {
+func (a *app) updateCaskLock(lock *caskLock, persistBindings bool) error {
 	if lock.APIVersion == "" {
 		lock.APIVersion = "anas.dev/v1"
 	}
@@ -180,14 +195,19 @@ func (a *app) updateCaskLock(lock *caskLock, persistBindings bool) {
 	}
 	for _, name := range a.order {
 		mod := a.reg[name]
+		digest, err := caskBundleDigest(mod.SourceDir)
+		if err != nil {
+			return fmt.Errorf("digest cask %s: %w", name, err)
+		}
 		lock.Casks[name] = caskLockRecord{
 			Version:    mod.Version,
 			AppVersion: mod.AppVersion,
-			Source:     filepath.ToSlash(filepath.Join("casks", "mods", name)),
+			Source:     "bundle:" + name,
+			Digest:     digest,
 		}
 	}
 	if !persistBindings {
-		return
+		return nil
 	}
 	for module, bindings := range a.resolvedBindings {
 		if lock.Bindings[module] == nil {
@@ -197,4 +217,70 @@ func (a *app) updateCaskLock(lock *caskLock, persistBindings bool) {
 			lock.Bindings[module][capability] = provider
 		}
 	}
+	return nil
+}
+
+func caskBundleDigest(root string) (string, error) {
+	paths := []string{}
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		paths = append(paths, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	sort.Strings(paths)
+	h := sha256.New()
+	for _, rel := range paths {
+		if _, err := io.WriteString(h, rel+"\x00"); err != nil {
+			return "", err
+		}
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		info, err := os.Lstat(path)
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return "", err
+			}
+			if _, err := io.WriteString(h, "symlink\x00"+target+"\x00"); err != nil {
+				return "", err
+			}
+			continue
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return "", err
+		}
+		_, copyErr := io.Copy(h, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return "", copyErr
+		}
+		if closeErr != nil {
+			return "", closeErr
+		}
+		if _, err := io.WriteString(h, "\x00"); err != nil {
+			return "", err
+		}
+	}
+	return fmt.Sprintf("sha256:%x", h.Sum(nil)), nil
 }

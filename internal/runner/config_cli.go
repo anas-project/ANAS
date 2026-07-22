@@ -23,6 +23,9 @@ func runConfig(args []string) error {
 		return fmt.Errorf("config requires set, explain, plan, or secret")
 	}
 	subcommand := args[0]
+	if subcommand == "secret" {
+		return runConfigSecret(args[1:])
+	}
 	fs := flag.NewFlagSet("config "+subcommand, flag.ContinueOnError)
 	cfgPath := fs.String("c", "config.yml", "config file")
 	fs.StringVar(cfgPath, "config", "config.yml", "config file")
@@ -82,34 +85,55 @@ func runConfig(args []string) error {
 			return fmt.Errorf("usage: anas config plan [-c config.yml] [-b ~/.anas]")
 		}
 		return printConfigPlan(*cfgPath, *base, reg)
-	case "secret":
-		store, err := loadSecretStore(*base)
-		if err != nil {
-			return err
-		}
-		switch {
-		case fs.NArg() == 1 && fs.Arg(0) == "list":
-			keys := make([]string, 0, len(store.values))
-			for key := range store.values {
-				keys = append(keys, key)
-			}
-			sort.Strings(keys)
-			for _, key := range keys {
-				fmt.Println(key)
-			}
-			return nil
-		case fs.NArg() == 2 && fs.Arg(0) == "get":
-			value, ok := store.values[fs.Arg(1)]
-			if !ok {
-				return fmt.Errorf("no generated secret %q; use `anas config secret list`", fs.Arg(1))
-			}
-			fmt.Println(value)
-			return nil
-		default:
-			return fmt.Errorf("usage: anas config secret list | anas config secret get <KEY>")
-		}
 	default:
 		return fmt.Errorf("unknown config command %q", subcommand)
+	}
+}
+
+func runConfigSecret(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: anas config secret list | anas config secret get <KEY>")
+	}
+	action := args[0]
+	fs := flag.NewFlagSet("config secret "+action, flag.ContinueOnError)
+	base := fs.String("b", "", "runtime base path")
+	fs.StringVar(base, "base", "", "runtime base path")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *base == "" {
+		*base = defaultRuntimeBase()
+	}
+	store, err := loadSecretStore(*base)
+	if err != nil {
+		return err
+	}
+	switch action {
+	case "list":
+		if fs.NArg() != 0 {
+			return fmt.Errorf("usage: anas config secret list [-b ~/.anas]")
+		}
+		keys := make([]string, 0, len(store.values))
+		for key := range store.values {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			fmt.Println(key)
+		}
+		return nil
+	case "get":
+		if fs.NArg() != 1 {
+			return fmt.Errorf("usage: anas config secret get <KEY> [-b ~/.anas]")
+		}
+		value, ok := store.values[fs.Arg(0)]
+		if !ok {
+			return fmt.Errorf("no generated secret %q; use `anas config secret list`", fs.Arg(0))
+		}
+		fmt.Println(value)
+		return nil
+	default:
+		return fmt.Errorf("usage: anas config secret list | anas config secret get <KEY>")
 	}
 }
 

@@ -34,6 +34,10 @@ type app struct {
 	hookBins         map[string]string
 	sensitiveKeys    map[string]bool
 	resolvedBindings map[string]map[string]string
+	// artifactRoot is the final immutable deployment cask directory. Hooks use
+	// this path while a deployment is rendered in staging so values they derive
+	// never contain the temporary staging path.
+	artifactRoot string
 }
 
 func Main(args []string) error {
@@ -41,10 +45,22 @@ func Main(args []string) error {
 		args = []string{"help"}
 	}
 	switch args[0] {
-	case "start", "build", "restart", "stop", "render", "plan":
-		return run(args[0], args[1:])
+	case "plan":
+		return runPlan(args[1:])
+	case "render", "build":
+		return runPrepare(args[0], args[1:])
+	case "apply":
+		return runApply(args[1:])
+	case "start", "restart", "stop":
+		return runActive(args[0], args[1:])
 	case "rollback":
-		return runRollback(args[1:])
+		return runDeploymentRollback(args[1:])
+	case "status":
+		return runStatus(args[1:])
+	case "deployments":
+		return runDeployments(args[1:])
+	case "lock":
+		return runLock(args[1:])
 	case "config":
 		return runConfig(args[1:])
 	case "help", "-h", "--help":
@@ -59,13 +75,17 @@ func usage() {
 	fmt.Printf(`anas - NAS service launcher
 
 Usage:
-  anas start   [--build] [-c config.yml] [-b ~/.anas] [--verbose]
-  anas build   [-c config.yml] [-b ~/.anas] [--verbose]
-  anas render  [-c config.yml] [-b ~/.anas] [--verbose]
-  anas plan    [-c config.yml] [--root project-dir]
-  anas restart [-b ~/.anas]
-  anas stop    [-b ~/.anas]
-  anas rollback [-b ~/.anas]
+	anas plan    -c config.yml [--cask-root casks/mods]
+	anas lock    -c config.yml [--cask-root casks/mods]
+	anas render  -c config.yml [-b ~/.anas]
+	anas build   -c config.yml [-b ~/.anas]
+	anas apply   (-c config.yml [--build] | --deployment ID) [-b ~/.anas]
+	anas start   [-b ~/.anas]
+	anas restart [-b ~/.anas]
+	anas stop    [-b ~/.anas]
+	anas rollback [DEPLOYMENT_ID] [-b ~/.anas] [--restore-data]
+	anas status [-b ~/.anas]
+	anas deployments list|inspect [ID] [-b ~/.anas]
   anas config set     [-c config.yml] <module.parameter> <value>
   anas config explain <module.parameter>
   anas config plan    [-c config.yml] [-b ~/.anas]
@@ -355,7 +375,9 @@ func (a *app) execute(actions []string) error {
 			if err := snapshotCaskLock(a.base, release+".previous"); err != nil {
 				return err
 			}
-			a.updateCaskLock(a.lock, contains(actions, "start"))
+			if err := a.updateCaskLock(a.lock, contains(actions, "start")); err != nil {
+				return err
+			}
 			if err := a.lock.Save(a.base); err != nil {
 				return err
 			}
@@ -391,7 +413,11 @@ func (a *app) runAfterStart(release string) error {
 // requests always carry this stable path, so any value a hook derives from
 // its workdir stays valid after promotion and across artifact starts.
 func (a *app) releaseDirFor(name string) string {
-	path := filepath.Join(a.base, "release", name)
+	root := a.artifactRoot
+	if root == "" {
+		root = filepath.Join(a.base, "release")
+	}
+	path := filepath.Join(root, name)
 	if abs, err := filepath.Abs(path); err == nil {
 		return abs
 	}
@@ -1036,4 +1062,3 @@ func index(items []string, item string) int {
 	}
 	return -1
 }
-

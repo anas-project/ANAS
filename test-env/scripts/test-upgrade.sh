@@ -25,7 +25,7 @@ sed "s|data_path: .*|data_path: $data_dir|" "$CONFIG_DIR/full.yml" >"$config"
 
 if {
   echo "== baseline start: $fixture =="
-  run_anas start --build -c "$config" -b "$base"
+  run_anas apply --build -c "$config" -b "$base" --update-lock
 
   echo "== seed migration probes: $fixture =="
   docker exec anas_postgres sh -c "printf '%s\n' '$fixture' > /var/lib/postgresql/data/$marker"
@@ -37,10 +37,10 @@ if {
   run_anas stop -b "$base"
 
   echo "== seed old cask lock: $fixture =="
-  cp "$lock" "$base/cask.lock.yml"
+  cp "$lock" "$base/config.lock.yml"
 
   echo "== upgrade start: $fixture =="
-  run_anas start --build -c "$config" -b "$base"
+  run_anas apply --build -c "$config" -b "$base" --update-lock --allow-risky
 
   echo "== upgrade probes: $fixture =="
   "$TEST_ENV_DIR/scripts/test-upgrade-probes.sh" "$base" "$data_dir"

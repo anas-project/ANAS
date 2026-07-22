@@ -16,5 +16,5 @@ run_anas() {
 }
 
 rendered_module_dirs() {
-  find "$RUNTIME_DIR/release" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort
+  find "$RUNTIME_DIR/deployments" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | sort
 }

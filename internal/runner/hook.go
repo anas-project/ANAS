@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -130,6 +131,17 @@ func (a *app) ensureHookBinary(mod Module, pkg string) (string, error) {
 		return "", err
 	}
 	bin := filepath.Join(dir, mod.Name)
+	prebuilt := filepath.Join(mod.SourceDir, "hook", "bin", runtime.GOOS+"-"+runtime.GOARCH, "anas-hook")
+	if exists(prebuilt) {
+		if err := copyFileMode(prebuilt, bin, 0755); err != nil {
+			return "", err
+		}
+		if a.hookBins == nil {
+			a.hookBins = map[string]string{}
+		}
+		a.hookBins[mod.Name] = bin
+		return bin, nil
+	}
 	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
 	if err != nil {
 		return "", err
@@ -163,7 +175,12 @@ func (a *app) freezeHookBinary(mod Module, dir string) error {
 	if err != nil {
 		return err
 	}
-	return copyFileMode(bin, filepath.Join(dir, hookBinaryName), 0755)
+	if err := copyFileMode(bin, filepath.Join(dir, hookBinaryName), 0755); err != nil {
+		return err
+	}
+	// The deployment carries the executable hook, not its Go source or the
+	// platform bundle used during materialization.
+	return os.RemoveAll(filepath.Join(dir, "hook"))
 }
 
 func applyHookEnv(env map[string]string, patch map[string]string) {

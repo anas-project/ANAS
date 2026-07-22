@@ -10,9 +10,11 @@ Current cask runtime ABI: `anas.cask/v1`.
 
 ```sh
 go run ./cmd/anas plan   -c config.example.yml
+go run ./cmd/anas lock   -c config.example.yml
 go run ./cmd/anas render -c config.example.yml -b ./.runtime
 go run ./cmd/anas build  -c config.example.yml -b ~/.anas
-go run ./cmd/anas start  -c config.example.yml -b ~/.anas
+go run ./cmd/anas apply  -c config.example.yml --build -b ~/.anas
+go run ./cmd/anas start  -b ~/.anas
 go run ./cmd/anas stop   -b ~/.anas
 go run ./cmd/anas rollback -b ~/.anas
 go run ./cmd/anas config explain samba_dc.user_min_pass_length
@@ -21,21 +23,21 @@ go run ./cmd/anas config plan -c config.yml -b ~/.anas
 go run ./cmd/anas config secret list -b ~/.anas
 ```
 
-`start --build` runs build first, then starts the rendered release.
+`render` and `build` create an immutable ready deployment but never change the
+active deployment. `apply` is the only normal deployment entry point. It
+materializes under `staging/`, atomically finalizes the artifact under
+`deployments/<id>/`, and only then starts Compose from that final path. This
+keeps Docker Compose working-directory metadata valid. `start`, `stop`, and
+`restart` operate only on the active frozen deployment and do not need the
+original cask source tree or a Go toolchain.
 
-Starting with a config file renders into `tmp/`, reconciles running compose
-projects against the new render (`up -d` per cask plus an explicit `down` for
-casks removed from the config), and atomically promotes the render to
-`release/`. `start` and `restart` without `-c` treat the existing release as
-an immutable artifact: nothing is recalculated or re-rendered, and the frozen
-per-cask environments and hook binaries are used as-is. `rollback` swaps
-`release/` with `release.previous/`, restores the matching cask lock, and
-starts the restored artifact.
-
-The launcher locates casks from `--root`, `ANAS_ROOT`, the current directory,
-or the installation directory. Use `--root` when the binary and casks are
-installed separately. `plan` is read-only: it does not inspect host networking,
-run cask hooks, or create runtime state.
+The launcher locates independent cask bundles from `--cask-root`,
+`ANAS_CASK_ROOT`, the current directory, or the installation directory. The
+config-side `<name>.lock.yml` records both cask versions and bundle content
+digests. A distributable bundle can carry a prebuilt hook at
+`hook/bin/<os>-<arch>/anas-hook`; render/apply then need no Go toolchain.
+`plan` is read-only: it does not inspect host networking, run cask
+hooks, or create runtime state.
 
 ## Configuration
 
@@ -58,6 +60,20 @@ global:
 env:
   BASICAUTH_USER: admin
 ```
+
+Persistent data can optionally use guarded Btrfs snapshots:
+
+```yaml
+rollback:
+  snapshot:
+    backend: btrfs
+    source: /srv/anas/data
+    root: /srv/anas/.snapshots
+```
+
+The source must be a Btrfs subvolume and the snapshot root must be on the same
+Btrfs filesystem. A data restore requires `rollback --restore-data --yes` and
+keeps the replaced data as a recovery subvolume.
 
 Legacy Ruby keys such as `mods` and `envs` are intentionally rejected.
 Per-service overrides live under `services`:
@@ -91,16 +107,16 @@ fields are rejected instead of being ignored.
 
 Runtime files are written below the selected base path:
 
-- `release/`: the active rendered Compose projects.
-- `release.previous/`: the previously promoted release kept for `rollback`,
-  including a `.cask.lock.snapshot` of the matching cask lock.
-- `tmp/`: temporary render/build directory before atomic promotion.
+- `deployments/<id>/`: immutable, self-describing deployment artifacts.
+- `staging/<id>/`: temporary materialization only; containers never start here.
+- `state/active.yml`: active deployment and ordered rollback history.
+- `state/deployments/*.yml` and `state/index.yml`: per-deployment lifecycle and
+  a rebuildable summary index.
+- `snapshots/<id>/`: optional data snapshot metadata and Btrfs subvolume.
 - `secrets.generated.yml`: persistent generated secrets such as SSH keys,
   TURN secrets, OIDC client secrets, and SAML/OIDC signing keys.
-- `cask.lock.yml`: installed cask versions, source paths, and resolved capability
-  provider bindings used for upgrades and stable restarts.
-- `state/config-applied.yml`: hashes of explicit settings from the last
-  successful start; it contains no plaintext configuration values.
+- `<config-name>.lock.yml`: project-side cask versions, bundle digests, source
+  identities, and resolved capability-provider bindings.
 - `hook-bin/`: hook binaries compiled once per run; each rendered cask also
   carries its frozen copy as `.hook.bin`, so artifact starts need no Go
   toolchain.

@@ -13,9 +13,23 @@ import (
 type File struct {
 	Modules  []string           `yaml:"modules"`
 	Global   Global             `yaml:"global"`
+	Rollback Rollback           `yaml:"rollback"`
 	Secrets  map[string]any     `yaml:"secrets"`
 	Services map[string]Service `yaml:"services"`
 	Env      map[string]any     `yaml:"env"`
+}
+
+// Rollback configures an optional persistent-data snapshot backend. Runtime
+// artifacts are always immutable deployments; this section only controls data
+// that lives outside those artifacts.
+type Rollback struct {
+	Snapshot Snapshot `yaml:"snapshot"`
+}
+
+type Snapshot struct {
+	Backend string `yaml:"backend"`
+	Source  string `yaml:"source"`
+	Root    string `yaml:"root"`
 }
 
 type Global struct {

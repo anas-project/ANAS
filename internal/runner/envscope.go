@@ -75,7 +75,8 @@ func (a *app) sensitiveEnvKeySet() map[string]bool {
 	}
 	if a.secrets != nil {
 		values := map[string]bool{}
-		for _, v := range a.secrets.values {
+		for key, v := range a.secrets.values {
+			out[key] = true
 			if v != "" {
 				values[v] = true
 			}
