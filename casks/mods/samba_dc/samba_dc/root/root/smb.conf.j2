@@ -18,6 +18,15 @@
 	log level = ${SAMBA_DC_LOG_LEVEL}
 	log file = /var/log/samba/%m.log
 
+	# Samba stores NT ACLs in the security.NTACL extended attribute, and
+	# writing the security.* namespace needs CAP_SYS_ADMIN, which a container
+	# does not get by default. Without this, provisioning dies at
+	# "fset_nt_acl returned NT_STATUS_ACCESS_DENIED" and the domain is left
+	# half-created. Keeping the attributes in a TDB is Samba's documented
+	# answer for stores that cannot hold them, and avoids handing the domain
+	# controller a capability that would let it escape the container.
+	posix:eadb = /var/lib/samba/eadb.tdb
+
 	template shell = ${SAMBA_DC_TEMPLATE_SHELL}
 	template homedir = ${SAMBA_DC_TEMPLATE_HOMEDIR}
 	

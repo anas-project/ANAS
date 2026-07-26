@@ -12,6 +12,14 @@ services:
     hostname: ${SAMBA_FS_HOSTNAME}
     cap_add:
       - CAP_NET_ADMIN
+    # Joining the domain needs the AD zone, which only the domain controller's
+    # DNS serves. Without this the container inherits a resolver that cannot
+    # answer for the realm and the join loops on
+    # "kinit: Cannot contact any KDC".
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    dns_search:
+      - ${SAMBA_DC_DNS_SEARCH}
     env_file:
       - .env
     healthcheck:

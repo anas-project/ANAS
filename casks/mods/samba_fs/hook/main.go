@@ -158,7 +158,12 @@ func changed(old, cur map[string]string) map[string]string {
 func calcSambaFS(e map[string]string, _ string, _ *secretStore) error {
 	e["SAMBA_FS_USE_DEFAULT_DOMAIN"] = defaultValue(e["SAMBA_FS_USE_DEFAULT_DOMAIN"], e["USE_DEFAULT_DOMAIN"])
 	e["SAMBA_FS_NETBIOS_NAME"] = strings.ToUpper(defaultValue(e["SAMBA_FS_NETBIOS_NAME"], e["SAMBA_FS_HOSTNAME"]))
-	e["SAMBA_FS_DNS_SERVER"] = defaultValue(e["SAMBA_FS_DNS_SERVER"], e["VLAN_BRIDGE_IP"])
+	// Joining the domain needs a resolver that knows the AD zone. The VLAN
+	// bridge address is only a gateway and answers nothing, which leaves the
+	// join retrying "kinit: Cannot contact any KDC"; the domain controller's
+	// DNS serves the realm and forwards everything else.
+	e["SAMBA_FS_DNS_SERVER"] = defaultValue(e["SAMBA_FS_DNS_SERVER"],
+		defaultValue(e["SAMBA_DC_DNS_SERVER"], e["VLAN_BRIDGE_IP"]))
 	mode := strings.ToLower(defaultValue(e["SHARE_ACCESS_MODE"], "all_read_group_write"))
 	domainGroup := func(name string) string {
 		return `@"` + e["SAMBA_DC_WORKGROUP"] + `\` + name + `"`

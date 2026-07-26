@@ -182,7 +182,7 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_HOST_IP"] = defaultValue(e["SAMBA_DC_HOST_IP"], e["HOST_IP"])
 	e["SAMBA_DC_DNS_SERVER"] = e["SAMBA_DC_HOST_IP"]
 	e["SAMBA_DC_DNS_FORWARDERS"] = dnsList(defaultValue(e["SAMBA_DC_DNS_FORWARDERS"], e["HOST_DNS_SERVER"]))
-	e["SAMBA_DC_DNS_ALLOWED_NETWORKS"] = dnsList(defaultValue(e["SAMBA_DC_DNS_ALLOWED_NETWORKS"], hostNetworkCIDR(e["HOST_IP"], e["HOST_SUBNET_MASK"])))
+	e["SAMBA_DC_DNS_ALLOWED_NETWORKS"] = dnsList(defaultValue(e["SAMBA_DC_DNS_ALLOWED_NETWORKS"], defaultDNSAllowedNetworks(e)))
 	e["SAMBA_DC_LDAPS_PORT"] = "636"
 	e["SAMBA_DC_LDAPS_SERVER_URL_PORT"] = e["SAMBA_DC_LDAPS_SERVER_URL"] + ":" + e["SAMBA_DC_LDAPS_PORT"]
 	e["SAMBA_DC_WORKGROUP"] = strings.ToUpper(defaultValue(e["SAMBA_DC_WORKGROUP"], strings.Split(domain, ".")[0]))
@@ -244,6 +244,30 @@ func dnsList(value string) string {
 		return ""
 	}
 	return strings.Join(fields, "; ") + ";"
+}
+
+// defaultDNSAllowedNetworks lists the networks BIND may answer and recurse for.
+// The LAN alone is not enough: every other cask reaches this DNS from a Docker
+// network, and those subnets are allocated dynamically, so a query from a
+// sibling container comes back REFUSED. Container-to-container ranges are
+// covered by allowing the private address space this deployment lives in.
+// BIND only listens on loopback and the LAN address, so this does not expose
+// the resolver beyond hosts that can already reach it.
+func defaultDNSAllowedNetworks(e map[string]string) string {
+	networks := []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+	if host := hostNetworkCIDR(e["HOST_IP"], e["HOST_SUBNET_MASK"]); host != "" {
+		known := false
+		for _, n := range networks {
+			if n == host {
+				known = true
+				break
+			}
+		}
+		if !known {
+			networks = append(networks, host)
+		}
+	}
+	return strings.Join(networks, ";")
 }
 
 func hostNetworkCIDR(address, prefix string) string {

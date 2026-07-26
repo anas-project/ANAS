@@ -105,9 +105,12 @@ do
 done
 echo "search $SAMBA_DC_DNS_SEARCH" >> /etc/resolv.conf
 
-join_domain
+# /var/lib/samba is a bind mount that starts empty, so the directories the
+# image ships are not there. net ads join needs private/ for its messaging
+# socket and fails with "Unable to initialize messaging context!" without it.
+mkdir -p /var/lib/samba/private /var/log/samba
 
-mkdir -p /var/log/samba/
+join_domain
 
 echo "Create share"
 mkdir -p /$USERDATA_NAME/$SHARE_DIR_NAME

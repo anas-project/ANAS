@@ -13,9 +13,15 @@ if [ ! -f /etc/timezone ] && [ ! -z "$TZ" ]; then
   echo $TZ >/etc/timezone
 fi
 
+# Cores must exist before samba runs, not after: provisioning already starts
+# smbd/winbindd and they log a failure for every missing core directory.
+mkdir -p /var/log/samba/cores
+chmod 700 /var/log/samba/cores
+
 if [ ! -f /var/lib/samba/registry.tdb ]; then
   INTERFACE_OPTS="--option=\"bind interfaces only=$SAMBA_DC_BIND_INTERFACES_ONLY\" \
-      --option=\"interfaces=$SAMBA_DC_INTERFACES\""
+      --option=\"interfaces=$SAMBA_DC_INTERFACES\" \
+      --option=\"posix:eadb=/var/lib/samba/eadb.tdb\""
 
   if [ $SAMBA_DC_DOMAIN_ACTION == provision ]; then
     PROVISION_OPTS="--server-role=dc --use-rfc2307 --domain=$SAMBA_DC_WORKGROUP \
@@ -74,9 +80,6 @@ export SAMBA_DC_TLS_ENABLED="${SAMBA_DC_TLS_ENABLED:-yes}"
 
 echo "Creating /etc/samba/smb.conf ..."
 envsubst < /root/smb.conf.j2 > /etc/samba/smb.conf
-
-mkdir -p /var/log/samba/cores
-chmod 700 /var/log/samba/cores
 
 chmod 0755 /usr/local/bin/structure.sh
 chmod +x /usr/local/bin/anas_zone.sh

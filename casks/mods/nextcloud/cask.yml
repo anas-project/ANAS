@@ -64,6 +64,12 @@ config:
     - ANAS_IAM_PORTAL_URL
     - POSTGRES_PASSWORD
     - MARIADB_PASSWORD
+    # Directory credentials owned by samba_dc: the LDAP agent bind password
+    # configured through occ, and the administrator password this cask reuses
+    # for its own initial admin. Both are sensitive, so they only cross the
+    # cask boundary through an explicit claim.
+    - SAMBA_DC_PASSWORD_BIND_PASSWORD
+    - SAMBA_DC_ADMIN_PASSWORD
   changes:
     db_type:
       effect: data_migrate

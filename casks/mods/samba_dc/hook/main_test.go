@@ -25,8 +25,12 @@ func TestCalcSambaDCHostIPDefaultsToHostIP(t *testing.T) {
 	if got := env["SAMBA_DC_DNS_FORWARDERS"]; got != "192.0.2.1; 1.1.1.1;" {
 		t.Fatalf("SAMBA_DC_DNS_FORWARDERS = %q", got)
 	}
-	if got := env["SAMBA_DC_DNS_ALLOWED_NETWORKS"]; got != "192.0.2.0/24;" {
-		t.Fatalf("SAMBA_DC_DNS_ALLOWED_NETWORKS = %q", got)
+	// Sibling casks query this resolver from Docker networks whose subnets are
+	// allocated at run time, so the private space has to be allowed alongside
+	// the LAN or those queries come back REFUSED.
+	if got, want := env["SAMBA_DC_DNS_ALLOWED_NETWORKS"],
+		"10.0.0.0/8; 172.16.0.0/12; 192.168.0.0/16; 192.0.2.0/24;"; got != want {
+		t.Fatalf("SAMBA_DC_DNS_ALLOWED_NETWORKS = %q, want %q", got, want)
 	}
 }
 

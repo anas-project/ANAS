@@ -27,6 +27,11 @@ config:
   consumes:
     - SHARE_ACCESS_MODE
     - USE_DEFAULT_DOMAIN
+    # The domain join authenticates as this account. The password is sensitive
+    # and owned by samba_dc, so it only crosses the boundary through an explicit
+    # claim; without it the join runs with an empty password and locks the
+    # account out after the tenth attempt.
+    - SAMBA_DC_ADMIN_PASSWORD
   changes:
     hostname:
       effect: data_migrate
