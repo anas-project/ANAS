@@ -5,6 +5,7 @@ version: 0.25.5
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: NetBird
 description: Incomplete WireGuard overlay network scaffold; excluded from recommended deployments.
 category: network
@@ -15,29 +16,34 @@ runtime:
 dependencies:
   requires:
     - traefik
-  requires_one:
-    - capability: sso_provider
-      selected_by: sso_provider
-      providers:
-        - keycloak
-        - llng
-      default: keycloak
+  requires_capabilities:
+    - name: iam
+      interface_selected_by: iam_protocol
+      interfaces:
+        any_of:
+          - oidc
+        prefer:
+          - oidc
 config:
   defaults:
     domain_prefix: netbird
     adminer_enabled: "false"
-    sso_provider: auto
-  # OIDC client registration and app-launcher metadata published to the IAM.
+    iam_protocol: auto
+  # Generic client registration and app-launcher metadata published to
+  # whichever IAM the deployment selected.
   exports:
-    - OIDC_RP_*
+    - ANAS_IAM_CLIENT__NETBIRD__*
     - APPS_LIST*
+  # This cask's own IAM binding. It reads no other consumer's binding and no
+  # IAM-implementation variable.
+  consumes:
+    - ANAS_IAM_BINDING__NETBIRD__*
   changes:
-    sso_provider:
+    iam_protocol:
       effect: container_recreate
       apply: recreate-netbird
       description: The OIDC issuer and client configuration change together.
 features:
-  sso_client: true
   generated_secrets: true
   domain: true
 services:

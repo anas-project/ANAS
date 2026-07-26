@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,13 +37,6 @@ type hookResponse struct {
 	Secrets         map[string]string `json:"secrets,omitempty"`
 	Files           map[string]string `json:"files,omitempty"`
 	DisableServices []string          `json:"disable_services,omitempty"`
-	DockerCopies    []dockerCopy      `json:"docker_copies,omitempty"`
-}
-
-type dockerCopy struct {
-	Source      string `json:"source"`
-	Container   string `json:"container"`
-	Destination string `json:"destination"`
 }
 
 type secretStore struct {
@@ -88,57 +83,82 @@ func main() {
 	}
 	fmt.Print(string(out))
 }
+
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)
 }
+
 func handle(req hookRequest) (hookResponse, error) {
 	env := cloneMap(req.Env)
 	secrets := &secretStore{values: cloneMap(req.Secrets)}
+	if req.Module != "authentik" {
+		return hookResponse{}, nil
+	}
 	switch req.Phase {
 	case "calculate":
-		if err := calculate(req.Module, env, req.Workdir, secrets); err != nil {
+		if err := calcAuthentik(env, secrets); err != nil {
 			return hookResponse{}, err
 		}
 		return hookResponse{Env: changed(req.Env, env), Secrets: changed(req.Secrets, secrets.values)}, nil
 	case "render_env":
-		files, err := renderEnv(req.Module, env, req.Workdir)
+		files, err := renderAuthentik(env)
 		if err != nil {
 			return hookResponse{}, err
 		}
 		return hookResponse{Env: changed(req.Env, env), Files: files}, nil
-	case "services":
-		return hookResponse{DisableServices: disabledServices(req.Module, env)}, nil
-	case "after_start":
-		return hookResponse{DockerCopies: afterStart(req.Module, env)}, nil
 	default:
 		return hookResponse{}, nil
 	}
 }
-func calculate(module string, env map[string]string, workdir string, secrets *secretStore) error {
-	if module != "meshcentral" {
-		return nil
+
+func calcAuthentik(e map[string]string, secrets *secretStore) error {
+	e["AUTHENTIK_DOMAIN"] = e["AUTHENTIK_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
+	e["AUTHENTIK_DOMAIN_PORT"] = e["AUTHENTIK_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
+	e["AUTHENTIK_DOMAIN_FULL"] = "https://" + e["AUTHENTIK_DOMAIN_PORT"]
+	e["AUTHENTIK_PASSWORD"] = defaultValue(e["AUTHENTIK_PASSWORD"], e["DEFAULT_SERVICE_ROOT_PASSWORD"])
+
+	switch e["AUTHENTIK_DB_TYPE"] {
+	case "postgres":
+		e["AUTHENTIK_NETWORK_DB"] = e["POSTGRES_NETWORK_NAME"]
+		e["AUTHENTIK_POSTGRESQL__HOST"] = e["POSTGRES_HOST"]
+		e["AUTHENTIK_POSTGRESQL__PORT"] = e["POSTGRES_PORT"]
+		e["AUTHENTIK_POSTGRESQL__USER"] = e["POSTGRES_USERNAME"]
+		e["AUTHENTIK_POSTGRESQL__PASSWORD"] = e["POSTGRES_PASSWORD"]
+		e["AUTHENTIK_POSTGRESQL__NAME"] = e["AUTHENTIK_DB_NAME"]
+	case "mariadb":
+		return fmt.Errorf("authentik requires postgres; set authentik.db_type to postgres")
+	default:
+		return fmt.Errorf("AUTHENTIK_DB_TYPE must be resolved to postgres")
 	}
-	return calcMeshcentral(env, workdir, secrets)
+	e["AUTHENTIK_REDIS__HOST"] = e["CONTAINER_PREFIX"] + "authentik_redis"
+	e["AUTHENTIK_LOG_LEVEL"] = defaultValue(e["AUTHENTIK_LOG_LEVEL"], "warn")
+
+	key, err := secrets.Ensure("AUTHENTIK_SECRET_KEY", func() (string, error) { return randomHexErr(32) })
+	if err != nil {
+		return err
+	}
+	e["AUTHENTIK_SECRET_KEY"] = key
+	e["AUTHENTIK_BOOTSTRAP_PASSWORD"] = e["AUTHENTIK_PASSWORD"]
+	e["AUTHENTIK_BOOTSTRAP_EMAIL"] = e["EMAIL"]
+
+	if err := ensureSigningKeypair(e, secrets); err != nil {
+		return err
+	}
+	return publishIAMEndpoints(e)
 }
-func renderEnv(module string, env map[string]string, workdir string) (map[string]string, error) {
-	if module != "meshcentral" {
+
+func renderAuthentik(e map[string]string) (map[string]string, error) {
+	blueprint, err := renderClientBlueprint(e)
+	if err != nil {
+		return nil, err
+	}
+	if blueprint == "" {
 		return map[string]string{}, nil
 	}
-	return map[string]string{}, nil
+	return map[string]string{"blueprints/anas-clients.yaml": blueprint}, nil
 }
-func disabledServices(module string, env map[string]string) []string {
-	if module != "meshcentral" {
-		return nil
-	}
-	return nil
-}
-func afterStart(module string, env map[string]string) []dockerCopy {
-	if module != "meshcentral" {
-		return nil
-	}
-	return nil
-}
+
 func cloneMap(in map[string]string) map[string]string {
 	out := map[string]string{}
 	for k, v := range in {
@@ -146,6 +166,7 @@ func cloneMap(in map[string]string) map[string]string {
 	}
 	return out
 }
+
 func changed(old, cur map[string]string) map[string]string {
 	out := map[string]string{}
 	for k, v := range cur {
@@ -155,32 +176,22 @@ func changed(old, cur map[string]string) map[string]string {
 	}
 	return out
 }
-func calcMeshcentral(e map[string]string, _ string, _ *secretStore) error {
-	e["MESHCENTRAL_DOMAIN"] = e["MESHCENTRAL_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
-	e["MESHCENTRAL_TITLE"] = defaultValue(e["MESHCENTRAL_TITLE"], e["SERVER_NAME"])
-	e["MESHCENTRAL_SUBTITLE"] = defaultValue(e["MESHCENTRAL_SUBTITLE"], " ")
-	if e["MESHCENTRAL_USER_FILTER"] == "" {
-		if e["SAMBA_DC_APP_FILTER"] == "true" {
-			e["MESHCENTRAL_USER_FILTER"] = "(&" + e["SAMBA_DC_USER_CLASS_FILTER"] + "(|(memberOf=CN=APP_meshcentral," + e["SAMBA_DC_BASE_APP_DN"] + ")(memberOf=" + e["SAMBA_DC_APP_ALL_DN"] + ")(memberOf=" + e["SAMBA_DC_ADMIN_GROUP_DN"] + ")))"
-		} else {
-			e["MESHCENTRAL_USER_FILTER"] = e["SAMBA_DC_USER_CLASS_FILTER"]
-		}
-	}
-	if e["MESHCENTRAL_USER_LOGIN_FILTER"] == "" {
-		parts := []string{}
-		for _, attr := range splitCSV(e["SAMBA_DC_USER_LOGIN_ATTRS"]) {
-			parts = append(parts, "("+attr+"={{username}})")
-		}
-		e["MESHCENTRAL_USER_LOGIN_FILTER"] = "(&" + e["MESHCENTRAL_USER_FILTER"] + e["SAMBA_DC_USER_ENABLED_FILTER"] + "(|" + strings.Join(parts, "") + "))"
-	}
-	return nil
-}
+
 func defaultValue(v, d string) string {
 	if v == "" {
 		return d
 	}
 	return v
 }
+
+func randomHexErr(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
 func splitCSV(s string) []string {
 	out := []string{}
 	for _, item := range strings.Split(s, ",") {

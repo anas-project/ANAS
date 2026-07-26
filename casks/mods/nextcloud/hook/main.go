@@ -11,7 +11,18 @@ import (
 	"strings"
 )
 
-const hookABI = "anas.cask/v1"
+// The runner sends the ABI it speaks. Both are accepted so a cask bundle
+// stays usable with a v1 runner; only the v2 fields are runner-side.
+var supportedHookABIs = []string{"anas.cask/v1", "anas.cask/v2"}
+
+func supportedABI(v string) bool {
+	for _, abi := range supportedHookABIs {
+		if v == abi {
+			return true
+		}
+	}
+	return false
+}
 
 type hookRequest struct {
 	ABI     string            `json:"abi"`
@@ -61,7 +72,7 @@ func main() {
 	if err := json.Unmarshal(b, &req); err != nil {
 		fail(err)
 	}
-	if req.ABI != hookABI {
+	if !supportedABI(req.ABI) {
 		fail(fmt.Errorf("unsupported ABI %q", req.ABI))
 	}
 	resp, err := handle(req)
@@ -191,13 +202,10 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) er
 	if e["SAMBA_DC_APP_FILTER"] == "true" {
 		allowGroups = "APP_nextcloud"
 	}
-	e["SMAL_SP_APPS"] = addCSV(e["SMAL_SP_APPS"], "nextcloud")
-	e["SMAL_SP__NEXTCLOUD__METADATA_URL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/metadata?idp=1"
-	e["SMAL_SP__NEXTCLOUD__ATTR01"] = "cn,cn,1"
-	e["SMAL_SP__NEXTCLOUD__ATTR02"] = "sAMAccountName,sAMAccountName,1"
-	e["SMAL_SP__NEXTCLOUD__NAMEID_FORMAT"] = "windows"
-	e["SMAL_SP__NEXTCLOUD__ALLOW_GROUPS"] = allowGroups
-	e["SMAL_SP__NEXTCLOUD__DOMAIN"] = e["NEXTCLOUD_DOMAIN"]
+	publishClientRegistration(e, allowGroups)
+	if err := ensureSPKeypair(e, secrets); err != nil {
+		return err
+	}
 	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "nextcloud")
 	e["APPS_LIST__NEXTCLOUD__NAME"] = defaultValue(e["APPS_LIST__NEXTCLOUD__NAME"], "Nextcloud")
 	e["APPS_LIST__NEXTCLOUD__DESC"] = defaultValue(e["APPS_LIST__NEXTCLOUD__DESC"], "Self hosted file sharing and communication")
@@ -235,6 +243,10 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) er
 	return nil
 }
 func moduleNextcloud(e map[string]string, _ string) error {
+	if err := applyIAMBinding(e); err != nil {
+		return err
+	}
+	e["NEXTCLOUD_SAML_IDP_CERT"] = unquotePEM(e["NEXTCLOUD_SAML_IDP_CERT"])
 	e["MEMORY_LIMIT"] = e["NEXTCLOUD_MEMORY_LIMIT"]
 	e["UPLOAD_MAX_SIZE"] = e["NEXTCLOUD_UPLOAD_MAX_SIZE"]
 	e["OPCACHE_MEM_SIZE"] = "128"

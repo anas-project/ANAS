@@ -19,6 +19,17 @@ global:
   # them with `anas config secret list`.
   default_service_root_password: ChangeMe1!
 
+# The single identity provider for this deployment. Required as soon as any
+# enabled cask consumes the iam capability; the runner never picks one for you,
+# even when only one candidate is installed. The chosen cask is pulled into the
+# dependency closure automatically, so it does not need to be in `modules`.
+iam:
+  provider: llng
+  # Optional. Applies to casks whose iam_protocol is left on "auto" and that
+  # actually support this protocol; the rest fall back to their own preference
+  # order. Per-cask overrides live in services.<name>.env.iam_protocol.
+  default_protocol: oidc
+
 env:
   BASICAUTH_USER: admin
   # all_rw: all authenticated domain users can write.

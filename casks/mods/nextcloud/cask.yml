@@ -6,6 +6,7 @@ app_version: 30.0.1
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: Nextcloud
 description: File sync, sharing, office integration, memories, and Talk.
 category: app
@@ -17,6 +18,18 @@ dependencies:
     - traefik
     - eturnal
     - samba_dc
+  requires_capabilities:
+    # Only SAML is declared: this cask configures the user_saml app and has no
+    # OIDC path, and declaring a protocol it cannot actually serve is exactly
+    # the gap between "manifest claims" and "deployment works" that this model
+    # exists to close.
+    - name: iam
+      interface_selected_by: iam_protocol
+      interfaces:
+        any_of:
+          - saml
+        prefer:
+          - saml
   requires_one:
     - capability: relational_database
       selected_by: db_type
@@ -37,18 +50,18 @@ config:
     talk_enabled: "true"
     memories_enabled: "true"
     db_type: auto
-  # SAML SP registration, app-launcher metadata, and Talk service settings
-  # published for the IAM portal and the bundled Talk containers.
+    iam_protocol: auto
+  # Generic SAML SP registration, app-launcher metadata, and Talk service
+  # settings published for the selected IAM and the bundled Talk containers.
   exports:
-    - SMAL_SP_*
+    - ANAS_IAM_CLIENT__NEXTCLOUD__*
     - APPS_LIST*
     - TALK_*
-  # SAML IdP endpoints and signing material read by the container init
-  # scripts when LLNG is deployed (absent keys simply disable the SP setup),
-  # and the resolved database backend's real connection password.
+  # This cask's own IAM binding plus the resolved database backend's real
+  # connection password. No IAM-implementation variable is read.
   consumes:
-    - LLNG_DOMAIN
-    - LLNG_SAML_*
+    - ANAS_IAM_BINDING__NEXTCLOUD__*
+    - ANAS_IAM_PORTAL_URL
     - POSTGRES_PASSWORD
     - MARIADB_PASSWORD
   changes:
@@ -87,7 +100,6 @@ config:
       description: The app can be enabled or disabled through occ without restarting the container.
 features:
   ldap_client: true
-  sso_client: true
   generated_secrets: true
   domain: true
 services:

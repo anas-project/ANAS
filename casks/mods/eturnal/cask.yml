@@ -5,6 +5,7 @@ version: 1.12.0
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: Eturnal TURN
 description: TURN service used by realtime communication modules.
 category: communication

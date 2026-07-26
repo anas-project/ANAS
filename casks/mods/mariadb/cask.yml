@@ -6,6 +6,7 @@ app_version: 10.11.4
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: MariaDB
 description: MariaDB database service with optional Adminer UI.
 category: database

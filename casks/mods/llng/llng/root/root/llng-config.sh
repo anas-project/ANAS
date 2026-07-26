@@ -125,13 +125,13 @@ done
 saml_get_var() { # $1 app name, $2 key name
   local app_name="$1"
   local key_name="$2"
-  local name="SMAL_SP__${app_name^^}__${key_name}"
+  local name="SAML_SP__${app_name^^}__${key_name}"
   local var="${!name}"
 
   echo "$var"
 }
 IFS=','
-for app in $SMAL_SP_APPS; do
+for app in $SAML_SP_APPS; do
   (
     IFS=' '
     echo "Configuring saml sp $app"
@@ -165,7 +165,7 @@ for app in $SMAL_SP_APPS; do
     index=1
     continue_loop=true
     while [ "$continue_loop" = true ]; do
-      var="SMAL_SP__${app^^}__ATTR$(printf "%02d" "$index")"
+      var="SAML_SP__${app^^}__ATTR$(printf "%02d" "$index")"
       value="${!var}"
 
       if [ -z "$value" ]; then

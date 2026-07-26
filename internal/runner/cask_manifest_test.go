@@ -146,7 +146,7 @@ kind: Cask
 name: example
 version: 1.0.0
 abi:
-  supports: [anas.cask/v1]
+  supports: [anas.cask/v2]
 runtime:
   type: builtin
 dependencies:

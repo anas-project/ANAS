@@ -1,0 +1,78 @@
+api_version: anas.dev/v1
+kind: Cask
+name: authentik
+version: 2024.10.5
+app_version: 2024.10.5
+abi:
+  supports:
+    - anas.cask/v1
+    - anas.cask/v2
+title: authentik
+description: Identity provider serving OIDC and SAML with per-application endpoints.
+category: identity
+status: experimental
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+capabilities:
+  provides:
+    - name: iam
+      interfaces:
+        - oidc
+        - saml
+dependencies:
+  requires:
+    - traefik
+    - samba_dc
+  requires_one:
+    - capability: relational_database
+      selected_by: db_type
+      providers:
+        - postgres
+        - mariadb
+      default: postgres
+config:
+  defaults:
+    domain_prefix: auth
+    log_level: warn
+    db_name: authentik
+    image_tag: 2024.10.5
+    db_type: auto
+  # Endpoints this cask publishes for its bound consumers. Unlike a portal that
+  # serves one endpoint set for the whole deployment, these differ per
+  # consumer, which is why the contract is per-binding.
+  exports:
+    - ANAS_IAM_BINDING_*
+    - ANAS_IAM_PORTAL_URL
+  # Generic client registration requests published by consumers, translated
+  # into blueprints during render_env.
+  consumes:
+    - ANAS_IAM_CLIENTS
+    - ANAS_IAM_OIDC_CLIENTS
+    - ANAS_IAM_SAML_CLIENTS
+    - ANAS_IAM_CLIENT_*
+    - APPS_LIST*
+    - POSTGRES_PASSWORD
+    - MARIADB_PASSWORD
+  changes:
+    password:
+      effect: credential_rotate
+      apply: rotate-authentik-admin-password
+      sensitive: true
+      description: Update the existing bootstrap administrator explicitly.
+    db_type:
+      effect: data_migrate
+      apply: migrate-authentik-database
+      description: Existing authentik data must be migrated explicitly.
+    domain_prefix:
+      effect: reconcile
+      apply: reconcile-authentik-domain
+      description: Every per-application endpoint is derived from this domain, so clients must be reconciled with it.
+features:
+  generated_secrets: true
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

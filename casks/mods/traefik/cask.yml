@@ -5,6 +5,7 @@ version: 2.5.1
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: Traefik reverse proxy
 description: HTTPS reverse proxy and dashboard for all web-facing services.
 category: network

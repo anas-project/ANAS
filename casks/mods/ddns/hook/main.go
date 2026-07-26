@@ -8,7 +8,18 @@ import (
 	"strings"
 )
 
-const hookABI = "anas.cask/v1"
+// The runner sends the ABI it speaks. Both are accepted so a cask bundle
+// stays usable with a v1 runner; only the v2 fields are runner-side.
+var supportedHookABIs = []string{"anas.cask/v1", "anas.cask/v2"}
+
+func supportedABI(v string) bool {
+	for _, abi := range supportedHookABIs {
+		if v == abi {
+			return true
+		}
+	}
+	return false
+}
 
 type hookRequest struct {
 	ABI     string            `json:"abi"`
@@ -58,7 +69,7 @@ func main() {
 	if err := json.Unmarshal(b, &req); err != nil {
 		fail(err)
 	}
-	if req.ABI != hookABI {
+	if !supportedABI(req.ABI) {
 		fail(fmt.Errorf("unsupported ABI %q", req.ABI))
 	}
 	resp, err := handle(req)

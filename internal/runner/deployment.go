@@ -239,6 +239,7 @@ func runPlan(args []string) error {
 		return err
 	}
 	fmt.Println(strings.Join(a.order, "\n"))
+	fmt.Print(a.iamPlanSummary())
 	return nil
 }
 
@@ -385,6 +386,18 @@ func validateLockedResolution(a *app, lock *caskLock) error {
 		}
 		if record.Digest != digest {
 			return fmt.Errorf("cask %q bundle digest does not match config lock; run anas lock to update explicitly", name)
+		}
+	}
+	// Switching IAM or protocol rewrites client registrations and callback
+	// URLs, so it must go through an explicit lock update rather than being
+	// applied silently by an ordinary start.
+	if a.iamProvider != "" {
+		locked := ""
+		if lock.IAM != nil {
+			locked = lock.IAM.Provider
+		}
+		if locked != a.iamProvider {
+			return fmt.Errorf("iam.provider resolved to %s but lock records %q; run anas lock", a.iamProvider, locked)
 		}
 	}
 	for module, bindings := range a.resolvedBindings {

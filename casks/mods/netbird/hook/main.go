@@ -11,7 +11,18 @@ import (
 	"strings"
 )
 
-const hookABI = "anas.cask/v1"
+// The runner sends the ABI it speaks. Both are accepted so a cask bundle
+// stays usable with a v1 runner; only the v2 fields are runner-side.
+var supportedHookABIs = []string{"anas.cask/v1", "anas.cask/v2"}
+
+func supportedABI(v string) bool {
+	for _, abi := range supportedHookABIs {
+		if v == abi {
+			return true
+		}
+	}
+	return false
+}
 
 type hookRequest struct {
 	ABI     string            `json:"abi"`
@@ -61,7 +72,7 @@ func main() {
 	if err := json.Unmarshal(b, &req); err != nil {
 		fail(err)
 	}
-	if req.ABI != hookABI {
+	if !supportedABI(req.ABI) {
 		fail(fmt.Errorf("unsupported ABI %q", req.ABI))
 	}
 	resp, err := handle(req)
@@ -158,22 +169,24 @@ func calcNetbird(e map[string]string, workdir string, secrets *secretStore) erro
 	if e["SAMBA_DC_APP_FILTER"] == "true" {
 		allowGroups = "APP_netbird,APP_all,Admins"
 	}
-	e["OIDC_RP_APPS"] = addCSV(e["OIDC_RP_APPS"], "netbird")
-	e["OIDC_RP__NETBIRD__ATTR01"] = "cn,cn,1"
-	e["OIDC_RP__NETBIRD__ATTR02"] = "sAMAccountName,sAMAccountName,1"
-	e["OIDC_RP__NETBIRD__ATTR03"] = "email,email,1"
-	e["OIDC_RP__NETBIRD__CLIENT_ID"] = "netbird"
-	if e["OIDC_RP__NETBIRD__CLIENT_SECRET"] == "" {
-		v, err := secrets.Ensure("OIDC_RP__NETBIRD__CLIENT_SECRET", func() (string, error) { return randomHexErr(6) })
+	// Generic client registration. The selected IAM translates this into its
+	// own configuration format, so nothing here names an IAM implementation.
+	const client = "ANAS_IAM_CLIENT__NETBIRD__"
+	e[client+"INTERFACE"] = "oidc"
+	e[client+"CLIENT_ID"] = "netbird"
+	if e[client+"CLIENT_SECRET"] == "" {
+		v, err := secrets.Ensure(client+"CLIENT_SECRET", func() (string, error) { return randomHexErr(6) })
 		if err != nil {
 			return err
 		}
-		e["OIDC_RP__NETBIRD__CLIENT_SECRET"] = v
+		e[client+"CLIENT_SECRET"] = v
 	}
-	e["OIDC_RP__NETBIRD__REDIRECT_URI"] = e["NETBIRD_DOMAIN_FULL"] + "/auth, " + e["NETBIRD_DOMAIN_FULL"] + "/silent-auth"
-	e["OIDC_RP__NETBIRD__LOGOUT_REDIRECT_URI"] = e["NETBIRD_DOMAIN_FULL"]
-	e["OIDC_RP__NETBIRD__ALLOW_GROUPS"] = allowGroups
-	e["OIDC_RP__NETBIRD__DOMAIN"] = e["NETBIRD_DOMAIN"]
+	e[client+"REDIRECT_URIS"] = e["NETBIRD_DOMAIN_FULL"] + "/auth," + e["NETBIRD_DOMAIN_FULL"] + "/silent-auth"
+	e[client+"POST_LOGOUT_REDIRECT_URIS"] = e["NETBIRD_DOMAIN_FULL"]
+	e[client+"SCOPES"] = "openid,profile,email"
+	e[client+"ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1,email:email:1"
+	e[client+"ALLOW_GROUPS"] = allowGroups
+	e[client+"DOMAIN"] = e["NETBIRD_DOMAIN"]
 	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "netbird")
 	e["APPS_LIST__NETBIRD__NAME"] = defaultValue(e["APPS_LIST__NETBIRD__NAME"], "Netbird")
 	e["APPS_LIST__NETBIRD__DESC"] = defaultValue(e["APPS_LIST__NETBIRD__DESC"], "Connect and Secure Your IT Infrastructure in Minutes")
@@ -188,20 +201,22 @@ func moduleNetbird(e map[string]string, _ string) error {
 	e["NETBIRD_MGMT_API_ENDPOINT"] = e["NETBIRD_DOMAIN_FULL"]
 	e["NETBIRD_MGMT_GRPC_API_ENDPOINT"] = e["NETBIRD_DOMAIN_FULL"]
 	e["NETBIRD_MGMT_API_PORT"] = e["TRAEFIK_BASE_PORT"]
-	e["AUTH_CLIENT_ID"] = e["OIDC_RP__NETBIRD__CLIENT_ID"]
-	e["AUTH_CLIENT_SECRET"] = e["OIDC_RP__NETBIRD__CLIENT_SECRET"]
+	e["AUTH_CLIENT_ID"] = e["ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID"]
+	e["AUTH_CLIENT_SECRET"] = e["ANAS_IAM_CLIENT__NETBIRD__CLIENT_SECRET"]
 	e["NETBIRD_SIGNAL_ENDPOINT"] = e["NETBIRD_DOMAIN_FULL"]
 	e["NETBIRD_SIGNAL_PORT"] = e["TRAEFIK_BASE_PORT"]
 	e["AUTH_REDIRECT_URI"] = "/auth"
 	e["AUTH_SILENT_REDIRECT_URI"] = "/silent-auth"
-	var oidcEndpoint string
-	switch e["NETBIRD_SSO_PROVIDER"] {
-	case "keycloak":
-		oidcEndpoint = e["KEYCLOAK_OIDC_CONFIGURATION_ENDPOINT"]
-	case "llng":
-		oidcEndpoint = e["LLNG_OIDC_CONFIGURATION_ENDPOINT"]
-	default:
-		return fmt.Errorf("NETBIRD_SSO_PROVIDER must be resolved to keycloak or llng")
+	// Read this cask's own binding rather than branching on which IAM is
+	// deployed: the runner already resolved provider and protocol, and the
+	// provider published the endpoint under this cask's binding prefix.
+	const binding = "ANAS_IAM_BINDING__NETBIRD__"
+	if iface := e[binding+"INTERFACE"]; iface != "oidc" {
+		return fmt.Errorf("netbird requires an oidc IAM binding, got %q", iface)
+	}
+	oidcEndpoint := e[binding+"OIDC_DISCOVERY_URL"]
+	if oidcEndpoint == "" {
+		return fmt.Errorf("%sOIDC_DISCOVERY_URL is empty", binding)
 	}
 	e["NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT"] = oidcEndpoint
 	e["AUTH_SUPPORTED_SCOPES"] = "openid profile email"

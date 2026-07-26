@@ -5,6 +5,7 @@ version: 7.8.0
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: LDAP Account Manager
 description: Web UI for LDAP account administration.
 category: identity

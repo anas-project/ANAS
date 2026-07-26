@@ -6,6 +6,7 @@ app_version: 15.3.0
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: PostgreSQL
 description: PostgreSQL database service with optional Adminer UI.
 category: database

@@ -134,7 +134,7 @@ func TestNextcloudAutoAddsAndLocksOneDatabaseProvider(t *testing.T) {
 			lock.Bindings["nextcloud"] = map[string]string{"relational_database": binding}
 		}
 		return &app{
-			cfg: &config.File{Modules: []string{"nextcloud"}, Services: map[string]config.Service{}}, reg: reg,
+			cfg: &config.File{Modules: []string{"nextcloud"}, IAM: config.IAM{Provider: "llng"}, Services: map[string]config.Service{}}, reg: reg,
 			env: map[string]string{"NEXTCLOUD_DB_TYPE": "auto"}, lock: lock,
 		}
 	}
@@ -153,8 +153,13 @@ func TestNextcloudAutoAddsAndLocksOneDatabaseProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !contains(order, "mariadb") || contains(order, "postgres") || index(order, "mariadb") > index(order, "nextcloud") {
-		t.Fatalf("locked order = %v, want only mariadb before nextcloud", order)
+	// nextcloud honours its locked mariadb binding. postgres may still appear:
+	// the IAM this deployment binds to resolves its own database separately.
+	if got := a.resolvedBindings["nextcloud"]["relational_database"]; got != "mariadb" {
+		t.Fatalf("nextcloud database binding = %q, want the locked mariadb", got)
+	}
+	if !contains(order, "mariadb") || index(order, "mariadb") > index(order, "nextcloud") {
+		t.Fatalf("locked order = %v, want mariadb before nextcloud", order)
 	}
 
 	a = newApp("")
@@ -168,7 +173,7 @@ func TestNextcloudAutoAddsAndLocksOneDatabaseProvider(t *testing.T) {
 	}
 }
 
-func TestNetbirdAutoAddsOneSSOProvider(t *testing.T) {
+func TestNetbirdBindsToTheSelectedIAM(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
@@ -179,17 +184,17 @@ func TestNetbirdAutoAddsOneSSOProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &app{
-		cfg:  &config.File{Modules: []string{"netbird"}, Services: map[string]config.Service{}},
+		cfg:  &config.File{Modules: []string{"netbird"}, IAM: config.IAM{Provider: "llng"}, Services: map[string]config.Service{}},
 		reg:  reg,
-		env:  map[string]string{"NETBIRD_SSO_PROVIDER": "auto"},
+		env:  map[string]string{},
 		lock: &caskLock{Bindings: map[string]map[string]string{}},
 	}
 	order, err := a.resolveOrder(a.cfg.Modules)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !contains(order, "keycloak") || contains(order, "llng") || index(order, "keycloak") > index(order, "netbird") {
-		t.Fatalf("order = %v, want only keycloak before netbird", order)
+	if !contains(order, "llng") || index(order, "llng") > index(order, "netbird") {
+		t.Fatalf("order = %v, want llng before netbird", order)
 	}
 	for _, required := range []string{"traefik", "samba_dc", "postgres"} {
 		if !contains(order, required) {
@@ -210,8 +215,14 @@ func TestEveryCaskResolvesAsAStandaloneSelection(t *testing.T) {
 	}
 	for name := range reg {
 		t.Run(name, func(t *testing.T) {
+			// An IAM cask selected on its own is its own provider; selecting
+			// any other one alongside it would be the two-IAM error.
+			provider := "llng"
+			if _, ok := reg[name].providedCapability(capabilityIAM); ok {
+				provider = name
+			}
 			a := &app{
-				cfg:  &config.File{Modules: []string{name}, Services: map[string]config.Service{}},
+				cfg:  &config.File{Modules: []string{name}, IAM: config.IAM{Provider: provider}, Services: map[string]config.Service{}},
 				reg:  reg,
 				env:  map[string]string{},
 				lock: &caskLock{Bindings: map[string]map[string]string{}},
@@ -245,19 +256,18 @@ func TestBuiltInHardDependencyClosure(t *testing.T) {
 		"mariadb":     {"traefik"},
 		"eturnal":     {"traefik"},
 		"ddns":        {"traefik"},
-		"keycloak":    {"traefik", "samba_dc", "postgres"},
 		"llng":        {"traefik", "samba_dc", "postgres"},
 		"nextcloud":   {"traefik", "eturnal", "samba_dc", "postgres"},
 		"collabora":   {"nextcloud"},
 		"meshcentral": {"traefik", "mariadb", "samba_dc"},
 		"lam":         {"traefik", "samba_dc"},
-		"netbird":     {"traefik", "keycloak"},
+		"netbird":     {"traefik", "llng"},
 		"freeradius":  {"lego"},
 	}
 	for name, dependencies := range expected {
 		t.Run(name, func(t *testing.T) {
 			a := &app{
-				cfg:  &config.File{Modules: []string{name}, Services: map[string]config.Service{}},
+				cfg:  &config.File{Modules: []string{name}, IAM: config.IAM{Provider: "llng"}, Services: map[string]config.Service{}},
 				reg:  reg,
 				env:  map[string]string{},
 				lock: &caskLock{Bindings: map[string]map[string]string{}},

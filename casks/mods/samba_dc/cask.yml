@@ -5,6 +5,7 @@ version: 24.04.0
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: Samba domain controller and DNS
 description: Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server.
 category: identity

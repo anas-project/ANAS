@@ -5,6 +5,7 @@ version: 23.05.0-2
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: Collabora Online
 description: Online document editing backend for Nextcloud.
 category: app

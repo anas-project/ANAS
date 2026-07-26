@@ -5,6 +5,7 @@ version: 0.0.0
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: DDNS
 description: Dynamic DNS updater for the base domain and wildcard host.
 category: network

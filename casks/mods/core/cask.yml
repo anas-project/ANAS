@@ -5,6 +5,7 @@ version: 0.0.0
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: Core runtime
 description: Shared runtime defaults, host network discovery, generated secrets, and directory variables.
 category: system

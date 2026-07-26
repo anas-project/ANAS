@@ -13,10 +13,26 @@ import (
 type File struct {
 	Modules  []string           `yaml:"modules"`
 	Global   Global             `yaml:"global"`
+	IAM      IAM                `yaml:"iam"`
 	Rollback Rollback           `yaml:"rollback"`
 	Secrets  map[string]any     `yaml:"secrets"`
 	Services map[string]Service `yaml:"services"`
 	Env      map[string]any     `yaml:"env"`
+}
+
+// IAM selects the single identity provider for the deployment. Provider has no
+// default: when an IAM consumer is enabled the runner fails rather than picking
+// one, even if only one candidate exists. These values are deliberately absent
+// from BaseEnv so a host environment variable cannot make the same config file
+// produce a different deployment.
+type IAM struct {
+	// Provider is the IAM cask name. Required whenever an enabled cask
+	// consumes the iam capability.
+	Provider string `yaml:"provider"`
+	// DefaultProtocol is the deployment-wide fallback for casks that leave
+	// their protocol on "auto". It only applies to casks that actually
+	// support it; others fall back to their manifest preference order.
+	DefaultProtocol string `yaml:"default_protocol"`
 }
 
 // Rollback configures an optional persistent-data snapshot backend. Runtime
@@ -75,6 +91,8 @@ func Load(path string) (*File, error) {
 	if len(cfg.Modules) == 0 {
 		return nil, fmt.Errorf("missing modules")
 	}
+	cfg.IAM.Provider = strings.ToLower(strings.TrimSpace(cfg.IAM.Provider))
+	cfg.IAM.DefaultProtocol = strings.ToLower(strings.TrimSpace(cfg.IAM.DefaultProtocol))
 	// The shared administrator password is optional: when it is absent every
 	// cask receives its own generated root password instead. When set it must
 	// still meet the minimum length.

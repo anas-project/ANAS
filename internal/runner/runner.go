@@ -34,6 +34,12 @@ type app struct {
 	hookBins         map[string]string
 	sensitiveKeys    map[string]bool
 	resolvedBindings map[string]map[string]string
+	// iamProvider is the single IAM cask serving this deployment, and
+	// iamBindings maps each consumer to its resolved protocol. Both are empty
+	// until a consumer is actually reached during ordering, so an unused
+	// iam.provider never starts an IAM.
+	iamProvider string
+	iamBindings map[string]string
 	// artifactRoot is the final immutable deployment cask directory. Hooks use
 	// this path while a deployment is rendered in staging so values they derive
 	// never contain the temporary staging path.
@@ -262,6 +268,7 @@ func (a *app) execute(actions []string) error {
 	a.applyModuleDefaults()
 	if contains(actions, "plan") {
 		fmt.Println(strings.Join(a.order, "\n"))
+		fmt.Print(a.iamPlanSummary())
 		return nil
 	}
 	if contains(actions, "stop") {
@@ -536,6 +543,9 @@ func (a *app) hostLANRequired() bool {
 }
 
 func (a *app) resolveOrder(mods []string) ([]string, error) {
+	if err := a.checkSingleIAM(); err != nil {
+		return nil, err
+	}
 	seen := map[string]bool{}
 	temp := map[string]bool{}
 	resolvedDeps := map[string][]string{}
@@ -572,6 +582,13 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 			}
 			deps = append(deps, provider)
 		}
+		for _, dep := range mod.RequiresCapabilities {
+			provider, err := a.resolveCapabilityDependency(name, mod, dep)
+			if err != nil {
+				return err
+			}
+			deps = append(deps, provider)
+		}
 		if name != "core" && !contains(deps, "core") {
 			deps = append([]string{"core"}, deps...)
 		}
@@ -599,6 +616,7 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 		}
 	}
 	a.deps = resolvedDeps
+	a.publishIAMEnv()
 	return stableModuleOrder(out, resolvedDeps, a.reg)
 }
 
@@ -783,6 +801,11 @@ func (a *app) calculate() error {
 			return err
 		}
 		a.secrets.Merge(resp.Secrets)
+		if name == a.iamProvider {
+			if err := a.validateIAMEndpoints(); err != nil {
+				return err
+			}
+		}
 	}
 	domains := []string{}
 	for _, name := range a.order {

@@ -5,6 +5,7 @@ version: 22.04.0
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: Samba file server
 description: File sharing service joined to the Samba domain.
 category: storage

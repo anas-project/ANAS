@@ -32,9 +32,17 @@ func parseVersionConstraint(raw string) (*semver.Constraints, error) {
 }
 
 type caskLock struct {
-	APIVersion string                       `yaml:"api_version"`
-	Casks      map[string]caskLockRecord    `yaml:"casks"`
-	Bindings   map[string]map[string]string `yaml:"bindings,omitempty"`
+	APIVersion string                    `yaml:"api_version"`
+	Casks      map[string]caskLockRecord `yaml:"casks"`
+	// IAM records the deployment's single identity provider once. The protocol
+	// each consumer resolved to is per-app and lives in Bindings under
+	// "iam.interface".
+	IAM      *caskLockIAM                 `yaml:"iam,omitempty"`
+	Bindings map[string]map[string]string `yaml:"bindings,omitempty"`
+}
+
+type caskLockIAM struct {
+	Provider string `yaml:"provider"`
 }
 
 type caskLockRecord struct {
@@ -208,6 +216,9 @@ func (a *app) updateCaskLock(lock *caskLock, persistBindings bool) error {
 	}
 	if !persistBindings {
 		return nil
+	}
+	if a.iamProvider != "" {
+		lock.IAM = &caskLockIAM{Provider: a.iamProvider}
 	}
 	for module, bindings := range a.resolvedBindings {
 		if lock.Bindings[module] == nil {

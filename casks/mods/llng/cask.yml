@@ -6,12 +6,19 @@ app_version: 2.0.64
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: LemonLDAP::NG
 description: SSO portal, SAML/OIDC identity provider, and app launcher.
 category: identity
 runtime:
   type: compose
   compose_file: docker-compose.yml
+capabilities:
+  provides:
+    - name: iam
+      interfaces:
+        - oidc
+        - saml
 dependencies:
   requires:
     - traefik
@@ -33,12 +40,20 @@ config:
     enable_test: "true"
     adminer_enabled: "false"
     db_type: auto
-  # The portal renders SAML SP registrations, OIDC RP clients, and the app
-  # launcher published by application casks, and connects to its resolved
-  # database backend with that backend's real password.
+  # Endpoints this cask publishes for its bound consumers. The runner checks
+  # that every binding actually received them.
+  exports:
+    - ANAS_IAM_BINDING_*
+    - ANAS_IAM_PORTAL_URL
+  # Generic client registration requests from consumers (translated into this
+  # cask's private SAML SP / OIDC RP configuration during render_env), the app
+  # launcher metadata, and the resolved database backend's real password.
+  # Consumers publish these, so they are outside this cask's closure.
   consumes:
-    - SMAL_SP_*
-    - OIDC_RP_*
+    - ANAS_IAM_CLIENTS
+    - ANAS_IAM_OIDC_CLIENTS
+    - ANAS_IAM_SAML_CLIENTS
+    - ANAS_IAM_CLIENT_*
     - APPS_LIST*
     - POSTGRES_PASSWORD
     - MARIADB_PASSWORD
@@ -57,7 +72,6 @@ config:
       apply: reconcile-llng-domain
       description: SAML/OIDC metadata, clients, and proxy routes must change together.
 features:
-  sso_provider: true
   generated_secrets: true
   after_start: copy_portal_logos
 services:

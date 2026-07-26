@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const currentCaskABI = "anas.cask/v1"
+const currentCaskABI = "anas.cask/v2"
 
 type manifestABI struct {
 	Supports []string `yaml:"supports"`
@@ -28,6 +28,7 @@ type caskManifest struct {
 	Description  string               `yaml:"description"`
 	Category     string               `yaml:"category"`
 	Runtime      manifestRuntime      `yaml:"runtime"`
+	Capabilities manifestCapabilities `yaml:"capabilities"`
 	Dependencies manifestDependencies `yaml:"dependencies"`
 	Upgrade      manifestUpgrade      `yaml:"upgrade"`
 	Config       manifestConfig       `yaml:"config"`
@@ -44,9 +45,33 @@ type manifestRuntime struct {
 }
 
 type manifestDependencies struct {
-	Requires    []manifestDependency            `yaml:"requires"`
-	RequiresOne []manifestAlternativeDependency `yaml:"requires_one"`
-	After       []string                        `yaml:"after"`
+	Requires             []manifestDependency            `yaml:"requires"`
+	RequiresOne          []manifestAlternativeDependency `yaml:"requires_one"`
+	RequiresCapabilities []manifestRequiredCapability    `yaml:"requires_capabilities"`
+	After                []string                        `yaml:"after"`
+}
+
+type manifestCapabilities struct {
+	Provides []manifestProvidedCapability `yaml:"provides"`
+}
+
+type manifestProvidedCapability struct {
+	Name       string   `yaml:"name"`
+	Interfaces []string `yaml:"interfaces"`
+}
+
+// manifestRequiredCapability deliberately has no provider-selection field.
+// Decoding runs with KnownFields(true), so a cask that tries to reintroduce
+// one (selected_by, provider_selected_by, providers) fails to load.
+type manifestRequiredCapability struct {
+	Name                string                       `yaml:"name"`
+	InterfaceSelectedBy string                       `yaml:"interface_selected_by"`
+	Interfaces          manifestCapabilityInterfaces `yaml:"interfaces"`
+}
+
+type manifestCapabilityInterfaces struct {
+	AnyOf  []string `yaml:"any_of"`
+	Prefer []string `yaml:"prefer"`
 }
 
 type manifestAlternativeDependency struct {
@@ -103,8 +128,6 @@ type manifestChangePolicy struct {
 type manifestFeatures struct {
 	LDAPClient           bool     `yaml:"ldap_client"`
 	LDAPProvider         bool     `yaml:"ldap_provider"`
-	SSOClient            bool     `yaml:"sso_client"`
-	SSOProvider          bool     `yaml:"sso_provider"`
 	GeneratedSecrets     bool     `yaml:"generated_secrets"`
 	Domain               bool     `yaml:"domain"`
 	HostLAN              string   `yaml:"host_lan"`
@@ -303,26 +326,36 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if err != nil {
 		return Module{}, err
 	}
+	provides, err := normalizeProvidedCapabilities(dirname, manifest.Capabilities.Provides)
+	if err != nil {
+		return Module{}, err
+	}
+	requiresCapabilities, err := normalizeRequiredCapabilities(dirname, manifest.Dependencies.RequiresCapabilities)
+	if err != nil {
+		return Module{}, err
+	}
 	mod := Module{
-		Name:        manifest.Name,
-		Version:     manifest.Version,
-		AppVersion:  strings.TrimSpace(manifest.AppVersion),
-		UpgradeFrom: manifest.Upgrade.From,
-		SourceDir:   dir,
-		EnvPrefix:   envPrefix,
-		Defaults:    normalizeDefaults(manifest.Name, envPrefix, manifest.Config.Defaults),
-		Required:    normalizeRequired(manifest.Name, envPrefix, manifest.Config.Required),
-		Consumes:    consumes,
-		Exports:     exports,
-		Changes:     changes,
-		Requires:    normalizeManifestDependencies(manifest.Dependencies.Requires),
-		RequiresOne: normalizeAlternativeDependencies(manifest.Dependencies.RequiresOne),
-		RunAfter:    append([]string{}, manifest.Dependencies.After...),
-		UseLDAP:     manifest.Features.LDAPClient,
-		UseHostLAN:  manifest.Features.HostLAN,
-		Hook:        manifest.Logic.Hook,
-		RuntimeType: manifest.Runtime.Type,
-		ComposeFile: composeFile,
+		Name:                 manifest.Name,
+		Version:              manifest.Version,
+		AppVersion:           strings.TrimSpace(manifest.AppVersion),
+		UpgradeFrom:          manifest.Upgrade.From,
+		SourceDir:            dir,
+		EnvPrefix:            envPrefix,
+		Defaults:             normalizeDefaults(manifest.Name, envPrefix, manifest.Config.Defaults),
+		Required:             normalizeRequired(manifest.Name, envPrefix, manifest.Config.Required),
+		Consumes:             consumes,
+		Exports:              exports,
+		Changes:              changes,
+		Requires:             normalizeManifestDependencies(manifest.Dependencies.Requires),
+		RequiresOne:          normalizeAlternativeDependencies(manifest.Dependencies.RequiresOne),
+		Provides:             provides,
+		RequiresCapabilities: requiresCapabilities,
+		RunAfter:             append([]string{}, manifest.Dependencies.After...),
+		UseLDAP:              manifest.Features.LDAPClient,
+		UseHostLAN:           manifest.Features.HostLAN,
+		Hook:                 manifest.Logic.Hook,
+		RuntimeType:          manifest.Runtime.Type,
+		ComposeFile:          composeFile,
 	}
 	return mod, nil
 }

@@ -5,6 +5,7 @@ version: 4.11.0
 abi:
   supports:
     - anas.cask/v1
+    - anas.cask/v2
 title: Lego ACME certificates
 description: Issues and stores wildcard certificates used by Traefik and domain services.
 category: certificate

@@ -18,7 +18,18 @@ import (
 	"time"
 )
 
-const hookABI = "anas.cask/v1"
+// The runner sends the ABI it speaks. Both are accepted so a cask bundle
+// stays usable with a v1 runner; only the v2 fields are runner-side.
+var supportedHookABIs = []string{"anas.cask/v1", "anas.cask/v2"}
+
+func supportedABI(v string) bool {
+	for _, abi := range supportedHookABIs {
+		if v == abi {
+			return true
+		}
+	}
+	return false
+}
 
 type hookRequest struct {
 	ABI     string            `json:"abi"`
@@ -68,7 +79,7 @@ func main() {
 	if err := json.Unmarshal(b, &req); err != nil {
 		fail(err)
 	}
-	if req.ABI != hookABI {
+	if !supportedABI(req.ABI) {
 		fail(fmt.Errorf("unsupported ABI %q", req.ABI))
 	}
 	resp, err := handle(req)
@@ -101,7 +112,7 @@ func handle(req hookRequest) (hookResponse, error) {
 		}
 		return hookResponse{Env: changed(req.Env, env), Secrets: changed(req.Secrets, secrets.values)}, nil
 	case "render_env":
-		files, err := renderEnv(req.Module, env, req.Workdir)
+		files, err := renderEnv(req.Module, env, req.Workdir, secrets)
 		if err != nil {
 			return hookResponse{}, err
 		}
@@ -120,10 +131,11 @@ func calculate(module string, env map[string]string, workdir string, secrets *se
 	}
 	return calcLLNG(env, workdir, secrets)
 }
-func renderEnv(module string, env map[string]string, workdir string) (map[string]string, error) {
+func renderEnv(module string, env map[string]string, workdir string, secrets *secretStore) (map[string]string, error) {
 	if module != "llng" {
 		return map[string]string{}, nil
 	}
+	applyServicePrivateKeys("LLNG", env, secrets)
 	return map[string]string{}, moduleLLNG(env, workdir)
 }
 func disabledServices(module string, env map[string]string) []string {
@@ -202,13 +214,15 @@ func identityCalc(prefix string) func(map[string]string, *secretStore) error {
 		e[prefix+"_HANDLER_SOCKET_PORT"] = "9000"
 		e[prefix+"_LDAP_AUTH_FILTER"] = "(&" + e["SAMBA_DC_USER_CLASS_FILTER"] + e["SAMBA_DC_USER_ENABLED_FILTER"] + "(" + e["SAMBA_DC_USER_NAME"] + "=$user))"
 		e[prefix+"_LDAP_MAIL_FILTER"] = "(&" + e["SAMBA_DC_USER_CLASS_FILTER"] + e["SAMBA_DC_USER_ENABLED_FILTER"] + "(" + e["SAMBA_DC_USER_EMAIL"] + "=$mail))"
-		priv, cert, keyID, err := ensureServiceCert(secrets, prefix, e[prefix+"_DOMAIN"])
+		// Only the public certificate belongs in the shared calculate
+		// environment: consumers are in this cask's dependency closure, so
+		// anything published here reaches their .env files. The private key is
+		// set in render_env instead, where the environment is cask-local.
+		_, cert, keyID, err := ensureServiceCert(secrets, prefix, e[prefix+"_DOMAIN"])
 		if err != nil {
 			return err
 		}
-		e[prefix+"_SAML_SERVICE_PRIVATE_KEY"] = priv
 		e[prefix+"_SAML_SERVICE_PUBLIC_KEY"] = cert
-		e[prefix+"_OIDC_SERVICE_PRIVATE_KEY"] = priv
 		e[prefix+"_OIDC_SERVICE_PUBLIC_KEY"] = cert
 		e[prefix+"_OIDC_SERVICE_KEY_ID"] = keyID
 		e[prefix+"_SAML_IDP_ENTITY_ID"] = e[prefix+"_DOMAIN_FULL"] + "/saml/metadata"
@@ -216,7 +230,7 @@ func identityCalc(prefix string) func(map[string]string, *secretStore) error {
 		e[prefix+"_SAML_IDP_SLO"] = e[prefix+"_DOMAIN_FULL"] + "/saml/singleLogout"
 		e[prefix+"_SAML_IDP_SLO_RESPONSE"] = e[prefix+"_DOMAIN_FULL"] + "/saml/singleLogoutReturn"
 		e[prefix+"_OIDC_CONFIGURATION_ENDPOINT"] = e[prefix+"_DOMAIN_FULL"] + "/.well-known/openid-configuration"
-		return nil
+		return publishIAMEndpoints(e)
 	}
 }
 func moduleLLNG(e map[string]string, w string) error { return moduleIdentity("LLNG", e, w) }
@@ -238,7 +252,7 @@ func moduleIdentity(prefix string, e map[string]string, _ string) error {
 			e["APPS_LIST__"+strings.ToUpper(app)+"__LOGO_NAME"] = filepath.Base(e[key])
 		}
 	}
-	return nil
+	return applyClientRegistrations(e)
 }
 func defaultValue(v, d string) string {
 	if v == "" {

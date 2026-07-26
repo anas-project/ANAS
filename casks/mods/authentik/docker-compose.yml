@@ -1,0 +1,82 @@
+version: "3.5"
+
+services:
+  anas_authentik_redis:
+    container_name: ${CONTAINER_PREFIX}authentik_redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: --save 60 1 --loglevel warning
+    volumes:
+      - "${DATA_PATH}/authentik/redis:/data"
+    networks:
+      - authentik
+
+  # Docker creates bind-mount targets as root, but the authentik image runs as
+  # uid 1000 and its first-run migration creates /media/public. Without this the
+  # server crash-loops on PermissionError before it ever reaches the database.
+  anas_authentik_init:
+    container_name: ${CONTAINER_PREFIX}authentik_init
+    image: alpine:3.20
+    user: root
+    command: sh -c "mkdir -p /media/public && chown -R 1000:1000 /media"
+    restart: "no"
+    volumes:
+      - "${DATA_PATH}/authentik/media:/media"
+
+  anas_authentik:
+    container_name: ${CONTAINER_PREFIX}authentik
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_IMAGE_TAG}
+    restart: unless-stopped
+    command: server
+    depends_on:
+      anas_authentik_init:
+        condition: service_completed_successfully
+      anas_authentik_redis:
+        condition: service_started
+    volumes:
+      - "${DATA_PATH}/authentik/media:/media"
+      # Declarative Application and Provider definitions generated from the
+      # generic client registration requests.
+      - "./blueprints:/blueprints/anas:ro"
+    env_file:
+      - .env
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "traefik.http.routers.authentik.entrypoints=https"
+      - "traefik.http.routers.authentik.rule=Host(`${AUTHENTIK_DOMAIN}`)"
+      - "traefik.http.routers.authentik.tls=true"
+      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+    networks:
+      - traefik
+      - authentik
+      - db
+
+  anas_authentik_worker:
+    container_name: ${CONTAINER_PREFIX}authentik_worker
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_IMAGE_TAG}
+    restart: unless-stopped
+    command: worker
+    depends_on:
+      anas_authentik_init:
+        condition: service_completed_successfully
+      anas_authentik_redis:
+        condition: service_started
+    volumes:
+      - "${DATA_PATH}/authentik/media:/media"
+      - "./blueprints:/blueprints/anas:ro"
+    env_file:
+      - .env
+    networks:
+      - authentik
+      - db
+
+networks:
+  authentik:
+    name: ${NETWORK_PREFIX}authentik
+  db:
+    name: $AUTHENTIK_NETWORK_DB
+    external: true
+  traefik:
+    name: ${NETWORK_PREFIX}traefik
+    external: true

@@ -30,8 +30,8 @@ if [ "$NEXTCLOUD_TALK_ENABLED" == "true" ]; then
   turn_ip=$( ping $TURN_HOSTNAME -c 1 | sed '1{s/[^(]*(//;s/).*//;q}' )
   set_host $TURN_DOMAIN $turn_ip
 fi
-if [ -n "$LLNG_DOMAIN" ]; then
-  set_host $LLNG_DOMAIN $traefik_ip
+if [ -n "$NEXTCLOUD_IAM_HOST" ]; then
+  set_host $NEXTCLOUD_IAM_HOST $traefik_ip
 fi
 
 if [ -n "$SAMBA_DC_HOST" ]; then
