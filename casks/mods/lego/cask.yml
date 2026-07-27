@@ -17,10 +17,19 @@ config:
     - global.dns_provider
   defaults:
     dns_server: 223.5.5.5
+  # Issuer-neutral certificate paths every TLS-serving or TLS-verifying cask
+  # reads. LEGO_* remains this cask's private vocabulary.
+  exports:
+    - ANAS_TLS_*
   # DNS provider credentials from the user secrets section for the ACME
   # DNS-01 challenge.
   consumes:
     - DNSPOD_API_KEY
+  changes:
+    virtual_domain:
+      effect: reconcile
+      apply: reissue-certificates
+      description: Switching between ACME and the internal CA replaces the certificate every service presents, and clients must re-trust it.
 logic:
   hook:
     command:

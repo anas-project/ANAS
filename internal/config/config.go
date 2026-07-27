@@ -60,6 +60,12 @@ type Global struct {
 	DNSProvider                string `yaml:"dns_provider"`
 	DNSServer                  string `yaml:"dns_server"`
 	DefaultServiceRootPassword string `yaml:"default_service_root_password"`
+	// VirtualDomain marks a domain that cannot obtain a publicly trusted
+	// certificate — a reserved TLD such as .test or .lan, or any name without
+	// public DNS. It means exactly one thing: do not attempt ACME. The
+	// internal CA exists either way, because ACME issuance is never instant
+	// and services need a certificate while it is in flight.
+	VirtualDomain bool `yaml:"virtual_domain"`
 }
 
 type Service struct {
@@ -135,6 +141,9 @@ func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
 	set("DNS_PROVIDER", f.Global.DNSProvider)
 	set("DNS_SERVER", f.Global.DNSServer)
 	set("DEFAULT_SERVICE_ROOT_PASSWORD", f.Global.DefaultServiceRootPassword)
+	if f.Global.VirtualDomain {
+		set("ANAS_VIRTUAL_DOMAIN", "true")
+	}
 	for k, v := range f.Secrets {
 		key := EnvKey(k)
 		env[key] = Scalar(v)

@@ -1,8 +1,18 @@
 FROM goacme/lego:v4.11.0
 
+ARG CHINESE_SPEEDUP
+# openssl backs the internal CA; the upstream image only ships the lego binary.
+RUN if [ "$CHINESE_SPEEDUP" = "true" ]; then \
+    sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories; \
+  fi; \
+  apk --update --no-cache add openssl
+
 WORKDIR /certs
-COPY cert.sh run.sh /root/
-RUN echo "0 3 * * 6 /root/cert.sh > /dev/stdout" > /etc/crontabs/root \
-  && chmod +x /root/run.sh /root/cert.sh
+COPY cert.sh run.sh ca.sh /root/
+# Weekly ACME renewal, daily internal-certificate check. The internal check is
+# cheap and has to notice a domain change promptly, since every service URL is
+# derived from it.
+RUN printf '0 3 * * 6 /root/cert.sh > /dev/stdout 2>&1\n0 4 * * * /root/ca.sh renew > /dev/stdout 2>&1\n' > /etc/crontabs/root \
+  && chmod +x /root/run.sh /root/cert.sh /root/ca.sh
 
 ENTRYPOINT [ "/root/run.sh" ]

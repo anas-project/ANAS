@@ -163,6 +163,24 @@ func calcLego(e map[string]string, _ string, _ *secretStore) error {
 	e["LEGO_CERT_NAME"] = e["BASE_DOMAIN"] + ".crt"
 	e["LEGO_KEY_NAME"] = e["BASE_DOMAIN"] + ".key"
 	e["LEGO_CA_CERT_NAME"] = e["BASE_DOMAIN"] + ".issuer.crt"
+
+	// Issuer-neutral contract for consumers. LEGO_* stays this cask's private
+	// vocabulary: naming the implementation in something every other cask
+	// reads is the coupling the IAM binding just removed, and it would have to
+	// be unpicked the day a different issuer appears.
+	//
+	// Consumers mount ANAS_TLS_CERTS_DIR at /certs and reference the names
+	// below, matching the convention the existing casks already use.
+	e["ANAS_TLS_CERTS_DIR"] = e["LEGO_CERTS_PATH"]
+	e["ANAS_TLS_CERT_NAME"] = e["LEGO_CERT_NAME"]
+	e["ANAS_TLS_KEY_NAME"] = e["LEGO_KEY_NAME"]
+	// Whatever signed the serving certificate: the public intermediate under
+	// ACME, the internal root otherwise. Consumers trust it without knowing
+	// which, so no cask branches on the certificate source.
+	e["ANAS_TLS_ISSUER_NAME"] = e["LEGO_CA_CERT_NAME"]
+	// The internal root is published under a stable name even while ACME
+	// serves traffic, because bootstrap and renewal failures fall back to it.
+	e["ANAS_TLS_INTERNAL_CA_NAME"] = "anas-internal-ca.crt"
 	return nil
 }
 func defaultValue(v, d string) string {

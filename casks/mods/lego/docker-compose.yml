@@ -2,7 +2,10 @@ version: "3.5"
 
 services:
   anas_lego:
-    build: ./lego
+    build:
+      context: ./lego
+      args:
+        - CHINESE_SPEEDUP
     container_name: ${CONTAINER_PREFIX}lego
     image: ${IMAGE_PREFIX}lego:latest
     restart: unless-stopped

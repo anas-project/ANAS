@@ -53,28 +53,24 @@ cp /var/lib/samba/private/krb5.conf /etc/krb5.conf
 
 if [ -n "${SAMBA_DC_TLS_KEYFILE:-}" ] && [ -n "${SAMBA_DC_TLS_CERTFILE:-}" ] && [ -n "${SAMBA_DC_TLS_CAFILE:-}" ]; then
   echo "Using configured Samba TLS certificate"
-elif [ -s "/certs/${LEGO_KEY_NAME:-missing}" ] && [ -s "/certs/${LEGO_CERT_NAME:-missing}" ] && [ -s "/certs/${LEGO_CA_CERT_NAME:-missing}" ]; then
-  echo "Using ACME certificate for Samba TLS"
+else
+  # The deployment always publishes a certificate here: an ACME one when the
+  # domain can be validated, otherwise one signed by the internal CA. This
+  # cask used to mint its own self-signed certificate when the directory was
+  # empty, which is precisely why nothing trusted it — every cask that did the
+  # same became its own issuer, and an LDAPS client had no way to verify any of
+  # them. If the file is missing now, something upstream failed and saying so
+  # is more useful than quietly serving a certificate no client can check.
+  for f in "${LEGO_KEY_NAME:-}" "${LEGO_CERT_NAME:-}" "${LEGO_CA_CERT_NAME:-}"; do
+    if [ -z "$f" ] || [ ! -s "/certs/$f" ]; then
+      echo "Samba TLS material /certs/${f:-<unset>} is missing; the certificate provider has not published it" >&2
+      exit 1
+    fi
+  done
+  echo "Using the deployment certificate for Samba TLS"
   export SAMBA_DC_TLS_KEYFILE="/certs/$LEGO_KEY_NAME"
   export SAMBA_DC_TLS_CERTFILE="/certs/$LEGO_CERT_NAME"
   export SAMBA_DC_TLS_CAFILE="/certs/$LEGO_CA_CERT_NAME"
-else
-  echo "ACME certificate is unavailable; generating a persistent self-signed Samba TLS certificate"
-  tls_dir=/var/lib/samba/private/tls
-  mkdir -p "$tls_dir"
-  if [ ! -s "$tls_dir/key.pem" ] || [ ! -s "$tls_dir/cert.pem" ]; then
-    openssl req -newkey rsa:3072 -x509 -sha256 -nodes -days 3650 \
-      -subj "/CN=$SAMBA_DC_DC_DOMAIN" \
-      -addext "subjectAltName=DNS:$SAMBA_DC_DOMAIN,DNS:$SAMBA_DC_DC_DOMAIN" \
-      -keyout "$tls_dir/key.pem" \
-      -out "$tls_dir/cert.pem"
-    cp "$tls_dir/cert.pem" "$tls_dir/ca.pem"
-  fi
-  chmod 0600 "$tls_dir/key.pem"
-  chmod 0644 "$tls_dir/cert.pem" "$tls_dir/ca.pem"
-  export SAMBA_DC_TLS_KEYFILE="$tls_dir/key.pem"
-  export SAMBA_DC_TLS_CERTFILE="$tls_dir/cert.pem"
-  export SAMBA_DC_TLS_CAFILE="$tls_dir/ca.pem"
 fi
 export SAMBA_DC_TLS_ENABLED="${SAMBA_DC_TLS_ENABLED:-yes}"
 

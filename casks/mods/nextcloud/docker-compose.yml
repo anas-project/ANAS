@@ -10,6 +10,10 @@ services:
     container_name: ${CONTAINER_PREFIX}nextcloud
     volumes:
       - "${NEXTCLOUD_BASE_PATH}/nextcloud:/data"
+      # Read-only access to the deployment's certificates so this container can
+      # trust the internal CA when it talks to the domain controller over
+      # LDAPS or fetches identity-provider metadata over HTTPS.
+      - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
       # - type: tmpfs
       #   target: /tmp
     dns:
