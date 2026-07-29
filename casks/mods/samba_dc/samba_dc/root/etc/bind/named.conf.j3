@@ -9,6 +9,12 @@ options {
     listen-on port 53 { 127.0.0.1; ${SAMBA_DC_DNS_SERVER}; };
     listen-on-v6 { any; };
     auth-nxdomain no;
+    // BIND sizes its cache at 90% of total host memory by default, which
+    // assumes it owns the machine. Here it is one container among many on a
+    // shared host, and on a small host that default asks for more than is
+    // available and aborts during cache setup. A domain controller resolving
+    // for its own services needs a fraction of that.
+    max-cache-size ${SAMBA_DC_DNS_CACHE_SIZE};
     recursion yes;
     allow-query { trusted-networks; };
     allow-query-cache { trusted-networks; };

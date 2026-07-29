@@ -20,6 +20,10 @@ config:
     app_filter: "true"
     create_structure: "true"
     admin_name: admin
+    # Bound on the bundled BIND resolver's cache. Raise it on a host with
+    # memory to spare; BIND's own default is 90% of total host memory, which
+    # over-commits badly when it shares a machine with every other cask.
+    dns_cache_size: 128M
     template_shell: /bin/false
     template_homedir: /home/%D/%U
     user_complex_pass: "true"

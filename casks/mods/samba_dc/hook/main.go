@@ -183,6 +183,7 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_DNS_SERVER"] = e["SAMBA_DC_HOST_IP"]
 	e["SAMBA_DC_DNS_FORWARDERS"] = dnsList(defaultValue(e["SAMBA_DC_DNS_FORWARDERS"], e["HOST_DNS_SERVER"]))
 	e["SAMBA_DC_DNS_ALLOWED_NETWORKS"] = dnsList(defaultValue(e["SAMBA_DC_DNS_ALLOWED_NETWORKS"], defaultDNSAllowedNetworks(e)))
+	e["SAMBA_DC_DNS_CACHE_SIZE"] = defaultValue(e["SAMBA_DC_DNS_CACHE_SIZE"], "128M")
 	e["SAMBA_DC_LDAPS_PORT"] = "636"
 	e["SAMBA_DC_LDAPS_SERVER_URL_PORT"] = e["SAMBA_DC_LDAPS_SERVER_URL"] + ":" + e["SAMBA_DC_LDAPS_PORT"]
 	e["SAMBA_DC_WORKGROUP"] = strings.ToUpper(defaultValue(e["SAMBA_DC_WORKGROUP"], strings.Split(domain, ".")[0]))
