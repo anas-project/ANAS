@@ -79,7 +79,7 @@ EOF
     -out "$tmp/leaf.crt" 2>/dev/null
 
   install -m 0644 "$tmp/leaf.crt" "$OUT/$LEGO_CERT_NAME"
-  install -m 0644 "$tmp/leaf.key" "$OUT/$LEGO_KEY_NAME"
+  install -m 0600 "$tmp/leaf.key" "$OUT/$LEGO_KEY_NAME"
   # Consumers trust whatever signed the serving certificate. Under ACME this
   # file is the public intermediate; here it is our own root. Either way the
   # contract is the same, so no cask has to know which mode is active.
@@ -91,6 +91,19 @@ EOF
 publish_ca_only() {
   mkdir -p "$OUT"
   install -m 0644 "$CA_CRT" "$OUT/anas-internal-ca.crt"
+}
+
+# Samba refuses to start its LDAP server when the TLS private key is readable
+# beyond its owner, and a domain controller that will not start takes the whole
+# deployment down with it. Every consumer reads the key as root, and lego's own
+# ACME output already has this mode, so nothing is lost by enforcing it.
+#
+# This runs on every invocation rather than only at issuance: a key published
+# by an earlier version of this script is still on disk, and a certificate that
+# is still current is deliberately never rewritten.
+harden_key() {
+  [ -f "$OUT/$LEGO_KEY_NAME" ] || return 0
+  chmod 0600 "$OUT/$LEGO_KEY_NAME"
 }
 
 ensure_ca
@@ -125,3 +138,5 @@ case "${1:-bootstrap}" in
     exit 2
     ;;
 esac
+
+harden_key
