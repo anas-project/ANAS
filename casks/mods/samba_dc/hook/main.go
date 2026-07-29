@@ -201,7 +201,13 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_APP_ALL_NAME"] = "APP_all"
 	e["SAMBA_DC_APP_ALL_DN"] = "CN=" + e["SAMBA_DC_APP_ALL_NAME"] + "," + e["SAMBA_DC_BASE_APP_DN"]
 	e["SAMBA_DC_ADMINISTRATOR_DN"] = "CN=Administrator,CN=Users," + baseDN
-	e["SAMBA_DC_ADMIN_DN"] = "CN=" + e["SAMBA_DC_ADMIN_NAME"] + "," + e["SAMBA_DC_BASE_ADMINS_DN"]
+	// The admin account lives with ordinary users, not in OU=Admins. Every
+	// LDAP-integrated application searches SAMBA_DC_BASE_USERS_DN and nothing
+	// else, so an admin outside that subtree is invisible to all of them —
+	// Nextcloud's provisioning waits forever for an account it cannot see.
+	// What makes the account privileged is its group membership, which is
+	// unaffected by where the object sits.
+	e["SAMBA_DC_ADMIN_DN"] = "CN=" + e["SAMBA_DC_ADMIN_NAME"] + "," + e["SAMBA_DC_BASE_USERS_DN"]
 	e["SAMBA_DC_ADMIN_GROUP_NAME"] = "Admins"
 	e["SAMBA_DC_ADMIN_GROUP_DN"] = "CN=Admins," + e["SAMBA_DC_BASE_GROUPS_ROLE_DN"]
 	e["SAMBA_DC_FS_ADMIN_GROUP_NAME"] = "FS Admins"

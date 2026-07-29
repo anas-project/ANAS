@@ -110,13 +110,20 @@ fi
 # deal with admin
 if [ ! -z "$SAMBA_DC_ADMIN_NAME" ]; then
   echo "Deal with admin"
-  sAMAccountName=$( get_attribute_dn "distinguishedName=$SAMBA_DC_ADMIN_DN" sAMAccountName )
-  if [ "$sAMAccountName" == "$SAMBA_DC_ADMIN_NAME" ]; then
-    echo "$SAMBA_DC_ADMIN_NAME user already exist "
-  else
+  # Located by account name rather than by DN: a deployment provisioned before
+  # the account moved into OU=People still has it somewhere else, and that has
+  # to be recognised as the same account instead of a missing one.
+  admin_dn=$( get_attribute_dn "sAMAccountName=$SAMBA_DC_ADMIN_NAME" dn )
+  if [ -z "$admin_dn" ]; then
     echo "Create $SAMBA_DC_ADMIN_DN"
-    samba-tool user add "$SAMBA_DC_ADMIN_NAME" "$SAMBA_DC_ADMIN_PASSWORD" --userou="OU=Admins"
+    samba-tool user add "$SAMBA_DC_ADMIN_NAME" "$SAMBA_DC_ADMIN_PASSWORD" \
+      --userou="$SAMBA_DC_BASE_USERS_DN_PREFIX"
     samba-tool user rename $SAMBA_DC_ADMIN_NAME --display-name=$SAMBA_DC_ADMIN_DISPLAY_NAME
+  elif [ "$admin_dn" != "$SAMBA_DC_ADMIN_DN" ]; then
+    echo "Move $admin_dn to $SAMBA_DC_BASE_USERS_DN"
+    samba-tool user move "$SAMBA_DC_ADMIN_NAME" "$SAMBA_DC_BASE_USERS_DN"
+  else
+    echo "$SAMBA_DC_ADMIN_NAME user already exist "
   fi
   add_to_group "Domain Admins" $SAMBA_DC_ADMIN_NAME
   add_to_group "Group Policy Creator Owners" $SAMBA_DC_ADMIN_NAME 
@@ -159,6 +166,19 @@ reset_password_guid="00299570-246d-11d0-a768-00aa006e0529"
 reset_password_ace="(OA;CI;CR;$reset_password_guid;;$password_bind_sid)"
 if ! samba-tool dsacl get --objectdn="$SAMBA_DC_BASE_USERS_DN" | grep -Fq "$reset_password_ace"; then
   samba-tool dsacl set --objectdn="$SAMBA_DC_BASE_USERS_DN" --sddl="$reset_password_ace"
+fi
+
+# The right above is inherited by everything in OU=People, and the admin account
+# now lives there too. Without this the password service account could reset the
+# domain administrator's password, and its credentials sit in the configuration
+# of every application that offers a password-change form. An explicit ACE on
+# the object wins over the inherited one, so the admin is carved back out.
+if [ ! -z "$SAMBA_DC_ADMIN_NAME" ]; then
+  deny_reset_ace="(OD;;CR;$reset_password_guid;;$password_bind_sid)"
+  if ! samba-tool dsacl get --objectdn="$SAMBA_DC_ADMIN_DN" | grep -Fq "$deny_reset_ace"; then
+    echo "Deny $SAMBA_DC_PASSWORD_BIND_NAME the Reset Password right on $SAMBA_DC_ADMIN_NAME"
+    samba-tool dsacl set --objectdn="$SAMBA_DC_ADMIN_DN" --sddl="$deny_reset_ace"
+  fi
 fi
 
 # samba password rule
