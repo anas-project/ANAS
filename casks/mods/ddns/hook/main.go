@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 )
@@ -158,6 +159,15 @@ func changed(old, cur map[string]string) map[string]string {
 func calcDDNS(e map[string]string, _ string, _ *secretStore) error {
 	e["DDNS_DNS_SERVER"] = defaultValue(e["DDNS_DNS_SERVER"], e["DNS_SERVER"])
 	e["DDNS_DOMAIN"] = e["DDNS_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
+	// IPv6 is a statement of intent, not of fact. Asking for AAAA records on a
+	// host with no IPv6 of its own produces nothing but a permanently unhealthy
+	// container: the updater cannot discover an address it does not have, so it
+	// retries every public-IP service in turn, fails all of them, and skips the
+	// update anyway. Recording the outcome keeps a silent downgrade auditable in
+	// the rendered environment.
+	ipv6Wanted := e["IPv6"] == "true"
+	ipv6Usable := ipv6Wanted && hostHasGlobalIPv6()
+	e["DDNS_IPV6_AVAILABLE"] = boolValue(ipv6Usable)
 	if e["DNS_PROVIDER"] == "dnspod" {
 		settings := []string{}
 		if e["IPv4"] == "true" {
@@ -166,7 +176,7 @@ func calcDDNS(e map[string]string, _ string, _ *secretStore) error {
 				fmt.Sprintf(`{"provider":"dnspod","token":%q,"domain":%q,"host":"*","ip_version":"ipv4"}`, e["DNSPOD_API_KEY"], e["BASE_DOMAIN"]),
 			)
 		}
-		if e["IPv6"] == "true" {
+		if ipv6Usable {
 			settings = append(settings,
 				fmt.Sprintf(`{"provider":"dnspod","token":%q,"domain":%q,"host":"@","ip_version":"ipv6"}`, e["DNSPOD_API_KEY"], e["BASE_DOMAIN"]),
 				fmt.Sprintf(`{"provider":"dnspod","token":%q,"domain":%q,"host":"*","ip_version":"ipv6"}`, e["DNSPOD_API_KEY"], e["BASE_DOMAIN"]),
@@ -175,6 +185,37 @@ func calcDDNS(e map[string]string, _ string, _ *secretStore) error {
 		e["DDNS_CONFIG"] = `{"settings":[` + strings.Join(settings, ",") + `]}`
 	}
 	return nil
+}
+// hostHasGlobalIPv6 reports whether this host holds a routable IPv6 address.
+//
+// The check is deliberately local. Dialling an outside host would measure the
+// deploy machine's connectivity at one instant and make rendering depend on the
+// internet being reachable, whereas the failure this guards against — "connect:
+// network is unreachable" — is decided before a packet is ever sent, by the
+// absence of a global address to source it from. Link-local and loopback
+// addresses exist on every machine and route nowhere, so they do not count.
+func hostHasGlobalIPv6() bool {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		// To4 is non-nil for IPv4-mapped forms, which are not IPv6 routing.
+		if ipNet.IP.To4() == nil && ipNet.IP.IsGlobalUnicast() {
+			return true
+		}
+	}
+	return false
+}
+func boolValue(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
 }
 func defaultValue(v, d string) string {
 	if v == "" {
