@@ -1,8 +1,21 @@
 #!/usr/bin/with-contenv bash
 
+# samba is the supervised process; the two helpers reconcile AD content once it
+# is up, so they cannot run from cont-init.d and are started from here.
+#
+# s6 re-runs this script every time samba exits, and both helpers loop until
+# they succeed rather than giving up. Without a guard, a samba that fails to
+# start stacks another pair of never-ending loops every few seconds: one such
+# crash loop left the host with hundreds of concurrent samba-tool processes and
+# a load average of 100. The lock keeps at most one copy of each alive; a
+# restart re-runs a helper only once the previous copy has finished.
+run_once() {
+  flock -n "/run/anas-$1.lock" "$2" &
+}
+
 echo "samba -i"
 
-nohup bash -c "/usr/local/bin/structure.sh &"
-nohup bash -c "/usr/local/bin/anas_zone.sh &"
+run_once structure /usr/local/bin/structure.sh
+run_once zone /usr/local/bin/anas_zone.sh
 
 exec samba -i </dev/null
