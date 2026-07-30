@@ -361,6 +361,12 @@ func materializeDeployment(opts prepareOptions, build bool) (string, error) {
 	if err := saveCaskLockFile(filepath.Join(stagingRoot, "lock.yml"), lock); err != nil {
 		return "", err
 	}
+	if err := copyFileMode(opts.cfgPath, deploymentConfigSourcePath(stagingRoot), 0600); err != nil {
+		return "", fmt.Errorf("preserve the config this deployment was built from: %w", err)
+	}
+	if err := sealDeployment(stagingRoot); err != nil {
+		return "", err
+	}
 	if err := os.Rename(stagingRoot, finalRoot); err != nil {
 		return "", err
 	}
