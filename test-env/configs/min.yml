@@ -4,7 +4,6 @@ modules:
 global:
   domain: nas.test
   email: admin@nas.test
-  data_path: ./.anas-test/data
   timezone: Asia/Shanghai
   dns_provider: manual
   default_service_root_password: change-me-now

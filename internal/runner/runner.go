@@ -15,7 +15,9 @@ import (
 )
 
 type app struct {
-	root             string
+	root string
+	// workspace is the deployment root; base is its .anas state directory.
+	workspace        string
 	base             string
 	cfgPath          string
 	verbose          bool
@@ -51,6 +53,8 @@ func Main(args []string) error {
 		args = []string{"help"}
 	}
 	switch args[0] {
+	case "init":
+		return runInit(args[1:])
 	case "plan":
 		return runPlan(args[1:])
 	case "render", "build":
@@ -81,21 +85,35 @@ func usage() {
 	fmt.Printf(`anas - NAS service launcher
 
 Usage:
-	anas plan    -c config.yml [--cask-root casks/mods]
-	anas lock    -c config.yml [--cask-root casks/mods]
-	anas render  -c config.yml [-b ~/.anas]
-	anas build   -c config.yml [-b ~/.anas]
-	anas apply   (-c config.yml [--build] | --deployment ID) [-b ~/.anas]
-	anas start   [-b ~/.anas]
-	anas restart [-b ~/.anas]
-	anas stop    [-b ~/.anas]
-	anas rollback [DEPLOYMENT_ID] [-b ~/.anas] [--restore-data]
-	anas status [-b ~/.anas]
-	anas deployments list|inspect [ID] [-b ~/.anas]
-  anas config set     [-c config.yml] <module.parameter> <value>
+  anas init [PATH] [--shell-init] [-y]
+  anas plan    -c config.yml [--cask-root casks/mods]
+  anas lock    [-w WORKSPACE] [-c config.yml]
+  anas render  [-w WORKSPACE] [-c config.yml]
+  anas build   [-w WORKSPACE] [-c config.yml]
+  anas apply   [-w WORKSPACE] [-c config.yml [--build] | --deployment ID]
+  anas start   [-w WORKSPACE]
+  anas restart [-w WORKSPACE]
+  anas stop    [-w WORKSPACE]
+  anas rollback [DEPLOYMENT_ID] -w WORKSPACE [--restore-data]
+  anas status [-w WORKSPACE]
+  anas deployments list|inspect [ID] [-w WORKSPACE]
+  anas config set     [-w WORKSPACE] <module.parameter> <value>
   anas config explain <module.parameter>
-  anas config plan    [-c config.yml] [-b ~/.anas]
-  anas config secret  list | get <KEY>   [-b ~/.anas]
+  anas config plan    [-w WORKSPACE]
+  anas config secret  list | get <KEY>   [-w WORKSPACE]
+
+Workspace:
+  A workspace holds the config, data, snapshots and runtime state of one
+  deployment, so backing up that single directory backs up everything.
+
+    <workspace>/config.yml   desired state (the only file you edit)
+    <workspace>/data/        service data; no configurable location
+    <workspace>/snapshots/   point-in-time copies
+    <workspace>/.anas/       runtime state
+
+  It is resolved from -w, then $ANAS_WORKSPACE, then the current directory
+  when that directory already contains .anas/. Commands never create one
+  implicitly; run "anas init" for that. "rollback" accepts only -w.
 
 Cask ABI:
   %s

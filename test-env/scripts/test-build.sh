@@ -6,7 +6,9 @@ set -eu
 cd "$ROOT_DIR"
 log="$REPORT_DIR/build.log"
 
-if run_anas build -c "$CONFIG_DIR/full.yml" -b "$RUNTIME_DIR/full" >"$log" 2>&1; then
+make_workspace "$RUNTIME_DIR/full" "$CONFIG_DIR/full.yml"
+
+if run_anas build -w "$RUNTIME_DIR/full" >"$log" 2>&1; then
   cat "$log"
 else
   status=$?

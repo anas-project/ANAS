@@ -34,7 +34,6 @@ type deploymentManifest struct {
 	Bindings          map[string]map[string]string `yaml:"capability_bindings,omitempty"`
 	Casks             map[string]deploymentCask    `yaml:"casks"`
 	Settings          map[string]deploymentSetting `yaml:"settings,omitempty"`
-	DataRoot          string                       `yaml:"data_root,omitempty"`
 	Snapshot          deploymentSnapshotPolicy     `yaml:"snapshot,omitempty"`
 }
 
@@ -107,16 +106,12 @@ type deploymentIndex struct {
 }
 
 type prepareOptions struct {
+	workspace  string
 	base       string
 	cfgPath    string
 	caskRoot   string
 	verbose    bool
 	updateLock bool
-}
-
-func defaultRuntimeBase() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".anas")
 }
 
 func projectLockPath(configPath string) string {
@@ -129,8 +124,8 @@ func parsePrepareOptions(name string, args []string) (prepareOptions, error) {
 	var out prepareOptions
 	fs.StringVar(&out.cfgPath, "c", "", "config file")
 	fs.StringVar(&out.cfgPath, "config", "", "config file")
-	fs.StringVar(&out.base, "b", "", "runtime base path")
-	fs.StringVar(&out.base, "base", "", "runtime base path")
+	fs.StringVar(&out.workspace, "w", "", "workspace path")
+	fs.StringVar(&out.workspace, "workspace", "", "workspace path")
 	fs.StringVar(&out.caskRoot, "cask-root", "", "directory containing cask bundles")
 	fs.StringVar(&out.caskRoot, "root", "", "project root or cask bundle directory")
 	fs.BoolVar(&out.verbose, "verbose", false, "debug logging")
@@ -139,13 +134,19 @@ func parsePrepareOptions(name string, args []string) (prepareOptions, error) {
 		return out, err
 	}
 	if fs.NArg() != 0 {
-		return out, fmt.Errorf("usage: anas %s -c config.yml [--update-lock]", name)
+		return out, fmt.Errorf("usage: anas %s [-w <workspace>] [-c config.yml] [--update-lock]", name)
 	}
-	if out.cfgPath == "" {
-		return out, fmt.Errorf("%s requires -c config.yml", name)
+	workspace, err := resolveWorkspace(out.workspace)
+	if err != nil {
+		return out, err
 	}
-	if out.base == "" {
-		out.base = defaultRuntimeBase()
+	out.workspace = workspace
+	out.base = stateDir(workspace)
+	// A workspace owns its config, so -c is only needed to point at one that
+	// lives elsewhere.
+	out.cfgPath = configPathFor(workspace, out.cfgPath)
+	if !exists(out.cfgPath) {
+		return out, fmt.Errorf("config %s does not exist", out.cfgPath)
 	}
 	if out.caskRoot != "" && exists(filepath.Join(out.caskRoot, "casks", "mods")) {
 		out.caskRoot = filepath.Join(out.caskRoot, "casks", "mods")
@@ -201,9 +202,9 @@ func runPlan(args []string) error {
 	caskRoot := fs.String("cask-root", "", "directory containing cask bundles")
 	rootAlias := fs.String("root", "", "project root or cask bundle directory")
 	// Accepted for command-line symmetry, but plan intentionally never creates
-	// or reads runtime state.
-	_ = fs.String("b", "", "unused runtime base path")
-	_ = fs.String("base", "", "unused runtime base path")
+	// or reads runtime state, so it neither requires nor validates a workspace.
+	_ = fs.String("w", "", "unused workspace path")
+	_ = fs.String("workspace", "", "unused workspace path")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -293,11 +294,13 @@ func materializeDeployment(opts prepareOptions, build bool) (string, error) {
 	}
 
 	a := &app{
-		base: opts.base, cfgPath: opts.cfgPath, verbose: opts.verbose,
+		workspace: opts.workspace,
+		base:      opts.base, cfgPath: opts.cfgPath, verbose: opts.verbose,
 		reg: reg, cfg: cfg, lock: lock, artifactRoot: finalCasks,
 		resolvedBindings: map[string]map[string]string{},
 	}
 	a.env, a.envOwner = cfg.BaseEnvWithOwners()
+	a.applyWorkspaceEnv()
 	a.order, err = a.resolveOrder(cfg.Modules)
 	if err != nil {
 		return "", err
@@ -420,15 +423,17 @@ func buildDeploymentManifest(a *app, id, cfgPath string) (*deploymentManifest, e
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
 		ModuleOrder: append([]string{}, a.order...), Bindings: cloneNestedMap(a.resolvedBindings),
 		Casks: map[string]deploymentCask{}, Settings: map[string]deploymentSetting{},
-		DataRoot: a.env["DATA_PATH"],
 		Snapshot: deploymentSnapshotPolicy{
 			Backend: strings.ToLower(strings.TrimSpace(a.cfg.Rollback.Snapshot.Backend)),
 			Source:  strings.TrimSpace(a.cfg.Rollback.Snapshot.Source),
 			Root:    strings.TrimSpace(a.cfg.Rollback.Snapshot.Root),
 		},
 	}
-	if manifest.Snapshot.Source == "" {
-		manifest.Snapshot.Source = manifest.DataRoot
+	// The data location is fixed by the workspace layout, so the manifest no
+	// longer records it: a manifest that named an absolute path would pin the
+	// deployment to the machine it was rendered on.
+	if manifest.Snapshot.Source == "" && a.workspace != "" {
+		manifest.Snapshot.Source = dataDir(a.workspace)
 	}
 	if manifest.Snapshot.Source != "" {
 		if absolute, err := filepath.Abs(manifest.Snapshot.Source); err == nil {
@@ -479,8 +484,8 @@ func runApply(args []string) error {
 	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
 	cfgPath := fs.String("c", "", "config file")
 	fs.StringVar(cfgPath, "config", "", "config file")
-	base := fs.String("b", "", "runtime base path")
-	fs.StringVar(base, "base", "", "runtime base path")
+	workspaceFlag := fs.String("w", "", "workspace path")
+	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
 	caskRoot := fs.String("cask-root", "", "directory containing cask bundles")
 	rootAlias := fs.String("root", "", "project root or cask bundle directory")
 	deploymentID := fs.String("deployment", "", "existing ready deployment id")
@@ -491,20 +496,25 @@ func runApply(args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: anas apply (-c config.yml | --deployment ID) [-b ~/.anas]")
+		return fmt.Errorf("usage: anas apply [-w <workspace>] [-c config.yml | --deployment ID]")
 	}
-	if *base == "" {
-		*base = defaultRuntimeBase()
+	workspace, err := resolveWorkspace(*workspaceFlag)
+	if err != nil {
+		return err
 	}
-	if (*cfgPath == "") == (*deploymentID == "") {
-		return fmt.Errorf("apply requires exactly one of -c config.yml or --deployment ID")
+	announceWorkspace(workspace)
+	base := stateDir(workspace)
+	if *deploymentID == "" {
+		*cfgPath = configPathFor(workspace, *cfgPath)
+	} else if *cfgPath != "" {
+		return fmt.Errorf("apply accepts either -c config.yml or --deployment ID, not both")
 	}
-	unlock, err := acquireRuntimeLock(*base)
+	unlock, err := acquireRuntimeLock(base)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	if *cfgPath != "" {
+	if *deploymentID == "" {
 		explicit := *caskRoot
 		if explicit == "" {
 			explicit = *rootAlias
@@ -516,14 +526,14 @@ func runApply(args []string) error {
 		if err != nil {
 			return err
 		}
-		opts := prepareOptions{base: *base, cfgPath: *cfgPath, caskRoot: located, updateLock: *updateLock}
+		opts := prepareOptions{workspace: workspace, base: base, cfgPath: *cfgPath, caskRoot: located, updateLock: *updateLock}
 		id, err := materializeDeployment(opts, *build)
 		if err != nil {
 			return err
 		}
 		*deploymentID = id
 	} else {
-		state, err := loadDeploymentState(*base, *deploymentID)
+		state, err := loadDeploymentState(base, *deploymentID)
 		if err != nil {
 			return err
 		}
@@ -531,7 +541,7 @@ func runApply(args []string) error {
 			return fmt.Errorf("deployment %s has status %q; apply --deployment requires ready", *deploymentID, state.Status)
 		}
 	}
-	if err := activateDeployment(*base, *deploymentID, *allowRisky, false); err != nil {
+	if err := activateDeployment(base, *deploymentID, *allowRisky, false); err != nil {
 		return err
 	}
 	fmt.Println(*deploymentID)
@@ -540,23 +550,26 @@ func runApply(args []string) error {
 
 func runActive(action string, args []string) error {
 	fs := flag.NewFlagSet(action, flag.ContinueOnError)
-	base := fs.String("b", "", "runtime base path")
-	fs.StringVar(base, "base", "", "runtime base path")
+	workspaceFlag := fs.String("w", "", "workspace path")
+	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("usage: anas %s [-b ~/.anas]", action)
+		return fmt.Errorf("usage: anas %s [-w <workspace>]", action)
 	}
-	if *base == "" {
-		*base = defaultRuntimeBase()
+	workspace, err := resolveWorkspace(*workspaceFlag)
+	if err != nil {
+		return err
 	}
-	unlock, err := acquireRuntimeSharedLock(*base)
+	announceWorkspace(workspace)
+	base := stateDir(workspace)
+	unlock, err := acquireRuntimeSharedLock(base)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	active, err := loadActiveState(*base)
+	active, err := loadActiveState(base)
 	if err != nil {
 		return err
 	}
@@ -567,7 +580,7 @@ func runActive(action string, args []string) error {
 	if err != nil {
 		return err
 	}
-	a, root, _, err := loadDeploymentApp(*base, active.ActiveDeployment, cli)
+	a, root, _, err := loadDeploymentApp(base, active.ActiveDeployment, cli)
 	if err != nil {
 		return err
 	}
@@ -793,27 +806,34 @@ func deploymentRollbackVersionBlockers(current, target *deploymentManifest) []st
 
 func runDeploymentRollback(args []string) error {
 	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
-	base := fs.String("b", "", "runtime base path")
-	fs.StringVar(base, "base", "", "runtime base path")
+	workspaceFlag := fs.String("w", "", "workspace path")
+	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
 	allowRisky := fs.Bool("allow-risky", false, "allow guarded rollback without data restore")
 	restoreData := fs.Bool("restore-data", false, "restore the recorded data snapshot")
 	yes := fs.Bool("yes", false, "confirm destructive data restore")
-	if err := fs.Parse(args); err != nil {
+	positional, err := parseInterspersed(fs, args)
+	if err != nil {
 		return err
 	}
-	if fs.NArg() > 1 {
-		return fmt.Errorf("usage: anas rollback [DEPLOYMENT_ID] [-b ~/.anas]")
+	if len(positional) > 1 {
+		return fmt.Errorf("usage: anas rollback [DEPLOYMENT_ID] -w <workspace>")
 	}
-	if *base == "" {
-		*base = defaultRuntimeBase()
+	// Rollback is the one command that can replace live data, and a workspace
+	// inherited from the environment is the easiest thing to leave stale and
+	// pointed somewhere else. It accepts only the flag.
+	workspace, err := resolveWorkspaceStrict(*workspaceFlag, "rollback")
+	if err != nil {
+		return err
 	}
-	active, err := loadActiveState(*base)
+	announceWorkspace(workspace)
+	base := stateDir(workspace)
+	active, err := loadActiveState(base)
 	if err != nil {
 		return err
 	}
 	target := ""
-	if fs.NArg() == 1 {
-		target = fs.Arg(0)
+	if len(positional) == 1 {
+		target = positional[0]
 	} else if len(active.PreviousDeployments) > 0 {
 		target = active.PreviousDeployments[0]
 	}
@@ -823,7 +843,7 @@ func runDeploymentRollback(args []string) error {
 	if target == active.ActiveDeployment {
 		return fmt.Errorf("deployment %s is already active", target)
 	}
-	unlock, err := acquireRuntimeLock(*base)
+	unlock, err := acquireRuntimeLock(base)
 	if err != nil {
 		return err
 	}
@@ -836,20 +856,20 @@ func runDeploymentRollback(args []string) error {
 		if err != nil {
 			return err
 		}
-		currentApp, currentRoot, _, err := loadDeploymentApp(*base, active.ActiveDeployment, cli)
+		currentApp, currentRoot, _, err := loadDeploymentApp(base, active.ActiveDeployment, cli)
 		if err != nil {
 			return err
 		}
 		if err := currentApp.stopRelease(currentRoot); err != nil {
 			return fmt.Errorf("stop active deployment before data restore: %w", err)
 		}
-		if err := restoreDeploymentSnapshot(*base, active.ActiveDeployment, target); err != nil {
+		if err := restoreDeploymentSnapshot(base, active.ActiveDeployment, target); err != nil {
 			_ = startDeployment(currentApp, currentRoot)
 			return err
 		}
 		*allowRisky = true
 	}
-	return activateDeployment(*base, target, *allowRisky, true)
+	return activateDeployment(base, target, *allowRisky, true)
 }
 
 func createDeploymentSnapshot(base string, current, target *deploymentManifest) (string, error) {
@@ -871,7 +891,7 @@ func createDeploymentSnapshot(base string, current, target *deploymentManifest) 
 	}
 	root := policy.Root
 	if root == "" {
-		root = filepath.Join(base, "snapshots")
+		root = snapshotsDir(workspaceOf(base))
 	}
 	root, err = filepath.Abs(root)
 	if err != nil {
@@ -910,7 +930,7 @@ func restoreDeploymentSnapshot(base, currentID, targetID string) error {
 	}
 	snapshotRoot := currentManifest.Snapshot.Root
 	if snapshotRoot == "" {
-		snapshotRoot = filepath.Join(base, "snapshots")
+		snapshotRoot = snapshotsDir(workspaceOf(base))
 	}
 	metaPath := filepath.Join(snapshotRoot, state.SnapshotID, "snapshot.yml")
 	var snapshot dataSnapshot
@@ -962,8 +982,77 @@ var btrfsCommand = func(args ...string) error {
 
 func runBtrfs(args ...string) error { return btrfsCommand(args...) }
 
-func btrfsSubvolumeShow(path string) error {
-	return runBtrfs("subvolume", "show", path)
+// btrfsSubvolumeShow verifies that path is a Btrfs subvolume.
+//
+// It deliberately does not run `btrfs subvolume show`, which needs
+// CAP_SYS_ADMIN for its tree-search ioctl and so fails for an ordinary user
+// even though `btrfs subvolume create`, `snapshot` and `delete` all succeed
+// unprivileged. Using it as a precondition put the entire snapshot feature
+// behind root for no reason.
+//
+// A subvolume root is identified without any privilege by two facts: it lives
+// on Btrfs, and its inode number is 256.
+//
+// Both conditions are required, not belt-and-braces. Inode numbers in Btrfs are
+// per-subvolume rather than filesystem-wide, which makes the number decisive on
+// Btrfs and meaningless anywhere else, where 256 is just an ordinary inode some
+// file will eventually get.
+//
+// 256 is not a magic value: Btrfs reserves objectids 0-255 for internal trees
+// (the top-level FS_TREE is 5, which is why the toplevel subvolume is subvolid
+// 5), and BTRFS_FIRST_FREE_OBJECTID is simply the first number after that
+// block. Each subvolume is its own tree with its own objectid space, and its
+// root directory is the first object created in it, so the root always lands on
+// 256 and the next object on 257. That makes this a structural guarantee rather
+// than an observed regularity — the distinction that makes it safe to validate
+// against.
+//
+// The number is deliberately not unique on disk: two sibling subvolumes both
+// report inode 256. Btrfs keeps the POSIX guarantee that (st_dev, st_ino)
+// identifies a file by giving each subvolume its own anonymous device number,
+// so the collision is confined to st_ino. This check asks whether a path is
+// *a* subvolume root, never *which* one, so the duplication is the mechanism
+// rather than a hazard. The anonymous st_dev is not stable across mounts and
+// must never be persisted.
+//
+// Verified against `btrfs subvolume show` on a real filesystem: subvolumes,
+// nested subvolumes, read-only snapshots and the top-level mount all report
+// 256, while plain directories and files report 257 upward.
+const btrfsSubvolumeRootInode = 256
+
+// Overridable for the same reason as btrfsCommand: tests exercise the snapshot
+// bookkeeping on whatever filesystem the temp directory happens to be.
+var btrfsSubvolumeCheck = checkBtrfsSubvolume
+
+func btrfsSubvolumeShow(path string) error { return btrfsSubvolumeCheck(path) }
+
+func checkBtrfsSubvolume(path string) error {
+	btrfs, err := filesystemIsBtrfs(path)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if !btrfs {
+		return fmt.Errorf("%s is not on a Btrfs filesystem", path)
+	}
+	// Lstat, not Stat: a symlink pointing at a subvolume root must not pass.
+	// The restore path renames this location aside, and renaming a symlink
+	// moves the link rather than the data it names, so accepting one would
+	// silently restore into the wrong place.
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", path)
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("cannot inspect %s", path)
+	}
+	if st.Ino != btrfsSubvolumeRootInode {
+		return fmt.Errorf("%s is a directory on Btrfs but not a subvolume root", path)
+	}
+	return nil
 }
 
 func runStatus(args []string) error {
@@ -1032,22 +1121,26 @@ func parseBaseOnly(name string, args []string) (string, error) {
 		return "", err
 	}
 	if len(rest) != 0 {
-		return "", fmt.Errorf("usage: anas %s [-b ~/.anas]", name)
+		return "", fmt.Errorf("usage: anas %s [-w <workspace>]", name)
 	}
 	return base, nil
 }
 
+// parseBaseArgs resolves the workspace and returns its state directory, which
+// is what every read-only inspection command actually needs.
 func parseBaseArgs(name string, args []string) (string, []string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	base := fs.String("b", "", "runtime base path")
-	fs.StringVar(base, "base", "", "runtime base path")
-	if err := fs.Parse(args); err != nil {
+	workspaceFlag := fs.String("w", "", "workspace path")
+	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
+	positional, err := parseInterspersed(fs, args)
+	if err != nil {
 		return "", nil, err
 	}
-	if *base == "" {
-		*base = defaultRuntimeBase()
+	workspace, err := resolveWorkspace(*workspaceFlag)
+	if err != nil {
+		return "", nil, err
 	}
-	return *base, fs.Args(), nil
+	return stateDir(workspace), positional, nil
 }
 
 func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploymentManifest, error) {
@@ -1108,18 +1201,29 @@ func loadDeploymentManifest(root string) (*deploymentManifest, error) {
 	return &manifest, nil
 }
 
+// ensureRuntimeLayout creates the state directory tree. snapshots/ is not part
+// of it: snapshots live at <workspace>/snapshots, a sibling of .anas rather
+// than a child, so that a data restore which replaces the data directory can
+// never take the runtime state with it.
 func ensureRuntimeLayout(base string) error {
 	for _, dir := range []string{
 		base, filepath.Join(base, "state"), filepath.Join(base, "state", "deployments"),
 		filepath.Join(base, "state", "transactions"), filepath.Join(base, "deployments"),
-		filepath.Join(base, "staging"), filepath.Join(base, "snapshots"),
+		filepath.Join(base, "staging"),
 	} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return err
 		}
 	}
+	if err := os.MkdirAll(snapshotsDir(workspaceOf(base)), 0700); err != nil {
+		return err
+	}
 	return os.Chmod(base, 0700)
 }
+
+// workspaceOf inverts stateDir. Several runtime helpers are handed only the
+// state directory, and the layout guarantees its parent is the workspace.
+func workspaceOf(base string) string { return filepath.Dir(base) }
 
 func acquireRuntimeLock(base string) (func(), error) {
 	return acquireRuntimeLockMode(base, syscall.LOCK_EX)

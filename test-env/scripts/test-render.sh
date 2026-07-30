@@ -7,16 +7,14 @@ cd "$ROOT_DIR"
 
 for config in "$CONFIG_DIR"/*.yml; do
   name=$(basename "$config" .yml)
-  base="$RUNTIME_DIR/$name"
+  ws="$RUNTIME_DIR/$name"
   log="$REPORT_DIR/render-$name.log"
-  mkdir -p "$base"
-  runtime_config="$base/config.yml"
-  cp "$config" "$runtime_config"
+  make_workspace "$ws" "$config"
   if {
     echo "== plan: $name =="
-    run_anas plan -c "$runtime_config" -b "$base"
+    run_anas plan -c "$ws/config.yml"
     echo "== render: $name =="
-    run_anas render -c "$runtime_config" -b "$base" --update-lock
+    run_anas render -w "$ws" --update-lock
   } >"$log" 2>&1; then
     cat "$log"
   else
@@ -25,7 +23,7 @@ for config in "$CONFIG_DIR"/*.yml; do
     exit "$status"
   fi
 
-  if find "$base/deployments" -type f -name '*.erb' -print -quit | grep -q .; then
+  if find "$(ws_deployments "$ws")" -type f -name '*.erb' -print -quit | grep -q .; then
     echo "unrendered ERB files remain for $name" >&2
     exit 1
   fi

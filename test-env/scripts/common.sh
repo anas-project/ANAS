@@ -15,6 +15,24 @@ run_anas() {
   go run ./cmd/anas "$@"
 }
 
+# make_workspace <dir> <config> creates a workspace and installs the config as
+# its own. Tests are re-run against existing trees, so an already-initialised
+# directory is not an error here.
+make_workspace() {
+  ws=$1
+  cfg=$2
+  mkdir -p "$(dirname -- "$ws")"
+  if [ ! -d "$ws/.anas" ]; then
+    run_anas init "$ws" -y >/dev/null
+  fi
+  cp "$cfg" "$ws/config.yml"
+}
+
+# Deployment artifacts live under the workspace state directory.
+ws_deployments() {
+  printf '%s\n' "$1/.anas/deployments"
+}
+
 rendered_module_dirs() {
-  find "$RUNTIME_DIR/deployments" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | sort
+  find "$RUNTIME_DIR" -mindepth 4 -maxdepth 4 -type d -path '*/.anas/deployments/*' 2>/dev/null | sort
 }

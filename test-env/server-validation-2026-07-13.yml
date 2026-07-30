@@ -15,7 +15,6 @@ modules:
 global:
   domain: nas.test
   email: admin@nas.test
-  data_path: /data/anas-refactor-test/validation-2026-07-13-v14/data
   timezone: Asia/Shanghai
   dns_provider: manual
   default_service_root_password: change-me-now

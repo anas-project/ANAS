@@ -18,7 +18,6 @@ config:
     - email
     - default_service_root_password
   defaults:
-    data_path: ~/data
     timezone: Asia/Hong_Kong
     container_prefix: anas_
     image_prefix: anas_
@@ -41,10 +40,6 @@ config:
       effect: immutable
       apply: migrate-domain
       description: Samba realm, SSO issuers, certificates, and application URLs depend on it.
-    data_path:
-      effect: data_migrate
-      apply: migrate-storage
-      description: Moving the path requires an offline copy, verification, and rollback plan.
     timezone:
       effect: container_recreate
       apply: recreate-affected-containers

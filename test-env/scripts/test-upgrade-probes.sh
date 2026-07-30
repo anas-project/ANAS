@@ -4,7 +4,7 @@ set -eu
 . "$(dirname -- "$0")/common.sh"
 
 base=${1:-"$RUNTIME_DIR/upgrade-previous-patch"}
-data_dir=${2:-"$ROOT_DIR/.anas-test/upgrade-data/previous-patch"}
+data_dir=${2:-"$base/data"}
 marker="anas-upgrade-marker"
 log="$REPORT_DIR/upgrade-probes-$(basename "$base").log"
 

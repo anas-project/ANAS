@@ -1,0 +1,28 @@
+# Configuration for the Btrfs data-snapshot test.
+#
+# Its own prefixes and port, for the same reason as rollback.yml: the test may
+# run on a host already running a real deployment, and a shared `anas_` prefix
+# would make `docker compose up` recreate the live containers. Distinct from
+# rollback.yml's prefix so the two tests cannot collide with each other either.
+modules:
+  - traefik
+
+global:
+  domain: snapshot.test
+  email: admin@snapshot.test
+  timezone: Asia/Shanghai
+  dns_provider: manual
+  default_service_root_password: change-me-now
+
+rollback:
+  snapshot:
+    # source defaults to <workspace>/data and root to <workspace>/snapshots;
+    # leaving both unset is what the test is checking.
+    backend: btrfs
+
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anassn_
+  IMAGE_PREFIX: anassn_
+  NETWORK_PREFIX: anassn_
+  TRAEFIK_BASE_PORT: "19444"

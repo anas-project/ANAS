@@ -15,12 +15,14 @@ func TestPlanDoesNotCreateRuntimeState(t *testing.T) {
 		t.Fatal("runtime.Caller failed")
 	}
 	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	base := filepath.Join(t.TempDir(), "runtime")
-	if err := Main([]string{"plan", "-c", filepath.Join(root, "config.example.yml"), "--root", root, "-b", base}); err != nil {
+	workspace := t.TempDir()
+	if err := Main([]string{"plan", "-c", filepath.Join(root, "config.example.yml"), "--root", root, "-w", workspace}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(base); !os.IsNotExist(err) {
-		t.Fatalf("plan created runtime state at %s", base)
+	// plan accepts -w only for symmetry: it must neither require a workspace
+	// nor leave any state behind in one.
+	if _, err := os.Stat(stateDir(workspace)); !os.IsNotExist(err) {
+		t.Fatalf("plan created runtime state at %s", stateDir(workspace))
 	}
 }
 

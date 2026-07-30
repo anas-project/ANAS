@@ -49,9 +49,12 @@ type Snapshot struct {
 }
 
 type Global struct {
-	Domain                     string `yaml:"domain"`
-	Email                      string `yaml:"email"`
-	DataPath                   string `yaml:"data_path"`
+	Domain string `yaml:"domain"`
+	Email  string `yaml:"email"`
+	// There is deliberately no data_path. Service data always lives at
+	// <workspace>/data so that copying one directory is a complete backup; a
+	// configurable location would silently make that untrue. Users who need the
+	// data on a larger disk put the whole workspace there.
 	Timezone                   string `yaml:"timezone"`
 	ContainerPrefix            string `yaml:"container_prefix"`
 	ImagePrefix                string `yaml:"image_prefix"`
@@ -132,7 +135,8 @@ func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
 	}
 	set("BASE_DOMAIN", f.Global.Domain)
 	set("EMAIL", f.Global.Email)
-	set("DATA_PATH", f.Global.DataPath)
+	// DATA_PATH is not sourced from the config; the runner injects it from the
+	// workspace it resolved.
 	set("TZ", f.Global.Timezone)
 	set("CONTAINER_PREFIX", f.Global.ContainerPrefix)
 	set("IMAGE_PREFIX", f.Global.ImagePrefix)

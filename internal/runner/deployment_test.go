@@ -77,6 +77,12 @@ func TestBtrfsSnapshotRestoreKeepsRecoverySubvolume(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "marker"), []byte("before"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	// The real check reads the inode number of a Btrfs subvolume root, which a
+	// temp directory on the test machine's filesystem cannot satisfy.
+	originalCheck := btrfsSubvolumeCheck
+	btrfsSubvolumeCheck = func(string) error { return nil }
+	t.Cleanup(func() { btrfsSubvolumeCheck = originalCheck })
+
 	originalCommand := btrfsCommand
 	btrfsCommand = func(args ...string) error {
 		if len(args) >= 3 && args[0] == "subvolume" && args[1] == "show" {

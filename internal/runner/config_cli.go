@@ -3,8 +3,6 @@ package runner
 import (
 	"flag"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -27,12 +25,13 @@ func runConfig(args []string) error {
 		return runConfigSecret(args[1:])
 	}
 	fs := flag.NewFlagSet("config "+subcommand, flag.ContinueOnError)
-	cfgPath := fs.String("c", "config.yml", "config file")
-	fs.StringVar(cfgPath, "config", "config.yml", "config file")
-	base := fs.String("b", "", "runtime base path")
-	fs.StringVar(base, "base", "", "runtime base path")
+	cfgPath := fs.String("c", "", "config file")
+	fs.StringVar(cfgPath, "config", "", "config file")
+	workspaceFlag := fs.String("w", "", "workspace path")
+	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
 	rootFlag := fs.String("root", "", "project root containing casks/mods")
-	if err := fs.Parse(args[1:]); err != nil {
+	positional, err := parseInterspersed(fs, args[1:])
+	if err != nil {
 		return err
 	}
 	root, err := locateRoot(*rootFlag)
@@ -43,21 +42,28 @@ func runConfig(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *base == "" {
-		home, _ := os.UserHomeDir()
-		*base = filepath.Join(home, ".anas")
+	// `explain` only reads the cask registry, so it stays usable outside a
+	// workspace; the other subcommands act on one and must resolve it.
+	var workspace, base string
+	if subcommand != "explain" {
+		workspace, err = resolveWorkspace(*workspaceFlag)
+		if err != nil {
+			return err
+		}
+		base = stateDir(workspace)
+		*cfgPath = configPathFor(workspace, *cfgPath)
 	}
 
 	switch subcommand {
 	case "set":
-		if fs.NArg() != 2 {
+		if len(positional) != 2 {
 			return fmt.Errorf("usage: anas config set [-c config.yml] <path> <value>")
 		}
-		target, err := resolveConfigTarget(fs.Arg(0), reg)
+		target, err := resolveConfigTarget(positional[0], reg)
 		if err != nil {
 			return err
 		}
-		if err := config.SetScalar(*cfgPath, target.YAMLPath, fs.Arg(1)); err != nil {
+		if err := config.SetScalar(*cfgPath, target.YAMLPath, positional[1]); err != nil {
 			return err
 		}
 		policy := policyForTarget(target, reg)
@@ -67,10 +73,10 @@ func runConfig(args []string) error {
 		}
 		return nil
 	case "explain":
-		if fs.NArg() != 1 {
+		if len(positional) != 1 {
 			return fmt.Errorf("usage: anas config explain <path>")
 		}
-		target, err := resolveConfigTarget(fs.Arg(0), reg)
+		target, err := resolveConfigTarget(positional[0], reg)
 		if err != nil {
 			return err
 		}
@@ -81,10 +87,10 @@ func runConfig(args []string) error {
 		}
 		return nil
 	case "plan":
-		if fs.NArg() != 0 {
-			return fmt.Errorf("usage: anas config plan [-c config.yml] [-b ~/.anas]")
+		if len(positional) != 0 {
+			return fmt.Errorf("usage: anas config plan [-w <workspace>] [-c config.yml]")
 		}
-		return printConfigPlan(*cfgPath, *base, reg)
+		return printConfigPlan(*cfgPath, base, reg)
 	default:
 		return fmt.Errorf("unknown config command %q", subcommand)
 	}
@@ -96,22 +102,23 @@ func runConfigSecret(args []string) error {
 	}
 	action := args[0]
 	fs := flag.NewFlagSet("config secret "+action, flag.ContinueOnError)
-	base := fs.String("b", "", "runtime base path")
-	fs.StringVar(base, "base", "", "runtime base path")
+	workspaceFlag := fs.String("w", "", "workspace path")
+	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
-	if *base == "" {
-		*base = defaultRuntimeBase()
+	workspace, err := resolveWorkspace(*workspaceFlag)
+	if err != nil {
+		return err
 	}
-	store, err := loadSecretStore(*base)
+	store, err := loadSecretStore(stateDir(workspace))
 	if err != nil {
 		return err
 	}
 	switch action {
 	case "list":
 		if fs.NArg() != 0 {
-			return fmt.Errorf("usage: anas config secret list [-b ~/.anas]")
+			return fmt.Errorf("usage: anas config secret list [-w <workspace>]")
 		}
 		keys := make([]string, 0, len(store.values))
 		for key := range store.values {
@@ -124,7 +131,7 @@ func runConfigSecret(args []string) error {
 		return nil
 	case "get":
 		if fs.NArg() != 1 {
-			return fmt.Errorf("usage: anas config secret get <KEY> [-b ~/.anas]")
+			return fmt.Errorf("usage: anas config secret get <KEY> [-w <workspace>]")
 		}
 		value, ok := store.values[fs.Arg(0)]
 		if !ok {
@@ -194,7 +201,7 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 
 func isGlobalParameter(parameter string) bool {
 	switch parameter {
-	case "domain", "email", "data_path", "timezone", "container_prefix", "image_prefix", "network_prefix", "host_ip", "dns_provider", "dns_server", "default_service_root_password":
+	case "domain", "email", "timezone", "container_prefix", "image_prefix", "network_prefix", "host_ip", "dns_provider", "dns_server", "default_service_root_password":
 		return true
 	default:
 		return false
