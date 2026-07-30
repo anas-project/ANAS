@@ -21,8 +21,9 @@ ISSUER_MARK="$OUT/.issuer"
 
 # The CA outlives everything else: rotating it invalidates the copy every user
 # installed on their own devices, so it is deliberately long-lived and is only
-# reported on, never rotated automatically.
-CA_DAYS=3650
+# reported on, never rotated automatically. Sixty years puts expiry past the
+# lifetime of any deployment that installs it.
+CA_DAYS=21900
 LEAF_DAYS=730
 RENEW_BEFORE_DAYS=90
 
