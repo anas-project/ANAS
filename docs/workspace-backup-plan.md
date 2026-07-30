@@ -1,6 +1,7 @@
 # workspace 与备份体系：实施计划
 
-> 状态：设计已定，未开工。本文是总纲，JSON 契约见
+> 状态：一（workspace 语义）、二（`anas init`）、三（snapshot 体系）已落地；
+> 四（breaking 升级自动快照）未开工。本文是总纲，JSON 契约见
 > [contracts/](contracts/README.md)，cask 分发见
 > [cask-distribution-draft.md](cask-distribution-draft.md)（草案，不在本计划内）。
 
@@ -120,9 +121,12 @@ workspace 目录，解析结果都固定——正好重新引入 cwd 解析要�
 | 可见 | 写完打印文件路径与生效方式 |
 | 可撤销 | `--shell-init=remove` 删除标记块 |
 
-## 三、snapshot 体系
+## 三、snapshot 体系（已落地）
 
-完整契约见 [contracts/snapshot.md](contracts/snapshot.md)。要点：
+完整契约见 [contracts/snapshot.md](contracts/snapshot.md)，实现见
+[snapshot.go](../internal/runner/snapshot.go)、
+[snapshot_restore.go](../internal/runner/snapshot_restore.go)、
+[snapshot_cli.go](../internal/runner/snapshot_cli.go)。要点：
 
 - **概念分界**：snapshot = 本机、瞬时、为回滚服务；backup = 异地、完整、为灾难恢复
   服务。因此 `snapshots/` 默认不进 backup。
@@ -131,14 +135,16 @@ workspace 目录，解析结果都固定——正好重新引入 cwd 解析要�
 - **`deployment/` 复制**按 reflink → 硬链接 → 完整复制降级。`snapshots/` 保持普通
   目录（非 subvolume），无跨 subvolume 的 EXDEV 限制。但**硬链接一档依赖制品封印，
   见下**。
-- **制品封印是本期新增的前置任务。** 设计文档 §13 规定"release 普通资产在封印后改为
-  只读"，实际**未实现**——全仓仅两处 `os.Chmod` 都是给 base 设 0700。硬链接与源共享
-  inode，任何原地写入会同时污染所有引用它的快照，因此封印（制品 0444/0555、`.env`
-  0400）落地前，降级链跳过硬链接。
-- **`apply` 需把原始配置写入 `deployments/<id>/config.source.yml`（0600）。** 今天
-  原始 config 原文在系统里没有任何副本：`saveAppliedConfig` 只存 sha256 指纹，release
-  只有脱敏的 `resolved.redacted.yml`，manifest 只有 Settings 指纹。没有它，快照拿不到
-  与自己匹配的配置，"仅凭快照恢复系统"不成立。
+- **制品封印**（前置任务，已落地）：`sealDeployment` 在 rename 进
+  `deployments/<id>/` 之前按位清除写权限，因此三档降级链全部可用。按位清除而非赋固定
+  模式，是为了让可执行文件仍可执行、`.env` 仍是 0600 → 0400 而不是被"只读"顺手放宽成
+  全局可读。目录保持 0700 不封——只读目录会连 unlink 一起挡住，而 unlink-and-replace
+  分配新 inode，本就是硬链接安全的改动。
+- **`apply` 把原始配置写入 `deployments/<id>/config.source.yml`（0600）**（前置任务，
+  已落地）。此前原始 config 原文在系统里没有任何副本：`saveAppliedConfig` 只存 sha256
+  指纹，release 只有脱敏的 `resolved.redacted.yml`，manifest 只有 Settings 指纹。指纹
+  能**检测**磁盘 config 与 applied 不符，但产不出那份旧配置。没有它，快照拿不到与自己
+  匹配的配置，"仅凭快照恢复系统"不成立。
 - **换来的简化**：deployment GC 与快照完全解耦，不再需要"pinned 快照连带 pin 住
   deployment"这条跨子系统不变量。
 - **`state/` 只拷不可重建的部分**，`active.yml` 恢复时由快照的 `deployment_id` 重建。

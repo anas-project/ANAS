@@ -1,6 +1,10 @@
 # snapshot 命令 JSON 契约
 
-> 状态：设计中，尚未实现。通用约定见 [README.md](README.md)，本文不再重复。
+> 状态：**已实现**（`list` / `show` / `create` / `restore` / `pin` / `unpin` /
+> `delete` / `prune` / `verify` / `path`）。本文的"自动触发"一节（`data_breaking`
+> 与回滚判定）仍属设计，未落地——目前 `apply` 沿用既有触发条件，记
+> `reason: pre_apply`。`diff` 列入二期。
+> 通用约定见 [README.md](README.md)，本文不再重复。
 > 与 backup 的分界见 [backup.md](backup.md)。
 
 ## 存储布局
@@ -48,20 +52,24 @@ subvolume 的目录无法直接删除，并切断下面的硬链接降级路径�
    同样不跨边界，无 `EXDEV` 限制
 3. 完整复制 —— 兜底，约 42M/快照
 
-### 硬链接的前置条件：制品封印
+### 硬链接的前置条件：制品封印（**已落地**）
 
 硬链接与源共享 inode，**任何对 deployment 文件的原地写入都会同时污染所有引用它的
-快照**。设计文档 §13 规定"release 普通资产在封印后改为只读"，但**该封印尚未实现**
-——全仓仅两处 `os.Chmod`（[deployment.go:1121](../../internal/runner/deployment.go)、
-[runner.go:286](../../internal/runner/runner.go)），都是给 base 设 0700，制品一个
-都没封。
+快照**。设计文档 §13 规定"release 普通资产在封印后改为只读"。该封印已由
+`sealDeployment`（[artifact.go](../../internal/runner/artifact.go)）实现，在 staging
+rename 进 `deployments/<id>/` 之前执行，因此三档降级链**全部可用**。
 
-当前代码路径上确实没有 render 之后的写入（`applyHookFiles`、`renderERBFiles`、
-`freezeHookBinary`、`writeEnv` 全在 render 阶段；`runAfterStart` 只处理
-`DockerCopies`），但这是约定而非保证。
+封印**按位清除写权限**而非赋固定模式，保留 render 已经做出的两个区分：可执行文件仍
+可执行（0755 → 0555），owner-only 的敏感文件仍是 owner-only（0600 → 0400），其余落在
+0444。若统一赋 0444，`.env` 会从 0600 变成全局可读——为了只读而放宽了访问面。
 
-**因此：封印实现之前，降级链跳过第 2 档，只走 reflink → 完整复制。** 封印落地
-（制品 0444/0555、`.env` 0400）后再启用硬链接。
+**目录保持 0700，不封。** 只读目录会连 unlink 一起挡住，而 unlink-and-replace 分配的
+是新 inode，恰恰是硬链接本来就安全的那种改动；封目录换不来额外保证，却会让
+deployment 无法回收。
+
+`snapshot.yml` 的 `artifact_copy` 字段记录实际用到的档位（`reflink` / `hardlink` /
+`copy`）。第 1 档用 `cp -a --reflink=always` 而非 `=auto`：`auto` 会静默降级为完整
+复制，记录下来的档位就成了假话。
 
 复制它换来一条跨子系统不变量的消失：deployment GC **不需要**读快照索引来规避被引用
 的制品，pin 一个快照也不再需要连带 pin 住 deployment。
@@ -75,6 +83,32 @@ subvolume 的目录无法直接删除，并切断下面的硬链接降级路径�
 | `state/index.yml` | ❌ | 定义上可重建 |
 | `state/transactions/` | ❌ | 诊断性、瞬态 |
 | `state/lock` | ❌ | 运行时锁 |
+
+### 删除子卷需要权限（实测结论，与"create/snapshot/delete 都无需 root"的通行说法不符）
+
+`btrfs subvolume create` 与 `snapshot` 普通用户可用，`delete` **不可用**：
+`BTRFS_IOC_SNAP_DESTROY` 要求 CAP_SYS_ADMIN，除非文件系统挂载时带
+`user_subvol_rm_allowed`。在 ln.hlong.wang（内核 5.15，`/data` 未带该选项）实测：
+
+| 操作 | 普通用户 |
+| --- | --- |
+| `btrfs subvolume create` | ✅ |
+| `btrfs subvolume snapshot -r` | ✅ |
+| `btrfs subvolume delete`（非空子卷） | ❌ EPERM |
+| `btrfs property set -ts <p> ro false` | ✅ |
+| `rmdir` 空子卷 | ✅（内核 ≥ 4.18） |
+| `rm -rf` 只读快照内容 | ❌ Read-only file system |
+
+因此**所有回收空间的命令**（`delete`、`prune`、apply 之后的保留策略、清理中断的
+`.tmp-*`）在缺少该挂载选项时都会失败。实现的处置是**报错并给出补救方式**
+（`subvolume_delete_denied`，退出码 4），而不是回退到"清空 ro 标志 + 递归删除"：
+
+- 那条路径对**容器以 root 写入的数据目录**（NAS 的常态）依然会中途 EACCES；
+- 中途失败会留下一个被删掉一半的快照——正是 `verify` 存在的意义所在的那种损坏状态，
+  自己制造它比拒绝更糟。
+
+补救：`mount -o remount,user_subvol_rm_allowed <fs>` 并写进 fstab，或以 root 执行回收
+类命令。
 
 ### 创建的原子性
 
@@ -105,6 +139,12 @@ data 一同回退是自洽的，但"只恢复 meta 保留当前 data"会造成�
 
 - `snapshot.keep_auto`（默认 **5**）：`kind: auto` 且 `pinned: false` 的按创建时间
   倒序保留 N 个，其余回收。
+  **实现位置与本文命名不一致**：配置里的 snapshot 段目前挂在 `rollback.snapshot`
+  下（`backend` / `source` / `root` 已在那里），故实际写作
+  `rollback.snapshot.keep_auto`。JSON 输出的字段名仍是 `keep_auto`，与本文一致。
+  把整段提升为顶层 `snapshot:` 属于独立的配置改名，不在本期内。
+  用 `*int` 而非 `int`：显式写 `keep_auto: 0`（一个都不留）必须与"没写"区分开，
+  后者取默认值 5。
 - `kind: manual` 与 `pinned: true` 一律不参与自动回收，**且不计入 N**。
 - 回收时机：每次 `apply` 成功提交 active 之后，以及显式 `anas snapshot prune`。
 - deployment GC 与快照**无耦合**：快照持有自己的制品副本（见上），`.anas/deployments/`
@@ -226,14 +266,14 @@ to return to that state, restore a snapshot instead:
   anas snapshot restore <id>
 ```
 
-### 由此简化掉的三处
+### 由此简化掉的三处（**均已落地**）
 
 1. **`rollback --restore-data` 标志删除**，`rollback` 语义变为纯粹的制品切换
-2. **`restoreDeploymentSnapshot` 的跃迁配对校验删除**
-   （[deployment.go:925](../../internal/runner/deployment.go) 的
-   `snapshot.ToDeployment != currentID || snapshot.FromDeployment != targetID`）——
-   该检查存在的唯一理由是快照绑定于特定跃迁；快照自足之后它就是一个**时间点**，恢复
-   它无需参照 `deployments/` 中的任何东西
+2. **`restoreDeploymentSnapshot` 的跃迁配对校验删除**（连同 `restoreDeploymentSnapshot`
+   与 `createDeploymentSnapshot`、`dataSnapshot` 一并删除）——该检查存在的唯一理由是
+   快照绑定于特定跃迁；快照自足之后它就是一个**时间点**，恢复它无需参照
+   `deployments/` 中的任何东西。`from_deployment` / `to_deployment` 保留为字段，但
+   降级为供人阅读的上下文，不再参与任何判定
 3. **`deploymentState.SnapshotID` 删除**（本就计划删除，此处失去最后的存在理由）
 
 ### 为什么不取消"不带数据的回滚"
@@ -305,24 +345,40 @@ reason: cask_upgrade_breaking    # 枚举，见下
 label: "升级前"                   # 用户自由文本，可空
 source: /home/whl/anas-deploy/data
 path: /home/whl/anas-deploy/snapshots/20260729T081504Z-4a1b2c3d/data
-from_deployment: 20260728T041632Z-a9f9519d
-to_deployment: 20260728T131040Z-cd6fc061
+from_deployment: 20260728T041632Z-a9f9519d   # 可选，仅供人读，恢复时不参照
+to_deployment: 20260728T131040Z-cd6fc061     # 同上
 deployment_id: 20260728T131040Z-cd6fc061
 config_digest: sha256:…
 lock_digest: sha256:…
-secret_generation: 7
 casks: { nextcloud: "30.0.1", authentik: "2024.10.5" }
-recovery_path: ""       # 回滚时被挪开的原数据位置，仅回滚后有值
+artifact_copy: hardlink  # reflink | hardlink | copy，实际用到的降级档位
+complete: true           # 最后写入；缺失即中断产物，不可恢复
 ```
+
+两处与初稿的偏差，均已按现实修正：
+
+- **删掉 `secret_generation`。** secret store 目前是
+  `secrets.generated.yml` 里的一张平表，没有分代（设计文档 §8.3 描述了分代，但未
+  实现），没有可写的代次号。写 `0` 会是一个假测量值，故整个字段不出现。分代落地后
+  再加回来——加字段不升 `api_version`。
+- **删掉 `recovery_path`。** 它描述的是"回滚时被挪开的原数据位置"。恢复前必建
+  `reason: pre_restore` 快照之后，那份被挪开的数据已经在一个具名快照里，恢复成功后
+  就地删除；再留一个无人知道含义的目录只会占盘。撤销一次恢复现在走
+  `snapshot restore <pre_restore-id>`，返回的 JSON 里有它的 id。
 
 ### `reason` 枚举
 
-| 值 | 触发场景 |
-| --- | --- |
-| `cask_upgrade_breaking` | 跨过 `data_breaking_versions` |
-| `setting_data_migrate` | 变更了 `effect: data_migrate` 的设置 |
-| `manual` | 用户执行 `anas snapshot create` |
-| `pre_backup` | `anas backup create` 内部建的快照 |
+| 值 | 触发场景 | 状态 |
+| --- | --- | --- |
+| `manual` | 用户执行 `anas snapshot create` | 已实现 |
+| `pre_apply` | `apply` 切换 deployment 前的自动快照 | 已实现 |
+| `pre_restore` | `snapshot restore` 执行前，为使恢复本身可撤销 | 已实现 |
+| `pre_backup` | `anas backup create` 内部建的快照 | 预留 |
+| `cask_upgrade_breaking` | 跨过 `data_breaking` | 预留 |
+| `setting_data_migrate` | 变更了 `effect: data_migrate` 的设置 | 预留 |
+
+`pre_restore` 与 `pre_apply` 是本次补上的：初稿的枚举里没有它们，但正文既要求恢复前
+建快照、`apply` 又早已在切换前建快照，两者都没有可写的 `reason`。
 
 ---
 
@@ -358,6 +414,10 @@ anas snapshot list [--json]
 ```
 
 - `size_bytes` 为 `null` 表示 btrfs qgroup 未启用，无法统计——**不要输出 `0`**。
+  **一期恒为 `null`**：读 qgroup 要走 `btrfs qgroup show`，与
+  `btrfs subvolume show` / `list` 同样需要 CAP_SYS_ADMIN 的 tree-search ioctl，
+  而整个快照子系统刻意做到无 root 可用（见 `checkBtrfsSubvolume` 用 inode 256 判定
+  subvolume 的理由）。为了一个体积数字把全部命令推到 root 之后，代价不对等。
 - `config_matches_current: false` 表示当前 `config.yml` 与该快照记录的不一致。
 - `complete: false` 表示这是一个中断产物，不可用于恢复。
 

@@ -46,6 +46,11 @@ type Snapshot struct {
 	Backend string `yaml:"backend"`
 	Source  string `yaml:"source"`
 	Root    string `yaml:"root"`
+	// KeepAuto is how many automatic snapshots survive a prune; manual and
+	// pinned ones are neither counted nor collected. It is a pointer so that an
+	// explicit 0 ("keep none") stays distinguishable from an absent setting,
+	// which takes the default of 5.
+	KeepAuto *int `yaml:"keep_auto"`
 }
 
 type Global struct {

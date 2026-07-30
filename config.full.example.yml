@@ -29,6 +29,21 @@ iam:
   # order. Per-cask overrides live in services.<name>.env.iam_protocol.
   default_protocol: oidc
 
+# Point-in-time copies of <workspace>/data, taken before an apply switches
+# deployments. Each snapshot also carries the config, lock, secrets and a full
+# copy of the deployment artifact, so it can restore the system on its own.
+# Requires the workspace to be on Btrfs.
+rollback:
+  snapshot:
+    # btrfs, or none to disable automatic snapshots. `anas snapshot create`
+    # works regardless, as long as the workspace is on Btrfs.
+    backend: btrfs
+    # How many automatic snapshots survive collection. Manual and pinned
+    # snapshots are neither counted nor collected, so pinning three does not
+    # reduce how much automatic history is kept. Omit for the default of 5;
+    # 0 means keep none, which is not the same as omitting it.
+    keep_auto: 5
+
 env:
   BASICAUTH_USER: admin
   # all_rw: all authenticated domain users can write.
