@@ -128,10 +128,29 @@ store 中的键本应天然敏感，不应通过“其值是否也出现在 env�
    包含 deployment 路径，否则 GC 旧 deployment 会留下悬空引用；
 10. rollback 与 apply 执行同一套 change-policy 守卫（见 6.1）。
 
-## 4. 推荐运行目录
+## 4. 运行目录
+
+运行状态位于 workspace 的 `.anas/` 下。workspace 是一次部署拥有的全部内容——配置、
+业务数据、快照、运行状态——目的是让"备份一个目录"等价于"备份整套部署"。完整设计见
+[workspace-backup-plan.md](workspace-backup-plan.md)。
 
 ```text
-~/.anas/
+<workspace>/
+  config.yml                   # 用户期望状态，唯一需要手工维护的文件
+  config.lock.yml              # 解析锁，由 config 路径推导
+  data/                        # 业务数据；位置固定，不可配置
+  snapshots/                   # 时间点副本，与 .anas 平级而非嵌套
+  .anas/                       # 以下为运行状态，0700
+```
+
+`data/` 没有可配置的位置。可配置就意味着"复制一个目录"不再等价于完整备份，而那正是
+本布局要保证的事；需要把数据放在大盘上的用户，把整个 workspace 放过去。
+
+`snapshots/` 与 `.anas/` 平级而不是放在其中：数据恢复会整体替换数据目录，嵌套会让
+一次恢复顺手把运行状态也换掉。
+
+```text
+<workspace>/.anas/
   state/
     active.yml                 # 唯一活动指针与最后验证结果
     index.yml                  # 可重建的 deployment 状态汇总
@@ -155,14 +174,12 @@ store 中的键本应天然敏感，不应通过“其值是否也出现在 env�
           assets/...
   staging/
     <deployment-id>/           # 只允许 render/build/validate，禁止启动容器
-  snapshots/
-    <snapshot-id>/
-      snapshot.yml             # 数据快照来源、适用迁移边界和恢复记录
-      data                     # 可选 Btrfs 只读子卷快照
   secrets/
     store.yml                  # key -> generations（值 + 元数据），单文件，0600
-  data/                         # 可选默认业务数据根；永不放进 release
 ```
+
+快照不在 `.anas/` 内，见上方 workspace 布局与
+[contracts/snapshot.md](contracts/snapshot.md)。
 
 不再通过 rename 交换 `release` 和 `release.previous`。deployment ID 是
 "时间戳 + 随机后缀"的唯一标识符，明确不做内容寻址：内容 hash 在物化时
@@ -550,13 +567,17 @@ journal 中记录补偿动作。
 
 ## 13. 并发、权限与备份
 
-- base 根目录和所有 secret/env 文件保持 `0700/0600`；
+- `.anas/` 根目录、`snapshots/` 和所有 secret/env 文件保持 `0700/0600`；
 - `state/lock` 上使用 flock：apply/rollback/gc 取排他锁，
   start/stop/restart 取共享锁，"start 不能与 apply 并发"由锁模式自动
   成立，不需要额外机制；
-- release 普通资产在封印后改为只读，敏感 env 仍为 `0600`；
-- 备份单元是：用户 config、项目 lock、`secrets/`、业务 data 和
-  `state/active.yml`；release 可选备份，但不是业务数据替代品；
+- release 普通资产在封印后改为只读，敏感 env 仍为 `0600`
+  （**该封印尚未实现**，且它是快照复用 deployment 制品时启用硬链接的前提，
+  见 [contracts/snapshot.md](contracts/snapshot.md)）；
+- **备份单元就是整个 `<workspace>/`**。这正是 workspace 布局存在的理由：把它拆成
+  一份需要人工核对的路径清单，就等于把"漏掉一项"变成常态。缓存目录
+  （`.anas/go-build-cache/`、`.anas/hook-bin/`、`.anas/staging/`）可以排除，
+  其余不行；详见 [contracts/backup.md](contracts/backup.md)；
 - GC 默认保留 active + 最近两个 verified release + 所有未过期 failed
   staging；被保留 manifest 引用的 deployment 和 secret generation 不能
   删除；
