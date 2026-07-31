@@ -15,6 +15,11 @@ runtime:
 dependencies:
   requires:
     - traefik
+upgrade:
+  # Empty, not absent: no release of this cask has rewritten its on-disk data
+  # format. Absent would mean "unknown" and would block every rollback that
+  # changes the version. See docs/contracts/snapshot.md.
+  data_breaking: []
 config:
   env_prefix: TURN
   defaults:

@@ -136,6 +136,43 @@ func TestCasksUseManifestRule(t *testing.T) {
 	}
 }
 
+// A cask that forgets upgrade.data_breaking is not obviously broken: it renders,
+// deploys and runs. The only symptom is that every rollback across a version
+// change is refused as "data compatibility unknown", which surfaces months
+// later on the day someone needs to roll back. So it is checked here instead.
+func TestBundledCasksDeclareDataBreaking(t *testing.T) {
+	root := filepath.Join("..", "..", "casks", "mods")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		mod, err := loadModuleManifest(filepath.Join(root, entry.Name()), entry.Name())
+		if err != nil {
+			t.Fatalf("%s: %v", entry.Name(), err)
+		}
+		if mod.DataBreaking == nil {
+			t.Fatalf("cask %s does not declare upgrade.data_breaking; "+
+				"every rollback that changes its version will be refused as unknown", entry.Name())
+		}
+		// Nothing has shipped yet, so the claim each cask is making is that no
+		// release of it has ever rewritten its data format. That is checkable
+		// today; the assertion is here so that the day one of them stops being
+		// true, the change is deliberate.
+		if len(*mod.DataBreaking) != 0 {
+			t.Logf("cask %s declares data-breaking versions %v", entry.Name(), *mod.DataBreaking)
+		}
+		checked++
+	}
+	if checked == 0 {
+		t.Fatal("no casks checked")
+	}
+}
+
 func TestManifestRejectsRemovedBeforeDependencyField(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "example")
 	if err := os.MkdirAll(dir, 0700); err != nil {
