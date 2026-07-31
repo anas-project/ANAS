@@ -1,10 +1,12 @@
+# The widest module set that can run together. It uses authentik because that
+# is what real deployments run; llng is covered by matrix-auth.yml. Only one
+# IAM can be active at a time, so the two providers cannot share a config.
 modules:
   - samba_dc
   - samba_fs
   - postgres
   - mariadb
-  - llng
-  - keycloak
+  - authentik
   - nextcloud
   - collabora
   - meshcentral
@@ -13,6 +15,9 @@ modules:
   - ddns
   - eturnal
   - freeradius
+
+iam:
+  provider: authentik
 
 global:
   domain: nas.test

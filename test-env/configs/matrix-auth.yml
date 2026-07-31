@@ -1,8 +1,12 @@
+# The llng identity path. authentik is exercised by full.yml and the other
+# matrices, so this is where the alternative provider stays covered.
 modules:
   - samba_dc
   - llng
-  - keycloak
   - lam
+
+iam:
+  provider: llng
 
 global:
   domain: nas.test

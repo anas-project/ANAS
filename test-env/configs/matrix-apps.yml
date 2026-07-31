@@ -1,10 +1,16 @@
+# nextcloud consumes the iam capability, so an identity provider has to be
+# present for this matrix to resolve at all.
 modules:
   - postgres
   - mariadb
   - samba_dc
+  - authentik
   - nextcloud
   - collabora
   - meshcentral
+
+iam:
+  provider: authentik
 
 global:
   domain: nas.test
