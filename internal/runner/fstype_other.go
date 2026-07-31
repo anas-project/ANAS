@@ -9,3 +9,12 @@ package runner
 func filesystemIsBtrfs(path string) (bool, error) {
 	return false, nil
 }
+
+// filesystemFree reports "unknown" rather than a number off a differently
+// shaped statfs. Every caller already has to handle not knowing, because a
+// destination may be a filesystem that does not report free space at all, and
+// an unknown is safer than a plausible wrong figure that would let a backup
+// start with nowhere to land.
+func filesystemFree(path string) (int64, bool) {
+	return 0, false
+}
