@@ -1,7 +1,7 @@
 # workspace 与备份体系：实施计划
 
-> 状态：一（workspace 语义）、二（`anas init`）、三（snapshot 体系）已落地；
-> 四（breaking 升级自动快照）未开工。本文是总纲，JSON 契约见
+> 状态：一（workspace 语义）、二（`anas init`）、三（snapshot 体系）、
+> 四（breaking 升级自动快照）已落地。本文是总纲，JSON 契约见
 > [contracts/](contracts/README.md)，cask 分发见
 > [cask-distribution-draft.md](cask-distribution-draft.md)（草案，不在本计划内）。
 
@@ -162,7 +162,7 @@ workspace 目录，解析结果都固定——正好重新引入 cwd 解析要�
 命令：`list` / `show` / `create` / `restore` / `pin` / `unpin` / `delete` / `prune` /
 `verify` / `path`。`diff` 列入二期。
 
-## 四、breaking 升级自动快照
+## 四、breaking 升级自动快照（已落地）
 
 `upgrade` 节点**已存在**（[manifest.go:104](../internal/runner/manifest.go)），本期在
 其下新增 `data_breaking`，不另建顶层字段：

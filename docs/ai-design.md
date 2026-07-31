@@ -134,6 +134,12 @@ description: Short service purpose.
 category: app
 upgrade:
   from: ">=1.0.1 <=1.5.1"
+  # Versions at which the on-disk data format changed. Required on every cask:
+  # an absent list means "unknown" and blocks every rollback across a version
+  # change, while `[]` states that no release ever rewrote the format. When in
+  # doubt, list the version — an extra snapshot costs far less than a rollback
+  # into data the old code cannot read. See docs/contracts/snapshot.md.
+  data_breaking: []
 runtime:
   type: compose
   compose_file: docker-compose.yml
