@@ -2,7 +2,10 @@
 # End-to-end Btrfs snapshot tests. Requires a workspace on Btrfs.
 #
 # S1  `anas init` creates data/ as a subvolume when the workspace is on Btrfs.
-# S2  An apply that changes configuration takes a data snapshot beforehand.
+# S2  An apply that changes an irreversible setting snapshots the data first,
+#     and records why.
+# S2b A routine apply does NOT snapshot, and `--snapshot` overrides that.
+# S2c `--no-snapshot` refuses to run unattended without -y.
 # S3  The snapshot lands in <workspace>/snapshots, not inside .anas.
 # S4  A snapshot is self-sufficient: config, lock, secrets, the deployment
 #     state, a full artifact copy and the data are all physically present.
@@ -18,6 +21,11 @@
 # S9 and S11 together pin down the distinction the two operations exist for: a
 # rollback keeps the data, a restore rewinds it. Getting either one backwards
 # loses user data.
+#
+# S2 and S2b are a pair for the same reason. Snapshotting every apply and
+# snapshotting none of them are both wrong: the first fills the keep_auto slots
+# with routine config edits and evicts the snapshot that mattered, the second
+# leaves an irreversible change with no way back.
 set -eu
 
 . "$(dirname -- "$0")/common.sh"
@@ -156,9 +164,12 @@ fi
   # Written before the snapshot: must come back after the restore.
   echo "before-snapshot" >"$ws/data/marker-before"
 
-  echo "== S2: a second apply snapshots the data first =="
-  anas config set core.timezone Europe/Berlin -w "$ws"
-  anas apply --build -w "$ws" --update-lock
+  echo "== S2: an apply that cannot be undone snapshots the data first =="
+  # A credential rotation changes state inside the service, not just the
+  # rendered artifact: putting the old value back in config.yml does not put it
+  # back in the LDAP directory. That is what earns a snapshot.
+  anas config set core.default_service_root_password rotated-once -w "$ws"
+  anas apply --build -w "$ws" --update-lock --allow-risky
   second=$(active_deployment)
   echo "second deployment: $second"
 
@@ -169,7 +180,8 @@ fi
     echo "automatic snapshot: $auto"
   fi
   reason=$(snapshot_field "$auto" reason)
-  [ "$reason" = "pre_apply" ] || fail "automatic snapshot reason is '$reason', want pre_apply"
+  [ "$reason" = "setting_data_migrate" ] ||
+    fail "automatic snapshot reason is '$reason', want setting_data_migrate"
   # The snapshot must belong to the deployment it captured, not the new one.
   captured=$(snapshot_field "$auto" deployment_id)
   [ "$captured" = "$first" ] || fail "snapshot records deployment '$captured', want $first"
@@ -177,6 +189,33 @@ fi
   if grep -q "^snapshot_id:" "$ws/.anas/state/deployments/$second.yml" 2>/dev/null; then
     fail "deployment state still records a snapshot_id; a snapshot is not bound to one transition"
   fi
+
+  echo "== S2b: a routine apply does not spend a retention slot =="
+  # A timezone change recreates containers and touches nothing on disk. If this
+  # snapshotted, five such edits would evict the pre-rotation snapshot above.
+  before_routine=$(snapshot_ids | wc -l)
+  anas config set core.timezone Europe/Berlin -w "$ws"
+  anas apply --build -w "$ws" --update-lock
+  third=$(active_deployment)
+  [ "$third" != "$second" ] || fail "a config change did not produce a new deployment"
+  after_routine=$(snapshot_ids | wc -l)
+  [ "$before_routine" = "$after_routine" ] ||
+    fail "a routine apply took a snapshot ($before_routine -> $after_routine)"
+
+  # ...but an operator who wants one anyway can say so.
+  anas config set core.timezone Asia/Tokyo -w "$ws"
+  anas apply --build -w "$ws" --update-lock --snapshot
+  forced=$(snapshot_ids | wc -l)
+  [ "$forced" -gt "$after_routine" ] || fail "--snapshot did not force a snapshot"
+  [ "$(snapshot_field "$(snapshot_ids | head -1)" reason)" = "pre_apply" ] ||
+    fail "a forced snapshot should record reason pre_apply"
+
+  echo "== S2c: --no-snapshot needs -y, because it gives up the way back =="
+  anas config set core.default_service_root_password rotated-twice -w "$ws"
+  expect_exit 3 anas apply --build -w "$ws" --update-lock --allow-risky --no-snapshot </dev/null
+  expect_exit 2 anas apply -w "$ws" --snapshot --no-snapshot
+  # Put the setting back so the rest of the suite sees the state it expects.
+  anas config set core.default_service_root_password rotated-once -w "$ws"
 
   echo "== S3: the snapshot lives beside .anas, not inside it =="
   if [ ! -d "$ws/snapshots/$auto" ]; then

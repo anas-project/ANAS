@@ -497,11 +497,18 @@ func runApply(args []string) error {
 	build := fs.Bool("build", false, "build images before activation")
 	updateLock := fs.Bool("update-lock", false, "create or update the config lock")
 	allowRisky := fs.Bool("allow-risky", false, "allow changes requiring explicit migration or credential rotation")
+	snapshot := fs.Bool("snapshot", false, "snapshot the data first even when nothing requires it")
+	noSnapshot := fs.Bool("no-snapshot", false, "skip the automatic pre-apply snapshot (requires -y)")
+	yes := fs.Bool("y", false, "confirm without prompting")
+	fs.BoolVar(yes, "yes", false, "confirm without prompting")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
 		return fmt.Errorf("usage: anas apply [-w <workspace>] [-c config.yml | --deployment ID]")
+	}
+	if *snapshot && *noSnapshot {
+		return usageErrorf("apply accepts either --snapshot or --no-snapshot, not both")
 	}
 	workspace, err := resolveWorkspace(*workspaceFlag)
 	if err != nil {
@@ -546,7 +553,9 @@ func runApply(args []string) error {
 			return fmt.Errorf("deployment %s has status %q; apply --deployment requires ready", *deploymentID, state.Status)
 		}
 	}
-	if err := activateDeployment(base, *deploymentID, *allowRisky, false); err != nil {
+	if err := activateDeployment(base, *deploymentID, activateOptions{
+		allowRisky: *allowRisky, snapshot: *snapshot, noSnapshot: *noSnapshot, yes: *yes,
+	}); err != nil {
 		return err
 	}
 	fmt.Println(*deploymentID)
@@ -626,7 +635,21 @@ func startDeployment(a *app, casksRoot string) error {
 	return a.runAfterStart(casksRoot)
 }
 
-func activateDeployment(base, id string, allowRisky, rollback bool) error {
+// activateOptions carries the operator's answers to the questions activation
+// may have to ask. They are grouped rather than passed positionally because
+// three of the five are booleans that only differ by name at the call site.
+type activateOptions struct {
+	allowRisky bool
+	rollback   bool
+	// snapshot forces a snapshot even when nothing triggers one.
+	snapshot bool
+	// noSnapshot suppresses the automatic snapshot. It needs yes, because
+	// declining it throws away the only way back from the change being applied.
+	noSnapshot bool
+	yes        bool
+}
+
+func activateDeployment(base, id string, opts activateOptions) error {
 	cli, err := compose.Detect()
 	if err != nil {
 		return err
@@ -651,7 +674,7 @@ func activateDeployment(base, id string, allowRisky, rollback bool) error {
 			return err
 		}
 		blockers := deploymentChangeBlockers(current, target)
-		if rollback {
+		if opts.rollback {
 			guard := deploymentRollbackVersionGuard(current, target)
 			// Checked before the --allow-risky gate on purpose. The other
 			// blockers describe something the runner does not know and an
@@ -662,27 +685,15 @@ func activateDeployment(base, id string, allowRisky, rollback bool) error {
 			blockers = append(blockers, guard.Blocked...)
 			sort.Strings(blockers)
 		}
-		if len(blockers) > 0 && !allowRisky {
+		if len(blockers) > 0 && !opts.allowRisky {
 			verb := "apply"
-			if rollback {
+			if opts.rollback {
 				verb = "rollback"
 			}
 			return fmt.Errorf("%s crosses guarded state changes:\n  %s\nrun the declared migration/rotation or repeat with --allow-risky", verb, strings.Join(blockers, "\n  "))
 		}
-		if !rollback && target.Snapshot.Backend != "" && target.Snapshot.Backend != "none" {
-			// Quiescing first: a snapshot taken while services are mid-write
-			// captures a crash-consistent database rather than a clean one.
-			if err := oldApp.stopRelease(oldRoot); err != nil {
-				return fmt.Errorf("quiesce active deployment before data snapshot: %w", err)
-			}
-			// The snapshot is not recorded against this deployment. It stands
-			// on its own, carrying the artifact and config it belongs to, and
-			// is found by listing snapshots rather than by following a pointer.
-			if _, err := createSnapshot(workspaceOf(base), snapshotOptions{
-				kind: snapshotKindAuto, reason: snapshotReasonPreApply,
-				from: current.ID, to: target.ID,
-			}); err != nil {
-				_ = startDeployment(oldApp, oldRoot)
+		if !opts.rollback {
+			if err := snapshotBeforeApply(base, opts, oldApp, oldRoot, current, target); err != nil {
 				return err
 			}
 		}
@@ -735,6 +746,67 @@ func activateDeployment(base, id string, allowRisky, rollback bool) error {
 	return nil
 }
 
+// snapshotBeforeApply takes the automatic pre-apply snapshot, when the change
+// being applied is one the operator cannot take back on their own.
+//
+// The trigger is deliberately narrow — see deploymentSnapshotTrigger. Applies
+// that only recreate a container or reload a config leave the data exactly as
+// it was, and spending a keep_auto slot on each of them would push the snapshot
+// that actually matters out of the retention window.
+//
+// Every path that ends up not taking a snapshot asks first. Continuing quietly
+// would leave the operator believing they had a way back at the one moment they
+// do not.
+func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot string, current, target *deploymentManifest) error {
+	trigger := deploymentSnapshotTrigger(current, target)
+	if trigger == nil {
+		if !opts.snapshot {
+			return nil
+		}
+		trigger = &applySnapshotTrigger{reason: snapshotReasonPreApply, detail: "--snapshot was requested"}
+	}
+	workspace := workspaceOf(base)
+	if opts.noSnapshot {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", trigger.detail)
+		fmt.Fprintf(os.Stderr, "warning: --no-snapshot gives up the only way back to the current data.\n")
+		return confirmDestructive("Apply without a data snapshot", opts.yes)
+	}
+	if reason := snapshotUnavailable(workspace, target); reason != "" {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", trigger.detail)
+		fmt.Fprintf(os.Stderr, "warning: %s, so no snapshot can be taken and the current data cannot be recovered afterwards.\n", reason)
+		return confirmDestructive("Apply anyway, with no way back to the current data", opts.yes)
+	}
+	// Quiescing first: a snapshot taken while services are mid-write captures a
+	// crash-consistent database rather than a clean one.
+	if err := oldApp.stopRelease(oldRoot); err != nil {
+		return fmt.Errorf("quiesce active deployment before data snapshot: %w", err)
+	}
+	// The snapshot is not recorded against this deployment. It stands on its
+	// own, carrying the artifact and config it belongs to, and is found by
+	// listing snapshots rather than by following a pointer.
+	if _, err := createSnapshot(workspace, snapshotOptions{
+		kind: snapshotKindAuto, reason: trigger.reason,
+		from: current.ID, to: target.ID,
+	}); err != nil {
+		_ = startDeployment(oldApp, oldRoot)
+		return err
+	}
+	return nil
+}
+
+// snapshotUnavailable reports, in words fit for an operator, why this host
+// cannot snapshot — or "" when it can.
+func snapshotUnavailable(workspace string, target *deploymentManifest) string {
+	backend := strings.ToLower(strings.TrimSpace(target.Snapshot.Backend))
+	if backend == "" || backend == "none" {
+		return "no snapshot backend is configured (rollback.snapshot.backend)"
+	}
+	if err := btrfsSubvolumeShow(dataDir(workspace)); err != nil {
+		return fmt.Sprintf("%s is not a Btrfs subvolume", dataDir(workspace))
+	}
+	return ""
+}
+
 // collectAutomaticSnapshots applies the keep_auto policy. Failures are reported
 // and swallowed: a deployment that is up and verified must not be reported as
 // failed because some older snapshot could not be reclaimed.
@@ -778,7 +850,19 @@ func errorsJoin(errs []error) error {
 	return errors.Join(errs...)
 }
 
-func deploymentChangeBlockers(current, target *deploymentManifest) []string {
+// guardedSettingChange is a changed setting whose effect cannot be undone by
+// editing config.yml back.
+type guardedSettingChange struct {
+	Key    string
+	Effect string
+	Apply  string
+}
+
+// guardedSettingChanges is the one place the "not automatically reversible"
+// effect set is spelled out on the deployment side. The apply blocker and the
+// automatic snapshot trigger both read it, so the two cannot drift apart into
+// disagreeing about what counts as irreversible.
+func guardedSettingChanges(current, target *deploymentManifest) []guardedSettingChange {
 	if current == nil || target == nil {
 		return nil
 	}
@@ -789,7 +873,7 @@ func deploymentChangeBlockers(current, target *deploymentManifest) []string {
 	for key := range target.Settings {
 		keys[key] = true
 	}
-	blocked := []string{}
+	changes := []guardedSettingChange{}
 	for key := range keys {
 		from, fromOK := current.Settings[key]
 		to, toOK := target.Settings[key]
@@ -802,8 +886,21 @@ func deploymentChangeBlockers(current, target *deploymentManifest) []string {
 		}
 		switch setting.Effect {
 		case "credential_rotate", "data_migrate", "immutable":
-			blocked = append(blocked, fmt.Sprintf("%s (%s; %s)", key, setting.Effect, setting.Apply))
+			changes = append(changes, guardedSettingChange{Key: key, Effect: setting.Effect, Apply: setting.Apply})
 		}
+	}
+	sort.Slice(changes, func(i, j int) bool { return changes[i].Key < changes[j].Key })
+	return changes
+}
+
+func deploymentChangeBlockers(current, target *deploymentManifest) []string {
+	changes := guardedSettingChanges(current, target)
+	if changes == nil {
+		return nil
+	}
+	blocked := []string{}
+	for _, change := range changes {
+		blocked = append(blocked, fmt.Sprintf("%s (%s; %s)", change.Key, change.Effect, change.Apply))
 	}
 	sort.Strings(blocked)
 	return blocked
@@ -857,7 +954,7 @@ func runDeploymentRollback(args []string) error {
 	// `anas snapshot restore`, a different operation with a different blast
 	// radius, and offering it here as a flag made the destructive case one
 	// typo away from the safe one.
-	return activateDeployment(base, target, *allowRisky, true)
+	return activateDeployment(base, target, activateOptions{allowRisky: *allowRisky, rollback: true})
 }
 
 var btrfsCommand = func(args ...string) error {

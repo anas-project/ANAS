@@ -240,6 +240,73 @@ func (g rollbackVersionGuard) breakingError() error {
 	return preconditionErrorf("data_breaking_crossed", "%s", b.String())
 }
 
+// ---------------------------------------------------------------- apply
+
+// applySnapshotTrigger is why an apply has to snapshot the data before it runs.
+type applySnapshotTrigger struct {
+	reason string
+	detail string
+}
+
+// deploymentSnapshotTrigger decides whether an apply is one the operator cannot
+// take back by editing config.yml and applying again.
+//
+// Two things qualify. A cask upgrade that crosses a declared break point, since
+// after it the old artifact can no longer read the data. And a changed setting
+// whose effect is not automatically reversible — data_migrate rewrites what is
+// there, credential_rotate changes state inside the service that putting the old
+// value back in config.yml will not change back.
+//
+// Nothing else does, and that restraint is the point. keep_auto is a handful of
+// slots; snapshotting every apply would fill them with routine config edits and
+// evict the pre-breaking snapshot that is the entire reason the mechanism
+// exists. reconcile is idempotent by contract and the restart-family effects do
+// not touch data, so neither is worth a slot.
+func deploymentSnapshotTrigger(current, target *deploymentManifest) *applySnapshotTrigger {
+	if current == nil || target == nil {
+		return nil
+	}
+	// The upgrade case is reported first: it is the more severe of the two, and
+	// only one snapshot is taken either way.
+	breaking := []string{}
+	for name, to := range target.Casks {
+		from, ok := current.Casks[name]
+		if !ok {
+			// A cask being added has no prior data, so there is nothing to break.
+			continue
+		}
+		if verdict, at := caskTransitionVerdict(from, to); verdict == dataBreaking {
+			breaking = append(breaking, fmt.Sprintf("%s %s -> %s crosses data-breaking version %s", name, from.Version, to.Version, at))
+		}
+	}
+	if len(breaking) > 0 {
+		sort.Strings(breaking)
+		return &applySnapshotTrigger{
+			reason: snapshotReasonCaskUpgradeBreaking,
+			detail: "cask upgrade rewrites data on disk: " + strings.Join(breaking, "; "),
+		}
+	}
+	changed := []string{}
+	for _, change := range guardedSettingChanges(current, target) {
+		// immutable cannot change by definition — activateDeployment refuses the
+		// apply outright — so in practice this is the other two.
+		if change.Effect == "data_migrate" || change.Effect == "credential_rotate" {
+			changed = append(changed, fmt.Sprintf("%s (%s)", change.Key, change.Effect))
+		}
+	}
+	if len(changed) > 0 {
+		sort.Strings(changed)
+		// One reason covers both effects. The name reads as if it were only about
+		// data_migrate, but a credential rotation is equally irreversible from
+		// config.yml and equally in need of a way back.
+		return &applySnapshotTrigger{
+			reason: snapshotReasonSettingDataMigrate,
+			detail: "setting change is not automatically reversible: " + strings.Join(changed, ", "),
+		}
+	}
+	return nil
+}
+
 // cloneStringListPointer copies a *[]string, preserving the nil/empty
 // distinction the whole guard rests on.
 func cloneStringListPointer(in *[]string) *[]string {

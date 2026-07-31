@@ -184,6 +184,115 @@ func TestDeploymentRollbackVersionGuard(t *testing.T) {
 	})
 }
 
+func TestDeploymentSnapshotTrigger(t *testing.T) {
+	casks := func(version string, breaks *[]string) map[string]deploymentCask {
+		return map[string]deploymentCask{
+			"nextcloud": {Name: "nextcloud", Version: version, DataBreaking: breaks},
+		}
+	}
+	setting := func(fingerprint, effect string) map[string]deploymentSetting {
+		return map[string]deploymentSetting{
+			"nextcloud.admin_password": {Fingerprint: fingerprint, Effect: effect, Apply: "rotate"},
+		}
+	}
+
+	cases := []struct {
+		name            string
+		current, target *deploymentManifest
+		want            string
+	}{
+		{
+			name:    "routine apply does not snapshot",
+			current: &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("old", "container_recreate")},
+			target:  &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("new", "container_recreate")},
+			want:    "",
+		},
+		{
+			name:    "reconcile does not snapshot",
+			current: &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("old", "reconcile")},
+			target:  &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("new", "reconcile")},
+			want:    "",
+		},
+		{
+			name:    "a non-breaking upgrade does not snapshot",
+			current: &deploymentManifest{Casks: casks("30.0.1", declared("31.0.0"))},
+			target:  &deploymentManifest{Casks: casks("30.0.2", declared("31.0.0"))},
+			want:    "",
+		},
+		{
+			name:    "an undeclared upgrade does not snapshot",
+			current: &deploymentManifest{Casks: casks("30.0.1", nil)},
+			target:  &deploymentManifest{Casks: casks("31.0.0", nil)},
+			want:    "",
+		},
+		{
+			name:    "a breaking upgrade snapshots",
+			current: &deploymentManifest{Casks: casks("30.0.1", declared())},
+			target:  &deploymentManifest{Casks: casks("31.0.0", declared("31.0.0"))},
+			want:    snapshotReasonCaskUpgradeBreaking,
+		},
+		{
+			name:    "data_migrate snapshots",
+			current: &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("old", "data_migrate")},
+			target:  &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("new", "data_migrate")},
+			want:    snapshotReasonSettingDataMigrate,
+		},
+		{
+			name:    "credential_rotate snapshots",
+			current: &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("old", "credential_rotate")},
+			target:  &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("new", "credential_rotate")},
+			want:    snapshotReasonSettingDataMigrate,
+		},
+		{
+			name:    "the upgrade reason wins over the setting reason",
+			current: &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("old", "data_migrate")},
+			target:  &deploymentManifest{Casks: casks("31.0.0", declared("31.0.0")), Settings: setting("new", "data_migrate")},
+			want:    snapshotReasonCaskUpgradeBreaking,
+		},
+		{
+			name:    "the first apply has no data to protect",
+			current: nil,
+			target:  &deploymentManifest{Casks: casks("31.0.0", declared("31.0.0"))},
+			want:    "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := deploymentSnapshotTrigger(tc.current, tc.target)
+			if tc.want == "" {
+				if got != nil {
+					t.Fatalf("expected no snapshot, got %s (%s)", got.reason, got.detail)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("expected reason %s, got no snapshot", tc.want)
+			}
+			if got.reason != tc.want {
+				t.Fatalf("reason = %s, want %s", got.reason, tc.want)
+			}
+			if !validSnapshotReason(got.reason) {
+				t.Fatalf("reason %s is not in the contract's enumeration", got.reason)
+			}
+			if got.detail == "" {
+				t.Fatal("the trigger has to say why, or the warning it prints is empty")
+			}
+		})
+	}
+}
+
+// A cask that appears in the target but not in the current deployment has no
+// prior data, so there is nothing its upgrade could break.
+func TestDeploymentSnapshotTriggerIgnoresAddedCasks(t *testing.T) {
+	current := &deploymentManifest{Casks: map[string]deploymentCask{}}
+	target := &deploymentManifest{Casks: map[string]deploymentCask{
+		"nextcloud": {Name: "nextcloud", Version: "31.0.0", DataBreaking: declared("31.0.0")},
+	}}
+	if got := deploymentSnapshotTrigger(current, target); got != nil {
+		t.Fatalf("adding a cask triggered %s", got.reason)
+	}
+}
+
 // The frozen manifest has to preserve the nil/empty distinction across a YAML
 // round trip, or the guard reads the opposite verdict off disk from the one it
 // wrote.
