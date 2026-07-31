@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -99,6 +100,88 @@ func TestGoverningDataBreakingPicksTheHigherVersion(t *testing.T) {
 	if got, at := caskTransitionVerdict(from, to); got != dataBreaking || at != "31.0.0" {
 		t.Fatalf("transition verdict = %v/%q, want breaking at 31.0.0", got, at)
 	}
+}
+
+func TestDeploymentRollbackVersionGuard(t *testing.T) {
+	manifest := func(casks ...deploymentCask) *deploymentManifest {
+		m := &deploymentManifest{Casks: map[string]deploymentCask{}}
+		for _, c := range casks {
+			m.Casks[c.Name] = c
+		}
+		return m
+	}
+	cask := func(name, version string, breaks *[]string) deploymentCask {
+		return deploymentCask{Name: name, Version: version, AppVersion: version, DataBreaking: breaks}
+	}
+
+	t.Run("identical versions are a config-only rollback", func(t *testing.T) {
+		guard := deploymentRollbackVersionGuard(
+			manifest(cask("nextcloud", "30.0.1", nil)),
+			manifest(cask("nextcloud", "30.0.1", nil)))
+		if len(guard.Blocked) != 0 || len(guard.Crossings) != 0 {
+			t.Fatalf("a config-only rollback was guarded: %+v", guard)
+		}
+	})
+
+	t.Run("declared and not crossing is permitted", func(t *testing.T) {
+		guard := deploymentRollbackVersionGuard(
+			manifest(cask("nextcloud", "30.0.2", declared("31.0.0"))),
+			manifest(cask("nextcloud", "30.0.1", declared("31.0.0"))))
+		if len(guard.Blocked) != 0 || len(guard.Crossings) != 0 {
+			t.Fatalf("a declared non-breaking version rollback was guarded: %+v", guard)
+		}
+	})
+
+	t.Run("crossing in reverse has no override", func(t *testing.T) {
+		guard := deploymentRollbackVersionGuard(
+			manifest(cask("nextcloud", "31.0.0", declared("31.0.0"))),
+			manifest(cask("nextcloud", "30.0.1", declared())))
+		if len(guard.Blocked) != 0 {
+			t.Fatalf("a crossing must be fatal, not merely blocked: %v", guard.Blocked)
+		}
+		err := guard.breakingError()
+		if err == nil {
+			t.Fatal("a reverse crossing produced no error")
+		}
+		want := []string{
+			"cannot roll back nextcloud 31.0.0 -> 30.0.1: crosses data-breaking version 31.0.0",
+			"data written by 31.0.0 cannot be read by 30.0.1",
+			"to return to that state, restore a snapshot instead:",
+			"anas snapshot list",
+			"anas snapshot restore <id>",
+		}
+		for _, line := range want {
+			if !strings.Contains(err.Error(), line) {
+				t.Fatalf("message is missing %q:\n%s", line, err.Error())
+			}
+		}
+		// The message has to be machine-branchable as a precondition, not a
+		// generic failure, so a caller can tell it apart from --allow-risky.
+		if ExitCode(err) != exitPrecondition {
+			t.Fatalf("exit code = %d, want %d", ExitCode(err), exitPrecondition)
+		}
+	})
+
+	t.Run("addition and removal stay blocked", func(t *testing.T) {
+		guard := deploymentRollbackVersionGuard(
+			manifest(cask("nextcloud", "30.0.1", declared()), cask("collabora", "1.0.0", declared())),
+			manifest(cask("nextcloud", "30.0.1", declared()), cask("eturnal", "1.0.0", declared())))
+		if len(guard.Blocked) != 2 {
+			t.Fatalf("cask addition and removal must stay blocked, got %v", guard.Blocked)
+		}
+		if len(guard.Crossings) != 0 {
+			t.Fatalf("cask addition and removal are not crossings: %+v", guard.Crossings)
+		}
+	})
+
+	t.Run("one breaking cask is enough", func(t *testing.T) {
+		guard := deploymentRollbackVersionGuard(
+			manifest(cask("nextcloud", "31.0.0", declared("31.0.0")), cask("traefik", "1.0.1", declared())),
+			manifest(cask("nextcloud", "30.0.1", declared()), cask("traefik", "1.0.0", declared())))
+		if len(guard.Crossings) != 1 || guard.Crossings[0].Cask != "nextcloud" {
+			t.Fatalf("crossings = %+v", guard.Crossings)
+		}
+	})
 }
 
 // The frozen manifest has to preserve the nil/empty distinction across a YAML

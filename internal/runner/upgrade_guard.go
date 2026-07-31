@@ -21,6 +21,7 @@ package runner
 // annotated and turn the conservative default inside out.
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -130,6 +131,113 @@ func governingDataBreaking(fromVersion string, fromDeclared *[]string, toVersion
 func caskTransitionVerdict(from, to deploymentCask) (dataVerdict, string) {
 	declared := governingDataBreaking(from.Version, from.DataBreaking, to.Version, to.DataBreaking)
 	return caskDataVerdict(from.Version, to.Version, declared)
+}
+
+// ---------------------------------------------------------------- rollback
+
+// dataBreakingCrossing is one cask whose rollback would step back over a
+// declared break point.
+type dataBreakingCrossing struct {
+	Cask string
+	From string // the deployed version, the one that wrote the data
+	To   string // the rollback target, the one that would have to read it
+	At   string // the declared version at which the format changed
+}
+
+// rollbackVersionGuard separates the two kinds of "no" a rollback can be given,
+// because they deserve different escapes.
+type rollbackVersionGuard struct {
+	// Blocked lists changes whose data compatibility is merely unknown: an
+	// undeclared version change, a cask appearing, a cask disappearing.
+	// --allow-risky is a legitimate answer to these, since an operator may know
+	// something the cask author never wrote down.
+	Blocked []string
+	// Crossings lists changes that provably cannot work. There is no escape for
+	// these — see breakingError.
+	Crossings []dataBreakingCrossing
+}
+
+// deploymentRollbackVersionGuard classifies every cask difference between the
+// running deployment and the rollback target.
+//
+// This replaces a placeholder that treated any version difference at all as
+// unknown and blocked it, down to a patch bump. That was the only honest answer
+// while no cask said anything about its data format; now that they can, the
+// block narrows to the cases that are actually unsafe.
+//
+// The narrowing is a usability change, not a safety one, and it rests entirely
+// on cask authors declaring correctly — which is why an absent declaration
+// still lands in Blocked exactly as before.
+func deploymentRollbackVersionGuard(current, target *deploymentManifest) rollbackVersionGuard {
+	guard := rollbackVersionGuard{Blocked: []string{}}
+	if current == nil || target == nil {
+		return guard
+	}
+	names := map[string]bool{}
+	for name := range current.Casks {
+		names[name] = true
+	}
+	for name := range target.Casks {
+		names[name] = true
+	}
+	for name := range names {
+		from, fromOK := current.Casks[name]
+		to, toOK := target.Casks[name]
+		switch {
+		case !fromOK:
+			// Rolling forward into a cask the running deployment does not have.
+			guard.Blocked = append(guard.Blocked,
+				fmt.Sprintf("cask %s removal (data compatibility unknown)", name))
+			continue
+		case !toOK:
+			// The target predates this cask; its data would be left on disk with
+			// nothing running against it.
+			guard.Blocked = append(guard.Blocked,
+				fmt.Sprintf("cask %s addition (data compatibility unknown)", name))
+			continue
+		}
+		verdict, at := caskTransitionVerdict(from, to)
+		switch verdict {
+		case dataUnchanged, dataCompatible:
+			// Nothing to say. Rollback never touches data, so a cask whose format
+			// did not move across this interval simply carries on reading it.
+		case dataUnknown:
+			guard.Blocked = append(guard.Blocked, fmt.Sprintf(
+				"cask %s %s/%s -> %s/%s (data compatibility unknown; the cask does not declare upgrade.data_breaking)",
+				name, from.Version, from.AppVersion, to.Version, to.AppVersion))
+		case dataBreaking:
+			guard.Crossings = append(guard.Crossings, dataBreakingCrossing{
+				Cask: name, From: from.Version, To: to.Version, At: at,
+			})
+		}
+	}
+	sort.Strings(guard.Blocked)
+	sort.Slice(guard.Crossings, func(i, j int) bool {
+		return guard.Crossings[i].Cask < guard.Crossings[j].Cask
+	})
+	return guard
+}
+
+// breakingError reports a rollback that steps back over a declared break point.
+//
+// There is deliberately no --allow-risky for this. The other blockers describe
+// something the runner does not know; this one describes something it does: the
+// old code cannot read the new format, so letting the rollback through buys
+// nothing but a deployment that will not start. The message therefore has to
+// name the operation that *would* work rather than a flag that would not.
+func (g rollbackVersionGuard) breakingError() error {
+	if len(g.Crossings) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	for _, c := range g.Crossings {
+		fmt.Fprintf(&b, "cannot roll back %s %s -> %s: crosses data-breaking version %s\n", c.Cask, c.From, c.To, c.At)
+		fmt.Fprintf(&b, "data written by %s cannot be read by %s\n", c.From, c.To)
+	}
+	b.WriteString("\nto return to that state, restore a snapshot instead:\n")
+	b.WriteString("  anas snapshot list\n")
+	b.WriteString("  anas snapshot restore <id>")
+	return preconditionErrorf("data_breaking_crossed", "%s", b.String())
 }
 
 // cloneStringListPointer copies a *[]string, preserving the nil/empty

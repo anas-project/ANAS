@@ -24,16 +24,22 @@ func TestDeploymentChangeBlockers(t *testing.T) {
 	}
 }
 
-func TestRollbackGuardsCaskVersionChanges(t *testing.T) {
+// An undeclared cask keeps the pre-contract behaviour: any version difference
+// is unknown, and unknown is blocked.
+func TestRollbackGuardsUndeclaredCaskVersionChanges(t *testing.T) {
 	current := &deploymentManifest{Casks: map[string]deploymentCask{
 		"db": {Name: "db", Version: "2.0.0", AppVersion: "16"},
 	}}
 	target := &deploymentManifest{Casks: map[string]deploymentCask{
 		"db": {Name: "db", Version: "1.0.0", AppVersion: "15"},
 	}}
-	got := deploymentRollbackVersionBlockers(current, target)
-	if len(got) != 1 || got[0] != "cask db 2.0.0/16 -> 1.0.0/15 (data compatibility unknown)" {
-		t.Fatalf("rollback blockers = %v", got)
+	guard := deploymentRollbackVersionGuard(current, target)
+	want := "cask db 2.0.0/16 -> 1.0.0/15 (data compatibility unknown; the cask does not declare upgrade.data_breaking)"
+	if len(guard.Blocked) != 1 || guard.Blocked[0] != want {
+		t.Fatalf("rollback blockers = %v", guard.Blocked)
+	}
+	if err := guard.breakingError(); err != nil {
+		t.Fatalf("an undeclared version change must be overridable, got a hard error: %v", err)
 	}
 }
 

@@ -652,7 +652,14 @@ func activateDeployment(base, id string, allowRisky, rollback bool) error {
 		}
 		blockers := deploymentChangeBlockers(current, target)
 		if rollback {
-			blockers = append(blockers, deploymentRollbackVersionBlockers(current, target)...)
+			guard := deploymentRollbackVersionGuard(current, target)
+			// Checked before the --allow-risky gate on purpose. The other
+			// blockers describe something the runner does not know and an
+			// operator might; this one describes something it does know.
+			if err := guard.breakingError(); err != nil {
+				return err
+			}
+			blockers = append(blockers, guard.Blocked...)
 			sort.Strings(blockers)
 		}
 		if len(blockers) > 0 && !allowRisky {
@@ -796,38 +803,6 @@ func deploymentChangeBlockers(current, target *deploymentManifest) []string {
 		switch setting.Effect {
 		case "credential_rotate", "data_migrate", "immutable":
 			blocked = append(blocked, fmt.Sprintf("%s (%s; %s)", key, setting.Effect, setting.Apply))
-		}
-	}
-	sort.Strings(blocked)
-	return blocked
-}
-
-// A cask version transition can include an application schema migration that
-// is invisible in the YAML setting diff. Until a cask declares and implements
-// a richer rollback contract, every reverse version/module transition is
-// conservatively guarded.
-func deploymentRollbackVersionBlockers(current, target *deploymentManifest) []string {
-	if current == nil || target == nil {
-		return nil
-	}
-	names := map[string]bool{}
-	for name := range current.Casks {
-		names[name] = true
-	}
-	for name := range target.Casks {
-		names[name] = true
-	}
-	blocked := []string{}
-	for name := range names {
-		from, fromOK := current.Casks[name]
-		to, toOK := target.Casks[name]
-		switch {
-		case !fromOK:
-			blocked = append(blocked, fmt.Sprintf("cask %s removal (data compatibility unknown)", name))
-		case !toOK:
-			blocked = append(blocked, fmt.Sprintf("cask %s addition (data compatibility unknown)", name))
-		case from.Version != to.Version || from.AppVersion != to.AppVersion:
-			blocked = append(blocked, fmt.Sprintf("cask %s %s/%s -> %s/%s (data compatibility unknown)", name, from.Version, from.AppVersion, to.Version, to.AppVersion))
 		}
 	}
 	sort.Strings(blocked)
