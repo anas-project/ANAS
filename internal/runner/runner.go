@@ -67,6 +67,8 @@ func Main(args []string) error {
 		return runDeploymentRollback(args[1:])
 	case "snapshot":
 		return runSnapshot(args[1:])
+	case "backup":
+		return runBackup(args[1:])
 	case "status":
 		return runStatus(args[1:])
 	case "deployments":
@@ -101,6 +103,10 @@ Usage:
   anas deployments list|inspect [ID] [-w WORKSPACE]
   anas snapshot list|show|create|pin|unpin|delete|prune|verify|path [-w WORKSPACE]
   anas snapshot restore ID -w WORKSPACE [--dry-run] [-y]
+  anas backup capabilities [--to DEST] [-w WORKSPACE]
+  anas backup plan|create  --to DEST [--mode MODE] [--snapshot ID] [--no-stop]
+  anas backup list|verify  --to DEST [--backup-id ID]
+  anas backup restore --from SRC -w WORKSPACE [--backup-id ID] [--dry-run] [-y]
   anas config set     [-w WORKSPACE] <module.parameter> <value>
   anas config explain <module.parameter>
   anas config plan    [-w WORKSPACE]
@@ -119,6 +125,12 @@ Workspace:
   when that directory already contains .anas/. Commands never create one
   implicitly; run "anas init" for that. "rollback" and "snapshot restore"
   accept only -w.
+
+Snapshot versus backup:
+  A snapshot is local, instant, and exists so an upgrade can be undone. A
+  backup is the same thing sent somewhere else, so it survives the disk.
+  "anas backup capabilities" reports which transfer modes this host and
+  destination can actually manage, and why the others cannot.
 
 Rollback versus restore:
   "rollback" switches the artifact and never touches data — the right answer

@@ -169,29 +169,43 @@ func probeBackupCapabilities(workspace, dest string) (*backupCapabilities, error
 		}
 		caps.Dest = &info
 	}
-	caps.Modes = evaluateBackupModes(workspace, caps)
+	facts := backupFacts{}
+	if caps.Dest != nil && caps.Dest.Exists {
+		facts.destBtrfs, _ = filesystemIsBtrfs(caps.Dest.Path)
+		if facts.destBtrfs && caps.Source.DataIsSubvolume {
+			facts.sameFilesystem = sameBtrfsFilesystem(workspace, caps.Dest.Path)
+		}
+		// A destination inside the workspace is the one place the secrets are
+		// not going anywhere new. Everywhere else the snapshot carries
+		// config.yml and the generated secret store in the clear, and the user
+		// is entitled to know that before it leaves.
+		facts.destLeavesHost = !pathWithin(caps.Dest.Path, workspace)
+		facts.parents = incrementalParents(workspace, caps.Dest)
+	}
+	caps.Modes = evaluateBackupModes(caps, facts)
 	caps.Recommended = recommendBackupMode(caps.Modes)
 	return caps, nil
+}
+
+// backupFacts are the things about the destination that need the filesystem to
+// answer. Separating them from the decision keeps evaluateBackupModes a pure
+// function of stated facts, which is the only way the mode table can be tested
+// on a machine that has no Btrfs to offer.
+type backupFacts struct {
+	destBtrfs      bool
+	sameFilesystem bool
+	destLeavesHost bool
+	parents        []string
 }
 
 // evaluateBackupModes fills in the availability of all four modes. Each mode
 // checks its preconditions in the order a human would ask about them, so the
 // single reason reported is the most fundamental thing that is wrong rather
 // than whichever check happened to run first.
-func evaluateBackupModes(workspace string, caps *backupCapabilities) []backupModeReport {
-	destBtrfs := false
-	sameFS := false
-	if caps.Dest != nil && caps.Dest.Exists {
-		destBtrfs, _ = filesystemIsBtrfs(caps.Dest.Path)
-		if destBtrfs && caps.Source.DataIsSubvolume {
-			sameFS = sameBtrfsFilesystem(workspace, caps.Dest.Path)
-		}
-	}
-	// A destination inside the workspace is the one place the secrets are not
-	// going anywhere new. Everywhere else, the snapshot carries config.yml and
-	// the generated secret store in the clear, and the user is entitled to know
-	// that before it leaves.
-	leaving := caps.Dest != nil && !pathWithin(caps.Dest.Path, workspace)
+func evaluateBackupModes(caps *backupCapabilities, facts backupFacts) []backupModeReport {
+	destBtrfs := facts.destBtrfs
+	sameFS := facts.sameFilesystem
+	leaving := facts.destLeavesHost
 
 	// destReason returns the first thing wrong with the destination itself,
 	// shared by every mode because none of them can write to a place that is
@@ -273,7 +287,7 @@ func evaluateBackupModes(workspace string, caps *backupCapabilities) []backupMod
 	// snapshot it was made from, because `btrfs send -p` reads the parent
 	// locally to compute the difference.
 	if sendMode.Available || sendFileMode.Available {
-		parents := incrementalParents(workspace, caps.Dest)
+		parents := facts.parents
 		for _, mode := range []*backupModeReport{&sendMode, &sendFileMode} {
 			if !mode.Available {
 				continue

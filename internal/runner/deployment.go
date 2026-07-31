@@ -1216,15 +1216,23 @@ func ensureRuntimeLayout(base string) error {
 func workspaceOf(base string) string { return filepath.Dir(base) }
 
 // acquireRuntimeLock takes the exclusive lock, and is also where the debris of
-// an interrupted snapshot is swept up. Cleaning under the exclusive lock is
+// an interrupted operation is swept up. Cleaning under the exclusive lock is
 // what makes it safe: a create holds the same lock for its entire duration, so
-// a .tmp- directory visible here can never be one that is still being built.
+// a .tmp- directory visible here can never be one that is still being built,
+// and an open container transaction can never belong to a backup still running.
+//
+// The container compensation is here rather than only in the backup path
+// because the case it exists for is the one where the backup process no longer
+// exists to do it: a backup killed between stopping the containers and starting
+// them again leaves services down, and the next command to take this lock is
+// the first opportunity anything has to notice.
 func acquireRuntimeLock(base string) (func(), error) {
 	unlock, err := acquireRuntimeLockMode(base, syscall.LOCK_EX)
 	if err != nil {
 		return nil, err
 	}
 	cleanStaleSnapshotTemp(workspaceOf(base))
+	compensateContainerTransactions(base)
 	return unlock, nil
 }
 
