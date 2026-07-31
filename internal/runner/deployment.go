@@ -1235,7 +1235,9 @@ func runStatus(args []string, jsonMode bool) error {
 }
 
 func runDeployments(args []string, jsonMode bool) error {
-	if len(args) == 0 {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		// A subcommand is a word, never a flag: `anas deployments --json` must
+		// not take "--json" as the name of a subcommand.
 		return usageErrorf("usage: anas deployments list|inspect [ID] [-w <workspace>] [--json]")
 	}
 	sub := args[0]

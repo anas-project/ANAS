@@ -17,7 +17,9 @@ import (
 )
 
 func runSnapshot(args []string) error {
-	if len(args) == 0 {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		// A subcommand is a word, never a flag. `anas snapshot --json` reached
+		// the unknown-subcommand branch and reported "--json" as the name.
 		return usageErrorf("usage: anas snapshot list|show|create|restore|pin|unpin|delete|prune|verify|path")
 	}
 	sub, rest := args[0], args[1:]

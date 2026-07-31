@@ -24,6 +24,12 @@ func runBackup(args []string) error {
 	if len(args) == 0 {
 		return runBackupInteractive(nil)
 	}
+	if strings.HasPrefix(args[0], "-") {
+		// A subcommand is a word, never a flag. Falling into the interactive
+		// form here would be worse still: `anas backup --json` would start
+		// asking questions of a caller that asked for a JSON document.
+		return usageErrorf("usage: anas backup capabilities|plan|create|list|restore|verify ... [--json]")
+	}
 	sub, rest := args[0], args[1:]
 	jsonMode := wantsJSON(rest)
 	err := dispatchBackup(sub, rest, jsonMode)

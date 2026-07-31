@@ -17,8 +17,11 @@ type configTarget struct {
 }
 
 func runConfig(args []string, jsonMode bool) error {
-	if len(args) == 0 {
-		return usageErrorf("usage: anas config set|explain|plan|secret ...")
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		// `anas config --json` used to take "--json" as the subcommand name and
+		// fail several steps later with an unrelated code. A subcommand is a
+		// word, never a flag.
+		return usageErrorf("usage: anas config set|explain|plan|secret ... [--json]")
 	}
 	subcommand := args[0]
 	if subcommand == "secret" {
@@ -120,7 +123,7 @@ func configTargetDocument(target configTarget, policy ChangePolicy) map[string]a
 }
 
 func runConfigSecret(args []string, jsonMode bool) error {
-	if len(args) == 0 {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		return usageErrorf("usage: anas config secret list | anas config secret get <KEY>")
 	}
 	action := args[0]
@@ -128,7 +131,14 @@ func runConfigSecret(args []string, jsonMode bool) error {
 	workspaceFlag := fs.String("w", "", "workspace path")
 	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
 	registerJSONFlag(fs)
-	if err := fs.Parse(args[1:]); err != nil {
+	// parseInterspersed, not fs.Parse: the natural `config secret get KEY -w
+	// <workspace>` stops the standard parser at KEY, so -w was silently
+	// dropped and the command read the secrets of whatever workspace the
+	// current directory or ANAS_WORKSPACE happened to name. Reading one
+	// deployment's secrets while the operator believes they asked for
+	// another's is not a thing to leave to argument order.
+	positional, err := parseInterspersed(fs, args[1:])
+	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
 	workspace, err := resolveWorkspace(*workspaceFlag)
@@ -141,7 +151,7 @@ func runConfigSecret(args []string, jsonMode bool) error {
 	}
 	switch action {
 	case "list":
-		if fs.NArg() != 0 {
+		if len(positional) != 0 {
 			return usageErrorf("usage: anas config secret list [-w <workspace>] [--json]")
 		}
 		keys := make([]string, 0, len(store.values))
@@ -160,16 +170,16 @@ func runConfigSecret(args []string, jsonMode bool) error {
 		}
 		return nil
 	case "get":
-		if fs.NArg() != 1 {
+		if len(positional) != 1 {
 			return usageErrorf("usage: anas config secret get <KEY> [-w <workspace>] [--json]")
 		}
-		value, ok := store.values[fs.Arg(0)]
+		value, ok := store.values[positional[0]]
 		if !ok {
 			return preconditionErrorf("secret_missing",
-				"no generated secret %q; use `anas config secret list`", fs.Arg(0))
+				"no generated secret %q; use `anas config secret list`", positional[0])
 		}
 		if jsonMode {
-			return emitOK(map[string]any{"workspace": workspace, "key": fs.Arg(0), "value": value})
+			return emitOK(map[string]any{"workspace": workspace, "key": positional[0], "value": value})
 		}
 		fmt.Println(value)
 		return nil
