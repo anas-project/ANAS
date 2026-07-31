@@ -1,7 +1,7 @@
 # workspace 与备份体系：实施计划
 
 > 状态：一（workspace 语义）、二（`anas init`）、三（snapshot 体系）、
-> 四（breaking 升级自动快照）已落地。本文是总纲，JSON 契约见
+> 四（breaking 升级自动快照）、五（backup 体系）已落地。本文是总纲，JSON 契约见
 > [contracts/](contracts/README.md)，cask 分发见
 > [cask-distribution-draft.md](cask-distribution-draft.md)（草案，不在本计划内）。
 
@@ -206,9 +206,11 @@ upgrade:
   常见的回滚场景，强制走快照恢复会丢掉自上次 apply 以来的全部用户数据。
 - 非 btrfs 无法建快照：breaking 升级需打印警告并要求 `-y`。
 
-## 五、backup 体系
+## 五、backup 体系（已落地）
 
-完整契约见 [contracts/backup.md](contracts/backup.md)。要点：
+完整契约见 [contracts/backup.md](contracts/backup.md)，实现见
+[backup.go](../internal/runner/backup.go) 及同前缀的各文件，端到端测试见
+[test-backup.sh](../test-env/scripts/test-backup.sh)。要点：
 
 - **备份单元就是快照**。`backup create` 不带 `--snapshot` 时先建一个
   `reason: pre_backup` 的快照再发送，因此不存在第二套 include/exclude 规则。
@@ -227,6 +229,13 @@ upgrade:
   命令启动时检测并补偿。备份失败把服务留在停机状态是本功能唯一不可接受的失效方式。
 - **明文密钥警告**：往非本机目标写时强制打印 `plaintext_secrets_leaving_host`。
   `--encrypt` 二期。
+- **落地时修正的四处**（详见契约中的「与初稿的偏差」各节）：`statfs` 的 `f_fsid`
+  混入了 subvolume objectid，不能用作文件系统标识，改从
+  `/sys/fs/btrfs/<uuid>/devices/` 读 UUID；`copy` 模式除"目标可写"外还需要能读全
+  `data/`，而容器以 root 写下的数据普通用户读不到，故 `capabilities` 增加
+  `source.data_fully_readable` 并据此报 `insufficient_privilege`；目标端布局改为
+  每备份一个目录，中断产物带 `.tmp-` 前缀、靠 rename 发布；`recommended` 把
+  `snapshot` 排在最后，因为它把副本放在要防的那块盘上。
 
 ## 六、非交互契约收口
 
@@ -383,6 +392,11 @@ R10 同样在一期：备份和回滚失败后把服务留在停机状态，是�
 | --- | --- |
 | `test-env/scripts/test-rollback.sh` | R1、R10（无需 btrfs） |
 | `test-env/scripts/test-snapshot.sh` | R6~R9（需 btrfs，仅 ln） |
+| `test-env/scripts/test-backup.sh` | B1~B8（需 btrfs，仅 ln；B8 需 root） |
+
+`test-backup.sh` **要跑两遍**，普通用户一遍、root 一遍：`btrfs send` 需要
+`CAP_SYS_ADMIN`，普通用户那遍无法覆盖 send 与 send-file，跳过信息同时打到 stdout
+和 stderr——静默跳过会让套件在最需要它的那台机器上变绿。
 
 判定逻辑的单元测试进 `internal/runner/deployment_test.go`，随 `test-static.sh` 跑。
 
