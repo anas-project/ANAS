@@ -340,7 +340,7 @@ func createBackup(workspace string, plan *backupPlan, opts backupOptions) (*back
 	base := stateDir(workspace)
 	started := time.Now().UTC()
 	for _, warning := range plan.Warnings {
-		emitWarning(opts.json, warning.Code, warning.Message)
+		emitWarning(opts.json, warning.Code, "%s", warning.Message)
 	}
 
 	source, snapshotID, downtime, err := prepareBackupSource(workspace, base, plan, opts)
@@ -492,16 +492,6 @@ func restartAfterBackup(base string, a *app, casksRoot string, txn *containerTra
 				"         the record at %s will be retried by the next anas command\n",
 			err, transactionPath(base, txn.ID))
 	}
-}
-
-// emitWarning writes one JSON Lines warning record to stderr, alongside the
-// progress records, so a caller sees it in the same stream and in order.
-func emitWarning(jsonMode bool, code, message string) {
-	if jsonMode {
-		fmt.Fprintf(os.Stderr, "{\"type\":\"warning\",\"code\":%q,\"message\":%q}\n", code, message)
-		return
-	}
-	fmt.Fprintf(os.Stderr, "warning: %s\n", message)
 }
 
 // describeBackupReasonFor maps a reason code to the sentence a human needs.

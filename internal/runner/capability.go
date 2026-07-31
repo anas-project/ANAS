@@ -301,6 +301,26 @@ func (a *app) iamPlanSummary() string {
 	return b.String()
 }
 
+// iamPlanDocument is the machine-readable form of iamPlanSummary. provider is
+// null rather than absent when nothing consumes the capability, so a caller
+// always finds the key and never has to distinguish "no IAM" from "this
+// version of anas does not report one".
+func (a *app) iamPlanDocument() map[string]any {
+	document := map[string]any{"provider": nil, "consumers": []map[string]string{}}
+	if a.iamProvider == "" || len(a.iamBindings) == 0 {
+		return document
+	}
+	document["provider"] = a.iamProvider
+	consumers := make([]map[string]string, 0, len(a.iamBindings))
+	for _, consumer := range a.iamConsumers() {
+		consumers = append(consumers, map[string]string{
+			"cask": consumer, "interface": a.iamBindings[consumer],
+		})
+	}
+	document["consumers"] = consumers
+	return document
+}
+
 // validateIAMEndpoints runs right after the provider's calculate hook and
 // checks only the protocols actually bound. A provider that mints endpoints
 // per application has nothing to publish for a protocol no consumer uses, so

@@ -219,5 +219,5 @@ func stopActiveDeployment(base string) error {
 	if err != nil {
 		return err
 	}
-	return app.stopRelease(root)
+	return app.stopRelease(root, false)
 }

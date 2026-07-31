@@ -39,7 +39,12 @@ func (c CLI) RunFile(dir, project, composeFile string, env map[string]string, ar
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
-	cmd.Stdout = os.Stdout
+	// Compose's chatter is a log, not this command's result. Sending it to
+	// stdout put container-pull lines in front of the JSON document that
+	// docs/contracts/README.md promises is the only thing on stdout, so a
+	// caller could not parse the output of any command that starts containers.
+	// stderr is where the contract already puts progress and logs.
+	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }

@@ -48,48 +48,82 @@ type app struct {
 	artifactRoot string
 }
 
+// Main is the single place the contract's output rules are applied. Every
+// command is dispatched through it, so a failure anywhere ends up as one JSON
+// document on stdout under --json and as an exit code from the contract's
+// table, without each command having to remember to do it.
 func Main(args []string) error {
 	if len(args) == 0 {
 		args = []string{"help"}
 	}
-	switch args[0] {
-	case "init":
-		return runInit(args[1:])
-	case "plan":
-		return runPlan(args[1:])
-	case "render", "build":
-		return runPrepare(args[0], args[1:])
-	case "apply":
-		return runApply(args[1:])
-	case "start", "restart", "stop":
-		return runActive(args[0], args[1:])
-	case "rollback":
-		return runDeploymentRollback(args[1:])
-	case "snapshot":
-		return runSnapshot(args[1:])
-	case "backup":
-		return runBackup(args[1:])
-	case "status":
-		return runStatus(args[1:])
-	case "deployments":
-		return runDeployments(args[1:])
-	case "lock":
-		return runLock(args[1:])
-	case "config":
-		return runConfig(args[1:])
-	case "help", "-h", "--help":
-		usage()
-		return nil
-	default:
-		return fmt.Errorf("unknown command %q", args[0])
+	command, rest := args[0], args[1:]
+	jsonMode := wantsJSON(rest)
+	err := dispatch(command, rest, jsonMode)
+	// A command that already emitted its own failure document is left alone.
+	// Emitting a second one here would put two JSON values on stdout, which is
+	// exactly what the "exactly one document" rule exists to prevent.
+	if err != nil && jsonMode && !Reported(err) {
+		return emitJSONError(err)
 	}
+	return err
+}
+
+func dispatch(command string, args []string, jsonMode bool) error {
+	switch command {
+	case "init":
+		return runInit(args, jsonMode)
+	case "plan":
+		return runPlan(args, jsonMode)
+	case "render", "build":
+		return runPrepare(command, args, jsonMode)
+	case "apply":
+		return runApply(args, jsonMode)
+	case "start", "restart", "stop":
+		return runActive(command, args, jsonMode)
+	case "rollback":
+		return runDeploymentRollback(args, jsonMode)
+	case "snapshot":
+		return runSnapshot(args)
+	case "backup":
+		return runBackup(args)
+	case "status":
+		return runStatus(args, jsonMode)
+	case "deployments":
+		return runDeployments(args, jsonMode)
+	case "lock":
+		return runLock(args, jsonMode)
+	case "config":
+		return runConfig(args, jsonMode)
+	case "help", "-h", "--help":
+		return runHelp(jsonMode)
+	default:
+		// A mistyped command is a usage error, not an execution failure. It was
+		// exit 1, which told a caller nothing it could act on.
+		return usageErrorf("unknown command %q", command)
+	}
+}
+
+// commandNames is the enumeration `help --json` reports. Help text itself is
+// prose and deliberately not a contract, so the machine-readable form lists
+// what can be invoked rather than trying to render the same paragraphs.
+var commandNames = []string{
+	"init", "plan", "lock", "render", "build", "apply", "start", "restart",
+	"stop", "rollback", "status", "deployments", "snapshot", "backup", "config",
+}
+
+func runHelp(jsonMode bool) error {
+	if jsonMode {
+		return emitOK(map[string]any{"commands": commandNames, "cask_abi": currentCaskABI})
+	}
+	usage()
+	return nil
 }
 
 func usage() {
 	fmt.Printf(`anas - NAS service launcher
 
 Usage:
-  anas init [PATH] [--shell-init] [-y]
+  anas init [PATH] [--shell-init write|remove] [-y]
   anas plan    -c config.yml [--cask-root casks/mods]
   anas lock    [-w WORKSPACE] [-c config.yml]
   anas render  [-w WORKSPACE] [-c config.yml]
@@ -140,6 +174,12 @@ Rollback versus restore:
 
 Cask ABI:
   %s
+
+Machine-readable output:
+  Every command above accepts --json: one JSON document on stdout, progress
+  and warnings on stderr, and an exit code from the table in
+  docs/contracts/README.md. Without --json the output is prose and is not a
+  contract; do not parse it.
 
 The Go CLI reads only the structured YAML format documented in README.md.
 `, currentCaskABI)
@@ -314,7 +354,7 @@ func (a *app) execute(actions []string) error {
 	}
 	if contains(actions, "stop") {
 		a.adoptReleaseEnv(release)
-		return a.stopRelease(release)
+		return a.stopRelease(release, false)
 	}
 	if contains(actions, "start") && !a.skipStartGuard {
 		if err := validateOrdinaryStartChanges(a.base, cfgPath, a.reg); err != nil {
@@ -380,7 +420,7 @@ func (a *app) execute(actions []string) error {
 		}
 	}
 	if contains(actions, "restart") {
-		if err := a.stopRelease(release); err != nil {
+		if err := a.stopRelease(release, false); err != nil {
 			return err
 		}
 	}
@@ -485,14 +525,16 @@ func (a *app) adoptReleaseEnv(release string) {
 	}
 }
 
-func (a *app) stopRelease(release string) error {
+func (a *app) stopRelease(release string, jsonMode bool) error {
 	if !exists(release) {
 		return nil
 	}
 	modules := a.releaseModules(release)
+	total := int64(len(modules))
 	var stopErrors []error
 	for i := len(modules) - 1; i >= 0; i-- {
 		name := modules[i]
+		emitProgress(jsonMode, "stop-containers", int64(len(modules)-i), total, "casks")
 		dir := filepath.Join(release, name)
 		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.caskEnv(dir), "down"); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("stop %s: %w", name, err))

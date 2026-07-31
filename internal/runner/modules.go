@@ -72,10 +72,10 @@ func (m Module) providedCapability(name string) (ProvidedCapability, bool) {
 }
 
 type ChangePolicy struct {
-	Effect      string
-	Apply       string
-	Description string
-	Sensitive   bool
+	Effect      string `json:"effect"`
+	Apply       string `json:"apply"`
+	Description string `json:"description,omitempty"`
+	Sensitive   bool   `json:"sensitive"`
 }
 
 type Dependency struct {

@@ -16,13 +16,13 @@ type configTarget struct {
 	Parameter string
 }
 
-func runConfig(args []string) error {
+func runConfig(args []string, jsonMode bool) error {
 	if len(args) == 0 {
-		return fmt.Errorf("config requires set, explain, plan, or secret")
+		return usageErrorf("usage: anas config set|explain|plan|secret ...")
 	}
 	subcommand := args[0]
 	if subcommand == "secret" {
-		return runConfigSecret(args[1:])
+		return runConfigSecret(args[1:], jsonMode)
 	}
 	fs := flag.NewFlagSet("config "+subcommand, flag.ContinueOnError)
 	cfgPath := fs.String("c", "", "config file")
@@ -30,17 +30,18 @@ func runConfig(args []string) error {
 	workspaceFlag := fs.String("w", "", "workspace path")
 	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
 	rootFlag := fs.String("root", "", "project root containing casks/mods")
+	registerJSONFlag(fs)
 	positional, err := parseInterspersed(fs, args[1:])
 	if err != nil {
-		return err
+		return usageErrorf("%s", err.Error())
 	}
 	root, err := locateRoot(*rootFlag)
 	if err != nil {
-		return err
+		return preconditionErrorf("cask_root_missing", "%s", err.Error())
 	}
 	reg, err := loadRegistry(root)
 	if err != nil {
-		return err
+		return preconditionErrorf("cask_root_invalid", "%s", err.Error())
 	}
 	// `explain` only reads the cask registry, so it stays usable outside a
 	// workspace; the other subcommands act on one and must resolve it.
@@ -48,25 +49,34 @@ func runConfig(args []string) error {
 	if subcommand != "explain" {
 		workspace, err = resolveWorkspace(*workspaceFlag)
 		if err != nil {
-			return err
+			return usageErrorf("%s", err.Error())
 		}
 		base = stateDir(workspace)
-		*cfgPath = configPathFor(workspace, *cfgPath)
+		*cfgPath = absolutePath(configPathFor(workspace, *cfgPath))
 	}
 
 	switch subcommand {
 	case "set":
 		if len(positional) != 2 {
-			return fmt.Errorf("usage: anas config set [-c config.yml] <path> <value>")
+			return usageErrorf("usage: anas config set [-w <workspace>] [-c config.yml] <path> <value> [--json]")
 		}
 		target, err := resolveConfigTarget(positional[0], reg)
 		if err != nil {
-			return err
+			return usageErrorf("%s", err.Error())
+		}
+		if !exists(*cfgPath) {
+			return preconditionErrorf("config_missing", "config %s does not exist", *cfgPath)
 		}
 		if err := config.SetScalar(*cfgPath, target.YAMLPath, positional[1]); err != nil {
-			return err
+			return failuref("write_failed", "%s", err.Error())
 		}
 		policy := policyForTarget(target, reg)
+		if jsonMode {
+			return emitOK(map[string]any{
+				"workspace": workspace, "config": *cfgPath,
+				"setting": configTargetDocument(target, policy),
+			})
+		}
 		fmt.Printf("updated %s\neffect: %s\napply: %s\n", target.Display, policy.Effect, policy.Apply)
 		if policy.Description != "" {
 			fmt.Println(policy.Description)
@@ -74,13 +84,16 @@ func runConfig(args []string) error {
 		return nil
 	case "explain":
 		if len(positional) != 1 {
-			return fmt.Errorf("usage: anas config explain <path>")
+			return usageErrorf("usage: anas config explain <path> [--json]")
 		}
 		target, err := resolveConfigTarget(positional[0], reg)
 		if err != nil {
-			return err
+			return usageErrorf("%s", err.Error())
 		}
 		policy := policyForTarget(target, reg)
+		if jsonMode {
+			return emitOK(map[string]any{"setting": configTargetDocument(target, policy)})
+		}
 		fmt.Printf("path: %s\nmodule: %s\nparameter: %s\neffect: %s\napply: %s\nsensitive: %t\n", target.Display, target.Module, target.Parameter, policy.Effect, policy.Apply, policy.Sensitive)
 		if policy.Description != "" {
 			fmt.Println("description: " + policy.Description)
@@ -88,59 +101,80 @@ func runConfig(args []string) error {
 		return nil
 	case "plan":
 		if len(positional) != 0 {
-			return fmt.Errorf("usage: anas config plan [-w <workspace>] [-c config.yml]")
+			return usageErrorf("usage: anas config plan [-w <workspace>] [-c config.yml] [--json]")
 		}
-		return printConfigPlan(*cfgPath, base, reg)
+		return reportConfigPlan(workspace, *cfgPath, base, reg, jsonMode)
 	default:
-		return fmt.Errorf("unknown config command %q", subcommand)
+		return usageErrorf("unknown config command %q; expected set, explain, plan or secret", subcommand)
 	}
 }
 
-func runConfigSecret(args []string) error {
+// configTargetDocument is the one shape `set` and `explain` both report, so a
+// caller that can read one can read the other.
+func configTargetDocument(target configTarget, policy ChangePolicy) map[string]any {
+	return map[string]any{
+		"path": target.Display, "module": target.Module, "parameter": target.Parameter,
+		"effect": policy.Effect, "apply": policy.Apply,
+		"sensitive": policy.Sensitive, "description": policy.Description,
+	}
+}
+
+func runConfigSecret(args []string, jsonMode bool) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: anas config secret list | anas config secret get <KEY>")
+		return usageErrorf("usage: anas config secret list | anas config secret get <KEY>")
 	}
 	action := args[0]
 	fs := flag.NewFlagSet("config secret "+action, flag.ContinueOnError)
 	workspaceFlag := fs.String("w", "", "workspace path")
 	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
+	registerJSONFlag(fs)
 	if err := fs.Parse(args[1:]); err != nil {
-		return err
+		return usageErrorf("%s", err.Error())
 	}
 	workspace, err := resolveWorkspace(*workspaceFlag)
 	if err != nil {
-		return err
+		return usageErrorf("%s", err.Error())
 	}
 	store, err := loadSecretStore(stateDir(workspace))
 	if err != nil {
-		return err
+		return preconditionErrorf("secrets_unreadable", "%s", err.Error())
 	}
 	switch action {
 	case "list":
 		if fs.NArg() != 0 {
-			return fmt.Errorf("usage: anas config secret list [-w <workspace>]")
+			return usageErrorf("usage: anas config secret list [-w <workspace>] [--json]")
 		}
 		keys := make([]string, 0, len(store.values))
 		for key := range store.values {
 			keys = append(keys, key)
 		}
 		sort.Strings(keys)
+		if jsonMode {
+			// Keys only. `list` exists so an operator can discover what was
+			// generated; putting the values here would make a routine
+			// inventory command leak every secret into whatever captured it.
+			return emitOK(map[string]any{"workspace": workspace, "keys": keys})
+		}
 		for _, key := range keys {
 			fmt.Println(key)
 		}
 		return nil
 	case "get":
 		if fs.NArg() != 1 {
-			return fmt.Errorf("usage: anas config secret get <KEY> [-w <workspace>]")
+			return usageErrorf("usage: anas config secret get <KEY> [-w <workspace>] [--json]")
 		}
 		value, ok := store.values[fs.Arg(0)]
 		if !ok {
-			return fmt.Errorf("no generated secret %q; use `anas config secret list`", fs.Arg(0))
+			return preconditionErrorf("secret_missing",
+				"no generated secret %q; use `anas config secret list`", fs.Arg(0))
+		}
+		if jsonMode {
+			return emitOK(map[string]any{"workspace": workspace, "key": fs.Arg(0), "value": value})
 		}
 		fmt.Println(value)
 		return nil
 	default:
-		return fmt.Errorf("usage: anas config secret list | anas config secret get <KEY>")
+		return usageErrorf("usage: anas config secret list | anas config secret get <KEY>")
 	}
 }
 
@@ -272,14 +306,17 @@ func targetForSettingPath(path string, reg map[string]Module) configTarget {
 	return configTarget{Display: path, Module: "core", Parameter: path}
 }
 
-func printConfigPlan(cfgPath, base string, reg map[string]Module) error {
+func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, jsonMode bool) error {
+	if !exists(cfgPath) {
+		return preconditionErrorf("config_missing", "config %s does not exist", cfgPath)
+	}
 	settings, err := config.Settings(cfgPath)
 	if err != nil {
-		return err
+		return preconditionErrorf("config_invalid", "%s", err.Error())
 	}
 	state, err := loadAppliedConfig(base)
 	if err != nil {
-		return err
+		return preconditionErrorf("state_unreadable", "%s", err.Error())
 	}
 	keys := map[string]bool{}
 	for key := range settings {
@@ -295,15 +332,10 @@ func printConfigPlan(cfgPath, base string, reg map[string]Module) error {
 		}
 	}
 	sort.Strings(changed)
-	if len(changed) == 0 {
-		fmt.Println("configuration matches the last successful start")
-		return nil
-	}
-	if state.AppliedAt == "" {
-		fmt.Println("no applied snapshot exists; treating this as initial configuration")
-	} else {
-		fmt.Println("last successful start: " + state.AppliedAt)
-	}
+
+	// change is an enumeration, not a verb chosen for the sentence it appears
+	// in: add, remove and change are what a caller branches on.
+	changes := make([]map[string]any, 0, len(changed))
 	for _, key := range changed {
 		target := targetForSettingPath(key, reg)
 		policy := policyForTarget(target, reg)
@@ -313,7 +345,31 @@ func printConfigPlan(cfgPath, base string, reg map[string]Module) error {
 		} else if _, ok := state.Values[key]; !ok {
 			change = "add"
 		}
-		fmt.Printf("%-7s %-48s %-20s %s\n", change, key, policy.Effect, policy.Apply)
+		entry := configTargetDocument(target, policy)
+		entry["key"] = key
+		entry["change"] = change
+		changes = append(changes, entry)
+	}
+
+	if jsonMode {
+		return emitOK(map[string]any{
+			"workspace": workspace, "config": cfgPath,
+			"applied_at":         nullableString(state.AppliedAt),
+			"matches_last_start": len(changes) == 0,
+			"changes":            changes,
+		})
+	}
+	if len(changes) == 0 {
+		fmt.Println("configuration matches the last successful start")
+		return nil
+	}
+	if state.AppliedAt == "" {
+		fmt.Println("no applied snapshot exists; treating this as initial configuration")
+	} else {
+		fmt.Println("last successful start: " + state.AppliedAt)
+	}
+	for _, entry := range changes {
+		fmt.Printf("%-7s %-48s %-20s %s\n", entry["change"], entry["key"], entry["effect"], entry["apply"])
 	}
 	return nil
 }

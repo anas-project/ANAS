@@ -21,17 +21,29 @@ const (
 	shellInitEndMarker   = "# <<< anas workspace <<<"
 )
 
-func runInit(args []string) error {
+// shellInitAction enumerates the values --shell-init accepts. An unrecognised
+// one is a usage error rather than a silent no-op, because "anas init
+// --shell-init=yes" quietly doing nothing is indistinguishable from it working.
+const (
+	shellInitWrite  = "write"
+	shellInitRemove = "remove"
+)
+
+func runInit(args []string, jsonMode bool) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	shellInit := fs.String("shell-init", "", `write ANAS_WORKSPACE into the shell profile ("write" or "remove")`)
 	yes := fs.Bool("y", false, "accept prompts")
 	fs.BoolVar(yes, "yes", false, "accept prompts")
+	registerJSONFlag(fs)
 	positional, err := parseInterspersed(fs, args)
 	if err != nil {
-		return err
+		return usageErrorf("%s", err.Error())
 	}
 	if len(positional) > 1 {
-		return fmt.Errorf("usage: anas init [PATH] [--shell-init] [-y]")
+		return usageErrorf("usage: anas init [PATH] [--shell-init write|remove] [-y] [--json]")
+	}
+	if *shellInit != "" && *shellInit != shellInitWrite && *shellInit != shellInitRemove {
+		return usageErrorf("--shell-init accepts %q or %q, got %q", shellInitWrite, shellInitRemove, *shellInit)
 	}
 	target := "."
 	if len(positional) == 1 {
@@ -39,64 +51,106 @@ func runInit(args []string) error {
 	}
 	workspace, err := filepath.Abs(target)
 	if err != nil {
+		return usageErrorf("resolve %s: %v", target, err)
+	}
+
+	if *shellInit == shellInitRemove {
+		path, removed, err := removeShellInit()
+		if err != nil {
+			return err
+		}
+		if jsonMode {
+			return emitOK(map[string]any{
+				"shell_init": map[string]any{
+					"action": shellInitRemove, "profile": absolutePath(path), "changed": removed,
+				},
+			})
+		}
+		return nil
+	}
+
+	created, err := createWorkspace(workspace, *yes, jsonMode)
+	if err != nil {
 		return err
 	}
 
-	if *shellInit == "remove" {
-		return removeShellInit()
+	shellInitResult := map[string]any{"action": "none", "profile": nil, "changed": false}
+	if *shellInit == shellInitWrite {
+		path, changed, err := writeShellInit(workspace, *yes)
+		if err != nil {
+			return err
+		}
+		shellInitResult = map[string]any{
+			"action": shellInitWrite, "profile": absolutePath(path), "changed": changed,
+		}
 	}
 
-	if err := createWorkspace(workspace, *yes); err != nil {
-		return err
+	if jsonMode {
+		return emitOK(map[string]any{
+			"workspace":         workspace,
+			"config_path":       workspaceConfigPath(workspace),
+			"data_path":         dataDir(workspace),
+			"snapshots_path":    snapshotsDir(workspace),
+			"state_path":        stateDir(workspace),
+			"btrfs":             created.Btrfs,
+			"data_is_subvolume": created.DataIsSubvolume,
+			"snapshots_usable":  created.Btrfs,
+			"shell_init":        shellInitResult,
+		})
 	}
 	fmt.Println(workspace)
-
-	if *shellInit != "" {
-		return writeShellInit(workspace, *yes)
+	if *shellInit == "" {
+		printShellInitHint(workspace)
 	}
-	printShellInitHint(workspace)
 	return nil
 }
 
-func createWorkspace(workspace string, yes bool) error {
+// workspaceCreation records what init actually got, as opposed to what it
+// asked for. Whether data/ became a subvolume decides whether snapshots and
+// data restore exist for this workspace at all, so it is a result rather than
+// an implementation detail.
+type workspaceCreation struct {
+	Btrfs           bool
+	DataIsSubvolume bool
+}
+
+func createWorkspace(workspace string, yes, jsonMode bool) (workspaceCreation, error) {
+	var created workspaceCreation
 	if exists(filepath.Join(workspace, workspaceStateDir)) {
-		return fmt.Errorf("%s is already a workspace", workspace)
+		return created, preconditionErrorf("workspace_exists", "%s is already a workspace", workspace)
 	}
 	if err := os.MkdirAll(workspace, 0755); err != nil {
-		return err
+		return created, failuref("mkdir_failed", "create %s: %v", workspace, err)
 	}
 
 	btrfs, err := filesystemIsBtrfs(workspace)
 	if err != nil {
-		return fmt.Errorf("determine filesystem of %s: %w", workspace, err)
+		return created, failuref("fstype_unknown", "determine filesystem of %s: %v", workspace, err)
 	}
+	created.Btrfs = btrfs
 	if !btrfs {
 		// Saying "snapshots may not work" would leave the user to discover the
 		// real cost on the day an upgrade goes wrong, so spell out what is lost.
-		fmt.Fprintf(os.Stderr, `warning: %s is not on Btrfs.
-  Snapshots and data restore will be unavailable.
-  Cask upgrades will not create an automatic pre-upgrade data snapshot.
-  Backups still work, but only in whole-directory copy mode.
-`, workspace)
-		ok, err := confirm("Continue?", yes)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("aborted")
+		emitWarning(jsonMode, "workspace_not_btrfs",
+			"%s is not on Btrfs: snapshots and data restore will be unavailable, cask upgrades will not create an automatic pre-upgrade data snapshot, and backups can only run in whole-directory copy mode",
+			workspace)
+		if err := confirmDestructive("Create a workspace with no snapshot capability", yes); err != nil {
+			return created, err
 		}
 	}
 
 	if err := ensureRuntimeLayout(stateDir(workspace)); err != nil {
-		return err
+		return created, failuref("layout_failed", "%s", err.Error())
 	}
-	if err := createDataDir(workspace, btrfs); err != nil {
-		return err
+	subvolume, err := createDataDir(workspace, btrfs)
+	if err != nil {
+		return created, err
 	}
+	created.DataIsSubvolume = subvolume
 	if err := writeConfigSkeleton(workspace); err != nil {
-		return err
+		return created, failuref("write_failed", "%s", err.Error())
 	}
-	return nil
+	return created, nil
 }
 
 // createDataDir refuses a symlink or a mount point rather than working around
@@ -104,30 +158,36 @@ func createWorkspace(workspace string, yes bool) error {
 // the backup silently comes out empty; a mount point makes the rename that a
 // data restore performs fail with EBUSY. Both break a guarantee quietly, which
 // is worse than refusing up front.
-func createDataDir(workspace string, btrfs bool) error {
+func createDataDir(workspace string, btrfs bool) (bool, error) {
 	data := dataDir(workspace)
 	if info, err := os.Lstat(data); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%s is a symlink; data must be a real directory inside the workspace or backups will not include it", data)
+			return false, preconditionErrorf("data_is_symlink",
+				"%s is a symlink; data must be a real directory inside the workspace or backups will not include it", data)
 		}
 		mount, err := isMountPoint(data)
 		if err != nil {
-			return err
+			return false, failuref("stat_failed", "%s", err.Error())
 		}
 		if mount {
-			return fmt.Errorf("%s is a mount point; data restore renames this directory and cannot do so across a mount", data)
+			return false, preconditionErrorf("data_is_mount_point",
+				"%s is a mount point; data restore renames this directory and cannot do so across a mount", data)
 		}
-		return nil
+		// An existing data/ may already be a subvolume from an earlier init.
+		return btrfsSubvolumeShow(data) == nil, nil
 	}
 	if btrfs {
 		// Only the *source* of a snapshot has to be a subvolume, which is why
 		// data/ is one and snapshots/ is an ordinary directory.
 		if err := runBtrfs("subvolume", "create", data); err != nil {
-			return fmt.Errorf("create Btrfs subvolume %s: %w", data, err)
+			return false, failuref("subvolume_create_failed", "create Btrfs subvolume %s: %v", data, err)
 		}
-		return nil
+		return true, nil
 	}
-	return os.MkdirAll(data, 0755)
+	if err := os.MkdirAll(data, 0755); err != nil {
+		return false, failuref("mkdir_failed", "create %s: %v", data, err)
+	}
+	return false, nil
 }
 
 func isMountPoint(path string) (bool, error) {
@@ -236,14 +296,18 @@ To use this workspace without -w, either cd into it, or add to your shell profil
 // "right command, wrong deployment" mistake that requiring an existing .anas/
 // in the current directory is there to prevent. It also has no effect on cron
 // or systemd units.
-func writeShellInit(workspace string, yes bool) error {
+// writeShellInit returns the profile it touched and whether it changed it.
+// "already correct" and "rewritten" are different answers and a caller that
+// cannot tell them apart cannot report what it did.
+func writeShellInit(workspace string, yes bool) (string, bool, error) {
 	path, line, err := shellProfile()
 	if err != nil {
-		return fmt.Errorf("%w; add ANAS_WORKSPACE=%s to your profile manually", err, workspace)
+		return "", false, preconditionErrorf("shell_unrecognised",
+			"%v; add ANAS_WORKSPACE=%s to your profile manually", err, workspace)
 	}
 	existing, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
-		return err
+		return path, false, failuref("read_failed", "%s", err.Error())
 	}
 	block := shellInitBeginMarker + "\n" + line(workspace) + "\n" + shellInitEndMarker
 	current := string(existing)
@@ -251,15 +315,11 @@ func writeShellInit(workspace string, yes bool) error {
 	if old, ok := extractShellInitBlock(current); ok {
 		if old == block {
 			fmt.Fprintf(os.Stderr, "%s already points at this workspace\n", path)
-			return nil
+			return path, false, nil
 		}
 		fmt.Fprintf(os.Stderr, "%s currently contains:\n%s\n\nreplacing with:\n%s\n", path, old, block)
-		ok, err := confirm("Replace?", yes)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("aborted")
+		if err := confirmDestructive("Replace the anas block in "+path, yes); err != nil {
+			return path, false, err
 		}
 		current = replaceShellInitBlock(current, block)
 	} else {
@@ -270,37 +330,37 @@ func writeShellInit(workspace string, yes bool) error {
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
+		return path, false, failuref("mkdir_failed", "%s", err.Error())
 	}
 	if err := os.WriteFile(path, []byte(current), 0644); err != nil {
-		return err
+		return path, false, failuref("write_failed", "%s", err.Error())
 	}
 	fmt.Fprintf(os.Stderr, "wrote %s; new shells pick it up, or run: source %s\n", path, path)
-	return nil
+	return path, true, nil
 }
 
-func removeShellInit() error {
+func removeShellInit() (string, bool, error) {
 	path, _, err := shellProfile()
 	if err != nil {
-		return err
+		return "", false, preconditionErrorf("shell_unrecognised", "%s", err.Error())
 	}
 	existing, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return path, false, nil
 		}
-		return err
+		return path, false, failuref("read_failed", "%s", err.Error())
 	}
 	current := string(existing)
 	if _, ok := extractShellInitBlock(current); !ok {
 		fmt.Fprintf(os.Stderr, "%s has no anas block\n", path)
-		return nil
+		return path, false, nil
 	}
 	if err := os.WriteFile(path, []byte(replaceShellInitBlock(current, "")), 0644); err != nil {
-		return err
+		return path, false, failuref("write_failed", "%s", err.Error())
 	}
 	fmt.Fprintf(os.Stderr, "removed the anas block from %s\n", path)
-	return nil
+	return path, true, nil
 }
 
 func extractShellInitBlock(content string) (string, bool) {
