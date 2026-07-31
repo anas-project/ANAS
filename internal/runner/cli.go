@@ -11,8 +11,10 @@ package runner
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 const cliAPIVersion = "anas.dev/cli/v1"
@@ -102,6 +104,76 @@ func emitJSON(value any) error {
 	}
 	_, err = fmt.Fprintf(os.Stdout, "%s\n", b)
 	return err
+}
+
+// emitOK writes the success document. Every command routes its result through
+// here so `api_version` and `ok` cannot be forgotten on one path and present on
+// another — a caller that has to check whether the envelope exists has no
+// envelope.
+func emitOK(fields map[string]any) error {
+	document := map[string]any{"api_version": cliAPIVersion, "ok": true}
+	for key, value := range fields {
+		document[key] = value
+	}
+	return emitJSON(document)
+}
+
+// emitEmptyOK is the whole result for a command that has nothing to report but
+// whether it worked — `stop` either stopped the containers or did not. The
+// alternative was inventing a payload so the document would look substantial,
+// which would give a caller fields it must not come to depend on.
+func emitEmptyOK(jsonMode bool, fields map[string]any) error {
+	if !jsonMode {
+		return nil
+	}
+	return emitOK(fields)
+}
+
+// registerJSONFlag declares --json on a command's own flag set. wantsJSON has
+// already scanned the raw arguments by the time parsing happens, so this exists
+// to stop the flag package rejecting a flag the contract requires, not to
+// discover the mode.
+func registerJSONFlag(fs *flag.FlagSet) {
+	fs.Bool("json", false, "machine-readable output")
+}
+
+// absolutePath enforces the contract's path rule in one place. A relative path
+// is meaningless to a caller that did not share this process's working
+// directory, which is every caller the contract is written for.
+func absolutePath(path string) string {
+	if path == "" {
+		return ""
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return absolute
+}
+
+// absolutePaths maps absolutePath over a list, preserving order.
+func absolutePaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, path := range paths {
+		out = append(out, absolutePath(path))
+	}
+	return out
+}
+
+// emitWarning writes one warning to stderr: a JSON Lines record under --json,
+// prose otherwise. The code is the enumeration a caller branches on; the
+// message is only ever shown to a human.
+func emitWarning(jsonMode bool, code, format string, args ...any) {
+	message := fmt.Sprintf(format, args...)
+	if !jsonMode {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", message)
+		return
+	}
+	b, err := json.Marshal(map[string]any{"type": "warning", "code": code, "message": message})
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s\n", b)
 }
 
 // emitJSONError writes the failure document and marks the error as reported so

@@ -12,7 +12,7 @@ import (
 )
 
 type HookConfig struct {
-	Command []string `yaml:"command"`
+	Command []string `yaml:"command" json:"command"`
 }
 
 type hookRequest struct {
