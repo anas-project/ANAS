@@ -24,16 +24,22 @@ func TestDeploymentChangeBlockers(t *testing.T) {
 	}
 }
 
-func TestRollbackGuardsCaskVersionChanges(t *testing.T) {
+// An undeclared cask keeps the pre-contract behaviour: any version difference
+// is unknown, and unknown is blocked.
+func TestRollbackGuardsUndeclaredCaskVersionChanges(t *testing.T) {
 	current := &deploymentManifest{Casks: map[string]deploymentCask{
 		"db": {Name: "db", Version: "2.0.0", AppVersion: "16"},
 	}}
 	target := &deploymentManifest{Casks: map[string]deploymentCask{
 		"db": {Name: "db", Version: "1.0.0", AppVersion: "15"},
 	}}
-	got := deploymentRollbackVersionBlockers(current, target)
-	if len(got) != 1 || got[0] != "cask db 2.0.0/16 -> 1.0.0/15 (data compatibility unknown)" {
-		t.Fatalf("rollback blockers = %v", got)
+	guard := deploymentRollbackVersionGuard(current, target)
+	want := "cask db 2.0.0/16 -> 1.0.0/15 (data compatibility unknown; the cask does not declare upgrade.data_breaking)"
+	if len(guard.Blocked) != 1 || guard.Blocked[0] != want {
+		t.Fatalf("rollback blockers = %v", guard.Blocked)
+	}
+	if err := guard.breakingError(); err != nil {
+		t.Fatalf("an undeclared version change must be overridable, got a hard error: %v", err)
 	}
 }
 
@@ -65,81 +71,5 @@ func TestDeploymentIDRejectsPathTraversal(t *testing.T) {
 		if err := validateDeploymentID(id); err == nil {
 			t.Fatalf("deployment id %q was accepted", id)
 		}
-	}
-}
-
-func TestBtrfsSnapshotRestoreKeepsRecoverySubvolume(t *testing.T) {
-	base := t.TempDir()
-	source := filepath.Join(base, "data")
-	if err := os.MkdirAll(source, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(source, "marker"), []byte("before"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	// The real check reads the inode number of a Btrfs subvolume root, which a
-	// temp directory on the test machine's filesystem cannot satisfy.
-	originalCheck := btrfsSubvolumeCheck
-	btrfsSubvolumeCheck = func(string) error { return nil }
-	t.Cleanup(func() { btrfsSubvolumeCheck = originalCheck })
-
-	originalCommand := btrfsCommand
-	btrfsCommand = func(args ...string) error {
-		if len(args) >= 3 && args[0] == "subvolume" && args[1] == "show" {
-			_, err := os.Stat(args[2])
-			return err
-		}
-		if len(args) >= 4 && args[0] == "subvolume" && args[1] == "snapshot" {
-			sourceIndex := 2
-			if args[2] == "-r" {
-				sourceIndex = 3
-			}
-			src, dst := args[sourceIndex], args[sourceIndex+1]
-			if err := os.MkdirAll(dst, 0700); err != nil {
-				return err
-			}
-			contents, err := os.ReadFile(filepath.Join(src, "marker"))
-			if err != nil {
-				return err
-			}
-			return os.WriteFile(filepath.Join(dst, "marker"), contents, 0600)
-		}
-		return nil
-	}
-	t.Cleanup(func() { btrfsCommand = originalCommand })
-
-	current := &deploymentManifest{ID: "old"}
-	target := &deploymentManifest{ID: "new", Snapshot: deploymentSnapshotPolicy{
-		Backend: "btrfs", Source: source, Root: filepath.Join(base, "snapshots"),
-	}}
-	snapshotID, err := createDeploymentSnapshot(base, current, target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(source, "marker"), []byte("after"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	deploymentRoot := filepath.Join(base, "deployments", "new")
-	if err := os.MkdirAll(deploymentRoot, 0700); err != nil {
-		t.Fatal(err)
-	}
-	target.APIVersion = deploymentAPIVersion
-	if err := writeYAMLAtomic(filepath.Join(deploymentRoot, "deployment.yml"), target, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := saveDeploymentState(base, deploymentState{ID: "new", SnapshotID: snapshotID}); err != nil {
-		t.Fatal(err)
-	}
-	if err := restoreDeploymentSnapshot(base, "new", "old"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(filepath.Join(source, "marker"))
-	if err != nil || string(got) != "before" {
-		t.Fatalf("restored marker = %q, %v", got, err)
-	}
-	recovery := source + ".rollback-recovery-" + snapshotID
-	got, err = os.ReadFile(filepath.Join(recovery, "marker"))
-	if err != nil || string(got) != "after" {
-		t.Fatalf("recovery marker = %q, %v", got, err)
 	}
 }

@@ -173,13 +173,11 @@ func confirm(prompt string, yes bool) (bool, error) {
 	if yes {
 		return true, nil
 	}
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return false, err
-	}
 	// A non-interactive caller must fail immediately rather than block forever
-	// waiting on input nobody is there to give.
-	if info.Mode()&os.ModeCharDevice == 0 {
+	// waiting on input nobody is there to give. The question is whether stdin
+	// is a terminal, which is not the same as whether it is a character
+	// device — /dev/null is one and answers nothing.
+	if !isTerminal(os.Stdin.Fd()) {
 		return false, fmt.Errorf("%s requires -y when stdin is not a terminal", prompt)
 	}
 	fmt.Fprintf(os.Stderr, "%s [y/N] ", prompt)

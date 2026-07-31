@@ -102,7 +102,25 @@ func (d *manifestDependency) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type manifestUpgrade struct {
+	// From constrains which installed versions may upgrade to this one.
 	From string `yaml:"from"`
+	// DataBreaking lists the versions at which this cask's on-disk data format
+	// changed, so that data written at or above one of them cannot be read by
+	// anything below it.
+	//
+	// It is a pointer because "not declared" and "declared to be empty" are
+	// different claims and lead to opposite decisions. An absent field means the
+	// cask author has said nothing, and the conservative reading of silence is
+	// that any version change might have moved the format; an explicit `[]` is a
+	// checkable statement that no release ever did, which is what lets a rollback
+	// through. Modelling the absent case as an empty slice would make the
+	// crossing predicate vacuously false for every cask that has not been
+	// annotated and silently flip the default from "block" to "allow".
+	//
+	// From and DataBreaking answer different questions and neither implies the
+	// other: From says whether an upgrade may happen at all, DataBreaking says
+	// whether it can be undone afterwards.
+	DataBreaking *[]string `yaml:"data_breaking"`
 }
 
 type manifestConfig struct {
@@ -251,6 +269,17 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 			return Module{}, fmt.Errorf("cask %q upgrade.from %q is invalid: %w", dirname, manifest.Upgrade.From, err)
 		}
 	}
+	// Every entry is validated at load rather than at comparison time. A
+	// data_breaking entry that does not parse would otherwise be silently
+	// unmatchable, which reads on disk as a declared guard and behaves as no
+	// guard at all.
+	if manifest.Upgrade.DataBreaking != nil {
+		for _, raw := range *manifest.Upgrade.DataBreaking {
+			if _, err := parseSemver(raw); err != nil {
+				return Module{}, fmt.Errorf("cask %q upgrade.data_breaking entry %q is invalid: %w", dirname, raw, err)
+			}
+		}
+	}
 	for _, dep := range manifest.Dependencies.Requires {
 		if strings.TrimSpace(dep.Name) == "" {
 			return Module{}, fmt.Errorf("cask %q has dependency without name", dirname)
@@ -339,6 +368,7 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		Version:              manifest.Version,
 		AppVersion:           strings.TrimSpace(manifest.AppVersion),
 		UpgradeFrom:          manifest.Upgrade.From,
+		DataBreaking:         cloneStringListPointer(manifest.Upgrade.DataBreaking),
 		SourceDir:            dir,
 		EnvPrefix:            envPrefix,
 		Defaults:             normalizeDefaults(manifest.Name, envPrefix, manifest.Config.Defaults),

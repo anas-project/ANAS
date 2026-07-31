@@ -186,6 +186,7 @@ func calcDDNS(e map[string]string, _ string, _ *secretStore) error {
 	}
 	return nil
 }
+
 // hostHasGlobalIPv6 reports whether this host holds a routable IPv6 address.
 //
 // The check is deliberately local. Dialling an outside host would measure the

@@ -65,6 +65,8 @@ func Main(args []string) error {
 		return runActive(args[0], args[1:])
 	case "rollback":
 		return runDeploymentRollback(args[1:])
+	case "snapshot":
+		return runSnapshot(args[1:])
 	case "status":
 		return runStatus(args[1:])
 	case "deployments":
@@ -94,9 +96,11 @@ Usage:
   anas start   [-w WORKSPACE]
   anas restart [-w WORKSPACE]
   anas stop    [-w WORKSPACE]
-  anas rollback [DEPLOYMENT_ID] -w WORKSPACE [--restore-data]
+  anas rollback [DEPLOYMENT_ID] -w WORKSPACE
   anas status [-w WORKSPACE]
   anas deployments list|inspect [ID] [-w WORKSPACE]
+  anas snapshot list|show|create|pin|unpin|delete|prune|verify|path [-w WORKSPACE]
+  anas snapshot restore ID -w WORKSPACE [--dry-run] [-y]
   anas config set     [-w WORKSPACE] <module.parameter> <value>
   anas config explain <module.parameter>
   anas config plan    [-w WORKSPACE]
@@ -113,7 +117,14 @@ Workspace:
 
   It is resolved from -w, then $ANAS_WORKSPACE, then the current directory
   when that directory already contains .anas/. Commands never create one
-  implicitly; run "anas init" for that. "rollback" accepts only -w.
+  implicitly; run "anas init" for that. "rollback" and "snapshot restore"
+  accept only -w.
+
+Rollback versus restore:
+  "rollback" switches the artifact and never touches data — the right answer
+  when a config change broke the service and the data is fine. Rewinding data
+  is only ever "snapshot restore", which puts config, lock, secrets, state,
+  artifact and data back to one point in time.
 
 Cask ABI:
   %s

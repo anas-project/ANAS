@@ -571,9 +571,17 @@ journal 中记录补偿动作。
 - `state/lock` 上使用 flock：apply/rollback/gc 取排他锁，
   start/stop/restart 取共享锁，"start 不能与 apply 并发"由锁模式自动
   成立，不需要额外机制；
-- release 普通资产在封印后改为只读，敏感 env 仍为 `0600`
-  （**该封印尚未实现**，且它是快照复用 deployment 制品时启用硬链接的前提，
-  见 [contracts/snapshot.md](contracts/snapshot.md)）；
+- release 普通资产在封印后改为只读（`sealDeployment`，rename 进
+  `deployments/<id>/` 之前执行）。封印按位清除写权限而非赋固定模式，因此可执行文件
+  仍可执行（0755 → 0555）、owner-only 的敏感文件仍是 owner-only（0600 → 0400），其余
+  资产落在 0444 —— 容器内的服务用户仍读得到 bind mount 进去的配置。目录保持 0700：
+  只读目录会连 unlink 一起挡住，而 unlink-and-replace 分配的是新 inode，恰恰是硬链接
+  本来就安全的那种改动，封目录换不来额外保证，却会让 deployment 无法回收。
+  该封印是快照复用 deployment 制品时启用硬链接的前提，
+  见 [contracts/snapshot.md](contracts/snapshot.md)；
+- `deployments/<id>/config.source.yml`（0600）保存该 deployment 构建时所用配置的原文。
+  这不违反 §9.1 —— 那条禁止的是把配置当**启动输入**，此处是只读的**恢复用**副本，
+  没有它，快照拿不到与自身匹配的配置；
 - **备份单元就是整个 `<workspace>/`**。这正是 workspace 布局存在的理由：把它拆成
   一份需要人工核对的路径清单，就等于把"漏掉一项"变成常态。缓存目录
   （`.anas/go-build-cache/`、`.anas/hook-bin/`、`.anas/staging/`）可以排除，
