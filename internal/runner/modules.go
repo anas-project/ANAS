@@ -10,6 +10,7 @@ type Module struct {
 	Version              string
 	AppVersion           string
 	UpgradeFrom          string
+	DataBreaking         *[]string
 	SourceDir            string
 	EnvPrefix            string
 	Defaults             map[string]string

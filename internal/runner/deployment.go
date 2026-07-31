@@ -38,9 +38,15 @@ type deploymentManifest struct {
 }
 
 type deploymentCask struct {
-	Name         string                  `yaml:"name"`
-	Version      string                  `yaml:"version"`
-	AppVersion   string                  `yaml:"app_version,omitempty"`
+	Name       string `yaml:"name"`
+	Version    string `yaml:"version"`
+	AppVersion string `yaml:"app_version,omitempty"`
+	// DataBreaking is frozen from the cask's upgrade.data_breaking so that a
+	// rollback can be judged against what the cask claimed when it was rendered,
+	// not against whatever the bundle on disk says today. omitempty distinguishes
+	// the two states that matter: an undeclared list is absent, a declared-empty
+	// one is written out as `[]`.
+	DataBreaking *[]string               `yaml:"data_breaking,omitempty"`
 	RuntimeType  string                  `yaml:"runtime"`
 	ComposeFile  string                  `yaml:"compose_file,omitempty"`
 	Hook         HookConfig              `yaml:"hook,omitempty"`
@@ -452,7 +458,8 @@ func buildDeploymentManifest(a *app, id, cfgPath string) (*deploymentManifest, e
 		mod := a.reg[name]
 		manifest.Casks[name] = deploymentCask{
 			Name: name, Version: mod.Version, AppVersion: mod.AppVersion,
-			RuntimeType: mod.RuntimeType, ComposeFile: mod.ComposeFile,
+			DataBreaking: cloneStringListPointer(mod.DataBreaking),
+			RuntimeType:  mod.RuntimeType, ComposeFile: mod.ComposeFile,
 			Hook: mod.Hook, EnvPrefix: mod.EnvPrefix,
 			Consumes:     append([]string{}, mod.Consumes...),
 			Dependencies: append([]string{}, a.deps[name]...),
