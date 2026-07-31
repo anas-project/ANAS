@@ -102,7 +102,7 @@ func buildBackupPlan(workspace string, opts backupOptions) (*backupPlan, error) 
 	report, ok := backupModeReportFor(caps.Modes, mode)
 	if !ok || !report.Available {
 		return nil, preconditionErrorf(report.Reason,
-			"backup mode %s cannot run here: %s", mode, describeBackupReason(report.Reason))
+			"backup mode %s cannot run here: %s", mode, describeBackupReasonFor(mode, report.Reason))
 	}
 
 	plan := &backupPlan{
@@ -504,8 +504,22 @@ func emitWarning(jsonMode bool, code, message string) {
 	fmt.Fprintf(os.Stderr, "warning: %s\n", message)
 }
 
-// describeBackupReason maps a reason code to the sentence a human needs. The
-// code is what a caller branches on; this is only ever shown, never parsed.
+// describeBackupReasonFor maps a reason code to the sentence a human needs.
+// The code is what a caller branches on; this is only ever shown, never parsed.
+//
+// insufficient_privilege needs the mode to explain it, because two entirely
+// different privileges are missing. The send modes want CAP_SYS_ADMIN for the
+// send ioctl; copy mode wants to be the user who owns the container data. They
+// share a code because a caller's response to both is the same — run this as
+// root — but the reason a human needs to hear is not.
+func describeBackupReasonFor(mode, reason string) string {
+	if reason == reasonInsufficientPrivilege && mode == backupModeCopy {
+		return "part of the data directory cannot be read by this user; containers write their " +
+			"data as root, and a copy that skipped what it cannot read would be a backup with holes in it"
+	}
+	return describeBackupReason(reason)
+}
+
 func describeBackupReason(reason string) string {
 	switch reason {
 	case reasonDestNotSpecified:

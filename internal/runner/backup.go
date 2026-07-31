@@ -87,6 +87,11 @@ type backupSourceInfo struct {
 	FSID             string `json:"fsid"`
 	DataIsSubvolume  bool   `json:"data_is_subvolume"`
 	DataIsMountpoint bool   `json:"data_is_mountpoint"`
+	// DataFullyReadable is false when part of data/ cannot be read by this
+	// process. Containers write their data as root, so on a real deployment
+	// this is the normal state for an ordinary user — and it is exactly what
+	// decides whether `copy` can produce a complete backup.
+	DataFullyReadable bool `json:"data_fully_readable"`
 }
 
 // backupDestInfo describes where it would be written.
@@ -139,18 +144,20 @@ func probeBackupCapabilities(workspace, dest string) (*backupCapabilities, error
 	data := dataDir(workspace)
 	sourceBtrfs, _ := filesystemIsBtrfs(data)
 	dataSubvolume := sourceBtrfs && btrfsSubvolumeShow(data) == nil
+	estimate, dataReadable := estimateBackupSize(workspace)
 
 	caps := &backupCapabilities{
 		Workspace: workspace,
 		Source: backupSourceInfo{
-			FSType:           filesystemName(data),
-			FSID:             btrfsFilesystemID(data),
-			DataIsSubvolume:  dataSubvolume,
-			DataIsMountpoint: pathIsMountPoint(data),
+			FSType:            filesystemName(data),
+			FSID:              btrfsFilesystemID(data),
+			DataIsSubvolume:   dataSubvolume,
+			DataIsMountpoint:  pathIsMountPoint(data),
+			DataFullyReadable: dataReadable,
 		},
 		Tools:      map[string]bool{"btrfs": haveBtrfsTool(), "rsync": haveTool("rsync")},
 		Privileged: hasSysAdmin(),
-		Estimate:   estimateBackupSize(workspace),
+		Estimate:   estimate,
 	}
 	if strings.TrimSpace(dest) != "" {
 		absolute, err := filepath.Abs(dest)
@@ -304,11 +311,21 @@ func evaluateBackupModes(caps *backupCapabilities, facts backupFacts) []backupMo
 
 	// copy works anywhere something can be written, and is the only mode
 	// available when the source is not Btrfs at all.
+	//
+	// It is also the only mode that reads the data file by file, which is what
+	// makes it the only one privilege can stop. Containers write their data as
+	// root, so on a real deployment an ordinary user cannot read all of data/ —
+	// and a copy that skips what it cannot read is a backup with holes in it
+	// that reports success. The contract's table has copy requiring nothing but
+	// a writable destination; on any host where containers have actually run,
+	// it requires privilege too.
+	//
+	// The Btrfs modes are unaffected because none of them reads a file:
+	// `snapshot` is a metadata operation and `send` reads through the
+	// filesystem rather than through the directory permissions.
 	copyReason := destReason()
-	if copyReason == "" && !caps.Tools["rsync"] {
-		// Not fatal: the built-in walker is the fallback, and saying rsync is
-		// missing would be reporting a preference as a precondition.
-		copyReason = ""
+	if copyReason == "" && !caps.Source.DataFullyReadable {
+		copyReason = reasonInsufficientPrivilege
 	}
 	modes = append(modes, report(backupModeCopy, copyReason, []string{noteNoIncremental, noteSnapshotsExcluded}))
 
@@ -436,31 +453,39 @@ func directoryIsWritable(dir string) bool {
 
 // ---------------------------------------------------------------- estimates
 
-// estimateBackupSize measures what a backup would carry. Directories that
-// cannot be read are skipped rather than failing the walk: container data is
-// routinely owned by root with 0700 directories, and an unprivileged
-// `capabilities` that refused to produce any estimate at all would be less
-// useful than one that produces a low one.
-func estimateBackupSize(workspace string) backupEstimate {
+// estimateBackupSize measures what a backup would carry, and reports whether
+// all of it could even be seen.
+//
+// Directories that cannot be read are skipped rather than failing the walk:
+// container data is routinely owned by root with 0700 directories, and an
+// unprivileged `capabilities` that refused to produce any estimate would be
+// less useful than one that produces a low estimate and says so.
+func estimateBackupSize(workspace string) (backupEstimate, bool) {
 	base := stateDir(workspace)
-	estimate := backupEstimate{
-		DataBytes:  treeSize(dataDir(workspace)),
-		StateBytes: treeSize(filepath.Join(base, "state")) + treeSize(filepath.Join(base, "secrets.generated.yml")),
-	}
+	dataBytes, dataReadable := measureTree(dataDir(workspace))
+	stateBytes, _ := measureTree(filepath.Join(base, "state"))
+	secretBytes, _ := measureTree(filepath.Join(base, "secrets.generated.yml"))
+	estimate := backupEstimate{DataBytes: dataBytes, StateBytes: stateBytes + secretBytes}
 	if active, err := loadActiveState(base); err == nil && active.ActiveDeployment != "" {
-		estimate.ActiveDeploymentBytes = treeSize(deploymentArtifactDir(base, active.ActiveDeployment))
+		estimate.ActiveDeploymentBytes, _ = measureTree(deploymentArtifactDir(base, active.ActiveDeployment))
 	}
 	estimate.TotalBytes = estimate.DataBytes + estimate.StateBytes + estimate.ActiveDeploymentBytes
-	return estimate
+	return estimate, dataReadable
 }
 
-func treeSize(root string) int64 {
+// measureTree returns the size of a tree and whether every part of it was
+// readable.
+func measureTree(root string) (int64, bool) {
 	var total int64
+	readable := true
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			// An unreadable subtree contributes nothing rather than aborting
-			// the walk. Skipping the directory is important: returning the
-			// error would abandon every sibling too.
+			if os.IsPermission(err) {
+				readable = false
+			}
+			// Skipping the directory is important: returning the error would
+			// abandon every sibling too, and the point is to measure as much as
+			// can be measured.
 			if d != nil && d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -469,12 +494,22 @@ func treeSize(root string) int64 {
 		if d.IsDir() || !d.Type().IsRegular() {
 			return nil
 		}
-		if info, err := d.Info(); err == nil {
-			total += info.Size()
+		info, err := d.Info()
+		if err != nil {
+			if os.IsPermission(err) {
+				readable = false
+			}
+			return nil
 		}
+		total += info.Size()
 		return nil
 	})
-	return total
+	return total, readable
+}
+
+func treeSize(root string) int64 {
+	size, _ := measureTree(root)
+	return size
 }
 
 // estimatedDowntimeSeconds is how long services are expected to be down.

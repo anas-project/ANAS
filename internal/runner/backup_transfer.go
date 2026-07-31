@@ -322,6 +322,34 @@ func describeSendFailure(cause error, stderr string) error {
 	return failuref("data_transfer_failed", "btrfs send: %s", detail)
 }
 
+// keepClassified preserves an error that already carries an enumerated code
+// and exit status. Wrapping it again would replace a precondition a caller can
+// act on — "you are not root" — with a generic execution failure.
+func keepClassified(err error, code, format string, args ...any) error {
+	if classified, ok := err.(*CLIError); ok {
+		return classified
+	}
+	return failuref(code, "%s: %v", fmt.Sprintf(format, args...), err)
+}
+
+// describeCopyFailure names the one cause worth distinguishing. "rsync exit
+// status 23" tells a user nothing; "the containers own these files and you do
+// not" tells them what to do about it.
+func describeCopyFailure(src string, cause error, output string) error {
+	detail := strings.TrimSpace(output)
+	if strings.Contains(detail, "Permission denied") {
+		return preconditionErrorf(reasonInsufficientPrivilege,
+			"cannot read all of %s: containers write their data as root, so an ordinary user cannot copy it. "+
+				"A partial copy would be a backup with holes in it, so it is refused rather than published. "+
+				"Run this as root, or use a Btrfs mode, which reads through the filesystem instead: %s",
+			src, detail)
+	}
+	if detail == "" {
+		detail = cause.Error()
+	}
+	return failuref("data_transfer_failed", "rsync %s: %s", src, detail)
+}
+
 // transferByCopy writes the tree out file by file. It is the only mode that
 // works when the source is not Btrfs, and the only one whose result can be
 // restored onto any filesystem.
@@ -331,7 +359,7 @@ func transferByCopy(req transferRequest) (*transferResult, error) {
 	}
 	emitProgress(req.json, "copy_files", 0, 0, "bytes")
 	if err := copyDirectory(req.source.dataPath, backupDataPath(req.destRoot)); err != nil {
-		return nil, failuref("data_transfer_failed", "copy the data to %s: %v", req.destRoot, err)
+		return nil, keepClassified(err, "data_transfer_failed", "copy the data to %s", req.destRoot)
 	}
 	return &transferResult{bytes: treeSize(backupDataPath(req.destRoot)), channels: []string{backupChannelData, backupChannelMetadata}}, nil
 }
@@ -349,7 +377,7 @@ func writeMetadataChannel(req transferRequest) error {
 		}
 		if part.dir {
 			if err := copyDirectory(part.src, target); err != nil {
-				return failuref("metadata_transfer_failed", "copy %s: %v", part.src, err)
+				return keepClassified(err, "metadata_transfer_failed", "copy %s", part.src)
 			}
 			continue
 		}
@@ -552,9 +580,12 @@ func copyDirectory(src, dst string) error {
 			return nil
 		}
 		// rsync exit 23 is "partial transfer due to error", which unprivileged
-		// runs hit routinely on root-owned files. Falling through to the
-		// built-in walk would hit the same wall, so the error is reported.
-		return fmt.Errorf("rsync %s: %w: %s", src, err, strings.TrimSpace(string(output)))
+		// runs hit on root-owned container files. `capabilities` refuses copy
+		// mode before it gets this far, so reaching here means the permissions
+		// changed underneath — or a caller went around the check. Either way an
+		// incomplete copy must not be published as a backup, and falling
+		// through to the built-in walk would hit the same wall one file later.
+		return describeCopyFailure(src, err, string(output))
 	}
 	return copyTreeAll(src, dst)
 }

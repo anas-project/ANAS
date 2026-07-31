@@ -14,8 +14,8 @@ import (
 // means the Btrfs cases run on macOS, which is where most of the development
 // happens and none of the Btrfs exists.
 func TestBackupModeSelection(t *testing.T) {
-	btrfsSource := backupSourceInfo{FSType: "btrfs", FSID: "aaaa", DataIsSubvolume: true}
-	plainSource := backupSourceInfo{FSType: "ext4"}
+	btrfsSource := backupSourceInfo{FSType: "btrfs", FSID: "aaaa", DataIsSubvolume: true, DataFullyReadable: true}
+	plainSource := backupSourceInfo{FSType: "ext4", DataFullyReadable: true}
 
 	cases := []struct {
 		name  string
@@ -104,7 +104,7 @@ func TestBackupModeSelection(t *testing.T) {
 		{
 			name: "Btrfs without a subvolume data directory is not a snapshot source",
 			caps: backupCapabilities{
-				Source: backupSourceInfo{FSType: "btrfs", DataIsSubvolume: false},
+				Source: backupSourceInfo{FSType: "btrfs", DataFullyReadable: true},
 				Tools:  map[string]bool{"btrfs": true}, Privileged: true,
 				Dest: &backupDestInfo{Path: "/mnt/usb", Exists: true, Writable: true},
 			},
@@ -120,7 +120,7 @@ func TestBackupModeSelection(t *testing.T) {
 			// exactly that, so a backup taken here could never be put back.
 			name: "a data directory that is a mount point is refused",
 			caps: backupCapabilities{
-				Source: backupSourceInfo{FSType: "btrfs", DataIsSubvolume: true, DataIsMountpoint: true},
+				Source: backupSourceInfo{FSType: "btrfs", DataIsSubvolume: true, DataIsMountpoint: true, DataFullyReadable: true},
 				Tools:  map[string]bool{"btrfs": true}, Privileged: true,
 				Dest: &backupDestInfo{Path: "/mnt/usb", Exists: true, Writable: true},
 			},
@@ -142,6 +142,24 @@ func TestBackupModeSelection(t *testing.T) {
 				backupModeSend:     reasonDestNotWritable,
 				backupModeSendFile: reasonDestNotWritable,
 				backupModeCopy:     reasonDestNotWritable,
+			},
+		},
+		{
+			// The contract's table has copy needing nothing but a writable
+			// destination. On any host where containers have run, data/ holds
+			// root-owned files an ordinary user cannot read, and a copy that
+			// skipped them would publish a backup with holes in it. The Btrfs
+			// modes are unaffected: none of them reads a file.
+			name: "data written by root rules out copy but not the Btrfs modes",
+			caps: backupCapabilities{
+				Source: backupSourceInfo{FSType: "btrfs", DataIsSubvolume: true, DataFullyReadable: false},
+				Tools:  map[string]bool{"btrfs": true}, Privileged: true,
+				Dest: &backupDestInfo{Path: "/mnt/other", Exists: true, Writable: true, FSType: "btrfs"},
+			},
+			facts: backupFacts{destBtrfs: true, sameFilesystem: true},
+			want: map[string]string{
+				backupModeSnapshot: "", backupModeSend: "", backupModeSendFile: "",
+				backupModeCopy: reasonInsufficientPrivilege,
 			},
 		},
 		{
@@ -241,7 +259,7 @@ func TestBackupRecommendationPrefersOffDisk(t *testing.T) {
 // security regression that produces no visible symptom.
 func TestBackupWarnsWhenSecretsLeaveTheHost(t *testing.T) {
 	caps := backupCapabilities{
-		Source: backupSourceInfo{FSType: "btrfs", DataIsSubvolume: true},
+		Source: backupSourceInfo{FSType: "btrfs", DataIsSubvolume: true, DataFullyReadable: true},
 		Tools:  map[string]bool{"btrfs": true}, Privileged: true,
 		Dest: &backupDestInfo{Path: "/mnt/usb", Exists: true, Writable: true},
 	}
