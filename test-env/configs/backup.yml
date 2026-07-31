@@ -1,0 +1,26 @@
+# Configuration for the backup end-to-end test.
+#
+# Its own prefixes and port, for the same reason as rollback.yml and
+# snapshot.yml: the test may run on a host already running a real deployment,
+# and a shared `anas_` prefix would make `docker compose` recreate the live
+# containers. anasrb_ is 19443 and anassn_ is 19444, so this one takes 19445.
+modules:
+  - traefik
+
+global:
+  domain: backup.test
+  email: admin@backup.test
+  timezone: Asia/Shanghai
+  dns_provider: manual
+  default_service_root_password: change-me-now
+
+rollback:
+  snapshot:
+    backend: btrfs
+
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anasbk_
+  IMAGE_PREFIX: anasbk_
+  NETWORK_PREFIX: anasbk_
+  TRAEFIK_BASE_PORT: "19445"

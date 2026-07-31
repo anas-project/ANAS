@@ -11,4 +11,5 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 "$SCRIPT_DIR/test-smoke.sh"
 "$SCRIPT_DIR/test-rollback.sh"
 "$SCRIPT_DIR/test-snapshot.sh"
+"$SCRIPT_DIR/test-backup.sh"
 "$SCRIPT_DIR/test-upgrade.sh"
