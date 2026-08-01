@@ -10,7 +10,7 @@ cask **没有** embed 进二进制。运行时按以下顺序在磁盘上查找 
 （[manifest.go:184](../internal/runner/manifest.go)）：
 
 ```
---cask-root  →  ANAS_CASK_ROOT  →  $ANAS_ROOT/casks/mods  →  $CWD/casks/mods
+--cask-root  →  ANAS_CASK_ROOT  →  $CWD/casks/mods  →  可执行文件旁的 casks/mods
              →  <可执行文件目录>/casks/mods  →  其父目录
 ```
 

@@ -198,7 +198,7 @@ patch 只能写本 cask 前缀键和声明导出的能力键，其余一律报�
 **现象**：`runner.go:675-677` 把编译机上的源码路径作为根目录候选。
 开发便利被烧进了发布二进制，在生产机上可能猜中一个完全无关的路径。
 
-**解决方案**：候选只保留 `--root`、`ANAS_ROOT`、cwd、可执行文件目录；
+**解决方案**：候选只保留 `--root`、`ANAS_CASK_ROOT`、cwd、可执行文件目录；
 `runtime.Caller` 候选用 build tag 限定在开发构建。
 
 ## P2-14 文档与代码漂移
@@ -264,7 +264,7 @@ reconcile 框架下统一设计，避免两套并行的状态模型。
 | P1-10 无回滚 | 已解决 | promote 保留 `release.previous` + `.cask.lock.snapshot`；新增 `anas rollback` 交换目录、恢复 lock、以制品方式启动并更新 applied 快照 |
 | P1-11 归属不确定 | 已解决 | `policyOwnerForEnv` 排序遍历，多归属直接报错要求使用模块路径 |
 | P2-12 模板静默失败 | 已解决 | 未守卫的缺键引用报错（提示 consumes/默认值）、渲染后残留 `<%` 报错；`if` 守卫内的缺键仍按空值语义移除 |
-| P2-13 locateRoot 魔法 | 已解决 | 移除 `runtime.Caller` 候选；`bin/anas` 显式传 `ANAS_ROOT` |
+| P2-13 locateRoot 魔法 | 已解决 | 移除 `runtime.Caller` 候选；`bin/anas` 显式传 `ANAS_CASK_ROOT` |
 | P2-14 文档漂移 | 已解决 | 删除 `before` 字段描述；`internalEnv` 文档改为实际存在的 `internal_env` 协议字段与作用域机制 |
 | P2-15 结构/卫生 | 部分解决 | 从 `runner.go` 拆出 `envfile.go`/`envscope.go`/`render.go`；stop 不再被密码长度校验卡住（校验仅在设置了口令时生效）。`legacy/` 目录（含 .gem 二进制）删除留待用户确认 |
 | P2-16 sudoers 未文档化 | 已解决 | 新增 `docs/util/macvlan-sudoers.md`：脚本行为、最小 sudoers 授权样例、更严格的 root-owned 路径方案 |

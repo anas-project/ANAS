@@ -9,6 +9,30 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestLocateCaskRootUsesAnasCaskRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "bundles")
+	moduleDir := filepath.Join(root, "test-cask")
+	if err := os.MkdirAll(moduleDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "cask.yml"), []byte("name: test-cask\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ANAS_CASK_ROOT", root)
+
+	got, err := locateCaskRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("cask root = %q, want %q", got, want)
+	}
+}
+
 func TestCasksUseManifestRule(t *testing.T) {
 	root := filepath.Join("..", "..", "casks", "mods")
 	entries, err := os.ReadDir(root)

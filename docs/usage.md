@@ -102,7 +102,7 @@ If the binary lives somewhere else — `/usr/local/bin/anas` with the casks
 elsewhere — point at them once:
 
 ```bash
-export ANAS_ROOT=/opt/anas
+export ANAS_CASK_ROOT=/opt/anas/casks/mods
 ```
 
 Only some commands need them at all:
@@ -118,8 +118,8 @@ bare machine comes up with no casks anywhere in sight. Rendering a *new* one is
 what needs the definitions.
 
 Missing, you get `could not locate project root containing casks/mods` or
-`could not locate cask bundle directory`. `ANAS_ROOT` answers both; `--root`,
-`--cask-root` and `ANAS_CASK_ROOT` are the per-invocation forms.
+`could not locate cask bundle directory`. Set `ANAS_CASK_ROOT` persistently,
+or use `--root` or `--cask-root` for one invocation.
 
 ### Bring it up
 
@@ -154,7 +154,7 @@ the cask tree — they read the deployment that was already rendered.
 ## 4. Changing the configuration
 
 Edit `config.yml` directly, or use the `config` commands — these read the cask
-definitions, so `ANAS_ROOT` has to be set (see §2):
+definitions, so `ANAS_CASK_ROOT` has to be set (see §2):
 
 ```bash
 anas config set core.timezone Europe/Berlin -w /srv/anas
@@ -378,7 +378,7 @@ Pass `-w`, or `cd` into one, or `anas init`.
 
 **`could not locate project root containing casks/mods`** / **`could not locate
 cask bundle directory`** — the command needs the cask definitions. Set
-`ANAS_ROOT`; see §2.
+`ANAS_CASK_ROOT`; see §2.
 
 **`anas rollback requires an explicit -w`** — by design; see §1.
 

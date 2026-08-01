@@ -90,7 +90,7 @@ cask 是**程序的一部分，不是部署的一部分**——和 `anas` 二进
 如果二进制装在别处（比如 `/usr/local/bin/anas` 而 casks 在另一处），指一次即可：
 
 ```bash
-export ANAS_ROOT=/opt/anas
+export ANAS_CASK_ROOT=/opt/anas/casks/mods
 ```
 
 而且只有一部分命令需要它们：
@@ -105,8 +105,8 @@ export ANAS_ROOT=/opt/anas
 需要那些定义。
 
 找不到时会报 `could not locate project root containing casks/mods` 或
-`could not locate cask bundle directory`。`ANAS_ROOT` 两者通吃；`--root`、
-`--cask-root`、`ANAS_CASK_ROOT` 是单次调用的形式。
+`could not locate cask bundle directory`。可以设置持久的 `ANAS_CASK_ROOT`，也可以在
+单次调用中使用 `--root` 或 `--cask-root`。
 
 ### 启动
 
@@ -140,7 +140,7 @@ anas deployments inspect <id>
 ## 四、修改配置
 
 直接编辑 `config.yml`，或者用 `config` 系列命令——它们要读 cask 定义，因此需要设好
-`ANAS_ROOT`（见第二节）：
+`ANAS_CASK_ROOT`（见第二节）：
 
 ```bash
 anas config set core.timezone Europe/Berlin -w /srv/anas
@@ -352,7 +352,7 @@ ExecStart=/usr/local/bin/anas backup create -w /srv/anas --to /mnt/backup -y
 `cd` 进去，或者 `anas init`。
 
 **`could not locate project root containing casks/mods`** / **`could not locate
-cask bundle directory`** —— 这条命令需要 cask 定义。设置 `ANAS_ROOT`，见第二节。
+cask bundle directory`** —— 这条命令需要 cask 定义。设置 `ANAS_CASK_ROOT`，见第二节。
 
 **`anas rollback requires an explicit -w`** —— 设计如此，见第一节。
 

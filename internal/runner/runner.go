@@ -194,12 +194,16 @@ func run(action string, args []string) error {
 	buildBeforeStart := fs.Bool("build", false, "build before start")
 	verbose := fs.Bool("verbose", false, "debug logging")
 	yes := fs.Bool("y", false, "accept defaults")
-	rootFlag := fs.String("root", "", "project root containing casks/mods")
+	rootFlag := fs.String("root", "", "project root or cask bundle directory")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	root, err := locateRoot(*rootFlag)
+	caskRoot := *rootFlag
+	if caskRoot != "" && exists(filepath.Join(caskRoot, "casks", "mods")) {
+		caskRoot = filepath.Join(caskRoot, "casks", "mods")
+	}
+	root, err := locateCaskRoot(caskRoot)
 	if err != nil {
 		return err
 	}
@@ -207,7 +211,7 @@ func run(action string, args []string) error {
 		home, _ := os.UserHomeDir()
 		*base = filepath.Join(home, ".anas")
 	}
-	reg, err := loadRegistry(root)
+	reg, err := loadRegistryDir(root)
 	if err != nil {
 		return err
 	}
@@ -234,11 +238,15 @@ func runRollback(args []string) error {
 	base := fs.String("b", "", "runtime base path")
 	fs.StringVar(base, "base", "", "runtime base path")
 	verbose := fs.Bool("verbose", false, "debug logging")
-	rootFlag := fs.String("root", "", "project root containing casks/mods")
+	rootFlag := fs.String("root", "", "project root or cask bundle directory")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	root, err := locateRoot(*rootFlag)
+	caskRoot := *rootFlag
+	if caskRoot != "" && exists(filepath.Join(caskRoot, "casks", "mods")) {
+		caskRoot = filepath.Join(caskRoot, "casks", "mods")
+	}
+	root, err := locateCaskRoot(caskRoot)
 	if err != nil {
 		return err
 	}
@@ -246,7 +254,7 @@ func runRollback(args []string) error {
 		home, _ := os.UserHomeDir()
 		*base = filepath.Join(home, ".anas")
 	}
-	reg, err := loadRegistry(root)
+	reg, err := loadRegistryDir(root)
 	if err != nil {
 		return err
 	}
@@ -1016,32 +1024,6 @@ func (a *app) services(mod Module, dir string, env map[string]string) ([]string,
 func (a *app) moduleEnabled(name string) bool {
 	service, ok := a.cfg.Services[name]
 	return !ok || service.Enabled == nil || *service.Enabled
-}
-
-func locateRoot(explicit string) (string, error) {
-	candidates := []string{explicit, os.Getenv("ANAS_ROOT")}
-	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates, cwd)
-	}
-	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Dir(exe), filepath.Dir(filepath.Dir(exe)))
-	}
-	seen := map[string]bool{}
-	for _, candidate := range candidates {
-		if strings.TrimSpace(candidate) == "" {
-			continue
-		}
-		candidate, _ = filepath.Abs(candidate)
-		candidate = filepath.Clean(candidate)
-		if seen[candidate] {
-			continue
-		}
-		seen[candidate] = true
-		if info, err := os.Stat(filepath.Join(candidate, "casks", "mods")); err == nil && info.IsDir() {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("could not locate project root containing casks/mods; use --root or ANAS_ROOT")
 }
 
 // promoteRelease atomically replaces the release with the staged render. The

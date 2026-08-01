@@ -47,7 +47,7 @@ active 制品必须包含，理由有三条，每一条单独都足够：
 1. 它是**镜像构建上下文**（compose 里写的是 `build: context: ./${MODULE_NAME}`），
    没有它连 `docker compose build` 都跑不了；
 2. 它是 workspace 内**唯一一份可运行的 cask 副本**——cask 源树在 workspace 之外
-   （`locateCaskRoot` 在 `ANAS_ROOT`/cwd/可执行文件旁找 `casks/mods`）；
+   （`locateCaskRoot` 按 `ANAS_CASK_ROOT`/cwd/可执行文件寻找 cask bundle）；
 3. 它携带**冻结的 hook 二进制**（`<cask>/.hook.bin`），`freezeHookBinary` 在写入它的
    同时删除了 `hook/` 源码目录，目的正是"无需 Go 工具链即可运行"。`.anas/hook-bin/`
    只是构建缓存，权威副本在这里。

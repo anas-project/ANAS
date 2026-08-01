@@ -3,6 +3,7 @@ package runner
 import (
 	"flag"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -32,17 +33,21 @@ func runConfig(args []string, jsonMode bool) error {
 	fs.StringVar(cfgPath, "config", "", "config file")
 	workspaceFlag := fs.String("w", "", "workspace path")
 	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
-	rootFlag := fs.String("root", "", "project root containing casks/mods")
+	rootFlag := fs.String("root", "", "project root or cask bundle directory")
 	registerJSONFlag(fs)
 	positional, err := parseInterspersed(fs, args[1:])
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
-	root, err := locateRoot(*rootFlag)
+	caskRoot := *rootFlag
+	if caskRoot != "" && exists(filepath.Join(caskRoot, "casks", "mods")) {
+		caskRoot = filepath.Join(caskRoot, "casks", "mods")
+	}
+	root, err := locateCaskRoot(caskRoot)
 	if err != nil {
 		return preconditionErrorf("cask_root_missing", "%s", err.Error())
 	}
-	reg, err := loadRegistry(root)
+	reg, err := loadRegistryDir(root)
 	if err != nil {
 		return preconditionErrorf("cask_root_invalid", "%s", err.Error())
 	}

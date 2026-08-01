@@ -201,9 +201,6 @@ func loadRegistryDir(casksRoot string) (map[string]Module, error) {
 
 func locateCaskRoot(explicit string) (string, error) {
 	candidates := []string{explicit, os.Getenv("ANAS_CASK_ROOT")}
-	if root := os.Getenv("ANAS_ROOT"); root != "" {
-		candidates = append(candidates, filepath.Join(root, "casks", "mods"))
-	}
 	if cwd, err := os.Getwd(); err == nil {
 		candidates = append(candidates, filepath.Join(cwd, "casks", "mods"))
 	}
