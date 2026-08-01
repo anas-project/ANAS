@@ -21,10 +21,28 @@ Everything one deployment owns lives in a single directory:
   .anas/              runtime state (0700; nothing in here is edited by hand)
 ```
 
-**Backing up that one directory backs up the deployment.** That is the reason
-for the layout, and it is why `data/` has no configurable location: a
-configurable one would make "copy this directory" conditional on nobody having
+**Nothing outside this directory is needed to restore the deployment.** That is
+the reason for the layout, and it is why `data/` has no configurable location:
+a configurable one would make self-containment conditional on nobody having
 moved it. If the data belongs on a larger disk, put the whole workspace there.
+
+Self-contained is not the same as "tar it". **Use `anas backup`** (§7) rather
+than copying the directory:
+
+- `snapshots/` duplicates `data/`. On Btrfs the copies are extent-shared and
+  nearly free on disk, but `cp` and `tar` read files and write them out, so
+  five snapshots of a 1.3 GB dataset materialise as roughly 6.5 GB of archive —
+  for data that is already there once.
+- `.anas/` is mostly rebuildable. On a live deployment measured at 402 MB, the
+  part that cannot be reconstructed is **52 KB** (`state/` and
+  `secrets.generated.yml`); the active artifact adds 42 MB, and the remaining
+  ~360 MB is historical deployments and build caches.
+- A copy taken while services are running is crash-consistent at best.
+  `anas backup` stops them for the moment the snapshot is taken.
+
+`anas backup` already knows which of those to include. The single-directory
+property is what makes that possible — it is not an instruction to archive the
+directory by hand.
 
 ### How commands find the workspace
 
@@ -64,26 +82,42 @@ profile it wins from every directory, which reintroduces the "right command,
 wrong deployment" mistake that directory-based resolution avoids. It also has
 no effect on cron or systemd units.
 
-### You also need the cask tree
+### Where the cask definitions come from
 
-The cask definitions (`casks/mods/`) live with the anas source, **not** in the
-workspace. Commands that read them have to be able to find it:
+The casks are **part of the program, not part of the deployment** — the same
+category as the `anas` binary itself, and deliberately not copied into each
+workspace. Install them beside it:
 
-```bash
-export ANAS_ROOT=/opt/anas-src     # the checkout containing casks/mods
+```text
+/opt/anas/
+  bin/anas
+  casks/mods/…
 ```
 
-| Needs the cask tree | Does not |
+With that layout nothing needs configuring: `anas` finds the casks next to its
+own executable, from any working directory. Running from a source checkout works
+for the same reason.
+
+If the binary lives somewhere else — `/usr/local/bin/anas` with the casks
+elsewhere — point at them once:
+
+```bash
+export ANAS_ROOT=/opt/anas
+```
+
+Only some commands need them at all:
+
+| Needs the casks | Does not |
 | --- | --- |
 | `plan` `lock` `render` `build` `apply` | `init` `status` `start` `stop` `restart` |
 | `config set` `config explain` `config plan` | `deployments` `rollback` `snapshot *` `backup *` |
 
 The split is **changing things versus running things**. A rendered deployment
 carries everything it needs to start, which is why a workspace restored onto a
-bare machine comes up without the source anywhere in sight. Rendering a *new*
-one is what needs the definitions.
+bare machine comes up with no casks anywhere in sight. Rendering a *new* one is
+what needs the definitions.
 
-Without it you get `could not locate project root containing casks/mods` or
+Missing, you get `could not locate project root containing casks/mods` or
 `could not locate cask bundle directory`. `ANAS_ROOT` answers both; `--root`,
 `--cask-root` and `ANAS_CASK_ROOT` are the per-invocation forms.
 

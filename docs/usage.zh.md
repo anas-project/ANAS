@@ -20,9 +20,23 @@
   .anas/              运行时状态（0700，里面的东西不要手工改）
 ```
 
-**备份这一个目录就等于备份了整套部署。** 这是这个布局存在的理由，也是 `data/`
-没有可配置位置的原因：一旦可配置，"复制这个目录"就变成了"只要没人挪过它才成立"。
-数据要放大盘，就把整个 workspace 放过去。
+**恢复这套部署不需要这个目录之外的任何东西。** 这是布局存在的理由，也是 `data/`
+没有可配置位置的原因：一旦可配置，自足性就变成了"只要没人挪过它才成立"。数据要放
+大盘，就把整个 workspace 放过去。
+
+但"自足"不等于"打个包就行"。**请用 `anas backup`**（第七节），不要直接复制目录：
+
+- `snapshots/` 是 `data/` 的副本。btrfs 上它们共享 extent、几乎不占额外空间，但
+  `cp` 和 `tar` 是逐文件读出再写入的，所以 1.3 GB 数据的五个快照会**实打实展开成
+  约 6.5 GB 归档**——而这些数据已经在 `data/` 里有一份了。
+- `.anas/` 绝大部分可重建。线上实测 402 MB，其中真正不可重建的只有 **52 KB**
+  （`state/` 和 `secrets.generated.yml`），活动制品再加 42 MB，剩下约 360 MB 是历史
+  deployment 和构建缓存。
+- 服务运行中复制出来的副本，最好也只是崩溃一致的。`anas backup` 会在拍快照的那一刻
+  把它们停下来。
+
+`anas backup` 已经知道该收哪些、不该收哪些。"单目录"是**使这件事成为可能的性质**，
+不是"请手工打包这个目录"的指示。
 
 ### 命令怎么找到 workspace
 
@@ -59,25 +73,38 @@ anas init /srv/anas --shell-init remove    # 撤销
 哪都以它为准，正好把目录解析要避免的"在错地方跑对命令"重新引了回来。而且它对
 cron 和 systemd 单元不生效。
 
-### 还需要 cask 树
+### cask 定义从哪来
 
-cask 定义（`casks/mods/`）跟随 anas 源码，**不在 workspace 里**。要读它们的命令
-必须能找到它：
+cask 是**程序的一部分，不是部署的一部分**——和 `anas` 二进制同类，因此刻意不复制进
+每个 workspace。把它们装在二进制旁边：
 
-```bash
-export ANAS_ROOT=/opt/anas-src     # 含 casks/mods 的那份源码树
+```text
+/opt/anas/
+  bin/anas
+  casks/mods/…
 ```
 
-| 需要 cask 树 | 不需要 |
+这个布局下**什么都不用配**：`anas` 会在自己可执行文件旁边找到 casks，无论从哪个目录
+运行。直接在源码检出里运行也是同理。
+
+如果二进制装在别处（比如 `/usr/local/bin/anas` 而 casks 在另一处），指一次即可：
+
+```bash
+export ANAS_ROOT=/opt/anas
+```
+
+而且只有一部分命令需要它们：
+
+| 需要 casks | 不需要 |
 | --- | --- |
 | `plan` `lock` `render` `build` `apply` | `init` `status` `start` `stop` `restart` |
 | `config set` `config explain` `config plan` | `deployments` `rollback` `snapshot *` `backup *` |
 
 这条分界是**改东西 vs 跑东西**。渲染好的 deployment 自带了启动所需的一切——这正是
-把 workspace 恢复到一台裸机上、源码根本不在场也能起来的原因。渲染一个**新的**才
+把 workspace 恢复到一台裸机上、casks 根本不在场也能起来的原因。渲染一个**新的**才
 需要那些定义。
 
-没有它会报 `could not locate project root containing casks/mods` 或
+找不到时会报 `could not locate project root containing casks/mods` 或
 `could not locate cask bundle directory`。`ANAS_ROOT` 两者通吃；`--root`、
 `--cask-root`、`ANAS_CASK_ROOT` 是单次调用的形式。
 
