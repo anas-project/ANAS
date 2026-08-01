@@ -1,4 +1,5 @@
 {
+  "userland-proxy": false,
   "registry-mirrors": [
     "https://sk-docker.bengbu.cc.cd/",
     "https://sk-ghcr.bengbu.cc.cd/"

@@ -1,7 +1,7 @@
 api_version: anas.dev/v1
 kind: Cask
 name: samba_fs
-version: 26.04.0
+version: 26.04.1
 app_version: 4.23.6
 abi:
   supports:

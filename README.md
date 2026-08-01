@@ -148,7 +148,7 @@ The launcher covers:
 - default env generation and cask hook based derived env generation
 - cask hook phases for calculation, render-time env/files, optional service
   filtering, and after-start copy operations
-- ERB template rendering used by current modules
+- container-owned configuration generation from scoped environment files
 - per-module `.env` generation
 - Docker Compose detection and execution
 - build/start/restart/stop/render/plan commands

@@ -41,7 +41,7 @@ start() {
     echo "could not detect uplink interface" >&2
     exit 1
   fi
-  dns_upstream=${ANAS_TEST_DNS_UPSTREAM:-$(resolvectl dns "$uplink" 2>/dev/null | awk 'NR == 1 { print $NF }')}
+  dns_upstream=${ANAS_TEST_DNS_UPSTREAM:-$(resolvectl dns "$uplink" 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) { print $i; exit } }')}
   dns_upstream=${dns_upstream:-1.1.1.1}
 
   systemctl stop anas-test-docker-v3.service 2>/dev/null || true

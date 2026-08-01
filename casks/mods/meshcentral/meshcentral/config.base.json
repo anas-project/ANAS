@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Ylianst/MeshCentral/master/meshcentral-config-schema.json",
+  "settings": {
+    "_redirPort": 80,
+    "_redirAliasPort": 80,
+    "AgentPong": 300,
+    "SelfUpdate": false,
+    "AllowFraming": true,
+    "agentLogDump": true,
+    "agentCoreDump": true,
+    "mySQL": {
+      "ssl": false
+    }
+  },
+  "domains": {
+    "": {
+      "agentConfig": ["webSocketMaskOverride=1"],
+      "NewAccounts": false,
+      "ipkvm": true,
+      "auth": "ldap",
+      "ldapOptions": {
+        "tlsOptions": {"rejectUnauthorized": true},
+        "reconnect": true
+      },
+      "ldapUserKey": "sAMAccountName",
+      "ldapUserRealName": "{{{givenName}}} {{{sn}}}",
+      "ldapUserGroups": "memberOf"
+    }
+  }
+}

@@ -71,9 +71,44 @@ else
   export GLOBAL_RECYCLE=""
 fi
 
-envsubst < /etc/samba/smb.conf.j2 > /etc/samba/smb.conf 
-envsubst < /etc/samba/smbusers.j2 > /etc/samba/smbusers
-envsubst < /etc/krb5.conf.j2 > /etc/krb5.conf
+smb_variables='${GLOBAL_RECYCLE} ${SAMBA_DC_REALM} ${SAMBA_DC_WORKGROUP} ${SAMBA_FS_ADMIN_USERS} ${SAMBA_FS_INTERFACES} ${SAMBA_FS_LOG_LEVEL} ${SAMBA_FS_NETBIOS_NAME} ${SAMBA_FS_SHARE_VALID_USERS} ${SAMBA_FS_SHARE_WRITE_LIST} ${SAMBA_FS_USE_DEFAULT_DOMAIN} ${SHARE_DIR_NAME} ${SHARE_GUEST_READ_ONLY} ${USERDATA_NAME}'
+for name in $(printf '%s\n' "$smb_variables" | grep -o '[A-Z][A-Z0-9_]*'); do
+  eval 'present=${'"$name"'+x}'
+  if [[ "$present" != x ]]; then
+    echo "missing required environment variable: $name" >&2
+    exit 1
+  fi
+done
+envsubst "$smb_variables" < /etc/samba/smb.conf.envsubst > /etc/samba/smb.conf.tmp
+mv /etc/samba/smb.conf.tmp /etc/samba/smb.conf
+
+smbusers_variables='${SAMBA_DC_ADMIN_NAME} ${SAMBA_DC_WORKGROUP}'
+for name in SAMBA_DC_ADMIN_NAME SAMBA_DC_WORKGROUP; do
+  eval 'present=${'"$name"'+x}'
+  if [[ "$present" != x ]]; then
+    echo "missing required environment variable: $name" >&2
+    exit 1
+  fi
+done
+envsubst "$smbusers_variables" < /etc/samba/smbusers.envsubst > /etc/samba/smbusers.tmp
+mv /etc/samba/smbusers.tmp /etc/samba/smbusers
+
+krb5_variables='${SAMBA_DC_DC_DOMAIN} ${SAMBA_DC_DOMAIN} ${SAMBA_DC_REALM}'
+for name in SAMBA_DC_DC_DOMAIN SAMBA_DC_DOMAIN SAMBA_DC_REALM; do
+  eval 'present=${'"$name"'+x}'
+  if [[ "$present" != x ]]; then
+    echo "missing required environment variable: $name" >&2
+    exit 1
+  fi
+done
+envsubst "$krb5_variables" < /etc/krb5.conf.envsubst > /etc/krb5.conf.tmp
+mv /etc/krb5.conf.tmp /etc/krb5.conf
+
+if grep -n '\${[A-Z][A-Z0-9_]*}' /etc/samba/smb.conf /etc/samba/smbusers /etc/krb5.conf; then
+  echo "unresolved variables in Samba client configuration" >&2
+  exit 1
+fi
+testparm -s /etc/samba/smb.conf >/dev/null
 
 # rm -f /var/cache/samba/*.tdb
 # rm -f /var/cache/samba/*.ldb

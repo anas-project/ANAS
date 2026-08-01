@@ -81,24 +81,3 @@ func TestCaskEnvPrefersRenderedEnvFile(t *testing.T) {
 		t.Fatalf("caskEnv fallback = %q, want in-memory value", got)
 	}
 }
-
-func TestRenderERBStrictness(t *testing.T) {
-	env := map[string]string{"SET_KEY": "value", "FLAG": "true", "EMPTY": ""}
-	out, err := renderERB(`a=<%= envs["SET_KEY"] %> e=<%= envs['EMPTY'] %>`, env)
-	if err != nil || out != "a=value e=" {
-		t.Fatalf("render = %q, %v", out, err)
-	}
-	// A guarded block referencing missing keys disappears without error.
-	out, err = renderERB(`<% if envs['FLAG'] == 'false' %>x=<%= envs["ABSENT"] %><% end %>ok`, env)
-	if err != nil || out != "ok" {
-		t.Fatalf("guarded render = %q, %v", out, err)
-	}
-	// An unguarded reference to an absent key fails.
-	if _, err := renderERB(`x=<%= envs["ABSENT"] %>`, env); err == nil {
-		t.Fatal("expected missing-key error")
-	}
-	// Unsupported leftover markers fail.
-	if _, err := renderERB(`<% weird ruby %>`, env); err == nil {
-		t.Fatal("expected unrendered-marker error")
-	}
-}

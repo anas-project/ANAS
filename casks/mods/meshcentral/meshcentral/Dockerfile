@@ -22,5 +22,6 @@ RUN set -eux; \
     mysql@2.18.1; \
   npm cache clean --force
 
-COPY ./config.json /opt/meshcentral/config.json
+COPY ./config.base.json /opt/anas/config.base.json
+COPY ./configure.js /opt/anas/configure.js
 COPY ./startup.sh ./startup.sh

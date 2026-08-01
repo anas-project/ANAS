@@ -941,9 +941,6 @@ func (a *app) renderAll(work string) error {
 		if err := applyHookFiles(dir, resp.Files); err != nil {
 			return err
 		}
-		if err := renderERBFiles(dir, env); err != nil {
-			return err
-		}
 		fileEnv := env
 		if len(resp.InternalEnv) > 0 {
 			fileEnv = cloneMap(env)

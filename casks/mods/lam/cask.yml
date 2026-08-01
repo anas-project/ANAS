@@ -1,7 +1,7 @@
 api_version: anas.dev/v1
 kind: Cask
 name: lam
-version: 7.8.0
+version: 7.8.1
 abi:
   supports:
     - anas.cask/v1

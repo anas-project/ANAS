@@ -1,0 +1,32 @@
+modules:
+  - samba_dc
+  - samba_fs
+  - mariadb
+  - meshcentral
+  - lam
+  - eturnal
+
+global:
+  domain: nas.test
+  email: admin@nas.test
+  timezone: Asia/Shanghai
+  dns_provider: manual
+  default_service_root_password: AnasTest1!
+
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_tmpl_
+  IMAGE_PREFIX: anas_tmpl_
+  NETWORK_PREFIX: anas_tmpl_
+  CHINESE_SPEEDUP: "true"
+  GITHUB_DOWNLOAD_PROXY_PREFIX: https://gh-proxy.com/
+  DOCKER_SOCKET_PATH: /run/anas-template-docker.sock
+  NETWORK_NAMESPACE_PATH: /run/netns/anas-tmpl
+  HOST_IP: 10.252.0.2
+  INTERFACE: anas-tmpl-p
+  DEFAULT_GATEWAY_IP: 10.252.0.1
+  HOST_SUBNET_MASK: "24"
+  LOCAL_DNS_SERVER: 10.252.0.2
+  SAMBA_DC_HOST_IP: 10.252.0.2
+  SAMBA_DC_INTERFACES: anas-tmpl-p
+  SAMBA_FS_DNS_SERVER: 10.252.0.2

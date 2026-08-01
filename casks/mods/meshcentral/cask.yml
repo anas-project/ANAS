@@ -1,7 +1,7 @@
 api_version: anas.dev/v1
 kind: Cask
 name: meshcentral
-version: 1.1.5
+version: 1.1.6
 abi:
   supports:
     - anas.cask/v1
@@ -27,7 +27,7 @@ config:
     domain_prefix: meshcentral
     mps_port: "4433"
   # The container connects to MariaDB and binds to LDAP with these real
-  # credentials directly (config.json.erb).
+  # credentials directly. Its entrypoint derives config.json in /run/anas.
   consumes:
     - MYSQL_PASSWORD
     - SAMBA_DC_LDAP_BIND_PASSWORD

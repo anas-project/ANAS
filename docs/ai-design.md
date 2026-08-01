@@ -113,7 +113,7 @@ casks/mods/<cask_name>/
   <service>/Dockerfile             Optional build context
   <service>/root/...               Optional container root files
   assets/...                       Optional images and static assets
-  *.erb                            Optional templates rendered before Compose
+  *.envsubst                       Optional container-runtime text templates
 ```
 
 Do not add `runner.rb`. Put cask-specific behavior in the cask hook declared by
@@ -275,9 +275,9 @@ cask functionality is:
   patches are validated against the cask's prefixes and `config.exports`.
 - Persist generated secrets in `secrets.generated.yml` and reuse them on later
   runs. Non-calculate hook phases receive only the cask-scoped secrets.
-- Render cask assets into the runtime work directory, process the supported
-  ERB-like template syntax strictly (missing keys and unrendered markers fail
-  the render), and write a scoped per-cask `.env`.
+- Copy cask assets into the runtime work directory and write a scoped per-cask
+  `.env`. The runner does not interpret application configuration templates;
+  each container derives its runtime configuration from that environment.
 - Detect Docker Compose and reconcile per cask with `build`, `up -d
   --remove-orphans`, and `down` using project names like `anas_nextcloud`.
   A config-driven start downs casks removed from the config instead of
@@ -324,8 +324,8 @@ Current limitations:
   outside the Go cask rules.
 - `keycloak` and `freeradius` are scaffolds and need service-specific cleanup
   before production use.
-- The runner does not execute arbitrary Ruby template code. Complex rendering
-  must be moved into a hook and exposed as simple env values.
+- The runner does not render application configuration. Container entrypoints
+  own deterministic config generation from their scoped environment.
 
 ## How To Design A New Cask
 
@@ -402,17 +402,29 @@ docker compose --project-name anas_<cask> --env-file .env ...
 
 Do not rely on the caller's shell environment for required values.
 
-## Template Rule
+## Container Configuration Rule
 
-Current templates are ERB-like files ending in `.erb`. The Go renderer supports
-the existing simple patterns used by the casks:
+The runner never renders application configuration. It freezes each cask's
+Compose definition, image inputs, startup scripts, and scoped `.env`; the
+container entrypoint derives runtime configuration under `/run/anas` before it
+execs the upstream process.
 
-- `<%= envs["KEY"] %>`
-- `<%= "#{envs["KEY"]}" %>`
-- simple equality blocks like `<% if envs['KEY'] == 'value' %> ... <% end %>`
+- JSON must be produced with an application-native structured writer (for
+  example Node.js `JSON.stringify`), not `sed` or unrestricted `envsubst`.
+- Small YAML files may be emitted by a container entrypoint only after values
+  are type-checked and safely quoted.
+- INI, XML, and other text formats may use `.envsubst`, with an explicit
+  variable allowlist and a post-render unresolved-variable check.
+- Generated files use a temporary sibling plus atomic rename, and sensitive
+  files are owner-only.
+- Runtime configuration is deterministic from the sealed `.env` and image. It
+  must not generate secrets, contact discovery services, or mutate the secret
+  store. Runtime-only discoveries such as a container IP are permitted when
+  they are not deployment identity.
 
-Do not add arbitrary Ruby expressions. If a template needs complex logic, move
-the logic into Go and render a simple env value.
+The suffixes `.erb`, `.j2`, `.j3`, and `.tmpl`, and ERB markers under `casks/`,
+are rejected by the static test. Use `.envsubst` only for actual container-side
+text substitution.
 
 ## Replacement Criteria
 

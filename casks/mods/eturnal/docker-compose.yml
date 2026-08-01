@@ -1,25 +1,17 @@
 services:
   anas_eturnal:
-    image: ghcr.io/processone/eturnal:1.12.2
+    image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
+    build:
+      context: ./eturnal
     container_name: ${CONTAINER_PREFIX}eturnal
     read_only: true
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges
-    ports:
-      - "${TURN_PORT}:${TURN_PORT}/tcp"
-      - "${TURN_PORT}:${TURN_PORT}/udp"
-      - "${TURN_RELAY_MIN_PORT}-${TURN_RELAY_MAX_PORT}:${TURN_RELAY_MIN_PORT}-${TURN_RELAY_MAX_PORT}/udp"
+    network_mode: host
     restart: unless-stopped
-    networks:
-      - traefik
     env_file:
       - .env
-    volumes:
-      - "./eturnal/eturnal.yml:/etc/eturnal.yml:ro"
-
-networks:
-  traefik:
-    name: ${NETWORK_PREFIX}traefik
-    external: true
+    tmpfs:
+      - /run/anas:mode=0700,uid=9000,gid=9000,size=1m

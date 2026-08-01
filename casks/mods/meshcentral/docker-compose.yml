@@ -16,6 +16,8 @@ services:
       - ${MESHCENTRAL_MPS_PORT}:${MESHCENTRAL_MPS_PORT}
     env_file:
       - .env
+    tmpfs:
+      - /run/anas:mode=0700,size=1m
     volumes:
       - "${DATA_PATH}/meshcentral/meshcentral-data:/opt/meshcentral/meshcentral-data"
       - "${DATA_PATH}/meshcentral/meshcentral-files:/opt/meshcentral/meshcentral-files"

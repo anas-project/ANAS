@@ -1,7 +1,7 @@
 api_version: anas.dev/v1
 kind: Cask
 name: netbird
-version: 0.25.5
+version: 0.25.6
 abi:
   supports:
     - anas.cask/v1

@@ -32,7 +32,9 @@ Do not commit `.anas-test/` or generated secrets.
 
 1. Static tests
 
-   Runs Go unit tests and manifest validation:
+   Runs Go unit tests, manifest validation, the legacy-template ban, and
+   container configuration generation tests for Traefik, Eturnal, and
+   MeshCentral (the MeshCentral case runs when Node.js is available):
 
    ```sh
    ./test-env/scripts/test-static.sh
@@ -46,8 +48,8 @@ Do not commit `.anas-test/` or generated secrets.
    ./test-env/scripts/test-render.sh
    ```
 
-   This validates module ordering, cask hooks, env generation, ERB rendering,
-   generated files, and persistent secrets.
+   This validates module ordering, cask hooks, scoped env generation, generated
+   files, persistent secrets, and the absence of legacy host-rendered templates.
 
 3. Docker Compose config tests
 

@@ -75,7 +75,21 @@ fi
 export SAMBA_DC_TLS_ENABLED="${SAMBA_DC_TLS_ENABLED:-yes}"
 
 echo "Creating /etc/samba/smb.conf ..."
-envsubst < /root/smb.conf.j2 > /etc/samba/smb.conf
+smb_variables='${SAMBA_DC_BIND_INTERFACES_ONLY} ${SAMBA_DC_DOMAIN_MASTER} ${SAMBA_DC_INTERFACES} ${SAMBA_DC_LOG_LEVEL} ${SAMBA_DC_NETBIOS_NAME} ${SAMBA_DC_REALM} ${SAMBA_DC_TEMPLATE_HOMEDIR} ${SAMBA_DC_TEMPLATE_SHELL} ${SAMBA_DC_TLS_CAFILE} ${SAMBA_DC_TLS_CERTFILE} ${SAMBA_DC_TLS_ENABLED} ${SAMBA_DC_TLS_KEYFILE} ${SAMBA_DC_WORKGROUP}'
+for name in $(printf '%s\n' "$smb_variables" | grep -o '[A-Z][A-Z0-9_]*'); do
+  eval 'present=${'"$name"'+x}'
+  if [[ "$present" != x ]]; then
+    echo "missing required environment variable: $name" >&2
+    exit 1
+  fi
+done
+envsubst "$smb_variables" < /root/smb.conf.envsubst > /etc/samba/smb.conf.tmp
+if grep -n '\${[A-Z][A-Z0-9_]*}' /etc/samba/smb.conf.tmp; then
+  echo "unresolved variables in smb.conf" >&2
+  exit 1
+fi
+mv /etc/samba/smb.conf.tmp /etc/samba/smb.conf
+testparm -s /etc/samba/smb.conf >/dev/null
 
 chmod 0755 /usr/local/bin/structure.sh
 chmod +x /usr/local/bin/anas_zone.sh
