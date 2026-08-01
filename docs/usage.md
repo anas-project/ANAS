@@ -1,0 +1,358 @@
+# Using anas
+
+*[中文版本](usage.zh.md)*
+
+This is the task-oriented guide: how to set a deployment up, run it, change it,
+and get it back when something goes wrong. For the exact JSON and exit codes
+each command produces, see [contracts/](contracts/README.md).
+
+---
+
+## 1. The workspace
+
+Everything one deployment owns lives in a single directory:
+
+```text
+<workspace>/
+  config.yml          the desired state — the only file you edit
+  config.lock.yml     resolved cask versions and bindings
+  data/               service data
+  snapshots/          point-in-time copies
+  .anas/              runtime state (0700; nothing in here is edited by hand)
+```
+
+**Backing up that one directory backs up the deployment.** That is the reason
+for the layout, and it is why `data/` has no configurable location: a
+configurable one would make "copy this directory" conditional on nobody having
+moved it. If the data belongs on a larger disk, put the whole workspace there.
+
+### How commands find the workspace
+
+In order: the `-w` flag, then `$ANAS_WORKSPACE`, then the current directory —
+but only when that directory already contains `.anas/`.
+
+No command creates a workspace implicitly. A mistyped `cd` must not silently
+grow a second parallel deployment, so `anas init` is the only thing that makes
+one.
+
+**`rollback`, `snapshot restore` and `backup restore` accept only `-w`.** They
+are the operations that replace things, and an environment variable left in a
+shell profile is the easiest way to point one at the wrong deployment.
+
+---
+
+## 2. First run
+
+```bash
+anas init /srv/anas
+```
+
+Creates the layout above and writes a skeleton `config.yml`. On Btrfs it also
+makes `data/` a subvolume, which is what snapshots are taken from. Off Btrfs it
+says which capabilities will be unavailable and asks before continuing.
+
+`init` prints an `export ANAS_WORKSPACE=…` line but does **not** write it
+anywhere. To have it written to your shell profile, ask:
+
+```bash
+anas init /srv/anas --shell-init write     # idempotent, marked block
+anas init /srv/anas --shell-init remove    # take it back out
+```
+
+It is opt-in because `ANAS_WORKSPACE` is machine-global: once it is in a
+profile it wins from every directory, which reintroduces the "right command,
+wrong deployment" mistake that directory-based resolution avoids. It also has
+no effect on cron or systemd units.
+
+### You also need the cask tree
+
+The cask definitions (`casks/mods/`) live with the anas source, **not** in the
+workspace. Commands that read them have to be able to find it:
+
+```bash
+export ANAS_ROOT=/opt/anas-src     # the checkout containing casks/mods
+```
+
+| Needs the cask tree | Does not |
+| --- | --- |
+| `plan` `lock` `render` `build` `apply` | `init` `status` `start` `stop` `restart` |
+| `config set` `config explain` `config plan` | `deployments` `rollback` `snapshot *` `backup *` |
+
+The split is **changing things versus running things**. A rendered deployment
+carries everything it needs to start, which is why a workspace restored onto a
+bare machine comes up without the source anywhere in sight. Rendering a *new*
+one is what needs the definitions.
+
+Without it you get `could not locate project root containing casks/mods` or
+`could not locate cask bundle directory`. `ANAS_ROOT` answers both; `--root`,
+`--cask-root` and `ANAS_CASK_ROOT` are the per-invocation forms.
+
+### Bring it up
+
+Edit `<workspace>/config.yml`, then:
+
+```bash
+anas apply --build --update-lock -w /srv/anas
+```
+
+`--build` builds the images; `--update-lock` writes the resolved cask versions
+into `config.lock.yml`. After the first run neither is needed unless versions
+change.
+
+---
+
+## 3. Everyday operation
+
+```bash
+anas status                 # what is active, and whether it verified
+anas start
+anas stop
+anas restart
+anas deployments list
+anas deployments inspect <id>
+```
+
+All of these take `-w`, or run from inside the workspace, and none of them needs
+the cask tree — they read the deployment that was already rendered.
+
+---
+
+## 4. Changing the configuration
+
+Edit `config.yml` directly, or use the `config` commands — these read the cask
+definitions, so `ANAS_ROOT` has to be set (see §2):
+
+```bash
+anas config set core.timezone Europe/Berlin -w /srv/anas
+anas config explain nextcloud.domain_prefix        # what changing it costs
+anas config plan -w /srv/anas                      # what the pending edits would do
+```
+
+Then apply:
+
+```bash
+anas apply -w /srv/anas
+```
+
+Each apply produces a **new immutable deployment**; the previous one stays on
+disk, which is what makes rollback possible.
+
+Some settings cannot be applied by an ordinary restart because they change
+state *inside* a service — a password that lives in the LDAP directory, a
+database that has to be migrated. `apply` refuses those with exit 4 and names
+the setting. `--allow-risky` proceeds once you have arranged the migration.
+
+---
+
+## 5. When something breaks
+
+This is the one distinction worth learning properly.
+
+| Situation | Command | What happens to data |
+| --- | --- | --- |
+| A config change broke the service; the data is fine | `anas rollback` | **untouched** |
+| The data itself is wrong — a bad upgrade, a bad migration | `anas snapshot restore <id>` | **rewound** |
+
+```bash
+anas rollback -w /srv/anas              # back to the previous deployment
+anas rollback <deployment-id> -w /srv/anas
+```
+
+`rollback` switches the artifact and **never touches data**. That matters
+because the common case is "I broke the config" — answering it by rewinding
+data would throw away everything written since the last apply.
+
+Rewinding data is only ever `snapshot restore`, which puts config, lock,
+secrets, state, artifact and data back to one point in time, together.
+
+### Rollbacks that are refused
+
+A rollback across a cask version that rewrote the on-disk format cannot work:
+the older code cannot read the newer data. `anas` refuses it outright, with no
+`--allow-risky` override, and points at the snapshot to restore instead.
+
+A version change where the cask says nothing about its data format is treated
+as unknown and blocked, overridable with `--allow-risky`.
+
+---
+
+## 6. Snapshots
+
+A snapshot is **local, instant, and exists so a change can be undone**.
+Requires Btrfs.
+
+```bash
+anas snapshot create --label "before the upgrade"
+anas snapshot list
+anas snapshot show <id>
+anas snapshot path <id>          # print the read-only data path, to fish one file out
+anas snapshot restore <id> -w /srv/anas
+anas snapshot verify             # do the recorded snapshots still exist?
+```
+
+`verify` is worth running from cron. The usual way a backup fails is that
+somebody deleted the underlying subvolume by hand and nothing noticed until the
+day it was needed.
+
+### Automatic snapshots
+
+`apply` takes one by itself before a change that cannot be undone:
+
+- a cask upgrade that crosses a version the cask declared as rewriting data
+- a setting whose effect is `data_migrate` or `credential_rotate`
+
+Routine applies do **not** snapshot. Doing so would fill the retention slots
+with ordinary config edits and evict the one that mattered.
+
+```bash
+anas apply --snapshot        # force one anyway
+anas apply --no-snapshot -y  # skip it; -y required, this discards the only way back
+```
+
+### Retention
+
+`rollback.snapshot.keep_auto` in `config.yml`, default 5. Manual and pinned
+snapshots are neither counted nor collected.
+
+```bash
+anas snapshot pin <id>
+anas snapshot prune --dry-run    # always look first
+anas snapshot prune --keep 3
+```
+
+---
+
+## 7. Backup and disaster recovery
+
+A backup is **a snapshot sent somewhere else**, so it survives the disk.
+
+Ask what this host can actually do before planning around it:
+
+```bash
+anas backup capabilities --to /mnt/backup
+```
+
+It reports each of the four modes and, for the ones that cannot run, an
+enumerated reason — the remedy for "wrong filesystem" is not the remedy for
+"cannot read the data".
+
+| Mode | Needs | Notes |
+| --- | --- | --- |
+| `snapshot` | destination on the same Btrfs filesystem | fastest, but the copy is on the disk you are protecting against — never recommended |
+| `send` | both sides Btrfs, **root** | supports incremental with `--parent` |
+| `send-file` | source Btrfs, **root** | a stream file; restores only onto Btrfs |
+| `copy` | destination writable, **all data readable** | works anywhere; the only mode off Btrfs |
+
+```bash
+anas backup plan --to /mnt/backup          # what it would do, without doing it
+anas backup create --to /mnt/backup
+anas backup list   --to /mnt/backup
+anas backup verify --to /mnt/backup        # cron this too
+```
+
+Containers stop only while the snapshot is taken, then start again before the
+transfer runs. Downtime is therefore set by how long a snapshot takes — seconds
+— not by how much data there is. If a backup fails part way, the services are
+started again; that compensation also survives the process being killed.
+
+### Restoring onto a fresh machine
+
+```bash
+anas init /srv/anas                 # the workspace must exist first
+anas backup restore --from /mnt/backup -w /srv/anas
+anas start -w /srv/anas
+```
+
+The restored workspace carries its own artifact, so it starts without needing
+the cask source tree. It does still pull base images from a registry.
+
+---
+
+## 8. What needs root, and why
+
+`anas` runs as an ordinary user. Three operations do not, and it says so rather
+than escalating by itself:
+
+| Operation | Why |
+| --- | --- |
+| Reclaiming a snapshot (`delete`, `prune`) | `btrfs subvolume delete` needs `CAP_SYS_ADMIN` unless the filesystem was mounted `user_subvol_rm_allowed` |
+| `send` / `send-file` backups | `btrfs send` needs root |
+| `copy` backups of a deployment that has run | containers write their data as root; an unprivileged reader cannot read it |
+
+The root cause of the first and third is the same: **container data is
+root-owned**, so reclaiming or reading a copy of it needs privilege whether or
+not snapshots are involved.
+
+The practical answer is a systemd timer running the scheduled operations as
+root — they were going to be scheduled anyway:
+
+```ini
+# anas-prune.service / anas-backup.service, driven by matching .timer units
+ExecStart=/usr/local/bin/anas snapshot prune -w /srv/anas -y
+ExecStart=/usr/local/bin/anas backup create -w /srv/anas --to /mnt/backup -y
+```
+
+Mounting with `user_subvol_rm_allowed` also works, but it applies to the whole
+filesystem and cannot be narrowed to one subvolume, so it is documented as an
+option rather than a requirement.
+
+---
+
+## 9. Without Btrfs
+
+Everything works except the snapshot-dependent parts:
+
+- no `snapshot` commands, and no automatic pre-upgrade snapshot
+- no `rollback` protection from data restore — `rollback` itself still works
+- backups run in `copy` mode only, which needs privilege once services have run
+
+`anas init` says this at the point where you can still choose a different disk.
+
+---
+
+## 10. Scripting
+
+Every command accepts `--json`:
+
+- exactly one JSON document on stdout, parseable without filtering
+- progress, warnings and logs on stderr as JSON Lines
+- an exit code from a fixed table
+
+| Code | Meaning |
+| --- | --- |
+| 0 | success |
+| 1 | the work started and failed |
+| 2 | the command line was wrong |
+| 3 | a confirmation is required and cannot be obtained |
+| 4 | the machine is not in a state where this can run |
+
+`code` and `reason` fields are fixed enumerations. `message` is for humans —
+do not parse it. Without `--json` the output is prose and is not a contract.
+
+Non-interactive callers should pass `-y` where a confirmation would be
+required; without it, and with no terminal, a command fails immediately at exit
+3 rather than blocking on input nobody is there to give.
+
+Full details in [contracts/README.md](contracts/README.md).
+
+---
+
+## 11. Common messages
+
+**`… is not a workspace: no .anas/ directory`** — you are outside a workspace.
+Pass `-w`, or `cd` into one, or `anas init`.
+
+**`could not locate project root containing casks/mods`** / **`could not locate
+cask bundle directory`** — the command needs the cask definitions. Set
+`ANAS_ROOT`; see §2.
+
+**`anas rollback requires an explicit -w`** — by design; see §1.
+
+**`no backup mode can run against …`** — run `anas backup capabilities --to …`,
+which names the reason for each mode.
+
+**`cannot delete Btrfs subvolume …: needs CAP_SYS_ADMIN`** — snapshot
+reclamation; see §8.
+
+**`crosses data-breaking version …`** — the rollback you asked for cannot work;
+restore a snapshot instead. See §5.

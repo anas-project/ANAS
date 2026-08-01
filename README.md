@@ -4,7 +4,10 @@ ANAS is a Go-based NAS service launcher built around composable casks. Each
 cask owns its Docker Compose assets and declares its launcher metadata in
 `cask.yml`.
 
-Current cask runtime ABI: `anas.cask/v1`.
+Current cask runtime ABI: `anas.cask/v2`.
+
+**Usage guide: [docs/usage.md](docs/usage.md) · [中文](docs/usage.zh.md)** —
+how to initialise a deployment, run it, change it, and recover it.
 
 ## Commands
 
