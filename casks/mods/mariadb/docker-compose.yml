@@ -1,20 +1,23 @@
-version: "3.5"
-
 services:
   anas_mariadb:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
-    image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
-    build: ./${MODULE_NAME}
+    image: mariadb:12.3.2
     restart: unless-stopped
     env_file:
       - .env
     volumes:
-      - "${DATA_PATH}/mariadb:/config"
+      - "${DATA_PATH}/mariadb:/var/lib/mysql"
+      - "./mariadb/root/etc/my.cnf.d/server.cnf:/etc/mysql/conf.d/anas.cnf:ro"
+    healthcheck:
+      test: ["CMD-SHELL", "unset MYSQL_HOST MARIADB_HOST; exec healthcheck.sh --connect --innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     networks:
       - mariadb
 
   anas_mariadb_adminer:
-    image: adminer
+    image: adminer:5.5.0
     container_name: ${CONTAINER_PREFIX}mariadb_adminer
     restart: unless-stopped
     env_file:

@@ -1,16 +1,30 @@
-FROM ghcr.io/linuxserver/baseimage-ubuntu:noble
+FROM ubuntu:resolute
 LABEL maintainer="Hailong"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 ARG CHINESE_SPEEDUP
-RUN if [ "$CHINESE_SPEEDUP" = "true" ] ; then  \
-  sed -i "s/archive.ubuntu.com/mirrors.aliyun.com/g" /etc/apt/sources.list; \
+RUN if [ "$CHINESE_SPEEDUP" = "true" ] ; then \
+  for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do \
+    if [ -f "$source" ]; then \
+      sed -i \
+        -e "s|http://archive.ubuntu.com|https://mirrors.aliyun.com|g" \
+        -e "s|http://security.ubuntu.com|https://mirrors.aliyun.com|g" \
+        "$source"; \
+    fi; \
+  done; \
   fi
 
 RUN apt-get update \
   && apt-get install -y \
   samba \
+  samba-ad-dc \
+  samba-ad-provision \
+  samba-dsdb-modules \
   smbclient \
   winbind \
   libpam-winbind \
@@ -24,6 +38,11 @@ RUN apt-get update \
   ldb-tools \
   gettext \
   netcat-openbsd \
+  procps \
+  runit \
+  tini \
+  tzdata \
+  util-linux \
   && apt-get clean \
   && rm -rf \
   /tmp/* \
@@ -34,8 +53,10 @@ RUN apt-get update \
 COPY root/ /
 
 RUN chmod +x \
+  /usr/bin/with-contenv \
   /etc/services.d/samba_dc/run \
   /etc/services.d/named/run \
+  /usr/local/bin/anas-entrypoint.sh \
   /usr/local/bin/structure.sh \
   /usr/local/bin/anas_zone.sh \
   /etc/cont-init.d/11-samba_dc.sh \
@@ -43,3 +64,5 @@ RUN chmod +x \
 
 VOLUME /var/lib/samba
 EXPOSE 53 53/udp 88 88/udp 135 137-138/udp 139 389 389/udp 445 464 464/udp 636 3268-3269 49152-65535
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/anas-entrypoint.sh"]

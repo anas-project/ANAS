@@ -166,11 +166,16 @@ func calcSambaFS(e map[string]string, _ string, _ *secretStore) error {
 		defaultValue(e["SAMBA_DC_DNS_SERVER"], e["VLAN_BRIDGE_IP"]))
 	mode := strings.ToLower(defaultValue(e["SHARE_ACCESS_MODE"], "all_read_group_write"))
 	domainGroup := func(name string) string {
-		return `@"` + e["SAMBA_DC_WORKGROUP"] + `\` + name + `"`
+		if strings.EqualFold(e["SAMBA_FS_USE_DEFAULT_DOMAIN"], "yes") ||
+			strings.EqualFold(e["SAMBA_FS_USE_DEFAULT_DOMAIN"], "true") {
+			return `@"` + name + `"`
+		}
+		return `@"` + e["SAMBA_DC_WORKGROUP"] + `+` + name + `"`
 	}
 	admins := domainGroup(e["SAMBA_DC_FS_ADMIN_GROUP_NAME"])
 	writers := domainGroup(e["SAMBA_DC_FS_SHARE_RW_GROUP_NAME"])
 	domainUsers := domainGroup("Domain Users")
+	e["SAMBA_FS_ADMIN_USERS"] = admins
 	e["SAMBA_FS_SHARE_VALID_USERS"] = "nobody, " + domainUsers + ", " + admins + ", " + writers
 	switch mode {
 	case "all_rw":

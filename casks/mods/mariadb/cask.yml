@@ -1,8 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: mariadb
-version: 10.11.4
-app_version: 10.11.4
+version: 12.3.2
+app_version: 12.3.2
 abi:
   supports:
     - anas.cask/v1

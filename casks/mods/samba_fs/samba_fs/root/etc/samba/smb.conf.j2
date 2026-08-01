@@ -57,7 +57,7 @@
 #  fruit:advertise_fullsync = true
 #  fruit:aapl = yes
 
-  admin users = @"${SAMBA_DC_WORKGROUP}\${SAMBA_DC_FS_ADMIN_GROUP_NAME}"
+  admin users = ${SAMBA_FS_ADMIN_USERS}
 
 [Home]
   comment = "User's personal files"

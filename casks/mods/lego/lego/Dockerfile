@@ -1,4 +1,4 @@
-FROM goacme/lego:v4.11.0
+FROM goacme/lego:v5.3.1
 
 ARG CHINESE_SPEEDUP
 # openssl backs the internal CA; the upstream image only ships the lego binary.

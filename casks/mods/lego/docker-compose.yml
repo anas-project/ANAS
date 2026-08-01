@@ -1,5 +1,3 @@
-version: "3.5"
-
 services:
   anas_lego:
     build:
@@ -7,7 +5,7 @@ services:
       args:
         - CHINESE_SPEEDUP
     container_name: ${CONTAINER_PREFIX}lego
-    image: ${IMAGE_PREFIX}lego:latest
+    image: ${IMAGE_PREFIX}lego:5.3.1
     restart: unless-stopped
     volumes:
       - "${LEGO_DATA_PATH}:/certs"

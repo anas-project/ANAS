@@ -1,14 +1,12 @@
-version: "3.5"
-
 services:
   anas_postgres:
     container_name: ${CONTAINER_PREFIX}postgres
-    image: postgres:15.3-alpine
+    image: postgres:18.4-alpine
     restart: unless-stopped
     env_file:
       - .env
     volumes:
-      - "${DATA_PATH}/postgres:/var/lib/postgresql/data"
+      - "${DATA_PATH}/postgres:/var/lib/postgresql"
       - "./initdb:/docker-entrypoint-initdb.d:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_USERNAME}"]
@@ -19,7 +17,7 @@ services:
       - postgres
 
   anas_postgres_reconcile:
-    image: postgres:15.3-alpine
+    image: postgres:18.4-alpine
     restart: "no"
     env_file:
       - .env
@@ -38,7 +36,7 @@ services:
       - postgres
 
   anas_postgres_adminer:
-    image: adminer
+    image: adminer:5.5.0
     container_name: ${CONTAINER_PREFIX}postgres_adminer
     restart: unless-stopped
     env_file:

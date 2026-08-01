@@ -1,7 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: traefik
-version: 2.5.1
+version: 3.7.10
+app_version: 3.7.10
 abi:
   supports:
     - anas.cask/v1

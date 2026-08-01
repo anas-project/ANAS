@@ -1,7 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: eturnal
-version: 1.12.0
+version: 1.12.2
+app_version: 1.12.2
 abi:
   supports:
     - anas.cask/v1

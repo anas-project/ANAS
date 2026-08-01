@@ -314,9 +314,9 @@ rules; `core` is also added implicitly for non-core casks.
 | `keycloak` | identity | Identity cask scaffold based on current LLNG integration assets. Derives Keycloak-prefixed SAML/OIDC fields and database env, but the service assets still mirror LLNG-style integration. | Requires `traefik`, `samba_dc`, and one relational database. Treat as scaffold until service-specific assets are completed. |
 | `lam` | identity | Runs LDAP Account Manager, derives domain/language/admin password, and connects to Samba LDAP env. | Requires `traefik` and `samba_dc`. |
 | `meshcentral` | app | Runs MeshCentral with Traefik routing, LDAP auth filters, app-filter aware user restrictions, and configurable MPS port. | Requires `traefik`, `mariadb`, and `samba_dc`. |
-| `ddns` | network | Runs qmcgaw/ddns-updater and generates DNSPod settings for base-domain and wildcard IPv4/IPv6 records when `DNS_PROVIDER=dnspod`. | Requires `traefik` for dashboard routing and `global.dns_provider`. |
+| `ddns` | network | Runs the upstream `ghcr.io/qdm12/ddns-updater` image and generates DNSPod settings for base-domain and wildcard IPv4/IPv6 records when `DNS_PROVIDER=dnspod`. | Requires `traefik` for dashboard routing and `global.dns_provider`. |
 | `netbird` | network | Incomplete experimental dashboard, signal, and management scaffold; excluded from the full example. | Requires `traefik` and one SSO provider (`keycloak` or `llng`). Persistence and the complete management flow still need work. |
-| `freeradius` | network | Experimental FreeRADIUS manifest scaffold only. The current compose file still mirrors the Lego scaffold and is not a complete RADIUS deployment. | Requires `lego`; status `experimental`. |
+| `freeradius` | network | Runs the upstream FreeRADIUS 3.2 image with UDP 1812/1813 publication and configuration health checks; client and user policy remain deployment-owned. | Standalone base service; no default production clients or users are generated. |
 
 Current limitations:
 

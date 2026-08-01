@@ -1,9 +1,6 @@
-version: "3.5"
-
 services:
   anas_traefik:
-    image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
-    build: ./traefik
+    image: traefik:v3.7.10
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     command:
       - --entrypoints.https.address=:${TRAEFIK_BASE_PORT}
@@ -13,14 +10,19 @@ services:
       - --providers.docker.constraints=Label(`anas.traefik.instance`,`${NETWORK_PREFIX}traefik`)
       - --api.dashboard=true
       - --providers.file.filename=/cert.yml
+      - --ping=true
     restart: unless-stopped
-    environment:
-      - LEGO_CERT_PATH
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     ports:
       - "${TRAEFIK_BASE_PORT}:${TRAEFIK_BASE_PORT}"
     volumes:
       - "${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro"
       - "${LEGO_CERTS_PATH}:/certs:ro"
+      - "./traefik/cert.yml:/cert.yml:ro"
     labels:
       - "traefik.http.routers.api.entrypoints=https"
       - "traefik.http.routers.api.rule=Host(`${TRAEFIK_DOMAIN}`)"

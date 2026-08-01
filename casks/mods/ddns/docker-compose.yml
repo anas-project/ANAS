@@ -1,7 +1,6 @@
-version: "3.7"
 services:
   anas_ddns-updater:
-    image: qmcgaw/ddns-updater
+    image: ghcr.io/qdm12/ddns-updater:2.10.0
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     restart: unless-stopped
     dns:
@@ -19,8 +18,10 @@ services:
       - RESOLVER_ADDRESS=${DDNS_DNS_SERVER}:53
 
       # Web UI
-      - LISTENING_PORT=8000
+      - SERVER_ENABLED=yes
+      - LISTENING_ADDRESS=:8000
       - ROOT_URL=/
+      - HEALTH_SERVER_ADDRESS=127.0.0.1:9999
 
       # Backup
       - BACKUP_PERIOD=0 # 0 to disable
@@ -31,8 +32,6 @@ services:
       - LOG_CALLER=short
       - SHOUTRRR_ADDRESSES=
 
-      - UID=${PUID}
-      - GID=${PGID}
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"

@@ -1,0 +1,34 @@
+modules:
+  - samba_dc
+  - samba_fs
+  - postgres
+  - mariadb
+  - ddns
+  - eturnal
+  - freeradius
+
+global:
+  domain: nas.test
+  email: admin@nas.test
+  timezone: Asia/Shanghai
+  dns_provider: manual
+  default_service_root_password: AnasTest1!
+
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_base_
+  IMAGE_PREFIX: anas_base_
+  NETWORK_PREFIX: anas_base_
+  CHINESE_SPEEDUP: "true"
+  GITHUB_DOWNLOAD_PROXY_PREFIX: https://gh-proxy.com/
+  DDNS_CONFIG: '{"settings":[]}'
+  DOCKER_SOCKET_PATH: /run/anas-base-docker.sock
+  NETWORK_NAMESPACE_PATH: /run/netns/anas-base
+  HOST_IP: 10.253.0.2
+  INTERFACE: anas-b-peer
+  DEFAULT_GATEWAY_IP: 10.253.0.1
+  HOST_SUBNET_MASK: "24"
+  LOCAL_DNS_SERVER: 10.253.0.2
+  SAMBA_DC_HOST_IP: 10.253.0.2
+  SAMBA_DC_INTERFACES: anas-b-peer
+  SAMBA_FS_DNS_SERVER: 10.253.0.2

@@ -9,10 +9,11 @@ ISSUER_MARK="$OUT/.issuer"
 
 mkdir -p /certs/certs1000 "$OUT"
 
-set -- -a -m="$LEGO_EMAIL" \
+set -- run -a -m="$LEGO_EMAIL" \
   --domains "$BASE_DOMAIN" --domains "*.$BASE_DOMAIN" \
   --path /certs --pem \
-  --dns "$DNS_PROVIDER" --dns.resolvers "$LEGO_DNS_SERVER"
+  --dns "$DNS_PROVIDER" --dns.resolvers "$LEGO_DNS_SERVER" \
+  --renew-days 30
 
 # Staging has no rate limits, so it is the right target while a deployment is
 # being brought up. Production allows only a handful of identical certificates
@@ -29,21 +30,8 @@ publish() {
   echo acme > "$ISSUER_MARK"
 }
 
-# Only renew what ACME itself issued. The certificate currently on disk may be
-# the internal one, which lego knows nothing about; asking it to renew that
-# would either error or, worse, decide the long-lived internal certificate
-# needs no action and leave ACME permanently unused.
-if [ "$(cat "$ISSUER_MARK" 2>/dev/null)" = acme ]; then
-  echo "Renewing the existing ACME certificate"
-  if /lego "$@" renew --days 30; then
-    publish
-    exit 0
-  fi
-  echo "Renewal failed; requesting a new certificate"
-fi
-
-echo "Applying for a certificate"
-if /lego "$@" run; then
+echo "Applying for or renewing the ACME certificate"
+if /lego "$@"; then
   publish
   exit 0
 fi

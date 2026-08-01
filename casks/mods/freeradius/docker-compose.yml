@@ -1,10 +1,7 @@
-version: "3.5"
-
 services:
   anas_freeradius:
-    build: ./freeradius
     container_name: ${CONTAINER_PREFIX}freeradius
-    image: ${IMAGE_PREFIX}freeradius:latest
+    image: freeradius/freeradius-server:3.2.10
     restart: unless-stopped
     ports:
       - "1812:1812/udp"

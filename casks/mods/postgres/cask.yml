@@ -1,8 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: postgres
-version: 15.3.0
-app_version: 15.3.0
+version: 18.4.0
+app_version: 18.4.0
 abi:
   supports:
     - anas.cask/v1
