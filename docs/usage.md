@@ -105,6 +105,11 @@ elsewhere — point at them once:
 export ANAS_CASK_ROOT=/opt/anas/casks/mods
 ```
 
+The variable wants the bundle directory itself, not its parent. The `--root`
+and `--cask-root` flags accept either and append `casks/mods` when it is there;
+the environment variable does not, so a value that worked as a flag can fail as
+an export.
+
 Only some commands need them at all:
 
 | Needs the casks | Does not |
@@ -117,9 +122,9 @@ carries everything it needs to start, which is why a workspace restored onto a
 bare machine comes up with no casks anywhere in sight. Rendering a *new* one is
 what needs the definitions.
 
-Missing, you get `could not locate project root containing casks/mods` or
-`could not locate cask bundle directory`. Set `ANAS_CASK_ROOT` persistently,
-or use `--root` or `--cask-root` for one invocation.
+Missing, you get `could not locate cask bundle directory`. Set
+`ANAS_CASK_ROOT` persistently, or use `--root` or `--cask-root` for one
+invocation.
 
 ### Bring it up
 
@@ -376,8 +381,9 @@ Full details in [contracts/README.md](contracts/README.md).
 **`… is not a workspace: no .anas/ directory`** — you are outside a workspace.
 Pass `-w`, or `cd` into one, or `anas init`.
 
-**`could not locate project root containing casks/mods`** / **`could not locate
-cask bundle directory`** — the command needs the cask definitions. Set
+**`could not locate cask bundle directory`** — the command needs the cask
+definitions, and `ANAS_CASK_ROOT` must name `casks/mods` itself rather than the
+directory above it. Set
 `ANAS_CASK_ROOT`; see §2.
 
 **`anas rollback requires an explicit -w`** — by design; see §1.

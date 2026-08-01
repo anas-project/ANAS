@@ -93,6 +93,10 @@ cask 是**程序的一部分，不是部署的一部分**——和 `anas` 二进
 export ANAS_CASK_ROOT=/opt/anas/casks/mods
 ```
 
+这个变量要的是 bundle 目录**本身**，不是它的上级。`--root` 和 `--cask-root` 参数两种
+都接受、发现下面有 `casks/mods` 会自动补上，环境变量不会——所以作为参数能用的值，
+写成 export 可能会失败。
+
 而且只有一部分命令需要它们：
 
 | 需要 casks | 不需要 |
@@ -104,9 +108,8 @@ export ANAS_CASK_ROOT=/opt/anas/casks/mods
 把 workspace 恢复到一台裸机上、casks 根本不在场也能起来的原因。渲染一个**新的**才
 需要那些定义。
 
-找不到时会报 `could not locate project root containing casks/mods` 或
-`could not locate cask bundle directory`。可以设置持久的 `ANAS_CASK_ROOT`，也可以在
-单次调用中使用 `--root` 或 `--cask-root`。
+找不到时会报 `could not locate cask bundle directory`。可以设置持久的
+`ANAS_CASK_ROOT`，也可以在单次调用中使用 `--root` 或 `--cask-root`。
 
 ### 启动
 
@@ -351,8 +354,8 @@ ExecStart=/usr/local/bin/anas backup create -w /srv/anas --to /mnt/backup -y
 **`… is not a workspace: no .anas/ directory`** —— 你不在 workspace 里。加 `-w`、
 `cd` 进去，或者 `anas init`。
 
-**`could not locate project root containing casks/mods`** / **`could not locate
-cask bundle directory`** —— 这条命令需要 cask 定义。设置 `ANAS_CASK_ROOT`，见第二节。
+**`could not locate cask bundle directory`** —— 这条命令需要 cask 定义，而且
+`ANAS_CASK_ROOT` 要指向 `casks/mods` 本身，不是它的上级目录。见第二节。
 
 **`anas rollback requires an explicit -w`** —— 设计如此，见第一节。
 
