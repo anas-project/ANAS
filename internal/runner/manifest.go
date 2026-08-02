@@ -199,8 +199,24 @@ func loadRegistryDir(casksRoot string) (map[string]Module, error) {
 	return reg, nil
 }
 
+// caskRootCandidate accepts either the bundle directory or the directory above
+// it. Every caller used to do this for the value it had just parsed out of
+// --root or --cask-root, six copies of the same three lines, which is why the
+// one input nobody owned — ANAS_CASK_ROOT — was the one that missed out: it is
+// read here rather than by a caller. The same value therefore worked as a flag
+// and failed as an export, and the error named the two as interchangeable.
+func caskRootCandidate(path string) string {
+	if path != "" && exists(filepath.Join(path, "casks", "mods")) {
+		return filepath.Join(path, "casks", "mods")
+	}
+	return path
+}
+
 func locateCaskRoot(explicit string) (string, error) {
-	candidates := []string{explicit, os.Getenv("ANAS_CASK_ROOT")}
+	candidates := []string{
+		caskRootCandidate(explicit),
+		caskRootCandidate(os.Getenv("ANAS_CASK_ROOT")),
+	}
 	if cwd, err := os.Getwd(); err == nil {
 		candidates = append(candidates, filepath.Join(cwd, "casks", "mods"))
 	}

@@ -199,11 +199,7 @@ func run(action string, args []string) error {
 		return err
 	}
 
-	caskRoot := *rootFlag
-	if caskRoot != "" && exists(filepath.Join(caskRoot, "casks", "mods")) {
-		caskRoot = filepath.Join(caskRoot, "casks", "mods")
-	}
-	root, err := locateCaskRoot(caskRoot)
+	root, err := locateCaskRoot(*rootFlag)
 	if err != nil {
 		return err
 	}
@@ -242,11 +238,7 @@ func runRollback(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	caskRoot := *rootFlag
-	if caskRoot != "" && exists(filepath.Join(caskRoot, "casks", "mods")) {
-		caskRoot = filepath.Join(caskRoot, "casks", "mods")
-	}
-	root, err := locateCaskRoot(caskRoot)
+	root, err := locateCaskRoot(*rootFlag)
 	if err != nil {
 		return err
 	}

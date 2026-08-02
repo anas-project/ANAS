@@ -151,9 +151,6 @@ func parsePrepareOptions(name string, args []string) (prepareOptions, error) {
 	if !exists(out.cfgPath) {
 		return out, preconditionErrorf("config_missing", "config %s does not exist", out.cfgPath)
 	}
-	if out.caskRoot != "" && exists(filepath.Join(out.caskRoot, "casks", "mods")) {
-		out.caskRoot = filepath.Join(out.caskRoot, "casks", "mods")
-	}
 	root, err := locateCaskRoot(out.caskRoot)
 	if err != nil {
 		return out, preconditionErrorf("cask_root_missing", "%s", err.Error())
@@ -248,9 +245,6 @@ func runPlan(args []string, jsonMode bool) error {
 	explicit := *caskRoot
 	if explicit == "" {
 		explicit = *rootAlias
-	}
-	if explicit != "" && exists(filepath.Join(explicit, "casks", "mods")) {
-		explicit = filepath.Join(explicit, "casks", "mods")
 	}
 	located, err := locateCaskRoot(explicit)
 	if err != nil {
@@ -599,9 +593,6 @@ func runApply(args []string, jsonMode bool) error {
 		explicit := *caskRoot
 		if explicit == "" {
 			explicit = *rootAlias
-		}
-		if explicit != "" && exists(filepath.Join(explicit, "casks", "mods")) {
-			explicit = filepath.Join(explicit, "casks", "mods")
 		}
 		located, err := locateCaskRoot(explicit)
 		if err != nil {

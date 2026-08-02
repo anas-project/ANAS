@@ -3,7 +3,6 @@ package runner
 import (
 	"flag"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -39,11 +38,7 @@ func runConfig(args []string, jsonMode bool) error {
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
-	caskRoot := *rootFlag
-	if caskRoot != "" && exists(filepath.Join(caskRoot, "casks", "mods")) {
-		caskRoot = filepath.Join(caskRoot, "casks", "mods")
-	}
-	root, err := locateCaskRoot(caskRoot)
+	root, err := locateCaskRoot(*rootFlag)
 	if err != nil {
 		return preconditionErrorf("cask_root_missing", "%s", err.Error())
 	}

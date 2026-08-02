@@ -33,6 +33,50 @@ func TestLocateCaskRootUsesAnasCaskRoot(t *testing.T) {
 	}
 }
 
+// The flag and the environment variable have to accept the same values. They
+// did not: each caller normalised the flag it had just parsed, six copies of
+// the same three lines, and the variable — read inside locateCaskRoot rather
+// than by any caller — was the one that missed out. A path that worked as
+// --cask-root failed as an export, and the error named the two as
+// interchangeable remedies.
+func TestCaskRootAcceptsBundleDirOrItsParent(t *testing.T) {
+	prefix := t.TempDir()
+	bundles := filepath.Join(prefix, "casks", "mods")
+	if err := os.MkdirAll(filepath.Join(bundles, "test-cask"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundles, "test-cask", "cask.yml"), []byte("name: test-cask\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.Abs(bundles)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, given := range []string{prefix, bundles} {
+		t.Run("flag", func(t *testing.T) {
+			t.Setenv("ANAS_CASK_ROOT", "")
+			got, err := locateCaskRoot(given)
+			if err != nil {
+				t.Fatalf("--cask-root %s: %v", given, err)
+			}
+			if got != want {
+				t.Fatalf("--cask-root %s resolved to %q, want %q", given, got, want)
+			}
+		})
+		t.Run("env", func(t *testing.T) {
+			t.Setenv("ANAS_CASK_ROOT", given)
+			got, err := locateCaskRoot("")
+			if err != nil {
+				t.Fatalf("ANAS_CASK_ROOT=%s: %v", given, err)
+			}
+			if got != want {
+				t.Fatalf("ANAS_CASK_ROOT=%s resolved to %q, want %q", given, got, want)
+			}
+		})
+	}
+}
+
 func TestCasksUseManifestRule(t *testing.T) {
 	root := filepath.Join("..", "..", "casks", "mods")
 	entries, err := os.ReadDir(root)
