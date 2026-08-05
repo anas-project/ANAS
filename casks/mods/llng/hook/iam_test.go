@@ -52,7 +52,8 @@ func TestPublishIAMEndpointsRepeatsTheSingletonForEveryConsumer(t *testing.T) {
 	e := map[string]string{
 		"LLNG_DOMAIN_FULL":                       "https://auth.nas.test:9000",
 		"LLNG_SAML_SERVICE_PUBLIC_KEY":           `"cert"`,
-		"ANAS_IAM_CLIENTS":                       "netbird,nextcloud",
+		"ANAS_IDENTITY_OIDC_CLIENTS":             "netbird",
+		"ANAS_IDENTITY_SAML_CLIENTS":             "nextcloud",
 		"ANAS_IAM_BINDING__NETBIRD__INTERFACE":   "oidc",
 		"ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE": "saml",
 	}
@@ -73,8 +74,8 @@ func TestPublishIAMEndpointsRepeatsTheSingletonForEveryConsumer(t *testing.T) {
 
 func TestApplyClientRegistrationsTranslatesToPrivateNames(t *testing.T) {
 	e := map[string]string{
-		"ANAS_IAM_OIDC_CLIENTS":                       "netbird",
-		"ANAS_IAM_SAML_CLIENTS":                       "nextcloud",
+		"ANAS_IDENTITY_OIDC_CLIENTS":                  "netbird",
+		"ANAS_IDENTITY_SAML_CLIENTS":                  "nextcloud",
 		"ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID":         "netbird",
 		"ANAS_IAM_CLIENT__NETBIRD__CLIENT_SECRET":     "s3cret",
 		"ANAS_IAM_CLIENT__NETBIRD__REDIRECT_URIS":     "https://n.example/auth",
@@ -104,10 +105,10 @@ func TestApplyClientRegistrationsTranslatesToPrivateNames(t *testing.T) {
 }
 
 func TestApplyClientRegistrationsRequiresMandatoryFields(t *testing.T) {
-	if err := applyClientRegistrations(map[string]string{"ANAS_IAM_OIDC_CLIENTS": "netbird"}); err == nil {
+	if err := applyClientRegistrations(map[string]string{"ANAS_IDENTITY_OIDC_CLIENTS": "netbird"}); err == nil {
 		t.Fatal("expected a missing CLIENT_ID to be rejected")
 	}
-	if err := applyClientRegistrations(map[string]string{"ANAS_IAM_SAML_CLIENTS": "nextcloud"}); err == nil {
+	if err := applyClientRegistrations(map[string]string{"ANAS_IDENTITY_SAML_CLIENTS": "nextcloud"}); err == nil {
 		t.Fatal("expected a missing SP_METADATA_URL to be rejected")
 	}
 }

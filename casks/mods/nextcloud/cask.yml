@@ -1,8 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: nextcloud
-version: 30.0.1
-app_version: 30.0.1
+version: 34.0.2
+app_version: 34.0.2
 abi:
   supports:
     - anas.cask/v1
@@ -67,8 +67,11 @@ config:
   consumes:
     - ANAS_IAM_BINDING__NEXTCLOUD__*
     - ANAS_IAM_PORTAL_URL
+    - COLLABORA_DOMAIN_FULL
+    - COLLABORA_HOSTNAME
     - POSTGRES_PASSWORD
     - MARIADB_PASSWORD
+    - TURN_SECRET
     # Directory credentials owned by samba_dc: the LDAP agent bind password
     # configured through occ, and the administrator password this cask reuses
     # for its own initial admin. Both are sensitive, so they only cross the
@@ -109,8 +112,11 @@ config:
       effect: reconcile
       apply: reconcile-nextcloud-apps
       description: The app can be enabled or disabled through occ without restarting the container.
+identity:
+  interfaces:
+    - ldaps
+  application_group: true
 features:
-  ldap_client: true
   generated_secrets: true
   domain: true
 services:

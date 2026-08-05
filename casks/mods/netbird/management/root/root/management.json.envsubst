@@ -17,8 +17,13 @@
             }
         ],
         "CredentialsTTL": "12h0m0s",
-        "Secret": "secret",
-        "TimeBasedCredentials": false
+        "Secret": "$TURN_SECRET",
+        "TimeBasedCredentials": true
+    },
+    "Relay": {
+        "Addresses": ["$NETBIRD_RELAY_ENDPOINT"],
+        "CredentialsTTL": "24h",
+        "Secret": "$NETBIRD_RELAY_AUTH_SECRET"
     },
     "Signal": {
         "Proto": "https",
@@ -26,9 +31,16 @@
         "Username": "",
         "Password": ""
     },
+    "ReverseProxy": {
+        "TrustedHTTPProxies": [],
+        "TrustedHTTPProxiesCount": 0,
+        "TrustedPeers": ["0.0.0.0/0"]
+    },
+    "DisableDefaultPolicy": false,
     "Datadir": "/var/lib/netbird/",
+    "DataStoreEncryptionKey": "$NETBIRD_DATASTORE_ENC_KEY",
     "StoreConfig": {
-        "Engine": "jsonfile"
+        "Engine": "sqlite"
     },
     "HttpConfig": {
         "Address": "0.0.0.0:$NETBIRD_MGMT_API_PORT",

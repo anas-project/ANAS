@@ -1,9 +1,15 @@
-version: "3.5"
-
 services:
   anas_lam:
-    build: ./lam
-    image: ${IMAGE_PREFIX}lam:latest
+    build:
+      context: ./lam
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        CHINESE_SPEEDUP: ${CHINESE_SPEEDUP:-false}
+        APT_MIRROR_URL: ${APT_MIRROR_URL:-}
+        LAM_APT_MIRROR_URL: ${LAM_APT_MIRROR_URL:-}
+        LAM_DOWNLOAD_URL: ${LAM_DOWNLOAD_URL:-}
+        GITHUB_DOWNLOAD_PROXY_PREFIX: ${GITHUB_DOWNLOAD_PROXY_PREFIX:-}
+    image: ${IMAGE_PREFIX}lam:9.6.0
     container_name: ${CONTAINER_PREFIX}lam
     restart: unless-stopped
     dns:
@@ -15,11 +21,10 @@ services:
       - "traefik.http.routers.lam.rule=Host(`${LAM_DOMAIN}`)"
       - "traefik.http.routers.lam.tls=true"
       - "traefik.http.services.lam.loadbalancer.server.port=80"
-    environment:
-      - "LAM_SKIP_PRECONFIGURE=true"
-      - "DEBUG=true"
     env_file:
       - .env
+    volumes:
+      - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
     networks:
       - traefik
 

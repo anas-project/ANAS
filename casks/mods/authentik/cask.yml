@@ -1,8 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: authentik
-version: 2024.10.5
-app_version: 2024.10.5
+version: 2026.5.6
+app_version: 2026.5.6
 abi:
   supports:
     - anas.cask/v1
@@ -29,7 +29,6 @@ dependencies:
       selected_by: db_type
       providers:
         - postgres
-        - mariadb
       default: postgres
 upgrade:
   # Empty, not absent: no release of this cask has rewritten its on-disk data
@@ -41,8 +40,11 @@ config:
     domain_prefix: auth
     log_level: warn
     db_name: authentik
-    image_tag: 2024.10.5
+    image_tag: 2026.5.6
     db_type: auto
+    ldap_enabled: "true"
+    ldap_object_uniqueness_field: objectSid
+    ldap_password_writeback: "true"
   # Endpoints this cask publishes for its bound consumers. Unlike a portal that
   # serves one endpoint set for the whole deployment, these differ per
   # consumer, which is why the contract is per-binding.
@@ -52,19 +54,16 @@ config:
   # Generic client registration requests published by consumers, translated
   # into blueprints during render_env.
   consumes:
-    - ANAS_IAM_CLIENTS
-    - ANAS_IAM_OIDC_CLIENTS
-    - ANAS_IAM_SAML_CLIENTS
+    - ANAS_IDENTITY_OIDC_CLIENTS
+    - ANAS_IDENTITY_SAML_CLIENTS
     - ANAS_IAM_CLIENT_*
     - APPS_LIST*
     - POSTGRES_PASSWORD
     - MARIADB_PASSWORD
+    - SAMBA_DC_LDAPS_SERVER_URL_PORT
+    - SAMBA_DC_PASSWORD_BIND_DN
+    - SAMBA_DC_PASSWORD_BIND_PASSWORD
   changes:
-    password:
-      effect: credential_rotate
-      apply: rotate-authentik-admin-password
-      sensitive: true
-      description: Update the existing bootstrap administrator explicitly.
     db_type:
       effect: data_migrate
       apply: migrate-authentik-database
@@ -73,6 +72,10 @@ config:
       effect: reconcile
       apply: reconcile-authentik-domain
       description: Every per-application endpoint is derived from this domain, so clients must be reconciled with it.
+    ldap_object_uniqueness_field:
+      effect: reconcile
+      apply: reconcile-authentik-ldap-source
+      description: Changing the LDAP identity key requires an explicit duplicate-account audit.
 features:
   generated_secrets: true
 logic:

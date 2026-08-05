@@ -1,0 +1,39 @@
+modules:
+  - samba_dc
+  - postgres
+  - llng
+  - nextcloud
+  - collabora
+  - meshcentral
+  - netbird
+  - lam
+
+iam:
+  provider: llng
+  default_protocol: oidc
+
+global:
+  domain: nas.test
+  email: admin@nas.test
+  timezone: Asia/Shanghai
+  dns_provider: manual
+  default_service_root_password: AnasTest1!
+
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_app_
+  IMAGE_PREFIX: anas_app_
+  NETWORK_PREFIX: anas_app_
+  CHINESE_SPEEDUP: "true"
+  APT_MIRROR_URL: https://mirrors.aliyun.com
+  APK_MIRROR_URL: https://mirrors.aliyun.com
+  NPM_REGISTRY_URL: https://registry.npmmirror.com
+  DOCKER_SOCKET_PATH: /run/anas-app-docker.sock
+  NETWORK_NAMESPACE_PATH: /run/netns/anas-app
+  HOST_IP: 10.251.0.2
+  INTERFACE: anas-app-peer
+  DEFAULT_GATEWAY_IP: 10.251.0.1
+  HOST_SUBNET_MASK: "24"
+  LOCAL_DNS_SERVER: 10.251.0.2
+  SAMBA_DC_HOST_IP: 10.251.0.2
+  SAMBA_DC_INTERFACES: anas-app-peer

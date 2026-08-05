@@ -20,7 +20,8 @@ env:
   IMAGE_PREFIX: anas_base_
   NETWORK_PREFIX: anas_base_
   CHINESE_SPEEDUP: "true"
-  GITHUB_DOWNLOAD_PROXY_PREFIX: https://gh-proxy.com/
+  APT_MIRROR_URL: https://mirrors.aliyun.com
+  APK_MIRROR_URL: https://mirrors.aliyun.com
   DDNS_CONFIG: '{"settings":[]}'
   DOCKER_SOCKET_PATH: /run/anas-base-docker.sock
   NETWORK_NAMESPACE_PATH: /run/netns/anas-base

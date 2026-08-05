@@ -22,6 +22,8 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
+  consumes:
+    - ANAS_IDENTITY_APP_CLIENTS
   defaults:
     app_filter: "true"
     create_structure: "true"

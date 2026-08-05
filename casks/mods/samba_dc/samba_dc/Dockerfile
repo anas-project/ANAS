@@ -8,12 +8,13 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 ARG CHINESE_SPEEDUP
-RUN if [ "$CHINESE_SPEEDUP" = "true" ] ; then \
+ARG APT_MIRROR_URL
+RUN if [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ] ; then \
   for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do \
     if [ -f "$source" ]; then \
       sed -i \
-        -e "s|http://archive.ubuntu.com|https://mirrors.aliyun.com|g" \
-        -e "s|http://security.ubuntu.com|https://mirrors.aliyun.com|g" \
+        -e "s|http://archive.ubuntu.com|${APT_MIRROR_URL%/}|g" \
+        -e "s|http://security.ubuntu.com|${APT_MIRROR_URL%/}|g" \
         "$source"; \
     fi; \
   done; \

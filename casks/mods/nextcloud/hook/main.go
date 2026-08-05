@@ -163,6 +163,7 @@ func changed(old, cur map[string]string) map[string]string {
 }
 func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) error {
 	e["NEXTCLOUD_HOSTNAME"] = e["CONTAINER_PREFIX"] + "nextcloud"
+	e["NEXTCLOUD_PUSH_HOSTNAME"] = e["CONTAINER_PREFIX"] + "nextcloud_push"
 	e["NEXTCLOUD_BASE_PATH"] = defaultValue(e["NEXTCLOUD_BASE_PATH"], filepath.Join(e["DATA_PATH"], "nextcloud"))
 	e["NEXTCLOUD_DOMAIN"] = e["NEXTCLOUD_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
 	e["NEXTCLOUD_DOMAIN_PORT"] = e["NEXTCLOUD_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
@@ -170,9 +171,6 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) er
 	e["NEXTCLOUD_TALK_SIGNALING_DOMAIN_FULL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/talk"
 	e["NEXTCLOUD_REDIS_HOSTNAME"] = e["CONTAINER_PREFIX"] + "nextcloud_redis"
 	e["NEXTCLOUD_REDIS_PORT"] = "6379"
-	// Preview Generator 5.12.x declares Nextcloud 30 compatibility but uses a
-	// Symfony Console signature that is incompatible with the bundled runtime.
-	e["NEXTCLOUD_PREVIEWGENERATOR_VERSION"] = defaultValue(e["NEXTCLOUD_PREVIEWGENERATOR_VERSION"], "5.7.0")
 	switch e["NEXTCLOUD_DB_TYPE"] {
 	case "mariadb":
 		e["NEXTCLOUD_NETWORK_DB"] = e["MARIADB_NETWORK_NAME"]
@@ -181,7 +179,7 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) er
 	default:
 		return fmt.Errorf("NEXTCLOUD_DB_TYPE must be resolved to postgres or mariadb")
 	}
-	e["NEXTCLOUD_IMAGINARY_HOSTNAME"] = e["CONTAINER_PREFIX"] + "imaginary"
+	e["NEXTCLOUD_IMAGINARY_HOSTNAME"] = e["CONTAINER_PREFIX"] + "nextcloud_imaginary"
 	e["NEXTCLOUD_ADMIN_USERNAME"] = defaultValue(e["NEXTCLOUD_ADMIN_USERNAME"], e["SAMBA_DC_ADMIN_NAME"]+"_nc")
 	e["NEXTCLOUD_ADMIN_PASSWORD"] = defaultValue(e["NEXTCLOUD_ADMIN_PASSWORD"], e["SAMBA_DC_ADMIN_PASSWORD"])
 	if e["SAMBA_DC_APP_FILTER"] == "true" {
@@ -226,19 +224,12 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) er
 		}
 		e["TALK_SIGNALING_SECRET"] = v
 	}
-	if e["TALK_HASH_KEY"] == "" {
-		v, err := secrets.Ensure("TALK_HASH_KEY", func() (string, error) { return randomHexErr(16) })
+	if e["NEXTCLOUD_IMAGINARY_SECRET"] == "" {
+		v, err := secrets.Ensure("NEXTCLOUD_IMAGINARY_SECRET", func() (string, error) { return randomHexErr(16) })
 		if err != nil {
 			return err
 		}
-		e["TALK_HASH_KEY"] = v
-	}
-	if e["TALK_BLOCK_KEY"] == "" {
-		v, err := secrets.Ensure("TALK_BLOCK_KEY", func() (string, error) { return randomHexErr(16) })
-		if err != nil {
-			return err
-		}
-		e["TALK_BLOCK_KEY"] = v
+		e["NEXTCLOUD_IMAGINARY_SECRET"] = v
 	}
 	return nil
 }
@@ -247,30 +238,27 @@ func moduleNextcloud(e map[string]string, _ string) error {
 		return err
 	}
 	e["NEXTCLOUD_SAML_IDP_CERT"] = unquotePEM(e["NEXTCLOUD_SAML_IDP_CERT"])
-	e["MEMORY_LIMIT"] = e["NEXTCLOUD_MEMORY_LIMIT"]
-	e["UPLOAD_MAX_SIZE"] = e["NEXTCLOUD_UPLOAD_MAX_SIZE"]
-	e["OPCACHE_MEM_SIZE"] = "128"
-	e["APC_SHM_SIZE"] = "128M"
-	e["REAL_IP_HEADER"] = "X-Forwarded-For"
-	e["LOG_IP_VAR"] = "http_x_forwarded_for"
-	e["HSTS_HEADER"] = "max-age=15768000; includeSubDomains"
-	e["RP_HEADER"] = "strict-origin"
-	e["SUBDIR"] = ""
+	e["NEXTCLOUD_ADMIN_USER"] = e["NEXTCLOUD_ADMIN_USERNAME"]
+	e["NEXTCLOUD_DATA_DIR"] = "/var/www/html/data"
+	e["NEXTCLOUD_TRUSTED_DOMAINS"] = e["NEXTCLOUD_DOMAIN_PORT"]
+	e["OVERWRITEPROTOCOL"] = "https"
+	e["OVERWRITEHOST"] = e["NEXTCLOUD_DOMAIN_PORT"]
+	e["OVERWRITECLIURL"] = e["NEXTCLOUD_DOMAIN_FULL"]
+	e["PHP_MEMORY_LIMIT"] = e["NEXTCLOUD_MEMORY_LIMIT"]
+	e["PHP_UPLOAD_LIMIT"] = e["NEXTCLOUD_UPLOAD_MAX_SIZE"]
+	e["APACHE_BODY_LIMIT"] = "0"
+	e["NEXTCLOUD_UPDATE"] = "1"
+	e["NEXTCLOUD_INIT_HTACCESS"] = "true"
+	e["REDIS_HOST"] = e["NEXTCLOUD_REDIS_HOSTNAME"]
 	if e["NEXTCLOUD_DB_TYPE"] == "postgres" {
-		// tiredofit/nextcloud expects DB_HOST and DB_PORT separately.
-		e["DB_HOST"] = e["POSTGRES_HOST"]
-		e["DB_PORT"] = e["POSTGRES_PORT"]
-		e["DB_USER"] = e["POSTGRES_USERNAME"]
-		e["DB_PASSWORD"] = e["POSTGRES_PASSWORD"]
-		e["DB_TYPE"] = "pgsql"
+		e["POSTGRES_DB"] = e["NEXTCLOUD_DB_NAME"]
+		e["POSTGRES_USER"] = e["POSTGRES_USERNAME"]
 	} else {
-		e["DB_HOST"] = e["MARIADB_HOST"]
-		e["DB_PORT"] = e["MARIADB_PORT"]
-		e["DB_USER"] = e["MARIADB_USERNAME"]
-		e["DB_PASSWORD"] = e["MARIADB_PASSWORD"]
-		e["DB_TYPE"] = "mysql"
+		e["MYSQL_HOST"] = e["MARIADB_HOST"]
+		e["MYSQL_DATABASE"] = e["NEXTCLOUD_DB_NAME"]
+		e["MYSQL_USER"] = e["MARIADB_USERNAME"]
+		e["MYSQL_PASSWORD"] = e["MARIADB_PASSWORD"]
 	}
-	e["DB_NAME"] = e["NEXTCLOUD_DB_NAME"]
 	return nil
 }
 func defaultValue(v, d string) string {

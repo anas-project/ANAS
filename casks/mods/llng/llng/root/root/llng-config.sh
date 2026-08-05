@@ -1,21 +1,39 @@
-#!/command/with-contenv bash
+#!/bin/bash
 
-sleep 5
+set -eo pipefail
 
-source /assets/functions/00-container
-source /assets/functions/20-llng
+var_true() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
-if [ $LLNG_DB_TYPE == "postgres" ]; then
-  db_config="DBI:Pg:database=${LLNG_DB_NAME};host=${DB_HOST};port=${DB_POST}"
-  browseable_db_config="Apache::Session::Browseable::PgJSON"
-elif [ $LLNG_DB_TYPE == "mariadb" ]; then
-  db_config="DBI:mysql:database=${LLNG_DB_NAME};host=${DB_HOST};port=${DB_POST}"
-  browseable_db_config="Apache::Session::Browseable::MySQL"
-fi
+waiting_url() {
+  local url=$1
+  local host=${2:-}
+  local code
+  while :; do
+    if [ -n "$host" ]; then
+      code=$(curl -ks -H "Host: $host" -o /dev/null -w '%{http_code}' "$url" || true)
+    else
+      code=$(curl -ks -o /dev/null -w '%{http_code}' "$url" || true)
+    fi
+    [ "$code" = 200 ] && return
+    echo "Waiting for $url"
+    sleep 3
+  done
+}
 
-configure_lmConf $db_config $browseable_db_config
+set_host() {
+  printf '%s\t%s\n' "$2" "$1" >>/etc/hosts
+}
 
-lemonldap_ng_cli="sudo -u $NGINX_USER /usr/share/lemonldap-ng/bin/lemonldap-ng-cli"
+waiting_url "http://127.0.0.1" "$LLNG_DOMAIN"
+set_host "$LLNG_DOMAIN" 127.0.0.1
+until [ -s /var/lib/lemonldap-ng/conf/lmConf-1.json ]; do sleep 2; done
+
+lemonldap_ng_cli="/usr/share/lemonldap-ng/bin/lemonldap-ng-cli --user=www-data --group=www-data"
 lemonldap_ng_cli_set="$lemonldap_ng_cli -yes 1 -force 1 set"
 lemonldap_ng_cli_addkey="$lemonldap_ng_cli -yes 1 -force 1 addKey"
 lemonldap_ng_cli_delkey="$lemonldap_ng_cli -yes 1 -force 1 delKey"
@@ -28,7 +46,7 @@ cat /var/lib/lemonldap-ng/conf/lmConf-$config_version.json \
   | jq --arg domain "$LLNG_MANAGER_DOMAIN" --arg group "$SAMBA_DC_ADMIN_GROUP_NAME" '. + {locationRules: {($domain): {default: "inGroup(\"\($group)\")"}}}' \
   > /tmp/config_new.json
 mv /tmp/config_new.json /var/lib/lemonldap-ng/conf/lmConf-$config_version.json
-chown -R "${NGINX_USER}":"${NGINX_GROUP}" /var/lib/lemonldap-ng/conf
+chown -R www-data:www-data /var/lib/lemonldap-ng/conf
 
 # manager & domain locationRules
 $lemonldap_ng_cli_addkey \
@@ -136,10 +154,12 @@ for app in $SAML_SP_APPS; do
     IFS=' '
     echo "Configuring saml sp $app"
     metadata_url=$(saml_get_var $app "METADATA_URL")
-    waiting_url $metadata_url
+    domain=$(saml_get_var $app "DOMAIN")
+    set_host "$domain" "$traefik_ip"
+    waiting_url "$metadata_url"
 
     $lemonldap_ng_cli_addkey \
-          samlSPMetaDataXML/$app samlSPMetaDataXML "`curl $metadata_url`"
+          samlSPMetaDataXML/$app samlSPMetaDataXML "$(curl "$metadata_url")"
 
     # TODO: suit every app
     $lemonldap_ng_cli_addkey \
@@ -179,8 +199,6 @@ for app in $SAML_SP_APPS; do
         index=$((index + 1))
       fi
     done
-    domain=$(saml_get_var $app "DOMAIN")
-    set_host $domain $traefik_ip
   )
 done
 
@@ -252,8 +270,9 @@ for app in $OIDC_RP_APPS; do
     done
 
     domain=$(oidc_get_var $app "DOMAIN")
-    set_host $domain $traefik_ip
+    set_host "$domain" "$traefik_ip"
   )
 done
 
-sudo -u $NGINX_USER /usr/share/lemonldap-ng/bin/lemonldap-ng-cli update-cache
+/usr/share/lemonldap-ng/bin/lemonldap-ng-cli --user=www-data --group=www-data update-cache
+touch /run/llng-configured

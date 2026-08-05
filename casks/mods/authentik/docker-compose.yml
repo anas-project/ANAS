@@ -1,45 +1,32 @@
-version: "3.5"
-
 services:
-  anas_authentik_redis:
-    container_name: ${CONTAINER_PREFIX}authentik_redis
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: --save 60 1 --loglevel warning
-    volumes:
-      - "${DATA_PATH}/authentik/redis:/data"
-    networks:
-      - authentik
-
-  # Docker creates bind-mount targets as root, but the authentik image runs as
-  # uid 1000 and its first-run migration creates /media/public. Without this the
-  # server crash-loops on PermissionError before it ever reaches the database.
   anas_authentik_init:
     container_name: ${CONTAINER_PREFIX}authentik_init
-    image: alpine:3.20
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_IMAGE_TAG}
     user: root
-    command: sh -c "mkdir -p /media/public && chown -R 1000:1000 /media"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mkdir -p /data && chown -R 1000:1000 /data"]
     restart: "no"
     volumes:
-      - "${DATA_PATH}/authentik/media:/media"
+      - "${DATA_PATH}/authentik/data:/data"
 
   anas_authentik:
     container_name: ${CONTAINER_PREFIX}authentik
     image: ghcr.io/goauthentik/server:${AUTHENTIK_IMAGE_TAG}
     restart: unless-stopped
     command: server
+    shm_size: 512mb
     depends_on:
       anas_authentik_init:
         condition: service_completed_successfully
-      anas_authentik_redis:
-        condition: service_started
     volumes:
-      - "${DATA_PATH}/authentik/media:/media"
+      - "${DATA_PATH}/authentik/data:/data"
       # Declarative Application and Provider definitions generated from the
       # generic client registration requests.
       - "./blueprints:/blueprints/anas:ro"
     env_file:
       - .env
+    dns:
+      - ${LOCAL_DNS_SERVER}
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
@@ -47,6 +34,12 @@ services:
       - "traefik.http.routers.authentik.rule=Host(`${AUTHENTIK_DOMAIN}`)"
       - "traefik.http.routers.authentik.tls=true"
       - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
     networks:
       - traefik
       - authentik
@@ -56,17 +49,35 @@ services:
     container_name: ${CONTAINER_PREFIX}authentik_worker
     image: ghcr.io/goauthentik/server:${AUTHENTIK_IMAGE_TAG}
     restart: unless-stopped
-    command: worker
+    # Import the ANAS CA before the worker discovers the Samba AD blueprint.
+    # authentik deliberately skips LDAP TLS verification when peer_certificate
+    # is empty and does not fall back to the OS trust store.
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        ak import_certificate \
+          --certificate "/certs/$${ANAS_TLS_INTERNAL_CA_NAME}" \
+          --name anas-samba-ad-ca
+        exec ak worker
+    shm_size: 512mb
+    user: root
     depends_on:
       anas_authentik_init:
         condition: service_completed_successfully
-      anas_authentik_redis:
-        condition: service_started
     volumes:
-      - "${DATA_PATH}/authentik/media:/media"
+      - "${DATA_PATH}/authentik/data:/data"
       - "./blueprints:/blueprints/anas:ro"
+      - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
     env_file:
       - .env
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
     networks:
       - authentik
       - db

@@ -1,8 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: llng
-version: 2.0.64
-app_version: 2.0.64
+version: 2.23.2
+app_version: 2.23.2
 abi:
   supports:
     - anas.cask/v1
@@ -55,13 +55,13 @@ config:
   # launcher metadata, and the resolved database backend's real password.
   # Consumers publish these, so they are outside this cask's closure.
   consumes:
-    - ANAS_IAM_CLIENTS
-    - ANAS_IAM_OIDC_CLIENTS
-    - ANAS_IAM_SAML_CLIENTS
+    - ANAS_IDENTITY_OIDC_CLIENTS
+    - ANAS_IDENTITY_SAML_CLIENTS
     - ANAS_IAM_CLIENT_*
     - APPS_LIST*
     - POSTGRES_PASSWORD
     - MARIADB_PASSWORD
+    - SAMBA_DC_PASSWORD_BIND_PASSWORD
   changes:
     password:
       effect: credential_rotate

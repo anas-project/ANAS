@@ -1,6 +1,46 @@
 package main
 
-import "testing"
+import (
+	"encoding/base64"
+	"strings"
+	"testing"
+)
+
+func TestCalcNetbirdUses32ByteEncryptionKey(t *testing.T) {
+	env := map[string]string{
+		"NETBIRD_DATASTORE_ENC_KEY": strings.Repeat("x", 48),
+	}
+	secrets := &secretStore{values: map[string]string{
+		"NETBIRD_DATASTORE_ENC_KEY": env["NETBIRD_DATASTORE_ENC_KEY"],
+	}}
+
+	if err := calcNetbird(env, "", secrets); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(env["NETBIRD_DATASTORE_ENC_KEY"])
+	if err != nil {
+		t.Fatalf("decode encryption key: %v", err)
+	}
+	if got := len(decoded); got != 32 {
+		t.Fatalf("decoded encryption key length = %d, want 32", got)
+	}
+	if got := secrets.values["NETBIRD_DATASTORE_ENC_KEY"]; got != env["NETBIRD_DATASTORE_ENC_KEY"] {
+		t.Fatalf("persisted encryption key = %q, want %q", got, env["NETBIRD_DATASTORE_ENC_KEY"])
+	}
+}
+
+func TestCalcNetbirdPreservesValidEncryptionKey(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x", 32)))
+	env := map[string]string{"NETBIRD_DATASTORE_ENC_KEY": key}
+	secrets := &secretStore{values: map[string]string{"NETBIRD_DATASTORE_ENC_KEY": key}}
+
+	if err := calcNetbird(env, "", secrets); err != nil {
+		t.Fatal(err)
+	}
+	if got := env["NETBIRD_DATASTORE_ENC_KEY"]; got != key {
+		t.Fatalf("encryption key = %q, want existing key", got)
+	}
+}
 
 func TestModuleNetbirdReadsItsOwnBinding(t *testing.T) {
 	env := map[string]string{

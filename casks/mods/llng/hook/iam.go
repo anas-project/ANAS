@@ -57,7 +57,7 @@ func addCSV(s, item string) string {
 // list and each consumer's protocol, so a provider that needed per-application
 // endpoints could derive them here too.
 func publishIAMEndpoints(e map[string]string) error {
-	consumers := splitCSV(e["ANAS_IAM_CLIENTS"])
+	consumers := append(splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]), splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])...)
 	if len(consumers) == 0 {
 		return nil
 	}
@@ -92,7 +92,7 @@ func publishIAMEndpoints(e map[string]string) error {
 // applyClientRegistrations runs during render_env and translates the generic
 // registration requests into the private variables llng-config.sh consumes.
 func applyClientRegistrations(e map[string]string) error {
-	for _, app := range splitCSV(e["ANAS_IAM_OIDC_CLIENTS"]) {
+	for _, app := range splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]) {
 		src := iamClientPrefix + envName(app) + "__"
 		dst := "OIDC_RP__" + envName(app) + "__"
 		if e[src+"CLIENT_ID"] == "" {
@@ -107,7 +107,7 @@ func applyClientRegistrations(e map[string]string) error {
 		e[dst+"DOMAIN"] = e[src+"DOMAIN"]
 		applyClientAttributes(e, src, dst)
 	}
-	for _, app := range splitCSV(e["ANAS_IAM_SAML_CLIENTS"]) {
+	for _, app := range splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"]) {
 		src := iamClientPrefix + envName(app) + "__"
 		dst := "SAML_SP__" + envName(app) + "__"
 		if e[src+"SP_METADATA_URL"] == "" {

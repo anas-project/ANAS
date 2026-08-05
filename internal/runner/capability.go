@@ -214,11 +214,13 @@ func (a *app) checkSingleIAM() error {
 // application) that the contract has to absorb. A singleton shape is a special
 // case of the per-consumer one, not the other way round.
 const (
-	envIAMProvider    = "ANAS_IAM_PROVIDER"
-	envIAMInterfaces  = "ANAS_IAM_INTERFACES"
-	envIAMClients     = "ANAS_IAM_CLIENTS"
-	envIAMBindingPfx  = "ANAS_IAM_BINDING__"
-	envIAMClientsTmpl = "ANAS_IAM_%s_CLIENTS"
+	envIAMProvider         = "ANAS_IAM_PROVIDER"
+	envIAMInterfaces       = "ANAS_IAM_INTERFACES"
+	envIAMBindingPfx       = "ANAS_IAM_BINDING__"
+	envIdentityClients     = "ANAS_IDENTITY_CLIENTS"
+	envIdentityAppClients  = "ANAS_IDENTITY_APP_CLIENTS"
+	envIdentityClientsTmpl = "ANAS_IDENTITY_%s_CLIENTS"
+	envIdentityClientPfx   = "ANAS_IDENTITY_CLIENT__"
 )
 
 // requiredEndpointSuffixes lists the per-binding endpoint variables a provider
@@ -261,29 +263,72 @@ func (a *app) iamConsumersByInterface(iface string) []string {
 // provider whose endpoints are per-application needs the consumer list and
 // their protocols during its own calculate phase; all of it is already known
 // once ordering succeeds, so no lifecycle reordering is required.
-func (a *app) publishIAMEnv() {
-	if a.iamProvider == "" || len(a.iamBindings) == 0 {
-		return
-	}
+func (a *app) publishIAMEnv(selected []string) {
 	if a.env == nil {
 		a.env = map[string]string{}
 	}
-	owner := a.iamProvider
-	set := func(key, value string) {
+	set := func(key, value, owner string) {
 		a.env[key] = value
 		a.setEnvOwner(key, owner)
 	}
-	capability, _ := a.reg[a.iamProvider].providedCapability(capabilityIAM)
-	set(envIAMProvider, a.iamProvider)
-	set(envIAMInterfaces, strings.Join(capability.Interfaces, ","))
-	set(envIAMClients, strings.Join(a.iamConsumers(), ","))
-	for _, iface := range knownCapabilityInterfaces[capabilityIAM] {
-		key := fmt.Sprintf(envIAMClientsTmpl, strings.ToUpper(iface))
-		set(key, strings.Join(a.iamConsumersByInterface(iface), ","))
+	if a.iamProvider != "" {
+		capability, _ := a.reg[a.iamProvider].providedCapability(capabilityIAM)
+		set(envIAMProvider, a.iamProvider, a.iamProvider)
+		set(envIAMInterfaces, strings.Join(capability.Interfaces, ","), a.iamProvider)
 	}
 	for _, consumer := range a.iamConsumers() {
-		set(iamBindingKey(consumer, "INTERFACE"), a.iamBindings[consumer])
+		set(iamBindingKey(consumer, "INTERFACE"), a.iamBindings[consumer], a.iamProvider)
 	}
+
+	// Identity topology covers every direct and federated authentication
+	// protocol. It replaces the LDAP-only USE_LDAP_MODS_NAME and the IAM-only
+	// per-protocol client lists with one source of truth.
+	clientIfaces := map[string][]string{}
+	appClients := []string{}
+	for _, name := range selected {
+		mod := a.reg[name]
+		for _, iface := range mod.IdentityInterfaces {
+			clientIfaces[name] = appendUnique(clientIfaces[name], iface)
+		}
+		if mod.IdentityAppGroup {
+			appClients = appendUnique(appClients, name)
+		}
+	}
+	for consumer, iface := range a.iamBindings {
+		clientIfaces[consumer] = appendUnique(clientIfaces[consumer], iface)
+	}
+	clients := make([]string, 0, len(clientIfaces))
+	byInterface := map[string][]string{}
+	for client, ifaces := range clientIfaces {
+		clients = append(clients, client)
+		sort.Strings(ifaces)
+		for _, iface := range ifaces {
+			byInterface[iface] = append(byInterface[iface], client)
+		}
+	}
+	sort.Strings(clients)
+	sort.Strings(appClients)
+	// The topology is a runner-owned cross-cask contract, not core output.
+	// Giving it a synthetic owner keeps it out of every dependency closure;
+	// only manifests that explicitly consume a key receive it in their .env.
+	const identityContractOwner = "runner"
+	set(envIdentityClients, strings.Join(clients, ","), identityContractOwner)
+	set(envIdentityAppClients, strings.Join(appClients, ","), identityContractOwner)
+	for iface, names := range byInterface {
+		sort.Strings(names)
+		set(fmt.Sprintf(envIdentityClientsTmpl, strings.ToUpper(iface)), strings.Join(names, ","), identityContractOwner)
+	}
+	for _, client := range clients {
+		key := envIdentityClientPfx + strings.ToUpper(strings.ReplaceAll(client, "-", "_")) + "__INTERFACES"
+		set(key, strings.Join(clientIfaces[client], ","), identityContractOwner)
+	}
+}
+
+func appendUnique(in []string, value string) []string {
+	if value == "" || contains(in, value) {
+		return in
+	}
+	return append(in, value)
 }
 
 // iamPlanSummary reports the resolved binding for each consumer so `plan`

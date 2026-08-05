@@ -3,6 +3,7 @@ services:
     image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
     build:
       context: ./traefik
+      network: ${DOCKER_BUILD_NETWORK:-default}
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     environment:
       LEGO_CERT_NAME: ${LEGO_CERT_NAME}

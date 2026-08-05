@@ -190,7 +190,8 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	baseDN := "DC=" + strings.Join(strings.Split(domain, "."), ",DC=")
 	e["SAMBA_DC_BASE_DN"] = baseDN
 	e["SAMBA_DC_BASE_COMPUTERS_DN"] = "CN=Computers," + baseDN
-	e["SAMBA_DC_BASE_GROUPS_DN"] = "OU=Groups," + baseDN
+	e["SAMBA_DC_BASE_GROUPS_DN_PREFIX"] = "OU=Groups"
+	e["SAMBA_DC_BASE_GROUPS_DN"] = e["SAMBA_DC_BASE_GROUPS_DN_PREFIX"] + "," + baseDN
 	e["SAMBA_DC_BASE_GROUPS_ROLE_DN"] = "OU=Role," + e["SAMBA_DC_BASE_GROUPS_DN"]
 	e["SAMBA_DC_BASE_USERS_DN_NAME"] = "People"
 	e["SAMBA_DC_BASE_USERS_DN_PREFIX"] = "OU=" + e["SAMBA_DC_BASE_USERS_DN_NAME"]

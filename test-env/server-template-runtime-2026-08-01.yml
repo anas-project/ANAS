@@ -19,7 +19,9 @@ env:
   IMAGE_PREFIX: anas_tmpl_
   NETWORK_PREFIX: anas_tmpl_
   CHINESE_SPEEDUP: "true"
-  GITHUB_DOWNLOAD_PROXY_PREFIX: https://gh-proxy.com/
+  APT_MIRROR_URL: https://mirrors.aliyun.com
+  APK_MIRROR_URL: https://mirrors.aliyun.com
+  NPM_REGISTRY_URL: https://registry.npmmirror.com
   DOCKER_SOCKET_PATH: /run/anas-template-docker.sock
   NETWORK_NAMESPACE_PATH: /run/netns/anas-tmpl
   HOST_IP: 10.252.0.2

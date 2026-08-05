@@ -23,7 +23,8 @@ type Module struct {
 	Provides             []ProvidedCapability
 	RequiresCapabilities []RequiredCapability
 	RunAfter             []string
-	UseLDAP              bool
+	IdentityInterfaces   []string
+	IdentityAppGroup     bool
 	UseHostLAN           string
 	Hook                 HookConfig
 	RuntimeType          string

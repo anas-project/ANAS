@@ -25,7 +25,9 @@ env:
   IMAGE_PREFIX: anas_
   NETWORK_PREFIX: anas_test_
   CHINESE_SPEEDUP: "true"
-  GITHUB_DOWNLOAD_PROXY_PREFIX: https://gh-proxy.com/
+  APT_MIRROR_URL: https://mirrors.aliyun.com
+  APK_MIRROR_URL: https://mirrors.aliyun.com
+  NPM_REGISTRY_URL: https://registry.npmmirror.com
   NEXTCLOUD_NOTIFY_PUSH_ALLOW_SELF_SIGNED: "true"
   LDAPTLS_REQCERT: never
   DOCKER_SOCKET_PATH: /run/anas-docker-test.sock

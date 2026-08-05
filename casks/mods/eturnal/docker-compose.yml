@@ -3,6 +3,7 @@ services:
     image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
     build:
       context: ./eturnal
+      network: ${DOCKER_BUILD_NETWORK:-default}
     container_name: ${CONTAINER_PREFIX}eturnal
     read_only: true
     cap_drop:

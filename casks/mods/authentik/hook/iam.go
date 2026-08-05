@@ -41,7 +41,7 @@ func slug(app string) string {
 // already published the consumer list and each consumer's protocol before any
 // hook ran, which is what makes this derivable during calculate.
 func publishIAMEndpoints(e map[string]string) error {
-	consumers := splitCSV(e["ANAS_IAM_CLIENTS"])
+	consumers := append(splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]), splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])...)
 	if len(consumers) == 0 {
 		return nil
 	}
@@ -127,8 +127,8 @@ func ensureSigningKeypair(e map[string]string, secrets *secretStore) error {
 // value; this is the single place the generic namespace becomes private
 // configuration.
 func renderClientBlueprint(e map[string]string) (string, error) {
-	oidc := splitCSV(e["ANAS_IAM_OIDC_CLIENTS"])
-	saml := splitCSV(e["ANAS_IAM_SAML_CLIENTS"])
+	oidc := splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"])
+	saml := splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])
 	if len(oidc) == 0 && len(saml) == 0 {
 		return "", nil
 	}
@@ -168,6 +168,7 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 			b.WriteString("          url: " + yamlString(uri) + "\n")
 		}
 		writeApplicationEntry(&b, e, app, s)
+		writeAccessPolicyEntries(&b, e, app, s)
 	}
 
 	for _, app := range saml {
@@ -176,6 +177,7 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 			return "", fmt.Errorf("saml client %s published no %sSP_METADATA_URL", app, src)
 		}
 		s := slug(app)
+		propertyMappings := writeSAMLPropertyMappingEntries(&b, e[src+"ATTRIBUTES"], s)
 		b.WriteString("  - model: authentik_providers_saml.samlprovider\n")
 		b.WriteString("    identifiers:\n      name: " + s + "\n")
 		b.WriteString("    id: provider-" + s + "\n")
@@ -194,11 +196,58 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 		// certificate published as SAML_SIGNING_CERT useful to the SP.
 		b.WriteString("      sign_assertion: true\n")
 		b.WriteString("      sign_response: false\n")
+		if len(propertyMappings) != 0 {
+			b.WriteString("      property_mappings:\n")
+			for _, id := range propertyMappings {
+				b.WriteString("        - !KeyOf " + id + "\n")
+			}
+		}
 		b.WriteString("      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]\n")
 		b.WriteString("      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]\n")
 		writeApplicationEntry(&b, e, app, s)
+		writeAccessPolicyEntries(&b, e, app, s)
 	}
 	return b.String(), nil
+}
+
+// writeSAMLPropertyMappingEntries translates the provider-neutral
+// source:claim:required registration shape into authentik property mappings.
+// Directory usernames are sourced from Samba AD's sAMAccountName mapping, so
+// they remain available even though applications never know the IAM product.
+func writeSAMLPropertyMappingEntries(b *strings.Builder, attributes, appSlug string) []string {
+	ids := []string{}
+	for _, raw := range splitCSV(attributes) {
+		parts := strings.Split(raw, ":")
+		if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
+			continue
+		}
+		source := strings.TrimSpace(parts[0])
+		claim := strings.TrimSpace(parts[1])
+		id := "saml-mapping-" + appSlug + "-" + slug(claim)
+		ids = append(ids, id)
+		b.WriteString("  - model: authentik_providers_saml.samlpropertymapping\n")
+		b.WriteString("    identifiers:\n      name: anas-" + appSlug + "-" + slug(claim) + "\n")
+		b.WriteString("    id: " + id + "\n")
+		b.WriteString("    attrs:\n")
+		b.WriteString("      saml_name: " + yamlString(claim) + "\n")
+		b.WriteString("      friendly_name: " + yamlString(claim) + "\n")
+		b.WriteString("      expression: |\n")
+		b.WriteString("        " + samlAttributeExpression(source) + "\n")
+	}
+	return ids
+}
+
+func samlAttributeExpression(source string) string {
+	switch strings.ToLower(source) {
+	case "samaccountname", "username", "uid":
+		return "return request.user.username"
+	case "cn", "name", "displayname":
+		return "return request.user.name"
+	case "mail", "email":
+		return "return request.user.email"
+	default:
+		return "return request.user.attributes.get(" + yamlString(source) + ")"
+	}
 }
 
 func writeApplicationEntry(b *strings.Builder, e map[string]string, app, s string) {
@@ -208,12 +257,36 @@ func writeApplicationEntry(b *strings.Builder, e map[string]string, app, s strin
 	}
 	b.WriteString("  - model: authentik_core.application\n")
 	b.WriteString("    identifiers:\n      slug: " + s + "\n")
+	b.WriteString("    id: application-" + s + "\n")
 	b.WriteString("    attrs:\n")
 	b.WriteString("      name: " + yamlString(title) + "\n")
 	b.WriteString("      provider: !KeyOf provider-" + s + "\n")
 	if uri := e["APPS_LIST__"+envName(app)+"__URI"]; uri != "" {
 		b.WriteString("      meta_launch_url: " + yamlString(uri) + "\n")
 	}
+}
+
+func writeAccessPolicyEntries(b *strings.Builder, e map[string]string, app, s string) {
+	groups := splitCSV(e[iamClientPrefix+envName(app)+"__ALLOW_GROUPS"])
+	if len(groups) == 0 {
+		return
+	}
+	quoted := make([]string, 0, len(groups))
+	for _, group := range groups {
+		quoted = append(quoted, yamlString(group))
+	}
+	b.WriteString("  - model: authentik_policies_expression.expressionpolicy\n")
+	b.WriteString("    identifiers:\n      name: anas-access-" + s + "\n")
+	b.WriteString("    id: access-policy-" + s + "\n")
+	b.WriteString("    attrs:\n")
+	b.WriteString("      expression: |\n")
+	b.WriteString("        allowed = [" + strings.Join(quoted, ", ") + "]\n")
+	b.WriteString("        return any(ak_is_group_member(request.user, name=name) for name in allowed)\n")
+	b.WriteString("  - model: authentik_policies.policybinding\n")
+	b.WriteString("    identifiers:\n")
+	b.WriteString("      target: !KeyOf application-" + s + "\n")
+	b.WriteString("      policy: !KeyOf access-policy-" + s + "\n")
+	b.WriteString("      order: 0\n")
 }
 
 func yamlString(v string) string {

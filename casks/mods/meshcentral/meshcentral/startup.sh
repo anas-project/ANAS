@@ -2,17 +2,6 @@
 
 set -euo pipefail
 
-if [ -f /opt/meshcentral/meshcentral-data/webserver-cert-private.key  ]; then
-  rm -f /opt/meshcentral/meshcentral-data/webserver-cert-private.key \
-    /opt/meshcentral/meshcentral-data/webserver-cert-public.crt
-fi
-
-if [ -f /opt/meshcentral/certs/$LEGO_KEY_NAME  ]; then
-  ln -s /opt/meshcentral/certs/$LEGO_KEY_NAME /opt/meshcentral/meshcentral-data/webserver-cert-private.key 
-  ln -s /opt/meshcentral/certs/$LEGO_CERT_NAME /opt/meshcentral/meshcentral-data/webserver-cert-public.crt 
-fi
-
-
 set_host() { # $1 domain, $2 ip
   echo "Set $2 $1"
   if grep -q $1 "/etc/hosts"; then
@@ -42,4 +31,4 @@ mkdir -p /run/anas
 TRAEFIK_IP="$traefik_ip" node /opt/anas/configure.js \
   /opt/anas/config.base.json /run/anas/config.json
 
-exec node meshcentral/meshcentral --configfile /run/anas/config.json
+exec node /opt/meshcentral/meshcentral/meshcentral --configfile /run/anas/config.json

@@ -33,6 +33,7 @@ type caskManifest struct {
 	Upgrade      manifestUpgrade      `yaml:"upgrade"`
 	Config       manifestConfig       `yaml:"config"`
 	Features     manifestFeatures     `yaml:"features"`
+	Identity     manifestIdentity     `yaml:"identity"`
 	Services     manifestServices     `yaml:"services"`
 	Logic        manifestLogic        `yaml:"logic"`
 	Status       string               `yaml:"status"`
@@ -144,7 +145,6 @@ type manifestChangePolicy struct {
 }
 
 type manifestFeatures struct {
-	LDAPClient           bool     `yaml:"ldap_client"`
 	LDAPProvider         bool     `yaml:"ldap_provider"`
 	GeneratedSecrets     bool     `yaml:"generated_secrets"`
 	Domain               bool     `yaml:"domain"`
@@ -153,6 +153,15 @@ type manifestFeatures struct {
 	KerberosEnv          bool     `yaml:"kerberos_env"`
 	AfterStart           string   `yaml:"after_start"`
 	Special              []string `yaml:"special_files"`
+}
+
+// manifestIdentity declares direct identity protocols used by a cask. IAM
+// protocols are resolved from requires_capabilities; direct directory access
+// such as LDAPS is declared here. AppGroup is deliberately explicit: a daemon
+// may query a directory without representing an interactive application.
+type manifestIdentity struct {
+	Interfaces []string `yaml:"interfaces"`
+	AppGroup   bool     `yaml:"application_group"`
 }
 
 type manifestServices struct {
@@ -394,13 +403,25 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		Provides:             provides,
 		RequiresCapabilities: requiresCapabilities,
 		RunAfter:             append([]string{}, manifest.Dependencies.After...),
-		UseLDAP:              manifest.Features.LDAPClient,
+		IdentityInterfaces:   normalizeIdentityInterfaces(manifest.Identity.Interfaces),
+		IdentityAppGroup:     manifest.Identity.AppGroup,
 		UseHostLAN:           manifest.Features.HostLAN,
 		Hook:                 manifest.Logic.Hook,
 		RuntimeType:          manifest.Runtime.Type,
 		ComposeFile:          composeFile,
 	}
 	return mod, nil
+}
+
+func normalizeIdentityInterfaces(in []string) []string {
+	out := []string{}
+	for _, iface := range in {
+		iface = strings.ToLower(strings.TrimSpace(iface))
+		if iface != "" && !contains(out, iface) {
+			out = append(out, iface)
+		}
+	}
+	return out
 }
 
 func normalizeAlternativeDependencies(in []manifestAlternativeDependency) []AlternativeDependency {

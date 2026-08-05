@@ -1,22 +1,19 @@
-#!/usr/bin/with-contenv bash
+#!/bin/bash
+set -o pipefail
 
-runas_user() {
-  yasu nextcloud:nextcloud "$@"
+occ() {
+  runuser -u www-data -- php /var/www/html/occ "$@"
 }
-
-if [ "$SIDECAR_CRON" = "1" ] || [ "$SIDECAR_PREVIEWGEN" = "1" ] || [ "$SIDECAR_NEWSUPDATER" = "1" ]; then
-  exit 0
-fi
 
 rm -f /run/nextcloud-tasks.ready
 
 if [ "$NEXTCLOUD_RM_SKELETON_FILES" == "true" ]; then 
-  rm -rf /var/www/core/skeleton/*
-  mkdir /var/www/core/skeleton/Documents
-  mkdir /var/www/core/skeleton/Photos
+  rm -rf /var/www/html/core/skeleton/*
+  mkdir -p /var/www/html/core/skeleton/Documents
+  mkdir -p /var/www/html/core/skeleton/Photos
 fi
 
-user_app_path='/var/www/userapps'
+user_app_path='/var/www/html/custom_apps'
 retry_occ() {
   local attempt
   for attempt in 1 2 3 4 5; do
@@ -49,7 +46,10 @@ install_app_once() {
     return "$status"
   fi
 
-  proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-https://gh-proxy.com/}"
+  proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-}"
+  if [ -z "$proxy_prefix" ]; then
+    return "$status"
+  fi
   archive=$(mktemp)
   echo "Direct GitHub download failed; retrying $app_name through the configured mirror"
   if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 \
@@ -67,28 +67,84 @@ install_app_once() {
 
 app_version_pin() {
   case "$1" in
-    previewgenerator) printf '%s' "${NEXTCLOUD_PREVIEWGENERATOR_VERSION:-}" ;;
+    richdocuments) printf '%s' '11.1.0' ;;
+    spreed) printf '%s' '24.0.3' ;;
+    previewgenerator) printf '%s' '5.14.0' ;;
+    notify_push) printf '%s' '1.3.5' ;;
+    memories) printf '%s' '8.1.0' ;;
+    user_saml) printf '%s' '8.2.0' ;;
   esac
 }
 
 restore_memories_places_source() {
   local places_file backup proxy_prefix
   places_file="$user_app_path/memories/lib/Service/Places.php"
-  backup="/data/.anas-backups/memories-Places.php"
+  backup="/var/www/html/.anas-backups/memories-Places.php"
   [ -f "$places_file" ] || return 0
   if [ -f "$backup" ]; then
     cp -p "$backup" "$places_file"
     return
   fi
-  proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-https://gh-proxy.com/}"
-  sed -i \
-    "s#${proxy_prefix}https://github.com/pulsejet/memories-assets/#https://github.com/pulsejet/memories-assets/#" \
-    "$places_file"
+  proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-}"
+  if [ -n "$proxy_prefix" ]; then
+    sed -i \
+      "s#${proxy_prefix}https://github.com/pulsejet/memories-assets/#https://github.com/pulsejet/memories-assets/#" \
+      "$places_file"
+  fi
+}
+
+memories_places_archive='/var/www/html/.anas-cache/planet_coarse_boundaries.zip'
+memories_places_sha256='b443fc32dfdd26dd27b3c2def96da865841b6210473e3360da191f725f14dc55'
+
+validate_memories_places_archive() {
+  printf '%s  %s\n' "$memories_places_sha256" "$memories_places_archive" | \
+    sha256sum -c - >/dev/null || return 1
+  php -r '
+    $zip = new ZipArchive();
+    $status = $zip->open($argv[1]);
+    if ($status !== true) {
+      exit(1);
+    }
+    $valid = $zip->locateName("planet_coarse_boundaries.txt") !== false;
+    $zip->close();
+    exit($valid ? 0 : 1);
+  ' "$memories_places_archive"
+}
+
+prepare_memories_places_archive() {
+  local attempt download_url proxy_prefix
+
+  if [ -s "$memories_places_archive" ] && validate_memories_places_archive; then
+    echo "Using cached Memories places archive"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$memories_places_archive")"
+  download_url='https://github.com/pulsejet/memories-assets/releases/download/geo-0.0.4/planet_coarse_boundaries.zip'
+  if [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$GITHUB_DOWNLOAD_PROXY_PREFIX" ]; then
+    proxy_prefix="$GITHUB_DOWNLOAD_PROXY_PREFIX"
+    download_url="$proxy_prefix$download_url"
+  fi
+
+  for attempt in 1 2 3 4 5; do
+    echo "Downloading Memories places archive (attempt $attempt/5)"
+    if curl -fL --retry 5 --retry-delay 2 --retry-all-errors \
+      --connect-timeout 20 --max-time 3600 -C - \
+      "$download_url" -o "$memories_places_archive"; then
+      if validate_memories_places_archive; then
+        return 0
+      fi
+      echo "Downloaded Memories places archive is invalid"
+      rm -f "$memories_places_archive"
+    fi
+    sleep 5
+  done
+  return 1
 }
 
 install_app_from_store_mirror() {
   local app_name="$1"
-  local version version_pin appstore_cache download_url proxy_prefix archive
+  local version version_pin appstore_cache release release_version download_url proxy_prefix archive
 
   version=$(occ status --output=json | jq -r '.versionstring')
   version_pin=$(app_version_pin "$app_name")
@@ -98,7 +154,7 @@ install_app_from_store_mirror() {
       "https://apps.nextcloud.com/api/v1/platform/$version/apps.json" \
       -o "$appstore_cache" || return 1
   fi
-  download_url=$(jq -r --arg app "$app_name" --arg pin "$version_pin" '
+  release=$(jq -c --arg app "$app_name" --arg pin "$version_pin" '
     map(select(.id == $app))[0].releases
     | map(select(.version | test("-") | not))
     | if $pin == "" then
@@ -106,30 +162,35 @@ install_app_from_store_mirror() {
       else
         map(select(.version == $pin)) | last
       end
-    | .download // empty
   ' "$appstore_cache")
+  release_version=$(printf '%s' "$release" | jq -r '.version // empty')
+  download_url=$(printf '%s' "$release" | jq -r '.download // empty')
   if [ -z "$download_url" ]; then
     return 1
   fi
 
   case "$download_url" in
     https://github.com/*)
-      proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-https://gh-proxy.com/}"
-      download_url="$proxy_prefix$download_url"
+      proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-}"
+      if [ -n "$proxy_prefix" ]; then
+        download_url="$proxy_prefix$download_url"
+      fi
       ;;
   esac
-  archive=$(mktemp)
+  mkdir -p /var/www/html/.anas-cache/apps
+  archive="/var/www/html/.anas-cache/apps/$app_name-$release_version.tar.gz"
   echo "Installing $app_name from the Nextcloud app store through the configured mirror"
-  if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 \
-    "$download_url" -o "$archive"; then
-    rm -f "$archive"
-    return 1
+  if ! tar -tzf "$archive" >/dev/null 2>&1; then
+    if ! curl -fL --retry 5 --retry-delay 2 --retry-all-errors \
+      --connect-timeout 20 --max-time 3600 -C - \
+      "$download_url" -o "$archive"; then
+      return 1
+    fi
   fi
+  tar -tzf "$archive" >/dev/null 2>&1 || return 1
   if ! tar -xzf "$archive" -C "$user_app_path"; then
-    rm -f "$archive"
     return 1
   fi
-  rm -f "$archive"
   [ -d "$user_app_path/$app_name" ]
 }
 
@@ -137,8 +198,7 @@ retry_install_app() {
   local app_name="$1"
   local attempt
   for attempt in 1 2 3 4 5; do
-    if [ "$CHINESE_SPEEDUP" = "true" ] && \
-      install_app_from_store_mirror "$app_name"; then
+    if install_app_from_store_mirror "$app_name"; then
       return 0
     fi
     if install_app_once "$app_name"; then
@@ -194,47 +254,61 @@ install_and_enable_app() { # $1 app name
 }
 
 setup_memories_places() {
-  local places_file backup marker proxy_prefix status
+  local places_file backup marker progress_marker log_file
 
-  marker="/data/.anas-state/memories-places.ready"
+  marker="/var/www/html/.anas-state/memories-places.ready"
+  progress_marker="/var/www/html/.anas-state/memories-places.in-progress"
+  log_file="/var/www/html/.anas-state/memories-places.log"
   if [ -f "$marker" ]; then
     echo "Memories places data is already initialized"
     return 0
   fi
+  if [ -f "$progress_marker" ] && pgrep -f 'occ memories:places-setup' >/dev/null; then
+    echo "Memories places data import is already running"
+    return 0
+  fi
+  rm -f "$progress_marker"
 
-  if [ "$CHINESE_SPEEDUP" != "true" ]; then
-    occ memories:places-setup --force \
-      --transaction-size "${NEXTCLOUD_MEMORIES_PLACES_TRANSACTION_SIZE:-10000}"
-    status=$?
-    if [ "$status" -eq 0 ]; then
-      mkdir -p "$(dirname "$marker")"
-      touch "$marker"
-    fi
-    return "$status"
+  if ! prepare_memories_places_archive; then
+    echo "Unable to download a valid Memories places archive"
+    return 1
   fi
 
   places_file="$user_app_path/memories/lib/Service/Places.php"
-  backup="/data/.anas-backups/memories-Places.php"
+  backup="/var/www/html/.anas-backups/memories-Places.php"
   mkdir -p "$(dirname "$backup")"
   restore_memories_places_source
   cp -p "$places_file" "$backup"
-  proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-https://gh-proxy.com/}"
   sed -i \
-    "s#https://github.com/pulsejet/memories-assets/#${proxy_prefix}https://github.com/pulsejet/memories-assets/#" \
+    "s#^const PLANET_URL = .*#const PLANET_URL = 'file://${memories_places_archive}';#" \
     "$places_file"
-  occ memories:places-setup --force \
-    --transaction-size "${NEXTCLOUD_MEMORIES_PLACES_TRANSACTION_SIZE:-10000}"
-  status=$?
-  cp -p "$backup" "$places_file"
-  if ! occ integrity:check-app memories >/dev/null; then
-    echo "Integrity check failed after Memories places setup"
-    return 1
-  fi
-  if [ "$status" -eq 0 ]; then
-    mkdir -p "$(dirname "$marker")"
-    touch "$marker"
-  fi
-  return "$status"
+  mkdir -p "$(dirname "$marker")"
+  touch "$progress_marker"
+  (
+    status=1
+    for attempt in 1 2 3 4 5; do
+      occ memories:places-setup --force \
+        --transaction-size "${NEXTCLOUD_MEMORIES_PLACES_TRANSACTION_SIZE:-10000}" && {
+          status=0
+          break
+        }
+      status=$?
+      echo "Memories places setup failed (attempt $attempt/5)"
+      sleep 5
+    done
+    cp -p "$backup" "$places_file"
+    if ! occ integrity:check-app memories >/dev/null; then
+      echo "Integrity check failed after Memories places setup"
+      status=1
+    fi
+    if [ "$status" -eq 0 ]; then
+      touch "$marker"
+    fi
+    rm -f "$progress_marker"
+    exit "$status"
+  ) >>"$log_file" 2>&1 &
+  echo "Memories places data import started in background"
+  return 0
 }
 
 disable_app() { # $1 app name
@@ -322,14 +396,12 @@ echo "Install collabora office"
 if [ -n "$COLLABORA_DOMAIN_FULL" ]; then
   app_name='richdocuments'
   install_and_enable_app $app_name
-  richdocuments_config='{}'
-  richdocuments_config=`echo $richdocuments_config | jq ".apps.$app_name = { doc_format: \"ooxml\"}" `
-  richdocuments_config=`echo $richdocuments_config | jq ".apps.$app_name = { public_wopi_url: \"$COLLABORA_DOMAIN_FULL\"}" `
-  richdocuments_config=`echo $richdocuments_config | jq ".apps.$app_name = { wopi_url: \"$COLLABORA_DOMAIN_FULL\"}" `
-
-  collabora_ipv4=`ping $COLLABORA_HOSTNAME -c 1 | sed '1{s/[^(]*(//;s/).*//;q}'`
+  collabora_ipv4=$(getent ahostsv4 "$COLLABORA_HOSTNAME" | awk 'NR == 1 { print $1 }')
   # TODO: ipv6
-  richdocuments_config=`echo $richdocuments_config | jq ".apps.$app_name = { wopi_allowlist: \"$collabora_ipv4\"}" `
+  richdocuments_config=$(jq -n \
+    --arg url "$COLLABORA_DOMAIN_FULL" \
+    --arg allowlist "$collabora_ipv4" \
+    '{apps:{richdocuments:{doc_format:"ooxml",public_wopi_url:$url,wopi_url:$url,wopi_allowlist:$allowlist}}}')
   import_occ "$richdocuments_config"
   occ richdocuments:activate-config
 else
@@ -340,7 +412,6 @@ echo "Install talk"
 if [ "$NEXTCLOUD_TALK_ENABLED" == "true" ]; then
   app_name='spreed'
   install_and_enable_app $app_name
-  talk_config='{}'
   occ config:app:set spreed stun_servers --value "[]"
   occ talk:stun:add "$TURN_DOMAIN_PORT"
   occ config:app:set spreed turn_servers --value "[]"
@@ -363,6 +434,7 @@ config_imaginary=$(cat <<EOF
     "preview_max_x": 2048,
     "preview_max_y": 2048,
     "preview_imaginary_url": "http://$NEXTCLOUD_IMAGINARY_HOSTNAME:9000",
+    "preview_imaginary_key": "$NEXTCLOUD_IMAGINARY_SECRET",
     "enable_previews": true,
     "filelocking.enabled": true,
     "redis": {
@@ -408,66 +480,80 @@ import_occ "$config_imaginary"
 echo "Install notify_push"
 app_name='notify_push'
 install_and_enable_app $app_name
-occ config:system:set trusted_proxies 1 --value="127.0.0.1"
-occ config:system:set trusted_proxies 2 --value="::1"
+notify_push_ip=''
+for attempt in $(seq 1 30); do
+  notify_push_ip=$(getent ahostsv4 "$NEXTCLOUD_PUSH_HOSTNAME" | awk 'NR == 1 { print $1 }' || true)
+  if [ -n "$notify_push_ip" ]; then
+    break
+  fi
+  sleep 1
+done
+if [ -z "$notify_push_ip" ]; then
+  echo "Unable to resolve notify_push container: $NEXTCLOUD_PUSH_HOSTNAME" >&2
+  exit 1
+fi
+occ config:system:set trusted_proxies 1 --value="$notify_push_ip"
+occ config:system:set trusted_proxies 2 --value="127.0.0.1"
+occ config:system:set trusted_proxies 3 --value="::1"
 occ config:app:set notify_push base_endpoint --value="$NEXTCLOUD_DOMAIN_FULL/push"
 
 echo "Set LDAP"
 
 occ app:enable user_ldap
 LDAP_CONFIG_NAME="s01"
-LDAP_CMD="occ ldap:set-config $LDAP_CONFIG_NAME"
+
+if ! occ ldap:show-config "$LDAP_CONFIG_NAME" >/dev/null 2>&1; then
+  occ ldap:create-empty-config
+fi
+
+if ! occ ldap:show-config "$LDAP_CONFIG_NAME" >/dev/null 2>&1; then
+  echo "Unable to create LDAP configuration $LDAP_CONFIG_NAME" >&2
+  exit 1
+fi
+
+set_ldap_config() {
+  occ ldap:set-config "$LDAP_CONFIG_NAME" "$1" "$2"
+}
 
 IFS=',' read -ra attrs_array <<< "$SAMBA_DC_USER_LOGIN_ATTRS"
 attrs=""
 for attr in "${attrs_array[@]}"; do
   [ -z "${attr//[[:space:]]/}" ] && continue
-  [ -n "$attrs" ] && attrs="${attrs}\\n"
+  [ -n "$attrs" ] && attrs="${attrs}"$'\n'
   attrs="${attrs}${attr}"
 done
-config_ldap=$(cat <<EOF
-{
-  "apps": {
-    "user_ldap": {
-      "types": "authentication",
-      "s01ldap_configuration_active": "1",
-      "s01ldap_port": $SAMBA_DC_LDAPS_PORT,
-      "s01ldap_dn": "$SAMBA_DC_PASSWORD_BIND_DN",
-      "s01ldap_base": "$SAMBA_DC_BASE_DN",
-      "s01ldap_base_groups": "$SAMBA_DC_BASE_GROUPS_ROLE_DN",
-      "s01ldap_base_users": "$SAMBA_DC_BASE_USERS_DN",
-      "s01ldap_group_filter": "$SAMBA_DC_GROUP_CLASS_FILTER",
-      "s01ldap_groupfilter_objectclass": "$SAMBA_DC_GROUP_CLASS_NAME",
-      "s01ldap_group_display_name": "$SAMBA_DC_GROUP_DISPLAY_NAME",
-      "s01ldap_group_member_assoc_attribute": "$SAMBA_DC_GROUP_MEMBER_ATTR",
-      "s01ldap_host": "$SAMBA_DC_LDAPS_SERVER_URL",
-      "s01ldap_login_filter": "$NEXTCLOUD_USER_LOGIN_FILTER",
-      "s01ldap_userlist_filter": "$NEXTCLOUD_USER_FILTER",
-      "s01ldap_expert_username_attr": "$SAMBA_DC_USER_NAME",
-      "s01ldap_userfilter_objectclass": "$SAMBA_DC_USER_CLASS_NAME",
-      "s01ldap_display_name": "$SAMBA_DC_USER_DISPLAY_NAME",
-      "s01ldap_attributes_for_user_search": "$attrs",
-      "s01ldap_email_attr": "$SAMBA_DC_USER_EMAIL",
-      "s01ldap_nested_groups": 1,
-      "s01ldap_user_filter_mode": 1,
-      "s01ldap_group_filter_mode": 1,
-      "s01ldap_login_filter_mode": 1,
-      "s01ldap_nested_groups": 1,
-      "s01ldap_expert_uuid_group_attr": "cn",
-      "s01ldap_expert_uuid_user_attr": "sAMAccountName",
-      "s01ldap_turn_on_pwd_change": 1
-    }
-  }
-}
-EOF
-)
+
+set_ldap_config ldapPort "$SAMBA_DC_LDAPS_PORT"
+set_ldap_config ldapAgentName "$SAMBA_DC_PASSWORD_BIND_DN"
+set_ldap_config ldapBase "$SAMBA_DC_BASE_DN"
+set_ldap_config ldapBaseGroups "$SAMBA_DC_BASE_GROUPS_ROLE_DN"
+set_ldap_config ldapBaseUsers "$SAMBA_DC_BASE_USERS_DN"
+set_ldap_config ldapGroupFilter "$SAMBA_DC_GROUP_CLASS_FILTER"
+set_ldap_config ldapGroupFilterObjectclass "$SAMBA_DC_GROUP_CLASS_NAME"
+set_ldap_config ldapGroupDisplayName "$SAMBA_DC_GROUP_DISPLAY_NAME"
+set_ldap_config ldapGroupMemberAssocAttr "$SAMBA_DC_GROUP_MEMBER_ATTR"
+set_ldap_config ldapHost "$SAMBA_DC_LDAPS_SERVER_URL"
+set_ldap_config ldapLoginFilter "$NEXTCLOUD_USER_LOGIN_FILTER"
+set_ldap_config ldapUserFilter "$NEXTCLOUD_USER_FILTER"
+set_ldap_config ldapExpertUsernameAttr "$SAMBA_DC_USER_NAME"
+set_ldap_config ldapUserFilterObjectclass "$SAMBA_DC_USER_CLASS_NAME"
+set_ldap_config ldapUserDisplayName "$SAMBA_DC_USER_DISPLAY_NAME"
+set_ldap_config ldapAttributesForUserSearch "$attrs"
+set_ldap_config ldapEmailAttribute "$SAMBA_DC_USER_EMAIL"
+set_ldap_config ldapNestedGroups 1
+set_ldap_config ldapUserFilterMode 1
+set_ldap_config ldapGroupFilterMode 1
+set_ldap_config ldapLoginFilterMode 1
+set_ldap_config ldapExpertUUIDGroupAttr cn
+set_ldap_config ldapExpertUUIDUserAttr sAMAccountName
+set_ldap_config turnOnPasswordChange 1
 
 if [ -n "$NEXTCLOUD_DEFAULT_QUOTA" ]; then
-  config_ldap=`echo $config_ldap | jq ".apps.user_ldap = { s01ldap_quota_def: \"$NEXTCLOUD_DEFAULT_QUOTA\"}" `
+  set_ldap_config ldapQuotaDefault "$NEXTCLOUD_DEFAULT_QUOTA"
 fi
 
-import_occ "$config_ldap"
-$LDAP_CMD ldapAgentPassword "$SAMBA_DC_PASSWORD_BIND_PASSWORD"
+set_ldap_config ldapAgentPassword "$SAMBA_DC_PASSWORD_BIND_PASSWORD"
+set_ldap_config ldapConfigurationActive 1
 
 echo "occ ldap:test-config s01"
 occ ldap:test-config s01

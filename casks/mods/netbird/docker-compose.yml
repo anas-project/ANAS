@@ -1,10 +1,7 @@
-version: "3.5"
 services:
-  #UI dashboard
   anas_dashboard:
-    build: ./dashboard
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_dashboard
-    image: ${IMAGE_PREFIX}${MODULE_NAME}_dashboard:latest
+    image: netbirdio/dashboard:v2.90.9
     restart: unless-stopped
     env_file:
       - .env
@@ -13,48 +10,82 @@ services:
       - anas.traefik.instance=${NETWORK_PREFIX}traefik
       - traefik.http.routers.netbird-dashboard.rule=Host(`${NETBIRD_DOMAIN}`)
       - traefik.http.routers.netbird-dashboard.tls=true
+      - traefik.http.routers.netbird-dashboard.priority=1
       - traefik.http.services.netbird-dashboard.loadbalancer.server.port=80
     networks:
       - traefik
 
-  # Signal
   anas_signal:
-    image: netbirdio/signal:0.25.5
+    image: netbirdio/signal:0.76.1
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_signal
     restart: unless-stopped
     env_file:
       - .env
+    volumes:
+      - "${DATA_PATH}/netbird/signal:/var/lib/netbird"
     labels:
       - traefik.enable=true
       - anas.traefik.instance=${NETWORK_PREFIX}traefik
       - traefik.http.routers.netbird-signal.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/signalexchange.SignalExchange/`)
       - traefik.http.routers.netbird-signal.tls=true
-      - traefik.http.services.netbird-signal.loadbalancer.server.port=80
+      - traefik.http.routers.netbird-signal.service=netbird-signal
+      - traefik.http.services.netbird-signal.loadbalancer.server.port=10000
       - traefik.http.services.netbird-signal.loadbalancer.server.scheme=h2c
+      - traefik.http.routers.netbird-signal-ws.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/ws-proxy/signal`)
+      - traefik.http.routers.netbird-signal-ws.tls=true
+      - traefik.http.routers.netbird-signal-ws.service=netbird-signal-ws
+      - traefik.http.services.netbird-signal-ws.loadbalancer.server.port=80
     networks:
       - traefik
 
-  # Management
+  anas_relay:
+    image: netbirdio/relay:0.76.1
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_relay
+    restart: unless-stopped
+    environment:
+      - NB_LOG_LEVEL=info
+      - NB_LISTEN_ADDRESS=:33080
+      - NB_EXPOSED_ADDRESS=${NETBIRD_RELAY_ENDPOINT}
+      - NB_AUTH_SECRET=${NETBIRD_RELAY_AUTH_SECRET}
+    labels:
+      - traefik.enable=true
+      - anas.traefik.instance=${NETWORK_PREFIX}traefik
+      - traefik.http.routers.netbird-relay.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/relay`)
+      - traefik.http.routers.netbird-relay.tls=true
+      - traefik.http.services.netbird-relay.loadbalancer.server.port=33080
+    networks:
+      - traefik
+
   anas_management:
-    build: ./management
+    build:
+      context: ./management
+      network: ${DOCKER_BUILD_NETWORK:-default}
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_management
-    image: ${IMAGE_PREFIX}${MODULE_NAME}_management:latest
+    image: ${IMAGE_PREFIX}${MODULE_NAME}_management:0.76.1
     restart: unless-stopped
     env_file:
       - .env
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    volumes:
+      - "${DATA_PATH}/netbird/management:/var/lib/netbird"
+      - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
     labels:
       - traefik.enable=true
       - anas.traefik.instance=${NETWORK_PREFIX}traefik
       - traefik.http.routers.netbird-api.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/api`)
       - traefik.http.routers.netbird-api.service=netbird-api
       - traefik.http.routers.netbird-api.tls=true
-      - traefik.http.services.netbird-api.loadbalancer.server.port=8000
-      - traefik.http.services.netbird-api.loadbalancer.server.scheme=h2c
+      - traefik.http.services.netbird-api.loadbalancer.server.port=33073
       - traefik.http.routers.netbird-management.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/management.ManagementService/`)
       - traefik.http.routers.netbird-management.service=netbird-management
       - traefik.http.routers.netbird-management.tls=true
-      - traefik.http.services.netbird-management.loadbalancer.server.port=8000
+      - traefik.http.services.netbird-management.loadbalancer.server.port=33073
       - traefik.http.services.netbird-management.loadbalancer.server.scheme=h2c
+      - traefik.http.routers.netbird-management-ws.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/ws-proxy/management`)
+      - traefik.http.routers.netbird-management-ws.tls=true
+      - traefik.http.routers.netbird-management-ws.service=netbird-management-ws
+      - traefik.http.services.netbird-management-ws.loadbalancer.server.port=33073
     networks:
       - traefik
 

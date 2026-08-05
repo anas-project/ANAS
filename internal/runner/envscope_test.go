@@ -29,7 +29,7 @@ func scopeTestApp() *app {
 			"core":      {Name: "core", EnvPrefix: "CORE"},
 			"traefik":   {Name: "traefik", EnvPrefix: "TRAEFIK"},
 			"postgres":  {Name: "postgres", EnvPrefix: "POSTGRES"},
-			"nextcloud": {Name: "nextcloud", EnvPrefix: "NEXTCLOUD", Consumes: []string{"EXTRA_CONTRACT_*"}},
+			"nextcloud": {Name: "nextcloud", EnvPrefix: "NEXTCLOUD", Consumes: []string{"EXTRA_CONTRACT_*", "ANAS_IDENTITY_SAML_CLIENTS"}},
 			"ddns":      {Name: "ddns", EnvPrefix: "DDNS", Consumes: []string{"DNSPOD_API_KEY"}},
 		},
 		deps: map[string][]string{
@@ -39,30 +39,34 @@ func scopeTestApp() *app {
 			"ddns":      {"core", "traefik"},
 		},
 		env: map[string]string{
-			"BASE_DOMAIN":         "nas.example.com",
-			"HOST_IP":             "192.0.2.10",
-			"POSTGRES_PASSWORD":   "db-secret",
-			"NEXTCLOUD_DB_NAME":   "nextcloud",
-			"DDNS_CONFIG":         "ddns-secret",
-			"DNSPOD_API_KEY":      "token",
-			"EXTRA_CONTRACT_KEY":  "shared",
-			"UNRELATED_HOOK_KEY":  "private",
-			"SMAL_SP_APPS":        "nextcloud",
-			"DEFAULT_GATEWAY_IP":  "192.0.2.1",
-			"NEXTCLOUD_ADMIN_PWD": "pw",
+			"BASE_DOMAIN":                "nas.example.com",
+			"HOST_IP":                    "192.0.2.10",
+			"POSTGRES_PASSWORD":          "db-secret",
+			"NEXTCLOUD_DB_NAME":          "nextcloud",
+			"DDNS_CONFIG":                "ddns-secret",
+			"DNSPOD_API_KEY":             "token",
+			"EXTRA_CONTRACT_KEY":         "shared",
+			"UNRELATED_HOOK_KEY":         "private",
+			"SMAL_SP_APPS":               "nextcloud",
+			"DEFAULT_GATEWAY_IP":         "192.0.2.1",
+			"NEXTCLOUD_ADMIN_PWD":        "pw",
+			"ANAS_IDENTITY_CLIENTS":      "nextcloud",
+			"ANAS_IDENTITY_SAML_CLIENTS": "nextcloud",
 		},
 		envOwner: map[string]string{
-			"BASE_DOMAIN":         "",
-			"HOST_IP":             "core",
-			"POSTGRES_PASSWORD":   "postgres",
-			"NEXTCLOUD_DB_NAME":   "nextcloud",
-			"DDNS_CONFIG":         "ddns",
-			"DNSPOD_API_KEY":      config.OwnerUserSecret,
-			"EXTRA_CONTRACT_KEY":  "ddns",
-			"UNRELATED_HOOK_KEY":  "ddns",
-			"SMAL_SP_APPS":        "nextcloud",
-			"DEFAULT_GATEWAY_IP":  "core",
-			"NEXTCLOUD_ADMIN_PWD": "nextcloud",
+			"BASE_DOMAIN":                "",
+			"HOST_IP":                    "core",
+			"POSTGRES_PASSWORD":          "postgres",
+			"NEXTCLOUD_DB_NAME":          "nextcloud",
+			"DDNS_CONFIG":                "ddns",
+			"DNSPOD_API_KEY":             config.OwnerUserSecret,
+			"EXTRA_CONTRACT_KEY":         "ddns",
+			"UNRELATED_HOOK_KEY":         "ddns",
+			"SMAL_SP_APPS":               "nextcloud",
+			"DEFAULT_GATEWAY_IP":         "core",
+			"NEXTCLOUD_ADMIN_PWD":        "nextcloud",
+			"ANAS_IDENTITY_CLIENTS":      "runner",
+			"ANAS_IDENTITY_SAML_CLIENTS": "runner",
 		},
 	}
 }
@@ -70,7 +74,7 @@ func scopeTestApp() *app {
 func TestScopedEnvFiltersByClosureAndConsumes(t *testing.T) {
 	a := scopeTestApp()
 	env := a.scopedEnv("nextcloud")
-	for _, want := range []string{"BASE_DOMAIN", "HOST_IP", "POSTGRES_PASSWORD", "NEXTCLOUD_DB_NAME", "EXTRA_CONTRACT_KEY", "SMAL_SP_APPS"} {
+	for _, want := range []string{"BASE_DOMAIN", "HOST_IP", "POSTGRES_PASSWORD", "NEXTCLOUD_DB_NAME", "EXTRA_CONTRACT_KEY", "SMAL_SP_APPS", "ANAS_IDENTITY_SAML_CLIENTS"} {
 		if _, ok := env[want]; !ok {
 			t.Errorf("nextcloud scope is missing %s", want)
 		}
@@ -79,6 +83,12 @@ func TestScopedEnvFiltersByClosureAndConsumes(t *testing.T) {
 		if _, ok := env[banned]; ok {
 			t.Errorf("nextcloud scope leaks %s", banned)
 		}
+	}
+	if _, ok := env["ANAS_IDENTITY_CLIENTS"]; ok {
+		t.Error("nextcloud received an undeclared runner identity contract")
+	}
+	if _, ok := a.scopedEnv("traefik")["ANAS_IDENTITY_SAML_CLIENTS"]; ok {
+		t.Error("traefik received identity topology without declaring consumes")
 	}
 }
 

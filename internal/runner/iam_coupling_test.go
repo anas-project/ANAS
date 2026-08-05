@@ -19,8 +19,8 @@ import (
 // deployment-level value to offer.
 //
 // This list is enumerated exactly on purpose: matching ANAS_IAM_OIDC_* or
-// ANAS_IAM_SAML_* as a prefix would also catch ANAS_IAM_OIDC_CLIENTS and
-// ANAS_IAM_SAML_CLIENTS, which providers are supposed to read.
+// Endpoint variables are enumerated exactly so generic binding and identity
+// topology variables remain legal.
 var deploymentLevelEndpointVars = []string{
 	"ANAS_IAM_OIDC_ISSUER_URL",
 	"ANAS_IAM_OIDC_DISCOVERY_URL",
@@ -145,7 +145,7 @@ func TestCasksDoNotReadDeploymentLevelIAMEndpoints(t *testing.T) {
 // the banned convenience variables, so this pins the distinction the guard
 // above depends on.
 func TestProtocolClientListsAreNotBanned(t *testing.T) {
-	for _, allowed := range []string{"ANAS_IAM_OIDC_CLIENTS", "ANAS_IAM_SAML_CLIENTS"} {
+	for _, allowed := range []string{"ANAS_IDENTITY_OIDC_CLIENTS", "ANAS_IDENTITY_SAML_CLIENTS"} {
 		for _, banned := range deploymentLevelEndpointVars {
 			if strings.Contains(allowed, banned) {
 				t.Fatalf("%s would be caught by the ban on %s; the guard must enumerate exact names", allowed, banned)

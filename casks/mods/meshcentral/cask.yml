@@ -1,7 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: meshcentral
-version: 1.1.6
+version: 1.2.4
+app_version: 1.2.4
 abi:
   supports:
     - anas.cask/v1
@@ -31,8 +32,11 @@ config:
   consumes:
     - MYSQL_PASSWORD
     - SAMBA_DC_LDAP_BIND_PASSWORD
+identity:
+  interfaces:
+    - ldaps
+  application_group: true
 features:
-  ldap_client: true
   domain: true
 logic:
   hook:

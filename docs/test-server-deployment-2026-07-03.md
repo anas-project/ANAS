@@ -81,7 +81,7 @@ rsync -az --delete \
 cd /home/whl/anas-refactor-test
 export PATH="$PWD/.tools/go/bin:$PATH"
 export GOTOOLCHAIN=local
-export GOPROXY=https://goproxy.cn,direct
+export GOPROXY="$TEST_GOPROXY"
 export DOCKER_HOST=unix:///run/anas-docker-test.sock
 
 go build -o bin/anas ./cmd/anas

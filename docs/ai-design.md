@@ -154,8 +154,10 @@ config:
     - token
   defaults:
     domain_prefix: example
+identity:
+  interfaces: [ldaps]
+  application_group: true
 features:
-  ldap_client: true
   domain: true
 services:
   optional:

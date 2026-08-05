@@ -1,7 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: collabora
-version: 23.05.0-2
+version: 26.4.2
+app_version: 26.04.2.4.1
 abi:
   supports:
     - anas.cask/v1
@@ -26,6 +27,9 @@ config:
     log_level: warning
     interface: default
     auto_save: "60"
+  exports:
+    - COLLABORA_DOMAIN_FULL
+    - COLLABORA_HOSTNAME
   changes:
     domain_prefix:
       effect: container_recreate

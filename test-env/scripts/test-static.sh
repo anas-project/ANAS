@@ -14,6 +14,21 @@ if grep -R -n -E '<%=|<%[[:space:]]+if|#\{envs\[' casks; then
   echo "legacy ERB syntax is forbidden under casks/" >&2
   exit 1
 fi
+proxy_hits=$(
+  git ls-files --cached --others --exclude-standard |
+    while IFS= read -r file; do
+      [ "${file#test-env/}" = "$file" ] || continue
+      [ -f "$file" ] || continue
+      grep -IHnE \
+        'mirrors\.aliyun\.com|registry\.npmmirror\.com|goproxy\.cn' \
+        "$file" || true
+    done
+)
+if [ -n "$proxy_hits" ]; then
+  printf '%s\n' "$proxy_hits" >&2
+  echo "test-only proxy addresses are forbidden outside test-env/" >&2
+  exit 1
+fi
 
 status=0
 go test ./... >"$log" 2>&1 || status=$?

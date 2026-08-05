@@ -275,6 +275,13 @@ func TestIAMProviderNotStartedWithoutConsumer(t *testing.T) {
 
 func TestIAMEnvContractAndClientListPartition(t *testing.T) {
 	reg := iamFixtureRegistry(t)
+	nextcloud := reg["nextcloud"]
+	nextcloud.IdentityInterfaces = []string{"ldaps"}
+	nextcloud.IdentityAppGroup = true
+	reg["nextcloud"] = nextcloud
+	netbird := reg["netbird"]
+	netbird.IdentityAppGroup = true
+	reg["netbird"] = netbird
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud", "netbird"}, "llng", "", nil))
 	a.env["NEXTCLOUD_IAM_PROTOCOL"] = "saml"
 	if _, err := a.resolveOrder(a.cfg.Modules); err != nil {
@@ -286,11 +293,25 @@ func TestIAMEnvContractAndClientListPartition(t *testing.T) {
 	if got := a.env[envIAMInterfaces]; got != "oidc,saml" {
 		t.Fatalf("%s = %q, want oidc,saml", envIAMInterfaces, got)
 	}
-	flat := splitList(a.env[envIAMClients])
-	oidc := splitList(a.env["ANAS_IAM_OIDC_CLIENTS"])
-	saml := splitList(a.env["ANAS_IAM_SAML_CLIENTS"])
+	flat := splitList(a.env[envIdentityClients])
+	oidc := splitList(a.env["ANAS_IDENTITY_OIDC_CLIENTS"])
+	saml := splitList(a.env["ANAS_IDENTITY_SAML_CLIENTS"])
 	if len(flat) != 2 || !contains(flat, "netbird") || !contains(flat, "nextcloud") {
-		t.Fatalf("%s = %v, want both consumers", envIAMClients, flat)
+		t.Fatalf("%s = %v, want both consumers", envIdentityClients, flat)
+	}
+	if got := a.env[envIdentityAppClients]; got != "netbird,nextcloud" {
+		t.Fatalf("%s = %q, want both application-group consumers", envIdentityAppClients, got)
+	}
+	if got := a.env[envIdentityClientPfx+"NEXTCLOUD__INTERFACES"]; got != "ldaps,saml" {
+		t.Fatalf("nextcloud identity interfaces = %q, want ldaps,saml", got)
+	}
+	if got := a.envOwner[envIdentityClients]; got != "runner" {
+		t.Fatalf("identity contract owner = %q, want runner", got)
+	}
+	for _, removed := range []string{"USE_LDAP_MODS_NAME", "ANAS_IAM_CLIENTS", "ANAS_IAM_OIDC_CLIENTS", "ANAS_IAM_SAML_CLIENTS"} {
+		if _, ok := a.env[removed]; ok {
+			t.Fatalf("removed compatibility variable %s was published", removed)
+		}
 	}
 	// The per-protocol lists must partition the flat list: disjoint, and
 	// together covering every consumer.

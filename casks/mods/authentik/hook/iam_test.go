@@ -10,9 +10,8 @@ func boundEnv() map[string]string {
 		"AUTHENTIK_DOMAIN_FULL":                  "https://auth.example:443",
 		"AUTHENTIK_SIGNING_CERT":                 "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
 		"AUTHENTIK_SIGNING_KEY":                  "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\n",
-		"ANAS_IAM_CLIENTS":                       "netbird,nextcloud",
-		"ANAS_IAM_OIDC_CLIENTS":                  "netbird",
-		"ANAS_IAM_SAML_CLIENTS":                  "nextcloud",
+		"ANAS_IDENTITY_OIDC_CLIENTS":             "netbird",
+		"ANAS_IDENTITY_SAML_CLIENTS":             "nextcloud",
 		"ANAS_IAM_BINDING__NETBIRD__INTERFACE":   "oidc",
 		"ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE": "saml",
 	}
@@ -23,10 +22,9 @@ func boundEnv() map[string]string {
 // the wrong issuer.
 func TestEndpointsDifferPerApplication(t *testing.T) {
 	e := boundEnv()
-	e["ANAS_IAM_OIDC_CLIENTS"] = "netbird,collabora"
-	e["ANAS_IAM_CLIENTS"] = "netbird,collabora"
+	e["ANAS_IDENTITY_OIDC_CLIENTS"] = "netbird,collabora"
 	e["ANAS_IAM_BINDING__COLLABORA__INTERFACE"] = "oidc"
-	delete(e, "ANAS_IAM_SAML_CLIENTS")
+	delete(e, "ANAS_IDENTITY_SAML_CLIENTS")
 	delete(e, "ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE")
 	if err := publishIAMEndpoints(e); err != nil {
 		t.Fatal(err)
@@ -101,6 +99,7 @@ func TestBlueprintTranslatesGenericRegistrations(t *testing.T) {
 	e["ANAS_IAM_CLIENT__NEXTCLOUD__SP_ENTITY_ID"] = "https://nc.example/apps/user_saml/saml/metadata"
 	e["ANAS_IAM_CLIENT__NEXTCLOUD__ACS_URL"] = "https://nc.example/apps/user_saml/saml/acs"
 	e["ANAS_IAM_CLIENT__NEXTCLOUD__NAME_ID_FORMAT"] = "windows"
+	e["ANAS_IAM_CLIENT__NEXTCLOUD__ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1"
 	e["APPS_LIST__NEXTCLOUD__NAME"] = "Nextcloud"
 
 	blueprint, err := renderClientBlueprint(e)
@@ -113,6 +112,10 @@ func TestBlueprintTranslatesGenericRegistrations(t *testing.T) {
 		`client_id: "netbird"`,
 		`url: "https://netbird.example/silent-auth"`,
 		`acs_url: "https://nc.example/apps/user_saml/saml/acs"`,
+		"authentik_providers_saml.samlpropertymapping",
+		`saml_name: "sAMAccountName"`,
+		"return request.user.username",
+		"- !KeyOf saml-mapping-nextcloud-samaccountname",
 		"slug: nextcloud",
 		`name: "Nextcloud"`,
 		"provider: !KeyOf provider-nextcloud",

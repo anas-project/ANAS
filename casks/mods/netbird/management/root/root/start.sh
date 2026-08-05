@@ -1,5 +1,13 @@
 #!/bin/bash
 
+set -euo pipefail
+
+ca="/certs/${ANAS_TLS_INTERNAL_CA_NAME:-anas-internal-ca.crt}"
+if [ -s "$ca" ]; then
+  install -m 0644 "$ca" /usr/local/share/ca-certificates/anas-internal-ca.crt
+  update-ca-certificates
+fi
+
 set_host() { # $1 domain, $2 ip
   echo "Set $2 $1"
   if grep -q $1 "/etc/hosts"; then
@@ -14,7 +22,7 @@ waiting_url() { # $1 url
   url=$1
   http_status=0
   while [ "$http_status" -ne "200" ]; do
-    response=$(curl -s -o /dev/null -w "%{http_code}" $url)
+    response=$(curl -sS -o /dev/null -w "%{http_code}" "$url" || true)
     http_status=$response
 
     if [ "$http_status" -eq "200" ]; then
@@ -29,10 +37,12 @@ waiting_url() { # $1 url
 echo "Set hosts"
 traefik_ip=$( ping $TRAEFIK_HOSTNAME -c 1 | sed '1{s/[^(]*(//;s/).*//;q}')
 set_host $NETBIRD_DOMAIN $traefik_ip
+auth_domain=$(printf '%s' "$NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT" | sed -E 's#^[a-z]+://([^/:]+).*#\1#')
+set_host "$auth_domain" "$traefik_ip"
 
 waiting_url $NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT
 
-curl "${NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT}" -q -o openid-configuration.json
+curl -fsS "${NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT}" -o openid-configuration.json
 
 export NETBIRD_AUTH_AUTHORITY=$(jq -r '.issuer' openid-configuration.json)
 export NETBIRD_AUTH_JWT_CERTS=$(jq -r '.jwks_uri' openid-configuration.json)
@@ -50,7 +60,7 @@ fi
 
 mkdir -p /etc/netbird
 
-management_variables='$AUTH_AUDIENCE $AUTH_CLIENT_ID $AUTH_CLIENT_SECRET $AUTH_SUPPORTED_SCOPES $NETBIRD_AUTH_AUTHORITY $NETBIRD_AUTH_DEVICE_AUTH_USE_ID_TOKEN $NETBIRD_AUTH_JWT_CERTS $NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT $NETBIRD_AUTH_PKCE_AUTHORIZATION_ENDPOINT $NETBIRD_AUTH_TOKEN_ENDPOINT $NETBIRD_AUTH_USER_ID_CLAIM $NETBIRD_DOMAIN_PORT $NETBIRD_MGMT_API_PORT $TURN_DOMAIN_PORT'
+management_variables='$AUTH_AUDIENCE $AUTH_CLIENT_ID $AUTH_CLIENT_SECRET $AUTH_SUPPORTED_SCOPES $NETBIRD_AUTH_AUTHORITY $NETBIRD_AUTH_DEVICE_AUTH_USE_ID_TOKEN $NETBIRD_AUTH_JWT_CERTS $NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT $NETBIRD_AUTH_PKCE_AUTHORIZATION_ENDPOINT $NETBIRD_AUTH_TOKEN_ENDPOINT $NETBIRD_AUTH_USER_ID_CLAIM $NETBIRD_DATASTORE_ENC_KEY $NETBIRD_DOMAIN_PORT $NETBIRD_MGMT_API_PORT $NETBIRD_RELAY_AUTH_SECRET $NETBIRD_RELAY_ENDPOINT $TURN_DOMAIN_PORT $TURN_SECRET'
 for name in $(printf '%s\n' "$management_variables" | grep -o '[A-Z][A-Z0-9_]*'); do
     eval 'present=${'"$name"'+x}'
     if [[ "$present" != x ]]; then
@@ -66,4 +76,4 @@ fi
 jq empty /etc/netbird/management.json.tmp
 mv /etc/netbird/management.json.tmp /etc/netbird/management.json
 
-exec /go/bin/netbird-mgmt management --port 8000 --log-file console --disable-anonymous-metrics=true
+exec /go/bin/netbird-mgmt management --port 33073 --log-file console --disable-anonymous-metrics=true

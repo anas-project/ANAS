@@ -699,7 +699,7 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 		}
 	}
 	a.deps = resolvedDeps
-	a.publishIAMEnv()
+	a.publishIAMEnv(out)
 	return stableModuleOrder(out, resolvedDeps, a.reg)
 }
 
@@ -847,14 +847,10 @@ func (a *app) applyModuleDefaults() {
 		}
 	}
 	a.env["ALL_MODS_NAME"] = strings.Join(a.order, ",")
-	ldap := []string{}
 	hostReq := []string{}
 	hostOpt := []string{}
 	for _, name := range a.order {
 		mod := a.reg[name]
-		if mod.UseLDAP {
-			ldap = append(ldap, name)
-		}
 		if mod.UseHostLAN == "required" {
 			hostReq = append(hostReq, name)
 		}
@@ -862,7 +858,6 @@ func (a *app) applyModuleDefaults() {
 			hostOpt = append(hostOpt, name)
 		}
 	}
-	a.env["USE_LDAP_MODS_NAME"] = strings.Join(ldap, ",")
 	a.env["USE_HOST_LAN_REQUIRED_MODS_NAME"] = strings.Join(hostReq, ",")
 	a.env["USE_HOST_LAN_OPTIONAL_MODS_NAME"] = strings.Join(hostOpt, ",")
 }

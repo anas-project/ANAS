@@ -168,6 +168,7 @@ func calcEturnal(e map[string]string, _ string, secrets *secretStore) error {
 		e["TURN_SECRET"] = v
 	}
 	e["TURN_DOMAIN"] = defaultValue(e["TURN_DOMAIN"], e["TURN_DOMAIN_PREFIX"]+"."+e["BASE_DOMAIN"])
+	e["ETURNAL_DOMAIN"] = e["TURN_DOMAIN"]
 	e["TURN_DOMAIN_PORT"] = e["TURN_DOMAIN"] + ":" + e["TURN_PORT"]
 	return nil
 }

@@ -1,7 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: netbird
-version: 0.25.6
+version: 0.76.1
+app_version: 0.76.1
 abi:
   supports:
     - anas.cask/v1
@@ -16,6 +17,7 @@ runtime:
 dependencies:
   requires:
     - traefik
+    - eturnal
   requires_capabilities:
     - name: iam
       interface_selected_by: iam_protocol
@@ -43,11 +45,14 @@ config:
   # IAM-implementation variable.
   consumes:
     - ANAS_IAM_BINDING__NETBIRD__*
+    - TURN_SECRET
   changes:
     iam_protocol:
       effect: container_recreate
       apply: recreate-netbird
       description: The OIDC issuer and client configuration change together.
+identity:
+  application_group: true
 features:
   generated_secrets: true
   domain: true

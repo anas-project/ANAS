@@ -59,19 +59,10 @@ whl ALL=(ALL) NOPASSWD: ALL
 
 ### Docker 镜像代理
 
-专用 daemon 使用：
-
-```json
-{
-  "registry-mirrors": [
-    "https://sk-docker.bengbu.cc.cd/",
-    "https://sk-ghcr.bengbu.cc.cd/"
-  ]
-}
-```
-
-两个地址的 `/v2/` 均返回 HTTP 200。Docker 的 `registry-mirrors` 只原生代理 Docker Hub，
-所以 GHCR 镜像通过 `sk-ghcr.bengbu.cc.cd/<path>` 拉取后回标为 `ghcr.io/<path>`。
+专用 daemon 使用 `test-env/server-docker-daemon.json` 中的测试专用镜像代理。代理地址不进入
+生产配置或公开部署说明。两个测试端点的 `/v2/` 均返回 HTTP 200。Docker 的
+`registry-mirrors` 只原生代理 Docker Hub，所以 GHCR 镜像通过测试代理拉取后回标为
+`ghcr.io/<path>`。
 
 ## 独立 Docker daemon 修复
 
@@ -91,7 +82,7 @@ whl ALL=(ALL) NOPASSWD: ALL
 isolated-runtime-ok
 ```
 
-容器内 `nslookup sk-docker.bengbu.cc.cd` 也成功。
+容器内解析测试镜像代理主机也成功。
 
 Samba 运行时要求 daemon 所在 namespace 内存在 `enp3s0` 作为 macvlan parent。测试脚本会
 创建同名 dummy 接口，仅供隔离 smoke 使用，不移动或修改宿主真实网卡。macvlan network
@@ -112,11 +103,11 @@ rsync -az --delete \
   refactor/ whl@finance.hlong.wang:/home/whl/anas-refactor-test/
 ```
 
-Go 1.24.2 从阿里云镜像下载；`go.dev` 和 `dl.google.com` 在该服务器连接超时：
+Go 1.24.2 从测试环境配置的下载代理获取；`go.dev` 和 `dl.google.com` 在该服务器连接超时：
 
 ```sh
 curl -fL -o /tmp/go1.24.2.linux-amd64.tar.gz \
-  https://mirrors.aliyun.com/golang/go1.24.2.linux-amd64.tar.gz
+  "$TEST_GO_DOWNLOAD_URL"
 tar -C .tools -xzf /tmp/go1.24.2.linux-amd64.tar.gz
 ```
 
@@ -125,7 +116,7 @@ tar -C .tools -xzf /tmp/go1.24.2.linux-amd64.tar.gz
 ```sh
 export PATH="$PWD/.tools/go/bin:$PATH"
 export GOTOOLCHAIN=local
-export GOPROXY=https://goproxy.cn,direct
+export GOPROXY="$TEST_GOPROXY"
 export DOCKER_HOST=unix:///run/anas-docker-test.sock
 
 go build -o bin/anas ./cmd/anas
@@ -200,7 +191,7 @@ ssh whl@finance.hlong.wang
 cd /home/whl/anas-refactor-test
 export PATH="$PWD/.tools/go/bin:$PATH"
 export GOTOOLCHAIN=local
-export GOPROXY=https://goproxy.cn,direct
+export GOPROXY="$TEST_GOPROXY"
 export DOCKER_HOST=unix:///run/anas-docker-test.sock
 ./test-env/scripts/test-static.sh
 ANAS_SERVER_CONFIG="$PWD/test-env/server-buildable-runtime.yml" \

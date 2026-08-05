@@ -225,8 +225,8 @@ IAM 不再使用带静态 `providers` 列表的 `requires_one`。数据库等现
 7. 校验失败立即报错，不运行 Hook、不生成密钥、不写运行目录。
 8. 把 IAM Cask 加入每个消费方的依赖边，保证 IAM 的 `calculate` Hook 先运行。
 9. **在任何 Hook 运行之前**注入完整绑定集合：`ANAS_IAM_PROVIDER`、
-   `ANAS_IAM_CLIENTS`、按协议拆分的 `ANAS_IAM_OIDC_CLIENTS` 与
-   `ANAS_IAM_SAML_CLIENTS`，以及每个消费方的
+   `ANAS_IDENTITY_CLIENTS`、按协议拆分的 `ANAS_IDENTITY_OIDC_CLIENTS` 与
+   `ANAS_IDENTITY_SAML_CLIENTS`，以及每个消费方的
    `ANAS_IAM_BINDING__<APP>__INTERFACE`。
 10. 按现有顺序执行 Hook。
 11. 成功 `start` 后把提供方和每个应用的协议绑定写入锁文件。
@@ -268,9 +268,12 @@ Runner 在任何 Hook 之前发布部署级只读变量：
 ANAS_IAM_PROVIDER=llng
 ANAS_IAM_INTERFACES=oidc,saml
 
-ANAS_IAM_CLIENTS=nextcloud,netbird
-ANAS_IAM_OIDC_CLIENTS=netbird
-ANAS_IAM_SAML_CLIENTS=nextcloud
+ANAS_IDENTITY_CLIENTS=nextcloud,netbird
+ANAS_IDENTITY_LDAPS_CLIENTS=nextcloud
+ANAS_IDENTITY_OIDC_CLIENTS=netbird
+ANAS_IDENTITY_SAML_CLIENTS=nextcloud
+ANAS_IDENTITY_CLIENT__NEXTCLOUD__INTERFACES=ldaps,saml
+ANAS_IDENTITY_CLIENT__NETBIRD__INTERFACES=oidc
 
 ANAS_IAM_BINDING__NETBIRD__INTERFACE=oidc
 ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE=saml
@@ -285,23 +288,24 @@ ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE=saml
 
 ### 6.1 消费方名单按协议拆分
 
-`ANAS_IAM_<PROTOCOL>_CLIENTS` 是 `ANAS_IAM_CLIENTS` 按已解析协议的投影。三个
-变量都由 Runner 从 §5 的同一份解析结果一次写出，Cask 只读不写，因此不存在
+`ANAS_IDENTITY_<PROTOCOL>_CLIENTS` 是 `ANAS_IDENTITY_CLIENTS` 按协议的投影。变量
+都由 Runner 从直接协议声明和 §5 的 IAM 解析结果一次写出，Cask 只读不写，因此不存在
 互相偏离的可能。
 
 拆分的理由不是"否则拿不到协议"——协议本来就可以逐个查
 `ANAS_IAM_BINDING__<APP>__INTERFACE`。真正的收益是让
-**"本次部署没有 SAML 消费方"成为可以直接判断的一等条件**（`ANAS_IAM_SAML_CLIENTS`
+**"本次部署没有 SAML 消费方"成为可以直接判断的一等条件**（`ANAS_IDENTITY_SAML_CLIENTS`
 为空），而这正是 §6.3 端点校验所依据的条件。两处使用同一事实，就该有同一种
 表达，否则每个 Provider Cask 都要自己扫一遍名单才能决定是否生成 SAML 配置段。
 对 Authentik 这类按协议逐个创建 Application/Provider 对象的实现，拆分后的列表
 是直接的 1:1 映射。
 
-保留扁平的 `ANAS_IAM_CLIENTS`，是因为存在与协议无关的消费场景，例如 LLNG 门户
+保留扁平的 `ANAS_IDENTITY_CLIENTS`，是因为存在与协议无关的消费场景，例如 LLNG 门户
 的应用启动器需要列出全部应用。
 
-**不变量：两个协议列表构成 `ANAS_IAM_CLIENTS` 的一个划分**——每个消费方恰好出现
-在一个列表中，因为 §4.2 规定一个应用只绑定一个协议。若将来引入 `all_of` 允许
+**不变量：OIDC 与 SAML 列表构成 IAM 消费方集合的一个划分**——每个 IAM 消费方恰好出现
+在一个列表中，因为 §4.2 规定一个应用只绑定一个 IAM 协议。身份协议的全体列表允许
+重叠，例如 Nextcloud 同时出现在 LDAPS 和 SAML 列表。若将来引入 `all_of` 允许
 一个应用同时使用两种协议，划分会退化为覆盖，`__INTERFACE` 也不再是单值，届时
 本节和 §6.3 必须一并重新设计，不能靠"顺手多加一个列表"糊过去。
 
@@ -336,9 +340,9 @@ Provider 若确有部署级单例端点，**可以额外**发布 `ANAS_IAM_OIDC_
 Runner 在 Provider Hook 返回后，**按实际绑定逐个消费方**校验必需变量，遍历范围
 就是 §6.1 的两个协议列表：
 
-- `ANAS_IAM_OIDC_CLIENTS` 中的每个消费方：`..._OIDC_ISSUER_URL`、
+- `ANAS_IDENTITY_OIDC_CLIENTS` 中的每个消费方：`..._OIDC_ISSUER_URL`、
   `..._OIDC_DISCOVERY_URL`；
-- `ANAS_IAM_SAML_CLIENTS` 中的每个消费方：`..._SAML_METADATA_URL`、
+- `ANAS_IDENTITY_SAML_CLIENTS` 中的每个消费方：`..._SAML_METADATA_URL`、
   `..._SAML_ENTITY_ID`、`..._SAML_SSO_URL`；`..._SAML_SLO_URL`、
   `..._SAML_SLO_RESPONSE_URL`、`..._SAML_SIGNING_CERT` 可选，但 SP 若要校验
   断言签名就需要 `SAML_SIGNING_CERT`。
@@ -359,7 +363,7 @@ Runner 在 Provider Hook 返回后，**按实际绑定逐个消费方**校验必
 ### 6.4 客户端注册请求
 
 消费方继续负责生成自己的客户端 secret 和回调地址，但改用通用命名空间。名单类
-变量（`ANAS_IAM_CLIENTS`、`ANAS_IAM_OIDC_CLIENTS`、`ANAS_IAM_SAML_CLIENTS`）
+变量（`ANAS_IDENTITY_CLIENTS`、`ANAS_IDENTITY_OIDC_CLIENTS`、`ANAS_IDENTITY_SAML_CLIENTS`）
 已由 Runner 在 §6 发布，消费方只补充自己的字段，不得追加或改写名单：
 
 ```dotenv
@@ -455,7 +459,7 @@ bindings:
   `ANAS_IAM_SAML_METADATA_URL`、`ANAS_IAM_SAML_ENTITY_ID`、
   `ANAS_IAM_SAML_SSO_URL`、`ANAS_IAM_SAML_SLO_URL`），**不能按
   `ANAS_IAM_OIDC_*` / `ANAS_IAM_SAML_*` 前缀匹配**，否则会误伤 §6.1 中允许读取
-  的 `ANAS_IAM_OIDC_CLIENTS` 和 `ANAS_IAM_SAML_CLIENTS`；
+  的 `ANAS_IDENTITY_OIDC_CLIENTS` 和 `ANAS_IDENTITY_SAML_CLIENTS`；
 - 增加清单/源码静态测试防止重新引入实现名分支；
 - 移除 `features.sso_provider` / `features.sso_client` 布尔字段，能力信息统一由
   `capabilities` 表达。
@@ -475,10 +479,10 @@ Runner 单元测试：
 - 只声明 `oidc` 的 IAM Cask 在清单加载阶段被拒绝；
 - Provider Hook 未为某个 SAML 绑定的消费方发布
   `ANAS_IAM_BINDING__<APP>__SAML_METADATA_URL` 时失败；
-- 反向用例：本次部署没有 SAML 消费方时，`ANAS_IAM_SAML_CLIENTS` 为空，Provider
+- 反向用例：本次部署没有 SAML 消费方时，`ANAS_IDENTITY_SAML_CLIENTS` 为空，Provider
   不发布任何 SAML 端点也应成功，校验只覆盖已绑定协议；
-- 名单划分不变量：`ANAS_IAM_OIDC_CLIENTS` 与 `ANAS_IAM_SAML_CLIENTS` 无交集，
-  且并集等于 `ANAS_IAM_CLIENTS`；
+- 名单划分不变量：`ANAS_IDENTITY_OIDC_CLIENTS` 与 `ANAS_IDENTITY_SAML_CLIENTS` 无交集，
+  且并集等于 IAM 消费方集合；
 - 协议列表随解析结果变化：`nextcloud` 从 `saml` 改为 `auto` 且
   `iam.default_protocol: oidc` 时，它从 SAML 列表移动到 OIDC 列表；
 - per-app 端点用例：伪造一个为每个消费方发布不同端点的 provider，验证各应用读到

@@ -70,7 +70,7 @@ if [ $SAMBA_DC_APP_FILTER == "true" ]; then
   APP_BASE="OU=Apps,OU=Groups"
   # User can access all app if add to this group
   create_group "$SAMBA_DC_APP_ALL_NAME" "$APP_BASE" "Add user to this group, can access all app when \$SAMBA_DC_APP_FILTER == true"
-  for name in $(echo $USE_LDAP_MODS_NAME | tr "," "\n")
+  for name in $(echo "$ANAS_IDENTITY_APP_CLIENTS" | tr "," "\n")
   do
     create_group "APP_$name" $APP_BASE "Add user to this group, can access app $name"
     # Add $SAMBA_DC_APP_ALL_NAME group to APP_$name, for recursive the permission
@@ -134,7 +134,7 @@ if [ ! -z "$SAMBA_DC_ADMIN_NAME" ]; then
   fi
   if [ "$SAMBA_DC_APP_FILTER" == "true" ]; then
     add_to_group "$SAMBA_DC_APP_ALL_NAME" "$SAMBA_DC_ADMIN_NAME"
-    for name in $(echo "$USE_LDAP_MODS_NAME" | tr "," "\n"); do
+    for name in $(echo "$ANAS_IDENTITY_APP_CLIENTS" | tr "," "\n"); do
       add_to_group "APP_$name" "$SAMBA_DC_ADMIN_NAME"
     done
   fi

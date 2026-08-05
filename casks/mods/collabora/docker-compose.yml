@@ -1,14 +1,17 @@
-version: "3.5"
-
 services:
   anas_collabora:
-    build: ./${MODULE_NAME}
-    image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
+    image: collabora/code:26.04.2.4.1
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     restart: unless-stopped
     cap_add:
       - MKNOD
-      - NET_ADMIN
+    environment:
+      aliasgroup1: ${COLLABORA_ALIAS_GROUP}
+      extra_params: ${COLLABORA_EXTRA_PARAMS}
+      server_name: ${COLLABORA_DOMAIN_PORT}
+      username: ${COLLABORA_ADMIN_USERNAME}
+      password: ${COLLABORA_ADMIN_PASSWORD}
+      DONT_GEN_SSL_CERT: "1"
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
@@ -18,6 +21,14 @@ services:
       - "traefik.http.services.collabora.loadbalancer.server.port=9980"
     env_file:
       - .env
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    healthcheck:
+      test: ["CMD", "/usr/bin/coolwsd", "--probe"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 networks:
   default:
     external: true

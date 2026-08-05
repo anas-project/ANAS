@@ -56,7 +56,7 @@ rsync -az --delete \
 cd /home/whl/anas-refactor-test
 export PATH="$PWD/.tools/go/bin:$PATH"
 export GOTOOLCHAIN=local
-export GOPROXY=https://goproxy.cn,direct
+export GOPROXY="$TEST_GOPROXY"
 export GOCACHE="$PWD/.gocache"
 export DOCKER_HOST=unix:///run/anas-docker-test.sock
 
@@ -248,7 +248,7 @@ rsync -az --delete --exclude '.tools/' --exclude '.anas-test/' \
 ssh whl@finance.hlong.wang
 cd /home/whl/anas-refactor-test
 export PATH="$PWD/.tools/go/bin:$PATH" GOTOOLCHAIN=local \
-  GOPROXY=https://goproxy.cn,direct GOCACHE="$PWD/.gocache" \
+  GOPROXY="$TEST_GOPROXY" GOCACHE="$PWD/.gocache" \
   DOCKER_HOST=unix:///run/anas-docker-test.sock
 go build -o bin/anas ./cmd/anas && ./test-env/scripts/test-static.sh
 ```

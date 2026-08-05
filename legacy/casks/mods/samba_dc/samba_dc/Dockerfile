@@ -4,8 +4,9 @@ LABEL maintainer="Hailong"
 ENV DEBIAN_FRONTEND noninteractive
 
 ARG CHINESE_SPEEDUP
-RUN if [ "$CHINESE_SPEEDUP" = "true" ] ; then  \
-  sed -i "s/archive.ubuntu.com/mirrors.aliyun.com/g" /etc/apt/sources.list; \
+ARG APT_MIRROR_URL
+RUN if [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ] ; then  \
+  sed -i "s|http://archive.ubuntu.com|${APT_MIRROR_URL%/}|g" /etc/apt/sources.list; \
   fi
 
 COPY root/ /

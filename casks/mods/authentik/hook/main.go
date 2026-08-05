@@ -116,7 +116,13 @@ func calcAuthentik(e map[string]string, secrets *secretStore) error {
 	e["AUTHENTIK_DOMAIN"] = e["AUTHENTIK_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
 	e["AUTHENTIK_DOMAIN_PORT"] = e["AUTHENTIK_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
 	e["AUTHENTIK_DOMAIN_FULL"] = "https://" + e["AUTHENTIK_DOMAIN_PORT"]
-	e["AUTHENTIK_PASSWORD"] = defaultValue(e["AUTHENTIK_PASSWORD"], e["DEFAULT_SERVICE_ROOT_PASSWORD"])
+	breakGlassPassword, err := secrets.Ensure("AUTHENTIK_BREAK_GLASS_PASSWORD", func() (string, error) {
+		return randomHexErr(32)
+	})
+	if err != nil {
+		return err
+	}
+	e["AUTHENTIK_BREAK_GLASS_PASSWORD"] = breakGlassPassword
 
 	switch e["AUTHENTIK_DB_TYPE"] {
 	case "postgres":
@@ -131,15 +137,33 @@ func calcAuthentik(e map[string]string, secrets *secretStore) error {
 	default:
 		return fmt.Errorf("AUTHENTIK_DB_TYPE must be resolved to postgres")
 	}
-	e["AUTHENTIK_REDIS__HOST"] = e["CONTAINER_PREFIX"] + "authentik_redis"
 	e["AUTHENTIK_LOG_LEVEL"] = defaultValue(e["AUTHENTIK_LOG_LEVEL"], "warn")
+	if e["AUTHENTIK_LDAP_ENABLED"] == "true" {
+		if err := requireKeys(e, []string{
+			"SAMBA_DC_LDAPS_SERVER_URL_PORT", "SAMBA_DC_PASSWORD_BIND_DN",
+			"SAMBA_DC_PASSWORD_BIND_PASSWORD", "SAMBA_DC_BASE_DN",
+			"SAMBA_DC_BASE_USERS_DN_PREFIX", "SAMBA_DC_BASE_GROUPS_DN_PREFIX",
+		}); err != nil {
+			return fmt.Errorf("configure authentik Samba AD source: %w", err)
+		}
+		e["AUTHENTIK_LDAP_SERVER_URI"] = e["SAMBA_DC_LDAPS_SERVER_URL_PORT"]
+		e["AUTHENTIK_LDAP_BIND_DN"] = e["SAMBA_DC_PASSWORD_BIND_DN"]
+		e["AUTHENTIK_LDAP_BIND_PASSWORD"] = e["SAMBA_DC_PASSWORD_BIND_PASSWORD"]
+		e["AUTHENTIK_LDAP_BASE_DN"] = e["SAMBA_DC_BASE_DN"]
+		e["AUTHENTIK_LDAP_ADDITIONAL_USER_DN"] = e["SAMBA_DC_BASE_USERS_DN_PREFIX"]
+		e["AUTHENTIK_LDAP_ADDITIONAL_GROUP_DN"] = e["SAMBA_DC_BASE_GROUPS_DN_PREFIX"]
+		e["AUTHENTIK_LDAP_USER_OBJECT_FILTER"] = "(&(objectClass=user)(!(objectClass=computer)))"
+		e["AUTHENTIK_LDAP_GROUP_OBJECT_FILTER"] = e["SAMBA_DC_GROUP_CLASS_FILTER"]
+		e["AUTHENTIK_LDAP_GROUP_MEMBERSHIP_FIELD"] = "memberOf:1.2.840.113556.1.4.1941:"
+		e["AUTHENTIK_LDAP_USER_MEMBERSHIP_ATTRIBUTE"] = "distinguishedName"
+	}
 
 	key, err := secrets.Ensure("AUTHENTIK_SECRET_KEY", func() (string, error) { return randomHexErr(32) })
 	if err != nil {
 		return err
 	}
 	e["AUTHENTIK_SECRET_KEY"] = key
-	e["AUTHENTIK_BOOTSTRAP_PASSWORD"] = e["AUTHENTIK_PASSWORD"]
+	e["AUTHENTIK_BOOTSTRAP_PASSWORD"] = breakGlassPassword
 	e["AUTHENTIK_BOOTSTRAP_EMAIL"] = e["EMAIL"]
 
 	if err := ensureSigningKeypair(e, secrets); err != nil {
@@ -153,10 +177,14 @@ func renderAuthentik(e map[string]string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if blueprint == "" {
-		return map[string]string{}, nil
+	files := map[string]string{}
+	if blueprint != "" {
+		files["blueprints/anas-clients.yaml"] = blueprint
 	}
-	return map[string]string{"blueprints/anas-clients.yaml": blueprint}, nil
+	if e["AUTHENTIK_LDAP_ENABLED"] == "true" {
+		files["blueprints/anas-samba-ad.yaml"] = renderDirectoryBlueprint()
+	}
+	return files, nil
 }
 
 func cloneMap(in map[string]string) map[string]string {
@@ -182,6 +210,19 @@ func defaultValue(v, d string) string {
 		return d
 	}
 	return v
+}
+
+func requireKeys(e map[string]string, keys []string) error {
+	missing := []string{}
+	for _, key := range keys {
+		if strings.TrimSpace(e[key]) == "" {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) != 0 {
+		return fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 func randomHexErr(n int) (string, error) {

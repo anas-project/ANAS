@@ -7,6 +7,7 @@ services:
       context: ./${MODULE_NAME}
       args:
         - CHINESE_SPEEDUP
+        - APT_MIRROR_URL
     image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
     restart: unless-stopped
     hostname: ${SAMBA_FS_HOSTNAME}

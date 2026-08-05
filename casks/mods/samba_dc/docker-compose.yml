@@ -3,8 +3,10 @@ services:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     build: 
       context: ./${MODULE_NAME}
+      network: ${DOCKER_BUILD_NETWORK:-default}
       args:
         - CHINESE_SPEEDUP
+        - APT_MIRROR_URL
     image: ${IMAGE_PREFIX}${MODULE_NAME}:26.04.0
     restart: unless-stopped
     network_mode: host

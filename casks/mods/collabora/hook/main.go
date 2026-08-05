@@ -164,20 +164,9 @@ func domainCalc(prefix, service string) func(map[string]string, string, *secretS
 	}
 }
 func moduleCollabora(e map[string]string, _ string) error {
-	e["TIMEZONE"] = e["TZ"]
-	e["CONTAINER_NAME"] = e["CONTAINER_PREFIX"] + "collabora"
-	e["ADMIN_USER"] = e["SAMBA_DC_ADMIN_NAME"]
-	e["ADMIN_PASS"] = e["DEFAULT_SERVICE_ROOT_PASSWORD"]
-	e["ALLOWED_HOSTS"] = e["NEXTCLOUD_DOMAIN_FULL"]
-	e["INTERFACE"] = e["COLLABORA_INTERFACE"]
-	e["LOG_TYPE"] = "CONSOLE"
-	e["LOG_LEVEL"] = e["COLLABORA_LOG_LEVEL"]
-	e["ENABLE_TLS"] = "FALSE"
-	e["ENABLE_TLS_CERT_GENERATE"] = "FALSE"
-	e["ENABLE_TLS_REVERSE_PROXY"] = "TRUE"
-	e["AUTO_SAVE"] = e["COLLABORA_AUTO_SAVE"]
-	e["HOSTNAME"] = e["COLLABORA_DOMAIN_PORT"]
-	e["FRAME_ANCESTORS"] = "https://*"
-	e["ENABLE_CLEANUP"] = "true"
+	e["COLLABORA_ADMIN_USERNAME"] = e["SAMBA_DC_ADMIN_NAME"]
+	e["COLLABORA_ADMIN_PASSWORD"] = e["DEFAULT_SERVICE_ROOT_PASSWORD"]
+	e["COLLABORA_ALIAS_GROUP"] = e["NEXTCLOUD_DOMAIN_FULL"]
+	e["COLLABORA_EXTRA_PARAMS"] = "--o:ssl.enable=false --o:ssl.termination=true --o:logging.level=" + e["COLLABORA_LOG_LEVEL"] + " --o:autosave.autosave_interval_secs=" + e["COLLABORA_AUTO_SAVE"] + " --o:welcome.enable=false --o:fetch_update_check=0 --o:allow_update_popup=false"
 	return nil
 }

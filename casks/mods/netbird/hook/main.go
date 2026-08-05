@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -193,6 +194,21 @@ func calcNetbird(e map[string]string, workdir string, secrets *secretStore) erro
 	e["APPS_LIST__NETBIRD__LOGO_PATH"] = defaultValue(e["APPS_LIST__NETBIRD__LOGO_PATH"], filepath.Join(workdir, "assets", "netbird.png"))
 	e["APPS_LIST__NETBIRD__URI"] = e["NETBIRD_DOMAIN_FULL"]
 	e["APPS_LIST__NETBIRD__ALLOW_GROUPS"] = allowGroups
+	if !validBase64Secret(e["NETBIRD_DATASTORE_ENC_KEY"], 32) {
+		value, err := randomBase64Err(32)
+		if err != nil {
+			return err
+		}
+		secrets.values["NETBIRD_DATASTORE_ENC_KEY"] = value
+		e["NETBIRD_DATASTORE_ENC_KEY"] = value
+	}
+	if e["NETBIRD_RELAY_AUTH_SECRET"] == "" {
+		value, err := secrets.Ensure("NETBIRD_RELAY_AUTH_SECRET", func() (string, error) { return randomHexErr(32) })
+		if err != nil {
+			return err
+		}
+		e["NETBIRD_RELAY_AUTH_SECRET"] = value
+	}
 	return nil
 }
 func moduleNetbird(e map[string]string, _ string) error {
@@ -200,7 +216,7 @@ func moduleNetbird(e map[string]string, _ string) error {
 	e["NETBIRD_DASHBOARD_ENDPOINT"] = e["NETBIRD_DOMAIN_FULL"]
 	e["NETBIRD_MGMT_API_ENDPOINT"] = e["NETBIRD_DOMAIN_FULL"]
 	e["NETBIRD_MGMT_GRPC_API_ENDPOINT"] = e["NETBIRD_DOMAIN_FULL"]
-	e["NETBIRD_MGMT_API_PORT"] = e["TRAEFIK_BASE_PORT"]
+	e["NETBIRD_MGMT_API_PORT"] = "33073"
 	e["AUTH_CLIENT_ID"] = e["ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID"]
 	e["AUTH_CLIENT_SECRET"] = e["ANAS_IAM_CLIENT__NETBIRD__CLIENT_SECRET"]
 	e["NETBIRD_SIGNAL_ENDPOINT"] = e["NETBIRD_DOMAIN_FULL"]
@@ -219,6 +235,11 @@ func moduleNetbird(e map[string]string, _ string) error {
 		return fmt.Errorf("%sOIDC_DISCOVERY_URL is empty", binding)
 	}
 	e["NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT"] = oidcEndpoint
+	e["AUTH_AUTHORITY"] = e[binding+"OIDC_ISSUER_URL"]
+	e["NETBIRD_AUTH_AUTHORITY"] = e["AUTH_AUTHORITY"]
+	e["NETBIRD_AUTH_USER_ID_CLAIM"] = "sub"
+	e["NETBIRD_AUTH_DEVICE_AUTH_USE_ID_TOKEN"] = "false"
+	e["NETBIRD_RELAY_ENDPOINT"] = "rels://" + e["NETBIRD_DOMAIN_PORT"] + "/relay"
 	e["AUTH_SUPPORTED_SCOPES"] = "openid profile email"
 	e["AUTH_DEVICE_AUTH_PROVIDER"] = "false"
 	e["USE_AUTH0"] = "false"
@@ -237,6 +258,18 @@ func randomHexErr(n int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+func randomBase64Err(n int) (string, error) {
+	b := make([]byte, n)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b), nil
+}
+func validBase64Secret(value string, size int) bool {
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	return err == nil && len(decoded) == size
 }
 func splitCSV(s string) []string {
 	out := []string{}

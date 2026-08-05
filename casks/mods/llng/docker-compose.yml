@@ -1,15 +1,36 @@
-version: "3.5"
-
 services:
   anas_llng:
     container_name: ${CONTAINER_PREFIX}llng
-    image: ${IMAGE_PREFIX}llng:latest
-    build: ./llng
+    image: ${IMAGE_PREFIX}llng:2.23.2
+    build:
+      context: ./llng
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        CHINESE_SPEEDUP: ${CHINESE_SPEEDUP:-false}
+        APT_MIRROR_URL: ${APT_MIRROR_URL:-}
     restart: unless-stopped
     volumes:
       - "${DATA_PATH}/llng/conf:/var/lib/lemonldap-ng/conf/"
+      - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
     env_file:
       - .env
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    environment:
+      SSODOMAIN: ${BASE_DOMAIN}
+      PORTAL_HOSTNAME: ${LLNG_DOMAIN}
+      MANAGER_HOSTNAME: ${LLNG_MANAGER_DOMAIN}
+      TEST1_HOSTNAME: ${LLNG_TEST_DOMAIN}
+      LOGLEVEL: ${LLNG_LOG_LEVEL}
+      PORT: "80"
+      IPV4_ONLY: "true"
+      PRESERVEFILES: /var/lib/lemonldap-ng/conf
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /run/llng-configured && curl -fsS -H 'Host: ${LLNG_DOMAIN}' http://127.0.0.1/ >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"

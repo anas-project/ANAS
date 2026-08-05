@@ -1,21 +1,17 @@
-version: "3.5"
-
 services:
   anas_nextcloud:
     build:
       context: ./nextcloud
+      network: ${DOCKER_BUILD_NETWORK:-default}
       args:
         - CHINESE_SPEEDUP
-    image: ${IMAGE_PREFIX}nextcloud:latest
+        - APT_MIRROR_URL
+        - NEXTCLOUD_APT_MIRROR_URL
+    image: ${IMAGE_PREFIX}nextcloud:34.0.2
     container_name: ${CONTAINER_PREFIX}nextcloud
     volumes:
-      - "${NEXTCLOUD_BASE_PATH}/nextcloud:/data"
-      # Read-only access to the deployment's certificates so this container can
-      # trust the internal CA when it talks to the domain controller over
-      # LDAPS or fetches identity-provider metadata over HTTPS.
+      - "${NEXTCLOUD_BASE_PATH}/nextcloud:/var/www/html"
       - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
-      # - type: tmpfs
-      #   target: /tmp
     dns:
       - ${LOCAL_DNS_SERVER}
     labels:
@@ -26,7 +22,7 @@ services:
       - "traefik.http.routers.nextcloud.middlewares=nextcloud-dav,nextcloud-webfinger,nextcloud-regex,nextcloud-header"
       - "traefik.http.routers.nextcloud.tls=true"
       - "traefik.http.routers.nextcloud.service=nextcloud"
-      - "traefik.http.services.nextcloud.loadbalancer.server.port=8000"
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
       - "traefik.http.middlewares.nextcloud-dav.replacepathregex.regex=^/.well-known/(card|cal)dav"
       - "traefik.http.middlewares.nextcloud-dav.replacepathregex.replacement=/remote.php/dav/"
       - "traefik.http.middlewares.nextcloud-webfinger.replacepathregex.regex=^(/.well-known.*)"
@@ -41,67 +37,167 @@ services:
       - "traefik.http.middlewares.nextcloud-header.headers.customFrameOptionsValue=SAMEORIGIN"
       - "traefik.http.middlewares.nextcloud-header.headers.customRequestHeaders.X-Forwarded-Proto=https"
       - "traefik.http.middlewares.nextcloud-header.headers.customResponseHeaders.X-Robots-Tag=noindex,nofollow"
+      - "traefik.docker.network=${NETWORK_PREFIX}traefik"
+    env_file:
+      - .env
+    depends_on:
+      anas_nextcloud-redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /run/nextcloud-tasks.ready && curl -fsS http://127.0.0.1/status.php | grep -q '\"installed\":true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 900s
+    networks:
+      - nextcloud
+      - db
+      - traefik
+
+  anas_nextcloud-cron:
+    image: ${IMAGE_PREFIX}nextcloud:34.0.2
+    container_name: ${CONTAINER_PREFIX}nextcloud_cron
+    entrypoint: ["/cron.sh"]
+    volumes:
+      - "${NEXTCLOUD_BASE_PATH}/nextcloud:/var/www/html"
+    env_file:
+      - .env
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    depends_on:
+      anas_nextcloud:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - nextcloud
+      - db
+
+  anas_nextcloud-push:
+    image: ghcr.io/nextcloud-releases/aio-notify-push:latest
+    container_name: ${CONTAINER_PREFIX}nextcloud_push
+    user: "33:33"
+    init: true
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        until nc -z "$$NEXTCLOUD_HOST" 80; do
+          echo "Waiting for Nextcloud to start..."
+          sleep 5
+        done
+        cpu_arch="$$(uname -m)"
+        if [ "$$cpu_arch" != "x86_64" ]; then
+          cpu_arch="aarch64"
+        fi
+        push_path="/var/www/html/custom_apps/notify_push/bin/$$cpu_arch/notify_push"
+        if [ ! -x "$$push_path" ]; then
+          push_path="/var/www/html/apps/notify_push/bin/$$cpu_arch/notify_push"
+        fi
+        export RUST_LOG="$$AIO_LOG_LEVEL"
+        echo "notify-push was started"
+        exec "$$push_path" \
+          --port 7867 \
+          --nextcloud-url "http://$$NEXTCLOUD_HOST" \
+          /var/www/html/config/config.php
+    volumes:
+      - "${NEXTCLOUD_BASE_PATH}/nextcloud:/var/www/html:ro"
+    environment:
+      NEXTCLOUD_HOST: ${NEXTCLOUD_HOSTNAME}
+      AIO_LOG_LEVEL: info
+      TZ: ${TZ}
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
       - "traefik.http.routers.nextcloud-push.entrypoints=https"
       - "traefik.http.routers.nextcloud-push.rule=Host(`${NEXTCLOUD_DOMAIN}`) && PathPrefix(`/push`)"
       - "traefik.http.routers.nextcloud-push.tls=true"
       - "traefik.http.routers.nextcloud-push.service=nextcloud-push"
-      - "traefik.http.routers.nextcloud-push.middlewares=nextcloud-push_stripprefix"
-      - "traefik.http.middlewares.nextcloud-push_stripprefix.stripprefix.prefixes=/push"
+      - "traefik.http.routers.nextcloud-push.middlewares=nextcloud-push-stripprefix"
+      - "traefik.http.middlewares.nextcloud-push-stripprefix.stripprefix.prefixes=/push"
       - "traefik.http.services.nextcloud-push.loadbalancer.server.port=7867"
       - "traefik.docker.network=${NETWORK_PREFIX}traefik"
-    env_file:
-      - .env
     restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - NET_RAW
     healthcheck:
-      test: ["CMD-SHELL", "test -f /run/nextcloud-tasks.ready && curl -fsS http://127.0.0.1:12345/ping >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 120s
+      test: ["CMD", "nc", "-z", "127.0.0.1", "7867"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
     networks:
       - nextcloud
       - db
       - traefik
 
   anas_imaginary:
-    build:
-      context: ./imaginary
-      args:
-        - CHINESE_SPEEDUP
-        - GOPROXY
-    image: ${IMAGE_PREFIX}nextcloud_imaginary:latest
-    restart: unless-stopped
+    image: ghcr.io/nextcloud-releases/aio-imaginary:latest
     container_name: ${CONTAINER_PREFIX}nextcloud_imaginary
-    env_file:
-      - .env
+    user: "65534:65534"
+    init: true
+    environment:
+      IMAGINARY_SECRET: ${NEXTCLOUD_IMAGINARY_SECRET}
+      AIO_LOG_LEVEL: info
+      TZ: ${TZ}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_add:
+      - SYS_NICE
+    cap_drop:
+      - NET_RAW
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/healthcheck.sh"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
     networks:
       - nextcloud
-      - traefik
 
   anas_nextcloud-redis:
     container_name: ${CONTAINER_PREFIX}nextcloud_redis
-    image: redis:7.4-alpine
+    image: redis:8.10.0-alpine
+    command: ["redis-server", "--appendonly", "yes"]
     restart: unless-stopped
     volumes:
       - "${NEXTCLOUD_BASE_PATH}/redis:/data"
-    env_file:
-      - .env
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
     networks:
       - nextcloud
 
   anas_talk:
-    build:
-      context: ./talk
-      args:
-        - CHINESE_SPEEDUP
-    image: ${IMAGE_PREFIX}nextcloud_talk:latest
+    image: ghcr.io/nextcloud-releases/aio-talk:latest
     container_name: ${CONTAINER_PREFIX}nextcloud_talk
-    restart: unless-stopped
-    env_file:
-      - .env
+    user: "1000:1000"
+    init: true
+    environment:
+      NC_DOMAIN: ${NEXTCLOUD_DOMAIN_PORT}
+      TURN_DOMAIN: ${TURN_DOMAIN}
+      TALK_HOST: ${CONTAINER_PREFIX}nextcloud_talk
+      TURN_SECRET: ${TURN_SECRET}
+      SIGNALING_SECRET: ${TALK_SIGNALING_SECRET}
+      INTERNAL_SECRET: ${NEXTCLOUD_TALK_INTERNAL_SECRET}
+      TALK_PORT: ${TURN_PORT}
+      AIO_LOG_LEVEL: info
+      TZ: ${TZ}
+    dns:
+      - ${LOCAL_DNS_SERVER}
     volumes:
-      - type: tmpfs
-        target: /var/lib/coturn
+      - "${ANAS_TLS_CERTS_DIR}/${ANAS_TLS_INTERNAL_CA_NAME}:/usr/local/share/ca-certificates/anas-internal-ca.crt:ro"
+    read_only: true
+    tmpfs:
+      - /var/log/supervisord
+      - /var/run/supervisord
+      - /opt/eturnal/run
+      - /conf
+      - /tmp
+    cap_drop:
+      - NET_RAW
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
@@ -109,20 +205,24 @@ services:
       - "traefik.http.routers.nextcloud-talk-signaling.tls=true"
       - "traefik.http.routers.nextcloud-talk-signaling.rule=Host(`${NEXTCLOUD_DOMAIN}`) && PathPrefix(`/talk`)"
       - "traefik.http.routers.nextcloud-talk-signaling.service=nextcloud-talk-signaling"
-      - "traefik.http.routers.nextcloud-talk-signaling.middlewares=nextcloud-talk-signaling_stripprefix"
+      - "traefik.http.routers.nextcloud-talk-signaling.middlewares=nextcloud-talk-signaling-stripprefix"
       - "traefik.http.services.nextcloud-talk-signaling.loadbalancer.server.port=8081"
-      - "traefik.http.middlewares.nextcloud-talk-signaling_stripprefix.stripprefix.prefixes=/talk"
+      - "traefik.http.middlewares.nextcloud-talk-signaling-stripprefix.stripprefix.prefixes=/talk"
       - "traefik.docker.network=${NETWORK_PREFIX}traefik"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/healthcheck.sh"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
     networks:
+      - nextcloud
       - traefik
 
 networks:
   nextcloud:
     driver: bridge
     name: ${NETWORK_PREFIX}nextcloud
-    # enable_ipv6: true
-    # driver_opts:
-    #   com.docker.network.enable_ipv6: "true"
   db:
     name: ${NEXTCLOUD_NETWORK_DB}
     external: true

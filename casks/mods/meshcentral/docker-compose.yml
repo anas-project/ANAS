@@ -1,14 +1,15 @@
-version: "3.5"
-
 services:
   anas_meshcentral:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
-    image: ${IMAGE_PREFIX}${MODULE_NAME}:latest
+    image: ${IMAGE_PREFIX}${MODULE_NAME}:1.2.4
     build:
       context: ./${MODULE_NAME}
+      network: ${DOCKER_BUILD_NETWORK:-default}
       args:
         CHINESE_SPEEDUP: ${CHINESE_SPEEDUP:-false}
+        NPM_REGISTRY_URL: ${NPM_REGISTRY_URL:-https://registry.npmjs.org}
     restart: unless-stopped
+    init: true
     dns:
       - ${LOCAL_DNS_SERVER}
     ports:
@@ -18,6 +19,12 @@ services:
       - .env
     tmpfs:
       - /run/anas:mode=0700,size=1m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${TRAEFIK_BASE_PORT}/ >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     volumes:
       - "${DATA_PATH}/meshcentral/meshcentral-data:/opt/meshcentral/meshcentral-data"
       - "${DATA_PATH}/meshcentral/meshcentral-files:/opt/meshcentral/meshcentral-files"

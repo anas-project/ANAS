@@ -1,7 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: lam
-version: 7.8.1
+version: 9.6.0
+app_version: 9.6.0
 abi:
   supports:
     - anas.cask/v1
@@ -34,8 +35,11 @@ config:
       effect: container_recreate
       apply: recreate-lam
       description: The proxy route is generated from the domain.
+identity:
+  interfaces:
+    - ldaps
+  application_group: true
 features:
-  ldap_client: true
   domain: true
 logic:
   hook:

@@ -57,7 +57,7 @@ Go 1.24.2 安装在部署目录的 `.tools/go`，没有修改系统包。压缩�
 ```sh
 export PATH="$HOME/anas-refactor-test/.tools/go/bin:$PATH"
 export GOTOOLCHAIN=local
-export GOPROXY=https://goproxy.cn,direct
+export GOPROXY="$TEST_GOPROXY"
 ```
 
 ### 3. 同步与构建
@@ -162,7 +162,7 @@ docker logs --tail 100 anas_test_postgres
 ./bin/anas stop -b .anas-test/server-runtime
 
 # 再次启动
-GOPROXY=https://goproxy.cn,direct ./bin/anas start \
+GOPROXY="$TEST_GOPROXY" ./bin/anas start \
   -c test-env/server-runtime.yml \
   -b .anas-test/server-runtime
 ```

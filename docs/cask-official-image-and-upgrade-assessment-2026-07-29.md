@@ -1,7 +1,7 @@
 # Cask 官方镜像切换与版本升级评估
 
 评估日期：2026-07-29
-实施更新：2026-08-01
+实施更新：2026-08-01、2026-08-02
 
 ## 1. 实施前提
 
@@ -14,7 +14,7 @@
 - 网络与通信：`ddns`、`eturnal`、`freeradius`。
 - 目录和文件服务基础：`samba_dc`、`samba_fs`。
 
-应用层 cask（Authentik、Nextcloud、Collabora、MeshCentral、NetBird、LAM、LLNG）留到下一批处理。
+2026-08-02 已继续处理应用层 cask：Authentik、Nextcloud、Collabora、MeshCentral、NetBird、LAM、LLNG。
 
 ## 2. 升级结果
 
@@ -30,6 +30,18 @@
 | `freeradius` | 镜像 `3.2.7`，元数据误写 `4.4.0` | `freeradius/freeradius-server:3.2.10` | 直接使用上游镜像 | 保留 1812/1813 UDP 和 `freeradius -XC` 健康检查；修正 cask/app 版本 |
 | `samba_dc` | LinuxServer Ubuntu 24.04 base，Samba 4.19 系列 | Docker Official `ubuntu:resolute`，Samba 4.23.6 包 | 官方基础镜像加项目服务层 | 用 `tini`/`runit` 替代 LinuxServer s6，保留 BIND9-DLZ、AD 初始化、TLS、DNS、密码策略和 `/var/lib/samba` 布局 |
 | `samba_fs` | LinuxServer Ubuntu 22.04 base，Samba 4.15 系列 | Docker Official `ubuntu:resolute`，Samba 4.23.6 包 | 官方基础镜像加项目服务层 | 用 `tini`/`runit` 运行现有服务脚本，保留域加入、winbind、Avahi、wsdd2、ACL 和共享配置 |
+
+### 应用服务
+
+| Cask | 原版本或镜像 | 新版本或镜像 | 镜像策略 | 功能保持措施 |
+| --- | --- | --- | --- | --- |
+| `authentik` | 2024.10.5，外置 Redis | 2026.5.6 | Authentik 官方 server/worker 镜像 | 按新版拓扑移除 Redis，保留 PostgreSQL、bootstrap 管理员、OIDC provider、SAML provider、Traefik 路由和持久化 `/data` |
+| `collabora` | 23.05.0-2 自定义派生镜像 | `collabora/code:26.04.2.4.1` | 直接使用官方镜像 | 使用官方 `--use-env-vars` 配置入口，保留 WOPI allowlist、Nextcloud 集成、TLS 终止和健康探针 |
+| `lam` | 7.8.1，LinuxServer 派生镜像 | 9.6.0 | Docker Official `debian:trixie-slim` 加 LAM 官方 `.deb` | 保留中文界面、LDAPS、Samba AD profile、密码修改和 Traefik 路由；下载包固定 SHA-256 |
+| `llng` | 2.0.64，旧 LinuxServer 服务层 | 2.23.2 | LemonLDAP::NG 官方镜像的最小配置层 | 保留 PostgreSQL 配置存储、LDAP 登录、Nextcloud SAML、NetBird OIDC、应用门户和内部 CA 信任 |
+| `meshcentral` | 1.1.6 自定义 npm 镜像 | 1.2.4 | MeshCentral 官方 GHCR 镜像的最小依赖层 | 仅补充 LDAP/MySQL 运行依赖和动态配置，保留 LDAP 登录、MariaDB、Traefik 路由和持久化目录 |
+| `netbird` | 0.25.6 experimental 拓扑 | management/signal/relay 0.76.1，dashboard 2.90.9 | 官方多容器拓扑 | 保留外部 LLNG OIDC，新增 relay，管理存储切到新版支持的 SQLite，保留 TURN、WebSocket/gRPC 路由和内部 CA 信任 |
+| `nextcloud` | 30.0.1，自制 push/Imaginary/Talk 镜像，Redis 7.4 | 34.0.2，Redis 8.10.0 | Nextcloud 官方 Apache 基础镜像和官方 AIO 配套镜像 | 保留 LDAP、SAML、Collabora、Talk、notify_push、Imaginary、Memories、WebDAV 和 cron；应用版本固定到 NC 34 兼容版本 |
 
 ## 3. 官方镜像判断
 
@@ -73,14 +85,12 @@ Samba 没有 Docker Official Image。社区应用镜像不能直接覆盖当前 
 
 2026-08-01 已在远端隔离 Docker daemon 完成上述基础服务回归，结果见 `docs/test-server-base-services-2026-08-01.md`。
 
-## 6. 后续批次
+## 6. 应用层实施说明
 
-基础服务验证通过后，再处理应用层：
-
-1. 先升级数据库消费者并确认 PostgreSQL 18、MariaDB 12 的支持范围。
-2. 将 Collabora、Nextcloud、LAM、LLNG 等第三方镜像迁移到官方镜像。
-3. 按官方升级序列处理 Authentik 和 Nextcloud 等不允许跨版本跳级的应用。
-4. 按当前官方自托管拓扑重写已过时的 NetBird experimental cask。
+1. 本轮按“未发布、无旧数据兼容”前提使用全新 workspace 验证，因此 Authentik 和 Nextcloud 直接初始化最新版，不提供跨大版本原地迁移脚本。
+2. NetBird 保留多容器模式，因为 combined 模式内置身份提供方，无法保持现有 LLNG 外部 OIDC 功能。
+3. Nextcloud 首次初始化会下载 98 MB Memories 地理库；现改为持久缓存、断点续传、固定 SHA-256 校验，再从本地缓存导入，避免网络中断后从零开始。
+4. 应用服务远端回归结果记录在 `docs/test-server-application-services-2026-08-02.md`。
 
 ## 7. 上游依据
 
@@ -93,3 +103,10 @@ Samba 没有 Docker Official Image。社区应用镜像不能直接覆盖当前 
 - Eturnal container and changelog: https://eturnal.net/doc/container.html, https://eturnal.net/doc/changelog.html
 - FreeRADIUS 3.2.10: https://github.com/FreeRADIUS/freeradius-server/releases/tag/release_3_2_10
 - Samba stable release and Ubuntu package: https://devel.samba.org/samba/, https://packages.ubuntu.com/resolute/samba
+- Authentik releases and Docker Compose installation: https://docs.goauthentik.io/releases/, https://docs.goauthentik.io/install-config/install/docker-compose/
+- Nextcloud releases and official image: https://nextcloud.com/changelog/, https://hub.docker.com/_/nextcloud
+- Collabora CODE image: https://hub.docker.com/r/collabora/code
+- LemonLDAP::NG image: https://hub.docker.com/r/lemonldapng/lemonldap-ng
+- MeshCentral releases: https://github.com/Ylianst/MeshCentral/releases
+- NetBird self-hosting: https://docs.netbird.io/selfhosted/selfhosted-guide
+- LDAP Account Manager releases: https://github.com/LDAPAccountManager/lam/releases
