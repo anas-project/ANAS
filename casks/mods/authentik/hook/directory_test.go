@@ -27,9 +27,11 @@ func TestDirectoryBlueprintUsesEnvironmentContracts(t *testing.T) {
 		!strings.Contains(blueprint, "authentik.core.auth.InbuiltBackend") {
 		t.Fatal("password stage must retain LDAP for AD users and inbuilt auth for akadmin")
 	}
-	if !strings.Contains(blueprint, `peer_certificate: !Find [authentik_crypto.certificatekeypair, [name, "anas-samba-ad-ca"]]`) ||
-		!strings.Contains(blueprint, "sni: true") {
-		t.Fatal("Samba AD source must verify LDAPS with the imported ANAS CA and SNI")
+	if !strings.Contains(blueprint, `peer_certificate: !Find [authentik_crypto.certificatekeypair, [name, "anas-samba-ad-ca"]]`) {
+		t.Fatal("Samba AD source must verify LDAPS with the imported ANAS CA")
+	}
+	if strings.Contains(blueprint, "sni: true") {
+		t.Fatal("explicit SNI must stay disabled because authentik passes the full LDAPS URI as the SNI name")
 	}
 	if !strings.Contains(blueprint, `"is_superuser": group_name == "Admins"`) ||
 		!strings.Contains(blueprint, "- !KeyOf samba-ad-group-role-mapping") {

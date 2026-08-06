@@ -55,12 +55,12 @@ services:
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
+        install -m 0444 "/certs/$${ANAS_TLS_INTERNAL_CA_NAME}" /tmp/anas-samba-ad-ca.crt
         ak import_certificate \
-          --certificate "/certs/$${ANAS_TLS_INTERNAL_CA_NAME}" \
+          --certificate /tmp/anas-samba-ad-ca.crt \
           --name anas-samba-ad-ca
         exec ak worker
     shm_size: 512mb
-    user: root
     depends_on:
       anas_authentik_init:
         condition: service_completed_successfully

@@ -30,7 +30,6 @@ entries:
       name: Samba AD
       enabled: true
       server_uri: !Env AUTHENTIK_LDAP_SERVER_URI
-      sni: true
       peer_certificate: !Find [authentik_crypto.certificatekeypair, [name, "anas-samba-ad-ca"]]
       bind_cn: !Env AUTHENTIK_LDAP_BIND_DN
       bind_password: !Env AUTHENTIK_LDAP_BIND_PASSWORD

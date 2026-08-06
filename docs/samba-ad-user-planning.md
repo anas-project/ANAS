@@ -299,7 +299,7 @@ anas config secret get AUTHENTIK_BREAK_GLASS_PASSWORD -w /home/whl/anas-deploy
 
 Authentik 允许用户修改密码，但新密码必须通过 LDAPS 写回 Samba AD，不在 Authentik 保留可独立认证的密码。LDAP Source 使用 `svc_password`，设置 `sync_users_password=true` 和 `password_login_update_internal_password=false`。
 
-Authentik worker 在处理目录 Blueprint 前，从 Lego 的共享证书目录导入 ANAS 内部 CA；LDAP Source 显式设置 `peer_certificate` 并启用 SNI。不得把证书字段留空，否则 Authentik 会跳过 LDAPS 服务端证书校验。
+Authentik worker 在处理目录 Blueprint 前，从 Lego 的共享证书目录导入 ANAS 内部 CA；LDAP Source 显式设置 `peer_certificate`，但不启用 Authentik 的显式 SNI 开关，因为 Authentik 2026.5 会错误地把完整 `ldaps://host:port` URI 作为 SNI 名称。TLS 库仍会从 URI 主机名完成正常证书校验。不得把证书字段留空，否则 Authentik 会跳过 LDAPS 服务端证书校验。
 
 `svc_password` 只有 `OU=People` 的 Reset Password 权限，不能创建、删除用户或修改服务账号；对高权限 `admin` 的显式拒绝 ACE 保持有效。密码找回流程必须结合可信邮箱、MFA 和事件审计。
 
