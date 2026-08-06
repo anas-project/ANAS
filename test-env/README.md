@@ -127,6 +127,14 @@ Do not commit `.anas-test/` or generated secrets.
 The full run performs static, render, upgrade-render, Compose config, build,
 smoke, and runtime upgrade tests in that order.
 
+## Test Server Cleanup
+
+Images pulled or built on a test server do not need to be removed after a test
+run. Keep them for reuse by later runs unless disk space must be reclaimed.
+Cleanup should still remove test containers, networks, and other temporary
+runtime resources. Do not run a global `docker image prune` as routine test
+cleanup.
+
 ## Matrix
 
 - `min.yml`: minimal reverse-proxy baseline.
