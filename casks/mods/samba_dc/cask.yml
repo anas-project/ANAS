@@ -1,7 +1,7 @@
 api_version: anas.dev/v1
 kind: Cask
 name: samba_dc
-version: 26.04.1
+version: 26.04.2
 app_version: 4.23.6
 abi:
   supports:
@@ -44,6 +44,8 @@ config:
     user_lockout_reset_after: "30"
     ldap_bind_name: svc_ldap
     password_bind_name: svc_password
+    anchor_bind_name: svc_anchor
+    anchor_scan_interval: "300"
     dns_debug: "false"
     dns_forwarders: ""
     dns_allowed_networks: ""
@@ -77,6 +79,15 @@ config:
       apply: rotate-password-bind-password
       sensitive: true
       description: Update AD and password-capable applications as one transaction.
+    anchor_bind_password:
+      effect: credential_rotate
+      apply: rotate-anchor-bind-password
+      sensitive: true
+      description: Update the AD service account and Anchor Worker as one transaction.
+    anchor_scan_interval:
+      effect: container_recreate
+      apply: recreate-anchor-worker
+      description: The reconciliation interval is consumed by the Anchor Worker process.
     user_complex_pass:
       effect: hot_reload
       apply: samba-password-policy

@@ -544,8 +544,8 @@ set_ldap_config ldapNestedGroups 1
 set_ldap_config ldapUserFilterMode 1
 set_ldap_config ldapGroupFilterMode 1
 set_ldap_config ldapLoginFilterMode 1
-set_ldap_config ldapExpertUUIDGroupAttr cn
-set_ldap_config ldapExpertUUIDUserAttr sAMAccountName
+set_ldap_config ldapExpertUUIDGroupAttr "$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"
+set_ldap_config ldapExpertUUIDUserAttr "$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"
 set_ldap_config turnOnPasswordChange 1
 
 if [ -n "$NEXTCLOUD_DEFAULT_QUOTA" ]; then
@@ -615,7 +615,9 @@ install_and_enable_app $app_name
 occ config:app:set user_saml type --value="saml"
 occ saml:config:set 1 \
     --general-idp0_display_name="SSO Login" \
-    --general-uid_mapping="sAMAccountName" \
+    --general-uid_mapping="$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE" \
+    --saml-attribute-mapping-displayName_mapping=cn \
+    --saml-attribute-mapping-user_id_ldap_mapping="$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE" \
     --idp-entityId="$NEXTCLOUD_SAML_IDP_ENTITY_ID" \
     --idp-singleSignOnService.url="$NEXTCLOUD_SAML_IDP_SSO" \
     --idp-singleLogoutService.url="$NEXTCLOUD_SAML_IDP_SLO" \
@@ -623,7 +625,7 @@ occ saml:config:set 1 \
     --idp-x509cert="$NEXTCLOUD_SAML_IDP_CERT" \
     --sp-x509cert="$NEXTCLOUD_SAML_SP_CERT" \
     --sp-privateKey="$NEXTCLOUD_SAML_SP_PRIVATE_KEY" \
-    --sp-name-id-format="urn:oasis:names:tc:SAML:1.1:nameid-format:WindowsDomainQualifiedName" \
+    --sp-name-id-format="urn:oasis:names:tc:SAML:2.0:nameid-format:WindowsDomainQualifiedName" \
     --security-nameIdEncrypted=0 \
     --security-authnRequestsSigned=1 \
     --security-logoutRequestSigned=1 \

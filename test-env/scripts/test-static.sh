@@ -32,6 +32,9 @@ fi
 
 status=0
 go test ./... >"$log" 2>&1 || status=$?
+if [ "$status" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
+  PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s casks/mods/samba_dc/anchor_worker -p 'test_*.py' >>"$log" 2>&1 || status=$?
+fi
 if [ "$status" -eq 0 ]; then
   sh ./test-env/scripts/test-container-config.sh >>"$log" 2>&1 || status=$?
 fi

@@ -63,6 +63,37 @@ func TestPublishesRequiredEndpointsForEachProtocol(t *testing.T) {
 	if e["ANAS_IAM_BINDING__NETBIRD__SAML_SSO_URL"] != "" {
 		t.Fatal("netbird is bound to oidc but received a SAML endpoint")
 	}
+	if got, want := e["ANAS_IAM_BINDING__NEXTCLOUD__SAML_SSO_URL"], "https://auth.example:443/application/saml/nextcloud/"; got != want {
+		t.Fatalf("Nextcloud SSO URL = %q, want canonical endpoint %q", got, want)
+	}
+	if got, want := e["ANAS_IAM_BINDING__NEXTCLOUD__SAML_ENTITY_ID"], "https://auth.example:443/application/saml/nextcloud/metadata/"; got != want {
+		t.Fatalf("Nextcloud IdP entity ID = %q, want metadata entity ID %q", got, want)
+	}
+}
+
+func TestSAMLProviderRespondsUsingPostBinding(t *testing.T) {
+	e := boundEnv()
+	e["ANAS_IDENTITY_OIDC_CLIENTS"] = ""
+	e["ANAS_IAM_CLIENT__NEXTCLOUD__SP_METADATA_URL"] = "https://nc.example/metadata"
+	e["ANAS_IAM_CLIENT__NEXTCLOUD__SP_ENTITY_ID"] = "https://nc.example/metadata"
+	e["ANAS_IAM_CLIENT__NEXTCLOUD__ACS_URL"] = "https://nc.example/acs"
+	blueprint, err := renderClientBlueprint(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(blueprint, "      sp_binding: post\n") {
+		t.Fatal("SAML provider must return assertions through the SP's HTTP-POST ACS binding")
+	}
+	if !strings.Contains(blueprint, "      sign_assertion: true\n") || !strings.Contains(blueprint, "      sign_response: true\n") {
+		t.Fatal("SAML provider must sign both the assertion and response required by Nextcloud")
+	}
+}
+
+func TestIdentityAnchorMappingUsesAuthentikLDAPUniquenessValue(t *testing.T) {
+	got := samlAttributeExpression("anasIdentityAnchor", "anasIdentityAnchor")
+	if want := `return request.user.attributes.get("ldap_uniq")`; got != want {
+		t.Fatalf("identity anchor expression = %q, want %q", got, want)
+	}
 }
 
 func TestPublishIAMEndpointsRejectsUnknownInterface(t *testing.T) {
@@ -110,6 +141,7 @@ func TestBlueprintTranslatesGenericRegistrations(t *testing.T) {
 		"authentik_providers_oauth2.oauth2provider",
 		"authentik_providers_saml.samlprovider",
 		`client_id: "netbird"`,
+		"sub_mode: user_uuid",
 		`url: "https://netbird.example/silent-auth"`,
 		`acs_url: "https://nc.example/apps/user_saml/saml/acs"`,
 		"authentik_providers_saml.samlpropertymapping",

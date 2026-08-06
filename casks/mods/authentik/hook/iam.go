@@ -59,11 +59,16 @@ func publishIAMEndpoints(e map[string]string) error {
 			e[p+"OIDC_ISSUER_URL"] = issuer
 			e[p+"OIDC_DISCOVERY_URL"] = issuer + ".well-known/openid-configuration"
 		case "saml":
-			sso := base + "/application/saml/" + s + "/sso/binding/redirect/"
-			e[p+"SAML_METADATA_URL"] = base + "/application/saml/" + s + "/metadata/"
-			e[p+"SAML_ENTITY_ID"] = sso
+			// Use the canonical endpoints advertised by authentik metadata. The
+			// canonical SSO endpoint dispatches both Redirect and POST requests;
+			// binding-specific internal endpoints force the response binding and
+			// must not be exposed through the provider-neutral contract.
+			metadata := base + "/application/saml/" + s + "/metadata/"
+			sso := base + "/application/saml/" + s + "/"
+			e[p+"SAML_METADATA_URL"] = metadata
+			e[p+"SAML_ENTITY_ID"] = metadata
 			e[p+"SAML_SSO_URL"] = sso
-			e[p+"SAML_SLO_URL"] = base + "/application/saml/" + s + "/slo/binding/redirect/"
+			e[p+"SAML_SLO_URL"] = sso
 			// The signing keypair is provisioned by this cask rather than
 			// generated inside authentik, so the certificate is known at
 			// calculate time and consumers can validate assertions.
@@ -158,7 +163,10 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 		b.WriteString("      client_id: " + yamlString(e[src+"CLIENT_ID"]) + "\n")
 		b.WriteString("      client_secret: " + yamlString(e[src+"CLIENT_SECRET"]) + "\n")
 		b.WriteString("      client_type: confidential\n")
-		b.WriteString("      sub_mode: user_username\n")
+		// The LDAP source connection is matched by the printable AD anchor, so
+		// the authentik user UUID remains stable across a forest rebuild. Usernames
+		// are login names and must never become an OIDC subject identifier.
+		b.WriteString("      sub_mode: user_uuid\n")
 		b.WriteString("      signing_key: !KeyOf " + signingKeypairName + "\n")
 		b.WriteString("      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]\n")
 		b.WriteString("      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]\n")
@@ -177,13 +185,18 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 			return "", fmt.Errorf("saml client %s published no %sSP_METADATA_URL", app, src)
 		}
 		s := slug(app)
-		propertyMappings := writeSAMLPropertyMappingEntries(&b, e[src+"ATTRIBUTES"], s)
+		propertyMappings := writeSAMLPropertyMappingEntries(
+			&b, e[src+"ATTRIBUTES"], s, e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"])
 		b.WriteString("  - model: authentik_providers_saml.samlprovider\n")
 		b.WriteString("    identifiers:\n      name: " + s + "\n")
 		b.WriteString("    id: provider-" + s + "\n")
 		b.WriteString("    attrs:\n")
 		b.WriteString("      acs_url: " + yamlString(e[src+"ACS_URL"]) + "\n")
 		b.WriteString("      audience: " + yamlString(e[src+"SP_ENTITY_ID"]) + "\n")
+		// AuthnRequests arrive through Redirect binding, while Nextcloud's ACS
+		// advertises HTTP-POST only. This controls the response binding and is
+		// independent of the inbound SSO endpoint binding.
+		b.WriteString("      sp_binding: post\n")
 		// The generic NAME_ID_FORMAT is deliberately not mapped here.
 		// authentik's name_id_mapping is a foreign key to a property mapping,
 		// not a NameID format URN, and it has no field for the format itself:
@@ -195,7 +208,7 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 		// signing anything. Signing assertions is also what makes the
 		// certificate published as SAML_SIGNING_CERT useful to the SP.
 		b.WriteString("      sign_assertion: true\n")
-		b.WriteString("      sign_response: false\n")
+		b.WriteString("      sign_response: true\n")
 		if len(propertyMappings) != 0 {
 			b.WriteString("      property_mappings:\n")
 			for _, id := range propertyMappings {
@@ -214,7 +227,7 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 // source:claim:required registration shape into authentik property mappings.
 // Directory usernames are sourced from Samba AD's sAMAccountName mapping, so
 // they remain available even though applications never know the IAM product.
-func writeSAMLPropertyMappingEntries(b *strings.Builder, attributes, appSlug string) []string {
+func writeSAMLPropertyMappingEntries(b *strings.Builder, attributes, appSlug, identityAnchor string) []string {
 	ids := []string{}
 	for _, raw := range splitCSV(attributes) {
 		parts := strings.Split(raw, ":")
@@ -232,12 +245,17 @@ func writeSAMLPropertyMappingEntries(b *strings.Builder, attributes, appSlug str
 		b.WriteString("      saml_name: " + yamlString(claim) + "\n")
 		b.WriteString("      friendly_name: " + yamlString(claim) + "\n")
 		b.WriteString("      expression: |\n")
-		b.WriteString("        " + samlAttributeExpression(source) + "\n")
+		b.WriteString("        " + samlAttributeExpression(source, identityAnchor) + "\n")
 	}
 	return ids
 }
 
-func samlAttributeExpression(source string) string {
+func samlAttributeExpression(source, identityAnchor string) string {
+	if identityAnchor != "" && strings.EqualFold(source, identityAnchor) {
+		// LDAPSource normalizes whichever uniqueness field is configured into
+		// this stable Authentik attribute instead of retaining its LDAP name.
+		return `return request.user.attributes.get("ldap_uniq")`
+	}
 	switch strings.ToLower(source) {
 	case "samaccountname", "username", "uid":
 		return "return request.user.username"

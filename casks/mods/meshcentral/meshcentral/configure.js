@@ -58,6 +58,8 @@ ldap.groupSearchFilter = required("SAMBA_DC_GROUP_CLASS_FILTER");
 domain.orphanAgentUser = required("SAMBA_DC_ADMIN_NAME");
 domain.ldapUserName = required("SAMBA_DC_USER_DISPLAY_NAME");
 domain.ldapUserEmail = required("SAMBA_DC_USER_EMAIL");
+delete domain.ldapUserBinaryKey;
+domain.ldapUserKey = required("SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE");
 domain.ldapSyncWithUserGroups = {
   filter: required("SAMBA_DC_BASE_GROUPS_ROLE_DN"),
 };

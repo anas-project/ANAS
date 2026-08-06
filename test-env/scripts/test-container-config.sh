@@ -47,6 +47,7 @@ if command -v node >/dev/null 2>&1; then
     SAMBA_DC_ADMIN_NAME=admin \
     SAMBA_DC_USER_DISPLAY_NAME=displayName \
     SAMBA_DC_USER_EMAIL=mail \
+    SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE=anasIdentityAnchor \
     SAMBA_DC_APP_FILTER=true \
     SAMBA_DC_BASE_APP_DN=OU=Apps,DC=example,DC=test \
     SAMBA_DC_ADMIN_GROUP_DN=CN=Admins,OU=Roles,DC=example,DC=test \
@@ -57,6 +58,8 @@ if command -v node >/dev/null 2>&1; then
     const config = require(process.argv[1]);
     if (config.settings.mySQL.password !== `quote" slash\\ dollar$ unicode密码`) process.exit(1);
     if (!config.domains[""].ldapUserRequiredGroupMembership.endsWith("OU=Apps,DC=example,DC=test")) process.exit(2);
+    if (config.domains[""].ldapUserKey !== "anasIdentityAnchor") process.exit(3);
+    if (config.domains[""].ldapUserBinaryKey !== undefined) process.exit(4);
   ' "$test_dir/meshcentral/config.json" || exit 1
 fi
 

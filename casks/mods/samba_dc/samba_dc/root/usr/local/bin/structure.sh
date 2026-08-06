@@ -1,5 +1,8 @@
 #!/usr/bin/with-contenv bash
 
+set -euo pipefail
+rm -f /run/anas-structure.ready
+
 LDBSEARCH_CMD_PREFIX="ldbsearch -H /var/lib/samba/private/sam.ldb"
 
 get_attribute_dn() { # $1 filter, $2 attritube name
@@ -168,6 +171,27 @@ if ! samba-tool dsacl get --objectdn="$SAMBA_DC_BASE_USERS_DN" | grep -Fq "$rese
   samba-tool dsacl set --objectdn="$SAMBA_DC_BASE_USERS_DN" --sddl="$reset_password_ace"
 fi
 
+# The identity-anchor writer can only write the binary and printable anchors below the
+# business user and group OUs. It cannot create/delete entries, reset
+# passwords, or write any other attribute.
+if ! samba-tool user show "$SAMBA_DC_ANCHOR_BIND_NAME" >/dev/null 2>&1; then
+  echo "Create identity anchor service account $SAMBA_DC_ANCHOR_BIND_NAME"
+  samba-tool user add "$SAMBA_DC_ANCHOR_BIND_NAME" "$SAMBA_DC_ANCHOR_BIND_PASSWORD" \
+    --userou="OU=Service Accounts"
+fi
+samba-tool user setexpiry "$SAMBA_DC_ANCHOR_BIND_NAME" --noexpiry
+anchor_bind_sid=$(samba-tool user show "$SAMBA_DC_ANCHOR_BIND_NAME" | sed -n 's/^objectSid: //p')
+binary_anchor_attribute_guid="23773dc2-b63a-11d2-90e1-00c04fd91ab1"
+printable_anchor_attribute_guid="7108c5a7-2290-45e0-9eba-eef087be58e3"
+for attribute_guid in "$binary_anchor_attribute_guid" "$printable_anchor_attribute_guid"; do
+  anchor_write_ace="(OA;CI;WP;$attribute_guid;;$anchor_bind_sid)"
+  for anchor_base in "$SAMBA_DC_BASE_USERS_DN" "$SAMBA_DC_BASE_GROUPS_DN"; do
+    if ! samba-tool dsacl get --objectdn="$anchor_base" | grep -Fq "$anchor_write_ace"; then
+      samba-tool dsacl set --objectdn="$anchor_base" --sddl="$anchor_write_ace"
+    fi
+  done
+done
+
 # The right above is inherited by everything in OU=People, and the admin account
 # now lives there too. Without this the password service account could reset the
 # domain administrator's password, and its credentials sit in the configuration
@@ -202,7 +226,7 @@ fi
 echo "Set Samba DC user password complex: $SAMBA_DC_USER_COMPLEX_PASS"
 
 # Separate policy object for privileged accounts.
-if samba-tool domain passwordsettings pso list | grep -Fxq "pso_privileged"; then
+if samba-tool domain passwordsettings pso list | grep -Eq '\|[[:space:]]*pso_privileged[[:space:]]*$'; then
   samba-tool domain passwordsettings pso set "pso_privileged" --min-pwd-length=8 --complexity=on \
     --history-length=4 --min-pwd-age=1 --max-pwd-age=60
 else
@@ -216,3 +240,4 @@ samba-tool domain passwordsettings pso apply "pso_privileged" "$SAMBA_DC_ADMIN_G
 samba-tool forest directory_service dsheuristics 000000001
 
 echo "The structure has been set up."
+touch /run/anas-structure.ready

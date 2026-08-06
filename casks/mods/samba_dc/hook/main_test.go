@@ -129,6 +129,36 @@ func TestCalcSambaDCCreatesPasswordWriterBindIdentity(t *testing.T) {
 	}
 }
 
+func TestCalcSambaDCCreatesIdentityAnchorWriter(t *testing.T) {
+	env := map[string]string{
+		"BASE_DOMAIN": "nas.test",
+		"SERVER_NAME": "fengoffice",
+		"HOST_IP":     "192.0.2.10",
+	}
+	secrets := &secretStore{values: map[string]string{}}
+	if err := calcSambaDC(env, "", secrets); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := env["SAMBA_DC_ANCHOR_BIND_DN"], "CN=svc_anchor,OU=Service Accounts,DC=nas,DC=test"; got != want {
+		t.Fatalf("SAMBA_DC_ANCHOR_BIND_DN = %q, want %q", got, want)
+	}
+	if got := env["SAMBA_DC_ANCHOR_BIND_PASSWORD"]; got == "" || secrets.values["SAMBA_DC_ANCHOR_BIND_PASSWORD"] != got {
+		t.Fatal("anchor writer password was not generated and persisted")
+	}
+	if got := env["SAMBA_DC_IDENTITY_ANCHOR_BINARY_ATTRIBUTE"]; got != "mS-DS-ConsistencyGuid" {
+		t.Fatalf("binary identity anchor attribute = %q", got)
+	}
+	if got := env["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"]; got != "anasIdentityAnchor" {
+		t.Fatalf("identity anchor attribute = %q", got)
+	}
+	if got, want := env["SAMBA_DC_ANCHOR_USER_BASES"], "OU=People,DC=nas,DC=test"; got != want {
+		t.Fatalf("anchor user bases = %q, want %q", got, want)
+	}
+	if got, want := env["SAMBA_DC_GROUP_CLASS_FILTER"], "(&(objectClass=group)(anasIdentityAnchor=*))"; got != want {
+		t.Fatalf("group filter = %q, want %q", got, want)
+	}
+}
+
 func hasPasswordComplexity(password string) bool {
 	var upper, lower, digit, symbol bool
 	for _, r := range password {

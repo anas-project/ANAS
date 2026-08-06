@@ -143,6 +143,7 @@ func calcAuthentik(e map[string]string, secrets *secretStore) error {
 			"SAMBA_DC_LDAPS_SERVER_URL_PORT", "SAMBA_DC_PASSWORD_BIND_DN",
 			"SAMBA_DC_PASSWORD_BIND_PASSWORD", "SAMBA_DC_BASE_DN",
 			"SAMBA_DC_BASE_USERS_DN_PREFIX", "SAMBA_DC_BASE_GROUPS_DN_PREFIX",
+			"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE",
 		}); err != nil {
 			return fmt.Errorf("configure authentik Samba AD source: %w", err)
 		}
@@ -152,8 +153,9 @@ func calcAuthentik(e map[string]string, secrets *secretStore) error {
 		e["AUTHENTIK_LDAP_BASE_DN"] = e["SAMBA_DC_BASE_DN"]
 		e["AUTHENTIK_LDAP_ADDITIONAL_USER_DN"] = e["SAMBA_DC_BASE_USERS_DN_PREFIX"]
 		e["AUTHENTIK_LDAP_ADDITIONAL_GROUP_DN"] = e["SAMBA_DC_BASE_GROUPS_DN_PREFIX"]
-		e["AUTHENTIK_LDAP_USER_OBJECT_FILTER"] = "(&(objectClass=user)(!(objectClass=computer)))"
+		e["AUTHENTIK_LDAP_USER_OBJECT_FILTER"] = "(&(objectClass=user)(!(objectClass=computer))(" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + "=*))"
 		e["AUTHENTIK_LDAP_GROUP_OBJECT_FILTER"] = e["SAMBA_DC_GROUP_CLASS_FILTER"]
+		e["AUTHENTIK_LDAP_OBJECT_UNIQUENESS_FIELD"] = e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"]
 		e["AUTHENTIK_LDAP_GROUP_MEMBERSHIP_FIELD"] = "memberOf:1.2.840.113556.1.4.1941:"
 		e["AUTHENTIK_LDAP_USER_MEMBERSHIP_ATTRIBUTE"] = "distinguishedName"
 	}

@@ -1,7 +1,7 @@
 services:
   anas_meshcentral:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
-    image: ${IMAGE_PREFIX}${MODULE_NAME}:1.2.4
+    image: ${IMAGE_PREFIX}${MODULE_NAME}:1.2.5
     build:
       context: ./${MODULE_NAME}
       network: ${DOCKER_BUILD_NETWORK:-default}

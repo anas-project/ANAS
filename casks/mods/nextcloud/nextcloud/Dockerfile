@@ -1,8 +1,8 @@
 FROM nextcloud:34.0.2-apache
 
-ARG CHINESE_SPEEDUP
-ARG APT_MIRROR_URL
-ARG NEXTCLOUD_APT_MIRROR_URL
+ARG CHINESE_SPEEDUP=false
+ARG APT_MIRROR_URL=""
+ARG NEXTCLOUD_APT_MIRROR_URL=""
 RUN set -eu; \
   if [ -n "$NEXTCLOUD_APT_MIRROR_URL" ]; then \
     sed -i -E "s|https?://deb.debian.org|${NEXTCLOUD_APT_MIRROR_URL%/}|g" /etc/apt/sources.list.d/debian.sources; \

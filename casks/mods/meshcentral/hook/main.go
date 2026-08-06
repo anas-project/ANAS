@@ -161,9 +161,9 @@ func calcMeshcentral(e map[string]string, _ string, _ *secretStore) error {
 	e["MESHCENTRAL_SUBTITLE"] = defaultValue(e["MESHCENTRAL_SUBTITLE"], " ")
 	if e["MESHCENTRAL_USER_FILTER"] == "" {
 		if e["SAMBA_DC_APP_FILTER"] == "true" {
-			e["MESHCENTRAL_USER_FILTER"] = "(&" + e["SAMBA_DC_USER_CLASS_FILTER"] + "(|(memberOf=CN=APP_meshcentral," + e["SAMBA_DC_BASE_APP_DN"] + ")(memberOf=" + e["SAMBA_DC_APP_ALL_DN"] + ")(memberOf=" + e["SAMBA_DC_ADMIN_GROUP_DN"] + ")))"
+			e["MESHCENTRAL_USER_FILTER"] = "(&" + e["SAMBA_DC_USER_CLASS_FILTER"] + "(" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + "=*)(|(memberOf=CN=APP_meshcentral," + e["SAMBA_DC_BASE_APP_DN"] + ")(memberOf=" + e["SAMBA_DC_APP_ALL_DN"] + ")(memberOf=" + e["SAMBA_DC_ADMIN_GROUP_DN"] + ")))"
 		} else {
-			e["MESHCENTRAL_USER_FILTER"] = e["SAMBA_DC_USER_CLASS_FILTER"]
+			e["MESHCENTRAL_USER_FILTER"] = "(&" + e["SAMBA_DC_USER_CLASS_FILTER"] + "(" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + "=*))"
 		}
 	}
 	if e["MESHCENTRAL_USER_LOGIN_FILTER"] == "" {

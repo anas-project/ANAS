@@ -183,12 +183,12 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) er
 	e["NEXTCLOUD_ADMIN_USERNAME"] = defaultValue(e["NEXTCLOUD_ADMIN_USERNAME"], e["SAMBA_DC_ADMIN_NAME"]+"_nc")
 	e["NEXTCLOUD_ADMIN_PASSWORD"] = defaultValue(e["NEXTCLOUD_ADMIN_PASSWORD"], e["SAMBA_DC_ADMIN_PASSWORD"])
 	if e["SAMBA_DC_APP_FILTER"] == "true" {
-		e["NEXTCLOUD_USER_FILTER"] = defaultValue(e["NEXTCLOUD_USER_FILTER"], "(&"+e["SAMBA_DC_USER_CLASS_FILTER"]+"(|(memberOf=CN=APP_nextcloud,"+e["SAMBA_DC_BASE_APP_DN"]+")(memberOf="+e["SAMBA_DC_APP_ALL_DN"]+")(memberOf="+e["SAMBA_DC_ADMIN_GROUP_DN"]+")))")
+		e["NEXTCLOUD_USER_FILTER"] = defaultValue(e["NEXTCLOUD_USER_FILTER"], "(&"+e["SAMBA_DC_USER_CLASS_FILTER"]+"("+e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"]+"=*)(|(memberOf=CN=APP_nextcloud,"+e["SAMBA_DC_BASE_APP_DN"]+")(memberOf="+e["SAMBA_DC_APP_ALL_DN"]+")(memberOf="+e["SAMBA_DC_ADMIN_GROUP_DN"]+")))")
 	} else {
-		e["NEXTCLOUD_USER_FILTER"] = defaultValue(e["NEXTCLOUD_USER_FILTER"], "(&"+e["SAMBA_DC_USER_CLASS_FILTER"]+")")
+		e["NEXTCLOUD_USER_FILTER"] = defaultValue(e["NEXTCLOUD_USER_FILTER"], "(&"+e["SAMBA_DC_USER_CLASS_FILTER"]+"("+e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"]+"=*))")
 	}
 	if e["NEXTCLOUD_USER_LOGIN_FILTER"] == "" {
-		attrs := append(splitCSV(e["SAMBA_DC_USER_LOGIN_ATTRS"]), "objectGUID")
+		attrs := splitCSV(e["SAMBA_DC_USER_LOGIN_ATTRS"])
 		parts := []string{}
 		for _, attr := range attrs {
 			parts = append(parts, "("+attr+"=%uid)")

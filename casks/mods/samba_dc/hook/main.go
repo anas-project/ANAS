@@ -227,8 +227,21 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 		}
 		e["SAMBA_DC_PASSWORD_BIND_PASSWORD"] = password
 	}
+	e["SAMBA_DC_IDENTITY_ANCHOR_BINARY_ATTRIBUTE"] = "mS-DS-ConsistencyGuid"
+	e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] = "anasIdentityAnchor"
+	e["SAMBA_DC_ANCHOR_BIND_NAME"] = defaultValue(e["SAMBA_DC_ANCHOR_BIND_NAME"], "svc_anchor")
+	e["SAMBA_DC_ANCHOR_BIND_DN"] = "CN=" + e["SAMBA_DC_ANCHOR_BIND_NAME"] + "," + e["SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN"]
+	anchorBindPassword, err := ensurePassword(e["SAMBA_DC_ANCHOR_BIND_PASSWORD"], "SAMBA_DC_ANCHOR_BIND_PASSWORD", secrets)
+	if err != nil {
+		return err
+	}
+	e["SAMBA_DC_ANCHOR_BIND_PASSWORD"] = anchorBindPassword
+	e["SAMBA_DC_ANCHOR_USER_BASES"] = defaultValue(e["SAMBA_DC_ANCHOR_USER_BASES"], e["SAMBA_DC_BASE_USERS_DN"])
+	e["SAMBA_DC_ANCHOR_GROUP_BASES"] = defaultValue(e["SAMBA_DC_ANCHOR_GROUP_BASES"], e["SAMBA_DC_BASE_GROUPS_DN"])
+	e["SAMBA_DC_ANCHOR_SCAN_INTERVAL"] = defaultValue(e["SAMBA_DC_ANCHOR_SCAN_INTERVAL"], "300")
+	e["SAMBA_DC_ANCHOR_AUDIT_FILE"] = "/var/log/samba-audit/dsdb.json"
 	e["SAMBA_DC_GROUP_CLASS_NAME"] = "group"
-	e["SAMBA_DC_GROUP_CLASS_FILTER"] = "(objectClass=group)"
+	e["SAMBA_DC_GROUP_CLASS_FILTER"] = "(&(objectClass=group)(" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + "=*))"
 	e["SAMBA_DC_USER_CLASS_NAME"] = "user"
 	e["SAMBA_DC_USER_CLASS_FILTER"] = "(objectClass=user)"
 	e["SAMBA_DC_USER_ENABLED_FILTER"] = "(!(userAccountControl:1.2.840.113556.1.4.803:=2))"

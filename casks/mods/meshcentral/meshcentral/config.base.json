@@ -22,7 +22,7 @@
         "tlsOptions": {"rejectUnauthorized": true},
         "reconnect": true
       },
-      "ldapUserKey": "sAMAccountName",
+      "ldapUserKey": "anasIdentityAnchor",
       "ldapUserRealName": "{{{givenName}}} {{{sn}}}",
       "ldapUserGroups": "memberOf"
     }

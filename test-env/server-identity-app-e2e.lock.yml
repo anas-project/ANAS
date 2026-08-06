@@ -5,35 +5,15 @@ casks:
         app_version: 2026.5.6
         source: bundle:authentik
         digest: sha256:046886061ae2973d2543e9170a9faeb8e0c7eb6eba965af6649a743da7bdc0da
-    collabora:
-        version: 26.4.2
-        app_version: 26.04.2.4.1
-        source: bundle:collabora
-        digest: sha256:16842cdfdfb6218d2e2e3050fd2ac27ca4fa0a6cf880b0b68ced2032432d061b
     core:
         version: 0.0.0
         source: bundle:core
         digest: sha256:e224c8400f8cb4373010b02a3320a414a3ac591fadfe9153e6ad8977706798e6
-    ddns:
-        version: 2.10.0
-        app_version: 2.10.0
-        source: bundle:ddns
-        digest: sha256:f1cb0cbfaeeb3485b372dafd7925a7fd22f7b9d1035aa3247d88d245392a9b10
     eturnal:
         version: 1.12.3
         app_version: 1.12.2
         source: bundle:eturnal
         digest: sha256:1934a134a0bcadd2f1d27f53fc6e950800954abb12430070d81c6f1d7dca84b9
-    freeradius:
-        version: 3.2.10
-        app_version: 3.2.10
-        source: bundle:freeradius
-        digest: sha256:ce8fc836a89867ab7736e29e8087c475ab1a1b3e34597c2578ceccd58655a888
-    lam:
-        version: 9.6.0
-        app_version: 9.6.0
-        source: bundle:lam
-        digest: sha256:e86fd2099543fc52c5fcda86191843c12b3b8dcdb509b239ebf86f8edc1a3d57
     lego:
         version: 5.3.1
         app_version: 5.3.1
@@ -68,12 +48,7 @@ casks:
         version: 26.04.2
         app_version: 4.23.6
         source: bundle:samba_dc
-        digest: sha256:a400340c7971ee0cea81d7fd5a2c641d418c2eaac0a0ffb1f58fdfb48090d35f
-    samba_fs:
-        version: 26.04.1
-        app_version: 4.23.6
-        source: bundle:samba_fs
-        digest: sha256:57184f217321c1db969232e0119f91f283bd9715a3263637c1e0468bcacb3cce
+        digest: sha256:74cea2e50a0c5c07a6a56ad92a021daf9c3d448de6d3616b600852eecc752974
     traefik:
         version: 3.7.11
         app_version: 3.7.10

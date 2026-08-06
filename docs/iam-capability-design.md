@@ -48,7 +48,7 @@ Authelia 当前只提供 OIDC，没有 SAML IdP，因此在本设计下**不具�
 两者的端点模型正好相反，这不是巧合而是选型标准：Authentik 的 Application 与
 Provider 一对一绑定，SAML 端点挂在应用 slug 下
 （`/application/saml/<slug>/metadata/`、
-`/application/saml/<slug>/sso/binding/redirect/` 等），每个 Provider 有独立的
+`/application/saml/<slug>/` 等），每个 Provider 有独立的
 EntityID；OIDC 默认也按应用 slug 生成不同 issuer 与 discovery URL。而 LLNG 的
 IdP 端点是部署级单例，所有 SP 共用。同时支持这两种形状，契约才算真的通用。
 
@@ -319,9 +319,9 @@ ANAS_IAM_BINDING__NETBIRD__OIDC_ISSUER_URL=https://auth.nas.example.com/applicat
 ANAS_IAM_BINDING__NETBIRD__OIDC_DISCOVERY_URL=https://auth.nas.example.com/application/o/netbird/.well-known/openid-configuration
 
 ANAS_IAM_BINDING__NEXTCLOUD__SAML_METADATA_URL=https://auth.nas.example.com/application/saml/nextcloud/metadata/
-ANAS_IAM_BINDING__NEXTCLOUD__SAML_ENTITY_ID=https://auth.nas.example.com/application/saml/nextcloud/sso/binding/redirect/
-ANAS_IAM_BINDING__NEXTCLOUD__SAML_SSO_URL=https://auth.nas.example.com/application/saml/nextcloud/sso/binding/redirect/
-ANAS_IAM_BINDING__NEXTCLOUD__SAML_SLO_URL=https://auth.nas.example.com/application/saml/nextcloud/slo/binding/redirect/
+ANAS_IAM_BINDING__NEXTCLOUD__SAML_ENTITY_ID=https://auth.nas.example.com/application/saml/nextcloud/metadata/
+ANAS_IAM_BINDING__NEXTCLOUD__SAML_SSO_URL=https://auth.nas.example.com/application/saml/nextcloud/
+ANAS_IAM_BINDING__NEXTCLOUD__SAML_SLO_URL=https://auth.nas.example.com/application/saml/nextcloud/
 ```
 
 这是覆盖 §1.1 两种端点形状的唯一契约：对 LLNG 和 Keycloak，各消费方拿到的值

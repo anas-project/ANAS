@@ -33,7 +33,7 @@ func publishClientRegistration(e map[string]string, allowGroups string) {
 	e[iamClientPrefix+"SP_ENTITY_ID"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/metadata"
 	e[iamClientPrefix+"ACS_URL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/acs"
 	e[iamClientPrefix+"NAME_ID_FORMAT"] = "windows"
-	e[iamClientPrefix+"ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1"
+	e[iamClientPrefix+"ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1," + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":1"
 	e[iamClientPrefix+"ALLOW_GROUPS"] = allowGroups
 	e[iamClientPrefix+"DOMAIN"] = e["NEXTCLOUD_DOMAIN"]
 }

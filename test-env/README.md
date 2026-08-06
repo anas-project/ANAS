@@ -106,6 +106,18 @@ Do not commit `.anas-test/` or generated secrets.
 
    Available upgrade fixtures live under `test-env/upgrades/supported/`.
 
+8. Samba identity-anchor runtime test
+
+   Against a running server deployment, verifies audit-triggered user and
+   group stamping, exclusion of computer accounts, and startup reconciliation
+   after the worker misses a create event:
+
+   ```sh
+   DOCKER_HOST=unix:///run/anas-docker-test.sock \
+   ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
+     ./test-env/scripts/server-anchor-e2e.sh
+   ```
+
 ## Full Run
 
 ```sh

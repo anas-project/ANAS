@@ -309,11 +309,9 @@ Authentik worker 在处理目录 Blueprint 前，从 Lego 的共享证书目录�
 
 - `sAMAccountName`、UPN、mail 用于登录和查找，可以展示给用户；
 - `objectSid` 适合当前 AD 对象和 Windows ACL，但删除重建用户、重建域或跨域迁移会变化；
-- 组织级 `employeeID` 或随机身份 UUID 可以跨 AD 重建恢复，但必须由创建流程保证非空、全局唯一、永不修改和永不复用。
+- `mS-DS-ConsistencyGuid` 是本部署的二进制永久身份锚点，由 Anchor Worker 在对象首次进入业务 OU 时以 `objectGUID` 原始 16 字节初始化；之后禁止自动覆盖；`anasIdentityAnchor` 是从该二进制值按 AD GUID 字节序生成的标准 UUID 文本投影。
 
-小型 NAS 可以暂时把 `sAMAccountName` 视为不可变，并禁止离职后复用；这能覆盖改名问题，但不能替代 Samba AD 状态备份。长期如果需要支持全新建域后的应用数据重连，应把独立保存的永久 ID 写回新 AD，并将 OIDC `sub`、SAML UID 和应用内部目录 UUID 逐步迁移到该字段。
-
-当前实现仍以兼容现有应用为目标：Authentik Source 的对象唯一字段是 `objectSid`，OIDC `sub` 使用 Authentik username，Nextcloud 的 LDAP UUID 与 SAML UID、MeshCentral 的 LDAP user key 使用 `sAMAccountName`。因此当前发布前约束是：禁止修改或复用 `sAMAccountName`，并优先恢复原 Samba AD 数据而不是建立新域。`employeeID` 方案只有在人员 ID 已独立备份并建立唯一性校验后才能切换；不能仅把字段名改成 `employeeID` 就获得灾难恢复能力。
+Nextcloud 的用户和组 LDAP UUID、SAML UID、Authentik LDAP Source 的对象唯一字段以及 MeshCentral 的文本 LDAP 用户键都使用 `anasIdentityAnchor`；Entra 等理解 AD 二进制 GUID 的系统继续使用 `mS-DS-ConsistencyGuid`。`sAMAccountName`、UPN 和 mail 只用于登录、搜索和显示。跨域重建必须先恢复旧二进制锚点，再把对象移入 Worker 与下游可见的业务 OU；仅创建同名账号不能恢复原身份。
 
 ### 13.4 小型 NAS 管理组
 

@@ -1,7 +1,7 @@
 api_version: anas.dev/v1
 kind: Cask
 name: authentik
-version: 2026.5.6
+version: 2026.5.7
 app_version: 2026.5.6
 abi:
   supports:
@@ -43,7 +43,6 @@ config:
     image_tag: 2026.5.6
     db_type: auto
     ldap_enabled: "true"
-    ldap_object_uniqueness_field: objectSid
     ldap_password_writeback: "true"
   # Endpoints this cask publishes for its bound consumers. Unlike a portal that
   # serves one endpoint set for the whole deployment, these differ per
@@ -72,10 +71,6 @@ config:
       effect: reconcile
       apply: reconcile-authentik-domain
       description: Every per-application endpoint is derived from this domain, so clients must be reconciled with it.
-    ldap_object_uniqueness_field:
-      effect: reconcile
-      apply: reconcile-authentik-ldap-source
-      description: Changing the LDAP identity key requires an explicit duplicate-account audit.
 features:
   generated_secrets: true
 logic:

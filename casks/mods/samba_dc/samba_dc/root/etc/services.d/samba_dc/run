@@ -13,9 +13,12 @@ run_once() {
   flock -n "/run/anas-$1.lock" "$2" &
 }
 
-echo "samba -i"
+echo "samba -F --no-process-group"
 
 run_once structure /usr/local/bin/structure.sh
 run_once zone /usr/local/bin/anas_zone.sh
 
-exec samba -i </dev/null
+# Interactive mode forces every debug class to stdout and therefore defeats
+# the per-class @PATH audit targets consumed by the anchor sidecar. Foreground
+# daemon mode keeps Samba supervised by runit while honoring smb.conf logging.
+exec samba -F --no-process-group </dev/null

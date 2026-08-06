@@ -3,7 +3,7 @@ set -euo pipefail
 
 export SAMBA_DC_DOMAIN_ACTION="${SAMBA_DC_DOMAIN_ACTION:-provision}"
 export SAMBA_DC_DOMAIN_MASTER="${SAMBA_DC_DOMAIN_MASTER:-auto}"
-rm -f /var/lib/samba/.anas-zone-ready /run/anas-zone.ready
+rm -f /var/lib/samba/.anas-zone-ready /run/anas-zone.ready /run/anas-identity-schema.ready
 export SAMBA_DC_BIND_INTERFACES_ONLY="${SAMBA_DC_BIND_INTERFACES_ONLY:-No}"
 export SAMBA_DC_SERVER_STRING="${SAMBA_DC_SERVER_STRING:-'Samba Domain Controller'}"
 
@@ -15,8 +15,9 @@ fi
 
 # Cores must exist before samba runs, not after: provisioning already starts
 # smbd/winbindd and they log a failure for every missing core directory.
-mkdir -p /var/log/samba/cores
+mkdir -p /var/log/samba/cores /var/log/samba-audit
 chmod 700 /var/log/samba/cores
+chmod 755 /var/log/samba-audit
 
 if [ ! -f /var/lib/samba/registry.tdb ]; then
   INTERFACE_OPTS="--option=\"bind interfaces only=$SAMBA_DC_BIND_INTERFACES_ONLY\" \
@@ -90,6 +91,10 @@ if grep -n '\${[A-Z][A-Z0-9_]*}' /etc/samba/smb.conf.tmp; then
 fi
 mv /etc/samba/smb.conf.tmp /etc/samba/smb.conf
 testparm -s /etc/samba/smb.conf >/dev/null
+
+# Schema changes must be applied while the directory daemon is stopped. Doing
+# this here also makes upgrades of an existing provisioned volume idempotent.
+/usr/local/bin/install-identity-schema.sh
 
 chmod 0755 /usr/local/bin/structure.sh
 chmod +x /usr/local/bin/anas_zone.sh

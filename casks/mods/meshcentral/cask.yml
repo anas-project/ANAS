@@ -1,7 +1,7 @@
 api_version: anas.dev/v1
 kind: Cask
 name: meshcentral
-version: 1.2.4
+version: 1.2.5
 app_version: 1.2.4
 abi:
   supports:

@@ -15,7 +15,7 @@
 	bind interfaces only = ${SAMBA_DC_BIND_INTERFACES_ONLY}
 	domain master = ${SAMBA_DC_DOMAIN_MASTER}
 	interfaces = lo ${SAMBA_DC_INTERFACES}
-	log level = ${SAMBA_DC_LOG_LEVEL}
+	log level = ${SAMBA_DC_LOG_LEVEL} dsdb_json_audit:5@/var/log/samba-audit/dsdb.json dsdb_transaction_json_audit:5@/var/log/samba-audit/transaction.json
 	log file = /var/log/samba/%m.log
 
 	# Samba stores NT ACLs in the security.NTACL extended attribute, and

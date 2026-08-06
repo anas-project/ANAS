@@ -7,13 +7,13 @@ services:
       args:
         - CHINESE_SPEEDUP
         - APT_MIRROR_URL
-    image: ${IMAGE_PREFIX}${MODULE_NAME}:26.04.0
+    image: ${IMAGE_PREFIX}${MODULE_NAME}:26.04.2
     restart: unless-stopped
     network_mode: host
     env_file:
       - .env
     healthcheck:
-      test: ["CMD-SHELL", "test -f /run/anas-zone.ready && pgrep -x named >/dev/null && samba-tool domain level show >/dev/null && samba-tool user show \"$$SAMBA_DC_ADMIN_NAME\" >/dev/null && nc -z 127.0.0.1 53 && nc -z 127.0.0.1 88 && nc -z 127.0.0.1 389 && nc -z 127.0.0.1 636 && host \"$$SAMBA_DC_DC_DOMAIN\" 127.0.0.1 >/dev/null"]
+      test: ["CMD-SHELL", "test -f /run/anas-identity-schema.ready && test -f /run/anas-zone.ready && test -f /run/anas-structure.ready && pgrep -x named >/dev/null && samba-tool domain level show >/dev/null && samba-tool user show \"$$SAMBA_DC_ADMIN_NAME\" >/dev/null && nc -z 127.0.0.1 53 && nc -z 127.0.0.1 88 && nc -z 127.0.0.1 389 && nc -z 127.0.0.1 636 && host \"$$SAMBA_DC_DC_DOMAIN\" 127.0.0.1 >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 6
@@ -21,3 +21,53 @@ services:
     volumes:
       - "${LEGO_CERTS_PATH}:/certs:ro"
       - "${DATA_PATH}/samba_dc/var:/var/lib/samba"
+      - samba-dc-audit:/var/log/samba-audit
+
+  anas_samba_dc_anchor:
+    container_name: ${CONTAINER_PREFIX}samba_dc_anchor
+    build:
+      context: ./anchor_worker
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        - CHINESE_SPEEDUP
+        - APT_MIRROR_URL
+    image: ${IMAGE_PREFIX}samba_dc_anchor:26.04.2
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      anas_samba_dc:
+        condition: service_healthy
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    environment:
+      ANCHOR_LDAP_URL: ${SAMBA_DC_LDAPS_SERVER_URL_PORT}
+      ANCHOR_BIND_DN: ${SAMBA_DC_ANCHOR_BIND_DN}
+      ANCHOR_BIND_PASSWORD: ${SAMBA_DC_ANCHOR_BIND_PASSWORD}
+      ANCHOR_USER_BASES: ${SAMBA_DC_ANCHOR_USER_BASES}
+      ANCHOR_GROUP_BASES: ${SAMBA_DC_ANCHOR_GROUP_BASES}
+      ANCHOR_BINARY_ATTRIBUTE: ${SAMBA_DC_IDENTITY_ANCHOR_BINARY_ATTRIBUTE}
+      ANCHOR_ATTRIBUTE: ${SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE}
+      ANCHOR_SCAN_INTERVAL: ${SAMBA_DC_ANCHOR_SCAN_INTERVAL}
+      ANCHOR_AUDIT_FILE: ${SAMBA_DC_ANCHOR_AUDIT_FILE}
+      ANCHOR_TLS_CACERT: /certs/${LEGO_CA_CERT_NAME}
+      ANCHOR_HEALTH_FILE: /run/anchor-worker/health.json
+    volumes:
+      - samba-dc-audit:/var/log/samba-audit:ro
+      - "${LEGO_CERTS_PATH}:/certs:ro"
+    tmpfs:
+      - /run/anchor-worker:uid=65534,gid=65534,mode=0750
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python3", "/app/anchor_worker.py", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+volumes:
+  samba-dc-audit:
