@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // The runner sends the ABI it speaks. Both are accepted so a cask bundle
@@ -181,6 +182,35 @@ func calcLego(e map[string]string, _ string, _ *secretStore) error {
 	// The internal root is published under a stable name even while ACME
 	// serves traffic, because bootstrap and renewal failures fall back to it.
 	e["ANAS_TLS_INTERNAL_CA_NAME"] = "anas-internal-ca.crt"
+	return resolveDNSPlatform(e)
+}
+
+// resolveDNSPlatform turns the configured DNS vendor into the provider code
+// lego's CLI expects and the list of credential variables it reads.
+//
+// A vendor is only needed for the DNS-01 challenge, so a deployment that never
+// attempts ACME does not need one. Demanding it unconditionally would force
+// every .test and .lan deployment to name a vendor it will never contact.
+func resolveDNSPlatform(e map[string]string) error {
+	name := strings.TrimSpace(e["LEGO_DNS_PROVIDER"])
+	if name == "" {
+		if e["ANAS_VIRTUAL_DOMAIN"] == "true" {
+			return nil
+		}
+		return fmt.Errorf("lego: services.lego.env.dns_provider is not set, and %s is not a virtual domain so a certificate must be requested;\nset it to one of: %s\nor set global.virtual_domain: true to serve the internal certificate instead",
+			e["BASE_DOMAIN"], strings.Join(supportedDNSPlatforms(), ", "))
+	}
+	platform, ok := lookupDNSPlatform(name)
+	if !ok {
+		return fmt.Errorf("lego: dns_provider %q is not a DNS platform lego can use for the ACME DNS-01 challenge;\nset services.lego.env.dns_provider to one of: %s",
+			name, strings.Join(supportedDNSPlatforms(), ", "))
+	}
+	e["LEGO_PROVIDER_CODE"] = platform.Provider
+	// The credential values arrive under this cask's env prefix; cert.sh
+	// re-exports them under the names lego itself reads. Passing the key list
+	// rather than the values keeps the translation in one place and keeps this
+	// hook from handling secrets it has no use for.
+	e["LEGO_DNS_CRED_KEYS"] = strings.Join(platform.Required, " ")
 	return nil
 }
 func defaultValue(v, d string) string {

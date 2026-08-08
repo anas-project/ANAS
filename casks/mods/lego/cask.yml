@@ -19,18 +19,20 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
-  required:
-    - global.dns_provider
+  # dns_provider is deliberately not required here: it is only needed for the
+  # ACME DNS-01 challenge, and a virtual domain never runs one. The hook
+  # demands it exactly when a certificate will actually be requested.
   defaults:
     dns_server: 223.5.5.5
   # Issuer-neutral certificate paths every TLS-serving or TLS-verifying cask
   # reads. LEGO_* remains this cask's private vocabulary.
   exports:
     - ANAS_TLS_*
-  # DNS provider credentials from the user secrets section for the ACME
-  # DNS-01 challenge.
-  consumes:
-    - DNSPOD_API_KEY
+  # DNS vendor credentials need no claim here. The runner materialises them
+  # under this cask's own env prefix (LEGO_TENCENTCLOUD_SECRET_ID and so on),
+  # where prefix ownership already scopes them to lego alone. See
+  # internal/runner/dnscred.go.
+  consumes: []
   changes:
     virtual_domain:
       effect: reconcile
