@@ -1,0 +1,70 @@
+api_version: anas.dev/v1
+kind: Cask
+name: ddns_go
+version: 6.17.4
+app_version: 6.17.4
+abi:
+  supports:
+    - anas.cask/v1
+    - anas.cask/v2
+title: DDNS-GO
+description: Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage.
+category: network
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  requires:
+    - traefik
+  # ddns-go has a built-in login, but this deployment does not use it: a second
+  # password to rotate, held in a file next to the DNS credentials, is worse
+  # than the gate every other administrative interface already goes through.
+  requires_capabilities:
+    - name: forward_auth
+      interface_selected_by: forward_auth_interface
+      interfaces:
+        any_of:
+          - http
+upgrade:
+  # Empty, not absent: no release of this cask has rewritten its on-disk data
+  # format. Absent would mean "unknown" and would block every rollback that
+  # changes the version. See docs/contracts/snapshot.md.
+  data_breaking: []
+config:
+  required:
+    - dns_provider
+  defaults:
+    domain_prefix: ddns-go
+    forward_auth_interface: auto
+    # Seconds between update checks. ddns-go's own default is 300.
+    interval: "300"
+    # How the host's own address is discovered, per family: url asks an outside
+    # service what the world sees, netInterface reads a local interface. url is
+    # the default because an interface often carries several addresses of one
+    # family and only an outside observer can say which one is reachable.
+    # Leaving urls or interface empty takes a sensible default; with
+    # netInterface the interface falls back to the one core detected.
+    ipv4_gettype: url
+    ipv6_gettype: url
+    ipv4_urls: ""
+    ipv6_urls: ""
+    ipv4_interface: ""
+    ipv6_interface: ""
+    web_enabled: "true"
+  # DNS vendor credentials arrive already materialised under this cask's own
+  # env prefix, so the prefix rule in envScopeFor grants them and no vendor key
+  # needs to be claimed here. Only cross-cask contract keys are consumed.
+  consumes:
+    - ANAS_FORWARD_AUTH_MIDDLEWARE
+  # Traefik's Docker provider cannot see a host-network container, so the route
+  # is declared rather than discovered. See casks/mods/traefik/README.md.
+  exports:
+    - ANAS_TRAEFIK_ROUTE__*
+features:
+  domain: true
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

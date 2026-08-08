@@ -1,0 +1,51 @@
+services:
+  anas_ddns-go:
+    build:
+      context: ./ddns-go
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        - GOPROXY_URL
+    image: ${IMAGE_PREFIX}ddns_go:6.17.4
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
+    restart: unless-stopped
+    # Host networking is what makes IPv6 work. A bridge container has no IPv6
+    # route unless the daemon and the network are both configured for it, so it
+    # cannot reach an IPv6 echo service and cannot see the host's own global
+    # address either -- it would publish an address that belongs to nothing.
+    # The running ddns-go on ln.hlong.wang uses this same arrangement.
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      # The reconciler's inputs. Credentials are named indirectly: it is told
+      # which variables hold them for the configured vendor and reads those, so
+      # no secret is copied into a second place.
+      - ANAS_DDNS_GO_CONFIG=/root/.ddns_go_config.yaml
+      - ANAS_DDNS_GO_BINARY=/app/ddns-go
+      - ANAS_DDNS_GO_RECORDS=${DDNS_GO_RECORDS}
+      - ANAS_DDNS_GO_PROVIDER=${DDNS_GO_PROVIDER_CODE}
+      - ANAS_DDNS_GO_CRED_ID_KEY=${DDNS_GO_CRED_ID_KEY}
+      - ANAS_DDNS_GO_CRED_SECRET_KEY=${DDNS_GO_CRED_SECRET_KEY}
+      - ANAS_DDNS_GO_CRED_EXT_KEY=${DDNS_GO_CRED_EXT_KEY}
+      - ANAS_DDNS_GO_USERNAME=${DDNS_GO_USERNAME}
+      - ANAS_DDNS_GO_PASSWORD_HASH=${DDNS_GO_PASSWORD_HASH}
+      # How each family's address is discovered. The hook has validated the
+      # method and filled whichever of urls/interface that method reads.
+      - ANAS_DDNS_GO_IPV4_GETTYPE=${DDNS_GO_IPV4_GETTYPE}
+      - ANAS_DDNS_GO_IPV4_URLS=${DDNS_GO_IPV4_URLS}
+      - ANAS_DDNS_GO_IPV4_INTERFACE=${DDNS_GO_IPV4_INTERFACE}
+      - ANAS_DDNS_GO_IPV6_GETTYPE=${DDNS_GO_IPV6_GETTYPE}
+      - ANAS_DDNS_GO_IPV6_URLS=${DDNS_GO_IPV6_URLS}
+      - ANAS_DDNS_GO_IPV6_INTERFACE=${DDNS_GO_IPV6_INTERFACE}
+    volumes:
+      - "${DATA_PATH}/ddns_go:/root"
+    command:
+      - -c
+      - /root/.ddns_go_config.yaml
+      - -f
+      - ${DDNS_GO_INTERVAL}
+      # Bound to the shared network's gateway, not 0.0.0.0: on host networking
+      # the latter would publish the interface to the LAN, where it would
+      # bypass the Traefik gate that is the only thing authenticating it.
+      - -l
+      - ${DDNS_GO_WEB_LISTEN}
