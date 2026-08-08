@@ -11,13 +11,33 @@ import (
 )
 
 type File struct {
-	Modules  []string           `yaml:"modules"`
-	Global   Global             `yaml:"global"`
-	IAM      IAM                `yaml:"iam"`
-	Rollback Rollback           `yaml:"rollback"`
-	Secrets  map[string]any     `yaml:"secrets"`
-	Services map[string]Service `yaml:"services"`
-	Env      map[string]any     `yaml:"env"`
+	Modules    []string           `yaml:"modules"`
+	Global     Global             `yaml:"global"`
+	IAM        IAM                `yaml:"iam"`
+	DynamicDNS DynamicDNS         `yaml:"dynamic_dns"`
+	Rollback   Rollback           `yaml:"rollback"`
+	Secrets    map[string]any     `yaml:"secrets"`
+	Services   map[string]Service `yaml:"services"`
+	Env        map[string]any     `yaml:"env"`
+}
+
+// DynamicDNS asks for the deployment's own A/AAAA records to be kept current
+// without naming the program that does it.
+//
+// It is deliberately not a list. Several DDNS implementations may run at once
+// -- listing them in `modules` still starts them, and nothing here stops that
+// -- but exactly one of them holds the records ANAS declares. Two programs
+// updating one record is not redundancy, it is a race whose loser silently
+// reverts the winner.
+type DynamicDNS struct {
+	// Provider is the cask that maintains the declared records, or "auto" to
+	// let the runner pick from the implementations that can address the chosen
+	// vendor. Empty means ANAS declares no records at all, and any DDNS cask
+	// listed in `modules` is left entirely to its own configuration.
+	Provider string `yaml:"provider"`
+	// DNSProvider is the vendor those records live at. It seeds the selected
+	// cask's own dns_provider, which may still be set per service to override.
+	DNSProvider string `yaml:"dns_provider"`
 }
 
 // IAM selects the single identity provider for the deployment. Provider has no
@@ -60,12 +80,16 @@ type Global struct {
 	// <workspace>/data so that copying one directory is a complete backup; a
 	// configurable location would silently make that untrue. Users who need the
 	// data on a larger disk put the whole workspace there.
-	Timezone                   string `yaml:"timezone"`
-	ContainerPrefix            string `yaml:"container_prefix"`
-	ImagePrefix                string `yaml:"image_prefix"`
-	NetworkPrefix              string `yaml:"network_prefix"`
-	HostIP                     string `yaml:"host_ip"`
-	DNSProvider                string `yaml:"dns_provider"`
+	Timezone        string `yaml:"timezone"`
+	ContainerPrefix string `yaml:"container_prefix"`
+	ImagePrefix     string `yaml:"image_prefix"`
+	NetworkPrefix   string `yaml:"network_prefix"`
+	HostIP          string `yaml:"host_ip"`
+	// There is deliberately no dns_provider. A DNS vendor is chosen per engine
+	// -- services.lego.env.dns_provider, services.ddns_go.env.dns_provider --
+	// because certificates and dynamic DNS routinely live at different
+	// vendors, and because the same vendor often needs different credentials
+	// for each. See internal/dns.
 	DNSServer                  string `yaml:"dns_server"`
 	DefaultServiceRootPassword string `yaml:"default_service_root_password"`
 	// VirtualDomain marks a domain that cannot obtain a publicly trusted
@@ -107,6 +131,11 @@ func Load(path string) (*File, error) {
 	}
 	cfg.IAM.Provider = strings.ToLower(strings.TrimSpace(cfg.IAM.Provider))
 	cfg.IAM.DefaultProtocol = strings.ToLower(strings.TrimSpace(cfg.IAM.DefaultProtocol))
+	cfg.DynamicDNS.Provider = strings.ToLower(strings.TrimSpace(cfg.DynamicDNS.Provider))
+	cfg.DynamicDNS.DNSProvider = strings.TrimSpace(cfg.DynamicDNS.DNSProvider)
+	if cfg.DynamicDNS.Provider != "" && cfg.DynamicDNS.DNSProvider == "" {
+		return nil, fmt.Errorf("dynamic_dns.provider is set but dynamic_dns.dns_provider is not; name the DNS vendor the records live at")
+	}
 	// The shared administrator password is optional: when it is absent every
 	// cask receives its own generated root password instead. When set it must
 	// still meet the minimum length.
@@ -147,7 +176,6 @@ func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
 	set("IMAGE_PREFIX", f.Global.ImagePrefix)
 	set("NETWORK_PREFIX", f.Global.NetworkPrefix)
 	set("HOST_IP", f.Global.HostIP)
-	set("DNS_PROVIDER", f.Global.DNSProvider)
 	set("DNS_SERVER", f.Global.DNSServer)
 	set("DEFAULT_SERVICE_ROOT_PASSWORD", f.Global.DefaultServiceRootPassword)
 	if f.Global.VirtualDomain {

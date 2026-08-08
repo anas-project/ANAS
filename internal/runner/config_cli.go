@@ -245,7 +245,7 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 
 func isGlobalParameter(parameter string) bool {
 	switch parameter {
-	case "domain", "email", "timezone", "container_prefix", "image_prefix", "network_prefix", "host_ip", "dns_provider", "dns_server", "default_service_root_password":
+	case "domain", "email", "timezone", "container_prefix", "image_prefix", "network_prefix", "host_ip", "dns_server", "default_service_root_password":
 		return true
 	default:
 		return false

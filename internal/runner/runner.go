@@ -12,29 +12,33 @@ import (
 
 	"github.com/whlsxl/anas/internal/compose"
 	"github.com/whlsxl/anas/internal/config"
+	"github.com/whlsxl/anas/internal/dns"
 )
 
 type app struct {
 	root string
 	// workspace is the deployment root; base is its .anas state directory.
-	workspace        string
-	base             string
-	cfgPath          string
-	verbose          bool
-	yes              bool
-	skipStartGuard   bool
-	useFrozenHooks   bool
-	compose          compose.CLI
-	reg              map[string]Module
-	cfg              *config.File
-	env              map[string]string
-	envOwner         map[string]string
-	deps             map[string][]string
-	order            []string
-	secrets          *secretStore
-	lock             *caskLock
-	hookBins         map[string]string
-	sensitiveKeys    map[string]bool
+	workspace      string
+	base           string
+	cfgPath        string
+	verbose        bool
+	yes            bool
+	skipStartGuard bool
+	useFrozenHooks bool
+	compose        compose.CLI
+	reg            map[string]Module
+	cfg            *config.File
+	env            map[string]string
+	envOwner       map[string]string
+	deps           map[string][]string
+	order          []string
+	secrets        *secretStore
+	lock           *caskLock
+	hookBins       map[string]string
+	sensitiveKeys  map[string]bool
+	// runnerSensitive holds keys the runner itself derived from user secrets,
+	// which nothing else would recognise as sensitive. See markSensitive.
+	runnerSensitive  map[string]bool
 	resolvedBindings map[string]map[string]string
 	// iamProvider is the single IAM cask serving this deployment, and
 	// iamBindings maps each consumer to its resolved protocol. Both are empty
@@ -42,10 +46,18 @@ type app struct {
 	// iam.provider never starts an IAM.
 	iamProvider string
 	iamBindings map[string]string
+	// capabilityProviders records the cask bound for each capability this
+	// deployment actually resolved, keyed by capability name.
+	capabilityProviders map[string]string
+	// dynamicDNSProvider is the cask holding the records this deployment
+	// declares. Other DDNS casks may still run alongside it, self-managed.
+	dynamicDNSProvider string
 	// artifactRoot is the final immutable deployment cask directory. Hooks use
 	// this path while a deployment is rendered in staging so values they derive
 	// never contain the temporary staging path.
 	artifactRoot string
+	// dnsReg is the DNS platform registry, loaded on first use.
+	dnsReg *dns.Registry
 }
 
 // Main is the single place the contract's output rules are applied. Every
@@ -347,9 +359,18 @@ func (a *app) execute(actions []string) error {
 		}
 	}
 	a.applyModuleDefaults()
+	// Ahead of the plan output, so a platform typo or a half-configured
+	// credential is reported by `plan` rather than by a container in a
+	// restart loop.
+	if err := a.materializeDNSCredentials(); err != nil {
+		return err
+	}
+	a.reportDynamicDNSOverlaps()
 	if contains(actions, "plan") {
 		fmt.Println(strings.Join(a.order, "\n"))
 		fmt.Print(a.iamPlanSummary())
+		fmt.Print(a.dnsPlanSummary())
+		fmt.Print(a.dynamicDNSPlanSummary())
 		return nil
 	}
 	if contains(actions, "stop") {
@@ -629,6 +650,17 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 	if err := a.checkSingleIAM(); err != nil {
 		return nil, err
 	}
+	// Dynamic DNS belongs to the deployment rather than to any cask, so no
+	// dependency edge would ever pull its implementation in. Resolving it here
+	// and adding it as a root is what makes `dynamic_dns.provider` sufficient
+	// on its own, without also listing the cask in `modules`.
+	dynamicDNS, err := a.resolveDynamicDNS()
+	if err != nil {
+		return nil, err
+	}
+	if dynamicDNS != "" && !contains(mods, dynamicDNS) {
+		mods = append(append([]string{}, mods...), dynamicDNS)
+	}
 	seen := map[string]bool{}
 	temp := map[string]bool{}
 	resolvedDeps := map[string][]string{}
@@ -700,6 +732,7 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 	}
 	a.deps = resolvedDeps
 	a.publishIAMEnv(out)
+	a.applyDynamicDNSBinding(dynamicDNS)
 	return stableModuleOrder(out, resolvedDeps, a.reg)
 }
 

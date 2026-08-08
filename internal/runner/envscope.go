@@ -65,6 +65,9 @@ func (a *app) sensitiveEnvKeySet() map[string]bool {
 		return a.sensitiveKeys
 	}
 	out := map[string]bool{}
+	for key := range a.runnerSensitive {
+		out[key] = true
+	}
 	for name, mod := range a.reg {
 		for param, policy := range mod.Changes {
 			if !policy.Sensitive {

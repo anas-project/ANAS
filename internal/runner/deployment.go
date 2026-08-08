@@ -271,15 +271,27 @@ func runPlan(args []string, jsonMode bool) error {
 	if err := a.validateVersions(&caskLock{APIVersion: "anas.dev/v1", Casks: map[string]caskLockRecord{}}); err != nil {
 		return preconditionErrorf("version_conflict", "%s", err.Error())
 	}
+	// Defaults first: a cask may supply the DNS vendor its hook would use, and
+	// resolving credentials against a half-populated environment would report
+	// a platform as unset when it is merely defaulted.
+	a.applyModuleDefaults()
+	if err := a.materializeDNSCredentials(); err != nil {
+		return preconditionErrorf("dns_credentials_invalid", "%s", err.Error())
+	}
+	a.reportDynamicDNSOverlaps()
 	if jsonMode {
 		return emitOK(map[string]any{
 			"config": configPath, "cask_root": absolutePath(located),
 			"modules": a.order, "iam": a.iamPlanDocument(),
 			"capability_bindings": cloneNestedMap(a.resolvedBindings),
+			"dns_platforms":       a.dnsPlanDocument(),
+			"dynamic_dns":         a.dynamicDNSPlanDocument(),
 		})
 	}
 	fmt.Println(strings.Join(a.order, "\n"))
 	fmt.Print(a.iamPlanSummary())
+	fmt.Print(a.dnsPlanSummary())
+	fmt.Print(a.dynamicDNSPlanSummary())
 	return nil
 }
 
@@ -368,6 +380,10 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		return "", preconditionErrorf("lock_stale", "%s", err.Error())
 	}
 	a.applyModuleDefaults()
+	if err := a.materializeDNSCredentials(); err != nil {
+		return "", preconditionErrorf("dns_credentials_invalid", "%s", err.Error())
+	}
+	a.reportDynamicDNSOverlaps()
 	secrets, err := loadSecretStore(opts.base)
 	if err != nil {
 		return "", preconditionErrorf("secrets_unreadable", "%s", err.Error())
