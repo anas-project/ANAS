@@ -55,10 +55,18 @@ global:
   email: admin@example.com
   data_path: ./data
   timezone: Asia/Shanghai
-  dns_provider: manual
   # Optional shared administrator password. When omitted, every cask gets its
   # own generated root password; read them with `anas config secret get`.
   default_service_root_password: ChangeMe1!
+
+services:
+  # The DNS vendor is chosen per engine rather than deployment-wide.
+  lego:
+    env:
+      dns_provider: cloudflare
+
+secrets:
+  cloudflare_dns_api_token: replace-me
 
 env:
   BASICAUTH_USER: admin

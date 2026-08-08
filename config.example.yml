@@ -5,11 +5,25 @@ global:
   domain: nas.example.com
   email: admin@example.com
   timezone: Asia/Shanghai
-  dns_provider: manual
   # Optional shared password for administrator accounts that people log in
   # with. When omitted, each cask gets its own generated root password; list
   # them with `anas config secret list`.
   default_service_root_password: ChangeMe1!
+
+services:
+  # The DNS vendor is chosen per engine, not deployment-wide: certificates and
+  # dynamic DNS often live at different vendors, and the same vendor sometimes
+  # needs a different credential for each. Run `anas plan` to see what each
+  # engine resolved and whether they share one credential.
+  lego:
+    env:
+      dns_provider: cloudflare
+
+secrets:
+  # Named for the vendor, so every engine configured for that vendor uses it.
+  # To give one engine its own account instead, prefix the key with that cask:
+  # ddns_go_cloudflare_dns_api_token.
+  cloudflare_dns_api_token: replace-me
 
 env:
   BASICAUTH_USER: admin

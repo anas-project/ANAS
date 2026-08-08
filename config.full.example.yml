@@ -12,11 +12,39 @@ global:
   domain: nas.example.com
   email: admin@example.com
   timezone: Asia/Shanghai
-  dns_provider: manual
   # Optional shared password for administrator accounts that people log in
   # with. When omitted, each cask gets its own generated root password; list
   # them with `anas config secret list`.
   default_service_root_password: ChangeMe1!
+
+# The DNS vendor is chosen per engine, not deployment-wide: certificates and
+# dynamic DNS often live at different vendors, and the same vendor sometimes
+# needs a different credential for each (Namecheap's DNS API user is not its
+# Dynamic DNS password). `anas plan` reports what each engine resolved and
+# whether they can share one credential.
+services:
+  lego:
+    env:
+      dns_provider: cloudflare
+  ddns_go:
+    env:
+      dns_provider: cloudflare
+
+secrets:
+  # Keyed by vendor: every engine configured for that vendor reads it. Prefix
+  # the key with a cask name to give that engine its own account instead, e.g.
+  # ddns_go_cloudflare_dns_api_token.
+  cloudflare_dns_api_token: replace-me
+
+# Keep this deployment's own A/AAAA records current, without naming the program
+# that does it. "auto" picks among the implementations that can address the
+# vendor, and records the choice in the lock so a later release cannot move an
+# existing deployment onto a different one. Omit the section entirely to
+# declare no records; a DDNS cask listed in `modules` then runs entirely on its
+# own configuration.
+dynamic_dns:
+  provider: auto
+  dns_provider: cloudflare
 
 # The single identity provider for this deployment. Required as soon as any
 # enabled cask consumes the iam capability; the runner never picks one for you,
