@@ -429,7 +429,7 @@ capabilities:
 		t.Fatal(err)
 	}
 	_, err := loadModuleManifest(dir, "authelia")
-	if err == nil || !strings.Contains(err.Error(), "must declare both") {
+	if err == nil || !strings.Contains(err.Error(), "must declare all of: oidc, saml") {
 		t.Fatalf("error = %v, want an OIDC-only IAM to be rejected at manifest load", err)
 	}
 }

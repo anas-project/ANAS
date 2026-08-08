@@ -6,69 +6,131 @@ import (
 	"strings"
 )
 
-// Capability binding for IAM. A deployment runs exactly one IAM, chosen
-// explicitly through config `iam.provider`; casks may narrow the protocol but
-// never the provider. Requiring every IAM provider to serve both OIDC and SAML
-// (see requireIAMInterfaces) removes the whole "consumer wants SAML but the
-// provider only speaks OIDC" failure class before any resolution happens.
-const capabilityIAM = "iam"
+// Capability binding. A capability names a job some cask does for others --
+// serving identity, gating HTTP access -- and a consumer declares the job it
+// needs rather than the cask it wants. What differs between capabilities is
+// how the single provider is chosen, and that difference is data here rather
+// than a branch: see capabilityDefinitions.
+const (
+	capabilityIAM         = "iam"
+	capabilityForwardAuth = "forward_auth"
+)
 
 const (
 	interfaceOIDC = "oidc"
 	interfaceSAML = "saml"
+	// interfaceHTTP is Traefik's ForwardAuth exchange: the proxy asks an
+	// external endpoint about each request and forwards it only on 2xx.
+	interfaceHTTP = "http"
 )
 
-// knownCapabilityInterfaces lists the protocol identifiers the runner
-// understands per capability. An identifier outside this set fails at manifest
-// load rather than being ignored, so a typo cannot silently disable SSO.
-var knownCapabilityInterfaces = map[string][]string{
-	capabilityIAM: {interfaceOIDC, interfaceSAML},
+// Provider selection policies.
+const (
+	// selectionExplicit refuses to guess. Used where picking wrong is
+	// expensive to undo: switching IAM rewrites every client registration.
+	selectionExplicit = "explicit"
+	// selectionAuto binds the only enabled provider. The choice is still
+	// recorded in the lock, so gaining a second implementation later cannot
+	// silently move an existing deployment onto it.
+	selectionAuto = "auto"
+)
+
+// capabilityDefinition is what the runner knows about a capability before any
+// manifest or config is read.
+type capabilityDefinition struct {
+	// Interfaces are the protocol identifiers this capability may use. An
+	// identifier outside the set fails at manifest load rather than being
+	// ignored, so a typo cannot silently disable SSO.
+	Interfaces []string
+	// RequireAll is the provider admission rule: a cask may only register as
+	// a provider when it serves all of these. Checking at manifest load means
+	// whether a cask qualifies never depends on the user's configuration.
+	RequireAll []string
+	// Selection is how the provider is chosen.
+	Selection string
+	// ConfiguredProvider reads the explicitly selected provider from config.
+	// Only meaningful for selectionExplicit.
+	ConfiguredProvider func(a *app) string
+	// DefaultInterface reads the deployment-wide protocol preference, which
+	// applies to consumers that left their own choice on "auto".
+	DefaultInterface func(a *app) string
+	// ConfigKey names the config field in error messages.
+	ConfigKey string
 }
 
-// requireIAMInterfaces is the IAM provider admission rule: a cask may only
-// register as an IAM provider when it serves both protocols. The check runs at
-// manifest load, so whether a given IAM qualifies never depends on the user's
-// configuration.
-var requireIAMInterfaces = []string{interfaceOIDC, interfaceSAML}
+var capabilityDefinitions = map[string]capabilityDefinition{
+	// Requiring every IAM provider to serve both protocols removes the whole
+	// "consumer wants SAML but the provider only speaks OIDC" failure class
+	// before any resolution happens.
+	capabilityIAM: {
+		Interfaces:         []string{interfaceOIDC, interfaceSAML},
+		RequireAll:         []string{interfaceOIDC, interfaceSAML},
+		Selection:          selectionExplicit,
+		ConfigKey:          "iam.provider",
+		ConfiguredProvider: func(a *app) string { return a.cfg.IAM.Provider },
+		DefaultInterface:   func(a *app) string { return a.cfg.IAM.DefaultProtocol },
+	},
+	// Forward auth puts an authenticated gate in front of a service that has
+	// no login of its own. There is one exchange to speak and, today, one
+	// implementation, so demanding the user name it would be ceremony.
+	capabilityForwardAuth: {
+		Interfaces: []string{interfaceHTTP},
+		RequireAll: []string{interfaceHTTP},
+		Selection:  selectionAuto,
+		ConfigKey:  "forward_auth.provider",
+	},
+}
 
-// resolveCapabilityDependency binds one consumer to the deployment's IAM and
-// records the protocol it will speak. It returns the provider cask name so the
-// caller can add a dependency edge, which is what guarantees the provider's
-// calculate hook runs before the consumer's.
+// knownCapabilityInterfaces is the manifest-validation view of the table.
+func knownCapabilityInterfaces(name string) ([]string, bool) {
+	definition, ok := capabilityDefinitions[name]
+	if !ok {
+		return nil, false
+	}
+	return definition.Interfaces, true
+}
+
+// resolveCapabilityDependency binds one consumer to the deployment's provider
+// for a capability and records the interface it will speak. It returns the
+// provider cask name so the caller can add a dependency edge, which is what
+// guarantees the provider's calculate hook runs before the consumer's.
 func (a *app) resolveCapabilityDependency(moduleName string, mod Module, dep RequiredCapability) (string, error) {
-	if dep.Name != capabilityIAM {
+	definition, ok := capabilityDefinitions[dep.Name]
+	if !ok {
 		return "", fmt.Errorf("cask %q requires capability %q which the runner cannot bind", moduleName, dep.Name)
 	}
-	provider := ""
-	if a.cfg != nil {
-		provider = a.cfg.IAM.Provider
-	}
-	if provider == "" {
-		return "", fmt.Errorf("%s requires IAM capability, but iam.provider is not set;\nset iam.provider to one of: %s",
-			moduleName, a.listIAMProviders())
+	provider, err := a.selectCapabilityProvider(moduleName, dep.Name, definition)
+	if err != nil {
+		return "", err
 	}
 	providerMod, ok := a.reg[provider]
 	if !ok {
-		return "", fmt.Errorf("iam.provider %q is not a known cask;\navailable providers: %s",
-			provider, a.describeIAMProviders())
+		return "", fmt.Errorf("%s %q is not a known cask;\navailable providers: %s",
+			definition.ConfigKey, provider, a.describeCapabilityProviders(dep.Name))
 	}
-	capability, ok := providerMod.providedCapability(capabilityIAM)
+	capability, ok := providerMod.providedCapability(dep.Name)
 	if !ok {
-		return "", fmt.Errorf("iam.provider %q does not provide capability %q;\navailable providers: %s",
-			provider, capabilityIAM, a.describeIAMProviders())
+		return "", fmt.Errorf("%s %q does not provide capability %q;\navailable providers: %s",
+			definition.ConfigKey, provider, dep.Name, a.describeCapabilityProviders(dep.Name))
 	}
 	if !a.moduleEnabled(provider) {
-		return "", fmt.Errorf("iam.provider %q is disabled but required by %s", provider, moduleName)
+		return "", fmt.Errorf("%s %q is disabled but required by %s", definition.ConfigKey, provider, moduleName)
 	}
 	iface, err := a.resolveCapabilityInterface(moduleName, mod, dep, provider, capability)
 	if err != nil {
 		return "", err
 	}
-	a.iamProvider = provider
-	if a.iamBindings == nil {
-		a.iamBindings = map[string]string{}
+	if dep.Name == capabilityIAM {
+		a.iamProvider = provider
+		if a.iamBindings == nil {
+			a.iamBindings = map[string]string{}
+		}
+		a.iamBindings[moduleName] = iface
 	}
-	a.iamBindings[moduleName] = iface
+	if a.capabilityProviders == nil {
+		a.capabilityProviders = map[string]string{}
+	}
+	a.capabilityProviders[dep.Name] = provider
 	// Reuse the generic binding record so the existing lock comparison
 	// protects an IAM or protocol switch the same way it protects a database
 	// switch.
@@ -78,9 +140,45 @@ func (a *app) resolveCapabilityDependency(moduleName string, mod Module, dep Req
 	if a.resolvedBindings[moduleName] == nil {
 		a.resolvedBindings[moduleName] = map[string]string{}
 	}
-	a.resolvedBindings[moduleName][capabilityIAM] = provider
-	a.resolvedBindings[moduleName][capabilityIAM+".interface"] = iface
+	a.resolvedBindings[moduleName][dep.Name] = provider
+	a.resolvedBindings[moduleName][dep.Name+".interface"] = iface
 	return provider, nil
+}
+
+// selectCapabilityProvider applies the capability's selection policy.
+//
+// An explicit policy names the config key that is missing, because "pick one
+// yourself" is only actionable if the user is told where to write it. An auto
+// policy binds a lone provider and refuses to guess between several, which is
+// the point at which a deployment does have to choose.
+func (a *app) selectCapabilityProvider(moduleName, capability string, definition capabilityDefinition) (string, error) {
+	if definition.Selection == selectionExplicit {
+		provider := ""
+		if a.cfg != nil && definition.ConfiguredProvider != nil {
+			provider = definition.ConfiguredProvider(a)
+		}
+		if provider == "" {
+			return "", fmt.Errorf("%s requires %s capability, but %s is not set;\nset %s to one of: %s",
+				moduleName, capability, definition.ConfigKey, definition.ConfigKey, a.listCapabilityProviders(capability))
+		}
+		return provider, nil
+	}
+	candidates := []string{}
+	for _, name := range a.capabilityProviderNames(capability) {
+		if a.moduleEnabled(name) {
+			candidates = append(candidates, name)
+		}
+	}
+	switch len(candidates) {
+	case 1:
+		return candidates[0], nil
+	case 0:
+		return "", fmt.Errorf("%s requires %s capability, but no enabled cask provides it;\nenable one of: %s",
+			moduleName, capability, a.listCapabilityProviders(capability))
+	default:
+		return "", fmt.Errorf("%s requires %s capability, but %s all provide it;\nset %s to the one this deployment should use",
+			moduleName, capability, strings.Join(candidates, ", "), definition.ConfigKey)
+	}
 }
 
 // resolveCapabilityInterface applies the protocol precedence: an explicit cask
@@ -99,12 +197,13 @@ func (a *app) resolveCapabilityInterface(moduleName string, mod Module, dep Requ
 		}
 		iface = requested
 	default:
+		definition := capabilityDefinitions[dep.Name]
 		fallback := ""
-		if a.cfg != nil {
-			fallback = a.cfg.IAM.DefaultProtocol
+		if a.cfg != nil && definition.DefaultInterface != nil {
+			fallback = definition.DefaultInterface(a)
 		}
 		if fallback != "" {
-			known := knownCapabilityInterfaces[dep.Name]
+			known, _ := knownCapabilityInterfaces(dep.Name)
 			if !contains(known, fallback) {
 				return "", fmt.Errorf("iam.default_protocol %q is not a known protocol;\nset iam.default_protocol to one of: %s",
 					fallback, strings.Join(known, ", "))
@@ -139,12 +238,12 @@ func (a *app) resolveCapabilityInterface(moduleName string, mod Module, dep Requ
 	return iface, nil
 }
 
-// iamProviderNames lists every cask that qualifies as an IAM provider, so an
-// error can tell the user what they may actually choose.
-func (a *app) iamProviderNames() []string {
+// capabilityProviderNames lists every cask that qualifies as a provider for a
+// capability, so an error can tell the user what they may actually choose.
+func (a *app) capabilityProviderNames(capability string) []string {
 	names := []string{}
 	for name, mod := range a.reg {
-		if _, ok := mod.providedCapability(capabilityIAM); ok {
+		if _, ok := mod.providedCapability(capability); ok {
 			names = append(names, name)
 		}
 	}
@@ -152,25 +251,25 @@ func (a *app) iamProviderNames() []string {
 	return names
 }
 
-func (a *app) listIAMProviders() string {
-	names := a.iamProviderNames()
+func (a *app) listCapabilityProviders(capability string) string {
+	names := a.capabilityProviderNames(capability)
 	if len(names) == 0 {
-		return "(no cask provides the iam capability)"
+		return "(no cask provides the " + capability + " capability)"
 	}
 	return strings.Join(names, ", ")
 }
 
-// describeIAMProviders renders providers with their protocols, e.g.
+// describeCapabilityProviders renders providers with their interfaces, e.g.
 // "llng[oidc,saml]".
-func (a *app) describeIAMProviders() string {
-	names := a.iamProviderNames()
+func (a *app) describeCapabilityProviders(capability string) string {
+	names := a.capabilityProviderNames(capability)
 	if len(names) == 0 {
-		return "(no cask provides the iam capability)"
+		return "(no cask provides the " + capability + " capability)"
 	}
 	out := make([]string, 0, len(names))
 	for _, name := range names {
-		capability, _ := a.reg[name].providedCapability(capabilityIAM)
-		out = append(out, fmt.Sprintf("%s[%s]", name, strings.Join(capability.Interfaces, ",")))
+		provided, _ := a.reg[name].providedCapability(capability)
+		out = append(out, fmt.Sprintf("%s[%s]", name, strings.Join(provided.Interfaces, ",")))
 	}
 	return strings.Join(out, ", ")
 }
@@ -178,6 +277,11 @@ func (a *app) describeIAMProviders() string {
 // checkSingleIAM rejects a config that would start two IAMs at once. Listing an
 // IAM in modules is how a user starts one without any consumer, so the check is
 // over explicitly listed casks plus the selected provider.
+//
+// The restriction is specific to IAM rather than general to capabilities: two
+// identity providers would both claim to be the deployment's source of truth
+// for accounts. Two forward-auth gateways in front of different services are
+// merely redundant, so nothing rejects them.
 func (a *app) checkSingleIAM() error {
 	if a.cfg == nil {
 		return nil
@@ -400,7 +504,7 @@ func normalizeProvidedCapabilities(cask string, in []manifestProvidedCapability)
 		if name == "" {
 			return nil, fmt.Errorf("cask %q has capabilities.provides entry without name", cask)
 		}
-		known, ok := knownCapabilityInterfaces[name]
+		known, ok := knownCapabilityInterfaces(name)
 		if !ok {
 			return nil, fmt.Errorf("cask %q provides unknown capability %q; known capabilities: %s",
 				cask, name, strings.Join(knownCapabilityNames(), ", "))
@@ -416,11 +520,14 @@ func normalizeProvidedCapabilities(cask string, in []manifestProvidedCapability)
 		if len(interfaces) == 0 {
 			return nil, fmt.Errorf("cask %q provides capability %q without interfaces", cask, name)
 		}
-		if name == capabilityIAM {
-			if missing := missingInterfaces(interfaces, requireIAMInterfaces); len(missing) > 0 {
+		// Admission: a provider must serve everything the capability promises
+		// its consumers, checked here so qualification never depends on the
+		// user's configuration.
+		if required := capabilityDefinitions[name].RequireAll; len(required) > 0 {
+			if missing := missingInterfaces(interfaces, required); len(missing) > 0 {
 				return nil, fmt.Errorf(
-					"cask %q declares capability %s with interfaces [%s]; an IAM provider must declare both %s",
-					cask, name, strings.Join(interfaces, ","), strings.Join(requireIAMInterfaces, " and "))
+					"cask %q declares capability %s with interfaces [%s]; a provider of %s must declare all of: %s",
+					cask, name, strings.Join(interfaces, ","), name, strings.Join(required, ", "))
 			}
 		}
 		out = append(out, ProvidedCapability{Name: name, Interfaces: interfaces})
@@ -436,7 +543,7 @@ func normalizeRequiredCapabilities(cask string, in []manifestRequiredCapability)
 		if name == "" {
 			return nil, fmt.Errorf("cask %q has requires_capabilities entry without name", cask)
 		}
-		known, ok := knownCapabilityInterfaces[name]
+		known, ok := knownCapabilityInterfaces(name)
 		if !ok {
 			return nil, fmt.Errorf("cask %q requires unknown capability %q; known capabilities: %s",
 				cask, name, strings.Join(knownCapabilityNames(), ", "))
@@ -505,8 +612,8 @@ func missingInterfaces(have, want []string) []string {
 }
 
 func knownCapabilityNames() []string {
-	names := make([]string, 0, len(knownCapabilityInterfaces))
-	for name := range knownCapabilityInterfaces {
+	names := make([]string, 0, len(capabilityDefinitions))
+	for name := range capabilityDefinitions {
 		names = append(names, name)
 	}
 	sort.Strings(names)
