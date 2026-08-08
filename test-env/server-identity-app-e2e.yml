@@ -16,6 +16,16 @@ global:
   default_service_root_password: AnasTest1!
 
 services:
+  # The cask default, 172.28.0.0/16, is a range an ordinary Docker install
+  # hands out early, so a test host that already runs containers of its own is
+  # likely to hold it. The collision only surfaces the first time the shared
+  # network is created from scratch -- Compose reuses an existing network of
+  # the same name whatever subnet it has -- which makes it look intermittent.
+  # Pinning it here keeps that out of the runtime tests.
+  traefik:
+    env:
+      subnet: 172.23.0.0/16
+      gateway_ip: 172.23.0.1
   nextcloud:
     env:
       talk_enabled: "false"

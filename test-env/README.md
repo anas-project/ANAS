@@ -118,6 +118,35 @@ Do not commit `.anas-test/` or generated secrets.
      ./test-env/scripts/server-anchor-e2e.sh
    ```
 
+9. Directory event journal runtime test
+
+   Against a running deployment carrying both samba_dc and authentik, this
+   reproduces the stale-sync failure on purpose before proving the fix: with
+   the watcher stopped, a group membership written to AD stays invisible to
+   authentik and no sync runs; with the watcher running, the same change
+   converges in seconds without waiting for the schedule. It also covers noise
+   rejection, burst debouncing into a single sync, and cursor durability across
+   a watcher restart.
+
+   ```sh
+   DOCKER_HOST=unix:///run/anas-anchor-docker.sock \
+   ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
+     ./test-env/scripts/server-directory-events-e2e.sh
+   ```
+
+10. Deploy preflight
+
+    Checks a rendered deployment for the two collisions that stay invisible on
+    a redeploy and abort the first cold create: a pinned subnet the host
+    already routes, and a published port a previous failed create never
+    released. Run it before applying on a host that runs containers of its own.
+
+    ```sh
+    DOCKER_HOST=unix:///run/anas-anchor-docker.sock \
+      ./test-env/scripts/server-deploy-preflight.sh \
+      <workspace>/.anas/deployments/<deployment-id>
+    ```
+
 ## Full Run
 
 ```sh

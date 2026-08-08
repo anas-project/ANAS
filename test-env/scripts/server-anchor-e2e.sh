@@ -140,6 +140,14 @@ test "$dc_state" = running
 test "$worker_state" = running
 wait_healthy
 dc_exec grep -Fq 'dsdb_json_audit:5@/var/log/samba-audit/dsdb.json' /etc/samba/smb.conf
+# Samba caps the audit log itself. A zero "max log size" would not merely
+# uncap it -- it short-circuits the check that reopens the file after a
+# rotation, which is what keeps every Samba process writing to the file the
+# anchor worker is reading. testparm reports the effective value.
+audit_max_log_size=$(dc_exec testparm -s --parameter-name='max log size' 2>/dev/null | awk 'NF { value = $NF } END { print value }')
+test "$audit_max_log_size" -gt 0
+# Nothing consumes the transaction audit, so it must not be writing a file.
+dc_exec test ! -e /var/log/samba-audit/transaction.json
 dc_exec test -f /run/anas-identity-schema.ready
 dc_exec ldbsearch -H /var/lib/samba/private/sam.ldb \
   -b "CN=Schema,CN=Configuration,$(dc_exec printenv SAMBA_DC_BASE_DN)" \
