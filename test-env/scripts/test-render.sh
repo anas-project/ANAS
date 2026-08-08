@@ -7,6 +7,9 @@ cd "$ROOT_DIR"
 
 for config in "$CONFIG_DIR"/*.yml; do
   name=$(basename "$config" .yml)
+  # Lock fixtures live beside the config they belong to and are not configs
+  # themselves; feeding one to `plan` fails on the very first field.
+  case "$name" in *.lock) continue ;; esac
   ws="$RUNTIME_DIR/$name"
   log="$REPORT_DIR/render-$name.log"
   make_workspace "$ws" "$config"

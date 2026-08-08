@@ -1,0 +1,43 @@
+# Both DDNS implementations at once, each behind the shared authenticated
+# gate. Running them together is allowed and is the arrangement that exercises
+# per-engine credential separation, the declarative Traefik route used by the
+# host-network cask, and the forward_auth capability binding.
+modules:
+  - traefik
+  - lego
+  - samba_dc
+  - postgres
+  - authentik
+  - ddns_updater
+  - ddns_go
+
+iam:
+  provider: authentik
+
+global:
+  domain: nas.test
+  email: admin@nas.test
+  timezone: Asia/Shanghai
+  virtual_domain: true
+  default_service_root_password: change-me-now
+
+services:
+  # Different vendors on purpose: certificates and dynamic DNS need not live at
+  # the same provider, and nothing should force them to.
+  ddns_updater:
+    env:
+      dns_provider: cloudflare
+  ddns_go:
+    env:
+      dns_provider: tencentcloud
+
+secrets:
+  cloudflare_dns_api_token: test-token-not-a-real-credential
+  tencentcloud_secret_id: test-id-not-a-real-credential
+  tencentcloud_secret_key: test-key-not-a-real-credential
+
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_test_
+  IMAGE_PREFIX: anas_
+  NETWORK_PREFIX: anas_test_

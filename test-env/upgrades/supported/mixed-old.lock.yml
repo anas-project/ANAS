@@ -45,9 +45,9 @@ casks:
   lam:
     version: 7.6.0
     source: casks/mods/lam
-  ddns:
+  ddns_updater:
     version: 0.0.0
-    source: casks/mods/ddns
+    source: casks/mods/ddns_updater
   freeradius:
-    version: 4.2.0
+    version: 3.2.9
     source: casks/mods/freeradius

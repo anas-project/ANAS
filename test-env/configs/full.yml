@@ -12,7 +12,7 @@ modules:
   - meshcentral
   - netbird
   - lam
-  - ddns
+  - ddns_updater
   - eturnal
   - freeradius
 
@@ -23,8 +23,21 @@ global:
   domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
-  dns_provider: manual
+  virtual_domain: true
   default_service_root_password: change-me-now
 
 env:
   BASICAUTH_USER: admin
+
+# One credential, two engines: Cloudflare uses the same API token for the ACME
+# DNS-01 challenge and for record updates, so this covers the shared path.
+services:
+  lego:
+    env:
+      dns_provider: cloudflare
+  ddns_updater:
+    env:
+      dns_provider: cloudflare
+
+secrets:
+  cloudflare_dns_api_token: test-token-not-a-real-credential

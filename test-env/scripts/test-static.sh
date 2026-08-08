@@ -32,6 +32,15 @@ fi
 
 status=0
 go test ./... >"$log" 2>&1 || status=$?
+# Nested modules are excluded from ./... by design: a cask component that is
+# built inside its own image keeps its own module so the image build context
+# stays the bundle rather than the whole repository. They still have to be
+# tested, so each is listed here.
+if [ "$status" -eq 0 ]; then
+  for module in casks/mods/ddns_go/ddns-go/reconcile; do
+    (cd "$module" && go test ./...) >>"$log" 2>&1 || status=$?
+  done
+fi
 if [ "$status" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
   PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s casks/mods/samba_dc/anchor_worker -p 'test_*.py' >>"$log" 2>&1 || status=$?
 fi

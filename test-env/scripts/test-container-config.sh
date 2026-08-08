@@ -13,6 +13,71 @@ LEGO_KEY_NAME=key.pem \
   sh "$ROOT_DIR/casks/mods/traefik/traefik/anas-entrypoint.sh" || exit 1
 grep -q 'certFile: /certs/fullchain.pem' "$test_dir/traefik/cert.yml" || exit 1
 grep -q 'keyFile: /certs/key.pem' "$test_dir/traefik/cert.yml" || exit 1
+# No route declarations means no routes file at all, so a stale one from an
+# earlier release cannot keep advertising a route that is now gone.
+[ ! -e "$test_dir/traefik/routes.yml" ] || exit 1
+
+# Declared routes for services the Docker provider cannot see.
+mkdir -p "$test_dir/traefik-routes"
+env \
+  ANAS_CONFIG_DIR="$test_dir/traefik-routes" \
+  ANAS_TRAEFIK_BINARY=/usr/bin/true \
+  LEGO_CERT_NAME=fullchain.pem \
+  LEGO_KEY_NAME=key.pem \
+  'ANAS_TRAEFIK_ROUTE__DDNS_GO__RULE=Host(`ddns-go.example.test`)' \
+  ANAS_TRAEFIK_ROUTE__DDNS_GO__URL=http://172.18.0.1:9876 \
+  ANAS_TRAEFIK_ROUTE__DDNS_GO__MIDDLEWARES=forward-auth,compress \
+  sh "$ROOT_DIR/casks/mods/traefik/traefik/anas-entrypoint.sh" || exit 1
+grep -q '    ddns-go:' "$test_dir/traefik-routes/routes.yml" || exit 1
+grep -q 'rule: "Host(`ddns-go.example.test`)"' "$test_dir/traefik-routes/routes.yml" || exit 1
+grep -q 'url: "http://172.18.0.1:9876"' "$test_dir/traefik-routes/routes.yml" || exit 1
+grep -q -- '- "forward-auth"' "$test_dir/traefik-routes/routes.yml" || exit 1
+grep -q -- '- "compress"' "$test_dir/traefik-routes/routes.yml" || exit 1
+grep -q -- '- "https"' "$test_dir/traefik-routes/routes.yml" || exit 1
+grep -q 'tls: {}' "$test_dir/traefik-routes/routes.yml" || exit 1
+# The certificate store is still written beside the routes.
+grep -q 'certFile: /certs/fullchain.pem' "$test_dir/traefik-routes/cert.yml" || exit 1
+
+# A quote in a rule must be escaped into the scalar, not close it.
+mkdir -p "$test_dir/traefik-quote"
+env \
+  ANAS_CONFIG_DIR="$test_dir/traefik-quote" \
+  ANAS_TRAEFIK_BINARY=/usr/bin/true \
+  LEGO_CERT_NAME=fullchain.pem \
+  LEGO_KEY_NAME=key.pem \
+  'ANAS_TRAEFIK_ROUTE__ODD__RULE=Header(`X-Q`, `a"b\c`)' \
+  ANAS_TRAEFIK_ROUTE__ODD__URL=http://10.0.0.1:1 \
+  sh "$ROOT_DIR/casks/mods/traefik/traefik/anas-entrypoint.sh" || exit 1
+grep -q 'rule: "Header(`X-Q`, `a\\"b\\\\c`)"' "$test_dir/traefik-quote/routes.yml" || exit 1
+
+# A newline is the one character that could end the scalar and inject YAML, so
+# it is refused rather than escaped.
+mkdir -p "$test_dir/traefik-newline"
+if env \
+   ANAS_CONFIG_DIR="$test_dir/traefik-newline" \
+   ANAS_TRAEFIK_BINARY=/usr/bin/true \
+   LEGO_CERT_NAME=fullchain.pem \
+   LEGO_KEY_NAME=key.pem \
+   ANAS_TRAEFIK_ROUTE__EVIL__RULE="Host(\`a\`)
+      injected: true" \
+   ANAS_TRAEFIK_ROUTE__EVIL__URL=http://10.0.0.1:1 \
+     sh "$ROOT_DIR/casks/mods/traefik/traefik/anas-entrypoint.sh" 2>/dev/null; then
+  echo "entrypoint accepted a route rule containing a newline" >&2
+  exit 1
+fi
+
+# A rule without an upstream is a declaration error, not a silent no-op.
+mkdir -p "$test_dir/traefik-nourl"
+if env \
+   ANAS_CONFIG_DIR="$test_dir/traefik-nourl" \
+   ANAS_TRAEFIK_BINARY=/usr/bin/true \
+   LEGO_CERT_NAME=fullchain.pem \
+   LEGO_KEY_NAME=key.pem \
+   'ANAS_TRAEFIK_ROUTE__NOURL__RULE=Host(`x.example.test`)' \
+     sh "$ROOT_DIR/casks/mods/traefik/traefik/anas-entrypoint.sh" 2>/dev/null; then
+  echo "entrypoint accepted a route without an upstream URL" >&2
+  exit 1
+fi
 
 mkdir -p "$test_dir/eturnal"
 ANAS_CONFIG_DIR="$test_dir/eturnal" \

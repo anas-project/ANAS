@@ -12,7 +12,6 @@ global:
   domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
-  dns_provider: manual
   virtual_domain: true
   default_service_root_password: AnasTest1!
 

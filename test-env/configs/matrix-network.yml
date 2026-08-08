@@ -8,7 +8,7 @@ modules:
   - samba_dc
   - postgres
   - authentik
-  - ddns
+  - ddns_updater
   - eturnal
   - netbird
   - freeradius
@@ -20,8 +20,18 @@ global:
   domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
-  dns_provider: manual
+  virtual_domain: true
   default_service_root_password: change-me-now
 
 env:
   BASICAUTH_USER: admin
+
+# A DNS vendor is now chosen per engine rather than deployment-wide. Cloudflare
+# uses a single API token, so this also covers the token-shaped credential.
+services:
+  ddns_updater:
+    env:
+      dns_provider: cloudflare
+
+secrets:
+  cloudflare_dns_api_token: test-token-not-a-real-credential

@@ -11,7 +11,7 @@ global:
   domain: backup.test
   email: admin@backup.test
   timezone: Asia/Shanghai
-  dns_provider: manual
+  virtual_domain: true
   default_service_root_password: change-me-now
 
 rollback:

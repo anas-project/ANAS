@@ -14,10 +14,10 @@ casks:
         version: 0.0.0
         source: bundle:core
         digest: sha256:e224c8400f8cb4373010b02a3320a414a3ac591fadfe9153e6ad8977706798e6
-    ddns:
+    ddns_updater:
         version: 2.10.0
         app_version: 2.10.0
-        source: bundle:ddns
+        source: bundle:ddns_updater
         digest: sha256:f1cb0cbfaeeb3485b372dafd7925a7fd22f7b9d1035aa3247d88d245392a9b10
     eturnal:
         version: 1.12.3

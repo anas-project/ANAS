@@ -1,0 +1,49 @@
+# Dynamic DNS end-to-end against a real vendor.
+#
+# The domain is the test host's own name, so the records this writes are the
+# ones the host actually answers on. server-ddns-e2e.sh snapshots them first
+# and restores them if the run fails.
+#
+# Credentials come from .runtime-local/ln/private.env and are never committed.
+modules:
+  - traefik
+  - lego
+  - samba_dc
+  - postgres
+  - authentik
+
+iam:
+  provider: authentik
+
+# No DDNS cask is listed: asking for the capability is the whole request, and
+# resolving it is part of what this test verifies.
+dynamic_dns:
+  provider: auto
+  dns_provider: tencentcloud
+
+global:
+  domain: ln.hlong.wang
+  email: whlsxl@gmail.com
+  timezone: Asia/Shanghai
+  # The host has no publicly trusted certificate for this test deployment, and
+  # issuing one would consume a real rate limit. The DNS credentials are still
+  # exercised by the updater, which is what this test is for.
+  virtual_domain: true
+  default_service_root_password: DdnsE2ePass1!
+
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_ddnse2e_
+  IMAGE_PREFIX: anas_
+  NETWORK_PREFIX: anas_ddnse2e_
+  CHINESE_SPEEDUP: "true"
+  APT_MIRROR_URL: https://mirrors.aliyun.com
+  APK_MIRROR_URL: https://mirrors.aliyun.com
+  NPM_REGISTRY_URL: https://registry.npmmirror.com
+  GOPROXY_URL: https://goproxy.cn,direct
+  DOCKER_SOCKET_PATH: /run/anas-docker-test.sock
+  # Off the host's real 80/443: an unrelated reverse proxy already holds those.
+  TRAEFIK_BASE_PORT: "9443"
+  # Away from the 172.18/16 the host's existing Docker bridge uses.
+  TRAEFIK_SUBNET: 172.29.0.0/16
+  TRAEFIK_GATEWAY_IP: 172.29.0.1

@@ -10,7 +10,7 @@ global:
   domain: lifecycle.test
   email: admin@lifecycle.test
   timezone: Asia/Shanghai
-  dns_provider: manual
+  virtual_domain: true
   default_service_root_password: change-me-now
 
 env:

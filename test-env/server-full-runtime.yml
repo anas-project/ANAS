@@ -10,7 +10,7 @@ modules:
   - meshcentral
   - netbird
   - lam
-  - ddns
+  - ddns_updater
   - eturnal
   - freeradius
 
@@ -18,7 +18,7 @@ global:
   domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
-  dns_provider: manual
+  virtual_domain: true
   default_service_root_password: change-me-now
 
 env:
@@ -31,3 +31,13 @@ env:
   APK_MIRROR_URL: https://mirrors.aliyun.com
   NPM_REGISTRY_URL: https://registry.npmmirror.com
   DOCKER_SOCKET_PATH: /run/anas-docker-test.sock
+
+# A DNS vendor is now chosen per engine rather than deployment-wide. Cloudflare
+# uses a single API token, so this also covers the token-shaped credential.
+services:
+  ddns_updater:
+    env:
+      dns_provider: cloudflare
+
+secrets:
+  cloudflare_dns_api_token: test-token-not-a-real-credential
