@@ -1,0 +1,74 @@
+services:
+  anas_oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.3
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
+    restart: unless-stopped
+    # The deployment's own resolver, not an upstream one: the identity provider
+    # is reached by its public name, and only this resolver maps that name to
+    # the address it is actually served on. An upstream resolver returns the
+    # public address, which a container on the shared network cannot reach.
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    env_file:
+      - .env
+    volumes:
+      # The identity provider presents an internally issued certificate when
+      # the domain cannot obtain a public one, so the issuer has to be trusted
+      # explicitly; oauth2-proxy takes it as a flag rather than from the system
+      # store.
+      - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
+    command:
+      # The static-upstream arrangement from the upstream Traefik integration
+      # guide: an authenticated request gets a 202 straight from the proxy, and
+      # an unauthenticated one gets a redirect to the sign-in page. The
+      # alternative, pointing ForwardAuth at /oauth2/auth, returns a bare 401
+      # that Traefik has to translate back into a redirect with an errors
+      # middleware and a 401->302 status rewrite; browsers render a "Found."
+      # link instead of following it when that rewrite is missed.
+      - --upstream=static://202
+      # Builds redirect URLs from the X-Forwarded-* headers Traefik sets rather
+      # than from the address it was reached on. Required in this arrangement.
+      - --reverse-proxy=true
+      # Without this, any client that can reach the proxy is trusted to supply
+      # X-Forwarded-* headers, and those headers decide where a sign-in returns
+      # to. Only the reverse proxy on the shared network should be believed.
+      - --trusted-proxy-ip=${TRAEFIK_SUBNET}
+      - --http-address=0.0.0.0:4180
+      - --provider=oidc
+      - --provider-ca-file=/certs/${ANAS_TLS_INTERNAL_CA_NAME}
+      - --oidc-issuer-url=${OAUTH2_PROXY_OIDC_ISSUER_URL}
+      - --client-id=${OAUTH2_PROXY_CLIENT_ID}
+      - --client-secret=${OAUTH2_PROXY_CLIENT_SECRET}
+      - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET}
+      - --redirect-url=${OAUTH2_PROXY_REDIRECT_URL}
+      # One cookie for the whole deployment, so signing in once covers every
+      # gated service under the base domain.
+      - --cookie-domain=.${BASE_DOMAIN}
+      # Without this, a redirect back to the service the user actually asked
+      # for is treated as an open-redirect attempt and refused.
+      - --whitelist-domain=.${BASE_DOMAIN}
+      - --cookie-secure=true
+      - --email-domain=*
+      - --scope=openid profile email
+      - --skip-provider-button=true
+      - --set-xauthrequest=true
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      # The gate's own router: it must be reachable by name because the OIDC
+      # callback and the sign-in page are served from here.
+      - "traefik.http.routers.oauth2-proxy.entrypoints=https"
+      - "traefik.http.routers.oauth2-proxy.rule=Host(`${OAUTH2_PROXY_DOMAIN}`)"
+      - "traefik.http.routers.oauth2-proxy.tls=true"
+      - "traefik.http.services.oauth2-proxy.loadbalancer.server.port=4180"
+      # The middleware every protected service attaches. The address is the
+      # container rather than the public URL so Traefik does not loop back
+      # through itself, which would also require it to trust the internal CA.
+      - "traefik.http.middlewares.${ANAS_FORWARD_AUTH_MIDDLEWARE_NAME}.forwardauth.address=http://${CONTAINER_PREFIX}${MODULE_NAME}:4180/"
+      - "traefik.http.middlewares.${ANAS_FORWARD_AUTH_MIDDLEWARE_NAME}.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.${ANAS_FORWARD_AUTH_MIDDLEWARE_NAME}.forwardauth.authResponseHeaders=X-Auth-Request-User,X-Auth-Request-Email,X-Auth-Request-Preferred-Username"
+
+networks:
+  default:
+    external: true
+    name: ${NETWORK_PREFIX}traefik
