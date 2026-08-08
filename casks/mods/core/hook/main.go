@@ -219,6 +219,7 @@ func calcCore(e map[string]string, _ string, _ *secretStore) error {
 			e[k] = v
 		}
 	}
+	detectHostIPv6(e)
 	e["LOCAL_DNS_SERVER"] = defaultValue(e["LOCAL_DNS_SERVER"], e["HOST_IP"])
 	e["USERDATA_PATH"] = defaultValue(e["USERDATA_PATH"], filepath.Join(e["DATA_PATH"], e["USERDATA_NAME"]))
 	e["DOWNLOAD_DIR_NAME"] = defaultValue(e["DOWNLOAD_DIR_NAME"], "Downloads")
@@ -232,6 +233,72 @@ func defaultValue(v, d string) string {
 	}
 	return v
 }
+
+// detectHostIPv6 publishes whether this host holds a routable IPv6 address,
+// and which one.
+//
+// It lives in core rather than in a DDNS cask because more than one cask needs
+// the answer, and because the question is about the host rather than about any
+// service. It is also only a statement about this machine: a host address says
+// nothing about whether a bridge-network container can reach the IPv6
+// internet, which is a separate question each cask answers for itself.
+//
+// The check is deliberately local. Dialling an outside host would measure
+// connectivity at one instant and make rendering depend on the internet being
+// reachable, whereas the failure this guards against -- "connect: network is
+// unreachable" -- is decided before a packet is sent, by the absence of a
+// global address to source it from. Link-local and loopback addresses exist on
+// every machine and route nowhere, so they do not count.
+func detectHostIPv6(e map[string]string) {
+	if e["HOST_IPV6"] != "" {
+		e["HOST_HAS_IPV6"] = "true"
+		return
+	}
+	preferred := e["INTERFACE"]
+	ifaces, _ := net.Interfaces()
+	fallbackIP, fallbackIface := "", ""
+	for _, iface := range ifaces {
+		addrs, _ := iface.Addrs()
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			// To4 is non-nil for IPv4-mapped forms, which are not IPv6 routing.
+			if ipnet.IP.To4() != nil || !ipnet.IP.IsGlobalUnicast() {
+				continue
+			}
+			// A unique-local address is globally unicast by Go's definition but
+			// is not reachable from outside, so publishing it as the host's
+			// address would produce an AAAA record nobody can connect to.
+			if isUniqueLocalIPv6(ipnet.IP) {
+				continue
+			}
+			if iface.Name == preferred {
+				e["HOST_IPV6"] = ipnet.IP.String()
+				e["HOST_IPV6_INTERFACE"] = iface.Name
+				e["HOST_HAS_IPV6"] = "true"
+				return
+			}
+			if fallbackIP == "" {
+				fallbackIP, fallbackIface = ipnet.IP.String(), iface.Name
+			}
+		}
+	}
+	if fallbackIP != "" {
+		e["HOST_IPV6"] = fallbackIP
+		e["HOST_IPV6_INTERFACE"] = fallbackIface
+		e["HOST_HAS_IPV6"] = "true"
+		return
+	}
+	e["HOST_HAS_IPV6"] = "false"
+}
+
+// isUniqueLocalIPv6 reports fc00::/7, the IPv6 counterpart of RFC1918.
+func isUniqueLocalIPv6(ip net.IP) bool {
+	return len(ip) == net.IPv6len && ip[0]&0xfe == 0xfc
+}
+
 func detectHostNetwork(preferred string) (hostNetwork, error) {
 	gateway, ifaceName := defaultRoute()
 	ifaces, _ := net.Interfaces()
