@@ -1,0 +1,385 @@
+# DNS platform registry: the single source of truth for how one DNS vendor is
+# addressed by each engine ANAS drives.
+#
+# Two concepts are deliberately kept apart. A *platform* is a DNS vendor
+# (tencentcloud, cloudflare). An *engine* is a program that talks to it (lego
+# for ACME DNS-01, ddns_go and ddns_updater for dynamic DNS). The same vendor
+# is frequently reached through different APIs by different engines, and the
+# credentials for those APIs are frequently not the same object -- Namecheap's
+# DNS API user is not its Dynamic DNS password. Encoding that per engine is the
+# whole point of this file.
+#
+# The canonical platform name is lego's CLI provider code, because lego covers
+# far more vendors than either DDNS engine and therefore breaks ties least
+# often. `aliases` carries names a user may reasonably write instead.
+#
+# Credential compatibility is NOT declared here. It is derived: two engines can
+# share credentials for a platform when they require the identical set of
+# credential keys. A declared flag would be a second source of truth that can
+# disagree with the keys right next to it, and the derivation is exact.
+#
+# `role` maps a credential onto the engine's own configuration slot:
+#   id     -> ddns-go DNS.ID
+#   secret -> ddns-go DNS.Secret
+#   ext    -> ddns-go DNS.ExtParam
+# lego consumes its credentials as environment variables under the listed keys
+# and has no slots, so the role is informational there.
+#
+# Every entry below was checked against the engine's own documentation or
+# source. Do not add a platform from memory: a wrong key name surfaces as an
+# authentication failure at runtime, which is expensive to trace back here.
+
+version: 1
+
+platforms:
+  - name: tencentcloud
+    title: Tencent Cloud DNS (DNSPod)
+    engines:
+      lego:
+        provider: tencentcloud
+        credentials:
+          - {key: TENCENTCLOUD_SECRET_ID, role: id}
+          - {key: TENCENTCLOUD_SECRET_KEY, role: secret}
+      ddns_go:
+        provider: tencentcloud
+        credentials:
+          - {key: TENCENTCLOUD_SECRET_ID, role: id}
+          - {key: TENCENTCLOUD_SECRET_KEY, role: secret}
+
+  # The legacy DNSPod token (a single "id,token" string) is a different
+  # credential object from the Tencent Cloud API key above, not an older
+  # spelling of it. lego v5 removed this provider outright, so a deployment
+  # holding only a legacy token can run DDNS but cannot issue certificates.
+  #
+  # Registered for ddns_go alone. ddns-updater also speaks the legacy API, but
+  # offering it there would present a third path to the same vendor that no
+  # deployment should choose: it cannot share credentials with lego, and
+  # ddns_go already covers the legacy token for anyone who still holds one.
+  # Tencent Cloud accounts use the tencentcloud platform above.
+  - name: dnspod
+    title: DNSPod (legacy API token)
+    engines:
+      ddns_go:
+        provider: dnspod
+        credentials:
+          - {key: DNSPOD_ID, role: id}
+          - {key: DNSPOD_TOKEN, role: secret}
+
+  - name: alidns
+    title: Alibaba Cloud DNS
+    aliases: [aliyun]
+    engines:
+      lego:
+        provider: alidns
+        credentials:
+          - {key: ALICLOUD_ACCESS_KEY, role: id}
+          - {key: ALICLOUD_SECRET_KEY, role: secret}
+      ddns_go:
+        provider: alidns
+        credentials:
+          - {key: ALICLOUD_ACCESS_KEY, role: id}
+          - {key: ALICLOUD_SECRET_KEY, role: secret}
+      ddns_updater:
+        provider: aliyun
+        credentials:
+          - {key: ALICLOUD_ACCESS_KEY, role: id}
+          - {key: ALICLOUD_SECRET_KEY, role: secret}
+
+  - name: aliesa
+    title: Alibaba Cloud ESA
+    engines:
+      lego:
+        provider: aliesa
+        credentials:
+          - {key: ALIESA_ACCESS_KEY, role: id}
+          - {key: ALIESA_SECRET_KEY, role: secret}
+      ddns_go:
+        provider: aliesa
+        credentials:
+          - {key: ALIESA_ACCESS_KEY, role: id}
+          - {key: ALIESA_SECRET_KEY, role: secret}
+
+  # Cloudflare is the clearest case for deriving compatibility rather than
+  # declaring it: lego also accepts an account email plus Global API Key, but
+  # ddns-go only ever sends a bearer token. Only the token form is registered,
+  # so the derivation reports "shared" for exactly the configuration that is
+  # actually interchangeable.
+  - name: cloudflare
+    title: Cloudflare
+    engines:
+      lego:
+        provider: cloudflare
+        credentials:
+          - {key: CLOUDFLARE_DNS_API_TOKEN, role: secret}
+      ddns_go:
+        provider: cloudflare
+        credentials:
+          - {key: CLOUDFLARE_DNS_API_TOKEN, role: secret}
+      ddns_updater:
+        provider: cloudflare
+        credentials:
+          - {key: CLOUDFLARE_DNS_API_TOKEN, role: secret}
+
+  - name: huaweicloud
+    title: Huawei Cloud DNS
+    engines:
+      lego:
+        provider: huaweicloud
+        credentials:
+          - {key: HUAWEICLOUD_ACCESS_KEY_ID, role: id}
+          - {key: HUAWEICLOUD_SECRET_ACCESS_KEY, role: secret}
+          - {key: HUAWEICLOUD_REGION, role: ext}
+      ddns_go:
+        provider: huaweicloud
+        credentials:
+          - {key: HUAWEICLOUD_ACCESS_KEY_ID, role: id}
+          - {key: HUAWEICLOUD_SECRET_ACCESS_KEY, role: secret}
+
+  - name: baiducloud
+    title: Baidu Cloud DNS
+    engines:
+      lego:
+        provider: baiducloud
+        credentials:
+          - {key: BAIDUCLOUD_ACCESS_KEY_ID, role: id}
+          - {key: BAIDUCLOUD_SECRET_ACCESS_KEY, role: secret}
+      ddns_go:
+        provider: baiducloud
+        credentials:
+          - {key: BAIDUCLOUD_ACCESS_KEY_ID, role: id}
+          - {key: BAIDUCLOUD_SECRET_ACCESS_KEY, role: secret}
+
+  - name: edgeone
+    title: Tencent Cloud EdgeOne
+    engines:
+      lego:
+        provider: edgeone
+        credentials:
+          - {key: EDGEONE_SECRET_ID, role: id}
+          - {key: EDGEONE_SECRET_KEY, role: secret}
+      ddns_go:
+        provider: edgeone
+        credentials:
+          - {key: EDGEONE_SECRET_ID, role: id}
+          - {key: EDGEONE_SECRET_KEY, role: secret}
+
+  - name: dnsla
+    title: DNS.LA
+    engines:
+      lego:
+        provider: dnsla
+        credentials:
+          - {key: DNSLA_API_ID, role: id}
+          - {key: DNSLA_API_SECRET, role: secret}
+      ddns_go:
+        provider: dnsla
+        credentials:
+          - {key: DNSLA_API_ID, role: id}
+          - {key: DNSLA_API_SECRET, role: secret}
+
+  - name: porkbun
+    title: Porkbun
+    engines:
+      lego:
+        provider: porkbun
+        credentials:
+          - {key: PORKBUN_API_KEY, role: id}
+          - {key: PORKBUN_SECRET_API_KEY, role: secret}
+      ddns_go:
+        provider: porkbun
+        credentials:
+          - {key: PORKBUN_API_KEY, role: id}
+          - {key: PORKBUN_SECRET_API_KEY, role: secret}
+      ddns_updater:
+        provider: porkbun
+        credentials:
+          - {key: PORKBUN_API_KEY, role: id}
+          - {key: PORKBUN_SECRET_API_KEY, role: secret}
+
+  - name: godaddy
+    title: GoDaddy
+    engines:
+      lego:
+        provider: godaddy
+        credentials:
+          - {key: GODADDY_API_KEY, role: id}
+          - {key: GODADDY_API_SECRET, role: secret}
+      ddns_go:
+        provider: godaddy
+        credentials:
+          - {key: GODADDY_API_KEY, role: id}
+          - {key: GODADDY_API_SECRET, role: secret}
+      ddns_updater:
+        provider: godaddy
+        credentials:
+          - {key: GODADDY_API_KEY, role: id}
+          - {key: GODADDY_API_SECRET, role: secret}
+
+  - name: namesilo
+    title: NameSilo
+    engines:
+      lego:
+        provider: namesilo
+        credentials:
+          - {key: NAMESILO_API_KEY, role: secret}
+      ddns_go:
+        provider: namesilo
+        credentials:
+          - {key: NAMESILO_API_KEY, role: secret}
+      ddns_updater:
+        provider: namesilo
+        credentials:
+          - {key: NAMESILO_API_KEY, role: secret}
+
+  - name: spaceship
+    title: Spaceship
+    engines:
+      lego:
+        provider: spaceship
+        credentials:
+          - {key: SPACESHIP_API_KEY, role: id}
+          - {key: SPACESHIP_API_SECRET, role: secret}
+      ddns_go:
+        provider: spaceship
+        credentials:
+          - {key: SPACESHIP_API_KEY, role: id}
+          - {key: SPACESHIP_API_SECRET, role: secret}
+      ddns_updater:
+        provider: spaceship
+        credentials:
+          - {key: SPACESHIP_API_KEY, role: id}
+          - {key: SPACESHIP_API_SECRET, role: secret}
+
+  - name: vercel
+    title: Vercel
+    engines:
+      lego:
+        provider: vercel
+        credentials:
+          - {key: VERCEL_API_TOKEN, role: secret}
+          - {key: VERCEL_TEAM_ID, role: ext, optional: true}
+      ddns_go:
+        provider: vercel
+        credentials:
+          - {key: VERCEL_API_TOKEN, role: secret}
+          - {key: VERCEL_TEAM_ID, role: ext, optional: true}
+
+  - name: namedotcom
+    title: Name.com
+    engines:
+      lego:
+        provider: namedotcom
+        credentials:
+          - {key: NAMECOM_USERNAME, role: id}
+          - {key: NAMECOM_API_TOKEN, role: secret}
+      ddns_go:
+        provider: name_com
+        credentials:
+          - {key: NAMECOM_USERNAME, role: id}
+          - {key: NAMECOM_API_TOKEN, role: secret}
+      ddns_updater:
+        provider: namecom
+        credentials:
+          - {key: NAMECOM_USERNAME, role: id}
+          - {key: NAMECOM_API_TOKEN, role: secret}
+
+  - name: ns1
+    title: NS1
+    engines:
+      lego:
+        provider: ns1
+        credentials:
+          - {key: NS1_API_KEY, role: secret}
+      ddns_go:
+        provider: nsone
+        credentials:
+          - {key: NS1_API_KEY, role: secret}
+
+  - name: gcore
+    title: Gcore DNS
+    engines:
+      lego:
+        provider: gcore
+        credentials:
+          - {key: GCORE_PERMANENT_API_TOKEN, role: secret}
+      ddns_go:
+        provider: gcore
+        credentials:
+          - {key: GCORE_PERMANENT_API_TOKEN, role: secret}
+
+  - name: cloudns
+    title: ClouDNS
+    engines:
+      lego:
+        provider: cloudns
+        credentials:
+          - {key: CLOUDNS_AUTH_ID, role: id}
+          - {key: CLOUDNS_AUTH_PASSWORD, role: secret}
+      ddns_go:
+        provider: cloudns
+        credentials:
+          - {key: CLOUDNS_AUTH_ID, role: id}
+          - {key: CLOUDNS_AUTH_PASSWORD, role: secret}
+
+  - name: todaynic
+    title: Todaynic (now.cn)
+    engines:
+      lego:
+        provider: todaynic
+        credentials:
+          - {key: TODAYNIC_AUTH_USER_ID, role: id}
+          - {key: TODAYNIC_API_KEY, role: secret}
+      ddns_go:
+        provider: nowcn
+        credentials:
+          - {key: TODAYNIC_AUTH_USER_ID, role: id}
+          - {key: TODAYNIC_API_KEY, role: secret}
+
+  # Rain Yun needs a per-domain product id that is not a credential and has no
+  # lego counterpart, so the two engines cannot share a configuration even
+  # though they share the API key.
+  - name: rainyun
+    title: Rain Yun
+    engines:
+      lego:
+        provider: rainyun
+        credentials:
+          - {key: RAINYUN_API_KEY, role: secret}
+      ddns_go:
+        provider: rainyun
+        credentials:
+          - {key: RAINYUN_API_KEY, role: secret}
+          - {key: RAINYUN_DOMAIN_ID, role: ext}
+
+  # Namecheap and Dynadot are the canonical separate-mode platforms: lego uses
+  # the full DNS API, while ddns-go authenticates against the Dynamic DNS
+  # endpoint with a per-domain password that the DNS API cannot produce.
+  - name: namecheap
+    title: Namecheap
+    engines:
+      lego:
+        provider: namecheap
+        credentials:
+          - {key: NAMECHEAP_API_USER, role: id}
+          - {key: NAMECHEAP_API_KEY, role: secret}
+      ddns_go:
+        provider: namecheap
+        credentials:
+          - {key: NAMECHEAP_DDNS_PASSWORD, role: secret}
+      ddns_updater:
+        provider: namecheap
+        credentials:
+          - {key: NAMECHEAP_DDNS_PASSWORD, role: secret}
+
+  - name: dynadot
+    title: Dynadot
+    engines:
+      lego:
+        provider: dynadot
+        credentials:
+          - {key: DYNADOT_API_KEY, role: id}
+          - {key: DYNADOT_API_SECRET, role: secret}
+      ddns_go:
+        provider: dynadot
+        credentials:
+          - {key: DYNADOT_DDNS_PASSWORD, role: secret}
