@@ -5,4 +5,3 @@
 secrets.generated.yml
 test-env/reports/*
 !test-env/reports/.gitkeep
-/legacy/refactor-runtime-cache/

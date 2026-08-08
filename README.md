@@ -218,7 +218,8 @@ secrets, files, service filters, and after-start copy operations. Runner code
 does not contain cask-specific calculation functions.
 
 `runner.rb` files are not part of the Go rules and should not be added. The
-previous Ruby implementation is retained under `legacy/` for reference.
+previous Ruby implementation has been removed; recover it from the git history
+if you need it.
 
 Before releasing changes, run render/build/start against real NAS configuration
 and verify each enabled module.

@@ -266,7 +266,7 @@ reconcile 框架下统一设计，避免两套并行的状态模型。
 | P2-12 模板静默失败 | 已解决并移除 | 2026-08-01 删除 Go 正则 ERB 渲染器及全部 `.erb`；JSON/YAML/文本配置改由容器入口基于作用域化 `.env` 生成，静态测试禁止旧后缀和 ERB 标记 |
 | P2-13 locateRoot 魔法 | 已解决 | 移除 `runtime.Caller` 候选；`bin/anas` 显式传 `ANAS_CASK_ROOT` |
 | P2-14 文档漂移 | 已解决 | 删除 `before` 字段描述；`internalEnv` 文档改为实际存在的 `internal_env` 协议字段与作用域机制 |
-| P2-15 结构/卫生 | 部分解决 | 从 `runner.go` 拆出 `envfile.go`/`envscope.go`；原 `render.go` 随 ERB 能力删除。stop 不再被密码长度校验卡住（校验仅在设置了口令时生效）。`legacy/` 目录（含 .gem 二进制）删除留待用户确认 |
+| P2-15 结构/卫生 | 部分解决 | 从 `runner.go` 拆出 `envfile.go`/`envscope.go`；原 `render.go` 随 ERB 能力删除。stop 不再被密码长度校验卡住（校验仅在设置了口令时生效）。`legacy/` 目录（含 .gem 二进制）已于 2026-08-08 整体删除，需要时从 git 历史取回 |
 | P2-16 sudoers 未文档化 | 已解决 | 新增 `docs/util/macvlan-sudoers.md`：脚本行为、最小 sudoers 授权样例、更严格的 root-owned 路径方案 |
 
 实施过程中额外发现并修复：hook 在 calculate 阶段用临时渲染路径构造持久

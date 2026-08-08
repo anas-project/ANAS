@@ -1,5 +1,0 @@
-#!/usr/bin/with-contenv bash
-
-# /usr/sbin/sshd -D -ddd
-
-exec /usr/sbin/sshd -D -E /tmp/sshd.log

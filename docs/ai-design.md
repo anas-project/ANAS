@@ -322,8 +322,6 @@ rules; `core` is also added implicitly for non-core casks.
 
 Current limitations:
 
-- Root-level Ruby casks still exist in the repository, but they are legacy and
-  outside the Go cask rules.
 - `keycloak` and `freeradius` are scaffolds and need service-specific cleanup
   before production use.
 - The runner does not render application configuration. Container entrypoints

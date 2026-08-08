@@ -1,9 +1,0 @@
-#!/usr/bin/with-contenv bash
-
-sleep 10
-SAMBA_FS_WSDD_LOG_LEVEL="${SAMBA_FS_WSDD_LOG_LEVEL:-0}"
-if [ $SAMBA_FS_WSDD_LOG_LEVEL != "0" ]; then
-  debug_level=-$(perl -E "say \"W\" x $SAMBA_FS_WSDD_LOG_LEVEL")
-fi
-echo "exec /usr/sbin/wsdd2 -N $SAMBA_FS_HOSTNAME $debug_level"
-exec /usr/sbin/wsdd2 -N $SAMBA_FS_HOSTNAME $debug_level 
