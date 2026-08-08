@@ -60,6 +60,10 @@ config:
     - POSTGRES_PASSWORD
     - MARIADB_PASSWORD
     - SAMBA_DC_LDAPS_SERVER_URL_PORT
+    # Subscribed to so a group change reaches the source sync in seconds
+    # instead of waiting for the next scheduled run.
+    - ANAS_DIRECTORY_EVENTS_DIR
+    - ANAS_DIRECTORY_EVENTS_FILE_NAME
     - SAMBA_DC_PASSWORD_BIND_DN
     - SAMBA_DC_PASSWORD_BIND_PASSWORD
   changes:

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -240,6 +241,24 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_ANCHOR_GROUP_BASES"] = defaultValue(e["SAMBA_DC_ANCHOR_GROUP_BASES"], e["SAMBA_DC_BASE_GROUPS_DN"])
 	e["SAMBA_DC_ANCHOR_SCAN_INTERVAL"] = defaultValue(e["SAMBA_DC_ANCHOR_SCAN_INTERVAL"], "300")
 	e["SAMBA_DC_ANCHOR_AUDIT_FILE"] = "/var/log/samba-audit/dsdb.json"
+	// Samba's raw dsdb audit stream. A host directory rather than a named
+	// volume so the anchor worker can read it, but it stays private to this
+	// cask: its format is Samba's, and only the anchor worker parses it.
+	e["SAMBA_DC_AUDIT_PATH"] = filepath.Join(e["DATA_PATH"], "samba_dc", "audit")
+	// What the rest of the deployment subscribes to. The anchor worker
+	// normalizes the raw stream into this journal, so a subscriber never sees
+	// Samba's shape and never needs write access to Samba's own log. The
+	// generic name is the capability; mirrors how lego publishes
+	// ANAS_TLS_CERTS_DIR alongside LEGO_CERTS_PATH.
+	e["SAMBA_DC_EVENTS_PATH"] = filepath.Join(e["DATA_PATH"], "samba_dc", "events")
+	e["ANAS_DIRECTORY_EVENTS_DIR"] = e["SAMBA_DC_EVENTS_PATH"]
+	e["ANAS_DIRECTORY_EVENTS_FILE_NAME"] = "events.jsonl"
+	e["SAMBA_DC_ANCHOR_EVENT_FILE"] = "/var/lib/anas-directory-events/events.jsonl"
+	e["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"] = defaultValue(
+		e["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"],
+		"member,memberOf,userAccountControl,sAMAccountName,userPrincipalName,displayName,mail,"+
+			e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"],
+	)
 	e["SAMBA_DC_GROUP_CLASS_NAME"] = "group"
 	e["SAMBA_DC_GROUP_CLASS_FILTER"] = "(&(objectClass=group)(" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + "=*))"
 	e["SAMBA_DC_USER_CLASS_NAME"] = "user"

@@ -22,6 +22,12 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
+  # The normalized directory-change stream. Subscribers bind to these generic
+  # names rather than to this cask, so nothing downstream needs to know the
+  # events originate from Samba's dsdb audit log.
+  exports:
+    - ANAS_DIRECTORY_EVENTS_DIR
+    - ANAS_DIRECTORY_EVENTS_FILE_NAME
   consumes:
     - ANAS_IDENTITY_APP_CLIENTS
   defaults:
@@ -50,6 +56,15 @@ config:
     dns_forwarders: ""
     dns_allowed_networks: ""
     log_level: "1"
+    # Kilobytes, per log file, and the cap on the dsdb audit trail the anchor
+    # worker reads: Samba renames to <path>.old at this size and keeps one
+    # rotated generation, so the audit directory settles at roughly twice this.
+    # Nothing archives that log -- the anchor worker republishes what matters
+    # into the event journal, which has its own retention -- so the useful
+    # setting is the smallest one that still leaves a reader room to catch up.
+    # Must not be 0: that disables the reopen-after-rename check Samba relies
+    # on to keep all of its processes writing to the current file.
+    max_log_size: "2048"
   changes:
     realm:
       effect: immutable
@@ -121,6 +136,10 @@ config:
       apply: samba-password-policy
       description: samba-tool can update the domain policy without restarting Samba.
     log_level:
+      effect: container_recreate
+      apply: recreate-samba-dc
+      description: The generated smb.conf is installed during container initialization.
+    max_log_size:
       effect: container_recreate
       apply: recreate-samba-dc
       description: The generated smb.conf is installed during container initialization.

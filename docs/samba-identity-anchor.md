@@ -119,3 +119,10 @@ docker exec "${CONTAINER_PREFIX}samba_dc" test -f /run/anas-identity-schema.read
 docker inspect --format '{{json .State.Health}}' "${CONTAINER_PREFIX}samba_dc_anchor"
 docker logs "${CONTAINER_PREFIX}samba_dc_anchor"
 ```
+
+## Directory event journal
+
+The worker follows Samba's dsdb audit log to find new objects, and republishes
+the interesting records from that same pass as a normalized stream for other
+casks to subscribe to. See
+[directory-event-journal.md](directory-event-journal.md).

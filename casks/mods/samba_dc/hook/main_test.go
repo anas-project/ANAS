@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"unicode"
 )
@@ -168,4 +169,35 @@ func hasPasswordComplexity(password string) bool {
 		symbol = symbol || unicode.IsPunct(r) || unicode.IsSymbol(r)
 	}
 	return upper && lower && digit && symbol
+}
+
+func TestCalcSambaDCPublishesDirectoryEventJournal(t *testing.T) {
+	env := map[string]string{
+		"BASE_DOMAIN": "nas.test",
+		"SERVER_NAME": "fengoffice",
+		"HOST_IP":     "192.0.2.10",
+		"DATA_PATH":   "/srv/anas/data",
+	}
+	if err := calcSambaDC(env, "", &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	// The raw Samba log and the normalized journal are separate directories so
+	// the anchor worker never needs write access to the DC's own audit trail.
+	if got, want := env["SAMBA_DC_AUDIT_PATH"], "/srv/anas/data/samba_dc/audit"; got != want {
+		t.Fatalf("SAMBA_DC_AUDIT_PATH = %q, want %q", got, want)
+	}
+	if got, want := env["SAMBA_DC_EVENTS_PATH"], "/srv/anas/data/samba_dc/events"; got != want {
+		t.Fatalf("SAMBA_DC_EVENTS_PATH = %q, want %q", got, want)
+	}
+	// Subscribers bind to the capability name, never to this cask's own.
+	if got, want := env["ANAS_DIRECTORY_EVENTS_DIR"], env["SAMBA_DC_EVENTS_PATH"]; got != want {
+		t.Fatalf("ANAS_DIRECTORY_EVENTS_DIR = %q, want %q", got, want)
+	}
+	if got := env["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"]; !strings.Contains(got, "member") ||
+		!strings.Contains(got, "anasIdentityAnchor") {
+		t.Fatalf("published attribute set = %q", got)
+	}
+	if got := env["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"]; strings.Contains(got, "logonCount") {
+		t.Fatalf("machine-account churn must not be publishable: %q", got)
+	}
 }

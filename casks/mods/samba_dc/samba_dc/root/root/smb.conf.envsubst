@@ -15,8 +15,30 @@
 	bind interfaces only = ${SAMBA_DC_BIND_INTERFACES_ONLY}
 	domain master = ${SAMBA_DC_DOMAIN_MASTER}
 	interfaces = lo ${SAMBA_DC_INTERFACES}
-	log level = ${SAMBA_DC_LOG_LEVEL} dsdb_json_audit:5@/var/log/samba-audit/dsdb.json dsdb_transaction_json_audit:5@/var/log/samba-audit/transaction.json
+	# Only the dsdb change audit is routed to a file, because only that one has
+	# a reader: the anchor worker. The transaction audit that used to sit
+	# beside it wrote a second file of begin/prepare/commit records that
+	# nothing ever opened, doubling the audit write volume to describe the
+	# framing of changes this deployment already sees individually. Dropping
+	# the target leaves the class at the global level, where it stays silent.
+	log level = ${SAMBA_DC_LOG_LEVEL} dsdb_json_audit:5@/var/log/samba-audit/dsdb.json
 	log file = /var/log/samba/%m.log
+
+	# Samba's own rotation, stated explicitly and set far below the 5000 KB
+	# default. check_log_size() runs on every debug write and walks every
+	# class holding its own @PATH target, so this bounds the audit log above
+	# and not just `log file`: past this size Samba renames the file to
+	# <path>.old and reopens, keeping one rotated generation. Two files of
+	# this size is the entire on-disk cost of the audit trail.
+	#
+	# It must stay non-zero. Zero does not merely lift the size cap, it
+	# short-circuits the whole check -- including the inode comparison that
+	# makes any rename survivable. Samba is multi-process: whichever process
+	# trips the limit renames and reopens, and the others keep writing through
+	# their existing descriptor until they notice the path's inode no longer
+	# matches. With the check disabled they never notice, and every process
+	# but one keeps appending to a file that no longer has a name.
+	max log size = ${SAMBA_DC_MAX_LOG_SIZE}
 
 	# Samba stores NT ACLs in the security.NTACL extended attribute, and
 	# writing the security.* namespace needs CAP_SYS_ADMIN, which a container

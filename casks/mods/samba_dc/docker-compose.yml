@@ -21,7 +21,23 @@ services:
     volumes:
       - "${LEGO_CERTS_PATH}:/certs:ro"
       - "${DATA_PATH}/samba_dc/var:/var/lib/samba"
-      - samba-dc-audit:/var/log/samba-audit
+      - "${SAMBA_DC_AUDIT_PATH}:/var/log/samba-audit"
+
+  # Docker creates a bind-mount source as root, and the anchor worker runs
+  # unprivileged, so the journal directory has to be handed over before it
+  # starts. Same shape as the authentik data init.
+  anas_samba_dc_events_init:
+    container_name: ${CONTAINER_PREFIX}samba_dc_events_init
+    image: ubuntu:resolute
+    user: root
+    entrypoint: ["/bin/sh", "-c"]
+    # 0755: subscribers run as their own application's user and only ever read.
+    # The journal carries DNs and changed attribute names, never values, so a
+    # readable path costs nothing that LDAP itself does not already expose.
+    command: ["mkdir -p /events && chown 65534:65534 /events && chmod 0755 /events"]
+    restart: "no"
+    volumes:
+      - "${SAMBA_DC_EVENTS_PATH}:/events"
 
   anas_samba_dc_anchor:
     container_name: ${CONTAINER_PREFIX}samba_dc_anchor
@@ -38,6 +54,8 @@ services:
     depends_on:
       anas_samba_dc:
         condition: service_healthy
+      anas_samba_dc_events_init:
+        condition: service_completed_successfully
     dns:
       - ${LOCAL_DNS_SERVER}
     environment:
@@ -50,10 +68,18 @@ services:
       ANCHOR_ATTRIBUTE: ${SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE}
       ANCHOR_SCAN_INTERVAL: ${SAMBA_DC_ANCHOR_SCAN_INTERVAL}
       ANCHOR_AUDIT_FILE: ${SAMBA_DC_ANCHOR_AUDIT_FILE}
-      ANCHOR_TLS_CACERT: /certs/${LEGO_CA_CERT_NAME}
+      ANCHOR_EVENT_FILE: ${SAMBA_DC_ANCHOR_EVENT_FILE}
+      ANCHOR_EVENT_ATTRIBUTES: ${SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES}
+      # The domain controller presents whichever certificate lego published, so
+      # the worker verifies against the bundle rather than one issuer's chain.
+      ANCHOR_TLS_CACERT: /certs/${ANAS_TLS_TRUST_BUNDLE_NAME}
       ANCHOR_HEALTH_FILE: /run/anchor-worker/health.json
     volumes:
-      - samba-dc-audit:/var/log/samba-audit:ro
+      # Samba's own log stays read-only here; the normalized journal the worker
+      # publishes lives in its own directory so this container never has write
+      # access to the domain controller's audit trail.
+      - "${SAMBA_DC_AUDIT_PATH}:/var/log/samba-audit:ro"
+      - "${SAMBA_DC_EVENTS_PATH}:/var/lib/anas-directory-events"
       - "${LEGO_CERTS_PATH}:/certs:ro"
     tmpfs:
       - /run/anchor-worker:uid=65534,gid=65534,mode=0750
@@ -68,6 +94,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 120s
-
-volumes:
-  samba-dc-audit:

@@ -49,13 +49,18 @@ services:
     container_name: ${CONTAINER_PREFIX}authentik_worker
     image: ghcr.io/goauthentik/server:${AUTHENTIK_IMAGE_TAG}
     restart: unless-stopped
-    # Import the ANAS CA before the worker discovers the Samba AD blueprint.
-    # authentik deliberately skips LDAP TLS verification when peer_certificate
-    # is empty and does not fall back to the OS trust store.
+    # Import the trust anchor before the worker discovers the Samba AD
+    # blueprint. authentik deliberately skips LDAP TLS verification when
+    # peer_certificate is empty and does not fall back to the OS trust store,
+    # so it has to be given something -- and that something must cover
+    # whichever issuer is serving LDAPS. The internal CA alone stops working
+    # the moment ACME succeeds for the domain, which fails here as
+    # "unable to get local issuer certificate" and silently stops every sync.
+    # peer_certificate is documented as a CA *chain*, so the bundle fits.
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
-        install -m 0444 "/certs/$${ANAS_TLS_INTERNAL_CA_NAME}" /tmp/anas-samba-ad-ca.crt
+        install -m 0444 "/certs/$${ANAS_TLS_TRUST_BUNDLE_NAME}" /tmp/anas-samba-ad-ca.crt
         ak import_certificate \
           --certificate /tmp/anas-samba-ad-ca.crt \
           --name anas-samba-ad-ca
@@ -78,6 +83,39 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
+    networks:
+      - authentik
+      - db
+
+  # Subscribes to the directory event journal and asks the scheduler to run the
+  # Samba AD sync early. Reuses the authentik image purely so it can reach the
+  # ORM: triggering through the REST API instead would mean provisioning a
+  # long-lived token, and this needs no credential at all.
+  anas_authentik_dirwatch:
+    container_name: ${CONTAINER_PREFIX}authentik_dirwatch
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_IMAGE_TAG}
+    restart: unless-stopped
+    entrypoint: ["python3", "/app/directory_watch.py"]
+    depends_on:
+      anas_authentik:
+        condition: service_healthy
+    volumes:
+      - "./dirwatch/directory_watch.py:/app/directory_watch.py:ro"
+      # Read-only: a subscriber never writes to the journal.
+      - "${AUTHENTIK_DIRWATCH_EVENTS_DIR}:/var/lib/anas-directory-events:ro"
+      - "${DATA_PATH}/authentik/data:/data"
+    env_file:
+      - .env
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python3", "/app/directory_watch.py", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     networks:
       - authentik
       - db

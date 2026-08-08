@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -112,6 +113,49 @@ func handle(req hookRequest) (hookResponse, error) {
 	}
 }
 
+// calcDirectoryWatch subscribes authentik to the directory event journal so a
+// group change takes effect in seconds instead of waiting for the next
+// scheduled sync. It stays a pure accelerator: the schedule is untouched, and
+// with no journal published the watcher simply finds nothing to read.
+//
+// The debounce exists because authentik has no per-user refresh. The only
+// entry point is a full source sync, so a bulk membership change has to
+// collapse into one run rather than one run per member.
+func calcDirectoryWatch(e map[string]string) {
+	// Always renderable: compose has no conditional services, so the mount
+	// source needs a value even when no directory provider published a
+	// journal. The watcher treats an absent journal as nothing to do.
+	e["AUTHENTIK_DIRWATCH_EVENTS_DIR"] = defaultValue(
+		e["ANAS_DIRECTORY_EVENTS_DIR"],
+		filepath.Join(e["DATA_PATH"], "authentik", "directory-events"),
+	)
+	e["AUTHENTIK_DIRWATCH_EVENT_FILE"] = "/var/lib/anas-directory-events/" +
+		defaultValue(e["ANAS_DIRECTORY_EVENTS_FILE_NAME"], "events.jsonl")
+	e["AUTHENTIK_DIRWATCH_CURSOR_FILE"] = "/data/anas-dirwatch/cursor.json"
+	e["AUTHENTIK_DIRWATCH_HEALTH_FILE"] = "/data/anas-dirwatch/health.json"
+	e["AUTHENTIK_DIRWATCH_SOURCE_SLUG"] = "samba-ad"
+	// Where the image installs the authentik package. The watcher runs as a
+	// plain script rather than through `ak`, so it has to put this on sys.path
+	// itself before Django can be configured.
+	e["AUTHENTIK_DIRWATCH_APP_ROOT"] = "/"
+	e["AUTHENTIK_DIRWATCH_OPERATIONS"] = defaultValue(
+		e["AUTHENTIK_DIRWATCH_OPERATIONS"], "Add,Modify,Delete")
+	// Only what changes an authorization decision. displayName and mail are
+	// published by the producer but do not justify a full sync on their own;
+	// they ride along on the next scheduled run.
+	e["AUTHENTIK_DIRWATCH_ATTRIBUTES"] = defaultValue(
+		e["AUTHENTIK_DIRWATCH_ATTRIBUTES"],
+		"member,memberOf,userAccountControl,sAMAccountName,"+
+			e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"],
+	)
+	e["AUTHENTIK_DIRWATCH_DEBOUNCE_SECONDS"] = defaultValue(
+		e["AUTHENTIK_DIRWATCH_DEBOUNCE_SECONDS"], "5")
+	e["AUTHENTIK_DIRWATCH_MIN_INTERVAL_SECONDS"] = defaultValue(
+		e["AUTHENTIK_DIRWATCH_MIN_INTERVAL_SECONDS"], "60")
+	e["AUTHENTIK_DIRWATCH_POLL_SECONDS"] = defaultValue(
+		e["AUTHENTIK_DIRWATCH_POLL_SECONDS"], "1")
+}
+
 func calcAuthentik(e map[string]string, secrets *secretStore) error {
 	e["AUTHENTIK_DOMAIN"] = e["AUTHENTIK_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
 	e["AUTHENTIK_DOMAIN_PORT"] = e["AUTHENTIK_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
@@ -159,6 +203,7 @@ func calcAuthentik(e map[string]string, secrets *secretStore) error {
 		e["AUTHENTIK_LDAP_GROUP_MEMBERSHIP_FIELD"] = "memberOf:1.2.840.113556.1.4.1941:"
 		e["AUTHENTIK_LDAP_USER_MEMBERSHIP_ATTRIBUTE"] = "distinguishedName"
 	}
+	calcDirectoryWatch(e)
 
 	key, err := secrets.Ensure("AUTHENTIK_SECRET_KEY", func() (string, error) { return randomHexErr(32) })
 	if err != nil {

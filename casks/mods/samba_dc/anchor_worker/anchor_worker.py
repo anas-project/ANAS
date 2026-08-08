@@ -14,6 +14,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from event_journal import (
+    DEFAULT_ATTRIBUTES,
+    DEFAULT_MAX_BYTES,
+    EventJournal,
+    normalize_change,
+    parse_audit_line,
+    split_attributes,
+    successful_change,
+)
+
 try:
     import ldap
     from ldap.controls import SimplePagedResultsControl
@@ -45,24 +55,18 @@ def printable_anchor(value: bytes) -> str:
 
 def extract_audit_event(line: str) -> str | None:
     """Return a successful DSDB Add DN from a possibly prefixed log line."""
-    start = line.find("{")
-    if start < 0:
+    record = parse_audit_line(line)
+    if record is None:
         return None
-    try:
-        record = json.loads(line[start:])
-    except json.JSONDecodeError:
+    return extract_added_dn(record)
+
+
+def extract_added_dn(record: dict) -> str | None:
+    """Return the DN of a successful DSDB Add, for an already parsed record."""
+    change = successful_change(record)
+    if change is None or change.get("operation") != "Add":
         return None
-    if record.get("type") != "dsdbChange":
-        return None
-    change = record.get("dsdbChange") or {}
-    if change.get("operation") != "Add":
-        return None
-    if change.get("statusCode") not in (None, 0):
-        return None
-    if change.get("status") not in (None, "Success"):
-        return None
-    dn = change.get("dn")
-    return dn if isinstance(dn, str) and dn else None
+    return change["dn"]
 
 
 @dataclass(frozen=True)
@@ -79,6 +83,9 @@ class Settings:
     tls_cacert: str
     scan_interval: int
     page_size: int
+    event_file: Path | None = None
+    event_attributes: tuple[str, ...] = DEFAULT_ATTRIBUTES
+    event_max_bytes: int = DEFAULT_MAX_BYTES
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -108,6 +115,22 @@ class Settings:
             tls_cacert=os.environ["ANCHOR_TLS_CACERT"],
             scan_interval=max(30, int(os.environ.get("ANCHOR_SCAN_INTERVAL", "300"))),
             page_size=max(1, int(os.environ.get("ANCHOR_PAGE_SIZE", "500"))),
+            # Publishing is optional: an empty path leaves the worker doing
+            # exactly what it did before, which keeps the deployment that has
+            # no subscribers from carrying a journal it never reads.
+            event_file=(
+                Path(os.environ["ANCHOR_EVENT_FILE"])
+                if os.environ.get("ANCHOR_EVENT_FILE")
+                else None
+            ),
+            event_attributes=(
+                split_attributes(os.environ["ANCHOR_EVENT_ATTRIBUTES"])
+                if os.environ.get("ANCHOR_EVENT_ATTRIBUTES")
+                else DEFAULT_ATTRIBUTES
+            ),
+            event_max_bytes=max(
+                64 * 1024, int(os.environ.get("ANCHOR_EVENT_MAX_BYTES", str(DEFAULT_MAX_BYTES)))
+            ),
         )
 
 
@@ -311,6 +334,11 @@ class Worker:
         self.settings = settings
         self.directory = Directory(settings)
         self.follower = AuditFollower(settings.audit_file)
+        self.journal = (
+            EventJournal(settings.event_file, settings.event_max_bytes)
+            if settings.event_file
+            else None
+        )
         self.health = {
             "ready": False,
             "started_at": int(time.time()),
@@ -321,6 +349,7 @@ class Worker:
             "last_integrity_at": 0,
             "duplicate_anchors": None,
             "invalid_anchors": None,
+            "last_published_seq": self.journal.seq if self.journal else None,
         }
 
     def write_health(self) -> None:
@@ -420,6 +449,27 @@ class Worker:
             time.sleep(delay)
         LOG.info("discarding Add event for absent or out-of-scope object %s", dn)
 
+    def handle_audit_line(self, line: str) -> dict | None:
+        """Feed one audit line to both sinks, parsing it exactly once.
+
+        Anchoring runs first: a subscriber woken by the event should already be
+        able to see the anchor that every downstream consumer keys on.
+        """
+        record = parse_audit_line(line)
+        if record is None:
+            return None
+        dn = extract_added_dn(record)
+        if dn:
+            self.handle_dn(dn)
+        if self.journal is None:
+            return None
+        event = normalize_change(record, self.settings.event_attributes, self.dn_in_scope)
+        if event is None:
+            return None
+        published = self.journal.append(event)
+        self.health["last_published_seq"] = published["seq"]
+        return published
+
     def dn_in_scope(self, dn: str) -> bool:
         normalized = dn.casefold()
         for base in (*self.settings.user_bases, *self.settings.group_bases):
@@ -440,9 +490,7 @@ class Worker:
                     self.reconcile()
                     next_scan = time.monotonic() + self.settings.scan_interval
                 for line in self.follower.lines():
-                    dn = extract_audit_event(line)
-                    if dn:
-                        self.handle_dn(dn)
+                    self.handle_audit_line(line)
                 time.sleep(0.25)
             except (ldap.LDAPError, OSError, RuntimeError, ValueError) as exc:
                 LOG.exception("worker operation failed")
