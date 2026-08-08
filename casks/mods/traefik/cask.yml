@@ -25,6 +25,17 @@ config:
   defaults:
     base_port: "9000"
     domain_prefix: traefik
+    # Fixed so that a host-network service and Traefik can agree on one address
+    # without discovering it at runtime. Change both together if this range is
+    # already in use on the host.
+    subnet: 172.28.0.0/16
+    gateway_ip: 172.28.0.1
+  # Route declarations from casks the Docker provider cannot discover: host
+  # networking, non-Docker processes, or anything Traefik must reach by
+  # address. Published by the declaring cask, rendered by this cask's
+  # entrypoint into the file provider directory.
+  consumes:
+    - ANAS_TRAEFIK_ROUTE__*
   changes:
     base_port:
       effect: container_recreate
@@ -34,6 +45,14 @@ config:
       effect: container_recreate
       apply: recreate-traefik
       description: The router rule is a Compose label.
+    subnet:
+      effect: reconcile
+      apply: recreate-traefik-network
+      description: Every container on the shared network must be re-attached, and host-network services bind to the gateway address derived from it.
+    gateway_ip:
+      effect: reconcile
+      apply: recreate-traefik-network
+      description: Host-network services bind to this address and Traefik routes to it.
 features:
   domain: true
 logic:

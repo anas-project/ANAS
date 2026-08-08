@@ -5,6 +5,12 @@ services:
       context: ./traefik
       network: ${DOCKER_BUILD_NETWORK:-default}
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
+    # The rendered environment is loaded into the container, not only used for
+    # substitution above: the entrypoint enumerates ANAS_TRAEFIK_ROUTE__* from
+    # its own environment to build the file-provider routes, and a declaration
+    # that only reached Compose would be silently ignored.
+    env_file:
+      - .env
     environment:
       LEGO_CERT_NAME: ${LEGO_CERT_NAME}
       LEGO_KEY_NAME: ${LEGO_KEY_NAME}
@@ -15,7 +21,9 @@ services:
       - --providers.docker.network=${NETWORK_PREFIX}traefik
       - --providers.docker.constraints=Label(`anas.traefik.instance`,`${NETWORK_PREFIX}traefik`)
       - --api.dashboard=true
-      - --providers.file.filename=/run/anas/cert.yml
+      # A directory, not a single file: the entrypoint writes the certificate
+      # store and any declared host-network routes as separate documents.
+      - --providers.file.directory=/run/anas
       - --ping=true
     restart: unless-stopped
     healthcheck:
@@ -45,3 +53,12 @@ networks:
   default:
     driver: bridge
     name: ${NETWORK_PREFIX}traefik
+    # A fixed subnet, so the gateway address is known before anything starts.
+    # A service on host networking has to bind to an address that containers on
+    # this network can reach, and Traefik has to be told the same address; with
+    # a Docker-assigned subnet neither side could learn it without discovery at
+    # runtime. Override traefik.subnet if it collides with an existing network.
+    ipam:
+      config:
+        - subnet: ${TRAEFIK_SUBNET}
+          gateway: ${TRAEFIK_GATEWAY_IP}
