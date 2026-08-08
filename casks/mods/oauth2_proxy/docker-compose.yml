@@ -12,10 +12,10 @@ services:
     env_file:
       - .env
     volumes:
-      # The identity provider presents an internally issued certificate when
-      # the domain cannot obtain a public one, so the issuer has to be trusted
-      # explicitly; oauth2-proxy takes it as a flag rather than from the system
-      # store.
+      # --provider-ca-file replaces the system store rather than adding to it,
+      # so the pinned file has to cover both issuers: internal when the domain
+      # cannot obtain a public certificate, public once ACME succeeds. That is
+      # what the trust bundle is.
       - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
     command:
       # The static-upstream arrangement from the upstream Traefik integration
@@ -35,7 +35,7 @@ services:
       - --trusted-proxy-ip=${TRAEFIK_SUBNET}
       - --http-address=0.0.0.0:4180
       - --provider=oidc
-      - --provider-ca-file=/certs/${ANAS_TLS_INTERNAL_CA_NAME}
+      - --provider-ca-file=/certs/${ANAS_TLS_TRUST_BUNDLE_NAME}
       - --oidc-issuer-url=${OAUTH2_PROXY_OIDC_ISSUER_URL}
       - --client-id=${OAUTH2_PROXY_CLIENT_ID}
       - --client-secret=${OAUTH2_PROXY_CLIENT_SECRET}

@@ -7,6 +7,24 @@
 OUT=/certs/certificates
 ISSUER_MARK="$OUT/.issuer"
 
+# lego writes every artifact 0600. The leaf certificate and the issuer chain
+# are public material, and the consumers that verify TLS do not run as root --
+# the anchor worker is nobody, oauth2_proxy and authentik are their own users.
+# Left at 0600 they cannot read the chain, and the failure surfaces far from
+# here as "certificate signed by unknown authority" or an LDAPS bind that
+# reports Permission denied. Only the private key stays owner-only. ca.sh
+# already makes the same distinction for the internal issuer.
+cert_mode_for() {
+  case "$1" in
+  *"$LEGO_KEY_NAME") echo 0600 ;;
+  *) echo 0644 ;;
+  esac
+}
+
+cert_mode() {
+  chmod "$(cert_mode_for "$1")" "$1"
+}
+
 # run.sh makes this decision at startup, but cron calls this script directly
 # and would otherwise attempt ACME every night on a deployment that has
 # declared it cannot use it -- failing on an empty provider and writing an
@@ -85,7 +103,11 @@ adopt() {
       echo "expected $src from lego, but it is missing or empty" >&2
       return 1
     fi
-    [ "$src" = "$dst" ] || cp "$src" "$dst"
+    if [ "$src" = "$dst" ]; then
+      cert_mode "$dst"
+    else
+      install -m "$(cert_mode_for "$dst")" "$src" "$dst"
+    fi
   done
   echo "Published $(basename "$base").* as ${LEGO_CERT_NAME%.crt}.{crt,key,issuer.crt}"
 }

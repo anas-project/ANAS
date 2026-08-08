@@ -182,6 +182,14 @@ func calcLego(e map[string]string, _ string, _ *secretStore) error {
 	// The internal root is published under a stable name even while ACME
 	// serves traffic, because bootstrap and renewal failures fall back to it.
 	e["ANAS_TLS_INTERNAL_CA_NAME"] = "anas-internal-ca.crt"
+	// What a consumer that *verifies* TLS should pin. Neither name above works
+	// for that on its own: the issuer chain ends at a public intermediate
+	// whose root lives in the system store, and the internal root cannot
+	// verify a publicly issued certificate. A consumer pinning either one
+	// fails the moment the deployment switches issuers -- and it fails at the
+	// consumer, far from here. This bundle carries the public roots and the
+	// internal root together, so one path stays correct through the switch.
+	e["ANAS_TLS_TRUST_BUNDLE_NAME"] = "anas-trust-bundle.crt"
 	return resolveDNSPlatform(e)
 }
 
