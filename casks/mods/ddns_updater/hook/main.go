@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"strings"
 )
@@ -117,25 +116,25 @@ func handle(req hookRequest) (hookResponse, error) {
 	}
 }
 func calculate(module string, env map[string]string, workdir string, secrets *secretStore) error {
-	if module != "ddns" {
+	if module != "ddns_updater" {
 		return nil
 	}
-	return calcDDNS(env, workdir, secrets)
+	return calcDDNSUpdater(env, workdir, secrets)
 }
 func renderEnv(module string, env map[string]string, workdir string) (map[string]string, error) {
-	if module != "ddns" {
+	if module != "ddns_updater" {
 		return map[string]string{}, nil
 	}
 	return map[string]string{}, nil
 }
 func disabledServices(module string, env map[string]string) []string {
-	if module != "ddns" {
+	if module != "ddns_updater" {
 		return nil
 	}
 	return nil
 }
 func afterStart(module string, env map[string]string) []dockerCopy {
-	if module != "ddns" {
+	if module != "ddns_updater" {
 		return nil
 	}
 	return nil
@@ -156,9 +155,9 @@ func changed(old, cur map[string]string) map[string]string {
 	}
 	return out
 }
-func calcDDNS(e map[string]string, _ string, _ *secretStore) error {
-	e["DDNS_DNS_SERVER"] = defaultValue(e["DDNS_DNS_SERVER"], e["DNS_SERVER"])
-	e["DDNS_DOMAIN"] = e["DDNS_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
+func calcDDNSUpdater(e map[string]string, _ string, _ *secretStore) error {
+	e["DDNS_UPDATER_DNS_SERVER"] = defaultValue(e["DDNS_UPDATER_DNS_SERVER"], e["DNS_SERVER"])
+	e["DDNS_UPDATER_DOMAIN"] = e["DDNS_UPDATER_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
 	// IPv6 is a statement of intent, not of fact. Asking for AAAA records on a
 	// host with no IPv6 of its own produces nothing but a permanently unhealthy
 	// container: the updater cannot discover an address it does not have, so it
@@ -166,52 +165,97 @@ func calcDDNS(e map[string]string, _ string, _ *secretStore) error {
 	// update anyway. Recording the outcome keeps a silent downgrade auditable in
 	// the rendered environment.
 	ipv6Wanted := e["IPv6"] == "true"
-	ipv6Usable := ipv6Wanted && hostHasGlobalIPv6()
-	e["DDNS_IPV6_AVAILABLE"] = boolValue(ipv6Usable)
-	if e["DNS_PROVIDER"] == "dnspod" {
-		settings := []string{}
+	ipv6Usable := ipv6Wanted && e["HOST_HAS_IPV6"] == "true"
+	e["DDNS_UPDATER_IPV6_AVAILABLE"] = boolValue(ipv6Usable)
+
+	name := strings.TrimSpace(e["DDNS_UPDATER_DNS_PROVIDER"])
+	if name == "" {
+		return fmt.Errorf("ddns_updater: services.ddns_updater.env.dns_provider is not set;\nset it to one of: %s",
+			strings.Join(supportedDNSPlatforms(), ", "))
+	}
+	platform, ok := lookupDNSPlatform(name)
+	if !ok {
+		return fmt.Errorf("ddns_updater: dns_provider %q is not a DNS platform ddns-updater can update;\nset services.ddns_updater.env.dns_provider to one of: %s",
+			name, strings.Join(supportedDNSPlatforms(), ", "))
+	}
+
+	settings := []string{}
+	// The base domain and its wildcard are maintained together because every
+	// service in a deployment is addressed under one or the other.
+	for _, host := range []string{"@", "*"} {
 		if e["IPv4"] == "true" {
-			settings = append(settings,
-				fmt.Sprintf(`{"provider":"dnspod","token":%q,"domain":%q,"host":"@","ip_version":"ipv4"}`, e["DNSPOD_API_KEY"], e["BASE_DOMAIN"]),
-				fmt.Sprintf(`{"provider":"dnspod","token":%q,"domain":%q,"host":"*","ip_version":"ipv4"}`, e["DNSPOD_API_KEY"], e["BASE_DOMAIN"]),
-			)
+			settings = append(settings, updaterSetting(e, platform, host, "ipv4"))
 		}
 		if ipv6Usable {
-			settings = append(settings,
-				fmt.Sprintf(`{"provider":"dnspod","token":%q,"domain":%q,"host":"@","ip_version":"ipv6"}`, e["DNSPOD_API_KEY"], e["BASE_DOMAIN"]),
-				fmt.Sprintf(`{"provider":"dnspod","token":%q,"domain":%q,"host":"*","ip_version":"ipv6"}`, e["DNSPOD_API_KEY"], e["BASE_DOMAIN"]),
-			)
+			settings = append(settings, updaterSetting(e, platform, host, "ipv6"))
 		}
-		e["DDNS_CONFIG"] = `{"settings":[` + strings.Join(settings, ",") + `]}`
+	}
+	e["DDNS_UPDATER_CONFIG"] = `{"settings":[` + strings.Join(settings, ",") + `]}`
+	return validatePublicIPFetchers(e)
+}
+
+// publicIPFetchers are the discovery methods ddns-updater implements. Unlike
+// ddns-go there is no local-interface mode: every method asks an outside
+// service what the world sees, so a host whose public address sits on its own
+// interface still learns it from outside.
+var publicIPFetchers = []string{"http", "dns", "all"}
+
+// validatePublicIPFetchers checks the one field with a small closed set.
+//
+// The provider lists are deliberately not validated here: ddns-updater accepts
+// eleven names plus arbitrary "url:" endpoints, and copying that list into this
+// hook would create a second place to keep in step with upstream for no gain,
+// since a wrong name is reported by the updater itself.
+func validatePublicIPFetchers(e map[string]string) error {
+	value := strings.TrimSpace(e["DDNS_UPDATER_PUBLICIP_FETCHERS"])
+	if value == "" {
+		return nil
+	}
+	for _, fetcher := range strings.Split(value, ",") {
+		fetcher = strings.TrimSpace(fetcher)
+		if fetcher == "" {
+			continue
+		}
+		if !contains(publicIPFetchers, fetcher) {
+			return fmt.Errorf("ddns_updater: publicip_fetchers %q is not a method ddns-updater understands;\nset services.ddns_updater.env.publicip_fetchers to one or more of: %s",
+				fetcher, strings.Join(publicIPFetchers, ", "))
+		}
 	}
 	return nil
 }
 
-// hostHasGlobalIPv6 reports whether this host holds a routable IPv6 address.
-//
-// The check is deliberately local. Dialling an outside host would measure the
-// deploy machine's connectivity at one instant and make rendering depend on the
-// internet being reachable, whereas the failure this guards against — "connect:
-// network is unreachable" — is decided before a packet is ever sent, by the
-// absence of a global address to source it from. Link-local and loopback
-// addresses exist on every machine and route nowhere, so they do not count.
-func hostHasGlobalIPv6() bool {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return false
-	}
-	for _, addr := range addrs {
-		ipNet, ok := addr.(*net.IPNet)
-		if !ok {
-			continue
-		}
-		// To4 is non-nil for IPv4-mapped forms, which are not IPv6 routing.
-		if ipNet.IP.To4() == nil && ipNet.IP.IsGlobalUnicast() {
+func contains(list []string, want string) bool {
+	for _, item := range list {
+		if item == want {
 			return true
 		}
 	}
 	return false
 }
+
+// updaterSetting renders one record entry. Credentials are read from this
+// cask's own namespace, which is what keeps a second DDNS implementation in
+// the same deployment from sharing this one's account by accident.
+func updaterSetting(e map[string]string, platform dnsPlatform, host, ipVersion string) string {
+	fields := []string{
+		fmt.Sprintf(`"provider":%q`, platform.Provider),
+		fmt.Sprintf(`"domain":%q`, e["BASE_DOMAIN"]),
+		fmt.Sprintf(`"host":%q`, host),
+		fmt.Sprintf(`"ip_version":%q`, ipVersion),
+	}
+	// ddns-updater names the single-secret field "token" and the paired form
+	// "username"/"password"; the registry says which shape this vendor uses by
+	// whether it fills the id slot.
+	if platform.IDKey == "" {
+		fields = append(fields, fmt.Sprintf(`"token":%q`, e["DDNS_UPDATER_"+platform.SecretKey]))
+	} else {
+		fields = append(fields,
+			fmt.Sprintf(`"username":%q`, e["DDNS_UPDATER_"+platform.IDKey]),
+			fmt.Sprintf(`"password":%q`, e["DDNS_UPDATER_"+platform.SecretKey]))
+	}
+	return "{" + strings.Join(fields, ",") + "}"
+}
+
 func boolValue(v bool) string {
 	if v {
 		return "true"

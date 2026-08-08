@@ -1,0 +1,59 @@
+services:
+  anas_ddns-updater:
+    image: ghcr.io/qdm12/ddns-updater:2.10.0
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
+    restart: unless-stopped
+    dns:
+      - ${DDNS_UPDATER_DNS_SERVER}
+    env_file:
+      - .env
+    environment:
+      - CONFIG=${DDNS_UPDATER_CONFIG}
+      - PERIOD=5m
+      - UPDATE_COOLDOWN_PERIOD=5m
+      # How the public address is discovered. ddns-updater has no local
+      # interface mode: every method asks an outside service. Its own default
+      # cycles across all echo services on each request, which is what keeps
+      # any single one from rate-limiting the updater, so the default here is
+      # "all" rather than a fixed pair.
+      - PUBLICIP_FETCHERS=${DDNS_UPDATER_PUBLICIP_FETCHERS}
+      - PUBLICIP_HTTP_PROVIDERS=${DDNS_UPDATER_PUBLICIP_PROVIDERS}
+      - PUBLICIPV4_HTTP_PROVIDERS=${DDNS_UPDATER_PUBLICIP_IPV4_PROVIDERS}
+      - PUBLICIPV6_HTTP_PROVIDERS=${DDNS_UPDATER_PUBLICIP_IPV6_PROVIDERS}
+      - PUBLICIP_DNS_PROVIDERS=${DDNS_UPDATER_PUBLICIP_DNS_PROVIDERS}
+      - HTTP_TIMEOUT=10s
+      - DATADIR=/updater/data
+      - RESOLVER_ADDRESS=${DDNS_UPDATER_DNS_SERVER}:53
+
+      # Web UI
+      - SERVER_ENABLED=yes
+      - LISTENING_ADDRESS=:8000
+      - ROOT_URL=/
+      - HEALTH_SERVER_ADDRESS=127.0.0.1:9999
+
+      # Backup
+      - BACKUP_PERIOD=0 # 0 to disable
+      - BACKUP_DIRECTORY=/updater/data
+
+      # Other
+      - LOG_LEVEL=info
+      - LOG_CALLER=short
+      - SHOUTRRR_ADDRESSES=
+
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "traefik.http.routers.ddns-updater.entrypoints=https"
+      - "traefik.http.routers.ddns-updater.rule=Host(`${DDNS_UPDATER_DOMAIN}`)"
+      - "traefik.http.routers.ddns-updater.tls=true"
+      # ddns-updater has no user system of its own: this middleware is the only
+      # thing between the internet and a UI that can rewrite the deployment's
+      # DNS records. Until this was added the router carried no middleware at
+      # all and the interface was published unauthenticated.
+      - "traefik.http.routers.ddns-updater.middlewares=${ANAS_FORWARD_AUTH_MIDDLEWARE}"
+      - "traefik.http.services.ddns-updater.loadbalancer.server.port=8000"
+
+networks:
+  default:
+    external: true
+    name: ${NETWORK_PREFIX}traefik

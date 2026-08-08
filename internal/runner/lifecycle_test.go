@@ -251,20 +251,20 @@ func TestBuiltInHardDependencyClosure(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := map[string][]string{
-		"traefik":     {"lego"},
-		"samba_dc":    {"lego"},
-		"samba_fs":    {"samba_dc"},
-		"postgres":    {"traefik"},
-		"mariadb":     {"traefik"},
-		"eturnal":     {"traefik"},
-		"ddns":        {"traefik"},
-		"llng":        {"traefik", "samba_dc", "postgres"},
-		"nextcloud":   {"traefik", "eturnal", "samba_dc", "postgres"},
-		"collabora":   {"nextcloud"},
-		"meshcentral": {"traefik", "mariadb", "samba_dc"},
-		"lam":         {"traefik", "samba_dc"},
-		"netbird":     {"traefik", "llng"},
-		"freeradius":  {"lego"},
+		"traefik":      {"lego"},
+		"samba_dc":     {"lego"},
+		"samba_fs":     {"samba_dc"},
+		"postgres":     {"traefik"},
+		"mariadb":      {"traefik"},
+		"eturnal":      {"traefik"},
+		"ddns_updater": {"traefik"},
+		"llng":         {"traefik", "samba_dc", "postgres"},
+		"nextcloud":    {"traefik", "eturnal", "samba_dc", "postgres"},
+		"collabora":    {"nextcloud"},
+		"meshcentral":  {"traefik", "mariadb", "samba_dc"},
+		"lam":          {"traefik", "samba_dc"},
+		"netbird":      {"traefik", "llng"},
+		"freeradius":   {"lego"},
 	}
 	for name, dependencies := range expected {
 		t.Run(name, func(t *testing.T) {
