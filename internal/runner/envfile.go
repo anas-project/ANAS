@@ -9,6 +9,12 @@ import (
 	"strings"
 )
 
+// globalEnvFile is the deployment-wide environment, written beside the
+// rendered casks rather than inside one of them. Artifact start, stop and
+// rollback read it to recover what the release was built with. The leading dot
+// keeps it out of the directory scan that finds casks by their subdirectory.
+const globalEnvFile = ".global.env"
+
 // writeEnv writes a per-cask .env file. Values are quoted so that docker
 // compose's dotenv parser and parseEnvFile both read back the exact original
 // value; see quoteEnv for the rules.

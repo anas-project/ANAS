@@ -18,10 +18,10 @@ wait_for_group() {
 wait_for_group "$SAMBA_DC_FS_ADMIN_GROUP_NAME"
 wait_for_group "$SAMBA_DC_FS_SHARE_RW_GROUP_NAME"
 
-echo "Fixing /$USERDATA_NAME/$SHARE_DIR_NAME..."
-share_path="/$USERDATA_NAME/$SHARE_DIR_NAME"
-home_path="/$USERDATA_NAME/Home"
-guest_acl_state_file="/$USERDATA_NAME/.anas-share-guest-acl-state"
+echo "Fixing /userdata/$SHARE_DIR_NAME..."
+share_path="/userdata/$SHARE_DIR_NAME"
+home_path="/userdata/Home"
+guest_acl_state_file="/userdata/.anas-share-guest-acl-state"
 
 chown root:"$SAMBA_DC_FS_SHARE_RW_GROUP_NAME" "$share_path"
 chmod 2770 "$share_path"

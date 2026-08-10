@@ -51,12 +51,20 @@ func fakeBtrfs(t *testing.T) {
 func newSnapshotWorkspace(t *testing.T) (workspace, deploymentID string) {
 	t.Helper()
 	workspace = t.TempDir()
+	if err := os.MkdirAll(dataDir(workspace), 0700); err != nil {
+		t.Fatal(err)
+	}
+	return workspace, seedSnapshotWorkspaceAt(t, workspace)
+}
+
+// seedSnapshotWorkspaceAt fills in everything a snapshot needs to exist, given
+// a workspace whose data trees are already in place. It is split out so the
+// real-Btrfs test can create those trees as actual subvolumes first.
+func seedSnapshotWorkspaceAt(t *testing.T, workspace string) (deploymentID string) {
+	t.Helper()
 	base := stateDir(workspace)
 	deploymentID = "20260101T000000Z-deadbeef"
 	if err := ensureRuntimeLayout(base); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(dataDir(workspace), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dataDir(workspace), "marker"), []byte("before"), 0600); err != nil {
@@ -91,7 +99,7 @@ func newSnapshotWorkspace(t *testing.T) (workspace, deploymentID string) {
 	if err := saveActiveState(base, &activeDeploymentState{ActiveDeployment: deploymentID}); err != nil {
 		t.Fatal(err)
 	}
-	return workspace, deploymentID
+	return deploymentID
 }
 
 // A snapshot has to be restorable with nothing but itself, because once it has
@@ -194,7 +202,7 @@ func TestRestoreRewindsDataAndLeavesAWayBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outcome, err := restoreSnapshot(workspace, meta, false)
+	outcome, err := restoreSnapshot(workspace, meta, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +249,7 @@ func TestRestoreRefusesAnIncompleteSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	meta.Complete = false
-	if _, err := restoreSnapshot(workspace, meta, false); err == nil {
+	if _, err := restoreSnapshot(workspace, meta, false, false); err == nil {
 		t.Fatal("an interrupted snapshot was restored")
 	}
 }

@@ -33,7 +33,7 @@ publish_trust_bundle() {
 }
 publish_trust_bundle
 
-if [ "${ANAS_VIRTUAL_DOMAIN:-false}" = "true" ]; then
+if [ "${VIRTUAL_DOMAIN:-false}" = "true" ]; then
   echo "Virtual domain: not attempting ACME; serving the internal certificate"
 else
   /root/cert.sh

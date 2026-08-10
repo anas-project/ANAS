@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -60,5 +61,39 @@ func TestCalcSambaFSRejectsUnknownAccessMode(t *testing.T) {
 	env := sambaFSTestEnv("unknown")
 	if err := calcSambaFS(env, "", nil); err == nil {
 		t.Fatal("expected unsupported access mode error")
+	}
+}
+
+// The share tree is user content, so it is derived from USER_DATA_PATH and not
+// from DATA_PATH. Deriving it from DATA_PATH would put every shared file inside
+// the subvolume a deployment rollback replaces.
+func TestCalcSambaFSDerivesUserdataPath(t *testing.T) {
+	env := sambaFSTestEnv("all_rw")
+	env["DATA_PATH"] = "/data/ws/data"
+	env["USER_DATA_PATH"] = "/data/ws/userdata"
+	if err := calcSambaFS(env, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := env["SAMBA_FS_USERDATA_PATH"]; got != "/data/ws/userdata/samba_fs" {
+		t.Fatalf("SAMBA_FS_USERDATA_PATH = %q", got)
+	}
+	// Deriving from DATA_PATH is the specific mistake this guards: the two
+	// differ by one path component and the wrong one is invisible until a
+	// rollback deletes somebody's files.
+	if strings.HasPrefix(env["SAMBA_FS_USERDATA_PATH"], env["DATA_PATH"]) {
+		t.Fatalf("the share tree must not live under DATA_PATH: %q", env["SAMBA_FS_USERDATA_PATH"])
+	}
+}
+
+// The compose file mounts the derived host path at the fixed container path
+// the share templates are written against; a rename on one side only is the
+// failure mode this guards.
+func TestComposeMountsUserdataAtFixedContainerPath(t *testing.T) {
+	b, err := os.ReadFile("../docker-compose.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"${SAMBA_FS_USERDATA_PATH}:/userdata"`) {
+		t.Fatal("compose must mount SAMBA_FS_USERDATA_PATH at /userdata")
 	}
 }

@@ -87,15 +87,17 @@ func runInit(args []string, jsonMode bool) error {
 
 	if jsonMode {
 		return emitOK(map[string]any{
-			"workspace":         workspace,
-			"config_path":       workspaceConfigPath(workspace),
-			"data_path":         dataDir(workspace),
-			"snapshots_path":    snapshotsDir(workspace),
-			"state_path":        stateDir(workspace),
-			"btrfs":             created.Btrfs,
-			"data_is_subvolume": created.DataIsSubvolume,
-			"snapshots_usable":  created.Btrfs,
-			"shell_init":        shellInitResult,
+			"workspace":              workspace,
+			"config_path":            workspaceConfigPath(workspace),
+			"data_path":              dataDir(workspace),
+			"user_data_path":         userDataDir(workspace),
+			"snapshots_path":         snapshotsDir(workspace),
+			"state_path":             stateDir(workspace),
+			"btrfs":                  created.Btrfs,
+			"data_is_subvolume":      created.DataIsSubvolume,
+			"user_data_is_subvolume": created.UserDataIsSubvolume,
+			"snapshots_usable":       created.Btrfs,
+			"shell_init":             shellInitResult,
 		})
 	}
 	fmt.Println(workspace)
@@ -112,6 +114,11 @@ func runInit(args []string, jsonMode bool) error {
 type workspaceCreation struct {
 	Btrfs           bool
 	DataIsSubvolume bool
+	// UserDataIsSubvolume decides whether user content can be captured at all.
+	// It is reported separately because it is separately consequential: data/
+	// being a subvolume makes rollback possible, userdata/ being one makes it
+	// possible to back up the files without also making them part of rollback.
+	UserDataIsSubvolume bool
 }
 
 func createWorkspace(workspace string, yes, jsonMode bool) (workspaceCreation, error) {
@@ -147,6 +154,11 @@ func createWorkspace(workspace string, yes, jsonMode bool) (workspaceCreation, e
 		return created, err
 	}
 	created.DataIsSubvolume = subvolume
+	userSubvolume, err := createUserDataDir(workspace, btrfs)
+	if err != nil {
+		return created, err
+	}
+	created.UserDataIsSubvolume = userSubvolume
 	if err := writeConfigSkeleton(workspace); err != nil {
 		return created, failuref("write_failed", "%s", err.Error())
 	}
@@ -190,6 +202,39 @@ func createDataDir(workspace string, btrfs bool) (bool, error) {
 	return false, nil
 }
 
+// createUserDataDir prepares the tree that holds what people store, which is
+// governed by different rules than data/ on both counts createDataDir refuses.
+//
+// A mount point is allowed, and is the supported way to keep bulk files on a
+// second disk: nothing renames this directory, so the EBUSY that blocks a data
+// restore cannot arise. A symlink is still refused, for the same reason as
+// before -- tar and rsync skip it and the backup comes out quietly empty.
+//
+// Its own subvolume is what lets a snapshot capture it separately from data/,
+// which is what makes "roll the deployment back without rewinding anyone's
+// documents" expressible at all. Failing to create one is not fatal: the tree
+// still works, it simply cannot be snapshotted, and the caller reports that.
+func createUserDataDir(workspace string, btrfs bool) (bool, error) {
+	userData := userDataDir(workspace)
+	if info, err := os.Lstat(userData); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return false, preconditionErrorf("userdata_is_symlink",
+				"%s is a symlink; user data must be a real directory or a mount point, or backups will not include it", userData)
+		}
+		return btrfsSubvolumeShow(userData) == nil, nil
+	}
+	if btrfs {
+		if err := runBtrfs("subvolume", "create", userData); err != nil {
+			return false, failuref("subvolume_create_failed", "create Btrfs subvolume %s: %v", userData, err)
+		}
+		return true, nil
+	}
+	if err := os.MkdirAll(userData, 0755); err != nil {
+		return false, failuref("mkdir_failed", "create %s: %v", userData, err)
+	}
+	return false, nil
+}
+
 func isMountPoint(path string) (bool, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -209,14 +254,17 @@ func writeConfigSkeleton(workspace string) error {
 	}
 	skeleton := `# anas workspace configuration.
 #
-# Service data always lives at <workspace>/data; there is no data_path setting.
-# Back up this whole directory and the deployment is fully recoverable.
+# Application state lives at <workspace>/data and the files people store live
+# at <workspace>/userdata. They are separate because a rollback replaces the
+# first and must never touch the second. Back up this whole directory and the
+# deployment is fully recoverable.
 
 modules:
   - samba_dc
 
 global:
-  domain: example.test
+  # The root every hostname and the Samba realm derive from.
+  base_domain: example.test
   email: admin@example.test
   timezone: UTC
 

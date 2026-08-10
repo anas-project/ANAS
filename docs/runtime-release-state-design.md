@@ -227,7 +227,7 @@ id: 20260720T081530Z-8f3c12ab
 created_at: 2026-07-20T08:15:30Z
 config_fingerprint: sha256:...
 lock_fingerprint: sha256:...
-module_order: [core, lego, traefik, postgres, nextcloud]
+module_order: [lego, traefik, postgres, nextcloud]
 capability_bindings:
   nextcloud:
     relational_database: postgres
@@ -370,7 +370,7 @@ resolve 阶段的每个值都应携带元数据：
 ```go
 type ResolvedValue struct {
     Key            string
-    Producer       string       // global、user、core 或 cask name
+    Producer       string       // global、user 或 cask name
     Source         ValueSource  // config/default/hook/capability/secret
     Classification Classification // public/internal/sensitive
     Consumers      []string

@@ -36,6 +36,13 @@ type app struct {
 	lock           *caskLock
 	hookBins       map[string]string
 	sensitiveKeys  map[string]bool
+	// narrowFileScope restricts a rendered .env to what its cask declares --
+	// global values, its own prefix, and manifest `config.consumes` -- instead
+	// of everything its dependency closure happens to own. It is a field rather
+	// than an outright replacement of the old rule so that one rendering can be
+	// diffed against the other, which is how the missing declarations are found
+	// rather than guessed.
+	narrowFileScope bool
 	// runnerSensitive holds keys the runner itself derived from user secrets,
 	// which nothing else would recognise as sensitive. See markSensitive.
 	runnerSensitive  map[string]bool
@@ -141,9 +148,9 @@ Usage:
   anas render  [-w WORKSPACE] [-c config.yml]
   anas build   [-w WORKSPACE] [-c config.yml]
   anas apply   [-w WORKSPACE] [-c config.yml [--build] | --deployment ID]
-  anas start   [-w WORKSPACE]
-  anas restart [-w WORKSPACE]
-  anas stop    [-w WORKSPACE]
+  anas start   [CASK...] [-w WORKSPACE]
+  anas restart [CASK...] [-w WORKSPACE]
+  anas stop    [CASK...] [-w WORKSPACE]
   anas rollback [DEPLOYMENT_ID] -w WORKSPACE
   anas status [-w WORKSPACE]
   anas deployments list|inspect [ID] [-w WORKSPACE]
@@ -153,6 +160,7 @@ Usage:
   anas backup plan|create  --to DEST [--mode MODE] [--snapshot ID] [--no-stop]
   anas backup list|verify  --to DEST [--backup-id ID]
   anas backup restore --from SRC -w WORKSPACE [--backup-id ID] [--dry-run] [-y]
+  anas config list    [global|CASK] [-w WORKSPACE]
   anas config set     [-w WORKSPACE] <module.parameter> <value>
   anas config explain <module.parameter>
   anas config plan    [-w WORKSPACE]
@@ -163,7 +171,8 @@ Workspace:
   deployment, so backing up that single directory backs up everything.
 
     <workspace>/config.yml   desired state (the only file you edit)
-    <workspace>/data/        service data; no configurable location
+    <workspace>/data/        application state; replaced by a restore
+    <workspace>/userdata/    files people store; never touched by a rollback
     <workspace>/snapshots/   point-in-time copies
     <workspace>/.anas/       runtime state
 
@@ -397,6 +406,12 @@ func (a *app) execute(actions []string) error {
 		if err := os.RemoveAll(tmp); err != nil {
 			return err
 		}
+		// Ahead of calculate so every hook sees a settled host environment,
+		// and only on a render: an artifact start reuses the values the
+		// release was built with rather than re-probing the machine.
+		if err := a.applyHostNetwork(); err != nil {
+			return err
+		}
 		if err := a.calculate(); err != nil {
 			return err
 		}
@@ -431,7 +446,7 @@ func (a *app) execute(actions []string) error {
 	}
 	if contains(actions, "build") {
 		if err := a.each(work, func(run caskRun) error {
-			if run.mod.Name == "core" {
+			if run.mod.RuntimeType != "compose" {
 				return nil
 			}
 			args := append([]string{"build"}, run.services...)
@@ -455,7 +470,7 @@ func (a *app) execute(actions []string) error {
 			return err
 		}
 		if err := a.each(work, func(run caskRun) error {
-			if run.mod.Name == "core" {
+			if run.mod.RuntimeType != "compose" {
 				return nil
 			}
 			args := append([]string{"up", "-d", "--remove-orphans"}, run.services...)
@@ -502,10 +517,10 @@ func (a *app) execute(actions []string) error {
 
 func (a *app) runAfterStart(release string) error {
 	for _, name := range a.order {
-		if name == "core" {
+		mod := a.reg[name]
+		if mod.RuntimeType != "compose" {
 			continue
 		}
-		mod := a.reg[name]
 		dir := filepath.Join(release, name)
 		resp, err := a.runHook(mod, "after_start", dir, a.caskEnv(dir))
 		if err != nil {
@@ -533,11 +548,11 @@ func (a *app) releaseDirFor(name string) string {
 	return path
 }
 
-// adoptReleaseEnv replaces the config-derived base env with the environment
-// rendered into the release's core cask, so artifact start/stop/restart use
-// the values the release was actually built with.
+// adoptReleaseEnv replaces the config-derived base env with the deployment-wide
+// environment the release was rendered with, so artifact start/stop/restart use
+// the values it was actually built with.
 func (a *app) adoptReleaseEnv(release string) {
-	env, err := parseEnvFile(filepath.Join(release, "core", ".env"))
+	env, err := parseEnvFile(filepath.Join(release, globalEnvFile))
 	if err != nil {
 		return
 	}
@@ -580,7 +595,7 @@ func (a *app) releaseModules(release string) []string {
 	}
 	present := map[string]bool{}
 	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "core" {
+		if !entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
@@ -703,9 +718,6 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 				return err
 			}
 			deps = append(deps, provider)
-		}
-		if name != "core" && !contains(deps, "core") {
-			deps = append([]string{"core"}, deps...)
 		}
 		if svc, ok := a.cfg.Services[name]; ok {
 			deps = append(deps, svc.DependsOn...)
@@ -867,16 +879,20 @@ func (a *app) requireCaskManifest(name string) error {
 }
 
 func (a *app) applyModuleDefaults() {
-	for _, name := range a.order {
-		owner := name
-		if name == "core" {
-			owner = "core"
+	// The deployment's own parameters come first and are globally owned, so a
+	// cask default can never shadow one and every cask can read them.
+	for k, v := range globalConfig.Defaults {
+		if a.env[k] == "" {
+			a.env[k] = v
 		}
+		a.setEnvOwner(k, globalScope)
+	}
+	for _, name := range a.order {
 		for k, v := range a.reg[name].Defaults {
 			if a.env[k] == "" {
 				a.env[k] = v
 			}
-			a.setEnvOwner(k, owner)
+			a.setEnvOwner(k, name)
 		}
 	}
 	a.env["ALL_MODS_NAME"] = strings.Join(a.order, ",")
@@ -896,6 +912,9 @@ func (a *app) applyModuleDefaults() {
 }
 
 func (a *app) calculate() error {
+	if err := requireKeys(a.env, globalConfig.Required); err != nil {
+		return fmt.Errorf("deployment config: %w", err)
+	}
 	for _, name := range a.order {
 		mod := a.reg[name]
 		if err := a.applyCaskRootPassword(a.env, name); err != nil {
@@ -926,7 +945,7 @@ func (a *app) calculate() error {
 		}
 	}
 	a.env["DOMAINS"] = strings.Join(domains, ",")
-	a.setEnvOwner("DOMAINS", "core")
+	a.setEnvOwner("DOMAINS", globalScope)
 	return nil
 }
 
@@ -934,18 +953,16 @@ func (a *app) renderAll(work string) error {
 	if err := os.MkdirAll(work, 0755); err != nil {
 		return err
 	}
+	if err := writeEnv(filepath.Join(work, globalEnvFile), a.globalEnv()); err != nil {
+		return err
+	}
 	for _, name := range a.order {
 		mod := a.reg[name]
 		dir := filepath.Join(work, name)
-		if name != "core" {
-			src := mod.SourceDir
-			if err := copyDir(src, dir); err != nil {
-				return err
-			}
-			if err := a.freezeHookBinary(mod, dir); err != nil {
-				return err
-			}
-		} else if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := copyDir(mod.SourceDir, dir); err != nil {
+			return err
+		}
+		if err := a.freezeHookBinary(mod, dir); err != nil {
 			return err
 		}
 		env := a.scopedEnv(name)
@@ -990,11 +1007,20 @@ type caskRun struct {
 }
 
 func (a *app) each(work string, fn func(caskRun) error) error {
-	for _, name := range a.order {
+	return a.eachOf(work, a.order, fn)
+}
+
+// eachOf is `each` over a chosen subset, which is what lets start, restart and
+// build act on named casks. The names are already in deployment order.
+func (a *app) eachOf(work string, names []string, fn func(caskRun) error) error {
+	for _, name := range names {
 		mod := a.reg[name]
 		dir := filepath.Join(work, name)
 		env := a.caskEnv(dir)
-		if name == "core" {
+		if mod.RuntimeType != "compose" {
+			// Nothing to enumerate services for, but the callback still runs:
+			// callers count casks for progress, and a runtime that starts no
+			// containers is still part of the deployment.
 			if err := fn(caskRun{mod: mod, dir: dir, env: env}); err != nil {
 				return err
 			}

@@ -156,6 +156,21 @@ func changed(old, cur map[string]string) map[string]string {
 	return out
 }
 func calcSambaFS(e map[string]string, _ string, _ *secretStore) error {
+	// The share tree is user content, so it lives under USER_DATA_PATH rather
+	// than DATA_PATH. The distinction is not cosmetic: DATA_PATH is replaced
+	// wholesale by a deployment rollback, which would rewind every file anyone
+	// saved since the snapshot.
+	//
+	// The path is derived, not configured. It used to be assembled from
+	// USERDATA_NAME, a deployment-wide setting that could not actually be
+	// changed: the same value was the container's mount point and was baked
+	// into smb.conf's share paths and the guest-ACL state file, so a new value
+	// pointed Samba at an empty tree and stranded the old one. Moving the share
+	// to another disk is done by mounting that disk at USER_DATA_PATH, which
+	// moves every cask's user content together and keeps one answer to "where
+	// do the files live".
+	e["SAMBA_FS_USERDATA_PATH"] = defaultValue(e["SAMBA_FS_USERDATA_PATH"],
+		strings.TrimSuffix(e["USER_DATA_PATH"], "/")+"/samba_fs")
 	e["SAMBA_FS_USE_DEFAULT_DOMAIN"] = defaultValue(e["SAMBA_FS_USE_DEFAULT_DOMAIN"], e["USE_DEFAULT_DOMAIN"])
 	e["SAMBA_FS_NETBIOS_NAME"] = strings.ToUpper(defaultValue(e["SAMBA_FS_NETBIOS_NAME"], e["SAMBA_FS_HOSTNAME"]))
 	// Joining the domain needs a resolver that knows the AD zone. The VLAN

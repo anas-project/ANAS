@@ -2,13 +2,18 @@ modules:
   - traefik
 
 global:
-  domain: nas.example.com
+  base_domain: nas.example.com
   email: admin@example.com
   timezone: Asia/Shanghai
   # Optional shared password for administrator accounts that people log in
   # with. When omitted, each cask gets its own generated root password; list
   # them with `anas config secret list`.
   default_service_root_password: ChangeMe1!
+  # The administrator name for Traefik's dashboard gate.
+  basicauth_user: admin
+  # Optional. Absent means the default applies; an explicit false is kept, which
+  # is why these are written as booleans rather than left to the env: block.
+  # ipv6: false
 
 services:
   # The DNS vendor is chosen per engine, not deployment-wide: certificates and
@@ -26,7 +31,13 @@ secrets:
   cloudflare_dns_api_token: replace-me
 
 env:
-  BASICAUTH_USER: admin
+  # The top level env: block sets raw environment keys, for values no manifest
+  # declares. Parameters that are declared belong under global: or under
+  # services.<cask>.env; `anas config list` prints the path for each.
+  #
+  # These two are samba_fs parameters published under a bare name, because they
+  # name what people see in a file manager.
+  #
   # all_rw: all authenticated domain users can write.
   # all_read_group_write: all authenticated users can read; FS Share RW can write.
   SHARE_ACCESS_MODE: all_read_group_write

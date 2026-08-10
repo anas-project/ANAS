@@ -162,7 +162,7 @@ Edit `config.yml` directly, or use the `config` commands — these read the cask
 definitions, so `ANAS_CASK_ROOT` has to be set (see §2):
 
 ```bash
-anas config set core.timezone Europe/Berlin -w /srv/anas
+anas config set global.timezone Europe/Berlin -w /srv/anas
 anas config explain nextcloud.domain_prefix        # what changing it costs
 anas config plan -w /srv/anas                      # what the pending edits would do
 ```

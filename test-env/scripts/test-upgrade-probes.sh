@@ -51,7 +51,7 @@ check_container_running() {
   docker exec anas_nextcloud sh -c 'test -d /data'
 
   echo "== cask lock updated =="
-  for cask in core lego samba_dc samba_fs traefik keycloak llng mariadb postgres eturnal nextcloud collabora meshcentral netbird lam ddns_updater freeradius; do
+  for cask in lego samba_dc samba_fs traefik keycloak llng mariadb postgres eturnal nextcloud collabora meshcentral netbird lam ddns_updater freeradius; do
     current=$(awk '
       $1 == "version:" { print $2; exit }
     ' "$ROOT_DIR/casks/mods/$cask/cask.yml")

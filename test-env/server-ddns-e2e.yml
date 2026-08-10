@@ -22,7 +22,7 @@ dynamic_dns:
   dns_provider: tencentcloud
 
 global:
-  domain: ln.hlong.wang
+  base_domain: ln.hlong.wang
   email: whlsxl@gmail.com
   timezone: Asia/Shanghai
   # The host has no publicly trusted certificate for this test deployment, and

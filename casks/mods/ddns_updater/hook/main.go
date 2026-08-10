@@ -164,7 +164,7 @@ func calcDDNSUpdater(e map[string]string, _ string, _ *secretStore) error {
 	// retries every public-IP service in turn, fails all of them, and skips the
 	// update anyway. Recording the outcome keeps a silent downgrade auditable in
 	// the rendered environment.
-	ipv6Wanted := e["IPv6"] == "true"
+	ipv6Wanted := wantAddressFamily(e, "IPV6")
 	ipv6Usable := ipv6Wanted && e["HOST_HAS_IPV6"] == "true"
 	e["DDNS_UPDATER_IPV6_AVAILABLE"] = boolValue(ipv6Usable)
 
@@ -183,7 +183,7 @@ func calcDDNSUpdater(e map[string]string, _ string, _ *secretStore) error {
 	// The base domain and its wildcard are maintained together because every
 	// service in a deployment is addressed under one or the other.
 	for _, host := range []string{"@", "*"} {
-		if e["IPv4"] == "true" {
+		if wantAddressFamily(e, "IPV4") {
 			settings = append(settings, updaterSetting(e, platform, host, "ipv4"))
 		}
 		if ipv6Usable {
@@ -267,4 +267,18 @@ func defaultValue(v, d string) string {
 		return d
 	}
 	return v
+}
+
+// wantAddressFamily reads an address-family intent the way the global schema
+// declares it: ipv4 and ipv6 default to true, so anything that is not an
+// explicit "false" means enabled.
+//
+// The polarity has to match the schema default, and the two DDNS casks used to
+// disagree about it -- this one treated an absent value as enabled, the other
+// as disabled. Nothing went wrong only because the schema always supplied an
+// explicit "true"; the day that default changed or the key went missing, the
+// same config would have meant opposite things depending on which
+// implementation was selected.
+func wantAddressFamily(e map[string]string, key string) bool {
+	return e[key] != "false"
 }

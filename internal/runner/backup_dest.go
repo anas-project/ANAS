@@ -56,6 +56,7 @@ type backupManifest struct {
 const (
 	backupChannelData     = "data"
 	backupChannelMetadata = "metadata"
+	backupChannelUserData = "userdata"
 )
 
 const backupTempPrefix = ".tmp-"
@@ -63,10 +64,12 @@ const backupTempPrefix = ".tmp-"
 func backupRoot(dest, id string) string     { return filepath.Join(dest, id) }
 func backupTempRoot(dest, id string) string { return filepath.Join(dest, backupTempPrefix+id) }
 
-func backupManifestPath(root string) string { return filepath.Join(root, "backup.yml") }
-func backupStreamPath(root string) string   { return filepath.Join(root, "data.stream") }
-func backupMetaTarPath(root string) string  { return filepath.Join(root, "meta.tar") }
-func backupDataPath(root string) string     { return filepath.Join(root, "data") }
+func backupManifestPath(root string) string   { return filepath.Join(root, "backup.yml") }
+func backupStreamPath(root string) string     { return filepath.Join(root, "data.stream") }
+func backupUserStreamPath(root string) string { return filepath.Join(root, "userdata.stream") }
+func backupMetaTarPath(root string) string    { return filepath.Join(root, "meta.tar") }
+func backupDataPath(root string) string       { return filepath.Join(root, "data") }
+func backupUserDataPath(root string) string   { return filepath.Join(root, "userdata") }
 
 func validateBackupID(id string) error {
 	if id == "" || filepath.Base(id) != id || id == "." || id == ".." ||
@@ -235,6 +238,18 @@ func verifyBackup(dest string, manifest backupManifest, present map[string]bool)
 	if !manifest.Complete {
 		add("incomplete_backup", "backup %s was interrupted and cannot be restored", manifest.BackupID)
 	}
+	// A backup that recorded a user-content channel must still have it. The
+	// channel list is what the manifest promises; checking the promise against
+	// the disk is the whole point of verify, and user content is the part whose
+	// absence cannot be repaired by redeploying.
+	if contains(manifest.Channels, backupChannelUserData) {
+		switch manifest.Mode {
+		case backupModeSendFile:
+			checkPresent(add, backupUserStreamPath(root), "userdata_stream_missing", "user data stream")
+		default:
+			checkPresent(add, backupUserDataPath(root), "userdata_stream_missing", "user data directory")
+		}
+	}
 	switch manifest.Mode {
 	case backupModeSendFile:
 		checkStream(add, backupStreamPath(root), manifest.SizeBytes, "stream_missing")
@@ -316,10 +331,11 @@ func cleanStaleBackupTemp(dest string) {
 // through btrfs first when there is one. A received subvolume is read-only, so
 // an ordinary recursive delete fails on every file inside it.
 func removeBackupTree(root string) error {
-	data := backupDataPath(root)
-	if exists(data) && btrfsSubvolumeShow(data) == nil {
-		if err := runBtrfs("subvolume", "delete", data); err != nil {
-			return describeSubvolumeDeleteFailure(data, err)
+	for _, path := range []string{backupDataPath(root), backupUserDataPath(root)} {
+		if exists(path) && btrfsSubvolumeShow(path) == nil {
+			if err := runBtrfs("subvolume", "delete", path); err != nil {
+				return describeSubvolumeDeleteFailure(path, err)
+			}
 		}
 	}
 	return os.RemoveAll(root)

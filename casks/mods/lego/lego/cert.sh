@@ -29,7 +29,7 @@ cert_mode() {
 # and would otherwise attempt ACME every night on a deployment that has
 # declared it cannot use it -- failing on an empty provider and writing an
 # error to the log that looks like a real problem.
-if [ "${ANAS_VIRTUAL_DOMAIN:-false}" = "true" ]; then
+if [ "${VIRTUAL_DOMAIN:-false}" = "true" ]; then
   echo "Virtual domain: not attempting ACME; the internal certificate stays in place"
   exit 0
 fi

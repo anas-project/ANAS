@@ -9,7 +9,7 @@ modules:
   - traefik
 
 global:
-  domain: rollback.test
+  base_domain: rollback.test
   email: admin@rollback.test
   timezone: Asia/Shanghai
   virtual_domain: true

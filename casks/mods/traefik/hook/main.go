@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -118,7 +120,40 @@ func calculate(module string, env map[string]string, workdir string, secrets *se
 	if module != "traefik" {
 		return nil
 	}
-	return domainCalc("TRAEFIK", "traefik")(env, workdir, secrets)
+	if err := domainCalc("TRAEFIK", "traefik")(env, workdir, secrets); err != nil {
+		return err
+	}
+	return calcBasicAuth(env)
+}
+
+// calcBasicAuth builds the credential for the dashboard's basic-auth
+// middleware, the only consumer there has ever been. It used to be computed by
+// the core cask, which meant the hash format was frozen somewhere nobody
+// maintaining Traefik would think to look.
+//
+// The hash stays {SHA} for now. Traefik also accepts bcrypt, which is the
+// better choice, but bcrypt salts every call: the value is rendered into a
+// Compose label, so a fresh hash on every render would recreate the container
+// each time. Moving to it means persisting the hash itself in the secret
+// store, which is a separate decision this cask is now free to make.
+func calcBasicAuth(e map[string]string) error {
+	if e["TRAEFIK_BASICAUTH_HTPASSWD"] != "" {
+		return nil
+	}
+	user := e["BASICAUTH_USER"]
+	if user == "" {
+		user = "admin"
+	}
+	pass := e["BASICAUTH_PASSWD"]
+	if pass == "" {
+		pass = e["DEFAULT_SERVICE_ROOT_PASSWORD"]
+	}
+	if pass == "" {
+		return fmt.Errorf("no password for the dashboard: set global.default_service_root_password or env.BASICAUTH_PASSWD")
+	}
+	sum := sha1.Sum([]byte(pass))
+	e["TRAEFIK_BASICAUTH_HTPASSWD"] = user + ":{SHA}" + base64.StdEncoding.EncodeToString(sum[:])
+	return nil
 }
 func renderEnv(module string, env map[string]string, workdir string) (map[string]string, error) {
 	if module != "traefik" {

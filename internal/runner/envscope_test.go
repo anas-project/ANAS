@@ -26,10 +26,12 @@ func TestMatchEnvPattern(t *testing.T) {
 func scopeTestApp() *app {
 	return &app{
 		reg: map[string]Module{
-			"core":      {Name: "core", EnvPrefix: "CORE"},
-			"traefik":   {Name: "traefik", EnvPrefix: "TRAEFIK"},
-			"postgres":  {Name: "postgres", EnvPrefix: "POSTGRES"},
-			"nextcloud": {Name: "nextcloud", EnvPrefix: "NEXTCLOUD", Consumes: []string{"EXTRA_CONTRACT_*", "ANAS_IDENTITY_SAML_CLIENTS"}},
+			"traefik":  {Name: "traefik", EnvPrefix: "TRAEFIK"},
+			"postgres": {Name: "postgres", EnvPrefix: "POSTGRES"},
+			// POSTGRES_PASSWORD is declared rather than inherited: being a
+			// dependency of postgres no longer carries postgres's values along
+			// with it, which is the whole point of the declaration.
+			"nextcloud": {Name: "nextcloud", EnvPrefix: "NEXTCLOUD", Consumes: []string{"EXTRA_CONTRACT_*", "ANAS_IDENTITY_SAML_CLIENTS", "POSTGRES_PASSWORD"}},
 			// Two DDNS implementations coexist, and their credentials are told
 			// apart by env prefix alone. ddns_updater claims one canonical
 			// vendor key through consumes; everything else relies on the
@@ -38,11 +40,10 @@ func scopeTestApp() *app {
 			"ddns_go":      {Name: "ddns_go", EnvPrefix: "DDNS_GO"},
 		},
 		deps: map[string][]string{
-			"traefik":      {"core"},
-			"postgres":     {"core", "traefik"},
-			"nextcloud":    {"core", "traefik", "postgres"},
-			"ddns_updater": {"core", "traefik"},
-			"ddns_go":      {"core", "traefik"},
+			"postgres":     {"traefik"},
+			"nextcloud":    {"traefik", "postgres"},
+			"ddns_updater": {"traefik"},
+			"ddns_go":      {"traefik"},
 		},
 		env: map[string]string{
 			"BASE_DOMAIN":                          "nas.example.com",
@@ -63,7 +64,7 @@ func scopeTestApp() *app {
 		},
 		envOwner: map[string]string{
 			"BASE_DOMAIN":                          "",
-			"HOST_IP":                              "core",
+			"HOST_IP":                              globalScope,
 			"POSTGRES_PASSWORD":                    "postgres",
 			"NEXTCLOUD_DB_NAME":                    "nextcloud",
 			"DDNS_UPDATER_CONFIG":                  "ddns_updater",
@@ -73,7 +74,7 @@ func scopeTestApp() *app {
 			"EXTRA_CONTRACT_KEY":                   "ddns_updater",
 			"UNRELATED_HOOK_KEY":                   "ddns_updater",
 			"SMAL_SP_APPS":                         "nextcloud",
-			"DEFAULT_GATEWAY_IP":                   "core",
+			"DEFAULT_GATEWAY_IP":                   globalScope,
 			"NEXTCLOUD_ADMIN_PWD":                  "nextcloud",
 			"ANAS_IDENTITY_CLIENTS":                "runner",
 			"ANAS_IDENTITY_SAML_CLIENTS":           "runner",
@@ -81,9 +82,20 @@ func scopeTestApp() *app {
 	}
 }
 
-func TestScopedEnvFiltersByClosureAndConsumes(t *testing.T) {
+// A cask receives global values, its own, and exactly what it declares. The
+// dependency closure decides start order and nothing else: depending on
+// postgres is not a reason to be handed every postgres variable.
+func TestScopedEnvFiltersByDeclarationRatherThanClosure(t *testing.T) {
 	a := scopeTestApp()
 	env := a.scopedEnv("nextcloud")
+
+	// SMAL_SP_APPS is nextcloud's own by ownership, POSTGRES_PASSWORD is
+	// reached only through consumes.
+	undeclared := scopeTestApp()
+	undeclared.reg["nextcloud"] = Module{Name: "nextcloud", EnvPrefix: "NEXTCLOUD"}
+	if _, ok := undeclared.scopedEnv("nextcloud")["POSTGRES_PASSWORD"]; ok {
+		t.Error("a dependency's value crossed the boundary without being declared")
+	}
 	for _, want := range []string{"BASE_DOMAIN", "HOST_IP", "POSTGRES_PASSWORD", "NEXTCLOUD_DB_NAME", "EXTRA_CONTRACT_KEY", "SMAL_SP_APPS", "ANAS_IDENTITY_SAML_CLIENTS"} {
 		if _, ok := env[want]; !ok {
 			t.Errorf("nextcloud scope is missing %s", want)
@@ -141,17 +153,33 @@ func TestScopedEnvSeparatesPerEngineCredentials(t *testing.T) {
 	}
 }
 
-func TestCoreScopeIsGlobalOnly(t *testing.T) {
+// The deployment-wide environment is what artifact start, stop and rollback
+// read back, so it must carry the global keys and nothing a cask owns.
+func TestGlobalEnvIsGlobalOnly(t *testing.T) {
 	a := scopeTestApp()
-	env := a.scopedEnv("core")
+	env := a.globalEnv()
 	if _, ok := env["POSTGRES_PASSWORD"]; ok {
-		t.Error("core scope must not contain other casks' secrets")
+		t.Error("global env must not contain a cask's secrets")
 	}
-	if _, ok := env["HOST_IP"]; !ok {
-		t.Error("core scope must contain core-derived keys")
+	for _, want := range []string{"HOST_IP", "DEFAULT_GATEWAY_IP", "BASE_DOMAIN"} {
+		if _, ok := env[want]; !ok {
+			t.Errorf("global env is missing %s", want)
+		}
 	}
-	if _, ok := env["BASE_DOMAIN"]; !ok {
-		t.Error("core scope must contain global keys")
+}
+
+// Host facts are visible to every cask through their ownership, not through a
+// dependency edge each cask had to be given. Nothing here depends on whoever
+// discovered them.
+func TestGlobalKeysReachCasksWithoutAnEdge(t *testing.T) {
+	a := scopeTestApp()
+	for _, name := range []string{"traefik", "postgres", "nextcloud", "ddns_go"} {
+		env := a.scopedEnv(name)
+		for _, want := range []string{"HOST_IP", "DEFAULT_GATEWAY_IP", "BASE_DOMAIN"} {
+			if _, ok := env[want]; !ok {
+				t.Errorf("%s scope is missing globally owned %s", name, want)
+			}
+		}
 	}
 }
 
@@ -179,12 +207,11 @@ func TestApplyCalculatePatchEnforcesExports(t *testing.T) {
 		t.Fatalf("exported write rejected: %v", err)
 	}
 
-	core := a.reg["core"]
-	if err := a.applyCalculatePatch(core, map[string]string{"ANY_GLOBAL": "v"}); err != nil {
-		t.Fatalf("core write rejected: %v", err)
-	}
-	if a.envOwner["ANY_GLOBAL"] != "core" {
-		t.Fatalf("core-written key owner = %q", a.envOwner["ANY_GLOBAL"])
+	// No cask may write an unprefixed key it has not declared. This used to be
+	// exempted for one cask named "core", which is why a deployment-wide value
+	// could appear from a bundle with nothing declaring it.
+	if err := a.applyCalculatePatch(a.reg["traefik"], map[string]string{"ANY_GLOBAL": "v"}); err == nil {
+		t.Fatal("an undeclared unprefixed write was accepted")
 	}
 }
 

@@ -8,7 +8,7 @@ modules:
   - traefik
 
 global:
-  domain: backup.test
+  base_domain: backup.test
   email: admin@backup.test
   timezone: Asia/Shanghai
   virtual_domain: true

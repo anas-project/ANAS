@@ -58,9 +58,9 @@ ANAS 将身份目录和文件服务分开：
 
 - Samba DC 数据、SYSVOL 和域数据库存放在`${DATA_PATH}/samba_dc/var`。
 - Samba FS 的域成员状态存放在`${DATA_PATH}/samba_fs/var`。
-- 用户文件存放在`${USERDATA_PATH}`，默认是`${DATA_PATH}/userdata`。
+- 用户文件存放在`${SAMBA_FS_USERDATA_PATH}`，固定为`${DATA_PATH}/userdata`，在容器内挂载为`/userdata`。
 - 用户私有目录为`Home/<用户名>`，首次访问时创建，权限为`0700`。
-- 公共共享目录为`Share`，默认不允许匿名访问。设置`SHARE_GUEST_READ_ONLY=Yes`后，guest映射为本地`nobody`，并递归获得`r-X` ACL，所以可以浏览目录和读取文件，但不能写入。guest ACL状态保存在`${USERDATA_PATH}/.anas-share-guest-acl-state`；只有开关变化时才递归扫描Share，普通容器重启不会遍历全部文件。首次切换大型目录时仍会产生一次较高的元数据I/O。
+- 公共共享目录为`Share`，默认不允许匿名访问。设置`SHARE_GUEST_READ_ONLY=Yes`后，guest映射为本地`nobody`，并递归获得`r-X` ACL，所以可以浏览目录和读取文件，但不能写入。guest ACL状态保存在`${SAMBA_FS_USERDATA_PATH}/.anas-share-guest-acl-state`；只有开关变化时才递归扫描Share，普通容器重启不会遍历全部文件。首次切换大型目录时仍会产生一次较高的元数据I/O。
 
 目录结构中的组分为三类：
 

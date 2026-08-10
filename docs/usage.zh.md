@@ -146,7 +146,7 @@ anas deployments inspect <id>
 `ANAS_CASK_ROOT`（见第二节）：
 
 ```bash
-anas config set core.timezone Europe/Berlin -w /srv/anas
+anas config set global.timezone Europe/Berlin -w /srv/anas
 anas config explain nextcloud.domain_prefix        # 改它的代价是什么
 anas config plan -w /srv/anas                      # 当前待应用的改动会做什么
 ```

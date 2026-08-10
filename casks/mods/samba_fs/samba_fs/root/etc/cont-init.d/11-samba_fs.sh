@@ -71,7 +71,7 @@ else
   export GLOBAL_RECYCLE=""
 fi
 
-smb_variables='${GLOBAL_RECYCLE} ${SAMBA_DC_REALM} ${SAMBA_DC_WORKGROUP} ${SAMBA_FS_ADMIN_USERS} ${SAMBA_FS_INTERFACES} ${SAMBA_FS_LOG_LEVEL} ${SAMBA_FS_NETBIOS_NAME} ${SAMBA_FS_SHARE_VALID_USERS} ${SAMBA_FS_SHARE_WRITE_LIST} ${SAMBA_FS_USE_DEFAULT_DOMAIN} ${SHARE_DIR_NAME} ${SHARE_GUEST_READ_ONLY} ${USERDATA_NAME}'
+smb_variables='${GLOBAL_RECYCLE} ${SAMBA_DC_REALM} ${SAMBA_DC_WORKGROUP} ${SAMBA_FS_ADMIN_USERS} ${SAMBA_FS_INTERFACES} ${SAMBA_FS_LOG_LEVEL} ${SAMBA_FS_NETBIOS_NAME} ${SAMBA_FS_SHARE_VALID_USERS} ${SAMBA_FS_SHARE_WRITE_LIST} ${SAMBA_FS_USE_DEFAULT_DOMAIN} ${SHARE_DIR_NAME} ${SHARE_GUEST_READ_ONLY}'
 for name in $(printf '%s\n' "$smb_variables" | grep -o '[A-Z][A-Z0-9_]*'); do
   eval 'present=${'"$name"'+x}'
   if [[ "$present" != x ]]; then
@@ -148,5 +148,5 @@ mkdir -p /var/lib/samba/private /var/log/samba
 join_domain
 
 echo "Create share"
-mkdir -p /$USERDATA_NAME/$SHARE_DIR_NAME
-mkdir -p /$USERDATA_NAME/Home
+mkdir -p /userdata/$SHARE_DIR_NAME
+mkdir -p /userdata/Home

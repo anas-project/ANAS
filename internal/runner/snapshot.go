@@ -108,9 +108,50 @@ type snapshotMeta struct {
 	// ladder actually produced deployment/, because the three have very
 	// different disk costs and only the last is independent of the source.
 	ArtifactCopy string `yaml:"artifact_copy,omitempty" json:"artifact_copy,omitempty"`
+	// Coverage names every tree the workspace holds and says whether this
+	// snapshot captured it. It exists because the answer is routinely "no" for
+	// userdata and a snapshot that does not say so is claiming more than it
+	// has: a restore would report success while leaving the largest tree in
+	// the workspace untouched, and nothing on disk would record that.
+	Coverage []snapshotCoverage `yaml:"coverage,omitempty" json:"coverage,omitempty"`
 	// Complete is written last. Anything without it is the debris of an
 	// interrupted create and must never be restored.
 	Complete bool `yaml:"complete" json:"complete"`
+}
+
+// snapshotCoverage is one tree's verdict.
+type snapshotCoverage struct {
+	Tree     string `yaml:"tree" json:"tree"`
+	Path     string `yaml:"path" json:"path"`
+	Captured bool   `yaml:"captured" json:"captured"`
+	// Reason is set when Captured is false, and distinguishes "this snapshot
+	// was not meant to carry it" from "it could not be carried".
+	Reason string `yaml:"reason,omitempty" json:"reason,omitempty"`
+}
+
+const (
+	snapshotTreeData     = "data"
+	snapshotTreeUserData = "userdata"
+
+	// coverageReasonExcluded is the ordinary case rather than a fault: a
+	// snapshot taken to make a deployment reversible has no business carrying
+	// user content, because restoring it would undo work nobody asked to undo.
+	coverageReasonExcluded      = "excluded"
+	coverageReasonNotSubvolume  = "not_a_subvolume"
+	coverageReasonMissing       = "missing"
+	coverageReasonSnapshotError = "snapshot_failed"
+)
+
+// capturedTree reports whether the snapshot holds the named tree.
+func (m snapshotMeta) capturedTree(tree string) bool {
+	for _, entry := range m.Coverage {
+		if entry.Tree == tree {
+			return entry.Captured
+		}
+	}
+	// Coverage is absent on nothing this version writes; data is always
+	// captured, so treating it as present keeps the accessor total.
+	return tree == snapshotTreeData
 }
 
 const (
@@ -132,6 +173,7 @@ func snapshotMetaFile(root string) string     { return filepath.Join(root, "snap
 func snapshotMetaDir(root string) string      { return filepath.Join(root, "meta") }
 func snapshotArtifactDir(root string) string  { return filepath.Join(root, "deployment") }
 func snapshotDataPath(root string) string     { return filepath.Join(root, "data") }
+func snapshotUserDataPath(root string) string { return filepath.Join(root, "userdata") }
 func snapshotIndexPath(base string) string    { return filepath.Join(base, "state", "snapshots.yml") }
 func snapshotMetaEntry(root, n string) string { return filepath.Join(snapshotMetaDir(root), n) }
 func deploymentArtifactDir(base, id string) string {
@@ -221,6 +263,12 @@ type snapshotOptions struct {
 	from string
 	to   string
 	json bool
+	// includeUserData is off by default, including for every automatic
+	// snapshot. Those exist to make a deployment reversible, and user content
+	// is not part of a deployment: capturing it would invite a restore that
+	// deletes documents written since, which is not something a rollback
+	// should ever be able to do by accident.
+	includeUserData bool
 }
 
 // createSnapshot builds a snapshot in snapshots/.tmp-<id>/, flushes it, renames
@@ -304,6 +352,29 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 		cleanup()
 		return nil, failuref("data_snapshot_failed", "create Btrfs data snapshot: %v", err)
 	}
+	coverage := []snapshotCoverage{{Tree: snapshotTreeData, Path: source, Captured: true}}
+
+	userSource := userDataDir(workspace)
+	userEntry := snapshotCoverage{Tree: snapshotTreeUserData, Path: userSource}
+	switch {
+	case !opts.includeUserData:
+		userEntry.Reason = coverageReasonExcluded
+	case !exists(userSource):
+		userEntry.Reason = coverageReasonMissing
+	case btrfsSubvolumeShow(userSource) != nil:
+		// Refusing outright would make a workspace whose user content sits on
+		// an ext4 disk unable to snapshot anything at all, which is worse than
+		// snapshotting what can be snapshotted and saying what was left out.
+		userEntry.Reason = coverageReasonNotSubvolume
+	default:
+		emitProgress(opts.json, "snapshot-userdata", 0, 0, "bytes")
+		if err := runBtrfs("subvolume", "snapshot", "-r", userSource, snapshotUserDataPath(tmp)); err != nil {
+			cleanup()
+			return nil, failuref("userdata_snapshot_failed", "create Btrfs user data snapshot: %v", err)
+		}
+		userEntry.Captured = true
+	}
+	coverage = append(coverage, userEntry)
 
 	manifest, err := loadDeploymentManifest(artifact)
 	if err != nil {
@@ -332,7 +403,7 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 		Source: source, Path: snapshotDataPath(final),
 		FromDeployment: opts.from, ToDeployment: opts.to,
 		DeploymentID: deploymentID, ConfigDigest: configDigest, LockDigest: lockDigest,
-		Casks: casks, ArtifactCopy: method, Complete: false,
+		Casks: casks, ArtifactCopy: method, Coverage: coverage, Complete: false,
 	}
 	if err := writeYAMLAtomic(snapshotMetaFile(tmp), &meta, 0600); err != nil {
 		cleanup()
@@ -484,12 +555,20 @@ func fileDigest(path string) (string, error) {
 // first and through btrfs: a read-only snapshot's contents cannot be unlinked,
 // so an ordinary recursive delete fails on every file in it.
 func removeSnapshotTree(root string) error {
-	data := snapshotDataPath(root)
-	if exists(data) {
-		if err := btrfsSubvolumeShow(data); err == nil {
-			if err := runBtrfs("subvolume", "delete", data); err != nil {
-				return describeSubvolumeDeleteFailure(data, err)
-			}
+	// Every captured tree, not just data: a received or snapshotted subvolume
+	// is read-only, so os.RemoveAll cannot touch what is inside it and the
+	// delete fails with a bare "Read-only file system". Missing userdata here
+	// would make `snapshot delete` and `prune` fail on exactly the snapshots
+	// that carry the files worth keeping.
+	for _, path := range []string{snapshotDataPath(root), snapshotUserDataPath(root)} {
+		if !exists(path) {
+			continue
+		}
+		if err := btrfsSubvolumeShow(path); err != nil {
+			continue
+		}
+		if err := runBtrfs("subvolume", "delete", path); err != nil {
+			return describeSubvolumeDeleteFailure(path, err)
 		}
 	}
 	return os.RemoveAll(root)
@@ -586,10 +665,13 @@ func snapshotsToPrune(all []snapshotMeta, keep int) (collect []snapshotMeta, ret
 // through editing the file that snapshots exist to protect them from.
 func workspaceKeepAuto(workspace string) int {
 	cfg, err := config.Load(workspaceConfigPath(workspace))
-	if err != nil || cfg.Rollback.Snapshot.KeepAuto == nil {
+	if err != nil {
 		return snapshotDefaultKeepAuto
 	}
-	keep := *cfg.Rollback.Snapshot.KeepAuto
+	keep, set := cfg.Rollback.Snapshot.KeepAuto.Value()
+	if !set {
+		return snapshotDefaultKeepAuto
+	}
 	if keep < 0 {
 		return 0
 	}

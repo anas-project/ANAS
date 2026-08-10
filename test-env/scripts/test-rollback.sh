@@ -60,7 +60,7 @@ running_containers() {
   date -u +%Y-%m-%dT%H:%M:%SZ >"$ws/data/$marker"
 
   echo "== R1: change configuration only, no version change =="
-  run_anas config set core.timezone Europe/Berlin -w "$ws"
+  run_anas config set global.timezone Europe/Berlin -w "$ws"
   run_anas apply --build -w "$ws" --update-lock
   second=$(active_deployment)
   echo "second deployment: $second"

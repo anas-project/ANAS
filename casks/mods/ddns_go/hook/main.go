@@ -281,23 +281,34 @@ func contains(list []string, want string) bool {
 // publishWebRoute exposes the interface through Traefik without exposing the
 // port itself.
 //
-// Host networking is what lets ddns-go see the host's IPv6 address, but it
-// also puts the listener on the host rather than on a Docker network, where
-// binding 0.0.0.0 would make it reachable from the LAN and bypass the gate
-// entirely. Binding the shared network's gateway address instead keeps it
-// reachable from containers on that network -- Traefik included -- and from
-// nowhere else.
+// Host networking is what lets ddns-go see the host's IPv6 address, which also
+// puts the listener on the host rather than on a Docker network. Traefik
+// therefore cannot discover it and is told where to go instead.
 func publishWebRoute(e map[string]string) error {
 	if e[key("WEB_ENABLED")] != "true" {
 		// -noweb: nothing listens, so nothing is routed.
 		e[key("WEB_LISTEN")] = ""
+		e[key("WEB_TARGET")] = ""
 		return nil
 	}
-	gateway := strings.TrimSpace(e["TRAEFIK_GATEWAY_IP"])
-	if gateway == "" {
-		return fmt.Errorf("ddns_go: TRAEFIK_GATEWAY_IP is empty, so the web interface has no address that is reachable from Traefik but not from the LAN;\nset services.ddns_go.env.web_enabled to \"false\" to run without an interface")
+	// The interface binds every address rather than one that only Traefik can
+	// reach. It used to bind Traefik's bridge gateway so the LAN could not
+	// reach it at all, which is what forced Traefik's subnet to be pinned: a
+	// host-network process cannot discover an address on a network that does
+	// not exist yet, so the address had to be decided before anything started.
+	//
+	// That defence is not what protects this interface. reconcileWebCredentials
+	// configures ddns-go's own login with the deployment's administrator name
+	// and password, so the interface authenticates on its own, and the
+	// forward-auth gate in front of the Traefik route is a second layer. Paying
+	// for a third with a pinned subnet -- which collides with whatever else the
+	// host runs -- buys less than it costs.
+	host := strings.TrimSpace(e["HOST_IP"])
+	if host == "" {
+		return fmt.Errorf("ddns_go: HOST_IP is empty, so Traefik has no address to route the web interface to;\nset global.host_ip, or set services.ddns_go.env.web_enabled to \"false\" to run without an interface")
 	}
-	e[key("WEB_LISTEN")] = gateway + ":" + e[key("WEB_PORT")]
+	e[key("WEB_LISTEN")] = ":" + e[key("WEB_PORT")]
+	e[key("WEB_TARGET")] = host + ":" + e[key("WEB_PORT")]
 
 	middleware := strings.TrimSpace(e["ANAS_FORWARD_AUTH_MIDDLEWARE"])
 	if middleware == "" {
@@ -305,7 +316,9 @@ func publishWebRoute(e map[string]string) error {
 	}
 	const route = "ANAS_TRAEFIK_ROUTE__DDNS_GO__"
 	e[route+"RULE"] = "Host(`" + e[key("DOMAIN")] + "`)"
-	e[route+"URL"] = "http://" + e[key("WEB_LISTEN")]
+	// Traefik dials the host by address; the listener itself binds every
+	// interface, so the two are not the same string.
+	e[route+"URL"] = "http://" + e[key("WEB_TARGET")]
 	e[route+"MIDDLEWARES"] = middleware
 	return nil
 }
@@ -326,12 +339,12 @@ func desiredRecords(e map[string]string) (string, error) {
 	}
 	// IPv4 and IPv6 are independent intents, not alternatives: a dual-stack
 	// host needs both A and AAAA for the same name.
-	wantV4 := e["IPv4"] != "false"
+	wantV4 := wantAddressFamily(e, "IPV4")
 	// Asking for AAAA records on a host with no IPv6 of its own produces
 	// nothing but a permanently failing updater, so intent is intersected with
 	// what core actually found. Recording the downgrade in the environment
 	// keeps it auditable rather than silent.
-	wantV6 := e["IPv6"] != "false" && e["HOST_HAS_IPV6"] == "true"
+	wantV6 := wantAddressFamily(e, "IPV6") && e["HOST_HAS_IPV6"] == "true"
 	e[key("IPV6_AVAILABLE")] = boolValue(wantV6)
 	if !wantV4 && !wantV6 {
 		return "", fmt.Errorf("ddns_go: there is nothing to update: IPv4 is disabled and this host has no global IPv6 address")
@@ -389,4 +402,18 @@ func boolValue(v bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+// wantAddressFamily reads an address-family intent the way the global schema
+// declares it: ipv4 and ipv6 default to true, so anything that is not an
+// explicit "false" means enabled.
+//
+// The polarity has to match the schema default, and the two DDNS casks used to
+// disagree about it -- this one treated an absent value as enabled, the other
+// as disabled. Nothing went wrong only because the schema always supplied an
+// explicit "true"; the day that default changed or the key went missing, the
+// same config would have meant opposite things depending on which
+// implementation was selected.
+func wantAddressFamily(e map[string]string, key string) bool {
+	return e[key] != "false"
 }

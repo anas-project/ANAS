@@ -17,8 +17,8 @@ CLI 不把“写入配置文件”和“让运行中的服务生效”混为一�
 # 修改模块参数；只写配置，不直接操作运行服务
 anas config set -c config.yml samba_dc.user_min_pass_length 10
 
-# core 的非 global 参数会写入顶层 env
-anas config set -c config.yml core.share_guest_read_only Yes
+# 以裸 env 名声明的 cask 参数会写入顶层 env
+anas config set -c config.yml samba_fs.share_guest_read_only Yes
 
 # 查看生命周期、是否敏感和应执行的动作
 anas config explain samba_dc.user_min_pass_length

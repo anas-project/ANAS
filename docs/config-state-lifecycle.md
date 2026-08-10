@@ -23,7 +23,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 
 | 模块 | 当前持久状态 | 判断与处理建议 |
 | --- | --- | --- |
-| `core` | `${base}/secrets.generated.yml`、`cask.lock.yml`、`release/` | generated secrets 是关键状态；lock 是升级元数据；release 可重建。新增 applied state。 |
+| runner 自身 | `${base}/secrets.generated.yml`、`cask.lock.yml`、`release/` | generated secrets 是关键状态；lock 是升级元数据；release 可重建。新增 applied state。 |
 | `collabora` | 无 | 无关键本地状态。 |
 | `ddns` | `/updater/data` 未挂载 | 当前主要损失是历史/缓存；若启用备份或依赖更新历史，应挂载为可选运行状态。 |
 | `eturnal` | `TURN_SECRET` 在 generated secrets | 已满足稳定密钥要求，无业务卷。 |
@@ -38,7 +38,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 | `nextcloud` | `${NEXTCLOUD_BASE_PATH}/nextcloud`、Redis 数据、外部数据库、`.anas-state` 标记 | Nextcloud 数据目录和数据库必须一致备份；Redis 可重建；Memories 标记正确地跟随数据卷。Talk 的 signaling `hashkey/blockkey` 已改为 generated secrets。 |
 | `postgres` | `${DATA_PATH}/postgres` | 关键数据库状态；首次初始化脚本保留，同时增加一次性在线 reconciler，后续新增模块也能幂等创建数据库。 |
 | `samba_dc` | `${DATA_PATH}/samba_dc/var`、generated secrets | AD 数据库、BIND9-DLZ DNS、域 SID、机器账户、GPO、用户/组、内部 TLS 是关键状态；BIND 配置和缓存可由 cask 重建。 |
-| `samba_fs` | `${USERDATA_PATH}`、`${DATA_PATH}/samba_fs/var`、guest ACL 状态文件 | 用户文件是关键数据；member join 状态可重建但应持久化；guest ACL 标记与 userdata 同卷，可避免每次启动递归扫描，当前方向正确。 |
+| `samba_fs` | `${SAMBA_FS_USERDATA_PATH}`、`${DATA_PATH}/samba_fs/var`、guest ACL 状态文件 | 用户文件是关键数据；member join 状态可重建但应持久化；guest ACL 标记与 userdata 同卷，可避免每次启动递归扫描，当前方向正确。 |
 | `traefik` | 无；只读使用 lego 证书 | 路由配置可重建，无独立关键状态。 |
 
 ### runner 自身状态
@@ -60,7 +60,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 
 | 范围 | 设置 | 当前实际行为 | 正确动作 |
 | --- | --- | --- | --- |
-| 存储根目录 | `DATA_PATH`、`USERDATA_PATH`、`NEXTCLOUD_BASE_PATH`、`LEGO_DATA_PATH` | 修改后指向另一套目录，常表现为“全新实例”，不会搬迁旧数据 | `migrate-storage`，校验容量、停止写入、复制、校验、切换、回滚 |
+| 存储根目录 | `DATA_PATH`、`SAMBA_FS_USERDATA_PATH`、`NEXTCLOUD_BASE_PATH`、`LEGO_DATA_PATH` | 修改后指向另一套目录，常表现为“全新实例”，不会搬迁旧数据 | `migrate-storage`，校验容量、停止写入、复制、校验、切换、回滚 |
 | PostgreSQL | `POSTGRES_USERNAME`、`POSTGRES_PASSWORD` | 官方 entrypoint 只对空 PGDATA 初始化；后改 env 不会改数据库角色密码 | `rotate-credential` 或 SQL reconciler |
 | PostgreSQL | 依赖模块的 `*_DB_NAME` | 生成的 initdb 脚本只在空 PGDATA 执行；数据库已运行后新增模块不会得到新库 | 在线、幂等的 `ensure-databases` reconciler |
 | MariaDB | `MARIADB_ROOT_PASSWORD` | `/config` 首次初始化后，改 env 不会自动改现存 root 密码 | 数据库内轮换后，再原子更新消费者凭据 |

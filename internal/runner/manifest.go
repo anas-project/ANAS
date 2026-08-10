@@ -135,6 +135,33 @@ type manifestConfig struct {
 	// Exports lists env keys (exact or trailing-* glob) outside the cask's own
 	// prefix that its calculate hook is allowed to publish.
 	Exports []string `yaml:"exports"`
+	// Types declares what a parameter accepts, so a wrong value is refused when
+	// it is set rather than discovered at render time -- or not discovered at
+	// all, which is what happens to a value nothing validates.
+	Types map[string]manifestParamType `yaml:"types"`
+}
+
+// manifestParamType is written either as a bare kind (`log_level: int`) or as a
+// mapping carrying an enumeration (`share_access_mode: {enum: [...]}`). The
+// short form is what most parameters need and the long form is what an
+// enumeration requires, so both are accepted rather than forcing every
+// declaration into the verbose shape.
+type manifestParamType struct {
+	Kind string   `yaml:"kind"`
+	Enum []string `yaml:"enum"`
+}
+
+func (t *manifestParamType) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		return node.Decode(&t.Kind)
+	}
+	type raw manifestParamType
+	var out raw
+	if err := node.Decode(&out); err != nil {
+		return err
+	}
+	*t = manifestParamType(out)
+	return nil
 }
 
 type manifestChangePolicy struct {
@@ -144,15 +171,17 @@ type manifestChangePolicy struct {
 	Sensitive   bool   `yaml:"sensitive"`
 }
 
+// manifestFeatures is decoded with KnownFields(true), so every key a cask may
+// write has to appear here. Only HostLAN reaches the runner; the rest are
+// declarations casks make about themselves that nothing yet consults.
 type manifestFeatures struct {
-	LDAPProvider         bool     `yaml:"ldap_provider"`
-	GeneratedSecrets     bool     `yaml:"generated_secrets"`
-	Domain               bool     `yaml:"domain"`
-	HostLAN              string   `yaml:"host_lan"`
-	HostNetworkDiscovery bool     `yaml:"host_network_discovery"`
-	KerberosEnv          bool     `yaml:"kerberos_env"`
-	AfterStart           string   `yaml:"after_start"`
-	Special              []string `yaml:"special_files"`
+	LDAPProvider     bool     `yaml:"ldap_provider"`
+	GeneratedSecrets bool     `yaml:"generated_secrets"`
+	Domain           bool     `yaml:"domain"`
+	HostLAN          string   `yaml:"host_lan"`
+	KerberosEnv      bool     `yaml:"kerberos_env"`
+	AfterStart       string   `yaml:"after_start"`
+	Special          []string `yaml:"special_files"`
 }
 
 // manifestIdentity declares direct identity protocols used by a cask. IAM
@@ -201,9 +230,6 @@ func loadRegistryDir(casksRoot string) (map[string]Module, error) {
 			return nil, err
 		}
 		reg[mod.Name] = mod
-	}
-	if _, ok := reg["core"]; !ok {
-		return nil, fmt.Errorf("missing core cask")
 	}
 	return reg, nil
 }
@@ -377,6 +403,10 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if err != nil {
 		return Module{}, err
 	}
+	types, err := normalizeParamTypes(dirname, manifest.Config.Types)
+	if err != nil {
+		return Module{}, err
+	}
 	provides, err := normalizeProvidedCapabilities(dirname, manifest.Capabilities.Provides)
 	if err != nil {
 		return Module{}, err
@@ -393,8 +423,10 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		DataBreaking:         cloneStringListPointer(manifest.Upgrade.DataBreaking),
 		SourceDir:            dir,
 		EnvPrefix:            envPrefix,
-		Defaults:             normalizeDefaults(manifest.Name, envPrefix, manifest.Config.Defaults),
-		Required:             normalizeRequired(manifest.Name, envPrefix, manifest.Config.Required),
+		Defaults:             normalizeDefaults(manifest.Name, envPrefix, exports, manifest.Config.Defaults),
+		Required:             normalizeRequired(manifest.Name, envPrefix, exports, manifest.Config.Required),
+		Parameters:           declaredParameters(manifest.Config),
+		Types:                types,
 		Consumes:             consumes,
 		Exports:              exports,
 		Changes:              changes,
@@ -411,6 +443,37 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		ComposeFile:          composeFile,
 	}
 	return mod, nil
+}
+
+// normalizeParamTypes validates the declarations themselves. A type nobody can
+// satisfy -- an unknown kind, or an enumeration with no members -- would reject
+// every value including the cask's own default, so it is refused when the cask
+// is loaded rather than when somebody tries to set the parameter.
+func normalizeParamTypes(cask string, in map[string]manifestParamType) (map[string]ParamType, error) {
+	out := map[string]ParamType{}
+	for name, declared := range in {
+		kind := strings.ToLower(strings.TrimSpace(declared.Kind))
+		enum := []string{}
+		for _, value := range declared.Enum {
+			if value = strings.TrimSpace(value); value != "" {
+				enum = append(enum, value)
+			}
+		}
+		if len(enum) > 0 && kind == "" {
+			kind = "enum"
+		}
+		switch kind {
+		case "string", "bool", "int":
+		case "enum":
+			if len(enum) == 0 {
+				return nil, fmt.Errorf("cask %q config.types.%s is an enum with no values", cask, name)
+			}
+		default:
+			return nil, fmt.Errorf("cask %q config.types.%s has unknown type %q; use string, bool, int or enum", cask, name, declared.Kind)
+		}
+		out[strings.ToLower(strings.TrimSpace(name))] = ParamType{Kind: kind, Enum: enum}
+	}
+	return out, nil
 }
 
 func normalizeIdentityInterfaces(in []string) []string {
@@ -462,18 +525,18 @@ func normalizeManifestDependencies(in []manifestDependency) []Dependency {
 	return out
 }
 
-func normalizeDefaults(module, prefix string, in map[string]any) map[string]string {
+func normalizeDefaults(module, prefix string, exports []string, in map[string]any) map[string]string {
 	out := map[string]string{}
 	for k, v := range in {
-		out[paramEnvKey(module, prefix, k)] = config.Scalar(v)
+		out[caskParamEnvKey(module, prefix, exports, k)] = config.Scalar(v)
 	}
 	return out
 }
 
-func normalizeRequired(module, prefix string, in []string) []string {
+func normalizeRequired(module, prefix string, exports []string, in []string) []string {
 	out := []string{}
 	for _, k := range in {
-		out = append(out, paramEnvKey(module, prefix, k))
+		out = append(out, caskParamEnvKey(module, prefix, exports, k))
 	}
 	return out
 }
@@ -522,6 +585,20 @@ func matchEnvPattern(patterns []string, key string) bool {
 	return false
 }
 
+// caskParamEnvKey maps a cask's manifest parameter name to the env key it
+// produces. A cask's parameters normally acquire its prefix; one whose bare env
+// name the cask lists in `config.exports` keeps that bare name instead. That is
+// how a parameter genuinely owned by one cask can still be addressed by the
+// name people use for it -- SHARE_ACCESS_MODE, not SAMBA_FS_SHARE_ACCESS_MODE
+// -- without moving it back into the deployment-wide namespace, and without
+// manifests having to spell parameters in two different cases.
+func caskParamEnvKey(module, prefix string, exports []string, key string) string {
+	if bare := globalParamEnv(key); contains(exports, bare) {
+		return bare
+	}
+	return paramEnvKey(module, prefix, key)
+}
+
 func paramEnvKey(module, prefix, key string) string {
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -533,28 +610,18 @@ func paramEnvKey(module, prefix, key string) string {
 	if isEnvKey(key) {
 		return key
 	}
-	if module == "core" {
+	if module == globalScope {
 		return globalParamEnv(key)
 	}
 	p := strings.ToUpper(strings.ReplaceAll(prefix, "-", "_"))
 	return p + "_" + strings.ToUpper(key)
 }
 
+// globalParamEnv is the runner's view of the one mapping, which lives in
+// internal/config beside the struct it describes. It used to be a second copy
+// of the same switch, and the copies had already drifted apart.
 func globalParamEnv(key string) string {
-	switch strings.ToLower(key) {
-	case "domain", "base_domain":
-		return "BASE_DOMAIN"
-	case "email":
-		return "EMAIL"
-	case "timezone", "tz":
-		return "TZ"
-	case "ipv4":
-		return "IPv4"
-	case "ipv6":
-		return "IPv6"
-	default:
-		return strings.ToUpper(key)
-	}
+	return config.EnvKey(key)
 }
 
 func isEnvKey(key string) bool {
@@ -566,5 +633,5 @@ func isEnvKey(key string) bool {
 			return false
 		}
 	}
-	return strings.Contains(key, "_") || key == "IPv4" || key == "IPv6" || strings.ToUpper(key) == key
+	return strings.Contains(key, "_") || strings.ToUpper(key) == key
 }

@@ -42,7 +42,10 @@ Important files:
   `restart`, and `stop`.
 - `internal/runner/manifest.go`: loads cask manifests and validates the cask ABI.
 - `internal/runner/hook.go`: invokes cask hook programs through the cask ABI.
-- `internal/runner/modules.go`: contains core module metadata types.
+- `internal/runner/modules.go`: contains the cask metadata types.
+- `internal/runner/globals.go` and `globals.yml`: the deployment's own
+  parameter schema, compiled into the runner.
+- `internal/runner/hostnet.go`: host network discovery and macvlan planning.
 - `internal/runner/secrets.go`: persists generated secrets under the runtime
   base path.
 - `internal/runner/network.go`: creates host LAN/macvlan support when required.
@@ -57,7 +60,7 @@ modules:
   - nextcloud
 
 global:
-  domain: nas.example.com
+  base_domain: nas.example.com
   email: admin@example.com
   data_path: /srv/anas
   timezone: Asia/Shanghai
@@ -158,7 +161,7 @@ identity:
   interfaces: [ldaps]
   application_group: true
 features:
-  domain: true
+  base_domain: true
 services:
   optional:
     - name: example_admin
@@ -261,8 +264,8 @@ cask functionality is:
   current ABI support marker, invalid metadata, invalid semantic versions, or
   leftover `runner.rb` files.
 - Build the execution order from cask required dependencies, optional
-  dependency version constraints, order-only `after` rules, implicit `core`,
-  and user-provided `services.<name>.depends_on`.
+  dependency version constraints, order-only `after` rules, and
+  user-provided `services.<name>.depends_on`.
 - Apply manifest defaults after user config is flattened. Defaults use
   lower snake_case names in manifests and become prefixed environment keys such
   as `NEXTCLOUD_DOMAIN_PREFIX`.
@@ -298,12 +301,13 @@ cask functionality is:
 
 Current cask functionality is summarized below. Dependency names listed here are
 the user-visible effect of manifest `requires`, `requires_one`, and `after`
-rules; `core` is also added implicitly for non-core casks.
+rules. There is no implicit dependency: the deployment's own parameters and
+the runner's host discovery are globally owned, so every cask sees them without
+an edge.
 
 | Cask | Category | Current functionality | Dependencies and notes |
 | --- | --- | --- | --- |
-| `core` | system | Provides shared defaults, host and gateway discovery, basic auth hash generation, data path variables, DNS defaults, and VLAN/macvlan env values. | Required implicitly by every non-core cask. |
-| `lego` | certificate | Prepares ACME certificate paths, email, certificate names, and certificate storage used by web and domain services. | Requires DNS provider config through `global.dns_provider`; currently ordered after `core`. |
+| `lego` | certificate | Prepares ACME certificate paths, email, certificate names, and certificate storage used by web and domain services. | Requires DNS provider config through `global.dns_provider`. |
 | `traefik` | network | Builds and runs the HTTPS reverse proxy, dashboard, TLS routing, and basic-auth protected API. Generates service domain env from `domain_prefix`. | Requires `lego`; exposes the shared `traefik` Docker network. |
 | `samba_dc` | identity | Runs an AD-compatible Samba domain controller and BIND9-DLZ DNS in one container; derives DNS forwarders, realm, base DN, LDAP filters, admin DN, app group DN, LDAPS endpoints, and Kerberos settings. | Requires `lego`. Acts as the DNS and LDAP provider for dependent casks. |
 | `samba_fs` | storage | Runs a Samba file server joined to the domain and derives NetBIOS/default-domain settings. | Requires `samba_dc` and host LAN/macvlan. |
@@ -375,7 +379,7 @@ available for template rendering but excludes them from the written `.env`.
 
 Environment access is scoped. A cask's rendered `.env`, its template
 rendering, and its `render_env`/`services`/`after_start` hook input contain
-only: global and core-derived keys, keys owned by the cask itself or its
+only: globally owned keys, keys owned by the cask itself or its
 dependency closure, keys matching those casks' env prefixes, and keys claimed
 in manifest `config.consumes`. User secrets from the config `secrets` section
 are only distributed to casks that claim them. The `calculate` phase is the

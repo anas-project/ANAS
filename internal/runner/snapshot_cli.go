@@ -233,12 +233,13 @@ func runSnapshotCreate(args []string, jsonMode bool) error {
 	f := newSnapshotFlags("create")
 	label := f.fs.String("label", "", "free-text label")
 	reason := f.fs.String("reason", snapshotReasonManual, "why the snapshot was taken")
+	includeUserData := f.fs.Bool("include-userdata", false, "also capture "+workspaceUserDataDir+"/")
 	positional, err := f.parse(args)
 	if err != nil {
 		return err
 	}
 	if len(positional) != 0 {
-		return usageErrorf("usage: anas snapshot create [--label TEXT] [--reason manual] [-w <workspace>] [--json]")
+		return usageErrorf("usage: anas snapshot create [--label TEXT] [--reason manual] [--include-userdata] [-w <workspace>] [--json]")
 	}
 	if !validSnapshotReason(*reason) {
 		return usageErrorf("unknown snapshot reason %q", *reason)
@@ -255,6 +256,7 @@ func runSnapshotCreate(args []string, jsonMode bool) error {
 	defer unlock()
 	meta, err := createSnapshot(workspace, snapshotOptions{
 		kind: snapshotKindManual, reason: *reason, label: *label, json: jsonMode,
+		includeUserData: *includeUserData,
 	})
 	if err != nil {
 		return err
@@ -262,17 +264,78 @@ func runSnapshotCreate(args []string, jsonMode bool) error {
 	return reportSnapshot(workspace, meta, jsonMode)
 }
 
+// resolveUserDataRestore decides whether a restore also replaces user content.
+//
+// The default is no, and it is no in every non-interactive case, because the
+// files at stake were written after the snapshot and have nothing to do with
+// the deployment being restored: rewinding them is a deletion the user did not
+// ask for. -y means "do not ask me", not "do the more destructive thing", so it
+// selects the same default rather than opting in.
+//
+// An interactive operator is asked, because they are the one who knows whether
+// this is a rollback of a bad deploy (keep the files) or a recovery from a bad
+// state (take everything back). The question is only worth asking when the
+// snapshot actually holds user content.
+func resolveUserDataRestore(requested bool, meta *snapshotMeta, yes bool) (bool, error) {
+	captured := meta.capturedTree(snapshotTreeUserData)
+	if requested {
+		if !captured {
+			return false, preconditionErrorf("userdata_not_captured",
+				"--restore-userdata was given, but snapshot %s does not contain %s/: %s",
+				meta.ID, workspaceUserDataDir, describeUserDataCoverage(meta))
+		}
+		return true, nil
+	}
+	if !captured || yes || !isTerminal(os.Stdin.Fd()) {
+		return false, nil
+	}
+	answer, err := confirm(fmt.Sprintf(
+		"Snapshot %s also contains %s/. Replace the current user files with it too?",
+		meta.ID, workspaceUserDataDir), false)
+	if err != nil {
+		return false, failuref("stdin_unavailable", "%s", err.Error())
+	}
+	return answer, nil
+}
+
+// describeUserDataCoverage turns the recorded reason into something an operator
+// can act on, rather than reporting only that the tree is absent.
+func describeUserDataCoverage(meta *snapshotMeta) string {
+	reason := ""
+	for _, entry := range meta.Coverage {
+		if entry.Tree == snapshotTreeUserData {
+			reason = entry.Reason
+		}
+	}
+	switch reason {
+	case coverageReasonExcluded:
+		return "it was taken without --include-userdata"
+	case coverageReasonNotSubvolume:
+		return userDataDirHint()
+	case coverageReasonMissing:
+		return "the workspace had no " + workspaceUserDataDir + "/ when it was taken"
+	default:
+		return "it was taken before user content was captured separately"
+	}
+}
+
+func userDataDirHint() string {
+	return workspaceUserDataDir + "/ is not a Btrfs subvolume, so it cannot be snapshotted; " +
+		"back it up with `anas backup` instead"
+}
+
 // ---------------------------------------------------------------- restore
 
 func runSnapshotRestore(args []string, jsonMode bool) error {
 	f := newSnapshotFlags("restore")
 	dryRun := f.fs.Bool("dry-run", false, "list what would be replaced")
+	restoreUserData := f.fs.Bool("restore-userdata", false, "also replace "+workspaceUserDataDir+"/ from the snapshot")
 	positional, err := f.parse(args)
 	if err != nil {
 		return err
 	}
 	if len(positional) != 1 {
-		return usageErrorf("usage: anas snapshot restore <id> -w <workspace> [--dry-run] [-y] [--json]")
+		return usageErrorf("usage: anas snapshot restore <id> -w <workspace> [--dry-run] [--restore-userdata] [-y] [--json]")
 	}
 	// Restoring is the one command that replaces live data, and ANAS_WORKSPACE
 	// set once in a shell profile is the easiest thing to leave stale and
@@ -287,7 +350,7 @@ func runSnapshotRestore(args []string, jsonMode bool) error {
 		return err
 	}
 	if *dryRun {
-		targets := restoreTargets(workspace, meta)
+		targets := restoreTargets(workspace, meta, *restoreUserData && meta.capturedTree(snapshotTreeUserData))
 		if jsonMode {
 			return emitJSON(map[string]any{
 				"api_version": cliAPIVersion, "ok": true, "dry_run": true,
@@ -304,12 +367,16 @@ func runSnapshotRestore(args []string, jsonMode bool) error {
 	if err := confirmDestructive(fmt.Sprintf("Restore %s over %s, replacing its data", meta.ID, workspace), *f.yes); err != nil {
 		return err
 	}
+	wantUserData, err := resolveUserDataRestore(*restoreUserData, meta, *f.yes)
+	if err != nil {
+		return err
+	}
 	unlock, err := acquireRuntimeLock(stateDir(workspace))
 	if err != nil {
 		return failuref("lock_failed", "%s", err.Error())
 	}
 	defer unlock()
-	outcome, err := restoreSnapshot(workspace, meta, jsonMode)
+	outcome, err := restoreSnapshot(workspace, meta, wantUserData, jsonMode)
 	if err != nil {
 		return err
 	}

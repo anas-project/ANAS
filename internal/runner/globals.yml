@@ -1,0 +1,48 @@
+# Parameters that belong to the deployment rather than to any cask.
+#
+# This is a schema, not a bundle. It has no version, no digest and no ABI,
+# because nothing ships it: it is compiled into the runner, which is the only
+# thing that reads it. It used to be the config block of a "core" cask, which
+# gave these parameters a version number nobody could bump, a hook directory
+# that produced nothing, and an owner name that every scoping rule had to
+# special-case alongside the real global scope.
+#
+# Every key here is published with global ownership, so every cask sees it.
+api_version: anas.dev/v1
+kind: GlobalConfig
+config:
+  # default_service_root_password is deliberately absent: the runner generates
+  # a per-cask password when the config omits it, so requiring it could never
+  # fail and saying otherwise was misleading.
+  required:
+    - base_domain
+    - email
+  defaults:
+    timezone: Asia/Hong_Kong
+    container_prefix: anas_
+    image_prefix: anas_
+    network_prefix: anas_
+    basicauth_user: admin
+    default_language: zh-cn
+    chinese_speedup: "false"
+    ipv4: "true"
+    ipv6: "true"
+    dns_server: 223.5.5.5
+  changes:
+    base_domain:
+      effect: immutable
+      apply: migrate-domain
+      description: Samba realm, SSO issuers, certificates, and application URLs depend on it.
+    timezone:
+      effect: container_recreate
+      apply: recreate-affected-containers
+      description: Containers receive the timezone through their environment.
+    default_service_root_password:
+      effect: credential_rotate
+      apply: rotate-human-admin-passwords
+      sensitive: true
+      description: This is a template for human-facing administrator accounts, not an automatic live password change.
+    dns_server:
+      effect: container_recreate
+      apply: recreate-affected-containers
+      description: DNS settings are injected when containers are created.

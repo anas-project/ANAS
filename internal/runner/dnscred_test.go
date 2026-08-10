@@ -112,9 +112,12 @@ func TestMaterialisedCredentialsDoNotFollowTheDependencyClosure(t *testing.T) {
 			t.Errorf("traefik received %s through lego's dependency closure", key)
 		}
 	}
-	// Non-secret derived values still travel: only the credentials are gated.
-	if _, ok := traefik["LEGO_DNS_PLATFORM"]; !ok {
-		t.Error("marking credentials sensitive also blocked ordinary derived values")
+	// Nor does anything else of lego's, credential or not: a rendered .env now
+	// carries what the cask declares rather than what its dependencies own.
+	// The credential gate still matters, because it also governs the
+	// calculate-phase view that declarations do not.
+	if _, ok := traefik["LEGO_DNS_PLATFORM"]; ok {
+		t.Error("traefik received an undeclared value from lego")
 	}
 }
 

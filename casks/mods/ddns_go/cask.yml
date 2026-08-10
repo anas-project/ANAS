@@ -54,6 +54,13 @@ config:
   # DNS vendor credentials arrive already materialised under this cask's own
   # env prefix, so the prefix rule in envScopeFor grants them and no vendor key
   # needs to be claimed here. Only cross-cask contract keys are consumed.
+  types:
+    web_enabled: bool
+    interval: int
+    ipv4_gettype:
+      enum: [url, netInterface]
+    ipv6_gettype:
+      enum: [url, netInterface]
   consumes:
     - ANAS_FORWARD_AUTH_MIDDLEWARE
   # Traefik's Docker provider cannot see a host-network container, so the route

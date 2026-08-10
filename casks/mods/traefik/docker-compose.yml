@@ -43,7 +43,7 @@ services:
       - "traefik.http.routers.api.rule=Host(`${TRAEFIK_DOMAIN}`)"
       - "traefik.http.routers.api.service=api@internal"
       - "traefik.http.routers.api.middlewares=auth"
-      - "traefik.http.middlewares.auth.basicauth.users=${BASICAUTH_HTPASSWD}"
+      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_BASICAUTH_HTPASSWD}"
       - "traefik.http.routers.api.tls=true"
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
@@ -53,12 +53,7 @@ networks:
   default:
     driver: bridge
     name: ${NETWORK_PREFIX}traefik
-    # A fixed subnet, so the gateway address is known before anything starts.
-    # A service on host networking has to bind to an address that containers on
-    # this network can reach, and Traefik has to be told the same address; with
-    # a Docker-assigned subnet neither side could learn it without discovery at
-    # runtime. Override traefik.subnet if it collides with an existing network.
-    ipam:
-      config:
-        - subnet: ${TRAEFIK_SUBNET}
-          gateway: ${TRAEFIK_GATEWAY_IP}
+    # No fixed subnet: Docker assigns one. It used to be pinned so that a
+    # host-network cask could bind the gateway address and oauth2_proxy could
+    # name this range as its trusted proxy source. Neither needs it now, and a
+    # pin is a standing collision with whatever else the host runs.

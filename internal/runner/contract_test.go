@@ -147,7 +147,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		{"init", []string{"init", fresh, "-y", "--json"}, 0},
 		{"status", []string{"status", "-w", workspace, "--json"}, 0},
 		{"deployments list", []string{"deployments", "list", "-w", workspace, "--json"}, 0},
-		{"config explain", []string{"config", "explain", "global.domain", "--root", root, "--json"}, 0},
+		{"config explain", []string{"config", "explain", "global.base_domain", "--root", root, "--json"}, 0},
 		{"config set", []string{"config", "set", "global.timezone", "UTC", "-w", workspace, "--root", root, "--json"}, 0},
 		{"config plan", []string{"config", "plan", "-w", workspace, "--root", root, "--json"}, 0},
 		{"config secret list", []string{"config", "secret", "list", "-w", workspace, "--json"}, 0},
@@ -351,7 +351,7 @@ func TestHumanOutputStaysOffTheJSONPath(t *testing.T) {
 		{"deployments", "list", "-w", workspace, "--json"},
 		{"config", "plan", "-w", workspace, "--root", root, "--json"},
 		{"config", "secret", "list", "-w", workspace, "--json"},
-		{"config", "explain", "global.domain", "--root", root, "--json"},
+		{"config", "explain", "global.base_domain", "--root", root, "--json"},
 		{"plan", "-c", filepath.Join(root, "config.example.yml"), "--root", root, "--json"},
 	} {
 		label := strings.Join(args, " ")

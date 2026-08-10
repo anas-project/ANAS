@@ -7,7 +7,7 @@ modules:
   - traefik
 
 global:
-  domain: lifecycle.test
+  base_domain: lifecycle.test
   email: admin@lifecycle.test
   timezone: Asia/Shanghai
   virtual_domain: true

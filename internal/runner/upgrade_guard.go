@@ -52,8 +52,8 @@ const (
 // versions; see governingDataBreaking for why.
 //
 // Versions are cask versions, not app_version. That is the granularity
-// validateUpgrade already constrains, and several casks (samba_dc, lego, ddns_updater,
-// core) carry no app_version at all. The two cannot disagree in practice: both
+// validateUpgrade already constrains, and several casks (samba_dc, lego,
+// ddns_updater) carry no app_version at all. The two cannot disagree in practice: both
 // are read out of the same cask.yml, so equal versions always imply equal
 // app_versions.
 //

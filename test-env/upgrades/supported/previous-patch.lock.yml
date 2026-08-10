@@ -1,8 +1,5 @@
 api_version: anas.dev/v1
 casks:
-  core:
-    version: 0.0.0
-    source: casks/mods/core
   lego:
     version: 4.10.0
     source: casks/mods/lego

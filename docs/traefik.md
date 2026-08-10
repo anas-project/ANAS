@@ -94,7 +94,7 @@ TLS证书是由CA（数字证书认证机构）颁发的，我们可以主动向
 * `- "traefik.http.routers.api.rule=Host(`traefik.${BASE_DOMAIN}`)"`: Traefik Dashboard地址
 * `- "traefik.http.routers.api.service=api@internal"`: 在开启dashboard开关后，会自动生成`api@internal`的service
 * `- "traefik.http.routers.api.middlewares=auth"`: 添加dashboard的Basic Auth验证
-* `- "traefik.http.middlewares.auth.basicauth.users=${BASICAUTH_HTPASSWD}"`: 使用`echo $(htpasswd -nb [admin] [password]) | sed -e s/\\$/\\$\\$/g`生成用户名密码，用户名为**admin**，密码为**password**（务必修改）。密码建议由`openssl rand -base64 12`生成
+* `- "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_BASICAUTH_HTPASSWD}"`: 由本 cask 的 hook 生成，用户名取 `BASICAUTH_USER`（默认 **admin**），密码取 `BASICAUTH_PASSWD`，未设置时用该 cask 的 `DEFAULT_SERVICE_ROOT_PASSWORD`。哈希格式为 `{SHA}`；Traefik 也接受 bcrypt，但 bcrypt 每次加盐都会产生新值，而这个值渲染进 Compose label，会导致每次 render 都重建容器——要换算法需要同时把哈希本身存进 secret store。也可以在配置的 `env:` 里直接给出现成的 htpasswd 行（`TRAEFIK_BASICAUTH_HTPASSWD`），此时不再推导。
 * `- "traefik.enable=true"`: 在此container开启traefik
 * `- "traefik.docker.network=traefik"`: 定义使用的docker网络
 

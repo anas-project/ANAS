@@ -412,7 +412,9 @@ func (a *app) publishIAMEnv(selected []string) {
 	}
 	sort.Strings(clients)
 	sort.Strings(appClients)
-	// The topology is a runner-owned cross-cask contract, not core output.
+	// The topology is a runner-owned cross-cask contract rather than the output
+	// of any cask, and unlike the deployment's global parameters it is not for
+	// everyone to read.
 	// Giving it a synthetic owner keeps it out of every dependency closure;
 	// only manifests that explicitly consume a key receive it in their .env.
 	const identityContractOwner = "runner"

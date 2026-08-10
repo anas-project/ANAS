@@ -44,6 +44,14 @@ type backupSource struct {
 	casks        map[string]string
 	// dataPath is what gets sent or copied.
 	dataPath string
+	// userDataPath is the user-content tree, or "" when this backup carries
+	// none -- because the workspace has none, because it could not be captured,
+	// or because the operator asked for a deployment-only backup.
+	//
+	// It is a separate channel rather than part of dataPath because the two are
+	// separate subvolumes with separate restore rules: a backup restore may put
+	// application state back without putting files back over newer ones.
+	userDataPath string
 	// parts are the metadata files, as (source path, destination-relative path).
 	parts []backupPart
 	// synthesizedSnapshot is written verbatim as snapshot.yml when there is no
@@ -63,13 +71,36 @@ func snapshotBackupSource(workspace string, meta *snapshotMeta) *backupSource {
 	return &backupSource{
 		root: root, snapshotID: meta.ID, deploymentID: meta.DeploymentID,
 		configDigest: meta.ConfigDigest, casks: meta.Casks,
-		dataPath: snapshotDataPath(root),
+		dataPath:     snapshotDataPath(root),
+		userDataPath: capturedUserDataPath(root, meta),
 		parts: []backupPart{
 			{src: snapshotMetaFile(root), rel: "snapshot.yml"},
 			{src: snapshotMetaDir(root), rel: "meta", dir: true},
 			{src: snapshotArtifactDir(root), rel: "deployment", dir: true},
 		},
 	}
+}
+
+// existingUserDataPath returns the live user-content tree, or "" when the
+// workspace has none -- a deployment with no file-serving cask never creates
+// one, and an empty channel is the honest way to say so.
+func existingUserDataPath(workspace string) string {
+	path := userDataDir(workspace)
+	if !exists(path) {
+		return ""
+	}
+	return path
+}
+
+// capturedUserDataPath returns the snapshot's user-content tree, or "" when it
+// holds none. The snapshot's own coverage record is the authority: a directory
+// may exist beside it from an interrupted run, and shipping that would put
+// files into a backup that its metadata says are not there.
+func capturedUserDataPath(root string, meta *snapshotMeta) string {
+	if !meta.capturedTree(snapshotTreeUserData) {
+		return ""
+	}
+	return snapshotUserDataPath(root)
 }
 
 // workspaceBackupSource names the pieces of a live workspace that make up the
@@ -121,6 +152,11 @@ func workspaceBackupSource(workspace string) (*backupSource, error) {
 	source := &backupSource{
 		deploymentID: deploymentID, configDigest: configDigest, casks: casks,
 		dataPath: dataDir(workspace),
+		// Copy mode reads the live workspace, so whatever user content is there
+		// is what gets copied. There is no snapshot to consult and nothing to
+		// hold it still, which is the same caveat that already applies to data/
+		// in this mode.
+		userDataPath: existingUserDataPath(workspace),
 		parts: []backupPart{
 			{src: configSource, rel: filepath.Join("meta", snapshotMetaConfigName)},
 			{src: lockPath, rel: filepath.Join("meta", snapshotMetaLockName)},
@@ -200,7 +236,17 @@ func transferBySnapshot(req transferRequest) (*transferResult, error) {
 	if err := runBtrfs("subvolume", "snapshot", "-r", req.source.dataPath, backupDataPath(req.destRoot)); err != nil {
 		return nil, failuref("data_transfer_failed", "snapshot the data into %s: %v", req.destRoot, err)
 	}
-	return &transferResult{bytes: treeSize(req.source.dataPath), channels: []string{backupChannelData, backupChannelMetadata}}, nil
+	channels := []string{backupChannelData, backupChannelMetadata}
+	bytes := treeSize(req.source.dataPath)
+	if req.source.userDataPath != "" {
+		emitProgress(req.json, "snapshot_userdata", 0, 0, "bytes")
+		if err := runBtrfs("subvolume", "snapshot", "-r", req.source.userDataPath, backupUserDataPath(req.destRoot)); err != nil {
+			return nil, failuref("userdata_transfer_failed", "snapshot the user data into %s: %v", req.destRoot, err)
+		}
+		channels = append(channels, backupChannelUserData)
+		bytes += treeSize(req.source.userDataPath)
+	}
+	return &transferResult{bytes: bytes, channels: channels}, nil
 }
 
 // transferBySend pipes `btrfs send` into `btrfs receive`, and carries the
@@ -210,28 +256,53 @@ func transferBySend(req transferRequest) (*transferResult, error) {
 		return nil, err
 	}
 	emitProgress(req.json, "send_stream", 0, 0, "bytes")
-	send := exec.Command("btrfs", sendArgs(req)...)
+	if err := sendSubvolumeInto(req, req.source.dataPath, req.parentSnapshotData); err != nil {
+		return nil, err
+	}
+	channels := []string{backupChannelData, backupChannelMetadata}
+	bytes := treeSize(backupDataPath(req.destRoot))
+	if req.source.userDataPath != "" {
+		emitProgress(req.json, "send_userdata_stream", 0, 0, "bytes")
+		// No parent: incremental sends key off the previous backup's data
+		// subvolume, and there is no corresponding record for user content yet.
+		// A full send is correct but slower, which is a cost worth naming
+		// rather than a bug.
+		if err := sendSubvolumeInto(req, req.source.userDataPath, ""); err != nil {
+			return nil, err
+		}
+		channels = append(channels, backupChannelUserData)
+		bytes += treeSize(backupUserDataPath(req.destRoot))
+	}
+	return &transferResult{bytes: bytes, channels: channels}, nil
+}
+
+// sendSubvolumeInto pipes one `btrfs send` into `btrfs receive`. receive names
+// the arriving subvolume after its source, which is why the workspace layout
+// uses the same names at both ends: data/ arrives as data/ and userdata/ as
+// userdata/, with no rename step to get wrong.
+func sendSubvolumeInto(req transferRequest, subvolume, parent string) error {
+	send := exec.Command("btrfs", sendArgsFor(req, subvolume, parent)...)
 	receive := exec.Command("btrfs", "receive", req.destRoot)
 	pipe, err := send.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	receive.Stdin = pipe
 	receive.Stderr = os.Stderr
 	var sendErrors strings.Builder
 	send.Stderr = &sendErrors
 	if err := receive.Start(); err != nil {
-		return nil, failuref("data_transfer_failed", "start btrfs receive: %v", err)
+		return failuref("data_transfer_failed", "start btrfs receive: %v", err)
 	}
 	if err := send.Run(); err != nil {
 		_ = receive.Process.Kill()
 		_ = receive.Wait()
-		return nil, describeSendFailure(err, sendErrors.String())
+		return describeSendFailure(err, sendErrors.String())
 	}
 	if err := receive.Wait(); err != nil {
-		return nil, failuref("data_transfer_failed", "btrfs receive: %v", err)
+		return failuref("data_transfer_failed", "btrfs receive: %v", err)
 	}
-	return &transferResult{bytes: treeSize(backupDataPath(req.destRoot)), channels: []string{backupChannelData, backupChannelMetadata}}, nil
+	return nil
 }
 
 // transferBySendFile writes the stream to a file. The destination only has to
@@ -242,35 +313,53 @@ func transferBySendFile(req transferRequest) (*transferResult, error) {
 		return nil, err
 	}
 	emitProgress(req.json, "send_stream", 0, 0, "bytes")
-	streamPath := backupStreamPath(req.destRoot)
+	size, err := sendSubvolumeToFile(req, req.source.dataPath, req.parentSnapshotData, backupStreamPath(req.destRoot))
+	if err != nil {
+		return nil, err
+	}
+	channels := []string{backupChannelData, backupChannelMetadata}
+	if req.source.userDataPath != "" {
+		emitProgress(req.json, "send_userdata_stream", 0, 0, "bytes")
+		userSize, err := sendSubvolumeToFile(req, req.source.userDataPath, "", backupUserStreamPath(req.destRoot))
+		if err != nil {
+			return nil, err
+		}
+		channels = append(channels, backupChannelUserData)
+		size += userSize
+	}
+	return &transferResult{bytes: size, channels: channels}, nil
+}
+
+// sendSubvolumeToFile writes one send stream out and returns its size. The size
+// is what `verify` compares against later to detect a truncated file, so the
+// stream is fsynced before it is measured.
+func sendSubvolumeToFile(req transferRequest, subvolume, parent, streamPath string) (int64, error) {
 	stream, err := os.OpenFile(streamPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
-		return nil, failuref("data_transfer_failed", "create %s: %v", streamPath, err)
+		return 0, failuref("data_transfer_failed", "create %s: %v", streamPath, err)
 	}
-	send := exec.Command("btrfs", sendArgs(req)...)
+	send := exec.Command("btrfs", sendArgsFor(req, subvolume, parent)...)
 	send.Stdout = stream
 	var sendErrors strings.Builder
 	send.Stderr = &sendErrors
 	runErr := send.Run()
-	// The stream is fsynced before its size is recorded, because that size is
-	// what `verify` compares against later to detect a truncated file.
 	syncErr := stream.Sync()
 	closeErr := stream.Close()
 	if runErr != nil {
 		_ = os.Remove(streamPath)
-		return nil, describeSendFailure(runErr, sendErrors.String())
+		return 0, describeSendFailure(runErr, sendErrors.String())
 	}
 	if syncErr != nil {
-		return nil, failuref("data_transfer_failed", "flush %s: %v", streamPath, syncErr)
+		return 0, failuref("data_transfer_failed", "flush %s: %v", streamPath, syncErr)
 	}
 	if closeErr != nil {
-		return nil, failuref("data_transfer_failed", "close %s: %v", streamPath, closeErr)
+		return 0, failuref("data_transfer_failed", "close %s: %v", streamPath, closeErr)
 	}
 	info, err := os.Stat(streamPath)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	return &transferResult{bytes: info.Size(), channels: []string{backupChannelData, backupChannelMetadata}}, nil
+	return info.Size(), nil
 }
 
 // runBtrfsWithStdin is `btrfs receive`'s shape: the stream arrives on standard
@@ -296,11 +385,19 @@ func runBtrfsWithStdin(stdin io.Reader, args ...string) error {
 }
 
 func sendArgs(req transferRequest) []string {
+	return sendArgsFor(req, req.source.dataPath, req.parentSnapshotData)
+}
+
+// sendArgsFor builds the argument list for one subvolume. The user-content
+// stream is a second, independent send: it has its own parent for incremental
+// runs, and pairing it with data/'s parent would ask btrfs to diff two
+// unrelated subvolumes.
+func sendArgsFor(req transferRequest, subvolume, parent string) []string {
 	args := []string{"send"}
-	if req.parentSnapshotData != "" {
-		args = append(args, "-p", req.parentSnapshotData)
+	if parent != "" {
+		args = append(args, "-p", parent)
 	}
-	return append(args, req.source.dataPath)
+	return append(args, subvolume)
 }
 
 // describeSendFailure turns the bare EPERM an ordinary user gets into the one
@@ -358,10 +455,22 @@ func transferByCopy(req transferRequest) (*transferResult, error) {
 		return nil, err
 	}
 	emitProgress(req.json, "copy_files", 0, 0, "bytes")
+	if req.source.userDataPath != "" {
+		emitProgress(req.json, "copy_userdata", 0, 0, "bytes")
+		if err := copyDirectory(req.source.userDataPath, backupUserDataPath(req.destRoot)); err != nil {
+			return nil, failuref("userdata_transfer_failed", "copy the user data into %s: %v", req.destRoot, err)
+		}
+	}
 	if err := copyDirectory(req.source.dataPath, backupDataPath(req.destRoot)); err != nil {
 		return nil, keepClassified(err, "data_transfer_failed", "copy the data to %s", req.destRoot)
 	}
-	return &transferResult{bytes: treeSize(backupDataPath(req.destRoot)), channels: []string{backupChannelData, backupChannelMetadata}}, nil
+	channels := []string{backupChannelData, backupChannelMetadata}
+	bytes := treeSize(backupDataPath(req.destRoot))
+	if req.source.userDataPath != "" {
+		channels = append(channels, backupChannelUserData)
+		bytes += treeSize(backupUserDataPath(req.destRoot))
+	}
+	return &transferResult{bytes: bytes, channels: channels}, nil
 }
 
 // ---------------------------------------------------------------- metadata

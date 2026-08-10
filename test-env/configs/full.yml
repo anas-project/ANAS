@@ -20,13 +20,25 @@ iam:
   provider: authentik
 
 global:
-  domain: nas.test
+  # Both Dockerfile mirror substitutions are gated on this.
+  chinese_speedup: true
+  base_domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: change-me-now
 
 env:
+  # Image builds fetch Debian and Alpine packages, and this host reaches the
+  # upstream mirrors at a few KB/s when it reaches them at all -- apt exits 100
+  # and the build fails for a reason that has nothing to do with what is being
+  # tested. The cask Dockerfiles substitute these when they are set.
+  # The host part only. The Dockerfiles substitute the hostname inside the
+  # existing repository lines, which already carry their own path -- so a value
+  # ending in /alpine produces .../alpine/alpine/v3.x/main and apk then reports
+  # "unable to select packages".
+  APT_MIRROR_URL: https://mirrors.aliyun.com
+  APK_MIRROR_URL: https://mirrors.aliyun.com
   BASICAUTH_USER: admin
 
 # One credential, two engines: Cloudflare uses the same API token for the ACME
