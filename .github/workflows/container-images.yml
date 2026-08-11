@@ -228,8 +228,22 @@ jobs:
           raw_manifest="$(docker buildx imagetools inspect --raw "$GHCR_IMAGE")"
           source_ref="${GHCR_IMAGE%:*}"
           sources=()
+          index_bytes="$(printf '%s' "$raw_manifest" | wc -c | tr -d ' ')"
+          echo "OCI index: ${index_bytes} bytes"
           while IFS= read -r digest; do
             sources+=("${source_ref}@${digest}")
+
+            platform_manifest="$(docker buildx imagetools inspect --raw "${source_ref}@${digest}")"
+            manifest_bytes="$(printf '%s' "$platform_manifest" | wc -c | tr -d ' ')"
+            config_bytes="$(jq -r '.config.size // 0' <<<"$platform_manifest")"
+            layer_count="$(jq -r '.layers | length' <<<"$platform_manifest")"
+            annotations_bytes="$(jq -c '.annotations // {}' <<<"$platform_manifest" | wc -c | tr -d ' ')"
+            platform="$(jq -r --arg digest "$digest" '
+              .manifests[]
+              | select(.digest == $digest)
+              | "\(.platform.os)/\(.platform.architecture)"
+            ' <<<"$raw_manifest")"
+            echo "Runtime manifest ${digest} (${platform}): ${manifest_bytes} bytes; config: ${config_bytes} bytes; layers: ${layer_count}; annotations JSON: ${annotations_bytes} bytes"
           done < <(jq -r '
             .manifests[]?
             | select(.platform.os != "unknown" and .platform.architecture != "unknown")
