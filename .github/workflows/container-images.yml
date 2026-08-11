@@ -238,12 +238,24 @@ jobs:
             config_bytes="$(jq -r '.config.size // 0' <<<"$platform_manifest")"
             layer_count="$(jq -r '.layers | length' <<<"$platform_manifest")"
             annotations_bytes="$(jq -c '.annotations // {}' <<<"$platform_manifest" | wc -c | tr -d ' ')"
+            image_config="$(docker buildx imagetools inspect --format '{{json .Image}}' "${source_ref}@${digest}")"
+            history_bytes="$(jq -c '.history // []' <<<"$image_config" | wc -c | tr -d ' ')"
+            runtime_config_bytes="$(jq -c '.config // {}' <<<"$image_config" | wc -c | tr -d ' ')"
+            rootfs_bytes="$(jq -c '.rootfs // {}' <<<"$image_config" | wc -c | tr -d ' ')"
+            history_count="$(jq -r '.history | length' <<<"$image_config")"
             platform="$(jq -r --arg digest "$digest" '
               .manifests[]
               | select(.digest == $digest)
               | "\(.platform.os)/\(.platform.architecture)"
             ' <<<"$raw_manifest")"
             echo "Runtime manifest ${digest} (${platform}): ${manifest_bytes} bytes; config: ${config_bytes} bytes; layers: ${layer_count}; annotations JSON: ${annotations_bytes} bytes"
+            echo "Image config breakdown (${platform}): history=${history_bytes} bytes (${history_count} entries); runtime config=${runtime_config_bytes} bytes; rootfs=${rootfs_bytes} bytes"
+            jq -r '
+              [.history[]? | {bytes: ((.created_by // "") | length), command: ((.created_by // "") | gsub("[[:space:]]+"; " ") | .[0:160])}]
+              | sort_by(-.bytes)
+              | .[0:5][]
+              | "Largest history entry: \(.bytes) bytes; prefix=\(.command)"
+            ' <<<"$image_config"
           done < <(jq -r '
             .manifests[]?
             | select(.platform.os != "unknown" and .platform.architecture != "unknown")
