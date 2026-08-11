@@ -60,16 +60,16 @@
 
 [Home]
   comment = "User's personal files"
-  path = /${USERDATA_NAME}/Home/%U
+  path = /userdata/Home/%U
   guest ok = No
   read only = No
   browseable = Yes
   valid users = %U
-  root preexec = /usr/local/bin/samba_create_user_dir.sh /${USERDATA_NAME}/Home %U
+  root preexec = /usr/local/bin/samba_create_user_dir.sh /userdata/Home %U
 
 [${SHARE_DIR_NAME}]
   comment = "User shares"
-  path = /${USERDATA_NAME}/${SHARE_DIR_NAME}
+  path = /userdata/${SHARE_DIR_NAME}
   guest ok = ${SHARE_GUEST_READ_ONLY}
   read only = Yes
   browseable = Yes

@@ -54,6 +54,18 @@ config:
   # Generic client registration requests published by consumers, translated
   # into blueprints during render_env.
   consumes:
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_TRUST_BUNDLE_NAME
+    - POSTGRES_HOST
+    - POSTGRES_NETWORK_NAME
+    - POSTGRES_PORT
+    - POSTGRES_USERNAME
+    - SAMBA_DC_BASE_DN
+    - SAMBA_DC_BASE_GROUPS_DN_PREFIX
+    - SAMBA_DC_BASE_USERS_DN_PREFIX
+    - SAMBA_DC_GROUP_CLASS_FILTER
+    - SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE
+    - TRAEFIK_BASE_PORT
     - ANAS_IDENTITY_OIDC_CLIENTS
     - ANAS_IDENTITY_SAML_CLIENTS
     - ANAS_IAM_CLIENT_*

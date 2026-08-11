@@ -37,9 +37,9 @@ type restoreOutcome struct {
 }
 
 // restoreTargets lists what a restore replaces, in the order it replaces them.
-func restoreTargets(workspace string, meta *snapshotMeta) []string {
+func restoreTargets(workspace string, meta *snapshotMeta, restoreUserData bool) []string {
 	base := stateDir(workspace)
-	return []string{
+	targets := []string{
 		workspaceConfigPath(workspace),
 		projectLockPath(workspaceConfigPath(workspace)),
 		filepath.Join(base, "secrets.generated.yml"),
@@ -48,11 +48,19 @@ func restoreTargets(workspace string, meta *snapshotMeta) []string {
 		deploymentArtifactDir(base, meta.DeploymentID),
 		dataDir(workspace),
 	}
+	// userdata appears here only when it is actually going to be replaced.
+	// Listing it unconditionally would tell a user checking what a restore
+	// touches that their files are at risk when they are not, and the whole
+	// point of --dry-run is that its answer can be trusted.
+	if restoreUserData {
+		targets = append(targets, userDataDir(workspace))
+	}
+	return targets
 }
 
 // restoreSnapshot puts the workspace back to the moment the snapshot captured.
 // The caller must already hold the exclusive runtime lock.
-func restoreSnapshot(workspace string, meta *snapshotMeta, jsonMode bool) (*restoreOutcome, error) {
+func restoreSnapshot(workspace string, meta *snapshotMeta, restoreUserData, jsonMode bool) (*restoreOutcome, error) {
 	base := stateDir(workspace)
 	root := snapshotRoot(workspace, meta.ID)
 	if !meta.Complete {
@@ -86,6 +94,11 @@ func restoreSnapshot(workspace string, meta *snapshotMeta, jsonMode bool) (*rest
 	pre, err := createSnapshot(workspace, snapshotOptions{
 		kind: snapshotKindAuto, reason: snapshotReasonPreRestore,
 		label: "before restoring " + meta.ID, json: jsonMode,
+		// The undo has to cover whatever this restore is about to replace. A
+		// pre-restore snapshot that omitted user content while the restore
+		// went on to overwrite it would leave the one thing that cannot be
+		// regenerated with no way back.
+		includeUserData: restoreUserData,
 	})
 	if err != nil {
 		return nil, err
@@ -136,6 +149,18 @@ func restoreSnapshot(workspace string, meta *snapshotMeta, jsonMode bool) (*rest
 		return nil, failuref("restore_failed", "%s", err.Error())
 	}
 	restored = append(restored, "data")
+
+	// User content is restored only when it was asked for. A restore exists to
+	// put the deployment back; the files people saved in the meantime are not
+	// part of the deployment, and rewinding them is a deletion nobody
+	// requested. The caller has already established consent by this point.
+	if restoreUserData {
+		emitProgress(jsonMode, "restore-userdata", 0, 0, "bytes")
+		if err := restoreDataSubvolume(snapshotUserDataPath(root), userDataDir(workspace), meta.ID); err != nil {
+			return nil, failuref("restore_failed", "restore user data: %s", err.Error())
+		}
+		restored = append(restored, "userdata")
+	}
 
 	if err := rebuildSnapshotIndex(workspace); err != nil {
 		return nil, err

@@ -39,7 +39,7 @@ secrets:
 解析结果：
 
 ```text
-core → lego → traefik → samba_dc → postgres → authentik
+lego → traefik → samba_dc → postgres → authentik
      → oauth2_proxy → ddns_go
 
 dynamic dns: ddns_go (auto)
@@ -261,10 +261,11 @@ warning: more than one dynamic DNS updater maintains these records:
 
 具体配置见 §8 和各 cask 的 README。
 
-### 5.1 宿主 IPv6 探测在 core
+### 5.1 宿主 IPv6 探测在 runner
 
-`core` 导出 `HOST_IPV6` / `HOST_IPV6_INTERFACE` / `HOST_HAS_IPV6`，两个 DDNS cask
-都读它而不是各自实现一遍。
+Runner 的 `applyHostNetwork` 导出 `HOST_IPV6` / `HOST_IPV6_INTERFACE` /
+`HOST_HAS_IPV6`，两个 DDNS cask 都读它而不是各自实现一遍。这是关于宿主的事实，
+不属于任何一个 cask。
 
 探测**排除 ULA（`fc00::/7`）**：Go 的 `IsGlobalUnicast()` 对 ULA 也返回 true，
 但把 ULA 写进 AAAA 记录会得到一个外部客户端连不上的地址。

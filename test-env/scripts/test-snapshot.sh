@@ -17,6 +17,9 @@
 #     leaves a pre_restore snapshot so the restore itself is undoable.
 # S10 `restore` refuses to infer the workspace from ANAS_WORKSPACE or cwd.
 # S11 `rollback` no longer has --restore-data, and does not touch data.
+# S12 Neither rollback nor an ordinary restore touches <workspace>/userdata:
+#     application state is coupled to the deployment, the files people store
+#     are not, and rewinding them is a deletion nobody asked for.
 #
 # S9 and S11 together pin down the distinction the two operations exist for: a
 # rollback keeps the data, a restore rewinds it. Getting either one backwards
@@ -168,7 +171,7 @@ fi
   # A credential rotation changes state inside the service, not just the
   # rendered artifact: putting the old value back in config.yml does not put it
   # back in the LDAP directory. That is what earns a snapshot.
-  anas config set core.default_service_root_password rotated-once -w "$ws"
+  anas config set global.default_service_root_password rotated-once -w "$ws"
   anas apply --build -w "$ws" --update-lock --allow-risky
   second=$(active_deployment)
   echo "second deployment: $second"
@@ -194,7 +197,7 @@ fi
   # A timezone change recreates containers and touches nothing on disk. If this
   # snapshotted, five such edits would evict the pre-rotation snapshot above.
   before_routine=$(snapshot_ids | wc -l)
-  anas config set core.timezone Europe/Berlin -w "$ws"
+  anas config set global.timezone Europe/Berlin -w "$ws"
   anas apply --build -w "$ws" --update-lock
   third=$(active_deployment)
   [ "$third" != "$second" ] || fail "a config change did not produce a new deployment"
@@ -203,7 +206,7 @@ fi
     fail "a routine apply took a snapshot ($before_routine -> $after_routine)"
 
   # ...but an operator who wants one anyway can say so.
-  anas config set core.timezone Asia/Tokyo -w "$ws"
+  anas config set global.timezone Asia/Tokyo -w "$ws"
   anas apply --build -w "$ws" --update-lock --snapshot
   forced=$(snapshot_ids | wc -l)
   [ "$forced" -gt "$after_routine" ] || fail "--snapshot did not force a snapshot"
@@ -211,11 +214,11 @@ fi
     fail "a forced snapshot should record reason pre_apply"
 
   echo "== S2c: --no-snapshot needs -y, because it gives up the way back =="
-  anas config set core.default_service_root_password rotated-twice -w "$ws"
+  anas config set global.default_service_root_password rotated-twice -w "$ws"
   expect_exit 3 anas apply --build -w "$ws" --update-lock --allow-risky --no-snapshot </dev/null
   expect_exit 2 anas apply -w "$ws" --snapshot --no-snapshot
   # Put the setting back so the rest of the suite sees the state it expects.
-  anas config set core.default_service_root_password rotated-once -w "$ws"
+  anas config set global.default_service_root_password rotated-once -w "$ws"
 
   echo "== S3: the snapshot lives beside .anas, not inside it =="
   if [ ! -d "$ws/snapshots/$auto" ]; then
@@ -317,12 +320,20 @@ fi
 
   echo "== S11: rollback no longer restores data =="
   expect_failure anas rollback "$first" -w "$ws" --restore-data --yes
+  # A file saved by a person after the snapshot was taken. It has nothing to do
+  # with the deployment being rolled back, and losing it is the failure the
+  # whole data/userdata split exists to prevent.
+  mkdir -p "$ws/userdata"
+  printf 'saved after the snapshot\n' > "$ws/userdata/document"
   anas rollback "$first" -w "$ws" --allow-risky
   if [ "$(active_deployment)" != "$first" ]; then
     fail "rollback left $(active_deployment) active, expected $first"
   fi
   if [ ! -f "$ws/data/marker-after" ]; then
     fail "rollback rewound the data; it must only switch the artifact"
+  fi
+  if [ ! -f "$ws/userdata/document" ]; then
+    fail "rollback deleted a file saved after the snapshot"
   fi
 
   echo "== S9: restore rewinds data, config and the active deployment =="
@@ -336,6 +347,13 @@ fi
   fi
   if [ -f "$ws/data/marker-after" ]; then
     fail "data written after the snapshot survived the restore"
+  fi
+  # The other half of the split: a restore rewinds application state, and still
+  # does not touch the files people saved, because --restore-userdata was not
+  # given. Rewinding both is what a restore used to do to everything under
+  # data/, user content included.
+  if [ ! -f "$ws/userdata/document" ]; then
+    fail "restore rewound user content without --restore-userdata"
   fi
   if ! is_subvolume "$ws/data"; then
     fail "restored data is not a Btrfs subvolume; the next snapshot would be impossible"

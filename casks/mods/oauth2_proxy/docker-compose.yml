@@ -29,10 +29,20 @@ services:
       # Builds redirect URLs from the X-Forwarded-* headers Traefik sets rather
       # than from the address it was reached on. Required in this arrangement.
       - --reverse-proxy=true
-      # Without this, any client that can reach the proxy is trusted to supply
-      # X-Forwarded-* headers, and those headers decide where a sign-in returns
-      # to. Only the reverse proxy on the shared network should be believed.
-      - --trusted-proxy-ip=${TRAEFIK_SUBNET}
+      # Whose X-Forwarded-* headers are believed, and those headers decide where
+      # a sign-in returns to.
+      #
+      # The private ranges rather than this network's exact CIDR, because the
+      # exact one is not knowable: Docker assigns it, and naming it in advance
+      # meant pinning a subnet that collides with whatever else the host runs.
+      # The reachable set is what actually bounds this -- the proxy publishes no
+      # port and sits on one internal network, so the only clients that can
+      # reach it at all are this deployment's own containers. An attacker who is
+      # already one of them has better options than forging a redirect, and
+      # --whitelist-domain still refuses any target outside the base domain.
+      - --trusted-proxy-ip=10.0.0.0/8
+      - --trusted-proxy-ip=172.16.0.0/12
+      - --trusted-proxy-ip=192.168.0.0/16
       - --http-address=0.0.0.0:4180
       - --provider=oidc
       - --provider-ca-file=/certs/${ANAS_TLS_TRUST_BUNDLE_NAME}

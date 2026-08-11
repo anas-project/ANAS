@@ -30,7 +30,7 @@ services:
       retries: 6
       start_period: 90s
     volumes:
-      - "${USERDATA_PATH}:/${USERDATA_NAME}"
+      - "${SAMBA_FS_USERDATA_PATH}:/userdata"
       - "${DATA_PATH}/samba_fs/var:/var/lib/samba"
     # ports:
     #   - 445:445

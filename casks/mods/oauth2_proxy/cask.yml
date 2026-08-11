@@ -55,6 +55,8 @@ config:
     - ANAS_FORWARD_AUTH_*
     - ANAS_IAM_CLIENT__OAUTH2_PROXY__*
   consumes:
+    - ANAS_TLS_TRUST_BUNDLE_NAME
+    - TRAEFIK_BASE_PORT
     - ANAS_IAM_BINDING_*
     - SAMBA_DC_ADMIN_GROUP_NAME
     # The issuer-neutral certificate contract: the identity provider presents

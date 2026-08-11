@@ -8,7 +8,7 @@ modules:
   - traefik
 
 global:
-  domain: snapshot.test
+  base_domain: snapshot.test
   email: admin@snapshot.test
   timezone: Asia/Shanghai
   virtual_domain: true
@@ -26,3 +26,11 @@ env:
   IMAGE_PREFIX: anassn_
   NETWORK_PREFIX: anassn_
   TRAEFIK_BASE_PORT: "19444"
+  # This suite namespaces everything it creates so it can run beside other
+  # deployments on the same host, and the Docker network is part of that.
+  #
+  # The pin sits outside 172.17.0.0/12, which is where Docker assigns bridge
+  # subnets by itself. Anything inside that range is a range Docker may hand to
+  # a sibling network first -- the cask's own lego network took 172.31 that way
+  # -- and the pinned one then collides with a network this same deployment
+  # just created.

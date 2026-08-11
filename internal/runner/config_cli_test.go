@@ -9,12 +9,15 @@ import (
 	"github.com/anas-project/ANAS/internal/config"
 )
 
-func TestResolveCoreAndServiceConfigTargets(t *testing.T) {
+func TestResolveGlobalAndServiceConfigTargets(t *testing.T) {
 	reg, err := loadRegistry(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	guest, err := resolveConfigTarget("core.share_guest_read_only", reg)
+	// A parameter a cask publishes under a bare env name is reachable through
+	// the cask that owns it, and keeps that cask's change policy rather than
+	// falling back to the default one.
+	guest, err := resolveConfigTarget("samba_fs.share_guest_read_only", reg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +46,7 @@ func TestOrdinaryStartRejectsImmutableChange(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.yml")
 	writeTestConfig := func(domain string) {
 		t.Helper()
-		content := "modules: [traefik]\nglobal:\n  domain: " + domain + "\n  email: admin@example.com\n  default_service_root_password: change-me\n"
+		content := "modules: [traefik]\nglobal:\n  base_domain: " + domain + "\n  email: admin@example.com\n  default_service_root_password: change-me\n"
 		if err := os.WriteFile(cfgPath, []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -58,7 +61,7 @@ func TestOrdinaryStartRejectsImmutableChange(t *testing.T) {
 		t.Fatalf("expected immutable change error, got %v", err)
 	}
 	settings, err := config.Settings(cfgPath)
-	if err != nil || settings["global.domain"] != "new.example.com" {
+	if err != nil || settings["global.base_domain"] != "new.example.com" {
 		t.Fatalf("desired config was not retained: %v, %v", settings, err)
 	}
 }

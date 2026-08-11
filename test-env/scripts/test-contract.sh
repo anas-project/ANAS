@@ -164,7 +164,7 @@ expect_exit 0 "deployments list when there are none" -- anas deployments list -w
 expect_exit 0 "snapshot list when there are none" -- anas snapshot list -w "$ws" --json
 expect_exit 0 "config secret list" -- anas config secret list -w "$ws" --json
 expect_exit 0 "config plan" -- anas config plan -w "$ws" --root "$ROOT_DIR" --json
-expect_exit 0 "config explain" -- anas config explain global.domain --root "$ROOT_DIR" --json
+expect_exit 0 "config explain" -- anas config explain global.base_domain --root "$ROOT_DIR" --json
 expect_exit 0 "backup capabilities" -- anas backup capabilities -w "$ws" --json
 
 echo "== C3: the workspace announcement is on stderr, not in the document =="

@@ -676,3 +676,38 @@ anas snapshot restore <id> -w <workspace> [--dry-run] [-y] [--json]
 
 `anas snapshot diff <id>` —— 对比快照与当前的 cask 版本、配置差异，回滚前知道会丢
 什么。有价值但不阻塞一期。
+
+## 覆盖范围（coverage）
+
+工作区有两棵独立的 btrfs subvolume，快照分别对待：
+
+| 树 | 内容 | 快照默认 | restore 默认 |
+|---|---|---|---|
+| `<workspace>/data` | 应用状态（数据库、AD 库、证书） | **总是包含** | **总是还原** |
+| `<workspace>/userdata` | 用户自己存的文件 | **不包含** | **不还原** |
+
+分开的理由是正确性而非整洁：restore 会整体替换 `data/`，用户文件若在里面，**每次部署回滚都会删掉快照之后保存的文件**——那些文件和被回滚的部署毫无关系。
+
+`snapshot.yml` 用 `coverage` 记录每棵树捕获与否，未捕获时给出原因：
+
+```yaml
+coverage:
+    - tree: data
+      path: /data/ws/data
+      captured: true
+    - tree: userdata
+      path: /data/ws/userdata
+      captured: false
+      reason: excluded
+```
+
+`reason` 取值：`excluded`（自动快照，或手动快照未加 `--include-userdata`）、`not_a_subvolume`（userdata 不在 btrfs 上，无法快照）、`missing`（工作区没有这棵树）。
+
+没有这条记录，快照会照常标记 `complete`、restore 会照常报告成功，而工作区里最大的一棵树原封未动，盘上没有任何东西说明这件事。
+
+命令层面：
+
+- `anas snapshot create [--include-userdata]` —— 默认不含
+- `anas snapshot restore <id> [--restore-userdata]` —— 默认不还原；交互式终端会额外问一次；`-y` 走默认值（不还原），因为它的意思是"别问我"而不是"做更狠的那个"
+- 自动的 pre-apply 快照**永不包含** userdata
+- `anas backup create [--skip-userdata]` —— **默认包含**，方向与快照相反：备份是为了盘挂了还能回来，用户文件是唯一 redeploy 补不回来的部分

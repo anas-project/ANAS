@@ -278,12 +278,13 @@ func runBackupCreate(args []string, jsonMode bool) error {
 	snapshotID := f.fs.String("snapshot", "", "back up an existing snapshot")
 	parent := f.fs.String("parent", "", "send incrementally against this backup")
 	noStop := f.fs.Bool("no-stop", false, "do not stop containers")
+	skipUserData := f.fs.Bool("skip-userdata", false, "back up the deployment only, without "+workspaceUserDataDir+"/")
 	positional, err := f.parse(args)
 	if err != nil {
 		return err
 	}
 	if len(positional) != 0 {
-		return usageErrorf("usage: anas backup create --to <dest> [--mode <mode>] [--snapshot <id>] [--parent <id>] [--no-stop] [-y] [-w <workspace>] [--json]")
+		return usageErrorf("usage: anas backup create --to <dest> [--mode <mode>] [--snapshot <id>] [--parent <id>] [--no-stop] [--skip-userdata] [-y] [-w <workspace>] [--json]")
 	}
 	workspace, err := resolveBackupWorkspace(*f.workspace)
 	if err != nil {
@@ -292,6 +293,7 @@ func runBackupCreate(args []string, jsonMode bool) error {
 	opts := backupOptions{
 		dest: *f.to, mode: *mode, snapshotID: *snapshotID,
 		parent: *parent, noStop: *noStop, yes: *f.yes, json: jsonMode,
+		skipUserData: *skipUserData,
 	}
 	announceWorkspace(workspace)
 	plan, err := buildBackupPlan(workspace, opts)

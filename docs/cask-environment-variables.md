@@ -20,12 +20,12 @@
 
 旧的 `USE_LDAP_MODS_NAME`、`ANAS_IAM_CLIENTS`、`ANAS_IAM_OIDC_CLIENTS` 和 `ANAS_IAM_SAML_CLIENTS` 已移除，不提供兼容别名。
 
-## core
+## Runner 产生的宿主与全局变量
 
 - 主机与网络：`HOST_IP`、`HOST_SUBNET_MASK`、`HOST_DNS_SERVER`、`DEFAULT_GATEWAY_IP`、`VLAN_GATEWAY_IP`、`INTERFACE`、`LOCAL_DNS_SERVER`。
-- 路径与名称：`SERVER_NAME`、`USERDATA_PATH`、`DOWNLOAD_DIR_NAME`、`MUSIC_DIR_NAME`、`VIDEO_DIR_NAME`。
-- 公共运行参数：`DOCKER_ALPINE_VERSION`、`BASICAUTH_HTPASSWD`。
-- `DATA_PATH`、`BASE_DOMAIN`、`EMAIL`、`TZ`、容器/镜像/网络前缀等来自全局配置，不算某个业务 Cask 的私有输出。
+- macvlan 地址规划：`HOST_SEGMENT`、`VLAN_SEGMENT`、`VLAN_SUBNET_MASK`、`VLAN_BRIDGE_IP`、`VLAN_BRIDGE_INTERFACE`、`VLAN_INTERFACE`。仅当存在 `features.host_lan: required` 的 Cask 时才计算——宿主前缀窄于 /28 时无法划出地址池，而没有消费方时这个池本来也没人要。
+- 路径与名称：`SERVER_NAME`。
+- `DATA_PATH`（应用状态）与 `USER_DATA_PATH`（用户文件）来自工作区布局；`BASE_DOMAIN`、`EMAIL`、`TZ`、容器/镜像/网络前缀等来自全局配置，不算某个业务 Cask 的私有输出。
 
 ## lego
 
@@ -48,7 +48,9 @@
 
 ## samba_fs
 
-产生 `SAMBA_FS_NETBIOS_NAME`、`SAMBA_FS_DNS_SERVER`、`SAMBA_FS_ADMIN_USERS`、`SAMBA_FS_SHARE_VALID_USERS`、`SAMBA_FS_SHARE_WRITE_LIST`、`SAMBA_FS_SHARE_DOMAIN_USERS_ACL`、`SAMBA_FS_USE_DEFAULT_DOMAIN` 和 `SHARE_ACCESS_MODE`。它消费 Samba DC 的域、DNS、管理员和组变量。
+产生 `SAMBA_FS_NETBIOS_NAME`、`SAMBA_FS_DNS_SERVER`、`SAMBA_FS_ADMIN_USERS`、`SAMBA_FS_SHARE_VALID_USERS`、`SAMBA_FS_SHARE_WRITE_LIST`、`SAMBA_FS_SHARE_DOMAIN_USERS_ACL`、`SAMBA_FS_USE_DEFAULT_DOMAIN` 和 `SAMBA_FS_USERDATA_PATH`。它消费 Samba DC 的域、DNS、管理员和组变量。
+
+文件共享参数 `SHARE_DIR_NAME`、`SHARE_ACCESS_MODE`、`SHARE_GUEST_READ_ONLY`、`USE_DEFAULT_DOMAIN` 归 samba_fs 所有，但以裸名声明：它们是用户在文件管理器里看到的东西，在配置的顶层 `env:` 块里设置。共享树固定挂在容器内的 `/userdata`：这个名字同时是 smb.conf 共享路径和 guest ACL 状态文件的前缀，不可配置。宿主路径 `SAMBA_FS_USERDATA_PATH` 由 `${USER_DATA_PATH}/samba_fs` 推导，**不是** `DATA_PATH`——用户文件属于 `<workspace>/userdata`，而 `<workspace>/data` 会被 restore 整体替换。要把这些文件放到别的盘，把那块盘挂到 `<workspace>/userdata`，一个挂载点解决全部 cask 的用户内容；没有 per-cask 的路径覆盖，因为那会让某个 cask 的文件跑到快照和备份都不知道的地方，同时长得像个普通设置。
 
 ## postgres
 
@@ -135,3 +137,31 @@ LLNG 从 `ANAS_IDENTITY_OIDC_CLIENTS` 和 `ANAS_IDENTITY_SAML_CLIENTS` 读取最
 3. 实现私有变量使用 Cask 前缀；跨实现契约使用 `ANAS_*`。
 4. 身份协议清单只由 Runner 产生，Cask 不得追加或覆盖。
 5. 文档只记录变量名和语义，禁止写入实际密码、Token 或私钥。
+
+## 作用域：一个 cask 收到什么
+
+渲染出的 `.env` 只包含这个 cask**声明过**的东西，而不是它依赖闭包里碰巧存在的一切：
+
+```
+.env = 全局所有权的键
+     + 自己前缀的键（<CASK>_*，或 config.exports 声明的裸名）
+     + config.consumes 显式声明的跨 cask 键
+     + 用户在 env: / services.<cask>.env 里显式写的
+     + runner 注入的（MODULE_NAME 等）
+```
+
+依赖闭包只决定启动顺序。依赖 postgres 不等于被交付 postgres 的全部变量——闭包回答的是"谁可能相关"，不是"谁真的需要"。改之前 collabora 的容器拿到 264 个变量，其中它自己只用到 19 个；现在是 49 个。整个部署从 2524 降到 1142。
+
+因为每个 cask 的 compose 都写了 `env_file: .env`，`.env` 里的东西会原样进入容器进程环境——出现在 `docker inspect`、`/proc/<pid>/environ`、崩溃转储里。所以这不只是整洁问题。
+
+漏声明的后果是容器拿到空值、立刻可见地失败，而不是"多给了也看不出来"。`test-env/scripts/test-env-scope.sh` 会渲染两遍（旧规则 / 新规则）并证明没有任何到达应用的值发生变化。
+
+## 命名规则
+
+- **全局参数**：env 键 = 参数名大写。例外只有 `timezone` → `TZ`（容器镜像的既定约定）。
+- **cask 参数**：env 键 = `<CASK>_` + 参数名大写，除非在 `config.exports` 里声明为裸名。
+- **`ANAS_` 前缀**：标记 runner 推导出来的跨 cask 契约键（`ANAS_IAM_*`、`ANAS_TLS_*`、`ANAS_FORWARD_AUTH_*` 等），不是用户设置。
+
+映射只有一处定义（`internal/config` 的 `globalBindings`），并由测试保证是双射——两个参数不能映射到同一个键。
+
+`anas config list [global|<cask>]` 打印每个参数的路径、env 键、默认值、当前值和变更效果。

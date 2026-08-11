@@ -2,15 +2,17 @@ package runner
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/config"
 )
 
-// Environment scoping. Every key in the flat environment has an owner: ""
-// for global config sections, "core" for the base cask, a cask name for
-// values that cask introduced, or config.OwnerUserSecret for user secrets.
+// Environment scoping. Every key in the flat environment has an owner:
+// globalScope for the deployment's own parameters and everything the runner
+// derives about the host, a cask name for values that cask introduced, or
+// config.OwnerUserSecret for user secrets.
 // A cask's rendered .env — and therefore its containers and its
 // render/services/after_start hook input — only receives keys that are
 // global, produced inside its dependency closure, matching its own or a
@@ -29,9 +31,10 @@ func (a *app) setEnvOwner(key, owner string) {
 }
 
 // depClosure returns the transitive dependency closure of a cask, including
-// the cask itself and core.
+// the cask itself. Globally owned keys are not part of it: they are visible
+// through their ownership, not through an edge every cask had to be given.
 func (a *app) depClosure(name string) map[string]bool {
-	out := map[string]bool{"core": true, name: true}
+	out := map[string]bool{name: true}
 	var visit func(string)
 	visit = func(n string) {
 		for _, dep := range a.deps[n] {
@@ -68,12 +71,17 @@ func (a *app) sensitiveEnvKeySet() map[string]bool {
 	for key := range a.runnerSensitive {
 		out[key] = true
 	}
+	for param, policy := range globalConfig.Changes {
+		if policy.Sensitive {
+			out[paramEnvKey(globalScope, "", param)] = true
+		}
+	}
 	for name, mod := range a.reg {
 		for param, policy := range mod.Changes {
 			if !policy.Sensitive {
 				continue
 			}
-			out[paramEnvKey(name, mod.EnvPrefix, param)] = true
+			out[caskParamEnvKey(name, mod.EnvPrefix, mod.Exports, param)] = true
 		}
 	}
 	if a.secrets != nil {
@@ -94,18 +102,23 @@ func (a *app) sensitiveEnvKeySet() map[string]bool {
 	return out
 }
 
+// wideEnvScopeRequested restores the pre-declaration rule for one run, so a
+// deployment can be rendered both ways and diffed. It is a diagnostic, not a
+// supported configuration: what a cask receives should be a property of its
+// manifest, not of the environment the runner happened to start in.
+func wideEnvScopeRequested() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ANAS_WIDE_ENV_SCOPE"))) {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
 // envScopeFor returns the membership test for one cask's environment scope.
 func (a *app) envScopeFor(name string) func(key string) bool {
+	a.narrowFileScope = !wideEnvScopeRequested()
 	sensitive := a.sensitiveEnvKeySet()
-	if name == "core" {
-		// core has no containers; its .env is the release's global environment
-		// snapshot used by artifact start/stop, so it carries exactly the
-		// global and core-derived keys.
-		return func(key string) bool {
-			owner, tracked := a.envOwner[key]
-			return tracked && (owner == "" || owner == "core")
-		}
-	}
 	ownPrefixes := []string{}
 	if mod, ok := a.reg[name]; ok {
 		ownPrefixes = []string{mod.EnvPrefix + "_", defaultEnvPrefix(name) + "_"}
@@ -139,16 +152,40 @@ func (a *app) envScopeFor(name string) func(key string) bool {
 			// prefix membership.
 			return matchEnvPattern(consumes, key)
 		}
-		if owner, tracked := a.envOwner[key]; tracked && owner != config.OwnerUserSecret && (owner == "" || closure[owner]) {
+		if owner, tracked := a.envOwner[key]; tracked && owner != config.OwnerUserSecret && owner == globalScope {
 			return true
 		}
-		for _, prefix := range prefixes {
-			if strings.HasPrefix(key, prefix) {
+		if !a.narrowFileScope {
+			// The wide rule: anything owned by, or prefixed like, a member of
+			// the dependency closure. It answers "who might be relevant" rather
+			// than "who is needed", and the gap between those is most of what a
+			// container receives -- collabora reads 19 of the 264 variables this
+			// admits. Retained only so a rendering can be compared against it.
+			if owner, tracked := a.envOwner[key]; tracked && owner != config.OwnerUserSecret && closure[owner] {
 				return true
+			}
+			for _, prefix := range prefixes {
+				if strings.HasPrefix(key, prefix) {
+					return true
+				}
 			}
 		}
 		return matchEnvPattern(consumes, key)
 	}
+}
+
+// globalEnv is the deployment-wide environment: every key nobody owns
+// privately. It is written next to the rendered casks so artifact
+// start/stop/rollback can reconstruct what the release was built with without
+// re-reading the config, which is what the "core" cask's .env used to be for.
+func (a *app) globalEnv() map[string]string {
+	out := map[string]string{}
+	for k, v := range a.env {
+		if owner, tracked := a.envOwner[k]; tracked && owner == globalScope {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // scopedEnv filters the full environment down to one cask's scope.
@@ -196,21 +233,20 @@ func (a *app) applyCaskRootPassword(env map[string]string, name string) error {
 		value = generated
 	}
 	env["DEFAULT_SERVICE_ROOT_PASSWORD"] = value
-	a.setEnvOwner("DEFAULT_SERVICE_ROOT_PASSWORD", "")
+	a.setEnvOwner("DEFAULT_SERVICE_ROOT_PASSWORD", globalScope)
 	return nil
 }
 
 // applyCalculatePatch merges a calculate hook's env patch into the global
-// environment, records ownership, and enforces the cask's write contract:
-// non-core casks may only publish keys under their own prefixes, keys they
-// already own, or keys declared in manifest `config.exports`.
+// environment, records ownership, and enforces the cask's write contract: a
+// cask may only publish keys under its own prefixes, keys it already owns, or
+// keys declared in manifest `config.exports`. There is no cask exempt from
+// this; the deployment-wide values it used to cover are written by the runner,
+// which does not go through a hook patch at all.
 func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 	violations := []string{}
 	ownPrefixes := []string{mod.EnvPrefix + "_", defaultEnvPrefix(mod.Name) + "_"}
 	allowed := func(key string) bool {
-		if mod.Name == "core" {
-			return true
-		}
 		for _, prefix := range ownPrefixes {
 			if strings.HasPrefix(key, prefix) {
 				return true
@@ -232,11 +268,7 @@ func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 			continue
 		}
 		a.env[k] = patch[k]
-		owner := mod.Name
-		if mod.Name == "core" {
-			owner = "core"
-		}
-		a.setEnvOwner(k, owner)
+		a.setEnvOwner(k, mod.Name)
 	}
 	if len(violations) > 0 {
 		return fmt.Errorf("cask %q calculate hook writes undeclared env keys: %s (declare them in cask.yml config.exports)", mod.Name, strings.Join(violations, ", "))

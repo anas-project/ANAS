@@ -176,7 +176,7 @@ step "L7 write data that must survive everything below"
 echo lifecycle-marker >"$ws/data/marker"
 
 step "L8 second apply, configuration only"
-run anas config set core.timezone Europe/Berlin -w "$ws"
+run anas config set global.timezone Europe/Berlin -w "$ws"
 run anas apply --build -w "$ws" --update-lock
 second=$(active_deployment "$ws")
 [ "$second" != "$first" ] || fail "a config change produced no new deployment"
@@ -283,6 +283,74 @@ json_ok anas status -w "$ws" --json
 run anas start -w "$ws"
 [ -n "$(running)" ] || fail "the deployment did not start again after a stop"
 run anas stop -w "$ws"
+
+step "L15 acting on one cask leaves the rest of the deployment alone"
+run anas start -w "$ws"
+all_running=$(running)
+[ -n "$all_running" ] || fail "the deployment did not start"
+# A cask this deployment does not have is a usage error, not a silent no-op
+# that reports success having restarted nothing.
+expect_exit 2 anas restart nosuchcask -w "$ws" --json
+# Restarting one cask must not stop the others. Before this, changing one
+# setting meant restarting every container in the deployment.
+run anas restart lego -w "$ws"
+[ "$(running)" = "$all_running" ] || fail "restarting one cask changed which containers run: '$all_running' -> '$(running)'"
+# Stopping one cask stops exactly that one.
+run anas stop lego -w "$ws"
+case "$(running)" in
+  *"${prefix}lego"*) fail "stop lego left it running" ;;
+esac
+[ -n "$(running)" ] || fail "stopping one cask stopped the whole deployment"
+run anas start lego -w "$ws"
+[ "$(running)" = "$all_running" ] || fail "starting the cask back did not restore the deployment"
+run anas stop -w "$ws"
+
+step "L16 a flag after a cask name is still a flag"
+# The standard Go flag parser stops at the first positional argument, so
+# `anas restart lego -w <workspace>` dropped -w and fell back to the current
+# directory or ANAS_WORKSPACE -- acting on whichever deployment that named,
+# without saying so. Running from a directory that is not a workspace is what
+# makes the difference observable: the command must still find the workspace
+# the flag names.
+outside=$(mktemp -d)
+( cd "$outside" && ANAS_WORKSPACE= "$anas_bin" restart lego -w "$ws" ) \
+  >>"$log" 2>&1 || fail "a flag placed after a cask name was dropped"
+# --root as well as -w: build needs the cask registry, which it otherwise
+# locates from the current directory. Both flags sit after the cask name, which
+# is the thing being tested.
+( cd "$outside" && ANAS_WORKSPACE= "$anas_bin" build lego -w "$ws" --root "$ROOT_DIR" ) \
+  >>"$log" 2>&1 || fail "build dropped a flag placed after a cask name"
+rmdir "$outside" 2>/dev/null || true
+run anas stop -w "$ws"
+
+step "L17 a deployment does not depend on any particular Docker subnet"
+# Traefik used to pin its subnet, so a host already using that range could not
+# deploy at all -- and a replacement pin collided with whatever Docker handed a
+# sibling network of the same deployment. Holding the old pinned range hostage
+# is the direct test that nothing depends on it any more.
+decoy=anas_subnet_decoy
+docker network rm "$decoy" >/dev/null 2>&1 || true
+held=no
+if docker network create --subnet 172.28.0.0/16 "$decoy" >/dev/null 2>&1; then
+  held=yes
+else
+  # Already taken by something else on this host, which is the same condition
+  # under a different owner and needs no decoy of ours.
+  echo "172.28.0.0/16 is already held by another network; using it as the decoy" >&2
+fi
+run anas start -w "$ws"
+[ -n "$(running)" ] || fail "the deployment could not start while 172.28.0.0/16 was taken"
+run anas stop -w "$ws"
+[ "$held" = yes ] && docker network rm "$decoy" >/dev/null 2>&1
+true
+
+step "L18 a malformed setting is refused when the config is read"
+# A checked scalar: `ipv6: flase` used to be stored verbatim and read as true by
+# a cask testing != "false", so the setting was written, accepted, and reversed.
+bad=$(mktemp)
+sed 's/^  email:/  ipv6: flase\n  email:/' "$config" > "$bad"
+expect_exit 4 anas plan -c "$bad"
+rm -f "$bad"
 
 echo
 if [ "$failures" -ne 0 ]; then

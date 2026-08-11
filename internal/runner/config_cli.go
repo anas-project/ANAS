@@ -21,7 +21,7 @@ func runConfig(args []string, jsonMode bool) error {
 		// `anas config --json` used to take "--json" as the subcommand name and
 		// fail several steps later with an unrelated code. A subcommand is a
 		// word, never a flag.
-		return usageErrorf("usage: anas config set|explain|plan|secret ... [--json]")
+		return usageErrorf("usage: anas config list|set|explain|plan|secret ... [--json]")
 	}
 	subcommand := args[0]
 	if subcommand == "secret" {
@@ -48,8 +48,24 @@ func runConfig(args []string, jsonMode bool) error {
 	}
 	// `explain` only reads the cask registry, so it stays usable outside a
 	// workspace; the other subcommands act on one and must resolve it.
+	//
+	// `list` sits between the two: what can be set is a property of the casks,
+	// so it answers outside a workspace, and inside one it additionally fills
+	// in the current values. Requiring a workspace would deny the question to
+	// exactly the person who has not built one yet.
 	var workspace, base string
-	if subcommand != "explain" {
+	switch subcommand {
+	case "explain":
+	case "list":
+		if workspace, err = resolveWorkspace(*workspaceFlag); err == nil {
+			base = stateDir(workspace)
+			*cfgPath = absolutePath(configPathFor(workspace, *cfgPath))
+		} else if strings.TrimSpace(*cfgPath) != "" {
+			*cfgPath = absolutePath(*cfgPath)
+		} else {
+			*cfgPath = ""
+		}
+	default:
 		workspace, err = resolveWorkspace(*workspaceFlag)
 		if err != nil {
 			return usageErrorf("%s", err.Error())
@@ -59,12 +75,27 @@ func runConfig(args []string, jsonMode bool) error {
 	}
 
 	switch subcommand {
+	case "list":
+		if len(positional) > 1 {
+			return usageErrorf("usage: anas config list [global|<cask>] [-w <workspace>] [-c config.yml] [--json]")
+		}
+		scope := ""
+		if len(positional) == 1 {
+			scope = strings.ToLower(strings.TrimSpace(positional[0]))
+			if _, known := declaredParametersFor(scope, reg); !known {
+				return usageErrorf("unknown module %q; pass a cask name or %q", scope, globalModuleName)
+			}
+		}
+		return reportConfigList(*cfgPath, reg, scope, jsonMode)
 	case "set":
 		if len(positional) != 2 {
 			return usageErrorf("usage: anas config set [-w <workspace>] [-c config.yml] <path> <value> [--json]")
 		}
 		target, err := resolveConfigTarget(positional[0], reg)
 		if err != nil {
+			return usageErrorf("%s", err.Error())
+		}
+		if err := validateParameterValue(target.Module, target.Parameter, positional[1], reg); err != nil {
 			return usageErrorf("%s", err.Error())
 		}
 		if !exists(*cfgPath) {
@@ -108,7 +139,7 @@ func runConfig(args []string, jsonMode bool) error {
 		}
 		return reportConfigPlan(workspace, *cfgPath, base, reg, jsonMode)
 	default:
-		return usageErrorf("unknown config command %q; expected set, explain, plan or secret", subcommand)
+		return usageErrorf("unknown config command %q; expected list, set, explain, plan or secret", subcommand)
 	}
 }
 
@@ -200,7 +231,7 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 		if len(parts) != 2 {
 			return configTarget{}, fmt.Errorf("global config path must have two components")
 		}
-		return configTarget{YAMLPath: parts, Display: strings.Join(parts, "."), Module: "core", Parameter: strings.ToLower(parts[1])}, nil
+		return resolveGlobalTarget(strings.ToLower(parts[1]), reg)
 	}
 	if parts[0] == "env" {
 		if len(parts) != 2 {
@@ -222,34 +253,80 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 		if _, ok := reg[parts[1]]; !ok {
 			return configTarget{}, fmt.Errorf("unknown module %q", parts[1])
 		}
+		if err := validateParameter(parts[1], parts[2], reg); err != nil {
+			return configTarget{}, err
+		}
 		yamlPath := []string{"services", parts[1], "env", parts[2]}
 		return configTarget{YAMLPath: yamlPath, Display: parts[1] + "." + parts[2], Module: parts[1], Parameter: strings.ToLower(parts[2])}, nil
 	}
 	module := parts[0]
-	if _, ok := reg[module]; !ok {
+	if _, ok := reg[module]; !ok && module != globalModuleName {
 		return configTarget{}, fmt.Errorf("unknown module %q", module)
 	}
 	if len(parts) != 2 {
 		return configTarget{}, fmt.Errorf("module config path must have two components")
 	}
 	parameter := strings.ToLower(parts[1])
-	if module == "core" {
-		if isGlobalParameter(parameter) {
-			return configTarget{YAMLPath: []string{"global", parameter}, Display: "global." + parameter, Module: module, Parameter: parameter}, nil
-		}
-		key := config.EnvKey(parameter)
+	if module == globalModuleName {
+		return resolveGlobalTarget(parameter, reg)
+	}
+	if err := validateParameter(module, parameter, reg); err != nil {
+		return configTarget{}, err
+	}
+	// A parameter the cask declares under a bare env name is set in the top
+	// level `env:` block: every key under `services.<cask>.env` acquires the
+	// cask prefix, which would write a variant nothing reads.
+	if key, ok := reg[module].bareEnvParameter(parameter); ok {
 		return configTarget{YAMLPath: []string{"env", key}, Display: "env." + key, Module: module, Parameter: parameter}, nil
 	}
 	return configTarget{YAMLPath: []string{"services", module, "env", parameter}, Display: module + "." + parameter, Module: module, Parameter: parameter}, nil
 }
 
-func isGlobalParameter(parameter string) bool {
-	switch parameter {
-	case "domain", "email", "timezone", "container_prefix", "image_prefix", "network_prefix", "host_ip", "dns_server", "default_service_root_password":
-		return true
-	default:
-		return false
+// resolveGlobalTarget is the single answer to "where does a deployment-wide
+// parameter get written", shared by `global.<parameter>` and the module path
+// spelled with the global module name. They used to disagree: the former wrote
+// into the `global:` block unconditionally, so a parameter with no field on
+// config.Global -- basicauth_user, say -- produced a config that KnownFields
+// then refused to load, breaking every later command rather than the `set`
+// that caused it.
+func resolveGlobalTarget(parameter string, reg map[string]Module) (configTarget, error) {
+	if err := validateParameter(globalModuleName, parameter, reg); err != nil {
+		return configTarget{}, err
 	}
+	if isGlobalParameter(parameter) {
+		return configTarget{
+			YAMLPath: []string{"global", parameter}, Display: "global." + parameter,
+			Module: globalModuleName, Parameter: parameter,
+		}, nil
+	}
+	// Anything else lands in the top level `env:` block, and the key there may
+	// well belong to a cask that publishes it under a bare name. Naming it
+	// through the global path must not lose that cask's change policy.
+	key := config.EnvKey(parameter)
+	owner, ownerParameter, err := policyOwnerForEnv(key, reg)
+	if err != nil {
+		return configTarget{}, err
+	}
+	return configTarget{
+		YAMLPath: []string{"env", key}, Display: "env." + key,
+		Module: owner, Parameter: ownerParameter,
+	}, nil
+}
+
+// globalParameterSet is config.Global's own field list. Deriving it is what
+// keeps `anas config list` honest: it prints `global.<parameter>` as the way
+// to address these, so a name here that config.Global does not have would be
+// advertising a path that corrupts the config.
+var globalParameterSet = func() map[string]bool {
+	out := map[string]bool{}
+	for _, parameter := range config.GlobalParameters() {
+		out[parameter] = true
+	}
+	return out
+}()
+
+func isGlobalParameter(parameter string) bool {
+	return globalParameterSet[strings.ToLower(strings.TrimSpace(parameter))]
 }
 
 func policyOwnerForEnv(key string, reg map[string]Module) (string, string, error) {
@@ -268,14 +345,17 @@ func policyOwnerForEnv(key string, reg map[string]Module) (string, string, error
 		}
 		sort.Strings(parameters)
 		for _, parameter := range parameters {
-			if strings.EqualFold(paramEnvKey(name, mod.EnvPrefix, parameter), key) {
+			if strings.EqualFold(caskParamEnvKey(name, mod.EnvPrefix, mod.Exports, parameter), key) {
 				matches = append(matches, owner{name, parameter})
 			}
 		}
 	}
 	switch len(matches) {
 	case 0:
-		return "core", strings.ToLower(key), nil
+		if parameter, ok := globalConfig.parameterFor(key); ok {
+			return globalModuleName, parameter, nil
+		}
+		return globalModuleName, strings.ToLower(key), nil
 	case 1:
 		return matches[0].module, matches[0].parameter, nil
 	default:
@@ -288,6 +368,11 @@ func policyOwnerForEnv(key string, reg map[string]Module) (string, string, error
 }
 
 func policyForTarget(target configTarget, reg map[string]Module) ChangePolicy {
+	if target.Module == globalModuleName {
+		if policy, ok := globalConfig.policy(target.Parameter); ok {
+			return policy
+		}
+	}
 	if mod, ok := reg[target.Module]; ok {
 		if policy, ok := mod.Changes[strings.ToLower(target.Parameter)]; ok {
 			return policy
@@ -313,7 +398,7 @@ func targetForSettingPath(path string, reg map[string]Module) configTarget {
 		target, _ := resolveConfigTarget("services."+parts[1]+"."+parts[3], reg)
 		return target
 	}
-	return configTarget{Display: path, Module: "core", Parameter: path}
+	return configTarget{Display: path, Module: globalModuleName, Parameter: path}
 }
 
 func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, jsonMode bool) error {

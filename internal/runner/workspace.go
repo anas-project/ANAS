@@ -28,8 +28,25 @@ const (
 	// workspaceStateDir holds everything the runner writes for itself. It is
 	// deliberately a dotted name: users never edit anything inside it.
 	workspaceStateDir = ".anas"
-	// workspaceDataDir is where every cask's persistent data lives.
+	// workspaceDataDir is where every cask's own persistent state lives:
+	// databases, directory stores, issued certificates. It is the subvolume a
+	// snapshot captures and a restore replaces wholesale, because this state
+	// is coupled to the deployment that wrote it and has to move with it.
 	workspaceDataDir = "data"
+	// workspaceUserDataDir holds what people put there: the file shares, the
+	// documents. It is deliberately a sibling of data rather than a directory
+	// inside it, and the reason is a correctness one rather than tidiness.
+	//
+	// A restore replaces data/ entirely. User content kept inside it would be
+	// rewound by every deployment rollback, destroying whatever was saved
+	// since the snapshot -- files that have nothing to do with the deployment
+	// being rolled back. Separating the two is what lets a rollback restore
+	// application state without touching anyone's documents.
+	//
+	// Unlike data/, this may be a mount point: nothing renames it, so a second
+	// disk mounted here works. That is the supported way to keep bulk files on
+	// larger or cheaper storage.
+	workspaceUserDataDir = "userdata"
 	// workspaceSnapshotDir is a plain directory, not a subvolume. Only the
 	// *source* of a Btrfs snapshot has to be a subvolume; the destination just
 	// needs a parent on the same filesystem.
@@ -92,6 +109,7 @@ func checkWorkspace(path, source string) (string, error) {
 
 func stateDir(workspace string) string     { return filepath.Join(workspace, workspaceStateDir) }
 func dataDir(workspace string) string      { return filepath.Join(workspace, workspaceDataDir) }
+func userDataDir(workspace string) string  { return filepath.Join(workspace, workspaceUserDataDir) }
 func snapshotsDir(workspace string) string { return filepath.Join(workspace, workspaceSnapshotDir) }
 
 func workspaceConfigPath(workspace string) string {
@@ -108,9 +126,14 @@ func configPathFor(workspace, explicit string) string {
 }
 
 // applyWorkspaceEnv injects the values that come from the workspace layout
-// rather than from the config file. DATA_PATH is the only one today: casks
-// reference it as ${DATA_PATH} in their compose files, but its value is fixed
-// by the layout, so the config has no say in it.
+// rather than from the config file. Casks reference them as ${DATA_PATH} and
+// ${USER_DATA_PATH} in their compose files, but the values are fixed by the
+// layout, so the config has no say in them.
+//
+// The two are separate variables rather than one because they are backed up
+// and restored on different terms -- see workspaceUserDataDir. A cask storing
+// its own state under USER_DATA_PATH would silently opt that state out of
+// rollback, so the choice between them is part of what a cask declares.
 func (a *app) applyWorkspaceEnv() {
 	if a.workspace == "" {
 		return
@@ -119,8 +142,10 @@ func (a *app) applyWorkspaceEnv() {
 		a.env = map[string]string{}
 	}
 	a.env["DATA_PATH"] = dataDir(a.workspace)
+	a.env["USER_DATA_PATH"] = userDataDir(a.workspace)
 	if a.envOwner != nil {
-		a.envOwner["DATA_PATH"] = ""
+		a.envOwner["DATA_PATH"] = globalScope
+		a.envOwner["USER_DATA_PATH"] = globalScope
 	}
 }
 

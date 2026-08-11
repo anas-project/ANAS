@@ -23,6 +23,15 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
+  # Cross-cask values this cask reads. Listing them is what lets a rendered
+  # .env carry only what is used, instead of everything the dependency
+  # closure happens to own.
+  consumes:
+    - COLLABORA_ADMIN_USERNAME
+    - COLLABORA_ALIAS_GROUP
+    - NEXTCLOUD_DOMAIN_FULL
+    - SAMBA_DC_ADMIN_NAME
+    - TRAEFIK_BASE_PORT
   defaults:
     domain_prefix: collabora
     log_level: warning

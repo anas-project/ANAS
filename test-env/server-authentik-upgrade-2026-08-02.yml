@@ -8,7 +8,7 @@ iam:
   provider: authentik
 
 global:
-  domain: nas.test
+  base_domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true

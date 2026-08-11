@@ -134,7 +134,26 @@ Do not commit `.anas-test/` or generated secrets.
      ./test-env/scripts/server-directory-events-e2e.sh
    ```
 
-10. Deploy preflight
+10. Environment scope
+
+    Proves that restricting each cask's rendered `.env` to what its manifest
+    declares changed nothing an application can see. It renders the same
+    deployment under both the old and new rules and compares the results: the
+    resolved `docker compose config` must match apart from the env_file
+    passthrough, every `${VAR}` a compose file substitutes must still be
+    delivered, and every variable an entrypoint or `.envsubst` template reads
+    inside the container must still be present.
+
+    ```sh
+    ./test-env/scripts/test-env-scope.sh
+    ```
+
+    The comparison is only meaningful against the wide baseline: a variable the
+    cask never received cannot have been taken away, and most environment-looking
+    references are not environment values at all (`$TTL` is a BIND zone
+    directive, `APT_MIRROR_URL` a Dockerfile build argument).
+
+11. Deploy preflight
 
     Checks a rendered deployment for the two collisions that stay invisible on
     a redeploy and abort the first cold create: a pinned subnet the host

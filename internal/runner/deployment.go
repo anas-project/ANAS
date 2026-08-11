@@ -115,6 +115,8 @@ type prepareOptions struct {
 	caskRoot   string
 	verbose    bool
 	updateLock bool
+	// casks narrows which images `build` builds. Empty means all of them.
+	casks []string
 }
 
 func projectLockPath(configPath string) string {
@@ -134,12 +136,21 @@ func parsePrepareOptions(name string, args []string) (prepareOptions, error) {
 	fs.BoolVar(&out.verbose, "verbose", false, "debug logging")
 	fs.BoolVar(&out.updateLock, "update-lock", false, "create or update the config lock")
 	registerJSONFlag(fs)
-	if err := fs.Parse(args); err != nil {
+	// parseInterspersed for the same reason runActive uses it: `anas build lego
+	// -w <workspace>` must see the flag that follows the cask name, rather than
+	// silently building in whatever workspace the cwd happens to name.
+	positional, err := parseInterspersed(fs, args)
+	if err != nil {
 		return out, usageErrorf("%s", err.Error())
 	}
-	if fs.NArg() != 0 {
+	// `build` accepts cask names: rendering the whole deployment is cheap and
+	// has to happen anyway, but building every image to pick up a change in one
+	// Dockerfile is minutes of work for nothing. `render` takes none, because a
+	// partial rendering is not a deployment.
+	if len(positional) != 0 && name != "build" {
 		return out, usageErrorf("usage: anas %s [-w <workspace>] [-c config.yml] [--update-lock] [--json]", name)
 	}
+	out.casks = positional
 	workspace, err := resolveWorkspace(out.workspace)
 	if err != nil {
 		return out, usageErrorf("%s", err.Error())
@@ -391,6 +402,12 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	}
 	a.secrets = secrets
 	emitProgress(jsonMode, "calculate", 0, total, "casks")
+	// Part of the calculate stage, and reported as such: it is the derivation
+	// every cask hook reads from, so a host it cannot describe is a failure of
+	// the same step rather than a new contract code.
+	if err := a.applyHostNetwork(); err != nil {
+		return "", failuref("calculate_failed", "%s", err.Error())
+	}
 	if err := a.calculate(); err != nil {
 		return "", failuref("calculate_failed", "%s", err.Error())
 	}
@@ -409,11 +426,16 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 			return "", preconditionErrorf("compose_missing", "%s", err.Error())
 		}
 		a.compose = cli
+		selection, err := selectCasks(a, opts.casks)
+		if err != nil {
+			return "", usageErrorf("%s", err.Error())
+		}
+		total = int64(len(selection))
 		done := int64(0)
-		if err := a.each(stagingCasks, func(run caskRun) error {
+		if err := a.eachOf(stagingCasks, selection, func(run caskRun) error {
 			done++
 			emitProgress(jsonMode, "build-images", done, total, "casks")
-			if run.mod.Name == "core" {
+			if run.mod.RuntimeType != "compose" {
 				return nil
 			}
 			args := append([]string{"build"}, run.services...)
@@ -674,11 +696,14 @@ func runActive(action string, args []string, jsonMode bool) error {
 	workspaceFlag := fs.String("w", "", "workspace path")
 	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
 	registerJSONFlag(fs)
-	if err := fs.Parse(args); err != nil {
+	// parseInterspersed, not fs.Parse: the standard parser stops at the first
+	// non-flag argument, so `anas restart lego -w <workspace>` would take lego
+	// as positional and never see -w. That does not fail loudly -- it falls
+	// back to the cwd or ANAS_WORKSPACE and acts on whichever deployment that
+	// names, which is the failure `config secret get` already had to fix.
+	requested, err := parseInterspersed(fs, args)
+	if err != nil {
 		return usageErrorf("%s", err.Error())
-	}
-	if fs.NArg() != 0 {
-		return usageErrorf("usage: anas %s [-w <workspace>] [--json]", action)
 	}
 	workspace, err := resolveWorkspace(*workspaceFlag)
 	if err != nil {
@@ -706,20 +731,34 @@ func runActive(action string, args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("deployment_unreadable", "%s", err.Error())
 	}
+	selection, err := selectCasks(a, requested)
+	if err != nil {
+		return usageErrorf("%s", err.Error())
+	}
+	// A selection stops only what was named and leaves the macvlan bridge
+	// alone; the whole-deployment path still tears it down, because then there
+	// is nothing left to use it.
+	partial := len(requested) > 0
+	stop := func() error {
+		if partial {
+			return a.stopCasks(root, selection, jsonMode)
+		}
+		return a.stopRelease(root, jsonMode)
+	}
 	switch action {
 	case "start":
-		if err := startDeployment(a, root, jsonMode); err != nil {
+		if err := startDeployment(a, root, selection, jsonMode); err != nil {
 			return failuref("start_failed", "%s", err.Error())
 		}
 	case "restart":
-		if err := a.stopRelease(root, jsonMode); err != nil {
+		if err := stop(); err != nil {
 			return failuref("stop_failed", "%s", err.Error())
 		}
-		if err := startDeployment(a, root, jsonMode); err != nil {
+		if err := startDeployment(a, root, selection, jsonMode); err != nil {
 			return failuref("start_failed", "%s", err.Error())
 		}
 	case "stop":
-		if err := a.stopRelease(root, jsonMode); err != nil {
+		if err := stop(); err != nil {
 			return failuref("stop_failed", "%s", err.Error())
 		}
 	default:
@@ -731,26 +770,29 @@ func runActive(action string, args []string, jsonMode bool) error {
 	// would look substantial.
 	return emitEmptyOK(jsonMode, map[string]any{
 		"workspace": workspace, "action": action,
-		"deployment_id": active.ActiveDeployment, "casks": a.order,
+		"deployment_id": active.ActiveDeployment, "casks": selection,
 	})
 }
 
-func startDeployment(a *app, casksRoot string, jsonMode bool) error {
-	for _, name := range a.order {
+func startDeployment(a *app, casksRoot string, selection []string, jsonMode bool) error {
+	for _, name := range selection {
 		if _, err := parseEnvFile(filepath.Join(casksRoot, name, ".env")); err != nil {
 			return fmt.Errorf("deployment cask %s env: %w", name, err)
 		}
 	}
 	a.adoptReleaseEnv(casksRoot)
+	// hostLANRequired is asked of the whole deployment, not of the selection: a
+	// cask that does not itself need the bridge may still be started alongside
+	// one that does, and the bridge has to exist either way.
 	if err := a.ensureHostLAN(); err != nil {
 		return err
 	}
-	total := int64(len(a.order))
+	total := int64(len(selection))
 	done := int64(0)
-	if err := a.each(casksRoot, func(run caskRun) error {
+	if err := a.eachOf(casksRoot, selection, func(run caskRun) error {
 		done++
 		emitProgress(jsonMode, "start-containers", done, total, "casks")
-		if run.mod.Name == "core" {
+		if run.mod.RuntimeType != "compose" {
 			return nil
 		}
 		args := append([]string{"up", "-d", "--remove-orphans"}, run.services...)
@@ -793,7 +835,7 @@ func activateDeployment(base, id string, opts activateOptions) error {
 		return preconditionErrorf("deployment_unreadable", "%s", err.Error())
 	}
 	if active.ActiveDeployment == id {
-		if err := startDeployment(newApp, newRoot, opts.json); err != nil {
+		if err := startDeployment(newApp, newRoot, newApp.order, opts.json); err != nil {
 			return failuref("start_failed", "%s", err.Error())
 		}
 		return nil
@@ -843,10 +885,10 @@ func activateDeployment(base, id string, opts activateOptions) error {
 		}
 	}
 
-	if err := startDeployment(newApp, newRoot, opts.json); err != nil {
+	if err := startDeployment(newApp, newRoot, newApp.order, opts.json); err != nil {
 		_ = saveDeploymentFailure(base, id, err)
 		if oldApp != nil {
-			_ = startDeployment(oldApp, oldRoot, opts.json)
+			_ = startDeployment(oldApp, oldRoot, oldApp.order, opts.json)
 		}
 		return failuref("start_failed", "%s", err.Error())
 	}
@@ -866,7 +908,7 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	}
 	if err := saveActiveState(base, active); err != nil {
 		if oldApp != nil {
-			_ = startDeployment(oldApp, oldRoot, opts.json)
+			_ = startDeployment(oldApp, oldRoot, oldApp.order, opts.json)
 		}
 		return failuref("write_failed", "%s", err.Error())
 	}
@@ -931,7 +973,7 @@ func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot
 		kind: snapshotKindAuto, reason: trigger.reason,
 		from: current.ID, to: target.ID, json: opts.json,
 	}); err != nil {
-		_ = startDeployment(oldApp, oldRoot, opts.json)
+		_ = startDeployment(oldApp, oldRoot, oldApp.order, opts.json)
 		return err
 	}
 	return nil
@@ -973,15 +1015,15 @@ func stopRemovedDeployments(oldApp *app, oldRoot string, target *deploymentManif
 	removed := int64(0)
 	for i := len(oldApp.order) - 1; i >= 0; i-- {
 		name := oldApp.order[i]
-		if name == "core" || contains(target.ModuleOrder, name) {
+		if contains(target.ModuleOrder, name) {
 			continue
 		}
-		removed++
-		emitProgress(jsonMode, "stop-removed-casks", removed, 0, "casks")
 		mod := oldApp.reg[name]
 		if mod.RuntimeType != "compose" {
 			continue
 		}
+		removed++
+		emitProgress(jsonMode, "stop-removed-casks", removed, 0, "casks")
 		dir := filepath.Join(oldRoot, name)
 		if err := oldApp.compose.RunFile(dir, "anas_"+name, mod.ComposeFile, oldApp.caskEnv(dir), "down"); err != nil {
 			errs = append(errs, fmt.Errorf("stop removed cask %s: %w", name, err))

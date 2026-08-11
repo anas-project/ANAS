@@ -24,6 +24,19 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
+  # Cross-cask values this cask reads. Listing them is what lets a rendered
+  # .env carry only what is used, instead of everything the dependency
+  # closure happens to own.
+  consumes:
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_INTERNAL_CA_NAME
+    - SAMBA_DC_ADMIN_DN
+    - SAMBA_DC_BASE_COMPUTERS_DN
+    - SAMBA_DC_BASE_DN
+    - SAMBA_DC_BASE_GROUPS_DN
+    - SAMBA_DC_BASE_USERS_DN
+    - SAMBA_DC_DOMAIN
+    - SAMBA_DC_LDAPS_SERVER_URL
   defaults:
     domain_prefix: lam
   changes:

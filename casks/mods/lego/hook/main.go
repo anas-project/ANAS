@@ -202,7 +202,7 @@ func calcLego(e map[string]string, _ string, _ *secretStore) error {
 func resolveDNSPlatform(e map[string]string) error {
 	name := strings.TrimSpace(e["LEGO_DNS_PROVIDER"])
 	if name == "" {
-		if e["ANAS_VIRTUAL_DOMAIN"] == "true" {
+		if e["VIRTUAL_DOMAIN"] == "true" {
 			return nil
 		}
 		return fmt.Errorf("lego: services.lego.env.dns_provider is not set, and %s is not a virtual domain so a certificate must be requested;\nset it to one of: %s\nor set global.virtual_domain: true to serve the internal certificate instead",

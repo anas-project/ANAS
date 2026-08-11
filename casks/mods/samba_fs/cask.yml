@@ -27,13 +27,47 @@ config:
     log_level: "1"
     wsdd_log_level: "0"
     hostname: SambaFS
-  # The normalized share access mode is published without a cask prefix for
-  # the file-sharing templates.
+    # File-sharing parameters. They are this cask's own, but keep bare env
+    # names -- see `exports` below -- because they name what people see in a
+    # file manager and are set in the config's top level `env:` block. They
+    # lived in the core cask when every shared value did, which made them look
+    # deployment-wide.
+    share_dir_name: Share
+    share_access_mode: all_read_group_write
+    share_guest_read_only: "No"
+    use_default_domain: "yes"
+  # What each parameter accepts. share_access_mode was already validated, but
+  # only in the calculate hook -- so a wrong value was accepted by `config set`,
+  # written to the config, and rejected at the next render, well after the
+  # person who chose it had moved on.
+  types:
+    share_access_mode:
+      enum: [all_rw, all_read_group_write]
+    # Samba's own spelling, which is why it is Yes/No rather than true/false.
+    share_guest_read_only:
+      enum: [Yes, No]
+    use_default_domain:
+      enum: [yes, no]
+    log_level: int
+    wsdd_log_level: int
+  # Listing a bare env name here is what publishes the parameter of the same
+  # name without this cask's prefix, and what allows the hook to write it.
   exports:
+    - SHARE_DIR_NAME
     - SHARE_ACCESS_MODE
-  consumes:
-    - SHARE_ACCESS_MODE
+    - SHARE_GUEST_READ_ONLY
     - USE_DEFAULT_DOMAIN
+  consumes:
+    - ANAS_TLS_INTERNAL_CA_NAME
+    - SAMBA_DC_ADMIN_NAME
+    - SAMBA_DC_DC_DOMAIN
+    - SAMBA_DC_DNS_SEARCH
+    - SAMBA_DC_DNS_SERVER
+    - SAMBA_DC_DOMAIN
+    - SAMBA_DC_FS_ADMIN_GROUP_NAME
+    - SAMBA_DC_FS_SHARE_RW_GROUP_NAME
+    - SAMBA_DC_REALM
+    - SAMBA_DC_WORKGROUP
     # The domain join authenticates as this account. The password is sensitive
     # and owned by samba_dc, so it only crosses the boundary through an explicit
     # claim; without it the join runs with an empty password and locks the
@@ -48,6 +82,26 @@ config:
       effect: container_recreate
       apply: recreate-samba-fs
       description: The generated smb.conf is installed during container initialization.
+    share_access_mode:
+      effect: reconcile
+      apply: reconcile-samba-share-acl
+      description: Samba configuration and root/default ACLs must be reconciled.
+    share_guest_read_only:
+      effect: reconcile
+      apply: reconcile-samba-guest-acl
+      description: A state marker prevents recursive ACL work when the value is unchanged.
+    # Renaming the share renames the directory holding its contents: the
+    # container creates the new name empty and leaves the old one behind, with
+    # its ACLs, on the next start. Recreating the container is not enough.
+    share_dir_name:
+      effect: data_migrate
+      apply: migrate-share-directory
+      description: The share directory holds the files; a new name is a new empty directory unless the contents are moved with it.
+    # There is deliberately no userdata_path. The share tree is derived from
+    # USER_DATA_PATH, and a second disk is attached by mounting it there rather
+    # than by pointing one cask somewhere else: a per-cask override would move
+    # that cask's files outside the tree snapshots and backups know about,
+    # while looking like an ordinary setting.
 features:
   host_lan: required
 logic:

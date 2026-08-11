@@ -82,7 +82,7 @@ anas plan -c config.yml [--cask-root DIR] [--json]
   "api_version": "anas.dev/cli/v1", "ok": true,
   "config": "/data/ws/config.yml",
   "cask_root": "/srv/anas/casks/mods",
-  "modules": ["core", "postgres", "authentik", "nextcloud"],
+  "modules": ["postgres", "authentik", "nextcloud"],
   "iam": {
     "provider": "authentik",
     "consumers": [{ "cask": "nextcloud", "interface": "oidc" }]
@@ -116,8 +116,8 @@ anas lock [-w WORKSPACE] [-c config.yml] [--json]
   "api_version": "anas.dev/cli/v1", "ok": true,
   "workspace": "/data/ws", "config": "/data/ws/config.yml",
   "lock_path": "/data/ws/config.lock.yml",
-  "modules": ["core", "postgres"],
-  "casks": [{ "name": "core", "version": "1.2.0", "revision": 1, "app_version": "", "digest": "sha256:…" }],
+  "modules": ["postgres", "traefik"],
+  "casks": [{ "name": "postgres", "version": "16.4.0", "revision": 1, "app_version": "16.4", "digest": "sha256:…" }],
   "iam": { "provider": null, "consumers": [] },
   "capability_bindings": {}
 }
@@ -131,10 +131,12 @@ anas lock [-w WORKSPACE] [-c config.yml] [--json]
 
 ```
 anas render [-w WORKSPACE] [-c config.yml] [--update-lock] [--json]
-anas build  [-w WORKSPACE] [-c config.yml] [--update-lock] [--json]
+anas build  [CASK...] [-w WORKSPACE] [-c config.yml] [--update-lock] [--json]
 ```
 
 产出一个不可变部署制品并封印它，但**不激活**。`build` 比 `render` 多一步构建镜像。
+
+`build` 接受 cask 名，只构建这些 cask 的镜像；渲染始终是整个部署的，因为渲染一半不构成部署。`render` 不接受 cask 名。
 
 ```json
 {
@@ -188,7 +190,7 @@ anas apply [-w WORKSPACE] [-c config.yml [--build] | --deployment ID]
   "error": {
     "code": "guarded_changes",
     "message": "apply crosses guarded state changes:\n  …",
-    "detail": { "blocked": ["core.default_service_root_password (credential_rotate; rotate-secret)"] }
+    "detail": { "blocked": ["global.default_service_root_password (credential_rotate; rotate-secret)"] }
   }
 }
 ```
@@ -211,8 +213,12 @@ warning 记录到 stderr，`code` 取 `no_snapshot_backend` 或 `data_not_subvol
 ## start / restart / stop
 
 ```
-anas start|restart|stop [-w WORKSPACE] [--json]
+anas start|restart|stop [CASK...] [-w WORKSPACE] [--json]
 ```
+
+不给 cask 名就是整个部署。给了名字只作用于这些 cask，顺序取自部署的依赖顺序而非命令行词序；名字不在本部署中是用法错误，并列出本部署实际有哪些 cask。
+
+部分停止**不拆 macvlan 网桥**：整体停止会拆（没人再用），停一个 cask 不代表其他 cask 不用它。
 
 **没有天然结果的命令**，按 README 的"最小信封"办：
 
@@ -221,7 +227,7 @@ anas start|restart|stop [-w WORKSPACE] [--json]
   "api_version": "anas.dev/cli/v1", "ok": true,
   "workspace": "/data/ws", "action": "stop",
   "deployment_id": "20260731T101500Z-a1b2c3d4",
-  "casks": ["core", "postgres", "authentik"]
+  "casks": ["postgres", "authentik", "traefik"]
 }
 ```
 
@@ -330,10 +336,25 @@ anas deployments inspect ID [-w WORKSPACE] [--json]
 ## config
 
 ```
+anas config list    [global|<cask>]     [-w WORKSPACE] [-c config.yml] [--json]
 anas config set     <module.parameter> <value> [-w WORKSPACE] [-c config.yml] [--json]
 anas config explain <module.parameter> [--json]
 anas config plan    [-w WORKSPACE] [-c config.yml] [--json]
 anas config secret  list | get <KEY>   [-w WORKSPACE] [--json]
+```
+
+`config list` enumerates every settable parameter with the path `set` accepts,
+the environment key it becomes, its default, its current value and its change
+effect. Values of parameters marked sensitive are reported as `<set>`/`<unset>`
+and never printed; `config secret get` remains the way to read a credential. It
+needs no workspace, because what can be set is a property of the casks; inside
+one it additionally fills in the current values.
+
+`set` and `explain` reject a parameter no manifest declares, naming the closest
+declared one, and exit with the usage code. The raw `env.<KEY>` path is not
+checked: it is the escape hatch for values nothing declares.
+
+```text
 ```
 
 `set` 与 `explain` 共用一个 `setting` 形状，能读一个就能读另一个：
@@ -343,7 +364,7 @@ anas config secret  list | get <KEY>   [-w WORKSPACE] [--json]
   "api_version": "anas.dev/cli/v1", "ok": true,
   "workspace": "/data/ws", "config": "/data/ws/config.yml",
   "setting": {
-    "path": "core.default_service_root_password", "module": "core",
+    "path": "global.default_service_root_password", "module": "global",
     "parameter": "default_service_root_password",
     "effect": "credential_rotate", "apply": "rotate-secret",
     "sensitive": true, "description": "…"
@@ -366,7 +387,7 @@ anas config secret  list | get <KEY>   [-w WORKSPACE] [--json]
   "matches_last_start": false,
   "changes": [{
     "key": "global.timezone", "change": "change",
-    "path": "global.timezone", "module": "core", "parameter": "timezone",
+    "path": "global.timezone", "module": "global", "parameter": "timezone",
     "effect": "container_recreate", "apply": "render-and-recreate",
     "sensitive": false, "description": "…"
   }]

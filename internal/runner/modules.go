@@ -6,19 +6,25 @@ import (
 )
 
 type Module struct {
-	Name                 string
-	Version              string
-	Revision             int
-	AppVersion           string
-	UpgradeFrom          string
-	DataBreaking         *[]string
-	SourceDir            string
-	EnvPrefix            string
-	Defaults             map[string]string
-	Required             []string
-	Consumes             []string
-	Exports              []string
-	Changes              map[string]ChangePolicy
+	Name         string
+	Version      string
+	Revision     int
+	AppVersion   string
+	UpgradeFrom  string
+	DataBreaking *[]string
+	SourceDir    string
+	EnvPrefix    string
+	Defaults     map[string]string
+	Required     []string
+	// Parameters is every parameter cask.yml declares, in config spelling.
+	// Defaults and Required hold the same names already converted to env keys,
+	// which is the form calculation needs and the wrong form for an inventory.
+	Parameters []string
+	Consumes   []string
+	Exports    []string
+	Changes    map[string]ChangePolicy
+	// Types is what each parameter accepts, by config name.
+	Types                map[string]ParamType
 	Requires             []Dependency
 	RequiresOne          []AlternativeDependency
 	Provides             []ProvidedCapability
@@ -79,6 +85,32 @@ type ChangePolicy struct {
 	Description string `json:"description,omitempty"`
 	Sensitive   bool   `json:"sensitive"`
 }
+
+// bareEnvParameter reports the env key for a parameter a cask publishes under a
+// bare env name instead of under its own prefix, which is what listing that
+// name in `config.exports` declares. Such a parameter is owned by the cask but
+// addressed by its bare name, so it is set in the config's top level `env:`
+// block rather than under `services.<cask>.env`, where every key acquires the
+// prefix.
+func (m Module) bareEnvParameter(parameter string) (string, bool) {
+	key := globalParamEnv(parameter)
+	if contains(m.Exports, key) {
+		return key, true
+	}
+	return "", false
+}
+
+// ParamType is a parameter's accepted shape. An empty Kind with no Enum means
+// nothing was declared, which is the state every cask parameter was in before
+// this existed: any string went in and a wrong one was found, at best, when a
+// container failed to start.
+type ParamType struct {
+	Kind string
+	Enum []string
+}
+
+// Declared reports whether the cask said anything about this parameter.
+func (t ParamType) Declared() bool { return t.Kind != "" || len(t.Enum) > 0 }
 
 type Dependency struct {
 	Name     string

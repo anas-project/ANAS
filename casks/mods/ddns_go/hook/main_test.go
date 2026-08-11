@@ -189,3 +189,15 @@ func TestNetInterfaceRequiresAnInterfaceName(t *testing.T) {
 		t.Fatal("expected an error when no interface is known")
 	}
 }
+
+// The same agreement, asserted from the other side. See the ddns_updater test
+// of the same name: a shared parameter whose default polarity depends on which
+// implementation reads it is a config that means two things.
+func TestAbsentAddressFamilyMeansEnabled(t *testing.T) {
+	if !wantAddressFamily(map[string]string{}, "IPV4") {
+		t.Error("an absent ipv4 must mean enabled, matching the schema default")
+	}
+	if wantAddressFamily(map[string]string{"IPV6": "false"}, "IPV6") {
+		t.Error("an explicit false must disable the family")
+	}
+}

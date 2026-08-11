@@ -155,10 +155,23 @@ func restoreBackup(workspace, dest string, manifest *backupManifest, all []backu
 	restored = append(restored, "state")
 
 	emitProgress(jsonMode, "restore-data", 0, 0, "bytes")
-	if err := installBackupData(filepath.Join(source.root, "data"), workspace); err != nil {
+	if err := installBackupData(filepath.Join(source.root, "data"), workspace, dataDir(workspace)); err != nil {
 		return nil, failuref("restore_failed", "%s", err.Error())
 	}
 	restored = append(restored, "data")
+
+	// Restoring a backup is not the same act as rolling a deployment back: the
+	// workspace being restored into is usually empty or broken, and the files
+	// are the reason the backup was taken. So user content is put back when the
+	// backup carries it, rather than being held out the way a snapshot restore
+	// holds it out.
+	if userSource := filepath.Join(source.root, workspaceUserDataDir); exists(userSource) {
+		emitProgress(jsonMode, "restore-userdata", 0, 0, "bytes")
+		if err := installBackupData(userSource, workspace, userDataDir(workspace)); err != nil {
+			return nil, failuref("restore_failed", "restore user data: %s", err.Error())
+		}
+		restored = append(restored, workspaceUserDataDir)
+	}
 
 	if err := rebuildSnapshotIndex(workspace); err != nil {
 		return nil, err
@@ -212,6 +225,12 @@ func materializeFromTree(workspace, root string, manifest *backupManifest) (*mat
 		cleanup()
 		return nil, failuref("restore_failed", "copy the backed-up data: %v", err)
 	}
+	if exists(backupUserDataPath(root)) {
+		if err := copyDirectory(backupUserDataPath(root), filepath.Join(staging, workspaceUserDataDir)); err != nil {
+			cleanup()
+			return nil, failuref("restore_failed", "copy the backed-up user data: %v", err)
+		}
+	}
 	return &materialized{root: staging, cleanup: cleanup}, nil
 }
 
@@ -257,6 +276,21 @@ func materializeFromStream(workspace, dest string, manifest *backupManifest, all
 		if err != nil {
 			cleanup()
 			return nil, failuref("restore_failed", "receive backup %s: %v", link.BackupID, err)
+		}
+	}
+	// The user-content stream is full rather than incremental, so only the
+	// backup being restored carries one and there is no chain to walk.
+	if userStream := backupUserStreamPath(backupRoot(dest, manifest.BackupID)); exists(userStream) {
+		stream, err := os.Open(userStream)
+		if err != nil {
+			cleanup()
+			return nil, preconditionErrorf("stream_missing", "backup %s user data: %v", manifest.BackupID, err)
+		}
+		err = runBtrfsWithStdin(stream, "receive", staging)
+		_ = stream.Close()
+		if err != nil {
+			cleanup()
+			return nil, failuref("restore_failed", "receive backup %s user data: %v", manifest.BackupID, err)
 		}
 	}
 	if err := extractTar(backupMetaTarPath(backupRoot(dest, manifest.BackupID)), staging); err != nil {
@@ -346,15 +380,14 @@ func restoreBackupArtifact(root, base, id string) error {
 	return os.Rename(staged, target)
 }
 
-// installBackupData replaces the workspace's data.
+// installBackupData replaces one of the workspace's trees.
 //
-// The current data is moved aside first so a failure part way through can put
+// The current tree is moved aside first so a failure part way through can put
 // it straight back, and only removed once the replacement is in place. On Btrfs
 // the replacement is created as a subvolume even when it has to be filled by
-// copying, because a data directory that is not a subvolume silently costs the
-// workspace every future snapshot.
-func installBackupData(source, workspace string) error {
-	target := dataDir(workspace)
+// copying, because a tree that is not a subvolume silently costs the workspace
+// every future snapshot of it.
+func installBackupData(source, workspace, target string) error {
 	onBtrfs, _ := filesystemIsBtrfs(workspace)
 	aside := ""
 	if exists(target) {

@@ -45,6 +45,13 @@ config:
   # This cask's own IAM binding. It reads no other consumer's binding and no
   # IAM-implementation variable.
   consumes:
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_INTERNAL_CA_NAME
+    - NETBIRD_SIGNAL_PORT
+    - SAMBA_DC_APP_FILTER
+    - TRAEFIK_BASE_PORT
+    - TRAEFIK_HOSTNAME
+    - TURN_DOMAIN_PORT
     - ANAS_IAM_BINDING__NETBIRD__*
     - TURN_SECRET
   changes:

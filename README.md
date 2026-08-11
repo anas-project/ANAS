@@ -51,7 +51,7 @@ modules:
   - traefik
 
 global:
-  domain: nas.example.com
+  base_domain: nas.example.com
   email: admin@example.com
   data_path: ./data
   timezone: Asia/Shanghai
@@ -171,7 +171,6 @@ The launcher covers:
 
 Current casks provide:
 
-- base runtime defaults and host network discovery through `core`
 - ACME certificate files through `lego`
 - HTTPS routing through `traefik`
 - local BIND9-DLZ DNS and Samba AD support through `samba_dc`
@@ -243,6 +242,11 @@ structure, and rules for designing new casks.
 See [docs/iam-capability-design.md](docs/iam-capability-design.md) for the
 proposed provider-neutral IAM capability model, OIDC/SAML negotiation,
 environment contract, provider selection, and migration plan.
+
+See [docs/app-catalog-design.md](docs/app-catalog-design.md) for the proposed
+provider-neutral application catalog: manifest launcher metadata, per-user
+visibility derived from the enforcing authorization point, categories, the
+declarative icon contract, and the LLNG/authentik mapping.
 
 See [docs/config-state-lifecycle.md](docs/config-state-lifecycle.md) for the
 current persistent-state audit, first-start-only settings, and the proposed
