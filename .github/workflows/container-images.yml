@@ -164,20 +164,48 @@ jobs:
           username: cnb
           password: ${{ secrets.CNB_REGISTRY_TOKEN }}
 
-      - name: Reject an existing release tag in either registry
+      - name: Inspect release state
+        id: release_state
         if: github.event_name != 'pull_request'
         env:
           GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
           CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
         run: |
-          for image in "$GHCR_IMAGE" "$CNB_IMAGE"; do
-            if docker buildx imagetools inspect "$image" >/dev/null 2>&1; then
-              echo "$image already exists; published tags are immutable" >&2
-              exit 1
-            fi
-          done
+          set -euo pipefail
+
+          ghcr_exists=false
+          cnb_exists=false
+          docker buildx imagetools inspect "$GHCR_IMAGE" >/dev/null 2>&1 && ghcr_exists=true
+          docker buildx imagetools inspect "$CNB_IMAGE" >/dev/null 2>&1 && cnb_exists=true
+
+          if [[ "$ghcr_exists" == true && "$cnb_exists" == true ]]; then
+            mode=complete
+          elif [[ "$ghcr_exists" == true ]]; then
+            mode=mirror_to_cnb
+          elif [[ "$cnb_exists" == true ]]; then
+            mode=mirror_to_ghcr
+          else
+            mode=build
+          fi
+          echo "mode=$mode" >>"$GITHUB_OUTPUT"
+          echo "Release state: GHCR=$ghcr_exists CNB=$cnb_exists mode=$mode"
+
+      - name: Mirror the existing GHCR image to CNB
+        if: steps.release_state.outputs.mode == 'mirror_to_cnb'
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+          CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
+        run: docker buildx imagetools create --tag "$CNB_IMAGE" "$GHCR_IMAGE"
+
+      - name: Mirror the existing CNB image to GHCR
+        if: steps.release_state.outputs.mode == 'mirror_to_ghcr'
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+          CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
+        run: docker buildx imagetools create --tag "$GHCR_IMAGE" "$CNB_IMAGE"
 
       - name: Build and publish
+        if: github.event_name == 'pull_request' || steps.release_state.outputs.mode == 'build'
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
@@ -197,3 +225,12 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
           provenance: mode=max
           sbom: true
+
+      - name: Verify the published release
+        if: github.event_name != 'pull_request'
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+          CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
+        run: |
+          docker buildx imagetools inspect "$GHCR_IMAGE" >/dev/null
+          docker buildx imagetools inspect "$CNB_IMAGE" >/dev/null
