@@ -122,9 +122,11 @@ registry。GHCR 保留完整的 provenance 和 SBOM；由于 CNB Registry 对单
 
 `samba_dc` 的 Ubuntu 基础镜像还包含超过 CNB 限制的构建历史元数据，因此其运行镜像使用
 多阶段 Dockerfile：第一阶段完成安装，最终 `scratch` 阶段用单个 `COPY --from=rootfs`
-生成运行根文件系统。`samba_dc` 主镜像还禁用 BuildKit provenance/SBOM，避免证明元数据再次
-超过 CNB 限制；其余镜像继续生成完整证明。该调整以 `4.23.6-r3` 首次发布；文件内容与运行
-配置保持一致，但最终 manifest/config 足够紧凑，可由两个 registry 接收。
+生成运行根文件系统。进一步诊断发现 `EXPOSE 49152-65535` 会被 BuildKit 展开成 16,384 个
+端口条目，同时写入 image config 的 `config.ExposedPorts` 和 `history[].created_by`，使每个平台
+config 达到 411,539 字节。`samba_dc` 使用 host 网络，`EXPOSE` 本身不发布端口，因此从镜像
+元数据中移除该动态端口范围，不改变运行时可用端口；provenance 和 SBOM 继续保留。该调整以
+`4.23.6-r3` 首次发布。
 
 ## 文档整理
 

@@ -214,8 +214,8 @@ jobs:
             dev.anas.cask.revision=${{ matrix.revision }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
-          provenance: ${{ matrix.image == 'anas-samba-dc' && 'false' || 'mode=max' }}
-          sbom: ${{ matrix.image != 'anas-samba-dc' }}
+          provenance: mode=max
+          sbom: true
 
       - name: Mirror the GHCR runtime image to CNB
         if: steps.release_state.outputs.mode == 'mirror_to_cnb' || steps.release_state.outputs.mode == 'build'
