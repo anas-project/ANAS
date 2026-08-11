@@ -53,7 +53,7 @@ install_app_once() {
   archive=$(mktemp)
   echo "Direct GitHub download failed; retrying $app_name through the configured mirror"
   if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 \
-    "$proxy_prefix$github_url" -o "$archive"; then
+    "${proxy_prefix%/}/${github_url#https://}" -o "$archive"; then
     rm -f "$archive"
     return "$status"
   fi
@@ -88,7 +88,8 @@ restore_memories_places_source() {
   proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-}"
   if [ -n "$proxy_prefix" ]; then
     sed -i \
-      "s#${proxy_prefix}https://github.com/pulsejet/memories-assets/#https://github.com/pulsejet/memories-assets/#" \
+      -e "s#${proxy_prefix%/}/github.com/pulsejet/memories-assets/#https://github.com/pulsejet/memories-assets/#" \
+      -e "s#${proxy_prefix}https://github.com/pulsejet/memories-assets/#https://github.com/pulsejet/memories-assets/#" \
       "$places_file"
   fi
 }
@@ -123,7 +124,7 @@ prepare_memories_places_archive() {
   download_url='https://github.com/pulsejet/memories-assets/releases/download/geo-0.0.4/planet_coarse_boundaries.zip'
   if [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$GITHUB_DOWNLOAD_PROXY_PREFIX" ]; then
     proxy_prefix="$GITHUB_DOWNLOAD_PROXY_PREFIX"
-    download_url="$proxy_prefix$download_url"
+    download_url="${proxy_prefix%/}/${download_url#https://}"
   fi
 
   for attempt in 1 2 3 4 5; do
@@ -144,14 +145,15 @@ prepare_memories_places_archive() {
 
 install_app_from_store_mirror() {
   local app_name="$1"
-  local version version_pin appstore_cache release release_version download_url proxy_prefix archive
+  local version version_pin appstore_cache appstore_url release release_version download_url proxy_prefix archive
 
   version=$(occ status --output=json | jq -r '.versionstring')
   version_pin=$(app_version_pin "$app_name")
   appstore_cache="/tmp/nextcloud-appstore-$version.json"
   if [ ! -s "$appstore_cache" ]; then
+    appstore_url="${NEXTCLOUD_APPSTORE_URL:-https://apps.nextcloud.com/api/v1}"
     curl -fsSL --retry 3 --connect-timeout 15 --max-time 120 \
-      "https://apps.nextcloud.com/api/v1/platform/$version/apps.json" \
+      "${appstore_url%/}/platform/$version/apps.json" \
       -o "$appstore_cache" || return 1
   fi
   release=$(jq -c --arg app "$app_name" --arg pin "$version_pin" '
@@ -173,7 +175,7 @@ install_app_from_store_mirror() {
     https://github.com/*)
       proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-}"
       if [ -n "$proxy_prefix" ]; then
-        download_url="$proxy_prefix$download_url"
+        download_url="${proxy_prefix%/}/${download_url#https://}"
       fi
       ;;
   esac

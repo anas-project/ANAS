@@ -1,13 +1,14 @@
 services:
   anas_llng:
     container_name: ${CONTAINER_PREFIX}llng
-    image: ${IMAGE_PREFIX}llng:2.23.2
+    image: ${GHCR_REGISTRY:-ghcr.io}/anas-project/anas-llng:2.23.2-r1
     build:
       context: ./llng
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
         CHINESE_SPEEDUP: ${CHINESE_SPEEDUP:-false}
         APT_MIRROR_URL: ${APT_MIRROR_URL:-}
+        LLNG_DOCKER_HUB_REGISTRY: ${LLNG_DOCKER_HUB_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
     restart: unless-stopped
     volumes:
       - "${DATA_PATH}/llng/conf:/var/lib/lemonldap-ng/conf/"

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/whlsxl/anas/internal/config"
+	"github.com/anas-project/ANAS/internal/config"
 )
 
 // Environment scoping. Every key in the flat environment has an owner:

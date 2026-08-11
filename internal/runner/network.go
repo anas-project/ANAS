@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/whlsxl/anas/internal/compose"
+	"github.com/anas-project/ANAS/internal/compose"
 )
 
 func ensureMacvlan(env map[string]string, base string, _ compose.CLI) error {

@@ -5,7 +5,9 @@ services:
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
         - GOPROXY_URL
-    image: ${IMAGE_PREFIX}ddns_go:6.17.4
+        - DOCKER_HUB_REGISTRY
+        - GHCR_REGISTRY
+    image: ${GHCR_REGISTRY:-ghcr.io}/anas-project/anas-ddns-go:6.17.4-r1
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     restart: unless-stopped
     # Host networking is what makes IPv6 work. A bridge container has no IPv6

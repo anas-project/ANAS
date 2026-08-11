@@ -2,6 +2,7 @@ api_version: anas.dev/v1
 kind: Cask
 name: mariadb
 version: 12.3.2
+revision: 1
 app_version: 12.3.2
 abi:
   supports:

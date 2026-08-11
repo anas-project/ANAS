@@ -1,4 +1,4 @@
-module github.com/whlsxl/anas/casks/mods/ddns_go/reconcile
+module github.com/anas-project/ANAS/casks/mods/ddns_go/reconcile
 
 go 1.26.5
 

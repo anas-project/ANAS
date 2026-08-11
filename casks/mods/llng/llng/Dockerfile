@@ -1,4 +1,5 @@
-FROM lemonldapng/lemonldap-ng:2.23.2
+ARG LLNG_DOCKER_HUB_REGISTRY=docker.io
+FROM ${LLNG_DOCKER_HUB_REGISTRY}/lemonldapng/lemonldap-ng:2.23.2
 
 LABEL maintainer="Hailong"
 

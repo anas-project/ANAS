@@ -129,6 +129,23 @@ func governingDataBreaking(fromVersion string, fromDeclared *[]string, toVersion
 // caskTransitionVerdict answers the question for one cask across a deployment
 // transition, resolving the governing declaration on the caller's behalf.
 func caskTransitionVerdict(from, to deploymentCask) (dataVerdict, string) {
+	if strings.TrimSpace(from.Version) == strings.TrimSpace(to.Version) && from.Revision != to.Revision {
+		declared := to.DataBreaking
+		higher := to
+		if from.Revision > to.Revision {
+			declared = from.DataBreaking
+			higher = from
+		}
+		if declared == nil {
+			return dataUnknown, ""
+		}
+		for _, raw := range *declared {
+			if strings.TrimSpace(raw) == strings.TrimSpace(higher.Version) {
+				return dataBreaking, formatCaskRelease(higher.Version, higher.Revision)
+			}
+		}
+		return dataCompatible, ""
+	}
 	declared := governingDataBreaking(from.Version, from.DataBreaking, to.Version, to.DataBreaking)
 	return caskDataVerdict(from.Version, to.Version, declared)
 }
@@ -204,10 +221,10 @@ func deploymentRollbackVersionGuard(current, target *deploymentManifest) rollbac
 		case dataUnknown:
 			guard.Blocked = append(guard.Blocked, fmt.Sprintf(
 				"cask %s %s/%s -> %s/%s (data compatibility unknown; the cask does not declare upgrade.data_breaking)",
-				name, from.Version, from.AppVersion, to.Version, to.AppVersion))
+				name, formatCaskRelease(from.Version, from.Revision), from.AppVersion, formatCaskRelease(to.Version, to.Revision), to.AppVersion))
 		case dataBreaking:
 			guard.Crossings = append(guard.Crossings, dataBreakingCrossing{
-				Cask: name, From: from.Version, To: to.Version, At: at,
+				Cask: name, From: formatCaskRelease(from.Version, from.Revision), To: formatCaskRelease(to.Version, to.Revision), At: at,
 			})
 		}
 	}
@@ -276,7 +293,7 @@ func deploymentSnapshotTrigger(current, target *deploymentManifest) *applySnapsh
 			continue
 		}
 		if verdict, at := caskTransitionVerdict(from, to); verdict == dataBreaking {
-			breaking = append(breaking, fmt.Sprintf("%s %s -> %s crosses data-breaking version %s", name, from.Version, to.Version, at))
+			breaking = append(breaking, fmt.Sprintf("%s %s -> %s crosses data-breaking version %s", name, formatCaskRelease(from.Version, from.Revision), formatCaskRelease(to.Version, to.Revision), at))
 		}
 	}
 	if len(breaking) > 0 {

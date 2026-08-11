@@ -82,6 +82,10 @@ env:
   # declares. Parameters that are declared belong under global: or under
   # services.<cask>.env; `anas config list` prints the path for each.
   #
+  # Mainland China: enables APT, APK, npm, Go, GitHub/Nextcloud downloads and
+  # Docker Hub/GHCR/Quay mirrors as one coordinated setting.
+  # CHINESE_SPEEDUP: "true"
+  #
   # These two are samba_fs parameters published under a bare name, because they
   # name what people see in a file manager.
   #

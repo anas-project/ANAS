@@ -1,4 +1,5 @@
-FROM ubuntu:resolute
+ARG DOCKER_HUB_REGISTRY=docker.io
+FROM ${DOCKER_HUB_REGISTRY}/library/ubuntu:resolute
 LABEL maintainer="Hailong"
 
 ENV DEBIAN_FRONTEND=noninteractive

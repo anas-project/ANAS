@@ -42,7 +42,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/whlsxl/anas/internal/config"
+	"github.com/anas-project/ANAS/internal/config"
 )
 
 const (
@@ -383,7 +383,7 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 	}
 	casks := map[string]string{}
 	for name, cask := range manifest.Casks {
-		casks[name] = cask.Version
+		casks[name] = formatCaskRelease(cask.Version, cask.Revision)
 	}
 	configDigest, err := fileDigest(configSource)
 	if err != nil {

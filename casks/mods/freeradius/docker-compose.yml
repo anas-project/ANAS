@@ -1,7 +1,7 @@
 services:
   anas_freeradius:
     container_name: ${CONTAINER_PREFIX}freeradius
-    image: freeradius/freeradius-server:3.2.10
+    image: ${DOCKER_HUB_REGISTRY:-docker.io}/freeradius/freeradius-server:3.2.10
     restart: unless-stopped
     ports:
       - "1812:1812/udp"

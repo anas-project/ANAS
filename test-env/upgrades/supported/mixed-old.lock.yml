@@ -4,10 +4,10 @@ casks:
     version: 4.8.0
     source: casks/mods/lego
   samba_dc:
-    version: 24.01.0
+    version: 4.22.0
     source: casks/mods/samba_dc
   samba_fs:
-    version: 22.01.0
+    version: 4.22.0
     source: casks/mods/samba_fs
   traefik:
     version: 2.4.0

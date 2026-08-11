@@ -32,14 +32,18 @@ func TestVersionConstraintHyphenRange(t *testing.T) {
 
 func TestValidateUpgradeRejectsUnsupportedSource(t *testing.T) {
 	mod := Module{Name: "example", Version: "1.5.2", UpgradeFrom: ">=1.0.1 <=1.5.1"}
-	if err := validateUpgrade(mod, "1.5.1"); err != nil {
+	mod.Revision = 2
+	if err := validateUpgrade(mod, "1.5.1", 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateUpgrade(mod, "0.9.1"); err == nil {
+	if err := validateUpgrade(mod, "0.9.1", 1); err == nil {
 		t.Fatal("expected unsupported source version error")
 	}
-	if err := validateUpgrade(mod, "2.0.1"); err == nil {
+	if err := validateUpgrade(mod, "2.0.1", 1); err == nil {
 		t.Fatal("expected downgrade error")
+	}
+	if err := validateUpgrade(mod, "1.5.2", 3); err == nil {
+		t.Fatal("expected revision downgrade error")
 	}
 }
 
@@ -70,7 +74,7 @@ func TestCaskLockPersistsResolvedBindings(t *testing.T) {
 	base := filepath.Join(t.TempDir(), "runtime")
 	lock := &caskLock{
 		APIVersion: "anas.dev/v1",
-		Casks:      map[string]caskLockRecord{"nextcloud": {Version: "30.0.1"}},
+		Casks:      map[string]caskLockRecord{"nextcloud": {Version: "30.0.1", Revision: 2}},
 		Bindings:   map[string]map[string]string{"nextcloud": {"relational_database": "mariadb"}},
 	}
 	if err := lock.Save(base); err != nil {
@@ -82,5 +86,8 @@ func TestCaskLockPersistsResolvedBindings(t *testing.T) {
 	}
 	if got := loaded.Bindings["nextcloud"]["relational_database"]; got != "mariadb" {
 		t.Fatalf("binding = %q, want mariadb", got)
+	}
+	if got := loaded.Casks["nextcloud"].Revision; got != 2 {
+		t.Fatalf("revision = %d, want 2", got)
 	}
 }

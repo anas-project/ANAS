@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/whlsxl/anas/internal/config"
+	"github.com/anas-project/ANAS/internal/config"
 )
 
 // dnsCredApp builds a deployment running lego alongside both DDNS engines,

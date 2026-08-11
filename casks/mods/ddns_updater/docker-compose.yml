@@ -1,6 +1,6 @@
 services:
   anas_ddns-updater:
-    image: ghcr.io/qdm12/ddns-updater:2.10.0
+    image: ${GHCR_REGISTRY:-ghcr.io}/qdm12/ddns-updater:2.10.0
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     restart: unless-stopped
     dns:

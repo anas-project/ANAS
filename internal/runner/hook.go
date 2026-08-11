@@ -149,6 +149,9 @@ func (a *app) ensureHookBinary(mod Module, pkg string) (string, error) {
 	build := exec.Command("go", "build", "-o", bin, pkg)
 	build.Dir = mod.SourceDir
 	build.Env = append(os.Environ(), "GOCACHE="+cacheDir)
+	if proxy := strings.TrimSpace(a.env["GOPROXY_URL"]); proxy != "" {
+		build.Env = append(build.Env, "GOPROXY="+proxy)
+	}
 	var stderr bytes.Buffer
 	build.Stderr = &stderr
 	if err := build.Run(); err != nil {

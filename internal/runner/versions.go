@@ -31,6 +31,13 @@ func parseVersionConstraint(raw string) (*semver.Constraints, error) {
 	return constraint, nil
 }
 
+func formatCaskRelease(version string, revision int) string {
+	if revision < 1 {
+		return version
+	}
+	return fmt.Sprintf("%s-r%d", version, revision)
+}
+
 type caskLock struct {
 	APIVersion string                    `yaml:"api_version"`
 	Casks      map[string]caskLockRecord `yaml:"casks"`
@@ -46,9 +53,10 @@ type caskLockIAM struct {
 }
 
 type caskLockRecord struct {
-	Version string `yaml:"version"`
+	Version  string `yaml:"version"`
+	Revision int    `yaml:"revision"`
 	// AppVersion records the upstream application/image version separately
-	// from the cask packaging version used for constraints and upgrades.
+	// when its original spelling differs from normalized Version.
 	AppVersion string `yaml:"app_version,omitempty"`
 	Source     string `yaml:"source,omitempty"`
 	Digest     string `yaml:"digest"`
@@ -121,7 +129,7 @@ func (a *app) validateVersions(lock *caskLock) error {
 		mod := a.reg[name]
 		current, ok := lock.Casks[name]
 		if ok && current.Version != "" {
-			if err := validateUpgrade(mod, current.Version); err != nil {
+			if err := validateUpgrade(mod, current.Version, current.Revision); err != nil {
 				return err
 			}
 		}
@@ -147,7 +155,7 @@ func (a *app) validateVersions(lock *caskLock) error {
 	return nil
 }
 
-func validateUpgrade(mod Module, currentVersion string) error {
+func validateUpgrade(mod Module, currentVersion string, currentRevision int) error {
 	current, err := parseSemver(currentVersion)
 	if err != nil {
 		return fmt.Errorf("installed cask %q version %q is invalid: %w", mod.Name, currentVersion, err)
@@ -158,6 +166,9 @@ func validateUpgrade(mod Module, currentVersion string) error {
 	}
 	cmp := current.Compare(target)
 	if cmp == 0 {
+		if currentRevision > mod.Revision {
+			return fmt.Errorf("cask %q downgrade from %s-r%d to %s-r%d is not supported", mod.Name, currentVersion, currentRevision, mod.Version, mod.Revision)
+		}
 		return nil
 	}
 	if cmp > 0 {
@@ -209,6 +220,7 @@ func (a *app) updateCaskLock(lock *caskLock, persistBindings bool) error {
 		}
 		lock.Casks[name] = caskLockRecord{
 			Version:    mod.Version,
+			Revision:   mod.Revision,
 			AppVersion: mod.AppVersion,
 			Source:     "bundle:" + name,
 			Digest:     digest,

@@ -10,9 +10,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/whlsxl/anas/internal/compose"
-	"github.com/whlsxl/anas/internal/config"
-	"github.com/whlsxl/anas/internal/dns"
+	"github.com/anas-project/ANAS/internal/compose"
+	"github.com/anas-project/ANAS/internal/config"
+	"github.com/anas-project/ANAS/internal/dns"
 )
 
 type app struct {

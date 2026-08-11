@@ -9,7 +9,8 @@ services:
         LAM_APT_MIRROR_URL: ${LAM_APT_MIRROR_URL:-}
         LAM_DOWNLOAD_URL: ${LAM_DOWNLOAD_URL:-}
         GITHUB_DOWNLOAD_PROXY_PREFIX: ${GITHUB_DOWNLOAD_PROXY_PREFIX:-}
-    image: ${IMAGE_PREFIX}lam:9.6.0
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
+    image: ${GHCR_REGISTRY:-ghcr.io}/anas-project/anas-lam:9.6.0-r1
     container_name: ${CONTAINER_PREFIX}lam
     restart: unless-stopped
     dns:

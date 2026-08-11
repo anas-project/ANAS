@@ -35,6 +35,10 @@ env:
   # declares. Parameters that are declared belong under global: or under
   # services.<cask>.env; `anas config list` prints the path for each.
   #
+  # Mainland China: one switch enables package, source-download and container
+  # registry mirrors. Every generated default can still be overridden here.
+  # CHINESE_SPEEDUP: "true"
+  #
   # These two are samba_fs parameters published under a bare name, because they
   # name what people see in a file manager.
   #

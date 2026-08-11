@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/whlsxl/anas/internal/config"
-	"github.com/whlsxl/anas/internal/dns"
+	"github.com/anas-project/ANAS/internal/config"
+	"github.com/anas-project/ANAS/internal/dns"
 )
 
 // DNS credential materialisation.

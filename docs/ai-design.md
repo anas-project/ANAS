@@ -173,16 +173,17 @@ Manifest fields:
 - `api_version`: currently `anas.dev/v1`.
 - `kind`: always `Cask`.
 - `name`: directory name and module id.
-- `version`: the cask packaging version using semantic versioning
-  (`MAJOR.MINOR.PATCH`). Dependency constraints, `upgrade.from`, and the
-  downgrade check operate on this field only. Bump it when the cask's assets,
-  templates, hook, or manifest change in a way consumers can observe.
+- `version`: the normalized upstream version using semantic versioning
+  (`MAJOR.MINOR.PATCH`). Dependency constraints and `upgrade.from` operate on
+  this field. When the upstream version changes, reset `revision` to `1`.
+- `revision`: the positive ANAS packaging revision for `version`. It starts at
+  `1` and increments when ANAS changes a Dockerfile or another file copied into
+  an image without changing the upstream version. Release identity and image
+  tags use `<version>-r<revision>`; the runner compares `version` first and the
+  numeric revision second instead of parsing the tag as SemVer.
 - `app_version`: optional upstream application/image version, recorded in the
-  lock file for humans and tooling. Track the primary service image version
-  here (for build-based casks, the primary Dockerfile `FROM` version). An
-  image bump changes `app_version` and needs only a minor/patch bump of
-  `version` unless the packaging contract also changed. Existing casks carry
-  their historical image-derived `version` as the packaging baseline.
+  lock file for humans and tooling. It preserves the upstream spelling when it
+  cannot be used as normalized SemVer, such as Collabora's `26.04.2.4.1`.
 - `abi.supports`: cask runtime ABI versions supported by this cask. The current
   runner ABI is `anas.cask/v1`.
 - `upgrade.from`: optional semantic version constraint for supported source

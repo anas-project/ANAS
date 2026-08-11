@@ -6,8 +6,9 @@ services:
       args:
         - CHINESE_SPEEDUP
         - APK_MIRROR_URL
+        - DOCKER_HUB_REGISTRY
     container_name: ${CONTAINER_PREFIX}lego
-    image: ${IMAGE_PREFIX}lego:5.3.1
+    image: ${GHCR_REGISTRY:-ghcr.io}/anas-project/anas-lego:5.3.1-r1
     restart: unless-stopped
     volumes:
       - "${LEGO_DATA_PATH}:/certs"

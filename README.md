@@ -69,6 +69,9 @@ secrets:
   cloudflare_dns_api_token: replace-me
 
 env:
+  # Set to "true" in mainland China to enable all built-in package, download,
+  # and container-registry mirrors. Individual endpoints remain overridable.
+  # CHINESE_SPEEDUP: "true"
   BASICAUTH_USER: admin
 ```
 
@@ -224,6 +227,14 @@ Before releasing changes, run render/build/start against real NAS configuration
 and verify each enabled module.
 
 ## Developer Docs
+
+See [docs/container-image-release-implementation-2026-08-11.md](docs/container-image-release-implementation-2026-08-11.md)
+for the implemented cask image versioning, GHCR publishing workflow, and GitHub
+organization migration record.
+
+See [docs/research/README.md](docs/research/README.md) for the research archive,
+including the current open-source self-hosted Kanban comparison and historical
+technology assessments.
 
 See [docs/ai-design.md](docs/ai-design.md) for the project structure, cask
 structure, and rules for designing new casks.

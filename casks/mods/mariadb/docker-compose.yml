@@ -1,7 +1,7 @@
 services:
   anas_mariadb:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
-    image: mariadb:12.3.2
+    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/mariadb:12.3.2
     restart: unless-stopped
     env_file:
       - .env
@@ -17,7 +17,7 @@ services:
       - mariadb
 
   anas_mariadb_adminer:
-    image: adminer:5.5.0
+    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/adminer:5.5.0
     container_name: ${CONTAINER_PREFIX}mariadb_adminer
     restart: unless-stopped
     env_file:

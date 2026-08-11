@@ -1,4 +1,5 @@
-FROM ghcr.io/ylianst/meshcentral:1.2.4
+ARG GHCR_REGISTRY=ghcr.io
+FROM ${GHCR_REGISTRY}/ylianst/meshcentral:1.2.4
 
 ARG CHINESE_SPEEDUP=false
 ARG NPM_REGISTRY_URL=https://registry.npmjs.org

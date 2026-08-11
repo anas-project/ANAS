@@ -67,7 +67,7 @@ Samba 没有 Docker Official Image。社区应用镜像不能直接覆盖当前 
 
 ### 静态和编排
 
-1. 所有 `cask.yml` 可解析，`version` 和 `app_version` 与镜像一致。
+1. 所有 `cask.yml` 可解析，`version`、`revision` 和 `app_version` 与镜像发布身份一致。
 2. 所有 Compose 文件可完成变量替换和 `docker compose config`。
 3. Traefik 和 Eturnal 容器入口可从作用域化环境生成合法 YAML，仓库中不存在 ERB 模板。
 4. 不再存在本轮基础服务的无 tag 上游镜像。

@@ -1,13 +1,14 @@
 services:
   anas_meshcentral:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
-    image: ${IMAGE_PREFIX}${MODULE_NAME}:1.2.5
+    image: ${GHCR_REGISTRY:-ghcr.io}/anas-project/anas-meshcentral:1.2.4-r1
     build:
       context: ./${MODULE_NAME}
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
         CHINESE_SPEEDUP: ${CHINESE_SPEEDUP:-false}
         NPM_REGISTRY_URL: ${NPM_REGISTRY_URL:-https://registry.npmjs.org}
+        GHCR_REGISTRY: ${GHCR_REGISTRY:-ghcr.io}
     restart: unless-stopped
     init: true
     dns:
