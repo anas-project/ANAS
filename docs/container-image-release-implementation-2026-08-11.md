@@ -122,8 +122,9 @@ registry。GHCR 保留完整的 provenance 和 SBOM；由于 CNB Registry 对单
 
 `samba_dc` 的 Ubuntu 基础镜像还包含超过 CNB 限制的构建历史元数据，因此其运行镜像使用
 多阶段 Dockerfile：第一阶段完成安装，最终 `scratch` 阶段用单个 `COPY --from=rootfs`
-生成运行根文件系统。该调整以 `4.23.6-r2` 首次发布；文件内容与运行配置保持一致，但最终
-manifest/config 足够紧凑，可由两个 registry 接收。
+生成运行根文件系统。`samba_dc` 主镜像还禁用 BuildKit provenance/SBOM，避免证明元数据再次
+超过 CNB 限制；其余镜像继续生成完整证明。该调整以 `4.23.6-r3` 首次发布；文件内容与运行
+配置保持一致，但最终 manifest/config 足够紧凑，可由两个 registry 接收。
 
 ## 文档整理
 

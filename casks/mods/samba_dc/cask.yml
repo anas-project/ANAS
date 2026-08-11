@@ -2,7 +2,7 @@ api_version: anas.dev/v1
 kind: Cask
 name: samba_dc
 version: 4.23.6
-revision: 2
+revision: 3
 app_version: 4.23.6
 abi:
   supports:
