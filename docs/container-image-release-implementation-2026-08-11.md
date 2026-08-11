@@ -115,10 +115,10 @@ docker.cnb.cool/anas.dev/anas/<image>:<version>-r<revision>
 
 GitHub 构建启用双架构 manifest、cache、provenance 和 SBOM，并在发布前同时检查两个
 registry。GHCR 保留完整的 provenance 和 SBOM；由于 CNB Registry 对单个 manifest 元数据
-有 64 KB 限制，同步时通过 Skopeo 把 OCI manifest 转为更紧凑的 Docker schema 2。镜像层、
-运行配置和多架构能力不变。两边都没有时先构建 GHCR 再同步 CNB；仅一边存在时直接补齐
-另一边；两边都存在时校验后结束。所有路径都不会覆盖已存在的固定 tag，CNB 灾备同步也
-会跳过已有 tag。
+有 64 KB 限制，同步到 CNB 时只组合 `amd64`/`arm64` 运行平台 manifest，不复制 BuildKit
+生成的证明 manifest。镜像层、运行配置和多架构能力不变。两边都没有时先构建 GHCR 再
+同步 CNB；仅一边存在时直接补齐另一边；两边都存在时校验后结束。所有路径都不会覆盖
+已存在的固定 tag，CNB 灾备同步也会跳过已有 tag。
 
 `samba_dc` 的 Ubuntu 基础镜像还包含超过 CNB 限制的构建历史元数据，因此其运行镜像使用
 多阶段 Dockerfile：第一阶段完成安装，最终 `scratch` 阶段用单个 `COPY --from=rootfs`

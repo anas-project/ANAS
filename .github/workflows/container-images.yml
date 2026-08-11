@@ -217,12 +217,6 @@ jobs:
           provenance: mode=max
           sbom: true
 
-      - name: Install registry copy tool
-        if: steps.release_state.outputs.mode == 'mirror_to_cnb' || steps.release_state.outputs.mode == 'build'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes skopeo
-
       - name: Mirror the GHCR runtime image to CNB
         if: steps.release_state.outputs.mode == 'mirror_to_cnb' || steps.release_state.outputs.mode == 'build'
         env:
@@ -230,12 +224,21 @@ jobs:
           CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
         run: |
           set -euo pipefail
-          skopeo copy \
-            --all \
-            --format v2s2 \
-            --authfile "$HOME/.docker/config.json" \
-            "docker://${GHCR_IMAGE}" \
-            "docker://${CNB_IMAGE}"
+
+          raw_manifest="$(docker buildx imagetools inspect --raw "$GHCR_IMAGE")"
+          source_ref="${GHCR_IMAGE%:*}"
+          sources=()
+          while IFS= read -r digest; do
+            sources+=("${source_ref}@${digest}")
+          done < <(jq -r '
+            .manifests[]?
+            | select(.platform.os != "unknown" and .platform.architecture != "unknown")
+            | .digest
+          ' <<<"$raw_manifest")
+          if [[ "${#sources[@]}" == 0 ]]; then
+            sources+=("$GHCR_IMAGE")
+          fi
+          docker buildx imagetools create --tag "$CNB_IMAGE" "${sources[@]}"
 
       - name: Verify the published release
         if: github.event_name != 'pull_request'
