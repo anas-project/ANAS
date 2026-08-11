@@ -7,6 +7,7 @@ services:
         - CHINESE_SPEEDUP
         - APT_MIRROR_URL
         - NEXTCLOUD_APT_MIRROR_URL
+        - DOCKER_HUB_REGISTRY
     image: ${IMAGE_PREFIX}nextcloud:34.0.3
     container_name: ${CONTAINER_PREFIX}nextcloud
     volumes:
@@ -74,7 +75,7 @@ services:
       - db
 
   anas_nextcloud-push:
-    image: ghcr.io/nextcloud-releases/aio-notify-push:latest
+    image: ${GHCR_REGISTRY:-ghcr.io}/nextcloud-releases/aio-notify-push:latest
     container_name: ${CONTAINER_PREFIX}nextcloud_push
     user: "33:33"
     init: true
@@ -131,7 +132,7 @@ services:
       - traefik
 
   anas_imaginary:
-    image: ghcr.io/nextcloud-releases/aio-imaginary:latest
+    image: ${GHCR_REGISTRY:-ghcr.io}/nextcloud-releases/aio-imaginary:latest
     container_name: ${CONTAINER_PREFIX}nextcloud_imaginary
     user: "65534:65534"
     init: true
@@ -157,7 +158,7 @@ services:
 
   anas_nextcloud-redis:
     container_name: ${CONTAINER_PREFIX}nextcloud_redis
-    image: redis:8.10.0-alpine
+    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/redis:8.10.0-alpine
     command: ["redis-server", "--appendonly", "yes"]
     restart: unless-stopped
     volumes:
@@ -171,7 +172,7 @@ services:
       - nextcloud
 
   anas_talk:
-    image: ghcr.io/nextcloud-releases/aio-talk:latest
+    image: ${GHCR_REGISTRY:-ghcr.io}/nextcloud-releases/aio-talk:latest
     container_name: ${CONTAINER_PREFIX}nextcloud_talk
     user: "1000:1000"
     init: true

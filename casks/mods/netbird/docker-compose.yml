@@ -1,7 +1,7 @@
 services:
   anas_dashboard:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_dashboard
-    image: netbirdio/dashboard:v2.90.9
+    image: ${DOCKER_HUB_REGISTRY:-docker.io}/netbirdio/dashboard:v2.90.9
     restart: unless-stopped
     env_file:
       - .env
@@ -16,7 +16,7 @@ services:
       - traefik
 
   anas_signal:
-    image: netbirdio/signal:0.76.1
+    image: ${DOCKER_HUB_REGISTRY:-docker.io}/netbirdio/signal:0.76.1
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_signal
     restart: unless-stopped
     env_file:
@@ -39,7 +39,7 @@ services:
       - traefik
 
   anas_relay:
-    image: netbirdio/relay:0.76.1
+    image: ${DOCKER_HUB_REGISTRY:-docker.io}/netbirdio/relay:0.76.1
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_relay
     restart: unless-stopped
     environment:
@@ -60,6 +60,10 @@ services:
     build:
       context: ./management
       network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        CHINESE_SPEEDUP: ${CHINESE_SPEEDUP:-false}
+        APT_MIRROR_URL: ${APT_MIRROR_URL:-}
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_management
     image: ${IMAGE_PREFIX}${MODULE_NAME}_management:0.76.1
     restart: unless-stopped

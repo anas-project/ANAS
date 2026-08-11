@@ -14,19 +14,26 @@ if grep -R -n -E '<%=|<%[[:space:]]+if|#\{envs\[' casks; then
   echo "legacy ERB syntax is forbidden under casks/" >&2
   exit 1
 fi
-proxy_hits=$(
-  git ls-files --cached --others --exclude-standard |
-    while IFS= read -r file; do
-      [ "${file#test-env/}" = "$file" ] || continue
-      [ -f "$file" ] || continue
-      grep -IHnE \
-        'mirrors\.aliyun\.com|registry\.npmmirror\.com|goproxy\.cn' \
-        "$file" || true
-    done
+
+# Every upstream image must pass through a registry variable. Otherwise
+# CHINESE_SPEEDUP can silently work for package downloads but still fail while
+# Compose pulls an image or a Dockerfile resolves FROM.
+direct_compose_images=$(
+  grep -R -n -E --include='docker-compose.yml' '^[[:space:]]+image:' casks |
+    grep -v -E 'image:[[:space:]]+\$\{(IMAGE_PREFIX|DOCKER_HUB_REGISTRY|GHCR_REGISTRY|QUAY_REGISTRY)' || true
 )
-if [ -n "$proxy_hits" ]; then
-  printf '%s\n' "$proxy_hits" >&2
-  echo "test-only proxy addresses are forbidden outside test-env/" >&2
+if [ -n "$direct_compose_images" ]; then
+  printf '%s\n' "$direct_compose_images" >&2
+  echo "Compose image bypasses the configurable registry variables" >&2
+  exit 1
+fi
+direct_dockerfile_images=$(
+  grep -R -n -E --include='Dockerfile' '^FROM[[:space:]]+' casks |
+    grep -v -E 'FROM[[:space:]]+\$\{(DOCKER_HUB_REGISTRY|LLNG_DOCKER_HUB_REGISTRY|GHCR_REGISTRY|QUAY_REGISTRY)\}' || true
+)
+if [ -n "$direct_dockerfile_images" ]; then
+  printf '%s\n' "$direct_dockerfile_images" >&2
+  echo "Dockerfile FROM bypasses the configurable registry variables" >&2
   exit 1
 fi
 

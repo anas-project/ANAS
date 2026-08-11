@@ -1,4 +1,5 @@
-FROM ghcr.io/processone/eturnal:1.12.2
+ARG GHCR_REGISTRY=ghcr.io
+FROM ${GHCR_REGISTRY}/processone/eturnal:1.12.2
 
 ENV ETURNAL_ETC_DIR=/run/anas
 

@@ -1,4 +1,5 @@
-FROM nextcloud:34.0.2-apache
+ARG DOCKER_HUB_REGISTRY=docker.io
+FROM ${DOCKER_HUB_REGISTRY}/library/nextcloud:34.0.2-apache
 
 ARG CHINESE_SPEEDUP=false
 ARG APT_MIRROR_URL=""

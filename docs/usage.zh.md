@@ -122,6 +122,26 @@ anas apply --build --update-lock -w /srv/anas
 `--build` 构建镜像；`--update-lock` 把解析出的 cask 版本写进 `config.lock.yml`。
 首次之后两者都不需要，除非版本有变。
 
+### 中国大陆镜像
+
+在顶层 `env` 打开一个开关即可，不需要逐项配置：
+
+```yaml
+env:
+  CHINESE_SPEEDUP: "true"
+```
+
+它同时作用于 Docker Hub、GHCR、Quay、APT、Alpine APK、npm、Go modules、
+GitHub Release 和 Nextcloud App Store。默认使用阿里云、npmmirror、goproxy.cn
+以及 DaoCloud 的公开镜像。任何端点都能在同一 `env` 中显式覆盖；完整变量表和
+CNB 国内制品发行方案见
+[中国大陆镜像与 CNB 发行方案](research/china-mainland-mirrors-and-cnb-distribution-2026-08-11.md)。
+
+若不是运行预编译的 `anas`，而是第一次执行 `go run ./cmd/anas`，Go 必须先把 ANAS
+本身编译出来，此时程序尚未读取配置。首次运行需在宿主机执行
+`go env -w GOPROXY=https://goproxy.cn,direct`；启动后的 cask hook 构建会自动继承
+总开关生成的代理。
+
 ---
 
 ## 三、日常运行

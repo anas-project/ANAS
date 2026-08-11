@@ -5,6 +5,8 @@ services:
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
         - GOPROXY_URL
+        - DOCKER_HUB_REGISTRY
+        - GHCR_REGISTRY
     image: ${IMAGE_PREFIX}ddns_go:6.17.4
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     restart: unless-stopped

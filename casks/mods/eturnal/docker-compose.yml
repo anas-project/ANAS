@@ -4,6 +4,8 @@ services:
     build:
       context: ./eturnal
       network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        GHCR_REGISTRY: ${GHCR_REGISTRY:-ghcr.io}
     container_name: ${CONTAINER_PREFIX}eturnal
     read_only: true
     cap_drop:

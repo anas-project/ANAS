@@ -4,6 +4,8 @@ services:
     build:
       context: ./traefik
       network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     # The rendered environment is loaded into the container, not only used for
     # substitution above: the entrypoint enumerates ANAS_TRAEFIK_ROUTE__* from

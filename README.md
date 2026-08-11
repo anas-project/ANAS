@@ -69,6 +69,9 @@ secrets:
   cloudflare_dns_api_token: replace-me
 
 env:
+  # Set to "true" in mainland China to enable all built-in package, download,
+  # and container-registry mirrors. Individual endpoints remain overridable.
+  # CHINESE_SPEEDUP: "true"
   BASICAUTH_USER: admin
 ```
 

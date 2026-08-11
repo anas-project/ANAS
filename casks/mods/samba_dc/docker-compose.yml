@@ -7,6 +7,7 @@ services:
       args:
         - CHINESE_SPEEDUP
         - APT_MIRROR_URL
+        - DOCKER_HUB_REGISTRY
     image: ${IMAGE_PREFIX}${MODULE_NAME}:26.04.2
     restart: unless-stopped
     network_mode: host
@@ -28,7 +29,7 @@ services:
   # starts. Same shape as the authentik data init.
   anas_samba_dc_events_init:
     container_name: ${CONTAINER_PREFIX}samba_dc_events_init
-    image: ubuntu:resolute
+    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/ubuntu:resolute
     user: root
     entrypoint: ["/bin/sh", "-c"]
     # 0755: subscribers run as their own application's user and only ever read.
@@ -47,6 +48,7 @@ services:
       args:
         - CHINESE_SPEEDUP
         - APT_MIRROR_URL
+        - DOCKER_HUB_REGISTRY
     image: ${IMAGE_PREFIX}samba_dc_anchor:26.04.2
     restart: unless-stopped
     env_file:

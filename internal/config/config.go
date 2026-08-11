@@ -150,6 +150,23 @@ func Load(path string) (*File, error) {
 // user-provided secret that is only distributed to casks that claim it.
 const OwnerUserSecret = "!user-secret"
 
+// chineseSpeedupDefaults turns CHINESE_SPEEDUP into one complete, predictable
+// switch.  Individual values remain overridable from config.env, but a user
+// should not have to discover and configure every package manager and registry
+// independently just to make a build work from mainland China.
+var chineseSpeedupDefaults = map[string]string{
+	"APT_MIRROR_URL":               "https://mirrors.aliyun.com",
+	"APK_MIRROR_URL":               "https://mirrors.aliyun.com",
+	"NPM_REGISTRY_URL":             "https://registry.npmmirror.com",
+	"GOPROXY_URL":                  "https://goproxy.cn,direct",
+	"GITHUB_DOWNLOAD_PROXY_PREFIX": "https://files.m.daocloud.io/",
+	"NEXTCLOUD_APPSTORE_URL":       "https://files.m.daocloud.io/apps.nextcloud.com/api/v1",
+	"DOCKER_HUB_REGISTRY":          "m.daocloud.io/docker.io",
+	"LLNG_DOCKER_HUB_REGISTRY":     "docker.1ms.run",
+	"GHCR_REGISTRY":                "ghcr.nju.edu.cn",
+	"QUAY_REGISTRY":                "quay.nju.edu.cn",
+}
+
 func (f *File) BaseEnv() map[string]string {
 	env, _ := f.BaseEnvWithOwners()
 	return env
@@ -200,6 +217,14 @@ func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
 			}
 			env[key] = Scalar(v)
 			owners[key] = name
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(env["CHINESE_SPEEDUP"]), "true") {
+		for key, value := range chineseSpeedupDefaults {
+			if strings.TrimSpace(env[key]) == "" {
+				env[key] = value
+				owners[key] = ""
+			}
 		}
 	}
 	return env, owners

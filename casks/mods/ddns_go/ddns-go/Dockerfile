@@ -1,8 +1,10 @@
 ARG DDNS_GO_VERSION=v6.17.4
+ARG DOCKER_HUB_REGISTRY=docker.io
+ARG GHCR_REGISTRY=ghcr.io
 
 # The reconciler is built from source in the bundle rather than shipped as a
 # binary, so the image is reproducible from this repository alone.
-FROM golang:1.26-alpine AS build
+FROM ${DOCKER_HUB_REGISTRY}/library/golang:1.26-alpine AS build
 ARG GOPROXY_URL
 ENV CGO_ENABLED=0
 # Keyed on GOPROXY_URL alone rather than on CHINESE_SPEEDUP: which module proxy
@@ -16,7 +18,7 @@ RUN go mod download
 COPY reconcile/ ./
 RUN go build -trimpath -ldflags="-s -w" -o /anas-ddns-go-reconcile .
 
-FROM ghcr.io/jeessy2/ddns-go:${DDNS_GO_VERSION}
+FROM ${GHCR_REGISTRY}/jeessy2/ddns-go:${DDNS_GO_VERSION}
 COPY --from=build /anas-ddns-go-reconcile /anas-ddns-go-reconcile
 # Fail the build, not the container, if upstream moves the binary: the
 # reconciler execs it by path and a wrong one surfaces at runtime as a bare

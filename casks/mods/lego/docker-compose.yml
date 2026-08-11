@@ -6,6 +6,7 @@ services:
       args:
         - CHINESE_SPEEDUP
         - APK_MIRROR_URL
+        - DOCKER_HUB_REGISTRY
     container_name: ${CONTAINER_PREFIX}lego
     image: ${IMAGE_PREFIX}lego:5.3.1
     restart: unless-stopped

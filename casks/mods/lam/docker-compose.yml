@@ -9,6 +9,7 @@ services:
         LAM_APT_MIRROR_URL: ${LAM_APT_MIRROR_URL:-}
         LAM_DOWNLOAD_URL: ${LAM_DOWNLOAD_URL:-}
         GITHUB_DOWNLOAD_PROXY_PREFIX: ${GITHUB_DOWNLOAD_PROXY_PREFIX:-}
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
     image: ${IMAGE_PREFIX}lam:9.6.0
     container_name: ${CONTAINER_PREFIX}lam
     restart: unless-stopped

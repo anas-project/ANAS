@@ -1,4 +1,5 @@
-FROM debian:trixie-slim
+ARG DOCKER_HUB_REGISTRY=docker.io
+FROM ${DOCKER_HUB_REGISTRY}/library/debian:trixie-slim
 
 ARG LAM_VERSION=9.6
 ARG LAM_DEB_SHA256=d44ccf15e4428becb150c2372e00f4f455053751458674c2d5fb7826156fc5e2
@@ -32,7 +33,7 @@ RUN if [ -n "$LAM_APT_MIRROR_URL" ]; then \
   && locale-gen
 
 RUN download_url="https://github.com/LDAPAccountManager/lam/releases/download/${LAM_VERSION}/ldap-account-manager_${LAM_VERSION}-1_all.deb" \
-  && if [ -n "$LAM_DOWNLOAD_URL" ]; then download_url="$LAM_DOWNLOAD_URL"; elif [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$GITHUB_DOWNLOAD_PROXY_PREFIX" ]; then download_url="${GITHUB_DOWNLOAD_PROXY_PREFIX}${download_url}"; fi \
+  && if [ -n "$LAM_DOWNLOAD_URL" ]; then download_url="$LAM_DOWNLOAD_URL"; elif [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$GITHUB_DOWNLOAD_PROXY_PREFIX" ]; then download_url="${GITHUB_DOWNLOAD_PROXY_PREFIX%/}/${download_url#https://}"; fi \
   && curl --http1.1 -fsSL --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 30 "$download_url" \
     -o /tmp/lam.deb \
   && echo "${LAM_DEB_SHA256}  /tmp/lam.deb" | sha256sum -c - \

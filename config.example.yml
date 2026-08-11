@@ -26,6 +26,9 @@ secrets:
   cloudflare_dns_api_token: replace-me
 
 env:
+  # Mainland China: one switch enables package, source-download and container
+  # registry mirrors. Every generated default can still be overridden here.
+  # CHINESE_SPEEDUP: "true"
   BASICAUTH_USER: admin
   # all_rw: all authenticated domain users can write.
   # all_read_group_write: all authenticated users can read; FS Share RW can write.

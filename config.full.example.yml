@@ -73,6 +73,9 @@ rollback:
     keep_auto: 5
 
 env:
+  # Mainland China: enables APT, APK, npm, Go, GitHub/Nextcloud downloads and
+  # Docker Hub/GHCR/Quay mirrors as one coordinated setting.
+  # CHINESE_SPEEDUP: "true"
   BASICAUTH_USER: admin
   # all_rw: all authenticated domain users can write.
   # all_read_group_write: all authenticated users can read; FS Share RW can write.
