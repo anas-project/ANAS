@@ -190,13 +190,6 @@ jobs:
           echo "mode=$mode" >>"$GITHUB_OUTPUT"
           echo "Release state: GHCR=$ghcr_exists CNB=$cnb_exists mode=$mode"
 
-      - name: Mirror the existing GHCR image to CNB
-        if: steps.release_state.outputs.mode == 'mirror_to_cnb'
-        env:
-          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
-          CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
-        run: docker buildx imagetools create --tag "$CNB_IMAGE" "$GHCR_IMAGE"
-
       - name: Mirror the existing CNB image to GHCR
         if: steps.release_state.outputs.mode == 'mirror_to_ghcr'
         env:
@@ -212,9 +205,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platforms }}
           push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
-            docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -225,6 +216,29 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
           provenance: mode=max
           sbom: true
+
+      - name: Mirror the GHCR runtime image to CNB
+        if: steps.release_state.outputs.mode == 'mirror_to_cnb' || steps.release_state.outputs.mode == 'build'
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+          CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
+        run: |
+          set -euo pipefail
+
+          raw_manifest="$(docker buildx imagetools inspect --raw "$GHCR_IMAGE")"
+          source_ref="${GHCR_IMAGE%:*}"
+          sources=()
+          while IFS= read -r digest; do
+            sources+=("${source_ref}@${digest}")
+          done < <(jq -r '
+            .manifests[]?
+            | select(.platform.os != "unknown" and .platform.architecture != "unknown")
+            | .digest
+          ' <<<"$raw_manifest")
+          if [[ "${#sources[@]}" == 0 ]]; then
+            sources+=("$GHCR_IMAGE")
+          fi
+          docker buildx imagetools create --tag "$CNB_IMAGE" "${sources[@]}"
 
       - name: Verify the published release
         if: github.event_name != 'pull_request'

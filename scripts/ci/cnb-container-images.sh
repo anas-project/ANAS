@@ -55,9 +55,21 @@ while IFS= read -r item; do
     echo "$target already exists; skipping immutable tag."
     continue
   fi
-  if ! docker buildx imagetools inspect "$source" >/dev/null 2>&1; then
+  if ! raw_manifest="$(docker buildx imagetools inspect --raw "$source" 2>/dev/null)"; then
     echo "$source does not exist or is not readable" >&2
     exit 1
   fi
-  docker buildx imagetools create --tag "$target" "$source"
+  source_ref="${source%:*}"
+  sources=()
+  while IFS= read -r digest; do
+    sources+=("${source_ref}@${digest}")
+  done < <(jq -r '
+    .manifests[]?
+    | select(.platform.os != "unknown" and .platform.architecture != "unknown")
+    | .digest
+  ' <<<"$raw_manifest")
+  if [[ "${#sources[@]}" == 0 ]]; then
+    sources+=("$source")
+  fi
+  docker buildx imagetools create --tag "$target" "${sources[@]}"
 done < <(jq -c '.[]' "$catalog")

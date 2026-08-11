@@ -88,9 +88,9 @@ Compose 使用 `ANAS_IMAGE_REGISTRY` 单独选择 ANAS 自建镜像来源，默�
    永不覆盖。
 6. 生成 provenance 和 SBOM，并使用 GitHub Actions cache。
 7. 首次发布使用 `workflow_dispatch`，参数 `cask=all`，一次构建当前清单中的全部镜像。
-8. 非 PR 构建只执行一次，同时把相同多架构结果推送到 GHCR 与 CNB，不在 CNB 重复
-   编译。如果其中一个 registry 已有该 tag、另一个缺失，GitHub Actions 直接复制现有
-   manifest 和镜像层到缺失的一侧，用于首次迁移或单侧发布故障恢复。
+8. 非 PR 构建只执行一次并推送到 GHCR，再由同一工作流把相同的多架构运行镜像复制到
+   CNB，不在 CNB 重复编译。如果其中一个 registry 已有该 tag、另一个缺失，GitHub
+   Actions 直接补齐缺失的一侧，用于首次迁移或单侧发布故障恢复。
 
 首次成功推送后，需要在 GitHub Packages 中确认每个 container package 为 public，才能
 让未登录 GHCR 的部署端直接拉取。
@@ -114,8 +114,11 @@ docker.cnb.cool/anas.dev/anas/<image>:<version>-r<revision>
 ```
 
 GitHub 构建启用双架构 manifest、cache、provenance 和 SBOM，并在发布前同时检查两个
-registry。两边都没有时构建并双推；仅一边存在时从现有 registry 直接补齐另一边；两边
-都存在时校验后结束。所有路径都不会覆盖已存在的固定 tag，CNB 灾备同步也会跳过已有 tag。
+registry。GHCR 保留完整的 provenance 和 SBOM；由于 CNB Registry 对单个 manifest 元数据
+有 64 KB 限制，同步到 CNB 时只组合 `amd64`/`arm64` 运行平台 manifest，不复制 BuildKit
+生成的证明 manifest。镜像层、运行配置和多架构能力不变。两边都没有时先构建 GHCR 再
+同步 CNB；仅一边存在时直接补齐另一边；两边都存在时校验后结束。所有路径都不会覆盖
+已存在的固定 tag，CNB 灾备同步也会跳过已有 tag。
 
 ## 文档整理
 
