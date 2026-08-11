@@ -1,6 +1,5 @@
 ARG DOCKER_HUB_REGISTRY=docker.io
-FROM ${DOCKER_HUB_REGISTRY}/library/ubuntu:resolute
-LABEL maintainer="Hailong"
+FROM ${DOCKER_HUB_REGISTRY}/library/ubuntu:resolute AS rootfs
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -64,6 +63,13 @@ RUN chmod +x \
   /usr/local/bin/anas_zone.sh \
   /etc/cont-init.d/11-samba_dc.sh \
   /etc/cont-init.d/12-bind.sh
+
+FROM scratch
+
+LABEL maintainer="Hailong"
+ENV DEBIAN_FRONTEND=noninteractive
+
+COPY --from=rootfs / /
 
 VOLUME /var/lib/samba
 EXPOSE 53 53/udp 88 88/udp 135 137-138/udp 139 389 389/udp 445 464 464/udp 636 3268-3269 49152-65535

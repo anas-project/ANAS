@@ -120,6 +120,11 @@ registry。GHCR 保留完整的 provenance 和 SBOM；由于 CNB Registry 对单
 另一边；两边都存在时校验后结束。所有路径都不会覆盖已存在的固定 tag，CNB 灾备同步也
 会跳过已有 tag。
 
+`samba_dc` 的 Ubuntu 基础镜像还包含超过 CNB 限制的构建历史元数据，因此其运行镜像使用
+多阶段 Dockerfile：第一阶段完成安装，最终 `scratch` 阶段用单个 `COPY --from=rootfs`
+生成运行根文件系统。该调整以 `4.23.6-r2` 首次发布；文件内容与运行配置保持一致，但最终
+manifest/config 足够紧凑，可由两个 registry 接收。
+
 ## 文档整理
 
 外部调研、竞品比较和历史技术评估统一移动到 `docs/research/`，并增加目录索引。稳定的

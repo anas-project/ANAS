@@ -29,7 +29,7 @@ if [ -n "$direct_compose_images" ]; then
 fi
 direct_dockerfile_images=$(
   grep -R -n -E --include='Dockerfile' '^FROM[[:space:]]+' casks |
-    grep -v -E 'FROM[[:space:]]+\$\{(DOCKER_HUB_REGISTRY|LLNG_DOCKER_HUB_REGISTRY|GHCR_REGISTRY|QUAY_REGISTRY)\}' || true
+    grep -v -E 'FROM[[:space:]]+(scratch|\$\{(DOCKER_HUB_REGISTRY|LLNG_DOCKER_HUB_REGISTRY|GHCR_REGISTRY|QUAY_REGISTRY)\})' || true
 )
 if [ -n "$direct_dockerfile_images" ]; then
   printf '%s\n' "$direct_dockerfile_images" >&2
