@@ -731,13 +731,13 @@ func runActive(action string, args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("deployment_unreadable", "%s", err.Error())
 	}
-	selection, err := selectCasks(a, requested)
+	selection, err := selectLifecycleCasks(a, action, requested)
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
-	// A selection stops only what was named and leaves the macvlan bridge
-	// alone; the whole-deployment path still tears it down, because then there
-	// is nothing left to use it.
+	// A named selection is expanded to its dependency-safe chain and leaves the
+	// macvlan bridge alone; the whole-deployment path still tears it down,
+	// because then there is nothing left to use it.
 	partial := len(requested) > 0
 	stop := func() error {
 		if partial {
@@ -801,7 +801,7 @@ func startDeployment(a *app, casksRoot string, selection []string, jsonMode bool
 		return err
 	}
 	emitProgress(jsonMode, "after-start-hooks", 0, total, "casks")
-	return a.runAfterStart(casksRoot)
+	return a.runAfterStartOf(casksRoot, selection)
 }
 
 // activateOptions carries the operator's answers to the questions activation

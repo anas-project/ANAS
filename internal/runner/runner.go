@@ -516,7 +516,13 @@ func (a *app) execute(actions []string) error {
 }
 
 func (a *app) runAfterStart(release string) error {
-	for _, name := range a.order {
+	return a.runAfterStartOf(release, a.order)
+}
+
+// runAfterStartOf runs hooks only for casks started by this operation. A
+// partial lifecycle command must not rerun hooks belonging to untouched casks.
+func (a *app) runAfterStartOf(release string, names []string) error {
+	for _, name := range names {
 		mod := a.reg[name]
 		if mod.RuntimeType != "compose" {
 			continue

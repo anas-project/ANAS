@@ -216,9 +216,17 @@ warning 记录到 stderr，`code` 取 `no_snapshot_backend` 或 `data_not_subvol
 anas start|restart|stop [CASK...] [-w WORKSPACE] [--json]
 ```
 
-不给 cask 名就是整个部署。给了名字只作用于这些 cask，顺序取自部署的依赖顺序而非命令行词序；名字不在本部署中是用法错误，并列出本部署实际有哪些 cask。
+不给 cask 名就是整个部署。给出名字时，命令必须把目标展开为依赖安全的 chain，不能只操作点名的 cask：
 
-部分停止**不拆 macvlan 网桥**：整体停止会拆（没人再用），停一个 cask 不代表其他 cask 不用它。
+- `start CASK...` 向前展开目标的全部直接、间接依赖，再按依赖正序启动。这样目标启动前，它需要的 provider、数据库等都已经运行。
+- `stop CASK...` 向后展开全部直接、间接依赖目标的 cask，再按依赖逆序停止。这样不会在依赖已停止后留下仍在运行但已经出错的应用。
+- `restart CASK...` 使用与 `stop` 相同的依赖者 chain，先按依赖逆序全部停止，再按依赖正序全部启动。
+
+多个目标分别展开后取并集、去重。最终顺序取自部署的冻结依赖顺序，而非命令行词序。`dependencies.after` 只在 chain 中两个 cask 都已被选中时约束顺序，不会扩大 chain。名字不在本部署中是用法错误，并列出本部署实际有哪些 cask。CLI 不提供绕过 chain、只操作单个依赖节点的选项。
+
+例如依赖关系为 `postgres -> nextcloud -> collabora` 时，`anas restart postgres` 依次停止 `collabora、nextcloud、postgres`，再依次启动 `postgres、nextcloud、collabora`。`anas restart nextcloud` 不重启仍正常运行的 PostgreSQL，只重启 Nextcloud 及其依赖者 Collabora。
+
+指定 chain 的停止**不拆 macvlan 网桥**：整体停止会拆（没人再用），停止一个 chain 不代表 chain 外的 cask 不用它。
 
 **没有天然结果的命令**，按 README 的"最小信封"办：
 
@@ -231,7 +239,7 @@ anas start|restart|stop [CASK...] [-w WORKSPACE] [--json]
 }
 ```
 
-`casks` 是操作涉及的 cask 顺序，不是"停/起了几个"的统计。调用方**不应**期待此外
+`casks` 是 chain 展开后实际操作涉及的 cask，按依赖正序列出，不是"停/起了几个"的统计。调用方**不应**期待此外
 的结果字段。未加 `--json` 时 stdout 为空。
 
 进度 `phase`：`stop-containers`、`start-containers`、`after-start-hooks`，

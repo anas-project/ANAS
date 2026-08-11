@@ -115,6 +115,31 @@ json_ok() {
 
 active_deployment() { sed -n 's/^active_deployment: //p' "$1/.anas/state/active.yml" 2>/dev/null; }
 running() { docker ps --filter "name=^$prefix" --format '{{.Names}}' | sort | tr '\n' ' '; }
+container_id() { docker inspect --type container --format '{{.Id}}' "${prefix}$1" 2>/dev/null; }
+
+# Docker's event journal is the observable boundary for lifecycle order. Final
+# state alone cannot distinguish "dependent stopped first" from "dependency
+# disappeared first and the dependent happened to recover". Timestamps use
+# RFC3339 nanoseconds so an event from an earlier operation in the same second
+# cannot leak into the assertion.
+capture_container_events() {
+  since=$1
+  until=$2
+  output=$3
+  docker events --since "$since" --until "$until" --filter type=container \
+    --format '{{.Actor.Attributes.name}} {{.Action}}' >"$output" 2>>"$log" ||
+    fail "could not read Docker lifecycle events"
+}
+
+event_order() {
+  events=$1
+  action=$2
+  awk -v prefix="$prefix" -v action="$action" '
+    $2 == action && ($1 == prefix "lego" || $1 == prefix "traefik") {
+      printf "%s ", $1
+    }
+  ' "$events"
+}
 
 btrfs_here=no
 mkdir -p "$(dirname -- "$ws")"
@@ -284,25 +309,67 @@ run anas start -w "$ws"
 [ -n "$(running)" ] || fail "the deployment did not start again after a stop"
 run anas stop -w "$ws"
 
-step "L15 acting on one cask leaves the rest of the deployment alone"
+step "L15 named lifecycle commands preserve dependency chains"
 run anas start -w "$ws"
 all_running=$(running)
 [ -n "$all_running" ] || fail "the deployment did not start"
 # A cask this deployment does not have is a usage error, not a silent no-op
 # that reports success having restarted nothing.
 expect_exit 2 anas restart nosuchcask -w "$ws" --json
-# Restarting one cask must not stop the others. Before this, changing one
-# setting meant restarting every container in the deployment.
+# Traefik depends on Lego. Restarting Lego must recreate both the dependency
+# and its dependent, stopping Traefik first and starting Lego first.
+lego_before=$(container_id lego)
+traefik_before=$(container_id traefik)
 run anas restart lego -w "$ws"
 [ "$(running)" = "$all_running" ] || fail "restarting one cask changed which containers run: '$all_running' -> '$(running)'"
-# Stopping one cask stops exactly that one.
+[ -n "$(container_id lego)" ] && [ "$(container_id lego)" != "$lego_before" ] ||
+  fail "restart lego did not recreate Lego"
+[ -n "$(container_id traefik)" ] && [ "$(container_id traefik)" != "$traefik_before" ] ||
+  fail "restart lego did not include dependent Traefik"
+# Multiple explicit targets are deliberately written in the opposite order.
+# The actual Docker journal, rather than only the final state, must show the
+# dependent destroyed first and the dependency started first.
+events="$scratch/restart-multiple.events"
+since=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
+run anas restart traefik lego -w "$ws"
+until=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
+capture_container_events "$since" "$until" "$events"
+[ "$(event_order "$events" destroy)" = "${prefix}traefik ${prefix}lego " ] ||
+  fail "multiple restart destroy order was '$(event_order "$events" destroy)'"
+[ "$(event_order "$events" start)" = "${prefix}lego ${prefix}traefik " ] ||
+  fail "multiple restart start order was '$(event_order "$events" start)'"
+# Stop receives dependency order on the command line but must still execute in
+# reverse dependency order. Starting receives reverse input and must execute in
+# forward dependency order.
+events="$scratch/stop-multiple.events"
+since=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
+run anas stop lego traefik -w "$ws"
+until=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
+capture_container_events "$since" "$until" "$events"
+[ "$(event_order "$events" destroy)" = "${prefix}traefik ${prefix}lego " ] ||
+  fail "multiple stop destroy order was '$(event_order "$events" destroy)'"
+[ -z "$(running)" ] || fail "multiple stop left containers running: '$(running)'"
+events="$scratch/start-multiple.events"
+since=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
+run anas start traefik lego -w "$ws"
+until=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
+capture_container_events "$since" "$until" "$events"
+[ "$(event_order "$events" start)" = "${prefix}lego ${prefix}traefik " ] ||
+  fail "multiple start order was '$(event_order "$events" start)'"
+[ "$(running)" = "$all_running" ] || fail "multiple start did not restore the deployment"
+# Stopping a dependency also stops every dependent.
 run anas stop lego -w "$ws"
-case "$(running)" in
-  *"${prefix}lego"*) fail "stop lego left it running" ;;
-esac
-[ -n "$(running)" ] || fail "stopping one cask stopped the whole deployment"
-run anas start lego -w "$ws"
+[ -z "$(running)" ] || fail "stop lego left its dependency chain running: '$(running)'"
+# Starting the leaf application from a cold state pulls in its prerequisite.
+run anas start traefik -w "$ws"
 [ "$(running)" = "$all_running" ] || fail "starting the cask back did not restore the deployment"
+# Stopping a leaf does not stop the prerequisite, which remains valid on its
+# own; only dependents are expanded by stop/restart.
+run anas stop traefik -w "$ws"
+[ -n "$(container_id lego)" ] || fail "stop traefik incorrectly stopped prerequisite Lego"
+[ -z "$(container_id traefik)" ] || fail "stop traefik left Traefik running"
+run anas start traefik -w "$ws"
+[ "$(running)" = "$all_running" ] || fail "start traefik did not restore its dependency chain"
 run anas stop -w "$ws"
 
 step "L16 a flag after a cask name is still a flag"

@@ -10,11 +10,11 @@ import (
 
 // Acting on part of a deployment.
 //
-// start, restart, stop and build used to refuse any positional argument, so
-// changing one cask's configuration meant restarting everything -- every
-// database, the domain controller, every session -- to apply a setting that
-// affected one container. The deployment is still resolved and ordered as a
-// whole; what a selection changes is only which casks the command acts on.
+// build acts on exactly the named casks. Lifecycle commands are deliberately
+// stricter: a database cannot be stopped or restarted while applications that
+// depend on it are left running, and an application cannot be started without
+// first ensuring its dependencies are up. Their named targets are therefore
+// expanded to a dependency-safe chain before any containers are touched.
 //
 // Ordering is preserved rather than taken from the command line. Starting
 // `nextcloud postgres` has to start postgres first whichever order they were
@@ -53,6 +53,73 @@ func selectCasks(a *app, names []string) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// selectLifecycleCasks expands named lifecycle targets into the chain needed
+// to keep the deployment consistent. Start walks towards prerequisites. Stop
+// and restart walk in the other direction, towards every direct or transitive
+// dependent, so none is left running across an unavailable dependency.
+//
+// a.deps contains the frozen, resolved dependency graph: requires_one and
+// capability dependencies already name the provider selected when this
+// deployment was rendered. Order-only `after` edges are absent by design; they
+// order two selected casks but do not make one part of the other's chain.
+func selectLifecycleCasks(a *app, action string, names []string) ([]string, error) {
+	targets, err := selectCasks(a, names)
+	if err != nil || len(names) == 0 {
+		return targets, err
+	}
+
+	wanted := map[string]bool{}
+	for _, name := range targets {
+		wanted[name] = true
+	}
+
+	switch action {
+	case "start":
+		var addDependencies func(string)
+		addDependencies = func(name string) {
+			for _, dependency := range a.deps[name] {
+				if wanted[dependency] {
+					continue
+				}
+				wanted[dependency] = true
+				addDependencies(dependency)
+			}
+		}
+		for _, name := range targets {
+			addDependencies(name)
+		}
+	case "stop", "restart":
+		// Repeatedly scan in deployment order. Adding a direct dependent on one
+		// pass makes its dependents eligible on the next, yielding the complete
+		// reverse transitive closure without relying on map iteration order.
+		for changed := true; changed; {
+			changed = false
+			for _, name := range a.order {
+				if wanted[name] {
+					continue
+				}
+				for _, dependency := range a.deps[name] {
+					if wanted[dependency] {
+						wanted[name] = true
+						changed = true
+						break
+					}
+				}
+			}
+		}
+	default:
+		return nil, fmt.Errorf("unknown lifecycle action %q", action)
+	}
+
+	selection := make([]string, 0, len(wanted))
+	for _, name := range a.order {
+		if wanted[name] {
+			selection = append(selection, name)
+		}
+	}
+	return selection, nil
 }
 
 func quoteAll(names []string) []string {

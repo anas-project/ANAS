@@ -1,12 +1,82 @@
 package runner
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
 
 func selectionApp() *app {
-	return &app{order: []string{"lego", "traefik", "postgres", "nextcloud"}}
+	return &app{
+		order: []string{"lego", "traefik", "postgres", "nextcloud", "collabora"},
+		deps: map[string][]string{
+			"traefik":   {"lego"},
+			"nextcloud": {"traefik", "postgres"},
+			"collabora": {"nextcloud"},
+		},
+	}
+}
+
+func TestLifecycleStartIncludesTransitiveDependencies(t *testing.T) {
+	a := selectionApp()
+	got, err := selectLifecycleCasks(a, "start", []string{"collabora"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"lego", "traefik", "postgres", "nextcloud", "collabora"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("start selection = %v, want %v", got, want)
+	}
+}
+
+func TestLifecycleStopIncludesTransitiveDependents(t *testing.T) {
+	a := selectionApp()
+	got, err := selectLifecycleCasks(a, "stop", []string{"postgres"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"postgres", "nextcloud", "collabora"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("stop selection = %v, want %v", got, want)
+	}
+}
+
+func TestLifecycleRestartIncludesUnionOfDependentChains(t *testing.T) {
+	a := selectionApp()
+	// CLI order is deliberately unrelated to dependency order. The merged
+	// chains must still come back in the deployment's frozen order.
+	got, err := selectLifecycleCasks(a, "restart", []string{"postgres", "lego"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"lego", "traefik", "postgres", "nextcloud", "collabora"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("restart selection = %v, want %v", got, want)
+	}
+}
+
+func TestLifecycleLeafRestartDoesNotRestartItsDependencies(t *testing.T) {
+	a := selectionApp()
+	got, err := selectLifecycleCasks(a, "restart", []string{"collabora"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []string{"collabora"}) {
+		t.Fatalf("restart selection = %v, want [collabora]", got)
+	}
+}
+
+func TestLifecycleWithoutTargetsStillSelectsEverything(t *testing.T) {
+	a := selectionApp()
+	for _, action := range []string{"start", "stop", "restart"} {
+		got, err := selectLifecycleCasks(a, action, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(got, a.order) {
+			t.Fatalf("%s selection = %v, want %v", action, got, a.order)
+		}
+	}
 }
 
 // The command line is not a dependency order. Whatever order the names are

@@ -34,6 +34,14 @@ keeps Docker Compose working-directory metadata valid. `start`, `stop`, and
 `restart` operate only on the active frozen deployment and do not need the
 original cask source tree or a Go toolchain.
 
+Named lifecycle operations always preserve dependency consistency. `start CASK...`
+first includes every prerequisite and starts the resulting chain in
+dependency order. `stop CASK...` and `restart CASK...` include every direct and
+transitive dependent; they stop in reverse dependency order, and restart then
+starts the same chain in forward order. Multiple named chains are merged and
+deduplicated. There is intentionally no option to bypass this expansion and
+leave running applications without a dependency they require.
+
 The launcher locates independent cask bundles from `--cask-root`,
 `ANAS_CASK_ROOT`, the current directory, or the installation directory. The
 config-side `<name>.lock.yml` records both cask versions and bundle content
