@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/whlsxl/anas/internal/config"
+	"github.com/anas-project/ANAS/internal/config"
 )
 
 // Fixtures for the auto-selected capability path. forward_auth is the first
@@ -17,6 +17,7 @@ const (
 kind: Cask
 name: %s
 version: 1.0.0
+revision: 1
 abi:
   supports: [anas.cask/v2]
 runtime:
@@ -30,6 +31,7 @@ capabilities:
 kind: Cask
 name: ddns_go
 version: 1.0.0
+revision: 1
 abi:
   supports: [anas.cask/v2]
 runtime:
@@ -143,6 +145,7 @@ func TestForwardAuthProviderMustDeclareItsInterface(t *testing.T) {
 kind: Cask
 name: broken
 version: 1.0.0
+revision: 1
 abi:
   supports: [anas.cask/v2]
 runtime:

@@ -2,6 +2,7 @@ api_version: anas.dev/v1
 kind: Cask
 name: ddns_go
 version: 6.17.4
+revision: 1
 app_version: 6.17.4
 abi:
   supports:

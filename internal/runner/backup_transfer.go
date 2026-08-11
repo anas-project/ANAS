@@ -112,7 +112,7 @@ func workspaceBackupSource(workspace string) (*backupSource, error) {
 	}
 	casks := map[string]string{}
 	for name, cask := range manifest.Casks {
-		casks[name] = cask.Version
+		casks[name] = formatCaskRelease(cask.Version, cask.Revision)
 	}
 	id, err := newDeploymentID()
 	if err != nil {

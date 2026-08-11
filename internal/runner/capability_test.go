@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/whlsxl/anas/internal/config"
+	"github.com/anas-project/ANAS/internal/config"
 )
 
 // Fixture casks for IAM binding. Real casks are still on requires_one for SSO,
@@ -16,6 +16,7 @@ const (
 kind: Cask
 name: core
 version: 0.0.0
+revision: 1
 abi:
   supports: [anas.cask/v2]
 runtime:
@@ -26,6 +27,7 @@ runtime:
 kind: Cask
 name: %s
 version: 1.0.0
+revision: 1
 abi:
   supports: [anas.cask/v2]
 runtime:
@@ -40,6 +42,7 @@ capabilities:
 kind: Cask
 name: nextcloud
 version: 1.0.0
+revision: 1
 abi:
   supports: [anas.cask/v2]
 runtime:
@@ -60,6 +63,7 @@ config:
 kind: Cask
 name: netbird
 version: 1.0.0
+revision: 1
 abi:
   supports: [anas.cask/v2]
 runtime:
@@ -416,6 +420,7 @@ func TestIAMProviderMustDeclareBothProtocols(t *testing.T) {
 kind: Cask
 name: authelia
 version: 1.0.0
+revision: 1
 abi:
   supports: [anas.cask/v2]
 runtime:
@@ -516,6 +521,7 @@ func TestCapabilityManifestValidation(t *testing.T) {
 kind: Cask
 name: example
 version: 1.0.0
+revision: 1
 abi:
   supports: [anas.cask/v2]
 runtime:

@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/whlsxl/anas/internal/compose"
+	"github.com/anas-project/ANAS/internal/compose"
 )
 
 func TestDeploymentChangeBlockers(t *testing.T) {

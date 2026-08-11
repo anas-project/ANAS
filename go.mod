@@ -1,4 +1,4 @@
-module github.com/whlsxl/anas
+module github.com/anas-project/ANAS
 
 go 1.26.5
 

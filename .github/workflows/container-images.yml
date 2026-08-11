@@ -1,0 +1,187 @@
+name: Container images
+
+on:
+  pull_request:
+    paths:
+      - ".github/images.json"
+      - ".github/workflows/container-images.yml"
+      - "casks/mods/**"
+  push:
+    branches: [master]
+    paths:
+      - ".github/images.json"
+      - ".github/workflows/container-images.yml"
+      - "casks/mods/**"
+  workflow_dispatch:
+    inputs:
+      cask:
+        description: "Cask to publish, or all for the initial release"
+        required: true
+        default: all
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: container-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      count: ${{ steps.matrix.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select images
+        id: matrix
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          REQUESTED_CASK: ${{ inputs.cask }}
+        run: |
+          set -euo pipefail
+
+          jq -e 'type == "array" and length > 0' .github/images.json >/dev/null
+          actual="$(find casks/mods -type f -name Dockerfile | LC_ALL=C sort)"
+          registered="$(jq -r '.[].dockerfile' .github/images.json | LC_ALL=C sort)"
+          if ! diff -u <(printf '%s\n' "$actual") <(printf '%s\n' "$registered"); then
+            echo "Every Dockerfile must appear exactly once in .github/images.json" >&2
+            exit 1
+          fi
+
+          registry_prefix='${GHCR_REGISTRY:-ghcr.io}'
+          while IFS=$'\t' read -r cask image; do
+            manifest="casks/mods/${cask}/cask.yml"
+            version="$(awk '$1 == "version:" { print $2; exit }' "$manifest")"
+            revision="$(awk '$1 == "revision:" { print $2; exit }' "$manifest")"
+            expected="${registry_prefix}/anas-project/${image}:${version}-r${revision}"
+            if ! grep -Fq "image: ${expected}" "casks/mods/${cask}/docker-compose.yml"; then
+              echo "${cask}/docker-compose.yml must reference ${expected}" >&2
+              exit 1
+            fi
+          done < <(jq -r '.[] | [.cask, .image] | @tsv' .github/images.json)
+
+          selected='[]'
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ -z "$REQUESTED_CASK" || "$REQUESTED_CASK" == "all" ]]; then
+              selected="$(jq -c '.' .github/images.json)"
+            else
+              selected="$(jq -c --arg cask "$REQUESTED_CASK" '[.[] | select(.cask == $cask)]' .github/images.json)"
+              if [[ "$(jq 'length' <<<"$selected")" == "0" ]]; then
+                echo "Unknown or image-less cask: $REQUESTED_CASK" >&2
+                exit 1
+              fi
+            fi
+          else
+            changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+            changed_casks='[]'
+            while IFS= read -r context; do
+              if grep -q "^${context}/" <<<"$changed"; then
+                cask="$(jq -r --arg context "$context" '.[] | select(.context == $context) | .cask' .github/images.json)"
+                changed_casks="$(jq -c --arg cask "$cask" '. + [$cask] | unique' <<<"$changed_casks")"
+              fi
+            done < <(jq -r '.[].context' .github/images.json)
+            selected="$(jq -c --argjson casks "$changed_casks" '[.[] | select(.cask as $cask | $casks | index($cask))]' .github/images.json)"
+          fi
+
+          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
+            while IFS= read -r cask; do
+              manifest="casks/mods/${cask}/cask.yml"
+              if ! old_manifest="$(git show "${BASE_SHA}:${manifest}" 2>/dev/null)"; then
+                continue
+              fi
+              old_version="$(awk '$1 == "version:" { print $2; exit }' <<<"$old_manifest")"
+              old_revision="$(awk '$1 == "revision:" { print $2; exit }' <<<"$old_manifest")"
+              old_revision="${old_revision:-0}"
+              new_version="$(awk '$1 == "version:" { print $2; exit }' "$manifest")"
+              new_revision="$(awk '$1 == "revision:" { print $2; exit }' "$manifest")"
+              if [[ "$new_version" == "$old_version" ]]; then
+                expected=$((old_revision + 1))
+                if [[ "$new_revision" != "$expected" ]]; then
+                  echo "$cask container changed without revision $expected" >&2
+                  exit 1
+                fi
+              elif [[ "$new_revision" != "1" ]]; then
+                echo "$cask changed version from $old_version to $new_version, so revision must reset to 1" >&2
+                exit 1
+              fi
+            done < <(jq -r '.[].cask' <<<"$selected" | LC_ALL=C sort -u)
+          fi
+
+          enriched='[]'
+          while IFS= read -r item; do
+            cask="$(jq -r '.cask' <<<"$item")"
+            manifest="casks/mods/${cask}/cask.yml"
+            version="$(awk '$1 == "version:" { print $2; exit }' "$manifest")"
+            revision="$(awk '$1 == "revision:" { print $2; exit }' "$manifest")"
+            if [[ -z "$version" || ! "$revision" =~ ^[1-9][0-9]*$ ]]; then
+              echo "$manifest must contain a version and a positive integer revision" >&2
+              exit 1
+            fi
+            item="$(jq -c --arg version "$version" --argjson revision "$revision" --arg tag "${version}-r${revision}" '. + {version: $version, revision: $revision, tag: $tag}' <<<"$item")"
+            enriched="$(jq -c --argjson item "$item" '. + [$item]' <<<"$enriched")"
+          done < <(jq -c '.[]' <<<"$selected")
+
+          matrix="$(jq -c '{include: .}' <<<"$enriched")"
+          echo "matrix=$matrix" >>"$GITHUB_OUTPUT"
+          echo "count=$(jq 'length' <<<"$enriched")" >>"$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reject an existing release tag
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "$IMAGE already exists; published tags are immutable" >&2
+            exit 1
+          fi
+
+      - name: Build and publish
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ matrix.tag }}
+            dev.anas.cask=${{ matrix.cask }}
+            dev.anas.cask.revision=${{ matrix.revision }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          provenance: mode=max
+          sbom: true

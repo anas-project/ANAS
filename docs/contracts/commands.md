@@ -117,7 +117,7 @@ anas lock [-w WORKSPACE] [-c config.yml] [--json]
   "workspace": "/data/ws", "config": "/data/ws/config.yml",
   "lock_path": "/data/ws/config.lock.yml",
   "modules": ["core", "postgres"],
-  "casks": [{ "name": "core", "version": "1.2.0", "app_version": "", "digest": "sha256:…" }],
+  "casks": [{ "name": "core", "version": "1.2.0", "revision": 1, "app_version": "", "digest": "sha256:…" }],
   "iam": { "provider": null, "consumers": [] },
   "capability_bindings": {}
 }

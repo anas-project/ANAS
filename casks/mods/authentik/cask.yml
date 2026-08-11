@@ -1,7 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: authentik
-version: 2026.5.7
+version: 2026.5.6
+revision: 1
 app_version: 2026.5.6
 abi:
   supports:

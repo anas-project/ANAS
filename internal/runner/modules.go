@@ -8,6 +8,7 @@ import (
 type Module struct {
 	Name                 string
 	Version              string
+	Revision             int
 	AppVersion           string
 	UpgradeFrom          string
 	DataBreaking         *[]string

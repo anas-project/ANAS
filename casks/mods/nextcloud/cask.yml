@@ -1,7 +1,8 @@
 api_version: anas.dev/v1
 kind: Cask
 name: nextcloud
-version: 34.0.3
+version: 34.0.2
+revision: 1
 app_version: 34.0.2
 abi:
   supports:

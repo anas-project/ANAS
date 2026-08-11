@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/whlsxl/anas/internal/config"
+	"github.com/anas-project/ANAS/internal/config"
 )
 
 func TestResolveCoreAndServiceConfigTargets(t *testing.T) {

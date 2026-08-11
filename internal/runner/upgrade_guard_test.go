@@ -102,6 +102,19 @@ func TestGoverningDataBreakingPicksTheHigherVersion(t *testing.T) {
 	}
 }
 
+func TestCaskTransitionVerdictComparesRevisionWithinVersion(t *testing.T) {
+	empty := declared()
+	from := deploymentCask{Version: "34.0.2", Revision: 1, DataBreaking: empty}
+	to := deploymentCask{Version: "34.0.2", Revision: 2, DataBreaking: empty}
+	if verdict, _ := caskTransitionVerdict(from, to); verdict != dataCompatible {
+		t.Fatalf("revision transition verdict = %v, want compatible", verdict)
+	}
+	to.DataBreaking = nil
+	if verdict, _ := caskTransitionVerdict(from, to); verdict != dataUnknown {
+		t.Fatalf("undeclared revision transition verdict = %v, want unknown", verdict)
+	}
+}
+
 func TestDeploymentRollbackVersionGuard(t *testing.T) {
 	manifest := func(casks ...deploymentCask) *deploymentManifest {
 		m := &deploymentManifest{Casks: map[string]deploymentCask{}}

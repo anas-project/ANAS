@@ -101,6 +101,7 @@ func TestCasksUseManifestRule(t *testing.T) {
 			Kind       string `yaml:"kind"`
 			Name       string `yaml:"name"`
 			Version    string `yaml:"version"`
+			Revision   int    `yaml:"revision"`
 			ABI        struct {
 				Supports []string `yaml:"supports"`
 			} `yaml:"abi"`
@@ -142,6 +143,9 @@ func TestCasksUseManifestRule(t *testing.T) {
 		}
 		if manifest.Version == "" {
 			t.Fatalf("%s missing version", entry.Name())
+		}
+		if manifest.Revision < 1 {
+			t.Fatalf("%s revision = %d, want at least 1", entry.Name(), manifest.Revision)
 		}
 		if _, err := parseSemver(manifest.Version); err != nil {
 			t.Fatalf("%s version %q is invalid: %v", entry.Name(), manifest.Version, err)
@@ -250,6 +254,7 @@ func TestManifestRejectsRemovedBeforeDependencyField(t *testing.T) {
 kind: Cask
 name: example
 version: 1.0.0
+revision: 1
 abi:
   supports: [anas.cask/v2]
 runtime:

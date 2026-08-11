@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/whlsxl/anas/internal/config"
+	"github.com/anas-project/ANAS/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,6 +22,7 @@ type caskManifest struct {
 	Kind         string               `yaml:"kind"`
 	Name         string               `yaml:"name"`
 	Version      string               `yaml:"version"`
+	Revision     int                  `yaml:"revision"`
 	AppVersion   string               `yaml:"app_version"`
 	ABI          manifestABI          `yaml:"abi"`
 	Title        string               `yaml:"title"`
@@ -286,6 +287,9 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if _, err := parseSemver(manifest.Version); err != nil {
 		return Module{}, fmt.Errorf("cask %q version %q is invalid: %w", dirname, manifest.Version, err)
 	}
+	if manifest.Revision < 1 {
+		return Module{}, fmt.Errorf("cask %q revision must be at least 1", dirname)
+	}
 	if manifest.Upgrade.From != "" {
 		if _, err := parseVersionConstraint(manifest.Upgrade.From); err != nil {
 			return Module{}, fmt.Errorf("cask %q upgrade.from %q is invalid: %w", dirname, manifest.Upgrade.From, err)
@@ -388,6 +392,7 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	mod := Module{
 		Name:                 manifest.Name,
 		Version:              manifest.Version,
+		Revision:             manifest.Revision,
 		AppVersion:           strings.TrimSpace(manifest.AppVersion),
 		UpgradeFrom:          manifest.Upgrade.From,
 		DataBreaking:         cloneStringListPointer(manifest.Upgrade.DataBreaking),

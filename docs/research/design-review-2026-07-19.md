@@ -146,10 +146,10 @@ patch 只能写本 cask 前缀键和声明导出的能力键，其余一律报�
 同一个字段上。镜像 bump 一次 major，就会连带触发所有依赖约束与升级路径
 语义，而 cask 打包本身可能毫无变化；反之打包大改而镜像未动时无法表达。
 
-**解决方案**：拆成两个字段：`version`（cask 打包版本，语义化，约束与
-升级检查只看它）和 `app_version`（上游镜像版本，展示与记录用）。迁移时
-现有值原样拷到 `app_version`，`version` 从 1.0.0 重新起步，lock 文件
-同时记录两者。
+**最终方案（2026-08-11，项目尚未发布）**：采用规范化上游 `version`、上游原始
+`app_version` 和整数 `revision`。发布身份为 `<version>-r<revision>`；同一上游版本的
+ANAS 修订只增加 revision，上游升级时 revision 重置为 1。升级判断先比较 SemVer
+version，相同时比较 revision。
 
 ## P1-9 单一 `default_service_root_password` 复用到所有管理员账户
 
@@ -259,7 +259,7 @@ reconcile 框架下统一设计，避免两套并行的状态模型。
 | P1-5 全停全启 | 已解决 | 改为按 cask `up -d --remove-orphans` 对账 + 仅 down 被移除模块；全停只保留在 `restart`（语义即全量重启）与 `rollback` |
 | P1-6 hook go run | 已解决 | `go run` hook 每次运行编译一次（`hook-bin/`），并冻结进渲染产物 `.hook.bin`；制品启动直接执行冻结二进制，无需 Go 工具链；渲染流程始终从源码重编译，杜绝旧二进制泄入新 release |
 | P1-7 隐式契约 | 已解决（机制） | calculate 补丁强制"自身前缀或 `config.exports`"写契约；跨界读取显式化为 `config.consumes`（支持前/后缀 glob）；已为 nextcloud/netbird/mariadb/samba_fs 声明 exports，llng/keycloak/postgres/lego/ddns 声明 consumes。IAM 协议协商仍按 `iam-capability-design.md` 推进 |
-| P1-8 版本双语义 | 已解决 | manifest/lock 新增 `app_version` 记录上游镜像版本；`version` 明确为打包版本，约束与升级检查只作用于它；文档定义 bump 规则，存量号保持不变避免破坏已部署实例 |
+| P1-8 版本双语义 | 已解决 | manifest/lock 新增 `revision`；规范化 `version` 跟随上游，`app_version` 保留上游原始拼写，ANAS 自身修订使用独立整数；未发布，因此直接规范化现有版本，不保留旧编号兼容 |
 | P1-9 单一管理密码 | 已解决 | `default_service_root_password` 改为可选；缺省时每个 cask 生成独立根密码（`<PREFIX>_DEFAULT_ROOT_PASSWORD`）存入 secret store；新增 `anas config secret list/get` |
 | P1-10 无回滚 | 已解决 | promote 保留 `release.previous` + `.cask.lock.snapshot`；新增 `anas rollback` 交换目录、恢复 lock、以制品方式启动并更新 applied 快照 |
 | P1-11 归属不确定 | 已解决 | `policyOwnerForEnv` 排序遍历，多归属直接报错要求使用模块路径 |

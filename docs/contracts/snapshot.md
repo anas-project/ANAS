@@ -228,10 +228,10 @@ breaking  ⟺  ∃ V ∈ data_breaking,  A < V ≤ B
 
 列表的维护规则（只增不改、何时可以修剪）见下面的"给 cask 作者的规则"。
 
-版本粒度用 cask `version` 而非 `app_version`，与 `validateUpgrade` 保持一致；且
-samba_dc、lego、ddns、core 等 cask 本就没有 `app_version`。两者不会真的分歧——它们出自
-同一份 cask.yml，`version` 相同必然 `app_version` 也相同——所以只比 `version` 与同时比
-两者在可达状态上等价，而前者是契约明文规定的那一个。
+发布粒度使用 cask 的 `(version, revision)`，不使用仅供展示的 `app_version`，与
+`validateUpgrade` 保持一致。`version` 不同时按 SemVer 比较；`version` 相同时按整数
+`revision` 比较。同一 version 的 revision 跃迁也属于发布变化：未声明
+`data_breaking` 时仍按未知处理，显式 `[]` 才表示兼容。
 
 ### 升级方向
 

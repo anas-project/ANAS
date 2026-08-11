@@ -2,6 +2,7 @@ api_version: anas.dev/v1
 kind: Cask
 name: core
 version: 0.0.0
+revision: 1
 abi:
   supports:
     - anas.cask/v1

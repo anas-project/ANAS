@@ -2,6 +2,7 @@ api_version: anas.dev/v1
 kind: Cask
 name: oauth2_proxy
 version: 7.15.3
+revision: 1
 app_version: 7.15.3
 abi:
   supports:

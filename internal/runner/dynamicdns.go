@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/whlsxl/anas/internal/dns"
+	"github.com/anas-project/ANAS/internal/dns"
 )
 
 // Deployment-scoped dynamic DNS.

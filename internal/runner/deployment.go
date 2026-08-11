@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/whlsxl/anas/internal/compose"
-	"github.com/whlsxl/anas/internal/config"
+	"github.com/anas-project/ANAS/internal/compose"
+	"github.com/anas-project/ANAS/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -44,6 +44,7 @@ type deploymentManifest struct {
 type deploymentCask struct {
 	Name       string `yaml:"name" json:"name"`
 	Version    string `yaml:"version" json:"version"`
+	Revision   int    `yaml:"revision" json:"revision"`
 	AppVersion string `yaml:"app_version,omitempty" json:"app_version,omitempty"`
 	// DataBreaking is frozen from the cask's upgrade.data_breaking so that a
 	// rollback can be judged against what the cask claimed when it was rendered,
@@ -219,7 +220,7 @@ func caskLockDocument(lock *caskLock) []map[string]any {
 		record := lock.Casks[name]
 		out = append(out, map[string]any{
 			"name": name, "version": record.Version,
-			"app_version": record.AppVersion, "digest": record.Digest,
+			"revision": record.Revision, "app_version": record.AppVersion, "digest": record.Digest,
 		})
 	}
 	return out
@@ -458,8 +459,8 @@ func validateLockedResolution(a *app, lock *caskLock) error {
 		if !ok {
 			return fmt.Errorf("config lock has no cask %q; run anas lock", name)
 		}
-		if record.Version != a.reg[name].Version {
-			return fmt.Errorf("cask %q is locked at %s but source provides %s; run anas lock to update explicitly", name, record.Version, a.reg[name].Version)
+		if record.Version != a.reg[name].Version || record.Revision != a.reg[name].Revision {
+			return fmt.Errorf("cask %q is locked at %s-r%d but source provides %s-r%d; run anas lock to update explicitly", name, record.Version, record.Revision, a.reg[name].Version, a.reg[name].Revision)
 		}
 		digest, err := caskBundleDigest(a.reg[name].SourceDir)
 		if err != nil {
@@ -531,7 +532,7 @@ func buildDeploymentManifest(a *app, id, cfgPath string) (*deploymentManifest, e
 	for _, name := range a.order {
 		mod := a.reg[name]
 		manifest.Casks[name] = deploymentCask{
-			Name: name, Version: mod.Version, AppVersion: mod.AppVersion,
+			Name: name, Version: mod.Version, Revision: mod.Revision, AppVersion: mod.AppVersion,
 			DataBreaking: cloneStringListPointer(mod.DataBreaking),
 			RuntimeType:  mod.RuntimeType, ComposeFile: mod.ComposeFile,
 			Hook: mod.Hook, EnvPrefix: mod.EnvPrefix,
@@ -1369,7 +1370,7 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 	deps := map[string][]string{}
 	for name, cask := range manifest.Casks {
 		reg[name] = Module{
-			Name: name, Version: cask.Version, AppVersion: cask.AppVersion,
+			Name: name, Version: cask.Version, Revision: cask.Revision, AppVersion: cask.AppVersion,
 			SourceDir: filepath.Join(casksRoot, name), EnvPrefix: cask.EnvPrefix,
 			Consumes: append([]string{}, cask.Consumes...), Changes: cask.Changes,
 			UseHostLAN: cask.UseHostLAN, Hook: cask.Hook,

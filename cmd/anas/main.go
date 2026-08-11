@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/whlsxl/anas/internal/runner"
+	"github.com/anas-project/ANAS/internal/runner"
 )
 
 func main() {

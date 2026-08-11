@@ -4,6 +4,9 @@
 > 它与 [workspace-backup-plan.md](workspace-backup-plan.md) 的一到四期没有依赖关系，
 > 可以在其之后任意时点推进。
 
+> **已实施子集（2026-08-11）：** cask 容器镜像的版本规则、GHCR 发布清单和 GitHub
+> Actions 已落地；cask bundle 本身的 OCI 分发仍是草案。
+
 ## 现状
 
 cask **没有** embed 进二进制。运行时按以下顺序在磁盘上查找 `casks/mods`
@@ -102,19 +105,31 @@ hook 预编译是**可选优化**，不是分发的前提。两种选择：
 
 ### 版本身份与发布触发
 
-**先要引入 cask 修订号。** 今天 `cask.yml` 里 `version` 与 `app_version` 是同一个值
-（nextcloud 都是 `34.0.2`）。分发场景下这会撞车：同一应用版本改了 Dockerfile 或 hook
-之后，第二次修订发不出去。
+容器发布采用“规范化上游版本 + ANAS 修订号”。同一上游版本下修改 Dockerfile、入口
+脚本或其他 build context 文件时，只增加 `revision`；上游升级时更新 `version` 和
+`app_version`，并把 `revision` 重置为 `1`。
 
 ```yaml
 version: 34.0.2
 app_version: 34.0.2
-revision: 2          # cask 打包修订，app_version 不变时递增
+revision: 2
 ```
 
-- **git tag**：`nextcloud/v34.0.2-2`（带前缀的 monorepo tag，与 Go 多 module 约定一致）
-- **发布触发**：路径过滤，`casks/mods/nextcloud/**` 变化才重建该 cask 的制品
+- **发布身份与镜像 tag**：`34.0.2-r2`。`-r2` 不作为 SemVer 预发布后缀参与比较；
+  runner 先比较 `version`，相同时再比较整数 `revision`
+- **git tag**：`nextcloud/v34.0.2-r2`
+- **首次发布**：手工执行 GitHub Actions 的 `workflow_dispatch`，参数使用 `all`
+- **后续发布触发**：只在 `.github/images.json` 登记的 build context 发生变化时选择
+  对应 cask；PR 构建验证，合并主分支后发布
+- **版本校验**：上游版本不变时 revision 必须恰好加一；上游版本变化时必须重置为 1；
+  已存在的 GHCR tag 不允许覆盖
+- **多镜像 cask**：`samba_dc` 任一 context 变化时，两个镜像按同一版本成组发布
 - **`data_breaking` 布尔化遍历的是修订序列**，不是应用版本序列
+
+容器清单位于 `.github/images.json`。CI 同时扫描仓库中的全部 Dockerfile，未登记或重复
+登记都会失败。镜像发布到 `ghcr.io/anas-project/anas-<image>:<version>-r<revision>`，不发布
+`latest`。默认平台为 `linux/amd64` 和 `linux/arm64`。第一次成功推送后，需要在 GitHub
+Packages 中把这些 container package 设为 public，部署端才能匿名拉取。
 
 ⚠️ **hook 共享库会打破路径过滤。** 若把 16 份重复的 hook 协议样板抽成
 `casks/lib/hook` 并留在本仓库，该目录一变就要重建全部 cask 制品。这是 monorepo 加
@@ -126,7 +141,8 @@ cask bundle 源码分发时，`import` 一个独立小 module 才能让编译闭
 
 **不单独造索引文件，registry 的 tag list 就是索引。**
 
-- `GET /v2/<name>/tags/list` 是标准 API，排序用已有的 `Masterminds/semver`
+- `GET /v2/<name>/tags/list` 是标准 API；tag 先拆出 `-rN`，再用已有的
+  `Masterminds/semver` 排序版本并按整数排序 revision
 - 单独的 `index.yaml` 会引入新的失败模式：索引里有的制品不在、制品在的索引里没有。
   让 registry 当唯一真相源就没有这个不一致
 - 本地缓存（见「开放问题」2）只是缓存，可随时按 registry 重建

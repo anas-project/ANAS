@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/whlsxl/anas/internal/dns"
+	"github.com/anas-project/ANAS/internal/dns"
 )
 
 func main() {
