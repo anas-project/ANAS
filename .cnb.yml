@@ -1,0 +1,22 @@
+master:
+  push:
+    - name: Publish changed cask images
+      services:
+        - name: docker
+          options:
+            rootlessBuildkitd:
+              enabled: true
+      stages:
+        - name: Build and publish changed images
+          script: bash scripts/ci/cnb-container-images.sh changed
+
+  web_trigger_publish_all:
+    - name: Publish all cask images
+      services:
+        - name: docker
+          options:
+            rootlessBuildkitd:
+              enabled: true
+      stages:
+        - name: Build and publish all images
+          script: bash scripts/ci/cnb-container-images.sh all

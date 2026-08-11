@@ -1,6 +1,6 @@
 services:
   anas_traefik:
-    image: ${GHCR_REGISTRY:-ghcr.io}/anas-project/anas-traefik:3.7.10-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r1
     build:
       context: ./traefik
       network: ${DOCKER_BUILD_NETWORK:-default}

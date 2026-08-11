@@ -85,6 +85,7 @@ func TestChineseSpeedupEnablesAllMirrorDefaults(t *testing.T) {
 		"NEXTCLOUD_APPSTORE_URL":       "https://files.m.daocloud.io/apps.nextcloud.com/api/v1",
 		"DOCKER_HUB_REGISTRY":          "m.daocloud.io/docker.io",
 		"LLNG_DOCKER_HUB_REGISTRY":     "docker.1ms.run",
+		"ANAS_IMAGE_REGISTRY":          "docker.cnb.cool/anas.dev/anas",
 		"GHCR_REGISTRY":                "ghcr.nju.edu.cn",
 		"QUAY_REGISTRY":                "quay.nju.edu.cn",
 	}
@@ -100,14 +101,18 @@ func TestChineseSpeedupEnablesAllMirrorDefaults(t *testing.T) {
 
 func TestChineseSpeedupPreservesExplicitMirrorOverrides(t *testing.T) {
 	cfg := &File{Env: map[string]any{
-		"CHINESE_SPEEDUP":  "true",
-		"APT_MIRROR_URL":   "https://mirror.example/apt",
-		"GHCR_REGISTRY":    "registry.example/ghcr",
-		"NPM_REGISTRY_URL": "https://npm.example",
+		"CHINESE_SPEEDUP":     "true",
+		"APT_MIRROR_URL":      "https://mirror.example/apt",
+		"ANAS_IMAGE_REGISTRY": "registry.example/anas",
+		"GHCR_REGISTRY":       "registry.example/ghcr",
+		"NPM_REGISTRY_URL":    "https://npm.example",
 	}}
 	env := cfg.BaseEnv()
 	if got := env["APT_MIRROR_URL"]; got != "https://mirror.example/apt" {
 		t.Fatalf("APT_MIRROR_URL = %q", got)
+	}
+	if got := env["ANAS_IMAGE_REGISTRY"]; got != "registry.example/anas" {
+		t.Fatalf("ANAS_IMAGE_REGISTRY = %q", got)
 	}
 	if got := env["GHCR_REGISTRY"]; got != "registry.example/ghcr" {
 		t.Fatalf("GHCR_REGISTRY = %q", got)

@@ -20,7 +20,7 @@ fi
 # Compose pulls an image or a Dockerfile resolves FROM.
 direct_compose_images=$(
   grep -R -n -E --include='docker-compose.yml' '^[[:space:]]+image:' casks |
-    grep -v -E 'image:[[:space:]]+\$\{(IMAGE_PREFIX|DOCKER_HUB_REGISTRY|GHCR_REGISTRY|QUAY_REGISTRY)' || true
+    grep -v -E 'image:[[:space:]]+\$\{(IMAGE_PREFIX|ANAS_IMAGE_REGISTRY|DOCKER_HUB_REGISTRY|GHCR_REGISTRY|QUAY_REGISTRY)' || true
 )
 if [ -n "$direct_compose_images" ]; then
   printf '%s\n' "$direct_compose_images" >&2

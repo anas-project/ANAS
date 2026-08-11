@@ -38,6 +38,7 @@ env:
   # Mainland China: one switch enables package, source-download and container
   # registry mirrors. Every generated default can still be overridden here.
   # CHINESE_SPEEDUP: "true"
+  # ANAS_IMAGE_REGISTRY: docker.cnb.cool/anas.dev/anas
   #
   # These two are samba_fs parameters published under a bare name, because they
   # name what people see in a file manager.

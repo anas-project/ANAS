@@ -85,6 +85,7 @@ env:
   # Mainland China: enables APT, APK, npm, Go, GitHub/Nextcloud downloads and
   # Docker Hub/GHCR/Quay mirrors as one coordinated setting.
   # CHINESE_SPEEDUP: "true"
+  # ANAS_IMAGE_REGISTRY: docker.cnb.cool/anas.dev/anas
   #
   # These two are samba_fs parameters published under a bare name, because they
   # name what people see in a file manager.

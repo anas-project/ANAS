@@ -272,6 +272,7 @@ var chineseSpeedupDefaults = map[string]string{
 	"NEXTCLOUD_APPSTORE_URL":       "https://files.m.daocloud.io/apps.nextcloud.com/api/v1",
 	"DOCKER_HUB_REGISTRY":          "m.daocloud.io/docker.io",
 	"LLNG_DOCKER_HUB_REGISTRY":     "docker.1ms.run",
+	"ANAS_IMAGE_REGISTRY":          "docker.cnb.cool/anas.dev/anas",
 	"GHCR_REGISTRY":                "ghcr.nju.edu.cn",
 	"QUAY_REGISTRY":                "quay.nju.edu.cn",
 }

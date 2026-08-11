@@ -20,7 +20,8 @@ GitHub Release。
 | `NEXTCLOUD_APPSTORE_URL` | `https://files.m.daocloud.io/apps.nextcloud.com/api/v1` | Nextcloud 应用元数据 |
 | `DOCKER_HUB_REGISTRY` | `m.daocloud.io/docker.io` | Compose 镜像与 Dockerfile 基础镜像 |
 | `LLNG_DOCKER_HUB_REGISTRY` | `docker.1ms.run` | LemonLDAP::NG 基础镜像；该镜像不在 DaoCloud 白名单中 |
-| `GHCR_REGISTRY` | `ghcr.nju.edu.cn` | GHCR 镜像与基础镜像 |
+| `ANAS_IMAGE_REGISTRY` | `docker.cnb.cool/anas.dev/anas` | ANAS 自建的正式国内镜像 |
+| `GHCR_REGISTRY` | `ghcr.nju.edu.cn` | 第三方 GHCR 镜像与基础镜像 |
 | `QUAY_REGISTRY` | `quay.nju.edu.cn` | oauth2-proxy |
 
 例如只替换企业内部 GHCR 镜像库，而保留其他中国默认值：
@@ -80,6 +81,11 @@ CNB 同时提供国内 Git 托管、云原生构建和 `docker.cnb.cool` Docker 
 3. 生成 `images.lock.yml`，记录上游地址、上游 digest、CNB 地址和 CNB digest；
 4. 生成国内版 Compose，把三个 registry 变量统一指向 CNB；
 5. 发布按版本固定的镜像，不把可变的 `latest` 当作可复现发行物。
+
+实际采用的 CNB 地址为 `https://cnb.cool/anas.dev/ANAS`，ANAS 自建镜像使用
+`docker.cnb.cool/anas.dev/anas/<image>:<version>-r<revision>`。源码通过 GitHub Actions
+镜像全部分支和 tag；CNB 在 `master` push 后只构建发生变化的 Cask，首次导入或手动
+“发布全部 Cask 镜像”时构建当前登记的 12 个镜像。
 
 上游镜像复制示例：
 

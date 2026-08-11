@@ -1,0 +1,10 @@
+branch:
+  - reg: ^master$
+    buttons:
+      - name: 发布全部 Cask 镜像
+        description: 首次发布或灾备恢复时构建全部固定版本镜像
+        event: web_trigger_publish_all
+        isDefault: true
+        permissions:
+          roles:
+            - master

@@ -26,6 +26,12 @@
 - Go module：`github.com/anas-project/ANAS`
 - 容器命名空间：`ghcr.io/anas-project/`
 
+国内镜像与代码镜像使用：
+
+- CNB 组织：`anas.dev`
+- CNB 仓库：`https://cnb.cool/anas.dev/ANAS`
+- CNB 容器命名空间：`docker.cnb.cool/anas.dev/anas/`
+
 其他工作副本可执行以下命令切换远端：
 
 ```bash
@@ -65,6 +71,11 @@ ghcr.io/anas-project/anas-<image>:<version>-r<revision>
 
 不发布可变的 `latest` tag。默认构建平台为 `linux/amd64` 和 `linux/arm64`。
 
+Compose 使用 `ANAS_IMAGE_REGISTRY` 单独选择 ANAS 自建镜像来源，默认值为
+`ghcr.io/anas-project`。启用 `CHINESE_SPEEDUP=true` 时，默认切换为
+`docker.cnb.cool/anas.dev/anas`；`GHCR_REGISTRY` 继续只负责第三方 GHCR 镜像，避免把
+第三方命名空间与 ANAS 的 CNB 仓库路径混在一起。
+
 ## GitHub Actions 发布规则
 
 工作流位于 `.github/workflows/container-images.yml`：
@@ -79,6 +90,27 @@ ghcr.io/anas-project/anas-<image>:<version>-r<revision>
 
 首次成功推送后，需要在 GitHub Packages 中确认每个 container package 为 public，才能
 让未登录 GHCR 的部署端直接拉取。
+
+## CNB 同步与发布规则
+
+GitHub 仍是上游主仓库。`.github/workflows/cnb-sync.yml` 在任意分支或 tag 变化时，把全部
+远端分支和 tag 镜像到公开仓库 `anas.dev/ANAS`。GitHub 仓库需要配置一个名为
+`CNB_TOKEN` 的 secret，令牌仅需对该 CNB 仓库拥有 Git 写权限。
+
+CNB 收到 `master` push 后读取 `.cnb.yml`，由
+`scripts/ci/cnb-container-images.sh` 校验镜像登记、Compose tag 和 revision 规则，然后只
+构建 build context 发生变化的 Cask。首次导入没有父提交时构建全部镜像。也可以在
+`master` 分支页面点击“发布全部 Cask 镜像”，手工执行不可变 tag 的全量发布。
+
+CNB 镜像使用：
+
+```text
+docker.cnb.cool/anas.dev/anas/<image>:<version>-r<revision>
+```
+
+CNB 的 Docker 服务向当前仓库制品库提供登录凭据；构建启用 rootless BuildKit、双架构
+manifest、registry cache、provenance 和 SBOM。发布前会检查目标 tag，已经存在的固定 tag
+不会被覆盖。
 
 ## 文档整理
 
@@ -98,12 +130,20 @@ git diff --check
 两项均通过，同时确认仓库中不再残留旧的 Go module 路径或
 `ghcr.io/whlsxl` 镜像命名空间。
 
-## 发布前剩余操作
+## 首次发布操作
 
-本提交只把实现和文档写入 Git。推送到 GitHub 后，还需要：
+GitHub 首次发布需要：
 
 1. 查看 GitHub Actions 的首次校验结果；
 2. 手工运行 `Container images` 工作流，选择 `all`；
 3. 确认全部镜像成功推送到 `ghcr.io/anas-project/`；
 4. 将新建的 container packages 设置为 public；
 5. 用一台干净机器按 Compose 中的固定 tag 做匿名拉取验证。
+
+CNB 首次同步需要：
+
+1. 在 CNB 创建公开组织 `anas.dev` 和公开仓库 `ANAS`；
+2. 创建 CNB Git 访问令牌，并保存为 GitHub repository secret `CNB_TOKEN`；
+3. 手工运行一次 GitHub 的 `Sync repository to CNB` 工作流；
+4. 等待 CNB 的首次 `master push` 流水线发布 12 个镜像；
+5. 匿名拉取 `docker.cnb.cool/anas.dev/anas/<image>:<version>-r<revision>` 验证。
