@@ -7,4 +7,5 @@ branch:
         isDefault: true
         permissions:
           roles:
+            - owner
             - master
