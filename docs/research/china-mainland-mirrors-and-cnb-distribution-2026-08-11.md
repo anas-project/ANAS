@@ -84,8 +84,9 @@ CNB 同时提供国内 Git 托管、云原生构建和 `docker.cnb.cool` Docker 
 
 实际采用的 CNB 地址为 `https://cnb.cool/anas.dev/ANAS`，ANAS 自建镜像使用
 `docker.cnb.cool/anas.dev/anas/<image>:<version>-r<revision>`。源码通过 GitHub Actions
-镜像全部分支和 tag；CNB 在 `master` push 后只构建发生变化的 Cask，首次导入或手动
-“发布全部 Cask 镜像”时构建当前登记的 12 个镜像。
+镜像全部分支和 tag。镜像在 GitHub Actions 中只构建一次，同时推送到 GHCR 与 CNB；
+CNB 不重复编译。灾备按钮可把 CNB 中缺失的固定 tag 从公开 GHCR 直接复制回来，并保留
+多架构 manifest。
 
 上游镜像复制示例：
 

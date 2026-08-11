@@ -87,6 +87,8 @@ Compose 使用 `ANAS_IMAGE_REGISTRY` 单独选择 ANAS 自建镜像来源，默�
 5. 发布前检查 GHCR；已存在的 tag 不允许覆盖。
 6. 生成 provenance 和 SBOM，并使用 GitHub Actions cache。
 7. 首次发布使用 `workflow_dispatch`，参数 `cask=all`，一次构建当前清单中的全部镜像。
+8. 非 PR 构建只执行一次，同时把相同多架构结果推送到 GHCR 与 CNB，不在 CNB 重复
+   编译。
 
 首次成功推送后，需要在 GitHub Packages 中确认每个 container package 为 public，才能
 让未登录 GHCR 的部署端直接拉取。
@@ -98,9 +100,10 @@ GitHub 仍是上游主仓库。`.github/workflows/cnb-sync.yml` 在任意分支�
 `CNB_TOKEN` 的 secret，令牌仅需对该 CNB 仓库拥有 Git 写权限。
 
 CNB 收到 `master` push 后读取 `.cnb.yml`，由
-`scripts/ci/cnb-container-images.sh` 校验镜像登记、Compose tag 和 revision 规则，然后只
-构建 build context 发生变化的 Cask。首次导入没有父提交时构建全部镜像。也可以在
-`master` 分支页面点击“发布全部 Cask 镜像”，手工执行不可变 tag 的全量发布。
+`scripts/ci/cnb-container-images.sh` 校验镜像登记和 Compose tag。正式镜像由 GitHub
+Actions 的同一次 BuildKit 构建同时推送到两个 registry，因此不重复消耗 CNB 构建额度。
+灾备恢复时可以在 `master` 分支页面点击“从 GHCR 同步全部 Cask 镜像”，用
+`docker buildx imagetools create` 把 CNB 中缺失的多架构固定 tag 从 GHCR 直接复制过来。
 
 CNB 镜像使用：
 
@@ -108,9 +111,8 @@ CNB 镜像使用：
 docker.cnb.cool/anas.dev/anas/<image>:<version>-r<revision>
 ```
 
-CNB 的 Docker 服务向当前仓库制品库提供登录凭据；构建启用 rootless BuildKit、双架构
-manifest、registry cache、provenance 和 SBOM。发布前会检查目标 tag，已经存在的固定 tag
-不会被覆盖。
+GitHub 构建启用双架构 manifest、cache、provenance 和 SBOM，并在发布前同时检查两个
+registry；任一目标 tag 已存在都会拒绝覆盖。CNB 灾备同步也会跳过已存在的固定 tag。
 
 ## 文档整理
 
@@ -144,6 +146,9 @@ CNB 首次同步需要：
 
 1. 在 CNB 创建公开组织 `anas.dev` 和公开仓库 `ANAS`；
 2. 创建 CNB Git 访问令牌，并保存为 GitHub repository secret `CNB_TOKEN`；
-3. 手工运行一次 GitHub 的 `Sync repository to CNB` 工作流；
-4. 等待 CNB 的首次 `master push` 流水线发布 12 个镜像；
-5. 匿名拉取 `docker.cnb.cool/anas.dev/anas/<image>:<version>-r<revision>` 验证。
+3. 创建具备当前仓库 Docker 制品写权限的 CNB 令牌，并保存为
+   `CNB_REGISTRY_TOKEN`；
+4. 手工运行一次 GitHub 的 `Sync repository to CNB` 工作流；
+5. 手工运行 GitHub 的 `Container images` 工作流，参数 `cask=all`，同时发布两个
+   registry 的 12 个镜像；
+6. 匿名拉取 `docker.cnb.cool/anas.dev/anas/<image>:<version>-r<revision>` 验证。

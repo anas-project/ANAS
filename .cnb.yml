@@ -1,22 +1,17 @@
 master:
   push:
-    - name: Publish changed cask images
-      services:
-        - name: docker
-          options:
-            rootlessBuildkitd:
-              enabled: true
+    - name: Validate mirrored repository
       stages:
-        - name: Build and publish changed images
-          script: bash scripts/ci/cnb-container-images.sh changed
+        - name: Validate image metadata
+          script: bash scripts/ci/cnb-container-images.sh validate
 
-  web_trigger_publish_all:
-    - name: Publish all cask images
+  web_trigger_mirror_all:
+    - name: Mirror all cask images from GHCR
       services:
         - name: docker
           options:
             rootlessBuildkitd:
               enabled: true
       stages:
-        - name: Build and publish all images
-          script: bash scripts/ci/cnb-container-images.sh all
+        - name: Mirror missing images from GHCR
+          script: bash scripts/ci/cnb-container-images.sh mirror-all
