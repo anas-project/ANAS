@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -27,6 +28,37 @@ func TestVersionConstraintHyphenRange(t *testing.T) {
 		if constraint.Check(v) {
 			t.Fatalf("%s should not match range", version)
 		}
+	}
+}
+
+func TestUpdateCaskLockDropsUnselectedResolution(t *testing.T) {
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "cask.yml"), []byte("name: selected\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	a := &app{
+		order: []string{"selected"},
+		reg: map[string]Module{"selected": {
+			Name: "selected", Version: "1.0.0", SourceDir: source,
+		}},
+		resolvedBindings: map[string]map[string]string{},
+	}
+	lock := &caskLock{
+		Casks:    map[string]caskLockRecord{"removed": {Version: "1.0.0"}},
+		IAM:      &caskLockIAM{Provider: "removed"},
+		Bindings: map[string]map[string]string{"removed": {"relational_database": "mariadb"}},
+	}
+	if err := a.updateCaskLock(lock, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := lock.Casks["removed"]; ok {
+		t.Fatal("removed cask remained in updated lock")
+	}
+	if _, ok := lock.Casks["selected"]; !ok {
+		t.Fatal("selected cask is missing from updated lock")
+	}
+	if lock.IAM != nil || len(lock.Bindings) != 0 {
+		t.Fatalf("stale resolution remained: IAM=%#v bindings=%#v", lock.IAM, lock.Bindings)
 	}
 }
 

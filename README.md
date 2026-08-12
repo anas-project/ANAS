@@ -24,6 +24,8 @@ go run ./cmd/anas config explain samba_dc.user_min_pass_length
 go run ./cmd/anas config set -c config.yml samba_dc.user_min_pass_length 10
 go run ./cmd/anas config plan -c config.yml -b ~/.anas
 go run ./cmd/anas config secret list -b ~/.anas
+go run ./cmd/anas admin local list -w ~/.anas
+go run ./cmd/anas admin local credential ddns_go -w ~/.anas
 ```
 
 `render` and `build` create an immutable ready deployment but never change the
@@ -63,9 +65,17 @@ global:
   email: admin@example.com
   data_path: ./data
   timezone: Asia/Shanghai
-  # Optional shared administrator password. When omitted, every cask gets its
-  # own generated root password; read them with `anas config secret get`.
+  # Legacy compatibility for casks not yet migrated to managed local accounts.
   default_service_root_password: ChangeMe1!
+
+administration:
+  bootstrap:
+    username: admin
+    roles: [platform_admin, directory_admin]
+  local_accounts:
+    username_template: "admin_{cask}"
+    password_policy: generated_per_cask
+    password_length: 24
 
 services:
   # The DNS vendor is chosen per engine rather than deployment-wide.
@@ -80,22 +90,29 @@ env:
   # Set to "true" in mainland China to enable all built-in package, download,
   # and container-registry mirrors. Individual endpoints remain overridable.
   # CHINESE_SPEEDUP: "true"
+  # Traefik-only dashboard gate; this is not the global administrator name.
   BASICAUTH_USER: admin
 ```
 
-Persistent data can optionally use guarded Btrfs snapshots:
+Managed local passwords never enter deployment `.env` files. List account
+names safely with `anas admin local list`; use `credential` only when the
+plaintext is explicitly needed. The complete model is documented in
+[docs/design/admin-account-system.md](docs/design/admin-account-system.md).
+
+When `rollback.snapshot.backend` is omitted, `anas lock` checks the workspace.
+It locks Btrfs with five retained automatic snapshots when `data/` is a Btrfs
+subvolume, or locks snapshots off when the workspace cannot support them.
+An explicit value is only needed to override detection:
 
 ```yaml
 rollback:
   snapshot:
-    backend: btrfs
-    source: /srv/anas/data
-    root: /srv/anas/.snapshots
+    backend: none # force snapshots off
 ```
 
-The source must be a Btrfs subvolume and the snapshot root must be on the same
-Btrfs filesystem. A data restore requires `rollback --restore-data --yes` and
-keeps the replaced data as a recovery subvolume.
+The automatic Btrfs choice is frozen in `config.lock.yml`; ordinary render and
+apply commands do not probe again. A data restore keeps the replaced data as a
+recovery subvolume.
 
 Legacy Ruby keys such as `mods` and `envs` are intentionally rejected.
 Per-service overrides live under `services`:
@@ -244,14 +261,14 @@ See [docs/research/README.md](docs/research/README.md) for the research archive,
 including the current open-source self-hosted Kanban comparison and historical
 technology assessments.
 
-See [docs/ai-design.md](docs/ai-design.md) for the project structure, cask
+See [docs/design/ai-design.md](docs/design/ai-design.md) for the project structure, cask
 structure, and rules for designing new casks.
 
-See [docs/iam-capability-design.md](docs/iam-capability-design.md) for the
+See [docs/design/iam-capability-design.md](docs/design/iam-capability-design.md) for the
 proposed provider-neutral IAM capability model, OIDC/SAML negotiation,
 environment contract, provider selection, and migration plan.
 
-See [docs/app-catalog-design.md](docs/app-catalog-design.md) for the proposed
+See [docs/design/app-catalog-design.md](docs/design/app-catalog-design.md) for the proposed
 provider-neutral application catalog: manifest launcher metadata, per-user
 visibility derived from the enforcing authorization point, categories, the
 declarative icon contract, and the LLNG/authentik mapping.

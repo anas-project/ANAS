@@ -14,7 +14,7 @@
 ```text
 <workspace>/
   config.yml          期望状态 —— 唯一需要你手工编辑的文件
-  config.lock.yml     解析出的 cask 版本与能力绑定
+  config.lock.yml     解析出的 cask 版本、能力绑定与快照策略
   data/               业务数据
   snapshots/          时间点副本
   .anas/              运行时状态（0700，里面的东西不要手工改）
@@ -119,8 +119,8 @@ export ANAS_CASK_ROOT=/opt/anas/casks/mods
 anas apply --build --update-lock -w /srv/anas
 ```
 
-`--build` 构建镜像；`--update-lock` 把解析出的 cask 版本写进 `config.lock.yml`。
-首次之后两者都不需要，除非版本有变。
+`--build` 构建镜像；`--update-lock` 把解析出的 cask 版本、能力绑定和宿主机快照策略
+写进 `config.lock.yml`。首次之后两者都不需要，除非要显式改变这些决策。
 
 ### 中国大陆镜像
 
@@ -235,6 +235,10 @@ anas snapshot verify             # 记录在案的快照是否还在
 
 ### 自动快照
 
+省略 `rollback.snapshot.backend` 时，`anas lock` 会检查工作区。若工作区位于 Btrfs
+且 `data/` 是子卷，就锁定 `backend: btrfs` 和 `keep_auto: 5`；否则锁定
+`backend: none`。普通 render/apply 不会重新探测，只有显式更新 lock 才会重选。
+
 `apply` 会在无法撤销的变更之前自己拍一张：
 
 - cask 升级跨过了该 cask 声明为"改写数据格式"的版本
@@ -250,8 +254,8 @@ anas apply --no-snapshot -y  # 跳过；必须带 -y，因为这是在放弃唯�
 
 ### 保留策略
 
-`config.yml` 里的 `rollback.snapshot.keep_auto`，默认 5。手动创建的和 pin 住的
-既不计入数量，也不会被回收。
+锁定的 `keep_auto` 默认是 5；在 `config.yml` 显式配置后，会在下一次更新 lock 时
+覆盖默认值。手动创建的和 pin 住的既不计入数量，也不会被回收。
 
 ```bash
 anas snapshot pin <id>

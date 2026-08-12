@@ -15,7 +15,7 @@ Everything one deployment owns lives in a single directory:
 ```text
 <workspace>/
   config.yml          the desired state — the only file you edit
-  config.lock.yml     resolved cask versions and bindings
+  config.lock.yml     resolved cask versions, bindings, and snapshot policy
   data/               service data
   snapshots/          point-in-time copies
   .anas/              runtime state (0700; nothing in here is edited by hand)
@@ -134,9 +134,9 @@ Edit `<workspace>/config.yml`, then:
 anas apply --build --update-lock -w /srv/anas
 ```
 
-`--build` builds the images; `--update-lock` writes the resolved cask versions
-into `config.lock.yml`. After the first run neither is needed unless versions
-change.
+`--build` builds the images; `--update-lock` writes the resolved cask versions,
+capability bindings, and host snapshot policy into `config.lock.yml`. After the
+first run neither is needed unless one of those decisions should change.
 
 ### Mainland China mirrors
 
@@ -255,6 +255,11 @@ day it was needed.
 
 ### Automatic snapshots
 
+If `rollback.snapshot.backend` is omitted, `anas lock` checks the workspace. A
+Btrfs workspace whose `data/` is a subvolume locks `backend: btrfs` and
+`keep_auto: 5`; any other workspace locks `backend: none`. That decision stays
+fixed until the next explicit lock update.
+
 `apply` takes one by itself before a change that cannot be undone:
 
 - a cask upgrade that crosses a version the cask declared as rewriting data
@@ -270,8 +275,9 @@ anas apply --no-snapshot -y  # skip it; -y required, this discards the only way 
 
 ### Retention
 
-`rollback.snapshot.keep_auto` in `config.yml`, default 5. Manual and pinned
-snapshots are neither counted nor collected.
+The locked `keep_auto` default is 5. An explicit
+`rollback.snapshot.keep_auto` overrides it on the next lock update. Manual and
+pinned snapshots are neither counted nor collected.
 
 ```bash
 anas snapshot pin <id>

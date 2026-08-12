@@ -119,7 +119,8 @@ anas lock [-w WORKSPACE] [-c config.yml] [--json]
   "modules": ["postgres", "traefik"],
   "casks": [{ "name": "postgres", "version": "16.4.0", "revision": 1, "app_version": "16.4", "digest": "sha256:…" }],
   "iam": { "provider": null, "consumers": [] },
-  "capability_bindings": {}
+  "capability_bindings": {},
+  "snapshot": { "backend": "btrfs", "keep_auto": 5 }
 }
 ```
 
@@ -419,6 +420,29 @@ checked: it is the escape hatch for values nothing declares.
 | `secret_missing` | 4 | 没有这个生成的 secret |
 | `secrets_unreadable` | 4 | secret store 读不出来 |
 | `write_failed` | 1 | 写配置失败 |
+
+## admin local
+
+```text
+anas admin local list [-w WORKSPACE] [--json]
+anas admin local credential CASK [ACCOUNT] [-w WORKSPACE] [--password-only | --json]
+```
+
+`list` 是不泄密的安全库存，只返回 Cask、账号 id、用途、用户名和当前入口；不存在本地
+账号时返回空列表。`credential` 是显式敏感读取，同时返回入口、用户名、密码和用途。
+`--password-only` 供交互式管道使用，输出一行裸密码；它不能与 `--json` 组合。
+
+账号名称锁保存在 `.anas/local-admins.yml`，密码保存在 `secrets.generated.yml`，两者都不
+进入部署 `.env`。Runner 仅在 Cask Hook 执行期间注入明文；若 Cask 支持 hash，制品只
+持久化 hash。
+
+| code | 退出码 | 何时 |
+| --- | --- | --- |
+| `usage` | 2 | 子命令、参数数量或 flag 组合错误 |
+| `local_admin_missing` | 4 | Cask 无本地账号，或有多个账号但未指定 id |
+| `local_admin_state_unreadable` | 4 | 本地管理员库存无法读取 |
+| `secret_missing` | 4 | 库存存在，但对应随机密码缺失 |
+| `secrets_unreadable` | 4 | Secret Store 无法读取 |
 
 ## help
 

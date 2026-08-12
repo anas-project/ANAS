@@ -71,7 +71,7 @@ workspace 自身与 `.anas/` **保持普通目录，不做 subvolume**。理由�
 | [deployment.go:423](../internal/runner/deployment.go) | `DataRoot` 不再需要存储，由 workspace 推导 |
 | [runner.go:86-98](../internal/runner/runner.go) | `usage()` 十三行帮助文本全部写着 `[-b ~/.anas]`，逐行改为 `[-w <workspace>]` |
 | [deployment.go:1111](../internal/runner/deployment.go) | `ensureRuntimeLayout` 现在把 `snapshots` 建在 `base` 内。**目录布局属于一期**：`snapshots/` 移到 `<workspace>/snapshots`，与 `.anas` 平级。留到二期做等于让用户迁移两次目录 |
-| [runtime-release-state-design.md:134](runtime-release-state-design.md)、§13 | §4「推荐运行目录」画的仍是 `~/.anas/` 树，§13 备份单元仍是五项清单，两处均与本计划冲突，随代码同步更新 |
+| [runtime-release-state-design.md:134](design/runtime-release-state-design.md)、§13 | §4「推荐运行目录」画的仍是 `~/.anas/` 树，§13 备份单元仍是五项清单，两处均与本计划冲突，随代码同步更新 |
 
 ## 二、`anas init`
 
@@ -297,7 +297,7 @@ anas-backup.timer  → 以 root 执行 anas backup create
 - **但它独有的价值只剩一条。** 定时用 systemd timer；容器拉起用 Docker 的 restart policy；
   证书续期 lego 容器里的 cron 已在做。剩下无可替代的只有"给 web 服务提供实时状态与 API"。
 - **代价是状态权威分裂。** 本设计建立在"磁盘文件是唯一权威"之上（见
-  [runtime-release-state-design.md](runtime-release-state-design.md) §3），常驻进程天然
+  [runtime-release-state-design.md](design/runtime-release-state-design.md) §3），常驻进程天然
   倾向于在内存里攒状态并与磁盘漂移。
 - **业界在往反方向走**：Docker 的 root 守护进程是长期被批评的设计，podman 正是为去掉它
   而生。"docker 组等于 root"是公认的坑，本项目刚刚验证过。

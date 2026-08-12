@@ -33,6 +33,7 @@ type app struct {
 	deps           map[string][]string
 	order          []string
 	secrets        *secretStore
+	localAdmins    *localAdminState
 	lock           *caskLock
 	hookBins       map[string]string
 	sensitiveKeys  map[string]bool
@@ -113,6 +114,8 @@ func dispatch(command string, args []string, jsonMode bool) error {
 		return runLock(args, jsonMode)
 	case "config":
 		return runConfig(args, jsonMode)
+	case "admin":
+		return runAdmin(args, jsonMode)
 	case "help", "-h", "--help":
 		return runHelp(jsonMode)
 	default:
@@ -127,7 +130,7 @@ func dispatch(command string, args []string, jsonMode bool) error {
 // what can be invoked rather than trying to render the same paragraphs.
 var commandNames = []string{
 	"init", "plan", "lock", "render", "build", "apply", "start", "restart",
-	"stop", "rollback", "status", "deployments", "snapshot", "backup", "config",
+	"stop", "rollback", "status", "deployments", "snapshot", "backup", "config", "admin",
 }
 
 func runHelp(jsonMode bool) error {
@@ -165,6 +168,7 @@ Usage:
   anas config explain <module.parameter>
   anas config plan    [-w WORKSPACE]
   anas config secret  list | get <KEY>   [-w WORKSPACE]
+  anas admin local list | credential CASK [ACCOUNT] [-w WORKSPACE]
 
 Workspace:
   A workspace holds the config, data, snapshots and runtime state of one
@@ -929,7 +933,7 @@ func (a *app) calculate() error {
 		if err := requireKeys(a.env, mod.Required); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
-		resp, err := a.runHook(mod, "calculate", a.releaseDirFor(name), a.env)
+		resp, err := a.runHook(mod, "calculate", a.releaseDirFor(name), a.localAdminHookEnv(name, a.env))
 		if err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
@@ -976,7 +980,7 @@ func (a *app) renderAll(work string) error {
 		if err := a.applyCaskRootPassword(env, name); err != nil {
 			return err
 		}
-		resp, err := a.runHook(mod, "render_env", a.releaseDirFor(name), env)
+		resp, err := a.runHook(mod, "render_env", a.releaseDirFor(name), a.localAdminHookEnv(name, env))
 		if err != nil {
 			return err
 		}

@@ -46,8 +46,8 @@ services:
       - /root/.ddns_go_config.yaml
       - -f
       - ${DDNS_GO_INTERVAL}
-      # Bound to the shared network's gateway, not 0.0.0.0: on host networking
-      # the latter would publish the interface to the LAN, where it would
-      # bypass the Traefik gate that is the only thing authenticating it.
+      # The host-network listener is protected by ddns-go's own login. The same
+      # credentials apply whether the interface is reached through Traefik or
+      # directly on the host port.
       - -l
       - ${DDNS_GO_WEB_LISTEN}

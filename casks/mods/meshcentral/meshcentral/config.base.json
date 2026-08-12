@@ -7,10 +7,7 @@
     "SelfUpdate": false,
     "AllowFraming": true,
     "agentLogDump": true,
-    "agentCoreDump": true,
-    "mySQL": {
-      "ssl": false
-    }
+    "agentCoreDump": true
   },
   "domains": {
     "": {

@@ -69,6 +69,7 @@ config:
     - ANAS_TLS_CERTS_DIR
     - ANAS_TLS_INTERNAL_CA_NAME
     - POSTGRES_NETWORK_NAME
+    - POSTGRES_HOST
     - POSTGRES_USER
     - POSTGRES_USERNAME
     - SAMBA_DC_ADMIN_GROUP_DN
@@ -150,8 +151,24 @@ config:
       apply: reconcile-nextcloud-apps
       description: The app can be enabled or disabled through occ without restarting the container.
 identity:
-  interfaces:
-    - ldaps
+  provisioning:
+    capability: directory
+    interfaces:
+      any_of:
+        - ldaps
+    objects:
+      - users
+      - groups
+    identity_key: anasIdentityAnchor
+    required: true
+  authentication:
+    capability: iam
+    selected_by: login_protocol
+    interfaces:
+      any_of:
+        - saml
+      prefer:
+        - saml
   application_group: true
 features:
   generated_secrets: true

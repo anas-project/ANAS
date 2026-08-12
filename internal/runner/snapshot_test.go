@@ -93,6 +93,15 @@ func seedSnapshotWorkspaceAt(t *testing.T, workspace string) (deploymentID strin
 	if err := os.WriteFile(filepath.Join(base, "secrets.generated.yml"), []byte("KEY: value\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	admins := localAdminState{
+		APIVersion: localAdminStateVersion,
+		Accounts: map[string]localAdminRecord{
+			"core.primary": {Cask: "core", ID: "primary", Purpose: "break_glass", Username: "admin_core", SecretKey: "CORE_PASSWORD"},
+		},
+	}
+	if err := writeYAMLAtomic(localAdminStatePath(base), &admins, 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := saveDeploymentState(base, deploymentState{ID: deploymentID, Status: "active"}); err != nil {
 		t.Fatal(err)
 	}
@@ -117,6 +126,7 @@ func TestSnapshotCarriesEverythingNeededToRestoreItAlone(t *testing.T) {
 		filepath.Join("meta", snapshotMetaConfigName),
 		filepath.Join("meta", snapshotMetaLockName),
 		filepath.Join("meta", snapshotMetaSecretsName),
+		filepath.Join("meta", snapshotMetaAdminsName),
 		filepath.Join("meta", snapshotMetaStateName),
 		filepath.Join("deployment", "deployment.yml"),
 		filepath.Join("deployment", deploymentConfigSourceName),
@@ -128,6 +138,13 @@ func TestSnapshotCarriesEverythingNeededToRestoreItAlone(t *testing.T) {
 	}
 	if meta.DeploymentID != deploymentID {
 		t.Errorf("snapshot records deployment %q, want %q", meta.DeploymentID, deploymentID)
+	}
+	var admins localAdminState
+	if err := readYAML(snapshotMetaEntry(root, snapshotMetaAdminsName), &admins); err != nil {
+		t.Fatal(err)
+	}
+	if got := admins.Accounts["core.primary"].Username; got != "admin_core" {
+		t.Errorf("snapshot local administrator username = %q, want admin_core", got)
 	}
 	if !meta.Complete {
 		t.Error("complete was not written")

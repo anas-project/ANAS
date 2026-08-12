@@ -40,10 +40,28 @@ settings.port = port("TRAEFIK_BASE_PORT");
 settings.AliasPort = required("TRAEFIK_BASE_PORT");
 settings.MpsPort = required("MESHCENTRAL_MPS_PORT");
 settings.tlsOffload = required("TRAEFIK_IP");
-settings.mySQL.host = required("MYSQL_HOST");
-settings.mySQL.port = required("MYSQL_PORT");
-settings.mySQL.user = required("MYSQL_USERNAME");
-settings.mySQL.password = required("MYSQL_PASSWORD");
+delete settings.mySQL;
+delete settings.mariaDB;
+delete settings.postgres;
+const database = {
+  host: required("MESHCENTRAL_DB_HOST"),
+  port: port("MESHCENTRAL_DB_PORT"),
+  user: required("MESHCENTRAL_DB_USERNAME"),
+  password: required("MESHCENTRAL_DB_PASSWORD"),
+  database: required("MESHCENTRAL_DB_NAME"),
+};
+switch (required("MESHCENTRAL_DB_TYPE")) {
+  case "postgres":
+    settings.postgres = { ...database, createdatabase: false };
+    break;
+  case "mariadb":
+    // Keep the existing mysql2-backed path for deployments already locked to
+    // MariaDB. The host is still the selected MariaDB service.
+    settings.mySQL = { ...database, ssl: false };
+    break;
+  default:
+    throw new Error("MESHCENTRAL_DB_TYPE must be postgres or mariadb");
+}
 
 domain.certUrl = required("TRAEFIK_DOMAIN_FULL");
 domain.title = required("MESHCENTRAL_TITLE");

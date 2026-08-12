@@ -21,6 +21,7 @@
         config.yml            # 取自制品的 config.source.yml，非磁盘当前值，0600
         config.lock.yml
         secrets.generated.yml # 该时刻的 secret store，0600
+        local-admins.yml       # 本地管理员锁定名称与 Secret 逻辑键，0600
         deployment-state.yml  # 对应那一个 .anas/state/deployments/<id>.yml
       deployment/         # .anas/deployments/<id>/ 的完整副本
       data/               # data 的只读 btrfs 快照
@@ -33,8 +34,9 @@
 config、lock、secrets、可运行制品、数据全部是实体副本而非引用。唯一无法覆盖的是
 上游基础镜像（需要 registry），见"恢复语义"。
 
-`config.yml` 与 `secrets.generated.yml` 含明文密钥，故 `snapshots/` 整体 0700、
-`meta/` 下文件 0600。
+`config.yml` 与 `secrets.generated.yml` 含明文密钥，`local-admins.yml` 虽不含密码但属于
+安全库存，故 `snapshots/` 整体 0700、`meta/` 下文件 0600。恢复时三者必须一起回滚，
+否则用户名锁与密码逻辑键可能指向不同账号。
 
 **`snapshots/` 是普通目录，不是 subvolume。** 只有快照的**源**必须是 subvolume
 （`data/`）；目标只要求父目录存在且位于同一个 btrfs 上，`snapshots/<id>/data` 会被
@@ -400,8 +402,10 @@ pre-breaking 快照反而被挤掉。要强制建用显式 `--snapshot`。
 
 无法建快照，breaking 升级需打印明确警告并要求 `-y`，不得静默继续。
 
-实现上"建不了快照"有两种：`rollback.snapshot.backend` 未配置或为 `none`，以及
-`<workspace>/data` 不是 btrfs subvolume。两者走同一条路径：把触发原因和无法建快照的
+`rollback.snapshot.backend` 未配置时，`anas lock` 探测工作区并把结果冻结到
+`config.lock.yml`：可用时写 `btrfs` 与 `keep_auto: 5`，否则写 `none`。因此运行时
+"建不了快照"有两种：lock 中 backend 为 `none`，或
+`<workspace>/data` 后来不再是 btrfs subvolume。两者走同一条路径：把触发原因和无法建快照的
 原因各打印一行到 stderr，然后要求确认（`-y`，或 tty 上的交互确认）。非 tty 且无 `-y`
 时退出码 3。**没有任何一条路径会在触发条件成立时静默地不建快照。**
 

@@ -233,8 +233,7 @@ func TestMergeAllowsSameDomainAtAnotherVendor(t *testing.T) {
 }
 
 // The login ddns-go insists on having is ANAS-managed, and public access stays
-// denied: the check is against the direct peer, which for a proxied request is
-// the reverse proxy's private address.
+// denied independently of the local credential.
 func TestMergeManagesTheLoginAndDeniesPublicAccess(t *testing.T) {
 	root := parse(t, existingConfig)
 	if err := merge(root, primary()); err != nil {

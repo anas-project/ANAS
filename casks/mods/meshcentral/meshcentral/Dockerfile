@@ -17,7 +17,8 @@ RUN set -eux; \
     --no-save \
     --registry="$NPM_REGISTRY_URL" \
     ldapauth-fork@5.0.5 \
-    mysql2@3.15.1; \
+    mysql2@3.15.1 \
+    pg@8.16.3; \
   npm cache clean --force
 
 COPY ./config.base.json /opt/anas/config.base.json

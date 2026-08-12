@@ -158,6 +158,7 @@ const (
 	snapshotMetaConfigName  = "config.yml"
 	snapshotMetaLockName    = "config.lock.yml"
 	snapshotMetaSecretsName = "secrets.generated.yml"
+	snapshotMetaAdminsName  = "local-admins.yml"
 	snapshotMetaStateName   = "deployment-state.yml"
 )
 
@@ -316,7 +317,7 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 	}
 	cleanup := func() { _ = removeSnapshotTree(tmp) }
 
-	emitProgress(opts.json, "copy-metadata", 0, 4, "files")
+	emitProgress(opts.json, "copy-metadata", 0, 5, "files")
 	if err := copyFileMode(configSource, snapshotMetaEntry(tmp, snapshotMetaConfigName), 0600); err != nil {
 		cleanup()
 		return nil, err
@@ -329,6 +330,10 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 		cleanup()
 		return nil, err
 	}
+	if err := copyLocalAdminState(base, snapshotMetaEntry(tmp, snapshotMetaAdminsName)); err != nil {
+		cleanup()
+		return nil, err
+	}
 	// Only state/deployments/<id>.yml is copied. active.yml is regenerated at
 	// restore from the snapshot's own deployment_id: its previous_deployments
 	// list names deployments the snapshot does not contain, so copying it would
@@ -338,7 +343,7 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 		cleanup()
 		return nil, err
 	}
-	emitProgress(opts.json, "copy-metadata", 4, 4, "files")
+	emitProgress(opts.json, "copy-metadata", 5, 5, "files")
 
 	emitProgress(opts.json, "copy-deployment", 0, 0, "bytes")
 	method, err := copyDeploymentTree(artifact, snapshotArtifactDir(tmp))
@@ -664,6 +669,11 @@ func snapshotsToPrune(all []snapshotMeta, keep int) (collect []snapshotMeta, ret
 // failing the command: retention must keep working while the user is midway
 // through editing the file that snapshots exist to protect them from.
 func workspaceKeepAuto(workspace string) int {
+	if lock, err := loadCaskLockFile(projectLockPath(workspaceConfigPath(workspace))); err == nil && lock.Snapshot != nil {
+		if lock.Snapshot.Backend == "btrfs" {
+			return lock.Snapshot.KeepAuto
+		}
+	}
 	cfg, err := config.Load(workspaceConfigPath(workspace))
 	if err != nil {
 		return snapshotDefaultKeepAuto
@@ -785,7 +795,7 @@ func verifySnapshot(workspace string, meta snapshotMeta) []snapshotProblem {
 	} else if err := btrfsSubvolumeShow(data); err != nil {
 		add("subvolume_missing", "%s is no longer a Btrfs subvolume: %v", data, err)
 	}
-	for _, name := range []string{snapshotMetaConfigName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaStateName} {
+	for _, name := range []string{snapshotMetaConfigName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaAdminsName, snapshotMetaStateName} {
 		if !exists(snapshotMetaEntry(root, name)) {
 			add("meta_incomplete", "meta/%s is missing from %s", name, meta.ID)
 		}

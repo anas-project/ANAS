@@ -2,7 +2,7 @@ api_version: anas.dev/v1
 kind: Cask
 name: meshcentral
 version: 1.2.4
-revision: 1
+revision: 2
 app_version: 1.2.4
 abi:
   supports:
@@ -17,8 +17,14 @@ runtime:
 dependencies:
   requires:
     - traefik
-    - mariadb
     - samba_dc
+  requires_one:
+    - capability: relational_database
+      selected_by: db_type
+      providers:
+        - postgres
+        - mariadb
+      default: postgres
 upgrade:
   # Empty, not absent: no release of this cask has rewritten its on-disk data
   # format. Absent would mean "unknown" and would block every rollback that
@@ -28,12 +34,20 @@ config:
   defaults:
     domain_prefix: meshcentral
     mps_port: "4433"
-  # The container connects to MariaDB and binds to LDAP with these real
-  # credentials directly. Its entrypoint derives config.json in /run/anas.
+    db_name: meshcentral
+    db_type: auto
+  # The container connects to the resolved database and binds to LDAP with
+  # these real credentials directly. Its entrypoint derives config.json in
+  # /run/anas.
   consumes:
-    - MYSQL_HOST
-    - MYSQL_PORT
-    - MYSQL_USERNAME
+    - MARIADB_HOST
+    - MARIADB_NETWORK_NAME
+    - MARIADB_PORT
+    - MARIADB_USERNAME
+    - POSTGRES_HOST
+    - POSTGRES_NETWORK_NAME
+    - POSTGRES_PORT
+    - POSTGRES_USERNAME
     - SAMBA_DC_ADMIN_GROUP_DN
     - SAMBA_DC_ADMIN_NAME
     - SAMBA_DC_APP_ALL_DN
@@ -54,8 +68,18 @@ config:
     - TRAEFIK_DOMAIN
     - TRAEFIK_DOMAIN_FULL
     - TRAEFIK_HOSTNAME
-    - MYSQL_PASSWORD
+    - MARIADB_PASSWORD
+    - POSTGRES_PASSWORD
     - SAMBA_DC_LDAP_BIND_PASSWORD
+  changes:
+    db_type:
+      effect: data_migrate
+      apply: migrate-meshcentral-database
+      description: Changing the selected database does not migrate existing MeshCentral data.
+    db_name:
+      effect: data_migrate
+      apply: migrate-meshcentral-database
+      description: The database name is materialized when the database is initialized.
 identity:
   interfaces:
     - ldaps

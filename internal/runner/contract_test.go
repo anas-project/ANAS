@@ -151,6 +151,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		{"config set", []string{"config", "set", "global.timezone", "UTC", "-w", workspace, "--root", root, "--json"}, 0},
 		{"config plan", []string{"config", "plan", "-w", workspace, "--root", root, "--json"}, 0},
 		{"config secret list", []string{"config", "secret", "list", "-w", workspace, "--json"}, 0},
+		{"admin local list", []string{"admin", "local", "list", "-w", workspace, "--json"}, 0},
 		{"plan", []string{"plan", "-c", filepath.Join(root, "config.example.yml"), "--root", root, "--json"}, 0},
 		// snapshot and backup already conformed; they are here so a
 		// regression in the shared plumbing fails against them too.
@@ -170,6 +171,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		{"apply with conflicting snapshot flags", []string{"apply", "-w", workspace, "--snapshot", "--no-snapshot", "--json"}, 2},
 		{"status with a stray argument", []string{"status", "-w", workspace, "extra", "--json"}, 2},
 		{"secret get without a key", []string{"config", "secret", "get", "-w", workspace, "--json"}, 2},
+		{"admin with no subcommand", []string{"admin", "--json"}, 2},
 		{"rollback without -w", []string{"rollback", "--json"}, 2},
 		{"unknown snapshot subcommand", []string{"snapshot", "wat", "-w", workspace, "--json"}, 2},
 		{"unknown backup subcommand", []string{"backup", "wat", "--json"}, 2},
@@ -180,6 +182,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		{"lock with a missing config", []string{"lock", "-w", workspace, "-c", filepath.Join(root, "no-such-config.yml"), "--json"}, 4},
 		{"inspect a missing deployment", []string{"deployments", "inspect", "nosuchdeployment", "-w", workspace, "--json"}, 4},
 		{"get a missing secret", []string{"config", "secret", "get", "NO_SUCH_SECRET", "-w", workspace, "--json"}, 4},
+		{"get a missing local admin", []string{"admin", "local", "credential", "ddns_go", "-w", workspace, "--json"}, 4},
 		{"rollback with no previous deployment", []string{"rollback", "-w", workspace, "--json"}, 4},
 		{"start with no active deployment", []string{"start", "-w", workspace, "--json"}, 4},
 		{"stop with no active deployment", []string{"stop", "-w", workspace, "--json"}, 4},

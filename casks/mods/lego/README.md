@@ -50,7 +50,7 @@ dns platforms:
   ddns_go/lego credentials: shared
 ```
 
-详见[动态 DNS 能力设计](../../../docs/dynamic-dns-capability-design.md)。
+详见[动态 DNS 能力设计](../../../docs/design/dynamic-dns-capability-design.md)。
 
 > **`dnspod` 已不可用于 lego。** lego v5 删除了该 provider，官方替代是
 > `tencentcloud`（`TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY`）。旧版

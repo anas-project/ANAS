@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -12,15 +13,52 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var localConfigUsernamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`)
+
 type File struct {
-	Modules    []string           `yaml:"modules"`
-	Global     Global             `yaml:"global"`
-	IAM        IAM                `yaml:"iam"`
-	DynamicDNS DynamicDNS         `yaml:"dynamic_dns"`
-	Rollback   Rollback           `yaml:"rollback"`
-	Secrets    map[string]any     `yaml:"secrets"`
-	Services   map[string]Service `yaml:"services"`
-	Env        map[string]any     `yaml:"env"`
+	Modules        []string           `yaml:"modules"`
+	Global         Global             `yaml:"global"`
+	Administration Administration     `yaml:"administration"`
+	Identity       Identity           `yaml:"identity"`
+	IAM            IAM                `yaml:"iam"`
+	DynamicDNS     DynamicDNS         `yaml:"dynamic_dns"`
+	Rollback       Rollback           `yaml:"rollback"`
+	Secrets        map[string]any     `yaml:"secrets"`
+	Services       map[string]Service `yaml:"services"`
+	Env            map[string]any     `yaml:"env"`
+}
+
+// Administration contains deployment-wide defaults for human administrator
+// accounts. Casks still declare whether they have a local account at all; this
+// block only makes those independently managed accounts predictable to find.
+type Administration struct {
+	Bootstrap     BootstrapAdministrator `yaml:"bootstrap"`
+	LocalAccounts LocalAccountDefaults   `yaml:"local_accounts"`
+}
+
+type BootstrapAdministrator struct {
+	Username    string   `yaml:"username"`
+	DisplayName string   `yaml:"display_name"`
+	Email       string   `yaml:"email"`
+	Roles       []string `yaml:"roles"`
+}
+
+type LocalAccountDefaults struct {
+	UsernameTemplate string `yaml:"username_template"`
+	PasswordPolicy   string `yaml:"password_policy"`
+	PasswordLength   int    `yaml:"password_length"`
+}
+
+// Identity is the provider-oriented spelling of the deployment identity
+// topology. IAM remains readable as a legacy top-level alias until existing
+// configurations have migrated.
+type Identity struct {
+	Directory DirectoryProvider `yaml:"directory"`
+	IAM       IAM               `yaml:"iam"`
+}
+
+type DirectoryProvider struct {
+	Provider string `yaml:"provider"`
 }
 
 // DynamicDNS asks for the deployment's own A/AAAA records to be kept current
@@ -210,9 +248,27 @@ func GlobalParameters() []string {
 }
 
 type Service struct {
-	Enabled   *bool          `yaml:"enabled"`
-	DependsOn []string       `yaml:"depends_on"`
-	Env       map[string]any `yaml:"env"`
+	Enabled        *bool                 `yaml:"enabled"`
+	DependsOn      []string              `yaml:"depends_on"`
+	Identity       ServiceIdentity       `yaml:"identity"`
+	Administration ServiceAdministration `yaml:"administration"`
+	Env            map[string]any        `yaml:"env"`
+}
+
+type ServiceIdentity struct {
+	// LoginProtocol is the human-facing spelling of the IAM protocol selector.
+	// It maps to the cask's existing <PREFIX>_IAM_PROTOCOL contract so old env
+	// configuration remains compatible while provisioning and login are no
+	// longer presented as one setting.
+	LoginProtocol string `yaml:"login_protocol"`
+}
+
+type ServiceAdministration struct {
+	LocalAccounts map[string]LocalAccountOverride `yaml:"local_accounts"`
+}
+
+type LocalAccountOverride struct {
+	Username string `yaml:"username"`
 }
 
 func Load(path string) (*File, error) {
@@ -240,8 +296,67 @@ func Load(path string) (*File, error) {
 	}
 	cfg.IAM.Provider = strings.ToLower(strings.TrimSpace(cfg.IAM.Provider))
 	cfg.IAM.DefaultProtocol = strings.ToLower(strings.TrimSpace(cfg.IAM.DefaultProtocol))
+	cfg.Identity.Directory.Provider = strings.ToLower(strings.TrimSpace(cfg.Identity.Directory.Provider))
+	cfg.Identity.IAM.Provider = strings.ToLower(strings.TrimSpace(cfg.Identity.IAM.Provider))
+	cfg.Identity.IAM.DefaultProtocol = strings.ToLower(strings.TrimSpace(cfg.Identity.IAM.DefaultProtocol))
+	if cfg.Identity.Directory.Provider != "" && cfg.Identity.Directory.Provider != "samba_dc" {
+		return nil, fmt.Errorf("identity.directory.provider must currently be samba_dc")
+	}
+	if cfg.Identity.IAM.Provider != "" {
+		if cfg.IAM.Provider != "" && cfg.IAM.Provider != cfg.Identity.IAM.Provider {
+			return nil, fmt.Errorf("identity.iam.provider conflicts with legacy iam.provider")
+		}
+		cfg.IAM.Provider = cfg.Identity.IAM.Provider
+	}
+	if cfg.Identity.IAM.DefaultProtocol != "" {
+		if cfg.IAM.DefaultProtocol != "" && cfg.IAM.DefaultProtocol != cfg.Identity.IAM.DefaultProtocol {
+			return nil, fmt.Errorf("identity.iam.default_protocol conflicts with legacy iam.default_protocol")
+		}
+		cfg.IAM.DefaultProtocol = cfg.Identity.IAM.DefaultProtocol
+	}
+	cfg.Administration.Bootstrap.Username = strings.TrimSpace(cfg.Administration.Bootstrap.Username)
+	if cfg.Administration.Bootstrap.Username != "" && !localConfigUsernamePattern.MatchString(cfg.Administration.Bootstrap.Username) {
+		return nil, fmt.Errorf("administration.bootstrap.username is invalid")
+	}
 	cfg.DynamicDNS.Provider = strings.ToLower(strings.TrimSpace(cfg.DynamicDNS.Provider))
 	cfg.DynamicDNS.DNSProvider = strings.TrimSpace(cfg.DynamicDNS.DNSProvider)
+	cfg.Administration.LocalAccounts.UsernameTemplate = strings.TrimSpace(cfg.Administration.LocalAccounts.UsernameTemplate)
+	if cfg.Administration.LocalAccounts.UsernameTemplate == "" {
+		cfg.Administration.LocalAccounts.UsernameTemplate = "admin_{cask}"
+	}
+	if !strings.Contains(cfg.Administration.LocalAccounts.UsernameTemplate, "{cask}") {
+		return nil, fmt.Errorf("administration.local_accounts.username_template must contain {cask}")
+	}
+	cfg.Administration.LocalAccounts.PasswordPolicy = strings.ToLower(strings.TrimSpace(cfg.Administration.LocalAccounts.PasswordPolicy))
+	if cfg.Administration.LocalAccounts.PasswordPolicy == "" {
+		cfg.Administration.LocalAccounts.PasswordPolicy = "generated_per_cask"
+	}
+	if cfg.Administration.LocalAccounts.PasswordPolicy != "generated_per_cask" {
+		return nil, fmt.Errorf("administration.local_accounts.password_policy must be generated_per_cask")
+	}
+	if cfg.Administration.LocalAccounts.PasswordLength == 0 {
+		cfg.Administration.LocalAccounts.PasswordLength = 24
+	}
+	if cfg.Administration.LocalAccounts.PasswordLength < 16 {
+		return nil, fmt.Errorf("administration.local_accounts.password_length must be at least 16")
+	}
+	for name, service := range cfg.Services {
+		protocol := strings.ToLower(strings.TrimSpace(service.Identity.LoginProtocol))
+		switch protocol {
+		case "", "auto", "oidc", "saml":
+		default:
+			return nil, fmt.Errorf("services.%s.identity.login_protocol must be auto, oidc or saml", name)
+		}
+		service.Identity.LoginProtocol = protocol
+		for id, override := range service.Administration.LocalAccounts {
+			override.Username = strings.TrimSpace(override.Username)
+			if override.Username != "" && !localConfigUsernamePattern.MatchString(override.Username) {
+				return nil, fmt.Errorf("services.%s.administration.local_accounts.%s.username is invalid", name, id)
+			}
+			service.Administration.LocalAccounts[id] = override
+		}
+		cfg.Services[name] = service
+	}
 	if cfg.DynamicDNS.Provider != "" && cfg.DynamicDNS.DNSProvider == "" {
 		return nil, fmt.Errorf("dynamic_dns.provider is set but dynamic_dns.dns_provider is not; name the DNS vendor the records live at")
 	}
@@ -311,6 +426,10 @@ func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
 	}
 	for name, service := range f.Services {
 		prefix := strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+		if protocol := strings.ToLower(strings.TrimSpace(service.Identity.LoginProtocol)); protocol != "" {
+			env[prefix+"_IAM_PROTOCOL"] = protocol
+			owners[prefix+"_IAM_PROTOCOL"] = name
+		}
 		for k, v := range service.Env {
 			key := EnvKey(k)
 			if !strings.HasPrefix(key, prefix+"_") {
@@ -318,6 +437,14 @@ func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
 			}
 			env[key] = Scalar(v)
 			owners[key] = name
+		}
+	}
+	if username := strings.TrimSpace(f.Administration.Bootstrap.Username); username != "" {
+		env["ANAS_BOOTSTRAP_ADMIN_USERNAME"] = username
+		owners["ANAS_BOOTSTRAP_ADMIN_USERNAME"] = ""
+		if f.Identity.Directory.Provider == "samba_dc" || f.Identity.Directory.Provider == "" {
+			env["SAMBA_DC_ADMIN_NAME"] = username
+			owners["SAMBA_DC_ADMIN_NAME"] = "samba_dc"
 		}
 	}
 	if strings.EqualFold(strings.TrimSpace(env["CHINESE_SPEEDUP"]), "true") {

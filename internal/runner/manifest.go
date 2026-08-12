@@ -35,6 +35,7 @@ type caskManifest struct {
 	Config       manifestConfig       `yaml:"config"`
 	Features     manifestFeatures     `yaml:"features"`
 	Identity     manifestIdentity     `yaml:"identity"`
+	Management   manifestManagement   `yaml:"management"`
 	Services     manifestServices     `yaml:"services"`
 	Logic        manifestLogic        `yaml:"logic"`
 	Status       string               `yaml:"status"`
@@ -190,8 +191,62 @@ type manifestFeatures struct {
 // such as LDAPS is declared here. AppGroup is deliberately explicit: a daemon
 // may query a directory without representing an interactive application.
 type manifestIdentity struct {
-	Interfaces []string `yaml:"interfaces"`
-	AppGroup   bool     `yaml:"application_group"`
+	Interfaces     []string                        `yaml:"interfaces"`
+	AppGroup       bool                            `yaml:"application_group"`
+	Provisioning   *manifestIdentityProvisioning   `yaml:"provisioning"`
+	Authentication *manifestIdentityAuthentication `yaml:"authentication"`
+}
+
+type manifestIdentityProvisioning struct {
+	Capability  string                       `yaml:"capability"`
+	Interfaces  manifestCapabilityInterfaces `yaml:"interfaces"`
+	Objects     []string                     `yaml:"objects"`
+	IdentityKey string                       `yaml:"identity_key"`
+	Required    bool                         `yaml:"required"`
+}
+
+type manifestIdentityAuthentication struct {
+	Capability string                       `yaml:"capability"`
+	SelectedBy string                       `yaml:"selected_by"`
+	Interfaces manifestCapabilityInterfaces `yaml:"interfaces"`
+}
+
+type manifestManagement struct {
+	Surfaces      []manifestManagementSurface `yaml:"surfaces"`
+	LocalAccounts []manifestLocalAccount      `yaml:"local_accounts"`
+}
+
+type manifestManagementSurface struct {
+	ID             string                        `yaml:"id"`
+	URIFrom        string                        `yaml:"uri_from"`
+	Authentication manifestSurfaceAuthentication `yaml:"authentication"`
+}
+
+type manifestSurfaceAuthentication struct {
+	Primary string `yaml:"primary"`
+}
+
+type manifestLocalAccount struct {
+	ID            string                  `yaml:"id"`
+	Purpose       string                  `yaml:"purpose"`
+	FixedUsername string                  `yaml:"fixed_username"`
+	Username      manifestLocalUsername   `yaml:"username"`
+	Credential    manifestLocalCredential `yaml:"credential"`
+	Lifecycle     manifestLocalLifecycle  `yaml:"lifecycle"`
+}
+
+type manifestLocalUsername struct {
+	Template string `yaml:"template"`
+}
+
+type manifestLocalCredential struct {
+	Policy          string `yaml:"policy"`
+	ContainerFormat string `yaml:"container_format"`
+}
+
+type manifestLocalLifecycle struct {
+	Apply  string `yaml:"apply"`
+	Rotate string `yaml:"rotate"`
 }
 
 type manifestServices struct {
@@ -419,33 +474,45 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if err != nil {
 		return Module{}, err
 	}
+	managementSurfaces, localAccounts, err := normalizeManagement(dirname, manifest.Management)
+	if err != nil {
+		return Module{}, err
+	}
+	provisioning, authentication, identityInterfaces, err := normalizeIdentity(dirname, manifest.Identity)
+	if err != nil {
+		return Module{}, err
+	}
 	mod := Module{
-		Name:                 manifest.Name,
-		Version:              manifest.Version,
-		Revision:             manifest.Revision,
-		AppVersion:           strings.TrimSpace(manifest.AppVersion),
-		UpgradeFrom:          manifest.Upgrade.From,
-		DataBreaking:         cloneStringListPointer(manifest.Upgrade.DataBreaking),
-		SourceDir:            dir,
-		EnvPrefix:            envPrefix,
-		Defaults:             normalizeDefaults(manifest.Name, envPrefix, exports, manifest.Config.Defaults),
-		Required:             normalizeRequired(manifest.Name, envPrefix, exports, manifest.Config.Required),
-		Parameters:           declaredParameters(manifest.Config),
-		Types:                types,
-		Consumes:             consumes,
-		Exports:              exports,
-		Changes:              changes,
-		Requires:             normalizeManifestDependencies(manifest.Dependencies.Requires),
-		RequiresOne:          normalizeAlternativeDependencies(manifest.Dependencies.RequiresOne),
-		Provides:             provides,
-		RequiresCapabilities: requiresCapabilities,
-		RunAfter:             append([]string{}, manifest.Dependencies.After...),
-		IdentityInterfaces:   normalizeIdentityInterfaces(manifest.Identity.Interfaces),
-		IdentityAppGroup:     manifest.Identity.AppGroup,
-		UseHostLAN:           manifest.Features.HostLAN,
-		Hook:                 manifest.Logic.Hook,
-		RuntimeType:          manifest.Runtime.Type,
-		ComposeFile:          composeFile,
+		Name:                   manifest.Name,
+		Version:                manifest.Version,
+		Revision:               manifest.Revision,
+		AppVersion:             strings.TrimSpace(manifest.AppVersion),
+		UpgradeFrom:            manifest.Upgrade.From,
+		DataBreaking:           cloneStringListPointer(manifest.Upgrade.DataBreaking),
+		SourceDir:              dir,
+		EnvPrefix:              envPrefix,
+		Defaults:               normalizeDefaults(manifest.Name, envPrefix, exports, manifest.Config.Defaults),
+		Required:               normalizeRequired(manifest.Name, envPrefix, exports, manifest.Config.Required),
+		Parameters:             declaredParameters(manifest.Config),
+		Types:                  types,
+		Consumes:               consumes,
+		Exports:                exports,
+		Changes:                changes,
+		Requires:               normalizeManifestDependencies(manifest.Dependencies.Requires),
+		RequiresOne:            normalizeAlternativeDependencies(manifest.Dependencies.RequiresOne),
+		Provides:               provides,
+		RequiresCapabilities:   requiresCapabilities,
+		RunAfter:               append([]string{}, manifest.Dependencies.After...),
+		IdentityInterfaces:     identityInterfaces,
+		IdentityAppGroup:       manifest.Identity.AppGroup,
+		IdentityProvisioning:   provisioning,
+		IdentityAuthentication: authentication,
+		ManagementSurfaces:     managementSurfaces,
+		LocalAccounts:          localAccounts,
+		UseHostLAN:             manifest.Features.HostLAN,
+		Hook:                   manifest.Logic.Hook,
+		RuntimeType:            manifest.Runtime.Type,
+		ComposeFile:            composeFile,
 	}
 	return mod, nil
 }
@@ -490,6 +557,122 @@ func normalizeIdentityInterfaces(in []string) []string {
 		}
 	}
 	return out
+}
+
+func normalizeIdentity(cask string, in manifestIdentity) (*IdentityProvisioning, *IdentityAuthentication, []string, error) {
+	interfaces := normalizeIdentityInterfaces(in.Interfaces)
+	var provisioning *IdentityProvisioning
+	if in.Provisioning != nil {
+		capability := strings.ToLower(strings.TrimSpace(in.Provisioning.Capability))
+		if capability == "" {
+			return nil, nil, nil, fmt.Errorf("cask %q identity.provisioning has no capability", cask)
+		}
+		anyOf := normalizeIdentityInterfaces(in.Provisioning.Interfaces.AnyOf)
+		if len(anyOf) == 0 {
+			return nil, nil, nil, fmt.Errorf("cask %q identity.provisioning has no interface", cask)
+		}
+		objects := normalizeIdentityInterfaces(in.Provisioning.Objects)
+		for _, object := range objects {
+			if object != "users" && object != "groups" {
+				return nil, nil, nil, fmt.Errorf("cask %q identity.provisioning has unsupported object %q", cask, object)
+			}
+		}
+		for _, iface := range anyOf {
+			if !contains(interfaces, iface) {
+				interfaces = append(interfaces, iface)
+			}
+		}
+		provisioning = &IdentityProvisioning{
+			Capability: capability, AnyOf: anyOf, Objects: objects,
+			IdentityKey: strings.TrimSpace(in.Provisioning.IdentityKey), Required: in.Provisioning.Required,
+		}
+	}
+	var authentication *IdentityAuthentication
+	if in.Authentication != nil {
+		capability := strings.ToLower(strings.TrimSpace(in.Authentication.Capability))
+		selectedBy := strings.ToLower(strings.TrimSpace(in.Authentication.SelectedBy))
+		anyOf := normalizeIdentityInterfaces(in.Authentication.Interfaces.AnyOf)
+		prefer := normalizeIdentityInterfaces(in.Authentication.Interfaces.Prefer)
+		if capability == "" || selectedBy == "" || len(anyOf) == 0 {
+			return nil, nil, nil, fmt.Errorf("cask %q identity.authentication requires capability, selected_by and interfaces.any_of", cask)
+		}
+		for _, preferred := range prefer {
+			if !contains(anyOf, preferred) {
+				return nil, nil, nil, fmt.Errorf("cask %q identity.authentication prefers unsupported interface %q", cask, preferred)
+			}
+		}
+		authentication = &IdentityAuthentication{Capability: capability, SelectedBy: selectedBy, AnyOf: anyOf, Prefer: prefer}
+	}
+	return provisioning, authentication, interfaces, nil
+}
+
+func normalizeManagement(cask string, in manifestManagement) ([]ManagementSurface, []LocalAccount, error) {
+	surfaces := make([]ManagementSurface, 0, len(in.Surfaces))
+	seenSurface := map[string]bool{}
+	for _, raw := range in.Surfaces {
+		id := strings.ToLower(strings.TrimSpace(raw.ID))
+		if id == "" || seenSurface[id] {
+			return nil, nil, fmt.Errorf("cask %q management.surfaces has an empty or duplicate id %q", cask, raw.ID)
+		}
+		seenSurface[id] = true
+		auth := strings.ToLower(strings.TrimSpace(raw.Authentication.Primary))
+		switch auth {
+		case "local", "iam", "forward_auth":
+		default:
+			return nil, nil, fmt.Errorf("cask %q management surface %q has unsupported authentication %q", cask, id, auth)
+		}
+		uriFrom := strings.TrimSpace(raw.URIFrom)
+		if uriFrom == "" || !isEnvKey(uriFrom) {
+			return nil, nil, fmt.Errorf("cask %q management surface %q has invalid uri_from %q", cask, id, uriFrom)
+		}
+		surfaces = append(surfaces, ManagementSurface{ID: id, URIFrom: uriFrom, Authentication: auth})
+	}
+
+	accounts := make([]LocalAccount, 0, len(in.LocalAccounts))
+	seenAccount := map[string]bool{}
+	for _, raw := range in.LocalAccounts {
+		id := strings.ToLower(strings.TrimSpace(raw.ID))
+		if id == "" || seenAccount[id] {
+			return nil, nil, fmt.Errorf("cask %q management.local_accounts has an empty or duplicate id %q", cask, raw.ID)
+		}
+		seenAccount[id] = true
+		purpose := strings.ToLower(strings.TrimSpace(raw.Purpose))
+		switch purpose {
+		case "primary", "break_glass", "embedded_guard":
+		default:
+			return nil, nil, fmt.Errorf("cask %q local account %q has unsupported purpose %q", cask, id, purpose)
+		}
+		fixed := strings.TrimSpace(raw.FixedUsername)
+		template := strings.ToLower(strings.TrimSpace(raw.Username.Template))
+		if fixed != "" && template != "" {
+			return nil, nil, fmt.Errorf("cask %q local account %q cannot set both fixed_username and username.template", cask, id)
+		}
+		if fixed == "" && template == "" {
+			template = "global"
+		}
+		if template != "" && template != "global" {
+			return nil, nil, fmt.Errorf("cask %q local account %q username.template must be global", cask, id)
+		}
+		policy := strings.ToLower(strings.TrimSpace(raw.Credential.Policy))
+		if policy == "" {
+			policy = "generated_per_cask"
+		}
+		if policy != "generated_per_cask" {
+			return nil, nil, fmt.Errorf("cask %q local account %q has unsupported credential policy %q", cask, id, policy)
+		}
+		format := strings.ToLower(strings.TrimSpace(raw.Credential.ContainerFormat))
+		switch format {
+		case "bcrypt", "plaintext_on_bootstrap", "plaintext":
+		default:
+			return nil, nil, fmt.Errorf("cask %q local account %q has unsupported container_format %q", cask, id, format)
+		}
+		accounts = append(accounts, LocalAccount{
+			ID: id, Purpose: purpose, FixedUsername: fixed, UsernameTemplate: template,
+			PasswordPolicy: policy, ContainerFormat: format,
+			Apply: strings.TrimSpace(raw.Lifecycle.Apply), Rotate: strings.TrimSpace(raw.Lifecycle.Rotate),
+		})
+	}
+	return surfaces, accounts, nil
 }
 
 func normalizeAlternativeDependencies(in []manifestAlternativeDependency) []AlternativeDependency {

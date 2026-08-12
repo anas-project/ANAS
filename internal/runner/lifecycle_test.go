@@ -261,7 +261,7 @@ func TestBuiltInHardDependencyClosure(t *testing.T) {
 		"llng":         {"traefik", "samba_dc", "postgres"},
 		"nextcloud":    {"traefik", "eturnal", "samba_dc", "postgres"},
 		"collabora":    {"nextcloud"},
-		"meshcentral":  {"traefik", "mariadb", "samba_dc"},
+		"meshcentral":  {"traefik", "postgres", "samba_dc"},
 		"lam":          {"traefik", "samba_dc"},
 		"netbird":      {"traefik", "llng"},
 		"freeradius":   {"lego"},

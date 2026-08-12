@@ -43,6 +43,7 @@ func restoreTargets(workspace string, meta *snapshotMeta, restoreUserData bool) 
 		workspaceConfigPath(workspace),
 		projectLockPath(workspaceConfigPath(workspace)),
 		filepath.Join(base, "secrets.generated.yml"),
+		localAdminStatePath(base),
 		deploymentStatePath(base, meta.DeploymentID),
 		activeStatePath(base),
 		deploymentArtifactDir(base, meta.DeploymentID),
@@ -105,7 +106,7 @@ func restoreSnapshot(workspace string, meta *snapshotMeta, restoreUserData, json
 	}
 
 	restored := []string{}
-	emitProgress(jsonMode, "restore-metadata", 0, 4, "files")
+	emitProgress(jsonMode, "restore-metadata", 0, 5, "files")
 	if err := copyFileMode(snapshotMetaEntry(root, snapshotMetaConfigName), workspaceConfigPath(workspace), 0600); err != nil {
 		return nil, failuref("restore_failed", "restore config.yml: %v", err)
 	}
@@ -118,6 +119,10 @@ func restoreSnapshot(workspace string, meta *snapshotMeta, restoreUserData, json
 		return nil, failuref("restore_failed", "restore the secret store: %v", err)
 	}
 	restored = append(restored, "secrets")
+	if err := copyFileMode(snapshotMetaEntry(root, snapshotMetaAdminsName), localAdminStatePath(base), 0600); err != nil {
+		return nil, failuref("restore_failed", "restore local administrator state: %v", err)
+	}
+	restored = append(restored, "local_admins")
 
 	emitProgress(jsonMode, "restore-deployment", 0, 0, "bytes")
 	if err := restoreDeploymentArtifact(root, base, meta.DeploymentID); err != nil {

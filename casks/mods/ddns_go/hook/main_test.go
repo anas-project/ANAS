@@ -9,9 +9,9 @@ import (
 
 func credentialEnv(password string) map[string]string {
 	return map[string]string{
-		"DDNS_GO_WEB_ENABLED":           "true",
-		"DEFAULT_SERVICE_ROOT_PASSWORD": password,
-		"BASICAUTH_USER":                "admin",
+		"DDNS_GO_WEB_ENABLED":          "true",
+		"DDNS_GO_LOCAL_ADMIN_PASSWORD": password,
+		"DDNS_GO_LOCAL_ADMIN_USERNAME": "admin_ddns_go",
 	}
 }
 
@@ -23,8 +23,8 @@ func TestWebPasswordIsTheAdministratorPassword(t *testing.T) {
 	if err := reconcileWebCredentials(e, secrets); err != nil {
 		t.Fatal(err)
 	}
-	if e["DDNS_GO_USERNAME"] != "admin" {
-		t.Errorf("username = %q, want admin", e["DDNS_GO_USERNAME"])
+	if e["DDNS_GO_USERNAME"] != "admin_ddns_go" {
+		t.Errorf("username = %q, want admin_ddns_go", e["DDNS_GO_USERNAME"])
 	}
 	hash := e["DDNS_GO_PASSWORD_HASH"]
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte("AdminPass1!")); err != nil {
@@ -105,6 +105,25 @@ func TestEnabledInterfaceRequiresAPassword(t *testing.T) {
 	err := reconcileWebCredentials(e, &secretStore{values: map[string]string{}})
 	if err == nil {
 		t.Fatal("expected an error when no administrator password is available")
+	}
+}
+
+func TestWebRouteUsesOnlyNativeLogin(t *testing.T) {
+	e := map[string]string{
+		"DDNS_GO_WEB_ENABLED": "true",
+		"DDNS_GO_WEB_PORT":    "9876",
+		"DDNS_GO_DOMAIN":      "ddns-go.nas.test",
+		"HOST_IP":             "192.0.2.10",
+	}
+	if err := publishWebRoute(e); err != nil {
+		t.Fatal(err)
+	}
+	const route = "ANAS_TRAEFIK_ROUTE__DDNS_GO__"
+	if got := e[route+"URL"]; got != "http://192.0.2.10:9876" {
+		t.Fatalf("route URL = %q", got)
+	}
+	if middleware := e[route+"MIDDLEWARES"]; middleware != "" {
+		t.Fatalf("route unexpectedly uses external authentication middleware %q", middleware)
 	}
 }
 

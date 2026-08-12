@@ -46,6 +46,12 @@ type caskLock struct {
 	// "iam.interface".
 	IAM      *caskLockIAM                 `yaml:"iam,omitempty"`
 	Bindings map[string]map[string]string `yaml:"bindings,omitempty"`
+	Snapshot *caskLockSnapshot            `yaml:"snapshot,omitempty"`
+}
+
+type caskLockSnapshot struct {
+	Backend  string `yaml:"backend"`
+	KeepAuto int    `yaml:"keep_auto,omitempty"`
 }
 
 type caskLockIAM struct {
@@ -206,19 +212,14 @@ func (a *app) updateCaskLock(lock *caskLock, persistBindings bool) error {
 	if lock.APIVersion == "" {
 		lock.APIVersion = "anas.dev/v1"
 	}
-	if lock.Casks == nil {
-		lock.Casks = map[string]caskLockRecord{}
-	}
-	if lock.Bindings == nil {
-		lock.Bindings = map[string]map[string]string{}
-	}
+	resolvedCasks := make(map[string]caskLockRecord, len(a.order))
 	for _, name := range a.order {
 		mod := a.reg[name]
 		digest, err := caskBundleDigest(mod.SourceDir)
 		if err != nil {
 			return fmt.Errorf("digest cask %s: %w", name, err)
 		}
-		lock.Casks[name] = caskLockRecord{
+		resolvedCasks[name] = caskLockRecord{
 			Version:    mod.Version,
 			Revision:   mod.Revision,
 			AppVersion: mod.AppVersion,
@@ -226,9 +227,12 @@ func (a *app) updateCaskLock(lock *caskLock, persistBindings bool) error {
 			Digest:     digest,
 		}
 	}
+	lock.Casks = resolvedCasks
 	if !persistBindings {
 		return nil
 	}
+	lock.IAM = nil
+	lock.Bindings = map[string]map[string]string{}
 	if a.iamProvider != "" {
 		lock.IAM = &caskLockIAM{Provider: a.iamProvider}
 	}

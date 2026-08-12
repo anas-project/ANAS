@@ -84,6 +84,7 @@ func backupRestoreTargets(workspace string, manifest *backupManifest) []string {
 		workspaceConfigPath(workspace),
 		projectLockPath(workspaceConfigPath(workspace)),
 		filepath.Join(base, "secrets.generated.yml"),
+		localAdminStatePath(base),
 		deploymentStatePath(base, manifest.DeploymentID),
 		activeStatePath(base),
 		deploymentArtifactDir(base, manifest.DeploymentID),
@@ -114,7 +115,7 @@ func restoreBackup(workspace, dest string, manifest *backupManifest, all []backu
 	}
 
 	restored := []string{}
-	emitProgress(jsonMode, "restore-metadata", 0, 4, "files")
+	emitProgress(jsonMode, "restore-metadata", 0, 5, "files")
 	metaDir := filepath.Join(source.root, "meta")
 	if err := copyFileMode(filepath.Join(metaDir, snapshotMetaConfigName), workspaceConfigPath(workspace), 0600); err != nil {
 		return nil, failuref("restore_failed", "restore config.yml: %v", err)
@@ -128,6 +129,10 @@ func restoreBackup(workspace, dest string, manifest *backupManifest, all []backu
 		return nil, failuref("restore_failed", "restore the secret store: %v", err)
 	}
 	restored = append(restored, "secrets")
+	if err := copyFileMode(filepath.Join(metaDir, snapshotMetaAdminsName), localAdminStatePath(base), 0600); err != nil {
+		return nil, failuref("restore_failed", "restore local administrator state: %v", err)
+	}
+	restored = append(restored, "local_admins")
 
 	emitProgress(jsonMode, "restore-deployment", 0, 0, "bytes")
 	if err := restoreBackupArtifact(source.root, base, manifest.DeploymentID); err != nil {
@@ -309,7 +314,7 @@ func verifyMaterialized(root string) []snapshotProblem {
 	if !exists(filepath.Join(root, "data")) {
 		add("subvolume_missing", "the backup's data is not present at %s", filepath.Join(root, "data"))
 	}
-	for _, name := range []string{snapshotMetaConfigName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaStateName} {
+	for _, name := range []string{snapshotMetaConfigName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaAdminsName, snapshotMetaStateName} {
 		if !exists(filepath.Join(root, "meta", name)) {
 			add("meta_incomplete", "meta/%s is missing", name)
 		}

@@ -1,7 +1,7 @@
 services:
   anas_meshcentral:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r2
     build:
       context: ./${MODULE_NAME}
       network: ${DOCKER_BUILD_NETWORK:-default}
@@ -39,11 +39,11 @@ services:
       - "traefik.http.routers.meshcentral.tls=true"
       - "traefik.http.services.meshcentral.loadbalancer.server.port=${TRAEFIK_BASE_PORT}"
     networks:
-      - mariadb
+      - db
       - traefik
 networks:
-  mariadb:
-    name: ${NETWORK_PREFIX}mariadb
+  db:
+    name: ${MESHCENTRAL_NETWORK_DB}
     external: true
   traefik:
     name: ${NETWORK_PREFIX}traefik

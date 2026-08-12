@@ -173,10 +173,8 @@ func workspaceBackupSource(workspace string) (*backupSource, error) {
 	return source, nil
 }
 
-// writeSynthesizedMeta produces the two metadata files that have no single file
-// on disk to copy: the secret store needs a definite placeholder when a
-// deployment generated none, and deployment-state.yml has to exist even for a
-// deployment that never recorded one.
+// writeSynthesizedMeta produces the metadata files that need definite
+// placeholders when a deployment has not recorded them yet.
 func writeSynthesizedMeta(workspace, destRoot, deploymentID string) error {
 	base := stateDir(workspace)
 	metaDir := filepath.Join(destRoot, "meta")
@@ -184,6 +182,9 @@ func writeSynthesizedMeta(workspace, destRoot, deploymentID string) error {
 		return err
 	}
 	if err := copySecretStore(base, filepath.Join(metaDir, snapshotMetaSecretsName)); err != nil {
+		return err
+	}
+	if err := copyLocalAdminState(base, filepath.Join(metaDir, snapshotMetaAdminsName)); err != nil {
 		return err
 	}
 	return copyDeploymentStateFile(base, deploymentID, filepath.Join(metaDir, snapshotMetaStateName))
@@ -513,6 +514,7 @@ func writeMetadataTar(req transferRequest) error {
 	if req.source.root == "" {
 		staged = append(staged,
 			backupPart{src: filepath.Join(req.destRoot, "meta", snapshotMetaSecretsName), rel: filepath.Join("meta", snapshotMetaSecretsName)},
+			backupPart{src: filepath.Join(req.destRoot, "meta", snapshotMetaAdminsName), rel: filepath.Join("meta", snapshotMetaAdminsName)},
 			backupPart{src: filepath.Join(req.destRoot, "meta", snapshotMetaStateName), rel: filepath.Join("meta", snapshotMetaStateName)},
 			backupPart{src: filepath.Join(req.destRoot, "snapshot.yml"), rel: "snapshot.yml"},
 		)

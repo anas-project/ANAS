@@ -17,15 +17,6 @@ runtime:
 dependencies:
   requires:
     - traefik
-  # ddns-go has a built-in login, but this deployment does not use it: a second
-  # password to rotate, held in a file next to the DNS credentials, is worse
-  # than the gate every other administrative interface already goes through.
-  requires_capabilities:
-    - name: forward_auth
-      interface_selected_by: forward_auth_interface
-      interfaces:
-        any_of:
-          - http
 upgrade:
   # Empty, not absent: no release of this cask has rewritten its on-disk data
   # format. Absent would mean "unknown" and would block every rollback that
@@ -36,7 +27,6 @@ config:
     - dns_provider
   defaults:
     domain_prefix: ddns-go
-    forward_auth_interface: auto
     # Seconds between update checks. ddns-go's own default is 300.
     interval: "300"
     # How the host's own address is discovered, per family: url asks an outside
@@ -62,14 +52,29 @@ config:
       enum: [url, netInterface]
     ipv6_gettype:
       enum: [url, netInterface]
-  consumes:
-    - ANAS_FORWARD_AUTH_MIDDLEWARE
   # Traefik's Docker provider cannot see a host-network container, so the route
   # is declared rather than discovered. See casks/mods/traefik/README.md.
   exports:
     - ANAS_TRAEFIK_ROUTE__*
 features:
   domain: true
+management:
+  surfaces:
+    - id: web
+      uri_from: DDNS_GO_DOMAIN_FULL
+      authentication:
+        primary: local
+  local_accounts:
+    - id: primary
+      purpose: primary
+      username:
+        template: global
+      credential:
+        policy: generated_per_cask
+        container_format: bcrypt
+      lifecycle:
+        apply: reconcile
+        rotate: rotate-ddns-go-local-admin
 logic:
   hook:
     command:

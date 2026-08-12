@@ -24,18 +24,54 @@ type Module struct {
 	Exports    []string
 	Changes    map[string]ChangePolicy
 	// Types is what each parameter accepts, by config name.
-	Types                map[string]ParamType
-	Requires             []Dependency
-	RequiresOne          []AlternativeDependency
-	Provides             []ProvidedCapability
-	RequiresCapabilities []RequiredCapability
-	RunAfter             []string
-	IdentityInterfaces   []string
-	IdentityAppGroup     bool
-	UseHostLAN           string
-	Hook                 HookConfig
-	RuntimeType          string
-	ComposeFile          string
+	Types                  map[string]ParamType
+	Requires               []Dependency
+	RequiresOne            []AlternativeDependency
+	Provides               []ProvidedCapability
+	RequiresCapabilities   []RequiredCapability
+	RunAfter               []string
+	IdentityInterfaces     []string
+	IdentityAppGroup       bool
+	IdentityProvisioning   *IdentityProvisioning
+	IdentityAuthentication *IdentityAuthentication
+	ManagementSurfaces     []ManagementSurface
+	LocalAccounts          []LocalAccount
+	UseHostLAN             string
+	Hook                   HookConfig
+	RuntimeType            string
+	ComposeFile            string
+}
+
+type IdentityProvisioning struct {
+	Capability  string
+	AnyOf       []string
+	Objects     []string
+	IdentityKey string
+	Required    bool
+}
+
+type IdentityAuthentication struct {
+	Capability string
+	SelectedBy string
+	AnyOf      []string
+	Prefer     []string
+}
+
+type ManagementSurface struct {
+	ID             string
+	URIFrom        string
+	Authentication string
+}
+
+type LocalAccount struct {
+	ID               string
+	Purpose          string
+	FixedUsername    string
+	UsernameTemplate string
+	PasswordPolicy   string
+	ContainerFormat  string
+	Apply            string
+	Rotate           string
 }
 
 type AlternativeDependency struct {

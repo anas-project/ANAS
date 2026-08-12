@@ -159,6 +159,22 @@ func calcMeshcentral(e map[string]string, _ string, _ *secretStore) error {
 	e["MESHCENTRAL_DOMAIN"] = e["MESHCENTRAL_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
 	e["MESHCENTRAL_TITLE"] = defaultValue(e["MESHCENTRAL_TITLE"], e["SERVER_NAME"])
 	e["MESHCENTRAL_SUBTITLE"] = defaultValue(e["MESHCENTRAL_SUBTITLE"], " ")
+	switch e["MESHCENTRAL_DB_TYPE"] {
+	case "postgres":
+		e["MESHCENTRAL_DB_HOST"] = e["POSTGRES_HOST"]
+		e["MESHCENTRAL_DB_PORT"] = e["POSTGRES_PORT"]
+		e["MESHCENTRAL_DB_USERNAME"] = e["POSTGRES_USERNAME"]
+		e["MESHCENTRAL_DB_PASSWORD"] = e["POSTGRES_PASSWORD"]
+		e["MESHCENTRAL_NETWORK_DB"] = e["POSTGRES_NETWORK_NAME"]
+	case "mariadb":
+		e["MESHCENTRAL_DB_HOST"] = e["MARIADB_HOST"]
+		e["MESHCENTRAL_DB_PORT"] = e["MARIADB_PORT"]
+		e["MESHCENTRAL_DB_USERNAME"] = e["MARIADB_USERNAME"]
+		e["MESHCENTRAL_DB_PASSWORD"] = e["MARIADB_PASSWORD"]
+		e["MESHCENTRAL_NETWORK_DB"] = e["MARIADB_NETWORK_NAME"]
+	default:
+		return fmt.Errorf("MESHCENTRAL_DB_TYPE must be resolved to postgres or mariadb")
+	}
 	if e["MESHCENTRAL_USER_FILTER"] == "" {
 		if e["SAMBA_DC_APP_FILTER"] == "true" {
 			e["MESHCENTRAL_USER_FILTER"] = "(&" + e["SAMBA_DC_USER_CLASS_FILTER"] + "(" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + "=*)(|(memberOf=CN=APP_meshcentral," + e["SAMBA_DC_BASE_APP_DN"] + ")(memberOf=" + e["SAMBA_DC_APP_ALL_DN"] + ")(memberOf=" + e["SAMBA_DC_ADMIN_GROUP_DN"] + ")))"

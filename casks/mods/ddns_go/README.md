@@ -5,7 +5,7 @@ DDNS-GO
 能读本地网卡拿宿主 IPv6、有 Web 界面**；代价是上游支持的厂商总数少一些。
 
 能力设计与两个实现的对比见
-[动态 DNS 能力设计](../../../docs/dynamic-dns-capability-design.md)。
+[动态 DNS 能力设计](../../../docs/design/dynamic-dns-capability-design.md)。
 
 配置
 ----------------
@@ -13,8 +13,8 @@ DDNS-GO
 ### 依赖的模块
 
 - `traefik`
-- `forward_auth` 能力（当前由 `oauth2_proxy` 提供）——**硬依赖**。Web 界面能改写这个
-  部署拥有的全部 DNS 记录，而 ddns-go 自己的登录关不掉也不足以单独承担认证。
+
+ddns-go 不依赖 IAM 或 `forward_auth`。Web 界面始终使用它自己的本地账号登录。
 
 ### 最简用法
 
@@ -38,7 +38,7 @@ secrets:
 | `domain_prefix` | `ddns-go` | Web 界面的域名前缀 |
 | `interval` | `300` | 检查间隔（秒） |
 | `web_enabled` | `true` | 关掉则以 `-noweb` 运行，不发布路由 |
-| `web_port` | `9876` | 监听端口，只绑共享网络网关地址 |
+| `web_port` | `9876` | host 网络上的监听端口 |
 | `ipv4_gettype` / `ipv6_gettype` | `url` | `url` 或 `netInterface` |
 | `ipv4_urls` / `ipv6_urls` | 见下 | 逗号分隔的探测地址 |
 | `ipv4_interface` / `ipv6_interface` | 见下 | `netInterface` 时读哪块网卡 |
@@ -88,14 +88,14 @@ IPv6 出站，既到不了 IPv6 探测服务，也看不到宿主自己的全局
 ### Web 界面
 
 host 网络的容器 Traefik 的 Docker provider 看不见，所以路由用
-[声明式路由契约](../traefik/README.md)注册。界面绑定的是**共享网络的网关地址**
-（例如 `172.18.0.1`）而不是 `0.0.0.0`：后者在 host 网络下会让界面对整个 LAN 可达，
-绕过唯一在认证它的网关。
+[声明式路由契约](../traefik/README.md)注册。该路由不挂 IAM 或 ForwardAuth 中间件；
+通过域名和通过宿主端口直连，都由 ddns-go 自带登录保护。
 
-登录用的是管理员密码（`global.default_service_root_password`），改管理员密码会在
-下次 render 时同步过去。这一层不是主要认证手段——前面的 forward_auth 网关才是，
-它只放行 `Admins` 组。ddns-go 的登录无法关闭（详见能力设计文档 §6.1），所以由 ANAS
-托管而不是留空，留空反而会让首个访问者选定账号。
+登录使用 ANAS 管理的 Cask 私有账号。默认用户名是 `admin_ddns_go`，密码随机生成且
+不与任何其他服务共享；用 `anas admin local credential ddns_go` 查询。ddns-go 的
+登录无法关闭（详见能力设计文档 §6.1），所以不能把账号留空，否则首个访问者会在
+初始化窗口内选定账号。由于 host 网络监听端口也可被直接访问，这个本地账号是实际
+安全边界，不是备用凭据。
 
 ### 配置合并
 

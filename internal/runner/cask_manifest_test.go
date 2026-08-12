@@ -208,6 +208,22 @@ func TestCasksUseManifestRule(t *testing.T) {
 	}
 }
 
+func TestNextcloudDeclaresProvisioningSeparatelyFromAuthentication(t *testing.T) {
+	mod, err := loadModuleManifest(filepath.Join("..", "..", "casks", "mods", "nextcloud"), "nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mod.IdentityProvisioning == nil || !contains(mod.IdentityProvisioning.AnyOf, "ldaps") {
+		t.Fatalf("provisioning = %+v, want required LDAPS", mod.IdentityProvisioning)
+	}
+	if mod.IdentityAuthentication == nil || !contains(mod.IdentityAuthentication.AnyOf, "saml") {
+		t.Fatalf("authentication = %+v, want SAML", mod.IdentityAuthentication)
+	}
+	if mod.IdentityProvisioning.IdentityKey != "anasIdentityAnchor" {
+		t.Fatalf("identity key = %q", mod.IdentityProvisioning.IdentityKey)
+	}
+}
+
 // A cask that forgets upgrade.data_breaking is not obviously broken: it renders,
 // deploys and runs. The only symptom is that every rollback across a version
 // change is refused as "data compatibility unknown", which surfaces months

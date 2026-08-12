@@ -36,6 +36,74 @@ env:
 	if env["BASICAUTH_USER"] != "admin" {
 		t.Fatalf("BASICAUTH_USER = %q", env["BASICAUTH_USER"])
 	}
+	if got := cfg.Administration.LocalAccounts.UsernameTemplate; got != "admin_{cask}" {
+		t.Fatalf("local username template = %q", got)
+	}
+	if got := cfg.Administration.LocalAccounts.PasswordLength; got != 24 {
+		t.Fatalf("local password length = %d", got)
+	}
+}
+
+func TestLocalAdministratorPolicyIsValidated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`modules: [traefik]
+administration:
+  local_accounts:
+    username_template: operator
+    password_length: 8
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "{cask}") {
+		t.Fatalf("error = %v, want username template validation", err)
+	}
+}
+
+func TestServiceIdentityLoginProtocolMapsToIAMSelector(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`modules: [nextcloud]
+services:
+  nextcloud:
+    identity:
+      login_protocol: saml
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.BaseEnv()["NEXTCLOUD_IAM_PROTOCOL"]; got != "saml" {
+		t.Fatalf("NEXTCLOUD_IAM_PROTOCOL = %q", got)
+	}
+}
+
+func TestIdentityAndBootstrapAdministratorAliasesAreMaterialized(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`modules: [samba_dc, nextcloud]
+identity:
+  directory:
+    provider: samba_dc
+  iam:
+    provider: authentik
+    default_protocol: saml
+administration:
+  bootstrap:
+    username: operator
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.IAM.Provider != "authentik" || cfg.IAM.DefaultProtocol != "saml" {
+		t.Fatalf("legacy IAM view = %+v", cfg.IAM)
+	}
+	env := cfg.BaseEnv()
+	if env["SAMBA_DC_ADMIN_NAME"] != "operator" || env["ANAS_BOOTSTRAP_ADMIN_USERNAME"] != "operator" {
+		t.Fatalf("bootstrap env = %+v", env)
+	}
 }
 
 func TestLowercaseServiceEnvIsNormalized(t *testing.T) {

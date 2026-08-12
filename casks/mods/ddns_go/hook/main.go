@@ -125,6 +125,7 @@ func handle(req hookRequest) (hookResponse, error) {
 // and duplicating a secret into a second blob only widens where it can leak.
 func calculate(e map[string]string, secrets *secretStore) error {
 	e[key("DOMAIN")] = e[key("DOMAIN_PREFIX")] + "." + e["BASE_DOMAIN"]
+	e[key("DOMAIN_FULL")] = "https://" + e[key("DOMAIN")] + ":" + e["TRAEFIK_BASE_PORT"]
 	e[key("WEB_PORT")] = defaultValue(e[key("WEB_PORT")], "9876")
 
 	name := strings.TrimSpace(e[key("DNS_PROVIDER")])
@@ -181,24 +182,22 @@ func calculate(e map[string]string, secrets *secretStore) error {
 // public-access policy from their own Referer header. After that window the
 // interface locks out and asks to be restarted.
 //
-// Since a password is unavoidable, it is the administrator's own rather than a
-// separate generated one: a second credential to find and rotate is worse than
-// the one the user already knows, and the forward-auth gate in front is what
-// actually authenticates. DEFAULT_SERVICE_ROOT_PASSWORD is the deployment's
-// shared administrator password when one is configured, and a per-cask
-// generated password otherwise -- the runner has already resolved which.
-//
-// Changing the administrator password therefore changes this one too, on the
-// next render, because the stored hash stops verifying and is regenerated.
+// The runner owns one generated local credential per cask and injects it only
+// into hook input. The plaintext never reaches the rendered container env;
+// this reconciler publishes a stable bcrypt hash instead. Rotating the managed
+// secret regenerates the hash on the next render.
 func reconcileWebCredentials(e map[string]string, secrets *secretStore) error {
 	if e[key("WEB_ENABLED")] != "true" {
 		return nil
 	}
-	e[key("USERNAME")] = defaultValue(e[key("USERNAME")], defaultValue(e["BASICAUTH_USER"], "admin"))
+	e[key("USERNAME")] = defaultValue(e[key("USERNAME")], e[key("LOCAL_ADMIN_USERNAME")])
+	if e[key("USERNAME")] == "" {
+		return fmt.Errorf("ddns_go: local administrator username is empty")
+	}
 
-	password := e["DEFAULT_SERVICE_ROOT_PASSWORD"]
+	password := e[key("LOCAL_ADMIN_PASSWORD")]
 	if password == "" {
-		return fmt.Errorf("ddns_go: no administrator password is available for the web interface;\nset global.default_service_root_password, or set services.ddns_go.env.web_enabled to \"false\"")
+		return fmt.Errorf("ddns_go: no managed local administrator password is available for the web interface")
 	}
 
 	// The hash is persisted rather than recomputed, because bcrypt salts every
@@ -297,12 +296,10 @@ func publishWebRoute(e map[string]string) error {
 	// host-network process cannot discover an address on a network that does
 	// not exist yet, so the address had to be decided before anything started.
 	//
-	// That defence is not what protects this interface. reconcileWebCredentials
-	// configures ddns-go's own login with the deployment's administrator name
-	// and password, so the interface authenticates on its own, and the
-	// forward-auth gate in front of the Traefik route is a second layer. Paying
-	// for a third with a pinned subnet -- which collides with whatever else the
-	// host runs -- buys less than it costs.
+	// The interface is protected by ddns-go's own login, configured by
+	// reconcileWebCredentials. The Traefik route deliberately adds no external
+	// identity middleware: this cask owns its local administrator lifecycle and
+	// does not pull an IAM stack into an otherwise standalone service deployment.
 	host := strings.TrimSpace(e["HOST_IP"])
 	if host == "" {
 		return fmt.Errorf("ddns_go: HOST_IP is empty, so Traefik has no address to route the web interface to;\nset global.host_ip, or set services.ddns_go.env.web_enabled to \"false\" to run without an interface")
@@ -310,16 +307,11 @@ func publishWebRoute(e map[string]string) error {
 	e[key("WEB_LISTEN")] = ":" + e[key("WEB_PORT")]
 	e[key("WEB_TARGET")] = host + ":" + e[key("WEB_PORT")]
 
-	middleware := strings.TrimSpace(e["ANAS_FORWARD_AUTH_MIDDLEWARE"])
-	if middleware == "" {
-		return fmt.Errorf("ddns_go: no forward_auth middleware was published, and the interface can rewrite every DNS record this deployment owns;\nset services.ddns_go.env.web_enabled to \"false\" to run without an interface")
-	}
 	const route = "ANAS_TRAEFIK_ROUTE__DDNS_GO__"
 	e[route+"RULE"] = "Host(`" + e[key("DOMAIN")] + "`)"
 	// Traefik dials the host by address; the listener itself binds every
 	// interface, so the two are not the same string.
 	e[route+"URL"] = "http://" + e[key("WEB_TARGET")]
-	e[route+"MIDDLEWARES"] = middleware
 	return nil
 }
 

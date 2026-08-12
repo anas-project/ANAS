@@ -71,9 +71,10 @@ type deploymentSetting struct {
 }
 
 type deploymentSnapshotPolicy struct {
-	Backend string `yaml:"backend,omitempty" json:"backend"`
-	Source  string `yaml:"source,omitempty" json:"source"`
-	Root    string `yaml:"root,omitempty" json:"root"`
+	Backend  string `yaml:"backend,omitempty" json:"backend"`
+	Source   string `yaml:"source,omitempty" json:"source"`
+	Root     string `yaml:"root,omitempty" json:"root"`
+	KeepAuto int    `yaml:"keep_auto,omitempty" json:"keep_auto"`
 }
 
 type activeDeploymentState struct {
@@ -201,6 +202,10 @@ func runLock(args []string, jsonMode bool) error {
 	if err := a.updateCaskLock(lock, true); err != nil {
 		return failuref("lock_update_failed", "%s", err.Error())
 	}
+	lock.Snapshot, err = resolveSnapshotLock(opts.workspace, cfg)
+	if err != nil {
+		return preconditionErrorf("snapshot_policy_invalid", "%s", err.Error())
+	}
 	if err := saveCaskLockFile(lockPath, lock); err != nil {
 		return failuref("write_failed", "%s", err.Error())
 	}
@@ -209,6 +214,7 @@ func runLock(args []string, jsonMode bool) error {
 			"workspace": opts.workspace, "config": opts.cfgPath, "lock_path": lockPath,
 			"modules": a.order, "casks": caskLockDocument(lock),
 			"iam": a.iamPlanDocument(), "capability_bindings": cloneNestedMap(a.resolvedBindings),
+			"snapshot": lock.Snapshot,
 		})
 	}
 	fmt.Println(lockPath)
@@ -385,6 +391,10 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		if err := a.updateCaskLock(lock, true); err != nil {
 			return "", failuref("lock_update_failed", "%s", err.Error())
 		}
+		lock.Snapshot, err = resolveSnapshotLock(opts.workspace, cfg)
+		if err != nil {
+			return "", preconditionErrorf("snapshot_policy_invalid", "%s", err.Error())
+		}
 		if err := saveCaskLockFile(lockPath, lock); err != nil {
 			return "", failuref("write_failed", "%s", err.Error())
 		}
@@ -401,6 +411,9 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		return "", preconditionErrorf("secrets_unreadable", "%s", err.Error())
 	}
 	a.secrets = secrets
+	if err := a.materializeLocalAccounts(); err != nil {
+		return "", preconditionErrorf("local_admin_invalid", "%s", err.Error())
+	}
 	emitProgress(jsonMode, "calculate", 0, total, "casks")
 	// Part of the calculate stage, and reported as such: it is the derivation
 	// every cask hook reads from, so a host it cannot describe is a failure of
@@ -412,6 +425,9 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		return "", failuref("calculate_failed", "%s", err.Error())
 	}
 	if err := a.secrets.Save(); err != nil {
+		return "", failuref("write_failed", "%s", err.Error())
+	}
+	if err := a.localAdmins.Save(); err != nil {
 		return "", failuref("write_failed", "%s", err.Error())
 	}
 	emitProgress(jsonMode, "render", 0, total, "casks")
@@ -476,6 +492,9 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 }
 
 func validateLockedResolution(a *app, lock *caskLock) error {
+	if err := validateLockedSnapshot(a.cfg, lock); err != nil {
+		return err
+	}
 	for _, name := range a.order {
 		record, ok := lock.Casks[name]
 		if !ok {
@@ -525,10 +544,16 @@ func buildDeploymentManifest(a *app, id, cfgPath string) (*deploymentManifest, e
 		ModuleOrder: append([]string{}, a.order...), Bindings: cloneNestedMap(a.resolvedBindings),
 		Casks: map[string]deploymentCask{}, Settings: map[string]deploymentSetting{},
 		Snapshot: deploymentSnapshotPolicy{
-			Backend: strings.ToLower(strings.TrimSpace(a.cfg.Rollback.Snapshot.Backend)),
-			Source:  strings.TrimSpace(a.cfg.Rollback.Snapshot.Source),
-			Root:    strings.TrimSpace(a.cfg.Rollback.Snapshot.Root),
+			Source: strings.TrimSpace(a.cfg.Rollback.Snapshot.Source),
+			Root:   strings.TrimSpace(a.cfg.Rollback.Snapshot.Root),
 		},
+	}
+	if a.lock != nil && a.lock.Snapshot != nil {
+		manifest.Snapshot.Backend = a.lock.Snapshot.Backend
+		manifest.Snapshot.KeepAuto = a.lock.Snapshot.KeepAuto
+	} else {
+		manifest.Snapshot.Backend = strings.ToLower(strings.TrimSpace(a.cfg.Rollback.Snapshot.Backend))
+		manifest.Snapshot.KeepAuto, _ = a.cfg.Rollback.Snapshot.KeepAuto.Value()
 	}
 	// The data location is fixed by the workspace layout, so the manifest no
 	// longer records it: a manifest that named an absolute path would pin the

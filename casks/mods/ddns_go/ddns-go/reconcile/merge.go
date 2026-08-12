@@ -253,9 +253,10 @@ func addressSection(family addressFamily, enabled bool, domains []string) *yaml.
 // gets to set the public-access policy from their own Referer header. After
 // that window the interface locks out entirely and asks to be restarted.
 //
-// So the credentials are managed rather than omitted: ANAS holds them, the
-// gate in front remains the real authentication, and this login is an inert
-// second lock whose key is never handed to a visitor.
+// So the credentials are managed rather than omitted: ANAS generates one
+// independent local account for this cask and exposes it only through the
+// explicit administrator credential command. This login is the interface's
+// authentication boundary; there is no external IAM gate in front of it.
 func reconcileUser(root *yaml.Node, desired *desiredState) {
 	if desired.Username == "" || desired.Password == "" {
 		return
