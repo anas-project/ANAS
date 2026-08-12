@@ -26,7 +26,9 @@ global:
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
-  default_service_root_password: change-me-now
+  # Must satisfy the password policy of the newest Samba release used by the
+  # runtime smoke test.
+  default_service_root_password: Anas-Test-2026!Root
 
 env:
   # Image builds fetch Debian and Alpine packages, and this host reaches the
@@ -50,6 +52,7 @@ services:
   ddns_updater:
     env:
       dns_provider: cloudflare
+      zone_identifier: test-zone-id
 
 secrets:
   cloudflare_dns_api_token: test-token-not-a-real-credential

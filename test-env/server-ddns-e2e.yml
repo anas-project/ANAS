@@ -8,12 +8,6 @@
 modules:
   - traefik
   - lego
-  - samba_dc
-  - postgres
-  - authentik
-
-iam:
-  provider: authentik
 
 # No DDNS cask is listed: asking for the capability is the whole request, and
 # resolving it is part of what this test verifies.
@@ -29,10 +23,14 @@ global:
   # issuing one would consume a real rate limit. The DNS credentials are still
   # exercised by the updater, which is what this test is for.
   virtual_domain: true
-  default_service_root_password: DdnsE2ePass1!
+
+administration:
+  local_accounts:
+    username_template: "admin_{cask}"
+    password_policy: generated_per_cask
+    password_length: 24
 
 env:
-  BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_ddnse2e_
   IMAGE_PREFIX: anas_
   NETWORK_PREFIX: anas_ddnse2e_

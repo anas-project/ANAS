@@ -10,6 +10,15 @@ ws=${ANAS_TEST_WORKSPACE:-$RUNTIME_DIR/full}
 wait_seconds=${ANAS_SMOKE_WAIT_SECONDS:-180}
 started=1
 
+# The repository's full smoke fixture intentionally contains non-working DNS
+# vendor credentials. ddns-updater's image healthcheck validates the external
+# record update itself, so it is expected to be unhealthy in that one fixture
+# even when the process and UI are stable. Real provider updates belong to the
+# credentialed DDNS E2E suite.
+expected_external_health_failure() {
+  [ "$1" = "anas_ddns_updater" ] && grep -q 'cloudflare_dns_api_token: test-token-not-a-real-credential' "$config"
+}
+
 cleanup() {
   if [ "$started" -eq 1 ]; then
     if [ -f "$ws/.anas/state/active.yml" ]; then
@@ -44,7 +53,16 @@ while [ "$elapsed" -lt "$wait_seconds" ]; do
   fi
   for container_id in $container_ids; do
     state=$(docker inspect --format '{{.State.Status}}' "$container_id")
+    exit_code=$(docker inspect --format '{{.State.ExitCode}}' "$container_id")
+    restart_policy=$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$container_id")
+    name=$(docker inspect --format '{{.Name}}' "$container_id" | sed 's|^/||')
     health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id")
+    if [ "$state" = "exited" ] && [ "$exit_code" -eq 0 ] && [ "$restart_policy" = "no" ]; then
+      continue
+    fi
+    if [ "$state" = "running" ] && [ "$health" = "unhealthy" ] && expected_external_health_failure "$name"; then
+      continue
+    fi
     if [ "$state" != "running" ] || [ "$health" = "starting" ] || [ "$health" = "unhealthy" ]; then
       stable=0
       break
@@ -87,11 +105,20 @@ while read -r compose_file; do
 
   for container_id in $container_ids; do
     state=$(docker inspect --format '{{.State.Status}}' "$container_id")
+    exit_code=$(docker inspect --format '{{.State.ExitCode}}' "$container_id")
+    restart_policy=$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$container_id")
     restarts=$(docker inspect --format '{{.RestartCount}}' "$container_id")
     health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id")
     name=$(docker inspect --format '{{.Name}}' "$container_id" | sed 's|^/||')
     echo "$name state=$state health=$health restarts=$restarts" >>"$log"
 
+    if [ "$state" = "exited" ] && [ "$exit_code" -eq 0 ] && [ "$restart_policy" = "no" ]; then
+      continue
+    fi
+    if [ "$state" = "running" ] && [ "$restarts" -eq 0 ] && [ "$health" = "unhealthy" ] && expected_external_health_failure "$name"; then
+      echo "$name external provider health skipped for fake smoke credential" >>"$log"
+      continue
+    fi
     if [ "$state" != "running" ] || [ "$restarts" -ne 0 ] || [ "$health" = "unhealthy" ] || [ "$health" = "starting" ]; then
       echo "container $name is not stable; see $log" >&2
       failed=1

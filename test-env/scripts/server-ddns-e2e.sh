@@ -126,8 +126,10 @@ say "the capability resolved without naming a cask"
 plan=$(cd "$root" && go run ./cmd/anas plan -c "$workspace/config.yml")
 printf '%s\n' "$plan" | grep -q '^ddns_go$' ||
   { echo "ddns_go was not pulled in by the capability" >&2; exit 1; }
-printf '%s\n' "$plan" | grep -q '^oauth2_proxy$' ||
-  { echo "oauth2_proxy was not pulled in by the forward_auth dependency" >&2; exit 1; }
+if printf '%s\n' "$plan" | grep -q '^oauth2_proxy$'; then
+  echo "oauth2_proxy was unexpectedly pulled in by ddns_go" >&2
+  exit 1
+fi
 printf '%s\n' "$plan" | grep -q 'dynamic dns: ddns_go (auto)' ||
   { echo "the plan does not report the resolved implementation" >&2; exit 1; }
 
@@ -184,29 +186,46 @@ resolved=$(dig +short "@$authoritative" "$domain" A | tail -1)
   { echo "$authoritative answers $resolved for $domain, want $host_v4" >&2; exit 1; }
 printf '%s answers %s for %s\n' "$authoritative" "$resolved" "$domain"
 
-say "the interface is not reachable without authentication"
-gateway=$(docker -H "unix://$socket" network inspect "${ANAS_TEST_NETWORK_PREFIX:-anas_ddnse2e_}traefik" \
-  --format '{{ (index .IPAM.Config 0).Gateway }}')
-# Straight at the listener, bypassing Traefik: it must not be published to
-# anything but the shared network's gateway.
-curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:9876/" 2>/dev/null | grep -q '^000$' ||
-  { echo "the ddns-go interface is listening on loopback, so it is not confined to the gateway" >&2; exit 1; }
-printf 'listener is not on loopback; bound to %s only\n' "$gateway"
+say "the managed local account is the only Web authentication"
+credential=$(cd "$root" && go run ./cmd/anas admin local credential ddns_go -w "$workspace" --json)
+local_username=$(CREDENTIAL_JSON=$credential python3 -c 'import json,os; print(json.loads(os.environ["CREDENTIAL_JSON"])["account"]["username"])')
+local_password=$(CREDENTIAL_JSON=$credential python3 -c 'import json,os; print(json.loads(os.environ["CREDENTIAL_JSON"])["account"]["password"])')
+cookie_jar=$(mktemp)
 
-# Through Traefik without a session: the gate must intervene rather than the
-# interface answering.
+# Direct host-port access bypasses Traefik by construction, so this proves the
+# native account itself is effective rather than merely present in YAML.
+direct_code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:9876/" || true)
+case "$direct_code" in 302|303|307) ;; *)
+  echo "unauthenticated direct request returned $direct_code, want a login redirect" >&2; exit 1 ;;
+esac
+curl -sS --max-time 10 -c "$cookie_jar" -o /dev/null -H 'Content-Type: application/json' \
+  --data "{\"Username\":\"$local_username\",\"Password\":\"$local_password\"}" \
+  "http://127.0.0.1:9876/loginFunc"
+grep -q '[[:space:]]token[[:space:]]' "$cookie_jar" ||
+  { echo "managed local credential did not receive a login cookie" >&2; exit 1; }
+curl -sS --max-time 10 -b "$cookie_jar" -o /dev/null -w '%{http_code}' \
+  "http://127.0.0.1:9876/" | grep -q '^200$' ||
+  { echo "authenticated direct request did not reach ddns-go" >&2; exit 1; }
+rm -f "$cookie_jar"
+
+# Through Traefik, an unauthenticated request must reach ddns-go's own login,
+# not an oauth2-proxy redirect.
 entry_port=${ANAS_TEST_ENTRY_PORT:-9443}
-code=$(curl -sk --max-time 10 -o /dev/null -w '%{http_code}' \
+headers=$(mktemp)
+code=$(curl -sk --max-time 10 -D "$headers" -o /dev/null -w '%{http_code}' \
   --resolve "ddns-go.$domain:$entry_port:127.0.0.1" \
   "https://ddns-go.$domain:$entry_port/" || true)
 case "$code" in
-  302|303|307|401|403)
-    printf 'unauthenticated request returned %s\n' "$code" ;;
+  302|303|307)
+    grep -i '^location: /login' "$headers" >/dev/null ||
+      { echo "domain entry did not redirect to ddns-go's native login" >&2; exit 1; }
+    printf 'unauthenticated domain request reached the native login (%s)\n' "$code" ;;
   200)
     echo "unauthenticated request reached the interface (HTTP 200)" >&2; exit 1 ;;
   *)
     printf 'unauthenticated request returned %s\n' "$code" ;;
 esac
+rm -f "$headers"
 
 say "restore"
 restore_records

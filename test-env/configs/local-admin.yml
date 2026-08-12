@@ -1,0 +1,24 @@
+modules:
+  - traefik
+  - ddns_go
+
+global:
+  base_domain: nas.test
+  email: admin@nas.test
+  timezone: Asia/Shanghai
+  virtual_domain: true
+
+administration:
+  local_accounts:
+    username_template: "admin_{cask}"
+    password_policy: generated_per_cask
+    password_length: 24
+
+services:
+  ddns_go:
+    env:
+      dns_provider: tencentcloud
+
+secrets:
+  tencentcloud_secret_id: test-id-not-a-real-credential
+  tencentcloud_secret_key: test-key-not-a-real-credential

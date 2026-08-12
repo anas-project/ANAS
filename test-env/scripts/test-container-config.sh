@@ -88,6 +88,25 @@ TURN_SECRET="quote'safe" \
   sh "$ROOT_DIR/casks/mods/eturnal/eturnal/anas-entrypoint.sh" /usr/bin/true || exit 1
 grep -q "secret: 'quote''safe'" "$test_dir/eturnal/eturnal.yml" || exit 1
 
+# A fresh Nextcloud volume exposes HTTP before its post-install tasks have
+# downloaded notify_push. The sidecar must wait for the executable instead of
+# entering a restart loop with exit 127.
+grep -Fq 'while [ ! -x "$$custom_push_path" ] && [ ! -x "$$bundled_push_path" ]; do' \
+  "$ROOT_DIR/casks/mods/nextcloud/docker-compose.yml" || exit 1
+
+# The official Nextcloud image only performs a non-interactive first install
+# when the selected database host reaches the cask-scoped environment.
+grep -Eq '^    - POSTGRES_HOST$' "$ROOT_DIR/casks/mods/nextcloud/cask.yml" || exit 1
+
+# Authentik's worker must not race the server's first-run database migrations.
+awk '
+  /^  anas_authentik_worker:/ { worker = 1; next }
+  worker && /^  [^ ]/ { exit }
+  worker && /anas_authentik:/ { server = 1 }
+  server && /condition: service_healthy/ { found = 1 }
+  END { exit !found }
+' "$ROOT_DIR/casks/mods/authentik/docker-compose.yml" || exit 1
+
 if command -v node >/dev/null 2>&1; then
   mkdir -p "$test_dir/meshcentral"
   env \
@@ -95,10 +114,12 @@ if command -v node >/dev/null 2>&1; then
     TRAEFIK_BASE_PORT=9000 \
     MESHCENTRAL_MPS_PORT=4433 \
     TRAEFIK_IP=172.20.0.2 \
-    MYSQL_HOST=db \
-    MYSQL_PORT=3306 \
-    MYSQL_USERNAME=mesh \
-    'MYSQL_PASSWORD=quote" slash\ dollar$ unicode密码' \
+    MESHCENTRAL_DB_TYPE=postgres \
+    MESHCENTRAL_DB_HOST=db \
+    MESHCENTRAL_DB_PORT=5432 \
+    MESHCENTRAL_DB_USERNAME=mesh \
+    MESHCENTRAL_DB_NAME=meshcentral \
+    'MESHCENTRAL_DB_PASSWORD=quote" slash\ dollar$ unicode密码' \
     TRAEFIK_DOMAIN_FULL=https://proxy.example.test \
     'MESHCENTRAL_TITLE=NAS "Control"' \
     MESHCENTRAL_SUBTITLE=Devices \
@@ -121,7 +142,10 @@ if command -v node >/dev/null 2>&1; then
       "$test_dir/meshcentral/config.json" || exit 1
   node -e '
     const config = require(process.argv[1]);
-    if (config.settings.mySQL.password !== `quote" slash\\ dollar$ unicode密码`) process.exit(1);
+    if (config.settings.postgres.password !== `quote" slash\\ dollar$ unicode密码`) process.exit(1);
+    if (config.settings.postgres.database !== "meshcentral") process.exit(5);
+    if (config.settings.postgres.createdatabase !== false) process.exit(6);
+    if (config.settings.mySQL !== undefined) process.exit(7);
     if (!config.domains[""].ldapUserRequiredGroupMembership.endsWith("OU=Apps,DC=example,DC=test")) process.exit(2);
     if (config.domains[""].ldapUserKey !== "anasIdentityAnchor") process.exit(3);
     if (config.domains[""].ldapUserBinaryKey !== undefined) process.exit(4);

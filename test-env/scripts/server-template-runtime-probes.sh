@@ -17,7 +17,7 @@ section() {
 }
 
 section "container stability"
-expected="lego samba_dc samba_fs traefik mariadb meshcentral lam eturnal"
+expected="lego samba_dc samba_fs traefik postgres meshcentral lam eturnal"
 for service in $expected; do
   name=$(container "$service")
   state=$($docker_cmd inspect --format '{{.State.Status}}' "$name")

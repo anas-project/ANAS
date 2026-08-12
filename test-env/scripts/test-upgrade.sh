@@ -25,10 +25,13 @@ if {
   run_anas apply --build -w "$base" --update-lock
 
   echo "== seed migration probes: $fixture =="
-  docker exec anas_postgres sh -c "printf '%s\n' '$fixture' > /var/lib/postgresql/data/$marker"
-  docker exec anas_mariadb sh -c "printf '%s\n' '$fixture' > /config/$marker"
+  # Write at stable bind-mount roots, not engine-internal data directories.
+  # PostgreSQL 18 moved PGDATA below /var/lib/postgresql/18/docker and
+  # Nextcloud's persisted application root is /var/www/html.
+  docker exec anas_postgres sh -c "printf '%s\n' '$fixture' > /var/lib/postgresql/$marker"
+  docker exec anas_mariadb sh -c "printf '%s\n' '$fixture' > /var/lib/mysql/$marker"
   docker exec anas_samba_dc sh -c "printf '%s\n' '$fixture' > /var/lib/samba/$marker"
-  docker exec anas_nextcloud sh -c "printf '%s\n' '$fixture' > /data/$marker"
+  docker exec anas_nextcloud sh -c "printf '%s\n' '$fixture' > /var/www/html/$marker"
 
   echo "== baseline stop: $fixture =="
   run_anas stop -w "$base"

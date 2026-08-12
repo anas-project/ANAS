@@ -47,6 +47,7 @@ services:
   ddns_updater:
     env:
       dns_provider: cloudflare
+      zone_identifier: test-zone-id
 
 secrets:
   cloudflare_dns_api_token: test-token-not-a-real-credential

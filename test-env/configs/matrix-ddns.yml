@@ -1,7 +1,7 @@
-# Both DDNS implementations at once, each behind the shared authenticated
-# gate. Running them together is allowed and is the arrangement that exercises
-# per-engine credential separation, the declarative Traefik route used by the
-# host-network cask, and the forward_auth capability binding.
+# Both DDNS implementations at once. Running them together exercises per-engine
+# credential separation and the declarative Traefik route used by the
+# host-network cask. ddns_updater uses the shared authenticated gate; ddns_go
+# deliberately uses only its own login.
 modules:
   - traefik
   - lego
@@ -27,6 +27,7 @@ services:
   ddns_updater:
     env:
       dns_provider: cloudflare
+      zone_identifier: test-zone-id
   ddns_go:
     env:
       dns_provider: tencentcloud
