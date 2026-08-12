@@ -132,7 +132,7 @@ store 中的键本应天然敏感，不应通过“其值是否也出现在 env�
 
 运行状态位于 workspace 的 `.anas/` 下。workspace 是一次部署拥有的全部内容——配置、
 业务数据、快照、运行状态——目的是让"备份一个目录"等价于"备份整套部署"。完整设计见
-[workspace-backup-plan.md](workspace-backup-plan.md)。
+[workspace-backup-plan.md](../workspace-backup-plan.md)。
 
 ```text
 <workspace>/

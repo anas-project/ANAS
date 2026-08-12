@@ -30,24 +30,24 @@
 现状：`APPS_LIST` 是一组 Hook 之间的口头约定，Runner 完全不参与。
 
 1. **只有两个 Cask 参与。** 只有 `nextcloud`
-   （[main.go:207](../casks/mods/nextcloud/hook/main.go#L207)）和 `netbird`
-   （[main.go:191](../casks/mods/netbird/hook/main.go#L191)）发布条目。
+   （[main.go:207](../../casks/mods/nextcloud/hook/main.go#L207)）和 `netbird`
+   （[main.go:191](../../casks/mods/netbird/hook/main.go#L191)）发布条目。
    `lam`、`meshcentral`、`collabora`、各 Adminer、Traefik dashboard、LLNG
    Manager、Authentik 自身都不在门户里，用户必须记域名。
 2. **权限写了两份且互不校验。** LLNG 的 `display` 表达式读
    `APPS_LIST__<APP>__ALLOW_GROUPS`
-   （[llng-config.sh:117](../casks/mods/llng/llng/root/root/llng-config.sh#L117)），
+   （[llng-config.sh:117](../../casks/mods/llng/llng/root/root/llng-config.sh#L117)），
    Authentik 的策略绑定读 `ANAS_IAM_CLIENT__<APP>__ALLOW_GROUPS`
-   （[iam.go:287](../casks/mods/authentik/hook/iam.go#L287)）。两者由不同代码路径
+   （[iam.go:287](../../casks/mods/authentik/hook/iam.go#L287)）。两者由不同代码路径
    产生，可以静默不一致——门户显示一个点进去被拒的应用，或者藏起一个用户其实
    有权访问的应用。
 3. **没有分类契约。** LLNG 把所有应用硬编码进单一分类 `1apps` "Applications"
-   （[llng-config.sh:103](../casks/mods/llng/llng/root/root/llng-config.sh#L103)）；
+   （[llng-config.sh:103](../../casks/mods/llng/llng/root/root/llng-config.sh#L103)）；
    Authentik 的 `application.group` 根本没有设置。
 4. **图标机制脆弱。** LLNG 靠 `after_start` 的 `docker cp` 把
    `LOGO_PATH` 拷进容器 htdocs
-   （[main.go:165](../casks/mods/llng/hook/main.go#L165)）。这是命令式的：容器重建
-   后要重跑，路径依赖渲染产物位置——[design-review-2026-07-19.md](design-review-2026-07-19.md)
+   （[main.go:165](../../casks/mods/llng/hook/main.go#L165)）。这是命令式的：容器重建
+   后要重跑，路径依赖渲染产物位置——[design-review-2026-07-19.md](../research/design-review-2026-07-19.md)
    记录的就是 promote 后路径失效导致的启动破坏。Authentik 侧则完全没有图标。
 5. **展示元数据重复。** `cask.yml` 已经有 `title`、`description`、`category`，
    Hook 里又硬编码了一份 `NAME`/`DESC`，两者可以漂移。
@@ -259,7 +259,7 @@ Provider 在 `render_env` 里读到的永远是完整目录。这与 IAM 注册�
 
 - Runner 在渲染时把每个条目的图标收敛到产物内的 `apps/icons/<id>.<ext>`，并发布
   `ANAS_APP_ICONS_DIR` 指向 promote 之后的稳定路径。这正是
-  [design-review-2026-07-19.md](design-review-2026-07-19.md) 里那个
+  [design-review-2026-07-19.md](../research/design-review-2026-07-19.md) 里那个
   "calculate 阶段用临时渲染路径构造持久值" 缺陷的正解。
 - Provider 的 compose 以只读 bind mount 挂载该目录，容器重建幂等，
   `after_start` 的 `copy_portal_logos` 整个删除。

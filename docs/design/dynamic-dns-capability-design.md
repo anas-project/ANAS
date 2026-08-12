@@ -39,13 +39,13 @@ secrets:
 解析结果：
 
 ```text
-lego → traefik → samba_dc → postgres → authentik
-     → oauth2_proxy → ddns_go
+lego → traefik → ddns_go
 
 dynamic dns: ddns_go (auto)
 ```
 
-`ddns_go` 由能力拉入，`oauth2_proxy` 又被 ddns_go 的 `forward_auth` 依赖拉入。
+`ddns_go` 由能力拉入。它使用自己的 Web 登录，不会再因为动态 DNS 顺带拉入 IAM
+和 `oauth2_proxy`。
 
 ### 2.1 每个引擎独立选厂商
 
@@ -83,7 +83,7 @@ secrets:
 
 ### 3.1 单一真相源
 
-[`internal/dns/providers.yml`](../internal/dns/providers.yml) 是唯一的真相源。
+[`internal/dns/providers.yml`](../../internal/dns/providers.yml) 是唯一的真相源。
 每个平台按 engine 分别声明 provider 代码和凭据键：
 
 ```yaml
@@ -110,7 +110,7 @@ secrets:
 ### 3.2 投影到 cask bundle
 
 Cask hook 是**自包含程序**，会被复制到本仓库之外分发，不能 import 这个包。所以
-[`cmd/gen-dns-registry`](../cmd/gen-dns-registry/main.go) 把每个 engine 的切片投影
+[`cmd/gen-dns-registry`](../../cmd/gen-dns-registry/main.go) 把每个 engine 的切片投影
 成一个自包含 Go 文件写进对应 cask：
 
 ```text
@@ -162,7 +162,7 @@ dns platforms:
 ### 3.4 凭据物化
 
 Runner 在任何 hook 运行之前，把用户写的凭据归一化到每个引擎自己的命名空间
-（[`internal/runner/dnscred.go`](../internal/runner/dnscred.go)）：
+（[`internal/runner/dnscred.go`](../../internal/runner/dnscred.go)）：
 
 ```text
 用户写 tencentcloud_secret_id
@@ -197,7 +197,7 @@ canonical 拼法本身不下发给任何 cask
 
 与 IAM 不同，动态 DNS **没有消费方 cask**：没有任何 cask 声明"我需要自己的 A 记录"，
 是部署整体需要。所以没有依赖边可以解析它，选中的 cask 被作为模块图的**根**注入
-（[`resolveOrder`](../internal/runner/runner.go)）。
+（[`resolveOrder`](../../internal/runner/runner.go)）。
 
 绑定记在锁文件的保留槽位下：
 
@@ -275,16 +275,13 @@ Runner 的 `applyHostNetwork` 导出 `HOST_IPV6` / `HOST_IPV6_INTERFACE` /
 
 ## 6. Web 界面与认证
 
-两个界面都能改写这个部署拥有的全部 DNS 记录，所以 `forward_auth` 是**硬依赖**，
-不是可选项。两个 cask 都声明：
+两个界面都能改写这个部署拥有的全部 DNS 记录，但认证方式不同：
 
-```yaml
-dependencies:
-  requires_capabilities:
-    - name: forward_auth
-```
+- `ddns_updater` 没有自己的登录，因此把 `forward_auth` 声明为硬依赖；
+- `ddns_go` 有不能关闭的本地登录，只使用自己的账号，不依赖 IAM 或
+  `forward_auth`。
 
-由 `oauth2_proxy` 提供，它自己是 IAM 的 OIDC 消费者，并通过既有的
+`ddns_updater` 的 `forward_auth` 当前由 `oauth2_proxy` 提供。它自己是 IAM 的 OIDC 消费者，并通过既有的
 `ANAS_IAM_CLIENT__*__ALLOW_GROUPS` 契约声明只允许 `Admins`。**组判定不在网关里**，
 由 IdP 执行——不在该组的用户走不完 OIDC 流程，所以网关不可能和 IdP 对"谁是管理员"
 产生分歧。管理员组名取自 `SAMBA_DC_ADMIN_GROUP_NAME`，不写死。
@@ -306,9 +303,9 @@ dependencies:
 社区流传的"关闭外网访问就可以不设用户名密码"是**错的**。`notallowwanaccess: true`
 只把 `CheckPassword` 的密码强度门槛从 30 bit 降到 25 bit，不是免密码。
 
-所以密码是被托管而不是省略：用 `global.default_service_root_password`，改管理员
-密码会在下次 render 时同步过去（存储的哈希验不过就重算）。前面的 forward_auth 网关
-才是真正的认证，这层是一把钥匙不外流的第二道锁。
+所以密码是被托管而不是省略：Runner 为 ddns-go 生成独立随机本地密码，通过
+`anas admin local credential ddns_go` 显式查询。它是 ddns-go Web 界面的唯一登录
+凭据；Secret 变化时，存储的哈希验不过就会在下次 render 重算。
 
 ### 6.2 `notallowwanaccess` 保持 true
 
@@ -320,15 +317,14 @@ ddns-go 的公网访问检查针对 `r.RemoteAddr`——直连对端。对代理
 
 `ddns_go` 用 host 网络才能看到宿主 IPv6，但 Traefik 的 Docker provider 看不见 host
 网络的容器。解决办法是 Traefik 的**声明式路由契约**（见
-[traefik/README.md](../casks/mods/traefik/README.md)）：
+[traefik/README.md](../../casks/mods/traefik/README.md)）：
 
 ```text
 ANAS_TRAEFIK_ROUTE__<NAME>__RULE / __URL / __MIDDLEWARES / __ENTRYPOINTS / __TLS
 ```
 
-同时 Web 界面绑定的是**共享网络的网关地址**而不是 `0.0.0.0`：host 网络下后者会让
-界面对整个 LAN 可达，绕过唯一在认证它的网关。为此 Traefik 网络固定了子网
-（`172.28.0.0/16`，可覆盖），因为 Docker 自动分配的子网两边都无法在启动前得知。
+Web 界面监听 host 端口，通过域名或宿主地址访问时都使用同一套 ddns-go 本地账号。
+声明式路由不附加外部认证中间件，也不再为了认证固定 Traefik 子网。
 
 ## 7. ddns_go 的配置合并
 
@@ -337,7 +333,7 @@ Web UI 也写同一个文件。两种简单做法都不行——每次覆盖会�
 干脆不写则声明的配置只是个建议。
 
 所以容器启动时、ddns-go 运行之前，由
-[`anas-ddns-go-reconcile`](../casks/mods/ddns_go/ddns-go/reconcile/) 合并。
+[`anas-ddns-go-reconcile`](../../casks/mods/ddns_go/ddns-go/reconcile/) 合并。
 
 **用 `yaml.Node` AST 合并而不是结构体往返**：后者会静默删掉它不认识的所有字段，
 上游哪天新增一个就会在下次部署时被抹掉。
@@ -388,17 +384,17 @@ ANAS_DDNS_GO_IPV{4,6}_GETTYPE / _URLS / _INTERFACE
 
 ## 9. 密码存储策略
 
-明文只在两处，其余全是 bcrypt 哈希：
+持久明文只在 Secret Store，其余全是 bcrypt 哈希：
 
 | 位置 | 内容 | 权限 |
 |---|---|---|
-| `config.yml` | `global.default_service_root_password` **明文** | `0600` |
-| `.anas/secrets.generated.yml` | `DDNS_GO_WEB_PASSWORD_HASH` | `0600` |
-| 渲染的 `.env` | `DDNS_GO_PASSWORD_HASH`；`DEFAULT_SERVICE_ROOT_PASSWORD` **明文** | `0400` |
+| `.anas/secrets.generated.yml` | `ANAS_LOCAL_ADMIN__DDNS_GO__PRIMARY__PASSWORD` 明文及 `DDNS_GO_WEB_PASSWORD_HASH` | `0600` |
+| Hook calculate 请求 | `DDNS_GO_LOCAL_ADMIN_PASSWORD` 明文，仅进程内短暂存在 | 不落盘 |
+| 渲染的 `.env` | `DDNS_GO_LOCAL_ADMIN_USERNAME`、`DDNS_GO_PASSWORD_HASH` | `0400` |
 | `.ddns_go_config.yaml` | `user.password` bcrypt | `0600` |
 
-`.env` 里那份明文不是 ddns_go 特有的：`applyCaskRootPassword` 给每个 cask 都注入
-`DEFAULT_SERVICE_ROOT_PASSWORD`，是仓库既有契约。ddns_go 自己前缀下只有哈希。
+Runner 把本地密码只注入 ddns-go 的 Hook 输入；Hook 发布用户名和 bcrypt hash，明文
+不会进入 deployment `.env` 或容器环境。
 
 哈希只算一次并持久化——bcrypt 每次加盐不同，每次重算会让配置文件每次重启都被改写。
 只有当它验不过当前管理员密码时才重算，这既是密码同步的机制，也是"没改就不重写"的
