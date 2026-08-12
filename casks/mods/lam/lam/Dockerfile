@@ -11,6 +11,25 @@ ARG GITHUB_DOWNLOAD_PROXY_PREFIX
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Bootstrap certificates over the selected mirror's HTTP endpoint, then put
+# the original source definition back so the regular mirror switch below uses
+# the configured HTTPS URL. Debian verifies signed repository metadata during
+# this bootstrap even though transport TLS is not available yet.
+RUN cp /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
+  && bootstrap_mirror="" \
+  && if [ -n "$LAM_APT_MIRROR_URL" ]; then bootstrap_mirror="$LAM_APT_MIRROR_URL"; \
+     elif [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then bootstrap_mirror="$APT_MIRROR_URL"; fi \
+  && case "$bootstrap_mirror" in https://*) bootstrap_mirror="http://${bootstrap_mirror#https://}";; esac \
+  && if [ -n "$bootstrap_mirror" ]; then sed -i \
+       -e "s|http://deb.debian.org|${bootstrap_mirror%/}|g" \
+       -e "s|https://deb.debian.org|${bootstrap_mirror%/}|g" \
+       -e "s|http://security.debian.org|${bootstrap_mirror%/}|g" \
+       /etc/apt/sources.list.d/debian.sources; fi \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && mv /tmp/debian.sources /etc/apt/sources.list.d/debian.sources
+
 RUN if [ -n "$LAM_APT_MIRROR_URL" ]; then \
     sed -i \
       -e "s|http://deb.debian.org|${LAM_APT_MIRROR_URL%/}|g" \

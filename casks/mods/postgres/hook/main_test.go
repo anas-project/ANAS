@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPostgresPasswordIsStableRandomSecret(t *testing.T) {
 	secrets := &secretStore{values: map[string]string{}}
@@ -24,6 +27,12 @@ func TestPostgresDependentDatabaseReconcilerRunsAfterInitialization(t *testing.T
 	script := initDatabasesScript(env)
 	if script == "" {
 		t.Fatal("expected online database reconciliation script")
+	}
+	if !strings.Contains(script, "until pg_isready") {
+		t.Fatal("reconciler must wait until PostgreSQL accepts connections")
+	}
+	if strings.Contains(script, "pg_isready --host") {
+		t.Fatal("initdb must use its Unix socket; only the reconcile service supplies PGHOST")
 	}
 	for _, disabled := range disabledServices("postgres", env) {
 		if disabled == "anas_postgres_reconcile" {

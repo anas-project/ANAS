@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -178,6 +179,17 @@ func calcDDNSUpdater(e map[string]string, _ string, _ *secretStore) error {
 		return fmt.Errorf("ddns_updater: dns_provider %q is not a DNS platform ddns-updater can update;\nset services.ddns_updater.env.dns_provider to one of: %s",
 			name, strings.Join(supportedDNSPlatforms(), ", "))
 	}
+	if platform.Name == "cloudflare" {
+		if strings.TrimSpace(e["DDNS_UPDATER_ZONE_IDENTIFIER"]) == "" {
+			return fmt.Errorf("ddns_updater: Cloudflare requires services.ddns_updater.env.zone_identifier")
+		}
+		ttl := defaultValue(strings.TrimSpace(e["DDNS_UPDATER_TTL"]), "300")
+		seconds, err := strconv.Atoi(ttl)
+		if err != nil || seconds <= 0 {
+			return fmt.Errorf("ddns_updater: Cloudflare ttl must be a positive integer number of seconds")
+		}
+		e["DDNS_UPDATER_TTL"] = strconv.Itoa(seconds)
+	}
 
 	settings := []string{}
 	// The base domain and its wildcard are maintained together because every
@@ -252,6 +264,11 @@ func updaterSetting(e map[string]string, platform dnsPlatform, host, ipVersion s
 		fields = append(fields,
 			fmt.Sprintf(`"username":%q`, e["DDNS_UPDATER_"+platform.IDKey]),
 			fmt.Sprintf(`"password":%q`, e["DDNS_UPDATER_"+platform.SecretKey]))
+	}
+	if platform.Name == "cloudflare" {
+		fields = append(fields,
+			fmt.Sprintf(`"zone_identifier":%q`, e["DDNS_UPDATER_ZONE_IDENTIFIER"]),
+			fmt.Sprintf(`"ttl":%s`, e["DDNS_UPDATER_TTL"]))
 	}
 	return "{" + strings.Join(fields, ",") + "}"
 }

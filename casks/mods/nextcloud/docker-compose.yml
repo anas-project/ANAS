@@ -90,10 +90,14 @@ services:
         if [ "$$cpu_arch" != "x86_64" ]; then
           cpu_arch="aarch64"
         fi
-        push_path="/var/www/html/custom_apps/notify_push/bin/$$cpu_arch/notify_push"
-        if [ ! -x "$$push_path" ]; then
-          push_path="/var/www/html/apps/notify_push/bin/$$cpu_arch/notify_push"
-        fi
+        custom_push_path="/var/www/html/custom_apps/notify_push/bin/$$cpu_arch/notify_push"
+        bundled_push_path="/var/www/html/apps/notify_push/bin/$$cpu_arch/notify_push"
+        while [ ! -x "$$custom_push_path" ] && [ ! -x "$$bundled_push_path" ]; do
+          echo "Waiting for the notify_push application to be installed..."
+          sleep 5
+        done
+        push_path="$$custom_push_path"
+        [ -x "$$push_path" ] || push_path="$$bundled_push_path"
         export RUST_LOG="$$AIO_LOG_LEVEL"
         echo "notify-push was started"
         exec "$$push_path" \

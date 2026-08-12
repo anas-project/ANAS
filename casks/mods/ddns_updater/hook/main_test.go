@@ -56,3 +56,27 @@ func TestAbsentAddressFamilyMeansEnabled(t *testing.T) {
 		t.Error("an explicit true must enable the family")
 	}
 }
+
+func TestCloudflareRequiresAndRendersZoneIdentifierAndTTL(t *testing.T) {
+	base := map[string]string{
+		"DDNS_UPDATER_DNS_PROVIDER":             "cloudflare",
+		"DDNS_UPDATER_CLOUDFLARE_DNS_API_TOKEN": "token",
+		"BASE_DOMAIN":                           "example.test",
+		"IPV4":                                  "true",
+	}
+	if err := calcDDNSUpdater(cloneMap(base), "", nil); err == nil || !strings.Contains(err.Error(), "zone_identifier") {
+		t.Fatalf("missing zone identifier error = %v", err)
+	}
+
+	env := cloneMap(base)
+	env["DDNS_UPDATER_ZONE_IDENTIFIER"] = "zone-id"
+	env["DDNS_UPDATER_TTL"] = "300"
+	if err := calcDDNSUpdater(env, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"zone_identifier":"zone-id"`, `"ttl":300`} {
+		if !strings.Contains(env["DDNS_UPDATER_CONFIG"], want) {
+			t.Fatalf("CONFIG %s does not contain %s", env["DDNS_UPDATER_CONFIG"], want)
+		}
+	}
+}

@@ -67,8 +67,11 @@ services:
         exec ak worker
     shm_size: 512mb
     depends_on:
-      anas_authentik_init:
-        condition: service_completed_successfully
+      # The server applies database migrations during a cold start. Starting
+      # the worker after only the filesystem initializer lets it query the
+      # partially migrated schema and enter a restart loop.
+      anas_authentik:
+        condition: service_healthy
     volumes:
       - "${DATA_PATH}/authentik/data:/data"
       - "./blueprints:/blueprints/anas:ro"

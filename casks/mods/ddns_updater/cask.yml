@@ -52,6 +52,7 @@ config:
     publicip_ipv4_providers: all
     publicip_ipv6_providers: all
     publicip_dns_providers: all
+    ttl: "300"
   # DNS vendor credentials need no claim here. The runner materialises them
   # under this cask's own env prefix, where prefix ownership already scopes
   # them to ddns_updater alone. See internal/runner/dnscred.go. The middleware

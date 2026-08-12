@@ -7,7 +7,7 @@ DDNS Updater
 它并不过时：`qdm12/ddns-updater` 2.10.0 就是当前最新版。
 
 能力设计与两个实现的对比见
-[动态 DNS 能力设计](../../../docs/dynamic-dns-capability-design.md)。
+[动态 DNS 能力设计](../../../docs/design/dynamic-dns-capability-design.md)。
 
 配置
 ----------------
