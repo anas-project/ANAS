@@ -93,6 +93,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       text: '研究与选型',
       items: [
         { text: '索引', link: '/research/' },
+        { text: '应用研究 Module 规范', link: '/research/application-research-module-spec' },
+        { text: '自部署笔记应用调研', link: '/research/self-hosted-open-source-notes-research-2026-08-13' },
         { text: '中国大陆镜像与 CNB', link: '/research/china-mainland-mirrors-and-cnb-distribution-2026-08-11' },
         { text: '自部署 Kanban 调研', link: '/research/self-hosted-open-source-kanban-research-2026-08-10' }
       ]

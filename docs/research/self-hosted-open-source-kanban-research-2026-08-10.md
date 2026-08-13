@@ -1,7 +1,28 @@
-# 开源自部署 Kanban 应用全景调研
+# 开源自部署 Kanban 应用全景调研（2026-08-10，2026-08-13 修订）
 
-调研日期：2026-08-10（Asia/Singapore）
-适用项目：ANAS（Go module 编排器、Docker Compose、Traefik、PostgreSQL/MariaDB、Samba/LDAP、Authentik/LLNG、Nextcloud）
+本报告按[开源自部署应用研究 Module 规范 v1.1](./application-research-module-spec.md)研究 Kanban 主题。首轮事实采集于 2026-08-10；2026-08-13 按规范补做商业基准反向发现、目录补漏、社区/付费边界和同日动态指标刷新。报告是选型快照，不是当前部署说明。
+
+```yaml
+topic: kanban
+title: 开源自部署 Kanban 应用
+snapshot_date: 2026-08-13
+decision_for: ANAS Runtime Module 候选
+must_be:
+  - 可获得源代码并允许自行部署
+  - 提供多人 Kanban，或在相邻类别明确标注单人/套件属性
+  - 上游、许可证和可用部署路径仍可访问
+deployment_target:
+  os: Linux
+  runtime: Docker Engine + Docker Compose v2
+  ingress: Traefik HTTPS
+  architectures: [amd64, arm64]
+target_users: 家庭、小团队、研发团队
+expected_scale: 5-50 用户，单实例 1k-10k cards
+questions:
+  - 哪些项目值得进入 Module PoC？
+  - 社区自部署版能否接 ANAS IAM？
+  - 能否复用关系数据库、Nextcloud、入口与备份能力？
+```
 
 ## 1. 结论先行
 
@@ -10,6 +31,7 @@
 1. **默认独立 module：Vikunja**。成熟度、资源占用、OIDC、LDAP、REST API/Webhook、迁移能力和 Go 单体部署之间最平衡。它不只是纯看板，适合个人和中小团队的任务、日历、Gantt/表格需求。
 2. **现代纯看板优先：Kan**。界面和 Trello 心智最接近，AGPL、PostgreSQL、Docker Compose、通用 OIDC、API Key 和原生 MCP 都很贴合 ANAS；但项目始于 2023 年，成熟度和升级历史弱于 Vikunja/Wekan，建议先标为 `experimental`。
 3. **零新增服务：Nextcloud Deck**。ANAS 已有 Nextcloud、SAML/LDAP、移动端和文件体系，启用 Deck 应用即可获得最低运维成本。短板是大型看板性能、工作流深度和 API 稳定性不如专用系统。
+4. **新增的轻量现代候选：Kaneo**。规范补漏发现它已具备 MIT、PostgreSQL、Docker、通用 OIDC 与 OpenAPI，值得与 Kan 同批做 experimental PoC；但项目不足两年，暂不替代成熟度更高的 Vikunja。
 
 备选：
 
@@ -20,65 +42,141 @@
 
 不建议作为首个 module：Plane、OpenProject、Taiga、Huly。它们是完整项目管理套件，依赖和运维面明显更大；Plane/OpenProject 社区版的企业 SSO 边界也不符合 ANAS 当前“开源版即可接 IAM”的理想契约。
 
-## 2. 范围、口径与局限
+## 2. 范围、发现方法与局限
 
 ### 2.1 纳入范围
 
-本报告把候选分成四类：
+本报告把候选分成五类：
 
 - 以 Kanban/Trello 替代为核心的多人 Web 应用；
 - 同时提供看板的开源任务/项目管理套件；
 - 已在 ANAS 生态内或能显著复用现有基础设施的应用；
+- 源码可见/开放核心但不满足严格开源定义的应用；
 - 经常出现在推荐列表、但已停更或已改为非开源许可证的项目，用于排雷。
 
-“当前所有”无法做数学意义的穷尽：个人仓库每天都可能出现。本次从用户给出的 [AlternativeTo Kanba 列表](https://alternativeto.net/software/kanba/?license=opensource&platform=self-hosted)、[Opensource.com Trello 替代文章](https://opensource.com/alternatives/trello)、GitHub 主题/搜索、项目官网和官方文档交叉扩展，共核对 30 余个代表性项目。未把仅有静态单机板、编辑器插件、纯白板、SaaS-only 项目列入主表。
+“当前所有”无法做数学意义的穷尽：目录标签可能错误，个人仓库每天都可能出现。本次核对 40 余个有名称的项目；仅静态单机板、编辑器插件、纯白板和 SaaS-only 产品进入排除项而不进入严格开源排名。
 
-### 2.2 指标口径
+### 2.2 发现来源与检索边界
 
-- Star、最后推送时间、许可证和归档标志来自 GitHub 官方仓库 API，快照时间为 2026-08-10；Star 取整显示，完整值见 §8。
+本轮使用了相互独立的四类来源，并打开 AlternativeTo 第二页：
+
+- [AlternativeTo：Trello 的 Open Source + Self-Hosted alternatives](https://alternativeto.net/software/trello/?license=opensource&platform=self-hosted)及[第二页](https://alternativeto.net/software/trello/?license=opensource&p=2&platform=self-hosted)；
+- 用户给出的 [AlternativeTo：Kanba alternatives](https://alternativeto.net/software/kanba/?license=opensource&platform=self-hosted)；
+- [awesome-selfhosted](https://awesome-selfhosted.net/) 与 [selfh.st Apps](https://selfh.st/apps/) 的 task/project management 分类；
+- [Opensource.com 的 Trello 替代文章](https://opensource.com/alternatives/trello)、GitHub/GitLab 搜索、候选官方 alternatives/竞品页。
+
+目录只用于发现。许可证、部署、认证、API、商业边界和维护状态均回到上游文档、仓库或配置核验。第二页补入 **Kaneo、Operately、Fira、Koge Kanban**；进一步搜索补入 **Tasks.md**。
+
+### 2.3 头部商业基准反向发现
+
+| 商业基准 | 核心比较场景 | 反向发现或确认的开源候选 |
+| --- | --- | --- |
+| Trello | 最低学习成本的 board/list/card、Power-Ups、移动端 | Wekan、Kan、PLANKA、4ga Boards、Kaneo、Kanboard |
+| Jira | Issue、workflow、Scrum、报表、研发集成 | Plane、OpenProject、Taiga、Tuleap、禅道、GitLab |
+| Asana | List/Board/Timeline、任务依赖、团队协作 | Vikunja、Leantime、Plane、OpenProject |
+| Monday.com | 多视图、自定义字段、自动化和 dashboard | Plane、OpenProject、Huly、ERPNext/Odoo |
+| ClickUp | 任务、文档、目标、时间与 AI 一体化 | Plane、Huly、Leantime、Operately |
+| Linear | 现代研发 UX、cycles、快捷键、API | Plane、Kaneo、Kan、Huly |
+
+这些闭源产品只建立用户场景与发现入口，不参与严格开源排名。
+
+### 2.4 指标口径
+
+- Star、创建日、最后推送时间、许可证和归档标志来自 GitHub 官方仓库 API，动态快照刷新到 2026-08-13；未在同日成功获取的值明确留空。
 - “活跃度”综合最近推送、发行节奏和项目自述。仓库有自动化提交不等于健康社区，故只分为高/中/低/停止。
 - “成熟度”综合项目年龄、升级历史、文档、API、部署方式和维护状态，不等同于功能多少。
 - “社区版 SSO”只认免费自部署版本可用的 LDAP、OIDC 或 SAML；社交登录不自动等于通用企业 SSO。
-- “AI”分为原生 AI、官方 MCP/Agent、仅能通过 API/Webhook 外接三档。
+- AI 统一按规范分为 A 原生可自选模型、B 原生但受限、C 可通过稳定 API/Webhook/MCP 集成、D 只能靠不稳定接口或 UI 自动化。
 - 移动平台区分原生 App、桌面封装和响应式 Web/PWA，避免把“手机浏览器可打开”写成“有 App”。
 
-## 3. 主流严格开源候选总表
+### 2.5 候选台账摘要
 
-符号：✅ 原生/官方支持；◐ 有限制、插件或仍在早期；— 未确认或没有。Star 为 2026-08-10 快照。
+| 分层 | 项目 | 发现来源与去向 |
+| --- | --- | --- |
+| 核心 | Kan、Vikunja、Deck、Wekan、4ga、Kanboard、Kaneo、Leantime、Taiga、Plane CE、OpenProject CE、Tududi、Scrumboy、Kanba | 严格开源、可自部署且看板是核心能力；进入产品/部署表 |
+| 相邻 | Huly、Operately、Tasks.md、GitLab、Gitea、Forgejo、Tuleap、禅道、Redmine、Phorge、ERPNext、Odoo、Super Productivity | 套件、研发平台、文件型单人板或客户端；单列，不与纯看板同分 |
+| 源码可见 | PLANKA、Taskosaur | 当前许可证不属于严格开源；单列商业/许可风险 |
+| 停止/不成熟 | Focalboard、Taskcafe、Restyaboard、Lavagna、TaskBoard、Fira、Koge Kanban | 明确停更、长期低活动或生产证据不足 |
+| 排除 | Trello、Jira、Asana、Monday、ClickUp、Linear、Notion board、GitHub Projects | SaaS/闭源或不可独立自部署；仅作商业基准 |
 
-| 项目 | 定位 / 许可证 | Web 与客户端 | 社区版 SSO | API / 自动化 | AI 接入 | Star | 活跃度 / 成熟度 | ANAS 适配 |
-| --- | --- | --- | --- | --- | --- | ---: | --- | --- |
-| **Kan** | 现代 Trello 替代；AGPL-3.0 | ✅ Web/响应式；无官方原生 App | ✅ 通用 OIDC，另有 Google/GitHub/Discord | ✅ API Key；MCP 提供 46 个工具 | ✅ 官方 MCP，可由 Codex/Claude/Copilot 控制 | 5,327 | 高 / 成长中 | **A**：PostgreSQL、Compose、OIDC、MCP 非常匹配；先 experimental |
-| **Vikunja** | 任务管理 + Kanban/List/Gantt/Table；AGPL-3.0 | ✅ Web；官方桌面；Android/iOS 功能较基础 | ✅ OIDC；✅ LDAP | ✅ REST/OpenAPI、Webhook、OAuth2 server、n8n | ◐ 无内置生成式 AI；API、Webhook、bot user、agent CLI 易外接 | 5,029 | 高 / 成熟 | **A**：单容器/单二进制、Go、PG/MariaDB、IAM 都匹配 |
-| **Nextcloud Deck** | Nextcloud 内的团队/个人看板；AGPL-3.0 | ✅ Web；✅ Android、iOS | ✅ 继承 Nextcloud LDAP/SAML/OIDC 体系 | ✅ OCS REST API；Nextcloud 活动/日历/文件集成 | ◐ 可经 REST/Nextcloud Assistant 外接，非 Deck 原生 | 1,410 | 高 / 成熟 | **A**：现有 Nextcloud 直接启用；规模性能要压测 |
-| **Wekan** | 功能完整的 Trello 克隆；MIT | ✅ Web/PWA；Snap/多架构包；无可靠官方原生移动 App | ✅ LDAP、OAuth2/OIDC，另有多种认证配置 | ✅ REST API、Webhook、导入导出 | ◐ REST/Webhook 外接，无原生 AI | 21,027 | 很高 / 很成熟 | **B+**：功能强；MongoDB/FerretDB 与 Meteor 增加新栈 |
-| **4ga Boards** | 轻量实时纯看板；MIT | ✅ 响应式 Web；无原生 App | ✅ 通用 OIDC | ◐ 项目接口和实时能力可扩展，公开 API 生态尚小 | ◐ 无原生 AI | 687 | 高 / 成长中 | **B+**：Compose/OIDC 好；较年轻，需补 API 和升级验证 |
-| **Kanboard** | 极简传统 Kanban；MIT | ✅ 响应式 Web；无官方原生 App，存在第三方客户端 | ✅ LDAP；◐ OAuth/OIDC/SAML 主要靠插件或前置认证 | ✅ 完整 JSON-RPC API、Webhook、插件/事件系统 | ◐ API/插件外接 | 9,785 | 中 / 很成熟；官方 maintenance mode | **B**：轻量可靠；不宜期待大功能演进 |
-| **Leantime** | 目标导向 PM + 看板；AGPL-3.0 | ✅ Web/PWA；无主流官方原生 App | ✅ OIDC、LDAP（部分高级配置可能需认证插件） | ✅ JSON-RPC API；插件；暂无内置 Webhook | ◐ AI/MCP 以 Pro/Marketplace 插件为主 | 11,292 | 高 / 成熟 | **B**：MariaDB、IAM 很匹配；需固定 OSS/插件功能边界 |
-| **Taiga** | Scrum + Kanban 套件；MPL-2.0 | ✅ Web；无当前官方原生 PM App | ◐ 核心没有通用企业 SSO；LDAP/OIDC/SAML 多依赖社区插件 | ✅ 完整 REST API、Webhook、GitHub/GitLab 集成 | ◐ API 外接，无核心原生 AI | 844（后端） | 中高 / 成熟 | **B-**：成熟但多容器、PG/RabbitMQ/Redis，IAM 需自维护插件 |
-| **Plane CE** | Linear/Jira 式 PM + 看板/周期/页面；AGPL-3.0 | ✅ Web/PWA；官方移动端对自部署 CE 支持仍需逐版核对 | **— CE 无通用 OIDC/SAML/LDAP**；付费层提供 | ✅ 180+ REST endpoints、Webhook、OAuth App | ✅ Plane AI、MCP/Agents；具体自托管版本/额度需核对 | 55,778 | 很高 / 成长为成熟 | **C+**：能力强，但 ≥4 GB、多服务，CE SSO 是硬缺口 |
-| **OpenProject CE** | 企业级 PM/Portfolio + 基础看板；GPL-3.0 | ✅ Web；✅ Android/iOS Beta（需 v17+、可信 HTTPS） | ◐ LDAP 登录；**OIDC/SAML 为 Enterprise add-on** | ✅ HATEOAS REST API v3、OpenAPI | ◐ 官方 MCP 为 Enterprise；CE 可用 REST 外接 | 15,817 | 很高 / 很成熟 | **C+**：专业但重；SSO/MCP 社区版缺失 |
-| **Huly** | Jira/Linear/Slack/Notion 一体化；EPL-2.0 | ✅ Web/桌面；移动能力非主要卖点 | ◐ 自托管认证与企业 SSO需逐版核对 | ✅ 丰富内部服务接口；外部 API 文档成熟度一般 | ✅ 平台含 AI/协作能力，但自托管配置复杂 | 27,288 | 高 / 成长中 | **C**：系统面和资源面过大，不适合作为轻量 module |
-| **Tududi** | 个人/小团队任务、项目、笔记 + Kanban；MIT | ✅ Web；借 CalDAV 接 Tasks.org、Apple Reminders 等 | ✅ OIDC（新版本）；CalDAV 另有 Basic Auth | ◐ CalDAV 强，通用业务 API 生态较小 | ✅ 可选 OpenAI Key 的 Daily Brief/Insights | 3,230 | 很高 / 年轻 | **B（观察）**：轻、OIDC、AI；多人权限和升级历史需验证 |
-| **Scrumboy** | 可分享实时看板/Issue tracker；AGPL-3.0 | ✅ Web/PWA | ✅ OIDC/SSO | ✅ API；✅ MCP client/server 能力 | ✅ MCP、语音/AI 接入导向 | 427 | 很高 / 很年轻 | **B（观察）**：方向匹配但生产样本和历史不足 |
-| **Kanba** | 面向 maker/小团队的轻量 Trello 替代；MIT | ✅ Web；无官方原生 App | ◐ Supabase Auth/社交登录；未确认通用 OIDC/SAML/LDAP | ◐ 使用 Supabase/Next.js API，尚无成熟公开集成 API 契约 | — 未见原生 AI | 638 | 高 / 很年轻（2025） | **C+（观察）**：正是参考链接对象，但 Supabase/Stripe 架构与 ANAS 复用度低 |
+## 3. 严格开源核心候选
 
-### 3.1 与 Git/ERP 平台捆绑的可用替代
+符号：✅ 官方原生；◐ 有限制、插件或早期；❌ 官方明确不支持；— 未确认或不适用。平台项不把移动网页写成原生 App；Star 为 2026-08-13 同日快照。
+
+### 3.1 产品能力与平台
+
+| 项目 | 定位 / 许可证 | Web | 桌面 | Android | iOS | 社区版 SSO | API / 自动化 | AI 等级 | Star | 活跃 / 成熟 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | --- |
+| **Vikunja** | 任务 + 多视图；AGPL-3.0 | ✅ 完整 | ✅ 官方封装 | ◐ 官方、基础功能 | ◐ 官方、基础功能 | ✅ OIDC、LDAP | ✅ REST/OpenAPI、Webhook、OAuth2、n8n | C | 5,050 | 高 / 成熟 |
+| **Kan** | 现代 Trello 替代；AGPL-3.0 | ✅ 响应式 | — | — | — | ✅ 通用 OIDC | ✅ API Key；官方 MCP 46 tools | C（MCP） | 5,343 | 高 / 成长 |
+| **Kaneo** | 轻量现代 PM/Kanban；MIT | ✅ 响应式 | — | — | — | ✅ 通用 OAuth2/OIDC | ✅ OpenAPI API | C | 8,206 | 高 / 早期 |
+| **Nextcloud Deck** | Nextcloud 看板 app；AGPL-3.0 | ✅ 完整 | — | ✅ 官方 | ✅ 官方 | ✅ 继承 Nextcloud LDAP/SAML/OIDC | ✅ OCS REST；活动/日历/文件 | C | 1,412 | 高 / 成熟 |
+| **Wekan** | 完整 Trello 克隆；MIT | ✅ PWA | ◐ Snap/桌面式包 | — | — | ✅ LDAP、OAuth2/OIDC 等 | ✅ REST、Webhook、导入导出 | C | 21,026 | 高 / 成熟 |
+| **4ga Boards** | 轻量实时纯看板；MIT | ✅ 响应式 | — | — | — | ✅ 通用 OIDC | ◐ 公开 API 契约仍弱 | D/C 边界 | 689 | 高 / 成长 |
+| **Kanboard** | 极简传统 Kanban；MIT | ✅ 响应式 | — | ◐ 第三方 | ◐ 第三方 | ✅ LDAP；◐ OIDC/SAML 插件 | ✅ JSON-RPC、Webhook、插件/事件 | C | 9,791 | 中 / 成熟；maintenance mode |
+| **Leantime** | 目标导向 PM + 看板；AGPL-3.0 | ✅ PWA | — | — | — | ◐ OIDC、LDAP；插件边界需锁版 | ✅ JSON-RPC；插件；无核心 Webhook | B/C（插件） | 11,322 | 高 / 成熟 |
+| **Taiga** | Scrum + Kanban；MPL-2.0 | ✅ 完整 | — | — | — | ◐ 通用 SSO 多依赖社区插件 | ✅ REST、Webhook、GitHub/GitLab | C | 844（后端） | 中高 / 成熟 |
+| **Plane CE** | Linear/Jira 式 PM；AGPL-3.0 | ✅ PWA | ◐ 官方设备文档 | ◐ 自部署 CE 逐版核对 | ◐ 自部署 CE 逐版核对 | ❌ CE 无通用 OIDC/SAML/LDAP | ✅ 180+ REST、Webhook、OAuth App | B/C；AI entitlement 需锁版 | 55,901 | 高 / 成长为成熟 |
+| **OpenProject CE** | 企业 PM + 基础 board；GPL-3.0 | ✅ 完整 | — | ◐ 官方 Beta | ◐ 官方 Beta | ◐ LDAP；❌ OIDC/SAML 为 Enterprise | ✅ REST v3/OpenAPI | B/C；MCP 为 Enterprise | 15,836 | 高 / 成熟 |
+| **Tududi** | 任务/项目/笔记 + Kanban；MIT | ✅ 响应式 | — | ◐ 经 CalDAV 客户端 | ◐ 经 CalDAV 客户端 | ✅ OIDC | ◐ CalDAV 强；公共业务 API 生态小 | A/B：OpenAI Key，模型范围需核对 | 3,242 | 高 / 早期 |
+| **Scrumboy** | 实时看板/Issue tracker；AGPL-3.0 | ✅ PWA | — | — | — | ✅ OIDC | ✅ API、MCP | C（MCP） | 428 | 高 / 很早期 |
+| **Kanba** | maker/小团队轻看板；MIT | ✅ 响应式 | — | — | — | — Supabase Auth；通用 OIDC 未确认 | ◐ 无稳定公开业务契约 | D | 640 | 高 / 很早期 |
+
+### 3.2 部署、数据与 ANAS 适配
+
+| 项目 | 官方自部署拓扑 | 必须依赖 | 可选/联网依赖 | 数据与备份面 | 镜像/架构证据 | ANAS 适配 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Vikunja** | 单容器/单二进制 | SQLite 或 PostgreSQL/MySQL | SMTP、S3/搜索等可选 | DB + attachments/config | 官方 Docker/二进制；amd64/arm64 | **A**：最小拓扑、Go、关系数据库、OIDC 都匹配 |
+| **Kan** | web + migration | PostgreSQL | Redis、SMTP、S3、MCP client 可选 | PG + 对象/附件 + secret | 官方 GHCR/Compose；双架构需锁版确认 | **A**：PG/OIDC/API/MCP 契约清楚；先 experimental |
+| **Kaneo** | web/API + PostgreSQL | PostgreSQL | OAuth providers、SMTP | PG + 上传/配置 secret | 官方 Docker/Compose；双架构需 PoC | **A**：PG、通用 OIDC、OpenAPI 高度匹配；不足两年，先 experimental |
+| **Deck** | 现有 Nextcloud app | Nextcloud 及其 DB/文件 | App Store 或离线 app 包 | 复用 Nextcloud DB/files/config | 跟随 ANAS Nextcloud 镜像 | **A**：零新增服务；大板性能和 app 兼容要压测 |
+| **Wekan** | Meteor app + MongoDB | MongoDB（或上游验证过的兼容后端） | SMTP、Webhook | MongoDB + attachments/config | 官方多架构镜像/Snap | **B**：成熟，但新增 document DB 与 Meteor 运维面 |
+| **4ga** | 官方 Compose 多服务 | 以锁定 Compose 为准 | OIDC/SMTP | DB + attachments/config | 官方 Docker；架构需 PoC | **B**：OIDC 好、年轻；API 与恢复契约待验证 |
+| **Kanboard** | PHP app；可单容器 | SQLite/MySQL/PostgreSQL | SMTP、插件 | DB + data/plugins/config | 官方镜像；架构需锁版确认 | **B**：极轻且 API 强；功能处于维护模式 |
+| **Leantime** | PHP app + DB | MySQL/MariaDB | OIDC/LDAP/AI/MCP 插件、SMTP | DB + userdata + plugins | 官方 Docker；架构/插件 entitlement 需核对 | **B**：MariaDB 复用好；免费插件边界是风险 |
+| **Taiga** | front/back/events/async + 基础服务 | PostgreSQL、RabbitMQ/Redis 等 | SMTP、第三方 SSO 插件 | PG + media + queue/config | 官方 taiga-docker；多架构需 PoC | **B**：成熟可用，但拓扑和 IAM 维护成本高 |
+| **Plane CE** | web/api/worker/live + PG/Redis/MinIO | PostgreSQL、Redis、对象存储 | AI/集成外联 | PG + object storage + secrets | 官方 Docker/K8s；最低约 2 CPU/4 GB | **C**：API 强但重，CE SSO 是硬缺口 |
+| **OpenProject CE** | 官方包/容器 + PostgreSQL | PostgreSQL | 缓存、SMTP、企业 add-ons | PG + attachments/config | 官方 Docker/包/K8s | **C**：专业且重；社区版 OIDC/SAML/MCP 缺失 |
+| **Tududi** | 应用容器 | 内置数据存储（锁版确认） | CalDAV、Telegram、OpenAI | DB + config/secrets | 官方 Docker；架构需 PoC | **B**：轻、OIDC、AI；多人/恢复历史仍短 |
+| **Scrumboy** | 官方容器 | 以锁定 release Compose 为准 | OIDC、MCP/语音 | DB/files/config | GHCR；双架构未确认 | **B（观察）**：契约方向好，生产历史不足 |
+| **Kanba** | Next.js + Supabase 拓扑 | Supabase DB/Auth/Storage | Stripe 仅托管业务；自托管可不配 | Supabase 数据/对象/secret | 自建路径可用；官方镜像/架构证据弱 | **C**：比传统 PG module 多一层 Supabase 运维 |
+
+### 3.3 相邻候选与套件型替代
 
 这些系统有看板，但不应只为看板而部署：
 
 | 项目 | 看板特点 | SSO/API/AI | Star / 活跃度 | ANAS 判断 |
 | --- | --- | --- | --- | --- |
-| **Gitea**（MIT） | Issues/Projects 看板适合研发团队 | LDAP/OAuth2/OIDC；完整 REST API；可接外部 AI | 57,299 / 很高 | 若未来已有 Git module，顺带使用最合理；不是通用业务看板首选 |
+| **Gitea**（MIT） | Issues/Projects 看板适合研发团队 | LDAP/OAuth2/OIDC；完整 REST API；可接外部 AI | 57,351 / 很高 | 若未来已有 Git module，顺带使用最合理；不是通用业务看板首选 |
 | **Forgejo**（GPL-3.0+，主要在 Codeberg） | Gitea 系谱的项目看板 | LDAP/OAuth2/OIDC；API | 活跃成熟 | 比 Gitea 更社区治理；同样仅推荐给代码研发场景 |
-| **ERPNext**（GPL-3.0） | DocType/任务的 Kanban 视图 | OAuth/LDAP、REST、Frappe 扩展 | 37,913 / 很高 | 只有同时需要 ERP 时才合理；部署和数据模型远超看板需求 |
-| **Odoo Community**（LGPL 核心） | Project/CRM 等模型的 Kanban 视图 | XML-RPC/JSON-RPC；认证和 AI 功能存在版本/企业版边界 | 53,627 / 很高 | 适合已有 Odoo 的组织，不建议作为独立看板 module |
-| **Super Productivity**（MIT） | 个人 Kanban、时间盒、时间跟踪；GitHub/GitLab/Jira/OpenProject 集成 | 本地优先/文件同步，非标准多人服务 API/SSO | 21,244 / 很高 | 更像跨平台个人客户端，不符合 ANAS 多用户服务 module 主目标 |
+| **ERPNext**（GPL-3.0） | DocType/任务的 Kanban 视图 | OAuth/LDAP、REST、Frappe 扩展 | 38,016 / 很高 | 只有同时需要 ERP 时才合理；部署和数据模型远超看板需求 |
+| **Odoo Community**（LGPL 核心） | Project/CRM 等模型的 Kanban 视图 | XML-RPC/JSON-RPC；认证和 AI 功能存在版本/企业版边界 | 53,691 / 很高 | 适合已有 Odoo 的组织，不建议作为独立看板 module |
+| **Super Productivity**（MIT） | 个人 Kanban、时间盒、时间跟踪；GitHub/GitLab/Jira/OpenProject 集成 | 本地优先/文件同步，非标准多人服务 API/SSO | 21,319 / 很高 | 更像跨平台个人客户端，不符合 ANAS 多用户服务 module 主目标 |
+| **Huly**（EPL-2.0） | Issue、文档、聊天、日历等一体化 | 自托管认证/API/AI 边界需专项核验 | 同日 API 限流，未列 Star / 活跃 | 系统和资源面远超轻量看板 |
+| **Operately**（许可证需按 LICENSE 复核） | 公司 operating system：Goals、Projects、check-ins | API token/CLI 可供 AI agent；自部署 SSO 未确认 | 539 / 高、成长 | 适合 OKR/公司治理，不是 Trello 式纯看板 |
+| **Tasks.md**（MIT） | 单实例 Markdown 文件型看板 | 无标准多人 IAM；直接以文件/容器卷自动化 | 2,180 / 中 | 低资源、Git/AI 友好，但不满足统一多用户默认项 |
 | **GitLab Self-Managed Free/CE** | Issue Boards 与代码、MR、Milestone 结合；Free 层有项目看板 | ✅ REST Board API；✅ Self-Managed Free 的实例级 SAML/LDAP/OmniAuth；AI 多为付费能力 | GitLab 主仓库在 GitLab.com，不用 GitHub Star横比 | 已有 GitLab 时直接用；只为看板部署过重 |
 | **Tuleap**（GPL-2.0-or-later） | 完整 ALM，Tracker、Scrum、Kanban、Git、测试和文档 | REST API；官方称不区分 Enterprise/Community 功能，认证仍需按发行版核对 | 官方 Git 仓库不以 GitHub API 计数 | 软件研发和强追踪场景成熟，但明显不是轻量看板 |
-| **禅道 ZenTao 开源版** | 中国团队常用 Scrum/Kanban/需求/缺陷/测试套件 | API 与企业集成因版本/版本线而异；SSO/AI 需核对开源版边界 | 1,666 / 高 | 本地化强；ZPL/产品线和免费功能边界需法务及 PoC 单独核实 |
-| **Phorge**（Apache-2.0） | Phabricator 的社区延续，Workboards 面向研发任务 | Conduit API；认证扩展丰富；无现代原生 AI | 195 / 活跃镜像 | 适合既有 Phabricator 用户，不建议新建通用看板实例 |
-| **Redmine**（GPL-2.0） | 核心是 Issue/Gantt；Kanban 通常依赖 Agile/看板插件 | REST API、LDAP；OIDC/SAML 和 Kanban 都依赖插件选择 | 6,015（GitHub 镜像）/ 成熟 | 不能把插件能力写成 Redmine 社区核心；仅在已有 Redmine 时考虑 |
+| **禅道 ZenTao 开源版** | 中国团队常用 Scrum/Kanban/需求/缺陷/测试套件 | API 与企业集成因版本/版本线而异；SSO/AI 需核对开源版边界 | 1,667 / 高 | 本地化强；ZPL/产品线和免费功能边界需法务及 PoC 单独核实 |
+| **Phorge**（Apache-2.0） | Phabricator 的社区延续，Workboards 面向研发任务 | Conduit API；认证扩展丰富；无现代原生 AI | 196 / 活跃镜像 | 适合既有 Phabricator 用户，不建议新建通用看板实例 |
+| **Redmine**（GPL-2.0） | 核心是 Issue/Gantt；Kanban 通常依赖 Agile/看板插件 | REST API、LDAP；OIDC/SAML 和 Kanban 都依赖插件选择 | 6,016（GitHub 镜像）/ 成熟 | 不能把插件能力写成 Redmine 社区核心；仅在已有 Redmine 时考虑 |
+
+### 3.4 社区自部署、官方托管与付费边界
+
+| 项目/组 | 开源社区自部署 | 官方免费托管 | 付费/企业差异 | 自部署限制或隐性外部依赖 |
+| --- | --- | --- | --- | --- |
+| Kan | AGPL，核心看板、OIDC、API/MCP 可自部署；无 license key | 有，额度以官网当期为准 | 托管容量/服务；未发现社区核心 SSO 被锁 | S3/SMTP/社交登录可外联；MCP client 需 Node/npm |
+| Vikunja | AGPL，自部署核心完整；不要求 license key | 有试用/托管产品 | Vikunja Pro 是可选自部署功能集，具体 entitlement 按锁定版本核验 | Pro 启用时会联系 license server；社区核心可离线 |
+| Kaneo | MIT，自部署核心、通用 OIDC、API | 官方托管状态/额度未确认 | 未确认是否存在私有企业功能 | 社交 OAuth/SMTP 可外联；本地账号可独立运行 |
+| Nextcloud Deck | AGPL app，依附任一社区 Nextcloud | 各托管商而非 Deck 单独套餐 | Nextcloud 企业支持不改变 Deck 开源许可 | App Store 联网可用离线包替代；继承 Nextcloud 的限制 |
+| Wekan / Kanboard / 4ga | MIT 社区自部署，无已知 license key | Wekan 有商业托管/支持；其余不统一 | 主要为托管/支持；Kanboard 功能依插件生态 | 第三方插件必须单独核验许可、维护和 API 兼容 |
+| Leantime | AGPL 核心可自部署 | 有云服务 | Advanced Auth、AI/MCP、自定义字段等存在插件/Pro 边界 | Marketplace 插件可能闭源或需订阅；必须锁版验 entitlement |
+| Plane CE | AGPL CE，无社区用户上限 | Cloud Free 有独立额度 | Commercial/Pro/Business/Enterprise 增加 SSO、工作流、LDAP、审计、AI 配额等 | CE、Commercial 是不同代码/发行线；不要把 Cloud Free 功能写成 CE |
+| OpenProject CE | GPL CE，可免费自部署 | Cloud 试用/套餐 | OIDC/SAML、MCP、组同步和多项治理能力为 Enterprise add-on | Enterprise on-prem 需 license；CE API 可独立运行 |
+| Taiga | MPL 前后端可自部署 | 官方 SaaS 有免费/付费计划 | 托管容量与支持；企业 SSO主要靠社区插件而非核心付费层 | 插件不是官方稳定契约；部署仍需多项基础服务 |
+| Tududi / Scrumboy / Kanba | 社区源码可部署 | 有无托管及额度变化快 | 未确认统一企业矩阵 | AI、Telegram、Supabase、OAuth 等可产生外部依赖；逐 release 核验 |
+
+报告未确认的官方 SaaS 用户数、存储和 AI credits 不外推为社区自部署上限；反过来，仓库存在也不证明同品牌的商业插件属于开源版。
 
 ## 4. 源码可见但不再属于严格开源
 
@@ -93,12 +191,24 @@
 
 | 项目 | Star | 最后有效开发信号 | 状态判断 | 替代建议 |
 | --- | ---: | --- | --- | --- |
-| **Focalboard standalone** | 26,386 | README 明示 “currently not maintained”；最后正式版 8.0.0（2024） | 不作为新生产部署；桌面端/Server/API 曾经完整 | Kan、Vikunja、Wekan |
+| **Focalboard standalone** | 26,396 | README 明示 “currently not maintained”；最后正式版 8.0.0（2024） | 不作为新生产部署；桌面端/Server/API 曾经完整 | Kan、Vikunja、Wekan |
 | **Taskcafe** | 5,208 | 最后代码推送 2023-07 | 事实停更，虽未归档 | Plane/Kan/Vikunja |
 | **Restyaboard** | 2,085 | 最后代码推送 2023-10，最后发行版 2022 | README 称 active 与仓库活动矛盾；旧 PHP/ElasticSearch 部署面大 | Wekan/Kanboard |
 | **Lavagna** | 641 | 2024-08，仓库已 archived | 停止 | Kanboard/Vikunja |
 | **TaskBoard** | 1,401 | 提交信号稀疏，架构和 UI 较旧 | 低维护，不建议新部署 | Kanboard/4ga Boards |
-| **Kanboard** | 9,785 | 2026 仍发布修复 | 不是停更，但官方明确 maintenance mode | 低资源保守场景仍可选 |
+| **Kanboard** | 9,791 | 2026 仍发布修复 | 不是停更，但官方明确 maintenance mode | 低资源保守场景仍可选 |
+| **Fira** | 83 | 最后 push 2025-11；项目创建不足一年 | Markdown/Git 方向有趣，但无持续 release/多人 IAM 生产证据 | Tasks.md 或 Kan |
+| **Koge Kanban** | 7 | 2026-04 后无 push；README 自述 AI/vibe-coding 生成 | 极早期，Gemini AI 外联且无成熟运维契约 | Kan/Scrumboy |
+
+### 5.1 明确排除清单
+
+| 项目/类型 | 排除原因 | 是否保留观察 |
+| --- | --- | --- |
+| Trello、Jira、Asana、Monday.com、ClickUp、Linear | 闭源/SaaS 商业基准，不能自行部署开源服务 | 是，只用于反向发现和 UX 基准 |
+| GitHub Projects | SaaS-only，不存在可独立自部署服务 | 否；自部署研发平台看 GitLab/Gitea/Forgejo |
+| Notion database board、Obsidian Kanban 插件 | 主题相邻或客户端插件，不是独立多人 Kanban 服务 | 否；分别进入文档/笔记研究 |
+| 纯静态 HTML board、编辑器内 Kanban/TUI | 没有多账号服务端、持久化与协作契约 | 仅在“Git/文件型个人任务”专项观察 |
+| TaskView Community | source-available，自述 SAML/OIDC/API 但许可证和完整免费拓扑不满足严格开源口径 | 是，放入未来源码可见补录 |
 
 ## 6. 重点候选详评
 
@@ -185,6 +295,12 @@ Kanba 是 MIT、源码开放、自托管的年轻项目，强调简洁、速度�
 
 它目前没有 Kan 那样清晰的通用 OIDC、稳定公开业务 API 和 MCP 契约，也没有原生移动 App。可以继续观察 UI 和产品方向，但如果现在落 module，需要额外承担 Supabase 组件、认证映射与迁移维护；综合优先级低于名称相近但技术契约更完整的 **Kan**。
 
+### 6.9 Kaneo：规范补漏后进入 PoC 的候选
+
+Kaneo 是 2024-12 创建的 MIT 项目，定位介于 Kan 的纯看板和 Plane 的完整项目管理之间。官方文档明确提供 Docker、自托管 PostgreSQL、GitHub/Google/Discord 和通用 OAuth2/OIDC；API 文档由 OpenAPI 自动生成。这使它能直接消费 ANAS PostgreSQL 与 IAM，而不需要商业 SSO license。
+
+风险来自年龄而不是基本契约：项目不足两年，8k Star 增长很快，但 Star 不能替代升级、备份、安全响应和多人生产历史。建议与 Kan 同批建 `kaneo` experimental PoC，验证镜像双架构、数据库 migration 幂等、附件落点、API token 权限、禁止开放注册、OIDC JIT/登出、前一版本升级和空机恢复。通过后再决定 Kan 与 Kaneo 是否只保留一个同质 Module。
+
 ## 7. ANAS 落地方案
 
 ### 7.1 推荐顺序
@@ -194,7 +310,8 @@ Kanba 是 MIT、源码开放、自托管的年轻项目，强调简洁、速度�
 | 1 | 在现有 Nextcloud module 增加 Deck 可选 app | 新装/升级/禁用可 reconcile；REST smoke；SAML/LDAP 与移动端验证 |
 | 2 | 新增 `vikunja` experimental module | PG/MariaDB 二选一、OIDC、备份恢复、升级回滚、API/Webhook 全通过 |
 | 3 | 新增 `kan` experimental module | PostgreSQL、OIDC、Trello import、附件、API Key/MCP、迁移幂等通过 |
-| 4 | 对 Kan/Vikunja/Deck 做真实用户与资源对比 | 记录 idle/load RAM/CPU、首屏、1k/10k card、移动体验、恢复时间 |
+| 3 | 同批验证 `kaneo` experimental module | PostgreSQL、OIDC、OpenAPI、附件和升级恢复通过；与 Kan 二选一 |
+| 4 | 对 Kan/Kaneo/Vikunja/Deck 做真实用户与资源对比 | 记录 idle/load RAM/CPU、首屏、1k/10k card、移动体验、恢复时间 |
 | 5 | 按需求决定 Wekan/4ga/Kanboard | 只有明确用户场景再扩充，避免一次维护多个同质 module |
 
 ### 7.2 module 契约要求
@@ -211,7 +328,7 @@ Kanba 是 MIT、源码开放、自托管的年轻项目，强调简洁、速度�
 - 备份至少覆盖数据库、附件和必要配置；恢复后验证 board/card/comment/attachment、OIDC subject 映射和 API token。
 - 升级探针覆盖数据库 migration、前一 patch、至少一个前一 minor；数据破坏版本写入 `upgrade.data_breaking`。
 
-### 7.3 建议的实测评分权重
+### 7.3 可复算的文档预评分
 
 | 维度 | 权重 | 原因 |
 | --- | ---: | --- |
@@ -223,51 +340,74 @@ Kanba 是 MIT、源码开放、自托管的年轻项目，强调简洁、速度�
 | 移动与多平台 | 10% | 家庭/团队任务经常在手机录入 |
 | 资源占用 | 5% | NAS 需要与文件、IAM、数据库等服务共存 |
 
-按文档证据的预评分：Vikunja 88、Kan 85、Deck 83、Wekan 78、4ga 76、Kanboard 73、Leantime 72、Plane CE 66。分数只用于安排 PoC 顺序，不替代真实部署测试。
+每项按 `0-5` 打分：`0` 明确不支持，`1` 严重缺口，`2` 依赖商业层/高成本插件，`3` 可用但有限制，`4` 完整且有文档，`5` 与 ANAS 契约高度匹配且证据成熟。总分公式为 `Σ(分项 / 5 × 权重)`。这只是文档证据分，不把 Star 直接换算成分数。
 
-## 8. GitHub 指标快照
+| 项目 | IAM 20 | 运维 20 | API 15 | UX 15 | 活跃成熟 15 | 平台 10 | 资源 5 | 总分 /100 | 主要扣分依据 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Deck | 5 | 5 | 3.5 | 3.5 | 4.5 | 5 | 5 | 89.5 | API/大型看板性能与专业工作流有限 |
+| Vikunja | 4 | 4.5 | 5 | 4 | 4.5 | 3.5 | 4.5 | 86 | 移动端仅基础功能；OIDC WebView 需实测 |
+| Kan | 5 | 4 | 5 | 4.5 | 3.5 | 2 | 4 | 83 | 年轻、无原生移动端、升级历史较短 |
+| Kaneo | 5 | 4 | 4 | 4 | 3 | 2 | 4 | 77 | 不足两年，运维与生产案例仍少 |
+| Wekan | 4 | 2.5 | 4.5 | 4.5 | 5 | 2.5 | 2.5 | 75.5 | MongoDB/Meteor 新栈、无可靠原生移动 App |
+| 4ga | 5 | 4 | 2.5 | 4 | 3.5 | 2 | 4 | 74 | 公共 API/自动化契约和生产历史较弱 |
+| Kanboard | 2.5 | 4.5 | 5 | 3 | 3 | 2 | 5 | 70 | OIDC/SAML 依赖插件；maintenance mode |
+| Leantime | 3.5 | 3.5 | 3 | 4 | 4 | 2.5 | 3.5 | 69.5 | Auth/API/AI 插件与付费边界需锁版 |
+| Plane CE | 1 | 2 | 5 | 5 | 5 | 3 | 1.5 | 64.5 | CE 无通用 SSO；多服务、资源高 |
 
-数据来自各仓库 `https://api.github.com/repos/{owner}/{repo}`，采集于 2026-08-10。`pushed_at` 只表示仓库最近推送，不自动代表发布质量。
+Deck 的高分表示“对现有 ANAS 的增量成本最低”，不是说它在纯看板功能上胜过 Kan/Wekan。PoC 后用实测数据替换运维、平台和资源分；若需求是独立服务，比较时应排除 Deck 再排序。
 
-| 仓库 | Star | Fork | Open issues | 最近推送（UTC） | GitHub 许可证标识 |
-| --- | ---: | ---: | ---: | --- | --- |
-| `makeplane/plane` | 55,778 | 5,286 | 1,004 | 2026-08-10 | AGPL-3.0 |
-| `hcengineering/platform` | 27,288 | 2,095 | 844 | 2026-08-07 | EPL-2.0 |
-| `mattermost-community/focalboard` | 26,386 | 2,577 | 784 | 2026-05-18 | 未识别；README 明示未维护 |
-| `wekan/wekan` | 21,027 | 2,997 | 347 | 2026-08-10 | MIT |
-| `opf/openproject` | 15,817 | 3,419 | 199 | 2026-08-10 | GPL-3.0 |
-| `plankanban/planka` | 12,326 | 1,338 | 445 | 2026-08-10 | 未识别；官方为 Fair Use/商业许可 |
-| `Leantime/leantime` | 11,292 | 1,099 | 321 | 2026-08-10 | AGPL-3.0 |
-| `kanboard/kanboard` | 9,785 | 1,986 | 163 | 2026-08-01 | MIT |
-| `kanbn/kan` | 5,327 | 439 | 114 | 2026-08-08 | AGPL-3.0 |
-| `JordanKnott/taskcafe` | 5,208 | 470 | 22 | 2023-07-23 | MIT |
-| `go-vikunja/vikunja` | 5,029 | 600 | 238 | 2026-08-10 | AGPL-3.0 |
-| `chrisvel/tududi` | 3,230 | 233 | 16 | 2026-08-10 | MIT |
-| `RestyaPlatform/board` | 2,085 | 385 | 189 | 2023-10-26 | OSL-3.0 |
-| `kiswa/TaskBoard` | 1,401 | 296 | 55 | 2025-05-23 | MIT |
-| `nextcloud/deck` | 1,410 | 346 | 838 | 2026-08-10 | AGPL-3.0 |
-| `taigaio/taiga-back` | 844 | 300 | 94 | 2026-08-04 | MPL-2.0 |
-| `RARgames/4gaBoards` | 687 | 119 | 157 | 2026-08-09 | MIT |
-| `Kanba-co/kanba` | 638 | 102 | 11 | 2026-08-08 | MIT |
-| `digitalfondue/lavagna` | 641 | 113 | 28 | 2024-08-06 | GPL-3.0；已归档 |
-| `Taskosaur/Taskosaur` | 542 | 106 | 10 | 2026-07-21 | GitHub 未识别；实际 BSL |
-| `markrai/scrumboy` | 427 | 35 | 5 | 2026-08-10 | AGPL-3.0 |
-| `easysoft/zentaopms` | 1,666 | 398 | 0 | 2026-07-30 | GitHub 未识别；ZPL/版本线需单独核实 |
-| `redmine/redmine`（官方 SVN 镜像） | 6,015 | 2,455 | 3 | 2026-08-03 | GitHub 未识别；GPL-2.0 |
-| `phorgeit/phorge`（只读镜像） | 195 | 44 | 0 | 2026-08-09 | Apache-2.0 |
+## 8. GitHub 动态指标快照
 
-旁系大型平台：`go-gitea/gitea` 57,299 Star、`odoo/odoo` 53,627、`frappe/erpnext` 37,913、`super-productivity/super-productivity` 21,244；这些 Star 不能归因于看板模块本身。
+数据来自各仓库 `https://api.github.com/repos/{owner}/{repo}`，统一刷新于 2026-08-13。`pushed_at` 只表示仓库事件，不代表稳定 release；open issues 也可能包含 PR。Huly 请求遇到未认证 API 限流，因此同日值留空而不混用 8 月 10 日旧值。
+
+| 仓库 | Star | 创建 | 最近 push | 归档 | GitHub API 许可证标识 |
+| --- | ---: | --- | --- | --- | --- |
+| `makeplane/plane` | 55,901 | 2022-11 | 2026-08-13 | 否 | AGPL-3.0 |
+| `hcengineering/platform` | — | — | — | — | 同日请求限流；项目声明 EPL-2.0 |
+| `mattermost-community/focalboard` | 26,396 | 2020-10 | 2026-05-18 | 否 | 未识别；README 明示未维护 |
+| `wekan/wekan` | 21,026 | 2014-01 | 2026-08-13 | 否 | MIT |
+| `opf/openproject` | 15,836 | 2012-11 | 2026-08-13 | 否 | GPL-3.0 |
+| `plankanban/planka` | 12,343 | 2019-08 | 2026-08-10 | 否 | 未识别；官方为 Fair Use/商业许可 |
+| `Leantime/leantime` | 11,322 | 2015-01 | 2026-08-11 | 否 | AGPL-3.0 |
+| `kanboard/kanboard` | 9,791 | 2014-01 | 2026-08-11 | 否 | MIT |
+| `usekaneo/kaneo` | 8,206 | 2024-12 | 2026-08-12 | 否 | MIT |
+| `kanbn/kan` | 5,343 | 2023-10 | 2026-08-12 | 否 | AGPL-3.0 |
+| `JordanKnott/taskcafe` | 5,208 | 2020-06 | 2023-07-23 | 否 | MIT |
+| `go-vikunja/vikunja` | 5,050 | 2018-11 | 2026-08-13 | 否 | AGPL-3.0 |
+| `chrisvel/tududi` | 3,242 | 2023-11 | 2026-08-11 | 否 | MIT |
+| `BaldissaraMatheus/Tasks.md` | 2,180 | 2023-02 | 2026-03-08 | 否 | MIT |
+| `RestyaPlatform/board` | 2,086 | 2015-06 | 2023-10-26 | 否 | OSL-3.0 |
+| `nextcloud/deck` | 1,412 | 2017-01 | 2026-08-13 | 否 | AGPL-3.0 |
+| `kiswa/TaskBoard` | 1,401 | 2014-10 | 2025-05-23 | 否 | MIT |
+| `easysoft/zentaopms` | 1,667 | 2011-01 | 2026-07-30 | 否 | 未识别；ZPL/版本线需单独核实 |
+| `taigaio/taiga-back` | 844 | 2021-04 | 2026-08-04 | 否 | MPL-2.0 |
+| `RARgames/4gaBoards` | 689 | 2023-01 | 2026-08-13 | 否 | MIT |
+| `digitalfondue/lavagna` | 641 | 2014-10 | 2024-08-06 | 是 | GPL-3.0 |
+| `Kanba-co/kanba` | 640 | 2025-06 | 2026-08-08 | 否 | MIT |
+| `Taskosaur/Taskosaur` | 544 | 2025-07 | 2026-07-21 | 否 | 未识别；实际 BSL |
+| `operately/operately` | 539 | 2023-02 | 2026-08-12 | 否 | 未识别；按 LICENSE 复核 |
+| `markrai/scrumboy` | 428 | 2026-03 | 2026-08-13 | 否 | AGPL-3.0 |
+| `phorgeit/phorge`（只读镜像） | 196 | 2022-09 | 2026-08-12 | 否 | Apache-2.0 |
+| `Onix-Systems/Fira` | 83 | 2025-09 | 2025-11-13 | 否 | Apache-2.0 |
+| `dezuhan/Koge-Kanban` | 7 | 2025-12 | 2026-04-01 | 否 | MIT |
+| `redmine/redmine`（官方 SVN 镜像） | 6,016 | 2012-11 | 2026-08-03 | 否 | 未识别；项目 GPL-2.0 |
+
+旁系大型平台同日快照：`go-gitea/gitea` 57,351 Star、`odoo/odoo` 53,691、`frappe/erpnext` 38,016、`super-productivity/super-productivity` 21,319；这些 Star 不能归因于看板模块本身。GitLab/Tuleap/Forgejo 的权威仓库不在 GitHub，未用非官方镜像 Star 横比。
 
 ## 9. 主要来源
 
 ### 发现入口
 
 - [AlternativeTo：Kanba 的开源自托管替代](https://alternativeto.net/software/kanba/?license=opensource&platform=self-hosted)
+- [AlternativeTo：Trello 的开源自托管替代](https://alternativeto.net/software/trello/?license=opensource&platform=self-hosted)及[第二页](https://alternativeto.net/software/trello/?license=opensource&p=2&platform=self-hosted)
+- [selfh.st Apps](https://selfh.st/apps/)（目录每日更新，活动色只作发现信号）
+- [awesome-selfhosted](https://awesome-selfhosted.net/)
 - [Opensource.com：Trello alternatives](https://opensource.com/alternatives/trello)
 
 ### 官方仓库和功能文档
 
 - Kan：[GitHub](https://github.com/kanbn/kan)（README 含 Compose、OIDC、API key、MCP）
+- Kaneo：[GitHub](https://github.com/usekaneo/kaneo)、[通用 OAuth/OIDC](https://kaneo.app/docs/core/social-providers/custom-oauth)、[OpenAPI API](https://kaneo.mintlify.app/api-reference/introduction)
 - Vikunja：[安装](https://vikunja.io/docs/installing/)、[OIDC](https://vikunja.io/docs/openid/)、[文档/API/集成目录](https://vikunja.io/docs/)
 - Wekan：[GitHub](https://github.com/wekan/wekan)、[官方文档](https://wekan.github.io/docs/)、[REST API](https://wekan.github.io/api/)
 - Kanboard：[GitHub](https://github.com/kanboard/kanboard)、[官方文档、API、LDAP、插件](https://docs.kanboard.org/)
@@ -281,6 +421,10 @@ Kanba 是 MIT、源码开放、自托管的年轻项目，强调简洁、速度�
 - Focalboard：[官方仓库和未维护声明](https://github.com/mattermost-community/focalboard)
 - Tududi：[官方仓库](https://github.com/chrisvel/tududi)
 - Scrumboy：[官方仓库](https://github.com/markrai/scrumboy)
+- Tasks.md：[官方仓库](https://github.com/BaldissaraMatheus/Tasks.md)
+- Operately：[官方仓库](https://github.com/operately/operately)、[自托管 API token/AI agent](https://operately.com/help/use-with-openclaw/)
+- Fira：[官方仓库](https://github.com/Onix-Systems/Fira)、[产品说明](https://fira.onix.team/)
+- Koge Kanban：[官方仓库](https://github.com/dezuhan/Koge-Kanban)
 - Kanba：[官方仓库和部署说明](https://github.com/Kanba-co/kanba)
 - Taskosaur：[官方仓库](https://github.com/Taskosaur/Taskosaur)
 - GitLab：[Self-Managed Issue Boards API](https://docs.gitlab.com/api/boards/)、[Self-Managed Free SAML SSO](https://docs.gitlab.com/integration/saml/)
@@ -294,11 +438,16 @@ Kanba 是 MIT、源码开放、自托管的年轻项目，强调简洁、速度�
 文档研究无法替代以下实测：
 
 1. Kan、Vikunja、4ga 在 Authentik 与 LLNG 下的 JIT 建号、账号冲突、组/角色映射和移动端 OIDC。
-2. 三者在 1,000/10,000 cards、50 并发和大附件下的 CPU、RAM、数据库查询及 WebSocket 行为。
-3. 固定前一 patch/minor 的升级与回滚；migration 失败后能否安全重试。
-4. API token 的权限粒度、撤销、审计和备份恢复后的有效性。
-5. Kan MCP 是否能限制 destructive tool、workspace 与 board 范围；提示注入内容是否会导致越权操作。
-6. Deck 1.17.x 与 Nextcloud 34 的明确兼容范围、REST reorder 契约和移动端功能差异。
-7. Leantime 当前 release 中 OIDC/LDAP/API/MCP 各自究竟属于核心、免费插件还是付费 bundle。
+2. Kaneo 在 Authentik/LLNG 下的通用 OIDC、禁止注册、API token、附件与 migration 行为，并与 Kan 做同数据集 A/B。
+3. Kan/Kaneo/Vikunja/4ga 在 1,000/10,000 cards、50 并发和大附件下的 CPU、RAM、数据库查询及 WebSocket 行为。
+4. 固定前一 patch/minor 的升级与回滚；migration 失败后能否安全重试；amd64/arm64 镜像是否同 digest release 发布。
+5. API token 的权限粒度、撤销、审计和备份恢复后的有效性。
+6. Kan MCP 是否能限制 destructive tool、workspace 与 board 范围；提示注入内容是否会导致越权操作。
+7. Deck 1.17.x 与 Nextcloud 34 的明确兼容范围、REST reorder 契约和移动端功能差异。
+8. Leantime、Vikunja Pro、Plane CE/Commercial 当前 release 的社区/付费 entitlement 与是否联网校验。
 
 完成这些 PoC 后再把推荐从“文档预选”升级为 ANAS 稳定 module 决策。
+
+## 11. 更新周期
+
+在 2026-11-13 前，或在实施任一候选 Module 前，重新采集许可证、Star、创建/最近 push、稳定 release、镜像架构、SSO/API/AI entitlement 和社区/商业边界。优先关注 Kaneo 的升级与生产历史、Kan MCP 权限收敛、Vikunja Pro 对社区能力的影响、PLANKA 许可/SSO 变化、Plane CE 与 Commercial 的发行差异、OpenProject CE 的 board/SSO/MCP 边界，以及 Fira/Koge 是否恢复持续维护。
