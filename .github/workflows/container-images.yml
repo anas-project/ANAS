@@ -99,6 +99,7 @@ jobs:
           done < <(jq -c '.[]' .github/mirrors.json)
 
           selected='[]'
+          revision_modules='[]'
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             if [[ -z "$REQUESTED_MODULE" || "$REQUESTED_MODULE" == "all" ]]; then
               selected="$(jq -c '.' .github/images.json)"
@@ -114,7 +115,12 @@ jobs:
                 changed_modules="$(jq -c --arg module "$module" '. + [$module] | unique' <<<"$changed_modules")"
               fi
             done < <(jq -r '.[].context' .github/images.json)
-            selected="$(jq -c --argjson modules "$changed_modules" '[.[] | select(.module as $module | $modules | index($module))]' .github/images.json)"
+            revision_modules="$changed_modules"
+            if grep -Eq '^(\.github/images\.json|\.github/workflows/container-images\.yml|scripts/ci/runtime-image\.sh)$' <<<"$changed"; then
+              selected="$(jq -c '.' .github/images.json)"
+            else
+              selected="$(jq -c --argjson modules "$changed_modules" '[.[] | select(.module as $module | $modules | index($module))]' .github/images.json)"
+            fi
           fi
 
           if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
@@ -138,7 +144,7 @@ jobs:
                 echo "$module changed version from $old_version to $new_version, so revision must reset to 1" >&2
                 exit 1
               fi
-            done < <(jq -r '.[].module' <<<"$selected" | LC_ALL=C sort -u)
+            done < <(jq -r '.[]' <<<"$revision_modules" | LC_ALL=C sort -u)
           fi
 
           enriched='[]'

@@ -81,6 +81,27 @@ fi
 # os/architecture=unknown and can exceed CNB's per-manifest metadata limit;
 # they remain available on ANAS-built GHCR packages but are not deployment
 # inputs and are deliberately omitted from mirrors.
-docker buildx imagetools create --tag "$target_image" "${sources[@]}"
+#
+# A new CNB package can briefly return 404 after the registry accepts the
+# login but before its package metadata is visible to every backend. Retrying
+# the idempotent immutable-tag publish covers that eventual-consistency window
+# without changing the GHCR -> CNB source-of-truth relationship.
+copy_attempts="${RUNTIME_IMAGE_COPY_ATTEMPTS:-5}"
+copy_retry_delay="${RUNTIME_IMAGE_COPY_RETRY_DELAY_SECONDS:-5}"
+if [[ ! "$copy_attempts" =~ ^[1-9][0-9]*$ || ! "$copy_retry_delay" =~ ^[0-9]+$ ]]; then
+  echo "copy retry settings must be non-negative integers and attempts must be positive" >&2
+  exit 1
+fi
+for ((attempt = 1; attempt <= copy_attempts; attempt++)); do
+  if docker buildx imagetools create --tag "$target_image" "${sources[@]}"; then
+    break
+  fi
+  if [[ "$attempt" == "$copy_attempts" ]]; then
+    echo "failed to publish $target_image after $copy_attempts attempts" >&2
+    exit 1
+  fi
+  echo "publish attempt $attempt/$copy_attempts failed; retrying in ${copy_retry_delay}s" >&2
+  sleep "$copy_retry_delay"
+done
 docker buildx imagetools inspect "$target_image" >/dev/null
 echo "published $target_image from $source_image"
