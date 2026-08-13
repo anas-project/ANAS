@@ -101,9 +101,5 @@ func (s *secretStore) Save() error {
 		ordered.Content = append(ordered.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: k})
 		ordered.Content = append(ordered.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: s.values[k]})
 	}
-	b, err := yaml.Marshal(&ordered)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.path, b, 0600)
+	return writeYAMLAtomic(s.path, &ordered, 0600)
 }

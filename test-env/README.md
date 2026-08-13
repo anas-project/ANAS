@@ -200,6 +200,21 @@ Do not commit `.anas-test/` or generated secrets.
     and an idempotent `anas apply` to cover dependency restart ordering and
     persistence.
 
+14. LAM `Admins` group login runtime test
+
+    Against a running deployment carrying `samba_dc` and `lam`, this creates a
+    temporary directory user and executes LAM's deployed search-and-bind policy.
+    It proves a non-member is rejected, an enabled `Admins` member can bind with
+    their own password, a wrong password fails, disabling the member revokes
+    access, re-enabling restores it, and removing group membership revokes it
+    again. The temporary user is removed on exit.
+
+    ```sh
+    DOCKER_HOST=unix:///run/anas-anchor-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
+      ./test-env/scripts/server-lam-admins-e2e.sh
+    ```
+
 ## Full Run
 
 ```sh

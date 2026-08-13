@@ -85,6 +85,42 @@ func localAdminEnvKeys(mod Module, id string) (string, string) {
 	return prefix + "_USERNAME", prefix + "_PASSWORD"
 }
 
+func localAdminPasswordFileEnvKey(mod Module, id string) string {
+	_, passwordKey := localAdminEnvKeys(mod, id)
+	return passwordKey + "_FILE"
+}
+
+func localAdminPasswordFile(base, module, id string) string {
+	return filepath.Join(base, "runtime-secrets", "local-admins", module, id+".password")
+}
+
+func writeLocalAdminPasswordFile(path, password string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".local-admin-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.WriteString(password + "\n"); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
 func (a *app) materializeLocalAccounts() error {
 	state, err := loadLocalAdminState(a.base)
 	if err != nil {
@@ -93,17 +129,46 @@ func (a *app) materializeLocalAccounts() error {
 	a.localAdmins = state
 	for _, module := range a.order {
 		mod := a.reg[module]
+		if service, ok := a.cfg.Modules.Values[module]; ok {
+			for overrideID := range service.Administration.LocalAccounts {
+				knownID := false
+				for _, account := range mod.LocalAccounts {
+					if account.ID == overrideID {
+						knownID = true
+						break
+					}
+				}
+				if !knownID {
+					return fmt.Errorf("modules.%s.administration.local_accounts.%s is not a manifest account id", module, overrideID)
+				}
+			}
+		}
 		for _, declared := range mod.LocalAccounts {
 			key := localAdminKey(module, declared.ID)
 			record, locked := state.Accounts[key]
+			if locked && (record.Module != module || record.ID != declared.ID || record.SecretKey != localAdminSecretKey(module, declared.ID)) {
+				return fmt.Errorf("local administrator state %s does not match the manifest account identity", key)
+			}
+			if locked {
+				uriFrom := localAdminURIFrom(mod)
+				if record.Purpose != declared.Purpose || record.URIFrom != uriFrom {
+					record.Purpose, record.URIFrom = declared.Purpose, uriFrom
+					state.Accounts[key], state.dirty = record, true
+				}
+			}
+			var explicitUsername string
+			if service, ok := a.cfg.Modules.Values[module]; ok {
+				if override, ok := service.Administration.LocalAccounts[declared.ID]; ok {
+					explicitUsername = strings.TrimSpace(override.Username)
+				}
+			}
+			if locked && explicitUsername != "" && explicitUsername != record.Username {
+				return fmt.Errorf("local administrator %s is locked as %q; requested username %q would be ignored; restore the override to %q (username migration requires an application-specific transaction and is not supported yet)", key, record.Username, explicitUsername, record.Username)
+			}
 			if !locked {
 				username := declared.FixedUsername
 				if username == "" {
-					if service, ok := a.cfg.Modules.Values[module]; ok {
-						if override, ok := service.Administration.LocalAccounts[declared.ID]; ok && strings.TrimSpace(override.Username) != "" {
-							username = strings.TrimSpace(override.Username)
-						}
-					}
+					username = explicitUsername
 				}
 				if username == "" {
 					username = strings.ReplaceAll(a.cfg.Administration.LocalAccounts.UsernameTemplate, "{module}", strings.ReplaceAll(module, "-", "_"))
@@ -118,14 +183,24 @@ func (a *app) materializeLocalAccounts() error {
 				state.Accounts[key] = record
 				state.dirty = true
 			}
-			if _, err := a.secrets.Ensure(record.SecretKey, func() (string, error) {
+			password, err := a.secrets.Ensure(record.SecretKey, func() (string, error) {
 				return randomPassword(a.cfg.Administration.LocalAccounts.PasswordLength)
-			}); err != nil {
+			})
+			if err != nil {
 				return err
 			}
 			usernameKey, _ := localAdminEnvKeys(mod, declared.ID)
 			a.env[usernameKey] = record.Username
 			a.setEnvOwner(usernameKey, module)
+			if declared.ContainerFormat == "plaintext_on_bootstrap" {
+				path := localAdminPasswordFile(a.base, module, declared.ID)
+				if err := writeLocalAdminPasswordFile(path, password); err != nil {
+					return err
+				}
+				fileKey := localAdminPasswordFileEnvKey(mod, declared.ID)
+				a.env[fileKey] = path
+				a.setEnvOwner(fileKey, module)
+			}
 		}
 	}
 	return nil
@@ -156,6 +231,57 @@ func (a *app) localAdminHookEnv(module string, env map[string]string) map[string
 		out[passwordKey] = a.secrets.values[record.SecretKey]
 	}
 	return out
+}
+
+// restoreLocalAdminPasswordFiles recreates non-authoritative runtime
+// projections after snapshot restore or artifact activation. The Secret Store
+// remains the only backed-up plaintext source.
+func (a *app) restoreLocalAdminPasswordFiles() error {
+	if a.localAdmins == nil || a.secrets == nil {
+		return nil
+	}
+	for module, mod := range a.reg {
+		for _, declared := range mod.LocalAccounts {
+			if declared.ContainerFormat != "plaintext_on_bootstrap" {
+				continue
+			}
+			record, ok := a.localAdmins.Accounts[localAdminKey(module, declared.ID)]
+			if !ok {
+				return fmt.Errorf("local administrator state for %s.%s is missing", module, declared.ID)
+			}
+			password := a.secrets.values[record.SecretKey]
+			if password == "" {
+				return fmt.Errorf("local administrator secret %s is missing", record.SecretKey)
+			}
+			if err := writeLocalAdminPasswordFile(localAdminPasswordFile(a.base, module, declared.ID), password); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (a *app) applyLocalAdministrators(mod Module, dir string, env map[string]string) error {
+	for _, declared := range mod.LocalAccounts {
+		if strings.TrimSpace(declared.Apply) == "" {
+			continue
+		}
+		record, ok := a.localAdmins.Accounts[localAdminKey(mod.Name, declared.ID)]
+		if !ok {
+			return fmt.Errorf("local administrator state for %s.%s is missing", mod.Name, declared.ID)
+		}
+		password := a.secrets.values[record.SecretKey]
+		if password == "" {
+			return fmt.Errorf("local administrator secret %s is missing", record.SecretKey)
+		}
+		op := localAccountOperation{Handler: declared.Apply, AccountID: declared.ID, Username: record.Username, SecretKey: record.SecretKey, CandidateSecretKey: localAdminCandidateSecretKey}
+		secretView := a.scopedSecrets(mod.Name)
+		secretView[record.SecretKey], secretView[localAdminCandidateSecretKey] = password, password
+		if _, err := a.runLocalAccountHook(mod, "local_account_apply", dir, env, op, secretView); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func sortedLocalAdminRecords(state *localAdminState) []localAdminRecord {

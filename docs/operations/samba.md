@@ -86,9 +86,20 @@ samba-tool group addmembers "APP_nextcloud" alice
 
 只读LDAP集成应用使用`svc_ldap`查询目录，不再使用内置`Administrator`。需要修改密码的应用使用通用的`svc_password`账户；该账户只在`OU=People`中继承“重置密码”权限，因此Nextcloud、LLNG等应用可以修改普通用户的AD密码，但不能创建、删除用户或管理管理员和服务账户。AD用户的创建、删除和组管理仍应通过LAM或Samba管理工具完成。
 
+LAM 主登录允许已启用的 `Admins` 组成员（包括嵌套组成员）使用各自的
+`sAMAccountName` 和目录密码登录。`svc_ldap` 只负责在登录前查找用户 DN；LAM 随后使用
+该用户自己的绑定执行目录操作。因此 `Admins` 负责登录授权，但不会越过 AD ACL：需要
+创建、删除或管理域对象的账号仍须按职责加入相应高权限组或获得专门委派。
+
 两个服务账户的随机密码保存在运行目录的`secrets.generated.yml`中，并写入各模块的`.env`供容器使用；两个文件权限均为`0600`。密码是权限保护的明文，不是加密密文，因此运行目录、Docker管理权限和备份必须按秘密数据保护。
 
 普通用户和管理员密码的最小长度均为8位，密码历史为4次，复杂度保持启用。管理员通过`pso_privileged`应用独立策略。
+
+日常 `admin` 账号属于 `Domain Admins`、`Administrators` 和
+`Group Policy Creator Owners`，足够日常目录管理。内置 RID 500 `Administrator` 只保留给
+域 provision、底层恢复以及架构/林级操作。`admin_password` 与
+`administrator_password` 省略时分别生成不同随机 Secret；不要日常使用或复用
+`Administrator` 密码。
 
 文件服务器使用确定性的`idmap_rid`映射，因此不读取AD对象上的`uidNumber`和`gidNumber`。已存放数据后不要直接切换到`idmap_ad`或修改映射范围，否则文件的Unix所有者可能发生变化。
 

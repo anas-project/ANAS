@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha1"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,12 +20,21 @@ func supportedABI(v string) bool {
 }
 
 type hookRequest struct {
-	ABI     string            `json:"abi"`
-	Phase   string            `json:"phase"`
-	Module  string            `json:"module"`
-	Workdir string            `json:"workdir"`
-	Env     map[string]string `json:"env"`
-	Secrets map[string]string `json:"secrets"`
+	ABI          string                 `json:"abi"`
+	Phase        string                 `json:"phase"`
+	Module       string                 `json:"module"`
+	Workdir      string                 `json:"workdir"`
+	Env          map[string]string      `json:"env"`
+	Secrets      map[string]string      `json:"secrets"`
+	LocalAccount *localAccountOperation `json:"local_account,omitempty"`
+}
+
+type localAccountOperation struct {
+	Handler            string `json:"handler"`
+	AccountID          string `json:"account_id"`
+	Username           string `json:"username"`
+	SecretKey          string `json:"secret_key"`
+	CandidateSecretKey string `json:"candidate_secret_key"`
 }
 
 type hookResponse struct {
@@ -96,6 +103,11 @@ func handle(req hookRequest) (hookResponse, error) {
 	env := cloneMap(req.Env)
 	secrets := &secretStore{values: cloneMap(req.Secrets)}
 	switch req.Phase {
+	case "local_account_apply", "local_account_rotate", "local_account_rollback":
+		if err := handleLocalAccount(req); err != nil {
+			return hookResponse{}, err
+		}
+		return hookResponse{}, nil
 	case "calculate":
 		if err := calculate(req.Module, env, req.Workdir, secrets); err != nil {
 			return hookResponse{}, err
@@ -122,43 +134,22 @@ func calculate(module string, env map[string]string, workdir string, secrets *se
 	if err := domainCalc("TRAEFIK", "traefik")(env, workdir, secrets); err != nil {
 		return err
 	}
-	return calcBasicAuth(env)
-}
-
-// calcBasicAuth builds the credential for the dashboard's basic-auth
-// middleware, the only consumer there has ever been. It used to be computed by
-// the core module, which meant the hash format was frozen somewhere nobody
-// maintaining Traefik would think to look.
-//
-// The hash stays {SHA} for now. Traefik also accepts bcrypt, which is the
-// better choice, but bcrypt salts every call: the value is rendered into a
-// Compose label, so a fresh hash on every render would recreate the container
-// each time. Moving to it means persisting the hash itself in the secret
-// store, which is a separate decision this module is now free to make.
-func calcBasicAuth(e map[string]string) error {
-	if e["TRAEFIK_BASICAUTH_HTPASSWD"] != "" {
-		return nil
-	}
-	user := e["BASICAUTH_USER"]
-	if user == "" {
-		user = "admin"
-	}
-	pass := e["BASICAUTH_PASSWD"]
-	if pass == "" {
-		pass = e["DEFAULT_SERVICE_ROOT_PASSWORD"]
-	}
-	if pass == "" {
-		return fmt.Errorf("no password for the dashboard: set global.default_service_root_password or env.BASICAUTH_PASSWD")
-	}
-	sum := sha1.Sum([]byte(pass))
-	e["TRAEFIK_BASICAUTH_HTPASSWD"] = user + ":{SHA}" + base64.StdEncoding.EncodeToString(sum[:])
+	env["TRAEFIK_DASHBOARD_URL"] = env["TRAEFIK_DOMAIN_FULL"] + "/dashboard/"
 	return nil
 }
 func renderEnv(module string, env map[string]string, workdir string) (map[string]string, error) {
 	if module != "traefik" {
 		return map[string]string{}, nil
 	}
-	return map[string]string{}, nil
+	user, password := env["TRAEFIK_LOCAL_ADMIN_USERNAME"], env["TRAEFIK_LOCAL_ADMIN_PASSWORD"]
+	if user == "" || password == "" {
+		return nil, fmt.Errorf("managed Traefik administrator credential is missing")
+	}
+	content, err := traefikAuthConfig(user, password)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"dynamic/dashboard-auth.yml": content}, nil
 }
 func disabledServices(module string, env map[string]string) []string {
 	if module != "traefik" {

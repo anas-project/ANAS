@@ -118,3 +118,23 @@ Runner 会为每个 Consumer 创建独立数据库、用户和稳定生成的凭
 ## Secret
 
 不要把真实 Secret 写进示例文件或提交到版本库。`config secret list` 只列键名；只有明确的 `config secret get` 操作会输出明文。生成的 Secret 位于受保护的 workspace 运行目录中，并由 ANAS 备份流程处理。
+
+## Module 本地管理员
+
+`management.local_accounts` 是 Module Manifest 的能力声明；用户配置只能设置全局用户名
+模板或按账号 ID 覆盖用户名。这里的账号 ID（如 `primary`、`break_glass`）不是用户名。
+密码不能写进 `config.yml`。查询与轮换分别使用：
+
+```bash
+anas admin local credential nextcloud break_glass -w /srv/anas
+anas admin local rotate nextcloud break_glass -w /srv/anas
+anas admin local rotate ddns_go --prompt -w /srv/anas
+```
+
+省略账号 ID 时按 `primary`、唯一账号、歧义报错的顺序解析。用户名一旦进入
+`.anas/local-admins.yml` 就是应用身份状态；之后改变普通 username override 会被明确拒绝，
+不会静默创建或假装重命名账号。当前没有通用 rename 命令，因为重命名必须由每个应用提供
+可回滚的身份迁移 handler。
+
+Nextcloud 不声明 `modules.nextcloud.config.admin_password`；该路径是非法配置。Nextcloud
+handler 通过真实的 `occ user:resetpassword --password-from-env` 路径更新和验证恢复账号。

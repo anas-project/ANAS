@@ -28,12 +28,6 @@ func TestGlobalSchemaParses(t *testing.T) {
 			t.Errorf("global schema no longer requires %s", want)
 		}
 	}
-	if _, ok := schema.Changes["default_service_root_password"]; !ok {
-		t.Fatal("the administrator password lost its change policy")
-	}
-	if !schema.Changes["default_service_root_password"].Sensitive {
-		t.Fatal("the administrator password is no longer marked sensitive")
-	}
 	if got := schema.Changes["chinese_build_speedup"].Effect; got != "image_rebuild" {
 		t.Fatalf("chinese_build_speedup effect = %q, want image_rebuild", got)
 	}

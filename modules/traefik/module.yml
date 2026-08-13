@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: traefik
 version: 3.7.10
-revision: 1
+revision: 2
 app_version: 3.7.10
 abi:
   supports:
@@ -49,6 +49,23 @@ config:
       description: The router rule is a Compose label.
 features:
   domain: true
+management:
+  surfaces:
+    - id: dashboard
+      uri_from: TRAEFIK_DASHBOARD_URL
+      authentication:
+        primary: local
+  local_accounts:
+    - id: primary
+      purpose: primary
+      username:
+        template: global
+      credential:
+        policy: generated_per_module
+        container_format: bcrypt
+      lifecycle:
+        apply: apply-traefik-local-admin
+        rotate: rotate-traefik-local-admin
 logic:
   hook:
     command:

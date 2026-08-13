@@ -224,6 +224,38 @@ func TestNextcloudDeclaresProvisioningSeparatelyFromAuthentication(t *testing.T)
 	}
 }
 
+func TestBundledLocalAdministratorCapabilitiesAreRealAndScoped(t *testing.T) {
+	for _, tc := range []struct{ module, id, purpose, handler string }{
+		{"ddns_go", "primary", "primary", "rotate-ddns-go-local-admin"},
+		{"nextcloud", "break_glass", "break_glass", "rotate-nextcloud-break-glass"},
+	} {
+		mod, err := loadModuleManifest(filepath.Join("..", "..", "modules", tc.module), tc.module)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(mod.LocalAccounts) != 1 {
+			t.Fatalf("%s local accounts = %+v", tc.module, mod.LocalAccounts)
+		}
+		account := mod.LocalAccounts[0]
+		if account.ID != tc.id || account.Purpose != tc.purpose || account.Rotate != tc.handler {
+			t.Fatalf("%s account = %+v", tc.module, account)
+		}
+		if len(mod.Hook.Command) == 0 {
+			t.Fatalf("%s declares rotation without a module hook", tc.module)
+		}
+	}
+}
+
+func TestNextcloudAdministratorPasswordIsNotConfiguration(t *testing.T) {
+	mod, err := loadModuleManifest(filepath.Join("..", "..", "modules", "nextcloud"), "nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(mod.Parameters, "admin_password") {
+		t.Fatal("Nextcloud managed administrator password is still a config parameter")
+	}
+}
+
 // A module that forgets upgrade.data_breaking is not obviously broken: it renders,
 // deploys and runs. The only symptom is that every rollback across a version
 // change is refused as "data compatibility unknown", which surfaces months

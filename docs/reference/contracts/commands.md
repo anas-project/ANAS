@@ -191,7 +191,7 @@ anas apply [-w WORKSPACE] [-c config.yml [--build] | --deployment ID]
   "error": {
     "code": "guarded_changes",
     "message": "apply crosses guarded state changes:\n  …",
-    "detail": { "blocked": ["global.default_service_root_password (credential_rotate; rotate-secret)"] }
+    "detail": { "blocked": ["samba_dc.admin_password (credential_rotate; rotate-samba-admin-password)"] }
   }
 }
 ```
@@ -373,9 +373,9 @@ checked: it is the escape hatch for values nothing declares.
   "api_version": "anas.dev/cli/v1", "ok": true,
   "workspace": "/data/ws", "config": "/data/ws/config.yml",
   "setting": {
-    "path": "global.default_service_root_password", "module": "global",
-    "parameter": "default_service_root_password",
-    "effect": "credential_rotate", "apply": "rotate-secret",
+    "path": "samba_dc.admin_password", "module": "samba_dc",
+    "parameter": "admin_password",
+    "effect": "credential_rotate", "apply": "rotate-samba-admin-password",
     "sensitive": true, "description": "…"
   }
 }
@@ -426,23 +426,37 @@ checked: it is the escape hatch for values nothing declares.
 ```text
 anas admin local list [-w WORKSPACE] [--json]
 anas admin local credential MODULE [ACCOUNT] [-w WORKSPACE] [--password-only | --json]
+anas admin local rotate MODULE [ACCOUNT] [-w WORKSPACE] [--prompt] [--json]
 ```
 
 `list` 是不泄密的安全库存，只返回 Module、账号 id、用途、用户名和当前入口；不存在本地
 账号时返回空列表。`credential` 是显式敏感读取，同时返回入口、用户名、密码和用途。
 `--password-only` 供交互式管道使用，输出一行裸密码；它不能与 `--json` 组合。
 
-账号名称锁保存在 `.anas/local-admins.yml`，密码保存在 `secrets.generated.yml`，两者都不
-进入部署 `.env`。Runner 仅在 Module Hook 执行期间注入明文；若 Module 支持 hash，制品只
-持久化 hash。
+`ACCOUNT` 始终是 Module Manifest 的 `management.local_accounts[].id`（例如 `primary`、
+`break_glass`），不是物理用户名。省略时依次选择 id 为 `primary` 的账号、该 Module 的唯一
+账号；其余多账号情形报歧义错误。`rotate` 默认生成随机密码；`--prompt` 只能从真实 TTY
+无回显读取并要求二次确认。命令不接受密码参数、环境变量或 YAML 明文输入。
+
+轮换先把候选 Secret 仅交给活动部署冻结的 Module handler。handler 更新应用内部状态并
+验证新凭据；验证失败必须恢复旧应用状态。只有成功后 Runner 才原子提交
+`secrets.generated.yml`（bootstrap-only 应用同时更新受限的 runtime Secret 投影）。未声明
+`lifecycle.rotate` 的 Module 明确报不支持，不能由 CLI 猜测一个更新方式。
+
+账号名称锁保存在 `.anas/local-admins.yml`，密码只由 `secrets.generated.yml` 持久保存，
+两者都不进入 `config.lock.yml`、deployment manifest 或部署 `.env`。Runner 仅在 Module
+Hook 执行期间注入明文；bootstrap-only 应用通过 `.anas/runtime-secrets/` 下的 0600 临时
+投影读取，支持 hash 的应用制品只持久化 hash。
 
 | code | 退出码 | 何时 |
 | --- | --- | --- |
 | `usage` | 2 | 子命令、参数数量或 flag 组合错误 |
+| `confirmation_required` | 3 | `--prompt` 在非 TTY 中使用、两次输入不一致或密码策略不满足 |
 | `local_admin_missing` | 4 | Module 无本地账号，或有多个账号但未指定 id |
 | `local_admin_state_unreadable` | 4 | 本地管理员库存无法读取 |
 | `secret_missing` | 4 | 库存存在，但对应随机密码缺失 |
 | `secrets_unreadable` | 4 | Secret Store 无法读取 |
+| `local_admin_rotate_failed` | 1 | handler、验证、回滚或 Secret 提交失败 |
 
 ## help
 

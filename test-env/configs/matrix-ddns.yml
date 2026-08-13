@@ -23,7 +23,6 @@ global:
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
-  default_service_root_password: change-me-now
 secrets:
   cloudflare_dns_api_token: test-token-not-a-real-credential
   tencentcloud_secret_id: test-id-not-a-real-credential

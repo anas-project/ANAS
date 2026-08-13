@@ -2,6 +2,19 @@
 
 Remote device management service using LDAP authentication.
 
+## Administrator access / 管理员入口
+
+Upstream MeshCentral supports native username/password accounts when domain
+`auth` is unset. This Module sets `auth: ldap`; that domain does not also accept
+a native local administrator. It therefore declares no `management.local_accounts`.
+Administration comes from Samba AD `ldapSiteAdminGroups`; recovery means restoring
+the directory or explicitly migrating the authentication topology.
+
+上游 MeshCentral 在 domain 未设置 `auth` 时支持原生账号；本 Module 设置了
+`auth: ldap`，该 domain 不会同时接受原生本地管理员。因此不声明托管本地账号。
+管理员权限来自 Samba AD `ldapSiteAdminGroups`；恢复方式是恢复目录服务，或专门迁移
+认证拓扑，而不是轮换本地密码。
+
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language
 

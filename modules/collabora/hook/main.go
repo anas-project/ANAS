@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -117,7 +119,15 @@ func calculate(module string, env map[string]string, workdir string, secrets *se
 	if module != "collabora" {
 		return nil
 	}
-	return domainCalc("COLLABORA", "collabora")(env, workdir, secrets)
+	if err := domainCalc("COLLABORA", "collabora")(env, workdir, secrets); err != nil {
+		return err
+	}
+	password, err := ensureCollaboraPassword(env["COLLABORA_ADMIN_PASSWORD"], secrets)
+	if err != nil {
+		return err
+	}
+	env["COLLABORA_ADMIN_PASSWORD"] = password
+	return nil
 }
 func renderEnv(module string, env map[string]string, workdir string) (map[string]string, error) {
 	if module != "collabora" {
@@ -163,9 +173,20 @@ func domainCalc(prefix, service string) func(map[string]string, string, *secretS
 	}
 }
 func moduleCollabora(e map[string]string, _ string) error {
-	e["COLLABORA_ADMIN_USERNAME"] = e["SAMBA_DC_ADMIN_NAME"]
-	e["COLLABORA_ADMIN_PASSWORD"] = e["DEFAULT_SERVICE_ROOT_PASSWORD"]
 	e["COLLABORA_ALIAS_GROUP"] = e["NEXTCLOUD_DOMAIN_FULL"]
 	e["COLLABORA_EXTRA_PARAMS"] = "--o:ssl.enable=false --o:ssl.termination=true --o:logging.level=" + e["COLLABORA_LOG_LEVEL"] + " --o:autosave.autosave_interval_secs=" + e["COLLABORA_AUTO_SAVE"] + " --o:welcome.enable=false --o:fetch_update_check=0 --o:allow_update_popup=false"
 	return nil
+}
+
+func ensureCollaboraPassword(explicit string, secrets *secretStore) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	return secrets.Ensure("COLLABORA_ADMIN_PASSWORD", func() (string, error) {
+		buf := make([]byte, 24)
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		return "Aa1!" + hex.EncodeToString(buf), nil
+	})
 }

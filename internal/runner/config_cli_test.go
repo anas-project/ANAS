@@ -57,7 +57,7 @@ func TestOrdinaryStartRejectsImmutableChange(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.yml")
 	writeTestConfig := func(domain string) {
 		t.Helper()
-		content := "modules:\n  traefik: {}\nglobal:\n  base_domain: " + domain + "\n  email: admin@example.com\n  default_service_root_password: change-me\n"
+		content := "modules:\n  traefik: {}\nglobal:\n  base_domain: " + domain + "\n  email: admin@example.com\n"
 		if err := os.WriteFile(cfgPath, []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}

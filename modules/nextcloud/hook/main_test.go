@@ -53,6 +53,43 @@ func TestNextcloudWarnsAndFallsBackForExplicitUnsupportedLanguage(t *testing.T) 
 	}
 }
 
+func TestExplicitManagedAdminPasswordIsRejected(t *testing.T) {
+	env := map[string]string{"NEXTCLOUD_DB_TYPE": "postgres", "NEXTCLOUD_ADMIN_PASSWORD": "legacy-cleartext"}
+	_, err := calcNextcloud(env, "", &secretStore{values: map[string]string{}})
+	if err == nil || !strings.Contains(err.Error(), "not accepted as configuration") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestManagedBreakGlassPlaintextIsNotPublishedToDeploymentEnv(t *testing.T) {
+	req := hookRequest{Module: "nextcloud", Phase: "calculate", Env: map[string]string{
+		"NEXTCLOUD_DB_TYPE": "postgres", "NEXTCLOUD_LOCAL_ADMIN__BREAK_GLASS_USERNAME": "admin_nc",
+		"NEXTCLOUD_LOCAL_ADMIN__BREAK_GLASS_PASSWORD": "must-stay-in-hook-input",
+	}, Secrets: map[string]string{}}
+	resp, err := handle(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range resp.Env {
+		if strings.Contains(key, "LOCAL_ADMIN") && strings.Contains(key, "PASSWORD") || value == "must-stay-in-hook-input" {
+			t.Fatalf("plaintext published as %s", key)
+		}
+	}
+	if _, ok := resp.Env["NEXTCLOUD_ADMIN_PASSWORD"]; ok {
+		t.Fatal("legacy admin password was published")
+	}
+}
+
+func TestNextcloudPublishesDirectBreakGlassEntry(t *testing.T) {
+	env := map[string]string{"NEXTCLOUD_DB_TYPE": "postgres", "NEXTCLOUD_DOMAIN_PREFIX": "nc", "BASE_DOMAIN": "example.test", "TRAEFIK_BASE_PORT": "443"}
+	if _, err := calcNextcloud(env, "", &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := env["NEXTCLOUD_BREAK_GLASS_URL"]; got != "https://nc.example.test:443/login?direct=1" {
+		t.Fatalf("URL = %q", got)
+	}
+}
+
 func TestServiceKeysAreStableGeneratedSecrets(t *testing.T) {
 	secrets := &secretStore{values: map[string]string{}}
 	base := map[string]string{

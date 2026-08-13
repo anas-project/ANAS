@@ -113,14 +113,25 @@ type ManagementSurface struct {
 }
 
 type LocalAccount struct {
-	ID               string
-	Purpose          string
-	FixedUsername    string
-	UsernameTemplate string
-	PasswordPolicy   string
-	ContainerFormat  string
-	Apply            string
-	Rotate           string
+	ID               string `yaml:"id" json:"id"`
+	Purpose          string `yaml:"purpose" json:"purpose"`
+	FixedUsername    string `yaml:"fixed_username,omitempty" json:"fixed_username,omitempty"`
+	UsernameTemplate string `yaml:"username_template,omitempty" json:"username_template,omitempty"`
+	PasswordPolicy   string `yaml:"password_policy" json:"password_policy"`
+	ContainerFormat  string `yaml:"container_format" json:"container_format"`
+	Apply            string `yaml:"apply,omitempty" json:"apply,omitempty"`
+	Rotate           string `yaml:"rotate,omitempty" json:"rotate,omitempty"`
+}
+
+// localAccountOperation is ephemeral hook input for a credential transaction.
+// Passwords are intentionally absent; current and candidate values travel in
+// the module-scoped Secrets map instead of metadata, argv, or deployment env.
+type localAccountOperation struct {
+	Handler            string `json:"handler"`
+	AccountID          string `json:"account_id"`
+	Username           string `json:"username"`
+	SecretKey          string `json:"secret_key"`
+	CandidateSecretKey string `json:"candidate_secret_key"`
 }
 
 type AlternativeDependency struct {

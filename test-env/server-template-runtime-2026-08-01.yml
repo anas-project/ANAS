@@ -10,7 +10,6 @@ global:
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
-  default_service_root_password: AnasTest1!
 env:
   BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_tmpl_

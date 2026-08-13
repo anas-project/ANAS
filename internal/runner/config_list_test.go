@@ -7,10 +7,6 @@ import (
 )
 
 // The inventory has to reach parameters that no `defaults` block mentions.
-// default_service_root_password is declared only under the global schema's
-// `changes`, and it is the parameter an operator is most likely to go looking
-// for, so building the list from defaults alone would miss exactly the case
-// the command exists for.
 func TestConfigListIncludesParametersDeclaredOnlyByPolicy(t *testing.T) {
 	t.Setenv("TZ", "Asia/Tokyo")
 	t.Setenv("LC_ALL", "")
@@ -30,14 +26,14 @@ func TestConfigListIncludesParametersDeclaredOnlyByPolicy(t *testing.T) {
 		byPath[entry.Path] = entry
 	}
 
-	password, ok := byPath["global.default_service_root_password"]
+	password, ok := byPath["lam.admin_password"]
 	if !ok {
-		t.Fatal("global.default_service_root_password is missing from the inventory")
+		t.Fatal("LAM admin_password is missing from the inventory")
 	}
-	if password.EnvKey != "DEFAULT_SERVICE_ROOT_PASSWORD" {
+	if password.EnvKey != "LAM_ADMIN_PASSWORD" {
 		t.Fatalf("password env key = %q", password.EnvKey)
 	}
-	if password.Policy.Effect != "credential_rotate" || !password.Policy.Sensitive {
+	if password.Policy.Effect != "container_recreate" || !password.Policy.Sensitive {
 		t.Fatalf("password policy = %+v", password.Policy)
 	}
 
@@ -107,13 +103,13 @@ func TestConfigListWithholdsSensitiveValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := map[string]string{"global.default_service_root_password": "ChangeMe1!"}
+	settings := map[string]string{"modules.lam.config.admin_password": "ChangeMe1!"}
 	entries, err := collectConfigParameters(reg, settings)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if entry.Path != "global.default_service_root_password" {
+		if entry.Path != "lam.admin_password" {
 			continue
 		}
 		if !entry.Set {
@@ -124,7 +120,7 @@ func TestConfigListWithholdsSensitiveValues(t *testing.T) {
 		}
 		return
 	}
-	t.Fatal("global.default_service_root_password is missing from the inventory")
+	t.Fatal("LAM admin_password is missing from the inventory")
 }
 
 // A misspelled parameter used to be written into the config and rendered into

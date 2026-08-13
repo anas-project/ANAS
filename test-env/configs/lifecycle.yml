@@ -10,7 +10,6 @@ global:
   email: admin@lifecycle.test
   timezone: Asia/Shanghai
   virtual_domain: true
-  default_service_root_password: change-me-now
 env:
   BASICAUTH_USER: admin
   # Keep the lifecycle suite independent of direct Docker Hub reachability on

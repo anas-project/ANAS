@@ -173,10 +173,18 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_DC_DOMAIN"] = e["SAMBA_DC_DC_NAME"] + "." + domain
 	e["SAMBA_DC_ADMINISTRATOR_NAME"] = "Administrator"
 	e["SAMBA_DC_ADMIN_DISPLAY_NAME"] = "Administrator"
-	// Human-facing administrator accounts inherit the operator-selected service
-	// password. Non-interactive bind accounts below keep distinct random secrets.
-	e["SAMBA_DC_ADMIN_PASSWORD"] = defaultValue(e["SAMBA_DC_ADMIN_PASSWORD"], e["DEFAULT_SERVICE_ROOT_PASSWORD"])
-	e["SAMBA_DC_ADMINISTRATOR_PASSWORD"] = defaultValue(e["SAMBA_DC_ADMINISTRATOR_PASSWORD"], e["DEFAULT_SERVICE_ROOT_PASSWORD"])
+	// The routine admin and the built-in recovery/provisioning Administrator
+	// are separate identities and therefore never share a fallback password.
+	adminPassword, err := ensurePassword(e["SAMBA_DC_ADMIN_PASSWORD"], "SAMBA_DC_ADMIN_PASSWORD", secrets)
+	if err != nil {
+		return err
+	}
+	e["SAMBA_DC_ADMIN_PASSWORD"] = adminPassword
+	administratorPassword, err := ensurePassword(e["SAMBA_DC_ADMINISTRATOR_PASSWORD"], "SAMBA_DC_ADMINISTRATOR_PASSWORD", secrets)
+	if err != nil {
+		return err
+	}
+	e["SAMBA_DC_ADMINISTRATOR_PASSWORD"] = administratorPassword
 	e["SAMBA_DC_LDAPS_SERVER_URL"] = defaultValue(e["SAMBA_DC_LDAPS_SERVER_URL"], "ldaps://"+domain)
 	e["SAMBA_DC_HOST"] = domain
 	e["SAMBA_DC_HOST_IP"] = defaultValue(e["SAMBA_DC_HOST_IP"], e["HOST_IP"])

@@ -110,3 +110,26 @@ The current manifests declare the following compatibility. The runner rejects in
 ## Secrets
 
 Do not commit real secrets. `config secret list` returns names only; only the explicit `config secret get` operation returns clear text. Generated secrets live in the protected workspace runtime and are handled by the ANAS backup flow.
+
+## Module-local administrators
+
+`management.local_accounts` is a capability declared by a Module Manifest.
+Configuration may choose the global username template or override a username
+by account ID. IDs such as `primary` and `break_glass` are not usernames, and
+passwords are never valid `config.yml` input.
+
+```bash
+anas admin local credential nextcloud break_glass -w /srv/anas
+anas admin local rotate nextcloud break_glass -w /srv/anas
+anas admin local rotate ddns_go --prompt -w /srv/anas
+```
+
+Omitting the ID selects `primary`, then a sole account, otherwise reports
+ambiguity. Once a physical username is locked in `.anas/local-admins.yml`, a
+different ordinary override is rejected instead of being silently ignored.
+There is no generic rename command yet because safe identity migration requires
+an application-specific rollback handler.
+
+Nextcloud does not declare `modules.nextcloud.config.admin_password`; that path
+is invalid configuration. Its handler resets and verifies the recovery account
+through `occ user:resetpassword --password-from-env`.

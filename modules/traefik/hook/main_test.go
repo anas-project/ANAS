@@ -1,57 +1,46 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
-// The dashboard credential is derived here rather than deployment-wide, so
-// the hash format is maintained next to the proxy that parses it.
-func TestCalcBasicAuthDerivesDashboardCredential(t *testing.T) {
-	e := map[string]string{
-		"BASICAUTH_USER":                "admin",
-		"DEFAULT_SERVICE_ROOT_PASSWORD": "s3cret",
-	}
-	if err := calcBasicAuth(e); err != nil {
+func TestRenderEnvUsesOnlyManagedDashboardCredential(t *testing.T) {
+	files, err := renderEnv("traefik", map[string]string{
+		"TRAEFIK_LOCAL_ADMIN_USERNAME": "admin_traefik",
+		"TRAEFIK_LOCAL_ADMIN_PASSWORD": "s3cret",
+		"BASICAUTH_PASSWD":             "must-not-win",
+	}, "")
+	if err != nil {
 		t.Fatal(err)
 	}
-	// {SHA} of "s3cret"; asserted literally so a change of hash format is a
-	// deliberate edit rather than a silent one.
-	const want = "admin:{SHA}/vNB+F2HQ559kaLUZbmHHvZrXpg="
-	if e["TRAEFIK_BASICAUTH_HTPASSWD"] != want {
-		t.Fatalf("TRAEFIK_BASICAUTH_HTPASSWD = %q, want %q", e["TRAEFIK_BASICAUTH_HTPASSWD"], want)
+	if strings.Contains(files["dynamic/dashboard-auth.yml"], "s3cret") {
+		t.Fatal("plaintext password entered rendered application state")
 	}
-
-	// An explicit password wins over the shared administrator password.
-	e = map[string]string{
-		"BASICAUTH_USER":                "ops",
-		"BASICAUTH_PASSWD":              "s3cret",
-		"DEFAULT_SERVICE_ROOT_PASSWORD": "ignored",
-	}
-	if err := calcBasicAuth(e); err != nil {
+	if err := verifyTraefikAuthFile([]byte(files["dynamic/dashboard-auth.yml"]), "admin_traefik", "s3cret"); err != nil {
 		t.Fatal(err)
 	}
-	if e["TRAEFIK_BASICAUTH_HTPASSWD"] != "ops:{SHA}/vNB+F2HQ559kaLUZbmHHvZrXpg=" {
-		t.Fatalf("explicit password was not used: %q", e["TRAEFIK_BASICAUTH_HTPASSWD"])
+	if _, err := renderEnv("traefik", map[string]string{}, ""); err == nil {
+		t.Fatal("missing managed credential was accepted")
 	}
+}
 
-	// A deployment that pasted a ready-made htpasswd line into the config keeps
-	// it verbatim rather than hashing a password over the top of it.
-	e = map[string]string{"TRAEFIK_BASICAUTH_HTPASSWD": "admin:{SHA}already-hashed"}
-	if err := calcBasicAuth(e); err != nil {
-		t.Fatal(err)
+func verifyTraefikAuthFile(content []byte, username, password string) error {
+	prefix := username + ":"
+	i := strings.Index(string(content), prefix)
+	if i < 0 {
+		return fmt.Errorf("username missing")
 	}
-	if e["TRAEFIK_BASICAUTH_HTPASSWD"] != "admin:{SHA}already-hashed" {
-		t.Fatalf("a supplied htpasswd line was overwritten: %q", e["TRAEFIK_BASICAUTH_HTPASSWD"])
+	hash := string(content)[i+len(prefix):]
+	if j := strings.IndexAny(hash, "\"\r\n"); j >= 0 {
+		hash = hash[:j]
 	}
-
-	// Silently publishing an empty credential would leave the dashboard behind
-	// a middleware that rejects everyone, with nothing to explain why.
-	if err := calcBasicAuth(map[string]string{"BASICAUTH_USER": "admin"}); err == nil {
-		t.Fatal("expected an error when no password is available")
-	}
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
 
 func TestComposeUsesRenderedTraefikNetworkName(t *testing.T) {

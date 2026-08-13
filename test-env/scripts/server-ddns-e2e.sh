@@ -208,6 +208,31 @@ curl -sS --max-time 10 -b "$cookie_jar" -o /dev/null -w '%{http_code}' \
   { echo "authenticated direct request did not reach ddns-go" >&2; exit 1; }
 rm -f "$cookie_jar"
 
+say "rotate the native account transactionally"
+(cd "$root" && go run ./cmd/anas admin local rotate ddns_go -w "$workspace")
+rotated_credential=$(cd "$root" && go run ./cmd/anas admin local credential ddns_go -w "$workspace" --json)
+rotated_password=$(CREDENTIAL_JSON=$rotated_credential python3 -c 'import json,os; print(json.loads(os.environ["CREDENTIAL_JSON"])["account"]["password"])')
+[ "$rotated_password" != "$local_password" ] ||
+  { echo "rotation did not change the generated password" >&2; exit 1; }
+
+old_cookie=$(mktemp)
+curl -sS --max-time 10 -c "$old_cookie" -o /dev/null -H 'Content-Type: application/json' \
+  --data "{\"Username\":\"$local_username\",\"Password\":\"$local_password\"}" \
+  "http://127.0.0.1:9876/loginFunc"
+if grep -q '[[:space:]]token[[:space:]]' "$old_cookie"; then
+  echo "old password still authenticates after rotation" >&2
+  exit 1
+fi
+rm -f "$old_cookie"
+
+new_cookie=$(mktemp)
+curl -sS --max-time 10 -c "$new_cookie" -o /dev/null -H 'Content-Type: application/json' \
+  --data "{\"Username\":\"$local_username\",\"Password\":\"$rotated_password\"}" \
+  "http://127.0.0.1:9876/loginFunc"
+grep -q '[[:space:]]token[[:space:]]' "$new_cookie" ||
+  { echo "rotated password did not authenticate" >&2; exit 1; }
+rm -f "$new_cookie"
+
 # Through Traefik, an unauthenticated request must reach ddns-go's own login,
 # not an oauth2-proxy redirect.
 entry_port=${ANAS_TEST_ENTRY_PORT:-9443}

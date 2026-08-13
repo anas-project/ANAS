@@ -114,7 +114,7 @@ host 网络的容器 Traefik 的 Docker provider 看不见，所以路由用
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`6.17.4-r1`（reviewed 2026-08-13）
+- Module version / 版本：`6.17.4-r2`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — The service receives TZ through the module .env; upstream does not expose a separate timezone setting.
 - Language scope / 语言范围：ddns-go Web UI and logs
 - Selection / 选择方式：`application`

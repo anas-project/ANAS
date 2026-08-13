@@ -24,12 +24,21 @@ func supportedABI(v string) bool {
 }
 
 type hookRequest struct {
-	ABI     string            `json:"abi"`
-	Phase   string            `json:"phase"`
-	Module  string            `json:"module"`
-	Workdir string            `json:"workdir"`
-	Env     map[string]string `json:"env"`
-	Secrets map[string]string `json:"secrets"`
+	ABI          string                 `json:"abi"`
+	Phase        string                 `json:"phase"`
+	Module       string                 `json:"module"`
+	Workdir      string                 `json:"workdir"`
+	Env          map[string]string      `json:"env"`
+	Secrets      map[string]string      `json:"secrets"`
+	LocalAccount *localAccountOperation `json:"local_account,omitempty"`
+}
+
+type localAccountOperation struct {
+	Handler            string `json:"handler"`
+	AccountID          string `json:"account_id"`
+	Username           string `json:"username"`
+	SecretKey          string `json:"secret_key"`
+	CandidateSecretKey string `json:"candidate_secret_key"`
 }
 
 type hookResponse struct {
@@ -96,6 +105,11 @@ func handle(req hookRequest) (hookResponse, error) {
 		return hookResponse{}, nil
 	}
 	switch req.Phase {
+	case "local_account_apply", "local_account_rotate", "local_account_rollback":
+		if err := handleLocalAccount(req); err != nil {
+			return hookResponse{}, err
+		}
+		return hookResponse{}, nil
 	case "calculate":
 		if err := calcAuthentik(env, secrets); err != nil {
 			return hookResponse{}, err
@@ -159,14 +173,7 @@ func calcAuthentik(e map[string]string, secrets *secretStore) error {
 	e["AUTHENTIK_DOMAIN"] = e["AUTHENTIK_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
 	e["AUTHENTIK_DOMAIN_PORT"] = e["AUTHENTIK_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
 	e["AUTHENTIK_DOMAIN_FULL"] = "https://" + e["AUTHENTIK_DOMAIN_PORT"]
-	breakGlassPassword, err := secrets.Ensure("AUTHENTIK_BREAK_GLASS_PASSWORD", func() (string, error) {
-		return randomHexErr(32)
-	})
-	if err != nil {
-		return err
-	}
-	e["AUTHENTIK_BREAK_GLASS_PASSWORD"] = breakGlassPassword
-
+	e["AUTHENTIK_BREAK_GLASS_URL"] = e["AUTHENTIK_DOMAIN_FULL"] + "/if/flow/default-authentication-flow/"
 	switch e["AUTHENTIK_DB_TYPE"] {
 	case "postgres":
 		e["AUTHENTIK_POSTGRESQL__HOST"] = e["AUTHENTIK_DB_HOST"]
@@ -208,7 +215,6 @@ func calcAuthentik(e map[string]string, secrets *secretStore) error {
 		return err
 	}
 	e["AUTHENTIK_SECRET_KEY"] = key
-	e["AUTHENTIK_BOOTSTRAP_PASSWORD"] = breakGlassPassword
 	e["AUTHENTIK_BOOTSTRAP_EMAIL"] = e["EMAIL"]
 
 	if err := ensureSigningKeypair(e, secrets); err != nil {

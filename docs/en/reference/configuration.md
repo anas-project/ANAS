@@ -50,28 +50,36 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 
 Language controls the UI-text fallback and locale controls regional formatting. Derivation supplies a default; it does not merge these concepts. See the [module timezone and language matrix](/en/reference/module-localization) for actual consumers.
 
-## The 131 declared parameters
+## The 130 declared parameters
 
 Every entry below appears in `anas config list` and can be addressed by `anas config set`. Global parameters use `global.<parameter>`; ordinary module parameters use `modules.<module>.config.<parameter>`.
 
 | Owner | Count | Parameters |
 | --- | ---: | --- |
-| `global` | 17 | `base_domain`, `basicauth_user`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `default_service_root_password`, `dns_server`, `email`, `host_ip`, `image_prefix`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
+| `global` | 16 | `base_domain`, `basicauth_user`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `dns_server`, `email`, `host_ip`, `image_prefix`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
 | `authentik` | 6 | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` |
-| `collabora` | 4 | `auto_save`, `domain_prefix`, `interface`, `log_level` |
+| `collabora` | 6 | `admin_password`, `admin_username`, `auto_save`, `domain_prefix`, `interface`, `log_level` |
 | `ddns_go` | 10 | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` |
 | `ddns_updater` | 9 | `dns_provider`, `domain_prefix`, `forward_auth_interface`, `publicip_dns_providers`, `publicip_fetchers`, `publicip_ipv4_providers`, `publicip_ipv6_providers`, `publicip_providers`, `ttl` |
 | `eturnal` | 2 | `domain_prefix`, `port` |
 | `lam` | 3 | `admin_password`, `domain_prefix`, `language` |
 | `lego` | 2 | `dns_server`, `virtual_domain` |
-| `llng` | 9 | `adminer_enabled`, `db_name`, `db_type`, `domain_prefix`, `enable_test`, `log_level`, `manager_domain_prefix`, `password`, `test_domain_prefix` |
+| `llng` | 8 | `adminer_enabled`, `db_name`, `db_type`, `domain_prefix`, `enable_test`, `log_level`, `manager_domain_prefix`, `test_domain_prefix` |
 | `mariadb` | 2 | `adminer_enabled`, `root_password` |
 | `meshcentral` | 4 | `db_name`, `db_type`, `domain_prefix`, `mps_port` |
 | `netbird` | 3 | `adminer_enabled`, `domain_prefix`, `iam_protocol` |
-| `nextcloud` | 15 | `admin_password`, `db_name`, `db_type`, `debug`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` |
+| `nextcloud` | 14 | `db_name`, `db_type`, `debug`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` |
 | `oauth2_proxy` | 3 | `allow_groups`, `domain_prefix`, `iam_protocol` |
 | `postgres` | 3 | `adminer_enabled`, `password`, `username` |
 | `samba_dc` | 30 | `admin_name`, `admin_password`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
+
+The Nextcloud administrator password is not a configuration parameter. It is
+owned by the managed `break_glass` Secret and application handler and cannot be
+written in YAML.
+
+`global.default_service_root_password` has been removed. LAM, Collabora, and
+Samba DC own their password parameters and generate independent Secrets when
+those parameters are omitted; no cross-application administrator password remains.
 | `samba_fs` | 7 | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` |
 | `traefik` | 2 | `base_port`, `domain_prefix` |
 

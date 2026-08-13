@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: llng
 version: 2.23.2
-revision: 2
+revision: 3
 app_version: 2.23.2
 abi:
   supports:
@@ -91,11 +91,6 @@ config:
     - APPS_LIST*
     - SAMBA_DC_PASSWORD_BIND_PASSWORD
   changes:
-    password:
-      effect: credential_rotate
-      apply: rotate-llng-admin-password
-      sensitive: true
-      description: Update the existing manager authentication state explicitly.
     db_type:
       effect: data_migrate
       apply: migrate-llng-database

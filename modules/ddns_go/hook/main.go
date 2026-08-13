@@ -28,12 +28,21 @@ func supportedABI(v string) bool {
 }
 
 type hookRequest struct {
-	ABI     string            `json:"abi"`
-	Phase   string            `json:"phase"`
-	Module  string            `json:"module"`
-	Workdir string            `json:"workdir"`
-	Env     map[string]string `json:"env"`
-	Secrets map[string]string `json:"secrets"`
+	ABI          string                 `json:"abi"`
+	Phase        string                 `json:"phase"`
+	Module       string                 `json:"module"`
+	Workdir      string                 `json:"workdir"`
+	Env          map[string]string      `json:"env"`
+	Secrets      map[string]string      `json:"secrets"`
+	LocalAccount *localAccountOperation `json:"local_account,omitempty"`
+}
+
+type localAccountOperation struct {
+	Handler            string `json:"handler"`
+	AccountID          string `json:"account_id"`
+	Username           string `json:"username"`
+	SecretKey          string `json:"secret_key"`
+	CandidateSecretKey string `json:"candidate_secret_key"`
 }
 
 type hookResponse struct {
@@ -112,6 +121,8 @@ func handle(req hookRequest) (hookResponse, error) {
 			return hookResponse{}, err
 		}
 		return hookResponse{Env: changed(req.Env, env), Secrets: changed(req.Secrets, secrets.values)}, nil
+	case "local_account_apply", "local_account_rotate", "local_account_rollback":
+		return hookResponse{}, handleLocalAccount(req)
 	default:
 		return hookResponse{}, nil
 	}

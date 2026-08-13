@@ -187,7 +187,6 @@ func calcLLNG(e map[string]string, _ string, secrets *secretStore) error {
 }
 func identityCalc(prefix string) func(map[string]string, *secretStore) error {
 	return func(e map[string]string, secrets *secretStore) error {
-		e[prefix+"_PASSWORD"] = defaultValue(e[prefix+"_PASSWORD"], e["DEFAULT_SERVICE_ROOT_PASSWORD"])
 		for _, part := range []string{"", "_TEST", "_MANAGER"} {
 			keyPrefix := prefix + part
 			domainPrefixKey := keyPrefix + "_DOMAIN_PREFIX"
