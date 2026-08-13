@@ -157,7 +157,7 @@ printf 'audit stream readable, journal directory writable\n'
 debounce=$(container_env "$dirwatch" AUTHENTIK_DIRWATCH_DEBOUNCE_SECONDS)
 min_interval=$(container_env "$dirwatch" AUTHENTIK_DIRWATCH_MIN_INTERVAL_SECONDS)
 test -n "$debounce" && test -n "$min_interval"
-docker exec "$dirwatch" python3 /app/directory_watch.py --healthcheck
+docker exec "$dirwatch" python3 /opt/anas/bin/directory-watch --healthcheck
 printf 'debounce=%ss min_interval=%ss\n' "$debounce" "$min_interval"
 
 section "an in-scope create reaches the journal"
@@ -232,13 +232,13 @@ syncs_before=$(sync_count)
 docker restart "$dirwatch" >/dev/null
 sleep $(( debounce + 25 ))
 test "$(sync_count)" = "$syncs_before"
-docker exec "$dirwatch" python3 /app/directory_watch.py --healthcheck
+docker exec "$dirwatch" python3 /opt/anas/bin/directory-watch --healthcheck
 printf 'cursor survived the restart, no replay\n'
 
 section "the deployment survives a watcher restart cycle"
-# The dirwatch container is the only service in the stack whose image is the
-# authentik image driven by a mounted script, so a bad mount or a bad
-# entrypoint shows up as a crash loop rather than a failed deploy.
+# The dirwatch service runs the watcher shipped in the ANAS authentik image,
+# so a bad image path or entrypoint shows up as a crash loop rather than a
+# failed deploy.
 docker restart "$dirwatch" >/dev/null
 deadline=$(( $(date +%s) + 60 ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -248,7 +248,7 @@ done
 test "$(docker inspect --format '{{.State.Status}}' "$dirwatch")" = running
 sleep 10
 test "$(docker inspect --format '{{.State.Status}}' "$dirwatch")" = running
-docker exec "$dirwatch" python3 /app/directory_watch.py --healthcheck
+docker exec "$dirwatch" python3 /opt/anas/bin/directory-watch --healthcheck
 printf 'watcher came back and stayed up\n'
 
 printf '\ndirectory event journal e2e tests passed\n'
