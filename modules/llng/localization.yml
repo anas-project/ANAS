@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: llng
+module_version: 2.23.2
+module_revision: 2
+reviewed_at: 2026-08-13
+timezone:
+  status: container
+  mechanism: LLNG receives TZ through the module .env; no deployment-wide application timezone is forced.
+language:
+  status: supported
+  scope: LemonLDAP::NG Portal and language selector
+  selection: browser
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: LLNG JSON language code
+  fallback: Portal language selector and Accept-Language are used; unmatched requests fall back to English.
+  supported: [ar, en, es, fi, fr, he, it, mfe, pl, pt-BR, pt, ru, sk, tr, vi, zh-TW, zh]
+  evidence:
+    - version: v2.23.2
+      url: https://gitlab.ow2.org/lemonldap-ng/lemonldap-ng/-/tree/v2.23.2/lemonldap-ng-portal/site/htdocs/static/languages
+      path: Portal JSON language directory
+  notes: Manager and mail templates have separate translation resources; the list records the user-facing Portal inventory.

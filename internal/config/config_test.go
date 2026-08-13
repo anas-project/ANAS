@@ -44,6 +44,57 @@ env:
 	}
 }
 
+func TestLoadNormalizesAndValidatesGlobalLocalization(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`modules:
+  traefik: {}
+global:
+  timezone: Asia/Tokyo
+  default_language: zh_cn.UTF-8
+  default_locale: pt_BR
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Global.DefaultLanguage != "zh-CN" || cfg.Global.DefaultLocale != "pt-BR" {
+		t.Fatalf("normalized localization = language %q locale %q", cfg.Global.DefaultLanguage, cfg.Global.DefaultLocale)
+	}
+
+	if err := os.WriteFile(path, []byte("modules:\n  traefik: {}\nglobal:\n  timezone: UTC+8\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "IANA timezone") {
+		t.Fatalf("invalid timezone error = %v", err)
+	}
+}
+
+func TestLoadDerivesLocaleOnlyFromLanguageWithExplicitRegion(t *testing.T) {
+	for _, test := range []struct {
+		language, wantLocale string
+	}{
+		{language: "en_GB.UTF-8", wantLocale: "en-GB"},
+		{language: "zh-Hant-TW", wantLocale: "zh-Hant-TW"},
+		{language: "zh-Hans", wantLocale: ""},
+		{language: "en", wantLocale: ""},
+	} {
+		path := filepath.Join(t.TempDir(), "config.yml")
+		body := "modules:\n  traefik: {}\nglobal:\n  default_language: " + test.language + "\n"
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("%s: %v", test.language, err)
+		}
+		if cfg.Global.DefaultLocale != test.wantLocale {
+			t.Errorf("language %q derived locale %q, want %q", test.language, cfg.Global.DefaultLocale, test.wantLocale)
+		}
+	}
+}
+
 func TestLocalAdministratorPolicyIsValidated(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
 	if err := os.WriteFile(path, []byte(`modules:
@@ -353,7 +404,7 @@ func TestGlobalBindingsProduceDeclaredKeys(t *testing.T) {
 		ContainerPrefix: "c_", ImagePrefix: "i_", NetworkPrefix: "n_",
 		HostIP: "10.0.0.2", DNSServer: "1.1.1.1",
 		DefaultServiceRootPassword: "ChangeMe1!", VirtualDomain: BoolTrue,
-		BasicAuthUser: "admin", DefaultLanguage: "en",
+		BasicAuthUser: "admin", DefaultLanguage: "en", DefaultLocale: "en-SG",
 		ChineseSpeedup: BoolFalse, ChineseBuildSpeedup: BoolFalse, IPv4: BoolTrue, IPv6: BoolFalse,
 	}}
 	env := f.BaseEnv()

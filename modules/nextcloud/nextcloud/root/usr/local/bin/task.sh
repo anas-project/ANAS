@@ -323,19 +323,15 @@ import_occ() { # $1 json string
 echo "Config setting"
 
 config_system='{}'
-# default_phone_region
-# occ config:system:set default_phone_region --value=$NEXTCLOUD_PHONE_REGION
-
-# default_language
-# echo "Set default_language => $DEFAULT_LANGUAGE"
-# occ config:system:set default_language --value=$DEFAULT_LANGUAGE
-
-# config domain
+# Defaults never force a signed-in user's preference. When no user preference
+# exists, Nextcloud still considers the browser before these fallback values.
 echo "Set https $NEXTCLOUD_DOMAIN_FULL"
 config_system=$(cat <<EOF
 {
   "system": {
     "default_phone_region": "$NEXTCLOUD_PHONE_REGION",
+    "default_language": "$NEXTCLOUD_LANGUAGE",
+    "default_locale": "$NEXTCLOUD_LOCALE",
     "overwriteprotocol": "https",
     "trusted_domains": [
       "$NEXTCLOUD_DOMAIN_PORT"

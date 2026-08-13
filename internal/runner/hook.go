@@ -33,6 +33,9 @@ type hookResponse struct {
 	// InternalEnv lists env keys from this response that templates may use but
 	// that must not be written into the rendered .env file.
 	InternalEnv []string `json:"internal_env"`
+	// Warnings report recoverable adaptation problems. They never make the hook
+	// fail; the runner renders them according to the command's output mode.
+	Warnings []string `json:"warnings"`
 }
 
 type dockerCopy struct {
@@ -90,6 +93,9 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	var resp hookResponse
 	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
 		return hookResponse{}, fmt.Errorf("%s hook %s returned invalid JSON: %w", mod.Name, phase, err)
+	}
+	for _, warning := range resp.Warnings {
+		emitWarning(a.jsonMode, "module_localization_fallback", "%s hook %s: %s", mod.Name, phase, warning)
 	}
 	return resp, nil
 }

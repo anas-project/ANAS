@@ -18,12 +18,10 @@ config:
     - base_domain
     - email
   defaults:
-    timezone: Asia/Hong_Kong
     container_prefix: anas_
     image_prefix: anas_
     network_prefix: anas_
     basicauth_user: admin
-    default_language: zh-cn
     chinese_speedup: "false"
     chinese_build_speedup: "false"
     ipv4: "true"
@@ -38,6 +36,14 @@ config:
       effect: container_recreate
       apply: recreate-affected-containers
       description: Containers receive the timezone through their environment.
+    default_language:
+      effect: reconcile
+      apply: reconcile-module-localization
+      description: Modules reconcile this according to their localization inventory; browser-only and fixed-language applications may not consume it.
+    default_locale:
+      effect: reconcile
+      apply: reconcile-module-localization
+      description: Regional date, number, and formatting defaults are reconciled separately from UI language.
     default_service_root_password:
       effect: credential_rotate
       apply: rotate-human-admin-passwords

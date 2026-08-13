@@ -19,7 +19,11 @@ modules:
 global:
   base_domain: nas.example.com
   email: admin@example.com
+  # Optional. Locale derives from an explicit region-bearing language first,
+  # then host locale and CLDR inference. Keep it explicit for reproducibility.
   timezone: Asia/Shanghai
+  # default_language: zh-Hans
+  # default_locale: zh-CN
   # Legacy compatibility for modules not yet migrated to managed local accounts.
   default_service_root_password: ChangeMe1!
   # The administrator name for Traefik's dashboard gate.

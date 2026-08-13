@@ -23,6 +23,8 @@ Do not duplicate an entire topic across categories. A guide explains how, a refe
 
 - Changes to user-facing `getting-started`, `guide`, `operations`, and core `reference` pages must update the matching English page under `/en/`.
 - Mirrors use the same relative path and section structure.
+- AI agents, generators, and other automation follow the same rule: create or update the Chinese page and its `docs/en/` mirror in one task. Never leave translation to a later task after generating a single-language page.
+- A generator must treat both language files as one atomic output set. Its `--check` mode fails when either file is missing or stale, and every new generated page needs tests and sidebar entries for both languages.
 - Chinese is currently the source language for detailed architecture. When a full translation is not practical, update the English architecture or research index with an accurate summary and link to the Chinese source.
 - Do not translate commands, configuration keys, module names, paths, or error codes.
 - Both languages must state the same support status, defaults, and risks.
@@ -37,6 +39,8 @@ Verify facts in this order:
 4. maintained guides and design documents.
 
 Do not copy commands or defaults from an old page without verification. Check CLI help, parsing, or the relevant tests. For versions, module status, counts, and other volatile facts, name the source or review date; link to an authoritative inventory instead of duplicating a list when possible.
+
+Versioned module timezone and language facts live in `modules/*/localization.yml`; tooling renders them into module READMEs and the reference matrix. See the [module documentation standard](/en/developer/module-documentation) for fields, evidence, and generation rules.
 
 Architecture documents must declare one of these states near the top:
 
@@ -109,6 +113,7 @@ Reference pages can instead use scope, field or command tables, errors and bound
 
 - [ ] The category and audience are correct, with no unnecessary duplicate page.
 - [ ] User documentation has matching Chinese and English updates, or the translation boundary is documented.
+- [ ] Generated pages were updated in both languages in the same run and are reachable from both sidebars.
 - [ ] Commands, configuration, versions, and module status were checked against the implementation.
 - [ ] Current behavior, proposals, and historical records are clearly separated.
 - [ ] Examples contain no real secrets, host information, or personal data.

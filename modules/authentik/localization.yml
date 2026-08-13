@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: authentik
+module_version: 2026.5.6
+module_revision: 2
+reviewed_at: 2026-08-13
+timezone:
+  status: container
+  mechanism: All long-running authentik services receive the module .env and TZ; no separate application timezone is forced.
+language:
+  status: supported
+  scope: authentik Web UI
+  selection: browser
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: authentik locale code
+  fallback: Browser negotiation first; authentik falls back to English when no packaged locale matches.
+  supported: [cs-CZ, de-DE, en, en-XA, es-ES, fi-FI, fr-FR, it-IT, ja-JP, ko-KR, nl-NL, pl-PL, pt-BR, ru-RU, tr-TR, zh-Hans, zh-Hant]
+  evidence:
+    - version: 2026.5.6
+      url: https://github.com/goauthentik/authentik/blob/version/2026.5.6/web/lit-localize.json
+      path: web/lit-localize.json targetLocales
+  notes: The list describes packaged frontend locales. ANAS does not force a locale and preserves authentik's browser locale selector.

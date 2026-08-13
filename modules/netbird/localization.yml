@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: netbird
+module_version: 0.76.1
+module_revision: 2
+reviewed_at: 2026-08-13
+timezone:
+  status: partial
+  mechanism: Dashboard, signal, and management receive the module environment; the relay service does not currently receive TZ.
+language:
+  status: fixed
+  scope: NetBird Dashboard v2.90.9
+  selection: fixed
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: none
+  fallback: English is the only Dashboard language in the fixed source version.
+  supported: [en]
+  evidence:
+    - version: v2.90.9
+      url: https://github.com/netbirdio/dashboard/tree/v2.90.9
+      path: source tree contains no locale, i18n, or translation resources
+  notes: NetBird desktop client's i18n package is a different component and must not be used to claim Dashboard languages.

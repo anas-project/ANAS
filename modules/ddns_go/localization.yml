@@ -1,0 +1,25 @@
+api_version: anas.module-localization/v1
+module: ddns_go
+module_version: 6.17.4
+module_revision: 1
+reviewed_at: 2026-08-13
+timezone:
+  status: container
+  mechanism: The service receives TZ through the module .env; upstream does not expose a separate timezone setting.
+language:
+  status: supported
+  scope: ddns-go Web UI and logs
+  selection: application
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: ddns-go language code
+  fallback: The persisted application setting defaults to English; users can switch language in the Web UI.
+  supported: [en, zh-CN]
+  evidence:
+    - version: v6.17.4
+      url: https://github.com/jeessy2/ddns-go/blob/v6.17.4/static/i18n.js
+      path: static/i18n.js I18N_MAP
+    - version: v6.17.4
+      url: https://github.com/jeessy2/ddns-go/blob/v6.17.4/web/set_lang.go
+      path: persisted language selector
+  notes: ddns-go uses zh-cn internally; ANAS documentation exposes the canonical BCP 47 tag zh-CN.

@@ -1,0 +1,21 @@
+api_version: anas.module-localization/v1
+module: lego
+module_version: 5.3.1
+module_revision: 2
+reviewed_at: 2026-08-13
+timezone:
+  status: container
+  mechanism: The certificate worker receives TZ for process and log timestamps.
+language:
+  status: not_applicable
+  scope: certificate automation CLI
+  selection: none
+  global_default: not_applicable
+  global_locale: not_applicable
+  upstream_format: none
+  fallback: No user-facing language exists.
+  supported: []
+  evidence:
+    - version: v5.3.1
+      url: https://github.com/go-acme/lego/tree/v5.3.1
+      path: CLI without localized UI resources

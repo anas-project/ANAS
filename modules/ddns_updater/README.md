@@ -98,3 +98,22 @@ services:
 
 在此之前这个 module 的 router 上**一个中间件都没有**，`SERVER_ENABLED=yes` 的界面
 是完全裸奔的——任何人拿到域名就能改这个部署的全部 DNS 记录。
+
+<!-- generated:localization:start -->
+## 时区与语言 / Timezone and language
+
+> 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
+
+- Module version / 版本：`2.10.0-r1`（reviewed 2026-08-13）
+- Timezone / 时区：`application` — Upstream officially accepts the IANA TZ environment variable for Web UI and log timestamps.
+- Language scope / 语言范围：DDNS Updater Web UI
+- Selection / 选择方式：`fixed`
+- ANAS global defaults / 全局默认：`default_language=not_consumed`; `default_locale=not_consumed`
+- Upstream format / 上游格式：none
+- Fallback / 回退：English is the only UI language in the fixed source version.
+- Supported languages / 支持语言（1）：`en`
+
+Evidence / 证据：
+
+- [v2.10.0 — source tree contains no locale or translation resources](https://github.com/qdm12/ddns-updater/tree/v2.10.0)
+<!-- generated:localization:end -->

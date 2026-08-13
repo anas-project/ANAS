@@ -1,0 +1,21 @@
+api_version: anas.module-localization/v1
+module: traefik
+module_version: 3.7.10
+module_revision: 1
+reviewed_at: 2026-08-13
+timezone:
+  status: container
+  mechanism: Traefik receives TZ for process and access-log timestamps.
+language:
+  status: fixed
+  scope: Traefik Proxy built-in Dashboard
+  selection: fixed
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: none
+  fallback: The built-in Dashboard is English and exposes no supported language selector.
+  supported: [en]
+  evidence:
+    - version: v3.7.10
+      url: https://github.com/traefik/traefik/tree/v3.7.10
+      path: Dashboard and static configuration expose no localization setting

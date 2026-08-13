@@ -1,0 +1,21 @@
+api_version: anas.module-localization/v1
+module: samba_dc
+module_version: 4.23.6
+module_revision: 4
+reviewed_at: 2026-08-13
+timezone:
+  status: system
+  mechanism: Startup validates TZ against /usr/share/zoneinfo and installs /etc/localtime and /etc/timezone.
+language:
+  status: not_applicable
+  scope: directory, Kerberos, and DNS protocol services
+  selection: none
+  global_default: not_applicable
+  global_locale: not_applicable
+  upstream_format: none
+  fallback: No user-facing Web UI exists; automation should keep LC_ALL=C where stable machine-readable output is required.
+  supported: []
+  evidence:
+    - version: 4.23.6
+      url: https://www.samba.org/samba/docs/current/man-html/
+      path: protocol and command-line services without a Module UI

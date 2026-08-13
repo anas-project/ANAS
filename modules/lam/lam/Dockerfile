@@ -46,7 +46,20 @@ RUN if [ -n "$LAM_APT_MIRROR_URL" ]; then \
   && apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl dumb-init locales \
   && sed -i \
+    -e 's/^# *\(de_DE.UTF-8\)/\1/' \
+    -e 's/^# *\(en_GB.UTF-8\)/\1/' \
     -e 's/^# *\(en_US.UTF-8\)/\1/' \
+    -e 's/^# *\(es_ES.UTF-8\)/\1/' \
+    -e 's/^# *\(fr_FR.UTF-8\)/\1/' \
+    -e 's/^# *\(el_GR.UTF-8\)/\1/' \
+    -e 's/^# *\(it_IT.UTF-8\)/\1/' \
+    -e 's/^# *\(nl_NL.UTF-8\)/\1/' \
+    -e 's/^# *\(pl_PL.UTF-8\)/\1/' \
+    -e 's/^# *\(pt_BR.UTF-8\)/\1/' \
+    -e 's/^# *\(sk_SK.UTF-8\)/\1/' \
+    -e 's/^# *\(uk_UA.UTF-8\)/\1/' \
+    -e 's/^# *\(ja_JP.UTF-8\)/\1/' \
+    -e 's/^# *\(zh_TW.UTF-8\)/\1/' \
     -e 's/^# *\(zh_CN.UTF-8\)/\1/' \
     /etc/locale.gen \
   && locale-gen

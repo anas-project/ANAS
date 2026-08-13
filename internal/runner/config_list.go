@@ -80,6 +80,7 @@ func collectConfigParameters(reg map[string]Module, settings map[string]string) 
 	}
 
 	entries := make([]configListEntry, 0, len(sources))
+	globalDefaults := globalConfig.defaultValues()
 	for _, src := range sources {
 		path := src.parameter
 		if src.module != globalModuleName {
@@ -101,7 +102,7 @@ func collectConfigParameters(reg map[string]Module, settings map[string]string) 
 			Policy:    policyForTarget(target, reg),
 		}
 		if src.module == globalModuleName {
-			entry.Default = globalConfig.Defaults[entry.EnvKey]
+			entry.Default = globalDefaults[entry.EnvKey]
 		} else {
 			entry.Default = reg[src.module].Defaults[entry.EnvKey]
 		}

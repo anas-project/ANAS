@@ -108,3 +108,24 @@ host 网络的容器 Traefik 的 Docker provider 看不见，所以路由用
 - 其他条目、webhook、语言、以及本程序不认识的字段**原样保留**
 
 所以可以放心在界面上加自己的记录，重新部署不会被删。
+
+<!-- generated:localization:start -->
+## 时区与语言 / Timezone and language
+
+> 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
+
+- Module version / 版本：`6.17.4-r1`（reviewed 2026-08-13）
+- Timezone / 时区：`container` — The service receives TZ through the module .env; upstream does not expose a separate timezone setting.
+- Language scope / 语言范围：ddns-go Web UI and logs
+- Selection / 选择方式：`application`
+- ANAS global defaults / 全局默认：`default_language=not_consumed`; `default_locale=not_consumed`
+- Upstream format / 上游格式：ddns-go language code
+- Fallback / 回退：The persisted application setting defaults to English; users can switch language in the Web UI.
+- Supported languages / 支持语言（2）：`en`, `zh-CN`
+- Notes / 说明：ddns-go uses zh-cn internally; ANAS documentation exposes the canonical BCP 47 tag zh-CN.
+
+Evidence / 证据：
+
+- [v6.17.4 — static/i18n.js I18N_MAP](https://github.com/jeessy2/ddns-go/blob/v6.17.4/static/i18n.js)
+- [v6.17.4 — persisted language selector](https://github.com/jeessy2/ddns-go/blob/v6.17.4/web/set_lang.go)
+<!-- generated:localization:end -->

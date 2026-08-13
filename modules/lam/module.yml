@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: lam
 version: 9.6.0
-revision: 2
+revision: 3
 app_version: 9.6.0
 abi:
   supports:
@@ -48,6 +48,10 @@ config:
       effect: container_recreate
       apply: recreate-lam
       description: The proxy route is generated from the domain.
+    language:
+      effect: container_recreate
+      apply: recreate-lam
+      description: The BCP 47 language is matched to a LAM-supported POSIX locale when the container starts.
 identity:
   interfaces:
     - ldaps

@@ -1,0 +1,21 @@
+api_version: anas.module-localization/v1
+module: mariadb
+module_version: 12.3.2
+module_revision: 1
+reviewed_at: 2026-08-13
+timezone:
+  status: container
+  mechanism: MariaDB and optional Adminer receive TZ; this does not populate MariaDB timezone tables or change SQL session time_zone.
+language:
+  status: supported
+  scope: optional Adminer 5.5.0 Web UI; MariaDB itself has no UI language
+  selection: browser
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: Adminer language code
+  fallback: Adminer negotiates browser language and falls back to English.
+  supported: [ar, bg, bn, bs, ca, cs, da, de, el, en, es, et, fa, fi, fr, gl, he, hi, hr, hu, id, it, ja, ka, ko, lt, lv, ms, nl, no, pl, pt-BR, pt, ro, ru, sk, sl, sr, sv, ta, th, tr, uk, uz, vi, zh-TW, zh]
+  evidence:
+    - version: v5.5.0
+      url: https://github.com/vrana/adminer/tree/v5.5.0/adminer/lang
+      path: Adminer language files; xx test locale excluded

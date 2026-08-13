@@ -1,0 +1,21 @@
+api_version: anas.module-localization/v1
+module: samba_fs
+module_version: 4.23.6
+module_revision: 2
+reviewed_at: 2026-08-13
+timezone:
+  status: container
+  mechanism: The file server receives TZ and includes tzdata; client-visible timestamps are also affected by SMB client behavior.
+language:
+  status: not_applicable
+  scope: SMB protocol service
+  selection: client
+  global_default: not_applicable
+  global_locale: not_applicable
+  upstream_format: none
+  fallback: File-manager language belongs to each SMB client, not the server Module.
+  supported: []
+  evidence:
+    - version: 4.23.6
+      url: https://www.samba.org/samba/docs/current/man-html/smb.conf.5.html
+      path: server protocol configuration; no Module Web UI

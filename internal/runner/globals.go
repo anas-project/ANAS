@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anas-project/ANAS/internal/localization"
 	"gopkg.in/yaml.v3"
 )
 
@@ -150,4 +151,19 @@ func (s globalSchema) parameterFor(key string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// defaultValues resolves host-inherited defaults at operation time. Keeping
+// the actual values out of globals.yml prevents a compiled-in locale from
+// overriding the machine that owns the workspace.
+func (s globalSchema) defaultValues() map[string]string {
+	out := make(map[string]string, len(s.Defaults)+3)
+	for key, value := range s.Defaults {
+		out[key] = value
+	}
+	system := localization.CurrentSystemDefaults()
+	out["TZ"] = system.Timezone
+	out["DEFAULT_LANGUAGE"] = system.Language
+	out["DEFAULT_LOCALE"] = system.Locale
+	return out
 }

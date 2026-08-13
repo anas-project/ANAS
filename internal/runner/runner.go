@@ -23,6 +23,7 @@ type app struct {
 	cfgPath        string
 	verbose        bool
 	yes            bool
+	jsonMode       bool
 	skipStartGuard bool
 	useFrozenHooks bool
 	compose        compose.CLI
@@ -900,7 +901,7 @@ func (a *app) requireModuleManifest(name string) error {
 func (a *app) applyModuleDefaults() {
 	// The deployment's own parameters come first and are globally owned, so a
 	// module default can never shadow one and every module can read them.
-	for k, v := range globalConfig.Defaults {
+	for k, v := range globalConfig.defaultValues() {
 		if a.env[k] == "" {
 			a.env[k] = v
 		}

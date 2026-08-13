@@ -43,6 +43,11 @@ func TestGlobalSchemaParses(t *testing.T) {
 // under a module's name silently disappears from every other module's .env, with
 // no error anywhere. This pins the keys that must stay global.
 func TestDeploymentWideKeysAreGloballyOwned(t *testing.T) {
+	t.Setenv("TZ", "Asia/Tokyo")
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_MESSAGES", "")
+	t.Setenv("LC_TIME", "")
+	t.Setenv("LANG", "pt_BR.UTF-8")
 	reg, err := loadRegistry(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -55,12 +60,15 @@ func TestDeploymentWideKeysAreGloballyOwned(t *testing.T) {
 	a.env["INTERFACE"] = "anas-test-peer"
 	a.env["HOST_SUBNET_MASK"] = "24"
 	a.applyModuleDefaults()
+	if a.env["TZ"] != "Asia/Tokyo" || a.env["DEFAULT_LANGUAGE"] != "pt-BR" || a.env["DEFAULT_LOCALE"] != "pt-BR" {
+		t.Fatalf("host localization defaults were not rendered: TZ=%q language=%q locale=%q", a.env["TZ"], a.env["DEFAULT_LANGUAGE"], a.env["DEFAULT_LOCALE"])
+	}
 	if err := a.applyHostNetwork(); err != nil {
 		t.Fatal(err)
 	}
 	for _, key := range []string{
 		"TZ", "CONTAINER_PREFIX", "IMAGE_PREFIX", "NETWORK_PREFIX", "BASICAUTH_USER",
-		"DEFAULT_LANGUAGE", "CHINESE_SPEEDUP", "CHINESE_BUILD_SPEEDUP", "IPV4", "IPV6", "DNS_SERVER",
+		"DEFAULT_LANGUAGE", "DEFAULT_LOCALE", "CHINESE_SPEEDUP", "CHINESE_BUILD_SPEEDUP", "IPV4", "IPV6", "DNS_SERVER",
 		"HOST_IP", "INTERFACE", "HOST_SUBNET_MASK", "HOST_DNS_SERVER", "SERVER_NAME",
 		"LOCAL_DNS_SERVER", "HOST_HAS_IPV6", "HOST_SEGMENT", "VLAN_SEGMENT",
 		"VLAN_GATEWAY_IP", "VLAN_BRIDGE_IP", "VLAN_INTERFACE", "VLAN_BRIDGE_INTERFACE",

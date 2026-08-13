@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/anas-project/ANAS/internal/localization"
+	"golang.org/x/text/language"
 )
 
 // The runner sends the module-hook ABI it speaks; this unreleased format has no legacy aliases.
@@ -34,6 +37,7 @@ type hookResponse struct {
 	Files           map[string]string `json:"files,omitempty"`
 	DisableServices []string          `json:"disable_services,omitempty"`
 	DockerCopies    []dockerCopy      `json:"docker_copies,omitempty"`
+	Warnings        []string          `json:"warnings,omitempty"`
 }
 
 type dockerCopy struct {
@@ -95,10 +99,11 @@ func handle(req hookRequest) (hookResponse, error) {
 	secrets := &secretStore{values: cloneMap(req.Secrets)}
 	switch req.Phase {
 	case "calculate":
-		if err := calculate(req.Module, env, req.Workdir, secrets); err != nil {
+		warnings, err := calculate(req.Module, env, req.Workdir, secrets)
+		if err != nil {
 			return hookResponse{}, err
 		}
-		return hookResponse{Env: changed(req.Env, env), Secrets: changed(req.Secrets, secrets.values)}, nil
+		return hookResponse{Env: changed(req.Env, env), Secrets: changed(req.Secrets, secrets.values), Warnings: warnings}, nil
 	case "render_env":
 		files, err := renderEnv(req.Module, env, req.Workdir)
 		if err != nil {
@@ -113,9 +118,9 @@ func handle(req hookRequest) (hookResponse, error) {
 		return hookResponse{}, nil
 	}
 }
-func calculate(module string, env map[string]string, workdir string, secrets *secretStore) error {
+func calculate(module string, env map[string]string, workdir string, secrets *secretStore) ([]string, error) {
 	if module != "lam" {
-		return nil
+		return nil, nil
 	}
 	return calcLAM(env, workdir, secrets)
 }
@@ -153,12 +158,47 @@ func changed(old, cur map[string]string) map[string]string {
 	}
 	return out
 }
-func calcLAM(e map[string]string, _ string, _ *secretStore) error {
-	e["LAM_LANGUAGE"] = defaultValue(e["LAM_LANGUAGE"], e["DEFAULT_LANGUAGE"])
+func calcLAM(e map[string]string, _ string, _ *secretStore) ([]string, error) {
+	explicitLanguage := e["LAM_LANGUAGE"]
+	languageValue, confidence, err := localization.Match(defaultValue(explicitLanguage, e["DEFAULT_LANGUAGE"]), lamLanguages, "en-US")
+	if err != nil {
+		return nil, fmt.Errorf("LAM language: %w", err)
+	}
+	var warnings []string
+	if confidence == language.No {
+		source, requested := "inherited global language", e["DEFAULT_LANGUAGE"]
+		if explicitLanguage != "" {
+			source, requested = "configured language", explicitLanguage
+		}
+		warnings = append(warnings, fmt.Sprintf("%s %q is unsupported; continuing with fallback %q", source, requested, languageValue))
+	}
+	e["LAM_LANGUAGE"] = languageValue
 	e["LAM_DOMAIN"] = e["LAM_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
 	e["LAM_ADMIN_PASSWORD"] = defaultValue(e["LAM_ADMIN_PASSWORD"], e["SAMBA_DC_ADMIN_PASSWORD"])
-	return nil
+	return warnings, nil
 }
+
+// The list is the active (non-commented) set in LAM 9.6's config/language.
+// Values are deliberately not derived by replacing '-' with '_': LAM consumes
+// POSIX locale identifiers and the image must generate every listed locale.
+var lamLanguages = []localization.Target{
+	{Language: "de-DE", Value: "de_DE.utf8"},
+	{Language: "en-GB", Value: "en_GB.utf8"},
+	{Language: "en-US", Value: "en_US.utf8"},
+	{Language: "es-ES", Value: "es_ES.utf8"},
+	{Language: "fr-FR", Value: "fr_FR.utf8"},
+	{Language: "el-GR", Value: "el_GR.utf8"},
+	{Language: "it-IT", Value: "it_IT.utf8"},
+	{Language: "nl-NL", Value: "nl_NL.utf8"},
+	{Language: "pl-PL", Value: "pl_PL.utf8"},
+	{Language: "pt-BR", Value: "pt_BR.utf8"},
+	{Language: "sk-SK", Value: "sk_SK.utf8"},
+	{Language: "uk-UA", Value: "uk_UA.utf8"},
+	{Language: "ja-JP", Value: "ja_JP.utf8"},
+	{Language: "zh-TW", Value: "zh_TW.utf8"},
+	{Language: "zh-CN", Value: "zh_CN.utf8"},
+}
+
 func defaultValue(v, d string) string {
 	if v == "" {
 		return d

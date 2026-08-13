@@ -1,0 +1,21 @@
+api_version: anas.module-localization/v1
+module: freeradius
+module_version: 3.2.10
+module_revision: 1
+reviewed_at: 2026-08-13
+timezone:
+  status: container
+  mechanism: The RADIUS service receives TZ for process and log timestamps.
+language:
+  status: not_applicable
+  scope: RADIUS protocol service
+  selection: none
+  global_default: not_applicable
+  global_locale: not_applicable
+  upstream_format: none
+  fallback: No user-facing language exists.
+  supported: []
+  evidence:
+    - version: 3.2.10
+      url: https://github.com/FreeRADIUS/freeradius-server/tree/release_3_2_10
+      path: protocol service without a localized UI

@@ -9,6 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/anas-project/ANAS/internal/localization"
+	"golang.org/x/text/language"
 )
 
 // The runner sends the module-hook ABI it speaks; this unreleased format has no legacy aliases.
@@ -38,6 +41,7 @@ type hookResponse struct {
 	Files           map[string]string `json:"files,omitempty"`
 	DisableServices []string          `json:"disable_services,omitempty"`
 	DockerCopies    []dockerCopy      `json:"docker_copies,omitempty"`
+	Warnings        []string          `json:"warnings,omitempty"`
 }
 
 type dockerCopy struct {
@@ -99,10 +103,11 @@ func handle(req hookRequest) (hookResponse, error) {
 	secrets := &secretStore{values: cloneMap(req.Secrets)}
 	switch req.Phase {
 	case "calculate":
-		if err := calculate(req.Module, env, req.Workdir, secrets); err != nil {
+		warnings, err := calculate(req.Module, env, req.Workdir, secrets)
+		if err != nil {
 			return hookResponse{}, err
 		}
-		return hookResponse{Env: changed(req.Env, env), Secrets: changed(req.Secrets, secrets.values)}, nil
+		return hookResponse{Env: changed(req.Env, env), Secrets: changed(req.Secrets, secrets.values), Warnings: warnings}, nil
 	case "render_env":
 		files, err := renderEnv(req.Module, env, req.Workdir)
 		if err != nil {
@@ -117,9 +122,9 @@ func handle(req hookRequest) (hookResponse, error) {
 		return hookResponse{}, nil
 	}
 }
-func calculate(module string, env map[string]string, workdir string, secrets *secretStore) error {
+func calculate(module string, env map[string]string, workdir string, secrets *secretStore) ([]string, error) {
 	if module != "nextcloud" {
-		return nil
+		return nil, nil
 	}
 	return calcNextcloud(env, workdir, secrets)
 }
@@ -160,7 +165,26 @@ func changed(old, cur map[string]string) map[string]string {
 	}
 	return out
 }
-func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) error {
+func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) ([]string, error) {
+	explicitLanguage := e["NEXTCLOUD_LANGUAGE"]
+	languageValue, confidence, err := localization.Match(defaultValue(explicitLanguage, e["DEFAULT_LANGUAGE"]), nextcloudLanguages, "en")
+	if err != nil {
+		return nil, fmt.Errorf("Nextcloud language: %w", err)
+	}
+	var warnings []string
+	if confidence == language.No {
+		source, requested := "inherited global language", e["DEFAULT_LANGUAGE"]
+		if explicitLanguage != "" {
+			source, requested = "configured language", explicitLanguage
+		}
+		warnings = append(warnings, fmt.Sprintf("%s %q is unsupported; continuing with fallback %q", source, requested, languageValue))
+	}
+	e["NEXTCLOUD_LANGUAGE"] = languageValue
+	localeValue, err := localization.Underscore(defaultValue(e["NEXTCLOUD_LOCALE"], e["DEFAULT_LOCALE"]))
+	if err != nil {
+		return nil, fmt.Errorf("Nextcloud locale: %w", err)
+	}
+	e["NEXTCLOUD_LOCALE"] = localeValue
 	e["NEXTCLOUD_HOSTNAME"] = e["CONTAINER_PREFIX"] + "nextcloud"
 	e["NEXTCLOUD_PUSH_HOSTNAME"] = e["CONTAINER_PREFIX"] + "nextcloud_push"
 	e["NEXTCLOUD_BASE_PATH"] = defaultValue(e["NEXTCLOUD_BASE_PATH"], filepath.Join(e["DATA_PATH"], "nextcloud"))
@@ -173,7 +197,7 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) er
 	switch e["NEXTCLOUD_DB_TYPE"] {
 	case "mariadb", "postgres":
 	default:
-		return fmt.Errorf("NEXTCLOUD_DB_TYPE must be resolved to postgres or mariadb")
+		return nil, fmt.Errorf("NEXTCLOUD_DB_TYPE must be resolved to postgres or mariadb")
 	}
 	e["NEXTCLOUD_IMAGINARY_HOSTNAME"] = e["CONTAINER_PREFIX"] + "nextcloud_imaginary"
 	e["NEXTCLOUD_ADMIN_USERNAME"] = defaultValue(e["NEXTCLOUD_ADMIN_USERNAME"], e["SAMBA_DC_ADMIN_NAME"]+"_nc")
@@ -198,7 +222,7 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) er
 	}
 	publishClientRegistration(e, allowGroups)
 	if err := ensureSPKeypair(e, secrets); err != nil {
-		return err
+		return nil, err
 	}
 	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "nextcloud")
 	e["APPS_LIST__NEXTCLOUD__NAME"] = defaultValue(e["APPS_LIST__NEXTCLOUD__NAME"], "Nextcloud")
@@ -209,26 +233,53 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) er
 	if e["NEXTCLOUD_TALK_INTERNAL_SECRET"] == "" {
 		v, err := secrets.Ensure("NEXTCLOUD_TALK_INTERNAL_SECRET", func() (string, error) { return randomHexErr(16) })
 		if err != nil {
-			return err
+			return nil, err
 		}
 		e["NEXTCLOUD_TALK_INTERNAL_SECRET"] = v
 	}
 	if e["TALK_SIGNALING_SECRET"] == "" {
 		v, err := secrets.Ensure("TALK_SIGNALING_SECRET", func() (string, error) { return randomHexErr(16) })
 		if err != nil {
-			return err
+			return nil, err
 		}
 		e["TALK_SIGNALING_SECRET"] = v
 	}
 	if e["NEXTCLOUD_IMAGINARY_SECRET"] == "" {
 		v, err := secrets.Ensure("NEXTCLOUD_IMAGINARY_SECRET", func() (string, error) { return randomHexErr(16) })
 		if err != nil {
-			return err
+			return nil, err
 		}
 		e["NEXTCLOUD_IMAGINARY_SECRET"] = v
 	}
-	return nil
+	return warnings, nil
 }
+
+// Extracted from Nextcloud server v34.0.2 core/l10n. These are defaults only:
+// Nextcloud still gives a signed-in user's choice and the browser language
+// precedence over default_language.
+var nextcloudLanguages = []localization.Target{
+	{Language: "en", Value: "en"}, {Language: "ar", Value: "ar"}, {Language: "ast", Value: "ast"},
+	{Language: "be", Value: "be"}, {Language: "bg", Value: "bg"}, {Language: "ca", Value: "ca"},
+	{Language: "cs", Value: "cs"}, {Language: "da", Value: "da"}, {Language: "de", Value: "de"},
+	{Language: "de-DE", Value: "de_DE"}, {Language: "el", Value: "el"}, {Language: "en-GB", Value: "en_GB"},
+	{Language: "eo", Value: "eo"}, {Language: "es", Value: "es"}, {Language: "es-EC", Value: "es_EC"},
+	{Language: "es-MX", Value: "es_MX"}, {Language: "et-EE", Value: "et_EE"}, {Language: "eu", Value: "eu"},
+	{Language: "fa", Value: "fa"}, {Language: "fi", Value: "fi"}, {Language: "fr", Value: "fr"},
+	{Language: "ga", Value: "ga"}, {Language: "gl", Value: "gl"}, {Language: "hr", Value: "hr"},
+	{Language: "hu", Value: "hu"}, {Language: "id", Value: "id"}, {Language: "is", Value: "is"},
+	{Language: "it", Value: "it"}, {Language: "ja", Value: "ja"}, {Language: "ka", Value: "ka"},
+	{Language: "ko", Value: "ko"}, {Language: "lo", Value: "lo"}, {Language: "lt-LT", Value: "lt_LT"},
+	{Language: "lv", Value: "lv"}, {Language: "mk", Value: "mk"}, {Language: "mn", Value: "mn"},
+	{Language: "nb", Value: "nb"}, {Language: "nl", Value: "nl"}, {Language: "pl", Value: "pl"},
+	{Language: "pt-BR", Value: "pt_BR"}, {Language: "pt-PT", Value: "pt_PT"}, {Language: "ro", Value: "ro"},
+	{Language: "ru", Value: "ru"}, {Language: "sc", Value: "sc"}, {Language: "sk", Value: "sk"},
+	{Language: "sl", Value: "sl"}, {Language: "sr", Value: "sr"}, {Language: "sv", Value: "sv"},
+	{Language: "sw", Value: "sw"}, {Language: "th", Value: "th"}, {Language: "tr", Value: "tr"},
+	{Language: "ug", Value: "ug"}, {Language: "uk", Value: "uk"}, {Language: "uz", Value: "uz"},
+	{Language: "vi", Value: "vi"}, {Language: "zh-CN", Value: "zh_CN"}, {Language: "zh-HK", Value: "zh_HK"},
+	{Language: "zh-TW", Value: "zh_TW"},
+}
+
 func moduleNextcloud(e map[string]string, _ string) error {
 	if err := applyIAMBinding(e); err != nil {
 		return err

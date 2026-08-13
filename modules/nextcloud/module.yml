@@ -140,6 +140,14 @@ config:
       effect: reconcile
       apply: reconcile-nextcloud-domain
       description: Trusted domains, SSO metadata, and proxy routes must be updated together.
+    language:
+      effect: reconcile
+      apply: reconcile-nextcloud-localization
+      description: Sets the fallback UI language without overriding browser or per-user preferences.
+    locale:
+      effect: reconcile
+      apply: reconcile-nextcloud-localization
+      description: Sets the fallback regional formatting locale separately from the UI language.
     upload_max_size:
       effect: container_recreate
       apply: recreate-nextcloud

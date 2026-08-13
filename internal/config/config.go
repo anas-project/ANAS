@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/anas-project/ANAS/internal/localization"
 	"gopkg.in/yaml.v3"
 )
 
@@ -185,6 +186,7 @@ type Global struct {
 	DefaultServiceRootPassword string `yaml:"default_service_root_password"`
 	BasicAuthUser              string `yaml:"basicauth_user"`
 	DefaultLanguage            string `yaml:"default_language"`
+	DefaultLocale              string `yaml:"default_locale"`
 	// Bool rather than bool: the schema defaults these to true, and a default
 	// fills whatever the config left empty, so a type that could not express
 	// "absent" would let the default overwrite a deliberate false. See
@@ -233,6 +235,7 @@ var globalBindings = []globalBinding{
 	}},
 	{"basicauth_user", "BASICAUTH_USER", func(g Global) string { return g.BasicAuthUser }},
 	{"default_language", "DEFAULT_LANGUAGE", func(g Global) string { return g.DefaultLanguage }},
+	{"default_locale", "DEFAULT_LOCALE", func(g Global) string { return g.DefaultLocale }},
 	{"chinese_speedup", "CHINESE_SPEEDUP", func(g Global) string { return g.ChineseSpeedup.String() }},
 	{"chinese_build_speedup", "CHINESE_BUILD_SPEEDUP", func(g Global) string { return g.ChineseBuildSpeedup.String() }},
 	{"ipv4", "IPV4", func(g Global) string { return g.IPv4.String() }},
@@ -390,6 +393,22 @@ func Load(path string) (*File, error) {
 	}
 	if cfg.DynamicDNS.Provider != "" && cfg.DynamicDNS.DNSProvider == "" {
 		return nil, fmt.Errorf("dynamic_dns.provider is set but dynamic_dns.dns_provider is not; name the DNS vendor the records live at")
+	}
+	if cfg.Global.Timezone, err = localization.ValidateTimezone(cfg.Global.Timezone); err != nil {
+		return nil, fmt.Errorf("global.timezone: %w", err)
+	}
+	if cfg.Global.DefaultLanguage, err = localization.NormalizeLanguage(cfg.Global.DefaultLanguage); err != nil {
+		return nil, fmt.Errorf("global.default_language: %w", err)
+	}
+	if cfg.Global.DefaultLocale, err = localization.NormalizeLocale(cfg.Global.DefaultLocale); err != nil {
+		return nil, fmt.Errorf("global.default_locale: %w", err)
+	}
+	if cfg.Global.DefaultLocale == "" {
+		if inferred, ok, err := localization.LocaleFromExplicitLanguage(cfg.Global.DefaultLanguage); err != nil {
+			return nil, fmt.Errorf("global.default_language: %w", err)
+		} else if ok {
+			cfg.Global.DefaultLocale = inferred
+		}
 	}
 	// The shared administrator password is optional: when it is absent every
 	// module receives its own generated root password instead. When set it must

@@ -1,0 +1,25 @@
+api_version: anas.module-localization/v1
+module: nextcloud
+module_version: 34.0.2
+module_revision: 2
+reviewed_at: 2026-08-13
+timezone:
+  status: partial
+  mechanism: Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
+language:
+  status: supported
+  scope: Nextcloud Web UI
+  selection: browser
+  global_default: fallback
+  global_locale: fallback
+  upstream_format: Nextcloud language code with underscore region
+  fallback: User preference, then browser language, then ANAS default_language, then English.
+  supported: [en, ar, ast, be, bg, ca, cs, da, de, de-DE, el, en-GB, eo, es, es-EC, es-MX, et-EE, eu, fa, fi, fr, ga, gl, hr, hu, id, is, it, ja, ka, ko, lo, lt-LT, lv, mk, mn, nb, nl, pl, pt-BR, pt-PT, ro, ru, sc, sk, sl, sr, sv, sw, th, tr, ug, uk, uz, vi, zh-CN, zh-HK, zh-TW]
+  evidence:
+    - version: v34.0.2
+      url: https://github.com/nextcloud/server/tree/v34.0.2/core/l10n
+      path: core/l10n JSON files plus English source language
+    - version: "34"
+      url: https://docs.nextcloud.com/server/stable/admin_manual/configuration_server/language_configuration.html
+      path: default_language and default_locale precedence
+  notes: ANAS writes default_language and default_locale only. It never writes force_language or force_locale.

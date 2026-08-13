@@ -69,3 +69,22 @@ dns platforms:
 凭据在 ANAS 里带 module 前缀存放（`LEGO_TENCENTCLOUD_SECRET_ID`），这样同一厂商下
 另一个引擎用不同账号时互不可见。lego 本身读的是无前缀的厂商变量名，翻译发生在
 `cert.sh` 里——容器内唯一需要它们的进程，`.env` 中始终只有带前缀的名字。
+
+<!-- generated:localization:start -->
+## 时区与语言 / Timezone and language
+
+> 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
+
+- Module version / 版本：`5.3.1-r2`（reviewed 2026-08-13）
+- Timezone / 时区：`container` — The certificate worker receives TZ for process and log timestamps.
+- Language scope / 语言范围：certificate automation CLI
+- Selection / 选择方式：`none`
+- ANAS global defaults / 全局默认：`default_language=not_applicable`; `default_locale=not_applicable`
+- Upstream format / 上游格式：none
+- Fallback / 回退：No user-facing language exists.
+- Supported languages / 支持语言：not applicable / 不适用
+
+Evidence / 证据：
+
+- [v5.3.1 — CLI without localized UI resources](https://github.com/go-acme/lego/tree/v5.3.1)
+<!-- generated:localization:end -->

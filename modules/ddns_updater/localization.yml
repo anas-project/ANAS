@@ -1,0 +1,21 @@
+api_version: anas.module-localization/v1
+module: ddns_updater
+module_version: 2.10.0
+module_revision: 1
+reviewed_at: 2026-08-13
+timezone:
+  status: application
+  mechanism: Upstream officially accepts the IANA TZ environment variable for Web UI and log timestamps.
+language:
+  status: fixed
+  scope: DDNS Updater Web UI
+  selection: fixed
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: none
+  fallback: English is the only UI language in the fixed source version.
+  supported: [en]
+  evidence:
+    - version: v2.10.0
+      url: https://github.com/qdm12/ddns-updater/tree/v2.10.0
+      path: source tree contains no locale or translation resources

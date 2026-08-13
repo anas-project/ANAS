@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: collabora
+module_version: 26.4.2
+module_revision: 1
+reviewed_at: 2026-08-13
+timezone:
+  status: container
+  mechanism: The Collabora service receives TZ through the module .env.
+language:
+  status: supported
+  scope: Collabora Online editor UI and document locale
+  selection: integration
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: BCP 47
+  fallback: Nextcloud/WOPI passes the user or browser locale; Collabora defaults to en-US when the integration supplies none.
+  supported: [sq, ar, hy, eu, bg, ca, zh-Hans, zh-Hant, hr, cs, da, nl, en-GB, en-US, eo, fi, fr, gl, de, el, he, hu, is, id, ga, it, ja, kk, nb, pl, pt, pt-BR, ro, ru, sk, sl, es, sv, ta, tr, uk, vi, cy]
+  evidence:
+    - version: 26.04.2.4.1
+      url: https://sdk.collaboraonline.com/CO-SDK-manual.pdf
+      path: WOPI lang parameter and published UI language inventory
+  notes: Do not set container LANG to select the editor UI. Language is a per-session WOPI value.

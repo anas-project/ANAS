@@ -12,6 +12,11 @@ import (
 // for, so building the list from defaults alone would miss exactly the case
 // the command exists for.
 func TestConfigListIncludesParametersDeclaredOnlyByPolicy(t *testing.T) {
+	t.Setenv("TZ", "Asia/Tokyo")
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_MESSAGES", "")
+	t.Setenv("LC_TIME", "")
+	t.Setenv("LANG", "pt_BR.UTF-8")
 	reg, err := loadRegistry(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -40,6 +45,15 @@ func TestConfigListIncludesParametersDeclaredOnlyByPolicy(t *testing.T) {
 	// field of config.Global, which is the other declaration site.
 	if _, ok := byPath["global.virtual_domain"]; !ok {
 		t.Fatal("global.virtual_domain is missing from the inventory")
+	}
+	for path, want := range map[string]string{
+		"global.timezone":         "Asia/Tokyo",
+		"global.default_language": "pt-BR",
+		"global.default_locale":   "pt-BR",
+	} {
+		if got := byPath[path].Default; got != want {
+			t.Errorf("%s inherited default = %q, want %q", path, got, want)
+		}
 	}
 
 	// A module parameter published under a bare env name is addressed through

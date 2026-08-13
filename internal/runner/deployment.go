@@ -428,7 +428,7 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 
 	a := &app{
 		workspace: opts.workspace,
-		base:      opts.base, cfgPath: opts.cfgPath, verbose: opts.verbose,
+		base:      opts.base, cfgPath: opts.cfgPath, verbose: opts.verbose, jsonMode: jsonMode,
 		reg: reg, contracts: contracts, cfg: cfg, lock: lock, artifactRoot: finalModules,
 		resolvedBindings: map[string]map[string]string{},
 	}

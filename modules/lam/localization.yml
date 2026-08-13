@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: lam
+module_version: 9.6.0
+module_revision: 3
+reviewed_at: 2026-08-13
+timezone:
+  status: application
+  mechanism: ANAS writes the IANA TZ value to the LAM profile timeZone setting.
+language:
+  status: supported
+  scope: LDAP Account Manager Web UI
+  selection: deployment_default
+  global_default: applied
+  global_locale: not_consumed
+  upstream_format: POSIX locale ending in .utf8
+  fallback: CLDR language matching chooses the closest same-script LAM locale, then English.
+  supported: [de-DE, en-GB, en-US, es-ES, fr-FR, el-GR, it-IT, nl-NL, pl-PL, pt-BR, sk-SK, uk-UA, ja-JP, zh-TW, zh-CN]
+  evidence:
+    - version: 9.6
+      url: https://github.com/LDAPAccountManager/lam/blob/9.6/lam/config/language
+      path: active entries in lam/config/language
+  notes: The ANAS image generates every listed POSIX locale. BCP 47 input is converted by the localization library, not by string replacement.

@@ -51,6 +51,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '概览', link: '/reference/' },
         { text: '配置结构', link: '/reference/configuration' },
         { text: 'Module 目录', link: '/reference/modules' },
+        { text: 'Module 时区与语言', link: '/reference/module-localization' },
         { text: 'Module 环境变量', link: '/reference/module-environment-variables' },
         { text: 'CLI JSON 契约', link: '/reference/contracts/' }
       ]
@@ -63,6 +64,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '概览', link: '/developer/' },
         { text: '仓库结构', link: '/developer/repository-layout' },
         { text: 'Module 开发', link: '/developer/module-development' },
+        { text: 'Module 文档规范', link: '/developer/module-documentation' },
+        { text: 'Module 升级 SOP', link: '/developer/module-upgrade-sop' },
         { text: '测试', link: '/developer/testing' },
         { text: '镜像发布', link: '/developer/release' },
         { text: '文档写作标准', link: '/developer/documentation-standard' },
@@ -146,8 +149,10 @@ export const enSidebar: DefaultTheme.Sidebar = {
       text: 'Reference',
       items: [
         { text: 'Overview', link: '/en/reference/' },
+        { text: 'Configuration structure', link: '/en/reference/configuration' },
         { text: 'CLI contract', link: '/en/reference/cli-contract' },
-        { text: 'Module catalog', link: '/en/reference/modules' }
+        { text: 'Module catalog', link: '/en/reference/modules' },
+        { text: 'Module timezone and language', link: '/en/reference/module-localization' }
       ]
     }
   ],
@@ -158,6 +163,8 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Overview', link: '/en/developer/' },
         { text: 'Repository layout', link: '/en/developer/repository-layout' },
         { text: 'Module development', link: '/en/developer/module-development' },
+        { text: 'Module documentation standard', link: '/en/developer/module-documentation' },
+        { text: 'Module upgrade SOP', link: '/en/developer/module-upgrade-sop' },
         { text: 'Testing', link: '/en/developer/testing' },
         { text: 'Image releases', link: '/en/developer/release' },
         { text: 'Documentation standard', link: '/en/developer/documentation-standard' },

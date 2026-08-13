@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: meshcentral
+module_version: 1.2.4
+module_revision: 3
+reviewed_at: 2026-08-13
+timezone:
+  status: container
+  mechanism: MeshCentral receives TZ through the module .env for process and log timestamps.
+language:
+  status: supported
+  scope: MeshCentral Web UI
+  selection: browser
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: MeshCentral translation key
+  fallback: User localization preference and browser language are used; unmatched languages fall back to English.
+  supported: [ar, bs, ca, cs, da, de, el, en, es, fi, fr, he, hi, hr, hu, it, ja, ko, nl, pl, pt, pt-BR, ro, ru, sr, sv, tr, uk, zh-Hans, zh-Hant]
+  evidence:
+    - version: 1.2.4
+      url: https://github.com/Ylianst/MeshCentral/blob/1.2.4/translate/translate.json
+      path: unique language keys in translate.json
+  notes: Upstream zh-chs and zh-cht are documented as canonical zh-Hans and zh-Hant.
