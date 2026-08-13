@@ -83,14 +83,14 @@ Samba 没有 Docker Official Image。社区应用镜像不能直接覆盖当前 
 7. FreeRADIUS：配置检查和 1812/1813 UDP 监听。
 8. Samba DC/FS：AD provision、Kerberos、LDAP/LDAPS、BIND9-DLZ、域加入、共享访问和发现服务。
 
-2026-08-01 已在远端隔离 Docker daemon 完成上述基础服务回归，结果见 `docs/test-server-base-services-2026-08-01.md`。
+2026-08-01 曾在远端隔离 Docker daemon 完成上述基础服务回归。带主机信息的时间点报告已从公开文档移除，仍可通过 Git 历史追溯。
 
 ## 6. 应用层实施说明
 
 1. 本轮按“未发布、无旧数据兼容”前提使用全新 workspace 验证，因此 Authentik 和 Nextcloud 直接初始化最新版，不提供跨大版本原地迁移脚本。
 2. NetBird 保留多容器模式，因为 combined 模式内置身份提供方，无法保持现有 LLNG 外部 OIDC 功能。
 3. Nextcloud 首次初始化会下载 98 MB Memories 地理库；现改为持久缓存、断点续传、固定 SHA-256 校验，再从本地缓存导入，避免网络中断后从零开始。
-4. 应用服务远端回归结果记录在 `docs/test-server-application-services-2026-08-02.md`。
+4. 应用服务曾完成远端回归；带主机信息的原始报告仅保留在 Git 历史中。
 
 ## 7. 上游依据
 

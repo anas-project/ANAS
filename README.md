@@ -1,78 +1,61 @@
 # ANAS
 
 ANAS is a Go-based NAS service launcher built around composable modules. Each
-module owns its Docker Compose assets and declares its launcher metadata in
-`module.yml`.
+module owns its Docker Compose assets and declares its metadata in `module.yml`.
 
-Current module runtime ABI: `anas.module-hook/v1`.
+Current module hook ABI: `anas.module-hook/v1`.
 
-**Usage guide: [docs/usage.md](docs/usage.md) · [中文](docs/usage.zh.md)** —
-how to initialise a deployment, run it, change it, and recover it.
+Documentation: [website](https://anas-project.github.io/ANAS/) ·
+[English](docs/en/getting-started/quick-start.md) ·
+[简体中文](docs/getting-started/quick-start.md)
 
-## Commands
+## Quick start
+
+ANAS targets Linux hosts with Docker Engine and Docker Compose v2. A Btrfs
+workspace is recommended when local snapshots are required.
 
 ```sh
-go run ./cmd/anas plan   -c config.example.yml
-go run ./cmd/anas lock   -c config.example.yml
-go run ./cmd/anas render -c config.example.yml -b ./.runtime
-go run ./cmd/anas build  -c config.example.yml -b ~/.anas
-go run ./cmd/anas apply  -c config.example.yml --build -b ~/.anas
-go run ./cmd/anas start  -b ~/.anas
-go run ./cmd/anas stop   -b ~/.anas
-go run ./cmd/anas rollback -b ~/.anas
-go run ./cmd/anas config explain samba_dc.user_min_pass_length
-go run ./cmd/anas config set -c config.yml samba_dc.user_min_pass_length 10
-go run ./cmd/anas config plan -c config.yml -b ~/.anas
-go run ./cmd/anas config secret list -b ~/.anas
-go run ./cmd/anas admin local list -w ~/.anas
-go run ./cmd/anas admin local credential ddns_go -w ~/.anas
+# Create the self-contained workspace.
+anas init /srv/anas
+
+# Edit /srv/anas/config.yml, then validate its module selection.
+anas plan -c /srv/anas/config.yml
+
+# Build, lock, and activate the first immutable deployment.
+anas apply --build --update-lock -w /srv/anas
+
+# Inspect the active deployment.
+anas status -w /srv/anas
 ```
 
-`render` and `build` create an immutable ready deployment but never change the
-active deployment. `apply` is the only normal deployment entry point. It
-materializes under `staging/`, atomically finalizes the artifact under
-`deployments/<id>/`, and only then starts Compose from that final path. This
-keeps Docker Compose working-directory metadata valid. `start`, `stop`, and
-`restart` operate only on the active frozen deployment and do not need the
-original module source tree or a Go toolchain.
-
-Named lifecycle operations always preserve dependency consistency. `start MODULE...`
-first includes every prerequisite and starts the resulting chain in
-dependency order. `stop MODULE...` and `restart MODULE...` include every direct and
-transitive dependent; they stop in reverse dependency order, and restart then
-starts the same chain in forward order. Multiple named chains are merged and
-deduplicated. There is intentionally no option to bypass this expansion and
-leave running applications without a dependency they require.
-
-The launcher locates independent module bundles from `--module-root`,
-`ANAS_MODULE_ROOT`, the current directory, or the installation directory. The
-config-side `<name>.lock.yml` records both module versions and bundle content
-digests. A distributable bundle can carry a prebuilt hook at
-`hook/bin/<os>-<arch>/anas-hook`; render/apply then need no Go toolchain.
-`plan` is read-only: it does not inspect host networking, run module
-hooks, or create runtime state.
+When running from a source checkout, replace `anas` with
+`go run ./cmd/anas`. See the [installation guide](docs/en/getting-started/installation.md)
+and [complete task guide](docs/en/guide/usage.md) for prerequisites, normal
+operation, snapshots, backups, and recovery.
 
 ## Configuration
 
-Only the structured YAML format is supported:
+Only structured YAML is supported. Module selection is a mapping, and each
+module's parameters live beside its selection:
 
 ```yaml
 modules:
   traefik: {}
   lego:
     config:
-      # The DNS vendor is chosen per engine rather than deployment-wide.
       dns_provider: cloudflare
 
 global:
   base_domain: nas.example.com
   email: admin@example.com
-  timezone: Asia/Shanghai
-  default_service_root_password: ChangeMe1!
+  timezone: Asia/Singapore
+  default_service_root_password: replace-with-a-strong-password
 
 administration:
   bootstrap:
     username: admin
+    display_name: Administrator
+    email: admin@example.com
     roles: [platform_admin, directory_admin]
   local_accounts:
     username_template: "admin_{module}"
@@ -81,226 +64,63 @@ administration:
 
 secrets:
   cloudflare_dns_api_token: replace-me
-
-env:
-  # Set to "true" in mainland China to enable all built-in package, download,
-  # and container-registry mirrors. Individual endpoints remain overridable.
-  # CHINESE_SPEEDUP: "true"
-  # Traefik-only dashboard gate; this is not the global administrator name.
-  BASICAUTH_USER: admin
 ```
 
-Managed local passwords never enter deployment `.env` files. List account
-names safely with `anas admin local list`; use `credential` only when the
-plaintext is explicitly needed. The complete model is documented in
-[docs/design/admin-account-system.md](docs/design/admin-account-system.md).
+Use `global`, `administration`, `identity`, `dynamic_dns`, `rollback`,
+`secrets`, and `modules.<name>.config` for declared settings. Top-level `env`
+is an escape hatch for raw environment keys without a structured field.
 
-When `rollback.snapshot.backend` is omitted, `anas lock` checks the workspace.
-It locks Btrfs with five retained automatic snapshots when `data/` is a Btrfs
-subvolume, or locks snapshots off when the workspace cannot support them.
-An explicit value is only needed to override detection:
+Inspect and change declared settings with:
 
-```yaml
-rollback:
-  snapshot:
-    backend: none # force snapshots off
+```sh
+anas config list
+anas config explain samba_dc.user_min_pass_length
+anas config set -w /srv/anas samba_dc.user_min_pass_length 10
+anas config plan -w /srv/anas
+anas apply -w /srv/anas
 ```
 
-The automatic Btrfs choice is frozen in `config.lock.yml`; ordinary render and
-apply commands do not probe again. A data restore keeps the replaced data as a
-recovery subvolume.
+Do not commit real credentials or generated runtime state.
 
-Legacy keys such as `mods`, list-form `modules`, and `services` are
-intentionally rejected. Module configuration lives with its selection:
+## Runtime model
 
-```yaml
-modules:
-  nextcloud:
-    enabled: true
-    config:
-      domain_prefix: cloud
-      upload_max_size: 32G
-      # Advanced override: auto, postgres, or mariadb.
-      db_type: auto
-```
-
-Module config keys are automatically converted to the module prefix. The example
-above becomes `NEXTCLOUD_DOMAIN_PREFIX` and `NEXTCLOUD_UPLOAD_MAX_SIZE`.
-
-Use top-level `env` only for explicit raw environment variables that do not fit
-the structured `global`, `secrets`, or `modules.<name>.config` sections.
-
-Set `modules.<name>.enabled: false` to exclude a module. Disabling a module
-required by another enabled module is an error.
-
-Module dependency semantics are explicit: `requires` selects and orders a hard
-dependency, `requires_one` selects exactly one capability provider, and `after`
-only orders two modules when both were selected. Unknown or obsolete manifest
-fields are rejected instead of being ignored.
-
-## Generated State
-
-Runtime files are written below the selected base path:
-
-- `deployments/<id>/`: immutable, self-describing deployment artifacts.
-- `staging/<id>/`: temporary materialization only; containers never start here.
-- `state/active.yml`: active deployment and ordered rollback history.
-- `state/deployments/*.yml` and `state/index.yml`: per-deployment lifecycle and
-  a rebuildable summary index.
-- `snapshots/<id>/`: optional data snapshot metadata and Btrfs subvolume.
-- `secrets.generated.yml`: persistent generated secrets such as SSH keys,
-  TURN secrets, OIDC client secrets, and SAML/OIDC signing keys.
-- `<config-name>.lock.yml`: project-side module versions, bundle digests, source
-  identities, and resolved capability-provider bindings.
-- `hook-bin/`: hook binaries compiled once per run; each rendered module also
-  carries its frozen copy as `.hook.bin`, so artifact starts need no Go
-  toolchain.
-- `go-build-cache/`: Go build cache used when compiling module hooks.
-
-Each rendered module's `.env` is scoped: it contains only global values, the
-module's own and its dependency closure's keys, and keys the module claims via
-manifest `config.consumes`. One module (or its containers) never receives the
-credentials of unrelated modules.
-
-Do not commit runtime directories or generated secrets. The runtime base and
-generated `.env` files are owner-only because they contain service credentials.
-
-## Current Scope
-
-The launcher covers:
-
-- manifest-based module discovery from `modules/*/module.yml`
-- module ABI validation with `anas.module-hook/v1`
-- semantic module versions, dependency version constraints, upgrade checks, and a
-  persisted module lock file
-- alternative capability providers with stable lock-file bindings (for example,
-  PostgreSQL or MariaDB for application modules)
-- module dependency ordering
-- structured YAML config loading
-- default env generation and module hook based derived env generation
-- module hook phases for calculation, render-time env/files, optional service
-  filtering, and after-start copy operations
-- container-owned configuration generation from scoped environment files
-- per-module `.env` generation
-- Docker Compose detection and execution
-- build/start/restart/stop/render/plan commands
-- persistent generated secrets
-- LLNG/Keycloak SAML/OIDC material generation
-- Nextcloud, Netbird, Meshcentral, LDAP app integration variables
-- macvlan setup for modules that require host LAN
-- current module manifests under `modules/*/module.yml`
-
-Current modules provide:
-
-- ACME certificate files through `lego`
-- HTTPS routing through `traefik`
-- local BIND9-DLZ DNS and Samba AD support through `samba_dc`
-- domain-joined file sharing through `samba_fs`
-- PostgreSQL and MariaDB data stores with optional Adminer UIs
-- TURN support through `eturnal`
-- Nextcloud with Redis, Imaginary, optional Talk signaling, LDAP, SAML, and app
-  launcher integration
-- Collabora as the Nextcloud office backend
-- LemonLDAP::NG as the current SSO portal and SAML/OIDC provider
-- Keycloak as an identity module scaffold using the current LLNG integration
-  assets
-- LDAP Account Manager and MeshCentral with Samba/LDAP integration
-- DDNS config generation for DNSPod when selected
-- NetBird as an incomplete experimental scaffold excluded from the full example
-- FreeRADIUS as an experimental scaffold, not a complete RADIUS deployment yet
-
-## Module Layout
-
-Each module directory follows this rule:
+One workspace contains everything owned by a deployment:
 
 ```text
-modules/<name>/
-  module.yml
-  hook/
-    main.go
-  docker-compose.yml
-  <service build contexts, templates, assets>
+<workspace>/
+  config.yml          desired state
+  config.lock.yml     resolved module releases and providers
+  data/               application state restored by data recovery
+  userdata/           user files, backed up but not changed by deployment rollback
+  snapshots/          local point-in-time copies
+  .anas/              protected runtime state and immutable deployments
 ```
 
-Each module declares the runner ABI it supports:
+`apply` is the normal deployment entry point. It materializes an immutable
+artifact under `.anas/deployments/<id>/`, validates it, and only then activates
+it. `start`, `stop`, and `restart` use the frozen active deployment and do not
+need the source checkout or a Go toolchain.
 
-```yaml
-abi:
-  supports:
-    - anas.module-hook/v1
+Use deployment rollback for a bad artifact or configuration. Use snapshot
+restore when persistent data itself must be rewound. Use `anas backup` instead
+of copying the workspace directly.
+
+## Development
+
+```sh
+go test ./...
+npm ci
+npm run docs:build
 ```
 
-Use lower snake_case for module parameters in `module.yml`. The runner maps them to
-the environment variables consumed by existing templates, using the module
-`config.env_prefix` or the module name as the prefix. For example,
-`domain_prefix` in the `nextcloud` module becomes `NEXTCLOUD_DOMAIN_PREFIX`.
+Developer references:
 
-Per-module logic is executed through `logic.hook.command`. The runner sends a
-JSON request using the module ABI and applies the returned env patch, generated
-secrets, files, service filters, and after-start copy operations. Runner code
-does not contain module-specific calculation functions.
+- [repository and module development](docs/developer/index.md)
+- [module catalog](docs/reference/modules.md)
+- [configuration reference](docs/reference/configuration.md)
+- [CLI JSON contracts](docs/reference/contracts/index.md)
+- [architecture and design](docs/architecture/index.md)
+- [container image releases](docs/developer/release.md)
 
-`runner.rb` files are not part of the Go rules and should not be added. The
-previous Ruby implementation has been removed; recover it from the git history
-if you need it.
-
-Before releasing changes, run render/build/start against real NAS configuration
-and verify each enabled module.
-
-## Developer Docs
-
-See [docs/container-image-release-implementation-2026-08-11.md](docs/container-image-release-implementation-2026-08-11.md)
-for the implemented module image versioning, GHCR publishing workflow, and GitHub
-organization migration record.
-
-See [docs/research/README.md](docs/research/README.md) for the research archive,
-including the current open-source self-hosted Kanban comparison and historical
-technology assessments.
-
-See [docs/design/ai-design.md](docs/design/ai-design.md) for the project structure, module
-structure, and rules for designing new modules.
-
-See [docs/design/iam-capability-design.md](docs/design/iam-capability-design.md) for the
-proposed provider-neutral IAM capability model, OIDC/SAML negotiation,
-environment contract, provider selection, and migration plan.
-
-See [docs/design/app-catalog-design.md](docs/design/app-catalog-design.md) for the proposed
-provider-neutral application catalog: manifest launcher metadata, per-user
-visibility derived from the enforcing authorization point, categories, the
-declarative icon contract, and the LLNG/authentik mapping.
-
-See [docs/config-state-lifecycle.md](docs/config-state-lifecycle.md) for the
-current persistent-state audit, first-start-only settings, and the proposed
-configuration lifecycle and reconciliation model.
-
-See [docs/config-cli-lifecycle.md](docs/config-cli-lifecycle.md) for CLI config
-editing, change-effect classification, start guards, and the apply/rotation/
-migration command design.
-
-See [docs/test-server-deployment-2026-06-30.md](docs/test-server-deployment-2026-06-30.md)
-for the test-server deployment procedure, verification results, fixes, and
-remaining full-stack test constraints.
-
-See [docs/test-server-deployment-2026-07-03.md](docs/test-server-deployment-2026-07-03.md)
-for the isolated Docker findings, PostgreSQL persistence verification, and the
-remaining blockers for a full-stack availability claim.
-
-See [docs/test-server-deployment-2026-07-04.md](docs/test-server-deployment-2026-07-04.md)
-for the server-buildable image builds and the initial smoke-start of the full
-stack.
-
-See [docs/test-server-deployment-2026-07-05.md](docs/test-server-deployment-2026-07-05.md)
-for the current record: per-container runtime verification that exposed three
-crash-loop defects (postgres per-service database provisioning, the NetBird
-dashboard `set -e` bootstrap, and the Nextcloud DB-wait host/port split), the
-fixes and their re-verification, and why the earlier smoke pass was a false
-green.
-
-See [docs/test-server-deployment-2026-07-13.md](docs/test-server-deployment-2026-07-13.md)
-for the latest deployment attempt, the fixed smoke-test false-green check, the
-local regression results, and the current SSH entry-point blocker.
-
-See [docs/test-server-deployment-2026-07-13-finance.md](docs/test-server-deployment-2026-07-13-finance.md)
-for the completed isolated deployment on `finance.hlong.wang`, the runtime bugs
-fixed there, service and persistence probes, and the remaining product-scope
-limitations.
+The documentation site is built with VitePress. Pull requests validate the
+site; documentation changes on `master` are deployed to GitHub Pages.

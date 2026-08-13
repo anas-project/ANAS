@@ -205,7 +205,7 @@ Module ABI:
 Machine-readable output:
   Every command above accepts --json: one JSON document on stdout, progress
   and warnings on stderr, and an exit code from the table in
-  docs/contracts/README.md. Without --json the output is prose and is not a
+  docs/reference/contracts/index.md. Without --json the output is prose and is not a
   contract; do not parse it.
 
 The Go CLI reads only the structured YAML format documented in README.md.

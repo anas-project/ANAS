@@ -2,6 +2,9 @@
 .anas-test/
 .gocache/
 .runtime*/
+node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
 secrets.generated.yml
 test-env/reports/*
 !test-env/reports/.gitkeep
