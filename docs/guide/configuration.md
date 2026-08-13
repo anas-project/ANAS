@@ -124,6 +124,104 @@ DNS API token 等普通部署输入保留在系统管理的 `config.yml` 中；�
 
 `config secret list` 只列存储键和类型；只有明确的 `config secret get` 操作会输出明文。导入失败不会修改 `config.yml`、`secrets.yml` 或配置摘要。备份和快照必须把 `config.yml` 与 `secrets.yml` 都按明文敏感数据保护。
 
+### `config.yml`、`config-managed.yml` 与 `secrets.yml`
+
+假设操作者准备了以下外部配置：
+
+```yaml
+# /tmp/my-anas.yml
+global:
+  base_domain: example.com
+  timezone: Asia/Singapore
+
+modules:
+  nextcloud:
+    administration:
+      local_accounts:
+        break_glass:
+          username: admin_nextcloud
+          password: Initial-Nextcloud-Password
+
+secrets:
+  cloudflare_dns_api_token: cloudflare-token-123
+```
+
+执行受控导入：
+
+```bash
+anas config import /tmp/my-anas.yml -w /srv/anas
+```
+
+外部源文件保持不变；workspace 中产生三类相互关联的状态。
+
+`/srv/anas/config.yml` 保存普通期望状态、用户名以及普通部署 Secret：
+
+```yaml
+global:
+  base_domain: example.com
+  timezone: Asia/Singapore
+
+modules:
+  nextcloud:
+    administration:
+      local_accounts:
+        break_glass:
+          username: admin_nextcloud
+
+secrets:
+  cloudflare_dns_api_token: cloudflare-token-123
+```
+
+Nextcloud 本地管理员密码已经移除；Cloudflare token 仍留在 `config.yml`，因为普通 apply
+可以正确重新渲染该部署输入。文件权限为 `0600`，CLI 库存与 plan 对声明为 sensitive 的值
+脱敏。
+
+`/srv/anas/.anas/secrets.yml` 保存生命周期托管凭据及系统生成 Secret：
+
+```yaml
+api_version: anas.secrets/v2
+secrets:
+  ANAS_LOCAL_ADMIN__NEXTCLOUD__BREAK_GLASS__PASSWORD:
+    value: Initial-Nextcloud-Password
+    owner: nextcloud
+    kind: local_admin
+    provenance: config-import:modules.nextcloud.administration.local_accounts.break_glass.password
+  NEXTCLOUD_DB_PASSWORD:
+    value: 8QLRhDzA4ScpJp6h...
+    owner: runner
+    kind: generated
+    provenance: runtime
+```
+
+稳定逻辑 key 标识凭据；`owner` 表示归属，`kind` 区分本地管理员、其他生命周期凭据和
+生成值，`provenance` 记录来源。以后运行 `anas admin local rotate nextcloud break_glass`
+只会在应用更新并验证成功后原子更新这里，不会把密码写回 `config.yml`。
+
+`/srv/anas/.anas/config-managed.yml` 只保存 `config.yml` 的完整性元数据：
+
+```yaml
+api_version: anas.config/v1
+digest: sha256:643136ee18baf6e3...
+updated_by: config-import
+```
+
+摘要只覆盖 `config.yml`，不覆盖 `secrets.yml`；该文件不含配置副本或 Secret。plan、lock、
+render、build 和 apply 会比较摘要，拒绝绕过 CLI 的手工修改。快照和备份必须把它与对应的
+`config.yml` 一起恢复。
+
+| 操作 | `config.yml` | `config-managed.yml` | `secrets.yml` |
+| --- | --- | --- | --- |
+| `config import` | 规范化写入，剥离生命周期密码 | 写入新摘要 | 导入生命周期凭据 |
+| `config set global.timezone UTC` | 修改 | 更新摘要 | 不变 |
+| 修改普通 DNS/API token | 修改 | 更新摘要 | 不变 |
+| `admin local rotate nextcloud` | 不变 | 不变 | 应用验证成功后更新 |
+| 手工编辑 `config.yml` | 内容改变 | 摘要未同步 | 不变；plan/apply 拒绝 |
+| snapshot/backup restore | 恢复 | 与配置一起恢复 | 一起恢复 |
+
+简言之：`config.yml` 表示“希望部署成什么样”，`config-managed.yml` 证明“这份配置由
+ANAS CLI 合法写入”，`secrets.yml` 保存“不能通过普通 apply 安全改变的凭据和 Runner
+生成的 Secret”。
+
 ## Module 本地管理员
 
 `management.local_accounts` 是 Module Manifest 的能力声明；用户配置只能设置全局用户名

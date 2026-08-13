@@ -116,6 +116,114 @@ Only `lifecycle_managed` credentials are atomically extracted during import: mod
 
 `config secret list` returns store keys and kinds only; only explicit `config secret get` reveals clear text. A failed import changes none of `config.yml`, `secrets.yml`, or the managed-config digest. Backups and snapshots must protect both files as plaintext-sensitive data.
 
+### How `config.yml`, `config-managed.yml`, and `secrets.yml` relate
+
+Consider this external input:
+
+```yaml
+# /tmp/my-anas.yml
+global:
+  base_domain: example.com
+  timezone: Asia/Singapore
+
+modules:
+  nextcloud:
+    administration:
+      local_accounts:
+        break_glass:
+          username: admin_nextcloud
+          password: Initial-Nextcloud-Password
+
+secrets:
+  cloudflare_dns_api_token: cloudflare-token-123
+```
+
+Import it through the controlled boundary:
+
+```bash
+anas config import /tmp/my-anas.yml -w /srv/anas
+```
+
+The external source remains unchanged. The workspace receives three related
+forms of state.
+
+`/srv/anas/config.yml` contains ordinary desired state, usernames, and ordinary
+deployment secrets:
+
+```yaml
+global:
+  base_domain: example.com
+  timezone: Asia/Singapore
+
+modules:
+  nextcloud:
+    administration:
+      local_accounts:
+        break_glass:
+          username: admin_nextcloud
+
+secrets:
+  cloudflare_dns_api_token: cloudflare-token-123
+```
+
+The Nextcloud local-administrator password has been removed. The Cloudflare
+token remains because ordinary apply can correctly re-render that deployment
+input. The file is mode `0600`, and inventory and plan output redact values
+declared sensitive.
+
+`/srv/anas/.anas/secrets.yml` contains lifecycle-managed credentials and
+system-generated secrets:
+
+```yaml
+api_version: anas.secrets/v2
+secrets:
+  ANAS_LOCAL_ADMIN__NEXTCLOUD__BREAK_GLASS__PASSWORD:
+    value: Initial-Nextcloud-Password
+    owner: nextcloud
+    kind: local_admin
+    provenance: config-import:modules.nextcloud.administration.local_accounts.break_glass.password
+  NEXTCLOUD_DB_PASSWORD:
+    value: 8QLRhDzA4ScpJp6h...
+    owner: runner
+    kind: generated
+    provenance: runtime
+```
+
+The stable logical key identifies the credential. `owner` records ownership,
+`kind` distinguishes local administrators, other lifecycle credentials, and
+generated values, while `provenance` records the source. A later
+`anas admin local rotate nextcloud break_glass` updates this file atomically
+only after the application update and verification succeed; it never writes the
+password back to `config.yml`.
+
+`/srv/anas/.anas/config-managed.yml` contains only integrity metadata for
+`config.yml`:
+
+```yaml
+api_version: anas.config/v1
+digest: sha256:643136ee18baf6e3...
+updated_by: config-import
+```
+
+The digest covers `config.yml` only, not `secrets.yml`. This file contains no
+configuration copy or secret. Plan, lock, render, build, and apply compare the
+digest and reject out-of-band edits. Snapshots and backups must restore it with
+the matching `config.yml`.
+
+| Operation | `config.yml` | `config-managed.yml` | `secrets.yml` |
+| --- | --- | --- | --- |
+| `config import` | Normalize and remove lifecycle passwords | Write a new digest | Import lifecycle credentials |
+| `config set global.timezone UTC` | Change | Update digest | Unchanged |
+| Change an ordinary DNS/API token | Change | Update digest | Unchanged |
+| `admin local rotate nextcloud` | Unchanged | Unchanged | Update after application verification |
+| Edit `config.yml` by hand | Content changes | Digest does not | Unchanged; plan/apply reject |
+| Snapshot/backup restore | Restore | Restore with config | Restore together |
+
+In short, `config.yml` says what the deployment should be,
+`config-managed.yml` proves that the ANAS CLI wrote that desired state, and
+`secrets.yml` stores credentials that ordinary apply cannot safely change plus
+Runner-generated secrets.
+
 ## Module-local administrators
 
 `management.local_accounts` is a capability declared by a Module Manifest.
