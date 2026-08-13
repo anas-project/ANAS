@@ -131,7 +131,6 @@ modules:
     administration:
       local_accounts:
         break_glass:
-          username: admin_nextcloud
           password: Initial-Nextcloud-Password
 
 secrets:
@@ -147,7 +146,7 @@ anas config import /tmp/my-anas.yml -w /srv/anas
 The external source remains unchanged. The workspace receives three related
 forms of state.
 
-`/srv/anas/config.yml` contains ordinary desired state, usernames, and ordinary
+`/srv/anas/config.yml` contains ordinary desired state and ordinary
 deployment secrets:
 
 ```yaml
@@ -159,14 +158,14 @@ modules:
   nextcloud:
     administration:
       local_accounts:
-        break_glass:
-          username: admin_nextcloud
+        break_glass: {}
 
 secrets:
   cloudflare_dns_api_token: cloudflare-token-123
 ```
 
-The Nextcloud local-administrator password has been removed. The Cloudflare
+The Nextcloud local-administrator password has been removed, and its username
+is determined by ANAS rather than configuration. The Cloudflare
 token remains because ordinary apply can correctly re-render that deployment
 input. The file is mode `0600`, and inventory and plan output redact values
 declared sensitive.
@@ -227,8 +226,9 @@ Runner-generated secrets.
 ## Module-local administrators
 
 `management.local_accounts` is a capability declared by a Module Manifest.
-Configuration may choose the global username template or override a username
-by account ID. IDs such as `primary` and `break_glass` are not usernames, and
+Users cannot configure a local-administrator username. A Module
+`fixed_username` wins; otherwise ANAS uses its fixed `admin_{module}` template.
+IDs such as `primary` and `break_glass` are not usernames, and
 lifecycle-managed passwords are not persistent `config.yml` fields. An external import may provide one as a one-time bootstrap input; the normalized workspace copy removes it after a successful import.
 
 ```bash
@@ -238,10 +238,9 @@ anas admin local rotate ddns_go --prompt -w /srv/anas
 ```
 
 Omitting the ID selects `primary`, then a sole account, otherwise reports
-ambiguity. Once a physical username is locked in `.anas/local-admins.yml`, a
-different ordinary override is rejected instead of being silently ignored.
-There is no generic rename command yet because safe identity migration requires
-an application-specific rollback handler.
+ambiguity. Once materialized, the physical username is locked in
+`.anas/local-admins.yml`. Global `username_template` and module-level `username`
+overrides are invalid fields, and the CLI provides no rename command.
 
 Nextcloud does not declare `modules.nextcloud.config.admin_password`; that path
 is invalid configuration. Its handler resets and verifies the recovery account

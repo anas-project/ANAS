@@ -58,8 +58,6 @@ management:
   local_accounts:
     - id: primary
       purpose: primary
-      username:
-        template: global
       credential:
         policy: generated_per_module
         container_format: bcrypt

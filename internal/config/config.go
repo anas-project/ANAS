@@ -86,9 +86,8 @@ type BootstrapAdministrator struct {
 }
 
 type LocalAccountDefaults struct {
-	UsernameTemplate string `yaml:"username_template"`
-	PasswordPolicy   string `yaml:"password_policy"`
-	PasswordLength   int    `yaml:"password_length"`
+	PasswordPolicy string `yaml:"password_policy"`
+	PasswordLength int    `yaml:"password_length"`
 }
 
 // Identity is the provider-oriented spelling of the deployment identity
@@ -309,8 +308,24 @@ type ModuleAdministration struct {
 	LocalAccounts map[string]LocalAccountOverride `yaml:"local_accounts"`
 }
 
-type LocalAccountOverride struct {
-	Username string `yaml:"username"`
+// LocalAccountOverride is intentionally fieldless. The mapping exists only so
+// controlled import can validate a Manifest account ID while extracting its
+// one-time password. Physical usernames are never user configuration.
+type LocalAccountOverride struct{}
+
+func (*LocalAccountOverride) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("local account configuration must be a mapping")
+	}
+	if len(node.Content) != 0 {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == "username" {
+				return fmt.Errorf("local administrator username is not configurable; the Module fixed_username or ANAS default determines it")
+			}
+		}
+		return fmt.Errorf("local administrator credentials are accepted only as one-time `anas config import` input")
+	}
+	return nil
 }
 
 func Load(path string) (*File, error) {
@@ -349,13 +364,6 @@ func Load(path string) (*File, error) {
 	}
 	cfg.DynamicDNS.Provider = strings.ToLower(strings.TrimSpace(cfg.DynamicDNS.Provider))
 	cfg.DynamicDNS.DNSProvider = strings.TrimSpace(cfg.DynamicDNS.DNSProvider)
-	cfg.Administration.LocalAccounts.UsernameTemplate = strings.TrimSpace(cfg.Administration.LocalAccounts.UsernameTemplate)
-	if cfg.Administration.LocalAccounts.UsernameTemplate == "" {
-		cfg.Administration.LocalAccounts.UsernameTemplate = "admin_{module}"
-	}
-	if !strings.Contains(cfg.Administration.LocalAccounts.UsernameTemplate, "{module}") {
-		return nil, fmt.Errorf("administration.local_accounts.username_template must contain {module}")
-	}
 	cfg.Administration.LocalAccounts.PasswordPolicy = strings.ToLower(strings.TrimSpace(cfg.Administration.LocalAccounts.PasswordPolicy))
 	if cfg.Administration.LocalAccounts.PasswordPolicy == "" {
 		cfg.Administration.LocalAccounts.PasswordPolicy = "generated_per_module"
@@ -377,13 +385,6 @@ func Load(path string) (*File, error) {
 			return nil, fmt.Errorf("modules.%s.identity.login_protocol must be auto, oidc or saml", name)
 		}
 		module.Identity.LoginProtocol = protocol
-		for id, override := range module.Administration.LocalAccounts {
-			override.Username = strings.TrimSpace(override.Username)
-			if override.Username != "" && !localConfigUsernamePattern.MatchString(override.Username) {
-				return nil, fmt.Errorf("modules.%s.administration.local_accounts.%s.username is invalid", name, id)
-			}
-			module.Administration.LocalAccounts[id] = override
-		}
 		cfg.Modules.Values[name] = module
 	}
 	if cfg.DynamicDNS.Provider != "" && cfg.DynamicDNS.DNSProvider == "" {

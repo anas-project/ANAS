@@ -264,13 +264,8 @@ type manifestLocalAccount struct {
 	ID            string                  `yaml:"id"`
 	Purpose       string                  `yaml:"purpose"`
 	FixedUsername string                  `yaml:"fixed_username"`
-	Username      manifestLocalUsername   `yaml:"username"`
 	Credential    manifestLocalCredential `yaml:"credential"`
 	Lifecycle     manifestLocalLifecycle  `yaml:"lifecycle"`
-}
-
-type manifestLocalUsername struct {
-	Template string `yaml:"template"`
 }
 
 type manifestLocalCredential struct {
@@ -697,16 +692,6 @@ func normalizeManagement(module string, in manifestManagement) ([]ManagementSurf
 			return nil, nil, fmt.Errorf("module %q local account %q has unsupported purpose %q", module, id, purpose)
 		}
 		fixed := strings.TrimSpace(raw.FixedUsername)
-		template := strings.ToLower(strings.TrimSpace(raw.Username.Template))
-		if fixed != "" && template != "" {
-			return nil, nil, fmt.Errorf("module %q local account %q cannot set both fixed_username and username.template", module, id)
-		}
-		if fixed == "" && template == "" {
-			template = "global"
-		}
-		if template != "" && template != "global" {
-			return nil, nil, fmt.Errorf("module %q local account %q username.template must be global", module, id)
-		}
 		policy := strings.ToLower(strings.TrimSpace(raw.Credential.Policy))
 		if policy == "" {
 			policy = "generated_per_module"
@@ -721,7 +706,7 @@ func normalizeManagement(module string, in manifestManagement) ([]ManagementSurf
 			return nil, nil, fmt.Errorf("module %q local account %q has unsupported container_format %q", module, id, format)
 		}
 		accounts = append(accounts, LocalAccount{
-			ID: id, Purpose: purpose, FixedUsername: fixed, UsernameTemplate: template,
+			ID: id, Purpose: purpose, FixedUsername: fixed,
 			PasswordPolicy: policy, ContainerFormat: format,
 			Apply: strings.TrimSpace(raw.Lifecycle.Apply), Rotate: strings.TrimSpace(raw.Lifecycle.Rotate),
 		})

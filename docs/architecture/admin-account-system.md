@@ -88,7 +88,6 @@ administration:
       - all_application_admins
 
   local_accounts:
-    username_template: "admin_{module}"
     password_policy: generated_per_module
     password_length: 24
 
@@ -105,7 +104,8 @@ IAM 只使用 `identity.iam`；顶层 `iam:` 不再接受。Module 必需
 `bootstrap` 只表示首次创建并授予角色的目录账号，不表示系统永远只有一个管理员。
 后续人员通过角色成员关系管理。
 
-本地账号允许逐 Module 覆盖用户名，但密码不接受 YAML 明文：
+本地账号用户名不属于用户配置。上游固定账号由 Module 声明 `fixed_username`；其他账号由
+ANAS 固定模板 `admin_{module}` 在首次物化时确定。以下配置会被拒绝：
 
 ```yaml
 modules:
@@ -113,7 +113,7 @@ modules:
     administration:
       local_accounts:
         primary:
-          username: ops_ddns
+          username: ops_ddns # 非法：用户名不可配置
 ```
 
 ## 5. Module Manifest 契约
@@ -154,8 +154,6 @@ management:
   local_accounts:
     - id: primary
       purpose: primary
-      username:
-        template: global
       credential:
         policy: generated_per_module
         container_format: bcrypt
@@ -170,13 +168,14 @@ management:
 - `break_glass`：外部身份失效时使用；
 - `embedded_guard`：应用无法关闭的第二层本地认证。
 
-用户名固定的上游账号声明 `fixed_username: akadmin`。Runner 使用固定值而不是全局模板。
+用户名固定的上游账号声明 `fixed_username: akadmin`。未声明时 Runner 使用不可配置的 ANAS
+默认模板 `admin_{module}`。
 
 ## 6. Runner 解析和 Secret
 
 对每个启用的本地账号，Runner：
 
-1. 读取锁定名称；没有锁时按 Module 固定值、服务覆盖、全局模板的顺序解析。
+1. 读取锁定名称；没有锁时按 Module `fixed_username`、ANAS 默认模板的顺序解析。
 2. 校验字符集和长度并把结果锁定在 `.anas/local-admins.yml`。
 3. 在 Secret Store 中以账号为粒度生成密码。
 4. 仅在 Hook 需要的阶段把明文交给所属 Module。
@@ -227,13 +226,12 @@ modules:
     administration:
       local_accounts:
         break_glass:
-          username: admin_nextcloud
           password: Initial-Nextcloud-Password
 secrets:
   cloudflare_dns_api_token: cloudflare-token-123
 ```
 
-受控导入后，workspace `config.yml` 保留用户名与 Cloudflare token，但移除本地管理员密码；
+受控导入后，workspace `config.yml` 保留 Cloudflare token，但移除本地管理员密码；
 `.anas/secrets.yml` 以稳定逻辑 key
 `ANAS_LOCAL_ADMIN__NEXTCLOUD__BREAK_GLASS__PASSWORD` 保存该密码及
 `owner: nextcloud`、`kind: local_admin`、导入路径 provenance；
@@ -242,9 +240,9 @@ secrets:
 成功后更新 Secret Store，快照/备份恢复则必须同时恢复三者。完整文件示例和操作矩阵见
 [配置指南](/guide/configuration#config-yml-config-managed-yml-与-secrets-yml)。
 
-初始化后改变普通 username override 会明确报错并指出锁定值，不能静默无效。通用
-rename/migrate 命令尚不存在：只有应用提供“改名、验证、失败回滚”的专用 handler 后才能
-声明该能力。
+任何 `administration.local_accounts.username_template` 或
+`modules.<module>.administration.local_accounts.<id>.username` 都会被 schema/导入明确拒绝。
+用户名首次物化后锁定；不提供 rename/migrate 命令。
 
 ## 7. CLI
 
@@ -296,13 +294,13 @@ ddns_go local administrator ready: anas admin local credential ddns_go
 2. Traefik 不再消费 `BASICAUTH_USER`、`BASICAUTH_PASSWD` 或
    `TRAEFIK_BASICAUTH_HTPASSWD`，Dashboard 账号只来自托管 `primary`；
 3. `DEFAULT_SERVICE_ROOT_PASSWORD` 已删除；每个账号拥有独立 Secret；
-4. 新部署用户名直接按固定值、Module override、全局模板解析并锁定；
-5. 改用户名属于 `identity_migrate`，必须有应用专用事务；没有 handler 就明确不支持。
+4. 新部署用户名只按 Module `fixed_username` 或 ANAS 固定模板解析并锁定；
+5. 用户名不可配置，CLI 不提供 rename/migrate。
 
 ## 9. 验证要求
 
 - Manifest 解码和非法声明测试；
-- 用户名模板、固定用户名、锁定名称和 Secret 隔离单元测试；
+- 默认用户名、固定用户名、锁定名称、非法 override 和 Secret 隔离单元测试；
 - CLI 列表不泄密、credential 显式输出和 JSON 合同测试；
 - ddns-go E2E：计划不包含 oauth2-proxy、域名登录和直连登录均验证本地密码；
 - Nextcloud E2E：LDAP 用户已同步、SAML 登录关联同一用户、本地恢复账号可用；
@@ -323,7 +321,7 @@ ddns_go local administrator ready: anas admin local credential ddns_go
 Authentik）、阶段 3 的
 Manifest/配置表达，以及本地管理员状态的 snapshot/backup 一致性。Nextcloud 已不再复用
 Samba 管理员密码：首次安装使用运行时 Secret 文件，已有安装由真实 occ handler 更新；
-默认用户名由全局模板直接解析为 `admin_nextcloud` 并锁定。
+默认用户名由 ANAS 固定模板直接解析为 `admin_nextcloud` 并锁定。
 
 仓库已有 `server-authentik-nextcloud-login-e2e.sh` 覆盖 LDAP provisioning、SAML 浏览器
 登录、目录 anchor 与同一 Nextcloud 用户映射；`server-nextcloud-local-admin-e2e.sh` 覆盖

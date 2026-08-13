@@ -113,14 +113,13 @@ type ManagementSurface struct {
 }
 
 type LocalAccount struct {
-	ID               string `yaml:"id" json:"id"`
-	Purpose          string `yaml:"purpose" json:"purpose"`
-	FixedUsername    string `yaml:"fixed_username,omitempty" json:"fixed_username,omitempty"`
-	UsernameTemplate string `yaml:"username_template,omitempty" json:"username_template,omitempty"`
-	PasswordPolicy   string `yaml:"password_policy" json:"password_policy"`
-	ContainerFormat  string `yaml:"container_format" json:"container_format"`
-	Apply            string `yaml:"apply,omitempty" json:"apply,omitempty"`
-	Rotate           string `yaml:"rotate,omitempty" json:"rotate,omitempty"`
+	ID              string `yaml:"id" json:"id"`
+	Purpose         string `yaml:"purpose" json:"purpose"`
+	FixedUsername   string `yaml:"fixed_username,omitempty" json:"fixed_username,omitempty"`
+	PasswordPolicy  string `yaml:"password_policy" json:"password_policy"`
+	ContainerFormat string `yaml:"container_format" json:"container_format"`
+	Apply           string `yaml:"apply,omitempty" json:"apply,omitempty"`
+	Rotate          string `yaml:"rotate,omitempty" json:"rotate,omitempty"`
 }
 
 // localAccountOperation is ephemeral hook input for a credential transaction.

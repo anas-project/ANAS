@@ -9,18 +9,18 @@ import (
 	"github.com/anas-project/ANAS/internal/config"
 )
 
-func localAdminTestApp(t *testing.T, base string, template string) *app {
+func localAdminTestApp(t *testing.T, base string) *app {
 	t.Helper()
 	secrets := &secretStore{path: filepath.Join(base, "secrets.yml"), values: map[string]string{}}
 	return &app{
 		base: base,
 		cfg: &config.File{Administration: config.Administration{LocalAccounts: config.LocalAccountDefaults{
-			UsernameTemplate: template, PasswordPolicy: "generated_per_module", PasswordLength: 24,
+			PasswordPolicy: "generated_per_module", PasswordLength: 24,
 		}}},
 		reg: map[string]Module{"ddns_go": {
 			Name: "ddns_go", EnvPrefix: "DDNS_GO",
 			ManagementSurfaces: []ManagementSurface{{ID: "web", URIFrom: "DDNS_GO_DOMAIN_FULL", Authentication: "local"}},
-			LocalAccounts:      []LocalAccount{{ID: "primary", Purpose: "primary", UsernameTemplate: "global", PasswordPolicy: "generated_per_module", ContainerFormat: "bcrypt"}},
+			LocalAccounts:      []LocalAccount{{ID: "primary", Purpose: "primary", PasswordPolicy: "generated_per_module", ContainerFormat: "bcrypt"}},
 		}},
 		order: []string{"ddns_go"}, env: map[string]string{}, envOwner: map[string]string{}, secrets: secrets,
 	}
@@ -28,7 +28,7 @@ func localAdminTestApp(t *testing.T, base string, template string) *app {
 
 func TestLocalAdministratorIsGeneratedAndPlaintextStaysOutOfDeploymentEnv(t *testing.T) {
 	base := t.TempDir()
-	a := localAdminTestApp(t, base, "admin_{module}")
+	a := localAdminTestApp(t, base)
 	if err := a.materializeLocalAccounts(); err != nil {
 		t.Fatal(err)
 	}
@@ -44,9 +44,9 @@ func TestLocalAdministratorIsGeneratedAndPlaintextStaysOutOfDeploymentEnv(t *tes
 	}
 }
 
-func TestLocalAdministratorUsernameIsLockedAcrossTemplateChanges(t *testing.T) {
+func TestLocalAdministratorUsernameIsLockedAcrossMaterialization(t *testing.T) {
 	base := t.TempDir()
-	first := localAdminTestApp(t, base, "admin_{module}")
+	first := localAdminTestApp(t, base)
 	if err := first.materializeLocalAccounts(); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestLocalAdministratorUsernameIsLockedAcrossTemplateChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	second := localAdminTestApp(t, base, "operator_{module}")
+	second := localAdminTestApp(t, base)
 	if err := second.materializeLocalAccounts(); err != nil {
 		t.Fatal(err)
 	}
@@ -63,38 +63,22 @@ func TestLocalAdministratorUsernameIsLockedAcrossTemplateChanges(t *testing.T) {
 	}
 }
 
-func TestLocalAdministratorUsernameMayBeOverriddenPerModule(t *testing.T) {
-	a := localAdminTestApp(t, t.TempDir(), "admin_{module}")
-	a.cfg.Modules.Values = map[string]config.ModuleConfig{"ddns_go": {Administration: config.ModuleAdministration{
-		LocalAccounts: map[string]config.LocalAccountOverride{"primary": {Username: "dns_operator"}},
-	}}}
+func TestLocalAdministratorUsesManifestFixedUsername(t *testing.T) {
+	a := localAdminTestApp(t, t.TempDir())
+	mod := a.reg["ddns_go"]
+	mod.LocalAccounts[0].FixedUsername = "upstream_admin"
+	a.reg["ddns_go"] = mod
 	if err := a.materializeLocalAccounts(); err != nil {
 		t.Fatal(err)
 	}
-	if got := a.env["DDNS_GO_LOCAL_ADMIN_USERNAME"]; got != "dns_operator" {
+	if got := a.env["DDNS_GO_LOCAL_ADMIN_USERNAME"]; got != "upstream_admin" {
 		t.Fatalf("username = %q", got)
-	}
-}
-
-func TestLockedLocalAdministratorRejectsChangedOverride(t *testing.T) {
-	base := t.TempDir()
-	first := localAdminTestApp(t, base, "admin_{module}")
-	if err := first.materializeLocalAccounts(); err != nil {
-		t.Fatal(err)
-	}
-	if err := first.localAdmins.Save(); err != nil {
-		t.Fatal(err)
-	}
-	second := localAdminTestApp(t, base, "admin_{module}")
-	second.cfg.Modules.Values = map[string]config.ModuleConfig{"ddns_go": {Administration: config.ModuleAdministration{LocalAccounts: map[string]config.LocalAccountOverride{"primary": {Username: "silently_ignored"}}}}}
-	if err := second.materializeLocalAccounts(); err == nil {
-		t.Fatal("changed locked override was silently accepted")
 	}
 }
 
 func TestPlaintextBootstrapCredentialUsesRuntimeFileNotDeploymentEnv(t *testing.T) {
 	base := t.TempDir()
-	a := localAdminTestApp(t, base, "admin_{module}")
+	a := localAdminTestApp(t, base)
 	mod := a.reg["ddns_go"]
 	mod.LocalAccounts[0].ContainerFormat = "plaintext_on_bootstrap"
 	a.reg["ddns_go"] = mod

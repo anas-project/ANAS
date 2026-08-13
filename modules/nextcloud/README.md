@@ -7,13 +7,11 @@ File sync, sharing, office integration, memories, and Talk.
 - 日常登录通过 IAM/SAML，并由 LDAP provisioning 关联目录用户；本地账号不参与日常 SSO。
 - 本地恢复账号的 Manifest ID 是 `break_glass`，purpose 也是 `break_glass`。`ACCOUNT` 指这个
   ID，不是用户名。
-- 用户名来自全局 `administration.local_accounts.username_template`；默认模板
-  `admin_{module}` 在本 Module 解析为 `admin_nextcloud`。可在
-  `modules.nextcloud.administration.local_accounts.break_glass.username` 覆盖。物理用户名首次
-  物化后锁定。
+- 用户名由 ANAS 固定默认模板确定；`admin_{module}` 在本 Module 解析为
+  `admin_nextcloud`。用户名不可配置，首次物化后锁定，也不提供 rename 命令。
 - 密码没有 YAML 定义。Runner 生成逻辑 Secret
   `ANAS_LOCAL_ADMIN__NEXTCLOUD__BREAK_GLASS__PASSWORD`，持久化在 workspace 的
-  `.anas/secrets.generated.yml`。首次安装只通过 0600 文件
+  `.anas/secrets.yml`。首次安装只通过 0600 文件
   `.anas/runtime-secrets/local-admins/nextcloud/break_glass.password` 交给官方 entrypoint；
   明文不进入 deployment `.env`、lock 或 manifest。
 - IAM 故障恢复入口是 `https://<nextcloud>/login?direct=1`，可由 credential 命令一起查询。

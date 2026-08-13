@@ -36,7 +36,6 @@ management:
   local_accounts:
     - id: break_glass
       purpose: break_glass
-      username: {template: global}
       credential:
         policy: generated_per_module
         container_format: plaintext_on_bootstrap
@@ -48,9 +47,10 @@ management:
 The account `id` is the CLI `ACCOUNT`: a stable logical ID, never a username.
 Purposes are `primary`, `break_glass`, and `embedded_guard`. Omission resolves
 `primary`, then a sole account, otherwise ambiguity. Use the global username
-template or the per-module account-ID override; use `fixed_username` only when
-upstream fixes the physical name. Once materialized, a username is locked and
-ordinary configuration must not pretend to rename application state.
+Users cannot configure the username. A module declares `fixed_username` only
+when upstream fixes the physical name; otherwise the Runner uses the immutable
+ANAS default template `admin_{module}`. Once materialized, the username is
+locked, and no rename command is provided.
 
 Passwords persist only in the versioned `.anas/secrets.yml` store (0600), using
 stable keys and owner/kind/provenance metadata. External import YAML may supply
@@ -78,7 +78,7 @@ the direct entry point. Stable support requires a real-container test proving
 the old password fails and the new password succeeds.
 
 Current status is explicit: Authentik declares the fixed `akadmin`
-`break_glass` account, and Traefik declares a template-derived `primary` account;
+`break_glass` account, and Traefik declares an ANAS-default `primary` account;
 both have application apply/rotate handlers. Upstream MeshCentral supports local
 accounts only when domain `auth` is unset, while this module selects LDAP and has
 no same-domain local bypass. LAM's main login accepts enabled Samba `Admins`

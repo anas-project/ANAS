@@ -57,8 +57,6 @@ management:
   local_accounts:
     - id: break_glass
       purpose: break_glass
-      username:
-        template: global
       credential:
         policy: generated_per_module
         container_format: plaintext_on_bootstrap
@@ -72,9 +70,8 @@ management:
 1. `id` 是 CLI 中的 `ACCOUNT`，是稳定的逻辑账号 ID，不是用户名。允许的用途为
    `primary`、`break_glass`、`embedded_guard`。CLI 省略 `ACCOUNT` 时按 `primary`、唯一账号、
    歧义错误的顺序解析。
-2. 可配置用户名使用全局模板或 `modules.<module>.administration.local_accounts.<id>.username`
-   覆盖；上游固定账号才使用 `fixed_username`。用户名首次物化后锁定，普通配置变更不得
-   假装完成应用内改名。
+2. 用户名不可由用户配置。上游固定账号由 Module 声明 `fixed_username`；否则 Runner 使用
+   固定的 ANAS 默认模板 `admin_{module}`。用户名首次物化后锁定，不提供 rename 命令。
 3. 密码只能由版本化 `.anas/secrets.yml`（0600）持久化，以稳定 key 和
    owner/kind/provenance 区分来源。外部导入 YAML 可提供一次性 bootstrap 值，成功导入后
    workspace config 必须移除；Module 不得从 argv、workspace YAML、`.env` 或长期容器环境

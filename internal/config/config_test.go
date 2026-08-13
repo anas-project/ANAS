@@ -35,9 +35,6 @@ env:
 	if env["BASICAUTH_USER"] != "admin" {
 		t.Fatalf("BASICAUTH_USER = %q", env["BASICAUTH_USER"])
 	}
-	if got := cfg.Administration.LocalAccounts.UsernameTemplate; got != "admin_{module}" {
-		t.Fatalf("local username template = %q", got)
-	}
 	if got := cfg.Administration.LocalAccounts.PasswordLength; got != 24 {
 		t.Fatalf("local password length = %d", got)
 	}
@@ -94,19 +91,34 @@ func TestLoadDerivesLocaleOnlyFromLanguageWithExplicitRegion(t *testing.T) {
 	}
 }
 
-func TestLocalAdministratorPolicyIsValidated(t *testing.T) {
+func TestLocalAdministratorUsernameConfigurationIsRejected(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
 	if err := os.WriteFile(path, []byte(`modules:
   traefik: {}
 administration:
   local_accounts:
     username_template: operator
-    password_length: 8
 `), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "{module}") {
-		t.Fatalf("error = %v, want username template validation", err)
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "username_template") {
+		t.Fatalf("error = %v, want username template rejection", err)
+	}
+}
+
+func TestModuleLocalAdministratorUsernameOverrideIsRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`modules:
+  nextcloud:
+    administration:
+      local_accounts:
+        break_glass:
+          username: custom_admin
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "username") {
+		t.Fatalf("error = %v, want local username override rejection", err)
 	}
 }
 

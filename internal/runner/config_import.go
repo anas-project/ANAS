@@ -244,6 +244,9 @@ func normalizeImportedConfig(source string, reg map[string]Module) (configImport
 			for j := 0; j+1 < len(accounts.Content); j += 2 {
 				id := strings.TrimSpace(accounts.Content[j].Value)
 				accountNode := accounts.Content[j+1]
+				if mappingValue(accountNode, "username") != nil {
+					return result, fmt.Errorf("modules.%s.administration.local_accounts.%s.username is not configurable; the Module fixed_username or ANAS default determines the locked username", name, id)
+				}
 				passwordNode := mappingValue(accountNode, "password")
 				if passwordNode == nil {
 					continue
