@@ -189,7 +189,7 @@ DC=nas,DC=example,DC=com
 3. 轮换 `svc_ldap` 或 `svc_password` 时，必须同步更新全部使用方并验证 LDAP 登录/改密流程。
 4. 内置 `Administrator` 与自定义管理账号不得使用相同密码。
 5. 对支持 MFA 的上层 SSO 和应用启用 MFA；Samba AD 本身的口令仍须独立保护。
-6. `secrets.generated.yml`、模块 `.env`、备份和 Docker 管理权限均按秘密数据保护。
+6. `secrets.yml`、模块 `.env`、备份和 Docker 管理权限均按秘密数据保护。
 
 ## 10. 用户生命周期流程
 

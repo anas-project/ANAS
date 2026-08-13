@@ -126,6 +126,9 @@ func createWorkspace(workspace string, yes, jsonMode bool) (workspaceCreation, e
 	if exists(filepath.Join(workspace, workspaceStateDir)) {
 		return created, preconditionErrorf("workspace_exists", "%s is already a workspace", workspace)
 	}
+	if exists(workspaceConfigPath(workspace)) {
+		return created, preconditionErrorf("external_config_requires_import", "%s already contains config.yml; initialize an empty workspace, then run `anas config import %s -w <workspace>`", workspace, workspaceConfigPath(workspace))
+	}
 	if err := os.MkdirAll(workspace, 0755); err != nil {
 		return created, failuref("mkdir_failed", "create %s: %v", workspace, err)
 	}
@@ -160,6 +163,9 @@ func createWorkspace(workspace string, yes, jsonMode bool) (workspaceCreation, e
 	}
 	created.UserDataIsSubvolume = userSubvolume
 	if err := writeConfigSkeleton(workspace); err != nil {
+		return created, failuref("write_failed", "%s", err.Error())
+	}
+	if err := writeManagedConfigState(workspace, "init"); err != nil {
 		return created, failuref("write_failed", "%s", err.Error())
 	}
 	return created, nil
@@ -257,7 +263,8 @@ func writeConfigSkeleton(workspace string) error {
 # Application state lives at <workspace>/data and the files people store live
 # at <workspace>/userdata. They are separate because a rollback replaces the
 # first and must never touch the second. Back up this whole directory and the
-# deployment is fully recoverable.
+# deployment is fully recoverable. This file is managed by ANAS; use
+# anas config commands to modify it and anas config import for external input.
 
 modules:
   samba_dc: {}
@@ -273,7 +280,9 @@ env:
   IMAGE_PREFIX: anas_
   NETWORK_PREFIX: anas_
 `
-	// The config carries user secrets, so it is never world-readable.
+	// Ordinary deployment inputs may include API tokens, so the CLI-managed
+	// config remains private even though lifecycle-managed credentials are kept
+	// in the managed credential store.
 	return os.WriteFile(path, []byte(skeleton), 0600)
 }
 

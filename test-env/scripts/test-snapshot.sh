@@ -235,7 +235,7 @@ fi
   fi
 
   echo "== S4: the snapshot is self-sufficient =="
-  for f in meta/config.yml meta/config.lock.yml meta/secrets.generated.yml \
+  for f in meta/config.yml meta/config.lock.yml meta/secrets.yml \
            meta/deployment-state.yml deployment/deployment.yml \
            deployment/config.source.yml snapshot.yml; do
     [ -f "$ws/snapshots/$auto/$f" ] || fail "snapshot $auto is missing $f"

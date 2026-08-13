@@ -35,6 +35,13 @@ func runAdmin(args []string, jsonMode bool) error {
 		return usageErrorf("%s", err.Error())
 	}
 	base := stateDir(workspace)
+	if action == "rotate" {
+		unlock, lockErr := acquireRuntimeLock(base)
+		if lockErr != nil {
+			return preconditionErrorf("runtime_lock_failed", "%s", lockErr.Error())
+		}
+		defer unlock()
+	}
 	state, err := loadLocalAdminState(base)
 	if err != nil {
 		return preconditionErrorf("local_admin_state_unreadable", "%s", err.Error())

@@ -181,6 +181,13 @@ func writeSynthesizedMeta(workspace, destRoot, deploymentID string) error {
 	if err := os.MkdirAll(metaDir, 0700); err != nil {
 		return err
 	}
+	configBytes, err := os.ReadFile(filepath.Join(metaDir, snapshotMetaConfigName))
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(metaDir, snapshotMetaConfigStateName), managedConfigStateBytes(configBytes, "backup"), 0600); err != nil {
+		return err
+	}
 	if err := copySecretStore(base, filepath.Join(metaDir, snapshotMetaSecretsName)); err != nil {
 		return err
 	}
@@ -513,6 +520,7 @@ func writeMetadataTar(req transferRequest) error {
 	staged = append(staged, req.source.parts...)
 	if req.source.root == "" {
 		staged = append(staged,
+			backupPart{src: filepath.Join(req.destRoot, "meta", snapshotMetaConfigStateName), rel: filepath.Join("meta", snapshotMetaConfigStateName)},
 			backupPart{src: filepath.Join(req.destRoot, "meta", snapshotMetaSecretsName), rel: filepath.Join("meta", snapshotMetaSecretsName)},
 			backupPart{src: filepath.Join(req.destRoot, "meta", snapshotMetaAdminsName), rel: filepath.Join("meta", snapshotMetaAdminsName)},
 			backupPart{src: filepath.Join(req.destRoot, "meta", snapshotMetaStateName), rel: filepath.Join("meta", snapshotMetaStateName)},

@@ -1,11 +1,11 @@
 # CLI 配置修改与生效生命周期
 
 > [!IMPORTANT]
-> 本页同时记录当前实现与后续设计。只有“当前命令”一节中的命令可以执行；`config apply`、`secret rotate`、`migrate` 和 `config import-state` 仍是设计提案。
+> 本页同时记录当前实现与后续设计。受控的 `config import`、`config migrate` 与管理员专用轮换已实现；通用 `config apply`、任意 `secret rotate` 和 `config import-state` 仍是设计提案。
 
 ## 当前模型
 
-ANAS 将用户维护的 desired config、解析后的 lock 和不可变 deployment 制品分开：
+ANAS 将 CLI 管理的规范化 desired config、解析后的 lock 和不可变 deployment 制品分开：
 
 1. `config set` 只修改 `<workspace>/config.yml`；
 2. `config explain` 查看参数类型、敏感性和变更 effect；

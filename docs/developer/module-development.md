@@ -75,9 +75,11 @@ management:
 2. 可配置用户名使用全局模板或 `modules.<module>.administration.local_accounts.<id>.username`
    覆盖；上游固定账号才使用 `fixed_username`。用户名首次物化后锁定，普通配置变更不得
    假装完成应用内改名。
-3. 密码只能由 Secret Store 生成和持久化。Module 不得接受托管密码的 argv、普通 YAML、
-   `.env` 或长期容器环境输入。bootstrap-only 上游使用 0600 runtime Secret 文件；能使用
-   hash 的上游只发布 hash。
+3. 密码只能由版本化 `.anas/secrets.yml`（0600）持久化，以稳定 key 和
+   owner/kind/provenance 区分来源。外部导入 YAML 可提供一次性 bootstrap 值，成功导入后
+   workspace config 必须移除；Module 不得从 argv、workspace YAML、`.env` 或长期容器环境
+   接受托管明文。bootstrap-only 上游使用 0600 runtime Secret 文件；能使用 hash 的上游只
+   发布 hash。DNS API token 等普通部署 Secret 不属于 lifecycle-managed，继续留在受管配置。
 4. `apply` 必须把当前托管 Secret 写入或核对应用内部状态，并验证账号确实可登录；仅设置
    容器环境变量不算完成。`rotate` 接收候选 Secret，更新应用、验证候选值，成功后才允许
    Runner 提交 Secret。失败必须恢复旧应用凭据；无法可靠回滚时不得声明 rotate。

@@ -388,7 +388,7 @@ ANAS_DDNS_GO_IPV{4,6}_GETTYPE / _URLS / _INTERFACE
 
 | 位置 | 内容 | 权限 |
 |---|---|---|
-| `.anas/secrets.generated.yml` | `ANAS_LOCAL_ADMIN__DDNS_GO__PRIMARY__PASSWORD` 明文及 `DDNS_GO_WEB_PASSWORD_HASH` | `0600` |
+| `.anas/secrets.yml` | `ANAS_LOCAL_ADMIN__DDNS_GO__PRIMARY__PASSWORD` 明文及 `DDNS_GO_WEB_PASSWORD_HASH` | `0600` |
 | Hook calculate 请求 | `DDNS_GO_LOCAL_ADMIN_PASSWORD` 明文，仅进程内短暂存在 | 不落盘 |
 | 渲染的 `.env` | `DDNS_GO_LOCAL_ADMIN_USERNAME`、`DDNS_GO_PASSWORD_HASH` | `0400` |
 | `.ddns_go_config.yaml` | `user.password` bcrypt | `0600` |

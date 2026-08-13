@@ -263,7 +263,7 @@ module functionality is:
   the rendered module directory, disabled Compose services, render-only
   `internal_env` keys, and after-start `docker cp` operations. Calculate
   patches are validated against the module's prefixes and `config.exports`.
-- Persist generated secrets in `secrets.generated.yml` and reuse them on later
+- Persist generated secrets in `secrets.yml` and reuse them on later
   runs. Non-calculate hook phases receive only the module-scoped secrets.
 - Copy module assets into the runtime work directory and write a scoped per-module
   `.env`. The runner does not interpret application configuration templates;

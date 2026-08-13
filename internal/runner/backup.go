@@ -15,7 +15,7 @@ package runner
 //	<dest>/<backup-id>/
 //	  backup.yml     manifest; complete: true written last
 //	  snapshot.yml   the source snapshot's own metadata
-//	  meta/          config.yml, config.lock.yml, secrets.generated.yml, deployment-state.yml
+//	  meta/          config.yml, config.lock.yml, secrets.yml, deployment-state.yml
 //	  deployment/    a full copy of the deployment artifact
 //	  data/          the data, as a subvolume or an ordinary directory
 //	  data.stream    ... or, for send-file, a `btrfs send` stream instead of data/
@@ -464,7 +464,7 @@ func estimateBackupSize(workspace string) (backupEstimate, bool) {
 	base := stateDir(workspace)
 	dataBytes, dataReadable := measureTree(dataDir(workspace))
 	stateBytes, _ := measureTree(filepath.Join(base, "state"))
-	secretBytes, _ := measureTree(filepath.Join(base, "secrets.generated.yml"))
+	secretBytes, _ := measureTree(filepath.Join(base, "secrets.yml"))
 	estimate := backupEstimate{DataBytes: dataBytes, StateBytes: stateBytes + secretBytes}
 	if active, err := loadActiveState(base); err == nil && active.ActiveDeployment != "" {
 		estimate.ActiveDeploymentBytes, _ = measureTree(deploymentArtifactDir(base, active.ActiveDeployment))

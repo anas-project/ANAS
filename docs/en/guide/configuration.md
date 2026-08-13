@@ -2,7 +2,7 @@
 
 ## File responsibilities
 
-`<workspace>/config.yml` is the desired state maintained by the operator. `config.lock.yml` records resolved module versions, providers, and host policy. Do not edit runtime state below `.anas/` by hand.
+`<workspace>/config.yml` is normalized desired state managed by the ANAS CLI, not a hand-edited input file. External YAML enters only through `anas config import SOURCE -w WORKSPACE`; the source is never modified. `config.lock.yml` records resolved module versions, providers, and host policy. Do not edit workspace configuration or `.anas/` state by hand: plan, lock, render, and apply verify the managed-config digest and reject out-of-band changes.
 
 The structured YAML contains:
 
@@ -18,9 +18,10 @@ The structured YAML contains:
 
 ## Change and preview
 
-Edit YAML directly or use the CLI:
+Import an external configuration after initialization, then modify it only through the CLI:
 
 ```bash
+anas config import ./my-config.yml -w /srv/anas
 anas config explain nextcloud.domain_prefix
 anas config set global.timezone Asia/Singapore -w /srv/anas
 anas config plan -w /srv/anas
@@ -107,16 +108,20 @@ The current manifests declare the following compatibility. The runner rejects in
 | `meshcentral` | supported | supported |
 | `authentik` | supported | not declared/supported |
 
-## Secrets
+## Secret boundary
 
-Do not commit real secrets. `config secret list` returns names only; only the explicit `config secret get` operation returns clear text. Generated secrets live in the protected workspace runtime and are handled by the ANAS backup flow.
+Ordinary deployment inputs such as DNS API tokens remain in the system-managed `config.yml`. The file is `0600`; inventory and plan output redact declared sensitive values, and operators change them through configuration commands such as `config set`. Do not commit an external source containing real secrets.
+
+Only `lifecycle_managed` credentials are atomically extracted during import: module-local administrator passwords and settings whose Manifest effect is `credential_rotate`, where an application API or CLI is required and ordinary apply cannot update the live credential correctly. These values and system-generated passwords share the versioned `.anas/secrets.yml` store (`0600`), with stable logical keys plus owner, kind, and provenance metadata. Legacy `.anas/secrets.generated.yml` is unsupported and is never migrated automatically.
+
+`config secret list` returns store keys and kinds only; only explicit `config secret get` reveals clear text. A failed import changes none of `config.yml`, `secrets.yml`, or the managed-config digest. Backups and snapshots must protect both files as plaintext-sensitive data.
 
 ## Module-local administrators
 
 `management.local_accounts` is a capability declared by a Module Manifest.
 Configuration may choose the global username template or override a username
 by account ID. IDs such as `primary` and `break_glass` are not usernames, and
-passwords are never valid `config.yml` input.
+lifecycle-managed passwords are not persistent `config.yml` fields. An external import may provide one as a one-time bootstrap input; the normalized workspace copy removes it after a successful import.
 
 ```bash
 anas admin local credential nextcloud break_glass -w /srv/anas

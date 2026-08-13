@@ -189,6 +189,11 @@ func (a *app) materializeLocalAccounts() error {
 			if err != nil {
 				return err
 			}
+			meta := a.secrets.metadata[record.SecretKey]
+			if meta.Kind != "local_admin" {
+				a.secrets.metadata[record.SecretKey] = secretMetadata{Owner: module, Kind: "local_admin", Provenance: "generated-local-admin"}
+				a.secrets.dirty = true
+			}
 			usernameKey, _ := localAdminEnvKeys(mod, declared.ID)
 			a.env[usernameKey] = record.Username
 			a.setEnvOwner(usernameKey, module)

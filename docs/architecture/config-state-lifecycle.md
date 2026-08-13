@@ -51,7 +51,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 
 | 路径 | 性质 | 备份 |
 | --- | --- | --- |
-| `secrets.generated.yml` | 稳定生成密钥，当前为 `0600` | 必须，且应加密备份 |
+| `secrets.yml` | 用户指定的 lifecycle-managed 凭据与稳定生成密钥，版本化且为 `0600` | 必须，且应加密备份 |
 | `config.lock.yml` | Module 版本、来源和 capability 解析结果 | 必须与配置一起保存 |
 | `.anas/deployments/<id>/` | 冻结配置、Module 和运行制品 | 由 ANAS 备份与回滚模型处理 |
 | `.anas/deployments/<id>/*/.env` | 含派生凭据的渲染产物 | 按敏感 deployment 制品保护 |
@@ -85,7 +85,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 
 当前有两种“默认值”，行为并不相同：
 
-1. `secrets.Ensure` 生成的稳定默认值会写入 `secrets.generated.yml`，以后修改代码里的生成规则不会替换旧值。
+1. `secrets.Ensure` 生成的稳定默认值会写入 `secrets.yml`，以后修改代码里的生成规则不会替换旧值。
 2. `defaultValue(x, parent)` 每次渲染重新计算，但目标应用可能只在第一次读取。于是 `.env` 已改变而应用内部仍保留旧值，形成无提示漂移。
 
 第一类包括：
@@ -138,7 +138,7 @@ LDAP bind 与密码修改 bind 都拥有独立参数或生成 Secret，禁止再
 
 ### 3. Secret providers
 
-配置只保存引用，例如 `secret://anas/samba/password-bind`。后端可以先支持本地 `secrets.generated.yml`，以后再接 Docker secrets、文件或外部 secret manager。日志、plan、applied state 和 config diff 中只显示引用、版本和 hash，不显示明文。
+配置只保存引用，例如 `secret://anas/samba/password-bind`。后端可以先支持本地 `secrets.yml`，以后再接 Docker secrets、文件或外部 secret manager。日志、plan、applied state 和 config diff 中只显示引用、版本和 hash，不显示明文。
 
 ### 4. Applied/observed state
 

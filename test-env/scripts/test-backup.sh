@@ -251,7 +251,7 @@ ext4_fstype=$(df -T /tmp 2>/dev/null | awk 'NR==2 {print $2}')
 
   # Both channels, and the completion marker last.
   for f in backup.yml snapshot.yml meta/config.yml meta/config.lock.yml \
-           meta/secrets.generated.yml meta/deployment-state.yml \
+           meta/secrets.yml meta/deployment-state.yml \
            deployment/deployment.yml deployment/config.source.yml; do
     [ -e "$ext4_dest/$backup_id/$f" ] || fail "backup $backup_id is missing $f"
   done
@@ -287,7 +287,7 @@ ext4_fstype=$(df -T /tmp 2>/dev/null | awk 'NR==2 {print $2}')
   grep -q '"ok": true' "$REPORT_DIR/backup-restore.json" || fail "restore reported failure"
   [ -f "$restore_ws/data/marker-before" ] || fail "the restored workspace has no data"
   [ -f "$restore_ws/config.yml" ] || fail "the restored workspace has no config"
-  [ -f "$restore_ws/.anas/secrets.generated.yml" ] || fail "the restored workspace has no secret store"
+  [ -f "$restore_ws/.anas/secrets.yml" ] || fail "the restored workspace has no secret store"
   # A restored data directory that is not a subvolume silently costs the
   # workspace every future snapshot.
   is_subvolume "$restore_ws/data" || fail "restored data is not a Btrfs subvolume"

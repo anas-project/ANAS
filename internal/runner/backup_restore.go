@@ -82,8 +82,9 @@ func backupRestoreTargets(workspace string, manifest *backupManifest) []string {
 	base := stateDir(workspace)
 	return []string{
 		workspaceConfigPath(workspace),
+		managedConfigStatePath(base),
 		projectLockPath(workspaceConfigPath(workspace)),
-		filepath.Join(base, "secrets.generated.yml"),
+		filepath.Join(base, "secrets.yml"),
 		localAdminStatePath(base),
 		deploymentStatePath(base, manifest.DeploymentID),
 		activeStatePath(base),
@@ -121,11 +122,14 @@ func restoreBackup(workspace, dest string, manifest *backupManifest, all []backu
 		return nil, failuref("restore_failed", "restore config.yml: %v", err)
 	}
 	restored = append(restored, "config")
+	if err := copyFileMode(filepath.Join(metaDir, snapshotMetaConfigStateName), managedConfigStatePath(base), 0600); err != nil {
+		return nil, failuref("restore_failed", "restore managed config state: %v", err)
+	}
 	if err := copyFileMode(filepath.Join(metaDir, snapshotMetaLockName), projectLockPath(workspaceConfigPath(workspace)), 0600); err != nil {
 		return nil, failuref("restore_failed", "restore config.lock.yml: %v", err)
 	}
 	restored = append(restored, "lock")
-	if err := copyFileMode(filepath.Join(metaDir, snapshotMetaSecretsName), filepath.Join(base, "secrets.generated.yml"), 0600); err != nil {
+	if err := copyFileMode(filepath.Join(metaDir, snapshotMetaSecretsName), filepath.Join(base, "secrets.yml"), 0600); err != nil {
 		return nil, failuref("restore_failed", "restore the secret store: %v", err)
 	}
 	restored = append(restored, "secrets")
@@ -315,7 +319,7 @@ func verifyMaterialized(root string) []snapshotProblem {
 	if !exists(filepath.Join(root, "data")) {
 		add("subvolume_missing", "the backup's data is not present at %s", filepath.Join(root, "data"))
 	}
-	for _, name := range []string{snapshotMetaConfigName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaAdminsName, snapshotMetaStateName} {
+	for _, name := range []string{snapshotMetaConfigName, snapshotMetaConfigStateName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaAdminsName, snapshotMetaStateName} {
 		if !exists(filepath.Join(root, "meta", name)) {
 			add("meta_incomplete", "meta/%s is missing", name)
 		}
@@ -344,7 +348,7 @@ func verifyRestoredWorkspace(workspace string, manifest *backupManifest) backupV
 	for _, path := range []string{
 		workspaceConfigPath(workspace),
 		projectLockPath(workspaceConfigPath(workspace)),
-		filepath.Join(base, "secrets.generated.yml"),
+		filepath.Join(base, "secrets.yml"),
 		deploymentStatePath(base, manifest.DeploymentID),
 		activeStatePath(base),
 		dataDir(workspace),

@@ -149,7 +149,7 @@ func usage() {
 
 Usage:
   anas init [PATH] [--shell-init write|remove] [-y]
-  anas plan    -c config.yml [--module-root modules]
+  anas plan    [-w WORKSPACE] [--module-root modules]
   anas lock    [-w WORKSPACE] [-c config.yml]
   anas render  [-w WORKSPACE] [-c config.yml]
   anas build   [-w WORKSPACE] [-c config.yml]
@@ -167,6 +167,8 @@ Usage:
   anas backup list|verify  --to DEST [--backup-id ID]
   anas backup restore --from SRC -w WORKSPACE [--backup-id ID] [--dry-run] [-y]
   anas config list    [global|MODULE] [-w WORKSPACE]
+  anas config import  SOURCE [-w WORKSPACE]
+  anas config migrate [-w WORKSPACE]
   anas config set     [-w WORKSPACE] <module.parameter> <value>
   anas config explain <module.parameter>
   anas config plan    [-w WORKSPACE]
@@ -177,7 +179,7 @@ Workspace:
   A workspace holds the config, data, snapshots and runtime state of one
   deployment, so backing up that single directory backs up everything.
 
-    <workspace>/config.yml   desired state (the only file you edit)
+    <workspace>/config.yml   CLI-managed normalized desired state (do not edit)
     <workspace>/data/        application state; replaced by a restore
     <workspace>/userdata/    files people store; never touched by a rollback
     <workspace>/snapshots/   point-in-time copies
@@ -365,6 +367,9 @@ func (a *app) execute(actions []string) error {
 	a.lock = lock
 	a.cfg = cfg
 	a.env, a.envOwner = cfg.BaseEnvWithOwners()
+	if err := a.loadImportedSecrets(); err != nil {
+		return err
+	}
 	a.order, err = a.resolveOrder(cfg.Modules.Order)
 	if err != nil {
 		return err

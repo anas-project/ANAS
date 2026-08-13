@@ -90,7 +90,7 @@ func seedSnapshotWorkspaceAt(t *testing.T, workspace string) (deploymentID strin
 	if err := os.WriteFile(workspaceConfigPath(workspace), []byte("modules:\n  core: {}\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(base, "secrets.generated.yml"), []byte("KEY: value\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(base, "secrets.yml"), []byte("api_version: anas.secrets/v2\nsecrets:\n  KEY:\n    value: value\n    owner: runner\n    kind: generated\n    provenance: test\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	admins := localAdminState{
@@ -124,6 +124,7 @@ func TestSnapshotCarriesEverythingNeededToRestoreItAlone(t *testing.T) {
 	root := snapshotRoot(workspace, meta.ID)
 	for _, rel := range []string{
 		filepath.Join("meta", snapshotMetaConfigName),
+		filepath.Join("meta", snapshotMetaConfigStateName),
 		filepath.Join("meta", snapshotMetaLockName),
 		filepath.Join("meta", snapshotMetaSecretsName),
 		filepath.Join("meta", snapshotMetaAdminsName),

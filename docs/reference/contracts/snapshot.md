@@ -19,8 +19,9 @@
       snapshot.yml        # 元数据，0600，complete 字段最后写
       meta/
         config.yml            # 取自制品的 config.source.yml，非磁盘当前值，0600
+        config-managed.yml    # 与上述 config.yml 匹配的 CLI 完整性摘要，0600
         config.lock.yml
-        secrets.generated.yml # 该时刻的 secret store，0600
+        secrets.yml # 该时刻的 secret store，0600
         local-admins.yml       # 本地管理员锁定名称与 Secret 逻辑键，0600
         deployment-state.yml  # 对应那一个 .anas/state/deployments/<id>.yml
       deployment/         # .anas/deployments/<id>/ 的完整副本
@@ -34,7 +35,7 @@
 config、lock、secrets、可运行制品、数据全部是实体副本而非引用。唯一无法覆盖的是
 上游基础镜像（需要 registry），见"恢复语义"。
 
-`config.yml` 与 `secrets.generated.yml` 含明文密钥，`local-admins.yml` 虽不含密码但属于
+`config.yml` 与 `secrets.yml` 含明文密钥，`local-admins.yml` 虽不含密码但属于
 安全库存，故 `snapshots/` 整体 0700、`meta/` 下文件 0600。恢复时三者必须一起回滚，
 否则用户名锁与密码逻辑键可能指向不同账号。
 
@@ -437,7 +438,7 @@ complete: true           # 最后写入；缺失即中断产物，不可恢复
 两处与初稿的偏差，均已按现实修正：
 
 - **删掉 `secret_generation`。** secret store 目前是
-  `secrets.generated.yml` 里的一张平表，没有分代（设计文档 §8.3 描述了分代，但未
+  `secrets.yml` 使用版本化记录并带 owner/kind/provenance 元数据，但当前没有分代（设计文档 §8.3 描述了分代，但未
   实现），没有可写的代次号。写 `0` 会是一个假测量值，故整个字段不出现。分代落地后
   再加回来——加字段不升 `api_version`。
 - **删掉 `recovery_path`。** 它描述的是"回滚时被挪开的原数据位置"。恢复前必建

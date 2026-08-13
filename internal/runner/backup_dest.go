@@ -259,7 +259,7 @@ func verifyBackup(dest string, manifest backupManifest, present map[string]bool)
 		checkPresent(add, backupMetaTarPath(root), "metadata_stream_missing", "metadata archive")
 	default:
 		checkPresent(add, backupDataPath(root), "stream_missing", "data directory")
-		for _, name := range []string{snapshotMetaConfigName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaAdminsName, snapshotMetaStateName} {
+		for _, name := range []string{snapshotMetaConfigName, snapshotMetaConfigStateName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaAdminsName, snapshotMetaStateName} {
 			if !exists(filepath.Join(root, "meta", name)) {
 				add("metadata_stream_missing", "meta/%s is missing from backup %s", name, manifest.BackupID)
 			}

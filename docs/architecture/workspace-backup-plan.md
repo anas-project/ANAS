@@ -25,11 +25,11 @@
   snapshots/              # 普通目录，0700；快照作为 subvolume 建在它下面
   .anas/                  # 即今日的 base，0700
     state/  deployments/  staging/  hook-bin/  go-build-cache/
-    secrets.generated.yml
+    secrets.yml
 ```
 
 workspace 自身与 `.anas/` **保持普通目录，不做 subvolume**。理由是实测数据：
-`.anas/` 共 404M，其中真正不可重建的只有 `state/`(44K) + `secrets.generated.yml`(8K)
+`.anas/` 共 404M，其中真正不可重建的只有 `state/`(44K) + `secrets.yml`(8K)
 约 52K，其余是 `deployments/`(249M)、`go-build-cache/`(68M)、`hook-bin/`(45M)、
 `staging/`(42M)。btrfs 快照不可过滤，做成 subvolume 会把 400M 缓存一并固化；52K 的
 文件级复制在已持有的 `state/lock` 排他锁下即可保证一致。

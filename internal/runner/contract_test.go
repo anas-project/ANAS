@@ -152,7 +152,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		{"config plan", []string{"config", "plan", "-w", workspace, "--root", root, "--json"}, 0},
 		{"config secret list", []string{"config", "secret", "list", "-w", workspace, "--json"}, 0},
 		{"admin local list", []string{"admin", "local", "list", "-w", workspace, "--json"}, 0},
-		{"plan", []string{"plan", "-c", filepath.Join(root, "config.example.yml"), "--root", root, "--json"}, 0},
+		{"plan", []string{"plan", "-w", workspace, "--root", root, "--json"}, 0},
 		// snapshot and backup already conformed; they are here so a
 		// regression in the shared plumbing fails against them too.
 		{"snapshot list", []string{"snapshot", "list", "-w", workspace, "--json"}, 0},
@@ -178,7 +178,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		{"unrecognised flag", []string{"status", "-w", workspace, "--nope", "--json"}, 2},
 
 		// ---- 4: precondition unmet -------------------------------------
-		{"plan with a missing config", []string{"plan", "-c", filepath.Join(root, "no-such-config.yml"), "--root", root, "--json"}, 4},
+		{"plan with a missing config", []string{"plan", "-w", workspace, "-c", filepath.Join(root, "no-such-config.yml"), "--root", root, "--json"}, 4},
 		{"lock with a missing config", []string{"lock", "-w", workspace, "-c", filepath.Join(root, "no-such-config.yml"), "--json"}, 4},
 		{"inspect a missing deployment", []string{"deployments", "inspect", "nosuchdeployment", "-w", workspace, "--json"}, 4},
 		{"get a missing secret", []string{"config", "secret", "get", "NO_SUCH_SECRET", "-w", workspace, "--json"}, 4},
@@ -356,7 +356,7 @@ func TestHumanOutputStaysOffTheJSONPath(t *testing.T) {
 		{"config", "plan", "-w", workspace, "--root", root, "--json"},
 		{"config", "secret", "list", "-w", workspace, "--json"},
 		{"config", "explain", "global.base_domain", "--root", root, "--json"},
-		{"plan", "-c", filepath.Join(root, "config.example.yml"), "--root", root, "--json"},
+		{"plan", "-w", workspace, "--root", root, "--json"},
 	} {
 		label := strings.Join(args, " ")
 		stdout, _, exit := capture(t, args...)
