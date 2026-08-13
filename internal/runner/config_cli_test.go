@@ -37,6 +37,17 @@ func TestResolveGlobalAndServiceConfigTargets(t *testing.T) {
 	}
 }
 
+func TestBuildMirrorEnvRequiresImageRebuild(t *testing.T) {
+	target, err := resolveConfigTarget("env.APT_MIRROR_URL", map[string]Module{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := policyForTarget(target, map[string]Module{})
+	if policy.Effect != "image_rebuild" || policy.Apply != "apply-with-build" {
+		t.Fatalf("APT mirror policy = %+v", policy)
+	}
+}
+
 func TestOrdinaryStartRejectsImmutableChange(t *testing.T) {
 	reg, err := loadRegistry(filepath.Join("..", ".."))
 	if err != nil {

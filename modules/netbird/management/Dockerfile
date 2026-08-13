@@ -1,11 +1,11 @@
 ARG DOCKER_HUB_REGISTRY=docker.io
 FROM ${DOCKER_HUB_REGISTRY}/netbirdio/management:0.76.1
 
-ARG CHINESE_SPEEDUP=false
+ARG CHINESE_BUILD_SPEEDUP=false
 ARG APT_MIRROR_URL
 
 COPY --chmod=0755 root/ /
-RUN if [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then \
+RUN if [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then \
     for sources in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do \
       [ -f "$sources" ] || continue; \
       sed -i \

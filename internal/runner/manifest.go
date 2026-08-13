@@ -743,7 +743,7 @@ func normalizeAlternativeDependencies(in []manifestAlternativeDependency) []Alte
 
 func validChangeEffect(effect string) bool {
 	switch effect {
-	case "hot_reload", "process_restart", "container_restart", "container_recreate", "reconcile", "credential_rotate", "data_migrate", "immutable":
+	case "hot_reload", "process_restart", "container_restart", "container_recreate", "image_rebuild", "reconcile", "credential_rotate", "data_migrate", "immutable":
 		return true
 	default:
 		return false

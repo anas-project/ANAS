@@ -3,11 +3,11 @@ FROM ${DOCKER_HUB_REGISTRY}/library/debian:trixie-slim
 
 ARG LAM_VERSION=9.6
 ARG LAM_DEB_SHA256=d44ccf15e4428becb150c2372e00f4f455053751458674c2d5fb7826156fc5e2
-ARG CHINESE_SPEEDUP=false
+ARG CHINESE_BUILD_SPEEDUP=false
 ARG APT_MIRROR_URL
 ARG LAM_APT_MIRROR_URL
 ARG LAM_DOWNLOAD_URL
-ARG GITHUB_DOWNLOAD_PROXY_PREFIX
+ARG BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -18,7 +18,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN cp /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
   && bootstrap_mirror="" \
   && if [ -n "$LAM_APT_MIRROR_URL" ]; then bootstrap_mirror="$LAM_APT_MIRROR_URL"; \
-     elif [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then bootstrap_mirror="$APT_MIRROR_URL"; fi \
+     elif [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then bootstrap_mirror="$APT_MIRROR_URL"; fi \
   && case "$bootstrap_mirror" in https://*) bootstrap_mirror="http://${bootstrap_mirror#https://}";; esac \
   && if [ -n "$bootstrap_mirror" ]; then sed -i \
        -e "s|http://deb.debian.org|${bootstrap_mirror%/}|g" \
@@ -36,7 +36,7 @@ RUN if [ -n "$LAM_APT_MIRROR_URL" ]; then \
       -e "s|https://deb.debian.org|${LAM_APT_MIRROR_URL%/}|g" \
       -e "s|http://security.debian.org|${LAM_APT_MIRROR_URL%/}|g" \
       /etc/apt/sources.list.d/debian.sources; \
-  elif [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then \
+  elif [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then \
     sed -i \
       -e "s|http://deb.debian.org|${APT_MIRROR_URL%/}|g" \
       -e "s|https://deb.debian.org|${APT_MIRROR_URL%/}|g" \
@@ -52,7 +52,7 @@ RUN if [ -n "$LAM_APT_MIRROR_URL" ]; then \
   && locale-gen
 
 RUN download_url="https://github.com/LDAPAccountManager/lam/releases/download/${LAM_VERSION}/ldap-account-manager_${LAM_VERSION}-1_all.deb" \
-  && if [ -n "$LAM_DOWNLOAD_URL" ]; then download_url="$LAM_DOWNLOAD_URL"; elif [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$GITHUB_DOWNLOAD_PROXY_PREFIX" ]; then download_url="${GITHUB_DOWNLOAD_PROXY_PREFIX%/}/${download_url#https://}"; fi \
+  && if [ -n "$LAM_DOWNLOAD_URL" ]; then download_url="$LAM_DOWNLOAD_URL"; elif [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX" ]; then download_url="${BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX%/}/${download_url#https://}"; fi \
   && curl --http1.1 -fsSL --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 30 "$download_url" \
     -o /tmp/lam.deb \
   && echo "${LAM_DEB_SHA256}  /tmp/lam.deb" | sha256sum -c - \

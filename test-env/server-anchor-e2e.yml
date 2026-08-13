@@ -12,6 +12,7 @@ env:
   IMAGE_PREFIX: anas_anchor_
   NETWORK_PREFIX: anas_anchor_
   CHINESE_SPEEDUP: "true"
+  CHINESE_BUILD_SPEEDUP: "true"
   APT_MIRROR_URL: https://mirrors.aliyun.com
   APK_MIRROR_URL: https://mirrors.aliyun.com
   DOCKER_SOCKET_PATH: /run/anas-anchor-docker.sock

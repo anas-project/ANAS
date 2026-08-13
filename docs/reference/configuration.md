@@ -56,7 +56,7 @@
 `config.Load` 使用 `KnownFields(true)`：除 `secrets`、`modules` 和 `env` 这些有意开放的
 map 外，拼错结构化字段会直接报错，不会静默忽略。
 
-## 已声明的 127 个参数
+## 已声明的 128 个参数
 
 表中参数都能被 `anas config list` 列出，也能通过 `anas config set` 地址设置。除特别说明
 外，全局参数写为 `global.<parameter>`，module 参数写入
@@ -64,7 +64,7 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。
 
 | 所有者 | 数量 | 参数 |
 | --- | ---: | --- |
-| `global` | 15 | `base_domain`, `basicauth_user`, `chinese_speedup`, `container_prefix`, `default_language`, `default_service_root_password`, `dns_server`, `email`, `host_ip`, `image_prefix`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
+| `global` | 16 | `base_domain`, `basicauth_user`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_service_root_password`, `dns_server`, `email`, `host_ip`, `image_prefix`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
 | `authentik` | 6 | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` |
 | `collabora` | 4 | `auto_save`, `domain_prefix`, `interface`, `log_level` |
 | `ddns_go` | 10 | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` |
@@ -111,18 +111,21 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。
 | `NPM_REGISTRY_URL` | npm registry |
 | `GOPROXY_URL` | Go module proxy |
 | `GITHUB_DOWNLOAD_PROXY_PREFIX` | GitHub 下载代理前缀 |
+| `BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX` | 构建阶段的 GitHub 下载代理前缀 |
 | `NEXTCLOUD_APPSTORE_URL` | Nextcloud 应用商店 API |
 | `DOCKER_HUB_REGISTRY` | 构建阶段的 Docker Hub 基础镜像前缀 |
 | `LLNG_DOCKER_HUB_REGISTRY` | LemonLDAP::NG 专用 Docker Hub 镜像前缀 |
 | `ANAS_IMAGE_REGISTRY` | ANAS 派生镜像与上游 mirror 的统一运行时仓库 |
 | `GHCR_REGISTRY` | 构建阶段的第三方 GHCR 基础镜像前缀 |
-| `QUAY_REGISTRY` | 构建阶段的 Quay 基础镜像前缀 |
 | `NEXTCLOUD_APT_MIRROR_URL` | 只覆盖 Nextcloud 构建的 APT 镜像 |
 | `LAM_APT_MIRROR_URL` | 只覆盖 LAM 构建的 APT 镜像 |
 | `LAM_DOWNLOAD_URL` | 直接覆盖 LAM 安装包下载地址 |
 
-`global.chinese_speedup: true` 已经结构化；启用后会为前 11 个通用键填入国内默认值，
-而顶层 `env:` 中的显式值优先。三个 module 专用覆盖项不由该开关直接生成。
+`global.chinese_speedup: true` 只生成 `ANAS_IMAGE_REGISTRY`、`NEXTCLOUD_APPSTORE_URL`
+和 `GITHUB_DOWNLOAD_PROXY_PREFIX`，供正式发布镜像及 Nextcloud 运行时下载使用。
+`global.chinese_build_speedup: true` 生成 APT、APK、npm、Go、Docker Hub、GHCR、LLNG
+和构建期 GitHub 下载默认值；修改它或上表中的构建变量后必须执行 `anas apply --build`。
+顶层 `env:` 中的显式值始终优先。
 
 ### 宿主构建与 Compose 集成
 

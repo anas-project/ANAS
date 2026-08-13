@@ -118,31 +118,39 @@ export ANAS_MODULE_ROOT=/opt/anas/modules
 编辑 `<workspace>/config.yml`，然后：
 
 ```bash
-anas apply --build --update-lock -w /srv/anas
+anas apply --update-lock -w /srv/anas
 ```
 
-`--build` 构建镜像；`--update-lock` 把解析出的 module 版本、能力绑定和宿主机快照策略
-写进 `config.lock.yml`。首次之后两者都不需要，除非要显式改变这些决策。
+正式发布用户直接拉取固定镜像；`--update-lock` 把解析出的 module 版本、能力绑定和宿主机
+快照策略写进 `config.lock.yml`。源码构建者才添加 `--build`。首次之后通常不需要这两个
+选项，除非要显式改变锁定决策或镜像构建输入。
 
 ### 中国大陆镜像
 
-在 `global` 打开一个开关即可，不需要逐项配置：
+正式发布用户只需打开运行时开关：
 
 ```yaml
 global:
   chinese_speedup: true
 ```
 
-它同时作用于 Docker Hub、GHCR、Quay、APT、Alpine APK、npm、Go modules、
-GitHub Release 和 Nextcloud App Store。默认使用阿里云、npmmirror、goproxy.cn
-以及 DaoCloud 的公开镜像。任何端点都能在同一 `env` 中显式覆盖；完整变量表和
-CNB 国内制品发行方案见
+它把全部运行镜像切换到 CNB，并代理 Nextcloud App Store 与运行时 GitHub 下载。
+只有从源码重新构建镜像时才同时设置：
+
+```yaml
+global:
+  chinese_build_speedup: true
+```
+
+该构建开关作用于 Docker Hub、GHCR、APT、Alpine APK、npm、Go modules 和构建期
+GitHub 下载；修改后必须执行 `anas apply --build`。任何端点都能在 `env` 中显式覆盖；
+完整变量表和 CNB 国内制品发行方案见
 [中国大陆镜像与 CNB 发行方案](/research/china-mainland-mirrors-and-cnb-distribution-2026-08-11)。
 
 若不是运行预编译的 `anas`，而是第一次执行 `go run ./cmd/anas`，Go 必须先把 ANAS
 本身编译出来，此时程序尚未读取配置。首次运行需在宿主机执行
 `go env -w GOPROXY=https://goproxy.cn,direct`；启动后的 module hook 构建会自动继承
-总开关生成的代理。
+构建开关生成的代理。
 
 ---
 

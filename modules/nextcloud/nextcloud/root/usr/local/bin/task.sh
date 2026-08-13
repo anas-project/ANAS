@@ -1,6 +1,8 @@
 #!/bin/bash
 set -o pipefail
 
+. /usr/local/bin/nextcloud-download.sh
+
 occ() {
   runuser -u www-data -- php /var/www/html/occ "$@"
 }
@@ -28,7 +30,7 @@ retry_occ() {
 
 install_app_once() {
   local app_name="$1"
-  local output status github_url archive proxy_prefix
+  local output status github_url archive download_url
 
   output=$(occ app:install "$app_name" 2>&1)
   status=$?
@@ -46,14 +48,14 @@ install_app_once() {
     return "$status"
   fi
 
-  proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-}"
-  if [ -z "$proxy_prefix" ]; then
+  if [ -z "${GITHUB_DOWNLOAD_PROXY_PREFIX:-}" ]; then
     return "$status"
   fi
   archive=$(mktemp)
-  echo "Direct GitHub download failed; retrying $app_name through the configured mirror"
+  download_url=$(nextcloud_download_url "$github_url")
+  echo "Direct GitHub download failed; retrying $app_name from $download_url"
   if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 \
-    "${proxy_prefix%/}/${github_url#https://}" -o "$archive"; then
+    "$download_url" -o "$archive"; then
     rm -f "$archive"
     return "$status"
   fi
@@ -113,7 +115,7 @@ validate_memories_places_archive() {
 }
 
 prepare_memories_places_archive() {
-  local attempt download_url proxy_prefix
+  local attempt download_url
 
   if [ -s "$memories_places_archive" ] && validate_memories_places_archive; then
     echo "Using cached Memories places archive"
@@ -121,14 +123,10 @@ prepare_memories_places_archive() {
   fi
 
   mkdir -p "$(dirname "$memories_places_archive")"
-  download_url='https://github.com/pulsejet/memories-assets/releases/download/geo-0.0.4/planet_coarse_boundaries.zip'
-  if [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$GITHUB_DOWNLOAD_PROXY_PREFIX" ]; then
-    proxy_prefix="$GITHUB_DOWNLOAD_PROXY_PREFIX"
-    download_url="${proxy_prefix%/}/${download_url#https://}"
-  fi
+  download_url=$(nextcloud_download_url 'https://github.com/pulsejet/memories-assets/releases/download/geo-0.0.4/planet_coarse_boundaries.zip')
 
   for attempt in 1 2 3 4 5; do
-    echo "Downloading Memories places archive (attempt $attempt/5)"
+    echo "Downloading Memories places archive from $download_url (attempt $attempt/5)"
     if curl -fL --retry 5 --retry-delay 2 --retry-all-errors \
       --connect-timeout 20 --max-time 3600 -C - \
       "$download_url" -o "$memories_places_archive"; then
@@ -145,15 +143,16 @@ prepare_memories_places_archive() {
 
 install_app_from_store_mirror() {
   local app_name="$1"
-  local version version_pin appstore_cache appstore_url release release_version download_url proxy_prefix archive
+  local version version_pin appstore_cache appstore_request_url release release_version download_url archive
 
   version=$(occ status --output=json | jq -r '.versionstring')
   version_pin=$(app_version_pin "$app_name")
   appstore_cache="/tmp/nextcloud-appstore-$version.json"
   if [ ! -s "$appstore_cache" ]; then
-    appstore_url="${NEXTCLOUD_APPSTORE_URL:-https://apps.nextcloud.com/api/v1}"
+    appstore_request_url=$(nextcloud_appstore_platform_url "$version")
+    echo "Fetching Nextcloud app metadata from $appstore_request_url"
     curl -fsSL --retry 3 --connect-timeout 15 --max-time 120 \
-      "${appstore_url%/}/platform/$version/apps.json" \
+      "$appstore_request_url" \
       -o "$appstore_cache" || return 1
   fi
   release=$(jq -c --arg app "$app_name" --arg pin "$version_pin" '
@@ -171,17 +170,10 @@ install_app_from_store_mirror() {
     return 1
   fi
 
-  case "$download_url" in
-    https://github.com/*)
-      proxy_prefix="${GITHUB_DOWNLOAD_PROXY_PREFIX:-}"
-      if [ -n "$proxy_prefix" ]; then
-        download_url="${proxy_prefix%/}/${download_url#https://}"
-      fi
-      ;;
-  esac
+  download_url=$(nextcloud_download_url "$download_url")
   mkdir -p /var/www/html/.anas-cache/apps
   archive="/var/www/html/.anas-cache/apps/$app_name-$release_version.tar.gz"
-  echo "Installing $app_name from the Nextcloud app store through the configured mirror"
+  echo "Installing $app_name from $download_url"
   if ! tar -tzf "$archive" >/dev/null 2>&1; then
     if ! curl -fL --retry 5 --retry-delay 2 --retry-all-errors \
       --connect-timeout 20 --max-time 3600 -C - \
@@ -193,7 +185,11 @@ install_app_from_store_mirror() {
   if ! tar -xzf "$archive" -C "$user_app_path"; then
     return 1
   fi
-  [ -d "$user_app_path/$app_name" ]
+  if [ -d "$user_app_path/$app_name" ]; then
+    echo "Installed $app_name $release_version from the configured app source"
+    return 0
+  fi
+  return 1
 }
 
 retry_install_app() {

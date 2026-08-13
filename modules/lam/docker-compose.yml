@@ -4,13 +4,13 @@ services:
       context: ./lam
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
-        CHINESE_SPEEDUP: ${CHINESE_SPEEDUP:-false}
+        CHINESE_BUILD_SPEEDUP: ${CHINESE_BUILD_SPEEDUP:-false}
         APT_MIRROR_URL: ${APT_MIRROR_URL:-}
         LAM_APT_MIRROR_URL: ${LAM_APT_MIRROR_URL:-}
         LAM_DOWNLOAD_URL: ${LAM_DOWNLOAD_URL:-}
-        GITHUB_DOWNLOAD_PROXY_PREFIX: ${GITHUB_DOWNLOAD_PROXY_PREFIX:-}
+        BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX: ${BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX:-}
         DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lam:9.6.0-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lam:9.6.0-r2
     container_name: ${CONTAINER_PREFIX}lam
     restart: unless-stopped
     dns:

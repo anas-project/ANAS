@@ -31,6 +31,7 @@ env:
   IMAGE_PREFIX: anas_
   NETWORK_PREFIX: anas_ddnse2e_
   CHINESE_SPEEDUP: "true"
+  CHINESE_BUILD_SPEEDUP: "true"
   APT_MIRROR_URL: https://mirrors.aliyun.com
   APK_MIRROR_URL: https://mirrors.aliyun.com
   NPM_REGISTRY_URL: https://registry.npmmirror.com

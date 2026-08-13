@@ -9,6 +9,7 @@ modules:
   traefik: {}
 global:
   chinese_speedup: true
+  chinese_build_speedup: true
   base_domain: rollback.test
   email: admin@rollback.test
   timezone: Asia/Shanghai

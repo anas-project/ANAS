@@ -378,10 +378,30 @@ func policyForTarget(target configTarget, reg map[string]Module) ChangePolicy {
 			return policy
 		}
 	}
+	if imageBuildEnvKeys[config.EnvKey(target.Parameter)] {
+		return ChangePolicy{
+			Effect: "image_rebuild", Apply: "apply-with-build",
+			Description: "This value is consumed while building an image; run anas apply --build to regenerate it.",
+		}
+	}
 	return ChangePolicy{
 		Effect: "container_recreate", Apply: "render-and-recreate",
 		Description: "No specialized reconciler is declared; recreate the affected container to apply rendered configuration.",
 	}
+}
+
+var imageBuildEnvKeys = map[string]bool{
+	"APT_MIRROR_URL":                     true,
+	"APK_MIRROR_URL":                     true,
+	"NPM_REGISTRY_URL":                   true,
+	"GOPROXY_URL":                        true,
+	"BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX": true,
+	"DOCKER_HUB_REGISTRY":                true,
+	"LLNG_DOCKER_HUB_REGISTRY":           true,
+	"GHCR_REGISTRY":                      true,
+	"NEXTCLOUD_APT_MIRROR_URL":           true,
+	"LAM_APT_MIRROR_URL":                 true,
+	"LAM_DOWNLOAD_URL":                   true,
 }
 
 func targetForSettingPath(path string, reg map[string]Module) configTarget {

@@ -1,10 +1,10 @@
 ARG DOCKER_HUB_REGISTRY=docker.io
 FROM ${DOCKER_HUB_REGISTRY}/goacme/lego:v5.3.1
 
-ARG CHINESE_SPEEDUP
+ARG CHINESE_BUILD_SPEEDUP
 ARG APK_MIRROR_URL
 # openssl backs the internal CA; the upstream image only ships the lego binary.
-RUN if [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$APK_MIRROR_URL" ]; then \
+RUN if [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APK_MIRROR_URL" ]; then \
     sed -i "s|https://dl-cdn.alpinelinux.org|${APK_MIRROR_URL%/}|g" /etc/apk/repositories; \
   fi; \
   apk --update --no-cache add openssl

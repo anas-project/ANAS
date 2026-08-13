@@ -3,13 +3,31 @@ FROM ${DOCKER_HUB_REGISTRY}/library/ubuntu:resolute AS rootfs
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
-
-ARG CHINESE_SPEEDUP
+ARG CHINESE_BUILD_SPEEDUP
 ARG APT_MIRROR_URL
-RUN if [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ] ; then \
+RUN bootstrap_mirror=""; \
+  if [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then \
+    bootstrap_mirror="$APT_MIRROR_URL"; \
+    case "$bootstrap_mirror" in https://*) bootstrap_mirror="http://${bootstrap_mirror#https://}";; esac; \
+  fi; \
+  if [ -n "$bootstrap_mirror" ]; then \
+    for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do \
+      if [ -f "$source" ]; then \
+        sed -i \
+          -e "s|http://archive.ubuntu.com|${bootstrap_mirror%/}|g" \
+          -e "s|http://security.ubuntu.com|${bootstrap_mirror%/}|g" \
+          "$source"; \
+      fi; \
+    done; \
+  fi; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends ca-certificates; \
+  rm -rf /var/lib/apt/lists/*; \
+  if [ -n "$bootstrap_mirror" ] && [ "$bootstrap_mirror" != "${APT_MIRROR_URL%/}" ]; then \
+    sed -i "s|${bootstrap_mirror%/}|${APT_MIRROR_URL%/}|g" /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+  fi
+
+RUN if [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ] ; then \
   for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do \
     if [ -f "$source" ]; then \
       sed -i \

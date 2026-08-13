@@ -56,7 +56,7 @@ docker.cnb.cool/anas.dev/anas/anas-<软件>:<version>-r<revision>
 
 未经修改的上游镜像使用 `anas-mirror-<软件>:<固定版本>`。清单同时保存上游引用、上游 manifest digest 和运行平台；即使来源使用 `latest`，发布输入也必须带 digest，ANAS 目标 tag 不得使用 `latest`。
 
-`ANAS_IMAGE_REGISTRY` 选择全部运行时镜像来源。`global.chinese_speedup: true` 默认切换到 CNB，因此部署服务器只需访问 `docker.cnb.cool`；`DOCKER_HUB_REGISTRY`、`GHCR_REGISTRY` 和 `QUAY_REGISTRY` 只用于构建阶段解析基础镜像。
+`ANAS_IMAGE_REGISTRY` 选择全部运行时镜像来源。`global.chinese_speedup: true` 默认切换到 CNB，因此部署服务器只需访问 `docker.cnb.cool`；`global.chinese_build_speedup: true` 才会为源码构建设置 `DOCKER_HUB_REGISTRY`、`GHCR_REGISTRY` 和包管理器镜像。
 
 ## CI 行为
 

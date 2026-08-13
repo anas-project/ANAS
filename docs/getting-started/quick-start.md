@@ -44,10 +44,11 @@ global:
 
 ```bash
 anas plan -c /srv/anas/config.yml
-anas apply --build --update-lock -w /srv/anas
+anas apply --update-lock -w /srv/anas
 ```
 
-`--build` 构建所需镜像；`--update-lock` 固化 Module 版本、能力绑定和快照策略。后续普通配置修改通常只需要：
+正式发布用户直接拉取固定镜像；`--update-lock` 固化 Module 版本、能力绑定和快照策略。
+只有源码构建者才启用 `global.chinese_build_speedup` 并添加 `--build`。后续普通配置修改通常只需要：
 
 ```bash
 anas apply -w /srv/anas

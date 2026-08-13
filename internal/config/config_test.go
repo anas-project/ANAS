@@ -141,21 +141,13 @@ env:
 	}
 }
 
-func TestChineseSpeedupEnablesAllMirrorDefaults(t *testing.T) {
+func TestChineseSpeedupEnablesPublishedRuntimeDefaults(t *testing.T) {
 	cfg := &File{Env: map[string]any{"CHINESE_SPEEDUP": true}}
 	env, owners := cfg.BaseEnvWithOwners()
 	want := map[string]string{
-		"APT_MIRROR_URL":               "https://mirrors.aliyun.com",
-		"APK_MIRROR_URL":               "https://mirrors.aliyun.com",
-		"NPM_REGISTRY_URL":             "https://registry.npmmirror.com",
-		"GOPROXY_URL":                  "https://goproxy.cn,direct",
 		"GITHUB_DOWNLOAD_PROXY_PREFIX": "https://files.m.daocloud.io/",
 		"NEXTCLOUD_APPSTORE_URL":       "https://files.m.daocloud.io/apps.nextcloud.com/api/v1",
-		"DOCKER_HUB_REGISTRY":          "m.daocloud.io/docker.io",
-		"LLNG_DOCKER_HUB_REGISTRY":     "docker.1ms.run",
 		"ANAS_IMAGE_REGISTRY":          "docker.cnb.cool/anas.dev/anas",
-		"GHCR_REGISTRY":                "ghcr.nju.edu.cn",
-		"QUAY_REGISTRY":                "quay.nju.edu.cn",
 	}
 	for key, value := range want {
 		if got := env[key]; got != value {
@@ -164,6 +156,37 @@ func TestChineseSpeedupEnablesAllMirrorDefaults(t *testing.T) {
 		if got := owners[key]; got != "" {
 			t.Errorf("owner of %s = %q, want global", key, got)
 		}
+	}
+	for _, key := range []string{"APT_MIRROR_URL", "APK_MIRROR_URL", "NPM_REGISTRY_URL", "GOPROXY_URL", "DOCKER_HUB_REGISTRY", "LLNG_DOCKER_HUB_REGISTRY", "GHCR_REGISTRY"} {
+		if _, ok := env[key]; ok {
+			t.Errorf("%s is a build-only default unexpectedly injected by CHINESE_SPEEDUP", key)
+		}
+	}
+}
+
+func TestChineseBuildSpeedupEnablesBuildDefaults(t *testing.T) {
+	cfg := &File{Env: map[string]any{"CHINESE_BUILD_SPEEDUP": true}}
+	env, owners := cfg.BaseEnvWithOwners()
+	want := map[string]string{
+		"APT_MIRROR_URL":                     "https://mirrors.aliyun.com",
+		"APK_MIRROR_URL":                     "https://mirrors.aliyun.com",
+		"NPM_REGISTRY_URL":                   "https://registry.npmmirror.com",
+		"GOPROXY_URL":                        "https://goproxy.cn,direct",
+		"BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX": "https://files.m.daocloud.io/",
+		"DOCKER_HUB_REGISTRY":                "m.daocloud.io/docker.io",
+		"LLNG_DOCKER_HUB_REGISTRY":           "docker.1ms.run",
+		"GHCR_REGISTRY":                      "ghcr.nju.edu.cn",
+	}
+	for key, value := range want {
+		if got := env[key]; got != value {
+			t.Errorf("%s = %q, want %q", key, got, value)
+		}
+		if got := owners[key]; got != "" {
+			t.Errorf("owner of %s = %q, want global", key, got)
+		}
+	}
+	if _, ok := env["ANAS_IMAGE_REGISTRY"]; ok {
+		t.Error("build acceleration unexpectedly selected a published runtime registry")
 	}
 }
 
@@ -191,11 +214,16 @@ func TestChineseSpeedupPreservesExplicitMirrorOverrides(t *testing.T) {
 }
 
 func TestChineseSpeedupFalseDoesNotInjectMirrors(t *testing.T) {
-	cfg := &File{Env: map[string]any{"CHINESE_SPEEDUP": false}}
+	cfg := &File{Env: map[string]any{"CHINESE_SPEEDUP": false, "CHINESE_BUILD_SPEEDUP": false}}
 	env := cfg.BaseEnv()
 	for key := range chineseSpeedupDefaults {
 		if _, ok := env[key]; ok {
 			t.Errorf("%s unexpectedly set while CHINESE_SPEEDUP=false", key)
+		}
+	}
+	for key := range chineseBuildSpeedupDefaults {
+		if _, ok := env[key]; ok {
+			t.Errorf("%s unexpectedly set while CHINESE_BUILD_SPEEDUP=false", key)
 		}
 	}
 }
@@ -326,7 +354,7 @@ func TestGlobalBindingsProduceDeclaredKeys(t *testing.T) {
 		HostIP: "10.0.0.2", DNSServer: "1.1.1.1",
 		DefaultServiceRootPassword: "ChangeMe1!", VirtualDomain: BoolTrue,
 		BasicAuthUser: "admin", DefaultLanguage: "en",
-		ChineseSpeedup: BoolFalse, IPv4: BoolTrue, IPv6: BoolFalse,
+		ChineseSpeedup: BoolFalse, ChineseBuildSpeedup: BoolFalse, IPv4: BoolTrue, IPv6: BoolFalse,
 	}}
 	env := f.BaseEnv()
 	for _, parameter := range GlobalParameters() {

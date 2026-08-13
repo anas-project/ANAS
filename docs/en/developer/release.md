@@ -48,7 +48,7 @@ docker.cnb.cool/anas.dev/anas/anas-<software>:<version>-r<revision>
 
 Unmodified upstream images use `anas-mirror-<software>:<fixed-version>`. The catalog records the upstream reference, manifest digest, and runtime platforms. Even when an upstream only publishes `latest`, the source is digest-pinned and the ANAS target never uses `latest`.
 
-`ANAS_IMAGE_REGISTRY` selects the source for every runtime image. `global.chinese_speedup: true` defaults it to CNB, so a deployment host only needs `docker.cnb.cool`; `DOCKER_HUB_REGISTRY`, `GHCR_REGISTRY`, and `QUAY_REGISTRY` remain build-time base-image controls.
+`ANAS_IMAGE_REGISTRY` selects the source for every runtime image. `global.chinese_speedup: true` defaults it to CNB, so a deployment host only needs `docker.cnb.cool`. Source builders separately enable `global.chinese_build_speedup: true` for Docker Hub, GHCR, and package-manager mirrors.
 
 ## CI behavior
 

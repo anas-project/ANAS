@@ -4,11 +4,11 @@ services:
       context: ./nextcloud
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
-        - CHINESE_SPEEDUP
+        - CHINESE_BUILD_SPEEDUP
         - APT_MIRROR_URL
         - NEXTCLOUD_APT_MIRROR_URL
         - DOCKER_HUB_REGISTRY
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r2
     container_name: ${CONTAINER_PREFIX}nextcloud
     volumes:
       - "${NEXTCLOUD_BASE_PATH}/nextcloud:/var/www/html"
@@ -57,7 +57,7 @@ services:
       - traefik
 
   anas_nextcloud-cron:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r2
     container_name: ${CONTAINER_PREFIX}nextcloud_cron
     entrypoint: ["/cron.sh"]
     volumes:

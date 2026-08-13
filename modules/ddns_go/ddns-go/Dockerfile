@@ -7,7 +7,7 @@ ARG GHCR_REGISTRY=ghcr.io
 FROM ${DOCKER_HUB_REGISTRY}/library/golang:1.26-alpine AS build
 ARG GOPROXY_URL
 ENV CGO_ENABLED=0
-# Keyed on GOPROXY_URL alone rather than on CHINESE_SPEEDUP: which module proxy
+# Keyed on GOPROXY_URL alone rather than on CHINESE_BUILD_SPEEDUP: which module proxy
 # a build can reach is a different question from whether the host wants Chinese
 # package mirrors. A host with good registry connectivity but no route to
 # proxy.golang.org has to be able to say so without claiming the other.

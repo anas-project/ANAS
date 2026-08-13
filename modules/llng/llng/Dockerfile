@@ -3,10 +3,10 @@ FROM ${LLNG_DOCKER_HUB_REGISTRY}/lemonldapng/lemonldap-ng:2.23.2
 
 LABEL maintainer="Hailong"
 
-ARG CHINESE_SPEEDUP=false
+ARG CHINESE_BUILD_SPEEDUP=false
 ARG APT_MIRROR_URL
 
-RUN if [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then \
+RUN if [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then \
     for source in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
       if [ -f "$source" ]; then \
         sed -i \

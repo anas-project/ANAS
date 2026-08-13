@@ -8,6 +8,7 @@ modules:
   traefik: {}
 global:
   chinese_speedup: true
+  chinese_build_speedup: true
   base_domain: backup.test
   email: admin@backup.test
   timezone: Asia/Shanghai

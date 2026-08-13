@@ -4,17 +4,34 @@ FROM ${DOCKER_HUB_REGISTRY}/library/ubuntu:resolute
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 
-ARG CHINESE_SPEEDUP
+ARG CHINESE_BUILD_SPEEDUP
 ARG APT_MIRROR_URL
 
-# The Ubuntu minimal image does not include the trust store. Install it from
-# the image's original HTTP source before switching that source to an HTTPS
-# mirror, otherwise apt cannot authenticate the mirror on a clean build.
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+# The Ubuntu minimal image has no trust store. Bootstrap ca-certificates from
+# the configured mirror over HTTP, then restore its requested HTTPS URL.
+RUN bootstrap_mirror=""; \
+  if [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then \
+    bootstrap_mirror="$APT_MIRROR_URL"; \
+    case "$bootstrap_mirror" in https://*) bootstrap_mirror="http://${bootstrap_mirror#https://}";; esac; \
+  fi; \
+  if [ -n "$bootstrap_mirror" ]; then \
+    for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do \
+      if [ -f "$source" ]; then \
+        sed -i \
+          -e "s|http://archive.ubuntu.com|${bootstrap_mirror%/}|g" \
+          -e "s|http://security.ubuntu.com|${bootstrap_mirror%/}|g" \
+          "$source"; \
+      fi; \
+    done; \
+  fi; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends ca-certificates; \
+  rm -rf /var/lib/apt/lists/*; \
+  if [ -n "$bootstrap_mirror" ] && [ "$bootstrap_mirror" != "${APT_MIRROR_URL%/}" ]; then \
+    sed -i "s|${bootstrap_mirror%/}|${APT_MIRROR_URL%/}|g" /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+  fi
 
-RUN if [ "$CHINESE_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ] ; then \
+RUN if [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ] ; then \
   for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do \
     if [ -f "$source" ]; then \
       sed -i \

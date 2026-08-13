@@ -35,6 +35,8 @@ type deploymentManifest struct {
 	ID                string                       `yaml:"id" json:"id"`
 	CreatedAt         string                       `yaml:"created_at" json:"created_at"`
 	ConfigFingerprint string                       `yaml:"config_fingerprint" json:"config_fingerprint"`
+	ImagesBuilt       bool                         `yaml:"images_built,omitempty" json:"images_built"`
+	BuildAcceleration bool                         `yaml:"build_acceleration,omitempty" json:"build_acceleration"`
 	ModuleOrder       []string                     `yaml:"module_order" json:"module_order"`
 	Bindings          map[string]map[string]string `yaml:"capability_bindings,omitempty" json:"capability_bindings,omitempty"`
 	Modules           map[string]deploymentModule  `yaml:"modules" json:"modules"`
@@ -520,7 +522,7 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		}
 	}
 
-	manifest, err := buildDeploymentManifest(a, id, opts.cfgPath)
+	manifest, err := buildDeploymentManifest(a, id, opts.cfgPath, build)
 	if err != nil {
 		return "", failuref("manifest_failed", "%s", err.Error())
 	}
@@ -611,15 +613,17 @@ func validateLockedResolution(a *app, lock *moduleLock) error {
 	return nil
 }
 
-func buildDeploymentManifest(a *app, id, cfgPath string) (*deploymentManifest, error) {
+func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*deploymentManifest, error) {
 	settings, err := config.Settings(cfgPath)
 	if err != nil {
 		return nil, err
 	}
 	manifest := &deploymentManifest{
 		APIVersion: deploymentAPIVersion, ID: id,
-		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
-		ModuleOrder: append([]string{}, a.order...), Bindings: cloneNestedMap(a.resolvedBindings),
+		CreatedAt:         time.Now().UTC().Format(time.RFC3339),
+		ImagesBuilt:       imagesBuilt,
+		BuildAcceleration: strings.EqualFold(strings.TrimSpace(a.env["CHINESE_BUILD_SPEEDUP"]), "true"),
+		ModuleOrder:       append([]string{}, a.order...), Bindings: cloneNestedMap(a.resolvedBindings),
 		Modules: map[string]deploymentModule{}, Settings: map[string]deploymentSetting{},
 		Snapshot: deploymentSnapshotPolicy{
 			Source: strings.TrimSpace(a.cfg.Rollback.Snapshot.Source),
@@ -1084,6 +1088,12 @@ func activateDeployment(base, id string, opts activateOptions) error {
 		if err != nil {
 			return preconditionErrorf("deployment_unreadable", "%s", err.Error())
 		}
+		if !opts.rollback {
+			changes := settingChangesWithEffect(current, target, "image_rebuild")
+			if len(changes) > 0 && !target.ImagesBuilt {
+				return imageRebuildRequiredError(changes)
+			}
+		}
 		blockers := deploymentChangeBlockers(current, target)
 		if opts.rollback {
 			guard := deploymentRollbackVersionGuard(current, target)
@@ -1119,6 +1129,9 @@ func activateDeployment(base, id string, opts activateOptions) error {
 		if err := stopRemovedDeployments(oldApp, oldRoot, target, opts.json); err != nil {
 			return failuref("stop_failed", "%s", err.Error())
 		}
+	}
+	if active.ActiveDeployment == "" && target.BuildAcceleration && !target.ImagesBuilt {
+		return imageRebuildRequiredError([]string{"global.chinese_build_speedup"})
 	}
 
 	selection := activationStartModules(current, target, active.RuntimeStatus)
@@ -1289,6 +1302,45 @@ type guardedSettingChange struct {
 	Key    string
 	Effect string
 	Apply  string
+}
+
+func settingChangesWithEffect(current, target *deploymentManifest, effect string) []string {
+	if current == nil || target == nil {
+		return nil
+	}
+	keys := map[string]bool{}
+	for key := range current.Settings {
+		keys[key] = true
+	}
+	for key := range target.Settings {
+		keys[key] = true
+	}
+	changed := []string{}
+	for key := range keys {
+		from, fromOK := current.Settings[key]
+		to, toOK := target.Settings[key]
+		if fromOK && toOK && from.Fingerprint == to.Fingerprint {
+			continue
+		}
+		setting := to
+		if !toOK {
+			setting = from
+		}
+		if setting.Effect == effect {
+			changed = append(changed, key)
+		}
+	}
+	sort.Strings(changed)
+	return changed
+}
+
+func imageRebuildRequiredError(changes []string) error {
+	return &CLIError{
+		Code:    "image_rebuild_required",
+		Message: fmt.Sprintf("configuration changes image build inputs:\n  %s\nrun `anas apply --build -w <workspace>` to rebuild images before activation", strings.Join(changes, "\n  ")),
+		Detail:  map[string]any{"settings": changes},
+		Exit:    exitPrecondition,
+	}
 }
 
 // guardedSettingChanges is the one place the "not automatically reversible"

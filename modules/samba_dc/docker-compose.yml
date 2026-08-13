@@ -5,10 +5,10 @@ services:
       context: ./${MODULE_NAME}
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
-        - CHINESE_SPEEDUP
+        - CHINESE_BUILD_SPEEDUP
         - APT_MIRROR_URL
         - DOCKER_HUB_REGISTRY
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r3
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r4
     restart: unless-stopped
     network_mode: host
     env_file:
@@ -46,10 +46,10 @@ services:
       context: ./anchor_worker
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
-        - CHINESE_SPEEDUP
+        - CHINESE_BUILD_SPEEDUP
         - APT_MIRROR_URL
         - DOCKER_HUB_REGISTRY
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r3
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r4
     restart: unless-stopped
     env_file:
       - .env

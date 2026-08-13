@@ -1,7 +1,6 @@
 ARG GHCR_REGISTRY=ghcr.io
 FROM ${GHCR_REGISTRY}/ylianst/meshcentral:1.2.4
 
-ARG CHINESE_SPEEDUP=false
 ARG NPM_REGISTRY_URL=https://registry.npmjs.org
 ENV NODE_PATH=/opt/meshcentral/ldap-deps/node_modules
 

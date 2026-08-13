@@ -61,11 +61,11 @@ services:
       context: ./management
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
-        CHINESE_SPEEDUP: ${CHINESE_SPEEDUP:-false}
+        CHINESE_BUILD_SPEEDUP: ${CHINESE_BUILD_SPEEDUP:-false}
         APT_MIRROR_URL: ${APT_MIRROR_URL:-}
         DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_management
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r2
     restart: unless-stopped
     env_file:
       - .env

@@ -2,14 +2,21 @@
 
 ## 结论
 
-ANAS 采用两层方案：源码构建时由 `CHINESE_SPEEDUP` 统一切换国内代理；正式发布时，
+ANAS 采用两层方案：源码构建时由 `CHINESE_BUILD_SPEEDUP` 统一切换国内代理；正式发布时，
 GitHub Actions 只构建一次并先发布到 GHCR，再把相同的运行平台 manifest 同步到 CNB
 托管完整的国内 OCI 镜像集。前者保证开发者能在中国大陆完成构建，后者让普通用户只
 访问 `docker.cnb.cool`，无需分别连接 Docker Hub、GHCR、Quay 和 GitHub Release；
 CNB 不从源码重复构建镜像。
 
-`CHINESE_SPEEDUP` 是总开关，不是“仅替换 apt”的提示位。值为 `true` 时，ANAS 在
-用户没有显式覆盖的情况下生成以下全局环境：
+两个开关具有不同生命周期。`CHINESE_SPEEDUP=true` 面向正式发布用户，只生成：
+
+| 变量 | 默认值 | 覆盖范围 |
+| --- | --- | --- |
+| `GITHUB_DOWNLOAD_PROXY_PREFIX` | `https://files.m.daocloud.io/` | Nextcloud GitHub Release 与 Memories 数据 |
+| `NEXTCLOUD_APPSTORE_URL` | `https://files.m.daocloud.io/apps.nextcloud.com/api/v1` | Nextcloud 应用元数据 |
+| `ANAS_IMAGE_REGISTRY` | `docker.cnb.cool/anas.dev/anas` | 全部正式运行时镜像（派生构建与上游 mirror） |
+
+`CHINESE_BUILD_SPEEDUP=true` 面向源码构建者，在用户没有显式覆盖的情况下生成：
 
 | 变量 | 默认值 | 覆盖范围 |
 | --- | --- | --- |
@@ -17,19 +24,16 @@ CNB 不从源码重复构建镜像。
 | `APK_MIRROR_URL` | `https://mirrors.aliyun.com` | Alpine 构建依赖 |
 | `NPM_REGISTRY_URL` | `https://registry.npmmirror.com` | MeshCentral npm 依赖 |
 | `GOPROXY_URL` | `https://goproxy.cn,direct` | module hook 与 ddns-go Go modules |
-| `GITHUB_DOWNLOAD_PROXY_PREFIX` | `https://files.m.daocloud.io/` | LAM、Nextcloud GitHub Release |
-| `NEXTCLOUD_APPSTORE_URL` | `https://files.m.daocloud.io/apps.nextcloud.com/api/v1` | Nextcloud 应用元数据 |
+| `BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX` | `https://files.m.daocloud.io/` | LAM 构建下载 |
 | `DOCKER_HUB_REGISTRY` | `m.daocloud.io/docker.io` | Dockerfile 基础镜像 |
 | `LLNG_DOCKER_HUB_REGISTRY` | `docker.1ms.run` | LemonLDAP::NG 基础镜像；该镜像不在 DaoCloud 白名单中 |
-| `ANAS_IMAGE_REGISTRY` | `docker.cnb.cool/anas.dev/anas` | 全部正式运行时镜像（派生构建与上游 mirror） |
 | `GHCR_REGISTRY` | `ghcr.nju.edu.cn` | 第三方 GHCR 基础镜像 |
-| `QUAY_REGISTRY` | `quay.nju.edu.cn` | Quay 基础镜像 |
 
 例如只替换企业内部 GHCR 镜像库，而保留其他中国默认值：
 
 ```yaml
 env:
-  CHINESE_SPEEDUP: "true"
+  CHINESE_BUILD_SPEEDUP: "true"
   GHCR_REGISTRY: registry.example.cn/ghcr
 ```
 
@@ -44,8 +48,8 @@ GitHub 下载前缀采用“镜像根地址 + 去掉协议的源 URL”语义。
 ## 为什么不能只配置 Docker daemon
 
 Docker 的 `registry-mirrors` 只透明代理 Docker Hub，不能用一个 daemon mirror 替换
-GHCR 或 Quay。ANAS 因而将三类 registry 显式写入 Compose 和 Dockerfile，并分别提供
-变量。Docker 官方也说明其 pull-through mirror 只能镜像中央 Docker Hub：
+GHCR。ANAS 因而为 Dockerfile 的两类基础镜像分别提供变量，而正式运行镜像统一使用
+`ANAS_IMAGE_REGISTRY`。Docker 官方也说明其 pull-through mirror 只能镜像中央 Docker Hub：
 <https://docs.docker.com/docker-hub/image-library/mirror/>。
 
 DaoCloud 公共镜像支持 `docker.io`、`ghcr.io`、`quay.io` 的前缀映射，并保持源

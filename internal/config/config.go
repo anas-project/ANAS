@@ -22,11 +22,11 @@ type File struct {
 	Identity       Identity        `yaml:"identity"`
 	// IAM is the normalized runtime view of Identity.IAM. It is not a second
 	// accepted YAML spelling.
-	IAM            IAM             `yaml:"-"`
-	DynamicDNS     DynamicDNS      `yaml:"dynamic_dns"`
-	Rollback       Rollback        `yaml:"rollback"`
-	Secrets        map[string]any  `yaml:"secrets"`
-	Env            map[string]any  `yaml:"env"`
+	IAM        IAM            `yaml:"-"`
+	DynamicDNS DynamicDNS     `yaml:"dynamic_dns"`
+	Rollback   Rollback       `yaml:"rollback"`
+	Secrets    map[string]any `yaml:"secrets"`
+	Env        map[string]any `yaml:"env"`
 }
 
 type ModuleSelection struct {
@@ -190,9 +190,10 @@ type Global struct {
 	// "absent" would let the default overwrite a deliberate false. See
 	// internal/config/scalar.go for why it is a checked string and not a
 	// pointer.
-	ChineseSpeedup Bool `yaml:"chinese_speedup"`
-	IPv4           Bool `yaml:"ipv4"`
-	IPv6           Bool `yaml:"ipv6"`
+	ChineseSpeedup      Bool `yaml:"chinese_speedup"`
+	ChineseBuildSpeedup Bool `yaml:"chinese_build_speedup"`
+	IPv4                Bool `yaml:"ipv4"`
+	IPv6                Bool `yaml:"ipv6"`
 	// VirtualDomain marks a domain that cannot obtain a publicly trusted
 	// certificate — a reserved TLD such as .test or .lan, or any name without
 	// public DNS. It means exactly one thing: do not attempt ACME. The
@@ -233,6 +234,7 @@ var globalBindings = []globalBinding{
 	{"basicauth_user", "BASICAUTH_USER", func(g Global) string { return g.BasicAuthUser }},
 	{"default_language", "DEFAULT_LANGUAGE", func(g Global) string { return g.DefaultLanguage }},
 	{"chinese_speedup", "CHINESE_SPEEDUP", func(g Global) string { return g.ChineseSpeedup.String() }},
+	{"chinese_build_speedup", "CHINESE_BUILD_SPEEDUP", func(g Global) string { return g.ChineseBuildSpeedup.String() }},
 	{"ipv4", "IPV4", func(g Global) string { return g.IPv4.String() }},
 	{"ipv6", "IPV6", func(g Global) string { return g.IPv6.String() }},
 	// A false virtual_domain publishes nothing rather than "false": the key's
@@ -403,22 +405,28 @@ func Load(path string) (*File, error) {
 // user-provided secret that is only distributed to modules that claim it.
 const OwnerUserSecret = "!user-secret"
 
-// chineseSpeedupDefaults turns CHINESE_SPEEDUP into one complete, predictable
-// switch.  Individual values remain overridable from config.env, but a user
-// should not have to discover and configure every package manager and registry
-// independently just to make a build work from mainland China.
+// chineseSpeedupDefaults are needed after release: published images come from
+// CNB, while Nextcloud still downloads application metadata and pinned runtime
+// assets during first start and upgrades.
 var chineseSpeedupDefaults = map[string]string{
-	"APT_MIRROR_URL":               "https://mirrors.aliyun.com",
-	"APK_MIRROR_URL":               "https://mirrors.aliyun.com",
-	"NPM_REGISTRY_URL":             "https://registry.npmmirror.com",
-	"GOPROXY_URL":                  "https://goproxy.cn,direct",
 	"GITHUB_DOWNLOAD_PROXY_PREFIX": "https://files.m.daocloud.io/",
 	"NEXTCLOUD_APPSTORE_URL":       "https://files.m.daocloud.io/apps.nextcloud.com/api/v1",
-	"DOCKER_HUB_REGISTRY":          "m.daocloud.io/docker.io",
-	"LLNG_DOCKER_HUB_REGISTRY":     "docker.1ms.run",
 	"ANAS_IMAGE_REGISTRY":          "docker.cnb.cool/anas.dev/anas",
-	"GHCR_REGISTRY":                "ghcr.nju.edu.cn",
-	"QUAY_REGISTRY":                "quay.nju.edu.cn",
+}
+
+// chineseBuildSpeedupDefaults are consumed while materialising hooks or
+// executing Dockerfiles. They deliberately live behind a separate switch:
+// changing them requires rebuilding images, whereas CHINESE_SPEEDUP only
+// selects published runtime artifacts and runtime download mirrors.
+var chineseBuildSpeedupDefaults = map[string]string{
+	"APT_MIRROR_URL":                     "https://mirrors.aliyun.com",
+	"APK_MIRROR_URL":                     "https://mirrors.aliyun.com",
+	"NPM_REGISTRY_URL":                   "https://registry.npmmirror.com",
+	"GOPROXY_URL":                        "https://goproxy.cn,direct",
+	"BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX": "https://files.m.daocloud.io/",
+	"DOCKER_HUB_REGISTRY":                "m.daocloud.io/docker.io",
+	"LLNG_DOCKER_HUB_REGISTRY":           "docker.1ms.run",
+	"GHCR_REGISTRY":                      "ghcr.nju.edu.cn",
 }
 
 func (f *File) BaseEnv() map[string]string {
@@ -478,6 +486,14 @@ func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
 	}
 	if strings.EqualFold(strings.TrimSpace(env["CHINESE_SPEEDUP"]), "true") {
 		for key, value := range chineseSpeedupDefaults {
+			if strings.TrimSpace(env[key]) == "" {
+				env[key] = value
+				owners[key] = ""
+			}
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(env["CHINESE_BUILD_SPEEDUP"]), "true") {
+		for key, value := range chineseBuildSpeedupDefaults {
 			if strings.TrimSpace(env[key]) == "" {
 				env[key] = value
 				owners[key] = ""

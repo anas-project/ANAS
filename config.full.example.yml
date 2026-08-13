@@ -73,9 +73,10 @@ env:
   # declares. Parameters that are declared belong under global: or under
   # modules.<module>.config; `anas config list` prints the path for each.
   #
-  # Mainland China: enables APT, APK, npm, Go, GitHub/Nextcloud downloads and
-  # Docker Hub/GHCR/Quay mirrors as one coordinated setting.
+  # Mainland China: published images/runtime downloads and source builds are
+  # separate so changing a build input cannot silently reuse an old image.
   # CHINESE_SPEEDUP: "true"
+  # CHINESE_BUILD_SPEEDUP: "true"
   # ANAS_IMAGE_REGISTRY: docker.cnb.cool/anas.dev/anas
   #
   # These two are samba_fs parameters published under a bare name, because they

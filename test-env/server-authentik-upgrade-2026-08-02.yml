@@ -18,6 +18,7 @@ env:
   IMAGE_PREFIX: anas_auth_
   NETWORK_PREFIX: anas_auth_
   CHINESE_SPEEDUP: "true"
+  CHINESE_BUILD_SPEEDUP: "true"
   APT_MIRROR_URL: https://mirrors.aliyun.com
   APK_MIRROR_URL: https://mirrors.aliyun.com
   DOCKER_SOCKET_PATH: /run/anas-app-docker.sock

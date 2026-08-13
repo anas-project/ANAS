@@ -1,12 +1,12 @@
 services:
   anas_llng:
     container_name: ${CONTAINER_PREFIX}llng
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r2
     build:
       context: ./llng
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
-        CHINESE_SPEEDUP: ${CHINESE_SPEEDUP:-false}
+        CHINESE_BUILD_SPEEDUP: ${CHINESE_BUILD_SPEEDUP:-false}
         APT_MIRROR_URL: ${APT_MIRROR_URL:-}
         LLNG_DOCKER_HUB_REGISTRY: ${LLNG_DOCKER_HUB_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
     restart: unless-stopped

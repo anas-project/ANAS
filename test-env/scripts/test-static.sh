@@ -15,12 +15,11 @@ if grep -R -n -E '<%=|<%[[:space:]]+if|#\{envs\[' modules; then
   exit 1
 fi
 
-# Every upstream image must pass through a registry variable. Otherwise
-# CHINESE_SPEEDUP can silently work for package downloads but still fail while
-# Compose pulls an image or a Dockerfile resolves FROM.
+# Published runtime images have one source. Build-time FROM references retain
+# registry-specific inputs because CHINESE_BUILD_SPEEDUP controls them.
 direct_compose_images=$(
   grep -R -n -E --include='docker-compose.yml' '^[[:space:]]+image:' modules |
-    grep -v -E 'image:[[:space:]]+\$\{(IMAGE_PREFIX|ANAS_IMAGE_REGISTRY|DOCKER_HUB_REGISTRY|GHCR_REGISTRY|QUAY_REGISTRY)' || true
+    grep -v -E 'image:[[:space:]]+\$\{ANAS_IMAGE_REGISTRY' || true
 )
 if [ -n "$direct_compose_images" ]; then
   printf '%s\n' "$direct_compose_images" >&2
@@ -29,7 +28,7 @@ if [ -n "$direct_compose_images" ]; then
 fi
 direct_dockerfile_images=$(
   grep -R -n -E --include='Dockerfile' '^FROM[[:space:]]+' modules |
-    grep -v -E 'FROM[[:space:]]+(scratch|\$\{(DOCKER_HUB_REGISTRY|LLNG_DOCKER_HUB_REGISTRY|GHCR_REGISTRY|QUAY_REGISTRY)\})' || true
+    grep -v -E 'FROM[[:space:]]+(scratch|\$\{(DOCKER_HUB_REGISTRY|LLNG_DOCKER_HUB_REGISTRY|GHCR_REGISTRY)\})' || true
 )
 if [ -n "$direct_dockerfile_images" ]; then
   printf '%s\n' "$direct_dockerfile_images" >&2
@@ -38,6 +37,7 @@ if [ -n "$direct_dockerfile_images" ]; then
 fi
 
 bash ./scripts/ci/cnb-container-images.sh validate
+sh ./test-env/scripts/test-nextcloud-download-proxy.sh
 
 status=0
 go test ./... >"$log" 2>&1 || status=$?

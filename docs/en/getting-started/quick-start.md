@@ -44,10 +44,10 @@ For the first deployment:
 
 ```bash
 anas plan -c /srv/anas/config.yml
-anas apply --build --update-lock -w /srv/anas
+anas apply --update-lock -w /srv/anas
 ```
 
-`--build` builds required images. `--update-lock` freezes module versions, capability bindings, and the snapshot policy. A normal later configuration change usually needs only:
+Published deployments pull fixed images directly. `--update-lock` freezes module versions, capability bindings, and the snapshot policy. Only source builders enable `global.chinese_build_speedup` and add `--build`. A normal later configuration change usually needs only:
 
 ```bash
 anas apply -w /srv/anas

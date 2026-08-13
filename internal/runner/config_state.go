@@ -48,7 +48,7 @@ func validateOrdinaryStartChanges(base, cfgPath string, reg map[string]Module) e
 		target := targetForSettingPath(key, reg)
 		policy := policyForTarget(target, reg)
 		switch policy.Effect {
-		case "credential_rotate", "data_migrate", "immutable":
+		case "image_rebuild", "credential_rotate", "data_migrate", "immutable":
 			blocked = append(blocked, fmt.Sprintf("%s (%s; %s)", key, policy.Effect, policy.Apply))
 		}
 	}

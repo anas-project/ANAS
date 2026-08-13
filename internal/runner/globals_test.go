@@ -34,6 +34,9 @@ func TestGlobalSchemaParses(t *testing.T) {
 	if !schema.Changes["default_service_root_password"].Sensitive {
 		t.Fatal("the administrator password is no longer marked sensitive")
 	}
+	if got := schema.Changes["chinese_build_speedup"].Effect; got != "image_rebuild" {
+		t.Fatalf("chinese_build_speedup effect = %q, want image_rebuild", got)
+	}
 }
 
 // Ownership is the whole scoping mechanism: a deployment-wide key recorded
@@ -57,7 +60,7 @@ func TestDeploymentWideKeysAreGloballyOwned(t *testing.T) {
 	}
 	for _, key := range []string{
 		"TZ", "CONTAINER_PREFIX", "IMAGE_PREFIX", "NETWORK_PREFIX", "BASICAUTH_USER",
-		"DEFAULT_LANGUAGE", "CHINESE_SPEEDUP", "IPV4", "IPV6", "DNS_SERVER",
+		"DEFAULT_LANGUAGE", "CHINESE_SPEEDUP", "CHINESE_BUILD_SPEEDUP", "IPV4", "IPV6", "DNS_SERVER",
 		"HOST_IP", "INTERFACE", "HOST_SUBNET_MASK", "HOST_DNS_SERVER", "SERVER_NAME",
 		"LOCAL_DNS_SERVER", "HOST_HAS_IPV6", "HOST_SEGMENT", "VLAN_SEGMENT",
 		"VLAN_GATEWAY_IP", "VLAN_BRIDGE_IP", "VLAN_INTERFACE", "VLAN_BRIDGE_INTERFACE",

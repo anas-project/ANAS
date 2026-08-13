@@ -25,6 +25,7 @@ config:
     basicauth_user: admin
     default_language: zh-cn
     chinese_speedup: "false"
+    chinese_build_speedup: "false"
     ipv4: "true"
     ipv6: "true"
     dns_server: 223.5.5.5
@@ -46,3 +47,11 @@ config:
       effect: container_recreate
       apply: recreate-affected-containers
       description: DNS settings are injected when containers are created.
+    chinese_speedup:
+      effect: container_recreate
+      apply: render-pull-and-recreate
+      description: Selects published CNB images and runtime download mirrors; no local image build is required.
+    chinese_build_speedup:
+      effect: image_rebuild
+      apply: apply-with-build
+      description: Changes Dockerfile and hook build inputs; run anas apply --build to regenerate images before recreating containers.
