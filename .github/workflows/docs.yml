@@ -19,6 +19,8 @@ jobs:
   build:
     name: Build documentation
     runs-on: ubuntu-latest
+    outputs:
+      pages_ready: ${{ steps.pages.outcome == 'success' }}
     permissions:
       contents: read
       pages: write
@@ -42,20 +44,26 @@ jobs:
         run: npm run docs:build
 
       - name: Setup GitHub Pages
+        id: pages
         if: github.event_name != 'pull_request'
+        continue-on-error: true
         uses: actions/configure-pages@v5
         with:
           enablement: true
 
+      - name: Report disabled GitHub Pages
+        if: github.event_name != 'pull_request' && steps.pages.outcome == 'failure'
+        run: echo '::warning::Documentation built successfully, but a repository administrator must enable GitHub Pages before deployment.'
+
       - name: Upload GitHub Pages artifact
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && steps.pages.outcome == 'success'
         uses: actions/upload-pages-artifact@v4
         with:
           path: docs/.vitepress/dist
 
   deploy:
     name: Deploy documentation
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && needs.build.outputs.pages_ready == 'true'
     needs: build
     runs-on: ubuntu-latest
     permissions:
