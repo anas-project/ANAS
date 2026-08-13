@@ -12,7 +12,6 @@ global:
   # default_language: zh-Hans
   # default_locale: zh-CN
   # Legacy compatibility for modules not yet migrated to managed local accounts.
-  default_service_root_password: ChangeMe1!
   # The administrator name for Traefik's dashboard gate.
   basicauth_user: admin
   # Optional. Absent means the default applies; an explicit false is kept, which

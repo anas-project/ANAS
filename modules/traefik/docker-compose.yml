@@ -1,6 +1,6 @@
 services:
   anas_traefik:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r2
     build:
       context: ./traefik
       network: ${DOCKER_BUILD_NETWORK:-default}
@@ -38,14 +38,14 @@ services:
     volumes:
       - "${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro"
       - "${LEGO_CERTS_PATH}:/certs:ro"
-    tmpfs:
-      - /run/anas:mode=0700,size=1m
+      # Mount the directory, not one file: local-admin rotation atomically
+      # renames the candidate document and Traefik must observe the new inode.
+      - "./dynamic:/run/anas"
     labels:
       - "traefik.http.routers.api.entrypoints=https"
       - "traefik.http.routers.api.rule=Host(`${TRAEFIK_DOMAIN}`)"
       - "traefik.http.routers.api.service=api@internal"
       - "traefik.http.routers.api.middlewares=auth"
-      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_BASICAUTH_HTPASSWD}"
       - "traefik.http.routers.api.tls=true"
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"

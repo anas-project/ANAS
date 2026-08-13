@@ -84,30 +84,24 @@ func TestCalcSambaDCCreatesLeastPrivilegeLDAPBindIdentity(t *testing.T) {
 	}
 }
 
-func TestCalcSambaDCUsesDefaultServicePasswordForHumanAdministrators(t *testing.T) {
+func TestCalcSambaDCGeneratesIndependentAdministratorPasswords(t *testing.T) {
 	env := map[string]string{
-		"BASE_DOMAIN":                   "nas.test",
-		"SERVER_NAME":                   "fengoffice",
-		"HOST_IP":                       "192.0.2.10",
-		"DEFAULT_SERVICE_ROOT_PASSWORD": "HumanAdmin1!",
+		"BASE_DOMAIN": "nas.test", "SERVER_NAME": "fengoffice", "HOST_IP": "192.0.2.10",
 	}
 	secrets := &secretStore{values: map[string]string{}}
 	if err := calcSambaDC(env, "", secrets); err != nil {
 		t.Fatal(err)
 	}
-	if got := env["SAMBA_DC_ADMIN_PASSWORD"]; got != "HumanAdmin1!" {
-		t.Fatalf("custom admin password = %q", got)
+	if env["SAMBA_DC_ADMIN_PASSWORD"] == env["SAMBA_DC_ADMINISTRATOR_PASSWORD"] {
+		t.Fatal("routine admin and built-in Administrator must have independent passwords")
 	}
-	if got := env["SAMBA_DC_ADMINISTRATOR_PASSWORD"]; got != "HumanAdmin1!" {
-		t.Fatalf("built-in Administrator password = %q", got)
-	}
-	for _, key := range []string{"SAMBA_DC_LDAP_BIND_PASSWORD", "SAMBA_DC_PASSWORD_BIND_PASSWORD"} {
+	for _, key := range []string{"SAMBA_DC_ADMIN_PASSWORD", "SAMBA_DC_ADMINISTRATOR_PASSWORD", "SAMBA_DC_LDAP_BIND_PASSWORD", "SAMBA_DC_PASSWORD_BIND_PASSWORD"} {
 		if !hasPasswordComplexity(env[key]) {
 			t.Fatalf("generated %s does not satisfy enabled password complexity", key)
 		}
 	}
-	if secrets.values["SAMBA_DC_ADMIN_PASSWORD"] != "" || secrets.values["SAMBA_DC_ADMINISTRATOR_PASSWORD"] != "" {
-		t.Fatal("human administrator passwords must not be generated independently")
+	if secrets.values["SAMBA_DC_ADMIN_PASSWORD"] != env["SAMBA_DC_ADMIN_PASSWORD"] || secrets.values["SAMBA_DC_ADMINISTRATOR_PASSWORD"] != env["SAMBA_DC_ADMINISTRATOR_PASSWORD"] {
+		t.Fatal("administrator passwords were not persisted independently")
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/anas-project/ANAS/internal/localization"
 	"gopkg.in/yaml.v3"
@@ -182,11 +181,10 @@ type Global struct {
 	// because certificates and dynamic DNS routinely live at different
 	// vendors, and because the same vendor often needs different credentials
 	// for each. See internal/dns.
-	DNSServer                  string `yaml:"dns_server"`
-	DefaultServiceRootPassword string `yaml:"default_service_root_password"`
-	BasicAuthUser              string `yaml:"basicauth_user"`
-	DefaultLanguage            string `yaml:"default_language"`
-	DefaultLocale              string `yaml:"default_locale"`
+	DNSServer       string `yaml:"dns_server"`
+	BasicAuthUser   string `yaml:"basicauth_user"`
+	DefaultLanguage string `yaml:"default_language"`
+	DefaultLocale   string `yaml:"default_locale"`
 	// Bool rather than bool: the schema defaults these to true, and a default
 	// fills whatever the config left empty, so a type that could not express
 	// "absent" would let the default overwrite a deliberate false. See
@@ -230,9 +228,6 @@ var globalBindings = []globalBinding{
 	{"network_prefix", "NETWORK_PREFIX", func(g Global) string { return g.NetworkPrefix }},
 	{"host_ip", "HOST_IP", func(g Global) string { return g.HostIP }},
 	{"dns_server", "DNS_SERVER", func(g Global) string { return g.DNSServer }},
-	{"default_service_root_password", "DEFAULT_SERVICE_ROOT_PASSWORD", func(g Global) string {
-		return g.DefaultServiceRootPassword
-	}},
 	{"basicauth_user", "BASICAUTH_USER", func(g Global) string { return g.BasicAuthUser }},
 	{"default_language", "DEFAULT_LANGUAGE", func(g Global) string { return g.DefaultLanguage }},
 	{"default_locale", "DEFAULT_LOCALE", func(g Global) string { return g.DefaultLocale }},
@@ -409,12 +404,6 @@ func Load(path string) (*File, error) {
 		} else if ok {
 			cfg.Global.DefaultLocale = inferred
 		}
-	}
-	// The shared administrator password is optional: when it is absent every
-	// module receives its own generated root password instead. When set it must
-	// still meet the minimum length.
-	if pw := cfg.Global.DefaultServiceRootPassword; pw != "" && utf8.RuneCountInString(pw) < 8 {
-		return nil, fmt.Errorf("global.default_service_root_password must be at least 8 characters")
 	}
 	return &cfg, nil
 }

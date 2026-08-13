@@ -171,7 +171,7 @@ Usage:
   anas config explain <module.parameter>
   anas config plan    [-w WORKSPACE]
   anas config secret  list | get <KEY>   [-w WORKSPACE]
-  anas admin local list | credential MODULE [ACCOUNT] [-w WORKSPACE]
+  anas admin local list | credential | rotate MODULE [ACCOUNT] [-w WORKSPACE]
 
 Workspace:
   A workspace holds the config, data, snapshots and runtime state of one
@@ -535,8 +535,11 @@ func (a *app) runAfterStartOf(release string, names []string) error {
 			continue
 		}
 		dir := filepath.Join(release, name)
-		resp, err := a.runHook(mod, "after_start", dir, a.moduleEnv(dir))
+		resp, err := a.runHook(mod, "after_start", dir, a.localAdminHookEnv(name, a.moduleEnv(dir)))
 		if err != nil {
+			return err
+		}
+		if err := a.applyLocalAdministrators(mod, dir, a.moduleEnv(dir)); err != nil {
 			return err
 		}
 		if err := runDockerCopies(resp.DockerCopies); err != nil {
@@ -940,9 +943,6 @@ func (a *app) calculate() error {
 		if err := a.publishModuleResources(name); err != nil {
 			return err
 		}
-		if err := a.applyModuleRootPassword(a.env, name); err != nil {
-			return err
-		}
 		if err := requireKeys(a.env, mod.Required); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
@@ -994,9 +994,6 @@ func (a *app) renderAll(work string) error {
 		}
 		env := a.scopedEnv(name)
 		env["MODULE_NAME"] = name
-		if err := a.applyModuleRootPassword(env, name); err != nil {
-			return err
-		}
 		resp, err := a.runHook(mod, "render_env", a.releaseDirFor(name), a.localAdminHookEnv(name, env))
 		if err != nil {
 			return err

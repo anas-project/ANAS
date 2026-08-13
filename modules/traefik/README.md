@@ -3,6 +3,21 @@ Traefik
 
 `Traefik`是本项目的基础，任何通过TCP(HTTP)访问的服务都会通过Traefik反向代理。
 
+## Administrator access / 管理员入口
+
+Dashboard 未接入 IAM，使用一个托管 BasicAuth 账号。Manifest 账号 ID 是 `primary`；
+默认实际用户名由全局 `{module}` 模板生成，为 `admin_traefik`。ANAS 只把 bcrypt
+校验值写入当前 file-provider 配置，密码不会进入部署 `.env` 或 Compose label。
+
+The Dashboard has no IAM integration and uses one managed BasicAuth account.
+Its Manifest account ID is `primary`; the default physical username is
+`admin_traefik`. Only a bcrypt verifier enters active Traefik configuration.
+
+```bash
+anas admin local credential traefik -w /srv/anas
+anas admin local rotate traefik --prompt -w /srv/anas
+```
+
 配置
 ----------------
 
@@ -51,7 +66,7 @@ ANAS_TRAEFIK_ROUTE__DDNS_GO__MIDDLEWARES: "forward-auth"
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`3.7.10-r1`（reviewed 2026-08-13）
+- Module version / 版本：`3.7.10-r2`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — Traefik receives TZ for process and access-log timestamps.
 - Language scope / 语言范围：Traefik Proxy built-in Dashboard
 - Selection / 选择方式：`fixed`

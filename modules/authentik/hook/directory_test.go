@@ -77,8 +77,7 @@ func TestCalcAuthentikUsesPasswordServiceAccount(t *testing.T) {
 	if !strings.Contains(env["AUTHENTIK_LDAP_USER_OBJECT_FILTER"], "(anasIdentityAnchor=*)") {
 		t.Fatalf("authentik user filter does not require the identity anchor: %s", env["AUTHENTIK_LDAP_USER_OBJECT_FILTER"])
 	}
-	password := secrets.values["AUTHENTIK_BREAK_GLASS_PASSWORD"]
-	if len(password) != 64 || env["AUTHENTIK_BOOTSTRAP_PASSWORD"] != password {
-		t.Fatalf("break-glass password was not generated and wired to bootstrap")
+	if secrets.values["AUTHENTIK_BREAK_GLASS_PASSWORD"] != "" || env["AUTHENTIK_BOOTSTRAP_PASSWORD"] != "" {
+		t.Fatal("legacy break-glass plaintext entered module-generated secrets or deployment env")
 	}
 }

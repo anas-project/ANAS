@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -158,7 +160,7 @@ func changed(old, cur map[string]string) map[string]string {
 	}
 	return out
 }
-func calcLAM(e map[string]string, _ string, _ *secretStore) ([]string, error) {
+func calcLAM(e map[string]string, _ string, secrets *secretStore) ([]string, error) {
 	explicitLanguage := e["LAM_LANGUAGE"]
 	languageValue, confidence, err := localization.Match(defaultValue(explicitLanguage, e["DEFAULT_LANGUAGE"]), lamLanguages, "en-US")
 	if err != nil {
@@ -174,8 +176,25 @@ func calcLAM(e map[string]string, _ string, _ *secretStore) ([]string, error) {
 	}
 	e["LAM_LANGUAGE"] = languageValue
 	e["LAM_DOMAIN"] = e["LAM_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
-	e["LAM_ADMIN_PASSWORD"] = defaultValue(e["LAM_ADMIN_PASSWORD"], e["SAMBA_DC_ADMIN_PASSWORD"])
+	password, err := ensureLAMPassword(e["LAM_ADMIN_PASSWORD"], secrets)
+	if err != nil {
+		return nil, err
+	}
+	e["LAM_ADMIN_PASSWORD"] = password
 	return warnings, nil
+}
+
+func ensureLAMPassword(explicit string, secrets *secretStore) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	return secrets.Ensure("LAM_ADMIN_PASSWORD", func() (string, error) {
+		buf := make([]byte, 24)
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		return "Aa1!" + hex.EncodeToString(buf), nil
+	})
 }
 
 // The list is the active (non-commented) set in LAM 9.6's config/language.

@@ -32,8 +32,6 @@ modules:
 global:
   base_domain: nas.example.com
   email: admin@example.com
-  default_service_root_password: replace-with-a-strong-password
-  basicauth_user: admin
 
 secrets:
   cloudflare_dns_api_token: replace-me
@@ -41,7 +39,17 @@ secrets:
 
 `lego` 通过 DNS-01 获取通配符证书，并将证书目录只读挂载给 Traefik。DNS 厂商凭据属于 Secret，不应提交到仓库。修改 `base_port` 或 `domain_prefix` 会重建 Traefik 容器及相关路由。
 
-Dashboard 使用 BasicAuth。用户名来自 `global.basicauth_user`（默认 `admin`），兼容配置下密码来自 `global.default_service_root_password`。也可以在顶层 `env` 中提供 `BASICAUTH_PASSWD` 或完整的 `TRAEFIK_BASICAUTH_HTPASSWD`；后者属于高级兼容接口。
+Dashboard 使用托管的 `primary` BasicAuth 账号。默认实际用户名是 `admin_traefik`；
+首次部署前可以通过 `modules.traefik.administration.local_accounts.primary.username`
+覆盖。密码由 Secret Store 生成，不能通过 argv、`config.yml` 或顶层 `env` 输入。
+
+```bash
+anas admin local credential traefik -w /srv/anas
+anas admin local rotate traefik --prompt -w /srv/anas
+```
+
+Traefik 的活动 file-provider 文件只保存 bcrypt 校验值，不保存明文；轮换通过候选密码
+生成新校验值，再以候选 BasicAuth 请求真实 Dashboard，验证后提交 Secret，失败则恢复旧配置。
 
 ## 路由来源
 

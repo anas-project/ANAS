@@ -2,7 +2,12 @@
 # matrices, so this is where the alternative provider stays covered.
 modules:
   samba_dc: {}
-  llng: {}
+  mariadb: {}
+  llng:
+    config:
+      # full.yml covers PostgreSQL consumers; this matrix keeps LLNG's
+      # MariaDB driver, resource binding, and external DB network exercised.
+      db_type: mariadb
   lam: {}
 identity:
   iam:
@@ -12,6 +17,5 @@ global:
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
-  default_service_root_password: change-me-now
 env:
   BASICAUTH_USER: admin

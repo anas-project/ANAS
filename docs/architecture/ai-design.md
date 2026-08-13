@@ -68,7 +68,6 @@ global:
   base_domain: nas.example.com
   email: admin@example.com
   timezone: Asia/Shanghai
-  default_service_root_password: ChangeMe1!
 
 secrets:
   dnspod_api_key: token-value

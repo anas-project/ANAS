@@ -524,6 +524,11 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if err != nil {
 		return Module{}, err
 	}
+	for _, account := range localAccounts {
+		if (account.Apply != "" || account.Rotate != "") && len(manifest.Logic.Hook.Command) == 0 {
+			return Module{}, fmt.Errorf("module %q local account %q declares lifecycle handlers without a module hook", dirname, account.ID)
+		}
+	}
 	provisioning, authentication, identityInterfaces, err := normalizeIdentity(dirname, manifest.Identity)
 	if err != nil {
 		return Module{}, err
@@ -711,7 +716,7 @@ func normalizeManagement(module string, in manifestManagement) ([]ManagementSurf
 		}
 		format := strings.ToLower(strings.TrimSpace(raw.Credential.ContainerFormat))
 		switch format {
-		case "bcrypt", "plaintext_on_bootstrap", "plaintext":
+		case "bcrypt", "plaintext_on_bootstrap":
 		default:
 			return nil, nil, fmt.Errorf("module %q local account %q has unsupported container_format %q", module, id, format)
 		}

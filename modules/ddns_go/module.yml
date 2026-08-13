@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: ddns_go
 version: 6.17.4
-revision: 1
+revision: 2
 app_version: 6.17.4
 abi:
   supports:
@@ -72,7 +72,7 @@ management:
         policy: generated_per_module
         container_format: bcrypt
       lifecycle:
-        apply: reconcile
+        apply: apply-ddns-go-local-admin
         rotate: rotate-ddns-go-local-admin
 logic:
   hook:

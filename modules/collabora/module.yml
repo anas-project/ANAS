@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: collabora
 version: 26.4.2
-revision: 1
+revision: 2
 app_version: 26.04.2.4.1
 abi:
   supports:
@@ -26,12 +26,10 @@ config:
   # .env carry only what is used, instead of everything the dependency
   # closure happens to own.
   consumes:
-    - COLLABORA_ADMIN_USERNAME
-    - COLLABORA_ALIAS_GROUP
     - NEXTCLOUD_DOMAIN_FULL
-    - SAMBA_DC_ADMIN_NAME
     - TRAEFIK_BASE_PORT
   defaults:
+    admin_username: admin_collabora
     domain_prefix: collabora
     log_level: warning
     interface: default
@@ -40,6 +38,15 @@ config:
     - COLLABORA_DOMAIN_FULL
     - COLLABORA_HOSTNAME
   changes:
+    admin_username:
+      effect: container_recreate
+      apply: recreate-collabora
+      description: The native admin-console username is injected when the container starts.
+    admin_password:
+      effect: container_recreate
+      apply: recreate-collabora
+      sensitive: true
+      description: If omitted, the Module persists an independent random password in the Secret Store.
     domain_prefix:
       effect: container_recreate
       apply: recreate-collabora

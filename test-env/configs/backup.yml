@@ -13,7 +13,6 @@ global:
   email: admin@backup.test
   timezone: Asia/Shanghai
   virtual_domain: true
-  default_service_root_password: change-me-now
 rollback:
   snapshot:
     backend: btrfs

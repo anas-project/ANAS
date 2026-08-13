@@ -49,7 +49,6 @@ global:
   base_domain: nas.example.com
   email: admin@example.com
   timezone: Asia/Singapore
-  default_service_root_password: replace-with-a-strong-password
 
 administration:
   bootstrap:

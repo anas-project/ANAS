@@ -98,10 +98,7 @@ func loadGlobalSchema(b []byte) (globalSchema, error) {
 }
 
 // declaredParameters is every parameter a config block names, by the spelling
-// it was written with, gathered from all three lists rather than from defaults
-// alone. default_service_root_password is why: it appears only under `changes`,
-// so an inventory built from defaults would omit the one parameter operators
-// most need to be told about.
+// it was written with, gathered from required, defaults, and changes.
 func declaredParameters(cfg manifestConfig) []string {
 	seen := map[string]bool{}
 	out := []string{}

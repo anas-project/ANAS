@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: nextcloud
 version: 34.0.2
-revision: 2
+revision: 3
 app_version: 34.0.2
 abi:
   supports:
@@ -116,12 +116,9 @@ config:
     - COLLABORA_DOMAIN_FULL
     - COLLABORA_HOSTNAME
     - TURN_SECRET
-    # Directory credentials owned by samba_dc: the LDAP agent bind password
-    # configured through occ, and the administrator password this module reuses
-    # for its own initial admin. Both are sensitive, so they only cross the
-    # module boundary through an explicit claim.
+    # Directory credential owned by samba_dc and configured through occ. The
+    # recovery administrator is module-local and never reuses Samba's password.
     - SAMBA_DC_PASSWORD_BIND_PASSWORD
-    - SAMBA_DC_ADMIN_PASSWORD
   changes:
     db_type:
       effect: data_migrate
@@ -131,11 +128,6 @@ config:
       effect: data_migrate
       apply: migrate-nextcloud-database
       description: The database name is materialized during installation.
-    admin_password:
-      effect: credential_rotate
-      apply: rotate-nextcloud-admin-password
-      sensitive: true
-      description: maintenance:install does not update an existing administrator password.
     domain_prefix:
       effect: reconcile
       apply: reconcile-nextcloud-domain
@@ -184,6 +176,27 @@ identity:
       prefer:
         - saml
   application_group: true
+management:
+  surfaces:
+    - id: web
+      uri_from: NEXTCLOUD_DOMAIN_FULL
+      authentication:
+        primary: iam
+    - id: local_recovery
+      uri_from: NEXTCLOUD_BREAK_GLASS_URL
+      authentication:
+        primary: local
+  local_accounts:
+    - id: break_glass
+      purpose: break_glass
+      username:
+        template: global
+      credential:
+        policy: generated_per_module
+        container_format: plaintext_on_bootstrap
+      lifecycle:
+        apply: apply-nextcloud-break-glass
+        rotate: rotate-nextcloud-break-glass
 features:
   generated_secrets: true
   domain: true

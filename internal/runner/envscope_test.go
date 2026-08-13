@@ -229,36 +229,3 @@ func TestApplyCalculatePatchEnforcesExports(t *testing.T) {
 		t.Fatal("an undeclared unprefixed write was accepted")
 	}
 }
-
-func TestModuleRootPasswordGeneratedPerModule(t *testing.T) {
-	a := scopeTestApp()
-	a.cfg = &config.File{}
-	a.secrets = &secretStore{values: map[string]string{}}
-	envA := map[string]string{}
-	if err := a.applyModuleRootPassword(envA, "nextcloud"); err != nil {
-		t.Fatal(err)
-	}
-	envB := map[string]string{}
-	if err := a.applyModuleRootPassword(envB, "postgres"); err != nil {
-		t.Fatal(err)
-	}
-	pa, pb := envA["DEFAULT_SERVICE_ROOT_PASSWORD"], envB["DEFAULT_SERVICE_ROOT_PASSWORD"]
-	if len(pa) < 16 || len(pb) < 16 {
-		t.Fatalf("generated passwords too short: %q %q", pa, pb)
-	}
-	if pa == pb {
-		t.Fatal("per-module passwords must differ")
-	}
-	if a.secrets.values["NEXTCLOUD_DEFAULT_ROOT_PASSWORD"] != pa {
-		t.Fatal("generated password not persisted under the module prefix")
-	}
-	// A configured shared password takes precedence.
-	a.cfg.Global.DefaultServiceRootPassword = "SharedPass1!"
-	envC := map[string]string{}
-	if err := a.applyModuleRootPassword(envC, "nextcloud"); err != nil {
-		t.Fatal(err)
-	}
-	if envC["DEFAULT_SERVICE_ROOT_PASSWORD"] != "SharedPass1!" {
-		t.Fatal("configured shared password must win")
-	}
-}

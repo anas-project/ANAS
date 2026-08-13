@@ -32,8 +32,6 @@ modules:
 global:
   base_domain: nas.example.com
   email: admin@example.com
-  default_service_root_password: replace-with-a-strong-password
-  basicauth_user: admin
 
 secrets:
   cloudflare_dns_api_token: replace-me
@@ -41,7 +39,20 @@ secrets:
 
 `lego` obtains a wildcard certificate through DNS-01. Its certificate directory is mounted read-only into Traefik. Keep DNS-provider credentials out of version control. Changing `base_port` or `domain_prefix` recreates the Traefik container and affected routes.
 
-The dashboard uses BasicAuth. The username comes from `global.basicauth_user` (default `admin`); the compatibility password comes from `global.default_service_root_password`. Advanced deployments can set `BASICAUTH_PASSWD` or a complete `TRAEFIK_BASICAUTH_HTPASSWD` in the top-level `env` section.
+The dashboard uses the managed `primary` BasicAuth account. Its default physical
+username is `admin_traefik`; before first deployment it can be overridden at
+`modules.traefik.administration.local_accounts.primary.username`. Passwords are
+generated in the Secret Store and cannot be supplied through argv, `config.yml`,
+or top-level `env`.
+
+```bash
+anas admin local credential traefik -w /srv/anas
+anas admin local rotate traefik --prompt -w /srv/anas
+```
+
+The active file-provider document stores only a bcrypt verifier. Rotation writes
+the candidate state, requests the real Dashboard with candidate BasicAuth, then
+commits the Secret; failure restores the old state.
 
 ## Route providers
 

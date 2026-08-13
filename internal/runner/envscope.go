@@ -212,31 +212,6 @@ func (a *app) scopedSecrets(name string) map[string]string {
 	return out
 }
 
-// applyModuleRootPassword sets DEFAULT_SERVICE_ROOT_PASSWORD for one module's
-// calculation or render. When the user configured a shared password it is
-// used unchanged; otherwise each module gets its own generated password,
-// persisted as <PREFIX>_DEFAULT_ROOT_PASSWORD in the secret store and
-// readable through `anas config secret get`.
-func (a *app) applyModuleRootPassword(env map[string]string, name string) error {
-	value := a.cfg.Global.DefaultServiceRootPassword
-	if value == "" {
-		prefix := defaultEnvPrefix(name)
-		if mod, ok := a.reg[name]; ok && mod.EnvPrefix != "" {
-			prefix = mod.EnvPrefix
-		}
-		generated, err := a.secrets.Ensure(prefix+"_DEFAULT_ROOT_PASSWORD", func() (string, error) {
-			return randomPassword(20)
-		})
-		if err != nil {
-			return err
-		}
-		value = generated
-	}
-	env["DEFAULT_SERVICE_ROOT_PASSWORD"] = value
-	a.setEnvOwner("DEFAULT_SERVICE_ROOT_PASSWORD", globalScope)
-	return nil
-}
-
 // applyCalculatePatch merges a calculate hook's env patch into the global
 // environment, records ownership, and enforces the module's write contract: a
 // module may only publish keys under its own prefixes, keys it already owns, or

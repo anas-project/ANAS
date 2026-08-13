@@ -71,6 +71,65 @@ The runner first reads explicit `global.default_language`; when absent, it deriv
 
 No additional global “format” knobs are introduced: character encoding is UTF-8; date, number, currency, first-day-of-week, and measurement formats derive from locale or application user preferences; business semantics such as a default phone country remain module settings (for example Nextcloud's `phone_region`). Automation that parses command output should set `LC_ALL=C` at that script boundary instead of using the UI language as a machine interface.
 
+## PostgreSQL and MariaDB
+
+The database is a per-consumer `relational_database` contract binding, not a global switch. A module that supports both engines selects `postgres`, `mariadb`, or `auto` through `modules.<module>.config.db_type`. For example, LLNG can use MariaDB while Nextcloud uses PostgreSQL:
+
+```yaml
+modules:
+  postgres: {}
+  mariadb: {}
+  llng:
+    config:
+      db_type: mariadb
+  nextcloud:
+    config:
+      db_type: postgres
+```
+
+For an existing deployment, `auto` preserves the binding recorded in `config.lock.yml`. On first resolution it uses the only explicitly selected compatible provider, when there is exactly one; otherwise it uses the module default, currently `postgres` for dual-database modules. Enabling both providers therefore does not migrate consumers to MariaDB. Verify the resolution with:
+
+```bash
+anas plan -c /srv/anas/config.yml
+anas config explain llng.db_type
+```
+
+Choose the engine before the first `apply` for a new deployment. Changing `db_type` for an installed application is a `data_migrate` change: back up and migrate the application data first, then apply with the explicit risk acknowledgement. `--allow-risky` does not copy tables, translate SQL, or validate the migrated data. Never switch a database by editing `config.lock.yml`.
+
+The runner creates a dedicated database, user, and stable generated credential for every consumer. It publishes only that resource's `*_DB_HOST`, `*_DB_PORT`, `*_DB_NAME`, `*_DB_USERNAME`, `*_DB_PASSWORD`, and `*_NETWORK_DB` values. Applications must not use the PostgreSQL superuser or MariaDB root credentials.
+
+The current manifests declare the following compatibility. The runner rejects interfaces not listed here:
+
+| Consumer module | PostgreSQL | MariaDB |
+| --- | --- | --- |
+| `llng` | supported | supported |
+| `nextcloud` | supported | supported |
+| `meshcentral` | supported | supported |
+| `authentik` | supported | not declared/supported |
+
 ## Secrets
 
 Do not commit real secrets. `config secret list` returns names only; only the explicit `config secret get` operation returns clear text. Generated secrets live in the protected workspace runtime and are handled by the ANAS backup flow.
+
+## Module-local administrators
+
+`management.local_accounts` is a capability declared by a Module Manifest.
+Configuration may choose the global username template or override a username
+by account ID. IDs such as `primary` and `break_glass` are not usernames, and
+passwords are never valid `config.yml` input.
+
+```bash
+anas admin local credential nextcloud break_glass -w /srv/anas
+anas admin local rotate nextcloud break_glass -w /srv/anas
+anas admin local rotate ddns_go --prompt -w /srv/anas
+```
+
+Omitting the ID selects `primary`, then a sole account, otherwise reports
+ambiguity. Once a physical username is locked in `.anas/local-admins.yml`, a
+different ordinary override is rejected instead of being silently ignored.
+There is no generic rename command yet because safe identity migration requires
+an application-specific rollback handler.
+
+Nextcloud does not declare `modules.nextcloud.config.admin_password`; that path
+is invalid configuration. Its handler resets and verifies the recovery account
+through `occ user:resetpassword --password-from-env`.

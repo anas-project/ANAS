@@ -186,10 +186,10 @@ Secret 逻辑键：
 
 ```text
 ANAS_LOCAL_ADMIN__DDNS_GO__PRIMARY__PASSWORD
-ANAS_LOCAL_ADMIN__NEXTCLOUD__RECOVERY__PASSWORD
+ANAS_LOCAL_ADMIN__NEXTCLOUD__BREAK_GLASS__PASSWORD
 ```
 
-兼容 Module 可获得私有别名：
+Module Hook 可获得账号私有别名：
 
 ```text
 DDNS_GO_LOCAL_ADMIN_USERNAME
@@ -198,8 +198,26 @@ DDNS_GO_LOCAL_ADMIN_PASSWORD
 
 这些键归 Module 所有并标记 sensitive，不能因依赖闭包传播给其他 Module。
 
+`ACCOUNT` 在所有 Runner API 和 CLI 中都指 `management.local_accounts[].id`，不是
+`username`。省略时按 `primary` → Module 唯一账号 → 歧义错误解析，因此单账号
+`break_glass` Module 也可省略，而多账号 Module 不会猜测恢复账号。
+
 `local-admins.yml` 不含密码，只保存 Module、账号 id、用途、已锁定用户名和 Secret 逻辑
 键。它与 `secrets.generated.yml` 一起进入 snapshot/backup，并在恢复时一起回滚。
+
+状态边界如下：
+
+- `config.yml`：用户期望状态和用户名策略；不接受托管密码。遗留显式密码会阻断 render，
+  删除后由 Module apply handler 把生成的托管密码写入应用；
+- `config.lock.yml` 与 deployment manifest：版本、绑定、账号 ID 和 handler 契约；不含明文；
+- `.anas/local-admins.yml`：账号 ID 到锁定物理用户名和 Secret 逻辑键的映射；不含明文；
+- `.anas/secrets.generated.yml`：唯一持久 Secret Store（0600）；
+- `.anas/runtime-secrets/`：bootstrap-only 容器的 0600 可再生运行时投影，不进入制品；
+- 应用内部状态：只保存应用需要的 hash/凭据。修改成功并验证后，Secret Store 才提交。
+
+初始化后改变普通 username override 会明确报错并指出锁定值，不能静默无效。通用
+rename/migrate 命令尚不存在：只有应用提供“改名、验证、失败回滚”的专用 handler 后才能
+声明该能力。
 
 ## 7. CLI
 
@@ -227,22 +245,32 @@ anas admin local rotate ddns_go --prompt
 轮换事务顺序是：生成候选值、调用 Module handler、验证登录、提交 Secret。失败时继续
 保留旧值。对 bootstrap-only 应用不能只改环境变量，必须执行应用 API/CLI。
 
+当前实际声明轮换能力的本地账号包括 ddns-go `primary`、Traefik `primary`、Nextcloud
+`break_glass` 与 Authentik `break_glass`。
+ddns-go handler 原子更新其持久配置 hash、重启并验证状态，失败恢复原文件；Nextcloud
+handler 通过 `occ user:resetpassword --password-from-env` 更新，再用 Nextcloud 用户管理器
+验证，失败时用旧 Secret 执行同一路径回滚；库存返回 `/login?direct=1` 作为 IAM 故障时
+绕过 SAML 门禁的本地恢复入口。Authentik 使用固定上游账号 `akadmin`，首次启动从运行时
+Secret 文件引导，后续通过 `ak shell` 更新并验证；Traefik 将 bcrypt 校验值原子写入活动
+file-provider 配置，并用候选 BasicAuth 对真实 Dashboard 发起请求验证。其他 Module 不声明
+handler，CLI 会报不支持。
+
 首次 apply 只输出查询提示，不输出密码：
 
 ```text
 ddns_go local administrator ready: anas admin local credential ddns_go
 ```
 
-## 8. 兼容与迁移
+## 8. 配置边界
 
-1. 现有 `SAMBA_DC_ADMIN_NAME` 先由 bootstrap username 派生，随后迁移为目录 provider
-   私有输出；其他 Module 改为消费角色或身份能力。
-2. `BASICAUTH_USER` 不再作为通用管理员名；Traefik BasicAuth 若保留，应改成 Traefik
-   私有参数。
-3. `DEFAULT_SERVICE_ROOT_PASSWORD` 不再给本地管理员扇出；旧部署可读取原值作为首次
-   迁移输入，但迁移后每 Module 拥有独立 Secret。
-4. 现有 `admin_nc`、`akadmin` 等名称进入状态锁，不因新模板自动重命名。
-5. 改用户名属于 `identity_migrate`，必须通过显式命令执行。
+本系统不保留旧管理员字段或历史用户名迁移分支：
+
+1. `SAMBA_DC_ADMIN_NAME` 属于目录 provider 身份，不得作为其他 Module 的本地管理员名；
+2. Traefik 不再消费 `BASICAUTH_USER`、`BASICAUTH_PASSWD` 或
+   `TRAEFIK_BASICAUTH_HTPASSWD`，Dashboard 账号只来自托管 `primary`；
+3. `DEFAULT_SERVICE_ROOT_PASSWORD` 已删除；每个账号拥有独立 Secret；
+4. 新部署用户名直接按固定值、Module override、全局模板解析并锁定；
+5. 改用户名属于 `identity_migrate`，必须有应用专用事务；没有 handler 就明确不支持。
 
 ## 9. 验证要求
 
@@ -251,6 +279,8 @@ ddns_go local administrator ready: anas admin local credential ddns_go
 - CLI 列表不泄密、credential 显式输出和 JSON 合同测试；
 - ddns-go E2E：计划不包含 oauth2-proxy、域名登录和直连登录均验证本地密码；
 - Nextcloud E2E：LDAP 用户已同步、SAML 登录关联同一用户、本地恢复账号可用；
+- Authentik 真实容器测试：`akadmin` bootstrap、`ak shell` 轮换及旧密码失效；
+- Traefik 真实容器测试：Dashboard BasicAuth 新密码生效、旧密码失效；
 - 轮换成功和失败回滚测试；
 - ln 主机执行 `test-all.sh` 与服务器身份/DDNS E2E。
 
@@ -262,7 +292,22 @@ ddns_go local administrator ready: anas admin local credential ddns_go
 4. provider-neutral 管理角色和授权 CLI；
 5. 移除旧的共享管理员字段。
 
-当前已完成阶段 1、阶段 3 的 Manifest/配置表达，以及本地管理员状态的快照和备份
-一致性。阶段 2 的轮换命令、Nextcloud 实际 LDAP/SAML 登录 E2E、阶段 4 的角色授权和
-阶段 5 的兼容字段移除仍是后续工作；因此目前 CLI 只有 `list` 与 `credential`，不会
-假装提供尚未具备事务回滚能力的 `rotate`。
+当前已完成阶段 1、阶段 2（对有真实 handler 的 ddns-go、Traefik、Nextcloud 与
+Authentik）、阶段 3 的
+Manifest/配置表达，以及本地管理员状态的 snapshot/backup 一致性。Nextcloud 已不再复用
+Samba 管理员密码：首次安装使用运行时 Secret 文件，已有安装由真实 occ handler 更新；
+默认用户名由全局模板直接解析为 `admin_nextcloud` 并锁定。
+
+仓库已有 `server-authentik-nextcloud-login-e2e.sh` 覆盖 LDAP provisioning、SAML 浏览器
+登录、目录 anchor 与同一 Nextcloud 用户映射；`server-nextcloud-local-admin-e2e.sh` 覆盖
+真实 occ apply/rotate、旧密码失效、新密码验证和恢复入口。它们需要完整服务器环境，本地
+单元测试不会冒充运行过这些链路。LAM 主登录使用已启用的 Samba `Admins` 组成员各自的
+目录凭据；`lam` 是服务器 profile 名，LAM 私有密码仅保护配置编辑器。`Admins` 只授权
+进入 LAM，目录读写权限仍由 Samba AD ACL 和高权限组决定。Collabora 使用
+`admin_collabora` 规则名与 Module 私有密码；其密码省略时独立随机生成，但尚无可验证
+回滚的 rotate handler，因此不加入托管账号。LLNG 的旧密码变量没有上游消费者，当前
+Manager 仅接受 AD 和目录管理员组，不声明虚假的 `break_glass`。MeshCentral 上游在未设置 domain `auth` 时支持本地账号，但本 Module
+使用 `auth: ldap`，同一 domain 没有可声称的本地绕过入口。仍未完成的是 Authentik/Traefik
+新增 handler 的真实服务器 E2E、阶段 4 的 provider-neutral 角色授权 CLI，以及阶段 5 中
+不属于本地账号的其余共享字段移除。这些能力继续如实标为未实现；尤其不会给没有
+应用级 handler 的 Module 伪造 rotate 或 rename 能力。

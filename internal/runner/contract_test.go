@@ -183,6 +183,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		{"inspect a missing deployment", []string{"deployments", "inspect", "nosuchdeployment", "-w", workspace, "--json"}, 4},
 		{"get a missing secret", []string{"config", "secret", "get", "NO_SUCH_SECRET", "-w", workspace, "--json"}, 4},
 		{"get a missing local admin", []string{"admin", "local", "credential", "ddns_go", "-w", workspace, "--json"}, 4},
+		{"rotate a missing local admin", []string{"admin", "local", "rotate", "ddns_go", "-w", workspace, "--json"}, 4},
 		{"rollback with no previous deployment", []string{"rollback", "-w", workspace, "--json"}, 4},
 		{"start with no active deployment", []string{"start", "-w", workspace, "--json"}, 4},
 		{"stop with no active deployment", []string{"stop", "-w", workspace, "--json"}, 4},

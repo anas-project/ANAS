@@ -35,7 +35,6 @@ global:
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
-  default_service_root_password: Anas-Test-2026!Root
 env:
   APT_MIRROR_URL: https://mirrors.aliyun.com
   APK_MIRROR_URL: https://mirrors.aliyun.com

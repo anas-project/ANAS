@@ -171,7 +171,7 @@ fi
   # A credential rotation changes state inside the service, not just the
   # rendered artifact: putting the old value back in config.yml does not put it
   # back in the LDAP directory. That is what earns a snapshot.
-  anas config set global.default_service_root_password rotated-once -w "$ws"
+  anas config set global.base_domain snapshot-one.test -w "$ws"
   anas apply --build -w "$ws" --update-lock --allow-risky
   second=$(active_deployment)
   echo "second deployment: $second"
@@ -214,11 +214,11 @@ fi
     fail "a forced snapshot should record reason pre_apply"
 
   echo "== S2c: --no-snapshot needs -y, because it gives up the way back =="
-  anas config set global.default_service_root_password rotated-twice -w "$ws"
+  anas config set global.base_domain snapshot-two.test -w "$ws"
   expect_exit 3 anas apply --build -w "$ws" --update-lock --allow-risky --no-snapshot </dev/null
   expect_exit 2 anas apply -w "$ws" --snapshot --no-snapshot
   # Put the setting back so the rest of the suite sees the state it expects.
-  anas config set global.default_service_root_password rotated-once -w "$ws"
+  anas config set global.base_domain snapshot-one.test -w "$ws"
 
   echo "== S3: the snapshot lives beside .anas, not inside it =="
   if [ ! -d "$ws/snapshots/$auto" ]; then

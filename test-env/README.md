@@ -178,6 +178,43 @@ Do not commit `.anas-test/` or generated secrets.
       <workspace>/.anas/deployments/<deployment-id>
     ```
 
+13. MariaDB consumer runtime test
+
+    `server-mariadb-modules-e2e.yml` binds every stable dual-database consumer
+    (`llng`, `nextcloud`, and `meshcentral`) explicitly to MariaDB. Run it only
+    against the isolated Docker daemon because it starts a complete directory,
+    IAM, proxy, database, and application stack:
+
+    ```sh
+    export DOCKER_HOST=unix:///run/anas-docker-test.sock
+    go run ./cmd/anas init /data/anas-mariadb-modules-test -y
+    cp test-env/server-mariadb-modules-e2e.yml \
+      /data/anas-mariadb-modules-test/config.yml
+    go run ./cmd/anas apply -w /data/anas-mariadb-modules-test \
+      --update-lock --no-snapshot -y
+    ```
+
+    Verify all three resource state files are `ready`, all four core containers
+    (`mariadb`, `llng`, `nextcloud`, and `meshcentral`) are healthy, and the
+    MariaDB schemas contain application tables. Then run `anas restart mariadb`
+    and an idempotent `anas apply` to cover dependency restart ordering and
+    persistence.
+
+14. LAM `Admins` group login runtime test
+
+    Against a running deployment carrying `samba_dc` and `lam`, this creates a
+    temporary directory user and executes LAM's deployed search-and-bind policy.
+    It proves a non-member is rejected, an enabled `Admins` member can bind with
+    their own password, a wrong password fails, disabling the member revokes
+    access, re-enabling restores it, and removing group membership revokes it
+    again. The temporary user is removed on exit.
+
+    ```sh
+    DOCKER_HOST=unix:///run/anas-anchor-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
+      ./test-env/scripts/server-lam-admins-e2e.sh
+    ```
+
 ## Full Run
 
 ```sh
@@ -199,7 +236,10 @@ cleanup.
 
 - `min.yml`: minimal reverse-proxy baseline.
 - `full.yml`: broad coverage of current modules.
-- `matrix-auth.yml`: identity and account management.
+- `matrix-auth.yml`: identity and account management, with LLNG explicitly
+  bound to MariaDB; the wider fixtures keep PostgreSQL consumer coverage. Run
+  it as a container smoke test with
+  `ANAS_TEST_CONFIG=test-env/configs/matrix-auth.yml ANAS_TEST_WORKSPACE=.anas-test/runtime/matrix-auth ./test-env/scripts/test-smoke.sh`.
 - `matrix-storage.yml`: Samba domain and file service.
 - `matrix-apps.yml`: user-facing application stack.
 - `matrix-network.yml`: network, certificate, DNS, TURN, VPN, and RADIUS modules.

@@ -13,7 +13,6 @@ global:
   email: admin@snapshot.test
   timezone: Asia/Shanghai
   virtual_domain: true
-  default_service_root_password: change-me-now
 rollback:
   snapshot:
     # source defaults to <workspace>/data and root to <workspace>/snapshots;

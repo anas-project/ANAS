@@ -27,12 +27,21 @@ func supportedABI(v string) bool {
 }
 
 type hookRequest struct {
-	ABI     string            `json:"abi"`
-	Phase   string            `json:"phase"`
-	Module  string            `json:"module"`
-	Workdir string            `json:"workdir"`
-	Env     map[string]string `json:"env"`
-	Secrets map[string]string `json:"secrets"`
+	ABI          string                 `json:"abi"`
+	Phase        string                 `json:"phase"`
+	Module       string                 `json:"module"`
+	Workdir      string                 `json:"workdir"`
+	Env          map[string]string      `json:"env"`
+	Secrets      map[string]string      `json:"secrets"`
+	LocalAccount *localAccountOperation `json:"local_account,omitempty"`
+}
+
+type localAccountOperation struct {
+	Handler            string `json:"handler"`
+	AccountID          string `json:"account_id"`
+	Username           string `json:"username"`
+	SecretKey          string `json:"secret_key"`
+	CandidateSecretKey string `json:"candidate_secret_key"`
 }
 
 type hookResponse struct {
@@ -118,6 +127,8 @@ func handle(req hookRequest) (hookResponse, error) {
 		return hookResponse{DisableServices: disabledServices(req.Module, env)}, nil
 	case "after_start":
 		return hookResponse{DockerCopies: afterStart(req.Module, env)}, nil
+	case "local_account_apply", "local_account_rotate", "local_account_rollback":
+		return hookResponse{}, handleLocalAccount(req)
 	default:
 		return hookResponse{}, nil
 	}
@@ -191,6 +202,7 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) ([
 	e["NEXTCLOUD_DOMAIN"] = e["NEXTCLOUD_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
 	e["NEXTCLOUD_DOMAIN_PORT"] = e["NEXTCLOUD_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
 	e["NEXTCLOUD_DOMAIN_FULL"] = "https://" + e["NEXTCLOUD_DOMAIN_PORT"]
+	e["NEXTCLOUD_BREAK_GLASS_URL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/login?direct=1"
 	e["NEXTCLOUD_TALK_SIGNALING_DOMAIN_FULL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/talk"
 	e["NEXTCLOUD_REDIS_HOSTNAME"] = e["CONTAINER_PREFIX"] + "nextcloud_redis"
 	e["NEXTCLOUD_REDIS_PORT"] = "6379"
@@ -200,8 +212,12 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) ([
 		return nil, fmt.Errorf("NEXTCLOUD_DB_TYPE must be resolved to postgres or mariadb")
 	}
 	e["NEXTCLOUD_IMAGINARY_HOSTNAME"] = e["CONTAINER_PREFIX"] + "nextcloud_imaginary"
-	e["NEXTCLOUD_ADMIN_USERNAME"] = defaultValue(e["NEXTCLOUD_ADMIN_USERNAME"], e["SAMBA_DC_ADMIN_NAME"]+"_nc")
-	e["NEXTCLOUD_ADMIN_PASSWORD"] = defaultValue(e["NEXTCLOUD_ADMIN_PASSWORD"], e["SAMBA_DC_ADMIN_PASSWORD"])
+	if e["NEXTCLOUD_ADMIN_PASSWORD"] != "" {
+		return nil, fmt.Errorf("Nextcloud administrator passwords are managed secrets; NEXTCLOUD_ADMIN_PASSWORD is not accepted as configuration, use anas admin local rotate nextcloud break_glass")
+	}
+	if managedUsername := e["NEXTCLOUD_LOCAL_ADMIN__BREAK_GLASS_USERNAME"]; managedUsername != "" {
+		e["NEXTCLOUD_ADMIN_USERNAME"] = managedUsername
+	}
 	if e["SAMBA_DC_APP_FILTER"] == "true" {
 		e["NEXTCLOUD_USER_FILTER"] = defaultValue(e["NEXTCLOUD_USER_FILTER"], "(&"+e["SAMBA_DC_USER_CLASS_FILTER"]+"("+e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"]+"=*)(|(memberOf=CN=APP_nextcloud,"+e["SAMBA_DC_BASE_APP_DN"]+")(memberOf="+e["SAMBA_DC_APP_ALL_DN"]+")(memberOf="+e["SAMBA_DC_ADMIN_GROUP_DN"]+")))")
 	} else {
@@ -281,6 +297,9 @@ var nextcloudLanguages = []localization.Target{
 }
 
 func moduleNextcloud(e map[string]string, _ string) error {
+	if e["NEXTCLOUD_ADMIN_USERNAME"] == "" {
+		return fmt.Errorf("Nextcloud managed break_glass username is missing")
+	}
 	if err := applyIAMBinding(e); err != nil {
 		return err
 	}

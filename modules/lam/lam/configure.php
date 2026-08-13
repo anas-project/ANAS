@@ -5,12 +5,14 @@ declare(strict_types=1);
 $names = [
     'LAM_ADMIN_PASSWORD',
     'LAM_LANGUAGE',
-    'SAMBA_DC_ADMIN_DN',
+    'SAMBA_DC_ADMIN_GROUP_DN',
     'SAMBA_DC_BASE_COMPUTERS_DN',
     'SAMBA_DC_BASE_DN',
     'SAMBA_DC_BASE_GROUPS_DN',
     'SAMBA_DC_BASE_USERS_DN',
     'SAMBA_DC_DOMAIN',
+    'SAMBA_DC_LDAP_BIND_DN',
+    'SAMBA_DC_LDAP_BIND_PASSWORD',
     'SAMBA_DC_LDAPS_SERVER_URL',
     'TZ',
 ];
@@ -57,6 +59,8 @@ $passwordHash = passwordHash($password);
 
 $mainPath = '/etc/ldap-account-manager/config.cfg';
 $main = readJson($mainPath);
+// This is the default server-profile name shown by LAM, not a local username.
+// The main application login uses the LDAP search policy in the `lam` profile.
 $main['default'] = 'lam';
 $main['password'] = $passwordHash;
 writeJson($mainPath, $main);
@@ -70,12 +74,18 @@ if (!str_ends_with($language, '.utf8')) {
 }
 $profile['ServerURL'] = (string) getenv('SAMBA_DC_LDAPS_SERVER_URL');
 $profile['useTLS'] = 'no';
-$profile['Admins'] = (string) getenv('SAMBA_DC_ADMIN_DN');
+$profile['Admins'] = '';
 $profile['Passwd'] = $passwordHash;
 $profile['defaultLanguage'] = $language;
 $profile['serverDisplayName'] = (string) getenv('SAMBA_DC_DOMAIN');
+$profile['loginMethod'] = 'search';
 $profile['loginSearchSuffix'] = (string) getenv('SAMBA_DC_BASE_DN');
-$profile['loginSearchFilter'] = 'sAMAccountName=%USER%';
+$profile['loginSearchFilter'] = '(&(objectCategory=person)(objectClass=user)'
+    . '(!(userAccountControl:1.2.840.113556.1.4.803:=2))'
+    . '(sAMAccountName=%USER%)'
+    . '(memberOf:1.2.840.113556.1.4.1941:=' . (string) getenv('SAMBA_DC_ADMIN_GROUP_DN') . '))';
+$profile['loginSearchDN'] = (string) getenv('SAMBA_DC_LDAP_BIND_DN');
+$profile['loginSearchPassword'] = (string) getenv('SAMBA_DC_LDAP_BIND_PASSWORD');
 $profile['timeZone'] = (string) getenv('TZ');
 $profile['activeTypes'] = 'user,group,host';
 $profile['typeSettings']['suffix_user'] = (string) getenv('SAMBA_DC_BASE_USERS_DN');

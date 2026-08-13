@@ -16,12 +16,52 @@ type HookConfig struct {
 }
 
 type hookRequest struct {
-	ABI     string            `json:"abi"`
-	Phase   string            `json:"phase"`
-	Module  string            `json:"module"`
-	Workdir string            `json:"workdir"`
-	Env     map[string]string `json:"env"`
-	Secrets map[string]string `json:"secrets"`
+	ABI          string                 `json:"abi"`
+	Phase        string                 `json:"phase"`
+	Module       string                 `json:"module"`
+	Workdir      string                 `json:"workdir"`
+	Env          map[string]string      `json:"env"`
+	Secrets      map[string]string      `json:"secrets"`
+	LocalAccount *localAccountOperation `json:"local_account,omitempty"`
+}
+
+func (a *app) runLocalAccountHook(mod Module, phase, workdir string, env map[string]string, operation localAccountOperation, secrets map[string]string) (hookResponse, error) {
+	if len(mod.Hook.Command) == 0 {
+		return hookResponse{}, fmt.Errorf("module %s has no hook for %s", mod.Name, operation.Handler)
+	}
+	req := hookRequest{ABI: currentModuleABI, Phase: phase, Module: mod.Name, Workdir: workdir, Env: env, Secrets: secrets, LocalAccount: &operation}
+	in, err := json.Marshal(req)
+	if err != nil {
+		return hookResponse{}, err
+	}
+	command, err := a.hookCommand(mod, workdir)
+	if err != nil {
+		return hookResponse{}, err
+	}
+	cmd := exec.Command(command[0], command[1:]...)
+	cmd.Dir = mod.SourceDir
+	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
+	if err != nil {
+		return hookResponse{}, err
+	}
+	cmd.Env = append(os.Environ(), "GOCACHE="+cacheDir)
+	cmd.Stdin = bytes.NewReader(in)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		if stderr.Len() > 0 {
+			return hookResponse{}, fmt.Errorf("%s hook %s: %w: %s", mod.Name, phase, err, strings.TrimSpace(stderr.String()))
+		}
+		return hookResponse{}, fmt.Errorf("%s hook %s: %w", mod.Name, phase, err)
+	}
+	if stdout.Len() == 0 {
+		return hookResponse{}, nil
+	}
+	var resp hookResponse
+	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+		return hookResponse{}, fmt.Errorf("%s hook %s returned invalid JSON: %w", mod.Name, phase, err)
+	}
+	return resp, nil
 }
 
 type hookResponse struct {

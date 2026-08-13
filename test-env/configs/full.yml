@@ -34,7 +34,6 @@ global:
   virtual_domain: true
   # Must satisfy the password policy of the newest Samba release used by the
   # runtime smoke test.
-  default_service_root_password: Anas-Test-2026!Root
 env:
   # Image builds fetch Debian and Alpine packages, and this host reaches the
   # upstream mirrors at a few KB/s when it reaches them at all -- apt exits 100

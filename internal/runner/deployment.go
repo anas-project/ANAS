@@ -57,16 +57,17 @@ type deploymentModule struct {
 	// not against whatever the bundle on disk says today. omitempty distinguishes
 	// the two states that matter: an undeclared list is absent, a declared-empty
 	// one is written out as `[]`.
-	DataBreaking *[]string               `yaml:"data_breaking,omitempty" json:"data_breaking,omitempty"`
-	RuntimeType  string                  `yaml:"runtime" json:"runtime"`
-	ComposeFile  string                  `yaml:"compose_file,omitempty" json:"compose_file,omitempty"`
-	Hook         HookConfig              `yaml:"hook,omitempty" json:"hook,omitempty"`
-	EnvPrefix    string                  `yaml:"env_prefix,omitempty" json:"env_prefix,omitempty"`
-	Consumes     []string                `yaml:"consumes,omitempty" json:"consumes,omitempty"`
-	Dependencies []string                `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
-	UseHostLAN   string                  `yaml:"host_lan,omitempty" json:"host_lan,omitempty"`
-	Changes      map[string]ChangePolicy `yaml:"changes,omitempty" json:"changes,omitempty"`
-	Providers    []ContractProvider      `yaml:"contract_providers,omitempty" json:"contract_providers,omitempty"`
+	DataBreaking  *[]string               `yaml:"data_breaking,omitempty" json:"data_breaking,omitempty"`
+	RuntimeType   string                  `yaml:"runtime" json:"runtime"`
+	ComposeFile   string                  `yaml:"compose_file,omitempty" json:"compose_file,omitempty"`
+	Hook          HookConfig              `yaml:"hook,omitempty" json:"hook,omitempty"`
+	EnvPrefix     string                  `yaml:"env_prefix,omitempty" json:"env_prefix,omitempty"`
+	Consumes      []string                `yaml:"consumes,omitempty" json:"consumes,omitempty"`
+	Dependencies  []string                `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
+	UseHostLAN    string                  `yaml:"host_lan,omitempty" json:"host_lan,omitempty"`
+	Changes       map[string]ChangePolicy `yaml:"changes,omitempty" json:"changes,omitempty"`
+	Providers     []ContractProvider      `yaml:"contract_providers,omitempty" json:"contract_providers,omitempty"`
+	LocalAccounts []LocalAccount          `yaml:"local_accounts,omitempty" json:"local_accounts,omitempty"`
 }
 
 type deploymentResource struct {
@@ -676,7 +677,8 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 			Consumes:     append([]string{}, mod.Consumes...),
 			Dependencies: append([]string{}, a.deps[name]...),
 			UseHostLAN:   mod.UseHostLAN, Changes: mod.Changes,
-			Providers: cloneContractProviders(mod.ContractProviders),
+			Providers:     cloneContractProviders(mod.ContractProviders),
+			LocalAccounts: append([]LocalAccount{}, mod.LocalAccounts...),
 		}
 	}
 	for _, request := range a.resourceRequests {
@@ -1719,6 +1721,7 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 			UseHostLAN: module.UseHostLAN, Hook: module.Hook,
 			RuntimeType: module.RuntimeType, ComposeFile: module.ComposeFile,
 			ContractProviders: cloneContractProviders(module.Providers),
+			LocalAccounts:     append([]LocalAccount{}, module.LocalAccounts...),
 		}
 		deps[name] = append([]string{}, module.Dependencies...)
 	}
@@ -1726,11 +1729,15 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 	if err != nil {
 		return nil, "", nil, err
 	}
+	localAdmins, err := loadLocalAdminState(base)
+	if err != nil {
+		return nil, "", nil, err
+	}
 	a := &app{
 		base: base, compose: cli, reg: reg, deps: deps,
 		order: append([]string{}, manifest.ModuleOrder...),
 		env:   map[string]string{}, envOwner: map[string]string{},
-		secrets: secrets, useFrozenHooks: true, artifactRoot: modulesRoot,
+		secrets: secrets, localAdmins: localAdmins, useFrozenHooks: true, artifactRoot: modulesRoot,
 		resolvedBindings: cloneNestedMap(manifest.Bindings),
 	}
 	for _, resource := range manifest.Resources {
@@ -1743,6 +1750,9 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 			Provider: resource.Provider, Interface: resource.Interface,
 			Spec: resource.Spec, SecretKey: resource.SecretKey, Password: password,
 		})
+	}
+	if err := a.restoreLocalAdminPasswordFiles(); err != nil {
+		return nil, "", nil, err
 	}
 	a.adoptReleaseEnv(modulesRoot)
 	return a, modulesRoot, manifest, nil

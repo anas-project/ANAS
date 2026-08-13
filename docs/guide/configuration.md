@@ -79,6 +79,62 @@ Runner 先读取显式 `global.default_language`；若省略，则从宿主机 `
 
 没有新增更多全局“通用格式”字段：字符集统一使用 UTF-8；日期、数字、货币、星期首日和度量衡从 locale 或应用内用户偏好派生；电话默认国家等业务语义仍是 Module 参数（例如 Nextcloud 的 `phone_region`）。自动化需要稳定解析命令输出时，应在该脚本边界设置 `LC_ALL=C`，不能用用户 UI 语言控制机器接口。
 
+## PostgreSQL 与 MariaDB
+
+数据库不是全局开关，而是每个 Consumer Module 通过 `relational_database` Contract 独立绑定。支持双数据库的 Module 使用 `modules.<module>.config.db_type` 选择 `postgres`、`mariadb` 或 `auto`。例如让 LLNG 使用 MariaDB、Nextcloud 使用 PostgreSQL：
+
+```yaml
+modules:
+  postgres: {}
+  mariadb: {}
+  llng:
+    config:
+      db_type: mariadb
+  nextcloud:
+    config:
+      db_type: postgres
+```
+
+`auto` 在已有部署中优先保留 `config.lock.yml` 固化的绑定；首次解析时，若只显式选择了一个兼容数据库 Provider 就使用它，否则使用 Module 声明的默认值，当前双数据库 Module 的默认值为 `postgres`。因此同时启用两个数据库并不会自动把应用迁移到 MariaDB。用以下命令确认解析结果：
+
+```bash
+anas plan -c /srv/anas/config.yml
+anas config explain llng.db_type
+```
+
+首次部署应在第一次 `apply` 前选定数据库。已有应用切换引擎时，修改 `db_type` 会被标记为 `data_migrate`；必须先备份并按应用要求迁移数据，再执行带有明确风险确认的应用。`--allow-risky` 只允许部署新配置，不复制表、转换 SQL 或验证迁移结果。不要通过手工编辑 `config.lock.yml` 切换数据库。
+
+Runner 会为每个 Consumer 创建独立数据库、用户和稳定生成的凭据，并只向该 Module 发布 `*_DB_HOST`、`*_DB_PORT`、`*_DB_NAME`、`*_DB_USERNAME`、`*_DB_PASSWORD` 和 `*_NETWORK_DB`。应用不应使用 PostgreSQL 超级用户或 MariaDB root 凭据。
+
+当前 Manifest 声明的兼容范围如下；只有列出的 interface 会被 Runner 接受：
+
+| Consumer Module | PostgreSQL | MariaDB |
+| --- | --- | --- |
+| `llng` | 支持 | 支持 |
+| `nextcloud` | 支持 | 支持 |
+| `meshcentral` | 支持 | 支持 |
+| `authentik` | 支持 | 不支持（Manifest 未声明） |
+
 ## Secret
 
 不要把真实 Secret 写进示例文件或提交到版本库。`config secret list` 只列键名；只有明确的 `config secret get` 操作会输出明文。生成的 Secret 位于受保护的 workspace 运行目录中，并由 ANAS 备份流程处理。
+
+## Module 本地管理员
+
+`management.local_accounts` 是 Module Manifest 的能力声明；用户配置只能设置全局用户名
+模板或按账号 ID 覆盖用户名。这里的账号 ID（如 `primary`、`break_glass`）不是用户名。
+密码不能写进 `config.yml`。查询与轮换分别使用：
+
+```bash
+anas admin local credential nextcloud break_glass -w /srv/anas
+anas admin local rotate nextcloud break_glass -w /srv/anas
+anas admin local rotate ddns_go --prompt -w /srv/anas
+```
+
+省略账号 ID 时按 `primary`、唯一账号、歧义报错的顺序解析。用户名一旦进入
+`.anas/local-admins.yml` 就是应用身份状态；之后改变普通 username override 会被明确拒绝，
+不会静默创建或假装重命名账号。当前没有通用 rename 命令，因为重命名必须由每个应用提供
+可回滚的身份迁移 handler。
+
+Nextcloud 不声明 `modules.nextcloud.config.admin_password`；该路径是非法配置。Nextcloud
+handler 通过真实的 `occ user:resetpassword --password-from-env` 路径更新和验证恢复账号。

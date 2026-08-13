@@ -68,11 +68,7 @@ if var_true "${LLNG_ENABLE_TEST}" ; then
         applicationList/98admin/test_auth/options logo "network.png" \
         applicationList/98admin/test_auth/options name "Test auth server" \
         applicationList/98admin/test_auth/options uri "$LLNG_TEST_DOMAIN_FULL"
-        
-else 
-  $lemonldap_ng_cli_delkey \
-        'locationRules' $LLNG_TEST_DOMAIN \
-        'applicationList/98admin' 'test_auth'
+
 fi
 
 # SAML & OIDC

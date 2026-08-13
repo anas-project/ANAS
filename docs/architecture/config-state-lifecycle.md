@@ -100,12 +100,13 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 
 第二类中风险最高的是：
 
-- LLNG 等兼容模块的部分人工管理员密码继承 `DEFAULT_SERVICE_ROOT_PASSWORD`；
-- Samba admin、Administrator、Nextcloud、LAM、Collabora、LLNG 等人工登录管理员仍有兼容默认密码路径；
+- LAM、Collabora 与 Samba 的应用内密码必须分别物化；
+- LLNG Manager 当前只接受目录认证，不存在独立本地管理员密码；
 - DB 类型根据当前已启用的数据库自动选择；
 - 各服务域名根据 `BASE_DOMAIN` 和 prefix 自动生成。
 
-`DEFAULT_SERVICE_ROOT_PASSWORD` 现在是唯一的人工管理员默认密码，配置校验要求至少 8 位；旧的 `DEFAULT_ROOT_PASSWORD` 已移除。数据库 root、LDAP bind、密码修改 bind 等非交互账户不继承它。
+共享的 `DEFAULT_SERVICE_ROOT_PASSWORD` 已删除。每个 Module 的人工账号、数据库 root、
+LDAP bind 与密码修改 bind 都拥有独立参数或生成 Secret，禁止再以全局密码扇出。
 
 通用规则应改为：
 

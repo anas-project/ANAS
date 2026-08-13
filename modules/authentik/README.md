@@ -2,12 +2,28 @@
 
 Identity provider serving OIDC and SAML with per-application endpoints.
 
+## Administrator access / 管理员入口
+
+Authentik keeps its upstream built-in `akadmin` user as an IAM-outage recovery
+account. The Manifest account ID is `break_glass` (not the username), while the
+fixed physical username is `akadmin`. ANAS supplies first-boot state through a
+`0600` runtime file and applies later rotations through `ak shell` with verification.
+
+Authentik 保留上游内置的 `akadmin` 作为 IAM 故障恢复账号。Manifest 账号 ID 是
+`break_glass`（不是用户名），实际固定用户名是 `akadmin`。首次启动使用 `0600`
+运行时文件，后续轮换通过 `ak shell` 更新并验证。
+
+```bash
+anas admin local credential authentik break_glass -w /srv/anas
+anas admin local rotate authentik break_glass --prompt -w /srv/anas
+```
+
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2026.5.6-r2`（reviewed 2026-08-13）
+- Module version / 版本：`2026.5.6-r3`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — All long-running authentik services receive the module .env and TZ; no separate application timezone is forced.
 - Language scope / 语言范围：authentik Web UI
 - Selection / 选择方式：`browser`

@@ -16,7 +16,6 @@ func TestLoadStructuredConfig(t *testing.T) {
 global:
   base_domain: nas.example.com
   email: admin@example.com
-  default_service_root_password: change-me
 env:
   basicauth_user: admin
 `), 0644); err != nil {
@@ -170,7 +169,6 @@ func TestLowercaseModuleConfigIsNormalized(t *testing.T) {
 global:
   base_domain: nas.example.com
   email: admin@example.com
-  default_service_root_password: change-me
 env:
   ipv4: false
 `), 0644); err != nil {
@@ -308,23 +306,6 @@ iam:
 	}
 }
 
-func TestLoadRejectsShortDefaultServicePassword(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yml")
-	if err := os.WriteFile(path, []byte(`modules:
-  traefik: {}
-global:
-  base_domain: nas.example.com
-  email: admin@example.com
-  default_service_root_password: short
-`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Load(path); err == nil {
-		t.Fatal("expected a password length validation error")
-	}
-}
-
 func TestSetScalarPreservesCommentsAndAddsModuleOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
@@ -333,7 +314,6 @@ func TestSetScalarPreservesCommentsAndAddsModuleOverride(t *testing.T) {
 global:
   base_domain: nas.example.com
   email: admin@example.com
-  default_service_root_password: change-me
 # keep this operator note
 env:
   SHARE_GUEST_READ_ONLY: "No"
@@ -356,6 +336,23 @@ env:
 	}
 	if got := cfg.BaseEnv()["SAMBA_DC_USER_MIN_PASS_LENGTH"]; got != "10" {
 		t.Fatalf("module override = %q", got)
+	}
+}
+
+func TestLoadRejectsRemovedDefaultServiceRootPassword(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(path, []byte(`modules:
+  traefik: {}
+global:
+  base_domain: nas.example.com
+  email: admin@example.com
+  default_service_root_password: must-be-rejected
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "field default_service_root_password not found") {
+		t.Fatalf("removed global password was accepted: %v", err)
 	}
 }
 
@@ -402,8 +399,7 @@ func TestGlobalBindingsProduceDeclaredKeys(t *testing.T) {
 	f := &File{Global: Global{
 		BaseDomain: "nas.example.com", Email: "a@example.com", Timezone: "Asia/Tokyo",
 		ContainerPrefix: "c_", ImagePrefix: "i_", NetworkPrefix: "n_",
-		HostIP: "10.0.0.2", DNSServer: "1.1.1.1",
-		DefaultServiceRootPassword: "ChangeMe1!", VirtualDomain: BoolTrue,
+		HostIP: "10.0.0.2", DNSServer: "1.1.1.1", VirtualDomain: BoolTrue,
 		BasicAuthUser: "admin", DefaultLanguage: "en", DefaultLocale: "en-SG",
 		ChineseSpeedup: BoolFalse, ChineseBuildSpeedup: BoolFalse, IPv4: BoolTrue, IPv6: BoolFalse,
 	}}

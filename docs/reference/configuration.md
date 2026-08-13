@@ -65,7 +65,7 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。
 语言只控制 UI 文本 fallback，locale 控制区域格式；推导只是默认值来源，不表示两个概念
 相同。各 Module 的实际消费边界见 [Module 时区与语言支持矩阵](/reference/module-localization)。
 
-## 已声明的 131 个参数
+## 已声明的 130 个参数
 
 表中参数都能被 `anas config list` 列出，也能通过 `anas config set` 地址设置。除特别说明
 外，全局参数写为 `global.<parameter>`，module 参数写入
@@ -73,22 +73,28 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。
 
 | 所有者 | 数量 | 参数 |
 | --- | ---: | --- |
-| `global` | 17 | `base_domain`, `basicauth_user`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `default_service_root_password`, `dns_server`, `email`, `host_ip`, `image_prefix`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
+| `global` | 16 | `base_domain`, `basicauth_user`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `dns_server`, `email`, `host_ip`, `image_prefix`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
 | `authentik` | 6 | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` |
-| `collabora` | 4 | `auto_save`, `domain_prefix`, `interface`, `log_level` |
+| `collabora` | 6 | `admin_password`, `admin_username`, `auto_save`, `domain_prefix`, `interface`, `log_level` |
 | `ddns_go` | 10 | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` |
 | `ddns_updater` | 9 | `dns_provider`, `domain_prefix`, `forward_auth_interface`, `publicip_dns_providers`, `publicip_fetchers`, `publicip_ipv4_providers`, `publicip_ipv6_providers`, `publicip_providers`, `ttl` |
 | `eturnal` | 2 | `domain_prefix`, `port` |
 | `lam` | 3 | `admin_password`, `domain_prefix`, `language` |
 | `lego` | 2 | `dns_server`, `virtual_domain` |
-| `llng` | 9 | `adminer_enabled`, `db_name`, `db_type`, `domain_prefix`, `enable_test`, `log_level`, `manager_domain_prefix`, `password`, `test_domain_prefix` |
+| `llng` | 8 | `adminer_enabled`, `db_name`, `db_type`, `domain_prefix`, `enable_test`, `log_level`, `manager_domain_prefix`, `test_domain_prefix` |
 | `mariadb` | 2 | `adminer_enabled`, `root_password` |
 | `meshcentral` | 4 | `db_name`, `db_type`, `domain_prefix`, `mps_port` |
 | `netbird` | 3 | `adminer_enabled`, `domain_prefix`, `iam_protocol` |
-| `nextcloud` | 15 | `admin_password`, `db_name`, `db_type`, `debug`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` |
+| `nextcloud` | 14 | `db_name`, `db_type`, `debug`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` |
 | `oauth2_proxy` | 3 | `allow_groups`, `domain_prefix`, `iam_protocol` |
 | `postgres` | 3 | `adminer_enabled`, `password`, `username` |
 | `samba_dc` | 30 | `admin_name`, `admin_password`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
+
+Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass` Secret 和应用 handler
+管理，不能写入 YAML。
+
+`global.default_service_root_password` 已删除。LAM、Collabora、Samba DC 等 Module 各自
+拥有密码参数；省略时分别生成独立 Secret，不再存在跨应用共享管理员密码。
 | `samba_fs` | 7 | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` |
 | `traefik` | 2 | `base_port`, `domain_prefix` |
 

@@ -11,9 +11,6 @@
 api_version: anas.dev/v1
 kind: GlobalConfig
 config:
-  # default_service_root_password is deliberately absent: the runner generates
-  # a per-module password when the config omits it, so requiring it could never
-  # fail and saying otherwise was misleading.
   required:
     - base_domain
     - email
@@ -44,11 +41,6 @@ config:
       effect: reconcile
       apply: reconcile-module-localization
       description: Regional date, number, and formatting defaults are reconciled separately from UI language.
-    default_service_root_password:
-      effect: credential_rotate
-      apply: rotate-human-admin-passwords
-      sensitive: true
-      description: This is a template for human-facing administrator accounts, not an automatic live password change.
     dns_server:
       effect: container_recreate
       apply: recreate-affected-containers

@@ -281,16 +281,17 @@ Samba AD 是业务用户、组、密码和启用状态的唯一权威来源。Au
 
 唯一例外是 Authentik 首次启动创建的本地超级管理员 `akadmin`。它是目录故障时使用的 break-glass（应急恢复）账号，不是 Samba AD 用户，不得用于 Nextcloud、NetBird 等业务登录。
 
-`akadmin` 密码由 ANAS 随机生成并保存为 `AUTHENTIK_BREAK_GLASS_PASSWORD`。查看命令为：
+`akadmin` 是 Authentik Manifest 中固定用户名的 `break_glass` 托管账号。密码由 ANAS
+按账号生成并保存在统一 Secret Store。显式查看命令为：
 
 ```bash
-anas config secret get AUTHENTIK_BREAK_GLASS_PASSWORD -w <workspace>
+anas admin local credential authentik break_glass -w <workspace>
 ```
 
 正式环境示例：
 
 ```bash
-anas config secret get AUTHENTIK_BREAK_GLASS_PASSWORD -w /home/whl/anas-deploy
+anas admin local credential authentik break_glass -w /home/whl/anas-deploy
 ```
 
 该命令会向终端输出明文，只能在受控终端执行，不得进入 shell trace、工单或聊天记录。日常不查看、不使用。当前 Secret 是首次引导凭据；首次接入已有 Authentik 时，Bootstrap 环境变量不会修改数据库中已经存在的 `akadmin` 密码，必须在迁移窗口单独完成一次校准。项目尚未提供原子化的 `akadmin` 密码轮换命令，因此不要只在 Authentik UI 中修改后仍把上述命令当作当前密码；正式发布前应补充“同时更新 Authentik 与 ANAS Secret 状态”的轮换事务。
