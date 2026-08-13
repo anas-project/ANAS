@@ -14,4 +14,7 @@ master:
               enabled: true
       stages:
         - name: Mirror missing images from GHCR
-          script: bash scripts/ci/cnb-container-images.sh mirror-all
+          script: |
+            bin_dir="${CNB_BUILD_WORKSPACE}/.anas-bin"
+            bash scripts/ci/install-crane.sh "$bin_dir"
+            PATH="$bin_dir:$PATH" bash scripts/ci/cnb-container-images.sh mirror-all

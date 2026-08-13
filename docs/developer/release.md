@@ -34,6 +34,7 @@ docker.cnb.cool/anas.dev/anas/anas-<软件>:<version>-r<revision>
 - Pull Request：只构建受影响的镜像，不推送。
 - `master`：只处理登记的构建上下文发生变化的 Module。
 - Mirror：校验上游 digest，筛选 `linux/amd64`、`linux/arm64` 运行 manifest，原样发布到 `anas-mirror-*`，不重新构建上游软件。
+- Registry 间使用固定版本、校验过下载包的 Crane 逐平台复制；对 CNB 禁用 HTTP/2，并按平台重试，已存在的 blob 不重复上传。
 - 两个 Registry 都没有固定标签时：构建一次并发布 GHCR，再复制运行平台 manifest 到 CNB。
 - 只有一侧存在时：补齐另一侧。
 - 两侧都存在时：验证后结束，不覆盖已有标签。

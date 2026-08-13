@@ -7,6 +7,7 @@ on:
       - ".github/mirrors.json"
       - ".github/workflows/container-images.yml"
       - "scripts/ci/runtime-image.sh"
+      - "scripts/ci/install-crane.sh"
       - "modules/**"
   push:
     branches: [master]
@@ -15,6 +16,7 @@ on:
       - ".github/mirrors.json"
       - ".github/workflows/container-images.yml"
       - "scripts/ci/runtime-image.sh"
+      - "scripts/ci/install-crane.sh"
       - "modules/**"
   workflow_dispatch:
     inputs:
@@ -116,7 +118,7 @@ jobs:
               fi
             done < <(jq -r '.[].context' .github/images.json)
             revision_modules="$changed_modules"
-            if grep -Eq '^(\.github/images\.json|\.github/workflows/container-images\.yml|scripts/ci/runtime-image\.sh)$' <<<"$changed"; then
+            if grep -Eq '^(\.github/images\.json|\.github/workflows/container-images\.yml|scripts/ci/(runtime-image|install-crane)\.sh)$' <<<"$changed"; then
               selected="$(jq -c '.' .github/images.json)"
             else
               selected="$(jq -c --argjson modules "$changed_modules" '[.[] | select(.module as $module | $modules | index($module))]' .github/images.json)"
@@ -173,7 +175,7 @@ jobs:
               fi
             fi
           else
-            if grep -Eq '^(\.github/mirrors\.json|\.github/workflows/container-images\.yml|scripts/ci/runtime-image\.sh)$' <<<"$changed"; then
+            if grep -Eq '^(\.github/mirrors\.json|\.github/workflows/container-images\.yml|scripts/ci/(runtime-image|install-crane)\.sh)$' <<<"$changed"; then
               mirror_selected="$(jq -c '.' .github/mirrors.json)"
             else
               changed_runtime_modules="$(awk -F/ '$1 == "modules" {print $2}' <<<"$changed" | LC_ALL=C sort -u | jq -Rsc 'split("\n") | map(select(length > 0))')"
@@ -202,6 +204,13 @@ jobs:
       - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
+
+      - name: Install crane
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          bash scripts/ci/install-crane.sh "$RUNNER_TEMP/anas-bin"
+          echo "$RUNNER_TEMP/anas-bin" >>"$GITHUB_PATH"
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
@@ -300,6 +309,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
+
+      - name: Install crane
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          bash scripts/ci/install-crane.sh "$RUNNER_TEMP/anas-bin"
+          echo "$RUNNER_TEMP/anas-bin" >>"$GITHUB_PATH"
 
       - name: Validate the pinned upstream manifest
         env:

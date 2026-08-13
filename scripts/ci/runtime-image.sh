@@ -47,6 +47,7 @@ if [[ "$last_component" == *:* ]]; then
 fi
 
 sources=()
+source_digests=()
 if jq -e '.manifests | type == "array"' <<<"$raw_manifest" >/dev/null 2>&1; then
   for platform in "${requested_platforms[@]}"; do
     os="${platform%/*}"
@@ -63,6 +64,7 @@ if jq -e '.manifests | type == "array"' <<<"$raw_manifest" >/dev/null 2>&1; then
       exit 1
     fi
     sources+=("${source_repository}@${digest}")
+    source_digests+=("${digest}")
   done
 else
   if [[ "${#requested_platforms[@]}" != 1 ]]; then
@@ -77,31 +79,73 @@ if [[ "$mode" == "validate" ]]; then
   exit 0
 fi
 
+if ! command -v crane >/dev/null 2>&1; then
+  echo "crane is required for registry-to-registry copies; run scripts/ci/install-crane.sh first" >&2
+  exit 1
+fi
+
+if [[ "${#source_digests[@]}" == 0 ]]; then
+  source_digests+=("$(crane digest "$source_image")")
+fi
+
 # Compose a runtime-only index. Provenance and SBOM descriptors use
 # os/architecture=unknown and can exceed CNB's per-manifest metadata limit;
 # they remain available on ANAS-built GHCR packages but are not deployment
 # inputs and are deliberately omitted from mirrors.
 #
 # A new CNB package can briefly return 404 after the registry accepts the
-# login but before its package metadata is visible to every backend. Retrying
-# the idempotent immutable-tag publish covers that eventual-consistency window
-# without changing the GHCR -> CNB source-of-truth relationship.
+# login but before its package metadata is visible to every backend. Large
+# BuildKit cross-registry copies can also fail at the CNB edge with an HTTP/2
+# PROTOCOL_ERROR. Crane performs the copy in this process, HTTP/2 is disabled
+# for registry traffic, and each platform is retried independently. Completed
+# blobs are discovered at the target and are not uploaded again.
 copy_attempts="${RUNTIME_IMAGE_COPY_ATTEMPTS:-5}"
 copy_retry_delay="${RUNTIME_IMAGE_COPY_RETRY_DELAY_SECONDS:-5}"
+crane_go_debug="${RUNTIME_IMAGE_CRANE_GODEBUG:-http2client=0}"
 if [[ ! "$copy_attempts" =~ ^[1-9][0-9]*$ || ! "$copy_retry_delay" =~ ^[0-9]+$ ]]; then
   echo "copy retry settings must be non-negative integers and attempts must be positive" >&2
   exit 1
 fi
-for ((attempt = 1; attempt <= copy_attempts; attempt++)); do
-  if docker buildx imagetools create --tag "$target_image" "${sources[@]}"; then
-    break
-  fi
-  if [[ "$attempt" == "$copy_attempts" ]]; then
-    echo "failed to publish $target_image after $copy_attempts attempts" >&2
-    exit 1
-  fi
-  echo "publish attempt $attempt/$copy_attempts failed; retrying in ${copy_retry_delay}s" >&2
-  sleep "$copy_retry_delay"
+
+retry() {
+  local description="$1"
+  shift
+  local attempt
+  for ((attempt = 1; attempt <= copy_attempts; attempt++)); do
+    if env GODEBUG="$crane_go_debug" "$@"; then
+      return 0
+    fi
+    if [[ "$attempt" == "$copy_attempts" ]]; then
+      echo "$description failed after $copy_attempts attempts" >&2
+      return 1
+    fi
+    echo "$description attempt $attempt/$copy_attempts failed; retrying in ${copy_retry_delay}s" >&2
+    sleep "$copy_retry_delay"
+  done
+}
+
+target_repository="${target_image%%@*}"
+target_last_component="${target_repository##*/}"
+if [[ "$target_last_component" == *:* ]]; then
+  target_repository="${target_repository%:*}"
+fi
+
+target_sources=()
+for i in "${!sources[@]}"; do
+  source_ref="${sources[$i]}"
+  digest="${source_digests[$i]}"
+  retry "copying $source_ref to $target_image" \
+    crane copy --jobs 1 "$source_ref" "$target_image"
+  target_sources+=("${target_repository}@${digest}")
 done
+
+if [[ "${#target_sources[@]}" -gt 1 ]]; then
+  index_args=()
+  for target_source in "${target_sources[@]}"; do
+    index_args+=(--manifest "$target_source")
+  done
+  retry "publishing runtime index $target_image" \
+    crane index append --tag "$target_image" "${index_args[@]}"
+fi
 docker buildx imagetools inspect "$target_image" >/dev/null
 echo "published $target_image from $source_image"
