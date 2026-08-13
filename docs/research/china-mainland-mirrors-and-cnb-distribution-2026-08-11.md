@@ -18,11 +18,11 @@ GitHub Release。
 | `GOPROXY_URL` | `https://goproxy.cn,direct` | module hook 与 ddns-go Go modules |
 | `GITHUB_DOWNLOAD_PROXY_PREFIX` | `https://files.m.daocloud.io/` | LAM、Nextcloud GitHub Release |
 | `NEXTCLOUD_APPSTORE_URL` | `https://files.m.daocloud.io/apps.nextcloud.com/api/v1` | Nextcloud 应用元数据 |
-| `DOCKER_HUB_REGISTRY` | `m.daocloud.io/docker.io` | Compose 镜像与 Dockerfile 基础镜像 |
+| `DOCKER_HUB_REGISTRY` | `m.daocloud.io/docker.io` | Dockerfile 基础镜像 |
 | `LLNG_DOCKER_HUB_REGISTRY` | `docker.1ms.run` | LemonLDAP::NG 基础镜像；该镜像不在 DaoCloud 白名单中 |
-| `ANAS_IMAGE_REGISTRY` | `docker.cnb.cool/anas.dev/anas` | ANAS 自建的正式国内镜像 |
-| `GHCR_REGISTRY` | `ghcr.nju.edu.cn` | 第三方 GHCR 镜像与基础镜像 |
-| `QUAY_REGISTRY` | `quay.nju.edu.cn` | oauth2-proxy |
+| `ANAS_IMAGE_REGISTRY` | `docker.cnb.cool/anas.dev/anas` | 全部正式运行时镜像（派生构建与上游 mirror） |
+| `GHCR_REGISTRY` | `ghcr.nju.edu.cn` | 第三方 GHCR 基础镜像 |
+| `QUAY_REGISTRY` | `quay.nju.edu.cn` | Quay 基础镜像 |
 
 例如只替换企业内部 GHCR 镜像库，而保留其他中国默认值：
 
@@ -72,28 +72,26 @@ CNB 同时提供国内 Git 托管、云原生构建和 `docker.cnb.cool` Docker 
   <https://docs.cnb.cool/zh/build/showcache/docker-build-and-push-to-cnb-artifact.html>
 - GitHub 导入与跨平台同步：<https://docs.cnb.cool/zh/guide/migration-tools.html>
 
-推荐保留 GitHub 为上游主仓库，并自动同步到公开 CNB 仓库。发布 tag 时，CNB 完成：
+保留 GitHub 为上游主仓库，并自动同步到公开 CNB 仓库。当前发布流程完成：
 
-1. 构建 ANAS 自有 Dockerfile，并推送到
-   `docker.cnb.cool/<org>/anas/<image>:<version>`；
-2. 用 `skopeo copy --all` 将 Compose 直接引用的 Docker Hub、GHCR、Quay 镜像复制到
-   同一命名空间，保留完整多架构 manifest；
-3. 生成 `images.lock.yml`，记录上游地址、上游 digest、CNB 地址和 CNB digest；
-4. 生成国内版 Compose，把三个 registry 变量统一指向 CNB；
-5. 发布按版本固定的镜像，不把可变的 `latest` 当作可复现发行物。
+1. 构建 `.github/images.json` 登记的 ANAS 派生镜像；
+2. 按 `.github/mirrors.json` 中的 digest 读取 Docker Hub、GHCR、Quay 上游镜像，不重新构建；
+3. 只组合 `linux/amd64`、`linux/arm64` 运行平台 manifest，排除 provenance 等 `unknown` 平台描述符以满足 CNB 元数据限制；
+4. 以 `anas-*` 和 `anas-mirror-*` 两类名称同时发布到 GHCR 与 CNB；
+5. 所有 Compose 运行镜像只使用 `ANAS_IMAGE_REGISTRY`，不生成另一份国内版 Compose；
+6. 上游 `latest` 必须锁定 digest，ANAS 目标 tag 永远不可变且不得使用 `latest`。
 
-实际采用的 CNB 地址为 `https://cnb.cool/anas.dev/ANAS`，ANAS 自建镜像使用
-`docker.cnb.cool/anas.dev/anas/<image>:<version>-r<revision>`。源码通过 GitHub Actions
+实际采用的 CNB 地址为 `https://cnb.cool/anas.dev/ANAS`，运行镜像使用
+`docker.cnb.cool/anas.dev/anas/<image>:<固定-tag>`。源码通过 GitHub Actions
 镜像全部分支和 tag。镜像在 GitHub Actions 中只构建一次，同时推送到 GHCR 与 CNB；
 CNB 不重复编译。灾备按钮可把 CNB 中缺失的固定 tag 从公开 GHCR 直接复制回来，并保留
 多架构 manifest。
 
-上游镜像复制示例：
+上游 mirror 示例：
 
 ```sh
-skopeo copy --all \
-  docker://ghcr.io/goauthentik/server:<version> \
-  docker://docker.cnb.cool/<org>/anas/authentik:<version>
+docker.cnb.cool/anas.dev/anas/anas-mirror-postgres:18.4-alpine
+docker.cnb.cool/anas.dev/anas/anas-mirror-nextcloud-talk:2026.07.30-2b9a7d12d3e6
 ```
 
 最终用户只需：

@@ -1,7 +1,7 @@
 services:
   anas_authentik_init:
     container_name: ${CONTAINER_PREFIX}authentik_init
-    image: ${GHCR_REGISTRY:-ghcr.io}/goauthentik/server:${AUTHENTIK_IMAGE_TAG}
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r2
     user: root
     entrypoint: ["/bin/sh", "-c"]
     command: ["mkdir -p /data && chown -R 1000:1000 /data"]
@@ -11,7 +11,12 @@ services:
 
   anas_authentik:
     container_name: ${CONTAINER_PREFIX}authentik
-    image: ${GHCR_REGISTRY:-ghcr.io}/goauthentik/server:${AUTHENTIK_IMAGE_TAG}
+    build:
+      context: ./authentik
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        GHCR_REGISTRY: ${GHCR_REGISTRY:-ghcr.io}
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r2
     restart: unless-stopped
     command: server
     shm_size: 512mb
@@ -47,7 +52,7 @@ services:
 
   anas_authentik_worker:
     container_name: ${CONTAINER_PREFIX}authentik_worker
-    image: ${GHCR_REGISTRY:-ghcr.io}/goauthentik/server:${AUTHENTIK_IMAGE_TAG}
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r2
     restart: unless-stopped
     # Import the trust anchor before the worker discovers the Samba AD
     # blueprint. authentik deliberately skips LDAP TLS verification when
@@ -57,14 +62,7 @@ services:
     # the moment ACME succeeds for the domain, which fails here as
     # "unable to get local issuer certificate" and silently stops every sync.
     # peer_certificate is documented as a CA *chain*, so the bundle fits.
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      - |
-        install -m 0444 "/certs/$${ANAS_TLS_TRUST_BUNDLE_NAME}" /tmp/anas-samba-ad-ca.crt
-        ak import_certificate \
-          --certificate /tmp/anas-samba-ad-ca.crt \
-          --name anas-samba-ad-ca
-        exec ak worker
+    entrypoint: ["/opt/anas/bin/worker-entrypoint"]
     shm_size: 512mb
     depends_on:
       # The server applies database migrations during a cold start. Starting
@@ -96,14 +94,13 @@ services:
   # long-lived token, and this needs no credential at all.
   anas_authentik_dirwatch:
     container_name: ${CONTAINER_PREFIX}authentik_dirwatch
-    image: ${GHCR_REGISTRY:-ghcr.io}/goauthentik/server:${AUTHENTIK_IMAGE_TAG}
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r2
     restart: unless-stopped
-    entrypoint: ["python3", "/app/directory_watch.py"]
+    entrypoint: ["python3", "/opt/anas/bin/directory-watch"]
     depends_on:
       anas_authentik:
         condition: service_healthy
     volumes:
-      - "./dirwatch/directory_watch.py:/app/directory_watch.py:ro"
       # Read-only: a subscriber never writes to the journal.
       - "${AUTHENTIK_DIRWATCH_EVENTS_DIR}:/var/lib/anas-directory-events:ro"
       - "${DATA_PATH}/authentik/data:/data"
@@ -114,7 +111,7 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "python3", "/app/directory_watch.py", "--healthcheck"]
+      test: ["CMD", "python3", "/opt/anas/bin/directory-watch", "--healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3

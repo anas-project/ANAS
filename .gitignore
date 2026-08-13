@@ -3,6 +3,8 @@
 .gocache/
 .runtime*/
 node_modules/
+__pycache__/
+*.py[cod]
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 secrets.generated.yml

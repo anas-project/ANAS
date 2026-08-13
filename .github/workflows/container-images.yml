@@ -4,13 +4,17 @@ on:
   pull_request:
     paths:
       - ".github/images.json"
+      - ".github/mirrors.json"
       - ".github/workflows/container-images.yml"
+      - "scripts/ci/runtime-image.sh"
       - "modules/**"
   push:
     branches: [master]
     paths:
       - ".github/images.json"
+      - ".github/mirrors.json"
       - ".github/workflows/container-images.yml"
+      - "scripts/ci/runtime-image.sh"
       - "modules/**"
   workflow_dispatch:
     inputs:
@@ -33,6 +37,8 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       count: ${{ steps.matrix.outputs.count }}
+      mirror_matrix: ${{ steps.matrix.outputs.mirror_matrix }}
+      mirror_count: ${{ steps.matrix.outputs.mirror_count }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,16 +74,36 @@ jobs:
             fi
           done < <(jq -r '.[] | [.module, .image] | @tsv' .github/images.json)
 
+          jq -e '
+            type == "array" and length > 0 and
+            all(.[ ];
+              (.modules | type == "array" and length > 0) and
+              (.image | test("^anas-mirror-[a-z0-9-]+$")) and
+              (.tag | type == "string" and length > 0 and . != "latest") and
+              (.source | type == "string" and length > 0) and
+              (.digest | test("^sha256:[0-9a-f]{64}$")) and
+              (.platforms | test("^linux/(amd64|arm64)(,linux/(amd64|arm64))*$"))
+            ) and
+            ([.[].image] | length == (unique | length))
+          ' .github/mirrors.json >/dev/null
+          while IFS= read -r item; do
+            image="$(jq -r '.image' <<<"$item")"
+            tag="$(jq -r '.tag' <<<"$item")"
+            expected='${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/'"${image}:${tag}"
+            while IFS= read -r module; do
+              if ! grep -Fq "image: ${expected}" "modules/${module}/docker-compose.yml"; then
+                echo "${module}/docker-compose.yml must reference ${expected}" >&2
+                exit 1
+              fi
+            done < <(jq -r '.modules[]' <<<"$item")
+          done < <(jq -c '.[]' .github/mirrors.json)
+
           selected='[]'
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             if [[ -z "$REQUESTED_MODULE" || "$REQUESTED_MODULE" == "all" ]]; then
               selected="$(jq -c '.' .github/images.json)"
             else
               selected="$(jq -c --arg module "$REQUESTED_MODULE" '[.[] | select(.module == $module)]' .github/images.json)"
-              if [[ "$(jq 'length' <<<"$selected")" == "0" ]]; then
-                echo "Unknown or image-less module: $REQUESTED_MODULE" >&2
-                exit 1
-              fi
             fi
           else
             changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
@@ -129,9 +155,32 @@ jobs:
             enriched="$(jq -c --argjson item "$item" '. + [$item]' <<<"$enriched")"
           done < <(jq -c '.[]' <<<"$selected")
 
+          mirror_selected='[]'
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ -z "$REQUESTED_MODULE" || "$REQUESTED_MODULE" == "all" ]]; then
+              mirror_selected="$(jq -c '.' .github/mirrors.json)"
+            else
+              mirror_selected="$(jq -c --arg module "$REQUESTED_MODULE" '[.[] | select(.modules | index($module))]' .github/mirrors.json)"
+              if [[ "$(jq 'length' <<<"$selected")" == "0" && "$(jq 'length' <<<"$mirror_selected")" == "0" ]]; then
+                echo "Unknown or image-less module: $REQUESTED_MODULE" >&2
+                exit 1
+              fi
+            fi
+          else
+            if grep -Eq '^(\.github/mirrors\.json|\.github/workflows/container-images\.yml|scripts/ci/runtime-image\.sh)$' <<<"$changed"; then
+              mirror_selected="$(jq -c '.' .github/mirrors.json)"
+            else
+              changed_runtime_modules="$(awk -F/ '$1 == "modules" {print $2}' <<<"$changed" | LC_ALL=C sort -u | jq -Rsc 'split("\n") | map(select(length > 0))')"
+              mirror_selected="$(jq -c --argjson modules "$changed_runtime_modules" '[.[] | select(any(.modules[]; . as $module | $modules | index($module)))]' .github/mirrors.json)"
+            fi
+          fi
+
           matrix="$(jq -c '{include: .}' <<<"$enriched")"
+          mirror_matrix="$(jq -c '{include: .}' <<<"$mirror_selected")"
           echo "matrix=$matrix" >>"$GITHUB_OUTPUT"
           echo "count=$(jq 'length' <<<"$enriched")" >>"$GITHUB_OUTPUT"
+          echo "mirror_matrix=$mirror_matrix" >>"$GITHUB_OUTPUT"
+          echo "mirror_count=$(jq 'length' <<<"$mirror_selected")" >>"$GITHUB_OUTPUT"
 
   build:
     needs: prepare
@@ -195,7 +244,7 @@ jobs:
         env:
           GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
           CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
-        run: docker buildx imagetools create --tag "$GHCR_IMAGE" "$CNB_IMAGE"
+        run: bash scripts/ci/runtime-image.sh copy "$CNB_IMAGE" "$GHCR_IMAGE" "${{ matrix.platforms }}"
 
       - name: Build and publish
         if: github.event_name == 'pull_request' || steps.release_state.outputs.mode == 'build'
@@ -222,49 +271,7 @@ jobs:
         env:
           GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
           CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
-        run: |
-          set -euo pipefail
-
-          raw_manifest="$(docker buildx imagetools inspect --raw "$GHCR_IMAGE")"
-          source_ref="${GHCR_IMAGE%:*}"
-          sources=()
-          index_bytes="$(printf '%s' "$raw_manifest" | wc -c | tr -d ' ')"
-          echo "OCI index: ${index_bytes} bytes"
-          while IFS= read -r digest; do
-            sources+=("${source_ref}@${digest}")
-
-            platform_manifest="$(docker buildx imagetools inspect --raw "${source_ref}@${digest}")"
-            manifest_bytes="$(printf '%s' "$platform_manifest" | wc -c | tr -d ' ')"
-            config_bytes="$(jq -r '.config.size // 0' <<<"$platform_manifest")"
-            layer_count="$(jq -r '.layers | length' <<<"$platform_manifest")"
-            annotations_bytes="$(jq -c '.annotations // {}' <<<"$platform_manifest" | wc -c | tr -d ' ')"
-            image_config="$(docker buildx imagetools inspect --format '{{json .Image}}' "${source_ref}@${digest}")"
-            history_bytes="$(jq -c '.history // []' <<<"$image_config" | wc -c | tr -d ' ')"
-            runtime_config_bytes="$(jq -c '.config // {}' <<<"$image_config" | wc -c | tr -d ' ')"
-            rootfs_bytes="$(jq -c '.rootfs // {}' <<<"$image_config" | wc -c | tr -d ' ')"
-            history_count="$(jq -r '.history | length' <<<"$image_config")"
-            platform="$(jq -r --arg digest "$digest" '
-              .manifests[]
-              | select(.digest == $digest)
-              | "\(.platform.os)/\(.platform.architecture)"
-            ' <<<"$raw_manifest")"
-            echo "Runtime manifest ${digest} (${platform}): ${manifest_bytes} bytes; config: ${config_bytes} bytes; layers: ${layer_count}; annotations JSON: ${annotations_bytes} bytes"
-            echo "Image config breakdown (${platform}): history=${history_bytes} bytes (${history_count} entries); runtime config=${runtime_config_bytes} bytes; rootfs=${rootfs_bytes} bytes"
-            jq -r '
-              [.history[]? | {bytes: ((.created_by // "") | length), command: ((.created_by // "") | gsub("[[:space:]]+"; " ") | .[0:160])}]
-              | sort_by(-.bytes)
-              | .[0:5][]
-              | "Largest history entry: \(.bytes) bytes; prefix=\(.command)"
-            ' <<<"$image_config"
-          done < <(jq -r '
-            .manifests[]?
-            | select(.platform.os != "unknown" and .platform.architecture != "unknown")
-            | .digest
-          ' <<<"$raw_manifest")
-          if [[ "${#sources[@]}" == 0 ]]; then
-            sources+=("$GHCR_IMAGE")
-          fi
-          docker buildx imagetools create --tag "$CNB_IMAGE" "${sources[@]}"
+        run: bash scripts/ci/runtime-image.sh copy "$GHCR_IMAGE" "$CNB_IMAGE" "${{ matrix.platforms }}"
 
       - name: Verify the published release
         if: github.event_name != 'pull_request'
@@ -274,3 +281,91 @@ jobs:
         run: |
           docker buildx imagetools inspect "$GHCR_IMAGE" >/dev/null
           docker buildx imagetools inspect "$CNB_IMAGE" >/dev/null
+
+  mirror:
+    needs: prepare
+    if: needs.prepare.outputs.mirror_count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.prepare.outputs.mirror_matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Validate the pinned upstream manifest
+        env:
+          SOURCE_IMAGE: ${{ matrix.source }}@${{ matrix.digest }}
+        run: bash scripts/ci/runtime-image.sh validate "$SOURCE_IMAGE" "${{ matrix.platforms }}"
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to CNB registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: docker.cnb.cool
+          username: cnb
+          password: ${{ secrets.CNB_REGISTRY_TOKEN }}
+
+      - name: Inspect mirror state
+        id: mirror_state
+        if: github.event_name != 'pull_request'
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+          CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
+        run: |
+          set -euo pipefail
+          ghcr_exists=false
+          cnb_exists=false
+          docker buildx imagetools inspect "$GHCR_IMAGE" >/dev/null 2>&1 && ghcr_exists=true
+          docker buildx imagetools inspect "$CNB_IMAGE" >/dev/null 2>&1 && cnb_exists=true
+          if [[ "$ghcr_exists" == true && "$cnb_exists" == true ]]; then
+            mode=complete
+          elif [[ "$ghcr_exists" == true ]]; then
+            mode=mirror_to_cnb
+          elif [[ "$cnb_exists" == true ]]; then
+            mode=mirror_to_ghcr
+          else
+            mode=publish
+          fi
+          echo "mode=$mode" >>"$GITHUB_OUTPUT"
+          echo "Mirror state: GHCR=$ghcr_exists CNB=$cnb_exists mode=$mode"
+
+      - name: Restore GHCR from CNB
+        if: steps.mirror_state.outputs.mode == 'mirror_to_ghcr'
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+          CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
+        run: bash scripts/ci/runtime-image.sh copy "$CNB_IMAGE" "$GHCR_IMAGE" "${{ matrix.platforms }}"
+
+      - name: Publish pinned upstream image to GHCR
+        if: steps.mirror_state.outputs.mode == 'publish'
+        env:
+          SOURCE_IMAGE: ${{ matrix.source }}@${{ matrix.digest }}
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+        run: bash scripts/ci/runtime-image.sh copy "$SOURCE_IMAGE" "$GHCR_IMAGE" "${{ matrix.platforms }}"
+
+      - name: Publish mirror to CNB
+        if: steps.mirror_state.outputs.mode == 'publish' || steps.mirror_state.outputs.mode == 'mirror_to_cnb'
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+          CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
+        run: bash scripts/ci/runtime-image.sh copy "$GHCR_IMAGE" "$CNB_IMAGE" "${{ matrix.platforms }}"
+
+      - name: Verify published mirrors
+        if: github.event_name != 'pull_request'
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+          CNB_IMAGE: docker.cnb.cool/anas.dev/anas/${{ matrix.image }}:${{ matrix.tag }}
+        run: |
+          bash scripts/ci/runtime-image.sh validate "$GHCR_IMAGE" "${{ matrix.platforms }}"
+          bash scripts/ci/runtime-image.sh validate "$CNB_IMAGE" "${{ matrix.platforms }}"

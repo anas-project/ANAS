@@ -6,7 +6,7 @@ master:
           script: bash scripts/ci/cnb-container-images.sh validate
 
   web_trigger_mirror_all:
-    - name: Mirror all cask images from GHCR
+    - name: Mirror all runtime images from GHCR
       services:
         - name: docker
           options:

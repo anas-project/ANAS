@@ -1,7 +1,7 @@
 services:
   anas_postgres:
     container_name: ${CONTAINER_PREFIX}postgres
-    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/postgres:18.4-alpine
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-postgres:18.4-alpine
     restart: unless-stopped
     env_file:
       - .env
@@ -16,7 +16,7 @@ services:
       - postgres
 
   anas_postgres_provision:
-    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/postgres:18.4-alpine
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-postgres:18.4-alpine
     restart: "no"
     env_file:
       - .env
@@ -35,7 +35,7 @@ services:
       - postgres
 
   anas_postgres_adminer:
-    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/adminer:5.5.0
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-adminer:5.5.0
     container_name: ${CONTAINER_PREFIX}postgres_adminer
     restart: unless-stopped
     env_file:

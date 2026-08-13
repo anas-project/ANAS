@@ -75,7 +75,7 @@ services:
       - db
 
   anas_nextcloud-push:
-    image: ${GHCR_REGISTRY:-ghcr.io}/nextcloud-releases/aio-notify-push:latest
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-notify-push:2026.07.30-7c156254927e
     container_name: ${CONTAINER_PREFIX}nextcloud_push
     user: "33:33"
     init: true
@@ -136,7 +136,7 @@ services:
       - traefik
 
   anas_imaginary:
-    image: ${GHCR_REGISTRY:-ghcr.io}/nextcloud-releases/aio-imaginary:latest
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-imaginary:2026.07.30-d5e7ffac6e1a
     container_name: ${CONTAINER_PREFIX}nextcloud_imaginary
     user: "65534:65534"
     init: true
@@ -162,7 +162,7 @@ services:
 
   anas_nextcloud-redis:
     container_name: ${CONTAINER_PREFIX}nextcloud_redis
-    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/redis:8.10.0-alpine
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-redis:8.10.0-alpine
     command: ["redis-server", "--appendonly", "yes"]
     restart: unless-stopped
     volumes:
@@ -176,7 +176,7 @@ services:
       - nextcloud
 
   anas_talk:
-    image: ${GHCR_REGISTRY:-ghcr.io}/nextcloud-releases/aio-talk:latest
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-talk:2026.07.30-2b9a7d12d3e6
     container_name: ${CONTAINER_PREFIX}nextcloud_talk
     user: "1000:1000"
     init: true

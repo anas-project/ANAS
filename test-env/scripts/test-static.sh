@@ -37,6 +37,8 @@ if [ -n "$direct_dockerfile_images" ]; then
   exit 1
 fi
 
+bash ./scripts/ci/cnb-container-images.sh validate
+
 status=0
 go test ./... >"$log" 2>&1 || status=$?
 # Nested modules are excluded from ./... by design: a module component that is
@@ -49,7 +51,7 @@ if [ "$status" -eq 0 ]; then
   done
 fi
 if [ "$status" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
-  for suite in modules/samba_dc/anchor_worker modules/authentik/dirwatch; do
+  for suite in modules/samba_dc/anchor_worker modules/authentik/authentik; do
     PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$suite" -p 'test_*.py' >>"$log" 2>&1 || status=$?
   done
 fi

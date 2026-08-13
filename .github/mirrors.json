@@ -1,0 +1,122 @@
+[
+  {
+    "modules": ["collabora"],
+    "image": "anas-mirror-collabora",
+    "tag": "26.04.2.4.1",
+    "source": "docker.io/collabora/code:26.04.2.4.1",
+    "digest": "sha256:1f864ce3f0c49e867787b6dd303bd6ba989542d3023f6809df558eafd04c1b97",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["ddns_updater"],
+    "image": "anas-mirror-ddns-updater",
+    "tag": "2.10.0",
+    "source": "ghcr.io/qdm12/ddns-updater:2.10.0",
+    "digest": "sha256:3e2aa558946b5a293def4d73008fa4651c072b2c12932cecd02126fb23979831",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["freeradius"],
+    "image": "anas-mirror-freeradius",
+    "tag": "3.2.10",
+    "source": "docker.io/freeradius/freeradius-server:3.2.10",
+    "digest": "sha256:cc7fd136e7b03e7b332d94297530318e824a4ecfedbce54562cced723e71e812",
+    "platforms": "linux/amd64"
+  },
+  {
+    "modules": ["mariadb"],
+    "image": "anas-mirror-mariadb",
+    "tag": "12.3.2",
+    "source": "docker.io/library/mariadb:12.3.2",
+    "digest": "sha256:759869cb6f003234a95c6384cdee245b4bce7de26913fe607a8110362c0c007d",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["mariadb", "postgres"],
+    "image": "anas-mirror-adminer",
+    "tag": "5.5.0",
+    "source": "docker.io/library/adminer:5.5.0",
+    "digest": "sha256:a1e730bf95a18f1d7c38b409ab58a39d57d07bdb090614b81f5c7b37c6021b96",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["netbird"],
+    "image": "anas-mirror-netbird-dashboard",
+    "tag": "2.90.9",
+    "source": "docker.io/netbirdio/dashboard:v2.90.9",
+    "digest": "sha256:d559f76456df2f06f57108d5271059e085f6d8b510ccdce3c3eac4df15c65121",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["netbird"],
+    "image": "anas-mirror-netbird-signal",
+    "tag": "0.76.1",
+    "source": "docker.io/netbirdio/signal:0.76.1",
+    "digest": "sha256:059fe994b561229de9393346111c377bf210137eb5959b47cd6c8463f2694757",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["netbird"],
+    "image": "anas-mirror-netbird-relay",
+    "tag": "0.76.1",
+    "source": "docker.io/netbirdio/relay:0.76.1",
+    "digest": "sha256:b08d54bb6bc74bf34cc5c14238923be259422152fb8bad5ff99e6eea264028d6",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["nextcloud"],
+    "image": "anas-mirror-nextcloud-notify-push",
+    "tag": "2026.07.30-7c156254927e",
+    "source": "ghcr.io/nextcloud-releases/aio-notify-push:latest",
+    "digest": "sha256:7c156254927e13fa4e67e399e8392989d2ba85fb724d95ced631ba4102e7ca4c",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["nextcloud"],
+    "image": "anas-mirror-nextcloud-imaginary",
+    "tag": "2026.07.30-d5e7ffac6e1a",
+    "source": "ghcr.io/nextcloud-releases/aio-imaginary:latest",
+    "digest": "sha256:d5e7ffac6e1aedaac0cf7ee69dbfb58c36b0f9c58e15dcfa164483ddcdfdeec7",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["nextcloud"],
+    "image": "anas-mirror-redis",
+    "tag": "8.10.0-alpine",
+    "source": "docker.io/library/redis:8.10.0-alpine",
+    "digest": "sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["nextcloud"],
+    "image": "anas-mirror-nextcloud-talk",
+    "tag": "2026.07.30-2b9a7d12d3e6",
+    "source": "ghcr.io/nextcloud-releases/aio-talk:latest",
+    "digest": "sha256:2b9a7d12d3e644b90c1fa6c7e73da0aa083719d64692bf40a62baaad3c2aebd1",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["oauth2_proxy"],
+    "image": "anas-mirror-oauth2-proxy",
+    "tag": "7.15.3",
+    "source": "quay.io/oauth2-proxy/oauth2-proxy:v7.15.3",
+    "digest": "sha256:10a1165743a192e1940b4708fb9647027185ce11a681a1c5519b442ff7f1f561",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["postgres"],
+    "image": "anas-mirror-postgres",
+    "tag": "18.4-alpine",
+    "source": "docker.io/library/postgres:18.4-alpine",
+    "digest": "sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["samba_dc"],
+    "image": "anas-mirror-ubuntu",
+    "tag": "resolute-678c6550cc43",
+    "source": "docker.io/library/ubuntu:resolute",
+    "digest": "sha256:678c6550cc43645e08669028bc177f50be4e7c5b8cca677067b1914d4afc7a03",
+    "platforms": "linux/amd64,linux/arm64"
+  }
+]

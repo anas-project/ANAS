@@ -65,7 +65,7 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。
 | 所有者 | 数量 | 参数 |
 | --- | ---: | --- |
 | `global` | 15 | `base_domain`, `basicauth_user`, `chinese_speedup`, `container_prefix`, `default_language`, `default_service_root_password`, `dns_server`, `email`, `host_ip`, `image_prefix`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
-| `authentik` | 7 | `db_name`, `db_type`, `domain_prefix`, `image_tag`, `ldap_enabled`, `ldap_password_writeback`, `log_level` |
+| `authentik` | 6 | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` |
 | `collabora` | 4 | `auto_save`, `domain_prefix`, `interface`, `log_level` |
 | `ddns_go` | 10 | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` |
 | `ddns_updater` | 9 | `dns_provider`, `domain_prefix`, `forward_auth_interface`, `publicip_dns_providers`, `publicip_fetchers`, `publicip_ipv4_providers`, `publicip_ipv6_providers`, `publicip_providers`, `ttl` |
@@ -112,11 +112,11 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。
 | `GOPROXY_URL` | Go module proxy |
 | `GITHUB_DOWNLOAD_PROXY_PREFIX` | GitHub 下载代理前缀 |
 | `NEXTCLOUD_APPSTORE_URL` | Nextcloud 应用商店 API |
-| `DOCKER_HUB_REGISTRY` | Docker Hub 镜像前缀 |
+| `DOCKER_HUB_REGISTRY` | 构建阶段的 Docker Hub 基础镜像前缀 |
 | `LLNG_DOCKER_HUB_REGISTRY` | LemonLDAP::NG 专用 Docker Hub 镜像前缀 |
-| `ANAS_IMAGE_REGISTRY` | ANAS 自建镜像仓库 |
-| `GHCR_REGISTRY` | 第三方 GHCR 镜像前缀 |
-| `QUAY_REGISTRY` | Quay 镜像前缀 |
+| `ANAS_IMAGE_REGISTRY` | ANAS 派生镜像与上游 mirror 的统一运行时仓库 |
+| `GHCR_REGISTRY` | 构建阶段的第三方 GHCR 基础镜像前缀 |
+| `QUAY_REGISTRY` | 构建阶段的 Quay 基础镜像前缀 |
 | `NEXTCLOUD_APT_MIRROR_URL` | 只覆盖 Nextcloud 构建的 APT 镜像 |
 | `LAM_APT_MIRROR_URL` | 只覆盖 LAM 构建的 APT 镜像 |
 | `LAM_DOWNLOAD_URL` | 直接覆盖 LAM 安装包下载地址 |

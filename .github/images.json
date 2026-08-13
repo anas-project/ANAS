@@ -1,5 +1,12 @@
 [
   {
+    "module": "authentik",
+    "image": "anas-authentik",
+    "context": "modules/authentik/authentik",
+    "dockerfile": "modules/authentik/authentik/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
     "module": "ddns_go",
     "image": "anas-ddns-go",
     "context": "modules/ddns_go/ddns-go",

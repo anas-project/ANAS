@@ -29,7 +29,7 @@ services:
   # starts. Same shape as the authentik data init.
   anas_samba_dc_events_init:
     container_name: ${CONTAINER_PREFIX}samba_dc_events_init
-    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/ubuntu:resolute
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43
     user: root
     entrypoint: ["/bin/sh", "-c"]
     # 0755: subscribers run as their own application's user and only ever read.

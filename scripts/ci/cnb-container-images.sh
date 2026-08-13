@@ -3,6 +3,8 @@ set -euo pipefail
 
 mode="${1:-validate}"
 catalog=".github/images.json"
+mirror_catalog=".github/mirrors.json"
+runtime_image_script="scripts/ci/runtime-image.sh"
 registry="${CNB_DOCKER_REGISTRY:-docker.cnb.cool}"
 repo_slug="${CNB_REPO_SLUG_LOWERCASE:-anas.dev/anas}"
 
@@ -30,12 +32,36 @@ while IFS=$'\t' read -r module image; do
   fi
 done < <(jq -r '.[] | [.module, .image] | @tsv' "$catalog")
 
+jq -e '
+  type == "array" and length > 0 and
+  all(.[ ];
+    (.modules | type == "array" and length > 0) and
+    (.image | test("^anas-mirror-[a-z0-9-]+$")) and
+    (.tag | type == "string" and length > 0 and . != "latest") and
+    (.source | type == "string" and length > 0) and
+    (.digest | test("^sha256:[0-9a-f]{64}$")) and
+    (.platforms | test("^linux/(amd64|arm64)(,linux/(amd64|arm64))*$"))
+  ) and
+  ([.[].image] | length == (unique | length))
+' "$mirror_catalog" >/dev/null
+while IFS= read -r item; do
+  image="$(jq -r '.image' <<<"$item")"
+  tag="$(jq -r '.tag' <<<"$item")"
+  expected='${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/'"${image}:${tag}"
+  while IFS= read -r module; do
+    if ! grep -Fq "image: ${expected}" "modules/${module}/docker-compose.yml"; then
+      echo "${module}/docker-compose.yml must reference ${expected}" >&2
+      exit 1
+    fi
+  done < <(jq -r '.modules[]' <<<"$item")
+done < <(jq -c '.[]' "$mirror_catalog")
+
 if [[ "$mode" == "validate" ]]; then
   echo "CNB image catalog and Compose references are valid."
   exit 0
 fi
 
-docker login -u "${CNB_TOKEN_USER_NAME}" -p "${CNB_TOKEN}" "$registry"
+printf '%s' "${CNB_TOKEN}" | docker login -u "${CNB_TOKEN_USER_NAME}" --password-stdin "$registry"
 
 while IFS= read -r item; do
   module="$(jq -r '.module' <<<"$item")"
@@ -55,21 +81,27 @@ while IFS= read -r item; do
     echo "$target already exists; skipping immutable tag."
     continue
   fi
-  if ! raw_manifest="$(docker buildx imagetools inspect --raw "$source" 2>/dev/null)"; then
+  if ! docker buildx imagetools inspect "$source" >/dev/null 2>&1; then
     echo "$source does not exist or is not readable" >&2
     exit 1
   fi
-  source_ref="${source%:*}"
-  sources=()
-  while IFS= read -r digest; do
-    sources+=("${source_ref}@${digest}")
-  done < <(jq -r '
-    .manifests[]?
-    | select(.platform.os != "unknown" and .platform.architecture != "unknown")
-    | .digest
-  ' <<<"$raw_manifest")
-  if [[ "${#sources[@]}" == 0 ]]; then
-    sources+=("$source")
-  fi
-  docker buildx imagetools create --tag "$target" "${sources[@]}"
+  platforms="$(jq -r '.platforms' <<<"$item")"
+  bash "$runtime_image_script" copy "$source" "$target" "$platforms"
 done < <(jq -c '.[]' "$catalog")
+
+while IFS= read -r item; do
+  image="$(jq -r '.image' <<<"$item")"
+  tag="$(jq -r '.tag' <<<"$item")"
+  platforms="$(jq -r '.platforms' <<<"$item")"
+  source="ghcr.io/anas-project/${image}:${tag}"
+  target="${registry}/${repo_slug}/${image}:${tag}"
+  if docker buildx imagetools inspect "$target" >/dev/null 2>&1; then
+    echo "$target already exists; skipping immutable tag."
+    continue
+  fi
+  if ! docker buildx imagetools inspect "$source" >/dev/null 2>&1; then
+    echo "$source does not exist or is not readable" >&2
+    exit 1
+  fi
+  bash "$runtime_image_script" copy "$source" "$target" "$platforms"
+done < <(jq -c '.[]' "$mirror_catalog")

@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: authentik
 version: 2026.5.6
-revision: 1
+revision: 2
 app_version: 2026.5.6
 abi:
   supports:
@@ -53,7 +53,6 @@ config:
     domain_prefix: auth
     log_level: warn
     db_name: authentik
-    image_tag: 2026.5.6
     db_type: auto
     ldap_enabled: "true"
     ldap_password_writeback: "true"
