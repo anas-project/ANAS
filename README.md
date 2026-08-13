@@ -121,6 +121,7 @@ Developer references:
 - [CLI JSON contracts](docs/reference/contracts/index.md)
 - [architecture and design](docs/architecture/index.md)
 - [container image releases](docs/developer/release.md)
+- [documentation standard](docs/developer/documentation-standard.md)
 
 The documentation site is built with VitePress. Pull requests validate the
 site; documentation changes on `master` are deployed to GitHub Pages.

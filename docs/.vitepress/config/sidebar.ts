@@ -65,6 +65,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Module 开发', link: '/developer/module-development' },
         { text: '测试', link: '/developer/testing' },
         { text: '镜像发布', link: '/developer/release' },
+        { text: '文档写作标准', link: '/developer/documentation-standard' },
         { text: '文档站点', link: '/developer/documentation' }
       ]
     }
@@ -159,6 +160,7 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Module development', link: '/en/developer/module-development' },
         { text: 'Testing', link: '/en/developer/testing' },
         { text: 'Image releases', link: '/en/developer/release' },
+        { text: 'Documentation standard', link: '/en/developer/documentation-standard' },
         { text: 'Documentation site', link: '/en/developer/documentation' }
       ]
     }

@@ -2,6 +2,8 @@
 
 The site uses VitePress. Chinese is served at the site root; the English mirror is under `/en/`.
 
+Read the [documentation standard](documentation-standard.md) before adding or changing content. It defines classification, bilingual maintenance, sources of truth, design status, links, safety, and review checks.
+
 ```bash
 npm ci
 npm run docs:dev       # local development

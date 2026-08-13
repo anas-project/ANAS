@@ -13,7 +13,8 @@
 2. [Module 开发](module-development.md)
 3. [测试](testing.md)
 4. [容器镜像发布](release.md)
-5. [Module、Contract 与 Resource 设计](/architecture/module-contract-resource-design)
-6. [CLI JSON 契约](/reference/contracts/)
+5. [文档写作标准](documentation-standard.md)
+6. [Module、Contract 与 Resource 设计](/architecture/module-contract-resource-design)
+7. [CLI JSON 契约](/reference/contracts/)
 
 旧的 [AI Design Guide](/architecture/ai-design)仍包含大量实现入口，但新增设计应进入具体架构文档，而不是继续扩充一份总览。
