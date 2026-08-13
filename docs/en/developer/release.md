@@ -2,6 +2,35 @@
 
 Runtime images are published to GHCR and CNB by [`.github/workflows/container-images.yml`](https://github.com/anas-project/ANAS/blob/master/.github/workflows/container-images.yml). `.github/images.json` registers ANAS-derived builds; `.github/mirrors.json` registers unchanged upstream images pinned by digest.
 
+## End-to-end synchronization
+
+GitHub is the source repository, GHCR is the primary container publication registry, and CNB provides both a mainland China code mirror and container distribution. Code synchronization and container publication are separate GitHub Actions workflows. The same GitHub push may trigger both, but neither workflow depends on the other.
+
+```text
+Code:           GitHub ──> CNB Git repository
+
+Derived image:  Dockerfile ──> GHCR ──> CNB Registry
+Upstream image: pinned digest ──> GHCR ──> CNB Registry
+Recovery:                       CNB Registry ──> GHCR
+```
+
+### Code repository
+
+`.github/workflows/cnb-sync.yml` runs for pushes and deletions of any GitHub branch or tag, and can also be dispatched manually. It fetches every GitHub branch and tag and pushes them with `--prune` to `https://cnb.cool/anas.dev/ANAS.git`, so deletions on GitHub are propagated to CNB. Synchronization is always from GitHub to CNB; CNB is not the source of truth for code.
+
+After code reaches CNB `master`, `.cnb.yml` validates image metadata and Compose references. It does not rebuild or republish containers.
+
+### Container images
+
+`.github/workflows/container-images.yml` handles container publication:
+
+- ANAS-derived images are built from registered Dockerfiles, pushed to GHCR first, and then have their runtime platform manifests copied to CNB;
+- unchanged upstream images are validated against the digest pinned in `.github/mirrors.json`, copied to GHCR, and then copied to CNB;
+- if neither registry has an immutable tag, the normal publication path runs; if only one registry has it, the missing side is restored from the existing side; if both have it, they are verified without replacement;
+- the normal direction is GHCR to CNB. CNB to GHCR is only a recovery path when GHCR is missing a fixed tag that CNB still has.
+
+Neither registry pushes to the other by itself. Cross-registry copies are performed by `scripts/ci/runtime-image.sh` with Crane from GitHub Actions.
+
 ## Release identity
 
 Each module declares:
@@ -31,4 +60,8 @@ Unmodified upstream images use `anas-mirror-<software>:<fixed-version>`. The cat
 - Existing fixed tags are verified, never replaced.
 - Images target `linux/amd64` and `linux/arm64`; GHCR retains provenance and SBOM.
 
-For the first release, manually run the `Container images` workflow with `module=all`. This publishes both derived images and every upstream mirror. Make GHCR packages publicly readable and verify anonymous pulls from both registries. Publishing needs `CNB_REGISTRY_TOKEN`; Git mirroring to CNB uses `CNB_TOKEN`.
+For the first release, manually run the `Container images` workflow with `module=all`. This publishes both derived images and every upstream mirror. Make GHCR packages publicly readable and verify anonymous pulls from both registries.
+
+The CNB `master` page also provides a **Mirror all Cask images from GHCR** button. Defined by `.cnb/web_trigger.yml` and `.cnb.yml`, it runs `scripts/ci/cnb-container-images.sh mirror-all` and copies fixed-version images that exist in GHCR but are missing from CNB. It neither builds images nor overwrites tags already present in CNB.
+
+Publishing needs `CNB_REGISTRY_TOKEN`; Git mirroring to CNB uses `CNB_TOKEN`.

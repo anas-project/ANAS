@@ -2,6 +2,35 @@
 
 运行时镜像由 [`.github/workflows/container-images.yml`](https://github.com/anas-project/ANAS/blob/master/.github/workflows/container-images.yml) 同时发布到 GHCR 和 CNB。`.github/images.json` 登记 ANAS 派生构建，`.github/mirrors.json` 登记按 digest 锁定、未经修改的上游镜像。
 
+## 整体同步流程
+
+GitHub 是代码主仓库，GHCR 是容器首发仓库，CNB 同时承担国内代码镜像和容器分发。代码同步与容器发布由两个独立的 GitHub Actions 工作流处理；同一次 GitHub push 可以同时触发二者，但它们没有先后依赖。
+
+```text
+代码：GitHub ──> CNB Git 仓库
+
+派生镜像：Dockerfile ──> GHCR ──> CNB Registry
+上游镜像：固定 digest ──> GHCR ──> CNB Registry
+异常恢复：             CNB Registry ──> GHCR
+```
+
+### 代码仓库
+
+`.github/workflows/cnb-sync.yml` 在 GitHub 任意分支或 tag 推送、删除以及手工触发时运行。它获取全部 GitHub 分支和 tag，并使用 `--prune` 推送到 `https://cnb.cool/anas.dev/ANAS.git`，因此 GitHub 上的删除也会同步到 CNB。同步方向固定为 GitHub 到 CNB；CNB 不是代码真相源。
+
+代码到达 CNB 的 `master` 后，`.cnb.yml` 运行镜像元数据和 Compose 引用校验，不重复构建或发布容器。
+
+### 容器镜像
+
+`.github/workflows/container-images.yml` 负责容器发布：
+
+- ANAS 派生镜像从登记的 Dockerfile 构建，首先推送 GHCR，再将运行平台 manifest 复制到 CNB；
+- 未经修改的上游镜像先校验 `.github/mirrors.json` 中锁定的 digest，再复制到 GHCR，最后复制到 CNB；
+- 两边均无固定 tag 时执行上述首发流程；只有一边存在时从已有一侧补齐缺失侧；两边均存在时只验证，不覆盖；
+- 正常发布主方向是 GHCR 到 CNB。CNB 到 GHCR 仅用于 GHCR 缺失而 CNB 已有固定 tag 时的恢复。
+
+因此，GHCR 和 CNB 本身都不会主动向对方推送；跨 Registry 复制由 GitHub Actions 中的 `scripts/ci/runtime-image.sh` 使用 Crane 执行。
+
 ## 发布身份
 
 每个 Module 在 `module.yml` 中声明：
@@ -51,6 +80,8 @@ docker.cnb.cool/anas.dev/anas/anas-<软件>:<version>-r<revision>
 ## 首次发布与恢复
 
 首次发布可手工运行 `Container images` 工作流并选择 `module=all`。这会同时生成派生镜像和全部上游 mirror。发布后确认 GHCR packages 与 CNB 制品均可匿名拉取，并验证两个 Registry 的运行平台 manifest。
+
+CNB 的 `master` 页面还提供“从 GHCR 同步全部 Cask 镜像”按钮。该入口由 `.cnb/web_trigger.yml` 和 `.cnb.yml` 定义，调用 `scripts/ci/cnb-container-images.sh mirror-all`，只把 GHCR 中已有、CNB 中缺失的固定版本镜像补到 CNB；它不会构建镜像，也不会覆盖 CNB 已有 tag。
 
 工作流需要：
 
