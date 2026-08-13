@@ -281,7 +281,7 @@ func TestVerifyDetectsMissingUserDataChannel(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "data"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{snapshotMetaConfigName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaAdminsName, snapshotMetaStateName} {
+	for _, name := range []string{snapshotMetaConfigName, snapshotMetaConfigStateName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaAdminsName, snapshotMetaStateName} {
 		if err := os.MkdirAll(filepath.Join(root, "meta"), 0700); err != nil {
 			t.Fatal(err)
 		}

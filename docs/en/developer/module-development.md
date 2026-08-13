@@ -52,10 +52,14 @@ template or the per-module account-ID override; use `fixed_username` only when
 upstream fixes the physical name. Once materialized, a username is locked and
 ordinary configuration must not pretend to rename application state.
 
-Passwords are generated and persisted only by the Secret Store. Managed clear
-text must not be accepted through argv, ordinary YAML, `.env`, or a long-lived
-container environment. Bootstrap-only applications use a mode-0600 runtime
-Secret file; hash-capable applications publish only the hash.
+Passwords persist only in the versioned `.anas/secrets.yml` store (0600), using
+stable keys and owner/kind/provenance metadata. External import YAML may supply
+a one-time bootstrap value, which is removed from the normalized workspace
+config after a successful import. A module must not accept managed clear text
+through argv, workspace YAML, `.env`, or a long-lived container environment.
+Bootstrap-only applications use a mode-0600 runtime Secret file; hash-capable
+applications publish only the hash. Ordinary deployment secrets such as DNS API
+tokens are not lifecycle-managed and remain in managed configuration.
 
 `apply` must write or reconcile the current Secret into application state and
 verify the account. Setting an environment variable alone is insufficient.

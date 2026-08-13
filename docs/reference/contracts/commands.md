@@ -346,6 +346,8 @@ anas deployments inspect ID [-w WORKSPACE] [--json]
 
 ```
 anas config list    [global|<module>]     [-w WORKSPACE] [-c config.yml] [--json]
+anas config import  SOURCE [-w WORKSPACE] [--json]
+anas config migrate        [-w WORKSPACE] [--json]
 anas config set     <module.parameter> <value> [-w WORKSPACE] [-c config.yml] [--json]
 anas config explain <module.parameter> [--json]
 anas config plan    [-w WORKSPACE] [-c config.yml] [--json]
@@ -358,6 +360,13 @@ effect. Values of parameters marked sensitive are reported as `<set>`/`<unset>`
 and never printed; `config secret get` remains the way to read a credential. It
 needs no workspace, because what can be set is a property of the modules; inside
 one it additionally fills in the current values.
+
+`config import` 是外部 YAML 进入 workspace 的唯一入口，且不修改源文件。它验证规范化
+配置后，把 `credential_rotate` 与本地管理员 bootstrap 密码移入 `.anas/secrets.yml`，
+普通 DNS/API token 等部署 Secret 则保留在 0600 的 workspace `config.yml` 中。配置、
+Secret Store 和完整性摘要先全部暂存，再一起替换；任一步失败都保留原状态。`migrate` 仅用于
+把尚未建立 CLI 完整性摘要的当前 workspace 配置纳入该模型，不提供旧 Secret Store 兼容。
+plan/lock/render/apply 拒绝外部 `-c` 和摘要不匹配的手工修改。
 
 `set` and `explain` reject a parameter no manifest declares, naming the closest
 declared one, and exit with the usage code. The raw `env.<KEY>` path is not
@@ -440,10 +449,10 @@ anas admin local rotate MODULE [ACCOUNT] [-w WORKSPACE] [--prompt] [--json]
 
 轮换先把候选 Secret 仅交给活动部署冻结的 Module handler。handler 更新应用内部状态并
 验证新凭据；验证失败必须恢复旧应用状态。只有成功后 Runner 才原子提交
-`secrets.generated.yml`（bootstrap-only 应用同时更新受限的 runtime Secret 投影）。未声明
+`secrets.yml`（bootstrap-only 应用同时更新受限的 runtime Secret 投影）。未声明
 `lifecycle.rotate` 的 Module 明确报不支持，不能由 CLI 猜测一个更新方式。
 
-账号名称锁保存在 `.anas/local-admins.yml`，密码只由 `secrets.generated.yml` 持久保存，
+账号名称锁保存在 `.anas/local-admins.yml`，密码只由 `secrets.yml` 持久保存，
 两者都不进入 `config.lock.yml`、deployment manifest 或部署 `.env`。Runner 仅在 Module
 Hook 执行期间注入明文；bootstrap-only 应用通过 `.anas/runtime-secrets/` 下的 0600 临时
 投影读取，支持 hash 的应用制品只持久化 hash。

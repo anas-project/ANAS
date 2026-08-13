@@ -203,15 +203,18 @@ DDNS_GO_LOCAL_ADMIN_PASSWORD
 `break_glass` Module 也可省略，而多账号 Module 不会猜测恢复账号。
 
 `local-admins.yml` 不含密码，只保存 Module、账号 id、用途、已锁定用户名和 Secret 逻辑
-键。它与 `secrets.generated.yml` 一起进入 snapshot/backup，并在恢复时一起回滚。
+键。它与 `secrets.yml` 一起进入 snapshot/backup，并在恢复时一起回滚。
 
 状态边界如下：
 
-- `config.yml`：用户期望状态和用户名策略；不接受托管密码。遗留显式密码会阻断 render，
-  删除后由 Module apply handler 把生成的托管密码写入应用；
+- `config.yml`：CLI 管理的规范化期望状态、普通部署 Secret 和用户名策略；外部文件只能通过
+  `config import` 进入。一次性 bootstrap 的生命周期密码在成功导入时原子剥离；摘要不匹配或
+  仍含此类密码会阻断 plan/apply；
 - `config.lock.yml` 与 deployment manifest：版本、绑定、账号 ID 和 handler 契约；不含明文；
 - `.anas/local-admins.yml`：账号 ID 到锁定物理用户名和 Secret 逻辑键的映射；不含明文；
-- `.anas/secrets.generated.yml`：唯一持久 Secret Store（0600）；
+- `.anas/secrets.yml`：唯一版本化持久 Secret Store（0600），统一保存用户指定的生命周期
+  凭据和系统生成 Secret，以稳定逻辑 key 及 owner/kind/provenance 区分；旧
+  `secrets.generated.yml` 不兼容且不会自动迁移；
 - `.anas/runtime-secrets/`：bootstrap-only 容器的 0600 可再生运行时投影，不进入制品；
 - 应用内部状态：只保存应用需要的 hash/凭据。修改成功并验证后，Secret Store 才提交。
 

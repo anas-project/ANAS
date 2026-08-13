@@ -5,7 +5,7 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 TEST_ENV_DIR="$ROOT_DIR/test-env"
 CONFIG_DIR="$TEST_ENV_DIR/configs"
 REPORT_DIR="$TEST_ENV_DIR/reports"
-RUNTIME_DIR="$ROOT_DIR/.anas-test/runtime"
+RUNTIME_DIR=${ANAS_TEST_RUNTIME_DIR:-"$ROOT_DIR/.anas-test/runtime"}
 GOCACHE="$ROOT_DIR/.gocache"
 export GOCACHE
 
@@ -25,7 +25,7 @@ make_workspace() {
   if [ ! -d "$ws/.anas" ]; then
     run_anas init "$ws" -y >/dev/null
   fi
-  cp "$cfg" "$ws/config.yml"
+  run_anas config import "$cfg" -w "$ws" >/dev/null
 }
 
 # Deployment artifacts live under the workspace state directory.

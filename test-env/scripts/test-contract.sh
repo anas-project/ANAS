@@ -149,7 +149,7 @@ expect_exit 2 "rollback without -w" -- anas rollback --json
 expect_exit 2 "an unrecognised flag" -- anas status -w "$ws" --nope --json
 
 echo "== C2: unmet preconditions exit 4 =="
-expect_exit 4 "plan with a missing config" -- anas plan -c "$work/absent.yml" --root "$ROOT_DIR" --json
+expect_exit 4 "plan with a missing config" -- anas plan -w "$ws" -c "$work/absent.yml" --root "$ROOT_DIR" --json
 expect_exit 4 "start with no active deployment" -- anas start -w "$ws" --json
 expect_exit 4 "stop with no active deployment" -- anas stop -w "$ws" --json
 expect_exit 4 "restart with no active deployment" -- anas restart -w "$ws" --json

@@ -36,7 +36,7 @@ than copying the directory:
   for data that is already there once.
 - `.anas/` is mostly rebuildable. On a live deployment measured at 402 MB, the
   part that cannot be reconstructed is **52 KB** (`state/` and
-  `secrets.generated.yml`); the active artifact adds 42 MB, and the remaining
+  `secrets.yml`); the active artifact adds 42 MB, and the remaining
   ~360 MB is historical deployments and build caches.
 - A copy taken while services are running is crash-consistent at best.
   `anas backup` stops them for the moment the snapshot is taken.

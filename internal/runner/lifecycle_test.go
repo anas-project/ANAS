@@ -9,20 +9,18 @@ import (
 	"github.com/anas-project/ANAS/internal/config"
 )
 
-func TestPlanDoesNotCreateRuntimeState(t *testing.T) {
+func TestPlanUsesOnlyManagedWorkspaceConfig(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
 	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	workspace := t.TempDir()
-	if err := Main([]string{"plan", "-c", filepath.Join(root, "config.example.yml"), "--root", root, "-w", workspace}); err != nil {
+	workspace := newWorkspace(t)
+	if err := Main([]string{"plan", "--root", root, "-w", workspace}); err != nil {
 		t.Fatal(err)
 	}
-	// plan accepts -w only for symmetry: it must neither require a workspace
-	// nor leave any state behind in one.
-	if _, err := os.Stat(stateDir(workspace)); !os.IsNotExist(err) {
-		t.Fatalf("plan created runtime state at %s", stateDir(workspace))
+	if err := Main([]string{"plan", "-c", filepath.Join(root, "config.example.yml"), "--root", root, "-w", workspace}); err == nil {
+		t.Fatal("plan accepted an external config instead of requiring config import")
 	}
 }
 

@@ -62,8 +62,8 @@ render() {
   rm -rf "$ws"
   mkdir -p "$ws"
   "$anas_bin" init "$ws" -y >>"$log" 2>&1
-  if [ -f "$base/wide/.anas/secrets.generated.yml" ] && [ "$wide" != "1" ]; then
-    cp "$base/wide/.anas/secrets.generated.yml" "$ws/.anas/secrets.generated.yml"
+  if [ -f "$base/wide/.anas/secrets.yml" ] && [ "$wide" != "1" ]; then
+    cp "$base/wide/.anas/secrets.yml" "$ws/.anas/secrets.yml"
   fi
   cp "$config" "$ws/config.yml"
   "$anas_bin" lock -w "$ws" >>"$log" 2>&1

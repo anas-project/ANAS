@@ -7,6 +7,6 @@ __pycache__/
 *.py[cod]
 docs/.vitepress/cache/
 docs/.vitepress/dist/
-secrets.generated.yml
+secrets.yml
 test-env/reports/*
 !test-env/reports/.gitkeep

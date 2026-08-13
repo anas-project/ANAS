@@ -36,7 +36,7 @@
 
 | 类别 | 内容 | copy 模式是否包含 |
 | --- | --- | --- |
-| 权威状态 | `config.yml`、`config.lock.yml`、`.anas/state/`、`.anas/secrets.generated.yml` | ✅ |
+| 权威状态 | `config.yml`、`config.lock.yml`、`.anas/state/`、`.anas/secrets.yml` | ✅ |
 | 业务数据 | `data/` | ✅ |
 | active 制品 | `.anas/deployments/<active-id>/` | ✅ |
 | 历史制品 | `.anas/deployments/` 下其余目录 | ❌ |
@@ -277,7 +277,7 @@ one-file-system 来排除 `snapshots/`——那样会连必须包含的 `data/` 
 | `snapshots_excluded_by_default` | `snapshots/` 默认不含在内 |
 | `no_incremental_support` | 该模式不支持增量，每次全量 |
 | `crash_consistent_only` | 配合 `--no-stop` 时仅崩溃一致性 |
-| `plaintext_secrets_leaving_host` | 备份含明文密钥（`config.yml`、`secrets.generated.yml`）将离开本机 |
+| `plaintext_secrets_leaving_host` | 备份含明文密钥（`config.yml`、`secrets.yml`）将离开本机 |
 
 ---
 

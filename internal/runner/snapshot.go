@@ -25,7 +25,7 @@ package runner
 //	    meta/
 //	      config.yml              the deployment's config.source.yml, 0600
 //	      config.lock.yml         the deployment's resolution lock
-//	      secrets.generated.yml   the secret store at that moment, 0600
+//	      secrets.yml   the secret store at that moment, 0600
 //	      deployment-state.yml    state/deployments/<id>.yml
 //	    deployment/       a full copy of .anas/deployments/<id>/
 //	    data/             a read-only Btrfs snapshot of <workspace>/data
@@ -155,11 +155,12 @@ func (m snapshotMeta) capturedTree(tree string) bool {
 }
 
 const (
-	snapshotMetaConfigName  = "config.yml"
-	snapshotMetaLockName    = "config.lock.yml"
-	snapshotMetaSecretsName = "secrets.generated.yml"
-	snapshotMetaAdminsName  = "local-admins.yml"
-	snapshotMetaStateName   = "deployment-state.yml"
+	snapshotMetaConfigName      = "config.yml"
+	snapshotMetaConfigStateName = "config-managed.yml"
+	snapshotMetaLockName        = "config.lock.yml"
+	snapshotMetaSecretsName     = "secrets.yml"
+	snapshotMetaAdminsName      = "local-admins.yml"
+	snapshotMetaStateName       = "deployment-state.yml"
 )
 
 func snapshotRoot(workspace, id string) string {
@@ -322,6 +323,15 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 		cleanup()
 		return nil, err
 	}
+	configBytes, err := os.ReadFile(configSource)
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+	if err := os.WriteFile(snapshotMetaEntry(tmp, snapshotMetaConfigStateName), managedConfigStateBytes(configBytes, "snapshot"), 0600); err != nil {
+		cleanup()
+		return nil, err
+	}
 	if err := copyFileMode(filepath.Join(artifact, "lock.yml"), snapshotMetaEntry(tmp, snapshotMetaLockName), 0600); err != nil {
 		cleanup()
 		return nil, err
@@ -435,12 +445,12 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 }
 
 func copySecretStore(base, dst string) error {
-	src := filepath.Join(base, "secrets.generated.yml")
+	src := filepath.Join(base, "secrets.yml")
 	if !exists(src) {
 		// A deployment that generated no secrets still needs the file present,
 		// so that restore has something definite to put back and verify can
 		// treat a missing one as damage rather than as an ambiguity.
-		return os.WriteFile(dst, []byte("{}\n"), 0600)
+		return writeYAMLAtomic(dst, &secretStoreDocument{APIVersion: "anas.secrets/v2", Secrets: map[string]secretStoreRecord{}}, 0600)
 	}
 	return copyFileMode(src, dst, 0600)
 }
@@ -795,7 +805,7 @@ func verifySnapshot(workspace string, meta snapshotMeta) []snapshotProblem {
 	} else if err := btrfsSubvolumeShow(data); err != nil {
 		add("subvolume_missing", "%s is no longer a Btrfs subvolume: %v", data, err)
 	}
-	for _, name := range []string{snapshotMetaConfigName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaAdminsName, snapshotMetaStateName} {
+	for _, name := range []string{snapshotMetaConfigName, snapshotMetaConfigStateName, snapshotMetaLockName, snapshotMetaSecretsName, snapshotMetaAdminsName, snapshotMetaStateName} {
 		if !exists(snapshotMetaEntry(root, name)) {
 			add("meta_incomplete", "meta/%s is missing from %s", name, meta.ID)
 		}

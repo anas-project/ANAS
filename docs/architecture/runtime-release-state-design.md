@@ -106,7 +106,7 @@ store 中的键本应天然敏感，不应通过“其值是否也出现在 env�
 
 | 状态 | 权威来源 | 是否可变 | 是否含明文 secret |
 | --- | --- | --- | --- |
-| 用户期望状态 | 用户维护的 `config.yml` | 是 | 可能包含用户 secret |
+| 用户期望状态 | CLI 管理的规范化 `config.yml` | 是 | 可能包含普通部署 secret，不含 lifecycle-managed 凭据 |
 | 解析锁 | config 同目录 `<config-name>.lock.yml` | 显式更新 | 否，只含版本、digest、绑定和 source |
 | deployment 制品 | `deployments/<deployment-id>/` | 否 | module 运行文件可能包含，目录整体按敏感数据保护 |
 | 活动运行状态 | `state/active.yml` | 仅 apply/rollback 提交 | 否 |

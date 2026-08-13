@@ -41,8 +41,9 @@ func restoreTargets(workspace string, meta *snapshotMeta, restoreUserData bool) 
 	base := stateDir(workspace)
 	targets := []string{
 		workspaceConfigPath(workspace),
+		managedConfigStatePath(base),
 		projectLockPath(workspaceConfigPath(workspace)),
-		filepath.Join(base, "secrets.generated.yml"),
+		filepath.Join(base, "secrets.yml"),
 		localAdminStatePath(base),
 		deploymentStatePath(base, meta.DeploymentID),
 		activeStatePath(base),
@@ -111,11 +112,14 @@ func restoreSnapshot(workspace string, meta *snapshotMeta, restoreUserData, json
 		return nil, failuref("restore_failed", "restore config.yml: %v", err)
 	}
 	restored = append(restored, "config")
+	if err := copyFileMode(snapshotMetaEntry(root, snapshotMetaConfigStateName), managedConfigStatePath(base), 0600); err != nil {
+		return nil, failuref("restore_failed", "restore managed config state: %v", err)
+	}
 	if err := copyFileMode(snapshotMetaEntry(root, snapshotMetaLockName), projectLockPath(workspaceConfigPath(workspace)), 0600); err != nil {
 		return nil, failuref("restore_failed", "restore config.lock.yml: %v", err)
 	}
 	restored = append(restored, "lock")
-	if err := copyFileMode(snapshotMetaEntry(root, snapshotMetaSecretsName), filepath.Join(base, "secrets.generated.yml"), 0600); err != nil {
+	if err := copyFileMode(snapshotMetaEntry(root, snapshotMetaSecretsName), filepath.Join(base, "secrets.yml"), 0600); err != nil {
 		return nil, failuref("restore_failed", "restore the secret store: %v", err)
 	}
 	restored = append(restored, "secrets")

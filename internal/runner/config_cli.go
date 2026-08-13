@@ -21,7 +21,7 @@ func runConfig(args []string, jsonMode bool) error {
 		// `anas config --json` used to take "--json" as the subcommand name and
 		// fail several steps later with an unrelated code. A subcommand is a
 		// word, never a flag.
-		return usageErrorf("usage: anas config list|set|explain|plan|secret ... [--json]")
+		return usageErrorf("usage: anas config import|migrate|list|set|explain|plan|secret ... [--json]")
 	}
 	subcommand := args[0]
 	if subcommand == "secret" {
@@ -75,6 +75,44 @@ func runConfig(args []string, jsonMode bool) error {
 	}
 
 	switch subcommand {
+	case "import":
+		if len(positional) != 1 {
+			return usageErrorf("usage: anas config import SOURCE [-w <workspace>] [--json]")
+		}
+		unlock, lockErr := acquireRuntimeLock(base)
+		if lockErr != nil {
+			return preconditionErrorf("runtime_lock_failed", "%s", lockErr.Error())
+		}
+		defer unlock()
+		source := absolutePath(positional[0])
+		result, err := importConfigIntoWorkspace(workspace, source, reg)
+		if err != nil {
+			return preconditionErrorf("config_import_failed", "%s", err.Error())
+		}
+		if jsonMode {
+			return emitOK(map[string]any{"workspace": workspace, "source": source, "config": workspaceConfigPath(workspace), "secrets_imported": len(result.Secrets)})
+		}
+		fmt.Printf("imported %s\nnormalized config: %s\nsecrets imported: %d\n", source, workspaceConfigPath(workspace), len(result.Secrets))
+		return nil
+	case "migrate":
+		if len(positional) != 0 {
+			return usageErrorf("usage: anas config migrate [-w <workspace>] [--json]")
+		}
+		unlock, lockErr := acquireRuntimeLock(base)
+		if lockErr != nil {
+			return preconditionErrorf("runtime_lock_failed", "%s", lockErr.Error())
+		}
+		defer unlock()
+		source := workspaceConfigPath(workspace)
+		result, err := importConfigIntoWorkspace(workspace, source, reg)
+		if err != nil {
+			return preconditionErrorf("config_import_failed", "%s", err.Error())
+		}
+		if jsonMode {
+			return emitOK(map[string]any{"workspace": workspace, "source": source, "config": source, "secrets_imported": len(result.Secrets)})
+		}
+		fmt.Printf("migrated %s\nsecrets imported: %d\n", source, len(result.Secrets))
+		return nil
 	case "list":
 		if len(positional) > 1 {
 			return usageErrorf("usage: anas config list [global|<module>] [-w <workspace>] [-c config.yml] [--json]")
@@ -84,6 +122,11 @@ func runConfig(args []string, jsonMode bool) error {
 			scope = strings.ToLower(strings.TrimSpace(positional[0]))
 			if _, known := declaredParametersFor(scope, reg); !known {
 				return usageErrorf("unknown module %q; pass a module name or %q", scope, globalModuleName)
+			}
+		}
+		if workspace != "" && *cfgPath != "" {
+			if err := validateManagedConfig(workspace, *cfgPath); err != nil {
+				return preconditionErrorf("config_not_managed", "%s", err.Error())
 			}
 		}
 		return reportConfigList(*cfgPath, reg, scope, jsonMode)
@@ -98,10 +141,18 @@ func runConfig(args []string, jsonMode bool) error {
 		if err := validateParameterValue(target.Module, target.Parameter, positional[1], reg); err != nil {
 			return usageErrorf("%s", err.Error())
 		}
+		if policyForTarget(target, reg).Effect == "credential_rotate" {
+			return usageErrorf("%s is lifecycle-managed; provide its initial value through `anas config import SOURCE` and use the declared credential rotation command afterwards", target.Display)
+		}
 		if !exists(*cfgPath) {
 			return preconditionErrorf("config_missing", "config %s does not exist", *cfgPath)
 		}
-		if err := config.SetScalar(*cfgPath, target.YAMLPath, positional[1]); err != nil {
+		unlock, lockErr := acquireRuntimeLock(base)
+		if lockErr != nil {
+			return preconditionErrorf("runtime_lock_failed", "%s", lockErr.Error())
+		}
+		defer unlock()
+		if err := setManagedConfigScalar(workspace, *cfgPath, target.YAMLPath, positional[1]); err != nil {
 			return failuref("write_failed", "%s", err.Error())
 		}
 		policy := policyForTarget(target, reg)
@@ -137,9 +188,12 @@ func runConfig(args []string, jsonMode bool) error {
 		if len(positional) != 0 {
 			return usageErrorf("usage: anas config plan [-w <workspace>] [-c config.yml] [--json]")
 		}
+		if err := validateManagedConfig(workspace, *cfgPath); err != nil {
+			return preconditionErrorf("config_not_managed", "%s", err.Error())
+		}
 		return reportConfigPlan(workspace, *cfgPath, base, reg, jsonMode)
 	default:
-		return usageErrorf("unknown config command %q; expected list, set, explain, plan or secret", subcommand)
+		return usageErrorf("unknown config command %q; expected import, migrate, list, set, explain, plan or secret", subcommand)
 	}
 }
 
@@ -186,18 +240,24 @@ func runConfigSecret(args []string, jsonMode bool) error {
 			return usageErrorf("usage: anas config secret list [-w <workspace>] [--json]")
 		}
 		keys := make([]string, 0, len(store.values))
+		sources := map[string]string{}
 		for key := range store.values {
 			keys = append(keys, key)
+			sources[key] = store.metadata[key].Kind
 		}
 		sort.Strings(keys)
 		if jsonMode {
 			// Keys only. `list` exists so an operator can discover what was
 			// generated; putting the values here would make a routine
 			// inventory command leak every secret into whatever captured it.
-			return emitOK(map[string]any{"workspace": workspace, "keys": keys})
+			items := make([]map[string]string, 0, len(keys))
+			for _, key := range keys {
+				items = append(items, map[string]string{"key": key, "source": sources[key]})
+			}
+			return emitOK(map[string]any{"workspace": workspace, "keys": keys, "secrets": items})
 		}
 		for _, key := range keys {
-			fmt.Println(key)
+			fmt.Printf("%s\t%s\n", sources[key], key)
 		}
 		return nil
 	case "get":
@@ -205,12 +265,13 @@ func runConfigSecret(args []string, jsonMode bool) error {
 			return usageErrorf("usage: anas config secret get <KEY> [-w <workspace>] [--json]")
 		}
 		value, ok := store.values[positional[0]]
+		source := store.metadata[positional[0]].Kind
 		if !ok {
 			return preconditionErrorf("secret_missing",
 				"no generated secret %q; use `anas config secret list`", positional[0])
 		}
 		if jsonMode {
-			return emitOK(map[string]any{"workspace": workspace, "key": positional[0], "value": value})
+			return emitOK(map[string]any{"workspace": workspace, "key": positional[0], "source": source, "value": value})
 		}
 		fmt.Println(value)
 		return nil

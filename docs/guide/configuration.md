@@ -2,7 +2,7 @@
 
 ## 配置文件的职责
 
-`<workspace>/config.yml` 是用户维护的期望状态；`config.lock.yml` 是 ANAS 解析并固化的 Module 版本、能力提供方和宿主机策略。不要手工编辑 `.anas/` 中的运行状态。
+`<workspace>/config.yml` 是 ANAS CLI 管理的规范化期望状态；它不是用户手工维护的输入文件。外部 YAML 只能通过 `anas config import SOURCE -w WORKSPACE` 导入，源文件不会被修改。`config.lock.yml` 是 ANAS 解析并固化的 Module 版本、能力提供方和宿主机策略。不要手工编辑 workspace 配置或 `.anas/` 运行状态；plan、lock、render 和 apply 会校验配置摘要并拒绝越权修改。
 
 配置只支持结构化 YAML。主要区域为：
 
@@ -20,9 +20,10 @@
 
 ## 修改和预览
 
-可以直接编辑 YAML，也可以使用 CLI：
+初始化后导入外部配置，之后只通过 CLI 修改：
 
 ```bash
+anas config import ./my-config.yml -w /srv/anas
 anas config explain nextcloud.domain_prefix
 anas config set global.timezone Asia/Singapore -w /srv/anas
 anas config plan -w /srv/anas
@@ -115,15 +116,19 @@ Runner 会为每个 Consumer 创建独立数据库、用户和稳定生成的凭
 | `meshcentral` | 支持 | 支持 |
 | `authentik` | 支持 | 不支持（Manifest 未声明） |
 
-## Secret
+## Secret 边界
 
-不要把真实 Secret 写进示例文件或提交到版本库。`config secret list` 只列键名；只有明确的 `config secret get` 操作会输出明文。生成的 Secret 位于受保护的 workspace 运行目录中，并由 ANAS 备份流程处理。
+DNS API token 等普通部署输入保留在系统管理的 `config.yml` 中；该文件权限为 `0600`，CLI 库存和 plan 对 sensitive 字段脱敏，值通过 `config set` 一类配置命令修改。不要提交含真实 Secret 的外部源文件。
+
+只有 `lifecycle_managed` 凭据会在导入时从 workspace 配置原子剥离：包括 Module 本地管理员密码，以及 Manifest 将变化声明为 `credential_rotate`、必须调用应用 API/CLI 才能正确改变的凭据。它们与系统生成的密码统一保存在版本化 `.anas/secrets.yml`（`0600`），记录稳定逻辑 key、owner、kind 和 provenance。旧 `.anas/secrets.generated.yml` 不受支持，也不会自动迁移。
+
+`config secret list` 只列存储键和类型；只有明确的 `config secret get` 操作会输出明文。导入失败不会修改 `config.yml`、`secrets.yml` 或配置摘要。备份和快照必须把 `config.yml` 与 `secrets.yml` 都按明文敏感数据保护。
 
 ## Module 本地管理员
 
 `management.local_accounts` 是 Module Manifest 的能力声明；用户配置只能设置全局用户名
 模板或按账号 ID 覆盖用户名。这里的账号 ID（如 `primary`、`break_glass`）不是用户名。
-密码不能写进 `config.yml`。查询与轮换分别使用：
+生命周期托管密码不能长期写进 `config.yml`；外部导入文件可把它作为一次性 bootstrap 输入，成功导入后 workspace 副本会移除该值。查询与轮换分别使用：
 
 ```bash
 anas admin local credential nextcloud break_glass -w /srv/anas

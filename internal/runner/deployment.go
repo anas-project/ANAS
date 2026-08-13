@@ -184,6 +184,9 @@ func parsePrepareOptions(name string, args []string) (prepareOptions, error) {
 	if !exists(out.cfgPath) {
 		return out, preconditionErrorf("config_missing", "config %s does not exist", out.cfgPath)
 	}
+	if err := validateManagedConfig(workspace, out.cfgPath); err != nil {
+		return out, preconditionErrorf("config_not_managed", "%s", err.Error())
+	}
 	root, err := locateModuleRoot(out.moduleRoot)
 	if err != nil {
 		return out, preconditionErrorf("module_root_missing", "%s", err.Error())
@@ -205,6 +208,9 @@ func runLock(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("module_root_invalid", "%s", err.Error())
 	}
+	if err := rejectUnimportedConfigSecrets(opts.cfgPath, reg); err != nil {
+		return preconditionErrorf("config_requires_import", "%s", err.Error())
+	}
 	lockPath := absolutePath(projectLockPath(opts.cfgPath))
 	lock, err := loadModuleLockFile(lockPath)
 	if err != nil {
@@ -216,6 +222,10 @@ func runLock(args []string, jsonMode bool) error {
 	}
 	a := &app{cfg: cfg, cfgPath: opts.cfgPath, reg: reg, contracts: contracts, lock: lock, resolvedBindings: map[string]map[string]string{}}
 	a.env, a.envOwner = cfg.BaseEnvWithOwners()
+	a.base = opts.base
+	if err := a.loadImportedSecrets(); err != nil {
+		return preconditionErrorf("secrets_unreadable", "%s", err.Error())
+	}
 	if err := a.validateContractRegistry(); err != nil {
 		return preconditionErrorf("contract_invalid", "%s", err.Error())
 	}
@@ -294,16 +304,22 @@ func runPlan(args []string, jsonMode bool) error {
 	fs.StringVar(cfgPath, "config", "", "config file")
 	moduleRoot := fs.String("module-root", "", "directory containing module bundles")
 	rootAlias := fs.String("root", "", "project root or module bundle directory")
-	// Accepted for command-line symmetry, but plan intentionally never creates
-	// or reads runtime state, so it neither requires nor validates a workspace.
-	_ = fs.String("w", "", "unused workspace path")
-	_ = fs.String("workspace", "", "unused workspace path")
+	workspaceFlag := fs.String("w", "", "workspace path")
+	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
 	registerJSONFlag(fs)
 	if err := fs.Parse(args); err != nil {
 		return usageErrorf("%s", err.Error())
 	}
-	if *cfgPath == "" || fs.NArg() != 0 {
-		return usageErrorf("usage: anas plan -c config.yml [--module-root modules] [--json]")
+	if fs.NArg() != 0 {
+		return usageErrorf("usage: anas plan [-w workspace] [-c config.yml] [--module-root modules] [--json]")
+	}
+	workspace, err := resolveWorkspace(*workspaceFlag)
+	if err != nil {
+		return usageErrorf("%s", err.Error())
+	}
+	configPath := absolutePath(configPathFor(workspace, *cfgPath))
+	if err := validateManagedConfig(workspace, configPath); err != nil {
+		return preconditionErrorf("config_not_managed", "%s", err.Error())
 	}
 	explicit := *moduleRoot
 	if explicit == "" {
@@ -313,7 +329,6 @@ func runPlan(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("module_root_missing", "%s", err.Error())
 	}
-	configPath := absolutePath(*cfgPath)
 	if !exists(configPath) {
 		return preconditionErrorf("config_missing", "config %s does not exist", configPath)
 	}
@@ -325,12 +340,19 @@ func runPlan(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("module_root_invalid", "%s", err.Error())
 	}
+	if err := rejectUnimportedConfigSecrets(configPath, reg); err != nil {
+		return preconditionErrorf("config_requires_import", "%s", err.Error())
+	}
 	contracts, err := loadContractRegistry(located)
 	if err != nil {
 		return preconditionErrorf("contract_root_invalid", "%s", err.Error())
 	}
 	a := &app{cfg: cfg, cfgPath: configPath, reg: reg, contracts: contracts, resolvedBindings: map[string]map[string]string{}}
 	a.env, a.envOwner = cfg.BaseEnvWithOwners()
+	a.base = stateDir(workspace)
+	if err := a.loadImportedSecrets(); err != nil {
+		return preconditionErrorf("secrets_unreadable", "%s", err.Error())
+	}
 	if err := a.validateContractRegistry(); err != nil {
 		return preconditionErrorf("contract_invalid", "%s", err.Error())
 	}
@@ -371,6 +393,11 @@ func runPrepare(action string, args []string, jsonMode bool) error {
 		return err
 	}
 	announceWorkspace(opts.workspace)
+	unlock, err := acquireRuntimeLock(opts.base)
+	if err != nil {
+		return failuref("lock_failed", "%s", err.Error())
+	}
+	defer unlock()
 	id, err := materializeDeployment(opts, action == "build", jsonMode)
 	if err != nil {
 		return err
@@ -397,6 +424,9 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	reg, err := loadRegistryDir(opts.moduleRoot)
 	if err != nil {
 		return "", preconditionErrorf("module_root_invalid", "%s", err.Error())
+	}
+	if err := rejectUnimportedConfigSecrets(opts.cfgPath, reg); err != nil {
+		return "", preconditionErrorf("config_requires_import", "%s", err.Error())
 	}
 	contracts, err := loadContractRegistry(opts.moduleRoot)
 	if err != nil {
@@ -434,6 +464,9 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		resolvedBindings: map[string]map[string]string{},
 	}
 	a.env, a.envOwner = cfg.BaseEnvWithOwners()
+	if err := a.loadImportedSecrets(); err != nil {
+		return "", preconditionErrorf("secrets_unreadable", "%s", err.Error())
+	}
 	a.applyWorkspaceEnv()
 	if err := a.validateContractRegistry(); err != nil {
 		return "", preconditionErrorf("contract_invalid", "%s", err.Error())

@@ -11,7 +11,7 @@ import (
 
 func localAdminTestApp(t *testing.T, base string, template string) *app {
 	t.Helper()
-	secrets := &secretStore{path: filepath.Join(base, "secrets.generated.yml"), values: map[string]string{}}
+	secrets := &secretStore{path: filepath.Join(base, "secrets.yml"), values: map[string]string{}}
 	return &app{
 		base: base,
 		cfg: &config.File{Administration: config.Administration{LocalAccounts: config.LocalAccountDefaults{
@@ -182,7 +182,7 @@ func localAdminRotationFixture(t *testing.T, hookBody string) (string, localAdmi
 	if err := state.Save(); err != nil {
 		t.Fatal(err)
 	}
-	secrets := &secretStore{path: filepath.Join(base, "secrets.generated.yml"), values: map[string]string{record.SecretKey: "old-password"}, dirty: true}
+	secrets := &secretStore{path: filepath.Join(base, "secrets.yml"), values: map[string]string{record.SecretKey: "old-password"}, dirty: true}
 	if err := secrets.Save(); err != nil {
 		t.Fatal(err)
 	}
