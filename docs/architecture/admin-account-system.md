@@ -218,6 +218,30 @@ DDNS_GO_LOCAL_ADMIN_PASSWORD
 - `.anas/runtime-secrets/`：bootstrap-only 容器的 0600 可再生运行时投影，不进入制品；
 - 应用内部状态：只保存应用需要的 hash/凭据。修改成功并验证后，Secret Store 才提交。
 
+三份核心状态的关系可以用一次 Nextcloud 导入说明。外部配置可能同时包含普通部署 Secret
+和一次性管理员 bootstrap 密码：
+
+```yaml
+modules:
+  nextcloud:
+    administration:
+      local_accounts:
+        break_glass:
+          username: admin_nextcloud
+          password: Initial-Nextcloud-Password
+secrets:
+  cloudflare_dns_api_token: cloudflare-token-123
+```
+
+受控导入后，workspace `config.yml` 保留用户名与 Cloudflare token，但移除本地管理员密码；
+`.anas/secrets.yml` 以稳定逻辑 key
+`ANAS_LOCAL_ADMIN__NEXTCLOUD__BREAK_GLASS__PASSWORD` 保存该密码及
+`owner: nextcloud`、`kind: local_admin`、导入路径 provenance；
+`.anas/config-managed.yml` 只保存规范化 `config.yml` 的 SHA-256 和合法写入来源，不包含
+配置副本或 Secret。因而普通 `config set` 同时更新 config 与摘要，管理员轮换只在应用验证
+成功后更新 Secret Store，快照/备份恢复则必须同时恢复三者。完整文件示例和操作矩阵见
+[配置指南](/guide/configuration#config-yml-config-managed-yml-与-secrets-yml)。
+
 初始化后改变普通 username override 会明确报错并指出锁定值，不能静默无效。通用
 rename/migrate 命令尚不存在：只有应用提供“改名、验证、失败回滚”的专用 handler 后才能
 声明该能力。
