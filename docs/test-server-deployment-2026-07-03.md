@@ -8,7 +8,7 @@
 本次验证通过：
 
 - Go 1.24.2 Linux/amd64 构建；
-- 全部 Go 单元测试和 cask manifest 静态校验；
+- 全部 Go 单元测试和 module manifest 静态校验；
 - 7 组配置矩阵的 plan/render；
 - 支持升级与拒绝降级的 lock fixture 校验；
 - 全部渲染模块的 `docker compose config` 校验；

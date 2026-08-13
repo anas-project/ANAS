@@ -19,7 +19,7 @@ func selectionApp() *app {
 
 func TestLifecycleStartIncludesTransitiveDependencies(t *testing.T) {
 	a := selectionApp()
-	got, err := selectLifecycleCasks(a, "start", []string{"collabora"})
+	got, err := selectLifecycleModules(a, "start", []string{"collabora"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestLifecycleStartIncludesTransitiveDependencies(t *testing.T) {
 
 func TestLifecycleStopIncludesTransitiveDependents(t *testing.T) {
 	a := selectionApp()
-	got, err := selectLifecycleCasks(a, "stop", []string{"postgres"})
+	got, err := selectLifecycleModules(a, "stop", []string{"postgres"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestLifecycleRestartIncludesUnionOfDependentChains(t *testing.T) {
 	a := selectionApp()
 	// CLI order is deliberately unrelated to dependency order. The merged
 	// chains must still come back in the deployment's frozen order.
-	got, err := selectLifecycleCasks(a, "restart", []string{"postgres", "lego"})
+	got, err := selectLifecycleModules(a, "restart", []string{"postgres", "lego"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestLifecycleRestartIncludesUnionOfDependentChains(t *testing.T) {
 
 func TestLifecycleLeafRestartDoesNotRestartItsDependencies(t *testing.T) {
 	a := selectionApp()
-	got, err := selectLifecycleCasks(a, "restart", []string{"collabora"})
+	got, err := selectLifecycleModules(a, "restart", []string{"collabora"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestLifecycleLeafRestartDoesNotRestartItsDependencies(t *testing.T) {
 func TestLifecycleWithoutTargetsStillSelectsEverything(t *testing.T) {
 	a := selectionApp()
 	for _, action := range []string{"start", "stop", "restart"} {
-		got, err := selectLifecycleCasks(a, action, nil)
+		got, err := selectLifecycleModules(a, action, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -81,9 +81,9 @@ func TestLifecycleWithoutTargetsStillSelectsEverything(t *testing.T) {
 
 // The command line is not a dependency order. Whatever order the names are
 // typed in, postgres has to start before nextcloud.
-func TestSelectCasksKeepsDeploymentOrder(t *testing.T) {
+func TestSelectModulesKeepsDeploymentOrder(t *testing.T) {
 	a := selectionApp()
-	got, err := selectCasks(a, []string{"nextcloud", "postgres"})
+	got, err := selectModules(a, []string{"nextcloud", "postgres"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,9 +94,9 @@ func TestSelectCasksKeepsDeploymentOrder(t *testing.T) {
 
 // No names means the whole deployment, which is what these commands did before
 // they could be narrowed.
-func TestSelectCasksDefaultsToEverything(t *testing.T) {
+func TestSelectModulesDefaultsToEverything(t *testing.T) {
 	a := selectionApp()
-	got, err := selectCasks(a, nil)
+	got, err := selectModules(a, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,18 +113,18 @@ func TestSelectCasksDefaultsToEverything(t *testing.T) {
 
 // A name that is not in this deployment is a usage error naming what is, rather
 // than a silent no-op that reports success having done nothing.
-func TestSelectCasksRejectsUnknownNames(t *testing.T) {
+func TestSelectModulesRejectsUnknownNames(t *testing.T) {
 	a := selectionApp()
-	_, err := selectCasks(a, []string{"traefik", "nosuchcask"})
+	_, err := selectModules(a, []string{"traefik", "nosuchmodule"})
 	if err == nil {
-		t.Fatal("an unknown cask was accepted")
+		t.Fatal("an unknown module was accepted")
 	}
-	if !strings.Contains(err.Error(), "nosuchcask") {
-		t.Errorf("the error does not name the bad cask: %v", err)
+	if !strings.Contains(err.Error(), "nosuchmodule") {
+		t.Errorf("the error does not name the bad module: %v", err)
 	}
 	// It also says what the deployment does carry, so the reader does not have
 	// to go and look it up.
 	if !strings.Contains(err.Error(), "traefik") {
-		t.Errorf("the error does not list the available casks: %v", err)
+		t.Errorf("the error does not list the available modules: %v", err)
 	}
 }

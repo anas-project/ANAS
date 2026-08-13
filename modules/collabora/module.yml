@@ -1,0 +1,58 @@
+api_version: anas.module/v1
+kind: Module
+name: collabora
+version: 26.4.2
+revision: 1
+app_version: 26.04.2.4.1
+abi:
+  supports:
+    - anas.module-hook/v1
+title: Collabora Online
+description: Online document editing backend for Nextcloud.
+category: app
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  requires:
+    - nextcloud
+upgrade:
+  # Empty, not absent: no release of this module has rewritten its on-disk data
+  # format. Absent would mean "unknown" and would block every rollback that
+  # changes the version. See docs/contracts/snapshot.md.
+  data_breaking: []
+config:
+  # Cross-module values this module reads. Listing them is what lets a rendered
+  # .env carry only what is used, instead of everything the dependency
+  # closure happens to own.
+  consumes:
+    - COLLABORA_ADMIN_USERNAME
+    - COLLABORA_ALIAS_GROUP
+    - NEXTCLOUD_DOMAIN_FULL
+    - SAMBA_DC_ADMIN_NAME
+    - TRAEFIK_BASE_PORT
+  defaults:
+    domain_prefix: collabora
+    log_level: warning
+    interface: default
+    auto_save: "60"
+  exports:
+    - COLLABORA_DOMAIN_FULL
+    - COLLABORA_HOSTNAME
+  changes:
+    domain_prefix:
+      effect: container_recreate
+      apply: recreate-collabora
+      description: The proxy route and Collabora hostname change.
+    log_level:
+      effect: container_recreate
+      apply: recreate-collabora
+      description: The value is injected into the container environment.
+features:
+  domain: true
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

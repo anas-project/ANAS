@@ -2,9 +2,9 @@ package runner
 
 // Whether a version change can be undone.
 //
-// A cask upgrade may rewrite the format of the data already on disk. Nothing in
+// A module upgrade may rewrite the format of the data already on disk. Nothing in
 // the settings diff shows that, and nothing in the artifact records it, so the
-// only way the runner can know is for the cask to say so. `upgrade.data_breaking`
+// only way the runner can know is for the module to say so. `upgrade.data_breaking`
 // is that statement: the versions at which the on-disk format changed, so that
 // data written at or above one of them cannot be read by anything below it.
 //
@@ -13,11 +13,11 @@ package runner
 // 33.0.0 may cross two separate breaks at once. Only the individual break points
 // make an arbitrary jump decidable.
 //
-// The whole file turns on one distinction: a cask that has not declared
-// data_breaking is not the same as a cask that has declared it empty. Silence is
+// The whole file turns on one distinction: a module that has not declared
+// data_breaking is not the same as a module that has declared it empty. Silence is
 // unknown and stays blocked; `[]` is a checkable claim that no release ever
 // rewrote the format, and it is what permits a rollback. Collapsing the two
-// would make the crossing predicate false for every cask that has not been
+// would make the crossing predicate false for every module that has not been
 // annotated and turn the conservative default inside out.
 
 import (
@@ -26,7 +26,7 @@ import (
 	"strings"
 )
 
-// dataVerdict is what can be said about the data after moving a cask between
+// dataVerdict is what can be said about the data after moving a module between
 // two versions.
 type dataVerdict int
 
@@ -34,7 +34,7 @@ const (
 	// dataUnchanged: the versions are the same, so no format can have moved.
 	// This is the config-only case, and it is the common one.
 	dataUnchanged dataVerdict = iota
-	// dataUnknown: the versions differ and the cask says nothing about its data
+	// dataUnknown: the versions differ and the module says nothing about its data
 	// format. Everything the runner could conclude would be a guess.
 	dataUnknown
 	// dataCompatible: declared, and no break point lies in the interval.
@@ -44,23 +44,23 @@ const (
 	dataBreaking
 )
 
-// caskDataVerdict decides what moving a cask between two versions does to the
+// moduleDataVerdict decides what moving a module between two versions does to the
 // data. Direction does not matter — the interval is the same either way, and
 // what changes is only what the caller does with the answer.
 //
 // declared must be the declaration attached to the *higher* of the two
 // versions; see governingDataBreaking for why.
 //
-// Versions are cask versions, not app_version. That is the granularity
-// validateUpgrade already constrains, and several casks (samba_dc, lego,
+// Versions are module versions, not app_version. That is the granularity
+// validateUpgrade already constrains, and several modules (samba_dc, lego,
 // ddns_updater) carry no app_version at all. The two cannot disagree in practice: both
-// are read out of the same cask.yml, so equal versions always imply equal
+// are read out of the same module.yml, so equal versions always imply equal
 // app_versions.
 //
 // Anything unparseable degrades to dataUnknown rather than to dataCompatible.
 // A malformed version is a bug somewhere, and the safe reading of a bug in a
 // safety declaration is that the guard might have applied.
-func caskDataVerdict(fromVersion, toVersion string, declared *[]string) (dataVerdict, string) {
+func moduleDataVerdict(fromVersion, toVersion string, declared *[]string) (dataVerdict, string) {
 	from, fromErr := parseSemver(fromVersion)
 	to, toErr := parseSemver(toVersion)
 	if fromErr != nil || toErr != nil {
@@ -109,9 +109,9 @@ func caskDataVerdict(fromVersion, toVersion string, declared *[]string) (dataVer
 // transition: always the one belonging to the higher version.
 //
 // Only the release that broke the format can know that it did. The older
-// cask.yml was written before the break existed and cannot mention it, so
+// module.yml was written before the break existed and cannot mention it, so
 // consulting it would report "compatible" for precisely the transitions that
-// are not. The runner only ever holds the cask.yml of the versions involved,
+// are not. The runner only ever holds the module.yml of the versions involved,
 // which is why this has to be resolved by rule rather than by looking at the
 // history in between.
 func governingDataBreaking(fromVersion string, fromDeclared *[]string, toVersion string, toDeclared *[]string) *[]string {
@@ -126,9 +126,9 @@ func governingDataBreaking(fromVersion string, fromDeclared *[]string, toVersion
 	return toDeclared
 }
 
-// caskTransitionVerdict answers the question for one cask across a deployment
+// moduleTransitionVerdict answers the question for one module across a deployment
 // transition, resolving the governing declaration on the caller's behalf.
-func caskTransitionVerdict(from, to deploymentCask) (dataVerdict, string) {
+func moduleTransitionVerdict(from, to deploymentModule) (dataVerdict, string) {
 	if strings.TrimSpace(from.Version) == strings.TrimSpace(to.Version) && from.Revision != to.Revision {
 		declared := to.DataBreaking
 		higher := to
@@ -141,49 +141,49 @@ func caskTransitionVerdict(from, to deploymentCask) (dataVerdict, string) {
 		}
 		for _, raw := range *declared {
 			if strings.TrimSpace(raw) == strings.TrimSpace(higher.Version) {
-				return dataBreaking, formatCaskRelease(higher.Version, higher.Revision)
+				return dataBreaking, formatModuleRelease(higher.Version, higher.Revision)
 			}
 		}
 		return dataCompatible, ""
 	}
 	declared := governingDataBreaking(from.Version, from.DataBreaking, to.Version, to.DataBreaking)
-	return caskDataVerdict(from.Version, to.Version, declared)
+	return moduleDataVerdict(from.Version, to.Version, declared)
 }
 
 // ---------------------------------------------------------------- rollback
 
-// dataBreakingCrossing is one cask whose rollback would step back over a
+// dataBreakingCrossing is one module whose rollback would step back over a
 // declared break point.
 type dataBreakingCrossing struct {
-	Cask string
-	From string // the deployed version, the one that wrote the data
-	To   string // the rollback target, the one that would have to read it
-	At   string // the declared version at which the format changed
+	Module string
+	From   string // the deployed version, the one that wrote the data
+	To     string // the rollback target, the one that would have to read it
+	At     string // the declared version at which the format changed
 }
 
 // rollbackVersionGuard separates the two kinds of "no" a rollback can be given,
 // because they deserve different escapes.
 type rollbackVersionGuard struct {
 	// Blocked lists changes whose data compatibility is merely unknown: an
-	// undeclared version change, a cask appearing, a cask disappearing.
+	// undeclared version change, a module appearing, a module disappearing.
 	// --allow-risky is a legitimate answer to these, since an operator may know
-	// something the cask author never wrote down.
+	// something the module author never wrote down.
 	Blocked []string
 	// Crossings lists changes that provably cannot work. There is no escape for
 	// these — see breakingError.
 	Crossings []dataBreakingCrossing
 }
 
-// deploymentRollbackVersionGuard classifies every cask difference between the
+// deploymentRollbackVersionGuard classifies every module difference between the
 // running deployment and the rollback target.
 //
 // This replaces a placeholder that treated any version difference at all as
 // unknown and blocked it, down to a patch bump. That was the only honest answer
-// while no cask said anything about its data format; now that they can, the
+// while no module said anything about its data format; now that they can, the
 // block narrows to the cases that are actually unsafe.
 //
 // The narrowing is a usability change, not a safety one, and it rests entirely
-// on cask authors declaring correctly — which is why an absent declaration
+// on module authors declaring correctly — which is why an absent declaration
 // still lands in Blocked exactly as before.
 func deploymentRollbackVersionGuard(current, target *deploymentManifest) rollbackVersionGuard {
 	guard := rollbackVersionGuard{Blocked: []string{}}
@@ -191,46 +191,46 @@ func deploymentRollbackVersionGuard(current, target *deploymentManifest) rollbac
 		return guard
 	}
 	names := map[string]bool{}
-	for name := range current.Casks {
+	for name := range current.Modules {
 		names[name] = true
 	}
-	for name := range target.Casks {
+	for name := range target.Modules {
 		names[name] = true
 	}
 	for name := range names {
-		from, fromOK := current.Casks[name]
-		to, toOK := target.Casks[name]
+		from, fromOK := current.Modules[name]
+		to, toOK := target.Modules[name]
 		switch {
 		case !fromOK:
-			// Rolling forward into a cask the running deployment does not have.
+			// Rolling forward into a module the running deployment does not have.
 			guard.Blocked = append(guard.Blocked,
-				fmt.Sprintf("cask %s removal (data compatibility unknown)", name))
+				fmt.Sprintf("module %s removal (data compatibility unknown)", name))
 			continue
 		case !toOK:
-			// The target predates this cask; its data would be left on disk with
+			// The target predates this module; its data would be left on disk with
 			// nothing running against it.
 			guard.Blocked = append(guard.Blocked,
-				fmt.Sprintf("cask %s addition (data compatibility unknown)", name))
+				fmt.Sprintf("module %s addition (data compatibility unknown)", name))
 			continue
 		}
-		verdict, at := caskTransitionVerdict(from, to)
+		verdict, at := moduleTransitionVerdict(from, to)
 		switch verdict {
 		case dataUnchanged, dataCompatible:
-			// Nothing to say. Rollback never touches data, so a cask whose format
+			// Nothing to say. Rollback never touches data, so a module whose format
 			// did not move across this interval simply carries on reading it.
 		case dataUnknown:
 			guard.Blocked = append(guard.Blocked, fmt.Sprintf(
-				"cask %s %s/%s -> %s/%s (data compatibility unknown; the cask does not declare upgrade.data_breaking)",
-				name, formatCaskRelease(from.Version, from.Revision), from.AppVersion, formatCaskRelease(to.Version, to.Revision), to.AppVersion))
+				"module %s %s/%s -> %s/%s (data compatibility unknown; the module does not declare upgrade.data_breaking)",
+				name, formatModuleRelease(from.Version, from.Revision), from.AppVersion, formatModuleRelease(to.Version, to.Revision), to.AppVersion))
 		case dataBreaking:
 			guard.Crossings = append(guard.Crossings, dataBreakingCrossing{
-				Cask: name, From: formatCaskRelease(from.Version, from.Revision), To: formatCaskRelease(to.Version, to.Revision), At: at,
+				Module: name, From: formatModuleRelease(from.Version, from.Revision), To: formatModuleRelease(to.Version, to.Revision), At: at,
 			})
 		}
 	}
 	sort.Strings(guard.Blocked)
 	sort.Slice(guard.Crossings, func(i, j int) bool {
-		return guard.Crossings[i].Cask < guard.Crossings[j].Cask
+		return guard.Crossings[i].Module < guard.Crossings[j].Module
 	})
 	return guard
 }
@@ -248,7 +248,7 @@ func (g rollbackVersionGuard) breakingError() error {
 	}
 	var b strings.Builder
 	for _, c := range g.Crossings {
-		fmt.Fprintf(&b, "cannot roll back %s %s -> %s: crosses data-breaking version %s\n", c.Cask, c.From, c.To, c.At)
+		fmt.Fprintf(&b, "cannot roll back %s %s -> %s: crosses data-breaking version %s\n", c.Module, c.From, c.To, c.At)
 		fmt.Fprintf(&b, "data written by %s cannot be read by %s\n", c.From, c.To)
 	}
 	b.WriteString("\nto return to that state, restore a snapshot instead:\n")
@@ -268,7 +268,7 @@ type applySnapshotTrigger struct {
 // deploymentSnapshotTrigger decides whether an apply is one the operator cannot
 // take back by editing config.yml and applying again.
 //
-// Two things qualify. A cask upgrade that crosses a declared break point, since
+// Two things qualify. A module upgrade that crosses a declared break point, since
 // after it the old artifact can no longer read the data. And a changed setting
 // whose effect is not automatically reversible — data_migrate rewrites what is
 // there, credential_rotate changes state inside the service that putting the old
@@ -286,21 +286,21 @@ func deploymentSnapshotTrigger(current, target *deploymentManifest) *applySnapsh
 	// The upgrade case is reported first: it is the more severe of the two, and
 	// only one snapshot is taken either way.
 	breaking := []string{}
-	for name, to := range target.Casks {
-		from, ok := current.Casks[name]
+	for name, to := range target.Modules {
+		from, ok := current.Modules[name]
 		if !ok {
-			// A cask being added has no prior data, so there is nothing to break.
+			// A module being added has no prior data, so there is nothing to break.
 			continue
 		}
-		if verdict, at := caskTransitionVerdict(from, to); verdict == dataBreaking {
-			breaking = append(breaking, fmt.Sprintf("%s %s -> %s crosses data-breaking version %s", name, formatCaskRelease(from.Version, from.Revision), formatCaskRelease(to.Version, to.Revision), at))
+		if verdict, at := moduleTransitionVerdict(from, to); verdict == dataBreaking {
+			breaking = append(breaking, fmt.Sprintf("%s %s -> %s crosses data-breaking version %s", name, formatModuleRelease(from.Version, from.Revision), formatModuleRelease(to.Version, to.Revision), at))
 		}
 	}
 	if len(breaking) > 0 {
 		sort.Strings(breaking)
 		return &applySnapshotTrigger{
-			reason: snapshotReasonCaskUpgradeBreaking,
-			detail: "cask upgrade rewrites data on disk: " + strings.Join(breaking, "; "),
+			reason: snapshotReasonModuleUpgradeBreaking,
+			detail: "module upgrade rewrites data on disk: " + strings.Join(breaking, "; "),
 		}
 	}
 	changed := []string{}

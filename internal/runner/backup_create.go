@@ -241,8 +241,8 @@ func backupContainersToStop(workspace string) []string {
 	}
 	names := []string{}
 	if cli, err := compose.Detect(); err == nil {
-		if a, casksRoot, _, err := loadDeploymentApp(base, active.ActiveDeployment, cli); err == nil {
-			for _, name := range runningCasks(a, casksRoot) {
+		if a, modulesRoot, _, err := loadDeploymentApp(base, active.ActiveDeployment, cli); err == nil {
+			for _, name := range runningModules(a, modulesRoot) {
 				names = append(names, "anas_"+name)
 			}
 			return names
@@ -250,8 +250,8 @@ func backupContainersToStop(workspace string) []string {
 	}
 	if manifest, err := loadDeploymentManifest(deploymentArtifactDir(base, active.ActiveDeployment)); err == nil {
 		for _, name := range manifest.ModuleOrder {
-			// Casks that start no containers have no container to name.
-			if manifest.Casks[name].RuntimeType != "compose" {
+			// Modules that start no containers have no container to name.
+			if manifest.Modules[name].RuntimeType != "compose" {
 				continue
 			}
 			names = append(names, "anas_"+name)
@@ -384,7 +384,7 @@ func createBackup(workspace string, plan *backupPlan, opts backupOptions) (*back
 		BackupID: id, Mode: plan.Mode, CreatedAt: started.Format(time.RFC3339),
 		SourceSnapshot: snapshotID, Incremental: plan.Incremental, Parent: plan.Parent,
 		SizeBytes: result.bytes, DeploymentID: source.deploymentID,
-		ConfigDigest: source.configDigest, Casks: source.casks,
+		ConfigDigest: source.configDigest, Modules: source.modules,
 		Channels: result.channels, Complete: true,
 	}
 	if err := writeBackupManifest(destRoot, manifest); err != nil {
@@ -420,7 +420,7 @@ func prepareBackupSource(workspace, base string, plan *backupPlan, opts backupOp
 
 	var txn *containerTransaction
 	var a *app
-	var casksRoot string
+	var modulesRoot string
 	downtimeStart := time.Now()
 	downtime := 0
 
@@ -434,17 +434,17 @@ func prepareBackupSource(workspace, base string, plan *backupPlan, opts backupOp
 			if err != nil {
 				return nil, "", 0, failuref("compose_missing", "%v", err)
 			}
-			a, casksRoot, _, err = loadDeploymentApp(base, active.ActiveDeployment, cli)
+			a, modulesRoot, _, err = loadDeploymentApp(base, active.ActiveDeployment, cli)
 			if err != nil {
 				return nil, "", 0, err
 			}
 			emitProgress(opts.json, "stop_containers", 0, 0, "containers")
-			txn, err = beginContainerTransaction(base, a, casksRoot, active.ActiveDeployment)
+			txn, err = beginContainerTransaction(base, a, modulesRoot, active.ActiveDeployment)
 			if err != nil {
 				// The transaction record already exists, so the restart below
 				// still runs and the compensation still applies if this process
 				// dies first.
-				restartAfterBackup(base, a, casksRoot, txn, opts.json)
+				restartAfterBackup(base, a, modulesRoot, txn, opts.json)
 				return nil, "", 0, failuref("stop_failed", "%v", err)
 			}
 		}
@@ -459,7 +459,7 @@ func prepareBackupSource(workspace, base string, plan *backupPlan, opts backupOp
 		}
 		restarted = true
 		downtime = int(time.Since(downtimeStart).Seconds())
-		restartAfterBackup(base, a, casksRoot, txn, opts.json)
+		restartAfterBackup(base, a, modulesRoot, txn, opts.json)
 	}
 	defer restart()
 
@@ -493,12 +493,12 @@ func prepareBackupSource(workspace, base string, plan *backupPlan, opts backupOp
 // restartAfterBackup puts back exactly what was stopped. A failure here is
 // reported loudly and does not abort: the transaction record survives, and the
 // next command to take the exclusive lock tries again.
-func restartAfterBackup(base string, a *app, casksRoot string, txn *containerTransaction, jsonMode bool) {
+func restartAfterBackup(base string, a *app, modulesRoot string, txn *containerTransaction, jsonMode bool) {
 	if txn == nil || a == nil {
 		return
 	}
-	emitProgress(jsonMode, "start_containers", 0, int64(len(txn.Casks)), "containers")
-	if err := finishContainerTransaction(base, a, casksRoot, txn); err != nil {
+	emitProgress(jsonMode, "start_containers", 0, int64(len(txn.Modules)), "containers")
+	if err := finishContainerTransaction(base, a, modulesRoot, txn); err != nil {
 		fmt.Fprintf(os.Stderr,
 			"warning: could not start the containers this backup stopped: %v\n"+
 				"         the record at %s will be retried by the next anas command\n",

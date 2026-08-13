@@ -1,0 +1,82 @@
+api_version: anas.module/v1
+kind: Module
+name: ddns_go
+version: 6.17.4
+revision: 1
+app_version: 6.17.4
+abi:
+  supports:
+    - anas.module-hook/v1
+title: DDNS-GO
+description: Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage.
+category: network
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  requires:
+    - traefik
+upgrade:
+  # Empty, not absent: no release of this module has rewritten its on-disk data
+  # format. Absent would mean "unknown" and would block every rollback that
+  # changes the version. See docs/contracts/snapshot.md.
+  data_breaking: []
+config:
+  required:
+    - dns_provider
+  defaults:
+    domain_prefix: ddns-go
+    # Seconds between update checks. ddns-go's own default is 300.
+    interval: "300"
+    # How the host's own address is discovered, per family: url asks an outside
+    # service what the world sees, netInterface reads a local interface. url is
+    # the default because an interface often carries several addresses of one
+    # family and only an outside observer can say which one is reachable.
+    # Leaving urls or interface empty takes a sensible default; with
+    # netInterface the interface falls back to the one core detected.
+    ipv4_gettype: url
+    ipv6_gettype: url
+    ipv4_urls: ""
+    ipv6_urls: ""
+    ipv4_interface: ""
+    ipv6_interface: ""
+    web_enabled: "true"
+  # DNS vendor credentials arrive already materialised under this module's own
+  # env prefix, so the prefix rule in envScopeFor grants them and no vendor key
+  # needs to be claimed here. Only cross-module contract keys are consumed.
+  types:
+    web_enabled: bool
+    interval: int
+    ipv4_gettype:
+      enum: [url, netInterface]
+    ipv6_gettype:
+      enum: [url, netInterface]
+  # Traefik's Docker provider cannot see a host-network container, so the route
+  # is declared rather than discovered. See modules/traefik/README.md.
+  exports:
+    - ANAS_TRAEFIK_ROUTE__*
+features:
+  domain: true
+management:
+  surfaces:
+    - id: web
+      uri_from: DDNS_GO_DOMAIN_FULL
+      authentication:
+        primary: local
+  local_accounts:
+    - id: primary
+      purpose: primary
+      username:
+        template: global
+      credential:
+        policy: generated_per_module
+        container_format: bcrypt
+      lifecycle:
+        apply: reconcile
+        rotate: rotate-ddns-go-local-admin
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

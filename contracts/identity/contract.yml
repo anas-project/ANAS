@@ -1,0 +1,15 @@
+api_version: anas.contract/v1
+kind: Contract
+name: identity
+version: 1.0.0
+interfaces:
+  - oidc
+  - saml
+resource:
+  schema: schemas/client.yml
+  identity: [consumer, resource_id]
+operations:
+  ensure: {required: true}
+  inspect: {required: true}
+  rotate_credential: {required: false}
+  delete: {required: false}

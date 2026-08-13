@@ -1,0 +1,9 @@
+type: object
+additional_properties: false
+required: [consumer, resource_id, provider, interface, spec]
+properties:
+  consumer: {type: string}
+  resource_id: {type: string}
+  provider: {type: string}
+  interface: {enum: [postgres, mariadb]}
+  spec: {$ref: resource.yml}

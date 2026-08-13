@@ -1,38 +1,30 @@
 # netbird consumes the iam capability, which pulls in an identity provider and
 # its database. That widens the matrix beyond networking, but dropping netbird
-# to keep the label tidy would remove the most intricate cask here from
+# to keep the label tidy would remove the most intricate module here from
 # coverage, which is the opposite of what the matrix is for.
 modules:
-  - traefik
-  - lego
-  - samba_dc
-  - postgres
-  - authentik
-  - ddns_updater
-  - eturnal
-  - netbird
-  - freeradius
-
-iam:
-  provider: authentik
-
+  traefik: {}
+  lego: {}
+  samba_dc: {}
+  postgres: {}
+  authentik: {}
+  ddns_updater:
+    config:
+      dns_provider: cloudflare
+      zone_identifier: test-zone-id
+  eturnal: {}
+  netbird: {}
+  freeradius: {}
+identity:
+  iam:
+    provider: authentik
 global:
   base_domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: change-me-now
-
 env:
   BASICAUTH_USER: admin
-
-# A DNS vendor is now chosen per engine rather than deployment-wide. Cloudflare
-# uses a single API token, so this also covers the token-shaped credential.
-services:
-  ddns_updater:
-    env:
-      dns_provider: cloudflare
-      zone_identifier: test-zone-id
-
 secrets:
   cloudflare_dns_api_token: test-token-not-a-real-credential

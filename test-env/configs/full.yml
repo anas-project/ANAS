@@ -2,23 +2,28 @@
 # is what real deployments run; llng is covered by matrix-auth.yml. Only one
 # IAM can be active at a time, so the two providers cannot share a config.
 modules:
-  - samba_dc
-  - samba_fs
-  - postgres
-  - mariadb
-  - authentik
-  - nextcloud
-  - collabora
-  - meshcentral
-  - netbird
-  - lam
-  - ddns_updater
-  - eturnal
-  - freeradius
-
-iam:
-  provider: authentik
-
+  samba_dc: {}
+  samba_fs: {}
+  postgres: {}
+  mariadb: {}
+  authentik: {}
+  nextcloud: {}
+  collabora: {}
+  meshcentral: {}
+  netbird: {}
+  lam: {}
+  ddns_updater:
+    config:
+      dns_provider: cloudflare
+      zone_identifier: test-zone-id
+  eturnal: {}
+  freeradius: {}
+  lego:
+    config:
+      dns_provider: cloudflare
+identity:
+  iam:
+    provider: authentik
 global:
   # Both Dockerfile mirror substitutions are gated on this.
   chinese_speedup: true
@@ -29,12 +34,11 @@ global:
   # Must satisfy the password policy of the newest Samba release used by the
   # runtime smoke test.
   default_service_root_password: Anas-Test-2026!Root
-
 env:
   # Image builds fetch Debian and Alpine packages, and this host reaches the
   # upstream mirrors at a few KB/s when it reaches them at all -- apt exits 100
   # and the build fails for a reason that has nothing to do with what is being
-  # tested. The cask Dockerfiles substitute these when they are set.
+  # tested. The module Dockerfiles substitute these when they are set.
   # The host part only. The Dockerfiles substitute the hostname inside the
   # existing repository lines, which already carry their own path -- so a value
   # ending in /alpine produces .../alpine/alpine/v3.x/main and apk then reports
@@ -42,17 +46,5 @@ env:
   APT_MIRROR_URL: https://mirrors.aliyun.com
   APK_MIRROR_URL: https://mirrors.aliyun.com
   BASICAUTH_USER: admin
-
-# One credential, two engines: Cloudflare uses the same API token for the ACME
-# DNS-01 challenge and for record updates, so this covers the shared path.
-services:
-  lego:
-    env:
-      dns_provider: cloudflare
-  ddns_updater:
-    env:
-      dns_provider: cloudflare
-      zone_identifier: test-zone-id
-
 secrets:
   cloudflare_dns_api_token: test-token-not-a-real-credential

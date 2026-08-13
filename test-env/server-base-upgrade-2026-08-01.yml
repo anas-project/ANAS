@@ -1,19 +1,20 @@
 modules:
-  - samba_dc
-  - samba_fs
-  - postgres
-  - mariadb
-  - ddns_updater
-  - eturnal
-  - freeradius
-
+  samba_dc: {}
+  samba_fs: {}
+  postgres: {}
+  mariadb: {}
+  ddns_updater:
+    config:
+      dns_provider: cloudflare
+      zone_identifier: test-zone-id
+  eturnal: {}
+  freeradius: {}
 global:
   base_domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: AnasTest1!
-
 env:
   BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_base_
@@ -33,14 +34,5 @@ env:
   SAMBA_DC_HOST_IP: 10.253.0.2
   SAMBA_DC_INTERFACES: anas-b-peer
   SAMBA_FS_DNS_SERVER: 10.253.0.2
-
-# A DNS vendor is now chosen per engine rather than deployment-wide. Cloudflare
-# uses a single API token, so this also covers the token-shaped credential.
-services:
-  ddns_updater:
-    env:
-      dns_provider: cloudflare
-      zone_identifier: test-zone-id
-
 secrets:
   cloudflare_dns_api_token: test-token-not-a-real-credential

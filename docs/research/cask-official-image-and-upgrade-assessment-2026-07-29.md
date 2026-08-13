@@ -1,4 +1,4 @@
-# Cask 官方镜像切换与版本升级评估
+# Module 官方镜像切换与版本升级评估
 
 评估日期：2026-07-29
 实施更新：2026-08-01、2026-08-02
@@ -14,11 +14,11 @@
 - 网络与通信：`ddns`、`eturnal`、`freeradius`。
 - 目录和文件服务基础：`samba_dc`、`samba_fs`。
 
-2026-08-02 已继续处理应用层 cask：Authentik、Nextcloud、Collabora、MeshCentral、NetBird、LAM、LLNG。
+2026-08-02 已继续处理应用层 module：Authentik、Nextcloud、Collabora、MeshCentral、NetBird、LAM、LLNG。
 
 ## 2. 升级结果
 
-| Cask | 原版本或镜像 | 新版本或镜像 | 镜像策略 | 功能保持措施 |
+| Module | 原版本或镜像 | 新版本或镜像 | 镜像策略 | 功能保持措施 |
 | --- | --- | --- | --- | --- |
 | `lego` | `goacme/lego:v4.11.0` | `goacme/lego:v5.3.1` | 保留最小派生镜像 | 保留内部 CA、ACME DNS-01、周期续期和证书发布目录；CLI 改为 v5 的 `run --renew-days` |
 | `traefik` | `traefik:v2.5.1` 派生镜像 | `traefik:v3.7.10` | 官方镜像的最小入口包装 | 容器启动时在 `/run/anas` 生成 `cert.yml`，保留 Docker provider、实例约束、Dashboard BasicAuth 和 HTTPS 入口；增加 ping 健康检查 |
@@ -27,13 +27,13 @@
 | `adminer` | 浮动 `adminer` | `adminer:5.5.0` | Docker Official Image | PostgreSQL 和 MariaDB 的可选 UI 同步固定版本，保留原 Traefik 路由和主题环境变量 |
 | `ddns` | 无 tag 的 `qmcgaw/ddns-updater` | `ghcr.io/qdm12/ddns-updater:2.10.0` | 直接使用上游镜像 | 保留 DNSPod 配置、IPv4/IPv6 判断、Web UI 和 Traefik 路由；使用新版 `LISTENING_ADDRESS` 和健康服务变量 |
 | `eturnal` | `eturnal/eturnal:1.12.0` 派生镜像 | `ghcr.io/processone/eturnal:1.12.2` | 上游镜像的最小入口包装 | 容器启动时在 `/run/anas` 生成配置；保留 TCP/UDP 监听、共享 secret 和 relay 范围，并补齐 relay UDP 端口发布 |
-| `freeradius` | 镜像 `3.2.7`，元数据误写 `4.4.0` | `freeradius/freeradius-server:3.2.10` | 直接使用上游镜像 | 保留 1812/1813 UDP 和 `freeradius -XC` 健康检查；修正 cask/app 版本 |
+| `freeradius` | 镜像 `3.2.7`，元数据误写 `4.4.0` | `freeradius/freeradius-server:3.2.10` | 直接使用上游镜像 | 保留 1812/1813 UDP 和 `freeradius -XC` 健康检查；修正 module/app 版本 |
 | `samba_dc` | LinuxServer Ubuntu 24.04 base，Samba 4.19 系列 | Docker Official `ubuntu:resolute`，Samba 4.23.6 包 | 官方基础镜像加项目服务层 | 用 `tini`/`runit` 替代 LinuxServer s6，保留 BIND9-DLZ、AD 初始化、TLS、DNS、密码策略和 `/var/lib/samba` 布局 |
 | `samba_fs` | LinuxServer Ubuntu 22.04 base，Samba 4.15 系列 | Docker Official `ubuntu:resolute`，Samba 4.23.6 包 | 官方基础镜像加项目服务层 | 用 `tini`/`runit` 运行现有服务脚本，保留域加入、winbind、Avahi、wsdd2、ACL 和共享配置 |
 
 ### 应用服务
 
-| Cask | 原版本或镜像 | 新版本或镜像 | 镜像策略 | 功能保持措施 |
+| Module | 原版本或镜像 | 新版本或镜像 | 镜像策略 | 功能保持措施 |
 | --- | --- | --- | --- | --- |
 | `authentik` | 2024.10.5，外置 Redis | 2026.5.6 | Authentik 官方 server/worker 镜像 | 按新版拓扑移除 Redis，保留 PostgreSQL、bootstrap 管理员、OIDC provider、SAML provider、Traefik 路由和持久化 `/data` |
 | `collabora` | 23.05.0-2 自定义派生镜像 | `collabora/code:26.04.2.4.1` | 直接使用官方镜像 | 使用官方 `--use-env-vars` 配置入口，保留 WOPI allowlist、Nextcloud 集成、TLS 终止和健康探针 |
@@ -52,7 +52,7 @@
 - `eturnal`：原派生层只生成配置并改启动命令，改为官方镜像加渲染模板。
 - `freeradius`：原 Dockerfile 只包含 `FROM`，直接使用上游镜像。
 
-`lego` 继续使用上游官方镜像作为基础，因为内部 CA、OpenSSL、cron 和证书发布逻辑是该 cask 的现有功能。
+`lego` 继续使用上游官方镜像作为基础，因为内部 CA、OpenSSL、cron 和证书发布逻辑是该 module 的现有功能。
 
 Samba 没有 Docker Official Image。社区应用镜像不能直接覆盖当前 BIND9-DLZ、域结构创建、域成员加入、Avahi/wsdd2 和数据目录约定，因此保留项目服务层，但基础镜像已切换为 Docker Official `ubuntu:resolute`。LinuxServer s6 依赖已移除，现有初始化脚本由发行版 `tini`/`runit` 托管；Samba 使用 Ubuntu 26.04 的 4.23.6 安全更新包，不引入源码编译。
 
@@ -67,7 +67,7 @@ Samba 没有 Docker Official Image。社区应用镜像不能直接覆盖当前 
 
 ### 静态和编排
 
-1. 所有 `cask.yml` 可解析，`version`、`revision` 和 `app_version` 与镜像发布身份一致。
+1. 所有 `module.yml` 可解析，`version`、`revision` 和 `app_version` 与镜像发布身份一致。
 2. 所有 Compose 文件可完成变量替换和 `docker compose config`。
 3. Traefik 和 Eturnal 容器入口可从作用域化环境生成合法 YAML，仓库中不存在 ERB 模板。
 4. 不再存在本轮基础服务的无 tag 上游镜像。

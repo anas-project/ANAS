@@ -4,17 +4,19 @@
 # hosts that are already running a real deployment, and a shared `anas_` prefix
 # would make `docker compose up` recreate the live containers instead of these.
 modules:
-  - traefik
-
+  traefik: {}
 global:
   base_domain: lifecycle.test
   email: admin@lifecycle.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: change-me-now
-
 env:
   BASICAUTH_USER: admin
+  # Keep the lifecycle suite independent of direct Docker Hub reachability on
+  # the Linux E2E host; this enables the same registry mirrors used by the
+  # other server fixtures without changing the lifecycle assertions.
+  CHINESE_SPEEDUP: "true"
   CONTAINER_PREFIX: anaslc_
   IMAGE_PREFIX: anaslc_
   NETWORK_PREFIX: anaslc_

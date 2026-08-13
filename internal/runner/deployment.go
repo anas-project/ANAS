@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -36,18 +37,21 @@ type deploymentManifest struct {
 	ConfigFingerprint string                       `yaml:"config_fingerprint" json:"config_fingerprint"`
 	ModuleOrder       []string                     `yaml:"module_order" json:"module_order"`
 	Bindings          map[string]map[string]string `yaml:"capability_bindings,omitempty" json:"capability_bindings,omitempty"`
-	Casks             map[string]deploymentCask    `yaml:"casks" json:"casks"`
+	Modules           map[string]deploymentModule  `yaml:"modules" json:"modules"`
 	Settings          map[string]deploymentSetting `yaml:"settings,omitempty" json:"settings,omitempty"`
+	Resources         []deploymentResource         `yaml:"resources,omitempty" json:"resources,omitempty"`
 	Snapshot          deploymentSnapshotPolicy     `yaml:"snapshot,omitempty" json:"snapshot"`
 }
 
-type deploymentCask struct {
-	Name       string `yaml:"name" json:"name"`
-	Version    string `yaml:"version" json:"version"`
-	Revision   int    `yaml:"revision" json:"revision"`
-	AppVersion string `yaml:"app_version,omitempty" json:"app_version,omitempty"`
-	// DataBreaking is frozen from the cask's upgrade.data_breaking so that a
-	// rollback can be judged against what the cask claimed when it was rendered,
+type deploymentModule struct {
+	Name               string `yaml:"name" json:"name"`
+	Version            string `yaml:"version" json:"version"`
+	Revision           int    `yaml:"revision" json:"revision"`
+	AppVersion         string `yaml:"app_version,omitempty" json:"app_version,omitempty"`
+	ArtifactDeployment string `yaml:"artifact_deployment" json:"artifact_deployment"`
+	RenderDigest       string `yaml:"render_digest" json:"render_digest"`
+	// DataBreaking is frozen from the module's upgrade.data_breaking so that a
+	// rollback can be judged against what the module claimed when it was rendered,
 	// not against whatever the bundle on disk says today. omitempty distinguishes
 	// the two states that matter: an undeclared list is absent, a declared-empty
 	// one is written out as `[]`.
@@ -60,6 +64,18 @@ type deploymentCask struct {
 	Dependencies []string                `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
 	UseHostLAN   string                  `yaml:"host_lan,omitempty" json:"host_lan,omitempty"`
 	Changes      map[string]ChangePolicy `yaml:"changes,omitempty" json:"changes,omitempty"`
+	Providers    []ContractProvider      `yaml:"contract_providers,omitempty" json:"contract_providers,omitempty"`
+}
+
+type deploymentResource struct {
+	Consumer        string         `yaml:"consumer" json:"consumer"`
+	ID              string         `yaml:"id" json:"id"`
+	Contract        string         `yaml:"contract" json:"contract"`
+	ContractVersion string         `yaml:"contract_version" json:"contract_version"`
+	Provider        string         `yaml:"provider" json:"provider"`
+	Interface       string         `yaml:"interface" json:"interface"`
+	Spec            map[string]any `yaml:"spec" json:"spec"`
+	SecretKey       string         `yaml:"password_secret" json:"password_secret"`
 }
 
 type deploymentSetting struct {
@@ -80,6 +96,7 @@ type deploymentSnapshotPolicy struct {
 type activeDeploymentState struct {
 	APIVersion          string   `yaml:"api_version"`
 	ActiveDeployment    string   `yaml:"active_deployment,omitempty"`
+	RuntimeStatus       string   `yaml:"runtime_status,omitempty"`
 	PreviousDeployments []string `yaml:"previous_deployments,omitempty"`
 	ActivatedAt         string   `yaml:"activated_at,omitempty"`
 	VerifiedAt          string   `yaml:"verified_at,omitempty"`
@@ -113,11 +130,11 @@ type prepareOptions struct {
 	workspace  string
 	base       string
 	cfgPath    string
-	caskRoot   string
+	moduleRoot string
 	verbose    bool
 	updateLock bool
-	// casks narrows which images `build` builds. Empty means all of them.
-	casks []string
+	// modules narrows which images `build` builds. Empty means all of them.
+	modules []string
 }
 
 func projectLockPath(configPath string) string {
@@ -132,26 +149,26 @@ func parsePrepareOptions(name string, args []string) (prepareOptions, error) {
 	fs.StringVar(&out.cfgPath, "config", "", "config file")
 	fs.StringVar(&out.workspace, "w", "", "workspace path")
 	fs.StringVar(&out.workspace, "workspace", "", "workspace path")
-	fs.StringVar(&out.caskRoot, "cask-root", "", "directory containing cask bundles")
-	fs.StringVar(&out.caskRoot, "root", "", "project root or cask bundle directory")
+	fs.StringVar(&out.moduleRoot, "module-root", "", "directory containing module bundles")
+	fs.StringVar(&out.moduleRoot, "root", "", "project root or module bundle directory")
 	fs.BoolVar(&out.verbose, "verbose", false, "debug logging")
 	fs.BoolVar(&out.updateLock, "update-lock", false, "create or update the config lock")
 	registerJSONFlag(fs)
 	// parseInterspersed for the same reason runActive uses it: `anas build lego
-	// -w <workspace>` must see the flag that follows the cask name, rather than
+	// -w <workspace>` must see the flag that follows the module name, rather than
 	// silently building in whatever workspace the cwd happens to name.
 	positional, err := parseInterspersed(fs, args)
 	if err != nil {
 		return out, usageErrorf("%s", err.Error())
 	}
-	// `build` accepts cask names: rendering the whole deployment is cheap and
+	// `build` accepts module names: rendering the whole deployment is cheap and
 	// has to happen anyway, but building every image to pick up a change in one
 	// Dockerfile is minutes of work for nothing. `render` takes none, because a
 	// partial rendering is not a deployment.
 	if len(positional) != 0 && name != "build" {
 		return out, usageErrorf("usage: anas %s [-w <workspace>] [-c config.yml] [--update-lock] [--json]", name)
 	}
-	out.casks = positional
+	out.modules = positional
 	workspace, err := resolveWorkspace(out.workspace)
 	if err != nil {
 		return out, usageErrorf("%s", err.Error())
@@ -164,11 +181,11 @@ func parsePrepareOptions(name string, args []string) (prepareOptions, error) {
 	if !exists(out.cfgPath) {
 		return out, preconditionErrorf("config_missing", "config %s does not exist", out.cfgPath)
 	}
-	root, err := locateCaskRoot(out.caskRoot)
+	root, err := locateModuleRoot(out.moduleRoot)
 	if err != nil {
-		return out, preconditionErrorf("cask_root_missing", "%s", err.Error())
+		return out, preconditionErrorf("module_root_missing", "%s", err.Error())
 	}
-	out.caskRoot = absolutePath(root)
+	out.moduleRoot = absolutePath(root)
 	return out, nil
 }
 
@@ -181,39 +198,47 @@ func runLock(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("config_invalid", "%s", err.Error())
 	}
-	reg, err := loadRegistryDir(opts.caskRoot)
+	reg, err := loadRegistryDir(opts.moduleRoot)
 	if err != nil {
-		return preconditionErrorf("cask_root_invalid", "%s", err.Error())
+		return preconditionErrorf("module_root_invalid", "%s", err.Error())
 	}
 	lockPath := absolutePath(projectLockPath(opts.cfgPath))
-	lock, err := loadCaskLockFile(lockPath)
+	lock, err := loadModuleLockFile(lockPath)
 	if err != nil {
 		return preconditionErrorf("lock_invalid", "%s", err.Error())
 	}
-	a := &app{cfg: cfg, cfgPath: opts.cfgPath, reg: reg, lock: lock, resolvedBindings: map[string]map[string]string{}}
+	contracts, err := loadContractRegistry(opts.moduleRoot)
+	if err != nil {
+		return preconditionErrorf("contract_root_invalid", "%s", err.Error())
+	}
+	a := &app{cfg: cfg, cfgPath: opts.cfgPath, reg: reg, contracts: contracts, lock: lock, resolvedBindings: map[string]map[string]string{}}
 	a.env, a.envOwner = cfg.BaseEnvWithOwners()
-	a.order, err = a.resolveOrder(cfg.Modules)
+	if err := a.validateContractRegistry(); err != nil {
+		return preconditionErrorf("contract_invalid", "%s", err.Error())
+	}
+	a.order, err = a.resolveOrder(cfg.Modules.Order)
 	if err != nil {
 		return preconditionErrorf("resolution_failed", "%s", err.Error())
 	}
 	if err := a.validateVersions(lock); err != nil {
 		return preconditionErrorf("version_conflict", "%s", err.Error())
 	}
-	if err := a.updateCaskLock(lock, true); err != nil {
+	if err := a.updateModuleLock(lock, true); err != nil {
 		return failuref("lock_update_failed", "%s", err.Error())
 	}
 	lock.Snapshot, err = resolveSnapshotLock(opts.workspace, cfg)
 	if err != nil {
 		return preconditionErrorf("snapshot_policy_invalid", "%s", err.Error())
 	}
-	if err := saveCaskLockFile(lockPath, lock); err != nil {
+	if err := saveModuleLockFile(lockPath, lock); err != nil {
 		return failuref("write_failed", "%s", err.Error())
 	}
 	if jsonMode {
 		return emitOK(map[string]any{
 			"workspace": opts.workspace, "config": opts.cfgPath, "lock_path": lockPath,
-			"modules": a.order, "casks": caskLockDocument(lock),
-			"iam": a.iamPlanDocument(), "capability_bindings": cloneNestedMap(a.resolvedBindings),
+			"module_order": a.order, "modules": moduleLockDocument(lock),
+			"contracts": contractLockDocument(lock),
+			"iam":       a.iamPlanDocument(), "capability_bindings": cloneNestedMap(a.resolvedBindings),
 			"snapshot": lock.Snapshot,
 		})
 	}
@@ -221,20 +246,20 @@ func runLock(args []string, jsonMode bool) error {
 	return nil
 }
 
-// caskLockDocument shapes the lock for JSON. The lock file's own YAML shape is
+// moduleLockDocument shapes the lock for JSON. The lock file's own YAML shape is
 // an on-disk format that may change; this is the contract's view of it.
-func caskLockDocument(lock *caskLock) []map[string]any {
+func moduleLockDocument(lock *moduleLock) []map[string]any {
 	if lock == nil {
 		return []map[string]any{}
 	}
-	names := make([]string, 0, len(lock.Casks))
-	for name := range lock.Casks {
+	names := make([]string, 0, len(lock.Modules))
+	for name := range lock.Modules {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	out := make([]map[string]any, 0, len(names))
 	for _, name := range names {
-		record := lock.Casks[name]
+		record := lock.Modules[name]
 		out = append(out, map[string]any{
 			"name": name, "version": record.Version,
 			"revision": record.Revision, "app_version": record.AppVersion, "digest": record.Digest,
@@ -243,12 +268,29 @@ func caskLockDocument(lock *caskLock) []map[string]any {
 	return out
 }
 
+func contractLockDocument(lock *moduleLock) []map[string]any {
+	if lock == nil {
+		return []map[string]any{}
+	}
+	names := make([]string, 0, len(lock.Contracts))
+	for name := range lock.Contracts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		record := lock.Contracts[name]
+		out = append(out, map[string]any{"name": name, "version": record.Version, "digest": record.Digest})
+	}
+	return out
+}
+
 func runPlan(args []string, jsonMode bool) error {
 	fs := flag.NewFlagSet("plan", flag.ContinueOnError)
 	cfgPath := fs.String("c", "", "config file")
 	fs.StringVar(cfgPath, "config", "", "config file")
-	caskRoot := fs.String("cask-root", "", "directory containing cask bundles")
-	rootAlias := fs.String("root", "", "project root or cask bundle directory")
+	moduleRoot := fs.String("module-root", "", "directory containing module bundles")
+	rootAlias := fs.String("root", "", "project root or module bundle directory")
 	// Accepted for command-line symmetry, but plan intentionally never creates
 	// or reads runtime state, so it neither requires nor validates a workspace.
 	_ = fs.String("w", "", "unused workspace path")
@@ -258,15 +300,15 @@ func runPlan(args []string, jsonMode bool) error {
 		return usageErrorf("%s", err.Error())
 	}
 	if *cfgPath == "" || fs.NArg() != 0 {
-		return usageErrorf("usage: anas plan -c config.yml [--cask-root casks/mods] [--json]")
+		return usageErrorf("usage: anas plan -c config.yml [--module-root modules] [--json]")
 	}
-	explicit := *caskRoot
+	explicit := *moduleRoot
 	if explicit == "" {
 		explicit = *rootAlias
 	}
-	located, err := locateCaskRoot(explicit)
+	located, err := locateModuleRoot(explicit)
 	if err != nil {
-		return preconditionErrorf("cask_root_missing", "%s", err.Error())
+		return preconditionErrorf("module_root_missing", "%s", err.Error())
 	}
 	configPath := absolutePath(*cfgPath)
 	if !exists(configPath) {
@@ -278,18 +320,25 @@ func runPlan(args []string, jsonMode bool) error {
 	}
 	reg, err := loadRegistryDir(located)
 	if err != nil {
-		return preconditionErrorf("cask_root_invalid", "%s", err.Error())
+		return preconditionErrorf("module_root_invalid", "%s", err.Error())
 	}
-	a := &app{cfg: cfg, cfgPath: configPath, reg: reg, resolvedBindings: map[string]map[string]string{}}
+	contracts, err := loadContractRegistry(located)
+	if err != nil {
+		return preconditionErrorf("contract_root_invalid", "%s", err.Error())
+	}
+	a := &app{cfg: cfg, cfgPath: configPath, reg: reg, contracts: contracts, resolvedBindings: map[string]map[string]string{}}
 	a.env, a.envOwner = cfg.BaseEnvWithOwners()
-	a.order, err = a.resolveOrder(cfg.Modules)
+	if err := a.validateContractRegistry(); err != nil {
+		return preconditionErrorf("contract_invalid", "%s", err.Error())
+	}
+	a.order, err = a.resolveOrder(cfg.Modules.Order)
 	if err != nil {
 		return preconditionErrorf("resolution_failed", "%s", err.Error())
 	}
-	if err := a.validateVersions(&caskLock{APIVersion: "anas.dev/v1", Casks: map[string]caskLockRecord{}}); err != nil {
+	if err := a.validateVersions(&moduleLock{APIVersion: "anas.module-lock/v1", Modules: map[string]moduleLockRecord{}}); err != nil {
 		return preconditionErrorf("version_conflict", "%s", err.Error())
 	}
-	// Defaults first: a cask may supply the DNS vendor its hook would use, and
+	// Defaults first: a module may supply the DNS vendor its hook would use, and
 	// resolving credentials against a half-populated environment would report
 	// a platform as unset when it is merely defaulted.
 	a.applyModuleDefaults()
@@ -299,7 +348,7 @@ func runPlan(args []string, jsonMode bool) error {
 	a.reportDynamicDNSOverlaps()
 	if jsonMode {
 		return emitOK(map[string]any{
-			"config": configPath, "cask_root": absolutePath(located),
+			"config": configPath, "module_root": absolutePath(located),
 			"modules": a.order, "iam": a.iamPlanDocument(),
 			"capability_bindings": cloneNestedMap(a.resolvedBindings),
 			"dns_platforms":       a.dnsPlanDocument(),
@@ -342,16 +391,20 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err != nil {
 		return "", preconditionErrorf("config_invalid", "%s", err.Error())
 	}
-	reg, err := loadRegistryDir(opts.caskRoot)
+	reg, err := loadRegistryDir(opts.moduleRoot)
 	if err != nil {
-		return "", preconditionErrorf("cask_root_invalid", "%s", err.Error())
+		return "", preconditionErrorf("module_root_invalid", "%s", err.Error())
+	}
+	contracts, err := loadContractRegistry(opts.moduleRoot)
+	if err != nil {
+		return "", preconditionErrorf("contract_root_invalid", "%s", err.Error())
 	}
 	lockPath := projectLockPath(opts.cfgPath)
-	lock, err := loadCaskLockFile(lockPath)
+	lock, err := loadModuleLockFile(lockPath)
 	if err != nil {
 		return "", preconditionErrorf("lock_invalid", "%s", err.Error())
 	}
-	if len(lock.Casks) == 0 && !opts.updateLock {
+	if len(lock.Modules) == 0 && !opts.updateLock {
 		return "", preconditionErrorf("lock_missing",
 			"missing config lock %s; run `anas lock -c %s` or pass --update-lock", lockPath, opts.cfgPath)
 	}
@@ -362,24 +415,27 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	}
 	stagingRoot := filepath.Join(opts.base, "staging", id)
 	finalRoot := filepath.Join(opts.base, "deployments", id)
-	stagingCasks := filepath.Join(stagingRoot, "casks")
-	finalCasks := filepath.Join(finalRoot, "casks")
+	stagingModules := filepath.Join(stagingRoot, "modules")
+	finalModules := filepath.Join(finalRoot, "modules")
 	if exists(stagingRoot) || exists(finalRoot) {
 		return "", failuref("deployment_id_collision", "deployment id collision %s", id)
 	}
-	if err := os.MkdirAll(stagingCasks, 0700); err != nil {
+	if err := os.MkdirAll(stagingModules, 0700); err != nil {
 		return "", failuref("mkdir_failed", "%s", err.Error())
 	}
 
 	a := &app{
 		workspace: opts.workspace,
 		base:      opts.base, cfgPath: opts.cfgPath, verbose: opts.verbose,
-		reg: reg, cfg: cfg, lock: lock, artifactRoot: finalCasks,
+		reg: reg, contracts: contracts, cfg: cfg, lock: lock, artifactRoot: finalModules,
 		resolvedBindings: map[string]map[string]string{},
 	}
 	a.env, a.envOwner = cfg.BaseEnvWithOwners()
 	a.applyWorkspaceEnv()
-	a.order, err = a.resolveOrder(cfg.Modules)
+	if err := a.validateContractRegistry(); err != nil {
+		return "", preconditionErrorf("contract_invalid", "%s", err.Error())
+	}
+	a.order, err = a.resolveOrder(cfg.Modules.Order)
 	if err != nil {
 		return "", preconditionErrorf("resolution_failed", "%s", err.Error())
 	}
@@ -388,14 +444,14 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		if err := a.validateVersions(lock); err != nil {
 			return "", preconditionErrorf("version_conflict", "%s", err.Error())
 		}
-		if err := a.updateCaskLock(lock, true); err != nil {
+		if err := a.updateModuleLock(lock, true); err != nil {
 			return "", failuref("lock_update_failed", "%s", err.Error())
 		}
 		lock.Snapshot, err = resolveSnapshotLock(opts.workspace, cfg)
 		if err != nil {
 			return "", preconditionErrorf("snapshot_policy_invalid", "%s", err.Error())
 		}
-		if err := saveCaskLockFile(lockPath, lock); err != nil {
+		if err := saveModuleLockFile(lockPath, lock); err != nil {
 			return "", failuref("write_failed", "%s", err.Error())
 		}
 	} else if err := validateLockedResolution(a, lock); err != nil {
@@ -411,12 +467,15 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		return "", preconditionErrorf("secrets_unreadable", "%s", err.Error())
 	}
 	a.secrets = secrets
+	if err := a.materializeResourceSecrets(); err != nil {
+		return "", preconditionErrorf("resource_invalid", "%s", err.Error())
+	}
 	if err := a.materializeLocalAccounts(); err != nil {
 		return "", preconditionErrorf("local_admin_invalid", "%s", err.Error())
 	}
-	emitProgress(jsonMode, "calculate", 0, total, "casks")
+	emitProgress(jsonMode, "calculate", 0, total, "modules")
 	// Part of the calculate stage, and reported as such: it is the derivation
-	// every cask hook reads from, so a host it cannot describe is a failure of
+	// every module hook reads from, so a host it cannot describe is a failure of
 	// the same step rather than a new contract code.
 	if err := a.applyHostNetwork(); err != nil {
 		return "", failuref("calculate_failed", "%s", err.Error())
@@ -430,11 +489,11 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err := a.localAdmins.Save(); err != nil {
 		return "", failuref("write_failed", "%s", err.Error())
 	}
-	emitProgress(jsonMode, "render", 0, total, "casks")
-	if err := a.renderAll(stagingCasks); err != nil {
+	emitProgress(jsonMode, "render", 0, total, "modules")
+	if err := a.renderAll(stagingModules); err != nil {
 		return "", failuref("render_failed", "%s", err.Error())
 	}
-	emitProgress(jsonMode, "render", total, total, "casks")
+	emitProgress(jsonMode, "render", total, total, "modules")
 
 	if build {
 		cli, err := compose.Detect()
@@ -442,15 +501,15 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 			return "", preconditionErrorf("compose_missing", "%s", err.Error())
 		}
 		a.compose = cli
-		selection, err := selectCasks(a, opts.casks)
+		selection, err := selectModules(a, opts.modules)
 		if err != nil {
 			return "", usageErrorf("%s", err.Error())
 		}
 		total = int64(len(selection))
 		done := int64(0)
-		if err := a.eachOf(stagingCasks, selection, func(run caskRun) error {
+		if err := a.eachOf(stagingModules, selection, func(run moduleRun) error {
 			done++
-			emitProgress(jsonMode, "build-images", done, total, "casks")
+			emitProgress(jsonMode, "build-images", done, total, "modules")
 			if run.mod.RuntimeType != "compose" {
 				return nil
 			}
@@ -468,7 +527,7 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err := writeYAMLAtomic(filepath.Join(stagingRoot, "deployment.yml"), manifest, 0600); err != nil {
 		return "", failuref("write_failed", "%s", err.Error())
 	}
-	if err := saveCaskLockFile(filepath.Join(stagingRoot, "lock.yml"), lock); err != nil {
+	if err := saveModuleLockFile(filepath.Join(stagingRoot, "lock.yml"), lock); err != nil {
 		return "", failuref("write_failed", "%s", err.Error())
 	}
 	if err := copyFileMode(opts.cfgPath, deploymentConfigSourcePath(stagingRoot), 0600); err != nil {
@@ -491,24 +550,43 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	return id, nil
 }
 
-func validateLockedResolution(a *app, lock *caskLock) error {
+func validateLockedResolution(a *app, lock *moduleLock) error {
 	if err := validateLockedSnapshot(a.cfg, lock); err != nil {
 		return err
 	}
 	for _, name := range a.order {
-		record, ok := lock.Casks[name]
+		record, ok := lock.Modules[name]
 		if !ok {
-			return fmt.Errorf("config lock has no cask %q; run anas lock", name)
+			return fmt.Errorf("config lock has no module %q; run anas lock", name)
 		}
 		if record.Version != a.reg[name].Version || record.Revision != a.reg[name].Revision {
-			return fmt.Errorf("cask %q is locked at %s-r%d but source provides %s-r%d; run anas lock to update explicitly", name, record.Version, record.Revision, a.reg[name].Version, a.reg[name].Revision)
+			return fmt.Errorf("module %q is locked at %s-r%d but source provides %s-r%d; run anas lock to update explicitly", name, record.Version, record.Revision, a.reg[name].Version, a.reg[name].Revision)
 		}
-		digest, err := caskBundleDigest(a.reg[name].SourceDir)
+		digest, err := moduleBundleDigest(a.reg[name].SourceDir)
 		if err != nil {
 			return err
 		}
 		if record.Digest != digest {
-			return fmt.Errorf("cask %q bundle digest does not match config lock; run anas lock to update explicitly", name)
+			return fmt.Errorf("module %q bundle digest does not match config lock; run anas lock to update explicitly", name)
+		}
+	}
+	usedContracts := map[string]bool{}
+	for _, name := range a.order {
+		for _, dependency := range a.reg[name].RequiresContracts {
+			usedContracts[dependency.Name] = true
+		}
+		for _, provider := range a.reg[name].ContractProviders {
+			usedContracts[provider.Name] = true
+		}
+	}
+	for name := range usedContracts {
+		installed, ok := a.contracts[name]
+		if !ok {
+			return fmt.Errorf("installed contract %s is missing", name)
+		}
+		locked, ok := lock.Contracts[name]
+		if !ok || locked.Version != installed.Version || locked.Digest != installed.Digest {
+			return fmt.Errorf("contract %s does not match the config lock; run anas lock", name)
 		}
 	}
 	// Switching IAM or protocol rewrites client registrations and callback
@@ -542,7 +620,7 @@ func buildDeploymentManifest(a *app, id, cfgPath string) (*deploymentManifest, e
 		APIVersion: deploymentAPIVersion, ID: id,
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
 		ModuleOrder: append([]string{}, a.order...), Bindings: cloneNestedMap(a.resolvedBindings),
-		Casks: map[string]deploymentCask{}, Settings: map[string]deploymentSetting{},
+		Modules: map[string]deploymentModule{}, Settings: map[string]deploymentSetting{},
 		Snapshot: deploymentSnapshotPolicy{
 			Source: strings.TrimSpace(a.cfg.Rollback.Snapshot.Source),
 			Root:   strings.TrimSpace(a.cfg.Rollback.Snapshot.Root),
@@ -578,15 +656,31 @@ func buildDeploymentManifest(a *app, id, cfgPath string) (*deploymentManifest, e
 	manifest.ConfigFingerprint = fmt.Sprintf("sha256:%x", sha256.Sum256(b))
 	for _, name := range a.order {
 		mod := a.reg[name]
-		manifest.Casks[name] = deploymentCask{
+		digest, err := normalizedModuleDigest(
+			filepath.Join(a.base, "staging", id, "modules", name),
+			filepath.Join(a.base, "deployments", id),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("digest rendered module %s: %w", name, err)
+		}
+		manifest.Modules[name] = deploymentModule{
 			Name: name, Version: mod.Version, Revision: mod.Revision, AppVersion: mod.AppVersion,
+			ArtifactDeployment: id, RenderDigest: digest,
 			DataBreaking: cloneStringListPointer(mod.DataBreaking),
 			RuntimeType:  mod.RuntimeType, ComposeFile: mod.ComposeFile,
 			Hook: mod.Hook, EnvPrefix: mod.EnvPrefix,
 			Consumes:     append([]string{}, mod.Consumes...),
 			Dependencies: append([]string{}, a.deps[name]...),
 			UseHostLAN:   mod.UseHostLAN, Changes: mod.Changes,
+			Providers: cloneContractProviders(mod.ContractProviders),
 		}
+	}
+	for _, request := range a.resourceRequests {
+		manifest.Resources = append(manifest.Resources, deploymentResource{
+			Consumer: request.Consumer, ID: request.ID, Contract: request.Contract, ContractVersion: request.ContractVersion,
+			Provider: request.Provider, Interface: request.Interface,
+			Spec: request.Spec, SecretKey: request.SecretKey,
+		})
 	}
 	for path, value := range settings {
 		target := targetForSettingPath(path, a.reg)
@@ -596,7 +690,102 @@ func buildDeploymentManifest(a *app, id, cfgPath string) (*deploymentManifest, e
 			Parameter: target.Parameter, Effect: policy.Effect, Apply: policy.Apply,
 		}
 	}
+	inheritUnchangedModuleArtifacts(a.base, manifest)
 	return manifest, nil
+}
+
+// normalizedModuleDigest identifies the effective rendered module while
+// ignoring the deployment directory embedded in bind-mount paths. Without
+// this normalization, two byte-for-byte equivalent renders under different
+// immutable deployment IDs would look changed and Compose would be invoked
+// for every module on every apply.
+func normalizedModuleDigest(root, deploymentRoot string) (string, error) {
+	h := sha256.New()
+	paths := []string{}
+	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			paths = append(paths, path)
+		}
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		rel, _ := filepath.Rel(root, path)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		body = bytes.ReplaceAll(body, []byte(deploymentRoot), []byte("$ANAS_DEPLOYMENT"))
+		_, _ = h.Write([]byte(filepath.ToSlash(rel)))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write(body)
+		_, _ = h.Write([]byte{0})
+	}
+	return fmt.Sprintf("sha256:%x", h.Sum(nil)), nil
+}
+
+// inheritUnchangedModuleArtifacts makes the runtime reference stable across a
+// deployment that did not change that module. A later `anas restart` therefore
+// uses the same Compose working directory and bind-mount paths; the old
+// deployment stays retained as an immutable artifact dependency.
+func inheritUnchangedModuleArtifacts(base string, target *deploymentManifest) {
+	active, err := loadActiveState(base)
+	if err != nil || active.ActiveDeployment == "" {
+		return
+	}
+	current, err := loadDeploymentManifest(filepath.Join(base, "deployments", active.ActiveDeployment))
+	if err != nil {
+		return
+	}
+	for name, next := range target.Modules {
+		previous, ok := current.Modules[name]
+		if !ok || previous.RenderDigest == "" || previous.RenderDigest != next.RenderDigest {
+			continue
+		}
+		artifact := previous.ArtifactDeployment
+		if artifact == "" {
+			artifact = current.ID
+		}
+		next.ArtifactDeployment = artifact
+		target.Modules[name] = next
+	}
+}
+
+func changedOrAddedModules(current, target *deploymentManifest) []string {
+	if target == nil {
+		return nil
+	}
+	if current == nil {
+		return append([]string{}, target.ModuleOrder...)
+	}
+	selection := []string{}
+	for _, name := range target.ModuleOrder {
+		next, ok := target.Modules[name]
+		if !ok {
+			continue
+		}
+		previous, existed := current.Modules[name]
+		if !existed || next.RenderDigest == "" || previous.RenderDigest == "" || next.RenderDigest != previous.RenderDigest {
+			selection = append(selection, name)
+		}
+	}
+	return selection
+}
+
+// activationStartModules preserves the activation diff while the active
+// deployment is running. After an explicit whole-deployment stop, however,
+// every target module must be restored: unchanged modules and their external
+// networks no longer exist at runtime even though their artifacts are equal.
+func activationStartModules(current, target *deploymentManifest, runtimeStatus string) []string {
+	if runtimeStatus == "stopped" {
+		return append([]string{}, target.ModuleOrder...)
+	}
+	return changedOrAddedModules(current, target)
 }
 
 func cloneNestedMap(in map[string]map[string]string) map[string]map[string]string {
@@ -613,8 +802,8 @@ func runApply(args []string, jsonMode bool) error {
 	fs.StringVar(cfgPath, "config", "", "config file")
 	workspaceFlag := fs.String("w", "", "workspace path")
 	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
-	caskRoot := fs.String("cask-root", "", "directory containing cask bundles")
-	rootAlias := fs.String("root", "", "project root or cask bundle directory")
+	moduleRoot := fs.String("module-root", "", "directory containing module bundles")
+	rootAlias := fs.String("root", "", "project root or module bundle directory")
 	deploymentID := fs.String("deployment", "", "existing ready deployment id")
 	build := fs.Bool("build", false, "build images before activation")
 	updateLock := fs.Bool("update-lock", false, "create or update the config lock")
@@ -654,18 +843,18 @@ func runApply(args []string, jsonMode bool) error {
 		return preconditionErrorf("state_unreadable", "%s", err.Error())
 	}
 	if *deploymentID == "" {
-		explicit := *caskRoot
+		explicit := *moduleRoot
 		if explicit == "" {
 			explicit = *rootAlias
 		}
-		located, err := locateCaskRoot(explicit)
+		located, err := locateModuleRoot(explicit)
 		if err != nil {
-			return preconditionErrorf("cask_root_missing", "%s", err.Error())
+			return preconditionErrorf("module_root_missing", "%s", err.Error())
 		}
 		if !exists(*cfgPath) {
 			return preconditionErrorf("config_missing", "config %s does not exist", *cfgPath)
 		}
-		opts := prepareOptions{workspace: workspace, base: base, cfgPath: *cfgPath, caskRoot: located, updateLock: *updateLock}
+		opts := prepareOptions{workspace: workspace, base: base, cfgPath: *cfgPath, moduleRoot: located, updateLock: *updateLock}
 		id, err := materializeDeployment(opts, *build, jsonMode)
 		if err != nil {
 			return err
@@ -756,7 +945,7 @@ func runActive(action string, args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("deployment_unreadable", "%s", err.Error())
 	}
-	selection, err := selectLifecycleCasks(a, action, requested)
+	selection, err := selectLifecycleModules(a, action, requested)
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
@@ -764,9 +953,10 @@ func runActive(action string, args []string, jsonMode bool) error {
 	// macvlan bridge alone; the whole-deployment path still tears it down,
 	// because then there is nothing left to use it.
 	partial := len(requested) > 0
+	wholeDeployment := !partial || len(selection) == len(a.order)
 	stop := func() error {
 		if partial {
-			return a.stopCasks(root, selection, jsonMode)
+			return a.stopModules(root, selection, jsonMode)
 		}
 		return a.stopRelease(root, jsonMode)
 	}
@@ -789,34 +979,51 @@ func runActive(action string, args []string, jsonMode bool) error {
 	default:
 		return usageErrorf("unknown lifecycle action %q", action)
 	}
+	if wholeDeployment {
+		if action == "stop" {
+			active.RuntimeStatus = "stopped"
+		} else {
+			active.RuntimeStatus = "running"
+		}
+		if err := saveActiveState(base, active); err != nil {
+			return failuref("write_failed", "record runtime status: %s", err.Error())
+		}
+	}
 	// start, restart and stop have no natural result: they either put the
 	// deployment in the requested state or they did not. The envelope plus the
 	// identifiers is the whole document, rather than a payload invented so it
 	// would look substantial.
 	return emitEmptyOK(jsonMode, map[string]any{
 		"workspace": workspace, "action": action,
-		"deployment_id": active.ActiveDeployment, "casks": selection,
+		"deployment_id": active.ActiveDeployment, "modules": selection,
 	})
 }
 
-func startDeployment(a *app, casksRoot string, selection []string, jsonMode bool) error {
+func startDeployment(a *app, modulesRoot string, selection []string, jsonMode bool) error {
 	for _, name := range selection {
-		if _, err := parseEnvFile(filepath.Join(casksRoot, name, ".env")); err != nil {
-			return fmt.Errorf("deployment cask %s env: %w", name, err)
+		dir := filepath.Join(modulesRoot, name)
+		if mod := a.reg[name]; a.useFrozenHooks && mod.SourceDir != "" {
+			dir = mod.SourceDir
+		}
+		if _, err := parseEnvFile(filepath.Join(dir, ".env")); err != nil {
+			return fmt.Errorf("deployment module %s env: %w", name, err)
 		}
 	}
-	a.adoptReleaseEnv(casksRoot)
+	a.adoptReleaseEnv(modulesRoot)
 	// hostLANRequired is asked of the whole deployment, not of the selection: a
-	// cask that does not itself need the bridge may still be started alongside
+	// module that does not itself need the bridge may still be started alongside
 	// one that does, and the bridge has to exist either way.
 	if err := a.ensureHostLAN(); err != nil {
 		return err
 	}
 	total := int64(len(selection))
 	done := int64(0)
-	if err := a.eachOf(casksRoot, selection, func(run caskRun) error {
+	if err := a.eachOf(modulesRoot, selection, func(run moduleRun) error {
 		done++
-		emitProgress(jsonMode, "start-containers", done, total, "casks")
+		emitProgress(jsonMode, "start-containers", done, total, "modules")
+		if err := a.ensureResourcesFor(run.mod.Name, modulesRoot); err != nil {
+			return err
+		}
 		if run.mod.RuntimeType != "compose" {
 			return nil
 		}
@@ -825,8 +1032,8 @@ func startDeployment(a *app, casksRoot string, selection []string, jsonMode bool
 	}); err != nil {
 		return err
 	}
-	emitProgress(jsonMode, "after-start-hooks", 0, total, "casks")
-	return a.runAfterStartOf(casksRoot, selection)
+	emitProgress(jsonMode, "after-start-hooks", 0, total, "modules")
+	return a.runAfterStartOf(modulesRoot, selection)
 }
 
 // activateOptions carries the operator's answers to the questions activation
@@ -862,6 +1069,10 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	if active.ActiveDeployment == id {
 		if err := startDeployment(newApp, newRoot, newApp.order, opts.json); err != nil {
 			return failuref("start_failed", "%s", err.Error())
+		}
+		active.RuntimeStatus = "running"
+		if err := saveActiveState(base, active); err != nil {
+			return failuref("write_failed", "record runtime status: %s", err.Error())
 		}
 		return nil
 	}
@@ -910,12 +1121,19 @@ func activateDeployment(base, id string, opts activateOptions) error {
 		}
 	}
 
-	if err := startDeployment(newApp, newRoot, newApp.order, opts.json); err != nil {
+	selection := activationStartModules(current, target, active.RuntimeStatus)
+	if err := startDeployment(newApp, newRoot, selection, opts.json); err != nil {
 		_ = saveDeploymentFailure(base, id, err)
 		if oldApp != nil {
 			_ = startDeployment(oldApp, oldRoot, oldApp.order, opts.json)
 		}
 		return failuref("start_failed", "%s", err.Error())
+	}
+	if err := retainRemovedResources(base, current, target); err != nil {
+		if oldApp != nil {
+			_ = startDeployment(oldApp, oldRoot, oldApp.order, opts.json)
+		}
+		return failuref("resource_state_failed", "%s", err.Error())
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -929,6 +1147,7 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	}
 	active = &activeDeploymentState{
 		APIVersion: activeStateVersion, ActiveDeployment: id,
+		RuntimeStatus:       "running",
 		PreviousDeployments: previous, ActivatedAt: now, VerifiedAt: now,
 	}
 	if err := saveActiveState(base, active); err != nil {
@@ -1048,10 +1267,10 @@ func stopRemovedDeployments(oldApp *app, oldRoot string, target *deploymentManif
 			continue
 		}
 		removed++
-		emitProgress(jsonMode, "stop-removed-casks", removed, 0, "casks")
+		emitProgress(jsonMode, "stop-removed-modules", removed, 0, "modules")
 		dir := filepath.Join(oldRoot, name)
-		if err := oldApp.compose.RunFile(dir, "anas_"+name, mod.ComposeFile, oldApp.caskEnv(dir), "down"); err != nil {
-			errs = append(errs, fmt.Errorf("stop removed cask %s: %w", name, err))
+		if err := oldApp.compose.RunFile(dir, "anas_"+name, mod.ComposeFile, oldApp.moduleEnv(dir), "down"); err != nil {
+			errs = append(errs, fmt.Errorf("stop removed module %s: %w", name, err))
 		}
 	}
 	return errorsJoin(errs)
@@ -1432,18 +1651,24 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 	if err != nil {
 		return nil, "", nil, err
 	}
-	casksRoot := filepath.Join(root, "casks")
+	modulesRoot := filepath.Join(root, "modules")
 	reg := map[string]Module{}
 	deps := map[string][]string{}
-	for name, cask := range manifest.Casks {
-		reg[name] = Module{
-			Name: name, Version: cask.Version, Revision: cask.Revision, AppVersion: cask.AppVersion,
-			SourceDir: filepath.Join(casksRoot, name), EnvPrefix: cask.EnvPrefix,
-			Consumes: append([]string{}, cask.Consumes...), Changes: cask.Changes,
-			UseHostLAN: cask.UseHostLAN, Hook: cask.Hook,
-			RuntimeType: cask.RuntimeType, ComposeFile: cask.ComposeFile,
+	for name, module := range manifest.Modules {
+		artifactDeployment := module.ArtifactDeployment
+		if artifactDeployment == "" {
+			artifactDeployment = manifest.ID
 		}
-		deps[name] = append([]string{}, cask.Dependencies...)
+		artifactRoot := filepath.Join(base, "deployments", artifactDeployment, "modules")
+		reg[name] = Module{
+			Name: name, Version: module.Version, Revision: module.Revision, AppVersion: module.AppVersion,
+			SourceDir: filepath.Join(artifactRoot, name), EnvPrefix: module.EnvPrefix,
+			Consumes: append([]string{}, module.Consumes...), Changes: module.Changes,
+			UseHostLAN: module.UseHostLAN, Hook: module.Hook,
+			RuntimeType: module.RuntimeType, ComposeFile: module.ComposeFile,
+			ContractProviders: cloneContractProviders(module.Providers),
+		}
+		deps[name] = append([]string{}, module.Dependencies...)
 	}
 	secrets, err := loadSecretStore(base)
 	if err != nil {
@@ -1453,11 +1678,22 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 		base: base, compose: cli, reg: reg, deps: deps,
 		order: append([]string{}, manifest.ModuleOrder...),
 		env:   map[string]string{}, envOwner: map[string]string{},
-		secrets: secrets, useFrozenHooks: true, artifactRoot: casksRoot,
+		secrets: secrets, useFrozenHooks: true, artifactRoot: modulesRoot,
 		resolvedBindings: cloneNestedMap(manifest.Bindings),
 	}
-	a.adoptReleaseEnv(casksRoot)
-	return a, casksRoot, manifest, nil
+	for _, resource := range manifest.Resources {
+		password := secrets.values[resource.SecretKey]
+		if password == "" {
+			return nil, "", nil, fmt.Errorf("resource %s.%s secret %s is missing", resource.Consumer, resource.ID, resource.SecretKey)
+		}
+		a.resourceRequests = append(a.resourceRequests, ResourceRequest{
+			Consumer: resource.Consumer, ID: resource.ID, Contract: resource.Contract, ContractVersion: resource.ContractVersion,
+			Provider: resource.Provider, Interface: resource.Interface,
+			Spec: resource.Spec, SecretKey: resource.SecretKey, Password: password,
+		})
+	}
+	a.adoptReleaseEnv(modulesRoot)
+	return a, modulesRoot, manifest, nil
 }
 
 func validateDeploymentID(id string) error {

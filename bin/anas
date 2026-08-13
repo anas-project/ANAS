@@ -2,4 +2,4 @@
 set -eu
 
 repo_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-ANAS_CASK_ROOT="${ANAS_CASK_ROOT:-$repo_dir/casks/mods}" exec go run "$repo_dir/cmd/anas" "$@"
+ANAS_MODULE_ROOT="${ANAS_MODULE_ROOT:-$repo_dir/modules}" exec go run "$repo_dir/cmd/anas" "$@"

@@ -5,17 +5,17 @@ on:
     paths:
       - ".github/images.json"
       - ".github/workflows/container-images.yml"
-      - "casks/mods/**"
+      - "modules/**"
   push:
     branches: [master]
     paths:
       - ".github/images.json"
       - ".github/workflows/container-images.yml"
-      - "casks/mods/**"
+      - "modules/**"
   workflow_dispatch:
     inputs:
-      cask:
-        description: "Cask to publish, or all for the initial release"
+      module:
+        description: "Module to publish, or all for the initial release"
         required: true
         default: all
 
@@ -45,55 +45,55 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
-          REQUESTED_CASK: ${{ inputs.cask }}
+          REQUESTED_MODULE: ${{ inputs.module }}
         run: |
           set -euo pipefail
 
           jq -e 'type == "array" and length > 0' .github/images.json >/dev/null
-          actual="$(find casks/mods -type f -name Dockerfile | LC_ALL=C sort)"
+          actual="$(find modules -type f -name Dockerfile | LC_ALL=C sort)"
           registered="$(jq -r '.[].dockerfile' .github/images.json | LC_ALL=C sort)"
           if ! diff -u <(printf '%s\n' "$actual") <(printf '%s\n' "$registered"); then
             echo "Every Dockerfile must appear exactly once in .github/images.json" >&2
             exit 1
           fi
 
-          while IFS=$'\t' read -r cask image; do
-            manifest="casks/mods/${cask}/cask.yml"
+          while IFS=$'\t' read -r module image; do
+            manifest="modules/${module}/module.yml"
             version="$(awk '$1 == "version:" { print $2; exit }' "$manifest")"
             revision="$(awk '$1 == "revision:" { print $2; exit }' "$manifest")"
             expected='${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/'"${image}:${version}-r${revision}"
-            if ! grep -Fq "image: ${expected}" "casks/mods/${cask}/docker-compose.yml"; then
-              echo "${cask}/docker-compose.yml must reference ${expected}" >&2
+            if ! grep -Fq "image: ${expected}" "modules/${module}/docker-compose.yml"; then
+              echo "${module}/docker-compose.yml must reference ${expected}" >&2
               exit 1
             fi
-          done < <(jq -r '.[] | [.cask, .image] | @tsv' .github/images.json)
+          done < <(jq -r '.[] | [.module, .image] | @tsv' .github/images.json)
 
           selected='[]'
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            if [[ -z "$REQUESTED_CASK" || "$REQUESTED_CASK" == "all" ]]; then
+            if [[ -z "$REQUESTED_MODULE" || "$REQUESTED_MODULE" == "all" ]]; then
               selected="$(jq -c '.' .github/images.json)"
             else
-              selected="$(jq -c --arg cask "$REQUESTED_CASK" '[.[] | select(.cask == $cask)]' .github/images.json)"
+              selected="$(jq -c --arg module "$REQUESTED_MODULE" '[.[] | select(.module == $module)]' .github/images.json)"
               if [[ "$(jq 'length' <<<"$selected")" == "0" ]]; then
-                echo "Unknown or image-less cask: $REQUESTED_CASK" >&2
+                echo "Unknown or image-less module: $REQUESTED_MODULE" >&2
                 exit 1
               fi
             fi
           else
             changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-            changed_casks='[]'
+            changed_modules='[]'
             while IFS= read -r context; do
               if grep -q "^${context}/" <<<"$changed"; then
-                cask="$(jq -r --arg context "$context" '.[] | select(.context == $context) | .cask' .github/images.json)"
-                changed_casks="$(jq -c --arg cask "$cask" '. + [$cask] | unique' <<<"$changed_casks")"
+                module="$(jq -r --arg context "$context" '.[] | select(.context == $context) | .module' .github/images.json)"
+                changed_modules="$(jq -c --arg module "$module" '. + [$module] | unique' <<<"$changed_modules")"
               fi
             done < <(jq -r '.[].context' .github/images.json)
-            selected="$(jq -c --argjson casks "$changed_casks" '[.[] | select(.cask as $cask | $casks | index($cask))]' .github/images.json)"
+            selected="$(jq -c --argjson modules "$changed_modules" '[.[] | select(.module as $module | $modules | index($module))]' .github/images.json)"
           fi
 
           if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
-            while IFS= read -r cask; do
-              manifest="casks/mods/${cask}/cask.yml"
+            while IFS= read -r module; do
+              manifest="modules/${module}/module.yml"
               if ! old_manifest="$(git show "${BASE_SHA}:${manifest}" 2>/dev/null)"; then
                 continue
               fi
@@ -105,20 +105,20 @@ jobs:
               if [[ "$new_version" == "$old_version" ]]; then
                 expected=$((old_revision + 1))
                 if [[ "$new_revision" != "$expected" ]]; then
-                  echo "$cask container changed without revision $expected" >&2
+                  echo "$module container changed without revision $expected" >&2
                   exit 1
                 fi
               elif [[ "$new_revision" != "1" ]]; then
-                echo "$cask changed version from $old_version to $new_version, so revision must reset to 1" >&2
+                echo "$module changed version from $old_version to $new_version, so revision must reset to 1" >&2
                 exit 1
               fi
-            done < <(jq -r '.[].cask' <<<"$selected" | LC_ALL=C sort -u)
+            done < <(jq -r '.[].module' <<<"$selected" | LC_ALL=C sort -u)
           fi
 
           enriched='[]'
           while IFS= read -r item; do
-            cask="$(jq -r '.cask' <<<"$item")"
-            manifest="casks/mods/${cask}/cask.yml"
+            module="$(jq -r '.module' <<<"$item")"
+            manifest="modules/${module}/module.yml"
             version="$(awk '$1 == "version:" { print $2; exit }' "$manifest")"
             revision="$(awk '$1 == "revision:" { print $2; exit }' "$manifest")"
             if [[ -z "$version" || ! "$revision" =~ ^[1-9][0-9]*$ ]]; then
@@ -210,8 +210,8 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ matrix.tag }}
-            dev.anas.cask=${{ matrix.cask }}
-            dev.anas.cask.revision=${{ matrix.revision }}
+            dev.anas.module=${{ matrix.module }}
+            dev.anas.module.revision=${{ matrix.revision }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
           provenance: mode=max

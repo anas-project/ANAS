@@ -1,0 +1,29 @@
+api_version: anas.contract/v1
+kind: Contract
+name: relational_database
+version: 1.0.0
+interfaces:
+  - postgres
+  - mariadb
+resource:
+  schema: schemas/resource.yml
+  identity:
+    - consumer
+    - resource_id
+operations:
+  ensure:
+    request_schema: schemas/ensure-request.yml
+    result_schema: schemas/connection-result.yml
+    required: true
+  inspect:
+    request_schema: schemas/inspect-request.yml
+    result_schema: schemas/inspect-result.yml
+    required: true
+  rotate_credential:
+    request_schema: schemas/rotate-request.yml
+    result_schema: schemas/connection-result.yml
+    required: false
+  delete:
+    request_schema: schemas/delete-request.yml
+    result_schema: schemas/delete-result.yml
+    required: false

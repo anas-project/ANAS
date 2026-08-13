@@ -12,23 +12,23 @@ if [[ "$mode" != "validate" && "$mode" != "mirror-all" ]]; then
 fi
 
 jq -e 'type == "array" and length > 0' "$catalog" >/dev/null
-actual="$(find casks/mods -type f -name Dockerfile | LC_ALL=C sort)"
+actual="$(find modules -type f -name Dockerfile | LC_ALL=C sort)"
 registered="$(jq -r '.[].dockerfile' "$catalog" | LC_ALL=C sort)"
 if ! diff -u <(printf '%s\n' "$actual") <(printf '%s\n' "$registered"); then
   echo "Every Dockerfile must appear exactly once in $catalog" >&2
   exit 1
 fi
 
-while IFS=$'\t' read -r cask image; do
-  manifest="casks/mods/${cask}/cask.yml"
+while IFS=$'\t' read -r module image; do
+  manifest="modules/${module}/module.yml"
   version="$(awk '$1 == "version:" { print $2; exit }' "$manifest")"
   revision="$(awk '$1 == "revision:" { print $2; exit }' "$manifest")"
   expected='${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/'"${image}:${version}-r${revision}"
-  if ! grep -Fq "image: ${expected}" "casks/mods/${cask}/docker-compose.yml"; then
-    echo "${cask}/docker-compose.yml must reference ${expected}" >&2
+  if ! grep -Fq "image: ${expected}" "modules/${module}/docker-compose.yml"; then
+    echo "${module}/docker-compose.yml must reference ${expected}" >&2
     exit 1
   fi
-done < <(jq -r '.[] | [.cask, .image] | @tsv' "$catalog")
+done < <(jq -r '.[] | [.module, .image] | @tsv' "$catalog")
 
 if [[ "$mode" == "validate" ]]; then
   echo "CNB image catalog and Compose references are valid."
@@ -38,9 +38,9 @@ fi
 docker login -u "${CNB_TOKEN_USER_NAME}" -p "${CNB_TOKEN}" "$registry"
 
 while IFS= read -r item; do
-  cask="$(jq -r '.cask' <<<"$item")"
+  module="$(jq -r '.module' <<<"$item")"
   image="$(jq -r '.image' <<<"$item")"
-  manifest="casks/mods/${cask}/cask.yml"
+  manifest="modules/${module}/module.yml"
   version="$(awk '$1 == "version:" { print $2; exit }' "$manifest")"
   revision="$(awk '$1 == "revision:" { print $2; exit }' "$manifest")"
   if [[ -z "$version" || ! "$revision" =~ ^[1-9][0-9]*$ ]]; then

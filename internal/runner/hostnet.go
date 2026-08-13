@@ -13,18 +13,18 @@ import (
 // Host network discovery and macvlan address planning.
 //
 // These answers describe the machine anas runs on, not any service it starts,
-// and their consumers are spread across the deployment: seven casks read the
+// and their consumers are spread across the deployment: seven modules read the
 // host address or interface, and the macvlan plan is read by the runner's own
-// ensureMacvlan. They used to be produced by a hook inside the "core" cask,
+// ensureMacvlan. They used to be produced by a hook inside the "core" module,
 // which put the computation on the far side of a boundary from the gate that
 // decides whether it is needed -- see applyHostNetwork for what that cost.
 
 // applyHostNetwork fills in the deployment's view of its host. It runs after
 // applyModuleDefaults, so a configured value always wins over a probed one,
-// and before calculate, so every cask hook sees a settled host environment.
+// and before calculate, so every module hook sees a settled host environment.
 //
-// Every key it publishes is owned globally rather than by a cask: these are
-// statements about the machine, and a cask that reads HOST_IP is not thereby
+// Every key it publishes is owned globally rather than by a module: these are
+// statements about the machine, and a module that reads HOST_IP is not thereby
 // depending on whoever discovered it.
 func (a *app) applyHostNetwork() error {
 	if a.env == nil {
@@ -53,10 +53,10 @@ func (a *app) applyHostNetwork() error {
 	if a.env["INTERFACE"] == "" || a.env["HOST_IP"] == "" || a.env["HOST_SUBNET_MASK"] == "" {
 		return fmt.Errorf("could not detect host interface, host ip, or subnet mask")
 	}
-	// The macvlan plan is only computed when a cask actually attaches to the
+	// The macvlan plan is only computed when a module actually attaches to the
 	// host LAN. calcVLAN carves a /28 pool out of the host segment and so
 	// refuses anything narrower, which used to fail `render` outright on a /30
-	// or /32 host -- an ordinary VPS -- even when no cask wanted a bridge. The
+	// or /32 host -- an ordinary VPS -- even when no module wanted a bridge. The
 	// gate that governs ensureMacvlan now also governs the calculation feeding
 	// it, which is only possible with both on the same side of the boundary.
 	if a.hostLANRequired() {
@@ -73,7 +73,7 @@ func (a *app) applyHostNetwork() error {
 	a.setHostEnv("LOCAL_DNS_SERVER", a.env["HOST_IP"])
 	// A configured host address is still the host's address: ownership has to
 	// be recorded whether the value was probed or supplied, or a deployment
-	// that pins HOST_IP would render casks that cannot see it.
+	// that pins HOST_IP would render modules that cannot see it.
 	for _, key := range hostEnvKeys {
 		a.setHostEnv(key, "")
 	}
@@ -210,11 +210,11 @@ func resolvNameservers() string {
 // detectHostIPv6 publishes whether this host holds a routable IPv6 address,
 // and which one.
 //
-// It belongs to the runner rather than to a DDNS cask because more than one
-// cask needs the answer, and because the question is about the host rather
+// It belongs to the runner rather than to a DDNS module because more than one
+// module needs the answer, and because the question is about the host rather
 // than about any service. It is also only a statement about this machine: a
 // host address says nothing about whether a bridge-network container can reach
-// the IPv6 internet, which is a separate question each cask answers for
+// the IPv6 internet, which is a separate question each module answers for
 // itself.
 //
 // The check is deliberately local. Dialling an outside host would measure

@@ -112,7 +112,7 @@ func runBackupInteractive(args []string) error {
 
 	prompt := "\nRun this backup"
 	if plan.StopContainers && len(plan.ContainersToStop) > 0 {
-		prompt = fmt.Sprintf("\nRun this backup, stopping %d cask(s) for about %ds",
+		prompt = fmt.Sprintf("\nRun this backup, stopping %d module(s) for about %ds",
 			len(plan.ContainersToStop), plan.EstimatedDowntimeSeconds)
 	}
 	yes, err := confirm(prompt+"?", false)

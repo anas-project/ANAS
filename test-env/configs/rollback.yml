@@ -6,15 +6,14 @@
 # recreate the live containers instead of the test ones. Isolation here is
 # structural rather than a matter of remembering to point it somewhere safe.
 modules:
-  - traefik
-
+  traefik: {}
 global:
+  chinese_speedup: true
   base_domain: rollback.test
   email: admin@rollback.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: change-me-now
-
 env:
   BASICAUTH_USER: admin
   CONTAINER_PREFIX: anasrb_

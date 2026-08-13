@@ -7,7 +7,7 @@ import (
 	"github.com/anas-project/ANAS/internal/config"
 )
 
-func dynamicDNSApp(cfg *config.File, lock *caskLock) *app {
+func dynamicDNSApp(cfg *config.File, lock *moduleLock) *app {
 	return &app{
 		cfg:  cfg,
 		lock: lock,
@@ -25,12 +25,12 @@ func dynamicDNSApp(cfg *config.File, lock *caskLock) *app {
 
 func dynamicDNSConfig(provider, vendor string, modules ...string) *config.File {
 	return &config.File{
-		Modules:    modules,
+		Modules:    config.NewModuleSelection(modules...),
 		DynamicDNS: config.DynamicDNS{Provider: provider, DNSProvider: vendor},
 	}
 }
 
-// Asking for dynamic DNS is enough: naming a cask as well would make the
+// Asking for dynamic DNS is enough: naming a module as well would make the
 // capability pointless.
 func TestDynamicDNSAutoPicksAnImplementation(t *testing.T) {
 	a := dynamicDNSApp(dynamicDNSConfig("auto", "tencentcloud"), nil)
@@ -74,7 +74,7 @@ func TestDynamicDNSAutoPrefersAnAlreadyListedModule(t *testing.T) {
 // A recorded binding outranks the preference list, so a later release that
 // reorders it cannot move an existing deployment onto a different updater.
 func TestDynamicDNSAutoHonoursTheLockedBinding(t *testing.T) {
-	lock := &caskLock{Bindings: map[string]map[string]string{
+	lock := &moduleLock{Bindings: map[string]map[string]string{
 		deploymentBindingKey: {capabilityDynamicDNS: "ddns_updater"},
 	}}
 	a := dynamicDNSApp(dynamicDNSConfig("auto", "cloudflare"), lock)
@@ -129,7 +129,7 @@ func TestDynamicDNSRejectsUnusableSelections(t *testing.T) {
 	}
 }
 
-// No request means no declared records, and a DDNS cask listed by hand is left
+// No request means no declared records, and a DDNS module listed by hand is left
 // entirely to its own configuration.
 func TestDynamicDNSIsOptional(t *testing.T) {
 	a := dynamicDNSApp(dynamicDNSConfig("", "", "ddns_go"), nil)
@@ -142,17 +142,17 @@ func TestDynamicDNSIsOptional(t *testing.T) {
 	}
 }
 
-// The selection seeds the chosen cask's vendor and tells every implementation
+// The selection seeds the chosen module's vendor and tells every implementation
 // whether it holds the declared records.
-func TestDynamicDNSBindingSeedsTheSelectedCask(t *testing.T) {
+func TestDynamicDNSBindingSeedsTheSelectedModule(t *testing.T) {
 	a := dynamicDNSApp(dynamicDNSConfig("auto", "tencentcloud"), nil)
 	a.applyDynamicDNSBinding("ddns_go")
 
 	if a.env["DDNS_GO_DNS_PROVIDER"] != "tencentcloud" {
-		t.Errorf("selected cask vendor = %q", a.env["DDNS_GO_DNS_PROVIDER"])
+		t.Errorf("selected module vendor = %q", a.env["DDNS_GO_DNS_PROVIDER"])
 	}
 	if a.env["DDNS_GO_DYNAMIC_DNS_MANAGED"] != "true" {
-		t.Error("the selected cask was not told it holds the declared records")
+		t.Error("the selected module was not told it holds the declared records")
 	}
 	if a.env["DDNS_UPDATER_DYNAMIC_DNS_MANAGED"] != "false" {
 		t.Error("an unselected implementation was not told to leave the records alone")

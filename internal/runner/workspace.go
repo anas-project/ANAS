@@ -28,7 +28,7 @@ const (
 	// workspaceStateDir holds everything the runner writes for itself. It is
 	// deliberately a dotted name: users never edit anything inside it.
 	workspaceStateDir = ".anas"
-	// workspaceDataDir is where every cask's own persistent state lives:
+	// workspaceDataDir is where every module's own persistent state lives:
 	// databases, directory stores, issued certificates. It is the subvolume a
 	// snapshot captures and a restore replaces wholesale, because this state
 	// is coupled to the deployment that wrote it and has to move with it.
@@ -126,14 +126,14 @@ func configPathFor(workspace, explicit string) string {
 }
 
 // applyWorkspaceEnv injects the values that come from the workspace layout
-// rather than from the config file. Casks reference them as ${DATA_PATH} and
+// rather than from the config file. Modules reference them as ${DATA_PATH} and
 // ${USER_DATA_PATH} in their compose files, but the values are fixed by the
 // layout, so the config has no say in them.
 //
 // The two are separate variables rather than one because they are backed up
-// and restored on different terms -- see workspaceUserDataDir. A cask storing
+// and restored on different terms -- see workspaceUserDataDir. A module storing
 // its own state under USER_DATA_PATH would silently opt that state out of
-// rollback, so the choice between them is part of what a cask declares.
+// rollback, so the choice between them is part of what a module declares.
 func (a *app) applyWorkspaceEnv() {
 	if a.workspace == "" {
 		return

@@ -313,15 +313,15 @@ step "L15 named lifecycle commands preserve dependency chains"
 run anas start -w "$ws"
 all_running=$(running)
 [ -n "$all_running" ] || fail "the deployment did not start"
-# A cask this deployment does not have is a usage error, not a silent no-op
+# A module this deployment does not have is a usage error, not a silent no-op
 # that reports success having restarted nothing.
-expect_exit 2 anas restart nosuchcask -w "$ws" --json
+expect_exit 2 anas restart nosuchmodule -w "$ws" --json
 # Traefik depends on Lego. Restarting Lego must recreate both the dependency
 # and its dependent, stopping Traefik first and starting Lego first.
 lego_before=$(container_id lego)
 traefik_before=$(container_id traefik)
 run anas restart lego -w "$ws"
-[ "$(running)" = "$all_running" ] || fail "restarting one cask changed which containers run: '$all_running' -> '$(running)'"
+[ "$(running)" = "$all_running" ] || fail "restarting one module changed which containers run: '$all_running' -> '$(running)'"
 [ -n "$(container_id lego)" ] && [ "$(container_id lego)" != "$lego_before" ] ||
   fail "restart lego did not recreate Lego"
 [ -n "$(container_id traefik)" ] && [ "$(container_id traefik)" != "$traefik_before" ] ||
@@ -362,7 +362,7 @@ run anas stop lego -w "$ws"
 [ -z "$(running)" ] || fail "stop lego left its dependency chain running: '$(running)'"
 # Starting the leaf application from a cold state pulls in its prerequisite.
 run anas start traefik -w "$ws"
-[ "$(running)" = "$all_running" ] || fail "starting the cask back did not restore the deployment"
+[ "$(running)" = "$all_running" ] || fail "starting the module back did not restore the deployment"
 # Stopping a leaf does not stop the prerequisite, which remains valid on its
 # own; only dependents are expanded by stop/restart.
 run anas stop traefik -w "$ws"
@@ -372,7 +372,7 @@ run anas start traefik -w "$ws"
 [ "$(running)" = "$all_running" ] || fail "start traefik did not restore its dependency chain"
 run anas stop -w "$ws"
 
-step "L16 a flag after a cask name is still a flag"
+step "L16 a flag after a module name is still a flag"
 # The standard Go flag parser stops at the first positional argument, so
 # `anas restart lego -w <workspace>` dropped -w and fell back to the current
 # directory or ANAS_WORKSPACE -- acting on whichever deployment that named,
@@ -381,12 +381,12 @@ step "L16 a flag after a cask name is still a flag"
 # the flag names.
 outside=$(mktemp -d)
 ( cd "$outside" && ANAS_WORKSPACE= "$anas_bin" restart lego -w "$ws" ) \
-  >>"$log" 2>&1 || fail "a flag placed after a cask name was dropped"
-# --root as well as -w: build needs the cask registry, which it otherwise
-# locates from the current directory. Both flags sit after the cask name, which
+  >>"$log" 2>&1 || fail "a flag placed after a module name was dropped"
+# --root as well as -w: build needs the module registry, which it otherwise
+# locates from the current directory. Both flags sit after the module name, which
 # is the thing being tested.
 ( cd "$outside" && ANAS_WORKSPACE= "$anas_bin" build lego -w "$ws" --root "$ROOT_DIR" ) \
-  >>"$log" 2>&1 || fail "build dropped a flag placed after a cask name"
+  >>"$log" 2>&1 || fail "build dropped a flag placed after a module name"
 rmdir "$outside" 2>/dev/null || true
 run anas stop -w "$ws"
 
@@ -413,7 +413,7 @@ true
 
 step "L18 a malformed setting is refused when the config is read"
 # A checked scalar: `ipv6: flase` used to be stored verbatim and read as true by
-# a cask testing != "false", so the setting was written, accepted, and reversed.
+# a module testing != "false", so the setting was written, accepted, and reversed.
 bad=$(mktemp)
 sed 's/^  email:/  ipv6: flase\n  email:/' "$config" > "$bad"
 expect_exit 4 anas plan -c "$bad"

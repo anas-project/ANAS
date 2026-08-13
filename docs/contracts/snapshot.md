@@ -163,9 +163,9 @@ upgrade:
 ```
 
 两者语义不同，不能互相推导：`from` 说的是"能不能升"，`data_breaking` 说的是"升了能不
-能回来"。一个 cask 可以允许从任意版本升上来，而某次升级仍然改写了数据格式。
+能回来"。一个 module 可以允许从任意版本升上来，而某次升级仍然改写了数据格式。
 
-本期落地前**没有任何 cask 声明 `upgrade:`**，两个字段都是纯新增；落地时 17 个 cask
+本期落地前**没有任何 module 声明 `upgrade:`**，两个字段都是纯新增；落地时 17 个 module
 全部补上了 `data_breaking: []`，`from` 仍然一个都没有用到。
 
 `data_breaking` 列出**磁盘数据格式发生断代的版本**：一旦部署了 ≥ 该版本，磁盘数据就
@@ -183,7 +183,7 @@ breaking，30.0.1 → 31.0.0 breaking，30.0.1 → 33.0.0 一次跨过两个断�
 breaking  ⟺  ∃ V ∈ data_breaking,  A < V ≤ B
 ```
 
-`≤ B` 而非 `< B`：升到断代版本本身就已改写格式。多个 cask 同时升级时任一 breaking 即
+`≤ B` 而非 `< B`：升到断代版本本身就已改写格式。多个 module 同时升级时任一 breaking 即
 整体 breaking——快照是 workspace 级的，一个就够。
 
 判定对方向对称：区间 `(min, max]` 与谁是起点无关，升级与回滚走同一个比较。区别只在
@@ -191,27 +191,27 @@ breaking  ⟺  ∃ V ∈ data_breaking,  A < V ≤ B
 
 ### 用哪一份声明（本文初稿未指明，实现按下述规则）
 
-一次跃迁涉及两个版本，各自的 cask.yml 都带着一份 `data_breaking`。**取版本较高的
+一次跃迁涉及两个版本，各自的 module.yml 都带着一份 `data_breaking`。**取版本较高的
 那一份。**
 
-只有"造成断代的那个 release"才可能知道自己断了代；较低版本的 cask.yml 写于断代之前，
+只有"造成断代的那个 release"才可能知道自己断了代；较低版本的 module.yml 写于断代之前，
 不可能提到它。若取低版本的声明，恰好在真正危险的跃迁上得到"兼容"。
 
 因此升级方向取**目标**的声明，回滚方向取**当前已部署**的声明——两者都是"版本较高的
 那一份"。实现上 `data_breaking` 被冻结进 `deployments/<id>/deployment.yml` 的
-`casks.<name>.data_breaking`，判定读冻结值而非磁盘上当前的 cask 包，这样已部署系统的
+`modules.<name>.data_breaking`，判定读冻结值而非磁盘上当前的 module 包，这样已部署系统的
 判定结果不会因为有人更新了 bundle 而改变。
 
 ### 无法解析一律降级为"未知"
 
 版本号或声明条目解析失败时判为**未知**（阻断），不判为"兼容"。声明里的错误是 bug，
-而安全声明里的 bug 的安全读法是"这道闸门可能本该生效"。`cask.yml` 加载时即校验每个
+而安全声明里的 bug 的安全读法是"这道闸门可能本该生效"。`module.yml` 加载时即校验每个
 条目是合法 semver（`loadModuleManifest`），所以这条只在冻结制品被手工改坏时才会走到。
 
 ### 未声明 ≠ 声明为空（必须区分，否则默认值反转）
 
 若把"未声明 `data_breaking`"当作空列表，上式恒为假 → 判定"从不 breaking" → **所有
-回滚放行**。而此前的行为是**默认全部阻断**，且当时 17 个 cask 一个都没声明 `upgrade:`。
+回滚放行**。而此前的行为是**默认全部阻断**，且当时 17 个 module 一个都没声明 `upgrade:`。
 按空列表处理会把默认行为从最保守翻转成最宽松，是一个会静默生效的安全回归。
 
 因此：
@@ -224,13 +224,13 @@ breaking  ⟺  ∃ V ∈ data_breaking,  A < V ≤ B
 
 实现上必须用 `*[]string` 才能区分 `nil` 与空切片，不能用 `[]string`。
 
-**发版前动作**：给每个 cask 显式写 `data_breaking: []`。含义是"到当前版本为止没有断代
+**发版前动作**：给每个 module 显式写 `data_breaking: []`。含义是"到当前版本为止没有断代
 点"——一个可核实的事实陈述，不是对未来的承诺。若发版时全部留空不写，rollback 会因
 "未知"而永远被阻断。
 
-列表的维护规则（只增不改、何时可以修剪）见下面的"给 cask 作者的规则"。
+列表的维护规则（只增不改、何时可以修剪）见下面的"给 module 作者的规则"。
 
-发布粒度使用 cask 的 `(version, revision)`，不使用仅供展示的 `app_version`，与
+发布粒度使用 module 的 `(version, revision)`，不使用仅供展示的 `app_version`，与
 `validateUpgrade` 保持一致。`version` 不同时按 SemVer 比较；`version` 相同时按整数
 `revision` 比较。同一 version 的 revision 跃迁也属于发布变化：未声明
 `data_breaking` 时仍按未知处理，显式 `[]` 才表示兼容。
@@ -262,12 +262,12 @@ breaking → `apply` 前自动创建 `kind: auto` 快照。`--no-snapshot` 显�
 | 情形 | 结果 |
 | --- | --- |
 | 目标 deployment 版本**完全相同**（纯配置回滚） | ✅ 放行，数据不动（现状即如此） |
-| 有版本变化，cask 未声明 `data_breaking` | ❌ 阻断（`--allow-risky` 可绕）——现状 |
+| 有版本变化，module 未声明 `data_breaking` | ❌ 阻断（`--allow-risky` 可绕）——现状 |
 | 有版本变化，已声明且反向不跨断代点 | ✅ 放行 |
 | 有版本变化，**反向跨断代点** | ❌ **直接报错，不提供绕过**，指向 snapshot restore |
 
 第三档是本期唯一的行为放宽——把"任何版本差异都要 `--allow-risky`"缩小到"只有跨断代
-点才要"。这是**体验改进而非安全性改进**，且以 cask 作者正确声明为前提，故默认值必须
+点才要"。这是**体验改进而非安全性改进**，且以 module 作者正确声明为前提，故默认值必须
 保持保守（见上）。
 
 第四档不给 `--allow-risky` 逃生舱：跨断代点意味着旧代码**确定**读不了新格式的数据，
@@ -286,8 +286,8 @@ to return to that state, restore a snapshot instead:
 `--allow-risky` 可绕的那一类（普通错误、退出码 1）在机器可读层面也区分得开。判定在
 `--allow-risky` 之前执行，所以加了这个标志也绕不过去。
 
-**cask 新增/移除维持原样阻断**（`--allow-risky` 可绕）：新增的 cask 在目标里没有对应
-版本，移除的 cask 数据留在磁盘上无人接管，两者都不是版本区间问题，`data_breaking`
+**module 新增/移除维持原样阻断**（`--allow-risky` 可绕）：新增的 module 在目标里没有对应
+版本，移除的 module 数据留在磁盘上无人接管，两者都不是版本区间问题，`data_breaking`
 无从判定。
 
 ### 由此简化掉的三处（**均已落地**）
@@ -339,12 +339,12 @@ pre-breaking 快照反而被挤掉。要强制建用显式 `--snapshot`。
 ### 边界
 
 - **降级**：`validateUpgrade` 已全面禁止（`cmp > 0` 直接报错），`A > B` 不会发生
-- **cask 新增**：无 `A`，不判 breaking（没有旧数据）
-- **cask 移除**：数据留在磁盘上，保守起见维持现有阻断
+- **module 新增**：无 `A`，不判 breaking（没有旧数据）
+- **module 移除**：数据留在磁盘上，保守起见维持现有阻断
 - `upgrade.from` 与 `data_breaking` **独立**：前者决定"能不能升"，后者决定"升了能不
   能回来"
 
-### 给 cask 作者的规则
+### 给 module 作者的规则
 
 **一句话：拿不准就标上。**
 
@@ -360,9 +360,9 @@ pre-breaking 快照反而被挤掉。要强制建用显式 `--snapshot`。
 
 五条操作规则：
 
-1. **发版前每个 cask 都要显式写 `data_breaking: []`。** 不写等于"未知"，会让该 cask
-   的任何版本变化都无法回滚。`TestBundledCasksDeclareDataBreaking` 守着这一条。
-   截至当前 17 个 cask 全部声明为 `[]`——这是一个可核实的事实陈述（还没发过版，没有
+1. **发版前每个 module 都要显式写 `data_breaking: []`。** 不写等于"未知"，会让该 module
+   的任何版本变化都无法回滚。`TestBundledModulesDeclareDataBreaking` 守着这一条。
+   截至当前 17 个 module 全部声明为 `[]`——这是一个可核实的事实陈述（还没发过版，没有
    任何 release 改写过数据格式），不是对未来的承诺。
 2. **断代点必须与造成它的版本号同一次提交写下。** 声明在渲染时被冻结进
    `deployment.yml`，判定读的是冻结值，所以**给一个已经部署出去的版本补标断代点，不会
@@ -373,7 +373,7 @@ pre-breaking 快照反而被挤掉。要强制建用显式 `--snapshot`。
    从该 deployment 回滚到 2.5.1 **仍然放行**。改为"升到 9.0.1 的同时声明 9.0.1 断代"，
    回滚立即被拒。
 
-   这是冻结语义的必然结果，而冻结是对的：另一种做法是判定时去读磁盘上当前的 cask 包，
+   这是冻结语义的必然结果，而冻结是对的：另一种做法是判定时去读磁盘上当前的 module 包，
    那会让已部署系统的判定结果随着有人更新 bundle 而改变。代价是补标无效——所以规则是
    **同批提交**，不是"想起来再补"。
 
@@ -394,9 +394,9 @@ pre-breaking 快照反而被挤掉。要强制建用显式 `--snapshot`。
 5. **`upgrade.from` 必须写成有明确下界的形式**（`>=X` 系）。`"!=31.0.0"` 这类没有下界，
    第 4 条无从执行。
 
-（cask 独立分发落地后可改为每个版本只声明一个布尔、由 runner 遍历 `A..B` 之间所有
-版本判定。现在做不到是因为 runner 手中只有涉及的那两个版本的 cask.yml。见
-[cask-distribution-draft.md](../cask-distribution-draft.md)。）
+（module 独立分发落地后可改为每个版本只声明一个布尔、由 runner 遍历 `A..B` 之间所有
+版本判定。现在做不到是因为 runner 手中只有涉及的那两个版本的 module.yml。见
+[module-distribution-draft.md](../module-distribution-draft.md)。）
 
 ### 非 btrfs
 
@@ -420,7 +420,7 @@ backend: btrfs
 kind: auto              # auto | manual
 pinned: false
 created_at: 2026-07-29T08:15:04Z
-reason: cask_upgrade_breaking    # 枚举，见下
+reason: module_upgrade_breaking    # 枚举，见下
 label: "升级前"                   # 用户自由文本，可空
 source: /home/whl/anas-deploy/data
 path: /home/whl/anas-deploy/snapshots/20260729T081504Z-4a1b2c3d/data
@@ -429,7 +429,7 @@ to_deployment: 20260728T131040Z-cd6fc061     # 同上
 deployment_id: 20260728T131040Z-cd6fc061
 config_digest: sha256:…
 lock_digest: sha256:…
-casks: { nextcloud: "30.0.1", authentik: "2024.10.5" }
+modules: { nextcloud: "30.0.1", authentik: "2024.10.5" }
 artifact_copy: hardlink  # reflink | hardlink | copy，实际用到的降级档位
 complete: true           # 最后写入；缺失即中断产物，不可恢复
 ```
@@ -453,7 +453,7 @@ complete: true           # 最后写入；缺失即中断产物，不可恢复
 | `pre_apply` | `apply` 切换 deployment 前的自动快照 | 已实现 |
 | `pre_restore` | `snapshot restore` 执行前，为使恢复本身可撤销 | 已实现 |
 | `pre_backup` | `anas backup create` 内部建的快照 | 预留 |
-| `cask_upgrade_breaking` | 跨过 `data_breaking` | 已实现 |
+| `module_upgrade_breaking` | 跨过 `data_breaking` | 已实现 |
 | `setting_data_migrate` | 变更了 `effect: data_migrate` **或 `credential_rotate`** 的设置 | 已实现 |
 
 **`setting_data_migrate` 的名字比它的范围窄。** 它同时覆盖 `credential_rotate`：改回
@@ -461,7 +461,7 @@ config.yml 里的口令不会把服务内部（LDAP/DB）的口令改回去，�
 逆转，一样需要退路。名字保留原样是因为枚举值是对外契约，为措辞改名要升
 `api_version`，代价与收益不相称。
 
-两者同时成立时记 `cask_upgrade_breaking`：只建一个快照，取更严重的那个理由。
+两者同时成立时记 `module_upgrade_breaking`：只建一个快照，取更严重的那个理由。
 
 `pre_restore` 与 `pre_apply` 是本次补上的：初稿的枚举里没有它们，但正文既要求恢复前
 建快照、`apply` 又早已在切换前建快照，两者都没有可写的 `reason`。
@@ -486,13 +486,13 @@ anas snapshot list [--json]
       "kind": "auto",
       "pinned": false,
       "created_at": "2026-07-29T08:15:04Z",
-      "reason": "cask_upgrade_breaking",
+      "reason": "module_upgrade_breaking",
       "label": "",
       "deployment_id": "20260728T131040Z-cd6fc061",
       "complete": true,
       "config_matches_current": false,
       "size_bytes": null,
-      "casks": { "nextcloud": "30.0.1" },
+      "modules": { "nextcloud": "30.0.1" },
       "healthy": true
     }
   ]
@@ -546,7 +546,7 @@ t4  渲染 deployment-B 并激活
 
 这也不是新机制：legacy 的 `release/` 路径已经在做
 （`copyFile(cfgPath, work/config.yml)`，[runner.go:369](../../internal/runner/runner.go)），
-只是 deployment 路径没有承接——服务器实测 `deployments/<id>/` 下只有 `casks`、
+只是 deployment 路径没有承接——服务器实测 `deployments/<id>/` 下只有 `modules`、
 `deployment.yml`、`lock.yml`。
 
 用 `state/config-applied.yml` 的 sha256 指纹可以**检测**磁盘 config 与 applied 不符，
@@ -678,7 +678,7 @@ anas snapshot restore <id> -w <workspace> [--dry-run] [-y] [--json]
 
 ## 二期
 
-`anas snapshot diff <id>` —— 对比快照与当前的 cask 版本、配置差异，回滚前知道会丢
+`anas snapshot diff <id>` —— 对比快照与当前的 module 版本、配置差异，回滚前知道会丢
 什么。有价值但不阻塞一期。
 
 ## 覆盖范围（coverage）

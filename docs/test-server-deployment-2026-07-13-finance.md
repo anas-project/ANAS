@@ -53,8 +53,8 @@ rsync -azc \
 
 ```sh
 go test ./...
-bash -n casks/mods/samba_dc/samba_dc/root/usr/local/bin/anas_zone.sh
-bash -n casks/mods/nextcloud/nextcloud/root/usr/local/bin/task.sh
+bash -n modules/samba_dc/samba_dc/root/usr/local/bin/anas_zone.sh
+bash -n modules/nextcloud/nextcloud/root/usr/local/bin/task.sh
 ./bin/anas build -c test-env/server-validation-2026-07-13.yml \
   -b .anas-test/runtime/server-validation-2026-07-13-v8
 ```
@@ -189,7 +189,7 @@ Nextcloud 配置与应用完整性、Memories 数据、Keycloak discovery、Trae
 
 ## 未覆盖和剩余工作
 
-以下不是本轮运行故障，而是当前 cask 的实现边界，因此不能宣称相应业务已经端到端完整：
+以下不是本轮运行故障，而是当前 module 的实现边界，因此不能宣称相应业务已经端到端完整：
 
 1. Keycloak 目前能启动并提供 master realm discovery，但尚未自动创建 NetBird 等业务
    client、redirect URI、LDAP federation 和角色映射；NetBird 的真实登录流程未完成。

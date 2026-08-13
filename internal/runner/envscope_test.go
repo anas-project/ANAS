@@ -28,6 +28,7 @@ func scopeTestApp() *app {
 		reg: map[string]Module{
 			"traefik":  {Name: "traefik", EnvPrefix: "TRAEFIK"},
 			"postgres": {Name: "postgres", EnvPrefix: "POSTGRES"},
+			"samba_dc": {Name: "samba_dc", EnvPrefix: "SAMBA_DC", Consumes: []string{"DOMAINS"}},
 			// POSTGRES_PASSWORD is declared rather than inherited: being a
 			// dependency of postgres no longer carries postgres's values along
 			// with it, which is the whole point of the declaration.
@@ -61,6 +62,7 @@ func scopeTestApp() *app {
 			"NEXTCLOUD_ADMIN_PWD":                  "pw",
 			"ANAS_IDENTITY_CLIENTS":                "nextcloud",
 			"ANAS_IDENTITY_SAML_CLIENTS":           "nextcloud",
+			"DOMAINS":                              "inner/nas/samba_dc,inner/nc/nextcloud",
 		},
 		envOwner: map[string]string{
 			"BASE_DOMAIN":                          "",
@@ -78,11 +80,24 @@ func scopeTestApp() *app {
 			"NEXTCLOUD_ADMIN_PWD":                  "nextcloud",
 			"ANAS_IDENTITY_CLIENTS":                "runner",
 			"ANAS_IDENTITY_SAML_CLIENTS":           "runner",
+			"DOMAINS":                              runnerScope,
 		},
 	}
 }
 
-// A cask receives global values, its own, and exactly what it declares. The
+func TestRunnerTopologyOnlyReachesDeclaredConsumer(t *testing.T) {
+	a := scopeTestApp()
+	if got := a.scopedEnv("samba_dc")["DOMAINS"]; got == "" {
+		t.Fatal("samba_dc declared DOMAINS but did not receive it")
+	}
+	for _, name := range []string{"traefik", "postgres", "nextcloud"} {
+		if _, ok := a.scopedEnv(name)["DOMAINS"]; ok {
+			t.Errorf("%s received runner-owned DOMAINS without declaring it", name)
+		}
+	}
+}
+
+// A module receives global values, its own, and exactly what it declares. The
 // dependency closure decides start order and nothing else: depending on
 // postgres is not a reason to be handed every postgres variable.
 func TestScopedEnvFiltersByDeclarationRatherThanClosure(t *testing.T) {
@@ -127,8 +142,8 @@ func TestScopedEnvUserSecretsRequireClaim(t *testing.T) {
 // Per-engine DNS credentials are separated by env prefix alone, with no
 // consumes entry on either side. This is what lets a deployment run two DDNS
 // implementations against the same vendor with different accounts, and it is
-// also why the updater cask is named ddns_updater rather than ddns: isOwn
-// matches on a prefix, so a cask named ddns would own every DDNS_GO_* key.
+// also why the updater module is named ddns_updater rather than ddns: isOwn
+// matches on a prefix, so a module named ddns would own every DDNS_GO_* key.
 func TestScopedEnvSeparatesPerEngineCredentials(t *testing.T) {
 	a := scopeTestApp()
 	updater := a.scopedEnv("ddns_updater")
@@ -154,12 +169,12 @@ func TestScopedEnvSeparatesPerEngineCredentials(t *testing.T) {
 }
 
 // The deployment-wide environment is what artifact start, stop and rollback
-// read back, so it must carry the global keys and nothing a cask owns.
+// read back, so it must carry the global keys and nothing a module owns.
 func TestGlobalEnvIsGlobalOnly(t *testing.T) {
 	a := scopeTestApp()
 	env := a.globalEnv()
 	if _, ok := env["POSTGRES_PASSWORD"]; ok {
-		t.Error("global env must not contain a cask's secrets")
+		t.Error("global env must not contain a module's secrets")
 	}
 	for _, want := range []string{"HOST_IP", "DEFAULT_GATEWAY_IP", "BASE_DOMAIN"} {
 		if _, ok := env[want]; !ok {
@@ -168,10 +183,10 @@ func TestGlobalEnvIsGlobalOnly(t *testing.T) {
 	}
 }
 
-// Host facts are visible to every cask through their ownership, not through a
-// dependency edge each cask had to be given. Nothing here depends on whoever
+// Host facts are visible to every module through their ownership, not through a
+// dependency edge each module had to be given. Nothing here depends on whoever
 // discovered them.
-func TestGlobalKeysReachCasksWithoutAnEdge(t *testing.T) {
+func TestGlobalKeysReachModulesWithoutAnEdge(t *testing.T) {
 	a := scopeTestApp()
 	for _, name := range []string{"traefik", "postgres", "nextcloud", "ddns_go"} {
 		env := a.scopedEnv(name)
@@ -207,24 +222,24 @@ func TestApplyCalculatePatchEnforcesExports(t *testing.T) {
 		t.Fatalf("exported write rejected: %v", err)
 	}
 
-	// No cask may write an unprefixed key it has not declared. This used to be
-	// exempted for one cask named "core", which is why a deployment-wide value
+	// No module may write an unprefixed key it has not declared. This used to be
+	// exempted for one module named "core", which is why a deployment-wide value
 	// could appear from a bundle with nothing declaring it.
 	if err := a.applyCalculatePatch(a.reg["traefik"], map[string]string{"ANY_GLOBAL": "v"}); err == nil {
 		t.Fatal("an undeclared unprefixed write was accepted")
 	}
 }
 
-func TestCaskRootPasswordGeneratedPerCask(t *testing.T) {
+func TestModuleRootPasswordGeneratedPerModule(t *testing.T) {
 	a := scopeTestApp()
 	a.cfg = &config.File{}
 	a.secrets = &secretStore{values: map[string]string{}}
 	envA := map[string]string{}
-	if err := a.applyCaskRootPassword(envA, "nextcloud"); err != nil {
+	if err := a.applyModuleRootPassword(envA, "nextcloud"); err != nil {
 		t.Fatal(err)
 	}
 	envB := map[string]string{}
-	if err := a.applyCaskRootPassword(envB, "postgres"); err != nil {
+	if err := a.applyModuleRootPassword(envB, "postgres"); err != nil {
 		t.Fatal(err)
 	}
 	pa, pb := envA["DEFAULT_SERVICE_ROOT_PASSWORD"], envB["DEFAULT_SERVICE_ROOT_PASSWORD"]
@@ -232,15 +247,15 @@ func TestCaskRootPasswordGeneratedPerCask(t *testing.T) {
 		t.Fatalf("generated passwords too short: %q %q", pa, pb)
 	}
 	if pa == pb {
-		t.Fatal("per-cask passwords must differ")
+		t.Fatal("per-module passwords must differ")
 	}
 	if a.secrets.values["NEXTCLOUD_DEFAULT_ROOT_PASSWORD"] != pa {
-		t.Fatal("generated password not persisted under the cask prefix")
+		t.Fatal("generated password not persisted under the module prefix")
 	}
 	// A configured shared password takes precedence.
 	a.cfg.Global.DefaultServiceRootPassword = "SharedPass1!"
 	envC := map[string]string{}
-	if err := a.applyCaskRootPassword(envC, "nextcloud"); err != nil {
+	if err := a.applyModuleRootPassword(envC, "nextcloud"); err != nil {
 		t.Fatal(err)
 	}
 	if envC["DEFAULT_SERVICE_ROOT_PASSWORD"] != "SharedPass1!" {

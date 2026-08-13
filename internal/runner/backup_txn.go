@@ -16,7 +16,7 @@ package runner
 //
 // Only what was running comes back. Starting everything would be a plausible
 // approximation and a wrong one: an operator who had deliberately stopped one
-// cask would find a backup had started it for them.
+// module would find a backup had started it for them.
 
 import (
 	"fmt"
@@ -42,9 +42,9 @@ type containerTransaction struct {
 	StartedAt    string `yaml:"started_at"`
 	Workspace    string `yaml:"workspace"`
 	DeploymentID string `yaml:"deployment_id"`
-	// Casks is what was running when the transaction opened, in start order.
-	Casks []string `yaml:"casks"`
-	State string   `yaml:"state"`
+	// Modules is what was running when the transaction opened, in start order.
+	Modules []string `yaml:"modules"`
+	State   string   `yaml:"state"`
 }
 
 func transactionsDir(base string) string { return filepath.Join(base, "state", "transactions") }
@@ -53,15 +53,15 @@ func transactionPath(base, id string) string {
 	return filepath.Join(transactionsDir(base), id+".yml")
 }
 
-// runningCasks asks compose which of a deployment's casks currently have
+// runningModules asks compose which of a deployment's modules currently have
 // containers. It is the only honest way to answer "what was running": the
 // runtime state files record what anas last intended, not what Docker is
 // actually doing after a reboot or a manual `docker stop`.
-func runningCasks(a *app, casksRoot string) []string {
+func runningModules(a *app, modulesRoot string) []string {
 	running := []string{}
-	for _, name := range a.releaseModules(casksRoot) {
-		dir := filepath.Join(casksRoot, name)
-		out, err := a.compose.OutputFile(dir, "anas_"+name, a.releaseComposeFile(name), a.caskEnv(dir), "ps", "-q")
+	for _, name := range a.releaseModules(modulesRoot) {
+		dir := filepath.Join(modulesRoot, name)
+		out, err := a.compose.OutputFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "ps", "-q")
 		if err != nil {
 			continue
 		}
@@ -72,11 +72,11 @@ func runningCasks(a *app, casksRoot string) []string {
 	return running
 }
 
-// beginContainerTransaction records the intent and then stops the casks. The
+// beginContainerTransaction records the intent and then stops the modules. The
 // order matters: the record has to be on disk before the first container goes
 // down, or a crash in between leaves services stopped with nothing to say so.
-func beginContainerTransaction(base string, a *app, casksRoot, deploymentID string) (*containerTransaction, error) {
-	casks := runningCasks(a, casksRoot)
+func beginContainerTransaction(base string, a *app, modulesRoot, deploymentID string) (*containerTransaction, error) {
+	modules := runningModules(a, modulesRoot)
 	id, err := newDeploymentID()
 	if err != nil {
 		return nil, err
@@ -84,13 +84,13 @@ func beginContainerTransaction(base string, a *app, casksRoot, deploymentID stri
 	txn := &containerTransaction{
 		APIVersion: activeStateVersion, ID: id, Kind: containerTransactionKind,
 		StartedAt: nowUTC(), Workspace: workspaceOf(base), DeploymentID: deploymentID,
-		Casks: casks, State: containerTransactionStopped,
+		Modules: modules, State: containerTransactionStopped,
 	}
 	if err := writeYAMLAtomic(transactionPath(base, id), txn, 0600); err != nil {
 		return nil, err
 	}
-	if err := stopCasks(a, casksRoot, casks); err != nil {
-		// The transaction stays on disk. Some casks may already be down, and
+	if err := stopModules(a, modulesRoot, modules); err != nil {
+		// The transaction stays on disk. Some modules may already be down, and
 		// the compensating start is what puts them back.
 		return txn, err
 	}
@@ -99,23 +99,23 @@ func beginContainerTransaction(base string, a *app, casksRoot, deploymentID stri
 
 // finishContainerTransaction starts back exactly what was stopped and then
 // clears the record. It is safe to call twice.
-func finishContainerTransaction(base string, a *app, casksRoot string, txn *containerTransaction) error {
+func finishContainerTransaction(base string, a *app, modulesRoot string, txn *containerTransaction) error {
 	if txn == nil {
 		return nil
 	}
-	if err := startCasks(a, casksRoot, txn.Casks); err != nil {
+	if err := startModules(a, modulesRoot, txn.Modules); err != nil {
 		return err
 	}
 	return os.Remove(transactionPath(base, txn.ID))
 }
 
-func stopCasks(a *app, casksRoot string, casks []string) error {
+func stopModules(a *app, modulesRoot string, modules []string) error {
 	var failures []string
-	// Reverse order: a cask's dependencies outlive it.
-	for i := len(casks) - 1; i >= 0; i-- {
-		name := casks[i]
-		dir := filepath.Join(casksRoot, name)
-		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.caskEnv(dir), "stop"); err != nil {
+	// Reverse order: a module's dependencies outlive it.
+	for i := len(modules) - 1; i >= 0; i-- {
+		name := modules[i]
+		dir := filepath.Join(modulesRoot, name)
+		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "stop"); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 		}
 	}
@@ -125,15 +125,15 @@ func stopCasks(a *app, casksRoot string, casks []string) error {
 	return nil
 }
 
-// startCasks brings back the recorded casks. `compose start` rather than `up`
+// startModules brings back the recorded modules. `compose start` rather than `up`
 // on purpose: the containers still exist, they were only stopped, and `up`
 // would recreate them against whatever the compose file says now — which during
 // a restore is not necessarily what they were.
-func startCasks(a *app, casksRoot string, casks []string) error {
+func startModules(a *app, modulesRoot string, modules []string) error {
 	var failures []string
-	for _, name := range casks {
-		dir := filepath.Join(casksRoot, name)
-		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.caskEnv(dir), "start"); err != nil {
+	for _, name := range modules {
+		dir := filepath.Join(modulesRoot, name)
+		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "start"); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 		}
 	}
@@ -169,22 +169,22 @@ func compensateContainerTransactions(base string) {
 		if txn.Kind != containerTransactionKind || txn.State != containerTransactionStopped {
 			continue
 		}
-		if len(txn.Casks) == 0 {
+		if len(txn.Modules) == 0 {
 			_ = os.Remove(path)
 			continue
 		}
 		fmt.Fprintf(os.Stderr,
-			"warning: a backup started at %s stopped %d cask(s) and did not start them again; starting them now\n",
-			txn.StartedAt, len(txn.Casks))
-		if err := resumeStoppedCasks(base, &txn); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not start %s: %v\n", strings.Join(txn.Casks, ", "), err)
+			"warning: a backup started at %s stopped %d module(s) and did not start them again; starting them now\n",
+			txn.StartedAt, len(txn.Modules))
+		if err := resumeStoppedModules(base, &txn); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not start %s: %v\n", strings.Join(txn.Modules, ", "), err)
 			continue
 		}
 		_ = os.Remove(path)
 	}
 }
 
-func resumeStoppedCasks(base string, txn *containerTransaction) error {
+func resumeStoppedModules(base string, txn *containerTransaction) error {
 	cli, err := compose.Detect()
 	if err != nil {
 		return err
@@ -200,9 +200,9 @@ func resumeStoppedCasks(base string, txn *containerTransaction) error {
 	if id == "" {
 		return fmt.Errorf("no deployment to start")
 	}
-	a, casksRoot, _, err := loadDeploymentApp(base, id, cli)
+	a, modulesRoot, _, err := loadDeploymentApp(base, id, cli)
 	if err != nil {
 		return err
 	}
-	return startCasks(a, casksRoot, txn.Casks)
+	return startModules(a, modulesRoot, txn.Modules)
 }

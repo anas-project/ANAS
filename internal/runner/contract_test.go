@@ -250,10 +250,10 @@ func TestProgressGoesToStderrAsJSONLines(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Stderr = file
-	emitProgress(true, "stop-containers", 8, 13, "casks")
+	emitProgress(true, "stop-containers", 8, 13, "modules")
 	emitProgress(true, "send-data", 734003200, 0, "bytes")
 	emitWarning(true, "plaintext_secrets_leaving_host", "secrets leave the host: %d%% of the way", 50)
-	emitProgress(false, "not-emitted", 1, 2, "casks")
+	emitProgress(false, "not-emitted", 1, 2, "modules")
 	os.Stderr = realErr
 
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
@@ -273,7 +273,7 @@ func TestProgressGoesToStderrAsJSONLines(t *testing.T) {
 		t.Fatalf("record 1 is not JSON: %v", err)
 	}
 	if first["type"] != "progress" || first["phase"] != "stop-containers" ||
-		first["current"] != float64(8) || first["total"] != float64(13) || first["unit"] != "casks" {
+		first["current"] != float64(8) || first["total"] != float64(13) || first["unit"] != "modules" {
 		t.Errorf("record 1 = %v", first)
 	}
 

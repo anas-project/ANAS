@@ -49,7 +49,7 @@ sh -n test-env/scripts/test-smoke.sh
 
 结果：
 
-- 所有 Go package 测试与 cask manifest 静态校验通过；
+- 所有 Go package 测试与 module manifest 静态校验通过；
 - `full`、`matrix-apps`、`matrix-auth`、`matrix-db`、`matrix-network`、
   `matrix-storage`、`min` 共 7 组 plan/render 通过；
 - `mixed-old`、`previous-patch` 升级渲染通过，`future-downgrade` 按预期拒绝；

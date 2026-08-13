@@ -7,8 +7,8 @@
 | 文档 | 类型 | 状态 |
 | --- | --- | --- |
 | [中国大陆镜像与 CNB 发行方案（2026-08-11）](./china-mainland-mirrors-and-cnb-distribution-2026-08-11.md) | 构建、镜像和国内发行 | 当前 |
-| [开源自部署 Kanban 应用全景调研（2026-08-10）](./self-hosted-open-source-kanban-research-2026-08-10.md) | 竞品与 cask 选型 | 当前 |
-| [Cask 官方镜像切换与版本升级评估](./cask-official-image-and-upgrade-assessment-2026-07-29.md) | 上游镜像和版本评估 | 已实施，历史快照 |
+| [开源自部署 Kanban 应用全景调研（2026-08-10）](./self-hosted-open-source-kanban-research-2026-08-10.md) | 竞品与 module 选型 | 当前 |
+| [Module 官方镜像切换与版本升级评估](./module-official-image-and-upgrade-assessment-2026-07-29.md) | 上游镜像和版本评估 | 已实施，历史快照 |
 | [ANAS 设计问题审查报告](./design-review-2026-07-19.md) | 代码与架构审查 | 历史快照 |
 
 ## 维护约定
@@ -17,4 +17,4 @@
 - Star、最新提交和版本不是质量分数，只作为社区规模和活跃度信号。
 - 优先引用项目官网、官方文档、许可证和仓库；聚合站只用于发现候选。
 - “开源”默认采用 OSI/FSF 通常语义。Fair-code、Business Source License 等源码可见项目单列，不混入严格开源推荐。
-- 新选型文档必须说明与 ANAS 的 cask、IAM、数据库、Traefik、备份和升级契约如何衔接。
+- 新选型文档必须说明与 ANAS 的 module、IAM、数据库、Traefik、备份和升级契约如何衔接。

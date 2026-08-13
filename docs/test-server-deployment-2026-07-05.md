@@ -1,7 +1,7 @@
 # 测试服务器部署与验证记录（2026-07-05）
 
 > 说明：本文件由 2026-07-05 的两轮工作合并而成。前一轮（下称"上半场"）修复了两处
-> cask hook bug 并一度将结论表述为"功能完整可用"，其依据是 smoke 与时间点 `docker ps`
+> module hook bug 并一度将结论表述为"功能完整可用"，其依据是 smoke 与时间点 `docker ps`
 > 快照。后一轮（下称"下半场"）对完整栈做了**逐容器的真实状态核查**（`RestartCount` /
 > 容器日志 / 数据库探针 / 健康状态随时间变化），发现上半场的 smoke 属**假性通过**，栈中
 > 仍有三个服务在**崩溃重启**。下半场定位并修复了这三处，复验通过，并把结论修正为下方
@@ -92,11 +92,11 @@ docker logs <container>
 docker exec anas_test_postgres psql -U postgres -tAc "select datname from pg_database"
 ```
 
-## 上半场：两处 cask hook 修复（已在代码中，经本轮确认生效）
+## 上半场：两处 module hook 修复（已在代码中，经本轮确认生效）
 
 ### Hook 修复 A：NetBird management OIDC endpoint 为空
 
-**文件**：`casks/mods/netbird/hook/main.go`。`NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT`
+**文件**：`modules/netbird/hook/main.go`。`NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT`
 原硬连到 `LLNG_OIDC_CONFIGURATION_ENDPOINT`，而 server-buildable 配置用 Keycloak、不加载
 LLNG，导致该变量为空、NetBird management 反复重启。修复为优先取
 `KEYCLOAK_OIDC_CONFIGURATION_ENDPOINT`，回退 LLNG。本轮核查确认 `anas_test_netbird_management`
@@ -104,7 +104,7 @@ LLNG，导致该变量为空、NetBird management 反复重启。修复为优先
 
 ### Hook 修复 B：Nextcloud `DB_HOST` 含端口
 
-**文件**：`casks/mods/nextcloud/hook/main.go`。原将 `DB_HOST` 设为 `POSTGRES_HOST_PORT`
+**文件**：`modules/nextcloud/hook/main.go`。原将 `DB_HOST` 设为 `POSTGRES_HOST_PORT`
 （`host:port`），occ 内部 psql 把整串当主机名解析失败。修复为分开设置
 `DB_HOST=POSTGRES_HOST`、`DB_PORT=POSTGRES_PORT`（MariaDB 分支同理）。本轮读码确认修复
 在位。**但该修复仅覆盖 occ 路径**，未覆盖初始化脚本的 DB 等待路径（见下半场缺陷 3）。
@@ -115,7 +115,7 @@ LLNG，导致该变量为空、NetBird management 反复重启。修复为优先
 
 ## 下半场：三处运行时崩溃缺陷（本轮定位并修复、复验）
 
-### 缺陷 1：postgres cask 不为依赖服务建库（阻断 Keycloak + Nextcloud）
+### 缺陷 1：postgres module 不为依赖服务建库（阻断 Keycloak + Nextcloud）
 
 **现象**：全新启动时 Keycloak 反复 `FATAL: database "keycloak" does not exist` →
 `Failed to start server`（`RestartCount=4`）；Nextcloud 卡在
@@ -124,11 +124,11 @@ LLNG，导致该变量为空、NetBird management 反复重启。修复为优先
 超级用户认证成功），失败纯在"目标库不存在"——没有任何组件负责为依赖模块建库。
 
 **修复**：
-- `casks/mods/postgres/hook/main.go`：`render_env` 阶段扫描全局 env 中所有
+- `modules/postgres/hook/main.go`：`render_env` 阶段扫描全局 env 中所有
   `<PREFIX>_DB_NAME`，凡其 `<PREFIX>_DB_HOST` 或 `<PREFIX>_NETWORK_DB` 指向本 postgres
   主机者收集为待建库；生成幂等脚本 `initdb/10-anas-create-databases.sh`（`SELECT 1 FROM
   pg_database` 不存在则 `CREATE DATABASE`）。MariaDB 背书模块因主机不匹配而不会误建。
-- `casks/mods/postgres/docker-compose.yml`：挂载
+- `modules/postgres/docker-compose.yml`：挂载
   `./initdb:/docker-entrypoint-initdb.d:ro`。
 - `internal/runner/hook.go`：hook 渲染文件权限 `0600` → `0644`。原权限下文件属主为宿主
   用户（uid 1000），postgres 容器以 postgres 用户运行，`source` 挂载脚本报
@@ -144,7 +144,7 @@ http://0.0.0.0:8080`、`Added user 'admin' to realm 'master'`、`RestartCount=0`
 **现象**：`anas_test_netbird_dashboard` 反复 `Restarting (6)`，日志只有重复的
 `Set hosts` / `Set 172.31.1.2 netbird.nas.test`。
 
-**定位**：`casks/mods/netbird/dashboard/start.sh` 顶部 `set -e`，而 `waiting_url` 里
+**定位**：`modules/netbird/dashboard/start.sh` 顶部 `set -e`，而 `waiting_url` 里
 `response=$(curl -s ... $url)` 在 OIDC 端点无法解析时 curl 返回 6（couldn't resolve
 host），命令替换失败直接触发 `set -e` 退出，重试循环没机会执行。OIDC 端点主机
 `auth.nas.test` 从未被写入容器 `/etc/hosts`（脚本只写了 `NETBIRD_DOMAIN`）。这与 hook
@@ -163,7 +163,7 @@ HTTPS 都经 traefik）；curl 加 `-k` 容忍测试自签证书。需重建 `an
 **现象**：修复缺陷 1 后，Nextcloud 变为
 `Waiting anas_test_postgres:anas_test_postgres online...`——端口位置竟是主机名。
 
-**定位**：`casks/mods/nextcloud/nextcloud/root/etc/cont-init.d/10-tasks.sh` 用
+**定位**：`modules/nextcloud/nextcloud/root/etc/cont-init.d/10-tasks.sh` 用
 `cut -d ":" -f 2` 从 `$DB_HOST` 拆端口，假设其为 `host:port`。但 hook 修复 B 已把
 `DB_HOST` 设为纯主机；无冒号时 `cut -f 2` 又返回整串主机名，于是 `nc -zv host host`
 永不成功。这正是 hook 修复 B 未覆盖到的第二条路径。
@@ -254,7 +254,7 @@ go build -o bin/anas ./cmd/anas && ./test-env/scripts/test-static.sh
 ```
 
 待办：
-1. 补齐 Keycloak cask：realm 与各服务 OIDC/SAML 客户端下发、正确的 hostname/proxy 配置，
+1. 补齐 Keycloak module：realm 与各服务 OIDC/SAML 客户端下发、正确的 hostname/proxy 配置，
    使 `/realms/<realm>/.well-known/openid-configuration` 经 traefik 返回 200；复验 NetBird
    dashboard OIDC 引导完成。
 2. 修复 `test-smoke.sh` 使其对真实运行容器判定健康，纳入常规回归。

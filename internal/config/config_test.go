@@ -12,7 +12,7 @@ func TestLoadStructuredConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
 	if err := os.WriteFile(path, []byte(`modules:
-  - traefik
+  traefik: {}
 global:
   base_domain: nas.example.com
   email: admin@example.com
@@ -26,7 +26,7 @@ env:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.Modules[0]; got != "traefik" {
+	if got := cfg.Modules.Order[0]; got != "traefik" {
 		t.Fatalf("module = %q, want traefik", got)
 	}
 	env := cfg.BaseEnv()
@@ -36,7 +36,7 @@ env:
 	if env["BASICAUTH_USER"] != "admin" {
 		t.Fatalf("BASICAUTH_USER = %q", env["BASICAUTH_USER"])
 	}
-	if got := cfg.Administration.LocalAccounts.UsernameTemplate; got != "admin_{cask}" {
+	if got := cfg.Administration.LocalAccounts.UsernameTemplate; got != "admin_{module}" {
 		t.Fatalf("local username template = %q", got)
 	}
 	if got := cfg.Administration.LocalAccounts.PasswordLength; got != 24 {
@@ -46,7 +46,8 @@ env:
 
 func TestLocalAdministratorPolicyIsValidated(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
-	if err := os.WriteFile(path, []byte(`modules: [traefik]
+	if err := os.WriteFile(path, []byte(`modules:
+  traefik: {}
 administration:
   local_accounts:
     username_template: operator
@@ -54,15 +55,14 @@ administration:
 `), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "{cask}") {
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "{module}") {
 		t.Fatalf("error = %v, want username template validation", err)
 	}
 }
 
-func TestServiceIdentityLoginProtocolMapsToIAMSelector(t *testing.T) {
+func TestModuleIdentityLoginProtocolMapsToIAMSelector(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
-	if err := os.WriteFile(path, []byte(`modules: [nextcloud]
-services:
+	if err := os.WriteFile(path, []byte(`modules:
   nextcloud:
     identity:
       login_protocol: saml
@@ -78,9 +78,11 @@ services:
 	}
 }
 
-func TestIdentityAndBootstrapAdministratorAliasesAreMaterialized(t *testing.T) {
+func TestIdentityAndBootstrapAdministratorAreMaterialized(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
-	if err := os.WriteFile(path, []byte(`modules: [samba_dc, nextcloud]
+	if err := os.WriteFile(path, []byte(`modules:
+  samba_dc: {}
+  nextcloud: {}
 identity:
   directory:
     provider: samba_dc
@@ -98,7 +100,7 @@ administration:
 		t.Fatal(err)
 	}
 	if cfg.IAM.Provider != "authentik" || cfg.IAM.DefaultProtocol != "saml" {
-		t.Fatalf("legacy IAM view = %+v", cfg.IAM)
+		t.Fatalf("normalized IAM view = %+v", cfg.IAM)
 	}
 	env := cfg.BaseEnv()
 	if env["SAMBA_DC_ADMIN_NAME"] != "operator" || env["ANAS_BOOTSTRAP_ADMIN_USERNAME"] != "operator" {
@@ -106,20 +108,18 @@ administration:
 	}
 }
 
-func TestLowercaseServiceEnvIsNormalized(t *testing.T) {
+func TestLowercaseModuleConfigIsNormalized(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
 	if err := os.WriteFile(path, []byte(`modules:
-  - nextcloud
+  nextcloud:
+    config:
+      domain_prefix: cloud
+      upload_max_size: 32G
 global:
   base_domain: nas.example.com
   email: admin@example.com
   default_service_root_password: change-me
-services:
-  nextcloud:
-    env:
-      domain_prefix: cloud
-      upload_max_size: 32G
 env:
   ipv4: false
 `), 0644); err != nil {
@@ -215,10 +215,25 @@ envs:
 	}
 }
 
+func TestLoadRejectsTopLevelIAMAlias(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`modules:
+  nextcloud: {}
+iam:
+  provider: authentik
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "field iam not found") {
+		t.Fatalf("error = %v, want strict rejection of top-level iam", err)
+	}
+}
+
 func TestLoadRejectsShortDefaultServicePassword(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
-	if err := os.WriteFile(path, []byte(`modules: [traefik]
+	if err := os.WriteFile(path, []byte(`modules:
+  traefik: {}
 global:
   base_domain: nas.example.com
   email: admin@example.com
@@ -231,11 +246,11 @@ global:
 	}
 }
 
-func TestSetScalarPreservesCommentsAndAddsServiceOverride(t *testing.T) {
+func TestSetScalarPreservesCommentsAndAddsModuleOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
 	if err := os.WriteFile(path, []byte(`modules:
-  - samba_dc
+  samba_dc: {}
 global:
   base_domain: nas.example.com
   email: admin@example.com
@@ -246,7 +261,7 @@ env:
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetScalar(path, []string{"services", "samba_dc", "env", "user_min_pass_length"}, "10"); err != nil {
+	if err := SetScalar(path, []string{"modules", "samba_dc", "config", "user_min_pass_length"}, "10"); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(path)
@@ -261,7 +276,7 @@ env:
 		t.Fatal(err)
 	}
 	if got := cfg.BaseEnv()["SAMBA_DC_USER_MIN_PASS_LENGTH"]; got != "10" {
-		t.Fatalf("service override = %q", got)
+		t.Fatalf("module override = %q", got)
 	}
 }
 
@@ -392,7 +407,7 @@ func TestOptionalBooleansDistinguishFalseFromAbsent(t *testing.T) {
 }
 
 // A typo must not become the opposite instruction. With a plain string field
-// "flase" would be stored verbatim and a cask testing `!= "false"` would read
+// "flase" would be stored verbatim and a module testing `!= "false"` would read
 // it as true: the setting written, the command silent, the behaviour reversed.
 func TestBoolRejectsAnythingThatIsNotABoolean(t *testing.T) {
 	for _, bad := range []string{"flase", "yes", "1", "on"} {

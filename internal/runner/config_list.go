@@ -16,7 +16,7 @@ import (
 // its name: `config explain` answers about a path you supply, and `config set`
 // accepts one. The parameters themselves had moved out of sight -- the
 // deployment-wide ones into a file compiled into the binary, the rest into
-// per-cask manifests -- so the honest answer to "what can I set?" was "read the
+// per-module manifests -- so the honest answer to "what can I set?" was "read the
 // example config". `config secret list` had long since settled the principle
 // for generated secrets; this applies it to configuration.
 
@@ -34,7 +34,7 @@ type configListEntry struct {
 }
 
 // collectConfigParameters builds the inventory from the two declaration sites
-// that survive: the embedded global schema and each cask's manifest.
+// that survive: the embedded global schema and each module's manifest.
 //
 // Parameters are gathered by env key rather than by config name because the env
 // key is what every declaration ultimately produces and what makes two spellings
@@ -91,7 +91,7 @@ func collectConfigParameters(reg map[string]Module, settings map[string]string) 
 		if err != nil {
 			// A parameter that cannot be addressed is a manifest bug, and
 			// listing it without a path would be advertising a dead end.
-			return nil, fmt.Errorf("cask %s parameter %s is not addressable: %w", src.module, src.parameter, err)
+			return nil, fmt.Errorf("module %s parameter %s is not addressable: %w", src.module, src.parameter, err)
 		}
 		entry := configListEntry{
 			Path:      target.Display,
@@ -112,7 +112,7 @@ func collectConfigParameters(reg map[string]Module, settings map[string]string) 
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		// Global parameters first: they are the ones a new deployment must
-		// decide, and a cask parameter only matters once its cask is enabled.
+		// decide, and a module parameter only matters once its module is enabled.
 		iGlobal := entries[i].Module == globalModuleName
 		jGlobal := entries[j].Module == globalModuleName
 		if iGlobal != jGlobal {
@@ -137,17 +137,17 @@ func parameterEnvKey(module, parameter string, reg map[string]Module) string {
 		return paramEnvKey(globalScope, "", parameter)
 	}
 	mod := reg[module]
-	return caskParamEnvKey(module, mod.EnvPrefix, mod.Exports, parameter)
+	return moduleParamEnvKey(module, mod.EnvPrefix, mod.Exports, parameter)
 }
 
 // reportConfigList prints the inventory. Values of parameters their owner marks
 // sensitive are reported as set or unset and never printed: an operator running
 // an inventory command is asking what exists, and `config secret get` already
 // exists for the case where they mean to read a credential.
-// A scope of "" lists everything; otherwise it is `global` or a cask name. The
+// A scope of "" lists everything; otherwise it is `global` or a module name. The
 // argument exists because the error for a misspelled parameter points the
 // reader at this command, and sending them to a 130-line listing to find one
-// cask's parameters would be answering a different question than they asked.
+// module's parameters would be answering a different question than they asked.
 func reportConfigList(cfgPath string, reg map[string]Module, scope string, jsonMode bool) error {
 	settings := map[string]string{}
 	if cfgPath != "" && exists(cfgPath) {

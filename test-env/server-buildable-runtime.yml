@@ -1,24 +1,25 @@
 modules:
-  - samba_dc
-  - samba_fs
-  - postgres
-  - mariadb
-  - keycloak
-  - nextcloud
-  - meshcentral
-  - netbird
-  - lam
-  - ddns_updater
-  - eturnal
-  - freeradius
-
+  samba_dc: {}
+  samba_fs: {}
+  postgres: {}
+  mariadb: {}
+  keycloak: {}
+  nextcloud: {}
+  meshcentral: {}
+  netbird: {}
+  lam: {}
+  ddns_updater:
+    config:
+      dns_provider: cloudflare
+      zone_identifier: test-zone-id
+  eturnal: {}
+  freeradius: {}
 global:
   base_domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: change-me-now
-
 env:
   BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_test_
@@ -29,14 +30,5 @@ env:
   APK_MIRROR_URL: https://mirrors.aliyun.com
   NPM_REGISTRY_URL: https://registry.npmmirror.com
   DOCKER_SOCKET_PATH: /run/anas-docker-test.sock
-
-# A DNS vendor is now chosen per engine rather than deployment-wide. Cloudflare
-# uses a single API token, so this also covers the token-shaped credential.
-services:
-  ddns_updater:
-    env:
-      dns_provider: cloudflare
-      zone_identifier: test-zone-id
-
 secrets:
   cloudflare_dns_api_token: test-token-not-a-real-credential

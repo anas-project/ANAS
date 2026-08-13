@@ -16,7 +16,7 @@ type Module struct {
 	EnvPrefix    string
 	Defaults     map[string]string
 	Required     []string
-	// Parameters is every parameter cask.yml declares, in config spelling.
+	// Parameters is every parameter module.yml declares, in config spelling.
 	// Defaults and Required hold the same names already converted to env keys,
 	// which is the form calculation needs and the wrong form for an inventory.
 	Parameters []string
@@ -27,6 +27,9 @@ type Module struct {
 	Types                  map[string]ParamType
 	Requires               []Dependency
 	RequiresOne            []AlternativeDependency
+	RequiresContracts      []ContractDependency
+	ContractProviders      []ContractProvider
+	Resources              []ResourceRequirement
 	Provides               []ProvidedCapability
 	RequiresCapabilities   []RequiredCapability
 	RunAfter               []string
@@ -40,6 +43,52 @@ type Module struct {
 	Hook                   HookConfig
 	RuntimeType            string
 	ComposeFile            string
+}
+
+// ContractDependency describes a versioned protocol a module consumes.  It is
+// resolved to a provider module and contributes a normal module dependency
+// edge, but its resources have a separate ensure lifecycle.
+type ContractDependency struct {
+	Name       string
+	Version    string
+	SelectedBy string
+	Interfaces []string
+	Default    string
+}
+
+// ContractProvider is a provider implementation shipped inside one module.
+// Operations are deliberately data: the runner dispatches runtimes such as
+// compose_run without knowing anything about PostgreSQL or MariaDB.
+type ContractProvider struct {
+	Name          string                       `yaml:"name" json:"name"`
+	Version       string                       `yaml:"version" json:"version"`
+	Interface     string                       `yaml:"interface" json:"interface"`
+	Manifest      string                       `yaml:"manifest" json:"manifest"`
+	Operations    map[string]ProviderOperation `yaml:"operations" json:"operations"`
+	OperationSvcs []string                     `yaml:"operation_services" json:"operation_services"`
+}
+
+type ProviderOperation struct {
+	Runtime string   `yaml:"runtime" json:"runtime"`
+	Service string   `yaml:"service" json:"service"`
+	Command []string `yaml:"command" json:"command"`
+}
+
+type ResourceRequirement struct {
+	ID       string
+	Contract string
+	Binding  string
+	Spec     map[string]any
+	SpecFrom map[string]string
+}
+
+func (m Module) providedContract(name, iface string) (ContractProvider, bool) {
+	for _, provider := range m.ContractProviders {
+		if provider.Name == name && provider.Interface == iface {
+			return provider, true
+		}
+	}
+	return ContractProvider{}, false
 }
 
 type IdentityProvisioning struct {
@@ -81,25 +130,25 @@ type AlternativeDependency struct {
 	Default    string
 }
 
-// ProvidedCapability is a capability a cask implements, together with the
+// ProvidedCapability is a capability a module implements, together with the
 // protocol interfaces it serves. Unlike requires_one, consumers never name
-// the providing cask: the deployment picks one provider and the runner binds
+// the providing module: the deployment picks one provider and the runner binds
 // consumers to it by capability.
 type ProvidedCapability struct {
 	Name       string
 	Interfaces []string
 }
 
-// RequiredCapability is a capability a cask consumes. It carries no provider
+// RequiredCapability is a capability a module consumes. It carries no provider
 // selector by design: the provider is a deployment-level choice
-// (config iam.provider) and a cask may only narrow the protocol.
+// (config iam.provider) and a module may only narrow the protocol.
 type RequiredCapability struct {
 	Name string
-	// InterfaceSelectedBy is the cask parameter holding the protocol
-	// override, resolved against the cask env prefix (iam_protocol ->
+	// InterfaceSelectedBy is the module parameter holding the protocol
+	// override, resolved against the module env prefix (iam_protocol ->
 	// NEXTCLOUD_IAM_PROTOCOL).
 	InterfaceSelectedBy string
-	// AnyOf lists every protocol this cask can speak; the resolved protocol
+	// AnyOf lists every protocol this module can speak; the resolved protocol
 	// must be one of them.
 	AnyOf []string
 	// Prefer orders AnyOf for "auto" resolution.
@@ -122,11 +171,11 @@ type ChangePolicy struct {
 	Sensitive   bool   `json:"sensitive"`
 }
 
-// bareEnvParameter reports the env key for a parameter a cask publishes under a
+// bareEnvParameter reports the env key for a parameter a module publishes under a
 // bare env name instead of under its own prefix, which is what listing that
-// name in `config.exports` declares. Such a parameter is owned by the cask but
+// name in `config.exports` declares. Such a parameter is owned by the module but
 // addressed by its bare name, so it is set in the config's top level `env:`
-// block rather than under `services.<cask>.env`, where every key acquires the
+// block rather than under `modules.<module>.config`, where every key acquires the
 // prefix.
 func (m Module) bareEnvParameter(parameter string) (string, bool) {
 	key := globalParamEnv(parameter)
@@ -137,7 +186,7 @@ func (m Module) bareEnvParameter(parameter string) (string, bool) {
 }
 
 // ParamType is a parameter's accepted shape. An empty Kind with no Enum means
-// nothing was declared, which is the state every cask parameter was in before
+// nothing was declared, which is the state every module parameter was in before
 // this existed: any string went in and a wrong one was found, at best, when a
 // container failed to start.
 type ParamType struct {
@@ -145,7 +194,7 @@ type ParamType struct {
 	Enum []string
 }
 
-// Declared reports whether the cask said anything about this parameter.
+// Declared reports whether the module said anything about this parameter.
 func (t ParamType) Declared() bool { return t.Kind != "" || len(t.Enum) > 0 }
 
 type Dependency struct {

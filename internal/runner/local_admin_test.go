@@ -14,12 +14,12 @@ func localAdminTestApp(t *testing.T, base string, template string) *app {
 	return &app{
 		base: base,
 		cfg: &config.File{Administration: config.Administration{LocalAccounts: config.LocalAccountDefaults{
-			UsernameTemplate: template, PasswordPolicy: "generated_per_cask", PasswordLength: 24,
+			UsernameTemplate: template, PasswordPolicy: "generated_per_module", PasswordLength: 24,
 		}}},
 		reg: map[string]Module{"ddns_go": {
 			Name: "ddns_go", EnvPrefix: "DDNS_GO",
 			ManagementSurfaces: []ManagementSurface{{ID: "web", URIFrom: "DDNS_GO_DOMAIN_FULL", Authentication: "local"}},
-			LocalAccounts:      []LocalAccount{{ID: "primary", Purpose: "primary", UsernameTemplate: "global", PasswordPolicy: "generated_per_cask", ContainerFormat: "bcrypt"}},
+			LocalAccounts:      []LocalAccount{{ID: "primary", Purpose: "primary", UsernameTemplate: "global", PasswordPolicy: "generated_per_module", ContainerFormat: "bcrypt"}},
 		}},
 		order: []string{"ddns_go"}, env: map[string]string{}, envOwner: map[string]string{}, secrets: secrets,
 	}
@@ -27,7 +27,7 @@ func localAdminTestApp(t *testing.T, base string, template string) *app {
 
 func TestLocalAdministratorIsGeneratedAndPlaintextStaysOutOfDeploymentEnv(t *testing.T) {
 	base := t.TempDir()
-	a := localAdminTestApp(t, base, "admin_{cask}")
+	a := localAdminTestApp(t, base, "admin_{module}")
 	if err := a.materializeLocalAccounts(); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestLocalAdministratorIsGeneratedAndPlaintextStaysOutOfDeploymentEnv(t *tes
 
 func TestLocalAdministratorUsernameIsLockedAcrossTemplateChanges(t *testing.T) {
 	base := t.TempDir()
-	first := localAdminTestApp(t, base, "admin_{cask}")
+	first := localAdminTestApp(t, base, "admin_{module}")
 	if err := first.materializeLocalAccounts(); err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestLocalAdministratorUsernameIsLockedAcrossTemplateChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	second := localAdminTestApp(t, base, "operator_{cask}")
+	second := localAdminTestApp(t, base, "operator_{module}")
 	if err := second.materializeLocalAccounts(); err != nil {
 		t.Fatal(err)
 	}
@@ -62,9 +62,9 @@ func TestLocalAdministratorUsernameIsLockedAcrossTemplateChanges(t *testing.T) {
 	}
 }
 
-func TestLocalAdministratorUsernameMayBeOverriddenPerCask(t *testing.T) {
-	a := localAdminTestApp(t, t.TempDir(), "admin_{cask}")
-	a.cfg.Services = map[string]config.Service{"ddns_go": {Administration: config.ServiceAdministration{
+func TestLocalAdministratorUsernameMayBeOverriddenPerModule(t *testing.T) {
+	a := localAdminTestApp(t, t.TempDir(), "admin_{module}")
+	a.cfg.Modules.Values = map[string]config.ModuleConfig{"ddns_go": {Administration: config.ModuleAdministration{
 		LocalAccounts: map[string]config.LocalAccountOverride{"primary": {Username: "dns_operator"}},
 	}}}
 	if err := a.materializeLocalAccounts(); err != nil {
@@ -76,7 +76,7 @@ func TestLocalAdministratorUsernameMayBeOverriddenPerCask(t *testing.T) {
 }
 
 func TestSelectLocalAdministratorRequiresIDWhenAmbiguous(t *testing.T) {
-	records := []localAdminRecord{{Cask: "app", ID: "primary"}, {Cask: "app", ID: "recovery"}}
+	records := []localAdminRecord{{Module: "app", ID: "primary"}, {Module: "app", ID: "recovery"}}
 	if _, err := selectLocalAdmin(records, "app", ""); err == nil {
 		t.Fatal("ambiguous local account selection succeeded")
 	}
@@ -92,14 +92,14 @@ func TestLocalAdministratorDocumentUsesActiveDeploymentURL(t *testing.T) {
 	if err := saveActiveState(base, &activeDeploymentState{ActiveDeployment: deploymentID}); err != nil {
 		t.Fatal(err)
 	}
-	envPath := filepath.Join(base, "deployments", deploymentID, "casks", "ddns_go", ".env")
+	envPath := filepath.Join(base, "deployments", deploymentID, "modules", "ddns_go", ".env")
 	if err := os.MkdirAll(filepath.Dir(envPath), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(envPath, []byte("DDNS_GO_DOMAIN_FULL=https://ddns.example.test:443\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	record := localAdminRecord{Cask: "ddns_go", ID: "primary", URIFrom: "DDNS_GO_DOMAIN_FULL"}
+	record := localAdminRecord{Module: "ddns_go", ID: "primary", URIFrom: "DDNS_GO_DOMAIN_FULL"}
 	if got := activeLocalAdminURL(base, record); got != "https://ddns.example.test:443" {
 		t.Fatalf("active local administrator URL = %q", got)
 	}

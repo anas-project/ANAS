@@ -14,8 +14,8 @@ func TestResolveGlobalAndServiceConfigTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A parameter a cask publishes under a bare env name is reachable through
-	// the cask that owns it, and keeps that cask's change policy rather than
+	// A parameter a module publishes under a bare env name is reachable through
+	// the module that owns it, and keeps that module's change policy rather than
 	// falling back to the default one.
 	guest, err := resolveConfigTarget("samba_fs.share_guest_read_only", reg)
 	if err != nil {
@@ -46,7 +46,7 @@ func TestOrdinaryStartRejectsImmutableChange(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.yml")
 	writeTestConfig := func(domain string) {
 		t.Helper()
-		content := "modules: [traefik]\nglobal:\n  base_domain: " + domain + "\n  email: admin@example.com\n  default_service_root_password: change-me\n"
+		content := "modules:\n  traefik: {}\nglobal:\n  base_domain: " + domain + "\n  email: admin@example.com\n  default_service_root_password: change-me\n"
 		if err := os.WriteFile(cfgPath, []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}

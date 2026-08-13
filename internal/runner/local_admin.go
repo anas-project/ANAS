@@ -23,7 +23,7 @@ type localAdminState struct {
 }
 
 type localAdminRecord struct {
-	Cask      string `yaml:"cask" json:"cask"`
+	Module    string `yaml:"module" json:"module"`
 	ID        string `yaml:"id" json:"id"`
 	Purpose   string `yaml:"purpose" json:"purpose"`
 	Username  string `yaml:"username" json:"username"`
@@ -71,10 +71,10 @@ func copyLocalAdminState(base, dst string) error {
 	return writeYAMLAtomic(dst, &state, 0600)
 }
 
-func localAdminKey(cask, id string) string { return cask + "." + id }
+func localAdminKey(module, id string) string { return module + "." + id }
 
-func localAdminSecretKey(cask, id string) string {
-	return "ANAS_LOCAL_ADMIN__" + defaultEnvPrefix(cask) + "__" + defaultEnvPrefix(id) + "__PASSWORD"
+func localAdminSecretKey(module, id string) string {
+	return "ANAS_LOCAL_ADMIN__" + defaultEnvPrefix(module) + "__" + defaultEnvPrefix(id) + "__PASSWORD"
 }
 
 func localAdminEnvKeys(mod Module, id string) (string, string) {
@@ -91,29 +91,29 @@ func (a *app) materializeLocalAccounts() error {
 		return err
 	}
 	a.localAdmins = state
-	for _, cask := range a.order {
-		mod := a.reg[cask]
+	for _, module := range a.order {
+		mod := a.reg[module]
 		for _, declared := range mod.LocalAccounts {
-			key := localAdminKey(cask, declared.ID)
+			key := localAdminKey(module, declared.ID)
 			record, locked := state.Accounts[key]
 			if !locked {
 				username := declared.FixedUsername
 				if username == "" {
-					if service, ok := a.cfg.Services[cask]; ok {
+					if service, ok := a.cfg.Modules.Values[module]; ok {
 						if override, ok := service.Administration.LocalAccounts[declared.ID]; ok && strings.TrimSpace(override.Username) != "" {
 							username = strings.TrimSpace(override.Username)
 						}
 					}
 				}
 				if username == "" {
-					username = strings.ReplaceAll(a.cfg.Administration.LocalAccounts.UsernameTemplate, "{cask}", strings.ReplaceAll(cask, "-", "_"))
+					username = strings.ReplaceAll(a.cfg.Administration.LocalAccounts.UsernameTemplate, "{module}", strings.ReplaceAll(module, "-", "_"))
 				}
 				if !localAdminUsernamePattern.MatchString(username) {
 					return fmt.Errorf("local administrator %s resolves to invalid username %q", key, username)
 				}
 				record = localAdminRecord{
-					Cask: cask, ID: declared.ID, Purpose: declared.Purpose, Username: username,
-					SecretKey: localAdminSecretKey(cask, declared.ID), URIFrom: localAdminURIFrom(mod),
+					Module: module, ID: declared.ID, Purpose: declared.Purpose, Username: username,
+					SecretKey: localAdminSecretKey(module, declared.ID), URIFrom: localAdminURIFrom(mod),
 				}
 				state.Accounts[key] = record
 				state.dirty = true
@@ -125,7 +125,7 @@ func (a *app) materializeLocalAccounts() error {
 			}
 			usernameKey, _ := localAdminEnvKeys(mod, declared.ID)
 			a.env[usernameKey] = record.Username
-			a.setEnvOwner(usernameKey, cask)
+			a.setEnvOwner(usernameKey, module)
 		}
 	}
 	return nil
@@ -140,14 +140,14 @@ func localAdminURIFrom(mod Module) string {
 	return ""
 }
 
-func (a *app) localAdminHookEnv(cask string, env map[string]string) map[string]string {
-	if a.localAdmins == nil || len(a.reg[cask].LocalAccounts) == 0 {
+func (a *app) localAdminHookEnv(module string, env map[string]string) map[string]string {
+	if a.localAdmins == nil || len(a.reg[module].LocalAccounts) == 0 {
 		return env
 	}
 	out := cloneMap(env)
-	mod := a.reg[cask]
+	mod := a.reg[module]
 	for _, declared := range mod.LocalAccounts {
-		record, ok := a.localAdmins.Accounts[localAdminKey(cask, declared.ID)]
+		record, ok := a.localAdmins.Accounts[localAdminKey(module, declared.ID)]
 		if !ok {
 			continue
 		}
@@ -164,10 +164,10 @@ func sortedLocalAdminRecords(state *localAdminState) []localAdminRecord {
 		out = append(out, record)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Cask == out[j].Cask {
+		if out[i].Module == out[j].Module {
 			return out[i].ID < out[j].ID
 		}
-		return out[i].Cask < out[j].Cask
+		return out[i].Module < out[j].Module
 	})
 	return out
 }

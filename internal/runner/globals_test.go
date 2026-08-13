@@ -15,7 +15,7 @@ func TestGlobalSchemaParses(t *testing.T) {
 		t.Fatal("global schema is empty")
 	}
 	// Parameters are declared in lower snake_case and become env keys, the same
-	// rule cask manifests follow. There are no exceptions: IPv4 and IPv6 used
+	// rule module manifests follow. There are no exceptions: IPv4 and IPv6 used
 	// to keep a mixed-case spelling, which forced every mapper to carry a
 	// special case for them and made the mapping non-uniform for no benefit.
 	for _, key := range append(append([]string{}, schema.Required...), keysOf(schema.Defaults)...) {
@@ -37,7 +37,7 @@ func TestGlobalSchemaParses(t *testing.T) {
 }
 
 // Ownership is the whole scoping mechanism: a deployment-wide key recorded
-// under a cask's name silently disappears from every other cask's .env, with
+// under a module's name silently disappears from every other module's .env, with
 // no error anywhere. This pins the keys that must stay global.
 func TestDeploymentWideKeysAreGloballyOwned(t *testing.T) {
 	reg, err := loadRegistry(filepath.Join("..", ".."))
@@ -69,17 +69,17 @@ func TestDeploymentWideKeysAreGloballyOwned(t *testing.T) {
 			continue
 		}
 		if owner != globalScope {
-			t.Errorf("%s is owned by %q; it must stay global or casks outside that owner lose it", key, owner)
+			t.Errorf("%s is owned by %q; it must stay global or modules outside that owner lose it", key, owner)
 		}
 	}
 	// The file-sharing parameters went the other way: they belong to samba_fs
 	// and keep their bare names through config.exports.
 	//
 	// This is the defaulted path. A value the user writes into the config's top
-	// level `env:` block is globally owned before any cask default is applied,
+	// level `env:` block is globally owned before any module default is applied,
 	// which is true of every key set there and is what that block means; such a
 	// value is therefore visible deployment-wide, exactly as it was when these
-	// parameters lived in the core cask.
+	// parameters lived in the core module.
 	for _, key := range []string{"SHARE_DIR_NAME", "SHARE_ACCESS_MODE", "SHARE_GUEST_READ_ONLY", "USE_DEFAULT_DOMAIN"} {
 		if owner := a.envOwner[key]; owner != "samba_fs" {
 			t.Errorf("%s is owned by %q, want samba_fs", key, owner)
@@ -96,7 +96,7 @@ func keysOf(m map[string]string) []string {
 }
 
 // Artifact start, stop and rollback recover the deployment-wide environment
-// from a file beside the rendered casks rather than from the config, so they
+// from a file beside the rendered modules rather than from the config, so they
 // use the values the release was actually built with.
 func TestAdoptReleaseEnvReadsGlobalFile(t *testing.T) {
 	release := t.TempDir()

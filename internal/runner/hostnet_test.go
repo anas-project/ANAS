@@ -5,12 +5,12 @@ import (
 	"testing"
 )
 
-func hostNetApp(env map[string]string, casks map[string]Module) *app {
+func hostNetApp(env map[string]string, modules map[string]Module) *app {
 	order := []string{}
-	for name := range casks {
+	for name := range modules {
 		order = append(order, name)
 	}
-	return &app{env: env, envOwner: map[string]string{}, reg: casks, order: order}
+	return &app{env: env, envOwner: map[string]string{}, reg: modules, order: order}
 }
 
 func TestCalcVLANAcceptsSlash28(t *testing.T) {
@@ -55,7 +55,7 @@ func TestApplyHostNetworkUsesExplicitHostNetwork(t *testing.T) {
 }
 
 // The host environment describes the machine, not whoever discovered it, so
-// every cask sees it regardless of its dependency closure. Recording anything
+// every module sees it regardless of its dependency closure. Recording anything
 // else would silently shrink a rendered .env.
 func TestApplyHostNetworkPublishesGloballyOwnedKeys(t *testing.T) {
 	a := hostNetApp(map[string]string{
@@ -89,14 +89,14 @@ func TestApplyHostNetworkSkipsVLANWithoutHostLANConsumer(t *testing.T) {
 	}
 	a := hostNetApp(env, map[string]Module{"traefik": {Name: "traefik"}})
 	if err := a.applyHostNetwork(); err != nil {
-		t.Fatalf("render failed on a /32 host with no host-LAN cask: %v", err)
+		t.Fatalf("render failed on a /32 host with no host-LAN module: %v", err)
 	}
 	if a.env["VLAN_SEGMENT"] != "" || a.env["HOST_SEGMENT"] != "" {
 		t.Fatalf("macvlan plan published without a consumer: segment=%q host=%q",
 			a.env["VLAN_SEGMENT"], a.env["HOST_SEGMENT"])
 	}
 
-	// The same host does have to fail when a cask genuinely needs the bridge:
+	// The same host does have to fail when a module genuinely needs the bridge:
 	// starting samba_fs without one is worse than refusing to render.
 	needsLAN := hostNetApp(map[string]string{
 		"HOST_IP":          "203.0.113.7",
@@ -104,7 +104,7 @@ func TestApplyHostNetworkSkipsVLANWithoutHostLANConsumer(t *testing.T) {
 		"HOST_SUBNET_MASK": "32",
 	}, map[string]Module{"samba_fs": {Name: "samba_fs", UseHostLAN: "required"}})
 	if err := needsLAN.applyHostNetwork(); err == nil {
-		t.Fatal("expected a /32 host to be rejected once a cask requires host LAN")
+		t.Fatal("expected a /32 host to be rejected once a module requires host LAN")
 	}
 }
 

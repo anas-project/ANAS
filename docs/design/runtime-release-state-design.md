@@ -5,7 +5,7 @@
 - 启动、重启、构建、渲染、应用和回滚的命令语义；
 - 环境变量、生成密钥和 hook 输入的记录与分发方式；
 - 用户配置、已解析配置和已应用状态的职责；
-- cask 版本锁、能力绑定和 deployment 版本快照；
+- module 版本锁、能力绑定和 deployment 版本快照；
 - 发布失败、进程崩溃、连续回滚和垃圾回收。
 
 项目尚未发布，本方案不保留当前 CLI 和运行目录的兼容语义，优先选择职责
@@ -16,7 +16,7 @@
 当前实现的三个方向应保留：
 
 1. release 是不可变制品，无配置启动时不重新 calculate/render；
-2. 每个 cask 的环境按 owner、依赖闭包和 `consumes` 收窄；
+2. 每个 module 的环境按 owner、依赖闭包和 `consumes` 收窄；
 3. hook 编译后冻结进 release，制品启动不依赖 Go 工具链。
 
 但当前整体并非最优，主要原因是：
@@ -25,7 +25,7 @@
    会提交 lock、capability bindings 和 applied config；
 2. `config.yml` 同时充当用户期望配置、release 启动输入和回滚依据，导致
    制品仍依赖解析当前源码中的 manifest；
-3. `cask.lock.yml` 同时承担解析输入、当前运行版本记录和升级基线，候选构建
+3. `module.lock.yml` 同时承担解析输入、当前运行版本记录和升级基线，候选构建
    与活动状态会互相污染；
 4. `.env` 同时承担 Compose 插值、hook 输入快照和容器运行环境，权限边界仍
    不够细；
@@ -59,19 +59,19 @@
 | `rollback` | 交换两个目录并恢复可选 lock snapshot | 只能可靠回退一次，且完全不检查 change policy |
 
 远端实测已经确认：`render -> start` 后服务可以运行，但
-`cask.lock.yml` 和 `state/config-applied.yml` 都不存在；第一次 rollback
+`module.lock.yml` 和 `state/config-applied.yml` 都不存在；第一次 rollback
 后，新的 `release.previous` 没有 lock snapshot。
 
 ### 2.2 环境变量记录
 
-当前每个 cask 的 `.env` 已经按作用域过滤，这是明显进步。但一个文件仍有
+当前每个 module 的 `.env` 已经按作用域过滤，这是明显进步。但一个文件仍有
 三种消费者：
 
 1. Docker Compose `${KEY}` 插值；
 2. `env_file: .env` 注入容器；
 3. runner 在 artifact start 时恢复 hook/Compose 输入。
 
-这三者需要的键集合不同。即使 cask 级隔离正确，同一 cask 内的辅助容器仍
+这三者需要的键集合不同。即使 module 级隔离正确，同一 module 内的辅助容器仍
 可能拿到主服务凭据。另一个问题是 owner/sensitive 仍是运行时推断：secret
 store 中的键本应天然敏感，不应通过“其值是否也出现在 env”来判断。
 
@@ -91,9 +91,9 @@ store 中的键本应天然敏感，不应通过“其值是否也出现在 env�
 
 ### 2.4 锁定文件
 
-当前全局 `cask.lock.yml` 混合了两种不同职责：
+当前全局 `module.lock.yml` 混合了两种不同职责：
 
-- **解析锁**：下次 resolve 时稳定选择 cask 版本和 capability provider；
+- **解析锁**：下次 resolve 时稳定选择 module 版本和 capability provider；
 - **部署记录**：描述当前活动 release 实际用了什么。
 
 解析候选时不应覆盖活动部署记录，活动部署也不应反过来成为唯一的项目解析
@@ -105,7 +105,7 @@ store 中的键本应天然敏感，不应通过“其值是否也出现在 env�
 | --- | --- | --- | --- |
 | 用户期望状态 | 用户维护的 `config.yml` | 是 | 可能包含用户 secret |
 | 解析锁 | config 同目录 `<config-name>.lock.yml` | 显式更新 | 否，只含版本、digest、绑定和 source |
-| deployment 制品 | `deployments/<deployment-id>/` | 否 | cask 运行文件可能包含，目录整体按敏感数据保护 |
+| deployment 制品 | `deployments/<deployment-id>/` | 否 | module 运行文件可能包含，目录整体按敏感数据保护 |
 | 活动运行状态 | `state/active.yml` | 仅 apply/rollback 提交 | 否 |
 | 生成密钥 | `secrets/` 的版本化 secret store | 追加式 | 是 |
 
@@ -164,7 +164,7 @@ store 中的键本应天然敏感，不应通过“其值是否也出现在 env�
       deployment.yml           # 自描述且不可变的部署 manifest
       resolved.redacted.yml    # 最终解析结果，secret 仅保留引用/哈希
       lock.yml                 # 本 deployment 使用的解析锁快照
-      casks/
+      modules/
         <name>/
           compose.yml
           compose.env          # 仅 Compose 插值所需，0600
@@ -199,6 +199,7 @@ store 中的键本应天然敏感，不应通过“其值是否也出现在 env�
 ```yaml
 api_version: anas.state/v2
 active_deployment: 20260720T081530Z-8f3c12ab
+runtime_status: running
 previous_deployments:
   - 20260719T163200Z-31aa920d
 activated_at: 2026-07-20T08:16:02Z
@@ -207,14 +208,14 @@ transaction: apply-20260720T081530Z
 ```
 
 这样可以连续回滚任意仍在保留期内的 deployment，不再需要
-`.cask.lock.snapshot`。`state/`、`staging/`、`deployments/` 必须位于同
+`.module.lock.snapshot`。`state/`、`staging/`、`deployments/` 必须位于同
 一文件系统，晋升和状态提交才能用原子 rename 完成；`data/` 可以单独
 挂载。
 
-每 release 独立目录意味着 cask 工作目录路径每次 apply 都会变化，这是
+每 release 独立目录意味着 module 工作目录路径每次 apply 都会变化，这是
 上文第 9 条不变量存在的原因：hook 派生的路径、compose bind mount 和
 `docker_copies` 的目标都不得把 release 路径固化到 release 目录与
-`data/` 之外。迁移时需要审计现有 cask（samba_dc 证书路径、postgres
+`data/` 之外。迁移时需要审计现有 module（samba_dc 证书路径、postgres
 init 脚本等）是否违反这一条。
 
 ## 5. Deployment manifest
@@ -231,14 +232,14 @@ module_order: [lego, traefik, postgres, nextcloud]
 capability_bindings:
   nextcloud:
     relational_database: postgres
-casks:
+modules:
   traefik:
-    cask_version: 1.2.0
+    module_version: 1.2.0
     app_version: 3.2.0
     runtime: compose
-    compose_file: casks/traefik/compose.yml
-    compose_env: casks/traefik/compose.env
-    hook: casks/traefik/hook
+    compose_file: modules/traefik/compose.yml
+    compose_env: modules/traefik/compose.env
+    hook: modules/traefik/hook
     artifact_digest: sha256:...
     image_digests:
       - traefik@sha256:...
@@ -246,7 +247,7 @@ casks:
       TRAEFIK_ADMIN_PASSWORD: TRAEFIK_ADMIN_PASSWORD@2
 ```
 
-启动旧 deployment 时不再调用 `loadRegistry` 重新解释当前 cask manifest。
+启动旧 deployment 时不再调用 `loadRegistry` 重新解释当前 module manifest。
 runner 只校验 deployment ABI、artifact digest 和本机依赖，然后按
 `module_order` 执行。
 
@@ -271,7 +272,7 @@ release 拒绝 start/rollback 并提示 re-apply，而不是尝试猜测。否�
 | `anas start` | 幂等启动 active deployment | 否 |
 | `anas restart` | 明确 down/up active deployment | 否 |
 | `anas stop` | 停止 active deployment | 否 |
-| `anas rollback [deployment-id]` | 经配置与 cask 版本门禁后回到目标 deployment | 是 |
+| `anas rollback [deployment-id]` | 经配置与 module 版本门禁后回到目标 deployment | 是 |
 | `anas deployments list/inspect` | 查看 deployment 状态索引与不可变 manifest | 否 |
 
 `render` 和 `build` 不再“顺便部署”。如果用户希望一步完成，唯一入口是
@@ -288,7 +289,7 @@ rollback 不是纯粹的指针切换。secret generation 只能回退文件状�
 
 因此 rollback 必须执行与 apply 相同的变更计划比较（目标 deployment 的
 resolved state vs 当前 active deployment），命中 `credential_rotate`、
-`data_migrate`、`immutable` 策略时默认拒绝。即使配置完全相同，只要 cask
+`data_migrate`、`immutable` 策略时默认拒绝。即使配置完全相同，只要 module
 或 app 版本发生反向变化，也按“数据兼容性未知”拒绝。操作者必须选择：
 
 1. 已完成外部迁移/验证后使用 `--allow-risky`，只回退制品；
@@ -370,7 +371,7 @@ resolve 阶段的每个值都应携带元数据：
 ```go
 type ResolvedValue struct {
     Key            string
-    Producer       string       // global、user 或 cask name
+    Producer       string       // global、user 或 module name
     Source         ValueSource  // config/default/hook/capability/secret
     Classification Classification // public/internal/sensitive
     Consumers      []string
@@ -390,7 +391,7 @@ type ResolvedValue struct {
   把现有启发式换了个数据结构，没有解决过度广播；
 - calculate 阶段的输入保持特权（可读全量 env 与 secrets），约束落在
   输出侧；只有 render/services/after_start 的输入收窄到 contract。否则
-  samba_dc 这类在派生阶段读取大量跨 cask 键的 hook 会全部断掉；
+  samba_dc 这类在派生阶段读取大量跨 module 键的 hook 会全部断掉；
 - hook calculate 的输出必须声明 producer、classification 和 export contract；
 - capability 输出使用类型化 capability 名称，不依赖任意全局 env 键覆盖。
 
@@ -401,8 +402,8 @@ type ResolvedValue struct {
 3. hook request：运行时按 manifest contract 临时构造，不保存全量 secrets
    快照。
 
-容器级拆分需要新的 manifest 契约：cask.yml 为每个 service 声明它需要
-的 env 键集合（例如 `services.<name>.env: [KEY...]`），初值可以从
+容器级拆分需要新的 manifest 契约：module.yml 为每个 service 声明它需要
+的 env 键集合（例如 `modules.<name>.config: [KEY...]`），初值可以从
 compose 文件中的 `${KEY}` 插值和 `environment:` 引用自动推导，再由声明
 显式补充。没有这个 schema，per-service env 无从生成，阶段 3 无法开工。
 
@@ -477,7 +478,7 @@ active deployment resolved.redacted.yml + deployment.yml
 
 - 用户显式配置；
 - manifest 默认值；
-- cask/app 版本和 image digest；
+- module/app 版本和 image digest；
 - capability bindings；
 - secret generation；
 - 模块集合、顺序和服务集合；
@@ -486,7 +487,7 @@ active deployment resolved.redacted.yml + deployment.yml
 这样 `credential_rotate`、`data_migrate`、`immutable` 守卫不会因为
 `AppliedAt` 缺失而失效，也能发现默认值或 provider 漂移。
 
-应用内部 observed state 仍与 desired/applied state 分开。后续 cask
+应用内部 observed state 仍与 desired/applied state 分开。后续 module
 reconciler 可把探测摘要写入 transaction verification result，但不能把容器
 当前状态反写为用户期望配置。
 
@@ -500,8 +501,8 @@ reconciler 可把探测摘要写入 transaction verification result，但不能�
 指向哪个目录，lock 就在哪个目录，
 而不是模糊的"项目侧"。由用户提交或备份，包含：
 
-- config schema 和 cask ABI；
-- cask packaging version、source 和 source digest；
+- config schema 和 module ABI；
+- module packaging version、source 和 source digest；
 - capability provider bindings；
 - image tag 解析后的 digest；
 - hook/template bundle digest。
@@ -514,24 +515,24 @@ lock 与 config 不一致时给出 diff 并失败，不能静默改锁。
 每个 deployment 内保存其使用的 `lock.yml`，并由 `deployment.yml` 记录
 checksum。这是部署证据，不可修改。rollback 直接使用目标 deployment 的
 snapshot，不修改
-项目侧 lock，也不存在全局 `.cask.lock.snapshot`。
+项目侧 lock，也不存在全局 `.module.lock.snapshot`。
 
-### 10.3 Runner 与 cask bundle 分离
+### 10.3 Runner 与 module bundle 分离
 
-runner 可执行文件不再假设 cask 必须和源码仓库同目录。解析/物化命令按以下
-顺序寻找独立 bundle 根：`--cask-root`、`ANAS_CASK_ROOT`、约定安装目录；
-项目 lock 同时记录 cask version、source 标识和整目录 SHA-256。相同版本但
+runner 可执行文件不再假设 module 必须和源码仓库同目录。解析/物化命令按以下
+顺序寻找独立 bundle 根：`--module-root`、`ANAS_MODULE_ROOT`、约定安装目录；
+项目 lock 同时记录 module version、source 标识和整目录 SHA-256。相同版本但
 内容被改动时，普通 render/apply 拒绝，必须显式 `anas lock` 或
 `--update-lock`。
 
-分离边界是：plan/lock/render/build/apply 需要 cask bundle；已经物化的
+分离边界是：plan/lock/render/build/apply 需要 module bundle；已经物化的
 start/stop/restart/rollback 只读取 `deployment.yml`、冻结的 compose/env/hook，
-既不需要 cask 源目录，也不需要 Go 工具链。后续 cask store/下载器只需把
-校验后的 bundle 放进 `ANAS_CASK_ROOT`，无需改变 deployment ABI。
+既不需要 module 源目录，也不需要 Go 工具链。后续 module store/下载器只需把
+校验后的 bundle 放进 `ANAS_MODULE_ROOT`，无需改变 deployment ABI。
 
 ## 11. 构建和镜像
 
-当前 build 只记录 cask version，无法保证同一 tag 下镜像内容不变。目标方案：
+当前 build 只记录 module version，无法保证同一 tag 下镜像内容不变。目标方案：
 
 1. build/pull 后解析并记录 image content digest；
 2. release compose 使用 digest，而不是可变 tag；
@@ -541,7 +542,7 @@ start/stop/restart/rollback 只读取 `deployment.yml`、冻结的 compose/env/h
 
 ## 12. Verify 与健康提交
 
-Compose `up -d` 成功不等于部署成功。cask manifest 应允许声明：
+Compose `up -d` 成功不等于部署成功。module manifest 应允许声明：
 
 ```yaml
 verify:
@@ -561,7 +562,7 @@ verify:
 主可达地址，要么退化为在某个容器内执行的 command 检查。不定义执行上下
 文，示例就是误导。
 
-只有所有 required cask 验证通过后才提交 active state。`after_start` 中实际
+只有所有 required module 验证通过后才提交 active state。`after_start` 中实际
 属于验证的逻辑迁到 verify；必须修改外部状态的 reconcile hook 要幂等，并在
 journal 中记录补偿动作。
 
@@ -620,14 +621,14 @@ snapshot"，修的正是阶段 1-2 要删除的机制；项目未发布、无兼
 4. artifact start 完全由 release manifest 驱动；
 5. rollback 按 release ID 工作，并接入 change-policy 守卫；
 6. 新增 `status`；
-7. 审计现有 cask 对 release 路径的外部固化（不变量 9）。
+7. 审计现有 module 对 release 路径的外部固化（不变量 9）。
 
 ### 阶段 2：配置与 lock 分层
 
 1. 引入 config 同目录 `<config-name>.lock.yml`；
 2. 保存 `resolved.redacted.yml`；
 3. 删除 release 中作为启动输入的原始 `config.yml`；
-4. 删除全局 mutable `cask.lock.yml` 和独立 `config-applied.yml`。
+4. 删除全局 mutable `module.lock.yml` 和独立 `config-applied.yml`。
 
 ### 阶段 3：值图和容器级环境隔离
 
@@ -635,13 +636,13 @@ snapshot"，修的正是阶段 1-2 要删除的机制；项目未发布、无兼
 2. 用 `ResolvedValue` 图替换 owner/value-equality 推断；
 3. secret generation 版本化；
 4. 拆分 `compose.env` 与 service env；
-5. 逐 cask 移除全量 `env_file`；
+5. 逐 module 移除全量 `env_file`；
 6. capability contract 类型化。
 
 ### 阶段 4：事务、验证与恢复
 
 1. 诊断性 journal 标记与收敛式 crash recovery（`start` + `gc`）；
-2. cask verify contract（含每类 check 的执行上下文）；
+2. module verify contract（含每类 check 的执行上下文）；
 3. reconcile 失败自动补偿旧 release，macvlan 等宿主副作用记录补偿动作；
 4. 基于 manifest 扫描的 release/secret GC；
 5. fault injection 测试覆盖 seal、reconcile、commit 与网络补偿等关键点。
@@ -652,11 +653,11 @@ snapshot"，修的正是阶段 1-2 要删除的机制；项目未发布、无兼
 2. `start/stop/restart` 不修改 config、lock、secret store 或 release 内容；
 3. `apply` 在 render/build/reconcile/verify/commit 任一点失败均可恢复；
 4. 第一次、第二次及指定 release rollback 都恢复正确 lock、env 和 secret；
-5. 新增、移除、改名 cask 不遗留 Compose project；
+5. 新增、移除、改名 module 不遗留 Compose project；
 6. manifest 默认值改变能出现在 plan 中；
 7. auto provider 不会在 lock 未更新时漂移；
 8. 每个 service 只拿到声明的 secret，secret store 任意键默认不跨边界；
-9. release 在当前源码 cask 已变化或不存在时仍能 start/stop；ABI 区间外
+9. release 在当前源码 module 已变化或不存在时仍能 start/stop；ABI 区间外
    的 release 被明确拒绝并提示 re-apply；
 10. 两个并发 apply 中只有一个能进入事务；apply 期间 start 被共享锁阻塞；
 11. 进程在 seal、reconcile、commit 前后被强制终止后，`start` + `gc`
@@ -675,7 +676,7 @@ snapshot"，修的正是阶段 1-2 要删除的机制；项目未发布、无兼
 - 用 release manifest 取代原始 config 作为制品启动输入；
 - 用 active pointer 取代可变 release 目录；
 - 用项目解析锁 + release lock snapshot 取代全局混合 lock；
-- 用版本化 secret 引用和容器级 env 取代值相等推断与 cask 全量 env；
+- 用版本化 secret 引用和容器级 env 取代值相等推断与 module 全量 env；
 - 用 verify + 幂等收敛恢复取代“目录 rename 即部署成功”。
 
 同时要守住两条克制的边界：第一，release 模型保证的是**制品**可回退，

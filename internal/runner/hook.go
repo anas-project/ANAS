@@ -48,11 +48,11 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	secrets := a.secrets.clone()
 	if phase != "calculate" {
 		// Only the calculate phase is a privileged derivation stage; the other
-		// phases receive the cask-scoped view.
+		// phases receive the module-scoped view.
 		secrets = a.scopedSecrets(mod.Name)
 	}
 	req := hookRequest{
-		ABI:     currentCaskABI,
+		ABI:     currentModuleABI,
 		Phase:   phase,
 		Module:  mod.Name,
 		Workdir: workdir,
@@ -94,10 +94,10 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	return resp, nil
 }
 
-// hookCommand resolves the command used to execute a cask hook. Hooks
+// hookCommand resolves the command used to execute a module hook. Hooks
 // declared as `go run <pkg>` are compiled once per run and executed as a
 // binary instead of re-compiling for every phase. Artifact starts prefer the
-// binary frozen into the rendered cask so no Go toolchain is needed; render
+// binary frozen into the rendered module so no Go toolchain is needed; render
 // runs always compile from the current source so a stale frozen binary can
 // never leak into a new release.
 func (a *app) hookCommand(mod Module, workdir string) ([]string, error) {
@@ -167,7 +167,7 @@ func (a *app) ensureHookBinary(mod Module, pkg string) (string, error) {
 	return bin, nil
 }
 
-// freezeHookBinary copies the compiled hook binary into the rendered cask so
+// freezeHookBinary copies the compiled hook binary into the rendered module so
 // the release stays runnable without a Go toolchain.
 func (a *app) freezeHookBinary(mod Module, dir string) error {
 	command := mod.Hook.Command

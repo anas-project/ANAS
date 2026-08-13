@@ -1,11 +1,11 @@
 # ANAS 设计问题审查报告（2026-07-19）
 
 本报告基于当前 `master`（f287011）的实际代码行为，覆盖 `internal/`、
-`cmd/`、`casks/mods/*` 与现有设计文档。每个问题给出证据位置、影响和解决
+`cmd/`、`modules/*` 与现有设计文档。每个问题给出证据位置、影响和解决
 方案，并按优先级分级：
 
 - **P0**：正确性或安全缺陷，会在真实部署中造成数据错误或凭据泄露面。
-- **P1**：架构性设计问题，随 cask 数量增长会持续放大成本。
+- **P1**：架构性设计问题，随 module 数量增长会持续放大成本。
 - **P2**：可维护性与文档一致性问题。
 
 已有设计文档（`config-state-lifecycle.md`、`config-cli-lifecycle.md`、
@@ -18,13 +18,13 @@
 
 **现象**
 
-- `renderAll` 把完整的全局 env（含所有模块的派生凭据）写进每个 cask 的
+- `renderAll` 把完整的全局 env（含所有模块的派生凭据）写进每个 module 的
   `.env`（`internal/runner/runner.go:573-587`）。
 - compose 文件普遍使用 `env_file: .env` 把整个文件注入容器进程环境，
-  例如 `casks/mods/nextcloud/docker-compose.yml:48,71,83,96`——连
+  例如 `modules/nextcloud/docker-compose.yml:48,71,83,96`——连
   `redis`、`imaginary` 这类纯内部服务也拿到 Samba 管理员密码、DNSPod
   API key、OIDC 签名密钥等全部凭据。
-- 每个 cask hook 收到全部生成密钥：`hook.go:50`
+- 每个 module hook 收到全部生成密钥：`hook.go:50`
   （`Secrets: a.secrets.clone()`）。
 - `ai-design.md` 承诺的 `internalEnv` 渲染期过滤在代码中不存在
   （全仓库 grep 无结果），意味着"仅渲染期使用"的敏感值也会落入 `.env`。
@@ -35,9 +35,9 @@
 
 **解决方案**
 
-1. 在 manifest 增加消费声明，runner 据此过滤每个 cask 的 `.env`：
-   全局白名单键（`BASE_DOMAIN`、`TZ` 等）+ 本 cask 前缀键 +
-   `config.consumes:` 显式列出的外部键。先以 warning 模式输出"本 cask
+1. 在 manifest 增加消费声明，runner 据此过滤每个 module 的 `.env`：
+   全局白名单键（`BASE_DOMAIN`、`TZ` 等）+ 本 module 前缀键 +
+   `config.consumes:` 显式列出的外部键。先以 warning 模式输出"本 module
    实际引用但未声明"的键（可从 compose/模板中扫描 `${KEY}` 得出），再切
    强制。
 2. secrets 按前缀或 manifest 声明做同样的作用域过滤后再传给 hook。
@@ -69,7 +69,7 @@ compose 插值规则转义为 `$$` 或按需保留），并加一条往返测试
    端口未释放时新启动会以更难解释的方式失败。
 
 **解决方案**：停止阶段以**旧状态**为准——枚举 `release/` 下实际存在的
-cask 目录（或 `cask.lock.yml` 记录），与新模块集合做差；被移除的项目显式
+module 目录（或 `module.lock.yml` 记录），与新模块集合做差；被移除的项目显式
 `down` 后再 promote。`stopRelease` 的错误应中止流程或至少醒目上报，不能
 丢弃。可另加兜底：用 `docker compose ls` 过滤 `anas_*` 项目，对不在
 期望集合中的项目给出警告。
@@ -79,7 +79,7 @@ cask 目录（或 `cask.lock.yml` 记录），与新模块集合做差；被移�
 **现象**：`useTmp` 仅在 build/render/带 `-c` 的 start 时为真
 （`runner.go:119`）。普通 `start`/`restart` 的工作目录就是 `release`，
 `renderAll` → `copyDir` 会先 `os.RemoveAll` 正在被运行中容器使用的
-cask 目录再重拷（`runner.go:765-769`）。中途崩溃会留下半损坏的
+module 目录再重拷（`runner.go:765-769`）。中途崩溃会留下半损坏的
 release；这也和 README 宣称的"tmp + 原子晋升"矛盾。
 
 **解决方案**：二选一，推荐前者：
@@ -95,32 +95,32 @@ release；这也和 README 宣称的"tmp + 原子晋升"矛盾。
 
 **现象**：带 `-c` 的 start 先停掉整个旧 release 再逐一启动
 （`runner.go:206-208`），任何一处配置改动都导致全栈停机窗口；而
-`docker compose up -d` 本身就是幂等对账，项目名稳定（`anas_<cask>`），
+`docker compose up -d` 本身就是幂等对账，项目名稳定（`anas_<module>`），
 大多数情况根本不需要先 down。
 
-**解决方案**：默认不做全停。对每个 cask 直接从新渲染目录 `up -d`，
+**解决方案**：默认不做全停。对每个 module 直接从新渲染目录 `up -d`，
 compose 自行重建有差异的容器；只有被移除的项目才 `down`（配合 P0-3）。
-可选优化：对渲染目录做内容哈希，未变化的 cask 直接跳过。这与
+可选优化：对渲染目录做内容哈希，未变化的 module 直接跳过。这与
 `config-state-lifecycle.md` 提出的 `resolve → plan → reconcile` 分层
 一致，可作为其第一块落地。
 
 ## P1-6 运行时依赖 Go 工具链，hook 每阶段重复 `go run` 编译
 
-**现象**：所有 cask 的 hook 声明为 `go run ./hook`，由 runner 在
+**现象**：所有 module 的 hook 声明为 `go run ./hook`，由 runner 在
 **源码目录**执行并注入 GOCACHE（`hook.go:56-62`）。后果：
 
 - 生产 NAS 必须安装完整 Go 工具链；
-- 一次 `start` 触发 16 个 cask × calculate/render_env/services/
+- 一次 `start` 触发 16 个 module × calculate/render_env/services/
   after_start 多阶段的重复 `go run`（首次全量编译尤其慢，测试文档里的
   go-build-cache 目录就是为此打的补丁）；
 - hook 在源码树而非渲染副本中运行，release 不再是自包含制品。
 
 **解决方案**：`build` 阶段把每个 hook `go build` 成静态二进制放入
 release（记录 hash 进 lock），start 阶段只执行二进制；或收敛为一个
-多路复用 hooks 二进制（子命令 = cask 名）。长期看，多数 hook 只做 env
+多路复用 hooks 二进制（子命令 = module 名）。长期看，多数 hook 只做 env
 派生，可在 manifest 中用声明式派生规则表达，真正的特殊逻辑才留 hook。
 
-## P1-7 跨 cask 契约靠命名约定与无限制的 env 写入
+## P1-7 跨 module 契约靠命名约定与无限制的 env 写入
 
 **现象**：
 
@@ -128,23 +128,23 @@ release（记录 hash 进 lock），start 阶段只执行二进制；或收敛�
   （`runner.go:547-554`），用 `USE_LDAP_MODS_NAME` 等逗号串传递能力
   信息（`runner.go:513-531`）；
 - `applyHookEnv` 允许任何 hook 覆盖任意键（`hook.go:83-87`），后执行
-  的 cask 可以悄悄改写先执行 cask 的输出，排序即契约；
+  的 module 可以悄悄改写先执行 module 的输出，排序即契约；
 - 消费方直接读取实现私有变量（`iam-capability-design.md` 第 2 节已列举
   netbird/nextcloud 的例子）。
 
 **解决方案**：`iam-capability-design.md` 的"能力绑定 + 统一环境契约"
 方向是对的，建议把它从 IAM 推广为通用机制：manifest 声明
 `provides`/`consumes` 能力及其导出变量集合；runner 校验 hook 的 env
-patch 只能写本 cask 前缀键和声明导出的能力键，其余一律报错。
+patch 只能写本 module 前缀键和声明导出的能力键，其余一律报错。
 `DOMAINS`/`USE_*_MODS_NAME` 改由 runner 从 manifest 能力声明计算，
 而不是从 env 键名反推。
 
-## P1-8 cask `version` 同时承担"上游镜像版本"和"打包版本"两种语义
+## P1-8 module `version` 同时承担"上游镜像版本"和"打包版本"两种语义
 
 **现象**：`ai-design.md` 规定 version 默认跟随主镜像版本，但
 `upgrade.from` 约束、依赖版本约束、降级拒绝（`versions.go`）全都作用在
 同一个字段上。镜像 bump 一次 major，就会连带触发所有依赖约束与升级路径
-语义，而 cask 打包本身可能毫无变化；反之打包大改而镜像未动时无法表达。
+语义，而 module 打包本身可能毫无变化；反之打包大改而镜像未动时无法表达。
 
 **最终方案（2026-08-11，项目尚未发布）**：采用规范化上游 `version`、上游原始
 `app_version` 和整数 `revision`。发布身份为 `<version>-r<revision>`；同一上游版本的
@@ -168,7 +168,7 @@ version，相同时比较 revision。
 `os.RemoveAll(backup)`。升级出问题时没有本地回滚制品，而 lock 机制又
 拒绝降级（`versions.go:137-139`），回滚只能靠人肉重建。
 
-**解决方案**：保留 `release.previous`（连同对应的 `cask.lock.yml`
+**解决方案**：保留 `release.previous`（连同对应的 `module.lock.yml`
 快照）直到下一次成功启动；提供 `anas rollback` 把上一版 release 原子换
 回并恢复 lock。磁盘成本可忽略（render 产物很小）。
 
@@ -190,7 +190,7 @@ version，相同时比较 revision。
 第一个 `<% end %>` 截断）；渲染残留的 `<%` 无检测。
 
 **解决方案**：短期加两道闸：键不存在即报错（模板引用集与 env 键集比
-对）、渲染结果中残留 `<%` 即报错。长期逐 cask 迁到 Go
+对）、渲染结果中残留 `<%` 即报错。长期逐 module 迁到 Go
 `text/template`（`missingkey=error`），`.erb` 只作为兼容期后缀。
 
 ## P2-13 `locateRoot` 用 `runtime.Caller` 猜项目根
@@ -205,7 +205,7 @@ version，相同时比较 revision。
 
 - `ai-design.md:344` 与 README 要求"用 `internalEnv` 过滤渲染期专用
   值"，代码中该机制不存在（见 P0-1）。
-- `ai-design.md` 新 cask 步骤 9 提到 `before` 依赖字段，manifest 结构
+- `ai-design.md` 新 module 步骤 9 提到 `before` 依赖字段，manifest 结构
   没有该字段且 `KnownFields(true)` 会直接拒绝。
 - 修复方式：实现或删改，二选一；建议在 CI 中对文档列举的 manifest 字段
   与 Go 结构体做一致性检查（很小的测试即可）。
@@ -242,8 +242,8 @@ systemd unit。
 | 3（结构性） | P0-1 env/secrets 作用域 + manifest `consumes`、P1-7 能力契约（与 IAM 设计合并推进）、P1-6 hook 预编译 | 需要 manifest 演进，建议随 `anas.dev/v2` 或兼容字段渐进 |
 | 4（产品面） | P1-9 按服务管理员密码、P1-8 版本语义拆分、P2-12 模板引擎 | 依赖阶段 3 的 manifest 与 secret 基建 |
 
-阶段 1、2 不改变 manifest 格式，对现有 cask 零侵入；阶段 3 开始涉及
-cask ABI/manifest 演进，建议先在 `config-state-lifecycle.md` 的
+阶段 1、2 不改变 manifest 格式，对现有 module 零侵入；阶段 3 开始涉及
+module ABI/manifest 演进，建议先在 `config-state-lifecycle.md` 的
 reconcile 框架下统一设计，避免两套并行的状态模型。
 
 ---
@@ -252,16 +252,16 @@ reconcile 框架下统一设计，避免两套并行的状态模型。
 
 | 问题 | 状态 | 实施摘要 |
 | --- | --- | --- |
-| P0-1 全量凭据注入 | 已解决 | env 归属跟踪（`envscope.go`）；每 cask `.env`/模板/`render_env`/`services`/`after_start` hook 输入按"全局 ∪ 自身 ∪ 依赖闭包 ∪ `config.consumes`"过滤；用户 secrets 必须显式认领；非 calculate 阶段 secrets 同规则过滤；hook 响应新增 `internal_env` 排除渲染专用值 |
+| P0-1 全量凭据注入 | 已解决 | env 归属跟踪（`envscope.go`）；每 module `.env`/模板/`render_env`/`services`/`after_start` hook 输入按"全局 ∪ 自身 ∪ 依赖闭包 ∪ `config.consumes`"过滤；用户 secrets 必须显式认领；非 calculate 阶段 secrets 同规则过滤；hook 响应新增 `internal_env` 排除渲染专用值 |
 | P0-2 quoteEnv 引号 | 已解决 | `envfile.go` 改为 dotenv 单形式引号（plain/单引号字面量/双引号转义 + `$$`），新增 `parseEnvFile` 逆解析与往返单测 |
 | P0-3 孤儿容器 / stop 吞错 | 已解决 | `releaseModules` 以 release 目录实际内容为准（移除模块排最后、逆序先停）；`stopRemoved` 在 reconcile 启动前显式 down 被移除模块；所有 stop 错误上抛终止流程 |
 | P0-4 就地渲染 | 已解决 | 无 `-c` 的 `start`/`restart` 以 release 为不可变制品：不 calculate、不渲染，`.env` 与 `.hook.bin` 冻结使用；旧格式 release 显式报错要求重渲染；渲染一律走 `tmp` + 原子晋升 |
-| P1-5 全停全启 | 已解决 | 改为按 cask `up -d --remove-orphans` 对账 + 仅 down 被移除模块；全停只保留在 `restart`（语义即全量重启）与 `rollback` |
+| P1-5 全停全启 | 已解决 | 改为按 module `up -d --remove-orphans` 对账 + 仅 down 被移除模块；全停只保留在 `restart`（语义即全量重启）与 `rollback` |
 | P1-6 hook go run | 已解决 | `go run` hook 每次运行编译一次（`hook-bin/`），并冻结进渲染产物 `.hook.bin`；制品启动直接执行冻结二进制，无需 Go 工具链；渲染流程始终从源码重编译，杜绝旧二进制泄入新 release |
 | P1-7 隐式契约 | 已解决（机制） | calculate 补丁强制"自身前缀或 `config.exports`"写契约；跨界读取显式化为 `config.consumes`（支持前/后缀 glob）；已为 nextcloud/netbird/mariadb/samba_fs 声明 exports，llng/keycloak/postgres/lego/ddns 声明 consumes。IAM 协议协商仍按 `iam-capability-design.md` 推进 |
 | P1-8 版本双语义 | 已解决 | manifest/lock 新增 `revision`；规范化 `version` 跟随上游，`app_version` 保留上游原始拼写，ANAS 自身修订使用独立整数；未发布，因此直接规范化现有版本，不保留旧编号兼容 |
-| P1-9 单一管理密码 | 已解决 | `default_service_root_password` 改为可选；缺省时每个 cask 生成独立根密码（`<PREFIX>_DEFAULT_ROOT_PASSWORD`）存入 secret store；新增 `anas config secret list/get` |
-| P1-10 无回滚 | 已解决 | promote 保留 `release.previous` + `.cask.lock.snapshot`；新增 `anas rollback` 交换目录、恢复 lock、以制品方式启动并更新 applied 快照 |
+| P1-9 单一管理密码 | 已解决 | `default_service_root_password` 改为可选；缺省时每个 module 生成独立根密码（`<PREFIX>_DEFAULT_ROOT_PASSWORD`）存入 secret store；新增 `anas config secret list/get` |
+| P1-10 无回滚 | 已解决 | promote 保留 `release.previous` + `.module.lock.snapshot`；新增 `anas rollback` 交换目录、恢复 lock、以制品方式启动并更新 applied 快照 |
 | P1-11 归属不确定 | 已解决 | `policyOwnerForEnv` 排序遍历，多归属直接报错要求使用模块路径 |
 | P2-12 模板静默失败 | 已解决并移除 | 2026-08-01 删除 Go 正则 ERB 渲染器及全部 `.erb`；JSON/YAML/文本配置改由容器入口基于作用域化 `.env` 生成，静态测试禁止旧后缀和 ERB 标记 |
 | P2-13 locateRoot 魔法 | 已解决 | 移除 `runtime.Caller` 候选；`bin/anas` 显式传 `ANAS_CASK_ROOT` |
@@ -277,7 +277,7 @@ reconcile 框架下统一设计，避免两套并行的状态模型。
 ### 验证状态
 
 静态验证已完成：编辑器编译诊断全绿；全仓扫描确认 compose `${VAR}` 引用、
-两个 ERB 模板、容器初始化脚本的跨 cask env 读取全部落在闭包或已声明的
+两个 ERB 模板、容器初始化脚本的跨 module env 读取全部落在闭包或已声明的
 consumes/exports 内。动态验证（`go test ./...`、
 `test-env/scripts/test-render.sh` 全配置渲染、与改动前渲染树的 diff）
 在本次会话中因执行环境不可用尚未运行，命令如下：

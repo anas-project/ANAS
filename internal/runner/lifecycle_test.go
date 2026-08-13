@@ -29,7 +29,7 @@ func TestPlanDoesNotCreateRuntimeState(t *testing.T) {
 func TestDisabledModuleIsExcluded(t *testing.T) {
 	disabled := false
 	a := &app{
-		cfg: &config.File{Services: map[string]config.Service{"app": {Enabled: &disabled}}},
+		cfg: &config.File{Modules: config.ModuleSelection{Values: map[string]config.ModuleConfig{"app": {Enabled: &disabled}}}},
 		reg: map[string]Module{"core": {Name: "core"}, "app": {Name: "app"}},
 	}
 	order, err := a.resolveOrder([]string{"app"})
@@ -44,7 +44,7 @@ func TestDisabledModuleIsExcluded(t *testing.T) {
 func TestDisabledRequiredModuleIsRejected(t *testing.T) {
 	disabled := false
 	a := &app{
-		cfg: &config.File{Services: map[string]config.Service{"database": {Enabled: &disabled}}},
+		cfg: &config.File{Modules: config.ModuleSelection{Values: map[string]config.ModuleConfig{"database": {Enabled: &disabled}}}},
 		reg: map[string]Module{
 			"core": {Name: "core"}, "app": {Name: "app", Requires: []Dependency{{Name: "database"}}}, "database": {Name: "database"},
 		},
@@ -63,7 +63,7 @@ func TestAlternativeDependencyDefaultsToPostgresAndUsesLockedBinding(t *testing.
 	a := &app{
 		env:  map[string]string{"APP_DB_TYPE": "auto"},
 		reg:  map[string]Module{"postgres": {Name: "postgres"}, "mariadb": {Name: "mariadb"}},
-		lock: &caskLock{Bindings: map[string]map[string]string{}},
+		lock: &moduleLock{Bindings: map[string]map[string]string{}},
 	}
 	provider, err := a.resolveAlternativeDependency("app", mod, dep)
 	if err != nil {
@@ -131,12 +131,15 @@ func TestNextcloudAutoAddsAndLocksOneDatabaseProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	newApp := func(binding string) *app {
-		lock := &caskLock{Bindings: map[string]map[string]string{}}
+		lock := &moduleLock{Bindings: map[string]map[string]string{}}
 		if binding != "" {
-			lock.Bindings["nextcloud"] = map[string]string{"relational_database": binding}
+			lock.Bindings["nextcloud"] = map[string]string{
+				"relational_database":           binding,
+				"relational_database.interface": binding,
+			}
 		}
 		return &app{
-			cfg: &config.File{Modules: []string{"nextcloud"}, IAM: config.IAM{Provider: "llng"}, Services: map[string]config.Service{}}, reg: reg,
+			cfg: &config.File{Modules: config.NewModuleSelection("nextcloud"), IAM: config.IAM{Provider: "llng"}}, reg: reg,
 			env: map[string]string{"NEXTCLOUD_DB_TYPE": "auto"}, lock: lock,
 		}
 	}
@@ -165,13 +168,13 @@ func TestNextcloudAutoAddsAndLocksOneDatabaseProvider(t *testing.T) {
 	}
 
 	a = newApp("")
-	a.cfg.Modules = []string{"mariadb", "nextcloud"}
-	order, err = a.resolveOrder(a.cfg.Modules)
+	a.cfg.Modules = config.NewModuleSelection("mariadb", "nextcloud")
+	order, err = a.resolveOrder(a.cfg.Modules.Order)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !contains(order, "mariadb") || contains(order, "postgres") {
-		t.Fatalf("configured order = %v, want the only configured provider mariadb", order)
+	if !contains(order, "mariadb") || a.resolvedBindings["nextcloud"]["relational_database"] != "mariadb" {
+		t.Fatalf("configured order = %v, want nextcloud bound to configured mariadb", order)
 	}
 }
 
@@ -186,12 +189,12 @@ func TestNetbirdBindsToTheSelectedIAM(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &app{
-		cfg:  &config.File{Modules: []string{"netbird"}, IAM: config.IAM{Provider: "llng"}, Services: map[string]config.Service{}},
+		cfg:  &config.File{Modules: config.NewModuleSelection("netbird"), IAM: config.IAM{Provider: "llng"}},
 		reg:  reg,
 		env:  map[string]string{},
-		lock: &caskLock{Bindings: map[string]map[string]string{}},
+		lock: &moduleLock{Bindings: map[string]map[string]string{}},
 	}
-	order, err := a.resolveOrder(a.cfg.Modules)
+	order, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +208,7 @@ func TestNetbirdBindsToTheSelectedIAM(t *testing.T) {
 	}
 }
 
-func TestEveryCaskResolvesAsAStandaloneSelection(t *testing.T) {
+func TestEveryModuleResolvesAsAStandaloneSelection(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
@@ -217,24 +220,24 @@ func TestEveryCaskResolvesAsAStandaloneSelection(t *testing.T) {
 	}
 	for name := range reg {
 		t.Run(name, func(t *testing.T) {
-			// An IAM cask selected on its own is its own provider; selecting
+			// An IAM module selected on its own is its own provider; selecting
 			// any other one alongside it would be the two-IAM error.
 			provider := "llng"
 			if _, ok := reg[name].providedCapability(capabilityIAM); ok {
 				provider = name
 			}
 			a := &app{
-				cfg:  &config.File{Modules: []string{name}, IAM: config.IAM{Provider: provider}, Services: map[string]config.Service{}},
+				cfg:  &config.File{Modules: config.NewModuleSelection(name), IAM: config.IAM{Provider: provider}},
 				reg:  reg,
 				env:  map[string]string{},
-				lock: &caskLock{Bindings: map[string]map[string]string{}},
+				lock: &moduleLock{Bindings: map[string]map[string]string{}},
 			}
-			order, err := a.resolveOrder(a.cfg.Modules)
+			order, err := a.resolveOrder(a.cfg.Modules.Order)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if len(order) == 0 || order[len(order)-1] != name {
-				t.Fatalf("order = %v, want selected cask %s last", order, name)
+				t.Fatalf("order = %v, want selected module %s last", order, name)
 			}
 		})
 	}
@@ -269,12 +272,12 @@ func TestBuiltInHardDependencyClosure(t *testing.T) {
 	for name, dependencies := range expected {
 		t.Run(name, func(t *testing.T) {
 			a := &app{
-				cfg:  &config.File{Modules: []string{name}, IAM: config.IAM{Provider: "llng"}, Services: map[string]config.Service{}},
+				cfg:  &config.File{Modules: config.NewModuleSelection(name), IAM: config.IAM{Provider: "llng"}},
 				reg:  reg,
 				env:  map[string]string{},
-				lock: &caskLock{Bindings: map[string]map[string]string{}},
+				lock: &moduleLock{Bindings: map[string]map[string]string{}},
 			}
-			order, err := a.resolveOrder(a.cfg.Modules)
+			order, err := a.resolveOrder(a.cfg.Modules.Order)
 			if err != nil {
 				t.Fatal(err)
 			}

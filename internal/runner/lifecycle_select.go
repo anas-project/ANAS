@@ -10,7 +10,7 @@ import (
 
 // Acting on part of a deployment.
 //
-// build acts on exactly the named casks. Lifecycle commands are deliberately
+// build acts on exactly the named modules. Lifecycle commands are deliberately
 // stricter: a database cannot be stopped or restarted while applications that
 // depend on it are left running, and an application cannot be started without
 // first ensuring its dependencies are up. Their named targets are therefore
@@ -21,10 +21,10 @@ import (
 // typed in, because the deployment's order is a dependency order and the words
 // on the command line are not.
 
-// selectCasks resolves cask names against the deployment, in deployment order.
+// selectModules resolves module names against the deployment, in deployment order.
 // An empty selection means the whole deployment, which is what every one of
 // these commands did before it could be narrowed.
-func selectCasks(a *app, names []string) ([]string, error) {
+func selectModules(a *app, names []string) ([]string, error) {
 	if len(names) == 0 {
 		return append([]string{}, a.order...), nil
 	}
@@ -43,7 +43,7 @@ func selectCasks(a *app, names []string) ([]string, error) {
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		return nil, fmt.Errorf("deployment has no cask %s; it carries %s",
+		return nil, fmt.Errorf("deployment has no module %s; it carries %s",
 			strings.Join(quoteAll(unknown), ", "), strings.Join(a.order, ", "))
 	}
 	out := []string{}
@@ -55,7 +55,7 @@ func selectCasks(a *app, names []string) ([]string, error) {
 	return out, nil
 }
 
-// selectLifecycleCasks expands named lifecycle targets into the chain needed
+// selectLifecycleModules expands named lifecycle targets into the chain needed
 // to keep the deployment consistent. Start walks towards prerequisites. Stop
 // and restart walk in the other direction, towards every direct or transitive
 // dependent, so none is left running across an unavailable dependency.
@@ -63,9 +63,9 @@ func selectCasks(a *app, names []string) ([]string, error) {
 // a.deps contains the frozen, resolved dependency graph: requires_one and
 // capability dependencies already name the provider selected when this
 // deployment was rendered. Order-only `after` edges are absent by design; they
-// order two selected casks but do not make one part of the other's chain.
-func selectLifecycleCasks(a *app, action string, names []string) ([]string, error) {
-	targets, err := selectCasks(a, names)
+// order two selected modules but do not make one part of the other's chain.
+func selectLifecycleModules(a *app, action string, names []string) ([]string, error) {
+	targets, err := selectModules(a, names)
 	if err != nil || len(names) == 0 {
 		return targets, err
 	}
@@ -130,15 +130,15 @@ func quoteAll(names []string) []string {
 	return out
 }
 
-// stopCasks brings down a chosen subset, in reverse deployment order so a
+// stopModules brings down a chosen subset, in reverse deployment order so a
 // dependent stops before what it depends on.
 //
 // It deliberately does not remove the macvlan bridge. stopRelease does, because
 // stopping the whole deployment means nothing is left to use it; stopping one
-// cask says nothing about the others, and tearing the network out from under
+// module says nothing about the others, and tearing the network out from under
 // them would turn "restart samba_fs" into an outage for everything on the host
 // LAN.
-func (a *app) stopCasks(release string, names []string, jsonMode bool) error {
+func (a *app) stopModules(release string, names []string, jsonMode bool) error {
 	present := a.releaseModules(release)
 	ordered := []string{}
 	for _, name := range names {
@@ -150,9 +150,9 @@ func (a *app) stopCasks(release string, names []string, jsonMode bool) error {
 	total := int64(len(ordered))
 	for i := len(ordered) - 1; i >= 0; i-- {
 		name := ordered[i]
-		emitProgress(jsonMode, "stop-containers", int64(len(ordered)-i), total, "casks")
+		emitProgress(jsonMode, "stop-containers", int64(len(ordered)-i), total, "modules")
 		dir := filepath.Join(release, name)
-		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.caskEnv(dir), "down"); err != nil {
+		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("stop %s: %w", name, err))
 		}
 	}

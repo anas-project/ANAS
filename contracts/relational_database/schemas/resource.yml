@@ -1,0 +1,19 @@
+type: object
+additional_properties: false
+required: [name, principal, credential, deletion_policy]
+properties:
+  name:
+    type: string
+    pattern: "^[a-z][a-z0-9_]{0,62}$"
+  principal:
+    type: string
+    pattern: "^[a-z][a-z0-9_]{0,62}$"
+  credential:
+    type: object
+    additional_properties: false
+    required: [policy]
+    properties:
+      policy:
+        enum: [generated]
+  deletion_policy:
+    enum: [retain, delete]

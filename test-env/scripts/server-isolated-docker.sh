@@ -47,7 +47,7 @@ start() {
   systemctl stop anas-test-docker-v3.service 2>/dev/null || true
   ip link delete anas-docker0 2>/dev/null || true
 
-  if ! ip netns list | grep -q "^$NS "; then
+  if ! ip netns list | grep -Eq "^${NS}( |$)"; then
     ip netns add "$NS"
   fi
   if ! ip link show "$HOST_VETH" >/dev/null 2>&1; then

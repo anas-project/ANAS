@@ -79,7 +79,7 @@ done
 failed=0
 compose_list="$REPORT_DIR/smoke-compose-files.txt"
 active_id=$(sed -n 's/^active_deployment: //p' "$ws/.anas/state/active.yml")
-find "$(ws_deployments "$ws")/$active_id/casks" -mindepth 2 -maxdepth 2 -name docker-compose.yml | sort >"$compose_list"
+find "$(ws_deployments "$ws")/$active_id/modules" -mindepth 2 -maxdepth 2 -name docker-compose.yml | sort >"$compose_list"
 
 while read -r compose_file; do
   module_dir=$(dirname "$compose_file")

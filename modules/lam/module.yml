@@ -1,0 +1,62 @@
+api_version: anas.module/v1
+kind: Module
+name: lam
+version: 9.6.0
+revision: 1
+app_version: 9.6.0
+abi:
+  supports:
+    - anas.module-hook/v1
+title: LDAP Account Manager
+description: Web UI for LDAP account administration.
+category: identity
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  requires:
+    - traefik
+    - samba_dc
+upgrade:
+  # Empty, not absent: no release of this module has rewritten its on-disk data
+  # format. Absent would mean "unknown" and would block every rollback that
+  # changes the version. See docs/contracts/snapshot.md.
+  data_breaking: []
+config:
+  # Cross-module values this module reads. Listing them is what lets a rendered
+  # .env carry only what is used, instead of everything the dependency
+  # closure happens to own.
+  consumes:
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_INTERNAL_CA_NAME
+    - SAMBA_DC_ADMIN_DN
+    - SAMBA_DC_BASE_COMPUTERS_DN
+    - SAMBA_DC_BASE_DN
+    - SAMBA_DC_BASE_GROUPS_DN
+    - SAMBA_DC_BASE_USERS_DN
+    - SAMBA_DC_DOMAIN
+    - SAMBA_DC_LDAPS_SERVER_URL
+  defaults:
+    domain_prefix: lam
+  changes:
+    admin_password:
+      effect: container_recreate
+      apply: recreate-lam
+      sensitive: true
+      description: LAM configuration is generated when the container starts.
+    domain_prefix:
+      effect: container_recreate
+      apply: recreate-lam
+      description: The proxy route is generated from the domain.
+identity:
+  interfaces:
+    - ldaps
+  application_group: true
+features:
+  domain: true
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

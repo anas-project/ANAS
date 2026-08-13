@@ -16,7 +16,7 @@ var (
 // decision. The decision belongs in config.lock.yml: probing on every render
 // would let the same desired config silently change behaviour after a mount or
 // filesystem change.
-func resolveSnapshotLock(workspace string, cfg *config.File) (*caskLockSnapshot, error) {
+func resolveSnapshotLock(workspace string, cfg *config.File) (*moduleLockSnapshot, error) {
 	backend := strings.ToLower(strings.TrimSpace(cfg.Rollback.Snapshot.Backend))
 	keep, keepSet := cfg.Rollback.Snapshot.KeepAuto.Value()
 	if !keepSet {
@@ -30,13 +30,13 @@ func resolveSnapshotLock(workspace string, cfg *config.File) (*caskLockSnapshot,
 	case "":
 		btrfs, err := snapshotFilesystemIsBtrfs(workspace)
 		if err == nil && btrfs && snapshotSubvolumeShow(dataDir(workspace)) == nil {
-			return &caskLockSnapshot{Backend: "btrfs", KeepAuto: keep}, nil
+			return &moduleLockSnapshot{Backend: "btrfs", KeepAuto: keep}, nil
 		}
-		return &caskLockSnapshot{Backend: "none"}, nil
+		return &moduleLockSnapshot{Backend: "none"}, nil
 	case "none":
-		return &caskLockSnapshot{Backend: "none"}, nil
+		return &moduleLockSnapshot{Backend: "none"}, nil
 	case "btrfs":
-		return &caskLockSnapshot{Backend: "btrfs", KeepAuto: keep}, nil
+		return &moduleLockSnapshot{Backend: "btrfs", KeepAuto: keep}, nil
 	default:
 		return nil, fmt.Errorf("rollback.snapshot.backend must be btrfs or none, got %q", backend)
 	}
@@ -45,7 +45,7 @@ func resolveSnapshotLock(workspace string, cfg *config.File) (*caskLockSnapshot,
 // validateLockedSnapshot makes an explicit config change require a new lock,
 // while an omitted setting continues to use the host decision already frozen
 // in the lock.
-func validateLockedSnapshot(cfg *config.File, lock *caskLock) error {
+func validateLockedSnapshot(cfg *config.File, lock *moduleLock) error {
 	if lock == nil || lock.Snapshot == nil {
 		return fmt.Errorf("config lock has no snapshot policy; run anas lock")
 	}

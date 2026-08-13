@@ -59,22 +59,22 @@ const (
 	snapshotKindManual = "manual"
 )
 
-// The reason enumeration. cask_upgrade_breaking and setting_data_migrate are
+// The reason enumeration. module_upgrade_breaking and setting_data_migrate are
 // declared here but only produced once the breaking-upgrade detection lands;
 // pre_apply is what the existing apply-time trigger records until then.
 const (
-	snapshotReasonManual              = "manual"
-	snapshotReasonPreApply            = "pre_apply"
-	snapshotReasonPreRestore          = "pre_restore"
-	snapshotReasonPreBackup           = "pre_backup"
-	snapshotReasonCaskUpgradeBreaking = "cask_upgrade_breaking"
-	snapshotReasonSettingDataMigrate  = "setting_data_migrate"
+	snapshotReasonManual                = "manual"
+	snapshotReasonPreApply              = "pre_apply"
+	snapshotReasonPreRestore            = "pre_restore"
+	snapshotReasonPreBackup             = "pre_backup"
+	snapshotReasonModuleUpgradeBreaking = "module_upgrade_breaking"
+	snapshotReasonSettingDataMigrate    = "setting_data_migrate"
 )
 
 func validSnapshotReason(reason string) bool {
 	switch reason {
 	case snapshotReasonManual, snapshotReasonPreApply, snapshotReasonPreRestore,
-		snapshotReasonPreBackup, snapshotReasonCaskUpgradeBreaking, snapshotReasonSettingDataMigrate:
+		snapshotReasonPreBackup, snapshotReasonModuleUpgradeBreaking, snapshotReasonSettingDataMigrate:
 		return true
 	}
 	return false
@@ -103,7 +103,7 @@ type snapshotMeta struct {
 	DeploymentID   string            `yaml:"deployment_id" json:"deployment_id"`
 	ConfigDigest   string            `yaml:"config_digest" json:"config_digest"`
 	LockDigest     string            `yaml:"lock_digest" json:"lock_digest"`
-	Casks          map[string]string `yaml:"casks,omitempty" json:"casks,omitempty"`
+	Modules        map[string]string `yaml:"modules,omitempty" json:"modules,omitempty"`
 	// ArtifactCopy records which tier of the reflink -> hard link -> full copy
 	// ladder actually produced deployment/, because the three have very
 	// different disk costs and only the last is independent of the source.
@@ -386,9 +386,9 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 		cleanup()
 		return nil, err
 	}
-	casks := map[string]string{}
-	for name, cask := range manifest.Casks {
-		casks[name] = formatCaskRelease(cask.Version, cask.Revision)
+	modules := map[string]string{}
+	for name, module := range manifest.Modules {
+		modules[name] = formatModuleRelease(module.Version, module.Revision)
 	}
 	configDigest, err := fileDigest(configSource)
 	if err != nil {
@@ -408,7 +408,7 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 		Source: source, Path: snapshotDataPath(final),
 		FromDeployment: opts.from, ToDeployment: opts.to,
 		DeploymentID: deploymentID, ConfigDigest: configDigest, LockDigest: lockDigest,
-		Casks: casks, ArtifactCopy: method, Coverage: coverage, Complete: false,
+		Modules: modules, ArtifactCopy: method, Coverage: coverage, Complete: false,
 	}
 	if err := writeYAMLAtomic(snapshotMetaFile(tmp), &meta, 0600); err != nil {
 		cleanup()
@@ -669,7 +669,7 @@ func snapshotsToPrune(all []snapshotMeta, keep int) (collect []snapshotMeta, ret
 // failing the command: retention must keep working while the user is midway
 // through editing the file that snapshots exist to protect them from.
 func workspaceKeepAuto(workspace string) int {
-	if lock, err := loadCaskLockFile(projectLockPath(workspaceConfigPath(workspace))); err == nil && lock.Snapshot != nil {
+	if lock, err := loadModuleLockFile(projectLockPath(workspaceConfigPath(workspace))); err == nil && lock.Snapshot != nil {
 		if lock.Snapshot.Backend == "btrfs" {
 			return lock.Snapshot.KeepAuto
 		}

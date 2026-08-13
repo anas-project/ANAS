@@ -161,7 +161,7 @@ fi
   if [ -n "$writable" ]; then
     fail "sealed deployment still has writable files: $writable"
   fi
-  envmode=$(stat -c %a "$ws/.anas/deployments/$first/casks/traefik/.env" 2>/dev/null || echo "")
+  envmode=$(stat -c %a "$ws/.anas/deployments/$first/modules/traefik/.env" 2>/dev/null || echo "")
   [ "$envmode" = "400" ] || fail ".env is mode $envmode, want 400 — sealing must not widen access"
 
   # Written before the snapshot: must come back after the restore.

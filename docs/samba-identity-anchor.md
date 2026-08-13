@@ -124,5 +124,5 @@ docker logs "${CONTAINER_PREFIX}samba_dc_anchor"
 
 The worker follows Samba's dsdb audit log to find new objects, and republishes
 the interesting records from that same pass as a normalized stream for other
-casks to subscribe to. See
+modules to subscribe to. See
 [directory-event-journal.md](directory-event-journal.md).

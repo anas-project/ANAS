@@ -16,20 +16,62 @@ import (
 var localConfigUsernamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`)
 
 type File struct {
-	Modules        []string           `yaml:"modules"`
-	Global         Global             `yaml:"global"`
-	Administration Administration     `yaml:"administration"`
-	Identity       Identity           `yaml:"identity"`
-	IAM            IAM                `yaml:"iam"`
-	DynamicDNS     DynamicDNS         `yaml:"dynamic_dns"`
-	Rollback       Rollback           `yaml:"rollback"`
-	Secrets        map[string]any     `yaml:"secrets"`
-	Services       map[string]Service `yaml:"services"`
-	Env            map[string]any     `yaml:"env"`
+	Modules        ModuleSelection `yaml:"modules"`
+	Global         Global          `yaml:"global"`
+	Administration Administration  `yaml:"administration"`
+	Identity       Identity        `yaml:"identity"`
+	// IAM is the normalized runtime view of Identity.IAM. It is not a second
+	// accepted YAML spelling.
+	IAM            IAM             `yaml:"-"`
+	DynamicDNS     DynamicDNS      `yaml:"dynamic_dns"`
+	Rollback       Rollback        `yaml:"rollback"`
+	Secrets        map[string]any  `yaml:"secrets"`
+	Env            map[string]any  `yaml:"env"`
+}
+
+type ModuleSelection struct {
+	Order  []string
+	Values map[string]ModuleConfig
+}
+
+func NewModuleSelection(names ...string) ModuleSelection {
+	selection := ModuleSelection{Values: map[string]ModuleConfig{}}
+	for _, name := range names {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name != "" {
+			selection.Order = append(selection.Order, name)
+			selection.Values[name] = ModuleConfig{}
+		}
+	}
+	return selection
+}
+
+func (m *ModuleSelection) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("modules must be a mapping of module names to configuration")
+	}
+	m.Order = nil
+	m.Values = map[string]ModuleConfig{}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		name := strings.ToLower(strings.TrimSpace(node.Content[i].Value))
+		if name == "" {
+			return fmt.Errorf("modules contains an empty name")
+		}
+		if _, exists := m.Values[name]; exists {
+			return fmt.Errorf("module %q is configured more than once", name)
+		}
+		var module ModuleConfig
+		if err := node.Content[i+1].Decode(&module); err != nil {
+			return fmt.Errorf("modules.%s: %w", name, err)
+		}
+		m.Order = append(m.Order, name)
+		m.Values[name] = module
+	}
+	return nil
 }
 
 // Administration contains deployment-wide defaults for human administrator
-// accounts. Casks still declare whether they have a local account at all; this
+// accounts. Modules still declare whether they have a local account at all; this
 // block only makes those independently managed accounts predictable to find.
 type Administration struct {
 	Bootstrap     BootstrapAdministrator `yaml:"bootstrap"`
@@ -70,13 +112,13 @@ type DirectoryProvider struct {
 // updating one record is not redundancy, it is a race whose loser silently
 // reverts the winner.
 type DynamicDNS struct {
-	// Provider is the cask that maintains the declared records, or "auto" to
+	// Provider is the module that maintains the declared records, or "auto" to
 	// let the runner pick from the implementations that can address the chosen
-	// vendor. Empty means ANAS declares no records at all, and any DDNS cask
+	// vendor. Empty means ANAS declares no records at all, and any DDNS module
 	// listed in `modules` is left entirely to its own configuration.
 	Provider string `yaml:"provider"`
 	// DNSProvider is the vendor those records live at. It seeds the selected
-	// cask's own dns_provider, which may still be set per service to override.
+	// module's own dns_provider, which may still be set per service to override.
 	DNSProvider string `yaml:"dns_provider"`
 }
 
@@ -86,11 +128,11 @@ type DynamicDNS struct {
 // from BaseEnv so a host environment variable cannot make the same config file
 // produce a different deployment.
 type IAM struct {
-	// Provider is the IAM cask name. Required whenever an enabled cask
+	// Provider is the IAM module name. Required whenever an enabled module
 	// consumes the iam capability.
 	Provider string `yaml:"provider"`
-	// DefaultProtocol is the deployment-wide fallback for casks that leave
-	// their protocol on "auto". It only applies to casks that actually
+	// DefaultProtocol is the deployment-wide fallback for modules that leave
+	// their protocol on "auto". It only applies to modules that actually
 	// support it; others fall back to their manifest preference order.
 	DefaultProtocol string `yaml:"default_protocol"`
 }
@@ -125,8 +167,8 @@ type Global struct {
 	// a deployment-wide switch would make that untrue for everything at once.
 	// Users who need the data on a larger disk put the whole workspace there.
 	//
-	// A single cask may still be pointed elsewhere -- samba_fs.userdata_path is
-	// the one that is -- but only through that cask's own parameter, which
+	// A single module may still be pointed elsewhere -- samba_fs.userdata_path is
+	// the one that is -- but only through that module's own parameter, which
 	// carries a change policy saying what moving it costs. The difference is
 	// that the exception is named and policed rather than global and silent.
 	Timezone        string `yaml:"timezone"`
@@ -135,7 +177,7 @@ type Global struct {
 	NetworkPrefix   string `yaml:"network_prefix"`
 	HostIP          string `yaml:"host_ip"`
 	// There is deliberately no dns_provider. A DNS vendor is chosen per engine
-	// -- services.lego.env.dns_provider, services.ddns_go.env.dns_provider --
+	// -- modules.lego.config.dns_provider, modules.ddns_go.config.dns_provider --
 	// because certificates and dynamic DNS routinely live at different
 	// vendors, and because the same vendor often needs different credentials
 	// for each. See internal/dns.
@@ -201,7 +243,7 @@ var globalBindings = []globalBinding{
 	// nothing for a pointer to distinguish.
 	//
 	// It is unprefixed like every other user setting. The ANAS_ prefix marks
-	// keys the runner derives as a cross-cask contract -- ANAS_IAM_*, ANAS_TLS_*
+	// keys the runner derives as a cross-module contract -- ANAS_IAM_*, ANAS_TLS_*
 	// -- and this was the one user-facing parameter wearing it, which made the
 	// prefix mean nothing in particular.
 	{"virtual_domain", "VIRTUAL_DOMAIN", func(g Global) string {
@@ -247,23 +289,23 @@ func GlobalParameters() []string {
 	return out
 }
 
-type Service struct {
-	Enabled        *bool                 `yaml:"enabled"`
-	DependsOn      []string              `yaml:"depends_on"`
-	Identity       ServiceIdentity       `yaml:"identity"`
-	Administration ServiceAdministration `yaml:"administration"`
-	Env            map[string]any        `yaml:"env"`
+type ModuleConfig struct {
+	Enabled        *bool                `yaml:"enabled"`
+	DependsOn      []string             `yaml:"depends_on"`
+	Identity       ModuleIdentity       `yaml:"identity"`
+	Administration ModuleAdministration `yaml:"administration"`
+	Config         map[string]any       `yaml:"config"`
 }
 
-type ServiceIdentity struct {
+type ModuleIdentity struct {
 	// LoginProtocol is the human-facing spelling of the IAM protocol selector.
-	// It maps to the cask's existing <PREFIX>_IAM_PROTOCOL contract so old env
+	// It maps to the module's existing <PREFIX>_IAM_PROTOCOL contract so old env
 	// configuration remains compatible while provisioning and login are no
 	// longer presented as one setting.
 	LoginProtocol string `yaml:"login_protocol"`
 }
 
-type ServiceAdministration struct {
+type ModuleAdministration struct {
 	LocalAccounts map[string]LocalAccountOverride `yaml:"local_accounts"`
 }
 
@@ -282,8 +324,8 @@ func Load(path string) (*File, error) {
 	if err := dec.Decode(&cfg); err != nil {
 		return nil, err
 	}
-	if cfg.Services == nil {
-		cfg.Services = map[string]Service{}
+	if cfg.Modules.Values == nil {
+		cfg.Modules.Values = map[string]ModuleConfig{}
 	}
 	if cfg.Secrets == nil {
 		cfg.Secrets = map[string]any{}
@@ -291,29 +333,16 @@ func Load(path string) (*File, error) {
 	if cfg.Env == nil {
 		cfg.Env = map[string]any{}
 	}
-	if len(cfg.Modules) == 0 {
+	if len(cfg.Modules.Order) == 0 {
 		return nil, fmt.Errorf("missing modules")
 	}
-	cfg.IAM.Provider = strings.ToLower(strings.TrimSpace(cfg.IAM.Provider))
-	cfg.IAM.DefaultProtocol = strings.ToLower(strings.TrimSpace(cfg.IAM.DefaultProtocol))
 	cfg.Identity.Directory.Provider = strings.ToLower(strings.TrimSpace(cfg.Identity.Directory.Provider))
 	cfg.Identity.IAM.Provider = strings.ToLower(strings.TrimSpace(cfg.Identity.IAM.Provider))
 	cfg.Identity.IAM.DefaultProtocol = strings.ToLower(strings.TrimSpace(cfg.Identity.IAM.DefaultProtocol))
 	if cfg.Identity.Directory.Provider != "" && cfg.Identity.Directory.Provider != "samba_dc" {
 		return nil, fmt.Errorf("identity.directory.provider must currently be samba_dc")
 	}
-	if cfg.Identity.IAM.Provider != "" {
-		if cfg.IAM.Provider != "" && cfg.IAM.Provider != cfg.Identity.IAM.Provider {
-			return nil, fmt.Errorf("identity.iam.provider conflicts with legacy iam.provider")
-		}
-		cfg.IAM.Provider = cfg.Identity.IAM.Provider
-	}
-	if cfg.Identity.IAM.DefaultProtocol != "" {
-		if cfg.IAM.DefaultProtocol != "" && cfg.IAM.DefaultProtocol != cfg.Identity.IAM.DefaultProtocol {
-			return nil, fmt.Errorf("identity.iam.default_protocol conflicts with legacy iam.default_protocol")
-		}
-		cfg.IAM.DefaultProtocol = cfg.Identity.IAM.DefaultProtocol
-	}
+	cfg.IAM = cfg.Identity.IAM
 	cfg.Administration.Bootstrap.Username = strings.TrimSpace(cfg.Administration.Bootstrap.Username)
 	if cfg.Administration.Bootstrap.Username != "" && !localConfigUsernamePattern.MatchString(cfg.Administration.Bootstrap.Username) {
 		return nil, fmt.Errorf("administration.bootstrap.username is invalid")
@@ -322,17 +351,17 @@ func Load(path string) (*File, error) {
 	cfg.DynamicDNS.DNSProvider = strings.TrimSpace(cfg.DynamicDNS.DNSProvider)
 	cfg.Administration.LocalAccounts.UsernameTemplate = strings.TrimSpace(cfg.Administration.LocalAccounts.UsernameTemplate)
 	if cfg.Administration.LocalAccounts.UsernameTemplate == "" {
-		cfg.Administration.LocalAccounts.UsernameTemplate = "admin_{cask}"
+		cfg.Administration.LocalAccounts.UsernameTemplate = "admin_{module}"
 	}
-	if !strings.Contains(cfg.Administration.LocalAccounts.UsernameTemplate, "{cask}") {
-		return nil, fmt.Errorf("administration.local_accounts.username_template must contain {cask}")
+	if !strings.Contains(cfg.Administration.LocalAccounts.UsernameTemplate, "{module}") {
+		return nil, fmt.Errorf("administration.local_accounts.username_template must contain {module}")
 	}
 	cfg.Administration.LocalAccounts.PasswordPolicy = strings.ToLower(strings.TrimSpace(cfg.Administration.LocalAccounts.PasswordPolicy))
 	if cfg.Administration.LocalAccounts.PasswordPolicy == "" {
-		cfg.Administration.LocalAccounts.PasswordPolicy = "generated_per_cask"
+		cfg.Administration.LocalAccounts.PasswordPolicy = "generated_per_module"
 	}
-	if cfg.Administration.LocalAccounts.PasswordPolicy != "generated_per_cask" {
-		return nil, fmt.Errorf("administration.local_accounts.password_policy must be generated_per_cask")
+	if cfg.Administration.LocalAccounts.PasswordPolicy != "generated_per_module" {
+		return nil, fmt.Errorf("administration.local_accounts.password_policy must be generated_per_module")
 	}
 	if cfg.Administration.LocalAccounts.PasswordLength == 0 {
 		cfg.Administration.LocalAccounts.PasswordLength = 24
@@ -340,28 +369,28 @@ func Load(path string) (*File, error) {
 	if cfg.Administration.LocalAccounts.PasswordLength < 16 {
 		return nil, fmt.Errorf("administration.local_accounts.password_length must be at least 16")
 	}
-	for name, service := range cfg.Services {
-		protocol := strings.ToLower(strings.TrimSpace(service.Identity.LoginProtocol))
+	for name, module := range cfg.Modules.Values {
+		protocol := strings.ToLower(strings.TrimSpace(module.Identity.LoginProtocol))
 		switch protocol {
 		case "", "auto", "oidc", "saml":
 		default:
-			return nil, fmt.Errorf("services.%s.identity.login_protocol must be auto, oidc or saml", name)
+			return nil, fmt.Errorf("modules.%s.identity.login_protocol must be auto, oidc or saml", name)
 		}
-		service.Identity.LoginProtocol = protocol
-		for id, override := range service.Administration.LocalAccounts {
+		module.Identity.LoginProtocol = protocol
+		for id, override := range module.Administration.LocalAccounts {
 			override.Username = strings.TrimSpace(override.Username)
 			if override.Username != "" && !localConfigUsernamePattern.MatchString(override.Username) {
-				return nil, fmt.Errorf("services.%s.administration.local_accounts.%s.username is invalid", name, id)
+				return nil, fmt.Errorf("modules.%s.administration.local_accounts.%s.username is invalid", name, id)
 			}
-			service.Administration.LocalAccounts[id] = override
+			module.Administration.LocalAccounts[id] = override
 		}
-		cfg.Services[name] = service
+		cfg.Modules.Values[name] = module
 	}
 	if cfg.DynamicDNS.Provider != "" && cfg.DynamicDNS.DNSProvider == "" {
 		return nil, fmt.Errorf("dynamic_dns.provider is set but dynamic_dns.dns_provider is not; name the DNS vendor the records live at")
 	}
 	// The shared administrator password is optional: when it is absent every
-	// cask receives its own generated root password instead. When set it must
+	// module receives its own generated root password instead. When set it must
 	// still meet the minimum length.
 	if pw := cfg.Global.DefaultServiceRootPassword; pw != "" && utf8.RuneCountInString(pw) < 8 {
 		return nil, fmt.Errorf("global.default_service_root_password must be at least 8 characters")
@@ -371,7 +400,7 @@ func Load(path string) (*File, error) {
 
 // Owner markers used in the ownership map returned by BaseEnvWithOwners.
 // The empty string marks a globally scoped key; OwnerUserSecret marks a
-// user-provided secret that is only distributed to casks that claim it.
+// user-provided secret that is only distributed to modules that claim it.
 const OwnerUserSecret = "!user-secret"
 
 // chineseSpeedupDefaults turns CHINESE_SPEEDUP into one complete, predictable
@@ -399,7 +428,7 @@ func (f *File) BaseEnv() map[string]string {
 
 // BaseEnvWithOwners flattens the config into environment values and reports
 // which config section introduced each key: "" for global sections,
-// OwnerUserSecret for user secrets, and the service name for service env.
+// OwnerUserSecret for user secrets, and the module name for module config.
 func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
 	env := map[string]string{}
 	owners := map[string]string{}
@@ -424,13 +453,13 @@ func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
 		env[key] = Scalar(v)
 		owners[key] = ""
 	}
-	for name, service := range f.Services {
+	for name, module := range f.Modules.Values {
 		prefix := strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
-		if protocol := strings.ToLower(strings.TrimSpace(service.Identity.LoginProtocol)); protocol != "" {
+		if protocol := strings.ToLower(strings.TrimSpace(module.Identity.LoginProtocol)); protocol != "" {
 			env[prefix+"_IAM_PROTOCOL"] = protocol
 			owners[prefix+"_IAM_PROTOCOL"] = name
 		}
-		for k, v := range service.Env {
+		for k, v := range module.Config {
 			key := EnvKey(k)
 			if !strings.HasPrefix(key, prefix+"_") {
 				key = prefix + "_" + key

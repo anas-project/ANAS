@@ -1,25 +1,32 @@
 modules:
-  - samba_dc
-  - samba_fs
-  - postgres
-  - llng
-  - nextcloud
-  - collabora
-  - meshcentral
-  - lam
-
+  samba_dc: {}
+  samba_fs: {}
+  postgres: {}
+  llng: {}
+  nextcloud:
+    identity:
+      # LDAP still provisions users and groups; this selects browser login.
+      login_protocol: saml
+  collabora: {}
+  meshcentral: {}
+  lam: {}
+  lego:
+    config:
+      dns_provider: cloudflare
+  ddns_go:
+    config:
+      dns_provider: cloudflare
 global:
   base_domain: nas.example.com
   email: admin@example.com
   timezone: Asia/Shanghai
-  # Legacy compatibility for casks not yet migrated to managed local accounts.
+  # Legacy compatibility for modules not yet migrated to managed local accounts.
   default_service_root_password: ChangeMe1!
   # The administrator name for Traefik's dashboard gate.
   basicauth_user: admin
   # Optional. Absent means the default applies; an explicit false is kept, which
   # is why these are written as booleans rather than left to the env: block.
   # ipv6: false
-
 administration:
   bootstrap:
     username: admin
@@ -27,65 +34,44 @@ administration:
     email: admin@example.com
     roles: [platform_admin, directory_admin, storage_admin]
   local_accounts:
-    username_template: "admin_{cask}"
-    password_policy: generated_per_cask
+    username_template: "admin_{module}"
+    password_policy: generated_per_module
     password_length: 24
-
-# The DNS vendor is chosen per engine, not deployment-wide: certificates and
-# dynamic DNS often live at different vendors, and the same vendor sometimes
-# needs a different credential for each (Namecheap's DNS API user is not its
-# Dynamic DNS password). `anas plan` reports what each engine resolved and
-# whether they can share one credential.
-services:
-  lego:
-    env:
-      dns_provider: cloudflare
-  ddns_go:
-    env:
-      dns_provider: cloudflare
-  nextcloud:
-    identity:
-      # LDAP still provisions users and groups; this selects browser login.
-      login_protocol: saml
-
 secrets:
   # Keyed by vendor: every engine configured for that vendor reads it. Prefix
-  # the key with a cask name to give that engine its own account instead, e.g.
+  # the key with a module name to give that engine its own account instead, e.g.
   # ddns_go_cloudflare_dns_api_token.
   cloudflare_dns_api_token: replace-me
-
 # Keep this deployment's own A/AAAA records current, without naming the program
 # that does it. "auto" picks among the implementations that can address the
 # vendor, and records the choice in the lock so a later release cannot move an
 # existing deployment onto a different one. Omit the section entirely to
-# declare no records; a DDNS cask listed in `modules` then runs entirely on its
+# declare no records; a DDNS module listed in `modules` then runs entirely on its
 # own configuration.
 dynamic_dns:
   provider: auto
   dns_provider: cloudflare
-
 # The single identity provider for this deployment. Required as soon as any
-# enabled cask consumes the iam capability; the runner never picks one for you,
-# even when only one candidate is installed. The chosen cask is pulled into the
+# enabled module consumes the iam capability; the runner never picks one for you,
+# even when only one candidate is installed. The chosen module is pulled into the
 # dependency closure automatically, so it does not need to be in `modules`.
-iam:
-  provider: llng
-  # Optional. Applies to casks whose iam_protocol is left on "auto" and that
+identity:
+  iam:
+    provider: llng
+  # Optional. Applies to modules whose iam_protocol is left on "auto" and that
   # actually support this protocol; the rest fall back to their own preference
-  # order. Per-cask overrides live in services.<name>.env.iam_protocol.
-  default_protocol: oidc
-
+  # order. Per-module overrides live in modules.<name>.config.iam_protocol.
+    default_protocol: oidc
 # Snapshot policy is normally omitted. `anas lock` records btrfs/keep_auto=5
 # when <workspace>/data is a Btrfs subvolume, otherwise it records none. Set
 # backend: none explicitly only to disable snapshots on a capable workspace.
 # rollback:
 #   snapshot:
 #     backend: none
-
 env:
   # The top level env: block sets raw environment keys, for values no manifest
   # declares. Parameters that are declared belong under global: or under
-  # services.<cask>.env; `anas config list` prints the path for each.
+  # modules.<module>.config; `anas config list` prints the path for each.
   #
   # Mainland China: enables APT, APK, npm, Go, GitHub/Nextcloud downloads and
   # Docker Hub/GHCR/Quay mirrors as one coordinated setting.

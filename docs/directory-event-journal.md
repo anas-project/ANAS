@@ -44,7 +44,7 @@ out.
 - **No stable endpoint to call.** authentik's trigger is
   `/api/v3/tasks/schedules/{uuid}/send/`, and the uuid is generated at runtime.
   There is nothing a hook could render into a registration at config time.
-- **No cross-cask network.** samba_dc runs on the host network and declares no
+- **No cross-module network.** samba_dc runs on the host network and declares no
   shared network with consumers.
 - **Delivery survives downtime.** A subscriber that was stopped for an hour
   resumes from its cursor. A fire-and-forget POST would simply have been lost.

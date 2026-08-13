@@ -46,9 +46,9 @@ active 制品必须包含，理由有三条，每一条单独都足够：
 
 1. 它是**镜像构建上下文**（compose 里写的是 `build: context: ./${MODULE_NAME}`），
    没有它连 `docker compose build` 都跑不了；
-2. 它是 workspace 内**唯一一份可运行的 cask 副本**——cask 源树在 workspace 之外
-   （`locateCaskRoot` 按 `ANAS_CASK_ROOT`/cwd/可执行文件寻找 cask bundle）；
-3. 它携带**冻结的 hook 二进制**（`<cask>/.hook.bin`），`freezeHookBinary` 在写入它的
+2. 它是 workspace 内**唯一一份可运行的 module 副本**——module 源树在 workspace 之外
+   （`locateModuleRoot` 按 `ANAS_MODULE_ROOT`/cwd/可执行文件寻找 module bundle）；
+3. 它携带**冻结的 hook 二进制**（`<module>/.hook.bin`），`freezeHookBinary` 在写入它的
    同时删除了 `hook/` 源码目录，目的正是"无需 Go 工具链即可运行"。`.anas/hook-bin/`
    只是构建缓存，权威副本在这里。
 
@@ -135,7 +135,7 @@ anas backup capabilities [--to <dest>] [--json]
 ### 与初稿的偏差二：`copy` 模式也需要权限（初稿写作「目标可写」）
 
 初稿的模式表把 `copy` 的条件写成"目标可写"。ln 实测（普通用户，workspace 里的
-cask 真跑过）：**不成立**。lego 以 root 写入 `data/lego/certs/accounts`（0700
+module 真跑过）：**不成立**。lego 以 root 写入 `data/lego/certs/accounts`（0700
 root）和 `ca.key`、`*.key`（0600 root），普通用户读不到，rsync 退出码 23。
 
 `copy` 是四种模式里**唯一逐文件读取数据**的，因此也是唯一会被权限拦住的：
@@ -425,7 +425,7 @@ anas backup list --to <dest> [--json]
       "size_bytes": 204010496,
       "deployment_id": "20260728T131040Z-cd6fc061",
       "config_digest": "sha256:…",
-      "casks": { "nextcloud": "30.0.1", "authentik": "2024.10.5" },
+      "modules": { "nextcloud": "30.0.1", "authentik": "2024.10.5" },
       "complete": true
     }
   ]

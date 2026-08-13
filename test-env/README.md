@@ -13,7 +13,7 @@ image builds, and optional smoke checks.
 test-env/
   configs/    Test matrix configs.
   scripts/    Repeatable test commands.
-  upgrades/   Historical cask lock fixtures for upgrade validation.
+  upgrades/   Historical module lock fixtures for upgrade validation.
   reports/    Generated logs and command output.
 ```
 
@@ -48,7 +48,7 @@ Do not commit `.anas-test/` or generated secrets.
    ./test-env/scripts/test-render.sh
    ```
 
-   This validates module ordering, cask hooks, scoped env generation, generated
+   This validates module ordering, module hooks, scoped env generation, generated
    files, persistent secrets, and the absence of legacy host-rendered templates.
 
 3. Docker Compose config tests
@@ -72,7 +72,7 @@ Do not commit `.anas-test/` or generated secrets.
 
 5. Upgrade render tests
 
-   Validates upgrade rules with multiple historical cask lock fixtures without
+   Validates upgrade rules with multiple historical module lock fixtures without
    starting Docker:
 
    ```sh
@@ -95,10 +95,10 @@ Do not commit `.anas-test/` or generated secrets.
 7. Runtime upgrade tests
 
    Starts a baseline release, writes migration probe data into persisted
-   volumes, stops it, seeds an older `cask.lock.yml`, starts the current release
+   volumes, stops it, seeds an older `module.lock.yml`, starts the current release
    with `--build`, checks required containers are running, checks host data
    markers still exist, runs service-level data probes, and verifies
-   `cask.lock.yml` was updated to current cask versions:
+   `module.lock.yml` was updated to current module versions:
 
    ```sh
    ./test-env/scripts/test-upgrade.sh previous-patch
@@ -134,9 +134,21 @@ Do not commit `.anas-test/` or generated secrets.
      ./test-env/scripts/server-directory-events-e2e.sh
    ```
 
-10. Environment scope
+10. Database resource hot-add test
 
-    Proves that restricting each cask's rendered `.env` to what its manifest
+    Applies a PostgreSQL/authentik baseline, then adds Nextcloud. It proves the
+    runner creates a dedicated `nextcloud` role and database through the
+    one-shot provider operation without recreating PostgreSQL, and that an
+    idempotent re-apply recreates neither PostgreSQL nor Nextcloud.
+
+    ```sh
+    DOCKER_HOST=unix:///run/anas-anchor-docker.sock \
+      ./test-env/scripts/server-database-hot-add-e2e.sh <workspace>
+    ```
+
+11. Environment scope
+
+    Proves that restricting each module's rendered `.env` to what its manifest
     declares changed nothing an application can see. It renders the same
     deployment under both the old and new rules and compares the results: the
     resolved `docker compose config` must match apart from the env_file
@@ -149,11 +161,11 @@ Do not commit `.anas-test/` or generated secrets.
     ```
 
     The comparison is only meaningful against the wide baseline: a variable the
-    cask never received cannot have been taken away, and most environment-looking
+    module never received cannot have been taken away, and most environment-looking
     references are not environment values at all (`$TTL` is a BIND zone
     directive, `APT_MIRROR_URL` a Dockerfile build argument).
 
-11. Deploy preflight
+12. Deploy preflight
 
     Checks a rendered deployment for the two collisions that stay invisible on
     a redeploy and abort the first cold create: a pinned subnet the host
@@ -186,18 +198,18 @@ cleanup.
 ## Matrix
 
 - `min.yml`: minimal reverse-proxy baseline.
-- `full.yml`: broad coverage of current casks.
+- `full.yml`: broad coverage of current modules.
 - `matrix-auth.yml`: identity and account management.
 - `matrix-storage.yml`: Samba domain and file service.
 - `matrix-apps.yml`: user-facing application stack.
-- `matrix-network.yml`: network, certificate, DNS, TURN, VPN, and RADIUS casks.
-- `matrix-db.yml`: database casks.
+- `matrix-network.yml`: network, certificate, DNS, TURN, VPN, and RADIUS modules.
+- `matrix-db.yml`: database modules.
 
 The removed `openldap` and `phpldapadmin` modules are not part of this matrix.
 
 ## Upgrade Validation
 
-Upgrade tests are based on cask lock fixtures:
+Upgrade tests are based on module lock fixtures:
 
 - `upgrades/supported/previous-patch.lock.yml`: one-step older versions.
 - `upgrades/supported/mixed-old.lock.yml`: mixed older versions across modules.
@@ -213,7 +225,7 @@ signals:
 - persisted host data markers remain present;
 - PostgreSQL responds to `pg_isready`;
 - MariaDB, Samba DC, and Nextcloud still see their mounted data directories;
-- `cask.lock.yml` records current cask versions after the upgrade.
+- `module.lock.yml` records current module versions after the upgrade.
 
 For module-specific migrations, add assertions to
 `scripts/test-upgrade-probes.sh`. Prefer direct service probes, such as SQL,

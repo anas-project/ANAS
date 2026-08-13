@@ -3,10 +3,10 @@
 // with which credential keys.
 //
 // The registry is data, not code, so that adding a vendor is a reviewable diff
-// in one file rather than a new branch in three hooks. Cask hooks cannot import
+// in one file rather than a new branch in three hooks. Module hooks cannot import
 // this package -- they are self-contained programs shipped inside distributable
 // bundles -- so a generator projects each engine's slice of the registry into
-// its cask, and a contract test fails when a projection drifts.
+// its module, and a contract test fails when a projection drifts.
 package dns
 
 import (
@@ -18,8 +18,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Engine identifiers. These are cask names, because the engine a credential
-// belongs to and the cask that receives it are the same thing.
+// Engine identifiers. These are module names, because the engine a credential
+// belongs to and the module that receives it are the same thing.
 const (
 	EngineLego        = "lego"
 	EngineDDNSGo      = "ddns_go"
@@ -80,7 +80,7 @@ var knownEngines = []string{EngineLego, EngineDDNSGo, EngineDDNSUpdater}
 
 var knownRoles = []string{RoleID, RoleSecret, RoleExt}
 
-// Engines lists the engine identifiers, which are also the cask names that
+// Engines lists the engine identifiers, which are also the module names that
 // implement them. Callers use it to find which engines a deployment runs.
 func Engines() []string {
 	return append([]string{}, knownEngines...)

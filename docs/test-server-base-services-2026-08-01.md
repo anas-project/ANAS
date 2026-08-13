@@ -39,7 +39,7 @@
 
 | 范围 | 结果 | 验证内容 |
 | --- | --- | --- |
-| 编排 | 通过 | 远端 `go test ./...`、构建、render、逐 cask `docker compose config`、`anas apply --build` |
+| 编排 | 通过 | 远端 `go test ./...`、构建、render、逐 module `docker compose config`、`anas apply --build` |
 | 容器状态 | 通过 | 8 个带健康检查的容器全部 healthy；Lego 运行正常；全部重启计数为 0 |
 | Traefik | 通过 | HTTPS Dashboard 未认证返回 401，BasicAuth 返回 200；自定义证书生效 |
 | Lego | 通过 | 内部 CA 签发 `nas.test` 和 `*.nas.test`；私钥权限 0600；证书有效期检查通过 |
@@ -74,7 +74,7 @@
 ## 7. 验证边界
 
 - DDNS 使用 `manual` provider 和空 settings，仅验证容器、配置解析、健康和 Web UI；没有真实 DNSPod 凭据，因此未更新公网记录。
-- FreeRADIUS cask 不生成生产 clients/users；验证了配置和 UDP 请求响应，真实 Access-Accept 需要部署方策略。
+- FreeRADIUS module 不生成生产 clients/users；验证了配置和 UDP 请求响应，真实 Access-Accept 需要部署方策略。
 - Eturnal 验证了控制面和 UDP STUN；未使用外部 NAT 客户端执行完整 TURN relay 媒体会话。
 - 本轮按“未发布、无需旧数据兼容”的前提测试全新数据目录，不代表 PostgreSQL 15、MariaDB LinuxServer 目录或旧 Samba 数据可直接升级。
 

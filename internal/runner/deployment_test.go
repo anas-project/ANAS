@@ -24,17 +24,17 @@ func TestDeploymentChangeBlockers(t *testing.T) {
 	}
 }
 
-// An undeclared cask keeps the pre-contract behaviour: any version difference
+// An undeclared module keeps the pre-contract behaviour: any version difference
 // is unknown, and unknown is blocked.
-func TestRollbackGuardsUndeclaredCaskVersionChanges(t *testing.T) {
-	current := &deploymentManifest{Casks: map[string]deploymentCask{
+func TestRollbackGuardsUndeclaredModuleVersionChanges(t *testing.T) {
+	current := &deploymentManifest{Modules: map[string]deploymentModule{
 		"db": {Name: "db", Version: "2.0.0", AppVersion: "16"},
 	}}
-	target := &deploymentManifest{Casks: map[string]deploymentCask{
+	target := &deploymentManifest{Modules: map[string]deploymentModule{
 		"db": {Name: "db", Version: "1.0.0", AppVersion: "15"},
 	}}
 	guard := deploymentRollbackVersionGuard(current, target)
-	want := "cask db 2.0.0/16 -> 1.0.0/15 (data compatibility unknown; the cask does not declare upgrade.data_breaking)"
+	want := "module db 2.0.0/16 -> 1.0.0/15 (data compatibility unknown; the module does not declare upgrade.data_breaking)"
 	if len(guard.Blocked) != 1 || guard.Blocked[0] != want {
 		t.Fatalf("rollback blockers = %v", guard.Blocked)
 	}
@@ -43,25 +43,25 @@ func TestRollbackGuardsUndeclaredCaskVersionChanges(t *testing.T) {
 	}
 }
 
-func TestLoadDeploymentAppNeedsNoCaskSourceBundle(t *testing.T) {
+func TestLoadDeploymentAppNeedsNoModuleSourceBundle(t *testing.T) {
 	base := t.TempDir()
 	id := "deployment-a"
 	root := filepath.Join(base, "deployments", id)
-	if err := os.MkdirAll(filepath.Join(root, "casks", "core"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "modules", "core"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	manifest := &deploymentManifest{
 		APIVersion: deploymentAPIVersion, ID: id, ModuleOrder: []string{"core"},
-		Casks: map[string]deploymentCask{"core": {Name: "core", RuntimeType: "builtin"}},
+		Modules: map[string]deploymentModule{"core": {Name: "core", RuntimeType: "builtin"}},
 	}
 	if err := writeYAMLAtomic(filepath.Join(root, "deployment.yml"), manifest, 0600); err != nil {
 		t.Fatal(err)
 	}
-	app, casksRoot, got, err := loadDeploymentApp(base, id, compose.CLI{})
+	app, modulesRoot, got, err := loadDeploymentApp(base, id, compose.CLI{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ID != id || app.order[0] != "core" || casksRoot != filepath.Join(root, "casks") {
+	if got.ID != id || app.order[0] != "core" || modulesRoot != filepath.Join(root, "modules") {
 		t.Fatalf("deployment was not reconstructed from its frozen manifest")
 	}
 }
@@ -71,5 +71,74 @@ func TestDeploymentIDRejectsPathTraversal(t *testing.T) {
 		if err := validateDeploymentID(id); err == nil {
 			t.Fatalf("deployment id %q was accepted", id)
 		}
+	}
+}
+
+func TestChangedOrAddedModulesSkipsIdenticalRenderedModules(t *testing.T) {
+	current := &deploymentManifest{
+		ModuleOrder: []string{"postgres", "authentik"},
+		Modules: map[string]deploymentModule{
+			"postgres":  {Name: "postgres", RenderDigest: "sha256:postgres"},
+			"authentik": {Name: "authentik", RenderDigest: "sha256:auth-old"},
+		},
+	}
+	target := &deploymentManifest{
+		ModuleOrder: []string{"postgres", "authentik", "nextcloud"},
+		Modules: map[string]deploymentModule{
+			"postgres":  {Name: "postgres", RenderDigest: "sha256:postgres"},
+			"authentik": {Name: "authentik", RenderDigest: "sha256:auth-new"},
+			"nextcloud": {Name: "nextcloud", RenderDigest: "sha256:nextcloud"},
+		},
+	}
+	want := []string{"authentik", "nextcloud"}
+	if got := changedOrAddedModules(current, target); !reflect.DeepEqual(got, want) {
+		t.Fatalf("activation selection = %v, want %v", got, want)
+	}
+}
+
+func TestActivationStartModulesSkipsRunningUnchangedPrerequisites(t *testing.T) {
+	current := &deploymentManifest{
+		ModuleOrder: []string{"lego", "traefik", "postgres"},
+		Modules: map[string]deploymentModule{
+			"lego":     {Name: "lego", RenderDigest: "sha256:lego"},
+			"traefik":  {Name: "traefik", RenderDigest: "sha256:traefik"},
+			"postgres": {Name: "postgres", RenderDigest: "sha256:postgres"},
+		},
+	}
+	target := &deploymentManifest{
+		ModuleOrder: []string{"lego", "traefik", "postgres", "nextcloud"},
+		Modules: map[string]deploymentModule{
+			"lego":      {Name: "lego", RenderDigest: "sha256:lego"},
+			"traefik":   {Name: "traefik", RenderDigest: "sha256:traefik"},
+			"postgres":  {Name: "postgres", RenderDigest: "sha256:postgres"},
+			"nextcloud": {Name: "nextcloud", RenderDigest: "sha256:nextcloud"},
+		},
+	}
+	want := []string{"nextcloud"}
+	got := activationStartModules(current, target, "running")
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("activation start selection = %v, want %v", got, want)
+	}
+}
+
+func TestActivationStartModulesRestoresWholeStoppedDeployment(t *testing.T) {
+	current := &deploymentManifest{
+		ModuleOrder: []string{"postgres", "mariadb"},
+		Modules: map[string]deploymentModule{
+			"postgres": {Name: "postgres", RenderDigest: "sha256:postgres"},
+			"mariadb":  {Name: "mariadb", RenderDigest: "sha256:mariadb"},
+		},
+	}
+	target := &deploymentManifest{
+		ModuleOrder: []string{"postgres", "mariadb", "nextcloud"},
+		Modules: map[string]deploymentModule{
+			"postgres":  {Name: "postgres", RenderDigest: "sha256:postgres"},
+			"mariadb":   {Name: "mariadb", RenderDigest: "sha256:mariadb"},
+			"nextcloud": {Name: "nextcloud", RenderDigest: "sha256:nextcloud"},
+		},
+	}
+	got := activationStartModules(current, target, "stopped")
+	if !reflect.DeepEqual(got, target.ModuleOrder) {
+		t.Fatalf("stopped deployment activation = %v, want %v", got, target.ModuleOrder)
 	}
 }

@@ -1,23 +1,21 @@
 # nextcloud consumes the iam capability, so an identity provider has to be
 # present for this matrix to resolve at all.
 modules:
-  - postgres
-  - mariadb
-  - samba_dc
-  - authentik
-  - nextcloud
-  - collabora
-  - meshcentral
-
-iam:
-  provider: authentik
-
+  postgres: {}
+  mariadb: {}
+  samba_dc: {}
+  authentik: {}
+  nextcloud: {}
+  collabora: {}
+  meshcentral: {}
+identity:
+  iam:
+    provider: authentik
 global:
   base_domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: change-me-now
-
 env:
   BASICAUTH_USER: admin

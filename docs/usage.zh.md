@@ -14,7 +14,7 @@
 ```text
 <workspace>/
   config.yml          期望状态 —— 唯一需要你手工编辑的文件
-  config.lock.yml     解析出的 cask 版本、能力绑定与快照策略
+  config.lock.yml     解析出的 module 版本、能力绑定与快照策略
   data/               业务数据
   snapshots/          时间点副本
   .anas/              运行时状态（0700，里面的东西不要手工改）
@@ -73,43 +73,43 @@ anas init /srv/anas --shell-init remove    # 撤销
 哪都以它为准，正好把目录解析要避免的"在错地方跑对命令"重新引了回来。而且它对
 cron 和 systemd 单元不生效。
 
-### cask 定义从哪来
+### module 定义从哪来
 
-cask 是**程序的一部分，不是部署的一部分**——和 `anas` 二进制同类，因此刻意不复制进
+module 是**程序的一部分，不是部署的一部分**——和 `anas` 二进制同类，因此刻意不复制进
 每个 workspace。把它们装在二进制旁边：
 
 ```text
 /opt/anas/
   bin/anas
-  casks/mods/…
+  modules/…
 ```
 
-这个布局下**什么都不用配**：`anas` 会在自己可执行文件旁边找到 casks，无论从哪个目录
+这个布局下**什么都不用配**：`anas` 会在自己可执行文件旁边找到 modules，无论从哪个目录
 运行。直接在源码检出里运行也是同理。
 
-如果二进制装在别处（比如 `/usr/local/bin/anas` 而 casks 在另一处），指一次即可：
+如果二进制装在别处（比如 `/usr/local/bin/anas` 而 modules 在另一处），指一次即可：
 
 ```bash
-export ANAS_CASK_ROOT=/opt/anas/casks/mods
+export ANAS_MODULE_ROOT=/opt/anas/modules
 ```
 
-这个变量要的是 bundle 目录**本身**，不是它的上级。`--root` 和 `--cask-root` 参数两种
-都接受、发现下面有 `casks/mods` 会自动补上，环境变量不会——所以作为参数能用的值，
+这个变量要的是 bundle 目录**本身**，不是它的上级。`--root` 和 `--module-root` 参数两种
+都接受、发现下面有 `modules` 会自动补上，环境变量不会——所以作为参数能用的值，
 写成 export 可能会失败。
 
 而且只有一部分命令需要它们：
 
-| 需要 casks | 不需要 |
+| 需要 modules | 不需要 |
 | --- | --- |
 | `plan` `lock` `render` `build` `apply` | `init` `status` `start` `stop` `restart` |
 | `config set` `config explain` `config plan` | `deployments` `rollback` `snapshot *` `backup *` |
 
 这条分界是**改东西 vs 跑东西**。渲染好的 deployment 自带了启动所需的一切——这正是
-把 workspace 恢复到一台裸机上、casks 根本不在场也能起来的原因。渲染一个**新的**才
+把 workspace 恢复到一台裸机上、modules 根本不在场也能起来的原因。渲染一个**新的**才
 需要那些定义。
 
-找不到时会报 `could not locate cask bundle directory`。可以设置持久的
-`ANAS_CASK_ROOT`，也可以在单次调用中使用 `--root` 或 `--cask-root`。
+找不到时会报 `could not locate module bundle directory`。可以设置持久的
+`ANAS_MODULE_ROOT`，也可以在单次调用中使用 `--root` 或 `--module-root`。
 
 ### 启动
 
@@ -119,7 +119,7 @@ export ANAS_CASK_ROOT=/opt/anas/casks/mods
 anas apply --build --update-lock -w /srv/anas
 ```
 
-`--build` 构建镜像；`--update-lock` 把解析出的 cask 版本、能力绑定和宿主机快照策略
+`--build` 构建镜像；`--update-lock` 把解析出的 module 版本、能力绑定和宿主机快照策略
 写进 `config.lock.yml`。首次之后两者都不需要，除非要显式改变这些决策。
 
 ### 中国大陆镜像
@@ -139,7 +139,7 @@ CNB 国内制品发行方案见
 
 若不是运行预编译的 `anas`，而是第一次执行 `go run ./cmd/anas`，Go 必须先把 ANAS
 本身编译出来，此时程序尚未读取配置。首次运行需在宿主机执行
-`go env -w GOPROXY=https://goproxy.cn,direct`；启动后的 cask hook 构建会自动继承
+`go env -w GOPROXY=https://goproxy.cn,direct`；启动后的 module hook 构建会自动继承
 总开关生成的代理。
 
 ---
@@ -155,15 +155,15 @@ anas deployments list
 anas deployments inspect <id>
 ```
 
-以上都接受 `-w`，或者直接在 workspace 目录里运行；也都**不需要 cask 树**——它们读的
+以上都接受 `-w`，或者直接在 workspace 目录里运行；也都**不需要 module 树**——它们读的
 是已经渲染好的 deployment。
 
 ---
 
 ## 四、修改配置
 
-直接编辑 `config.yml`，或者用 `config` 系列命令——它们要读 cask 定义，因此需要设好
-`ANAS_CASK_ROOT`（见第二节）：
+直接编辑 `config.yml`，或者用 `config` 系列命令——它们要读 module 定义，因此需要设好
+`ANAS_MODULE_ROOT`（见第二节）：
 
 ```bash
 anas config set global.timezone Europe/Berlin -w /srv/anas
@@ -208,11 +208,11 @@ anas rollback <deployment-id> -w /srv/anas
 
 ### 被拒绝的回滚
 
-如果一次回滚要跨过某个"改写了磁盘数据格式"的 cask 版本，它不可能成功：旧代码读
+如果一次回滚要跨过某个"改写了磁盘数据格式"的 module 版本，它不可能成功：旧代码读
 不了新数据。`anas` 直接拒绝，**不提供 `--allow-risky` 绕过**，并指向应该恢复的
 快照。
 
-如果 cask 对自己的数据格式什么都没声明，版本变化一律按"未知"阻断，可用
+如果 module 对自己的数据格式什么都没声明，版本变化一律按"未知"阻断，可用
 `--allow-risky` 覆盖。
 
 ---
@@ -241,7 +241,7 @@ anas snapshot verify             # 记录在案的快照是否还在
 
 `apply` 会在无法撤销的变更之前自己拍一张：
 
-- cask 升级跨过了该 cask 声明为"改写数据格式"的版本
+- module 升级跨过了该 module 声明为"改写数据格式"的版本
 - 某项设置的 effect 是 `data_migrate` 或 `credential_rotate`
 
 例行 apply **不会**拍快照。拍了会让保留槽位被普通配置编辑填满，把真正要紧的那张
@@ -304,7 +304,7 @@ anas backup restore --from /mnt/backup -w /srv/anas
 anas start -w /srv/anas
 ```
 
-恢复出的 workspace 自带制品，因此**不需要 cask 源码树**就能启动。但仍需从
+恢复出的 workspace 自带制品，因此**不需要 module 源码树**就能启动。但仍需从
 registry 拉取上游基础镜像。
 
 ---
@@ -378,8 +378,8 @@ ExecStart=/usr/local/bin/anas backup create -w /srv/anas --to /mnt/backup -y
 **`… is not a workspace: no .anas/ directory`** —— 你不在 workspace 里。加 `-w`、
 `cd` 进去，或者 `anas init`。
 
-**`could not locate cask bundle directory`** —— 这条命令需要 cask 定义，而且
-`ANAS_CASK_ROOT` 要指向 `casks/mods` 本身，不是它的上级目录。见第二节。
+**`could not locate module bundle directory`** —— 这条命令需要 module 定义，而且
+`ANAS_MODULE_ROOT` 要指向 `modules` 本身，不是它的上级目录。见第二节。
 
 **`anas rollback requires an explicit -w`** —— 设计如此，见第一节。
 

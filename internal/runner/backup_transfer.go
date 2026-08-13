@@ -41,7 +41,7 @@ type backupSource struct {
 	snapshotID   string
 	deploymentID string
 	configDigest string
-	casks        map[string]string
+	modules      map[string]string
 	// dataPath is what gets sent or copied.
 	dataPath string
 	// userDataPath is the user-content tree, or "" when this backup carries
@@ -70,7 +70,7 @@ func snapshotBackupSource(workspace string, meta *snapshotMeta) *backupSource {
 	root := snapshotRoot(workspace, meta.ID)
 	return &backupSource{
 		root: root, snapshotID: meta.ID, deploymentID: meta.DeploymentID,
-		configDigest: meta.ConfigDigest, casks: meta.Casks,
+		configDigest: meta.ConfigDigest, modules: meta.Modules,
 		dataPath:     snapshotDataPath(root),
 		userDataPath: capturedUserDataPath(root, meta),
 		parts: []backupPart{
@@ -82,7 +82,7 @@ func snapshotBackupSource(workspace string, meta *snapshotMeta) *backupSource {
 }
 
 // existingUserDataPath returns the live user-content tree, or "" when the
-// workspace has none -- a deployment with no file-serving cask never creates
+// workspace has none -- a deployment with no file-serving module never creates
 // one, and an empty channel is the honest way to say so.
 func existingUserDataPath(workspace string) string {
 	path := userDataDir(workspace)
@@ -141,16 +141,16 @@ func workspaceBackupSource(workspace string) (*backupSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	casks := map[string]string{}
-	for name, cask := range manifest.Casks {
-		casks[name] = formatCaskRelease(cask.Version, cask.Revision)
+	modules := map[string]string{}
+	for name, module := range manifest.Modules {
+		modules[name] = formatModuleRelease(module.Version, module.Revision)
 	}
 	id, err := newDeploymentID()
 	if err != nil {
 		return nil, err
 	}
 	source := &backupSource{
-		deploymentID: deploymentID, configDigest: configDigest, casks: casks,
+		deploymentID: deploymentID, configDigest: configDigest, modules: modules,
 		dataPath: dataDir(workspace),
 		// Copy mode reads the live workspace, so whatever user content is there
 		// is what gets copied. There is no snapshot to consult and nothing to
@@ -166,7 +166,7 @@ func workspaceBackupSource(workspace string) (*backupSource, error) {
 			APIVersion: snapshotAPIVersion, ID: id, Backend: "none",
 			Kind: snapshotKindAuto, CreatedAt: nowUTC(), Reason: snapshotReasonPreBackup,
 			Source: dataDir(workspace), DeploymentID: deploymentID,
-			ConfigDigest: configDigest, LockDigest: lockDigest, Casks: casks,
+			ConfigDigest: configDigest, LockDigest: lockDigest, Modules: modules,
 			ArtifactCopy: "copy", Complete: true,
 		},
 	}

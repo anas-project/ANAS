@@ -26,13 +26,13 @@ import (
 //	  ddns_go_namecheap_ddns_password: ... # separate: this engine only
 //
 // Each engine ends up with <ITS_PREFIX>_<CANONICAL_KEY>, owned by its own
-// cask. That is deliberately the same shape the env scope rules already use
-// for a cask's own variables (see envScopeFor), so isolation between engines
+// module. That is deliberately the same shape the env scope rules already use
+// for a module's own variables (see envScopeFor), so isolation between engines
 // needs no new mechanism and no `config.consumes` entry: a key prefixed
 // DDNS_GO_ cannot reach lego, because prefix ownership already says so.
 //
 // Materialising also means the canonical, unprefixed secret is never delivered
-// to any cask. It exists only as an input spelling.
+// to any module. It exists only as an input spelling.
 
 // dnsRegistry loads the platform registry once per run.
 func (a *app) dnsRegistry() (*dns.Registry, error) {
@@ -78,7 +78,7 @@ func (a *app) materializeEngineCredentials(registry *dns.Registry, engine string
 	prefix := a.envPrefixFor(engine)
 	configured := strings.TrimSpace(a.env[prefix+"_DNS_PROVIDER"])
 	if configured == "" {
-		// Whether a platform is mandatory is the cask's own business, declared
+		// Whether a platform is mandatory is the module's own business, declared
 		// through config.required and enforced with every other required key.
 		return nil
 	}
@@ -101,7 +101,7 @@ func (a *app) materializeEngineCredentials(registry *dns.Registry, engine string
 		target := prefix + "_" + key
 		if strings.TrimSpace(a.env[target]) != "" {
 			// Explicitly given for this engine. Claim ownership so the value
-			// is scoped to this cask even if it arrived as a bare user secret.
+			// is scoped to this module even if it arrived as a bare user secret.
 			a.setEnvOwner(target, engine)
 			a.markSensitive(target)
 			continue
@@ -124,7 +124,7 @@ func (a *app) materializeEngineCredentials(registry *dns.Registry, engine string
 	return nil
 }
 
-// markSensitive records a key that must not cross a cask boundary through
+// markSensitive records a key that must not cross a module boundary through
 // dependency-closure or prefix membership alone.
 //
 // A materialised DNS credential is owned by its engine, and Traefik depends on
@@ -142,7 +142,7 @@ func (a *app) markSensitive(key string) {
 	a.sensitiveKeys = nil
 }
 
-// envPrefixFor returns the env namespace a cask owns.
+// envPrefixFor returns the env namespace a module owns.
 func (a *app) envPrefixFor(name string) string {
 	if mod, ok := a.reg[name]; ok && mod.EnvPrefix != "" {
 		return mod.EnvPrefix

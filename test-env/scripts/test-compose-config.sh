@@ -9,7 +9,7 @@ ws="$RUNTIME_DIR/full"
 make_workspace "$ws" "$CONFIG_DIR/full.yml"
 deployment_id=$(run_anas render -w "$ws" --update-lock 2>"$REPORT_DIR/compose-render.log")
 
-find "$(ws_deployments "$ws")/$deployment_id/casks" -mindepth 2 -maxdepth 2 -name docker-compose.yml | sort | while read -r compose_file; do
+find "$(ws_deployments "$ws")/$deployment_id/modules" -mindepth 2 -maxdepth 2 -name docker-compose.yml | sort | while read -r compose_file; do
   module_dir=$(dirname "$compose_file")
   module_name=$(basename "$module_dir")
   log="$REPORT_DIR/compose-$module_name.log"

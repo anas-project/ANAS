@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// repoRoot walks up from the package directory so the test locates cask
+// repoRoot walks up from the package directory so the test locates module
 // bundles without depending on where `go test` was invoked from.
 func repoRoot(t *testing.T) string {
 	t.Helper()

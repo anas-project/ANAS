@@ -41,7 +41,7 @@ type backupManifest struct {
 	SizeBytes      int64             `yaml:"size_bytes" json:"size_bytes"`
 	DeploymentID   string            `yaml:"deployment_id" json:"deployment_id"`
 	ConfigDigest   string            `yaml:"config_digest,omitempty" json:"config_digest,omitempty"`
-	Casks          map[string]string `yaml:"casks,omitempty" json:"casks,omitempty"`
+	Modules        map[string]string `yaml:"modules,omitempty" json:"modules,omitempty"`
 	// Channels records which transfer channels finished. Both have to be
 	// present for the backup to be complete, and naming them individually is
 	// what lets `verify` say which one is missing.

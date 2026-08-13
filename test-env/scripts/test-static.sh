@@ -6,12 +6,12 @@ set -eu
 cd "$ROOT_DIR"
 log="$REPORT_DIR/static.log"
 
-if find casks -type f \( -name '*.erb' -o -name '*.j2' -o -name '*.j3' -o -name '*.tmpl' \) -print -quit | grep -q .; then
-  echo "legacy template suffixes are forbidden under casks/" >&2
+if find modules -type f \( -name '*.erb' -o -name '*.j2' -o -name '*.j3' -o -name '*.tmpl' \) -print -quit | grep -q .; then
+  echo "legacy template suffixes are forbidden under modules/" >&2
   exit 1
 fi
-if grep -R -n -E '<%=|<%[[:space:]]+if|#\{envs\[' casks; then
-  echo "legacy ERB syntax is forbidden under casks/" >&2
+if grep -R -n -E '<%=|<%[[:space:]]+if|#\{envs\[' modules; then
+  echo "legacy ERB syntax is forbidden under modules/" >&2
   exit 1
 fi
 
@@ -19,7 +19,7 @@ fi
 # CHINESE_SPEEDUP can silently work for package downloads but still fail while
 # Compose pulls an image or a Dockerfile resolves FROM.
 direct_compose_images=$(
-  grep -R -n -E --include='docker-compose.yml' '^[[:space:]]+image:' casks |
+  grep -R -n -E --include='docker-compose.yml' '^[[:space:]]+image:' modules |
     grep -v -E 'image:[[:space:]]+\$\{(IMAGE_PREFIX|ANAS_IMAGE_REGISTRY|DOCKER_HUB_REGISTRY|GHCR_REGISTRY|QUAY_REGISTRY)' || true
 )
 if [ -n "$direct_compose_images" ]; then
@@ -28,7 +28,7 @@ if [ -n "$direct_compose_images" ]; then
   exit 1
 fi
 direct_dockerfile_images=$(
-  grep -R -n -E --include='Dockerfile' '^FROM[[:space:]]+' casks |
+  grep -R -n -E --include='Dockerfile' '^FROM[[:space:]]+' modules |
     grep -v -E 'FROM[[:space:]]+(scratch|\$\{(DOCKER_HUB_REGISTRY|LLNG_DOCKER_HUB_REGISTRY|GHCR_REGISTRY|QUAY_REGISTRY)\})' || true
 )
 if [ -n "$direct_dockerfile_images" ]; then
@@ -39,17 +39,17 @@ fi
 
 status=0
 go test ./... >"$log" 2>&1 || status=$?
-# Nested modules are excluded from ./... by design: a cask component that is
+# Nested modules are excluded from ./... by design: a module component that is
 # built inside its own image keeps its own module so the image build context
 # stays the bundle rather than the whole repository. They still have to be
 # tested, so each is listed here.
 if [ "$status" -eq 0 ]; then
-  for module in casks/mods/ddns_go/ddns-go/reconcile; do
+  for module in modules/ddns_go/ddns-go/reconcile; do
     (cd "$module" && go test ./...) >>"$log" 2>&1 || status=$?
   done
 fi
 if [ "$status" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
-  for suite in casks/mods/samba_dc/anchor_worker casks/mods/authentik/dirwatch; do
+  for suite in modules/samba_dc/anchor_worker modules/authentik/dirwatch; do
     PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$suite" -p 'test_*.py' >>"$log" 2>&1 || status=$?
   done
 fi

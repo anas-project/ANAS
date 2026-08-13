@@ -5,19 +5,17 @@
 # and a shared `anas_` prefix would make `docker compose` recreate the live
 # containers. anasrb_ is 19443 and anassn_ is 19444, so this one takes 19445.
 modules:
-  - traefik
-
+  traefik: {}
 global:
+  chinese_speedup: true
   base_domain: backup.test
   email: admin@backup.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: change-me-now
-
 rollback:
   snapshot:
     backend: btrfs
-
 env:
   BASICAUTH_USER: admin
   CONTAINER_PREFIX: anasbk_

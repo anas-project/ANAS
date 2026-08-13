@@ -1,0 +1,46 @@
+api_version: anas.module/v1
+kind: Module
+name: lego
+version: 5.3.1
+revision: 1
+app_version: 5.3.1
+abi:
+  supports:
+    - anas.module-hook/v1
+title: Lego ACME certificates
+description: Issues and stores wildcard certificates used by Traefik and domain services.
+category: certificate
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+upgrade:
+  # Empty, not absent: no release of this module has rewritten its on-disk data
+  # format. Absent would mean "unknown" and would block every rollback that
+  # changes the version. See docs/contracts/snapshot.md.
+  data_breaking: []
+config:
+  # dns_provider is deliberately not required here: it is only needed for the
+  # ACME DNS-01 challenge, and a virtual domain never runs one. The hook
+  # demands it exactly when a certificate will actually be requested.
+  defaults:
+    dns_server: 223.5.5.5
+  # Issuer-neutral certificate paths every TLS-serving or TLS-verifying module
+  # reads. LEGO_* remains this module's private vocabulary.
+  exports:
+    - ANAS_TLS_*
+  # DNS vendor credentials need no claim here. The runner materialises them
+  # under this module's own env prefix (LEGO_TENCENTCLOUD_SECRET_ID and so on),
+  # where prefix ownership already scopes them to lego alone. See
+  # internal/runner/dnscred.go.
+  consumes: []
+  changes:
+    virtual_domain:
+      effect: reconcile
+      apply: reissue-certificates
+      description: Switching between ACME and the internal CA replaces the certificate every service presents, and clients must re-trust it.
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

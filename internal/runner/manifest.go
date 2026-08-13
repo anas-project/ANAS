@@ -11,13 +11,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const currentCaskABI = "anas.cask/v2"
+const currentModuleABI = "anas.module-hook/v1"
 
 type manifestABI struct {
 	Supports []string `yaml:"supports"`
 }
 
-type caskManifest struct {
+type moduleManifest struct {
 	APIVersion   string               `yaml:"api_version"`
 	Kind         string               `yaml:"kind"`
 	Name         string               `yaml:"name"`
@@ -30,7 +30,9 @@ type caskManifest struct {
 	Category     string               `yaml:"category"`
 	Runtime      manifestRuntime      `yaml:"runtime"`
 	Capabilities manifestCapabilities `yaml:"capabilities"`
+	Contracts    manifestContracts    `yaml:"contracts"`
 	Dependencies manifestDependencies `yaml:"dependencies"`
+	Resources    manifestResources    `yaml:"resources"`
 	Upgrade      manifestUpgrade      `yaml:"upgrade"`
 	Config       manifestConfig       `yaml:"config"`
 	Features     manifestFeatures     `yaml:"features"`
@@ -51,7 +53,39 @@ type manifestDependencies struct {
 	Requires             []manifestDependency            `yaml:"requires"`
 	RequiresOne          []manifestAlternativeDependency `yaml:"requires_one"`
 	RequiresCapabilities []manifestRequiredCapability    `yaml:"requires_capabilities"`
+	Contracts            []manifestContractDependency    `yaml:"contracts"`
 	After                []string                        `yaml:"after"`
+}
+
+type manifestContracts struct {
+	Provides []manifestContractProvider `yaml:"provides"`
+}
+
+type manifestContractProvider struct {
+	Name           string `yaml:"name"`
+	Version        string `yaml:"version"`
+	Interface      string `yaml:"interface"`
+	Implementation string `yaml:"implementation"`
+}
+
+type manifestContractDependency struct {
+	Name       string   `yaml:"name"`
+	Version    string   `yaml:"version"`
+	SelectedBy string   `yaml:"selected_by"`
+	Interfaces []string `yaml:"interfaces"`
+	Default    string   `yaml:"default"`
+}
+
+type manifestResources struct {
+	Requires []manifestResourceRequirement `yaml:"requires"`
+}
+
+type manifestResourceRequirement struct {
+	ID       string            `yaml:"id"`
+	Contract string            `yaml:"contract"`
+	Binding  string            `yaml:"binding"`
+	Spec     map[string]any    `yaml:"spec"`
+	SpecFrom map[string]string `yaml:"spec_from"`
 }
 
 type manifestCapabilities struct {
@@ -64,7 +98,7 @@ type manifestProvidedCapability struct {
 }
 
 // manifestRequiredCapability deliberately has no provider-selection field.
-// Decoding runs with KnownFields(true), so a cask that tries to reintroduce
+// Decoding runs with KnownFields(true), so a module that tries to reintroduce
 // one (selected_by, provider_selected_by, providers) fails to load.
 type manifestRequiredCapability struct {
 	Name                string                       `yaml:"name"`
@@ -107,17 +141,17 @@ func (d *manifestDependency) UnmarshalYAML(value *yaml.Node) error {
 type manifestUpgrade struct {
 	// From constrains which installed versions may upgrade to this one.
 	From string `yaml:"from"`
-	// DataBreaking lists the versions at which this cask's on-disk data format
+	// DataBreaking lists the versions at which this module's on-disk data format
 	// changed, so that data written at or above one of them cannot be read by
 	// anything below it.
 	//
 	// It is a pointer because "not declared" and "declared to be empty" are
 	// different claims and lead to opposite decisions. An absent field means the
-	// cask author has said nothing, and the conservative reading of silence is
+	// module author has said nothing, and the conservative reading of silence is
 	// that any version change might have moved the format; an explicit `[]` is a
 	// checkable statement that no release ever did, which is what lets a rollback
 	// through. Modelling the absent case as an empty slice would make the
-	// crossing predicate vacuously false for every cask that has not been
+	// crossing predicate vacuously false for every module that has not been
 	// annotated and silently flip the default from "block" to "allow".
 	//
 	// From and DataBreaking answer different questions and neither implies the
@@ -132,9 +166,9 @@ type manifestConfig struct {
 	Defaults  map[string]any                  `yaml:"defaults"`
 	Changes   map[string]manifestChangePolicy `yaml:"changes"`
 	// Consumes lists env keys (exact or trailing-* glob) produced outside this
-	// cask's dependency closure that its rendering and hooks may read.
+	// module's dependency closure that its rendering and hooks may read.
 	Consumes []string `yaml:"consumes"`
-	// Exports lists env keys (exact or trailing-* glob) outside the cask's own
+	// Exports lists env keys (exact or trailing-* glob) outside the module's own
 	// prefix that its calculate hook is allowed to publish.
 	Exports []string `yaml:"exports"`
 	// Types declares what a parameter accepts, so a wrong value is refused when
@@ -173,9 +207,9 @@ type manifestChangePolicy struct {
 	Sensitive   bool   `yaml:"sensitive"`
 }
 
-// manifestFeatures is decoded with KnownFields(true), so every key a cask may
+// manifestFeatures is decoded with KnownFields(true), so every key a module may
 // write has to appear here. Only HostLAN reaches the runner; the rest are
-// declarations casks make about themselves that nothing yet consults.
+// declarations modules make about themselves that nothing yet consults.
 type manifestFeatures struct {
 	LDAPProvider     bool     `yaml:"ldap_provider"`
 	GeneratedSecrets bool     `yaml:"generated_secrets"`
@@ -186,7 +220,7 @@ type manifestFeatures struct {
 	Special          []string `yaml:"special_files"`
 }
 
-// manifestIdentity declares direct identity protocols used by a cask. IAM
+// manifestIdentity declares direct identity protocols used by a module. IAM
 // protocols are resolved from requires_capabilities; direct directory access
 // such as LDAPS is declared here. AppGroup is deliberately explicit: a daemon
 // may query a directory without representing an interactive application.
@@ -263,15 +297,15 @@ type manifestLogic struct {
 }
 
 func loadRegistry(root string) (map[string]Module, error) {
-	return loadRegistryDir(filepath.Join(root, "casks", "mods"))
+	return loadRegistryDir(filepath.Join(root, "modules"))
 }
 
-// loadRegistryDir loads independent cask bundles from a directory whose
-// immediate children each contain cask.yml. The runner only needs this while
+// loadRegistryDir loads independent module bundles from a directory whose
+// immediate children each contain module.yml. The runner only needs this while
 // resolving or materializing a deployment; artifact lifecycle commands read
-// the frozen deployment manifest and do not need a cask source tree.
-func loadRegistryDir(casksRoot string) (map[string]Module, error) {
-	entries, err := os.ReadDir(casksRoot)
+// the frozen deployment manifest and do not need a module source tree.
+func loadRegistryDir(modulesRoot string) (map[string]Module, error) {
+	entries, err := os.ReadDir(modulesRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +314,7 @@ func loadRegistryDir(casksRoot string) (map[string]Module, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		dir := filepath.Join(casksRoot, entry.Name())
+		dir := filepath.Join(modulesRoot, entry.Name())
 		mod, err := loadModuleManifest(dir, entry.Name())
 		if err != nil {
 			return nil, err
@@ -290,32 +324,32 @@ func loadRegistryDir(casksRoot string) (map[string]Module, error) {
 	return reg, nil
 }
 
-// caskRootCandidate accepts either the bundle directory or the directory above
+// moduleRootCandidate accepts either the bundle directory or the directory above
 // it. Every caller used to do this for the value it had just parsed out of
-// --root or --cask-root, six copies of the same three lines, which is why the
-// one input nobody owned — ANAS_CASK_ROOT — was the one that missed out: it is
+// --root or --module-root, six copies of the same three lines, which is why the
+// one input nobody owned — ANAS_MODULE_ROOT — was the one that missed out: it is
 // read here rather than by a caller. The same value therefore worked as a flag
 // and failed as an export, and the error named the two as interchangeable.
-func caskRootCandidate(path string) string {
-	if path != "" && exists(filepath.Join(path, "casks", "mods")) {
-		return filepath.Join(path, "casks", "mods")
+func moduleRootCandidate(path string) string {
+	if path != "" && exists(filepath.Join(path, "modules")) {
+		return filepath.Join(path, "modules")
 	}
 	return path
 }
 
-func locateCaskRoot(explicit string) (string, error) {
+func locateModuleRoot(explicit string) (string, error) {
 	candidates := []string{
-		caskRootCandidate(explicit),
-		caskRootCandidate(os.Getenv("ANAS_CASK_ROOT")),
+		moduleRootCandidate(explicit),
+		moduleRootCandidate(os.Getenv("ANAS_MODULE_ROOT")),
 	}
 	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates, filepath.Join(cwd, "casks", "mods"))
+		candidates = append(candidates, filepath.Join(cwd, "modules"))
 	}
 	if exe, err := os.Executable(); err == nil {
 		dir := filepath.Dir(exe)
 		candidates = append(candidates,
-			filepath.Join(dir, "casks", "mods"),
-			filepath.Join(filepath.Dir(dir), "casks", "mods"))
+			filepath.Join(dir, "modules"),
+			filepath.Join(filepath.Dir(dir), "modules"))
 	}
 	seen := map[string]bool{}
 	for _, candidate := range candidates {
@@ -333,47 +367,47 @@ func locateCaskRoot(explicit string) (string, error) {
 			continue
 		}
 		for _, entry := range entries {
-			if entry.IsDir() && exists(filepath.Join(candidate, entry.Name(), "cask.yml")) {
+			if entry.IsDir() && exists(filepath.Join(candidate, entry.Name(), "module.yml")) {
 				return candidate, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("could not locate cask bundle directory; use --cask-root or ANAS_CASK_ROOT")
+	return "", fmt.Errorf("could not locate module bundle directory; use --module-root or ANAS_MODULE_ROOT")
 }
 
 func loadModuleManifest(dir, dirname string) (Module, error) {
-	path := filepath.Join(dir, "cask.yml")
+	path := filepath.Join(dir, "module.yml")
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return Module{}, err
 	}
-	var manifest caskManifest
+	var manifest moduleManifest
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
 	if err := dec.Decode(&manifest); err != nil {
 		return Module{}, fmt.Errorf("%s: %w", path, err)
 	}
-	if manifest.APIVersion != "anas.dev/v1" {
+	if manifest.APIVersion != "anas.module/v1" {
 		return Module{}, fmt.Errorf("%s api_version = %q", dirname, manifest.APIVersion)
 	}
-	if manifest.Kind != "Cask" {
+	if manifest.Kind != "Module" {
 		return Module{}, fmt.Errorf("%s kind = %q", dirname, manifest.Kind)
 	}
 	if manifest.Name != dirname {
 		return Module{}, fmt.Errorf("%s manifest name = %q", dirname, manifest.Name)
 	}
 	if manifest.Version == "" {
-		return Module{}, fmt.Errorf("cask %q is missing version", dirname)
+		return Module{}, fmt.Errorf("module %q is missing version", dirname)
 	}
 	if _, err := parseSemver(manifest.Version); err != nil {
-		return Module{}, fmt.Errorf("cask %q version %q is invalid: %w", dirname, manifest.Version, err)
+		return Module{}, fmt.Errorf("module %q version %q is invalid: %w", dirname, manifest.Version, err)
 	}
 	if manifest.Revision < 1 {
-		return Module{}, fmt.Errorf("cask %q revision must be at least 1", dirname)
+		return Module{}, fmt.Errorf("module %q revision must be at least 1", dirname)
 	}
 	if manifest.Upgrade.From != "" {
 		if _, err := parseVersionConstraint(manifest.Upgrade.From); err != nil {
-			return Module{}, fmt.Errorf("cask %q upgrade.from %q is invalid: %w", dirname, manifest.Upgrade.From, err)
+			return Module{}, fmt.Errorf("module %q upgrade.from %q is invalid: %w", dirname, manifest.Upgrade.From, err)
 		}
 	}
 	// Every entry is validated at load rather than at comparison time. A
@@ -383,49 +417,49 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if manifest.Upgrade.DataBreaking != nil {
 		for _, raw := range *manifest.Upgrade.DataBreaking {
 			if _, err := parseSemver(raw); err != nil {
-				return Module{}, fmt.Errorf("cask %q upgrade.data_breaking entry %q is invalid: %w", dirname, raw, err)
+				return Module{}, fmt.Errorf("module %q upgrade.data_breaking entry %q is invalid: %w", dirname, raw, err)
 			}
 		}
 	}
 	for _, dep := range manifest.Dependencies.Requires {
 		if strings.TrimSpace(dep.Name) == "" {
-			return Module{}, fmt.Errorf("cask %q has dependency without name", dirname)
+			return Module{}, fmt.Errorf("module %q has dependency without name", dirname)
 		}
 		if dep.Version != "" {
 			if _, err := parseVersionConstraint(dep.Version); err != nil {
-				return Module{}, fmt.Errorf("cask %q dependency %q version %q is invalid: %w", dirname, dep.Name, dep.Version, err)
+				return Module{}, fmt.Errorf("module %q dependency %q version %q is invalid: %w", dirname, dep.Name, dep.Version, err)
 			}
 		}
 	}
 	for _, dep := range manifest.Dependencies.RequiresOne {
 		if strings.TrimSpace(dep.Capability) == "" {
-			return Module{}, fmt.Errorf("cask %q has requires_one dependency without capability", dirname)
+			return Module{}, fmt.Errorf("module %q has requires_one dependency without capability", dirname)
 		}
 		if strings.TrimSpace(dep.SelectedBy) == "" {
-			return Module{}, fmt.Errorf("cask %q requires_one %q has no selected_by parameter", dirname, dep.Capability)
+			return Module{}, fmt.Errorf("module %q requires_one %q has no selected_by parameter", dirname, dep.Capability)
 		}
 		if len(dep.Providers) == 0 {
-			return Module{}, fmt.Errorf("cask %q requires_one %q has no providers", dirname, dep.Capability)
+			return Module{}, fmt.Errorf("module %q requires_one %q has no providers", dirname, dep.Capability)
 		}
 		if !contains(dep.Providers, dep.Default) {
-			return Module{}, fmt.Errorf("cask %q requires_one %q default %q is not a provider", dirname, dep.Capability, dep.Default)
+			return Module{}, fmt.Errorf("module %q requires_one %q default %q is not a provider", dirname, dep.Capability, dep.Default)
 		}
 		for _, provider := range dep.Providers {
 			if strings.TrimSpace(provider) == "" {
-				return Module{}, fmt.Errorf("cask %q requires_one %q contains an empty provider", dirname, dep.Capability)
+				return Module{}, fmt.Errorf("module %q requires_one %q contains an empty provider", dirname, dep.Capability)
 			}
 		}
 	}
-	if !contains(manifest.ABI.Supports, currentCaskABI) {
-		return Module{}, fmt.Errorf("cask %q does not support runner ABI %s", dirname, currentCaskABI)
+	if !contains(manifest.ABI.Supports, currentModuleABI) {
+		return Module{}, fmt.Errorf("module %q does not support runner ABI %s", dirname, currentModuleABI)
 	}
 	if manifest.Runtime.Type != "builtin" && manifest.Runtime.Type != "compose" {
-		return Module{}, fmt.Errorf("cask %q has unsupported runtime type %q", dirname, manifest.Runtime.Type)
+		return Module{}, fmt.Errorf("module %q has unsupported runtime type %q", dirname, manifest.Runtime.Type)
 	}
 	changes := map[string]ChangePolicy{}
 	for key, policy := range manifest.Config.Changes {
 		if !validChangeEffect(policy.Effect) {
-			return Module{}, fmt.Errorf("cask %q config.changes.%s has invalid effect %q", dirname, key, policy.Effect)
+			return Module{}, fmt.Errorf("module %q config.changes.%s has invalid effect %q", dirname, key, policy.Effect)
 		}
 		changes[strings.ToLower(strings.TrimSpace(key))] = ChangePolicy{
 			Effect: policy.Effect, Apply: policy.Apply,
@@ -438,14 +472,14 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 			composeFile = "docker-compose.yml"
 		}
 		if filepath.IsAbs(composeFile) || strings.HasPrefix(filepath.Clean(composeFile), ".."+string(filepath.Separator)) {
-			return Module{}, fmt.Errorf("cask %q has invalid compose_file %q", dirname, composeFile)
+			return Module{}, fmt.Errorf("module %q has invalid compose_file %q", dirname, composeFile)
 		}
 		if _, err := os.Stat(filepath.Join(dir, composeFile)); err != nil {
-			return Module{}, fmt.Errorf("cask %q compose_file %q: %w", dirname, composeFile, err)
+			return Module{}, fmt.Errorf("module %q compose_file %q: %w", dirname, composeFile, err)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(dir, "runner.rb")); err == nil {
-		return Module{}, fmt.Errorf("cask %q still contains unsupported runner.rb", dirname)
+		return Module{}, fmt.Errorf("module %q still contains unsupported runner.rb", dirname)
 	} else if !os.IsNotExist(err) {
 		return Module{}, err
 	}
@@ -471,6 +505,18 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		return Module{}, err
 	}
 	requiresCapabilities, err := normalizeRequiredCapabilities(dirname, manifest.Dependencies.RequiresCapabilities)
+	if err != nil {
+		return Module{}, err
+	}
+	requiresContracts, err := normalizeContractDependencies(dirname, manifest.Dependencies.Contracts)
+	if err != nil {
+		return Module{}, err
+	}
+	contractProviders, err := loadContractProviders(dir, dirname, manifest.Contracts.Provides)
+	if err != nil {
+		return Module{}, err
+	}
+	resources, err := normalizeResourceRequirements(dirname, manifest.Resources.Requires, requiresContracts)
 	if err != nil {
 		return Module{}, err
 	}
@@ -500,6 +546,9 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		Changes:                changes,
 		Requires:               normalizeManifestDependencies(manifest.Dependencies.Requires),
 		RequiresOne:            normalizeAlternativeDependencies(manifest.Dependencies.RequiresOne),
+		RequiresContracts:      requiresContracts,
+		ContractProviders:      contractProviders,
+		Resources:              resources,
 		Provides:               provides,
 		RequiresCapabilities:   requiresCapabilities,
 		RunAfter:               append([]string{}, manifest.Dependencies.After...),
@@ -519,9 +568,9 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 
 // normalizeParamTypes validates the declarations themselves. A type nobody can
 // satisfy -- an unknown kind, or an enumeration with no members -- would reject
-// every value including the cask's own default, so it is refused when the cask
+// every value including the module's own default, so it is refused when the module
 // is loaded rather than when somebody tries to set the parameter.
-func normalizeParamTypes(cask string, in map[string]manifestParamType) (map[string]ParamType, error) {
+func normalizeParamTypes(module string, in map[string]manifestParamType) (map[string]ParamType, error) {
 	out := map[string]ParamType{}
 	for name, declared := range in {
 		kind := strings.ToLower(strings.TrimSpace(declared.Kind))
@@ -538,10 +587,10 @@ func normalizeParamTypes(cask string, in map[string]manifestParamType) (map[stri
 		case "string", "bool", "int":
 		case "enum":
 			if len(enum) == 0 {
-				return nil, fmt.Errorf("cask %q config.types.%s is an enum with no values", cask, name)
+				return nil, fmt.Errorf("module %q config.types.%s is an enum with no values", module, name)
 			}
 		default:
-			return nil, fmt.Errorf("cask %q config.types.%s has unknown type %q; use string, bool, int or enum", cask, name, declared.Kind)
+			return nil, fmt.Errorf("module %q config.types.%s has unknown type %q; use string, bool, int or enum", module, name, declared.Kind)
 		}
 		out[strings.ToLower(strings.TrimSpace(name))] = ParamType{Kind: kind, Enum: enum}
 	}
@@ -559,22 +608,22 @@ func normalizeIdentityInterfaces(in []string) []string {
 	return out
 }
 
-func normalizeIdentity(cask string, in manifestIdentity) (*IdentityProvisioning, *IdentityAuthentication, []string, error) {
+func normalizeIdentity(module string, in manifestIdentity) (*IdentityProvisioning, *IdentityAuthentication, []string, error) {
 	interfaces := normalizeIdentityInterfaces(in.Interfaces)
 	var provisioning *IdentityProvisioning
 	if in.Provisioning != nil {
 		capability := strings.ToLower(strings.TrimSpace(in.Provisioning.Capability))
 		if capability == "" {
-			return nil, nil, nil, fmt.Errorf("cask %q identity.provisioning has no capability", cask)
+			return nil, nil, nil, fmt.Errorf("module %q identity.provisioning has no capability", module)
 		}
 		anyOf := normalizeIdentityInterfaces(in.Provisioning.Interfaces.AnyOf)
 		if len(anyOf) == 0 {
-			return nil, nil, nil, fmt.Errorf("cask %q identity.provisioning has no interface", cask)
+			return nil, nil, nil, fmt.Errorf("module %q identity.provisioning has no interface", module)
 		}
 		objects := normalizeIdentityInterfaces(in.Provisioning.Objects)
 		for _, object := range objects {
 			if object != "users" && object != "groups" {
-				return nil, nil, nil, fmt.Errorf("cask %q identity.provisioning has unsupported object %q", cask, object)
+				return nil, nil, nil, fmt.Errorf("module %q identity.provisioning has unsupported object %q", module, object)
 			}
 		}
 		for _, iface := range anyOf {
@@ -594,11 +643,11 @@ func normalizeIdentity(cask string, in manifestIdentity) (*IdentityProvisioning,
 		anyOf := normalizeIdentityInterfaces(in.Authentication.Interfaces.AnyOf)
 		prefer := normalizeIdentityInterfaces(in.Authentication.Interfaces.Prefer)
 		if capability == "" || selectedBy == "" || len(anyOf) == 0 {
-			return nil, nil, nil, fmt.Errorf("cask %q identity.authentication requires capability, selected_by and interfaces.any_of", cask)
+			return nil, nil, nil, fmt.Errorf("module %q identity.authentication requires capability, selected_by and interfaces.any_of", module)
 		}
 		for _, preferred := range prefer {
 			if !contains(anyOf, preferred) {
-				return nil, nil, nil, fmt.Errorf("cask %q identity.authentication prefers unsupported interface %q", cask, preferred)
+				return nil, nil, nil, fmt.Errorf("module %q identity.authentication prefers unsupported interface %q", module, preferred)
 			}
 		}
 		authentication = &IdentityAuthentication{Capability: capability, SelectedBy: selectedBy, AnyOf: anyOf, Prefer: prefer}
@@ -606,24 +655,24 @@ func normalizeIdentity(cask string, in manifestIdentity) (*IdentityProvisioning,
 	return provisioning, authentication, interfaces, nil
 }
 
-func normalizeManagement(cask string, in manifestManagement) ([]ManagementSurface, []LocalAccount, error) {
+func normalizeManagement(module string, in manifestManagement) ([]ManagementSurface, []LocalAccount, error) {
 	surfaces := make([]ManagementSurface, 0, len(in.Surfaces))
 	seenSurface := map[string]bool{}
 	for _, raw := range in.Surfaces {
 		id := strings.ToLower(strings.TrimSpace(raw.ID))
 		if id == "" || seenSurface[id] {
-			return nil, nil, fmt.Errorf("cask %q management.surfaces has an empty or duplicate id %q", cask, raw.ID)
+			return nil, nil, fmt.Errorf("module %q management.surfaces has an empty or duplicate id %q", module, raw.ID)
 		}
 		seenSurface[id] = true
 		auth := strings.ToLower(strings.TrimSpace(raw.Authentication.Primary))
 		switch auth {
 		case "local", "iam", "forward_auth":
 		default:
-			return nil, nil, fmt.Errorf("cask %q management surface %q has unsupported authentication %q", cask, id, auth)
+			return nil, nil, fmt.Errorf("module %q management surface %q has unsupported authentication %q", module, id, auth)
 		}
 		uriFrom := strings.TrimSpace(raw.URIFrom)
 		if uriFrom == "" || !isEnvKey(uriFrom) {
-			return nil, nil, fmt.Errorf("cask %q management surface %q has invalid uri_from %q", cask, id, uriFrom)
+			return nil, nil, fmt.Errorf("module %q management surface %q has invalid uri_from %q", module, id, uriFrom)
 		}
 		surfaces = append(surfaces, ManagementSurface{ID: id, URIFrom: uriFrom, Authentication: auth})
 	}
@@ -633,38 +682,38 @@ func normalizeManagement(cask string, in manifestManagement) ([]ManagementSurfac
 	for _, raw := range in.LocalAccounts {
 		id := strings.ToLower(strings.TrimSpace(raw.ID))
 		if id == "" || seenAccount[id] {
-			return nil, nil, fmt.Errorf("cask %q management.local_accounts has an empty or duplicate id %q", cask, raw.ID)
+			return nil, nil, fmt.Errorf("module %q management.local_accounts has an empty or duplicate id %q", module, raw.ID)
 		}
 		seenAccount[id] = true
 		purpose := strings.ToLower(strings.TrimSpace(raw.Purpose))
 		switch purpose {
 		case "primary", "break_glass", "embedded_guard":
 		default:
-			return nil, nil, fmt.Errorf("cask %q local account %q has unsupported purpose %q", cask, id, purpose)
+			return nil, nil, fmt.Errorf("module %q local account %q has unsupported purpose %q", module, id, purpose)
 		}
 		fixed := strings.TrimSpace(raw.FixedUsername)
 		template := strings.ToLower(strings.TrimSpace(raw.Username.Template))
 		if fixed != "" && template != "" {
-			return nil, nil, fmt.Errorf("cask %q local account %q cannot set both fixed_username and username.template", cask, id)
+			return nil, nil, fmt.Errorf("module %q local account %q cannot set both fixed_username and username.template", module, id)
 		}
 		if fixed == "" && template == "" {
 			template = "global"
 		}
 		if template != "" && template != "global" {
-			return nil, nil, fmt.Errorf("cask %q local account %q username.template must be global", cask, id)
+			return nil, nil, fmt.Errorf("module %q local account %q username.template must be global", module, id)
 		}
 		policy := strings.ToLower(strings.TrimSpace(raw.Credential.Policy))
 		if policy == "" {
-			policy = "generated_per_cask"
+			policy = "generated_per_module"
 		}
-		if policy != "generated_per_cask" {
-			return nil, nil, fmt.Errorf("cask %q local account %q has unsupported credential policy %q", cask, id, policy)
+		if policy != "generated_per_module" {
+			return nil, nil, fmt.Errorf("module %q local account %q has unsupported credential policy %q", module, id, policy)
 		}
 		format := strings.ToLower(strings.TrimSpace(raw.Credential.ContainerFormat))
 		switch format {
 		case "bcrypt", "plaintext_on_bootstrap", "plaintext":
 		default:
-			return nil, nil, fmt.Errorf("cask %q local account %q has unsupported container_format %q", cask, id, format)
+			return nil, nil, fmt.Errorf("module %q local account %q has unsupported container_format %q", module, id, format)
 		}
 		accounts = append(accounts, LocalAccount{
 			ID: id, Purpose: purpose, FixedUsername: fixed, UsernameTemplate: template,
@@ -716,7 +765,7 @@ func normalizeManifestDependencies(in []manifestDependency) []Dependency {
 func normalizeDefaults(module, prefix string, exports []string, in map[string]any) map[string]string {
 	out := map[string]string{}
 	for k, v := range in {
-		out[caskParamEnvKey(module, prefix, exports, k)] = config.Scalar(v)
+		out[moduleParamEnvKey(module, prefix, exports, k)] = config.Scalar(v)
 	}
 	return out
 }
@@ -724,7 +773,7 @@ func normalizeDefaults(module, prefix string, exports []string, in map[string]an
 func normalizeRequired(module, prefix string, exports []string, in []string) []string {
 	out := []string{}
 	for _, k := range in {
-		out = append(out, caskParamEnvKey(module, prefix, exports, k))
+		out = append(out, moduleParamEnvKey(module, prefix, exports, k))
 	}
 	return out
 }
@@ -736,16 +785,16 @@ func defaultEnvPrefix(module string) string {
 // normalizeEnvPatterns validates consumes/exports entries: an exact env key,
 // a prefix glob such as APPS_LIST__*, or a suffix glob such as *_DB_NAME used
 // by capability providers that scan their consumers' declarations.
-func normalizeEnvPatterns(cask, field string, in []string) ([]string, error) {
+func normalizeEnvPatterns(module, field string, in []string) ([]string, error) {
 	out := []string{}
 	for _, raw := range in {
 		pattern := strings.TrimSpace(raw)
 		if pattern == "" {
-			return nil, fmt.Errorf("cask %q config.%s contains an empty pattern", cask, field)
+			return nil, fmt.Errorf("module %q config.%s contains an empty pattern", module, field)
 		}
 		if stars := strings.Count(pattern, "*"); stars > 1 ||
 			(stars == 1 && !strings.HasSuffix(pattern, "*") && !strings.HasPrefix(pattern, "*")) {
-			return nil, fmt.Errorf("cask %q config.%s pattern %q may only have one leading or trailing *", cask, field, pattern)
+			return nil, fmt.Errorf("module %q config.%s pattern %q may only have one leading or trailing *", module, field, pattern)
 		}
 		out = append(out, pattern)
 	}
@@ -773,14 +822,14 @@ func matchEnvPattern(patterns []string, key string) bool {
 	return false
 }
 
-// caskParamEnvKey maps a cask's manifest parameter name to the env key it
-// produces. A cask's parameters normally acquire its prefix; one whose bare env
-// name the cask lists in `config.exports` keeps that bare name instead. That is
-// how a parameter genuinely owned by one cask can still be addressed by the
+// moduleParamEnvKey maps a module's manifest parameter name to the env key it
+// produces. A module's parameters normally acquire its prefix; one whose bare env
+// name the module lists in `config.exports` keeps that bare name instead. That is
+// how a parameter genuinely owned by one module can still be addressed by the
 // name people use for it -- SHARE_ACCESS_MODE, not SAMBA_FS_SHARE_ACCESS_MODE
 // -- without moving it back into the deployment-wide namespace, and without
 // manifests having to spell parameters in two different cases.
-func caskParamEnvKey(module, prefix string, exports []string, key string) string {
+func moduleParamEnvKey(module, prefix string, exports []string, key string) string {
 	if bare := globalParamEnv(key); contains(exports, bare) {
 		return bare
 	}

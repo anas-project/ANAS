@@ -122,7 +122,7 @@ ssh whl@finance.hlong.wang 'for h in auth nc traefik lam meshcentral netbird ddn
 
 ## 已知问题
 
-**meshcentral 返回 502。** `casks/mods/meshcentral/meshcentral/config.json.erb`
+**meshcentral 返回 502。** `modules/meshcentral/meshcentral/config.json.erb`
 本该渲染出 `config.json`（其中 `port` 和 `AliasPort` 都取 `TRAEFIK_BASE_PORT`=9443），
 但 `/home/whl/anas-deploy/data/meshcentral/meshcentral-data/` 下没有 `config.json`。
 MeshCentral 因此按默认配置只监听 80，而 Traefik 的

@@ -1,5 +1,5 @@
-api_version: anas.dev/v1
-casks:
+api_version: anas.module-lock/v1
+modules:
     authentik:
         version: 2026.5.6
         revision: 1

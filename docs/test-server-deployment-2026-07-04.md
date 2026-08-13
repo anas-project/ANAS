@@ -9,7 +9,7 @@
 已通过：
 
 - Go 1.24.2 Linux/amd64 构建；
-- 全部 Go 单元测试和 cask manifest 静态校验；
+- 全部 Go 单元测试和 module manifest 静态校验；
 - 7 组配置矩阵的 plan/render；
 - 支持升级与拒绝降级的 lock fixture 校验；
 - 全部渲染模块的 `docker compose config` 校验；
@@ -158,7 +158,7 @@ https://ghfast.top/https://github.com/meetecho/janus-gateway.git
 - Keycloak 增加 PostgreSQL/MariaDB 的运行顺序约束；
 - Keycloak Compose 的错误 `$LLNG_NETWORK_DB` 已改为 `$KEYCLOAK_NETWORK_DB`；
 - smoke 在发布目录生成前失败时，现会从 `tmp/` Compose 文件反向清理已启动容器；
-- Keycloak cask 原先大量复制 LLNG 行为。最新本地修改已去除 LLNG 文件、门户图标复制，
+- Keycloak module 原先大量复制 LLNG 行为。最新本地修改已去除 LLNG 文件、门户图标复制，
   并增加 Keycloak 原生数据库和管理员环境变量。该项尚待同步验证。
 
 ## 远端报告
@@ -184,8 +184,8 @@ https://ghfast.top/https://github.com/meetecho/janus-gateway.git
 
 ```sh
 rsync -az \
-  refactor/casks/mods/keycloak/ \
-  whl@finance.hlong.wang:/home/whl/anas-refactor-test/casks/mods/keycloak/
+  refactor/modules/keycloak/ \
+  whl@finance.hlong.wang:/home/whl/anas-refactor-test/modules/keycloak/
 
 ssh whl@finance.hlong.wang
 cd /home/whl/anas-refactor-test

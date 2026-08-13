@@ -1,5 +1,5 @@
-api_version: anas.dev/v1
-casks:
+api_version: anas.module-lock/v1
+modules:
   nextcloud:
     version: 99.0.0
-    source: casks/mods/nextcloud
+    source: modules/nextcloud

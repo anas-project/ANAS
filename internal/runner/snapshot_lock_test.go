@@ -70,7 +70,7 @@ func TestResolveSnapshotLockPreservesExplicitPolicy(t *testing.T) {
 }
 
 func TestValidateLockedSnapshotUsesFrozenAutoDecision(t *testing.T) {
-	lock := &caskLock{Snapshot: &caskLockSnapshot{Backend: "btrfs", KeepAuto: 5}}
+	lock := &moduleLock{Snapshot: &moduleLockSnapshot{Backend: "btrfs", KeepAuto: 5}}
 	if err := validateLockedSnapshot(&config.File{}, lock); err != nil {
 		t.Fatal(err)
 	}
@@ -82,8 +82,8 @@ func TestValidateLockedSnapshotUsesFrozenAutoDecision(t *testing.T) {
 
 func TestWorkspaceKeepAutoUsesLockedPolicy(t *testing.T) {
 	workspace := t.TempDir()
-	lock := &caskLock{Snapshot: &caskLockSnapshot{Backend: "btrfs", KeepAuto: 3}}
-	if err := saveCaskLockFile(filepath.Join(workspace, "config.lock.yml"), lock); err != nil {
+	lock := &moduleLock{Snapshot: &moduleLockSnapshot{Backend: "btrfs", KeepAuto: 3}}
+	if err := saveModuleLockFile(filepath.Join(workspace, "config.lock.yml"), lock); err != nil {
 		t.Fatal(err)
 	}
 	if got := workspaceKeepAuto(workspace); got != 3 {

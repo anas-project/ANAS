@@ -1,13 +1,13 @@
 # 开源自部署 Kanban 应用全景调研
 
 调研日期：2026-08-10（Asia/Singapore）
-适用项目：ANAS（Go cask 编排器、Docker Compose、Traefik、PostgreSQL/MariaDB、Samba/LDAP、Authentik/LLNG、Nextcloud）
+适用项目：ANAS（Go module 编排器、Docker Compose、Traefik、PostgreSQL/MariaDB、Samba/LDAP、Authentik/LLNG、Nextcloud）
 
 ## 1. 结论先行
 
 不存在一个适合所有 ANAS 用户的“最佳 Kanban”。按当前项目能力和部署成本，建议分成三条产品路径：
 
-1. **默认独立 cask：Vikunja**。成熟度、资源占用、OIDC、LDAP、REST API/Webhook、迁移能力和 Go 单体部署之间最平衡。它不只是纯看板，适合个人和中小团队的任务、日历、Gantt/表格需求。
+1. **默认独立 module：Vikunja**。成熟度、资源占用、OIDC、LDAP、REST API/Webhook、迁移能力和 Go 单体部署之间最平衡。它不只是纯看板，适合个人和中小团队的任务、日历、Gantt/表格需求。
 2. **现代纯看板优先：Kan**。界面和 Trello 心智最接近，AGPL、PostgreSQL、Docker Compose、通用 OIDC、API Key 和原生 MCP 都很贴合 ANAS；但项目始于 2023 年，成熟度和升级历史弱于 Vikunja/Wekan，建议先标为 `experimental`。
 3. **零新增服务：Nextcloud Deck**。ANAS 已有 Nextcloud、SAML/LDAP、移动端和文件体系，启用 Deck 应用即可获得最低运维成本。短板是大型看板性能、工作流深度和 API 稳定性不如专用系统。
 
@@ -18,7 +18,7 @@
 - **Kanboard**：极轻、稳定、API/插件成熟；官方已声明 maintenance mode，且现代 OIDC 通常依赖插件，适合保守型或低配设备而不适合作为默认新产品。
 - **Leantime**：如果目标是“目标/里程碑/时间管理 + 看板”而非 Trello 克隆，它与 MariaDB、OIDC/LDAP 的匹配很好；需要持续核对免费核心与付费插件边界。
 
-不建议作为首个 cask：Plane、OpenProject、Taiga、Huly。它们是完整项目管理套件，依赖和运维面明显更大；Plane/OpenProject 社区版的企业 SSO 边界也不符合 ANAS 当前“开源版即可接 IAM”的理想契约。
+不建议作为首个 module：Plane、OpenProject、Taiga、Huly。它们是完整项目管理套件，依赖和运维面明显更大；Plane/OpenProject 社区版的企业 SSO 边界也不符合 ANAS 当前“开源版即可接 IAM”的理想契约。
 
 ## 2. 范围、口径与局限
 
@@ -58,7 +58,7 @@
 | **Taiga** | Scrum + Kanban 套件；MPL-2.0 | ✅ Web；无当前官方原生 PM App | ◐ 核心没有通用企业 SSO；LDAP/OIDC/SAML 多依赖社区插件 | ✅ 完整 REST API、Webhook、GitHub/GitLab 集成 | ◐ API 外接，无核心原生 AI | 844（后端） | 中高 / 成熟 | **B-**：成熟但多容器、PG/RabbitMQ/Redis，IAM 需自维护插件 |
 | **Plane CE** | Linear/Jira 式 PM + 看板/周期/页面；AGPL-3.0 | ✅ Web/PWA；官方移动端对自部署 CE 支持仍需逐版核对 | **— CE 无通用 OIDC/SAML/LDAP**；付费层提供 | ✅ 180+ REST endpoints、Webhook、OAuth App | ✅ Plane AI、MCP/Agents；具体自托管版本/额度需核对 | 55,778 | 很高 / 成长为成熟 | **C+**：能力强，但 ≥4 GB、多服务，CE SSO 是硬缺口 |
 | **OpenProject CE** | 企业级 PM/Portfolio + 基础看板；GPL-3.0 | ✅ Web；✅ Android/iOS Beta（需 v17+、可信 HTTPS） | ◐ LDAP 登录；**OIDC/SAML 为 Enterprise add-on** | ✅ HATEOAS REST API v3、OpenAPI | ◐ 官方 MCP 为 Enterprise；CE 可用 REST 外接 | 15,817 | 很高 / 很成熟 | **C+**：专业但重；SSO/MCP 社区版缺失 |
-| **Huly** | Jira/Linear/Slack/Notion 一体化；EPL-2.0 | ✅ Web/桌面；移动能力非主要卖点 | ◐ 自托管认证与企业 SSO需逐版核对 | ✅ 丰富内部服务接口；外部 API 文档成熟度一般 | ✅ 平台含 AI/协作能力，但自托管配置复杂 | 27,288 | 高 / 成长中 | **C**：系统面和资源面过大，不适合作为轻量 cask |
+| **Huly** | Jira/Linear/Slack/Notion 一体化；EPL-2.0 | ✅ Web/桌面；移动能力非主要卖点 | ◐ 自托管认证与企业 SSO需逐版核对 | ✅ 丰富内部服务接口；外部 API 文档成熟度一般 | ✅ 平台含 AI/协作能力，但自托管配置复杂 | 27,288 | 高 / 成长中 | **C**：系统面和资源面过大，不适合作为轻量 module |
 | **Tududi** | 个人/小团队任务、项目、笔记 + Kanban；MIT | ✅ Web；借 CalDAV 接 Tasks.org、Apple Reminders 等 | ✅ OIDC（新版本）；CalDAV 另有 Basic Auth | ◐ CalDAV 强，通用业务 API 生态较小 | ✅ 可选 OpenAI Key 的 Daily Brief/Insights | 3,230 | 很高 / 年轻 | **B（观察）**：轻、OIDC、AI；多人权限和升级历史需验证 |
 | **Scrumboy** | 可分享实时看板/Issue tracker；AGPL-3.0 | ✅ Web/PWA | ✅ OIDC/SSO | ✅ API；✅ MCP client/server 能力 | ✅ MCP、语音/AI 接入导向 | 427 | 很高 / 很年轻 | **B（观察）**：方向匹配但生产样本和历史不足 |
 | **Kanba** | 面向 maker/小团队的轻量 Trello 替代；MIT | ✅ Web；无官方原生 App | ◐ Supabase Auth/社交登录；未确认通用 OIDC/SAML/LDAP | ◐ 使用 Supabase/Next.js API，尚无成熟公开集成 API 契约 | — 未见原生 AI | 638 | 高 / 很年轻（2025） | **C+（观察）**：正是参考链接对象，但 Supabase/Stripe 架构与 ANAS 复用度低 |
@@ -69,11 +69,11 @@
 
 | 项目 | 看板特点 | SSO/API/AI | Star / 活跃度 | ANAS 判断 |
 | --- | --- | --- | --- | --- |
-| **Gitea**（MIT） | Issues/Projects 看板适合研发团队 | LDAP/OAuth2/OIDC；完整 REST API；可接外部 AI | 57,299 / 很高 | 若未来已有 Git cask，顺带使用最合理；不是通用业务看板首选 |
+| **Gitea**（MIT） | Issues/Projects 看板适合研发团队 | LDAP/OAuth2/OIDC；完整 REST API；可接外部 AI | 57,299 / 很高 | 若未来已有 Git module，顺带使用最合理；不是通用业务看板首选 |
 | **Forgejo**（GPL-3.0+，主要在 Codeberg） | Gitea 系谱的项目看板 | LDAP/OAuth2/OIDC；API | 活跃成熟 | 比 Gitea 更社区治理；同样仅推荐给代码研发场景 |
 | **ERPNext**（GPL-3.0） | DocType/任务的 Kanban 视图 | OAuth/LDAP、REST、Frappe 扩展 | 37,913 / 很高 | 只有同时需要 ERP 时才合理；部署和数据模型远超看板需求 |
-| **Odoo Community**（LGPL 核心） | Project/CRM 等模型的 Kanban 视图 | XML-RPC/JSON-RPC；认证和 AI 功能存在版本/企业版边界 | 53,627 / 很高 | 适合已有 Odoo 的组织，不建议作为独立看板 cask |
-| **Super Productivity**（MIT） | 个人 Kanban、时间盒、时间跟踪；GitHub/GitLab/Jira/OpenProject 集成 | 本地优先/文件同步，非标准多人服务 API/SSO | 21,244 / 很高 | 更像跨平台个人客户端，不符合 ANAS 多用户服务 cask 主目标 |
+| **Odoo Community**（LGPL 核心） | Project/CRM 等模型的 Kanban 视图 | XML-RPC/JSON-RPC；认证和 AI 功能存在版本/企业版边界 | 53,627 / 很高 | 适合已有 Odoo 的组织，不建议作为独立看板 module |
+| **Super Productivity**（MIT） | 个人 Kanban、时间盒、时间跟踪；GitHub/GitLab/Jira/OpenProject 集成 | 本地优先/文件同步，非标准多人服务 API/SSO | 21,244 / 很高 | 更像跨平台个人客户端，不符合 ANAS 多用户服务 module 主目标 |
 | **GitLab Self-Managed Free/CE** | Issue Boards 与代码、MR、Milestone 结合；Free 层有项目看板 | ✅ REST Board API；✅ Self-Managed Free 的实例级 SAML/LDAP/OmniAuth；AI 多为付费能力 | GitLab 主仓库在 GitLab.com，不用 GitHub Star横比 | 已有 GitLab 时直接用；只为看板部署过重 |
 | **Tuleap**（GPL-2.0-or-later） | 完整 ALM，Tracker、Scrum、Kanban、Git、测试和文档 | REST API；官方称不区分 Enterprise/Community 功能，认证仍需按发行版核对 | 官方 Git 仓库不以 GitHub API 计数 | 软件研发和强追踪场景成熟，但明显不是轻量看板 |
 | **禅道 ZenTao 开源版** | 中国团队常用 Scrum/Kanban/需求/缺陷/测试套件 | API 与企业集成因版本/版本线而异；SSO/AI 需核对开源版边界 | 1,666 / 高 | 本地化强；ZPL/产品线和免费功能边界需法务及 PoC 单独核实 |
@@ -84,7 +84,7 @@
 
 | 项目 | 当前许可 / 状态 | 功能和风险 | 结论 |
 | --- | --- | --- | --- |
-| **PLANKA** | Fair Use License + Pro/Enterprise License；12,326 Star；活跃 | 现代 Trello 式 UI、实时协作、OIDC、Swagger/Postman API、Docker/Helm；文档明确称 source available/self-hostable | 可作为商业/源码可见候选，但不能写进“严格开源默认 cask” |
+| **PLANKA** | Fair Use License + Pro/Enterprise License；12,326 Star；活跃 | 现代 Trello 式 UI、实时协作、OIDC、Swagger/Postman API、Docker/Helm；文档明确称 source available/self-hostable | 可作为商业/源码可见候选，但不能写进“严格开源默认 module” |
 | **Taskosaur** | Business Source License；542 Star；活跃、年轻 | 内置对话式 AI，可接 OpenAI/OpenRouter/Anthropic/Ollama，Swagger API，Jira/Trello 同步；许多能力仍标注 planned/working toward | 技术观察，不进入 FLOSS 选型 |
 
 特别提醒：网上较旧的 PLANKA 对比文章仍把它标为 MIT/开源，当前官方文档已改变口径，必须以当前 LICENSE 和官方许可指南为准。
@@ -111,7 +111,7 @@
 - 可关闭本地注册和本地凭据，适合受控家庭/团队实例。
 - 支持 S3 兼容附件，未来可映射到 ANAS 自托管对象存储；当前也可先禁用或使用本地策略。
 - 原生 API Key + 官方 `@kan/mcp`，46 个 MCP 工具覆盖 workspace/board/list/card/comment/checklist/label/member，AI 集成不需要屏幕自动化。
-- 依赖 PostgreSQL，ANAS 已有 capability provider，可复用现有数据库 cask，而不是再部署内置数据库。
+- 依赖 PostgreSQL，ANAS 已有 capability provider，可复用现有数据库 module，而不是再部署内置数据库。
 
 风险：
 
@@ -120,13 +120,13 @@
 - 目前无官方原生移动 App，应按响应式 Web/PWA 描述。
 - MCP 运行在客户端侧 Node.js 进程；ANAS 若要把它作为长期服务，应单独设计 sidecar 或只发布配置说明。
 
-建议 cask：`kan`，`status: experimental`，`requires: traefik`，`requires_capabilities: relational_database/postgres`，`iam.interfaces: oidc`。第一期不引入 S3，先验证本地附件持久化和备份。
+建议 module：`kan`，`status: experimental`，`requires: traefik`，`requires_capabilities: relational_database/postgres`，`iam.interfaces: oidc`。第一期不引入 S3，先验证本地附件持久化和备份。
 
 ### 6.2 Vikunja：默认推荐的稳健方案
 
 优势：
 
-- 后端为 Go，前后端已打包为单二进制/单容器；可接 PostgreSQL、MySQL/MariaDB，拓扑最适合 cask。
+- 后端为 Go，前后端已打包为单二进制/单容器；可接 PostgreSQL、MySQL/MariaDB，拓扑最适合 module。
 - OIDC 官方文档直接给出 Authentik、Keycloak 等配置；当前文档也列出 LDAP。
 - REST/OpenAPI、Webhook、bot users、n8n、CalDAV、OAuth 2.0 authorization server，自动化边界最完整。
 - Web 之外有桌面包和移动 App；官方明确移动端目前只覆盖基础能力，应保留这个限制说明。
@@ -136,9 +136,9 @@
 
 - 不是“只做看板”，用户若只要极简 Trello UI，Kan/4ga/Wekan 更直观。
 - OIDC 移动端使用 WebView，有 cookie/state 已知限制；需要用 ANAS 实际 IdP 做 iOS/Android E2E。
-- 2026 已出现 Vikunja Pro 可选功能，需对每个版本锁定社区版功能矩阵，避免把付费能力写入 cask 契约。
+- 2026 已出现 Vikunja Pro 可选功能，需对每个版本锁定社区版功能矩阵，避免把付费能力写入 module 契约。
 
-建议 cask：`vikunja`，可直接作为 stable 候选。优先 PostgreSQL，提供 `db_type: auto`；OIDC 为第一期身份协议，LDAP 作为备选而不是双重自动建号。
+建议 module：`vikunja`，可直接作为 stable 候选。优先 PostgreSQL，提供 `db_type: auto`；OIDC 为第一期身份协议，LDAP 作为备选而不是双重自动建号。
 
 ### 6.3 Nextcloud Deck：最低总拥有成本
 
@@ -154,7 +154,7 @@
 - API 文档和实际 endpoint 曾出现不同步问题；集成必须用固定 Deck/Nextcloud 版本做契约测试。
 - 工作流、报表、自动化和 WIP 能力弱于专业 PM 套件。
 
-实施建议：不要新增独立 `deck` Compose cask。把它作为 `nextcloud` cask 的可选 app（例如 `deck_enabled`），在现有 app reconcile 和兼容版本锁中安装，并增加 REST smoke test、Android/iOS 登录说明和大板基准。
+实施建议：不要新增独立 `deck` Compose module。把它作为 `nextcloud` module 的可选 app（例如 `deck_enabled`），在现有 app reconcile 和兼容版本锁中安装，并增加 REST smoke test、Android/iOS 登录说明和大板基准。
 
 ### 6.4 Wekan：成熟 Trello 替代
 
@@ -166,7 +166,7 @@
 
 ### 6.5 4ga Boards：值得跟踪的轻量新秀
 
-官方文档提供 Docker 变量和 OIDC client 配置，实时协作与现代界面强，2026 年仍高频发行。相对 Kan，API/MCP/第三方客户端生态较弱；相对 Wekan，历史和生产规模证据较少。适合 experimental cask 与 Kan 做实际 UX/资源 A/B 测试。
+官方文档提供 Docker 变量和 OIDC client 配置，实时协作与现代界面强，2026 年仍高频发行。相对 Kan，API/MCP/第三方客户端生态较弱；相对 Wekan，历史和生产规模证据较少。适合 experimental module 与 Kan 做实际 UX/资源 A/B 测试。
 
 ### 6.6 Kanboard：低资源和长期稳定场景
 
@@ -183,7 +183,7 @@
 
 Kanba 是 MIT、源码开放、自托管的年轻项目，强调简洁、速度、无限项目和小团队协作。当前官方部署说明以 Next.js + Supabase（数据库、Auth、存储/Edge 能力）为中心，并保留托管业务所需的 Stripe 配置。作者说明自托管可不使用 Stripe，但这仍不是 ANAS 现有 PostgreSQL capability 可直接复用的传统单体拓扑。
 
-它目前没有 Kan 那样清晰的通用 OIDC、稳定公开业务 API 和 MCP 契约，也没有原生移动 App。可以继续观察 UI 和产品方向，但如果现在落 cask，需要额外承担 Supabase 组件、认证映射与迁移维护；综合优先级低于名称相近但技术契约更完整的 **Kan**。
+它目前没有 Kan 那样清晰的通用 OIDC、稳定公开业务 API 和 MCP 契约，也没有原生移动 App。可以继续观察 UI 和产品方向，但如果现在落 module，需要额外承担 Supabase 组件、认证映射与迁移维护；综合优先级低于名称相近但技术契约更完整的 **Kan**。
 
 ## 7. ANAS 落地方案
 
@@ -191,19 +191,19 @@ Kanba 是 MIT、源码开放、自托管的年轻项目，强调简洁、速度�
 
 | 阶段 | 动作 | 完成标准 |
 | --- | --- | --- |
-| 1 | 在现有 Nextcloud cask 增加 Deck 可选 app | 新装/升级/禁用可 reconcile；REST smoke；SAML/LDAP 与移动端验证 |
-| 2 | 新增 `vikunja` experimental cask | PG/MariaDB 二选一、OIDC、备份恢复、升级回滚、API/Webhook 全通过 |
-| 3 | 新增 `kan` experimental cask | PostgreSQL、OIDC、Trello import、附件、API Key/MCP、迁移幂等通过 |
+| 1 | 在现有 Nextcloud module 增加 Deck 可选 app | 新装/升级/禁用可 reconcile；REST smoke；SAML/LDAP 与移动端验证 |
+| 2 | 新增 `vikunja` experimental module | PG/MariaDB 二选一、OIDC、备份恢复、升级回滚、API/Webhook 全通过 |
+| 3 | 新增 `kan` experimental module | PostgreSQL、OIDC、Trello import、附件、API Key/MCP、迁移幂等通过 |
 | 4 | 对 Kan/Vikunja/Deck 做真实用户与资源对比 | 记录 idle/load RAM/CPU、首屏、1k/10k card、移动体验、恢复时间 |
-| 5 | 按需求决定 Wekan/4ga/Kanboard | 只有明确用户场景再扩充，避免一次维护多个同质 cask |
+| 5 | 按需求决定 Wekan/4ga/Kanboard | 只有明确用户场景再扩充，避免一次维护多个同质 module |
 
-### 7.2 cask 契约要求
+### 7.2 module 契约要求
 
 所有候选必须满足：
 
 - 固定上游版本和镜像 digest；验证 amd64 与 arm64。
 - 不直接复制上游一体化 Compose 的数据库，优先声明 ANAS `relational_database` capability；确实需要 MongoDB 时单独建能力边界。
-- `requires: traefik`，域名/HTTPS/上传限制走 cask 参数；禁止把数据库、OIDC、SMTP secret 暴露给无关容器。
+- `requires: traefik`，域名/HTTPS/上传限制走 module 参数；禁止把数据库、OIDC、SMTP secret 暴露给无关容器。
 - 身份声明必须与真实协议一致：Kan/Vikunja 先声明 OIDC；Deck 继承 Nextcloud；不得用 oauth2-proxy 冒充应用内账号生命周期已经集成。
 - 测试首次登录、JIT 建号、禁用本地注册、用户名/邮箱冲突、登出和 IdP 不可用降级。
 - 为 API 创建最小权限服务账号或 token；AI 不得默认获得管理员 token。
@@ -301,4 +301,4 @@ Kanba 是 MIT、源码开放、自托管的年轻项目，强调简洁、速度�
 6. Deck 1.17.x 与 Nextcloud 34 的明确兼容范围、REST reorder 契约和移动端功能差异。
 7. Leantime 当前 release 中 OIDC/LDAP/API/MCP 各自究竟属于核心、免费插件还是付费 bundle。
 
-完成这些 PoC 后再把推荐从“文档预选”升级为 ANAS 稳定 cask 决策。
+完成这些 PoC 后再把推荐从“文档预选”升级为 ANAS 稳定 module 决策。

@@ -1,5 +1,5 @@
 // Command gen-dns-registry writes each engine's slice of the DNS platform
-// registry into its cask bundle. Run it after editing
+// registry into its module bundle. Run it after editing
 // internal/dns/providers.yml; TestProjectionsMatchCommittedFiles fails until
 // you do.
 package main

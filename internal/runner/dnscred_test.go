@@ -52,7 +52,7 @@ func TestSharedCredentialReachesEveryEngine(t *testing.T) {
 			t.Errorf("%s = %q, want %q", tc.key, got, tc.want)
 		}
 	}
-	// The scope rules must attribute each copy to its own cask, or the prefix
+	// The scope rules must attribute each copy to its own module, or the prefix
 	// rule alone would be doing the work and a rename could break isolation.
 	if a.envOwner["DDNS_GO_TENCENTCLOUD_SECRET_KEY"] != "ddns_go" {
 		t.Errorf("owner = %q, want ddns_go", a.envOwner["DDNS_GO_TENCENTCLOUD_SECRET_KEY"])
@@ -67,7 +67,7 @@ func TestSharedCredentialReachesEveryEngine(t *testing.T) {
 }
 
 // The canonical spelling is an input only. Leaving it addressable would let a
-// cask reach a credential without the prefix that scopes it.
+// module reach a credential without the prefix that scopes it.
 func TestCanonicalSecretIsNeverDelivered(t *testing.T) {
 	a := dnsCredApp(map[string]string{
 		"LEGO_DNS_PROVIDER":       "tencentcloud",
@@ -113,7 +113,7 @@ func TestMaterialisedCredentialsDoNotFollowTheDependencyClosure(t *testing.T) {
 		}
 	}
 	// Nor does anything else of lego's, credential or not: a rendered .env now
-	// carries what the cask declares rather than what its dependencies own.
+	// carries what the module declares rather than what its dependencies own.
 	// The credential gate still matters, because it also governs the
 	// calculate-phase view that declarations do not.
 	if _, ok := traefik["LEGO_DNS_PLATFORM"]; ok {

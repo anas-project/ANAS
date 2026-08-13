@@ -1,0 +1,104 @@
+api_version: anas.module/v1
+kind: Module
+name: authentik
+version: 2026.5.6
+revision: 1
+app_version: 2026.5.6
+abi:
+  supports:
+    - anas.module-hook/v1
+title: authentik
+description: Identity provider serving OIDC and SAML with per-application endpoints.
+category: identity
+status: experimental
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+capabilities:
+  provides:
+    - name: iam
+      interfaces:
+        - oidc
+        - saml
+dependencies:
+  requires:
+    - traefik
+    - samba_dc
+  contracts:
+    - name: relational_database
+      version: ">=1.0.0 <2.0.0"
+      selected_by: db_type
+      interfaces:
+        - postgres
+      default: postgres
+resources:
+  requires:
+    - id: primary_database
+      contract: relational_database
+      binding: db_type
+      spec_from:
+        name: db_name
+      spec:
+        principal: authentik
+        credential:
+          policy: generated
+        deletion_policy: retain
+upgrade:
+  # Empty, not absent: no release of this module has rewritten its on-disk data
+  # format. Absent would mean "unknown" and would block every rollback that
+  # changes the version. See docs/contracts/snapshot.md.
+  data_breaking: []
+config:
+  defaults:
+    domain_prefix: auth
+    log_level: warn
+    db_name: authentik
+    image_tag: 2026.5.6
+    db_type: auto
+    ldap_enabled: "true"
+    ldap_password_writeback: "true"
+  # Endpoints this module publishes for its bound consumers. Unlike a portal that
+  # serves one endpoint set for the whole deployment, these differ per
+  # consumer, which is why the contract is per-binding.
+  exports:
+    - ANAS_IAM_BINDING_*
+    - ANAS_IAM_PORTAL_URL
+  # Generic client registration requests published by consumers, translated
+  # into blueprints during render_env.
+  consumes:
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_TRUST_BUNDLE_NAME
+    - SAMBA_DC_BASE_DN
+    - SAMBA_DC_BASE_GROUPS_DN_PREFIX
+    - SAMBA_DC_BASE_USERS_DN_PREFIX
+    - SAMBA_DC_GROUP_CLASS_FILTER
+    - SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE
+    - TRAEFIK_BASE_PORT
+    - ANAS_IDENTITY_OIDC_CLIENTS
+    - ANAS_IDENTITY_SAML_CLIENTS
+    - ANAS_IAM_CLIENT_*
+    - APPS_LIST*
+    - SAMBA_DC_LDAPS_SERVER_URL_PORT
+    # Subscribed to so a group change reaches the source sync in seconds
+    # instead of waiting for the next scheduled run.
+    - ANAS_DIRECTORY_EVENTS_DIR
+    - ANAS_DIRECTORY_EVENTS_FILE_NAME
+    - SAMBA_DC_PASSWORD_BIND_DN
+    - SAMBA_DC_PASSWORD_BIND_PASSWORD
+  changes:
+    db_type:
+      effect: data_migrate
+      apply: migrate-authentik-database
+      description: Existing authentik data must be migrated explicitly.
+    domain_prefix:
+      effect: reconcile
+      apply: reconcile-authentik-domain
+      description: Every per-application endpoint is derived from this domain, so clients must be reconciled with it.
+features:
+  generated_secrets: true
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

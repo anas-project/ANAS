@@ -5,7 +5,7 @@
 部署里的服务应当以**面向用户的应用列表**呈现：用户登录门户后看到自己有权访问
 的应用，按分类排列，每个条目有可配置的名称、描述、图标和顺序。LLNG 的
 `applicationList` 和 Authentik 的 *My applications* 都提供这种视图，但它们的数据
-模型完全不同，因此这不能是某个 IAM Cask 的内部细节。
+模型完全不同，因此这不能是某个 IAM Module 的内部细节。
 
 本设计把现有的 `APPS_LIST` 私有约定提升为 **Runner 拥有的应用目录契约**，与
 [iam-capability-design.md](iam-capability-design.md) 的做法一致：Runner 解析并
@@ -20,7 +20,7 @@
 3. **静态展示元数据属于清单，动态值属于 Hook。** 名称、描述、图标、分类在清单里
    就能确定；URL 依赖域名计算，只能由 Hook 产生。清单声明"URL 在哪个变量里"，
    Runner 负责取值。
-4. **目录不是 IAM 专属。** 契约按消费方发布，任何 Cask（IAM 门户、独立仪表盘）
+4. **目录不是 IAM 专属。** 契约按消费方发布，任何 Module（IAM 门户、独立仪表盘）
    都可以消费它。这是把它做成 Runner 契约而不是 LLNG 私有逻辑的全部理由。
 5. **Provider 可以声明不支持某个字段，但不得自行发明语义。** Authentik 没有条目
    排序，就忽略 `ORDER`，而不是把 `ORDER` 塞进名称前缀。
@@ -29,37 +29,37 @@
 
 现状：`APPS_LIST` 是一组 Hook 之间的口头约定，Runner 完全不参与。
 
-1. **只有两个 Cask 参与。** 只有 `nextcloud`
-   （[main.go:207](../../casks/mods/nextcloud/hook/main.go#L207)）和 `netbird`
-   （[main.go:191](../../casks/mods/netbird/hook/main.go#L191)）发布条目。
+1. **只有两个 Module 参与。** 只有 `nextcloud`
+   （[main.go:207](../../modules/nextcloud/hook/main.go#L207)）和 `netbird`
+   （[main.go:191](../../modules/netbird/hook/main.go#L191)）发布条目。
    `lam`、`meshcentral`、`collabora`、各 Adminer、Traefik dashboard、LLNG
    Manager、Authentik 自身都不在门户里，用户必须记域名。
 2. **权限写了两份且互不校验。** LLNG 的 `display` 表达式读
    `APPS_LIST__<APP>__ALLOW_GROUPS`
-   （[llng-config.sh:117](../../casks/mods/llng/llng/root/root/llng-config.sh#L117)），
+   （[llng-config.sh:117](../../modules/llng/llng/root/root/llng-config.sh#L117)），
    Authentik 的策略绑定读 `ANAS_IAM_CLIENT__<APP>__ALLOW_GROUPS`
-   （[iam.go:287](../../casks/mods/authentik/hook/iam.go#L287)）。两者由不同代码路径
+   （[iam.go:287](../../modules/authentik/hook/iam.go#L287)）。两者由不同代码路径
    产生，可以静默不一致——门户显示一个点进去被拒的应用，或者藏起一个用户其实
    有权访问的应用。
 3. **没有分类契约。** LLNG 把所有应用硬编码进单一分类 `1apps` "Applications"
-   （[llng-config.sh:103](../../casks/mods/llng/llng/root/root/llng-config.sh#L103)）；
+   （[llng-config.sh:103](../../modules/llng/llng/root/root/llng-config.sh#L103)）；
    Authentik 的 `application.group` 根本没有设置。
 4. **图标机制脆弱。** LLNG 靠 `after_start` 的 `docker cp` 把
    `LOGO_PATH` 拷进容器 htdocs
-   （[main.go:165](../../casks/mods/llng/hook/main.go#L165)）。这是命令式的：容器重建
+   （[main.go:165](../../modules/llng/hook/main.go#L165)）。这是命令式的：容器重建
    后要重跑，路径依赖渲染产物位置——[design-review-2026-07-19.md](../research/design-review-2026-07-19.md)
    记录的就是 promote 后路径失效导致的启动破坏。Authentik 侧则完全没有图标。
-5. **展示元数据重复。** `cask.yml` 已经有 `title`、`description`、`category`，
+5. **展示元数据重复。** `module.yml` 已经有 `title`、`description`、`category`，
    Hook 里又硬编码了一份 `NAME`/`DESC`，两者可以漂移。
 6. **无法加入外部条目。** 用户没法把路由器管理页、机柜 PDU、外部 SaaS 这类
    非 ANAS 应用放进同一个门户。
-7. **无用户覆盖。** 改一个应用的显示名或图标要改 Cask 源码。
+7. **无用户覆盖。** 改一个应用的显示名或图标要改 Module 源码。
 
 因此不建议继续在 Hook 里扩展 `APPS_LIST`。
 
 ## 3. 用户配置
 
-新增顶层 `launcher` 段，以及 `services.<app>.launcher` 覆盖块：
+新增顶层 `launcher` 段，以及 `modules.<app>.launcher` 覆盖块：
 
 ```yaml
 launcher:
@@ -84,7 +84,7 @@ launcher:
       icon: ./branding/router.png
       allow_groups: Admins
 
-services:
+modules:
   nextcloud:
     launcher:
       name: 我的云盘
@@ -97,23 +97,23 @@ services:
 
 规则：
 
-- `launcher` 是**显示层配置**，不参与 `services.<app>.env` 的前缀转换。它不会
+- `launcher` 是**显示层配置**，不参与 `modules.<app>.config` 的前缀转换。它不会
   变成 `NEXTCLOUD_LAUNCHER_NAME` 这类变量，而是并入 Runner 的目录解析结果。
-  理由：这些值的消费方是门户 Cask，不是应用自己，走应用前缀会让它们进错
+  理由：这些值的消费方是门户 Module，不是应用自己，走应用前缀会让它们进错
   `.env`。
-- `services.<app>.launcher.allow_groups` **只能是执行点组集合的子集**（约束 2）。
+- `modules.<app>.launcher.allow_groups` **只能是执行点组集合的子集**（约束 2）。
   给出超集时 Runner 报错，而不是悄悄放宽。
 - `visibility` 取 `allowed`（默认）、`always`、`hidden`。
-- 外部条目的 `id` 不得与任何 Cask 名冲突。外部条目没有执行点，因此它的
+- 外部条目的 `id` 不得与任何 Module 名冲突。外部条目没有执行点，因此它的
   `allow_groups` 就是它自己的定义，Runner 不做子集校验，但必须在文档和 `plan`
   输出里标记为 `source: config`——它只影响是否显示，不影响那个 URL 能不能打开。
 
 ## 4. 清单能力模型
 
-新增可选的 `launcher` 段。现有 Cask 不带该段仍然合法，因此这是纯增量变更，
-**ABI 保持 `anas.cask/v2`**，不需要 v3。
+新增可选的 `launcher` 段。现有 Module 不带该段仍然合法，因此这是纯增量变更，
+**ABI 保持 `anas.module-hook/v1`**，不需要 v3。
 
-单条目形式（绝大多数应用 Cask）：
+单条目形式（绝大多数应用 Module）：
 
 ```yaml
 launcher:
@@ -131,7 +131,7 @@ launcher:
     via: iam
 ```
 
-多条目形式（一个 Cask 暴露多个界面）：
+多条目形式（一个 Module 暴露多个界面）：
 
 ```yaml
 launcher:
@@ -157,25 +157,25 @@ launcher:
 
 字段约束：
 
-- `publish` 缺省 `false`。不显式声明的 Cask 不进目录，避免把 `postgres`、
+- `publish` 缺省 `false`。不显式声明的 Module 不进目录，避免把 `postgres`、
   `lego` 这类没有界面的基础设施塞进用户门户。
-- `uri_from` 必须是该 Cask 自己前缀下的变量，或它 `config.consumes` 覆盖的变量。
+- `uri_from` 必须是该 Module 自己前缀下的变量，或它 `config.consumes` 覆盖的变量。
   跨界读取沿用现有作用域规则，不为目录开后门。
 - `access.via` 取 `iam`、`forward_auth`、`none`，决定 §5 里 `allow_groups` 的
   继承来源。它描述的是**事实**（这个界面实际由谁把门），不是愿望；填错会被 §9
   的一致性校验抓出来。
-- `icon` 是相对 Cask 目录的路径。
+- `icon` 是相对 Module 目录的路径。
 - `enabled_if` 引用一个布尔或非空判定的变量，解决 Adminer 这类可选服务。
 
 `identity.application_group: true`（已存在）与 `launcher.publish` 是两件事：前者
-决定 Samba AD 里是否创建 `APP_<cask>` 组，后者决定是否进门户。一个应用可以有组
+决定 Samba AD 里是否创建 `APP_<module>` 组，后者决定是否进门户。一个应用可以有组
 但不进门户（纯 API 客户端），也可以进门户但不限制组（`visibility: always`）。
 
 ## 5. 权限模型
 
 每个条目的最终组集合 `ALLOW_GROUPS` 由 Runner 按以下顺序确定，第一个命中的生效：
 
-1. 用户配置 `services.<app>.launcher.allow_groups`（必须是下面继承结果的子集）；
+1. 用户配置 `modules.<app>.launcher.allow_groups`（必须是下面继承结果的子集）；
 2. `access.via: iam` → 该应用的 `ANAS_IAM_CLIENT__<APP>__ALLOW_GROUPS`，即
    Authentik 策略绑定和 LLNG 规则**已经在用**的那一份；
 3. `access.via: forward_auth` → 保护它的网关的 `allow_groups`
@@ -205,7 +205,7 @@ LLNG 的 shell 里（`groups_filter="$groups_filter | inGroup('$SAMBA_DC_ADMIN_G
 ## 6. 环境变量契约
 
 Runner 发布，owner 为合成的 `runner`（与 §6 身份拓扑同样处理），只有显式
-`config.consumes` 的 Cask 才收到：
+`config.consumes` 的 Module 才收到：
 
 ```dotenv
 ANAS_APP_CATALOG=lam,netbird,nextcloud,router
@@ -224,19 +224,19 @@ ANAS_APP_ENTRY__NEXTCLOUD__ORDER=10
 ANAS_APP_ENTRY__NEXTCLOUD__ICON_NAME=nextcloud.png
 ANAS_APP_ENTRY__NEXTCLOUD__ALLOW_GROUPS=APP_nextcloud,Admins
 ANAS_APP_ENTRY__NEXTCLOUD__VISIBILITY=allowed
-ANAS_APP_ENTRY__NEXTCLOUD__SOURCE=cask:nextcloud
+ANAS_APP_ENTRY__NEXTCLOUD__SOURCE=module:nextcloud
 
 ANAS_APP_ICONS_DIR=<release>/apps/icons
 ```
 
-`SOURCE` 区分 `cask:<name>` 与 `config`，让 Provider 和 `plan` 输出都能说明一个
+`SOURCE` 区分 `module:<name>` 与 `config`，让 Provider 和 `plan` 输出都能说明一个
 条目是从哪来的；这在排查"门户里为什么有这一项"时是最先要回答的问题。
 
 条目 id 到变量名的转换与现有契约一致：大写，`-` 转 `_`。
 
 ### 6.1 两段式发布
 
-URL 依赖各 Cask 的 `calculate`，分类和图标不依赖。因此契约分两次写出，正好落在
+URL 依赖各 Module 的 `calculate`，分类和图标不依赖。因此契约分两次写出，正好落在
 现有生命周期的缝隙里，**不需要改动 Hook 阶段顺序**：
 
 1. 所有 `calculate` 之前：Runner 发布 `ANAS_APP_CATALOG`、全部分类变量，以及每个
@@ -291,7 +291,7 @@ capabilities:
 与 `iam` 不同，`app_launcher` **不设"一个部署只能有一个"的约束，也没有
 `launcher.provider` 配置项**。目录是只读显示数据，两个门户同时渲染它不产生冲突，
 也不产生第二个会话域。谁在部署里，谁就渲染。这正是契约化之后才可能出现的收益：
-将来加一个独立仪表盘 Cask，不需要改动任何应用 Cask。
+将来加一个独立仪表盘 Module，不需要改动任何应用 Module。
 
 | 契约字段 | LLNG | Authentik |
 | --- | --- | --- |
@@ -314,9 +314,9 @@ Authentik 缺少条目排序、缺少多级分类，这是能力差异，按约�
 - 条目引用了未定义的分类；
 - `uri_from` 指向的变量在解析后为空，而条目 `visibility` 不是 `hidden`；
 - `icon` 文件不存在、扩展名或大小越界；
-- 条目 id 与 Cask 名冲突，或两个条目 id 相同；
+- 条目 id 与 Module 名冲突，或两个条目 id 相同；
 - 用户配置的 `allow_groups` 不是执行点集合的子集；
-- `access.via: iam` 但该 Cask 没有 IAM 绑定，或 `access.via: forward_auth` 但
+- `access.via: iam` 但该 Module 没有 IAM 绑定，或 `access.via: forward_auth` 但
   部署里没有 `forward_auth` 提供方——这条是把 §5 的继承链从"填什么都行"变成可
   验证的原因；
 - **组名字符集** `^[A-Za-z0-9 _-]+$`。这是安全校验，不是洁癖：组名会被拼进
@@ -331,7 +331,7 @@ define it under launcher.categories or use one of: office, infra
 ```
 
 ```text
-services.nextcloud.launcher.allow_groups adds "Staff", which is not enforced
+modules.nextcloud.launcher.allow_groups adds "Staff", which is not enforced
 anywhere; the portal would show nextcloud to users who cannot open it.
 allow_groups may only narrow the enforced set: APP_nextcloud, Admins
 ```
@@ -350,7 +350,7 @@ allow_groups may only narrow the enforced set: APP_nextcloud, Admins
 
 | 阶段 | 内容 |
 | --- | --- |
-| A | Runner 契约：清单 `launcher` 段、两段式发布、§9 校验；同时双写旧 `APPS_LIST*` 保持现有 Cask 可用 |
+| A | Runner 契约：清单 `launcher` 段、两段式发布、§9 校验；同时双写旧 `APPS_LIST*` 保持现有 Module 可用 |
 | B | LLNG 改读新契约；图标改挂载，删除 `after_start: copy_portal_logos` 与 `LOGO_PATH`/`LOGO_NAME` |
 | C | Authentik 补分类与图标；策略绑定与门户可见性统一读 §5 的解析结果 |
 | D | 给 `lam`、`meshcentral`、`collabora`、各 Adminer、Traefik dashboard、LLNG Manager、Authentik 自身补 `launcher` 声明；删除 `APPS_LIST*` 与 `nextcloud`/`netbird` Hook 里的对应代码 |
@@ -368,5 +368,5 @@ A 到 D 之间旧契约保持可用，因此每一阶段都能单独渲染验证
   在本设计范围，也不应该偷偷塞进 `VISIBILITY`。
 - 匿名（未登录）门户不在范围。
 - 一个应用的多个界面共享同一套执行点组集合。若将来出现"同一应用不同界面不同
-  授权"的需求，`access` 需要按条目而不是按 Cask 解析；当前多条目形式已经把
+  授权"的需求，`access` 需要按条目而不是按 Module 解析；当前多条目形式已经把
   `access` 放在条目上，因此这是扩展而非重构。

@@ -1,0 +1,24 @@
+api_version: anas.module/v1
+kind: Module
+name: freeradius
+version: 3.2.10
+revision: 1
+app_version: 3.2.10
+abi:
+  supports:
+    - anas.module-hook/v1
+title: FreeRADIUS
+description: RADIUS server module scaffold.
+category: network
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  requires:
+    - lego
+upgrade:
+  # Empty, not absent: no release of this module has rewritten its on-disk data
+  # format. Absent would mean "unknown" and would block every rollback that
+  # changes the version. See docs/contracts/snapshot.md.
+  data_breaking: []
+status: experimental

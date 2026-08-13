@@ -1,6 +1,6 @@
 # ANAS 配置、初始化与持久状态通用方案
 
-本文基于当前 `casks/mods`、Go runner、Compose 挂载和容器初始化脚本的实际行为，回答四个问题：哪些状态必须保存、哪些配置只在首次初始化生效、哪些默认值一旦物化就不能靠修改环境变量更新，以及后续如何分层管理配置。
+本文基于当前 `modules`、Go runner、Compose 挂载和容器初始化脚本的实际行为，回答四个问题：哪些状态必须保存、哪些配置只在首次初始化生效、哪些默认值一旦物化就不能靠修改环境变量更新，以及后续如何分层管理配置。
 
 ## 结论
 
@@ -8,7 +8,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 
 建议采用三个核心机制：
 
-1. 每个 cask 声明自己的持久数据、配置生命周期和对账动作。
+1. 每个 module 声明自己的持久数据、配置生命周期和对账动作。
 2. runner 保存一份不含明文密钥的 applied state，记录每个模块已经初始化和实际应用的配置版本。
 3. 启动拆成 `resolve -> inspect -> plan -> reconcile -> start -> verify -> commit state`，禁止把首次初始化配置的变化静默当成普通重启。
 
@@ -23,7 +23,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 
 | 模块 | 当前持久状态 | 判断与处理建议 |
 | --- | --- | --- |
-| runner 自身 | `${base}/secrets.generated.yml`、`cask.lock.yml`、`release/` | generated secrets 是关键状态；lock 是升级元数据；release 可重建。新增 applied state。 |
+| runner 自身 | `${base}/secrets.generated.yml`、`module.lock.yml`、`release/` | generated secrets 是关键状态；lock 是升级元数据；release 可重建。新增 applied state。 |
 | `collabora` | 无 | 无关键本地状态。 |
 | `ddns` | `/updater/data` 未挂载 | 当前主要损失是历史/缓存；若启用备份或依赖更新历史，应挂载为可选运行状态。 |
 | `eturnal` | `TURN_SECRET` 在 generated secrets | 已满足稳定密钥要求，无业务卷。 |
@@ -37,7 +37,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 | `netbird` | 当前没有任何持久卷 | 功能尚未完成，已标记为 experimental 并从完整示例移除。本阶段不补持久化；正式恢复前必须先决定保留还是删除。 |
 | `nextcloud` | `${NEXTCLOUD_BASE_PATH}/nextcloud`、Redis 数据、外部数据库、`.anas-state` 标记 | Nextcloud 数据目录和数据库必须一致备份；Redis 可重建；Memories 标记正确地跟随数据卷。Talk 的 signaling `hashkey/blockkey` 已改为 generated secrets。 |
 | `postgres` | `${DATA_PATH}/postgres` | 关键数据库状态；首次初始化脚本保留，同时增加一次性在线 reconciler，后续新增模块也能幂等创建数据库。 |
-| `samba_dc` | `${DATA_PATH}/samba_dc/var`、generated secrets | AD 数据库、BIND9-DLZ DNS、域 SID、机器账户、GPO、用户/组、内部 TLS 是关键状态；BIND 配置和缓存可由 cask 重建。 |
+| `samba_dc` | `${DATA_PATH}/samba_dc/var`、generated secrets | AD 数据库、BIND9-DLZ DNS、域 SID、机器账户、GPO、用户/组、内部 TLS 是关键状态；BIND 配置和缓存可由 module 重建。 |
 | `samba_fs` | `${SAMBA_FS_USERDATA_PATH}`、`${DATA_PATH}/samba_fs/var`、guest ACL 状态文件 | 用户文件是关键数据；member join 状态可重建但应持久化；guest ACL 标记与 userdata 同卷，可避免每次启动递归扫描，当前方向正确。 |
 | `traefik` | 无；只读使用 lego 证书 | 路由配置可重建，无独立关键状态。 |
 
@@ -48,7 +48,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 | 路径 | 性质 | 备份 |
 | --- | --- | --- |
 | `secrets.generated.yml` | 稳定生成密钥，当前为 `0600` | 必须，且应加密备份 |
-| `cask.lock.yml` | 已安装 cask 版本和来源 | 建议 |
+| `module.lock.yml` | 已安装 module 版本和来源 | 建议 |
 | `release/config.yml` | 当前 desired config 副本 | 建议，但不得包含明文生产密钥 |
 | `release/*/.env` | 含派生凭据的渲染产物 | 不作为权威备份；保持 `0600` |
 | `tmp/`、`go-build-cache/` | 临时/缓存 | 不需要 |
@@ -72,7 +72,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 | Keycloak | `KEYCLOAK_ADMIN_PASSWORD` | bootstrap admin 只在首次创建时有效 | Keycloak 管理 API/CLI 轮换 |
 | Keycloak/LLNG/Nextcloud | SSO entity、issuer、redirect URI 与域名 | 部分配置能重渲染，但已有客户端/元数据/外部信任不会自动整体迁移 | 跨模块 reconcile，保留过渡地址和签名验证窗口 |
 | LLNG | 首份 `lmConf-1.json` | 文件不存在时才从模板初始化；后续只能通过配置合并/管理接口修改 | 用版本化 reconciler 更新现有配置，不覆盖整份文件 |
-| NetBird | `/var/lib/netbird` 数据和 DataStoreEncryptionKey | 当前功能未完成且默认不部署 | 恢复开发时先决定持久模型，否则删除此 cask |
+| NetBird | `/var/lib/netbird` 数据和 DataStoreEncryptionKey | 当前功能未完成且默认不部署 | 恢复开发时先决定持久模型，否则删除此 module |
 | MeshCentral | 数据库选择和持久数据身份 | 改 env 不会搬迁数据库或文件状态 | 专用备份/迁移流程 |
 
 密码策略、Samba OU/组、应用访问组、Samba share 模式、Traefik 路由和多数资源限制适合做幂等 reconcile，可在每次启动检查并更新；它们不应混入“首次初始化”脚本。
@@ -119,9 +119,9 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 
 不要继续把所有内容压平成一张来源不明的 env map。建议分为五个平面，最终只有 render 阶段才生成环境变量。
 
-### 1. Schema / cask defaults
+### 1. Schema / module defaults
 
-由 cask 提供类型、默认值、是否敏感、生命周期和校验规则。它是产品默认，不是已应用状态。
+由 module 提供类型、默认值、是否敏感、生命周期和校验规则。它是产品默认，不是已应用状态。
 
 ### 2. Desired config
 
@@ -145,9 +145,9 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 
 最终 env 的来源必须可追踪。`anas config explain NEXTCLOUD_DB_TYPE` 应能显示：值、来源、生命周期、是否已应用、改变它会触发什么动作。
 
-## cask 状态契约
+## module 状态契约
 
-建议把现有 `cask.yml` 扩展为类似下面的声明：
+建议把现有 `module.yml` 扩展为类似下面的声明：
 
 ```yaml
 config:
@@ -238,7 +238,7 @@ anas migrate nextcloud --target-db postgres
 
 ### P1：建立状态模型
 
-1. 扩展 cask schema：parameter lifecycle、state volumes、probe、reconciler。
+1. 扩展 module schema：parameter lifecycle、state volumes、probe、reconciler。
 2. 增加 `state/applied.yml`、原子写入和敏感值脱敏。
 3. 增加 `config plan/explain`，显示来源和变更分类。
 4. 首次运行升级版 runner 时从真实服务导入 observed state，不根据当前 env 猜测已应用值。
@@ -248,6 +248,6 @@ anas migrate nextcloud --target-db postgres
 1. 数据库、Samba service account、Nextcloud/Keycloak admin 的凭据轮换事务。
 2. storage path、数据库类型、域名/SSO endpoint 的迁移器。
 3. 基于 state contract 自动生成备份清单和恢复顺序。
-4. 为每个 cask 增加“首次初始化后修改”的集成测试。
+4. 为每个 module 增加“首次初始化后修改”的集成测试。
 
 这套方案的关键不是增加更多环境变量，而是让每个配置值都有来源、生命周期、实际状态和合法变更动作。这样默认值可以方便首装，又不会在系统运行后造成无提示的配置漂移或意外新建实例。

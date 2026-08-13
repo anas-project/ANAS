@@ -17,7 +17,7 @@ CLI 不把“写入配置文件”和“让运行中的服务生效”混为一�
 # 修改模块参数；只写配置，不直接操作运行服务
 anas config set -c config.yml samba_dc.user_min_pass_length 10
 
-# 以裸 env 名声明的 cask 参数会写入顶层 env
+# 以裸 env 名声明的 module 参数会写入顶层 env
 anas config set -c config.yml samba_fs.share_guest_read_only Yes
 
 # 查看生命周期、是否敏感和应执行的动作
@@ -46,9 +46,9 @@ anas config plan -c config.yml -b ~/.anas
 
 未声明的参数保守地归类为 `container_recreate`，不会猜测它可以热更新。
 
-## cask 声明
+## module 声明
 
-变更行为由 cask 自己声明，runner 不硬编码具体应用知识：
+变更行为由 module 自己声明，runner 不硬编码具体应用知识：
 
 ```yaml
 config:
@@ -63,7 +63,7 @@ config:
       sensitive: true
 ```
 
-当前 schema 接受八种 effect。`apply` 是稳定的动作名称，后续由 cask hook 提供同名执行器。
+当前 schema 接受八种 effect。`apply` 是稳定的动作名称，后续由 module hook 提供同名执行器。
 
 ## 第二阶段执行命令
 

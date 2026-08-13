@@ -1,0 +1,14 @@
+api_version: anas.provider/v1
+kind: ContractProvider
+contract: relational_database
+contract_version: 1.0.0
+interface: mariadb
+operations:
+  ensure:
+    runtime: compose_run
+    service: anas_mariadb_provision
+    command: [ensure]
+  inspect:
+    runtime: compose_run
+    service: anas_mariadb_provision
+    command: [inspect]

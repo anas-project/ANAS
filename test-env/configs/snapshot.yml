@@ -5,21 +5,19 @@
 # would make `docker compose up` recreate the live containers. Distinct from
 # rollback.yml's prefix so the two tests cannot collide with each other either.
 modules:
-  - traefik
-
+  traefik: {}
 global:
+  chinese_speedup: true
   base_domain: snapshot.test
   email: admin@snapshot.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: change-me-now
-
 rollback:
   snapshot:
     # source defaults to <workspace>/data and root to <workspace>/snapshots;
     # leaving both unset is what the test is checking.
     backend: btrfs
-
 env:
   BASICAUTH_USER: admin
   CONTAINER_PREFIX: anassn_
@@ -31,6 +29,6 @@ env:
   #
   # The pin sits outside 172.17.0.0/12, which is where Docker assigns bridge
   # subnets by itself. Anything inside that range is a range Docker may hand to
-  # a sibling network first -- the cask's own lego network took 172.31 that way
+  # a sibling network first -- the module's own lego network took 172.31 that way
   # -- and the pinned one then collides with a network this same deployment
   # just created.

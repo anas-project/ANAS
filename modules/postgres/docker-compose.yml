@@ -1,0 +1,60 @@
+services:
+  anas_postgres:
+    container_name: ${CONTAINER_PREFIX}postgres
+    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/postgres:18.4-alpine
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - "${DATA_PATH}/postgres:/var/lib/postgresql"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_USERNAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - postgres
+
+  anas_postgres_provision:
+    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/postgres:18.4-alpine
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      PGHOST: ${POSTGRES_HOST}
+      PGPORT: ${POSTGRES_PORT}
+      PGUSER: ${POSTGRES_USERNAME}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      ANAS_RESOURCE_DATABASE: ${ANAS_RESOURCE_DATABASE:-}
+      ANAS_RESOURCE_USERNAME: ${ANAS_RESOURCE_USERNAME:-}
+      ANAS_RESOURCE_PASSWORD: ${ANAS_RESOURCE_PASSWORD:-}
+    entrypoint: ["/bin/sh", "/operations/provision.sh"]
+    volumes:
+      - "./providers/relational_database:/operations:ro"
+    networks:
+      - postgres
+
+  anas_postgres_adminer:
+    image: ${DOCKER_HUB_REGISTRY:-docker.io}/library/adminer:5.5.0
+    container_name: ${CONTAINER_PREFIX}postgres_adminer
+    restart: unless-stopped
+    env_file:
+      - .env
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "traefik.http.routers.adminer.entrypoints=https"
+      - "traefik.http.routers.adminer.rule=Host(`${POSTGRES_ADMINER_DOMAIN}`)"
+      - "traefik.http.routers.adminer.tls=true"
+      - "traefik.http.services.adminer.loadbalancer.server.port=8080"
+    networks:
+      - postgres
+      - traefik
+
+networks:
+  postgres:
+    driver: bridge
+    name: ${POSTGRES_NETWORK_NAME}
+  traefik:
+    name: ${NETWORK_PREFIX}traefik
+    external: true

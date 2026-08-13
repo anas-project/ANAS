@@ -10,7 +10,7 @@ ANAS_CONFIG_DIR="$test_dir/traefik" \
 ANAS_TRAEFIK_BINARY=/usr/bin/true \
 LEGO_CERT_NAME=fullchain.pem \
 LEGO_KEY_NAME=key.pem \
-  sh "$ROOT_DIR/casks/mods/traefik/traefik/anas-entrypoint.sh" || exit 1
+  sh "$ROOT_DIR/modules/traefik/traefik/anas-entrypoint.sh" || exit 1
 grep -q 'certFile: /certs/fullchain.pem' "$test_dir/traefik/cert.yml" || exit 1
 grep -q 'keyFile: /certs/key.pem' "$test_dir/traefik/cert.yml" || exit 1
 # No route declarations means no routes file at all, so a stale one from an
@@ -27,7 +27,7 @@ env \
   'ANAS_TRAEFIK_ROUTE__DDNS_GO__RULE=Host(`ddns-go.example.test`)' \
   ANAS_TRAEFIK_ROUTE__DDNS_GO__URL=http://172.18.0.1:9876 \
   ANAS_TRAEFIK_ROUTE__DDNS_GO__MIDDLEWARES=forward-auth,compress \
-  sh "$ROOT_DIR/casks/mods/traefik/traefik/anas-entrypoint.sh" || exit 1
+  sh "$ROOT_DIR/modules/traefik/traefik/anas-entrypoint.sh" || exit 1
 grep -q '    ddns-go:' "$test_dir/traefik-routes/routes.yml" || exit 1
 grep -q 'rule: "Host(`ddns-go.example.test`)"' "$test_dir/traefik-routes/routes.yml" || exit 1
 grep -q 'url: "http://172.18.0.1:9876"' "$test_dir/traefik-routes/routes.yml" || exit 1
@@ -47,7 +47,7 @@ env \
   LEGO_KEY_NAME=key.pem \
   'ANAS_TRAEFIK_ROUTE__ODD__RULE=Header(`X-Q`, `a"b\c`)' \
   ANAS_TRAEFIK_ROUTE__ODD__URL=http://10.0.0.1:1 \
-  sh "$ROOT_DIR/casks/mods/traefik/traefik/anas-entrypoint.sh" || exit 1
+  sh "$ROOT_DIR/modules/traefik/traefik/anas-entrypoint.sh" || exit 1
 grep -q 'rule: "Header(`X-Q`, `a\\"b\\\\c`)"' "$test_dir/traefik-quote/routes.yml" || exit 1
 
 # A newline is the one character that could end the scalar and inject YAML, so
@@ -61,7 +61,7 @@ if env \
    ANAS_TRAEFIK_ROUTE__EVIL__RULE="Host(\`a\`)
       injected: true" \
    ANAS_TRAEFIK_ROUTE__EVIL__URL=http://10.0.0.1:1 \
-     sh "$ROOT_DIR/casks/mods/traefik/traefik/anas-entrypoint.sh" 2>/dev/null; then
+     sh "$ROOT_DIR/modules/traefik/traefik/anas-entrypoint.sh" 2>/dev/null; then
   echo "entrypoint accepted a route rule containing a newline" >&2
   exit 1
 fi
@@ -74,7 +74,7 @@ if env \
    LEGO_CERT_NAME=fullchain.pem \
    LEGO_KEY_NAME=key.pem \
    'ANAS_TRAEFIK_ROUTE__NOURL__RULE=Host(`x.example.test`)' \
-     sh "$ROOT_DIR/casks/mods/traefik/traefik/anas-entrypoint.sh" 2>/dev/null; then
+     sh "$ROOT_DIR/modules/traefik/traefik/anas-entrypoint.sh" 2>/dev/null; then
   echo "entrypoint accepted a route without an upstream URL" >&2
   exit 1
 fi
@@ -85,18 +85,23 @@ TURN_PORT=3478 \
 TURN_RELAY_MIN_PORT=49152 \
 TURN_RELAY_MAX_PORT=49200 \
 TURN_SECRET="quote'safe" \
-  sh "$ROOT_DIR/casks/mods/eturnal/eturnal/anas-entrypoint.sh" /usr/bin/true || exit 1
+  sh "$ROOT_DIR/modules/eturnal/eturnal/anas-entrypoint.sh" /usr/bin/true || exit 1
 grep -q "secret: 'quote''safe'" "$test_dir/eturnal/eturnal.yml" || exit 1
 
 # A fresh Nextcloud volume exposes HTTP before its post-install tasks have
 # downloaded notify_push. The sidecar must wait for the executable instead of
 # entering a restart loop with exit 127.
 grep -Fq 'while [ ! -x "$$custom_push_path" ] && [ ! -x "$$bundled_push_path" ]; do' \
-  "$ROOT_DIR/casks/mods/nextcloud/docker-compose.yml" || exit 1
+  "$ROOT_DIR/modules/nextcloud/docker-compose.yml" || exit 1
 
-# The official Nextcloud image only performs a non-interactive first install
-# when the selected database host reaches the cask-scoped environment.
-grep -Eq '^    - POSTGRES_HOST$' "$ROOT_DIR/casks/mods/nextcloud/cask.yml" || exit 1
+# Nextcloud requests a database resource and names a dedicated principal. It
+# must not consume PostgreSQL's administrator credential from the provider.
+grep -Fq 'contract: relational_database' "$ROOT_DIR/modules/nextcloud/module.yml" || exit 1
+grep -Fq 'principal: nextcloud' "$ROOT_DIR/modules/nextcloud/module.yml" || exit 1
+if grep -Eq '^    - POSTGRES_(USERNAME|PASSWORD)$' "$ROOT_DIR/modules/nextcloud/module.yml"; then
+  echo "Nextcloud consumes PostgreSQL administrator credentials" >&2
+  exit 1
+fi
 
 # Authentik's worker must not race the server's first-run database migrations.
 awk '
@@ -105,7 +110,7 @@ awk '
   worker && /anas_authentik:/ { server = 1 }
   server && /condition: service_healthy/ { found = 1 }
   END { exit !found }
-' "$ROOT_DIR/casks/mods/authentik/docker-compose.yml" || exit 1
+' "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
 
 if command -v node >/dev/null 2>&1; then
   mkdir -p "$test_dir/meshcentral"
@@ -137,8 +142,8 @@ if command -v node >/dev/null 2>&1; then
     SAMBA_DC_APP_FILTER=true \
     SAMBA_DC_BASE_APP_DN=OU=Apps,DC=example,DC=test \
     SAMBA_DC_ADMIN_GROUP_DN=CN=Admins,OU=Roles,DC=example,DC=test \
-    node "$ROOT_DIR/casks/mods/meshcentral/meshcentral/configure.js" \
-      "$ROOT_DIR/casks/mods/meshcentral/meshcentral/config.base.json" \
+    node "$ROOT_DIR/modules/meshcentral/meshcentral/configure.js" \
+      "$ROOT_DIR/modules/meshcentral/meshcentral/config.base.json" \
       "$test_dir/meshcentral/config.json" || exit 1
   node -e '
     const config = require(process.argv[1]);

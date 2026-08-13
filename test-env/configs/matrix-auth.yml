@@ -1,19 +1,17 @@
 # The llng identity path. authentik is exercised by full.yml and the other
 # matrices, so this is where the alternative provider stays covered.
 modules:
-  - samba_dc
-  - llng
-  - lam
-
-iam:
-  provider: llng
-
+  samba_dc: {}
+  llng: {}
+  lam: {}
+identity:
+  iam:
+    provider: llng
 global:
   base_domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: change-me-now
-
 env:
   BASICAUTH_USER: admin

@@ -150,7 +150,8 @@ func restoreBackup(workspace, dest string, manifest *backupManifest, all []backu
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err := saveActiveState(base, &activeDeploymentState{
 		APIVersion: activeStateVersion, ActiveDeployment: manifest.DeploymentID,
-		ActivatedAt: now, VerifiedAt: now,
+		RuntimeStatus: "stopped",
+		ActivatedAt:   now, VerifiedAt: now,
 	}); err != nil {
 		return nil, failuref("restore_failed", "rewrite active.yml: %v", err)
 	}

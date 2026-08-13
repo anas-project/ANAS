@@ -1,0 +1,61 @@
+services:
+  anas_traefik:
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r1
+    build:
+      context: ./traefik
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
+    # The rendered environment is loaded into the container, not only used for
+    # substitution above: the entrypoint enumerates ANAS_TRAEFIK_ROUTE__* from
+    # its own environment to build the file-provider routes, and a declaration
+    # that only reached Compose would be silently ignored.
+    env_file:
+      - .env
+    environment:
+      LEGO_CERT_NAME: ${LEGO_CERT_NAME}
+      LEGO_KEY_NAME: ${LEGO_KEY_NAME}
+    command:
+      - --entrypoints.https.address=:${TRAEFIK_BASE_PORT}
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=${NETWORK_PREFIX}traefik
+      - --providers.docker.constraints=Label(`anas.traefik.instance`,`${NETWORK_PREFIX}traefik`)
+      - --api.dashboard=true
+      # A directory, not a single file: the entrypoint writes the certificate
+      # store and any declared host-network routes as separate documents.
+      - --providers.file.directory=/run/anas
+      - --ping=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    ports:
+      - "${TRAEFIK_BASE_PORT}:${TRAEFIK_BASE_PORT}"
+    volumes:
+      - "${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro"
+      - "${LEGO_CERTS_PATH}:/certs:ro"
+    tmpfs:
+      - /run/anas:mode=0700,size=1m
+    labels:
+      - "traefik.http.routers.api.entrypoints=https"
+      - "traefik.http.routers.api.rule=Host(`${TRAEFIK_DOMAIN}`)"
+      - "traefik.http.routers.api.service=api@internal"
+      - "traefik.http.routers.api.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_BASICAUTH_HTPASSWD}"
+      - "traefik.http.routers.api.tls=true"
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "traefik.docker.network=${NETWORK_PREFIX}traefik"
+
+networks:
+  default:
+    driver: bridge
+    name: ${NETWORK_PREFIX}traefik
+    # No fixed subnet: Docker assigns one. It used to be pinned so that a
+    # host-network module could bind the gateway address and oauth2_proxy could
+    # name this range as its trusted proxy source. Neither needs it now, and a
+    # pin is a standing collision with whatever else the host runs.

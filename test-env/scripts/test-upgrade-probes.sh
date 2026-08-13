@@ -46,22 +46,40 @@ check_container_running() {
 
   echo "== service probes =="
   docker exec anas_postgres pg_isready -U postgres
-  docker exec anas_mariadb sh -c 'test -d /config'
+  docker exec anas_mariadb sh -c 'test -d /var/lib/mysql'
   docker exec anas_samba_dc sh -c 'test -d /var/lib/samba'
-  docker exec anas_nextcloud sh -c 'test -d /data'
+  docker exec anas_nextcloud sh -c 'test -d /var/www/html'
 
-  echo "== cask lock updated =="
-  for cask in lego samba_dc samba_fs traefik keycloak llng mariadb postgres eturnal nextcloud collabora meshcentral netbird lam ddns_updater freeradius; do
+  echo "== module lock updated =="
+  selected_modules=$(awk '
+    $0 == "modules:" { inside_modules = 1; next }
+    inside_modules && /^[^[:space:]]/ { exit }
+    inside_modules && /^[[:space:]]+[[:alnum:]_]+:$/ {
+      match($0, /[^[:space:]]/)
+      indent = RSTART - 1
+      if (module_indent == 0) module_indent = indent
+      if (indent != module_indent) next
+      module = $0
+      sub(/^[[:space:]]+/, "", module)
+      sub(/:$/, "", module)
+      print module
+    }
+  ' "$base/config.lock.yml")
+  if [ -z "$selected_modules" ]; then
+    echo "config.lock.yml contains no selected modules" >&2
+    exit 1
+  fi
+  for module in $selected_modules; do
     current=$(awk '
       $1 == "version:" { print $2; exit }
-    ' "$ROOT_DIR/casks/mods/$cask/cask.yml")
-    if ! awk -v cask="$cask" -v version="$current" '
-      $1 == cask ":" { in_cask = 1; next }
-      in_cask && $1 == "version:" { found = ($2 == version); exit }
-      in_cask && /^[^[:space:]]/ { exit }
+    ' "$ROOT_DIR/modules/$module/module.yml")
+    if ! awk -v module="$module" -v version="$current" '
+      $1 == module ":" { in_module = 1; next }
+      in_module && $1 == "version:" { found = ($2 == version); exit }
+      in_module && /^[^[:space:]]/ { exit }
       END { exit found ? 0 : 1 }
-    ' "$base/cask.lock.yml"; then
-      echo "lock version for $cask was not updated to $current" >&2
+    ' "$base/config.lock.yml"; then
+      echo "lock version for $module was not updated to $current" >&2
       exit 1
     fi
   done

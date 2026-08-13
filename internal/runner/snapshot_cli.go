@@ -101,7 +101,7 @@ type snapshotListEntry struct {
 	Complete             bool              `json:"complete"`
 	ConfigMatchesCurrent bool              `json:"config_matches_current"`
 	SizeBytes            *int64            `json:"size_bytes"`
-	Casks                map[string]string `json:"casks,omitempty"`
+	Modules              map[string]string `json:"modules,omitempty"`
 	Healthy              bool              `json:"healthy"`
 }
 
@@ -137,7 +137,7 @@ func runSnapshotList(args []string, jsonMode bool) error {
 			// nil, never 0: without Btrfs qgroups there is no measurement, and
 			// reporting 0 bytes would be a false one.
 			SizeBytes: nil,
-			Casks:     meta.Casks,
+			Modules:   meta.Modules,
 			Healthy:   len(verifySnapshot(workspace, meta)) == 0,
 		})
 	}
@@ -210,15 +210,15 @@ func reportSnapshot(workspace string, meta *snapshotMeta, jsonMode bool) error {
 	fmt.Printf("deployment:    %s\ndata:          %s\ncomplete:      %t\nartifact_copy: %s\n",
 		meta.DeploymentID, meta.Path, meta.Complete, meta.ArtifactCopy)
 	fmt.Printf("config_matches_current: %t\n", matches)
-	if len(meta.Casks) > 0 {
-		names := make([]string, 0, len(meta.Casks))
-		for name := range meta.Casks {
+	if len(meta.Modules) > 0 {
+		names := make([]string, 0, len(meta.Modules))
+		for name := range meta.Modules {
 			names = append(names, name)
 		}
 		sort.Strings(names)
-		fmt.Println("casks:")
+		fmt.Println("modules:")
 		for _, name := range names {
-			fmt.Printf("  %s: %s\n", name, meta.Casks[name])
+			fmt.Printf("  %s: %s\n", name, meta.Modules[name])
 		}
 	}
 	for _, problem := range problems {

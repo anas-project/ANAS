@@ -1,0 +1,40 @@
+modules:
+  samba_dc: {}
+  postgres: {}
+  authentik: {}
+  nextcloud:
+    config:
+      talk_enabled: "false"
+      memories_enabled: "false"
+  traefik:
+    config:
+      subnet: 172.23.0.0/16
+      gateway_ip: 172.23.0.1
+identity:
+  iam:
+    provider: authentik
+global:
+  base_domain: nas.test
+  email: admin@nas.test
+  timezone: Asia/Shanghai
+  virtual_domain: true
+  default_service_root_password: AnasTest1!
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_anchor_
+  IMAGE_PREFIX: anas_anchor_
+  NETWORK_PREFIX: anas_anchor_
+  CHINESE_SPEEDUP: "true"
+  APT_MIRROR_URL: https://mirrors.aliyun.com
+  APK_MIRROR_URL: https://mirrors.aliyun.com
+  NPM_REGISTRY_URL: https://registry.npmmirror.com
+  DOCKER_SOCKET_PATH: /run/anas-anchor-docker.sock
+  NETWORK_NAMESPACE_PATH: /run/netns/anas-anchor
+  HOST_IP: 10.252.0.2
+  INTERFACE: anas-a-peer
+  DEFAULT_GATEWAY_IP: 10.252.0.1
+  HOST_SUBNET_MASK: "24"
+  LOCAL_DNS_SERVER: 10.252.0.2
+  SAMBA_DC_HOST_IP: 10.252.0.2
+  SAMBA_DC_INTERFACES: anas-a-peer
+  SAMBA_DC_ANCHOR_SCAN_INTERVAL: "300"

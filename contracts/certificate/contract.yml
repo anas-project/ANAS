@@ -1,0 +1,15 @@
+api_version: anas.contract/v1
+kind: Contract
+name: certificate
+version: 1.0.0
+interfaces:
+  - acme
+  - internal_ca
+resource:
+  schema: schemas/resource.yml
+  identity: [consumer, resource_id]
+operations:
+  ensure: {required: true}
+  inspect: {required: true}
+  renew: {required: false}
+  revoke: {required: false}

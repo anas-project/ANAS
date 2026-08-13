@@ -5,10 +5,10 @@
 
 | 文档 | 范围 |
 | --- | --- |
+| [Module、Contract 与 Resource](module-contract-resource-design.md) | 独立发布单元、跨模块协议、持久资源及 Provider operation |
 | [管理员账号系统](admin-account-system.md) | 目录管理员、应用角色、本地账号、Secret 与 CLI 生命周期 |
 | [IAM 能力](iam-capability-design.md) | IAM provider、OIDC/SAML 协议选择与绑定 |
 | [应用目录](app-catalog-design.md) | 门户条目、可见性与执行点授权映射 |
 | [动态 DNS 能力](dynamic-dns-capability-design.md) | DDNS 实现选择、凭据和 Web 认证 |
 | [运行时与发布状态](runtime-release-state-design.md) | deployment 制品、锁和持久状态 |
-| [AI Design Guide](ai-design.md) | 仓库结构与 Cask 开发入口 |
-
+| [AI Design Guide](ai-design.md) | 仓库结构与 Module 开发入口 |

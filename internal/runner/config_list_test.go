@@ -42,8 +42,8 @@ func TestConfigListIncludesParametersDeclaredOnlyByPolicy(t *testing.T) {
 		t.Fatal("global.virtual_domain is missing from the inventory")
 	}
 
-	// A cask parameter published under a bare env name is addressed through
-	// the top level env: block, and keeps its own cask's policy rather than
+	// A module parameter published under a bare env name is addressed through
+	// the top level env: block, and keeps its own module's policy rather than
 	// the default one.
 	share, ok := byPath["env.SHARE_DIR_NAME"]
 	if !ok {
@@ -141,7 +141,7 @@ func TestConfigTargetRejectsUndeclaredParameters(t *testing.T) {
 		t.Errorf("the error does not suggest the intended parameter: %v", err)
 	}
 
-	// Declared parameters still resolve, including one a cask publishes under a
+	// Declared parameters still resolve, including one a module publishes under a
 	// bare env name.
 	for _, path := range []string{"traefik.domain_prefix", "global.timezone", "samba_fs.share_dir_name"} {
 		if _, err := resolveConfigTarget(path, reg); err != nil {
@@ -188,7 +188,7 @@ func TestConfigListScopeSelectsOneModule(t *testing.T) {
 	if traefik == 0 || global == 0 {
 		t.Fatalf("expected both scopes to be populated: traefik=%d global=%d", traefik, global)
 	}
-	if _, known := declaredParametersFor("nosuchcask", reg); known {
+	if _, known := declaredParametersFor("nosuchmodule", reg); known {
 		t.Error("an unknown module reported known parameters")
 	}
 	if _, known := declaredParametersFor(globalModuleName, reg); !known {
@@ -196,7 +196,7 @@ func TestConfigListScopeSelectsOneModule(t *testing.T) {
 	}
 }
 
-// A value a cask cannot use is refused when it is set, not at the next render.
+// A value a module cannot use is refused when it is set, not at the next render.
 // share_access_mode was already checked by the calculate hook, so a wrong value
 // was accepted, written to the config, and rejected much later -- long after
 // the person who chose it had moved on.
@@ -229,7 +229,7 @@ func TestConfigSetRejectsValuesOutsideTheDeclaredType(t *testing.T) {
 		{"samba_fs", "log_level", "3"},
 		{"ddns_go", "web_enabled", "false"},
 		// A parameter with no declaration accepts anything, as everything did
-		// before types existed: requiring a declaration would make every cask
+		// before types existed: requiring a declaration would make every module
 		// that has not been annotated unconfigurable.
 		{"traefik", "domain_prefix", "anything at all"},
 	} {

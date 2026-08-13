@@ -32,24 +32,24 @@ func runConfig(args []string, jsonMode bool) error {
 	fs.StringVar(cfgPath, "config", "", "config file")
 	workspaceFlag := fs.String("w", "", "workspace path")
 	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
-	rootFlag := fs.String("root", "", "project root or cask bundle directory")
+	rootFlag := fs.String("root", "", "project root or module bundle directory")
 	registerJSONFlag(fs)
 	positional, err := parseInterspersed(fs, args[1:])
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
-	root, err := locateCaskRoot(*rootFlag)
+	root, err := locateModuleRoot(*rootFlag)
 	if err != nil {
-		return preconditionErrorf("cask_root_missing", "%s", err.Error())
+		return preconditionErrorf("module_root_missing", "%s", err.Error())
 	}
 	reg, err := loadRegistryDir(root)
 	if err != nil {
-		return preconditionErrorf("cask_root_invalid", "%s", err.Error())
+		return preconditionErrorf("module_root_invalid", "%s", err.Error())
 	}
-	// `explain` only reads the cask registry, so it stays usable outside a
+	// `explain` only reads the module registry, so it stays usable outside a
 	// workspace; the other subcommands act on one and must resolve it.
 	//
-	// `list` sits between the two: what can be set is a property of the casks,
+	// `list` sits between the two: what can be set is a property of the modules,
 	// so it answers outside a workspace, and inside one it additionally fills
 	// in the current values. Requiring a workspace would deny the question to
 	// exactly the person who has not built one yet.
@@ -77,13 +77,13 @@ func runConfig(args []string, jsonMode bool) error {
 	switch subcommand {
 	case "list":
 		if len(positional) > 1 {
-			return usageErrorf("usage: anas config list [global|<cask>] [-w <workspace>] [-c config.yml] [--json]")
+			return usageErrorf("usage: anas config list [global|<module>] [-w <workspace>] [-c config.yml] [--json]")
 		}
 		scope := ""
 		if len(positional) == 1 {
 			scope = strings.ToLower(strings.TrimSpace(positional[0]))
 			if _, known := declaredParametersFor(scope, reg); !known {
-				return usageErrorf("unknown module %q; pass a cask name or %q", scope, globalModuleName)
+				return usageErrorf("unknown module %q; pass a module name or %q", scope, globalModuleName)
 			}
 		}
 		return reportConfigList(*cfgPath, reg, scope, jsonMode)
@@ -243,12 +243,12 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 		}
 		return configTarget{YAMLPath: parts, Display: strings.Join(parts, "."), Module: module, Parameter: parameter}, nil
 	}
-	if parts[0] == "services" {
-		if len(parts) == 4 && parts[2] == "env" {
+	if parts[0] == "modules" {
+		if len(parts) == 4 && parts[2] == "config" {
 			parts = []string{parts[0], parts[1], parts[3]}
 		}
 		if len(parts) != 3 {
-			return configTarget{}, fmt.Errorf("service config path must be services.<module>.<parameter>")
+			return configTarget{}, fmt.Errorf("module config path must be modules.<module>.<parameter>")
 		}
 		if _, ok := reg[parts[1]]; !ok {
 			return configTarget{}, fmt.Errorf("unknown module %q", parts[1])
@@ -256,7 +256,7 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 		if err := validateParameter(parts[1], parts[2], reg); err != nil {
 			return configTarget{}, err
 		}
-		yamlPath := []string{"services", parts[1], "env", parts[2]}
+		yamlPath := []string{"modules", parts[1], "config", parts[2]}
 		return configTarget{YAMLPath: yamlPath, Display: parts[1] + "." + parts[2], Module: parts[1], Parameter: strings.ToLower(parts[2])}, nil
 	}
 	module := parts[0]
@@ -273,13 +273,13 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 	if err := validateParameter(module, parameter, reg); err != nil {
 		return configTarget{}, err
 	}
-	// A parameter the cask declares under a bare env name is set in the top
-	// level `env:` block: every key under `services.<cask>.env` acquires the
-	// cask prefix, which would write a variant nothing reads.
+	// A parameter the module declares under a bare env name is set in the top
+	// level `env:` block: every key under `modules.<module>.config` acquires the
+	// module prefix, which would write a variant nothing reads.
 	if key, ok := reg[module].bareEnvParameter(parameter); ok {
 		return configTarget{YAMLPath: []string{"env", key}, Display: "env." + key, Module: module, Parameter: parameter}, nil
 	}
-	return configTarget{YAMLPath: []string{"services", module, "env", parameter}, Display: module + "." + parameter, Module: module, Parameter: parameter}, nil
+	return configTarget{YAMLPath: []string{"modules", module, "config", parameter}, Display: module + "." + parameter, Module: module, Parameter: parameter}, nil
 }
 
 // resolveGlobalTarget is the single answer to "where does a deployment-wide
@@ -300,8 +300,8 @@ func resolveGlobalTarget(parameter string, reg map[string]Module) (configTarget,
 		}, nil
 	}
 	// Anything else lands in the top level `env:` block, and the key there may
-	// well belong to a cask that publishes it under a bare name. Naming it
-	// through the global path must not lose that cask's change policy.
+	// well belong to a module that publishes it under a bare name. Naming it
+	// through the global path must not lose that module's change policy.
 	key := config.EnvKey(parameter)
 	owner, ownerParameter, err := policyOwnerForEnv(key, reg)
 	if err != nil {
@@ -345,7 +345,7 @@ func policyOwnerForEnv(key string, reg map[string]Module) (string, string, error
 		}
 		sort.Strings(parameters)
 		for _, parameter := range parameters {
-			if strings.EqualFold(caskParamEnvKey(name, mod.EnvPrefix, mod.Exports, parameter), key) {
+			if strings.EqualFold(moduleParamEnvKey(name, mod.EnvPrefix, mod.Exports, parameter), key) {
 				matches = append(matches, owner{name, parameter})
 			}
 		}
@@ -394,8 +394,8 @@ func targetForSettingPath(path string, reg map[string]Module) configTarget {
 		target, _ := resolveConfigTarget(path, reg)
 		return target
 	}
-	if len(parts) == 4 && parts[0] == "services" && parts[2] == "env" {
-		target, _ := resolveConfigTarget("services."+parts[1]+"."+parts[3], reg)
+	if len(parts) == 4 && parts[0] == "modules" && parts[2] == "config" {
+		target, _ := resolveConfigTarget("modules."+parts[1]+"."+parts[3], reg)
 		return target
 	}
 	return configTarget{Display: path, Module: globalModuleName, Parameter: path}

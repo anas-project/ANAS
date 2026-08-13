@@ -1,86 +1,86 @@
 [
   {
-    "cask": "ddns_go",
+    "module": "ddns_go",
     "image": "anas-ddns-go",
-    "context": "casks/mods/ddns_go/ddns-go",
-    "dockerfile": "casks/mods/ddns_go/ddns-go/Dockerfile",
+    "context": "modules/ddns_go/ddns-go",
+    "dockerfile": "modules/ddns_go/ddns-go/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "cask": "eturnal",
+    "module": "eturnal",
     "image": "anas-eturnal",
-    "context": "casks/mods/eturnal/eturnal",
-    "dockerfile": "casks/mods/eturnal/eturnal/Dockerfile",
+    "context": "modules/eturnal/eturnal",
+    "dockerfile": "modules/eturnal/eturnal/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "cask": "lam",
+    "module": "lam",
     "image": "anas-lam",
-    "context": "casks/mods/lam/lam",
-    "dockerfile": "casks/mods/lam/lam/Dockerfile",
+    "context": "modules/lam/lam",
+    "dockerfile": "modules/lam/lam/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "cask": "lego",
+    "module": "lego",
     "image": "anas-lego",
-    "context": "casks/mods/lego/lego",
-    "dockerfile": "casks/mods/lego/lego/Dockerfile",
+    "context": "modules/lego/lego",
+    "dockerfile": "modules/lego/lego/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "cask": "llng",
+    "module": "llng",
     "image": "anas-llng",
-    "context": "casks/mods/llng/llng",
-    "dockerfile": "casks/mods/llng/llng/Dockerfile",
+    "context": "modules/llng/llng",
+    "dockerfile": "modules/llng/llng/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "cask": "meshcentral",
+    "module": "meshcentral",
     "image": "anas-meshcentral",
-    "context": "casks/mods/meshcentral/meshcentral",
-    "dockerfile": "casks/mods/meshcentral/meshcentral/Dockerfile",
+    "context": "modules/meshcentral/meshcentral",
+    "dockerfile": "modules/meshcentral/meshcentral/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "cask": "netbird",
+    "module": "netbird",
     "image": "anas-netbird-management",
-    "context": "casks/mods/netbird/management",
-    "dockerfile": "casks/mods/netbird/management/Dockerfile",
+    "context": "modules/netbird/management",
+    "dockerfile": "modules/netbird/management/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "cask": "nextcloud",
+    "module": "nextcloud",
     "image": "anas-nextcloud",
-    "context": "casks/mods/nextcloud/nextcloud",
-    "dockerfile": "casks/mods/nextcloud/nextcloud/Dockerfile",
+    "context": "modules/nextcloud/nextcloud",
+    "dockerfile": "modules/nextcloud/nextcloud/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "cask": "samba_dc",
+    "module": "samba_dc",
     "image": "anas-samba-dc-anchor",
-    "context": "casks/mods/samba_dc/anchor_worker",
-    "dockerfile": "casks/mods/samba_dc/anchor_worker/Dockerfile",
+    "context": "modules/samba_dc/anchor_worker",
+    "dockerfile": "modules/samba_dc/anchor_worker/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "cask": "samba_dc",
+    "module": "samba_dc",
     "image": "anas-samba-dc",
-    "context": "casks/mods/samba_dc/samba_dc",
-    "dockerfile": "casks/mods/samba_dc/samba_dc/Dockerfile",
+    "context": "modules/samba_dc/samba_dc",
+    "dockerfile": "modules/samba_dc/samba_dc/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "cask": "samba_fs",
+    "module": "samba_fs",
     "image": "anas-samba-fs",
-    "context": "casks/mods/samba_fs/samba_fs",
-    "dockerfile": "casks/mods/samba_fs/samba_fs/Dockerfile",
+    "context": "modules/samba_fs/samba_fs",
+    "dockerfile": "modules/samba_fs/samba_fs/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "cask": "traefik",
+    "module": "traefik",
     "image": "anas-traefik",
-    "context": "casks/mods/traefik/traefik",
-    "dockerfile": "casks/mods/traefik/traefik/Dockerfile",
+    "context": "modules/traefik/traefik",
+    "dockerfile": "modules/traefik/traefik/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   }
 ]

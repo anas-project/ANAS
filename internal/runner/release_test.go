@@ -35,7 +35,7 @@ func TestPromoteReleaseKeepsPreviousForRollback(t *testing.T) {
 	}
 }
 
-func TestReleaseModulesOrdersRemovedCasksLast(t *testing.T) {
+func TestReleaseModulesOrdersRemovedModulesLast(t *testing.T) {
 	release := t.TempDir()
 	for _, name := range []string{"traefik", "lego", "removedapp", "core"} {
 		dir := filepath.Join(release, name)
@@ -68,16 +68,16 @@ func TestReleaseModulesOrdersRemovedCasksLast(t *testing.T) {
 	}
 }
 
-func TestCaskEnvPrefersRenderedEnvFile(t *testing.T) {
+func TestModuleEnvPrefersRenderedEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	if err := writeEnv(filepath.Join(dir, ".env"), map[string]string{"KEY": "rendered"}); err != nil {
 		t.Fatal(err)
 	}
 	a := &app{env: map[string]string{"KEY": "memory"}}
-	if got := a.caskEnv(dir)["KEY"]; got != "rendered" {
-		t.Fatalf("caskEnv = %q, want rendered value", got)
+	if got := a.moduleEnv(dir)["KEY"]; got != "rendered" {
+		t.Fatalf("moduleEnv = %q, want rendered value", got)
 	}
-	if got := a.caskEnv(filepath.Join(dir, "missing"))["KEY"]; got != "memory" {
-		t.Fatalf("caskEnv fallback = %q, want in-memory value", got)
+	if got := a.moduleEnv(filepath.Join(dir, "missing"))["KEY"]; got != "memory" {
+		t.Fatalf("moduleEnv fallback = %q, want in-memory value", got)
 	}
 }

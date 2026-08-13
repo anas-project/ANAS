@@ -11,9 +11,9 @@ import (
 
 // Environment scoping. Every key in the flat environment has an owner:
 // globalScope for the deployment's own parameters and everything the runner
-// derives about the host, a cask name for values that cask introduced, or
+// derives about the host, a module name for values that module introduced, or
 // config.OwnerUserSecret for user secrets.
-// A cask's rendered .env — and therefore its containers and its
+// A module's rendered .env — and therefore its containers and its
 // render/services/after_start hook input — only receives keys that are
 // global, produced inside its dependency closure, matching its own or a
 // closure member's env prefix, or explicitly claimed through manifest
@@ -30,9 +30,9 @@ func (a *app) setEnvOwner(key, owner string) {
 	}
 }
 
-// depClosure returns the transitive dependency closure of a cask, including
-// the cask itself. Globally owned keys are not part of it: they are visible
-// through their ownership, not through an edge every cask had to be given.
+// depClosure returns the transitive dependency closure of a module, including
+// the module itself. Globally owned keys are not part of it: they are visible
+// through their ownership, not through an edge every module had to be given.
 func (a *app) depClosure(name string) map[string]bool {
 	out := map[string]bool{name: true}
 	var visit func(string)
@@ -48,19 +48,19 @@ func (a *app) depClosure(name string) map[string]bool {
 	return out
 }
 
-// sensitiveEnvKeySet identifies env keys that must not cross a cask boundary
+// sensitiveEnvKeySet identifies env keys that must not cross a module boundary
 // merely through dependency-closure or prefix membership, even though a
-// dependent cask can freely read them during its own calculate phase. A key
+// dependent module can freely read them during its own calculate phase. A key
 // is sensitive when either signal holds:
 //
-//   - its owning cask marks the source parameter `sensitive: true` in
+//   - its owning module marks the source parameter `sensitive: true` in
 //     manifest `config.changes` (covers user-rotatable credentials such as
 //     admin passwords that are not necessarily secret-store generated), or
 //   - its current value is identical to a value held in the generated secret
 //     store (covers TURN_SECRET, database passwords, and any alias of them
 //     such as MYSQL_PASSWORD mirroring MARIADB_ROOT_PASSWORD).
 //
-// A cask that genuinely needs a sensitive value belonging to a dependency
+// A module that genuinely needs a sensitive value belonging to a dependency
 // (a real LDAP bind, a real domain join, a real database connection) must
 // claim it explicitly through manifest `config.consumes`.
 func (a *app) sensitiveEnvKeySet() map[string]bool {
@@ -81,7 +81,7 @@ func (a *app) sensitiveEnvKeySet() map[string]bool {
 			if !policy.Sensitive {
 				continue
 			}
-			out[caskParamEnvKey(name, mod.EnvPrefix, mod.Exports, param)] = true
+			out[moduleParamEnvKey(name, mod.EnvPrefix, mod.Exports, param)] = true
 		}
 	}
 	if a.secrets != nil {
@@ -104,7 +104,7 @@ func (a *app) sensitiveEnvKeySet() map[string]bool {
 
 // wideEnvScopeRequested restores the pre-declaration rule for one run, so a
 // deployment can be rendered both ways and diffed. It is a diagnostic, not a
-// supported configuration: what a cask receives should be a property of its
+// supported configuration: what a module receives should be a property of its
 // manifest, not of the environment the runner happened to start in.
 func wideEnvScopeRequested() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("ANAS_WIDE_ENV_SCOPE"))) {
@@ -115,7 +115,7 @@ func wideEnvScopeRequested() bool {
 	}
 }
 
-// envScopeFor returns the membership test for one cask's environment scope.
+// envScopeFor returns the membership test for one module's environment scope.
 func (a *app) envScopeFor(name string) func(key string) bool {
 	a.narrowFileScope = !wideEnvScopeRequested()
 	sensitive := a.sensitiveEnvKeySet()
@@ -147,7 +147,7 @@ func (a *app) envScopeFor(name string) func(key string) bool {
 			return true
 		}
 		if sensitive[key] {
-			// A sensitive value owned by another cask crosses the boundary
+			// A sensitive value owned by another module crosses the boundary
 			// only through an explicit claim, regardless of closure or
 			// prefix membership.
 			return matchEnvPattern(consumes, key)
@@ -175,9 +175,9 @@ func (a *app) envScopeFor(name string) func(key string) bool {
 }
 
 // globalEnv is the deployment-wide environment: every key nobody owns
-// privately. It is written next to the rendered casks so artifact
+// privately. It is written next to the rendered modules so artifact
 // start/stop/rollback can reconstruct what the release was built with without
-// re-reading the config, which is what the "core" cask's .env used to be for.
+// re-reading the config, which is what the "core" module's .env used to be for.
 func (a *app) globalEnv() map[string]string {
 	out := map[string]string{}
 	for k, v := range a.env {
@@ -188,7 +188,7 @@ func (a *app) globalEnv() map[string]string {
 	return out
 }
 
-// scopedEnv filters the full environment down to one cask's scope.
+// scopedEnv filters the full environment down to one module's scope.
 func (a *app) scopedEnv(name string) map[string]string {
 	scope := a.envScopeFor(name)
 	out := map[string]string{}
@@ -212,12 +212,12 @@ func (a *app) scopedSecrets(name string) map[string]string {
 	return out
 }
 
-// applyCaskRootPassword sets DEFAULT_SERVICE_ROOT_PASSWORD for one cask's
+// applyModuleRootPassword sets DEFAULT_SERVICE_ROOT_PASSWORD for one module's
 // calculation or render. When the user configured a shared password it is
-// used unchanged; otherwise each cask gets its own generated password,
+// used unchanged; otherwise each module gets its own generated password,
 // persisted as <PREFIX>_DEFAULT_ROOT_PASSWORD in the secret store and
 // readable through `anas config secret get`.
-func (a *app) applyCaskRootPassword(env map[string]string, name string) error {
+func (a *app) applyModuleRootPassword(env map[string]string, name string) error {
 	value := a.cfg.Global.DefaultServiceRootPassword
 	if value == "" {
 		prefix := defaultEnvPrefix(name)
@@ -238,9 +238,9 @@ func (a *app) applyCaskRootPassword(env map[string]string, name string) error {
 }
 
 // applyCalculatePatch merges a calculate hook's env patch into the global
-// environment, records ownership, and enforces the cask's write contract: a
-// cask may only publish keys under its own prefixes, keys it already owns, or
-// keys declared in manifest `config.exports`. There is no cask exempt from
+// environment, records ownership, and enforces the module's write contract: a
+// module may only publish keys under its own prefixes, keys it already owns, or
+// keys declared in manifest `config.exports`. There is no module exempt from
 // this; the deployment-wide values it used to cover are written by the runner,
 // which does not go through a hook patch at all.
 func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
@@ -271,7 +271,7 @@ func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 		a.setEnvOwner(k, mod.Name)
 	}
 	if len(violations) > 0 {
-		return fmt.Errorf("cask %q calculate hook writes undeclared env keys: %s (declare them in cask.yml config.exports)", mod.Name, strings.Join(violations, ", "))
+		return fmt.Errorf("module %q calculate hook writes undeclared env keys: %s (declare them in module.yml config.exports)", mod.Name, strings.Join(violations, ", "))
 	}
 	return nil
 }

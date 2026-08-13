@@ -252,7 +252,7 @@ func printBackupPlan(plan *backupPlan) {
 	}
 	fmt.Printf("transfer:  up to %s\n", formatBytes(plan.Estimate.TransferBytes))
 	if plan.StopContainers {
-		fmt.Printf("downtime:  about %ds, stopping %d cask(s)\n",
+		fmt.Printf("downtime:  about %ds, stopping %d module(s)\n",
 			plan.EstimatedDowntimeSeconds, len(plan.ContainersToStop))
 	} else {
 		fmt.Println("downtime:  none; nothing is stopped")
@@ -310,7 +310,7 @@ func runBackupCreate(args []string, jsonMode bool) error {
 		}
 	} else if plan.StopContainers && len(plan.ContainersToStop) > 0 {
 		if err := confirmDestructive(
-			fmt.Sprintf("Stop %d cask(s) for about %ds to take the backup",
+			fmt.Sprintf("Stop %d module(s) for about %ds to take the backup",
 				len(plan.ContainersToStop), plan.EstimatedDowntimeSeconds), opts.yes); err != nil {
 			return err
 		}

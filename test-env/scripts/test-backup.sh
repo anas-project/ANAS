@@ -20,7 +20,7 @@
 # allowed to have.
 #
 # B3 exists because the contract's mode table is wrong about copy. It lists
-# only "destination writable", but every cask that runs as root leaves data an
+# only "destination writable", but every module that runs as root leaves data an
 # ordinary user cannot read, and a copy that skipped what it cannot read would
 # publish a backup with holes in it. The Btrfs modes are unaffected — none of
 # them reads a file.
@@ -109,7 +109,7 @@ else
   privileged=no
 fi
 
-# Casks run as root, so the data they write is not readable by the user running
+# Modules run as root, so the data they write is not readable by the user running
 # the tests. Copy mode legitimately refuses that (B3), which would leave the
 # copy round-trip untestable unprivileged — so the setup takes ownership of the
 # data once B3 has confirmed the refusal. That is not a workaround for a bug;
@@ -187,7 +187,7 @@ ext4_fstype=$(df -T /tmp 2>/dev/null | awk 'NR==2 {print $2}')
   fi
 
   echo "== B3: root-owned container data makes copy unavailable, and says so =="
-  # The casks have run, so data/ holds files this user cannot read. Copy is the
+  # The modules have run, so data/ holds files this user cannot read. Copy is the
   # only mode that reads files, so it is the only one that has to refuse — and
   # it has to refuse in `capabilities`, before anything is stopped.
   if [ "$privileged" = "no" ]; then
@@ -369,7 +369,7 @@ ext4_fstype=$(df -T /tmp 2>/dev/null | awk 'NR==2 {print $2}')
   [ "$leftover" = "0" ] || fail "$leftover container transaction(s) were not compensated"
 
   echo "== B7b: a forged crash record is compensated by the next command =="
-  # Forge the record a killed backup would have left, then stop a cask by hand
+  # Forge the record a killed backup would have left, then stop a module by hand
   # and check that the next command that takes the exclusive lock starts it.
   active=$(sed -n 's/^active_deployment: //p' "$ws/.anas/state/active.yml")
   txn="$ws/.anas/state/transactions/forged.yml"
@@ -380,13 +380,13 @@ kind: backup_containers
 started_at: 2026-07-31T00:00:00Z
 workspace: $ws
 deployment_id: $active
-casks:
+modules:
   - traefik
 state: stopped
 EOF
   docker compose --project-name anas_traefik --env-file .env \
-    --project-directory "$ws/.anas/deployments/$active/casks/traefik" \
-    -f "$ws/.anas/deployments/$active/casks/traefik/docker-compose.yml" stop >/dev/null 2>&1 ||
+    --project-directory "$ws/.anas/deployments/$active/modules/traefik" \
+    -f "$ws/.anas/deployments/$active/modules/traefik/docker-compose.yml" stop >/dev/null 2>&1 ||
     docker stop $(docker ps --filter "name=anasbk_traefik" -q) >/dev/null 2>&1 || true
   sleep 2
   # Any command that takes the exclusive lock must notice and compensate.
@@ -398,7 +398,7 @@ EOF
     fail "the forged transaction record was not cleared by a later command"
   fi
   resumed=$(docker ps --filter "name=anasbk_" -q | wc -l)
-  [ "$resumed" -gt 0 ] || fail "compensation did not start the stopped cask"
+  [ "$resumed" -gt 0 ] || fail "compensation did not start the stopped module"
 
   echo "== B8: the send modes =="
   if [ "$privileged" = "yes" ]; then

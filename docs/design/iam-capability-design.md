@@ -2,11 +2,11 @@
 
 ## 1. 目标与硬约束
 
-ANAS 应允许应用 Cask 对接不同 IAM 实现，例如 LemonLDAP::NG（LLNG）和 Authentik，
+ANAS 应允许应用 Module 对接不同 IAM 实现，例如 LemonLDAP::NG（LLNG）和 Authentik，
 而不在应用 Hook 中按 IAM 名称写分支。
 
 > **实现状态**：阶段 A–D 已全部落地。仓库中的 Keycloak scaffold 已删除，
-> `iam.provider` 在 `llng` 与 `authentik` 之间切换不需要改动任何消费方 Cask。
+> `iam.provider` 在 `llng` 与 `authentik` 之间切换不需要改动任何消费方 Module。
 > 与本文档正文的偏差集中记录在 §12。
 
 本设计遵循四条硬约束，它们决定了后面所有取舍：
@@ -16,16 +16,16 @@ ANAS 应允许应用 Cask 对接不同 IAM 实现，例如 LemonLDAP::NG（LLNG�
 2. **一个部署只启动一个 IAM。** 不支持多个 IAM 同时活动。
 3. **provider 只能由用户显式指定。** 没有默认值、没有优先级列表、没有自动
    推断。
-4. **Cask 不能选择 provider。** 应用 Cask 只能选择协议，不能选择由哪个 IAM
+4. **Module 不能选择 provider。** 应用 Module 只能选择协议，不能选择由哪个 IAM
    服务自己。
 
 在此之上，方案还需要满足：
 
-- IAM Cask 在清单中声明自己提供的协议；
-- 应用 Cask 声明自己可以使用的协议以及优先顺序；
+- IAM Module 在清单中声明自己提供的协议；
+- 应用 Module 声明自己可以使用的协议以及优先顺序；
 - Runner 在启动前完成协议解析，配置错误在 `plan`、`render`、`build`、`start`
   阶段立即失败；
-- Cask 通过统一环境变量读取解析结果，不依赖 `LLNG_*`、`KEYCLOAK_*` 等实现私有
+- Module 通过统一环境变量读取解析结果，不依赖 `LLNG_*`、`KEYCLOAK_*` 等实现私有
   变量；
 - 选择结果进入锁文件，重启时保持稳定，切换 IAM 时给出明确的变更提示。
 
@@ -40,7 +40,7 @@ ANAS 应允许应用 Cask 对接不同 IAM 实现，例如 LemonLDAP::NG（LLNG�
 
 Authelia 当前只提供 OIDC，没有 SAML IdP，因此在本设计下**不具备 IAM provider
 资格**，不进入迁移路径。若其未来提供 SAML IdP，可按 §4.1 的准入条件重新评估，
-届时无需修改任何应用 Cask。
+届时无需修改任何应用 Module。
 
 已实现的双协议提供方是 LLNG 和 Authentik。Keycloak 虽然也满足准入条件，但仓库
 中原有的 scaffold 已删除，不在支持范围内。
@@ -58,8 +58,8 @@ Authentik 路径形状未经运行实例验证，首次真实部署时应对照�
 
 ## 2. 当前实现的问题
 
-当前 `requires_one` 已能从静态列表选择一个 Cask，并将绑定写入
-`cask.lock.yml`。它适合 PostgreSQL/MariaDB 这种"实现名即能力"的依赖，但 IAM
+当前 `requires_one` 已能从静态列表选择一个 Module，并将绑定写入
+`module.lock.yml`。它适合 PostgreSQL/MariaDB 这种"实现名即能力"的依赖，但 IAM
 还存在以下耦合：
 
 1. 消费方必须列出所有实现名称，例如 `providers: [keycloak, llng]`；新增 IAM
@@ -82,37 +82,34 @@ Authentik 路径形状未经运行实例验证，首次真实部署时应对照�
 
 ```yaml
 modules:
-  - nextcloud
-  - netbird
-
-iam:
-  provider: llng
-  default_protocol: oidc
-
-services:
   nextcloud:
-    env:
-      iam_protocol: saml
+    identity:
+      login_protocol: saml
   netbird:
-    env:
-      iam_protocol: auto
+    identity:
+      login_protocol: auto
+
+identity:
+  iam:
+    provider: llng
+    default_protocol: oidc
 ```
 
 规则：
 
-- `iam.provider` 是部署级选择，值为 IAM Cask 名称；只要存在 IAM 消费方就必填，
+- `identity.iam.provider` 是部署级选择，值为 IAM Module 名称；只要存在 IAM 消费方就必填，
   **没有默认值**。Runner 不会因为只有一个候选就自动选它。
 - 被选择的 IAM 由 Runner 自动加入依赖闭包，用户无需同时写进 `modules`。
-- `iam.default_protocol` 可选，是应用未显式指定协议时的部署级默认值。
-- `services.<app>.env.iam_protocol` 是可选的应用级覆盖，取值为 `oidc`、`saml`
+- `identity.iam.default_protocol` 可选，是应用未显式指定协议时的部署级默认值。
+- `modules.<app>.config.iam_protocol` 是可选的应用级覆盖，取值为 `oidc`、`saml`
   或 `auto`。
-- **不存在应用级 provider 覆盖。** 应用 Cask 与用户配置都不能让某个应用使用
-  `iam.provider` 以外的 IAM。
-- 如果 `modules` 同时显式列出另一个 IAM Cask，Runner 报错。
-- 没有 IAM 消费方时不自动启动 `iam.provider`。如果用户确实只想启动 IAM，可把
+- **不存在应用级 provider 覆盖。** 应用 Module 与用户配置都不能让某个应用使用
+  `identity.iam.provider` 以外的 IAM。
+- 如果 `modules` 同时显式列出另一个 IAM Module，Runner 报错。
+- 没有 IAM 消费方时不自动启动 `identity.iam.provider`。如果用户确实只想启动 IAM，可把
   该 IAM 同时列入 `modules`。
 
-不允许宿主进程环境变量覆盖 `iam.provider` 或 `iam.default_protocol`，否则相同
+不允许宿主进程环境变量覆盖 `identity.iam.provider` 或 `identity.iam.default_protocol`，否则相同
 配置文件可能产生不同部署。临时试算可后续增加 `anas plan --iam llng`，但持久
 配置仍是唯一事实来源。
 
@@ -120,16 +117,16 @@ services:
 
 对每个消费方，最终协议按以下顺序确定，第一个命中的规则生效：
 
-1. `services.<app>.env.iam_protocol` 的显式值（非 `auto`）；
+1. `modules.<app>.config.iam_protocol` 的显式值（非 `auto`）；
 2. `iam.default_protocol`，当它出现在该应用清单的 `any_of` 中；
 3. 该应用清单 `prefer` 列表中的第一项。
 
 无论走哪条规则，结果都必须落在该应用的 `any_of` 内，否则报错。
 
-## 4. Cask 清单能力模型
+## 4. Module 清单能力模型
 
-该变更引入新的清单字段，ABI 升级为 `anas.cask/v2`。由于尚未正式发版，没有做
-v1/v2 双读：所有 Cask 一次性切到 v2，Runner 只认识 v2。
+该变更引入新的清单字段，ABI 升级为 `anas.module-hook/v1`。由于尚未正式发版，没有做
+v1/v2 双读：所有 Module 一次性切到 v2，Runner 只认识 v2。
 
 ### 4.1 IAM 提供方与准入条件
 
@@ -138,7 +135,7 @@ LLNG：
 ```yaml
 abi:
   supports:
-    - anas.cask/v2
+    - anas.module-hook/v1
 
 capabilities:
   provides:
@@ -152,7 +149,7 @@ capabilities:
 
 - `interfaces` 必须使用 Runner 已知的小写协议标识；第一版只认识 `oidc` 和
   `saml`，未知标识在加载清单时失败，不能静默忽略。
-- `interfaces` **必须同时包含 `oidc` 和 `saml`**。只声明其中一个的 Cask 在清单
+- `interfaces` **必须同时包含 `oidc` 和 `saml`**。只声明其中一个的 Module 在清单
   加载阶段就被拒绝，不能作为 IAM provider 注册，也不能被 `iam.provider` 选中。
 
 把准入检查放在清单加载阶段而不是解析阶段，是为了让"某个 IAM 不合格"这件事与
@@ -177,7 +174,7 @@ dependencies:
           - oidc
 ```
 
-一个可接受两种协议、优先 OIDC 的消费方长这样（实际的 Nextcloud Cask 只声明
+一个可接受两种协议、优先 OIDC 的消费方长这样（实际的 Nextcloud Module 只声明
 SAML，原因见 §12.1）：
 
 ```yaml
@@ -213,17 +210,17 @@ IAM 不再使用带静态 `providers` 列表的 `requires_one`。数据库等现
 
 解析发生在 Hook 执行之前：
 
-1. 读取所有 Cask 清单，建立 `capability -> provider -> interfaces` 索引，并在
+1. 读取所有 Module 清单，建立 `capability -> provider -> interfaces` 索引，并在
    此阶段执行 §4.1 的双协议准入检查。
 2. 收集已启用应用的 `requires_capabilities`。
 3. 如果存在 `iam` 消费方，读取 `iam.provider`；为空则报错，不做任何自动选择。
-4. 验证指定 Cask 存在、未被禁用，并声明 `provides: iam`。
+4. 验证指定 Module 存在、未被禁用，并声明 `provides: iam`。
 5. 对每个消费方按 §3.1 的优先级确定协议。
 6. 验证结果协议同时位于 `consumer.any_of` 和 `provider.interfaces` 中。由于
    准入条件保证了 provider 两种协议都有，这一步实际只会因应用侧的显式值越界
    而失败，但仍然保留为不变量检查。
 7. 校验失败立即报错，不运行 Hook、不生成密钥、不写运行目录。
-8. 把 IAM Cask 加入每个消费方的依赖边，保证 IAM 的 `calculate` Hook 先运行。
+8. 把 IAM Module 加入每个消费方的依赖边，保证 IAM 的 `calculate` Hook 先运行。
 9. **在任何 Hook 运行之前**注入完整绑定集合：`ANAS_IAM_PROVIDER`、
    `ANAS_IDENTITY_CLIENTS`、按协议拆分的 `ANAS_IDENTITY_OIDC_CLIENTS` 与
    `ANAS_IDENTITY_SAML_CLIENTS`，以及每个消费方的
@@ -233,7 +230,7 @@ IAM 不再使用带静态 `providers` 列表的 `requires_one`。数据库等现
 
 第 9 步是端点契约的前置条件。对 Authentik 这类 per-app 端点的 provider，它的
 `calculate` 必须先知道消费方名单和各自协议，才能推导出每个应用的 IdP 端点
-（slug 取 Cask 名）。这些信息在第 5–7 步就已经全部解析完毕，因此 Runner 可以
+（slug 取 Module 名）。这些信息在第 5–7 步就已经全部解析完毕，因此 Runner 可以
 在第一个 Hook 之前发布，不需要改动 `calculate` → `render_env` 的生命周期顺序。
 
 `plan` 仍保持只读，但需要执行清单级能力解析，因此能提前报告配置错误。
@@ -251,7 +248,7 @@ available providers: llng[oidc,saml]
 ```
 
 ```text
-cask "authelia" declares capability iam with interfaces [oidc];
+module "authelia" declares capability iam with interfaces [oidc];
 an IAM provider must declare both oidc and saml
 ```
 
@@ -289,14 +286,14 @@ ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE=saml
 ### 6.1 消费方名单按协议拆分
 
 `ANAS_IDENTITY_<PROTOCOL>_CLIENTS` 是 `ANAS_IDENTITY_CLIENTS` 按协议的投影。变量
-都由 Runner 从直接协议声明和 §5 的 IAM 解析结果一次写出，Cask 只读不写，因此不存在
+都由 Runner 从直接协议声明和 §5 的 IAM 解析结果一次写出，Module 只读不写，因此不存在
 互相偏离的可能。
 
 拆分的理由不是"否则拿不到协议"——协议本来就可以逐个查
 `ANAS_IAM_BINDING__<APP>__INTERFACE`。真正的收益是让
 **"本次部署没有 SAML 消费方"成为可以直接判断的一等条件**（`ANAS_IDENTITY_SAML_CLIENTS`
 为空），而这正是 §6.3 端点校验所依据的条件。两处使用同一事实，就该有同一种
-表达，否则每个 Provider Cask 都要自己扫一遍名单才能决定是否生成 SAML 配置段。
+表达，否则每个 Provider Module 都要自己扫一遍名单才能决定是否生成 SAML 配置段。
 对 Authentik 这类按协议逐个创建 Application/Provider 对象的实现，拆分后的列表
 是直接的 1:1 映射。
 
@@ -327,7 +324,7 @@ ANAS_IAM_BINDING__NEXTCLOUD__SAML_SLO_URL=https://auth.nas.example.com/applicati
 这是覆盖 §1.1 两种端点形状的唯一契约：对 LLNG 和 Keycloak，各消费方拿到的值
 就是同一个单例值重复若干遍；对 Authentik，各消费方的值真正不同。反过来把端点
 定义成部署级单例，则会把 LLNG/Keycloak 的形状写死进"通用"契约，第一个
-Authentik Cask 就会迫使消费方改代码，违背决策 6。
+Authentik Module 就会迫使消费方改代码，违背决策 6。
 
 Provider 若确有部署级单例端点，**可以额外**发布 `ANAS_IAM_OIDC_ISSUER_URL`
 等全局变量作为便利值，但消费方 Hook 不得读取它们。应用只读取自己的
@@ -383,7 +380,7 @@ SAML 客户端使用同一前缀，发布 `SP_METADATA_URL`、`SP_ENTITY_ID`、`
 
 Provider 的 `render_env` Hook 读取所有通用注册请求，翻译成 LLNG 或 Authentik 的
 私有配置：LLNG 写 `OIDC_RP_*` / `SAML_SP_*` 供其配置脚本消费，Authentik 生成
-声明式 blueprint 创建 Application 与 Provider 对象。私有变量不得再由应用 Cask
+声明式 blueprint 创建 Application 与 Provider 对象。私有变量不得再由应用 Module
 生成。
 
 由于当前生命周期先完成所有 `calculate`，再执行所有 `render_env`，这个方向与现有
@@ -445,7 +442,7 @@ bindings:
 按消费方端点契约。若第二个 IAM 也是单例端点形状（Keycloak 与 LLNG 同类），契约中
 "端点可以随消费方不同"这一维度不会被任何测试覆盖，缺陷会留到之后才暴露。
 
-- 新增 Authentik Cask，声明 `iam[oidc,saml]`；
+- 新增 Authentik Module，声明 `iam[oidc,saml]`；
 - 在 `calculate` 中按 Runner 发布的消费方名单推导每个应用的 SAML/OIDC 端点；
 - 自行生成 SAML 签名密钥对，因此 `SAML_SIGNING_CERT` 在 `calculate` 阶段就可发布，
   而不必等 Authentik 首次启动时自行生成；
@@ -475,8 +472,8 @@ Runner 单元测试：
   OIDC 的 `netbird(auto)` 仍选 OIDC；
 - `netbird(saml)` 因越出自身 `any_of` 在 `plan` 阶段失败；
 - 未设置 `iam.provider` 且存在消费者时失败，且不因候选唯一而自动选择；
-- 指定不存在、被禁用或不提供 IAM 能力的 Cask 时失败；
-- 只声明 `oidc` 的 IAM Cask 在清单加载阶段被拒绝；
+- 指定不存在、被禁用或不提供 IAM 能力的 Module 时失败；
+- 只声明 `oidc` 的 IAM Module 在清单加载阶段被拒绝；
 - Provider Hook 未为某个 SAML 绑定的消费方发布
   `ANAS_IAM_BINDING__<APP>__SAML_METADATA_URL` 时失败；
 - 反向用例：本次部署没有 SAML 消费方时，`ANAS_IDENTITY_SAML_CLIENTS` 为空，Provider
@@ -509,7 +506,7 @@ Runner 单元测试：
 
 ## 10. 关键决策
 
-1. **选择由 Runner 完成。** Cask 环境变量用于消费解析结果，而不是让每个 Cask
+1. **选择由 Runner 完成。** Module 环境变量用于消费解析结果，而不是让每个 Module
    自己扫描 `LLNG_*`、`KEYCLOAK_*` 后猜测提供方。
 2. **provider 是部署级且唯一，协议是应用级。** 一个 IAM 同时服务 OIDC 和 SAML
    应用，用户只登录一次。
@@ -518,7 +515,7 @@ Runner 单元测试：
 5. **端点按消费方发布，不是部署级单例。** IdP 端点是否随应用变化属于实现差异
    （LLNG/Keycloak 单例、Authentik per-app），必须由契约吸收。单例形状是
    per-app 的特例，反之不成立，所以契约取更一般的那个。
-6. **新增 IAM 不修改消费方。** 只要新 Cask 满足准入条件并实现统一环境契约，就能
+6. **新增 IAM 不修改消费方。** 只要新 Module 满足准入条件并实现统一环境契约，就能
    被现有应用选择。
 7. **不静默切换。** IAM 和协议绑定写入锁文件，变更进入 reconcile 流程。
 
@@ -529,7 +526,7 @@ Runner 单元测试：
 - **多 IAM 同时活动。** 跨 IAM 没有共享会话，用户需要登录两次，违背 SSO 目的。
   若将来确有需求，正确方向是 IAM 联邦（一个 IAM 作为另一个的上游），而不是并列
   多个活动 provider。
-- **Cask 或应用级指定 provider。** 一旦允许，等价于多 IAM，同样导致多次登录，
+- **Module 或应用级指定 provider。** 一旦允许，等价于多 IAM，同样导致多次登录，
   并让 `iam.provider` 不再是可信的部署级事实。
 - **provider 优先级列表 / 按协议的默认 provider。** 这些机制只在多 IAM 下才有
   意义。
@@ -543,8 +540,8 @@ Runner 单元测试：
 
 ### 12.1 Nextcloud 只声明 SAML
 
-§4.2 的示例把 Nextcloud 写成 `any_of: [oidc, saml]`，但实际 Cask 只声明
-`any_of: [saml]`。原因是这个 Cask 只配置 `user_saml`，没有任何 OIDC 代码路径。
+§4.2 的示例把 Nextcloud 写成 `any_of: [oidc, saml]`，但实际 Module 只声明
+`any_of: [saml]`。原因是这个 Module 只配置 `user_saml`，没有任何 OIDC 代码路径。
 声明一个自己实现不了的协议，恰好制造出本设计要消除的那种失败：清单通过校验、
 `plan` 通过、容器起来之后 SSO 不工作。
 

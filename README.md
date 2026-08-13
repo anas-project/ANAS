@@ -1,10 +1,10 @@
 # ANAS
 
-ANAS is a Go-based NAS service launcher built around composable casks. Each
-cask owns its Docker Compose assets and declares its launcher metadata in
-`cask.yml`.
+ANAS is a Go-based NAS service launcher built around composable modules. Each
+module owns its Docker Compose assets and declares its launcher metadata in
+`module.yml`.
 
-Current cask runtime ABI: `anas.cask/v2`.
+Current module runtime ABI: `anas.module-hook/v1`.
 
 **Usage guide: [docs/usage.md](docs/usage.md) · [中文](docs/usage.zh.md)** —
 how to initialise a deployment, run it, change it, and recover it.
@@ -34,22 +34,22 @@ materializes under `staging/`, atomically finalizes the artifact under
 `deployments/<id>/`, and only then starts Compose from that final path. This
 keeps Docker Compose working-directory metadata valid. `start`, `stop`, and
 `restart` operate only on the active frozen deployment and do not need the
-original cask source tree or a Go toolchain.
+original module source tree or a Go toolchain.
 
-Named lifecycle operations always preserve dependency consistency. `start CASK...`
+Named lifecycle operations always preserve dependency consistency. `start MODULE...`
 first includes every prerequisite and starts the resulting chain in
-dependency order. `stop CASK...` and `restart CASK...` include every direct and
+dependency order. `stop MODULE...` and `restart MODULE...` include every direct and
 transitive dependent; they stop in reverse dependency order, and restart then
 starts the same chain in forward order. Multiple named chains are merged and
 deduplicated. There is intentionally no option to bypass this expansion and
 leave running applications without a dependency they require.
 
-The launcher locates independent cask bundles from `--cask-root`,
-`ANAS_CASK_ROOT`, the current directory, or the installation directory. The
-config-side `<name>.lock.yml` records both cask versions and bundle content
+The launcher locates independent module bundles from `--module-root`,
+`ANAS_MODULE_ROOT`, the current directory, or the installation directory. The
+config-side `<name>.lock.yml` records both module versions and bundle content
 digests. A distributable bundle can carry a prebuilt hook at
 `hook/bin/<os>-<arch>/anas-hook`; render/apply then need no Go toolchain.
-`plan` is read-only: it does not inspect host networking, run cask
+`plan` is read-only: it does not inspect host networking, run module
 hooks, or create runtime state.
 
 ## Configuration
@@ -58,14 +58,16 @@ Only the structured YAML format is supported:
 
 ```yaml
 modules:
-  - traefik
+  traefik: {}
+  lego:
+    config:
+      # The DNS vendor is chosen per engine rather than deployment-wide.
+      dns_provider: cloudflare
 
 global:
   base_domain: nas.example.com
   email: admin@example.com
-  data_path: ./data
   timezone: Asia/Shanghai
-  # Legacy compatibility for casks not yet migrated to managed local accounts.
   default_service_root_password: ChangeMe1!
 
 administration:
@@ -73,15 +75,9 @@ administration:
     username: admin
     roles: [platform_admin, directory_admin]
   local_accounts:
-    username_template: "admin_{cask}"
-    password_policy: generated_per_cask
+    username_template: "admin_{module}"
+    password_policy: generated_per_module
     password_length: 24
-
-services:
-  # The DNS vendor is chosen per engine rather than deployment-wide.
-  lego:
-    env:
-      dns_provider: cloudflare
 
 secrets:
   cloudflare_dns_api_token: replace-me
@@ -114,32 +110,32 @@ The automatic Btrfs choice is frozen in `config.lock.yml`; ordinary render and
 apply commands do not probe again. A data restore keeps the replaced data as a
 recovery subvolume.
 
-Legacy Ruby keys such as `mods` and `envs` are intentionally rejected.
-Per-service overrides live under `services`:
+Legacy keys such as `mods`, list-form `modules`, and `services` are
+intentionally rejected. Module configuration lives with its selection:
 
 ```yaml
-services:
+modules:
   nextcloud:
     enabled: true
-    env:
+    config:
       domain_prefix: cloud
       upload_max_size: 32G
       # Advanced override: auto, postgres, or mariadb.
       db_type: auto
 ```
 
-Service env keys are automatically converted to the service prefix. The example
+Module config keys are automatically converted to the module prefix. The example
 above becomes `NEXTCLOUD_DOMAIN_PREFIX` and `NEXTCLOUD_UPLOAD_MAX_SIZE`.
 
 Use top-level `env` only for explicit raw environment variables that do not fit
-the structured `global`, `secrets`, or `services` sections.
+the structured `global`, `secrets`, or `modules.<name>.config` sections.
 
-Set `services.<name>.enabled: false` to exclude a module listed under
-`modules`. Disabling a module required by another enabled module is an error.
+Set `modules.<name>.enabled: false` to exclude a module. Disabling a module
+required by another enabled module is an error.
 
-Cask dependency semantics are explicit: `requires` selects and orders a hard
+Module dependency semantics are explicit: `requires` selects and orders a hard
 dependency, `requires_one` selects exactly one capability provider, and `after`
-only orders two casks when both were selected. Unknown or obsolete manifest
+only orders two modules when both were selected. Unknown or obsolete manifest
 fields are rejected instead of being ignored.
 
 ## Generated State
@@ -154,17 +150,17 @@ Runtime files are written below the selected base path:
 - `snapshots/<id>/`: optional data snapshot metadata and Btrfs subvolume.
 - `secrets.generated.yml`: persistent generated secrets such as SSH keys,
   TURN secrets, OIDC client secrets, and SAML/OIDC signing keys.
-- `<config-name>.lock.yml`: project-side cask versions, bundle digests, source
+- `<config-name>.lock.yml`: project-side module versions, bundle digests, source
   identities, and resolved capability-provider bindings.
-- `hook-bin/`: hook binaries compiled once per run; each rendered cask also
+- `hook-bin/`: hook binaries compiled once per run; each rendered module also
   carries its frozen copy as `.hook.bin`, so artifact starts need no Go
   toolchain.
-- `go-build-cache/`: Go build cache used when compiling cask hooks.
+- `go-build-cache/`: Go build cache used when compiling module hooks.
 
-Each rendered cask's `.env` is scoped: it contains only global values, the
-cask's own and its dependency closure's keys, and keys the cask claims via
-manifest `config.consumes`. One cask (or its containers) never receives the
-credentials of unrelated casks.
+Each rendered module's `.env` is scoped: it contains only global values, the
+module's own and its dependency closure's keys, and keys the module claims via
+manifest `config.consumes`. One module (or its containers) never receives the
+credentials of unrelated modules.
 
 Do not commit runtime directories or generated secrets. The runtime base and
 generated `.env` files are owner-only because they contain service credentials.
@@ -173,16 +169,16 @@ generated `.env` files are owner-only because they contain service credentials.
 
 The launcher covers:
 
-- manifest-based cask discovery from `casks/mods/*/cask.yml`
-- cask ABI validation with `anas.cask/v1`
-- semantic cask versions, dependency version constraints, upgrade checks, and a
-  persisted cask lock file
+- manifest-based module discovery from `modules/*/module.yml`
+- module ABI validation with `anas.module-hook/v1`
+- semantic module versions, dependency version constraints, upgrade checks, and a
+  persisted module lock file
 - alternative capability providers with stable lock-file bindings (for example,
-  PostgreSQL or MariaDB for application casks)
+  PostgreSQL or MariaDB for application modules)
 - module dependency ordering
 - structured YAML config loading
-- default env generation and cask hook based derived env generation
-- cask hook phases for calculation, render-time env/files, optional service
+- default env generation and module hook based derived env generation
+- module hook phases for calculation, render-time env/files, optional service
   filtering, and after-start copy operations
 - container-owned configuration generation from scoped environment files
 - per-module `.env` generation
@@ -192,9 +188,9 @@ The launcher covers:
 - LLNG/Keycloak SAML/OIDC material generation
 - Nextcloud, Netbird, Meshcentral, LDAP app integration variables
 - macvlan setup for modules that require host LAN
-- current cask manifests under `casks/mods/*/cask.yml`
+- current module manifests under `modules/*/module.yml`
 
-Current casks provide:
+Current modules provide:
 
 - ACME certificate files through `lego`
 - HTTPS routing through `traefik`
@@ -206,43 +202,43 @@ Current casks provide:
   launcher integration
 - Collabora as the Nextcloud office backend
 - LemonLDAP::NG as the current SSO portal and SAML/OIDC provider
-- Keycloak as an identity cask scaffold using the current LLNG integration
+- Keycloak as an identity module scaffold using the current LLNG integration
   assets
 - LDAP Account Manager and MeshCentral with Samba/LDAP integration
 - DDNS config generation for DNSPod when selected
 - NetBird as an incomplete experimental scaffold excluded from the full example
 - FreeRADIUS as an experimental scaffold, not a complete RADIUS deployment yet
 
-## Cask Layout
+## Module Layout
 
-Each cask directory follows this rule:
+Each module directory follows this rule:
 
 ```text
-casks/mods/<name>/
-  cask.yml
+modules/<name>/
+  module.yml
   hook/
     main.go
   docker-compose.yml
   <service build contexts, templates, assets>
 ```
 
-Each cask declares the runner ABI it supports:
+Each module declares the runner ABI it supports:
 
 ```yaml
 abi:
   supports:
-    - anas.cask/v1
+    - anas.module-hook/v1
 ```
 
-Use lower snake_case for cask parameters in `cask.yml`. The runner maps them to
-the environment variables consumed by existing templates, using the cask
-`config.env_prefix` or the cask name as the prefix. For example,
-`domain_prefix` in the `nextcloud` cask becomes `NEXTCLOUD_DOMAIN_PREFIX`.
+Use lower snake_case for module parameters in `module.yml`. The runner maps them to
+the environment variables consumed by existing templates, using the module
+`config.env_prefix` or the module name as the prefix. For example,
+`domain_prefix` in the `nextcloud` module becomes `NEXTCLOUD_DOMAIN_PREFIX`.
 
-Per-cask logic is executed through `logic.hook.command`. The runner sends a
-JSON request using the cask ABI and applies the returned env patch, generated
+Per-module logic is executed through `logic.hook.command`. The runner sends a
+JSON request using the module ABI and applies the returned env patch, generated
 secrets, files, service filters, and after-start copy operations. Runner code
-does not contain cask-specific calculation functions.
+does not contain module-specific calculation functions.
 
 `runner.rb` files are not part of the Go rules and should not be added. The
 previous Ruby implementation has been removed; recover it from the git history
@@ -254,15 +250,15 @@ and verify each enabled module.
 ## Developer Docs
 
 See [docs/container-image-release-implementation-2026-08-11.md](docs/container-image-release-implementation-2026-08-11.md)
-for the implemented cask image versioning, GHCR publishing workflow, and GitHub
+for the implemented module image versioning, GHCR publishing workflow, and GitHub
 organization migration record.
 
 See [docs/research/README.md](docs/research/README.md) for the research archive,
 including the current open-source self-hosted Kanban comparison and historical
 technology assessments.
 
-See [docs/design/ai-design.md](docs/design/ai-design.md) for the project structure, cask
-structure, and rules for designing new casks.
+See [docs/design/ai-design.md](docs/design/ai-design.md) for the project structure, module
+structure, and rules for designing new modules.
 
 See [docs/design/iam-capability-design.md](docs/design/iam-capability-design.md) for the
 proposed provider-neutral IAM capability model, OIDC/SAML negotiation,

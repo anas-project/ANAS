@@ -1,42 +1,33 @@
 # Both DDNS implementations at once. Running them together exercises per-engine
 # credential separation and the declarative Traefik route used by the
-# host-network cask. ddns_updater uses the shared authenticated gate; ddns_go
+# host-network module. ddns_updater uses the shared authenticated gate; ddns_go
 # deliberately uses only its own login.
 modules:
-  - traefik
-  - lego
-  - samba_dc
-  - postgres
-  - authentik
-  - ddns_updater
-  - ddns_go
-
-iam:
-  provider: authentik
-
+  traefik: {}
+  lego: {}
+  samba_dc: {}
+  postgres: {}
+  authentik: {}
+  ddns_updater:
+    config:
+      dns_provider: cloudflare
+      zone_identifier: test-zone-id
+  ddns_go:
+    config:
+      dns_provider: tencentcloud
+identity:
+  iam:
+    provider: authentik
 global:
   base_domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: change-me-now
-
-services:
-  # Different vendors on purpose: certificates and dynamic DNS need not live at
-  # the same provider, and nothing should force them to.
-  ddns_updater:
-    env:
-      dns_provider: cloudflare
-      zone_identifier: test-zone-id
-  ddns_go:
-    env:
-      dns_provider: tencentcloud
-
 secrets:
   cloudflare_dns_api_token: test-token-not-a-real-credential
   tencentcloud_secret_id: test-id-not-a-real-credential
   tencentcloud_secret_key: test-key-not-a-real-credential
-
 env:
   BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_test_

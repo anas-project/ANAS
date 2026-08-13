@@ -10,12 +10,12 @@ import (
 )
 
 // globalEnvFile is the deployment-wide environment, written beside the
-// rendered casks rather than inside one of them. Artifact start, stop and
+// rendered modules rather than inside one of them. Artifact start, stop and
 // rollback read it to recover what the release was built with. The leading dot
-// keeps it out of the directory scan that finds casks by their subdirectory.
+// keeps it out of the directory scan that finds modules by their subdirectory.
 const globalEnvFile = ".global.env"
 
-// writeEnv writes a per-cask .env file. Values are quoted so that docker
+// writeEnv writes a per-module .env file. Values are quoted so that docker
 // compose's dotenv parser and parseEnvFile both read back the exact original
 // value; see quoteEnv for the rules.
 func writeEnv(path string, env map[string]string) error {

@@ -9,7 +9,7 @@ import (
 
 func runAdmin(args []string, jsonMode bool) error {
 	if len(args) < 2 || args[0] != "local" {
-		return usageErrorf("usage: anas admin local list | credential CASK [ACCOUNT] [-w WORKSPACE]")
+		return usageErrorf("usage: anas admin local list | credential MODULE [ACCOUNT] [-w WORKSPACE]")
 	}
 	action := args[1]
 	fs := flag.NewFlagSet("admin local "+action, flag.ContinueOnError)
@@ -49,12 +49,12 @@ func runAdmin(args []string, jsonMode bool) error {
 			return emitOK(map[string]any{"workspace": workspace, "accounts": docs})
 		}
 		for _, record := range records {
-			fmt.Printf("%s\t%s\t%s\t%s\n", record.Cask, record.ID, record.Purpose, record.Username)
+			fmt.Printf("%s\t%s\t%s\t%s\n", record.Module, record.ID, record.Purpose, record.Username)
 		}
 		return nil
 	case "credential":
 		if len(positional) < 1 || len(positional) > 2 {
-			return usageErrorf("usage: anas admin local credential CASK [ACCOUNT] [-w WORKSPACE] [--password-only] [--json]")
+			return usageErrorf("usage: anas admin local credential MODULE [ACCOUNT] [-w WORKSPACE] [--password-only] [--json]")
 		}
 		if *passwordOnly && jsonMode {
 			return usageErrorf("--password-only and --json cannot be used together")
@@ -65,7 +65,7 @@ func runAdmin(args []string, jsonMode bool) error {
 		}
 		password, ok := secrets.values[record.SecretKey]
 		if !ok || password == "" {
-			return preconditionErrorf("secret_missing", "local administrator %s.%s has no generated password", record.Cask, record.ID)
+			return preconditionErrorf("secret_missing", "local administrator %s.%s has no generated password", record.Module, record.ID)
 		}
 		if *passwordOnly {
 			fmt.Println(password)
@@ -78,7 +78,7 @@ func runAdmin(args []string, jsonMode bool) error {
 		fmt.Printf("URL: %s\nUsername: %s\nPassword: %s\nPurpose: %s\n", doc["url"], record.Username, password, record.Purpose)
 		return nil
 	default:
-		return usageErrorf("usage: anas admin local list | credential CASK [ACCOUNT] [-w WORKSPACE]")
+		return usageErrorf("usage: anas admin local list | credential MODULE [ACCOUNT] [-w WORKSPACE]")
 	}
 }
 
@@ -89,27 +89,27 @@ func valueAt(values []string, index int) string {
 	return values[index]
 }
 
-func selectLocalAdmin(records []localAdminRecord, cask, id string) (localAdminRecord, error) {
-	cask = strings.TrimSpace(cask)
+func selectLocalAdmin(records []localAdminRecord, module, id string) (localAdminRecord, error) {
+	module = strings.TrimSpace(module)
 	id = strings.TrimSpace(id)
 	matches := []localAdminRecord{}
 	for _, record := range records {
-		if record.Cask == cask && (id == "" || record.ID == id) {
+		if record.Module == module && (id == "" || record.ID == id) {
 			matches = append(matches, record)
 		}
 	}
 	if len(matches) == 0 {
-		return localAdminRecord{}, fmt.Errorf("no local administrator for cask %q", cask)
+		return localAdminRecord{}, fmt.Errorf("no local administrator for module %q", module)
 	}
 	if len(matches) > 1 {
-		return localAdminRecord{}, fmt.Errorf("cask %q has multiple local administrators; specify one of their account ids", cask)
+		return localAdminRecord{}, fmt.Errorf("module %q has multiple local administrators; specify one of their account ids", module)
 	}
 	return matches[0], nil
 }
 
 func localAdminDocument(base string, record localAdminRecord, reveal bool, password string) map[string]any {
 	doc := map[string]any{
-		"cask": record.Cask, "id": record.ID, "purpose": record.Purpose,
+		"module": record.Module, "id": record.ID, "purpose": record.Purpose,
 		"username": record.Username, "url": activeLocalAdminURL(base, record),
 	}
 	if reveal {
@@ -123,7 +123,7 @@ func activeLocalAdminURL(base string, record localAdminRecord) string {
 	if err != nil || active.ActiveDeployment == "" || record.URIFrom == "" {
 		return ""
 	}
-	env, err := parseEnvFile(filepath.Join(base, "deployments", active.ActiveDeployment, "casks", record.Cask, ".env"))
+	env, err := parseEnvFile(filepath.Join(base, "deployments", active.ActiveDeployment, "modules", record.Module, ".env"))
 	if err != nil {
 		return ""
 	}

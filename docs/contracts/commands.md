@@ -72,7 +72,7 @@ anas init [PATH] [--shell-init write|remove] [-y] [--json]
 ## plan
 
 ```
-anas plan -c config.yml [--cask-root DIR] [--json]
+anas plan -c config.yml [--module-root DIR] [--json]
 ```
 
 只算不写。**不创建也不读取任何运行时状态**，`-w` 只为命令行对称而接受。
@@ -81,11 +81,11 @@ anas plan -c config.yml [--cask-root DIR] [--json]
 {
   "api_version": "anas.dev/cli/v1", "ok": true,
   "config": "/data/ws/config.yml",
-  "cask_root": "/srv/anas/casks/mods",
+  "module_root": "/srv/anas/modules",
   "modules": ["postgres", "authentik", "nextcloud"],
   "iam": {
     "provider": "authentik",
-    "consumers": [{ "cask": "nextcloud", "interface": "oidc" }]
+    "consumers": [{ "module": "nextcloud", "interface": "oidc" }]
   },
   "capability_bindings": { "nextcloud": { "relational_database": "postgres" } }
 }
@@ -99,7 +99,7 @@ anas plan -c config.yml [--cask-root DIR] [--json]
 | code | 退出码 | 何时 |
 | --- | --- | --- |
 | `config_missing` / `config_invalid` | 4 | 配置文件不在，或读不出来 |
-| `cask_root_missing` / `cask_root_invalid` | 4 | 找不到 cask 目录，或它读不出来 |
+| `module_root_missing` / `module_root_invalid` | 4 | 找不到 module 目录，或它读不出来 |
 | `resolution_failed` | 4 | 依赖成环、模块未知、被禁用的模块又被依赖 |
 | `version_conflict` | 4 | 版本约束互相打架 |
 
@@ -117,14 +117,14 @@ anas lock [-w WORKSPACE] [-c config.yml] [--json]
   "workspace": "/data/ws", "config": "/data/ws/config.yml",
   "lock_path": "/data/ws/config.lock.yml",
   "modules": ["postgres", "traefik"],
-  "casks": [{ "name": "postgres", "version": "16.4.0", "revision": 1, "app_version": "16.4", "digest": "sha256:…" }],
+  "modules": [{ "name": "postgres", "version": "16.4.0", "revision": 1, "app_version": "16.4", "digest": "sha256:…" }],
   "iam": { "provider": null, "consumers": [] },
   "capability_bindings": {},
   "snapshot": { "backend": "btrfs", "keep_auto": 5 }
 }
 ```
 
-`casks` 是契约对锁的视图，不是锁文件的磁盘格式；磁盘格式可以变，这里不跟着变。
+`modules` 是契约对锁的视图，不是锁文件的磁盘格式；磁盘格式可以变，这里不跟着变。
 
 错误码同 `plan`，另有 `lock_invalid`（4，锁文件读不出来）与 `write_failed`（1）。
 
@@ -137,7 +137,7 @@ anas build  [CASK...] [-w WORKSPACE] [-c config.yml] [--update-lock] [--json]
 
 产出一个不可变部署制品并封印它，但**不激活**。`build` 比 `render` 多一步构建镜像。
 
-`build` 接受 cask 名，只构建这些 cask 的镜像；渲染始终是整个部署的，因为渲染一半不构成部署。`render` 不接受 cask 名。
+`build` 接受 module 名，只构建这些 module 的镜像；渲染始终是整个部署的，因为渲染一半不构成部署。`render` 不接受 module 名。
 
 ```json
 {
@@ -150,12 +150,12 @@ anas build  [CASK...] [-w WORKSPACE] [-c config.yml] [--update-lock] [--json]
 ```
 
 进度 `phase`：`calculate` → `render` → `build-images`（仅 `build`）→ `seal`，
-`unit` 为 `casks`（`seal` 为 `deployments`）。
+`unit` 为 `modules`（`seal` 为 `deployments`）。
 
 | code | 退出码 | 何时 |
 | --- | --- | --- |
 | `lock_missing` | 4 | 没有 config lock，且没给 `--update-lock` |
-| `lock_stale` | 4 | 锁与源码里的 cask 对不上；要显式 `anas lock` 更新 |
+| `lock_stale` | 4 | 锁与源码里的 module 对不上；要显式 `anas lock` 更新 |
 | `secrets_unreadable` | 4 | secret store 读不出来 |
 | `compose_missing` | 4 | 要 build 但没有 docker compose |
 | `calculate_failed` / `render_failed` / `build_failed` / `seal_failed` | 1 | 动手之后失败 |
@@ -217,17 +217,17 @@ warning 记录到 stderr，`code` 取 `no_snapshot_backend` 或 `data_not_subvol
 anas start|restart|stop [CASK...] [-w WORKSPACE] [--json]
 ```
 
-不给 cask 名就是整个部署。给出名字时，命令必须把目标展开为依赖安全的 chain，不能只操作点名的 cask：
+不给 module 名就是整个部署。给出名字时，命令必须把目标展开为依赖安全的 chain，不能只操作点名的 module：
 
 - `start CASK...` 向前展开目标的全部直接、间接依赖，再按依赖正序启动。这样目标启动前，它需要的 provider、数据库等都已经运行。
-- `stop CASK...` 向后展开全部直接、间接依赖目标的 cask，再按依赖逆序停止。这样不会在依赖已停止后留下仍在运行但已经出错的应用。
+- `stop CASK...` 向后展开全部直接、间接依赖目标的 module，再按依赖逆序停止。这样不会在依赖已停止后留下仍在运行但已经出错的应用。
 - `restart CASK...` 使用与 `stop` 相同的依赖者 chain，先按依赖逆序全部停止，再按依赖正序全部启动。
 
-多个目标分别展开后取并集、去重。最终顺序取自部署的冻结依赖顺序，而非命令行词序。`dependencies.after` 只在 chain 中两个 cask 都已被选中时约束顺序，不会扩大 chain。名字不在本部署中是用法错误，并列出本部署实际有哪些 cask。CLI 不提供绕过 chain、只操作单个依赖节点的选项。
+多个目标分别展开后取并集、去重。最终顺序取自部署的冻结依赖顺序，而非命令行词序。`dependencies.after` 只在 chain 中两个 module 都已被选中时约束顺序，不会扩大 chain。名字不在本部署中是用法错误，并列出本部署实际有哪些 module。CLI 不提供绕过 chain、只操作单个依赖节点的选项。
 
 例如依赖关系为 `postgres -> nextcloud -> collabora` 时，`anas restart postgres` 依次停止 `collabora、nextcloud、postgres`，再依次启动 `postgres、nextcloud、collabora`。`anas restart nextcloud` 不重启仍正常运行的 PostgreSQL，只重启 Nextcloud 及其依赖者 Collabora。
 
-指定 chain 的停止**不拆 macvlan 网桥**：整体停止会拆（没人再用），停止一个 chain 不代表 chain 外的 cask 不用它。
+指定 chain 的停止**不拆 macvlan 网桥**：整体停止会拆（没人再用），停止一个 chain 不代表 chain 外的 module 不用它。
 
 **没有天然结果的命令**，按 README 的"最小信封"办：
 
@@ -236,15 +236,15 @@ anas start|restart|stop [CASK...] [-w WORKSPACE] [--json]
   "api_version": "anas.dev/cli/v1", "ok": true,
   "workspace": "/data/ws", "action": "stop",
   "deployment_id": "20260731T101500Z-a1b2c3d4",
-  "casks": ["postgres", "authentik", "traefik"]
+  "modules": ["postgres", "authentik", "traefik"]
 }
 ```
 
-`casks` 是 chain 展开后实际操作涉及的 cask，按依赖正序列出，不是"停/起了几个"的统计。调用方**不应**期待此外
+`modules` 是 chain 展开后实际操作涉及的 module，按依赖正序列出，不是"停/起了几个"的统计。调用方**不应**期待此外
 的结果字段。未加 `--json` 时 stdout 为空。
 
 进度 `phase`：`stop-containers`、`start-containers`、`after-start-hooks`，
-`unit` 为 `casks`。
+`unit` 为 `modules`。
 
 | code | 退出码 | 何时 |
 | --- | --- | --- |
@@ -282,7 +282,7 @@ anas rollback [DEPLOYMENT_ID] -w WORKSPACE [--allow-risky] [--json]
 | --- | --- | --- |
 | `no_previous_deployment` | 4 | 没有可回滚的目标 |
 | `already_active` | 4 | 指定的部署已经是活跃的 |
-| `rollback_data_breaking` | 4 | 目标 cask 声明了这次降级会重写磁盘数据；`--allow-risky` **不能**绕过 |
+| `rollback_data_breaking` | 4 | 目标 module 声明了这次降级会重写磁盘数据；`--allow-risky` **不能**绕过 |
 | `rollback_guarded_changes` | 4 | 跨越守卫变更；`--allow-risky` 可以绕过 |
 
 `rollback_data_breaking` 与 `rollback_guarded_changes` 分成两个码是有意的：
@@ -345,7 +345,7 @@ anas deployments inspect ID [-w WORKSPACE] [--json]
 ## config
 
 ```
-anas config list    [global|<cask>]     [-w WORKSPACE] [-c config.yml] [--json]
+anas config list    [global|<module>]     [-w WORKSPACE] [-c config.yml] [--json]
 anas config set     <module.parameter> <value> [-w WORKSPACE] [-c config.yml] [--json]
 anas config explain <module.parameter> [--json]
 anas config plan    [-w WORKSPACE] [-c config.yml] [--json]
@@ -356,7 +356,7 @@ anas config secret  list | get <KEY>   [-w WORKSPACE] [--json]
 the environment key it becomes, its default, its current value and its change
 effect. Values of parameters marked sensitive are reported as `<set>`/`<unset>`
 and never printed; `config secret get` remains the way to read a credential. It
-needs no workspace, because what can be set is a property of the casks; inside
+needs no workspace, because what can be set is a property of the modules; inside
 one it additionally fills in the current values.
 
 `set` and `explain` reject a parameter no manifest declares, naming the closest
@@ -384,7 +384,7 @@ checked: it is the escape hatch for values nothing declares.
 `setting.path` 是**配置项的点分路径**，不是文件系统路径——README 的"路径一律绝对"
 不适用于它。
 
-`explain` 不需要 workspace，只读 cask 注册表。
+`explain` 不需要 workspace，只读 module 注册表。
 
 `plan`：
 
@@ -428,18 +428,18 @@ anas admin local list [-w WORKSPACE] [--json]
 anas admin local credential CASK [ACCOUNT] [-w WORKSPACE] [--password-only | --json]
 ```
 
-`list` 是不泄密的安全库存，只返回 Cask、账号 id、用途、用户名和当前入口；不存在本地
+`list` 是不泄密的安全库存，只返回 Module、账号 id、用途、用户名和当前入口；不存在本地
 账号时返回空列表。`credential` 是显式敏感读取，同时返回入口、用户名、密码和用途。
 `--password-only` 供交互式管道使用，输出一行裸密码；它不能与 `--json` 组合。
 
 账号名称锁保存在 `.anas/local-admins.yml`，密码保存在 `secrets.generated.yml`，两者都不
-进入部署 `.env`。Runner 仅在 Cask Hook 执行期间注入明文；若 Cask 支持 hash，制品只
+进入部署 `.env`。Runner 仅在 Module Hook 执行期间注入明文；若 Module 支持 hash，制品只
 持久化 hash。
 
 | code | 退出码 | 何时 |
 | --- | --- | --- |
 | `usage` | 2 | 子命令、参数数量或 flag 组合错误 |
-| `local_admin_missing` | 4 | Cask 无本地账号，或有多个账号但未指定 id |
+| `local_admin_missing` | 4 | Module 无本地账号，或有多个账号但未指定 id |
 | `local_admin_state_unreadable` | 4 | 本地管理员库存无法读取 |
 | `secret_missing` | 4 | 库存存在，但对应随机密码缺失 |
 | `secrets_unreadable` | 4 | Secret Store 无法读取 |
@@ -456,7 +456,7 @@ anas help [--json]
 {
   "api_version": "anas.dev/cli/v1", "ok": true,
   "commands": ["init", "plan", "lock", "render", "…"],
-  "cask_abi": "anas.cask/v2"
+  "module_abi": "anas.module-hook/v1"
 }
 ```
 

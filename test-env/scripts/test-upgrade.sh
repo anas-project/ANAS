@@ -5,10 +5,11 @@ set -eu
 
 fixture=${1:-previous-patch}
 lock="$TEST_ENV_DIR/upgrades/supported/$fixture.lock.yml"
-base="$RUNTIME_DIR/upgrade-$fixture"
+base=${ANAS_UPGRADE_WORKSPACE:-$RUNTIME_DIR/upgrade-$fixture}
 marker="anas-upgrade-marker"
 log="$REPORT_DIR/upgrade-$fixture.log"
 config="$base/config.yml"
+config_fixture=${ANAS_UPGRADE_CONFIG:-$CONFIG_DIR/full.yml}
 
 if [ ! -f "$lock" ]; then
   echo "unknown upgrade fixture: $fixture" >&2
@@ -17,10 +18,15 @@ fi
 
 cd "$ROOT_DIR"
 # Data lives at <workspace>/data; there is no configurable path to rewrite.
-make_workspace "$base" "$CONFIG_DIR/full.yml"
+# The runtime fixture is injectable so a server-side run can describe an
+# isolated Docker daemon's explicit interface and gateway without weakening
+# the portable full.yml render fixture.
+make_workspace "$base" "$config_fixture"
 data_dir="$base/data"
 
-if {
+set +e
+(
+  set -e
   echo "== baseline start: $fixture =="
   run_anas apply --build -w "$base" --update-lock
 
@@ -36,7 +42,7 @@ if {
   echo "== baseline stop: $fixture =="
   run_anas stop -w "$base"
 
-  echo "== seed old cask lock: $fixture =="
+  echo "== seed old module lock: $fixture =="
   cp "$lock" "$base/config.lock.yml"
 
   echo "== upgrade start: $fixture =="
@@ -47,11 +53,11 @@ if {
 
   echo "== upgrade stop: $fixture =="
   run_anas stop -w "$base"
-} >"$log" 2>&1; then
-  cat "$log"
-else
-  status=$?
-  cat "$log"
+) >"$log" 2>&1
+status=$?
+set -e
+cat "$log"
+if [ "$status" -ne 0 ]; then
   run_anas stop -w "$base" >/dev/null 2>&1 || true
   exit "$status"
 fi

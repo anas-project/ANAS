@@ -9,8 +9,8 @@ import (
 )
 
 // Static guards against reintroducing implementation coupling. The binding
-// model only pays off if a cask can be swapped for another IAM without
-// touching any consumer, so these read the cask sources directly rather than
+// model only pays off if a module can be swapped for another IAM without
+// touching any consumer, so these read the module sources directly rather than
 // trusting review.
 
 // deploymentLevelEndpointVars are the optional convenience variables a
@@ -30,17 +30,17 @@ var deploymentLevelEndpointVars = []string{
 	"ANAS_IAM_SAML_SLO_URL",
 }
 
-func casksRoot(t *testing.T) string {
+func modulesRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	return filepath.Join(filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..")), "casks", "mods")
+	return filepath.Join(filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..")), "modules")
 }
 
-// caskSourceFiles returns the readable text files of one cask bundle.
-func caskSourceFiles(t *testing.T, dir string) map[string]string {
+// moduleSourceFiles returns the readable text files of one module bundle.
+func moduleSourceFiles(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -85,13 +85,13 @@ func iamProviderNamesInRegistry(t *testing.T) []string {
 		}
 	}
 	if len(names) == 0 {
-		t.Fatal("no IAM provider cask found; this guard would pass vacuously")
+		t.Fatal("no IAM provider module found; this guard would pass vacuously")
 	}
 	return names
 }
 
-func TestCasksDoNotReadAnotherIAMsPrivateVariables(t *testing.T) {
-	root := casksRoot(t)
+func TestModulesDoNotReadAnotherIAMsPrivateVariables(t *testing.T) {
+	root := modulesRoot(t)
 	providers := iamProviderNamesInRegistry(t)
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -101,26 +101,26 @@ func TestCasksDoNotReadAnotherIAMsPrivateVariables(t *testing.T) {
 		if !entry.IsDir() {
 			continue
 		}
-		cask := entry.Name()
-		files := caskSourceFiles(t, filepath.Join(root, cask))
+		module := entry.Name()
+		files := moduleSourceFiles(t, filepath.Join(root, module))
 		for _, provider := range providers {
-			if provider == cask {
+			if provider == module {
 				// A provider naturally owns its private variables.
 				continue
 			}
 			needle := defaultEnvPrefix(provider) + "_"
 			for path, body := range files {
 				if strings.Contains(body, needle) {
-					t.Errorf("%s references %s from cask %q; read the generic ANAS_IAM_BINDING__%s__* contract instead",
-						strings.TrimPrefix(path, root+string(filepath.Separator)), needle, provider, defaultEnvPrefix(cask))
+					t.Errorf("%s references %s from module %q; read the generic ANAS_IAM_BINDING__%s__* contract instead",
+						strings.TrimPrefix(path, root+string(filepath.Separator)), needle, provider, defaultEnvPrefix(module))
 				}
 			}
 		}
 	}
 }
 
-func TestCasksDoNotReadDeploymentLevelIAMEndpoints(t *testing.T) {
-	root := casksRoot(t)
+func TestModulesDoNotReadDeploymentLevelIAMEndpoints(t *testing.T) {
+	root := modulesRoot(t)
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestCasksDoNotReadDeploymentLevelIAMEndpoints(t *testing.T) {
 		if !entry.IsDir() {
 			continue
 		}
-		files := caskSourceFiles(t, filepath.Join(root, entry.Name()))
+		files := moduleSourceFiles(t, filepath.Join(root, entry.Name()))
 		for path, body := range files {
 			for _, banned := range deploymentLevelEndpointVars {
 				if strings.Contains(body, banned) {
@@ -155,7 +155,7 @@ func TestProtocolClientListsAreNotBanned(t *testing.T) {
 }
 
 func TestConsumerHooksDoNotBranchOnIAMImplementationNames(t *testing.T) {
-	root := casksRoot(t)
+	root := modulesRoot(t)
 	providers := iamProviderNamesInRegistry(t)
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -165,14 +165,14 @@ func TestConsumerHooksDoNotBranchOnIAMImplementationNames(t *testing.T) {
 		if !entry.IsDir() {
 			continue
 		}
-		cask := entry.Name()
-		hookDir := filepath.Join(root, cask, "hook")
+		module := entry.Name()
+		hookDir := filepath.Join(root, module, "hook")
 		if _, err := os.Stat(hookDir); err != nil {
 			continue
 		}
-		for path, body := range caskSourceFiles(t, hookDir) {
+		for path, body := range moduleSourceFiles(t, hookDir) {
 			for _, provider := range providers {
-				if provider == cask {
+				if provider == module {
 					continue
 				}
 				if strings.Contains(body, `"`+provider+`"`) {

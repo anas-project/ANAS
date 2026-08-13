@@ -122,7 +122,7 @@ chmod 600 "$workspace/config.yml"
 
 (cd "$root" && go run ./cmd/anas plan -c "$workspace/config.yml")
 
-say "the capability resolved without naming a cask"
+say "the capability resolved without naming a module"
 plan=$(cd "$root" && go run ./cmd/anas plan -c "$workspace/config.yml")
 printf '%s\n' "$plan" | grep -q '^ddns_go$' ||
   { echo "ddns_go was not pulled in by the capability" >&2; exit 1; }
@@ -137,7 +137,7 @@ printf '%s\n' "$plan" | grep -q 'dynamic dns: ddns_go (auto)' ||
 restore_needed=1
 
 deployment=$(ls -d "$workspace"/.anas/deployments/*/ | tail -1)
-compose="docker -H unix://$socket compose -f ${deployment}casks/ddns_go/docker-compose.yml --env-file ${deployment}casks/ddns_go/.env"
+compose="docker -H unix://$socket compose -f ${deployment}modules/ddns_go/docker-compose.yml --env-file ${deployment}modules/ddns_go/.env"
 
 say "the rendered configuration reached the container"
 docker -H "unix://$socket" exec "${prefix}ddns_go" \

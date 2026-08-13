@@ -12,7 +12,7 @@ import (
 // Rejecting parameters nothing declares.
 //
 // `anas config set traefik.tls_min_version quiet` used to succeed. It wrote
-// services.traefik.env.tls_min_version, rendered TRAEFIK_TLS_MIN_VERSION, and
+// modules.traefik.config.tls_min_version, rendered TRAEFIK_TLS_MIN_VERSION, and
 // nothing ever read it. The command reported success, the value was in the
 // config file where the operator could see it, and the setting simply had no
 // effect -- a failure with no symptom other than the thing not working.
@@ -47,8 +47,8 @@ func validateParameter(module, parameter string, reg map[string]Module) error {
 	if !known {
 		return nil
 	}
-	// A cask that declares nothing has nothing to check against. Treating that
-	// as "everything is wrong" would make an undeclared-but-working cask
+	// A module that declares nothing has nothing to check against. Treating that
+	// as "everything is wrong" would make an undeclared-but-working module
 	// unconfigurable, which is a worse failure than the one this prevents.
 	if len(declared) == 0 {
 		return nil
@@ -126,13 +126,13 @@ func min(a, b int) int {
 	return b
 }
 
-// validateParameterValue checks a value against what its cask declares it
+// validateParameterValue checks a value against what its module declares it
 // accepts. It runs when the value is set, which is the only moment the person
 // who chose it is still present to be told.
 //
 // An undeclared parameter accepts anything, as everything did before types
 // existed. That is deliberate: making a declaration mandatory would turn every
-// cask that has not been annotated yet into one that cannot be configured.
+// module that has not been annotated yet into one that cannot be configured.
 func validateParameterValue(module, parameter, value string, reg map[string]Module) error {
 	declared, ok := reg[module]
 	if !ok {

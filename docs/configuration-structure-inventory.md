@@ -1,15 +1,15 @@
 # `config.yml` 结构化配置与环境变量清单
 
 本文回答两个问题：哪些设置已经有 `config.yml` 的结构化入口，哪些设置目前只能写入
-顶层 `env:`。清单按 2026-08-12 的当前工作树统计；cask 增删参数后应重新运行文末命令，
+顶层 `env:`。清单按 2026-08-12 的当前工作树统计；module 增删参数后应重新运行文末命令，
 不要把本文中的数字当成固定 ABI。
 
 ## 结论
 
 - `anas config list --json` 当前登记 **124** 个可设置参数：15 个 `global` 参数、109 个
-  cask 参数。
-- 109 个 cask 参数中，105 个保存到 `services.<cask>.env.<parameter>`；4 个
-  `samba_fs` 参数虽然已经在 cask manifest 中声明并拥有默认值、类型和变更策略，
+  module 参数。
+- 109 个 module 参数中，105 个保存到 `modules.<module>.config.<parameter>`；4 个
+  `samba_fs` 参数虽然已经在 module manifest 中声明并拥有默认值、类型和变更策略，
   但为了导出裸环境变量，YAML 地址仍是 `env.<KEY>`。
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback`、`services` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
@@ -21,47 +21,46 @@
 
 1. **原生结构化字段**：Go YAML schema 直接解析、校验的部署语义；
 2. **manifest 声明参数**：值仍会变成环境变量，但参数名、默认值、类型、敏感性和变更
-   策略由 cask 声明，`config list/set/explain/plan` 能识别它。它不等同于任意 raw env。
+   策略由 module 声明，`config list/set/explain/plan` 能识别它。它不等同于任意 raw env。
 
 ## 原生结构化字段
 
 | YAML 路径 | 说明 | 状态 |
 | --- | --- | --- |
-| `modules[]` | 请求启用的 cask | 已使用 |
+| `modules.<module>` | 请求启用的 module 及其配置 | 已使用 |
 | `global.*` | 15 个部署级参数，详见下一节 | 已使用 |
 | `administration.bootstrap.username` | 引导管理员用户名 | 已使用 |
 | `administration.bootstrap.display_name` | 引导管理员显示名 | schema 已接收，当前尚未下发 |
 | `administration.bootstrap.email` | 引导管理员邮箱 | schema 已接收，当前尚未下发 |
 | `administration.bootstrap.roles[]` | 引导管理员角色 | schema 已接收，当前尚未下发 |
-| `administration.local_accounts.username_template` | 本地管理员用户名模板，必须包含 `{cask}` | 已使用 |
-| `administration.local_accounts.password_policy` | 当前只允许 `generated_per_cask` | 已使用 |
+| `administration.local_accounts.username_template` | 本地管理员用户名模板，必须包含 `{module}` | 已使用 |
+| `administration.local_accounts.password_policy` | 当前只允许 `generated_per_module` | 已使用 |
 | `administration.local_accounts.password_length` | 生成密码长度，最小 16 | 已使用 |
 | `identity.directory.provider` | 目录 Provider；当前只接受 `samba_dc` | 已使用 |
 | `identity.iam.provider` | IAM Provider | 已使用 |
 | `identity.iam.default_protocol` | IAM 默认协议 | 已使用 |
-| `iam.provider`、`iam.default_protocol` | 上述 IAM 字段的旧顶层别名 | 兼容入口，建议迁移到 `identity.iam` |
-| `dynamic_dns.provider` | 管理部署自身 DNS 记录的 cask 或 `auto` | 已使用 |
+| `dynamic_dns.provider` | 管理部署自身 DNS 记录的 module 或 `auto` | 已使用 |
 | `dynamic_dns.dns_provider` | DNS 厂商 | 已使用 |
 | `rollback.snapshot.backend` | 快照后端 | 已使用 |
 | `rollback.snapshot.source` | 快照源 | 已使用 |
 | `rollback.snapshot.root` | 快照根路径 | 已使用 |
 | `rollback.snapshot.keep_auto` | 自动快照保留数 | 已使用 |
 | `secrets.<name>` | 用户提供的敏感值；按消费者声明分发 | 已使用，键集合动态 |
-| `services.<cask>.enabled` | 启用或禁用服务 | 已使用 |
-| `services.<cask>.depends_on[]` | 用户追加的依赖 | 已使用 |
-| `services.<cask>.identity.login_protocol` | `auto`、`oidc` 或 `saml` | 已使用 |
-| `services.<cask>.administration.local_accounts.<id>.username` | 覆盖 cask 本地账户用户名 | 已使用，账户 ID 动态 |
-| `services.<cask>.env.<parameter>` | manifest 声明的 cask 参数 | 已使用，见下一节 |
+| `modules.<module>.enabled` | 启用或禁用服务 | 已使用 |
+| `modules.<module>.depends_on[]` | 用户追加的依赖 | 已使用 |
+| `modules.<module>.identity.login_protocol` | `auto`、`oidc` 或 `saml` | 已使用 |
+| `modules.<module>.administration.local_accounts.<id>.username` | 覆盖 module 本地账户用户名 | 已使用，账户 ID 动态 |
+| `modules.<module>.config.<parameter>` | manifest 声明的 module 参数 | 已使用，见下一节 |
 | `env.<KEY>` | 原始环境变量逃生口 | 开放 map，不做键集合校验 |
 
-`config.Load` 使用 `KnownFields(true)`：除 `secrets`、`services` 和 `env` 这些有意开放的
+`config.Load` 使用 `KnownFields(true)`：除 `secrets`、`modules` 和 `env` 这些有意开放的
 map 外，拼错结构化字段会直接报错，不会静默忽略。
 
 ## 已声明的 124 个参数
 
 表中参数都能被 `anas config list` 列出，也能通过 `anas config set` 地址设置。除特别说明
-外，全局参数写为 `global.<parameter>`，cask 参数写入
-`services.<cask>.env.<parameter>`。
+外，全局参数写为 `global.<parameter>`，module 参数写入
+`modules.<module>.config.<parameter>`。
 
 | 所有者 | 数量 | 参数 |
 | --- | ---: | --- |
@@ -99,7 +98,7 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。
 
 ## 当前只能使用顶层 `env:` 的用户覆盖项
 
-以下键由仓库明确消费，但没有 global 字段或 cask manifest 参数，因此当前只能写成
+以下键由仓库明确消费，但没有 global 字段或 module manifest 参数，因此当前只能写成
 `env.<KEY>`。这些项没有 manifest 级类型校验、敏感标记或变更策略，`config list` 也不会
 主动列出它们。
 
@@ -123,24 +122,24 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。
 | `LAM_DOWNLOAD_URL` | 直接覆盖 LAM 安装包下载地址 |
 
 `global.chinese_speedup: true` 已经结构化；启用后会为前 11 个通用键填入国内默认值，
-而顶层 `env:` 中的显式值优先。三个 cask 专用覆盖项不由该开关直接生成。
+而顶层 `env:` 中的显式值优先。三个 module 专用覆盖项不由该开关直接生成。
 
 ### 宿主构建与 Compose 集成
 
 | 键 | 用途 |
 | --- | --- |
-| `DOCKER_BUILD_NETWORK` | cask 镜像构建阶段使用的 Docker 网络，默认 `default` |
+| `DOCKER_BUILD_NETWORK` | module 镜像构建阶段使用的 Docker 网络，默认 `default` |
 | `DOCKER_SOCKET_PATH` | Traefik 挂载的宿主 Docker socket，默认 `/var/run/docker.sock` |
 
 这些键属于高级宿主集成项。若它们需要稳定的校验和生命周期语义，应提升为 global 或
-cask manifest 参数，而不是继续扩充 raw env 清单。
+module manifest 参数，而不是继续扩充 raw env 清单。
 
 ## 不应当手工配置的环境变量
 
-Hook 输出、生成 Secret、工作区路径、宿主网络探测结果和 `ANAS_*` 跨 cask 契约也会
+Hook 输出、生成 Secret、工作区路径、宿主网络探测结果和 `ANAS_*` 跨 module 契约也会
 出现在渲染后的 `.env`，但它们不是“只能用 env 配置”的用户参数。例如 `DATA_PATH`、
 `USER_DATA_PATH`、`LOCAL_DNS_SERVER`、`ANAS_TLS_*`、`ANAS_IAM_*`、`POSTGRES_HOST` 都由
-runner 或 cask 计算。把这类键写进顶层 `env:` 可能覆盖内部结果，但不构成受支持的配置
+runner 或 module 计算。把这类键写进顶层 `env:` 可能覆盖内部结果，但不构成受支持的配置
 接口，也不应纳入 raw-only 用户清单。
 
 用户提供的凭据应优先写入 `secrets.<name>`；不要因为最终载体是环境变量，就把 Token、
@@ -172,8 +171,8 @@ go run ./cmd/anas config list --json \
 
 维护规则：
 
-1. 新增普通用户配置时，优先加入 `global` schema 或对应 cask 的 `config` 声明；
+1. 新增普通用户配置时，优先加入 `global` schema 或对应 module 的 `config` 声明；
 2. 新增 raw-only 键时同步更新本文，并说明为什么暂不结构化；
 3. 新增、删除或重命名 manifest 参数后，重新生成统计并更新参数表；
-4. 不把 runner/cask 推导变量列为用户配置；
+4. 不把 runner/module 推导变量列为用户配置；
 5. 凭据走 `secrets` 或 manifest 中标记 `sensitive` 的参数。

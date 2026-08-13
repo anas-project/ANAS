@@ -24,7 +24,7 @@ ANAS 应允许部署声明"把我自己的 A/AAAA 记录保持最新"，而不�
 
 ## 2. 用户配置
 
-最小形态是两行，不需要在 `modules` 里列任何 DDNS cask：
+最小形态是两行，不需要在 `modules` 里列任何 DDNS module：
 
 ```yaml
 dynamic_dns:
@@ -50,16 +50,16 @@ dynamic dns: ddns_go (auto)
 ### 2.1 每个引擎独立选厂商
 
 ```yaml
-services:
+modules:
   lego:
-    env:
+    config:
       dns_provider: route53          # 证书走 Route53
   ddns_go:
-    env:
+    config:
       dns_provider: tencentcloud     # 动态 DNS 走腾讯云
 ```
 
-`services.<cask>.env.dns_provider` 优先于 `dynamic_dns.dns_provider`。所以可以让
+`modules.<module>.config.dns_provider` 优先于 `dynamic_dns.dns_provider`。所以可以让
 声明的记录在一家厂商，同时手工再跑一个 updater 在另一家。
 
 ### 2.2 凭据的两种拼法
@@ -72,7 +72,7 @@ secrets:
   tencentcloud_secret_id: ...
   tencentcloud_secret_key: ...
 
-  # 独占：只有这个 cask 能读到
+  # 独占：只有这个 module 能读到
   ddns_go_namecheap_ddns_password: ...
   lego_namecheap_api_key: ...
 ```
@@ -107,16 +107,16 @@ secrets:
 `name_com`、`nsone`，或 lego 的 `namedotcom`、`ns1`，都能解析到同一个平台；
 连字符和下划线等价。
 
-### 3.2 投影到 cask bundle
+### 3.2 投影到 module bundle
 
-Cask hook 是**自包含程序**，会被复制到本仓库之外分发，不能 import 这个包。所以
+Module hook 是**自包含程序**，会被复制到本仓库之外分发，不能 import 这个包。所以
 [`cmd/gen-dns-registry`](../../cmd/gen-dns-registry/main.go) 把每个 engine 的切片投影
-成一个自包含 Go 文件写进对应 cask：
+成一个自包含 Go 文件写进对应 module：
 
 ```text
-casks/mods/lego/hook/dns_registry_gen.go          仅含 lego 能用的平台
-casks/mods/ddns_go/hook/dns_registry_gen.go       仅含 ddns-go 能用的平台
-casks/mods/ddns_updater/hook/dns_registry_gen.go  仅含 ddns-updater 能用的平台
+modules/lego/hook/dns_registry_gen.go          仅含 lego 能用的平台
+modules/ddns_go/hook/dns_registry_gen.go       仅含 ddns-go 能用的平台
+modules/ddns_updater/hook/dns_registry_gen.go  仅含 ddns-updater 能用的平台
 ```
 
 改完 `providers.yml` 后运行：
@@ -169,11 +169,11 @@ Runner 在任何 hook 运行之前，把用户写的凭据归一化到每个引�
   → LEGO_TENCENTCLOUD_SECRET_ID      (owner=lego)
   → DDNS_GO_TENCENTCLOUD_SECRET_ID   (owner=ddns_go)
 
-canonical 拼法本身不下发给任何 cask
+canonical 拼法本身不下发给任何 module
 ```
 
 这样做的关键收益是**隔离不需要新机制**：`envScopeFor` 的前缀所有权规则本来就管着
-每个 cask 自己的变量，`DDNS_GO_` 开头的键天然到不了 lego。所以 DNS 凭据的
+每个 module 自己的变量，`DDNS_GO_` 开头的键天然到不了 lego。所以 DNS 凭据的
 `config.consumes` 恒为空。
 
 物化出的凭据同时被标记为 sensitive。没有这一步，Traefik 会因为依赖 lego 而通过
@@ -183,9 +183,9 @@ canonical 拼法本身不下发给任何 cask
 校验也在 hook 之前：厂商名打错、凭据只配了一半，是 `plan` 阶段的配置错误，不是容器
 反复重启之后才被发现的认证失败。
 
-### 3.5 cask 命名的硬约束
+### 3.5 module 命名的硬约束
 
-`isOwn` 用 `strings.HasPrefix` 判断前缀所有权。如果 updater 的 cask 名叫 `ddns`，
+`isOwn` 用 `strings.HasPrefix` 判断前缀所有权。如果 updater 的 module 名叫 `ddns`，
 它的前缀 `DDNS_` 是 `DDNS_GO_*` 的前缀，**它会拿到 ddns_go 的全部凭据**。
 
 这就是把 `ddns` 重命名为 `ddns_updater` 的原因——不是整理，是这套隔离成立的前提。
@@ -195,8 +195,8 @@ canonical 拼法本身不下发给任何 cask
 
 ### 4.1 部署级能力
 
-与 IAM 不同，动态 DNS **没有消费方 cask**：没有任何 cask 声明"我需要自己的 A 记录"，
-是部署整体需要。所以没有依赖边可以解析它，选中的 cask 被作为模块图的**根**注入
+与 IAM 不同，动态 DNS **没有消费方 module**：没有任何 module 声明"我需要自己的 A 记录"，
+是部署整体需要。所以没有依赖边可以解析它，选中的 module 被作为模块图的**根**注入
 （[`resolveOrder`](../../internal/runner/runner.go)）。
 
 绑定记在锁文件的保留槽位下：
@@ -207,7 +207,7 @@ capability_bindings:
     dynamic_dns: ddns_go
 ```
 
-`@` 不可能出现在 cask 名里，所以不会和真实模块撞。
+`@` 不可能出现在 module 名里，所以不会和真实模块撞。
 
 ### 4.2 auto 的解析顺序
 
@@ -216,7 +216,7 @@ capability_bindings:
 2. 用户已在 `modules` 里列出的实现优先——不平白给部署多加一个容器。
 3. 固定偏好顺序 `ddns_go → ddns_updater`。
 
-顺序写死在代码里而不是靠目录枚举，否则新增一个 cask 就可能改变已有部署的解析结果。
+顺序写死在代码里而不是靠目录枚举，否则新增一个 module 就可能改变已有部署的解析结果。
 `ddns_go` 在前的理由是它会探测宿主 IPv6，而这正是家用部署真正需要的场景。
 
 锁定的实现不再支持所选厂商时会重新解析，而不是硬保留。
@@ -259,19 +259,19 @@ warning: more than one dynamic DNS updater maintains these records:
 两边的默认都是"问外部服务"，理由相同：一块网卡上常有同族的多个地址——IPv6 临时
 隐私地址与稳定地址并存、ULA 与全局地址并存——只有外部观察者能说清哪个真正可达。
 
-具体配置见 §8 和各 cask 的 README。
+具体配置见 §8 和各 module 的 README。
 
 ### 5.1 宿主 IPv6 探测在 runner
 
 Runner 的 `applyHostNetwork` 导出 `HOST_IPV6` / `HOST_IPV6_INTERFACE` /
-`HOST_HAS_IPV6`，两个 DDNS cask 都读它而不是各自实现一遍。这是关于宿主的事实，
-不属于任何一个 cask。
+`HOST_HAS_IPV6`，两个 DDNS module 都读它而不是各自实现一遍。这是关于宿主的事实，
+不属于任何一个 module。
 
 探测**排除 ULA（`fc00::/7`）**：Go 的 `IsGlobalUnicast()` 对 ULA 也返回 true，
 但把 ULA 写进 AAAA 记录会得到一个外部客户端连不上的地址。
 
 这只是关于**宿主**的判断。它不说明 bridge 网络里的容器能不能走 IPv6 出站——那是
-每个 cask 自己回答的另一个问题。
+每个 module 自己回答的另一个问题。
 
 ## 6. Web 界面与认证
 
@@ -317,7 +317,7 @@ ddns-go 的公网访问检查针对 `r.RemoteAddr`——直连对端。对代理
 
 `ddns_go` 用 host 网络才能看到宿主 IPv6，但 Traefik 的 Docker provider 看不见 host
 网络的容器。解决办法是 Traefik 的**声明式路由契约**（见
-[traefik/README.md](../../casks/mods/traefik/README.md)）：
+[traefik/README.md](../../modules/traefik/README.md)）：
 
 ```text
 ANAS_TRAEFIK_ROUTE__<NAME>__RULE / __URL / __MIDDLEWARES / __ENTRYPOINTS / __TLS
@@ -333,7 +333,7 @@ Web UI 也写同一个文件。两种简单做法都不行——每次覆盖会�
 干脆不写则声明的配置只是个建议。
 
 所以容器启动时、ddns-go 运行之前，由
-[`anas-ddns-go-reconcile`](../../casks/mods/ddns_go/ddns-go/reconcile/) 合并。
+[`anas-ddns-go-reconcile`](../../modules/ddns_go/ddns-go/reconcile/) 合并。
 
 **用 `yaml.Node` AST 合并而不是结构体往返**：后者会静默删掉它不认识的所有字段，
 上游哪天新增一个就会在下次部署时被抹掉。

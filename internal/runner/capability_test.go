@@ -9,27 +9,27 @@ import (
 	"github.com/anas-project/ANAS/internal/config"
 )
 
-// Fixture casks for IAM binding. Real casks are still on requires_one for SSO,
+// Fixture modules for IAM binding. Real modules are still on requires_one for SSO,
 // so these stand in for a migrated provider and its consumers.
 const (
-	fixtureCoreCask = `api_version: anas.dev/v1
-kind: Cask
+	fixtureCoreModule = `api_version: anas.module/v1
+kind: Module
 name: core
 version: 0.0.0
 revision: 1
 abi:
-  supports: [anas.cask/v2]
+  supports: [anas.module-hook/v1]
 runtime:
   type: builtin
 `
 	// A qualified IAM provider: both protocols, as admission requires.
-	fixtureProviderCask = `api_version: anas.dev/v1
-kind: Cask
+	fixtureProviderModule = `api_version: anas.module/v1
+kind: Module
 name: %s
 version: 1.0.0
 revision: 1
 abi:
-  supports: [anas.cask/v2]
+  supports: [anas.module-hook/v1]
 runtime:
   type: builtin
 capabilities:
@@ -38,13 +38,13 @@ capabilities:
       interfaces: [oidc, saml]
 `
 	// A consumer that speaks both protocols and prefers OIDC.
-	fixtureDualConsumerCask = `api_version: anas.dev/v1
-kind: Cask
+	fixtureDualConsumerModule = `api_version: anas.module/v1
+kind: Module
 name: nextcloud
 version: 1.0.0
 revision: 1
 abi:
-  supports: [anas.cask/v2]
+  supports: [anas.module-hook/v1]
 runtime:
   type: builtin
 dependencies:
@@ -59,13 +59,13 @@ config:
     iam_protocol: auto
 `
 	// A consumer that only speaks OIDC.
-	fixtureOIDCConsumerCask = `api_version: anas.dev/v1
-kind: Cask
+	fixtureOIDCConsumerModule = `api_version: anas.module/v1
+kind: Module
 name: netbird
 version: 1.0.0
 revision: 1
 abi:
-  supports: [anas.cask/v2]
+  supports: [anas.module-hook/v1]
 runtime:
   type: builtin
 dependencies:
@@ -81,8 +81,8 @@ config:
 `
 )
 
-// writeCasks materializes cask.yml files and loads them as a registry.
-func writeCasks(t *testing.T, manifests map[string]string) map[string]Module {
+// writeModules materializes module.yml files and loads them as a registry.
+func writeModules(t *testing.T, manifests map[string]string) map[string]Module {
 	t.Helper()
 	root := t.TempDir()
 	for name, body := range manifests {
@@ -90,7 +90,7 @@ func writeCasks(t *testing.T, manifests map[string]string) map[string]Module {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "cask.yml"), []byte(body), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "module.yml"), []byte(body), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -104,11 +104,11 @@ func writeCasks(t *testing.T, manifests map[string]string) map[string]Module {
 // iamFixtureRegistry is the common llng + nextcloud + netbird arrangement.
 func iamFixtureRegistry(t *testing.T) map[string]Module {
 	t.Helper()
-	return writeCasks(t, map[string]string{
-		"core":      fixtureCoreCask,
-		"llng":      strings.Replace(fixtureProviderCask, "%s", "llng", 1),
-		"nextcloud": fixtureDualConsumerCask,
-		"netbird":   fixtureOIDCConsumerCask,
+	return writeModules(t, map[string]string{
+		"core":      fixtureCoreModule,
+		"llng":      strings.Replace(fixtureProviderModule, "%s", "llng", 1),
+		"nextcloud": fixtureDualConsumerModule,
+		"netbird":   fixtureOIDCConsumerModule,
 	})
 }
 
@@ -118,28 +118,28 @@ func newIAMApp(reg map[string]Module, cfg *config.File) *app {
 		reg:              reg,
 		env:              map[string]string{},
 		envOwner:         map[string]string{},
-		lock:             &caskLock{Bindings: map[string]map[string]string{}},
+		lock:             &moduleLock{Bindings: map[string]map[string]string{}},
 		resolvedBindings: map[string]map[string]string{},
 	}
 	a.applyModuleDefaults()
 	return a
 }
 
-func iamConfig(modules []string, provider, defaultProtocol string, services map[string]config.Service) *config.File {
+func iamConfig(modules []string, provider, defaultProtocol string, services map[string]config.ModuleConfig) *config.File {
 	if services == nil {
-		services = map[string]config.Service{}
+		services = map[string]config.ModuleConfig{}
 	}
-	return &config.File{
-		Modules:  modules,
-		IAM:      config.IAM{Provider: provider, DefaultProtocol: defaultProtocol},
-		Services: services,
+	selection := config.NewModuleSelection(modules...)
+	for name, module := range services {
+		selection.Values[name] = module
 	}
+	return &config.File{Modules: selection, IAM: config.IAM{Provider: provider, DefaultProtocol: defaultProtocol}}
 }
 
 func TestIAMAutoUsesManifestPreference(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud"}, "llng", "", nil))
-	order, err := a.resolveOrder(a.cfg.Modules)
+	order, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,11 +153,11 @@ func TestIAMAutoUsesManifestPreference(t *testing.T) {
 
 func TestIAMExplicitProtocolWins(t *testing.T) {
 	reg := iamFixtureRegistry(t)
-	a := newIAMApp(reg, iamConfig([]string{"nextcloud"}, "llng", "", map[string]config.Service{
-		"nextcloud": {Env: map[string]any{"iam_protocol": "saml"}},
+	a := newIAMApp(reg, iamConfig([]string{"nextcloud"}, "llng", "", map[string]config.ModuleConfig{
+		"nextcloud": {Config: map[string]any{"iam_protocol": "saml"}},
 	}))
 	a.env["NEXTCLOUD_IAM_PROTOCOL"] = "saml"
-	if _, err := a.resolveOrder(a.cfg.Modules); err != nil {
+	if _, err := a.resolveOrder(a.cfg.Modules.Order); err != nil {
 		t.Fatal(err)
 	}
 	if got := a.iamBindings["nextcloud"]; got != interfaceSAML {
@@ -168,7 +168,7 @@ func TestIAMExplicitProtocolWins(t *testing.T) {
 func TestIAMDefaultProtocolAppliesOnlyWhereSupported(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud", "netbird"}, "llng", "saml", nil))
-	if _, err := a.resolveOrder(a.cfg.Modules); err != nil {
+	if _, err := a.resolveOrder(a.cfg.Modules.Order); err != nil {
 		t.Fatal(err)
 	}
 	if got := a.iamBindings["nextcloud"]; got != interfaceSAML {
@@ -184,7 +184,7 @@ func TestIAMDefaultProtocolAppliesOnlyWhereSupported(t *testing.T) {
 func TestIAMRejectsUnknownDefaultProtocol(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud"}, "llng", "ldap", nil))
-	_, err := a.resolveOrder(a.cfg.Modules)
+	_, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err == nil || !strings.Contains(err.Error(), "iam.default_protocol") {
 		t.Fatalf("error = %v, want rejection of an unknown default protocol", err)
 	}
@@ -194,7 +194,7 @@ func TestIAMExplicitProtocolOutsideAnyOfFails(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"netbird"}, "llng", "", nil))
 	a.env["NETBIRD_IAM_PROTOCOL"] = "saml"
-	_, err := a.resolveOrder(a.cfg.Modules)
+	_, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err == nil || !strings.Contains(err.Error(), "netbird supports [oidc]") {
 		t.Fatalf("error = %v, want netbird to reject saml", err)
 	}
@@ -205,7 +205,7 @@ func TestIAMProviderRequiredAndNeverAutoSelected(t *testing.T) {
 	// llng is the only qualified provider; the runner must still refuse to
 	// pick it on the user's behalf.
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud"}, "", "", nil))
-	_, err := a.resolveOrder(a.cfg.Modules)
+	_, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err == nil || !strings.Contains(err.Error(), "iam.provider is not set") {
 		t.Fatalf("error = %v, want a missing iam.provider error", err)
 	}
@@ -217,7 +217,7 @@ func TestIAMProviderRequiredAndNeverAutoSelected(t *testing.T) {
 func TestIAMProviderMustExist(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud"}, "foo", "", nil))
-	_, err := a.resolveOrder(a.cfg.Modules)
+	_, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err == nil || !strings.Contains(err.Error(), `iam.provider "foo"`) {
 		t.Fatalf("error = %v, want an unknown provider error", err)
 	}
@@ -226,9 +226,9 @@ func TestIAMProviderMustExist(t *testing.T) {
 func TestIAMProviderMustProvideCapability(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud"}, "netbird", "", nil))
-	_, err := a.resolveOrder(a.cfg.Modules)
+	_, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err == nil || !strings.Contains(err.Error(), "does not provide capability") {
-		t.Fatalf("error = %v, want a non-provider cask to be rejected", err)
+		t.Fatalf("error = %v, want a non-provider module to be rejected", err)
 	}
 	if !strings.Contains(err.Error(), "llng[oidc,saml]") {
 		t.Fatalf("error = %v, want the message to describe available providers", err)
@@ -238,24 +238,24 @@ func TestIAMProviderMustProvideCapability(t *testing.T) {
 func TestIAMProviderMustBeEnabled(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	disabled := false
-	a := newIAMApp(reg, iamConfig([]string{"nextcloud"}, "llng", "", map[string]config.Service{
+	a := newIAMApp(reg, iamConfig([]string{"nextcloud"}, "llng", "", map[string]config.ModuleConfig{
 		"llng": {Enabled: &disabled},
 	}))
-	_, err := a.resolveOrder(a.cfg.Modules)
+	_, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("error = %v, want a disabled provider to be rejected", err)
 	}
 }
 
 func TestTwoActiveIAMsFail(t *testing.T) {
-	reg := writeCasks(t, map[string]string{
-		"core":      fixtureCoreCask,
-		"llng":      strings.Replace(fixtureProviderCask, "%s", "llng", 1),
-		"authentik": strings.Replace(fixtureProviderCask, "%s", "authentik", 1),
-		"nextcloud": fixtureDualConsumerCask,
+	reg := writeModules(t, map[string]string{
+		"core":      fixtureCoreModule,
+		"llng":      strings.Replace(fixtureProviderModule, "%s", "llng", 1),
+		"authentik": strings.Replace(fixtureProviderModule, "%s", "authentik", 1),
+		"nextcloud": fixtureDualConsumerModule,
 	})
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud", "authentik"}, "llng", "", nil))
-	_, err := a.resolveOrder(a.cfg.Modules)
+	_, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err == nil || !strings.Contains(err.Error(), "only one IAM") {
 		t.Fatalf("error = %v, want two active IAMs to be rejected", err)
 	}
@@ -265,7 +265,7 @@ func TestIAMProviderNotStartedWithoutConsumer(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	// iam.provider is set but nothing consumes the capability.
 	a := newIAMApp(reg, iamConfig([]string{"core"}, "llng", "", nil))
-	order, err := a.resolveOrder(a.cfg.Modules)
+	order, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestIAMEnvContractAndClientListPartition(t *testing.T) {
 	reg["netbird"] = netbird
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud", "netbird"}, "llng", "", nil))
 	a.env["NEXTCLOUD_IAM_PROTOCOL"] = "saml"
-	if _, err := a.resolveOrder(a.cfg.Modules); err != nil {
+	if _, err := a.resolveOrder(a.cfg.Modules.Order); err != nil {
 		t.Fatal(err)
 	}
 	if got := a.env[envIAMProvider]; got != "llng" {
@@ -343,7 +343,7 @@ func TestIAMEnvContractAndClientListPartition(t *testing.T) {
 func TestIAMEndpointValidationCoversBoundProtocolsOnly(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"netbird"}, "llng", "", nil))
-	if _, err := a.resolveOrder(a.cfg.Modules); err != nil {
+	if _, err := a.resolveOrder(a.cfg.Modules.Order); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.validateIAMEndpoints(); err == nil ||
@@ -362,7 +362,7 @@ func TestIAMEndpointValidationCoversBoundProtocolsOnly(t *testing.T) {
 func TestIAMEndpointsAreResolvedPerConsumer(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud", "netbird"}, "llng", "", nil))
-	if _, err := a.resolveOrder(a.cfg.Modules); err != nil {
+	if _, err := a.resolveOrder(a.cfg.Modules.Order); err != nil {
 		t.Fatal(err)
 	}
 	// Stand in for a provider that mints a different endpoint per
@@ -388,13 +388,13 @@ func TestIAMBindingIsRecordedInLock(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud", "netbird"}, "llng", "", nil))
 	a.env["NEXTCLOUD_IAM_PROTOCOL"] = "saml"
-	order, err := a.resolveOrder(a.cfg.Modules)
+	order, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err != nil {
 		t.Fatal(err)
 	}
 	a.order = order
-	lock := &caskLock{Bindings: map[string]map[string]string{}}
-	if err := a.updateCaskLock(lock, true); err != nil {
+	lock := &moduleLock{Bindings: map[string]map[string]string{}}
+	if err := a.updateModuleLock(lock, true); err != nil {
 		t.Fatal(err)
 	}
 	if lock.IAM == nil || lock.IAM.Provider != "llng" {
@@ -416,13 +416,13 @@ func TestIAMProviderMustDeclareBothProtocols(t *testing.T) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `api_version: anas.dev/v1
-kind: Cask
+	manifest := `api_version: anas.module/v1
+kind: Module
 name: authelia
 version: 1.0.0
 revision: 1
 abi:
-  supports: [anas.cask/v2]
+  supports: [anas.module-hook/v1]
 runtime:
   type: builtin
 capabilities:
@@ -430,7 +430,7 @@ capabilities:
     - name: iam
       interfaces: [oidc]
 `
-	if err := os.WriteFile(filepath.Join(dir, "cask.yml"), []byte(manifest), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "module.yml"), []byte(manifest), 0600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := loadModuleManifest(dir, "authelia")
@@ -497,7 +497,7 @@ func TestCapabilityManifestValidation(t *testing.T) {
 			want: "no interface_selected_by",
 		},
 		{
-			// A cask must not be able to pick its own provider: that would
+			// A module must not be able to pick its own provider: that would
 			// mean two IAMs and therefore two logins.
 			name: "provider selection field",
 			manifest: `dependencies:
@@ -517,17 +517,17 @@ func TestCapabilityManifestValidation(t *testing.T) {
 			if err := os.MkdirAll(dir, 0700); err != nil {
 				t.Fatal(err)
 			}
-			body := `api_version: anas.dev/v1
-kind: Cask
+			body := `api_version: anas.module/v1
+kind: Module
 name: example
 version: 1.0.0
 revision: 1
 abi:
-  supports: [anas.cask/v2]
+  supports: [anas.module-hook/v1]
 runtime:
   type: builtin
 ` + tc.manifest
-			if err := os.WriteFile(filepath.Join(dir, "cask.yml"), []byte(body), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "module.yml"), []byte(body), 0600); err != nil {
 				t.Fatal(err)
 			}
 			_, err := loadModuleManifest(dir, "example")
@@ -542,7 +542,7 @@ func TestIAMPlanSummaryReportsBindings(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud", "netbird"}, "llng", "", nil))
 	a.env["NEXTCLOUD_IAM_PROTOCOL"] = "saml"
-	if _, err := a.resolveOrder(a.cfg.Modules); err != nil {
+	if _, err := a.resolveOrder(a.cfg.Modules.Order); err != nil {
 		t.Fatal(err)
 	}
 	summary := a.iamPlanSummary()
@@ -552,7 +552,7 @@ func TestIAMPlanSummaryReportsBindings(t *testing.T) {
 		}
 	}
 	empty := newIAMApp(reg, iamConfig([]string{"core"}, "llng", "", nil))
-	if _, err := empty.resolveOrder(empty.cfg.Modules); err != nil {
+	if _, err := empty.resolveOrder(empty.cfg.Modules.Order); err != nil {
 		t.Fatal(err)
 	}
 	if got := empty.iamPlanSummary(); got != "" {

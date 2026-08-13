@@ -1,18 +1,18 @@
-# Parameters that belong to the deployment rather than to any cask.
+# Parameters that belong to the deployment rather than to any module.
 #
 # This is a schema, not a bundle. It has no version, no digest and no ABI,
 # because nothing ships it: it is compiled into the runner, which is the only
-# thing that reads it. It used to be the config block of a "core" cask, which
+# thing that reads it. It used to be the config block of a "core" module, which
 # gave these parameters a version number nobody could bump, a hook directory
 # that produced nothing, and an owner name that every scoping rule had to
 # special-case alongside the real global scope.
 #
-# Every key here is published with global ownership, so every cask sees it.
+# Every key here is published with global ownership, so every module sees it.
 api_version: anas.dev/v1
 kind: GlobalConfig
 config:
   # default_service_root_password is deliberately absent: the runner generates
-  # a per-cask password when the config omits it, so requiring it could never
+  # a per-module password when the config omits it, so requiring it could never
   # fail and saying otherwise was misleading.
   required:
     - base_domain

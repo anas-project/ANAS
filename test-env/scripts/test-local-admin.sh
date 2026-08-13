@@ -23,7 +23,7 @@ make_workspace "$ws" "$config"
   echo "== render creates one managed local credential =="
   run_anas render -w "$ws" --update-lock
   deployment=$(find "$(ws_deployments "$ws")" -mindepth 1 -maxdepth 1 -type d | sort | tail -1)
-  env_file="$deployment/casks/ddns_go/.env"
+  env_file="$deployment/modules/ddns_go/.env"
   grep -q '^DDNS_GO_LOCAL_ADMIN_USERNAME=admin_ddns_go$' "$env_file"
   grep -q '^DDNS_GO_PASSWORD_HASH=' "$env_file"
   if grep -q '^DDNS_GO_LOCAL_ADMIN_PASSWORD=' "$env_file"; then

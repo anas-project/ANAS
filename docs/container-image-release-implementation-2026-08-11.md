@@ -1,4 +1,4 @@
-# Cask 容器镜像发布实施记录（2026-08-11）
+# Module 容器镜像发布实施记录（2026-08-11）
 
 ## 目标与结论
 
@@ -40,12 +40,12 @@ git remote set-url origin git@github.com:anas-project/ANAS.git
 
 ## 仓库与运行时契约
 
-所有 `casks/mods/*/cask.yml` 都必须声明正整数 `revision`。该字段已经进入：
+所有 `modules/*/module.yml` 都必须声明正整数 `revision`。该字段已经进入：
 
-- cask manifest 解析和校验；
-- cask lock 文件与 `anas lock --json` 输出；
+- module manifest 解析和校验；
+- module lock 文件与 `anas lock --json` 输出；
 - frozen deployment manifest；
-- snapshot 中的 cask 发布身份；
+- snapshot 中的 module 发布身份；
 - 升级、降级和数据兼容性判定。
 
 runner 比较发布版本时先按 SemVer 比较 `version`，相同后再比较数字 `revision`。同一
@@ -57,11 +57,11 @@ runner 比较发布版本时先按 SemVer 比较 `version`，相同后再比较�
 
 ## 镜像清单
 
-`.github/images.json` 是 Dockerfile 与发布镜像的唯一登记表。本次登记 11 个 cask、12 个
-镜像，其中 `samba_dc` 的主镜像和 anchor worker 镜像作为同一 cask 成组发布。
+`.github/images.json` 是 Dockerfile 与发布镜像的唯一登记表。本次登记 11 个 module、12 个
+镜像，其中 `samba_dc` 的主镜像和 anchor worker 镜像作为同一 module 成组发布。
 
-CI 会扫描 `casks/mods` 下的全部 Dockerfile；任何 Dockerfile 未登记、重复登记，或者
-Compose 中的镜像 tag 与 cask 的 `version`/`revision` 不一致，都会使校验失败。
+CI 会扫描 `modules` 下的全部 Dockerfile；任何 Dockerfile 未登记、重复登记，或者
+Compose 中的镜像 tag 与 module 的 `version`/`revision` 不一致，都会使校验失败。
 
 所有 ANAS 自建镜像统一使用：
 
@@ -81,13 +81,13 @@ Compose 使用 `ANAS_IMAGE_REGISTRY` 单独选择 ANAS 自建镜像来源，默�
 工作流位于 `.github/workflows/container-images.yml`：
 
 1. Pull Request 只构建受影响的镜像，不推送，用于验证 Dockerfile 和多架构构建。
-2. 合并到 `master` 后，只发布 build context 发生变化的 cask 镜像。
+2. 合并到 `master` 后，只发布 build context 发生变化的 module 镜像。
 3. 同一上游版本发生镜像内容修改时，`revision` 必须恰好增加 `1`。
 4. `version` 变化时，`revision` 必须重置为 `1`。
 5. 发布前分别检查 GHCR 与 CNB；两个 registry 都不存在时才执行构建，已存在的固定 tag
    永不覆盖。
 6. 生成 provenance 和 SBOM，并使用 GitHub Actions cache。
-7. 首次发布使用 `workflow_dispatch`，参数 `cask=all`，一次构建当前清单中的全部镜像。
+7. 首次发布使用 `workflow_dispatch`，参数 `module=all`，一次构建当前清单中的全部镜像。
 8. 非 PR 构建只执行一次并推送到 GHCR，再由同一工作流把相同的多架构运行镜像复制到
    CNB，不在 CNB 重复编译。如果其中一个 registry 已有该 tag、另一个缺失，GitHub
    Actions 直接补齐缺失的一侧，用于首次迁移或单侧发布故障恢复。
@@ -104,7 +104,7 @@ GitHub 仍是上游主仓库。`.github/workflows/cnb-sync.yml` 在任意分支�
 CNB 收到 `master` push 后读取 `.cnb.yml`，由
 `scripts/ci/cnb-container-images.sh` 校验镜像登记和 Compose tag。正式镜像由 GitHub
 Actions 的同一次 BuildKit 构建同时推送到两个 registry，因此不重复消耗 CNB 构建额度。
-灾备恢复时可以在 `master` 分支页面点击“从 GHCR 同步全部 Cask 镜像”，用
+灾备恢复时可以在 `master` 分支页面点击“从 GHCR 同步全部 Module 镜像”，用
 `docker buildx imagetools create` 把 CNB 中缺失的多架构固定 tag 从 GHCR 直接复制过来。
 
 CNB 镜像使用：
@@ -132,7 +132,7 @@ config 达到 411,539 字节。`samba_dc` 使用 host 网络，`EXPOSE` 本身�
 
 外部调研、竞品比较和历史技术评估统一移动到 `docs/research/`，并增加目录索引。稳定的
 架构文档、命令契约和运行时契约仍保留在原有位置。容器镜像发布属于已经实施的子集；
-cask bundle 的 OCI 分发仍保留为后续设计。
+module bundle 的 OCI 分发仍保留为后续设计。
 
 ## 验证记录
 
@@ -163,6 +163,6 @@ CNB 首次同步需要：
 3. 创建具备当前仓库 Docker 制品写权限的 CNB 令牌，并保存为
    `CNB_REGISTRY_TOKEN`；
 4. 手工运行一次 GitHub 的 `Sync repository to CNB` 工作流；
-5. 手工运行 GitHub 的 `Container images` 工作流，参数 `cask=all`，同时发布两个
+5. 手工运行 GitHub 的 `Container images` 工作流，参数 `module=all`，同时发布两个
    registry 的 12 个镜像；
 6. 匿名拉取 `docker.cnb.cool/anas.dev/anas/<image>:<version>-r<revision>` 验证。

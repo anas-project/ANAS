@@ -31,9 +31,9 @@ func TestVersionConstraintHyphenRange(t *testing.T) {
 	}
 }
 
-func TestUpdateCaskLockDropsUnselectedResolution(t *testing.T) {
+func TestUpdateModuleLockDropsUnselectedResolution(t *testing.T) {
 	source := t.TempDir()
-	if err := os.WriteFile(filepath.Join(source, "cask.yml"), []byte("name: selected\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(source, "module.yml"), []byte("name: selected\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	a := &app{
@@ -43,19 +43,19 @@ func TestUpdateCaskLockDropsUnselectedResolution(t *testing.T) {
 		}},
 		resolvedBindings: map[string]map[string]string{},
 	}
-	lock := &caskLock{
-		Casks:    map[string]caskLockRecord{"removed": {Version: "1.0.0"}},
-		IAM:      &caskLockIAM{Provider: "removed"},
+	lock := &moduleLock{
+		Modules:  map[string]moduleLockRecord{"removed": {Version: "1.0.0"}},
+		IAM:      &moduleLockIAM{Provider: "removed"},
 		Bindings: map[string]map[string]string{"removed": {"relational_database": "mariadb"}},
 	}
-	if err := a.updateCaskLock(lock, true); err != nil {
+	if err := a.updateModuleLock(lock, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := lock.Casks["removed"]; ok {
-		t.Fatal("removed cask remained in updated lock")
+	if _, ok := lock.Modules["removed"]; ok {
+		t.Fatal("removed module remained in updated lock")
 	}
-	if _, ok := lock.Casks["selected"]; !ok {
-		t.Fatal("selected cask is missing from updated lock")
+	if _, ok := lock.Modules["selected"]; !ok {
+		t.Fatal("selected module is missing from updated lock")
 	}
 	if lock.IAM != nil || len(lock.Bindings) != 0 {
 		t.Fatalf("stale resolution remained: IAM=%#v bindings=%#v", lock.IAM, lock.Bindings)
@@ -102,24 +102,24 @@ func TestDependencyVersionConstraints(t *testing.T) {
 	}
 }
 
-func TestCaskLockPersistsResolvedBindings(t *testing.T) {
+func TestModuleLockPersistsResolvedBindings(t *testing.T) {
 	base := filepath.Join(t.TempDir(), "runtime")
-	lock := &caskLock{
-		APIVersion: "anas.dev/v1",
-		Casks:      map[string]caskLockRecord{"nextcloud": {Version: "30.0.1", Revision: 2}},
+	lock := &moduleLock{
+		APIVersion: "anas.module-lock/v1",
+		Modules:    map[string]moduleLockRecord{"nextcloud": {Version: "30.0.1", Revision: 2}},
 		Bindings:   map[string]map[string]string{"nextcloud": {"relational_database": "mariadb"}},
 	}
 	if err := lock.Save(base); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := loadCaskLock(base)
+	loaded, err := loadModuleLock(base)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := loaded.Bindings["nextcloud"]["relational_database"]; got != "mariadb" {
 		t.Fatalf("binding = %q, want mariadb", got)
 	}
-	if got := loaded.Casks["nextcloud"].Revision; got != 2 {
+	if got := loaded.Modules["nextcloud"].Revision; got != 2 {
 		t.Fatalf("revision = %d, want 2", got)
 	}
 }

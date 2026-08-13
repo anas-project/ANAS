@@ -325,15 +325,15 @@ Authentik 的 Samba AD Source 通过组属性映射，仅将名称精确等于 `
 
 Runner 统一发布 `ANAS_IDENTITY_CLIENTS`、`ANAS_IDENTITY_APP_CLIENTS`、`ANAS_IDENTITY_LDAPS_CLIENTS`、`ANAS_IDENTITY_OIDC_CLIENTS`、`ANAS_IDENTITY_SAML_CLIENTS` 以及 `ANAS_IDENTITY_CLIENT__<CASK>__INTERFACES`。Samba DC 根据 `ANAS_IDENTITY_APP_CLIENTS` 创建 `APP_<应用>`，不再依赖 LDAP 专用名单。
 
-完整变量清单见 [Cask 环境变量契约](cask-environment-variables.md)。
+完整变量清单见 [Module 环境变量契约](module-environment-variables.md)。
 
 ## 15. 实现依据
 
 本规划依据当前仓库中的 Samba DC 初始化和配置实现：
 
-- `casks/mods/samba_dc/hook/main.go`：OU、DN、账号和组名称的计算；
-- `casks/mods/samba_dc/samba_dc/root/usr/local/bin/structure.sh`：用户、服务账号、组成员关系、委派权限及密码策略；
-- `casks/mods/samba_dc/cask.yml`：默认配置和密码策略；
+- `modules/samba_dc/hook/main.go`：OU、DN、账号和组名称的计算；
+- `modules/samba_dc/samba_dc/root/usr/local/bin/structure.sh`：用户、服务账号、组成员关系、委派权限及密码策略；
+- `modules/samba_dc/module.yml`：默认配置和密码策略；
 - `docs/samba_dc.md`：文件服务权限和 AD 使用说明。
 
 若上述实现发生变化，应同步更新本文的“当前状态”，再评估目标规划是否需要调整。

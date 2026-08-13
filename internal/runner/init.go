@@ -139,7 +139,7 @@ func createWorkspace(workspace string, yes, jsonMode bool) (workspaceCreation, e
 		// Saying "snapshots may not work" would leave the user to discover the
 		// real cost on the day an upgrade goes wrong, so spell out what is lost.
 		emitWarning(jsonMode, "workspace_not_btrfs",
-			"%s is not on Btrfs: snapshots and data restore will be unavailable, cask upgrades will not create an automatic pre-upgrade data snapshot, and backups can only run in whole-directory copy mode",
+			"%s is not on Btrfs: snapshots and data restore will be unavailable, module upgrades will not create an automatic pre-upgrade data snapshot, and backups can only run in whole-directory copy mode",
 			workspace)
 		if err := confirmDestructive("Create a workspace with no snapshot capability", yes); err != nil {
 			return created, err
@@ -260,7 +260,7 @@ func writeConfigSkeleton(workspace string) error {
 # deployment is fully recoverable.
 
 modules:
-  - samba_dc
+  samba_dc: {}
 
 global:
   # The root every hostname and the Samba realm derive from.

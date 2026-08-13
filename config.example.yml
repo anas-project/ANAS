@@ -1,18 +1,19 @@
 modules:
-  - traefik
-
+  traefik: {}
+  lego:
+    config:
+      dns_provider: cloudflare
 global:
   base_domain: nas.example.com
   email: admin@example.com
   timezone: Asia/Shanghai
-  # Legacy compatibility for casks not yet migrated to managed local accounts.
+  # Legacy compatibility for modules not yet migrated to managed local accounts.
   default_service_root_password: ChangeMe1!
   # The administrator name for Traefik's dashboard gate.
   basicauth_user: admin
   # Optional. Absent means the default applies; an explicit false is kept, which
   # is why these are written as booleans rather than left to the env: block.
   # ipv6: false
-
 administration:
   bootstrap:
     username: admin
@@ -20,29 +21,18 @@ administration:
     email: admin@example.com
     roles: [platform_admin, directory_admin]
   local_accounts:
-    username_template: "admin_{cask}"
-    password_policy: generated_per_cask
+    username_template: "admin_{module}"
+    password_policy: generated_per_module
     password_length: 24
-
-services:
-  # The DNS vendor is chosen per engine, not deployment-wide: certificates and
-  # dynamic DNS often live at different vendors, and the same vendor sometimes
-  # needs a different credential for each. Run `anas plan` to see what each
-  # engine resolved and whether they share one credential.
-  lego:
-    env:
-      dns_provider: cloudflare
-
 secrets:
   # Named for the vendor, so every engine configured for that vendor uses it.
-  # To give one engine its own account instead, prefix the key with that cask:
+  # To give one engine its own account instead, prefix the key with that module:
   # ddns_go_cloudflare_dns_api_token.
   cloudflare_dns_api_token: replace-me
-
 env:
   # The top level env: block sets raw environment keys, for values no manifest
   # declares. Parameters that are declared belong under global: or under
-  # services.<cask>.env; `anas config list` prints the path for each.
+  # modules.<module>.config; `anas config list` prints the path for each.
   #
   # Mainland China: one switch enables package, source-download and container
   # registry mirrors. Every generated default can still be overridden here.

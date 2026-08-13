@@ -640,7 +640,7 @@ func TestContainerTransactionRoundTrip(t *testing.T) {
 	}
 	txn := containerTransaction{
 		APIVersion: activeStateVersion, ID: "t1", Kind: containerTransactionKind,
-		StartedAt: nowUTC(), DeploymentID: "d1", Casks: []string{"traefik"},
+		StartedAt: nowUTC(), DeploymentID: "d1", Modules: []string{"traefik"},
 		State: containerTransactionStopped,
 	}
 	if err := writeYAMLAtomic(transactionPath(base, txn.ID), &txn, 0600); err != nil {
@@ -653,8 +653,8 @@ func TestContainerTransactionRoundTrip(t *testing.T) {
 	if back.Kind != containerTransactionKind || back.State != containerTransactionStopped {
 		t.Fatalf("transaction did not survive the round trip: %+v", back)
 	}
-	if len(back.Casks) != 1 || back.Casks[0] != "traefik" {
-		t.Errorf("the record must name exactly what was stopped, got %v", back.Casks)
+	if len(back.Modules) != 1 || back.Modules[0] != "traefik" {
+		t.Errorf("the record must name exactly what was stopped, got %v", back.Modules)
 	}
 	// A record with nothing to restart is cleared rather than retried forever.
 	empty := containerTransaction{

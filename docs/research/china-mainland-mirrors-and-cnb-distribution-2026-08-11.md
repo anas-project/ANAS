@@ -15,7 +15,7 @@ GitHub Release。
 | `APT_MIRROR_URL` | `https://mirrors.aliyun.com` | Debian、Ubuntu 构建依赖 |
 | `APK_MIRROR_URL` | `https://mirrors.aliyun.com` | Alpine 构建依赖 |
 | `NPM_REGISTRY_URL` | `https://registry.npmmirror.com` | MeshCentral npm 依赖 |
-| `GOPROXY_URL` | `https://goproxy.cn,direct` | cask hook 与 ddns-go Go modules |
+| `GOPROXY_URL` | `https://goproxy.cn,direct` | module hook 与 ddns-go Go modules |
 | `GITHUB_DOWNLOAD_PROXY_PREFIX` | `https://files.m.daocloud.io/` | LAM、Nextcloud GitHub Release |
 | `NEXTCLOUD_APPSTORE_URL` | `https://files.m.daocloud.io/apps.nextcloud.com/api/v1` | Nextcloud 应用元数据 |
 | `DOCKER_HUB_REGISTRY` | `m.daocloud.io/docker.io` | Compose 镜像与 Dockerfile 基础镜像 |

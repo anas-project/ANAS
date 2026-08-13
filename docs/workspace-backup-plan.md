@@ -2,8 +2,8 @@
 
 > 状态：一（workspace 语义）、二（`anas init`）、三（snapshot 体系）、
 > 四（breaking 升级自动快照）、五（backup 体系）已落地。本文是总纲，JSON 契约见
-> [contracts/](contracts/README.md)，cask 分发见
-> [cask-distribution-draft.md](cask-distribution-draft.md)（草案，不在本计划内）。
+> [contracts/](contracts/README.md)，module 分发见
+> [module-distribution-draft.md](module-distribution-draft.md)（草案，不在本计划内）。
 
 ## 目标
 
@@ -94,7 +94,7 @@ anas init [路径] [--shell-init] [-y]
 ```
 警告：<workspace> 位于 ext4，不是 btrfs。
       快照与回滚数据恢复将不可用。
-      升级 cask 时不会自动创建可回退的数据快照。
+      升级 module 时不会自动创建可回退的数据快照。
       备份仍然可用，但只能是整目录复制模式。
 继续初始化？[y/N]
 ```
@@ -174,7 +174,7 @@ upgrade:
 ```
 
 两者语义不同、不可互推：`from` 说"能不能升"，`data_breaking` 说"升了能不能回来"。
-截至目前没有任何 cask 声明 `upgrade:`，两个字段都是纯新增。
+截至目前没有任何 module 声明 `upgrade:`，两个字段都是纯新增。
 
 设旧版 `A`、新版 `B`，存在 `V ∈ data_breaking` 使 `A < V ≤ B` 即为 breaking。
 
@@ -197,10 +197,10 @@ upgrade:
   放行只会让服务起不来。
 - **`data_breaking` 列表不需永久累积**：`A` 的下界由 `upgrade.from` 保证，`V ≤ 该下界`
   的条目是死条目。提高 `upgrade.from` 时同步修剪，已有条目只增不改。
-- **发版前动作**：给每个 cask 显式写 `data_breaking: []`，否则"未知"会让 rollback 永远
+- **发版前动作**：给每个 module 显式写 `data_breaking: []`，否则"未知"会让 rollback 永远
   被阻断。
 - **`data_breaking` 未声明 ≠ 声明为空。** 若把未声明当空列表，判定恒为"不 breaking"
-  → 所有回滚放行，而现状是默认全阻断、且 16 个 cask 一个都没声明 `upgrade:`——那是
+  → 所有回滚放行，而现状是默认全阻断、且 16 个 module 一个都没声明 `upgrade:`——那是
   一个会静默生效的安全回归。实现必须用 `*[]string` 区分 `nil` 与 `[]`。
 - **不取消"不带数据的制品回滚"。** 它与快照恢复解决不同问题：配置改错但数据完好是最
   常见的回滚场景，强制走快照恢复会丢掉自上次 apply 以来的全部用户数据。
@@ -320,7 +320,7 @@ anas-backup.timer  → 以 root 执行 anas backup create
 | 四 | 第五节：backup 四种模式、停机事务、交互式 | 异地灾难恢复 |
 | 五 | 第六节：`--json` / 退出码 / 进度输出统一收口 | web 服务可直接调用 |
 
-第五期可与第四期合并。[cask 分发](cask-distribution-draft.md)不在本计划内。
+第五期可与第四期合并。[module 分发](module-distribution-draft.md)不在本计划内。
 
 ## 回退与快照测试
 
@@ -359,7 +359,7 @@ Linux NAS，macOS 只是开发机。
 做法：回退需要真实存在两个 deployment 目录、真实的 active 指针、以及真实快照，必须走
 完整的 `apply → apply → rollback` 序列。
 
-因此需要两个真实 cask 版本的用例（R4、R5）**推迟到发版后**再写。
+因此需要两个真实 module 版本的用例（R4、R5）**推迟到发版后**再写。
 
 ### 用例矩阵
 

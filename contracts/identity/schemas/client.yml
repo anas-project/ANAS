@@ -1,0 +1,11 @@
+type: object
+additional_properties: false
+required: [interface, redirect_uris]
+properties:
+  interface: {enum: [oidc, saml]}
+  redirect_uris:
+    type: array
+    items: {type: string}
+  allowed_groups:
+    type: array
+    items: {type: string}

@@ -41,7 +41,7 @@
 
 ```json
 {"type":"progress","phase":"send-data","current":734003200,"total":1395864371,"unit":"bytes"}
-{"type":"progress","phase":"stop-containers","current":8,"total":13,"unit":"casks"}
+{"type":"progress","phase":"stop-containers","current":8,"total":13,"unit":"modules"}
 {"type":"warning","code":"plaintext_secrets_leaving_host","message":"..."}
 ```
 

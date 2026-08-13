@@ -11,12 +11,12 @@ import (
 
 // Deployment-scoped dynamic DNS.
 //
-// Unlike IAM, this capability has no consumer cask: nothing in a deployment
+// Unlike IAM, this capability has no consumer module: nothing in a deployment
 // declares that it needs its own A record, the deployment as a whole does. So
-// there is no dependency edge to resolve it from, and the selected cask is
+// there is no dependency edge to resolve it from, and the selected module is
 // injected as a root of the module graph instead.
 //
-// Selecting an implementation is not the same as running one. A DDNS cask
+// Selecting an implementation is not the same as running one. A DDNS module
 // listed in `modules` starts whether or not it was selected -- someone running
 // two updaters against different zones is doing something reasonable. What
 // selection decides is which one holds the records ANAS itself declares.
@@ -27,7 +27,7 @@ const (
 	// address the configured vendor.
 	dynamicDNSAuto = "auto"
 	// deploymentBindingKey is the module slot for capabilities that belong to
-	// the deployment rather than to a consumer. The "@" cannot occur in a cask
+	// the deployment rather than to a consumer. The "@" cannot occur in a module
 	// name, which is what keeps it from colliding with one.
 	deploymentBindingKey = "@deployment"
 )
@@ -38,7 +38,7 @@ const (
 // ddns_go comes first because it discovers the host's IPv6 address rather than
 // only its IPv4 one, which is the case a home deployment actually needs; both
 // are otherwise equivalent for a vendor they both support. The order is fixed
-// here rather than derived from directory listing so that adding a cask cannot
+// here rather than derived from directory listing so that adding a module cannot
 // silently change what an existing deployment resolves to.
 var dynamicDNSPreference = []string{dns.EngineDDNSGo, dns.EngineDDNSUpdater}
 
@@ -84,7 +84,7 @@ func (a *app) resolveDynamicDNS() (string, error) {
 	// An implementation the user already asked to run is preferred over one
 	// the runner would have to add.
 	for _, name := range dynamicDNSPreference {
-		if platform.Supports(name) && contains(a.cfg.Modules, name) && a.moduleEnabled(name) {
+		if platform.Supports(name) && contains(a.cfg.Modules.Order, name) && a.moduleEnabled(name) {
 			return name, nil
 		}
 	}
@@ -114,7 +114,7 @@ func supportingEngines(platform *dns.Platform) []string {
 	return out
 }
 
-// applyDynamicDNSBinding records the selection and seeds the chosen cask's own
+// applyDynamicDNSBinding records the selection and seeds the chosen module's own
 // vendor setting. A per-service dns_provider still wins, so a deployment can
 // declare its records at one vendor while a second updater it runs by hand
 // works at another.
@@ -136,7 +136,7 @@ func (a *app) applyDynamicDNSBinding(provider string) {
 		a.env[key] = a.cfg.DynamicDNS.DNSProvider
 		a.setEnvOwner(key, provider)
 	}
-	// Every DDNS cask learns whether it is the one holding the declared
+	// Every DDNS module learns whether it is the one holding the declared
 	// records, so an unselected one can leave them alone.
 	for _, engine := range dns.Engines() {
 		if engine == dns.EngineLego {
@@ -236,7 +236,7 @@ func (a *app) reportDynamicDNSOverlaps() {
 }
 
 // dynamicDNSPlanSummary reports which implementation holds the declared
-// records, so `plan` answers "who owns my DNS" rather than only listing casks.
+// records, so `plan` answers "who owns my DNS" rather than only listing modules.
 func (a *app) dynamicDNSPlanSummary() string {
 	if a.dynamicDNSProvider == "" {
 		return ""

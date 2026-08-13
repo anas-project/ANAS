@@ -71,23 +71,23 @@ func seedSnapshotWorkspaceAt(t *testing.T, workspace string) (deploymentID strin
 		t.Fatal(err)
 	}
 	artifact := deploymentArtifactDir(base, deploymentID)
-	if err := os.MkdirAll(filepath.Join(artifact, "casks", "core"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(artifact, "modules", "core"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	manifest := &deploymentManifest{
 		APIVersion: deploymentAPIVersion, ID: deploymentID, ModuleOrder: []string{"core"},
-		Casks: map[string]deploymentCask{"core": {Name: "core", Version: "1.0.0", RuntimeType: "builtin"}},
+		Modules: map[string]deploymentModule{"core": {Name: "core", Version: "1.0.0", RuntimeType: "builtin"}},
 	}
 	if err := writeYAMLAtomic(filepath.Join(artifact, "deployment.yml"), manifest, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveCaskLockFile(filepath.Join(artifact, "lock.yml"), &caskLock{}); err != nil {
+	if err := saveModuleLockFile(filepath.Join(artifact, "lock.yml"), &moduleLock{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(deploymentConfigSourcePath(artifact), []byte("modules: [core]\n"), 0600); err != nil {
+	if err := os.WriteFile(deploymentConfigSourcePath(artifact), []byte("modules:\n  core: {}\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(workspaceConfigPath(workspace), []byte("modules: [core]\n"), 0600); err != nil {
+	if err := os.WriteFile(workspaceConfigPath(workspace), []byte("modules:\n  core: {}\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(base, "secrets.generated.yml"), []byte("KEY: value\n"), 0600); err != nil {
@@ -96,7 +96,7 @@ func seedSnapshotWorkspaceAt(t *testing.T, workspace string) (deploymentID strin
 	admins := localAdminState{
 		APIVersion: localAdminStateVersion,
 		Accounts: map[string]localAdminRecord{
-			"core.primary": {Cask: "core", ID: "primary", Purpose: "break_glass", Username: "admin_core", SecretKey: "CORE_PASSWORD"},
+			"core.primary": {Module: "core", ID: "primary", Purpose: "break_glass", Username: "admin_core", SecretKey: "CORE_PASSWORD"},
 		},
 	}
 	if err := writeYAMLAtomic(localAdminStatePath(base), &admins, 0600); err != nil {
@@ -156,7 +156,7 @@ func TestSnapshotCarriesEverythingNeededToRestoreItAlone(t *testing.T) {
 	}
 	// The config comes from the deployment, not from whatever is on disk now.
 	got, err := os.ReadFile(filepath.Join(root, "meta", snapshotMetaConfigName))
-	if err != nil || string(got) != "modules: [core]\n" {
+	if err != nil || string(got) != "modules:\n  core: {}\n" {
 		t.Fatalf("meta config = %q, %v", got, err)
 	}
 }
@@ -168,7 +168,7 @@ func TestSnapshotCarriesEverythingNeededToRestoreItAlone(t *testing.T) {
 func TestSnapshotTakesConfigFromTheDeploymentNotTheDisk(t *testing.T) {
 	fakeBtrfs(t)
 	workspace, _ := newSnapshotWorkspace(t)
-	if err := os.WriteFile(workspaceConfigPath(workspace), []byte("modules: [core, nextcloud]\n"), 0600); err != nil {
+	if err := os.WriteFile(workspaceConfigPath(workspace), []byte("modules:\n  core: {}\n  nextcloud: {}\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	meta, err := createSnapshot(workspace, snapshotOptions{kind: snapshotKindAuto, reason: snapshotReasonPreApply})
@@ -179,7 +179,7 @@ func TestSnapshotTakesConfigFromTheDeploymentNotTheDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "modules: [core]\n" {
+	if string(got) != "modules:\n  core: {}\n" {
 		t.Fatalf("snapshot captured the edited config %q instead of the deployment's", got)
 	}
 }
@@ -215,7 +215,7 @@ func TestRestoreRewindsDataAndLeavesAWayBack(t *testing.T) {
 	}
 	// A config edit made after the snapshot must come back too, since restoring
 	// half the state would leave keys that do not match the data.
-	if err := os.WriteFile(workspaceConfigPath(workspace), []byte("modules: [core, drift]\n"), 0600); err != nil {
+	if err := os.WriteFile(workspaceConfigPath(workspace), []byte("modules:\n  core: {}\n  drift: {}\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -231,7 +231,7 @@ func TestRestoreRewindsDataAndLeavesAWayBack(t *testing.T) {
 		t.Error("data written after the snapshot survived the restore")
 	}
 	got, err = os.ReadFile(workspaceConfigPath(workspace))
-	if err != nil || string(got) != "modules: [core]\n" {
+	if err != nil || string(got) != "modules:\n  core: {}\n" {
 		t.Fatalf("config = %q, %v", got, err)
 	}
 	// The restore itself has to be undoable.
@@ -361,10 +361,10 @@ func TestVerifyReportsAMissingDataSubvolume(t *testing.T) {
 func TestDeploymentCopySharesTheInodeWhenItHardLinks(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "deployment")
-	if err := os.MkdirAll(filepath.Join(src, "casks", "core"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(src, "modules", "core"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(src, "casks", "core", "compose.yml")
+	file := filepath.Join(src, "modules", "core", "compose.yml")
 	if err := os.WriteFile(file, []byte("services: {}\n"), 0444); err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +373,7 @@ func TestDeploymentCopySharesTheInodeWhenItHardLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	copied := filepath.Join(dst, "casks", "core", "compose.yml")
+	copied := filepath.Join(dst, "modules", "core", "compose.yml")
 	got, err := os.ReadFile(copied)
 	if err != nil || string(got) != "services: {}\n" {
 		t.Fatalf("copied file = %q, %v", got, err)

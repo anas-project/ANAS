@@ -13,7 +13,7 @@ func declared(versions ...string) *[]string {
 // The distinction the whole guard rests on. An undeclared list and a
 // declared-empty one differ on every input where the versions are not equal,
 // and they differ in opposite directions: unknown blocks, empty permits.
-func TestCaskDataVerdictUnsetIsNotEmpty(t *testing.T) {
+func TestModuleDataVerdictUnsetIsNotEmpty(t *testing.T) {
 	cases := []struct {
 		name      string
 		from, to  string
@@ -27,17 +27,17 @@ func TestCaskDataVerdictUnsetIsNotEmpty(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got, _ := caskDataVerdict(tc.from, tc.to, nil); got != tc.unsetWant {
+			if got, _ := moduleDataVerdict(tc.from, tc.to, nil); got != tc.unsetWant {
 				t.Fatalf("unset: verdict = %v, want %v", got, tc.unsetWant)
 			}
-			if got, _ := caskDataVerdict(tc.from, tc.to, declared()); got != tc.emptyWant {
+			if got, _ := moduleDataVerdict(tc.from, tc.to, declared()); got != tc.emptyWant {
 				t.Fatalf("declared empty: verdict = %v, want %v", got, tc.emptyWant)
 			}
 		})
 	}
 }
 
-func TestCaskDataVerdict(t *testing.T) {
+func TestModuleDataVerdict(t *testing.T) {
 	breaks := declared("31.0.0")
 	twoBreaks := declared("31.0.0", "33.0.0")
 	cases := []struct {
@@ -74,7 +74,7 @@ func TestCaskDataVerdict(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, crossed := caskDataVerdict(tc.from, tc.to, tc.declared)
+			got, crossed := moduleDataVerdict(tc.from, tc.to, tc.declared)
 			if got != tc.want || crossed != tc.wantCrossed {
 				t.Fatalf("verdict = %v/%q, want %v/%q", got, crossed, tc.want, tc.wantCrossed)
 			}
@@ -93,44 +93,44 @@ func TestGoverningDataBreakingPicksTheHigherVersion(t *testing.T) {
 	if got := governingDataBreaking("31.0.0", recent, "30.0.1", old); got != recent {
 		t.Fatal("rollback must be judged by the deployed version's declaration")
 	}
-	// If the older cask.yml were consulted, this transition would read as
+	// If the older module.yml were consulted, this transition would read as
 	// compatible and the rollback would be let through.
-	from := deploymentCask{Version: "31.0.0", DataBreaking: recent}
-	to := deploymentCask{Version: "30.0.1", DataBreaking: old}
-	if got, at := caskTransitionVerdict(from, to); got != dataBreaking || at != "31.0.0" {
+	from := deploymentModule{Version: "31.0.0", DataBreaking: recent}
+	to := deploymentModule{Version: "30.0.1", DataBreaking: old}
+	if got, at := moduleTransitionVerdict(from, to); got != dataBreaking || at != "31.0.0" {
 		t.Fatalf("transition verdict = %v/%q, want breaking at 31.0.0", got, at)
 	}
 }
 
-func TestCaskTransitionVerdictComparesRevisionWithinVersion(t *testing.T) {
+func TestModuleTransitionVerdictComparesRevisionWithinVersion(t *testing.T) {
 	empty := declared()
-	from := deploymentCask{Version: "34.0.2", Revision: 1, DataBreaking: empty}
-	to := deploymentCask{Version: "34.0.2", Revision: 2, DataBreaking: empty}
-	if verdict, _ := caskTransitionVerdict(from, to); verdict != dataCompatible {
+	from := deploymentModule{Version: "34.0.2", Revision: 1, DataBreaking: empty}
+	to := deploymentModule{Version: "34.0.2", Revision: 2, DataBreaking: empty}
+	if verdict, _ := moduleTransitionVerdict(from, to); verdict != dataCompatible {
 		t.Fatalf("revision transition verdict = %v, want compatible", verdict)
 	}
 	to.DataBreaking = nil
-	if verdict, _ := caskTransitionVerdict(from, to); verdict != dataUnknown {
+	if verdict, _ := moduleTransitionVerdict(from, to); verdict != dataUnknown {
 		t.Fatalf("undeclared revision transition verdict = %v, want unknown", verdict)
 	}
 }
 
 func TestDeploymentRollbackVersionGuard(t *testing.T) {
-	manifest := func(casks ...deploymentCask) *deploymentManifest {
-		m := &deploymentManifest{Casks: map[string]deploymentCask{}}
-		for _, c := range casks {
-			m.Casks[c.Name] = c
+	manifest := func(modules ...deploymentModule) *deploymentManifest {
+		m := &deploymentManifest{Modules: map[string]deploymentModule{}}
+		for _, c := range modules {
+			m.Modules[c.Name] = c
 		}
 		return m
 	}
-	cask := func(name, version string, breaks *[]string) deploymentCask {
-		return deploymentCask{Name: name, Version: version, AppVersion: version, DataBreaking: breaks}
+	module := func(name, version string, breaks *[]string) deploymentModule {
+		return deploymentModule{Name: name, Version: version, AppVersion: version, DataBreaking: breaks}
 	}
 
 	t.Run("identical versions are a config-only rollback", func(t *testing.T) {
 		guard := deploymentRollbackVersionGuard(
-			manifest(cask("nextcloud", "30.0.1", nil)),
-			manifest(cask("nextcloud", "30.0.1", nil)))
+			manifest(module("nextcloud", "30.0.1", nil)),
+			manifest(module("nextcloud", "30.0.1", nil)))
 		if len(guard.Blocked) != 0 || len(guard.Crossings) != 0 {
 			t.Fatalf("a config-only rollback was guarded: %+v", guard)
 		}
@@ -138,8 +138,8 @@ func TestDeploymentRollbackVersionGuard(t *testing.T) {
 
 	t.Run("declared and not crossing is permitted", func(t *testing.T) {
 		guard := deploymentRollbackVersionGuard(
-			manifest(cask("nextcloud", "30.0.2", declared("31.0.0"))),
-			manifest(cask("nextcloud", "30.0.1", declared("31.0.0"))))
+			manifest(module("nextcloud", "30.0.2", declared("31.0.0"))),
+			manifest(module("nextcloud", "30.0.1", declared("31.0.0"))))
 		if len(guard.Blocked) != 0 || len(guard.Crossings) != 0 {
 			t.Fatalf("a declared non-breaking version rollback was guarded: %+v", guard)
 		}
@@ -147,8 +147,8 @@ func TestDeploymentRollbackVersionGuard(t *testing.T) {
 
 	t.Run("crossing in reverse has no override", func(t *testing.T) {
 		guard := deploymentRollbackVersionGuard(
-			manifest(cask("nextcloud", "31.0.0", declared("31.0.0"))),
-			manifest(cask("nextcloud", "30.0.1", declared())))
+			manifest(module("nextcloud", "31.0.0", declared("31.0.0"))),
+			manifest(module("nextcloud", "30.0.1", declared())))
 		if len(guard.Blocked) != 0 {
 			t.Fatalf("a crossing must be fatal, not merely blocked: %v", guard.Blocked)
 		}
@@ -177,29 +177,29 @@ func TestDeploymentRollbackVersionGuard(t *testing.T) {
 
 	t.Run("addition and removal stay blocked", func(t *testing.T) {
 		guard := deploymentRollbackVersionGuard(
-			manifest(cask("nextcloud", "30.0.1", declared()), cask("collabora", "1.0.0", declared())),
-			manifest(cask("nextcloud", "30.0.1", declared()), cask("eturnal", "1.0.0", declared())))
+			manifest(module("nextcloud", "30.0.1", declared()), module("collabora", "1.0.0", declared())),
+			manifest(module("nextcloud", "30.0.1", declared()), module("eturnal", "1.0.0", declared())))
 		if len(guard.Blocked) != 2 {
-			t.Fatalf("cask addition and removal must stay blocked, got %v", guard.Blocked)
+			t.Fatalf("module addition and removal must stay blocked, got %v", guard.Blocked)
 		}
 		if len(guard.Crossings) != 0 {
-			t.Fatalf("cask addition and removal are not crossings: %+v", guard.Crossings)
+			t.Fatalf("module addition and removal are not crossings: %+v", guard.Crossings)
 		}
 	})
 
-	t.Run("one breaking cask is enough", func(t *testing.T) {
+	t.Run("one breaking module is enough", func(t *testing.T) {
 		guard := deploymentRollbackVersionGuard(
-			manifest(cask("nextcloud", "31.0.0", declared("31.0.0")), cask("traefik", "1.0.1", declared())),
-			manifest(cask("nextcloud", "30.0.1", declared()), cask("traefik", "1.0.0", declared())))
-		if len(guard.Crossings) != 1 || guard.Crossings[0].Cask != "nextcloud" {
+			manifest(module("nextcloud", "31.0.0", declared("31.0.0")), module("traefik", "1.0.1", declared())),
+			manifest(module("nextcloud", "30.0.1", declared()), module("traefik", "1.0.0", declared())))
+		if len(guard.Crossings) != 1 || guard.Crossings[0].Module != "nextcloud" {
 			t.Fatalf("crossings = %+v", guard.Crossings)
 		}
 	})
 }
 
 func TestDeploymentSnapshotTrigger(t *testing.T) {
-	casks := func(version string, breaks *[]string) map[string]deploymentCask {
-		return map[string]deploymentCask{
+	modules := func(version string, breaks *[]string) map[string]deploymentModule {
+		return map[string]deploymentModule{
 			"nextcloud": {Name: "nextcloud", Version: version, DataBreaking: breaks},
 		}
 	}
@@ -216,56 +216,56 @@ func TestDeploymentSnapshotTrigger(t *testing.T) {
 	}{
 		{
 			name:    "routine apply does not snapshot",
-			current: &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("old", "container_recreate")},
-			target:  &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("new", "container_recreate")},
+			current: &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("old", "container_recreate")},
+			target:  &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("new", "container_recreate")},
 			want:    "",
 		},
 		{
 			name:    "reconcile does not snapshot",
-			current: &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("old", "reconcile")},
-			target:  &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("new", "reconcile")},
+			current: &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("old", "reconcile")},
+			target:  &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("new", "reconcile")},
 			want:    "",
 		},
 		{
 			name:    "a non-breaking upgrade does not snapshot",
-			current: &deploymentManifest{Casks: casks("30.0.1", declared("31.0.0"))},
-			target:  &deploymentManifest{Casks: casks("30.0.2", declared("31.0.0"))},
+			current: &deploymentManifest{Modules: modules("30.0.1", declared("31.0.0"))},
+			target:  &deploymentManifest{Modules: modules("30.0.2", declared("31.0.0"))},
 			want:    "",
 		},
 		{
 			name:    "an undeclared upgrade does not snapshot",
-			current: &deploymentManifest{Casks: casks("30.0.1", nil)},
-			target:  &deploymentManifest{Casks: casks("31.0.0", nil)},
+			current: &deploymentManifest{Modules: modules("30.0.1", nil)},
+			target:  &deploymentManifest{Modules: modules("31.0.0", nil)},
 			want:    "",
 		},
 		{
 			name:    "a breaking upgrade snapshots",
-			current: &deploymentManifest{Casks: casks("30.0.1", declared())},
-			target:  &deploymentManifest{Casks: casks("31.0.0", declared("31.0.0"))},
-			want:    snapshotReasonCaskUpgradeBreaking,
+			current: &deploymentManifest{Modules: modules("30.0.1", declared())},
+			target:  &deploymentManifest{Modules: modules("31.0.0", declared("31.0.0"))},
+			want:    snapshotReasonModuleUpgradeBreaking,
 		},
 		{
 			name:    "data_migrate snapshots",
-			current: &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("old", "data_migrate")},
-			target:  &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("new", "data_migrate")},
+			current: &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("old", "data_migrate")},
+			target:  &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("new", "data_migrate")},
 			want:    snapshotReasonSettingDataMigrate,
 		},
 		{
 			name:    "credential_rotate snapshots",
-			current: &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("old", "credential_rotate")},
-			target:  &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("new", "credential_rotate")},
+			current: &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("old", "credential_rotate")},
+			target:  &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("new", "credential_rotate")},
 			want:    snapshotReasonSettingDataMigrate,
 		},
 		{
 			name:    "the upgrade reason wins over the setting reason",
-			current: &deploymentManifest{Casks: casks("30.0.1", declared()), Settings: setting("old", "data_migrate")},
-			target:  &deploymentManifest{Casks: casks("31.0.0", declared("31.0.0")), Settings: setting("new", "data_migrate")},
-			want:    snapshotReasonCaskUpgradeBreaking,
+			current: &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("old", "data_migrate")},
+			target:  &deploymentManifest{Modules: modules("31.0.0", declared("31.0.0")), Settings: setting("new", "data_migrate")},
+			want:    snapshotReasonModuleUpgradeBreaking,
 		},
 		{
 			name:    "the first apply has no data to protect",
 			current: nil,
-			target:  &deploymentManifest{Casks: casks("31.0.0", declared("31.0.0"))},
+			target:  &deploymentManifest{Modules: modules("31.0.0", declared("31.0.0"))},
 			want:    "",
 		},
 	}
@@ -294,26 +294,26 @@ func TestDeploymentSnapshotTrigger(t *testing.T) {
 	}
 }
 
-// A cask that appears in the target but not in the current deployment has no
+// A module that appears in the target but not in the current deployment has no
 // prior data, so there is nothing its upgrade could break.
-func TestDeploymentSnapshotTriggerIgnoresAddedCasks(t *testing.T) {
-	current := &deploymentManifest{Casks: map[string]deploymentCask{}}
-	target := &deploymentManifest{Casks: map[string]deploymentCask{
+func TestDeploymentSnapshotTriggerIgnoresAddedModules(t *testing.T) {
+	current := &deploymentManifest{Modules: map[string]deploymentModule{}}
+	target := &deploymentManifest{Modules: map[string]deploymentModule{
 		"nextcloud": {Name: "nextcloud", Version: "31.0.0", DataBreaking: declared("31.0.0")},
 	}}
 	if got := deploymentSnapshotTrigger(current, target); got != nil {
-		t.Fatalf("adding a cask triggered %s", got.reason)
+		t.Fatalf("adding a module triggered %s", got.reason)
 	}
 }
 
 // The frozen manifest has to preserve the nil/empty distinction across a YAML
 // round trip, or the guard reads the opposite verdict off disk from the one it
 // wrote.
-func TestDeploymentCaskDataBreakingSurvivesYAML(t *testing.T) {
+func TestDeploymentModuleDataBreakingSurvivesYAML(t *testing.T) {
 	path := t.TempDir() + "/deployment.yml"
 	in := &deploymentManifest{
 		APIVersion: deploymentAPIVersion, ID: "x",
-		Casks: map[string]deploymentCask{
+		Modules: map[string]deploymentModule{
 			"undeclared": {Name: "undeclared", Version: "1.0.0"},
 			"empty":      {Name: "empty", Version: "1.0.0", DataBreaking: declared()},
 			"listed":     {Name: "listed", Version: "1.0.0", DataBreaking: declared("2.0.0")},
@@ -326,17 +326,17 @@ func TestDeploymentCaskDataBreakingSurvivesYAML(t *testing.T) {
 	if err := readYAML(path, &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Casks["undeclared"].DataBreaking != nil {
+	if out.Modules["undeclared"].DataBreaking != nil {
 		t.Fatal("an undeclared list came back declared")
 	}
-	empty := out.Casks["empty"].DataBreaking
+	empty := out.Modules["empty"].DataBreaking
 	if empty == nil {
 		t.Fatal("a declared-empty list came back undeclared; every rollback would block as unknown")
 	}
 	if len(*empty) != 0 {
 		t.Fatalf("declared-empty list came back as %v", *empty)
 	}
-	listed := out.Casks["listed"].DataBreaking
+	listed := out.Modules["listed"].DataBreaking
 	if listed == nil || len(*listed) != 1 || (*listed)[0] != "2.0.0" {
 		t.Fatalf("declared list came back as %v", listed)
 	}

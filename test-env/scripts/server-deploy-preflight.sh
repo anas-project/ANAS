@@ -4,7 +4,7 @@
 # Both failures this guards against are invisible on a normal redeploy and then
 # abort the deploy the first time the resource is really created:
 #
-#   * A cask that pins a subnet keeps working for as long as a network of that
+#   * A module that pins a subnet keeps working for as long as a network of that
 #     name already exists, because Compose reuses it whatever subnet it has.
 #     Delete that network once and the declared value is used for real -- and
 #     if the host already routes it, the deploy fails with "Pool overlaps with
@@ -21,7 +21,7 @@ if [ -z "$deployment" ]; then
   echo "usage: $0 <deployment-dir>" >&2
   exit 2
 fi
-test -d "$deployment/casks"
+test -d "$deployment/modules"
 
 section() { printf '\n== %s ==\n' "$1"; }
 status=0
@@ -34,8 +34,8 @@ env_value() { grep -m1 "^$2=" "$1" 2>/dev/null | cut -d= -f2- || true; }
 section "pinned subnets do not collide"
 host_routes=$(ip route 2>/dev/null | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+' | sort -u || true)
 
-for env_file in "$deployment"/casks/*/.env; do
-  cask=$(basename "$(dirname "$env_file")")
+for env_file in "$deployment"/modules/*/.env; do
+  module=$(basename "$(dirname "$env_file")")
   compose="$(dirname "$env_file")/docker-compose.yml"
   grep -q 'subnet:' "$compose" 2>/dev/null || continue
   network_prefix=$(env_value "$env_file" NETWORK_PREFIX)
@@ -44,7 +44,7 @@ for env_file in "$deployment"/casks/*/.env; do
     case "$key" in *SUBNET) ;; *) continue ;; esac
     [ -n "$value" ] || continue
     want=$(prefix_of "$value")
-    ours="${network_prefix}${cask}"
+    ours="${network_prefix}${module}"
     ours_subnets=$(docker network inspect "$ours" \
       --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null || true)
     # Only an existing network already *on the declared subnet* means there is
@@ -73,11 +73,11 @@ for env_file in "$deployment"/casks/*/.env; do
       done
     fi
     if [ -n "$owner" ]; then
-      printf 'COLLISION %s %s=%s is held by %s\n' "$cask" "$key" "$value" "$owner"
+      printf 'COLLISION %s %s=%s is held by %s\n' "$module" "$key" "$value" "$owner"
       printf '          override it in the deployment config\n'
       status=1
     else
-      printf 'ok        %s %s=%s\n' "$cask" "$key" "$value"
+      printf 'ok        %s %s=%s\n' "$module" "$key" "$value"
     fi
   done <"$env_file"
 done
@@ -88,8 +88,8 @@ section "published ports are free"
 owned_ports=$(docker ps --format '{{.Ports}}' 2>/dev/null |
   grep -oE '0\.0\.0\.0:[0-9]+' | cut -d: -f2 | sort -u || true)
 
-for compose in "$deployment"/casks/*/docker-compose.yml; do
-  cask=$(basename "$(dirname "$compose")")
+for compose in "$deployment"/modules/*/docker-compose.yml; do
+  module=$(basename "$(dirname "$compose")")
   env_file="$(dirname "$compose")/.env"
   ports=$(grep -oE '^\s+- "\$\{[A-Z_]*PORT[A-Z_]*\}:' "$compose" 2>/dev/null |
     grep -oE '[A-Z_]*PORT[A-Z_]*' | sort -u || true)
@@ -97,12 +97,12 @@ for compose in "$deployment"/casks/*/docker-compose.yml; do
     value=$(env_value "$env_file" "$name")
     [ -n "$value" ] || continue
     if printf '%s\n' $owned_ports | grep -qx "$value"; then
-      printf 'ok        %s %s=%s (already published by this deployment)\n' "$cask" "$name" "$value"
+      printf 'ok        %s %s=%s (already published by this deployment)\n' "$module" "$name" "$value"
     elif ss -tln 2>/dev/null | grep -qE "[:.]$value\b"; then
-      printf 'IN USE    %s %s=%s is held by something else on this host\n' "$cask" "$name" "$value"
+      printf 'IN USE    %s %s=%s is held by something else on this host\n' "$module" "$name" "$value"
       status=1
     else
-      printf 'ok        %s %s=%s\n' "$cask" "$name" "$value"
+      printf 'ok        %s %s=%s\n' "$module" "$name" "$value"
     fi
   done
 done

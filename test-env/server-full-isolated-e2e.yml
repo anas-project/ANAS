@@ -1,0 +1,57 @@
+# Full runtime fixture for the isolated Docker daemon on ln. Unlike the
+# portable render fixture, host-network facts are explicit because the daemon
+# runs in a network namespace and must not inherit the physical host's
+# interface name or address.
+modules:
+  samba_dc: {}
+  samba_fs: {}
+  postgres: {}
+  mariadb: {}
+  authentik: {}
+  nextcloud: {}
+  collabora: {}
+  meshcentral: {}
+  netbird: {}
+  lam: {}
+  ddns_updater:
+    config:
+      dns_provider: cloudflare
+      zone_identifier: test-zone-id
+  eturnal: {}
+  freeradius: {}
+  lego:
+    config:
+      dns_provider: cloudflare
+  traefik:
+    config:
+      subnet: 172.23.0.0/16
+      gateway_ip: 172.23.0.1
+identity:
+  iam:
+    provider: authentik
+global:
+  chinese_speedup: true
+  base_domain: nas.test
+  email: admin@nas.test
+  timezone: Asia/Shanghai
+  virtual_domain: true
+  default_service_root_password: Anas-Test-2026!Root
+env:
+  APT_MIRROR_URL: https://mirrors.aliyun.com
+  APK_MIRROR_URL: https://mirrors.aliyun.com
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_
+  IMAGE_PREFIX: anas_
+  NETWORK_PREFIX: anas_
+  DOCKER_SOCKET_PATH: /run/anas-anchor-docker.sock
+  NETWORK_NAMESPACE_PATH: /run/netns/anas-anchor
+  HOST_IP: 10.252.0.2
+  INTERFACE: anas-a-peer
+  DEFAULT_GATEWAY_IP: 10.252.0.1
+  HOST_SUBNET_MASK: "24"
+  LOCAL_DNS_SERVER: 10.252.0.2
+  SAMBA_DC_HOST_IP: 10.252.0.2
+  SAMBA_DC_INTERFACES: anas-a-peer
+  SAMBA_DC_ANCHOR_SCAN_INTERVAL: "300"
+secrets:
+  cloudflare_dns_api_token: test-token-not-a-real-credential

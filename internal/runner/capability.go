@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// Capability binding. A capability names a job some cask does for others --
+// Capability binding. A capability names a job some module does for others --
 // serving identity, gating HTTP access -- and a consumer declares the job it
-// needs rather than the cask it wants. What differs between capabilities is
+// needs rather than the module it wants. What differs between capabilities is
 // how the single provider is chosen, and that difference is data here rather
 // than a branch: see capabilityDefinitions.
 const (
@@ -42,9 +42,9 @@ type capabilityDefinition struct {
 	// identifier outside the set fails at manifest load rather than being
 	// ignored, so a typo cannot silently disable SSO.
 	Interfaces []string
-	// RequireAll is the provider admission rule: a cask may only register as
+	// RequireAll is the provider admission rule: a module may only register as
 	// a provider when it serves all of these. Checking at manifest load means
-	// whether a cask qualifies never depends on the user's configuration.
+	// whether a module qualifies never depends on the user's configuration.
 	RequireAll []string
 	// Selection is how the provider is chosen.
 	Selection string
@@ -92,12 +92,12 @@ func knownCapabilityInterfaces(name string) ([]string, bool) {
 
 // resolveCapabilityDependency binds one consumer to the deployment's provider
 // for a capability and records the interface it will speak. It returns the
-// provider cask name so the caller can add a dependency edge, which is what
+// provider module name so the caller can add a dependency edge, which is what
 // guarantees the provider's calculate hook runs before the consumer's.
 func (a *app) resolveCapabilityDependency(moduleName string, mod Module, dep RequiredCapability) (string, error) {
 	definition, ok := capabilityDefinitions[dep.Name]
 	if !ok {
-		return "", fmt.Errorf("cask %q requires capability %q which the runner cannot bind", moduleName, dep.Name)
+		return "", fmt.Errorf("module %q requires capability %q which the runner cannot bind", moduleName, dep.Name)
 	}
 	provider, err := a.selectCapabilityProvider(moduleName, dep.Name, definition)
 	if err != nil {
@@ -105,7 +105,7 @@ func (a *app) resolveCapabilityDependency(moduleName string, mod Module, dep Req
 	}
 	providerMod, ok := a.reg[provider]
 	if !ok {
-		return "", fmt.Errorf("%s %q is not a known cask;\navailable providers: %s",
+		return "", fmt.Errorf("%s %q is not a known module;\navailable providers: %s",
 			definition.ConfigKey, provider, a.describeCapabilityProviders(dep.Name))
 	}
 	capability, ok := providerMod.providedCapability(dep.Name)
@@ -173,7 +173,7 @@ func (a *app) selectCapabilityProvider(moduleName, capability string, definition
 	case 1:
 		return candidates[0], nil
 	case 0:
-		return "", fmt.Errorf("%s requires %s capability, but no enabled cask provides it;\nenable one of: %s",
+		return "", fmt.Errorf("%s requires %s capability, but no enabled module provides it;\nenable one of: %s",
 			moduleName, capability, a.listCapabilityProviders(capability))
 	default:
 		return "", fmt.Errorf("%s requires %s capability, but %s all provide it;\nset %s to the one this deployment should use",
@@ -181,9 +181,9 @@ func (a *app) selectCapabilityProvider(moduleName, capability string, definition
 	}
 }
 
-// resolveCapabilityInterface applies the protocol precedence: an explicit cask
-// parameter wins, then the deployment default when the cask supports it, then
-// the cask's own preference order.
+// resolveCapabilityInterface applies the protocol precedence: an explicit module
+// parameter wins, then the deployment default when the module supports it, then
+// the module's own preference order.
 func (a *app) resolveCapabilityInterface(moduleName string, mod Module, dep RequiredCapability, provider string, capability ProvidedCapability) (string, error) {
 	key := paramEnvKey(moduleName, mod.EnvPrefix, dep.InterfaceSelectedBy)
 	requested := strings.ToLower(strings.TrimSpace(a.env[key]))
@@ -238,7 +238,7 @@ func (a *app) resolveCapabilityInterface(moduleName string, mod Module, dep Requ
 	return iface, nil
 }
 
-// capabilityProviderNames lists every cask that qualifies as a provider for a
+// capabilityProviderNames lists every module that qualifies as a provider for a
 // capability, so an error can tell the user what they may actually choose.
 func (a *app) capabilityProviderNames(capability string) []string {
 	names := []string{}
@@ -254,7 +254,7 @@ func (a *app) capabilityProviderNames(capability string) []string {
 func (a *app) listCapabilityProviders(capability string) string {
 	names := a.capabilityProviderNames(capability)
 	if len(names) == 0 {
-		return "(no cask provides the " + capability + " capability)"
+		return "(no module provides the " + capability + " capability)"
 	}
 	return strings.Join(names, ", ")
 }
@@ -264,7 +264,7 @@ func (a *app) listCapabilityProviders(capability string) string {
 func (a *app) describeCapabilityProviders(capability string) string {
 	names := a.capabilityProviderNames(capability)
 	if len(names) == 0 {
-		return "(no cask provides the " + capability + " capability)"
+		return "(no module provides the " + capability + " capability)"
 	}
 	out := make([]string, 0, len(names))
 	for _, name := range names {
@@ -276,7 +276,7 @@ func (a *app) describeCapabilityProviders(capability string) string {
 
 // checkSingleIAM rejects a config that would start two IAMs at once. Listing an
 // IAM in modules is how a user starts one without any consumer, so the check is
-// over explicitly listed casks plus the selected provider.
+// over explicitly listed modules plus the selected provider.
 //
 // The restriction is specific to IAM rather than general to capabilities: two
 // identity providers would both claim to be the deployment's source of truth
@@ -287,7 +287,7 @@ func (a *app) checkSingleIAM() error {
 		return nil
 	}
 	active := []string{}
-	for _, name := range a.cfg.Modules {
+	for _, name := range a.cfg.Modules.Order {
 		mod, ok := a.reg[name]
 		if !ok || !a.moduleEnabled(name) {
 			continue
@@ -352,7 +352,7 @@ func (a *app) iamConsumers() []string {
 // The per-protocol lists are a projection of the flat list written from one
 // resolution result, which is what makes "this deployment has no SAML
 // consumer" a directly testable condition instead of something every provider
-// cask has to rediscover by scanning.
+// module has to rediscover by scanning.
 func (a *app) iamConsumersByInterface(iface string) []string {
 	names := []string{}
 	for _, name := range a.iamConsumers() {
@@ -412,21 +412,20 @@ func (a *app) publishIAMEnv(selected []string) {
 	}
 	sort.Strings(clients)
 	sort.Strings(appClients)
-	// The topology is a runner-owned cross-cask contract rather than the output
-	// of any cask, and unlike the deployment's global parameters it is not for
+	// The topology is a runner-owned cross-module contract rather than the output
+	// of any module, and unlike the deployment's global parameters it is not for
 	// everyone to read.
 	// Giving it a synthetic owner keeps it out of every dependency closure;
 	// only manifests that explicitly consume a key receive it in their .env.
-	const identityContractOwner = "runner"
-	set(envIdentityClients, strings.Join(clients, ","), identityContractOwner)
-	set(envIdentityAppClients, strings.Join(appClients, ","), identityContractOwner)
+	set(envIdentityClients, strings.Join(clients, ","), runnerScope)
+	set(envIdentityAppClients, strings.Join(appClients, ","), runnerScope)
 	for iface, names := range byInterface {
 		sort.Strings(names)
-		set(fmt.Sprintf(envIdentityClientsTmpl, strings.ToUpper(iface)), strings.Join(names, ","), identityContractOwner)
+		set(fmt.Sprintf(envIdentityClientsTmpl, strings.ToUpper(iface)), strings.Join(names, ","), runnerScope)
 	}
 	for _, client := range clients {
 		key := envIdentityClientPfx + strings.ToUpper(strings.ReplaceAll(client, "-", "_")) + "__INTERFACES"
-		set(key, strings.Join(clientIfaces[client], ","), identityContractOwner)
+		set(key, strings.Join(clientIfaces[client], ","), runnerScope)
 	}
 }
 
@@ -465,7 +464,7 @@ func (a *app) iamPlanDocument() map[string]any {
 	consumers := make([]map[string]string, 0, len(a.iamBindings))
 	for _, consumer := range a.iamConsumers() {
 		consumers = append(consumers, map[string]string{
-			"cask": consumer, "interface": a.iamBindings[consumer],
+			"module": consumer, "interface": a.iamBindings[consumer],
 		})
 	}
 	document["consumers"] = consumers
@@ -498,29 +497,29 @@ func (a *app) validateIAMEndpoints() error {
 	return nil
 }
 
-func normalizeProvidedCapabilities(cask string, in []manifestProvidedCapability) ([]ProvidedCapability, error) {
+func normalizeProvidedCapabilities(module string, in []manifestProvidedCapability) ([]ProvidedCapability, error) {
 	out := []ProvidedCapability{}
 	seen := map[string]bool{}
 	for _, capability := range in {
 		name := strings.ToLower(strings.TrimSpace(capability.Name))
 		if name == "" {
-			return nil, fmt.Errorf("cask %q has capabilities.provides entry without name", cask)
+			return nil, fmt.Errorf("module %q has capabilities.provides entry without name", module)
 		}
 		known, ok := knownCapabilityInterfaces(name)
 		if !ok {
-			return nil, fmt.Errorf("cask %q provides unknown capability %q; known capabilities: %s",
-				cask, name, strings.Join(knownCapabilityNames(), ", "))
+			return nil, fmt.Errorf("module %q provides unknown capability %q; known capabilities: %s",
+				module, name, strings.Join(knownCapabilityNames(), ", "))
 		}
 		if seen[name] {
-			return nil, fmt.Errorf("cask %q provides capability %q more than once", cask, name)
+			return nil, fmt.Errorf("module %q provides capability %q more than once", module, name)
 		}
 		seen[name] = true
-		interfaces, err := normalizeInterfaceList(cask, "capabilities.provides."+name+".interfaces", known, capability.Interfaces)
+		interfaces, err := normalizeInterfaceList(module, "capabilities.provides."+name+".interfaces", known, capability.Interfaces)
 		if err != nil {
 			return nil, err
 		}
 		if len(interfaces) == 0 {
-			return nil, fmt.Errorf("cask %q provides capability %q without interfaces", cask, name)
+			return nil, fmt.Errorf("module %q provides capability %q without interfaces", module, name)
 		}
 		// Admission: a provider must serve everything the capability promises
 		// its consumers, checked here so qualification never depends on the
@@ -528,8 +527,8 @@ func normalizeProvidedCapabilities(cask string, in []manifestProvidedCapability)
 		if required := capabilityDefinitions[name].RequireAll; len(required) > 0 {
 			if missing := missingInterfaces(interfaces, required); len(missing) > 0 {
 				return nil, fmt.Errorf(
-					"cask %q declares capability %s with interfaces [%s]; a provider of %s must declare all of: %s",
-					cask, name, strings.Join(interfaces, ","), name, strings.Join(required, ", "))
+					"module %q declares capability %s with interfaces [%s]; a provider of %s must declare all of: %s",
+					module, name, strings.Join(interfaces, ","), name, strings.Join(required, ", "))
 			}
 		}
 		out = append(out, ProvidedCapability{Name: name, Interfaces: interfaces})
@@ -537,42 +536,42 @@ func normalizeProvidedCapabilities(cask string, in []manifestProvidedCapability)
 	return out, nil
 }
 
-func normalizeRequiredCapabilities(cask string, in []manifestRequiredCapability) ([]RequiredCapability, error) {
+func normalizeRequiredCapabilities(module string, in []manifestRequiredCapability) ([]RequiredCapability, error) {
 	out := []RequiredCapability{}
 	seen := map[string]bool{}
 	for _, capability := range in {
 		name := strings.ToLower(strings.TrimSpace(capability.Name))
 		if name == "" {
-			return nil, fmt.Errorf("cask %q has requires_capabilities entry without name", cask)
+			return nil, fmt.Errorf("module %q has requires_capabilities entry without name", module)
 		}
 		known, ok := knownCapabilityInterfaces(name)
 		if !ok {
-			return nil, fmt.Errorf("cask %q requires unknown capability %q; known capabilities: %s",
-				cask, name, strings.Join(knownCapabilityNames(), ", "))
+			return nil, fmt.Errorf("module %q requires unknown capability %q; known capabilities: %s",
+				module, name, strings.Join(knownCapabilityNames(), ", "))
 		}
 		if seen[name] {
-			return nil, fmt.Errorf("cask %q requires capability %q more than once", cask, name)
+			return nil, fmt.Errorf("module %q requires capability %q more than once", module, name)
 		}
 		seen[name] = true
 		selectedBy := strings.TrimSpace(capability.InterfaceSelectedBy)
 		if selectedBy == "" {
-			return nil, fmt.Errorf("cask %q requires_capabilities %q has no interface_selected_by parameter", cask, name)
+			return nil, fmt.Errorf("module %q requires_capabilities %q has no interface_selected_by parameter", module, name)
 		}
-		anyOf, err := normalizeInterfaceList(cask, "requires_capabilities."+name+".interfaces.any_of", known, capability.Interfaces.AnyOf)
+		anyOf, err := normalizeInterfaceList(module, "requires_capabilities."+name+".interfaces.any_of", known, capability.Interfaces.AnyOf)
 		if err != nil {
 			return nil, err
 		}
 		if len(anyOf) == 0 {
-			return nil, fmt.Errorf("cask %q requires_capabilities %q has an empty any_of", cask, name)
+			return nil, fmt.Errorf("module %q requires_capabilities %q has an empty any_of", module, name)
 		}
-		prefer, err := normalizeInterfaceList(cask, "requires_capabilities."+name+".interfaces.prefer", known, capability.Interfaces.Prefer)
+		prefer, err := normalizeInterfaceList(module, "requires_capabilities."+name+".interfaces.prefer", known, capability.Interfaces.Prefer)
 		if err != nil {
 			return nil, err
 		}
 		for _, item := range prefer {
 			if !contains(anyOf, item) {
-				return nil, fmt.Errorf("cask %q requires_capabilities %q prefers %q which is not in any_of [%s]",
-					cask, name, item, strings.Join(anyOf, ","))
+				return nil, fmt.Errorf("module %q requires_capabilities %q prefers %q which is not in any_of [%s]",
+					module, name, item, strings.Join(anyOf, ","))
 			}
 		}
 		out = append(out, RequiredCapability{
@@ -584,19 +583,19 @@ func normalizeRequiredCapabilities(cask string, in []manifestRequiredCapability)
 
 // normalizeInterfaceList lowercases and de-duplicates protocol identifiers,
 // rejecting any the runner does not know for this capability.
-func normalizeInterfaceList(cask, field string, known, in []string) ([]string, error) {
+func normalizeInterfaceList(module, field string, known, in []string) ([]string, error) {
 	out := []string{}
 	for _, raw := range in {
 		item := strings.ToLower(strings.TrimSpace(raw))
 		if item == "" {
-			return nil, fmt.Errorf("cask %q %s contains an empty interface", cask, field)
+			return nil, fmt.Errorf("module %q %s contains an empty interface", module, field)
 		}
 		if !contains(known, item) {
-			return nil, fmt.Errorf("cask %q %s contains unknown interface %q; known interfaces: %s",
-				cask, field, item, strings.Join(known, ", "))
+			return nil, fmt.Errorf("module %q %s contains unknown interface %q; known interfaces: %s",
+				module, field, item, strings.Join(known, ", "))
 		}
 		if contains(out, item) {
-			return nil, fmt.Errorf("cask %q %s lists interface %q more than once", cask, field, item)
+			return nil, fmt.Errorf("module %q %s lists interface %q more than once", module, field, item)
 		}
 		out = append(out, item)
 	}

@@ -11,19 +11,25 @@ import (
 )
 
 // globalScope is the module identity of a parameter that belongs to the
-// deployment rather than to any cask. It is the empty string because that is
+// deployment rather than to any module. It is the empty string because that is
 // already what the environment scoping rules mean by "global": a key with this
-// owner is visible to every cask regardless of its dependency closure.
+// owner is visible to every module regardless of its dependency closure.
 //
-// There used to be a second spelling of the same idea -- a cask named "core"
+// There used to be a second spelling of the same idea -- a module named "core"
 // that owned the shared parameters -- and every rule that cared about global
 // ownership had to accept both. Hence the string is defined once, here, and
 // the two are the same value.
 const globalScope = ""
 
+// runnerScope owns derived cross-module topology. Unlike globalScope, these
+// values are delivered only to modules that explicitly list them in
+// config.consumes, so adding an unrelated module cannot perturb every
+// rendered .env and force an otherwise unnecessary Compose recreation.
+const runnerScope = "runner"
+
 // globalModuleName is how the same scope is spelled on the command line and in
 // the JSON contract, where an empty owner would read as a missing field. It
-// used to be reported as "core", the cask these parameters were kept in, even
+// used to be reported as "core", the module these parameters were kept in, even
 // on paths that had already rewritten themselves to `global.<parameter>`.
 const globalModuleName = "global"
 
@@ -33,7 +39,7 @@ var globalsYAML []byte
 var globalConfig = mustLoadGlobals()
 
 // globalSchema is the declaration side of the deployment's own parameters,
-// shaped like a cask's config block so the same normalization applies.
+// shaped like a module's config block so the same normalization applies.
 type globalSchema struct {
 	Required []string
 	Defaults map[string]string

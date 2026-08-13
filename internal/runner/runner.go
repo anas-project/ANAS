@@ -27,6 +27,7 @@ type app struct {
 	useFrozenHooks bool
 	compose        compose.CLI
 	reg            map[string]Module
+	contracts      map[string]Contract
 	cfg            *config.File
 	env            map[string]string
 	envOwner       map[string]string
@@ -34,10 +35,10 @@ type app struct {
 	order          []string
 	secrets        *secretStore
 	localAdmins    *localAdminState
-	lock           *caskLock
+	lock           *moduleLock
 	hookBins       map[string]string
 	sensitiveKeys  map[string]bool
-	// narrowFileScope restricts a rendered .env to what its cask declares --
+	// narrowFileScope restricts a rendered .env to what its module declares --
 	// global values, its own prefix, and manifest `config.consumes` -- instead
 	// of everything its dependency closure happens to own. It is a field rather
 	// than an outright replacement of the old rule so that one rendering can be
@@ -48,19 +49,20 @@ type app struct {
 	// which nothing else would recognise as sensitive. See markSensitive.
 	runnerSensitive  map[string]bool
 	resolvedBindings map[string]map[string]string
-	// iamProvider is the single IAM cask serving this deployment, and
+	resourceRequests []ResourceRequest
+	// iamProvider is the single IAM module serving this deployment, and
 	// iamBindings maps each consumer to its resolved protocol. Both are empty
 	// until a consumer is actually reached during ordering, so an unused
 	// iam.provider never starts an IAM.
 	iamProvider string
 	iamBindings map[string]string
-	// capabilityProviders records the cask bound for each capability this
+	// capabilityProviders records the module bound for each capability this
 	// deployment actually resolved, keyed by capability name.
 	capabilityProviders map[string]string
-	// dynamicDNSProvider is the cask holding the records this deployment
-	// declares. Other DDNS casks may still run alongside it, self-managed.
+	// dynamicDNSProvider is the module holding the records this deployment
+	// declares. Other DDNS modules may still run alongside it, self-managed.
 	dynamicDNSProvider string
-	// artifactRoot is the final immutable deployment cask directory. Hooks use
+	// artifactRoot is the final immutable deployment module directory. Hooks use
 	// this path while a deployment is rendered in staging so values they derive
 	// never contain the temporary staging path.
 	artifactRoot string
@@ -135,7 +137,7 @@ var commandNames = []string{
 
 func runHelp(jsonMode bool) error {
 	if jsonMode {
-		return emitOK(map[string]any{"commands": commandNames, "cask_abi": currentCaskABI})
+		return emitOK(map[string]any{"commands": commandNames, "module_abi": currentModuleABI})
 	}
 	usage()
 	return nil
@@ -146,14 +148,14 @@ func usage() {
 
 Usage:
   anas init [PATH] [--shell-init write|remove] [-y]
-  anas plan    -c config.yml [--cask-root casks/mods]
+  anas plan    -c config.yml [--module-root modules]
   anas lock    [-w WORKSPACE] [-c config.yml]
   anas render  [-w WORKSPACE] [-c config.yml]
   anas build   [-w WORKSPACE] [-c config.yml]
   anas apply   [-w WORKSPACE] [-c config.yml [--build] | --deployment ID]
-  anas start   [CASK...] [-w WORKSPACE]
-  anas restart [CASK...] [-w WORKSPACE]
-  anas stop    [CASK...] [-w WORKSPACE]
+  anas start   [MODULE...] [-w WORKSPACE]
+  anas restart [MODULE...] [-w WORKSPACE]
+  anas stop    [MODULE...] [-w WORKSPACE]
   anas rollback [DEPLOYMENT_ID] -w WORKSPACE
   anas status [-w WORKSPACE]
   anas deployments list|inspect [ID] [-w WORKSPACE]
@@ -163,12 +165,12 @@ Usage:
   anas backup plan|create  --to DEST [--mode MODE] [--snapshot ID] [--no-stop]
   anas backup list|verify  --to DEST [--backup-id ID]
   anas backup restore --from SRC -w WORKSPACE [--backup-id ID] [--dry-run] [-y]
-  anas config list    [global|CASK] [-w WORKSPACE]
+  anas config list    [global|MODULE] [-w WORKSPACE]
   anas config set     [-w WORKSPACE] <module.parameter> <value>
   anas config explain <module.parameter>
   anas config plan    [-w WORKSPACE]
   anas config secret  list | get <KEY>   [-w WORKSPACE]
-  anas admin local list | credential CASK [ACCOUNT] [-w WORKSPACE]
+  anas admin local list | credential MODULE [ACCOUNT] [-w WORKSPACE]
 
 Workspace:
   A workspace holds the config, data, snapshots and runtime state of one
@@ -197,7 +199,7 @@ Rollback versus restore:
   is only ever "snapshot restore", which puts config, lock, secrets, state,
   artifact and data back to one point in time.
 
-Cask ABI:
+Module ABI:
   %s
 
 Machine-readable output:
@@ -207,7 +209,7 @@ Machine-readable output:
   contract; do not parse it.
 
 The Go CLI reads only the structured YAML format documented in README.md.
-`, currentCaskABI)
+`, currentModuleABI)
 }
 
 func run(action string, args []string) error {
@@ -219,12 +221,12 @@ func run(action string, args []string) error {
 	buildBeforeStart := fs.Bool("build", false, "build before start")
 	verbose := fs.Bool("verbose", false, "debug logging")
 	yes := fs.Bool("y", false, "accept defaults")
-	rootFlag := fs.String("root", "", "project root or cask bundle directory")
+	rootFlag := fs.String("root", "", "project root or module bundle directory")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	root, err := locateCaskRoot(*rootFlag)
+	root, err := locateModuleRoot(*rootFlag)
 	if err != nil {
 		return err
 	}
@@ -253,17 +255,17 @@ func run(action string, args []string) error {
 }
 
 // runRollback swaps the release with release.previous, restores the matching
-// cask lock snapshot, and starts the restored artifact without re-rendering.
+// module lock snapshot, and starts the restored artifact without re-rendering.
 func runRollback(args []string) error {
 	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
 	base := fs.String("b", "", "runtime base path")
 	fs.StringVar(base, "base", "", "runtime base path")
 	verbose := fs.Bool("verbose", false, "debug logging")
-	rootFlag := fs.String("root", "", "project root or cask bundle directory")
+	rootFlag := fs.String("root", "", "project root or module bundle directory")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	root, err := locateCaskRoot(*rootFlag)
+	root, err := locateModuleRoot(*rootFlag)
 	if err != nil {
 		return err
 	}
@@ -316,8 +318,8 @@ func runRollback(args []string) error {
 			return err
 		}
 	}
-	if snapshot := filepath.Join(release, ".cask.lock.snapshot"); exists(snapshot) {
-		if err := copyFile(snapshot, caskLockPath(*base)); err != nil {
+	if snapshot := filepath.Join(release, ".module.lock.snapshot"); exists(snapshot) {
+		if err := copyFile(snapshot, moduleLockPath(*base)); err != nil {
 			return err
 		}
 	}
@@ -355,14 +357,14 @@ func (a *app) execute(actions []string) error {
 	if err != nil {
 		return err
 	}
-	lock, err := loadCaskLock(a.base)
+	lock, err := loadModuleLock(a.base)
 	if err != nil {
 		return err
 	}
 	a.lock = lock
 	a.cfg = cfg
 	a.env, a.envOwner = cfg.BaseEnvWithOwners()
-	a.order, err = a.resolveOrder(cfg.Modules)
+	a.order, err = a.resolveOrder(cfg.Modules.Order)
 	if err != nil {
 		return err
 	}
@@ -426,7 +428,7 @@ func (a *app) execute(actions []string) error {
 			return err
 		}
 	} else {
-		// Artifact start/restart: the rendered per-cask environments and
+		// Artifact start/restart: the rendered per-module environments and
 		// frozen hook binaries are the contract. Refuse to guess when a
 		// release predates the current format instead of starting with
 		// incomplete values.
@@ -435,10 +437,10 @@ func (a *app) execute(actions []string) error {
 		for _, name := range a.order {
 			envPath := filepath.Join(release, name, ".env")
 			if !exists(envPath) {
-				return fmt.Errorf("release cask %s has no rendered .env; re-render with `anas start -c <config>`", name)
+				return fmt.Errorf("release module %s has no rendered .env; re-render with `anas start -c <config>`", name)
 			}
 			if _, err := parseEnvFile(envPath); err != nil {
-				return fmt.Errorf("release cask %s was rendered by an older anas (%v); re-render with `anas start -c <config>`", name, err)
+				return fmt.Errorf("release module %s was rendered by an older anas (%v); re-render with `anas start -c <config>`", name, err)
 			}
 		}
 	}
@@ -449,7 +451,7 @@ func (a *app) execute(actions []string) error {
 		return promoteRelease(tmp, release)
 	}
 	if contains(actions, "build") {
-		if err := a.each(work, func(run caskRun) error {
+		if err := a.each(work, func(run moduleRun) error {
 			if run.mod.RuntimeType != "compose" {
 				return nil
 			}
@@ -473,7 +475,7 @@ func (a *app) execute(actions []string) error {
 		if err := a.ensureHostLAN(); err != nil {
 			return err
 		}
-		if err := a.each(work, func(run caskRun) error {
+		if err := a.each(work, func(run moduleRun) error {
 			if run.mod.RuntimeType != "compose" {
 				return nil
 			}
@@ -500,10 +502,10 @@ func (a *app) execute(actions []string) error {
 	}
 	if renders {
 		if contains(actions, "build") || contains(actions, "start") {
-			if err := snapshotCaskLock(a.base, release+".previous"); err != nil {
+			if err := snapshotModuleLock(a.base, release+".previous"); err != nil {
 				return err
 			}
-			if err := a.updateCaskLock(a.lock, contains(actions, "start")); err != nil {
+			if err := a.updateModuleLock(a.lock, contains(actions, "start")); err != nil {
 				return err
 			}
 			if err := a.lock.Save(a.base); err != nil {
@@ -523,8 +525,8 @@ func (a *app) runAfterStart(release string) error {
 	return a.runAfterStartOf(release, a.order)
 }
 
-// runAfterStartOf runs hooks only for casks started by this operation. A
-// partial lifecycle command must not rerun hooks belonging to untouched casks.
+// runAfterStartOf runs hooks only for modules started by this operation. A
+// partial lifecycle command must not rerun hooks belonging to untouched modules.
 func (a *app) runAfterStartOf(release string, names []string) error {
 	for _, name := range names {
 		mod := a.reg[name]
@@ -532,7 +534,7 @@ func (a *app) runAfterStartOf(release string, names []string) error {
 			continue
 		}
 		dir := filepath.Join(release, name)
-		resp, err := a.runHook(mod, "after_start", dir, a.caskEnv(dir))
+		resp, err := a.runHook(mod, "after_start", dir, a.moduleEnv(dir))
 		if err != nil {
 			return err
 		}
@@ -543,7 +545,7 @@ func (a *app) runAfterStartOf(release string, names []string) error {
 	return nil
 }
 
-// releaseDirFor returns the absolute path a cask occupies once promoted. Hook
+// releaseDirFor returns the absolute path a module occupies once promoted. Hook
 // requests always carry this stable path, so any value a hook derives from
 // its workdir stays valid after promotion and across artifact starts.
 func (a *app) releaseDirFor(name string) string {
@@ -580,9 +582,9 @@ func (a *app) stopRelease(release string, jsonMode bool) error {
 	var stopErrors []error
 	for i := len(modules) - 1; i >= 0; i-- {
 		name := modules[i]
-		emitProgress(jsonMode, "stop-containers", int64(len(modules)-i), total, "casks")
+		emitProgress(jsonMode, "stop-containers", int64(len(modules)-i), total, "modules")
 		dir := filepath.Join(release, name)
-		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.caskEnv(dir), "down"); err != nil {
+		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("stop %s: %w", name, err))
 		}
 	}
@@ -594,10 +596,10 @@ func (a *app) stopRelease(release string, jsonMode bool) error {
 	return errors.Join(stopErrors...)
 }
 
-// releaseModules lists the compose casks physically present in a rendered
-// release. Casks selected by the current config keep their dependency order;
-// casks that are no longer selected are appended, so iterating the reversed
-// slice stops removed casks first.
+// releaseModules lists the compose modules physically present in a rendered
+// release. Modules selected by the current config keep their dependency order;
+// modules that are no longer selected are appended, so iterating the reversed
+// slice stops removed modules first.
 func (a *app) releaseModules(release string) []string {
 	entries, err := os.ReadDir(release)
 	if err != nil {
@@ -638,7 +640,7 @@ func (a *app) releaseComposeFile(name string) string {
 	return "docker-compose.yml"
 }
 
-// stopRemoved downs release casks that the new configuration no longer
+// stopRemoved downs release modules that the new configuration no longer
 // selects, so a config change cannot leave orphaned compose projects behind.
 func (a *app) stopRemoved(release string) error {
 	var stopErrors []error
@@ -648,8 +650,8 @@ func (a *app) stopRemoved(release string) error {
 			continue
 		}
 		dir := filepath.Join(release, name)
-		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.caskEnv(dir), "down"); err != nil {
-			stopErrors = append(stopErrors, fmt.Errorf("stop removed cask %s: %w", name, err))
+		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
+			stopErrors = append(stopErrors, fmt.Errorf("stop removed module %s: %w", name, err))
 			continue
 		}
 		stoppedAny = true
@@ -675,10 +677,10 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 	if err := a.checkSingleIAM(); err != nil {
 		return nil, err
 	}
-	// Dynamic DNS belongs to the deployment rather than to any cask, so no
+	// Dynamic DNS belongs to the deployment rather than to any module, so no
 	// dependency edge would ever pull its implementation in. Resolving it here
 	// and adding it as a root is what makes `dynamic_dns.provider` sufficient
-	// on its own, without also listing the cask in `modules`.
+	// on its own, without also listing the module in `modules`.
 	dynamicDNS, err := a.resolveDynamicDNS()
 	if err != nil {
 		return nil, err
@@ -705,7 +707,7 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 		if !a.moduleEnabled(name) {
 			return fmt.Errorf("module %q is disabled but required by an enabled module", name)
 		}
-		if err := a.requireCaskManifest(name); err != nil {
+		if err := a.requireModuleManifest(name); err != nil {
 			return err
 		}
 		temp[name] = true
@@ -722,6 +724,13 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 			}
 			deps = append(deps, provider)
 		}
+		for _, dep := range mod.RequiresContracts {
+			provider, err := a.resolveContractDependency(name, mod, dep)
+			if err != nil {
+				return err
+			}
+			deps = append(deps, provider)
+		}
 		for _, dep := range mod.RequiresCapabilities {
 			provider, err := a.resolveCapabilityDependency(name, mod, dep)
 			if err != nil {
@@ -729,7 +738,7 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 			}
 			deps = append(deps, provider)
 		}
-		if svc, ok := a.cfg.Services[name]; ok {
+		if svc, ok := a.cfg.Modules.Values[name]; ok {
 			deps = append(deps, svc.DependsOn...)
 		}
 		deps = uniqueStrings(deps)
@@ -860,7 +869,7 @@ func (a *app) configuredProviders(providers []string) []string {
 	if a.cfg == nil {
 		return out
 	}
-	for _, name := range a.cfg.Modules {
+	for _, name := range a.cfg.Modules.Order {
 		if contains(providers, name) && a.moduleEnabled(name) && !contains(out, name) {
 			out = append(out, name)
 		}
@@ -868,20 +877,20 @@ func (a *app) configuredProviders(providers []string) []string {
 	return out
 }
 
-func (a *app) requireCaskManifest(name string) error {
+func (a *app) requireModuleManifest(name string) error {
 	mod, ok := a.reg[name]
 	if !ok {
 		return fmt.Errorf("unknown module %q", name)
 	}
-	path := filepath.Join(mod.SourceDir, "cask.yml")
+	path := filepath.Join(mod.SourceDir, "module.yml")
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("cask %q is missing cask.yml", name)
+			return fmt.Errorf("module %q is missing module.yml", name)
 		}
 		return err
 	}
 	if _, err := os.Stat(filepath.Join(mod.SourceDir, "runner.rb")); err == nil {
-		return fmt.Errorf("cask %q still contains unsupported runner.rb", name)
+		return fmt.Errorf("module %q still contains unsupported runner.rb", name)
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -890,7 +899,7 @@ func (a *app) requireCaskManifest(name string) error {
 
 func (a *app) applyModuleDefaults() {
 	// The deployment's own parameters come first and are globally owned, so a
-	// cask default can never shadow one and every cask can read them.
+	// module default can never shadow one and every module can read them.
 	for k, v := range globalConfig.Defaults {
 		if a.env[k] == "" {
 			a.env[k] = v
@@ -927,7 +936,10 @@ func (a *app) calculate() error {
 	}
 	for _, name := range a.order {
 		mod := a.reg[name]
-		if err := a.applyCaskRootPassword(a.env, name); err != nil {
+		if err := a.publishModuleResources(name); err != nil {
+			return err
+		}
+		if err := a.applyModuleRootPassword(a.env, name); err != nil {
 			return err
 		}
 		if err := requireKeys(a.env, mod.Required); err != nil {
@@ -955,7 +967,11 @@ func (a *app) calculate() error {
 		}
 	}
 	a.env["DOMAINS"] = strings.Join(domains, ",")
-	a.setEnvOwner("DOMAINS", globalScope)
+	// DOMAINS is an input to Samba's zone reconciler, not a deployment-wide
+	// setting. Keep it runner-owned so only an explicit consumer changes when
+	// the enabled module set changes. Treating it as global made adding
+	// Nextcloud rewrite PostgreSQL's .env and recreate PostgreSQL itself.
+	a.setEnvOwner("DOMAINS", runnerScope)
 	return nil
 }
 
@@ -977,7 +993,7 @@ func (a *app) renderAll(work string) error {
 		}
 		env := a.scopedEnv(name)
 		env["MODULE_NAME"] = name
-		if err := a.applyCaskRootPassword(env, name); err != nil {
+		if err := a.applyModuleRootPassword(env, name); err != nil {
 			return err
 		}
 		resp, err := a.runHook(mod, "render_env", a.releaseDirFor(name), a.localAdminHookEnv(name, env))
@@ -1009,29 +1025,32 @@ func (a *app) ensureHostLAN() error {
 	return ensureMacvlan(a.env, a.base, a.compose)
 }
 
-type caskRun struct {
+type moduleRun struct {
 	mod      Module
 	dir      string
 	env      map[string]string
 	services []string
 }
 
-func (a *app) each(work string, fn func(caskRun) error) error {
+func (a *app) each(work string, fn func(moduleRun) error) error {
 	return a.eachOf(work, a.order, fn)
 }
 
 // eachOf is `each` over a chosen subset, which is what lets start, restart and
-// build act on named casks. The names are already in deployment order.
-func (a *app) eachOf(work string, names []string, fn func(caskRun) error) error {
+// build act on named modules. The names are already in deployment order.
+func (a *app) eachOf(work string, names []string, fn func(moduleRun) error) error {
 	for _, name := range names {
 		mod := a.reg[name]
 		dir := filepath.Join(work, name)
-		env := a.caskEnv(dir)
+		if a.useFrozenHooks && mod.SourceDir != "" {
+			dir = mod.SourceDir
+		}
+		env := a.moduleEnv(dir)
 		if mod.RuntimeType != "compose" {
 			// Nothing to enumerate services for, but the callback still runs:
-			// callers count casks for progress, and a runtime that starts no
+			// callers count modules for progress, and a runtime that starts no
 			// containers is still part of the deployment.
-			if err := fn(caskRun{mod: mod, dir: dir, env: env}); err != nil {
+			if err := fn(moduleRun{mod: mod, dir: dir, env: env}); err != nil {
 				return err
 			}
 			continue
@@ -1040,17 +1059,17 @@ func (a *app) eachOf(work string, names []string, fn func(caskRun) error) error 
 		if err != nil {
 			return err
 		}
-		if err := fn(caskRun{mod: mod, dir: dir, env: env, services: services}); err != nil {
+		if err := fn(moduleRun{mod: mod, dir: dir, env: env, services: services}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// caskEnv returns the environment for operating one rendered cask. The
+// moduleEnv returns the environment for operating one rendered module. The
 // rendered .env is authoritative when it exists; the in-memory environment is
 // only a fallback for directories that were never rendered.
-func (a *app) caskEnv(dir string) map[string]string {
+func (a *app) moduleEnv(dir string) map[string]string {
 	if env, err := parseEnvFile(filepath.Join(dir, ".env")); err == nil {
 		return env
 	}
@@ -1070,12 +1089,15 @@ func (a *app) services(mod Module, dir string, env map[string]string) ([]string,
 	if len(resp.DisableServices) > 0 {
 		services = remove(services, resp.DisableServices...)
 	}
+	for _, provider := range mod.ContractProviders {
+		services = remove(services, provider.OperationSvcs...)
+	}
 	sort.Strings(services)
 	return services, nil
 }
 
 func (a *app) moduleEnabled(name string) bool {
-	service, ok := a.cfg.Services[name]
+	service, ok := a.cfg.Modules.Values[name]
 	return !ok || service.Enabled == nil || *service.Enabled
 }
 
@@ -1102,15 +1124,15 @@ func promoteRelease(staging, release string) error {
 	return nil
 }
 
-// snapshotCaskLock copies the pre-upgrade lock file into the demoted release
-// so a rollback restores cask versions and capability bindings together with
+// snapshotModuleLock copies the pre-upgrade lock file into the demoted release
+// so a rollback restores module versions and capability bindings together with
 // the rendered artifact.
-func snapshotCaskLock(base, backup string) error {
-	lockPath := caskLockPath(base)
+func snapshotModuleLock(base, backup string) error {
+	lockPath := moduleLockPath(base)
 	if !exists(lockPath) || !exists(backup) {
 		return nil
 	}
-	return copyFile(lockPath, filepath.Join(backup, ".cask.lock.snapshot"))
+	return copyFile(lockPath, filepath.Join(backup, ".module.lock.snapshot"))
 }
 
 func copyDir(src, dst string) error {

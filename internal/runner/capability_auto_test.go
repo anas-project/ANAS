@@ -13,13 +13,13 @@ import (
 // capability that is not IAM, so these cover the generic resolver rather than
 // the identity-specific policy layered on top of it.
 const (
-	fixtureForwardAuthProvider = `api_version: anas.dev/v1
-kind: Cask
+	fixtureForwardAuthProvider = `api_version: anas.module/v1
+kind: Module
 name: %s
 version: 1.0.0
 revision: 1
 abi:
-  supports: [anas.cask/v2]
+  supports: [anas.module-hook/v1]
 runtime:
   type: builtin
 capabilities:
@@ -27,13 +27,13 @@ capabilities:
     - name: forward_auth
       interfaces: [http]
 `
-	fixtureGatedConsumer = `api_version: anas.dev/v1
-kind: Cask
+	fixtureGatedConsumer = `api_version: anas.module/v1
+kind: Module
 name: ddns_go
 version: 1.0.0
 revision: 1
 abi:
-  supports: [anas.cask/v2]
+  supports: [anas.module-hook/v1]
 runtime:
   type: builtin
 dependencies:
@@ -52,10 +52,10 @@ func forwardAuthApp(t *testing.T, manifests map[string]string, cfg *config.File)
 	t.Helper()
 	a := &app{
 		cfg:              cfg,
-		reg:              writeCasks(t, manifests),
+		reg:              writeModules(t, manifests),
 		env:              map[string]string{},
 		envOwner:         map[string]string{},
-		lock:             &caskLock{Bindings: map[string]map[string]string{}},
+		lock:             &moduleLock{Bindings: map[string]map[string]string{}},
 		resolvedBindings: map[string]map[string]string{},
 	}
 	a.applyModuleDefaults()
@@ -63,13 +63,13 @@ func forwardAuthApp(t *testing.T, manifests map[string]string, cfg *config.File)
 }
 
 // With one implementation, requiring the capability is enough: the user does
-// not have to name a cask that has no alternative.
+// not have to name a module that has no alternative.
 func TestAutoSelectionBindsTheOnlyProvider(t *testing.T) {
 	a := forwardAuthApp(t, map[string]string{
-		"core":         fixtureCoreCask,
+		"core":         fixtureCoreModule,
 		"oauth2_proxy": strings.Replace(fixtureForwardAuthProvider, "%s", "oauth2_proxy", 1),
 		"ddns_go":      fixtureGatedConsumer,
-	}, &config.File{Modules: []string{"ddns_go"}})
+	}, &config.File{Modules: config.NewModuleSelection("ddns_go")})
 
 	order, err := a.resolveOrder([]string{"ddns_go"})
 	if err != nil {
@@ -99,15 +99,15 @@ func TestAutoSelectionBindsTheOnlyProvider(t *testing.T) {
 // choose, and the error must say so rather than pick one.
 func TestAutoSelectionRefusesToGuessBetweenProviders(t *testing.T) {
 	a := forwardAuthApp(t, map[string]string{
-		"core":         fixtureCoreCask,
+		"core":         fixtureCoreModule,
 		"oauth2_proxy": strings.Replace(fixtureForwardAuthProvider, "%s", "oauth2_proxy", 1),
 		"authelia":     strings.Replace(fixtureForwardAuthProvider, "%s", "authelia", 1),
 		"ddns_go":      fixtureGatedConsumer,
-	}, &config.File{Modules: []string{"ddns_go"}})
+	}, &config.File{Modules: config.NewModuleSelection("ddns_go")})
 
 	_, err := a.resolveOrder([]string{"ddns_go"})
 	if err == nil {
-		t.Fatal("expected an error when two casks provide the capability")
+		t.Fatal("expected an error when two modules provide the capability")
 	}
 	for _, want := range []string{"authelia", "oauth2_proxy", "forward_auth.provider"} {
 		if !strings.Contains(err.Error(), want) {
@@ -119,13 +119,13 @@ func TestAutoSelectionRefusesToGuessBetweenProviders(t *testing.T) {
 func TestAutoSelectionReportsWhenNoProviderIsEnabled(t *testing.T) {
 	disabled := false
 	a := forwardAuthApp(t, map[string]string{
-		"core":         fixtureCoreCask,
+		"core":         fixtureCoreModule,
 		"oauth2_proxy": strings.Replace(fixtureForwardAuthProvider, "%s", "oauth2_proxy", 1),
 		"ddns_go":      fixtureGatedConsumer,
 	}, &config.File{
-		Modules:  []string{"ddns_go"},
-		Services: map[string]config.Service{"oauth2_proxy": {Enabled: &disabled}},
+		Modules: config.NewModuleSelection("ddns_go"),
 	})
+	a.cfg.Modules.Values["oauth2_proxy"] = config.ModuleConfig{Enabled: &disabled}
 
 	_, err := a.resolveOrder([]string{"ddns_go"})
 	if err == nil {
@@ -136,18 +136,18 @@ func TestAutoSelectionReportsWhenNoProviderIsEnabled(t *testing.T) {
 	}
 }
 
-// Admission applies to every capability, not just IAM: a cask that claims to
+// Admission applies to every capability, not just IAM: a module that claims to
 // provide forward_auth without speaking the exchange is rejected at load,
 // before any configuration can depend on it.
 func TestForwardAuthProviderMustDeclareItsInterface(t *testing.T) {
 	dir := t.TempDir()
-	manifest := `api_version: anas.dev/v1
-kind: Cask
+	manifest := `api_version: anas.module/v1
+kind: Module
 name: broken
 version: 1.0.0
 revision: 1
 abi:
-  supports: [anas.cask/v2]
+  supports: [anas.module-hook/v1]
 runtime:
   type: builtin
 capabilities:
@@ -155,7 +155,7 @@ capabilities:
     - name: forward_auth
       interfaces: []
 `
-	if err := os.WriteFile(filepath.Join(dir, "cask.yml"), []byte(manifest), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "module.yml"), []byte(manifest), 0600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := loadModuleManifest(dir, "broken")

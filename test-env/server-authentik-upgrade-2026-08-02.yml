@@ -1,19 +1,17 @@
 modules:
-  - samba_dc
-  - postgres
-  - authentik
-  - netbird
-
-iam:
-  provider: authentik
-
+  samba_dc: {}
+  postgres: {}
+  authentik: {}
+  netbird: {}
+identity:
+  iam:
+    provider: authentik
 global:
   base_domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
   default_service_root_password: AnasTest1!
-
 env:
   BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_auth_

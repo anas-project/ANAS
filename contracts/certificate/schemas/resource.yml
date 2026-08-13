@@ -1,0 +1,10 @@
+type: object
+additional_properties: false
+required: [domains, usage, renewal]
+properties:
+  domains:
+    type: array
+    min_items: 1
+    items: {type: string}
+  usage: {enum: [server, client, ca]}
+  renewal: {enum: [managed, manual]}
