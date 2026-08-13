@@ -75,11 +75,11 @@ fi
 # reads.
 #
 # lego picks its own output basename and offers no flag to override it, and the
-# rule is not simply "the first domain": a run here wrote
-# finance.hlong.wang.crt.* while the contract names
-# finance.hlong.wang.{crt,key,issuer.crt}. Traefik went on serving the internal
-# certificate that still occupied those names, and nothing reported a problem --
-# the certificate was issued, stored, and ignored.
+# rule is not simply "the first domain": lego may include an extra suffix in
+# its resource basename (for example, <domain>.crt.{crt,key,issuer.crt}) while
+# the contract names <domain>.{crt,key,issuer.crt}. A consumer can otherwise go
+# on serving the internal certificate that still occupied those names, and
+# nothing reported a problem -- the certificate was issued, stored, and ignored.
 #
 # So the basename is discovered rather than predicted. Each resource lego writes
 # has a .json recording its domains, which is what identifies ours among any

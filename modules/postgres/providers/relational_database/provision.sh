@@ -44,55 +44,6 @@ SELECT format('GRANT CONNECT, TEMPORARY ON DATABASE %I TO %I', :'resource_databa
 SQL
     psql --dbname "$ANAS_RESOURCE_DATABASE" --set=ON_ERROR_STOP=1 \
       --set=resource_username="$ANAS_RESOURCE_USERNAME" <<'SQL'
-SELECT format('ALTER SCHEMA public OWNER TO %I', :'resource_username') \gexec
-SELECT format(
-  'ALTER %s %I.%I OWNER TO %I',
-  CASE c.relkind
-    WHEN 'S' THEN 'SEQUENCE'
-    WHEN 'v' THEN 'VIEW'
-    WHEN 'm' THEN 'MATERIALIZED VIEW'
-    WHEN 'f' THEN 'FOREIGN TABLE'
-    ELSE 'TABLE'
-  END,
-  n.nspname,
-  c.relname,
-  :'resource_username'
-)
-FROM pg_class c
-JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = 'public'
-  AND c.relkind IN ('r', 'p', 'S', 'v', 'm', 'f')
-  AND (
-    c.relkind <> 'S'
-    OR NOT EXISTS (
-      SELECT 1
-      FROM pg_depend d
-      WHERE d.classid = 'pg_class'::regclass
-        AND d.objid = c.oid
-        AND d.refclassid = 'pg_class'::regclass
-        AND d.deptype IN ('a', 'i')
-    )
-  )
-  AND pg_get_userbyid(c.relowner) <> :'resource_username' \gexec
-SELECT format(
-  'ALTER %s %I.%I(%s) OWNER TO %I',
-  CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,
-  n.nspname,
-  p.proname,
-  pg_get_function_identity_arguments(p.oid),
-  :'resource_username'
-)
-FROM pg_proc p
-JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE n.nspname = 'public'
-  AND pg_get_userbyid(p.proowner) <> :'resource_username' \gexec
-SELECT format('ALTER TYPE %I.%I OWNER TO %I', n.nspname, t.typname, :'resource_username')
-FROM pg_type t
-JOIN pg_namespace n ON n.oid = t.typnamespace
-WHERE n.nspname = 'public'
-  AND t.typrelid = 0
-  AND t.typtype IN ('d', 'e', 'r', 'm')
-  AND pg_get_userbyid(t.typowner) <> :'resource_username' \gexec
 SELECT format('GRANT USAGE, CREATE ON SCHEMA public TO %I', :'resource_username') \gexec
 SQL
     ;;

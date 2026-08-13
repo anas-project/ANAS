@@ -97,7 +97,7 @@ grep -Fq 'while [ ! -x "$$custom_push_path" ] && [ ! -x "$$bundled_push_path" ];
 # Nextcloud requests a database resource and names a dedicated principal. It
 # must not consume PostgreSQL's administrator credential from the provider.
 grep -Fq 'contract: relational_database' "$ROOT_DIR/modules/nextcloud/module.yml" || exit 1
-grep -Fq 'principal: oc_admin' "$ROOT_DIR/modules/nextcloud/module.yml" || exit 1
+grep -Fq 'principal: nextcloud' "$ROOT_DIR/modules/nextcloud/module.yml" || exit 1
 if grep -Eq '^    - POSTGRES_(USERNAME|PASSWORD)$' "$ROOT_DIR/modules/nextcloud/module.yml"; then
   echo "Nextcloud consumes PostgreSQL administrator credentials" >&2
   exit 1
