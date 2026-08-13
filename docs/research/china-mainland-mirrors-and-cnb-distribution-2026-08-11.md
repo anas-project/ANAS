@@ -3,9 +3,10 @@
 ## 结论
 
 ANAS 采用两层方案：源码构建时由 `CHINESE_SPEEDUP` 统一切换国内代理；正式发布时，
-再由 CNB 构建并托管完整的国内 OCI 镜像集。前者保证开发者能在中国大陆完成构建，
-后者让普通用户只访问 `docker.cnb.cool`，无需分别连接 Docker Hub、GHCR、Quay 和
-GitHub Release。
+GitHub Actions 只构建一次并先发布到 GHCR，再把相同的运行平台 manifest 同步到 CNB
+托管完整的国内 OCI 镜像集。前者保证开发者能在中国大陆完成构建，后者让普通用户只
+访问 `docker.cnb.cool`，无需分别连接 Docker Hub、GHCR、Quay 和 GitHub Release；
+CNB 不从源码重复构建镜像。
 
 `CHINESE_SPEEDUP` 是总开关，不是“仅替换 apt”的提示位。值为 `true` 时，ANAS 在
 用户没有显式覆盖的情况下生成以下全局环境：
@@ -83,9 +84,9 @@ CNB 同时提供国内 Git 托管、云原生构建和 `docker.cnb.cool` Docker 
 
 实际采用的 CNB 地址为 `https://cnb.cool/anas.dev/ANAS`，运行镜像使用
 `docker.cnb.cool/anas.dev/anas/<image>:<固定-tag>`。源码通过 GitHub Actions
-镜像全部分支和 tag。镜像在 GitHub Actions 中只构建一次，同时推送到 GHCR 与 CNB；
-CNB 不重复编译。灾备按钮可把 CNB 中缺失的固定 tag 从公开 GHCR 直接复制回来，并保留
-多架构 manifest。
+镜像全部分支和 tag。镜像在 GitHub Actions 中只构建一次，先发布到 GHCR，再从 GHCR
+同步到 CNB；CNB 不重复编译。补发流程同样只把 CNB 中缺失的固定 tag 从 GHCR 复制
+过去，并保留多架构 manifest。
 
 上游 mirror 示例：
 
