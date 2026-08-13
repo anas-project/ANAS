@@ -46,7 +46,10 @@ resources:
       spec_from:
         name: db_name
       spec:
-        principal: nextcloud
+        # This name is persisted in config.php after the first install. Keep
+        # the historical principal so contract adoption can reconcile an
+        # existing database without making the application switch identities.
+        principal: oc_admin
         credential:
           policy: generated
         deletion_policy: retain
