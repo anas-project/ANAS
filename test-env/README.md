@@ -178,6 +178,28 @@ Do not commit `.anas-test/` or generated secrets.
       <workspace>/.anas/deployments/<deployment-id>
     ```
 
+13. MariaDB consumer runtime test
+
+    `server-mariadb-modules-e2e.yml` binds every stable dual-database consumer
+    (`llng`, `nextcloud`, and `meshcentral`) explicitly to MariaDB. Run it only
+    against the isolated Docker daemon because it starts a complete directory,
+    IAM, proxy, database, and application stack:
+
+    ```sh
+    export DOCKER_HOST=unix:///run/anas-docker-test.sock
+    go run ./cmd/anas init /data/anas-mariadb-modules-test -y
+    cp test-env/server-mariadb-modules-e2e.yml \
+      /data/anas-mariadb-modules-test/config.yml
+    go run ./cmd/anas apply -w /data/anas-mariadb-modules-test \
+      --update-lock --no-snapshot -y
+    ```
+
+    Verify all three resource state files are `ready`, all four core containers
+    (`mariadb`, `llng`, `nextcloud`, and `meshcentral`) are healthy, and the
+    MariaDB schemas contain application tables. Then run `anas restart mariadb`
+    and an idempotent `anas apply` to cover dependency restart ordering and
+    persistence.
+
 ## Full Run
 
 ```sh
@@ -199,7 +221,10 @@ cleanup.
 
 - `min.yml`: minimal reverse-proxy baseline.
 - `full.yml`: broad coverage of current modules.
-- `matrix-auth.yml`: identity and account management.
+- `matrix-auth.yml`: identity and account management, with LLNG explicitly
+  bound to MariaDB; the wider fixtures keep PostgreSQL consumer coverage. Run
+  it as a container smoke test with
+  `ANAS_TEST_CONFIG=test-env/configs/matrix-auth.yml ANAS_TEST_WORKSPACE=.anas-test/runtime/matrix-auth ./test-env/scripts/test-smoke.sh`.
 - `matrix-storage.yml`: Samba domain and file service.
 - `matrix-apps.yml`: user-facing application stack.
 - `matrix-network.yml`: network, certificate, DNS, TURN, VPN, and RADIUS modules.

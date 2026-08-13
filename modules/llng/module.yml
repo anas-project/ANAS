@@ -68,6 +68,23 @@ config:
   # launcher metadata, and the resolved database backend's real password.
   # Consumers publish these, so they are outside this module's closure.
   consumes:
+    # The Compose mount and entrypoint need the shared certificate directory;
+    # scoped environments do not inherit runner-owned TLS paths implicitly.
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_INTERNAL_CA_NAME
+    - SAMBA_DC_ADMIN_GROUP_NAME
+    - SAMBA_DC_BASE_GROUPS_DN
+    - SAMBA_DC_BASE_GROUPS_ROLE_DN
+    - SAMBA_DC_BASE_USERS_DN
+    - SAMBA_DC_LDAPS_PORT
+    - SAMBA_DC_LDAPS_SERVER_URL
+    - SAMBA_DC_PASSWORD_BIND_DN
+    - SAMBA_DC_USER_CLASS_FILTER
+    - SAMBA_DC_USER_EMAIL
+    - SAMBA_DC_USER_ENABLED_FILTER
+    - SAMBA_DC_USER_NAME
+    - TRAEFIK_DOMAIN_FULL
+    - TRAEFIK_HOSTNAME
     - ANAS_IDENTITY_OIDC_CLIENTS
     - ANAS_IDENTITY_SAML_CLIENTS
     - ANAS_IAM_CLIENT_*

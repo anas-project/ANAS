@@ -44,7 +44,7 @@ GRANT ALL PRIVILEGES ON \`$ANAS_RESOURCE_DATABASE\`.* TO '$ANAS_RESOURCE_USERNAM
 SQL
     ;;
   inspect)
-    result="$(client --batch --skip-column-names --execute="SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='$ANAS_RESOURCE_DATABASE';")"
+    result="$(client --batch --skip-column-names --execute="SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name='$ANAS_RESOURCE_DATABASE') AND EXISTS (SELECT 1 FROM mysql.user WHERE User='$ANAS_RESOURCE_USERNAME' AND Host='%') THEN 1 ELSE 0 END;")"
     if [ "$result" = "1" ]; then
       echo ready
     else

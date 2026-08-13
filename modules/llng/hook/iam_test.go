@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -45,6 +46,64 @@ func TestRenderEnvRestoresThePrivateKey(t *testing.T) {
 		if !strings.HasPrefix(v, `"`) || !strings.Contains(v, "BEGIN RSA PRIVATE KEY") {
 			t.Fatalf("%s = %q, want the quoted PEM the config script expects", key, v)
 		}
+	}
+}
+
+func TestDatabaseBindingSupportsPostgresAndMariaDB(t *testing.T) {
+	for _, dbType := range []string{"postgres", "mariadb"} {
+		t.Run(dbType, func(t *testing.T) {
+			e := map[string]string{
+				"LLNG_DB_TYPE":     dbType,
+				"LLNG_DB_HOST":     "anas_" + dbType,
+				"LLNG_DB_PORT":     map[string]string{"postgres": "5432", "mariadb": "3306"}[dbType],
+				"LLNG_DB_USERNAME": "lemonldap_ng",
+				"LLNG_DB_PASSWORD": "dedicated-secret",
+				"LLNG_NETWORK_DB":  "anas_" + dbType,
+			}
+			if err := moduleIdentity("LLNG", e, ""); err != nil {
+				t.Fatal(err)
+			}
+			checks := map[string]string{
+				"DB_HOST":     "anas_" + dbType,
+				"DB_POST":     map[string]string{"postgres": "5432", "mariadb": "3306"}[dbType],
+				"DB_USER":     "lemonldap_ng",
+				"DB_PASSWORD": "dedicated-secret",
+			}
+			for key, want := range checks {
+				if got := e[key]; got != want {
+					t.Errorf("%s = %q, want %q", key, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestManifestClaimsCrossModuleVariablesUsedAtRuntime(t *testing.T) {
+	manifest, err := os.ReadFile("../module.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{
+		"ANAS_TLS_CERTS_DIR", "ANAS_TLS_INTERNAL_CA_NAME",
+		"SAMBA_DC_ADMIN_GROUP_NAME", "SAMBA_DC_BASE_GROUPS_DN", "SAMBA_DC_BASE_GROUPS_ROLE_DN",
+		"SAMBA_DC_BASE_USERS_DN", "SAMBA_DC_LDAPS_PORT", "SAMBA_DC_LDAPS_SERVER_URL",
+		"SAMBA_DC_PASSWORD_BIND_DN", "SAMBA_DC_PASSWORD_BIND_PASSWORD", "SAMBA_DC_USER_CLASS_FILTER",
+		"SAMBA_DC_USER_EMAIL", "SAMBA_DC_USER_ENABLED_FILTER", "SAMBA_DC_USER_NAME",
+		"TRAEFIK_DOMAIN_FULL", "TRAEFIK_HOSTNAME",
+	} {
+		if !strings.Contains(string(manifest), "- "+key) {
+			t.Errorf("module manifest does not consume %s", key)
+		}
+	}
+}
+
+func TestDisabledTestSiteDoesNotDeleteNestedLocationRulesThroughCLI(t *testing.T) {
+	script, err := os.ReadFile("../llng/root/root/llng-config.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(script), "'locationRules' $LLNG_TEST_DOMAIN") {
+		t.Fatal("delKey rejects locationRules because it contains nested hashes; the rebuilt config already omits the disabled test domain")
 	}
 }
 

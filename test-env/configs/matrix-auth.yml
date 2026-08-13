@@ -2,7 +2,12 @@
 # matrices, so this is where the alternative provider stays covered.
 modules:
   samba_dc: {}
-  llng: {}
+  mariadb: {}
+  llng:
+    config:
+      # full.yml covers PostgreSQL consumers; this matrix keeps LLNG's
+      # MariaDB driver, resource binding, and external DB network exercised.
+      db_type: mariadb
   lam: {}
 identity:
   iam:

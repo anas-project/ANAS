@@ -1,0 +1,48 @@
+# Runtime fixture for the isolated Docker daemon on ln. Every stable consumer
+# that declares the MariaDB relational_database interface is bound explicitly;
+# authentik is intentionally absent because its manifest supports PostgreSQL only.
+modules:
+  samba_dc: {}
+  mariadb: {}
+  llng:
+    config:
+      db_type: mariadb
+      enable_test: "false"
+  nextcloud:
+    config:
+      db_type: mariadb
+      talk_enabled: "false"
+      memories_enabled: "false"
+  meshcentral:
+    config:
+      db_type: mariadb
+      mps_port: "4443"
+  traefik:
+    config:
+      subnet: 172.23.0.0/16
+      gateway_ip: 172.23.0.1
+identity:
+  iam:
+    provider: llng
+global:
+  chinese_speedup: true
+  base_domain: mariadb.nas.test
+  email: admin@mariadb.nas.test
+  timezone: Asia/Shanghai
+  virtual_domain: true
+  default_service_root_password: Anas-MariaDB-Test-2026!
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_mdb_
+  IMAGE_PREFIX: anas_mdb_
+  NETWORK_PREFIX: anas_mdb_
+  DOCKER_SOCKET_PATH: /run/anas-docker-test.sock
+  NETWORK_NAMESPACE_PATH: /run/netns/anas-test
+  HOST_IP: 10.254.0.2
+  INTERFACE: anas-test-peer
+  DEFAULT_GATEWAY_IP: 10.254.0.1
+  HOST_SUBNET_MASK: "24"
+  LOCAL_DNS_SERVER: 10.254.0.2
+  SAMBA_DC_HOST_IP: 10.254.0.2
+  SAMBA_DC_INTERFACES: anas-test-peer
+  SAMBA_DC_ANCHOR_SCAN_INTERVAL: "300"
