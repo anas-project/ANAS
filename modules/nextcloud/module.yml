@@ -189,8 +189,6 @@ management:
   local_accounts:
     - id: break_glass
       purpose: break_glass
-      username:
-        template: global
       credential:
         policy: generated_per_module
         container_format: plaintext_on_bootstrap

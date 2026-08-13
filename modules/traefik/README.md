@@ -6,7 +6,8 @@ Traefik
 ## Administrator access / 管理员入口
 
 Dashboard 未接入 IAM，使用一个托管 BasicAuth 账号。Manifest 账号 ID 是 `primary`；
-默认实际用户名由全局 `{module}` 模板生成，为 `admin_traefik`。ANAS 只把 bcrypt
+默认实际用户名由 ANAS 固定 `admin_{module}` 模板生成，为 `admin_traefik`，用户不能
+覆盖或重命名。ANAS 只把 bcrypt
 校验值写入当前 file-provider 配置，密码不会进入部署 `.env` 或 Compose label。
 
 The Dashboard has no IAM integration and uses one managed BasicAuth account.

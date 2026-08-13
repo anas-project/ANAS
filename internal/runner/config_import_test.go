@@ -30,7 +30,6 @@ func TestConfigImportExtractsOnlyLifecycleManagedSecrets(t *testing.T) {
     administration:
       local_accounts:
         break_glass:
-          username: recovery_nc
           password: Nextcloud-Recovery-Initial-1!
 global:
   base_domain: nas.test
@@ -67,9 +66,6 @@ secrets:
 			t.Errorf("normalized config retains sensitive input %q", plaintext)
 		}
 	}
-	if !strings.Contains(string(normalized), "username: recovery_nc") {
-		t.Fatal("normalized config lost non-sensitive local administrator username")
-	}
 	if !strings.Contains(string(normalized), "cloudflare_dns_api_token: Cloudflare-Imported-Token") {
 		t.Fatal("normalized config must retain ordinary deployment secrets")
 	}
@@ -104,6 +100,32 @@ secrets:
 		if got := info.Mode().Perm(); got != 0600 {
 			t.Errorf("%s mode = %o, want 600", path, got)
 		}
+	}
+}
+
+func TestConfigImportRejectsLocalAdministratorUsernameOverride(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(stateDir(workspace), 0700); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "external.yml")
+	if err := os.WriteFile(source, []byte(`modules:
+  nextcloud:
+    administration:
+      local_accounts:
+        break_glass:
+          username: custom_recovery
+          password: Initial-Password-1!
+global:
+  timezone: UTC
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := importConfigIntoWorkspace(workspace, source, importTestRegistry(t)); err == nil || !strings.Contains(err.Error(), "username is not configurable") {
+		t.Fatalf("import error = %v", err)
+	}
+	if exists(workspaceConfigPath(workspace)) || exists(filepath.Join(stateDir(workspace), "secrets.yml")) {
+		t.Fatal("rejected username override modified the workspace")
 	}
 }
 

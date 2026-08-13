@@ -139,7 +139,6 @@ modules:
     administration:
       local_accounts:
         break_glass:
-          username: admin_nextcloud
           password: Initial-Nextcloud-Password
 
 secrets:
@@ -154,7 +153,7 @@ anas config import /tmp/my-anas.yml -w /srv/anas
 
 外部源文件保持不变；workspace 中产生三类相互关联的状态。
 
-`/srv/anas/config.yml` 保存普通期望状态、用户名以及普通部署 Secret：
+`/srv/anas/config.yml` 保存普通期望状态以及普通部署 Secret：
 
 ```yaml
 global:
@@ -165,14 +164,13 @@ modules:
   nextcloud:
     administration:
       local_accounts:
-        break_glass:
-          username: admin_nextcloud
+        break_glass: {}
 
 secrets:
   cloudflare_dns_api_token: cloudflare-token-123
 ```
 
-Nextcloud 本地管理员密码已经移除；Cloudflare token 仍留在 `config.yml`，因为普通 apply
+Nextcloud 本地管理员密码已经移除；其用户名由 ANAS 固定规则决定，不进入配置。Cloudflare token 仍留在 `config.yml`，因为普通 apply
 可以正确重新渲染该部署输入。文件权限为 `0600`，CLI 库存与 plan 对声明为 sensitive 的值
 脱敏。
 
@@ -224,8 +222,9 @@ ANAS CLI 合法写入”，`secrets.yml` 保存“不能通过普通 apply 安�
 
 ## Module 本地管理员
 
-`management.local_accounts` 是 Module Manifest 的能力声明；用户配置只能设置全局用户名
-模板或按账号 ID 覆盖用户名。这里的账号 ID（如 `primary`、`break_glass`）不是用户名。
+`management.local_accounts` 是 Module Manifest 的能力声明。用户不能配置本地管理员用户名：
+Module `fixed_username` 优先，否则使用 ANAS 固定模板 `admin_{module}`。这里的账号 ID（如
+`primary`、`break_glass`）不是用户名。
 生命周期托管密码不能长期写进 `config.yml`；外部导入文件可把它作为一次性 bootstrap 输入，成功导入后 workspace 副本会移除该值。查询与轮换分别使用：
 
 ```bash
@@ -234,10 +233,9 @@ anas admin local rotate nextcloud break_glass -w /srv/anas
 anas admin local rotate ddns_go --prompt -w /srv/anas
 ```
 
-省略账号 ID 时按 `primary`、唯一账号、歧义报错的顺序解析。用户名一旦进入
-`.anas/local-admins.yml` 就是应用身份状态；之后改变普通 username override 会被明确拒绝，
-不会静默创建或假装重命名账号。当前没有通用 rename 命令，因为重命名必须由每个应用提供
-可回滚的身份迁移 handler。
+省略账号 ID 时按 `primary`、唯一账号、歧义报错的顺序解析。用户名首次物化后进入
+`.anas/local-admins.yml` 并锁定。全局 `username_template` 与 Module 级 `username` override
+都是非法字段；CLI 不提供 rename 命令。
 
 Nextcloud 不声明 `modules.nextcloud.config.admin_password`；该路径是非法配置。Nextcloud
 handler 通过真实的 `occ user:resetpassword --password-from-env` 路径更新和验证恢复账号。

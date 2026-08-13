@@ -57,7 +57,6 @@ administration:
     email: admin@example.com
     roles: [platform_admin, directory_admin]
   local_accounts:
-    username_template: "admin_{module}"
     password_policy: generated_per_module
     password_length: 24
 

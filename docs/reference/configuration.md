@@ -33,7 +33,7 @@
 | `administration.bootstrap.display_name` | 引导管理员显示名 | schema 已接收，当前尚未下发 |
 | `administration.bootstrap.email` | 引导管理员邮箱 | schema 已接收，当前尚未下发 |
 | `administration.bootstrap.roles[]` | 引导管理员角色 | schema 已接收，当前尚未下发 |
-| `administration.local_accounts.username_template` | 本地管理员用户名模板，必须包含 `{module}` | 已使用 |
+| `administration.local_accounts.username_template` | 本地管理员全局用户名模板 | 非法；用户名由 ANAS 管理 |
 | `administration.local_accounts.password_policy` | 当前只允许 `generated_per_module` | 已使用 |
 | `administration.local_accounts.password_length` | 生成密码长度，最小 16 | 已使用 |
 | `identity.directory.provider` | 目录 Provider；当前只接受 `samba_dc` | 已使用 |
@@ -49,7 +49,7 @@
 | `modules.<module>.enabled` | 启用或禁用服务 | 已使用 |
 | `modules.<module>.depends_on[]` | 用户追加的依赖 | 已使用 |
 | `modules.<module>.identity.login_protocol` | `auto`、`oidc` 或 `saml` | 已使用 |
-| `modules.<module>.administration.local_accounts.<id>.username` | 覆盖 module 本地账户用户名 | 已使用，账户 ID 动态 |
+| `modules.<module>.administration.local_accounts.<id>.username` | 覆盖 Module 本地账户用户名 | 非法；`fixed_username` 优先，否则使用固定 `admin_{module}` |
 | `modules.<module>.config.<parameter>` | manifest 声明的 module 参数 | 已使用，见下一节 |
 | `env.<KEY>` | 原始环境变量逃生口 | 开放 map，不做键集合校验 |
 

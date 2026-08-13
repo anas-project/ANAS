@@ -24,7 +24,7 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 | `administration.bootstrap.display_name` | Bootstrap display name | accepted by schema, not yet published |
 | `administration.bootstrap.email` | Bootstrap email | accepted by schema, not yet published |
 | `administration.bootstrap.roles[]` | Bootstrap roles | accepted by schema, not yet published |
-| `administration.local_accounts.username_template` | Local administrator template containing `{module}` | used |
+| `administration.local_accounts.username_template` | Global local-administrator username template | invalid; usernames are ANAS-managed |
 | `administration.local_accounts.password_policy` | Currently only `generated_per_module` | used |
 | `administration.local_accounts.password_length` | Generated length, minimum 16 | used |
 | `identity.directory.provider` | Directory provider; currently `samba_dc` | used |
@@ -40,7 +40,7 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 | `modules.<module>.enabled` | Enable or disable a service | used |
 | `modules.<module>.depends_on[]` | User-added dependencies | used |
 | `modules.<module>.identity.login_protocol` | `auto`, `oidc`, or `saml` | used |
-| `modules.<module>.administration.local_accounts.<id>.username` | Module-local username override | used; dynamic IDs |
+| `modules.<module>.administration.local_accounts.<id>.username` | Module-local username override | invalid; usernames are ANAS-managed |
 | `modules.<module>.config.<parameter>` | Manifest-declared module parameter | used |
 | `env.<KEY>` | Raw environment escape hatch | open map |
 

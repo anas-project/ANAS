@@ -12,6 +12,7 @@ import (
 )
 
 const localAdminStateVersion = "anas.dev/v1"
+const defaultLocalAdminUsernameTemplate = "admin_{module}"
 
 var localAdminUsernamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`)
 
@@ -156,22 +157,10 @@ func (a *app) materializeLocalAccounts() error {
 					state.Accounts[key], state.dirty = record, true
 				}
 			}
-			var explicitUsername string
-			if service, ok := a.cfg.Modules.Values[module]; ok {
-				if override, ok := service.Administration.LocalAccounts[declared.ID]; ok {
-					explicitUsername = strings.TrimSpace(override.Username)
-				}
-			}
-			if locked && explicitUsername != "" && explicitUsername != record.Username {
-				return fmt.Errorf("local administrator %s is locked as %q; requested username %q would be ignored; restore the override to %q (username migration requires an application-specific transaction and is not supported yet)", key, record.Username, explicitUsername, record.Username)
-			}
 			if !locked {
 				username := declared.FixedUsername
 				if username == "" {
-					username = explicitUsername
-				}
-				if username == "" {
-					username = strings.ReplaceAll(a.cfg.Administration.LocalAccounts.UsernameTemplate, "{module}", strings.ReplaceAll(module, "-", "_"))
+					username = strings.ReplaceAll(defaultLocalAdminUsernameTemplate, "{module}", strings.ReplaceAll(module, "-", "_"))
 				}
 				if !localAdminUsernamePattern.MatchString(username) {
 					return fmt.Errorf("local administrator %s resolves to invalid username %q", key, username)
