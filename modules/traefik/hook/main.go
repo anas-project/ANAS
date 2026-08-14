@@ -41,6 +41,7 @@ type hookResponse struct {
 	Env             map[string]string `json:"env,omitempty"`
 	Secrets         map[string]string `json:"secrets,omitempty"`
 	Files           map[string]string `json:"files,omitempty"`
+	RuntimeFiles    map[string]string `json:"runtime_files,omitempty"`
 	DisableServices []string          `json:"disable_services,omitempty"`
 	DockerCopies    []dockerCopy      `json:"docker_copies,omitempty"`
 }
@@ -113,12 +114,12 @@ func handle(req hookRequest) (hookResponse, error) {
 			return hookResponse{}, err
 		}
 		return hookResponse{Env: changed(req.Env, env), Secrets: changed(req.Secrets, secrets.values)}, nil
-	case "render_env":
-		files, err := renderEnv(req.Module, env, req.Workdir)
+	case "render_env", "runtime_restore":
+		files, err := renderRuntimeEnv(req.Module, env)
 		if err != nil {
 			return hookResponse{}, err
 		}
-		return hookResponse{Env: changed(req.Env, env), Files: files}, nil
+		return hookResponse{Env: changed(req.Env, env), RuntimeFiles: files}, nil
 	case "services":
 		return hookResponse{DisableServices: disabledServices(req.Module, env)}, nil
 	case "after_start":
@@ -137,7 +138,7 @@ func calculate(module string, env map[string]string, workdir string, secrets *se
 	env["TRAEFIK_DASHBOARD_URL"] = env["TRAEFIK_DOMAIN_FULL"] + "/dashboard/"
 	return nil
 }
-func renderEnv(module string, env map[string]string, workdir string) (map[string]string, error) {
+func renderRuntimeEnv(module string, env map[string]string) (map[string]string, error) {
 	if module != "traefik" {
 		return map[string]string{}, nil
 	}

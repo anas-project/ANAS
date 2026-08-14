@@ -35,7 +35,7 @@ set -eu
 
 cd "$ROOT_DIR"
 
-ws=${ANAS_SNAPSHOT_WORKSPACE:-/data/anas-snapshot-test/ws}
+ws=${ANAS_SNAPSHOT_WORKSPACE:-$RUNTIME_DIR/snapshot}
 config=${ANAS_SNAPSHOT_CONFIG:-$CONFIG_DIR/snapshot.yml}
 log="$REPORT_DIR/snapshot.log"
 failures=0
@@ -96,6 +96,15 @@ snapshot_ids() {
 snapshot_field() {
   anas snapshot show "$1" -w "$ws" --json 2>/dev/null |
     sed -n "s/^ *\"$2\": \"\{0,1\}\([^\",]*\)\"\{0,1\},\{0,1\}$/\1/p" | head -1
+}
+
+import_domain() {
+	domain=$1
+	stage="$REPORT_DIR/snapshot-config.yml"
+	cp "$ws/config.yml" "$stage"
+	sed "s/^[[:space:]]*base_domain:.*/  base_domain: $domain/" "$stage" >"$stage.next"
+	mv "$stage.next" "$stage"
+	anas config import "$stage" -w "$ws" >/dev/null
 }
 
 # The exit-code table in docs/contracts/README.md is part of the contract, so
@@ -168,10 +177,10 @@ fi
   echo "before-snapshot" >"$ws/data/marker-before"
 
   echo "== S2: an apply that cannot be undone snapshots the data first =="
-  # A credential rotation changes state inside the service, not just the
-  # rendered artifact: putting the old value back in config.yml does not put it
-  # back in the LDAP directory. That is what earns a snapshot.
-  anas config set global.base_domain snapshot-one.test -w "$ws"
+  # The global domain is immutable because it changes the Samba realm, IAM
+  # issuers, certificates and application URLs together. --allow-risky can
+  # explicitly cross that guard, but only after preserving the old data.
+  import_domain snapshot-one.test
   anas apply --build -w "$ws" --update-lock --allow-risky
   second=$(active_deployment)
   echo "second deployment: $second"
@@ -188,6 +197,10 @@ fi
   # The snapshot must belong to the deployment it captured, not the new one.
   captured=$(snapshot_field "$auto" deployment_id)
   [ "$captured" = "$first" ] || fail "snapshot records deployment '$captured', want $first"
+  # This exact checkpoint is the restore target in S9. Protect it from S8b,
+  # whose purpose is to prove that prune reclaims every *unprotected* automatic
+  # snapshot when the test runs with enough privilege to delete subvolumes.
+  anas snapshot pin "$auto" -w "$ws" --json >/dev/null
   # A snapshot is a point in time; nothing points at it from deployment state.
   if grep -q "^snapshot_id:" "$ws/.anas/state/deployments/$second.yml" 2>/dev/null; then
     fail "deployment state still records a snapshot_id; a snapshot is not bound to one transition"
@@ -198,7 +211,6 @@ fi
   # snapshotted, five such edits would evict the pre-rotation snapshot above.
   before_routine=$(snapshot_ids | wc -l)
   anas config set global.timezone Europe/Berlin -w "$ws"
-  anas apply --build -w "$ws" --update-lock
   third=$(active_deployment)
   [ "$third" != "$second" ] || fail "a config change did not produce a new deployment"
   after_routine=$(snapshot_ids | wc -l)
@@ -206,7 +218,7 @@ fi
     fail "a routine apply took a snapshot ($before_routine -> $after_routine)"
 
   # ...but an operator who wants one anyway can say so.
-  anas config set global.timezone Asia/Tokyo -w "$ws"
+  anas config set --defer global.timezone Asia/Tokyo -w "$ws"
   anas apply --build -w "$ws" --update-lock --snapshot
   forced=$(snapshot_ids | wc -l)
   [ "$forced" -gt "$after_routine" ] || fail "--snapshot did not force a snapshot"
@@ -214,11 +226,11 @@ fi
     fail "a forced snapshot should record reason pre_apply"
 
   echo "== S2c: --no-snapshot needs -y, because it gives up the way back =="
-  anas config set global.base_domain snapshot-two.test -w "$ws"
+  import_domain snapshot-two.test
   expect_exit 3 anas apply --build -w "$ws" --update-lock --allow-risky --no-snapshot </dev/null
   expect_exit 2 anas apply -w "$ws" --snapshot --no-snapshot
   # Put the setting back so the rest of the suite sees the state it expects.
-  anas config set global.base_domain snapshot-one.test -w "$ws"
+  import_domain snapshot-one.test
 
   echo "== S3: the snapshot lives beside .anas, not inside it =="
   if [ ! -d "$ws/snapshots/$auto" ]; then
@@ -302,9 +314,10 @@ fi
   if [ "$reclaim_ok" = "yes" ]; then
     anas snapshot delete "$scratch" -w "$ws" -y --json >/dev/null
     snapshot_ids | grep -q "^$scratch\$" && fail "snapshot $scratch survived delete"
-    # Only auto, unpinned snapshots are collected, and the pinned manual one
-    # must be left alone even at --keep 0.
+    # Only auto, unpinned snapshots are collected, and checkpoints needed by
+    # the later restore plus the pinned manual one must survive --keep 0.
     anas snapshot prune -w "$ws" --keep 0 -y --json >"$REPORT_DIR/snapshot-prune-run.json"
+    snapshot_ids | grep -q "^$auto\$" || fail "prune reclaimed the protected restore checkpoint $auto"
     snapshot_ids | grep -q "^$manual\$" || fail "prune reclaimed the pinned snapshot $manual"
   else
     # A host that cannot reclaim must still say so precisely rather than

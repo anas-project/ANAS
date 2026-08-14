@@ -156,6 +156,8 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 			return "", fmt.Errorf("oidc client %s published no %sCLIENT_ID", app, src)
 		}
 		s := slug(app)
+		profileMapping := writeOIDCProfileMappingEntry(
+			&b, e[src+"ATTRIBUTES"], s, e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"])
 		b.WriteString("  - model: authentik_providers_oauth2.oauth2provider\n")
 		b.WriteString("    identifiers:\n      name: " + s + "\n")
 		b.WriteString("    id: provider-" + s + "\n")
@@ -163,6 +165,14 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 		b.WriteString("      client_id: " + yamlString(e[src+"CLIENT_ID"]) + "\n")
 		b.WriteString("      client_secret: " + yamlString(e[src+"CLIENT_SECRET"]) + "\n")
 		b.WriteString("      client_type: confidential\n")
+		// Authentik 2026 no longer gives OAuth providers an implicit grant set.
+		// An empty grant_types list makes an otherwise valid authorization-code
+		// request fail as malformed, so declare the grants used by ANAS OIDC
+		// consumers explicitly. Refresh tokens are needed by long-lived clients
+		// such as Nextcloud and NetBird.
+		b.WriteString("      grant_types:\n")
+		b.WriteString("        - authorization_code\n")
+		b.WriteString("        - refresh_token\n")
 		// The LDAP source connection is matched by the printable AD anchor, so
 		// the authentik user UUID remains stable across a forest rebuild. Usernames
 		// are login names and must never become an OIDC subject identifier.
@@ -174,6 +184,16 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 		for _, uri := range splitCSV(e[src+"REDIRECT_URIS"]) {
 			b.WriteString("        - matching_mode: strict\n")
 			b.WriteString("          url: " + yamlString(uri) + "\n")
+		}
+		if profileMapping != "" {
+			// Supplying property_mappings replaces authentik's implicit defaults.
+			// Keep the standard OpenID/email scopes and use our application-local
+			// profile mapping for the normal profile claims plus the generic
+			// ATTRIBUTES requested by this consumer.
+			b.WriteString("      property_mappings:\n")
+			b.WriteString("        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]\n")
+			b.WriteString("        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]\n")
+			b.WriteString("        - !KeyOf " + profileMapping + "\n")
 		}
 		writeApplicationEntry(&b, e, app, s)
 		writeAccessPolicyEntries(&b, e, app, s)
@@ -221,6 +241,63 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 		writeAccessPolicyEntries(&b, e, app, s)
 	}
 	return b.String(), nil
+}
+
+// writeOIDCProfileMappingEntry turns the provider-neutral
+// "claim:source:required" list into claims in the standard profile scope.
+// Each provider receives its own mapping, so one application's additional
+// claims cannot leak into another application's tokens. The standard profile
+// values are included here because setting property_mappings on an authentik
+// OAuth provider replaces its implicit default mapping set.
+func writeOIDCProfileMappingEntry(b *strings.Builder, attributes, appSlug, identityAnchor string) string {
+	if len(splitCSV(attributes)) == 0 {
+		return ""
+	}
+	id := "oidc-mapping-" + appSlug + "-profile"
+	b.WriteString("  - model: authentik_providers_oauth2.scopemapping\n")
+	b.WriteString("    identifiers:\n      name: anas-" + appSlug + "-profile\n")
+	b.WriteString("    id: " + id + "\n")
+	b.WriteString("    attrs:\n")
+	b.WriteString("      scope_name: profile\n")
+	b.WriteString("      expression: |\n")
+	b.WriteString("        claims = {\n")
+	b.WriteString("            \"name\": request.user.name,\n")
+	b.WriteString("            \"preferred_username\": request.user.username,\n")
+	b.WriteString("            \"nickname\": request.user.username,\n")
+	b.WriteString("            \"groups\": [group.name for group in request.user.groups.all()],\n")
+	b.WriteString("        }\n")
+	for _, raw := range splitCSV(attributes) {
+		parts := strings.Split(raw, ":")
+		if len(parts) < 2 {
+			continue
+		}
+		claim := strings.TrimSpace(parts[0])
+		source := strings.TrimSpace(parts[1])
+		if claim == "" || source == "" {
+			continue
+		}
+		b.WriteString("        claims[" + yamlString(claim) + "] = " + oidcClaimExpression(source, identityAnchor) + "\n")
+	}
+	b.WriteString("        return claims\n")
+	return id
+}
+
+func oidcClaimExpression(source, identityAnchor string) string {
+	if identityAnchor != "" && strings.EqualFold(source, identityAnchor) {
+		return `request.user.attributes.get("ldap_uniq")`
+	}
+	switch strings.ToLower(source) {
+	case "samaccountname", "username", "uid", "preferred_username":
+		return "request.user.username"
+	case "cn", "name", "displayname":
+		return "request.user.name"
+	case "mail", "email":
+		return "request.user.email"
+	case "groups", "group":
+		return "[group.name for group in request.user.groups.all()]"
+	default:
+		return "request.user.attributes.get(" + yamlString(source) + ")"
+	}
 }
 
 // writeSAMLPropertyMappingEntries translates the provider-neutral

@@ -16,6 +16,9 @@ RUN set -eux; \
     --no-save \
     --registry="$NPM_REGISTRY_URL" \
     ldapauth-fork@5.0.5 \
+    passport@0.7.0 \
+    connect-flash@0.1.1 \
+    openid-client@5.7.1 \
     mysql2@3.15.1 \
     pg@8.16.3; \
   npm cache clean --force

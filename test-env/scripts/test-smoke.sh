@@ -26,7 +26,8 @@ cleanup() {
     else
       find "$(ws_deployments "$ws")" -name docker-compose.yml 2>/dev/null | sort -r | while read -r compose_file; do
         module_dir=$(dirname "$compose_file")
-        docker compose -f "$compose_file" --env-file "$module_dir/.env" down --remove-orphans >>"$REPORT_DIR/smoke-stop.log" 2>&1 || true
+        module_name=$(basename "$module_dir")
+        docker compose --project-name "anas_$module_name" -f "$compose_file" --env-file "$module_dir/.env" down --remove-orphans >>"$REPORT_DIR/smoke-stop.log" 2>&1 || true
       done
       docker network rm anas_macvlan >>"$REPORT_DIR/smoke-stop.log" 2>&1 || true
     fi

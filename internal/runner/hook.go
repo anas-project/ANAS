@@ -65,9 +65,13 @@ func (a *app) runLocalAccountHook(mod Module, phase, workdir string, env map[str
 }
 
 type hookResponse struct {
-	Env             map[string]string `json:"env"`
-	Secrets         map[string]string `json:"secrets"`
-	Files           map[string]string `json:"files"`
+	Env     map[string]string `json:"env"`
+	Secrets map[string]string `json:"secrets"`
+	Files   map[string]string `json:"files"`
+	// RuntimeFiles are mutable, reconstructable files that must never enter the
+	// sealed deployment artifact. The runner writes them below the module's
+	// deployment-scoped runtime-state directory and rebuilds them before start.
+	RuntimeFiles    map[string]string `json:"runtime_files"`
 	DisableServices []string          `json:"disable_services"`
 	DockerCopies    []dockerCopy      `json:"docker_copies"`
 	// InternalEnv lists env keys from this response that templates may use but
@@ -247,6 +251,15 @@ func applyHookFiles(dir string, files map[string]string) error {
 	return nil
 }
 
+func applyHookRuntimeFiles(dir string, files map[string]string) error {
+	for rel, content := range files {
+		if err := writeRuntimeFileUnder(dir, rel, content); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func runDockerCopies(copies []dockerCopy) error {
 	for _, cp := range copies {
 		if cp.Source == "" || cp.Container == "" || cp.Destination == "" {
@@ -287,4 +300,15 @@ func writeFileUnder(root, rel, content string) error {
 	// service user. Generated secrets use the separate secret store, not this
 	// path.
 	return os.WriteFile(path, []byte(content), 0644)
+}
+
+func writeRuntimeFileUnder(root, rel, content string) error {
+	if filepath.IsAbs(rel) || strings.Contains(rel, "..") {
+		return fmt.Errorf("invalid hook runtime file path %q", rel)
+	}
+	path := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(content), 0600)
 }

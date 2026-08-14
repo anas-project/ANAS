@@ -256,11 +256,14 @@ module functionality is:
   as `NEXTCLOUD_DOMAIN_PREFIX`.
 - Validate required config keys before running each module's calculation hook.
 - Run module hooks through the `anas.module-hook/v1` JSON protocol. Supported phases are
-  `calculate`, `render_env`, `services`, and `after_start`. Hooks declared as
+  `calculate`, `render_env`, `runtime_restore`, `services`, and `after_start`.
+  `runtime_restore` reconstructs deployment-scoped mutable files before a
+  container starts; those files live outside the sealed artifact. Hooks declared as
   `go run <pkg>` are compiled once per run and frozen into the rendered module
   as `.hook.bin`, so starting an existing release needs no Go toolchain.
-- Accept hook responses for env patches, generated secrets, files written under
-  the rendered module directory, disabled Compose services, render-only
+- Accept hook responses for env patches, generated secrets, immutable files
+  written under the rendered module directory, mutable `runtime_files` written
+  under the deployment-scoped runtime-state directory, disabled Compose services, render-only
   `internal_env` keys, and after-start `docker cp` operations. Calculate
   patches are validated against the module's prefixes and `config.exports`.
 - Persist generated secrets in `secrets.yml` and reuse them on later
@@ -334,6 +337,20 @@ Do not store internal helper values such as SSH private keys in module `.env`
 files. A hook that returns render-only values must list those keys in the
 `internal_env` field of its `render_env` response; the runner keeps them
 available for template rendering but excludes them from the written `.env`.
+
+Do not place files that an application rewrites, or credentials changed by a
+lifecycle command, in the rendered Module directory. Return them through
+`runtime_files` during both `render_env` and `runtime_restore`. The Runner writes
+them below `.anas/runtime-state/deployments/<deployment>/<module>/`; the relative
+path in `.env` remains valid after backup restore, and the Secret Store remains
+the authoritative source for reconstructing credentials.
+
+The sealed `.env` keeps the original render as evidence, but workspace-derived
+absolute paths are runtime projections rather than portable identity. When a
+snapshot or backup is restored elsewhere, the Runner rewrites values located
+under the recorded `DATA_PATH` workspace prefix onto the restored workspace
+before hooks or Compose use them. Explicit paths outside that prefix are left
+unchanged.
 
 Environment access is scoped. A module's rendered `.env`, its template
 rendering, and its `render_env`/`services`/`after_start` hook input contain

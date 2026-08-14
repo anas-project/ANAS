@@ -3,6 +3,8 @@ package runner
 import (
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -33,6 +35,11 @@ func runConfig(args []string, jsonMode bool) error {
 	workspaceFlag := fs.String("w", "", "workspace path")
 	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
 	rootFlag := fs.String("root", "", "project root or module bundle directory")
+	var deferApply, updateLock bool
+	if subcommand == "set" {
+		fs.BoolVar(&deferApply, "defer", false, "store desired state without applying it to an active deployment")
+		fs.BoolVar(&updateLock, "update-lock", false, "also update the config lock when resolution changes")
+	}
 	registerJSONFlag(fs)
 	positional, err := parseInterspersed(fs, args[1:])
 	if err != nil {
@@ -141,8 +148,14 @@ func runConfig(args []string, jsonMode bool) error {
 		if err := validateParameterValue(target.Module, target.Parameter, positional[1], reg); err != nil {
 			return usageErrorf("%s", err.Error())
 		}
-		if policyForTarget(target, reg).Effect == "credential_rotate" {
+		policy := policyForTarget(target, reg)
+		switch policy.Effect {
+		case "credential_rotate":
 			return usageErrorf("%s is lifecycle-managed; provide its initial value through `anas config import SOURCE` and use the declared credential rotation command afterwards", target.Display)
+		case "data_migrate":
+			return usageErrorf("%s requires data migration (%s); config set will not write a value it cannot enact", target.Display, policy.Apply)
+		case "immutable":
+			return usageErrorf("%s is immutable after initialization (%s); use the declared replacement or migration workflow", target.Display, policy.Apply)
 		}
 		if !exists(*cfgPath) {
 			return preconditionErrorf("config_missing", "config %s does not exist", *cfgPath)
@@ -152,17 +165,52 @@ func runConfig(args []string, jsonMode bool) error {
 			return preconditionErrorf("runtime_lock_failed", "%s", lockErr.Error())
 		}
 		defer unlock()
+		rollback, err := captureManagedConfigFiles(*cfgPath, updateLock)
+		if err != nil {
+			return failuref("state_unreadable", "%s", err.Error())
+		}
 		if err := setManagedConfigScalar(workspace, *cfgPath, target.YAMLPath, positional[1]); err != nil {
 			return failuref("write_failed", "%s", err.Error())
 		}
-		policy := policyForTarget(target, reg)
+		execution := map[string]any{"status": "stored", "executor": effectExecutor(policy.Effect)}
+		active, err := loadActiveState(base)
+		if err != nil {
+			_ = rollback()
+			return preconditionErrorf("state_unreadable", "%s", err.Error())
+		}
+		if deferApply {
+			execution["status"] = "deferred"
+		} else if active.ActiveDeployment == "" {
+			execution["status"] = "pending_initial_apply"
+		} else if active.RuntimeStatus == "stopped" {
+			// Do not surprise an operator by starting a deliberately stopped
+			// deployment. The value is durably staged and the explicit next apply
+			// will materialize it; the status makes that deferral machine-visible.
+			execution["status"] = "pending_explicit_apply"
+		} else {
+			id, applyErr := applyManagedConfigChangeLocked(workspace, base, *cfgPath, root, policy, updateLock, jsonMode)
+			if applyErr != nil {
+				if restoreErr := rollback(); restoreErr != nil {
+					return failuref("config_rollback_failed", "apply failed (%v) and restoring managed config failed: %v", applyErr, restoreErr)
+				}
+				return applyErr
+			}
+			execution["status"] = "applied"
+			execution["deployment_id"] = id
+			execution["previous_deployment"] = active.ActiveDeployment
+		}
 		if jsonMode {
 			return emitOK(map[string]any{
 				"workspace": workspace, "config": *cfgPath,
-				"setting": configTargetDocument(target, policy),
+				"setting": configTargetDocument(target, policy), "execution": execution,
 			})
 		}
 		fmt.Printf("updated %s\neffect: %s\napply: %s\n", target.Display, policy.Effect, policy.Apply)
+		fmt.Printf("execution: %s", execution["status"])
+		if id, ok := execution["deployment_id"].(string); ok {
+			fmt.Printf(" (%s)", id)
+		}
+		fmt.Println()
 		if policy.Description != "" {
 			fmt.Println(policy.Description)
 		}
@@ -177,9 +225,23 @@ func runConfig(args []string, jsonMode bool) error {
 		}
 		policy := policyForTarget(target, reg)
 		if jsonMode {
-			return emitOK(map[string]any{"setting": configTargetDocument(target, policy)})
+			document := configTargetDocument(target, policy)
+			kind, values := paramTypeDocument(targetParamType(target, reg))
+			document["type"] = kind
+			if len(values) > 0 {
+				document["allowed_values"] = values
+			}
+			document["env_key"] = parameterEnvKey(target.Module, target.Parameter, reg)
+			return emitOK(map[string]any{"setting": document})
 		}
-		fmt.Printf("path: %s\nmodule: %s\nparameter: %s\neffect: %s\napply: %s\nsensitive: %t\n", target.Display, target.Module, target.Parameter, policy.Effect, policy.Apply, policy.Sensitive)
+		kind, values := paramTypeDocument(targetParamType(target, reg))
+		fmt.Printf("path: %s\nmodule: %s\nparameter: %s\ntype: %s\nenv: %s\neffect: %s\nexecutor: %s\napply: %s\nsensitive: %t\n",
+			target.Display, target.Module, target.Parameter, kind,
+			parameterEnvKey(target.Module, target.Parameter, reg), policy.Effect,
+			effectExecutor(policy.Effect), policy.Apply, policy.Sensitive)
+		if len(values) > 0 {
+			fmt.Println("allowed: " + strings.Join(values, ", "))
+		}
 		if policy.Description != "" {
 			fmt.Println("description: " + policy.Description)
 		}
@@ -197,14 +259,136 @@ func runConfig(args []string, jsonMode bool) error {
 	}
 }
 
+// captureManagedConfigFiles makes config set transactional with deployment
+// activation. Runtime activation already compensates by restarting the prior
+// deployment when the new one fails; this restores the matching desired state
+// and managed digest so a later apply cannot retry a rejected value silently.
+func captureManagedConfigFiles(configPath string, includeLock bool) (func() error, error) {
+	type saved struct {
+		path    string
+		data    []byte
+		mode    os.FileMode
+		existed bool
+	}
+	paths := []string{configPath, managedConfigStatePath(stateDir(filepath.Dir(configPath)))}
+	if includeLock {
+		paths = append(paths, projectLockPath(configPath))
+	}
+	savedFiles := make([]saved, 0, len(paths))
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) && path == projectLockPath(configPath) {
+				savedFiles = append(savedFiles, saved{path: path})
+				continue
+			}
+			return nil, err
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		savedFiles = append(savedFiles, saved{path: path, data: body, mode: info.Mode().Perm(), existed: true})
+	}
+	return func() error {
+		files := make([]importFile, 0, len(savedFiles))
+		for _, file := range savedFiles {
+			if !file.existed {
+				continue
+			}
+			files = append(files, importFile{path: file.path, data: file.data, mode: file.mode})
+		}
+		if err := commitImportedFiles(files); err != nil {
+			return err
+		}
+		for _, file := range savedFiles {
+			if !file.existed {
+				if err := os.Remove(file.path); err != nil && !os.IsNotExist(err) {
+					return err
+				}
+			}
+		}
+		return nil
+	}, nil
+}
+
+func effectExecutor(effect string) string {
+	switch effect {
+	case "image_rebuild":
+		return "deployment_build_apply"
+	case "credential_rotate":
+		return "credential_lifecycle_command"
+	case "data_migrate":
+		return "migration_command"
+	case "immutable":
+		return "replacement_workflow"
+	default:
+		// Until a Module implements the future config_apply hook, rendering and
+		// activating an immutable deployment is the conservative executor for
+		// reload/reconcile/restart effects. It may recreate the affected
+		// container, but it never reports a value as applied without an action.
+		return "deployment_apply_fallback"
+	}
+}
+
+func applyManagedConfigChangeLocked(workspace, base, cfgPath, moduleRoot string, policy ChangePolicy, updateLock, jsonMode bool) (string, error) {
+	opts := prepareOptions{
+		workspace: workspace, base: base, cfgPath: cfgPath,
+		moduleRoot: moduleRoot, updateLock: updateLock,
+	}
+	id, err := materializeDeployment(opts, policy.Effect == "image_rebuild", jsonMode)
+	if err != nil {
+		return "", err
+	}
+	if err := activateDeployment(base, id, activateOptions{json: jsonMode}); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
 // configTargetDocument is the one shape `set` and `explain` both report, so a
 // caller that can read one can read the other.
 func configTargetDocument(target configTarget, policy ChangePolicy) map[string]any {
+	editable, editCommand := configEditability(policy)
 	return map[string]any{
 		"path": target.Display, "module": target.Module, "parameter": target.Parameter,
 		"effect": policy.Effect, "apply": policy.Apply,
 		"sensitive": policy.Sensitive, "description": policy.Description,
+		"editable": editable, "edit_command": editCommand,
+		"executor":          effectExecutor(policy.Effect),
+		"declared_executor": nullableString(policy.Executor),
+		"verification":      nullableString(policy.Verify),
 	}
+}
+
+func configEditability(policy ChangePolicy) (bool, string) {
+	switch policy.Effect {
+	case "credential_rotate":
+		return false, policy.Apply
+	case "data_migrate":
+		return false, policy.Apply
+	case "immutable":
+		return false, policy.Apply
+	default:
+		return true, "anas config set"
+	}
+}
+
+func targetParamType(target configTarget, reg map[string]Module) ParamType {
+	if mod, ok := reg[target.Module]; ok {
+		return mod.Types[strings.ToLower(target.Parameter)]
+	}
+	return ParamType{}
+}
+
+func paramTypeDocument(spec ParamType) (string, []string) {
+	if len(spec.Enum) > 0 {
+		return "enum", append([]string{}, spec.Enum...)
+	}
+	if spec.Kind != "" {
+		return spec.Kind, nil
+	}
+	return "string", nil
 }
 
 func runConfigSecret(args []string, jsonMode bool) error {
@@ -490,7 +674,7 @@ func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, js
 	if err != nil {
 		return preconditionErrorf("config_invalid", "%s", err.Error())
 	}
-	state, err := loadAppliedConfig(base)
+	appliedAt, appliedValues, err := appliedSettingFingerprints(base)
 	if err != nil {
 		return preconditionErrorf("state_unreadable", "%s", err.Error())
 	}
@@ -498,12 +682,12 @@ func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, js
 	for key := range settings {
 		keys[key] = true
 	}
-	for key := range state.Values {
+	for key := range appliedValues {
 		keys[key] = true
 	}
 	changed := []string{}
 	for key := range keys {
-		if hashSetting(settings[key]) != state.Values[key] {
+		if hashSetting(settings[key]) != appliedValues[key] {
 			changed = append(changed, key)
 		}
 	}
@@ -518,7 +702,7 @@ func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, js
 		change := "change"
 		if _, ok := settings[key]; !ok {
 			change = "remove"
-		} else if _, ok := state.Values[key]; !ok {
+		} else if _, ok := appliedValues[key]; !ok {
 			change = "add"
 		}
 		entry := configTargetDocument(target, policy)
@@ -530,7 +714,7 @@ func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, js
 	if jsonMode {
 		return emitOK(map[string]any{
 			"workspace": workspace, "config": cfgPath,
-			"applied_at":         nullableString(state.AppliedAt),
+			"applied_at":         nullableString(appliedAt),
 			"matches_last_start": len(changes) == 0,
 			"changes":            changes,
 		})
@@ -539,13 +723,44 @@ func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, js
 		fmt.Println("configuration matches the last successful start")
 		return nil
 	}
-	if state.AppliedAt == "" {
+	if appliedAt == "" {
 		fmt.Println("no applied snapshot exists; treating this as initial configuration")
 	} else {
-		fmt.Println("last successful start: " + state.AppliedAt)
+		fmt.Println("last successful activation: " + appliedAt)
 	}
 	for _, entry := range changes {
 		fmt.Printf("%-7s %-48s %-20s %s\n", entry["change"], entry["key"], entry["effect"], entry["apply"])
 	}
 	return nil
+}
+
+// appliedSettingFingerprints reads the active immutable deployment first. The
+// legacy config-applied.yml snapshot is only a compatibility fallback for old
+// tests/workspaces; a successful deployment activation is now the authority on
+// what configuration the runtime has observed.
+func appliedSettingFingerprints(base string) (string, map[string]string, error) {
+	active, err := loadActiveState(base)
+	if err != nil {
+		return "", nil, err
+	}
+	if active.ActiveDeployment != "" {
+		manifest, err := loadDeploymentManifest(filepath.Join(base, "deployments", active.ActiveDeployment))
+		if err != nil {
+			return "", nil, err
+		}
+		values := make(map[string]string, len(manifest.Settings))
+		for key, setting := range manifest.Settings {
+			values[key] = setting.Fingerprint
+		}
+		at := active.VerifiedAt
+		if at == "" {
+			at = active.ActivatedAt
+		}
+		return at, values, nil
+	}
+	legacy, err := loadAppliedConfig(base)
+	if err != nil {
+		return "", nil, err
+	}
+	return legacy.AppliedAt, legacy.Values, nil
 }

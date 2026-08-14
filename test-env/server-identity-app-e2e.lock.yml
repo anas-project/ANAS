@@ -2,56 +2,71 @@ api_version: anas.module-lock/v1
 modules:
     authentik:
         version: 2026.5.6
-        revision: 1
+        revision: 4
         app_version: 2026.5.6
         source: bundle:authentik
-        digest: sha256:ec1de669c21836ffce5f6f9a74ce324628f15d6788729d3c3206e52453bdef21
+        digest: sha256:ee4d213e3567ba73517e404490624f736d664363173ac4adc48debc772358fd0
     eturnal:
         version: 1.12.2
         revision: 1
         app_version: 1.12.2
         source: bundle:eturnal
-        digest: sha256:e3a0f92cc817e58de0121814f613a4f1ac5ecc84a6f110ea49c8f4ec8bca4859
+        digest: sha256:9410b9412a215d100580699d4e760c7bbdf937deb3b31c8ac1a7b73392901987
     lego:
         version: 5.3.1
-        revision: 1
+        revision: 2
         app_version: 5.3.1
         source: bundle:lego
-        digest: sha256:40f872d330c2909e694805af3a948a550f6561fe66d99980778aa422fac87edb
+        digest: sha256:f78184ad5b671bd5211d67bc04b9c8aa9ea1269d7f10b68d131539d5fd17ec68
+    meshcentral:
+        version: 1.2.4
+        revision: 4
+        app_version: 1.2.4
+        source: bundle:meshcentral
+        digest: sha256:7fd54264d654648fb3d745440625a5a53ff2274b4f04b5c47b962eaf10b23c9c
     netbird:
         version: 0.76.1
-        revision: 1
+        revision: 2
         app_version: 0.76.1
         source: bundle:netbird
-        digest: sha256:c1b94c4c614283e58d5868125dda8e39e1c6112909fe31bd0ad95e86938e8744
+        digest: sha256:4843ef59844977b82f2ac27a2fd8b029742bfbfc78b1431f11495b4c02b2aa10
     nextcloud:
         version: 34.0.2
-        revision: 1
+        revision: 4
         app_version: 34.0.2
         source: bundle:nextcloud
-        digest: sha256:430fdc0a224a3e83eb1345b778f0b18184d3bf0127a990a90df2ef0fb06d2315
+        digest: sha256:2d02b6519b8e19738ef50e9fd88dcc5eb81d2bbb2ed11dca47eebd03d41b8513
     postgres:
         version: 18.4.0
         revision: 1
         app_version: 18.4.0
         source: bundle:postgres
-        digest: sha256:03f15a48a8db2e90ec29593280530c3e17319166539a150954025f5c95c397b4
+        digest: sha256:fc86688b2f12b21cae897a1ccbdcd4d785a8cf8a1233b24e79b6673805b118c6
     samba_dc:
         version: 4.23.6
-        revision: 3
+        revision: 5
         app_version: 4.23.6
         source: bundle:samba_dc
-        digest: sha256:9bf170bd216e06e7ad332bffd62fed7b38a641f743c7b4f049cd167b575013c4
+        digest: sha256:aaff909e3f93daf269979e9bc64d874c7ad29f602343577e9a6eaa8e482a8765
     traefik:
         version: 3.7.10
-        revision: 1
+        revision: 2
         app_version: 3.7.10
         source: bundle:traefik
-        digest: sha256:378162428afc3dcf1ab33fed229f8876821d0278f07ddabb122b91a77de15859
+        digest: sha256:45169008dd74bba931a23b8f43c7fefbffb3f7b937653515b5e3a6b6bb4f7db3
+contracts:
+    relational_database:
+        version: 1.0.0
+        digest: sha256:c354bcae319632a9f606a14fe6dd06ed5bbc659e169e405f3d468c7f93ad71eb
 iam:
     provider: authentik
 bindings:
     authentik:
+        relational_database: postgres
+        relational_database.interface: postgres
+    meshcentral:
+        iam: authentik
+        iam.interface: oidc
         relational_database: postgres
         relational_database.interface: postgres
     netbird:
@@ -59,7 +74,7 @@ bindings:
         iam.interface: oidc
     nextcloud:
         iam: authentik
-        iam.interface: saml
+        iam.interface: oidc
         relational_database: postgres
         relational_database.interface: postgres
 snapshot:

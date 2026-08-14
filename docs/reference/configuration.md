@@ -38,7 +38,7 @@
 | `administration.local_accounts.password_length` | 生成密码长度，最小 16 | 已使用 |
 | `identity.directory.provider` | 目录 Provider；当前只接受 `samba_dc` | 已使用 |
 | `identity.iam.provider` | IAM Provider | 已使用 |
-| `identity.iam.default_protocol` | IAM 默认协议 | 已使用 |
+| `identity.iam.default_protocol` | IAM 默认协议；省略时为 `oidc`，不支持的 Module 按 manifest 回退 | 已使用 |
 | `dynamic_dns.provider` | 管理部署自身 DNS 记录的 module 或 `auto` | 已使用 |
 | `dynamic_dns.dns_provider` | DNS 厂商 | 已使用 |
 | `rollback.snapshot.backend` | 快照后端 | 已使用 |
@@ -67,7 +67,8 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。
 
 ## 已声明的 130 个参数
 
-表中参数都能被 `anas config list` 列出，也能通过 `anas config set` 地址设置。除特别说明
+表中参数都能被 `anas config list` 列出。普通可编辑参数可通过 `anas config set` 设置；
+`credential_rotate`、`data_migrate` 和 `immutable` 只用于 inventory/explain，必须执行专用流程。除特别说明
 外，全局参数写为 `global.<parameter>`，module 参数写入
 `modules.<module>.config.<parameter>`。
 

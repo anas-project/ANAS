@@ -38,14 +38,15 @@ services:
     volumes:
       - "${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro"
       - "${LEGO_CERTS_PATH}:/certs:ro"
-      # Mount the directory, not one file: local-admin rotation atomically
-      # renames the candidate document and Traefik must observe the new inode.
-      - "./dynamic:/run/anas"
+      # Mutable provider state is deployment-scoped and lives outside the
+      # sealed artifact. Mount the directory so atomic credential replacement
+      # is observed and rollback deployments never share runtime files.
+      - "${ANAS_MODULE_RUNTIME_STATE_PATH}/dynamic:/run/anas"
     labels:
       - "traefik.http.routers.api.entrypoints=https"
       - "traefik.http.routers.api.rule=Host(`${TRAEFIK_DOMAIN}`)"
       - "traefik.http.routers.api.service=api@internal"
-      - "traefik.http.routers.api.middlewares=auth"
+      - "traefik.http.routers.api.middlewares=auth@file"
       - "traefik.http.routers.api.tls=true"
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"

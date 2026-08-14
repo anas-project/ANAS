@@ -1,0 +1,7 @@
+api_version: anas.contract-documentation/v1
+contract: certificate
+status: proposal
+reviewed_at: 2026-08-14
+summary:
+  zh: 证书资源 Contract 提案；当前证书由 lego 与 ANAS_TLS_* 直接完成，不经 Contract 调度。
+  en: A certificate-resource Contract proposal; current certificates are handled directly by lego and ANAS_TLS_* without Contract dispatch.

@@ -4,7 +4,11 @@ File sync, sharing, office integration, memories, and Talk.
 
 ## 管理员访问 / Administrator access
 
-- 日常登录通过 IAM/SAML，并由 LDAP provisioning 关联目录用户；本地账号不参与日常 SSO。
+- 日常登录默认通过 IAM/OIDC；也可把 `nextcloud.iam_protocol` 显式设为 `saml`。
+  两种协议都只负责认证，用户和组仍由 LDAP provisioning 管理，本地账号不参与日常 SSO。
+- OIDC 使用官方 `user_oidc` 应用。OIDC `preferred_username` 对齐 LDAP 的
+  `sAMAccountName`/Internal Username，因而登录复用现有 LDAP 用户；目录
+  `anasIdentityAnchor` 仍作为 IAM claim 发布，用于跨系统身份核验。
 - 本地恢复账号的 Manifest ID 是 `break_glass`，purpose 也是 `break_glass`。`ACCOUNT` 指这个
   ID，不是用户名。
 - 用户名由 ANAS 固定默认模板确定；`admin_{module}` 在本 Module 解析为
@@ -24,19 +28,30 @@ anas admin local rotate nextcloud break_glass -w /srv/anas
 anas admin local rotate nextcloud break_glass --prompt -w /srv/anas
 ```
 
-Daily login uses IAM/SAML and LDAP-provisioned directory users. The native
-account is only for recovery. Its logical Manifest ID is `break_glass`; the
-default physical username is `admin_nextcloud`, while its password is an
-independent generated Secret rather than YAML configuration. The direct
-`/login?direct=1` route bypasses IAM. Apply and rotation update the real account
-through `occ`, verify it, and restore the previous password on failure.
+Daily login uses IAM/OIDC by default; setting `nextcloud.iam_protocol` to
+`saml` keeps the existing SAML path available. Both protocols authenticate
+LDAP-provisioned users rather than creating a second user backend. The OIDC
+`preferred_username` claim matches the LDAP `sAMAccountName` internal username,
+while `anasIdentityAnchor` remains available for cross-system identity checks.
+The native account is only for recovery. Its logical Manifest ID is
+`break_glass`; the default physical username is `admin_nextcloud`, while its
+password is an independent generated Secret rather than YAML configuration.
+The direct `/login?direct=1` route bypasses IAM. Apply and rotation update the
+real account through `occ`, verify it, and restore the previous password on
+failure.
+
+```bash
+anas config set nextcloud.iam_protocol oidc -w /srv/anas
+# Optional fallback:
+anas config set nextcloud.iam_protocol saml -w /srv/anas
+```
 
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`34.0.2-r3`（reviewed 2026-08-13）
+- Module version / 版本：`34.0.2-r4`（reviewed 2026-08-13）
 - Timezone / 时区：`partial` — Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
 - Language scope / 语言范围：Nextcloud Web UI
 - Selection / 选择方式：`browser`

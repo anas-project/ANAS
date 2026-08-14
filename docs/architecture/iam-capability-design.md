@@ -175,8 +175,7 @@ dependencies:
           - oidc
 ```
 
-一个可接受两种协议、优先 OIDC 的消费方长这样（实际的 Nextcloud Module 只声明
-SAML，原因见 §12.1）：
+一个可接受两种协议、优先 OIDC 的消费方长这样；Nextcloud 当前使用这个声明：
 
 ```yaml
 dependencies:
@@ -539,15 +538,16 @@ Runner 单元测试：
 
 实现过程中发现三处正文与现实不符，这里记录结论和原因。
 
-### 12.1 Nextcloud 只声明 SAML
+### 12.1 Nextcloud 已增加 OIDC，SAML 保留为 fallback
 
-§4.2 的示例把 Nextcloud 写成 `any_of: [oidc, saml]`，但实际 Module 只声明
-`any_of: [saml]`。原因是这个 Module 只配置 `user_saml`，没有任何 OIDC 代码路径。
-声明一个自己实现不了的协议，恰好制造出本设计要消除的那种失败：清单通过校验、
-`plan` 通过、容器起来之后 SSO 不工作。
+Nextcloud 现已接入官方 `user_oidc`，实际声明为 `any_of: [oidc, saml]`，并优先
+OIDC。OIDC 使用授权码流，`preferred_username` 对齐 LDAP 的 `sAMAccountName`
+Internal Username；`auto_provision=false`，因此 IAM 只认证，用户和组仍由 LDAPS
+backend 管理。原有 `user_saml` 路径保留，只有显式选择 `iam_protocol: saml` 时启用。
+Runner 的 provider-neutral capability 解析不需要为这项新增支持做特例。
 
-要支持 OIDC，需要单独接入 Nextcloud 的 `user_oidc` 应用，属于新功能而非本次
-迁移范围。届时只需把 `oidc` 加进 `any_of`，Runner 侧无需改动。
+MeshCentral 同时加入 OIDC-only IAM capability：OIDC 负责认证和管理员组 claim，
+LDAPS 继续负责目录同步。两个 consumer 的完整授权码链路由服务器 E2E 验证。
 
 ### 12.2 SP 密钥归属改变
 

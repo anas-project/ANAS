@@ -39,6 +39,7 @@ fi
 bash ./scripts/ci/cnb-container-images.sh validate
 sh ./test-env/scripts/test-nextcloud-download-proxy.sh
 go run ./cmd/gen-module-docs --check
+go run ./cmd/gen-contract-docs --check
 
 status=0
 go test ./... >"$log" 2>&1 || status=$?

@@ -2,13 +2,13 @@ api_version: anas.module/v1
 kind: Module
 name: meshcentral
 version: 1.2.4
-revision: 3
+revision: 4
 app_version: 1.2.4
 abi:
   supports:
     - anas.module-hook/v1
 title: MeshCentral
-description: Remote device management service using LDAP authentication.
+description: Remote device management with OIDC authentication and LDAP directory synchronization.
 category: app
 runtime:
   type: compose
@@ -17,6 +17,14 @@ dependencies:
   requires:
     - traefik
     - samba_dc
+  requires_capabilities:
+    - name: iam
+      interface_selected_by: iam_protocol
+      interfaces:
+        any_of:
+          - oidc
+        prefer:
+          - oidc
   contracts:
     - name: relational_database
       version: ">=1.0.0 <2.0.0"
@@ -48,11 +56,20 @@ config:
     mps_port: "4433"
     db_name: meshcentral
     db_type: auto
+    iam_protocol: auto
+  exports:
+    - ANAS_IAM_CLIENT__MESHCENTRAL__*
+    - APPS_LIST*
   # The container connects to the resolved database and binds to LDAP with
   # these real credentials directly. Its entrypoint derives config.json in
   # /run/anas.
   consumes:
+    - ANAS_IAM_BINDING__MESHCENTRAL__*
+    - ANAS_IAM_PORTAL_URL
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_INTERNAL_CA_NAME
     - SAMBA_DC_ADMIN_GROUP_DN
+    - SAMBA_DC_ADMIN_GROUP_NAME
     - SAMBA_DC_ADMIN_NAME
     - SAMBA_DC_APP_ALL_DN
     - SAMBA_DC_APP_FILTER
@@ -82,12 +99,39 @@ config:
       effect: data_migrate
       apply: migrate-meshcentral-database
       description: The database name is materialized when the database is initialized.
+    iam_protocol:
+      effect: container_recreate
+      apply: recreate-meshcentral
+      description: The OIDC client registration and generated runtime configuration must be reconciled together.
 identity:
-  interfaces:
-    - ldaps
+  provisioning:
+    capability: directory
+    interfaces:
+      any_of:
+        - ldaps
+    objects:
+      - users
+      - groups
+    identity_key: anasIdentityAnchor
+    required: true
+  authentication:
+    capability: iam
+    selected_by: iam_protocol
+    interfaces:
+      any_of:
+        - oidc
+      prefer:
+        - oidc
   application_group: true
 features:
+  generated_secrets: true
   domain: true
+management:
+  surfaces:
+    - id: web
+      uri_from: MESHCENTRAL_DOMAIN_FULL
+      authentication:
+        primary: iam
 logic:
   hook:
     command:

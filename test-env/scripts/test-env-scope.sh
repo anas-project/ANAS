@@ -65,7 +65,7 @@ render() {
   if [ -f "$base/wide/.anas/secrets.yml" ] && [ "$wide" != "1" ]; then
     cp "$base/wide/.anas/secrets.yml" "$ws/.anas/secrets.yml"
   fi
-  cp "$config" "$ws/config.yml"
+	"$anas_bin" config import "$config" -w "$ws" >>"$log" 2>&1
   "$anas_bin" lock -w "$ws" >>"$log" 2>&1
   if [ "$wide" = "1" ]; then
     ANAS_WIDE_ENV_SCOPE=1 "$anas_bin" render -w "$ws" >>"$log" 2>&1

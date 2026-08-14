@@ -87,6 +87,7 @@ func loadGlobalSchema(b []byte) (globalSchema, error) {
 		changes[strings.ToLower(strings.TrimSpace(key))] = ChangePolicy{
 			Effect: policy.Effect, Apply: policy.Apply,
 			Description: policy.Description, Sensitive: policy.Sensitive,
+			Executor: policy.Executor, Verify: policy.Verify,
 		}
 	}
 	return globalSchema{

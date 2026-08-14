@@ -23,6 +23,11 @@ func TestNextcloudRotationUsesOccAndKeepsPasswordOutOfArgv(t *testing.T) {
 		if calls == 1 && !strings.Contains(joined, "user:resetpassword --password-from-env") {
 			t.Fatalf("not the real occ reset path: %s", joined)
 		}
+		if calls == 2 {
+			if strings.Contains(joined, "getUserManager") || !strings.Contains(joined, `get(\OCP\IUserManager::class)`) {
+				t.Fatalf("verification does not use Nextcloud's current container API: %s", joined)
+			}
+		}
 		return nil, nil
 	}
 	if err := handleLocalAccount(nextcloudRotateRequest("old-password", "candidate-password")); err != nil {

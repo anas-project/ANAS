@@ -76,3 +76,27 @@ func TestOrdinaryStartRejectsImmutableChange(t *testing.T) {
 		t.Fatalf("desired config was not retained: %v, %v", settings, err)
 	}
 }
+
+func TestConfigEffectExecutorAndEditability(t *testing.T) {
+	for _, test := range []struct {
+		effect, executor string
+		editable         bool
+	}{
+		{"hot_reload", "deployment_apply_fallback", true},
+		{"reconcile", "deployment_apply_fallback", true},
+		{"container_recreate", "deployment_apply_fallback", true},
+		{"image_rebuild", "deployment_build_apply", true},
+		{"credential_rotate", "credential_lifecycle_command", false},
+		{"data_migrate", "migration_command", false},
+		{"immutable", "replacement_workflow", false},
+	} {
+		policy := ChangePolicy{Effect: test.effect, Apply: "declared-operation"}
+		if got := effectExecutor(test.effect); got != test.executor {
+			t.Errorf("%s executor = %q, want %q", test.effect, got, test.executor)
+		}
+		editable, _ := configEditability(policy)
+		if editable != test.editable {
+			t.Errorf("%s editable = %t, want %t", test.effect, editable, test.editable)
+		}
+	}
+}

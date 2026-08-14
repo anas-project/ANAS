@@ -39,9 +39,10 @@ secrets:
 
 `lego` 通过 DNS-01 获取通配符证书，并将证书目录只读挂载给 Traefik。DNS 厂商凭据属于 Secret，不应提交到仓库。修改 `base_port` 或 `domain_prefix` 会重建 Traefik 容器及相关路由。
 
-Dashboard 使用托管的 `primary` BasicAuth 账号。默认实际用户名是 `admin_traefik`；
-首次部署前可以通过 `modules.traefik.administration.local_accounts.primary.username`
-覆盖。密码由 Secret Store 生成，不能通过 argv、`config.yml` 或顶层 `env` 输入。
+Dashboard 使用托管的 `primary` BasicAuth 账号，固定实际用户名为 `admin_traefik`。
+用户名由 ANAS 管理，不能通过全局模板、Module override、`config.yml` 或命令修改；
+`primary` 是 CLI 使用的逻辑账号 ID，不是用户名。密码由 Secret Store 生成，不能通过
+argv、`config.yml` 或顶层 `env` 输入。
 
 ```bash
 anas admin local credential traefik -w /srv/anas

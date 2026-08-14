@@ -112,18 +112,20 @@ say "render and start"
 workspace=${ANAS_TEST_WORKSPACE:-$HOME/anas-ddns-e2e}
 mkdir -p "$workspace"
 [ -d "$workspace/.anas" ] || (cd "$root" && go run ./cmd/anas init "$workspace" -y >/dev/null)
-cp "$root/test-env/server-ddns-e2e.yml" "$workspace/config.yml"
+source_config="$workdir/config.yml"
+cp "$root/test-env/server-ddns-e2e.yml" "$source_config"
 {
   echo "secrets:"
   echo "  tencentcloud_secret_id: $TENCENTCLOUD_SECRET_ID"
   echo "  tencentcloud_secret_key: $TENCENTCLOUD_SECRET_KEY"
-} >> "$workspace/config.yml"
-chmod 600 "$workspace/config.yml"
+} >> "$source_config"
+chmod 600 "$source_config"
+(cd "$root" && go run ./cmd/anas config import "$source_config" -w "$workspace" >/dev/null)
 
-(cd "$root" && go run ./cmd/anas plan -c "$workspace/config.yml")
+(cd "$root" && go run ./cmd/anas plan -w "$workspace")
 
 say "the capability resolved without naming a module"
-plan=$(cd "$root" && go run ./cmd/anas plan -c "$workspace/config.yml")
+plan=$(cd "$root" && go run ./cmd/anas plan -w "$workspace")
 printf '%s\n' "$plan" | grep -q '^ddns_go$' ||
   { echo "ddns_go was not pulled in by the capability" >&2; exit 1; }
 if printf '%s\n' "$plan" | grep -q '^oauth2_proxy$'; then

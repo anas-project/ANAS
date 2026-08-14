@@ -1,0 +1,7 @@
+api_version: anas.contract-documentation/v1
+contract: identity
+status: pending
+reviewed_at: 2026-08-14
+summary:
+  zh: 描述 OIDC/SAML 客户端资源；当前尚未接入 Runner，不能视为已实现能力。
+  en: Describes OIDC/SAML client resources; it is not wired into the Runner and is not an implemented capability yet.

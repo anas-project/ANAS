@@ -55,14 +55,14 @@ $docker_cmd exec "$(container nextcloud)" occ status
 $docker_cmd exec "$(container nextcloud)" occ ldap:test-config s01
 $docker_cmd exec "$(container nextcloud)" occ user:info admin
 $docker_cmd exec "$(container nextcloud)" occ app:list
-for app in previewgenerator memories user_saml user_ldap notify_push spreed; do
+for app in previewgenerator memories user_oidc user_ldap notify_push spreed; do
   $docker_cmd exec "$(container nextcloud)" occ integrity:check-app "$app"
 done
 $docker_cmd exec "$(container nextcloud)" sh -ceu 'test -f /run/nextcloud-tasks.ready; test -f /data/.anas-state/memories-places.ready; test "$(curl -fsS -o /dev/null -w "%{http_code}" http://127.0.0.1:12345/ping)" = 200; echo "task, memories, and ping markers: ok"'
 $docker_cmd exec "$(container postgres)" sh -ceu 'psql -U "$POSTGRES_USER" -d nextcloud -Atc "select count(*) from oc_memories_planet"' | sed 's/^/memories_planet_rows=/'
 
 section "application integrations"
-$docker_cmd exec "$(container meshcentral)" node -e "require('ldapauth-fork'); require('mysql'); console.log('meshcentral_node_dependencies=ok')"
+$docker_cmd exec "$(container meshcentral)" node -e "require('ldapauth-fork'); require('mysql2'); require('openid-client'); require('passport'); console.log('meshcentral_node_dependencies=ok')"
 discovery_url="https://auth.$domain:$entry_port/realms/master/.well-known/openid-configuration"
 discovery=
 attempt=0

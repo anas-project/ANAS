@@ -81,3 +81,31 @@ func TestModuleEnvPrefersRenderedEnvFile(t *testing.T) {
 		t.Fatalf("moduleEnv fallback = %q, want in-memory value", got)
 	}
 }
+
+func TestModuleEnvRelocatesWorkspaceDerivedPathsAfterRestore(t *testing.T) {
+	oldWorkspace := filepath.Join(t.TempDir(), "source")
+	newWorkspace := filepath.Join(t.TempDir(), "restored")
+	dir := t.TempDir()
+	if err := writeEnv(filepath.Join(dir, ".env"), map[string]string{
+		"DATA_PATH":       filepath.Join(oldWorkspace, workspaceDataDir),
+		"USER_DATA_PATH":  filepath.Join(oldWorkspace, workspaceUserDataDir),
+		"LEGO_CERTS_PATH": filepath.Join(oldWorkspace, workspaceDataDir, "lego", "certificates") + string(os.PathSeparator),
+		"EXTERNAL_PATH":   "/mnt/operator-managed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	a := &app{base: stateDir(newWorkspace)}
+	env := a.moduleEnv(dir)
+	if got, want := env["DATA_PATH"], dataDir(newWorkspace); got != want {
+		t.Fatalf("DATA_PATH = %q, want %q", got, want)
+	}
+	if got, want := env["USER_DATA_PATH"], userDataDir(newWorkspace); got != want {
+		t.Fatalf("USER_DATA_PATH = %q, want %q", got, want)
+	}
+	if got, want := env["LEGO_CERTS_PATH"], filepath.Join(dataDir(newWorkspace), "lego", "certificates")+string(os.PathSeparator); got != want {
+		t.Fatalf("LEGO_CERTS_PATH = %q, want %q", got, want)
+	}
+	if got := env["EXTERNAL_PATH"]; got != "/mnt/operator-managed" {
+		t.Fatalf("external path was rewritten to %q", got)
+	}
+}

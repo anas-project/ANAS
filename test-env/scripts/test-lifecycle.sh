@@ -156,7 +156,7 @@ done
 # Re-initialising an existing workspace is a precondition failure, not a usage
 # mistake: the command line was right, the machine was not in the state it needs.
 expect_exit 4 anas init "$ws" -y
-cp "$config" "$ws/config.yml"
+run anas config import "$config" -w "$ws"
 
 step "L2 before anything is deployed"
 expect_exit 4 anas start -w "$ws"
@@ -169,7 +169,7 @@ json_ok anas deployments list -w "$ws" --json
 step "L3 inspect the configuration"
 json_ok anas config explain nextcloud.domain_prefix --json
 json_ok anas config plan -w "$ws" --json
-json_ok anas plan -c "$ws/config.yml" --json
+json_ok anas plan -w "$ws" -c "$ws/config.yml" --json
 json_ok anas lock -w "$ws" --json
 
 step "L4 first apply"
@@ -200,11 +200,10 @@ step "L6 the artifact carries what a restore needs"
 step "L7 write data that must survive everything below"
 echo lifecycle-marker >"$ws/data/marker"
 
-step "L8 second apply, configuration only"
+step "L8 config set applies the running deployment"
 run anas config set global.timezone Europe/Berlin -w "$ws"
-run anas apply --build -w "$ws" --update-lock
 second=$(active_deployment "$ws")
-[ "$second" != "$first" ] || fail "a config change produced no new deployment"
+[ "$second" != "$first" ] || fail "config set produced no new deployment"
 echo "deployment 2: $second"
 
 step "L9 rollback keeps the data"
@@ -416,7 +415,7 @@ step "L18 a malformed setting is refused when the config is read"
 # a module testing != "false", so the setting was written, accepted, and reversed.
 bad=$(mktemp)
 sed 's/^  email:/  ipv6: flase\n  email:/' "$config" > "$bad"
-expect_exit 4 anas plan -c "$bad"
+expect_exit 4 anas plan -c "$bad" -w "$ws"
 rm -f "$bad"
 
 echo

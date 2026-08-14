@@ -216,11 +216,36 @@ func TestNextcloudDeclaresProvisioningSeparatelyFromAuthentication(t *testing.T)
 	if mod.IdentityProvisioning == nil || !contains(mod.IdentityProvisioning.AnyOf, "ldaps") {
 		t.Fatalf("provisioning = %+v, want required LDAPS", mod.IdentityProvisioning)
 	}
-	if mod.IdentityAuthentication == nil || !contains(mod.IdentityAuthentication.AnyOf, "saml") {
-		t.Fatalf("authentication = %+v, want SAML", mod.IdentityAuthentication)
+	if mod.IdentityAuthentication == nil || !contains(mod.IdentityAuthentication.AnyOf, "oidc") || !contains(mod.IdentityAuthentication.AnyOf, "saml") {
+		t.Fatalf("authentication = %+v, want OIDC and SAML", mod.IdentityAuthentication)
+	}
+	if len(mod.IdentityAuthentication.Prefer) == 0 || mod.IdentityAuthentication.Prefer[0] != "oidc" {
+		t.Fatalf("authentication preference = %+v, want OIDC first", mod.IdentityAuthentication.Prefer)
+	}
+	if mod.IdentityAuthentication.SelectedBy != "iam_protocol" {
+		t.Fatalf("authentication selected_by = %q, want iam_protocol", mod.IdentityAuthentication.SelectedBy)
 	}
 	if mod.IdentityProvisioning.IdentityKey != "anasIdentityAnchor" {
 		t.Fatalf("identity key = %q", mod.IdentityProvisioning.IdentityKey)
+	}
+}
+
+func TestMeshcentralDeclaresOIDCAuthenticationAndLDAPProvisioning(t *testing.T) {
+	mod, err := loadModuleManifest(filepath.Join("..", "..", "modules", "meshcentral"), "meshcentral")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mod.IdentityProvisioning == nil || !contains(mod.IdentityProvisioning.AnyOf, "ldaps") {
+		t.Fatalf("provisioning = %+v, want required LDAPS", mod.IdentityProvisioning)
+	}
+	if mod.IdentityAuthentication == nil || len(mod.IdentityAuthentication.AnyOf) != 1 || mod.IdentityAuthentication.AnyOf[0] != "oidc" {
+		t.Fatalf("authentication = %+v, want OIDC only", mod.IdentityAuthentication)
+	}
+	if mod.IdentityAuthentication.SelectedBy != "iam_protocol" {
+		t.Fatalf("authentication selected_by = %q, want iam_protocol", mod.IdentityAuthentication.SelectedBy)
+	}
+	if len(mod.LocalAccounts) != 0 {
+		t.Fatalf("MeshCentral must not claim an unimplemented local recovery account: %+v", mod.LocalAccounts)
 	}
 }
 

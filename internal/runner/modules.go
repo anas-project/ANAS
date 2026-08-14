@@ -179,6 +179,8 @@ type ChangePolicy struct {
 	Apply       string `json:"apply"`
 	Description string `json:"description,omitempty"`
 	Sensitive   bool   `json:"sensitive"`
+	Executor    string `json:"executor,omitempty"`
+	Verify      string `json:"verify,omitempty"`
 }
 
 // bareEnvParameter reports the env key for a parameter a module publishes under a

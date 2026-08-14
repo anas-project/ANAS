@@ -14,9 +14,9 @@ for config in "$CONFIG_DIR"/*.yml; do
   log="$REPORT_DIR/render-$name.log"
   make_workspace "$ws" "$config"
   if {
-    echo "== plan: $name =="
-    run_anas plan -c "$ws/config.yml"
-    echo "== render: $name =="
+    echo "== plan: $name ==" &&
+    run_anas plan -w "$ws" -c "$ws/config.yml" &&
+    echo "== render: $name ==" &&
     run_anas render -w "$ws" --update-lock
   } >"$log" 2>&1; then
     cat "$log"

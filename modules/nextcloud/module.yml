@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: nextcloud
 version: 34.0.2
-revision: 3
+revision: 4
 app_version: 34.0.2
 abi:
   supports:
@@ -19,16 +19,14 @@ dependencies:
     - eturnal
     - samba_dc
   requires_capabilities:
-    # Only SAML is declared: this module configures the user_saml app and has no
-    # OIDC path, and declaring a protocol it cannot actually serve is exactly
-    # the gap between "manifest claims" and "deployment works" that this model
-    # exists to close.
     - name: iam
       interface_selected_by: iam_protocol
       interfaces:
         any_of:
+          - oidc
           - saml
         prefer:
+          - oidc
           - saml
   contracts:
     - name: relational_database
@@ -69,7 +67,7 @@ config:
     memories_enabled: "true"
     db_type: auto
     iam_protocol: auto
-  # Generic SAML SP registration, app-launcher metadata, and Talk service
+  # Generic OIDC/SAML registration, app-launcher metadata, and Talk service
   # settings published for the selected IAM and the bundled Talk containers.
   exports:
     - ANAS_IAM_CLIENT__NEXTCLOUD__*
@@ -81,6 +79,7 @@ config:
     - ANAS_TLS_CERTS_DIR
     - ANAS_TLS_INTERNAL_CA_NAME
     - SAMBA_DC_ADMIN_GROUP_DN
+    - SAMBA_DC_ADMIN_GROUP_NAME
     - SAMBA_DC_ADMIN_NAME
     - SAMBA_DC_APP_ALL_DN
     - SAMBA_DC_APP_FILTER
@@ -132,6 +131,10 @@ config:
       effect: reconcile
       apply: reconcile-nextcloud-domain
       description: Trusted domains, SSO metadata, and proxy routes must be updated together.
+    iam_protocol:
+      effect: container_recreate
+      apply: recreate-nextcloud
+      description: Switching OIDC and SAML changes both the IAM registration and the enabled Nextcloud authentication app.
     language:
       effect: reconcile
       apply: reconcile-nextcloud-localization
@@ -169,11 +172,13 @@ identity:
     required: true
   authentication:
     capability: iam
-    selected_by: login_protocol
+    selected_by: iam_protocol
     interfaces:
       any_of:
+        - oidc
         - saml
       prefer:
+        - oidc
         - saml
   application_group: true
 management:

@@ -13,9 +13,9 @@ for lock in "$TEST_ENV_DIR"/upgrades/supported/*.lock.yml; do
   cp "$lock" "$base/config.lock.yml"
 
   if {
-    echo "== upgrade plan: $name =="
-    run_anas plan -c "$base/config.yml"
-    echo "== upgrade render: $name =="
+    echo "== upgrade plan: $name ==" &&
+    run_anas plan -w "$base" -c "$base/config.yml" &&
+    echo "== upgrade render: $name ==" &&
     run_anas render -w "$base" --update-lock
   } >"$log" 2>&1; then
     cat "$log"

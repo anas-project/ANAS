@@ -30,8 +30,8 @@ set -eu
 
 cd "$ROOT_DIR"
 
-ws=${ANAS_BACKUP_WORKSPACE:-/data/anas-backup-test/ws}
-restore_ws=${ANAS_BACKUP_RESTORE_WORKSPACE:-/data/anas-backup-test/restored}
+ws=${ANAS_BACKUP_WORKSPACE:-$RUNTIME_DIR/backup/ws}
+restore_ws=${ANAS_BACKUP_RESTORE_WORKSPACE:-$RUNTIME_DIR/backup/restored}
 config=${ANAS_BACKUP_CONFIG:-$CONFIG_DIR/backup.yml}
 log="$REPORT_DIR/backup.log"
 failures=0

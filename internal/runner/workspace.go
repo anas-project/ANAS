@@ -143,10 +143,39 @@ func (a *app) applyWorkspaceEnv() {
 	}
 	a.env["DATA_PATH"] = dataDir(a.workspace)
 	a.env["USER_DATA_PATH"] = userDataDir(a.workspace)
+	if strings.TrimSpace(a.env["DOCKER_SOCKET_PATH"]) == "" {
+		if socket := dockerSocketPathFromHost(os.Getenv("DOCKER_HOST")); socket != "" {
+			a.env["DOCKER_SOCKET_PATH"] = socket
+		}
+	}
+	if strings.TrimSpace(a.env["ANAS_RUNTIME_ENTRY_IP"]) == "" {
+		if entryIP := strings.TrimSpace(os.Getenv("ANAS_RUNTIME_ENTRY_IP")); entryIP != "" {
+			a.env["ANAS_RUNTIME_ENTRY_IP"] = entryIP
+		}
+	}
 	if a.envOwner != nil {
 		a.envOwner["DATA_PATH"] = globalScope
 		a.envOwner["USER_DATA_PATH"] = globalScope
+		if a.env["DOCKER_SOCKET_PATH"] != "" {
+			a.envOwner["DOCKER_SOCKET_PATH"] = globalScope
+		}
+		if a.env["ANAS_RUNTIME_ENTRY_IP"] != "" {
+			a.envOwner["ANAS_RUNTIME_ENTRY_IP"] = globalScope
+		}
 	}
+}
+
+func dockerSocketPathFromHost(host string) string {
+	host = strings.TrimSpace(host)
+	for _, prefix := range []string{"unix://", "unix:"} {
+		if strings.HasPrefix(host, prefix) {
+			path := strings.TrimPrefix(host, prefix)
+			if filepath.IsAbs(path) {
+				return filepath.Clean(path)
+			}
+		}
+	}
+	return ""
 }
 
 // announceWorkspace prints the resolved workspace before anything is changed.

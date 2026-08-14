@@ -39,11 +39,12 @@ secrets:
 
 `lego` obtains a wildcard certificate through DNS-01. Its certificate directory is mounted read-only into Traefik. Keep DNS-provider credentials out of version control. Changing `base_port` or `domain_prefix` recreates the Traefik container and affected routes.
 
-The dashboard uses the managed `primary` BasicAuth account. Its default physical
-username is `admin_traefik`; before first deployment it can be overridden at
-`modules.traefik.administration.local_accounts.primary.username`. Passwords are
-generated in the Secret Store and cannot be supplied through argv, `config.yml`,
-or top-level `env`.
+The dashboard uses the managed `primary` BasicAuth account with the fixed
+physical username `admin_traefik`. ANAS owns that username: no global template,
+module override, `config.yml` value, or command can change it. `primary` is the
+logical account ID used by the CLI, not a username. Passwords are generated in
+the Secret Store and cannot be supplied through argv, `config.yml`, or top-level
+`env`.
 
 ```bash
 anas admin local credential traefik -w /srv/anas

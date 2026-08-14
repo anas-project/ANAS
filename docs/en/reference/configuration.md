@@ -29,7 +29,7 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 | `administration.local_accounts.password_length` | Generated length, minimum 16 | used |
 | `identity.directory.provider` | Directory provider; currently `samba_dc` | used |
 | `identity.iam.provider` | IAM provider | used |
-| `identity.iam.default_protocol` | Default IAM protocol | used |
+| `identity.iam.default_protocol` | Default IAM protocol; omitted means `oidc`, with per-module manifest fallback | used |
 | `dynamic_dns.provider` | Module maintaining deployment DNS records, or `auto` | used |
 | `dynamic_dns.dns_provider` | DNS vendor | used |
 | `rollback.snapshot.backend` | Snapshot backend | used |
@@ -52,7 +52,7 @@ Language controls the UI-text fallback and locale controls regional formatting. 
 
 ## The 130 declared parameters
 
-Every entry below appears in `anas config list` and can be addressed by `anas config set`. Global parameters use `global.<parameter>`; ordinary module parameters use `modules.<module>.config.<parameter>`.
+Every entry below appears in `anas config list`. Ordinary editable parameters can be addressed by `anas config set`; `credential_rotate`, `data_migrate`, and `immutable` entries are inventory/explain-only and require their dedicated workflow. Global parameters use `global.<parameter>`; ordinary module parameters use `modules.<module>.config.<parameter>`.
 
 | Owner | Count | Parameters |
 | --- | ---: | --- |

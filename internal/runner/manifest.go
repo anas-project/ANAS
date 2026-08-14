@@ -205,6 +205,8 @@ type manifestChangePolicy struct {
 	Apply       string `yaml:"apply"`
 	Description string `yaml:"description"`
 	Sensitive   bool   `yaml:"sensitive"`
+	Executor    string `yaml:"executor"`
+	Verify      string `yaml:"verify"`
 }
 
 // manifestFeatures is decoded with KnownFields(true), so every key a module may
@@ -459,6 +461,7 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		changes[strings.ToLower(strings.TrimSpace(key))] = ChangePolicy{
 			Effect: policy.Effect, Apply: policy.Apply,
 			Description: policy.Description, Sensitive: policy.Sensitive,
+			Executor: policy.Executor, Verify: policy.Verify,
 		}
 	}
 	composeFile := strings.TrimSpace(manifest.Runtime.ComposeFile)

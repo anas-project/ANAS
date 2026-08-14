@@ -1,0 +1,7 @@
+api_version: anas.contract-documentation/v1
+contract: relational_database
+status: implemented
+reviewed_at: 2026-08-14
+summary:
+  zh: 为 Module 提供幂等的关系数据库、账号与凭据生命周期。
+  en: Provides modules with an idempotent relational database, principal, and credential lifecycle.

@@ -61,11 +61,10 @@ running_containers() {
 
   echo "== R1: change configuration only, no version change =="
   run_anas config set global.timezone Europe/Berlin -w "$ws"
-  run_anas apply --build -w "$ws" --update-lock
   second=$(active_deployment)
   echo "second deployment: $second"
   if [ "$first" = "$second" ]; then
-    fail "a config change did not produce a new deployment"
+    fail "config set did not produce a new deployment"
   fi
 
   echo "== R1: roll back =="

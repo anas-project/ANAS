@@ -179,6 +179,12 @@ func reportConfigList(cfgPath string, reg map[string]Module, scope string, jsonM
 				Display: entry.Path, Module: entry.Module, Parameter: entry.Parameter,
 			}, entry.Policy)
 			document["env_key"] = entry.EnvKey
+			kind, values := paramTypeDocument(targetParamType(configTarget{Module: entry.Module, Parameter: entry.Parameter}, reg))
+			document["type"] = kind
+			if len(values) > 0 {
+				document["allowed_values"] = values
+			}
+			document["required"] = parameterRequired(entry.Module, entry.Parameter, reg)
 			document["default"] = entry.Default
 			document["set"] = entry.Set
 			if entry.Set && !entry.Policy.Sensitive {
@@ -197,6 +203,15 @@ func reportConfigList(cfgPath string, reg map[string]Module, scope string, jsonM
 			placeholder(entry.Default), configListValue(entry), entry.Policy.Effect)
 	}
 	return w.Flush()
+}
+
+func parameterRequired(module, parameter string, reg map[string]Module) bool {
+	key := parameterEnvKey(module, parameter, reg)
+	if module == globalModuleName {
+		return contains(globalConfig.Required, key)
+	}
+	mod, ok := reg[module]
+	return ok && contains(mod.Required, key)
 }
 
 func configListValue(entry configListEntry) string {

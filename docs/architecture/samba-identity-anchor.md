@@ -96,8 +96,12 @@ historical entries.
 ## Consumer contract
 
 - Authentik uses `anasIdentityAnchor` as `object_uniqueness_field`.
-- Nextcloud uses it for user/group LDAP UUIDs and its SAML UID claim.
-- MeshCentral uses it through the textual `ldapUserKey` option.
+- Nextcloud uses it for user/group LDAP UUIDs, its SAML UID claim, and an OIDC
+  identity-verification claim. OIDC login itself maps `preferred_username` to
+  the LDAP `sAMAccountName` internal username, as required by `user_oidc` when
+  LDAP owns provisioning.
+- MeshCentral uses it through the textual `ldapUserKey` option and as the
+  application-specific OIDC account key claim.
 - OIDC providers use Authentik's stable `user_uuid` as `sub`; usernames are
   login names, not identities.
 

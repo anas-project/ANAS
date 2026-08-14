@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Generic IAM contract implementation for Nextcloud's SAML service provider.
+// Generic IAM contract implementation for Nextcloud's OIDC/SAML client.
 //
 // Nextcloud publishes a registration request in the generic namespace and
 // reads back only its own binding, so it works against any IAM that satisfies
@@ -27,40 +27,78 @@ const (
 
 // publishClientRegistration describes this service provider to whichever IAM
 // the deployment selected.
-func publishClientRegistration(e map[string]string, allowGroups string) {
-	e[iamClientPrefix+"INTERFACE"] = "saml"
-	e[iamClientPrefix+"SP_METADATA_URL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/metadata?idp=1"
-	e[iamClientPrefix+"SP_ENTITY_ID"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/metadata"
-	e[iamClientPrefix+"ACS_URL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/acs"
-	e[iamClientPrefix+"NAME_ID_FORMAT"] = "windows"
-	e[iamClientPrefix+"ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1," + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":1"
+func publishClientRegistration(e map[string]string, allowGroups string, secrets *secretStore) error {
+	protocol := defaultValue(defaultValue(e[iamBindingPrefix+"INTERFACE"], e["NEXTCLOUD_IAM_PROTOCOL"]), "oidc")
+	e[iamClientPrefix+"INTERFACE"] = protocol
+	e[iamClientPrefix+"ATTRIBUTES"] = "name:cn:1,preferred_username:sAMAccountName:1,email:mail:1," + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":1"
 	e[iamClientPrefix+"ALLOW_GROUPS"] = allowGroups
 	e[iamClientPrefix+"DOMAIN"] = e["NEXTCLOUD_DOMAIN"]
+	switch protocol {
+	case "oidc":
+		secret, err := secrets.Ensure("NEXTCLOUD_OIDC_CLIENT_SECRET", func() (string, error) { return randomHexErr(32) })
+		if err != nil {
+			return err
+		}
+		e["NEXTCLOUD_OIDC_CLIENT_ID"] = "nextcloud"
+		e["NEXTCLOUD_OIDC_CLIENT_SECRET"] = secret
+		e["NEXTCLOUD_OIDC_SCOPES"] = "openid email profile"
+		e[iamClientPrefix+"CLIENT_ID"] = e["NEXTCLOUD_OIDC_CLIENT_ID"]
+		e[iamClientPrefix+"CLIENT_SECRET"] = secret
+		e[iamClientPrefix+"REDIRECT_URIS"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_oidc/code"
+		e[iamClientPrefix+"POST_LOGOUT_REDIRECT_URIS"] = e["NEXTCLOUD_DOMAIN_FULL"]
+		e[iamClientPrefix+"SCOPES"] = "openid,profile,email"
+	case "saml":
+		e[iamClientPrefix+"SP_METADATA_URL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/metadata?idp=1"
+		e[iamClientPrefix+"SP_ENTITY_ID"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/metadata"
+		e[iamClientPrefix+"ACS_URL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/acs"
+		e[iamClientPrefix+"NAME_ID_FORMAT"] = "windows"
+	default:
+		return fmt.Errorf("nextcloud requires an oidc or saml IAM binding, got %q", protocol)
+	}
+	return nil
 }
 
 // applyIAMBinding maps this module's own binding onto the variables the
 // container init script consumes. It never reads another consumer's binding
 // and never names an IAM implementation.
 func applyIAMBinding(e map[string]string) error {
-	if iface := e[iamBindingPrefix+"INTERFACE"]; iface != "saml" {
-		return fmt.Errorf("nextcloud requires a saml IAM binding, got %q", iface)
-	}
-	for _, field := range []struct{ src, dst string }{
-		{"SAML_ENTITY_ID", "NEXTCLOUD_SAML_IDP_ENTITY_ID"},
-		{"SAML_SSO_URL", "NEXTCLOUD_SAML_IDP_SSO"},
-		{"SAML_SLO_URL", "NEXTCLOUD_SAML_IDP_SLO"},
-		{"SAML_SIGNING_CERT", "NEXTCLOUD_SAML_IDP_CERT"},
-	} {
-		value := e[iamBindingPrefix+field.src]
-		if value == "" {
-			return fmt.Errorf("%s%s is empty", iamBindingPrefix, field.src)
+	iface := e[iamBindingPrefix+"INTERFACE"]
+	e["NEXTCLOUD_IAM_PROTOCOL"] = iface
+	switch iface {
+	case "oidc":
+		for _, field := range []struct{ src, dst string }{
+			{"OIDC_ISSUER_URL", "NEXTCLOUD_OIDC_ISSUER_URL"},
+			{"OIDC_DISCOVERY_URL", "NEXTCLOUD_OIDC_DISCOVERY_URL"},
+		} {
+			value := e[iamBindingPrefix+field.src]
+			if value == "" {
+				return fmt.Errorf("%s%s is empty", iamBindingPrefix, field.src)
+			}
+			e[field.dst] = value
 		}
-		e[field.dst] = value
+		if e["NEXTCLOUD_OIDC_CLIENT_ID"] == "" || e["NEXTCLOUD_OIDC_CLIENT_SECRET"] == "" {
+			return fmt.Errorf("nextcloud OIDC client credentials are empty")
+		}
+	case "saml":
+		for _, field := range []struct{ src, dst string }{
+			{"SAML_ENTITY_ID", "NEXTCLOUD_SAML_IDP_ENTITY_ID"},
+			{"SAML_SSO_URL", "NEXTCLOUD_SAML_IDP_SSO"},
+			{"SAML_SLO_URL", "NEXTCLOUD_SAML_IDP_SLO"},
+			{"SAML_SIGNING_CERT", "NEXTCLOUD_SAML_IDP_CERT"},
+		} {
+			value := e[iamBindingPrefix+field.src]
+			if value == "" {
+				return fmt.Errorf("%s%s is empty", iamBindingPrefix, field.src)
+			}
+			e[field.dst] = value
+		}
+		// Single logout response URL is optional in the contract; fall back to
+		// the logout endpoint when the provider has no separate response URL.
+		e["NEXTCLOUD_SAML_IDP_SLO_RESPONSE"] = defaultValue(
+			e[iamBindingPrefix+"SAML_SLO_RESPONSE_URL"], e[iamBindingPrefix+"SAML_SLO_URL"])
+	default:
+		return fmt.Errorf("nextcloud requires an oidc or saml IAM binding, got %q", iface)
 	}
-	// Single logout response URL is optional in the contract; fall back to the
-	// logout endpoint when the provider does not publish a separate one.
-	e["NEXTCLOUD_SAML_IDP_SLO_RESPONSE"] = defaultValue(
-		e[iamBindingPrefix+"SAML_SLO_RESPONSE_URL"], e[iamBindingPrefix+"SAML_SLO_URL"])
 	// The container adds a hosts entry so it can reach the portal through the
 	// reverse proxy. Derived from the generic portal URL rather than from any
 	// particular IAM's domain variable.

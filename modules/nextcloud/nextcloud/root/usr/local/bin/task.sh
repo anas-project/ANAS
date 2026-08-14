@@ -75,6 +75,7 @@ app_version_pin() {
     notify_push) printf '%s' '1.3.5' ;;
     memories) printf '%s' '8.1.0' ;;
     user_saml) printf '%s' '8.2.0' ;;
+    user_oidc) printf '%s' '8.10.1' ;;
   esac
 }
 
@@ -598,69 +599,72 @@ EOF
   fi
 fi
 
-echo "Install SAML authentication"
-app_name='user_saml'
-install_and_enable_app $app_name
-
-# line_count=$(occ saml:config:get 1 | wc -l)
-# if [ "$line_count" -eq 1 ]; then
-#     occ saml:config:create
-# fi
-occ config:app:set user_saml type --value="saml"
-occ saml:config:set 1 \
-    --general-idp0_display_name="SSO Login" \
-    --general-uid_mapping="$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE" \
-    --saml-attribute-mapping-displayName_mapping=cn \
-    --saml-attribute-mapping-user_id_ldap_mapping="$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE" \
-    --idp-entityId="$NEXTCLOUD_SAML_IDP_ENTITY_ID" \
-    --idp-singleSignOnService.url="$NEXTCLOUD_SAML_IDP_SSO" \
-    --idp-singleLogoutService.url="$NEXTCLOUD_SAML_IDP_SLO" \
-    --idp-singleLogoutService.responseUrl="$NEXTCLOUD_SAML_IDP_SLO_RESPONSE" \
-    --idp-x509cert="$NEXTCLOUD_SAML_IDP_CERT" \
-    --sp-x509cert="$NEXTCLOUD_SAML_SP_CERT" \
-    --sp-privateKey="$NEXTCLOUD_SAML_SP_PRIVATE_KEY" \
-    --sp-name-id-format="urn:oasis:names:tc:SAML:2.0:nameid-format:WindowsDomainQualifiedName" \
-    --security-nameIdEncrypted=0 \
-    --security-authnRequestsSigned=1 \
-    --security-logoutRequestSigned=1 \
-    --security-logoutResponseSigned=1 \
-    --security-signMetadata=0 \
-    --security-wantMessagesSigned=1 \
-    --security-wantAssertionsSigned=1 \
-    --security-wantAssertionsEncrypted=0 \
-    --security-wantXMLValidation=0 \
-    --security-sloWebServerDecode=1 \
-    --security-lowercaseUrlencoding=1 \
-    --security-wantNameId=0 \
-    --security-wantNameIdEncrypted=0 \
-    --security-signatureAlgorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
-occ config:app:set user_saml general-use_saml_auth_for_desktop --value=1
-occ config:app:set user_saml general-require_provisioned_account --value=0
-
-# config openid connect
-# config_oidc=$(cat <<EOF
-# {
-#   "system": {
-#     "oidc_login_proxy_ldap": true,
-#     "oidc_login_hide_password_form": true,
-#     "oidc_login_auto_redirect": true,
-#     "oidc_login_redir_fallback": false,
-#     "oidc_login_provider_url": "",
-#     "oidc_login_tls_verify": true,
-#     "oidc_login_client_id": "testtest",
-#     "oidc_login_client_secret": "testtesttesttest",
-#     "oidc_login_disable_registration": true,
-#     "oidc_login_use_id_token": false,
-#     "oidc_login_attributes": {
-#       "sAMAccountName": "sAMAccountName"
-#     },
-#     "oidc_login_scope": "openid profile email",
-#     "oidc_login_logout_url": ""
-#   }
-# }
-# EOF
-# )
-# import_occ "$config_oidc"
+case "$NEXTCLOUD_IAM_PROTOCOL" in
+  oidc)
+    echo "Install OpenID Connect authentication"
+    if [ -d "$user_app_path/user_saml" ]; then
+      occ app:disable user_saml || true
+    fi
+    install_and_enable_app user_oidc
+    occ config:system:set user_oidc auto_provision --type=boolean --value=false
+    occ config:system:set user_oidc use_pkce --type=boolean --value=true
+    occ user_oidc:provider anas \
+      --clientid="$NEXTCLOUD_OIDC_CLIENT_ID" \
+      --clientsecret="$NEXTCLOUD_OIDC_CLIENT_SECRET" \
+      --discoveryuri="$NEXTCLOUD_OIDC_DISCOVERY_URL" \
+      --scope="$NEXTCLOUD_OIDC_SCOPES" \
+      --unique-uid=0 \
+      --mapping-uid=preferred_username \
+      --mapping-display-name=name \
+      --mapping-email=email \
+      --mapping-groups=groups \
+      --group-provisioning=0
+    # With a single provider, make OIDC the normal login path. The managed
+    # break-glass administrator remains available through /login?direct=1.
+    occ config:app:set --type=string --value=0 user_oidc allow_multiple_user_backends
+    ;;
+  saml)
+    echo "Install SAML authentication"
+    if [ -d "$user_app_path/user_oidc" ]; then
+      occ app:disable user_oidc || true
+    fi
+    install_and_enable_app user_saml
+    occ config:app:set user_saml type --value="saml"
+    occ saml:config:set 1 \
+        --general-idp0_display_name="SSO Login" \
+        --general-uid_mapping="$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE" \
+        --saml-attribute-mapping-displayName_mapping=cn \
+        --saml-attribute-mapping-user_id_ldap_mapping="$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE" \
+        --idp-entityId="$NEXTCLOUD_SAML_IDP_ENTITY_ID" \
+        --idp-singleSignOnService.url="$NEXTCLOUD_SAML_IDP_SSO" \
+        --idp-singleLogoutService.url="$NEXTCLOUD_SAML_IDP_SLO" \
+        --idp-singleLogoutService.responseUrl="$NEXTCLOUD_SAML_IDP_SLO_RESPONSE" \
+        --idp-x509cert="$NEXTCLOUD_SAML_IDP_CERT" \
+        --sp-x509cert="$NEXTCLOUD_SAML_SP_CERT" \
+        --sp-privateKey="$NEXTCLOUD_SAML_SP_PRIVATE_KEY" \
+        --sp-name-id-format="urn:oasis:names:tc:SAML:2.0:nameid-format:WindowsDomainQualifiedName" \
+        --security-nameIdEncrypted=0 \
+        --security-authnRequestsSigned=1 \
+        --security-logoutRequestSigned=1 \
+        --security-logoutResponseSigned=1 \
+        --security-signMetadata=0 \
+        --security-wantMessagesSigned=1 \
+        --security-wantAssertionsSigned=1 \
+        --security-wantAssertionsEncrypted=0 \
+        --security-wantXMLValidation=0 \
+        --security-sloWebServerDecode=1 \
+        --security-lowercaseUrlencoding=1 \
+        --security-wantNameId=0 \
+        --security-wantNameIdEncrypted=0 \
+        --security-signatureAlgorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+    occ config:app:set user_saml general-use_saml_auth_for_desktop --value=1
+    occ config:app:set user_saml general-require_provisioned_account --value=0
+    ;;
+  *)
+    echo "Unsupported Nextcloud IAM protocol: $NEXTCLOUD_IAM_PROTOCOL" >&2
+    exit 1
+    ;;
+esac
 
 echo "Nextcloud tasks execute completed"
 touch /run/nextcloud-tasks.ready

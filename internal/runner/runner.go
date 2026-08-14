@@ -540,6 +540,9 @@ func (a *app) runAfterStartOf(release string, names []string) error {
 			continue
 		}
 		dir := filepath.Join(release, name)
+		if a.useFrozenHooks && mod.SourceDir != "" {
+			dir = mod.SourceDir
+		}
 		resp, err := a.runHook(mod, "after_start", dir, a.localAdminHookEnv(name, a.moduleEnv(dir)))
 		if err != nil {
 			return err
@@ -577,6 +580,7 @@ func (a *app) adoptReleaseEnv(release string) {
 	if err != nil {
 		return
 	}
+	env = a.relocateDeploymentEnv(env)
 	for k, v := range env {
 		a.env[k] = v
 	}
@@ -999,6 +1003,7 @@ func (a *app) renderAll(work string) error {
 		}
 		env := a.scopedEnv(name)
 		env["MODULE_NAME"] = name
+		env["ANAS_MODULE_RUNTIME_STATE_PATH"] = a.moduleRuntimeStatePath(name)
 		resp, err := a.runHook(mod, "render_env", a.releaseDirFor(name), a.localAdminHookEnv(name, env))
 		if err != nil {
 			return err
@@ -1006,6 +1011,14 @@ func (a *app) renderAll(work string) error {
 		applyHookEnv(env, resp.Env)
 		if err := applyHookFiles(dir, resp.Files); err != nil {
 			return err
+		}
+		if err := applyHookRuntimeFiles(a.resolveModuleRuntimeStatePath(name, env), resp.RuntimeFiles); err != nil {
+			return err
+		}
+		if len(resp.RuntimeFiles) == 0 {
+			// Only modules that actually own mutable runtime files carry this
+			// generated bind path into Compose and their render digest.
+			delete(env, "ANAS_MODULE_RUNTIME_STATE_PATH")
 		}
 		fileEnv := env
 		if len(resp.InternalEnv) > 0 {
@@ -1019,6 +1032,46 @@ func (a *app) renderAll(work string) error {
 		}
 	}
 	return nil
+}
+
+// moduleRuntimeStatePath is deliberately relative to the rendered module.
+// A deployment artifact can therefore be copied to another workspace without
+// retaining an absolute path to the source machine. The deployment id remains
+// in the path, so two rollback targets never share mutable state.
+func (a *app) moduleRuntimeStatePath(name string) string {
+	moduleDir := a.releaseDirFor(name)
+	target := filepath.Join(a.base, "runtime-state", "release", name)
+	if a.artifactRoot != "" {
+		deploymentID := filepath.Base(filepath.Dir(a.artifactRoot))
+		target = filepath.Join(a.base, "runtime-state", "deployments", deploymentID, name)
+	}
+	rel, err := filepath.Rel(moduleDir, target)
+	if err != nil {
+		return target
+	}
+	return filepath.ToSlash(rel)
+}
+
+func (a *app) resolveModuleRuntimeStatePath(name string, env map[string]string) string {
+	path := strings.TrimSpace(env["ANAS_MODULE_RUNTIME_STATE_PATH"])
+	if path == "" {
+		path = a.moduleRuntimeStatePath(name)
+	}
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(filepath.Join(a.releaseDirFor(name), filepath.FromSlash(path)))
+}
+
+// restoreModuleRuntimeState reconstructs runtime-only configuration before a
+// container is started. Runtime state is intentionally excluded from sealed
+// artifacts and backups; the generated Secret Store remains authoritative.
+func (a *app) restoreModuleRuntimeState(mod Module, dir string, env map[string]string) error {
+	resp, err := a.runHook(mod, "runtime_restore", dir, a.localAdminHookEnv(mod.Name, env))
+	if err != nil {
+		return err
+	}
+	return applyHookRuntimeFiles(a.resolveModuleRuntimeStatePath(mod.Name, env), resp.RuntimeFiles)
 }
 
 func (a *app) ensureHostLAN() error {
@@ -1074,9 +1127,45 @@ func (a *app) eachOf(work string, names []string, fn func(moduleRun) error) erro
 // only a fallback for directories that were never rendered.
 func (a *app) moduleEnv(dir string) map[string]string {
 	if env, err := parseEnvFile(filepath.Join(dir, ".env")); err == nil {
-		return env
+		return a.relocateDeploymentEnv(env)
 	}
 	return a.env
+}
+
+// relocateDeploymentEnv projects workspace-derived absolute paths onto the
+// workspace that currently owns the artifact. Backup and snapshot restore copy
+// the sealed artifact verbatim, so its .env still names the source workspace;
+// treating those bytes as authoritative without relocating them would mount
+// the old workspace's data into a restored deployment.
+func (a *app) relocateDeploymentEnv(env map[string]string) map[string]string {
+	if a.base == "" {
+		return env
+	}
+	oldData := filepath.Clean(strings.TrimSpace(env["DATA_PATH"]))
+	if oldData == "." || filepath.Base(oldData) != workspaceDataDir {
+		return env
+	}
+	oldWorkspace := filepath.Dir(oldData)
+	newWorkspace := workspaceOf(a.base)
+	if oldWorkspace == newWorkspace {
+		return env
+	}
+	out := cloneMap(env)
+	oldPrefix := oldWorkspace + string(os.PathSeparator)
+	for key, value := range out {
+		clean := filepath.Clean(value)
+		switch {
+		case clean == oldWorkspace:
+			out[key] = newWorkspace
+		case strings.HasPrefix(clean, oldPrefix):
+			suffix := strings.TrimPrefix(clean, oldPrefix)
+			out[key] = filepath.Join(newWorkspace, suffix)
+			if strings.HasSuffix(value, string(os.PathSeparator)) {
+				out[key] += string(os.PathSeparator)
+			}
+		}
+	}
+	return out
 }
 
 func (a *app) services(mod Module, dir string, env map[string]string) ([]string, error) {

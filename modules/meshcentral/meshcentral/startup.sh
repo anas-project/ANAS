@@ -26,6 +26,11 @@ if [ -z "$traefik_ip" ]; then
   exit 1
 fi
 set_host "$TRAEFIK_DOMAIN" "$traefik_ip"
+set_host "$MESHCENTRAL_IAM_HOST" "$traefik_ip"
+
+if [ -f /usr/local/share/ca-certificates/anas-internal-ca.crt ]; then
+  update-ca-certificates >/dev/null
+fi
 
 mkdir -p /run/anas
 TRAEFIK_IP="$traefik_ip" node /opt/anas/configure.js \

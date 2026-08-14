@@ -31,6 +31,7 @@ identity:
     provider: authentik
 global:
   chinese_speedup: true
+  chinese_build_speedup: true
   base_domain: nas.test
   email: admin@nas.test
   timezone: Asia/Shanghai

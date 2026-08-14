@@ -760,6 +760,8 @@ func normalizedModuleDigest(root, deploymentRoot string) (string, error) {
 			return "", err
 		}
 		body = bytes.ReplaceAll(body, []byte(deploymentRoot), []byte("$ANAS_DEPLOYMENT"))
+		runtimeState := filepath.ToSlash(filepath.Join("runtime-state", "deployments", filepath.Base(deploymentRoot)))
+		body = bytes.ReplaceAll(body, []byte(runtimeState), []byte("runtime-state/deployments/$ANAS_DEPLOYMENT"))
 		_, _ = h.Write([]byte(filepath.ToSlash(rel)))
 		_, _ = h.Write([]byte{0})
 		_, _ = h.Write(body)
@@ -1044,8 +1046,13 @@ func startDeployment(a *app, modulesRoot string, selection []string, jsonMode bo
 		if mod := a.reg[name]; a.useFrozenHooks && mod.SourceDir != "" {
 			dir = mod.SourceDir
 		}
-		if _, err := parseEnvFile(filepath.Join(dir, ".env")); err != nil {
+		env, err := parseEnvFile(filepath.Join(dir, ".env"))
+		if err != nil {
 			return fmt.Errorf("deployment module %s env: %w", name, err)
+		}
+		env = a.relocateDeploymentEnv(env)
+		if err := a.restoreModuleRuntimeState(a.reg[name], dir, env); err != nil {
+			return fmt.Errorf("deployment module %s runtime state: %w", name, err)
 		}
 	}
 	a.adoptReleaseEnv(modulesRoot)
@@ -1820,7 +1827,8 @@ func ensureRuntimeLayout(base string) error {
 	for _, dir := range []string{
 		base, filepath.Join(base, "state"), filepath.Join(base, "state", "deployments"),
 		filepath.Join(base, "state", "transactions"), filepath.Join(base, "deployments"),
-		filepath.Join(base, "staging"),
+		filepath.Join(base, "staging"), filepath.Join(base, "runtime-state"),
+		filepath.Join(base, "runtime-state", "deployments"),
 	} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return err

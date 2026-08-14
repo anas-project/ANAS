@@ -252,7 +252,11 @@ func verifyBackup(dest string, manifest backupManifest, present map[string]bool)
 	}
 	switch manifest.Mode {
 	case backupModeSendFile:
-		checkStream(add, backupStreamPath(root), manifest.SizeBytes, "stream_missing")
+		streamPaths := []string{backupStreamPath(root)}
+		if contains(manifest.Channels, backupChannelUserData) {
+			streamPaths = append(streamPaths, backupUserStreamPath(root))
+		}
+		checkStreamsSize(add, streamPaths, manifest.SizeBytes)
 		checkPresent(add, backupMetaTarPath(root), "metadata_stream_missing", "metadata archive")
 	case backupModeSend:
 		checkPresent(add, backupDataPath(root), "stream_missing", "received data subvolume")
@@ -281,18 +285,23 @@ func checkPresent(add func(string, string, ...any), path, code, what string) {
 	}
 }
 
-// checkStream compares the recorded size against the file on disk. A truncated
-// stream is the damage this catches that a presence check cannot: the file is
-// there, `btrfs receive` will start, and it will fail partway through a restore
-// that has already replaced the data it was going to fall back on.
-func checkStream(add func(string, string, ...any), path string, want int64, missingCode string) {
-	info, err := os.Stat(path)
-	if err != nil {
-		add(missingCode, "send stream is missing at %s", path)
-		return
+// checkStreamsSize compares the recorded transfer size against every send
+// stream promised by the manifest. A send-file backup can contain both the
+// managed data stream and a user-data stream; SizeBytes records their total.
+// Presence is checked separately so a missing channel retains its precise
+// stream_missing/userdata_stream_missing diagnostic instead of producing a
+// second, misleading size error.
+func checkStreamsSize(add func(string, string, ...any), paths []string, want int64) {
+	var got int64
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			return
+		}
+		got += info.Size()
 	}
-	if want > 0 && info.Size() != want {
-		add("size_mismatch", "send stream %s is %d bytes, the manifest records %d", path, info.Size(), want)
+	if want > 0 && got != want {
+		add("size_mismatch", "send streams total %d bytes, the manifest records %d", got, want)
 	}
 }
 

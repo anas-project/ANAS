@@ -94,6 +94,45 @@ if (appFilter === "true") {
 }
 domain.ldapSiteAdminGroups = required("SAMBA_DC_ADMIN_GROUP_DN");
 
+const oidc = {
+  issuer: {
+    issuer: required("MESHCENTRAL_OIDC_ISSUER_URL"),
+  },
+  client: {
+    client_id: required("MESHCENTRAL_OIDC_CLIENT_ID"),
+    client_secret: required("MESHCENTRAL_OIDC_CLIENT_SECRET"),
+    redirect_uri: required("MESHCENTRAL_DOMAIN_FULL") + "/auth-oidc-callback",
+    post_logout_redirect_uri: required("MESHCENTRAL_DOMAIN_FULL") + "/login",
+  },
+  custom: {
+    scope: required("MESHCENTRAL_OIDC_SCOPES"),
+    claims: {
+      email: "email",
+      name: "name",
+      uuid: required("SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"),
+    },
+  },
+  newAccounts: true,
+  groups: {
+    // MeshCentral otherwise requests a separate literal "groups" scope. The
+    // generic IAM profile mapping already carries the groups claim, so reuse
+    // that standard scope rather than require a provider-specific extra one.
+    scope: "profile",
+    siteadmin: [required("SAMBA_DC_ADMIN_GROUP_NAME")],
+    revokeAdmin: true,
+    sync: true,
+    claim: "groups",
+  },
+};
+if (appFilter === "true") {
+  oidc.groups.required = [
+    "APP_meshcentral",
+    "APP_all",
+    required("SAMBA_DC_ADMIN_GROUP_NAME"),
+  ];
+}
+domain.authStrategies = { ...(domain.authStrategies || {}), oidc };
+
 const temporary = `${destination}.tmp`;
 fs.writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
 fs.renameSync(temporary, destination);

@@ -1,24 +1,27 @@
 # CLI 配置修改与生效生命周期
 
 > [!IMPORTANT]
-> 本页同时记录当前实现与后续设计。受控的 `config import`、`config migrate` 与管理员专用轮换已实现；通用 `config apply`、任意 `secret rotate` 和 `config import-state` 仍是设计提案。
+> 本页同时记录当前实现与后续设计。受控的 `config import`、`config migrate`、`config set` 自动 deployment 执行与管理员专用轮换已实现；Module 专用 `config_apply` handler、任意 `secret rotate` 和 `config import-state` 仍是设计提案。
 
 ## 当前模型
 
 ANAS 将 CLI 管理的规范化 desired config、解析后的 lock 和不可变 deployment 制品分开：
 
-1. `config set` 只修改 `<workspace>/config.yml`；
+1. `config set` 修改受管 `<workspace>/config.yml`，并在存在运行中的 active deployment 时自动生成和激活新 deployment；
 2. `config explain` 查看参数类型、敏感性和变更 effect；
 3. `config plan` 分类配置差异，不修改运行状态；
-4. `anas apply` 渲染并激活新的 deployment。
+4. `anas apply` 用于初次、deferred 或批量配置的显式部署。
 
 当前 deployment 激活会比较现用制品与目标制品的 guarded settings。遇到 `credential_rotate`、`data_migrate` 或 `immutable` 变化时，普通 `apply` 会阻止激活。`--allow-risky` 只解除这道门禁，不会替用户执行凭据轮换、数据迁移或应用级验证。
 
 ## 当前命令
 
 ```bash
-# 只写配置文件
-anas config set -c /srv/anas/config.yml samba_dc.user_min_pass_length 10
+# 修改并在活跃运行态执行
+anas config set -w /srv/anas samba_dc.user_min_pass_length 10
+
+# 只保存 desired state，稍后显式 apply
+anas config set -w /srv/anas --defer global.timezone UTC
 
 # 查看参数的 effect、类型和敏感性
 anas config explain samba_dc.user_min_pass_length
@@ -30,20 +33,21 @@ anas config plan -c /srv/anas/config.yml -w /srv/anas
 anas apply -w /srv/anas
 ```
 
-`config set` 尽量保留 YAML 注释和顺序。敏感值不会出现在普通列表或 plan 输出中。早期 workspace 可能没有 applied 配置指纹，此时 `config plan` 会将其视为 initial configuration；实际激活门禁仍以 deployment 中冻结的设置为准。
+`config set` 尽量保留 YAML 注释和顺序。敏感值不会出现在普通列表或 plan 输出中。没有 active deployment 时返回 `pending_initial_apply`；运行态已停止时返回 `pending_explicit_apply`，不会擅自启动。活跃部署执行失败时，旧受管配置和本次显式更新的 lock 会恢复，activation 同时补偿启动旧 deployment。`config plan` 优先读取 active deployment 冻结的 setting 指纹。
 
 ## 变更类型
 
 | Effect | 含义 | 当前处理 |
 | --- | --- | --- |
-| `hot_reload` | 服务可在线调整 | 记录建议动作；专用 reconciler 尚未统一实现 |
-| `process_restart` | 只需重启目标进程 | 记录建议动作 |
-| `container_restart` | 配置已更新，只需重启容器 | 记录建议动作 |
+| `hot_reload` | 服务可在线调整 | 当前用 deployment apply 安全兜底；专用 handler 未实现时不假装 reload |
+| `process_restart` | 只需重启目标进程 | 当前用 deployment apply 安全兜底 |
+| `container_restart` | 配置已更新，只需重启容器 | 当前用 deployment apply 安全兜底 |
 | `container_recreate` | env、label、端口或服务集合变化 | 重新 render，并由新 deployment 重建受影响容器 |
-| `reconcile` | 需要应用专用的幂等操作 | 记录 module 声明的动作 |
-| `credential_rotate` | 凭据及其消费者必须协同更新 | 激活门禁，除非显式 `--allow-risky` |
-| `data_migrate` | 数据、数据库或机器身份需要迁移 | 激活门禁，除非显式 `--allow-risky` |
-| `immutable` | 普通变更不应修改的初始化身份 | 激活门禁，除非显式 `--allow-risky` |
+| `reconcile` | 需要应用专用的幂等操作 | 当前用 deployment apply 与现有 after-start 收敛安全兜底 |
+| `image_rebuild` | build 输入变化 | build image 后激活 deployment |
+| `credential_rotate` | 凭据及其消费者必须协同更新 | `config set` 写入前拒绝，要求专用 lifecycle 命令 |
+| `data_migrate` | 数据、数据库或机器身份需要迁移 | `config set` 写入前拒绝，要求专用 migrate 命令 |
+| `immutable` | 普通变更不应修改的初始化身份 | `config set` 写入前拒绝，要求 replacement/migration 流程 |
 
 未声明 effect 的参数保守地按 `container_recreate` 处理。
 
@@ -64,7 +68,7 @@ config:
       sensitive: true
 ```
 
-`apply` 是动作标识，不代表当前 Runner 已实现同名执行器。新增或修改 effect 时，必须同时考虑快照、回滚阻断和应用级验证。
+`apply` 是稳定动作标识，不代表同名执行器已经存在。Manifest 可额外声明 `executor` 与 `verify`；在 Module 专用 handler 落地前，Runner 对安全 effect 使用 `deployment_apply_fallback`，宁可保守重建受影响容器，也不能只写配置后报告成功。新增或修改 effect 时必须同时考虑快照、回滚阻断和应用级验证。
 
 ## 尚未实现的执行器设计
 

@@ -354,6 +354,17 @@ func Load(path string) (*File, error) {
 	cfg.Identity.Directory.Provider = strings.ToLower(strings.TrimSpace(cfg.Identity.Directory.Provider))
 	cfg.Identity.IAM.Provider = strings.ToLower(strings.TrimSpace(cfg.Identity.IAM.Provider))
 	cfg.Identity.IAM.DefaultProtocol = strings.ToLower(strings.TrimSpace(cfg.Identity.IAM.DefaultProtocol))
+	if cfg.Identity.IAM.DefaultProtocol == "" {
+		// OIDC is the deployment default for IAM consumers. A module that does
+		// not implement OIDC is not forced outside its manifest contract: the
+		// capability resolver falls back to that module's declared preference.
+		cfg.Identity.IAM.DefaultProtocol = "oidc"
+	}
+	switch cfg.Identity.IAM.DefaultProtocol {
+	case "oidc", "saml":
+	default:
+		return nil, fmt.Errorf("identity.iam.default_protocol must be oidc or saml")
+	}
 	if cfg.Identity.Directory.Provider != "" && cfg.Identity.Directory.Provider != "samba_dc" {
 		return nil, fmt.Errorf("identity.directory.provider must currently be samba_dc")
 	}

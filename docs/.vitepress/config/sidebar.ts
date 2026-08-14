@@ -53,7 +53,11 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Module 目录', link: '/reference/modules' },
         { text: 'Module 时区与语言', link: '/reference/module-localization' },
         { text: 'Module 环境变量', link: '/reference/module-environment-variables' },
-        { text: 'CLI JSON 契约', link: '/reference/contracts/' }
+        { text: 'Module IAM / OIDC 支持', link: '/reference/module-iam-support' },
+        { text: 'CLI JSON 契约', link: '/reference/contracts/' },
+        { text: 'relational_database Contract', link: '/reference/contracts/relational_database' },
+        { text: 'identity Contract', link: '/reference/contracts/identity' },
+        { text: 'certificate Contract', link: '/reference/contracts/certificate' }
       ]
     }
   ],
@@ -65,6 +69,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '仓库结构', link: '/developer/repository-layout' },
         { text: 'Module 开发', link: '/developer/module-development' },
         { text: 'Module 文档规范', link: '/developer/module-documentation' },
+        { text: 'Contract 文档规范', link: '/developer/contract-documentation' },
         { text: 'Module 升级 SOP', link: '/developer/module-upgrade-sop' },
         { text: '测试', link: '/developer/testing' },
         { text: '镜像发布', link: '/developer/release' },
@@ -154,7 +159,11 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Configuration structure', link: '/en/reference/configuration' },
         { text: 'CLI contract', link: '/en/reference/cli-contract' },
         { text: 'Module catalog', link: '/en/reference/modules' },
-        { text: 'Module timezone and language', link: '/en/reference/module-localization' }
+        { text: 'Module timezone and language', link: '/en/reference/module-localization' },
+        { text: 'Module IAM and OIDC support', link: '/en/reference/module-iam-support' },
+        { text: 'relational_database Contract', link: '/en/reference/contracts/relational_database' },
+        { text: 'identity Contract', link: '/en/reference/contracts/identity' },
+        { text: 'certificate Contract', link: '/en/reference/contracts/certificate' }
       ]
     }
   ],
@@ -166,6 +175,7 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Repository layout', link: '/en/developer/repository-layout' },
         { text: 'Module development', link: '/en/developer/module-development' },
         { text: 'Module documentation standard', link: '/en/developer/module-documentation' },
+        { text: 'Contract documentation standard', link: '/en/developer/contract-documentation' },
         { text: 'Module upgrade SOP', link: '/en/developer/module-upgrade-sop' },
         { text: 'Testing', link: '/en/developer/testing' },
         { text: 'Image releases', link: '/en/developer/release' },

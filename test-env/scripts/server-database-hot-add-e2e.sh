@@ -12,7 +12,7 @@ run_anas() {
 
 apply_config() {
   config=$1
-  cp "$config" "$workspace/config.yml"
+	run_anas config import "$config" -w "$workspace"
   run_anas apply -w "$workspace" --root "$root" --update-lock --build \
     --allow-risky --no-snapshot -y
 }

@@ -30,7 +30,11 @@ anas config plan -w /srv/anas
 anas apply -w /srv/anas
 ```
 
-`config plan` 用于查看待应用变更。某些会改变服务内部持久状态的配置需要迁移步骤，ANAS 会拒绝普通应用；只有在已经完成对应迁移准备时才可显式使用 `anas apply --allow-risky`。这个标志只解除门禁，不会代替数据库迁移或凭据轮换。
+已有活跃部署时，`config set` 默认立即生成并激活新 deployment；失败会恢复旧受管配置与旧运行态。使用 `--defer` 可只保存 desired state。尚未部署或已显式停止时，命令分别返回 pending 状态，不会擅自启动服务。`config plan` 用于查看 deferred/initial 待应用变更。
+
+`credential_rotate`、`data_migrate` 和 `immutable` 参数会在 `config set` 写入前拒绝，必须走声明的轮换、迁移或替换流程。`apply --allow-risky` 只用于已在外部完成并验证迁移后的显式接管，不会代替数据库迁移或凭据轮换。
+
+OIDC 是 `identity.iam.default_protocol` 的默认值，只对声明支持 OIDC 的 IAM consumer 生效。Nextcloud 与 MeshCentral 当前默认使用 OIDC；Nextcloud 仍可通过 Module 参数显式选择 SAML。完整清单见 [Module IAM / OIDC 支持](/reference/module-iam-support)。
 
 ## 时区、语言与区域格式
 
@@ -210,7 +214,7 @@ render、build 和 apply 会比较摘要，拒绝绕过 CLI 的手工修改。�
 | 操作 | `config.yml` | `config-managed.yml` | `secrets.yml` |
 | --- | --- | --- | --- |
 | `config import` | 规范化写入，剥离生命周期密码 | 写入新摘要 | 导入生命周期凭据 |
-| `config set global.timezone UTC` | 修改 | 更新摘要 | 不变 |
+| `config set global.timezone UTC` | 修改并执行/明确 pending | 更新摘要 | 不变 |
 | 修改普通 DNS/API token | 修改 | 更新摘要 | 不变 |
 | `admin local rotate nextcloud` | 不变 | 不变 | 应用验证成功后更新 |
 | 手工编辑 `config.yml` | 内容改变 | 摘要未同步 | 不变；plan/apply 拒绝 |

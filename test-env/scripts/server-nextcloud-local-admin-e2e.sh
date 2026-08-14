@@ -23,7 +23,7 @@ username_from() {
 verify_password() {
   local username=$1 password=$2
   printf '%s\n' "$password" | docker exec -i --user www-data "${prefix}nextcloud" php -r \
-    'require_once "/var/www/html/lib/base.php"; $p=rtrim(stream_get_contents(STDIN), "\r\n"); exit(\OC::$server->getUserManager()->checkPassword($argv[1], $p) ? 0 : 1);' \
+    'require_once "/var/www/html/lib/base.php"; $p=rtrim(stream_get_contents(STDIN), "\r\n"); $users=\OC::$server->get(\OCP\IUserManager::class); exit($users->checkPassword($argv[1], $p) ? 0 : 1);' \
     "$username"
 }
 

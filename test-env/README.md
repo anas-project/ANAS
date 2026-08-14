@@ -215,6 +215,25 @@ Do not commit `.anas-test/` or generated secrets.
       ./test-env/scripts/server-lam-admins-e2e.sh
     ```
 
+15. Authentik OIDC application login runtime test
+
+    Against `server-identity-app-e2e.yml`, this drives the real Authentik
+    identification, password, application authorization, authorization-code
+    callback, and application session flows for both Nextcloud and
+    MeshCentral. It also verifies that Nextcloud reused its LDAP user and that
+    MeshCentral received the directory identity anchor and site-admin group.
+
+    ```sh
+    ANAS_TEST_PASSWORD='<directory-admin-password>' \
+    ANAS_TEST_DOCKER_SOCKET=/run/anas-anchor-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
+      ./test-env/scripts/server-authentik-oidc-login-e2e.sh
+    ```
+
+    `server-authentik-nextcloud-login-e2e.sh` remains the explicit Nextcloud
+    SAML-fallback test and must be run against a deployment whose
+    `nextcloud.iam_protocol` is `saml`.
+
 ## Full Run
 
 ```sh

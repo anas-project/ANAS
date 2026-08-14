@@ -28,7 +28,11 @@ anas config plan -w /srv/anas
 anas apply -w /srv/anas
 ```
 
-Some changes affect persistent state inside a service and require an explicit migration. ANAS rejects an ordinary apply and reports the risk. Use `anas apply --allow-risky` only after preparing the required migration; the flag removes the gate but does not rotate credentials or migrate a database for you.
+With an active running deployment, `config set` immediately materializes and activates a new deployment; failure restores the prior managed configuration and runtime. `--defer` stores desired state only. An undeployed or explicitly stopped workspace reports a pending status and is never started implicitly.
+
+`credential_rotate`, `data_migrate`, and `immutable` parameters are rejected before `config set` writes them and require their declared lifecycle, migration, or replacement workflow. `apply --allow-risky` is only an explicit takeover after an external migration has been completed and verified.
+
+OIDC is the default `identity.iam.default_protocol` only for IAM consumers that declare OIDC support. Nextcloud and MeshCentral now use OIDC by default; Nextcloud can still select SAML explicitly through its module parameter. See [Module IAM and OIDC support](/en/reference/module-iam-support).
 
 ## Timezone, language, and regional formatting
 
@@ -212,7 +216,7 @@ the matching `config.yml`.
 | Operation | `config.yml` | `config-managed.yml` | `secrets.yml` |
 | --- | --- | --- | --- |
 | `config import` | Normalize and remove lifecycle passwords | Write a new digest | Import lifecycle credentials |
-| `config set global.timezone UTC` | Change | Update digest | Unchanged |
+| `config set global.timezone UTC` | Change and execute, or report pending | Update digest | Unchanged |
 | Change an ordinary DNS/API token | Change | Update digest | Unchanged |
 | `admin local rotate nextcloud` | Unchanged | Unchanged | Update after application verification |
 | Edit `config.yml` by hand | Content changes | Digest does not | Unchanged; plan/apply reject |

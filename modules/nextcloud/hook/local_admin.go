@@ -40,7 +40,7 @@ func resetAndVerifyNextcloudPassword(env map[string]string, username, password s
 	if out, err := runSecretCommand(password, "docker", "exec", "-i", container, "sh", "-c", resetScript, "anas-reset", username); err != nil {
 		return fmt.Errorf("occ user:resetpassword: %w: %s", err, bytes.TrimSpace(out))
 	}
-	verifyPHP := `require_once "/var/www/html/lib/base.php"; $p=rtrim(stream_get_contents(STDIN), "\r\n"); if (!\OC::$server->getUserManager()->checkPassword($argv[1], $p)) { fwrite(STDERR, "password rejected\n"); exit(1); }`
+	verifyPHP := `require_once "/var/www/html/lib/base.php"; $p=rtrim(stream_get_contents(STDIN), "\r\n"); $users=\OC::$server->get(\OCP\IUserManager::class); if (!$users->checkPassword($argv[1], $p)) { fwrite(STDERR, "password rejected\n"); exit(1); }`
 	if out, err := runSecretCommand(password, "docker", "exec", "-i", "--user", "www-data", container, "php", "-r", verifyPHP, username); err != nil {
 		return fmt.Errorf("Nextcloud password verification: %w: %s", err, bytes.TrimSpace(out))
 	}

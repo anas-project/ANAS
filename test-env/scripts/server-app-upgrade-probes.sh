@@ -116,9 +116,9 @@ printf '%s\n' "$apps_json" | jq -e '
   .enabled.previewgenerator == "5.14.0" and
   .enabled.notify_push == "1.3.5" and
   .enabled.memories == "8.1.0" and
-  .enabled.user_saml == "8.2.0"
+  .enabled.user_oidc == "8.10.1"
 ' >/dev/null
-for app in richdocuments spreed previewgenerator notify_push memories user_saml user_ldap; do
+for app in richdocuments spreed previewgenerator notify_push memories user_oidc user_ldap; do
   printf '%s\n' "$apps_json" | jq -e --arg app "$app" '.enabled[$app] != null' >/dev/null
   occ integrity:check-app "$app"
 done
@@ -140,7 +140,7 @@ docker_cmd exec "$(container postgres)" sh -ceu 'psql -U "$POSTGRES_USER" -d nex
 
 section "nextcloud web and WebDAV"
 test "$(https_code "nc.$domain" /status.php)" = 200
-test "$(https_code "nc.$domain" /apps/user_saml/saml/metadata?idp=1)" = 200
+test "$(https_code "nc.$domain" /apps/user_oidc/login/1)" = 302
 test "$(https_code "nc.$domain" /talk/api/v1/welcome)" = 200
 probe_file=$(mktemp)
 download_file=$(mktemp)
@@ -167,7 +167,7 @@ https_get "lam.$domain" / | grep -F 'LDAP Account Manager' >/dev/null
 docker_cmd exec "$(container lam)" php -r '$c=json_decode(file_get_contents("/var/lib/ldap-account-manager/config/lam.conf"), true, 512, JSON_THROW_ON_ERROR); if (($c["ServerURL"] ?? "") === "") exit(1); echo "lam_profile=ok\n";'
 docker_cmd exec "$(container lam)" php -r '$c=ldap_connect(getenv("SAMBA_DC_LDAPS_SERVER_URL")); ldap_set_option($c, LDAP_OPT_PROTOCOL_VERSION, 3); if (!ldap_bind($c, getenv("SAMBA_DC_ADMIN_DN"), getenv("LAM_ADMIN_PASSWORD"))) exit(1); echo "lam_ldaps_bind=ok\n";'
 test "$(https_code "meshcentral.$domain" /)" = 200
-docker_cmd exec "$(container meshcentral)" node -e "require('ldapauth-fork'); require('mysql2'); console.log('meshcentral_dependencies=ok')"
+docker_cmd exec "$(container meshcentral)" node -e "require('ldapauth-fork'); require('mysql2'); require('openid-client'); require('passport'); console.log('meshcentral_dependencies=ok')"
 docker_cmd exec "$(container meshcentral)" node -e "JSON.parse(require('fs').readFileSync('/run/anas/config.json')); console.log('meshcentral_config=ok')"
 
 section "llng SSO"
@@ -176,7 +176,7 @@ printf '%s\n' "$discovery" | jq -e --arg issuer "https://auth.$domain:$entry_por
 test "$(https_code "auth.$domain" /saml/metadata)" = 200
 manager_code=$(https_code "auth-manager.$domain" /)
 case "$manager_code" in 200|302) ;; *) exit 1 ;; esac
-docker_cmd exec "$(container llng)" jq -e '.oidcRPMetaDataOptions.netbird and .samlSPMetaDataOptions.nextcloud and .applicationList."1apps".nextcloud' /var/lib/lemonldap-ng/conf/lmConf-1.json >/dev/null
+docker_cmd exec "$(container llng)" jq -e '.oidcRPMetaDataOptions.netbird and .oidcRPMetaDataOptions.nextcloud and .applicationList."1apps".nextcloud' /var/lib/lemonldap-ng/conf/lmConf-1.json >/dev/null
 cookie_file=$(mktemp)
 login_page=$(mktemp)
 curl -skS --resolve "auth.$domain:$entry_port:$entry_ip" -c "$cookie_file" -b "$cookie_file" \

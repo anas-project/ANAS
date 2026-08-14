@@ -6,6 +6,7 @@ modules:
     config:
       talk_enabled: "false"
       memories_enabled: "false"
+  meshcentral: {}
   netbird: {}
   traefik:
     config:

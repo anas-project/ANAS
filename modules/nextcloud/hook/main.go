@@ -234,11 +234,15 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) ([
 	e["NEXTCLOUD_USER_COMPLEX_PASS"] = defaultValue(e["NEXTCLOUD_USER_COMPLEX_PASS"], defaultValue(e["SAMBA_DC_USER_COMPLEX_PASS"], "true"))
 	allowGroups := ""
 	if e["SAMBA_DC_APP_FILTER"] == "true" {
-		allowGroups = "APP_nextcloud"
+		allowGroups = "APP_nextcloud,APP_all," + defaultValue(e["SAMBA_DC_ADMIN_GROUP_NAME"], "Admins")
 	}
-	publishClientRegistration(e, allowGroups)
-	if err := ensureSPKeypair(e, secrets); err != nil {
+	if err := publishClientRegistration(e, allowGroups, secrets); err != nil {
 		return nil, err
+	}
+	if e[iamClientPrefix+"INTERFACE"] == "saml" {
+		if err := ensureSPKeypair(e, secrets); err != nil {
+			return nil, err
+		}
 	}
 	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "nextcloud")
 	e["APPS_LIST__NEXTCLOUD__NAME"] = defaultValue(e["APPS_LIST__NEXTCLOUD__NAME"], "Nextcloud")
@@ -303,7 +307,9 @@ func moduleNextcloud(e map[string]string, _ string) error {
 	if err := applyIAMBinding(e); err != nil {
 		return err
 	}
-	e["NEXTCLOUD_SAML_IDP_CERT"] = unquotePEM(e["NEXTCLOUD_SAML_IDP_CERT"])
+	if e["NEXTCLOUD_IAM_PROTOCOL"] == "saml" {
+		e["NEXTCLOUD_SAML_IDP_CERT"] = unquotePEM(e["NEXTCLOUD_SAML_IDP_CERT"])
+	}
 	e["NEXTCLOUD_ADMIN_USER"] = e["NEXTCLOUD_ADMIN_USERNAME"]
 	e["NEXTCLOUD_DATA_DIR"] = "/var/www/html/data"
 	e["NEXTCLOUD_TRUSTED_DOMAINS"] = e["NEXTCLOUD_DOMAIN_PORT"]

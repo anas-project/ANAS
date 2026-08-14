@@ -139,7 +139,40 @@ func TestLDAPIdentityUsesPrintableAnchorFromFirstInstall(t *testing.T) {
 		t.Fatalf("login filter must not accept the old identity attribute: %s", got)
 	}
 	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__ATTRIBUTES"]; !strings.Contains(got, "anasIdentityAnchor:anasIdentityAnchor:1") {
-		t.Fatalf("SAML registration does not publish the printable identity anchor: %s", got)
+		t.Fatalf("IAM registration does not publish the printable identity anchor: %s", got)
+	}
+}
+
+func TestNextcloudOIDCIsDefaultAndPreservesLDAPProvisioning(t *testing.T) {
+	secrets := &secretStore{values: map[string]string{}}
+	env := map[string]string{
+		"NEXTCLOUD_DB_TYPE":                  "postgres",
+		"NEXTCLOUD_DOMAIN_PREFIX":            "nc",
+		"BASE_DOMAIN":                        "example.test",
+		"TRAEFIK_BASE_PORT":                  "9000",
+		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE": "anasIdentityAnchor",
+	}
+	if _, err := calcNextcloud(env, "", secrets); err != nil {
+		t.Fatal(err)
+	}
+	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__INTERFACE"]; got != "oidc" {
+		t.Fatalf("interface = %q, want oidc", got)
+	}
+	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__REDIRECT_URIS"]; got != "https://nc.example.test:9000/apps/user_oidc/code" {
+		t.Fatalf("redirect URI = %q", got)
+	}
+	if env["NEXTCLOUD_OIDC_CLIENT_SECRET"] == "" || secrets.values["NEXTCLOUD_OIDC_CLIENT_SECRET"] != env["NEXTCLOUD_OIDC_CLIENT_SECRET"] {
+		t.Fatal("OIDC client secret was not generated and persisted")
+	}
+	if env["NEXTCLOUD_SAML_SP_PRIVATE_KEY"] != "" {
+		t.Fatal("OIDC mode generated unused SAML private material")
+	}
+	task, err := os.ReadFile("../nextcloud/root/usr/local/bin/task.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(task), "--mapping-uid=preferred_username") {
+		t.Fatal("OIDC user ID must match the sAMAccountName-backed LDAP internal username")
 	}
 }
 

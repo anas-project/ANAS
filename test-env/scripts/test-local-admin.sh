@@ -13,7 +13,7 @@ make_workspace "$ws" "$config"
 
 {
   echo "== plan does not pull an IAM gate =="
-  plan=$(run_anas plan -c "$ws/config.yml")
+  plan=$(run_anas plan -w "$ws" -c "$ws/config.yml")
   printf '%s\n' "$plan"
   if printf '%s\n' "$plan" | grep -q '^oauth2_proxy$'; then
     echo "ddns_go unexpectedly pulled oauth2_proxy" >&2

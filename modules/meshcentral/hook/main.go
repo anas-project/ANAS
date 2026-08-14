@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -124,7 +126,7 @@ func renderEnv(module string, env map[string]string, workdir string) (map[string
 	if module != "meshcentral" {
 		return map[string]string{}, nil
 	}
-	return map[string]string{}, nil
+	return map[string]string{}, moduleMeshcentral(env)
 }
 func disabledServices(module string, env map[string]string) []string {
 	if module != "meshcentral" {
@@ -154,8 +156,10 @@ func changed(old, cur map[string]string) map[string]string {
 	}
 	return out
 }
-func calcMeshcentral(e map[string]string, _ string, _ *secretStore) error {
+func calcMeshcentral(e map[string]string, _ string, secrets *secretStore) error {
 	e["MESHCENTRAL_DOMAIN"] = e["MESHCENTRAL_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
+	e["MESHCENTRAL_DOMAIN_PORT"] = e["MESHCENTRAL_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
+	e["MESHCENTRAL_DOMAIN_FULL"] = "https://" + e["MESHCENTRAL_DOMAIN_PORT"]
 	e["MESHCENTRAL_TITLE"] = defaultValue(e["MESHCENTRAL_TITLE"], e["SERVER_NAME"])
 	e["MESHCENTRAL_SUBTITLE"] = defaultValue(e["MESHCENTRAL_SUBTITLE"], " ")
 	switch e["MESHCENTRAL_DB_TYPE"] {
@@ -177,6 +181,18 @@ func calcMeshcentral(e map[string]string, _ string, _ *secretStore) error {
 		}
 		e["MESHCENTRAL_USER_LOGIN_FILTER"] = "(&" + e["MESHCENTRAL_USER_FILTER"] + e["SAMBA_DC_USER_ENABLED_FILTER"] + "(|" + strings.Join(parts, "") + "))"
 	}
+	allowGroups := ""
+	if e["SAMBA_DC_APP_FILTER"] == "true" {
+		allowGroups = "APP_meshcentral,APP_all," + defaultValue(e["SAMBA_DC_ADMIN_GROUP_NAME"], "Admins")
+	}
+	if err := publishMeshcentralOIDCRegistration(e, allowGroups, secrets); err != nil {
+		return err
+	}
+	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "meshcentral")
+	e["APPS_LIST__MESHCENTRAL__NAME"] = defaultValue(e["APPS_LIST__MESHCENTRAL__NAME"], "MeshCentral")
+	e["APPS_LIST__MESHCENTRAL__DESC"] = defaultValue(e["APPS_LIST__MESHCENTRAL__DESC"], "Remote device management")
+	e["APPS_LIST__MESHCENTRAL__URI"] = e["MESHCENTRAL_DOMAIN_FULL"]
+	e["APPS_LIST__MESHCENTRAL__ALLOW_GROUPS"] = allowGroups
 	return nil
 }
 func defaultValue(v, d string) string {
@@ -194,4 +210,22 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+func addCSV(s, item string) string {
+	items := splitCSV(s)
+	for _, existing := range items {
+		if existing == item {
+			return strings.Join(items, ",")
+		}
+	}
+	return strings.Join(append(items, item), ",")
+}
+
+func randomHexErr(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }

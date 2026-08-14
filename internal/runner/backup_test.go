@@ -395,6 +395,21 @@ func TestVerifyBackupCatchesTruncationAndMissingChannels(t *testing.T) {
 		t.Errorf("an intact backup reported problems: %v", problems)
 	}
 
+	withUserData := writeStreamBackup("with-userdata", 60, true)
+	withUserData.Channels = []string{backupChannelData, backupChannelMetadata, backupChannelUserData}
+	if err := os.WriteFile(backupUserStreamPath(backupRoot(dest, "with-userdata")), make([]byte, 40), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if problems := verifyBackup(dest, withUserData, present); len(problems) != 0 {
+		t.Errorf("an intact two-stream backup reported problems: %v", problems)
+	}
+	if err := os.Truncate(backupUserStreamPath(backupRoot(dest, "with-userdata")), 20); err != nil {
+		t.Fatal(err)
+	}
+	if problems := verifyBackup(dest, withUserData, present); !hasProblemCode(problems, "size_mismatch") {
+		t.Errorf("a truncated user-data stream must report size_mismatch; got %v", problems)
+	}
+
 	truncated := writeStreamBackup("truncated", 60, true)
 	problems := verifyBackup(dest, truncated, present)
 	if !hasProblemCode(problems, "size_mismatch") {

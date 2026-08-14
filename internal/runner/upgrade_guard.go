@@ -305,16 +305,18 @@ func deploymentSnapshotTrigger(current, target *deploymentManifest) *applySnapsh
 	}
 	changed := []string{}
 	for _, change := range guardedSettingChanges(current, target) {
-		// immutable cannot change by definition — activateDeployment refuses the
-		// apply outright — so in practice this is the other two.
-		if change.Effect == "data_migrate" || change.Effect == "credential_rotate" {
+		// --allow-risky can explicitly cross every guarded setting, including an
+		// immutable one such as the global domain. If activation is permitted, the
+		// current data must be snapshotted before that one-way transition too.
+		if change.Effect == "data_migrate" || change.Effect == "credential_rotate" || change.Effect == "immutable" {
 			changed = append(changed, fmt.Sprintf("%s (%s)", change.Key, change.Effect))
 		}
 	}
 	if len(changed) > 0 {
 		sort.Strings(changed)
-		// One reason covers both effects. The name reads as if it were only about
-		// data_migrate, but a credential rotation is equally irreversible from
+		// One reason covers all guarded setting effects. The historical name reads
+		// as if it were only about data_migrate, but credential rotations and an
+		// explicitly overridden immutable transition are equally irreversible from
 		// config.yml and equally in need of a way back.
 		return &applySnapshotTrigger{
 			reason: snapshotReasonSettingDataMigrate,

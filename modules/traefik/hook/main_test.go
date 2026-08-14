@@ -10,12 +10,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestRenderEnvUsesOnlyManagedDashboardCredential(t *testing.T) {
-	files, err := renderEnv("traefik", map[string]string{
+func TestRenderRuntimeEnvUsesOnlyManagedDashboardCredential(t *testing.T) {
+	files, err := renderRuntimeEnv("traefik", map[string]string{
 		"TRAEFIK_LOCAL_ADMIN_USERNAME": "admin_traefik",
 		"TRAEFIK_LOCAL_ADMIN_PASSWORD": "s3cret",
 		"BASICAUTH_PASSWD":             "must-not-win",
-	}, "")
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,8 +25,24 @@ func TestRenderEnvUsesOnlyManagedDashboardCredential(t *testing.T) {
 	if err := verifyTraefikAuthFile([]byte(files["dynamic/dashboard-auth.yml"]), "admin_traefik", "s3cret"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := renderEnv("traefik", map[string]string{}, ""); err == nil {
+	if _, err := renderRuntimeEnv("traefik", map[string]string{}); err == nil {
 		t.Fatal("missing managed credential was accepted")
+	}
+}
+
+func TestRuntimeRestoreReturnsNoArtifactFiles(t *testing.T) {
+	resp, err := handle(hookRequest{Module: "traefik", Phase: "runtime_restore", Env: map[string]string{
+		"TRAEFIK_LOCAL_ADMIN_USERNAME": "admin_traefik",
+		"TRAEFIK_LOCAL_ADMIN_PASSWORD": "s3cret",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Files) != 0 {
+		t.Fatalf("runtime restore returned artifact files: %v", resp.Files)
+	}
+	if _, ok := resp.RuntimeFiles["dynamic/dashboard-auth.yml"]; !ok {
+		t.Fatal("runtime restore did not reconstruct dashboard authentication")
 	}
 }
 
@@ -53,6 +69,9 @@ func TestComposeUsesRenderedTraefikNetworkName(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "--providers.docker.constraints=Label(`anas.traefik.instance`,`${NETWORK_PREFIX}traefik`)") {
 		t.Fatal("Docker provider must only discover containers assigned to this Traefik instance")
+	}
+	if !strings.Contains(string(b), "${ANAS_MODULE_RUNTIME_STATE_PATH}/dynamic:/run/anas") {
+		t.Fatal("Traefik file-provider state is not mounted outside the sealed artifact")
 	}
 
 	composeFiles, err := filepath.Glob("../../*/docker-compose.yml")

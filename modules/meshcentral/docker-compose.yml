@@ -1,7 +1,7 @@
 services:
   anas_meshcentral:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r3
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r4
     build:
       context: ./${MODULE_NAME}
       network: ${DOCKER_BUILD_NETWORK:-default}
@@ -26,6 +26,7 @@ services:
       retries: 5
       start_period: 60s
     volumes:
+      - "${ANAS_TLS_CERTS_DIR}/${ANAS_TLS_INTERNAL_CA_NAME}:/usr/local/share/ca-certificates/anas-internal-ca.crt:ro"
       - "${DATA_PATH}/meshcentral/meshcentral-data:/opt/meshcentral/meshcentral-data"
       - "${DATA_PATH}/meshcentral/meshcentral-files:/opt/meshcentral/meshcentral-files"
       - "${DATA_PATH}/meshcentral/meshcentral-web:/opt/meshcentral/meshcentral-web"

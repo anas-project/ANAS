@@ -10,6 +10,7 @@ func boundEnv() map[string]string {
 		"AUTHENTIK_DOMAIN_FULL":                  "https://auth.example:443",
 		"AUTHENTIK_SIGNING_CERT":                 "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
 		"AUTHENTIK_SIGNING_KEY":                  "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\n",
+		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE":     "anasIdentityAnchor",
 		"ANAS_IDENTITY_OIDC_CLIENTS":             "netbird",
 		"ANAS_IDENTITY_SAML_CLIENTS":             "nextcloud",
 		"ANAS_IAM_BINDING__NETBIRD__INTERFACE":   "oidc",
@@ -126,6 +127,7 @@ func TestBlueprintTranslatesGenericRegistrations(t *testing.T) {
 	e["ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID"] = "netbird"
 	e["ANAS_IAM_CLIENT__NETBIRD__CLIENT_SECRET"] = "s3cret"
 	e["ANAS_IAM_CLIENT__NETBIRD__REDIRECT_URIS"] = "https://netbird.example/auth,https://netbird.example/silent-auth"
+	e["ANAS_IAM_CLIENT__NETBIRD__ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1,anasIdentityAnchor:anasIdentityAnchor:1"
 	e["ANAS_IAM_CLIENT__NEXTCLOUD__SP_METADATA_URL"] = "https://nc.example/apps/user_saml/saml/metadata?idp=1"
 	e["ANAS_IAM_CLIENT__NEXTCLOUD__SP_ENTITY_ID"] = "https://nc.example/apps/user_saml/saml/metadata"
 	e["ANAS_IAM_CLIENT__NEXTCLOUD__ACS_URL"] = "https://nc.example/apps/user_saml/saml/acs"
@@ -139,10 +141,15 @@ func TestBlueprintTranslatesGenericRegistrations(t *testing.T) {
 	}
 	for _, want := range []string{
 		"authentik_providers_oauth2.oauth2provider",
+		"authentik_providers_oauth2.scopemapping",
 		"authentik_providers_saml.samlprovider",
 		`client_id: "netbird"`,
+		"grant_types:\n        - authorization_code\n        - refresh_token",
 		"sub_mode: user_uuid",
 		`url: "https://netbird.example/silent-auth"`,
+		"scope_name: profile",
+		`claims["anasIdentityAnchor"] = request.user.attributes.get("ldap_uniq")`,
+		"- !KeyOf oidc-mapping-netbird-profile",
 		`acs_url: "https://nc.example/apps/user_saml/saml/acs"`,
 		"authentik_providers_saml.samlpropertymapping",
 		`saml_name: "sAMAccountName"`,

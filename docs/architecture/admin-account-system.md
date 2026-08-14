@@ -93,8 +93,8 @@ administration:
 
 modules:
   nextcloud:
-    identity:
-      login_protocol: saml
+    config:
+      iam_protocol: saml # 可选；默认 oidc
 ```
 
 IAM 只使用 `identity.iam`；顶层 `iam:` 不再接受。Module 必需
@@ -132,14 +132,14 @@ identity:
 
   authentication:
     capability: iam
-    selected_by: login_protocol
+    selected_by: iam_protocol
     interfaces:
-      any_of: [saml]
-      prefer: [saml]
+      any_of: [oidc, saml]
+      prefer: [oidc, saml]
 ```
 
-如果应用以后真正支持 OIDC，才把 `oidc` 加入 `any_of`。Manifest 不能声明尚未实现的
-协议。
+Manifest 只能声明应用已实现且经过 E2E 的协议。MeshCentral 因此声明 OIDC-only，
+Nextcloud 声明 OIDC/SAML 并默认 OIDC。
 
 ### 5.2 管理界面和本地账号
 
@@ -303,7 +303,8 @@ ddns_go local administrator ready: anas admin local credential ddns_go
 - 默认用户名、固定用户名、锁定名称、非法 override 和 Secret 隔离单元测试；
 - CLI 列表不泄密、credential 显式输出和 JSON 合同测试；
 - ddns-go E2E：计划不包含 oauth2-proxy、域名登录和直连登录均验证本地密码；
-- Nextcloud E2E：LDAP 用户已同步、SAML 登录关联同一用户、本地恢复账号可用；
+- Nextcloud E2E：LDAP 用户已同步、OIDC 默认登录关联同一用户、SAML fallback 与本地恢复账号可用；
+- MeshCentral E2E：OIDC 授权码登录成功、目录 anchor 成为稳定账号键、管理员组授予 site-admin；
 - Authentik 真实容器测试：`akadmin` bootstrap、`ak shell` 轮换及旧密码失效；
 - Traefik 真实容器测试：Dashboard BasicAuth 新密码生效、旧密码失效；
 - 轮换成功和失败回滚测试；
@@ -323,8 +324,10 @@ Manifest/配置表达，以及本地管理员状态的 snapshot/backup 一致性
 Samba 管理员密码：首次安装使用运行时 Secret 文件，已有安装由真实 occ handler 更新；
 默认用户名由 ANAS 固定模板直接解析为 `admin_nextcloud` 并锁定。
 
-仓库已有 `server-authentik-nextcloud-login-e2e.sh` 覆盖 LDAP provisioning、SAML 浏览器
-登录、目录 anchor 与同一 Nextcloud 用户映射；`server-nextcloud-local-admin-e2e.sh` 覆盖
+仓库已有 `server-authentik-oidc-login-e2e.sh` 覆盖 Nextcloud 与 MeshCentral 的完整 OIDC
+授权码登录、应用 session、目录 anchor 和管理员组映射；原
+`server-authentik-nextcloud-login-e2e.sh` 保留覆盖 Nextcloud SAML fallback。
+`server-nextcloud-local-admin-e2e.sh` 覆盖
 真实 occ apply/rotate、旧密码失效、新密码验证和恢复入口。它们需要完整服务器环境，本地
 单元测试不会冒充运行过这些链路。LAM 主登录使用已启用的 Samba `Admins` 组成员各自的
 目录凭据；`lam` 是服务器 profile 名，LAM 私有密码仅保护配置编辑器。`Admins` 只授权
@@ -332,7 +335,7 @@ Samba 管理员密码：首次安装使用运行时 Secret 文件，已有安装
 `admin_collabora` 规则名与 Module 私有密码；其密码省略时独立随机生成，但尚无可验证
 回滚的 rotate handler，因此不加入托管账号。LLNG 的旧密码变量没有上游消费者，当前
 Manager 仅接受 AD 和目录管理员组，不声明虚假的 `break_glass`。MeshCentral 上游在未设置 domain `auth` 时支持本地账号，但本 Module
-使用 `auth: ldap`，同一 domain 没有可声称的本地绕过入口。仍未完成的是 Authentik/Traefik
+保留 `auth: ldap` 做目录同步并增加 OIDC strategy，同一 domain 仍没有可声称的本地绕过入口。仍未完成的是 Authentik/Traefik
 新增 handler 的真实服务器 E2E、阶段 4 的 provider-neutral 角色授权 CLI，以及阶段 5 中
 不属于本地账号的其余共享字段移除。这些能力继续如实标为未实现；尤其不会给没有
 应用级 handler 的 Module 伪造 rotate 或 rename 能力。

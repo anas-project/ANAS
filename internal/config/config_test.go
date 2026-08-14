@@ -170,6 +170,40 @@ administration:
 	}
 }
 
+func TestOIDCIsTheDefaultIAMProtocol(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`modules:
+  nextcloud: {}
+identity:
+  iam:
+    provider: authentik
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Identity.IAM.DefaultProtocol != "oidc" || cfg.IAM.DefaultProtocol != "oidc" {
+		t.Fatalf("IAM default protocol = identity:%q alias:%q, want oidc", cfg.Identity.IAM.DefaultProtocol, cfg.IAM.DefaultProtocol)
+	}
+}
+
+func TestUnknownIAMDefaultProtocolIsRejectedAtLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`modules:
+  nextcloud: {}
+identity:
+  iam:
+    default_protocol: ldap
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "default_protocol") {
+		t.Fatalf("error = %v, want default_protocol rejection", err)
+	}
+}
+
 func TestLowercaseModuleConfigIsNormalized(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")

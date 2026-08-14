@@ -80,3 +80,58 @@ func TestMeshcentralMapsMariaDBBinding(t *testing.T) {
 		t.Fatalf("database username = %q, want dedicated meshcentral user", got)
 	}
 }
+
+func TestMeshcentralPublishesOIDCRegistration(t *testing.T) {
+	secrets := &secretStore{values: map[string]string{}}
+	env := map[string]string{
+		"MESHCENTRAL_DOMAIN_PREFIX":          "meshcentral",
+		"MESHCENTRAL_DB_TYPE":                "postgres",
+		"BASE_DOMAIN":                        "nas.test",
+		"TRAEFIK_BASE_PORT":                  "9000",
+		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE": "anasIdentityAnchor",
+		"SAMBA_DC_USER_CLASS_FILTER":         "(objectClass=user)",
+		"SAMBA_DC_USER_LOGIN_ATTRS":          "sAMAccountName",
+		"SAMBA_DC_APP_FILTER":                "true",
+		"SAMBA_DC_ADMIN_GROUP_NAME":          "Admins",
+		"SAMBA_DC_BASE_APP_DN":               "OU=Apps,DC=nas,DC=test",
+		"SAMBA_DC_APP_ALL_DN":                "CN=APP_all,OU=Apps,DC=nas,DC=test",
+		"SAMBA_DC_ADMIN_GROUP_DN":            "CN=Admins,OU=Roles,DC=nas,DC=test",
+	}
+	if err := calcMeshcentral(env, "", secrets); err != nil {
+		t.Fatal(err)
+	}
+	checks := map[string]string{
+		"ANAS_IAM_CLIENT__MESHCENTRAL__INTERFACE":     "oidc",
+		"ANAS_IAM_CLIENT__MESHCENTRAL__CLIENT_ID":     "meshcentral",
+		"ANAS_IAM_CLIENT__MESHCENTRAL__REDIRECT_URIS": "https://meshcentral.nas.test:9000/auth-oidc-callback",
+		"APPS_LIST__MESHCENTRAL__URI":                 "https://meshcentral.nas.test:9000",
+	}
+	for key, want := range checks {
+		if got := env[key]; got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
+	}
+	if got := env["ANAS_IAM_CLIENT__MESHCENTRAL__ALLOW_GROUPS"]; got != "APP_meshcentral,APP_all,Admins" {
+		t.Fatalf("allow groups = %q", got)
+	}
+	if env["MESHCENTRAL_OIDC_CLIENT_SECRET"] == "" || secrets.values["MESHCENTRAL_OIDC_CLIENT_SECRET"] != env["MESHCENTRAL_OIDC_CLIENT_SECRET"] {
+		t.Fatal("OIDC client secret was not persisted")
+	}
+}
+
+func TestMeshcentralAppliesOIDCBinding(t *testing.T) {
+	env := map[string]string{
+		"ANAS_IAM_BINDING__MESHCENTRAL__INTERFACE":          "oidc",
+		"ANAS_IAM_BINDING__MESHCENTRAL__OIDC_ISSUER_URL":    "https://auth.example/application/o/meshcentral/",
+		"ANAS_IAM_BINDING__MESHCENTRAL__OIDC_DISCOVERY_URL": "https://auth.example/application/o/meshcentral/.well-known/openid-configuration",
+		"ANAS_IAM_PORTAL_URL":                               "https://auth.example:9000",
+		"MESHCENTRAL_OIDC_CLIENT_ID":                        "meshcentral",
+		"MESHCENTRAL_OIDC_CLIENT_SECRET":                    "secret",
+	}
+	if err := moduleMeshcentral(env); err != nil {
+		t.Fatal(err)
+	}
+	if got := env["MESHCENTRAL_IAM_HOST"]; got != "auth.example" {
+		t.Fatalf("IAM host = %q", got)
+	}
+}

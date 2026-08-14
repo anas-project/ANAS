@@ -257,6 +257,12 @@ func TestDeploymentSnapshotTrigger(t *testing.T) {
 			want:    snapshotReasonSettingDataMigrate,
 		},
 		{
+			name:    "an explicitly overridden immutable change snapshots",
+			current: &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("old", "immutable")},
+			target:  &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("new", "immutable")},
+			want:    snapshotReasonSettingDataMigrate,
+		},
+		{
 			name:    "the upgrade reason wins over the setting reason",
 			current: &deploymentManifest{Modules: modules("30.0.1", declared()), Settings: setting("old", "data_migrate")},
 			target:  &deploymentManifest{Modules: modules("31.0.0", declared("31.0.0")), Settings: setting("new", "data_migrate")},

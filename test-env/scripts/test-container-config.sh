@@ -112,10 +112,23 @@ awk '
   END { exit !found }
 ' "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
 
+# The managed break-glass projection is deliberately root:root 0600. The
+# server entrypoint must read it as root and drop privileges before launching
+# authentik; widening the secret file permissions is not acceptable.
+awk '
+  /^  anas_authentik:/ { server = 1; next }
+  server && /^  [^ ]/ { exit }
+  server && /user: root/ { found = 1 }
+  END { exit !found }
+' "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
+grep -Fq 'setpriv --reuid=1000 --regid=1000 --init-groups ak "$@"' \
+  "$ROOT_DIR/modules/authentik/authentik/server-entrypoint.sh" || exit 1
+
 if command -v node >/dev/null 2>&1; then
   mkdir -p "$test_dir/meshcentral"
   env \
     MESHCENTRAL_DOMAIN=mesh.example.test \
+    MESHCENTRAL_DOMAIN_FULL=https://mesh.example.test:9000 \
     TRAEFIK_BASE_PORT=9000 \
     MESHCENTRAL_MPS_PORT=4433 \
     TRAEFIK_IP=172.20.0.2 \
@@ -142,6 +155,11 @@ if command -v node >/dev/null 2>&1; then
     SAMBA_DC_APP_FILTER=true \
     SAMBA_DC_BASE_APP_DN=OU=Apps,DC=example,DC=test \
     SAMBA_DC_ADMIN_GROUP_DN=CN=Admins,OU=Roles,DC=example,DC=test \
+    SAMBA_DC_ADMIN_GROUP_NAME=Admins \
+    MESHCENTRAL_OIDC_ISSUER_URL=https://auth.example.test:9000/application/o/meshcentral/ \
+    MESHCENTRAL_OIDC_CLIENT_ID=meshcentral \
+    'MESHCENTRAL_OIDC_CLIENT_SECRET=oidc"secret\value' \
+    'MESHCENTRAL_OIDC_SCOPES=openid email' \
     node "$ROOT_DIR/modules/meshcentral/meshcentral/configure.js" \
       "$ROOT_DIR/modules/meshcentral/meshcentral/config.base.json" \
       "$test_dir/meshcentral/config.json" || exit 1
@@ -154,6 +172,12 @@ if command -v node >/dev/null 2>&1; then
     if (!config.domains[""].ldapUserRequiredGroupMembership.endsWith("OU=Apps,DC=example,DC=test")) process.exit(2);
     if (config.domains[""].ldapUserKey !== "anasIdentityAnchor") process.exit(3);
     if (config.domains[""].ldapUserBinaryKey !== undefined) process.exit(4);
+    const oidc = config.domains[""].authStrategies.oidc;
+    if (oidc.client.redirect_uri !== "https://mesh.example.test:9000/auth-oidc-callback") process.exit(8);
+    if (oidc.client.client_secret !== `oidc"secret\\value`) process.exit(9);
+    if (!oidc.groups.required.includes("APP_meshcentral")) process.exit(10);
+    if (oidc.custom.claims.uuid !== "anasIdentityAnchor") process.exit(11);
+    if (oidc.groups.scope !== "profile") process.exit(12);
   ' "$test_dir/meshcentral/config.json" || exit 1
 fi
 

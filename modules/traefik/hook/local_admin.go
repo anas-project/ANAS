@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -32,7 +35,14 @@ func handleLocalAccount(req hookRequest) error {
 	if current == "" || candidate == "" {
 		return fmt.Errorf("traefik: current or candidate local administrator secret is missing")
 	}
-	path := filepath.Join(req.Workdir, "dynamic", "dashboard-auth.yml")
+	runtimeRoot := req.Env["ANAS_MODULE_RUNTIME_STATE_PATH"]
+	if runtimeRoot == "" {
+		return fmt.Errorf("Traefik runtime-state path is missing")
+	}
+	if !filepath.IsAbs(runtimeRoot) {
+		runtimeRoot = filepath.Join(req.Workdir, filepath.FromSlash(runtimeRoot))
+	}
+	path := filepath.Join(filepath.Clean(runtimeRoot), "dynamic", "dashboard-auth.yml")
 	before, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read Traefik dashboard authentication state: %w", err)
@@ -50,7 +60,11 @@ func handleLocalAccount(req hookRequest) error {
 		}
 		return fmt.Errorf("Traefik verification failed; old credential restored: %w", err)
 	}
-	if err := verifyTraefikDashboard(req.Env["TRAEFIK_DASHBOARD_URL"], op.Username, candidate); err != nil {
+	entryIP := req.Env["ANAS_RUNTIME_ENTRY_IP"]
+	if entryIP == "" {
+		entryIP = req.Env["HOST_IP"]
+	}
+	if err := verifyTraefikDashboard(req.Env["TRAEFIK_DASHBOARD_URL"], entryIP, op.Username, candidate); err != nil {
 		if restoreErr := writeTraefikAuthAtomic(path, before); restoreErr != nil {
 			return fmt.Errorf("Traefik dashboard verification failed (%v) and rollback failed (%v)", err, restoreErr)
 		}
@@ -59,14 +73,39 @@ func handleLocalAccount(req hookRequest) error {
 	return nil
 }
 
-func verifyTraefikDashboardHTTP(url, username, password string) error {
-	if url == "" {
+func verifyTraefikDashboardHTTP(rawURL, hostIP, username, password string) error {
+	if rawURL == "" {
 		return fmt.Errorf("Traefik dashboard URL is missing")
 	}
-	client := &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true}}} // #nosec G402: the module verifies an internal endpoint whose certificate may still be bootstrapping.
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return err
+	}
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true} // #nosec G402: the module verifies an internal endpoint whose certificate may still be bootstrapping.
+	transport := &http.Transport{TLSClientConfig: tlsConfig}
+	// The dashboard hostname often has no public DNS record yet during the
+	// first deployment. Dial the deployment entry IP while retaining the
+	// original URL, Host header and SNI, so verification exercises the actual
+	// router without depending on external DNS propagation.
+	if hostIP != "" {
+		port := parsed.Port()
+		if port == "" {
+			port = "443"
+		}
+		target := net.JoinHostPort(hostIP, port)
+		dialer := &net.Dialer{Timeout: 2 * time.Second}
+		transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp", target)
+		}
+	}
+	client := &http.Client{Timeout: 2 * time.Second, Transport: transport}
 	var last error
-	for attempt := 0; attempt < 20; attempt++ {
-		req, err := http.NewRequest(http.MethodGet, url, nil)
+	// Docker and file providers initialize asynchronously. On a cold daemon the
+	// dashboard router can return 404 for several seconds even though the
+	// container is already healthy; allow the provider convergence window but
+	// still require the candidate credential to produce a successful response.
+	for attempt := 0; attempt < 120; attempt++ {
+		req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 		if err != nil {
 			return err
 		}
@@ -80,7 +119,7 @@ func verifyTraefikDashboardHTTP(url, username, password string) error {
 			err = fmt.Errorf("HTTP %d", resp.StatusCode)
 		}
 		last = err
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 	return last
 }
