@@ -1,24 +1,44 @@
 # ANAS、Module 与容器发布
 
-ANAS 有两条发布链路：Core 二进制从 `master` 按人工确认的 SemVer 发布；Module bundle、
+ANAS 有两条发布链路：Core 二进制从 `master` 按自动递增或人工指定的 SemVer 发布；Module bundle、
 派生容器镜像和上游 mirror 从 `image-release` 按变更上下文发布。Module 与容器属于同一
 事务，不能单独留下一个引用不存在镜像的 bundle。
 
 ## ANAS Core 发布
 
-工作流为 `.github/workflows/anas-release.yml`，只允许从 `master` 手工触发。
+工作流为 `.github/workflows/anas-release.yml`。第一次自动发布为 `0.1.0`；之后以最新的
+稳定 `vMAJOR.MINOR.PATCH` tag 为版本真相源，自动发布默认递增 patch。版本计算由
+`scripts/ci/anas-release-version.sh` 完成并有独立 fixture 测试。
 
-1. 确认 `master` 是准备发布的 commit，并完成常规 PR、测试和文档检查。
-2. 在 GitHub Actions 选择 `ANAS release`，输入不带 `v` 的 SemVer，例如 `0.4.0`。
-3. 工作流拒绝非法版本和已存在的固定 tag，运行 `go test ./...`。
-4. 分别交叉编译 Linux `amd64`、`arm64` 静态二进制。
-5. 生成两个 `tar.gz` 和 `SHA256SUMS`，创建不可覆盖的 GitHub Release `v0.4.0`。
+自动触发有两条路径：
+
+- `master` 上 `cmd/anas/`、`internal/`、`go.mod` 或 `go.sum` 发生直接 push；
+- `Module and container artifacts` 在 `image-release` 上成功，并已创建对应
+  `module-release/<run>-<attempt>` 边界且把同一 commit 快进到 `master`。
+
+若最新 Core tag 已指向目标 commit，或自上一个稳定 Core tag 后上述 Core 输入没有变化，
+自动任务成功跳过，不制造空版本。并发任务串行执行，已存在的不可变 tag 不能被覆盖。
+
+需要显式控制版本时，从 `master` 手工运行 `ANAS release`：`version` 留空时按所选
+`patch`、`minor` 或 `major` 递增；填写 `version` 时使用该精确 SemVer。稳定版本不得倒退，
+也不得复用指向其他 commit 的 tag。例如：
+
+```bash
+# 当前没有 Core tag 时解析为首次版本 0.1.0
+gh workflow run anas-release.yml --ref master -f version= -f bump=patch -f prerelease=false
+
+# 明确指定版本
+gh workflow run anas-release.yml --ref master -f version=0.2.0 -f bump=patch -f prerelease=false
+```
+
+发布任务运行 `go test ./...`，分别交叉编译 Linux `amd64`、`arm64` 静态二进制，生成
+两个 `tar.gz` 和 `SHA256SUMS`，然后创建不可覆盖的 GitHub Release。
 
 发布包名称：
 
 ```text
-anas_0.4.0_linux_amd64.tar.gz
-anas_0.4.0_linux_arm64.tar.gz
+anas_0.1.0_linux_amd64.tar.gz
+anas_0.1.0_linux_arm64.tar.gz
 SHA256SUMS
 ```
 
