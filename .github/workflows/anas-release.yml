@@ -4,7 +4,6 @@ on:
   push:
     branches: [anas-release]
     paths:
-      - ".cnb.yml"
       - "cmd/anas/**"
       - "internal/**"
       - "install.sh"
@@ -196,3 +195,12 @@ jobs:
             --title "ANAS ${VERSION}" \
             --generate-notes \
             "${prerelease[@]}"
+
+  sync-cnb:
+    needs: [validate, publish]
+    if: needs.validate.outputs.publish == 'true'
+    uses: ./.github/workflows/anas-cnb-release.yml
+    with:
+      tag: ${{ needs.validate.outputs.tag }}
+      commit: ${{ needs.validate.outputs.commit }}
+    secrets: inherit

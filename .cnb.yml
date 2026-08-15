@@ -18,36 +18,3 @@ master:
             bin_dir="${CNB_BUILD_WORKSPACE}/.anas-bin"
             bash scripts/ci/install-crane.sh "$bin_dir"
             PATH="$bin_dir:$PATH" bash scripts/ci/cnb-container-images.sh mirror-all
-
-v*:
-  tag_push:
-    - name: ANAS Core release
-      runner:
-        tags: cnb:arch:amd64
-      docker:
-        image: golang:1.26.5-bookworm
-      stages:
-        - name: Build Linux archives
-          env:
-            GOPROXY: https://goproxy.cn,direct
-          script: |
-            set -eu
-            version=${CNB_BRANCH#v}
-            build_date=$(git show -s --format=%cI "$CNB_COMMIT")
-            mkdir -p dist
-            bash scripts/ci/build-anas-release.sh "$version" "$CNB_COMMIT" "$build_date" amd64 dist
-            bash scripts/ci/build-anas-release.sh "$version" "$CNB_COMMIT" "$build_date" arm64 dist
-            (cd dist && sha256sum anas_linux_*.tar.gz >SHA256SUMS)
-        - name: Create CNB Release
-          type: git:release
-          options:
-            title: ANAS $CNB_BRANCH
-            description: Linux amd64 and arm64 binaries for ANAS $CNB_BRANCH.
-            latest: true
-        - name: Upload CNB Release archives
-          image: cnbcool/attachments:latest
-          settings:
-            attachments:
-              - dist/anas_linux_amd64.tar.gz
-              - dist/anas_linux_arm64.tar.gz
-              - dist/SHA256SUMS

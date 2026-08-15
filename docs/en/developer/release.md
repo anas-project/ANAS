@@ -13,7 +13,7 @@ releases use the latest stable `vMAJOR.MINOR.PATCH` tag as the version source of
 patch by default. `scripts/ci/anas-release-version.sh` owns this calculation and has an isolated
 fixture test.
 
-Only the `anas-release` branch triggers an automatic Core publication. A push changing `.cnb.yml`,
+Only the `anas-release` branch triggers an automatic Core publication. A push changing
 `cmd/anas/`, `internal/`, `install.sh`, `go.mod`, `go.sum`, or the Core release build and installer
 test scripts starts the workflow. Neither a `master` push nor the
 Module/container workflow triggers a Core release, so the two release paths advance independently.
@@ -52,9 +52,22 @@ gh workflow run anas-release.yml --ref anas-release -f version=0.2.0 -f bump=pat
 
 The publishing run executes `go test ./...`, cross-compiles static Linux binaries for `amd64` and
 `arm64`, creates `anas_linux_amd64.tar.gz`, `anas_linux_arm64.tar.gz`, and `SHA256SUMS`, then
-publishes an immutable GitHub Release. Once the tag is mirrored, the root `.cnb.yml` publishes the
-same stable asset names as a CNB Release for the one-line installer. `cnb-sync.yml` also runs after
-a successful Core workflow so tags created with the workflow token are not missed.
+publishes an immutable GitHub Release. `.github/workflows/anas-cnb-release.yml` verifies that CNB's
+tag identifies the same commit, creates the CNB Release through its OpenAPI, and uploads the exact
+assets downloaded and verified from GitHub. CNB does not rebuild them. An existing attachment must
+have the same SHA-256 or the sync fails without overwriting it.
+
+Repair or backfill an existing release idempotently with:
+
+```bash
+gh workflow run anas-cnb-release.yml \
+  --ref anas-release \
+  -f tag=v0.1.0 \
+  -f commit=
+```
+
+An empty `commit` is resolved from the immutable tag. Repository-level `cnb-sync.yml` still mirrors
+all refs after the complete Core workflow succeeds.
 
 Release builds expose their identity through:
 
@@ -155,5 +168,6 @@ Create `image-release` once from `master`, then dispatch **Module and container 
 ref with `module=all`. Later releases merge the intended `master` state into `image-release`.
 Single-Module manual dispatches are repair operations and do not advance the global successful base.
 
-Publishing requires repository/package write permission, `CNB_REGISTRY_TOKEN` for CNB artifacts, and
-`CNB_TOKEN` for successful Git ref synchronization. The workflow never force-pushes.
+Publishing requires repository/package write permission, `CNB_REGISTRY_TOKEN` for CNB artifacts,
+and a `CNB_TOKEN` with CNB repository-code and Release read/write access for ref synchronization,
+Core Release creation, and attachment upload. The workflow never force-pushes.

@@ -30,6 +30,9 @@ Install from the CN source, backed by CNB, and keep it as the default distributi
 curl --proto '=https' --tlsv1.2 -fsSL https://cnb.cool/anas.dev/ANAS/-/git/raw/master/install.sh | sh -s -- --source cn
 ```
 
+CNB Release attachments are byte-for-byte mirrors of the GitHub Release and are SHA-256 verified;
+they are not rebuilt on CNB.
+
 The installer records the choice in `${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`. A CNB install
 stores `official-cn`. A later `anas init`, or `anas config import` whose external file omits
 `module_source`, persists:

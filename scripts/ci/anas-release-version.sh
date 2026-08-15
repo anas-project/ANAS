@@ -154,7 +154,7 @@ done < <(git tag --points-at "$commit" --list 'v*')
 
 if [[ "$automatic" == true && -n "$latest_tag" ]] &&
    git diff --quiet "$latest_tag" "$commit" -- \
-     .cnb.yml cmd/anas install.sh internal go.mod go.sum \
+     cmd/anas install.sh internal go.mod go.sum \
      scripts/ci/build-anas-release.sh scripts/ci/install-test.sh; then
   echo "skip:no-core-changes"
   exit 0
