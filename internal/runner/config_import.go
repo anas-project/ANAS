@@ -152,15 +152,22 @@ func normalizeImportedConfig(source string, reg map[string]Module) (configImport
 	// Persist the CN source's runtime defaults into normalized desired state.
 	// This makes the automatic behavior visible to `config plan`, backups and
 	// operators instead of leaving it as an in-memory side effect of resolution.
-	if source := mappingValue(root, "module_source"); source != nil {
-		if source.Kind != yaml.ScalarNode {
+	sourceNode := mappingValue(root, "module_source")
+	if sourceNode == nil {
+		sourceNode = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: modulesource.InstalledDefaultName("")}
+		root.Content = append([]*yaml.Node{
+			{Kind: yaml.ScalarNode, Tag: "!!str", Value: "module_source"}, sourceNode,
+		}, root.Content...)
+	}
+	if sourceNode != nil {
+		if sourceNode.Kind != yaml.ScalarNode {
 			return result, fmt.Errorf("module_source must be a scalar")
 		}
-		source.Value = modulesource.DefaultName(source.Value)
-		if _, ok := modulesource.LookupBuiltin(source.Value); !ok {
+		sourceNode.Value = modulesource.DefaultName(sourceNode.Value)
+		if _, ok := modulesource.LookupBuiltin(sourceNode.Value); !ok {
 			return result, fmt.Errorf("module_source must be official, official-cn, or cn")
 		}
-		if modulesource.UsesChineseDefaults(source.Value) {
+		if modulesource.UsesChineseDefaults(sourceNode.Value) {
 			global := ensureMappingValue(root, "global")
 			if global.Kind != yaml.MappingNode {
 				return result, fmt.Errorf("global must be a mapping")

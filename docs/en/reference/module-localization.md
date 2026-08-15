@@ -8,7 +8,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | --- | --- | --- | --- | --- | --- | --- | ---: |
 | [authentik](#authentik) | 2026.5.6-r4 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [collabora](#collabora) | 26.4.2-r2 | container | supported | integration | not_consumed | not_consumed | 43 |
-| [ddns_go](#ddns_go) | 6.17.4-r2 | container | supported | application | not_consumed | not_consumed | 2 |
+| [ddns_go](#ddns_go) | 6.17.4-r3 | container | supported | application | not_consumed | not_consumed | 2 |
 | [ddns_updater](#ddns_updater) | 2.10.0-r1 | application | fixed | fixed | not_consumed | not_consumed | 1 |
 | [eturnal](#eturnal) | 1.12.2-r1 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [freeradius](#freeradius) | 3.2.10-r1 | container | not_applicable | none | not_applicable | not_applicable | 0 |
@@ -49,7 +49,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## ddns_go
 
-- **Version / 版本：** `6.17.4-r2`; reviewed 2026-08-13
+- **Version / 版本：** `6.17.4-r3`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — The service receives TZ through the module .env; upstream does not expose a separate timezone setting.
 - **Language / 语言：** `supported`, `application` — ddns-go Web UI and logs
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`

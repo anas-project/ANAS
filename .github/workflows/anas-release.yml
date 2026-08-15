@@ -4,10 +4,14 @@ on:
   push:
     branches: [master]
     paths:
+      - ".cnb.yml"
       - "cmd/anas/**"
       - "internal/**"
+      - "install.sh"
       - "go.mod"
       - "go.sum"
+      - "scripts/ci/build-anas-release.sh"
+      - "scripts/ci/install-test.sh"
   workflow_run:
     workflows: ["Module and container artifacts"]
     types: [completed]
@@ -65,6 +69,9 @@ jobs:
       - name: Test release version calculator
         run: bash scripts/ci/anas-release-version-test.sh
 
+      - name: Test installer
+        run: bash scripts/ci/install-test.sh
+
       - name: Validate release identity
         id: release
         env:
@@ -79,7 +86,7 @@ jobs:
           set -euo pipefail
 
           commit="$(git rev-parse HEAD)"
-          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          build_date="$(git show -s --format=%cI "$commit")"
           skip_release() {
             echo "ANAS release skipped: $1"
             echo "publish=false" >>"$GITHUB_OUTPUT"
@@ -168,14 +175,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive="anas_${VERSION}_linux_${GOARCH}"
-          mkdir -p "dist/${archive}"
-          CGO_ENABLED=0 GOOS=linux go build \
-            -trimpath \
-            -ldflags "-s -w -X github.com/anas-project/ANAS/internal/buildinfo.Version=${VERSION} -X github.com/anas-project/ANAS/internal/buildinfo.Commit=${COMMIT} -X github.com/anas-project/ANAS/internal/buildinfo.Date=${BUILD_DATE}" \
-            -o "dist/${archive}/anas" \
-            ./cmd/anas
-          tar -C dist -czf "dist/${archive}.tar.gz" "$archive"
+          bash scripts/ci/build-anas-release.sh "$VERSION" "$COMMIT" "$BUILD_DATE" "$GOARCH" dist
 
       - uses: actions/upload-artifact@v4
         with:
@@ -201,7 +201,7 @@ jobs:
 
       - name: Create checksums
         working-directory: dist
-        run: sha256sum *.tar.gz >SHA256SUMS
+        run: sha256sum anas_linux_*.tar.gz >SHA256SUMS
 
       - name: Create immutable GitHub release
         env:

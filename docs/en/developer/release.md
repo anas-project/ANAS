@@ -15,7 +15,8 @@ fixture test.
 
 Two events can trigger an automatic release:
 
-- a direct push to `master` changes `cmd/anas/`, `internal/`, `go.mod`, or `go.sum`;
+- a direct push to `master` changes a Core source, installer, or Core packaging input, as jointly
+  enumerated by the workflow paths and `anas-release-version.sh`;
 - `Module and container artifacts` succeeds on `image-release`, creates its matching
   `module-release/<run>-<attempt>` boundary, and fast-forwards the same commit to `master`.
 
@@ -36,7 +37,10 @@ gh workflow run anas-release.yml --ref master -f version=0.2.0 -f bump=patch -f 
 ```
 
 The publishing run executes `go test ./...`, cross-compiles static Linux binaries for `amd64` and
-`arm64`, creates two `tar.gz` archives plus `SHA256SUMS`, and publishes an immutable GitHub Release.
+`arm64`, creates `anas_linux_amd64.tar.gz`, `anas_linux_arm64.tar.gz`, and `SHA256SUMS`, then
+publishes an immutable GitHub Release. Once the tag is mirrored, the root `.cnb.yml` publishes the
+same stable asset names as a CNB Release for the one-line installer. `cnb-sync.yml` also runs after
+a successful Core workflow so tags created with the workflow token are not missed.
 
 Release builds expose their identity through:
 

@@ -56,7 +56,9 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。`modules.<
 解码层是 map，但 `config import` 和部署解析会再按 manifest 校验每个键及类型；手写 YAML
 不能绕过 `config set` 的声明检查。
 
-`module_source` 省略时为 `official`。`cn` 会在托管配置中规范化为 `official-cn`；选择
+未通过安装器选择源时，`module_source` 省略值为 `official`。一行安装脚本会把选择保存到
+`${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`；新建 workspace 或导入未声明该字段的外部
+配置时会先把此选择固化到受管配置。`cn` 会在托管配置中规范化为 `official-cn`；选择
 `official-cn`/`cn` 且未显式设置 `global.chinese_speedup` 时，导入过程会持久化
 `global.chinese_speedup: true`。显式 `false` 不会被默认覆盖。
 

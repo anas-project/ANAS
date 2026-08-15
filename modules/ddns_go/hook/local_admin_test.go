@@ -18,8 +18,13 @@ func TestDDNSRotationFailureRestoresApplicationState(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := restartDDNSGo
-	defer func() { restartDDNSGo = original }()
+	originalOwnership := takeDDNSStateOwnership
+	defer func() {
+		restartDDNSGo = original
+		takeDDNSStateOwnership = originalOwnership
+	}()
 	restartDDNSGo = func(string) error { return errors.New("restart failed") }
+	takeDDNSStateOwnership = func(string) error { return nil }
 	req := hookRequest{Module: "ddns_go", Phase: "local_account_rotate", Env: map[string]string{"DATA_PATH": data, "CONTAINER_PREFIX": "anas_"}, Secrets: map[string]string{"old": "old-password", "new": "new-password"}, LocalAccount: &localAccountOperation{Handler: "rotate-ddns-go-local-admin", AccountID: "primary", Username: "old", SecretKey: "old", CandidateSecretKey: "new"}}
 	if err := handleLocalAccount(req); err == nil {
 		t.Fatal("rotation unexpectedly succeeded")

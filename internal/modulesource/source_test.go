@@ -1,6 +1,10 @@
 package modulesource
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestBuiltinsKeepOfficialContentIdentityAcrossMirrors(t *testing.T) {
 	official, ok := LookupBuiltin(Official)
@@ -41,5 +45,27 @@ func TestDefaultName(t *testing.T) {
 		if got := DefaultName(input); got != want {
 			t.Errorf("DefaultName(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestInstalledDefaultName(t *testing.T) {
+	preference := filepath.Join(t.TempDir(), "source")
+	t.Setenv("ANAS_SOURCE_CONFIG", preference)
+	t.Setenv("ANAS_DEFAULT_SOURCE", "")
+	if got := InstalledDefaultName(""); got != Official {
+		t.Fatalf("missing installer preference = %q", got)
+	}
+	if err := os.WriteFile(preference, []byte("official-cn\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := InstalledDefaultName(""); got != OfficialCN {
+		t.Fatalf("installed CN source = %q", got)
+	}
+	if got := InstalledDefaultName(Official); got != Official {
+		t.Fatalf("explicit source was overridden: %q", got)
+	}
+	t.Setenv("ANAS_DEFAULT_SOURCE", "official")
+	if got := InstalledDefaultName(""); got != Official {
+		t.Fatalf("environment override = %q", got)
 	}
 }

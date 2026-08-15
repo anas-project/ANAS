@@ -12,7 +12,8 @@ ANAS 有两条发布链路：Core 二进制从 `master` 按自动递增或人工
 
 自动触发有两条路径：
 
-- `master` 上 `cmd/anas/`、`internal/`、`go.mod` 或 `go.sum` 发生直接 push；
+- `master` 上 Core 源码、安装器或 Core 打包输入发生直接 push；这些输入由 workflow paths
+  与 `anas-release-version.sh` 的清单共同约束；
 - `Module and container artifacts` 在 `image-release` 上成功，并已创建对应
   `module-release/<run>-<attempt>` 边界且把同一 commit 快进到 `master`。
 
@@ -32,13 +33,16 @@ gh workflow run anas-release.yml --ref master -f version=0.2.0 -f bump=patch -f 
 ```
 
 发布任务运行 `go test ./...`，分别交叉编译 Linux `amd64`、`arm64` 静态二进制，生成
-两个 `tar.gz` 和 `SHA256SUMS`，然后创建不可覆盖的 GitHub Release。
+两个 `tar.gz` 和 `SHA256SUMS`，然后创建不可覆盖的 GitHub Release。Git tag 同步到 CNB
+后（`cnb-sync.yml` 也会在 Core workflow 成功结束时补做一次同步），根 `.cnb.yml` 用同一
+commit、版本和构建时间生成对应 CNB Release；两个源都提供安装器
+使用的稳定附件名。
 
 发布包名称：
 
 ```text
-anas_0.1.0_linux_amd64.tar.gz
-anas_0.1.0_linux_arm64.tar.gz
+anas_linux_amd64.tar.gz
+anas_linux_arm64.tar.gz
 SHA256SUMS
 ```
 
@@ -49,8 +53,9 @@ anas version
 anas version --json
 ```
 
-Core release 不内嵌 Module。Module 有自己的版本、OCI digest 和更新节奏，安装器根据
-config/lock 获取；本地 `modules/` + `contracts/` 只保留为源码开发覆盖。
+Core release 不内嵌 Module。Module 有自己的版本、OCI digest 和更新节奏，安装器选择会
+写入用户级源偏好，新建或导入配置再把它固化到 config/lock；本地 `modules/` + `contracts/`
+只保留为源码开发覆盖。
 
 ## Module 与容器整体流程
 

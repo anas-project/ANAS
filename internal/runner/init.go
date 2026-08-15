@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/anas-project/ANAS/internal/modulesource"
 	"github.com/anas-project/ANAS/internal/modulestore"
 )
 
@@ -312,13 +313,23 @@ func writeConfigSkeleton(workspace string) error {
 	if exists(path) {
 		return nil
 	}
-	skeleton := `# anas workspace configuration.
+	source := modulesource.InstalledDefaultName("")
+	if _, ok := modulesource.LookupBuiltin(source); !ok {
+		return fmt.Errorf("installed default source must be official, official-cn, or cn")
+	}
+	chineseDefault := ""
+	if modulesource.UsesChineseDefaults(source) {
+		chineseDefault = "  chinese_speedup: true\n"
+	}
+	skeleton := fmt.Sprintf(`# anas workspace configuration.
 #
 # Application state lives at <workspace>/data and the files people store live
 # at <workspace>/userdata. They are separate because a rollback replaces the
 # first and must never touch the second. Back up this whole directory and the
 # deployment is fully recoverable. This file is managed by ANAS; use
 # anas config commands to modify it and anas config import for external input.
+
+module_source: %s
 
 modules:
   samba_dc: {}
@@ -328,11 +339,12 @@ global:
   base_domain: example.test
   email: admin@example.test
   timezone: UTC
+%s
 
 env:
   CONTAINER_PREFIX: anas_
   NETWORK_PREFIX: anas_
-`
+`, source, chineseDefault)
 	// Ordinary deployment inputs may include API tokens, so the CLI-managed
 	// config remains private even though lifecycle-managed credentials are kept
 	// in the managed credential store.
