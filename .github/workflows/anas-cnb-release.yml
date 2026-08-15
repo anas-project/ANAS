@@ -84,6 +84,7 @@ jobs:
           echo "prerelease=$prerelease" >>"$GITHUB_OUTPUT"
 
       - name: Mirror the immutable release tag to CNB
+        id: tag
         env:
           CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
           TAG: ${{ inputs.tag }}
@@ -104,14 +105,49 @@ jobs:
             echo "CNB $TAG identifies $remote_commit, expected $COMMIT" >&2
             exit 1
           fi
+          new_tag=false
           if [[ -z "$remote_commit" ]]; then
             git push cnb-release "refs/tags/${TAG}:refs/tags/${TAG}"
+            new_tag=true
           fi
+          echo "new=$new_tag" >>"$GITHUB_OUTPUT"
 
-      - name: Create or verify the CNB Release and attachments
+      - name: Inspect the existing CNB Release
+        id: state
         env:
           CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
           TAG: ${{ inputs.tag }}
-          COMMIT: ${{ steps.release.outputs.commit }}
-          PRERELEASE: ${{ steps.release.outputs.prerelease }}
-        run: bash scripts/ci/sync-anas-release-to-cnb.sh "$TAG" "$COMMIT" dist "$PRERELEASE"
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(bash scripts/ci/sync-anas-release-to-cnb.sh "$TAG" dist probe)"
+          echo "state=$state" >>"$GITHUB_OUTPUT"
+
+      - name: Trigger a trusted CNB repair build for an existing tag
+        id: repair
+        if: steps.state.outputs.state != 'complete' && steps.tag.outputs.new != 'true'
+        env:
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing_branch="$(git ls-remote cnb-release "refs/heads/${TAG}" | awk '{print $1}')"
+          if [[ -n "$existing_branch" ]]; then
+            echo "temporary CNB repair branch $TAG already exists at $existing_branch" >&2
+            exit 1
+          fi
+          git push cnb-release "HEAD:refs/heads/${TAG}"
+          echo "created=true" >>"$GITHUB_OUTPUT"
+
+      - name: Wait for and verify the CNB Release attachments
+        if: steps.state.outputs.state != 'complete'
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: bash scripts/ci/sync-anas-release-to-cnb.sh "$TAG" dist wait
+
+      - name: Remove the temporary CNB repair branch
+        if: steps.repair.outputs.created == 'true'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: git push cnb-release --delete "refs/heads/${TAG}"

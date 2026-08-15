@@ -18,3 +18,80 @@ master:
             bin_dir="${CNB_BUILD_WORKSPACE}/.anas-bin"
             bash scripts/ci/install-crane.sh "$bin_dir"
             PATH="$bin_dir:$PATH" bash scripts/ci/cnb-container-images.sh mirror-all
+
+v*:
+  tag_push:
+    - name: Publish the mirrored ANAS Core release
+      stages:
+        - name: Download and verify GitHub Release assets
+          script: |
+            set -eu
+            case "$CNB_BRANCH" in
+              v[0-9]*.[0-9]*.[0-9]*) ;;
+              *) echo "invalid ANAS release tag: $CNB_BRANCH" >&2; exit 1 ;;
+            esac
+            mkdir -p dist
+            root="https://github.com/anas-project/ANAS/releases/download/${CNB_BRANCH}"
+            curl --proto '=https' --tlsv1.2 -fsSL --retry 5 -o dist/SHA256SUMS "$root/SHA256SUMS"
+            while read -r checksum filename; do
+              filename=${filename#\*}
+              case "$filename" in
+                *.tar.gz)
+                  curl --proto '=https' --tlsv1.2 -fsSL --retry 5 -o "dist/$filename" "$root/$filename"
+                  ;;
+              esac
+            done <dist/SHA256SUMS
+            (cd dist && sha256sum --check SHA256SUMS)
+        - name: Create or update the CNB Release
+          type: git:release
+          options:
+            overlying: false
+            tag: $CNB_BRANCH
+            title: ANAS $CNB_BRANCH
+            description: Byte-identical mirror of the ANAS GitHub Release assets.
+            latest: true
+        - name: Upload CNB Release attachments
+          image: cnbcool/attachments:latest
+          settings:
+            tag: $CNB_BRANCH
+            attachments:
+              - dist/*.tar.gz
+              - dist/SHA256SUMS
+
+  branch.create:
+    - name: Repair an existing ANAS Core release
+      stages:
+        - name: Download and verify GitHub Release assets
+          script: |
+            set -eu
+            case "$CNB_BRANCH" in
+              v[0-9]*.[0-9]*.[0-9]*) ;;
+              *) echo "invalid ANAS release tag: $CNB_BRANCH" >&2; exit 1 ;;
+            esac
+            mkdir -p dist
+            root="https://github.com/anas-project/ANAS/releases/download/${CNB_BRANCH}"
+            curl --proto '=https' --tlsv1.2 -fsSL --retry 5 -o dist/SHA256SUMS "$root/SHA256SUMS"
+            while read -r checksum filename; do
+              filename=${filename#\*}
+              case "$filename" in
+                *.tar.gz)
+                  curl --proto '=https' --tlsv1.2 -fsSL --retry 5 -o "dist/$filename" "$root/$filename"
+                  ;;
+              esac
+            done <dist/SHA256SUMS
+            (cd dist && sha256sum --check SHA256SUMS)
+        - name: Create or update the CNB Release
+          type: git:release
+          options:
+            overlying: false
+            tag: $CNB_BRANCH
+            title: ANAS $CNB_BRANCH
+            description: Byte-identical mirror of the ANAS GitHub Release assets.
+            latest: true
+        - name: Upload CNB Release attachments
+          image: cnbcool/attachments:latest
+          settings:
+            tag: $CNB_BRANCH
+            attachments:
+              - dist/*.tar.gz
+              - dist/SHA256SUMS
