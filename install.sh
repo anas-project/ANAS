@@ -88,10 +88,7 @@ download() {
   curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$output" "$url"
 }
 
-case "$source_name" in
-  github) latest_url="${release_root%/}/latest" ;;
-  cn) latest_url="${release_root%/-/releases}/-/badge/release.link" ;;
-esac
+latest_url="${release_root%/}/latest"
 latest_effective_url="$(
   curl --proto '=https' --tlsv1.2 -fsSL --retry 3 \
     -o /dev/null -w '%{url_effective}' "$latest_url"

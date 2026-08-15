@@ -31,7 +31,8 @@ curl --proto '=https' --tlsv1.2 -fsSL https://cnb.cool/anas.dev/ANAS/-/git/raw/m
 ```
 
 CNB Release attachments are byte-for-byte mirrors of the GitHub Release and are SHA-256 verified;
-they are not rebuilt on CNB.
+they are not rebuilt on CNB. The installer resolves the current stable tag through the public
+`/-/releases/latest` redirect.
 
 The installer records the choice in `${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`. A CNB install
 stores `official-cn`. A later `anas init`, or `anas config import` whose external file omits

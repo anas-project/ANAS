@@ -29,7 +29,8 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-pro
 curl --proto '=https' --tlsv1.2 -fsSL https://cnb.cool/anas.dev/ANAS/-/git/raw/master/install.sh | sh -s -- --source cn
 ```
 
-CNB Release 附件由 GitHub Release 原样同步并再次校验 SHA-256，不在 CNB 重新编译。
+CNB Release 附件由 GitHub Release 原样同步并再次校验 SHA-256，不在 CNB 重新编译；安装器
+通过公开的 `/-/releases/latest` 跳转解析当前稳定 tag。
 
 安装器把选择写入 `${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`。选择 CNB 时保存
 `official-cn`；之后 `anas init` 创建的新配置，以及未显式声明 `module_source` 的
