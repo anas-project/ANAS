@@ -2,7 +2,7 @@
 
 ## 配置文件的职责
 
-`<workspace>/config.yml` 是 ANAS CLI 管理的规范化期望状态；它不是用户手工维护的输入文件。外部 YAML 只能通过 `anas config import SOURCE -w WORKSPACE` 导入，源文件不会被修改。`config.lock.yml` 是 ANAS 解析并固化的 Module 版本、能力提供方和宿主机策略。不要手工编辑 workspace 配置或 `.anas/` 运行状态；plan、lock、render 和 apply 会校验配置摘要并拒绝越权修改。
+`<workspace>/config.yml` 是 ANAS CLI 管理的规范化期望状态；它不是用户手工维护的输入文件。首次创建时用 `anas init WORKSPACE --config SOURCE` 导入外部 YAML；已有 workspace 用 `anas config import SOURCE -w WORKSPACE`。两种方式都不会修改源文件。`config.lock.yml` 是 ANAS 解析并固化的 Module 版本、能力提供方和宿主机策略。不要手工编辑 workspace 配置或 `.anas/` 运行状态；plan、lock、render 和 apply 会校验配置摘要并拒绝越权修改。
 
 配置只支持结构化 YAML。主要区域为：
 
@@ -12,7 +12,7 @@
 - `identity`：目录与 IAM Provider 选择；
 - `dynamic_dns`：负责 ANAS 声明记录的 DDNS Module 和 DNS 厂商；
 - `rollback`：本地快照后端与保留策略；
-- `modules.<name>`：单个 Module 的启用状态、身份协议和 `config` 参数；
+- `modules.<name>`：单个 Module 的精确版本、启用状态、身份协议和 `config` 参数；
 - `secrets`：需要显式提供的敏感值；
 - `env`：无法用结构化字段表示的原始环境变量。
 
@@ -20,15 +20,27 @@
 
 ## 修改和预览
 
-初始化后导入外部配置，之后只通过 CLI 修改：
+初始化时导入外部配置；已有 workspace 可再次导入。之后只通过 CLI 修改：
 
 ```bash
+anas init /srv/anas --config ./my-config.yml
+# 已初始化时：
 anas config import ./my-config.yml -w /srv/anas
+anas module update -w /srv/anas
 anas config explain nextcloud.domain_prefix
 anas config set global.timezone Asia/Singapore -w /srv/anas
 anas config plan -w /srv/anas
 anas apply -w /srv/anas
 ```
+
+若外部配置选择 `module_source: cn` 且省略 `global.chinese_speedup`，导入后的受管配置会
+规范化为 `module_source: official-cn` 并补入 `global.chinese_speedup: true`；渲染结果包含
+`CHINESE_SPEEDUP=true`。显式 `false` 保持不变。
+
+需要固定 Module release 时，在外部配置中写入 `modules.<name>.version`，格式为
+`<semver>-r<N>`，例如 `34.0.2-r2`。`anas module update` 根据该约束解析并记录不可变 OCI
+digest；普通 `plan`、`render` 和 `apply` 不会自动升级。新主机可用 `anas module sync` 按
+已有 lock 恢复同一批包。
 
 已有活跃部署时，`config set` 默认立即生成并激活新 deployment；失败会恢复旧受管配置与旧运行态。使用 `--defer` 可只保存 desired state。尚未部署或已显式停止时，命令分别返回 pending 状态，不会擅自启动服务。`config plan` 用于查看 deferred/initial 待应用变更。
 

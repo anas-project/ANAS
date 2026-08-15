@@ -144,6 +144,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 	}{
 		// ---- 0: success ------------------------------------------------
 		{"help", []string{"help", "--json"}, 0},
+		{"version", []string{"version", "--json"}, 0},
 		{"init", []string{"init", fresh, "-y", "--json"}, 0},
 		{"status", []string{"status", "-w", workspace, "--json"}, 0},
 		{"deployments list", []string{"deployments", "list", "-w", workspace, "--json"}, 0},
@@ -172,6 +173,9 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		{"status with a stray argument", []string{"status", "-w", workspace, "extra", "--json"}, 2},
 		{"secret get without a key", []string{"config", "secret", "get", "-w", workspace, "--json"}, 2},
 		{"admin with no subcommand", []string{"admin", "--json"}, 2},
+		{"module with no subcommand", []string{"module", "--json"}, 2},
+		{"unknown module subcommand", []string{"module", "wat", "--json"}, 2},
+		{"module install without release", []string{"module", "install", "nextcloud", "--json"}, 2},
 		{"rollback without -w", []string{"rollback", "--json"}, 2},
 		{"unknown snapshot subcommand", []string{"snapshot", "wat", "-w", workspace, "--json"}, 2},
 		{"unknown backup subcommand", []string{"backup", "wat", "--json"}, 2},
@@ -190,6 +194,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		{"restart with no active deployment", []string{"restart", "-w", workspace, "--json"}, 4},
 		{"apply an unknown deployment", []string{"apply", "-w", workspace, "--deployment", "nosuchdeployment", "--json"}, 4},
 		{"init over an existing workspace", []string{"init", workspace, "-y", "--json"}, 4},
+		{"module sync without a lock", []string{"module", "sync", "-w", workspace, "--json"}, 4},
 	}
 
 	for _, testCase := range cases {

@@ -73,6 +73,11 @@ type moduleLockRecord struct {
 	Lifecycle  string `yaml:"lifecycle"`
 	Source     string `yaml:"source,omitempty"`
 	Digest     string `yaml:"digest"`
+	// Registry installations retain all three identities. Digest remains the
+	// Runner's installed-tree guard used for local and remote bundles alike.
+	OCIDigest     string `yaml:"oci_digest,omitempty"`
+	ContentDigest string `yaml:"content_digest,omitempty"`
+	Repository    string `yaml:"repository,omitempty"`
 }
 
 func loadModuleLock(base string) (*moduleLock, error) {
@@ -146,6 +151,14 @@ func moduleLockPath(base string) string {
 func (a *app) validateVersions(lock *moduleLock) error {
 	for _, name := range a.order {
 		mod := a.reg[name]
+		if a.cfg != nil {
+			if selected, ok := a.cfg.Modules.Values[name]; ok && strings.TrimSpace(selected.Version) != "" {
+				actual := formatModuleRelease(mod.Version, mod.Revision)
+				if actual != strings.TrimSpace(selected.Version) {
+					return fmt.Errorf("module %q is pinned to %s, got %s; run `anas module update %s`", name, strings.TrimSpace(selected.Version), actual, name)
+				}
+			}
+		}
 		current, ok := lock.Modules[name]
 		if ok && current.Version != "" {
 			if err := validateUpgrade(mod, current.Version, current.Revision); err != nil {
@@ -239,6 +252,30 @@ func (a *app) updateModuleLock(lock *moduleLock, persistBindings bool) error {
 			Lifecycle:  mod.Lifecycle,
 			Source:     "bundle:" + name,
 			Digest:     digest,
+		}
+	}
+	// When the active registry is a workspace cache view, retain its immutable
+	// Registry identities. A normal `anas lock` or `apply --update-lock` must not
+	// silently turn a remote lock back into a local bundle lock merely because
+	// the Runner is reading the unpacked cache tree.
+	if a.workspace != "" {
+		if view, err := loadWorkspaceModuleView(a.workspace); err == nil {
+			for name, record := range resolvedModules {
+				installation, ok := view.Installations[name]
+				if !ok {
+					continue
+				}
+				modulePath, moduleErr := filepath.EvalSymlinks(a.reg[name].SourceDir)
+				installedPath, installErr := filepath.EvalSymlinks(installation.Path)
+				if moduleErr != nil || installErr != nil || modulePath != installedPath {
+					continue
+				}
+				record.Source = installation.ImmutableReference
+				record.OCIDigest = installation.OCIDigest
+				record.ContentDigest = installation.ContentDigest
+				record.Repository = installation.Repository
+				resolvedModules[name] = record
+			}
 		}
 	}
 	lock.Modules = resolvedModules

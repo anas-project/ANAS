@@ -15,14 +15,17 @@ ANAS targets Linux hosts with Docker Engine and Docker Compose v2. A Btrfs
 workspace is recommended when local snapshots are required.
 
 ```sh
-# Create the self-contained workspace.
-anas init /srv/anas
+# Prepare an external configuration, then create and import it.
+cp config.example.yml ./anas.yml
+# Edit ./anas.yml before initialization.
+anas init /srv/anas --config ./anas.yml
 
-# Edit /srv/anas/config.yml, then validate its module selection.
-anas plan -c /srv/anas/config.yml
+# Resolve and cache immutable Module releases, then validate desired state.
+anas module update -w /srv/anas
+anas plan -w /srv/anas
 
-# Build, lock, and activate the first immutable deployment.
-anas apply --build --update-lock -w /srv/anas
+# Activate the first immutable deployment from published images.
+anas apply -w /srv/anas
 
 # Inspect the active deployment.
 anas status -w /srv/anas
@@ -75,6 +78,11 @@ anas apply -w /srv/anas
 ```
 
 Do not commit real credentials or generated runtime state.
+
+`/srv/anas/config.yml` is CLI-managed. For an existing workspace, update it with
+`anas config import ./anas.yml -w /srv/anas` rather than editing it directly. If the external
+configuration selects `module_source: cn` and omits `global.chinese_speedup`, ANAS persists the
+normalized `official-cn` source and `global.chinese_speedup: true`; an explicit `false` is preserved.
 
 ## Runtime model
 

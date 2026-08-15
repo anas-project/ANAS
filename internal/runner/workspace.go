@@ -1,12 +1,12 @@
 package runner
 
-// A workspace is everything one deployment owns: the user's configuration, the
+// A workspace is everything one deployment owns: the managed configuration, the
 // business data, the snapshots, and the runtime state. It exists so that a
 // backup is a single directory rather than a set of paths the user has to
 // remember to collect. Nothing outside the workspace is required to restore it.
 //
 //	<workspace>/
-//	  config.yml          user-maintained desired state
+//	  config.yml          CLI-managed normalized desired state
 //	  config.lock.yml     resolution lock, derived from the config path
 //	  data/               service data; a Btrfs subvolume when possible
 //	  snapshots/          point-in-time copies; a plain directory

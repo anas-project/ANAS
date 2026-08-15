@@ -89,10 +89,14 @@ func loadContractRegistry(moduleRoot string) (map[string]Contract, error) {
 	}
 	out := map[string]Contract{}
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		dir := filepath.Join(root, entry.Name())
+		info, statErr := os.Stat(dir)
+		if statErr != nil || !info.IsDir() {
 			continue
 		}
-		dir := filepath.Join(root, entry.Name())
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = resolved
+		}
 		path := filepath.Join(dir, "contract.yml")
 		body, err := os.ReadFile(path)
 		if err != nil {

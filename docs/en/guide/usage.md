@@ -14,7 +14,7 @@ Everything one deployment owns lives in a single directory:
 
 ```text
 <workspace>/
-  config.yml          the desired state — the only file you edit
+  config.yml          normalized desired state managed by the CLI; do not edit
   config.lock.yml     resolved module versions, bindings, and snapshot policy
   data/               service data
   userdata/           user files; deployment rollback never changes them
@@ -62,14 +62,22 @@ shell profile is the easiest way to point one at the wrong deployment.
 
 ## 2. First run
 
+Prepare an external configuration outside the workspace and import it during initialization:
+
 ```bash
-anas init /srv/anas
+anas init /srv/anas --config ./anas.yml
 ```
 
-Creates the layout above and writes a skeleton `config.yml`. On Btrfs it makes
+This creates the layout above and writes a normalized, managed `config.yml` without modifying the
+source. Without `--config`, it writes a skeleton instead. For an existing workspace, use
+`anas config import ./anas.yml -w /srv/anas`. On Btrfs it makes
 `data/` and `userdata/` separate subvolumes. Ordinary snapshots include only
 `data/`; backups include `userdata/` by default. Off Btrfs it says which
 capabilities will be unavailable and asks before continuing.
+
+When the external file selects `module_source: cn` and omits `global.chinese_speedup`, managed state
+persists `module_source: official-cn` and `global.chinese_speedup: true`, which renders as
+`CHINESE_SPEEDUP=true`. An explicit `false` is not overridden.
 
 `init` prints an `export ANAS_WORKSPACE=…` line but does **not** write it
 anywhere. To have it written to your shell profile, ask:
@@ -86,37 +94,33 @@ no effect on cron or systemd units.
 
 ### Where the module definitions come from
 
-The modules are **part of the program, not part of the deployment** — the same
-category as the `anas` binary itself, and deliberately not copied into each
-workspace. Install them beside it:
+Production installations discover Modules from the OCI catalog selected by `module_source`.
+`init --config` bootstraps current packages when no local definitions exist; then resolve the
+configuration, dependency closure, and immutable lock with:
 
-```text
-/opt/anas/
-  bin/anas
-  modules/…
+```bash
+anas module update -w /srv/anas
 ```
 
-With that layout nothing needs configuring: `anas` finds the modules next to its
-own executable, from any working directory. Running from a source checkout works
-for the same reason.
+The cache lives under `~/.cache/anas/modules/`. `.anas/module-view.json` points to a view assembled
+by OCI/content digest, which plan, lock, render, apply, and config commands use automatically.
+Deployments still freeze complete Modules, so start, rollback, and active-deployment recovery do not
+depend on Registry or cache availability.
 
-If the binary lives somewhere else — `/usr/local/bin/anas` with the modules
-elsewhere — point at them once:
+Source development can still override the Registry view:
 
 ```bash
 export ANAS_MODULE_ROOT=/opt/anas/modules
 ```
 
-The variable wants the bundle directory itself, not its parent. The `--root`
-and `--module-root` flags accept either and append `modules` when it is there;
-the environment variable does not, so a value that worked as a flag can fail as
-an export.
+The variable names the bundle directory itself, not its parent. Explicit `--module-root` and
+`ANAS_MODULE_ROOT` take priority over the workspace Registry view.
 
 Only some commands need them at all:
 
 | Needs the modules | Does not |
 | --- | --- |
-| `plan` `lock` `render` `build` `apply` | `init` `status` `start` `stop` `restart` |
+| `module update` `plan` `lock` `render` `build` `apply` | `module list/versions/install` `status` `start` `stop` `restart` |
 | `config set` `config explain` `config plan` | `deployments` `rollback` `snapshot *` `backup *` |
 
 The split is **changing things versus running things**. A rendered deployment
@@ -124,30 +128,32 @@ carries everything it needs to start, which is why a workspace restored onto a
 bare machine comes up with no modules anywhere in sight. Rendering a *new* one is
 what needs the definitions.
 
-Missing, you get `could not locate module bundle directory`. Set
-`ANAS_MODULE_ROOT` persistently, or use `--root` or `--module-root` for one
-invocation.
+On a new host with a remote lock but an empty cache, run `anas module sync -w /srv/anas`; it restores
+only locked digests and never upgrades. `could not locate module bundle directory` now means neither
+a local override nor a workspace view is available.
 
 ### Bring it up
 
-Edit `<workspace>/config.yml`, then:
+Import external configuration during initialization, or update managed state with `config import` /
+`config set`, then:
 
 ```bash
-anas apply --update-lock -w /srv/anas
+anas module update -w /srv/anas
+anas apply -w /srv/anas
 ```
 
-Published deployments pull fixed images directly. `--update-lock` writes the
-resolved module versions, capability bindings, and host snapshot policy into
-`config.lock.yml`. Source builders add `--build`. Neither option is normally
-needed later unless a locked decision or image build input changes.
+`module update` is the normal command that may change locked releases; it also freezes capability
+bindings and host snapshot policy. Published deployments pull fixed images directly. Source builders
+use a local Module override and add `--build --update-lock`.
 
 ### Mainland China mirrors
 
-Published deployments use the runtime switch:
+Selecting the CN Module source enables the runtime switch by default:
 
 ```yaml
+module_source: cn
 global:
-  chinese_speedup: true
+  # chinese_speedup: true  # inserted when omitted; explicit false opts out
 ```
 
 It selects the complete CNB runtime image set and mirrors Nextcloud App Store
@@ -189,10 +195,12 @@ the module tree — they read the deployment that was already rendered.
 
 ## 4. Changing the configuration
 
-Edit `config.yml` directly, or use the `config` commands — these read the module
-definitions, so `ANAS_MODULE_ROOT` has to be set (see §2):
+Re-import an external YAML file or use the `config` commands; do not edit managed `config.yml`
+directly. These commands read the workspace Module view; only source-development overrides need
+`ANAS_MODULE_ROOT` (see §2):
 
 ```bash
+anas config import ./anas.yml -w /srv/anas
 anas config set global.timezone Europe/Berlin -w /srv/anas
 anas config explain nextcloud.domain_prefix        # what changing it costs
 anas config plan -w /srv/anas                      # what the pending edits would do
@@ -420,9 +428,10 @@ Full details are in the [CLI JSON contracts](/reference/contracts/).
 Pass `-w`, or `cd` into one, or `anas init`.
 
 **`could not locate module bundle directory`** — the command needs the module
-definitions, and `ANAS_MODULE_ROOT` must name `modules` itself rather than the
-directory above it. Set
-`ANAS_MODULE_ROOT`; see §2.
+definitions, but this workspace has no remote Module view. Run
+`anas module sync -w WORKSPACE` when a remote lock already exists, or
+`anas module update -w WORKSPACE` for first resolution or an intentional upgrade. For source
+development, `ANAS_MODULE_ROOT` must name `modules` itself rather than its parent; see §2.
 
 **`anas rollback requires an explicit -w`** — by design; see §1.
 

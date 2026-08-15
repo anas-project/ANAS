@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+
+	"github.com/anas-project/ANAS/internal/modulestore"
 )
 
 const (
@@ -32,6 +34,9 @@ const (
 func runInit(args []string, jsonMode bool) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	shellInit := fs.String("shell-init", "", `write ANAS_WORKSPACE into the shell profile ("write" or "remove")`)
+	configSource := fs.String("config", "", "external config to import during initialization")
+	fs.StringVar(configSource, "c", "", "external config to import during initialization")
+	moduleRoot := fs.String("module-root", "", "directory containing Module bundles for config validation")
 	yes := fs.Bool("y", false, "accept prompts")
 	fs.BoolVar(yes, "yes", false, "accept prompts")
 	registerJSONFlag(fs)
@@ -40,7 +45,7 @@ func runInit(args []string, jsonMode bool) error {
 		return usageErrorf("%s", err.Error())
 	}
 	if len(positional) > 1 {
-		return usageErrorf("usage: anas init [PATH] [--shell-init write|remove] [-y] [--json]")
+		return usageErrorf("usage: anas init [PATH] [-c CONFIG] [--module-root modules] [--shell-init write|remove] [-y] [--json]")
 	}
 	if *shellInit != "" && *shellInit != shellInitWrite && *shellInit != shellInitRemove {
 		return usageErrorf("--shell-init accepts %q or %q, got %q", shellInitWrite, shellInitRemove, *shellInit)
@@ -53,7 +58,6 @@ func runInit(args []string, jsonMode bool) error {
 	if err != nil {
 		return usageErrorf("resolve %s: %v", target, err)
 	}
-
 	if *shellInit == shellInitRemove {
 		path, removed, err := removeShellInit()
 		if err != nil {
@@ -69,9 +73,54 @@ func runInit(args []string, jsonMode bool) error {
 		return nil
 	}
 
+	var source string
+	var reg map[string]Module
+	var bootstrappedView *modulestore.View
+	if strings.TrimSpace(*configSource) != "" {
+		source, err = filepath.Abs(*configSource)
+		if err != nil {
+			return usageErrorf("resolve config %s: %v", *configSource, err)
+		}
+		if source == workspaceConfigPath(workspace) {
+			return usageErrorf("initial config must remain outside the workspace; pass its external path with --config")
+		}
+		root, rootErr := locateModuleRoot(*moduleRoot)
+		if rootErr != nil {
+			if strings.TrimSpace(*moduleRoot) != "" || strings.TrimSpace(os.Getenv("ANAS_MODULE_ROOT")) != "" {
+				return preconditionErrorf("module_root_missing", "%s", rootErr.Error())
+			}
+			view, bootstrapErr := bootstrapRemoteModuleView(source, jsonMode)
+			if bootstrapErr != nil {
+				return failuref("module_bootstrap_failed", "%s", bootstrapErr.Error())
+			}
+			bootstrappedView = &view
+			root = view.ModuleRoot
+		}
+		reg, rootErr = loadRegistryDir(root)
+		if rootErr != nil {
+			return preconditionErrorf("module_root_invalid", "%s", rootErr.Error())
+		}
+		if importErr := validateConfigImportSource(source, reg); importErr != nil {
+			return preconditionErrorf("config_import_failed", "%s", importErr.Error())
+		}
+	}
+
 	created, err := createWorkspace(workspace, *yes, jsonMode)
 	if err != nil {
 		return err
+	}
+	secretsImported := 0
+	if source != "" {
+		result, importErr := importConfigIntoWorkspace(workspace, source, reg)
+		if importErr != nil {
+			return failuref("config_import_failed", "workspace was initialized, but importing %s failed: %v", source, importErr)
+		}
+		secretsImported = len(result.Secrets)
+	}
+	if bootstrappedView != nil {
+		if viewErr := saveWorkspaceModuleView(workspace, *bootstrappedView); viewErr != nil {
+			return failuref("write_failed", "workspace was initialized, but saving the Module view failed: %v", viewErr)
+		}
 	}
 
 	shellInitResult := map[string]any{"action": "none", "profile": nil, "changed": false}
@@ -89,6 +138,8 @@ func runInit(args []string, jsonMode bool) error {
 		return emitOK(map[string]any{
 			"workspace":              workspace,
 			"config_path":            workspaceConfigPath(workspace),
+			"config_source":          source,
+			"secrets_imported":       secretsImported,
 			"data_path":              dataDir(workspace),
 			"user_data_path":         userDataDir(workspace),
 			"snapshots_path":         snapshotsDir(workspace),
@@ -101,6 +152,9 @@ func runInit(args []string, jsonMode bool) error {
 		})
 	}
 	fmt.Println(workspace)
+	if source != "" {
+		fmt.Printf("imported config: %s\nnormalized config: %s\nsecrets imported: %d\n", source, workspaceConfigPath(workspace), secretsImported)
+	}
 	if *shellInit == "" {
 		printShellInitHint(workspace)
 	}

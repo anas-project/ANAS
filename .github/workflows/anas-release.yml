@@ -1,0 +1,146 @@
+name: ANAS release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "SemVer without the v prefix (for example 0.4.0)"
+        required: true
+      prerelease:
+        description: "Publish as a GitHub prerelease"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: anas-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      commit: ${{ steps.release.outputs.commit }}
+      build_date: ${{ steps.release.outputs.build_date }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release identity
+        id: release
+        env:
+          VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_NAME" != "master" ]]; then
+            echo "ANAS releases must be dispatched from master" >&2
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid SemVer: $VERSION" >&2
+            exit 1
+          fi
+          tag="v${VERSION}"
+          if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
+            echo "Immutable release tag already exists: $tag" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test release commit
+        run: go test ./...
+
+  build:
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build Linux archive
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          COMMIT: ${{ needs.validate.outputs.commit }}
+          BUILD_DATE: ${{ needs.validate.outputs.build_date }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="anas_${VERSION}_linux_${GOARCH}"
+          mkdir -p "dist/${archive}"
+          CGO_ENABLED=0 GOOS=linux go build \
+            -trimpath \
+            -ldflags "-s -w -X github.com/anas-project/ANAS/internal/buildinfo.Version=${VERSION} -X github.com/anas-project/ANAS/internal/buildinfo.Commit=${COMMIT} -X github.com/anas-project/ANAS/internal/buildinfo.Date=${BUILD_DATE}" \
+            -o "dist/${archive}/anas" \
+            ./cmd/anas
+          tar -C dist -czf "dist/${archive}.tar.gz" "$archive"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anas-linux-${{ matrix.goarch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: anas-linux-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum *.tar.gz >SHA256SUMS
+
+      - name: Create immutable GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          COMMIT: ${{ needs.validate.outputs.commit }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          prerelease=()
+          if [[ "$PRERELEASE" == "true" ]]; then
+            prerelease=(--prerelease)
+          fi
+          gh release create "$TAG" dist/*.tar.gz dist/SHA256SUMS \
+            --target "$COMMIT" \
+            --title "ANAS ${VERSION}" \
+            --generate-notes \
+            "${prerelease[@]}"

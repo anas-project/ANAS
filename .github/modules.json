@@ -1,0 +1,110 @@
+[
+  {
+    "module": "authentik",
+    "repository": "anas-module-authentik",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "collabora",
+    "repository": "anas-module-collabora",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "ddns_go",
+    "repository": "anas-module-ddns-go",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "ddns_updater",
+    "repository": "anas-module-ddns-updater",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "eturnal",
+    "repository": "anas-module-eturnal",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "freeradius",
+    "repository": "anas-module-freeradius",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["contracts"]
+  },
+  {
+    "module": "lam",
+    "repository": "anas-module-lam",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "internal/localization", "contracts"]
+  },
+  {
+    "module": "lego",
+    "repository": "anas-module-lego",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "llng",
+    "repository": "anas-module-llng",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "mariadb",
+    "repository": "anas-module-mariadb",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "meshcentral",
+    "repository": "anas-module-meshcentral",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "netbird",
+    "repository": "anas-module-netbird",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "nextcloud",
+    "repository": "anas-module-nextcloud",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "internal/localization", "contracts"]
+  },
+  {
+    "module": "oauth2_proxy",
+    "repository": "anas-module-oauth2-proxy",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "postgres",
+    "repository": "anas-module-postgres",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "samba_dc",
+    "repository": "anas-module-samba-dc",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "samba_fs",
+    "repository": "anas-module-samba-fs",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
+    "module": "traefik",
+    "repository": "anas-module-traefik",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  }
+]

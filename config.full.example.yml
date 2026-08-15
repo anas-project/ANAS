@@ -1,9 +1,16 @@
+# Module artifacts: official uses GHCR first; cn/official-cn uses CNB first and,
+# unless explicitly disabled, also enables global.chinese_speedup.
+module_source: official
+
 modules:
   samba_dc: {}
   samba_fs: {}
   postgres: {}
   llng: {}
   nextcloud:
+    # Optional exact Module release. `anas module update` records its immutable
+    # OCI digest in config.lock.yml; ordinary apply never upgrades it.
+    # version: 34.0.2-r2
     identity:
       # LDAP still provisions users and groups; this selects browser login.
       login_protocol: saml

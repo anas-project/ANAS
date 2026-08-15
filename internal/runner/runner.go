@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anas-project/ANAS/internal/buildinfo"
 	"github.com/anas-project/ANAS/internal/compose"
 	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/dns"
@@ -119,6 +120,10 @@ func dispatch(command string, args []string, jsonMode bool) error {
 		return runConfig(args, jsonMode)
 	case "admin":
 		return runAdmin(args, jsonMode)
+	case "module":
+		return runModule(args, jsonMode)
+	case "version":
+		return runVersion(args, jsonMode)
 	case "help", "-h", "--help":
 		return runHelp(jsonMode)
 	default:
@@ -133,7 +138,28 @@ func dispatch(command string, args []string, jsonMode bool) error {
 // what can be invoked rather than trying to render the same paragraphs.
 var commandNames = []string{
 	"init", "plan", "lock", "render", "build", "apply", "start", "restart",
-	"stop", "rollback", "status", "deployments", "snapshot", "backup", "config", "admin",
+	"stop", "rollback", "status", "deployments", "snapshot", "backup", "config", "admin", "module",
+	"version",
+}
+
+func runVersion(args []string, jsonMode bool) error {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	registerJSONFlag(fs)
+	if err := fs.Parse(args); err != nil {
+		return usageErrorf("version: %v", err)
+	}
+	if fs.NArg() != 0 {
+		return usageErrorf("usage: anas version [--json]")
+	}
+	if jsonMode {
+		return emitOK(map[string]any{
+			"version": buildinfo.Version,
+			"commit":  buildinfo.Commit,
+			"date":    buildinfo.Date,
+		})
+	}
+	fmt.Printf("anas %s (commit %s, built %s)\n", buildinfo.Version, buildinfo.Commit, buildinfo.Date)
+	return nil
 }
 
 func runHelp(jsonMode bool) error {
@@ -148,7 +174,7 @@ func usage() {
 	fmt.Printf(`anas - NAS service launcher
 
 Usage:
-  anas init [PATH] [--shell-init write|remove] [-y]
+  anas init [PATH] [-c CONFIG] [--module-root modules] [--shell-init write|remove] [-y]
   anas plan    [-w WORKSPACE] [--module-root modules]
   anas lock    [-w WORKSPACE] [-c config.yml]
   anas render  [-w WORKSPACE] [-c config.yml]
@@ -174,6 +200,12 @@ Usage:
   anas config plan    [-w WORKSPACE]
   anas config secret  list | get <KEY>   [-w WORKSPACE]
   anas admin local list | credential | rotate MODULE [ACCOUNT] [-w WORKSPACE]
+  anas module list [--source NAME] [-w WORKSPACE]
+  anas module versions NAME [--source NAME] [-w WORKSPACE]
+  anas module install NAME@VERSION-rN [--source NAME] [--digest sha256:...]
+  anas module sync [-w WORKSPACE]
+  anas module update [MODULE...] [-w WORKSPACE]
+  anas version [--json]
 
 Workspace:
   A workspace holds the config, data, snapshots and runtime state of one

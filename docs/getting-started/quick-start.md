@@ -1,18 +1,12 @@
 # 首次部署
 
-## 1. 创建 workspace
+## 1. 准备外部配置
 
-```bash
-anas init /srv/anas
-```
-
-`init` 是唯一会创建 workspace 的命令。它会生成 `config.yml`、`data/`、`userdata/`、`snapshots/` 和受保护的 `.anas/` 运行目录。在 Btrfs 上，`data/` 与 `userdata/` 会创建为独立 subvolume：数据恢复默认只替换 `data/`，用户文件由备份单独保护。
-
-## 2. 编辑最小配置
-
-编辑 `/srv/anas/config.yml`，选择需要的 Module，并至少设置域名、管理员邮箱、时区和必要凭据。配置结构以仓库中的 [`config.example.yml`](https://github.com/anas-project/ANAS/blob/master/config.example.yml) 为起点：
+在 workspace 外创建 `anas.yml`，选择需要的 Module，并至少设置域名、管理员邮箱、时区和必要凭据。配置结构以仓库中的 [`config.example.yml`](https://github.com/anas-project/ANAS/blob/master/config.example.yml) 为起点：
 
 ```yaml
+module_source: cn
+
 modules:
   traefik: {}
   lego:
@@ -28,26 +22,45 @@ secrets:
   cloudflare_dns_api_token: replace-me
 ```
 
-中国大陆网络环境可以启用统一镜像开关：
+不要把真实密码或 API token 提交到 Git。
+
+## 2. 初始化并导入
+
+```bash
+anas init /srv/anas --config ./anas.yml
+```
+
+`init` 创建 workspace，并把外部配置规范化写入受管的 `/srv/anas/config.yml`；外部
+`anas.yml` 不会被修改。当 `module_source: cn` 且没有声明 `global.chinese_speedup` 时，
+受管配置自动写入：
 
 ```yaml
+module_source: official-cn
 global:
   chinese_speedup: true
 ```
 
-不要把真实密码或 API token 提交到 Git。
+这会在容器环境中生成 `CHINESE_SPEEDUP=true`。显式写
+`global.chinese_speedup: false` 会保留，不会被默认值覆盖。若 workspace 已经初始化，
+使用 `anas config import ./anas.yml -w /srv/anas` 更新，不要直接编辑受管配置。
+
+`init` 还会创建 `data/`、`userdata/`、`snapshots/` 和受保护的 `.anas/` 运行目录。在
+Btrfs 上，`data/` 与 `userdata/` 会创建为独立 subvolume。
 
 ## 3. 规划并应用
 
 首次部署执行：
 
 ```bash
-anas plan -c /srv/anas/config.yml
-anas apply --update-lock -w /srv/anas
+anas module update -w /srv/anas
+anas plan -w /srv/anas
+anas apply -w /srv/anas
 ```
 
-正式发布用户直接拉取固定镜像；`--update-lock` 固化 Module 版本、能力绑定和快照策略。
-只有源码构建者才启用 `global.chinese_build_speedup` 并添加 `--build`。后续普通配置修改通常只需要：
+`module update` 从配置的 source 解析 Module release，把 OCI/content digest、能力绑定和快照
+策略写入 lock，并建立 workspace Module 视图。正式发布用户直接拉取固定镜像；只有源码
+构建者才启用 `global.chinese_build_speedup`、使用本地 `--module-root` 并添加 `--build`。
+后续普通配置修改通常只需要：
 
 ```bash
 anas apply -w /srv/anas

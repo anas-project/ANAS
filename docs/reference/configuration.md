@@ -27,6 +27,7 @@
 
 | YAML 路径 | 说明 | 状态 |
 | --- | --- | --- |
+| `module_source` | Module 分发 profile：`official`、`official-cn` 或简写 `cn` | 已用于 catalog、下载、缓存、lock 与 CN 默认 |
 | `modules.<module>` | 请求启用的 module 及其配置 | 已使用 |
 | `global.*` | 14 个部署级参数，详见下一节 | 已使用 |
 | `administration.bootstrap.username` | 引导管理员用户名 | 已使用 |
@@ -43,6 +44,7 @@
 | `rollback.snapshot.keep_auto` | 自动快照保留数 | 已使用 |
 | `secrets.<name>` | 用户提供的敏感值；按消费者声明分发 | 已使用，键集合动态 |
 | `modules.<module>.enabled` | 启用或禁用服务 | 已使用 |
+| `modules.<module>.version` | 精确 Module release，例如 `34.0.2-r4` | `module update` 解析为不可变 OCI digest |
 | `modules.<module>.depends_on[]` | 用户追加的依赖 | 已使用 |
 | `modules.<module>.identity.login_protocol` | `auto`、`oidc` 或 `saml` | 已使用 |
 | `modules.<module>.administration.local_accounts.<id>.username` | 覆盖 Module 本地账户用户名 | 非法；`fixed_username` 优先，否则使用固定 `admin_{module}` |
@@ -53,6 +55,10 @@
 map 外，拼错结构化字段会直接报错，不会静默忽略。`modules.<module>.config` 虽在 YAML
 解码层是 map，但 `config import` 和部署解析会再按 manifest 校验每个键及类型；手写 YAML
 不能绕过 `config set` 的声明检查。
+
+`module_source` 省略时为 `official`。`cn` 会在托管配置中规范化为 `official-cn`；选择
+`official-cn`/`cn` 且未显式设置 `global.chinese_speedup` 时，导入过程会持久化
+`global.chinese_speedup: true`。显式 `false` 不会被默认覆盖。
 
 `global.timezone`、`global.default_language` 和 `global.default_locale` 都是可选字段。显式值
 会在加载时校验和规范化。省略 `default_locale` 时，Runner 依次使用：包含明确地区的显式

@@ -9,13 +9,20 @@ import (
 	"sort"
 	"strings"
 
+	semver "github.com/Masterminds/semver/v3"
 	"github.com/anas-project/ANAS/internal/localization"
+	"github.com/anas-project/ANAS/internal/modulesource"
 	"gopkg.in/yaml.v3"
 )
 
 var localConfigUsernamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`)
+var moduleReleasePattern = regexp.MustCompile(`^(.+)-r([1-9][0-9]*)$`)
 
 type File struct {
+	// ModuleSource selects a distribution profile. It is retrieval policy, not
+	// a container environment value; the exact artifact identity is frozen in
+	// the resolution lock after resolution.
+	ModuleSource   string          `yaml:"module_source"`
 	Modules        ModuleSelection `yaml:"modules"`
 	Global         Global          `yaml:"global"`
 	Administration Administration  `yaml:"administration"`
@@ -281,6 +288,10 @@ func GlobalParameters() []string {
 }
 
 type ModuleConfig struct {
+	// Version selects an exact independently published Module release such as
+	// 34.0.2-r2. Resolution writes the immutable OCI digest to config.lock.yml;
+	// ordinary sync/apply never follows a moved tag.
+	Version        string               `yaml:"version"`
 	Enabled        *bool                `yaml:"enabled"`
 	DependsOn      []string             `yaml:"depends_on"`
 	Identity       ModuleIdentity       `yaml:"identity"`
@@ -340,8 +351,31 @@ func Load(path string) (*File, error) {
 	if cfg.Env == nil {
 		cfg.Env = map[string]any{}
 	}
+	cfg.ModuleSource = modulesource.DefaultName(cfg.ModuleSource)
+	if _, ok := modulesource.LookupBuiltin(cfg.ModuleSource); !ok {
+		return nil, fmt.Errorf("module_source must be official, official-cn, or cn")
+	}
+	// The CN source is a complete distribution profile: Module artifacts come
+	// from CNB and the deployed services should use the matching published image
+	// and download mirrors. An explicit false remains an escape hatch.
+	if modulesource.UsesChineseDefaults(cfg.ModuleSource) && !cfg.Global.ChineseSpeedup.Set() {
+		cfg.Global.ChineseSpeedup = BoolTrue
+	}
 	if len(cfg.Modules.Order) == 0 {
 		return nil, fmt.Errorf("missing modules")
+	}
+	for name, module := range cfg.Modules.Values {
+		if release := strings.TrimSpace(module.Version); release != "" {
+			match := moduleReleasePattern.FindStringSubmatch(release)
+			if match == nil {
+				return nil, fmt.Errorf("modules.%s.version must be <semver>-r<N>", name)
+			}
+			if _, err := semver.NewVersion(match[1]); err != nil {
+				return nil, fmt.Errorf("modules.%s.version %q is invalid: %w", name, release, err)
+			}
+			module.Version = release
+			cfg.Modules.Values[name] = module
+		}
 	}
 	cfg.Identity.Directory.Provider = strings.ToLower(strings.TrimSpace(cfg.Identity.Directory.Provider))
 	cfg.Identity.IAM.Provider = strings.ToLower(strings.TrimSpace(cfg.Identity.IAM.Provider))

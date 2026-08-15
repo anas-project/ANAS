@@ -5,11 +5,14 @@
 `apply` 是正常部署入口。每次成功应用都会生成一个新的不可变 deployment，完成物化后再切换活动状态：
 
 ```bash
+anas module update -w /srv/anas  # 首次部署或明确更新 Module release
 anas apply -w /srv/anas
 anas status -w /srv/anas
 ```
 
-首次部署或需要更新锁定决策时使用 `--build --update-lock`。
+`module update` 解析远程 Module、能力绑定和宿主机策略并更新 lock；普通 `apply` 使用既有
+lock，不会升级 Module。只有源码开发使用本地 Module 覆盖时才按需添加
+`--build --update-lock`。
 
 ## 日常操作
 

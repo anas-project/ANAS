@@ -5,8 +5,9 @@ usage() {
   cat <<'EOF'
 Usage: scripts/ci/module-revisions.sh [--base <git-ref>] [--write|--check|--print]
 
-Calculate derived-image module revisions from changes to the build contexts
-registered in .github/images.json.
+Calculate Module revisions from changes to their publishable runtime context.
+Every Module is registered in .github/modules.json; .github/images.json remains
+the catalog of Module-owned derived images whose tags follow the Module release.
 
   --write  update module.yml, localization.yml, and docker-compose.yml
   --check  fail when the checked-in values differ from the calculation
@@ -59,9 +60,10 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 }
 cd "$repo_root"
 
-catalog=.github/images.json
-if [[ ! -f "$catalog" ]]; then
-  echo "$catalog does not exist" >&2
+image_catalog=.github/images.json
+module_catalog=.github/modules.json
+if [[ ! -f "$image_catalog" || ! -f "$module_catalog" ]]; then
+  echo "$image_catalog and $module_catalog must exist" >&2
   exit 2
 fi
 if ! command -v jq >/dev/null 2>&1; then
@@ -153,16 +155,73 @@ replace_compose_tag() {
   mv "$tmp" "$file"
 }
 
-context_changed() {
-  local context
-  while IFS= read -r context; do
-    if ! git diff --quiet "$base" -- "$context"; then
+runtime_path() {
+  local path="$1" basename
+  basename="${path##*/}"
+  case "$basename" in
+    README*.md|localization.yml|.DS_Store|*_test.go|test_*.py) return 1 ;;
+  esac
+  [[ "$path" != */__pycache__/* && "$path" != modules/ddns_go/ddns-go/reconcile/reconcile ]]
+}
+
+path_context_changed() {
+  local context="$1" path
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    if runtime_path "$path"; then
       return 0
     fi
-    if [[ -n "$(git ls-files --others --exclude-standard -- "$context")" ]]; then
+  done < <(git diff --name-only "$base" -- "$context")
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    if runtime_path "$path"; then
+      return 0
+    fi
+  done < <(git ls-files --others --exclude-standard -- "$context")
+  return 1
+}
+
+catalog_entry_changed() {
+  local catalog="$1" filter="$2" before after
+  # Introducing a catalog makes existing releases discoverable; it does not
+  # change their runtime content and must not manufacture a revision bump for
+  # every Module during the first independent-package release.
+  if ! git cat-file -e "${base}:${catalog}" 2>/dev/null; then
+    return 1
+  fi
+  before="$(git show "${base}:${catalog}" 2>/dev/null | jq -cS "$filter" 2>/dev/null || true)"
+  after="$(jq -cS "$filter" "$catalog")"
+  [[ "$before" != "$after" ]]
+}
+
+module_context_changed() {
+  local module="$1" context
+  # The packager is an input to every bundle. Its initial introduction only
+  # exposes existing releases, while later behavior changes produce new bytes
+  # and therefore require a new revision for every Module.
+  for context in cmd/package-module internal/modulepackage; do
+    if git ls-tree -r --name-only "$base" -- "$context" | grep -q . && path_context_changed "$context"; then
       return 0
     fi
   done
+  if path_context_changed "modules/${module}"; then
+    return 0
+  fi
+  while IFS= read -r context; do
+    [[ -z "$context" ]] && continue
+    if path_context_changed "$context"; then
+      return 0
+    fi
+  done < <(jq -r --arg module "$module" '.[] | select(.module == $module) | .shared_contexts[]?' "$module_catalog")
+  if catalog_entry_changed "$module_catalog" "[.[] | select(.module == \"$module\")]"; then
+    return 0
+  fi
+  if catalog_entry_changed "$image_catalog" "[.[] | select(.module == \"$module\")]"; then
+    return 0
+  fi
+  if [[ -f .github/mirrors.json ]] && catalog_entry_changed .github/mirrors.json "[.[] | select(.modules | index(\"$module\"))]"; then
+    return 0
+  fi
   return 1
 }
 
@@ -179,7 +238,7 @@ metadata_matches() {
   fi
   while IFS= read -r image; do
     grep -Fq "/${image}:${version}-r${revision}" "$compose" || return 1
-  done < <(jq -r --arg module "$module" '.[] | select(.module == $module) | .image' "$catalog")
+  done < <(jq -r --arg module "$module" '.[] | select(.module == $module) | .image' "$image_catalog")
 }
 
 write_metadata() {
@@ -203,7 +262,7 @@ write_metadata() {
     if ! grep -Fq "/${image}:${version}-r${revision}" "$compose"; then
       replace_compose_tag "$compose" "$image" "${version}-r${revision}"
     fi
-  done < <(jq -r --arg module "$module" '.[] | select(.module == $module) | .image' "$catalog")
+  done < <(jq -r --arg module "$module" '.[] | select(.module == $module) | .image' "$image_catalog")
 }
 
 if ! jq -e '
@@ -213,8 +272,30 @@ if ! jq -e '
     (.image | type == "string" and test("^[a-z0-9-]+$")) and
     (.context | type == "string" and length > 0)
   )
-' "$catalog" >/dev/null; then
-  echo "$catalog is not a valid derived-image catalog" >&2
+' "$image_catalog" >/dev/null; then
+  echo "$image_catalog is not a valid derived-image catalog" >&2
+  exit 2
+fi
+
+if ! jq -e '
+  type == "array" and length > 0 and
+  all(.[ ];
+    (.module | type == "string" and test("^[a-z][a-z0-9_]*$")) and
+    (.repository | type == "string" and test("^anas-module-[a-z0-9-]+$")) and
+    (.platforms | type == "array" and length > 0 and all(.[]; . == "linux/amd64" or . == "linux/arm64")) and
+    ((.shared_contexts // []) | type == "array")
+  ) and
+  ([.[].module] | length == (unique | length)) and
+  ([.[].repository] | length == (unique | length))
+' "$module_catalog" >/dev/null; then
+  echo "$module_catalog is not a valid Module package catalog" >&2
+  exit 2
+fi
+
+actual_modules="$(find modules -mindepth 2 -maxdepth 2 -type f -name module.yml | sed 's#^modules/##;s#/module.yml$##' | LC_ALL=C sort)"
+registered_modules="$(jq -r '.[].module' "$module_catalog" | LC_ALL=C sort)"
+if ! diff -u <(printf '%s\n' "$actual_modules") <(printf '%s\n' "$registered_modules"); then
+  echo "Every Module must appear exactly once in $module_catalog" >&2
   exit 2
 fi
 
@@ -245,7 +326,7 @@ while IFS= read -r module; do
   elif [[ "$version" != "$old_version" ]]; then
     expected_revision=1
     reason=version-changed
-  elif jq -r --arg module "$module" '.[] | select(.module == $module) | .context' "$catalog" | context_changed; then
+  elif module_context_changed "$module"; then
     expected_revision=$((old_revision + 1))
     reason=context-changed
   else
@@ -260,7 +341,7 @@ while IFS= read -r module; do
     echo "revision metadata for $module is stale; run: scripts/ci/module-revisions.sh --base $base --write" >&2
     drift=1
   fi
-done < <(jq -r '.[].module' "$catalog" | LC_ALL=C sort -u)
+done < <(jq -r '.[].module' "$module_catalog" | LC_ALL=C sort -u)
 
 if [[ "$mode" == write ]]; then
   echo "Revision metadata updated from base $base."

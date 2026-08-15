@@ -3,7 +3,10 @@ package runner
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/anas-project/ANAS/internal/config"
 )
 
 func TestVersionConstraintHyphenRange(t *testing.T) {
@@ -99,6 +102,25 @@ func TestDependencyVersionConstraints(t *testing.T) {
 		if !tt.wantErr && err != nil {
 			t.Fatalf("%s: %v", tt.name, err)
 		}
+	}
+}
+
+func TestValidateVersionsEnforcesConfiguredExactRelease(t *testing.T) {
+	selection := config.NewModuleSelection("selected")
+	selected := selection.Values["selected"]
+	selected.Version = "1.2.3-r2"
+	selection.Values["selected"] = selected
+	a := &app{
+		cfg:   &config.File{Modules: selection},
+		order: []string{"selected"},
+		reg:   map[string]Module{"selected": {Name: "selected", Version: "1.2.3", Revision: 2}},
+	}
+	if err := a.validateVersions(&moduleLock{Modules: map[string]moduleLockRecord{}}); err != nil {
+		t.Fatal(err)
+	}
+	a.reg["selected"] = Module{Name: "selected", Version: "1.2.3", Revision: 1}
+	if err := a.validateVersions(&moduleLock{Modules: map[string]moduleLockRecord{}}); err == nil || !strings.Contains(err.Error(), "pinned to 1.2.3-r2") {
+		t.Fatalf("configured release mismatch error = %v", err)
 	}
 }
 

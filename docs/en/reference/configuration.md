@@ -18,6 +18,7 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 
 | YAML path | Meaning | Status |
 | --- | --- | --- |
+| `module_source` | Module distribution profile: `official`, `official-cn`, or the `cn` shorthand | used for catalog, download, cache, lock, and CN defaults |
 | `modules.<module>` | Requested modules and their settings | used |
 | `global.*` | 14 deployment-wide parameters | used |
 | `administration.bootstrap.username` | Bootstrap administrator username | used |
@@ -34,6 +35,7 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 | `rollback.snapshot.keep_auto` | Automatic snapshot retention | used |
 | `secrets.<name>` | User secret distributed to declared consumers | used; dynamic keys |
 | `modules.<module>.enabled` | Enable or disable a service | used |
+| `modules.<module>.version` | Exact Module release such as `34.0.2-r4` | `module update` resolves it to an immutable OCI digest |
 | `modules.<module>.depends_on[]` | User-added dependencies | used |
 | `modules.<module>.identity.login_protocol` | `auto`, `oidc`, or `saml` | used |
 | `modules.<module>.administration.local_accounts.<id>.username` | Module-local username override | invalid; usernames are ANAS-managed |
@@ -41,6 +43,10 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 | `env.<KEY>` | Raw environment escape hatch | open map |
 
 `config.Load` uses `KnownFields(true)`. Misspelled structured fields fail instead of being silently ignored, except inside the intentionally open `secrets`, `modules`, and `env` maps. Although `modules.<module>.config` is a map at YAML decode time, `config import` and deployment resolution now validate every key and value type against the manifest; hand-written YAML cannot bypass the declaration checks used by `config set`.
+
+`module_source` defaults to `official`. The `cn` shorthand is normalized to `official-cn` in managed
+configuration. When `official-cn` / `cn` is selected and `global.chinese_speedup` is not explicitly
+set, importing persists `global.chinese_speedup: true`; an explicit `false` is never overridden.
 
 `global.timezone`, `global.default_language`, and `global.default_locale` are optional and explicit values are validated and normalized. When `default_locale` is absent, the runner uses an explicit region-bearing `default_language`, then host locale, CLDR likely-subtag inference, and finally `en-US`. A language directly becomes the locale only when `language.Region()` returns `Exact`: `en-GB` qualifies, while `en` and `zh-Hans` do not replace an available host locale. `config list` and rendered environments show the final BCP 47 value.
 

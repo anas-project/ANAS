@@ -1,18 +1,14 @@
 # First deployment
 
-## 1. Create a workspace
+## 1. Prepare an external configuration
 
-```bash
-anas init /srv/anas
-```
-
-`init` is the only command that creates a workspace. It generates `config.yml`, `data/`, `userdata/`, `snapshots/`, and the protected `.anas/` runtime directory. On Btrfs, `data/` and `userdata/` are separate subvolumes: data recovery replaces `data/` by default, while backups protect user files separately.
-
-## 2. Edit the minimum configuration
-
-Edit `/srv/anas/config.yml`, select the required modules, and set at least the domain, administrator email, timezone, and required credentials. Use the repository's [`config.example.yml`](https://github.com/anas-project/ANAS/blob/master/config.example.yml) as the starting point:
+Create `anas.yml` outside the workspace, select the required modules, and set at least the domain,
+administrator email, timezone, and credentials. Use the repository's
+[`config.example.yml`](https://github.com/anas-project/ANAS/blob/master/config.example.yml) as a starting point:
 
 ```yaml
+module_source: cn
+
 modules:
   traefik: {}
   lego:
@@ -28,25 +24,46 @@ secrets:
   cloudflare_dns_api_token: replace-me
 ```
 
-For networks in mainland China, enable the unified mirror switch:
+Never commit real passwords or API tokens.
+
+## 2. Initialize and import
+
+```bash
+anas init /srv/anas --config ./anas.yml
+```
+
+`init` creates the workspace and writes a normalized copy to the managed
+`/srv/anas/config.yml`; it never modifies the external `anas.yml`. When `module_source: cn` is set
+and `global.chinese_speedup` is absent, the managed configuration contains:
 
 ```yaml
+module_source: official-cn
 global:
   chinese_speedup: true
 ```
 
-Never commit real passwords or API tokens.
+This renders as `CHINESE_SPEEDUP=true` in the container environment. An explicit
+`global.chinese_speedup: false` is preserved. For an existing workspace, update it with
+`anas config import ./anas.yml -w /srv/anas` instead of editing the managed file.
+
+`init` also creates `data/`, `userdata/`, `snapshots/`, and the protected `.anas/` runtime directory.
+On Btrfs, `data/` and `userdata/` are separate subvolumes.
 
 ## 3. Plan and apply
 
 For the first deployment:
 
 ```bash
-anas plan -c /srv/anas/config.yml
-anas apply --update-lock -w /srv/anas
+anas module update -w /srv/anas
+anas plan -w /srv/anas
+anas apply -w /srv/anas
 ```
 
-Published deployments pull fixed images directly. `--update-lock` freezes module versions, capability bindings, and the snapshot policy. Only source builders enable `global.chinese_build_speedup` and add `--build`. A normal later configuration change usually needs only:
+`module update` resolves releases from the configured source, records OCI/content digests,
+capability bindings, and snapshot policy in the lock, and creates the workspace Module view.
+Published deployments pull fixed images directly. Only source builders enable
+`global.chinese_build_speedup`, use a local `--module-root`, and add `--build`. A normal later
+configuration change usually needs only:
 
 ```bash
 anas apply -w /srv/anas

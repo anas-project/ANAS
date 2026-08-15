@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/config"
+	"github.com/anas-project/ANAS/internal/modulesource"
 	"gopkg.in/yaml.v3"
 )
 
@@ -147,6 +148,37 @@ func normalizeImportedConfig(source string, reg map[string]Module) (configImport
 	}
 	root := doc.Content[0]
 	result := configImportResult{}
+
+	// Persist the CN source's runtime defaults into normalized desired state.
+	// This makes the automatic behavior visible to `config plan`, backups and
+	// operators instead of leaving it as an in-memory side effect of resolution.
+	if source := mappingValue(root, "module_source"); source != nil {
+		if source.Kind != yaml.ScalarNode {
+			return result, fmt.Errorf("module_source must be a scalar")
+		}
+		source.Value = modulesource.DefaultName(source.Value)
+		if _, ok := modulesource.LookupBuiltin(source.Value); !ok {
+			return result, fmt.Errorf("module_source must be official, official-cn, or cn")
+		}
+		if modulesource.UsesChineseDefaults(source.Value) {
+			global := ensureMappingValue(root, "global")
+			if global.Kind != yaml.MappingNode {
+				return result, fmt.Errorf("global must be a mapping")
+			}
+			chineseSpeedup := mappingValue(global, "chinese_speedup")
+			if chineseSpeedup == nil {
+				global.Content = append(global.Content,
+					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "chinese_speedup"},
+					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: "true"})
+			} else if chineseSpeedup.Kind == yaml.ScalarNode &&
+				(chineseSpeedup.Tag == "!!null" || strings.TrimSpace(chineseSpeedup.Value) == "") {
+				// YAML null and the empty optional-bool spelling have the same
+				// meaning as omission; persist the resolved default instead.
+				chineseSpeedup.Tag = "!!bool"
+				chineseSpeedup.Value = "true"
+			}
+		}
+	}
 
 	sensitiveEnv := map[string]bool{}
 	localEnv := map[string]importedConfigSecret{}
@@ -298,6 +330,16 @@ func mappingValue(mapping *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
+func ensureMappingValue(mapping *yaml.Node, key string) *yaml.Node {
+	if value := mappingValue(mapping, key); value != nil {
+		return value
+	}
+	value := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	mapping.Content = append(mapping.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, value)
+	return value
+}
+
 func removeMappingKey(mapping *yaml.Node, key string) {
 	if mapping == nil || mapping.Kind != yaml.MappingNode {
 		return
@@ -324,21 +366,12 @@ func importConfigIntoWorkspace(workspace, source string, reg map[string]Module) 
 	if err != nil {
 		return result, err
 	}
+	if err := validateNormalizedImportedConfig(result.Normalized, reg); err != nil {
+		return result, err
+	}
 	base := stateDir(workspace)
 	if err := os.MkdirAll(base, 0700); err != nil {
 		return result, err
-	}
-	validation := filepath.Join(base, ".config-import-validation.yml")
-	if err := os.WriteFile(validation, result.Normalized, 0600); err != nil {
-		return result, err
-	}
-	defer os.Remove(validation)
-	loaded, err := config.Load(validation)
-	if err != nil {
-		return result, fmt.Errorf("normalized config is invalid: %w", err)
-	}
-	if err := validateConfiguredParameters(loaded, reg); err != nil {
-		return result, fmt.Errorf("normalized config is invalid: %w", err)
 	}
 
 	store, err := loadSecretStore(base)
@@ -369,6 +402,42 @@ func importConfigIntoWorkspace(workspace, source string, reg map[string]Module) 
 		return result, err
 	}
 	return result, nil
+}
+
+func validateConfigImportSource(source string, reg map[string]Module) error {
+	result, err := normalizeImportedConfig(source, reg)
+	if err != nil {
+		return err
+	}
+	return validateNormalizedImportedConfig(result.Normalized, reg)
+}
+
+func validateNormalizedImportedConfig(normalized []byte, reg map[string]Module) error {
+	validation, err := os.CreateTemp("", "anas-config-import-validation-*.yml")
+	if err != nil {
+		return err
+	}
+	validationPath := validation.Name()
+	defer os.Remove(validationPath)
+	if err := validation.Chmod(0600); err != nil {
+		validation.Close()
+		return err
+	}
+	if _, err := validation.Write(normalized); err != nil {
+		validation.Close()
+		return err
+	}
+	if err := validation.Close(); err != nil {
+		return err
+	}
+	loaded, err := config.Load(validationPath)
+	if err != nil {
+		return fmt.Errorf("normalized config is invalid: %w", err)
+	}
+	if err := validateConfiguredParameters(loaded, reg); err != nil {
+		return fmt.Errorf("normalized config is invalid: %w", err)
+	}
+	return nil
 }
 
 type importFile struct {

@@ -16,6 +16,61 @@ func importTestRegistry(t *testing.T) map[string]Module {
 	return reg
 }
 
+func TestConfigImportPersistsCNSourceRuntimeDefault(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "external.yml")
+	if err := os.WriteFile(source, []byte(`module_source: cn
+modules:
+  traefik: {}
+global:
+  base_domain: nas.test
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := normalizeImportedConfig(source, importTestRegistry(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(result.Normalized)
+	if !strings.Contains(body, "chinese_speedup: true") {
+		t.Fatalf("normalized config did not persist CN runtime default:\n%s", body)
+	}
+	if !strings.Contains(body, "module_source: official-cn") {
+		t.Fatalf("normalized config did not canonicalize CN source:\n%s", body)
+	}
+
+	if err := os.WriteFile(source, []byte(`module_source: official-cn
+modules:
+  traefik: {}
+global:
+  chinese_speedup: false
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err = normalizeImportedConfig(source, importTestRegistry(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(result.Normalized), "chinese_speedup: true") {
+		t.Fatalf("explicit opt-out was replaced:\n%s", result.Normalized)
+	}
+
+	if err := os.WriteFile(source, []byte(`module_source: cn
+modules:
+  traefik: {}
+global:
+  chinese_speedup: null
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err = normalizeImportedConfig(source, importTestRegistry(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(result.Normalized), "chinese_speedup: true") {
+		t.Fatalf("null CN runtime default was not persisted:\n%s", result.Normalized)
+	}
+}
+
 func TestConfigImportExtractsOnlyLifecycleManagedSecrets(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.MkdirAll(stateDir(workspace), 0700); err != nil {

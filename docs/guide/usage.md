@@ -13,7 +13,7 @@
 
 ```text
 <workspace>/
-  config.yml          期望状态 —— 唯一需要你手工编辑的文件
+  config.yml          由 CLI 管理的规范化期望状态，不要手工编辑
   config.lock.yml     解析出的 module 版本、能力绑定与快照策略
   data/               业务数据
   userdata/           用户文件；deployment 回滚不修改它
@@ -55,13 +55,21 @@
 
 ## 二、第一次运行
 
+准备 workspace 外部的配置文件后，在初始化时导入：
+
 ```bash
-anas init /srv/anas
+anas init /srv/anas --config ./anas.yml
 ```
 
-建立上面的目录结构并写出 `config.yml` 骨架。在 Btrfs 上还会把 `data/` 和
+建立上面的目录结构并将外部配置规范化写入受管的 `config.yml`。源文件保持不变；若不传
+`--config`，则写出配置骨架。已有 workspace 使用
+`anas config import ./anas.yml -w /srv/anas`。在 Btrfs 上还会把 `data/` 和
 `userdata/` 建成独立 subvolume。普通快照默认只包含 `data/`；备份默认同时包含
 `userdata/`。不在 Btrfs 上时会说明哪些能力将不可用，并等你确认。
+
+当外部配置写 `module_source: cn` 且没有 `global.chinese_speedup` 时，受管配置会自动写入
+`module_source: official-cn` 和 `global.chinese_speedup: true`，渲染后即
+`CHINESE_SPEEDUP=true`。显式 `false` 不会被覆盖。
 
 `init` 会打印一行 `export ANAS_WORKSPACE=…`，但**不会写进任何文件**。要写进
 shell 配置得显式要求：
@@ -77,61 +85,63 @@ cron 和 systemd 单元不生效。
 
 ### module 定义从哪来
 
-module 是**程序的一部分，不是部署的一部分**——和 `anas` 二进制同类，因此刻意不复制进
-每个 workspace。把它们装在二进制旁边：
+正式安装从 `module_source` 指向的 OCI catalog 发现 Module。`init --config` 在没有本地
+Module 时引导缓存当前包；随后用以下命令解析配置、依赖闭包和不可变 lock：
 
-```text
-/opt/anas/
-  bin/anas
-  modules/…
+```bash
+anas module update -w /srv/anas
 ```
 
-这个布局下**什么都不用配**：`anas` 会在自己可执行文件旁边找到 modules，无论从哪个目录
-运行。直接在源码检出里运行也是同理。
+缓存位于 `~/.cache/anas/modules/`，workspace 的 `.anas/module-view.json` 指向按
+OCI/content digest 组装的只读视图。`plan`、`lock`、`render`、`apply` 和 `config` 命令会
+自动使用该视图；deployment 仍冻结完整 Module，因此启动、回滚与恢复活动 deployment 不
+依赖 Registry 或缓存继续存在。
 
-如果二进制装在别处（比如 `/usr/local/bin/anas` 而 modules 在另一处），指一次即可：
+源码开发仍可显式覆盖：
 
 ```bash
 export ANAS_MODULE_ROOT=/opt/anas/modules
 ```
 
-这个变量要的是 bundle 目录**本身**，不是它的上级。`--root` 和 `--module-root` 参数两种
-都接受、发现下面有 `modules` 会自动补上，环境变量不会——所以作为参数能用的值，
-写成 export 可能会失败。
+这个变量要的是 bundle 目录**本身**，不是它的上级。显式 `--module-root` 和
+`ANAS_MODULE_ROOT` 的优先级高于 workspace 远程视图。
 
 而且只有一部分命令需要它们：
 
 | 需要 modules | 不需要 |
 | --- | --- |
-| `plan` `lock` `render` `build` `apply` | `init` `status` `start` `stop` `restart` |
+| `module update` `plan` `lock` `render` `build` `apply` | `module list/versions/install` `status` `start` `stop` `restart` |
 | `config set` `config explain` `config plan` | `deployments` `rollback` `snapshot *` `backup *` |
 
 这条分界是**改东西 vs 跑东西**。渲染好的 deployment 自带了启动所需的一切——这正是
 把 workspace 恢复到一台裸机上、modules 根本不在场也能起来的原因。渲染一个**新的**才
 需要那些定义。
 
-找不到时会报 `could not locate module bundle directory`。可以设置持久的
-`ANAS_MODULE_ROOT`，也可以在单次调用中使用 `--root` 或 `--module-root`。
+新主机已有远程 lock 但缓存缺失时运行 `anas module sync -w /srv/anas`；它只恢复 lock 中
+的 digest，不升级。找不到本地覆盖或 workspace 视图时才会报
+`could not locate module bundle directory`。
 
 ### 启动
 
-编辑 `<workspace>/config.yml`，然后：
+初始化时导入外部配置，或用 `config import` / `config set` 更新受管配置，然后：
 
 ```bash
-anas apply --update-lock -w /srv/anas
+anas module update -w /srv/anas
+anas apply -w /srv/anas
 ```
 
-正式发布用户直接拉取固定镜像；`--update-lock` 把解析出的 module 版本、能力绑定和宿主机
-快照策略写进 `config.lock.yml`。源码构建者才添加 `--build`。首次之后通常不需要这两个
-选项，除非要显式改变锁定决策或镜像构建输入。
+`module update` 是普通流程中唯一改变已锁 Module release 的命令，同时固化能力绑定和宿主
+快照策略。正式发布用户直接拉取固定镜像；源码构建者才用本地 Module 覆盖并添加
+`--build --update-lock`。
 
 ### 中国大陆镜像
 
-正式发布用户只需打开运行时开关：
+选择 CN Module 源会默认同时打开运行时开关：
 
 ```yaml
+module_source: cn
 global:
-  chinese_speedup: true
+  # chinese_speedup: true  # 省略时自动补入；显式 false 可关闭
 ```
 
 它把全部运行镜像切换到 CNB，并代理 Nextcloud App Store 与运行时 GitHub 下载。
@@ -172,10 +182,12 @@ anas deployments inspect <id>
 
 ## 四、修改配置
 
-直接编辑 `config.yml`，或者用 `config` 系列命令——它们要读 module 定义，因此需要设好
+重新导入 workspace 外部的 YAML，或者使用 `config` 系列命令。不要直接编辑受管的
+`config.yml`。这些命令读取 workspace Module 视图；源码开发覆盖时才需要设置
 `ANAS_MODULE_ROOT`（见第二节）：
 
 ```bash
+anas config import ./anas.yml -w /srv/anas
 anas config set global.timezone Europe/Berlin -w /srv/anas
 anas config explain nextcloud.domain_prefix        # 改它的代价是什么
 anas config plan -w /srv/anas                      # 当前待应用的改动会做什么
@@ -389,7 +401,9 @@ ExecStart=/usr/local/bin/anas backup create -w /srv/anas --to /mnt/backup -y
 `cd` 进去，或者 `anas init`。
 
 **`could not locate module bundle directory`** —— 这条命令需要 module 定义，而且
-`ANAS_MODULE_ROOT` 要指向 `modules` 本身，不是它的上级目录。见第二节。
+workspace 还没有远程 Module 视图。已有远程 lock 时运行
+`anas module sync -w WORKSPACE`；需要首次解析或升级时运行 `anas module update -w WORKSPACE`。
+源码开发中，`ANAS_MODULE_ROOT` 要指向 `modules` 本身，不是它的上级目录。见第二节。
 
 **`anas rollback requires an explicit -w`** —— 设计如此，见第一节。
 

@@ -1,6 +1,13 @@
+# Module artifacts: official uses GHCR first; cn/official-cn uses CNB first and,
+# unless explicitly disabled, also enables global.chinese_speedup.
+module_source: official
+
 modules:
   traefik: {}
   lego:
+    # Optional exact Module release. `anas module update` records its immutable
+    # OCI digest in config.lock.yml; ordinary apply never upgrades it.
+    # version: 1.0.0-r1
     config:
       dns_provider: cloudflare
 global:

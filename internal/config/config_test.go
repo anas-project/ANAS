@@ -40,6 +40,81 @@ env:
 	}
 }
 
+func TestCNModuleSourceEnablesChineseRuntimeDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`module_source: cn
+modules:
+  traefik: {}
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ModuleSource != "official-cn" {
+		t.Fatalf("module source = %q", cfg.ModuleSource)
+	}
+	if !cfg.Global.ChineseSpeedup.True() {
+		t.Fatal("CN module source did not enable chinese_speedup")
+	}
+	if got := cfg.BaseEnv()["ANAS_IMAGE_REGISTRY"]; got != "docker.cnb.cool/anas.dev/anas" {
+		t.Fatalf("ANAS_IMAGE_REGISTRY = %q", got)
+	}
+}
+
+func TestCNModuleSourceRespectsExplicitChineseSpeedupFalse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`module_source: official-cn
+modules:
+  traefik: {}
+global:
+  chinese_speedup: false
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Global.ChineseSpeedup.True() {
+		t.Fatal("explicit chinese_speedup=false was overridden")
+	}
+	if _, ok := cfg.BaseEnv()["ANAS_IMAGE_REGISTRY"]; ok {
+		t.Fatal("CN runtime registry was injected despite explicit opt-out")
+	}
+}
+
+func TestUnknownModuleSourceIsRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte("module_source: typo\nmodules:\n  traefik: {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "module_source") {
+		t.Fatalf("error = %v, want module_source validation", err)
+	}
+}
+
+func TestModuleReleaseSelectionIsValidated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte("modules:\n  traefik:\n    version: 3.7.10-r2\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Modules.Values["traefik"].Version != "3.7.10-r2" {
+		t.Fatalf("version = %q", cfg.Modules.Values["traefik"].Version)
+	}
+	if err := os.WriteFile(path, []byte("modules:\n  traefik:\n    version: latest\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "modules.traefik.version") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestLoadNormalizesAndValidatesGlobalLocalization(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
 	if err := os.WriteFile(path, []byte(`modules:

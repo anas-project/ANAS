@@ -5,11 +5,14 @@
 `apply` is the normal deployment entry point. Every successful apply creates a new immutable deployment before switching the active state:
 
 ```bash
+anas module update -w /srv/anas  # first deployment or an intentional Module release update
 anas apply -w /srv/anas
 anas status -w /srv/anas
 ```
 
-Use `--build --update-lock` for the first deployment or when intentionally updating locked decisions.
+`module update` resolves remote Modules, capability bindings, and host policy into the lock. Ordinary
+`apply` uses that lock and never upgrades a Module. Only source development with a local Module
+override normally adds `--build --update-lock`.
 
 ## Normal operation
 

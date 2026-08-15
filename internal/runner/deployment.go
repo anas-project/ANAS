@@ -188,7 +188,7 @@ func parsePrepareOptions(name string, args []string) (prepareOptions, error) {
 	if err := validateManagedConfig(workspace, out.cfgPath); err != nil {
 		return out, preconditionErrorf("config_not_managed", "%s", err.Error())
 	}
-	root, err := locateModuleRoot(out.moduleRoot)
+	root, err := locateModuleRootForWorkspace(out.moduleRoot, out.workspace)
 	if err != nil {
 		return out, preconditionErrorf("module_root_missing", "%s", err.Error())
 	}
@@ -221,7 +221,7 @@ func runLock(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("contract_root_invalid", "%s", err.Error())
 	}
-	a := &app{cfg: cfg, cfgPath: opts.cfgPath, reg: reg, contracts: contracts, lock: lock, resolvedBindings: map[string]map[string]string{}}
+	a := &app{workspace: opts.workspace, cfg: cfg, cfgPath: opts.cfgPath, reg: reg, contracts: contracts, lock: lock, resolvedBindings: map[string]map[string]string{}}
 	a.env, a.envOwner = cfg.BaseEnvWithOwners()
 	a.base = opts.base
 	if err := a.loadImportedSecrets(); err != nil {
@@ -277,6 +277,8 @@ func moduleLockDocument(lock *moduleLock) []map[string]any {
 		out = append(out, map[string]any{
 			"name": name, "version": record.Version,
 			"revision": record.Revision, "app_version": record.AppVersion, "digest": record.Digest,
+			"source": record.Source, "repository": record.Repository,
+			"oci_digest": record.OCIDigest, "content_digest": record.ContentDigest,
 		})
 	}
 	return out
@@ -326,7 +328,7 @@ func runPlan(args []string, jsonMode bool) error {
 	if explicit == "" {
 		explicit = *rootAlias
 	}
-	located, err := locateModuleRoot(explicit)
+	located, err := locateModuleRootForWorkspace(explicit, workspace)
 	if err != nil {
 		return preconditionErrorf("module_root_missing", "%s", err.Error())
 	}
@@ -891,7 +893,7 @@ func runApply(args []string, jsonMode bool) error {
 		if explicit == "" {
 			explicit = *rootAlias
 		}
-		located, err := locateModuleRoot(explicit)
+		located, err := locateModuleRootForWorkspace(explicit, workspace)
 		if err != nil {
 			return preconditionErrorf("module_root_missing", "%s", err.Error())
 		}

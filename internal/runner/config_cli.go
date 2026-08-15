@@ -45,14 +45,6 @@ func runConfig(args []string, jsonMode bool) error {
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
-	root, err := locateModuleRoot(*rootFlag)
-	if err != nil {
-		return preconditionErrorf("module_root_missing", "%s", err.Error())
-	}
-	reg, err := loadRegistryDir(root)
-	if err != nil {
-		return preconditionErrorf("module_root_invalid", "%s", err.Error())
-	}
 	// `explain` only reads the module registry, so it stays usable outside a
 	// workspace; the other subcommands act on one and must resolve it.
 	//
@@ -79,6 +71,14 @@ func runConfig(args []string, jsonMode bool) error {
 		}
 		base = stateDir(workspace)
 		*cfgPath = absolutePath(configPathFor(workspace, *cfgPath))
+	}
+	root, err := locateModuleRootForWorkspace(*rootFlag, workspace)
+	if err != nil {
+		return preconditionErrorf("module_root_missing", "%s", err.Error())
+	}
+	reg, err := loadRegistryDir(root)
+	if err != nil {
+		return preconditionErrorf("module_root_invalid", "%s", err.Error())
 	}
 
 	switch subcommand {

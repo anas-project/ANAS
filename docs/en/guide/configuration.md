@@ -2,7 +2,7 @@
 
 ## File responsibilities
 
-`<workspace>/config.yml` is normalized desired state managed by the ANAS CLI, not a hand-edited input file. External YAML enters only through `anas config import SOURCE -w WORKSPACE`; the source is never modified. `config.lock.yml` records resolved module versions, providers, and host policy. Do not edit workspace configuration or `.anas/` state by hand: plan, lock, render, and apply verify the managed-config digest and reject out-of-band changes.
+`<workspace>/config.yml` is normalized desired state managed by the ANAS CLI, not a hand-edited input file. Import external YAML with `anas init WORKSPACE --config SOURCE` on first creation, or `anas config import SOURCE -w WORKSPACE` for an existing workspace. Neither form modifies the source. `config.lock.yml` records resolved module versions, providers, and host policy. Do not edit workspace configuration or `.anas/` state by hand: plan, lock, render, and apply verify the managed-config digest and reject out-of-band changes.
 
 The structured YAML contains:
 
@@ -12,21 +12,34 @@ The structured YAML contains:
 - `identity` for directory and IAM provider selection;
 - `dynamic_dns` for the selected DDNS implementation and DNS vendor;
 - `rollback` for local snapshot policy;
-- `modules.<name>` for enablement, identity protocol, and module parameters;
+- `modules.<name>` for an exact release, enablement, identity protocol, and module parameters;
 - `secrets` for explicitly supplied sensitive values;
 - `env` for raw environment variables that have no structured field.
 
 ## Change and preview
 
-Import an external configuration after initialization, then modify it only through the CLI:
+Import an external configuration during initialization, or re-import it for an existing workspace;
+then modify managed state only through the CLI:
 
 ```bash
+anas init /srv/anas --config ./my-config.yml
+# For an existing workspace:
 anas config import ./my-config.yml -w /srv/anas
+anas module update -w /srv/anas
 anas config explain nextcloud.domain_prefix
 anas config set global.timezone Asia/Singapore -w /srv/anas
 anas config plan -w /srv/anas
 anas apply -w /srv/anas
 ```
+
+When the source selects `module_source: cn` and omits `global.chinese_speedup`, the managed
+configuration normalizes the source to `official-cn` and persists `global.chinese_speedup: true`.
+The rendered environment contains `CHINESE_SPEEDUP=true`. An explicit `false` is preserved.
+
+To pin a Module release, set `modules.<name>.version` in the external configuration using
+`<semver>-r<N>`, for example `34.0.2-r2`. `anas module update` resolves that constraint and records
+an immutable OCI digest; ordinary plan, render, and apply operations never upgrade it. On a new host,
+`anas module sync` restores the same packages from the existing lock.
 
 With an active running deployment, `config set` immediately materializes and activates a new deployment; failure restores the prior managed configuration and runtime. `--defer` stores desired state only. An undeployed or explicitly stopped workspace reports a pending status and is never started implicitly.
 

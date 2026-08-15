@@ -1,115 +1,191 @@
-# 容器镜像发布
+# ANAS、Module 与容器发布
 
-运行时镜像由 [`.github/workflows/container-images.yml`](https://github.com/anas-project/ANAS/blob/master/.github/workflows/container-images.yml) 从专用的 `image-release` 分支同时发布到 GHCR 和 CNB。普通 `master` push 不发布镜像；只有合并到 `image-release` 才进入 revision 计算和发布链路。`.github/images.json` 登记 ANAS 派生构建，`.github/mirrors.json` 登记按 digest 锁定、未经修改的上游镜像。
+ANAS 有两条发布链路：Core 二进制从 `master` 按人工确认的 SemVer 发布；Module bundle、
+派生容器镜像和上游 mirror 从 `image-release` 按变更上下文发布。Module 与容器属于同一
+事务，不能单独留下一个引用不存在镜像的 bundle。
 
-## 整体同步流程
+## ANAS Core 发布
 
-GitHub 是代码主仓库，GHCR 是容器首发仓库，CNB 同时承担国内代码镜像和容器分发。日常开发先进入 `master`；需要发布镜像时，把准备发布的 `master` 提交合并到 `image-release`。发布工作流自动生成 revision commit，从该 commit 构建镜像，成功后再把同一 commit 快进回 `master`。
+工作流为 `.github/workflows/anas-release.yml`，只允许从 `master` 手工触发。
 
-```text
-代码：功能分支 ──> master ──> image-release
-                                  │
-                                  ├──> 自动 revision commit
-                                  ├──> 构建并验证镜像
-                                  └──> 成功后快进 master
+1. 确认 `master` 是准备发布的 commit，并完成常规 PR、测试和文档检查。
+2. 在 GitHub Actions 选择 `ANAS release`，输入不带 `v` 的 SemVer，例如 `0.4.0`。
+3. 工作流拒绝非法版本和已存在的固定 tag，运行 `go test ./...`。
+4. 分别交叉编译 Linux `amd64`、`arm64` 静态二进制。
+5. 生成两个 `tar.gz` 和 `SHA256SUMS`，创建不可覆盖的 GitHub Release `v0.4.0`。
 
-派生镜像：Dockerfile ──> GHCR ──> CNB Registry
-上游镜像：固定 digest ──> GHCR ──> CNB Registry
-异常恢复：             CNB Registry ──> GHCR
-```
-
-### 代码仓库
-
-`.github/workflows/cnb-sync.yml` 在 GitHub 任意分支或 tag 推送、删除以及手工触发时运行。它获取全部 GitHub 分支和 tag，并使用 `--prune` 推送到 `https://cnb.cool/anas.dev/ANAS.git`，因此 GitHub 上的删除也会同步到 CNB。同步方向固定为 GitHub 到 CNB；CNB 不是代码真相源。
-
-根据 [GitHub 的 `GITHUB_TOKEN` 触发规则](https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs)，工作流自身 token 生成的普通 push 不会递归创建另一个 Actions run。成功发布的 finalize Job 因此使用 `CNB_TOKEN` 直接把对应的 `image-release`、`master` 和成功 tag 推送到 CNB。
-
-代码到达 CNB 的 `master` 后，`.cnb.yml` 运行镜像元数据和 Compose 引用校验，不重复构建或发布容器。
-
-### 容器镜像
-
-`.github/workflows/container-images.yml` 负责容器发布：
-
-- 目标为 `image-release` 的 PR 计算候选 revision 并构建验证，但不提交、不推送镜像；
-- 合并到 `image-release` 后，工作流按 Module 自动计算并提交 revision；
-- ANAS 派生镜像从登记的 Dockerfile 构建，首先推送 GHCR，再将运行平台 manifest 复制到 CNB；
-- 未经修改的上游镜像先校验 `.github/mirrors.json` 中锁定的 digest，再复制到 GHCR，最后复制到 CNB；
-- 两边均无固定 tag 时执行上述首发流程；只有一边存在时从已有一侧补齐缺失侧；两边均存在时只验证，不覆盖；
-- 正常发布主方向是 GHCR 到 CNB。CNB 到 GHCR 仅用于 GHCR 缺失而 CNB 已有固定 tag 时的恢复。
-
-因此，GHCR 和 CNB 本身都不会主动向对方推送；跨 Registry 复制由 GitHub Actions 中的 `scripts/ci/runtime-image.sh` 使用 Crane 执行。
-
-## 发布身份
-
-每个 Module 在 `module.yml` 中声明：
-
-- `version`：规范化的上游 SemVer；
-- `revision`：ANAS 对该上游版本的打包修订号，从 `1` 开始；
-- `app_version`：上游版本的原始展示形式。
-
-固定镜像标签为：
+发布包名称：
 
 ```text
-<version>-r<revision>
+anas_0.4.0_linux_amd64.tar.gz
+anas_0.4.0_linux_arm64.tar.gz
+SHA256SUMS
 ```
 
-修改构建上下文但不升级上游时，`revision` 必须恰好加一。升级 `version` 时，`revision` 必须重置为 `1`。固定标签不可覆盖，不发布 `latest`。
+构建通过 ldflags 写入版本、源码 commit 和 UTC 构建时间：
 
-正常发布不需要人工运行 revision 命令。工作流找到当前 `image-release` 历史中最新的 `image-release/*` 成功发布 tag，以其 commit 为基准执行：
+```bash
+anas version
+anas version --json
+```
+
+Core release 不内嵌 Module。Module 有自己的版本、OCI digest 和更新节奏，安装器根据
+config/lock 获取；本地 `modules/` + `contracts/` 只保留为源码开发覆盖。
+
+## Module 与容器整体流程
+
+工作流 `.github/workflows/container-images.yml` 从专用 `image-release` 分支同时处理：
+
+- `.github/modules.json`：所有 first-party Module 的 artifact repository、平台和 shared context；
+- `.github/images.json`：ANAS 派生容器构建；
+- `.github/mirrors.json`：按上游 digest 固定、未经修改的镜像 mirror。
+
+日常变更先进入 `master`，发布时把待发布 commit 合并到 `image-release`：
+
+```mermaid
+flowchart LR
+  A["功能分支"] --> B["master"] --> C["image-release"]
+  C --> D["计算并提交 Module revision"]
+  D --> E["构建或复用容器镜像"]
+  E --> F["发布 Module OCI bundle"]
+  F --> G["GHCR/CNB 双端验证"]
+  G --> H["成功 tag"]
+  H --> I["fast-forward master 并同步 CNB"]
+```
+
+GitHub 是代码真相源，GHCR 是制品首发源，CNB 是国内代码与制品镜像。Registry 之间不会
+自行同步；工作流使用 Crane 复制容器 manifest，使用 ORAS 复制 Module artifact。
+
+## Module 发布身份
+
+每个 `module.yml` 声明：
+
+- `version`：规范化 SemVer；
+- `revision`：同一版本的 ANAS 打包修订号，从 `1` 开始；
+- `app_version`：上游原始展示版本。
+
+固定发布身份为 `<version>-r<revision>`。固定 tag 不覆盖，也不发布 `latest`。
+
+工作流找到最新 `image-release/*` 成功 tag 的 commit，以它为基准执行：
 
 ```bash
 bash scripts/ci/module-revisions.sh --base "$LAST_SUCCESSFUL_RELEASE_SHA" --write
 ```
 
-脚本只管理 `.github/images.json` 中登记的 ANAS 派生镜像。它逐个 Module 比较登记的 build context；同一 Module 的任一 context 相对上次成功发布有变化，就从基准 manifest 的 revision 加一。多个 context 同时变化仍只增加一次，不影响其他 Module。上游 `version` 变化或新增 Module 时使用 `1`。`--write` 同时更新 `module.yml`、存在时的 `localization.yml`，以及该 Module 在 `docker-compose.yml` 中的全部派生镜像标签。未经修改的上游 mirror 不使用 `-r<revision>` 镜像标签，因此不由此脚本计算。
+同一上游版本的发布上下文变化时 revision 恰好增加一次；`version` 变化或新增 Module 时
+revision 为 `1`。生成值由 `github-actions[bot]` 同步写入 `module.yml`、存在时的
+`localization.yml` 和 Compose 中的派生镜像 tag。
 
-生成内容由 `github-actions[bot]` 提交到 `image-release`，后续 Job 显式 checkout 该 commit；OCI `org.opencontainers.image.revision` 也记录这个 SHA。全部镜像在 GHCR 和 CNB 验证成功后，工作流创建 `image-release/<run>-<attempt>` tag。该 tag 只代表成功发布，是下次 revision 计算的稳定基准。构建失败不会创建 tag，也不会同步 `master`；重新运行或下一次合并会继续从上一个成功 tag 累计变化。
+全部制品成功后创建：
 
-本地排查时仍可只读预览或显式写入，但这不是正常发版步骤：
+```text
+image-release/<run>-<attempt>
+module-release/<run>-<attempt>
+module/<name>/<version>-r<revision>
+```
+
+前两个 tag 是下次计算使用的成功边界；第三个提供单 Module 版本到源码 commit 的历史
+映射。失败不会创建这些 tag，也不会同步 `master`。
+
+## Module 打包内容
+
+`cmd/package-module` 为一个 Module 生成一个可复现 `tar.gz`。一个包同时携带 Linux
+`amd64` 和 `arm64` hook：
+
+```bash
+go run ./cmd/package-module \
+  --module nextcloud \
+  --platform all \
+  --output dist/nextcloud-34.0.2-r2.tar.gz
+```
+
+包内包含 `package.yml`、`module.yml`、`docker-compose.yml`、Module hook 源码、两套
+预编译 hook、Docker build context、provider、运行期 Contract schema、asset 和 Module 运行文件；不包含 README、
+本地化文档、测试、缓存及本地构建残留。完整字段、digest 语义和安全边界见
+[Module 独立编译、发布与安装源](../architecture/module-distribution-draft.md)。
+
+OCI 目标：
+
+```text
+ghcr.io/anas-project/anas-module-<name>:<version>-r<revision>
+docker.cnb.cool/anas.dev/anas/anas-module-<name>:<version>-r<revision>
+```
+
+artifact type 为 `application/vnd.anas.module.v1`，唯一 layer type 为
+`application/vnd.anas.module.bundle.v1.tar+gzip`。发布后必须校验两边 artifact/layer type
+和 manifest digest 完全一致。
+
+完整发布还生成 `anas.module-catalog/v1`，以 `sha-<release-commit>` 保存不可变快照，并把
+两边的 `anas-module-catalog:stable` 发现指针移动到同一 digest。catalog 只列 Module 和
+当前 release；某个 Module 的全部历史版本仍以该 Module OCI repository 的 tag list 为准。
+
+## 变更上下文
+
+以下变化发布对应 Module：
+
+- `modules/<name>/` 内的运行文件；
+- `.github/modules.json` 声明的 shared context，例如根 `go.mod`、`go.sum`、`contracts/`；
+- 该 Module 的 modules/images/mirrors catalog 条目；
+- 已存在的 Module 打包器实现变化（影响全部 Module）；
+- manifest `version`。
+
+README、`localization.yml`、测试、`.DS_Store`、`__pycache__` 和已知本机构建残留忽略。
+一个 Module 有多个派生镜像时，任一 context 变化只提升一次 Module revision，并成组处理
+全部相关镜像。
+
+本地预览和校验：
 
 ```bash
 bash scripts/ci/module-revisions.sh --base <成功发布SHA> --print
-bash scripts/ci/module-revisions.sh --base <成功发布SHA> --write
+bash scripts/ci/module-revisions.sh --base <成功发布SHA> --check
+bash scripts/ci/module-revisions-test.sh
 ```
 
-## Registry
+## 派生镜像与 Module revision 联动
+
+派生镜像固定 tag 与 Module release 相同：
 
 ```text
 ghcr.io/anas-project/anas-<软件>:<version>-r<revision>
 docker.cnb.cool/anas.dev/anas/anas-<软件>:<version>-r<revision>
 ```
 
-未经修改的上游镜像使用 `anas-mirror-<软件>:<固定版本>`。清单同时保存上游引用、上游 manifest digest 和运行平台；即使来源使用 `latest`，发布输入也必须带 digest，ANAS 目标 tag 不得使用 `latest`。
+- Docker build context 变化：构建新镜像，首先推 GHCR，再复制到 CNB；
+- 只有 hook、manifest、Compose 或 shared context 变化：不重建相同容器内容，把上一固定
+  tag 的 manifest/digest 复制为新 Module revision tag；
+- 目标只存在一侧：从已有侧恢复另一侧；
+- 两侧都存在：验证后结束，不覆盖；
+- 两侧都不存在且上一版本也不可取：回退为重新构建，避免发布悬空引用。
 
-`ANAS_IMAGE_REGISTRY` 选择全部运行时镜像来源。`global.chinese_speedup: true` 默认切换到 CNB，因此部署服务器只需访问 `docker.cnb.cool`；`global.chinese_build_speedup: true` 才会为源码构建设置 `DOCKER_HUB_REGISTRY`、`GHCR_REGISTRY` 和包管理器镜像。
+因此 Module 包生成前，它引用的每个固定镜像 tag 都已存在于两个 Registry。
+
+## 上游镜像 mirror
+
+未经修改的上游镜像使用：
+
+```text
+anas-mirror-<软件>:<固定版本>
+```
+
+`.github/mirrors.json` 同时保存上游引用、manifest digest 和运行平台。工作流先校验 digest，
+筛选 `linux/amd64`、`linux/arm64` manifest，再复制到 GHCR 和 CNB；即使上游输入写了
+`latest`，也必须附带 digest，ANAS 目标 tag 不得使用 `latest`。
 
 ## CI 行为
 
-- 普通 `master` push：不运行容器发布工作流。
-- 目标为 `image-release` 的 Pull Request：自动计算候选 revision，只构建受影响镜像，不提交、不推送。
-- `image-release` push：自动提交生成的 revision，只处理从上次成功发布以来 context 发生变化的 Module。
-- 首次发布还没有成功 tag 时：处理全部派生镜像和 mirror；失败重试仍处理全部目标。
-- 同一 Module 的任一登记 context 变化：该 Module revision 增加一次，并构建它登记的全部镜像。
-- Mirror：校验上游 digest，筛选 `linux/amd64`、`linux/arm64` 运行 manifest，原样发布到 `anas-mirror-*`，不重新构建上游软件。
-- Registry 间使用固定版本、校验过下载包的 Crane 逐平台复制；对 CNB 禁用 HTTP/2，并按平台重试，已存在的 blob 不重复上传。
-- 两个 Registry 都没有固定标签时：构建一次并发布 GHCR，再复制运行平台 manifest 到 CNB。
-- 只有一侧存在时：补齐另一侧。
-- 两侧都存在时：验证后结束，不覆盖已有标签。
-- 构建目标为 `linux/amd64` 和 `linux/arm64`，GHCR 保留 provenance 与 SBOM。
-- 构建期间 `image-release` 又有新提交时：当前成功 commit 仍创建发布 tag，但不回退分支；排队的下一轮从该 tag 继续计算并负责同步 `master`。
-- `master` 独立前进而不能快进时：停止同步，必须先把最新 `master` 合并进 `image-release`，不会强推或覆盖历史。
+- 普通 `master` push：不发布 Module 或容器；
+- 目标为 `image-release` 的 PR：计算候选 revision、构建受影响镜像和 Module bundle，
+  但不提交、不推 Registry；bundle 作为 Actions artifact 供检查；
+- `image-release` push：自动提交 revision，发布自上次成功 tag 以来变化的 Module；
+- 首次没有成功 tag：发布全部 Module、派生镜像和 mirror；
+- `workflow_dispatch module=all`：完成首次/失败发布，并允许 finalize；
+- `workflow_dispatch module=<name>`：只补发或恢复指定 Module，不推进全局成功基准；
+- 发布期间分支又前进：当前 commit 仍可完成并打成功 tag，排队的下一轮负责后续变化；
+- `master` 独立前进、无法 fast-forward：停止同步，不强推。
 
-修改 Dockerfile 时同时检查：
+## 首次发布
 
-1. Dockerfile 在 `.github/images.json` 中恰好登记一次；
-2. Compose 镜像名和标签与 `version`、`revision` 一致；
-3. 同版本的 `revision` 正确递增，或新版本重置为 `1`；
-4. 所有 Compose 上游镜像都在 `.github/mirrors.json` 中锁定 digest，并使用 `anas-mirror-*`；
-5. `go test ./...` 和相关 Module 测试通过。
-
-## 首次发布与恢复
-
-从当前 `master` 创建一次 `image-release` 分支并推送：
+从当前 `master` 创建 `image-release`：
 
 ```bash
 git fetch origin
@@ -117,17 +193,37 @@ git switch -c image-release origin/master
 git push origin image-release
 ```
 
-第一次可在 GitHub Actions 中从 `image-release` ref 手工运行 `Container images`，选择 `module=all`；也可以把后续 `master` 通过 PR 合并进该分支触发。首次成功会发布全部派生镜像和上游 mirror，并创建第一个成功 tag。以后只需把待发布的 `master` 合并到 `image-release`，revision、提交、构建、tag 和成功后的 `master` 同步均自动完成。
+在 GitHub Actions 从 `image-release` ref 运行 `Module and container artifacts`，选择
+`module=all`。首次成功后，在 GitHub Packages/CNB 确认 Module artifact 和 container
+package 可匿名拉取。以后通过 PR 把待发布 `master` 合并到 `image-release` 即可。
 
-手工 `workflow_dispatch` 必须选择 `image-release` ref。`module=all` 可完成失败发布并创建成功 tag、同步 `master`；选择单个 Module 只用于补发或 Registry 恢复，不会推进全局成功 tag，也不会同步 `master`。
+## 安装源与中国大陆默认
 
-CNB 的 `master` 页面还提供“从 GHCR 同步全部 Cask 镜像”按钮。该入口由 `.cnb/web_trigger.yml` 和 `.cnb.yml` 定义，调用 `scripts/ci/cnb-container-images.sh mirror-all`，只把 GHCR 中已有、CNB 中缺失的固定版本镜像补到 CNB；它不会构建镜像，也不会覆盖 CNB 已有 tag。
+```yaml
+module_source: official       # GHCR 主源，CNB 回退
+# module_source: official-cn  # CNB 主源，GHCR 回退
+# module_source: cn           # official-cn 的简写
+```
 
-工作流需要：
+使用 `official-cn` 或 `cn` 时，如果用户没有显式配置，ANAS 自动并在托管 config 中持久化：
 
-- Repository Actions 的 workflow permission 允许读写仓库；
-- `image-release` 禁止 force push；[ruleset bypass](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository#granting-bypass-permissions-for-your-branch-or-tag-ruleset) 允许 GitHub Actions App 提交自动 revision；
-- `master` 分支规则允许 GitHub Actions App 执行安全的 fast-forward；如果仓库规则无法授予该 App bypass，需要把 checkout/push token 换成具备同等权限的专用 GitHub App installation token；工作流从不 force push；
-- GitHub 自动提供的 `GITHUB_TOKEN` 写入 GHCR；
-- `CNB_REGISTRY_TOKEN` 写入 CNB Registry；
-- `CNB_TOKEN` 供成功发布后把 `image-release`、`master` 和成功 tag 同步到 CNB Git 仓库。
+```yaml
+global:
+  chinese_speedup: true
+```
+
+这会让正式运行镜像和运行期下载源一起走国内配置。显式
+`global.chinese_speedup: false` 始终优先，只选择 CN Module 源但不切换容器/下载加速。
+`global.chinese_build_speedup` 仍是独立开关，改变构建输入时必须重新构建镜像。
+
+## 所需权限与 Secret
+
+- Repository Actions workflow permission 允许写仓库和 Packages；
+- `image-release` 禁止 force push，并允许 GitHub Actions App 提交自动 revision；
+- `master` 允许同一 App 做安全 fast-forward；
+- `GITHUB_TOKEN` 写 GitHub Release、GHCR container 和 Module artifact；
+- `CNB_REGISTRY_TOKEN` 写 CNB Registry；
+- `CNB_TOKEN` 同步成功分支与 tag 到 CNB Git 仓库。
+
+工作流从不 force push。若分支规则不能给 GitHub Actions App bypass，应改用权限等价、范围
+受限的 GitHub App installation token，不能关闭保护规则。

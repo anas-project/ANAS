@@ -1,113 +1,26 @@
-# module 独立分发（草案）
+# Module 独立编译、发布与安装源
 
-> **状态：草案，未排期。** 本文只记录问题、约束和候选方案，不构成实施计划。
-> 它与 [workspace-backup-plan.md](workspace-backup-plan.md) 的一到四期没有依赖关系，
-> 可以在其之后任意时点推进。
+> **状态：分发与安装闭环已实施。** Module catalog、变更上下文、revision 计算、可复现
+> 打包、双 Registry 发布、版本查询、下载、安全解包、内容寻址缓存、workspace 视图和
+> OCI/content/installed-tree digest lock 已进入代码。签名/来源证明与第三方 source 是后续阶段。
 
-> **已实施子集（2026-08-11）：** module 容器镜像的版本规则、GHCR 发布清单和 GitHub
-> Actions 已落地；module bundle 本身的 OCI 分发仍是草案。
+## 目标与边界
 
-## 现状
+ANAS Core 和 Module 使用不同的发布节奏：
 
-module **没有** embed 进二进制。运行时按以下顺序在磁盘上查找 `modules`
-（[manifest.go:184](https://github.com/anas-project/ANAS/blob/master/internal/runner/manifest.go)）：
+- ANAS Core 使用 `v<semver>`，发布 Linux `amd64`、`arm64` 二进制；
+- 每个 Module 独立使用 `<version>-r<revision>`；
+- Module 代码继续放在 monorepo，但每个 Module 生成独立 OCI artifact；
+- Module artifact、它引用的 ANAS 派生镜像和上游镜像 mirror 必须在同一次发布事务中完成；
+- 用户可选择官方国际源或中国大陆源，最终选择的 artifact digest 写入 lock；
+- deployment 仍然冻结完整 Module，不把恢复建立在 Registry 永久可用的假设上。
 
-```
---module-root  →  ANAS_MODULE_ROOT  →  $CWD/modules  →  可执行文件旁的 modules
-             →  <可执行文件目录>/modules  →  其父目录
-```
+仓库布局与分发粒度是两件事。保留 monorepo 可以让跨 Module ABI、IAM、依赖关系和
+横切测试原子变更；独立 OCI repository 则提供独立版本、独立查询和独立安装。
 
-lock 中每个 module 记录 `source: bundle:<name>` 与 `digest`，digest 由
-`moduleBundleDigest(mod.SourceDir)`（[versions.go:234](https://github.com/anas-project/ANAS/blob/master/internal/runner/versions.go)）
-对源目录树计算。
+## 发布身份
 
-hook 的处理是这里最关键的一环：
-
-- 声明形式是 `command: [go, run, ./hook]`，16 个 module 中有 hook 目录
-- `ensureHookBinary`（[hook.go:122](https://github.com/anas-project/ANAS/blob/master/internal/runner/hook.go)）**优先查找**
-  `<module>/hook/bin/<GOOS>-<GOARCH>/anas-hook`，存在即直接使用；不存在才
-  `go build`。**这条预编译加载路径已经实现，但今天没有任何 module 附带它**
-- `freezeHookBinary`（[hook.go:167](https://github.com/anas-project/ANAS/blob/master/internal/runner/hook.go)）把编译产物拷进
-  `deployments/<id>/modules/<name>/.hook.bin`，**并删除该 module 的 `hook/` 源码目录**，
-  目的是让 release 无需 Go 工具链即可运行
-
-## 问题
-
-1. **module 源树在 workspace 之外，且无版本身份。** finance 上是
-   `/home/whl/anas-src/`，一份 rsync 副本、非 git 检出——"服务器上跑的是哪个 commit"
-   现在答不出来。lock 里有 digest 可校验，但没有任何东西能告诉你这个 digest 对应
-   哪个上游版本、去哪里再取一份。
-2. **从 config + lock 重建 deployment 需要匹配 digest 的 module 源，而它不可寻址。**
-   digest 只能验证手上这份对不对，不能用来获取。
-3. **制品体积几乎全是 hook 二进制。** finance 实测单个 deployment 42M，其中 41M 是
-   13 个 `.hook.bin`。真正的配置和 build context 约 1M。
-
-## 目标形态
-
-module 成为**独立发布、digest 寻址、可获取**的制品：
-
-```yaml
-# config.lock.yml
-modules:
-  nextcloud:
-    version: 30.0.1
-    source: <scheme>://…/nextcloud@sha256:117617…
-    digest: sha256:117617…
-```
-
-`anas` 在本地缓存中按 digest 查找，缺失时按 `source` 获取并校验 digest 后使用。
-
-## 关键约束
-
-**module 本体是架构无关的。** 它是 YAML + Dockerfile + Docker build context + hook
-的 Go 源码，没有任何部分需要按 x64 / arm64 / macOS-arm64 分版本。
-
-需要分平台的只有两样：
-
-| 产物 | 是否分平台 | 说明 |
-| --- | --- | --- |
-| `anas` 二进制 | ✅ | 常规交叉编译发布 |
-| hook 二进制 | ✅ **可选** | 附带则填进 `hook/bin/<GOOS>-<GOARCH>/anas-hook`，加载路径已就绪 |
-| module 其余内容 | ❌ | 架构无关 |
-
-hook 预编译是**可选优化**，不是分发的前提。两种选择：
-
-- **保持源码分发、本地编译**（现状）：module 制品小，但恢复目标机需要 Go 工具链。
-  注意 `freezeHookBinary` 已经让 *deployment* 不依赖工具链，只有首次 render 需要
-- **附带预编译二进制**：每个有 hook 的 module 多出 N 个平台 × 约 3M 的产物，并引入
-  交叉编译流水线；换来 render 阶段也不依赖 Go
-
-倾向前者，理由是后者的收益仅覆盖"首次 render"这一个场景，而代价是每个 module 的产物
-数量乘以平台数。
-
-## 仓库布局：monorepo
-
-**已决定：所有 first-party module 留在本仓库，每个 module 独立版本、独立发布制品。**
-（本节是全文唯一已定的部分——它不依赖分发是否排期，即便本草案永不推进，仓库布局
-也按此维持。）
-
-前提是把两件事解耦：**仓库布局 ≠ 分发粒度**。制品按 digest 寻址，lock 里记的是
-`source: <scheme>://…/nextcloud@sha256:…`，消费者看不到它从哪个 git 仓库构建。
-"独立版本、独立更新"和"同一个仓库"没有冲突——Homebrew tap、nixpkgs、helm charts
-都是这个形态。
-
-选 monorepo 而不是每 module 一仓的理由：
-
-1. **跨 module 的契约变更需要原子提交。** IAM capability binding 这次改动同时动了
-   authentik / llng / nextcloud 的 hook、runner 和文档。分仓后这是四个 PR 加一套
-   合并顺序约定。这些 module 之间耦合度很高（`dependencies.requires`、IAM
-   provider/consumer、traefik 路由），它们不是互相独立的插件。
-2. **横切测试没有地方放。** `module_manifest_test.go` 已经在遍历所有 module 校验 ABI
-   一致性，分仓后这个测试无家可归。
-3. **单人维护 17 个仓库的 issue / CI / release 是纯开销。**
-
-第三方 module 不构成分仓理由——第三方本来就在自己的仓库里，跟 first-party 怎么放无关。
-
-### 版本身份与发布触发
-
-容器发布采用“规范化上游版本 + ANAS 修订号”。同一上游版本下修改 Dockerfile、入口
-脚本或其他 build context 文件时，只增加 `revision`；上游升级时更新 `version` 和
-`app_version`，并把 `revision` 重置为 `1`。
+Module manifest 声明：
 
 ```yaml
 version: 34.0.2
@@ -115,87 +28,274 @@ app_version: 34.0.2
 revision: 2
 ```
 
-- **发布身份与镜像 tag**：`34.0.2-r2`。`-r2` 不作为 SemVer 预发布后缀参与比较；
-  runner 先比较 `version`，相同时再比较整数 `revision`
-- **成功发布 tag**：`image-release/<run>-<attempt>`，指向自动 revision commit，作为下一次计算基准
-- **首次发布**：从 `master` 创建 `image-release`，手工执行一次 `workflow_dispatch all` 或合并后触发
-- **后续发布触发**：只在合并到 `image-release` 后计算；相对上次成功 tag，按
-  `.github/images.json` 登记的 build context 选择对应 Module
-- **版本生成**：同一上游版本有 context 变化时 revision 自动加一；上游版本变化时自动重置为 1；
-  生成值由 Bot 提交，已存在的 GHCR tag 不允许覆盖
-- **多镜像 module**：`samba_dc` 任一 context 变化时，两个镜像按同一版本成组发布
-- **`data_breaking` 布尔化遍历的是修订序列**，不是应用版本序列
+发布版本为 `34.0.2-r2`：
 
-容器清单位于 `.github/images.json`。CI 同时扫描仓库中的全部 Dockerfile，未登记或重复
-登记都会失败。镜像发布到 `ghcr.io/anas-project/anas-<image>:<version>-r<revision>`，不发布
-`latest`。默认平台为 `linux/amd64` 和 `linux/arm64`。第一次成功推送后，需要在 GitHub
-Packages 中把这些 container package 设为 public，部署端才能匿名拉取。
+- `version` 是规范化 SemVer；
+- `app_version` 保留上游展示形式；
+- `revision` 是 ANAS 对同一版本的打包修订号，从 `1` 开始；
+- 上游版本变化时 revision 重置为 `1`；
+- 可发布上下文变化、版本不变时 revision 恰好加一；
+- 固定 tag 永不覆盖，不发布 `latest`。
 
-⚠️ **hook 共享库会打破路径过滤。** 若把 16 份重复的 hook 协议样板抽成
-`modules/lib/hook` 并留在本仓库，该目录一变就要重建全部 module 制品。这是 monorepo 加
-同仓 SDK 的真实成本，也是"module 分发落地时 SDK 应拆成独立 module"的主要论据——
-module bundle 源码分发时，`import` 一个独立小 module 才能让编译闭包保持最小，否则
-编译一个 3MB 的 bundle 要拉整个 anas 仓库。
+Registry repository 由 [`.github/modules.json`](../../.github/modules.json) 定义。例如：
 
-### 索引
+```text
+ghcr.io/anas-project/anas-module-nextcloud:34.0.2-r2
+docker.cnb.cool/anas.dev/anas/anas-module-nextcloud:34.0.2-r2
+```
 
-**不单独造索引文件，registry 的 tag list 就是索引。**
+Git tag 同时记录代码身份：
 
-- `GET /v2/<name>/tags/list` 是标准 API；tag 先拆出 `-rN`，再用已有的
-  `Masterminds/semver` 排序版本并按整数排序 revision
-- 单独的 `index.yaml` 会引入新的失败模式：索引里有的制品不在、制品在的索引里没有。
-  让 registry 当唯一真相源就没有这个不一致
-- 本地缓存（见「开放问题」2）只是缓存，可随时按 registry 重建
+```text
+module/nextcloud/34.0.2-r2
+module-release/<run>-<attempt>
+```
 
-## 候选分发形式
+前者是单个 Module 的历史版本，后者是一次全部制品均发布成功的计算基准。
 
-| 形式 | 优点 | 缺点 |
-| --- | --- | --- |
-| OCI artifact（registry） | digest 寻址天然契合；用户已经在跑 docker，无新依赖；可用现有 registry | 需要 registry 可达；离线场景要预先 pull |
-| tar.gz + 索引文件（HTTP） | 实现最简单；可放任意静态托管 | 需自己做索引、签名、缓存目录管理 |
-| git tag / submodule | 版本身份最清晰 | 获取粒度粗（整仓），digest 与 git 对象模型对不齐 |
+## Module 包包含什么
 
-倾向 OCI artifact，但需要确认 `moduleBundleDigest` 的计算方式能否与 OCI descriptor
-digest 统一，否则 lock 里会出现两个含义不同的 digest。
+一个 Module release 只生成一个架构无关的 `tar.gz` bundle；有 hook 时，包内同时附带
+Linux `amd64` 与 `arm64` 两个二进制，不按架构拆成两个 Module 版本。
 
-## 影响面
+### 必须包含
 
-- `locateModuleRoot` 从"在磁盘上猜路径"变成"在缓存中按 digest 取"，`--module-root` /
-  `ANAS_MODULE_ROOT` 保留为本地开发的覆盖手段
-- `source: bundle:<name>` 的写法要变，`moduleLockRecord` 结构随之调整
-- 快照内 `deployment/` 副本会从 42M 降到约 1M（若 hook 不预编译，则冻结的 `.hook.bin`
-  仍在制品里，体积不变——**这一点要想清楚再动**）
+| 内容 | 用途 |
+| --- | --- |
+| `package.yml` | 包身份、源码 commit、兼容性、输入与内容 digest、镜像引用 |
+| `module.yml` | Module ABI、版本、依赖、参数和生命周期契约 |
+| `docker-compose.yml` | 固定镜像版本和运行拓扑 |
+| `hook/` Go 源码 | 审计、开发回退和未覆盖平台的本地编译输入 |
+| `hook/bin/linux-amd64/anas-hook` | x86-64 Linux 预编译 hook |
+| `hook/bin/linux-arm64/anas-hook` | ARM64 Linux 预编译 hook |
+| Docker build context | Dockerfile、入口脚本、配置模板和本地构建输入 |
+| `providers/` | capability provider 声明和实现脚本 |
+| `contracts/` | Runner 所需的 Contract manifests 与 schema；workspace 视图按名称去重 |
+| `assets/` 及其他运行文件 | Module 自己引用的静态资源 |
 
-## 明确不改变的
+没有 hook 的 Module（当前为 `freeradius`）不生成 `hook/bin`。
 
-**deployment 制品仍然进备份和快照。** module 可获取之后，理论上可以只备份 config +
-lock 再重建，但那让恢复依赖"网络通 + 制品仓库仍然存在"。对自托管工具这个假设太重，
-而制品只占数据体积的 3%。见 [backup 契约](../reference/contracts/backup.md) 的
-「备份单元就是快照」。
+`package.yml` 示例结构：
 
-## 顺带解锁的一件事：`data_breaking` 可简化为布尔
+```yaml
+api_version: anas.module-package/v1
+name: nextcloud
+version: 34.0.2
+revision: 2
+release: 34.0.2-r2
+platforms: [linux/amd64, linux/arm64]
+repository: anas-module-nextcloud
+source:
+  repository: https://github.com/anas-project/ANAS
+  commit: <git-sha>
+compatibility:
+  module_api: anas.module/v1
+  hook_abis: [anas.module-hook/v1]
+context_digest: sha256:<发布输入摘要>
+content_digest: sha256:<解包 payload 摘要>
+images:
+  - ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r2
+```
 
-[snapshot 契约](../reference/contracts/snapshot.md) 要求 module 用**列表**声明数据格式断代
-版本，因为 runner 手中只有目标版本 `B` 的 `module.yml`，拿不到 `A..B` 之间任何中间版本。
+### 不包含
 
-module 可按 digest 寻址之后，runner 能取到区间内每个版本的 `module.yml`，于是每个版本只
-需声明一个布尔"我相对上一版是否改写了数据格式"，由 runner 遍历判定。列表连同它的修剪
-规则（随 `upgrade.from` 同步删除死条目）都可以取消。
+- `README.md` 和文档；
+- `localization.yml`（它用于生成文档，不是 Runner 输入）；
+- `*_test.go`、`test_*.py`、`__pycache__`；
+- `.DS_Store`；
+- 本地构建残留或误提交的宿主机二进制。
 
-这不是推进 module 分发的理由，只是落地后可以顺手做的简化。
+根 `go.mod`、`go.sum` 以及部分共享本地化代码是 hook 编译上下文，会进入
+`context_digest` 并触发受影响 Module 新 revision，但不会复制到最终包。最终包已经携带
+预编译 hook；保留的 Module 内 hook 源码不依赖把整个 ANAS 仓库一并安装。
 
-## 开放问题
+### 四种 digest 不混用
 
-1. `moduleBundleDigest` 与所选分发形式的 digest 能否统一为一个值？
-   **倾向不统一。** 两者语义本就不同：`moduleBundleDigest` 是"解包后源目录树的内容
-   指纹"，OCI descriptor digest 是"压缩制品的指纹"。lock 保留两个字段——`source`
-   内的 digest 用于**获取**，`digest` 用于**校验解包后的内容**。强行统一要求 tar
-   完全可复现（时间戳、条目顺序、权限全部规范化），能做但很脆，收益只是少一个字段。
-2. 本地缓存放哪里——workspace 内（每个 workspace 一份，浪费但自足）还是用户级
-   （`~/.cache/anas/modules`，共享但破坏 workspace 自足性）？
-   **倾向用户级。** 它是纯缓存、可按 registry 重建，不破坏 workspace 自足性——
-   自足性由 deployment 制品保证（见「明确不改变的」）。缓存丢失只影响首次 render，
-   不影响恢复。
-3. hook 预编译若不做，`freezeHookBinary` 冻结的 `.hook.bin` 仍占制品 97% 体积，
-   "module 分离能让制品变小"这个预期不成立。需要先确认目标到底是体积还是可寻址性。
-4. 制品签名与信任模型——digest 能防篡改，但谁来背书 digest 本身？
+| digest | 含义 |
+| --- | --- |
+| `context_digest` | 发布输入身份，包含 Module runtime 文件和声明的 shared context |
+| `content_digest` | 解包后 payload 的规范化内容身份，不包含自引用的 `package.yml` |
+| OCI manifest digest | Registry 中压缩制品的获取身份 |
+| installed-tree digest | Runner 对完整解包树（包括 `package.yml`）的执行输入校验身份 |
+
+lock 保存 OCI、content 和 installed-tree digest：依次保证取得正确 manifest/blob、payload
+与包声明一致、Runner 最终执行树未变。`context_digest` 留在 `package.yml` 中证明发布输入。
+打包器固定条目顺序、时间戳、uid/gid 和 gzip header，以便相同 commit 的相同输入产生
+可复现文件。
+
+## 什么变化才发布
+
+权威清单是 [`.github/modules.json`](../../.github/modules.json)。每项声明 Module、OCI
+repository、支持平台和 Module 目录之外的 shared context。
+
+下列变化会发布该 Module：
+
+- `modules/<name>/` 中任一可发布运行文件变化；
+- 该 Module 声明的 shared context 变化；
+- `.github/modules.json` 中该 Module 条目变化；
+- `.github/images.json` 中该 Module 的派生镜像定义变化；
+- `.github/mirrors.json` 中该 Module 使用的 mirror 定义变化；
+- 打包器实现变化（影响全部 Module；首次引入不制造 revision）；
+- manifest `version` 变化。
+
+README、本地化文档、测试、缓存和本机构建残留不触发 revision。新增
+`.github/modules.json` 本身也不为所有已有 Module 人工制造 revision；它只让已有版本
+进入独立发布体系。
+
+`scripts/ci/module-revisions.sh` 同时校验：
+
+- 每个含 `module.yml` 的目录在 Module catalog 中恰好出现一次；
+- Module 名、repository、平台和 shared context 合法；
+- `module.yml`、`localization.yml` 和 Compose 固定 tag 与计算结果一致；
+- 一个 Module 有多个派生镜像时仍只提升一次 revision。
+
+## 与容器发布联动
+
+Module 和容器共享 `.github/workflows/container-images.yml`，从 `image-release` 分支发布：
+
+```mermaid
+flowchart LR
+  A["计算 Module context 与 revision"] --> B{"派生镜像 context 是否变化"}
+  B -->|是| C["构建并发布新镜像"]
+  B -->|否，仅 Module 元数据或 hook 变化| D["复用上一固定 tag 的镜像 digest"]
+  C --> E["GHCR → CNB，双端校验"]
+  D --> E
+  E --> F["编译双架构 hook 并打 Module 包"]
+  F --> G["发布 Module OCI artifact 到 GHCR 与 CNB"]
+  G --> H["校验 artifact type、layer type 与双端 digest"]
+  H --> I["创建成功 tag，并同步 master/CNB"]
+```
+
+这样，修改 hook 会得到新 Module revision 和新的 Compose 镜像 tag，但不会无意义地重建
+相同容器内容；流水线把上一版本镜像 manifest 复制为新固定 tag，保证新 bundle 引用始终
+存在。只有两边制品都验证成功后才写成功 tag，失败不会成为下一次 revision 基准。
+
+PR 只计算、构建和上传校验 bundle，不推送 Registry；`image-release` push 才发布。
+`workflow_dispatch module=<name>` 可修复或补发单个 Module；`all` 用于首次发布。
+
+## 安装源
+
+配置顶层使用 `module_source`：
+
+```yaml
+module_source: official
+```
+
+内置 profile：
+
+| 配置值 | Module 主源 | 同内容回退源 | 默认运行时行为 |
+| --- | --- | --- | --- |
+| `official` | GHCR | CNB | 不自动启用国内加速 |
+| `official-cn` / `cn` | CNB | GHCR | 未显式设置时自动启用 `global.chinese_speedup: true` |
+
+`cn` 在配置导入时规范化为 `official-cn`。使用 CN 源时，自动默认还会让已发布的运行镜像
+走 `docker.cnb.cool/anas.dev/anas`，并启用当前运行时下载镜像；规范化后的托管
+`config.yml` 会明确写出：
+
+```yaml
+module_source: official-cn
+global:
+  chinese_speedup: true
+```
+
+用户显式配置具有最高优先级，以下写法只让 Module 从 CNB 获取，不切换容器/运行时下载源：
+
+```yaml
+module_source: cn
+global:
+  chinese_speedup: false
+```
+
+源是“解析策略”，不是发布身份。解析完成后 lock 必须记录完整 OCI repository、固定
+manifest digest、Module release 和内容 digest；以后即使修改 `module_source`，已有 lock
+也不会静默漂移。
+
+## 版本查询与指定安装接口
+
+CLI 使用以下接口：
+
+```bash
+# 列出该源中的全部 Module
+anas module list --source official-cn
+
+# 列出一个 Module 的全部固定版本；Registry tag list 是唯一真相源
+anas module versions nextcloud --source official-cn
+
+# 预取并校验明确版本；只写用户缓存，不修改 workspace/lock
+anas module install nextcloud@34.0.2-r2 --source official-cn
+
+# 根据 config + lock 获取缺失包，不升级已有 digest
+anas module sync -w /srv/anas
+
+# 显式重新解析约束；这是唯一允许改变已锁版本的操作
+anas module update nextcloud -w /srv/anas
+```
+
+配置写法为：
+
+```yaml
+module_source: official-cn
+modules:
+  nextcloud:
+    version: 34.0.2-r2
+```
+
+省略 `version` 时，首次 `module update` 选择 catalog 声明的当前稳定 release，并在包校验
+和依赖解析阶段验证 Module API、Contract 与版本约束；之后始终使用 lock 的 OCI digest。
+不能在普通 render/apply 时偷偷追踪最新版本。需要选择历史版本时先用 `module versions`
+查看 tag，再把精确 release 写入配置。
+
+版本发现直接读取每个 OCI repository 的标准 tag list，过滤 `<semver>-r<N>` 后按 SemVer
+和整数 revision 排序。OCI catalog 只提供 Module 名称、repository、平台和当前 release
+提示，不复制全部历史版本，因此不会与 tag list 形成两套版本真相。官方 catalog 发布到：
+
+```text
+ghcr.io/anas-project/anas-module-catalog:stable
+docker.cnb.cool/anas.dev/anas/anas-module-catalog:stable
+```
+
+每次完整发布还保留 `sha-<release-commit>` 不可变 catalog；`stable` 只是发现指针，lock
+绝不记录它。第三方源以后使用同一 `anas.module-catalog/v1` schema。
+
+## 本地缓存与安装
+
+缓存位于用户级缓存目录：
+
+```text
+~/.cache/anas/modules/
+  blobs/sha256/<oci-digest>
+  unpacked/sha256/<content-digest>/
+  records/sha256/<oci-digest>.json
+  views/sha256/<view-digest>/
+```
+
+普通安装顺序固定为：解析固定 tag → 得到 OCI digest → 下载到临时文件 → 校验 OCI digest
+→ 安全解包（拒绝绝对路径、`..`、重复路径、全部 link 和设备节点）→ 校验 `package.yml`
+与内容 digest → 原子移入缓存 → 从缓存构建本次 registry → render 时冻结进 deployment。
+`module sync` 不重新依赖当前 catalog/tag，而是直接按 lock 中的 `repository@sha256` 获取；
+配置 source 只提供相同 digest 的镜像回退。
+
+`--module-root` 和 `ANAS_MODULE_ROOT` 继续作为本地开发覆盖入口。来自本地目录的 lock source
+仍写 `bundle:<name>`；来自 Registry 的 source 写不可变 OCI digest，两者不能被普通命令
+互相替换。
+
+## 实施阶段
+
+### 已完成
+
+- `.github/modules.json` 覆盖所有 first-party Module；
+- 全 Module context/revision 计算和测试；
+- 双架构 hook、`package.yml`、可复现 tar.gz 打包器；
+- Module OCI artifact 的 GHCR/CNB 发布、修复、类型和 digest 校验；
+- 双 Registry Module catalog 的不可变快照与 `stable` 发现指针；
+- 与派生镜像构建/复用及 mirror 发布联动；
+- `official`、`official-cn`/`cn` source profile；
+- CN source 自动且可覆盖的 `CHINESE_SPEEDUP` 默认；
+- `module list/versions/install/sync/update`、安全下载、内容寻址缓存与 workspace 视图；
+- `modules.<name>.version` 精确选择，以及 OCI/content/installed-tree digest lock；
+- ANAS Core 的独立二进制发布工作流和 `anas version`。
+
+### 后续阶段
+
+- Module artifact 签名、来源证明和安装时信任策略；
+- 第三方 catalog/source 配置。

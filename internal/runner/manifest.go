@@ -308,10 +308,17 @@ func loadRegistryDir(modulesRoot string) (map[string]Module, error) {
 	}
 	reg := map[string]Module{}
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		dir := filepath.Join(modulesRoot, entry.Name())
+		info, statErr := os.Stat(dir)
+		if statErr != nil || !info.IsDir() {
 			continue
 		}
-		dir := filepath.Join(modulesRoot, entry.Name())
+		// Cache views use symlinks to immutable content-addressed trees. Resolve
+		// them here so later WalkDir/copy operations freeze the real Module files
+		// into a deployment rather than copying the link itself.
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = resolved
+		}
 		mod, err := loadModuleManifest(dir, entry.Name())
 		if err != nil {
 			return nil, err
@@ -364,7 +371,9 @@ func locateModuleRoot(explicit string) (string, error) {
 			continue
 		}
 		for _, entry := range entries {
-			if entry.IsDir() && exists(filepath.Join(candidate, entry.Name(), "module.yml")) {
+			entryPath := filepath.Join(candidate, entry.Name())
+			info, statErr := os.Stat(entryPath)
+			if statErr == nil && info.IsDir() && exists(filepath.Join(entryPath, "module.yml")) {
 				return candidate, nil
 			}
 		}

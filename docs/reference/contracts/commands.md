@@ -2,7 +2,7 @@
 
 > 状态：**已实现**（`init` / `plan` / `lock` / `render` / `build` / `apply` /
 > `start` / `restart` / `stop` / `rollback` / `status` / `deployments` /
-> `config`）。
+> `config` / `module`）。
 > 通用约定（流分离、退出码、枚举、时间与大小、路径、版本、最小信封）见
 > [通用约定](index.md)，本文不再重复。
 > `snapshot` 见 [snapshot.md](snapshot.md)，`backup` 见 [backup.md](backup.md)。
@@ -21,6 +21,7 @@
 - [status](#status)
 - [deployments](#deployments)
 - [config](#config)
+- [module](#module)
 - [help](#help)
 
 ---
@@ -28,7 +29,7 @@
 ## init
 
 ```
-anas init [PATH] [--shell-init write|remove] [-y] [--json]
+anas init [PATH] [-c CONFIG] [--module-root DIR] [--shell-init write|remove] [-y] [--json]
 ```
 
 创建 workspace。是唯一会创建 workspace 的命令——别的命令一律拒绝凭空造一个，
@@ -40,6 +41,8 @@ anas init [PATH] [--shell-init write|remove] [-y] [--json]
   "ok": true,
   "workspace": "/data/ws",
   "config_path": "/data/ws/config.yml",
+  "config_source": "/data/anas.yml",
+  "secrets_imported": 0,
   "data_path": "/data/ws/data",
   "snapshots_path": "/data/ws/snapshots",
   "state_path": "/data/ws/.anas",
@@ -49,6 +52,12 @@ anas init [PATH] [--shell-init write|remove] [-y] [--json]
   "shell_init": { "action": "none", "profile": null, "changed": false }
 }
 ```
+
+`-c` / `--config` 在创建 workspace 时导入外部 YAML。ANAS 会先验证和规范化源文件，验证
+失败时不会创建 workspace；源文件自身始终保持不变。`module_source: cn` 会规范化为
+`official-cn`，若没有显式声明 `global.chinese_speedup`，受管 `config.yml` 会补入 `true`，
+渲染环境相应包含 `CHINESE_SPEEDUP=true`。显式 `false` 保持不变。`--module-root` 仅用于
+定位导入验证需要的 Module 定义。
 
 `data_is_subvolume` 决定这个 workspace **有没有快照和数据回滚能力**，所以它是
 结果的一部分而不是实现细节。非 btrfs 上它是 `false`，此后 `snapshot` 全线不可用、
@@ -63,6 +72,8 @@ anas init [PATH] [--shell-init write|remove] [-y] [--json]
 | code | 退出码 | 何时 |
 | --- | --- | --- |
 | `workspace_exists` | 4 | 目标已经是 workspace |
+| `config_import_failed` | 4 | 外部配置无法读取、规范化或通过 Module 参数验证 |
+| `module_root_missing` / `module_root_invalid` | 4 | 指定配置时无法找到或载入 Module 定义 |
 | `data_is_symlink` | 4 | `data/` 是符号链接；tar 与 rsync 会跳过它，备份会悄悄是空的 |
 | `data_is_mount_point` | 4 | `data/` 是挂载点；数据恢复要 rename 这个目录，跨挂载点做不到 |
 | `shell_unrecognised` | 4 | `$SHELL` 不认识，写不了 profile |
@@ -361,7 +372,8 @@ and never printed; `config secret get` remains the way to read a credential. It
 needs no workspace, because what can be set is a property of the modules; inside
 one it additionally fills in the current values.
 
-`config import` 是外部 YAML 进入 workspace 的唯一入口，且不修改源文件。它验证规范化
+`config import` 是已有 workspace 导入外部 YAML 的入口；首次创建也可用
+`anas init WORKSPACE --config SOURCE` 完成同样的导入。两者都不修改源文件。它验证规范化
 配置后，把 `credential_rotate` 与本地管理员 bootstrap 密码移入 `.anas/secrets.yml`，
 普通 DNS/API token 等部署 Secret 则保留在 0600 的 workspace `config.yml` 中。配置、
 Secret Store 和完整性摘要先全部暂存，再一起替换；任一步失败都保留原状态。`migrate` 仅用于
@@ -466,6 +478,62 @@ Hook 执行期间注入明文；bootstrap-only 应用通过 `.anas/runtime-secre
 | `secret_missing` | 4 | 库存存在，但对应随机密码缺失 |
 | `secrets_unreadable` | 4 | Secret Store 无法读取 |
 | `local_admin_rotate_failed` | 1 | handler、验证、回滚或 Secret 提交失败 |
+
+## module
+
+```text
+anas module list [--source NAME] [-w WORKSPACE] [--json]
+anas module versions NAME [--source NAME] [-w WORKSPACE] [--json]
+anas module install NAME@VERSION-rN [--source NAME] [--digest sha256:...] [--json]
+anas module sync [-w WORKSPACE] [--source NAME] [--json]
+anas module update [MODULE...] [-w WORKSPACE] [--source NAME] [--json]
+```
+
+`list` 读取 `anas.module-catalog/v1`；`versions` 读取 Module OCI repository 的标准 tag
+list，过滤 `<semver>-r<N>` 并按 SemVer、revision 降序排列。catalog 只给发现入口和当前
+release，历史版本的唯一真相源仍是 Registry tag list。
+
+`install` 下载一个明确 release。可选 `--digest` 要求 tag 当前解析到给定 OCI manifest
+digest。安装依次校验 artifact/layer media type、manifest/layer digest、`package.yml`
+身份和解包 `content_digest`；绝对路径、`..`、重复路径、symlink/hardlink 和设备节点一律
+拒绝。结果进入用户级内容寻址缓存，不直接修改 workspace 或 lock。
+
+`update` 是改变 lock 中 Module 版本的唯一普通入口。它根据 `modules.<name>.version` 或
+catalog 当前 release 解析完整依赖闭包，写入 OCI manifest、content 和安装树三个 digest，
+并生成 workspace Module 视图。指定 Module 名时，未指定且已有远程 lock 的 Module 保持原
+release；不指定时更新配置直接选择的 Module。`sync` 只按现有 lock 恢复缺失缓存和视图，
+不会升级；lock 中的本地 `bundle:<name>` 不会被它偷偷替换为 Registry 包。
+
+`--source` 的优先级高于 workspace `module_source`。无二者时使用 `official`。缓存默认在
+用户 cache 目录的 `anas/modules/` 下，`ANAS_MODULE_CACHE` 可覆盖。`--module-root` 与
+`ANAS_MODULE_ROOT` 仍优先于 workspace 远程视图，供源码开发使用。
+
+```json
+{
+  "api_version": "anas.dev/cli/v1",
+  "ok": true,
+  "source": "official-cn",
+  "module": "nextcloud",
+  "release": "34.0.2-r4",
+  "oci_digest": "sha256:…",
+  "content_digest": "sha256:…",
+  "path": "/home/user/.cache/anas/modules/unpacked/sha256/…"
+}
+```
+
+| code | 退出码 | 何时 |
+| --- | --- | --- |
+| `usage` | 2 | 子命令、source、release 或参数格式错误 |
+| `lock_missing` / `lock_invalid` | 4 | `sync` 没有可用 lock |
+| `config_not_managed` / `config_invalid` | 4 | `update` 的 workspace 配置未受 CLI 管理或内容非法 |
+| `module_lock_local` / `module_lock_mismatch` | 4 | lock 来源不是 OCI，或缓存内容与 lock 不一致 |
+| `module_not_found` | 4 | 配置选择的 Module 不在 catalog |
+| `module_root_invalid` / `contract_root_invalid` / `contract_invalid` | 4 | 已安装包的 Module/Contract 定义无法载入或校验 |
+| `resolution_failed` / `version_conflict` / `snapshot_policy_invalid` | 4 | 依赖、精确版本、能力绑定或宿主策略无法解析 |
+| `module_source_unavailable` / `module_versions_unavailable` | 1 | catalog、tag list 或所有回退源不可用 |
+| `module_install_failed` / `module_sync_failed` / `module_update_failed` | 1 | 下载、认证或多层 digest/包校验失败 |
+| `module_cache_unavailable` / `module_cache_corrupt` | 1 | 缓存目录不可用，或内容寻址记录/内容损坏 |
+| `module_view_failed` / `write_failed` / `lock_update_failed` | 1 | workspace 视图或 lock 解析/原子写入失败 |
 
 ## help
 
