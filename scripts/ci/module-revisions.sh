@@ -94,10 +94,20 @@ read_base_scalar() {
     awk -v key="$key" '$1 == key ":" { print $2; exit }'
 }
 
+file_mode() {
+  local file="$1" mode
+
+  if mode="$(stat -c '%a' "$file" 2>/dev/null)"; then
+    printf '%s\n' "$mode"
+  else
+    stat -f '%Lp' "$file"
+  fi
+}
+
 replace_scalar() {
   local file="$1" key="$2" value="$3" tmp mode_bits
   tmp="${file}.revision-tmp.$$"
-  mode_bits="$(stat -f '%Lp' "$file" 2>/dev/null || stat -c '%a' "$file")"
+  mode_bits="$(file_mode "$file")"
   awk -v key="$key" -v value="$value" '
     BEGIN { found = 0 }
     $1 == key ":" {
@@ -127,7 +137,7 @@ replace_scalar() {
 replace_compose_tag() {
   local file="$1" image="$2" tag="$3" tmp mode_bits
   tmp="${file}.revision-tmp.$$"
-  mode_bits="$(stat -f '%Lp' "$file" 2>/dev/null || stat -c '%a' "$file")"
+  mode_bits="$(file_mode "$file")"
   awk -v image="$image" -v tag="$tag" '
     BEGIN { found = 0 }
     {
