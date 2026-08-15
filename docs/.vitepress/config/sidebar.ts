@@ -99,6 +99,9 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: '索引', link: '/research/' },
         { text: '应用研究 Module 规范', link: '/research/application-research-module-spec' },
+        { text: 'S3 兼容存储调研', link: '/research/self-hosted-open-source-s3-compatible-storage-research-2026-08-15' },
+        { text: '自部署 Git 服务调研', link: '/research/self-hosted-open-source-git-services-research-2026-08-15' },
+        { text: 'Super Productivity 同类调研', link: '/research/super-productivity-alternatives-research-2026-08-15' },
         { text: '自部署笔记应用调研', link: '/research/self-hosted-open-source-notes-research-2026-08-13' },
         { text: '中国大陆镜像与 CNB', link: '/research/china-mainland-mirrors-and-cnb-distribution-2026-08-11' },
         { text: '自部署 Kanban 调研', link: '/research/self-hosted-open-source-kanban-research-2026-08-10' }
