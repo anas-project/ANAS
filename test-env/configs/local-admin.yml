@@ -10,7 +10,6 @@ global:
   virtual_domain: true
 administration:
   local_accounts:
-    password_policy: generated_per_module
     password_length: 24
 secrets:
   tencentcloud_secret_id: test-id-not-a-real-credential

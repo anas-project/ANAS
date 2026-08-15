@@ -271,6 +271,25 @@ Do not commit `.anas-test/` or generated secrets.
     each `APP_*`. Its `Admins` membership alone grants IAM access, keeping
     application-access groups free of redundant administrator membership.
 
+17. Parameter in-place capability E2E
+
+    Against the prepared isolated Samba DC, Lego, and Nextcloud deployment,
+    this changes and restores all eight Samba password-policy settings plus
+    Nextcloud language/locale while requiring stable container IDs. It also
+    starts disposable LAM and Samba FS containers to prove profile rewriting,
+    `smbcontrol all reload-config`, and ACL reconciliation work online. Finally,
+    it verifies that Docker route labels and Lego's PID 1 environment cannot be
+    changed in place.
+
+    ```sh
+    ANAS_TEST_DOCKER_HOST=unix:///run/anas-anchor-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
+      ./test-env/scripts/server-parameter-inplace-e2e.sh
+    ```
+
+    Run this only against the isolated test daemon. The script restores live
+    values and removes its disposable containers on both success and failure.
+
 ## Full Run
 
 ```sh
@@ -279,6 +298,17 @@ Do not commit `.anas-test/` or generated secrets.
 
 The full run performs static, render, upgrade-render, Compose config, build,
 smoke, and runtime upgrade tests in that order.
+
+`test-parameters.sh` requires the inventory to contain the exact 8
+`hot_reload` and 12 `reconcile` parameters with an effect, an in-place
+capability classification, and a runtime case. `test-parameter-effects.sh`
+then runs every one of those 20 parameters through the real CLI, importer,
+hooks, renderer, deployment diff, and activation flow with a deterministic
+Docker command boundary. It checks the rendered runtime value, affected-module
+Compose `up`, absence of `build`, same-value container idempotency, and
+configuration/deployment recovery after an injected activation failure. The
+server E2E above complements that deterministic matrix by testing the actual
+upstream in-place mechanisms and stable container IDs on ln.
 
 ## Test Server Cleanup
 

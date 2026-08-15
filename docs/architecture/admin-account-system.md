@@ -84,16 +84,8 @@ identity:
 administration:
   bootstrap:
     username: admin
-    display_name: Administrator
-    email: admin@example.com
-    roles:
-      - platform_admin
-      - directory_admin
-      - storage_admin
-      - all_application_admins
 
   local_accounts:
-    password_policy: generated_per_module
     password_length: 24
 
 modules:

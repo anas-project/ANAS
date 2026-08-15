@@ -22,10 +22,7 @@ modules:
   lego:
     config:
       dns_provider: cloudflare
-  traefik:
-    config:
-      subnet: 172.23.0.0/16
-      gateway_ip: 172.23.0.1
+  traefik: {}
 identity:
   iam:
     provider: authentik
@@ -39,9 +36,7 @@ global:
 env:
   APT_MIRROR_URL: https://mirrors.aliyun.com
   APK_MIRROR_URL: https://mirrors.aliyun.com
-  BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_
-  IMAGE_PREFIX: anas_
   NETWORK_PREFIX: anas_
   DOCKER_SOCKET_PATH: /run/anas-anchor-docker.sock
   NETWORK_NAMESPACE_PATH: /run/netns/anas-anchor

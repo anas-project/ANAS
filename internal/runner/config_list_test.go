@@ -4,10 +4,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anas-project/ANAS/internal/config"
 )
 
-// The inventory has to reach parameters that no `defaults` block mentions.
-func TestConfigListIncludesParametersDeclaredOnlyByPolicy(t *testing.T) {
+// The inventory has to reach parameters that no `defaults` block mentions,
+// whether they are declared by lifecycle policy or only by accepted type.
+func TestConfigListIncludesParametersDeclaredWithoutDefaults(t *testing.T) {
 	t.Setenv("TZ", "Asia/Tokyo")
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LC_MESSAGES", "")
@@ -35,6 +38,13 @@ func TestConfigListIncludesParametersDeclaredOnlyByPolicy(t *testing.T) {
 	}
 	if password.Policy.Effect != "container_recreate" || !password.Policy.Sensitive {
 		t.Fatalf("password policy = %+v", password.Policy)
+	}
+	zone, ok := byPath["ddns_updater.zone_identifier"]
+	if !ok {
+		t.Fatal("typed-only ddns_updater.zone_identifier is missing from the inventory")
+	}
+	if zone.EnvKey != "DDNS_UPDATER_ZONE_IDENTIFIER" {
+		t.Fatalf("zone identifier env key = %q", zone.EnvKey)
 	}
 
 	// virtual_domain has no default and no change policy: it exists only as a
@@ -157,6 +167,28 @@ func TestConfigTargetRejectsUndeclaredParameters(t *testing.T) {
 		if _, err := resolveConfigTarget(path, reg); err != nil {
 			t.Errorf("%s was rejected: %v", path, err)
 		}
+	}
+}
+
+func TestWholeConfigRejectsUndeclaredAndInvalidModuleParameters(t *testing.T) {
+	reg, err := loadRegistry(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.File{Modules: config.NewModuleSelection("traefik")}
+	selected := cfg.Modules.Values["traefik"]
+	selected.Config = map[string]any{"subnet": "172.23.0.0/16"}
+	cfg.Modules.Values["traefik"] = selected
+	if err := validateConfiguredParameters(cfg, reg); err == nil || !strings.Contains(err.Error(), "no parameter") {
+		t.Fatalf("undeclared YAML parameter error = %v", err)
+	}
+
+	cfg = &config.File{Modules: config.NewModuleSelection("ddns_updater")}
+	selected = cfg.Modules.Values["ddns_updater"]
+	selected.Config = map[string]any{"zone_identifier": "test-zone"}
+	cfg.Modules.Values["ddns_updater"] = selected
+	if err := validateConfiguredParameters(cfg, reg); err != nil {
+		t.Fatalf("typed-only parameter was rejected: %v", err)
 	}
 }
 

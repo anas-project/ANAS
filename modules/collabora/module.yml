@@ -33,7 +33,6 @@ config:
     admin_username: admin_collabora
     domain_prefix: collabora
     log_level: warning
-    interface: default
     auto_save: "60"
   exports:
     - COLLABORA_DOMAIN_FULL

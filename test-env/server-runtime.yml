@@ -6,7 +6,5 @@ global:
   timezone: Asia/Shanghai
   virtual_domain: true
 env:
-  BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_test_
-  IMAGE_PREFIX: anas_test_
   NETWORK_PREFIX: anas_test_

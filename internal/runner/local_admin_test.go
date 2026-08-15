@@ -15,7 +15,7 @@ func localAdminTestApp(t *testing.T, base string) *app {
 	return &app{
 		base: base,
 		cfg: &config.File{Administration: config.Administration{LocalAccounts: config.LocalAccountDefaults{
-			PasswordPolicy: "generated_per_module", PasswordLength: 24,
+			PasswordLength: 24,
 		}}},
 		reg: map[string]Module{"ddns_go": {
 			Name: "ddns_go", EnvPrefix: "DDNS_GO",

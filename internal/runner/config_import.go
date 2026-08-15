@@ -333,7 +333,11 @@ func importConfigIntoWorkspace(workspace, source string, reg map[string]Module) 
 		return result, err
 	}
 	defer os.Remove(validation)
-	if _, err := config.Load(validation); err != nil {
+	loaded, err := config.Load(validation)
+	if err != nil {
+		return result, fmt.Errorf("normalized config is invalid: %w", err)
+	}
+	if err := validateConfiguredParameters(loaded, reg); err != nil {
 		return result, fmt.Errorf("normalized config is invalid: %w", err)
 	}
 

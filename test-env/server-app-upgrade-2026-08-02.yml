@@ -17,9 +17,7 @@ global:
   timezone: Asia/Shanghai
   virtual_domain: true
 env:
-  BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_app_
-  IMAGE_PREFIX: anas_app_
   NETWORK_PREFIX: anas_app_
   CHINESE_SPEEDUP: "true"
   CHINESE_BUILD_SPEEDUP: "true"

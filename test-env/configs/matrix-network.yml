@@ -23,7 +23,5 @@ global:
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
-env:
-  BASICAUTH_USER: admin
 secrets:
   cloudflare_dns_api_token: test-token-not-a-real-credential

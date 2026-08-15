@@ -1,0 +1,37 @@
+#!/usr/bin/env sh
+# Deterministic Docker/Compose command boundary for lifecycle E2E tests. The
+# runner still performs real config import, hook execution, rendering,
+# deployment diffing and activation; only the external daemon is replaced.
+set -eu
+
+: "${ANAS_FAKE_DOCKER_LOG:?ANAS_FAKE_DOCKER_LOG is required}"
+printf '%s|docker %s\n' "$PWD" "$*" >>"$ANAS_FAKE_DOCKER_LOG"
+
+# Opt-in one-shot fault injection lets lifecycle tests prove that a failed
+# activation restores both the prior deployment and the managed config. The
+# marker must be explicit so unrelated fake-Docker users remain deterministic.
+if [ -n "${ANAS_FAKE_DOCKER_FAIL_ONCE_MATCH:-}" ] &&
+  [ -n "${ANAS_FAKE_DOCKER_FAIL_ONCE_MARKER:-}" ] &&
+  [ ! -e "$ANAS_FAKE_DOCKER_FAIL_ONCE_MARKER" ] &&
+  printf '%s\n' "$*" | grep -Eq -- "$ANAS_FAKE_DOCKER_FAIL_ONCE_MATCH"; then
+  : >"$ANAS_FAKE_DOCKER_FAIL_ONCE_MARKER"
+  exit 97
+fi
+
+if [ "${1:-}" = compose ] && [ "${2:-}" = version ]; then
+  echo "Docker Compose version v2.test"
+  exit 0
+fi
+
+# A missing macvlan makes the runner exercise its create path. The companion
+# fake sudo accepts the host bridge command, and network create is recorded
+# above like every other observable runtime action.
+if [ "${1:-}" = network ] && [ "${2:-}" = inspect ]; then
+  if [ "${ANAS_FAKE_DOCKER_NETWORK_EXISTS:-}" = true ]; then
+    printf '%s\n' '[{"Driver":"macvlan","Options":{"parent":"anas-test0"},"IPAM":{"Config":[{"Subnet":"192.0.2.0/24","IPRange":"192.0.2.240/28","Gateway":"192.0.2.1","AuxiliaryAddresses":{"bridge":"192.0.2.241"}}]}}]'
+    exit 0
+  fi
+  exit 1
+fi
+
+exit 0

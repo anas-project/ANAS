@@ -2,6 +2,7 @@ name: Container images
 
 on:
   pull_request:
+    branches: [image-release]
     paths:
       - ".github/images.json"
       - ".github/mirrors.json"
@@ -12,7 +13,7 @@ on:
       - "scripts/ci/module-revisions-test.sh"
       - "modules/**"
   push:
-    branches: [master]
+    branches: [image-release]
     paths:
       - ".github/images.json"
       - ".github/mirrors.json"
@@ -30,11 +31,11 @@ on:
         default: all
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 concurrency:
-  group: container-images-${{ github.ref }}
+  group: container-images-${{ github.event.pull_request.number || 'image-release' }}
   cancel-in-progress: false
 
 jobs:
@@ -45,6 +46,10 @@ jobs:
       count: ${{ steps.matrix.outputs.count }}
       mirror_matrix: ${{ steps.matrix.outputs.mirror_matrix }}
       mirror_count: ${{ steps.matrix.outputs.mirror_count }}
+      release_sha: ${{ steps.release.outputs.release_sha }}
+      base_sha: ${{ steps.release.outputs.base_sha }}
+      first_release: ${{ steps.release.outputs.first_release }}
+      finalize: ${{ steps.release.outputs.finalize }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,20 +58,97 @@ jobs:
       - name: Test revision calculator
         run: bash scripts/ci/module-revisions-test.sh
 
+      - name: Calculate and commit release revisions
+        id: release
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          REQUESTED_MODULE: ${{ inputs.module }}
+        run: |
+          set -euo pipefail
+
+          release_branch=image-release
+          first_release=false
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_sha="$PR_BASE_SHA"
+          else
+            if [[ "$REF_NAME" != "$release_branch" ]]; then
+              echo "Container releases must run from the $release_branch branch" >&2
+              exit 1
+            fi
+
+            last_release_tag=''
+            while IFS= read -r candidate; do
+              if git merge-base --is-ancestor "$candidate" HEAD; then
+                last_release_tag="$candidate"
+                break
+              fi
+            done < <(git for-each-ref --sort=-version:refname --format='%(refname:short)' 'refs/tags/image-release/*')
+
+            if [[ -n "$last_release_tag" ]]; then
+              base_sha="$(git rev-list -n1 "$last_release_tag")"
+              echo "Using successful release $last_release_tag at $base_sha"
+            else
+              first_release=true
+              zero_sha=0000000000000000000000000000000000000000
+              if [[ "$EVENT_NAME" == "push" && -n "$EVENT_BEFORE" && "$EVENT_BEFORE" != "$zero_sha" ]] &&
+                 git cat-file -e "${EVENT_BEFORE}^{commit}" 2>/dev/null; then
+                base_sha="$EVENT_BEFORE"
+              else
+                base_sha="$(git rev-parse HEAD)"
+              fi
+              echo "No successful image-release tag exists; using $base_sha as the bootstrap base"
+            fi
+          fi
+
+          if ! git merge-base --is-ancestor "$base_sha" HEAD; then
+            echo "Release base $base_sha is not an ancestor of HEAD" >&2
+            exit 1
+          fi
+
+          bash scripts/ci/module-revisions.sh --base "$base_sha" --write
+
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            while IFS= read -r module; do
+              git add -- "modules/${module}/module.yml" "modules/${module}/docker-compose.yml"
+              if [[ -f "modules/${module}/localization.yml" ]]; then
+                git add -- "modules/${module}/localization.yml"
+              fi
+            done < <(jq -r '.[].module' .github/images.json | LC_ALL=C sort -u)
+
+            if ! git diff --cached --quiet; then
+              git config user.name 'github-actions[bot]'
+              git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+              git commit -m "chore(images): calculate release revisions"
+              git push origin HEAD:refs/heads/image-release
+            fi
+          fi
+
+          release_sha="$(git rev-parse HEAD)"
+          finalize=false
+          if [[ "$EVENT_NAME" == "push" || ( "$EVENT_NAME" == "workflow_dispatch" && ( -z "$REQUESTED_MODULE" || "$REQUESTED_MODULE" == "all" ) ) ]]; then
+            finalize=true
+          fi
+          echo "base_sha=$base_sha" >>"$GITHUB_OUTPUT"
+          echo "release_sha=$release_sha" >>"$GITHUB_OUTPUT"
+          echo "first_release=$first_release" >>"$GITHUB_OUTPUT"
+          echo "finalize=$finalize" >>"$GITHUB_OUTPUT"
+
       - name: Select images
         id: matrix
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
+          BASE_SHA: ${{ steps.release.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.release.outputs.release_sha }}
+          FIRST_RELEASE: ${{ steps.release.outputs.first_release }}
           REQUESTED_MODULE: ${{ inputs.module }}
         run: |
           set -euo pipefail
-
-          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
-            bash scripts/ci/module-revisions.sh --base "$BASE_SHA" --check
-          fi
 
           jq -e 'type == "array" and length > 0' .github/images.json >/dev/null
           actual="$(find modules -type f -name Dockerfile | LC_ALL=C sort)"
@@ -111,6 +193,11 @@ jobs:
             done < <(jq -r '.modules[]' <<<"$item")
           done < <(jq -c '.[]' .github/mirrors.json)
 
+          changed=''
+          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
+            changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          fi
+
           selected='[]'
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             if [[ -z "$REQUESTED_MODULE" || "$REQUESTED_MODULE" == "all" ]]; then
@@ -118,8 +205,9 @@ jobs:
             else
               selected="$(jq -c --arg module "$REQUESTED_MODULE" '[.[] | select(.module == $module)]' .github/images.json)"
             fi
+          elif [[ "$FIRST_RELEASE" == "true" ]]; then
+            selected="$(jq -c '.' .github/images.json)"
           else
-            changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
             changed_modules='[]'
             while IFS= read -r context; do
               if grep -q "^${context}/" <<<"$changed"; then
@@ -159,6 +247,8 @@ jobs:
                 exit 1
               fi
             fi
+          elif [[ "$FIRST_RELEASE" == "true" ]]; then
+            mirror_selected="$(jq -c '.' .github/mirrors.json)"
           else
             if grep -Eq '^(\.github/mirrors\.json|\.github/workflows/container-images\.yml|scripts/ci/(runtime-image|install-crane)\.sh)$' <<<"$changed"; then
               mirror_selected="$(jq -c '.' .github/mirrors.json)"
@@ -185,6 +275,8 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
 
       - uses: docker/setup-qemu-action@v3
 
@@ -257,7 +349,7 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.release_sha }}
             org.opencontainers.image.version=${{ matrix.tag }}
             dev.anas.module=${{ matrix.module }}
             dev.anas.module.revision=${{ matrix.revision }}
@@ -292,6 +384,8 @@ jobs:
       matrix: ${{ fromJSON(needs.prepare.outputs.mirror_matrix) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -376,3 +470,74 @@ jobs:
         run: |
           bash scripts/ci/runtime-image.sh validate "$GHCR_IMAGE" "${{ matrix.platforms }}"
           bash scripts/ci/runtime-image.sh validate "$CNB_IMAGE" "${{ matrix.platforms }}"
+
+  finalize:
+    needs: [prepare, build, mirror]
+    if: |
+      always() &&
+      needs.prepare.outputs.finalize == 'true' &&
+      needs.prepare.result == 'success' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      (needs.mirror.result == 'success' || needs.mirror.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+          fetch-depth: 0
+
+      - name: Record the successful release
+        id: release_tag
+        env:
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          release_tag="image-release/${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          git tag -a "$release_tag" "$RELEASE_SHA" -m "Successful container release at $RELEASE_SHA"
+          git push origin "refs/tags/${release_tag}:refs/tags/${release_tag}"
+          echo "release_tag=$release_tag" >>"$GITHUB_OUTPUT"
+
+      - name: Fast-forward master when the release branch is unchanged
+        id: sync_master
+        env:
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin '+refs/heads/image-release:refs/remotes/origin/image-release' '+refs/heads/master:refs/remotes/origin/master'
+          release_head="$(git rev-parse refs/remotes/origin/image-release)"
+          if [[ "$release_head" != "$RELEASE_SHA" ]]; then
+            echo "image-release advanced to $release_head while $RELEASE_SHA was building; the queued release will synchronize master"
+            echo "branches_synced=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          master_head="$(git rev-parse refs/remotes/origin/master)"
+          if ! git merge-base --is-ancestor "$master_head" "$RELEASE_SHA"; then
+            echo "master advanced independently; merge master into image-release before synchronizing it back" >&2
+            exit 1
+          fi
+          git push origin "$RELEASE_SHA:refs/heads/master"
+          echo "branches_synced=true" >>"$GITHUB_OUTPUT"
+
+      - name: Synchronize released refs to CNB
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.release_tag }}
+          BRANCHES_SYNCED: ${{ steps.sync_master.outputs.branches_synced }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$CNB_TOKEN" ]]; then
+            echo "Repository secret CNB_TOKEN is required" >&2
+            exit 1
+          fi
+          printf 'machine cnb.cool\nlogin cnb\npassword %s\n' "$CNB_TOKEN" >"$HOME/.netrc"
+          chmod 600 "$HOME/.netrc"
+          git remote add cnb https://cnb.cool/anas.dev/ANAS.git
+          git push cnb "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          if [[ "$BRANCHES_SYNCED" == "true" ]]; then
+            git push cnb \
+              "$RELEASE_SHA:refs/heads/image-release" \
+              "$RELEASE_SHA:refs/heads/master"
+          fi

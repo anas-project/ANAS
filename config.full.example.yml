@@ -24,20 +24,13 @@ global:
   timezone: Asia/Shanghai
   # default_language: zh-Hans
   # default_locale: zh-CN
-  # Legacy compatibility for modules not yet migrated to managed local accounts.
-  # The administrator name for Traefik's dashboard gate.
-  basicauth_user: admin
   # Optional. Absent means the default applies; an explicit false is kept, which
   # is why these are written as booleans rather than left to the env: block.
   # ipv6: false
 administration:
   bootstrap:
     username: admin
-    display_name: Administrator
-    email: admin@example.com
-    roles: [platform_admin, directory_admin, storage_admin]
   local_accounts:
-    password_policy: generated_per_module
     password_length: 24
 secrets:
   # Keyed by vendor: every engine configured for that vendor reads it. Prefix

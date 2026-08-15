@@ -23,11 +23,9 @@ global:
   virtual_domain: true
 administration:
   local_accounts:
-    password_policy: generated_per_module
     password_length: 24
 env:
   CONTAINER_PREFIX: anas_ddnse2e_
-  IMAGE_PREFIX: anas_
   NETWORK_PREFIX: anas_ddnse2e_
   CHINESE_SPEEDUP: "true"
   CHINESE_BUILD_SPEEDUP: "true"

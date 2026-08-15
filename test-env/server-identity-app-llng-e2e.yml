@@ -10,10 +10,7 @@ modules:
       memories_enabled: "false"
   meshcentral: {}
   netbird: {}
-  traefik:
-    config:
-      subnet: 172.24.0.0/16
-      gateway_ip: 172.24.0.1
+  traefik: {}
 identity:
   iam:
     provider: llng
@@ -23,9 +20,7 @@ global:
   timezone: Asia/Shanghai
   virtual_domain: true
 env:
-  BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_llng_
-  IMAGE_PREFIX: anas_llng_
   NETWORK_PREFIX: anas_llng_
   CHINESE_SPEEDUP: "true"
   CHINESE_BUILD_SPEEDUP: "true"

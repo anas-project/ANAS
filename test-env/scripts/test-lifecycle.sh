@@ -201,9 +201,15 @@ step "L7 write data that must survive everything below"
 echo lifecycle-marker >"$ws/data/marker"
 
 step "L8 config set applies the running deployment"
+traefik_before=$(container_id traefik)
+[ -n "$traefik_before" ] || fail "Traefik has no container before config set"
 run anas config set global.timezone Europe/Berlin -w "$ws"
 second=$(active_deployment "$ws")
 [ "$second" != "$first" ] || fail "config set produced no new deployment"
+traefik_after=$(container_id traefik)
+[ -n "$traefik_after" ] || fail "Traefik has no container after config set"
+[ "$traefik_after" != "$traefik_before" ] ||
+  fail "container_recreate kept the same Traefik container id"
 echo "deployment 2: $second"
 
 step "L9 rollback keeps the data"

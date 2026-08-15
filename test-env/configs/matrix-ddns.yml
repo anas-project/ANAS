@@ -28,7 +28,5 @@ secrets:
   tencentcloud_secret_id: test-id-not-a-real-credential
   tencentcloud_secret_key: test-key-not-a-real-credential
 env:
-  BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_test_
-  IMAGE_PREFIX: anas_
   NETWORK_PREFIX: anas_test_

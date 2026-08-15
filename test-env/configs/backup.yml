@@ -17,8 +17,6 @@ rollback:
   snapshot:
     backend: btrfs
 env:
-  BASICAUTH_USER: admin
   CONTAINER_PREFIX: anasbk_
-  IMAGE_PREFIX: anasbk_
   NETWORK_PREFIX: anasbk_
   TRAEFIK_BASE_PORT: "19445"

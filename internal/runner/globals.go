@@ -99,7 +99,7 @@ func loadGlobalSchema(b []byte) (globalSchema, error) {
 }
 
 // declaredParameters is every parameter a config block names, by the spelling
-// it was written with, gathered from required, defaults, and changes.
+// it was written with, gathered from required, defaults, types, and changes.
 func declaredParameters(cfg manifestConfig) []string {
 	seen := map[string]bool{}
 	out := []string{}
@@ -115,6 +115,9 @@ func declaredParameters(cfg manifestConfig) []string {
 		add(name)
 	}
 	for name := range cfg.Defaults {
+		add(name)
+	}
+	for name := range cfg.Types {
 		add(name)
 	}
 	for name := range cfg.Changes {

@@ -15,8 +15,6 @@ global:
   timezone: Asia/Shanghai
   virtual_domain: true
 env:
-  BASICAUTH_USER: admin
   CONTAINER_PREFIX: anasrb_
-  IMAGE_PREFIX: anasrb_
   NETWORK_PREFIX: anasrb_
   TRAEFIK_BASE_PORT: "19443"

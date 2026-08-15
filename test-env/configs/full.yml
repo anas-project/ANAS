@@ -45,6 +45,5 @@ env:
   # "unable to select packages".
   APT_MIRROR_URL: https://mirrors.aliyun.com
   APK_MIRROR_URL: https://mirrors.aliyun.com
-  BASICAUTH_USER: admin
 secrets:
   cloudflare_dns_api_token: test-token-not-a-real-credential

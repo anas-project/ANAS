@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+# Host-network setup is privileged in production. Parameter-effect tests need
+# to prove that the runner reaches this boundary, not mutate the developer's
+# interfaces, so record the request and report success.
+set -eu
+
+: "${ANAS_FAKE_DOCKER_LOG:?ANAS_FAKE_DOCKER_LOG is required}"
+printf '%s|sudo %s\n' "$PWD" "$*" >>"$ANAS_FAKE_DOCKER_LOG"
+exit 0

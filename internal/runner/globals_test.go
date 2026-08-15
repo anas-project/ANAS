@@ -3,6 +3,8 @@ package runner
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/anas-project/ANAS/internal/config"
 )
 
 // The schema is embedded, so a malformed edit is a build that ships a panic.
@@ -61,7 +63,7 @@ func TestDeploymentWideKeysAreGloballyOwned(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{
-		"TZ", "CONTAINER_PREFIX", "IMAGE_PREFIX", "NETWORK_PREFIX", "BASICAUTH_USER",
+		"TZ", "CONTAINER_PREFIX", "NETWORK_PREFIX",
 		"DEFAULT_LANGUAGE", "DEFAULT_LOCALE", "CHINESE_SPEEDUP", "CHINESE_BUILD_SPEEDUP", "IPV4", "IPV6", "DNS_SERVER",
 		"HOST_IP", "INTERFACE", "HOST_SUBNET_MASK", "HOST_DNS_SERVER", "SERVER_NAME",
 		"LOCAL_DNS_SERVER", "HOST_HAS_IPV6", "HOST_SEGMENT", "VLAN_SEGMENT",
@@ -88,6 +90,19 @@ func TestDeploymentWideKeysAreGloballyOwned(t *testing.T) {
 	for _, key := range []string{"SHARE_DIR_NAME", "SHARE_ACCESS_MODE", "SHARE_GUEST_READ_ONLY", "USE_DEFAULT_DOMAIN"} {
 		if owner := a.envOwner[key]; owner != "samba_fs" {
 			t.Errorf("%s is owned by %q, want samba_fs", key, owner)
+		}
+	}
+}
+
+// Binding a typed global field into .env proves transport, not usefulness. A
+// dead global used to survive indefinitely because that transport test passed
+// even though no module, Compose file, or container asset read the value.
+func TestGlobalParametersHaveRuntimeConsumers(t *testing.T) {
+	modules := filepath.Join("..", "..", "modules")
+	for _, parameter := range config.GlobalParameters() {
+		key := config.GlobalEnvKey(parameter)
+		if !treeContainsRuntimeKey(modules, key) {
+			t.Errorf("global.%s produces %s but no shipped module reads it", parameter, key)
 		}
 	}
 }

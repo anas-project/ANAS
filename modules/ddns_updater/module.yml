@@ -53,6 +53,10 @@ config:
     publicip_ipv6_providers: all
     publicip_dns_providers: all
     ttl: "300"
+  types:
+    # Cloudflare needs its zone id in addition to the provider credential.
+    # Other providers ignore the value, so it is optional rather than required.
+    zone_identifier: string
   # DNS vendor credentials need no claim here. The runner materialises them
   # under this module's own env prefix, where prefix ownership already scopes
   # them to ddns_updater alone. See internal/runner/dnscred.go. The middleware

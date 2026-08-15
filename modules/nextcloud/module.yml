@@ -63,7 +63,6 @@ config:
     log_level: "2"
     memory_limit: 1G
     upload_max_size: 16G
-    debug: "false"
     talk_enabled: "true"
     memories_enabled: "true"
     db_type: auto

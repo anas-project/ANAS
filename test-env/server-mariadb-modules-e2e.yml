@@ -17,10 +17,7 @@ modules:
     config:
       db_type: mariadb
       mps_port: "4443"
-  traefik:
-    config:
-      subnet: 172.23.0.0/16
-      gateway_ip: 172.23.0.1
+  traefik: {}
 identity:
   iam:
     provider: llng
@@ -30,11 +27,8 @@ global:
   email: admin@mariadb.nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
-  default_service_root_password: Anas-MariaDB-Test-2026!
 env:
-  BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_mdb_
-  IMAGE_PREFIX: anas_mdb_
   NETWORK_PREFIX: anas_mdb_
   DOCKER_SOCKET_PATH: /run/anas-docker-test.sock
   NETWORK_NAMESPACE_PATH: /run/netns/anas-test

@@ -6,10 +6,7 @@ modules:
     config:
       talk_enabled: "false"
       memories_enabled: "false"
-  traefik:
-    config:
-      subnet: 172.23.0.0/16
-      gateway_ip: 172.23.0.1
+  traefik: {}
 identity:
   iam:
     provider: authentik
@@ -19,9 +16,7 @@ global:
   timezone: Asia/Shanghai
   virtual_domain: true
 env:
-  BASICAUTH_USER: admin
   CONTAINER_PREFIX: anas_anchor_
-  IMAGE_PREFIX: anas_anchor_
   NETWORK_PREFIX: anas_anchor_
   CHINESE_SPEEDUP: "true"
   CHINESE_BUILD_SPEEDUP: "true"

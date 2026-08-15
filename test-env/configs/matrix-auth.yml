@@ -17,5 +17,3 @@ global:
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
-env:
-  BASICAUTH_USER: admin

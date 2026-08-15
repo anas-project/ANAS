@@ -19,9 +19,7 @@ rollback:
     # leaving both unset is what the test is checking.
     backend: btrfs
 env:
-  BASICAUTH_USER: admin
   CONTAINER_PREFIX: anassn_
-  IMAGE_PREFIX: anassn_
   NETWORK_PREFIX: anassn_
   TRAEFIK_BASE_PORT: "19444"
   # This suite namespaces everything it creates so it can run beside other

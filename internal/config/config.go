@@ -79,15 +79,11 @@ type Administration struct {
 }
 
 type BootstrapAdministrator struct {
-	Username    string   `yaml:"username"`
-	DisplayName string   `yaml:"display_name"`
-	Email       string   `yaml:"email"`
-	Roles       []string `yaml:"roles"`
+	Username string `yaml:"username"`
 }
 
 type LocalAccountDefaults struct {
-	PasswordPolicy string `yaml:"password_policy"`
-	PasswordLength int    `yaml:"password_length"`
+	PasswordLength int `yaml:"password_length"`
 }
 
 // Identity is the provider-oriented spelling of the deployment identity
@@ -172,7 +168,6 @@ type Global struct {
 	// that the exception is named and policed rather than global and silent.
 	Timezone        string `yaml:"timezone"`
 	ContainerPrefix string `yaml:"container_prefix"`
-	ImagePrefix     string `yaml:"image_prefix"`
 	NetworkPrefix   string `yaml:"network_prefix"`
 	HostIP          string `yaml:"host_ip"`
 	// There is deliberately no dns_provider. A DNS vendor is chosen per engine
@@ -181,7 +176,6 @@ type Global struct {
 	// vendors, and because the same vendor often needs different credentials
 	// for each. See internal/dns.
 	DNSServer       string `yaml:"dns_server"`
-	BasicAuthUser   string `yaml:"basicauth_user"`
 	DefaultLanguage string `yaml:"default_language"`
 	DefaultLocale   string `yaml:"default_locale"`
 	// Bool rather than bool: the schema defaults these to true, and a default
@@ -223,11 +217,9 @@ var globalBindings = []globalBinding{
 	{"email", "EMAIL", func(g Global) string { return g.Email }},
 	{"timezone", "TZ", func(g Global) string { return g.Timezone }},
 	{"container_prefix", "CONTAINER_PREFIX", func(g Global) string { return g.ContainerPrefix }},
-	{"image_prefix", "IMAGE_PREFIX", func(g Global) string { return g.ImagePrefix }},
 	{"network_prefix", "NETWORK_PREFIX", func(g Global) string { return g.NetworkPrefix }},
 	{"host_ip", "HOST_IP", func(g Global) string { return g.HostIP }},
 	{"dns_server", "DNS_SERVER", func(g Global) string { return g.DNSServer }},
-	{"basicauth_user", "BASICAUTH_USER", func(g Global) string { return g.BasicAuthUser }},
 	{"default_language", "DEFAULT_LANGUAGE", func(g Global) string { return g.DefaultLanguage }},
 	{"default_locale", "DEFAULT_LOCALE", func(g Global) string { return g.DefaultLocale }},
 	{"chinese_speedup", "CHINESE_SPEEDUP", func(g Global) string { return g.ChineseSpeedup.String() }},
@@ -375,13 +367,6 @@ func Load(path string) (*File, error) {
 	}
 	cfg.DynamicDNS.Provider = strings.ToLower(strings.TrimSpace(cfg.DynamicDNS.Provider))
 	cfg.DynamicDNS.DNSProvider = strings.TrimSpace(cfg.DynamicDNS.DNSProvider)
-	cfg.Administration.LocalAccounts.PasswordPolicy = strings.ToLower(strings.TrimSpace(cfg.Administration.LocalAccounts.PasswordPolicy))
-	if cfg.Administration.LocalAccounts.PasswordPolicy == "" {
-		cfg.Administration.LocalAccounts.PasswordPolicy = "generated_per_module"
-	}
-	if cfg.Administration.LocalAccounts.PasswordPolicy != "generated_per_module" {
-		return nil, fmt.Errorf("administration.local_accounts.password_policy must be generated_per_module")
-	}
 	if cfg.Administration.LocalAccounts.PasswordLength == 0 {
 		cfg.Administration.LocalAccounts.PasswordLength = 24
 	}

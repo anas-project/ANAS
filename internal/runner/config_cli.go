@@ -531,7 +531,7 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 // parameter get written", shared by `global.<parameter>` and the module path
 // spelled with the global module name. They used to disagree: the former wrote
 // into the `global:` block unconditionally, so a parameter with no field on
-// config.Global -- basicauth_user, say -- produced a config that KnownFields
+// config.Global produced a config that KnownFields
 // then refused to load, breaking every later command rather than the `set`
 // that caused it.
 func resolveGlobalTarget(parameter string, reg map[string]Module) (configTarget, error) {

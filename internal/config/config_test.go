@@ -17,7 +17,7 @@ global:
   base_domain: nas.example.com
   email: admin@example.com
 env:
-  basicauth_user: admin
+  custom_setting: kept
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -32,8 +32,8 @@ env:
 	if env["BASE_DOMAIN"] != "nas.example.com" {
 		t.Fatalf("BASE_DOMAIN = %q", env["BASE_DOMAIN"])
 	}
-	if env["BASICAUTH_USER"] != "admin" {
-		t.Fatalf("BASICAUTH_USER = %q", env["BASICAUTH_USER"])
+	if env["CUSTOM_SETTING"] != "kept" {
+		t.Fatalf("CUSTOM_SETTING = %q", env["CUSTOM_SETTING"])
 	}
 	if got := cfg.Administration.LocalAccounts.PasswordLength; got != 24 {
 		t.Fatalf("local password length = %d", got)
@@ -444,9 +444,9 @@ func contains(list []string, want string) bool {
 func TestGlobalBindingsProduceDeclaredKeys(t *testing.T) {
 	f := &File{Global: Global{
 		BaseDomain: "nas.example.com", Email: "a@example.com", Timezone: "Asia/Tokyo",
-		ContainerPrefix: "c_", ImagePrefix: "i_", NetworkPrefix: "n_",
+		ContainerPrefix: "c_", NetworkPrefix: "n_",
 		HostIP: "10.0.0.2", DNSServer: "1.1.1.1", VirtualDomain: BoolTrue,
-		BasicAuthUser: "admin", DefaultLanguage: "en", DefaultLocale: "en-SG",
+		DefaultLanguage: "en", DefaultLocale: "en-SG",
 		ChineseSpeedup: BoolFalse, ChineseBuildSpeedup: BoolFalse, IPv4: BoolTrue, IPv6: BoolFalse,
 	}}
 	env := f.BaseEnv()
@@ -493,9 +493,9 @@ func TestEnvKeyAgreesWithTheBindingTable(t *testing.T) {
 			t.Errorf("EnvKey(%q) = %q, but the binding table says %q", parameter, got, want)
 		}
 	}
-	// A parameter with no binding falls through to the uniform rule.
-	if got := EnvKey("basicauth_user"); got != "BASICAUTH_USER" {
-		t.Errorf("EnvKey(basicauth_user) = %q", got)
+	// A raw environment name with no binding falls through to the uniform rule.
+	if got := EnvKey("custom_setting"); got != "CUSTOM_SETTING" {
+		t.Errorf("EnvKey(custom_setting) = %q", got)
 	}
 	// The mixed-case spellings are gone: every key is upper case now.
 	if got := EnvKey("ipv4"); got != "IPV4" {

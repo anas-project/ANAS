@@ -277,7 +277,6 @@ global:
 
 env:
   CONTAINER_PREFIX: anas_
-  IMAGE_PREFIX: anas_
   NETWORK_PREFIX: anas_
 `
 	// Ordinary deployment inputs may include API tokens, so the CLI-managed

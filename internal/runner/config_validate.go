@@ -67,6 +67,27 @@ func validateParameter(module, parameter string, reg map[string]Module) error {
 		"or set env.%s to write an undeclared value", message, module, config.EnvKey(parameter))
 }
 
+// validateConfiguredParameters applies the same declaration and type checks to
+// a whole imported/loaded config that `config set` applies to one path. Without
+// this, hand-written YAML can still create a plausible-looking environment key
+// that no runtime component reads, even though the CLI refuses the same path.
+func validateConfiguredParameters(cfg *config.File, reg map[string]Module) error {
+	if cfg == nil {
+		return nil
+	}
+	for module, selected := range cfg.Modules.Values {
+		for parameter, raw := range selected.Config {
+			if err := validateParameter(module, parameter, reg); err != nil {
+				return fmt.Errorf("modules.%s.config.%s: %w", module, parameter, err)
+			}
+			if err := validateParameterValue(module, parameter, config.Scalar(raw), reg); err != nil {
+				return fmt.Errorf("modules.%s.config.%s: %w", module, parameter, err)
+			}
+		}
+	}
+	return nil
+}
+
 // closestParameter picks the nearest declared name, or "" when nothing is near
 // enough to be worth suggesting. A wrong suggestion is worse than none: it
 // sends the reader looking for a parameter that has nothing to do with what

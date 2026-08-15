@@ -16,9 +16,7 @@ config:
     - email
   defaults:
     container_prefix: anas_
-    image_prefix: anas_
     network_prefix: anas_
-    basicauth_user: admin
     chinese_speedup: "false"
     chinese_build_speedup: "false"
     ipv4: "true"
@@ -53,3 +51,7 @@ config:
       effect: image_rebuild
       apply: apply-with-build
       description: Changes Dockerfile and hook build inputs; run anas apply --build to regenerate images before recreating containers.
+    virtual_domain:
+      effect: reconcile
+      apply: reissue-certificates
+      description: Switching between ACME and the internal CA replaces the certificate every service presents, and clients must re-trust it.

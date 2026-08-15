@@ -3,6 +3,7 @@ package runner
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -117,6 +118,7 @@ func TestModulesUseManifestRule(t *testing.T) {
 			Config struct {
 				Required []string                        `yaml:"required"`
 				Defaults map[string]any                  `yaml:"defaults"`
+				Types    map[string]manifestParamType    `yaml:"types"`
 				Changes  map[string]manifestChangePolicy `yaml:"changes"`
 			} `yaml:"config"`
 			Services struct {
@@ -172,6 +174,11 @@ func TestModulesUseManifestRule(t *testing.T) {
 		for key := range manifest.Config.Defaults {
 			if looksLikeEnvParam(key) {
 				t.Fatalf("%s default parameter %q should use lower snake_case", entry.Name(), key)
+			}
+		}
+		for key := range manifest.Config.Types {
+			if looksLikeEnvParam(key) {
+				t.Fatalf("%s typed parameter %q should use lower snake_case", entry.Name(), key)
 			}
 		}
 		for key, policy := range manifest.Config.Changes {
@@ -279,6 +286,75 @@ func TestNextcloudAdministratorPasswordIsNotConfiguration(t *testing.T) {
 	if contains(mod.Parameters, "admin_password") {
 		t.Fatal("Nextcloud managed administrator password is still a config parameter")
 	}
+}
+
+// A declaration is not a consumer. The runner will happily put any manifest
+// parameter in .env, including a typo or a value no process ever reads, so a
+// render-only test cannot distinguish configuration from dead text. Keep the
+// small set whose key is assembled dynamically explicit; every other parameter
+// must have a literal consumer in shipped code, Compose, or a container asset.
+//
+// An environment variable read only by an upstream image also belongs in this
+// exception map, with a pinned source URL in the reason. There are currently no
+// such implicit consumers: retained upstream-image settings are translated in
+// our hook or named explicitly in Compose, which makes upgrades auditable.
+func TestDeclaredParametersHaveRuntimeConsumers(t *testing.T) {
+	root := filepath.Join("..", "..")
+	reg, err := loadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dynamic := map[string]string{
+		"collabora.domain_prefix":             "domainCalc assembles COLLABORA_DOMAIN_PREFIX",
+		"ddns_go.dns_provider":                "key() assembles the DDNS_GO namespace",
+		"ddns_go.domain_prefix":               "key() assembles the DDNS_GO namespace",
+		"ddns_go.web_enabled":                 "key() assembles the DDNS_GO namespace",
+		"ddns_updater.forward_auth_interface": "capability interface_selected_by reads the parameter",
+		"llng.domain_prefix":                  "identityCalc assembles the LLNG domain key",
+		"llng.manager_domain_prefix":          "identityCalc assembles the LLNG manager domain key",
+		"llng.test_domain_prefix":             "identityCalc assembles the LLNG test domain key",
+		"netbird.iam_protocol":                "capability interface_selected_by reads the parameter",
+		"oauth2_proxy.iam_protocol":           "capability interface_selected_by reads the parameter",
+		"traefik.domain_prefix":               "domainCalc assembles the TRAEFIK domain key",
+	}
+
+	for module, mod := range reg {
+		for _, parameter := range mod.Parameters {
+			id := module + "." + parameter
+			if dynamic[id] != "" {
+				continue
+			}
+			key := moduleParamEnvKey(module, mod.EnvPrefix, mod.Exports, parameter)
+			if !treeContainsRuntimeKey(filepath.Join(root, "modules", module), key) {
+				t.Errorf("%s produces %s but no shipped runtime file reads it; remove it or document a dynamic/upstream consumer", id, key)
+			}
+		}
+	}
+}
+
+func treeContainsRuntimeKey(root, key string) bool {
+	found := false
+	keyPattern := regexp.MustCompile(`(^|[^A-Z0-9_])` + regexp.QuoteMeta(key) + `([^A-Z0-9_]|$)`)
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || found {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		name := info.Name()
+		if name == "module.yml" || name == "README.md" || strings.HasSuffix(name, "_test.go") {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		found = keyPattern.Match(content)
+		return nil
+	})
+	return found
 }
 
 // A module that forgets upgrade.data_breaking is not obviously broken: it renders,

@@ -11,13 +11,11 @@ global:
   timezone: Asia/Shanghai
   virtual_domain: true
 env:
-  BASICAUTH_USER: admin
   # Keep the lifecycle suite independent of direct Docker Hub reachability on
   # the Linux E2E host; this enables the same registry mirrors used by the
   # other server fixtures without changing the lifecycle assertions.
   CHINESE_SPEEDUP: "true"
   CHINESE_BUILD_SPEEDUP: "true"
   CONTAINER_PREFIX: anaslc_
-  IMAGE_PREFIX: anaslc_
   NETWORK_PREFIX: anaslc_
   TRAEFIK_BASE_PORT: "19446"

@@ -688,6 +688,9 @@ func (a *app) hostLANRequired() bool {
 }
 
 func (a *app) resolveOrder(mods []string) ([]string, error) {
+	if err := validateConfiguredParameters(a.cfg, a.reg); err != nil {
+		return nil, err
+	}
 	if err := a.checkSingleIAM(); err != nil {
 		return nil, err
 	}
