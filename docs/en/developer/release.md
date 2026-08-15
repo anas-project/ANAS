@@ -1,15 +1,42 @@
 # ANAS, Module, and container releases
 
-ANAS has two release paths. Core binaries are released manually from `master` with a SemVer. Module
+ANAS has two release paths. Core binaries are released from `master` with an automatically
+incremented or explicitly selected SemVer. Module
 bundles, derived container images, and pinned upstream mirrors are released together from
 `image-release`. The [Chinese release guide](../../developer/release.md) is the normative, detailed
 runbook.
 
 ## ANAS Core
 
-Dispatch `.github/workflows/anas-release.yml` from `master` with a version such as `0.4.0`. The
-workflow rejects an existing immutable tag, runs `go test ./...`, builds static Linux `amd64` and
-`arm64` binaries, writes `SHA256SUMS`, and creates GitHub Release `v0.4.0`.
+The first automatic `.github/workflows/anas-release.yml` publication is `0.1.0`. Later automatic
+releases use the latest stable `vMAJOR.MINOR.PATCH` tag as the version source of truth and increment
+patch by default. `scripts/ci/anas-release-version.sh` owns this calculation and has an isolated
+fixture test.
+
+Two events can trigger an automatic release:
+
+- a direct push to `master` changes `cmd/anas/`, `internal/`, `go.mod`, or `go.sum`;
+- `Module and container artifacts` succeeds on `image-release`, creates its matching
+  `module-release/<run>-<attempt>` boundary, and fast-forwards the same commit to `master`.
+
+An automatic run succeeds without publishing when the latest Core tag already identifies the
+target commit or no Core input changed since the previous stable Core tag. Runs are serialized and
+an immutable tag can never be replaced.
+
+For explicit control, manually dispatch `ANAS release` from `master`. Leave `version` empty to use
+the selected `patch`, `minor`, or `major` increment, or provide an exact SemVer. Stable versions
+cannot move backwards and a tag that identifies another commit cannot be reused:
+
+```bash
+# First release resolves to 0.1.0 when no Core tag exists.
+gh workflow run anas-release.yml --ref master -f version= -f bump=patch -f prerelease=false
+
+# Request an exact release.
+gh workflow run anas-release.yml --ref master -f version=0.2.0 -f bump=patch -f prerelease=false
+```
+
+The publishing run executes `go test ./...`, cross-compiles static Linux binaries for `amd64` and
+`arm64`, creates two `tar.gz` archives plus `SHA256SUMS`, and publishes an immutable GitHub Release.
 
 Release builds expose their identity through:
 
