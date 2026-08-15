@@ -117,12 +117,12 @@ revision: 2
 
 - **发布身份与镜像 tag**：`34.0.2-r2`。`-r2` 不作为 SemVer 预发布后缀参与比较；
   runner 先比较 `version`，相同时再比较整数 `revision`
-- **git tag**：`nextcloud/v34.0.2-r2`
-- **首次发布**：手工执行 GitHub Actions 的 `workflow_dispatch`，参数使用 `all`
-- **后续发布触发**：只在 `.github/images.json` 登记的 build context 发生变化时选择
-  对应 module；PR 构建验证，合并主分支后发布
-- **版本校验**：上游版本不变时 revision 必须恰好加一；上游版本变化时必须重置为 1；
-  已存在的 GHCR tag 不允许覆盖
+- **成功发布 tag**：`image-release/<run>-<attempt>`，指向自动 revision commit，作为下一次计算基准
+- **首次发布**：从 `master` 创建 `image-release`，手工执行一次 `workflow_dispatch all` 或合并后触发
+- **后续发布触发**：只在合并到 `image-release` 后计算；相对上次成功 tag，按
+  `.github/images.json` 登记的 build context 选择对应 Module
+- **版本生成**：同一上游版本有 context 变化时 revision 自动加一；上游版本变化时自动重置为 1；
+  生成值由 Bot 提交，已存在的 GHCR tag 不允许覆盖
 - **多镜像 module**：`samba_dc` 任一 context 变化时，两个镜像按同一版本成组发布
 - **`data_breaking` 布尔化遍历的是修订序列**，不是应用版本序列
 
