@@ -1,11 +1,28 @@
 name: ANAS release
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - "cmd/anas/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+  workflow_run:
+    workflows: ["Module and container artifacts"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
-        description: "SemVer without the v prefix (for example 0.4.0)"
+        description: "Exact SemVer without v; leave empty to increment"
+        required: false
+        default: ""
+      bump:
+        description: "Increment used when version is empty"
+        type: choice
+        options: [patch, minor, major]
         required: true
+        default: patch
       prerelease:
         description: "Publish as a GitHub prerelease"
         type: boolean
@@ -21,8 +38,20 @@ concurrency:
 
 jobs:
   validate:
+    if: |
+      github.event_name != 'workflow_run' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'image-release' &&
+        (
+          github.event.workflow_run.event == 'push' ||
+          github.event.workflow_run.event == 'workflow_dispatch'
+        )
+      )
     runs-on: ubuntu-latest
     outputs:
+      publish: ${{ steps.release.outputs.publish }}
+      reason: ${{ steps.release.outputs.reason }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
       commit: ${{ steps.release.outputs.commit }}
@@ -30,43 +59,91 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: master
           fetch-depth: 0
+
+      - name: Test release version calculator
+        run: bash scripts/ci/anas-release-version-test.sh
 
       - name: Validate release identity
         id: release
         env:
-          VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_REF_NAME: ${{ github.ref_name }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+          BUMP: ${{ inputs.bump }}
+          SOURCE_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF_NAME" != "master" ]]; then
+
+          commit="$(git rev-parse HEAD)"
+          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          skip_release() {
+            echo "ANAS release skipped: $1"
+            echo "publish=false" >>"$GITHUB_OUTPUT"
+            echo "reason=$1" >>"$GITHUB_OUTPUT"
+            echo "commit=$commit" >>"$GITHUB_OUTPUT"
+            echo "build_date=$build_date" >>"$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          if [[ "$EVENT_NAME" == workflow_dispatch && "$DISPATCH_REF_NAME" != master ]]; then
             echo "ANAS releases must be dispatched from master" >&2
             exit 1
           fi
-          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid SemVer: $VERSION" >&2
+
+          if [[ "$EVENT_NAME" == workflow_run ]]; then
+            boundary="module-release/${SOURCE_RUN_NUMBER}-${SOURCE_RUN_ATTEMPT}"
+            if ! git rev-parse --verify --quiet "refs/tags/${boundary}^{commit}" >/dev/null; then
+              skip_release "source workflow did not create $boundary"
+            fi
+            boundary_commit="$(git rev-list -n1 "$boundary")"
+            if [[ "$boundary_commit" != "$commit" ]]; then
+              skip_release "master is $commit, while $boundary released $boundary_commit"
+            fi
+          fi
+
+          bump="${BUMP:-patch}"
+          args=(--commit "$commit" --initial 0.1.0 --bump "$bump")
+          if [[ -n "${REQUESTED_VERSION:-}" ]]; then
+            args+=(--version "$REQUESTED_VERSION")
+          fi
+          if [[ "$EVENT_NAME" != workflow_dispatch ]]; then
+            args+=(--automatic)
+          fi
+          decision="$(bash scripts/ci/anas-release-version.sh "${args[@]}")"
+          if [[ "$decision" == skip:* ]]; then
+            skip_release "${decision#skip:}"
+          fi
+          if [[ "$decision" != release:* ]]; then
+            echo "unexpected release decision: $decision" >&2
             exit 1
           fi
-          tag="v${VERSION}"
-          if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
-            echo "Immutable release tag already exists: $tag" >&2
-            exit 1
-          fi
-          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+          version="${decision#release:}"
+          tag="v${version}"
+
+          echo "publish=true" >>"$GITHUB_OUTPUT"
+          echo "reason=release" >>"$GITHUB_OUTPUT"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "tag=$tag" >>"$GITHUB_OUTPUT"
-          echo "commit=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
-          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GITHUB_OUTPUT"
+          echo "commit=$commit" >>"$GITHUB_OUTPUT"
+          echo "build_date=$build_date" >>"$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5
+        if: steps.release.outputs.publish == 'true'
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Test release commit
+        if: steps.release.outputs.publish == 'true'
         run: go test ./...
 
   build:
     needs: validate
+    if: needs.validate.outputs.publish == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -108,6 +185,7 @@ jobs:
 
   publish:
     needs: [validate, build]
+    if: needs.validate.outputs.publish == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -131,7 +209,7 @@ jobs:
           TAG: ${{ needs.validate.outputs.tag }}
           VERSION: ${{ needs.validate.outputs.version }}
           COMMIT: ${{ needs.validate.outputs.commit }}
-          PRERELEASE: ${{ inputs.prerelease }}
+          PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
         shell: bash
         run: |
           set -euo pipefail
