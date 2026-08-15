@@ -1,6 +1,6 @@
 # ANAS、Module 与容器发布
 
-ANAS 有两条发布链路：Core 二进制从 `master` 按自动递增或人工指定的 SemVer 发布；Module bundle、
+ANAS 有两条发布链路：Core 二进制从专用 `anas-release` 分支按自动递增或人工指定的 SemVer 发布；Module bundle、
 派生容器镜像和上游 mirror 从 `image-release` 按变更上下文发布。Module 与容器属于同一
 事务，不能单独留下一个引用不存在镜像的 bundle。
 
@@ -10,25 +10,38 @@ ANAS 有两条发布链路：Core 二进制从 `master` 按自动递增或人工
 稳定 `vMAJOR.MINOR.PATCH` tag 为版本真相源，自动发布默认递增 patch。版本计算由
 `scripts/ci/anas-release-version.sh` 完成并有独立 fixture 测试。
 
-自动触发有两条路径：
+自动发布只由 `anas-release` 分支触发：该分支上的 `cmd/anas/`、`internal/`、`go.mod`
+或 `go.sum` 发生 push 时运行。`master` push 和 Module/container 工作流均不会触发 Core
+发布，因此 Core、Module 两条发布链路可以独立推进。
+每次任务固定使用触发事件中的 commit SHA；即使分支在排队期间继续前进，也不会构建错 commit。
 
-- `master` 上 `cmd/anas/`、`internal/`、`go.mod` 或 `go.sum` 发生直接 push；
-- `Module and container artifacts` 在 `image-release` 上成功，并已创建对应
-  `module-release/<run>-<attempt>` 边界且把同一 commit 快进到 `master`。
+日常开发先进入 `master`；需要发布 Core 时，通过 PR 或快进把选定的 `master` commit
+推进到 `anas-release`：
+
+```bash
+git fetch origin
+git switch anas-release
+git merge --ff-only origin/master
+git push origin anas-release
+```
+
+`anas-release` 分支首次建立时从已验证的 `master` commit 创建；建立后不把它作为日常开发
+分支，也不从该分支反向同步到 `master`。如果 `master` 包含尚不准备发布的提交，应先用
+PR 把明确的候选 commit 合入 `anas-release`，不要直接执行上述整体快进。
 
 若最新 Core tag 已指向目标 commit，或自上一个稳定 Core tag 后上述 Core 输入没有变化，
 自动任务成功跳过，不制造空版本。并发任务串行执行，已存在的不可变 tag 不能被覆盖。
 
-需要显式控制版本时，从 `master` 手工运行 `ANAS release`：`version` 留空时按所选
+需要显式控制版本时，从 `anas-release` 手工运行 `ANAS release`：`version` 留空时按所选
 `patch`、`minor` 或 `major` 递增；填写 `version` 时使用该精确 SemVer。稳定版本不得倒退，
 也不得复用指向其他 commit 的 tag。例如：
 
 ```bash
 # 当前没有 Core tag 时解析为首次版本 0.1.0
-gh workflow run anas-release.yml --ref master -f version= -f bump=patch -f prerelease=false
+gh workflow run anas-release.yml --ref anas-release -f version= -f bump=patch -f prerelease=false
 
 # 明确指定版本
-gh workflow run anas-release.yml --ref master -f version=0.2.0 -f bump=patch -f prerelease=false
+gh workflow run anas-release.yml --ref anas-release -f version=0.2.0 -f bump=patch -f prerelease=false
 ```
 
 发布任务运行 `go test ./...`，分别交叉编译 Linux `amd64`、`arm64` 静态二进制，生成

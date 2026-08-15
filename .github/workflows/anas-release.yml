@@ -2,15 +2,12 @@ name: ANAS release
 
 on:
   push:
-    branches: [master]
+    branches: [anas-release]
     paths:
       - "cmd/anas/**"
       - "internal/**"
       - "go.mod"
       - "go.sum"
-  workflow_run:
-    workflows: ["Module and container artifacts"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       version:
@@ -38,16 +35,6 @@ concurrency:
 
 jobs:
   validate:
-    if: |
-      github.event_name != 'workflow_run' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'image-release' &&
-        (
-          github.event.workflow_run.event == 'push' ||
-          github.event.workflow_run.event == 'workflow_dispatch'
-        )
-      )
     runs-on: ubuntu-latest
     outputs:
       publish: ${{ steps.release.outputs.publish }}
@@ -59,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: master
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Test release version calculator
@@ -72,8 +59,6 @@ jobs:
           DISPATCH_REF_NAME: ${{ github.ref_name }}
           REQUESTED_VERSION: ${{ inputs.version }}
           BUMP: ${{ inputs.bump }}
-          SOURCE_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
-          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         shell: bash
         run: |
           set -euo pipefail
@@ -89,20 +74,9 @@ jobs:
             exit 0
           }
 
-          if [[ "$EVENT_NAME" == workflow_dispatch && "$DISPATCH_REF_NAME" != master ]]; then
-            echo "ANAS releases must be dispatched from master" >&2
+          if [[ "$EVENT_NAME" == workflow_dispatch && "$DISPATCH_REF_NAME" != anas-release ]]; then
+            echo "ANAS releases must be dispatched from anas-release" >&2
             exit 1
-          fi
-
-          if [[ "$EVENT_NAME" == workflow_run ]]; then
-            boundary="module-release/${SOURCE_RUN_NUMBER}-${SOURCE_RUN_ATTEMPT}"
-            if ! git rev-parse --verify --quiet "refs/tags/${boundary}^{commit}" >/dev/null; then
-              skip_release "source workflow did not create $boundary"
-            fi
-            boundary_commit="$(git rev-list -n1 "$boundary")"
-            if [[ "$boundary_commit" != "$commit" ]]; then
-              skip_release "master is $commit, while $boundary released $boundary_commit"
-            fi
           fi
 
           bump="${BUMP:-patch}"

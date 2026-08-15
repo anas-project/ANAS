@@ -11,6 +11,31 @@ ANAS 面向 Linux 主机，运行服务需要 Docker Engine 和 Docker Compose v
 - 为所有服务准备的持久存储；
 - 如果使用域名和 HTTPS，准备 DNS 控制权以及所需的 DNS API 凭据。
 
+## 安装 ANAS Core
+
+Core 的预编译 Linux 二进制由 `anas-release` 分支发布到
+[GitHub Releases](https://github.com/anas-project/ANAS/releases)。选择固定版本和机器架构，
+校验后安装；以下以 `0.1.0` 为例：
+
+```bash
+version=0.1.0
+case "$(uname -m)" in
+  x86_64) arch=amd64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+curl -fLO "https://github.com/anas-project/ANAS/releases/download/v${version}/anas_${version}_linux_${arch}.tar.gz"
+curl -fLO "https://github.com/anas-project/ANAS/releases/download/v${version}/SHA256SUMS"
+sha256sum --check --ignore-missing SHA256SUMS
+tar -xzf "anas_${version}_linux_${arch}.tar.gz"
+sudo install -m 0755 "anas_${version}_linux_${arch}/anas" /usr/local/bin/anas
+anas version
+```
+
+Core release 只包含 `anas` 可执行文件。`module_source` 控制后续 Module bundle 的下载源，
+不会改变 Core 二进制的下载地址或版本。
+
 ## 选择 Module 源
 
 顶层 `module_source` 选择 Module artifact 的首选 Registry：

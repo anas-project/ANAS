@@ -11,6 +11,31 @@ You also need:
 - durable storage for all services;
 - control of DNS and the necessary DNS API credentials when using domains and HTTPS.
 
+## Install ANAS Core
+
+The `anas-release` branch publishes prebuilt Linux binaries to
+[GitHub Releases](https://github.com/anas-project/ANAS/releases). Select an exact version and the
+host architecture, verify its checksum, and install it. This example uses `0.1.0`:
+
+```bash
+version=0.1.0
+case "$(uname -m)" in
+  x86_64) arch=amd64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+curl -fLO "https://github.com/anas-project/ANAS/releases/download/v${version}/anas_${version}_linux_${arch}.tar.gz"
+curl -fLO "https://github.com/anas-project/ANAS/releases/download/v${version}/SHA256SUMS"
+sha256sum --check --ignore-missing SHA256SUMS
+tar -xzf "anas_${version}_linux_${arch}.tar.gz"
+sudo install -m 0755 "anas_${version}_linux_${arch}/anas" /usr/local/bin/anas
+anas version
+```
+
+A Core release contains only the `anas` executable. `module_source` controls subsequent Module
+bundle retrieval; it does not change the Core binary download location or version.
+
 ## Select a Module source
 
 ```yaml

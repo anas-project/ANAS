@@ -1,6 +1,6 @@
 # ANAS, Module, and container releases
 
-ANAS has two release paths. Core binaries are released from `master` with an automatically
+ANAS has two release paths. Core binaries are released from the dedicated `anas-release` branch with an automatically
 incremented or explicitly selected SemVer. Module
 bundles, derived container images, and pinned upstream mirrors are released together from
 `image-release`. The [Chinese release guide](../../developer/release.md) is the normative, detailed
@@ -13,26 +13,40 @@ releases use the latest stable `vMAJOR.MINOR.PATCH` tag as the version source of
 patch by default. `scripts/ci/anas-release-version.sh` owns this calculation and has an isolated
 fixture test.
 
-Two events can trigger an automatic release:
+Only the `anas-release` branch triggers an automatic Core publication. A push changing
+`cmd/anas/`, `internal/`, `go.mod`, or `go.sum` starts the workflow. Neither a `master` push nor the
+Module/container workflow triggers a Core release, so the two release paths advance independently.
+Every run pins the triggering commit SHA, so a later branch update cannot change a queued build.
 
-- a direct push to `master` changes `cmd/anas/`, `internal/`, `go.mod`, or `go.sum`;
-- `Module and container artifacts` succeeds on `image-release`, creates its matching
-  `module-release/<run>-<attempt>` boundary, and fast-forwards the same commit to `master`.
+Development lands on `master`. Promote the selected, tested `master` commit to `anas-release` by PR
+or fast-forward when Core is ready to publish:
+
+```bash
+git fetch origin
+git switch anas-release
+git merge --ff-only origin/master
+git push origin anas-release
+```
+
+Create `anas-release` once from a verified `master` commit. It is a release gate rather than a
+development branch and must not be synchronized back into `master`. If `master` contains commits
+that are not ready, merge an explicit candidate into `anas-release` by PR instead of advancing it to
+all of `master`.
 
 An automatic run succeeds without publishing when the latest Core tag already identifies the
 target commit or no Core input changed since the previous stable Core tag. Runs are serialized and
 an immutable tag can never be replaced.
 
-For explicit control, manually dispatch `ANAS release` from `master`. Leave `version` empty to use
+For explicit control, manually dispatch `ANAS release` from `anas-release`. Leave `version` empty to use
 the selected `patch`, `minor`, or `major` increment, or provide an exact SemVer. Stable versions
 cannot move backwards and a tag that identifies another commit cannot be reused:
 
 ```bash
 # First release resolves to 0.1.0 when no Core tag exists.
-gh workflow run anas-release.yml --ref master -f version= -f bump=patch -f prerelease=false
+gh workflow run anas-release.yml --ref anas-release -f version= -f bump=patch -f prerelease=false
 
 # Request an exact release.
-gh workflow run anas-release.yml --ref master -f version=0.2.0 -f bump=patch -f prerelease=false
+gh workflow run anas-release.yml --ref anas-release -f version=0.2.0 -f bump=patch -f prerelease=false
 ```
 
 The publishing run executes `go test ./...`, cross-compiles static Linux binaries for `amd64` and
