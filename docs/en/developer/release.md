@@ -13,8 +13,9 @@ releases use the latest stable `vMAJOR.MINOR.PATCH` tag as the version source of
 patch by default. `scripts/ci/anas-release-version.sh` owns this calculation and has an isolated
 fixture test.
 
-Only the `anas-release` branch triggers an automatic Core publication. A push changing
-`cmd/anas/`, `internal/`, `go.mod`, or `go.sum` starts the workflow. Neither a `master` push nor the
+Only the `anas-release` branch triggers an automatic Core publication. A push changing `.cnb.yml`,
+`cmd/anas/`, `internal/`, `install.sh`, `go.mod`, `go.sum`, or the Core release build and installer
+test scripts starts the workflow. Neither a `master` push nor the
 Module/container workflow triggers a Core release, so the two release paths advance independently.
 Every run pins the triggering commit SHA, so a later branch update cannot change a queued build.
 
@@ -50,7 +51,10 @@ gh workflow run anas-release.yml --ref anas-release -f version=0.2.0 -f bump=pat
 ```
 
 The publishing run executes `go test ./...`, cross-compiles static Linux binaries for `amd64` and
-`arm64`, creates two `tar.gz` archives plus `SHA256SUMS`, and publishes an immutable GitHub Release.
+`arm64`, creates `anas_linux_amd64.tar.gz`, `anas_linux_arm64.tar.gz`, and `SHA256SUMS`, then
+publishes an immutable GitHub Release. Once the tag is mirrored, the root `.cnb.yml` publishes the
+same stable asset names as a CNB Release for the one-line installer. `cnb-sync.yml` also runs after
+a successful Core workflow so tags created with the workflow token are not missed.
 
 Release builds expose their identity through:
 

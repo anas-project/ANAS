@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
@@ -13,6 +14,23 @@ import (
 
 var restartDDNSGo = func(container string) error {
 	return exec.Command("docker", "restart", container).Run()
+}
+
+// The reconciler runs as root in the container and atomically replaces the
+// bind-mounted state file. Without handing the bind mount back to the ANAS
+// user, the host-side lifecycle hook cannot verify or rotate the credential.
+var takeDDNSStateOwnership = func(container string) error {
+	owner := strconv.Itoa(os.Getuid()) + ":" + strconv.Itoa(os.Getgid())
+	for _, args := range [][]string{
+		{"exec", container, "chown", owner, "/root", "/root/.ddns_go_config.yaml"},
+		{"exec", container, "chmod", "0700", "/root"},
+		{"exec", container, "chmod", "0600", "/root/.ddns_go_config.yaml"},
+	} {
+		if output, err := exec.Command("docker", args...).CombinedOutput(); err != nil {
+			return fmt.Errorf("prepare ddns-go state ownership: %w: %s", err, bytes.TrimSpace(output))
+		}
+	}
+	return nil
 }
 
 func handleLocalAccount(req hookRequest) error {
@@ -25,6 +43,10 @@ func handleLocalAccount(req hookRequest) error {
 		return fmt.Errorf("ddns-go: current or candidate local administrator secret is missing")
 	}
 	path := filepath.Join(req.Env["DATA_PATH"], "ddns_go", ".ddns_go_config.yaml")
+	container := req.Env["CONTAINER_PREFIX"] + "ddns_go"
+	if err := takeDDNSStateOwnership(container); err != nil {
+		return err
+	}
 	if req.Phase == "local_account_apply" {
 		return verifyDDNSCredential(path, op.Username, candidate)
 	}
@@ -35,9 +57,11 @@ func handleLocalAccount(req hookRequest) error {
 	if err := writeDDNSCredential(path, before, op.Username, candidate); err != nil {
 		return err
 	}
-	container := req.Env["CONTAINER_PREFIX"] + "ddns_go"
 	if err := restartDDNSGo(container); err == nil {
-		if err = verifyDDNSCredential(path, op.Username, candidate); err == nil {
+		if err = takeDDNSStateOwnership(container); err == nil {
+			err = verifyDDNSCredential(path, op.Username, candidate)
+		}
+		if err == nil {
 			return nil
 		}
 	}

@@ -11,30 +11,50 @@ You also need:
 - durable storage for all services;
 - control of DNS and the necessary DNS API credentials when using domains and HTTPS.
 
-## Install ANAS Core
+## One-line Core installation
 
-The `anas-release` branch publishes prebuilt Linux binaries to
-[GitHub Releases](https://github.com/anas-project/ANAS/releases). Select an exact version and the
-host architecture, verify its checksum, and install it. This example uses `0.1.0`:
+The installer currently supports Linux only and detects `x86_64`/`amd64` and
+`aarch64`/`arm64`. It downloads the matching static binary, verifies it against the Release
+`SHA256SUMS`, and installs it as `/usr/local/bin/anas`. It invokes `sudo` only when the destination
+is not writable.
+
+Install from GitHub and keep GitHub/GHCR as the default distribution source:
 
 ```bash
-version=0.1.0
-case "$(uname -m)" in
-  x86_64) arch=amd64 ;;
-  aarch64|arm64) arch=arm64 ;;
-  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
-esac
-
-curl -fLO "https://github.com/anas-project/ANAS/releases/download/v${version}/anas_${version}_linux_${arch}.tar.gz"
-curl -fLO "https://github.com/anas-project/ANAS/releases/download/v${version}/SHA256SUMS"
-sha256sum --check --ignore-missing SHA256SUMS
-tar -xzf "anas_${version}_linux_${arch}.tar.gz"
-sudo install -m 0755 "anas_${version}_linux_${arch}/anas" /usr/local/bin/anas
-anas version
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-project/ANAS/master/install.sh | sh
 ```
 
-A Core release contains only the `anas` executable. `module_source` controls subsequent Module
-bundle retrieval; it does not change the Core binary download location or version.
+Install from the CN source, backed by CNB, and keep it as the default distribution source:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://cnb.cool/anas.dev/ANAS/-/git/raw/master/install.sh | sh -s -- --source cn
+```
+
+The installer records the choice in `${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`. A CNB install
+stores `official-cn`. A later `anas init`, or `anas config import` whose external file omits
+`module_source`, persists:
+
+```yaml
+module_source: official-cn
+global:
+  chinese_speedup: true
+```
+
+Modules then come from CNB, Compose receives
+`ANAS_IMAGE_REGISTRY=docker.cnb.cool/anas.dev/anas`, and runtime downloads use the mainland-China
+mirrors. Once a workspace is initialized, its own `config.yml` retains the source, so moving the
+workspace or changing the installer preference cannot silently change an existing deployment. An
+explicit `module_source` in the external configuration always wins.
+
+To avoid `sudo`, install into a writable directory already present in `PATH`:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-project/ANAS/master/install.sh | sh -s -- --install-dir "$HOME/.local/bin"
+```
+
+The script requires `curl`, `tar`, `install`, and either `sha256sum` or `shasum`. Automation can set
+`ANAS_INSTALL_SOURCE=github|cn` and `ANAS_INSTALL_DIR`; the CLI also accepts a temporary
+`ANAS_DEFAULT_SOURCE=official|official-cn` override.
 
 ## Select a Module source
 

@@ -10,8 +10,9 @@ ANAS 有两条发布链路：Core 二进制从专用 `anas-release` 分支按自
 稳定 `vMAJOR.MINOR.PATCH` tag 为版本真相源，自动发布默认递增 patch。版本计算由
 `scripts/ci/anas-release-version.sh` 完成并有独立 fixture 测试。
 
-自动发布只由 `anas-release` 分支触发：该分支上的 `cmd/anas/`、`internal/`、`go.mod`
-或 `go.sum` 发生 push 时运行。`master` push 和 Module/container 工作流均不会触发 Core
+自动发布只由 `anas-release` 分支触发：该分支上的 `.cnb.yml`、`cmd/anas/`、`internal/`、
+`install.sh`、`go.mod`、`go.sum` 或 Core 发布构建与安装测试脚本发生 push 时运行。`master`
+push 和 Module/container 工作流均不会触发 Core
 发布，因此 Core、Module 两条发布链路可以独立推进。
 每次任务固定使用触发事件中的 commit SHA；即使分支在排队期间继续前进，也不会构建错 commit。
 
@@ -45,13 +46,16 @@ gh workflow run anas-release.yml --ref anas-release -f version=0.2.0 -f bump=pat
 ```
 
 发布任务运行 `go test ./...`，分别交叉编译 Linux `amd64`、`arm64` 静态二进制，生成
-两个 `tar.gz` 和 `SHA256SUMS`，然后创建不可覆盖的 GitHub Release。
+两个 `tar.gz` 和 `SHA256SUMS`，然后创建不可覆盖的 GitHub Release。Git tag 同步到 CNB
+后（`cnb-sync.yml` 也会在 Core workflow 成功结束时补做一次同步），根 `.cnb.yml` 用同一
+commit、版本和构建时间生成对应 CNB Release；两个源都提供安装器
+使用的稳定附件名。
 
 发布包名称：
 
 ```text
-anas_0.1.0_linux_amd64.tar.gz
-anas_0.1.0_linux_arm64.tar.gz
+anas_linux_amd64.tar.gz
+anas_linux_arm64.tar.gz
 SHA256SUMS
 ```
 
@@ -62,8 +66,9 @@ anas version
 anas version --json
 ```
 
-Core release 不内嵌 Module。Module 有自己的版本、OCI digest 和更新节奏，安装器根据
-config/lock 获取；本地 `modules/` + `contracts/` 只保留为源码开发覆盖。
+Core release 不内嵌 Module。Module 有自己的版本、OCI digest 和更新节奏，安装器选择会
+写入用户级源偏好，新建或导入配置再把它固化到 config/lock；本地 `modules/` + `contracts/`
+只保留为源码开发覆盖。
 
 ## Module 与容器整体流程
 

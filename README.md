@@ -14,6 +14,17 @@ Documentation: [website](https://anas-project.github.io/ANAS/) ·
 ANAS targets Linux hosts with Docker Engine and Docker Compose v2. A Btrfs
 workspace is recommended when local snapshots are required.
 
+Install the latest Linux `amd64` or `arm64` release from GitHub:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-project/ANAS/master/install.sh | sh
+```
+
+For mainland China, use the CN one-line command in the
+[installation guide](docs/getting-started/installation.md). The selected source
+is also used as the default for Modules, runtime images, and runtime downloads
+when a new workspace does not override it.
+
 ```sh
 # Prepare an external configuration, then create and import it.
 cp config.example.yml ./anas.yml

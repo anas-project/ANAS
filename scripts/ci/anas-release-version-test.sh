@@ -13,6 +13,7 @@ mkdir -p cmd/anas internal/example docs
 printf 'package main\n' >cmd/anas/main.go
 printf 'package example\n' >internal/example/example.go
 printf 'module example.invalid/anas\n\ngo 1.26\n' >go.mod
+printf '#!/usr/bin/env sh\n' >install.sh
 printf '# docs\n' >docs/index.md
 git add .
 git commit -qm initial
@@ -30,6 +31,12 @@ git add docs/index.md
 git commit -qm docs
 decision="$(bash "$source_script" --commit HEAD --automatic)"
 [[ "$decision" == skip:no-core-changes ]]
+
+printf '# installer changed\n' >>install.sh
+git add install.sh
+git commit -qm installer
+decision="$(bash "$source_script" --commit HEAD --automatic)"
+[[ "$decision" == release:0.1.1 ]]
 
 printf '// core changed\n' >>internal/example/example.go
 git add internal/example/example.go
