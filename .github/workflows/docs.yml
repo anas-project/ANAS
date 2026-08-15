@@ -4,6 +4,10 @@ on:
   pull_request:
   push:
     branches: [master]
+  workflow_run:
+    workflows: [Module and container artifacts]
+    types: [completed]
+    branches: [image-release]
   workflow_dispatch:
 
 concurrency:
@@ -18,9 +22,8 @@ permissions:
 jobs:
   build:
     name: Build documentation
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request')
     runs-on: ubuntu-latest
-    outputs:
-      pages_ready: ${{ steps.pages.outcome == 'success' }}
     permissions:
       contents: read
       pages: write
@@ -30,6 +33,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && 'master' || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -46,24 +50,17 @@ jobs:
       - name: Setup GitHub Pages
         id: pages
         if: github.event_name != 'pull_request'
-        continue-on-error: true
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Report disabled GitHub Pages
-        if: github.event_name != 'pull_request' && steps.pages.outcome == 'failure'
-        run: echo '::warning::Documentation built successfully, but a repository administrator must enable GitHub Pages before deployment.'
 
       - name: Upload GitHub Pages artifact
-        if: github.event_name != 'pull_request' && steps.pages.outcome == 'success'
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v4
         with:
           path: docs/.vitepress/dist
 
   deploy:
     name: Deploy documentation
-    if: github.event_name != 'pull_request' && needs.build.outputs.pages_ready == 'true'
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     permissions:
