@@ -10,6 +10,7 @@ abi:
 title: MeshCentral
 description: Remote device management with OIDC authentication and LDAP directory synchronization.
 category: app
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

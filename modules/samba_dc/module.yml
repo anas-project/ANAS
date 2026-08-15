@@ -10,6 +10,7 @@ abi:
 title: Samba domain controller and DNS
 description: Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server.
 category: identity
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

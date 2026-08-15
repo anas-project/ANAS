@@ -392,6 +392,7 @@ func (a *app) execute(actions []string) error {
 		fmt.Print(a.iamPlanSummary())
 		fmt.Print(a.dnsPlanSummary())
 		fmt.Print(a.dynamicDNSPlanSummary())
+		fmt.Print(a.moduleLifecyclePlanSummary())
 		return nil
 	}
 	if contains(actions, "stop") {

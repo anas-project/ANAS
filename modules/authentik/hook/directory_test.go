@@ -37,6 +37,10 @@ func TestDirectoryBlueprintUsesEnvironmentContracts(t *testing.T) {
 		!strings.Contains(blueprint, "- !KeyOf samba-ad-group-role-mapping") {
 		t.Fatal("the exact Samba AD Admins group must be the only synchronized superuser role")
 	}
+	if !strings.Contains(blueprint, `display_name = list_flatten(ldap.get("displayName"))`) ||
+		!strings.Contains(blueprint, "- !KeyOf samba-ad-user-display-name-mapping") {
+		t.Fatal("Samba displayName must be the Authentik user name used by OIDC profile claims")
+	}
 }
 
 func TestCalcAuthentikUsesPasswordServiceAccount(t *testing.T) {

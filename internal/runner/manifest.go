@@ -402,6 +402,10 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if manifest.Revision < 1 {
 		return Module{}, fmt.Errorf("module %q revision must be at least 1", dirname)
 	}
+	manifest.Status = strings.ToLower(strings.TrimSpace(manifest.Status))
+	if !contains([]string{"release", "developing", "deprecated"}, manifest.Status) {
+		return Module{}, fmt.Errorf("module %q status %q is invalid; expected release, developing, or deprecated", dirname, manifest.Status)
+	}
 	if manifest.Upgrade.From != "" {
 		if _, err := parseVersionConstraint(manifest.Upgrade.From); err != nil {
 			return Module{}, fmt.Errorf("module %q upgrade.from %q is invalid: %w", dirname, manifest.Upgrade.From, err)
@@ -536,6 +540,7 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		Version:                manifest.Version,
 		Revision:               manifest.Revision,
 		AppVersion:             strings.TrimSpace(manifest.AppVersion),
+		Lifecycle:              manifest.Status,
 		UpgradeFrom:            manifest.Upgrade.From,
 		DataBreaking:           cloneStringListPointer(manifest.Upgrade.DataBreaking),
 		SourceDir:              dir,

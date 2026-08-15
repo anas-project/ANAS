@@ -6,6 +6,8 @@ File sync, sharing, office integration, memories, and Talk.
 
 - 日常登录默认通过 IAM/OIDC；也可把 `nextcloud.iam_protocol` 显式设为 `saml`。
   两种协议都只负责认证，用户和组仍由 LDAP provisioning 管理，本地账号不参与日常 SSO。
+- Samba AD `Admins` 通过 Nextcloud LDAP administrative group 动态映射为 `admin` 权限；
+  移出该目录组后权限随映射撤销，不维护单独的本地管理员成员关系。
 - OIDC 使用官方 `user_oidc` 应用。OIDC `preferred_username` 对齐 LDAP 的
   `sAMAccountName`/Internal Username，因而登录复用现有 LDAP 用户；目录
   `anasIdentityAnchor` 仍作为 IAM claim 发布，用于跨系统身份核验。
@@ -33,6 +35,9 @@ Daily login uses IAM/OIDC by default; setting `nextcloud.iam_protocol` to
 LDAP-provisioned users rather than creating a second user backend. The OIDC
 `preferred_username` claim matches the LDAP `sAMAccountName` internal username,
 while `anasIdentityAnchor` remains available for cross-system identity checks.
+Samba AD `Admins` is promoted as Nextcloud's dynamic LDAP administrative group;
+membership removal revokes application administration without a sticky local
+group assignment.
 The native account is only for recovery. Its logical Manifest ID is
 `break_glass`; the default physical username is `admin_nextcloud`, while its
 password is an independent generated Secret rather than YAML configuration.

@@ -8,6 +8,7 @@
 | [Module、Contract 与 Resource](module-contract-resource-design.md) | 当前模型 | 独立发布单元、跨模块协议、持久资源及 Provider operation |
 | [管理员账号系统](admin-account-system.md) | 当前模型与路线图 | 目录管理员、应用角色、本地账号、Secret 与 CLI 生命周期 |
 | [IAM 能力](iam-capability-design.md) | 当前模型 | IAM provider、OIDC/SAML 协议选择与绑定 |
+| [新 IAM Provider 准入要求](iam-provider-requirements.md) | 当前验收契约 | 新 IAM 的目录、协议、Adapter、安全与 E2E 要求 |
 | [应用目录](app-catalog-design.md) | 设计 | 门户条目、可见性与执行点授权映射 |
 | [动态 DNS 能力](dynamic-dns-capability-design.md) | 当前模型 | DDNS 实现选择、凭据和 Web 认证 |
 | [运行时与发布状态](runtime-release-state-design.md) | 已实施设计记录 | deployment 制品、锁和持久状态 |

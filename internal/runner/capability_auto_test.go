@@ -18,6 +18,7 @@ kind: Module
 name: %s
 version: 1.0.0
 revision: 1
+status: release
 abi:
   supports: [anas.module-hook/v1]
 runtime:
@@ -32,6 +33,7 @@ kind: Module
 name: ddns_go
 version: 1.0.0
 revision: 1
+status: release
 abi:
   supports: [anas.module-hook/v1]
 runtime:
@@ -146,6 +148,7 @@ kind: Module
 name: broken
 version: 1.0.0
 revision: 1
+status: developing
 abi:
   supports: [anas.module-hook/v1]
 runtime:

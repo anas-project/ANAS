@@ -119,6 +119,24 @@ func TestMeshcentralPublishesOIDCRegistration(t *testing.T) {
 	}
 }
 
+func TestMeshcentralApplicationGroupsUseRecursiveMembership(t *testing.T) {
+	env := map[string]string{
+		"MESHCENTRAL_DB_TYPE":                "postgres",
+		"SAMBA_DC_APP_FILTER":                "true",
+		"SAMBA_DC_USER_CLASS_FILTER":         "(objectClass=user)",
+		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE": "anasIdentityAnchor",
+		"SAMBA_DC_BASE_APP_DN":               "OU=Apps,OU=Groups,DC=nas,DC=test",
+		"SAMBA_DC_APP_ALL_DN":                "CN=APP_all,OU=Apps,OU=Groups,DC=nas,DC=test",
+		"SAMBA_DC_ADMIN_GROUP_DN":            "CN=Admins,OU=Role,OU=Groups,DC=nas,DC=test",
+	}
+	if err := calcMeshcentral(env, "", &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := env["MESHCENTRAL_USER_FILTER"]; strings.Count(got, "memberOf:1.2.840.113556.1.4.1941:=") != 3 {
+		t.Fatalf("application group filter is not recursive for all alternatives: %s", got)
+	}
+}
+
 func TestMeshcentralAppliesOIDCBinding(t *testing.T) {
 	env := map[string]string{
 		"ANAS_IAM_BINDING__MESHCENTRAL__INTERFACE":          "oidc",

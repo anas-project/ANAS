@@ -185,7 +185,18 @@ launcher:
 
 然后 Runner 统一追加管理员组 `SAMBA_DC_ADMIN_GROUP_NAME`。这条兜底今天写死在
 LLNG 的 shell 里（`groups_filter="$groups_filter | inGroup('$SAMBA_DC_ADMIN_GROUP_NAME')"`），
+正式契约中所有组固定按 **OR / any** 解释：命中任意一组即可访问。当前不提供
+`access.match` 配置项；如果将来增加，它只能显式取 `any` 或 `all`，而本方案生成的
+`APP_<应用名>,APP_all,Admins` 必须保持 `any`。固定语义可避免两个 IAM adapter 对同一份
+目录声明得出不同授权结果。
 搬到 Runner 后 Authentik 侧自动获得同样语义，不必在两份脚本里各写一次。
+
+LLNG adapter 还必须把每个应用声明的 claim 源属性加入 `ldapExportedVars`，再写入对应
+RP 的 exported vars；否则配置中虽然出现 `preferred_username: sAMAccountName`，LLNG
+会话里却没有 `sAMAccountName`。生成的 OIDC RP 统一启用
+`oidcRPMetaDataOptionsIDTokenForceClaims`，因为 Nextcloud 等客户端直接从 ID token 读取
+用户名，不保证再调用 UserInfo。Runner/E2E 同时校验“目录属性已加载、RP claim 已导出、
+应用 mapping 指向该 claim”这三个层次。
 
 `visibility` 的语义：
 

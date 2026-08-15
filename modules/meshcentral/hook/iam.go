@@ -32,7 +32,7 @@ func publishMeshcentralOIDCRegistration(e map[string]string, allowGroups string,
 	e[meshcentralIAMClientPrefix+"REDIRECT_URIS"] = e["MESHCENTRAL_DOMAIN_FULL"] + "/auth-oidc-callback"
 	e[meshcentralIAMClientPrefix+"POST_LOGOUT_REDIRECT_URIS"] = e["MESHCENTRAL_DOMAIN_FULL"] + "/login"
 	e[meshcentralIAMClientPrefix+"SCOPES"] = "openid,profile,email"
-	e[meshcentralIAMClientPrefix+"ATTRIBUTES"] = "name:cn:1,preferred_username:sAMAccountName:1,email:mail:1," + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":1,groups:groups:0"
+	e[meshcentralIAMClientPrefix+"ATTRIBUTES"] = "name:displayName:1,preferred_username:sAMAccountName:1,email:mail:1," + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":1,groups:groups:0"
 	e[meshcentralIAMClientPrefix+"ALLOW_GROUPS"] = allowGroups
 	e[meshcentralIAMClientPrefix+"DOMAIN"] = e["MESHCENTRAL_DOMAIN"]
 	return nil

@@ -14,7 +14,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [freeradius](#freeradius) | 3.2.10-r1 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [lam](#lam) | 9.6.0-r5 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r2 | container | not_applicable | none | not_applicable | not_applicable | 0 |
-| [llng](#llng) | 2.23.2-r3 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [llng](#llng) | 2.23.2-r4 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [mariadb](#mariadb) | 12.3.2-r1 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [meshcentral](#meshcentral) | 1.2.4-r4 | container | supported | browser | not_consumed | not_consumed | 30 |
 | [netbird](#netbird) | 0.76.1-r2 | partial | fixed | fixed | not_consumed | not_consumed | 1 |
@@ -111,7 +111,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## llng
 
-- **Version / 版本：** `2.23.2-r3`; reviewed 2026-08-13
+- **Version / 版本：** `2.23.2-r4`; reviewed 2026-08-15
 - **Timezone / 时区：** `container` — LLNG receives TZ through the module .env; no deployment-wide application timezone is forced.
 - **Language / 语言：** `supported`, `browser` — LemonLDAP::NG Portal and language selector
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`

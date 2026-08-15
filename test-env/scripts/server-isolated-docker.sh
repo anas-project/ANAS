@@ -13,7 +13,12 @@ SOCKET=${ANAS_TEST_DOCKER_SOCKET:-/run/anas-docker-test.sock}
 DATA_ROOT=${ANAS_TEST_DOCKER_ROOT:-/data/anas-docker-test}
 EXEC_ROOT=${ANAS_TEST_DOCKER_EXEC_ROOT:-/run/anas-docker-test}
 CONFIG=${ANAS_TEST_DOCKER_CONFIG:-/home/whl/anas-refactor-test/test-env/server-docker-daemon.json}
-UNIT=anas-test-docker-netns.service
+UNIT=${ANAS_TEST_DOCKER_UNIT:-anas-test-docker-netns.service}
+PID_FILE=${ANAS_TEST_DOCKER_PID_FILE:-/run/anas-docker-test.pid}
+CONTAINERD_NAMESPACE=${ANAS_TEST_CONTAINERD_NAMESPACE:-anas-test}
+CONTAINERD_PLUGINS_NAMESPACE=${ANAS_TEST_CONTAINERD_PLUGINS_NAMESPACE:-anas-test-plugins}
+DOCKER_BIP=${ANAS_TEST_DOCKER_BIP:-172.30.0.1/24}
+DOCKER_ADDRESS_POOL=${ANAS_TEST_DOCKER_ADDRESS_POOL:-172.31.0.0/16}
 
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
@@ -93,12 +98,12 @@ start() {
     --config-file="$CONFIG" \
     --data-root="$DATA_ROOT" \
     --exec-root="$EXEC_ROOT" \
-    --containerd-namespace=anas-test \
-    --containerd-plugins-namespace=anas-test-plugins \
-    --pidfile=/run/anas-docker-test.pid \
+    --containerd-namespace="$CONTAINERD_NAMESPACE" \
+    --containerd-plugins-namespace="$CONTAINERD_PLUGINS_NAMESPACE" \
+    --pidfile="$PID_FILE" \
     --host="unix://$SOCKET" \
-    --bip=172.30.0.1/24 \
-    --default-address-pool=base=172.31.0.0/16,size=24
+    --bip="$DOCKER_BIP" \
+    --default-address-pool="base=$DOCKER_ADDRESS_POOL,size=24"
 
   i=0
   until docker -H "unix://$SOCKET" info >/dev/null 2>&1; do

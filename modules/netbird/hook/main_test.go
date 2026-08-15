@@ -79,3 +79,20 @@ func TestModuleNetbirdRequiresPublishedEndpoint(t *testing.T) {
 		t.Fatal("expected netbird to fail when the provider published no discovery URL")
 	}
 }
+
+func TestNetbirdPublishesTheCommonApplicationGroupContract(t *testing.T) {
+	env := map[string]string{
+		"SAMBA_DC_APP_FILTER":       "true",
+		"SAMBA_DC_ADMIN_GROUP_NAME": "Directory Admins",
+	}
+	if err := calcNetbird(env, "", &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	want := "APP_netbird,APP_all,Directory Admins"
+	if got := env["ANAS_IAM_CLIENT__NETBIRD__ALLOW_GROUPS"]; got != want {
+		t.Fatalf("allow groups = %q, want %q", got, want)
+	}
+	if got := env["APPS_LIST__NETBIRD__ALLOW_GROUPS"]; got != want {
+		t.Fatalf("launcher allow groups = %q, want %q", got, want)
+	}
+}

@@ -10,6 +10,7 @@ abi:
 title: DDNS Updater
 description: Dynamic DNS updater for the base domain and wildcard host.
 category: network
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

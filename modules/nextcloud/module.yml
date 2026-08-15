@@ -10,6 +10,7 @@ abi:
 title: Nextcloud
 description: File sync, sharing, office integration, memories, and Talk.
 category: app
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

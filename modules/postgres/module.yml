@@ -10,6 +10,7 @@ abi:
 title: PostgreSQL
 description: PostgreSQL database service with optional Adminer UI.
 category: database
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

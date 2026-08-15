@@ -2,6 +2,7 @@ package runner
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -10,6 +11,7 @@ type Module struct {
 	Version      string
 	Revision     int
 	AppVersion   string
+	Lifecycle    string
 	UpgradeFrom  string
 	DataBreaking *[]string
 	SourceDir    string
@@ -43,6 +45,20 @@ type Module struct {
 	Hook                   HookConfig
 	RuntimeType            string
 	ComposeFile            string
+}
+
+func (a *app) moduleLifecyclePlanSummary() string {
+	lines := []string{}
+	for _, name := range a.order {
+		switch a.reg[name].Lifecycle {
+		case "developing":
+			lines = append(lines, fmt.Sprintf("module lifecycle: %s=developing (not release quality)\n", name))
+		case "deprecated":
+			lines = append(lines, fmt.Sprintf("module lifecycle: %s=deprecated (do not use for new deployments)\n", name))
+		}
+	}
+	sort.Strings(lines)
+	return strings.Join(lines, "")
 }
 
 // ContractDependency describes a versioned protocol a module consumes.  It is

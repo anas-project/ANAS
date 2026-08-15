@@ -234,6 +234,43 @@ Do not commit `.anas-test/` or generated secrets.
     SAML-fallback test and must be run against a deployment whose
     `nextcloud.iam_protocol` is `saml`.
 
+16. Samba AD application-authorization matrices (run separately per IAM)
+
+    These are the release-gating login tests. Neither test creates an IAM-local
+    business user. Each creates temporary Samba AD accounts for direct
+    `APP_nextcloud`, `APP_all`, `Admins`, no application group, disabled while
+    authorized, and a recursive `ROLE_* -> APP_nextcloud` membership. The tests
+    distinguish directory authentication failure from application-policy
+    denial, complete the real OIDC callbacks for Nextcloud and MeshCentral,
+    compare the resulting user IDs/display names/identity anchors, and validate
+    every registered application's generic env, provider translation, and app
+    runtime binding. NetBird is included in the registration/runtime contract;
+    its browser-only dashboard callback remains outside this curl-based session
+    probe while the module is marked experimental.
+
+    Authentik deployment (`server-identity-app-e2e.yml`):
+
+    ```sh
+    ANAS_TEST_DOCKER_SOCKET=/run/anas-anchor-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
+      ./test-env/scripts/server-authentik-login-matrix-e2e.sh
+    ```
+
+    LLNG must use its own deployment and is tested independently with
+    `server-identity-app-llng-e2e.yml`:
+
+    ```sh
+    DOCKER_HOST=unix:///run/anas-llng-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_llng_ \
+    ANAS_TEST_DOMAIN=llng.nas.test \
+    ANAS_TEST_ENTRY_IP=10.253.0.2 \
+      ./test-env/scripts/server-llng-login-matrix-e2e.sh
+    ```
+
+    Both matrices assert that the bootstrap `admin` is absent from `APP_all` and
+    each `APP_*`. Its `Admins` membership alone grants IAM access, keeping
+    application-access groups free of redundant administrator membership.
+
 ## Full Run
 
 ```sh

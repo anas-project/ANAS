@@ -82,6 +82,7 @@ $lemonldap_ng_cli_set \
         oidcServicePrivateKeySig "$oidc_private_key" \
         oidcServicePublicKeySig "$oidc_public_key" \
         oidcServiceKeyIdSig "$LLNG_OIDC_SERVICE_KEY_ID" \
+        issuerDBSAMLActivation 1 \
         issuerDBOpenIDConnectActivation 1
 
         # oidcServiceAllowImplicitFlow 1 \
@@ -115,12 +116,18 @@ for app in $APPS_LIST; do
 
     if [ -n "$allow_groups" ]; then
       groups=($(echo "$allow_groups" | tr ',' ' '))
+      has_admin_group=false
       for group in "${groups[@]}"; do
           app_function_call="inGroup('$group')"
           app_function_calls+=("$app_function_call")
+          if [ "$group" = "$SAMBA_DC_ADMIN_GROUP_NAME" ]; then
+            has_admin_group=true
+          fi
       done
       groups_filter=$(IFS='|'; echo "${app_function_calls[*]}")
-      groups_filter="$groups_filter | inGroup('$SAMBA_DC_ADMIN_GROUP_NAME')"
+      if [ "$has_admin_group" != true ]; then
+        groups_filter="$groups_filter | inGroup('$SAMBA_DC_ADMIN_GROUP_NAME')"
+      fi
     else
       groups_filter="on"
     fi
@@ -165,12 +172,18 @@ for app in $SAML_SP_APPS; do
 
     if [ -n "$allow_groups" ]; then
       groups=($(echo "$allow_groups" | tr ',' ' '))
+      has_admin_group=false
       for group in "${groups[@]}"; do
           saml_function_call="inGroup('$group')"
           saml_function_calls+=("$saml_function_call")
+          if [ "$group" = "$SAMBA_DC_ADMIN_GROUP_NAME" ]; then
+            has_admin_group=true
+          fi
       done
       groups_filter=$(IFS='|'; echo "${saml_function_calls[*]}")
-      groups_filter="$groups_filter | inGroup('$SAMBA_DC_ADMIN_GROUP_NAME')"
+      if [ "$has_admin_group" != true ]; then
+        groups_filter="$groups_filter | inGroup('$SAMBA_DC_ADMIN_GROUP_NAME')"
+      fi
       $lemonldap_ng_cli_addkey \
           samlSPMetaDataOptions/$app samlSPMetaDataOptionsRule "$groups_filter"
     else 
@@ -191,6 +204,10 @@ for app in $SAML_SP_APPS; do
 
         $lemonldap_ng_cli_addkey \
               samlSPMetaDataExportedAttributes/$app $var "$mandatory;$attr;;"
+
+        if [ "$attr" != "groups" ]; then
+          $lemonldap_ng_cli_addkey ldapExportedVars "$attr" "$attr"
+        fi
 
         index=$((index + 1))
       fi
@@ -229,19 +246,28 @@ for app in $OIDC_RP_APPS; do
     $lemonldap_ng_cli_addkey \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsClientID "$client_id" \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsClientSecret "$client_secret" \
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsIDTokenSignAlg RS256 \
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsIDTokenForceClaims 1 \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsRedirectUris "$redirect_uri_space" \
-          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsPostLogoutRedirectUris "$logout_redirect_uri_space"
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsPostLogoutRedirectUris "$logout_redirect_uri_space" \
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsBypassConsent 1
 
     allow_groups=$(oidc_get_var $app "ALLOW_GROUPS")
 
     if [ -n "$allow_groups" ]; then
       groups=($(echo "$allow_groups" | tr ',' ' '))
+      has_admin_group=false
       for group in "${groups[@]}"; do
           oidc_function_call="inGroup('$group')"
           oidc_function_calls+=("$oidc_function_call")
+          if [ "$group" = "$SAMBA_DC_ADMIN_GROUP_NAME" ]; then
+            has_admin_group=true
+          fi
       done
       groups_filter=$(IFS='|'; echo "${oidc_function_calls[*]}")
-      groups_filter="$groups_filter | inGroup('$SAMBA_DC_ADMIN_GROUP_NAME')"
+      if [ "$has_admin_group" != true ]; then
+        groups_filter="$groups_filter | inGroup('$SAMBA_DC_ADMIN_GROUP_NAME')"
+      fi
       $lemonldap_ng_cli_addkey \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsRule "$groups_filter"
     fi
@@ -258,8 +284,27 @@ for app in $OIDC_RP_APPS; do
       else
         IFS=',' read -r var attr mandatory <<< "$value"
 
+        oidc_attr="$attr"
+        # OIDC consumers require a stable JSON type.  LLNG's default "auto"
+        # mode emits a scalar when the user belongs to exactly one group and
+        # an array for several groups.  Declare groups as an always-array
+        # claim so every IAM consumer receives the same contract as it does
+        # from Authentik.
+        if [ "$attr" = "groups" ]; then
+          oidc_attr="$attr;string;always"
+        fi
+
         $lemonldap_ng_cli_addkey \
-              oidcRPMetaDataExportedVars/$app $var "$attr"
+              oidcRPMetaDataExportedVars/$app $var "$oidc_attr"
+
+        # RP output mappings reference LLNG session variables, not LDAP
+        # attributes directly.  Make every directory-backed source attribute
+        # declared by an application available in the session first.  `groups`
+        # is computed by LLNG's group engine and must not be read as an LDAP
+        # attribute.
+        if [ "$attr" != "groups" ]; then
+          $lemonldap_ng_cli_addkey ldapExportedVars "$attr" "$attr"
+        fi
 
         index=$((index + 1))
       fi

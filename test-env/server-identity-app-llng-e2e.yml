@@ -1,0 +1,44 @@
+modules:
+  samba_dc: {}
+  postgres: {}
+  llng:
+    config:
+      enable_test: "false"
+  nextcloud:
+    config:
+      talk_enabled: "false"
+      memories_enabled: "false"
+  meshcentral: {}
+  netbird: {}
+  traefik:
+    config:
+      subnet: 172.24.0.0/16
+      gateway_ip: 172.24.0.1
+identity:
+  iam:
+    provider: llng
+global:
+  base_domain: llng.nas.test
+  email: admin@llng.nas.test
+  timezone: Asia/Shanghai
+  virtual_domain: true
+env:
+  BASICAUTH_USER: admin
+  CONTAINER_PREFIX: anas_llng_
+  IMAGE_PREFIX: anas_llng_
+  NETWORK_PREFIX: anas_llng_
+  CHINESE_SPEEDUP: "true"
+  CHINESE_BUILD_SPEEDUP: "true"
+  APT_MIRROR_URL: https://mirrors.aliyun.com
+  APK_MIRROR_URL: https://mirrors.aliyun.com
+  NPM_REGISTRY_URL: https://registry.npmmirror.com
+  DOCKER_SOCKET_PATH: /run/anas-llng-docker.sock
+  NETWORK_NAMESPACE_PATH: /run/netns/anas-llng
+  HOST_IP: 10.253.0.2
+  INTERFACE: anas-l-peer
+  DEFAULT_GATEWAY_IP: 10.253.0.1
+  HOST_SUBNET_MASK: "24"
+  LOCAL_DNS_SERVER: 10.253.0.2
+  SAMBA_DC_HOST_IP: 10.253.0.2
+  SAMBA_DC_INTERFACES: anas-l-peer
+  SAMBA_DC_ANCHOR_SCAN_INTERVAL: "300"

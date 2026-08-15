@@ -169,7 +169,7 @@ func calcMeshcentral(e map[string]string, _ string, secrets *secretStore) error 
 	}
 	if e["MESHCENTRAL_USER_FILTER"] == "" {
 		if e["SAMBA_DC_APP_FILTER"] == "true" {
-			e["MESHCENTRAL_USER_FILTER"] = "(&" + e["SAMBA_DC_USER_CLASS_FILTER"] + "(" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + "=*)(|(memberOf=CN=APP_meshcentral," + e["SAMBA_DC_BASE_APP_DN"] + ")(memberOf=" + e["SAMBA_DC_APP_ALL_DN"] + ")(memberOf=" + e["SAMBA_DC_ADMIN_GROUP_DN"] + ")))"
+			e["MESHCENTRAL_USER_FILTER"] = "(&" + e["SAMBA_DC_USER_CLASS_FILTER"] + "(" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + "=*)(|(memberOf:1.2.840.113556.1.4.1941:=CN=APP_meshcentral," + e["SAMBA_DC_BASE_APP_DN"] + ")(memberOf:1.2.840.113556.1.4.1941:=" + e["SAMBA_DC_APP_ALL_DN"] + ")(memberOf:1.2.840.113556.1.4.1941:=" + e["SAMBA_DC_ADMIN_GROUP_DN"] + ")))"
 		} else {
 			e["MESHCENTRAL_USER_FILTER"] = "(&" + e["SAMBA_DC_USER_CLASS_FILTER"] + "(" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + "=*))"
 		}

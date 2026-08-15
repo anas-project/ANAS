@@ -1,7 +1,7 @@
 services:
   anas_llng:
     container_name: ${CONTAINER_PREFIX}llng
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r3
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r4
     build:
       context: ./llng
       network: ${DOCKER_BUILD_NETWORK:-default}

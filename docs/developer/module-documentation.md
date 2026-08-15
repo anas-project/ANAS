@@ -17,6 +17,16 @@
 <!-- generated:localization:end -->
 ```
 
+`module.yml` 还必须显式声明顶层 `status`，Runner 只接受：
+
+- `release`：达到发布质量，允许作为推荐部署的默认候选；
+- `developing`：功能或 E2E 尚不完整，只能用于开发和显式测试部署；
+- `deprecated`：仍保留用于迁移或读取现有部署，但不得用于新部署，必须给出替代方案。
+
+状态不得由缺省值推断，也不再接受含义含混的 `experimental`。从 `developing` 提升到
+`release` 前必须完成该 Module 的功能、升级/恢复和集成 E2E；标记 `deprecated` 前必须
+先提供迁移文档。
+
 运行以下命令生成所有 Module README 和中英文汇总页：
 
 ```bash

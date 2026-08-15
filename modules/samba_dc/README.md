@@ -5,7 +5,8 @@ Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS se
 ## Administrator identities / 管理员身份
 
 日常目录管理员默认为 `admin`（由 `admin_name` 设置）。它加入 `Domain Admins`、
-`Administrators`、`Group Policy Creator Owners` 和 ANAS 应用管理员组，足够日常用户、
+`Administrators`、`Group Policy Creator Owners` 和 ANAS `Admins` 角色，但不加入
+`APP_all` 或具体 `APP_*`；它仍足够日常用户、
 组、组策略、文件服务和应用管理；同时有意移出 `Schema Admins` 与 `Enterprise Admins`。
 
 内置 `Administrator` 保留给域初始化、底层恢复、架构/林级操作以及需要内置 RID 500

@@ -2,6 +2,13 @@
 
 Incomplete WireGuard overlay network scaffold; excluded from recommended deployments.
 
+Lifecycle: `developing`. The module is available only for explicit development
+and integration testing and is not a release-quality deployment candidate.
+
+Release blocker: Samba AD `Admins` must map to NetBird's highest tenant/account
+administrator role, membership removal must revoke it, and E2E must prove both
+the positive mapping and that `APP_all`/`APP_netbird` users are not elevated.
+
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language
 

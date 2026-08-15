@@ -17,6 +17,7 @@ kind: Module
 name: core
 version: 0.0.0
 revision: 1
+status: release
 abi:
   supports: [anas.module-hook/v1]
 runtime:
@@ -28,6 +29,7 @@ kind: Module
 name: %s
 version: 1.0.0
 revision: 1
+status: release
 abi:
   supports: [anas.module-hook/v1]
 runtime:
@@ -43,6 +45,7 @@ kind: Module
 name: nextcloud
 version: 1.0.0
 revision: 1
+status: release
 abi:
   supports: [anas.module-hook/v1]
 runtime:
@@ -64,6 +67,7 @@ kind: Module
 name: netbird
 version: 1.0.0
 revision: 1
+status: developing
 abi:
   supports: [anas.module-hook/v1]
 runtime:
@@ -421,6 +425,7 @@ kind: Module
 name: authelia
 version: 1.0.0
 revision: 1
+status: developing
 abi:
   supports: [anas.module-hook/v1]
 runtime:
@@ -522,6 +527,7 @@ kind: Module
 name: example
 version: 1.0.0
 revision: 1
+status: release
 abi:
   supports: [anas.module-hook/v1]
 runtime:

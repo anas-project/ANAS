@@ -107,6 +107,64 @@ func TestDisabledTestSiteDoesNotDeleteNestedLocationRulesThroughCLI(t *testing.T
 	}
 }
 
+func TestOIDCClientsBypassConsent(t *testing.T) {
+	script, err := os.ReadFile("../llng/root/root/llng-config.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(script), "oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsBypassConsent 1") {
+		t.Fatal("generated OIDC relying parties must bypass the scope-sharing consent screen")
+	}
+	if !strings.Contains(string(script), "oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsIDTokenSignAlg RS256") {
+		t.Fatal("generated OIDC relying parties must declare an ID token signing algorithm")
+	}
+	if !strings.Contains(string(script), "oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsIDTokenForceClaims 1") {
+		t.Fatal("generated OIDC relying parties must include declared claims in the ID token")
+	}
+}
+
+func TestClientClaimsAreLoadedFromLDAPBeforeTheyAreExported(t *testing.T) {
+	template, err := os.ReadFile("../llng/root/root/lmConf.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(template), `"anasIdentityAnchor": "anasIdentityAnchor"`) {
+		t.Fatal("the printable identity anchor must be loaded into the LLNG session")
+	}
+
+	script, err := os.ReadFile("../llng/root/root/llng-config.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(script), `addkey ldapExportedVars "$attr" "$attr"`) {
+		t.Fatal("application claim sources must be added to ldapExportedVars")
+	}
+	if !strings.Contains(string(script), `if [ "$attr" != "groups" ]`) {
+		t.Fatal("the synthetic groups session variable must not be requested as an LDAP attribute")
+	}
+	if !strings.Contains(string(script), `oidc_attr="$attr;string;always"`) {
+		t.Fatal("OIDC groups claims must always be emitted as JSON arrays")
+	}
+}
+
+func TestIssuerActivationHappensAfterSigningKeysAreInstalled(t *testing.T) {
+	template, err := os.ReadFile("../llng/root/root/lmConf.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(template), `"issuerDBSAMLActivation": 0`) {
+		t.Fatal("initial config must not activate SAML before its signing keys exist")
+	}
+	script, err := os.ReadFile("../llng/root/root/llng-config.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(script), "issuerDBSAMLActivation 1") ||
+		!strings.Contains(string(script), "issuerDBOpenIDConnectActivation 1") {
+		t.Fatal("client configuration must activate both issuers after installing signing keys")
+	}
+}
+
 func TestPublishIAMEndpointsRepeatsTheSingletonForEveryConsumer(t *testing.T) {
 	e := map[string]string{
 		"LLNG_DOMAIN_FULL":                       "https://auth.nas.test:9000",

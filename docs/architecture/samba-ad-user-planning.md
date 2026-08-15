@@ -51,7 +51,7 @@ DC=nas,DC=example,DC=com
 | 类别 | 当前账号/命名 | 位置 | 当前权限或用途 | 规划要求 |
 | --- | --- | --- | --- | --- |
 | 内置应急管理员 | `Administrator` | `CN=Users` | AD 内置最高权限账号，用于建域和应急恢复 | 不用于日常操作；凭据单独保管 |
-| 自动创建的管理员 | 默认 `admin`，可配置 | `OU=People` | 属于 `Domain Admins`、`Administrators`、`Group Policy Creator Owners`、`Admins`、`FS Admins` 和全部应用组 | 作为部署/管理账号，不作为日常个人账号；后续宜拆分职责 |
+| 自动创建的管理员 | 默认 `admin`，可配置 | `OU=People` | 属于 `Domain Admins`、`Administrators`、`Group Policy Creator Owners`、`Admins`、`FS Admins`；不加入 `APP_all` 或具体 `APP_*` | 作为部署/管理账号，不作为日常个人账号；后续宜拆分职责 |
 | 普通用户 | 建议 `姓名拼音` 或员工编号 | `OU=People` | 默认属于 `Domain Users`；按需加入角色、应用和资源组 | 每人一个账号，不加入内置高权限组 |
 | LDAP 查询服务账号 | `svc_ldap` | `OU=Service Accounts` | 供应用只读查询目录；不属于管理组；密码不过期 | 禁止交互使用，随机长密码，定期轮换 |
 | 密码修改服务账号 | `svc_password` | `OU=Service Accounts` | 仅继承 `OU=People` 的“重置密码”权限；明确禁止重置 `admin`；不能创建或删除用户 | 仅给确需修改 AD 密码的应用使用 |
@@ -75,7 +75,7 @@ DC=nas,DC=example,DC=com
 
 | 组 | 当前含义 | 是否等同域管理员 |
 | --- | --- | --- |
-| `Admins` | 应用管理员角色，也被应用登录过滤器识别 | 否 |
+| `Admins` | 全局应用管理员角色：允许进入所有应用并映射为最高应用级角色 | 否 |
 | `Unix Admins` | 域基础设施管理员；嵌套进内置 `Administrators`，并获得 `SeDiskOperatorPrivilege` | 是，高权限 |
 
 建议后续为实际组织增加 `ROLE_<职责>`，例如 `ROLE_Finance`、`ROLE_HR`、`ROLE_ITSupport`。角色组描述“用户是谁/承担什么职责”，不直接代替应用或文件资源权限组。
@@ -99,7 +99,27 @@ DC=nas,DC=example,DC=com
 | `APP_meshcentral` | 允许登录 MeshCentral |
 | `APP_<应用名>` | 允许登录对应 LDAP 应用；实际组随启用模块生成 |
 
-当前初始化会把 `APP_all` 嵌套到各 `APP_<应用名>`，并把自动创建的 `admin` 加入所有应用组。普通用户应按需加入具体应用组；只有确实需要访问全部应用的人才加入 `APP_all`。
+初始化会把 `APP_all` 嵌套到各 `APP_<应用名>`，但自动创建的 `admin` 只加入 `Admins`，
+不加入 `APP_all` 或具体 `APP_*`。IAM 客户端的允许集合统一为
+`APP_<应用名>,APP_all,Admins`（三者为 OR），因此 `Admins` 已足以让该账号进入全部应用；
+保持组职责互斥能让审计清楚，`APP_all` 只表达“非管理员的全应用访问”。
+
+在 Nextcloud 中，Samba `Admins` 被配置为 LDAP administrative group，所有成员动态获得
+Nextcloud `admin` 权限，移组后也随 LDAP 组映射撤销。初始化脚本不再把引导账号单独写入
+本地 `admin` 组，避免形成无法随目录收敛的第二份权限事实。
+
+同一规则适用于其他 Module：`Admins` 必须显式映射为应用的最高应用级角色；`APP_all`
+和 `APP_*` 仅授予登录权。这里的“应用级”不包含 Samba `Domain Admins`、宿主机 root、
+数据库超级用户或 `FS Admins`。LAM 是典型边界：`Admins` 获得完整 LAM 入口，但目录写入
+仍服从该用户的 AD ACL。各 Module 的具体映射与实现状态以
+[`iam-provider-requirements.md`](iam-provider-requirements.md) 为准。
+
+嵌套组是目录授权契约的一部分。`用户 -> ROLE_x -> APP_nextcloud` 必须与用户直接加入
+`APP_nextcloud` 等价；实现必须递归解析成员关系、处理循环且不能仅查看用户对象上的直接
+`memberOf`。当前 Authentik Source 与 Nextcloud/MeshCentral 的 LDAP 用户过滤器均
+使用 AD matching-rule-in-chain（OID `1.2.840.113556.1.4.1941`），LLNG 开启
+`ldapGroupRecursive`。这保证 IAM 放行后，应用侧目录开户也不会再次按直接成员拒绝。
+E2E 会创建临时 `ROLE_*` 嵌套组，同时验证两种 IAM 的结果。
 
 ## 6. 建议的目标账号模型
 

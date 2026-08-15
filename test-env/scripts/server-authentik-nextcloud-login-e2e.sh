@@ -138,6 +138,16 @@ curl_auth -H 'Accept: application/json' -H 'Content-Type: application/json' \
   -L \
   --data "$(jq -cn --arg password "$ANAS_TEST_PASSWORD" '{password:$password}')" \
   -D "$headers" -o "$body" "$api_url"
+if [ "$expected_outcome" = auth-denied ]; then
+  if [ "$(json_component)" = xak-flow-redirect ]; then
+    printf 'disabled directory account unexpectedly authenticated: %s\n' "$username" >&2
+    exit 1
+  fi
+  expect_component ak-stage-password
+  test "$(jq '.errors | length > 0' "$body")" = true
+  printf 'login=denied username=%s reason=directory-authentication\n' "$username"
+  exit 0
+fi
 expect_component xak-flow-redirect
 printf 'authentication_complete_path=%s\n' "$(jq -r '.to // empty' "$body" | cut -d '?' -f 1)"
 authenticated_redirect=$(python3 - "$api_url" "$(jq -r '.to // "/if/user/"' "$body")" <<'PY'

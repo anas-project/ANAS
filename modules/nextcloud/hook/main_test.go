@@ -143,6 +143,24 @@ func TestLDAPIdentityUsesPrintableAnchorFromFirstInstall(t *testing.T) {
 	}
 }
 
+func TestNextcloudApplicationGroupsUseRecursiveMembership(t *testing.T) {
+	env := map[string]string{
+		"NEXTCLOUD_DB_TYPE":                  "postgres",
+		"SAMBA_DC_APP_FILTER":                "true",
+		"SAMBA_DC_USER_CLASS_FILTER":         "(objectClass=user)",
+		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE": "anasIdentityAnchor",
+		"SAMBA_DC_BASE_APP_DN":               "OU=Apps,OU=Groups,DC=nas,DC=test",
+		"SAMBA_DC_APP_ALL_DN":                "CN=APP_all,OU=Apps,OU=Groups,DC=nas,DC=test",
+		"SAMBA_DC_ADMIN_GROUP_DN":            "CN=Admins,OU=Role,OU=Groups,DC=nas,DC=test",
+	}
+	if _, err := calcNextcloud(env, "", &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := env["NEXTCLOUD_USER_FILTER"]; strings.Count(got, "memberOf:1.2.840.113556.1.4.1941:=") != 3 {
+		t.Fatalf("application group filter is not recursive for all alternatives: %s", got)
+	}
+}
+
 func TestNextcloudOIDCIsDefaultAndPreservesLDAPProvisioning(t *testing.T) {
 	secrets := &secretStore{values: map[string]string{}}
 	env := map[string]string{
@@ -151,6 +169,8 @@ func TestNextcloudOIDCIsDefaultAndPreservesLDAPProvisioning(t *testing.T) {
 		"BASE_DOMAIN":                        "example.test",
 		"TRAEFIK_BASE_PORT":                  "9000",
 		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE": "anasIdentityAnchor",
+		"SAMBA_DC_APP_FILTER":                "true",
+		"SAMBA_DC_ADMIN_GROUP_NAME":          "Admins",
 	}
 	if _, err := calcNextcloud(env, "", secrets); err != nil {
 		t.Fatal(err)
@@ -160,6 +180,12 @@ func TestNextcloudOIDCIsDefaultAndPreservesLDAPProvisioning(t *testing.T) {
 	}
 	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__REDIRECT_URIS"]; got != "https://nc.example.test:9000/apps/user_oidc/code" {
 		t.Fatalf("redirect URI = %q", got)
+	}
+	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__ALLOW_GROUPS"]; got != "APP_nextcloud,APP_all,Admins" {
+		t.Fatalf("allow groups = %q, want direct, all-app, or administrator access", got)
+	}
+	if got := env["APPS_LIST__NEXTCLOUD__ALLOW_GROUPS"]; got != "APP_nextcloud,APP_all,Admins" {
+		t.Fatalf("launcher allow groups = %q, want the IAM policy group set", got)
 	}
 	if env["NEXTCLOUD_OIDC_CLIENT_SECRET"] == "" || secrets.values["NEXTCLOUD_OIDC_CLIENT_SECRET"] != env["NEXTCLOUD_OIDC_CLIENT_SECRET"] {
 		t.Fatal("OIDC client secret was not generated and persisted")
@@ -191,5 +217,19 @@ func TestNextcloudRequestsAuthentikSupportedWindowsNameID(t *testing.T) {
 	}
 	if !strings.Contains(got, `--saml-attribute-mapping-user_id_ldap_mapping="$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"`) {
 		t.Fatal("SAML login must resolve the anchor claim to the existing LDAP user")
+	}
+}
+
+func TestSambaAdminsArePromotedAsTheDynamicNextcloudAdminGroup(t *testing.T) {
+	task, err := os.ReadFile("../nextcloud/root/usr/local/bin/task.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(task)
+	if !strings.Contains(got, `occ ldap:promote-group --yes "$SAMBA_DC_ADMIN_GROUP_NAME"`) {
+		t.Fatal("Samba Admins is not configured as Nextcloud's LDAP administrative group")
+	}
+	if strings.Contains(got, "occ group:adduser admin") || strings.Contains(got, "waiting_admin") {
+		t.Fatal("bootstrap-only local admin membership must not replace the directory role mapping")
 	}
 }

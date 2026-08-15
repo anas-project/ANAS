@@ -29,6 +29,11 @@ ANAS 的管理员不能再由一个全局 `admin` 字符串和一份共享密码
 
 服务账号是第五类非人员身份，继续由各 provider 管理，不进入本设计的管理员 CLI。
 
+目录角色 `Admins` 是统一的全应用管理员契约：所有接入 Samba AD 或 IAM 的 Module 都把
+它映射为最高应用级角色，并在移组后撤销。`APP_all` 与 `APP_*` 只允许访问。此契约不把
+用户加入 `Domain Admins`、`FS Admins`，也不授予宿主机或数据库超级权限；这些仍由各自
+的高权限组和 ACL 独立控制。
+
 ## 3. 身份拓扑
 
 ### 3.1 仅本地登录
@@ -330,8 +335,8 @@ Samba 管理员密码：首次安装使用运行时 Secret 文件，已有安装
 `server-nextcloud-local-admin-e2e.sh` 覆盖
 真实 occ apply/rotate、旧密码失效、新密码验证和恢复入口。它们需要完整服务器环境，本地
 单元测试不会冒充运行过这些链路。LAM 主登录使用已启用的 Samba `Admins` 组成员各自的
-目录凭据；`lam` 是服务器 profile 名，LAM 私有密码仅保护配置编辑器。`Admins` 只授权
-进入 LAM，目录读写权限仍由 Samba AD ACL 和高权限组决定。Collabora 使用
+目录凭据；`lam` 是服务器 profile 名，LAM 私有密码仅保护配置编辑器。`Admins` 授予
+LAM 的完整应用管理入口，但目录读写权限仍由 Samba AD ACL 和高权限组决定。Collabora 使用
 `admin_collabora` 规则名与 Module 私有密码；其密码省略时独立随机生成，但尚无可验证
 回滚的 rotate handler，因此不加入托管账号。LLNG 的旧密码变量没有上游消费者，当前
 Manager 仅接受 AD 和目录管理员组，不声明虚假的 `break_glass`。MeshCentral 上游在未设置 domain `auth` 时支持本地账号，但本 Module

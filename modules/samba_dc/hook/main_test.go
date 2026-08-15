@@ -1,10 +1,28 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode"
 )
+
+func TestStructureDoesNotGrantBootstrapAdminApplicationGroups(t *testing.T) {
+	script, err := os.ReadFile(filepath.Join("..", "samba_dc", "root", "usr", "local", "bin", "structure.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(script)
+	for _, forbidden := range []string{
+		`add_to_group "$SAMBA_DC_APP_ALL_NAME" "$SAMBA_DC_ADMIN_NAME"`,
+		`add_to_group "APP_$name" "$SAMBA_DC_ADMIN_NAME"`,
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("bootstrap admin still receives an application group: %s", forbidden)
+		}
+	}
+}
 
 func TestCalcSambaDCHostIPDefaultsToHostIP(t *testing.T) {
 	env := map[string]string{

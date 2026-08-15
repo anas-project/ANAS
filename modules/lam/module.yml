@@ -10,6 +10,7 @@ abi:
 title: LDAP Account Manager
 description: Web UI for LDAP account administration.
 category: identity
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

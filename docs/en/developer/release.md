@@ -41,6 +41,20 @@ Each module declares:
 
 The immutable image tag is `<version>-r<revision>`. A build-context-only change increments `revision` by exactly one. An upstream `version` change resets it to `1`. Existing fixed tags are never overwritten, and `latest` is not published.
 
+Before a release, calculate and synchronize the values from a Git base:
+
+```bash
+# A feature branch normally uses its merge base with origin/master automatically.
+bash scripts/ci/module-revisions.sh --write
+
+# CI passes the PR base SHA or the SHA before a push and checks committed output.
+bash scripts/ci/module-revisions.sh --base "$BASE_SHA" --check
+```
+
+The script only manages ANAS-derived images registered in `.github/images.json`. It groups multiple build contexts by Module. A change in any context increments the revision from the base manifest; a new Module or upstream `version` uses revision `1`. `--write` synchronizes `module.yml`, `localization.yml` when present, and every derived-image tag in the Module's `docker-compose.yml`. Unmodified upstream mirrors do not have `-r<revision>` image tags and are outside this calculation.
+
+Do not run `--write` only in an ephemeral release checkout. The generated values must be committed so Registry tags and Compose references cannot diverge. Release CI therefore uses `--check` before building.
+
 ```text
 ghcr.io/anas-project/anas-<software>:<version>-r<revision>
 docker.cnb.cool/anas.dev/anas/anas-<software>:<version>-r<revision>

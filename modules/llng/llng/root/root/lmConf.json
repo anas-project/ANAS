@@ -79,7 +79,7 @@
   "ldapGroupAttributeNameSearch": "cn",
   "ldapGroupAttributeNameUser": "dn",
   "ldapGroupRecursive": 1,
-  "issuerDBSAMLActivation": 1,
+  "issuerDBSAMLActivation": 0,
   "issuerDBSAMLPath": "^/saml/",
   "issuerDBSAMLRule": 1,
   "issuerDBOpenIDConnectActivation": 1,
@@ -155,7 +155,8 @@
     "displayName": "displayName",
     "userPrincipalName": "userPrincipalName",
     "memberOf": "memberOf",
-    "name": "name"
+    "name": "name",
+    "anasIdentityAnchor": "anasIdentityAnchor"
   },
   "whatToTrace": "_whatToTrace"
 }

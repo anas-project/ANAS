@@ -553,29 +553,16 @@ set_ldap_config ldapConfigurationActive 1
 echo "occ ldap:test-config s01"
 occ ldap:test-config s01
 
+# Keep application administration tied to the Samba AD Admins role.  LDAP
+# group promotion is dynamic: adding or removing a directory member changes
+# Nextcloud administration without maintaining a second local group mapping.
+echo "occ ldap:promote-group --yes $SAMBA_DC_ADMIN_GROUP_NAME"
+occ ldap:promote-group --yes "$SAMBA_DC_ADMIN_GROUP_NAME"
+
 # Password changes are handled by Nextcloud's LDAP backend through the
 # narrowly delegated svc_password account. Broader LDAP writes and domain
 # user creation remain disabled.
 occ app:disable ldap_write_support >/dev/null 2>&1 || true
-
-# add ldap user admin to admin group
-waiting_admin() {
-  while :
-  do
-    echo "occ user:info $SAMBA_DC_ADMIN_NAME"
-    occ user:info $SAMBA_DC_ADMIN_NAME
-    if [[ $(echo $?) == 0 ]]; then
-      occ group:adduser admin $SAMBA_DC_ADMIN_NAME
-      return
-    fi
-    # force ldap update users
-    occ ldap:search $SAMBA_DC_ADMIN_NAME
-    echo "Waiting ldap admin user sync online..."
-    sleep 5
-  done
-}
-
-waiting_admin
 
 echo "Install memories"
 if [ "$NEXTCLOUD_MEMORIES_ENABLED" == "true" ]; then

@@ -70,6 +70,7 @@ type moduleLockRecord struct {
 	// AppVersion records the upstream application/image version separately
 	// when its original spelling differs from normalized Version.
 	AppVersion string `yaml:"app_version,omitempty"`
+	Lifecycle  string `yaml:"lifecycle"`
 	Source     string `yaml:"source,omitempty"`
 	Digest     string `yaml:"digest"`
 }
@@ -235,6 +236,7 @@ func (a *app) updateModuleLock(lock *moduleLock, persistBindings bool) error {
 			Version:    mod.Version,
 			Revision:   mod.Revision,
 			AppVersion: mod.AppVersion,
+			Lifecycle:  mod.Lifecycle,
 			Source:     "bundle:" + name,
 			Digest:     digest,
 		}

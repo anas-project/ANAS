@@ -30,7 +30,7 @@ const (
 func publishClientRegistration(e map[string]string, allowGroups string, secrets *secretStore) error {
 	protocol := defaultValue(defaultValue(e[iamBindingPrefix+"INTERFACE"], e["NEXTCLOUD_IAM_PROTOCOL"]), "oidc")
 	e[iamClientPrefix+"INTERFACE"] = protocol
-	e[iamClientPrefix+"ATTRIBUTES"] = "name:cn:1,preferred_username:sAMAccountName:1,email:mail:1," + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":1"
+	e[iamClientPrefix+"ATTRIBUTES"] = "name:displayName:1,preferred_username:sAMAccountName:1,email:mail:1," + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":1"
 	e[iamClientPrefix+"ALLOW_GROUPS"] = allowGroups
 	e[iamClientPrefix+"DOMAIN"] = e["NEXTCLOUD_DOMAIN"]
 	switch protocol {

@@ -21,4 +21,4 @@ upgrade:
   # format. Absent would mean "unknown" and would block every rollback that
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
-status: experimental
+status: developing

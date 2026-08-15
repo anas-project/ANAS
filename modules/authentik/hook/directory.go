@@ -9,6 +9,17 @@ version: 1
 metadata:
   name: anas-samba-ad
 entries:
+  - model: authentik_sources_ldap.ldapsourcepropertymapping
+    identifiers:
+      name: anas Samba AD display name mapping
+    id: samba-ad-user-display-name-mapping
+    attrs:
+      expression: |
+        display_name = list_flatten(ldap.get("displayName"))
+        if not display_name:
+            display_name = list_flatten(ldap.get("cn"))
+        return {"name": display_name}
+
   # A small NAS uses Samba AD's exact Admins group as its single management
   # role. All other synchronized groups remain non-superuser groups.
   - model: authentik_sources_ldap.ldapsourcepropertymapping
@@ -55,7 +66,7 @@ entries:
         - !Find [authentik_sources_ldap.ldapsourcepropertymapping, [name, "authentik default Active Directory Mapping: sn"]]
         - !Find [authentik_sources_ldap.ldapsourcepropertymapping, [name, "authentik default Active Directory Mapping: userPrincipalName"]]
         - !Find [authentik_sources_ldap.ldapsourcepropertymapping, [name, "authentik default LDAP Mapping: mail"]]
-        - !Find [authentik_sources_ldap.ldapsourcepropertymapping, [name, "authentik default LDAP Mapping: Name"]]
+        - !KeyOf samba-ad-user-display-name-mapping
       group_property_mappings:
         - !KeyOf samba-ad-group-role-mapping
 

@@ -10,6 +10,7 @@ abi:
 title: Eturnal TURN
 description: TURN service used by realtime communication modules.
 category: communication
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

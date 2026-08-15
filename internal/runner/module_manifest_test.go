@@ -318,6 +318,74 @@ func TestBundledModulesDeclareDataBreaking(t *testing.T) {
 	}
 }
 
+func TestBundledModulesDeclareLifecycle(t *testing.T) {
+	root := filepath.Join("..", "..", "modules")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		mod, err := loadModuleManifest(filepath.Join(root, entry.Name()), entry.Name())
+		if err != nil {
+			t.Fatalf("%s: %v", entry.Name(), err)
+		}
+		if mod.Lifecycle == "" {
+			t.Fatalf("module %s has no lifecycle", entry.Name())
+		}
+	}
+}
+
+func TestManifestRejectsUnknownLifecycle(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "example")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `api_version: anas.module/v1
+kind: Module
+name: example
+version: 1.0.0
+revision: 1
+status: experimental
+abi:
+  supports: [anas.module-hook/v1]
+runtime:
+  type: builtin
+`
+	if err := os.WriteFile(filepath.Join(dir, "module.yml"), []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadModuleManifest(dir, "example")
+	if err == nil || !strings.Contains(err.Error(), "expected release, developing, or deprecated") {
+		t.Fatalf("error = %v, want lifecycle validation error", err)
+	}
+}
+
+func TestModuleLifecyclePlanSummary(t *testing.T) {
+	a := &app{
+		order: []string{"stable", "vpn", "old"},
+		reg: map[string]Module{
+			"stable": {Name: "stable", Lifecycle: "release"},
+			"vpn":    {Name: "vpn", Lifecycle: "developing"},
+			"old":    {Name: "old", Lifecycle: "deprecated"},
+		},
+	}
+	got := a.moduleLifecyclePlanSummary()
+	for _, want := range []string{
+		"module lifecycle: vpn=developing (not release quality)",
+		"module lifecycle: old=deprecated (do not use for new deployments)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("summary = %q, want %q", got, want)
+		}
+	}
+	if strings.Contains(got, "stable") {
+		t.Fatalf("release modules should not create lifecycle warnings: %q", got)
+	}
+}
+
 func TestManifestRejectsRemovedBeforeDependencyField(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "example")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -328,6 +396,7 @@ kind: Module
 name: example
 version: 1.0.0
 revision: 1
+status: release
 abi:
   supports: [anas.module-hook/v1]
 runtime:

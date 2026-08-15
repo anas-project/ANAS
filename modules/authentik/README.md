@@ -4,6 +4,13 @@ Identity provider serving OIDC and SAML with per-application endpoints.
 
 ## Administrator access / 管理员入口
 
+Samba AD `Admins` 由 LDAP Source 显式映射为 Authentik superuser；移组后下一次 Source
+同步会撤销 superuser。`APP_all` 和 `APP_authentik` 只表示访问权，不会提权。
+
+Samba AD `Admins` is explicitly mapped to Authentik superusers by the LDAP Source;
+the next source sync revokes superuser after membership removal. `APP_all` and
+`APP_authentik` grant access only.
+
 Authentik keeps its upstream built-in `akadmin` user as an IAM-outage recovery
 account. The Manifest account ID is `break_glass` (not the username), while the
 fixed physical username is `akadmin`. ANAS supplies first-boot state through a

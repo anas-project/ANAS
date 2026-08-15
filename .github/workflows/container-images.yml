@@ -8,6 +8,8 @@ on:
       - ".github/workflows/container-images.yml"
       - "scripts/ci/runtime-image.sh"
       - "scripts/ci/install-crane.sh"
+      - "scripts/ci/module-revisions.sh"
+      - "scripts/ci/module-revisions-test.sh"
       - "modules/**"
   push:
     branches: [master]
@@ -17,6 +19,8 @@ on:
       - ".github/workflows/container-images.yml"
       - "scripts/ci/runtime-image.sh"
       - "scripts/ci/install-crane.sh"
+      - "scripts/ci/module-revisions.sh"
+      - "scripts/ci/module-revisions-test.sh"
       - "modules/**"
   workflow_dispatch:
     inputs:
@@ -46,6 +50,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Test revision calculator
+        run: bash scripts/ci/module-revisions-test.sh
+
       - name: Select images
         id: matrix
         shell: bash
@@ -56,6 +63,10 @@ jobs:
           REQUESTED_MODULE: ${{ inputs.module }}
         run: |
           set -euo pipefail
+
+          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
+            bash scripts/ci/module-revisions.sh --base "$BASE_SHA" --check
+          fi
 
           jq -e 'type == "array" and length > 0' .github/images.json >/dev/null
           actual="$(find modules -type f -name Dockerfile | LC_ALL=C sort)"
@@ -101,7 +112,6 @@ jobs:
           done < <(jq -c '.[]' .github/mirrors.json)
 
           selected='[]'
-          revision_modules='[]'
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             if [[ -z "$REQUESTED_MODULE" || "$REQUESTED_MODULE" == "all" ]]; then
               selected="$(jq -c '.' .github/images.json)"
@@ -117,36 +127,11 @@ jobs:
                 changed_modules="$(jq -c --arg module "$module" '. + [$module] | unique' <<<"$changed_modules")"
               fi
             done < <(jq -r '.[].context' .github/images.json)
-            revision_modules="$changed_modules"
             if grep -Eq '^(\.github/images\.json|\.github/workflows/container-images\.yml|scripts/ci/(runtime-image|install-crane)\.sh)$' <<<"$changed"; then
               selected="$(jq -c '.' .github/images.json)"
             else
               selected="$(jq -c --argjson modules "$changed_modules" '[.[] | select(.module as $module | $modules | index($module))]' .github/images.json)"
             fi
-          fi
-
-          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
-            while IFS= read -r module; do
-              manifest="modules/${module}/module.yml"
-              if ! old_manifest="$(git show "${BASE_SHA}:${manifest}" 2>/dev/null)"; then
-                continue
-              fi
-              old_version="$(awk '$1 == "version:" { print $2; exit }' <<<"$old_manifest")"
-              old_revision="$(awk '$1 == "revision:" { print $2; exit }' <<<"$old_manifest")"
-              old_revision="${old_revision:-0}"
-              new_version="$(awk '$1 == "version:" { print $2; exit }' "$manifest")"
-              new_revision="$(awk '$1 == "revision:" { print $2; exit }' "$manifest")"
-              if [[ "$new_version" == "$old_version" ]]; then
-                expected=$((old_revision + 1))
-                if [[ "$new_revision" != "$expected" ]]; then
-                  echo "$module container changed without revision $expected" >&2
-                  exit 1
-                fi
-              elif [[ "$new_revision" != "1" ]]; then
-                echo "$module changed version from $old_version to $new_version, so revision must reset to 1" >&2
-                exit 1
-              fi
-            done < <(jq -r '.[]' <<<"$revision_modules" | LC_ALL=C sort -u)
           fi
 
           enriched='[]'

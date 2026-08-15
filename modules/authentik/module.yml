@@ -10,7 +10,7 @@ abi:
 title: authentik
 description: Identity provider serving OIDC and SAML with per-application endpoints.
 category: identity
-status: experimental
+status: developing
 runtime:
   type: compose
   compose_file: docker-compose.yml

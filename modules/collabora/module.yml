@@ -10,6 +10,7 @@ abi:
 title: Collabora Online
 description: Online document editing backend for Nextcloud.
 category: app
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

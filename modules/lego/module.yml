@@ -10,6 +10,7 @@ abi:
 title: Lego ACME certificates
 description: Issues and stores wildcard certificates used by Traefik and domain services.
 category: certificate
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

@@ -10,6 +10,7 @@ abi:
 title: Traefik reverse proxy
 description: HTTPS reverse proxy and dashboard for all web-facing services.
 category: network
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

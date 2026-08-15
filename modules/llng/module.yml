@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: llng
 version: 2.23.2
-revision: 3
+revision: 4
 app_version: 2.23.2
 abi:
   supports:
@@ -10,6 +10,7 @@ abi:
 title: LemonLDAP::NG
 description: SSO portal, SAML/OIDC identity provider, and app launcher.
 category: identity
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

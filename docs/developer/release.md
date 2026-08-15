@@ -47,6 +47,20 @@ GitHub 是代码主仓库，GHCR 是容器首发仓库，CNB 同时承担国内�
 
 修改构建上下文但不升级上游时，`revision` 必须恰好加一。升级 `version` 时，`revision` 必须重置为 `1`。固定标签不可覆盖，不发布 `latest`。
 
+发布前使用脚本从 Git 基准自动计算并同步这些值：
+
+```bash
+# 功能分支通常可以省略 --base；脚本会使用与 origin/master 的 merge base
+bash scripts/ci/module-revisions.sh --write
+
+# CI 应明确传入 PR base SHA 或 push 前的 SHA，并只校验已提交结果
+bash scripts/ci/module-revisions.sh --base "$BASE_SHA" --check
+```
+
+脚本只管理 `.github/images.json` 中登记的 ANAS 派生镜像。它按 Module 合并多个 build context；同一 Module 的任一 context 有变化，就从基准 manifest 的 revision 加一。上游 `version` 变化或新增 Module 时使用 `1`。`--write` 同时更新 `module.yml`、存在时的 `localization.yml`，以及该 Module 在 `docker-compose.yml` 中的全部派生镜像标签。未经修改的上游 mirror 不使用 `-r<revision>` 镜像标签，因此不由此脚本计算。
+
+不要只在发布 CI 的临时 checkout 中执行 `--write`：计算结果必须提交，否则 Registry 中的新标签会与仓库里的 Compose 引用不一致。CI 应执行 `--check`，在真正构建前阻止这种漂移。
+
 ## Registry
 
 ```text

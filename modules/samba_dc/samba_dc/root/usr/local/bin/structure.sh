@@ -135,12 +135,6 @@ if [ ! -z "$SAMBA_DC_ADMIN_NAME" ]; then
   if [ "$SAMBA_DC_CREATE_STRUCTURE" == "true" ]; then
     add_to_group "$SAMBA_DC_FS_ADMIN_GROUP_NAME" "$SAMBA_DC_ADMIN_NAME"
   fi
-  if [ "$SAMBA_DC_APP_FILTER" == "true" ]; then
-    add_to_group "$SAMBA_DC_APP_ALL_NAME" "$SAMBA_DC_ADMIN_NAME"
-    for name in $(echo "$ANAS_IDENTITY_APP_CLIENTS" | tr "," "\n"); do
-      add_to_group "APP_$name" "$SAMBA_DC_ADMIN_NAME"
-    done
-  fi
   remove_from_group "Schema Admins" $SAMBA_DC_ADMIN_NAME
   remove_from_group "Enterprise Admins" $SAMBA_DC_ADMIN_NAME
 fi

@@ -10,7 +10,7 @@ abi:
 title: NetBird
 description: Incomplete WireGuard overlay network scaffold; excluded from recommended deployments.
 category: network
-status: experimental
+status: developing
 runtime:
   type: compose
   compose_file: docker-compose.yml
@@ -47,6 +47,7 @@ config:
     - ANAS_TLS_CERTS_DIR
     - ANAS_TLS_INTERNAL_CA_NAME
     - NETBIRD_SIGNAL_PORT
+    - SAMBA_DC_ADMIN_GROUP_NAME
     - SAMBA_DC_APP_FILTER
     - TRAEFIK_BASE_PORT
     - TRAEFIK_HOSTNAME

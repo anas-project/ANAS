@@ -167,7 +167,7 @@ func calcNetbird(e map[string]string, workdir string, secrets *secretStore) erro
 	e["NETBIRD_DOMAIN_FULL"] = "https://" + e["NETBIRD_DOMAIN_PORT"]
 	allowGroups := ""
 	if e["SAMBA_DC_APP_FILTER"] == "true" {
-		allowGroups = "APP_netbird,APP_all,Admins"
+		allowGroups = "APP_netbird,APP_all," + defaultValue(e["SAMBA_DC_ADMIN_GROUP_NAME"], "Admins")
 	}
 	// Generic client registration. The selected IAM translates this into its
 	// own configuration format, so nothing here names an IAM implementation.
@@ -184,7 +184,7 @@ func calcNetbird(e map[string]string, workdir string, secrets *secretStore) erro
 	e[client+"REDIRECT_URIS"] = e["NETBIRD_DOMAIN_FULL"] + "/auth," + e["NETBIRD_DOMAIN_FULL"] + "/silent-auth"
 	e[client+"POST_LOGOUT_REDIRECT_URIS"] = e["NETBIRD_DOMAIN_FULL"]
 	e[client+"SCOPES"] = "openid,profile,email"
-	e[client+"ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1,email:email:1"
+	e[client+"ATTRIBUTES"] = "name:displayName:1,cn:cn:1,sAMAccountName:sAMAccountName:1,email:email:1"
 	e[client+"ALLOW_GROUPS"] = allowGroups
 	e[client+"DOMAIN"] = e["NETBIRD_DOMAIN"]
 	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "netbird")

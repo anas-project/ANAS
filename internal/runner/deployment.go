@@ -50,6 +50,7 @@ type deploymentModule struct {
 	Version            string `yaml:"version" json:"version"`
 	Revision           int    `yaml:"revision" json:"revision"`
 	AppVersion         string `yaml:"app_version,omitempty" json:"app_version,omitempty"`
+	Lifecycle          string `yaml:"lifecycle" json:"lifecycle"`
 	ArtifactDeployment string `yaml:"artifact_deployment" json:"artifact_deployment"`
 	RenderDigest       string `yaml:"render_digest" json:"render_digest"`
 	// DataBreaking is frozen from the module's upgrade.data_breaking so that a
@@ -384,6 +385,7 @@ func runPlan(args []string, jsonMode bool) error {
 	fmt.Print(a.iamPlanSummary())
 	fmt.Print(a.dnsPlanSummary())
 	fmt.Print(a.dynamicDNSPlanSummary())
+	fmt.Print(a.moduleLifecyclePlanSummary())
 	return nil
 }
 
@@ -703,6 +705,7 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 		}
 		manifest.Modules[name] = deploymentModule{
 			Name: name, Version: mod.Version, Revision: mod.Revision, AppVersion: mod.AppVersion,
+			Lifecycle:          mod.Lifecycle,
 			ArtifactDeployment: id, RenderDigest: digest,
 			DataBreaking: cloneStringListPointer(mod.DataBreaking),
 			RuntimeType:  mod.RuntimeType, ComposeFile: mod.ComposeFile,
@@ -1756,6 +1759,7 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 		artifactRoot := filepath.Join(base, "deployments", artifactDeployment, "modules")
 		reg[name] = Module{
 			Name: name, Version: module.Version, Revision: module.Revision, AppVersion: module.AppVersion,
+			Lifecycle: module.Lifecycle,
 			SourceDir: filepath.Join(artifactRoot, name), EnvPrefix: module.EnvPrefix,
 			Consumes: append([]string{}, module.Consumes...), Changes: module.Changes,
 			UseHostLAN: module.UseHostLAN, Hook: module.Hook,
