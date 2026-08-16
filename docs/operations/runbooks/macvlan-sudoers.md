@@ -10,12 +10,21 @@
 `anas_service.sh` 由 runner 生成到运行时 base 目录（默认 `~/.anas`，
 0700），内容只做三件事：
 
-- `add`：创建 `anas_bridge` macvlan 接口、绑定桥 IP、拉起接口；
+- `add`：创建 `anas_bridge` macvlan 接口、绑定桥 IP、删除该接口上其他残留地址、
+  拉起接口，并为容器地址装一条 `/32` 路由；
 - `del`：删除 `anas_bridge` 接口；
 - 不读取环境变量，参数在生成时已固化（fmt %q 引用，无注入面）。
 
+那条 `/32` 路由是给显式指定地址的部署用的：桥地址此时是 `/32`，不再带出一段
+connected 路由，容器地址可能落在桥地址前缀之外，宿主到它的路由必须写明。自动分配
+的部署里这条路由与地址池的 connected 路由指向同一设备，是冗余但无害的。
+
 Docker macvlan 网络本身通过 `docker network create` 创建，不需要 sudo
 （要求当前用户在 `docker` 组或以 root 运行 runner）。
+
+地址占用探测（`ping` + `ip -4 neigh show`）**不经过这个脚本，也不需要 sudo**：它只
+读，且在宿主自己的网络命名空间里执行。只有配置了 `NETWORK_NAMESPACE_PATH` 的隔离
+测试环境例外——进入命名空间本身就需要特权，那里探测走 `sudo nsenter`。
 
 ## 最小 sudoers 授权
 

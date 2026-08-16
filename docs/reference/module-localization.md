@@ -22,7 +22,7 @@
 | [oauth2_proxy](#oauth2_proxy) | 7.15.3-r1 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [postgres](#postgres) | 18.4.0-r1 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [samba_dc](#samba_dc) | 4.23.6-r5 | system | not_applicable | none | not_applicable | not_applicable | 0 |
-| [samba_fs](#samba_fs) | 4.23.6-r2 | container | not_applicable | client | not_applicable | not_applicable | 0 |
+| [samba_fs](#samba_fs) | 4.23.6-r3 | container | not_applicable | client | not_applicable | not_applicable | 0 |
 | [traefik](#traefik) | 3.7.10-r2 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 
 ## authentik
@@ -195,7 +195,7 @@
 
 ## samba_fs
 
-- **Version / 版本：** `4.23.6-r2`; reviewed 2026-08-13
+- **Version / 版本：** `4.23.6-r3`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — The file server receives TZ and includes tzdata; client-visible timestamps are also affected by SMB client behavior.
 - **Language / 语言：** `not_applicable`, `client` — SMB protocol service
 - **ANAS globals / 全局默认：** `default_language=not_applicable`; `default_locale=not_applicable`

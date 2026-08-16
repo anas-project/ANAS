@@ -54,19 +54,16 @@ func (a *app) applyHostNetwork() error {
 		return fmt.Errorf("could not detect host interface, host ip, or subnet mask")
 	}
 	// The macvlan plan is only computed when a module actually attaches to the
-	// host LAN. calcVLAN carves a /28 pool out of the host segment and so
-	// refuses anything narrower, which used to fail `render` outright on a /30
-	// or /32 host -- an ordinary VPS -- even when no module wanted a bridge. The
-	// gate that governs ensureMacvlan now also governs the calculation feeding
-	// it, which is only possible with both on the same side of the boundary.
+	// host LAN. Carving an address pool refuses any host prefix narrower than a
+	// /28, which used to fail `render` outright on a /30 or /32 host -- an
+	// ordinary VPS -- even when no module wanted a bridge. The gate that governs
+	// ensureMacvlan now also governs the calculation feeding it, which is only
+	// possible with both on the same side of the boundary. A deployment that
+	// states its addresses carves no pool at all and so has no width to fail on;
+	// see applyMacvlanPlan.
 	if a.hostLANRequired() {
-		vlan, err := calcVLAN(a.env["HOST_IP"], a.env["HOST_SUBNET_MASK"])
-		if err != nil {
+		if err := a.applyMacvlanPlan(); err != nil {
 			return err
-		}
-		a.setHostEnv("VLAN_GATEWAY_IP", a.env["DEFAULT_GATEWAY_IP"])
-		for k, v := range vlan {
-			a.setHostEnv(k, v)
 		}
 	}
 	a.detectHostIPv6()
@@ -89,6 +86,139 @@ var hostEnvKeys = []string{
 	"HOST_SUBNET_MASK", "LOCAL_DNS_SERVER", "HOST_IPV6", "HOST_IPV6_INTERFACE",
 	"HOST_HAS_IPV6", "HOST_SEGMENT", "VLAN_SEGMENT", "VLAN_SUBNET_MASK",
 	"VLAN_GATEWAY_IP", "VLAN_BRIDGE_IP", "VLAN_BRIDGE_INTERFACE", "VLAN_INTERFACE",
+	"HOST_LAN_IP",
+}
+
+// applyMacvlanPlan settles the two addresses a host-LAN attachment puts on the
+// local segment: the container's own address and the host-side bridge.
+//
+// Both may be pinned in the config, and on a LAN with a DHCP server pinning
+// them is the correct thing to do. Docker's IPAM allocates from a pool carved
+// out of the host segment and never asks anyone for it -- see calcVLAN, whose
+// defence against handing out a leased address is to sit at the top of the
+// range where leases usually are not. That is a convention, not an agreement:
+// a router whose pool reaches the top of the segment will lease an address
+// this deployment is already using, and nothing on either side will say so.
+// A pinned address can be excluded from the router's pool, and can be probed
+// for an existing occupant before it is taken (see checkLANAddressConflicts).
+//
+// The pool is only carved when something is still unpinned, which is also what
+// lets a host whose prefix is narrower than a /28 attach to the host LAN at
+// all: the pool it cannot carve is the pool nobody is asking for.
+func (a *app) applyMacvlanPlan() error {
+	if pinned := strings.TrimSpace(a.env["HOST_LAN_BRIDGE_IP"]); pinned != "" {
+		a.setHostEnv("VLAN_BRIDGE_IP", pinned)
+	}
+	segment, err := hostSegment(a.env["HOST_IP"], a.env["HOST_SUBNET_MASK"])
+	if err != nil {
+		return err
+	}
+	a.setHostEnv("HOST_SEGMENT", segment)
+	a.setHostEnv("VLAN_INTERFACE", macvlanNetworkName)
+	a.setHostEnv("VLAN_BRIDGE_INTERFACE", macvlanBridgeName)
+	// Containers on the macvlan are on the LAN, so their default route is the
+	// LAN's router. The fall back to the host's own address only applies when
+	// no default route was detected at all, where nothing else is a better
+	// guess; it used to live inside calcVLAN, which meant the pinned path --
+	// where no pool is carved -- would have published no gateway at all.
+	a.setHostEnv("VLAN_GATEWAY_IP", defaultString(a.env["DEFAULT_GATEWAY_IP"], a.env["HOST_IP"]))
+	addressPinned := a.env["HOST_LAN_IP"] != ""
+	if !addressPinned || a.env["VLAN_BRIDGE_IP"] == "" {
+		vlan, err := calcVLAN(a.env["HOST_IP"], a.env["HOST_SUBNET_MASK"])
+		if err != nil {
+			return err
+		}
+		for key, value := range vlan {
+			// A pinned address may sit anywhere in the host segment, and
+			// VLAN_SEGMENT becomes docker's --ip-range, which would reject it.
+			// The range only constrains addresses this deployment did not
+			// choose, so with a pinned one there is nothing left to constrain.
+			if key == "VLAN_SEGMENT" && addressPinned {
+				continue
+			}
+			a.setHostEnv(key, value)
+		}
+		a.setHostEnv("HOST_LAN_IP", poolAddress(vlan["VLAN_SEGMENT"], 2))
+	} else {
+		// Nothing carved a pool, so the bridge address covers only itself and
+		// the container is reached through an explicit route. See ensureMacvlan.
+		a.setHostEnv("VLAN_SUBNET_MASK", "32")
+	}
+	return a.validateMacvlanPlan()
+}
+
+const (
+	macvlanNetworkName = "anas_macvlan"
+	macvlanBridgeName  = "anas_bridge"
+)
+
+// hostSegment is the CIDR the host's own address sits in. Unlike calcVLAN it
+// imposes no width: a segment is a statement about the host, and every host has
+// one, including the /30 and /32 hosts that have no room for an address pool.
+func hostSegment(ipStr, prefixStr string) (string, error) {
+	ip := net.ParseIP(ipStr).To4()
+	if ip == nil {
+		return "", fmt.Errorf("invalid HOST_IP %q", ipStr)
+	}
+	prefix, err := strconv.Atoi(prefixStr)
+	if err != nil || prefix <= 0 || prefix > 32 {
+		return "", fmt.Errorf("invalid HOST_SUBNET_MASK %q", prefixStr)
+	}
+	return fmt.Sprintf("%s/%d", ip.Mask(net.CIDRMask(prefix, 32)).String(), prefix), nil
+}
+
+// poolAddress is the nth address of a CIDR. The bridge takes the first, so the
+// container takes the second, which is also the first address docker's IPAM has
+// left to hand out once --aux-address has reserved the bridge.
+func poolAddress(segment string, n uint32) string {
+	_, network, err := net.ParseCIDR(segment)
+	if err != nil {
+		return ""
+	}
+	return uint32ToIP(ipToUint32(network.IP) + n).String()
+}
+
+// validateMacvlanPlan rejects an address that cannot work before anything is
+// created with it. Each of these produced a failure far from its cause: an
+// address outside the segment is unreachable, an address equal to the host's
+// or the gateway's takes over an address the LAN already depends on, and the
+// network and broadcast addresses are not host addresses at all.
+func (a *app) validateMacvlanPlan() error {
+	_, network, err := net.ParseCIDR(a.env["HOST_SEGMENT"])
+	if err != nil {
+		return fmt.Errorf("invalid HOST_SEGMENT %q: %w", a.env["HOST_SEGMENT"], err)
+	}
+	prefix, _ := network.Mask.Size()
+	broadcast := uint32ToIP(ipToUint32(network.IP) | ^uint32(0)>>uint(prefix))
+	for _, addr := range []struct{ parameter, value string }{
+		{"host_lan_bridge_ip", a.env["VLAN_BRIDGE_IP"]},
+		{"host_lan_ip", a.env["HOST_LAN_IP"]},
+	} {
+		ip := net.ParseIP(addr.value).To4()
+		if ip == nil {
+			return fmt.Errorf("%s must be an IPv4 address, got %q", addr.parameter, addr.value)
+		}
+		if !network.Contains(ip) {
+			return fmt.Errorf("%s %s is outside the host segment %s", addr.parameter, addr.value, a.env["HOST_SEGMENT"])
+		}
+		for _, taken := range []struct{ name, value string }{
+			{"the host", a.env["HOST_IP"]},
+			{"the default gateway", a.env["DEFAULT_GATEWAY_IP"]},
+		} {
+			if taken.value != "" && ip.Equal(net.ParseIP(taken.value).To4()) {
+				return fmt.Errorf("%s %s is already %s's address", addr.parameter, addr.value, taken.name)
+			}
+		}
+		// A /32 host segment has neither: the single address is the host's own,
+		// and the loop above has already rejected it.
+		if prefix < 31 && (ip.Equal(network.IP.To4()) || ip.Equal(broadcast)) {
+			return fmt.Errorf("%s %s is the network or broadcast address of %s", addr.parameter, addr.value, a.env["HOST_SEGMENT"])
+		}
+	}
+	if a.env["VLAN_BRIDGE_IP"] == a.env["HOST_LAN_IP"] {
+		return fmt.Errorf("host_lan_ip and host_lan_bridge_ip are both %s; the bridge and the container need separate addresses", a.env["HOST_LAN_IP"])
+	}
+	return nil
 }
 
 // setHostEnv publishes a discovered value without overwriting a configured
@@ -299,14 +429,18 @@ func calcVLAN(ipStr, prefixStr string) (map[string]string, error) {
 	broadcastN := ipToUint32(network) ^ uint32((1<<hostBits)-1)
 	vlanNetwork := uint32ToIP(broadcastN & ^uint32((1<<(32-vlanMask))-1))
 	bridgeIP := uint32ToIP(ipToUint32(vlanNetwork) + 1)
+	// VLAN_GATEWAY_IP is deliberately absent. It was here, set to the host's own
+	// address, and it never took effect: applyMacvlanPlan publishes the default
+	// route first and setHostEnv keeps the first value. The fallback it was
+	// meant to provide now lives at that one call site, where it applies to the
+	// pinned path too.
 	return map[string]string{
 		"HOST_SEGMENT":          fmt.Sprintf("%s/%d", network.String(), prefix),
 		"VLAN_SUBNET_MASK":      strconv.Itoa(vlanMask),
-		"VLAN_BRIDGE_INTERFACE": "anas_bridge",
+		"VLAN_BRIDGE_INTERFACE": macvlanBridgeName,
 		"VLAN_BRIDGE_IP":        bridgeIP.String(),
 		"VLAN_SEGMENT":          fmt.Sprintf("%s/%d", vlanNetwork.String(), vlanMask),
-		"VLAN_GATEWAY_IP":       ip.String(),
-		"VLAN_INTERFACE":        "anas_macvlan",
+		"VLAN_INTERFACE":        macvlanNetworkName,
 	}, nil
 }
 

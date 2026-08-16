@@ -2,6 +2,7 @@ package runner
 
 import (
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -198,5 +199,184 @@ func TestDetectHostIPv6OverwritesStaleFlag(t *testing.T) {
 	a.detectHostIPv6()
 	if a.env["HOST_HAS_IPV6"] != "true" {
 		t.Fatalf("HOST_HAS_IPV6 = %q, want true", a.env["HOST_HAS_IPV6"])
+	}
+}
+
+// The default path is the one every existing deployment is on, so it has to
+// keep producing exactly the plan it produced before addresses could be
+// pinned: same pool, same bridge, same range handed to docker.
+func TestApplyHostNetworkAllocatesFromThePoolByDefault(t *testing.T) {
+	a := hostNetApp(map[string]string{
+		"HOST_IP":            "192.168.1.10",
+		"INTERFACE":          "eth0",
+		"HOST_SUBNET_MASK":   "24",
+		"DEFAULT_GATEWAY_IP": "192.168.1.1",
+	}, map[string]Module{"samba_fs": {Name: "samba_fs", UseHostLAN: "required"}})
+	if err := a.applyHostNetwork(); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{
+		"HOST_SEGMENT":     "192.168.1.0/24",
+		"VLAN_SEGMENT":     "192.168.1.240/28",
+		"VLAN_SUBNET_MASK": "28",
+		"VLAN_BRIDGE_IP":   "192.168.1.241",
+		"VLAN_GATEWAY_IP":  "192.168.1.1",
+		// The bridge takes the pool's first address, so the container takes the
+		// second -- which is also the first one docker's IPAM has left after
+		// --aux-address reserves the bridge.
+		"HOST_LAN_IP": "192.168.1.242",
+	} {
+		if a.env[key] != want {
+			t.Errorf("%s = %q, want %q", key, a.env[key], want)
+		}
+	}
+}
+
+// Pinning both addresses is what a deployment on a LAN with DHCP does, and it
+// has to remove the pool rather than sit inside it: the pool becomes docker's
+// --ip-range, which would reject any address chosen from outside it.
+func TestApplyHostNetworkHonorsPinnedAddresses(t *testing.T) {
+	a := hostNetApp(map[string]string{
+		"HOST_IP":            "192.168.1.10",
+		"INTERFACE":          "eth0",
+		"HOST_SUBNET_MASK":   "24",
+		"DEFAULT_GATEWAY_IP": "192.168.1.1",
+		"HOST_LAN_IP":        "192.168.1.51",
+		"HOST_LAN_BRIDGE_IP": "192.168.1.50",
+	}, map[string]Module{"samba_fs": {Name: "samba_fs", UseHostLAN: "required"}})
+	if err := a.applyHostNetwork(); err != nil {
+		t.Fatal(err)
+	}
+	if a.env["HOST_LAN_IP"] != "192.168.1.51" || a.env["VLAN_BRIDGE_IP"] != "192.168.1.50" {
+		t.Fatalf("pinned addresses were overwritten: ip=%q bridge=%q", a.env["HOST_LAN_IP"], a.env["VLAN_BRIDGE_IP"])
+	}
+	if a.env["VLAN_SEGMENT"] != "" {
+		t.Errorf("VLAN_SEGMENT = %q; a pinned address leaves nothing for --ip-range to constrain", a.env["VLAN_SEGMENT"])
+	}
+	// With no pool the bridge address covers only itself; the container is
+	// reached through the explicit route the bridge script installs.
+	if a.env["VLAN_SUBNET_MASK"] != "32" {
+		t.Errorf("VLAN_SUBNET_MASK = %q, want 32", a.env["VLAN_SUBNET_MASK"])
+	}
+	if a.env["HOST_SEGMENT"] != "192.168.1.0/24" {
+		t.Errorf("HOST_SEGMENT = %q", a.env["HOST_SEGMENT"])
+	}
+}
+
+// Pinning only the container address still needs a bridge, so the pool is
+// carved for that one value -- but it must not also become --ip-range, or the
+// pinned address would have to live inside a pool it was chosen to escape.
+func TestApplyHostNetworkPinnedAddressDropsTheRangeButKeepsTheBridge(t *testing.T) {
+	a := hostNetApp(map[string]string{
+		"HOST_IP":            "192.168.1.10",
+		"INTERFACE":          "eth0",
+		"HOST_SUBNET_MASK":   "24",
+		"DEFAULT_GATEWAY_IP": "192.168.1.1",
+		"HOST_LAN_IP":        "192.168.1.51",
+	}, map[string]Module{"samba_fs": {Name: "samba_fs", UseHostLAN: "required"}})
+	if err := a.applyHostNetwork(); err != nil {
+		t.Fatal(err)
+	}
+	if a.env["VLAN_BRIDGE_IP"] != "192.168.1.241" {
+		t.Errorf("VLAN_BRIDGE_IP = %q, want the pool's first address", a.env["VLAN_BRIDGE_IP"])
+	}
+	if a.env["VLAN_SEGMENT"] != "" {
+		t.Errorf("VLAN_SEGMENT = %q, want it dropped once an address is pinned", a.env["VLAN_SEGMENT"])
+	}
+}
+
+// The /28 pool is the only reason a narrow host prefix was ever rejected. A
+// deployment that states its addresses is not asking for a pool, so a /30 --
+// or a /32 -- has to render.
+func TestApplyHostNetworkAcceptsNarrowPrefixWhenAddressesArePinned(t *testing.T) {
+	a := hostNetApp(map[string]string{
+		"HOST_IP":            "192.168.1.9",
+		"INTERFACE":          "eth0",
+		"HOST_SUBNET_MASK":   "30",
+		"DEFAULT_GATEWAY_IP": "192.168.1.10",
+		"HOST_LAN_IP":        "192.168.1.10",
+		"HOST_LAN_BRIDGE_IP": "192.168.1.8",
+	}, map[string]Module{"samba_fs": {Name: "samba_fs", UseHostLAN: "required"}})
+	err := a.applyHostNetwork()
+	// .8 is the network address of 192.168.1.8/30 and .10 is the gateway, so
+	// this particular pinning is rejected -- but for the address it names, not
+	// for the width of the prefix.
+	if err == nil {
+		t.Fatal("expected the network address to be rejected")
+	}
+	if got := err.Error(); !strings.Contains(got, "host_lan_bridge_ip") {
+		t.Fatalf("error = %q, want it to name the offending parameter", got)
+	}
+
+	// The same narrow host renders once the addresses are ones it can use.
+	ok := hostNetApp(map[string]string{
+		"HOST_IP":            "192.168.1.9",
+		"INTERFACE":          "eth0",
+		"HOST_SUBNET_MASK":   "29",
+		"DEFAULT_GATEWAY_IP": "192.168.1.14",
+		"HOST_LAN_IP":        "192.168.1.11",
+		"HOST_LAN_BRIDGE_IP": "192.168.1.12",
+	}, map[string]Module{"samba_fs": {Name: "samba_fs", UseHostLAN: "required"}})
+	if err := ok.applyHostNetwork(); err != nil {
+		t.Fatalf("a /29 host with pinned addresses must render: %v", err)
+	}
+}
+
+// Every one of these produced a failure a long way from its cause: an
+// unreachable container, a host that lost its own address, or a docker network
+// that refused to create.
+func TestValidateMacvlanPlanRejectsUnusableAddresses(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		ip     string
+		bridge string
+		want   string
+	}{
+		{"outside the segment", "10.9.9.9", "192.168.1.50", "outside the host segment"},
+		{"the host's own address", "192.168.1.10", "192.168.1.50", "the host's address"},
+		{"the default gateway", "192.168.1.1", "192.168.1.50", "the default gateway's address"},
+		{"the network address", "192.168.1.0", "192.168.1.50", "network or broadcast"},
+		{"the broadcast address", "192.168.1.255", "192.168.1.50", "network or broadcast"},
+		{"not an address at all", "192.168.1.999", "192.168.1.50", "must be an IPv4 address"},
+		{"the same address twice", "192.168.1.50", "192.168.1.50", "separate addresses"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := hostNetApp(map[string]string{
+				"HOST_IP":            "192.168.1.10",
+				"INTERFACE":          "eth0",
+				"HOST_SUBNET_MASK":   "24",
+				"DEFAULT_GATEWAY_IP": "192.168.1.1",
+				"HOST_LAN_IP":        tc.ip,
+				"HOST_LAN_BRIDGE_IP": tc.bridge,
+			}, map[string]Module{"samba_fs": {Name: "samba_fs", UseHostLAN: "required"}})
+			err := a.applyHostNetwork()
+			if err == nil {
+				t.Fatalf("%s was accepted", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %q, want it to mention %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
+
+// A host segment is a statement about the host, so unlike the address pool it
+// has no minimum width.
+func TestHostSegmentHasNoWidthRequirement(t *testing.T) {
+	for _, tc := range []struct{ ip, prefix, want string }{
+		{"192.168.1.10", "24", "192.168.1.0/24"},
+		{"203.0.113.7", "32", "203.0.113.7/32"},
+		{"10.0.0.6", "30", "10.0.0.4/30"},
+	} {
+		got, err := hostSegment(tc.ip, tc.prefix)
+		if err != nil {
+			t.Fatalf("hostSegment(%s/%s): %v", tc.ip, tc.prefix, err)
+		}
+		if got != tc.want {
+			t.Errorf("hostSegment(%s/%s) = %q, want %q", tc.ip, tc.prefix, got, tc.want)
+		}
+	}
+	if _, err := hostSegment("not-an-ip", "24"); err == nil {
+		t.Error("expected an invalid host address to be rejected")
 	}
 }

@@ -521,6 +521,7 @@ func TestGlobalBindingsProduceDeclaredKeys(t *testing.T) {
 		BaseDomain: "nas.example.com", Email: "a@example.com", Timezone: "Asia/Tokyo",
 		ContainerPrefix: "c_", NetworkPrefix: "n_",
 		HostIP: "10.0.0.2", DNSServer: "1.1.1.1", VirtualDomain: BoolTrue,
+		HostLANIP: "10.0.0.242", HostLANBridgeIP: "10.0.0.241", HostLANARPCheck: BoolFalse,
 		DefaultLanguage: "en", DefaultLocale: "en-SG",
 		ChineseSpeedup: BoolFalse, ChineseBuildSpeedup: BoolFalse, IPv4: BoolTrue, IPv6: BoolFalse,
 	}}

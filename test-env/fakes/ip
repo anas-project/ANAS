@@ -1,0 +1,31 @@
+#!/usr/bin/env sh
+# Neighbour-table boundary for the host-LAN address probe. The runner asks
+# `ip -4 neigh show <address>` whether anything already answers for an address
+# it is about to take; a test says which addresses are occupied by listing them
+# in ANAS_FAKE_LAN_OCCUPIED.
+#
+# Everything else exits quietly. The bridge script's own `ip` calls never reach
+# this fake -- they run through the fake sudo, which records the request instead
+# of executing it.
+set -eu
+
+if [ -n "${ANAS_FAKE_DOCKER_LOG:-}" ]; then
+  printf '%s|ip %s\n' "$PWD" "$*" >>"$ANAS_FAKE_DOCKER_LOG"
+fi
+
+for arg in "$@"; do
+  address=$arg
+done
+
+if [ "${1:-}" = neigh ] || [ "${2:-}" = neigh ]; then
+  for occupied in ${ANAS_FAKE_LAN_OCCUPIED:-}; do
+    if [ "$occupied" = "${address:-}" ]; then
+      # REACHABLE is the only state the runner accepts as an occupant; a STALE
+      # entry is a memory of an address nobody necessarily holds any more.
+      printf '%s dev anas-test0 lladdr 02:42:ac:11:00:99 REACHABLE\n' "$address"
+      exit 0
+    fi
+  done
+fi
+
+exit 0

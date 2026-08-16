@@ -25,7 +25,7 @@ import json, os, re, sys
 
 doc = json.load(open(sys.argv[1]))
 parameters = doc["parameters"]
-assert len(parameters) == 128, len(parameters)
+assert len(parameters) == 131, len(parameters)
 
 removed = {
     "global.basicauth_user",
@@ -48,7 +48,7 @@ effects = {}
 for item in parameters:
     effects[item["effect"]] = effects.get(item["effect"], 0) + 1
 assert effects == {
-    "container_recreate": 88,
+    "container_recreate": 91,
     "credential_rotate": 7,
     "data_migrate": 9,
     "hot_reload": 8,

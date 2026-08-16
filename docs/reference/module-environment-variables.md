@@ -23,7 +23,10 @@
 ## Runner 产生的宿主与全局变量
 
 - 主机与网络：`HOST_IP`、`HOST_SUBNET_MASK`、`HOST_DNS_SERVER`、`DEFAULT_GATEWAY_IP`、`VLAN_GATEWAY_IP`、`INTERFACE`、`LOCAL_DNS_SERVER`。
-- macvlan 地址规划：`HOST_SEGMENT`、`VLAN_SEGMENT`、`VLAN_SUBNET_MASK`、`VLAN_BRIDGE_IP`、`VLAN_BRIDGE_INTERFACE`、`VLAN_INTERFACE`。仅当存在 `features.host_lan: required` 的 Module 时才计算——宿主前缀窄于 /28 时无法划出地址池，而没有消费方时这个池本来也没人要。
+- macvlan 地址规划：`HOST_SEGMENT`、`HOST_LAN_IP`、`VLAN_SEGMENT`、`VLAN_SUBNET_MASK`、`VLAN_BRIDGE_IP`、`VLAN_BRIDGE_INTERFACE`、`VLAN_INTERFACE`。仅当存在 `features.host_lan: required` 的 Module 时才计算。
+  - `HOST_LAN_IP` 是容器在局域网上的地址，`VLAN_BRIDGE_IP` 是宿主侧桥接口的地址。两者都可以用 `global.host_lan_ip` / `global.host_lan_bridge_ip` 指定；不指定时从地址池顶部自动取（桥取第一个，容器取第二个）。
+  - `VLAN_SEGMENT` 只在两者都未指定时发布，它是 `docker network create --ip-range`。一旦容器地址被指定，这个范围就没有约束对象了，继续传会让 Docker 拒绝范围外的静态地址。
+  - 地址池是自动分配才需要的，所以宿主前缀窄于 /28 的限制也只在自动分配时成立：显式指定地址后 /29、/30 一样可以部署。
 - 路径与名称：`SERVER_NAME`。
 - `DATA_PATH`（应用状态）与 `USER_DATA_PATH`（用户文件）来自工作区布局；`BASE_DOMAIN`、`EMAIL`、`TZ`、容器/镜像/网络前缀等来自全局配置，不算某个业务 Module 的私有输出。
 
