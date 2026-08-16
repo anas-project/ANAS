@@ -1536,9 +1536,14 @@ func runBtrfs(args ...string) error { return btrfsCommand(args...) }
 //
 // It deliberately does not run `btrfs subvolume show`, which needs
 // CAP_SYS_ADMIN for its tree-search ioctl and so fails for an ordinary user
-// even though `btrfs subvolume create`, `snapshot` and `delete` all succeed
+// even though `btrfs subvolume create` and `snapshot` both succeed
 // unprivileged. Using it as a precondition put the entire snapshot feature
 // behind root for no reason.
+//
+// Deletion is the exception and does not belong in that list: BTRFS_IOC_SNAP_DESTROY
+// requires CAP_SYS_ADMIN unless the filesystem was mounted with
+// user_subvol_rm_allowed, which is why a workspace can take snapshots it cannot
+// reclaim. See describeSubvolumeDeleteFailure, which exists for that asymmetry.
 //
 // A subvolume root is identified without any privilege by two facts: it lives
 // on Btrfs, and its inode number is 256.
