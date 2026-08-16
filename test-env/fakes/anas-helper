@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+# Privileged boundary for host network setup. The real helper holds
+# CAP_NET_ADMIN and runs ip(8); tests need to prove the runner reaches this
+# boundary with the right plan, not to create interfaces on a developer's
+# machine.
+#
+# The real binary's own argument validation is covered by unit tests in
+# cmd/anas-helper, so nothing is re-checked here: this only records.
+set -eu
+
+if [ -n "${ANAS_FAKE_DOCKER_LOG:-}" ]; then
+  printf '%s|anas-helper %s\n' "$PWD" "$*" >>"$ANAS_FAKE_DOCKER_LOG"
+fi
+
+exit 0

@@ -15,7 +15,7 @@ Traefik 是公开 HTTP/HTTPS 入口，证书由所选 ACME/DNS 能力提供。�
 
 普通服务通过 Module 声明的 Docker 网络连接。需要直接出现在局域网中的服务可能使用 macvlan，并需要最小化的主机特权辅助操作。
 
-macvlan 常见限制是宿主机不能直接访问同一 macvlan 上的容器。不要为绕过限制授予 ANAS 任意 root shell；使用受限脚本和 sudoers 规则，参考 [macvlan sudoers Runbook](runbooks/macvlan-sudoers.md)。
+macvlan 常见限制是宿主机不能直接访问同一 macvlan 上的容器。ANAS 用一个只持有 `CAP_NET_ADMIN` 的独立二进制 `anas-helper` 建立桥接口来解决，不需要 sudoers 规则，也不需要任何 root shell。参考 [特权 helper Runbook](runbooks/privileged-helper.md)。
 
 ### 局域网地址必须排除出 DHCP 池
 

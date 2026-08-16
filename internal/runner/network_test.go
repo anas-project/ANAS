@@ -1,37 +1,118 @@
 package runner
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestNetworkScriptArgsOnHost(t *testing.T) {
-	got, err := networkScriptArgs("", "/tmp/anas_service.sh", "del")
+// The helper is what holds CAP_NET_ADMIN, so where it is found matters as much
+// as what it does: PATH belongs to whoever invoked anas, which is the party
+// this design is trying not to grant more to.
+func TestHostNetHelperIsFoundBesideTheBinaryBeforePATH(t *testing.T) {
+	dir := t.TempDir()
+	self, err := os.Executable()
+	if err != nil {
+		t.Skip("no executable path on this platform")
+	}
+	beside := filepath.Join(filepath.Dir(self), hostNetHelperName)
+	if err := os.WriteFile(beside, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Skipf("cannot write beside the test binary: %v", err)
+	}
+	defer os.Remove(beside)
+
+	shadow := filepath.Join(dir, hostNetHelperName)
+	if err := os.WriteFile(shadow, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	found, err := findHostNetHelper()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"sh", "/tmp/anas_service.sh", "del"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("networkScriptArgs() = %#v, want %#v", got, want)
+	if found != beside {
+		t.Fatalf("resolved %q, want the copy beside the binary at %q", found, beside)
 	}
 }
 
-func TestNetworkScriptArgsInNamespace(t *testing.T) {
-	got, err := networkScriptArgs("/run/netns/anas-test", "/tmp/anas_service.sh")
+// Not being installed has to say so. The failure it replaces -- a sudoers rule
+// that was never added -- used to surface as a bare non-zero exit from sudo.
+func TestHostNetHelperReportsItsAbsence(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	previous := hostNetHelperName
+	hostNetHelperName = "anas-helper-that-is-not-installed"
+	defer func() { hostNetHelperName = previous }()
+
+	_, err := hostNetHelperArgs("", "bridge", "down", "--name", "anas_bridge")
+	if err == nil {
+		t.Fatal("a missing helper was not reported")
+	}
+	if !strings.Contains(err.Error(), "is not installed") {
+		t.Fatalf("error = %q, want it to say the helper is missing", err.Error())
+	}
+}
+
+// Entering a network namespace is privileged in itself, so the isolation
+// environments that use one keep the sudo they always had. Nothing else does.
+func TestHostNetHelperEscalatesOnlyForANamespace(t *testing.T) {
+	dir := t.TempDir()
+	helper := filepath.Join(dir, hostNetHelperName)
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	previous := hostNetHelperInstallPath
+	hostNetHelperInstallPath = dir
+	defer func() { hostNetHelperInstallPath = previous }()
+
+	plain, err := hostNetHelperArgs("", "bridge", "down", "--name", "anas_bridge")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"nsenter", "--net=/run/netns/anas-test", "sh", "/tmp/anas_service.sh"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("networkScriptArgs() = %#v, want %#v", got, want)
+	if plain[0] == "sudo" {
+		t.Fatalf("the ordinary path escalated: %v", plain)
+	}
+	if filepath.Base(plain[0]) != hostNetHelperName {
+		t.Fatalf("args[0] = %q, want the helper itself", plain[0])
+	}
+
+	namespaced, err := hostNetHelperArgs("/run/netns/anas-test", "bridge", "down", "--name", "anas_bridge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"sudo", "nsenter", "--net=/run/netns/anas-test", helper, "bridge", "down", "--name", "anas_bridge"}
+	if !reflect.DeepEqual(namespaced, want) {
+		t.Fatalf("args = %#v, want %#v", namespaced, want)
+	}
+
+	if _, err := hostNetHelperArgs("run/netns/anas-test", "bridge", "down"); err == nil {
+		t.Fatal("expected a relative namespace path to be rejected")
 	}
 }
 
-func TestNetworkScriptArgsRejectsRelativeNamespace(t *testing.T) {
-	if _, err := networkScriptArgs("run/netns/anas-test", "/tmp/anas_service.sh"); err == nil {
-		t.Fatal("expected relative network namespace path to be rejected")
+// The bridge address carries the prefix the plan settled on, and every address
+// this deployment puts on the segment other than the bridge gets a route.
+func TestBridgeArgsCarryThePlan(t *testing.T) {
+	env := map[string]string{
+		"VLAN_BRIDGE_INTERFACE": "anas_bridge",
+		"INTERFACE":             "eth0",
+		"VLAN_BRIDGE_IP":        "192.168.1.50",
+		"VLAN_SUBNET_MASK":      "32",
+		"HOST_LAN_IP":           "192.168.1.51",
+	}
+	want := []string{
+		"bridge", "up", "--name", "anas_bridge", "--parent", "eth0",
+		"--address", "192.168.1.50/32", "--route", "192.168.1.51/32",
+	}
+	if got := bridgeUpArgs(env); !reflect.DeepEqual(got, want) {
+		t.Fatalf("bridgeUpArgs = %#v, want %#v", got, want)
+	}
+	wantDown := []string{"bridge", "down", "--name", "anas_bridge"}
+	if got := bridgeDownArgs(env); !reflect.DeepEqual(got, wantDown) {
+		t.Fatalf("bridgeDownArgs = %#v, want %#v", got, wantDown)
 	}
 }
 
@@ -85,16 +166,13 @@ func TestHostLANRoutesCoverTheContainerButNotTheBridge(t *testing.T) {
 	routes := hostLANRoutes(map[string]string{
 		"VLAN_BRIDGE_IP": "192.168.1.50", "HOST_LAN_IP": "192.168.1.51",
 	})
-	if routes != "192.168.1.51/32" {
-		t.Fatalf("routes = %q, want only the container address", routes)
-	}
 	// The bridge address is on the bridge already; routing to it through the
 	// bridge would be a loop.
-	if strings.Contains(routes, "192.168.1.50") {
-		t.Error("bridge address must not get a route through its own device")
+	if !reflect.DeepEqual(routes, []string{"192.168.1.51/32"}) {
+		t.Fatalf("routes = %#v, want only the container address", routes)
 	}
-	if got := hostLANRoutes(map[string]string{"VLAN_BRIDGE_IP": "192.168.1.241"}); got != "" {
-		t.Errorf("routes = %q, want none when no container address is planned", got)
+	if got := hostLANRoutes(map[string]string{"VLAN_BRIDGE_IP": "192.168.1.241"}); len(got) != 0 {
+		t.Errorf("routes = %#v, want none when no container address is planned", got)
 	}
 }
 

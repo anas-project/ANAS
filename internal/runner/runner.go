@@ -635,7 +635,7 @@ func (a *app) stopRelease(release string, jsonMode bool) error {
 		}
 	}
 	if a.hostLANRequired() {
-		if err := removeMacvlan(a.env, a.base); err != nil {
+		if err := removeMacvlan(a.env); err != nil {
 			stopErrors = append(stopErrors, err)
 		}
 	}
@@ -703,7 +703,7 @@ func (a *app) stopRemoved(release string) error {
 		stoppedAny = true
 	}
 	if stoppedAny && len(stopErrors) == 0 && !a.hostLANRequired() {
-		if err := removeMacvlan(a.env, a.base); err != nil {
+		if err := removeMacvlan(a.env); err != nil {
 			stopErrors = append(stopErrors, err)
 		}
 	}
@@ -1114,7 +1114,7 @@ func (a *app) ensureHostLAN() error {
 	if !a.hostLANRequired() {
 		return nil
 	}
-	return ensureMacvlan(a.env, a.base, a.compose)
+	return ensureMacvlan(a.env, a.compose)
 }
 
 type moduleRun struct {

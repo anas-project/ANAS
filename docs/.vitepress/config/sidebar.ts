@@ -40,7 +40,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       collapsed: true,
       items: [
         { text: '挂载与格式化', link: '/operations/runbooks/mount' },
-        { text: 'macvlan sudoers', link: '/operations/runbooks/macvlan-sudoers' }
+        { text: '特权 helper', link: '/operations/runbooks/privileged-helper' }
       ]
     }
   ],

@@ -133,6 +133,12 @@ tar -xzf "$archive" -C "$work_dir/extract" "$archive_dir/anas"
 binary="$work_dir/extract/$archive_dir/anas"
 [ -f "$binary" ] || fail "release archive does not contain anas"
 
+# The privileged helper is optional at install time: only a deployment with a
+# module that attaches to the host LAN needs it, and extracting it is allowed to
+# fail on a release that predates it.
+tar -xzf "$archive" -C "$work_dir/extract" "$archive_dir/anas-helper" 2>/dev/null || true
+helper="$work_dir/extract/$archive_dir/anas-helper"
+
 install_target="$install_dir/anas"
 if [ ! -d "$install_dir" ]; then
   mkdir -p "$install_dir" 2>/dev/null || true
@@ -146,6 +152,40 @@ else
   command -v sudo >/dev/null 2>&1 || fail "$install_dir is not writable and sudo is unavailable; use --install-dir"
   sudo install -d -m 0755 "$install_dir"
   sudo install -m 0755 "$binary" "$install_target"
+fi
+
+# anas-helper performs the one thing anas cannot do as an ordinary user:
+# create the macvlan bridge a host-LAN module needs. It is installed root-owned,
+# outside the writable install dir, and granted exactly CAP_NET_ADMIN -- not
+# setuid root, and not a sudoers rule pointing at a file anas itself writes.
+#
+# setcap has to be re-run on every upgrade: replacing the file drops the
+# capability with it, and the failure that follows ("needs CAP_NET_ADMIN")
+# arrives a long way from its cause.
+if [ -f "$helper" ]; then
+  helper_dir="${ANAS_HELPER_DIR:-/usr/local/lib/anas}"
+  helper_target="$helper_dir/anas-helper"
+  if [ "$(id -u)" -eq 0 ]; then
+    as_root=""
+  elif command -v sudo >/dev/null 2>&1; then
+    as_root="sudo"
+  else
+    as_root="unavailable"
+  fi
+  if [ "$as_root" = unavailable ]; then
+    printf 'Skipped anas-helper: %s needs root and sudo is unavailable.\n' "$helper_dir" >&2
+    printf 'Deployments with a host-LAN module will not start until it is installed.\n' >&2
+  else
+    $as_root install -d -m 0755 "$helper_dir"
+    $as_root install -m 0755 "$helper" "$helper_target"
+    if command -v setcap >/dev/null 2>&1; then
+      $as_root setcap cap_net_admin+ep "$helper_target"
+      printf 'Installed %s with CAP_NET_ADMIN\n' "$helper_target"
+    else
+      printf 'Installed %s, but setcap is not available.\n' "$helper_target" >&2
+      printf 'Install libcap2-bin (or libcap) and run: sudo setcap cap_net_admin+ep %s\n' "$helper_target" >&2
+    fi
+  fi
 fi
 
 if [ -n "${ANAS_SOURCE_CONFIG:-}" ]; then

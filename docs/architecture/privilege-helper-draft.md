@@ -1,14 +1,16 @@
 # 特权操作与 helper（草案）
 
-> **状态：草案，未实现。** 现状是一处隐式 `sudo`（macvlan 桥）加若干处显式的
-> "权限不够就报错"。本文提出把前者收进一个受限 helper，并说明为什么**不是**所有
-> 特权操作都该跟着进去。
+> **状态：§3–§4 的网络部分已实现**（`cmd/anas-helper`），sudoers 与生成脚本已删除。
+> §5 的流式 `btrfs send` 和 §4 里的 `subvolume delete` 仍是草案。
+>
+> 现状原本是一处隐式 `sudo`（macvlan 桥）加若干处显式的"权限不够就报错"。本文说明
+> 把前者收进一个受限 helper 的做法，以及为什么**不是**所有特权操作都该跟着进去。
 
 ## 1. 现状清单
 
 | 操作 | 实际需要 | 现在怎么做 |
 | --- | --- | --- |
-| 建/删 `anas_bridge`、装路由 | `CAP_NET_ADMIN` | `sudo sh <base>/anas_service.sh`（`internal/runner/network.go`）——**全仓库唯一一处隐式提权** |
+| 建/删 `anas_bridge`、装路由 | `CAP_NET_ADMIN` | `anas-helper`（root 拥有、`setcap cap_net_admin+ep`）。**已实现**；此前是 `sudo sh <base>/anas_service.sh` |
 | `btrfs send`（backup `send` / `send-file`） | `CAP_SYS_ADMIN` | 读 `/proc/self/status` 的 `CapEff` 探测，不够就报 `insufficient_privilege` |
 | `btrfs receive`（restore `send-file`） | 两端都要 `CAP_SYS_ADMIN` | 显式报错，要求以 root 运行 |
 | `btrfs subvolume delete`（`delete`、`prune`、apply 后的保留策略、清理中断的 create） | `CAP_SYS_ADMIN`，除非挂载带 `user_subvol_rm_allowed` | 显式报错 + remount 建议 |
@@ -46,19 +48,24 @@
 
 ## 3. helper 的形态
 
-一个小二进制 `anas-net`（暂名），只做几件具名的事，**不接受任意脚本或命令**：
+一个小二进制 `anas-helper`，只做几件具名的事，**不接受任意脚本或命令**。已实现：
 
 ```
-anas-net bridge add    --parent <iface> --name <bridge> --address <cidr>
-anas-net bridge del    --name <bridge>
-anas-net route add     --dev <bridge> --to <addr>/32
-anas-net subvolume del --path <path>          # 见 §4
-anas-net btrfs send    --subvolume <path> [--parent <path>]   # 输出到 stdout，见 §5
+anas-helper bridge up   --parent <iface> --name <bridge> --address <cidr> [--route <cidr>]...
+anas-helper bridge down --name <bridge>
 ```
 
-参数在 helper 内部校验：接口名必须匹配 anas 自己的命名前缀，路径必须落在工作区内，
-地址必须是合法 CIDR。这是它和今天那个方案的**实质区别**——今天 sudoers 授权 root
-执行一个**位于用户可写目录、内容由 anas 自己生成**的脚本，[runbook](../operations/runbooks/macvlan-sudoers.md)
+计划中（见 §4）：
+
+```
+anas-helper subvolume del --path <path>
+anas-helper btrfs send    --subvolume <path> [--parent <path>]   # 输出到 stdout，见 §5
+```
+
+参数在 helper 内部校验：接口名必须匹配 `^anas[a-z0-9_]*$`，路径必须落在工作区内，
+地址必须是带前缀长度的合法 IPv4 CIDR（`ip addr add 192.168.1.50 dev x` 是合法的且
+意为 `/32`，用在桥地址上会静默产生一个到不了容器的接口）。这是它和今天那个方案的**实质区别**——今天 sudoers 授权 root
+执行一个**位于用户可写目录、内容由 anas 自己生成**的脚本，[runbook](../operations/runbooks/privileged-helper.md)
 自己标注了这是弱点。对运行 anas 的用户来说，那已经约等于 root。
 
 ### 3.1 授权机制
@@ -67,11 +74,17 @@ anas-net btrfs send    --subvolume <path> [--parent <path>]   # 输出到 stdout
 
 | 机制 | 适用 | 关键性质 |
 | --- | --- | --- |
-| file capability（`setcap cap_net_admin+ep`） | 交互式 `anas apply` | **不传给子进程**。execve 后 ambient 集是空的，所以 helper 不能再 shell 出去调 `ip`——必须用 Go 的 netlink 在进程内做完 |
+| file capability（`setcap cap_net_admin+ep`） | 交互式 `anas apply` | **不传给子进程**。execve 后 ambient 集是空的，所以 helper 要么用 netlink 在进程内做完，要么自己把能力抬进 ambient 集 |
 | systemd `AmbientCapabilities=` | 开机 unit、备份 timer | **会传给子进程**，所以 shell 调 `ip`/`btrfs` 依然可用 |
 
-**这个区别决定 helper 怎么写。** 为了两个场景共用一个实现，helper 应当在进程内做
-netlink，不依赖 ambient 传递。
+**这个区别决定 helper 怎么写。** 实现选择的是第三条路：helper 自己把 `CAP_NET_ADMIN`
+抬进 ambient 集（`capset` 加 inheritable，再 `prctl(PR_CAP_AMBIENT_RAISE)`），然后
+exec `ip`。这样两个场景共用一个实现，而且不必引入 netlink 绑定——本仓库只有四个直接
+依赖，为此再加一个不划算。capget/capset 的结构体是内核 UAPI，直接声明在
+`cmd/anas-helper/apply_linux.go` 里。
+
+`ip` 从一组绝对路径里查找，不走 `PATH`：它即将带着 `CAP_NET_ADMIN` 运行，而 `PATH`
+属于调用方——正是这个设计不想扩大权限的那一方。
 
 不采用 docker 那种"root 守护进程 + 用户组"的模型：`docker` 组等价于 root（`docker run
 -v /:/host --privileged` 即可拿下整机），而 anas 真正需要的只有 `CAP_NET_ADMIN` 一个
@@ -79,16 +92,19 @@ netlink，不依赖 ambient 传递。
 
 ### 3.2 安装与升级
 
-`install.sh` 已经有 sudo 分支往 `/usr/local/bin` 装二进制，多两步：
+`install.sh` 已经有 sudo 分支往 `/usr/local/bin` 装二进制，多两步（**已实现**）：
 
 ```sh
-install -m 0755 anas-net /usr/local/lib/anas/anas-net
-setcap cap_net_admin+ep /usr/local/lib/anas/anas-net
+install -m 0755 anas-helper /usr/local/lib/anas/anas-helper
+setcap cap_net_admin+ep /usr/local/lib/anas/anas-helper
 ```
 
+发布归档里同时打包 `anas` 和 `anas-helper`（`scripts/ci/build-anas-release.sh`），
+安装器在 helper 存在时才装它，所以旧版本归档也能被新安装器处理。
+
 **升级必须重新 setcap**：替换二进制会丢掉 xattr，而失去能力后的失败模式是"桥建不
-起来"，离原因很远。安装器要负责这件事，并且 anas 启动时应当能自检（读
-`/proc/self/status` 之外，也可以直接尝试并给出准确的错误）。
+起来"，离原因很远。安装器负责这件事；`setcap` 不可用时它会装好二进制并打印那一行
+让人手工执行。
 
 某些文件系统（部分 NFS、noxattr 挂载）不支持 file capability。那种环境退回 systemd
 unit 方案或保留 sudoers。
@@ -134,27 +150,27 @@ winbind 和 Kerberos 会退化。
 
 写成硬约束，因为"anas 配置网络"和"anas 可能把机器搞断网"之间只隔着这一条：
 
-**anas 只创建和修改它自己命名的接口（`anas_bridge`），永不触碰宿主自身的地址、
-路由表默认路由和 resolver 配置。** 今天的脚本已经守着这条线；helper 应当把它变成
-参数校验里的硬性检查，而不是留在代码习惯里。
+**anas 只创建和修改它自己命名的接口（`anas*`），永不触碰宿主自身的地址、默认路由和
+resolver 配置。** 已经是 helper 参数校验里的硬性检查，两个方向都是，并有单元测试
+逐个断言它拒绝 `eth0`、`lo`、`docker0` 一类的名字——不再是留在代码习惯里的约定。
 
 ## 8. 迁移
 
-1. helper 落地并由安装器 setcap 之后，`ensureMacvlan` 从 `sudo sh <script>` 改为直接
-   调用 helper；生成脚本的整段逻辑删除。
-2. sudoers 文件与 [runbook](../operations/runbooks/macvlan-sudoers.md) 一并删除，文档
-   改为说明 helper 的安装与自检。
-3. `NETWORK_NAMESPACE_PATH` 那条隔离测试路径需要保留一种进命名空间的方式；helper 可
-   以接受 `--netns <path>` 并自己 setns，从而不再需要 `sudo nsenter`。
+1. **已完成**：`ensureMacvlan` 改为调用 helper，生成脚本的整段逻辑删除，`base` 参数
+   随之从 `ensureMacvlan`/`removeMacvlan` 上去掉。
+2. **已完成**：runbook 重写为 helper 的安装与用法，并说明旧的 `/etc/sudoers.d/anas`
+   和遗留的 `anas_service.sh` 可以删除。
+3. **未做**：`NETWORK_NAMESPACE_PATH` 那条隔离测试路径仍用 `sudo nsenter`。让 helper
+   接受 `--netns` 并自己 setns 需要 `CAP_SYS_ADMIN`，那只会把特权换个地方要，所以
+   保留现状——它只影响测试环境。
 
 ## 9. 待验证
 
-1. file capability 在目标发行版的 `/usr/local/lib` 下是否可靠（xattr 支持、以及各发行版
+1. **file capability 与 ambient 抬升在真实 Linux 宿主上的端到端行为**——这是最关键的
+   一条，本机没有 Linux 宿主，只验证了交叉编译和单元测试。要确认的是：`setcap` 之后
+   非 root 用户执行 helper 能建出接口，且 `ip` 确实继承到了能力。
+2. file capability 在目标发行版的 `/usr/local/lib` 下是否可靠（xattr 支持、各发行版
    打包工具是否保留）。
-2. Go 的 netlink 实现能否覆盖脚本现有的全部操作：macvlan 接口创建、地址替换、清理
-   残留地址、`/32` 路由。
-3. helper 自己 `setns` 进网络命名空间是否需要 `CAP_SYS_ADMIN`（很可能需要，那么隔离
-   测试环境仍要额外授权，这只影响测试环境）。
-4. 流式 send 的吞吐是否受管道影响（预计不受，`btrfs send` 本来就写 stdout）。
-5. `subvolume delete` 收进 helper 后，`user_subvol_rm_allowed` 那条提示是否还需要保留
+3. 流式 send 的吞吐是否受管道影响（预计不受，`btrfs send` 本来就写 stdout）。
+4. `subvolume delete` 收进 helper 后，`user_subvol_rm_allowed` 那条提示是否还需要保留
    （helper 可用时不需要，但 helper 未安装时仍要）。

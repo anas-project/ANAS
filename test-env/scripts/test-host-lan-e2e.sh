@@ -3,9 +3,10 @@
 # address comes from, what reaches docker because of it, and what happens when
 # something on the segment already answers for it.
 #
-# The CLI, config importer, hooks, renderer and activation are real. Docker,
-# sudo and the two probe commands are logged boundaries, which is what makes the
-# suite deterministic and keeps it from putting ICMP on a developer's network.
+# The CLI, config importer, hooks, renderer and activation are real. Docker, the
+# privileged helper and the two probe commands are logged boundaries, which is
+# what makes the suite deterministic and keeps it from creating interfaces or
+# putting ICMP on a developer's network.
 set -eu
 
 . "$(dirname -- "$0")/common.sh"
@@ -143,11 +144,11 @@ anas init "$ws" -y >>"$log" 2>&1
 }
 
 {
-  echo "== the bridge script routes to an address outside its own prefix =="
-  script=$(find "$ws" -name anas_service.sh | head -1)
-  [ -n "$script" ] || fail "the bridge script was never generated"
-  grep -q 'ADDR="192.0.2.50/32"' "$script" || fail "bridge address is not a /32: $(grep '^ADDR=' "$script")"
-  grep -q 'ROUTES="192.0.2.51/32"' "$script" || fail "container address has no route: $(grep '^ROUTES=' "$script")"
+  echo "== the helper is asked to route to an address outside the bridge's prefix =="
+  # No sudo and no generated script: the privileged step is a named operation
+  # on a root-owned binary, and the runner passes it the plan it settled on.
+  assert_command 'anas-helper bridge up .*--name anas_bridge .*--address 192\.0\.2\.50/32 --route 192\.0\.2\.51/32'
+  refute_command '\|sudo '
   echo "OK"
 }
 

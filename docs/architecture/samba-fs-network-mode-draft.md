@@ -145,9 +145,12 @@ ip -4 neigh show <addr>        # 有 lladdr 且状态 REACHABLE = 被占用
 起不到一个根本没人持有的地址上；而这个取舍的误差方向是安全的——解析太慢时报"无
 冲突"，不会报假冲突。
 
-两条命令都不需要权限，`anas_service.sh` 和它的 sudoers 授权**没有改动**。只有配置
-了 `NETWORK_NAMESPACE_PATH` 的隔离测试环境例外：进入命名空间本身就是特权操作，那里
-探测走 `sudo nsenter`。
+两条命令都不需要权限。只有配置了 `NETWORK_NAMESPACE_PATH` 的隔离测试环境例外：进入
+命名空间本身就是特权操作，那里探测走 `sudo nsenter`。
+
+（本节写作时桥还由 `sudo` + 生成脚本建立，探测"不新增特权"是相对那个基线说的。桥
+现在由 `anas-helper` 建立，见[特权 helper 草案](privilege-helper-draft.md)，普通部署
+已经完全没有 sudo。）
 
 ### 4.3 探到冲突怎么办
 
@@ -271,14 +274,14 @@ DC 侧 `server services` 的参数化）见本文件的 git 历史（`24c3853`�
 | `modules/samba_fs/module.yml`、`localization.yml` | revision 2 → 3 |
 | `modules/samba_fs/samba_fs/root/etc/cont-init.d/11-samba_fs.sh` | 无条件 `net ads dns register` |
 | `docs/operations/networking.md`（含 en） | DHCP 池排除、地址查看与指定、探测说明 |
-| `docs/operations/runbooks/macvlan-sudoers.md` | 脚本行为更新；说明探测不走 sudo |
+| `docs/operations/runbooks/privileged-helper.md` | 由 macvlan-sudoers.md 重写；桥改由 anas-helper 建立 |
 | `docs/reference/module-environment-variables.md` | `HOST_LAN_IP` 与新的发布条件 |
 | `internal/runner/hostnet_test.go`、`network_test.go` | 单元测试 |
 | `internal/runner/globals_test.go`、`test-env/scripts/test-render.sh` | 守卫测试新增 runner 消费类 |
 | `test-env/fakes/ip`、`fakes/ping` | 探测的可控边界 |
 | `test-env/scripts/test-host-lan-e2e.sh`、`test-all.sh` | E2E |
 
-sudoers 授权与 `anas_service.sh` 的授权规则**不变**。
+~~sudoers 授权与 `anas_service.sh` 的授权规则不变。~~ 两者随后都被 `anas-helper` 取代，见[特权 helper 草案](privilege-helper-draft.md)。
 
 ## 11. 不做什么
 

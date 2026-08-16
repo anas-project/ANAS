@@ -11,7 +11,7 @@ import (
 	"github.com/anas-project/ANAS/internal/compose"
 )
 
-func ensureMacvlan(env map[string]string, base string, _ compose.CLI) error {
+func ensureMacvlan(env map[string]string, _ compose.CLI) error {
 	name := env["VLAN_INTERFACE"]
 	matches, exists, err := inspectMacvlan(name, env)
 	if err != nil {
@@ -30,58 +30,39 @@ func ensureMacvlan(env map[string]string, base string, _ compose.CLI) error {
 			return err
 		}
 	}
-	script := filepath.Join(base, "anas_service.sh")
-	body := fmt.Sprintf(`#!/usr/bin/env sh
-set -eu
-
-BRIDGE=%q
-PARENT=%q
-ADDR=%q
-ROUTES=%q
-
-case "${1:-add}" in
-  add)
-    if ! ip link show "$BRIDGE" >/dev/null 2>&1; then
-      ip link add "$BRIDGE" link "$PARENT" type macvlan mode bridge
-    fi
-    ip addr replace "$ADDR" dev "$BRIDGE"
-    # An address left over from an earlier plan would keep the host answering
-    # for a range this deployment no longer owns, and would keep a stale
-    # connected route pointing at the bridge.
-    ip -4 -o addr show dev "$BRIDGE" | awk '{print $4}' | while read -r existing; do
-      [ "$existing" = "$ADDR" ] || ip addr del "$existing" dev "$BRIDGE"
-    done
-    ip link set "$BRIDGE" up
-    # A pinned container address may sit outside the bridge address's own
-    # prefix, so the host's route to it is stated rather than inherited from
-    # the bridge's connected route.
-    for route in $ROUTES; do
-      ip route replace "$route" dev "$BRIDGE"
-    done
-    ;;
-  del)
-    ip link delete "$BRIDGE" 2>/dev/null || true
-    ;;
-esac
-`, env["VLAN_BRIDGE_INTERFACE"], env["INTERFACE"], env["VLAN_BRIDGE_IP"]+"/"+env["VLAN_SUBNET_MASK"], hostLANRoutes(env))
-	if err := os.MkdirAll(base, 0700); err != nil {
-		return err
-	}
-	if err := os.WriteFile(script, []byte(body), 0755); err != nil {
-		return err
-	}
-	if err := runNetworkScript(env["NETWORK_NAMESPACE_PATH"], script); err != nil {
+	if err := runHostNetHelper(env, bridgeUpArgs(env)...); err != nil {
 		return fmt.Errorf("create macvlan bridge: %w", err)
 	}
 	if exists {
 		return nil
 	}
-	err = exec.Command("docker", networkCreateArgs(name, env)...).Run()
-	if err != nil {
-		_ = runNetworkScript(env["NETWORK_NAMESPACE_PATH"], script, "del")
+	if err := exec.Command("docker", networkCreateArgs(name, env)...).Run(); err != nil {
+		_ = runHostNetHelper(env, bridgeDownArgs(env)...)
 		return fmt.Errorf("create docker macvlan network: %w", err)
 	}
 	return nil
+}
+
+// bridgeUpArgs and bridgeDownArgs are the helper invocations that replace the
+// shell script this used to generate into the runtime base directory and run
+// through sudo. The script was the weak part of that arrangement: a sudoers
+// rule authorising root to execute a file in a directory the invoking user can
+// write is, for that user, indistinguishable from root. The helper is
+// root-owned, takes named operations, and validates them itself.
+func bridgeUpArgs(env map[string]string) []string {
+	args := []string{"bridge", "up",
+		"--name", env["VLAN_BRIDGE_INTERFACE"],
+		"--parent", env["INTERFACE"],
+		"--address", env["VLAN_BRIDGE_IP"] + "/" + env["VLAN_SUBNET_MASK"],
+	}
+	for _, route := range hostLANRoutes(env) {
+		args = append(args, "--route", route)
+	}
+	return args
+}
+
+func bridgeDownArgs(env map[string]string) []string {
+	return []string{"bridge", "down", "--name", env["VLAN_BRIDGE_INTERFACE"]}
 }
 
 // networkCreateArgs builds the docker macvlan network. --ip-range is omitted
@@ -102,15 +83,17 @@ func networkCreateArgs(name string, env map[string]string) []string {
 	return append(args, "--aux-address", "bridge="+env["VLAN_BRIDGE_IP"], name)
 }
 
-// hostLANRoutes is the space-separated route list the bridge script installs.
-func hostLANRoutes(env map[string]string) string {
+// hostLANRoutes is what the host needs routed through the bridge: every
+// address this deployment puts on the segment except the bridge's own, which
+// is on the bridge already and would be routing to itself.
+func hostLANRoutes(env map[string]string) []string {
 	routes := []string{}
 	for _, addr := range hostLANAddresses(env) {
 		if addr != env["VLAN_BRIDGE_IP"] {
 			routes = append(routes, addr+"/32")
 		}
 	}
-	return strings.Join(routes, " ")
+	return routes
 }
 
 // hostLANAddresses is every address this deployment puts on the host segment.
@@ -230,38 +213,85 @@ func probeCommand(namespacePath, name string, args ...string) (*exec.Cmd, error)
 	return exec.Command("sudo", full...), nil
 }
 
-func networkScriptArgs(namespacePath, script string, args ...string) ([]string, error) {
-	commandArgs := []string{}
-	if namespacePath != "" {
-		if !filepath.IsAbs(namespacePath) {
-			return nil, fmt.Errorf("NETWORK_NAMESPACE_PATH must be absolute: %q", namespacePath)
-		}
-		commandArgs = append(commandArgs, "nsenter", "--net="+filepath.Clean(namespacePath))
+// hostNetHelperArgs is the command that applies one bridge operation.
+//
+// The helper is looked up next to the anas binary first, then in the location
+// the installer uses, and only then on PATH. That order matters because the
+// helper is the thing holding CAP_NET_ADMIN: PATH belongs to whoever invoked
+// anas, so finding it there is a development convenience rather than how a
+// deployment is meant to resolve it.
+//
+// A configured namespace is an isolation or test environment. Entering one is
+// itself privileged, so that path keeps the sudo it always had -- and it is
+// the only path that has any.
+func hostNetHelperArgs(namespacePath string, args ...string) ([]string, error) {
+	helper, err := findHostNetHelper()
+	if err != nil {
+		return nil, err
 	}
-	commandArgs = append(commandArgs, "sh", script)
-	commandArgs = append(commandArgs, args...)
-	return commandArgs, nil
+	if namespacePath == "" {
+		return append([]string{helper}, args...), nil
+	}
+	if !filepath.IsAbs(namespacePath) {
+		return nil, fmt.Errorf("NETWORK_NAMESPACE_PATH must be absolute: %q", namespacePath)
+	}
+	full := []string{"sudo", "nsenter", "--net=" + filepath.Clean(namespacePath), helper}
+	return append(full, args...), nil
 }
 
-func runNetworkScript(namespacePath, script string, args ...string) error {
-	commandArgs, err := networkScriptArgs(namespacePath, script, args...)
+// hostNetHelperName is the binary that performs the privileged part of host
+// LAN setup. It is overridable only from tests in this package.
+var hostNetHelperName = "anas-helper"
+
+// hostNetHelperInstallPath is where the installer puts it: a root-owned
+// directory, because a helper that root executes must not live anywhere the
+// invoking user can write. A variable only so that tests can point the lookup
+// somewhere they can write.
+var hostNetHelperInstallPath = "/usr/local/lib/anas"
+
+func findHostNetHelper() (string, error) {
+	candidates := []string{}
+	if self, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(self), hostNetHelperName))
+	}
+	candidates = append(candidates, filepath.Join(hostNetHelperInstallPath, hostNetHelperName))
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	found, err := exec.LookPath(hostNetHelperName)
+	if err != nil {
+		return "", fmt.Errorf("%s is not installed. It performs the host network setup this "+
+			"deployment needs and holds the one capability anas requires; install it beside the "+
+			"anas binary or in %s. Looked in: %s, and PATH",
+			hostNetHelperName, hostNetHelperInstallPath, strings.Join(candidates, ", "))
+	}
+	return found, nil
+}
+
+func runHostNetHelper(env map[string]string, args ...string) error {
+	commandArgs, err := hostNetHelperArgs(env["NETWORK_NAMESPACE_PATH"], args...)
 	if err != nil {
 		return err
 	}
-	return exec.Command("sudo", commandArgs...).Run()
+	cmd := exec.Command(commandArgs[0], commandArgs[1:]...)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
-func removeMacvlan(env map[string]string, base string) error {
-	script := filepath.Join(base, "anas_service.sh")
-	if _, err := os.Stat(script); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
+func removeMacvlan(env map[string]string) error {
+	bridge := env["VLAN_BRIDGE_INTERFACE"]
+	if bridge == "" {
+		// Nothing was ever planned, so nothing was ever created. This used to
+		// be answered by the presence of a generated script; the bridge name is
+		// the same answer without a file to keep in sync.
+		return nil
 	}
 	name := env["VLAN_INTERFACE"]
 	if name == "" {
-		name = "anas_macvlan"
+		name = macvlanNetworkName
 	}
 	if err := exec.Command("docker", "network", "inspect", name).Run(); err == nil {
 		if err := exec.Command("docker", "network", "rm", name).Run(); err != nil {
@@ -270,7 +300,7 @@ func removeMacvlan(env map[string]string, base string) error {
 	} else if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
 		return fmt.Errorf("inspect docker macvlan network %q: %w", name, err)
 	}
-	if err := runNetworkScript(env["NETWORK_NAMESPACE_PATH"], script, "del"); err != nil {
+	if err := runHostNetHelper(env, bridgeDownArgs(env)...); err != nil {
 		return fmt.Errorf("remove macvlan bridge: %w", err)
 	}
 	return nil
