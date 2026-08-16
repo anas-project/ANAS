@@ -64,6 +64,11 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 [ -n "$write_format" ] && {
+  case "$ANAS_INSTALL_SOURCE:$url" in
+    github:https://github.com/anas-project/ANAS/releases/latest) ;;
+    cn:https://cnb.cool/anas.dev/ANAS/-/releases/latest) ;;
+    *) echo "unexpected latest release URL: $url" >&2; exit 1 ;;
+  esac
   printf 'https://fixture.invalid/releases/tag/v0.1.0'
   exit 0
 }
