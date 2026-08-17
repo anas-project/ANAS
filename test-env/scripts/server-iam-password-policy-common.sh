@@ -3,6 +3,15 @@
 # Shared, destructive fixture helpers for the provider-specific password-policy
 # E2E tests. Callers must run against an isolated deployment.
 
+case "${DOCKER_HOST:-}" in
+  unix:///run/anas-*-docker.sock|unix:///run/anas-*test*.sock) ;;
+  *)
+    printf 'refusing password-policy E2E outside a named isolated Docker socket: DOCKER_HOST=%s\n' \
+      "${DOCKER_HOST:-<unset>}" >&2
+    return 2 2>/dev/null || exit 2
+    ;;
+esac
+
 docker_cmd=${DOCKER_CMD:-docker}
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_anchor_}
 dc=${ANAS_TEST_SAMBA_DC_CONTAINER:-${prefix}samba_dc}
