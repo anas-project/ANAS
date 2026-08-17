@@ -111,6 +111,14 @@ for contract in \
   fi
 done
 
+# Eturnal restores its executable release into this tmpfs. Docker defaults
+# tmpfs mounts to noexec, so merely covering the inherited VOLUME is not enough.
+grep -Eq '/opt/eturnal:([^,]*,)*exec(,|$)' \
+  "$ROOT_DIR/modules/eturnal/docker-compose.yml" || {
+  echo "Eturnal runtime tmpfs must be executable" >&2
+  exit 1
+}
+
 mkdir -p \
   "$test_dir/llng-seed/etc-lemonldap-ng" \
   "$test_dir/llng-seed/etc-nginx-sites-enabled" \
