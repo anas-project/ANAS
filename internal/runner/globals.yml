@@ -51,6 +51,24 @@ config:
       effect: image_rebuild
       apply: apply-with-build
       description: Changes Dockerfile and hook build inputs; run anas apply --build to regenerate images before recreating containers.
+    # Declared here and not under `defaults` on purpose. A default -- even an
+    # empty one -- is written into every rendered .env, so seeding these would
+    # add a line to every module of every deployment, including the ones that
+    # have no host-LAN module at all. Declaring them as changes is what makes
+    # them addressable by `anas config set` and gives them a policy, without
+    # publishing anything until somebody sets a value.
+    host_lan_ip:
+      effect: container_recreate
+      apply: recreate-and-reregister-dns
+      description: The container's LAN address is fixed at creation; the directory's A record has to be re-registered with it.
+    host_lan_bridge_ip:
+      effect: container_recreate
+      apply: recreate-affected-containers
+      description: The host-side macvlan bridge address is configured when the bridge is created.
+    host_lan_arp_check:
+      effect: container_recreate
+      apply: recreate-affected-containers
+      description: Whether the runner probes a LAN address for an existing occupant before taking it. Unset means the probe runs.
     virtual_domain:
       effect: reconcile
       apply: reissue-certificates

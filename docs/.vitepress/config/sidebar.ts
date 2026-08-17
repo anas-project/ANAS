@@ -40,7 +40,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       collapsed: true,
       items: [
         { text: '挂载与格式化', link: '/operations/runbooks/mount' },
-        { text: 'macvlan sudoers', link: '/operations/runbooks/macvlan-sudoers' }
+        { text: '特权 helper', link: '/operations/runbooks/privileged-helper' }
       ]
     }
   ],
@@ -85,6 +85,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '设计索引', link: '/architecture/' },
         { text: 'Module、Contract 与 Resource', link: '/architecture/module-contract-resource-design' },
         { text: '管理员账号系统', link: '/architecture/admin-account-system' },
+        { text: 'Samba AD 用户与组规范', link: '/architecture/samba-ad-user-planning' },
         { text: 'IAM 能力', link: '/architecture/iam-capability-design' },
         { text: '应用目录', link: '/architecture/app-catalog-design' },
         { text: '动态 DNS', link: '/architecture/dynamic-dns-capability-design' },
@@ -98,6 +99,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       text: '研究与选型',
       items: [
         { text: '索引', link: '/research/' },
+        { text: 'samba-tool 用户与组管理', link: '/research/samba-tool-user-group-admin-guide-2026-08-17' },
         { text: '应用研究 Module 规范', link: '/research/application-research-module-spec' },
         { text: 'S3 兼容存储调研', link: '/research/self-hosted-open-source-s3-compatible-storage-research-2026-08-15' },
         { text: '自部署 Git 服务调研', link: '/research/self-hosted-open-source-git-services-research-2026-08-15' },
@@ -199,7 +201,8 @@ export const enSidebar: DefaultTheme.Sidebar = {
     {
       text: 'Research',
       items: [
-        { text: 'Overview', link: '/en/research/' }
+        { text: 'Overview', link: '/en/research/' },
+        { text: 'samba-tool user and group management', link: '/en/research/samba-tool-user-group-admin-guide-2026-08-17' }
       ]
     }
   ]

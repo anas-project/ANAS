@@ -177,6 +177,19 @@ type Global struct {
 	ContainerPrefix string `yaml:"container_prefix"`
 	NetworkPrefix   string `yaml:"network_prefix"`
 	HostIP          string `yaml:"host_ip"`
+	// The two addresses a host-LAN module puts on the local segment: the
+	// container's own address and the host-side macvlan bridge. Both are
+	// optional, and both exist because the alternative is Docker's IPAM
+	// choosing from a locally carved pool -- an allocation no DHCP server ever
+	// agreed to. Pinning them is what lets an operator exclude the addresses
+	// from the router's pool, and what lets the runner check for a conflict
+	// before taking them.
+	HostLANIP       string `yaml:"host_lan_ip"`
+	HostLANBridgeIP string `yaml:"host_lan_bridge_ip"`
+	// Unset means the check runs. It is a Bool rather than a plain string so
+	// that turning it off is a deliberate `false` and not a typo that silently
+	// disables a safety check.
+	HostLANARPCheck Bool `yaml:"host_lan_arp_check"`
 	// There is deliberately no dns_provider. A DNS vendor is chosen per engine
 	// -- modules.lego.config.dns_provider, modules.ddns_go.config.dns_provider --
 	// because certificates and dynamic DNS routinely live at different
@@ -226,6 +239,9 @@ var globalBindings = []globalBinding{
 	{"container_prefix", "CONTAINER_PREFIX", func(g Global) string { return g.ContainerPrefix }},
 	{"network_prefix", "NETWORK_PREFIX", func(g Global) string { return g.NetworkPrefix }},
 	{"host_ip", "HOST_IP", func(g Global) string { return g.HostIP }},
+	{"host_lan_ip", "HOST_LAN_IP", func(g Global) string { return g.HostLANIP }},
+	{"host_lan_bridge_ip", "HOST_LAN_BRIDGE_IP", func(g Global) string { return g.HostLANBridgeIP }},
+	{"host_lan_arp_check", "HOST_LAN_ARP_CHECK", func(g Global) string { return g.HostLANARPCheck.String() }},
 	{"dns_server", "DNS_SERVER", func(g Global) string { return g.DNSServer }},
 	{"default_language", "DEFAULT_LANGUAGE", func(g Global) string { return g.DefaultLanguage }},
 	{"default_locale", "DEFAULT_LOCALE", func(g Global) string { return g.DefaultLocale }},

@@ -57,13 +57,24 @@ for deployment in deployments:
                 keys.add(line.split("=", 1)[0])
 
 all_keys = set().union(*by_module.values()) if by_module else set()
+
+# Parameters whose reader is the runner rather than a container. They govern how
+# the deployment is attached to the host LAN and are consumed before any
+# container exists, so they reach no rendered environment by design. Naming them
+# here keeps the check exact: anything else missing is still a transport that
+# was declared and never wired up. TestGlobalParametersHaveRuntimeConsumers is
+# the matching guard on the other side -- it proves the runner does read them.
+runner_consumed = {"global.host_lan_bridge_ip", "global.host_lan_arp_check"}
+
 missing = []
 for parameter in inventory:
+    if parameter["path"] in runner_consumed:
+        continue
     visible = all_keys if parameter["module"] == "global" else by_module.get(parameter["module"], set())
     if parameter["env_key"] not in visible:
         missing.append((parameter["path"], parameter["env_key"]))
 
 assert not missing, "declared parameters absent from fresh renders: " + repr(missing)
-assert len(inventory) == 128, len(inventory)
+assert len(inventory) == 131, len(inventory)
 print(f"observed all {len(inventory)} parameter transports in fresh deployment artifacts")
 PY

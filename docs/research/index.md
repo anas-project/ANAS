@@ -6,6 +6,7 @@
 
 | 文档 | 类型 | 状态 |
 | --- | --- | --- |
+| [使用 `samba-tool` 管理用户、组和管理员（2026-08-17）](./samba-tool-user-group-admin-guide-2026-08-17.md) | Samba AD 操作手册 | 当前 |
 | [开源自部署应用研究 Module 规范](./application-research-module-spec.md) | 可复用研究方法与字段规范 | 当前 v1.1 |
 | [开源自部署 S3 兼容文件与对象服务调研（2026-08-15）](./self-hosted-open-source-s3-compatible-storage-research-2026-08-15.md) | 竞品与 module/外部资源选型 | 当前 |
 | [开源自部署 Git 服务全景调研（2026-08-15）](./self-hosted-open-source-git-services-research-2026-08-15.md) | 竞品与 module 选型 | 当前 |

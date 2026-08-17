@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+# The runner pings a LAN address to provoke ARP resolution before it takes the
+# address. Tests must not put ICMP on the developer's network, and the answer
+# has to be deterministic, so the probe is answered by the companion fake `ip`
+# from ANAS_FAKE_LAN_OCCUPIED rather than from the wire.
+#
+# Silence is the honest reply here: the runner reads its answer out of the
+# neighbour table, never from this exit status.
+set -eu
+
+if [ -n "${ANAS_FAKE_DOCKER_LOG:-}" ]; then
+  printf '%s|ping %s\n' "$PWD" "$*" >>"$ANAS_FAKE_DOCKER_LOG"
+fi
+
+exit 1

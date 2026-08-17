@@ -101,10 +101,32 @@ func TestGlobalParametersHaveRuntimeConsumers(t *testing.T) {
 	modules := filepath.Join("..", "..", "modules")
 	for _, parameter := range config.GlobalParameters() {
 		key := config.GlobalEnvKey(parameter)
+		if runnerConsumedGlobals[parameter] {
+			if !treeContainsRuntimeKey(".", key) {
+				t.Errorf("global.%s is declared as runner-consumed but %s appears nowhere in the runner", parameter, key)
+			}
+			continue
+		}
 		if !treeContainsRuntimeKey(modules, key) {
 			t.Errorf("global.%s produces %s but no shipped module reads it", parameter, key)
 		}
 	}
+}
+
+// runnerConsumedGlobals are the parameters whose reader is the runner rather
+// than a container. They are named here rather than exempted, because the
+// failure this test exists to catch -- a parameter nothing reads -- is just as
+// possible for them; the check simply has to look at the runner's own source
+// instead of the module tree.
+//
+// Both describe how the runner attaches a deployment to the host LAN, and both
+// are consumed before any container exists: the bridge address seeds the
+// macvlan plan, and the ARP check governs whether the runner probes an address
+// before taking it. Neither reaches a container, and giving them one to keep
+// this test quiet would be inventing a reader.
+var runnerConsumedGlobals = map[string]bool{
+	"host_lan_bridge_ip": true,
+	"host_lan_arp_check": true,
 }
 
 func keysOf(m map[string]string) []string {

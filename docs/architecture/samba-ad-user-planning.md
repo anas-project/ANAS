@@ -16,6 +16,8 @@
 6. `Domain Admins`、`Administrators`、`FS Admins` 等高权限组成员必须少量、明确并定期复核。
 7. 用户停用优先于立即删除；完成审计、数据交接和保留期后再删除。
 
+<span id="anas-directory-layout"></span>
+
 ## 3. 当前目录结构
 
 Samba DC 初始化后，目录结构如下：
@@ -61,6 +63,8 @@ DC=nas,DC=example,DC=com
 
 ## 5. 用户组规划
 
+<span id="ad-built-in-groups"></span>
+
 ### 5.1 AD 内置高权限组
 
 | 组 | 权限 | 建议 |
@@ -71,6 +75,8 @@ DC=nas,DC=example,DC=com
 | `Enterprise Admins` | 林级管理权限 | 当前自动从 `admin` 移除；日常保持空闲 |
 | `Schema Admins` | 修改 AD 架构 | 当前自动从 `admin` 移除；仅在架构变更窗口临时授予 |
 
+<span id="anas-role-groups"></span>
+
 ### 5.2 Role：职责角色组
 
 | 组 | 当前含义 | 是否等同域管理员 |
@@ -78,7 +84,9 @@ DC=nas,DC=example,DC=com
 | `Admins` | 全局应用管理员角色：允许进入所有应用并映射为最高应用级角色 | 否 |
 | `Unix Admins` | 域基础设施管理员；嵌套进内置 `Administrators`，并获得 `SeDiskOperatorPrivilege` | 是，高权限 |
 
-建议后续为实际组织增加 `ROLE_<职责>`，例如 `ROLE_Finance`、`ROLE_HR`、`ROLE_ITSupport`。角色组描述“用户是谁/承担什么职责”，不直接代替应用或文件资源权限组。
+建议后续为实际组织增加 `ROLE_<职责代码>`，例如 `ROLE_FINANCE`、`ROLE_HR`、`ROLE_IT_SUPPORT`。角色组描述“用户是谁/承担什么职责”，不直接代替应用或文件资源权限组。
+
+<span id="anas-access-groups"></span>
 
 ### 5.3 Access：资源权限组
 
@@ -89,6 +97,8 @@ DC=nas,DC=example,DC=com
 | `Domain Users` | 默认模式下可读取公共 `Share`；若 `SHARE_ACCESS_MODE=all_rw` 则可读写 | 普通 |
 
 文件共享默认采用 `all_read_group_write`：所有已认证域用户可读，只有 `FS Share RW` 和 `FS Admins` 可写。建议保持该模式，不要把 `Domain Admins` 或日常账号直接加入 `FS Admins`。
+
+<span id="anas-app-groups"></span>
 
 ### 5.4 Apps：应用登录组
 
@@ -114,12 +124,63 @@ Nextcloud `admin` 权限，移组后也随 LDAP 组映射撤销。初始化脚�
 仍服从该用户的 AD ACL。各 Module 的具体映射与实现状态以
 [`iam-provider-requirements.md`](iam-provider-requirements.md) 为准。
 
-嵌套组是目录授权契约的一部分。`用户 -> ROLE_x -> APP_nextcloud` 必须与用户直接加入
+嵌套组是目录授权契约的一部分。`用户 -> ROLE_X -> APP_nextcloud` 必须与用户直接加入
 `APP_nextcloud` 等价；实现必须递归解析成员关系、处理循环且不能仅查看用户对象上的直接
 `memberOf`。当前 Authentik Source 与 Nextcloud/MeshCentral 的 LDAP 用户过滤器均
 使用 AD matching-rule-in-chain（OID `1.2.840.113556.1.4.1941`），LLNG 开启
 `ldapGroupRecursive`。这保证 IAM 放行后，应用侧目录开户也不会再次按直接成员拒绝。
 E2E 会创建临时 `ROLE_*` 嵌套组，同时验证两种 IAM 的结果。
+
+<span id="anas-group-naming"></span>
+
+### 5.5 ANAS 组命名规范
+
+先判断组表达的是“人员身份/职责”“资源权限”还是“应用登录范围”，再选择前缀和 OU。一个组只表达一种含义；不要让同一个组同时承担部门成员、应用登录和文件 ACL 三种职责。
+
+| 类别 | 创建主体 | 命名格式 | 创建位置 | 推荐作用域/类型 | 示例 |
+| --- | --- | --- | --- | --- | --- |
+| 公司部门 | 管理员创建 | `ROLE_DEPT_<公司代码>_<部门代码>` | `OU=Role,OU=Groups` | `Global` / `Security` | `ROLE_DEPT_ANAS_IT`、`ROLE_DEPT_ANAS_FINANCE` |
+| 一般职责 | 管理员创建 | `ROLE_<职责代码>` | `OU=Role,OU=Groups` | `Global` / `Security` | `ROLE_HR_REVIEWER`、`ROLE_IT_SUPPORT` |
+| 项目或临时团队 | 管理员创建 | `ROLE_PROJECT_<项目代码>` | `OU=Role,OU=Groups` | `Global` / `Security` | `ROLE_PROJECT_ATLAS` |
+| 新增文件或资源权限 | 管理员创建 | `FS_<资源代码>_<RO\|RW\|ADMIN>` | `OU=Access,OU=Groups` | 单域资源通常用 `Domain` / `Security` | `FS_FINANCE_RW`、`FS_ARCHIVE_RO` |
+| 单应用登录 | ANAS 按启用的 LDAP Module 生成 | `APP_<module-id>` | `OU=Apps,OU=Groups` | 由 ANAS 管理 | `APP_nextcloud`、`APP_meshcentral` |
+| 全应用登录 | ANAS 固定创建 | `APP_all` | `OU=Apps,OU=Groups` | 由 ANAS 管理 | `APP_all` |
+| ANAS 固定管理/资源组 | ANAS 固定创建 | 保留产品定义的准确名称 | `OU=Role` 或 `OU=Access` | 由 ANAS 管理 | `Admins`、`Unix Admins`、`FS Admins`、`FS Share RW` |
+| AD 内置组 | AD 建域时创建 | 保留 AD 的准确名称 | AD 内置容器 | 由 AD 管理 | `Domain Admins`、`Administrators`、`Domain Users` |
+
+命名细则：
+
+- 管理员新建的组名使用稳定的 ASCII 代码；代码由大写 `A-Z`、数字 `0-9` 和下划线组成，不使用空格、中文全称或会随组织调整频繁变化的显示名称。
+- `<公司代码>`、`<部门代码>`、`<职责代码>`、`<项目代码>` 和 `<资源代码>` 必须来自组织维护的代码表；重命名显示名称时尽量保持代码和组 `sAMAccountName` 不变。
+- `RO` 是 read-only，`RW` 是 read/write，`ADMIN` 是 resource administrator。`ADMIN` 只能用于边界清楚的资源管理组，不等同 `Domain Admins`。
+- `APP_<module-id>` 的 `<module-id>` 与 ANAS Module ID 保持一致，通常为小写。不要手工创建一个看似存在但对应 Module 未启用的 `APP_*` 组。
+- `Admins` 与 AD 内置 `Administrators` 不是同一个组；`FS Admins`、`FS Share RW` 是现有产品契约。不要为了统一外观擅自改成下划线名称。
+- 每个自建组必须填写 `description`，至少记录中文名称、用途、负责人或审批方；临时组还要记录到期或复核条件。
+
+<span id="anas-department-groups"></span>
+
+#### 5.5.1 公司部门组
+
+部门组表示“哪些自然人属于该部门”，不直接表示某个应用或文件资源权限。部门组使用 `ROLE_DEPT_<公司代码>_<部门代码>`，例如 `ROLE_DEPT_ANAS_IT`，并创建在 `OU=Role,OU=Groups` 中。即使当前只有一家公司，也保留公司代码，避免以后增加法人或组织时出现两套命名格式。
+
+```bash
+samba-tool group add 'ROLE_DEPT_ANAS_IT' \
+  --groupou='OU=Role,OU=Groups' \
+  --group-scope=Global \
+  --group-type=Security \
+  --description='ANAS 公司信息技术部；负责人：IT Manager；成员来源：HR'
+```
+
+用户对象的 `department` 和 `company` 是资料属性，不会自动维护部门组成员关系。创建或转岗用户时，仍需显式运行 `group addmembers` / `group removemembers`，或者由经过审计的 HR 同步流程完成。
+
+授权时优先嵌套而不是给每位部门成员重复授权：
+
+```text
+用户 -> ROLE_DEPT_ANAS_IT -> APP_nextcloud
+用户 -> ROLE_DEPT_ANAS_FINANCE -> FS_FINANCE_RW
+```
+
+部门组不得直接嵌套进 `Domain Admins`、`Administrators`、`Unix Admins` 或 `FS Admins`。需要管理权限的人员应使用独立管理账号，并按职责单独审批。
 
 ## 6. 建议的目标账号模型
 
@@ -148,13 +209,15 @@ E2E 会创建临时 `ROLE_*` 嵌套组，同时验证两种 IAM 的结果。
 
 ## 7. 命名与属性规范
 
+<span id="anas-account-naming"></span>
+
 ### 7.1 用户名
 
 - 普通用户：`firstname.lastname`、姓名拼音或不可变员工编号，域内唯一。
 - 管理账号：`adm_<普通用户名>`。
 - 文件管理账号：`fsadm_<普通用户名>`。
 - 服务账号：`svc_<系统或用途>`。
-- 组：`ROLE_<职责>`、`APP_<应用>`、`FS_<资源>_<权限>`。
+- 组：统一遵循[§5.5 ANAS 组命名规范](#anas-group-naming)，此处不再重复列举。
 - 计算机：建议 `PC-<部门>-<编号>`、`SRV-<用途>-<编号>`。
 
 账号重名时使用员工编号或明确的数字后缀，不建议使用职位作为个人账号名。职位会变化，账号主体不应随职位改变。
@@ -336,7 +399,7 @@ Nextcloud 的用户和组 LDAP UUID、SAML UID、Authentik LDAP Source 的对象
 
 ### 13.4 小型 NAS 管理组
 
-小型 NAS 中可以只保留一个 `Admins` 管理角色，不额外建立 `ROLE_IAM_Admins`，前提是成员很少且所有成员都被授权管理整个身份入口。加入 `Admins` 等价于获得 Authentik、应用和部分基础设施的高权限，必须使用专用管理账号、启用 MFA 并定期复核。
+小型 NAS 中可以只保留一个 `Admins` 管理角色，不额外建立 `ROLE_IAM_ADMINS`，前提是成员很少且所有成员都被授权管理整个身份入口。加入 `Admins` 等价于获得 Authentik、应用和部分基础设施的高权限，必须使用专用管理账号、启用 MFA 并定期复核。
 
 Authentik 的 Samba AD Source 通过组属性映射，仅将名称精确等于 `Admins` 的同步组设置为 superuser；其他同步组不会因此获得 Authentik 管理权限。不要建立名为 `Admins` 的普通业务组，也不要把普通用户或 `APP_*` 组嵌套到它下面。
 

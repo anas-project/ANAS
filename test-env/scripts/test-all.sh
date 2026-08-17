@@ -9,6 +9,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 "$SCRIPT_DIR/test-managed-config-e2e.sh"
 "$SCRIPT_DIR/test-parameters.sh"
 "$SCRIPT_DIR/test-parameter-effects.sh"
+"$SCRIPT_DIR/test-host-lan-e2e.sh"
 "$SCRIPT_DIR/test-lifecycle.sh"
 "$SCRIPT_DIR/test-render.sh"
 "$SCRIPT_DIR/test-upgrade-render.sh"

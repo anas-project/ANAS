@@ -31,6 +31,15 @@ CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
   -o "${stage_dir}/anas" \
   ./cmd/anas
 
+# anas-helper ships beside anas because it is the one part that has to be
+# installed root-owned and granted a capability. Building it here rather than
+# separately keeps the two from drifting apart in a release.
+CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
+  -trimpath \
+  -ldflags "-s -w" \
+  -o "${stage_dir}/anas-helper" \
+  ./cmd/anas-helper
+
 tar \
   --sort=name \
   --mtime='@0' \

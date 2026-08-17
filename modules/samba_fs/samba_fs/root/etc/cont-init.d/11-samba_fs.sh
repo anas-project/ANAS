@@ -147,6 +147,15 @@ mkdir -p /var/lib/samba/private /var/log/samba
 
 join_domain
 
+# Unconditionally, not only after a join. join_domain returns early whenever
+# `net ads testjoin` still passes, which it does after the container's address
+# changes -- the machine account and its keytab are untouched by a new address.
+# The AD DNS A record is not: nothing else updates it, so the directory would
+# keep pointing clients at wherever this server used to be. Registering the
+# current address every start is idempotent and costs one LDAP update.
+echo "Registering $SAMBA_FS_HOSTNAME in AD DNS"
+net ads dns register -P || echo "AD DNS registration failed; clients may resolve a stale address" >&2
+
 echo "Create share"
 mkdir -p /userdata/$SHARE_DIR_NAME
 mkdir -p /userdata/Home

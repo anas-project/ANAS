@@ -64,7 +64,7 @@ ANAS 将身份目录和文件服务分开：
 - 用户私有目录为`Home/<用户名>`，首次访问时创建，权限为`0700`。
 - 公共共享目录为`Share`，默认不允许匿名访问。设置`SHARE_GUEST_READ_ONLY=Yes`后，guest映射为本地`nobody`，并递归获得`r-X` ACL，所以可以浏览目录和读取文件，但不能写入。guest ACL状态保存在`${SAMBA_FS_USERDATA_PATH}/.anas-share-guest-acl-state`；只有开关变化时才递归扫描Share，普通容器重启不会遍历全部文件。首次切换大型目录时仍会产生一次较高的元数据I/O。
 
-目录结构中的组分为三类：
+目录结构中的组分为三类；新建部门、职责、项目或资源组前，先按 [ANAS 组命名规范](/architecture/samba-ad-user-planning#anas-group-naming)选择前缀和 OU：
 
 - `Groups/Role`：业务或管理角色，例如`Admins`。`Admins`只表示应用管理员，不自动获得域管理员权限。
 - `Groups/Access`：资源权限，包括`FS Admins`和`FS Share RW`。
