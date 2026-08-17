@@ -27,7 +27,20 @@ RUN if [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then \
     postgresql-client \
   && rm -rf /var/lib/apt/lists/*
 
+# The upstream image declares four mutable runtime directories as Docker
+# volumes. Compose mounts tmpfs over them so Docker does not allocate anonymous
+# volumes. Preserve their image defaults outside those volume paths; the ANAS
+# entrypoint restores them into the empty tmpfs mounts on every start.
+RUN mkdir -p \
+      /opt/anas/runtime-seed/etc-lemonldap-ng \
+      /opt/anas/runtime-seed/etc-nginx-sites-enabled \
+  && cp -a /etc/lemonldap-ng/. \
+      /opt/anas/runtime-seed/etc-lemonldap-ng/ \
+  && cp -a /etc/nginx/sites-enabled/. \
+      /opt/anas/runtime-seed/etc-nginx-sites-enabled/
+
 COPY --chmod=0755 anas-entrypoint.sh /usr/local/bin/anas-entrypoint.sh
+COPY --chmod=0755 restore-runtime.sh /usr/local/bin/anas-llng-restore-runtime
 COPY --chmod=0755 root/root/llng-config.sh /usr/local/bin/anas-configure-clients.sh
 COPY root/root/lmConf.json /opt/anas/lmConf.json
 COPY root/root/mysql_init.sql /opt/anas/mysql_init.sql

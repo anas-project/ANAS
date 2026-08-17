@@ -80,13 +80,59 @@ if env \
 fi
 
 mkdir -p "$test_dir/eturnal"
+mkdir -p "$test_dir/eturnal-seed/bin" "$test_dir/eturnal-runtime"
+printf '#!/bin/sh\nexit 0\n' >"$test_dir/eturnal-seed/bin/eturnalctl"
+chmod 0755 "$test_dir/eturnal-seed/bin/eturnalctl"
 ANAS_CONFIG_DIR="$test_dir/eturnal" \
+ANAS_ETURNAL_RUNTIME_SEED="$test_dir/eturnal-seed" \
+ANAS_ETURNAL_RUNTIME_DIR="$test_dir/eturnal-runtime" \
 TURN_PORT=3478 \
 TURN_RELAY_MIN_PORT=49152 \
 TURN_RELAY_MAX_PORT=49200 \
 TURN_SECRET="quote'safe" \
   sh "$ROOT_DIR/modules/eturnal/eturnal/anas-entrypoint.sh" /usr/bin/true || exit 1
 grep -q "secret: 'quote''safe'" "$test_dir/eturnal/eturnal.yml" || exit 1
+test -x "$test_dir/eturnal-runtime/bin/eturnalctl" || exit 1
+
+# Every inherited LLNG/Eturnal image volume must have an explicit Compose mount.
+# Otherwise Docker silently creates one anonymous volume per uncovered path.
+for contract in \
+  'modules/llng/docker-compose.yml|/var/lib/lemonldap-ng/conf' \
+  'modules/llng/docker-compose.yml|/etc/lemonldap-ng' \
+  'modules/llng/docker-compose.yml|/etc/nginx/sites-enabled' \
+  'modules/llng/docker-compose.yml|/var/lib/lemonldap-ng/psessions' \
+  'modules/llng/docker-compose.yml|/var/lib/lemonldap-ng/sessions' \
+  'modules/eturnal/docker-compose.yml|/opt/eturnal'; do
+  compose_file=${contract%%|*}
+  target=${contract#*|}
+  if ! grep -Fq "$target" "$ROOT_DIR/$compose_file"; then
+    echo "$compose_file does not explicitly cover inherited volume $target" >&2
+    exit 1
+  fi
+done
+
+mkdir -p \
+  "$test_dir/llng-seed/etc-lemonldap-ng" \
+  "$test_dir/llng-seed/etc-nginx-sites-enabled" \
+  "$test_dir/llng-etc" \
+  "$test_dir/llng-nginx" \
+  "$test_dir/llng-psessions" \
+  "$test_dir/llng-sessions"
+printf 'seeded\n' >"$test_dir/llng-seed/etc-lemonldap-ng/lemonldap-ng.ini"
+printf 'seeded\n' >"$test_dir/llng-seed/etc-nginx-sites-enabled/portal-nginx.conf"
+env \
+  ANAS_LLNG_RUNTIME_SEED_ROOT="$test_dir/llng-seed" \
+  ANAS_LLNG_ETC_DIR="$test_dir/llng-etc" \
+  ANAS_LLNG_NGINX_SITES_DIR="$test_dir/llng-nginx" \
+  ANAS_LLNG_PSESSIONS_DIR="$test_dir/llng-psessions" \
+  ANAS_LLNG_SESSIONS_DIR="$test_dir/llng-sessions" \
+  ANAS_LLNG_RUNTIME_UID="$(id -u)" \
+  ANAS_LLNG_RUNTIME_GID="$(id -g)" \
+  sh "$ROOT_DIR/modules/llng/llng/restore-runtime.sh" || exit 1
+grep -q seeded "$test_dir/llng-etc/lemonldap-ng.ini" || exit 1
+grep -q seeded "$test_dir/llng-nginx/portal-nginx.conf" || exit 1
+test -d "$test_dir/llng-psessions/lock" || exit 1
+test -d "$test_dir/llng-sessions/lock" || exit 1
 
 # A fresh Nextcloud volume exposes HTTP before its post-install tasks have
 # downloaded notify_push. The sidecar must wait for the executable instead of

@@ -2,6 +2,16 @@
 
 set -eu
 
+runtime_seed=${ANAS_ETURNAL_RUNTIME_SEED:-/opt/anas/eturnal-seed}
+runtime_dir=${ANAS_ETURNAL_RUNTIME_DIR:-/opt/eturnal}
+if [ -d "$runtime_seed" ]; then
+  if find "$runtime_dir" -mindepth 1 -print -quit | grep -q .; then
+    echo "runtime directory is not empty: $runtime_dir" >&2
+    exit 1
+  fi
+  cp -R "$runtime_seed"/. "$runtime_dir"/
+fi
+
 required() {
   eval 'value=${'"$1"'-}'
   if [ -z "$value" ]; then

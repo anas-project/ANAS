@@ -7,7 +7,7 @@ TURN service used by realtime communication modules.
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`1.12.2-r1`（reviewed 2026-08-13）
+- Module version / 版本：`1.12.2-r2`（reviewed 2026-08-17）
 - Timezone / 时区：`container` — The TURN service receives TZ for process and log timestamps.
 - Language scope / 语言范围：TURN protocol service
 - Selection / 选择方式：`none`
