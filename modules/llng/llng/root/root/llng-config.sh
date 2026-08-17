@@ -77,6 +77,9 @@ saml_public_key=$(printf '%b\n' "${LLNG_SAML_SERVICE_PUBLIC_KEY//\"/}")
 oidc_private_key=$(printf '%b\n' "${LLNG_OIDC_SERVICE_PRIVATE_KEY//\"/}")
 oidc_public_key=$(printf '%b\n' "${LLNG_OIDC_SERVICE_PUBLIC_KEY//\"/}")
 $lemonldap_ng_cli_set \
+        passwordPolicyActivation 1 \
+        portalDisplayPasswordPolicy 1 \
+        passwordPolicyMinSize "$SAMBA_DC_USER_MIN_PASS_LENGTH" \
         samlServicePrivateKeySig "$saml_private_key" \
         samlServicePublicKeySig "$saml_public_key" \
         oidcServicePrivateKeySig "$oidc_private_key" \
@@ -250,7 +253,8 @@ for app in $OIDC_RP_APPS; do
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsIDTokenForceClaims 1 \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsRedirectUris "$redirect_uri_space" \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsPostLogoutRedirectUris "$logout_redirect_uri_space" \
-          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsBypassConsent 1
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsBypassConsent 1 \
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsLogoutBypassConfirm 1
 
     allow_groups=$(oidc_get_var $app "ALLOW_GROUPS")
 

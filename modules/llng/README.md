@@ -104,6 +104,32 @@ anas status -w /srv/anas
 
 密码存储、环境作用域、Hook、网络、Resource 和测试细节见[技术文档](docs/technical.md)。
 
+## Samba 密码同步行为 / Samba password behavior
+
+LLNG 的用户改密直接写回 Samba AD。ANAS 将 Samba 的最小长度、复杂度开关和密码历史
+次数写入 LLNG 配置或中文规则提示；修改这些 Samba 设置后，需要重新执行 ANAS
+apply/reconcile 才会刷新 LLNG。当前 LLNG 集成**没有**消费最小改密间隔，因此只会在
+Samba 拒绝后通过通用说明提示用户稍后再试。
+
+LLNG 能在提交前精确检查最小长度和两次输入是否一致。复杂度、用户名/姓名以及历史
+密码仍由 Samba 最终裁决。Samba 的 LDAP 返回码通常只把策略拒绝归为 19 或 53，LLNG
+不能可靠区分具体违反的是复杂度、姓名、历史还是最小间隔；中文页面因此显示包含全部
+相关规则的可操作说明，而不会伪造一个精确原因。原始目录诊断保留给管理员日志。
+
+LLNG password changes are written directly to Samba AD. ANAS synchronizes the
+minimum length, complexity flag, and history count into LLNG configuration or its
+Chinese guidance; run ANAS apply/reconcile after changing these Samba settings.
+The current LLNG integration does not consume the minimum password age, so a
+Samba rejection can only produce guidance to retry later.
+
+LLNG can preflight the minimum length and matching confirmation exactly. Samba
+remains authoritative for complexity, username/display-name content, history,
+and minimum age. LDAP result codes normally collapse policy rejection into 19 or
+53, so LLNG cannot safely name one exact failed rule; it displays comprehensive
+actionable guidance and keeps raw directory diagnostics in administrator logs.
+See [Module IAM / OIDC 支持清单](../../docs/reference/module-iam-support.md#samba-目录密码接入规范)
+for the provider contract.
+
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language
 

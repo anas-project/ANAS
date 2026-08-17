@@ -88,11 +88,42 @@ func TestManifestClaimsCrossModuleVariablesUsedAtRuntime(t *testing.T) {
 		"SAMBA_DC_ADMIN_GROUP_NAME", "SAMBA_DC_BASE_GROUPS_DN", "SAMBA_DC_BASE_GROUPS_ROLE_DN",
 		"SAMBA_DC_BASE_USERS_DN", "SAMBA_DC_LDAPS_PORT", "SAMBA_DC_LDAPS_SERVER_URL",
 		"SAMBA_DC_PASSWORD_BIND_DN", "SAMBA_DC_PASSWORD_BIND_PASSWORD", "SAMBA_DC_USER_CLASS_FILTER",
-		"SAMBA_DC_USER_EMAIL", "SAMBA_DC_USER_ENABLED_FILTER", "SAMBA_DC_USER_NAME",
+		"SAMBA_DC_USER_COMPLEX_PASS", "SAMBA_DC_USER_EMAIL", "SAMBA_DC_USER_ENABLED_FILTER",
+		"SAMBA_DC_USER_MIN_PASS_LENGTH", "SAMBA_DC_USER_NAME", "SAMBA_DC_USER_PASSWORD_HISTORY",
 		"TRAEFIK_DOMAIN_FULL", "TRAEFIK_HOSTNAME",
 	} {
 		if !strings.Contains(string(manifest), "- "+key) {
 			t.Errorf("module manifest does not consume %s", key)
+		}
+	}
+}
+
+func TestPasswordGuidanceFollowsSambaDomainPolicy(t *testing.T) {
+	script, err := os.ReadFile("../llng/root/root/llng-config.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`passwordPolicyActivation 1`,
+		`portalDisplayPasswordPolicy 1`,
+		`passwordPolicyMinSize "$SAMBA_DC_USER_MIN_PASS_LENGTH"`,
+	} {
+		if !strings.Contains(string(script), want) {
+			t.Fatalf("LLNG password policy setup missing %q", want)
+		}
+	}
+
+	guidance, err := os.ReadFile("../llng/configure-password-guidance.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"SAMBA_DC_USER_COMPLEX_PASS", "SAMBA_DC_USER_MIN_PASS_LENGTH",
+		"SAMBA_DC_USER_PASSWORD_HISTORY", ".PE25", ".PE28", ".PE29", ".PE31",
+		".passwordPolicy", ".passwordPolicySamePwd",
+	} {
+		if !strings.Contains(string(guidance), want) {
+			t.Fatalf("localized password guidance missing %q", want)
 		}
 	}
 }
@@ -120,6 +151,31 @@ func TestOIDCClientsBypassConsent(t *testing.T) {
 	}
 	if !strings.Contains(string(script), "oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsIDTokenForceClaims 1") {
 		t.Fatal("generated OIDC relying parties must include declared claims in the ID token")
+	}
+	if !strings.Contains(string(script), "oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsLogoutBypassConfirm 1") {
+		t.Fatal("generated OIDC relying parties must complete RP-initiated logout without leaving the SSO session active")
+	}
+}
+
+func TestImageEnablesSimplifiedChineseWithTraditionalFallback(t *testing.T) {
+	script, err := os.ReadFile("../llng/enable-chinese-language.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"zh_TW.json", "zh.json", "languages"} {
+		if !strings.Contains(string(script), want) {
+			t.Fatalf("Chinese language setup missing %q", want)
+		}
+	}
+	dockerfile, err := os.ReadFile("../llng/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(dockerfile), "anas-llng-enable-chinese-language") {
+		t.Fatal("LLNG image does not run the Chinese language setup")
+	}
+	if strings.Index(string(dockerfile), "RUN /usr/local/bin/anas-llng-enable-chinese-language") > strings.Index(string(dockerfile), "cp -a /etc/lemonldap-ng/.") {
+		t.Fatal("Chinese language setup must run before the runtime seed is captured")
 	}
 }
 

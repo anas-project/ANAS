@@ -66,6 +66,39 @@ anas admin local rotate authentik break_glass --prompt -w /srv/anas
 
 `credential` 会输出明文密码，应避免进入日志；`rotate` 默认生成随机密码，`--prompt` 从终端安全读取，不接受 argv 或普通环境变量传入密码。
 
+## Samba 密码同步行为 / Samba password behavior
+
+`ldap_password_writeback` 默认开启，目录用户在 Authentik 修改密码时会写回 Samba AD，
+不会建立第二套业务用户密码。ANAS 把 Samba 的最小长度同步到 Authentik 默认改密策略，
+并在默认改密页面显示复杂度开关、历史次数和最小改密间隔。为避免 Authentik 拒绝 Samba
+本会接受的密码，这条 Samba 支持的默认流程关闭 zxcvbn，并把独立字符类别计数设为零。
+修改 Samba 策略后需要重新执行 ANAS apply/reconcile。
+
+提交前，最小长度由 ANAS 策略精确检查；Authentik 的 AD 校验器从目录读取
+`pwdProperties`，按三类/五类规则检查复杂度，并检查 `sAMAccountName` 和显示名称。ANAS
+的固定版本派生镜像修复了上游用户名包含判断方向错误。历史密码和最小改密间隔无法从
+LDAP 预读，只在页面提示并由 Samba 最终裁决；Authentik Enterprise 的 Password
+Uniqueness 策略维护的是 Authentik 自己的历史，不能代替 Samba 历史。
+
+写回失败时，LDAP 19/53 映射为包含长度、复杂度、姓名、历史和最小间隔的“域策略拒绝”
+说明，50 映射为服务账号权限不足，32 映射为目录用户不存在，其余错误使用目录暂不可用
+的安全回退。原始 LDAP result、message 和 description 仍进入 Authentik 事件，绝不直接
+暴露给终端用户。19/53 无法稳定指出某一条具体规则，因此界面不会做虚假的精细归因。
+
+This behavior applies to Authentik's default password-change prompt and LDAP
+writeback path. Minimum length is checked locally; Authentik's AD validator reads
+`pwdProperties` and applies the three-of-five complexity and account/display-name
+checks. Samba alone enforces password history and minimum age. LDAP results 19/53
+receive broad policy guidance, while 50 and 32 map to insufficient access and a
+missing directory user; raw diagnostics remain in Authentik events.
+
+Forced first-login password change is a separate capability and is not claimed by
+this implementation merely because ordinary writeback works. Guidance language
+comes from deployment `DEFAULT_LANGUAGE`; the rest of the Authentik UI continues
+to use browser locale negotiation. This module remains `developing` and is not
+automatically selected over the active IAM provider. See
+[Module IAM / OIDC 支持清单](../../docs/reference/module-iam-support.md#samba-目录密码接入规范).
+
 ## 数据库支持
 
 | 项目 | 值 |
@@ -120,7 +153,6 @@ anas status -w /srv/anas
 ## 技术文档
 
 密码存储、环境作用域、Hook、网络、Resource 和测试细节见[技术文档](docs/technical.md)。
-
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language
 

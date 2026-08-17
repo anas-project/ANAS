@@ -9,6 +9,50 @@ version: 1
 metadata:
   name: anas-samba-ad
 entries:
+  # Keep authentik's local preflight aligned with Samba's authoritative
+  # minimum length. AD complexity is checked separately by authentik's LDAP
+  # password validator, which reads pwdProperties and implements the actual
+  # three-of-five rule. zxcvbn stays off here so authentik does not invent a
+  # second password policy that Samba itself would accept.
+  - model: authentik_policies_password.passwordpolicy
+    identifiers:
+      name: default-password-change-password-policy
+    id: samba-ad-password-policy
+    attrs:
+      password_field: password
+      check_static_rules: true
+      check_zxcvbn: false
+      length_min: !Env AUTHENTIK_PASSWORD_MIN_LENGTH
+      amount_digits: 0
+      amount_uppercase: 0
+      amount_lowercase: 0
+      amount_symbols: 0
+      error_message: !Env AUTHENTIK_PASSWORD_POLICY_ERROR
+
+  - model: authentik_stages_prompt.prompt
+    identifiers:
+      name: anas Samba AD password policy guidance
+    id: samba-ad-password-policy-guidance
+    attrs:
+      order: 250
+      field_key: anas_password_policy_guidance
+      type: alert_info
+      required: false
+      label: ""
+      placeholder: !Env AUTHENTIK_PASSWORD_POLICY_GUIDANCE
+      initial_value: !Env AUTHENTIK_PASSWORD_POLICY_GUIDANCE
+
+  - model: authentik_stages_prompt.promptstage
+    identifiers:
+      name: default-password-change-prompt
+    attrs:
+      fields:
+        - !KeyOf samba-ad-password-policy-guidance
+        - !Find [authentik_stages_prompt.prompt, [name, "default-password-change-field-password"]]
+        - !Find [authentik_stages_prompt.prompt, [name, "default-password-change-field-password-repeat"]]
+      validation_policies:
+        - !KeyOf samba-ad-password-policy
+
   - model: authentik_sources_ldap.ldapsourcepropertymapping
     identifiers:
       name: anas Samba AD display name mapping

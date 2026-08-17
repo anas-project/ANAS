@@ -63,8 +63,7 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 		env["ANAS_RESOURCE_DATABASE"], _ = request.Spec["name"].(string)
 		env["ANAS_RESOURCE_USERNAME"], _ = request.Spec["principal"].(string)
 		env["ANAS_RESOURCE_PASSWORD"] = request.Password
-		args := []string{"run", "--rm", "--no-deps", operation.Service}
-		args = append(args, operation.Command...)
+		args := resourceEnsureComposeArgs(operation.Service, operation.Command)
 		if err := a.compose.RunFile(providerDir, "anas_"+request.Provider, providerModule.ComposeFile, env, args...); err != nil {
 			return fmt.Errorf("ensure resource %s.%s through %s: %w", consumer, request.ID, request.Provider, err)
 		}
@@ -73,6 +72,15 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 		}
 	}
 	return nil
+}
+
+func resourceEnsureComposeArgs(service string, command []string) []string {
+	// Resource providers are one-shot, non-interactive jobs. compose run tries
+	// to allocate a TTY by default, but RunFile intentionally does not attach
+	// stdin. Tell Compose that explicitly so apply also works from automation,
+	// redirected shells, and SSH sessions without a controlling terminal.
+	args := []string{"run", "--rm", "--no-deps", "--no-TTY", service}
+	return append(args, command...)
 }
 
 func (a *app) saveResourceReady(request ResourceRequest, providerEnv map[string]string) error {
