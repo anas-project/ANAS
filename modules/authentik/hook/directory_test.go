@@ -1,9 +1,25 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
+
+func TestManifestProvidesSambaPasswordPolicyToAuthentik(t *testing.T) {
+	manifest, err := os.ReadFile("../module.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{
+		"SAMBA_DC_USER_COMPLEX_PASS", "SAMBA_DC_USER_MIN_PASS_AGE",
+		"SAMBA_DC_USER_MIN_PASS_LENGTH", "SAMBA_DC_USER_PASSWORD_HISTORY",
+	} {
+		if !strings.Contains(string(manifest), "- "+key) {
+			t.Fatalf("authentik manifest does not consume %s", key)
+		}
+	}
+}
 
 func TestDirectoryBlueprintUsesEnvironmentContracts(t *testing.T) {
 	blueprint := renderDirectoryBlueprint()
@@ -13,6 +29,9 @@ func TestDirectoryBlueprintUsesEnvironmentContracts(t *testing.T) {
 		"AUTHENTIK_LDAP_BIND_PASSWORD",
 		"AUTHENTIK_LDAP_OBJECT_UNIQUENESS_FIELD",
 		"AUTHENTIK_LDAP_PASSWORD_WRITEBACK",
+		"AUTHENTIK_PASSWORD_MIN_LENGTH",
+		"AUTHENTIK_PASSWORD_POLICY_ERROR",
+		"AUTHENTIK_PASSWORD_POLICY_GUIDANCE",
 	} {
 		if !strings.Contains(blueprint, "!Env "+key) {
 			t.Fatalf("directory blueprint does not consume %s through !Env", key)
@@ -26,6 +45,12 @@ func TestDirectoryBlueprintUsesEnvironmentContracts(t *testing.T) {
 	if !strings.Contains(blueprint, "authentik.sources.ldap.auth.LDAPBackend") ||
 		!strings.Contains(blueprint, "authentik.core.auth.InbuiltBackend") {
 		t.Fatal("password stage must retain LDAP for AD users and inbuilt auth for akadmin")
+	}
+	if !strings.Contains(blueprint, "default-password-change-password-policy") ||
+		!strings.Contains(blueprint, "default-password-change-prompt") ||
+		!strings.Contains(blueprint, "type: alert_info") ||
+		!strings.Contains(blueprint, "check_zxcvbn: false") {
+		t.Fatal("directory blueprint must synchronize and explain the Samba password policy")
 	}
 	if !strings.Contains(blueprint, `peer_certificate: !Find [authentik_crypto.certificatekeypair, [name, "anas-samba-ad-ca"]]`) {
 		t.Fatal("Samba AD source must verify LDAPS with the imported ANAS CA")
@@ -65,6 +90,11 @@ func TestCalcAuthentikUsesPasswordServiceAccount(t *testing.T) {
 		"SAMBA_DC_GROUP_CLASS_FILTER":        "(objectClass=group)",
 		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE": "anasIdentityAnchor",
 		"AUTHENTIK_LDAP_PASSWORD_WRITEBACK":  "true",
+		"SAMBA_DC_USER_COMPLEX_PASS":         "true",
+		"SAMBA_DC_USER_MIN_PASS_AGE":         "1",
+		"SAMBA_DC_USER_MIN_PASS_LENGTH":      "12",
+		"SAMBA_DC_USER_PASSWORD_HISTORY":     "8",
+		"DEFAULT_LANGUAGE":                   "zh-Hans",
 		"EMAIL":                              "admin@nas.example",
 	}
 	secrets := &secretStore{values: map[string]string{}}
@@ -81,7 +111,38 @@ func TestCalcAuthentikUsesPasswordServiceAccount(t *testing.T) {
 	if !strings.Contains(env["AUTHENTIK_LDAP_USER_OBJECT_FILTER"], "(anasIdentityAnchor=*)") {
 		t.Fatalf("authentik user filter does not require the identity anchor: %s", env["AUTHENTIK_LDAP_USER_OBJECT_FILTER"])
 	}
+	if got := env["AUTHENTIK_PASSWORD_MIN_LENGTH"]; got != "12" {
+		t.Fatalf("authentik minimum password length = %q, want Samba value 12", got)
+	}
+	for _, want := range []string{"至少 12 个字符", "五类中的三类", "最近 8 个密码", "间隔 1 天"} {
+		if !strings.Contains(env["AUTHENTIK_PASSWORD_POLICY_GUIDANCE"], want) {
+			t.Fatalf("Chinese password guidance %q missing %q", env["AUTHENTIK_PASSWORD_POLICY_GUIDANCE"], want)
+		}
+	}
 	if secrets.values["AUTHENTIK_BREAK_GLASS_PASSWORD"] != "" || env["AUTHENTIK_BOOTSTRAP_PASSWORD"] != "" {
 		t.Fatal("legacy break-glass plaintext entered module-generated secrets or deployment env")
+	}
+}
+
+func TestPasswordPolicyGuidanceOmitsDisabledRules(t *testing.T) {
+	got := passwordPolicyGuidance("en", 14, 0, 0, false)
+	if !strings.Contains(got, "at least 14 characters") {
+		t.Fatalf("English guidance = %q", got)
+	}
+	for _, unwanted := range []string{"three of", "last 0", "days apart"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("English guidance %q contains disabled rule %q", got, unwanted)
+		}
+	}
+}
+
+func TestPasswordPolicyRejectsInvalidSambaValues(t *testing.T) {
+	env := map[string]string{
+		"SAMBA_DC_USER_MIN_PASS_LENGTH":  "twelve",
+		"SAMBA_DC_USER_PASSWORD_HISTORY": "8",
+		"SAMBA_DC_USER_MIN_PASS_AGE":     "1",
+	}
+	if err := calcPasswordPolicy(env); err == nil || !strings.Contains(err.Error(), "SAMBA_DC_USER_MIN_PASS_LENGTH") {
+		t.Fatalf("invalid Samba policy error = %v", err)
 	}
 }
