@@ -8,12 +8,17 @@ set -euo pipefail
 # separately at /var/lib/lemonldap-ng/conf and sessions are stored in the DB.
 /usr/local/bin/anas-llng-restore-runtime
 
-for name in BASE_DOMAIN DB_HOST DB_PASSWORD DB_POST DB_USER LLNG_DB_NAME LLNG_DB_TYPE LLNG_DOMAIN LLNG_DOMAIN_FULL LLNG_LDAP_AUTH_FILTER LLNG_LDAP_MAIL_FILTER LLNG_MANAGER_DOMAIN LLNG_MANAGER_DOMAIN_FULL SAMBA_DC_ADMIN_GROUP_NAME SAMBA_DC_BASE_GROUPS_DN SAMBA_DC_BASE_GROUPS_ROLE_DN SAMBA_DC_BASE_USERS_DN SAMBA_DC_LDAPS_PORT SAMBA_DC_LDAPS_SERVER_URL SAMBA_DC_PASSWORD_BIND_DN SAMBA_DC_PASSWORD_BIND_PASSWORD SERVER_NAME TRAEFIK_DOMAIN_FULL; do
+for name in BASE_DOMAIN DB_HOST DB_PASSWORD DB_POST DB_USER LLNG_DB_NAME LLNG_DB_TYPE LLNG_DOMAIN LLNG_DOMAIN_FULL LLNG_LDAP_AUTH_FILTER LLNG_LDAP_MAIL_FILTER LLNG_MANAGER_DOMAIN LLNG_MANAGER_DOMAIN_FULL SAMBA_DC_ADMIN_GROUP_NAME SAMBA_DC_BASE_GROUPS_DN SAMBA_DC_BASE_GROUPS_ROLE_DN SAMBA_DC_BASE_USERS_DN SAMBA_DC_LDAPS_PORT SAMBA_DC_LDAPS_SERVER_URL SAMBA_DC_PASSWORD_BIND_DN SAMBA_DC_PASSWORD_BIND_PASSWORD SAMBA_DC_USER_COMPLEX_PASS SAMBA_DC_USER_MIN_PASS_LENGTH SAMBA_DC_USER_PASSWORD_HISTORY SERVER_NAME TRAEFIK_DOMAIN_FULL; do
   if [ -z "${!name:-}" ]; then
     echo "missing required environment variable: $name" >&2
     exit 1
   fi
 done
+
+# Keep the first-login password instructions aligned with the Samba domain
+# policy. The catalog lives in the image layer, so this is safely regenerated
+# on every container start and never becomes persistent configuration drift.
+/usr/local/bin/anas-llng-configure-password-guidance
 
 ca="/certs/${ANAS_TLS_INTERNAL_CA_NAME:-anas-internal-ca.crt}"
 if [ -s "$ca" ]; then

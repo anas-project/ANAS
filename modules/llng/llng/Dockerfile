@@ -28,6 +28,7 @@ RUN if [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --chmod=0755 enable-chinese-language.sh /usr/local/bin/anas-llng-enable-chinese-language
+COPY --chmod=0755 configure-password-guidance.sh /usr/local/bin/anas-llng-configure-password-guidance
 
 RUN /usr/local/bin/anas-llng-enable-chinese-language
 
