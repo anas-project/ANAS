@@ -10,7 +10,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [collabora](#collabora) | 26.4.2-r2 | container | supported | integration | not_consumed | not_consumed | 43 |
 | [ddns_go](#ddns_go) | 6.17.4-r3 | container | supported | application | not_consumed | not_consumed | 2 |
 | [ddns_updater](#ddns_updater) | 2.10.0-r1 | application | fixed | fixed | not_consumed | not_consumed | 1 |
-| [eturnal](#eturnal) | 1.12.2-r2 | container | not_applicable | none | not_applicable | not_applicable | 0 |
+| [eturnal](#eturnal) | 1.12.2-r3 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [freeradius](#freeradius) | 3.2.10-r1 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [lam](#lam) | 9.6.0-r5 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r2 | container | not_applicable | none | not_applicable | not_applicable | 0 |
@@ -70,7 +70,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## eturnal
 
-- **Version / 版本：** `1.12.2-r2`; reviewed 2026-08-17
+- **Version / 版本：** `1.12.2-r3`; reviewed 2026-08-17
 - **Timezone / 时区：** `container` — The TURN service receives TZ for process and log timestamps.
 - **Language / 语言：** `not_applicable`, `none` — TURN protocol service
 - **ANAS globals / 全局默认：** `default_language=not_applicable`; `default_locale=not_applicable`

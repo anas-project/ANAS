@@ -14,6 +14,8 @@
 
 当前 `postgres` 与 `mariadb` 提供实现，Nextcloud、MeshCentral、Authentik 和 LLNG 是 consumer。Contract schema 或语义发生不兼容变化时必须提升 major version；新增可选 operation 或字段可以提升 minor version。
 
+Provider operation、Secret 边界、Schema 展开和文档生成流程见[技术实现](docs/technical.md)。
+
 <!-- generated:contract-reference:start -->
 ## 生成的 Contract 参考
 

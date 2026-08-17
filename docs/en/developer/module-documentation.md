@@ -1,43 +1,197 @@
-# Module documentation standard
+# Module documentation generation standard
 
-This standard defines the version, timezone, language, and upstream evidence every module must maintain, and how README and reference pages are generated.
+This standard defines Module documentation sources, required content, generation boundaries, VitePress mapping, bilingual output, and CI validation. “Must”, “must not”, and “should” are normative for new Modules, Module upgrades, and generator changes.
 
-## Required files
+> [!IMPORTANT]
+> The current `cmd/gen-module-docs` only updates the timezone/language block in the Chinese README and generates the two localization reference pages. It does not yet implement the four-source-file validation, per-Module VitePress mirrors, catalog, or navigation required below. This document defines the target standard; unavailable generated pages must not be described as current behavior.
 
-Every `modules/<name>/` directory containing `module.yml` must also contain:
+## 1. Source layout
 
-- `README.md`, with manual module guidance and a generated timezone/language section;
-- `localization.yml`, the machine-readable inventory for the current module version.
+Every `modules/<name>/` directory containing `module.yml` must contain:
 
-`localization.yml` is the source of truth. Do not edit content between `<!-- generated:localization:start -->` and `<!-- generated:localization:end -->` in a module README.
+```text
+modules/<name>/
+├── module.yml
+├── localization.yml
+├── README.md
+├── README.en.md
+└── docs/
+    ├── technical.md
+    └── technical.en.md
+```
 
-Generate or verify all module READMEs and both reference pages with:
+| File | Audience | Responsibility |
+| --- | --- | --- |
+| `module.yml` | Runner and generators | Version, status, dependencies, configuration, database, IAM, admin entries, and other machine contracts |
+| `localization.yml` | Generator | Version-bound timezone, language, fallback, and evidence inventory |
+| `README.md` | Chinese users and administrators | Dependencies, configuration, login, user management, recovery, and operating commands |
+| `README.en.md` | English users and administrators | English equivalent of the Chinese README |
+| `docs/technical.md` | Chinese maintainers | Implementation, security boundaries, Secrets, data flow, hooks, Compose, and tests |
+| `docs/technical.en.md` | English maintainers | English equivalent of the Chinese technical document |
+
+The Module directory is the sole documentation source of truth. Pages under `docs/reference/modules/` are generated mirrors and must never become an independent implementation source.
+
+## 2. Evidence precedence
+
+Verify documentation facts in this order:
+
+1. Runner, configuration parsing, CLI implementation, and tests;
+2. `module.yml`, Compose, hooks, scripts, and Dockerfiles;
+3. Contract manifests, schemas, provider/consumer implementations, and tests;
+4. pinned upstream source, versioned official documentation, and real-container verification;
+5. existing prose, which is only a lead and cannot override current implementation.
+
+Never infer a capability from a name. An LDAP environment variable does not prove user sync, group sync, or password writeback. Unsupported CLI commands must be labeled unavailable instead of being presented as executable proposals.
+
+## 3. Required README content
+
+The Chinese and English READMEs must have equivalent sections covering at least:
+
+1. Module name, version/revision, status, category, and runtime;
+2. Module, Capability, and Contract dependencies, interfaces, and version constraints;
+3. a minimal example valid under the current `config.yml` schema;
+4. LDAPS, OIDC, SAML, Kerberos, user/group source of truth, synchronization direction, filters, and password writeback;
+5. routine admin login, direct access, private/local admins, and IAM-outage recovery;
+6. real commands for account inspection, credential retrieval, password rotation, configuration inspection, modification, and planning;
+7. database provider/consumer/none, interfaces, defaults, Resource, credential, and deletion policy;
+8. every available configuration parameter;
+9. storage, backup, verification, limitations, and a technical-document link;
+10. the versioned timezone and language generated block.
+
+Keep an explicit “unsupported/not applicable” section when IAM, database, local-admin, or password-writeback support is absent.
+
+### Configuration inventory
+
+The README must cover every parameter returned by `anas config list <module> --json`:
+
+| Field | Requirement |
+| --- | --- |
+| Path | Full path such as `nextcloud.db_type` |
+| Type | Type accepted by the current CLI |
+| Default | Current default or `—` |
+| Environment key | Rendered Module-private environment name |
+| Required | Whether the value is required |
+| Sensitive | Whether it is a Secret |
+| Editability | Ordinary `config set` support or the required lifecycle operation |
+| Effect | Such as `hot_reload`, `container_recreate`, `credential_rotate`, `data_migrate`, or `immutable` |
+| Purpose | Actual application, data, or network impact |
+
+Configuration must not exist only in technical documentation. Additions, removals, renames, and default changes update both READMEs and both technical documents together.
+
+### Administrator and password commands
+
+Only a local administrator declared in `module.yml` with an implemented handler may document:
+
+```bash
+anas admin local list -w /srv/anas
+anas admin local credential <module> <account-id> -w /srv/anas
+anas admin local rotate <module> <account-id> -w /srv/anas
+anas admin local rotate <module> <account-id> --prompt -w /srv/anas
+```
+
+Explain plaintext output, transaction behavior, prompt input, and failure behavior. A Module without a declared local account must explicitly say these commands are unavailable.
+
+Never put a password in argv, an ordinary environment variable, or shell history. Do not present `anas config set` as application-password rotation or directory-user password modification.
+
+## 4. Required technical content
+
+Both `docs/technical*.md` files must cover at least:
+
+1. implementation version, status, and scope;
+2. Module, Capability, and Contract dependencies;
+3. Compose service, image/build, network, and volume topology;
+4. the same complete configuration contract as the README;
+5. user, group, LDAPS, OIDC/SAML, identity-anchor, and password-writeback data flow;
+6. management entries, local admins, and IAM-outage implementation;
+7. Secret lifecycle, storage format, permissions, projection path, hash/plaintext boundary, and logging boundary;
+8. database Contract, Resource identity, provider/consumer, credentials, and deletion policy;
+9. exported and explicitly consumed environment variables;
+10. hooks, change executors, transactions, rollback, and compensation;
+11. implementation files, unit tests, integration/E2E entry points, and limitations.
+
+Technical documentation is maintained inside the Module. The ANAS site publishes mirrors and does not own Module implementation semantics.
+
+## 5. Generated versus reviewed content
+
+Generators may derive or validate Module facts, dependencies, configuration metadata, database and admin declarations, localization inventory, Compose indexes, VitePress pages, catalog entries, and navigation links.
+
+Human or AI-assisted review is required for synchronization direction, group authorization and revocation, password-writeback ACLs, recovery safety, login availability, migration, rotation, rollback, backup semantics, actually enabled upstream behavior, limitations, and runtime conclusions.
+
+Static analysis cannot prove a real login, synchronization, rotation, or recovery. Bind those claims to tests or runtime evidence.
+
+## 6. Generated markers
+
+A generator may modify only explicitly marked blocks. The existing localization block is:
+
+```markdown
+<!-- generated:localization:start -->
+...
+<!-- generated:localization:end -->
+```
+
+Content outside markers is reviewed prose. New blocks use a unique `generated:<section>` name and must detect missing, duplicate, reversed, and unbalanced markers. Never replace an entire reviewed README.
+
+## 7. VitePress output
+
+The completed generator must map sources as follows:
+
+| Module source | Chinese site output | English site output |
+| --- | --- | --- |
+| `README.md` / `README.en.md` | `docs/reference/modules/<name>.md` | `docs/en/reference/modules/<name>.md` |
+| `docs/technical.md` / `docs/technical.en.md` | `docs/reference/modules/<name>-technical.md` | `docs/en/reference/modules/<name>-technical.md` |
+
+It must also generate or update the bilingual `modules.md` catalog, bilingual localization reference, and the Module sidebar group or its generated data.
+
+Every site mirror carries a generated-file warning. Rewrite README-to-technical links so both source and site layouts remain valid. Technical pages may be reached from the user page instead of being flattened into the sidebar.
+
+The catalog and sidebar names, status, category, version, and links must come from the same sorted manifest inventory, never another hand-maintained list.
+
+## 8. Generator behavior
+
+The complete `cmd/gen-module-docs` implementation must:
+
+1. enumerate every directory containing `module.yml`;
+2. validate directory, manifest, localization, and document ownership;
+3. fail when any bilingual source document or `localization.yml` is missing;
+4. update only allowed generated blocks;
+5. generate all bilingual site pages, catalogs, and navigation data atomically;
+6. use deterministic ordering and formatting;
+7. make `--check` read-only and fail for missing sources, missing mirrors, or stale output;
+8. preserve all reviewed content outside markers.
 
 ```bash
 go run ./cmd/gen-module-docs
 go run ./cmd/gen-module-docs --check
+npm run docs:build
 ```
 
-The check form does not modify files and is suitable for CI.
+`npm run docs:build` builds only `docs/`; it does not imply that the Module generator ran. Generate first, then run the check and site build.
 
-The generator treats `docs/reference/module-localization.md` and `docs/en/reference/module-localization.md` as an inseparable output pair: one run writes both, and `--check` fails when either is missing or stale. An AI agent changing the generator or inventory must inspect both outputs and navigation, never commit only the Chinese page.
+## 9. Localization inventory
 
-## Inventory rules
+`localization.yml` uses `anas.module-localization/v1`. `module_version` and `module_revision` exactly match `module.yml`; `reviewed_at` is the real review date.
 
-The schema is `anas.module-localization/v1`. `module_version` and `module_revision` must exactly match `module.yml`; `reviewed_at` records the actual review date. Timezone metadata must state which processes consume `TZ` or an application-specific setting.
+`language.status` is `supported`, `fixed`, or `not_applicable`. `language.selection` is `browser`, `integration`, `application`, `deployment_default`, `fixed`, `client`, or `none`. `global_default` and `global_locale` are `applied`, `fallback`, `not_consumed`, or `not_applicable`.
 
-`language.status` is `supported`, `fixed`, or `not_applicable`. `language.selection` is `browser`, `integration`, `application`, `deployment_default`, `fixed`, `client`, or `none`. `global_default` and `global_locale` are `applied`, `fallback`, `not_consumed`, or `not_applicable`; they record application consumption, not merely that a key appears in `.env`. Write `supported` values as canonical BCP 47 tags and describe upstream spellings such as `zh_CN`, `pt-br`, or POSIX locales in `upstream_format`.
+Use canonical BCP 47 in `supported` and record upstream spellings such as `zh_CN`, `pt-br`, or POSIX locales in `upstream_format`. Prefer evidence from versioned source, then versioned official documentation, exact-image inspection, and finally official marketing material.
 
-Every evidence item must be tied to the pinned upstream version. Prefer a locale directory, translation manifest, or resource keys in versioned source, followed by versioned official documentation and inspection of the exact image. A rolling marketing page is supplementary evidence only.
+For `selection: browser`, upstream keeps the user or browser preference. Unknown values follow the declared fallback. Never cross script variants: `zh-Hant` must not silently match `zh-Hans`. See the [Module upstream upgrade SOP](/en/developer/module-upgrade-sop).
 
-## Selection and unsupported values
+## 10. CI and acceptance
 
-For `selection: browser`, the application keeps using the user preference or browser `Accept-Language`. `global.default_language` is a deployment fallback only when `global_default` says `fallback`; `not_consumed` means upstream uses its own fallback. Language and regional formatting remain separate, so applications such as Nextcloud also consume `global.default_locale`.
+CI must run before the VitePress build:
 
-When `global.default_locale` is absent, derivation from language is allowed only for an explicit region: `en-GB` can become the locale directly, while `en` or `zh-Hans` must try the host locale before `x/text` CLDR likely-subtag completion. Modules must not duplicate this policy locally.
+```bash
+go run ./cmd/gen-module-docs --check
+npm run docs:build
+```
 
-Modules accepting an explicit language use BCP 47 at the ANAS boundary and `internal/localization` for upstream conversion. A supported explicit value is converted. An unsupported explicit value emits `module_localization_fallback` and continues with the declared fallback; an unsupported inherited global value also continues with that fallback. Browser-negotiated applications delegate unknown browser values to upstream. `fixed` and `not_applicable` modules must not expose a setting that has no effect.
+Behavior changes also run the relevant Module unit and integration/E2E tests. Commit source documents and generated mirrors together.
 
-Never cross script variants: `zh-Hant` must not silently match `zh-Hans`. Do not scatter ad-hoc locale replacement tables across hooks.
-
-See the [module upstream upgrade SOP](/en/developer/module-upgrade-sop) for the recurring review workflow.
+- [ ] Every `module.yml` directory has four bilingual documents and `localization.yml`.
+- [ ] Both languages have the same structure, commands, defaults, support status, and risks.
+- [ ] Configuration tables cover every `anas config list <module> --json` parameter.
+- [ ] IAM, LDAPS, groups, administrators, databases, and unsupported cases are explicit.
+- [ ] No sensitive value appears in argv, logs, or ordinary environment-variable examples.
+- [ ] Generated blocks, mirrors, catalogs, links, and navigation are current.
+- [ ] Generator checks, relevant tests, and `npm run docs:build` pass.

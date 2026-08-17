@@ -13,6 +13,8 @@
 - private key 只能存在于 Secret/证书受保护目录，不能进入 deployment manifest 或 CLI JSON。
 - `renew`/`revoke` 成为实现要求前，需要 ADR 说明 provider 选择、信任分发、回滚和 consumer reload 行为。
 
+密码/私钥边界、Schema 展开和文档生成流程见[技术实现](docs/technical.md)。
+
 <!-- generated:contract-reference:start -->
 ## 生成的 Contract 参考
 

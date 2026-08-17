@@ -1,6 +1,102 @@
 # MariaDB
 
-MariaDB database service with optional Adminer UI.
+提供 `relational_database/mariadb`，并可选启用 Adminer。
+
+## 快速信息
+
+| 项目 | 值 |
+| --- | --- |
+| Module | `mariadb` |
+| 版本 / revision | `12.3.2-r1` |
+| 状态 | `release` |
+| 类别 | `database` |
+| 运行时 | `compose` |
+
+## 依赖的 Module、Capability 与 Contract
+
+| 依赖 | 类型 | 接口/版本 |
+| --- | --- | --- |
+| `traefik` | Module | — |
+| `relational_database` | 提供 Contract | `1.0.0` / `mariadb` |
+
+## 最简配置
+
+```yaml
+modules:
+  mariadb: {}
+```
+
+## 身份、用户与 Group
+
+数据库服务不使用目录或 IAM。每个 Consumer 由 Provider operation 创建独立数据库和专属账号。
+
+| 能力 | 当前声明 |
+| --- | --- |
+| Directory / LDAPS | 不支持/不适用 |
+| IAM | 不支持/不适用 |
+| Group | 未声明 |
+| 目录密码回写 | 不支持/不适用 |
+
+当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
+
+## 管理员登录与 IAM 故障恢复
+
+root 密码是 Provider 管理凭据，不是 Module 本地管理员。Adminer 启用后使用数据库账号登录。
+
+本 Module 没有声明由 `anas admin local` 管理的账号；`credential` 和 `rotate` 对它不可用。
+
+## 数据库支持
+
+本 Module 提供 `relational_database/mariadb` Contract，版本 `1.0.0`。
+
+## 所有可用配置参数
+
+以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
+
+| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mariadb.adminer_enabled` | string | `false` | `MARIADB_ADMINER_ENABLED` | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
+| `mariadb.root_password` | string | `—` | `MARIADB_ROOT_PASSWORD` | 否 | 是 | 否：`rotate-mariadb-root-password` | `credential_rotate` | 数据库 root 密码 |
+
+### 查询和修改
+
+```bash
+anas config list mariadb -w /srv/anas
+anas config explain mariadb.adminer_enabled
+anas config set mariadb.adminer_enabled false -w /srv/anas
+anas config plan -w /srv/anas
+```
+
+`editable=false` 的参数不能用普通 `config set` 完成；表中的专用流程名称是生命周期声明，不保证存在同名通用子命令。原始 `env.<KEY>` 仅是兼容逃生口，不能用来轮换应用内部密码。
+
+### 敏感参数与生成 Secret
+
+- `mariadb.root_password` → `MARIADB_ROOT_PASSWORD`
+
+```bash
+anas config secret list -w /srv/anas
+anas config secret get MARIADB_ROOT_PASSWORD -w /srv/anas
+```
+
+`secret get` 只在该值由 Module 生成并保存到 Secret Store 时可用。用户显式写入配置的值不会由安全库存命令回显。对于 `credential_rotate`，不能用 `config set` 或 `env.<KEY>` 代替应用内部轮换；对于仍标为普通重建的敏感参数，当前 CLI 虽接受 `config set`，但值会进入 argv/shell history，建议省略并使用生成 Secret，或在受保护的配置编辑流程中设置。
+
+## 存储、备份与验证
+
+持久数据应随 workspace 的 snapshot/backup 一起保护。数据库 Consumer 还必须备份所绑定的数据库 Resource；生成 Secret 和本地管理员状态也必须与数据保持同一恢复点。
+
+```bash
+anas plan -c /srv/anas/config.yml
+anas config list mariadb -w /srv/anas
+anas status -w /srv/anas
+```
+
+## 当前限制
+
+普通 `config set` 不能完成 root 密码轮换；必须使用声明的凭据生命周期流程。
+
+## 技术文档
+
+密码存储、环境作用域、Hook、网络、Resource 和测试细节见[技术文档](docs/technical.md)。
 
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language

@@ -146,8 +146,10 @@ func run(root string, check bool) error {
 		docs[i].Consumers = consumers[docs[i].Manifest.Name]
 		for _, english := range []bool{false, true} {
 			name := "README.md"
+			technicalName := "technical.md"
 			if english {
 				name = "README.en.md"
+				technicalName = "technical.en.md"
 			}
 			path := filepath.Join(docs[i].Dir, name)
 			current, readErr := os.ReadFile(path)
@@ -178,7 +180,26 @@ func run(root string, check bool) error {
 			if !english {
 				banner = "> 本页由 Contract 根目录 README 生成，请勿直接编辑。\n\n"
 			}
-			if err := update(site, []byte(banner+want), check, &stale); err != nil {
+			siteREADME := rewriteSiteLinks(want, docs[i].Manifest.Name, english, false)
+			if err := update(site, []byte(banner+siteREADME), check, &stale); err != nil {
+				return err
+			}
+
+			technicalSource := filepath.Join(docs[i].Dir, "docs", technicalName)
+			technical, readErr := os.ReadFile(technicalSource)
+			if readErr != nil {
+				return fmt.Errorf("%s: every Contract needs bilingual technical documentation: %w", technicalSource, readErr)
+			}
+			technicalSite := filepath.Join(root, "docs", "reference", "contracts", docs[i].Manifest.Name+"-technical.md")
+			if english {
+				technicalSite = filepath.Join(root, "docs", "en", "reference", "contracts", docs[i].Manifest.Name+"-technical.md")
+			}
+			technicalBanner := "> This page is generated from the Contract technical documentation. Do not edit it directly.\n\n"
+			if !english {
+				technicalBanner = "> 本页由 Contract 技术文档生成，请勿直接编辑。\n\n"
+			}
+			siteTechnical := rewriteSiteLinks(string(technical), docs[i].Manifest.Name, english, true)
+			if err := update(technicalSite, []byte(technicalBanner+siteTechnical), check, &stale); err != nil {
 				return err
 			}
 		}
@@ -188,6 +209,21 @@ func run(root string, check bool) error {
 		return fmt.Errorf("generated Contract documentation is stale:\n  %s\nrun: go run ./cmd/gen-contract-docs", strings.Join(stale, "\n  "))
 	}
 	return nil
+}
+
+func rewriteSiteLinks(markdown, contractName string, english, technical bool) string {
+	if technical {
+		source := "../README.md"
+		if english {
+			source = "../README.en.md"
+		}
+		return strings.ReplaceAll(markdown, "]("+source+")", "](./"+contractName+".md)")
+	}
+	source := "docs/technical.md"
+	if english {
+		source = "docs/technical.en.md"
+	}
+	return strings.ReplaceAll(markdown, "]("+source+")", "](./"+contractName+"-technical.md)")
 }
 
 func loadContracts(root string) ([]contractDoc, error) {

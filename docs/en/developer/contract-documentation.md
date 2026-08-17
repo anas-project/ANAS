@@ -1,41 +1,173 @@
 # Contract documentation generation standard
 
-This standard mirrors the [Module documentation standard](/en/developer/module-documentation) and defines how Contract root documentation, machine facts, reviewed semantics, and VitePress pages are maintained together.
+This standard defines Contract source files, machine contracts, reviewed semantics, generated output, VitePress mapping, bilingual content, and CI validation. Together with the [Module documentation generation standard](/en/developer/module-documentation), it is the maintenance baseline for Module and Contract documentation.
 
-## Required files and sources of truth
+> [!NOTE]
+> The current `cmd/gen-contract-docs` implements the README generated block and bilingual user/technical VitePress mirrors. Generated Contract catalogs, sidebar data, and CI `--check` enforcement are required by this standard but are not yet implemented.
 
-Every `contracts/<name>/` directory must contain `contract.yml`, `schemas/*.yml`, `documentation.yml`, `README.md`, and `README.en.md`. Root READMEs remain understandable outside the site. `docs/reference/contracts/<name>.md` and `docs/en/reference/contracts/<name>.md` are generated VitePress mirrors, not additional sources of truth.
+## 1. Source layout
+
+Every `contracts/<name>/` must contain:
+
+```text
+contracts/<name>/
+├── contract.yml
+├── documentation.yml
+├── schemas/
+│   └── *.yml
+├── README.md
+├── README.en.md
+└── docs/
+    ├── technical.md
+    └── technical.en.md
+```
+
+| File | Responsibility |
+| --- | --- |
+| `contract.yml` | Name, version, interfaces, Resource identity, operations, and schema paths |
+| `schemas/*.yml` | Resource, request, and result types, required fields, properties, and constraints |
+| `documentation.yml` | Documentation API, implementation status, review date, and bilingual summary |
+| `README.md` / `README.en.md` | Consumer-facing semantics, capability, examples, errors, and operating boundaries |
+| `docs/technical.md` / `docs/technical.en.md` | Provider/Consumer implementation, idempotency, Secrets, lifecycle, compatibility, and tests |
+
+`contracts/<name>/` is the sole source of truth. Files under `docs/reference/contracts/` are generated mirrors and must not be edited directly or contain independent facts.
+
+## 2. Naming, identity, and versioning
+
+The directory name, `contract.yml` name, `documentation.yml` contract, and Module-manifest Contract references must agree.
+
+Contracts use semantic versioning. Compatible field additions may retain the major version. Removing or renaming fields, tightening constraints, changing Resource identity, or changing operation semantics requires a new major version. Document compatibility, deprecation, and migration.
+
+Resource identity must be stable, serializable, and able to distinguish multiple Resources for one Consumer. Do not treat a display name or mutable address as stable identity.
+
+## 3. `documentation.yml`
+
+```yaml
+api_version: anas.contract-documentation/v1
+contract: example
+status: implemented
+reviewed_at: 2026-08-14
+summary:
+  zh: 中文摘要。
+  en: English summary.
+```
+
+Allowed status values are:
+
+- `implemented`: Runner dispatch, at least one Provider, and real E2E verification exist;
+- `partial`: only some operations, interfaces, or Provider/Consumer paths work;
+- `pending`: the definition exists but the Runner does not dispatch it;
+- `proposal`: ADR, necessity, or interface review is still required;
+- `deprecated`: compatibility only; no new Consumer may use it.
+
+A manifest, schema, Provider name, or test stub does not prove `implemented`. `reviewed_at` is the semantic review date, not the generation date.
+
+## 4. Required README content
+
+Chinese and English READMEs must have equivalent structures covering at least:
+
+1. business purpose, scope, and exclusions;
+2. version, status, review date, and interfaces;
+3. Resource identity, ownership, and lifecycle semantics;
+4. purpose, required flag, input, output, idempotency, and error boundary for every operation;
+5. current Providers, Consumers, version constraints, interfaces, and implementation status;
+6. user-visible credential, Secret, permission, and deletion boundaries;
+7. copyable examples without real Secrets;
+8. verification, recovery, unimplemented behavior, and limitations;
+9. a technical-document link.
+
+Examples for `pending` or `proposal` Contracts must say they are not currently executable. An unavailable optional operation must report or document unsupported behavior, never pretend success.
+
+## 5. Required technical content
+
+Both `docs/technical*.md` files must cover at least:
+
+1. full manifest and schema index;
+2. Resource identity, ownership, idempotency key, and persistence;
+3. operation requests/results, preconditions, transaction order, and state transitions;
+4. Provider dispatch, Consumer binding, version selection, and lock/deployment state;
+5. Secret generation, storage, projection, rotation, revocation, and logging boundaries;
+6. permission, network, process, and trust boundaries;
+7. delete/retain, compensation, retry, rollback, and disaster recovery;
+8. compatibility, upgrade, deprecation, and migration strategy;
+9. Provider/Consumer implementation, Runner dispatch, unit tests, and real-service E2E locations;
+10. limitations, unimplemented operations, and verification gaps;
+11. documentation-generation sources and review method.
+
+Technical documentation explains why and how. Schemas own field contracts; technical prose owns cross-operation security and lifecycle semantics.
+
+## 6. Generated versus reviewed content
+
+The generator derives the content between `generated:contract-reference` markers from `contract.yml`, schemas, Module manifests, and `documentation.yml`:
+
+- version, status, review date, and interfaces;
+- Resource identity and schema;
+- operation required flags and request/result schemas;
+- schema types, required fields, and all properties;
+- current Providers, Consumers, version constraints, interfaces, and implementation locations.
+
+Reviewed content outside the block owns purpose, real identity semantics, idempotency, transactions, locks, retries, compensation, deletion, Secrets, permissions, logging, trust, compatibility, migration, recovery, limitations, and runtime/E2E conclusions.
+
+Static analysis cannot prove state change, reliable rollback, or effective permissions. A generator must not promote declarations into unverified runtime conclusions.
+
+## 7. Markers and editing
+
+README generated blocks use:
+
+```markdown
+<!-- generated:contract-reference:start -->
+...
+<!-- generated:contract-reference:end -->
+```
+
+Only this block may be replaced. A missing block may be appended; duplicate, reversed, or unbalanced markers fail. README content outside the block and `docs/technical*.md` are reviewed sources.
+
+Generated files under `docs/reference/contracts/` carry a do-not-edit warning. Fix the Contract source or generator and regenerate instead of patching a mirror.
+
+## 8. VitePress output
+
+Each Contract generates four pages:
+
+| Contract source | Chinese site output | English site output |
+| --- | --- | --- |
+| `README.md` / `README.en.md` | `docs/reference/contracts/<name>.md` | `docs/en/reference/contracts/<name>.md` |
+| `docs/technical.md` / `docs/technical.en.md` | `docs/reference/contracts/<name>-technical.md` | `docs/en/reference/contracts/<name>-technical.md` |
+
+Rewrite `docs/technical*.md` links in README mirrors to the site technical page and rewrite `../README*.md` links in technical mirrors to the site user page. Both source and site layouts must be dead-link free.
+
+Contract catalog and sidebar names, status, version, and links should come from one sorted Contract inventory. User pages must be discoverable from the sidebar or catalog; technical pages may be reached from user pages.
+
+## 9. Generator behavior
+
+`cmd/gen-contract-docs` must:
+
+1. enumerate every directory containing `contract.yml`;
+2. strictly validate required sources, API versions, names, status, version, interfaces, operations, and schema paths;
+3. verify that operation schemas and references resolve;
+4. scan all Module manifests for the Provider/Consumer matrix;
+5. modify only README generated blocks;
+6. atomically generate all bilingual user pages, technical pages, catalogs, and navigation data;
+7. use deterministic ordering and Markdown formatting;
+8. make `--check` read-only and fail for missing sources, missing mirrors, or stale output;
+9. never infer implementation status from names or file presence.
 
 ```bash
 go run ./cmd/gen-contract-docs
 go run ./cmd/gen-contract-docs --check
+npm run docs:build
 ```
 
-The check form does not write files. The generator treats both root READMEs and both VitePress pages as one inseparable output set.
+`npm run docs:build` builds pages already under `docs/`; it does not run the Contract generator.
 
-## Status inventory
+## 10. Bilingual output and technical identifiers
 
-`documentation.yml` uses `anas.contract-documentation/v1` and one status:
+Both languages must have the same sections, operation set, support status, defaults, risks, and limitations. Do not translate Contract, Module, Provider, Consumer, or Resource names; interfaces; operations; fields; schema paths; commands; environment variables; status values; error codes; or version constraints.
 
-- `implemented`: the Runner dispatches it, a provider implements it, and real E2E verifies it;
-- `partial`: only some operations, interfaces, or provider/consumer paths work;
-- `pending`: the definition exists but the Runner does not dispatch it;
-- `proposal`: an ADR or necessity review is still required;
-- `deprecated`: compatibility remains, but no new consumer may use it.
+Translate explanatory prose only. A change to one language updates the other language and all generated mirrors in the same change set.
 
-The mere presence of `contract.yml`, schemas, or a Module name never proves `implemented`.
+## 11. CI and acceptance
 
-## Generated and reviewed content
-
-Content between `generated:contract-reference` markers is generated from code: version, status, interfaces, resource identity, operation schemas, schema fields, and current Module provider/consumer declarations.
-
-Content outside the block is reviewed prose: purpose, identity and idempotency semantics, lifecycle ordering, transactions, verification, compensation, Secret and trust boundaries, compatibility, deletion, examples, recovery, and known limitations.
-
-Code and existing prose can seed this content, including through AI analysis, but static analysis cannot prove that application state changed, login works, rollback is reliable, or a security intent is correct. Review ties those claims to tests and explicit design decisions instead of manually copying fields.
-
-## Bilingual output and CI
-
-Chinese and English READMEs must have parallel structures. Technical IDs, paths, operations, commands, and statuses remain unchanged.
+CI must run before the VitePress build:
 
 ```bash
 go run ./cmd/gen-contract-docs --check
@@ -43,4 +175,13 @@ test-env/scripts/test-contract.sh
 npm run docs:build
 ```
 
-Promoting a Contract to `implemented` requires provider and consumer manifests, Runner dispatch, operation tests, and evidence from a real-service E2E in the same change set.
+When a Contract lacks one shared test entry point, run the relevant Provider/Consumer tests and real-service E2E. Promotion to `implemented` requires Provider/Consumer manifests, Runner dispatch, operation tests, and E2E evidence in the same change.
+
+- [ ] Every Contract has a manifest, documentation metadata, schemas, and four bilingual documents.
+- [ ] Names, versions, interfaces, identity, operations, and schema references agree.
+- [ ] Both languages state identical semantics, support status, risks, and limitations.
+- [ ] The Provider/Consumer matrix comes from current Module manifests.
+- [ ] Secret, permission, idempotency, deletion, compensation, and recovery boundaries are explicit.
+- [ ] Pending, proposed, or unimplemented behavior is not presented as available.
+- [ ] Generated blocks, VitePress mirrors, links, catalogs, and navigation are current.
+- [ ] Generator checks, Contract tests, and `npm run docs:build` pass.

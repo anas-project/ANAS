@@ -16,6 +16,8 @@ This Contract provides modules with an idempotent relational database, principal
 
 `postgres` and `mariadb` currently implement the Contract. Nextcloud, MeshCentral, Authentik, and LLNG consume it. Incompatible schema or semantic changes require a major version; new optional operations or fields may use a minor version.
 
+See the [technical implementation](./relational_database-technical.md) for provider operations, secret boundaries, expanded schemas, and documentation generation.
+
 <!-- generated:contract-reference:start -->
 ## Generated contract reference
 

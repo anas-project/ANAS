@@ -40,7 +40,7 @@ Verify facts in this order:
 
 Do not copy commands or defaults from an old page without verification. Check CLI help, parsing, or the relevant tests. For versions, module status, counts, and other volatile facts, name the source or review date; link to an authoritative inventory instead of duplicating a list when possible.
 
-Versioned module timezone and language facts live in `modules/*/localization.yml`; tooling renders them into module READMEs and the reference matrix. See the [module documentation standard](/en/developer/module-documentation) for fields, evidence, and generation rules.
+The [Module documentation generation standard](/en/developer/module-documentation) and [Contract documentation generation standard](/en/developer/contract-documentation) define source files, required sections, generated markers, VitePress mirrors, bilingual output, and CI rules. Never edit a generated mirror directly; versioned Module timezone and language facts live in `modules/*/localization.yml`.
 
 Architecture documents must declare one of these states near the top:
 

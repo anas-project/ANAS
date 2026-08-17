@@ -40,7 +40,7 @@
 
 不要仅根据旧文档复制命令或默认值。提交前实际运行示例命令的 `--help`、解析或相关测试。版本、Module 状态、参数数量等容易变化的内容应注明来源或复核日期；能够链接到权威清单时，不重复维护易漂移的列表。
 
-Module 的版本化时区和语言事实以 `modules/*/localization.yml` 为准，由工具写入 Module README 和汇总页。字段、证据和生成规则见 [Module 文档规范](/developer/module-documentation)。
+Module 与 Contract 的源文件、必需章节、生成标记、VitePress 镜像、双语和 CI 规则分别以 [Module 文档生成标准](/developer/module-documentation) 与 [Contract 文档生成标准](/developer/contract-documentation) 为准。生成镜像不得直接编辑；Module 的版本化时区和语言事实以 `modules/*/localization.yml` 为准。
 
 设计文档必须在开头说明以下状态之一：
 

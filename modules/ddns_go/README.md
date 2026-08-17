@@ -1,113 +1,133 @@
-DDNS-GO
-=====
+# DDNS-GO
 
-把这个部署的 A/AAAA 记录保持最新。相对 `ddns_updater` 的取舍：**中国厂商覆盖更好、
-能读本地网卡拿宿主 IPv6、有 Web 界面**；代价是上游支持的厂商总数少一些。
+带 Web 界面的动态 DNS 更新器，支持宿主 IPv6 和中国 DNS 厂商。
 
-能力设计与两个实现的对比见
-[动态 DNS 能力设计](../../../docs/design/dynamic-dns-capability-design.md)。
+## 快速信息
 
-配置
-----------------
+| 项目 | 值 |
+| --- | --- |
+| Module | `ddns_go` |
+| 版本 / revision | `6.17.4-r3` |
+| 状态 | `release` |
+| 类别 | `network` |
+| 运行时 | `compose` |
 
-### 依赖的模块
+## 依赖的 Module、Capability 与 Contract
 
-- `traefik`
+| 依赖 | 类型 | 接口/版本 |
+| --- | --- | --- |
+| `traefik` | Module | — |
 
-ddns-go 不依赖 IAM 或 `forward_auth`。Web 界面始终使用它自己的本地账号登录。
+## 最简配置
 
-### 最简用法
+```yaml
+modules:
+  ddns_go: {}
+```
 
-不需要在 `modules` 里列出本 module，声明能力即可：
+## 身份、用户与 Group
+
+不接入目录或 IAM，没有用户同步和 Group 授权。
+
+| 能力 | 当前声明 |
+| --- | --- |
+| Directory / LDAPS | 不支持/不适用 |
+| IAM | 不支持/不适用 |
+| Group | 未声明 |
+| 目录密码回写 | 不支持/不适用 |
+
+当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
+
+## 管理员登录与 IAM 故障恢复
+
+Web 界面使用 `primary` 本地管理员，默认用户名为 `admin_ddns_go`。该账号由 ANAS 生成、查询和事务轮换。
+
+| 入口 ID | 地址来源 | 主要认证 |
+| --- | --- | --- |
+| `web` | `DDNS_GO_DOMAIN_FULL` | `local` |
+
+| ID | 用途 | 用户名 | 容器格式 | 可轮换 |
+| --- | --- | --- | --- | --- |
+| `primary` | `primary` | `admin_ddns_go` | `bcrypt` | 是 |
+
+```bash
+anas admin local list -w /srv/anas
+anas admin local credential ddns_go primary -w /srv/anas
+anas admin local rotate ddns_go primary -w /srv/anas
+anas admin local rotate ddns_go primary --prompt -w /srv/anas
+```
+
+`credential` 会输出明文密码，应避免进入日志；`rotate` 默认生成随机密码，`--prompt` 从终端安全读取，不接受 argv 或普通环境变量传入密码。
+
+## 数据库支持
+
+本 Module 不消费或提供关系数据库 Contract。
+
+## 所有可用配置参数
+
+以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
+
+| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `ddns_go.dns_provider` | string | `—` | `DDNS_GO_DNS_PROVIDER` | 是 | 否 | 是 | `container_recreate` | DNS 厂商 |
+| `ddns_go.domain_prefix` | string | `ddns-go` | `DDNS_GO_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| `ddns_go.interval` | int | `300` | `DDNS_GO_INTERVAL` | 否 | 否 | 是 | `container_recreate` | 执行间隔（秒） |
+| `ddns_go.ipv4_gettype` | enum (`url`, `netInterface`) | `url` | `DDNS_GO_IPV4_GETTYPE` | 否 | 否 | 是 | `container_recreate` | IPv4 地址发现方式 |
+| `ddns_go.ipv4_interface` | string | `—` | `DDNS_GO_IPV4_INTERFACE` | 否 | 否 | 是 | `container_recreate` | IPv4 本地网卡 |
+| `ddns_go.ipv4_urls` | string | `—` | `DDNS_GO_IPV4_URLS` | 否 | 否 | 是 | `container_recreate` | IPv4 外部探测地址 |
+| `ddns_go.ipv6_gettype` | enum (`url`, `netInterface`) | `url` | `DDNS_GO_IPV6_GETTYPE` | 否 | 否 | 是 | `container_recreate` | IPv6 地址发现方式 |
+| `ddns_go.ipv6_interface` | string | `—` | `DDNS_GO_IPV6_INTERFACE` | 否 | 否 | 是 | `container_recreate` | IPv6 本地网卡 |
+| `ddns_go.ipv6_urls` | string | `—` | `DDNS_GO_IPV6_URLS` | 否 | 否 | 是 | `container_recreate` | IPv6 外部探测地址 |
+| `ddns_go.web_enabled` | bool | `true` | `DDNS_GO_WEB_ENABLED` | 否 | 否 | 是 | `container_recreate` | 是否启用 Web 界面 |
+
+### 查询和修改
+
+```bash
+anas config list ddns_go -w /srv/anas
+anas config explain ddns_go.dns_provider
+anas config set ddns_go.dns_provider VALUE -w /srv/anas
+anas config plan -w /srv/anas
+```
+
+`editable=false` 的参数不能用普通 `config set` 完成；表中的专用流程名称是生命周期声明，不保证存在同名通用子命令。原始 `env.<KEY>` 仅是兼容逃生口，不能用来轮换应用内部密码。
+
+## 地址发现、IPv6 与配置合并
+
+`ipv4_gettype`/`ipv6_gettype` 默认使用 `url`，向外部服务查询实际可达地址。需要直接读取宿主网卡时使用大小写严格的 `netInterface`，并显式指定网卡：
 
 ```yaml
 dynamic_dns:
-  provider: auto          # 或直接写 ddns_go
+  provider: ddns_go
   dns_provider: tencentcloud
 
-secrets:
-  tencentcloud_secret_id: ...
-  tencentcloud_secret_key: ...
-```
-
-### 参数
-
-| 参数 | 默认 | 说明 |
-|---|---|---|
-| `dns_provider` | 无（必填） | DNS 厂商。优先于 `dynamic_dns.dns_provider` |
-| `domain_prefix` | `ddns-go` | Web 界面的域名前缀 |
-| `interval` | `300` | 检查间隔（秒） |
-| `web_enabled` | `true` | 关掉则以 `-noweb` 运行，不发布路由 |
-| `web_port` | `9876` | host 网络上的监听端口 |
-| `ipv4_gettype` / `ipv6_gettype` | `url` | `url` 或 `netInterface` |
-| `ipv4_urls` / `ipv6_urls` | 见下 | 逗号分隔的探测地址 |
-| `ipv4_interface` / `ipv6_interface` | 见下 | `netInterface` 时读哪块网卡 |
-
-支持的厂商见 `modules/ddns_go/hook/dns_registry_gen.go`，配置错误时报错信息里
-也会列出。
-
-### 地址发现
-
-默认 `url`，即问外部服务"你看到的我是哪个地址"。理由是一块网卡上常有同族的多个
-地址——IPv6 临时隐私地址与稳定地址并存、ULA 与全局地址并存——只有外部观察者能说清
-哪个真正可达。
-
-留空时的默认探测地址：
-
-```text
-ipv4_urls  https://myip.ipip.net, https://ddns.oray.com/checkip, https://ip.3322.net
-ipv6_urls  https://v6.ident.me, https://api6.ipify.org, https://v6.ip.zxinc.org/getip
-```
-
-宿主的公网地址就挂在自己网卡上、或者没有到探测服务的出站路径时，改用
-`netInterface`：
-
-```yaml
-services:
+modules:
   ddns_go:
-    env:
+    config:
       ipv6_gettype: netInterface
-      ipv6_interface: enp1s0     # 留空则取 core 探测到的网卡
+      ipv6_interface: enp1s0
 ```
 
-两处校验会在 `plan` 阶段就报错：
+留空 URL 时使用 Module 内置探测器；`plan` 会拒绝未知 gettype，以及无法解析网卡的 `netInterface` 配置。容器使用 host 网络以读取宿主 IPv6；宿主没有全局 IPv6 时自动降级为只更新 A，并发布 `DDNS_GO_IPV6_AVAILABLE` 供诊断。
 
-- **未知的 gettype**（比如大小写写成 `netinterface`）。ddns-go 遇到不认识的值只会
-  打印 `get IP method is unknown` 然后返回空串，更新器会一直跑但永远读不到地址。
-- **`netInterface` 没有网卡名**。不给名字时 ddns-go 会扫描所有网卡取第一个全局
-  地址，在一台挂满 Docker 网桥的宿主上，那不一定是对外提供服务的那个。
+`.ddns_go_config.yaml` 同时接受 ANAS 和 Web UI 修改。`anas-ddns-go-reconcile` 对 `anas-managed:<id>` 条目执行以下规则：同名条目整体替换；目标完全相同的手工条目由 ANAS 接管；部分重叠时报错；其他条目、webhook 和未知字段原样保留。支持的 DNS 厂商与凭据键以 `hook/dns_registry_gen.go` 为准。
 
-### IPv6
+## 存储、备份与验证
 
-`network_mode: host`。这是为了让容器看得见宿主的 IPv6 地址——bridge 容器默认没有
-IPv6 出站，既到不了 IPv6 探测服务，也看不到宿主自己的全局地址。
+持久数据应随 workspace 的 snapshot/backup 一起保护。数据库 Consumer 还必须备份所绑定的数据库 Resource；生成 Secret 和本地管理员状态也必须与数据保持同一恢复点。
 
-`core` 导出的 `HOST_HAS_IPV6` 决定是否真的启用 AAAA。宿主没有全局 IPv6 时会自动
-降级为只更新 A，并把结果记在 `DDNS_GO_IPV6_AVAILABLE` 里，避免静默。
+```bash
+anas plan -c /srv/anas/config.yml
+anas config list ddns_go -w /srv/anas
+anas status -w /srv/anas
+```
 
-### Web 界面
+## 当前限制
 
-host 网络的容器 Traefik 的 Docker provider 看不见，所以路由用
-[声明式路由契约](../traefik/README.md)注册。该路由不挂 IAM 或 ForwardAuth 中间件；
-通过域名和通过宿主端口直连，都由 ddns-go 自带登录保护。
+本地账号是域名入口和 host 端口直连入口的实际安全边界。
 
-登录使用 ANAS 管理的 Module 私有账号。默认用户名是 `admin_ddns_go`，密码随机生成且
-不与任何其他服务共享；用 `anas admin local credential ddns_go` 查询。ddns-go 的
-登录无法关闭（详见能力设计文档 §6.1），所以不能把账号留空，否则首个访问者会在
-初始化窗口内选定账号。由于 host 网络监听端口也可被直接访问，这个本地账号是实际
-安全边界，不是备用凭据。
+## 技术文档
 
-### 配置合并
-
-`.ddns_go_config.yaml` 有两个作者：ANAS 和 Web 界面。容器启动时由
-`anas-ddns-go-reconcile` 合并，ANAS 拥有的条目名为 `anas-managed:<id>`：
-
-- 同名条目整条替换
-- 记录目标完全相同的手工条目被**接管**，不会重复添加
-- 记录目标部分重叠时**报错**，不猜谁该拥有
-- 其他条目、webhook、语言、以及本程序不认识的字段**原样保留**
-
-所以可以放心在界面上加自己的记录，重新部署不会被删。
+密码存储、环境作用域、Hook、网络、Resource 和测试细节见[技术文档](docs/technical.md)。
 
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language

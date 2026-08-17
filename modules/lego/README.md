@@ -1,74 +1,109 @@
-Lego
-=====
+# Lego ACME certificates
 
-通过 ACME DNS-01 挑战申请并续期通配符证书，供 Traefik 和所有需要 TLS 的服务使用。
-虚拟域名下改为签发内部 CA 证书。
+通过 ACME DNS-01 或内部 CA 生成和续期证书。
 
-配置
-----------------
+## 快速信息
 
-### 依赖的模块
-无
+| 项目 | 值 |
+| --- | --- |
+| Module | `lego` |
+| 版本 / revision | `5.3.1-r2` |
+| 状态 | `release` |
+| 类别 | `certificate` |
+| 运行时 | `compose` |
 
-### DNS 厂商
+## 依赖的 Module、Capability 与 Contract
 
-DNS 厂商**按引擎选择**，不是部署级设置——证书和动态 DNS 经常不在同一家：
+| 依赖 | 类型 | 接口/版本 |
+| --- | --- | --- |
+| — | — | — |
+
+## 最简配置
 
 ```yaml
-services:
+modules:
+  lego: {}
+```
+
+## 身份、用户与 Group
+
+没有人员用户、目录同步或 IAM 登录。DNS API 凭据是机器 Secret。
+
+| 能力 | 当前声明 |
+| --- | --- |
+| Directory / LDAPS | 不支持/不适用 |
+| IAM | 不支持/不适用 |
+| Group | 未声明 |
+| 目录密码回写 | 不支持/不适用 |
+
+当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
+
+## 管理员登录与 IAM 故障恢复
+
+没有 Web 管理入口或私有管理员账号。
+
+本 Module 没有声明由 `anas admin local` 管理的账号；`credential` 和 `rotate` 对它不可用。
+
+## 数据库支持
+
+本 Module 不消费或提供关系数据库 Contract。
+
+## 所有可用配置参数
+
+以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
+
+| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `lego.dns_provider` | string | `—` | `LEGO_DNS_PROVIDER` | 否 | 否 | 是 | `reconcile` | DNS 厂商 |
+| `lego.dns_server` | string | `223.5.5.5` | `LEGO_DNS_SERVER` | 否 | 否 | 是 | `container_recreate` | DNS 校验服务器 |
+
+### 查询和修改
+
+```bash
+anas config list lego -w /srv/anas
+anas config explain lego.dns_provider
+anas config set lego.dns_provider VALUE -w /srv/anas
+anas config plan -w /srv/anas
+```
+
+`editable=false` 的参数不能用普通 `config set` 完成；表中的专用流程名称是生命周期声明，不保证存在同名通用子命令。原始 `env.<KEY>` 仅是兼容逃生口，不能用来轮换应用内部密码。
+
+## DNS 厂商与凭据作用域
+
+DNS 厂商按引擎选择；证书和动态 DNS 可以使用不同厂商。真实域名需要 ACME DNS-01，虚拟域名使用内部 CA 时不要求 `dns_provider`：
+
+```yaml
+modules:
   lego:
-    env:
+    config:
       dns_provider: tencentcloud
 
 secrets:
-  tencentcloud_secret_id: ...
-  tencentcloud_secret_key: ...
+  tencentcloud_secret_id: replace-me
+  tencentcloud_secret_key: replace-me
 ```
 
-`dns_provider` **不是无条件必填**：它只服务于 ACME DNS-01 挑战，而
-`global.virtual_domain: true` 的部署根本不会发起挑战。所以只有在真的要申请证书时
-才要求它，错误信息会同时给出两条出路。
+支持厂商和凭据键以 `hook/dns_registry_gen.go` 与 `internal/dns/providers.yml` 为准。共享厂商凭据可以供多个引擎使用；`lego_<vendor>_*` 形式只授予 lego。`anas plan` 会报告各引擎选择及凭据能否共享。lego v5 不再支持旧 `dnspod` provider，应使用 `tencentcloud`；旧 DNSPod token 不能转换为腾讯云 API 密钥。
 
-支持的厂商与各自需要的凭据见
-`modules/lego/hook/dns_registry_gen.go`，由
-[`internal/dns/providers.yml`](../../../internal/dns/providers.yml) 生成。
+Runner 在 lego 私有作用域中保存带前缀的凭据；仅证书工作进程在执行时把它翻译为上游变量。其他 Module 不会因依赖关系自动获得 DNS API Secret。
 
-凭据可以按厂商命名（所有用该厂商的引擎共享），也可以加 module 前缀独占：
+## 存储、备份与验证
 
-```yaml
-secrets:
-  tencentcloud_secret_id: ...        # lego 和 ddns_go 共用
-  lego_namecheap_api_key: ...        # 只有 lego 能读到
+持久数据应随 workspace 的 snapshot/backup 一起保护。数据库 Consumer 还必须备份所绑定的数据库 Resource；生成 Secret 和本地管理员状态也必须与数据保持同一恢复点。
+
+```bash
+anas plan -c /srv/anas/config.yml
+anas config list lego -w /srv/anas
+anas status -w /srv/anas
 ```
 
-`anas plan` 会报告解析结果和两个引擎能否共用同一份凭据：
+## 当前限制
 
-```text
-dns platforms:
-  ddns_go -> tencentcloud
-  lego -> tencentcloud
-  ddns_go/lego credentials: shared
-```
+不要用环境变量手工复制 DNS Secret；应使用结构化 `secrets` 配置和 Module 作用域。
 
-详见[动态 DNS 能力设计](../../../docs/design/dynamic-dns-capability-design.md)。
+## 技术文档
 
-> **`dnspod` 已不可用于 lego。** lego v5 删除了该 provider，官方替代是
-> `tencentcloud`（`TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY`）。旧版
-> DNSPod token 和腾讯云 API 密钥是两种不同的凭据对象，不能互相转换，所以 ANAS
-> 也不做自动迁移。
-
-### 其他参数
-
-| 参数 | 默认 | 说明 |
-|---|---|---|
-| `dns_server` | `223.5.5.5` | DNS-01 挑战校验用的解析器 |
-| `email` | 取 `core` 的 `email` | 提交给 CA，用于续期提醒 |
-
-### 凭据如何到达容器
-
-凭据在 ANAS 里带 module 前缀存放（`LEGO_TENCENTCLOUD_SECRET_ID`），这样同一厂商下
-另一个引擎用不同账号时互不可见。lego 本身读的是无前缀的厂商变量名，翻译发生在
-`cert.sh` 里——容器内唯一需要它们的进程，`.env` 中始终只有带前缀的名字。
+密码存储、环境作用域、Hook、网络、Resource 和测试细节见[技术文档](docs/technical.md)。
 
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language

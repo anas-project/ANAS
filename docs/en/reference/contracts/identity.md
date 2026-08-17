@@ -16,6 +16,8 @@ This Contract describes OIDC/SAML client-registration resources, but its current
 
 This page must remain `pending`, and modules must not depend on the Contract, until the Runner dispatches provider operations, at least one IAM provider implements them, and real login E2E passes. The existing IAM capability remains the current implementation.
 
+See the [technical implementation](./identity-technical.md) for secret boundaries, expanded schemas, and documentation generation.
+
 <!-- generated:contract-reference:start -->
 ## Generated contract reference
 

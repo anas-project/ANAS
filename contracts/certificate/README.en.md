@@ -13,6 +13,8 @@ A Contract becomes worthwhile when interchangeable providers exist, independent 
 - Private keys may exist only in protected Secret/certificate storage, never in deployment manifests or CLI JSON.
 - Before `renew` or `revoke` becomes an implementation requirement, an ADR must define provider selection, trust distribution, rollback, and consumer reload behavior.
 
+See the [technical implementation](docs/technical.en.md) for private-key boundaries, expanded schemas, and documentation generation.
+
 <!-- generated:contract-reference:start -->
 ## Generated contract reference
 

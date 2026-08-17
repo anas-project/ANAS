@@ -14,6 +14,8 @@
 
 在 Runner 支持 provider operation、至少一个 IAM provider 实现并通过真实登录 E2E 前，本文档和生成页面必须保持 `pending`，Module 也不得声明依赖本 Contract。现有 IAM capability 继续作为当前实现。
 
+Secret 边界、Schema 展开和文档生成流程见[技术实现](docs/technical.md)。
+
 <!-- generated:contract-reference:start -->
 ## 生成的 Contract 参考
 
