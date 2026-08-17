@@ -47,6 +47,10 @@ actionable guidance and keeps raw directory diagnostics in administrator logs.
 See [Module IAM / OIDC 支持清单](../../docs/reference/module-iam-support.md#samba-目录密码接入规范)
 for the provider contract.
 
+服务器 E2E `test-env/scripts/server-llng-password-policy-e2e.sh` 使用临时 Samba 用户覆盖
+长度、确认、复杂度、成功写回、历史拒绝、旧/新凭据和首次登录强制改密，并在退出时
+恢复临时修改的域策略。
+
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language
 
