@@ -15,6 +15,7 @@ esac
 docker_cmd=${DOCKER_CMD:-docker}
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_anchor_}
 dc=${ANAS_TEST_SAMBA_DC_CONTAINER:-${prefix}samba_dc}
+anchor_timeout=${ANAS_TEST_ANCHOR_TIMEOUT:-420}
 policy_suffix=${ANAS_TEST_PASSWORD_POLICY_SUFFIX:-$(date +%H%M%S)}
 policy_user=${ANAS_TEST_PASSWORD_POLICY_USER:-ipp${policy_suffix}}
 policy_display_name="Password Policy E2E ${policy_suffix}"
@@ -74,8 +75,6 @@ load_password_policy() {
   initial_password=$(strong_password initial)
   changed_password=$(strong_password changed)
   final_password=$(strong_password final)
-  forced_password=$(strong_password forced)
-  forced_final_password=$(strong_password forced-final)
   too_short_password=$(short_password)
   complexity_password=$(weak_password)
 }
@@ -87,11 +86,41 @@ create_password_policy_user() {
   dc_exec samba-tool user rename "$policy_user" --display-name="$policy_display_name" >/dev/null
 }
 
+wait_password_policy_identity_anchor() {
+  local deadline anchor_value
+  deadline=$(( $(date +%s) + anchor_timeout ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    anchor_value=$(dc_exec samba-tool user show "$policy_user" \
+      --attributes=anasIdentityAnchor 2>/dev/null \
+      | sed -n 's/^anasIdentityAnchor: //p')
+    if [ -n "$anchor_value" ]; then
+      return 0
+    fi
+    sleep 2
+  done
+  printf 'identity anchor was not written for password-policy user %s\n' "$policy_user" >&2
+  return 1
+}
+
 allow_rapid_password_changes() {
   # The normal test profile deliberately has a non-zero minimum age. Temporarily
-  # turn it off so one disposable user can exercise success and history paths in
-  # a single run; cleanup restores the exact deployed value.
+  # turn it off so one disposable user can exercise multiple successful writes
+  # in a single run; cleanup restores the exact deployed value.
   dc_exec samba-tool domain passwordsettings set --min-pwd-age=0 >/dev/null
+}
+
+password_last_set() {
+  dc_exec samba-tool user show "$policy_user" --attributes=pwdLastSet \
+    | sed -n 's/^pwdLastSet: //p'
+}
+
+assert_password_version_changed() {
+  local before=$1 after
+  after=$(password_last_set)
+  if [ -z "$before" ] || [ -z "$after" ] || [ "$before" = "$after" ]; then
+    printf 'Samba pwdLastSet did not change for password-policy user %s\n' "$policy_user" >&2
+    return 1
+  fi
 }
 
 cleanup_password_policy_fixture() {

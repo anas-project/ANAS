@@ -38,7 +38,7 @@ entries:
       field_key: anas_password_policy_guidance
       type: alert_info
       required: false
-      label: ""
+      label: Password requirements
       placeholder: !Env AUTHENTIK_PASSWORD_POLICY_GUIDANCE
       initial_value: !Env AUTHENTIK_PASSWORD_POLICY_GUIDANCE
 

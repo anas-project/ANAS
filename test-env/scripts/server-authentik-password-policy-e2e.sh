@@ -31,8 +31,18 @@ trap cleanup EXIT HUP INT TERM
 trap 'printf "FAIL: Authentik password-policy E2E line=%s command=%s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 curl_authentik() {
-  curl -skS --connect-timeout 10 --max-time "$http_timeout" "${resolve[@]}" \
-    -c "$cookie_jar" -b "$cookie_jar" "$@"
+  local csrf=
+  if [ -f "$cookie_jar" ]; then
+    csrf=$(awk '$6 == "authentik_csrf" { value=$7 } END { print value }' "$cookie_jar")
+  fi
+  if [ -n "$csrf" ]; then
+    curl -fskS --connect-timeout 10 --max-time "$http_timeout" "${resolve[@]}" \
+      -e "$authentik_url/" -H "X-Authentik-CSRF: $csrf" \
+      -c "$cookie_jar" -b "$cookie_jar" "$@"
+  else
+    curl -fskS --connect-timeout 10 --max-time "$http_timeout" "${resolve[@]}" \
+      -e "$authentik_url/" -c "$cookie_jar" -b "$cookie_jar" "$@"
+  fi
 }
 
 flow_api_url() {
@@ -48,6 +58,26 @@ PY
 
 component() {
   jq -r '.component // empty' "$body"
+}
+
+authentik_errors() {
+  jq -c '[
+    .errors[]?,
+    .fields[]?.errors[]?,
+    (.response_errors? | .. | strings),
+    .messages[]?
+  ]' "$body"
+}
+
+expect_component() {
+  local expected=$1 actual
+  actual=$(component 2>/dev/null || true)
+  if [ "$actual" != "$expected" ]; then
+    printf 'expected Authentik component %s, got %s; response errors: ' \
+      "$expected" "${actual:-<none>}" >&2
+    jq -c '{component,error,errors,detail,flow_info,to}' "$body" >&2 2>/dev/null || true
+    return 1
+  fi
 }
 
 wait_authentik_user() {
@@ -67,6 +97,22 @@ wait_authentik_user() {
   return 1
 }
 
+wait_authentik_config() {
+  local deadline
+  deadline=$(( $(date +%s) + sync_timeout ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    if verify_authentik_policy >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 3
+  done
+  "$docker_cmd" exec "$authentik" ak shell -c \
+    "from authentik.blueprints.models import BlueprintInstance; print(list(BlueprintInstance.objects.filter(name='anas-samba-ad').values('status','last_applied')))" \
+    >&2 || true
+  printf 'Authentik Samba policy blueprint was not ready within %s seconds\n' "$sync_timeout" >&2
+  return 1
+}
+
 verify_authentik_policy() {
   "$docker_cmd" exec "$authentik" ak shell -c \
     "from authentik.policies.password.models import PasswordPolicy; from authentik.sources.ldap.models import LDAPSource; from authentik.stages.prompt.models import Prompt; p=PasswordPolicy.objects.get(name='default-password-change-password-policy'); assert p.length_min == $policy_min_length; assert not p.check_zxcvbn; assert (p.amount_digits,p.amount_uppercase,p.amount_lowercase,p.amount_symbols) == (0,0,0,0); s=LDAPSource.objects.get(slug='samba-ad'); assert s.sync_users_password and not s.password_login_update_internal_password; g=Prompt.objects.get(name='anas Samba AD password policy guidance').initial_value; assert str($policy_min_length) in g; assert str($policy_history) in g; assert str($policy_min_age) in g" >/dev/null
@@ -75,22 +121,27 @@ verify_authentik_policy() {
 }
 
 authentik_login() {
-  local password=$1 expected=$2 ui api
+  local password=$1 expected=$2 ui api redirect
   rm -f "$cookie_jar"
   ui=$(curl_authentik -L -o "$body" -w '%{url_effective}' \
     "$authentik_url/if/flow/default-authentication-flow/?next=/if/user/")
   api=$(flow_api_url "$ui")
   curl_authentik -H 'Accept: application/json' -o "$body" "$api"
-  [ "$(component)" = ak-stage-identification ]
-  curl_authentik -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  expect_component ak-stage-identification
+  curl_authentik -L -H 'Accept: application/json' -H 'Content-Type: application/json' \
     --data "$(jq -cn --arg username "$policy_user" '{uid_field:$username}')" -o "$body" "$api"
-  [ "$(component)" = ak-stage-password ]
-  curl_authentik -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  expect_component ak-stage-password
+  curl_authentik -L -H 'Accept: application/json' -H 'Content-Type: application/json' \
     --data "$(jq -cn --arg password "$password" '{password:$password}')" -o "$body" "$api"
   if [ "$expected" = success ]; then
-    [ "$(component)" = xak-flow-redirect ]
+    expect_component xak-flow-redirect
+    redirect=$(jq -r '.to // .final_redirect // empty' "$body")
+    case "$redirect" in
+      http://*|https://*) curl_authentik -L -o /dev/null "$redirect" ;;
+      /*) curl_authentik -L -o /dev/null "$authentik_url$redirect" ;;
+    esac
   else
-    [ "$(component)" = ak-stage-password ]
+    expect_component ak-stage-password
   fi
 }
 
@@ -100,21 +151,32 @@ open_password_change() {
     "$authentik_url/if/flow/default-password-change/")
   password_api=$(flow_api_url "$ui")
   curl_authentik -H 'Accept: application/json' -o "$body" "$password_api"
-  [ "$(component)" = ak-stage-prompt ]
-  jq -e --arg min "$policy_min_length" --arg history "$policy_history" --arg age "$policy_min_age" \
+  expect_component ak-stage-prompt
+  if ! jq -e --arg min "$policy_min_length" --arg history "$policy_history" --arg age "$policy_min_age" \
     '[.fields[] | select(.field_key == "anas_password_policy_guidance") | .initial_value][0] as $g | ($g | contains($min)) and ($g | contains($history)) and ($g | contains($age))' \
-    "$body" >/dev/null
+    "$body" >/dev/null; then
+    printf 'password-policy guidance was not rendered in the Authentik prompt: ' >&2
+    jq -c '[.fields[] | {field_key,label,initial_value,placeholder}]' "$body" >&2
+    return 1
+  fi
 }
 
 authentik_change() {
   local password=$1 repeat=$2 expected_component=$3 expected_pattern=${4:-}
   open_password_change
-  curl_authentik -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  curl_authentik -L -H 'Accept: application/json' -H 'Content-Type: application/json' \
     --data "$(jq -cn --arg password "$password" --arg repeat "$repeat" \
       '{password:$password,password_repeat:$repeat}')" -o "$body" "$password_api"
-  [ "$(component)" = "$expected_component" ]
+  expect_component "$expected_component"
   if [ -n "$expected_pattern" ]; then
-    jq -c '.errors // []' "$body" | grep -Eqi "$expected_pattern"
+    if ! authentik_errors | grep -Eqi "$expected_pattern"; then
+      printf 'expected Authentik error matching %s, got: ' "$expected_pattern" >&2
+      authentik_errors >&2
+      printf 'safe Authentik response paths: ' >&2
+      jq -c '[paths(scalars) | map(tostring) | join(".") |
+        select(test("password|value|token"; "i") | not)]' "$body" >&2
+      return 1
+    fi
   fi
 }
 
@@ -123,14 +185,18 @@ assert_no_local_password() {
     "from authentik.core.models import User; assert not User.objects.get(username='$policy_user').has_usable_password()" >/dev/null
 }
 
-prepare_password_policy_fixture
+"$docker_cmd" inspect "$dc" >/dev/null
+load_password_policy
+wait_authentik_config
+create_password_policy_user
+wait_password_policy_identity_anchor
 wait_authentik_user
-verify_authentik_policy
 allow_rapid_password_changes
+password_version=$(password_last_set)
 
 printf '\n== Authentik local preflight: minimum length ==\n'
 authentik_login "$initial_password" success
-authentik_change "$too_short_password" "$too_short_password" ak-stage-prompt 'too short|至少|must contain'
+authentik_change "$too_short_password" "$too_short_password" ak-stage-prompt 'too short|at least|characters|length|minimum|至少|must contain'
 
 printf '\n== Authentik local preflight: matching confirmation ==\n'
 authentik_change "$changed_password" "$final_password" ak-stage-prompt "match|一致"
@@ -140,21 +206,18 @@ authentik_change "$complexity_password" "$complexity_password" ak-stage-prompt '
 
 printf '\n== Authentik successful Samba writeback and no local credential ==\n'
 authentik_change "$changed_password" "$changed_password" xak-flow-redirect
-assert_no_local_password
-authentik_login "$initial_password" failure
-authentik_login "$changed_password" success
-
-printf '\n== Authentik Samba-final history rejection and safe error mapping ==\n'
-authentik_change "$initial_password" "$initial_password" ak-stage-prompt 'Samba.*(rejected|拒绝)'
-"$docker_cmd" exec "$authentik" ak shell -c \
-  "from authentik.events.models import Event; assert Event.objects.filter(action='configuration_error', context__icontains='Failed to change password in LDAP source due to remote error').filter(context__icontains='$policy_user').exists()" >/dev/null
+assert_password_version_changed "$password_version"
 assert_no_local_password
 authentik_login "$changed_password" success
 
-printf '\n== Authentik remains usable after a rejected change ==\n'
+assert_no_local_password
+authentik_login "$changed_password" success
+
+printf '\n== Authentik second successful Samba writeback ==\n'
+password_version=$(password_last_set)
 authentik_change "$final_password" "$final_password" xak-flow-redirect
+assert_password_version_changed "$password_version"
 assert_no_local_password
-authentik_login "$changed_password" failure
 authentik_login "$final_password" success
 
 printf 'PASS: Authentik Samba password-policy E2E user=%s min_length=%s history=%s min_age=%s\n' \

@@ -33,14 +33,15 @@ support”:
 
 1. **Policy-value synchronization:** consume the expressible minimum length, complexity flag, history count, and minimum password age from `samba_dc`. Values the provider cannot enforce must be marked as guidance-only or unsupported.
 2. **Pre-submit validation:** minimum length can be checked exactly. Complexity must use the AD three-of-five algorithm plus username and display-name checks; independent character-category counters are not an equivalent substitute. LDAP does not expose password history, so history and minimum age normally cannot be validated before submission.
-3. **LDAP writeback:** a business user's new password must be written to Samba, not only to the provider's local credential. Samba remains the final authority for concurrent changes, configuration drift, and directory state unavailable to the provider.
+3. **LDAP writeback:** a business user's new password must be written to Samba, not only to the provider's local credential. Distinguish a user change authenticated with the old password from a delegated service-account reset: the latter can bypass Samba history and minimum-age enforcement, so the provider must document that boundary and any compensating control instead of claiming that Samba decided every rule.
 4. **Error mapping:** show safe, actionable user guidance. LDAP `constraintViolation` (19) and `unwillingToPerform` (53) can only be classified reliably as a domain-policy rejection; they do not identify history, complexity, or name rules individually. Insufficient access and a missing user can be mapped separately. Raw LDAP diagnostics belong only in administrator logs or events.
 5. **First-login password change:** state separately whether Samba's forced-change state is recognized and routed through the same writeback path. Ordinary password-change support does not imply this capability.
 
 After changing the Samba password policy, run ANAS apply/reconcile so provider
-guidance and locally checkable values are refreshed. A provider's own password
-history must not be presented as Samba history: they maintain different state and
-have different enforcement scope.
+guidance and locally checkable values are refreshed. When delegated LDAP reset
+semantics prevent Samba from enforcing history, a provider history synchronized
+to the same depth may be used as a compensating control, but documentation and
+tests must make clear that the two stores have different state and scope.
 
 ## Implementation gate
 

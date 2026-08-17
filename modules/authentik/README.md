@@ -35,9 +35,11 @@ anas admin local rotate authentik break_glass --prompt -w /srv/anas
 
 提交前，最小长度由 ANAS 策略精确检查；Authentik 的 AD 校验器从目录读取
 `pwdProperties`，按三类/五类规则检查复杂度，并检查 `sAMAccountName` 和显示名称。ANAS
-的固定版本派生镜像修复了上游用户名包含判断方向错误。历史密码和最小改密间隔无法从
-LDAP 预读，只在页面提示并由 Samba 最终裁决；Authentik Enterprise 的 Password
-Uniqueness 策略维护的是 Authentik 自己的历史，不能代替 Samba 历史。
+的固定版本派生镜像修复了上游用户名包含判断方向错误。Authentik 使用委派服务账号执行
+LDAP 密码重置；Samba 会执行长度、复杂度和姓名规则，但这种重置不会可靠执行用户改密的
+历史与最小间隔。Authentik Enterprise 的 Password Uniqueness 是另一份历史状态，且不能
+读取改由其他入口设置的 Samba 密码，因此 ANAS 不把它伪装成 Samba 历史。历史次数和最小
+改密间隔目前仅显示提示，不能声称已强制执行。
 
 写回失败时，LDAP 19/53 映射为包含长度、复杂度、姓名、历史和最小间隔的“域策略拒绝”
 说明，50 映射为服务账号权限不足，32 映射为目录用户不存在，其余错误使用目录暂不可用
@@ -47,14 +49,19 @@ Uniqueness 策略维护的是 Authentik 自己的历史，不能代替 Samba 历
 This behavior applies to Authentik's default password-change prompt and LDAP
 writeback path. Minimum length is checked locally; Authentik's AD validator reads
 `pwdProperties` and applies the three-of-five complexity and account/display-name
-checks. Samba alone enforces password history and minimum age. LDAP results 19/53
-receive broad policy guidance, while 50 and 32 map to insufficient access and a
-missing directory user; raw diagnostics remain in Authentik events.
+checks. Delegated LDAP reset semantics do not reliably enforce Samba history or
+minimum age. Authentik Enterprise Password Uniqueness is a separate history
+store and cannot see Samba passwords changed through other paths, so ANAS does
+not present it as Samba history. History and minimum age are guidance-only.
+LDAP results 19/53 receive broad policy guidance, while 50 and 32 map to
+insufficient access and a missing directory user; raw diagnostics remain in
+Authentik events.
 
 写回成功后，ANAS 会立即把同步目录用户的 Authentik 本地密码恢复为 unusable，避免 Samba
 密码之外再保留一份可登录的本地哈希；固定的 `akadmin` 恢复账号不受影响。服务器 E2E
-`test-env/scripts/server-authentik-password-policy-e2e.sh` 会同时验证此不变量、旧/新 Samba
-凭据、历史拒绝和管理员事件。
+`test-env/scripts/server-authentik-password-policy-e2e.sh` 会同时验证此不变量、Samba
+`pwdLastSet` 变化、新密码认证和安全错误映射；历史次数和最小间隔只验证提示状态。测试
+不要求旧密码立即失效，因为 Samba 可以按配置在旧密码宽限期内继续接受它。
 
 Forced first-login password change is a separate capability and is not claimed by
 this implementation merely because ordinary writeback works. Guidance language

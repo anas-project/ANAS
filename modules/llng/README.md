@@ -25,31 +25,34 @@ store, direct route, and verified rollback path, so this module does not claim a
 
 LLNG 的用户改密直接写回 Samba AD。ANAS 将 Samba 的最小长度、复杂度开关和密码历史
 次数写入 LLNG 配置或中文规则提示；修改这些 Samba 设置后，需要重新执行 ANAS
-apply/reconcile 才会刷新 LLNG。当前 LLNG 集成**没有**消费最小改密间隔，因此只会在
-Samba 拒绝后通过通用说明提示用户稍后再试。
+apply/reconcile 才会刷新 LLNG。当前 LDAP 写回使用委派服务账号重置语义；Samba 会执行
+长度、复杂度和姓名规则，但不会可靠执行用户改密的历史与最小间隔。因此这两项目前仅作
+提示，不能声称已强制执行。
 
-LLNG 能在提交前精确检查最小长度和两次输入是否一致。复杂度、用户名/姓名以及历史
-密码仍由 Samba 最终裁决。Samba 的 LDAP 返回码通常只把策略拒绝归为 19 或 53，LLNG
+LLNG 能在提交前精确检查最小长度和两次输入是否一致。复杂度与用户名/姓名规则仍由
+Samba 最终裁决。Samba 的 LDAP 返回码通常只把策略拒绝归为 19 或 53，LLNG
 不能可靠区分具体违反的是复杂度、姓名、历史还是最小间隔；中文页面因此显示包含全部
 相关规则的可操作说明，而不会伪造一个精确原因。原始目录诊断保留给管理员日志。
 
 LLNG password changes are written directly to Samba AD. ANAS synchronizes the
 minimum length, complexity flag, and history count into LLNG configuration or its
 Chinese guidance; run ANAS apply/reconcile after changing these Samba settings.
-The current LLNG integration does not consume the minimum password age, so a
-Samba rejection can only produce guidance to retry later.
+The delegated LDAP reset reliably enforces Samba length, complexity, and name
+rules, but not user-change history or minimum age; those two are guidance-only.
 
 LLNG can preflight the minimum length and matching confirmation exactly. Samba
-remains authoritative for complexity, username/display-name content, history,
-and minimum age. LDAP result codes normally collapse policy rejection into 19 or
-53, so LLNG cannot safely name one exact failed rule; it displays comprehensive
-actionable guidance and keeps raw directory diagnostics in administrator logs.
+remains authoritative for complexity and username/display-name content. LDAP
+result codes normally collapse policy rejection into 19 or 53, so LLNG cannot
+safely name one exact failed rule; it displays comprehensive actionable guidance
+and keeps raw directory diagnostics in administrator logs.
 See [Module IAM / OIDC 支持清单](../../docs/reference/module-iam-support.md#samba-目录密码接入规范)
 for the provider contract.
 
 服务器 E2E `test-env/scripts/server-llng-password-policy-e2e.sh` 使用临时 Samba 用户覆盖
-长度、确认、复杂度、成功写回、历史拒绝、旧/新凭据和首次登录强制改密，并在退出时
-恢复临时修改的域策略。
+长度、确认、复杂度和成功写回（`pwdLastSet` 变化且新密码可认证）；历史次数与最小间隔
+只验证提示状态，并在退出时恢复临时修改的域策略。当前 LLNG 未把 Samba 的
+`pwdLastSet=0`/LDAP 773 状态路由到强制改密流程，因此不声明首次登录强制改密支持。
+测试不要求旧密码立即失效，因为 Samba 可以按配置在旧密码宽限期内继续接受它。
 
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language
