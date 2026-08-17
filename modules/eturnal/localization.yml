@@ -1,8 +1,8 @@
 api_version: anas.module-localization/v1
 module: eturnal
 module_version: 1.12.2
-module_revision: 1
-reviewed_at: 2026-08-13
+module_revision: 2
+reviewed_at: 2026-08-17
 timezone:
   status: container
   mechanism: The TURN service receives TZ for process and log timestamps.
