@@ -70,6 +70,8 @@ wait_authentik_user() {
 verify_authentik_policy() {
   "$docker_cmd" exec "$authentik" ak shell -c \
     "from authentik.policies.password.models import PasswordPolicy; from authentik.sources.ldap.models import LDAPSource; from authentik.stages.prompt.models import Prompt; p=PasswordPolicy.objects.get(name='default-password-change-password-policy'); assert p.length_min == $policy_min_length; assert not p.check_zxcvbn; assert (p.amount_digits,p.amount_uppercase,p.amount_lowercase,p.amount_symbols) == (0,0,0,0); s=LDAPSource.objects.get(slug='samba-ad'); assert s.sync_users_password and not s.password_login_update_internal_password; g=Prompt.objects.get(name='anas Samba AD password policy guidance').initial_value; assert str($policy_min_length) in g; assert str($policy_history) in g; assert str($policy_min_age) in g" >/dev/null
+  "$docker_cmd" exec "$authentik" ak shell -c \
+    "from types import SimpleNamespace; from authentik.sources.ldap.signals import _anas_password_writeback_message as message; values=[message(SimpleNamespace(result=result,message='sensitive diagnostic',description='private detail')) for result in (19,50,32,80)]; assert len(set(values)) == 4; assert all('sensitive diagnostic' not in value and 'private detail' not in value for value in values)" >/dev/null
 }
 
 authentik_login() {

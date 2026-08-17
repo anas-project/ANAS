@@ -55,6 +55,7 @@ llng_login() {
     [ "$result" = 0 ]
     grep -q 'lemonldap' "$cookie_jar"
   else
+    [ -n "$result" ]
     [ "$result" != 0 ]
   fi
 }
@@ -77,7 +78,8 @@ llng_forced_change() {
   curl_llng -o "$body" "$portal_url"
   curl_llng -L -o "$body" -H 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode "user=$policy_user" --data-urlencode "password=$forced_password" "$portal_url"
-  grep -Eq 'trmsg="25"|newpassword' "$body"
+  grep -Eq 'trmsg="25"' "$body"
+  grep -q 'name="newpassword"' "$body"
   grep -q 'passwordPolicyMinSize' "$body"
   form_query=$(python3 - "$body" <<'PY'
 import html.parser

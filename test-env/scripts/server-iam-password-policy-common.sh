@@ -53,6 +53,7 @@ load_password_policy() {
     false) expected_complexity=off ;;
     *) printf 'invalid SAMBA_DC_USER_COMPLEX_PASS=%s\n' "$policy_complex" >&2; return 1 ;;
   esac
+  [ "$policy_complex" = true ]
   [ "$policy_min_length" -ge 8 ]
   [ "$policy_history" -gt 0 ]
   settings=$(dc_exec samba-tool domain passwordsettings show)
