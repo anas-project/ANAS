@@ -10,8 +10,9 @@ ANAS 有两条发布链路：Core 二进制从专用 `anas-release` 分支按自
 稳定 `vMAJOR.MINOR.PATCH` tag 为版本真相源，自动发布默认递增 patch。版本计算由
 `scripts/ci/anas-release-version.sh` 完成并有独立 fixture 测试。
 
-自动发布只由 `anas-release` 分支触发：该分支上的 `cmd/anas/`、`internal/`、`go.mod`
-或 `go.sum` 发生 push 时运行。`master` push 和 Module/container 工作流均不会触发 Core
+自动发布只由 `anas-release` 分支触发：该分支上的 `cmd/anas/`、`internal/`、
+`install.sh`、`go.mod`、`go.sum` 或 Core 发布构建与安装测试脚本发生 push 时运行。`master`
+push 和 Module/container 工作流均不会触发 Core
 发布，因此 Core、Module 两条发布链路可以独立推进。
 每次任务固定使用触发事件中的 commit SHA；即使分支在排队期间继续前进，也不会构建错 commit。
 
@@ -45,13 +46,31 @@ gh workflow run anas-release.yml --ref anas-release -f version=0.2.0 -f bump=pat
 ```
 
 发布任务运行 `go test ./...`，分别交叉编译 Linux `amd64`、`arm64` 静态二进制，生成
-两个 `tar.gz` 和 `SHA256SUMS`，然后创建不可覆盖的 GitHub Release。
+两个 `tar.gz` 和 `SHA256SUMS`，然后创建不可覆盖的 GitHub Release。成功后调用
+`.github/workflows/anas-cnb-release.yml`：先确认 CNB 的同名 tag 指向相同 commit；新 tag
+直接触发 CNB 的可信 `tag_push`，历史 tag 补发则临时创建同名 branch 触发
+`branch.create`。CNB 流水线从 GitHub Release 下载并校验同一批附件，再用流水线临时令牌
+创建 CNB Release 和上传附件，不重新编译。GitHub 侧最后通过只读 OpenAPI 再次下载或核对
+SHA-256；不一致即失败。
+
+CNB 缺失或发布中断时，可以对已有 GitHub Release 做幂等补发：
+
+```bash
+gh workflow run anas-cnb-release.yml \
+  --ref anas-release \
+  -f tag=v0.1.0 \
+  -f commit=
+```
+
+`commit` 留空时从不可变 tag 解析；填写时还会校验 tag 必须指向该 commit。补发使用的临时
+CNB branch 只在校验成功后删除；仓库级 `cnb-sync.yml` 在整个 Core workflow 成功后继续
+补做完整 refs 镜像。
 
 发布包名称：
 
 ```text
-anas_0.1.0_linux_amd64.tar.gz
-anas_0.1.0_linux_arm64.tar.gz
+anas_linux_amd64.tar.gz
+anas_linux_arm64.tar.gz
 SHA256SUMS
 ```
 
@@ -62,8 +81,9 @@ anas version
 anas version --json
 ```
 
-Core release 不内嵌 Module。Module 有自己的版本、OCI digest 和更新节奏，安装器根据
-config/lock 获取；本地 `modules/` + `contracts/` 只保留为源码开发覆盖。
+Core release 不内嵌 Module。Module 有自己的版本、OCI digest 和更新节奏，安装器选择会
+写入用户级源偏好，新建或导入配置再把它固化到 config/lock；本地 `modules/` + `contracts/`
+只保留为源码开发覆盖。
 
 ## Module 与容器整体流程
 
@@ -256,7 +276,8 @@ global:
 - `master` 允许同一 App 做安全 fast-forward；
 - `GITHUB_TOKEN` 写 GitHub Release、GHCR container 和 Module artifact；
 - `CNB_REGISTRY_TOKEN` 写 CNB Registry；
-- `CNB_TOKEN` 同步成功分支与 tag 到 CNB Git 仓库。
+- GitHub Secret `CNB_TOKEN` 需要 CNB 仓库代码读写与 Release 只读权限，用于同步 ref 和
+  双端校验；可信 CNB 流水线自动获得临时的 `repo-release:rw`，负责创建 Release 和附件。
 
 工作流从不 force push。若分支规则不能给 GitHub Actions App bypass，应改用权限等价、范围
 受限的 GitHub App installation token，不能关闭保护规则。

@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+# These paths are inherited Docker VOLUME declarations. Compose supplies fresh
+# tmpfs mounts so they are explicit, non-persistent runtime state instead of
+# anonymous Docker volumes. LLNG's authoritative configuration is mounted
+# separately at /var/lib/lemonldap-ng/conf and sessions are stored in the DB.
+/usr/local/bin/anas-llng-restore-runtime
+
 for name in BASE_DOMAIN DB_HOST DB_PASSWORD DB_POST DB_USER LLNG_DB_NAME LLNG_DB_TYPE LLNG_DOMAIN LLNG_DOMAIN_FULL LLNG_LDAP_AUTH_FILTER LLNG_LDAP_MAIL_FILTER LLNG_MANAGER_DOMAIN LLNG_MANAGER_DOMAIN_FULL SAMBA_DC_ADMIN_GROUP_NAME SAMBA_DC_BASE_GROUPS_DN SAMBA_DC_BASE_GROUPS_ROLE_DN SAMBA_DC_BASE_USERS_DN SAMBA_DC_LDAPS_PORT SAMBA_DC_LDAPS_SERVER_URL SAMBA_DC_PASSWORD_BIND_DN SAMBA_DC_PASSWORD_BIND_PASSWORD SERVER_NAME TRAEFIK_DOMAIN_FULL; do
   if [ -z "${!name:-}" ]; then
     echo "missing required environment variable: $name" >&2

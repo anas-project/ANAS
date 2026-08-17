@@ -67,6 +67,9 @@ func resolveModuleSource(source, workspace string) (modulesource.Profile, string
 		}
 		source = cfg.ModuleSource
 	}
+	if strings.TrimSpace(source) == "" {
+		source = modulesource.InstalledDefaultName("")
+	}
 	profile, ok := lookupModuleSourceProfile(source)
 	if !ok {
 		return modulesource.Profile{}, resolvedWorkspace, usageErrorf("--source must be official, official-cn, or cn")
@@ -96,7 +99,7 @@ func bootstrapRemoteModuleView(configSource string, jsonMode bool) (modulestore.
 	if err := yaml.Unmarshal(body, &bootstrap); err != nil {
 		return modulestore.View{}, err
 	}
-	profile, ok := lookupModuleSourceProfile(bootstrap.ModuleSource)
+	profile, ok := lookupModuleSourceProfile(modulesource.InstalledDefaultName(bootstrap.ModuleSource))
 	if !ok {
 		return modulestore.View{}, fmt.Errorf("module_source must be official, official-cn, or cn")
 	}

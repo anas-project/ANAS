@@ -1,0 +1,153 @@
+name: Sync ANAS release to CNB
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Existing GitHub Release tag"
+        type: string
+        required: true
+      commit:
+        description: "Expected release commit"
+        type: string
+        required: false
+        default: ""
+    secrets:
+      CNB_TOKEN:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing GitHub Release tag to repair or backfill"
+        type: string
+        required: true
+        default: "v0.1.0"
+      commit:
+        description: "Optional expected commit SHA"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anas-cnb-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download and verify the immutable GitHub assets
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          EXPECTED_COMMIT: ${{ inputs.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if [[ ! "$TAG" =~ $semver ]]; then
+            echo "invalid ANAS release tag: $TAG" >&2
+            exit 1
+          fi
+
+          git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          commit="$(git rev-list -n1 "$TAG")"
+          if [[ -n "$EXPECTED_COMMIT" && "$EXPECTED_COMMIT" != "$commit" ]]; then
+            echo "$TAG identifies $commit, expected $EXPECTED_COMMIT" >&2
+            exit 1
+          fi
+
+          prerelease="$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)"
+          mkdir -p dist
+          gh release download "$TAG" \
+            --dir dist \
+            --pattern '*.tar.gz' \
+            --pattern SHA256SUMS
+          [[ -f dist/SHA256SUMS ]]
+          shopt -s nullglob
+          archives=(dist/*.tar.gz)
+          if (( ${#archives[@]} == 0 )); then
+            echo "$TAG has no tar.gz assets" >&2
+            exit 1
+          fi
+          (cd dist && sha256sum --check SHA256SUMS)
+
+          echo "commit=$commit" >>"$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >>"$GITHUB_OUTPUT"
+
+      - name: Mirror the immutable release tag to CNB
+        id: tag
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$CNB_TOKEN" ]]; then
+            echo "Repository secret CNB_TOKEN is required" >&2
+            exit 1
+          fi
+
+          printf 'machine cnb.cool\nlogin cnb\npassword %s\n' "$CNB_TOKEN" >"$HOME/.netrc"
+          chmod 600 "$HOME/.netrc"
+          git remote add cnb-release https://cnb.cool/anas.dev/ANAS.git
+          remote_commit="$(git ls-remote cnb-release "refs/tags/${TAG}" | awk '{print $1}')"
+          if [[ -n "$remote_commit" && "$remote_commit" != "$COMMIT" ]]; then
+            echo "CNB $TAG identifies $remote_commit, expected $COMMIT" >&2
+            exit 1
+          fi
+          new_tag=false
+          if [[ -z "$remote_commit" ]]; then
+            git push cnb-release "refs/tags/${TAG}:refs/tags/${TAG}"
+            new_tag=true
+          fi
+          echo "new=$new_tag" >>"$GITHUB_OUTPUT"
+
+      - name: Inspect the existing CNB Release
+        id: state
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(bash scripts/ci/sync-anas-release-to-cnb.sh "$TAG" dist probe)"
+          echo "state=$state" >>"$GITHUB_OUTPUT"
+
+      - name: Trigger a trusted CNB repair build for an existing tag
+        id: repair
+        if: steps.state.outputs.state != 'complete' && steps.tag.outputs.new != 'true'
+        env:
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing_branch="$(git ls-remote cnb-release "refs/heads/${TAG}" | awk '{print $1}')"
+          if [[ -n "$existing_branch" ]]; then
+            echo "temporary CNB repair branch $TAG already exists at $existing_branch" >&2
+            exit 1
+          fi
+          git push cnb-release "HEAD:refs/heads/${TAG}"
+          echo "created=true" >>"$GITHUB_OUTPUT"
+
+      - name: Wait for and verify the CNB Release attachments
+        if: steps.state.outputs.state != 'complete'
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: bash scripts/ci/sync-anas-release-to-cnb.sh "$TAG" dist wait
+
+      - name: Remove the temporary CNB repair branch
+        if: steps.repair.outputs.created == 'true'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: git push cnb-release --delete "refs/heads/${TAG}"

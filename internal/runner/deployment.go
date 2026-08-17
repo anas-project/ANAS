@@ -1130,6 +1130,7 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	var oldApp *app
 	var oldRoot string
 	var current *deploymentManifest
+	quiesced := false
 	if active.ActiveDeployment != "" {
 		oldApp, oldRoot, current, err = loadDeploymentApp(base, active.ActiveDeployment, cli)
 		if err != nil {
@@ -1169,7 +1170,8 @@ func activateDeployment(base, id string, opts activateOptions) error {
 			}
 		}
 		if !opts.rollback {
-			if err := snapshotBeforeApply(base, opts, oldApp, oldRoot, current, target); err != nil {
+			quiesced, err = snapshotBeforeApply(base, opts, oldApp, oldRoot, current, target)
+			if err != nil {
 				return err
 			}
 		}
@@ -1181,7 +1183,15 @@ func activateDeployment(base, id string, opts activateOptions) error {
 		return imageRebuildRequiredError([]string{"global.chinese_build_speedup"})
 	}
 
-	selection := activationStartModules(current, target, active.RuntimeStatus)
+	runtimeStatus := active.RuntimeStatus
+	if quiesced {
+		// snapshotBeforeApply stopped the whole current deployment to take a
+		// clean snapshot. Render digests still describe unchanged modules, but
+		// none of their containers are running anymore, so all targets must be
+		// restored rather than only the changed subset.
+		runtimeStatus = "stopped"
+	}
+	selection := activationStartModules(current, target, runtimeStatus)
 	if err := startDeployment(newApp, newRoot, selection, opts.json); err != nil {
 		_ = saveDeploymentFailure(base, id, err)
 		if oldApp != nil {
@@ -1244,11 +1254,11 @@ func activateDeployment(base, id string, opts activateOptions) error {
 // Every path that ends up not taking a snapshot asks first. Continuing quietly
 // would leave the operator believing they had a way back at the one moment they
 // do not.
-func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot string, current, target *deploymentManifest) error {
+func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot string, current, target *deploymentManifest) (bool, error) {
 	trigger := deploymentSnapshotTrigger(current, target)
 	if trigger == nil {
 		if !opts.snapshot {
-			return nil
+			return false, nil
 		}
 		trigger = &applySnapshotTrigger{reason: snapshotReasonPreApply, detail: "--snapshot was requested"}
 	}
@@ -1257,18 +1267,18 @@ func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot
 		emitWarning(opts.json, trigger.reason, "%s", trigger.detail)
 		emitWarning(opts.json, "no_snapshot_requested",
 			"--no-snapshot gives up the only way back to the current data")
-		return confirmDestructive("Apply without a data snapshot", opts.yes)
+		return false, confirmDestructive("Apply without a data snapshot", opts.yes)
 	}
 	if code, reason := snapshotUnavailable(workspace, target); code != "" {
 		emitWarning(opts.json, trigger.reason, "%s", trigger.detail)
 		emitWarning(opts.json, code,
 			"%s, so no snapshot can be taken and the current data cannot be recovered afterwards", reason)
-		return confirmDestructive("Apply anyway, with no way back to the current data", opts.yes)
+		return false, confirmDestructive("Apply anyway, with no way back to the current data", opts.yes)
 	}
 	// Quiescing first: a snapshot taken while services are mid-write captures a
 	// crash-consistent database rather than a clean one.
 	if err := oldApp.stopRelease(oldRoot, opts.json); err != nil {
-		return failuref("quiesce_failed", "quiesce active deployment before data snapshot: %v", err)
+		return false, failuref("quiesce_failed", "quiesce active deployment before data snapshot: %v", err)
 	}
 	// The snapshot is not recorded against this deployment. It stands on its
 	// own, carrying the artifact and config it belongs to, and is found by
@@ -1278,9 +1288,9 @@ func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot
 		from: current.ID, to: target.ID, json: opts.json,
 	}); err != nil {
 		_ = startDeployment(oldApp, oldRoot, oldApp.order, opts.json)
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 // snapshotUnavailable reports why this host cannot snapshot: an enumerated code

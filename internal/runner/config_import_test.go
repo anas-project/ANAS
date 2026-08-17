@@ -71,6 +71,26 @@ global:
 	}
 }
 
+func TestConfigImportUsesInstalledCNSourceWhenOmitted(t *testing.T) {
+	preference := filepath.Join(t.TempDir(), "source")
+	if err := os.WriteFile(preference, []byte("official-cn\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ANAS_SOURCE_CONFIG", preference)
+	source := filepath.Join(t.TempDir(), "external.yml")
+	if err := os.WriteFile(source, []byte("modules:\n  traefik: {}\nglobal:\n  timezone: UTC\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := normalizeImportedConfig(source, importTestRegistry(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(result.Normalized)
+	if !strings.Contains(body, "module_source: official-cn") || !strings.Contains(body, "chinese_speedup: true") {
+		t.Fatalf("installer source was not persisted during import:\n%s", body)
+	}
+}
+
 func TestConfigImportExtractsOnlyLifecycleManagedSecrets(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.MkdirAll(stateDir(workspace), 0700); err != nil {

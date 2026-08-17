@@ -11,30 +11,52 @@ ANAS 面向 Linux 主机，运行服务需要 Docker Engine 和 Docker Compose v
 - 为所有服务准备的持久存储；
 - 如果使用域名和 HTTPS，准备 DNS 控制权以及所需的 DNS API 凭据。
 
-## 安装 ANAS Core
+## 一行命令安装主程序
 
-Core 的预编译 Linux 二进制由 `anas-release` 分支发布到
-[GitHub Releases](https://github.com/anas-project/ANAS/releases)。选择固定版本和机器架构，
-校验后安装；以下以 `0.1.0` 为例：
+安装脚本目前只支持 Linux，并自动识别 `x86_64`/`amd64` 与 `aarch64`/`arm64`。脚本从
+Release 下载对应静态二进制，使用同一 Release 的 `SHA256SUMS` 校验后安装到
+`/usr/local/bin/anas`；仅当目标目录不可写时调用 `sudo`。
+
+从 GitHub 安装并把 GitHub/GHCR 设为后续默认源：
 
 ```bash
-version=0.1.0
-case "$(uname -m)" in
-  x86_64) arch=amd64 ;;
-  aarch64|arm64) arch=arm64 ;;
-  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
-esac
-
-curl -fLO "https://github.com/anas-project/ANAS/releases/download/v${version}/anas_${version}_linux_${arch}.tar.gz"
-curl -fLO "https://github.com/anas-project/ANAS/releases/download/v${version}/SHA256SUMS"
-sha256sum --check --ignore-missing SHA256SUMS
-tar -xzf "anas_${version}_linux_${arch}.tar.gz"
-sudo install -m 0755 "anas_${version}_linux_${arch}/anas" /usr/local/bin/anas
-anas version
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-project/ANAS/master/install.sh | sh
 ```
 
-Core release 只包含 `anas` 可执行文件。`module_source` 控制后续 Module bundle 的下载源，
-不会改变 Core 二进制的下载地址或版本。
+从 CN 源安装，并把 CNB 设为后续默认分发源：
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://cnb.cool/anas.dev/ANAS/-/git/raw/master/install.sh | sh -s -- --source cn
+```
+
+CNB Release 附件由 GitHub Release 原样同步并再次校验 SHA-256，不在 CNB 重新编译；安装器
+通过公开的 `/-/releases/latest` 跳转解析当前稳定 tag。
+
+安装器把选择写入 `${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`。选择 CNB 时保存
+`official-cn`；之后 `anas init` 创建的新配置，以及未显式声明 `module_source` 的
+`anas config import`，都会持久化：
+
+```yaml
+module_source: official-cn
+global:
+  chinese_speedup: true
+```
+
+因此 Module 从 CNB 获取，Compose 的 `ANAS_IMAGE_REGISTRY` 为
+`docker.cnb.cool/anas.dev/anas`，运行期下载也使用国内镜像。workspace 一旦初始化，源已写入
+自身的 `config.yml`，换机或修改安装器默认值不会静默改变现有部署。外部配置中显式写出的
+`module_source` 始终优先。
+
+无权使用 `/usr/local/bin` 或不希望调用 `sudo` 时，可以安装到用户目录（并确保该目录在
+`PATH` 中）：
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-project/ANAS/master/install.sh | sh -s -- --install-dir "$HOME/.local/bin"
+```
+
+安装脚本依赖 `curl`、`tar`、`install`，以及 `sha256sum` 或 `shasum`。可用
+`ANAS_INSTALL_SOURCE=github|cn`、`ANAS_INSTALL_DIR` 做非交互覆盖；程序侧可用
+`ANAS_DEFAULT_SOURCE=official|official-cn` 临时覆盖安装器默认值。
 
 ## 选择 Module 源
 

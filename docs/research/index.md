@@ -7,6 +7,9 @@
 | 文档 | 类型 | 状态 |
 | --- | --- | --- |
 | [开源自部署应用研究 Module 规范](./application-research-module-spec.md) | 可复用研究方法与字段规范 | 当前 v1.1 |
+| [开源自部署 S3 兼容文件与对象服务调研（2026-08-15）](./self-hosted-open-source-s3-compatible-storage-research-2026-08-15.md) | 竞品与 module/外部资源选型 | 当前 |
+| [开源自部署 Git 服务全景调研（2026-08-15）](./self-hosted-open-source-git-services-research-2026-08-15.md) | 竞品与 module 选型 | 当前 |
+| [Super Productivity 与同类开源自部署项目调研（2026-08-15）](./super-productivity-alternatives-research-2026-08-15.md) | 竞品与 module 选型 | 当前 |
 | [开源自部署笔记应用全景调研（2026-08-13）](./self-hosted-open-source-notes-research-2026-08-13.md) | 竞品与 module 选型 | 当前 |
 | [中国大陆镜像与 CNB 发行方案（2026-08-11）](./china-mainland-mirrors-and-cnb-distribution-2026-08-11.md) | 构建、镜像和国内发行 | 当前 |
 | [开源自部署 Kanban 应用全景调研（2026-08-10）](./self-hosted-open-source-kanban-research-2026-08-10.md) | 竞品与 module 选型 | 当前 |

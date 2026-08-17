@@ -8,13 +8,13 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | --- | --- | --- | --- | --- | --- | --- | ---: |
 | [authentik](#authentik) | 2026.5.6-r4 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [collabora](#collabora) | 26.4.2-r2 | container | supported | integration | not_consumed | not_consumed | 43 |
-| [ddns_go](#ddns_go) | 6.17.4-r2 | container | supported | application | not_consumed | not_consumed | 2 |
+| [ddns_go](#ddns_go) | 6.17.4-r3 | container | supported | application | not_consumed | not_consumed | 2 |
 | [ddns_updater](#ddns_updater) | 2.10.0-r1 | application | fixed | fixed | not_consumed | not_consumed | 1 |
-| [eturnal](#eturnal) | 1.12.2-r1 | container | not_applicable | none | not_applicable | not_applicable | 0 |
+| [eturnal](#eturnal) | 1.12.2-r2 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [freeradius](#freeradius) | 3.2.10-r1 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [lam](#lam) | 9.6.0-r5 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r2 | container | not_applicable | none | not_applicable | not_applicable | 0 |
-| [llng](#llng) | 2.23.2-r4 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [llng](#llng) | 2.23.2-r5 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [mariadb](#mariadb) | 12.3.2-r1 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [meshcentral](#meshcentral) | 1.2.4-r4 | container | supported | browser | not_consumed | not_consumed | 30 |
 | [netbird](#netbird) | 0.76.1-r2 | partial | fixed | fixed | not_consumed | not_consumed | 1 |
@@ -49,7 +49,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## ddns_go
 
-- **Version / 版本：** `6.17.4-r2`; reviewed 2026-08-13
+- **Version / 版本：** `6.17.4-r3`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — The service receives TZ through the module .env; upstream does not expose a separate timezone setting.
 - **Language / 语言：** `supported`, `application` — ddns-go Web UI and logs
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -70,7 +70,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## eturnal
 
-- **Version / 版本：** `1.12.2-r1`; reviewed 2026-08-13
+- **Version / 版本：** `1.12.2-r2`; reviewed 2026-08-17
 - **Timezone / 时区：** `container` — The TURN service receives TZ for process and log timestamps.
 - **Language / 语言：** `not_applicable`, `none` — TURN protocol service
 - **ANAS globals / 全局默认：** `default_language=not_applicable`; `default_locale=not_applicable`
@@ -111,7 +111,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## llng
 
-- **Version / 版本：** `2.23.2-r4`; reviewed 2026-08-15
+- **Version / 版本：** `2.23.2-r5`; reviewed 2026-08-17
 - **Timezone / 时区：** `container` — LLNG receives TZ through the module .env; no deployment-wide application timezone is forced.
 - **Language / 语言：** `supported`, `browser` — LemonLDAP::NG Portal and language selector
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
