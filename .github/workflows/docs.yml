@@ -2,8 +2,6 @@ name: Documentation
 
 on:
   pull_request:
-  push:
-    branches: [master]
   workflow_run:
     workflows: [Module and container artifacts, ANAS release]
     types: [completed]
