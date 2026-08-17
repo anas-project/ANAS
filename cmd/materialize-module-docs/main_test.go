@@ -72,3 +72,11 @@ func TestRewriteTechnicalLinksUsesImmutableRef(t *testing.T) {
 		t.Fatalf("rewritten link = %q", got)
 	}
 }
+
+func TestRewriteUserLinksMapsRepositoryDocsIntoSite(t *testing.T) {
+	got := rewriteUserLinks("[support](../../docs/reference/module-iam-support.md#password)")
+	want := "[support](/reference/module-iam-support.md#password)"
+	if got != want {
+		t.Fatalf("rewritten link = %q, want %q", got, want)
+	}
+}

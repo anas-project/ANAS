@@ -139,7 +139,7 @@ for the provider contract.
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2.23.2-r5`（reviewed 2026-08-17）
+- Module version / 版本：`2.23.2-r7`（reviewed 2026-08-17）
 - Timezone / 时区：`container` — LLNG receives TZ through the module .env; no deployment-wide application timezone is forced.
 - Language scope / 语言范围：LemonLDAP::NG Portal and language selector
 - Selection / 选择方式：`browser`

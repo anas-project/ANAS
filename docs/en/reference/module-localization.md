@@ -6,7 +6,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 | Module | Version | Timezone | Language | Selection | Global language | Global locale | Count |
 | --- | --- | --- | --- | --- | --- | --- | ---: |
-| [authentik](#authentik) | 2026.5.6-r4 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [authentik](#authentik) | 2026.5.6-r6 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [collabora](#collabora) | 26.4.2-r2 | container | supported | integration | not_consumed | not_consumed | 43 |
 | [ddns_go](#ddns_go) | 6.17.4-r3 | container | supported | application | not_consumed | not_consumed | 2 |
 | [ddns_updater](#ddns_updater) | 2.10.0-r1 | application | fixed | fixed | not_consumed | not_consumed | 1 |
@@ -14,11 +14,11 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [freeradius](#freeradius) | 3.2.10-r1 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [lam](#lam) | 9.6.0-r5 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r2 | container | not_applicable | none | not_applicable | not_applicable | 0 |
-| [llng](#llng) | 2.23.2-r5 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [llng](#llng) | 2.23.2-r7 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [mariadb](#mariadb) | 12.3.2-r1 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [meshcentral](#meshcentral) | 1.2.4-r4 | container | supported | browser | not_consumed | not_consumed | 30 |
 | [netbird](#netbird) | 0.76.1-r2 | partial | fixed | fixed | not_consumed | not_consumed | 1 |
-| [nextcloud](#nextcloud) | 34.0.2-r4 | partial | supported | browser | fallback | fallback | 58 |
+| [nextcloud](#nextcloud) | 34.0.2-r5 | partial | supported | browser | fallback | fallback | 58 |
 | [oauth2_proxy](#oauth2_proxy) | 7.15.3-r1 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [postgres](#postgres) | 18.4.0-r1 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [samba_dc](#samba_dc) | 4.23.6-r6 | system | not_applicable | none | not_applicable | not_applicable | 0 |
@@ -27,7 +27,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## authentik
 
-- **Version / 版本：** `2026.5.6-r4`; reviewed 2026-08-13
+- **Version / 版本：** `2026.5.6-r6`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — All long-running authentik services receive the module .env and TZ; no separate application timezone is forced.
 - **Language / 语言：** `supported`, `browser` — authentik Web UI
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -111,7 +111,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## llng
 
-- **Version / 版本：** `2.23.2-r5`; reviewed 2026-08-17
+- **Version / 版本：** `2.23.2-r7`; reviewed 2026-08-17
 - **Timezone / 时区：** `container` — LLNG receives TZ through the module .env; no deployment-wide application timezone is forced.
 - **Language / 语言：** `supported`, `browser` — LemonLDAP::NG Portal and language selector
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -154,7 +154,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## nextcloud
 
-- **Version / 版本：** `34.0.2-r4`; reviewed 2026-08-13
+- **Version / 版本：** `34.0.2-r5`; reviewed 2026-08-13
 - **Timezone / 时区：** `partial` — Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
 - **Language / 语言：** `supported`, `browser` — Nextcloud Web UI
 - **ANAS globals / 全局默认：** `default_language=fallback`; `default_locale=fallback`

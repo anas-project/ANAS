@@ -158,12 +158,13 @@ anas status -w /srv/anas
 ## 技术文档
 
 密码存储、环境作用域、Hook、网络、Resource 和测试细节见[技术文档](docs/technical.md)。
+
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2026.5.6-r4`（reviewed 2026-08-13）
+- Module version / 版本：`2026.5.6-r6`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — All long-running authentik services receive the module .env and TZ; no separate application timezone is forced.
 - Language scope / 语言范围：authentik Web UI
 - Selection / 选择方式：`browser`

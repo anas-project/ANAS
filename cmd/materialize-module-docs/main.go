@@ -519,7 +519,8 @@ func renderVersionNavigation(module, release string, versions []string, english,
 
 func rewriteUserLinks(source string) string {
 	source = strings.ReplaceAll(source, "](docs/technical.md)", "](./technical)")
-	return strings.ReplaceAll(source, "](docs/technical.en.md)", "](./technical)")
+	source = strings.ReplaceAll(source, "](docs/technical.en.md)", "](./technical)")
+	return strings.ReplaceAll(source, "](../../docs/", "](/")
 }
 
 func rewriteTechnicalLinks(source, module, ref string, english bool) string {
