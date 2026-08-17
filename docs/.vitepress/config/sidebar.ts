@@ -1,4 +1,5 @@
 import type { DefaultTheme } from 'vitepress'
+import { moduleSidebar } from './module-docs'
 
 export const zhSidebar: DefaultTheme.Sidebar = {
   '/getting-started/': [
@@ -59,6 +60,11 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'identity Contract', link: '/reference/contracts/identity' },
         { text: 'certificate Contract', link: '/reference/contracts/certificate' }
       ]
+    },
+    {
+      text: 'Module',
+      collapsed: true,
+      items: moduleSidebar(false)
     }
   ],
   '/developer/': [
@@ -100,6 +106,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: '索引', link: '/research/' },
         { text: 'samba-tool 用户与组管理', link: '/research/samba-tool-user-group-admin-guide-2026-08-17' },
+        { text: 'Web API 与管理前端规划', link: '/research/web-api-admin-console-plan-2026-08-16' },
         { text: '应用研究 Module 规范', link: '/research/application-research-module-spec' },
         { text: 'S3 兼容存储调研', link: '/research/self-hosted-open-source-s3-compatible-storage-research-2026-08-15' },
         { text: '自部署 Git 服务调研', link: '/research/self-hosted-open-source-git-services-research-2026-08-15' },
@@ -170,6 +177,11 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'identity Contract', link: '/en/reference/contracts/identity' },
         { text: 'certificate Contract', link: '/en/reference/contracts/certificate' }
       ]
+    },
+    {
+      text: 'Modules',
+      collapsed: true,
+      items: moduleSidebar(true)
     }
   ],
   '/en/developer/': [

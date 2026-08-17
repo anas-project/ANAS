@@ -3,7 +3,7 @@
 This standard defines Module documentation sources, required content, generation boundaries, VitePress mapping, bilingual output, and CI validation. “Must”, “must not”, and “should” are normative for new Modules, Module upgrades, and generator changes.
 
 > [!IMPORTANT]
-> The current `cmd/gen-module-docs` only updates the timezone/language block in the Chinese README and generates the two localization reference pages. It does not yet implement the four-source-file validation, per-Module VitePress mirrors, catalog, or navigation required below. This document defines the target standard; unavailable generated pages must not be described as current behavior.
+> `cmd/gen-module-docs` maintains the timezone/language block and localization summaries. `cmd/materialize-module-docs` creates per-Module pages, catalogs, navigation data, and bounded version history inside the disposable VitePress source tree. Generated pages are neither written back nor committed under the real `docs/` tree.
 
 ## 1. Source layout
 
@@ -29,7 +29,7 @@ modules/<name>/
 | `docs/technical.md` | Chinese maintainers | Implementation, security boundaries, Secrets, data flow, hooks, Compose, and tests |
 | `docs/technical.en.md` | English maintainers | English equivalent of the Chinese technical document |
 
-The Module directory is the sole documentation source of truth. Pages under `docs/reference/modules/` are generated mirrors and must never become an independent implementation source.
+The Module directory is the sole documentation source of truth. Per-Module VitePress pages exist only in the disposable build tree and final static output and never become an independent implementation source.
 
 ## 2. Evidence precedence
 
@@ -133,30 +133,32 @@ Content outside markers is reviewed prose. New blocks use a unique `generated:<s
 
 ## 7. VitePress output
 
-The completed generator must map sources as follows:
+The documentation build maps sources inside its disposable VitePress tree as follows:
 
 | Module source | Chinese site output | English site output |
 | --- | --- | --- |
-| `README.md` / `README.en.md` | `docs/reference/modules/<name>.md` | `docs/en/reference/modules/<name>.md` |
-| `docs/technical.md` / `docs/technical.en.md` | `docs/reference/modules/<name>-technical.md` | `docs/en/reference/modules/<name>-technical.md` |
+| `README.md` / `README.en.md` | `/reference/modules/<name>/` | `/en/reference/modules/<name>/` |
+| `docs/technical.md` / `docs/technical.en.md` | `/reference/modules/<name>/technical` | `/en/reference/modules/<name>/technical` |
 
-It must also generate or update the bilingual `modules.md` catalog, bilingual localization reference, and the Module sidebar group or its generated data.
+It also generates the bilingual Module catalogs plus a temporary `.vitepress/generated/module-docs.json` used by the sidebar and version links. The existing localization summaries remain checked by `gen-module-docs`.
 
 Every site mirror carries a generated-file warning. Rewrite README-to-technical links so both source and site layouts remain valid. Technical pages may be reached from the user page instead of being flattened into the sidebar.
 
-The catalog and sidebar names, status, category, version, and links must come from the same sorted manifest inventory, never another hand-maintained list.
+Catalog and sidebar names, status, category, version, and links come from the same sorted manifest inventory. There is no hand-maintained README path map, and the published set must match `.github/modules.json`.
+
+Historical pages come from immutable `module/<name>/<version>-r<revision>` tags. Selection keeps only the highest revision of each version and then the five newest semantic versions. The four bilingual user/technical bodies are normalized for newlines, trailing whitespace, and release-only labels and hashed together with SHA-256. Identical bodies retain only the newest page and record older releases as aliases. Legacy tags without all four source documents are never filled from newer files and do not produce historical bodies.
 
 ## 8. Generator behavior
 
-The complete `cmd/gen-module-docs` implementation must:
+The two Module documentation commands divide responsibility as follows:
 
 1. enumerate every directory containing `module.yml`;
 2. validate directory, manifest, localization, and document ownership;
-3. fail when any bilingual source document or `localization.yml` is missing;
+3. make `materialize-module-docs` fail when a current bilingual source document or `localization.yml` is missing;
 4. update only allowed generated blocks;
-5. generate all bilingual site pages, catalogs, and navigation data atomically;
+5. let `materialize-module-docs` generate all bilingual pages, catalogs, and navigation data atomically in the disposable tree;
 6. use deterministic ordering and formatting;
-7. make `--check` read-only and fail for missing sources, missing mirrors, or stale output;
+7. make `gen-module-docs --check` read-only and fail for stale source blocks or localization summaries;
 8. preserve all reviewed content outside markers.
 
 ```bash
@@ -165,7 +167,7 @@ go run ./cmd/gen-module-docs --check
 npm run docs:build
 ```
 
-`npm run docs:build` builds only `docs/`; it does not imply that the Module generator ran. Generate first, then run the check and site build.
+`npm run docs:build` copies `docs/` to a disposable directory, runs `materialize-module-docs`, and then invokes VitePress. It leaves no per-Module mirror in the worktree. `npm run docs:dev` uses the same materialization path.
 
 ## 9. Localization inventory
 
@@ -186,12 +188,12 @@ go run ./cmd/gen-module-docs --check
 npm run docs:build
 ```
 
-Behavior changes also run the relevant Module unit and integration/E2E tests. Commit source documents and generated mirrors together.
+Behavior changes also run the relevant Module unit and integration/E2E tests. Commit Module sources and the allowed localization summaries, not per-Module VitePress mirrors.
 
 - [ ] Every `module.yml` directory has four bilingual documents and `localization.yml`.
 - [ ] Both languages have the same structure, commands, defaults, support status, and risks.
 - [ ] Configuration tables cover every `anas config list <module> --json` parameter.
 - [ ] IAM, LDAPS, groups, administrators, databases, and unsupported cases are explicit.
 - [ ] No sensitive value appears in argv, logs, or ordinary environment-variable examples.
-- [ ] Generated blocks, mirrors, catalogs, links, and navigation are current.
+- [ ] Generated blocks, temporary pages, catalogs, links, and navigation are current.
 - [ ] Generator checks, relevant tests, and `npm run docs:build` pass.

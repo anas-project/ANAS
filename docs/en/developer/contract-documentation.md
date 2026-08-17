@@ -38,6 +38,8 @@ The directory name, `contract.yml` name, `documentation.yml` contract, and Modul
 
 Contracts use semantic versioning. Compatible field additions may retain the major version. Removing or renaming fields, tightening constraints, changing Resource identity, or changing operation semantics requires a new major version. Document compatibility, deprecation, and migration.
 
+Contracts do not have independent release tags or a separate documentation version axis. A published site reads Contract sources, schemas, and Module manifests from the selected ANAS `vMAJOR.MINOR.PATCH` tag, so Contract pages and Provider/Consumer matrices are released and archived with ANAS Core. A Module release must not advance Contract page content on its own.
+
 Resource identity must be stable, serializable, and able to distinguish multiple Resources for one Consumer. Do not treat a display name or mutable address as stable identity.
 
 ## 3. `documentation.yml`

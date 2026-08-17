@@ -32,7 +32,7 @@ export function selectDocumentationVersions(tags) {
     selected.push(version)
   }
 
-  return selected.map((version, index) => ({
+  return selected.slice(0, 5).map((version, index) => ({
     ...version,
     current: index === 0,
     path: index === 0 ? '/' : `/versions/${version.major}.x/`

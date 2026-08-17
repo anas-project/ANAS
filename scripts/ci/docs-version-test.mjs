@@ -38,6 +38,14 @@ assert.deepEqual(
 
 assert.deepEqual(selectDocumentationVersions([]), [])
 
+assert.deepEqual(
+  selectDocumentationVersions([
+    'v1.9.0', 'v2.8.0', 'v3.7.0', 'v4.6.0', 'v5.5.0', 'v6.4.0',
+    'v6.5.0', 'v7.0.0-rc.1'
+  ]).map(({ version }) => version),
+  ['v6.5.0', 'v5.5.0', 'v4.6.0', 'v3.7.0', 'v2.8.0']
+)
+
 assert.equal(
   allowHistoricalDeadLinks('export default defineConfig({\n  title: \'ANAS\'\n})'),
   'export default defineConfig({\n  ignoreDeadLinks: true,\n  title: \'ANAS\'\n})'

@@ -3,7 +3,7 @@
 本标准规定 Module 文档的源文件、必需内容、自动生成边界、VitePress 映射、双语要求和 CI 验证。关键词“必须”“不得”“应该”具有规范性；新建 Module、升级 Module 或修改生成器时都必须遵守。
 
 > [!IMPORTANT]
-> 当前 `cmd/gen-module-docs` 只更新中文 README 的时区/语言标记块，并生成中英文 localization 汇总页；它尚未完成本标准要求的四份源文档校验、逐 Module VitePress 镜像、目录和导航生成。本节描述的是后续生成器必须达到的目标，不能把尚未生成的页面写成当前已实现。
+> `cmd/gen-module-docs` 维护 README 内的时区/语言标记块和 localization 汇总；`cmd/materialize-module-docs` 在 VitePress 构建使用的临时源目录中生成逐 Module 页面、目录、导航数据和有限的版本历史。生成页面不写回或提交到正式 `docs/`。
 
 ## 1. 源文件结构
 
@@ -31,7 +31,7 @@ modules/<name>/
 | `docs/technical.md` | 中文维护者 | 实现、安全边界、Secret、数据流、Hook、Compose 和测试 |
 | `docs/technical.en.md` | 英文维护者 | 与中文技术文档等价的英文说明 |
 
-Module 目录是唯一事实来源。`docs/reference/modules/` 下的页面只是生成镜像，不得反向作为 Module 实现或源文档的依据。
+Module 目录是唯一事实来源。逐 Module VitePress 页面只存在于临时构建目录和最终静态产物中，不得反向作为 Module 实现或源文档的依据。
 
 ## 2. 事实来源与优先级
 
@@ -149,34 +149,36 @@ anas admin local rotate <module> <account-id> --prompt -w /srv/anas
 
 ## 7. VitePress 输出规则
 
-生成器完成本标准后，必须执行以下映射：
+文档构建必须在临时 VitePress 源目录中执行以下映射：
 
 | Module 源文件 | 中文站点输出 | 英文站点输出 |
 | --- | --- | --- |
-| `README.md` / `README.en.md` | `docs/reference/modules/<name>.md` | `docs/en/reference/modules/<name>.md` |
-| `docs/technical.md` / `docs/technical.en.md` | `docs/reference/modules/<name>-technical.md` | `docs/en/reference/modules/<name>-technical.md` |
+| `README.md` / `README.en.md` | `/reference/modules/<name>/` | `/en/reference/modules/<name>/` |
+| `docs/technical.md` / `docs/technical.en.md` | `/reference/modules/<name>/technical` | `/en/reference/modules/<name>/technical` |
 
 同时必须生成或更新：
 
-- `docs/reference/modules.md` 与 `docs/en/reference/modules.md`：从所有 `module.yml` 生成的目录；
+- `/reference/modules` 与 `/en/reference/modules`：从所有 `module.yml` 生成的目录；
 - `docs/reference/module-localization.md` 与英文镜像；
-- 中英文侧边栏的 Module 分组或其生成数据。
+- 临时的 `.vitepress/generated/module-docs.json`，供中英文侧边栏和版本链接使用。
 
 VitePress 输出必须带“由 Module 源文档生成，请勿直接编辑”提示。生成器必须改写 README 与 technical 之间的相对链接，保证源目录和站点镜像都无死链。技术页面可以通过用户页面进入，不要求在侧边栏平铺全部技术页。
 
-Module 目录和侧边栏中的名称、状态、类别、版本和链接必须来自同一排序后的 manifest 清单，不得再人工维护另一份易漂移列表。
+Module 目录和侧边栏中的名称、状态、类别、版本和链接必须来自同一排序后的 manifest 清单，不得再人工维护 README 路径映射。正式 Module 集合与 `.github/modules.json` 必须一致。
+
+历史页面来自不可变 tag `module/<name>/<version>-r<revision>`。每个 Module 先对同一 version 只取最大 revision，再按 SemVer 倒序取最近五个 version。五个候选版本的中英文用户与技术正文经过换行、尾空格和纯发布标识规范化后计算组合 SHA-256；正文完全一致时只保留较新版本，并为较旧版本记录别名。缺少四份完整源文档的早期 tag 不得用当前文件补齐，也不生成历史正文。
 
 ## 8. 生成器行为
 
-`cmd/gen-module-docs` 的完整实现必须：
+两个 Module 文档命令分工如下：
 
 1. 枚举所有包含 `module.yml` 的目录，而不是维护硬编码名单；
 2. 校验目录名、manifest name、localization module 和文档归属一致；
-3. 缺少四份双语源文档或 `localization.yml` 时失败；
+3. `materialize-module-docs` 在缺少四份双语源文档或 `localization.yml` 时失败；
 4. 更新允许的生成标记块；
-5. 一次性生成全部中英文 VitePress 页面、目录和导航数据；
+5. `materialize-module-docs` 在临时目录中一次性生成全部中英文 VitePress 页面、目录和导航数据；
 6. 使用确定性排序和稳定格式；
-7. `--check` 模式不写文件，并在任何源文件缺失、生成页面缺失或输出过期时失败；
+7. `gen-module-docs --check` 不写文件，并在源生成块或 localization 汇总过期时失败；
 8. 不删除或覆盖标记外的人工内容。
 
 生成与检查命令：
@@ -187,7 +189,7 @@ go run ./cmd/gen-module-docs --check
 npm run docs:build
 ```
 
-`npm run docs:build` 只构建 `docs/`，不得被理解为自动执行 Module 生成器。提交前必须先生成，再执行 `--check` 和站点构建。
+`npm run docs:build` 复制 `docs/` 到临时目录，运行 `materialize-module-docs`，再由 VitePress 构建；它不会在工作树留下逐 Module 镜像。`npm run docs:dev` 使用相同的临时物化流程。
 
 ## 9. localization 清单规则
 
@@ -208,7 +210,7 @@ go run ./cmd/gen-module-docs --check
 npm run docs:build
 ```
 
-涉及运行行为的变更还必须执行相应 Module 单测和集成/E2E。提交必须同时包含源文档和生成镜像，不得只提交 `modules/` 或只提交 `docs/`。
+涉及运行行为的变更还必须执行相应 Module 单测和集成/E2E。提交只包含 Module 源文档及允许提交的 localization 汇总，不提交逐 Module VitePress 镜像。
 
 验收清单：
 
@@ -217,5 +219,5 @@ npm run docs:build
 - [ ] 配置表覆盖 `anas config list <module> --json` 的全部参数；
 - [ ] IAM、LDAPS、Group、管理员、数据库和不支持项都有明确结论；
 - [ ] 敏感值没有进入示例 argv、日志或普通环境变量；
-- [ ] 生成标记、站点镜像、目录、链接和导航没有漂移；
+- [ ] 生成标记、临时页面、目录、链接和导航没有漂移；
 - [ ] 生成器 `--check`、相关测试和 `npm run docs:build` 通过。

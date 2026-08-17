@@ -5,6 +5,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { allowHistoricalDeadLinks, selectDocumentationVersions } from './docs-version-lib.mjs'
+import { prepareDocumentationSource } from './docs-source.mjs'
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = path.resolve(scriptDirectory, '../..')
@@ -131,7 +132,15 @@ try {
   const versions = selectDocumentationVersions(readStableTags())
   const currentVersion = versions[0]?.version ?? 'development'
 
+  const releaseCoreTag = process.env.DOCS_PUBLISH_RELEASES === 'true' ? versions[0]?.tag : undefined
+  const currentSource = await prepareDocumentationSource(repositoryRoot, {
+    coreTag: releaseCoreTag,
+    releaseModules: Boolean(releaseCoreTag)
+  })
+  temporaryDirectories.push(currentSource.sourceDirectory)
+
   run(vitepressBinary, ['build', 'docs', '--outDir', stagingDirectory], {
+    cwd: currentSource.sourceDirectory,
     env: buildEnvironment(currentVersion, versions, siteBase(), false)
   })
 

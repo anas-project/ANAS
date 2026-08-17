@@ -43,6 +43,8 @@ contracts/<name>/
 
 Contract 使用语义化版本。兼容字段扩展可以保留当前 major；删除、改名、收紧字段、改变 Resource identity 或 operation 语义必须提升 major。README 和技术文档必须说明兼容边界、弃用期和迁移方式。
 
+Contract 不建立独立发布 tag 或独立站点版本轴。正式站点从所选 ANAS `vMAJOR.MINOR.PATCH` tag 读取 Contract 源文档、schema 和同一快照下的 Module manifests，因此 Contract 页面和 Provider/Consumer 矩阵随 ANAS Core 发布与归档。Module release 不得单独推进 Contract 页面内容。
+
 Resource identity 必须稳定、可序列化，并足以区分同一 Consumer 的多个 Resource。文档不得把显示名或易变地址误写成稳定身份。
 
 ## 3. `documentation.yml`

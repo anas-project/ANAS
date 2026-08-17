@@ -2,7 +2,7 @@
   "name": "anas-documentation",
   "private": true,
   "scripts": {
-    "docs:dev": "vitepress docs",
+    "docs:dev": "node scripts/ci/dev-docs.mjs",
     "docs:build": "node scripts/ci/build-versioned-docs.mjs",
     "docs:test-versions": "node scripts/ci/docs-version-test.mjs",
     "docs:preview": "vitepress preview docs"

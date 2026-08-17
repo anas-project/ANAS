@@ -5,6 +5,8 @@ on:
     branches: [anas-release]
     paths:
       - "cmd/anas/**"
+      - "cmd/gen-contract-docs/**"
+      - "contracts/**"
       - "internal/**"
       - "install.sh"
       - "go.mod"
@@ -119,7 +121,10 @@ jobs:
 
       - name: Test release commit
         if: steps.release.outputs.publish == 'true'
-        run: go test ./...
+        run: |
+          go run ./cmd/gen-module-docs --check
+          go run ./cmd/gen-contract-docs --check
+          go test ./...
 
   build:
     needs: validate
