@@ -1,7 +1,7 @@
 services:
   anas_llng:
     container_name: ${CONTAINER_PREFIX}llng
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r4
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r5
     build:
       context: ./llng
       network: ${DOCKER_BUILD_NETWORK:-default}
@@ -13,6 +13,13 @@ services:
     volumes:
       - "${DATA_PATH}/llng/conf:/var/lib/lemonldap-ng/conf/"
       - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
+    tmpfs:
+      # Explicitly cover the remaining inherited VOLUME declarations. These
+      # contain generated runtime configuration/locks, not authoritative data.
+      - /etc/lemonldap-ng:mode=0755,size=1m
+      - /etc/nginx/sites-enabled:mode=0755,size=1m
+      - /var/lib/lemonldap-ng/psessions:mode=0770,uid=33,gid=33,size=1m
+      - /var/lib/lemonldap-ng/sessions:mode=0770,uid=33,gid=33,size=1m
     env_file:
       - .env
     dns:
