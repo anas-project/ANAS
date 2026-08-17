@@ -498,7 +498,7 @@ func renderVersionNavigation(module, release string, versions []string, english,
 	}
 	items := []string{fmt.Sprintf("[%s](%s%s/%s)", currentLabel, prefix, module, currentSuffix)}
 	for _, version := range versions {
-		suffix := ""
+		suffix := "/"
 		if technical {
 			suffix = "/technical"
 		}

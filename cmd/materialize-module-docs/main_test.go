@@ -80,3 +80,11 @@ func TestRewriteUserLinksMapsRepositoryDocsIntoSite(t *testing.T) {
 		t.Fatalf("rewritten link = %q, want %q", got, want)
 	}
 }
+
+func TestRenderVersionNavigationLinksToDirectoryIndex(t *testing.T) {
+	got := renderVersionNavigation("demo", "2.0.0-r1", []string{"2.0.0-r1"}, false, true, false)
+	want := "](/reference/modules/demo/2.0.0-r1/)"
+	if !strings.Contains(got, want) {
+		t.Fatalf("version navigation = %q, want link containing %q", got, want)
+	}
+}
