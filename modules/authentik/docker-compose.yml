@@ -1,7 +1,7 @@
 services:
   anas_authentik_init:
     container_name: ${CONTAINER_PREFIX}authentik_init
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r4
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r5
     user: root
     entrypoint: ["/bin/sh", "-c"]
     command: ["mkdir -p /data && chown -R 1000:1000 /data"]
@@ -16,7 +16,7 @@ services:
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
         GHCR_REGISTRY: ${GHCR_REGISTRY:-ghcr.io}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r4
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r5
     restart: unless-stopped
     # The managed bootstrap password is projected as root:root 0600. The
     # entrypoint reads it once, then immediately drops back to authentik's
@@ -58,7 +58,7 @@ services:
 
   anas_authentik_worker:
     container_name: ${CONTAINER_PREFIX}authentik_worker
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r4
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r5
     restart: unless-stopped
     # Import the trust anchor before the worker discovers the Samba AD
     # blueprint. authentik deliberately skips LDAP TLS verification when
@@ -100,7 +100,7 @@ services:
   # long-lived token, and this needs no credential at all.
   anas_authentik_dirwatch:
     container_name: ${CONTAINER_PREFIX}authentik_dirwatch
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r4
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r5
     restart: unless-stopped
     entrypoint: ["python3", "/opt/anas/bin/directory-watch"]
     depends_on:
