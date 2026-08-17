@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -193,6 +194,8 @@ func calcAuthentik(e map[string]string, secrets *secretStore) error {
 			"SAMBA_DC_PASSWORD_BIND_PASSWORD", "SAMBA_DC_BASE_DN",
 			"SAMBA_DC_BASE_USERS_DN_PREFIX", "SAMBA_DC_BASE_GROUPS_DN_PREFIX",
 			"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE",
+			"SAMBA_DC_USER_COMPLEX_PASS", "SAMBA_DC_USER_MIN_PASS_AGE",
+			"SAMBA_DC_USER_MIN_PASS_LENGTH", "SAMBA_DC_USER_PASSWORD_HISTORY",
 		}); err != nil {
 			return fmt.Errorf("configure authentik Samba AD source: %w", err)
 		}
@@ -207,6 +210,9 @@ func calcAuthentik(e map[string]string, secrets *secretStore) error {
 		e["AUTHENTIK_LDAP_OBJECT_UNIQUENESS_FIELD"] = e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"]
 		e["AUTHENTIK_LDAP_GROUP_MEMBERSHIP_FIELD"] = "memberOf:1.2.840.113556.1.4.1941:"
 		e["AUTHENTIK_LDAP_USER_MEMBERSHIP_ATTRIBUTE"] = "distinguishedName"
+		if err := calcPasswordPolicy(e); err != nil {
+			return fmt.Errorf("configure authentik Samba AD password policy: %w", err)
+		}
 	}
 	calcDirectoryWatch(e)
 
@@ -221,6 +227,82 @@ func calcAuthentik(e map[string]string, secrets *secretStore) error {
 		return err
 	}
 	return publishIAMEndpoints(e)
+}
+
+func calcPasswordPolicy(e map[string]string) error {
+	minLength, err := nonNegativeInt(e["SAMBA_DC_USER_MIN_PASS_LENGTH"])
+	if err != nil {
+		return fmt.Errorf("SAMBA_DC_USER_MIN_PASS_LENGTH: %w", err)
+	}
+	history, err := nonNegativeInt(e["SAMBA_DC_USER_PASSWORD_HISTORY"])
+	if err != nil {
+		return fmt.Errorf("SAMBA_DC_USER_PASSWORD_HISTORY: %w", err)
+	}
+	minAge, err := nonNegativeInt(e["SAMBA_DC_USER_MIN_PASS_AGE"])
+	if err != nil {
+		return fmt.Errorf("SAMBA_DC_USER_MIN_PASS_AGE: %w", err)
+	}
+
+	e["AUTHENTIK_PASSWORD_MIN_LENGTH"] = strconv.Itoa(minLength)
+	e["AUTHENTIK_PASSWORD_POLICY_GUIDANCE"] = passwordPolicyGuidance(
+		e["DEFAULT_LANGUAGE"], minLength, history, minAge, varTrue(e["SAMBA_DC_USER_COMPLEX_PASS"]),
+	)
+	e["AUTHENTIK_PASSWORD_POLICY_ERROR"] = passwordPolicyLengthError(
+		e["DEFAULT_LANGUAGE"], minLength,
+	)
+	return nil
+}
+
+func nonNegativeInt(value string) (int, error) {
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("must be a non-negative integer, got %q", value)
+	}
+	return n, nil
+}
+
+func varTrue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func passwordPolicyGuidance(language string, minLength, history, minAge int, complex bool) string {
+	if strings.HasPrefix(strings.ToLower(language), "zh") {
+		parts := []string{fmt.Sprintf("新密码至少 %d 个字符", minLength)}
+		if complex {
+			parts = append(parts, "至少包含以下五类中的三类：大写字母、小写字母、数字、符号、其他 Unicode 字母，并且不能包含用户名或姓名")
+		}
+		if history > 0 {
+			parts = append(parts, fmt.Sprintf("不能重复最近 %d 个密码", history))
+		}
+		if minAge > 0 {
+			parts = append(parts, fmt.Sprintf("普通用户两次主动改密至少间隔 %d 天", minAge))
+		}
+		return strings.Join(parts, "；") + "。两次输入必须完全一致。"
+	}
+
+	parts := []string{fmt.Sprintf("Use at least %d characters", minLength)}
+	if complex {
+		parts = append(parts, "use at least three of uppercase letters, lowercase letters, digits, symbols, and other Unicode letters, and do not include the username or display name")
+	}
+	if history > 0 {
+		parts = append(parts, fmt.Sprintf("do not reuse the last %d passwords", history))
+	}
+	if minAge > 0 {
+		parts = append(parts, fmt.Sprintf("ordinary user-initiated changes must be at least %d days apart", minAge))
+	}
+	return strings.Join(parts, "; ") + ". Enter the same new password twice."
+}
+
+func passwordPolicyLengthError(language string, minLength int) string {
+	if strings.HasPrefix(strings.ToLower(language), "zh") {
+		return fmt.Sprintf("新密码太短，至少需要 %d 个字符。请同时满足页面列出的 Samba 域密码规则。", minLength)
+	}
+	return fmt.Sprintf("The new password must contain at least %d characters and satisfy the Samba domain rules shown on this page.", minLength)
 }
 
 func renderAuthentik(e map[string]string) (map[string]string, error) {

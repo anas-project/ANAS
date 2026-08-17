@@ -1,6 +1,10 @@
 ARG GHCR_REGISTRY=ghcr.io
 FROM ${GHCR_REGISTRY}/goauthentik/server:2026.5.6
 
+COPY patch-password-writeback-errors.py /opt/anas/build/patch-password-writeback-errors.py
+RUN python3 /opt/anas/build/patch-password-writeback-errors.py /authentik \
+  && rm -f /opt/anas/build/patch-password-writeback-errors.py
+
 # Keep ANAS-specific runtime code in the release image. Deployment-specific
 # applications, credentials, and directory values remain generated blueprints
 # and environment variables mounted at runtime.
