@@ -88,11 +88,42 @@ func TestManifestClaimsCrossModuleVariablesUsedAtRuntime(t *testing.T) {
 		"SAMBA_DC_ADMIN_GROUP_NAME", "SAMBA_DC_BASE_GROUPS_DN", "SAMBA_DC_BASE_GROUPS_ROLE_DN",
 		"SAMBA_DC_BASE_USERS_DN", "SAMBA_DC_LDAPS_PORT", "SAMBA_DC_LDAPS_SERVER_URL",
 		"SAMBA_DC_PASSWORD_BIND_DN", "SAMBA_DC_PASSWORD_BIND_PASSWORD", "SAMBA_DC_USER_CLASS_FILTER",
-		"SAMBA_DC_USER_EMAIL", "SAMBA_DC_USER_ENABLED_FILTER", "SAMBA_DC_USER_NAME",
+		"SAMBA_DC_USER_COMPLEX_PASS", "SAMBA_DC_USER_EMAIL", "SAMBA_DC_USER_ENABLED_FILTER",
+		"SAMBA_DC_USER_MIN_PASS_LENGTH", "SAMBA_DC_USER_NAME", "SAMBA_DC_USER_PASSWORD_HISTORY",
 		"TRAEFIK_DOMAIN_FULL", "TRAEFIK_HOSTNAME",
 	} {
 		if !strings.Contains(string(manifest), "- "+key) {
 			t.Errorf("module manifest does not consume %s", key)
+		}
+	}
+}
+
+func TestPasswordGuidanceFollowsSambaDomainPolicy(t *testing.T) {
+	script, err := os.ReadFile("../llng/root/root/llng-config.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`passwordPolicyActivation 1`,
+		`portalDisplayPasswordPolicy 1`,
+		`passwordPolicyMinSize "$SAMBA_DC_USER_MIN_PASS_LENGTH"`,
+	} {
+		if !strings.Contains(string(script), want) {
+			t.Fatalf("LLNG password policy setup missing %q", want)
+		}
+	}
+
+	guidance, err := os.ReadFile("../llng/configure-password-guidance.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"SAMBA_DC_USER_COMPLEX_PASS", "SAMBA_DC_USER_MIN_PASS_LENGTH",
+		"SAMBA_DC_USER_PASSWORD_HISTORY", ".PE25", ".PE28", ".PE29", ".PE31",
+		".passwordPolicy", ".passwordPolicySamePwd",
+	} {
+		if !strings.Contains(string(guidance), want) {
+			t.Fatalf("localized password guidance missing %q", want)
 		}
 	}
 }

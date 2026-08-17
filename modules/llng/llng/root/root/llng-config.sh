@@ -77,6 +77,9 @@ saml_public_key=$(printf '%b\n' "${LLNG_SAML_SERVICE_PUBLIC_KEY//\"/}")
 oidc_private_key=$(printf '%b\n' "${LLNG_OIDC_SERVICE_PRIVATE_KEY//\"/}")
 oidc_public_key=$(printf '%b\n' "${LLNG_OIDC_SERVICE_PUBLIC_KEY//\"/}")
 $lemonldap_ng_cli_set \
+        passwordPolicyActivation 1 \
+        portalDisplayPasswordPolicy 1 \
+        passwordPolicyMinSize "$SAMBA_DC_USER_MIN_PASS_LENGTH" \
         samlServicePrivateKeySig "$saml_private_key" \
         samlServicePublicKeySig "$saml_public_key" \
         oidcServicePrivateKeySig "$oidc_private_key" \
