@@ -25,7 +25,7 @@ import json, os, re, sys
 
 doc = json.load(open(sys.argv[1]))
 parameters = doc["parameters"]
-assert len(parameters) == 131, len(parameters)
+assert len(parameters) == 139, len(parameters)
 
 removed = {
     "global.basicauth_user",
@@ -82,6 +82,9 @@ for name in (
     "user_complex_pass", "user_min_pass_length", "user_password_history",
     "user_max_pass_age", "user_min_pass_age", "user_lockout_threshold",
     "user_lockout_duration", "user_lockout_reset_after",
+    "admin_complex_pass", "admin_min_pass_length", "admin_password_history",
+    "admin_max_pass_age", "admin_min_pass_age", "admin_lockout_threshold",
+    "admin_lockout_duration", "admin_lockout_reset_after",
 ):
     effect_cases[f"samba_dc.{name}"] = ("hot_reload", "in_place", "samba_password_policy")
 

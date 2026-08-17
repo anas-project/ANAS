@@ -247,6 +247,14 @@ PY
   run_fallback_case "$samba_ws" samba_dc.user_lockout_threshold 11 hot_reload samba_dc SAMBA_DC_USER_LOCKOUT_THRESHOLD 11
   run_fallback_case "$samba_ws" samba_dc.user_lockout_duration 31 hot_reload samba_dc SAMBA_DC_USER_LOCKOUT_DURATION 31
   run_fallback_case "$samba_ws" samba_dc.user_lockout_reset_after 31 hot_reload samba_dc SAMBA_DC_USER_LOCKOUT_RESET_AFTER 31
+  run_fallback_case "$samba_ws" samba_dc.admin_complex_pass false hot_reload samba_dc SAMBA_DC_ADMIN_COMPLEX_PASS false
+  run_fallback_case "$samba_ws" samba_dc.admin_min_pass_length 9 hot_reload samba_dc SAMBA_DC_ADMIN_MIN_PASS_LENGTH 9
+  run_fallback_case "$samba_ws" samba_dc.admin_password_history 3 hot_reload samba_dc SAMBA_DC_ADMIN_PASSWORD_HISTORY 3
+  run_fallback_case "$samba_ws" samba_dc.admin_max_pass_age 60 hot_reload samba_dc SAMBA_DC_ADMIN_MAX_PASS_AGE 60
+  run_fallback_case "$samba_ws" samba_dc.admin_min_pass_age 0 hot_reload samba_dc SAMBA_DC_ADMIN_MIN_PASS_AGE 0
+  run_fallback_case "$samba_ws" samba_dc.admin_lockout_threshold 11 hot_reload samba_dc SAMBA_DC_ADMIN_LOCKOUT_THRESHOLD 11
+  run_fallback_case "$samba_ws" samba_dc.admin_lockout_duration 31 hot_reload samba_dc SAMBA_DC_ADMIN_LOCKOUT_DURATION 31
+  run_fallback_case "$samba_ws" samba_dc.admin_lockout_reset_after 31 hot_reload samba_dc SAMBA_DC_ADMIN_LOCKOUT_RESET_AFTER 31
 
   echo "== setting the same value is runtime-idempotent =="
   reset_commands

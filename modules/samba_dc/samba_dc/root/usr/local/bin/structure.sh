@@ -220,12 +220,31 @@ fi
 echo "Set Samba DC user password complex: $SAMBA_DC_USER_COMPLEX_PASS"
 
 # Separate policy object for privileged accounts.
-if samba-tool domain passwordsettings pso list | grep -Eq '\|[[:space:]]*pso_privileged[[:space:]]*$'; then
-  samba-tool domain passwordsettings pso set "pso_privileged" --min-pwd-length=8 --complexity=on \
-    --history-length=4 --min-pwd-age=1 --max-pwd-age=60
+if [ "$SAMBA_DC_ADMIN_COMPLEX_PASS" = "true" ]; then
+  admin_complexity=on
 else
-  samba-tool domain passwordsettings pso create "pso_privileged" 1 --min-pwd-length=8 --complexity=on \
-    --history-length=4 --min-pwd-age=1 --max-pwd-age=60
+  admin_complexity=off
+fi
+if samba-tool domain passwordsettings pso list | grep -Eq '\|[[:space:]]*pso_privileged[[:space:]]*$'; then
+  samba-tool domain passwordsettings pso set "pso_privileged" \
+    --min-pwd-length="$SAMBA_DC_ADMIN_MIN_PASS_LENGTH" \
+    --complexity="$admin_complexity" \
+    --history-length="$SAMBA_DC_ADMIN_PASSWORD_HISTORY" \
+    --min-pwd-age="$SAMBA_DC_ADMIN_MIN_PASS_AGE" \
+    --max-pwd-age="$SAMBA_DC_ADMIN_MAX_PASS_AGE" \
+    --account-lockout-threshold="$SAMBA_DC_ADMIN_LOCKOUT_THRESHOLD" \
+    --account-lockout-duration="$SAMBA_DC_ADMIN_LOCKOUT_DURATION" \
+    --reset-account-lockout-after="$SAMBA_DC_ADMIN_LOCKOUT_RESET_AFTER"
+else
+  samba-tool domain passwordsettings pso create "pso_privileged" 1 \
+    --min-pwd-length="$SAMBA_DC_ADMIN_MIN_PASS_LENGTH" \
+    --complexity="$admin_complexity" \
+    --history-length="$SAMBA_DC_ADMIN_PASSWORD_HISTORY" \
+    --min-pwd-age="$SAMBA_DC_ADMIN_MIN_PASS_AGE" \
+    --max-pwd-age="$SAMBA_DC_ADMIN_MAX_PASS_AGE" \
+    --account-lockout-threshold="$SAMBA_DC_ADMIN_LOCKOUT_THRESHOLD" \
+    --account-lockout-duration="$SAMBA_DC_ADMIN_LOCKOUT_DURATION" \
+    --reset-account-lockout-after="$SAMBA_DC_ADMIN_LOCKOUT_RESET_AFTER"
 fi
 samba-tool domain passwordsettings pso apply "pso_privileged" "$SAMBA_DC_ADMINISTRATOR_NAME" || true
 samba-tool domain passwordsettings pso apply "pso_privileged" "$SAMBA_DC_ADMIN_GROUP_NAME" || true

@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: samba_dc
 version: 4.23.6
-revision: 5
+revision: 6
 app_version: 4.23.6
 abi:
   supports:
@@ -49,14 +49,22 @@ config:
     dns_cache_size: 128M
     template_shell: /bin/false
     template_homedir: /home/%D/%U
-    user_complex_pass: "true"
+    user_complex_pass: "false"
     user_max_pass_age: "90"
     user_min_pass_age: "1"
     user_min_pass_length: "8"
-    user_password_history: "4"
+    user_password_history: "2"
     user_lockout_threshold: "10"
     user_lockout_duration: "30"
     user_lockout_reset_after: "30"
+    admin_complex_pass: "true"
+    admin_max_pass_age: "0"
+    admin_min_pass_age: "1"
+    admin_min_pass_length: "8"
+    admin_password_history: "2"
+    admin_lockout_threshold: "10"
+    admin_lockout_duration: "30"
+    admin_lockout_reset_after: "30"
     ldap_bind_name: svc_ldap
     password_bind_name: svc_password
     anchor_bind_name: svc_anchor
@@ -144,6 +152,38 @@ config:
       effect: hot_reload
       apply: samba-password-policy
       description: samba-tool can update the domain policy without restarting Samba.
+    admin_complex_pass:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the privileged PSO without restarting Samba.
+    admin_min_pass_length:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the privileged PSO without restarting Samba.
+    admin_password_history:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the privileged PSO without restarting Samba.
+    admin_max_pass_age:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the privileged PSO without restarting Samba.
+    admin_min_pass_age:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the privileged PSO without restarting Samba.
+    admin_lockout_threshold:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the privileged PSO without restarting Samba.
+    admin_lockout_duration:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the privileged PSO without restarting Samba.
+    admin_lockout_reset_after:
+      effect: hot_reload
+      apply: samba-password-policy
+      description: samba-tool can update the privileged PSO without restarting Samba.
     log_level:
       effect: container_recreate
       apply: recreate-samba-dc

@@ -95,7 +95,7 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。`modules.<
 | `nextcloud` | 13 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` |
 | `oauth2_proxy` | 3 | `allow_groups`, `domain_prefix`, `iam_protocol` |
 | `postgres` | 3 | `adminer_enabled`, `password`, `username` |
-| `samba_dc` | 30 | `admin_name`, `admin_password`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
+| `samba_dc` | 38 | `admin_complex_pass`, `admin_lockout_duration`, `admin_lockout_reset_after`, `admin_lockout_threshold`, `admin_max_pass_age`, `admin_min_pass_age`, `admin_min_pass_length`, `admin_name`, `admin_password`, `admin_password_history`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
 | `samba_fs` | 7 | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` |
 | `traefik` | 2 | `base_port`, `domain_prefix` |
 
@@ -206,7 +206,7 @@ Collabora、Nextcloud 和数据库镜像的保留设置都在 Hook、容器脚�
 | `nextcloud` | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` | 生成安装/数据库环境，并由 `task.sh` 调和认证、locale、应用开关、PHP 限额和 skeleton 状态 |
 | `oauth2_proxy` | `allow_groups`, `domain_prefix`, `iam_protocol` | 生成 OIDC client、允许组、回调 URL 和 Traefik ForwardAuth middleware |
 | `postgres` | `adminer_enabled`, `password`, `username` | 改变可选 service；账号转换为上游初始化变量，并分别标记迁移/轮换语义 |
-| `samba_dc` | 表中 30 项 | 生成 AD/BIND 配置、目录结构与三类 service account；密码策略声明为 `samba-tool` 热更新，但当前版本通过 deployment fallback 应用，身份/密码项走迁移或轮换保护 |
+| `samba_dc` | 表中 38 项 | 生成 AD/BIND 配置、目录结构与三类 service account；普通用户域策略与管理员 PSO 均由参数生成，并声明为 `samba-tool` 热更新，但当前版本通过 deployment fallback 应用，身份/密码项走迁移或轮换保护 |
 | `samba_fs` | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` | 生成 member join、smb.conf、共享目录/ACL、guest 状态和 WSDD 广播 |
 | `traefik` | `base_port`, `domain_prefix` | 改变入口监听/发布端口、应用派生 URL 和 dashboard router |
 
