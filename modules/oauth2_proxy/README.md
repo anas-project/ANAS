@@ -102,7 +102,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`7.15.3-r1`（reviewed 2026-08-13）
+- Module version / 版本：`7.15.3-r2`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — oauth2-proxy receives TZ for process and log timestamps.
 - Language scope / 语言范围：oauth2-proxy built-in error and sign-in pages
 - Selection / 选择方式：`fixed`

@@ -128,7 +128,7 @@ Traefik 本地账号只保护 Dashboard，不代表下游应用管理员。
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`3.7.10-r2`（reviewed 2026-08-13）
+- Module version / 版本：`3.7.10-r3`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — Traefik receives TZ for process and access-log timestamps.
 - Language scope / 语言范围：Traefik Proxy built-in Dashboard
 - Selection / 选择方式：`fixed`

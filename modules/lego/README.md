@@ -110,7 +110,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`5.3.1-r2`（reviewed 2026-08-13）
+- Module version / 版本：`5.3.1-r3`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — The certificate worker receives TZ for process and log timestamps.
 - Language scope / 语言范围：certificate automation CLI
 - Selection / 选择方式：`none`

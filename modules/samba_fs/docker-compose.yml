@@ -8,7 +8,7 @@ services:
         - CHINESE_BUILD_SPEEDUP
         - APT_MIRROR_URL
         - DOCKER_HUB_REGISTRY
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-fs:4.23.6-r3
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-fs:4.23.6-r4
     restart: unless-stopped
     hostname: ${SAMBA_FS_HOSTNAME}
     cap_add:

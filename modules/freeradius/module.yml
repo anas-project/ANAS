@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: freeradius
 version: 3.2.10
-revision: 1
+revision: 2
 app_version: 3.2.10
 abi:
   supports:

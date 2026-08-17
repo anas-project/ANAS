@@ -134,7 +134,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`6.17.4-r3`（reviewed 2026-08-13）
+- Module version / 版本：`6.17.4-r4`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — The service receives TZ through the module .env; upstream does not expose a separate timezone setting.
 - Language scope / 语言范围：ddns-go Web UI and logs
 - Selection / 选择方式：`application`

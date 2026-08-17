@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: collabora
 version: 26.4.2
-revision: 2
+revision: 3
 app_version: 26.04.2.4.1
 abi:
   supports:

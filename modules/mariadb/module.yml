@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: mariadb
 version: 12.3.2
-revision: 1
+revision: 2
 app_version: 12.3.2
 abi:
   supports:

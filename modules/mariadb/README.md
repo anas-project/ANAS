@@ -103,7 +103,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`12.3.2-r1`（reviewed 2026-08-13）
+- Module version / 版本：`12.3.2-r2`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — MariaDB and optional Adminer receive TZ; this does not populate MariaDB timezone tables or change SQL session time_zone.
 - Language scope / 语言范围：optional Adminer 5.5.0 Web UI; MariaDB itself has no UI language
 - Selection / 选择方式：`browser`

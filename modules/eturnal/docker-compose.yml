@@ -1,6 +1,6 @@
 services:
   anas_eturnal:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-eturnal:1.12.2-r3
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-eturnal:1.12.2-r4
     build:
       context: ./eturnal
       network: ${DOCKER_BUILD_NETWORK:-default}

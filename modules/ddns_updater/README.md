@@ -120,7 +120,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2.10.0-r1`（reviewed 2026-08-13）
+- Module version / 版本：`2.10.0-r2`（reviewed 2026-08-13）
 - Timezone / 时区：`application` — Upstream officially accepts the IANA TZ environment variable for Web UI and log timestamps.
 - Language scope / 语言范围：DDNS Updater Web UI
 - Selection / 选择方式：`fixed`

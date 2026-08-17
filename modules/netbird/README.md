@@ -105,7 +105,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`0.76.1-r2`（reviewed 2026-08-13）
+- Module version / 版本：`0.76.1-r3`（reviewed 2026-08-13）
 - Timezone / 时区：`partial` — Dashboard, signal, and management receive the module environment; the relay service does not currently receive TZ.
 - Language scope / 语言范围：NetBird Dashboard v2.90.9
 - Selection / 选择方式：`fixed`

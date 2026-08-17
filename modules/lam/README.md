@@ -104,7 +104,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`9.6.0-r5`（reviewed 2026-08-13）
+- Module version / 版本：`9.6.0-r6`（reviewed 2026-08-13）
 - Timezone / 时区：`application` — ANAS writes the IANA TZ value to the LAM profile timeZone setting.
 - Language scope / 语言范围：LDAP Account Manager Web UI
 - Selection / 选择方式：`deployment_default`

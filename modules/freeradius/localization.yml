@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: freeradius
 module_version: 3.2.10
-module_revision: 1
+module_revision: 2
 reviewed_at: 2026-08-13
 timezone:
   status: container

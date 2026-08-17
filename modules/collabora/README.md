@@ -105,7 +105,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`26.4.2-r2`（reviewed 2026-08-13）
+- Module version / 版本：`26.4.2-r3`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — The Collabora service receives TZ through the module .env.
 - Language scope / 语言范围：Collabora Online editor UI and document locale
 - Selection / 选择方式：`integration`

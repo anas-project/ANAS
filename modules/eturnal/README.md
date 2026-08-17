@@ -91,7 +91,7 @@ TURN Secret 是机器凭据，不应作为人员密码查询或共享。
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`1.12.2-r3`（reviewed 2026-08-17）
+- Module version / 版本：`1.12.2-r4`（reviewed 2026-08-17）
 - Timezone / 时区：`container` — The TURN service receives TZ for process and log timestamps.
 - Language scope / 语言范围：TURN protocol service
 - Selection / 选择方式：`none`

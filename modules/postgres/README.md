@@ -104,7 +104,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`18.4.0-r1`（reviewed 2026-08-13）
+- Module version / 版本：`18.4.0-r2`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — PostgreSQL and optional Adminer receive TZ; database timezone remains an independent SQL setting.
 - Language scope / 语言范围：optional Adminer 5.5.0 Web UI; PostgreSQL itself has no UI language
 - Selection / 选择方式：`browser`
