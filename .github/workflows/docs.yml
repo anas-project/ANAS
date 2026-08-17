@@ -5,9 +5,9 @@ on:
   push:
     branches: [master]
   workflow_run:
-    workflows: [Module and container artifacts]
+    workflows: [Module and container artifacts, ANAS release]
     types: [completed]
-    branches: [image-release]
+    branches: [image-release, anas-release]
   workflow_dispatch:
 
 concurrency:
@@ -45,7 +45,9 @@ jobs:
         run: npm ci
 
       - name: Build with VitePress
-        run: npm run docs:build
+        run: |
+          npm run docs:test-versions
+          npm run docs:build
 
       - name: Setup GitHub Pages
         id: pages

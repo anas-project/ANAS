@@ -7,6 +7,7 @@ __pycache__/
 *.py[cod]
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+docs/.vitepress/versioned-dist-*/
 secrets.yml
 # Site-specific deployment files may contain DNS credentials and passwords.
 config.lnnj.com.cn.yml
