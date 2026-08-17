@@ -1,6 +1,6 @@
 services:
   anas_eturnal:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-eturnal:1.12.2-r2
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-eturnal:1.12.2-r3
     build:
       context: ./eturnal
       network: ${DOCKER_BUILD_NETWORK:-default}
@@ -20,4 +20,6 @@ services:
       - /run/anas:mode=0700,uid=9000,gid=9000,size=1m
       # The upstream image declares its application release as a volume. The
       # entrypoint restores the baked seed here; no state survives recreation.
-      - /opt/eturnal:mode=2755,uid=9000,gid=9000,size=64m
+      # Docker mounts tmpfs with noexec unless exec is requested explicitly.
+      # The upstream release stored here contains the eturnal executables.
+      - /opt/eturnal:exec,mode=2755,uid=9000,gid=9000,size=64m

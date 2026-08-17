@@ -600,6 +600,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.release_sha }}
+          # Candidate metadata is calculated against the previous successful
+          # release commit, so the package job needs that history locally.
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
