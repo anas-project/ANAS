@@ -27,6 +27,10 @@ RUN if [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ]; then \
     postgresql-client \
   && rm -rf /var/lib/apt/lists/*
 
+COPY --chmod=0755 enable-chinese-language.sh /usr/local/bin/anas-llng-enable-chinese-language
+
+RUN /usr/local/bin/anas-llng-enable-chinese-language
+
 # The upstream image declares four mutable runtime directories as Docker
 # volumes. Compose mounts tmpfs over them so Docker does not allocate anonymous
 # volumes. Preserve their image defaults outside those volume paths; the ANAS

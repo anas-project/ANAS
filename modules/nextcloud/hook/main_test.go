@@ -200,6 +200,12 @@ func TestNextcloudOIDCIsDefaultAndPreservesLDAPProvisioning(t *testing.T) {
 	if !strings.Contains(string(task), "--mapping-uid=preferred_username") {
 		t.Fatal("OIDC user ID must match the sAMAccountName-backed LDAP internal username")
 	}
+	if !strings.Contains(string(task), "--send-id-token-hint=1") {
+		t.Fatal("OIDC logout must identify the session to the provider")
+	}
+	if !strings.Contains(string(task), `--postlogouturi="$NEXTCLOUD_DOMAIN_FULL"`) {
+		t.Fatal("OIDC logout must return only to the registered Nextcloud URI")
+	}
 }
 
 func TestNextcloudRequestsAuthentikSupportedWindowsNameID(t *testing.T) {
