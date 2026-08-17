@@ -3,11 +3,20 @@ package runner
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestResourceEnsureComposeRunIsNonInteractive(t *testing.T) {
+	got := resourceEnsureComposeArgs("anas_postgres_provision", []string{"ensure"})
+	want := []string{"run", "--rm", "--no-deps", "--no-TTY", "anas_postgres_provision", "ensure"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("resource ensure compose args = %q, want %q", got, want)
+	}
+}
 
 func TestResourceSpecFromUsesResolvedModuleParameter(t *testing.T) {
 	a := &app{
