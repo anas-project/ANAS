@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: llng
 module_version: 2.23.2
-module_revision: 6
+module_revision: 7
 reviewed_at: 2026-08-17
 timezone:
   status: container
