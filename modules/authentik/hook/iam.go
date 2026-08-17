@@ -143,6 +143,16 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 	b.WriteString("metadata:\n  name: anas-clients\n")
 	b.WriteString("entries:\n")
 
+	// Authentik's default provider invalidation flow ends only the current
+	// application session. Bind the existing logout stage so an RP-initiated
+	// logout also ends the central Authentik session; otherwise a redirect back
+	// to an OIDC application immediately signs the user in again.
+	b.WriteString("  - model: authentik_flows.flowstagebinding\n")
+	b.WriteString("    identifiers:\n")
+	b.WriteString("      target: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]\n")
+	b.WriteString("      stage: !Find [authentik_stages_user_logout.userlogoutstage, [name, default-invalidation-logout]]\n")
+	b.WriteString("      order: 100\n")
+
 	b.WriteString("  - model: authentik_crypto.certificatekeypair\n")
 	b.WriteString("    identifiers:\n      name: " + signingKeypairName + "\n")
 	b.WriteString("    id: " + signingKeypairName + "\n")

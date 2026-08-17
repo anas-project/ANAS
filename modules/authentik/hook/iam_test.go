@@ -140,6 +140,10 @@ func TestBlueprintTranslatesGenericRegistrations(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
+		"authentik_flows.flowstagebinding",
+		"default-provider-invalidation-flow",
+		"authentik_stages_user_logout.userlogoutstage",
+		"default-invalidation-logout",
 		"authentik_providers_oauth2.oauth2provider",
 		"authentik_providers_oauth2.scopemapping",
 		"authentik_providers_saml.samlprovider",

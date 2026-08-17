@@ -250,7 +250,8 @@ for app in $OIDC_RP_APPS; do
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsIDTokenForceClaims 1 \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsRedirectUris "$redirect_uri_space" \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsPostLogoutRedirectUris "$logout_redirect_uri_space" \
-          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsBypassConsent 1
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsBypassConsent 1 \
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsLogoutBypassConfirm 1
 
     allow_groups=$(oidc_get_var $app "ALLOW_GROUPS")
 
