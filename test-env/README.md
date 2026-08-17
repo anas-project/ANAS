@@ -290,6 +290,41 @@ Do not commit `.anas-test/` or generated secrets.
     Run this only against the isolated test daemon. The script restores live
     values and removes its disposable containers on both success and failure.
 
+18. Samba-backed IAM password-policy E2E (run separately per IAM)
+
+    These tests use temporary directory users and the real browser-facing
+    password-change endpoints. They verify provider policy/guidance state,
+    minimum-length and confirmation preflight, AD complexity handling, a
+    successful Samba writeback, old/new credential behavior, password-history
+    rejection, safe user error mapping, and cleanup. The Authentik case also
+    requires the synchronized user's local password to remain unusable and the
+    raw LDAP failure to be retained in an administrator event. The LLNG case
+    additionally covers Samba's must-change-at-next-login path and the detailed
+    guidance shown on that form.
+
+    The scripts temporarily set the isolated domain's minimum password age to
+    zero so one disposable account can cover success and history in one run.
+    A trap restores the deployed value and removes the account. Never run them
+    against a production domain.
+
+    Authentik deployment (`server-identity-app-e2e.yml`):
+
+    ```sh
+    ANAS_TEST_DOCKER_SOCKET=/run/anas-anchor-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
+      ./test-env/scripts/server-authentik-password-policy-e2e.sh
+    ```
+
+    LLNG deployment (`server-identity-app-llng-e2e.yml`):
+
+    ```sh
+    DOCKER_HOST=unix:///run/anas-llng-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_llng_ \
+    ANAS_TEST_DOMAIN=llng.nas.test \
+    ANAS_TEST_ENTRY_IP=10.253.0.2 \
+      ./test-env/scripts/server-llng-password-policy-e2e.sh
+    ```
+
 ## Full Run
 
 ```sh

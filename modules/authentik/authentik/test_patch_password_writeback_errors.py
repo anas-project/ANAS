@@ -24,6 +24,8 @@ class PasswordWritebackPatchTests(unittest.TestCase):
             )
             (ldap / "signals.py").write_text(
                 "from django.utils.translation import gettext_lazy as _\n"
+                "from authentik.core.models import User\n"
+                "from authentik.stages.prompt.signals import password_validate\n"
                 "LOGGER = get_logger()\n\n\n@receiver(password_validate)\n"
                 "        raise ValidationError(\"Failed to set password\") from exc\n"
             )
@@ -43,6 +45,9 @@ class PasswordWritebackPatchTests(unittest.TestCase):
             self.assertIn("def _anas_password_writeback_message", signals)
             self.assertIn("result in (19, 53)", signals)
             self.assertIn("ValidationError(_anas_password_writeback_message(exc))", signals)
+            self.assertIn("@receiver(user_write)", signals)
+            self.assertIn("user.set_unusable_password()", signals)
+            self.assertIn("UserSourceConnection.objects.filter", signals)
             self.assertIn(
                 "stage_invalid(str(exc.detail[0]))", (user_write / "stage.py").read_text()
             )

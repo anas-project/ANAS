@@ -92,6 +92,11 @@ checks. Samba alone enforces password history and minimum age. LDAP results 19/5
 receive broad policy guidance, while 50 and 32 map to insufficient access and a
 missing directory user; raw diagnostics remain in Authentik events.
 
+写回成功后，ANAS 会立即把同步目录用户的 Authentik 本地密码恢复为 unusable，避免 Samba
+密码之外再保留一份可登录的本地哈希；固定的 `akadmin` 恢复账号不受影响。服务器 E2E
+`test-env/scripts/server-authentik-password-policy-e2e.sh` 会同时验证此不变量、旧/新 Samba
+凭据、历史拒绝和管理员事件。
+
 Forced first-login password change is a separate capability and is not claimed by
 this implementation merely because ordinary writeback works. Guidance language
 comes from deployment `DEFAULT_LANGUAGE`; the rest of the Authentik UI continues

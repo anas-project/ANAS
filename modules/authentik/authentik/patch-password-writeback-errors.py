@@ -28,6 +28,17 @@ def patch(root: Path) -> None:
     )
     replace_once(
         signals,
+        "from authentik.core.models import User",
+        "from authentik.core.models import User, UserSourceConnection",
+    )
+    replace_once(
+        signals,
+        "from authentik.stages.prompt.signals import password_validate",
+        "from authentik.stages.prompt.signals import password_validate\n"
+        "from authentik.stages.user_write.signals import user_write",
+    )
+    replace_once(
+        signals,
         "LOGGER = get_logger()\n\n\n@receiver(password_validate)",
         '''LOGGER = get_logger()
 
@@ -76,6 +87,26 @@ def _anas_password_writeback_message(exc: LDAPOperationResult) -> str:
         signals,
         '        raise ValidationError("Failed to set password") from exc',
         "        raise ValidationError(_anas_password_writeback_message(exc)) from exc",
+    )
+    replace_once(
+        signals,
+        '''        raise ValidationError(_anas_password_writeback_message(exc)) from exc
+''',
+        '''        raise ValidationError(_anas_password_writeback_message(exc)) from exc
+
+
+@receiver(user_write)
+def _anas_discard_directory_user_password(sender, user: User, data: dict, **_) -> None:
+    """Keep Samba-backed users from retaining an authentik-local password."""
+    if "password" not in data:
+        return
+    sources = LDAPSource.objects.filter(sync_users_password=True, enabled=True)
+    source_ids = sources.values_list("pk", flat=True)
+    if not UserSourceConnection.objects.filter(user=user, source_id__in=source_ids).exists():
+        return
+    user.set_unusable_password()
+    user.save(update_fields=["password"])
+''',
     )
 
     user_write = root / "stages/user_write/stage.py"
