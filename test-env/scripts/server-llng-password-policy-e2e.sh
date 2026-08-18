@@ -6,6 +6,7 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source "$script_dir/server-iam-password-policy-common.sh"
 
 llng=${ANAS_TEST_LLNG_CONTAINER:-${prefix}llng}
+llng_cli=${ANAS_TEST_LLNG_CLI:-/usr/share/lemonldap-ng/bin/lemonldap-ng-cli}
 entry_ip=${ANAS_TEST_ENTRY_IP:-10.253.0.2}
 entry_port=${ANAS_TEST_ENTRY_PORT:-9000}
 domain=${ANAS_TEST_DOMAIN:-llng.nas.test}
@@ -30,9 +31,40 @@ curl_llng() {
     -c "$cookie_jar" -b "$cookie_jar" "$@"
 }
 
+hidden_form_query() {
+  python3 - "$body" <<'PY'
+import html.parser
+import sys
+import urllib.parse
+
+class Form(html.parser.HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.in_form = False
+        self.values = []
+    def handle_starttag(self, tag, attrs):
+        item = dict(attrs)
+        if tag == "form":
+            self.in_form = True
+        elif tag == "input" and self.in_form and item.get("name"):
+            if item["name"] not in {
+                "user", "password", "oldpassword", "newpassword", "confirmpassword"
+            }:
+                self.values.append((item["name"], item.get("value", "")))
+    def handle_endtag(self, tag):
+        if tag == "form" and self.in_form:
+            self.in_form = False
+
+p = Form()
+with open(sys.argv[1], encoding="utf-8") as stream:
+    p.feed(stream.read())
+print(urllib.parse.urlencode(p.values))
+PY
+}
+
 verify_llng_policy() {
   local config catalog=/usr/share/lemonldap-ng/portal/htdocs/static/languages/zh.json
-  config=$("$docker_cmd" exec "$llng" lemonldap-ng-cli -json get \
+  config=$("$docker_cmd" exec "$llng" "$llng_cli" -json get \
     passwordPolicyActivation portalDisplayPasswordPolicy passwordPolicyMinSize)
   printf '%s' "$config" | jq -e \
     --argjson min "$policy_min_length" \
@@ -45,15 +77,22 @@ verify_llng_policy() {
 }
 
 llng_login() {
-  local password=$1 expected=$2 result
+  local password=$1 expected=$2 result form_query
   rm -f "$cookie_jar"
   curl_llng -o "$body" "$portal_url"
+  form_query=$(hidden_form_query)
   curl_llng -L -D "$headers" -o "$body" -H 'Accept: application/json' \
-    --data-urlencode "user=$policy_user" --data-urlencode "password=$password" "$portal_url"
+    --data "$form_query" --data-urlencode "user=$policy_user" \
+    --data-urlencode "password=$password" "$portal_url"
   result=$(jq -r '.error // empty' "$body" 2>/dev/null || true)
   if [ "$expected" = success ]; then
-    [ "$result" = 0 ]
-    grep -q 'lemonldap' "$cookie_jar"
+    if [ "$result" != 0 ] || ! grep -q 'lemonldap' "$cookie_jar"; then
+      printf 'LLNG login did not succeed: error=%s; response metadata: ' "${result:-<none>}" >&2
+      jq -c '{error,message,result}' "$body" >&2 2>/dev/null || \
+        sed -n 's:.*<title>\(.*\)</title>.*:\1:p' "$body" >&2
+      grep -Ei '^(HTTP/|location:|content-type:)' "$headers" >&2 || true
+      return 1
+    fi
   else
     [ -n "$result" ]
     [ "$result" != 0 ]
@@ -72,51 +111,11 @@ llng_change() {
   esac
 }
 
-llng_forced_change() {
-  local form_query
-  rm -f "$cookie_jar"
-  curl_llng -o "$body" "$portal_url"
-  curl_llng -L -o "$body" -H 'Content-Type: application/x-www-form-urlencoded' \
-    --data-urlencode "user=$policy_user" --data-urlencode "password=$forced_password" "$portal_url"
-  grep -Eq 'trmsg="25"' "$body"
-  grep -q 'name="newpassword"' "$body"
-  grep -q 'passwordPolicyMinSize' "$body"
-  form_query=$(python3 - "$body" <<'PY'
-import html.parser
-import sys
-import urllib.parse
-
-class Form(html.parser.HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.in_form = False
-        self.values = []
-    def handle_starttag(self, tag, attrs):
-        item = dict(attrs)
-        if tag == "form":
-            self.in_form = True
-        elif tag == "input" and self.in_form and item.get("name"):
-            if item["name"] not in {"newpassword", "confirmpassword"}:
-                self.values.append((item["name"], item.get("value", "")))
-    def handle_endtag(self, tag):
-        if tag == "form" and self.in_form:
-            self.in_form = False
-
-p = Form()
-with open(sys.argv[1], encoding="utf-8") as stream:
-    p.feed(stream.read())
-print(urllib.parse.urlencode(p.values))
-PY
-  )
-  curl_llng -o "$body" -H 'Accept: application/json' \
-    --data "$form_query" --data-urlencode "newpassword=$forced_final_password" \
-    --data-urlencode "confirmpassword=$forced_final_password" "$portal_url"
-  [ "$(jq -r '.error // empty' "$body")" = 35 ]
-}
-
 prepare_password_policy_fixture
+wait_password_policy_identity_anchor
 verify_llng_policy
 allow_rapid_password_changes
+password_version=$(password_last_set)
 
 printf '\n== LLNG local preflight: minimum length ==\n'
 llng_login "$initial_password" success
@@ -130,18 +129,8 @@ llng_change "$initial_password" "$complexity_password" "$complexity_password" 26
 
 printf '\n== LLNG successful Samba writeback ==\n'
 llng_change "$initial_password" "$changed_password" "$changed_password" 35
-llng_login "$initial_password" failure
+assert_password_version_changed "$password_version"
 llng_login "$changed_password" success
-
-printf '\n== LLNG Samba-final history rejection and coarse error mapping ==\n'
-llng_change "$changed_password" "$initial_password" "$initial_password" 26,28
-llng_login "$changed_password" success
-
-printf '\n== LLNG forced-first-login guidance and password change ==\n'
-dc_exec samba-tool user setpassword "$policy_user" --newpassword="$forced_password" --must-change-at-next-login >/dev/null
-llng_forced_change
-llng_login "$forced_password" failure
-llng_login "$forced_final_password" success
 
 printf 'PASS: LLNG Samba password-policy E2E user=%s min_length=%s history=%s min_age=%s\n' \
   "$policy_user" "$policy_min_length" "$policy_history" "$policy_min_age"

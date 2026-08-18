@@ -49,6 +49,7 @@ func TestDirectoryBlueprintUsesEnvironmentContracts(t *testing.T) {
 	if !strings.Contains(blueprint, "default-password-change-password-policy") ||
 		!strings.Contains(blueprint, "default-password-change-prompt") ||
 		!strings.Contains(blueprint, "type: alert_info") ||
+		!strings.Contains(blueprint, "label: Password requirements") ||
 		!strings.Contains(blueprint, "check_zxcvbn: false") {
 		t.Fatal("directory blueprint must synchronize and explain the Samba password policy")
 	}

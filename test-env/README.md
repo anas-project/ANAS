@@ -295,15 +295,24 @@ Do not commit `.anas-test/` or generated secrets.
     These tests use temporary directory users and the real browser-facing
     password-change endpoints. They verify provider policy/guidance state,
     minimum-length and confirmation preflight, AD complexity handling, a
-    successful Samba writeback, old/new credential behavior, password-history
-    rejection, safe user error mapping, and cleanup. The Authentik case also
-    requires the synchronized user's local password to remain unusable and the
-    raw LDAP failure to be retained in an administrator event. The LLNG case
-    additionally covers Samba's must-change-at-next-login path and the detailed
-    guidance shown on that form.
+    successful Samba writeback (`pwdLastSet` changes and the new credential
+    authenticates), safe user error mapping, and cleanup. The Authentik case also
+    requires the synchronized user's local password to remain unusable and
+    probes every safe LDAP error category without exposing its diagnostic and
+    verifies that history/minimum-age values remain explicitly guidance-only.
+    For LLNG, history and minimum age are guidance-only because its delegated
+    LDAP reset does not reliably enforce user-change semantics. LLNG does not
+    currently route Samba's must-change-at-next-login state into a forced
+    password-change flow, so the test and module do not claim that capability.
+
+    The scripts do not require the preceding credential to fail immediately:
+    Samba can intentionally accept it during its configured old-password grace
+    period. `pwdLastSet` plus authentication with the new credential is the
+    stable writeback assertion.
 
     The scripts temporarily set the isolated domain's minimum password age to
-    zero so one disposable account can cover success and history in one run.
+    zero so one disposable account can cover multiple successful writes in one
+    run.
     A trap restores the deployed value and removes the account. Never run them
     against a production domain.
 
@@ -315,7 +324,7 @@ Do not commit `.anas-test/` or generated secrets.
       ./test-env/scripts/server-authentik-password-policy-e2e.sh
     ```
 
-    LLNG deployment (`server-identity-app-llng-e2e.yml`):
+    LLNG deployment (`server-llng-password-policy-e2e.yml`):
 
     ```sh
     DOCKER_HOST=unix:///run/anas-llng-docker.sock \
