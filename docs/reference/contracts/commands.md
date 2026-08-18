@@ -365,29 +365,78 @@ anas config plan    [-w WORKSPACE] [-c config.yml] [--json]
 anas config secret  list | get <KEY>   [-w WORKSPACE] [--json]
 ```
 
-`config list` enumerates every settable parameter with the path `set` accepts,
-the environment key it becomes, its default, its current value and its change
-effect. Values of parameters marked sensitive are reported as `<set>`/`<unset>`
-and never printed; `config secret get` remains the way to read a credential. It
-needs no workspace, because what can be set is a property of the modules; inside
-one it additionally fills in the current values.
+`config list` 列出每个参数的 `set` 路径、环境变量、类型、输入/解析要求、默认来源、单字段
+约束、当前值状态和变更影响。敏感参数的值只报告 `<set>`/`<unset>`，绝不打印明文；读取凭据
+仍使用 `config secret get`。参数声明属于 Module，不需要 workspace；在 workspace 中调用时还会
+填充当前值。
+
+`parameters[].type` 取 `string`、`bool`、`int`、`enum` 或 `unknown`。`enum` 项同时
+带非空 `allowed_values`；其他类型省略该字段。`unknown` 是读取旧 Module 和开发中不完整
+声明的兼容值，内置 Module 的 release gate 禁止它进入发布，当前内置清单中数量必须为 0。
+调用方仍应处理 `unknown`，不能把它当成已明确声明的自由文本 `string`。
+
+每项都返回以下解析语义字段：
+
+| 字段 | 契约 |
+| --- | --- |
+| `required` | `input_required` 的兼容别名；两者必须始终相等 |
+| `input_required` | 操作者是否必须在该参数的所有适用场景显式提供非空输入；有默认值或其他无条件来源时必须为 `false` |
+| `must_resolve` | 规范化并应用所有来源后，最终值是否必须非空；它可以在 `input_required: false` 时为 `true` |
+| `has_default` | 是否声明了静态默认值；用来区分“无默认值”和“默认值明确为空字符串” |
+| `default_source` | 省略输入时的无条件来源：`none`、`static`、`host`、`runtime`、`generated` 或 `inherited` |
+
+`input_required: true` 的参数必须同时满足 `has_default: false` 和
+`default_source: "none"`。`required: false` 不表示任意值都有效，也不表示解析后允许缺值。
+兼容字段 `default` 仍是字符串，并可能显示当前宿主上可计算的 host 值；判断是否有静态
+默认值必须读取 `has_default`，不能用 `default` 是否为空来猜。
+
+`default_source: "none"` 只表示没有**无条件**来源，不推出 `input_required: true`。
+例如 `ddns_go.dns_provider` 与 `ddns_updater.dns_provider` 可由 deployment
+`dynamic_dns.dns_provider` 条件注入，所以两者都是 `input_required: false`、
+`must_resolve: true`、`default_source: "none"`；resolver 未注入时再由校验要求 Module
+侧提供值。
+
+声明了单字段限制时，参数还返回 `constraints` 对象。对象只包含非空成员：整数使用
+`minimum`、`maximum`，字符串使用 `min_length`、`max_length`、`pattern`、`format`；当前
+`format` 值为 `iana_timezone`、`language_tag`、`locale` 或 `ipv4`。`type`、枚举值和这些
+constraints 可在单个候选值上完成校验。条件必填、两个或更多字段之间的关系，以及依赖
+workspace/运行态的规则仍由 resolver、应用服务、plan 或 Hook 校验，不能把其中一个字段笼统标为
+`input_required`。
+
+这些字段是 ANAS 配置 schema 的 CLI 投影，**不是 JSON Schema 文档**：JSON Schema 的
+`required` 是对象属性名数组，而这里是当前参数的输入要求；JSON Schema 的 `default` 只是
+注解，而 ANAS 会在解析时真正应用默认值；`constraints` 也只支持上列稳定字段，不接受任意
+JSON Schema 关键字。新增参数不能从默认值的 YAML scalar 类型反推类型，必须在 global
+schema 或 Module manifest 中显式声明。
+
+类型化值在持久化和送入运行时前会规范化：`bool` 写成小写 `true`/`false`，`enum` 写回
+manifest 中的标准拼写，`int` 去除首尾空白，`string` 保留原文。这样旧配置中的大小写差异
+不会让 selector 突然失效，也不会出现“校验通过但 Hook 对同一值作相反解释”。
 
 `config import` 是已有 workspace 导入外部 YAML 的入口；首次创建也可用
-`anas init WORKSPACE --config SOURCE` 完成同样的导入。两者都不修改源文件。它验证规范化
-配置后，把 `credential_rotate` 与本地管理员 bootstrap 密码移入 `.anas/secrets.yml`，
-普通 DNS/API token 等部署 Secret 则保留在 0600 的 workspace `config.yml` 中。配置、
+`anas init WORKSPACE --config SOURCE` 完成同样的导入。两者都不修改源文件。导入先把
+`env` 键写成运行时大写拼写，把 Module 名、global 参数名和 Module 参数名写成
+小写；任何规范化后重复的地址都会让导入失败，不以 YAML 顺序决定胜负。声明为 bare export
+的结构化 Module 参数迁移到 canonical `env.<KEY>`：例如
+`modules.samba_fs.config.share_dir_name` 持久化为 `env.SHARE_DIR_NAME`；若两种地址同时出现，
+按碰撞拒绝。验证规范化配置后，`credential_rotate` 与本地管理员 bootstrap 密码移入
+`.anas/secrets.yml`，普通 DNS/API token 等部署 Secret 则保留在 0600 的 workspace
+`config.yml` 中。配置、
 Secret Store 和完整性摘要先全部暂存，再一起替换；任一步失败都保留原状态。`migrate` 仅用于
 把尚未建立 CLI 完整性摘要的当前 workspace 配置纳入该模型，不提供旧 Secret Store 兼容。
 plan/lock/render/apply 拒绝外部 `-c` 和摘要不匹配的手工修改。
 
 `set` and `explain` reject a parameter no manifest declares, naming the closest
-declared one, and exit with the usage code. The raw `env.<KEY>` path is not
-checked: it is the escape hatch for values nothing declares.
+declared one, and exit with the usage code. A raw `env.<KEY>` that maps to a
+declared parameter receives the same type validation and normalization; only a
+key that no schema declares remains the permissive compatibility escape hatch.
 
 ```text
 ```
 
-`set` 与 `explain` 共用一个 `setting` 形状，能读一个就能读另一个：
+`set` 与 `explain` 共用同一个完整 `setting` 形状，包括 `type`、枚举时的
+`allowed_values`、`env_key`、输入/解析要求、默认来源和单字段 constraints。类型和元数据
+含义与 `config list` 相同：
 
 ```json
 {
@@ -395,7 +444,10 @@ checked: it is the escape hatch for values nothing declares.
   "workspace": "/data/ws", "config": "/data/ws/config.yml",
   "setting": {
     "path": "samba_dc.admin_password", "module": "samba_dc",
-    "parameter": "admin_password",
+    "parameter": "admin_password", "type": "string",
+    "env_key": "SAMBA_DC_ADMIN_PASSWORD",
+    "required": false, "input_required": false, "must_resolve": true,
+    "has_default": false, "default_source": "generated", "default": "",
     "effect": "credential_rotate", "apply": "rotate-samba-admin-password",
     "sensitive": true, "description": "…"
   }

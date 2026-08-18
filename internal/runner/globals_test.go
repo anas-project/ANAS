@@ -2,6 +2,8 @@ package runner
 
 import (
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/anas-project/ANAS/internal/config"
@@ -13,25 +15,148 @@ func TestGlobalSchemaParses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(schema.Defaults) == 0 || len(schema.Changes) == 0 || len(schema.Required) == 0 {
+	if len(schema.Defaults) == 0 || len(schema.Changes) == 0 || len(schema.InputRequired) == 0 || len(schema.MustResolve) == 0 || len(schema.Types) == 0 {
 		t.Fatal("global schema is empty")
 	}
 	// Parameters are declared in lower snake_case and become env keys, the same
 	// rule module manifests follow. There are no exceptions: IPv4 and IPv6 used
 	// to keep a mixed-case spelling, which forced every mapper to carry a
 	// special case for them and made the mapping non-uniform for no benefit.
-	for _, key := range append(append([]string{}, schema.Required...), keysOf(schema.Defaults)...) {
+	for _, key := range append(schema.finalRequirements(), keysOf(schema.Defaults)...) {
 		if !isEnvKey(key) {
 			t.Errorf("global parameter produced %q, which is not an env key", key)
 		}
 	}
 	for _, want := range []string{"BASE_DOMAIN", "EMAIL"} {
-		if !contains(schema.Required, want) {
-			t.Errorf("global schema no longer requires %s", want)
+		if !contains(schema.InputRequired, want) {
+			t.Errorf("global schema no longer requires %s as input", want)
+		}
+	}
+	if got, want := schema.InputRequired, []string{"BASE_DOMAIN", "EMAIL"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("global input-required parameters = %v, want %v", got, want)
+	}
+	if len(schema.Required) != 0 {
+		t.Fatalf("global legacy-required parameters = %v, want none", schema.Required)
+	}
+	if got, want := schema.MustResolve, []string{"TZ", "DEFAULT_LANGUAGE", "DEFAULT_LOCALE", "HOST_IP"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("global post-resolution must-resolve parameters = %v, want %v", got, want)
+	}
+	if got, want := schema.finalRequirements(), []string{"BASE_DOMAIN", "EMAIL", "TZ", "DEFAULT_LANGUAGE", "DEFAULT_LOCALE", "HOST_IP"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("global final requirements = %v, want %v", got, want)
+	}
+	parameters := config.GlobalParameters()
+	if len(parameters) != 17 || len(schema.Types) != len(parameters) {
+		t.Fatalf("global parameters/types = %d/%d, want 17/17", len(parameters), len(schema.Types))
+	}
+	boolParameters := map[string]bool{
+		"host_lan_arp_check": true, "chinese_speedup": true, "chinese_build_speedup": true,
+		"ipv4": true, "ipv6": true, "virtual_domain": true,
+	}
+	for _, parameter := range parameters {
+		spec := schema.Types[parameter]
+		want := "string"
+		if boolParameters[parameter] {
+			want = "bool"
+		}
+		if !spec.Declared() || spec.Kind != want {
+			t.Errorf("global.%s type = %+v, want %s", parameter, spec, want)
 		}
 	}
 	if got := schema.Changes["chinese_build_speedup"].Effect; got != "image_rebuild" {
 		t.Fatalf("chinese_build_speedup effect = %q, want image_rebuild", got)
+	}
+}
+
+func TestGlobalSchemaRejectsMalformedRequirementLists(t *testing.T) {
+	for _, field := range []string{"input_required", "required", "must_resolve"} {
+		for _, test := range []struct {
+			name, values, want string
+		}{
+			{name: "empty", values: `"", token`, want: "empty parameter"},
+			{name: "normalized duplicate", values: `Token, " token "`, want: "more than once after normalization"},
+		} {
+			t.Run(field+"/"+test.name, func(t *testing.T) {
+				document := "api_version: anas.dev/v1\nkind: GlobalConfig\nconfig:\n  " + field + ": [" + test.values + "]\n"
+				if _, err := loadGlobalSchema([]byte(document)); err == nil || !strings.Contains(err.Error(), "config."+field) || !strings.Contains(err.Error(), test.want) {
+					t.Fatalf("error = %v, want config.%s %s", err, field, test.want)
+				}
+			})
+		}
+	}
+}
+
+func TestGlobalSchemaRejectsMalformedDefaultAndChangeKeys(t *testing.T) {
+	for _, test := range []struct {
+		name, config, field, want string
+	}{
+		{name: "empty default", config: "  defaults:\n    \" \": value\n", field: "config.defaults", want: "empty parameter name"},
+		{name: "duplicate default", config: "  defaults:\n    Mode: safe\n    \" mode \": fast\n  types: {mode: string}\n", field: "config.defaults", want: "more than once after normalization"},
+		{name: "empty change", config: "  changes:\n    \" \": {effect: container_recreate}\n", field: "config.changes", want: "empty parameter name"},
+		{name: "duplicate change", config: "  changes:\n    Mode: {effect: container_recreate}\n    \" mode \": {effect: hot_reload}\n  types: {mode: string}\n", field: "config.changes", want: "more than once after normalization"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			document := "api_version: anas.dev/v1\nkind: GlobalConfig\nconfig:\n" + test.config
+			if _, err := loadGlobalSchema([]byte(document)); err == nil || !strings.Contains(err.Error(), test.field) || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %s %s", err, test.field, test.want)
+			}
+		})
+	}
+}
+
+func TestGlobalSchemaRejectsDefaultOutsideDeclaredType(t *testing.T) {
+	_, err := loadGlobalSchema([]byte(`api_version: anas.dev/v1
+kind: GlobalConfig
+config:
+  defaults:
+    ipv6: maybe
+  types:
+    ipv6: bool
+`))
+	if err == nil || !strings.Contains(err.Error(), "accepts true or false") {
+		t.Fatalf("error = %v, want invalid typed default", err)
+	}
+	for _, value := range []string{"null", `""`} {
+		_, err := loadGlobalSchema([]byte(`api_version: anas.dev/v1
+kind: GlobalConfig
+config:
+  defaults:
+    ipv6: ` + value + `
+  types:
+    ipv6: bool
+`))
+		if err == nil || !strings.Contains(err.Error(), "non-empty bool") {
+			t.Errorf("typed empty global default %s error = %v", value, err)
+		}
+	}
+
+	schema, err := loadGlobalSchema([]byte(`api_version: anas.dev/v1
+kind: GlobalConfig
+config:
+  defaults:
+    ipv6: " TRUE "
+  types:
+    ipv6: bool
+`))
+	if err != nil {
+		t.Fatalf("canonicalizable global default was rejected: %v", err)
+	}
+	if got := schema.Defaults["IPV6"]; got != "true" {
+		t.Fatalf("global bool default = %q, want true", got)
+	}
+}
+
+func TestGlobalSchemaRejectsUnknownNestedConstraintField(t *testing.T) {
+	_, err := loadGlobalSchema([]byte(`api_version: anas.dev/v1
+kind: GlobalConfig
+config:
+  types:
+    host_ip:
+      kind: string
+      constraints:
+        formatt: ipv4
+`))
+	if err == nil || !strings.Contains(err.Error(), "formatt") {
+		t.Fatalf("error = %v, want strict nested-field rejection", err)
 	}
 }
 

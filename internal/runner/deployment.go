@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,113 +17,29 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/compose"
 	"github.com/anas-project/ANAS/internal/config"
+	"github.com/anas-project/ANAS/internal/deployment"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	deploymentAPIVersion = "anas.deployment/v1"
-	activeStateVersion   = "anas.state/v2"
+	deploymentAPIVersion = deployment.ManifestAPIVersion
+	activeStateVersion   = deployment.StateAPIVersion
 )
 
 // The json tags are not decoration: `deployments inspect --json` emits these
 // structs directly, and without them the document would carry Go field names
 // while the YAML on disk carried snake_case ones. Two spellings of the same
 // manifest is exactly the kind of thing a caller ends up hard-coding around.
-type deploymentManifest struct {
-	APIVersion        string                       `yaml:"api_version" json:"api_version"`
-	ID                string                       `yaml:"id" json:"id"`
-	CreatedAt         string                       `yaml:"created_at" json:"created_at"`
-	ConfigFingerprint string                       `yaml:"config_fingerprint" json:"config_fingerprint"`
-	ImagesBuilt       bool                         `yaml:"images_built,omitempty" json:"images_built"`
-	BuildAcceleration bool                         `yaml:"build_acceleration,omitempty" json:"build_acceleration"`
-	ModuleOrder       []string                     `yaml:"module_order" json:"module_order"`
-	Bindings          map[string]map[string]string `yaml:"capability_bindings,omitempty" json:"capability_bindings,omitempty"`
-	Modules           map[string]deploymentModule  `yaml:"modules" json:"modules"`
-	Settings          map[string]deploymentSetting `yaml:"settings,omitempty" json:"settings,omitempty"`
-	Resources         []deploymentResource         `yaml:"resources,omitempty" json:"resources,omitempty"`
-	Snapshot          deploymentSnapshotPolicy     `yaml:"snapshot,omitempty" json:"snapshot"`
-}
-
-type deploymentModule struct {
-	Name               string `yaml:"name" json:"name"`
-	Version            string `yaml:"version" json:"version"`
-	Revision           int    `yaml:"revision" json:"revision"`
-	AppVersion         string `yaml:"app_version,omitempty" json:"app_version,omitempty"`
-	Lifecycle          string `yaml:"lifecycle" json:"lifecycle"`
-	ArtifactDeployment string `yaml:"artifact_deployment" json:"artifact_deployment"`
-	RenderDigest       string `yaml:"render_digest" json:"render_digest"`
-	// DataBreaking is frozen from the module's upgrade.data_breaking so that a
-	// rollback can be judged against what the module claimed when it was rendered,
-	// not against whatever the bundle on disk says today. omitempty distinguishes
-	// the two states that matter: an undeclared list is absent, a declared-empty
-	// one is written out as `[]`.
-	DataBreaking  *[]string               `yaml:"data_breaking,omitempty" json:"data_breaking,omitempty"`
-	RuntimeType   string                  `yaml:"runtime" json:"runtime"`
-	ComposeFile   string                  `yaml:"compose_file,omitempty" json:"compose_file,omitempty"`
-	Hook          HookConfig              `yaml:"hook,omitempty" json:"hook,omitempty"`
-	EnvPrefix     string                  `yaml:"env_prefix,omitempty" json:"env_prefix,omitempty"`
-	Consumes      []string                `yaml:"consumes,omitempty" json:"consumes,omitempty"`
-	Dependencies  []string                `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
-	UseHostLAN    string                  `yaml:"host_lan,omitempty" json:"host_lan,omitempty"`
-	Changes       map[string]ChangePolicy `yaml:"changes,omitempty" json:"changes,omitempty"`
-	Providers     []ContractProvider      `yaml:"contract_providers,omitempty" json:"contract_providers,omitempty"`
-	LocalAccounts []LocalAccount          `yaml:"local_accounts,omitempty" json:"local_accounts,omitempty"`
-}
-
-type deploymentResource struct {
-	Consumer        string         `yaml:"consumer" json:"consumer"`
-	ID              string         `yaml:"id" json:"id"`
-	Contract        string         `yaml:"contract" json:"contract"`
-	ContractVersion string         `yaml:"contract_version" json:"contract_version"`
-	Provider        string         `yaml:"provider" json:"provider"`
-	Interface       string         `yaml:"interface" json:"interface"`
-	Spec            map[string]any `yaml:"spec" json:"spec"`
-	SecretKey       string         `yaml:"password_secret" json:"password_secret"`
-}
-
-type deploymentSetting struct {
-	Fingerprint string `yaml:"fingerprint" json:"fingerprint"`
-	Module      string `yaml:"module" json:"module"`
-	Parameter   string `yaml:"parameter" json:"parameter"`
-	Effect      string `yaml:"effect" json:"effect"`
-	Apply       string `yaml:"apply,omitempty" json:"apply,omitempty"`
-}
-
-type deploymentSnapshotPolicy struct {
-	Backend  string `yaml:"backend,omitempty" json:"backend"`
-	Source   string `yaml:"source,omitempty" json:"source"`
-	Root     string `yaml:"root,omitempty" json:"root"`
-	KeepAuto int    `yaml:"keep_auto,omitempty" json:"keep_auto"`
-}
-
-type activeDeploymentState struct {
-	APIVersion          string   `yaml:"api_version"`
-	ActiveDeployment    string   `yaml:"active_deployment,omitempty"`
-	RuntimeStatus       string   `yaml:"runtime_status,omitempty"`
-	PreviousDeployments []string `yaml:"previous_deployments,omitempty"`
-	ActivatedAt         string   `yaml:"activated_at,omitempty"`
-	VerifiedAt          string   `yaml:"verified_at,omitempty"`
-	Transaction         string   `yaml:"transaction,omitempty"`
-}
-
-type deploymentState struct {
-	APIVersion    string `yaml:"api_version"`
-	ID            string `yaml:"id"`
-	Status        string `yaml:"status"`
-	CreatedAt     string `yaml:"created_at"`
-	ActivatedAt   string `yaml:"activated_at,omitempty"`
-	DeactivatedAt string `yaml:"deactivated_at,omitempty"`
-	VerifiedAt    string `yaml:"verified_at,omitempty"`
-	Predecessor   string `yaml:"predecessor,omitempty"`
-	Failure       string `yaml:"failure,omitempty"`
-	// There is deliberately no snapshot_id. A single field could only ever name
-	// one snapshot, and it existed to answer "which snapshot do I use to get
-	// from Y back to X" — a question that stops being asked once a snapshot is
-	// a self-sufficient point in time rather than one leg of a transition.
-	// Keeping it would only open a window for the two writes to disagree.
-}
+type deploymentManifest = deployment.Manifest
+type deploymentModule = deployment.Module
+type deploymentResource = deployment.Resource
+type deploymentSetting = deployment.Setting
+type deploymentSnapshotPolicy = deployment.SnapshotPolicy
+type activeDeploymentState = deployment.ActiveState
+type deploymentState = deployment.State
 
 type deploymentIndex struct {
 	APIVersion  string            `yaml:"api_version"`
@@ -232,6 +149,9 @@ func runLock(args []string, jsonMode bool) error {
 	}
 	a.order, err = a.resolveOrder(cfg.Modules.Order)
 	if err != nil {
+		return preconditionErrorf("resolution_failed", "%s", err.Error())
+	}
+	if err := validateInputRequiredEnv(a.env, a.order, a.reg); err != nil {
 		return preconditionErrorf("resolution_failed", "%s", err.Error())
 	}
 	if err := a.validateVersions(lock); err != nil {
@@ -363,6 +283,9 @@ func runPlan(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("resolution_failed", "%s", err.Error())
 	}
+	if err := validateInputRequiredEnv(a.env, a.order, a.reg); err != nil {
+		return preconditionErrorf("resolution_failed", "%s", err.Error())
+	}
 	if err := a.validateVersions(&moduleLock{APIVersion: "anas.module-lock/v1", Modules: map[string]moduleLockRecord{}}); err != nil {
 		return preconditionErrorf("version_conflict", "%s", err.Error())
 	}
@@ -477,6 +400,9 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	}
 	a.order, err = a.resolveOrder(cfg.Modules.Order)
 	if err != nil {
+		return "", preconditionErrorf("resolution_failed", "%s", err.Error())
+	}
+	if err := validateInputRequiredEnv(a.env, a.order, a.reg); err != nil {
 		return "", preconditionErrorf("resolution_failed", "%s", err.Error())
 	}
 	total := int64(len(a.order))
@@ -1614,30 +1540,31 @@ func checkBtrfsSubvolume(path string) error {
 // answer and exits 0. Reporting it as a failure would make a caller unable to
 // distinguish a fresh workspace from an unreadable one.
 func runStatus(args []string, jsonMode bool) error {
-	workspace, base, err := parseBaseOnly("status", args)
+	workspace, _, err := parseBaseOnly("status", args)
 	if err != nil {
 		return err
 	}
-	active, err := loadActiveState(base)
+	status, err := application.NewService(workspace).Status(context.Background())
 	if err != nil {
-		return preconditionErrorf("state_unreadable", "%s", err.Error())
+		return applicationCLIError(err)
 	}
 	if jsonMode {
 		return emitOK(map[string]any{
 			"workspace":            workspace,
-			"active_deployment":    nullableString(active.ActiveDeployment),
-			"activated_at":         nullableString(active.ActivatedAt),
-			"verified_at":          nullableString(active.VerifiedAt),
-			"previous_deployments": append([]string{}, active.PreviousDeployments...),
+			"active_deployment":    status.ActiveDeployment,
+			"activated_at":         status.ActivatedAt,
+			"verified_at":          status.VerifiedAt,
+			"previous_deployments": append([]string{}, status.PreviousDeployments...),
 		})
 	}
-	if active.ActiveDeployment == "" {
+	if status.ActiveDeployment == nil {
 		fmt.Println("active: none")
 		return nil
 	}
-	fmt.Printf("active: %s\nactivated_at: %s\nverified_at: %s\n", active.ActiveDeployment, active.ActivatedAt, active.VerifiedAt)
-	if len(active.PreviousDeployments) > 0 {
-		fmt.Println("previous: " + strings.Join(active.PreviousDeployments, ","))
+	fmt.Printf("active: %s\nactivated_at: %s\nverified_at: %s\n",
+		*status.ActiveDeployment, optionalString(status.ActivatedAt), optionalString(status.VerifiedAt))
+	if len(status.PreviousDeployments) > 0 {
+		fmt.Println("previous: " + strings.Join(status.PreviousDeployments, ","))
 	}
 	return nil
 }
@@ -1649,7 +1576,7 @@ func runDeployments(args []string, jsonMode bool) error {
 		return usageErrorf("usage: anas deployments list|inspect [ID] [-w <workspace>] [--json]")
 	}
 	sub := args[0]
-	workspace, base, rest, err := parseBaseArgs("deployments "+sub, args[1:])
+	workspace, _, rest, err := parseBaseArgs("deployments "+sub, args[1:])
 	if err != nil {
 		return err
 	}
@@ -1658,16 +1585,18 @@ func runDeployments(args []string, jsonMode bool) error {
 		if len(rest) != 0 {
 			return usageErrorf("usage: anas deployments list [-w <workspace>] [--json]")
 		}
-		states, err := listDeploymentStates(base)
+		result, err := application.NewService(workspace).ListDeployments(
+			context.Background(), application.ListDeploymentsRequest{},
+		)
 		if err != nil {
-			return preconditionErrorf("state_unreadable", "%s", err.Error())
+			return applicationCLIError(err)
 		}
 		if jsonMode {
 			return emitOK(map[string]any{
-				"workspace": workspace, "deployments": deploymentStateDocuments(states),
+				"workspace": workspace, "deployments": deploymentStateDocuments(result.Deployments),
 			})
 		}
-		for _, state := range states {
+		for _, state := range result.Deployments {
 			fmt.Printf("%s\t%s\t%s\n", state.ID, state.Status, state.CreatedAt)
 		}
 		return nil
@@ -1678,34 +1607,30 @@ func runDeployments(args []string, jsonMode bool) error {
 		if err := validateDeploymentID(rest[0]); err != nil {
 			return usageErrorf("%s", err.Error())
 		}
-		root := filepath.Join(base, "deployments", rest[0])
+		result, err := application.NewService(workspace).InspectDeployment(
+			context.Background(), application.InspectDeploymentRequest{DeploymentID: rest[0]},
+		)
+		if err != nil {
+			return applicationCLIError(err)
+		}
 		if jsonMode {
-			// The YAML the human form prints is an on-disk format. Re-reading it
-			// into the manifest type and emitting that is what makes `inspect
-			// --json` a JSON document rather than YAML on stdout, which no
-			// amount of JSON.parse would have accepted.
-			manifest, err := loadDeploymentManifest(root)
-			if err != nil {
-				return preconditionErrorf("deployment_missing", "%s", err.Error())
-			}
-			state, err := loadDeploymentState(base, rest[0])
-			if err != nil {
-				return preconditionErrorf("state_unreadable", "%s", err.Error())
-			}
 			return emitOK(map[string]any{
-				"workspace": workspace, "deployment_path": root,
-				"deployment": manifest, "state": deploymentStateDocument(state),
+				"workspace": workspace, "deployment_path": result.DeploymentPath,
+				"deployment": result.Deployment, "state": deploymentStateDocument(result.State),
 			})
 		}
-		b, err := os.ReadFile(filepath.Join(root, "deployment.yml"))
-		if err != nil {
-			return preconditionErrorf("deployment_missing", "%s", err.Error())
-		}
-		fmt.Print(string(b))
+		fmt.Print(string(result.RawManifest))
 		return nil
 	default:
 		return usageErrorf("unknown deployments command %q; expected list or inspect", sub)
 	}
+}
+
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func deploymentStateDocument(state deploymentState) map[string]any {
@@ -1820,10 +1745,7 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 }
 
 func validateDeploymentID(id string) error {
-	if id == "" || filepath.Base(id) != id || id == "." || id == ".." || strings.ContainsAny(id, `/\\`) {
-		return fmt.Errorf("invalid deployment id %q", id)
-	}
-	return nil
+	return deployment.ValidateID(id)
 }
 
 func loadDeploymentManifest(root string) (*deploymentManifest, error) {

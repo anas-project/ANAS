@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: llng
 version: 2.23.2
-revision: 8
+revision: 9
 app_version: 2.23.2
 abi:
   supports:
@@ -59,6 +59,16 @@ config:
     enable_test: "true"
     adminer_enabled: "false"
     db_type: auto
+  types:
+    domain_prefix: string
+    manager_domain_prefix: string
+    test_domain_prefix: string
+    log_level: string
+    db_name: string
+    enable_test: bool
+    adminer_enabled: bool
+    db_type:
+      enum: [auto, postgres, mariadb]
   # Endpoints this module publishes for its bound consumers. The runner checks
   # that every binding actually received them.
   exports:

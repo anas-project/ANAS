@@ -5,6 +5,7 @@ on:
     branches: [anas-release]
     paths:
       - "cmd/anas/**"
+      - "cmd/anas-helper/**"
       - "cmd/gen-contract-docs/**"
       - "contracts/**"
       - "internal/**"
@@ -12,7 +13,12 @@ on:
       - "go.mod"
       - "go.sum"
       - "scripts/ci/build-anas-release.sh"
+      - "scripts/ci/anas-release-version.sh"
+      - "scripts/ci/anas-release-version-test.sh"
       - "scripts/ci/install-test.sh"
+      - "scripts/ci/verify-anas-release.sh"
+      - "scripts/ci/verify-anas-release-test.sh"
+      - ".github/workflows/anas-release.yml"
   workflow_dispatch:
     inputs:
       version:
@@ -58,7 +64,9 @@ jobs:
         run: bash scripts/ci/anas-release-version-test.sh
 
       - name: Test installer
-        run: bash scripts/ci/install-test.sh
+        run: |
+          bash scripts/ci/install-test.sh
+          bash scripts/ci/verify-anas-release-test.sh
 
       - name: Validate release identity
         id: release
@@ -144,6 +152,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.goarch == 'arm64'
+        with:
+          platforms: arm64
+
       - name: Build Linux archive
         env:
           VERSION: ${{ needs.validate.outputs.version }}
@@ -154,6 +167,9 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/ci/build-anas-release.sh "$VERSION" "$COMMIT" "$BUILD_DATE" "$GOARCH" dist
+          bash scripts/ci/verify-anas-release.sh \
+            "$VERSION" "$COMMIT" "$BUILD_DATE" "$GOARCH" \
+            "dist/anas_linux_${GOARCH}.tar.gz"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -178,8 +194,23 @@ jobs:
           merge-multiple: true
 
       - name: Create checksums
-        working-directory: dist
-        run: sha256sum anas_linux_*.tar.gz >SHA256SUMS
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          COMMIT: ${{ needs.validate.outputs.commit }}
+          BUILD_DATE: ${{ needs.validate.outputs.build_date }}
+        run: |
+          set -euo pipefail
+          mapfile -t archives < <(find dist -maxdepth 1 -type f -name 'anas_linux_*.tar.gz' -print | LC_ALL=C sort)
+          [[ "${#archives[@]}" -eq 2 ]] || {
+            echo "expected exactly two ANAS release archives, found ${#archives[@]}" >&2
+            exit 1
+          }
+          for arch in amd64 arm64; do
+            archive="dist/anas_linux_${arch}.tar.gz"
+            bash scripts/ci/verify-anas-release.sh \
+              "$VERSION" "$COMMIT" "$BUILD_DATE" "$arch" "$archive" --manifest-only
+          done
+          (cd dist && sha256sum anas_linux_*.tar.gz >SHA256SUMS)
 
       - name: Create immutable GitHub release
         env:

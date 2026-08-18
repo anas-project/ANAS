@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: ddns_updater
 version: 2.10.0
-revision: 2
+revision: 3
 app_version: 2.10.0
 abi:
   supports:
@@ -31,7 +31,7 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
-  required:
+  must_resolve:
     - dns_provider
   defaults:
     domain_prefix: ddns
@@ -54,6 +54,19 @@ config:
     publicip_dns_providers: all
     ttl: "300"
   types:
+    dns_provider: string
+    domain_prefix: string
+    forward_auth_interface:
+      enum: [auto, http]
+    # These are scalar encodings of ordered provider lists. Keep them strings
+    # until the schema can represent repeated values without narrowing them to
+    # a single enum choice.
+    publicip_fetchers: string
+    publicip_providers: string
+    publicip_ipv4_providers: string
+    publicip_ipv6_providers: string
+    publicip_dns_providers: string
+    ttl: int
     # Cloudflare needs its zone id in addition to the provider credential.
     # Other providers ignore the value, so it is optional rather than required.
     zone_identifier: string

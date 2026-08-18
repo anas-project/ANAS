@@ -131,6 +131,23 @@ func (s *secretStore) clone() map[string]string {
 	return out
 }
 
+// lifecycleManagedValues returns the only Secret Store records that may satisfy
+// caller-supplied configuration requirements. Generated hook material and local
+// administrator credentials have different lifecycles and must never make an
+// unrelated input_required declaration appear satisfied.
+func (s *secretStore) lifecycleManagedValues() map[string]string {
+	out := map[string]string{}
+	if s == nil {
+		return out
+	}
+	for key, value := range s.values {
+		if s.metadata[key].Kind == "lifecycle_managed" && value != "" {
+			out[key] = value
+		}
+	}
+	return out
+}
+
 func (s *secretStore) Merge(values map[string]string) {
 	if s.metadata == nil {
 		s.metadata = map[string]secretMetadata{}

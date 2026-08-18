@@ -26,6 +26,8 @@ import json, os, re, sys
 doc = json.load(open(sys.argv[1]))
 parameters = doc["parameters"]
 assert len(parameters) == 139, len(parameters)
+assert sum(item["module"] == "global" for item in parameters) == 17
+assert sum(item["module"] != "global" for item in parameters) == 122
 
 removed = {
     "global.basicauth_user",
@@ -41,8 +43,197 @@ paths = {item["path"] for item in parameters}
 assert not (paths & removed), sorted(paths & removed)
 
 for item in parameters:
-    for field in ("path", "module", "parameter", "env_key", "effect", "apply", "description"):
+    for field in ("path", "module", "parameter", "env_key", "type", "effect", "apply", "description"):
         assert item.get(field), (item.get("path"), field, item.get(field))
+    for field in ("required", "input_required", "must_resolve", "has_default"):
+        assert isinstance(item.get(field), bool), (item.get("path"), field, item.get(field))
+    assert item["required"] == item["input_required"], (
+        item["path"], item["required"], item["input_required"]
+    )
+    assert isinstance(item.get("default"), str), (item["path"], "default", item.get("default"))
+    assert item.get("default_source") in {
+        "none", "static", "host", "runtime", "generated", "inherited",
+    }, (item["path"], "default_source", item.get("default_source"))
+
+    # A literal default is represented only by has_default/static. Other
+    # sources may compute the v1 `default` string for display, but they never
+    # turn it into a literal declaration. Explicit input and an unconditional
+    # source are mutually exclusive.
+    assert item["has_default"] == (item["default_source"] == "static"), item
+    if item["input_required"]:
+        assert not item["has_default"], item
+        assert item["default_source"] == "none", item
+
+    constraints = item.get("constraints")
+    if constraints is None:
+        continue
+    assert isinstance(constraints, dict) and constraints, (item["path"], constraints)
+    assert set(constraints) <= {
+        "minimum", "maximum", "min_length", "max_length", "pattern", "format",
+    }, (item["path"], constraints)
+    for field in ("minimum", "maximum"):
+        if field in constraints:
+            assert item["type"] == "int" and type(constraints[field]) is int, (
+                item["path"], field, constraints[field]
+            )
+    for field in ("min_length", "max_length"):
+        if field in constraints:
+            assert item["type"] == "string" and type(constraints[field]) is int, (
+                item["path"], field, constraints[field]
+            )
+            assert constraints[field] >= 0, (item["path"], field, constraints[field])
+    if "pattern" in constraints:
+        assert item["type"] == "string" and isinstance(constraints["pattern"], str), (
+            item["path"], "pattern", constraints["pattern"]
+        )
+        assert constraints["pattern"], (item["path"], "pattern")
+    if "format" in constraints:
+        assert item["type"] == "string", (item["path"], "format", constraints["format"])
+        assert constraints["format"] in {
+            "iana_timezone", "language_tag", "locale", "ipv4",
+        }, (item["path"], "format", constraints["format"])
+
+# Cover every source spelling and prove that an explicit empty literal remains
+# distinguishable from no literal at all. Host-derived display defaults are
+# deliberately not pinned because they vary with the test machine.
+metadata_cases = {
+    "global.base_domain": (False, "none"),
+    "global.container_prefix": (True, "static"),
+    "global.timezone": (False, "host"),
+    "global.host_ip": (False, "runtime"),
+    "samba_dc.admin_password": (False, "generated"),
+    "nextcloud.language": (False, "inherited"),
+}
+by_path = {item["path"]: item for item in parameters}
+for path, (has_default, default_source) in metadata_cases.items():
+    item = by_path[path]
+    assert item["has_default"] == has_default, (path, item["has_default"])
+    assert item["default_source"] == default_source, (path, item["default_source"])
+assert by_path["ddns_go.ipv4_interface"]["default"] == ""
+assert by_path["ddns_go.ipv4_interface"]["has_default"] is True
+assert by_path["global.base_domain"]["default"] == ""
+assert by_path["global.base_domain"]["has_default"] is False
+
+default_source_counts = {}
+for item in parameters:
+    source = item["default_source"]
+    default_source_counts[source] = default_source_counts.get(source, 0) + 1
+assert default_source_counts == {
+    "none": 8,
+    "static": 111,
+    "host": 3,
+    "runtime": 4,
+    "generated": 9,
+    "inherited": 4,
+}, default_source_counts
+
+# Pin representative portable constraints without requiring every parameter to
+# have one. Adding a new constraint remains compatible; weakening one of these
+# published examples is an intentional contract change.
+constraint_cases = {
+    "global.timezone": {"format": "iana_timezone"},
+    "global.default_language": {"format": "language_tag"},
+    "global.default_locale": {"format": "locale"},
+    "global.host_ip": {"format": "ipv4"},
+    "eturnal.port": {"minimum": 1, "maximum": 65535},
+    "samba_dc.max_log_size": {"minimum": 1},
+    "oauth2_proxy.allow_groups": {"pattern": r"\S"},
+}
+for path, constraints in constraint_cases.items():
+    assert by_path[path].get("constraints") == constraints, (
+        path, by_path[path].get("constraints"), constraints
+    )
+
+# `unknown` remains readable for legacy/external Modules, but every parameter in
+# the built-in release inventory must have an explicit declaration. In
+# particular, an undeclared type must never be silently presented as `string`.
+type_counts = {}
+for item in parameters:
+    kind = item["type"]
+    assert kind in {"string", "bool", "int", "enum", "unknown"}, (item["path"], kind)
+    type_counts[kind] = type_counts.get(kind, 0) + 1
+    if kind == "enum":
+        assert item.get("allowed_values"), (item["path"], "enum without allowed_values")
+    else:
+        assert "allowed_values" not in item, (item["path"], kind, item.get("allowed_values"))
+assert type_counts == {
+    "string": 79,
+    "bool": 22,
+    "int": 24,
+    "enum": 14,
+}, type_counts
+
+global_types = {
+    item["parameter"]: item["type"]
+    for item in parameters
+    if item["module"] == "global"
+}
+assert global_types == {
+    "base_domain": "string",
+    "chinese_build_speedup": "bool",
+    "chinese_speedup": "bool",
+    "container_prefix": "string",
+    "default_language": "string",
+    "default_locale": "string",
+    "dns_server": "string",
+    "email": "string",
+    "host_ip": "string",
+    "host_lan_arp_check": "bool",
+    "host_lan_bridge_ip": "string",
+    "host_lan_ip": "string",
+    "ipv4": "bool",
+    "ipv6": "bool",
+    "network_prefix": "string",
+    "timezone": "string",
+    "virtual_domain": "bool",
+}, global_types
+
+# Input-required is intentionally conservative and `required` is its v1 alias.
+# must_resolve additionally covers values supplied by host/runtime/inherited/
+# generated sources or by a conditional deployment resolver. Conditional
+# requirements belong to resolver/application/plan/Hook validation rather than
+# either input-required field.
+input_required_paths = {
+    "global.base_domain",
+    "global.email",
+}
+must_resolve_paths = input_required_paths | {
+    "global.default_language",
+    "global.default_locale",
+    "global.host_ip",
+    "global.timezone",
+    "collabora.admin_password",
+    "ddns_go.dns_provider",
+    "ddns_updater.dns_provider",
+    "lam.admin_password",
+    "lam.language",
+    "mariadb.root_password",
+    "nextcloud.language",
+    "nextcloud.locale",
+    "postgres.password",
+    "samba_dc.admin_password",
+    "samba_dc.administrator_password",
+    "samba_dc.anchor_bind_password",
+    "samba_dc.ldap_bind_password",
+    "samba_dc.netbios_name",
+    "samba_dc.password_bind_password",
+    "samba_dc.realm",
+}
+assert {item["path"] for item in parameters if item["input_required"]} == input_required_paths
+assert {item["path"] for item in parameters if item["required"]} == input_required_paths
+assert len(must_resolve_paths) == 22
+assert {item["path"] for item in parameters if item["must_resolve"]} == must_resolve_paths
+
+# These have no unconditional default source, but the deployment-level
+# dynamic_dns.dns_provider resolver can supply them. `none` must therefore not
+# be interpreted as an inverse alias for input_required.
+for path in ("ddns_go.dns_provider", "ddns_updater.dns_provider"):
+    item = by_path[path]
+    assert item["input_required"] is False, item
+    assert item["required"] is False, item
+    assert item["must_resolve"] is True, item
+    assert item["has_default"] is False, item
+    assert item["default_source"] == "none", item
 
 effects = {}
 for item in parameters:
@@ -51,7 +242,7 @@ assert effects == {
     "container_recreate": 91,
     "credential_rotate": 7,
     "data_migrate": 9,
-    "hot_reload": 8,
+    "hot_reload": 16,
     "image_rebuild": 1,
     "immutable": 3,
     "reconcile": 12,

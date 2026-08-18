@@ -23,14 +23,26 @@ import (
 // configListEntry is one settable parameter, described the way an operator
 // needs it: the path that addresses it, what it would do, and what it is now.
 type configListEntry struct {
-	Path      string
-	Module    string
-	Parameter string
-	EnvKey    string
-	Default   string
-	Value     string
-	Set       bool
-	Policy    ChangePolicy
+	Path          string
+	Module        string
+	Parameter     string
+	EnvKey        string
+	Default       string
+	HasDefault    bool
+	DefaultSource string
+	Value         string
+	Set           bool
+	// ValueSensitive is true when the effective value came from a storage
+	// boundary that is secret regardless of manifest metadata. It prevents a
+	// malformed third-party declaration from exposing a lifecycle credential.
+	ValueSensitive bool
+	Policy         ChangePolicy
+}
+
+type configParameterValueView struct {
+	Values    map[string]string
+	Present   map[string]bool
+	Sensitive map[string]bool
 }
 
 // collectConfigParameters builds the inventory from the two declaration sites
@@ -41,7 +53,7 @@ type configListEntry struct {
 // of one parameter the same entry. The addressable path is then recovered
 // through resolveConfigTarget, so the path printed here is the path `set`
 // accepts -- the two cannot drift, because they are the same function.
-func collectConfigParameters(reg map[string]Module, settings map[string]string) ([]configListEntry, error) {
+func collectConfigParameters(reg map[string]Module, settings map[string]string, valueViews ...configParameterValueView) ([]configListEntry, error) {
 	type source struct {
 		module    string
 		parameter string
@@ -101,12 +113,23 @@ func collectConfigParameters(reg map[string]Module, settings map[string]string) 
 			EnvKey:    parameterEnvKey(src.module, src.parameter, reg),
 			Policy:    policyForTarget(target, reg),
 		}
-		if src.module == globalModuleName {
-			entry.Default = globalDefaults[entry.EnvKey]
-		} else {
-			entry.Default = reg[src.module].Defaults[entry.EnvKey]
-		}
-		if value, ok := settings[strings.Join(target.YAMLPath, ".")]; ok {
+		entry.Default, entry.HasDefault, entry.DefaultSource = parameterDefaultMetadata(
+			src.module, src.parameter, reg, globalDefaults,
+		)
+		if len(valueViews) > 0 {
+			view := valueViews[0]
+			if view.Present[entry.EnvKey] {
+				entry.Value, entry.Set = view.Values[entry.EnvKey], true
+				entry.ValueSensitive = view.Sensitive[entry.EnvKey]
+			} else if value, ok := settings[strings.Join(target.YAMLPath, ".")]; ok && value == "" {
+				// BaseEnv intentionally omits empty global fields. Settings is used
+				// only to preserve that explicit-empty presence bit; non-empty
+				// effective values always come from the canonical env-key view.
+				entry.Value, entry.Set = "", true
+			}
+		} else if value, ok := settings[strings.Join(target.YAMLPath, ".")]; ok {
+			// Compatibility for inventory-focused unit callers that do not have
+			// a loaded config. Runtime reporting always supplies a value view.
 			entry.Value, entry.Set = value, true
 		}
 		entries = append(entries, entry)
@@ -149,16 +172,42 @@ func parameterEnvKey(module, parameter string, reg map[string]Module) string {
 // argument exists because the error for a misspelled parameter points the
 // reader at this command, and sending them to a 130-line listing to find one
 // module's parameters would be answering a different question than they asked.
-func reportConfigList(cfgPath string, reg map[string]Module, scope string, jsonMode bool) error {
+func reportConfigList(cfgPath string, reg map[string]Module, scope string, jsonMode bool, bases ...string) error {
 	settings := map[string]string{}
+	valueView := configParameterValueView{
+		Values: map[string]string{}, Present: map[string]bool{}, Sensitive: map[string]bool{},
+	}
 	if cfgPath != "" && exists(cfgPath) {
-		loaded, err := config.Settings(cfgPath)
+		loaded, err := config.Load(cfgPath)
 		if err != nil {
 			return preconditionErrorf("config_invalid", "%s", err.Error())
 		}
-		settings = loaded
+		for key, value := range loaded.BaseEnv() {
+			key = config.EnvKey(key)
+			valueView.Values[key] = value
+			valueView.Present[key] = true
+		}
+		for key := range loaded.Secrets {
+			valueView.Sensitive[config.EnvKey(key)] = true
+		}
+		settings, err = config.Settings(cfgPath)
+		if err != nil {
+			return preconditionErrorf("config_invalid", "%s", err.Error())
+		}
+		if len(bases) > 0 && bases[0] != "" {
+			store, err := loadSecretStore(bases[0])
+			if err != nil {
+				return preconditionErrorf("secrets_unreadable", "%s", err.Error())
+			}
+			for key := range store.lifecycleManagedValues() {
+				key = config.EnvKey(key)
+				valueView.Present[key] = true
+				valueView.Sensitive[key] = true
+				delete(valueView.Values, key)
+			}
+		}
 	}
-	entries, err := collectConfigParameters(reg, settings)
+	entries, err := collectConfigParameters(reg, settings, valueView)
 	if err != nil {
 		return failuref("registry_invalid", "%s", err.Error())
 	}
@@ -179,15 +228,15 @@ func reportConfigList(cfgPath string, reg map[string]Module, scope string, jsonM
 				Display: entry.Path, Module: entry.Module, Parameter: entry.Parameter,
 			}, entry.Policy)
 			document["env_key"] = entry.EnvKey
-			kind, values := paramTypeDocument(targetParamType(configTarget{Module: entry.Module, Parameter: entry.Parameter}, reg))
-			document["type"] = kind
-			if len(values) > 0 {
-				document["allowed_values"] = values
+			defaultValue := entry.Default
+			if entry.Policy.Sensitive {
+				defaultValue = ""
 			}
-			document["required"] = parameterRequired(entry.Module, entry.Parameter, reg)
-			document["default"] = entry.Default
+			addConfigParameterMetadata(document, configTarget{
+				Display: entry.Path, Module: entry.Module, Parameter: entry.Parameter,
+			}, reg, defaultValue, entry.HasDefault, entry.DefaultSource)
 			document["set"] = entry.Set
-			if entry.Set && !entry.Policy.Sensitive {
+			if entry.Set && !entry.Policy.Sensitive && !entry.ValueSensitive {
 				document["value"] = entry.Value
 			}
 			documents = append(documents, document)
@@ -200,22 +249,110 @@ func reportConfigList(cfgPath string, reg map[string]Module, scope string, jsonM
 	for _, entry := range entries {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			entry.Path, entry.EnvKey,
-			placeholder(entry.Default), configListValue(entry), entry.Policy.Effect)
+			configDefaultDisplay(entry.Default, entry.HasDefault, entry.Policy.Sensitive),
+			configListValue(entry), entry.Policy.Effect)
 	}
 	return w.Flush()
 }
 
 func parameterRequired(module, parameter string, reg map[string]Module) bool {
+	return parameterInputRequired(module, parameter, reg)
+}
+
+// parameterInputRequired is the external input contract. The legacy JSON
+// field `required` remains an alias of this value, while MustResolve describes
+// the later invariant after literal, host, inherited, generated and runtime
+// defaults have had a chance to provide a value.
+func parameterInputRequired(module, parameter string, reg map[string]Module) bool {
 	key := parameterEnvKey(module, parameter, reg)
 	if module == globalModuleName {
-		return contains(globalConfig.Required, key)
+		return contains(globalConfig.InputRequired, key)
 	}
 	mod, ok := reg[module]
-	return ok && contains(mod.Required, key)
+	return ok && contains(mod.InputRequired, key)
+}
+
+func parameterMustResolve(module, parameter string, reg map[string]Module) bool {
+	key := parameterEnvKey(module, parameter, reg)
+	if module == globalModuleName {
+		return contains(globalConfig.finalRequirements(), key)
+	}
+	mod, ok := reg[module]
+	return ok && contains(mod.finalRequirements(), key)
+}
+
+// parameterDefaultMetadata keeps absence distinct from an explicit empty
+// literal and from a value supplied later by the host or runner. `default`
+// remains the v1 string projection; has_default says whether a literal exists,
+// while default_source says where an omitted input is resolved.
+func parameterDefaultMetadata(module, parameter string, reg map[string]Module, globalDefaults map[string]string) (string, bool, string) {
+	key := parameterEnvKey(module, parameter, reg)
+	spec := parameterType(module, parameter, reg)
+	if module == globalModuleName {
+		if value, ok := globalConfig.Defaults[key]; ok {
+			return value, true, "static"
+		}
+		if spec.DefaultSource != "" {
+			return globalDefaults[key], false, string(spec.DefaultSource)
+		}
+		return "", false, "none"
+	}
+	if mod, ok := reg[module]; ok {
+		if value, exists := mod.Defaults[key]; exists {
+			return value, true, "static"
+		}
+	}
+	if spec.DefaultSource != "" {
+		return "", false, string(spec.DefaultSource)
+	}
+	return "", false, "none"
+}
+
+func addConfigParameterMetadata(document map[string]any, target configTarget, reg map[string]Module, defaultValue string, hasDefault bool, defaultSource string) {
+	spec := targetParamType(target, reg)
+	kind, values := paramTypeDocument(spec)
+	document["type"] = kind
+	if len(values) > 0 {
+		document["allowed_values"] = values
+	}
+	if constraints := paramConstraintsDocument(spec); len(constraints) > 0 {
+		document["constraints"] = constraints
+	}
+	inputRequired := parameterInputRequired(target.Module, target.Parameter, reg)
+	document["required"] = inputRequired // v1 compatibility alias
+	document["input_required"] = inputRequired
+	document["must_resolve"] = parameterMustResolve(target.Module, target.Parameter, reg)
+	document["default"] = defaultValue
+	document["has_default"] = hasDefault
+	document["default_source"] = defaultSource
+}
+
+func paramConstraintsDocument(spec ParamType) map[string]any {
+	document := map[string]any{}
+	constraints := spec.Constraints
+	if constraints.Minimum != nil {
+		document["minimum"] = *constraints.Minimum
+	}
+	if constraints.Maximum != nil {
+		document["maximum"] = *constraints.Maximum
+	}
+	if constraints.MinLength != nil {
+		document["min_length"] = *constraints.MinLength
+	}
+	if constraints.MaxLength != nil {
+		document["max_length"] = *constraints.MaxLength
+	}
+	if constraints.Pattern != "" {
+		document["pattern"] = constraints.Pattern
+	}
+	if constraints.Format != "" {
+		document["format"] = constraints.Format
+	}
+	return document
 }
 
 func configListValue(entry configListEntry) string {
-	if entry.Policy.Sensitive {
+	if entry.Policy.Sensitive || entry.ValueSensitive {
 		if entry.Set {
 			return "<set>"
 		}
@@ -229,6 +366,22 @@ func configListValue(entry configListEntry) string {
 
 func placeholder(value string) string {
 	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
+}
+
+// configDefaultDisplay preserves the distinction between an absent default
+// and a literal empty-string default in human output. JSON already carries
+// has_default, but rendering both states as "-" made the text contract lie.
+func configDefaultDisplay(value string, hasDefault, sensitive bool) string {
+	if sensitive {
+		return "-"
+	}
+	if strings.TrimSpace(value) == "" {
+		if hasDefault {
+			return fmt.Sprintf("%q", value)
+		}
 		return "-"
 	}
 	return value

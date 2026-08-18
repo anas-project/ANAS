@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: samba_fs
 version: 4.23.6
-revision: 4
+revision: 5
 app_version: 4.23.6
 abi:
   supports:
@@ -41,15 +41,17 @@ config:
   # written to the config, and rejected at the next render, well after the
   # person who chose it had moved on.
   types:
+    hostname: string
     share_access_mode:
       enum: [all_rw, all_read_group_write]
     # Samba's own spelling, which is why it is Yes/No rather than true/false.
     share_guest_read_only:
       enum: [Yes, No]
     use_default_domain:
-      enum: [yes, no]
+      enum: [yes, no, true, false]
     log_level: int
     wsdd_log_level: int
+    share_dir_name: string
   # Listing a bare env name here is what publishes the parameter of the same
   # name without this module's prefix, and what allows the hook to write it.
   exports:

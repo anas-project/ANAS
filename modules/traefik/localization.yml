@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: traefik
 module_version: 3.7.10
-module_revision: 3
+module_revision: 4
 reviewed_at: 2026-08-13
 timezone:
   status: container

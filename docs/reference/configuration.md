@@ -1,19 +1,19 @@
 # `config.yml` 结构化配置与环境变量清单
 
 本文回答两个问题：哪些设置已经有 `config.yml` 的结构化入口，哪些设置目前只能写入
-顶层 `env:`。清单按 2026-08-15 的当前工作树统计；module 增删参数后应重新运行文末命令，
+顶层 `env:`。清单按 2026-08-18 的当前工作树统计；module 增删参数后应重新运行文末命令，
 不要把本文中的数字当成固定 ABI。
 
 ## 结论
 
-- `anas config list --json` 当前登记 **128** 个可设置参数：14 个 `global` 参数、114 个
+- `anas config list --json` 当前登记 **139** 个可设置参数：17 个 `global` 参数、122 个
   module 参数。
-- 114 个 module 参数中，110 个保存到 `modules.<module>.config.<parameter>`；4 个
+- 122 个 module 参数中，118 个保存到 `modules.<module>.config.<parameter>`；4 个
   `samba_fs` 参数虽然已经在 module manifest 中声明并拥有默认值、类型和变更策略，
   但为了导出裸环境变量，YAML 地址仍是 `env.<KEY>`。
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
-  上述 128 项。
+  上述 139 项。
 - 顶层 `env:` 是开放的 raw-env 逃生口，任意键都能写入，所以“只能用环境变量”的总数
   理论上不可穷举。下文只列仓库当前明确使用、且没有结构化参数的用户覆盖项。
 
@@ -29,7 +29,7 @@
 | --- | --- | --- |
 | `module_source` | Module 分发 profile：`official`、`official-cn` 或简写 `cn` | 已用于 catalog、下载、缓存、lock 与 CN 默认 |
 | `modules.<module>` | 请求启用的 module 及其配置 | 已使用 |
-| `global.*` | 14 个部署级参数，详见下一节 | 已使用 |
+| `global.*` | 17 个部署级参数，详见下一节 | 已使用 |
 | `administration.bootstrap.username` | 引导管理员用户名 | 已使用 |
 | `administration.local_accounts.username_template` | 本地管理员全局用户名模板 | 非法；用户名由 ANAS 管理 |
 | `administration.local_accounts.password_length` | 生成密码长度，最小 16 | 已使用 |
@@ -56,6 +56,14 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。`modules.<
 解码层是 map，但 `config import` 和部署解析会再按 manifest 校验每个键及类型；手写 YAML
 不能绕过 `config set` 的声明检查。
 
+`config import` 在验证和写入受管配置前统一 YAML 地址：`env` 键转换为规范的运行时大写
+拼写，Module 名、global 参数名和 Module 参数名转换为小写。若两个源键规范化后落到同一
+地址（例如 `env.custom_key` 与 `env.CUSTOM_KEY`，或 `modules.TRAEFIK` 与
+`modules.traefik`），导入会拒绝整个文件，而不是按顺序覆盖。声明为 bare export 的结构化
+Module 参数也会迁移到其唯一受管地址；例如源文件中的
+`modules.samba_fs.config.share_dir_name` 会写成 `env.SHARE_DIR_NAME`。若源文件同时提供这
+两个地址，同样按规范化碰撞拒绝。源文件自身不被修改。
+
 未通过安装器选择源时，`module_source` 省略值为 `official`。一行安装脚本会把选择保存到
 `${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`；新建 workspace 或导入未声明该字段的外部
 配置时会先把此选择固化到受管配置。`cn` 会在托管配置中规范化为 `official-cn`；选择
@@ -71,16 +79,48 @@ map 外，拼错结构化字段会直接报错，不会静默忽略。`modules.<
 语言只控制 UI 文本 fallback，locale 控制区域格式；推导只是默认值来源，不表示两个概念
 相同。各 Module 的实际消费边界见 [Module 时区与语言支持矩阵](/reference/module-localization)。
 
-## 已声明的 128 个参数
+## 已声明的 139 个参数
 
 表中参数都能被 `anas config list` 列出。普通可编辑参数可通过 `anas config set` 设置；
 `credential_rotate`、`data_migrate` 和 `immutable` 只用于 inventory/explain，必须执行专用流程。除特别说明
 外，全局参数写为 `global.<parameter>`，module 参数写入
 `modules.<module>.config.<parameter>`。
 
+JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同时提供
+`allowed_values`。`unknown` 仅为旧 Module 或开发中声明不完整时保留的兼容值，内置 Module
+的 release 校验不允许它出现，因此本节 139 项的 `unknown` 数量为 0。
+
+配置元数据把“操作者是否必须输入”和“解析后的值是否必须存在”分开：
+
+- `required` 是兼容字段，值始终等于 `input_required`。只有无法由默认值、宿主探测或其他
+  无条件来源补足，且在所有适用场景都要求操作者提供非空值时，`input_required` 才为
+  `true`；Module 参数的适用范围从该 Module 启用时开始；
+- `must_resolve` 表示规范化并应用默认值、宿主探测和运行时来源后，最终值仍必须为非空。
+  因而它可以在 `input_required: false` 时为 `true`；
+- `has_default` 区分“没有静态默认值”和“默认值明确为空字符串”，`default_source` 取
+  `none`、`static`、`host`、`runtime`、`generated` 或 `inherited`，说明省略输入时可用的
+  无条件来源；输入必填项不得同时声明默认值或非 `none` 来源。`none` 只表示没有无条件
+  来源，不排除 deployment resolver 在满足条件时注入值；
+- `constraints` 是可选的单字段约束对象，只投影已声明的 `minimum`、`maximum`、
+  `min_length`、`max_length`、`pattern` 和 `format`。条件必填、字段间关系以及需要读取其他
+  运行态的规则仍由 resolver、应用层、plan 或 Hook 校验，不能压成单字段 `required` 或约束。
+
+这份 inventory **不是 JSON Schema**。这里的 `required` 描述当前参数是否需要显式输入，
+不是对象属性名数组；这里的默认值会由 ANAS 解析流程应用，而 JSON Schema 的 `default`
+只是注解；`constraints` 也只是统一配置 schema 的稳定投影，不承诺接受任意 JSON Schema
+关键字。CLI、未来的 `anasd` 配置 API 和 Web 表单必须消费同一份应用层 schema。
+
+当前发布基线中，`input_required`/`required` 为 `true` 的只有
+`global.base_domain` 和 `global.email` 2 项，`must_resolve` 为 `true` 的共有 22 项。
+`ddns_go.dns_provider` 与 `ddns_updater.dns_provider` 可由 deployment
+`dynamic_dns.dns_provider` 条件注入，因此表现为 `input_required: false`、
+`must_resolve: true`、`default_source: none`；只有 resolver 未能注入时才需要 Module 侧输入。
+`default_source` 分布为 `static: 111`、`generated: 9`、`none: 8`、`runtime: 4`、`inherited: 4`、
+`host: 3`；`has_default: true` 与这 111 个 `static` 项严格对应。
+
 | 所有者 | 数量 | 参数 |
 | --- | ---: | --- |
-| `global` | 14 | `base_domain`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `dns_server`, `email`, `host_ip`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
+| `global` | 17 | `base_domain`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `dns_server`, `email`, `host_ip`, `host_lan_arp_check`, `host_lan_bridge_ip`, `host_lan_ip`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
 | `authentik` | 6 | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` |
 | `collabora` | 5 | `admin_password`, `admin_username`, `auto_save`, `domain_prefix`, `log_level` |
 | `ddns_go` | 10 | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` |
@@ -106,7 +146,8 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 拥有密码参数；省略时分别生成独立 Secret，不再存在跨应用共享管理员密码。
 
 `samba_fs` 的以下 4 项是特殊情况。它们有 manifest 元数据，不能算“未声明 raw env”，
-但因为 `config.exports` 要求发布裸键，实际 YAML 地址只能是顶层 `env:`：
+但因为 `config.exports` 要求发布裸键，受管配置中的 canonical YAML 地址只能是顶层
+`env:`；`config import` 可接受结构化源地址，但会在持久化前迁移到这里：
 
 | YAML 地址 | 所有者 | 环境变量 |
 | --- | --- | --- |
@@ -121,15 +162,15 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 ## 参数会产生什么结果
 
 `anas config list --json` 是参数名、环境键、默认值和变更结果的权威机器可读清单。
-当前 128 项按 effect 统计如下；effect 表示**修改已有部署后必须完成的动作**，不是参数
+当前 139 项按 effect 统计如下；effect 表示**修改已有部署后必须完成的动作**，不是参数
 传输到 `.env` 就算应用成功。
 
 | effect | 数量 | 修改结果 |
 | --- | ---: | --- |
-| `container_recreate` | 88 | 重新渲染，并重建受影响容器或 Compose project |
+| `container_recreate` | 91 | 重新渲染，并重建受影响容器或 Compose project |
 | `credential_rotate` | 7 | 普通设置和替换导入会被拒绝，必须通过凭据轮换事务同步应用状态与 Secret Store |
 | `data_migrate` | 9 | 普通设置和部署激活会被阻断，必须先迁移持久数据、数据库或成员身份 |
-| `hot_reload` | 8 | 声明目标是 Samba 管理命令；当前执行器保守地生成新部署并重新 `up` 受影响容器 |
+| `hot_reload` | 16 | 声明目标是 Samba 管理命令；当前执行器保守地生成新部署并重新 `up` 受影响容器 |
 | `image_rebuild` | 1 | 使用 `anas apply --build` 重建镜像后再部署 |
 | `immutable` | 3 | 通用 `config set` 不允许修改，必须走替换或域迁移流程 |
 | `reconcile` | 12 | 声明目标是应用/API/文件调和；当前执行器通过新部署和容器启动流程完成 |
@@ -190,6 +231,7 @@ Collabora、Nextcloud 和数据库镜像的保留设置都在 Hook、容器脚�
 | `global` | `base_domain`, `virtual_domain`, `email` | 派生应用 URL、AD realm、ACME/内部 CA 模式和服务联系邮箱 |
 | `global` | `container_prefix`, `network_prefix` | 改变 Compose 容器名、网络名和跨容器地址 |
 | `global` | `host_ip`, `dns_server`, `ipv4`, `ipv6` | 改变宿主路由目标、容器 DNS 和 DDNS A/AAAA 意图 |
+| `global` | `host_lan_ip`, `host_lan_bridge_ip`, `host_lan_arp_check` | 固定 host-LAN 容器与宿主桥地址，并控制地址占用探测；三项均为可选，未关闭探测时默认执行 ARP 检查 |
 | `global` | `timezone`, `default_language`, `default_locale` | 生成最终 `TZ`/BCP 47 默认值；只下发给声明支持的应用 |
 | `global` | `chinese_speedup`, `chinese_build_speedup` | 分别切换运行时镜像/下载源和构建期镜像/包源；后者要求重建镜像 |
 | `authentik` | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` | 选择数据库资源，生成 IAM URL/Blueprint、LDAP source/writeback 和日志级别 |
@@ -316,8 +358,14 @@ go run ./cmd/anas config list --json \
 1. 新增普通用户配置时，优先加入 `global` schema 或对应 module 的 `config` 声明；
 2. 新增 raw-only 键时同步更新本文，并说明为什么暂不结构化；
 3. 新增、删除或重命名 manifest 参数后，重新生成统计并更新参数表；
-4. 不把 runner/module 推导变量列为用户配置；
-5. 凭据走 `secrets` 或 manifest 中标记 `sensitive` 的参数。
+4. 每个内置参数都必须显式声明类型；`unknown` 只用于读取旧 Module，不能进入 release；
+5. CLI/JSON 的 `required` 始终与 manifest `input_required` 相等；输入必填项不得同时有默认值
+   或其他无条件来源。manifest 旧字段 `required` 保留 Hook 前校验语义，`must_resolve` 描述
+   Hook patch 后的最终非空不变量；
+6. 单字段限制声明在 `constraints`；条件必填和跨字段/运行态约束留给 resolver、应用层、
+   plan 或 Hook；
+7. 不把 runner/module 推导变量列为用户配置；
+8. 凭据走 `secrets` 或 manifest 中标记 `sensitive` 的参数。
 
 验证命令：
 
@@ -329,7 +377,7 @@ test-env/scripts/test-render.sh
 ```
 
 前者拒绝没有运行时消费者的声明参数；若消费者只存在于上游镜像，例外必须同时记录固定
-版本的上游源码证据。其余测试分别验证 128 项 inventory/废弃路径、七类 effect 的真实
-CLI→Hook→render→deployment→Compose/阻断边界，以及全部 128 个参数键在本轮新生成的
+版本的上游源码证据。其余测试分别验证 139 项 inventory、类型完整性和废弃路径，七类
+effect 的真实 CLI→Hook→render→deployment→Compose/阻断边界，以及全部 139 个参数键在本轮新生成的
 Module 部署产物中至少出现一次。`test-lifecycle.sh` 在真实 Docker 上进一步验证
 `container_recreate` 会更换容器 ID。

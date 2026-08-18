@@ -4,13 +4,15 @@ Certificate issuance and renewal through ACME DNS-01 or the internal CA.
 
 ## Quick facts
 
+<!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `lego` |
-| Version / revision | `5.3.1-r2` |
+| Version / revision | `5.3.1-r4` |
 | Status | `release` |
 | Category | `certificate` |
 | Runtime | `compose` |
+<!-- generated:module-facts:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -52,10 +54,10 @@ This module neither consumes nor provides a relational-database contract.
 
 This inventory comes from the current `module.yml` and `anas config list`. The environment key is the rendered module-private key, not the preferred configuration interface.
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `lego.dns_provider` | string | `—` | `LEGO_DNS_PROVIDER` | no | no | yes | `reconcile` | Changing the ACME DNS provider requires issuing a replacement certificate with that provider. |
-| `lego.dns_server` | string | `223.5.5.5` | `LEGO_DNS_SERVER` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `lego.dns_provider` | string | — | — | — | `LEGO_DNS_PROVIDER` | no | no | no | yes | `reconcile` | Changing the ACME DNS provider requires issuing a replacement certificate with that provider. |
+| `lego.dns_server` | string | — | `223.5.5.5` | `static` | `LEGO_DNS_SERVER` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
 ### Query and modify
 

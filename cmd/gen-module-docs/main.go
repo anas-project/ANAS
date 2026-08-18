@@ -1,9 +1,11 @@
-// Command gen-module-docs validates each module's versioned localization
-// inventory and renders the corresponding module and reference documentation.
+// Command gen-module-docs validates each module's configuration metadata and
+// versioned localization inventory, then renders the corresponding module and
+// reference documentation.
 package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,22 +14,48 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anas-project/ANAS/internal/configschema"
 	"github.com/anas-project/ANAS/internal/localization"
+	"github.com/anas-project/ANAS/internal/runner"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	localizationAPI = "anas.module-localization/v1"
-	blockStart      = "<!-- generated:localization:start -->"
-	blockEnd        = "<!-- generated:localization:end -->"
+	localizationAPI    = "anas.module-localization/v1"
+	blockStart         = "<!-- generated:localization:start -->"
+	blockEnd           = "<!-- generated:localization:end -->"
+	factsBlockStart    = "<!-- generated:module-facts:start -->"
+	factsBlockEnd      = "<!-- generated:module-facts:end -->"
+	identityBlockStart = "<!-- generated:module-identity:start -->"
+	identityBlockEnd   = "<!-- generated:module-identity:end -->"
+	topologyBlockStart = "<!-- generated:compose-topology:start -->"
+	topologyBlockEnd   = "<!-- generated:compose-topology:end -->"
 )
 
 type manifest struct {
+	APIVersion  string `yaml:"api_version"`
 	Name        string `yaml:"name"`
 	Version     string `yaml:"version"`
 	Revision    int    `yaml:"revision"`
 	Title       string `yaml:"title"`
 	Description string `yaml:"description"`
+	Status      string `yaml:"status"`
+	Category    string `yaml:"category"`
+	Runtime     struct {
+		Type        string `yaml:"type"`
+		ComposeFile string `yaml:"compose_file"`
+	} `yaml:"runtime"`
+}
+
+type composeDocument struct {
+	Services map[string]composeService `yaml:"services"`
+}
+
+type composeService struct {
+	Image    string    `yaml:"image"`
+	Build    yaml.Node `yaml:"build"`
+	Networks yaml.Node `yaml:"networks"`
+	Volumes  yaml.Node `yaml:"volumes"`
 }
 
 type inventory struct {
@@ -65,9 +93,16 @@ type evidenceInfo struct {
 }
 
 type moduleDoc struct {
-	Dir       string
-	Manifest  manifest
-	Inventory inventory
+	Dir        string
+	Manifest   manifest
+	Inventory  inventory
+	Compose    composeDocument
+	Parameters []runner.ConfigParameterInventoryEntry
+}
+
+type imageCatalogEntry struct {
+	Module string `json:"module"`
+	Image  string `json:"image"`
 }
 
 func main() {
@@ -113,29 +148,42 @@ func run(root string, check bool) error {
 	if err != nil {
 		return err
 	}
-	var stale []string
+	outputs := make(map[string][]byte)
 	for _, module := range modules {
-		path := filepath.Join(module.Dir, "README.md")
-		current, err := os.ReadFile(path)
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		base := string(current)
-		if len(current) == 0 {
-			base = "# " + module.Manifest.Title + "\n\n" + module.Manifest.Description + "\n"
-		}
-		want, err := replaceGeneratedBlock(base, renderModuleBlock(module))
-		if err != nil {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		if err := update(path, []byte(want), check, &stale); err != nil {
-			return err
+		for _, document := range []struct {
+			Path             string
+			Transform        func(string, moduleDoc) (string, error)
+			ParameterHeading string
+			English          bool
+		}{
+			{filepath.Join(module.Dir, "README.md"), syncChineseReadme, "## 所有可用配置参数", false},
+			{filepath.Join(module.Dir, "README.en.md"), syncEnglishReadme, "## All configuration parameters", true},
+			{filepath.Join(module.Dir, "docs", "technical.md"), syncChineseTechnical, "## 配置契约", false},
+			{filepath.Join(module.Dir, "docs", "technical.en.md"), syncEnglishTechnical, "## Configuration contract", true},
+		} {
+			current, readErr := os.ReadFile(document.Path)
+			if readErr != nil {
+				return readErr
+			}
+			if len(module.Parameters) > 0 {
+				projected, projectErr := syncParameterTable(string(current), module, document.English, document.ParameterHeading)
+				if projectErr != nil {
+					return fmt.Errorf("%s: validate parameter table: %w", document.Path, projectErr)
+				}
+				if projected != string(current) {
+					return fmt.Errorf("%s: parameter table is stale; update its machine-derived columns and reviewed purpose text together", document.Path)
+				}
+			}
+			want, transformErr := document.Transform(string(current), module)
+			if transformErr != nil {
+				return fmt.Errorf("%s: %w", document.Path, transformErr)
+			}
+			outputs[document.Path] = []byte(want)
 		}
 	}
-	outputs := map[string][]byte{
-		filepath.Join(root, "docs", "reference", "module-localization.md"):       renderReference(modules, false),
-		filepath.Join(root, "docs", "en", "reference", "module-localization.md"): renderReference(modules, true),
-	}
+	outputs[filepath.Join(root, "docs", "reference", "module-localization.md")] = renderReference(modules, false)
+	outputs[filepath.Join(root, "docs", "en", "reference", "module-localization.md")] = renderReference(modules, true)
+	var stale []string
 	for path, content := range outputs {
 		if err := update(path, content, check, &stale); err != nil {
 			return err
@@ -171,6 +219,32 @@ func loadModules(root string) ([]moduleDoc, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		manifestPath := filepath.Join(root, "modules", entry.Name(), "module.yml")
+		if !exists(manifestPath) {
+			continue
+		}
+		if err := runner.ValidateModuleConfigMetadataFile(manifestPath); err != nil {
+			return nil, fmt.Errorf("%s: %w", manifestPath, err)
+		}
+	}
+	parameterInventory, err := runner.LoadConfigParameterInventory(root)
+	if err != nil {
+		return nil, fmt.Errorf("load configuration parameter inventory: %w", err)
+	}
+	parametersByModule := map[string][]runner.ConfigParameterInventoryEntry{}
+	for _, parameter := range parameterInventory {
+		if parameter.Module != "global" {
+			parametersByModule[parameter.Module] = append(parametersByModule[parameter.Module], parameter)
+		}
+	}
+	managedImages, err := loadManagedImages(root)
+	if err != nil {
+		return nil, err
+	}
 	var modules []moduleDoc
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -193,13 +267,542 @@ func loadModules(root string) ([]moduleDoc, error) {
 		if err := validate(m, inv); err != nil {
 			return nil, fmt.Errorf("%s: %w", inventoryPath, err)
 		}
-		modules = append(modules, moduleDoc{Dir: dir, Manifest: m, Inventory: inv})
+		var compose composeDocument
+		composeFile := m.Runtime.ComposeFile
+		if composeFile == "" {
+			composeFile = "docker-compose.yml"
+		}
+		composePath := filepath.Join(dir, composeFile)
+		if err := decodeYAML(composePath, &compose, false); err != nil {
+			return nil, fmt.Errorf("%s: %w", composePath, err)
+		}
+		if len(compose.Services) == 0 {
+			return nil, fmt.Errorf("%s: services must not be empty", composePath)
+		}
+		if err := validateManagedComposeImages(compose, managedImages[m.Name], m.Version, m.Revision); err != nil {
+			return nil, fmt.Errorf("%s: %w", composePath, err)
+		}
+		modules = append(modules, moduleDoc{
+			Dir: dir, Manifest: m, Inventory: inv, Compose: compose,
+			Parameters: parametersByModule[m.Name],
+		})
 	}
 	sort.Slice(modules, func(i, j int) bool { return modules[i].Manifest.Name < modules[j].Manifest.Name })
 	if len(modules) == 0 {
 		return nil, errors.New("no modules found")
 	}
 	return modules, nil
+}
+
+func loadManagedImages(root string) (map[string][]string, error) {
+	path := filepath.Join(root, ".github", "images.json")
+	body, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return map[string][]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var catalog []imageCatalogEntry
+	if err := json.Unmarshal(body, &catalog); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	images := make(map[string][]string)
+	for _, entry := range catalog {
+		if entry.Module == "" || entry.Image == "" {
+			return nil, fmt.Errorf("%s: every entry requires module and image", path)
+		}
+		images[entry.Module] = append(images[entry.Module], entry.Image)
+	}
+	return images, nil
+}
+
+func validateManagedComposeImages(compose composeDocument, managed []string, version string, revision int) error {
+	expectedTag := fmt.Sprintf("%s-r%d", version, revision)
+	for _, managedImage := range managed {
+		found := false
+		for serviceName, service := range compose.Services {
+			image := strings.TrimSpace(service.Image)
+			lastSlash := strings.LastIndex(image, "/")
+			nameAndTag := image[lastSlash+1:]
+			separator := strings.LastIndex(nameAndTag, ":")
+			if separator < 0 || nameAndTag[:separator] != managedImage {
+				continue
+			}
+			found = true
+			if actual := nameAndTag[separator+1:]; actual != expectedTag {
+				return fmt.Errorf("service %s image %s has tag %q, want %q", serviceName, managedImage, actual, expectedTag)
+			}
+		}
+		if !found {
+			return fmt.Errorf("managed image %s is not referenced by a service", managedImage)
+		}
+	}
+	return nil
+}
+
+func syncChineseReadme(base string, module moduleDoc) (string, error) {
+	want, err := replaceRequiredGeneratedBlock(base, factsBlockStart, factsBlockEnd, renderModuleFacts(module, false))
+	if err != nil {
+		return "", err
+	}
+	return replaceRequiredGeneratedBlock(want, blockStart, blockEnd, renderModuleBlock(module))
+}
+
+func syncEnglishReadme(base string, module moduleDoc) (string, error) {
+	want, err := replaceRequiredGeneratedBlock(base, factsBlockStart, factsBlockEnd, renderModuleFacts(module, true))
+	if err != nil {
+		return "", err
+	}
+	return want, nil
+}
+
+func syncChineseTechnical(base string, module moduleDoc) (string, error) {
+	want, err := replaceRequiredGeneratedBlock(base, identityBlockStart, identityBlockEnd, renderModuleIdentity(module, false))
+	if err != nil {
+		return "", err
+	}
+	topology, err := renderComposeTopology(module)
+	if err != nil {
+		return "", err
+	}
+	want, err = replaceRequiredGeneratedBlock(want, topologyBlockStart, topologyBlockEnd, topology)
+	if err != nil {
+		return "", err
+	}
+	return want, nil
+}
+
+func syncEnglishTechnical(base string, module moduleDoc) (string, error) {
+	want, err := replaceRequiredGeneratedBlock(base, identityBlockStart, identityBlockEnd, renderModuleIdentity(module, true))
+	if err != nil {
+		return "", err
+	}
+	topology, err := renderComposeTopology(module)
+	if err != nil {
+		return "", err
+	}
+	want, err = replaceRequiredGeneratedBlock(want, topologyBlockStart, topologyBlockEnd, topology)
+	if err != nil {
+		return "", err
+	}
+	return want, nil
+}
+
+func syncParameterTable(base string, module moduleDoc, english bool, heading string) (string, error) {
+	if len(module.Parameters) == 0 {
+		return base, nil
+	}
+	tableStart, tableEnd, err := markdownTableBounds(base, heading)
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(strings.TrimSpace(base[tableStart:tableEnd]), "\n")
+	if len(lines) < 3 {
+		return "", fmt.Errorf("%s parameter table has no rows", heading)
+	}
+	header := splitMarkdownRow(lines[0])
+	if len(header) < 2 {
+		return "", fmt.Errorf("%s parameter table header is invalid", heading)
+	}
+	purposeByPath := map[string]string{}
+	recoveredTrailer := ""
+	for rowIndex, line := range lines[2:] {
+		cells := splitMarkdownRow(line)
+		if len(cells) < len(header) {
+			return "", fmt.Errorf("%s parameter row has %d cells, want at least %d: %s", heading, len(cells), len(header), line)
+		}
+		if len(cells) > len(header) {
+			if rowIndex != len(lines[2:])-1 || recoveredTrailer != "" {
+				return "", fmt.Errorf("%s parameter row has unexpected extra cells: %s", heading, line)
+			}
+			// Older generator output could consume the separator after the final
+			// table row. Recover that following heading or paragraph once, then
+			// always emit an explicit blank line below the generated table.
+			recoveredTrailer = strings.Join(cells[len(header):], " | ")
+			cells = cells[:len(header)]
+		}
+		path := strings.Trim(strings.TrimSpace(cells[0]), "`")
+		if path == "" {
+			return "", fmt.Errorf("%s parameter row has an empty path", heading)
+		}
+		if _, duplicate := purposeByPath[path]; duplicate {
+			return "", fmt.Errorf("%s parameter table repeats %s", heading, path)
+		}
+		purposeByPath[path] = cells[len(header)-1]
+	}
+	parameters := append([]runner.ConfigParameterInventoryEntry(nil), module.Parameters...)
+	sort.Slice(parameters, func(i, j int) bool { return parameters[i].Path < parameters[j].Path })
+	wantPaths := map[string]bool{}
+	for _, parameter := range parameters {
+		wantPaths[parameter.Path] = true
+		if _, ok := purposeByPath[parameter.Path]; !ok {
+			return "", fmt.Errorf("%s parameter table is missing %s and its manual purpose", heading, parameter.Path)
+		}
+	}
+	for path := range purposeByPath {
+		if !wantPaths[path] {
+			return "", fmt.Errorf("%s parameter table contains undeclared path %s", heading, path)
+		}
+	}
+
+	var out strings.Builder
+	if english {
+		out.WriteString("| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |\n")
+	} else {
+		out.WriteString("| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |\n")
+	}
+	out.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
+	for _, parameter := range parameters {
+		row, err := renderParameterRow(parameter, purposeByPath[parameter.Path], english)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", parameter.Path, err)
+		}
+		out.WriteString(row)
+		out.WriteByte('\n')
+	}
+	suffix := strings.TrimLeft(base[tableEnd:], "\r\n")
+	if recoveredTrailer != "" {
+		suffix = recoveredTrailer + "\n\n" + suffix
+	}
+	want := base[:tableStart] + strings.TrimRight(out.String(), "\n")
+	if suffix != "" {
+		want += "\n\n" + suffix
+	} else {
+		want += "\n"
+	}
+	return want, nil
+}
+
+func markdownTableBounds(base, heading string) (int, int, error) {
+	headingAt := strings.Index(base, heading+"\n")
+	if headingAt < 0 {
+		return 0, 0, fmt.Errorf("missing heading %q", heading)
+	}
+	sectionStart := headingAt + len(heading) + 1
+	sectionEnd := len(base)
+	if next := strings.Index(base[sectionStart:], "\n## "); next >= 0 {
+		sectionEnd = sectionStart + next
+	}
+	tableAt := strings.Index(base[sectionStart:sectionEnd], "\n|")
+	if tableAt < 0 {
+		return 0, 0, fmt.Errorf("%s has no parameter table", heading)
+	}
+	start := sectionStart + tableAt + 1
+	end := start
+	for end < len(base) {
+		lineEnd := strings.IndexByte(base[end:], '\n')
+		if lineEnd < 0 {
+			lineEnd = len(base) - end
+		}
+		if !strings.HasPrefix(strings.TrimSpace(base[end:end+lineEnd]), "|") {
+			break
+		}
+		end += lineEnd
+		if end < len(base) && base[end] == '\n' {
+			end++
+		}
+	}
+	return start, end, nil
+}
+
+func splitMarkdownRow(line string) []string {
+	line = strings.TrimSpace(line)
+	line = strings.TrimPrefix(line, "|")
+	line = strings.TrimSuffix(line, "|")
+	var raw []string
+	var cell strings.Builder
+	escaped := false
+	for _, char := range line {
+		if escaped {
+			cell.WriteRune(char)
+			escaped = false
+			continue
+		}
+		if char == '\\' {
+			cell.WriteRune(char)
+			escaped = true
+			continue
+		}
+		if char == '|' {
+			raw = append(raw, strings.TrimSpace(cell.String()))
+			cell.Reset()
+			continue
+		}
+		cell.WriteRune(char)
+	}
+	raw = append(raw, strings.TrimSpace(cell.String()))
+	return raw
+}
+
+func renderParameterRow(parameter runner.ConfigParameterInventoryEntry, purpose string, english bool) (string, error) {
+	typeText := parameter.Type
+	if len(parameter.AllowedValues) > 0 {
+		allowed := make([]string, 0, len(parameter.AllowedValues))
+		for _, value := range parameter.AllowedValues {
+			code, err := markdownCode(value)
+			if err != nil {
+				return "", err
+			}
+			allowed = append(allowed, code)
+		}
+		typeText += " (" + strings.Join(allowed, ", ") + ")"
+	}
+	defaultText := "—"
+	if parameter.HasDefault {
+		value := parameter.Default
+		if value == "" {
+			value = `""`
+		}
+		var err error
+		defaultText, err = markdownCode(value)
+		if err != nil {
+			return "", err
+		}
+	}
+	defaultSource := "—"
+	if parameter.DefaultSource != "" && parameter.DefaultSource != "none" {
+		var err error
+		defaultSource, err = markdownCode(parameter.DefaultSource)
+		if err != nil {
+			return "", err
+		}
+	}
+	constraintText, err := renderConstraints(parameter.Constraints)
+	if err != nil {
+		return "", err
+	}
+	envKey, err := markdownCode(parameter.EnvKey)
+	if err != nil {
+		return "", err
+	}
+	effect, err := markdownCode(parameter.Effect)
+	if err != nil {
+		return "", err
+	}
+	yes, no := "yes", "no"
+	if !english {
+		yes, no = "是", "否"
+	}
+	editable := yes
+	if !parameter.Editable {
+		command, err := markdownCode(parameter.EditCommand)
+		if err != nil {
+			return "", err
+		}
+		if english {
+			editable = "no: " + command
+		} else {
+			editable = "否：" + command
+		}
+	}
+	return fmt.Sprintf("| `%s` | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |",
+		parameter.Path, typeText, constraintText, defaultText, defaultSource, envKey,
+		boolWord(parameter.InputRequired, yes, no), boolWord(parameter.MustResolve, yes, no),
+		boolWord(parameter.Sensitive, yes, no), editable, effect, purpose), nil
+}
+
+func renderConstraints(constraints configschema.Constraints) (string, error) {
+	parts := []string{}
+	if constraints.Minimum != nil && constraints.Maximum != nil {
+		parts = append(parts, fmt.Sprintf("%d..%d", *constraints.Minimum, *constraints.Maximum))
+	} else if constraints.Minimum != nil {
+		parts = append(parts, fmt.Sprintf(">= %d", *constraints.Minimum))
+	} else if constraints.Maximum != nil {
+		parts = append(parts, fmt.Sprintf("<= %d", *constraints.Maximum))
+	}
+	if constraints.MinLength != nil && constraints.MaxLength != nil {
+		parts = append(parts, fmt.Sprintf("length: %d..%d", *constraints.MinLength, *constraints.MaxLength))
+	} else if constraints.MinLength != nil {
+		parts = append(parts, fmt.Sprintf("min length: %d", *constraints.MinLength))
+	} else if constraints.MaxLength != nil {
+		parts = append(parts, fmt.Sprintf("max length: %d", *constraints.MaxLength))
+	}
+	if constraints.Pattern != "" {
+		parts = append(parts, "pattern: "+constraints.Pattern)
+	}
+	if constraints.Format != "" {
+		parts = append(parts, "format: "+constraints.Format)
+	}
+	if len(parts) == 0 {
+		return "—", nil
+	}
+	for i, part := range parts {
+		code, err := markdownCode(part)
+		if err != nil {
+			return "", err
+		}
+		parts[i] = code
+	}
+	return strings.Join(parts, "; "), nil
+}
+
+func markdownCode(value string) (string, error) {
+	if strings.ContainsAny(value, "`|\r\n") {
+		return "", fmt.Errorf("value %q cannot be represented safely in a Markdown table", value)
+	}
+	return "`" + value + "`", nil
+}
+
+func boolWord(value bool, yes, no string) string {
+	if value {
+		return yes
+	}
+	return no
+}
+
+func replaceRequiredGeneratedBlock(base, startMarker, endMarker, block string) (string, error) {
+	starts := strings.Count(base, startMarker)
+	ends := strings.Count(base, endMarker)
+	if starts != 1 || ends != 1 {
+		return "", fmt.Errorf("generated block %s must have exactly one start and end marker (found %d/%d)", strings.TrimSuffix(strings.TrimPrefix(startMarker, "<!-- generated:"), ":start -->"), starts, ends)
+	}
+	return replaceMarkedBlock(base, startMarker, endMarker, block)
+}
+
+func replaceMarkedBlock(base, startMarker, endMarker, block string) (string, error) {
+	start := strings.Index(base, startMarker)
+	end := strings.Index(base, endMarker)
+	if start < 0 || end < 0 {
+		return "", errors.New("generated block markers are missing")
+	}
+	if end < start {
+		return "", errors.New("generated block markers are reversed")
+	}
+	end += len(endMarker)
+	prefix := strings.TrimRight(base[:start], " \n")
+	suffix := strings.TrimLeft(base[end:], " \n")
+	result := prefix + "\n\n" + strings.TrimRight(block, " \n")
+	if suffix != "" {
+		result += "\n\n" + suffix
+	} else {
+		result += "\n"
+	}
+	return result, nil
+}
+
+func renderModuleFacts(module moduleDoc, english bool) string {
+	m := module.Manifest
+	release := fmt.Sprintf("%s-r%d", m.Version, m.Revision)
+	var out strings.Builder
+	fmt.Fprintf(&out, "%s\n", factsBlockStart)
+	if english {
+		out.WriteString("| Item | Value |\n| --- | --- |\n")
+		fmt.Fprintf(&out, "| Module | `%s` |\n", m.Name)
+		fmt.Fprintf(&out, "| Version / revision | `%s` |\n", release)
+		fmt.Fprintf(&out, "| Status | `%s` |\n", m.Status)
+		fmt.Fprintf(&out, "| Category | `%s` |\n", m.Category)
+		fmt.Fprintf(&out, "| Runtime | `%s` |\n", m.Runtime.Type)
+	} else {
+		out.WriteString("| 项目 | 值 |\n| --- | --- |\n")
+		fmt.Fprintf(&out, "| Module | `%s` |\n", m.Name)
+		fmt.Fprintf(&out, "| 版本 / revision | `%s` |\n", release)
+		fmt.Fprintf(&out, "| 状态 | `%s` |\n", m.Status)
+		fmt.Fprintf(&out, "| 类别 | `%s` |\n", m.Category)
+		fmt.Fprintf(&out, "| 运行时 | `%s` |\n", m.Runtime.Type)
+	}
+	fmt.Fprintf(&out, "%s\n", factsBlockEnd)
+	return out.String()
+}
+
+func renderModuleIdentity(module moduleDoc, english bool) string {
+	m := module.Manifest
+	release := fmt.Sprintf("%s-r%d", m.Version, m.Revision)
+	var line string
+	if english {
+		line = fmt.Sprintf("> Status: current implementation; based on `%s` / `%s`.", release, m.APIVersion)
+	} else {
+		line = fmt.Sprintf("> 状态：当前实现；对应 `%s` / `%s`.", release, m.APIVersion)
+	}
+	return identityBlockStart + "\n" + line + "\n" + identityBlockEnd + "\n"
+}
+
+func renderComposeTopology(module moduleDoc) (string, error) {
+	names := make([]string, 0, len(module.Compose.Services))
+	for name := range module.Compose.Services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var out strings.Builder
+	fmt.Fprintf(&out, "%s\n", topologyBlockStart)
+	out.WriteString("| Service | Image/build | Networks | Volumes |\n| --- | --- | --- | --- |\n")
+	for _, name := range names {
+		service := module.Compose.Services[name]
+		image := strings.TrimSpace(service.Image)
+		if image == "" {
+			context := composeBuildContext(service.Build)
+			if context == "" {
+				return "", fmt.Errorf("Compose service %s must declare image or build context", name)
+			}
+			image = "build: " + context
+		}
+		networks := composeNodeNames(service.Networks)
+		values := append([]string{name, image}, networks...)
+		for _, value := range values {
+			if strings.ContainsAny(value, "`|\r\n") {
+				return "", fmt.Errorf("Compose value %q cannot be represented safely in Markdown", value)
+			}
+		}
+		fmt.Fprintf(&out, "| `%s` | `%s` | `%s` | %d |\n", name, image, strings.Join(networks, ", "), composeSequenceLength(service.Volumes))
+	}
+	fmt.Fprintf(&out, "%s\n", topologyBlockEnd)
+	return out.String(), nil
+}
+
+func composeBuildContext(node yaml.Node) string {
+	node = unwrapYAMLNode(node)
+	if node.Kind == yaml.ScalarNode {
+		return strings.TrimSpace(node.Value)
+	}
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == "context" {
+				return strings.TrimSpace(node.Content[i+1].Value)
+			}
+		}
+	}
+	return ""
+}
+
+func composeNodeNames(node yaml.Node) []string {
+	node = unwrapYAMLNode(node)
+	values := []string{}
+	switch node.Kind {
+	case yaml.SequenceNode:
+		for _, item := range node.Content {
+			value := nodePointerValue(item)
+			if value.Kind == yaml.ScalarNode {
+				values = append(values, strings.TrimSpace(value.Value))
+			}
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			values = append(values, strings.TrimSpace(node.Content[i].Value))
+		}
+	}
+	return values
+}
+
+func composeSequenceLength(node yaml.Node) int {
+	node = unwrapYAMLNode(node)
+	if node.Kind == yaml.SequenceNode {
+		return len(node.Content)
+	}
+	return 0
+}
+
+func unwrapYAMLNode(node yaml.Node) yaml.Node {
+	for (node.Kind == yaml.DocumentNode || node.Kind == yaml.AliasNode) && len(node.Content) > 0 {
+		node = *node.Content[0]
+	}
+	return node
+}
+
+func nodePointerValue(node *yaml.Node) yaml.Node {
+	if node == nil {
+		return yaml.Node{}
+	}
+	return unwrapYAMLNode(*node)
 }
 
 func decodeYAML(path string, out any, strict bool) error {
@@ -275,22 +878,6 @@ func validate(m manifest, inv inventory) error {
 		}
 	}
 	return nil
-}
-
-func replaceGeneratedBlock(base, block string) (string, error) {
-	start := strings.Index(base, blockStart)
-	end := strings.Index(base, blockEnd)
-	if (start < 0) != (end < 0) {
-		return "", errors.New("localization generated markers are unbalanced")
-	}
-	if start >= 0 {
-		if end < start {
-			return "", errors.New("localization generated markers are reversed")
-		}
-		end += len(blockEnd)
-		return strings.TrimRight(base[:start], " \n") + "\n\n" + block + strings.TrimLeft(base[end:], " \n"), nil
-	}
-	return strings.TrimRight(base, " \n") + "\n\n" + block, nil
 }
 
 func renderModuleBlock(module moduleDoc) string {

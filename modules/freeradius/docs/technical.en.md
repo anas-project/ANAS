@@ -2,7 +2,9 @@
 
 This page records the current implementation, security boundaries, and verification entry points for `freeradius`. User instructions are in the [English README](../README.en.md).
 
-> Status: current implementation; based on `3.2.10-r1` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> Status: current implementation; based on `3.2.10-r3` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -12,9 +14,11 @@ This page records the current implementation, security boundaries, and verificat
 
 ## Compose topology
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_freeradius` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-freeradius:3.2.10` | `` | 0 |
+<!-- generated:compose-topology:end -->
 
 ## Configuration contract
 

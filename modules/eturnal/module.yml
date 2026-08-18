@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: eturnal
 version: 1.12.2
-revision: 4
+revision: 5
 app_version: 1.12.2
 abi:
   supports:
@@ -27,6 +27,13 @@ config:
   defaults:
     port: "3478"
     domain_prefix: turn
+  types:
+    port:
+      kind: int
+      constraints:
+        minimum: 1
+        maximum: 65535
+    domain_prefix: string
 features:
   generated_secrets: true
   domain: true

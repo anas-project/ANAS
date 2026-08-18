@@ -1,11 +1,12 @@
 package config
 
 import (
-	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoadStructuredConfig(t *testing.T) {
@@ -37,6 +38,68 @@ env:
 	}
 	if got := cfg.Administration.LocalAccounts.PasswordLength; got != 24 {
 		t.Fatalf("local password length = %d", got)
+	}
+}
+
+func TestSettingsResolvesScalarAndSequenceAliases(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`env:
+  DB_MODE: &db_mode postgres
+  PROVIDERS: &providers [postgres, mariadb]
+modules:
+  nextcloud:
+    config:
+      db_type: *db_mode
+      provider_order: *providers
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := Settings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{
+		"env.DB_MODE":                             "postgres",
+		"env.PROVIDERS":                           "postgres,mariadb",
+		"modules.nextcloud.config.db_type":        "postgres",
+		"modules.nextcloud.config.provider_order": "postgres,mariadb",
+	} {
+		if got := settings[key]; got != want {
+			t.Errorf("%s=%q, want %q", key, got, want)
+		}
+	}
+}
+
+func TestSettingsUsesRuntimeNullSemanticsWithoutChangingQuotedText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`env:
+  UNSET: &unset null
+  ALIASED_UNSET: *unset
+  TEXT: "null"
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := Settings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"env.UNSET", "env.ALIASED_UNSET"} {
+		if got := settings[key]; got != "" {
+			t.Errorf("%s=%q, want runtime unset", key, got)
+		}
+	}
+	if got := settings["env.TEXT"]; got != "null" {
+		t.Errorf("quoted null text=%q, want null", got)
+	}
+}
+
+func TestFlattenNodeStopsAnAliasCycle(t *testing.T) {
+	alias := &yaml.Node{Kind: yaml.AliasNode}
+	alias.Alias = alias
+	out := map[string]string{}
+	flattenNode(alias, []string{"cycle"}, out)
+	if len(out) != 0 {
+		t.Fatalf("cyclic alias flattened to %#v", out)
 	}
 }
 
@@ -457,6 +520,61 @@ env:
 	}
 	if got := cfg.BaseEnv()["SAMBA_DC_USER_MIN_PASS_LENGTH"]; got != "10" {
 		t.Fatalf("module override = %q", got)
+	}
+}
+
+func TestSetStringPreservesExplicitYAMLLookingValues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(path, []byte(`modules:
+  samba_dc: {}
+global:
+  base_domain: nas.example.com
+  email: admin@example.com
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{
+		"null_value":     "null",
+		"float_value":    "1.0",
+		"sequence_value": "[x]",
+		"spaced_value":   "  keep both sides  ",
+	}
+	for parameter, value := range values {
+		if err := SetString(path, []string{"modules", "samba_dc", "config", parameter}, value); err != nil {
+			t.Fatalf("SetString(%s): %v", parameter, err)
+		}
+	}
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Modules map[string]struct {
+			Config map[string]yaml.Node `yaml:"config"`
+		} `yaml:"modules"`
+	}
+	if err := yaml.Unmarshal(body, &document); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := Settings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for parameter, want := range values {
+		node, ok := document.Modules["samba_dc"].Config[parameter]
+		if !ok {
+			t.Errorf("%s was not written", parameter)
+			continue
+		}
+		if node.Kind != yaml.ScalarNode || node.Tag != "!!str" || node.Value != want {
+			t.Errorf("%s node = kind %d tag %q value %q, want !!str %q", parameter, node.Kind, node.Tag, node.Value, want)
+		}
+		path := "modules.samba_dc.config." + parameter
+		if got := settings[path]; got != want {
+			t.Errorf("%s = %q, want %q", path, got, want)
+		}
 	}
 }
 

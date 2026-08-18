@@ -4,13 +4,15 @@
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `oauth2_proxy` |
-| 版本 / revision | `7.15.3-r1` |
+| 版本 / revision | `7.15.3-r3` |
 | 状态 | `release` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -62,11 +64,11 @@ identity:
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `oauth2_proxy.allow_groups` | string | `Admins` | `OAUTH2_PROXY_ALLOW_GROUPS` | 否 | 否 | 是 | `container_recreate` | 允许通过门禁的目录 Group |
-| `oauth2_proxy.domain_prefix` | string | `auth-gate` | `OAUTH2_PROXY_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
-| `oauth2_proxy.iam_protocol` | string | `auto` | `OAUTH2_PROXY_IAM_PROTOCOL` | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `oauth2_proxy.allow_groups` | string | `pattern: \S` | `Admins` | `static` | `OAUTH2_PROXY_ALLOW_GROUPS` | 否 | 否 | 否 | 是 | `container_recreate` | 允许通过门禁的目录 Group |
+| `oauth2_proxy.domain_prefix` | string | — | `auth-gate` | `static` | `OAUTH2_PROXY_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
 
 ### 查询和修改
 
@@ -102,7 +104,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`7.15.3-r2`（reviewed 2026-08-13）
+- Module version / 版本：`7.15.3-r3`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — oauth2-proxy receives TZ for process and log timestamps.
 - Language scope / 语言范围：oauth2-proxy built-in error and sign-in pages
 - Selection / 选择方式：`fixed`

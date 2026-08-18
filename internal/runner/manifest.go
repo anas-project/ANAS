@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/config"
+	"github.com/anas-project/ANAS/internal/configschema"
 	"gopkg.in/yaml.v3"
 )
 
@@ -161,10 +163,15 @@ type manifestUpgrade struct {
 }
 
 type manifestConfig struct {
-	EnvPrefix string                          `yaml:"env_prefix"`
-	Required  []string                        `yaml:"required"`
-	Defaults  map[string]any                  `yaml:"defaults"`
-	Changes   map[string]manifestChangePolicy `yaml:"changes"`
+	EnvPrefix     string   `yaml:"env_prefix"`
+	InputRequired []string `yaml:"input_required"`
+	// Required is the legacy pre-Hook invariant. Keep its decoding and runtime
+	// stage stable for existing third-party manifests; input_required is the new
+	// caller-input contract and must_resolve is the post-Hook invariant.
+	Required    []string                        `yaml:"required"`
+	MustResolve []string                        `yaml:"must_resolve"`
+	Defaults    map[string]any                  `yaml:"defaults"`
+	Changes     map[string]manifestChangePolicy `yaml:"changes"`
 	// Consumes lists env keys (exact or trailing-* glob) produced outside this
 	// module's dependency closure that its rendering and hooks may read.
 	Consumes []string `yaml:"consumes"`
@@ -183,13 +190,27 @@ type manifestConfig struct {
 // enumeration requires, so both are accepted rather than forcing every
 // declaration into the verbose shape.
 type manifestParamType struct {
-	Kind string   `yaml:"kind"`
-	Enum []string `yaml:"enum"`
+	Kind          string                     `yaml:"kind"`
+	Enum          []string                   `yaml:"enum"`
+	Constraints   configschema.Constraints   `yaml:"constraints"`
+	DefaultSource configschema.DefaultSource `yaml:"default_source"`
 }
 
 func (t *manifestParamType) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind == yaml.ScalarNode {
 		return node.Decode(&t.Kind)
+	}
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("parameter type must be a kind scalar or mapping")
+	}
+	allowed := map[string]bool{
+		"kind": true, "enum": true, "constraints": true, "default_source": true,
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		name := node.Content[i].Value
+		if !allowed[name] {
+			return fmt.Errorf("parameter type contains unknown field %q", name)
+		}
 	}
 	type raw manifestParamType
 	var out raw
@@ -466,16 +487,9 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if manifest.Runtime.Type != "builtin" && manifest.Runtime.Type != "compose" {
 		return Module{}, fmt.Errorf("module %q has unsupported runtime type %q", dirname, manifest.Runtime.Type)
 	}
-	changes := map[string]ChangePolicy{}
-	for key, policy := range manifest.Config.Changes {
-		if !validChangeEffect(policy.Effect) {
-			return Module{}, fmt.Errorf("module %q config.changes.%s has invalid effect %q", dirname, key, policy.Effect)
-		}
-		changes[strings.ToLower(strings.TrimSpace(key))] = ChangePolicy{
-			Effect: policy.Effect, Apply: policy.Apply,
-			Description: policy.Description, Sensitive: policy.Sensitive,
-			Executor: policy.Executor, Verify: policy.Verify,
-		}
+	changes, err := normalizeChangePolicies(dirname, manifest.Config.Changes)
+	if err != nil {
+		return Module{}, err
 	}
 	composeFile := strings.TrimSpace(manifest.Runtime.ComposeFile)
 	if manifest.Runtime.Type == "compose" {
@@ -508,6 +522,17 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		return Module{}, err
 	}
 	types, err := normalizeParamTypes(dirname, manifest.Config.Types)
+	if err != nil {
+		return Module{}, err
+	}
+	// input_required and default_source are new schema fields, so rejecting
+	// contradictory declarations cannot break a legacy manifest. Keep the old
+	// required+default behavior compatible, but never load a Module whose public
+	// caller-input contract is impossible to satisfy consistently.
+	if err := validateInputDefaultSemantics(dirname, manifest.Config, types); err != nil {
+		return Module{}, err
+	}
+	defaults, err := normalizeDefaultsWithTypes(dirname, dirname, envPrefix, exports, manifest.Config.Defaults, types)
 	if err != nil {
 		return Module{}, err
 	}
@@ -544,6 +569,10 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if err != nil {
 		return Module{}, err
 	}
+	requirements, err := normalizeConfigRequirements(manifest.Name, manifest.Name, envPrefix, exports, manifest.Config)
+	if err != nil {
+		return Module{}, err
+	}
 	mod := Module{
 		Name:                   manifest.Name,
 		Version:                manifest.Version,
@@ -554,8 +583,10 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		DataBreaking:           cloneStringListPointer(manifest.Upgrade.DataBreaking),
 		SourceDir:              dir,
 		EnvPrefix:              envPrefix,
-		Defaults:               normalizeDefaults(manifest.Name, envPrefix, exports, manifest.Config.Defaults),
-		Required:               normalizeRequired(manifest.Name, envPrefix, exports, manifest.Config.Required),
+		Defaults:               defaults,
+		InputRequired:          requirements.InputRequired,
+		Required:               requirements.Required,
+		MustResolve:            requirements.MustResolve,
 		Parameters:             declaredParameters(manifest.Config),
 		Types:                  types,
 		Consumes:               consumes,
@@ -590,26 +621,108 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 func normalizeParamTypes(module string, in map[string]manifestParamType) (map[string]ParamType, error) {
 	out := map[string]ParamType{}
 	for name, declared := range in {
-		kind := strings.ToLower(strings.TrimSpace(declared.Kind))
-		enum := []string{}
-		for _, value := range declared.Enum {
-			if value = strings.TrimSpace(value); value != "" {
-				enum = append(enum, value)
+		parameterName := strings.ToLower(strings.TrimSpace(name))
+		if parameterName == "" {
+			return nil, fmt.Errorf("module %q config.types contains an empty parameter name", module)
+		}
+		if _, exists := out[parameterName]; exists {
+			return nil, fmt.Errorf("module %q config.types declares %s more than once after normalization", module, parameterName)
+		}
+		parameter, err := configschema.NormalizeDefinition(configschema.Parameter{
+			Kind: declared.Kind, Enum: declared.Enum, Constraints: declared.Constraints,
+			DefaultSource: declared.DefaultSource,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("module %q config.types.%s %w", module, name, err)
+		}
+		out[parameterName] = parameter
+	}
+	return out, nil
+}
+
+// validateParamTypeDefaults checks only parameters that declare a type. Missing
+// declarations remain valid here for compatibility with older Module bundles;
+// repository publication checks enforce complete metadata for current sources.
+func validateParamTypeDefaults(owner string, defaults map[string]any, types map[string]ParamType) error {
+	_, err := normalizeParamTypeDefaults(owner, defaults, types)
+	return err
+}
+
+func normalizeParamTypeDefaults(owner string, defaults map[string]any, types map[string]ParamType) (map[string]string, error) {
+	out := make(map[string]string, len(defaults))
+	for name, value := range defaults {
+		parameter := strings.ToLower(strings.TrimSpace(name))
+		if parameter == "" {
+			return nil, fmt.Errorf("module %q config.defaults contains an empty parameter name", owner)
+		}
+		if _, exists := out[parameter]; exists {
+			return nil, fmt.Errorf("module %q config.defaults declares %s more than once after normalization", owner, parameter)
+		}
+		spec := types[parameter]
+		scalar := config.Scalar(value)
+		if !spec.Declared() {
+			out[parameter] = scalar
+			continue
+		}
+		// Empty is a valid runtime spelling for "unset", but a literal default
+		// must actually provide a value. Otherwise metadata would advertise a
+		// static default that still fails bool/int/enum resolution. An explicitly
+		// empty string remains meaningful and legal.
+		if spec.Kind != "string" && strings.TrimSpace(scalar) == "" {
+			return nil, fmt.Errorf("module %q config.defaults.%s must provide a non-empty %s value", owner, name, spec.Kind)
+		}
+		if value != nil {
+			switch reflect.TypeOf(value).Kind() {
+			case reflect.String, reflect.Bool,
+				reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+				reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+				reflect.Float32, reflect.Float64:
+			default:
+				return nil, fmt.Errorf("module %q config.defaults.%s must be a scalar %s", owner, name, spec.Kind)
 			}
 		}
-		if len(enum) > 0 && kind == "" {
-			kind = "enum"
+		normalized, err := normalizeValueAgainstParamType(scalar, spec)
+		if err != nil {
+			return nil, fmt.Errorf("module %q config.defaults.%s %w", owner, name, err)
 		}
-		switch kind {
-		case "string", "bool", "int":
-		case "enum":
-			if len(enum) == 0 {
-				return nil, fmt.Errorf("module %q config.types.%s is an enum with no values", module, name)
-			}
-		default:
-			return nil, fmt.Errorf("module %q config.types.%s has unknown type %q; use string, bool, int or enum", module, name, declared.Kind)
+		out[parameter] = normalized
+	}
+	return out, nil
+}
+
+func normalizeChangePolicies(owner string, in map[string]manifestChangePolicy) (map[string]ChangePolicy, error) {
+	out := make(map[string]ChangePolicy, len(in))
+	for name, policy := range in {
+		parameter := strings.ToLower(strings.TrimSpace(name))
+		if parameter == "" {
+			return nil, fmt.Errorf("module %q config.changes contains an empty parameter name", owner)
 		}
-		out[strings.ToLower(strings.TrimSpace(name))] = ParamType{Kind: kind, Enum: enum}
+		if _, exists := out[parameter]; exists {
+			return nil, fmt.Errorf("module %q config.changes declares %s more than once after normalization", owner, parameter)
+		}
+		if !validChangeEffect(policy.Effect) {
+			return nil, fmt.Errorf("module %q config.changes.%s has invalid effect %q", owner, name, policy.Effect)
+		}
+		if policy.Effect == "credential_rotate" && !policy.Sensitive {
+			return nil, fmt.Errorf("module %q config.changes.%s uses credential_rotate but is not marked sensitive", owner, name)
+		}
+		out[parameter] = ChangePolicy{
+			Effect: policy.Effect, Apply: policy.Apply,
+			Description: policy.Description, Sensitive: policy.Sensitive,
+			Executor: policy.Executor, Verify: policy.Verify,
+		}
+	}
+	return out, nil
+}
+
+func normalizeDefaultsWithTypes(owner, module, prefix string, exports []string, in map[string]any, types map[string]ParamType) (map[string]string, error) {
+	values, err := normalizeParamTypeDefaults(owner, in, types)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(values))
+	for parameter, value := range values {
+		out[moduleParamEnvKey(module, prefix, exports, parameter)] = value
 	}
 	return out, nil
 }
@@ -777,12 +890,50 @@ func normalizeDefaults(module, prefix string, exports []string, in map[string]an
 	return out
 }
 
-func normalizeRequired(module, prefix string, exports []string, in []string) []string {
-	out := []string{}
-	for _, k := range in {
-		out = append(out, moduleParamEnvKey(module, prefix, exports, k))
+type normalizedConfigRequirements struct {
+	InputRequired []string
+	Required      []string
+	MustResolve   []string
+}
+
+func normalizeConfigRequirements(owner, module, prefix string, exports []string, cfg manifestConfig) (normalizedConfigRequirements, error) {
+	inputRequired, err := normalizeRequirementParameters(owner, module, prefix, exports, "input_required", cfg.InputRequired)
+	if err != nil {
+		return normalizedConfigRequirements{}, err
 	}
-	return out
+	required, err := normalizeRequirementParameters(owner, module, prefix, exports, "required", cfg.Required)
+	if err != nil {
+		return normalizedConfigRequirements{}, err
+	}
+	mustResolve, err := normalizeRequirementParameters(owner, module, prefix, exports, "must_resolve", cfg.MustResolve)
+	if err != nil {
+		return normalizedConfigRequirements{}, err
+	}
+	return normalizedConfigRequirements{
+		InputRequired: inputRequired,
+		Required:      required,
+		MustResolve:   mustResolve,
+	}, nil
+}
+
+// normalizeRequirementParameters is shared by all requirement stages. Empty
+// items and duplicates after trimming/case/env normalization are almost always
+// manifest typos, so accepting them would make strict schema parsing illusory.
+func normalizeRequirementParameters(owner, module, prefix string, exports []string, field string, in []string) ([]string, error) {
+	out := make([]string, 0, len(in))
+	seen := map[string]bool{}
+	for _, raw := range in {
+		if strings.TrimSpace(raw) == "" {
+			return nil, fmt.Errorf("module %q config.%s contains an empty parameter", owner, field)
+		}
+		key := moduleParamEnvKey(module, prefix, exports, raw)
+		if seen[key] {
+			return nil, fmt.Errorf("module %q config.%s declares %s more than once after normalization", owner, field, key)
+		}
+		seen[key] = true
+		out = append(out, key)
+	}
+	return out, nil
 }
 
 func defaultEnvPrefix(module string) string {

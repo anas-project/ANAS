@@ -105,6 +105,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       text: '研究与选型',
       items: [
         { text: '索引', link: '/research/' },
+        { text: 'Changelog 方案', link: '/research/changelog-plan-2026-08-18' },
         { text: 'samba-tool 用户与组管理', link: '/research/samba-tool-user-group-admin-guide-2026-08-17' },
         { text: 'Web API 与管理前端规划', link: '/research/web-api-admin-console-plan-2026-08-16' },
         { text: '应用研究 Module 规范', link: '/research/application-research-module-spec' },

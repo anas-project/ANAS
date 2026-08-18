@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: postgres
 version: 18.4.0
-revision: 2
+revision: 3
 app_version: 18.4.0
 abi:
   supports:
@@ -29,9 +29,17 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
+  must_resolve:
+    - password
   defaults:
     username: postgres
     adminer_enabled: "false"
+  types:
+    username: string
+    password:
+      kind: string
+      default_source: generated
+    adminer_enabled: bool
   changes:
     username:
       effect: data_migrate

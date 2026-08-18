@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: mariadb
 version: 12.3.2
-revision: 2
+revision: 3
 app_version: 12.3.2
 abi:
   supports:
@@ -29,8 +29,15 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
+  must_resolve:
+    - root_password
   defaults:
     adminer_enabled: "false"
+  types:
+    adminer_enabled: bool
+    root_password:
+      kind: string
+      default_source: generated
   # MySQL-compatibility aliases published for consumers that expect MYSQL_*.
   exports:
     - MYSQL_*

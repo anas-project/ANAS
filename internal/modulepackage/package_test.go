@@ -37,7 +37,7 @@ func TestRuntimeTrackedFilesExcludeDocumentationAndTests(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(files, "\n")
-	for _, excluded := range []string{"README.md", "localization.yml", "main_test.go", "iam_test.go"} {
+	for _, excluded := range []string{"README.md", "localization.yml", "docs/technical.md", "docs/technical.en.md", "main_test.go", "iam_test.go"} {
 		if strings.Contains(joined, excluded) {
 			t.Errorf("runtime files contain %s", excluded)
 		}
@@ -46,6 +46,60 @@ func TestRuntimeTrackedFilesExcludeDocumentationAndTests(t *testing.T) {
 		if !strings.Contains(joined, required) {
 			t.Errorf("runtime files omit %s", required)
 		}
+	}
+}
+
+func TestDocumentationExclusionsAreScopedToCatalogRoots(t *testing.T) {
+	for _, path := range []string{
+		"modules/demo/docs/technical.md",
+		"contracts/database/docs/technical.md",
+		"contracts/database/documentation.yml",
+	} {
+		if !excludedRuntimeFile(path) {
+			t.Errorf("excludedRuntimeFile(%q) = false, want true", path)
+		}
+	}
+	for _, path := range []string{
+		"modules/demo/runtime/docs/payload.txt",
+		"contracts/database/runtime/docs/payload.txt",
+		"contracts/database/runtime/documentation.yml",
+	} {
+		if excludedRuntimeFile(path) {
+			t.Errorf("excludedRuntimeFile(%q) = true, want false", path)
+		}
+	}
+	for path, want := range map[string]bool{
+		"modules/demo/docs":                           true,
+		"contracts/database/docs":                     true,
+		"modules/demo/runtime/docs":                   false,
+		"contracts/database/runtime/docs":             false,
+		"contracts/work/ANAS/contracts/database/docs": false,
+	} {
+		if got := excludedRuntimeDirectory(path); got != want {
+			t.Errorf("excludedRuntimeDirectory(%q) = %t, want %t", path, got, want)
+		}
+	}
+}
+
+func TestExpandContextFilesExcludesExplicitDocumentationFile(t *testing.T) {
+	root := t.TempDir()
+	documentation := filepath.Join("contracts", "database", "documentation.yml")
+	schema := filepath.Join("contracts", "database", "schemas", "resource.json")
+	for path, body := range map[string]string{documentation: "documentation\n", schema: "{}\n"} {
+		absolute := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(absolute, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, err := expandContextFiles(root, []string{documentation, schema})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(files, "\n"); got != schema {
+		t.Fatalf("expanded files = %q, want %q", got, schema)
 	}
 }
 
@@ -79,7 +133,11 @@ func TestBuildImageOnlyModulePackage(t *testing.T) {
 			t.Errorf("package omits %s", required)
 		}
 	}
-	for _, excluded := range []string{"README.md", "README.en.md", "localization.yml"} {
+	for _, excluded := range []string{
+		"README.md", "README.en.md", "localization.yml", "docs/technical.md", "docs/technical.en.md",
+		"contracts/relational_database/README.md", "contracts/relational_database/README.en.md",
+		"contracts/relational_database/documentation.yml", "contracts/relational_database/docs/technical.md",
+	} {
 		if entries[excluded] {
 			t.Errorf("package contains %s", excluded)
 		}
@@ -88,6 +146,9 @@ func TestBuildImageOnlyModulePackage(t *testing.T) {
 		base := filepath.Base(entry)
 		if strings.HasPrefix(base, "README") && strings.HasSuffix(base, ".md") {
 			t.Errorf("package contains documentation %s", entry)
+		}
+		if strings.Contains(entry, "/docs/") || strings.HasSuffix(entry, "/docs") || strings.Contains(entry, "/__pycache__/") {
+			t.Errorf("package contains excluded directory %s", entry)
 		}
 	}
 	metadata, err := VerifyUnpackedArchiveForTest(output, t.TempDir())

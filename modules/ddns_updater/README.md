@@ -4,13 +4,15 @@
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `ddns_updater` |
-| 版本 / revision | `2.10.0-r1` |
+| 版本 / revision | `2.10.0-r3` |
 | 状态 | `release` |
 | 类别 | `network` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -53,18 +55,18 @@ modules:
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ddns_updater.dns_provider` | string | `—` | `DDNS_UPDATER_DNS_PROVIDER` | 是 | 否 | 是 | `container_recreate` | DNS 厂商 |
-| `ddns_updater.domain_prefix` | string | `ddns` | `DDNS_UPDATER_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
-| `ddns_updater.forward_auth_interface` | string | `auto` | `DDNS_UPDATER_FORWARD_AUTH_INTERFACE` | 否 | 否 | 是 | `container_recreate` | ForwardAuth 接口选择 |
-| `ddns_updater.publicip_dns_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_DNS_PROVIDERS` | 否 | 否 | 是 | `container_recreate` | DNS 地址探测器列表 |
-| `ddns_updater.publicip_fetchers` | string | `http` | `DDNS_UPDATER_PUBLICIP_FETCHERS` | 否 | 否 | 是 | `container_recreate` | 公网地址发现方法 |
-| `ddns_updater.publicip_ipv4_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_IPV4_PROVIDERS` | 否 | 否 | 是 | `container_recreate` | IPv4 探测服务列表 |
-| `ddns_updater.publicip_ipv6_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_IPV6_PROVIDERS` | 否 | 否 | 是 | `container_recreate` | IPv6 探测服务列表 |
-| `ddns_updater.publicip_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_PROVIDERS` | 否 | 否 | 是 | `container_recreate` | 通用地址探测服务列表 |
-| `ddns_updater.ttl` | string | `300` | `DDNS_UPDATER_TTL` | 否 | 否 | 是 | `container_recreate` | DNS 记录 TTL |
-| `ddns_updater.zone_identifier` | string | `—` | `DDNS_UPDATER_ZONE_IDENTIFIER` | 否 | 否 | 是 | `container_recreate` | DNS Zone 标识 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `ddns_updater.dns_provider` | string | — | — | — | `DDNS_UPDATER_DNS_PROVIDER` | 否 | 是 | 否 | 是 | `container_recreate` | DNS 厂商 |
+| `ddns_updater.domain_prefix` | string | — | `ddns` | `static` | `DDNS_UPDATER_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| `ddns_updater.forward_auth_interface` | enum (`auto`, `http`) | — | `auto` | `static` | `DDNS_UPDATER_FORWARD_AUTH_INTERFACE` | 否 | 否 | 否 | 是 | `container_recreate` | ForwardAuth 接口选择 |
+| `ddns_updater.publicip_dns_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_DNS_PROVIDERS` | 否 | 否 | 否 | 是 | `container_recreate` | DNS 地址探测器列表 |
+| `ddns_updater.publicip_fetchers` | string | — | `http` | `static` | `DDNS_UPDATER_PUBLICIP_FETCHERS` | 否 | 否 | 否 | 是 | `container_recreate` | 公网地址发现方法 |
+| `ddns_updater.publicip_ipv4_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_IPV4_PROVIDERS` | 否 | 否 | 否 | 是 | `container_recreate` | IPv4 探测服务列表 |
+| `ddns_updater.publicip_ipv6_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_IPV6_PROVIDERS` | 否 | 否 | 否 | 是 | `container_recreate` | IPv6 探测服务列表 |
+| `ddns_updater.publicip_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_PROVIDERS` | 否 | 否 | 否 | 是 | `container_recreate` | 通用地址探测服务列表 |
+| `ddns_updater.ttl` | int | — | `300` | `static` | `DDNS_UPDATER_TTL` | 否 | 否 | 否 | 是 | `container_recreate` | DNS 记录 TTL |
+| `ddns_updater.zone_identifier` | string | — | — | — | `DDNS_UPDATER_ZONE_IDENTIFIER` | 否 | 否 | 否 | 是 | `container_recreate` | DNS Zone 标识 |
 
 ### 查询和修改
 
@@ -120,7 +122,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2.10.0-r2`（reviewed 2026-08-13）
+- Module version / 版本：`2.10.0-r3`（reviewed 2026-08-13）
 - Timezone / 时区：`application` — Upstream officially accepts the IANA TZ environment variable for Web UI and log timestamps.
 - Language scope / 语言范围：DDNS Updater Web UI
 - Selection / 选择方式：`fixed`

@@ -2,7 +2,9 @@
 
 This page records the current implementation, security boundaries, and verification entry points for `collabora`. User instructions are in the [English README](../README.en.md).
 
-> Status: current implementation; based on `26.4.2-r2` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> Status: current implementation; based on `26.4.2-r4` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -12,19 +14,21 @@ This page records the current implementation, security boundaries, and verificat
 
 ## Compose topology
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_collabora` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-collabora:26.04.2.4.1` | `` | 0 |
+<!-- generated:compose-topology:end -->
 
 ## Configuration contract
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `collabora.admin_password` | string | `—` | `COLLABORA_ADMIN_PASSWORD` | no | yes | yes | `container_recreate` | If omitted, the Module persists an independent random password in the Secret Store. |
-| `collabora.admin_username` | string | `admin_collabora` | `COLLABORA_ADMIN_USERNAME` | no | no | yes | `container_recreate` | The native admin-console username is injected when the container starts. |
-| `collabora.auto_save` | string | `60` | `COLLABORA_AUTO_SAVE` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `collabora.domain_prefix` | string | `collabora` | `COLLABORA_DOMAIN_PREFIX` | no | no | yes | `container_recreate` | The proxy route and Collabora hostname change. |
-| `collabora.log_level` | string | `warning` | `COLLABORA_LOG_LEVEL` | no | no | yes | `container_recreate` | The value is injected into the container environment. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `collabora.admin_password` | string | — | — | `generated` | `COLLABORA_ADMIN_PASSWORD` | no | yes | yes | yes | `container_recreate` | If omitted, the Module persists an independent random password in the Secret Store. |
+| `collabora.admin_username` | string | — | `admin_collabora` | `static` | `COLLABORA_ADMIN_USERNAME` | no | no | no | yes | `container_recreate` | The native admin-console username is injected when the container starts. |
+| `collabora.auto_save` | int | — | `60` | `static` | `COLLABORA_AUTO_SAVE` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `collabora.domain_prefix` | string | — | `collabora` | `static` | `COLLABORA_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | The proxy route and Collabora hostname change. |
+| `collabora.log_level` | string | — | `warning` | `static` | `COLLABORA_LOG_LEVEL` | no | no | no | yes | `container_recreate` | The value is injected into the container environment. |
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
 

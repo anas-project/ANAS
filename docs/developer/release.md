@@ -10,7 +10,7 @@ ANAS 有两条发布链路：Core 二进制从专用 `anas-release` 分支按自
 稳定 `vMAJOR.MINOR.PATCH` tag 为版本真相源，自动发布默认递增 patch。版本计算由
 `scripts/ci/anas-release-version.sh` 完成并有独立 fixture 测试。
 
-自动发布只由 `anas-release` 分支触发：该分支上的 `cmd/anas/`、`internal/`、
+自动发布只由 `anas-release` 分支触发：该分支上的 `cmd/anas/`、`cmd/anas-helper/`、`internal/`、
 `install.sh`、`go.mod`、`go.sum` 或 Core 发布构建与安装测试脚本发生 push 时运行。`master`
 push 和 Module/container 工作流均不会触发 Core
 发布，因此 Core、Module 两条发布链路可以独立推进。
@@ -46,7 +46,9 @@ gh workflow run anas-release.yml --ref anas-release -f version=0.2.0 -f bump=pat
 ```
 
 发布任务运行 `go test ./...`，分别交叉编译 Linux `amd64`、`arm64` 静态二进制，生成
-两个 `tar.gz` 和 `SHA256SUMS`，然后创建不可覆盖的 GitHub Release。成功后调用
+两个 `tar.gz` 和 `SHA256SUMS`，然后创建不可覆盖的 GitHub Release。每个归档包含 `anas`、
+`anas-helper` 和 `release.json`；构建任务通过原生执行或 QEMU 实际运行 `anas version --json`，
+并把版本、commit 和日期与清单及发布决策逐字段核对。成功后调用
 `.github/workflows/anas-cnb-release.yml`：先确认 CNB 的同名 tag 指向相同 commit；新 tag
 直接触发 CNB 的可信 `tag_push`，历史 tag 补发则临时创建同名 branch 触发
 `branch.create`。CNB 流水线从 GitHub Release 下载并校验同一批附件，再用流水线临时令牌
@@ -74,7 +76,8 @@ anas_linux_arm64.tar.gz
 SHA256SUMS
 ```
 
-构建通过 ldflags 写入版本、源码 commit 和 UTC 构建时间：
+构建通过 ldflags 写入版本、源码 commit 和 release commit 时间戳；该时间戳用于可复现的
+制品身份，不表示 CI 实际开始构建的时刻：
 
 ```bash
 anas version
@@ -182,9 +185,15 @@ artifact type 为 `application/vnd.anas.module.v1`，唯一 layer type 为
 - 已存在的 Module 打包器实现变化（影响全部 Module）；
 - manifest `version`。
 
-README、`localization.yml`、测试、`.DS_Store`、`__pycache__` 和已知本机构建残留忽略。
+README、Module/Contract 技术文档、Contract `documentation.yml`、`localization.yml`、测试、
+`.DS_Store`、`__pycache__` 和已知本机构建残留忽略。
 一个 Module 有多个派生镜像时，任一 context 变化只提升一次 Module revision，并成组处理
 全部相关镜像。
+
+revision 计算会规范化 `module.yml` 的顶层 `revision` 和 Compose 中由 Module catalog 管理的
+派生镜像 tag；这些字段是计算结果而不是发布原因。计算完成后，文档生成器从最终 manifest
+与 Compose 同步四份双语文档，并用 YAML service 视图逐一核对所有 catalog 自有镜像引用，
+再由 metadata/documentation 两个 `--check` 验证后提交；注释中的 tag 不能代替活动 service。
 
 本地预览和校验：
 

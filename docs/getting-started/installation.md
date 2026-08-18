@@ -15,7 +15,8 @@ ANAS 面向 Linux 主机，运行服务需要 Docker Engine 和 Docker Compose v
 
 安装脚本目前只支持 Linux，并自动识别 `x86_64`/`amd64` 与 `aarch64`/`arm64`。脚本从
 Release 下载对应静态二进制，使用同一 Release 的 `SHA256SUMS` 校验后安装到
-`/usr/local/bin/anas`；仅当目标目录不可写时调用 `sudo`。
+`/usr/local/bin/anas`。覆盖现有程序或写入源偏好之前，安装器还会实际运行下载的二进制，
+确认其自报版本与 Release tag 一致；仅当目标目录不可写时调用 `sudo`。
 
 从 GitHub 安装并把 GitHub/GHCR 设为后续默认源：
 

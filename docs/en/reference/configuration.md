@@ -1,12 +1,12 @@
 # Structured `config.yml` and environment-variable inventory
 
-This reference distinguishes settings with a structured `config.yml` entry from overrides that currently require top-level `env:`. Counts reflect the 2026-08-15 working tree and are not a fixed ABI.
+This reference distinguishes settings with a structured `config.yml` entry from overrides that currently require top-level `env:`. Counts reflect the 2026-08-18 working tree and are not a fixed ABI.
 
 ## Summary
 
-- `anas config list --json` currently declares **128** configurable parameters: 14 global and 114 module parameters.
-- 110 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
-- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 128 count.
+- `anas config list --json` currently declares **139** configurable parameters: 17 global and 122 module parameters.
+- 118 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
+- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 139 count.
 - Top-level `env:` is an intentionally open escape hatch. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
 
 “Structured” has two layers:
@@ -20,7 +20,7 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 | --- | --- | --- |
 | `module_source` | Module distribution profile: `official`, `official-cn`, or the `cn` shorthand | used for catalog, download, cache, lock, and CN defaults |
 | `modules.<module>` | Requested modules and their settings | used |
-| `global.*` | 14 deployment-wide parameters | used |
+| `global.*` | 17 deployment-wide parameters | used |
 | `administration.bootstrap.username` | Bootstrap administrator username | used |
 | `administration.local_accounts.username_template` | Global local-administrator username template | invalid; usernames are ANAS-managed |
 | `administration.local_accounts.password_length` | Generated length, minimum 16 | used |
@@ -44,6 +44,18 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 
 `config.Load` uses `KnownFields(true)`. Misspelled structured fields fail instead of being silently ignored, except inside the intentionally open `secrets`, `modules`, and `env` maps. Although `modules.<module>.config` is a map at YAML decode time, `config import` and deployment resolution now validate every key and value type against the manifest; hand-written YAML cannot bypass the declaration checks used by `config set`.
 
+Before validation and managed persistence, `config import` gives every YAML
+address one canonical spelling: `env` keys use their uppercase runtime spelling,
+while Module names, global parameter names, and Module parameter names become
+lowercase. If two source keys collapse to the same address—for example
+`env.custom_key` plus `env.CUSTOM_KEY`, or `modules.TRAEFIK` plus
+`modules.traefik`—the whole import is rejected instead of letting order decide
+which value wins. A structured Module parameter declared as a bare export is
+moved to its sole managed address: source
+`modules.samba_fs.config.share_dir_name` becomes `env.SHARE_DIR_NAME`. Supplying
+both addresses is likewise a canonicalization collision. The source file is
+never modified.
+
 Without an installer preference, `module_source` defaults to `official`. The one-line installer
 records its choice in `${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`; a new workspace or an import
 whose external file omits the field first persists that choice into managed configuration. The `cn`
@@ -55,13 +67,61 @@ an explicit `false` is never overridden.
 
 Language controls the UI-text fallback and locale controls regional formatting. Derivation supplies a default; it does not merge these concepts. See the [module timezone and language matrix](/en/reference/module-localization) for actual consumers.
 
-## The 128 declared parameters
+## The 139 declared parameters
 
 Every entry below appears in `anas config list`. Ordinary editable parameters can be addressed by `anas config set`; `credential_rotate`, `data_migrate`, and `immutable` entries are inventory/explain-only and require their dedicated workflow. Global parameters use `global.<parameter>`; ordinary module parameters use `modules.<module>.config.<parameter>`.
 
+The JSON inventory reports `type` as `string`, `bool`, `int`, or `enum`; enum
+entries also provide `allowed_values`. `unknown` remains a compatibility value
+for legacy Modules and incomplete development declarations, but the built-in
+Module release gate rejects it, so all 139 entries in this inventory have an
+explicit type.
+
+Configuration metadata separates “the operator must enter a value” from “the
+resolved value must exist”:
+
+- `required` is a compatibility field and always equals `input_required`.
+  `input_required` is true only when no default, host discovery, or other
+  unconditional source can supply the value and every applicable case requires
+  the operator to provide a non-empty value. A Module parameter becomes
+  applicable when that Module is enabled.
+- `must_resolve` means the final value must be non-empty after canonicalization,
+  defaults, host discovery, and runtime sources. It can therefore be true while
+  `input_required` is false.
+- `has_default` distinguishes no static default from an explicitly empty-string
+  default. `default_source` is `none`, `static`, `host`, `runtime`, `generated`,
+  or `inherited` and identifies an unconditional source available when input is
+  omitted. An input-required parameter cannot also have a default or a source
+  other than `none`. `none` means that no unconditional source exists; it does
+  not rule out a deployment resolver that supplies the value conditionally.
+- Optional `constraints` contains only declared single-field rules:
+  `minimum`, `maximum`, `min_length`, `max_length`, `pattern`, and `format`.
+  Conditional requirements, relationships between fields, and rules that read
+  runtime state remain resolver, application-layer, plan, or Hook validation; they must
+  not be flattened into a field-level required flag or constraint.
+
+This inventory is **not JSON Schema**. Its `required` describes explicit input
+for the current parameter rather than an array of object property names. ANAS
+applies its defaults during resolution, whereas JSON Schema `default` is only
+an annotation. `constraints` is a stable projection of the shared ANAS schema,
+not support for arbitrary JSON Schema keywords. The CLI, future `anasd`
+configuration API, and Web forms must consume the same application-layer schema.
+
+In the current release baseline, only `global.base_domain` and `global.email`
+have `input_required`/`required` set to true; 22 entries have
+`must_resolve: true`. `ddns_go.dns_provider` and
+`ddns_updater.dns_provider` can be injected conditionally from deployment
+`dynamic_dns.dns_provider`, so each reports `input_required: false`,
+`must_resolve: true`, and `default_source: none`. Module-local input is needed
+only when that resolver cannot supply the value.
+
+The `default_source` distribution is `static: 111`, `generated: 9`, `none: 8`,
+`runtime: 4`, `inherited: 4`, and `host: 3`. The 111 `has_default: true`
+entries are exactly the 111 `static` entries.
+
 | Owner | Count | Parameters |
 | --- | ---: | --- |
-| `global` | 14 | `base_domain`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `dns_server`, `email`, `host_ip`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
+| `global` | 17 | `base_domain`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `dns_server`, `email`, `host_ip`, `host_lan_arp_check`, `host_lan_bridge_ip`, `host_lan_ip`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
 | `authentik` | 6 | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` |
 | `collabora` | 5 | `admin_password`, `admin_username`, `auto_save`, `domain_prefix`, `log_level` |
 | `ddns_go` | 10 | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` |
@@ -88,7 +148,10 @@ written in YAML.
 Samba DC own their password parameters and generate independent Secrets when
 those parameters are omitted; no cross-application administrator password remains.
 
-Four `samba_fs` parameters have manifest metadata but use top-level `env:` because `config.exports` publishes a bare name:
+Four `samba_fs` parameters have manifest metadata, but their canonical managed
+YAML address is top-level `env:` because `config.exports` publishes a bare
+name. `config import` may accept a structured source address, but migrates it
+here before persistence:
 
 | YAML address | Owner | Environment key |
 | --- | --- | --- |
@@ -101,14 +164,14 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 
 ## What changing a parameter does
 
-`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. The 128 current entries group by effect as follows. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
+`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. The 139 current entries group by effect as follows. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
 
 | Effect | Count | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 88 | Re-render and recreate the affected container or Compose project |
+| `container_recreate` | 91 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 7 | Ordinary setting and replacement import are refused; use a credential-rotation transaction to update application state and the Secret Store together |
 | `data_migrate` | 9 | Ordinary setting and deployment activation are blocked until persistent data, a database, or membership is migrated |
-| `hot_reload` | 8 | The declared target is a Samba management command; the current executor conservatively creates a deployment and runs Compose `up` for the affected container |
+| `hot_reload` | 16 | The declared target is a Samba management command; the current executor conservatively creates a deployment and runs Compose `up` for the affected container |
 | `image_rebuild` | 1 | Rebuild with `anas apply --build`, then deploy |
 | `immutable` | 3 | Generic `config set` refuses the change; use a replacement or domain-migration workflow |
 | `reconcile` | 12 | The declared target is application/API/file reconciliation; the current executor applies it through a new deployment and container startup |
@@ -162,6 +225,7 @@ The table below states what every owner's inputs ultimately change. Each named p
 | `global` | `base_domain`, `virtual_domain`, `email` | Derive application URLs, AD realm, ACME/internal-CA mode, and service contact email |
 | `global` | `container_prefix`, `network_prefix` | Change Compose container names, network names, and cross-container addresses |
 | `global` | `host_ip`, `dns_server`, `ipv4`, `ipv6` | Change host route targets, container DNS, and DDNS A/AAAA intent |
+| `global` | `host_lan_ip`, `host_lan_bridge_ip`, `host_lan_arp_check` | Pin the host-LAN container and host bridge addresses and control occupancy probing; all three are optional, and the ARP check runs unless explicitly disabled |
 | `global` | `timezone`, `default_language`, `default_locale` | Produce final `TZ`/BCP 47 defaults and deliver them only to applications declaring support |
 | `global` | `chinese_speedup`, `chinese_build_speedup` | Select runtime image/download mirrors and build-time image/package mirrors; the latter rebuilds images |
 | `authentik` | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` | Select the database resource and generate IAM URLs/blueprints, LDAP source/writeback, and logging |
@@ -271,8 +335,11 @@ Maintenance rules:
 1. Prefer the global schema or a module `config` declaration for ordinary user settings.
 2. Document every new raw-only key and why it is not yet structured.
 3. Recalculate counts and update both language versions after adding, removing, or renaming manifest parameters.
-4. Do not list runner/module-derived values as user configuration.
-5. Put credentials in `secrets` or parameters marked `sensitive`.
+4. Give every built-in parameter an explicit type; `unknown` may read legacy Modules but cannot enter a release.
+5. Keep CLI/JSON `required` equal to manifest `input_required`; an input-required parameter cannot also have a default or another unconditional source. Legacy manifest `required` retains its pre-Hook check, while `must_resolve` is the final post-Hook non-empty invariant.
+6. Put single-field rules in `constraints`; keep conditional, cross-field, and runtime-state rules in the resolver, application layer, plan, or Hook.
+7. Do not list runner/module-derived values as user configuration.
+8. Put credentials in `secrets` or parameters marked `sensitive`.
 
 Validation commands:
 
@@ -283,4 +350,4 @@ test-env/scripts/test-parameter-effects.sh
 test-env/scripts/test-render.sh
 ```
 
-The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the 128-entry inventory and retired paths, the real CLI→hook→render→deployment→Compose/refusal boundary for all seven effects, and require every one of the 128 parameter keys to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.
+The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the 139-entry inventory, complete type declarations, and retired paths; the real CLI→hook→render→deployment→Compose/refusal boundary for all seven effects; and require every one of the 139 parameter keys to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.

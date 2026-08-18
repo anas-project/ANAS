@@ -8,6 +8,8 @@ __pycache__/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 docs/.vitepress/versioned-dist-*/
+# Local/private operator documents and their screenshots.
+docs/private/
 secrets.yml
 # Site-specific deployment files may contain DNS credentials and passwords.
 config.lnnj.com.cn.yml

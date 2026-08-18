@@ -3,10 +3,12 @@ package runner
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/anas-project/ANAS/internal/configschema"
 	"gopkg.in/yaml.v3"
 )
 
@@ -116,10 +118,12 @@ func TestModulesUseManifestRule(t *testing.T) {
 				After       []string                        `yaml:"after"`
 			} `yaml:"dependencies"`
 			Config struct {
-				Required []string                        `yaml:"required"`
-				Defaults map[string]any                  `yaml:"defaults"`
-				Types    map[string]manifestParamType    `yaml:"types"`
-				Changes  map[string]manifestChangePolicy `yaml:"changes"`
+				InputRequired []string                        `yaml:"input_required"`
+				Required      []string                        `yaml:"required"`
+				MustResolve   []string                        `yaml:"must_resolve"`
+				Defaults      map[string]any                  `yaml:"defaults"`
+				Types         map[string]manifestParamType    `yaml:"types"`
+				Changes       map[string]manifestChangePolicy `yaml:"changes"`
 			} `yaml:"config"`
 			Services struct {
 				Optional []struct {
@@ -166,9 +170,15 @@ func TestModulesUseManifestRule(t *testing.T) {
 				t.Fatalf("%s requires_one selected_by %q should use lower snake_case", entry.Name(), dep.SelectedBy)
 			}
 		}
-		for _, key := range manifest.Config.Required {
-			if looksLikeEnvParam(key) {
-				t.Fatalf("%s required parameter %q should use lower snake_case", entry.Name(), key)
+		for stage, parameters := range map[string][]string{
+			"input_required": manifest.Config.InputRequired,
+			"required":       manifest.Config.Required,
+			"must_resolve":   manifest.Config.MustResolve,
+		} {
+			for _, key := range parameters {
+				if looksLikeEnvParam(key) {
+					t.Fatalf("%s %s parameter %q should use lower snake_case", entry.Name(), stage, key)
+				}
 			}
 		}
 		for key := range manifest.Config.Defaults {
@@ -439,6 +449,317 @@ runtime:
 	}
 }
 
+func TestNormalizeParamTypesDistinguishesExplicitStringAndRejectsKindEnumConflict(t *testing.T) {
+	types, err := normalizeParamTypes("example", map[string]manifestParamType{
+		"title": {Kind: "string"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := types["title"]; !got.Declared() || got.Kind != "string" {
+		t.Fatalf("explicit string = %+v", got)
+	}
+	if types["missing"].Declared() {
+		t.Fatal("missing type was reported as declared")
+	}
+
+	_, err = normalizeParamTypes("example", map[string]manifestParamType{
+		"mode": {Kind: "string", Enum: []string{"one", "two"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "combines kind") {
+		t.Fatalf("error = %v, want kind/enum conflict", err)
+	}
+	types, err = normalizeParamTypes("example", map[string]manifestParamType{
+		"mode": {Enum: []string{"prod", "PROD"}},
+	})
+	if err != nil || len(types["mode"].Enum) != 2 {
+		t.Fatalf("case-distinct legacy enum = %+v, %v", types["mode"], err)
+	}
+}
+
+func TestNormalizeParamTypesRejectsEmptyAndDuplicateNormalizedNames(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		types map[string]manifestParamType
+		want  string
+	}{
+		{name: "empty", types: map[string]manifestParamType{"  ": {Kind: "string"}}, want: "empty parameter"},
+		{
+			name: "case duplicate",
+			types: map[string]manifestParamType{
+				"Mode": {Kind: "string"}, " mode ": {Kind: "int"},
+			},
+			want: "more than once",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := normalizeParamTypes("example", test.types)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeParamTypesLoadsConstraintsAndDefaultSource(t *testing.T) {
+	minimum, maximum := 1, 10
+	types, err := normalizeParamTypes("example", map[string]manifestParamType{
+		"workers": {
+			Kind: "int", Constraints: configschema.Constraints{Minimum: &minimum, Maximum: &maximum},
+			DefaultSource: configschema.DefaultSourceRuntime,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := types["workers"]
+	if got.Kind != "int" || got.Constraints.Minimum == nil || *got.Constraints.Minimum != 1 ||
+		got.Constraints.Maximum == nil || *got.Constraints.Maximum != 10 ||
+		got.DefaultSource != configschema.DefaultSourceRuntime {
+		t.Fatalf("normalized parameter = %+v", got)
+	}
+}
+
+func TestManifestRejectsUnknownNestedParameterTypeFields(t *testing.T) {
+	for _, test := range []struct {
+		name, declaration, want string
+	}{
+		{
+			name: "parameter field",
+			declaration: `    workers:
+      kind: int
+      default_sources: runtime
+`,
+			want: "default_sources",
+		},
+		{
+			name: "constraint field",
+			declaration: `    workers:
+      kind: int
+      constraints:
+        minimun: 1
+`,
+			want: "minimun",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := writeModuleConfigManifest(t, "  types:\n"+test.declaration)
+			_, err := loadModuleManifest(dir, "example")
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want unknown field %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestManifestDefaultsUseConstraintAndFormatNormalization(t *testing.T) {
+	valid := writeModuleConfigManifest(t, `  defaults:
+    address: " 192.0.2.10 "
+    workers: "08"
+  types:
+    address:
+      kind: string
+      constraints: {format: ipv4}
+    workers:
+      kind: int
+      constraints: {minimum: 1, maximum: 10}
+`)
+	mod, err := loadModuleManifest(valid, "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := mod.Defaults["EXAMPLE_ADDRESS"]; got != "192.0.2.10" {
+		t.Fatalf("formatted default = %q", got)
+	}
+	if got := mod.Defaults["EXAMPLE_WORKERS"]; got != "08" {
+		t.Fatalf("integer default = %q", got)
+	}
+
+	invalid := writeModuleConfigManifest(t, `  defaults: {workers: "0"}
+  types:
+    workers:
+      kind: int
+      constraints: {minimum: 1}
+`)
+	if _, err := loadModuleManifest(invalid, "example"); err == nil || !strings.Contains(err.Error(), "at least 1") {
+		t.Fatalf("constrained default error = %v", err)
+	}
+}
+
+func TestManifestSeparatesAllRequirementStages(t *testing.T) {
+	dir := writeModuleConfigManifest(t, `  input_required: [token]
+  required: [mode, endpoint]
+  must_resolve: [address, token]
+  defaults:
+    mode: safe
+  types:
+    token: string
+    mode: string
+    endpoint:
+      kind: string
+      default_source: runtime
+    address:
+      kind: string
+      default_source: runtime
+`)
+	mod, err := loadModuleManifest(dir, "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := mod.InputRequired, []string{"EXAMPLE_TOKEN"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("input required = %v, want %v", got, want)
+	}
+	if got, want := mod.Required, []string{"EXAMPLE_MODE", "EXAMPLE_ENDPOINT"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("legacy pre-hook required = %v, want %v", got, want)
+	}
+	if got, want := mod.MustResolve, []string{"EXAMPLE_ADDRESS", "EXAMPLE_TOKEN"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("post-hook must-resolve = %v, want %v", got, want)
+	}
+	if !contains(mod.Parameters, "address") {
+		t.Fatalf("must_resolve-only parameter missing from inventory: %v", mod.Parameters)
+	}
+}
+
+func TestManifestRejectsMisspelledInputRequired(t *testing.T) {
+	dir := writeModuleConfigManifest(t, `  input_requiredd: [token]
+  types: {token: string}
+`)
+	if _, err := loadModuleManifest(dir, "example"); err == nil || !strings.Contains(err.Error(), "input_requiredd") {
+		t.Fatalf("error = %v, want strict unknown-field rejection", err)
+	}
+}
+
+func TestRuntimeManifestRejectsContradictoryInputRequiredDefaults(t *testing.T) {
+	for _, configBlock := range []string{
+		`  input_required: [token]
+  defaults: {token: fallback}
+  types: {token: string}
+`,
+		`  input_required: [token]
+  types:
+    token: {kind: string, default_source: generated}
+`,
+	} {
+		dir := writeModuleConfigManifest(t, configBlock)
+		if _, err := loadModuleManifest(dir, "example"); err == nil || !strings.Contains(err.Error(), "config.input_required") {
+			t.Errorf("contradictory runtime manifest error = %v", err)
+		}
+	}
+}
+
+func TestManifestRejectsMalformedRequirementLists(t *testing.T) {
+	for _, field := range []string{"input_required", "required", "must_resolve"} {
+		for _, test := range []struct {
+			name, values, want string
+		}{
+			{name: "empty", values: `"", token`, want: "empty parameter"},
+			{name: "normalized duplicate", values: `Token, " token "`, want: "more than once after normalization"},
+		} {
+			t.Run(field+"/"+test.name, func(t *testing.T) {
+				dir := writeModuleConfigManifest(t, "  "+field+": ["+test.values+"]\n  types: {token: string}\n")
+				if _, err := loadModuleManifest(dir, "example"); err == nil || !strings.Contains(err.Error(), "config."+field) || !strings.Contains(err.Error(), test.want) {
+					t.Fatalf("error = %v, want config.%s %s", err, field, test.want)
+				}
+			})
+		}
+	}
+}
+
+func TestManifestRejectsMalformedDefaultAndChangeKeys(t *testing.T) {
+	for _, test := range []struct {
+		name, config, field, want string
+	}{
+		{name: "empty default", config: "  defaults:\n    \" \": value\n", field: "config.defaults", want: "empty parameter name"},
+		{name: "duplicate default", config: "  defaults:\n    Mode: safe\n    \" mode \": fast\n  types: {mode: string}\n", field: "config.defaults", want: "more than once after normalization"},
+		{name: "empty change", config: "  changes:\n    \" \": {effect: container_recreate}\n", field: "config.changes", want: "empty parameter name"},
+		{name: "duplicate change", config: "  changes:\n    Mode: {effect: container_recreate}\n    \" mode \": {effect: hot_reload}\n  types: {mode: string}\n", field: "config.changes", want: "more than once after normalization"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := writeModuleConfigManifest(t, test.config)
+			if _, err := loadModuleManifest(dir, "example"); err == nil || !strings.Contains(err.Error(), test.field) || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %s %s", err, test.field, test.want)
+			}
+		})
+	}
+}
+
+func TestManifestRequiresCredentialRotationParametersToBeSensitive(t *testing.T) {
+	dir := writeModuleConfigManifest(t, `  changes:
+    token: {effect: credential_rotate}
+  types: {token: string}
+`)
+	if _, err := loadModuleManifest(dir, "example"); err == nil || !strings.Contains(err.Error(), "credential_rotate") || !strings.Contains(err.Error(), "sensitive") {
+		t.Fatalf("unsafe credential policy error = %v", err)
+	}
+
+	dir = writeModuleConfigManifest(t, `  changes:
+    token: {effect: credential_rotate, sensitive: true}
+  types: {token: string}
+`)
+	if _, err := loadModuleManifest(dir, "example"); err != nil {
+		t.Fatalf("sensitive credential policy was rejected: %v", err)
+	}
+}
+
+func TestManifestRejectsDefaultOutsideDeclaredTypeButAllowsLegacyUndeclaredDefault(t *testing.T) {
+	invalid := writeModuleConfigManifest(t, `  defaults:
+    enabled: maybe
+  types:
+    enabled: bool
+`)
+	if _, err := loadModuleManifest(invalid, "example"); err == nil || !strings.Contains(err.Error(), "accepts true or false") {
+		t.Fatalf("invalid typed default error = %v", err)
+	}
+	for _, value := range []string{"null", `""`} {
+		empty := writeModuleConfigManifest(t, `  defaults:
+    enabled: `+value+`
+  types:
+    enabled: bool
+`)
+		if _, err := loadModuleManifest(empty, "example"); err == nil || !strings.Contains(err.Error(), "non-empty bool") {
+			t.Errorf("typed empty default %s error = %v", value, err)
+		}
+	}
+
+	emptyString := writeModuleConfigManifest(t, `  defaults:
+    label: ""
+  types:
+    label: string
+`)
+	if mod, err := loadModuleManifest(emptyString, "example"); err != nil || mod.Defaults["EXAMPLE_LABEL"] != "" {
+		t.Fatalf("explicit empty string default = %+v, %v", mod, err)
+	}
+
+	legacy := writeModuleConfigManifest(t, `  defaults:
+    legacy_value: anything
+`)
+	mod, err := loadModuleManifest(legacy, "example")
+	if err != nil {
+		t.Fatalf("legacy undeclared default was rejected: %v", err)
+	}
+	if mod.Types["legacy_value"].Declared() {
+		t.Fatalf("legacy type = %+v, want undeclared", mod.Types["legacy_value"])
+	}
+
+	canonical := writeModuleConfigManifest(t, `  defaults:
+    enabled: " TRUE "
+    mode: FAST
+  types:
+    enabled: bool
+    mode: {enum: [safe, fast]}
+`)
+	mod, err = loadModuleManifest(canonical, "example")
+	if err != nil {
+		t.Fatalf("canonicalizable typed defaults were rejected: %v", err)
+	}
+	if got := mod.Defaults["EXAMPLE_ENABLED"]; got != "true" {
+		t.Errorf("bool default = %q, want true", got)
+	}
+	if got := mod.Defaults["EXAMPLE_MODE"]; got != "fast" {
+		t.Errorf("enum default = %q, want fast", got)
+	}
+}
+
 func TestModuleLifecyclePlanSummary(t *testing.T) {
 	a := &app{
 		order: []string{"stable", "vpn", "old"},
@@ -497,4 +818,28 @@ func looksLikeEnvParam(key string) bool {
 		return true
 	}
 	return strings.ToUpper(key) == key && strings.Contains(key, "_")
+}
+
+func writeModuleConfigManifest(t *testing.T, configBlock string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "example")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `api_version: anas.module/v1
+kind: Module
+name: example
+version: 1.0.0
+revision: 1
+status: release
+abi:
+  supports: [anas.module-hook/v1]
+runtime:
+  type: builtin
+config:
+` + configBlock
+	if err := os.WriteFile(filepath.Join(dir, "module.yml"), []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

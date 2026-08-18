@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/anas-project/ANAS/internal/configschema"
+	"github.com/anas-project/ANAS/internal/deployment"
 )
 
 type Module struct {
@@ -17,10 +20,18 @@ type Module struct {
 	SourceDir    string
 	EnvPrefix    string
 	Defaults     map[string]string
-	Required     []string
+	// InputRequired is the caller-input contract. Required preserves the legacy
+	// pre-Hook invariant after defaults and resolvers have run. MustResolve is the
+	// final invariant after the calculate Hook patch. Their runtime unions are
+	// computed at the enforcement and inventory boundaries so the manifest fields
+	// remain distinguishable here.
+	InputRequired []string
+	Required      []string
+	MustResolve   []string
 	// Parameters is every parameter module.yml declares, in config spelling.
-	// Defaults and Required hold the same names already converted to env keys,
-	// which is the form calculation needs and the wrong form for an inventory.
+	// Defaults and all three requirement lists hold the same names already
+	// converted to env keys, which is the form calculation needs and the wrong
+	// form for an inventory.
 	Parameters []string
 	Consumes   []string
 	Exports    []string
@@ -45,6 +56,19 @@ type Module struct {
 	Hook                   HookConfig
 	RuntimeType            string
 	ComposeFile            string
+}
+
+// preHookRequirements preserves the original config.required check point while
+// also carrying the stronger caller-input contract through calculation.
+func (m Module) preHookRequirements() []string {
+	return uniqueStrings(append(append([]string{}, m.InputRequired...), m.Required...))
+}
+
+// finalRequirements is the public must-resolve meaning: every requirement
+// class must still be non-empty once a calculate Hook has applied its patch.
+func (m Module) finalRequirements() []string {
+	out := m.preHookRequirements()
+	return uniqueStrings(append(out, m.MustResolve...))
 }
 
 func (a *app) moduleLifecyclePlanSummary() string {
@@ -75,20 +99,8 @@ type ContractDependency struct {
 // ContractProvider is a provider implementation shipped inside one module.
 // Operations are deliberately data: the runner dispatches runtimes such as
 // compose_run without knowing anything about PostgreSQL or MariaDB.
-type ContractProvider struct {
-	Name          string                       `yaml:"name" json:"name"`
-	Version       string                       `yaml:"version" json:"version"`
-	Interface     string                       `yaml:"interface" json:"interface"`
-	Manifest      string                       `yaml:"manifest" json:"manifest"`
-	Operations    map[string]ProviderOperation `yaml:"operations" json:"operations"`
-	OperationSvcs []string                     `yaml:"operation_services" json:"operation_services"`
-}
-
-type ProviderOperation struct {
-	Runtime string   `yaml:"runtime" json:"runtime"`
-	Service string   `yaml:"service" json:"service"`
-	Command []string `yaml:"command" json:"command"`
-}
+type ContractProvider = deployment.ContractProvider
+type ProviderOperation = deployment.ProviderOperation
 
 type ResourceRequirement struct {
 	ID       string
@@ -128,15 +140,7 @@ type ManagementSurface struct {
 	Authentication string
 }
 
-type LocalAccount struct {
-	ID              string `yaml:"id" json:"id"`
-	Purpose         string `yaml:"purpose" json:"purpose"`
-	FixedUsername   string `yaml:"fixed_username,omitempty" json:"fixed_username,omitempty"`
-	PasswordPolicy  string `yaml:"password_policy" json:"password_policy"`
-	ContainerFormat string `yaml:"container_format" json:"container_format"`
-	Apply           string `yaml:"apply,omitempty" json:"apply,omitempty"`
-	Rotate          string `yaml:"rotate,omitempty" json:"rotate,omitempty"`
-}
+type LocalAccount = deployment.LocalAccount
 
 // localAccountOperation is ephemeral hook input for a credential transaction.
 // Passwords are intentionally absent; current and candidate values travel in
@@ -190,14 +194,7 @@ func (m Module) providedCapability(name string) (ProvidedCapability, bool) {
 	return ProvidedCapability{}, false
 }
 
-type ChangePolicy struct {
-	Effect      string `json:"effect"`
-	Apply       string `json:"apply"`
-	Description string `json:"description,omitempty"`
-	Sensitive   bool   `json:"sensitive"`
-	Executor    string `json:"executor,omitempty"`
-	Verify      string `json:"verify,omitempty"`
-}
+type ChangePolicy = deployment.ChangePolicy
 
 // bareEnvParameter reports the env key for a parameter a module publishes under a
 // bare env name instead of under its own prefix, which is what listing that
@@ -213,17 +210,9 @@ func (m Module) bareEnvParameter(parameter string) (string, bool) {
 	return "", false
 }
 
-// ParamType is a parameter's accepted shape. An empty Kind with no Enum means
-// nothing was declared, which is the state every module parameter was in before
-// this existed: any string went in and a wrong one was found, at best, when a
-// container failed to start.
-type ParamType struct {
-	Kind string
-	Enum []string
-}
-
-// Declared reports whether the module said anything about this parameter.
-func (t ParamType) Declared() bool { return t.Kind != "" || len(t.Enum) > 0 }
+// ParamType remains the runner spelling for compatibility while the common
+// definition and normalization semantics live in configschema.
+type ParamType = configschema.Parameter
 
 type Dependency struct {
 	Name     string

@@ -4,13 +4,15 @@ SMB file server joined to Samba AD.
 
 ## Quick facts
 
+<!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `samba_fs` |
-| Version / revision | `4.23.6-r3` |
+| Version / revision | `4.23.6-r5` |
 | Status | `release` |
 | Category | `storage` |
 | Runtime | `compose` |
+<!-- generated:module-facts:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -52,15 +54,15 @@ This module neither consumes nor provides a relational-database contract.
 
 This inventory comes from the current `module.yml` and `anas config list`. The environment key is the rendered module-private key, not the preferred configuration interface.
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `env.SHARE_ACCESS_MODE` | enum (`all_rw`, `all_read_group_write`) | `all_read_group_write` | `SHARE_ACCESS_MODE` | no | no | yes | `reconcile` | Samba configuration and root/default ACLs must be reconciled. |
-| `env.SHARE_DIR_NAME` | string | `Share` | `SHARE_DIR_NAME` | no | no | no: `migrate-share-directory` | `data_migrate` | The share directory holds the files; a new name is a new empty directory unless the contents are moved with it. |
-| `env.SHARE_GUEST_READ_ONLY` | enum (`Yes`, `No`) | `No` | `SHARE_GUEST_READ_ONLY` | no | no | yes | `reconcile` | A state marker prevents recursive ACL work when the value is unchanged. |
-| `env.USE_DEFAULT_DOMAIN` | enum (`yes`, `no`) | `yes` | `USE_DEFAULT_DOMAIN` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `samba_fs.hostname` | string | `SambaFS` | `SAMBA_FS_HOSTNAME` | no | no | no: `rejoin-samba-member` | `data_migrate` | The AD machine account and member join must be changed together. |
-| `samba_fs.log_level` | int | `1` | `SAMBA_FS_LOG_LEVEL` | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
-| `samba_fs.wsdd_log_level` | int | `0` | `SAMBA_FS_WSDD_LOG_LEVEL` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `env.SHARE_ACCESS_MODE` | enum (`all_rw`, `all_read_group_write`) | — | `all_read_group_write` | `static` | `SHARE_ACCESS_MODE` | no | no | no | yes | `reconcile` | Samba configuration and root/default ACLs must be reconciled. |
+| `env.SHARE_DIR_NAME` | string | — | `Share` | `static` | `SHARE_DIR_NAME` | no | no | no | no: `migrate-share-directory` | `data_migrate` | The share directory holds the files; a new name is a new empty directory unless the contents are moved with it. |
+| `env.SHARE_GUEST_READ_ONLY` | enum (`Yes`, `No`) | — | `No` | `static` | `SHARE_GUEST_READ_ONLY` | no | no | no | yes | `reconcile` | A state marker prevents recursive ACL work when the value is unchanged. |
+| `env.USE_DEFAULT_DOMAIN` | enum (`yes`, `no`, `true`, `false`) | — | `yes` | `static` | `USE_DEFAULT_DOMAIN` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_fs.hostname` | string | — | `SambaFS` | `static` | `SAMBA_FS_HOSTNAME` | no | no | no | no: `rejoin-samba-member` | `data_migrate` | The AD machine account and member join must be changed together. |
+| `samba_fs.log_level` | int | — | `1` | `static` | `SAMBA_FS_LOG_LEVEL` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
+| `samba_fs.wsdd_log_level` | int | — | `0` | `static` | `SAMBA_FS_WSDD_LOG_LEVEL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
 ### Query and modify
 

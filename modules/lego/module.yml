@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: lego
 version: 5.3.1
-revision: 3
+revision: 4
 app_version: 5.3.1
 abi:
   supports:
@@ -29,6 +29,7 @@ config:
     # Optional because virtual domains never run an ACME challenge. Declaring
     # the type still makes this real input visible to config list/set.
     dns_provider: string
+    dns_server: string
   # Issuer-neutral certificate paths every TLS-serving or TLS-verifying module
   # reads. LEGO_* remains this module's private vocabulary.
   exports:

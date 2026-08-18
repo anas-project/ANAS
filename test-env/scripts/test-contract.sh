@@ -14,8 +14,8 @@
 # C5  every document carries api_version, and every failure a snake_case code.
 #
 # C2 is the point of the whole file. A command that returns 1 where the table
-# says 4 still looks like it works from a prompt, and gives the web service
-# nothing to branch on.
+# says 4 still looks like it works from a prompt, and gives an external
+# non-interactive caller nothing to branch on.
 set -eu
 
 . "$(dirname -- "$0")/common.sh"

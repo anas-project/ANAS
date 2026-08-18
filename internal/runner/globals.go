@@ -42,14 +42,27 @@ var globalConfig = mustLoadGlobals()
 // globalSchema is the declaration side of the deployment's own parameters,
 // shaped like a module's config block so the same normalization applies.
 type globalSchema struct {
-	Required []string
-	Defaults map[string]string
-	Changes  map[string]ChangePolicy
+	InputRequired []string
+	Required      []string
+	MustResolve   []string
+	Defaults      map[string]string
+	Changes       map[string]ChangePolicy
+	Types         map[string]ParamType
 	// Parameters is every name this schema declares, in config spelling rather
 	// than as env keys. Both are needed and neither derives from the other:
 	// paramEnvKey is not injective (timezone and tz both give TZ), so an
 	// inventory cannot be recovered by reversing the env keys.
 	Parameters []string
+}
+
+// finalRequirements is the global equivalent of Module.finalRequirements.
+// Globals have no calculate Hook, so all three declaration classes are checked
+// together after host/default materialization.
+func (s globalSchema) finalRequirements() []string {
+	out := append([]string{}, s.InputRequired...)
+	out = append(out, s.Required...)
+	out = append(out, s.MustResolve...)
+	return uniqueStrings(out)
 }
 
 func mustLoadGlobals() globalSchema {
@@ -79,27 +92,39 @@ func loadGlobalSchema(b []byte) (globalSchema, error) {
 	if doc.Config.EnvPrefix != "" {
 		return globalSchema{}, fmt.Errorf("global parameters have no env prefix")
 	}
-	changes := map[string]ChangePolicy{}
-	for key, policy := range doc.Config.Changes {
-		if !validChangeEffect(policy.Effect) {
-			return globalSchema{}, fmt.Errorf("config.changes.%s has invalid effect %q", key, policy.Effect)
-		}
-		changes[strings.ToLower(strings.TrimSpace(key))] = ChangePolicy{
-			Effect: policy.Effect, Apply: policy.Apply,
-			Description: policy.Description, Sensitive: policy.Sensitive,
-			Executor: policy.Executor, Verify: policy.Verify,
-		}
+	types, err := normalizeParamTypes(globalModuleName, doc.Config.Types)
+	if err != nil {
+		return globalSchema{}, err
+	}
+	defaults, err := normalizeDefaultsWithTypes(globalModuleName, globalScope, "", nil, doc.Config.Defaults, types)
+	if err != nil {
+		return globalSchema{}, err
+	}
+	changes, err := normalizeChangePolicies(globalModuleName, doc.Config.Changes)
+	if err != nil {
+		return globalSchema{}, err
+	}
+	if err := validateInputDefaultSemantics(globalModuleName, doc.Config, types); err != nil {
+		return globalSchema{}, err
+	}
+	requirements, err := normalizeConfigRequirements(globalModuleName, globalScope, "", nil, doc.Config)
+	if err != nil {
+		return globalSchema{}, err
 	}
 	return globalSchema{
-		Required:   normalizeRequired(globalScope, "", nil, doc.Config.Required),
-		Defaults:   normalizeDefaults(globalScope, "", nil, doc.Config.Defaults),
-		Changes:    changes,
-		Parameters: declaredParameters(doc.Config),
+		InputRequired: requirements.InputRequired,
+		Required:      requirements.Required,
+		MustResolve:   requirements.MustResolve,
+		Defaults:      defaults,
+		Changes:       changes,
+		Types:         types,
+		Parameters:    declaredParameters(doc.Config),
 	}, nil
 }
 
 // declaredParameters is every parameter a config block names, by the spelling
-// it was written with, gathered from required, defaults, types, and changes.
+// it was written with, gathered from input_required, legacy required,
+// must_resolve, defaults, types, and changes.
 func declaredParameters(cfg manifestConfig) []string {
 	seen := map[string]bool{}
 	out := []string{}
@@ -111,7 +136,13 @@ func declaredParameters(cfg manifestConfig) []string {
 		seen[name] = true
 		out = append(out, name)
 	}
+	for _, name := range cfg.InputRequired {
+		add(name)
+	}
 	for _, name := range cfg.Required {
+		add(name)
+	}
+	for _, name := range cfg.MustResolve {
 		add(name)
 	}
 	for name := range cfg.Defaults {

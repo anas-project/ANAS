@@ -4,13 +4,15 @@ Online document editing backend for Nextcloud.
 
 ## Quick facts
 
+<!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `collabora` |
-| Version / revision | `26.4.2-r2` |
+| Version / revision | `26.4.2-r4` |
 | Status | `release` |
 | Category | `app` |
 | Runtime | `compose` |
+<!-- generated:module-facts:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -52,13 +54,13 @@ This module neither consumes nor provides a relational-database contract.
 
 This inventory comes from the current `module.yml` and `anas config list`. The environment key is the rendered module-private key, not the preferred configuration interface.
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `collabora.admin_password` | string | `—` | `COLLABORA_ADMIN_PASSWORD` | no | yes | yes | `container_recreate` | If omitted, the Module persists an independent random password in the Secret Store. |
-| `collabora.admin_username` | string | `admin_collabora` | `COLLABORA_ADMIN_USERNAME` | no | no | yes | `container_recreate` | The native admin-console username is injected when the container starts. |
-| `collabora.auto_save` | string | `60` | `COLLABORA_AUTO_SAVE` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `collabora.domain_prefix` | string | `collabora` | `COLLABORA_DOMAIN_PREFIX` | no | no | yes | `container_recreate` | The proxy route and Collabora hostname change. |
-| `collabora.log_level` | string | `warning` | `COLLABORA_LOG_LEVEL` | no | no | yes | `container_recreate` | The value is injected into the container environment. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `collabora.admin_password` | string | — | — | `generated` | `COLLABORA_ADMIN_PASSWORD` | no | yes | yes | yes | `container_recreate` | If omitted, the Module persists an independent random password in the Secret Store. |
+| `collabora.admin_username` | string | — | `admin_collabora` | `static` | `COLLABORA_ADMIN_USERNAME` | no | no | no | yes | `container_recreate` | The native admin-console username is injected when the container starts. |
+| `collabora.auto_save` | int | — | `60` | `static` | `COLLABORA_AUTO_SAVE` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `collabora.domain_prefix` | string | — | `collabora` | `static` | `COLLABORA_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | The proxy route and Collabora hostname change. |
+| `collabora.log_level` | string | — | `warning` | `static` | `COLLABORA_LOG_LEVEL` | no | no | no | yes | `container_recreate` | The value is injected into the container environment. |
 
 ### Query and modify
 

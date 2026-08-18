@@ -140,7 +140,11 @@ func ValidateTimezone(value string) (string, error) {
 	if value == "" {
 		return "", nil
 	}
-	if filepath.IsAbs(value) || strings.Contains(value, "..") {
+	// time.LoadLocation treats "Local" as a process-local special case rather
+	// than an IANA database entry. Passing it through as TZ=Local is not
+	// portable to containers, where a zoneinfo file named Local usually does
+	// not exist.
+	if value == "Local" || filepath.IsAbs(value) || strings.Contains(value, "..") {
 		return "", fmt.Errorf("timezone must be an IANA name, got %q", value)
 	}
 	if _, err := time.LoadLocation(value); err != nil {

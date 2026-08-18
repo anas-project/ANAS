@@ -2,7 +2,9 @@
 
 本文面向 Module 维护者，记录 `ddns_updater` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
-> 状态：当前实现；对应 `2.10.0-r1` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> 状态：当前实现；对应 `2.10.0-r3` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -13,24 +15,26 @@
 
 ## Compose 拓扑
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_ddns-updater` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ddns-updater:2.10.0` | `` | 0 |
+<!-- generated:compose-topology:end -->
 
 ## 配置契约
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ddns_updater.dns_provider` | string | `—` | `DDNS_UPDATER_DNS_PROVIDER` | 是 | 否 | 是 | `container_recreate` | DNS 厂商 |
-| `ddns_updater.domain_prefix` | string | `ddns` | `DDNS_UPDATER_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
-| `ddns_updater.forward_auth_interface` | string | `auto` | `DDNS_UPDATER_FORWARD_AUTH_INTERFACE` | 否 | 否 | 是 | `container_recreate` | ForwardAuth 接口选择 |
-| `ddns_updater.publicip_dns_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_DNS_PROVIDERS` | 否 | 否 | 是 | `container_recreate` | DNS 地址探测器列表 |
-| `ddns_updater.publicip_fetchers` | string | `http` | `DDNS_UPDATER_PUBLICIP_FETCHERS` | 否 | 否 | 是 | `container_recreate` | 公网地址发现方法 |
-| `ddns_updater.publicip_ipv4_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_IPV4_PROVIDERS` | 否 | 否 | 是 | `container_recreate` | IPv4 探测服务列表 |
-| `ddns_updater.publicip_ipv6_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_IPV6_PROVIDERS` | 否 | 否 | 是 | `container_recreate` | IPv6 探测服务列表 |
-| `ddns_updater.publicip_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_PROVIDERS` | 否 | 否 | 是 | `container_recreate` | 通用地址探测服务列表 |
-| `ddns_updater.ttl` | string | `300` | `DDNS_UPDATER_TTL` | 否 | 否 | 是 | `container_recreate` | DNS 记录 TTL |
-| `ddns_updater.zone_identifier` | string | `—` | `DDNS_UPDATER_ZONE_IDENTIFIER` | 否 | 否 | 是 | `container_recreate` | DNS Zone 标识 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `ddns_updater.dns_provider` | string | — | — | — | `DDNS_UPDATER_DNS_PROVIDER` | 否 | 是 | 否 | 是 | `container_recreate` | DNS 厂商 |
+| `ddns_updater.domain_prefix` | string | — | `ddns` | `static` | `DDNS_UPDATER_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| `ddns_updater.forward_auth_interface` | enum (`auto`, `http`) | — | `auto` | `static` | `DDNS_UPDATER_FORWARD_AUTH_INTERFACE` | 否 | 否 | 否 | 是 | `container_recreate` | ForwardAuth 接口选择 |
+| `ddns_updater.publicip_dns_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_DNS_PROVIDERS` | 否 | 否 | 否 | 是 | `container_recreate` | DNS 地址探测器列表 |
+| `ddns_updater.publicip_fetchers` | string | — | `http` | `static` | `DDNS_UPDATER_PUBLICIP_FETCHERS` | 否 | 否 | 否 | 是 | `container_recreate` | 公网地址发现方法 |
+| `ddns_updater.publicip_ipv4_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_IPV4_PROVIDERS` | 否 | 否 | 否 | 是 | `container_recreate` | IPv4 探测服务列表 |
+| `ddns_updater.publicip_ipv6_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_IPV6_PROVIDERS` | 否 | 否 | 否 | 是 | `container_recreate` | IPv6 探测服务列表 |
+| `ddns_updater.publicip_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_PROVIDERS` | 否 | 否 | 否 | 是 | `container_recreate` | 通用地址探测服务列表 |
+| `ddns_updater.ttl` | int | — | `300` | `static` | `DDNS_UPDATER_TTL` | 否 | 否 | 否 | 是 | `container_recreate` | DNS 记录 TTL |
+| `ddns_updater.zone_identifier` | string | — | — | — | `DDNS_UPDATER_ZONE_IDENTIFIER` | 否 | 否 | 否 | 是 | `container_recreate` | DNS Zone 标识 |
 
 参数库存的权威来源是 `module.yml`；CLI 负责合并默认值、类型、required、环境变量映射、敏感性和变更执行器。技术文档不得另造可设置参数。
 

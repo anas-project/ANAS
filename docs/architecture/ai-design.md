@@ -100,6 +100,15 @@ becomes:
 NEXTCLOUD_DOMAIN_PREFIX=cloud
 ```
 
+`config import` canonicalizes YAML addresses before validating and persisting
+the managed copy. Raw `env` keys use their uppercase runtime spelling; Module
+names, global parameter names, and Module parameter names become lowercase. It
+rejects keys that collide after this conversion instead of silently choosing
+one. A structured parameter whose manifest exports a bare environment name is
+moved to canonical `env.<KEY>` storage, such as
+`modules.samba_fs.config.share_dir_name` becoming `env.SHARE_DIR_NAME`; providing
+both forms is also a collision. The imported source file remains unchanged.
+
 ## Module Directory Structure
 
 Every module must follow this layout:
@@ -129,6 +138,8 @@ kind: Module
 name: example
 version: 1.5.2
 revision: 1
+abi:
+  supports: [anas.module-hook/v1]
 title: Example Service
 description: Short service purpose.
 category: app
@@ -151,10 +162,35 @@ dependencies:
   after:
     - samba_dc
 config:
-  required:
+  input_required:
     - token
+  # Compatibility for an existing Module: checked after defaults/resolvers,
+  # but before the calculate Hook. New declarations should normally choose
+  # input_required or must_resolve instead.
+  required:
+    - legacy_mode
+  must_resolve:
+    - admin_password
   defaults:
     domain_prefix: example
+    legacy_mode: safe
+    port: 8080
+  types:
+    token:
+      kind: string
+      constraints:
+        min_length: 16
+    legacy_mode:
+      enum: [safe, fast]
+    admin_password:
+      kind: string
+      default_source: generated
+    domain_prefix: string
+    port:
+      kind: int
+      constraints:
+        minimum: 1
+        maximum: 65535
 identity:
   interfaces: [ldaps]
   application_group: true
@@ -164,6 +200,9 @@ services:
   optional:
     - name: example_admin
       enabled_by: EXAMPLE_ADMIN_ENABLED
+logic:
+  hook:
+    command: [go, run, ./hook]
 ```
 
 Manifest fields:
@@ -208,9 +247,31 @@ Manifest fields:
 
 - `config.env_prefix`: optional environment prefix when it differs from the
   module name, for example `eturnal` uses `TURN`.
-- `config.required`: lower snake_case parameters that must exist after config
-  flattening. Use `global.<name>` for global parameters.
+- `config.input_required`: lower-snake-case parameters the caller must provide
+  explicitly. This is checked before literal defaults and generic resolvers, so
+  it cannot be combined with a default or unconditional `default_source`.
+- `config.required`: legacy compatibility field checked after defaults and
+  generic resolvers but before the module's calculate Hook. Keep this stage for
+  existing third-party Modules; new declarations should state the actual intent
+  with `input_required` or `must_resolve`.
+- `config.must_resolve`: parameters that must be non-empty after the calculate
+  Hook patch. Input-required and legacy-required parameters also remain part of
+  the final invariant.
 - `config.defaults`: lower snake_case default parameters and values.
+- `config.types`: the shared parameter schema. A simple parameter may use the
+  short form (`domain_prefix: string`); the mapping form declares `kind`,
+  `enum`, `constraints`, and/or `default_source`. Supported kinds are `string`,
+  `bool`, `int`, and `enum`.
+- `config.types.<parameter>.constraints`: portable single-field validation.
+  Integers may declare `minimum`/`maximum`; strings may declare
+  `min_length`/`max_length`/`pattern`/`format`; supported format identifiers are
+  `iana_timezone`, `language_tag`, `locale`, and `ipv4`. Conditional and
+  cross-field rules stay in the resolver, application layer, plan, or Hook.
+- `config.types.<parameter>.default_source`: a non-literal source—`host`,
+  `runtime`, `inherited`, or `generated`—that may fill omitted input. Literal
+  values belong in `config.defaults`; CLI values `static` and `none` are
+  projections and are not manifest spellings. Metadata does not implement the
+  source, so the matching resolver or Hook must exist.
 - `config.consumes`: env keys produced outside the module's dependency closure
   that its rendering and hooks may read. Entries are exact keys or single
   leading/trailing-star globs, for example `APPS_LIST*` or `*_DB_NAME` for a
@@ -251,16 +312,23 @@ module functionality is:
 - Build the execution order from module required dependencies, optional
   dependency version constraints, order-only `after` rules, and
   user-provided `modules.<name>.depends_on`.
+- Enforce `input_required` against caller input before applying any literal
+  default or generic resolver.
 - Apply manifest defaults after user config is flattened. Defaults use
   lower snake_case names in manifests and become prefixed environment keys such
   as `NEXTCLOUD_DOMAIN_PREFIX`.
-- Validate required config keys before running each module's calculation hook.
+- Apply generic host/runtime/inherited resolvers, normalize their values through
+  the same type/constraint schema, and enforce legacy `required` immediately
+  before each module's calculate Hook.
 - Run module hooks through the `anas.module-hook/v1` JSON protocol. Supported phases are
   `calculate`, `render_env`, `runtime_restore`, `services`, and `after_start`.
   `runtime_restore` reconstructs deployment-scoped mutable files before a
   container starts; those files live outside the sealed artifact. Hooks declared as
   `go run <pkg>` are compiled once per run and frozen into the rendered module
   as `.hook.bin`, so starting an existing release needs no Go toolchain.
+- Apply and re-normalize each calculate Hook patch, then enforce the final
+  `must_resolve` invariant. Input-required and legacy-required keys remain part
+  of this final check as well.
 - Accept hook responses for env patches, generated secrets, immutable files
   written under the rendered module directory, mutable `runtime_files` written
   under the deployment-scoped runtime-state directory, disabled Compose services, render-only

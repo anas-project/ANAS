@@ -2,7 +2,9 @@
 
 This page records the current implementation, security boundaries, and verification entry points for `postgres`. User instructions are in the [English README](../README.en.md).
 
-> Status: current implementation; based on `18.4.0-r1` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> Status: current implementation; based on `18.4.0-r3` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -13,19 +15,21 @@ This page records the current implementation, security boundaries, and verificat
 
 ## Compose topology
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_postgres` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-postgres:18.4-alpine` | `postgres` | 1 |
 | `anas_postgres_adminer` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-adminer:5.5.0` | `postgres, traefik` | 0 |
 | `anas_postgres_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-postgres:18.4-alpine` | `postgres` | 1 |
+<!-- generated:compose-topology:end -->
 
 ## Configuration contract
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `postgres.adminer_enabled` | string | `false` | `POSTGRES_ADMINER_ENABLED` | no | no | yes | `container_recreate` | The optional Compose service set changes. |
-| `postgres.password` | string | `—` | `POSTGRES_PASSWORD` | no | yes | no: `rotate-postgres-password` | `credential_rotate` | Change the database role and consumers before recreating containers. |
-| `postgres.username` | string | `postgres` | `POSTGRES_USERNAME` | no | no | no: `migrate-postgres-owner` | `data_migrate` | POSTGRES_USER only initializes an empty data directory. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `postgres.adminer_enabled` | bool | — | `false` | `static` | `POSTGRES_ADMINER_ENABLED` | no | no | no | yes | `container_recreate` | The optional Compose service set changes. |
+| `postgres.password` | string | — | — | `generated` | `POSTGRES_PASSWORD` | no | yes | yes | no: `rotate-postgres-password` | `credential_rotate` | Change the database role and consumers before recreating containers. |
+| `postgres.username` | string | — | `postgres` | `static` | `POSTGRES_USERNAME` | no | no | no | no: `migrate-postgres-owner` | `data_migrate` | POSTGRES_USER only initializes an empty data directory. |
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
 

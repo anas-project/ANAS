@@ -9,11 +9,13 @@ cd "$fixture"
 git init -q
 git config user.email release-test@example.invalid
 git config user.name release-test
-mkdir -p cmd/anas internal/example docs
+mkdir -p cmd/anas cmd/anas-helper internal/example docs scripts/ci
 printf 'package main\n' >cmd/anas/main.go
+printf 'package main\n' >cmd/anas-helper/main.go
 printf 'package example\n' >internal/example/example.go
 printf 'module example.invalid/anas\n\ngo 1.26\n' >go.mod
 printf '#!/usr/bin/env sh\n' >install.sh
+printf '#!/usr/bin/env bash\n' >scripts/ci/install-test.sh
 printf '# docs\n' >docs/index.md
 git add .
 git commit -qm initial
@@ -31,6 +33,18 @@ git add docs/index.md
 git commit -qm docs
 decision="$(bash "$source_script" --commit HEAD --automatic)"
 [[ "$decision" == skip:no-core-changes ]]
+
+printf '# test-only change\n' >>scripts/ci/install-test.sh
+git add scripts/ci/install-test.sh
+git commit -qm release-test-only
+decision="$(bash "$source_script" --commit HEAD --automatic)"
+[[ "$decision" == skip:no-core-changes ]]
+
+printf '// helper changed\n' >>cmd/anas-helper/main.go
+git add cmd/anas-helper/main.go
+git commit -qm helper
+decision="$(bash "$source_script" --commit HEAD --automatic)"
+[[ "$decision" == release:0.1.1 ]]
 
 printf '# installer changed\n' >>install.sh
 git add install.sh

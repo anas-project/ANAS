@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: ddns_go
 version: 6.17.4
-revision: 4
+revision: 5
 app_version: 6.17.4
 abi:
   supports:
@@ -23,7 +23,7 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
-  required:
+  must_resolve:
     - dns_provider
   defaults:
     domain_prefix: ddns-go
@@ -46,12 +46,18 @@ config:
   # env prefix, so the prefix rule in envScopeFor grants them and no vendor key
   # needs to be claimed here. Only cross-module contract keys are consumed.
   types:
+    dns_provider: string
+    domain_prefix: string
     web_enabled: bool
     interval: int
     ipv4_gettype:
       enum: [url, netInterface]
     ipv6_gettype:
       enum: [url, netInterface]
+    ipv4_urls: string
+    ipv6_urls: string
+    ipv4_interface: string
+    ipv6_interface: string
   # Traefik's Docker provider cannot see a host-network container, so the route
   # is declared rather than discovered. See modules/traefik/README.md.
   exports:

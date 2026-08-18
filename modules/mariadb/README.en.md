@@ -4,13 +4,15 @@ Provider for `relational_database/mariadb` with optional Adminer.
 
 ## Quick facts
 
+<!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `mariadb` |
-| Version / revision | `12.3.2-r1` |
+| Version / revision | `12.3.2-r3` |
 | Status | `release` |
 | Category | `database` |
 | Runtime | `compose` |
+<!-- generated:module-facts:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -53,10 +55,10 @@ This module provides `relational_database/mariadb` contract, version `1.0.0`。
 
 This inventory comes from the current `module.yml` and `anas config list`. The environment key is the rendered module-private key, not the preferred configuration interface.
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `mariadb.adminer_enabled` | string | `false` | `MARIADB_ADMINER_ENABLED` | no | no | yes | `container_recreate` | The optional Compose service set changes. |
-| `mariadb.root_password` | string | `—` | `MARIADB_ROOT_PASSWORD` | no | yes | no: `rotate-mariadb-root-password` | `credential_rotate` | MYSQL_ROOT_PASSWORD only initializes an empty data directory. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mariadb.adminer_enabled` | bool | — | `false` | `static` | `MARIADB_ADMINER_ENABLED` | no | no | no | yes | `container_recreate` | The optional Compose service set changes. |
+| `mariadb.root_password` | string | — | — | `generated` | `MARIADB_ROOT_PASSWORD` | no | yes | yes | no: `rotate-mariadb-root-password` | `credential_rotate` | MYSQL_ROOT_PASSWORD only initializes an empty data directory. |
 
 ### Query and modify
 

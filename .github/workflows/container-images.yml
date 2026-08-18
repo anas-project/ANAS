@@ -9,6 +9,7 @@ on:
       - ".github/modules.json"
       - ".github/workflows/container-images.yml"
       - "cmd/package-module/**"
+      - "cmd/gen-module-docs/**"
       - "contracts/**"
       - "internal/localization/**"
       - "internal/modulepackage/**"
@@ -27,6 +28,7 @@ on:
       - ".github/modules.json"
       - ".github/workflows/container-images.yml"
       - "cmd/package-module/**"
+      - "cmd/gen-module-docs/**"
       - "contracts/**"
       - "internal/localization/**"
       - "internal/modulepackage/**"
@@ -77,7 +79,9 @@ jobs:
           cache: true
 
       - name: Test revision calculator
-        run: bash scripts/ci/module-revisions-test.sh
+        run: |
+          bash scripts/ci/module-revisions-test.sh
+          go test ./internal/modulepackage ./cmd/gen-module-docs ./cmd/materialize-module-docs
 
       - name: Calculate and commit release revisions
         id: release
@@ -133,6 +137,8 @@ jobs:
 
           bash scripts/ci/module-revisions.sh --base "$base_sha" --write
           go run ./cmd/gen-module-docs
+          bash scripts/ci/module-revisions.sh --base "$base_sha" --check
+          go run ./cmd/gen-module-docs --check
 
           if [[ "$EVENT_NAME" != "pull_request" ]]; then
             while IFS= read -r module; do
@@ -140,7 +146,11 @@ jobs:
               if [[ -f "modules/${module}/localization.yml" ]]; then
                 git add -- "modules/${module}/localization.yml"
               fi
-              git add -- "modules/${module}/README.md"
+              git add -- \
+                "modules/${module}/README.md" \
+                "modules/${module}/README.en.md" \
+                "modules/${module}/docs/technical.md" \
+                "modules/${module}/docs/technical.en.md"
             done < <(jq -r '.[].module' .github/modules.json | LC_ALL=C sort -u)
             git add -- docs/reference/module-localization.md docs/en/reference/module-localization.md
 
@@ -299,8 +309,7 @@ jobs:
             if grep -Eq '^(\.github/mirrors\.json|\.github/workflows/container-images\.yml|scripts/ci/(runtime-image|install-crane)\.sh)$' <<<"$changed"; then
               mirror_selected="$(jq -c '.' .github/mirrors.json)"
             else
-              changed_runtime_modules="$(awk -F/ '$1 == "modules" {print $2}' <<<"$changed" | LC_ALL=C sort -u | jq -Rsc 'split("\n") | map(select(length > 0))')"
-              mirror_selected="$(jq -c --argjson modules "$changed_runtime_modules" '[.[] | select(any(.modules[]; . as $module | $modules | index($module)))]' .github/mirrors.json)"
+              mirror_selected="$(jq -c --argjson modules "$release_modules" '[.[] | select(any(.modules[]; . as $module | $modules | index($module)))]' .github/mirrors.json)"
             fi
           fi
 

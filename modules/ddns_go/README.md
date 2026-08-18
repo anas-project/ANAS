@@ -4,13 +4,15 @@
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `ddns_go` |
-| 版本 / revision | `6.17.4-r3` |
+| 版本 / revision | `6.17.4-r5` |
 | 状态 | `release` |
 | 类别 | `network` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -67,18 +69,18 @@ anas admin local rotate ddns_go primary --prompt -w /srv/anas
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ddns_go.dns_provider` | string | `—` | `DDNS_GO_DNS_PROVIDER` | 是 | 否 | 是 | `container_recreate` | DNS 厂商 |
-| `ddns_go.domain_prefix` | string | `ddns-go` | `DDNS_GO_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
-| `ddns_go.interval` | int | `300` | `DDNS_GO_INTERVAL` | 否 | 否 | 是 | `container_recreate` | 执行间隔（秒） |
-| `ddns_go.ipv4_gettype` | enum (`url`, `netInterface`) | `url` | `DDNS_GO_IPV4_GETTYPE` | 否 | 否 | 是 | `container_recreate` | IPv4 地址发现方式 |
-| `ddns_go.ipv4_interface` | string | `—` | `DDNS_GO_IPV4_INTERFACE` | 否 | 否 | 是 | `container_recreate` | IPv4 本地网卡 |
-| `ddns_go.ipv4_urls` | string | `—` | `DDNS_GO_IPV4_URLS` | 否 | 否 | 是 | `container_recreate` | IPv4 外部探测地址 |
-| `ddns_go.ipv6_gettype` | enum (`url`, `netInterface`) | `url` | `DDNS_GO_IPV6_GETTYPE` | 否 | 否 | 是 | `container_recreate` | IPv6 地址发现方式 |
-| `ddns_go.ipv6_interface` | string | `—` | `DDNS_GO_IPV6_INTERFACE` | 否 | 否 | 是 | `container_recreate` | IPv6 本地网卡 |
-| `ddns_go.ipv6_urls` | string | `—` | `DDNS_GO_IPV6_URLS` | 否 | 否 | 是 | `container_recreate` | IPv6 外部探测地址 |
-| `ddns_go.web_enabled` | bool | `true` | `DDNS_GO_WEB_ENABLED` | 否 | 否 | 是 | `container_recreate` | 是否启用 Web 界面 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `ddns_go.dns_provider` | string | — | — | — | `DDNS_GO_DNS_PROVIDER` | 否 | 是 | 否 | 是 | `container_recreate` | DNS 厂商 |
+| `ddns_go.domain_prefix` | string | — | `ddns-go` | `static` | `DDNS_GO_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| `ddns_go.interval` | int | — | `300` | `static` | `DDNS_GO_INTERVAL` | 否 | 否 | 否 | 是 | `container_recreate` | 执行间隔（秒） |
+| `ddns_go.ipv4_gettype` | enum (`url`, `netInterface`) | — | `url` | `static` | `DDNS_GO_IPV4_GETTYPE` | 否 | 否 | 否 | 是 | `container_recreate` | IPv4 地址发现方式 |
+| `ddns_go.ipv4_interface` | string | — | `""` | `static` | `DDNS_GO_IPV4_INTERFACE` | 否 | 否 | 否 | 是 | `container_recreate` | IPv4 本地网卡 |
+| `ddns_go.ipv4_urls` | string | — | `""` | `static` | `DDNS_GO_IPV4_URLS` | 否 | 否 | 否 | 是 | `container_recreate` | IPv4 外部探测地址 |
+| `ddns_go.ipv6_gettype` | enum (`url`, `netInterface`) | — | `url` | `static` | `DDNS_GO_IPV6_GETTYPE` | 否 | 否 | 否 | 是 | `container_recreate` | IPv6 地址发现方式 |
+| `ddns_go.ipv6_interface` | string | — | `""` | `static` | `DDNS_GO_IPV6_INTERFACE` | 否 | 否 | 否 | 是 | `container_recreate` | IPv6 本地网卡 |
+| `ddns_go.ipv6_urls` | string | — | `""` | `static` | `DDNS_GO_IPV6_URLS` | 否 | 否 | 否 | 是 | `container_recreate` | IPv6 外部探测地址 |
+| `ddns_go.web_enabled` | bool | — | `true` | `static` | `DDNS_GO_WEB_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Web 界面 |
 
 ### 查询和修改
 
@@ -134,7 +136,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`6.17.4-r4`（reviewed 2026-08-13）
+- Module version / 版本：`6.17.4-r5`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — The service receives TZ through the module .env; upstream does not expose a separate timezone setting.
 - Language scope / 语言范围：ddns-go Web UI and logs
 - Selection / 选择方式：`application`

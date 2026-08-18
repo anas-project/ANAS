@@ -343,10 +343,10 @@ Do not commit `.anas-test/` or generated secrets.
 The full run performs static, render, upgrade-render, Compose config, build,
 smoke, and runtime upgrade tests in that order.
 
-`test-parameters.sh` requires the inventory to contain the exact 8
+`test-parameters.sh` requires the inventory to contain the exact 16
 `hot_reload` and 12 `reconcile` parameters with an effect, an in-place
 capability classification, and a runtime case. `test-parameter-effects.sh`
-then runs every one of those 20 parameters through the real CLI, importer,
+then runs every one of those 28 parameters through the real CLI, importer,
 hooks, renderer, deployment diff, and activation flow with a deterministic
 Docker command boundary. It checks the rendered runtime value, affected-module
 Compose `up`, absence of `build`, same-value container idempotency, and

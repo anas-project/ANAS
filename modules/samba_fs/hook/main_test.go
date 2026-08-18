@@ -44,6 +44,27 @@ func TestCalcSambaFSQualifiedGroupsUseWinbindSeparator(t *testing.T) {
 	}
 }
 
+func TestCalcSambaFSUseDefaultDomainBooleanAliases(t *testing.T) {
+	for _, test := range []struct {
+		value string
+		want  string
+	}{
+		{value: "true", want: `@"FS Admins"`},
+		{value: "false", want: `@"NAS+FS Admins"`},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			env := sambaFSTestEnv("all_read_group_write")
+			env["USE_DEFAULT_DOMAIN"] = test.value
+			if err := calcSambaFS(env, "", nil); err != nil {
+				t.Fatal(err)
+			}
+			if got := env["SAMBA_FS_ADMIN_USERS"]; got != test.want {
+				t.Fatalf("admin users = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestCalcSambaFSAllDomainUsersReadGroupWrites(t *testing.T) {
 	env := sambaFSTestEnv("all_read_group_write")
 	if err := calcSambaFS(env, "", nil); err != nil {

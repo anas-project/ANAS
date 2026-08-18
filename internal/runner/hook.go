@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/anas-project/ANAS/internal/deployment"
 )
 
-type HookConfig struct {
-	Command []string `yaml:"command" json:"command"`
-}
+type HookConfig = deployment.HookConfig
 
 type hookRequest struct {
 	ABI          string                 `json:"abi"`

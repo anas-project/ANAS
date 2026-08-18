@@ -142,7 +142,7 @@ replace_compose_tag() {
     BEGIN { found = 0 }
     {
       needle = "/" image ":"
-      if (index($0, needle)) {
+      if ($1 == "image:" && index($0, needle)) {
         prefix = substr($0, 1, index($0, needle) + length(needle) - 1)
         rest = substr($0, length(prefix) + 1)
         sub(/^[^[:space:]"\047]+/, tag, rest)
@@ -165,13 +165,116 @@ replace_compose_tag() {
   mv "$tmp" "$file"
 }
 
+compose_image_matches() {
+  local file="$1" image="$2" tag="$3"
+  awk -v image="$image" -v expected="$tag" '
+    BEGIN { found = 0; valid = 1 }
+    $1 == "image:" {
+      needle = "/" image ":"
+      position = index($0, needle)
+      if (!position) next
+      found++
+      actual = substr($0, position + length(needle))
+      sub(/[[:space:]"\047#].*$/, "", actual)
+      if (actual != expected) valid = 0
+    }
+    END { exit !(found > 0 && valid) }
+  ' "$file"
+}
+
 runtime_path() {
-  local path="$1" basename
+  local path="$1" basename relative
   basename="${path##*/}"
   case "$basename" in
     README*.md|localization.yml|.DS_Store|*_test.go|test_*.py) return 1 ;;
   esac
+  if [[ "$path" == modules/*/* ]]; then
+    relative="${path#modules/}"
+    relative="${relative#*/}"
+    [[ "$relative" == docs/* ]] && return 1
+  elif [[ "$path" == contracts/*/* ]]; then
+    relative="${path#contracts/}"
+    relative="${relative#*/}"
+    [[ "$relative" == docs/* || "$relative" == documentation.yml ]] && return 1
+  fi
   [[ "$path" != */__pycache__/* && "$path" != modules/ddns_go/ddns-go/reconcile/reconcile ]]
+}
+
+normalize_module_manifest() {
+  awk '
+    /^revision:[[:space:]]/ { print "revision: <managed>"; next }
+    { print }
+  '
+}
+
+normalize_module_compose() {
+  local module="$1" images
+  images="$(jq -r --arg module "$module" '.[] | select(.module == $module) | .image' "$image_catalog" | paste -sd '|' -)"
+  awk -v images="$images" '
+    BEGIN { count = split(images, managed, "|") }
+    {
+      line = $0
+      if ($1 != "image:") {
+        print line
+        next
+      }
+      for (i = 1; i <= count; i++) {
+        if (managed[i] == "") continue
+        needle = "/" managed[i] ":"
+        position = index(line, needle)
+        if (!position) continue
+        prefix = substr(line, 1, position + length(needle) - 1)
+        rest = substr(line, length(prefix) + 1)
+        sub(/^[^[:space:]"\047#]+/, "<managed>", rest)
+        line = prefix rest
+      }
+      print line
+    }
+  '
+}
+
+managed_file_differs() {
+  local module="$1" path="$2"
+  [[ -f "$path" ]] || return 0
+  git cat-file -e "${base}:${path}" 2>/dev/null || return 0
+  # File-mode changes affect the package even when normalized content matches.
+  if [[ -n "$(git diff --summary "$base" -- "$path")" ]]; then
+    return 0
+  fi
+  case "$path" in
+    modules/*/module.yml)
+      ! diff -q \
+        <(git show "${base}:${path}" | normalize_module_manifest) \
+        <(normalize_module_manifest <"$path") >/dev/null
+      ;;
+    modules/*/docker-compose.yml)
+      ! diff -q \
+        <(git show "${base}:${path}" | normalize_module_compose "$module") \
+        <(normalize_module_compose "$module" <"$path") >/dev/null
+      ;;
+    *) return 0 ;;
+  esac
+}
+
+module_path_context_changed() {
+  local module="$1" path
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    runtime_path "$path" || continue
+    case "$path" in
+      "modules/${module}/module.yml"|"modules/${module}/docker-compose.yml")
+        managed_file_differs "$module" "$path" || continue
+        ;;
+    esac
+    return 0
+  done < <(git diff --name-only "$base" -- "modules/${module}")
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    if runtime_path "$path"; then
+      return 0
+    fi
+  done < <(git ls-files --others --exclude-standard -- "modules/${module}")
+  return 1
 }
 
 path_context_changed() {
@@ -200,7 +303,11 @@ catalog_entry_changed() {
     return 1
   fi
   before="$(git show "${base}:${catalog}" 2>/dev/null | jq -cS "$filter" 2>/dev/null || true)"
-  after="$(jq -cS "$filter" "$catalog")"
+  if [[ -f "$catalog" ]]; then
+    after="$(jq -cS "$filter" "$catalog")"
+  else
+    after='[]'
+  fi
   [[ "$before" != "$after" ]]
 }
 
@@ -209,12 +316,14 @@ module_context_changed() {
   # The packager is an input to every bundle. Its initial introduction only
   # exposes existing releases, while later behavior changes produce new bytes
   # and therefore require a new revision for every Module.
-  for context in cmd/package-module internal/modulepackage; do
-    if git ls-tree -r --name-only "$base" -- "$context" | grep -q . && path_context_changed "$context"; then
-      return 0
-    fi
-  done
-  if path_context_changed "modules/${module}"; then
+  if git cat-file -e "${base}:${module_catalog}" 2>/dev/null; then
+    for context in cmd/package-module internal/modulepackage; do
+      if path_context_changed "$context"; then
+        return 0
+      fi
+    done
+  fi
+  if module_path_context_changed "$module"; then
     return 0
   fi
   while IFS= read -r context; do
@@ -229,7 +338,8 @@ module_context_changed() {
   if catalog_entry_changed "$image_catalog" "[.[] | select(.module == \"$module\")]"; then
     return 0
   fi
-  if [[ -f .github/mirrors.json ]] && catalog_entry_changed .github/mirrors.json "[.[] | select(.modules | index(\"$module\"))]"; then
+  if { [[ -f .github/mirrors.json ]] || git cat-file -e "${base}:.github/mirrors.json" 2>/dev/null; } &&
+     catalog_entry_changed .github/mirrors.json "[.[] | select(.modules | index(\"$module\"))]"; then
     return 0
   fi
   return 1
@@ -247,7 +357,7 @@ metadata_matches() {
     [[ "$(read_scalar "$localization" module_revision)" == "$revision" ]] || return 1
   fi
   while IFS= read -r image; do
-    grep -Fq "/${image}:${version}-r${revision}" "$compose" || return 1
+    compose_image_matches "$compose" "$image" "${version}-r${revision}" || return 1
   done < <(jq -r --arg module "$module" '.[] | select(.module == $module) | .image' "$image_catalog")
 }
 
@@ -269,7 +379,7 @@ write_metadata() {
     fi
   fi
   while IFS= read -r image; do
-    if ! grep -Fq "/${image}:${version}-r${revision}" "$compose"; then
+    if ! compose_image_matches "$compose" "$image" "${version}-r${revision}"; then
       replace_compose_tag "$compose" "$image" "${version}-r${revision}"
     fi
   done < <(jq -r --arg module "$module" '.[] | select(.module == $module) | .image' "$image_catalog")

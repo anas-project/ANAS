@@ -9,8 +9,9 @@ package runner
 //
 // The interactive form is not a second implementation. It probes with
 // `capabilities`, asks about what came back available, and then calls the same
-// non-interactive path a script would. A web layer does the same thing with the
-// same JSON. One set of rules about what is possible, in one place.
+// non-interactive path a script would. The future web adapter will call the
+// same typed application use case rather than parse this CLI's JSON. One set
+// of rules about what is possible, in one place.
 
 import (
 	"flag"
