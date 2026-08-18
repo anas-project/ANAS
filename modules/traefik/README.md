@@ -4,13 +4,15 @@
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `traefik` |
-| 版本 / revision | `3.7.10-r2` |
+| 版本 / revision | `3.7.10-r4` |
 | 状态 | `release` |
 | 类别 | `network` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -67,10 +69,10 @@ anas admin local rotate traefik primary --prompt -w /srv/anas
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `traefik.base_port` | int | `9000` | `TRAEFIK_BASE_PORT` | 否 | 否 | 是 | `container_recreate` | 对外端口基数 |
-| `traefik.domain_prefix` | string | `traefik` | `TRAEFIK_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `traefik.base_port` | int | `1..65535` | `9000` | `static` | `TRAEFIK_BASE_PORT` | 否 | 否 | 否 | 是 | `container_recreate` | 对外端口基数 |
+| `traefik.domain_prefix` | string | — | `traefik` | `static` | `TRAEFIK_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
 
 ### 查询和修改
 
@@ -128,7 +130,7 @@ Traefik 本地账号只保护 Dashboard，不代表下游应用管理员。
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`3.7.10-r3`（reviewed 2026-08-13）
+- Module version / 版本：`3.7.10-r4`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — Traefik receives TZ for process and access-log timestamps.
 - Language scope / 语言范围：Traefik Proxy built-in Dashboard
 - Selection / 选择方式：`fixed`

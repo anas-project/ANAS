@@ -7,13 +7,15 @@ IAM provider for OIDC and SAML with users and groups synchronized from Samba AD.
 
 ## Quick facts
 
+<!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `authentik` |
-| Version / revision | `2026.5.6-r4` |
+| Version / revision | `2026.5.6-r8` |
 | Status | `developing` |
 | Category | `identity` |
 | Runtime | `compose` |
+<!-- generated:module-facts:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -83,14 +85,14 @@ The runner creates a dedicated database, principal, and stable generated credent
 
 This inventory comes from the current `module.yml` and `anas config list`. The environment key is the rendered module-private key, not the preferred configuration interface.
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `authentik.db_name` | string | `authentik` | `AUTHENTIK_DB_NAME` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `authentik.db_type` | string | `auto` | `AUTHENTIK_DB_TYPE` | no | no | no: `migrate-authentik-database` | `data_migrate` | Existing authentik data must be migrated explicitly. |
-| `authentik.domain_prefix` | string | `auth` | `AUTHENTIK_DOMAIN_PREFIX` | no | no | yes | `reconcile` | Every per-application endpoint is derived from this domain, so clients must be reconciled with it. |
-| `authentik.ldap_enabled` | string | `true` | `AUTHENTIK_LDAP_ENABLED` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `authentik.ldap_password_writeback` | string | `true` | `AUTHENTIK_LDAP_PASSWORD_WRITEBACK` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `authentik.log_level` | string | `warn` | `AUTHENTIK_LOG_LEVEL` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `authentik.db_name` | string | — | `authentik` | `static` | `AUTHENTIK_DB_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `authentik.db_type` | enum (`auto`, `postgres`) | — | `auto` | `static` | `AUTHENTIK_DB_TYPE` | no | no | no | no: `migrate-authentik-database` | `data_migrate` | Existing authentik data must be migrated explicitly. |
+| `authentik.domain_prefix` | string | — | `auth` | `static` | `AUTHENTIK_DOMAIN_PREFIX` | no | no | no | yes | `reconcile` | Every per-application endpoint is derived from this domain, so clients must be reconciled with it. |
+| `authentik.ldap_enabled` | bool | — | `true` | `static` | `AUTHENTIK_LDAP_ENABLED` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `authentik.ldap_password_writeback` | bool | — | `true` | `static` | `AUTHENTIK_LDAP_PASSWORD_WRITEBACK` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `authentik.log_level` | string | — | `warn` | `static` | `AUTHENTIK_LOG_LEVEL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
 ### Query and modify
 

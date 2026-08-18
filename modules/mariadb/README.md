@@ -4,13 +4,15 @@
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `mariadb` |
-| 版本 / revision | `12.3.2-r1` |
+| 版本 / revision | `12.3.2-r3` |
 | 状态 | `release` |
 | 类别 | `database` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -53,10 +55,10 @@ root 密码是 Provider 管理凭据，不是 Module 本地管理员。Adminer �
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `mariadb.adminer_enabled` | string | `false` | `MARIADB_ADMINER_ENABLED` | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
-| `mariadb.root_password` | string | `—` | `MARIADB_ROOT_PASSWORD` | 否 | 是 | 否：`rotate-mariadb-root-password` | `credential_rotate` | 数据库 root 密码 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mariadb.adminer_enabled` | bool | — | `false` | `static` | `MARIADB_ADMINER_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
+| `mariadb.root_password` | string | — | — | `generated` | `MARIADB_ROOT_PASSWORD` | 否 | 是 | 是 | 否：`rotate-mariadb-root-password` | `credential_rotate` | 数据库 root 密码 |
 
 ### 查询和修改
 
@@ -103,7 +105,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`12.3.2-r2`（reviewed 2026-08-13）
+- Module version / 版本：`12.3.2-r3`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — MariaDB and optional Adminer receive TZ; this does not populate MariaDB timezone tables or change SQL session time_zone.
 - Language scope / 语言范围：optional Adminer 5.5.0 Web UI; MariaDB itself has no UI language
 - Selection / 选择方式：`browser`

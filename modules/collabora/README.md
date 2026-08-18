@@ -4,13 +4,15 @@
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `collabora` |
-| 版本 / revision | `26.4.2-r2` |
+| 版本 / revision | `26.4.2-r4` |
 | 状态 | `release` |
 | 类别 | `app` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -52,13 +54,13 @@ modules:
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `collabora.admin_password` | string | `—` | `COLLABORA_ADMIN_PASSWORD` | 否 | 是 | 是 | `container_recreate` | 管理界面或服务管理员密码 |
-| `collabora.admin_username` | string | `admin_collabora` | `COLLABORA_ADMIN_USERNAME` | 否 | 否 | 是 | `container_recreate` | 管理界面用户名 |
-| `collabora.auto_save` | string | `60` | `COLLABORA_AUTO_SAVE` | 否 | 否 | 是 | `container_recreate` | 自动保存间隔 |
-| `collabora.domain_prefix` | string | `collabora` | `COLLABORA_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
-| `collabora.log_level` | string | `warning` | `COLLABORA_LOG_LEVEL` | 否 | 否 | 是 | `container_recreate` | 日志级别 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `collabora.admin_password` | string | — | — | `generated` | `COLLABORA_ADMIN_PASSWORD` | 否 | 是 | 是 | 是 | `container_recreate` | 管理界面或服务管理员密码 |
+| `collabora.admin_username` | string | — | `admin_collabora` | `static` | `COLLABORA_ADMIN_USERNAME` | 否 | 否 | 否 | 是 | `container_recreate` | 管理界面用户名 |
+| `collabora.auto_save` | int | — | `60` | `static` | `COLLABORA_AUTO_SAVE` | 否 | 否 | 否 | 是 | `container_recreate` | 自动保存间隔 |
+| `collabora.domain_prefix` | string | — | `collabora` | `static` | `COLLABORA_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| `collabora.log_level` | string | — | `warning` | `static` | `COLLABORA_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | 日志级别 |
 
 ### 查询和修改
 
@@ -105,7 +107,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`26.4.2-r3`（reviewed 2026-08-13）
+- Module version / 版本：`26.4.2-r4`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — The Collabora service receives TZ through the module .env.
 - Language scope / 语言范围：Collabora Online editor UI and document locale
 - Selection / 选择方式：`integration`

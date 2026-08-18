@@ -7,13 +7,15 @@ FreeRADIUS service scaffold for development and integration testing only.
 
 ## Quick facts
 
+<!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `freeradius` |
-| Version / revision | `3.2.10-r1` |
+| Version / revision | `3.2.10-r3` |
 | Status | `developing` |
 | Category | `network` |
 | Runtime | `compose` |
+<!-- generated:module-facts:end -->
 
 ## Required modules, capabilities, and contracts
 

@@ -2,7 +2,9 @@
 
 本文面向 Module 维护者，记录 `freeradius` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
-> 状态：当前实现；对应 `3.2.10-r1` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> 状态：当前实现；对应 `3.2.10-r3` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -12,9 +14,11 @@
 
 ## Compose 拓扑
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_freeradius` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-freeradius:3.2.10` | `` | 0 |
+<!-- generated:compose-topology:end -->
 
 ## 配置契约
 

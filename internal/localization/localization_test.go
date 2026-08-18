@@ -68,7 +68,7 @@ func TestTimezoneValidation(t *testing.T) {
 	if got, err := ValidateTimezone("Asia/Shanghai"); err != nil || got != "Asia/Shanghai" {
 		t.Fatalf("valid timezone = %q, %v", got, err)
 	}
-	for _, bad := range []string{"UTC+8", "/etc/localtime", "../zone"} {
+	for _, bad := range []string{"Local", "UTC+8", "/etc/localtime", "../zone"} {
 		if _, err := ValidateTimezone(bad); err == nil {
 			t.Errorf("invalid timezone %q was accepted", bad)
 		}

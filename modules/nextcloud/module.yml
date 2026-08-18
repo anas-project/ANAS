@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: nextcloud
 version: 34.0.2
-revision: 6
+revision: 7
 app_version: 34.0.2
 abi:
   supports:
@@ -55,6 +55,9 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
+  must_resolve:
+    - language
+    - locale
   defaults:
     domain_prefix: nc
     db_name: nextcloud
@@ -67,6 +70,28 @@ config:
     memories_enabled: "true"
     db_type: auto
     iam_protocol: auto
+  types:
+    domain_prefix: string
+    db_name: string
+    phone_region: string
+    rm_skeleton_files: bool
+    # Nextcloud accepts named log levels as well as the numeric default.
+    log_level: string
+    # PHP-style sizes carry a unit suffix and are not plain integers.
+    memory_limit: string
+    upload_max_size: string
+    talk_enabled: bool
+    memories_enabled: bool
+    db_type:
+      enum: [auto, postgres, mariadb]
+    iam_protocol:
+      enum: [auto, oidc, saml]
+    language:
+      kind: string
+      default_source: inherited
+    locale:
+      kind: string
+      default_source: inherited
   # Generic OIDC/SAML registration, app-launcher metadata, and Talk service
   # settings published for the selected IAM and the bundled Talk containers.
   exports:

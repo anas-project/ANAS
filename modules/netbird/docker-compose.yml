@@ -65,7 +65,7 @@ services:
         APT_MIRROR_URL: ${APT_MIRROR_URL:-}
         DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_management
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r3
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r4
     restart: unless-stopped
     env_file:
       - .env

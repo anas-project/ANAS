@@ -3,7 +3,6 @@ package runner
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/config"
@@ -17,11 +16,10 @@ import (
 // config file where the operator could see it, and the setting simply had no
 // effect -- a failure with no symptom other than the thing not working.
 //
-// Only the named paths are checked. `env.<KEY>` stays deliberately permissive:
-// it is the escape hatch for values no manifest declares, and the whole point
-// of an escape hatch is that it does not ask permission. That gives an operator
-// who genuinely needs an undeclared value somewhere to put it, while keeping
-// the spelling of a declared one honest.
+// Named paths and raw env keys that map to a declared parameter are checked.
+// `env.<KEY>` stays deliberately permissive only for values no manifest
+// declares: that preserves the escape hatch without letting a second spelling
+// bypass a type the owner explicitly declared.
 
 // declaredParametersFor returns the parameters a module accepts by name, and
 // whether the module is one whose parameters are known at all.
@@ -80,9 +78,119 @@ func validateConfiguredParameters(cfg *config.File, reg map[string]Module) error
 			if err := validateParameter(module, parameter, reg); err != nil {
 				return fmt.Errorf("modules.%s.config.%s: %w", module, parameter, err)
 			}
+			path := fmt.Sprintf("modules.%s.config.%s", module, parameter)
 			if err := validateParameterValue(module, parameter, config.Scalar(raw), reg); err != nil {
-				return fmt.Errorf("modules.%s.config.%s: %w", module, parameter, err)
+				return parameterValidationError(path, module, parameter, err, reg)
 			}
+		}
+	}
+	for key, raw := range cfg.Env {
+		key = config.EnvKey(key)
+		module, parameter, err := policyOwnerForEnv(key, reg)
+		if err != nil {
+			return fmt.Errorf("env.%s: %w", key, err)
+		}
+		path := "env." + key
+		if err := validateParameterValue(module, parameter, config.Scalar(raw), reg); err != nil {
+			return parameterValidationError(path, module, parameter, err, reg)
+		}
+	}
+	// `secrets:` is an alternative spelling of a runtime environment input, not
+	// an escape hatch around the owning Module's schema. Values remain redacted
+	// by parameterValidationError whenever the declaration marks them sensitive.
+	for key, raw := range cfg.Secrets {
+		key = config.EnvKey(key)
+		module, parameter, err := policyOwnerForEnv(key, reg)
+		if err != nil {
+			return fmt.Errorf("secrets.%s: %w", key, err)
+		}
+		path := "secrets." + key
+		if err := validateParameterValue(module, parameter, config.Scalar(raw), reg); err != nil {
+			spec := parameterType(module, parameter, reg)
+			if spec.Declared() {
+				return fmt.Errorf("%s does not satisfy its declared %s type or constraints", path, spec.Kind)
+			}
+			return fmt.Errorf("%s does not satisfy its declared type or constraints", path)
+		}
+	}
+	return nil
+}
+
+// parameterValidationError never includes the rejected value when a manifest
+// marks the parameter sensitive. This applies to every change effect, not only
+// credential_rotate: lifecycle policy and secrecy are independent axes.
+func parameterValidationError(path, module, parameter string, err error, reg map[string]Module) error {
+	policy := policyForTarget(configTarget{Display: path, Module: module, Parameter: parameter}, reg)
+	if policy.Sensitive {
+		return fmt.Errorf("%s does not satisfy its declared type or constraints", path)
+	}
+	return fmt.Errorf("%s: %w", path, err)
+}
+
+func normalizeConfigInputForPolicy(target configTarget, value string, policy ChangePolicy, reg map[string]Module) (string, error) {
+	normalized, err := normalizeConfigInputValue(target, value, reg)
+	if err != nil && policy.Sensitive {
+		return "", fmt.Errorf("%s does not satisfy its declared type or constraints", target.Display)
+	}
+	return normalized, err
+}
+
+// validateLoadedConfigSchema is the common whole-config boundary used before
+// a plan is reported. Without it, plan could claim that an old managed config
+// was applicable after a Module tightened its schema, only for apply to reject
+// it later.
+func validateLoadedConfigSchema(cfg *config.File, reg map[string]Module, lifecycleInputs map[string]string) error {
+	if err := validateConfiguredParameters(cfg, reg); err != nil {
+		return err
+	}
+	values := cfg.BaseEnv()
+	// Lifecycle-managed credentials deliberately do not live in config.yml.
+	// Merge their private validation view without mutating the loaded config or
+	// projecting values into plan output. The caller is responsible for passing
+	// only Secret Store records whose kind is lifecycle_managed.
+	for key, value := range lifecycleInputs {
+		if strings.TrimSpace(value) != "" {
+			key = config.EnvKey(key)
+			module, parameter, err := policyOwnerForEnv(key, reg)
+			if err != nil {
+				return fmt.Errorf("lifecycle secret %s: %w", key, err)
+			}
+			normalized, err := normalizeImportedSensitiveParameter("lifecycle secret "+key, module, parameter, value, reg)
+			if err != nil {
+				return err
+			}
+			values[key] = normalized
+		}
+	}
+	if err := normalizeConfiguredParameterEnv(values, reg); err != nil {
+		return err
+	}
+	order := make([]string, 0, len(cfg.Modules.Order))
+	for _, name := range cfg.Modules.Order {
+		selected := cfg.Modules.Values[name]
+		if selected.Enabled == nil || *selected.Enabled {
+			order = append(order, name)
+		}
+	}
+	return validateInputRequiredEnv(values, order, reg)
+}
+
+// validateInputRequiredEnv checks the unconditional input contract only after
+// the generic resolver has selected the actual enabled Module set and applied
+// alternative structured inputs such as deployment-scoped bindings. This is
+// deliberately manifest-driven: neither the CLI nor anasd needs a branch for
+// any Module name.
+func validateInputRequiredEnv(values map[string]string, order []string, reg map[string]Module) error {
+	if err := requireKeys(values, globalConfig.InputRequired); err != nil {
+		return fmt.Errorf("deployment config input: %w", err)
+	}
+	for _, name := range order {
+		mod, ok := reg[name]
+		if !ok {
+			continue
+		}
+		if err := requireKeys(values, mod.InputRequired); err != nil {
+			return fmt.Errorf("%s config input: %w", name, err)
 		}
 	}
 	return nil
@@ -155,38 +263,66 @@ func min(a, b int) int {
 // existed. That is deliberate: making a declaration mandatory would turn every
 // module that has not been annotated yet into one that cannot be configured.
 func validateParameterValue(module, parameter, value string, reg map[string]Module) error {
-	declared, ok := reg[module]
-	if !ok {
-		return nil
-	}
-	spec := declared.Types[strings.ToLower(strings.TrimSpace(parameter))]
+	_, err := normalizeParameterValue(module, parameter, value, reg)
+	return err
+}
+
+// normalizeParameterValue returns the spelling runtime consumers must see.
+// Validation alone is insufficient for bools and selectors: many hooks compare
+// canonical environment strings, while existing configurations may contain
+// harmless case or surrounding-space differences that older selectors accepted.
+func normalizeParameterValue(module, parameter, value string, reg map[string]Module) (string, error) {
+	spec := parameterType(module, parameter, reg)
 	if !spec.Declared() {
-		return nil
+		return value, nil
 	}
-	trimmed := strings.TrimSpace(value)
-	switch spec.Kind {
-	case "bool":
-		switch strings.ToLower(trimmed) {
-		case "true", "false":
-			return nil
+	normalized, err := normalizeValueAgainstParamType(value, spec)
+	if err != nil {
+		return "", fmt.Errorf("%s.%s %w", module, parameter, err)
+	}
+	return normalized, nil
+}
+
+func parameterType(module, parameter string, reg map[string]Module) ParamType {
+	parameter = strings.ToLower(strings.TrimSpace(parameter))
+	if module == globalModuleName {
+		return globalConfig.Types[parameter]
+	}
+	if declared, ok := reg[module]; ok {
+		return declared.Types[parameter]
+	}
+	return ParamType{}
+}
+
+func validateValueAgainstParamType(value string, spec ParamType) error {
+	_, err := normalizeValueAgainstParamType(value, spec)
+	return err
+}
+
+func normalizeValueAgainstParamType(value string, spec ParamType) (string, error) {
+	return spec.Normalize(value)
+}
+
+// normalizeConfiguredParameterEnv canonicalizes every environment value whose
+// owner declared a type. Unknown raw env keys remain untouched as the explicit
+// compatibility escape hatch.
+func normalizeConfiguredParameterEnv(values map[string]string, reg map[string]Module) error {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := values[key]
+		module, parameter, err := policyOwnerForEnv(key, reg)
+		if err != nil {
+			return fmt.Errorf("env.%s: %w", key, err)
 		}
-		return fmt.Errorf("%s.%s accepts true or false, not %q", module, parameter, value)
-	case "int":
-		if _, err := strconv.Atoi(trimmed); err != nil {
-			return fmt.Errorf("%s.%s accepts a whole number, not %q", module, parameter, value)
+		normalized, err := normalizeParameterValue(module, parameter, value, reg)
+		if err != nil {
+			return parameterValidationError("env."+key, module, parameter, err, reg)
 		}
-		return nil
-	case "enum":
-		for _, allowed := range spec.Enum {
-			if trimmed == allowed {
-				return nil
-			}
-		}
-		// The permitted values are listed rather than merely counted: the reader
-		// is choosing one, and a rejection that does not say what is available
-		// sends them to the manifest to find out.
-		return fmt.Errorf("%s.%s accepts one of %s, not %q",
-			module, parameter, strings.Join(spec.Enum, ", "), value)
+		values[key] = normalized
 	}
 	return nil
 }

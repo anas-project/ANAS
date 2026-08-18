@@ -133,6 +133,13 @@ tar -xzf "$archive" -C "$work_dir/extract" "$archive_dir/anas"
 binary="$work_dir/extract/$archive_dir/anas"
 [ -f "$binary" ] || fail "release archive does not contain anas"
 
+# Verify the downloaded payload before replacing an existing installation or
+# writing source preferences. This remains compatible with legacy archives
+# that predate release.json while preventing a tag/binary identity mismatch.
+reported_version_output="$("$binary" version)" || fail "downloaded anas binary could not report its version"
+reported_version="$(printf '%s\n' "$reported_version_output" | awk 'NR == 1 && $1 == "anas" { print $2 }')"
+[ "$reported_version" = "$version" ] || fail "release tag $tag contains anas ${reported_version:-<unknown>}"
+
 # The privileged helper is optional at install time: only a deployment with a
 # module that attaches to the host LAN needs it, and extracting it is allowed to
 # fail on a release that predates it.

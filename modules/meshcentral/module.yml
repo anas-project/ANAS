@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: meshcentral
 version: 1.2.4
-revision: 5
+revision: 6
 app_version: 1.2.4
 abi:
   supports:
@@ -58,6 +58,18 @@ config:
     db_name: meshcentral
     db_type: auto
     iam_protocol: auto
+  types:
+    domain_prefix: string
+    mps_port:
+      kind: int
+      constraints:
+        minimum: 1
+        maximum: 65535
+    db_name: string
+    db_type:
+      enum: [auto, postgres, mariadb]
+    iam_protocol:
+      enum: [auto, oidc]
   exports:
     - ANAS_IAM_CLIENT__MESHCENTRAL__*
     - APPS_LIST*

@@ -4,13 +4,15 @@ Active Directory, LDAPS, Kerberos, and BIND9-DLZ DNS provider.
 
 ## Quick facts
 
+<!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `samba_dc` |
-| Version / revision | `4.23.6-r6` |
+| Version / revision | `4.23.6-r7` |
 | Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |
+<!-- generated:module-facts:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -82,46 +84,46 @@ This module neither consumes nor provides a relational-database contract.
 
 This inventory comes from the current `module.yml` and `anas config list`. The environment key is the rendered module-private key, not the preferred configuration interface.
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `samba_dc.admin_complex_pass` | string | `true` | `SAMBA_DC_ADMIN_COMPLEX_PASS` | no | no | yes | `hot_reload` | Administrator password complexity policy |
-| `samba_dc.admin_lockout_duration` | string | `30` | `SAMBA_DC_ADMIN_LOCKOUT_DURATION` | no | no | yes | `hot_reload` | Administrator lockout duration |
-| `samba_dc.admin_lockout_reset_after` | string | `30` | `SAMBA_DC_ADMIN_LOCKOUT_RESET_AFTER` | no | no | yes | `hot_reload` | Administrator failed-attempt reset interval |
-| `samba_dc.admin_lockout_threshold` | string | `10` | `SAMBA_DC_ADMIN_LOCKOUT_THRESHOLD` | no | no | yes | `hot_reload` | Administrator lockout threshold |
-| `samba_dc.admin_max_pass_age` | string | `0` | `SAMBA_DC_ADMIN_MAX_PASS_AGE` | no | no | yes | `hot_reload` | Administrator maximum password age; 0 means never expires |
-| `samba_dc.admin_min_pass_age` | string | `1` | `SAMBA_DC_ADMIN_MIN_PASS_AGE` | no | no | yes | `hot_reload` | Administrator minimum password age |
-| `samba_dc.admin_min_pass_length` | string | `8` | `SAMBA_DC_ADMIN_MIN_PASS_LENGTH` | no | no | yes | `hot_reload` | Administrator minimum password length |
-| `samba_dc.admin_password_history` | string | `2` | `SAMBA_DC_ADMIN_PASSWORD_HISTORY` | no | no | yes | `hot_reload` | Administrator password history length |
-| `samba_dc.admin_name` | string | `admin` | `SAMBA_DC_ADMIN_NAME` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `samba_dc.admin_password` | string | `—` | `SAMBA_DC_ADMIN_PASSWORD` | no | yes | no: `rotate-samba-admin-password` | `credential_rotate` | The existing AD account must be updated explicitly. |
-| `samba_dc.administrator_password` | string | `—` | `SAMBA_DC_ADMINISTRATOR_PASSWORD` | no | yes | no: `rotate-samba-administrator-password` | `credential_rotate` | The provision password is not reapplied after initialization. |
-| `samba_dc.anchor_bind_name` | string | `svc_anchor` | `SAMBA_DC_ANCHOR_BIND_NAME` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `samba_dc.anchor_bind_password` | string | `—` | `SAMBA_DC_ANCHOR_BIND_PASSWORD` | no | yes | no: `rotate-anchor-bind-password` | `credential_rotate` | Update the AD service account and Anchor Worker as one transaction. |
-| `samba_dc.anchor_scan_interval` | string | `300` | `SAMBA_DC_ANCHOR_SCAN_INTERVAL` | no | no | yes | `container_recreate` | The reconciliation interval is consumed by the Anchor Worker process. |
-| `samba_dc.app_filter` | string | `true` | `SAMBA_DC_APP_FILTER` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `samba_dc.create_structure` | string | `true` | `SAMBA_DC_CREATE_STRUCTURE` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `samba_dc.dns_allowed_networks` | string | `—` | `SAMBA_DC_DNS_ALLOWED_NETWORKS` | no | no | yes | `container_recreate` | BIND recursion and cache access are restricted to these networks. |
-| `samba_dc.dns_cache_size` | string | `128M` | `SAMBA_DC_DNS_CACHE_SIZE` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `samba_dc.dns_debug` | string | `false` | `SAMBA_DC_DNS_DEBUG` | no | no | yes | `container_recreate` | The named process debug level is selected when the container starts. |
-| `samba_dc.dns_forwarders` | string | `—` | `SAMBA_DC_DNS_FORWARDERS` | no | no | yes | `container_recreate` | The generated BIND configuration is installed during container initialization. |
-| `samba_dc.ldap_bind_name` | string | `svc_ldap` | `SAMBA_DC_LDAP_BIND_NAME` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `samba_dc.ldap_bind_password` | string | `—` | `SAMBA_DC_LDAP_BIND_PASSWORD` | no | yes | no: `rotate-ldap-bind-password` | `credential_rotate` | Update AD and all LDAP consumers as one transaction. |
-| `samba_dc.log_level` | string | `1` | `SAMBA_DC_LOG_LEVEL` | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
-| `samba_dc.max_log_size` | string | `2048` | `SAMBA_DC_MAX_LOG_SIZE` | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
-| `samba_dc.netbios_name` | string | `—` | `SAMBA_DC_NETBIOS_NAME` | no | no | no: `replace-domain-controller` | `immutable` | Changing the DC machine identity requires a controlled replacement. |
-| `samba_dc.password_bind_name` | string | `svc_password` | `SAMBA_DC_PASSWORD_BIND_NAME` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `samba_dc.password_bind_password` | string | `—` | `SAMBA_DC_PASSWORD_BIND_PASSWORD` | no | yes | no: `rotate-password-bind-password` | `credential_rotate` | Update AD and password-capable applications as one transaction. |
-| `samba_dc.realm` | string | `—` | `SAMBA_DC_REALM` | no | no | no: `migrate-domain` | `immutable` | The realm is part of the provisioned AD identity. |
-| `samba_dc.template_homedir` | string | `/home/%D/%U` | `SAMBA_DC_TEMPLATE_HOMEDIR` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `samba_dc.template_shell` | string | `/bin/false` | `SAMBA_DC_TEMPLATE_SHELL` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `samba_dc.user_complex_pass` | string | `false` | `SAMBA_DC_USER_COMPLEX_PASS` | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
-| `samba_dc.user_lockout_duration` | string | `30` | `SAMBA_DC_USER_LOCKOUT_DURATION` | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
-| `samba_dc.user_lockout_reset_after` | string | `30` | `SAMBA_DC_USER_LOCKOUT_RESET_AFTER` | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
-| `samba_dc.user_lockout_threshold` | string | `10` | `SAMBA_DC_USER_LOCKOUT_THRESHOLD` | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
-| `samba_dc.user_max_pass_age` | string | `90` | `SAMBA_DC_USER_MAX_PASS_AGE` | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
-| `samba_dc.user_min_pass_age` | string | `1` | `SAMBA_DC_USER_MIN_PASS_AGE` | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
-| `samba_dc.user_min_pass_length` | string | `8` | `SAMBA_DC_USER_MIN_PASS_LENGTH` | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
-| `samba_dc.user_password_history` | string | `2` | `SAMBA_DC_USER_PASSWORD_HISTORY` | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `samba_dc.admin_complex_pass` | bool | — | `true` | `static` | `SAMBA_DC_ADMIN_COMPLEX_PASS` | no | no | no | yes | `hot_reload` | Administrator password complexity policy |
+| `samba_dc.admin_lockout_duration` | int | — | `30` | `static` | `SAMBA_DC_ADMIN_LOCKOUT_DURATION` | no | no | no | yes | `hot_reload` | Administrator lockout duration |
+| `samba_dc.admin_lockout_reset_after` | int | — | `30` | `static` | `SAMBA_DC_ADMIN_LOCKOUT_RESET_AFTER` | no | no | no | yes | `hot_reload` | Administrator failed-attempt reset interval |
+| `samba_dc.admin_lockout_threshold` | int | — | `10` | `static` | `SAMBA_DC_ADMIN_LOCKOUT_THRESHOLD` | no | no | no | yes | `hot_reload` | Administrator lockout threshold |
+| `samba_dc.admin_max_pass_age` | int | — | `0` | `static` | `SAMBA_DC_ADMIN_MAX_PASS_AGE` | no | no | no | yes | `hot_reload` | Administrator maximum password age; 0 means never expires |
+| `samba_dc.admin_min_pass_age` | int | — | `1` | `static` | `SAMBA_DC_ADMIN_MIN_PASS_AGE` | no | no | no | yes | `hot_reload` | Administrator minimum password age |
+| `samba_dc.admin_min_pass_length` | int | — | `8` | `static` | `SAMBA_DC_ADMIN_MIN_PASS_LENGTH` | no | no | no | yes | `hot_reload` | Administrator minimum password length |
+| `samba_dc.admin_name` | string | — | `admin` | `static` | `SAMBA_DC_ADMIN_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_dc.admin_password` | string | — | — | `generated` | `SAMBA_DC_ADMIN_PASSWORD` | no | yes | yes | no: `rotate-samba-admin-password` | `credential_rotate` | The existing AD account must be updated explicitly. |
+| `samba_dc.admin_password_history` | int | — | `2` | `static` | `SAMBA_DC_ADMIN_PASSWORD_HISTORY` | no | no | no | yes | `hot_reload` | Administrator password history length |
+| `samba_dc.administrator_password` | string | — | — | `generated` | `SAMBA_DC_ADMINISTRATOR_PASSWORD` | no | yes | yes | no: `rotate-samba-administrator-password` | `credential_rotate` | The provision password is not reapplied after initialization. |
+| `samba_dc.anchor_bind_name` | string | — | `svc_anchor` | `static` | `SAMBA_DC_ANCHOR_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_dc.anchor_bind_password` | string | — | — | `generated` | `SAMBA_DC_ANCHOR_BIND_PASSWORD` | no | yes | yes | no: `rotate-anchor-bind-password` | `credential_rotate` | Update the AD service account and Anchor Worker as one transaction. |
+| `samba_dc.anchor_scan_interval` | int | — | `300` | `static` | `SAMBA_DC_ANCHOR_SCAN_INTERVAL` | no | no | no | yes | `container_recreate` | The reconciliation interval is consumed by the Anchor Worker process. |
+| `samba_dc.app_filter` | bool | — | `true` | `static` | `SAMBA_DC_APP_FILTER` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_dc.create_structure` | bool | — | `true` | `static` | `SAMBA_DC_CREATE_STRUCTURE` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_dc.dns_allowed_networks` | string | — | `""` | `static` | `SAMBA_DC_DNS_ALLOWED_NETWORKS` | no | no | no | yes | `container_recreate` | BIND recursion and cache access are restricted to these networks. |
+| `samba_dc.dns_cache_size` | string | — | `128M` | `static` | `SAMBA_DC_DNS_CACHE_SIZE` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_dc.dns_debug` | bool | — | `false` | `static` | `SAMBA_DC_DNS_DEBUG` | no | no | no | yes | `container_recreate` | The named process debug level is selected when the container starts. |
+| `samba_dc.dns_forwarders` | string | — | `""` | `static` | `SAMBA_DC_DNS_FORWARDERS` | no | no | no | yes | `container_recreate` | The generated BIND configuration is installed during container initialization. |
+| `samba_dc.ldap_bind_name` | string | — | `svc_ldap` | `static` | `SAMBA_DC_LDAP_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_dc.ldap_bind_password` | string | — | — | `generated` | `SAMBA_DC_LDAP_BIND_PASSWORD` | no | yes | yes | no: `rotate-ldap-bind-password` | `credential_rotate` | Update AD and all LDAP consumers as one transaction. |
+| `samba_dc.log_level` | string | — | `1` | `static` | `SAMBA_DC_LOG_LEVEL` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
+| `samba_dc.max_log_size` | int | `>= 1` | `2048` | `static` | `SAMBA_DC_MAX_LOG_SIZE` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
+| `samba_dc.netbios_name` | string | — | — | `runtime` | `SAMBA_DC_NETBIOS_NAME` | no | yes | no | no: `replace-domain-controller` | `immutable` | Changing the DC machine identity requires a controlled replacement. |
+| `samba_dc.password_bind_name` | string | — | `svc_password` | `static` | `SAMBA_DC_PASSWORD_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_dc.password_bind_password` | string | — | — | `generated` | `SAMBA_DC_PASSWORD_BIND_PASSWORD` | no | yes | yes | no: `rotate-password-bind-password` | `credential_rotate` | Update AD and password-capable applications as one transaction. |
+| `samba_dc.realm` | string | — | — | `inherited` | `SAMBA_DC_REALM` | no | yes | no | no: `migrate-domain` | `immutable` | The realm is part of the provisioned AD identity. |
+| `samba_dc.template_homedir` | string | — | `/home/%D/%U` | `static` | `SAMBA_DC_TEMPLATE_HOMEDIR` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_dc.template_shell` | string | — | `/bin/false` | `static` | `SAMBA_DC_TEMPLATE_SHELL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_dc.user_complex_pass` | bool | — | `false` | `static` | `SAMBA_DC_USER_COMPLEX_PASS` | no | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
+| `samba_dc.user_lockout_duration` | int | — | `30` | `static` | `SAMBA_DC_USER_LOCKOUT_DURATION` | no | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
+| `samba_dc.user_lockout_reset_after` | int | — | `30` | `static` | `SAMBA_DC_USER_LOCKOUT_RESET_AFTER` | no | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
+| `samba_dc.user_lockout_threshold` | int | — | `10` | `static` | `SAMBA_DC_USER_LOCKOUT_THRESHOLD` | no | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
+| `samba_dc.user_max_pass_age` | int | — | `90` | `static` | `SAMBA_DC_USER_MAX_PASS_AGE` | no | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
+| `samba_dc.user_min_pass_age` | int | — | `1` | `static` | `SAMBA_DC_USER_MIN_PASS_AGE` | no | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
+| `samba_dc.user_min_pass_length` | int | — | `8` | `static` | `SAMBA_DC_USER_MIN_PASS_LENGTH` | no | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
+| `samba_dc.user_password_history` | int | — | `2` | `static` | `SAMBA_DC_USER_PASSWORD_HISTORY` | no | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |
 
 ### Query and modify
 

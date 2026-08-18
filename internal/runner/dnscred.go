@@ -79,7 +79,8 @@ func (a *app) materializeEngineCredentials(registry *dns.Registry, engine string
 	configured := strings.TrimSpace(a.env[prefix+"_DNS_PROVIDER"])
 	if configured == "" {
 		// Whether a platform is mandatory is the module's own business, declared
-		// through config.required and enforced with every other required key.
+		// through its generic config requirement metadata and enforced at the
+		// matching resolution stage.
 		return nil
 	}
 	platform, ok := registry.Lookup(configured)

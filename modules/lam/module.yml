@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: lam
 version: 9.6.0
-revision: 6
+revision: 7
 app_version: 9.6.0
 abi:
   supports:
@@ -24,6 +24,9 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
+  must_resolve:
+    - admin_password
+    - language
   # Cross-module values this module reads. Listing them is what lets a rendered
   # .env carry only what is used, instead of everything the dependency
   # closure happens to own.
@@ -41,6 +44,14 @@ config:
     - SAMBA_DC_LDAPS_SERVER_URL
   defaults:
     domain_prefix: lam
+  types:
+    admin_password:
+      kind: string
+      default_source: generated
+    domain_prefix: string
+    language:
+      kind: string
+      default_source: inherited
   changes:
     admin_password:
       effect: container_recreate

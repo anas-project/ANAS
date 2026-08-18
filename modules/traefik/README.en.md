@@ -4,13 +4,15 @@ HTTPS reverse proxy, routing layer, and dashboard for Web services.
 
 ## Quick facts
 
+<!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `traefik` |
-| Version / revision | `3.7.10-r2` |
+| Version / revision | `3.7.10-r4` |
 | Status | `release` |
 | Category | `network` |
 | Runtime | `compose` |
+<!-- generated:module-facts:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -67,10 +69,10 @@ This module neither consumes nor provides a relational-database contract.
 
 This inventory comes from the current `module.yml` and `anas config list`. The environment key is the rendered module-private key, not the preferred configuration interface.
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `traefik.base_port` | int | `9000` | `TRAEFIK_BASE_PORT` | no | no | yes | `container_recreate` | Published ports and derived application URLs change. |
-| `traefik.domain_prefix` | string | `traefik` | `TRAEFIK_DOMAIN_PREFIX` | no | no | yes | `container_recreate` | The router rule is a Compose label. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `traefik.base_port` | int | `1..65535` | `9000` | `static` | `TRAEFIK_BASE_PORT` | no | no | no | yes | `container_recreate` | Published ports and derived application URLs change. |
+| `traefik.domain_prefix` | string | — | `traefik` | `static` | `TRAEFIK_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | The router rule is a Compose label. |
 
 ### Query and modify
 

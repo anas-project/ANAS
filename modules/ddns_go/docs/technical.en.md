@@ -2,7 +2,9 @@
 
 This page records the current implementation, security boundaries, and verification entry points for `ddns_go`. User instructions are in the [English README](../README.en.md).
 
-> Status: current implementation; based on `6.17.4-r3` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> Status: current implementation; based on `6.17.4-r5` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -12,24 +14,26 @@ This page records the current implementation, security boundaries, and verificat
 
 ## Compose topology
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_ddns-go` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ddns-go:6.17.4-r3` | `` | 1 |
+| `anas_ddns-go` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ddns-go:6.17.4-r5` | `` | 1 |
+<!-- generated:compose-topology:end -->
 
 ## Configuration contract
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ddns_go.dns_provider` | string | `—` | `DDNS_GO_DNS_PROVIDER` | yes | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_go.domain_prefix` | string | `ddns-go` | `DDNS_GO_DOMAIN_PREFIX` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_go.interval` | int | `300` | `DDNS_GO_INTERVAL` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_go.ipv4_gettype` | enum (`url`, `netInterface`) | `url` | `DDNS_GO_IPV4_GETTYPE` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_go.ipv4_interface` | string | `—` | `DDNS_GO_IPV4_INTERFACE` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_go.ipv4_urls` | string | `—` | `DDNS_GO_IPV4_URLS` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_go.ipv6_gettype` | enum (`url`, `netInterface`) | `url` | `DDNS_GO_IPV6_GETTYPE` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_go.ipv6_interface` | string | `—` | `DDNS_GO_IPV6_INTERFACE` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_go.ipv6_urls` | string | `—` | `DDNS_GO_IPV6_URLS` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_go.web_enabled` | bool | `true` | `DDNS_GO_WEB_ENABLED` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `ddns_go.dns_provider` | string | — | — | — | `DDNS_GO_DNS_PROVIDER` | no | yes | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_go.domain_prefix` | string | — | `ddns-go` | `static` | `DDNS_GO_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_go.interval` | int | — | `300` | `static` | `DDNS_GO_INTERVAL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_go.ipv4_gettype` | enum (`url`, `netInterface`) | — | `url` | `static` | `DDNS_GO_IPV4_GETTYPE` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_go.ipv4_interface` | string | — | `""` | `static` | `DDNS_GO_IPV4_INTERFACE` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_go.ipv4_urls` | string | — | `""` | `static` | `DDNS_GO_IPV4_URLS` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_go.ipv6_gettype` | enum (`url`, `netInterface`) | — | `url` | `static` | `DDNS_GO_IPV6_GETTYPE` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_go.ipv6_interface` | string | — | `""` | `static` | `DDNS_GO_IPV6_INTERFACE` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_go.ipv6_urls` | string | — | `""` | `static` | `DDNS_GO_IPV6_URLS` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_go.web_enabled` | bool | — | `true` | `static` | `DDNS_GO_WEB_ENABLED` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
 

@@ -8,7 +8,7 @@ services:
         - APK_MIRROR_URL
         - DOCKER_HUB_REGISTRY
     container_name: ${CONTAINER_PREFIX}lego
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lego:5.3.1-r3
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lego:5.3.1-r4
     restart: unless-stopped
     volumes:
       - "${LEGO_DATA_PATH}:/certs"

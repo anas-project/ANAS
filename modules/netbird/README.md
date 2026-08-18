@@ -7,13 +7,15 @@
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `netbird` |
-| 版本 / revision | `0.76.1-r2` |
+| 版本 / revision | `0.76.1-r4` |
 | 状态 | `developing` |
 | 类别 | `network` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -65,11 +67,11 @@ identity:
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `netbird.adminer_enabled` | string | `false` | `NETBIRD_ADMINER_ENABLED` | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
-| `netbird.domain_prefix` | string | `netbird` | `NETBIRD_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
-| `netbird.iam_protocol` | string | `auto` | `NETBIRD_IAM_PROTOCOL` | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `netbird.adminer_enabled` | bool | — | `false` | `static` | `NETBIRD_ADMINER_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
+| `netbird.domain_prefix` | string | — | `netbird` | `static` | `NETBIRD_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| `netbird.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `NETBIRD_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
 
 ### 查询和修改
 
@@ -105,7 +107,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`0.76.1-r3`（reviewed 2026-08-13）
+- Module version / 版本：`0.76.1-r4`（reviewed 2026-08-13）
 - Timezone / 时区：`partial` — Dashboard, signal, and management receive the module environment; the relay service does not currently receive TZ.
 - Language scope / 语言范围：NetBird Dashboard v2.90.9
 - Selection / 选择方式：`fixed`

@@ -3,7 +3,7 @@
 本标准规定 Module 文档的源文件、必需内容、自动生成边界、VitePress 映射、双语要求和 CI 验证。关键词“必须”“不得”“应该”具有规范性；新建 Module、升级 Module 或修改生成器时都必须遵守。
 
 > [!IMPORTANT]
-> `cmd/gen-module-docs` 维护 README 内的时区/语言标记块和 localization 汇总；`cmd/materialize-module-docs` 在 VitePress 构建使用的临时源目录中生成逐 Module 页面、目录、导航数据和有限的版本历史。生成页面不写回或提交到正式 `docs/`。
+> `cmd/gen-module-docs` 维护 README 的快速信息与时区/语言标记块、技术文档的实现身份与 Compose 拓扑标记块，以及 localization 汇总；`cmd/materialize-module-docs` 在 VitePress 构建使用的临时源目录中生成逐 Module 页面、目录、导航数据和有限的版本历史。生成页面不写回或提交到正式 `docs/`。
 
 ## 1. 源文件结构
 
@@ -69,16 +69,43 @@ README 必须列出 `anas config list <module> --json` 返回的全部参数。�
 | 字段 | 要求 |
 | --- | --- |
 | 路径 | 完整配置路径，例如 `nextcloud.db_type` |
-| 类型 | CLI 实际接受的类型 |
-| 默认值 | 当前默认值；无默认值写 `—` |
+| 类型 | `config.types` 显式声明且 CLI 实际接受的类型；不得从默认值推断 |
+| 默认值 | 当前静态默认值；无默认值写 `—`，明确的空字符串写 `""`，不得把两者混为一谈 |
+| 默认来源 | `default_source`；取 `none`、`static`、`host`、`runtime`、`generated` 或 `inherited` |
 | 环境变量 | 渲染后的 Module 私有环境变量名 |
-| 必填 | 是否 required |
+| 输入必填 | `input_required`；`required` 是与它完全相等的兼容别名 |
+| 解析必有 | `must_resolve`；应用默认值及其他来源后，最终值是否必须非空 |
+| 单字段约束 | `constraints` 中适用的范围、长度、pattern 或 format；没有时写 `—` |
 | 敏感 | 是否属于 Secret |
 | 可编辑性 | 是否可由普通 `config set` 修改；不可编辑时记录专用生命周期操作 |
 | 影响 | `hot_reload`、`container_recreate`、`credential_rotate`、`data_migrate`、`immutable` 等 |
 | 作用 | 对应用、数据或网络的实际影响 |
 
-参数不得只出现在技术文档中。新增、删除、改名或改变默认值时，中英文 README 和技术文档必须在同一变更中更新。
+内置 Module 的每个可配置参数都必须显式声明 `config.types`。`unknown` 只用于兼容旧 Module
+或暴露开发中的不完整声明，release gate 必须拒绝内置清单中的任何 `unknown`。
+
+`input_required` 只回答“操作者是否必须输入”：有静态默认值或 host/runtime/generated/
+inherited 无条件来源时必须为 `false`，并由 `has_default` 区分无默认值与空字符串默认值。
+`must_resolve` 回答“解析后是否必须有非空值”，可以与 `input_required: false` 同时成立。
+存在条件 resolver 时，`default_source: none` 也可以与这组值同时出现；它不表示操作者在所有
+场景都必须直接填写 Module 参数。
+manifest 的 `input_required` 声明“进入解析流程前必须由调用者显式提供”；旧字段
+`required` 为兼容已有 Module 保留，仍在 defaults/resolver 完成后、calculate Hook 前检查，
+可以由默认值或 resolver 满足；`must_resolve` 在 Hook patch 后检查最终非空。CLI/JSON 的
+`required` 不是 manifest 旧字段的直接投影，而始终是 `input_required` 的兼容别名。
+
+`constraints` 只声明单字段规则：整数的 `minimum`/`maximum`，字符串的 `min_length`/
+`max_length`/`pattern`/`format`。条件性要求、跨字段关系和依赖运行态的规则必须在“作用”中
+写清，并由 resolver、统一应用层、plan 或 Hook 校验，不能为了驱动表单而把参数笼统标成 required。
+这些元数据是 ANAS schema，不是 JSON Schema：两者的 `required` 和 `default` 语义不同。
+Module 只维护声明和通用校验规则；M3 的 `anasd` 配置 API 复用统一 schema，绝不增加逐
+Module 的 HTTP 适配。
+
+参数不得只出现在技术文档中。新增、删除、改名、改变类型/required 或改变默认值时，中英文
+README 和技术文档必须在同一变更中更新。
+
+配置表位于人工审核区。`gen-module-docs` 会用统一参数库存校验四张表的机器派生列是否一致，
+但不得在没有生成标记时改写表格；“作用”列及跨字段、迁移和安全语义始终由维护者审核。
 
 ### 管理员与密码命令
 
@@ -119,7 +146,10 @@ anas admin local rotate <module> <account-id> --prompt -w /srv/anas
 
 - Module 名、版本、revision、status、category 和 runtime；
 - Module/Capability/Contract 依赖；
-- 配置路径、类型、默认值、环境变量、required、sensitive、editable、effect 和 apply；
+- 配置路径、类型、默认值及来源、`required`/`input_required`、`must_resolve`、
+  `has_default`、单字段 constraints、环境变量、sensitive、editable、effect 和 apply；
+- 内置 Module 参数的类型声明完整性；完整 release 验收还要求 `config list --json` 中
+  `type: "unknown"` 的数量为 0；
 - 数据库和管理员账号的 manifest 声明；
 - localization 清单与证据链接；
 - Compose service、network、volume 和 Hook 文件索引；
@@ -137,15 +167,27 @@ anas admin local rotate <module> <account-id> --prompt -w /srv/anas
 
 ## 6. 生成标记
 
-生成器只能修改明确的生成标记块。现有 localization 标记为：
+生成器只能修改明确的生成标记块。当前标记为：
 
 ```markdown
+<!-- generated:module-facts:start -->
+...
+<!-- generated:module-facts:end -->
+
 <!-- generated:localization:start -->
 ...
 <!-- generated:localization:end -->
+
+<!-- generated:module-identity:start -->
+...
+<!-- generated:module-identity:end -->
+
+<!-- generated:compose-topology:start -->
+...
+<!-- generated:compose-topology:end -->
 ```
 
-标记外内容属于人工审核区。新增生成块必须使用唯一名称 `generated:<section>`，同时支持缺失、重复、反向和不平衡标记检查。不得用生成器覆盖整份人工 README。
+`module-facts` 与 `module-identity` 来自 `module.yml`，`compose-topology` 来自 manifest 指定的 Compose 文件，`localization` 来自 `localization.yml`。标记外内容属于人工审核区。新增生成块必须使用唯一名称 `generated:<section>`，同时支持缺失、重复、反向和不平衡标记检查。不得用生成器覆盖整份人工 README。
 
 ## 7. VitePress 输出规则
 
@@ -175,11 +217,14 @@ Module 目录和侧边栏中的名称、状态、类别、版本和链接必须�
 1. 枚举所有包含 `module.yml` 的目录，而不是维护硬编码名单；
 2. 校验目录名、manifest name、localization module 和文档归属一致；
 3. `materialize-module-docs` 在缺少四份双语源文档或 `localization.yml` 时失败；
-4. 更新允许的生成标记块；
+4. 在内存中预检四份源文档的全部标记，再更新允许的生成标记块；缺失、重复、反向或不平衡标记不得造成部分写入；
 5. `materialize-module-docs` 在临时目录中一次性生成全部中英文 VitePress 页面、目录和导航数据；
 6. 使用确定性排序和稳定格式；
-7. `gen-module-docs --check` 不写文件，并在源生成块或 localization 汇总过期时失败；
-8. 不删除或覆盖标记外的人工内容。
+7. `gen-module-docs --check` 不写文件，并在源生成块、localization 汇总、四份参数表的
+   机器派生列过期，或任一内置 Module 参数缺少显式类型时失败；
+8. Module 类型审计覆盖 `required`、`defaults`、`types`、`changes` 的并集，不能只检查有
+   默认值的参数；global 参数由 runner 的完整 inventory 验收覆盖；
+9. 不删除或覆盖标记外的人工内容。
 
 生成与检查命令：
 
@@ -216,7 +261,10 @@ npm run docs:build
 
 - [ ] 所有 `module.yml` 目录都有四份双语文档和 `localization.yml`；
 - [ ] 中英文结构、命令、默认值、支持状态和风险一致；
-- [ ] 配置表覆盖 `anas config list <module> --json` 的全部参数；
+- [ ] 配置表覆盖 `anas config list <module> --json` 的全部参数，区分输入必填、解析必有和
+      默认来源，且内置清单没有 `type: "unknown"`；
+- [ ] 单字段 constraints 与统一 schema 一致；条件/跨字段规则写入作用说明并有 resolver、
+      plan/Hook 或应用层验证，未增加逐 Module 的 API 适配；
 - [ ] IAM、LDAPS、Group、管理员、数据库和不支持项都有明确结论；
 - [ ] 敏感值没有进入示例 argv、日志或普通环境变量；
 - [ ] 生成标记、临时页面、目录、链接和导航没有漂移；

@@ -2,7 +2,9 @@
 
 This page records the current implementation, security boundaries, and verification entry points for `ddns_updater`. User instructions are in the [English README](../README.en.md).
 
-> Status: current implementation; based on `2.10.0-r1` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> Status: current implementation; based on `2.10.0-r3` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -13,24 +15,26 @@ This page records the current implementation, security boundaries, and verificat
 
 ## Compose topology
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_ddns-updater` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ddns-updater:2.10.0` | `` | 0 |
+<!-- generated:compose-topology:end -->
 
 ## Configuration contract
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ddns_updater.dns_provider` | string | `—` | `DDNS_UPDATER_DNS_PROVIDER` | yes | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_updater.domain_prefix` | string | `ddns` | `DDNS_UPDATER_DOMAIN_PREFIX` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_updater.forward_auth_interface` | string | `auto` | `DDNS_UPDATER_FORWARD_AUTH_INTERFACE` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_updater.publicip_dns_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_DNS_PROVIDERS` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_updater.publicip_fetchers` | string | `http` | `DDNS_UPDATER_PUBLICIP_FETCHERS` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_updater.publicip_ipv4_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_IPV4_PROVIDERS` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_updater.publicip_ipv6_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_IPV6_PROVIDERS` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_updater.publicip_providers` | string | `all` | `DDNS_UPDATER_PUBLICIP_PROVIDERS` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_updater.ttl` | string | `300` | `DDNS_UPDATER_TTL` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `ddns_updater.zone_identifier` | string | `—` | `DDNS_UPDATER_ZONE_IDENTIFIER` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `ddns_updater.dns_provider` | string | — | — | — | `DDNS_UPDATER_DNS_PROVIDER` | no | yes | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_updater.domain_prefix` | string | — | `ddns` | `static` | `DDNS_UPDATER_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_updater.forward_auth_interface` | enum (`auto`, `http`) | — | `auto` | `static` | `DDNS_UPDATER_FORWARD_AUTH_INTERFACE` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_updater.publicip_dns_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_DNS_PROVIDERS` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_updater.publicip_fetchers` | string | — | `http` | `static` | `DDNS_UPDATER_PUBLICIP_FETCHERS` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_updater.publicip_ipv4_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_IPV4_PROVIDERS` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_updater.publicip_ipv6_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_IPV6_PROVIDERS` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_updater.publicip_providers` | string | — | `all` | `static` | `DDNS_UPDATER_PUBLICIP_PROVIDERS` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_updater.ttl` | int | — | `300` | `static` | `DDNS_UPDATER_TTL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `ddns_updater.zone_identifier` | string | — | — | — | `DDNS_UPDATER_ZONE_IDENTIFIER` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
 

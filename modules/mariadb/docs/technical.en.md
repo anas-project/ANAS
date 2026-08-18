@@ -2,7 +2,9 @@
 
 This page records the current implementation, security boundaries, and verification entry points for `mariadb`. User instructions are in the [English README](../README.en.md).
 
-> Status: current implementation; based on `12.3.2-r1` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> Status: current implementation; based on `12.3.2-r3` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -13,18 +15,20 @@ This page records the current implementation, security boundaries, and verificat
 
 ## Compose topology
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_mariadb` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-mariadb:12.3.2` | `mariadb` | 2 |
 | `anas_mariadb_adminer` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-adminer:5.5.0` | `mariadb, traefik` | 0 |
 | `anas_mariadb_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-mariadb:12.3.2` | `mariadb` | 1 |
+<!-- generated:compose-topology:end -->
 
 ## Configuration contract
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `mariadb.adminer_enabled` | string | `false` | `MARIADB_ADMINER_ENABLED` | no | no | yes | `container_recreate` | The optional Compose service set changes. |
-| `mariadb.root_password` | string | `—` | `MARIADB_ROOT_PASSWORD` | no | yes | no: `rotate-mariadb-root-password` | `credential_rotate` | MYSQL_ROOT_PASSWORD only initializes an empty data directory. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mariadb.adminer_enabled` | bool | — | `false` | `static` | `MARIADB_ADMINER_ENABLED` | no | no | no | yes | `container_recreate` | The optional Compose service set changes. |
+| `mariadb.root_password` | string | — | — | `generated` | `MARIADB_ROOT_PASSWORD` | no | yes | yes | no: `rotate-mariadb-root-password` | `credential_rotate` | MYSQL_ROOT_PASSWORD only initializes an empty data directory. |
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
 

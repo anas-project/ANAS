@@ -14,7 +14,7 @@ patch by default. `scripts/ci/anas-release-version.sh` owns this calculation and
 fixture test.
 
 Only the `anas-release` branch triggers an automatic Core publication. A push changing
-`cmd/anas/`, `internal/`, `install.sh`, `go.mod`, `go.sum`, or the Core release build and installer
+`cmd/anas/`, `cmd/anas-helper/`, `internal/`, `install.sh`, `go.mod`, `go.sum`, or the Core release build and installer
 test scripts starts the workflow. Neither a `master` push nor the
 Module/container workflow triggers a Core release, so the two release paths advance independently.
 Every run pins the triggering commit SHA, so a later branch update cannot change a queued build.
@@ -52,7 +52,10 @@ gh workflow run anas-release.yml --ref anas-release -f version=0.2.0 -f bump=pat
 
 The publishing run executes `go test ./...`, cross-compiles static Linux binaries for `amd64` and
 `arm64`, creates `anas_linux_amd64.tar.gz`, `anas_linux_arm64.tar.gz`, and `SHA256SUMS`, then
-publishes an immutable GitHub Release. `.github/workflows/anas-cnb-release.yml` verifies that CNB's
+publishes an immutable GitHub Release. Each archive contains `anas`, `anas-helper`, and
+`release.json`; the build runs `anas version --json` natively or through QEMU and compares its
+version, commit, and release-commit timestamp with both the manifest and release decision.
+`.github/workflows/anas-cnb-release.yml` verifies that CNB's
 tag identifies the same commit. A new tag starts CNB's trusted `tag_push`; a historical repair uses
 a temporary same-name branch and `branch.create`. The CNB pipeline downloads and verifies the exact
 GitHub assets, then creates the Release and attachments with its short-lived token. CNB does not
@@ -72,7 +75,8 @@ An empty `commit` is resolved from the immutable tag. A temporary CNB repair bra
 after verification succeeds. Repository-level `cnb-sync.yml` still mirrors all refs after the
 complete Core workflow succeeds.
 
-Release builds expose their identity through:
+Release ldflags embed the version, source commit, and deterministic release-commit timestamp rather
+than the wall-clock start of CI. Release builds expose that identity through:
 
 ```bash
 anas version
@@ -99,8 +103,13 @@ commit to `master` only after every required artifact succeeds.
 
 Each Module release is `<version>-r<revision>`. A version change resets revision to `1`; a change to
 the Module runtime directory, its declared shared contexts, its modules/images/mirrors catalog
-entries, or the established packager implementation increments the revision once. Documentation,
-localization documentation, tests, caches, and local build residue do not increment it.
+entries, or the established packager implementation increments the revision once. README files,
+Module/Contract technical documentation, Contract `documentation.yml`, localization inventory,
+tests, caches, and local build residue do not increment it. The calculator normalizes the top-level
+manifest revision and catalog-owned Compose image tags because they are generated results, then
+regenerates all four bilingual Module documents. A YAML service-level check verifies every reference
+to a catalog-owned image before the metadata and documentation checks pass; a tag in a comment cannot
+satisfy an active service reference.
 
 Preview or verify the result locally:
 
@@ -122,7 +131,8 @@ module/<name>/<version>-r<revision>
 
 One reproducible bundle contains `package.yml`, `module.yml`, Compose, runtime/build files,
 providers/assets, runtime Contract schemas, hook source, and precompiled Linux `amd64` and `arm64`
-hooks. It excludes README, localization documentation, tests, caches, and host build residue.
+hooks. It excludes README, Module/Contract technical documentation, Contract `documentation.yml`,
+localization inventory, tests, caches, and host build residue.
 
 ```bash
 go run ./cmd/package-module \

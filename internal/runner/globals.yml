@@ -11,9 +11,14 @@
 api_version: anas.dev/v1
 kind: GlobalConfig
 config:
-  required:
+  input_required:
     - base_domain
     - email
+  must_resolve:
+    - timezone
+    - default_language
+    - default_locale
+    - host_ip
   defaults:
     container_prefix: anas_
     network_prefix: anas_
@@ -22,6 +27,48 @@ config:
     ipv4: "true"
     ipv6: "true"
     dns_server: 223.5.5.5
+  types:
+    base_domain: string
+    email: string
+    timezone:
+      kind: string
+      constraints:
+        format: iana_timezone
+      default_source: host
+    container_prefix: string
+    network_prefix: string
+    host_ip:
+      kind: string
+      constraints:
+        format: ipv4
+      default_source: runtime
+    host_lan_ip:
+      kind: string
+      constraints:
+        format: ipv4
+      default_source: runtime
+    host_lan_bridge_ip:
+      kind: string
+      constraints:
+        format: ipv4
+      default_source: runtime
+    host_lan_arp_check: bool
+    dns_server: string
+    default_language:
+      kind: string
+      constraints:
+        format: language_tag
+      default_source: host
+    default_locale:
+      kind: string
+      constraints:
+        format: locale
+      default_source: host
+    chinese_speedup: bool
+    chinese_build_speedup: bool
+    ipv4: bool
+    ipv6: bool
+    virtual_domain: bool
   changes:
     base_domain:
       effect: immutable

@@ -7,13 +7,15 @@
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `authentik` |
-| 版本 / revision | `2026.5.6-r4` |
+| 版本 / revision | `2026.5.6-r8` |
 | 状态 | `developing` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -128,14 +130,14 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `authentik.db_name` | string | `authentik` | `AUTHENTIK_DB_NAME` | 否 | 否 | 是 | `container_recreate` | 应用数据库名 |
-| `authentik.db_type` | string | `auto` | `AUTHENTIK_DB_TYPE` | 否 | 否 | 否：`migrate-authentik-database` | `data_migrate` | 关系数据库类型或自动选择 |
-| `authentik.domain_prefix` | string | `auth` | `AUTHENTIK_DOMAIN_PREFIX` | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
-| `authentik.ldap_enabled` | string | `true` | `AUTHENTIK_LDAP_ENABLED` | 否 | 否 | 是 | `container_recreate` | 是否启用 LDAP Source |
-| `authentik.ldap_password_writeback` | string | `true` | `AUTHENTIK_LDAP_PASSWORD_WRITEBACK` | 否 | 否 | 是 | `container_recreate` | 是否允许目录密码回写 |
-| `authentik.log_level` | string | `warn` | `AUTHENTIK_LOG_LEVEL` | 否 | 否 | 是 | `container_recreate` | 日志级别 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `authentik.db_name` | string | — | `authentik` | `static` | `AUTHENTIK_DB_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 应用数据库名 |
+| `authentik.db_type` | enum (`auto`, `postgres`) | — | `auto` | `static` | `AUTHENTIK_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-authentik-database` | `data_migrate` | 关系数据库类型或自动选择 |
+| `authentik.domain_prefix` | string | — | `auth` | `static` | `AUTHENTIK_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
+| `authentik.ldap_enabled` | bool | — | `true` | `static` | `AUTHENTIK_LDAP_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 LDAP Source |
+| `authentik.ldap_password_writeback` | bool | — | `true` | `static` | `AUTHENTIK_LDAP_PASSWORD_WRITEBACK` | 否 | 否 | 否 | 是 | `container_recreate` | 是否允许目录密码回写 |
+| `authentik.log_level` | string | — | `warn` | `static` | `AUTHENTIK_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | 日志级别 |
 
 ### 查询和修改
 
@@ -171,7 +173,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2026.5.6-r7`（reviewed 2026-08-13）
+- Module version / 版本：`2026.5.6-r8`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — All long-running authentik services receive the module .env and TZ; no separate application timezone is forced.
 - Language scope / 语言范围：authentik Web UI
 - Selection / 选择方式：`browser`

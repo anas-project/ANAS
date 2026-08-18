@@ -2,7 +2,7 @@
 
 日期：2026-08-16
 
-状态：**提案**。`anasd`、`/api/v1/*` 和本文出现的所有前端页面**当前均不可执行**，仓库中不存在对应实现。本文描述目标形态与实施顺序，不是操作指南。
+状态：**M0 部分实施（开发骨架），M0.5/M0.6 已实施**。仓库已完成首条只读切片：共享应用层、`anasd`、首批 `/api/v1` 端点及 OpenAPI 契约已经落地；内置配置参数也已补齐类型、输入/解析要求、默认来源和单字段约束投影及 release 校验。它们用于验证架构与契约，尚不是可安装的生产管理面。认证、前端、任务系统、配置 HTTP API、写操作以及安装/发布集成仍未实现。本文除明确标注的 M0/M0.5/M0.6 范围外仍描述目标形态与实施顺序，不是操作指南。
 
 ## 1. 结论
 
@@ -22,7 +22,9 @@
 - 所有主命令已经支持 `anas.dev/cli/v1` JSON 信封，错误码、退出码、进度 JSON Lines、警告和敏感值规则已经文档化。
 - 部署、配置、Module、快照、备份、本地管理员账户已有相对清晰的领域边界。
 - workspace 有真实的排他/共享文件锁（`internal/runner/deployment.go` 的 `acquireRuntimeLock` / `acquireRuntimeSharedLock`，`syscall.Flock`），可作为第一版串行化变更操作的底层保护——但需要改造，见 §2.2。
-- `config list --json` 已经输出 `type`、`allowed_values`、`required`、`default`、`set`、`effect`、`apply`、`sensitive`，字段形状适合驱动表单——但声明覆盖率很低，见 §2.2。
+- `config list --json` 已经输出完整类型、输入/解析要求、默认值及来源、单字段 constraints、
+  `set`、`effect`、`apply` 和 `sensitive`；139 项内置参数进入同一 release gate，足以作为
+  M3 表单的统一元数据基础，见 §2.2。
 - 部署制品不可变，活动部署和历史部署状态独立记录，天然适合管理页面展示、激活和回滚。
 - `backup capabilities → plan → create` 已经是“服务端算出可能性，前端只渲染结果”的现成模板。`internal/runner/backup_interactive.go` 的开头注释写明了这一立场：交互式表单不重写规则，只调用同一条非交互路径，“a web layer rendering the same JSON reaches the same conclusions”。Web 备份页应照抄这条链路，而不是另立一套。
 - 证书已经有唯一签发者和 issuer 中立的消费契约（`ANAS_TLS_*`），管理面可以直接复用，见 §5。
@@ -46,26 +48,53 @@
 
 此外，“谁持有锁、持了多久、为哪个任务”应当成为 API 可见状态。CLI 与 Web 互相阻塞时，操作者需要知道是谁在占用，而不是看到一个没有解释的挂起请求。
 
-#### 2.2.2 Module 配置元数据的声明覆盖率不足以驱动表单
+#### 2.2.2 Module 配置元数据覆盖率与 M0.5/M0.6 修复
 
-机制存在，数据不存在。当前实测：
+M0.5 实施前是“机制存在，数据不足”。2026-08-18 按完整公开 inventory 重测的基线为：
 
 | 指标 | 实测值 |
 | --- | --- |
-| 18 个 module 的 `config.defaults` 参数总数 | 88 |
-| 其中声明了 `config.types` 的 | **10**（ddns_go 2、samba_fs 5、ddns_updater / lego / traefik 各 1） |
+| `config list --json` 公开参数 | 139（17 个 global + 122 个 module） |
+| 18 个 module 的 `config.defaults` 参数总数 | 104 |
+| Module `config.types` 声明 | **12**（其中 10 项同时有 default） |
 | 声明了 `config.required` 的 module | 2 个，各 1 项 |
-| 声明了 `config.changes` 的参数 | 59 |
-| 全局参数（`internal/runner/globals.yml`）的类型声明 | **0**——`globalSchema` 结构体根本没有 `Types` 字段 |
+| 声明了 `config.changes` 的 module 参数 | 67 |
+| 17 个全局参数的类型声明 | **0**——`globalSchema` 结构体当时没有 `Types` 字段 |
 
-还有一处会直接误导前端：`paramTypeDocument` 对“未声明类型”和“声明为 string”**返回同一个值 `"string"`**，API 消费者无法区分“这是自由文本字段”和“没有人声明过这个字段”。
+当时还有一处会直接误导消费者：`paramTypeDocument` 对“未声明类型”和“声明为 string”
+**返回同一个值 `"string"`**，CLI 与未来 API 无法区分“这是自由文本字段”和“没有人声明过
+这个字段”。
 
-**后果**：M3 的 P0 页面“schema 驱动配置表单”按当前数据会把约 89% 的字段渲染成裸文本框，等于把 `config.example.yml` 搬进浏览器。因此需要一个独立的前置里程碑（见 §8 的 M0.5），内容是：
+M0.5 已完成这项前置工作：
 
-1. 回填 18 个 module 的 `config.types` 与 `config.required`；
-2. 给 `globalSchema` 增加 `Types`，并回填 `globals.yml`；
-3. 让 `ParamType` 携带“是否声明过”的语义，API 对未声明字段返回 `type: "unknown"` 而非 `"string"`；
-4. 在 `cmd/gen-module-docs` 的 `--check` 一类校验里加闸，新增参数未声明类型即失败。
+1. 122 个 module 参数与 17 个 global 参数都有显式类型；`config list --json` 的
+   `type: "unknown"` 数量为 0；
+2. `globalSchema` 保存类型，显式 `string` 与未声明类型不再合并；`unknown` 只保留为旧
+   Module/开发态兼容值；
+3. `required` 逐项保守审查：只有无默认值、无运行时来源且无条件必需时才声明，条件要求
+   仍由 resolver、plan 或 Hook 校验；
+4. 内置 Module 的 release gate 覆盖完整公开 inventory，新增参数未声明类型即失败。
+
+M0.6 继续消除了“required 一个布尔值同时代表三种事情”的歧义：
+
+1. `required` 只作为兼容别名，必须等于 `input_required`，表示操作者是否必须显式输入；
+   `must_resolve` 单独表示应用默认值和其他来源后，最终值是否必须非空；
+   `default_source: none` 只排除无条件来源，仍允许 deployment resolver 条件注入；
+2. `has_default` 区分无默认值与明确的空字符串默认值，`default_source` 统一投影
+   `none`/`static`/`host`/`runtime`/`generated`/`inherited`；输入必填项不得同时有默认值或
+   其他无条件来源；
+3. `constraints` 只承载 `minimum`/`maximum`、`min_length`/`max_length`、`pattern` 和
+   `format` 这类单字段规则；条件必填、跨字段关系和依赖运行态的规则继续由 resolver、
+   应用层、plan 或 Hook 校验；
+4. CLI 投影明确不是 JSON Schema：两者的 `required` 和 `default` 语义不同，前端不能把
+   这组字段不经转换直接当作 JSON Schema；
+5. shell release gate 固定 139 项基线、字段完整性、兼容别名、默认值/来源互斥和代表性
+   constraints，防止生成器、CLI 和声明层漂移。
+
+这不表示 M0 已经提供配置 HTTP 端点；当前 `anasd` 仍只有首批只读系统/部署接口。M3 的
+配置 GET/validate/PUT 必须消费与 CLI 相同的应用层 schema，**绝不为每个 Module 编写独立
+HTTP 适配或从 CLI JSON 反解析元数据**。这样新增 Module 参数只改声明和统一投影，不改
+handler 分支。
 
 #### 2.2.3 子进程环境继承在守护进程下语义改变
 
@@ -238,7 +267,7 @@ queued -> running -> succeeded
 1. **管理面必须在被管理系统停机时仍然可达。** 这是 §3.1 把 `anasd` 留在宿主机的全部理由。任何“把入口交给 Traefik”的设计都会在最需要控制台的时刻——Traefik 配错、apply 失败回滚、证书过期——把控制台一起带走。
 2. **ANAS 已经有唯一的证书签发者，不要再造第二个。** lego 在每个部署里都建内部 CA（`modules/lego/lego/ca.sh`），无论是否使用 ACME：先签发内部通配证书，ACME 成功后由 `cert.sh` 的 `adopt` 在**同一组路径上原地替换**，`verify_published` 拒绝“签发成功但实际还在用自签名”，`.issuer` 标记文件记录当前签发者，`renew` 只重签内部 CA 自己拥有的证书。消费者只读 issuer 中立的 `ANAS_TLS_CERTS_DIR` / `ANAS_TLS_CERT_NAME` / `ANAS_TLS_KEY_NAME`，不知道也不需要知道当前是哪一种。
 
-`ca.sh` 的开头注释已经写明了为什么不能有第二个签发者：曾经每个 module 各自生成自签名证书，“这就是为什么谁也不信谁”。
+两处措辞要精确，否则容易照着错的心智模型实现：lego 的兜底**不是“自签名”，是内部 CA 签发**——一个 CA 装一次覆盖全部服务，而不是每个服务各自自签；`ca.sh` 的开头注释正是写明了为什么不能有第二个签发者：曾经每个 module 各自生成自签名证书，“这就是为什么谁也不信谁”。顺序上它也**不是“ACME 失败才兜底”**，而是 `ca.sh bootstrap` **总是先跑**、拿到内部证书，之后才尝试 ACME 并原地替换。所以“跟随 lego 的行为”的准确含义是：**任何时刻都有可用证书，原地升级，中间没有空窗。**
 
 **因此：`anasd` 不自己签发长期证书，它和 Traefik 一样是 `ANAS_TLS_*` 的消费者。** 提问里设想的方向——anasd 生成自签名证书、再把它塞进 lego、有正式证书时替换——是反的：那会制造第二个签发者，而“内部证书 → ACME 证书”的替换 lego 已经完整实现了，anasd 什么都不用做，只需要在文件被原地替换后重新加载。
 
@@ -305,7 +334,7 @@ queued -> running -> succeeded
 2. **通配证书覆盖 `<base_domain>` 和 `*.<base_domain>`，不覆盖 IP。** 所以管理面必须**按名字访问**（`anas.<base_domain>`），按 IP 访问一定会报证书名不匹配。代价是管理员的设备要能解析这个名字：部署内有 samba_dc 时它就是 DNS，否则需要一条 hosts 记录或路由器的 DNS 配置。这是名字访问唯一的运维成本，应当写进安装文档。不建议为管理面在 `ca.sh` 里加 `IP:` SAN——ACME 无法为私网 IP 签发，这会让内部证书和 ACME 证书的形状产生差异，破坏 lego “消费者看不出区别”的核心不变量。
 3. **私钥是 0600 且由容器内的 root 写出。** `anasd` 必须以能读取它的身份运行。鉴于它本来就需要 Docker socket（权限近似 root），这不是新增的权限提升，但必须在 systemd unit 和文档里写明，不能等到运行时报 permission denied 才发现。
 
-第 2 点对引导级不适用：引导级用的是 `anasd` 自签的临时证书，签给什么名字由它自己决定，因此引导阶段按 IP 访问是可行的——这也正是引导阶段还没有可用 DNS 时唯一能走的方式。名字访问的要求只从完整级开始。
+第 2 点对可选的临时 HTTPS 引导路径不适用：显式执行 `anas console tls --self-signed` 时使用的是 `anasd` 的短期自签证书，签给什么名字由它自己决定，因此该路径可以按 IP 访问。默认的 LAN HTTP 引导同样不依赖 DNS；名字访问的要求只从完整级开始。
 
 ### 5.4 端口策略：不做端口移交
 
@@ -352,36 +381,74 @@ queued -> running -> succeeded
 
 两条访问路径（§5.4）应当有**不同的认证提供方**，这不是冗余，而是它们各自唯一合理的选择：
 
-| 路径 | 认证 | 角色来源 |
-| --- | --- | --- |
-| `https://anas.<base_domain>/`（经 Traefik） | IAM 的 OIDC（Authentik / LLNG） | 目录组 |
-| `https://anas.<base_domain>:<admin_port>`（直连） | 本地 break-glass 账号 | 服务配置 |
+| 路径 | 认证 | 身份来源 | 是否依赖被管理组件 |
+| --- | --- | --- | --- |
+| `https://anas.<base_domain>/`（经 Traefik） | `oauth2_proxy` forwardauth → IAM 的 OIDC | 目录组 `Admins` | 是（Traefik + IAM） |
+| `https://anas.<base_domain>:<admin_port>`（直连，自带 HTTPS） | 本地 `admin` 账号 | `anasd` 自己的 0600 凭据文件 | 否 |
+
+**`anasd` 必须自己终结 HTTPS 并永久持有直连监听器**，理由正是“Traefik 挂了也要能登录”。这已经是 §5.3 和 §5.4 的结论：证书从 lego 的 `ANAS_TLS_*` 读取并热重载，端口固定独占、从不让出。两条路径的差别不在冗余，而在**只有直连那条不依赖任何被管理组件**——所以它是故障期唯一可用的那条，也因此必须自带 TLS 而不是靠反代提供。
 
 **本地账号永久保留，这是硬要求。** 如果 OIDC 是唯一入口，那么 Authentik 或 LLNG 出问题的时候——正是最需要管理面去修它的时候——管理员登不进来。这与 §5.4 的端口移交是同一个失败模式，只是上移了一层。§7.1 的 break-glass 条款因此不是过渡措施。
 
-#### 5.6.1 `Admins` 组的边界
+#### 5.6.1 角色模型：MVP 只有一个角色，`Admins` 直接映射为 `owner`
 
-[管理员账户体系](/architecture/admin-account-system)已经把 `Admins` 定义为契约：“目录角色 `Admins` 是统一的全应用管理员契约：所有接入 Samba AD 或 IAM 的 Module 都把它映射为最高应用级角色，并在移组后撤销。”所以用它做管理后台的组来源是对的，不需要新造一个组。
+**决定：MVP 不做角色分层。** `Admins` 组成员即控制台 `owner`，拥有全部能力。ANAS 面向家用与小型公司 NAS，这个规模下一个部署通常只有一到两个真正的管理员，引入 `viewer`/`operator`/`owner` 的分层只会增加配置负担而没有对应的收益。
 
-**但同一段话划了一条界**：这个契约“不把用户加入 `Domain Admins`、`FS Admins`，也不授予宿主机或数据库超级权限；这些仍由各自的高权限组和 ACL 独立控制”。
+这个决定与产品既有姿态一致：`oauth2_proxy` 的 `allow_groups` 默认值就是 `Admins`，其注释写明“默认是管理员组，因为这个门后面的服务都是管理界面”。`ddns_updater` 一类没有自己登录的管理界面今天已经是这样被守住的。控制台走同一条路，是统一而非例外。
 
-而管理后台能控制 Docker、恢复数据、读取凭据——这些正是宿主机级权限。**把 `Admins` 直接映射成控制台的 `owner` 会突破这条界**：一个今天只意味着“所有应用的最高应用级角色”的组，会在无人改动组成员的情况下静默获得宿主机控制权。
+**但要如实记录它越过的那条界，以便将来需要时知道回到哪里。**[管理员账户体系](/architecture/admin-account-system)把 `Admins` 定义为“统一的全应用管理员契约”，同一段话同时划了界：该契约“不把用户加入 `Domain Admins`、`FS Admins`，也不授予宿主机或数据库超级权限；这些仍由各自的高权限组和 ACL 独立控制”。
 
-建议的映射：
+而控制台能控制 Docker、恢复数据、读取凭据——这些正是宿主机级权限。所以 MVP 的映射**确实扩大了 `Admins` 的含义**：加入这个组从此附带宿主机控制权。这是一个知情的取舍，不是疏忽，处理方式是：
 
-| 目录来源 | 控制台角色 | 能做什么 |
-| --- | --- | --- |
-| `Admins` 组成员 | `operator` | 查看状态、启停 Module、看任务与审计 |
-| 独立的平台管理角色（对应文档中的 `platform_admin`） | `owner` | 配置写入、apply、快照/备份恢复、凭据 reveal |
-| 本地 break-glass 账号 | `owner` | 同上，且是 IAM 不可用时的唯一入口 |
+- 管理员账户体系文档要同步补一句，说明 `Admins` 在部署了管理控制台后额外意味着什么——不能让读者从旧描述里推出错误结论；
+- 控制台在把某人识别为 `Admins` 成员并授予 `owner` 时，审计记录里写明授权来源是目录组，而不是只记用户名。
 
-这保持了 §7.5 的三角色设计，也让“加入 `Admins`”这个动作的含义不发生变化。
+**便宜的保险：** 即使 MVP 只有一个角色，也在 handler 层显式声明每个端点需要的权限（`requirePermission(perm.ConfigWrite)` 一类），而不是靠“登录了就都能干”。这样将来要分层时是加一张映射表，而不是逐页面回补鉴权——后者是这类系统最常见的返工。触发分层的信号很明确：**当有人第一次想给某个非管理员看状态页的时候。** 在那之前不做。
 
-#### 5.6.2 forwardauth 的身份头只能在 Traefik 路径上被信任
+#### 5.6.2 不需要把 anasd 的任何部分放进容器——`oauth2_proxy` 已经是那个 shim
 
-最省事的实现是让 Traefik 用 `oauth2_proxy` 的 forwardauth 中间件挡在路由前，`anasd` 读转发过来的身份头——不需要在 `anasd` 里写 OIDC 客户端。`anasd` 不是 Module，无法使用 `requires_capabilities: iam` 那套机制（它在部署渲染期运行、产物是各 Module 的 `.env`），所以这条路径比自己实现 OIDC 客户端现实得多。
+设想“把前端和一部分后端放进 Docker 容器就能直接用 OIDC”是对的方向，但这件事已经做完了，不需要新写：
 
-**但它有一个会直接导致完全绕过认证的陷阱：** 如果 `anasd` 无条件信任 `X-Forwarded-User` 一类的头，那么任何能访问直连端口的人只要自己带上这个头就是管理员。
+`modules/oauth2_proxy/module.yml` 已经是一个完整的 OIDC 客户端 Module：
+
+- `requires_capabilities: iam`（`any_of: [oidc]`）——它是 IAM 的普通 OIDC 客户端，走的正是渲染期那套 `ANAS_IAM_BINDING__*` 机制；
+- `provides: forward_auth`（`http` 接口）——“Traefik 对每个请求发问，只在 2xx 时放行”；
+- `exports: ANAS_FORWARD_AUTH_*`——受保护 Module 挂在自己 router 上的中间件名；
+- `allow_groups` 默认 `Admins`，且**组判定由 IAM 通过 `ANAS_IAM_CLIENT__*__ALLOW_GROUPS` 完成，“no group logic lives here”**。
+
+所以控制台要拿到 OIDC，需要做的只是在它的 Traefik 路由上挂 `ANAS_FORWARD_AUTH_*` 中间件——也就是 §5.4 里那个 `__MIDDLEWARES` 字段。`anasd` 里不写任何 OIDC 客户端代码，也不需要容器化。组到角色的判定发生在 IAM，不在控制台。
+
+**明确不要做的事：把前端同时从容器和 `go:embed` 两处提供。** 那会产生版本偏斜——容器里的 SPA 和宿主机二进制里嵌的 SPA 可以是两个不同版本，对同一个 API 说话。一个产物、一个版本是 `go:embed` 方案的主要好处，不要为了 OIDC 放弃它。
+
+同理，**不要把后端拆成"容器内一半、宿主机一半"**。§3.1 拒绝把控制台放进 Compose 的理由（`stop`、回滚、Traefik 故障会把管理面一起带走）对"一半在容器里"同样成立，只是变成了一半失效——而失效的那一半在故障期间恰好是不确定的哪一半。
+
+#### 5.6.3 break-glass 账号：可以同名，不可同密码，且永远可用
+
+**账号名沿用 `admin` 是好的**，管理员不需要记第二个名字。
+
+**但密码必须是独立的，不能等于 Samba 的 admin 密码。** 三条理由，第三条是决定性的：
+
+1. `samba_dc.admin_password` 的变更效果是 `credential_rotate`、`sensitive: true`，由 `.anas/secrets.yml` 持有，`config set` 明确拒绝写它。要让控制台校验一个"和 Samba 相同"的密码，控制台就得能读取目录管理员凭据——于是攻破控制台等于攻破域管理员。这与 §6.2 "secret 永不进入普通 API 路径"直接冲突。
+2. Samba 侧通过 `rotate-samba-admin-password` 轮换后，两边会静默失步，或者轮换动作被迫连带改动控制台凭据。
+3. **决定性的一条：破玻璃场景下 Samba 是不可用的**，所以没法拿密码去问 Samba 验证——控制台无论如何都必须在本地存一份可验证的凭据。既然本地副本不可避免，把它做成**独立**凭据就是零成本的，换来的是隔离：主系统失效不蕴含应急凭据也失效或已泄露。
+
+所以：同名 `admin`，独立密码，Argon2id 哈希存在 `anasd` 自己的 0600 文件里，与 workspace 的 secret store 无关。
+
+**不要按 OIDC 健康状态自动启用/禁用本地登录。** 这是 §5.4 端口移交、§5.5 关直连的同一个失败模式，再上移一层：
+
+- OIDC 可以**在线但配错**——client secret 错、redirect URI 错、组映射断、证书过期。健康检查通过，本地登录保持禁用，管理员被锁在门外，而他要修的正是这个配置。
+- 健康检查本身会变成安全关键控制：能让 `anasd` 误判"OIDC 挂了"的攻击者，就能启用本地登录路径。这是一次降级攻击，与 §5.2 单向棘轮防的是同一类事。
+- 反过来，OIDC 真的挂了但探测慢或抖动时，管理员要等。
+
+**破玻璃的含义是玻璃随时能砸。** 一个只在传感器报火警时才解锁的破玻璃箱不是破玻璃箱。正确形态：
+
+- 本地登录**始终**在直连监听器上可用（§5.5 的固定端口），不依赖任何探测；
+- 本地登录路径**只存在于直连监听器**，经 Traefik 的那个源根本不暴露它——这样对外发布的路由上没有"OIDC 绕过路径"；
+- 代价用限流、审计、可选二次因素来控，而不是用可用性来控：本地登录尝试全部进审计日志，成功登录额外产生一条显著的高危事件记录。
+
+#### 5.6.4 forwardauth 的身份头只能在 Traefik 路径上被信任
+
+`anasd` 从 `oauth2_proxy` 转发的头里读身份，有一个会直接导致完全绕过认证的陷阱：**如果无条件信任 `X-Forwarded-User` 一类的头，那么任何能访问直连端口的人只要自己带上这个头就是管理员。**
 
 因此：
 
@@ -397,11 +464,11 @@ OIDC 接入属于 P2，排在本地账号与 §5.2 分级之后。首版只做�
 
 | 页面 | 主要内容 | 首版优先级 |
 | --- | --- | --- |
-| 引导（引导级） | 指纹核对提示、token 输入、Module 选择、初始配置、首次 apply、证书就绪后的跳转指引 | P0 |
+| 引导（引导级） | token 输入、未加密提示、Module 选择、初始配置、首次 apply、证书就绪后的跳转指引 | P0 |
 | 登录/初始化 | 首次管理员设置（在完整级通道上）、登录、会话过期 | P0 |
 | 总览 | 服务能力、活动部署、Module 健康、配置待应用、最近任务/快照/备份、当前证书来源与监听形态 | P0 |
 | Module | 版本、运行状态、健康、依赖、入口地址、启停/重启 | P0 |
-| 配置 | 由 manifest/schema 驱动的分组表单、敏感字段 set/unset、变更效果 | P0（依赖 M0.5） |
+| 配置 | 由 manifest/schema 驱动的分组表单、敏感字段 set/unset、变更效果 | P0（M0.5/M0.6 前置已满足） |
 | 部署 | plan、apply、部署历史、详情、回滚 | P0 |
 | 任务中心 | 实时进度、日志、警告、失败详情、历史 | P0 |
 | 快照 | 创建、固定、验证、删除、恢复 | P1 |
@@ -441,9 +508,10 @@ OIDC 接入属于 P2，排在本地账号与 §5.2 分级之后。首版只做�
 - 未持有可信证书时，`anasd` 只提供 §5.2 的**引导级**能力。引导级默认走 LAN 明文 HTTP，其残余风险按 §5.2.1 如实标注并在升级后提示轮换引导期输入过的凭据；HTTP → HTTPS 的升级是单向的，证书事后消失应报错而非降级。
 - 第一版使用独立 ANAS 本地 break-glass 管理员，不依赖被管理的 Authentik/LLNG。经 Traefik 的 OIDC 是 P2 的附加路径（§5.6），**本地入口永久保留**且可限制为 localhost——IAM 故障时它是唯一入口。
 - 身份头（`X-Forwarded-User` 等）只在标记为“经受信代理”的监听器上解析，直连监听器一律剥离；受信来源地址显式声明，并有伪造头的负面测试。
-- 目录组 `Admins` 映射为控制台 `operator`，不映射为 `owner`——见 §5.6.1 的边界理由。
+- 目录组 `Admins` 映射为控制台 `owner`（MVP 单角色，见 §5.6.1）。这扩大了 `Admins` 今天的含义，需同步更新管理员账户体系文档，并在审计里记录授权来源是目录组。
+- 本地 `admin` 账号与 Samba 的 `admin` **同名但不同密码**，独立 Argon2id 哈希存于 `anasd` 自己的 0600 文件；**始终可用，不按 OIDC 健康状态开关**，且其登录路径只存在于直连监听器上（见 §5.6.3）。
 - 引导级到完整级是**单向棘轮**：持久管理员账户一旦建立，bootstrap token 立即作废、临时自签证书丢弃、引导级端点永久返回 404。重新开启只能从 CLI，且需要先移除现有管理员账户。这条要有测试：伪造“证书消失”不得让服务回到引导级。
-- bootstrap token 单次使用、TTL 15–30 分钟、只能由 CLI 生成，并与临时证书指纹一同打印。
+- bootstrap token 单次使用、TTL 15–30 分钟、只能由 CLI 生成；走可选的 `anas console tls --self-signed` 时，与临时证书指纹一同打印。
 - 密码使用 Argon2id；会话使用随机服务端 token，Cookie 设置 `Secure`、`HttpOnly`、`SameSite=Strict`、`Path=/`，并为写操作增加 CSRF token。
 - 限制请求体大小、登录频率、并发任务数和 SSE 连接数；设置 HTTP header/read/write/idle timeout。
 
@@ -479,13 +547,15 @@ OIDC 接入属于 P2，排在本地账号与 §5.2 分级之后。首版只做�
 
 - 登录、凭据 reveal、密码轮换、配置写入、部署、恢复和删除全部进入不可由 API 修改的审计日志；请求体先脱敏。
 - systemd unit 使用最小权限和明确的可写路径。Docker socket 权限本身近似 root；需要在部署文档中明确这一事实，不能把加入 `docker` 组描述成安全沙箱。
-- 设计 `viewer`、`operator`、`owner` 三种角色，即使 MVP 只有 owner，也应在 handler 层显式声明权限，避免以后按页面补鉴权。
+- **MVP 只有 `owner` 一种角色**（§5.6.1）。但每个 handler 仍显式声明它需要的权限，而不是依赖“登录即全权”——将来分层时只需加一张组到权限的映射表，不必逐页面回补鉴权。分层的触发信号是“第一次有人想让非管理员看状态页”，在那之前不做。
 
 ## 8. 分阶段实施
 
 以下估算按一名熟悉当前 Go 代码的开发者计算，重点是依赖顺序，不是承诺日期。**该估算不含 §7.4 的特权模型决策时间。**
 
 ### M0：服务层与契约骨架（3—5 天）
+
+实施状态（2026-08-18）：**部分实施，开发骨架**。首条切片已完成共享应用层、独立 HTTP 适配器、OpenAPI 契约和只读 daemon 入口；认证、前端、任务与任何写操作不属于这一状态声明。完整 M0 验收仍以本节末尾的测试条件为准。
 
 - 建 `internal/application`、统一 `Error`、`ProgressEvent`、`WarningEvent`。
 - 先迁移 `version`、`status`、`deployments list`、`deployments inspect` 四个只读操作。
@@ -497,13 +567,31 @@ OIDC 接入属于 P2，排在本地账号与 §5.2 分级之后。首版只做�
 
 ### M0.5：配置元数据回填（3—4 天，可与 M1 并行）
 
-见 §2.2.2。回填 18 个 module 的 `config.types` / `config.required`，给 `globalSchema` 增加 `Types` 并回填 `globals.yml`，让 API 能区分“未声明”与“声明为 string”，并在生成器校验里加闸。
+实施状态（2026-08-18）：**已实施**。见 §2.2.2。139 项公开参数（17 global + 122 module）
+均有显式类型，`required` 采用保守语义；`globalSchema` 与 Module manifest 进入同一类型投影，
+生成器/release 校验覆盖新增参数。
 
-验收：`config list --json` 中 `type: "unknown"` 的参数数量为零；新增未声明类型的参数会让校验失败。
+验收：`config list --json` 中 `type: "unknown"` 的参数数量为零；新增未声明类型的内置参数
+会让校验失败。M3 的 `anasd`/Web 配置功能复用这份统一 schema，不按 Module 增加适配代码。
+
+### M0.6：配置解析与约束语义（1—2 天，可与 M1 并行）
+
+实施状态（2026-08-18）：**已实施**。见 §2.2.2。`config list --json` 对 139 项参数统一投影
+`required`/`input_required`、`must_resolve`、`has_default`、`default_source` 与单字段
+`constraints`；`required` 仅保留为兼容别名。输入必填、解析后必须存在、静态默认值、其他
+无条件来源和条件/跨字段规则不再混用同一个布尔值。
+
+验收：参数总数与 M0.5 的类型/effect 基线不变；`input_required`/`required` 固定为 2 项，
+`must_resolve` 固定为 22 项；`default_source` 分布固定为 static 111、generated 9、none 8、
+runtime 4、inherited 4、host 3。每项的兼容别名与默认来源完整，输入必填不得和默认值或其他
+无条件来源并存；must-resolve-only 与 source none 的组合用于条件 resolver，不得反推为输入
+必填；约束字段形状由 schema 测试覆盖，当前已声明的数值和 format 代表项通过
+真实 CLI 固定。M3 才提供配置 HTTP API；`anasd`、CLI 与 Web 届时投影同一应用层 schema，
+绝不按 Module 添加 handler。
 
 ### M1：认证、前端壳与只读总览（5—7 天）
 
-- §5.2 的两级通道：临时自签证书 + 指纹打印、bootstrap token、引导级端点白名单、单向棘轮。
+- §5.2 的两级通道：LAN 明文 HTTP 引导、检测到证书后单向升级到 HTTPS、bootstrap token、引导级端点白名单、单向棘轮；可选的 `anas console tls --self-signed`（生成临时证书并打印指纹）。
 - 本地管理员初始化（在完整级通道上）、登录、退出、会话与 CSRF。
 - Vue/TypeScript/Vite 前端、OpenAPI 客户端、布局、错误处理、zh/en 映射表。
 - 引导页、总览、Module 只读列表、部署历史、能力探测。
@@ -523,7 +611,7 @@ OIDC 接入属于 P2，排在本地账号与 §5.2 分级之后。首版只做�
 
 ### M3：配置与 Module 管理（7—10 天）
 
-- 提供 schema 驱动配置 GET/validate/PUT、以 `managedConfigState.Digest` 为 ETag、原子写入和敏感值只写。
+- 提供 schema 驱动配置 GET/validate/PUT、以 `managedConfigState.Digest` 为 ETag、原子写入和敏感值只写；把 M0.6 的元数据转换为输入/解析 schema，而不是把 CLI 投影冒充 JSON Schema。
 - 补齐 Module 启用/停用与多字段配置的核心用例，不再通过生成临时 YAML 再调用 CLI。
 - Module catalog、版本、sync/update 进入任务系统。
 - 前端完成草稿、预检、变更计划和 apply 串联；三类守卫字段只读。
@@ -549,7 +637,7 @@ OIDC 接入属于 P2，排在本地账号与 §5.2 分级之后。首版只做�
   - `install.sh` 新增 `anasd` 二进制、systemd unit、服务用户与管理端口的安装/升级/卸载路径。注意 helper 的 `setcap` 已经因为“升级替换文件会丢失 capability”单独处理过，`anasd` 的 unit 与权限设置会遇到同类问题。
 - 使用真实 Docker/Btrfs test-env 做破坏性测试；普通单元测试不假装覆盖恢复正确性。
 
-整体约 6—9 个开发周，不含特权模型决策与可能的 Traefik entrypoint 扩展。若首版只交付 M0—M2（含 M0.5），可在约 3—4 周得到“可登录、可看状态、可部署和启停、可追踪任务”的可用管理面。
+整体约 6—9 个开发周，不含特权模型决策与可能的 Traefik entrypoint 扩展。若首版只交付 M0—M2（含 M0.5/M0.6），可在约 3—4 周得到“可登录、可看状态、可部署和启停、可追踪任务”的可用管理面。
 
 ## 9. 测试策略
 
@@ -562,7 +650,8 @@ OIDC 接入属于 P2，排在本地账号与 §5.2 分级之后。首版只做�
 - 证书：内部 CA → ACME 的原地替换后，`anasd` 无需重启即在下次握手提供新证书；`virtual_domain` 部署稳定停留在内部 CA 且能升到完整级。
 - 分级：引导级访问完整级端点返回 404 而非 403（不泄露端点存在）；持久管理员建立后 token 与引导级端点立即失效；删除或损坏证书文件不会让服务退回引导级，也不会让 HTTPS 退回明文 HTTP。
 - 代理身份头：向直连监听器发送伪造的 `X-Forwarded-User` 必须得到未认证结果；只有标记为受信代理的监听器、且来源地址在允许列表内时才解析该头。
-- 角色映射：`Admins` 组成员登录后取得 `operator`，尝试凭据 reveal、配置写入、恢复类操作均被拒绝。
+- 破玻璃：停掉 IAM 后本地 `admin` 仍可在直连监听器登录；本地登录路径在经 Traefik 的源上返回 404；本地 `admin` 的密码与 `samba_dc.admin_password` 无关联——轮换任一方不影响另一方。
+- 权限声明：每个变更类 handler 在缺少对应权限时拒绝，即使 MVP 只有一个角色也要有这条断言，防止将来分层时发现某些端点从未声明过权限。
 - 前端：组件测试覆盖配置表单与风险确认；Playwright 覆盖登录、plan/apply、刷新后恢复任务、错误重试；两种语言的错误码映射完整性。
 - 安全：未授权/越权、CSRF、路径穿越、超大 body、日志脱敏、Cookie 属性、凭据缓存策略、无管理员时拒绝非 loopback 监听。
 
@@ -588,20 +677,23 @@ OIDC 接入属于 P2，排在本地账号与 §5.2 分级之后。首版只做�
 | Web 服务放 Compose 里还是宿主机 | 独立宿主机 `anasd`，避免管理面随被管理系统一起停机 |
 | 任务存储用什么 | MVP 用 `.anas/console/` 下的 JSONL，放在接口后；SQLite 会与 `CGO_ENABLED=0` 和极简依赖姿态冲突，见 §4.4 |
 | Web 登录是否复用 IAM | 两条路径不同提供方：经 Traefik 走 OIDC（P2），直连永久保留本地 break-glass，见 §5.6 |
-| **`Admins` 组映射成什么角色** | **`operator`，不是 `owner`。`Admins` 契约明确不含宿主机级权限，控制台 `owner` 需要独立的平台管理角色，见 §5.6.1** |
+| **`Admins` 组映射成什么角色** | **MVP 单角色，直接映射 `owner`。这扩大了 `Admins` 的既有含义，作为知情取舍记录并同步管理员账户体系文档；handler 层仍显式声明权限以便将来分层，见 §5.6.1** |
+| **是否把控制台的一部分容器化以获得 OIDC** | **不需要。`oauth2_proxy` 已是完整 OIDC 客户端并默认 `allow_groups: Admins`，控制台只需在 Traefik 路由上挂 `ANAS_FORWARD_AUTH_*`；不要双份前端或半容器化后端，见 §5.6.2** |
+| **本地应急账号与 Samba admin 的关系** | **同名不同密码。破玻璃时 Samba 不可用，本地必须有可验证副本，所以独立凭据是零成本的隔离，见 §5.6.3** |
+| **本地登录是否按 OIDC 健康状态启用** | **不。始终可用，只存在于直连监听器；按探测开关会在 OIDC “在线但配错”时锁死管理员，并制造一条降级攻击面，见 §5.6.3** |
 | **引导期用 HTTP 还是 HTTPS** | **默认 LAN 明文 HTTP，与同类产品一致；有证书即单向升级到 HTTPS；无证书时开 HTTPS 需显式命令。残余风险（DNS 凭据）按 §5.2.1 标注并在升级后提示轮换** |
 | **引导期临时证书是否提升为 lego 的 CA** | **不。它是丢弃品；CA 私钥位置、60 年生命周期和授权范围三条都不允许，见 §5.2.3** |
 | REST 与 CLI 命令一一映射 | 查询以资源建模，长耗时变更以 action + job 建模，不暴露任意命令字符串 |
 | 是否允许 Web 读取 secret | 普通 API 绝不读取；凭据 reveal 是单独、重认证、短时、no-store 的高危操作 |
 | 是否立即支持取消 | 先让核心调用链接受 context；只对明确安全的阶段开放取消 |
-| **管理面证书从哪来** | **不自签。消费 lego 的 `ANAS_TLS_*`，热重载；引导期走 SSH 隧道而非自签名，见 §5** |
+| **管理面证书从哪来** | **完整级消费 lego 的 `ANAS_TLS_*` 并热重载，不自建长期签发者；引导期默认走 LAN HTTP，可显式生成短期自签证书并带外核对指纹，见 §5.2—§5.3** |
 | **管理面端口与 Traefik** | **固定独占端口，永不移交；Traefik 路由作为 P2 附加路径，需扩展 entrypoint 的 `serversTransport`，见 §5.4** |
 | **Traefik 起来后是否关直连** | **不按 Traefik 状态动态开关。直连范围是静态策略 `lan`/`loopback`；可随状态变化的是能力分级，不是可达性，见 §5.5** |
-| **引导期开放多少功能** | **两级：引导级只含“到达完整级所必需”的操作，用 token + 指纹核对的临时自签证书；拿到 lego 证书后升到完整级并单向锁死，见 §5.2** |
+| **引导期开放多少功能** | **两级：引导级只含“到达完整级所必需”的操作，用一次性 bootstrap token 认证；拿到 lego 证书后升到完整级并单向锁死，见 §5.2** |
 | **完整级的门槛是 ACME 还是任意可信证书** | **任意可信证书。内部 CA + 管理员安装根证书同样算，否则 `virtual_domain` 部署会被永久困在引导级** |
 | **`anasd` 的能力集** | **M4 首版只做不需要 `CAP_SYS_ADMIN` 的子集；是否授予 ambient capability 作为独立决策，见 §7.4** |
 | **Web 能否创建 workspace** | **不能。`anas init` 保持为终端操作；登录页在无注册 workspace 时显式提示命令，见 §6.1** |
-| **配置元数据够不够驱动表单** | **不够。M3 之前需要 M0.5 回填 types/required，见 §2.2.2** |
+| **配置元数据够不够驱动表单** | **足够作为 M3 基础。M0.5 为 139 项参数回填显式类型，M0.6 分离输入必填、解析后必有、默认来源和单字段 constraints，并建立 release gate；M3 直接复用统一 schema，绝不按 Module 单独适配，见 §2.2.2** |
 
 ## 12. 参考资料
 

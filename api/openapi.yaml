@@ -1,0 +1,536 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: ANAS Web API
+  version: 0.1.0-m0
+  description: |
+    Read-only M0 API for the ANAS administration daemon. This contract is
+    versioned independently from the CLI JSON contract: HTTP responses use
+    `anas.dev/api/v1`, while the CLI continues to use `anas.dev/cli/v1`.
+
+    Workspaces are registered when `anasd` starts. Callers address them only by
+    opaque workspace ID; request and response DTOs never contain host filesystem
+    paths. Authentication, write operations, jobs, and the web frontend are not
+    part of M0.
+servers:
+  - url: http://127.0.0.1:8080
+    description: Default loopback-only development listener
+security: []
+tags:
+  - name: Service
+  - name: Workspace
+  - name: Deployments
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Check whether the daemon is alive
+      description: Does not inspect Docker, Btrfs, tools, or any workspace.
+      tags: [Service]
+      responses:
+        "200":
+          description: The daemon is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowedProblem"
+  /api/v1/system:
+    get:
+      operationId: getSystem
+      summary: Read daemon build information and M0 capabilities
+      tags: [Service]
+      responses:
+        "200":
+          description: Build information, capability flags, and registered workspace IDs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/status:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    get:
+      operationId: getWorkspaceStatus
+      summary: Read the active and previous deployment state
+      tags: [Workspace]
+      responses:
+        "200":
+          description: The current workspace status. A new workspace returns a null active deployment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceStatusResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/deployments:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    get:
+      operationId: listDeployments
+      summary: List deployment state in reverse chronological order
+      tags: [Deployments]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of deployment state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/deployments/{id}:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - $ref: "#/components/parameters/DeploymentID"
+    get:
+      operationId: inspectDeployment
+      summary: Inspect a deployment manifest and its state
+      description: |
+        Returns a deliberately safe projection of the deployment artifact. Host
+        paths, hook commands, resource specifications, and secret-store keys are
+        omitted even when they exist in the on-disk manifest. All digests derived
+        from configuration, rendered trees, or other secret-bearing inputs are
+        omitted as well, so the read API cannot act as an offline guessing oracle.
+      tags: [Deployments]
+      responses:
+        "200":
+          description: Safe deployment metadata and state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentDetailResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+components:
+  parameters:
+    WorkspaceID:
+      name: ws
+      in: path
+      required: true
+      description: Opaque ID of a workspace registered when the daemon started; never a filesystem path.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    DeploymentID:
+      name: id
+      in: path
+      required: true
+      description: Deployment artifact ID, not a path.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of deployments to return.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor returned as `next_cursor` by the preceding page.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+  responses:
+    BadRequestProblem:
+      description: The Host is not a numeric loopback address, a path parameter is invalid, or the query string is malformed or unsupported.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFoundProblem:
+      description: The registered workspace or deployment does not exist.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PreconditionProblem:
+      description: Deployment metadata exists but is invalid or unreadable.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    MethodNotAllowedProblem:
+      description: The route only accepts GET.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+            const: GET
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    RequestCanceledProblem:
+      description: Request processing was canceled.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InternalProblem:
+      description: The daemon could not read or map the requested state.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    DeadlineProblem:
+      description: The request deadline expired before the query completed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    APIVersion:
+      type: string
+      const: anas.dev/api/v1
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    SystemResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, build, capabilities, workspace_ids]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        build:
+          $ref: "#/components/schemas/BuildInfo"
+        capabilities:
+          $ref: "#/components/schemas/SystemCapabilities"
+        workspace_ids:
+          type: array
+          items:
+            type: string
+          uniqueItems: true
+    BuildInfo:
+      type: object
+      additionalProperties: false
+      required: [version, commit, date]
+      properties:
+        version:
+          type: string
+        commit:
+          type: string
+        date:
+          type: string
+          description: Build date supplied by the release process, or `unknown` in a development build.
+    SystemCapabilities:
+      type: object
+      additionalProperties: false
+      required: [read_only]
+      properties:
+        read_only:
+          type: boolean
+          const: true
+    WorkspaceStatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - api_version
+        - workspace_id
+        - active_deployment
+        - activated_at
+        - verified_at
+        - previous_deployments
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+        active_deployment:
+          $ref: "#/components/schemas/NullableString"
+        activated_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        verified_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        previous_deployments:
+          type: array
+          items:
+            type: string
+    DeploymentListResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, items, next_cursor]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeploymentState"
+        next_cursor:
+          $ref: "#/components/schemas/NullableString"
+    DeploymentDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, deployment, state]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+        deployment:
+          $ref: "#/components/schemas/Deployment"
+        state:
+          $ref: "#/components/schemas/DeploymentState"
+    DeploymentState:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - status
+        - created_at
+        - activated_at
+        - deactivated_at
+        - verified_at
+        - predecessor
+        - failure
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          description: One of `ready`, `active`, `previous`, or `failed`; empty when a legacy artifact has no independent state record.
+        created_at:
+          type: string
+        activated_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        deactivated_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        verified_at:
+          $ref: "#/components/schemas/NullableTimestamp"
+        predecessor:
+          $ref: "#/components/schemas/NullableString"
+        failure:
+          $ref: "#/components/schemas/NullableString"
+    Deployment:
+      type: object
+      additionalProperties: false
+      description: Safe, path-free projection of an `anas.deployment/v1` manifest.
+      required:
+        - api_version
+        - id
+        - created_at
+        - images_built
+        - build_acceleration
+        - module_order
+        - capability_bindings
+        - modules
+        - settings
+        - resources
+        - snapshot
+      properties:
+        api_version:
+          type: string
+          const: anas.deployment/v1
+        id:
+          type: string
+        created_at:
+          type: string
+        images_built:
+          type: boolean
+        build_acceleration:
+          type: boolean
+        module_order:
+          type: array
+          items:
+            type: string
+        capability_bindings:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+        modules:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/DeploymentModule"
+        settings:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/DeploymentSetting"
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeploymentResource"
+        snapshot:
+          $ref: "#/components/schemas/DeploymentSnapshotPolicy"
+    DeploymentModule:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - version
+        - revision
+        - app_version
+        - lifecycle
+        - artifact_deployment
+        - data_breaking
+        - runtime
+        - env_prefix
+        - consumes
+        - dependencies
+        - host_lan
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        revision:
+          type: integer
+        app_version:
+          $ref: "#/components/schemas/NullableString"
+        lifecycle:
+          type: string
+        artifact_deployment:
+          type: string
+        data_breaking:
+          type: [array, "null"]
+          items:
+            type: string
+        runtime:
+          type: string
+        env_prefix:
+          $ref: "#/components/schemas/NullableString"
+        consumes:
+          type: array
+          items:
+            type: string
+        dependencies:
+          type: array
+          items:
+            type: string
+        host_lan:
+          $ref: "#/components/schemas/NullableString"
+    DeploymentSetting:
+      type: object
+      additionalProperties: false
+      required: [module, parameter, effect, apply]
+      properties:
+        module:
+          type: string
+        parameter:
+          type: string
+        effect:
+          type: string
+        apply:
+          $ref: "#/components/schemas/NullableString"
+    DeploymentResource:
+      type: object
+      additionalProperties: false
+      required: [consumer, id, contract, contract_version, provider, interface]
+      properties:
+        consumer:
+          type: string
+        id:
+          type: string
+        contract:
+          type: string
+        contract_version:
+          type: string
+        provider:
+          type: string
+        interface:
+          type: string
+    DeploymentSnapshotPolicy:
+      type: object
+      additionalProperties: false
+      required: [backend, keep_auto]
+      properties:
+        backend:
+          $ref: "#/components/schemas/NullableString"
+        keep_auto:
+          type: integer
+    NullableString:
+      type: [string, "null"]
+    NullableTimestamp:
+      type: [string, "null"]
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [api_version, type, title, status, detail, code]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        code:
+          type: string
+          pattern: "^[a-z][a-z0-9_]*$"

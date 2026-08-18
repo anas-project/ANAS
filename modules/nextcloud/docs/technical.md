@@ -2,7 +2,9 @@
 
 本文面向 Module 维护者，记录 `nextcloud` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
-> 状态：当前实现；对应 `34.0.2-r4` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> 状态：当前实现；对应 `34.0.2-r7` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -16,32 +18,34 @@
 
 ## Compose 拓扑
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_imaginary` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-imaginary:2026.07.30-d5e7ffac6e1a` | `nextcloud` | 0 |
-| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r4` | `nextcloud, db, traefik` | 3 |
-| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r4` | `nextcloud, db` | 1 |
+| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r7` | `nextcloud, db, traefik` | 3 |
+| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r7` | `nextcloud, db` | 1 |
 | `anas_nextcloud-push` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-notify-push:2026.07.30-7c156254927e` | `nextcloud, db, traefik` | 1 |
 | `anas_nextcloud-redis` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-redis:8.10.0-alpine` | `nextcloud` | 1 |
 | `anas_talk` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-talk:2026.07.30-2b9a7d12d3e6` | `nextcloud, traefik` | 1 |
+<!-- generated:compose-topology:end -->
 
 ## 配置契约
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `nextcloud.db_name` | string | `nextcloud` | `NEXTCLOUD_DB_NAME` | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 应用数据库名 |
-| `nextcloud.db_type` | string | `auto` | `NEXTCLOUD_DB_TYPE` | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 关系数据库类型或自动选择 |
-| `nextcloud.domain_prefix` | string | `nc` | `NEXTCLOUD_DOMAIN_PREFIX` | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
-| `nextcloud.iam_protocol` | string | `auto` | `NEXTCLOUD_IAM_PROTOCOL` | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
-| `nextcloud.language` | string | `—` | `NEXTCLOUD_LANGUAGE` | 否 | 否 | 是 | `reconcile` | 界面回退语言 |
-| `nextcloud.locale` | string | `—` | `NEXTCLOUD_LOCALE` | 否 | 否 | 是 | `reconcile` | 区域格式回退值 |
-| `nextcloud.log_level` | string | `2` | `NEXTCLOUD_LOG_LEVEL` | 否 | 否 | 是 | `container_recreate` | 日志级别 |
-| `nextcloud.memories_enabled` | string | `true` | `NEXTCLOUD_MEMORIES_ENABLED` | 否 | 否 | 是 | `reconcile` | 是否启用 Memories |
-| `nextcloud.memory_limit` | string | `1G` | `NEXTCLOUD_MEMORY_LIMIT` | 否 | 否 | 是 | `container_recreate` | 内存限制 |
-| `nextcloud.phone_region` | string | `CN` | `NEXTCLOUD_PHONE_REGION` | 否 | 否 | 是 | `container_recreate` | 默认电话区域 |
-| `nextcloud.rm_skeleton_files` | string | `false` | `NEXTCLOUD_RM_SKELETON_FILES` | 否 | 否 | 是 | `container_recreate` | 是否删除默认骨架文件 |
-| `nextcloud.talk_enabled` | string | `true` | `NEXTCLOUD_TALK_ENABLED` | 否 | 否 | 是 | `container_recreate` | 是否启用 Talk |
-| `nextcloud.upload_max_size` | string | `16G` | `NEXTCLOUD_UPLOAD_MAX_SIZE` | 否 | 否 | 是 | `container_recreate` | 上传大小上限 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `nextcloud.db_name` | string | — | `nextcloud` | `static` | `NEXTCLOUD_DB_NAME` | 否 | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 应用数据库名 |
+| `nextcloud.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `NEXTCLOUD_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 关系数据库类型或自动选择 |
+| `nextcloud.domain_prefix` | string | — | `nc` | `static` | `NEXTCLOUD_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
+| `nextcloud.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `NEXTCLOUD_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
+| `nextcloud.language` | string | — | — | `inherited` | `NEXTCLOUD_LANGUAGE` | 否 | 是 | 否 | 是 | `reconcile` | 界面回退语言 |
+| `nextcloud.locale` | string | — | — | `inherited` | `NEXTCLOUD_LOCALE` | 否 | 是 | 否 | 是 | `reconcile` | 区域格式回退值 |
+| `nextcloud.log_level` | string | — | `2` | `static` | `NEXTCLOUD_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | 日志级别 |
+| `nextcloud.memories_enabled` | bool | — | `true` | `static` | `NEXTCLOUD_MEMORIES_ENABLED` | 否 | 否 | 否 | 是 | `reconcile` | 是否启用 Memories |
+| `nextcloud.memory_limit` | string | — | `1G` | `static` | `NEXTCLOUD_MEMORY_LIMIT` | 否 | 否 | 否 | 是 | `container_recreate` | 内存限制 |
+| `nextcloud.phone_region` | string | — | `CN` | `static` | `NEXTCLOUD_PHONE_REGION` | 否 | 否 | 否 | 是 | `container_recreate` | 默认电话区域 |
+| `nextcloud.rm_skeleton_files` | bool | — | `false` | `static` | `NEXTCLOUD_RM_SKELETON_FILES` | 否 | 否 | 否 | 是 | `container_recreate` | 是否删除默认骨架文件 |
+| `nextcloud.talk_enabled` | bool | — | `true` | `static` | `NEXTCLOUD_TALK_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Talk |
+| `nextcloud.upload_max_size` | string | — | `16G` | `static` | `NEXTCLOUD_UPLOAD_MAX_SIZE` | 否 | 否 | 否 | 是 | `container_recreate` | 上传大小上限 |
 
 参数库存的权威来源是 `module.yml`；CLI 负责合并默认值、类型、required、环境变量映射、敏感性和变更执行器。技术文档不得另造可设置参数。
 

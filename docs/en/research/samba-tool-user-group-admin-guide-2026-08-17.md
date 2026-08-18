@@ -16,7 +16,7 @@ Creating a person account in ANAS normally has three steps:
 2. Add the user to the required application, file-access, or business-role groups.
 3. Add a dedicated administrative account to an administrator group only when the role requires it.
 
-This section keeps only the shortest workflow. Docker, Samba user, and group parameters each have one authoritative explanation later in this guide. The default Samba DC container is `anas_samba_dc`; it is affected by [`global.container_prefix`](/en/reference/configuration#the-128-declared-parameters). For a customized deployment, use [Section 2](#_2-preflight-checks) to find the actual name.
+This section keeps only the shortest workflow. Docker, Samba user, and group parameters each have one authoritative explanation later in this guide. The default Samba DC container is `anas_samba_dc`; it is affected by [`global.container_prefix`](/en/reference/configuration#the-139-declared-parameters). For a customized deployment, use [Section 2](#_2-preflight-checks) to find the actual name.
 
 ### 1.1 Create Daneel Wang's regular account
 

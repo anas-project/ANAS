@@ -244,7 +244,7 @@ func Build(opts BuildOptions) (BuildResult, error) {
 	// A remotely installed Module must not depend on a source checkout merely to
 	// validate or execute its provider/resource contracts, so every bundle carries
 	// the small runtime-only contract tree. A workspace view de-duplicates it.
-	if err := copyRuntimeTree(filepath.Join(root, "contracts"), filepath.Join(stage, "contracts")); err != nil {
+	if err := copyRuntimeTree(filepath.Join(root, "contracts"), filepath.Join(stage, "contracts"), "contracts"); err != nil {
 		return BuildResult{}, err
 	}
 
@@ -359,19 +359,47 @@ func runtimeTrackedFiles(root, module string) ([]string, error) {
 }
 
 func excludedRuntimeFile(rel string) bool {
+	slash := filepath.ToSlash(rel)
 	base := filepath.Base(rel)
 	if (strings.HasPrefix(base, "README") && strings.HasSuffix(base, ".md")) || base == "localization.yml" || base == ".DS_Store" {
 		return true
 	}
+	// Module documentation is published independently from the runtime bundle.
+	// Keep this aligned with scripts/ci/module-revisions.sh so documentation-only
+	// changes neither alter package bytes nor manufacture a release revision.
+	if moduleRelative := strings.TrimPrefix(slash, "modules/"); moduleRelative != slash {
+		parts := strings.Split(moduleRelative, "/")
+		if len(parts) >= 3 && parts[1] == "docs" {
+			return true
+		}
+	} else if marker := "/modules/"; strings.Contains(slash, marker) {
+		moduleRelative := strings.SplitN(slash, marker, 2)[1]
+		parts := strings.Split(moduleRelative, "/")
+		if len(parts) >= 3 && parts[1] == "docs" {
+			return true
+		}
+	}
+	contractRelative := strings.TrimPrefix(slash, "contracts/")
+	if contractRelative == slash {
+		if marker := "/contracts/"; strings.Contains(slash, marker) {
+			contractRelative = strings.SplitN(slash, marker, 2)[1]
+		}
+	}
+	if contractRelative != slash {
+		parts := strings.Split(contractRelative, "/")
+		if len(parts) >= 2 && (parts[1] == "docs" || parts[1] == "documentation.yml") {
+			return true
+		}
+	}
 	if strings.HasSuffix(base, "_test.go") || (strings.HasPrefix(base, "test_") && strings.HasSuffix(base, ".py")) {
 		return true
 	}
-	if strings.Contains(filepath.ToSlash(rel), "/__pycache__/") {
+	if strings.Contains(slash, "/__pycache__/") {
 		return true
 	}
 	// A historical local build accidentally became tracked. The Dockerfile builds
 	// the reconciler from source and must never package this host binary.
-	return filepath.ToSlash(rel) == "modules/ddns_go/ddns-go/reconcile/reconcile"
+	return slash == "modules/ddns_go/ddns-go/reconcile/reconcile"
 }
 
 func expandContextFiles(root string, contexts []string) ([]string, error) {
@@ -383,19 +411,27 @@ func expandContextFiles(root string, contexts []string) ([]string, error) {
 			return nil, err
 		}
 		if !info.IsDir() {
-			files = append(files, filepath.Clean(context))
+			if !excludedRuntimeFile(context) {
+				files = append(files, filepath.Clean(context))
+			}
 			continue
 		}
 		err = filepath.WalkDir(path, func(current string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
-			if entry.IsDir() || excludedRuntimeFile(current) {
-				return nil
-			}
 			rel, err := filepath.Rel(root, current)
 			if err != nil {
 				return err
+			}
+			if entry.IsDir() {
+				if excludedRuntimeDirectory(rel) {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if excludedRuntimeFile(rel) {
+				return nil
 			}
 			files = append(files, rel)
 			return nil
@@ -479,7 +515,7 @@ func copyPackageFile(source, target string) error {
 	return out.Close()
 }
 
-func copyRuntimeTree(source, target string) error {
+func copyRuntimeTree(source, target, catalogRoot string) error {
 	return filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -491,14 +527,32 @@ func copyRuntimeTree(source, target string) error {
 		if err != nil {
 			return err
 		}
+		catalogPath := filepath.Join(catalogRoot, rel)
+		if entry.IsDir() && excludedRuntimeDirectory(catalogPath) {
+			return fs.SkipDir
+		}
 		if entry.IsDir() {
 			return os.MkdirAll(filepath.Join(target, rel), 0755)
 		}
-		if excludedRuntimeFile(path) {
+		if excludedRuntimeFile(catalogPath) {
 			return nil
 		}
 		return copyPackageFile(path, filepath.Join(target, rel))
 	})
+}
+
+func excludedRuntimeDirectory(path string) bool {
+	slash := filepath.ToSlash(path)
+	if filepath.Base(path) == "__pycache__" {
+		return true
+	}
+	for _, prefix := range []string{"modules/", "contracts/"} {
+		if strings.HasPrefix(slash, prefix) {
+			parts := strings.Split(strings.TrimPrefix(slash, prefix), "/")
+			return len(parts) >= 2 && parts[1] == "docs"
+		}
+	}
+	return false
 }
 
 func digestDirectory(root string) (string, error) {

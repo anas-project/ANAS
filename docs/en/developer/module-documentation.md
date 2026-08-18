@@ -3,7 +3,7 @@
 This standard defines Module documentation sources, required content, generation boundaries, VitePress mapping, bilingual output, and CI validation. “Must”, “must not”, and “should” are normative for new Modules, Module upgrades, and generator changes.
 
 > [!IMPORTANT]
-> `cmd/gen-module-docs` maintains the timezone/language block and localization summaries. `cmd/materialize-module-docs` creates per-Module pages, catalogs, navigation data, and bounded version history inside the disposable VitePress source tree. Generated pages are neither written back nor committed under the real `docs/` tree.
+> `cmd/gen-module-docs` maintains README quick facts and timezone/language blocks, technical-document identity and Compose-topology blocks, and localization summaries. `cmd/materialize-module-docs` creates per-Module pages, catalogs, navigation data, and bounded version history inside the disposable VitePress source tree. Generated pages are neither written back nor committed under the real `docs/` tree.
 
 ## 1. Source layout
 
@@ -67,16 +67,56 @@ The README must cover every parameter returned by `anas config list <module> --j
 | Field | Requirement |
 | --- | --- |
 | Path | Full path such as `nextcloud.db_type` |
-| Type | Type accepted by the current CLI |
-| Default | Current default or `—` |
+| Type | Type explicitly declared in `config.types` and accepted by the CLI; never inferred from a default |
+| Default | Current static default; use `—` for none and `""` for an explicit empty-string default |
+| Default source | `default_source`: `none`, `static`, `host`, `runtime`, `generated`, or `inherited` |
 | Environment key | Rendered Module-private environment name |
-| Required | Whether the value is required |
+| Input required | `input_required`; `required` is an exactly equal compatibility alias |
+| Must resolve | `must_resolve`; whether the final value must be non-empty after defaults and other sources |
+| Single-field constraints | Applicable range, length, pattern, or format rules from `constraints`, or `—` |
 | Sensitive | Whether it is a Secret |
 | Editability | Ordinary `config set` support or the required lifecycle operation |
 | Effect | Such as `hot_reload`, `container_recreate`, `credential_rotate`, `data_migrate`, or `immutable` |
 | Purpose | Actual application, data, or network impact |
 
-Configuration must not exist only in technical documentation. Additions, removals, renames, and default changes update both READMEs and both technical documents together.
+Every configurable parameter in a built-in Module must explicitly declare
+`config.types`. `unknown` exists only to read legacy Modules or expose an
+incomplete development declaration; the release gate rejects any unknown type
+in the built-in inventory.
+
+`input_required` answers only whether the operator must enter a value. It must
+be false when a static default or an unconditional host, runtime, generated, or
+inherited source exists; `has_default` distinguishes no default from an
+explicit empty-string default. `must_resolve` says whether the resolved value
+must be non-empty and may be true while `input_required` is false. When a
+conditional resolver exists, `default_source: none` can accompany that
+combination; it does not mean the operator must directly fill the Module field
+in every scenario. Manifest `input_required` means the caller must explicitly
+provide a value before resolution begins. Legacy manifest `required` keeps its
+existing check after defaults/resolvers and before the calculate Hook, so those
+sources may satisfy it; `must_resolve` is checked after the Hook patch. The
+CLI/JSON `required` field is not a direct projection of legacy manifest
+`required`: it always aliases `input_required`.
+
+`constraints` covers only single-field rules: integer `minimum`/`maximum` and
+string `min_length`/`max_length`/`pattern`/`format`. Document conditional
+requirements, cross-field relationships, and runtime-dependent rules under
+Purpose and enforce them through the resolver, shared application layer, plan,
+or Hook.
+Do not broadly mark a field required merely to drive a form. This metadata is
+the ANAS schema, not JSON Schema; their `required` and `default` semantics
+differ. Modules maintain declarations and generic validation rules. The M3
+`anasd` configuration API reuses the shared schema and never adds per-Module
+HTTP adapters.
+
+Configuration must not exist only in technical documentation. Additions,
+removals, renames, type/required changes, and default changes update both
+READMEs and both technical documents together.
+
+Configuration tables remain reviewed content. `gen-module-docs` validates the
+machine-derived columns in all four tables against the shared inventory, but it
+must not rewrite an unmarked table. Purpose, cross-field, migration, and security
+semantics remain maintainer-reviewed.
 
 ### Administrator and password commands
 
@@ -113,7 +153,7 @@ Technical documentation is maintained inside the Module. The ANAS site publishes
 
 ## 5. Generated versus reviewed content
 
-Generators may derive or validate Module facts, dependencies, configuration metadata, database and admin declarations, localization inventory, Compose indexes, VitePress pages, catalog entries, and navigation links.
+Generators may derive or validate Module facts, dependencies, configuration metadata (including default presence/source, input and resolution requirements, and single-field constraints), database and admin declarations, localization inventory, Compose indexes, VitePress pages, catalog entries, and navigation links. The Module configuration audit proves that every built-in Module inventory entry has an explicit type; full release acceptance additionally requires `config list --json` to contain zero `type: "unknown"` entries.
 
 Human or AI-assisted review is required for synchronization direction, group authorization and revocation, password-writeback ACLs, recovery safety, login availability, migration, rotation, rollback, backup semantics, actually enabled upstream behavior, limitations, and runtime conclusions.
 
@@ -121,15 +161,27 @@ Static analysis cannot prove a real login, synchronization, rotation, or recover
 
 ## 6. Generated markers
 
-A generator may modify only explicitly marked blocks. The existing localization block is:
+A generator may modify only explicitly marked blocks. The current blocks are:
 
 ```markdown
+<!-- generated:module-facts:start -->
+...
+<!-- generated:module-facts:end -->
+
 <!-- generated:localization:start -->
 ...
 <!-- generated:localization:end -->
+
+<!-- generated:module-identity:start -->
+...
+<!-- generated:module-identity:end -->
+
+<!-- generated:compose-topology:start -->
+...
+<!-- generated:compose-topology:end -->
 ```
 
-Content outside markers is reviewed prose. New blocks use a unique `generated:<section>` name and must detect missing, duplicate, reversed, and unbalanced markers. Never replace an entire reviewed README.
+`module-facts` and `module-identity` come from `module.yml`, `compose-topology` comes from the manifest-selected Compose file, and `localization` comes from `localization.yml`. Content outside markers is reviewed prose. New blocks use a unique `generated:<section>` name and must detect missing, duplicate, reversed, and unbalanced markers. Never replace an entire reviewed README.
 
 ## 7. VitePress output
 
@@ -155,11 +207,12 @@ The two Module documentation commands divide responsibility as follows:
 1. enumerate every directory containing `module.yml`;
 2. validate directory, manifest, localization, and document ownership;
 3. make `materialize-module-docs` fail when a current bilingual source document or `localization.yml` is missing;
-4. update only allowed generated blocks;
+4. preflight every marker in all four source documents in memory, then update only allowed generated blocks without leaving partial writes after a missing, duplicate, reversed, or unbalanced marker;
 5. let `materialize-module-docs` generate all bilingual pages, catalogs, and navigation data atomically in the disposable tree;
 6. use deterministic ordering and formatting;
-7. make `gen-module-docs --check` read-only and fail for stale source blocks or localization summaries;
-8. preserve all reviewed content outside markers.
+7. make `gen-module-docs --check` read-only and fail for stale source blocks, stale localization summaries, stale machine-derived columns in any of the four parameter tables, or any built-in Module parameter without an explicit type;
+8. audit the union of Module `required`, `defaults`, `types`, and `changes` rather than checking only parameters with defaults; the runner's complete-inventory acceptance covers global parameters;
+9. preserve all reviewed content outside markers.
 
 ```bash
 go run ./cmd/gen-module-docs
@@ -192,7 +245,8 @@ Behavior changes also run the relevant Module unit and integration/E2E tests. Co
 
 - [ ] Every `module.yml` directory has four bilingual documents and `localization.yml`.
 - [ ] Both languages have the same structure, commands, defaults, support status, and risks.
-- [ ] Configuration tables cover every `anas config list <module> --json` parameter.
+- [ ] Configuration tables cover every `anas config list <module> --json` parameter, distinguish input-required, must-resolve, and default-source semantics, and the built-in inventory has no `type: "unknown"` entries.
+- [ ] Single-field constraints match the shared schema; conditional and cross-field rules are documented and enforced by a resolver, the application layer, plan, or Hook without per-Module API adapters.
 - [ ] IAM, LDAPS, groups, administrators, databases, and unsupported cases are explicit.
 - [ ] No sensitive value appears in argv, logs, or ordinary environment-variable examples.
 - [ ] Generated blocks, temporary pages, catalogs, links, and navigation are current.

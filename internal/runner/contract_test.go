@@ -2,8 +2,9 @@ package runner
 
 // Conformance tests for docs/contracts/README.md.
 //
-// The contract is what the future web service will branch on, and the two
-// parts of it that break silently are the two asserted here for every command:
+// The contract is what external non-interactive callers branch on and what the
+// shared application service must remain compatible with. The two parts that
+// break silently are the two asserted here for every command:
 // stdout must hold exactly one JSON document, and the exit code must be the
 // number from the table rather than merely non-zero. A command that returns 1
 // where the table says 4 still looks like it works from a shell prompt and
@@ -19,10 +20,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/anas-project/ANAS/internal/buildinfo"
 )
 
 // capture runs one command with stdout and stderr redirected, and reports what
@@ -208,6 +212,136 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 				return
 			}
 			requireFailureDocument(t, testCase.name, stdout)
+		})
+	}
+}
+
+// TestReadOnlyQueryPayloadsStayStable pins the four payloads being migrated to
+// the shared application service. The general contract table above protects
+// the envelope and exit status; these assertions protect the fields, nulls and
+// empty arrays that an external CLI consumer already sees.
+func TestReadOnlyQueryPayloadsStayStable(t *testing.T) {
+	workspace := newWorkspace(t)
+	base := stateDir(workspace)
+	deploymentID := "20260818T010203Z-deadbeef"
+	deploymentRoot := filepath.Join(base, "deployments", deploymentID)
+	if err := os.MkdirAll(deploymentRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := deploymentManifest{
+		APIVersion:        deploymentAPIVersion,
+		ID:                deploymentID,
+		CreatedAt:         "2026-08-18T01:02:03Z",
+		ConfigFingerprint: "sha256:test",
+		ModuleOrder:       []string{},
+		Modules:           map[string]deploymentModule{},
+	}
+	if err := writeYAMLAtomic(filepath.Join(deploymentRoot, "deployment.yml"), &manifest, 0600); err != nil {
+		t.Fatal(err)
+	}
+	state := deploymentState{
+		APIVersion: activeStateVersion,
+		ID:         deploymentID,
+		Status:     "ready",
+		CreatedAt:  "2026-08-18T01:02:03Z",
+	}
+	if err := saveDeploymentState(base, state); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		args []string
+		want map[string]any
+	}{
+		{
+			name: "version",
+			args: []string{"version", "--json"},
+			want: map[string]any{
+				"api_version": cliAPIVersion,
+				"ok":          true,
+				"version":     buildinfo.Version,
+				"commit":      buildinfo.Commit,
+				"date":        buildinfo.Date,
+			},
+		},
+		{
+			name: "status",
+			args: []string{"status", "-w", workspace, "--json"},
+			want: map[string]any{
+				"api_version":          cliAPIVersion,
+				"ok":                   true,
+				"workspace":            workspace,
+				"active_deployment":    nil,
+				"activated_at":         nil,
+				"verified_at":          nil,
+				"previous_deployments": []any{},
+			},
+		},
+		{
+			name: "deployments list",
+			args: []string{"deployments", "list", "-w", workspace, "--json"},
+			want: map[string]any{
+				"api_version": cliAPIVersion,
+				"ok":          true,
+				"workspace":   workspace,
+				"deployments": []any{
+					map[string]any{
+						"id":             deploymentID,
+						"status":         "ready",
+						"created_at":     "2026-08-18T01:02:03Z",
+						"activated_at":   nil,
+						"deactivated_at": nil,
+						"verified_at":    nil,
+						"predecessor":    nil,
+						"failure":        nil,
+					},
+				},
+			},
+		},
+		{
+			name: "deployments inspect",
+			args: []string{"deployments", "inspect", deploymentID, "-w", workspace, "--json"},
+			want: map[string]any{
+				"api_version":     cliAPIVersion,
+				"ok":              true,
+				"workspace":       workspace,
+				"deployment_path": deploymentRoot,
+				"deployment": map[string]any{
+					"api_version":        deploymentAPIVersion,
+					"id":                 deploymentID,
+					"created_at":         "2026-08-18T01:02:03Z",
+					"config_fingerprint": "sha256:test",
+					"images_built":       false,
+					"build_acceleration": false,
+					"module_order":       []any{},
+					"modules":            map[string]any{},
+					"snapshot":           map[string]any{"backend": "", "source": "", "root": "", "keep_auto": float64(0)},
+				},
+				"state": map[string]any{
+					"id":             deploymentID,
+					"status":         "ready",
+					"created_at":     "2026-08-18T01:02:03Z",
+					"activated_at":   nil,
+					"deactivated_at": nil,
+					"verified_at":    nil,
+					"predecessor":    nil,
+					"failure":        nil,
+				},
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			stdout, _, exit := capture(t, testCase.args...)
+			if exit != 0 {
+				t.Fatalf("exit = %d; stdout %q", exit, stdout)
+			}
+			got := requireSingleDocument(t, testCase.name, stdout)
+			if !reflect.DeepEqual(got, testCase.want) {
+				t.Fatalf("payload changed\ngot:  %#v\nwant: %#v", got, testCase.want)
+			}
 		})
 	}
 }

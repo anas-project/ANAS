@@ -2,7 +2,9 @@
 
 本文面向 Module 维护者，记录 `traefik` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
-> 状态：当前实现；对应 `3.7.10-r2` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> 状态：当前实现；对应 `3.7.10-r4` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -12,16 +14,18 @@
 
 ## Compose 拓扑
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r2` | `` | 3 |
+| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r4` | `` | 3 |
+<!-- generated:compose-topology:end -->
 
 ## 配置契约
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `traefik.base_port` | int | `9000` | `TRAEFIK_BASE_PORT` | 否 | 否 | 是 | `container_recreate` | 对外端口基数 |
-| `traefik.domain_prefix` | string | `traefik` | `TRAEFIK_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `traefik.base_port` | int | `1..65535` | `9000` | `static` | `TRAEFIK_BASE_PORT` | 否 | 否 | 否 | 是 | `container_recreate` | 对外端口基数 |
+| `traefik.domain_prefix` | string | — | `traefik` | `static` | `TRAEFIK_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
 
 参数库存的权威来源是 `module.yml`；CLI 负责合并默认值、类型、required、环境变量映射、敏感性和变更执行器。技术文档不得另造可设置参数。
 

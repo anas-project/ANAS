@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/anas-project/ANAS/internal/buildinfo"
+	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/compose"
 	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/dns"
@@ -151,14 +152,18 @@ func runVersion(args []string, jsonMode bool) error {
 	if fs.NArg() != 0 {
 		return usageErrorf("usage: anas version [--json]")
 	}
+	result, err := application.NewService("").Version(context.Background())
+	if err != nil {
+		return applicationCLIError(err)
+	}
 	if jsonMode {
 		return emitOK(map[string]any{
-			"version": buildinfo.Version,
-			"commit":  buildinfo.Commit,
-			"date":    buildinfo.Date,
+			"version": result.Version,
+			"commit":  result.Commit,
+			"date":    result.Date,
 		})
 	}
-	fmt.Printf("anas %s (commit %s, built %s)\n", buildinfo.Version, buildinfo.Commit, buildinfo.Date)
+	fmt.Printf("anas %s (commit %s, built %s)\n", result.Version, result.Commit, result.Date)
 	return nil
 }
 
@@ -404,6 +409,9 @@ func (a *app) execute(actions []string) error {
 	}
 	a.order, err = a.resolveOrder(cfg.Modules.Order)
 	if err != nil {
+		return err
+	}
+	if err := validateInputRequiredEnv(a.env, a.order, a.reg); err != nil {
 		return err
 	}
 	if renders || contains(actions, "plan") {
@@ -723,6 +731,9 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 	if err := validateConfiguredParameters(a.cfg, a.reg); err != nil {
 		return nil, err
 	}
+	if err := normalizeConfiguredParameterEnv(a.env, a.reg); err != nil {
+		return nil, err
+	}
 	if err := a.checkSingleIAM(); err != nil {
 		return nil, err
 	}
@@ -980,7 +991,13 @@ func (a *app) applyModuleDefaults() {
 }
 
 func (a *app) calculate() error {
-	if err := requireKeys(a.env, globalConfig.Required); err != nil {
+	// Defaults plus host/runtime resolvers are materialized before calculate.
+	// Normalize that data through the same schema boundary as caller input so a
+	// source cannot bypass type canonicalization or constraints.
+	if err := normalizeConfiguredParameterEnv(a.env, a.reg); err != nil {
+		return fmt.Errorf("resolved deployment config: %w", err)
+	}
+	if err := requireKeys(a.env, globalConfig.finalRequirements()); err != nil {
 		return fmt.Errorf("deployment config: %w", err)
 	}
 	for _, name := range a.order {
@@ -988,7 +1005,10 @@ func (a *app) calculate() error {
 		if err := a.publishModuleResources(name); err != nil {
 			return err
 		}
-		if err := requireKeys(a.env, mod.Required); err != nil {
+		// Legacy config.required is deliberately checked before calculate, after
+		// defaults and generic resolvers have run. This is distinct from both the
+		// earlier caller-input check and the post-Hook must_resolve invariant.
+		if err := requireKeys(a.env, mod.preHookRequirements()); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
 		resp, err := a.runHook(mod, "calculate", a.releaseDirFor(name), a.localAdminHookEnv(name, a.env))
@@ -997,6 +1017,14 @@ func (a *app) calculate() error {
 		}
 		if err := a.applyCalculatePatch(mod, resp.Env); err != nil {
 			return err
+		}
+		// Hook output is another parameter source, not an escape hatch around the
+		// common schema. Re-run normalization before enforcing the final invariant.
+		if err := normalizeConfiguredParameterEnv(a.env, a.reg); err != nil {
+			return fmt.Errorf("%s calculate patch: %w", name, err)
+		}
+		if err := requireKeys(a.env, mod.finalRequirements()); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
 		}
 		a.secrets.Merge(resp.Secrets)
 		if name == a.iamProvider {

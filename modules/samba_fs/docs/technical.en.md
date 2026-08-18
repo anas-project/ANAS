@@ -2,7 +2,9 @@
 
 This page records the current implementation, security boundaries, and verification entry points for `samba_fs`. User instructions are in the [English README](../README.en.md).
 
-> Status: current implementation; based on `4.23.6-r3` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> Status: current implementation; based on `4.23.6-r5` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -12,21 +14,23 @@ This page records the current implementation, security boundaries, and verificat
 
 ## Compose topology
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_samba_fs` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-fs:4.23.6-r3` | `default` | 2 |
+| `anas_samba_fs` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-fs:4.23.6-r5` | `default` | 2 |
+<!-- generated:compose-topology:end -->
 
 ## Configuration contract
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `env.SHARE_ACCESS_MODE` | enum (`all_rw`, `all_read_group_write`) | `all_read_group_write` | `SHARE_ACCESS_MODE` | no | no | yes | `reconcile` | Samba configuration and root/default ACLs must be reconciled. |
-| `env.SHARE_DIR_NAME` | string | `Share` | `SHARE_DIR_NAME` | no | no | no: `migrate-share-directory` | `data_migrate` | The share directory holds the files; a new name is a new empty directory unless the contents are moved with it. |
-| `env.SHARE_GUEST_READ_ONLY` | enum (`Yes`, `No`) | `No` | `SHARE_GUEST_READ_ONLY` | no | no | yes | `reconcile` | A state marker prevents recursive ACL work when the value is unchanged. |
-| `env.USE_DEFAULT_DOMAIN` | enum (`yes`, `no`) | `yes` | `USE_DEFAULT_DOMAIN` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `samba_fs.hostname` | string | `SambaFS` | `SAMBA_FS_HOSTNAME` | no | no | no: `rejoin-samba-member` | `data_migrate` | The AD machine account and member join must be changed together. |
-| `samba_fs.log_level` | int | `1` | `SAMBA_FS_LOG_LEVEL` | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
-| `samba_fs.wsdd_log_level` | int | `0` | `SAMBA_FS_WSDD_LOG_LEVEL` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `env.SHARE_ACCESS_MODE` | enum (`all_rw`, `all_read_group_write`) | — | `all_read_group_write` | `static` | `SHARE_ACCESS_MODE` | no | no | no | yes | `reconcile` | Samba configuration and root/default ACLs must be reconciled. |
+| `env.SHARE_DIR_NAME` | string | — | `Share` | `static` | `SHARE_DIR_NAME` | no | no | no | no: `migrate-share-directory` | `data_migrate` | The share directory holds the files; a new name is a new empty directory unless the contents are moved with it. |
+| `env.SHARE_GUEST_READ_ONLY` | enum (`Yes`, `No`) | — | `No` | `static` | `SHARE_GUEST_READ_ONLY` | no | no | no | yes | `reconcile` | A state marker prevents recursive ACL work when the value is unchanged. |
+| `env.USE_DEFAULT_DOMAIN` | enum (`yes`, `no`, `true`, `false`) | — | `yes` | `static` | `USE_DEFAULT_DOMAIN` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_fs.hostname` | string | — | `SambaFS` | `static` | `SAMBA_FS_HOSTNAME` | no | no | no | no: `rejoin-samba-member` | `data_migrate` | The AD machine account and member join must be changed together. |
+| `samba_fs.log_level` | int | — | `1` | `static` | `SAMBA_FS_LOG_LEVEL` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
+| `samba_fs.wsdd_log_level` | int | — | `0` | `static` | `SAMBA_FS_WSDD_LOG_LEVEL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
 

@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: oauth2_proxy
 version: 7.15.3
-revision: 2
+revision: 3
 app_version: 7.15.3
 abi:
   supports:
@@ -49,6 +49,18 @@ config:
     # administrator group because the services behind this gate are
     # administrative interfaces.
     allow_groups: Admins
+  types:
+    domain_prefix: string
+    iam_protocol:
+      enum: [auto, oidc]
+    # The runtime accepts a group list, which the current scalar type model
+    # cannot express without losing valid combinations. It can still enforce
+    # the unconditional safety rule that at least one non-whitespace character
+    # is present before the Hook registers an administrative access gate.
+    allow_groups:
+      kind: string
+      constraints:
+        pattern: '\S'
   # The middleware name protected modules attach to their routers, and the URL
   # of the gate itself.
   exports:

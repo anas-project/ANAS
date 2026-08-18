@@ -4,13 +4,15 @@
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `eturnal` |
-| 版本 / revision | `1.12.2-r3` |
+| 版本 / revision | `1.12.2-r5` |
 | 状态 | `release` |
 | 类别 | `communication` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -52,10 +54,10 @@ modules:
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `eturnal.domain_prefix` | string | `turn` | `TURN_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
-| `eturnal.port` | string | `3478` | `TURN_PORT` | 否 | 否 | 是 | `container_recreate` | 服务端口 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `eturnal.domain_prefix` | string | — | `turn` | `static` | `TURN_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| `eturnal.port` | int | `1..65535` | `3478` | `static` | `TURN_PORT` | 否 | 否 | 否 | 是 | `container_recreate` | 服务端口 |
 
 ### 查询和修改
 
@@ -91,7 +93,7 @@ TURN Secret 是机器凭据，不应作为人员密码查询或共享。
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`1.12.2-r4`（reviewed 2026-08-17）
+- Module version / 版本：`1.12.2-r5`（reviewed 2026-08-17）
 - Timezone / 时区：`container` — The TURN service receives TZ for process and log timestamps.
 - Language scope / 语言范围：TURN protocol service
 - Selection / 选择方式：`none`

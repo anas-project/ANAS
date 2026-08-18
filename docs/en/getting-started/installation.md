@@ -15,8 +15,9 @@ You also need:
 
 The installer currently supports Linux only and detects `x86_64`/`amd64` and
 `aarch64`/`arm64`. It downloads the matching static binary, verifies it against the Release
-`SHA256SUMS`, and installs it as `/usr/local/bin/anas`. It invokes `sudo` only when the destination
-is not writable.
+`SHA256SUMS`, then runs the downloaded binary and requires its reported version to match the Release
+tag before replacing an existing installation or writing source preferences. It installs the binary
+as `/usr/local/bin/anas` and invokes `sudo` only when the destination is not writable.
 
 Install from GitHub and keep GitHub/GHCR as the default distribution source:
 

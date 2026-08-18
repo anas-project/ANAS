@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: traefik
 version: 3.7.10
-revision: 3
+revision: 4
 app_version: 3.7.10
 abi:
   supports:
@@ -27,7 +27,12 @@ config:
     base_port: "9000"
     domain_prefix: traefik
   types:
-    base_port: int
+    base_port:
+      kind: int
+      constraints:
+        minimum: 1
+        maximum: 65535
+    domain_prefix: string
   # Route declarations from modules the Docker provider cannot discover: host
   # networking, non-Docker processes, or anything Traefik must reach by
   # address. Published by the declaring module, rendered by this module's

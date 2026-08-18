@@ -2,7 +2,9 @@
 
 This page records the current implementation, security boundaries, and verification entry points for `meshcentral`. User instructions are in the [English README](../README.en.md).
 
-> Status: current implementation; based on `1.2.4-r4` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> Status: current implementation; based on `1.2.4-r6` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -15,19 +17,21 @@ This page records the current implementation, security boundaries, and verificat
 
 ## Compose topology
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_meshcentral` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r4` | `db, traefik` | 5 |
+| `anas_meshcentral` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r6` | `db, traefik` | 5 |
+<!-- generated:compose-topology:end -->
 
 ## Configuration contract
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `meshcentral.db_name` | string | `meshcentral` | `MESHCENTRAL_DB_NAME` | no | no | no: `migrate-meshcentral-database` | `data_migrate` | The database name is materialized when the database is initialized. |
-| `meshcentral.db_type` | string | `auto` | `MESHCENTRAL_DB_TYPE` | no | no | no: `migrate-meshcentral-database` | `data_migrate` | Changing the selected database does not migrate existing MeshCentral data. |
-| `meshcentral.domain_prefix` | string | `meshcentral` | `MESHCENTRAL_DOMAIN_PREFIX` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `meshcentral.iam_protocol` | string | `auto` | `MESHCENTRAL_IAM_PROTOCOL` | no | no | yes | `container_recreate` | The OIDC client registration and generated runtime configuration must be reconciled together. |
-| `meshcentral.mps_port` | string | `4433` | `MESHCENTRAL_MPS_PORT` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `meshcentral.db_name` | string | — | `meshcentral` | `static` | `MESHCENTRAL_DB_NAME` | no | no | no | no: `migrate-meshcentral-database` | `data_migrate` | The database name is materialized when the database is initialized. |
+| `meshcentral.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `MESHCENTRAL_DB_TYPE` | no | no | no | no: `migrate-meshcentral-database` | `data_migrate` | Changing the selected database does not migrate existing MeshCentral data. |
+| `meshcentral.domain_prefix` | string | — | `meshcentral` | `static` | `MESHCENTRAL_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `meshcentral.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `MESHCENTRAL_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | The OIDC client registration and generated runtime configuration must be reconciled together. |
+| `meshcentral.mps_port` | int | `1..65535` | `4433` | `static` | `MESHCENTRAL_MPS_PORT` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
 

@@ -4,8 +4,8 @@ package runner
 //
 // It is deliberately thin. It calls `capabilities`, offers only what came back
 // available, then hands the answers to exactly the path a script would take.
-// The rules about what is possible live in one place, and a web layer rendering
-// the same JSON reaches the same conclusions without any of them being restated.
+// The rules about what is possible live in one place; a future web adapter will
+// call that same typed application use case without restating any of them.
 //
 // Writing a second implementation here would be the obvious shortcut and the
 // expensive one: the two copies would agree on the day they were written and

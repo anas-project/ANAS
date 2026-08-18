@@ -4,13 +4,15 @@
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `samba_fs` |
-| 版本 / revision | `4.23.6-r3` |
+| 版本 / revision | `4.23.6-r5` |
 | 状态 | `release` |
 | 类别 | `storage` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -52,15 +54,15 @@ SMB 客户端直接使用目录身份。`FS Share RW`/`FS Admins` 等 Group 控�
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `env.SHARE_ACCESS_MODE` | enum (`all_rw`, `all_read_group_write`) | `all_read_group_write` | `SHARE_ACCESS_MODE` | 否 | 否 | 是 | `reconcile` | 共享访问模式 |
-| `env.SHARE_DIR_NAME` | string | `Share` | `SHARE_DIR_NAME` | 否 | 否 | 否：`migrate-share-directory` | `data_migrate` | 共享目录名 |
-| `env.SHARE_GUEST_READ_ONLY` | enum (`Yes`, `No`) | `No` | `SHARE_GUEST_READ_ONLY` | 否 | 否 | 是 | `reconcile` | Guest 是否只读 |
-| `env.USE_DEFAULT_DOMAIN` | enum (`yes`, `no`) | `yes` | `USE_DEFAULT_DOMAIN` | 否 | 否 | 是 | `container_recreate` | 是否使用默认域 |
-| `samba_fs.hostname` | string | `SambaFS` | `SAMBA_FS_HOSTNAME` | 否 | 否 | 否：`rejoin-samba-member` | `data_migrate` | 主机名 |
-| `samba_fs.log_level` | int | `1` | `SAMBA_FS_LOG_LEVEL` | 否 | 否 | 是 | `container_recreate` | 日志级别 |
-| `samba_fs.wsdd_log_level` | int | `0` | `SAMBA_FS_WSDD_LOG_LEVEL` | 否 | 否 | 是 | `container_recreate` | WSDD 日志级别 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `env.SHARE_ACCESS_MODE` | enum (`all_rw`, `all_read_group_write`) | — | `all_read_group_write` | `static` | `SHARE_ACCESS_MODE` | 否 | 否 | 否 | 是 | `reconcile` | 共享访问模式 |
+| `env.SHARE_DIR_NAME` | string | — | `Share` | `static` | `SHARE_DIR_NAME` | 否 | 否 | 否 | 否：`migrate-share-directory` | `data_migrate` | 共享目录名 |
+| `env.SHARE_GUEST_READ_ONLY` | enum (`Yes`, `No`) | — | `No` | `static` | `SHARE_GUEST_READ_ONLY` | 否 | 否 | 否 | 是 | `reconcile` | Guest 是否只读 |
+| `env.USE_DEFAULT_DOMAIN` | enum (`yes`, `no`, `true`, `false`) | — | `yes` | `static` | `USE_DEFAULT_DOMAIN` | 否 | 否 | 否 | 是 | `container_recreate` | 是否使用默认域 |
+| `samba_fs.hostname` | string | — | `SambaFS` | `static` | `SAMBA_FS_HOSTNAME` | 否 | 否 | 否 | 否：`rejoin-samba-member` | `data_migrate` | 主机名 |
+| `samba_fs.log_level` | int | — | `1` | `static` | `SAMBA_FS_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | 日志级别 |
+| `samba_fs.wsdd_log_level` | int | — | `0` | `static` | `SAMBA_FS_WSDD_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | WSDD 日志级别 |
 
 ### 查询和修改
 
@@ -96,7 +98,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`4.23.6-r4`（reviewed 2026-08-13）
+- Module version / 版本：`4.23.6-r5`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — The file server receives TZ and includes tzdata; client-visible timestamps are also affected by SMB client behavior.
 - Language scope / 语言范围：SMB protocol service
 - Selection / 选择方式：`client`

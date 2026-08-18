@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anas-project/ANAS/internal/config"
+	"github.com/anas-project/ANAS/internal/configschema"
 )
 
 func importTestRegistry(t *testing.T) map[string]Module {
@@ -141,7 +144,7 @@ secrets:
 			t.Errorf("normalized config retains sensitive input %q", plaintext)
 		}
 	}
-	if !strings.Contains(string(normalized), "cloudflare_dns_api_token: Cloudflare-Imported-Token") {
+	if !strings.Contains(string(normalized), "CLOUDFLARE_DNS_API_TOKEN: Cloudflare-Imported-Token") {
 		t.Fatal("normalized config must retain ordinary deployment secrets")
 	}
 	if info, err := os.Stat(workspaceConfigPath(workspace)); err != nil {
@@ -204,6 +207,274 @@ global:
 	}
 }
 
+func TestConfigImportRawEnvCannotBypassDeclaredType(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "external.yml")
+	if err := os.WriteFile(source, []byte(`modules:
+  samba_fs: {}
+env:
+  SHARE_ACCESS_MODE: not-a-mode
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := validateConfigImportSource(source, importTestRegistry(t))
+	if err == nil || !strings.Contains(err.Error(), "all_read_group_write") {
+		t.Fatalf("import error = %v, want declared enum rejection", err)
+	}
+}
+
+func TestConfigImportCanonicalizesTypedValuesGenerically(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "external.yml")
+	if err := os.WriteFile(source, []byte(`modules:
+  authentik:
+    config:
+      db_type: POSTGRES
+      ldap_enabled: " TRUE "
+env:
+  SHARE_ACCESS_MODE: ALL_RW
+global:
+  ipv6: " TRUE "
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := normalizeImportedConfig(source, importTestRegistry(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(result.Normalized)
+	for _, want := range []string{"db_type: postgres", `ldap_enabled: "true"`, "SHARE_ACCESS_MODE: all_rw", `ipv6: "true"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("normalized import is missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestConfigImportCanonicalizesKeysAndMigratesBareExports(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "external.yml")
+	if err := os.WriteFile(source, []byte(`modules:
+  SAMBA_FS:
+    config:
+      SHARE_DIR_NAME: Media
+global:
+  BASE_DOMAIN: nas.test
+  EMAIL: admin@nas.test
+env:
+  custom_flag: enabled
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reg := importTestRegistry(t)
+	result, err := normalizeImportedConfig(source, reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateNormalizedImportedConfig(result.Normalized, reg); err != nil {
+		t.Fatal(err)
+	}
+	body := string(result.Normalized)
+	for _, want := range []string{"samba_fs:", "base_domain: nas.test", "email: admin@nas.test", "SHARE_DIR_NAME: Media", "CUSTOM_FLAG: enabled"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("normalized import is missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "SAMBA_FS_SHARE_DIR_NAME") {
+		t.Fatalf("normalized import retained a dead prefixed bare export:\n%s", body)
+	}
+
+	managed := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(managed, result.Normalized, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(managed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(loaded.Modules.Values["samba_fs"].Config); got != 0 {
+		t.Fatalf("structured bare export remained in module config: %+v", loaded.Modules.Values["samba_fs"].Config)
+	}
+	env := loaded.BaseEnv()
+	if env["SHARE_DIR_NAME"] != "Media" || env["SAMBA_FS_SHARE_DIR_NAME"] != "" || env["CUSTOM_FLAG"] != "enabled" {
+		t.Fatalf("BaseEnv after import = %+v", env)
+	}
+	settings, err := config.Settings(managed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := collectConfigParameters(reg, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Path == "env.SHARE_DIR_NAME" {
+			if !entry.Set || entry.Value != "Media" {
+				t.Fatalf("config list entry = %+v", entry)
+			}
+			return
+		}
+	}
+	t.Fatal("config list is missing imported env.SHARE_DIR_NAME")
+}
+
+func TestConfigImportRejectsCaseFoldedKeyCollisions(t *testing.T) {
+	tests := map[string]string{
+		"environment": `modules:
+  traefik: {}
+env:
+  custom_key: one
+  CUSTOM_KEY: two
+`,
+		"module": `modules:
+  TRAEFIK: {}
+  traefik: {}
+`,
+		"parameter": `modules:
+  samba_fs:
+    config:
+      SHARE_DIR_NAME: one
+      share_dir_name: two
+`,
+		"global parameter": `modules:
+  traefik: {}
+global:
+  EMAIL: one@example.com
+  email: two@example.com
+`,
+		"bare export and environment": `modules:
+  samba_fs:
+    config:
+      share_dir_name: one
+env:
+  SHARE_DIR_NAME: two
+`,
+	}
+	reg := importTestRegistry(t)
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			source := filepath.Join(t.TempDir(), "external.yml")
+			if err := os.WriteFile(source, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := normalizeImportedConfig(source, reg)
+			if err == nil || !strings.Contains(err.Error(), "after canonicalization") {
+				t.Fatalf("collision error = %v", err)
+			}
+		})
+	}
+}
+
+func TestConfigImportRedactsNonCredentialSensitiveConstraintErrors(t *testing.T) {
+	minimum := 12
+	reg := map[string]Module{
+		"demo": {
+			Name: "demo", EnvPrefix: "DEMO", Parameters: []string{"token"},
+			Types: map[string]ParamType{
+				"token": {Kind: "string", Constraints: configschema.Constraints{MinLength: &minimum}},
+			},
+			Changes: map[string]ChangePolicy{
+				"token": {Effect: "container_recreate", Sensitive: true},
+			},
+		},
+	}
+	write := func(body string) string {
+		path := filepath.Join(t.TempDir(), "external.yml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	for name, test := range map[string]struct {
+		value string
+		body  string
+	}{
+		"structured":  {value: "guess-me", body: "modules:\n  demo:\n    config:\n      token: guess-me\n"},
+		"environment": {value: "GUESS-ME", body: "modules:\n  demo: {}\nenv:\n  DEMO_TOKEN: GUESS-ME\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := normalizeImportedConfig(write(test.body), reg)
+			if err == nil || strings.Contains(err.Error(), test.value) || !strings.Contains(err.Error(), "does not satisfy its declared string type or constraints") {
+				t.Fatalf("sensitive normalization error = %v", err)
+			}
+		})
+	}
+	result, err := normalizeImportedConfig(write("modules:\n  demo:\n    config:\n      token: long-enough-secret\n"), reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Secrets) != 0 || !strings.Contains(string(result.Normalized), "token: long-enough-secret") {
+		t.Fatalf("non-credential sensitive value was extracted instead of retained: secrets=%+v\n%s", result.Secrets, result.Normalized)
+	}
+}
+
+func TestConfigImportRejectsExplicitNullSecretsWithoutEcho(t *testing.T) {
+	tests := map[string]string{
+		"credential rotate": `modules:
+  samba_dc:
+    config:
+      admin_password: null
+`,
+		"managed bootstrap": `modules:
+  nextcloud:
+    config:
+      admin_password: ~
+`,
+		"local account": `modules:
+  nextcloud:
+    administration:
+      local_accounts:
+        break_glass:
+          password: null
+`,
+	}
+	reg := importTestRegistry(t)
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "external.yml")
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := normalizeImportedConfig(path, reg)
+			if err == nil || !strings.Contains(err.Error(), "must be a non-empty scalar secret") {
+				t.Fatalf("null secret error = %v", err)
+			}
+			if strings.Contains(strings.ToLower(err.Error()), "null") || strings.Contains(err.Error(), "~") {
+				t.Fatalf("null spelling leaked in error: %v", err)
+			}
+		})
+	}
+}
+
+func TestConfigImportKeepsTypedEmptyAndScalarAliasValuesCompatible(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "external.yml")
+	if err := os.WriteFile(source, []byte(`global:
+  base_domain: nas.test
+  email: admin@nas.test
+  ipv6: &enabled " TRUE "
+modules:
+  authentik:
+    config:
+      db_type: null
+      ldap_enabled: *enabled
+env:
+  SHARE_ACCESS_MODE: ""
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reg := importTestRegistry(t)
+	result, err := normalizeImportedConfig(source, reg)
+	if err != nil {
+		t.Fatalf("normalizing typed null/alias values: %v", err)
+	}
+	if err := validateNormalizedImportedConfig(result.Normalized, reg); err != nil {
+		t.Fatalf("validating typed null/alias values: %v\n%s", err, result.Normalized)
+	}
+	body := string(result.Normalized)
+	if !strings.Contains(body, `ipv6: &enabled "true"`) {
+		t.Fatalf("global anchor was not canonicalized:\n%s", body)
+	}
+	if !strings.Contains(body, "ldap_enabled: *enabled") {
+		t.Fatalf("typed scalar alias was not preserved:\n%s", body)
+	}
+}
+
 func TestConfigImportFailureDoesNotModifyWorkspace(t *testing.T) {
 	workspace := t.TempDir()
 	base := stateDir(workspace)
@@ -244,7 +515,7 @@ func TestManagedBootstrapPasswordCannotBeReimportedAsRotation(t *testing.T) {
 	}
 	writeSource := func(password string) string {
 		path := filepath.Join(t.TempDir(), "config.yml")
-		body := "modules:\n  nextcloud:\n    administration:\n      local_accounts:\n        break_glass:\n          password: " + password + "\nglobal:\n  timezone: UTC\n"
+		body := "modules:\n  nextcloud:\n    administration:\n      local_accounts:\n        break_glass:\n          password: " + password + "\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\n  timezone: UTC\n"
 		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -297,7 +568,7 @@ func TestManagedConfigRejectsTamperingAndExternalPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := filepath.Join(t.TempDir(), "config.yml")
-	if err := os.WriteFile(source, []byte("modules:\n  lam: {}\nglobal:\n  timezone: UTC\nsecrets:\n  dns_token: retained\n"), 0600); err != nil {
+	if err := os.WriteFile(source, []byte("modules:\n  lam: {}\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\n  timezone: UTC\nsecrets:\n  dns_token: retained\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := importConfigIntoWorkspace(workspace, source, importTestRegistry(t)); err != nil {

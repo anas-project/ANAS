@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: samba_dc
 version: 4.23.6
-revision: 6
+revision: 7
 app_version: 4.23.6
 abi:
   supports:
@@ -23,6 +23,14 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
+  must_resolve:
+    - realm
+    - netbios_name
+    - admin_password
+    - administrator_password
+    - ldap_bind_password
+    - password_bind_password
+    - anchor_bind_password
   # The normalized directory-change stream. Subscribers bind to these generic
   # names rather than to this module, so nothing downstream needs to know the
   # events originate from Samba's dsdb audit log.
@@ -82,6 +90,63 @@ config:
     # Must not be 0: that disables the reopen-after-rename check Samba relies
     # on to keep all of its processes writing to the current file.
     max_log_size: "2048"
+  types:
+    app_filter: bool
+    create_structure: bool
+    admin_name: string
+    dns_cache_size: string
+    template_shell: string
+    template_homedir: string
+    user_complex_pass: bool
+    user_max_pass_age: int
+    user_min_pass_age: int
+    user_min_pass_length: int
+    user_password_history: int
+    user_lockout_threshold: int
+    user_lockout_duration: int
+    user_lockout_reset_after: int
+    admin_complex_pass: bool
+    admin_max_pass_age: int
+    admin_min_pass_age: int
+    admin_min_pass_length: int
+    admin_password_history: int
+    admin_lockout_threshold: int
+    admin_lockout_duration: int
+    admin_lockout_reset_after: int
+    ldap_bind_name: string
+    password_bind_name: string
+    anchor_bind_name: string
+    anchor_scan_interval: int
+    dns_debug: bool
+    # Samba accepts composite logging expressions and list-like DNS values.
+    log_level: string
+    dns_forwarders: string
+    dns_allowed_networks: string
+    max_log_size:
+      kind: int
+      constraints:
+        minimum: 1
+    realm:
+      kind: string
+      default_source: inherited
+    netbios_name:
+      kind: string
+      default_source: runtime
+    admin_password:
+      kind: string
+      default_source: generated
+    administrator_password:
+      kind: string
+      default_source: generated
+    ldap_bind_password:
+      kind: string
+      default_source: generated
+    password_bind_password:
+      kind: string
+      default_source: generated
+    anchor_bind_password:
+      kind: string
+      default_source: generated
   changes:
     realm:
       effect: immutable

@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: collabora
 version: 26.4.2
-revision: 3
+revision: 4
 app_version: 26.04.2.4.1
 abi:
   supports:
@@ -23,6 +23,8 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 config:
+  must_resolve:
+    - admin_password
   # Cross-module values this module reads. Listing them is what lets a rendered
   # .env carry only what is used, instead of everything the dependency
   # closure happens to own.
@@ -34,6 +36,14 @@ config:
     domain_prefix: collabora
     log_level: warning
     auto_save: "60"
+  types:
+    admin_username: string
+    admin_password:
+      kind: string
+      default_source: generated
+    domain_prefix: string
+    log_level: string
+    auto_save: int
   exports:
     - COLLABORA_DOMAIN_FULL
     - COLLABORA_HOSTNAME

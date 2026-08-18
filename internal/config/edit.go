@@ -30,20 +30,59 @@ func Settings(path string) (map[string]string, error) {
 }
 
 func flattenNode(node *yaml.Node, path []string, out map[string]string) {
+	flattenNodeSeen(node, path, out, map[*yaml.Node]bool{})
+}
+
+func flattenNodeSeen(node *yaml.Node, path []string, out map[string]string, resolving map[*yaml.Node]bool) {
+	if node == nil {
+		return
+	}
+	if node.Kind == yaml.AliasNode {
+		if node.Alias == nil || resolving[node] {
+			return
+		}
+		resolving[node] = true
+		flattenNodeSeen(node.Alias, path, out, resolving)
+		delete(resolving, node)
+		return
+	}
 	switch node.Kind {
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {
-			flattenNode(node.Content[i+1], append(path, node.Content[i].Value), out)
+			flattenNodeSeen(node.Content[i+1], append(path, node.Content[i].Value), out, resolving)
 		}
 	case yaml.SequenceNode:
 		values := make([]string, 0, len(node.Content))
 		for _, child := range node.Content {
-			values = append(values, child.Value)
+			values = append(values, scalarNodeValue(child, map[*yaml.Node]bool{}))
 		}
 		out[strings.Join(path, ".")] = strings.Join(values, ",")
 	case yaml.ScalarNode:
-		out[strings.Join(path, ".")] = node.Value
+		value := node.Value
+		if node.Tag == "!!null" {
+			value = ""
+		}
+		out[strings.Join(path, ".")] = value
 	}
+}
+
+func scalarNodeValue(node *yaml.Node, resolving map[*yaml.Node]bool) string {
+	if node == nil {
+		return ""
+	}
+	if node.Kind != yaml.AliasNode {
+		if node.Tag == "!!null" {
+			return ""
+		}
+		return node.Value
+	}
+	if node.Alias == nil || resolving[node] {
+		return ""
+	}
+	resolving[node] = true
+	value := scalarNodeValue(node.Alias, resolving)
+	delete(resolving, node)
+	return value
 }
 
 // SetScalar atomically updates a scalar YAML path while preserving unrelated
@@ -53,6 +92,28 @@ func SetScalar(path string, keys []string, value string) error {
 	if len(keys) == 0 {
 		return fmt.Errorf("empty config path")
 	}
+	var parsed yaml.Node
+	if err := yaml.Unmarshal([]byte(value), &parsed); err != nil {
+		return fmt.Errorf("invalid YAML scalar %q: %w", value, err)
+	}
+	if len(parsed.Content) == 0 || parsed.Content[0].Kind != yaml.ScalarNode {
+		return fmt.Errorf("value must be a scalar")
+	}
+	return setScalarNode(path, keys, parsed.Content[0])
+}
+
+// SetString atomically updates a YAML path with an explicit string scalar.
+// Unlike SetScalar, values that resemble YAML syntax retain their exact text:
+// for example null, 1.0 and [x] are strings rather than null, a number or a
+// sequence, and leading or trailing whitespace is not trimmed.
+func SetString(path string, keys []string, value string) error {
+	if len(keys) == 0 {
+		return fmt.Errorf("empty config path")
+	}
+	return setScalarNode(path, keys, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value})
+}
+
+func setScalarNode(path string, keys []string, value *yaml.Node) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -64,17 +125,10 @@ func SetScalar(path string, keys []string, value string) error {
 	if len(doc.Content) == 0 {
 		doc.Content = append(doc.Content, &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"})
 	}
-	var parsed yaml.Node
-	if err := yaml.Unmarshal([]byte(value), &parsed); err != nil {
-		return fmt.Errorf("invalid YAML scalar %q: %w", value, err)
-	}
-	if len(parsed.Content) == 0 || parsed.Content[0].Kind != yaml.ScalarNode {
-		return fmt.Errorf("value must be a scalar")
-	}
 	if doc.Content[0].Kind != yaml.MappingNode {
 		return fmt.Errorf("config root must be a mapping")
 	}
-	if err := setNode(doc.Content[0], keys, parsed.Content[0]); err != nil {
+	if err := setNode(doc.Content[0], keys, value); err != nil {
 		return err
 	}
 

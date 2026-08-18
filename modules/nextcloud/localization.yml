@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: nextcloud
 module_version: 34.0.2
-module_revision: 6
+module_revision: 7
 reviewed_at: 2026-08-13
 timezone:
   status: partial

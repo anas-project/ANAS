@@ -4,13 +4,15 @@ File sync, sharing, online office, Memories, and Talk platform.
 
 ## Quick facts
 
+<!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `nextcloud` |
-| Version / revision | `34.0.2-r4` |
+| Version / revision | `34.0.2-r7` |
 | Status | `release` |
 | Category | `app` |
 | Runtime | `compose` |
+<!-- generated:module-facts:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -89,21 +91,21 @@ The runner creates a dedicated database, principal, and stable generated credent
 
 This inventory comes from the current `module.yml` and `anas config list`. The environment key is the rendered module-private key, not the preferred configuration interface.
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `nextcloud.db_name` | string | `nextcloud` | `NEXTCLOUD_DB_NAME` | no | no | no: `migrate-nextcloud-database` | `data_migrate` | The database name is materialized during installation. |
-| `nextcloud.db_type` | string | `auto` | `NEXTCLOUD_DB_TYPE` | no | no | no: `migrate-nextcloud-database` | `data_migrate` | Changing the environment does not migrate an installed Nextcloud database. |
-| `nextcloud.domain_prefix` | string | `nc` | `NEXTCLOUD_DOMAIN_PREFIX` | no | no | yes | `reconcile` | Trusted domains, SSO metadata, and proxy routes must be updated together. |
-| `nextcloud.iam_protocol` | string | `auto` | `NEXTCLOUD_IAM_PROTOCOL` | no | no | yes | `container_recreate` | Switching OIDC and SAML changes both the IAM registration and the enabled Nextcloud authentication app. |
-| `nextcloud.language` | string | `—` | `NEXTCLOUD_LANGUAGE` | no | no | yes | `reconcile` | Sets the fallback UI language without overriding browser or per-user preferences. |
-| `nextcloud.locale` | string | `—` | `NEXTCLOUD_LOCALE` | no | no | yes | `reconcile` | Sets the fallback regional formatting locale separately from the UI language. |
-| `nextcloud.log_level` | string | `2` | `NEXTCLOUD_LOG_LEVEL` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `nextcloud.memories_enabled` | string | `true` | `NEXTCLOUD_MEMORIES_ENABLED` | no | no | yes | `reconcile` | The app can be enabled or disabled through occ without restarting the container. |
-| `nextcloud.memory_limit` | string | `1G` | `NEXTCLOUD_MEMORY_LIMIT` | no | no | yes | `container_recreate` | The limit is injected into the container environment. |
-| `nextcloud.phone_region` | string | `CN` | `NEXTCLOUD_PHONE_REGION` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `nextcloud.rm_skeleton_files` | string | `false` | `NEXTCLOUD_RM_SKELETON_FILES` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `nextcloud.talk_enabled` | string | `true` | `NEXTCLOUD_TALK_ENABLED` | no | no | yes | `container_recreate` | The optional Compose service set changes. |
-| `nextcloud.upload_max_size` | string | `16G` | `NEXTCLOUD_UPLOAD_MAX_SIZE` | no | no | yes | `container_recreate` | The limit is injected into the container environment. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `nextcloud.db_name` | string | — | `nextcloud` | `static` | `NEXTCLOUD_DB_NAME` | no | no | no | no: `migrate-nextcloud-database` | `data_migrate` | The database name is materialized during installation. |
+| `nextcloud.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `NEXTCLOUD_DB_TYPE` | no | no | no | no: `migrate-nextcloud-database` | `data_migrate` | Changing the environment does not migrate an installed Nextcloud database. |
+| `nextcloud.domain_prefix` | string | — | `nc` | `static` | `NEXTCLOUD_DOMAIN_PREFIX` | no | no | no | yes | `reconcile` | Trusted domains, SSO metadata, and proxy routes must be updated together. |
+| `nextcloud.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `NEXTCLOUD_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | Switching OIDC and SAML changes both the IAM registration and the enabled Nextcloud authentication app. |
+| `nextcloud.language` | string | — | — | `inherited` | `NEXTCLOUD_LANGUAGE` | no | yes | no | yes | `reconcile` | Sets the fallback UI language without overriding browser or per-user preferences. |
+| `nextcloud.locale` | string | — | — | `inherited` | `NEXTCLOUD_LOCALE` | no | yes | no | yes | `reconcile` | Sets the fallback regional formatting locale separately from the UI language. |
+| `nextcloud.log_level` | string | — | `2` | `static` | `NEXTCLOUD_LOG_LEVEL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `nextcloud.memories_enabled` | bool | — | `true` | `static` | `NEXTCLOUD_MEMORIES_ENABLED` | no | no | no | yes | `reconcile` | The app can be enabled or disabled through occ without restarting the container. |
+| `nextcloud.memory_limit` | string | — | `1G` | `static` | `NEXTCLOUD_MEMORY_LIMIT` | no | no | no | yes | `container_recreate` | The limit is injected into the container environment. |
+| `nextcloud.phone_region` | string | — | `CN` | `static` | `NEXTCLOUD_PHONE_REGION` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `nextcloud.rm_skeleton_files` | bool | — | `false` | `static` | `NEXTCLOUD_RM_SKELETON_FILES` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `nextcloud.talk_enabled` | bool | — | `true` | `static` | `NEXTCLOUD_TALK_ENABLED` | no | no | no | yes | `container_recreate` | The optional Compose service set changes. |
+| `nextcloud.upload_max_size` | string | — | `16G` | `static` | `NEXTCLOUD_UPLOAD_MAX_SIZE` | no | no | no | yes | `container_recreate` | The limit is injected into the container environment. |
 
 ### Query and modify
 

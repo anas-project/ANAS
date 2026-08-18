@@ -136,7 +136,7 @@ func runConfig(args []string, jsonMode bool) error {
 				return preconditionErrorf("config_not_managed", "%s", err.Error())
 			}
 		}
-		return reportConfigList(*cfgPath, reg, scope, jsonMode)
+		return reportConfigList(*cfgPath, reg, scope, jsonMode, base)
 	case "set":
 		if len(positional) != 2 {
 			return usageErrorf("usage: anas config set [-w <workspace>] [-c config.yml] <path> <value> [--json]")
@@ -145,10 +145,11 @@ func runConfig(args []string, jsonMode bool) error {
 		if err != nil {
 			return usageErrorf("%s", err.Error())
 		}
-		if err := validateParameterValue(target.Module, target.Parameter, positional[1], reg); err != nil {
+		policy := policyForTarget(target, reg)
+		normalizedValue, err := normalizeConfigInputForPolicy(target, positional[1], policy, reg)
+		if err != nil {
 			return usageErrorf("%s", err.Error())
 		}
-		policy := policyForTarget(target, reg)
 		switch policy.Effect {
 		case "credential_rotate":
 			return usageErrorf("%s is lifecycle-managed; provide its initial value through `anas config import SOURCE` and use the declared credential rotation command afterwards", target.Display)
@@ -169,7 +170,11 @@ func runConfig(args []string, jsonMode bool) error {
 		if err != nil {
 			return failuref("state_unreadable", "%s", err.Error())
 		}
-		if err := setManagedConfigScalar(workspace, *cfgPath, target.YAMLPath, positional[1]); err != nil {
+		// A declared type already interpreted the CLI token. Persist that exact
+		// canonical text instead of asking YAML to reinterpret it a second time
+		// (where "null", "1.0" or "[x]" would change meaning).
+		preserveText := targetParamType(target, reg).Declared()
+		if err := setManagedConfigScalar(workspace, *cfgPath, target.YAMLPath, normalizedValue, preserveText); err != nil {
 			return failuref("write_failed", "%s", err.Error())
 		}
 		execution := map[string]any{"status": "stored", "executor": effectExecutor(policy.Effect)}
@@ -202,7 +207,7 @@ func runConfig(args []string, jsonMode bool) error {
 		if jsonMode {
 			return emitOK(map[string]any{
 				"workspace": workspace, "config": *cfgPath,
-				"setting": configTargetDocument(target, policy), "execution": execution,
+				"setting": configTargetMetadataDocument(target, policy, reg), "execution": execution,
 			})
 		}
 		fmt.Printf("updated %s\neffect: %s\napply: %s\n", target.Display, policy.Effect, policy.Apply)
@@ -225,22 +230,31 @@ func runConfig(args []string, jsonMode bool) error {
 		}
 		policy := policyForTarget(target, reg)
 		if jsonMode {
-			document := configTargetDocument(target, policy)
-			kind, values := paramTypeDocument(targetParamType(target, reg))
-			document["type"] = kind
-			if len(values) > 0 {
-				document["allowed_values"] = values
-			}
-			document["env_key"] = parameterEnvKey(target.Module, target.Parameter, reg)
+			document := configTargetMetadataDocument(target, policy, reg)
 			return emitOK(map[string]any{"setting": document})
 		}
-		kind, values := paramTypeDocument(targetParamType(target, reg))
-		fmt.Printf("path: %s\nmodule: %s\nparameter: %s\ntype: %s\nenv: %s\neffect: %s\nexecutor: %s\napply: %s\nsensitive: %t\n",
+		spec := targetParamType(target, reg)
+		kind, values := paramTypeDocument(spec)
+		defaultValue, hasDefault, defaultSource := parameterDefaultMetadata(
+			target.Module, target.Parameter, reg, globalConfig.defaultValues(),
+		)
+		if policy.Sensitive {
+			defaultValue = ""
+		}
+		fmt.Printf("path: %s\nmodule: %s\nparameter: %s\ntype: %s\nenv: %s\nrequired: %t\ninput required: %t\nmust resolve: %t\nhas default: %t\ndefault source: %s\ndefault: %s\neffect: %s\nexecutor: %s\napply: %s\nsensitive: %t\n",
 			target.Display, target.Module, target.Parameter, kind,
-			parameterEnvKey(target.Module, target.Parameter, reg), policy.Effect,
+			parameterEnvKey(target.Module, target.Parameter, reg),
+			parameterInputRequired(target.Module, target.Parameter, reg),
+			parameterInputRequired(target.Module, target.Parameter, reg),
+			parameterMustResolve(target.Module, target.Parameter, reg),
+			hasDefault, defaultSource,
+			configDefaultDisplay(defaultValue, hasDefault, policy.Sensitive), policy.Effect,
 			effectExecutor(policy.Effect), policy.Apply, policy.Sensitive)
 		if len(values) > 0 {
 			fmt.Println("allowed: " + strings.Join(values, ", "))
+		}
+		if constraints := paramConstraintsDocument(spec); len(constraints) > 0 {
+			fmt.Println("constraints: " + formatConfigConstraints(constraints))
 		}
 		if policy.Description != "" {
 			fmt.Println("description: " + policy.Description)
@@ -361,6 +375,41 @@ func configTargetDocument(target configTarget, policy ChangePolicy) map[string]a
 	}
 }
 
+func configTargetMetadataDocument(target configTarget, policy ChangePolicy, reg map[string]Module) map[string]any {
+	document := configTargetDocument(target, policy)
+	document["env_key"] = parameterEnvKey(target.Module, target.Parameter, reg)
+	defaultValue, hasDefault, defaultSource := parameterDefaultMetadata(
+		target.Module, target.Parameter, reg, globalConfig.defaultValues(),
+	)
+	if policy.Sensitive {
+		defaultValue = ""
+	}
+	addConfigParameterMetadata(document, target, reg, defaultValue, hasDefault, defaultSource)
+	return document
+}
+
+func normalizeConfigInputValue(target configTarget, value string, reg map[string]Module) (string, error) {
+	normalized, err := normalizeParameterValue(target.Module, target.Parameter, value, reg)
+	if err != nil {
+		return "", err
+	}
+	if parameterInputRequired(target.Module, target.Parameter, reg) && strings.TrimSpace(normalized) == "" {
+		return "", fmt.Errorf("%s is required input and cannot be set to an empty value", target.Display)
+	}
+	return normalized, nil
+}
+
+func formatConfigConstraints(constraints map[string]any) string {
+	order := []string{"minimum", "maximum", "min_length", "max_length", "pattern", "format"}
+	parts := make([]string, 0, len(constraints))
+	for _, key := range order {
+		if value, ok := constraints[key]; ok {
+			parts = append(parts, fmt.Sprintf("%s=%v", key, value))
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
 func configEditability(policy ChangePolicy) (bool, string) {
 	switch policy.Effect {
 	case "credential_rotate":
@@ -375,20 +424,17 @@ func configEditability(policy ChangePolicy) (bool, string) {
 }
 
 func targetParamType(target configTarget, reg map[string]Module) ParamType {
-	if mod, ok := reg[target.Module]; ok {
-		return mod.Types[strings.ToLower(target.Parameter)]
-	}
-	return ParamType{}
+	return parameterType(target.Module, target.Parameter, reg)
 }
 
 func paramTypeDocument(spec ParamType) (string, []string) {
+	if !spec.Declared() {
+		return "unknown", nil
+	}
 	if len(spec.Enum) > 0 {
 		return "enum", append([]string{}, spec.Enum...)
 	}
-	if spec.Kind != "" {
-		return spec.Kind, nil
-	}
-	return "string", nil
+	return spec.Kind, nil
 }
 
 func runConfigSecret(args []string, jsonMode bool) error {
@@ -472,39 +518,34 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
 	}
-	if parts[0] == "global" {
+	namespace := strings.ToLower(parts[0])
+	if namespace == "global" {
 		if len(parts) != 2 {
 			return configTarget{}, fmt.Errorf("global config path must have two components")
 		}
 		return resolveGlobalTarget(strings.ToLower(parts[1]), reg)
 	}
-	if parts[0] == "env" {
+	if namespace == "env" {
 		if len(parts) != 2 {
 			return configTarget{}, fmt.Errorf("raw env config path must have two components")
 		}
-		module, parameter, err := policyOwnerForEnv(parts[1], reg)
+		key := config.EnvKey(parts[1])
+		module, parameter, err := policyOwnerForEnv(key, reg)
 		if err != nil {
 			return configTarget{}, err
 		}
-		return configTarget{YAMLPath: parts, Display: strings.Join(parts, "."), Module: module, Parameter: parameter}, nil
+		return configTarget{YAMLPath: []string{"env", key}, Display: "env." + key, Module: module, Parameter: parameter}, nil
 	}
-	if parts[0] == "modules" {
-		if len(parts) == 4 && parts[2] == "config" {
-			parts = []string{parts[0], parts[1], parts[3]}
+	if namespace == "modules" {
+		if len(parts) == 4 && strings.EqualFold(parts[2], "config") {
+			parts = []string{namespace, parts[1], parts[3]}
 		}
 		if len(parts) != 3 {
 			return configTarget{}, fmt.Errorf("module config path must be modules.<module>.<parameter>")
 		}
-		if _, ok := reg[parts[1]]; !ok {
-			return configTarget{}, fmt.Errorf("unknown module %q", parts[1])
-		}
-		if err := validateParameter(parts[1], parts[2], reg); err != nil {
-			return configTarget{}, err
-		}
-		yamlPath := []string{"modules", parts[1], "config", parts[2]}
-		return configTarget{YAMLPath: yamlPath, Display: parts[1] + "." + parts[2], Module: parts[1], Parameter: strings.ToLower(parts[2])}, nil
+		return resolveModuleTarget(strings.ToLower(parts[1]), strings.ToLower(parts[2]), reg)
 	}
-	module := parts[0]
+	module := namespace
 	if _, ok := reg[module]; !ok && module != globalModuleName {
 		return configTarget{}, fmt.Errorf("unknown module %q", module)
 	}
@@ -515,13 +556,23 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 	if module == globalModuleName {
 		return resolveGlobalTarget(parameter, reg)
 	}
+	return resolveModuleTarget(module, parameter, reg)
+}
+
+func resolveModuleTarget(module, parameter string, reg map[string]Module) (configTarget, error) {
+	module = strings.ToLower(strings.TrimSpace(module))
+	parameter = strings.ToLower(strings.TrimSpace(parameter))
+	mod, ok := reg[module]
+	if !ok {
+		return configTarget{}, fmt.Errorf("unknown module %q", module)
+	}
 	if err := validateParameter(module, parameter, reg); err != nil {
 		return configTarget{}, err
 	}
 	// A parameter the module declares under a bare env name is set in the top
 	// level `env:` block: every key under `modules.<module>.config` acquires the
 	// module prefix, which would write a variant nothing reads.
-	if key, ok := reg[module].bareEnvParameter(parameter); ok {
+	if key, ok := mod.bareEnvParameter(parameter); ok {
 		return configTarget{YAMLPath: []string{"env", key}, Display: "env." + key, Module: module, Parameter: parameter}, nil
 	}
 	return configTarget{YAMLPath: []string{"modules", module, "config", parameter}, Display: module + "." + parameter, Module: module, Parameter: parameter}, nil
@@ -577,6 +628,21 @@ func isGlobalParameter(parameter string) bool {
 func policyOwnerForEnv(key string, reg map[string]Module) (string, string, error) {
 	type owner struct{ module, parameter string }
 	matches := []owner{}
+	seen := map[owner]bool{}
+	add := func(module, parameter string) {
+		match := owner{module: module, parameter: strings.ToLower(strings.TrimSpace(parameter))}
+		if match.parameter == "" || seen[match] {
+			return
+		}
+		seen[match] = true
+		matches = append(matches, match)
+	}
+	globalParameters, _ := declaredParametersFor(globalModuleName, reg)
+	for _, parameter := range globalParameters {
+		if strings.EqualFold(parameterEnvKey(globalModuleName, parameter, reg), key) {
+			add(globalModuleName, parameter)
+		}
+	}
 	names := make([]string, 0, len(reg))
 	for name := range reg {
 		names = append(names, name)
@@ -584,22 +650,16 @@ func policyOwnerForEnv(key string, reg map[string]Module) (string, string, error
 	sort.Strings(names)
 	for _, name := range names {
 		mod := reg[name]
-		parameters := make([]string, 0, len(mod.Changes))
-		for parameter := range mod.Changes {
-			parameters = append(parameters, parameter)
-		}
+		parameters := append([]string{}, mod.Parameters...)
 		sort.Strings(parameters)
 		for _, parameter := range parameters {
 			if strings.EqualFold(moduleParamEnvKey(name, mod.EnvPrefix, mod.Exports, parameter), key) {
-				matches = append(matches, owner{name, parameter})
+				add(name, parameter)
 			}
 		}
 	}
 	switch len(matches) {
 	case 0:
-		if parameter, ok := globalConfig.parameterFor(key); ok {
-			return globalModuleName, parameter, nil
-		}
 		return globalModuleName, strings.ToLower(key), nil
 	case 1:
 		return matches[0].module, matches[0].parameter, nil
@@ -659,6 +719,13 @@ func targetForSettingPath(path string, reg map[string]Module) configTarget {
 		target, _ := resolveConfigTarget(path, reg)
 		return target
 	}
+	if len(parts) == 2 && parts[0] == "secrets" {
+		key := config.EnvKey(parts[1])
+		module, parameter, err := policyOwnerForEnv(key, reg)
+		if err == nil {
+			return configTarget{Display: path, Module: module, Parameter: parameter}
+		}
+	}
 	if len(parts) == 4 && parts[0] == "modules" && parts[2] == "config" {
 		target, _ := resolveConfigTarget("modules."+parts[1]+"."+parts[3], reg)
 		return target
@@ -669,6 +736,17 @@ func targetForSettingPath(path string, reg map[string]Module) configTarget {
 func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, jsonMode bool) error {
 	if !exists(cfgPath) {
 		return preconditionErrorf("config_missing", "config %s does not exist", cfgPath)
+	}
+	loaded, err := config.Load(cfgPath)
+	if err != nil {
+		return preconditionErrorf("config_invalid", "%s", err.Error())
+	}
+	store, err := loadSecretStore(base)
+	if err != nil {
+		return preconditionErrorf("state_unreadable", "%s", err.Error())
+	}
+	if err := validateLoadedConfigSchema(loaded, reg, store.lifecycleManagedValues()); err != nil {
+		return preconditionErrorf("config_invalid", "%s", err.Error())
 	}
 	settings, err := config.Settings(cfgPath)
 	if err != nil {

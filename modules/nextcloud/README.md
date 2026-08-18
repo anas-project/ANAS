@@ -4,13 +4,15 @@
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `nextcloud` |
-| 版本 / revision | `34.0.2-r4` |
+| 版本 / revision | `34.0.2-r7` |
 | 状态 | `release` |
 | 类别 | `app` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -89,21 +91,21 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `nextcloud.db_name` | string | `nextcloud` | `NEXTCLOUD_DB_NAME` | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 应用数据库名 |
-| `nextcloud.db_type` | string | `auto` | `NEXTCLOUD_DB_TYPE` | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 关系数据库类型或自动选择 |
-| `nextcloud.domain_prefix` | string | `nc` | `NEXTCLOUD_DOMAIN_PREFIX` | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
-| `nextcloud.iam_protocol` | string | `auto` | `NEXTCLOUD_IAM_PROTOCOL` | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
-| `nextcloud.language` | string | `—` | `NEXTCLOUD_LANGUAGE` | 否 | 否 | 是 | `reconcile` | 界面回退语言 |
-| `nextcloud.locale` | string | `—` | `NEXTCLOUD_LOCALE` | 否 | 否 | 是 | `reconcile` | 区域格式回退值 |
-| `nextcloud.log_level` | string | `2` | `NEXTCLOUD_LOG_LEVEL` | 否 | 否 | 是 | `container_recreate` | 日志级别 |
-| `nextcloud.memories_enabled` | string | `true` | `NEXTCLOUD_MEMORIES_ENABLED` | 否 | 否 | 是 | `reconcile` | 是否启用 Memories |
-| `nextcloud.memory_limit` | string | `1G` | `NEXTCLOUD_MEMORY_LIMIT` | 否 | 否 | 是 | `container_recreate` | 内存限制 |
-| `nextcloud.phone_region` | string | `CN` | `NEXTCLOUD_PHONE_REGION` | 否 | 否 | 是 | `container_recreate` | 默认电话区域 |
-| `nextcloud.rm_skeleton_files` | string | `false` | `NEXTCLOUD_RM_SKELETON_FILES` | 否 | 否 | 是 | `container_recreate` | 是否删除默认骨架文件 |
-| `nextcloud.talk_enabled` | string | `true` | `NEXTCLOUD_TALK_ENABLED` | 否 | 否 | 是 | `container_recreate` | 是否启用 Talk |
-| `nextcloud.upload_max_size` | string | `16G` | `NEXTCLOUD_UPLOAD_MAX_SIZE` | 否 | 否 | 是 | `container_recreate` | 上传大小上限 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `nextcloud.db_name` | string | — | `nextcloud` | `static` | `NEXTCLOUD_DB_NAME` | 否 | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 应用数据库名 |
+| `nextcloud.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `NEXTCLOUD_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 关系数据库类型或自动选择 |
+| `nextcloud.domain_prefix` | string | — | `nc` | `static` | `NEXTCLOUD_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
+| `nextcloud.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `NEXTCLOUD_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
+| `nextcloud.language` | string | — | — | `inherited` | `NEXTCLOUD_LANGUAGE` | 否 | 是 | 否 | 是 | `reconcile` | 界面回退语言 |
+| `nextcloud.locale` | string | — | — | `inherited` | `NEXTCLOUD_LOCALE` | 否 | 是 | 否 | 是 | `reconcile` | 区域格式回退值 |
+| `nextcloud.log_level` | string | — | `2` | `static` | `NEXTCLOUD_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | 日志级别 |
+| `nextcloud.memories_enabled` | bool | — | `true` | `static` | `NEXTCLOUD_MEMORIES_ENABLED` | 否 | 否 | 否 | 是 | `reconcile` | 是否启用 Memories |
+| `nextcloud.memory_limit` | string | — | `1G` | `static` | `NEXTCLOUD_MEMORY_LIMIT` | 否 | 否 | 否 | 是 | `container_recreate` | 内存限制 |
+| `nextcloud.phone_region` | string | — | `CN` | `static` | `NEXTCLOUD_PHONE_REGION` | 否 | 否 | 否 | 是 | `container_recreate` | 默认电话区域 |
+| `nextcloud.rm_skeleton_files` | bool | — | `false` | `static` | `NEXTCLOUD_RM_SKELETON_FILES` | 否 | 否 | 否 | 是 | `container_recreate` | 是否删除默认骨架文件 |
+| `nextcloud.talk_enabled` | bool | — | `true` | `static` | `NEXTCLOUD_TALK_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Talk |
+| `nextcloud.upload_max_size` | string | — | `16G` | `static` | `NEXTCLOUD_UPLOAD_MAX_SIZE` | 否 | 否 | 否 | 是 | `container_recreate` | 上传大小上限 |
 
 ### 查询和修改
 
@@ -139,7 +141,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`34.0.2-r6`（reviewed 2026-08-13）
+- Module version / 版本：`34.0.2-r7`（reviewed 2026-08-13）
 - Timezone / 时区：`partial` — Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
 - Language scope / 语言范围：Nextcloud Web UI
 - Selection / 选择方式：`browser`

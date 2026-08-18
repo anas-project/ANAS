@@ -4,13 +4,15 @@ TURN relay for realtime communication modules.
 
 ## Quick facts
 
+<!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `eturnal` |
-| Version / revision | `1.12.2-r3` |
+| Version / revision | `1.12.2-r5` |
 | Status | `release` |
 | Category | `communication` |
 | Runtime | `compose` |
+<!-- generated:module-facts:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -52,10 +54,10 @@ This module neither consumes nor provides a relational-database contract.
 
 This inventory comes from the current `module.yml` and `anas config list`. The environment key is the rendered module-private key, not the preferred configuration interface.
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `eturnal.domain_prefix` | string | `turn` | `TURN_DOMAIN_PREFIX` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `eturnal.port` | string | `3478` | `TURN_PORT` | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `eturnal.domain_prefix` | string | — | `turn` | `static` | `TURN_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `eturnal.port` | int | `1..65535` | `3478` | `static` | `TURN_PORT` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
 ### Query and modify
 

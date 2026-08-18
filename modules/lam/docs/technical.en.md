@@ -2,7 +2,9 @@
 
 This page records the current implementation, security boundaries, and verification entry points for `lam`. User instructions are in the [English README](../README.en.md).
 
-> Status: current implementation; based on `9.6.0-r5` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> Status: current implementation; based on `9.6.0-r7` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -13,17 +15,19 @@ This page records the current implementation, security boundaries, and verificat
 
 ## Compose topology
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_lam` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lam:9.6.0-r5` | `traefik` | 1 |
+| `anas_lam` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lam:9.6.0-r7` | `traefik` | 1 |
+<!-- generated:compose-topology:end -->
 
 ## Configuration contract
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `lam.admin_password` | string | `—` | `LAM_ADMIN_PASSWORD` | no | yes | yes | `container_recreate` | LAM configuration is generated when the container starts. |
-| `lam.domain_prefix` | string | `lam` | `LAM_DOMAIN_PREFIX` | no | no | yes | `container_recreate` | The proxy route is generated from the domain. |
-| `lam.language` | string | `—` | `LAM_LANGUAGE` | no | no | yes | `container_recreate` | The BCP 47 language is matched to a LAM-supported POSIX locale when the container starts. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `lam.admin_password` | string | — | — | `generated` | `LAM_ADMIN_PASSWORD` | no | yes | yes | yes | `container_recreate` | LAM configuration is generated when the container starts. |
+| `lam.domain_prefix` | string | — | `lam` | `static` | `LAM_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | The proxy route is generated from the domain. |
+| `lam.language` | string | — | — | `inherited` | `LAM_LANGUAGE` | no | yes | no | yes | `container_recreate` | The BCP 47 language is matched to a LAM-supported POSIX locale when the container starts. |
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
 

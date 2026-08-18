@@ -2,7 +2,9 @@
 
 本文面向 Module 维护者，记录 `llng` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
-> 状态：当前实现；对应 `2.23.2-r5` / `anas.module/v1`.
+<!-- generated:module-identity:start -->
+> 状态：当前实现；对应 `2.23.2-r9` / `anas.module/v1`.
+<!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -15,22 +17,24 @@
 
 ## Compose 拓扑
 
+<!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r5` | `traefik, db` | 2 |
+| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r9` | `traefik, db` | 2 |
+<!-- generated:compose-topology:end -->
 
 ## 配置契约
 
-| 路径 | 类型 | 默认值 | 环境变量 | 必填 | 敏感 | 可编辑性 | 影响 | 作用 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `llng.adminer_enabled` | string | `false` | `LLNG_ADMINER_ENABLED` | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
-| `llng.db_name` | string | `lemonldap_ng` | `LLNG_DB_NAME` | 否 | 否 | 是 | `container_recreate` | 应用数据库名 |
-| `llng.db_type` | string | `auto` | `LLNG_DB_TYPE` | 否 | 否 | 否：`migrate-llng-database` | `data_migrate` | 关系数据库类型或自动选择 |
-| `llng.domain_prefix` | string | `auth` | `LLNG_DOMAIN_PREFIX` | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
-| `llng.enable_test` | string | `true` | `LLNG_ENABLE_TEST` | 否 | 否 | 是 | `container_recreate` | 是否启用测试入口 |
-| `llng.log_level` | string | `warn` | `LLNG_LOG_LEVEL` | 否 | 否 | 是 | `container_recreate` | 日志级别 |
-| `llng.manager_domain_prefix` | string | `auth-manager` | `LLNG_MANAGER_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | Manager 域名前缀 |
-| `llng.test_domain_prefix` | string | `auth-test` | `LLNG_TEST_DOMAIN_PREFIX` | 否 | 否 | 是 | `container_recreate` | 测试入口域名前缀 |
+| 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `llng.adminer_enabled` | bool | — | `false` | `static` | `LLNG_ADMINER_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
+| `llng.db_name` | string | — | `lemonldap_ng` | `static` | `LLNG_DB_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 应用数据库名 |
+| `llng.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `LLNG_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-llng-database` | `data_migrate` | 关系数据库类型或自动选择 |
+| `llng.domain_prefix` | string | — | `auth` | `static` | `LLNG_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
+| `llng.enable_test` | bool | — | `true` | `static` | `LLNG_ENABLE_TEST` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用测试入口 |
+| `llng.log_level` | string | — | `warn` | `static` | `LLNG_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | 日志级别 |
+| `llng.manager_domain_prefix` | string | — | `auth-manager` | `static` | `LLNG_MANAGER_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | Manager 域名前缀 |
+| `llng.test_domain_prefix` | string | — | `auth-test` | `static` | `LLNG_TEST_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 测试入口域名前缀 |
 
 参数库存的权威来源是 `module.yml`；CLI 负责合并默认值、类型、required、环境变量映射、敏感性和变更执行器。技术文档不得另造可设置参数。
 

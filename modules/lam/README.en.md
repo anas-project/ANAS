@@ -4,13 +4,15 @@ Web administration for Samba AD users, groups, and computer objects.
 
 ## Quick facts
 
+<!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `lam` |
-| Version / revision | `9.6.0-r5` |
+| Version / revision | `9.6.0-r7` |
 | Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |
+<!-- generated:module-facts:end -->
 
 ## Required modules, capabilities, and contracts
 
@@ -53,11 +55,11 @@ This module neither consumes nor provides a relational-database contract.
 
 This inventory comes from the current `module.yml` and `anas config list`. The environment key is the rendered module-private key, not the preferred configuration interface.
 
-| Path | Type | Default | Environment | Required | Sensitive | Editability | Effect | Purpose |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `lam.admin_password` | string | `—` | `LAM_ADMIN_PASSWORD` | no | yes | yes | `container_recreate` | LAM configuration is generated when the container starts. |
-| `lam.domain_prefix` | string | `lam` | `LAM_DOMAIN_PREFIX` | no | no | yes | `container_recreate` | The proxy route is generated from the domain. |
-| `lam.language` | string | `—` | `LAM_LANGUAGE` | no | no | yes | `container_recreate` | The BCP 47 language is matched to a LAM-supported POSIX locale when the container starts. |
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `lam.admin_password` | string | — | — | `generated` | `LAM_ADMIN_PASSWORD` | no | yes | yes | yes | `container_recreate` | LAM configuration is generated when the container starts. |
+| `lam.domain_prefix` | string | — | `lam` | `static` | `LAM_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | The proxy route is generated from the domain. |
+| `lam.language` | string | — | — | `inherited` | `LAM_LANGUAGE` | no | yes | no | yes | `container_recreate` | The BCP 47 language is matched to a LAM-supported POSIX locale when the container starts. |
 
 ### Query and modify
 

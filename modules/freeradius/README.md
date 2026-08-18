@@ -7,13 +7,15 @@ FreeRADIUS 服务骨架，仅用于开发和集成验证。
 
 ## 快速信息
 
+<!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `freeradius` |
-| 版本 / revision | `3.2.10-r1` |
+| 版本 / revision | `3.2.10-r3` |
 | 状态 | `developing` |
 | 类别 | `network` |
 | 运行时 | `compose` |
+<!-- generated:module-facts:end -->
 
 ## 依赖的 Module、Capability 与 Contract
 
@@ -88,7 +90,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`3.2.10-r2`（reviewed 2026-08-13）
+- Module version / 版本：`3.2.10-r3`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — The RADIUS service receives TZ for process and log timestamps.
 - Language scope / 语言范围：RADIUS protocol service
 - Selection / 选择方式：`none`

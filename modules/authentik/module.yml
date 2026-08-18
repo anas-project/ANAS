@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: authentik
 version: 2026.5.6
-revision: 7
+revision: 8
 app_version: 2026.5.6
 abi:
   supports:
@@ -56,6 +56,14 @@ config:
     db_type: auto
     ldap_enabled: "true"
     ldap_password_writeback: "true"
+  types:
+    domain_prefix: string
+    log_level: string
+    db_name: string
+    db_type:
+      enum: [auto, postgres]
+    ldap_enabled: bool
+    ldap_password_writeback: bool
   # Endpoints this module publishes for its bound consumers. Unlike a portal that
   # serves one endpoint set for the whole deployment, these differ per
   # consumer, which is why the contract is per-binding.

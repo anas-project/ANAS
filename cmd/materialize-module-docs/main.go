@@ -387,7 +387,7 @@ func deduplicateReleases(selected []moduleRelease) ([]versionPage, map[string]st
 		if !release.Complete {
 			continue
 		}
-		fingerprint := documentFingerprint(release.Docs)
+		fingerprint := documentFingerprint(release.Docs, release.ID())
 		if canonical, ok := seen[fingerprint]; ok {
 			aliases[release.ID()] = canonical
 			continue
@@ -398,11 +398,32 @@ func deduplicateReleases(selected []moduleRelease) ([]versionPage, map[string]st
 	return pages, aliases
 }
 
-func documentFingerprint(docs documentBundle) string {
+func documentFingerprint(docs documentBundle, releaseID string) string {
 	parts := []string{docs.ReadmeZH, docs.ReadmeEN, docs.TechnicalZH, docs.TechnicalEN}
 	for i, value := range parts {
 		value = strings.ReplaceAll(value, "\r\n", "\n")
-		value = versionLinePattern.ReplaceAllString(value, "- Module version / 版本：`<release>`")
+		var localizationFound bool
+		value, localizationFound = normalizeFingerprintBlock(value, "<!-- generated:localization:start -->", "<!-- generated:localization:end -->", func(block string) string {
+			return versionLinePattern.ReplaceAllString(block, "- Module version / 版本：`<release>`")
+		})
+		if !localizationFound {
+			value = versionLinePattern.ReplaceAllString(value, "- Module version / 版本：`<release>`")
+		}
+		foundBlocks := make([]bool, 3)
+		for blockIndex, markers := range [][2]string{
+			{"<!-- generated:module-facts:start -->", "<!-- generated:module-facts:end -->"},
+			{"<!-- generated:module-identity:start -->", "<!-- generated:module-identity:end -->"},
+			{"<!-- generated:compose-topology:start -->", "<!-- generated:compose-topology:end -->"},
+		} {
+			transform := func(block string) string { return normalizeFactsRelease(block, releaseID) }
+			if blockIndex == 1 {
+				transform = func(block string) string { return normalizeIdentityRelease(block, releaseID) }
+			} else if blockIndex == 2 {
+				transform = func(block string) string { return normalizeTopologyRelease(block, releaseID) }
+			}
+			value, foundBlocks[blockIndex] = normalizeFingerprintBlock(value, markers[0], markers[1], transform)
+		}
+		value = normalizeLegacyReleaseLabels(value, releaseID, !foundBlocks[0], !foundBlocks[1], !foundBlocks[2])
 		lines := strings.Split(value, "\n")
 		for j := range lines {
 			lines[j] = strings.TrimRight(lines[j], " \t")
@@ -411,6 +432,77 @@ func documentFingerprint(docs documentBundle) string {
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\n\x00\n")))
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func normalizeFingerprintBlock(value, startMarker, endMarker string, transform func(string) string) (string, bool) {
+	start := strings.Index(value, startMarker)
+	end := strings.Index(value, endMarker)
+	if start < 0 || end < start {
+		return value, false
+	}
+	contentStart := start + len(startMarker)
+	content := strings.Trim(value[contentStart:end], " \n")
+	normalized := transform(content)
+	prefix := strings.TrimRight(value[:start], " \n")
+	suffix := strings.TrimLeft(value[end+len(endMarker):], " \n")
+	result := prefix + "\n\n" + normalized
+	if suffix != "" {
+		result += "\n\n" + suffix
+	}
+	return result, true
+}
+
+func normalizeFactsRelease(value, releaseID string) string {
+	lines := strings.Split(value, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "| 版本 / revision |") || strings.HasPrefix(line, "| Version / revision |") {
+			lines[i] = strings.Replace(line, "`"+releaseID+"`", "`<release>`", 1)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func normalizeIdentityRelease(value, releaseID string) string {
+	lines := strings.Split(value, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "> 状态：当前实现；对应 `") || strings.HasPrefix(line, "> Status: current implementation; based on `") {
+			lines[i] = strings.Replace(line, "`"+releaseID+"`", "`<release>`", 1)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func normalizeLegacyReleaseLabels(value, releaseID string, facts, identity, topology bool) string {
+	lines := strings.Split(value, "\n")
+	inTopology := false
+	for i, line := range lines {
+		if topology && (line == "## Compose 拓扑" || line == "## Compose topology") {
+			inTopology = true
+			continue
+		}
+		if inTopology && strings.HasPrefix(line, "## ") {
+			inTopology = false
+		}
+		if facts && (strings.HasPrefix(line, "| 版本 / revision |") || strings.HasPrefix(line, "| Version / revision |")) {
+			lines[i] = normalizeFactsRelease(line, releaseID)
+		} else if identity && (strings.HasPrefix(line, "> 状态：当前实现；对应 `") || strings.HasPrefix(line, "> Status: current implementation; based on `")) {
+			lines[i] = normalizeIdentityRelease(line, releaseID)
+		} else if inTopology {
+			lines[i] = normalizeTopologyRelease(line, releaseID)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func normalizeTopologyRelease(value, releaseID string) string {
+	const ownedPrefix = "`${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-"
+	lines := strings.Split(value, "\n")
+	for i, line := range lines {
+		if strings.Contains(line, ownedPrefix) && !strings.Contains(line, "/anas-mirror-") {
+			lines[i] = strings.ReplaceAll(line, ":"+releaseID+"`", ":<release>`")
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func renderModule(docsRoot string, build moduleBuild) error {
