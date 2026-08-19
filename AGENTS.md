@@ -5,8 +5,9 @@
 
 ## Workflow agreements
 
-- Before implementing a change, present the proposed approach and obtain the user's confirmation. If the approach, requirements, or trade-offs are uncertain, ask the user instead of making a material assumption.
+- Execute clear, explicit implementation instructions directly without asking for confirmation. Present the proposed approach and obtain the user's confirmation only when the approach, requirements, or trade-offs are uncertain or require a material user decision; ask instead of making a material assumption.
 - When the user explicitly asks for a "git 提交", commit the requested changes and then merge the working branch into `master`. Before finishing, review the current conversation for discussed or agreed implementation items that remain incomplete, and clearly remind the user about them.
+- At the end of every response, include a concise "下一步" section that tells the user what to do next. If no user action is required, explicitly state that no further action is needed.
 
 ## Code reuse and dependencies
 

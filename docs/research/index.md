@@ -7,7 +7,10 @@
 | 文档 | 类型 | 状态 |
 | --- | --- | --- |
 | [`BASE_DOMAIN` 与 `SAMBA_DC_DOMAIN` 分离实施计划（2026-08-19）](./base-domain-samba-domain-separation-plan-2026-08-19.md) | AD/应用域分离、DNS 模式、校验 ABI 与迁移计划 | 实施前设计 |
+| [BIND 9 开源 Web 管理工具调研（2026-08-19）](./bind9-open-source-web-management-research-2026-08-19.md) | 标准 BIND、Samba BIND9-DLZ 与 Web 管理/监控选型 | 当前 |
 | [ANAS 凭据库存与全量轮换范围审计（2026-08-19）](./anas-credential-inventory-and-rotation-scope-2026-08-19.md) | Secret 存储面、轮换能力与安全实施边界 | 待范围确认 |
+| [开源自部署邮件服务调研（2026-08-19）](./self-hosted-open-source-mail-services-research-2026-08-19.md) | 完整邮件服务与外部转发能力选型 | 当前 |
+| [开源自部署邮件转发服务调研（2026-08-19）](./self-hosted-open-source-email-forwarding-research-2026-08-19.md) | Cloudflare Email Routing 类转发与隐私别名选型 | 当前 |
 | [ANAS Core 与 Module Changelog 方案（2026-08-18）](./changelog-plan-2026-08-18.md) | 变更记录信息模型与发布流水线规划 | 提案 |
 | [使用 `samba-tool` 管理用户、组和管理员（2026-08-17）](./samba-tool-user-group-admin-guide-2026-08-17.md) | Samba AD 操作手册 | 当前 |
 | [ANAS Web API 与管理前端实施规划（2026-08-16）](./web-api-admin-console-plan-2026-08-16.md) | Web 管理面架构与实施路线 | M0 部分实施（开发骨架） |

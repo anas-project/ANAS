@@ -106,6 +106,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: '索引', link: '/research/' },
         { text: '应用域与 AD 域分离计划', link: '/research/base-domain-samba-domain-separation-plan-2026-08-19' },
+        { text: '自部署邮件服务调研', link: '/research/self-hosted-open-source-mail-services-research-2026-08-19' },
+        { text: '自部署邮件转发调研', link: '/research/self-hosted-open-source-email-forwarding-research-2026-08-19' },
         { text: 'Changelog 方案', link: '/research/changelog-plan-2026-08-18' },
         { text: 'samba-tool 用户与组管理', link: '/research/samba-tool-user-group-admin-guide-2026-08-17' },
         { text: 'Web API 与管理前端规划', link: '/research/web-api-admin-console-plan-2026-08-16' },
