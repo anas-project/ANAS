@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "$script_dir/server-require-isolated-docker.sh"
+
 docker_cmd=${DOCKER_CMD:-docker}
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_anchor_}
 dc=${prefix}samba_dc

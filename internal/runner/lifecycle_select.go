@@ -152,7 +152,7 @@ func (a *app) stopModules(release string, names []string, jsonMode bool) error {
 		name := ordered[i]
 		emitProgress(jsonMode, "stop-containers", int64(len(ordered)-i), total, "modules")
 		dir := filepath.Join(release, name)
-		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
+		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("stop %s: %w", name, err))
 		}
 	}

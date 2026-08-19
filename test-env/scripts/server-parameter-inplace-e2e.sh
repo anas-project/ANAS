@@ -7,6 +7,9 @@ set -euo pipefail
 # short-lived standalone containers for LAM and Samba FS.
 
 DOCKER_HOST_URI=${ANAS_TEST_DOCKER_HOST:-unix:///run/anas-anchor-docker.sock}
+export ANAS_TEST_DOCKER_HOST=$DOCKER_HOST_URI
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "$script_dir/server-require-isolated-docker.sh"
 PREFIX=${ANAS_TEST_CONTAINER_PREFIX:-anas_anchor_}
 SAMBA_DC=${ANAS_TEST_SAMBA_DC_CONTAINER:-${PREFIX}samba_dc}
 NEXTCLOUD=${ANAS_TEST_NEXTCLOUD_CONTAINER:-${PREFIX}nextcloud}

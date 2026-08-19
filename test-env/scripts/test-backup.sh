@@ -384,7 +384,7 @@ modules:
   - traefik
 state: stopped
 EOF
-  docker compose --project-name anas_traefik --env-file .env \
+  docker compose --project-name anasbk_traefik --env-file .env \
     --project-directory "$ws/.anas/deployments/$active/modules/traefik" \
     -f "$ws/.anas/deployments/$active/modules/traefik/docker-compose.yml" stop >/dev/null 2>&1 ||
     docker stop $(docker ps --filter "name=anasbk_traefik" -q) >/dev/null 2>&1 || true

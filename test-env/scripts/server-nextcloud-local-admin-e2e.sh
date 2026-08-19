@@ -5,6 +5,9 @@ set -euo pipefail
 
 root=${ANAS_TEST_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 socket=${ANAS_TEST_DOCKER_SOCKET:-/run/anas-anchor-docker.sock}
+export ANAS_TEST_DOCKER_SOCKET=$socket
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "$script_dir/server-require-isolated-docker.sh"
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_anchor_}
 export DOCKER_HOST="unix://$socket"
 

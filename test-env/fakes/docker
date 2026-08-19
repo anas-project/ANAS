@@ -23,6 +23,23 @@ if [ "${1:-}" = compose ] && [ "${2:-}" = version ]; then
   exit 0
 fi
 
+if [ "${1:-}" = info ] && [ -n "${ANAS_FAKE_DOCKER_ROOT:-}" ]; then
+  printf '%s\n' "$ANAS_FAKE_DOCKER_ROOT"
+  exit 0
+fi
+
+# The Compose-scope E2E can expose one daemon-observed project owner without a
+# real daemon. The runner must inspect this label before any mutating Compose
+# command and reject a project owned by a different workspace.
+if [ "${1:-}" = ps ] && [ -n "${ANAS_FAKE_DOCKER_COMPOSE_OWNER_PROJECT:-}" ]; then
+  case " $* " in
+    *" label=com.docker.compose.project=$ANAS_FAKE_DOCKER_COMPOSE_OWNER_PROJECT "*)
+      printf '%s\n' "${ANAS_FAKE_DOCKER_COMPOSE_OWNER_DIR:-}"
+      ;;
+  esac
+  exit 0
+fi
+
 # A missing macvlan makes the runner exercise its create path. The companion
 # fake sudo accepts the host bridge command, and network create is recorded
 # above like every other observable runtime action.

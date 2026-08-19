@@ -67,6 +67,25 @@ This module declares no account managed by `anas admin local`; `credential` and 
 
 Generated values and lifecycle-managed credentials use stable logical keys in workspace `.anas/secrets.yml` (`0600`). It is permission-protected plaintext, not an encrypted vault. Plaintext must not enter README files, locks, logs, or ordinary `config list`. Local-administrator names and secret references live in password-free `.anas/local-admins.yml`; hooks receive plaintext only for the required lifecycle phase. `bcrypt` accounts persist only a hash in runtime configuration, while `plaintext_on_bootstrap` accounts use a `0600` projection at `.anas/runtime-secrets/local-admins/<module>/<id>.password`. Snapshots/backups must keep the secret store, account inventory, and application data at one recovery point.
 
+### Signing-key exposure and rotation
+
+Treat an OIDC/SAML signing private key as potentially exposed whenever it enters
+terminal output, logs, test reports, task transcripts, or any other non-secret
+boundary, even without evidence of external transmission. Diagnostics must read
+an exact allowlist of configuration keys rather than recursively dumping LLNG
+configuration. Reports may contain a key ID, fingerprint, and public key, never
+the private-key body.
+
+ANAS does not automatically rotate a running LLNG key. Rotation is a separately
+approved operation: inventory whether every RP/SP consumes dynamic JWKS/metadata
+or pins a certificate, back up workspace secrets and LLNG configuration, create
+the replacement and publish its public material, refresh pinned trust, verify
+OIDC/SAML login and logout, and retire the old key only after token/assertion
+lifetime and rollback windows close. A deployment without overlapping-key
+support needs a maintenance window. Until rotation is approved, record the
+incident, restrict access to the affected transcript/log, and retain an explicit
+rotation action; never silently overwrite the secret.
+
 ## Database support
 
 | Item | Value |

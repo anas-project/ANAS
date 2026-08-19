@@ -8,6 +8,9 @@
 # deliberately, then shows the journal closing it.
 set -euo pipefail
 
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+source "$script_dir/server-require-isolated-docker.sh"
+
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_anchor_}
 timeout=${DIRECTORY_EVENTS_E2E_TIMEOUT:-180}
 

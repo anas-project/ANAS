@@ -5,6 +5,8 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 workspace=${1:?usage: server-database-hot-add-e2e.sh WORKSPACE}
 docker_host=${DOCKER_HOST:-unix:///run/anas-anchor-docker.sock}
 export DOCKER_HOST=$docker_host
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$script_dir/server-require-isolated-docker.sh"
 
 run_anas() {
   (cd "$root" && go run ./cmd/anas "$@")

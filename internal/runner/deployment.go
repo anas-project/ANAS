@@ -494,7 +494,7 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 				return nil
 			}
 			args := append([]string{"build"}, run.services...)
-			return a.compose.RunFile(run.dir, "anas_"+run.mod.Name, run.mod.ComposeFile, run.env, args...)
+			return a.runCompose(run.dir, run.mod.Name, run.mod.ComposeFile, run.env, args...)
 		}); err != nil {
 			return "", failuref("build_failed", "%s", err.Error())
 		}
@@ -1021,7 +1021,7 @@ func startDeployment(a *app, modulesRoot string, selection []string, jsonMode bo
 			return nil
 		}
 		args := append([]string{"up", "-d", "--remove-orphans"}, run.services...)
-		return a.compose.RunFile(run.dir, "anas_"+run.mod.Name, run.mod.ComposeFile, run.env, args...)
+		return a.runCompose(run.dir, run.mod.Name, run.mod.ComposeFile, run.env, args...)
 	}); err != nil {
 		return err
 	}
@@ -1281,7 +1281,7 @@ func stopRemovedDeployments(oldApp *app, oldRoot string, target *deploymentManif
 		removed++
 		emitProgress(jsonMode, "stop-removed-modules", removed, 0, "modules")
 		dir := filepath.Join(oldRoot, name)
-		if err := oldApp.compose.RunFile(dir, "anas_"+name, mod.ComposeFile, oldApp.moduleEnv(dir), "down"); err != nil {
+		if err := oldApp.runCompose(dir, name, mod.ComposeFile, oldApp.moduleEnv(dir), "down"); err != nil {
 			errs = append(errs, fmt.Errorf("stop removed module %s: %w", name, err))
 		}
 	}

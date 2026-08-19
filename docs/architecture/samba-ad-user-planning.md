@@ -245,14 +245,14 @@ samba-tool group add 'ROLE_DEPT_ANAS_IT' \
 
 其中本地部分必须与同一对象的 `sAMAccountName` 完全对应；后缀必须是该 AD 林已接受的
 UPN suffix，默认使用当前 AD DNS realm 的小写形式。例如 AD realm 为
-`LNNJ.COM.CN` 时，`sAMAccountName=wanghailong` 对应
-`userPrincipalName=wanghailong@lnnj.com.cn`。
+`EXAMPLE.COM` 时，`sAMAccountName=alice` 对应
+`userPrincipalName=alice@example.com`。
 
 以下值不符合规范：
 
-- `wangdanyi`：缺少 `@` 和 UPN suffix；
-- `wangdanyi@example.com`：若 `example.com` 不是目录接受的 UPN suffix；
-- `another-name@lnnj.com.cn`：本地部分与 `sAMAccountName=wangdanyi` 不一致。
+- `alice`：缺少 `@` 和 UPN suffix；
+- `alice@other.example`：若 `other.example` 不是目录接受的 UPN suffix；
+- `another-name@example.com`：本地部分与 `sAMAccountName=alice` 不一致。
 
 UPN 不是邮箱字段。即使组织当前让 UPN 与 `mail` 取相同字符串，也必须分别维护
 `userPrincipalName` 和 `mail`；邮件域变更不应自动改变 UPN。UPN 也不是应用的永久身份
@@ -407,7 +407,7 @@ anas admin local credential authentik break_glass -w <workspace>
 正式环境示例：
 
 ```bash
-anas admin local credential authentik break_glass -w /home/whl/anas-deploy
+anas admin local credential authentik break_glass -w /srv/anas
 ```
 
 该命令会向终端输出明文，只能在受控终端执行，不得进入 shell trace、工单或聊天记录。日常不查看、不使用。当前 Secret 是首次引导凭据；首次接入已有 Authentik 时，Bootstrap 环境变量不会修改数据库中已经存在的 `akadmin` 密码，必须在迁移窗口单独完成一次校准。项目尚未提供原子化的 `akadmin` 密码轮换命令，因此不要只在 Authentik UI 中修改后仍把上述命令当作当前密码；正式发布前应补充“同时更新 Authentik 与 ANAS Secret 状态”的轮换事务。

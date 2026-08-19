@@ -101,6 +101,13 @@ Module 升级时遗漏了 `sensitive` 标记，错误和普通投影仍不会回
 语言只控制 UI 文本 fallback，locale 控制区域格式；推导只是默认值来源，不表示两个概念
 相同。各 Module 的实际消费边界见 [Module 时区与语言支持矩阵](/reference/module-localization)。
 
+`global.container_prefix` 的默认值为 `anas_`。配置中省略该字段，或导出配置时因其等于
+默认值而不写出，都不会改变最终值。Runner 使用 `<container_prefix><module>` 作为 Docker
+Compose project name，同时以该前缀生成容器名；例如默认配置下 Nextcloud 的 project 为
+`anas_nextcloud`。同一 Docker daemon 上的不同 workspace 必须使用不同前缀。修改已有部署
+的前缀会生成另一组 project、容器名和跨容器地址，属于静态部署变更，不是现有资源的原地
+重命名；修改前必须先完成显式迁移或清理旧部署。
+
 ## 已声明的 139 个参数
 
 表中参数都能被 `anas config list` 列出。普通可编辑参数可通过 `anas config set` 设置；
@@ -229,7 +236,7 @@ workspace 已有运行中的 active deployment 时，`config set` 会先保存�
 ### 原地更新能力审计
 
 以下结论回答“上游服务是否具备原地更新能力”，不表示当前 Runner 已经调用这些接口。
-2026-08-15 在 ln 的隔离 Docker daemon 上执行
+2026-08-15 在独立的非生产隔离 Docker daemon 上执行
 `test-env/scripts/server-parameter-inplace-e2e.sh`：测试在修改前后比较容器 ID、读取应用
 实际状态，并在结束时恢复原值。当前 `config set` 仍走上一节所述 deployment fallback。
 
@@ -257,7 +264,7 @@ Collabora、Nextcloud 和数据库镜像的保留设置都在 Hook、容器脚�
 | 所有者 | 参数 | 可观察结果 / 消费边界 |
 | --- | --- | --- |
 | `global` | `base_domain`, `virtual_domain`, `email` | 派生应用 URL、AD realm、ACME/内部 CA 模式和服务联系邮箱 |
-| `global` | `container_prefix`, `network_prefix` | 改变 Compose 容器名、网络名和跨容器地址 |
+| `global` | `container_prefix`, `network_prefix` | 改变 Compose project/容器名、网络名和跨容器地址；project 为 `<container_prefix><module>`，不同 workspace 不得复用同一前缀 |
 | `global` | `host_ip`, `dns_server`, `ipv4`, `ipv6` | 改变宿主路由目标、容器 DNS 和 DDNS A/AAAA 意图 |
 | `global` | `host_lan_ip`, `host_lan_bridge_ip`, `host_lan_arp_check` | 固定 host-LAN 容器与宿主桥地址，并控制地址占用探测；三项均为可选，未关闭探测时默认执行 ARP 检查 |
 | `global` | `timezone`, `default_language`, `default_locale` | 生成最终 `TZ`/BCP 47 默认值；只下发给声明支持的应用 |

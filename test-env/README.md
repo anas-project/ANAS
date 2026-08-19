@@ -7,6 +7,38 @@ The test flow intentionally skips legacy Ruby comparison. It validates the
 refactor on its own through static tests, rendering, Docker Compose validation,
 image builds, and optional smoke checks.
 
+> **Production host restriction:** a host carrying production services must not
+> be used as a test server. Do not run this suite or any server E2E on such a
+> host. Use a dedicated non-production environment instead.
+
+## Mandatory isolation boundary
+
+Every test that creates or removes containers needs its own workspace,
+`container_prefix`, `network_prefix`, and port range. The runner derives the
+Compose project as `<CONTAINER_PREFIX><module>` and refuses a mutating Compose
+operation when containers with that project name report a different workspace
+in `com.docker.compose.project.working_dir`.
+
+Server E2Es additionally source `server-require-isolated-docker.sh`. They accept
+only an explicitly named ANAS test Unix socket whose daemon reports a test-scoped
+`DockerRootDir`; the default Docker socket and a test-named symlink to the
+production data root are rejected. Concurrent runs need distinct sockets,
+daemon data roots, workspaces, prefixes, and ports. Cleanup must use the current
+run's Compose project or labels; global Docker prune and generic `anas_` prefix
+cleanup are forbidden.
+
+Run the deterministic guards with:
+
+```sh
+./test-env/scripts/test-compose-project-isolation.sh
+./test-env/scripts/test-server-docker-isolation.sh
+sh ./test-env/scripts/test-container-config.sh
+```
+
+The last test also enforces the persistence rule: durable data uses explicit
+workspace `data` bind mounts, and images must not create anonymous volumes for
+uncovered paths.
+
 ## Layout
 
 ```text
@@ -352,7 +384,8 @@ Docker command boundary. It checks the rendered runtime value, affected-module
 Compose `up`, absence of `build`, same-value container idempotency, and
 configuration/deployment recovery after an injected activation failure. The
 server E2E above complements that deterministic matrix by testing the actual
-upstream in-place mechanisms and stable container IDs on ln.
+upstream in-place mechanisms and stable container IDs observed on an isolated
+non-production Docker daemon.
 
 ## Test Server Cleanup
 

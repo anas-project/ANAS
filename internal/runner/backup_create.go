@@ -243,7 +243,9 @@ func backupContainersToStop(workspace string) []string {
 	if cli, err := compose.Detect(); err == nil {
 		if a, modulesRoot, _, err := loadDeploymentApp(base, active.ActiveDeployment, cli); err == nil {
 			for _, name := range runningModules(a, modulesRoot) {
-				names = append(names, "anas_"+name)
+				if project, err := composeProjectName(name, a.moduleEnv(filepath.Join(modulesRoot, name))); err == nil {
+					names = append(names, project)
+				}
 			}
 			return names
 		}
@@ -254,7 +256,11 @@ func backupContainersToStop(workspace string) []string {
 			if manifest.Modules[name].RuntimeType != "compose" {
 				continue
 			}
-			names = append(names, "anas_"+name)
+			moduleDir := filepath.Join(deploymentArtifactDir(base, active.ActiveDeployment), "modules", name)
+			env, _ := parseEnvFile(filepath.Join(moduleDir, ".env"))
+			if project, err := composeProjectName(name, env); err == nil {
+				names = append(names, project)
+			}
 		}
 	}
 	return names

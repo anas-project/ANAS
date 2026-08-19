@@ -1,6 +1,9 @@
 #!/usr/bin/env sh
 set -eu
 
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$script_dir/server-require-isolated-docker.sh"
+
 docker_cmd=${DOCKER_CMD:-docker}
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_test_}
 timeout=${ANCHOR_E2E_TIMEOUT:-90}

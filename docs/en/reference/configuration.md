@@ -101,6 +101,16 @@ an explicit `false` is never overridden.
 
 Language controls the UI-text fallback and locale controls regional formatting. Derivation supplies a default; it does not merge these concepts. See the [module timezone and language matrix](/en/reference/module-localization) for actual consumers.
 
+`global.container_prefix` defaults to `anas_`. Omitting it, including when a
+configuration export removes a value equal to the default, does not change the
+resolved value. The runner uses `<container_prefix><module>` as the Docker
+Compose project name and also uses the prefix for container names; with the
+default configuration, the Nextcloud project is `anas_nextcloud`. Workspaces
+sharing one Docker daemon must use distinct prefixes. Changing the prefix of an
+existing deployment creates a different set of projects, container names, and
+cross-container addresses. It is a static deployment change, not an in-place
+rename, so the old deployment must be explicitly migrated or removed first.
+
 ## The 139 declared parameters
 
 Every entry below appears in `anas config list`. Ordinary editable parameters can be addressed by `anas config set`; `credential_rotate`, `data_migrate`, and `immutable` entries are inventory/explain-only and require their dedicated workflow. Global parameters use `global.<parameter>`; ordinary module parameters use `modules.<module>.config.<parameter>`.
@@ -244,7 +254,7 @@ enters a pending/deferred state and does not start containers unexpectedly.
 
 ### In-place update capability audit
 
-The following results answer whether the upstream service can apply a change in place; they do not claim that the current Runner calls that interface. On 2026-08-15, `test-env/scripts/server-parameter-inplace-e2e.sh` ran against the isolated Docker daemon on ln. It compared container IDs, read application state after each change, and restored every live value before exiting. `config set` still uses the deployment fallback described above.
+The following results answer whether the upstream service can apply a change in place; they do not claim that the current Runner calls that interface. On 2026-08-15, `test-env/scripts/server-parameter-inplace-e2e.sh` ran against a dedicated non-production isolated Docker daemon. It compared container IDs, read application state after each change, and restored every live value before exiting. `config set` still uses the deployment fallback described above.
 
 | Parameters | Complete effect in place | Observed result |
 | --- | --- | --- |
@@ -265,7 +275,7 @@ The table below states what every owner's inputs ultimately change. Each named p
 | Owner | Parameters | Observable result / consumer boundary |
 | --- | --- | --- |
 | `global` | `base_domain`, `virtual_domain`, `email` | Derive application URLs, AD realm, ACME/internal-CA mode, and service contact email |
-| `global` | `container_prefix`, `network_prefix` | Change Compose container names, network names, and cross-container addresses |
+| `global` | `container_prefix`, `network_prefix` | Change the Compose project/container names, network names, and cross-container addresses; the project is `<container_prefix><module>`, and separate workspaces must not reuse one prefix |
 | `global` | `host_ip`, `dns_server`, `ipv4`, `ipv6` | Change host route targets, container DNS, and DDNS A/AAAA intent |
 | `global` | `host_lan_ip`, `host_lan_bridge_ip`, `host_lan_arp_check` | Pin the host-LAN container and host bridge addresses and control occupancy probing; all three are optional, and the ARP check runs unless explicitly disabled |
 | `global` | `timezone`, `default_language`, `default_locale` | Produce final `TZ`/BCP 47 defaults and deliver them only to applications declaring support |

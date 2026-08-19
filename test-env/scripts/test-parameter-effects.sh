@@ -75,7 +75,7 @@ assert_active_env() {
 assert_compose_action() {
   module=$1
   action=$2
-  grep -E "docker compose .*--project-name anas_${module}( |$).* ${action}( |$)" "$command_log" >/dev/null ||
+  grep -E "docker compose .*--project-name [a-z0-9][a-z0-9_-]*${module}( |$).* ${action}( |$)" "$command_log" >/dev/null ||
     fail "Compose $action was not invoked for $module"
 }
 
@@ -146,11 +146,6 @@ global:
 env:
   CONTAINER_PREFIX: anaspe_
   NETWORK_PREFIX: anaspe_
-  HOST_IP: 192.0.2.10
-  INTERFACE: anas-test0
-  HOST_SUBNET_MASK: "24"
-  DEFAULT_GATEWAY_IP: 192.0.2.1
-  HOST_DNS_SERVER: 192.0.2.1
 secrets:
   cloudflare_dns_api_token: test-cloudflare-token
   tencentcloud_secret_id: test-tencentcloud-id
@@ -171,11 +166,6 @@ global:
 env:
   CONTAINER_PREFIX: anaspes_
   NETWORK_PREFIX: anaspes_
-  HOST_IP: 192.0.2.10
-  INTERFACE: anas-test0
-  HOST_SUBNET_MASK: "24"
-  DEFAULT_GATEWAY_IP: 192.0.2.1
-  HOST_DNS_SERVER: 192.0.2.1
 YAML
 
 rm -rf "$light_ws" "$samba_ws" "$full_ws" "$llng_ws"
@@ -209,8 +199,8 @@ assert_compose_action lego up
   assert_active_env "$light_ws" lego CHINESE_BUILD_SPEEDUP true
   assert_compose_action lego build
   assert_compose_action lego up
-  build_line=$(grep -nE 'docker compose .*--project-name anas_lego( |$).* build( |$)' "$command_log" | head -1 | cut -d: -f1)
-  up_line=$(grep -nE 'docker compose .*--project-name anas_lego( |$).* up( |$)' "$command_log" | head -1 | cut -d: -f1)
+  build_line=$(grep -nE 'docker compose .*--project-name anaspe_lego( |$).* build( |$)' "$command_log" | head -1 | cut -d: -f1)
+  up_line=$(grep -nE 'docker compose .*--project-name anaspe_lego( |$).* up( |$)' "$command_log" | head -1 | cut -d: -f1)
   [ "$build_line" -lt "$up_line" ] || fail "Compose up ran before image build"
   deployment=$(active_deployment "$light_ws")
   inspect=$(anas deployments inspect "$deployment" -w "$light_ws" --json)
@@ -233,13 +223,13 @@ PY
   assert_json_effect "$result" hot_reload deployment_apply_fallback
   assert_active_env "$samba_ws" samba_dc SAMBA_DC_USER_MIN_PASS_LENGTH 10
   assert_compose_action samba_dc up
-  if grep -E 'docker compose .*--project-name anas_samba_fs( |$).* up( |$)' "$command_log" >/dev/null; then
+  if grep -E 'docker compose .*--project-name anaspes_samba_fs( |$).* up( |$)' "$command_log" >/dev/null; then
     fail "hot_reload restarted unchanged samba_fs"
   fi
   assert_no_compose_action build
 
   echo "== every hot_reload parameter reaches the current fallback =="
-  run_fallback_case "$samba_ws" samba_dc.user_complex_pass false hot_reload samba_dc SAMBA_DC_USER_COMPLEX_PASS false
+  run_fallback_case "$samba_ws" samba_dc.user_complex_pass true hot_reload samba_dc SAMBA_DC_USER_COMPLEX_PASS true
   run_fallback_case "$samba_ws" samba_dc.user_min_pass_length 9 hot_reload samba_dc SAMBA_DC_USER_MIN_PASS_LENGTH 9
   run_fallback_case "$samba_ws" samba_dc.user_password_history 5 hot_reload samba_dc SAMBA_DC_USER_PASSWORD_HISTORY 5
   run_fallback_case "$samba_ws" samba_dc.user_max_pass_age 91 hot_reload samba_dc SAMBA_DC_USER_MAX_PASS_AGE 91
@@ -271,7 +261,7 @@ PY
   before_managed=$(file_digest "$samba_ws/.anas/config-managed.yml")
   failure_marker="$RUNTIME_DIR/parameter-effects-fallback-failed"
   rm -f "$failure_marker"
-  export ANAS_FAKE_DOCKER_FAIL_ONCE_MATCH='--project-name anas_samba_dc .* up'
+  export ANAS_FAKE_DOCKER_FAIL_ONCE_MATCH='--project-name anaspes_samba_dc .* up'
   export ANAS_FAKE_DOCKER_FAIL_ONCE_MARKER="$failure_marker"
   reset_commands
   if anas config set samba_dc.user_lockout_reset_after 32 -w "$samba_ws" --root "$ROOT_DIR" \
@@ -290,7 +280,7 @@ PY
   [ "$(file_digest "$samba_ws/.anas/config-managed.yml")" = "$before_managed" ] ||
     fail "failed fallback did not restore the managed config digest"
   assert_active_env "$samba_ws" samba_dc SAMBA_DC_USER_LOCKOUT_RESET_AFTER 31
-  samba_up_count=$(grep -Ec 'docker compose .*--project-name anas_samba_dc( |$).* up( |$)' "$command_log")
+  samba_up_count=$(grep -Ec 'docker compose .*--project-name anaspes_samba_dc( |$).* up( |$)' "$command_log")
   [ "$samba_up_count" -ge 2 ] || fail "failed fallback did not restart the prior deployment"
 
   echo "== every reconcile parameter reaches the current fallback =="
