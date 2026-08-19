@@ -6,6 +6,7 @@
 
 | 文档 | 类型 | 状态 |
 | --- | --- | --- |
+| [ANAS Module 分类与访问边界分析（2026-08-19）](./module-classification-and-access-boundary-analysis-2026-08-19.md) | 三类主分类、入口级 audience、现有 Module 归类与迁移顺序 | 提案 |
 | [`BASE_DOMAIN` 与 `SAMBA_DC_DOMAIN` 分离实施计划（2026-08-19）](./base-domain-samba-domain-separation-plan-2026-08-19.md) | AD/应用域分离、DNS 模式、校验 ABI 与迁移计划 | 实施中（WP1/WP2 首批） |
 | [BIND 9 开源 Web 管理工具调研（2026-08-19）](./bind9-open-source-web-management-research-2026-08-19.md) | 标准 BIND、Samba BIND9-DLZ 与 Web 管理/监控选型 | 当前 |
 | [ANAS 凭据库存与全量轮换范围审计及首版实现（2026-08-19）](./anas-credential-inventory-and-rotation-scope-2026-08-19.md) | Secret 存储面、轮换能力与安全实施边界 | 安全首版已实施 |
