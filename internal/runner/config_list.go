@@ -182,7 +182,7 @@ func reportConfigList(cfgPath string, reg map[string]Module, scope string, jsonM
 		if err != nil {
 			return preconditionErrorf("config_invalid", "%s", err.Error())
 		}
-		for key, value := range loaded.BaseEnv() {
+		for key, value := range configBaseEnv(loaded, reg) {
 			key = config.EnvKey(key)
 			valueView.Values[key] = value
 			valueView.Present[key] = true
@@ -190,6 +190,7 @@ func reportConfigList(cfgPath string, reg map[string]Module, scope string, jsonM
 		for key := range loaded.Secrets {
 			valueView.Sensitive[config.EnvKey(key)] = true
 		}
+		markSensitiveValueAliases(valueView.Values, valueView.Sensitive)
 		settings, err = config.Settings(cfgPath)
 		if err != nil {
 			return preconditionErrorf("config_invalid", "%s", err.Error())
@@ -199,11 +200,31 @@ func reportConfigList(cfgPath string, reg map[string]Module, scope string, jsonM
 			if err != nil {
 				return preconditionErrorf("secrets_unreadable", "%s", err.Error())
 			}
-			for key := range store.lifecycleManagedValues() {
+			// Every Secret Store kind is a plaintext provenance source even though
+			// only lifecycle-managed records participate in caller-input presence.
+			// A generated/local-admin value copied into an ordinary config alias
+			// must therefore remain hidden from both list projections.
+			storeValues := map[string]bool{}
+			for _, value := range store.values {
+				if value != "" {
+					storeValues[value] = true
+				}
+			}
+			for key, value := range valueView.Values {
+				if value != "" && storeValues[value] {
+					valueView.Sensitive[key] = true
+				}
+			}
+			lifecycleValues := store.lifecycleManagedValues()
+			for key, value := range lifecycleValues {
 				key = config.EnvKey(key)
 				valueView.Present[key] = true
 				valueView.Sensitive[key] = true
-				delete(valueView.Values, key)
+				valueView.Values[key] = value
+			}
+			markSensitiveValueAliases(valueView.Values, valueView.Sensitive)
+			for key := range lifecycleValues {
+				delete(valueView.Values, config.EnvKey(key))
 			}
 		}
 	}

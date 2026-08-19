@@ -7,7 +7,7 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 - `anas config list --json` currently declares **139** configurable parameters: 17 global and 122 module parameters.
 - 118 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
 - Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 139 count.
-- Top-level `env:` is an intentionally open escape hatch. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
+- Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
 
 “Structured” has two layers:
 
@@ -40,21 +40,43 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 | `modules.<module>.identity.login_protocol` | `auto`, `oidc`, or `saml` | used |
 | `modules.<module>.administration.local_accounts.<id>.username` | Module-local username override | invalid; usernames are ANAS-managed |
 | `modules.<module>.config.<parameter>` | Manifest-declared module parameter | used |
-| `env.<KEY>` | Raw environment escape hatch | open map |
+| `env.<KEY>` | Raw environment escape hatch | open map; keys must match `[A-Z_][A-Z0-9_]*` |
 
 `config.Load` uses `KnownFields(true)`. Misspelled structured fields fail instead of being silently ignored, except inside the intentionally open `secrets`, `modules`, and `env` maps. Although `modules.<module>.config` is a map at YAML decode time, `config import` and deployment resolution now validate every key and value type against the manifest; hand-written YAML cannot bypass the declaration checks used by `config set`.
 
 Before validation and managed persistence, `config import` gives every YAML
-address one canonical spelling: `env` keys use their uppercase runtime spelling,
-while Module names, global parameter names, and Module parameter names become
-lowercase. If two source keys collapse to the same address—for example
-`env.custom_key` plus `env.CUSTOM_KEY`, or `modules.TRAEFIK` plus
+address one canonical spelling: `env` and `secrets` keys use their uppercase
+runtime spelling, while Module names, global parameter names, and Module
+parameter names become lowercase. If two source keys collapse to the same
+address—for example `env.custom_key` plus `env.CUSTOM_KEY`,
+`secrets.demo_token` plus `secrets.DEMO_TOKEN`, or `modules.TRAEFIK` plus
 `modules.traefik`—the whole import is rejected instead of letting order decide
-which value wins. A structured Module parameter declared as a bare export is
-moved to its sole managed address: source
+which value wins. A `secrets`, `env`, and structured Module input that map to
+the same runtime key also collide. A structured Module parameter declared as a
+bare export is moved to its sole managed address: source
 `modules.samba_fs.config.share_dir_name` becomes `env.SHARE_DIR_NAME`. Supplying
 both addresses is likewise a canonicalization collision. The source file is
 never modified.
+
+`secrets.<KEY>` is a sensitive spelling of a runtime input, not an untyped way
+around the schema. When the key maps to a declared parameter, import still
+applies that parameter's type, constraints, sensitivity, and change effect, and
+errors never echo the candidate value.
+Structural selectors that choose a provider, interface, backend, or DNS
+platform cannot be supplied through `secrets:` or the lifecycle Secret Store:
+their canonical identifier must be persisted in plan and the resolution lock,
+so import/plan safely rejects that source and asks for ordinary configuration.
+Secret storage is reserved for the actual credential. Ordinary deployment
+secrets remain in the mode-0600 managed `config.yml`; `credential_rotate` inputs and managed local
+administrator bootstrap passwords move to `.anas/secrets.yml`. When a
+normalized managed configuration is reimported, only an existing non-empty
+Secret Store record whose kind is `lifecycle_managed` may satisfy caller-input
+requirements in the private validation view. `generated` and `local_admin`
+records cannot masquerade as such input. Reimporting the same value is
+idempotent; replacing it with a different value is rejected in favor of the
+declared rotation workflow. `config plan` revalidates the same private view
+against the current schema, while `config list` reports only that such a value
+is set; neither projects plaintext.
 
 Without an installer preference, `module_source` defaults to `official`. The one-line installer
 records its choice in `${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`; a new workspace or an import

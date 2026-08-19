@@ -493,6 +493,18 @@ func (f *File) BaseEnv() map[string]string {
 // which config section introduced each key: "" for global sections,
 // OwnerUserSecret for user secrets, and the module name for module config.
 func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
+	return f.baseEnvWithOwners(nil)
+}
+
+// BaseEnvWithOwnersUsing preserves the config package's established source
+// precedence while allowing the manifest-aware runner to choose the runtime
+// key for Module parameters. Returning an empty key uses the module-name
+// fallback, which keeps callers that have no registry fully compatible.
+func (f *File) BaseEnvWithOwnersUsing(moduleKey func(module, parameter string) string) (map[string]string, map[string]string) {
+	return f.baseEnvWithOwners(moduleKey)
+}
+
+func (f *File) baseEnvWithOwners(moduleKey func(module, parameter string) string) (map[string]string, map[string]string) {
 	env := map[string]string{}
 	owners := map[string]string{}
 	set := func(key, value string) {
@@ -519,12 +531,24 @@ func (f *File) BaseEnvWithOwners() (map[string]string, map[string]string) {
 	for name, module := range f.Modules.Values {
 		prefix := strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
 		if protocol := strings.ToLower(strings.TrimSpace(module.Identity.LoginProtocol)); protocol != "" {
-			env[prefix+"_IAM_PROTOCOL"] = protocol
-			owners[prefix+"_IAM_PROTOCOL"] = name
+			key := prefix + "_IAM_PROTOCOL"
+			if moduleKey != nil {
+				if mapped := moduleKey(name, "iam_protocol"); mapped != "" {
+					key = mapped
+				}
+			}
+			env[key] = protocol
+			owners[key] = name
 		}
 		for k, v := range module.Config {
 			key := EnvKey(k)
-			if !strings.HasPrefix(key, prefix+"_") {
+			if moduleKey != nil {
+				if mapped := moduleKey(name, k); mapped != "" {
+					key = mapped
+				} else if !strings.HasPrefix(key, prefix+"_") {
+					key = prefix + "_" + key
+				}
+			} else if !strings.HasPrefix(key, prefix+"_") {
 				key = prefix + "_" + key
 			}
 			env[key] = Scalar(v)

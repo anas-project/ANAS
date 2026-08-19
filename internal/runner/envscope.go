@@ -30,6 +30,15 @@ func (a *app) setEnvOwner(key, owner string) {
 	}
 }
 
+func (a *app) claimUserSecretOwner(key, owner string) {
+	if a.envOwner == nil {
+		a.envOwner = map[string]string{}
+	}
+	if current, ok := a.envOwner[key]; !ok || current == config.OwnerUserSecret {
+		a.envOwner[key] = owner
+	}
+}
+
 // depClosure returns the transitive dependency closure of a module, including
 // the module itself. Globally owned keys are not part of it: they are visible
 // through their ownership, not through an edge every module had to be given.
@@ -71,6 +80,11 @@ func (a *app) sensitiveEnvKeySet() map[string]bool {
 	for key := range a.runnerSensitive {
 		out[key] = true
 	}
+	if a.cfg != nil {
+		for key := range a.cfg.Secrets {
+			out[config.EnvKey(key)] = true
+		}
+	}
 	for param, policy := range globalConfig.Changes {
 		if policy.Sensitive {
 			out[paramEnvKey(globalScope, "", param)] = true
@@ -85,21 +99,99 @@ func (a *app) sensitiveEnvKeySet() map[string]bool {
 		}
 	}
 	if a.secrets != nil {
-		values := map[string]bool{}
-		for key, v := range a.secrets.values {
+		secretValues := map[string]bool{}
+		for key, value := range a.secrets.values {
 			out[key] = true
-			if v != "" {
-				values[v] = true
+			if value != "" {
+				secretValues[value] = true
 			}
 		}
-		for k, v := range a.env {
-			if v != "" && values[v] {
-				out[k] = true
+		for key, value := range a.env {
+			if value != "" && secretValues[value] {
+				out[key] = true
 			}
 		}
 	}
+	markSensitiveValueAliases(a.env, out)
 	a.sensitiveKeys = out
 	return out
+}
+
+// markSensitiveValueAliases extends source provenance across equivalent
+// runtime spellings. A secret may be copied into a compatibility alias or a
+// selector key before schema validation; redacting only the original key would
+// then expose the same plaintext under the alias. Empty values are ignored so
+// ordinary unset parameters do not taint one another.
+func markSensitiveValueAliases(values map[string]string, sensitive map[string]bool) {
+	secretValues := map[string]bool{}
+	for key := range sensitive {
+		if value := values[key]; value != "" {
+			secretValues[value] = true
+		}
+	}
+	if len(secretValues) == 0 {
+		return
+	}
+	for key, value := range values {
+		if value != "" && secretValues[value] {
+			sensitive[key] = true
+		}
+	}
+}
+
+// hookPatchSensitiveEnv returns a private sensitivity view for validating Hook
+// output. Hook patches can introduce a new runtime spelling after the normal
+// sensitivity set has already been cached, so rebuild from the post-patch
+// environment and carry provenance across equal values. Pending Hook secrets
+// are included before they enter the Secret Store so a schema error cannot
+// print either the canonical secret or an Env alias containing the same value.
+func (a *app) hookPatchSensitiveEnv(values, pendingSecrets map[string]string) map[string]bool {
+	// A successful Hook Env merge changes the values from which alias
+	// sensitivity is derived. Never reuse a pre-patch cache.
+	a.sensitiveKeys = nil
+	base := a.sensitiveEnvKeySet()
+	sensitive := make(map[string]bool, len(base)+len(pendingSecrets))
+	for key := range base {
+		sensitive[key] = true
+	}
+	secretValues := map[string]bool{}
+	// The target can be a render-scoped environment. Hooks receive Secret Store
+	// values through a separate request field, so the canonical secret key need
+	// not be present in values even though the Hook can copy its plaintext into
+	// a newly returned env alias. Derive the value provenance from the complete
+	// authoritative runtime view, not only from the target map being validated.
+	for key := range base {
+		if value := a.env[key]; value != "" {
+			secretValues[value] = true
+		}
+	}
+	if a.secrets != nil {
+		for _, value := range a.secrets.values {
+			if value != "" {
+				secretValues[value] = true
+			}
+		}
+	}
+	if a.cfg != nil {
+		for _, raw := range a.cfg.Secrets {
+			if value := config.Scalar(raw); value != "" {
+				secretValues[value] = true
+			}
+		}
+	}
+	for key, value := range pendingSecrets {
+		sensitive[key] = true
+		if value != "" {
+			secretValues[value] = true
+		}
+	}
+	markSensitiveValueAliases(values, sensitive)
+	for key, value := range values {
+		if value != "" && secretValues[value] {
+			sensitive[key] = true
+		}
+	}
+	return sensitive
 }
 
 // wideEnvScopeRequested restores the pre-declaration rule for one run, so a
@@ -143,14 +235,20 @@ func (a *app) envScopeFor(name string) func(key string) bool {
 	}
 	consumes := a.reg[name].Consumes
 	return func(key string) bool {
-		if isOwn(key) {
-			return true
-		}
 		if sensitive[key] {
+			if owner, tracked := a.envOwner[key]; tracked && owner == name {
+				return true
+			}
+			if owner, _, err := policyOwnerForEnv(key, a.reg); err == nil && owner == name {
+				return true
+			}
 			// A sensitive value owned by another module crosses the boundary
 			// only through an explicit claim, regardless of closure or
 			// prefix membership.
 			return matchEnvPattern(consumes, key)
+		}
+		if isOwn(key) {
+			return true
 		}
 		if owner, tracked := a.envOwner[key]; tracked && owner != config.OwnerUserSecret && owner == globalScope {
 			return true
@@ -205,11 +303,73 @@ func (a *app) scopedSecrets(name string) map[string]string {
 	scope := a.envScopeFor(name)
 	out := map[string]string{}
 	for k, v := range a.secrets.clone() {
+		// Persisted Secret Store ownership is authoritative. In particular, a
+		// module Hook cannot make a secret visible to another module merely by
+		// choosing that module's prefix. Cross-module delivery remains possible,
+		// but only through the consumer's explicit config.consumes declaration.
+		if meta, tracked := a.secrets.metadata[k]; tracked && meta.Owner != "" && meta.Owner != runnerScope {
+			if meta.Owner == name || matchEnvPattern(a.reg[name].Consumes, k) {
+				out[k] = v
+			}
+			continue
+		}
 		if scope(k) {
 			out[k] = v
 		}
 	}
 	return out
+}
+
+// moduleHookMayWriteKey is the common declaration-side authorization for all
+// calculate Hook outputs. Env and Secret patches intentionally share this
+// rule: a module may write its own namespace, a key it already owns, or a key
+// it explicitly publishes through config.exports.
+func moduleHookMayWriteKey(mod Module, key string, alreadyOwned bool) bool {
+	for _, prefix := range uniqueStrings([]string{mod.EnvPrefix, defaultEnvPrefix(mod.Name)}) {
+		if prefix != "" && strings.HasPrefix(key, prefix+"_") {
+			return true
+		}
+	}
+	return alreadyOwned || matchEnvPattern(mod.Exports, key)
+}
+
+// validateCalculateSecretPatch applies the same write contract as an Env
+// patch, then enforces both runtime-env and persisted-secret ownership. It is
+// deliberately validation-only so calculate can reject the complete Hook
+// response before mutating either destination.
+func (a *app) validateCalculateSecretPatch(mod Module, patch map[string]string) error {
+	violations := []string{}
+	conflicts := []string{}
+	keys := make([]string, 0, len(patch))
+	for key := range patch {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		envOwner, envTracked := a.envOwner[key]
+		meta, secretTracked := a.secrets.metadata[key]
+		alreadyOwned := (envTracked && envOwner == mod.Name) || (secretTracked && meta.Owner == mod.Name)
+		if !moduleHookMayWriteKey(mod, key, alreadyOwned) {
+			violations = append(violations, key)
+			continue
+		}
+
+		// Empty values and identical existing values are no-ops. Keeping them
+		// idempotent avoids changing metadata or leaking ownership information.
+		value := patch[key]
+		existing, exists := a.secrets.values[key]
+		mutates := value != "" && (!exists || existing != value)
+		if mutates && envTracked && envOwner != mod.Name {
+			conflicts = append(conflicts, key)
+		}
+	}
+	if len(violations) > 0 {
+		return fmt.Errorf("module %q calculate hook writes undeclared secret keys: %s (declare them in module.yml config.exports)", mod.Name, strings.Join(violations, ", "))
+	}
+	if len(conflicts) > 0 {
+		return fmt.Errorf("module %q calculate hook tries to write secret keys owned by another source: %s", mod.Name, strings.Join(conflicts, ", "))
+	}
+	return a.secrets.validateCanonicalHookSecretPatch(mod.Name, patch)
 }
 
 // applyCalculatePatch merges a calculate hook's env patch into the global
@@ -220,33 +380,42 @@ func (a *app) scopedSecrets(name string) map[string]string {
 // which does not go through a hook patch at all.
 func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 	violations := []string{}
-	ownPrefixes := []string{mod.EnvPrefix + "_", defaultEnvPrefix(mod.Name) + "_"}
-	allowed := func(key string) bool {
-		for _, prefix := range ownPrefixes {
-			if strings.HasPrefix(key, prefix) {
-				return true
-			}
-		}
-		if owner, ok := a.envOwner[key]; ok && owner == mod.Name {
-			return true
-		}
-		return matchEnvPattern(mod.Exports, key)
-	}
+	conflicts := []string{}
 	keys := make([]string, 0, len(patch))
 	for k := range patch {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		if !allowed(k) {
+		if !envKeyPattern.MatchString(k) {
+			continue
+		}
+		owner, tracked := a.envOwner[k]
+		if !moduleHookMayWriteKey(mod, k, tracked && owner == mod.Name) {
 			violations = append(violations, k)
 			continue
 		}
-		a.env[k] = patch[k]
-		a.setEnvOwner(k, mod.Name)
+		if tracked && owner != mod.Name {
+			conflicts = append(conflicts, k)
+		}
+	}
+	if invalid := invalidHookEnvKeys(patch); len(invalid) > 0 {
+		return fmt.Errorf("module %q calculate hook returned invalid env keys: %s", mod.Name, strings.Join(invalid, ", "))
 	}
 	if len(violations) > 0 {
 		return fmt.Errorf("module %q calculate hook writes undeclared env keys: %s (declare them in module.yml config.exports)", mod.Name, strings.Join(violations, ", "))
+	}
+	if len(conflicts) > 0 {
+		return fmt.Errorf("module %q calculate hook tries to overwrite env keys owned by another source: %s", mod.Name, strings.Join(conflicts, ", "))
+	}
+	for _, k := range keys {
+		a.env[k] = patch[k]
+		a.setEnvOwner(k, mod.Name)
+	}
+	if len(keys) > 0 {
+		// sensitiveEnvKeySet derives equal-value aliases from a.env. A Hook can
+		// add such an alias after the set was cached earlier in calculate.
+		a.sensitiveKeys = nil
 	}
 	return nil
 }

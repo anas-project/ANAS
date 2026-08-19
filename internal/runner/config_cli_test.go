@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/anas-project/ANAS/internal/config"
+	"github.com/anas-project/ANAS/internal/configschema"
 )
 
 func TestResolveGlobalAndServiceConfigTargets(t *testing.T) {
@@ -69,7 +70,7 @@ global:
 	if err := writeManagedConfigState(workspace, "test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := setManagedConfigScalar(workspace, configPath, target.YAMLPath, "all_rw", true); err != nil {
+	if err := setManagedConfigScalar(workspace, configPath, target.YAMLPath, "all_rw", true, reg); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := config.Load(configPath)
@@ -228,6 +229,7 @@ func TestTargetParamTypeReadsGlobalSchema(t *testing.T) {
 }
 
 func TestManagedTypedStringKeepsCLITextInsteadOfYAMLMeaning(t *testing.T) {
+	reg := importTestRegistry(t)
 	workspace := t.TempDir()
 	if err := os.MkdirAll(stateDir(workspace), 0o700); err != nil {
 		t.Fatal(err)
@@ -248,7 +250,7 @@ global:
 	}
 	for _, value := range []string{"null", "1.0", "[x]", "  keep both sides  "} {
 		if err := setManagedConfigScalar(workspace, configPath,
-			[]string{"modules", "traefik", "config", "domain_prefix"}, value, true); err != nil {
+			[]string{"modules", "traefik", "config", "domain_prefix"}, value, true, reg); err != nil {
 			t.Fatalf("store %q: %v", value, err)
 		}
 		settings, err := config.Settings(configPath)
@@ -268,7 +270,7 @@ global:
 		{name: "enum", path: []string{"modules", "nextcloud", "config", "db_type"}, value: "mariadb", envKey: "NEXTCLOUD_DB_TYPE", want: "mariadb"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if err := setManagedConfigScalar(workspace, configPath, test.path, test.value, true); err != nil {
+			if err := setManagedConfigScalar(workspace, configPath, test.path, test.value, true, reg); err != nil {
 				t.Fatal(err)
 			}
 			cfg, err := config.Load(configPath)
@@ -279,5 +281,236 @@ global:
 				t.Fatalf("reloaded %s = %q, want %q", test.envKey, got, test.want)
 			}
 		})
+	}
+}
+
+func TestManagedConfigSetRejectsEquivalentRuntimeAddresses(t *testing.T) {
+	reg := importTestRegistry(t)
+	for _, test := range []struct {
+		name, existing, target string
+	}{
+		{
+			name:     "raw env then structured",
+			existing: "modules:\n  authentik: {}\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\nenv:\n  AUTHENTIK_LDAP_ENABLED: true\n",
+			target:   "authentik.ldap_enabled",
+		},
+		{
+			name:     "structured then raw env",
+			existing: "modules:\n  authentik:\n    config:\n      ldap_enabled: true\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\n",
+			target:   "env.AUTHENTIK_LDAP_ENABLED",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			workspace := t.TempDir()
+			if err := os.MkdirAll(stateDir(workspace), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			configPath := workspaceConfigPath(workspace)
+			if err := os.WriteFile(configPath, []byte(test.existing), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeManagedConfigState(workspace, "test"); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(configPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target, err := resolveConfigTarget(test.target, reg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = setManagedConfigScalar(workspace, configPath, target.YAMLPath, "false", true, reg)
+			if err == nil || !strings.Contains(err.Error(), "both resolve to runtime key AUTHENTIK_LDAP_ENABLED") {
+				t.Fatalf("collision error = %v", err)
+			}
+			after, readErr := os.ReadFile(configPath)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(after) != string(before) {
+				t.Fatalf("rejected config set changed managed config:\n%s", after)
+			}
+			if err := validateManagedConfig(workspace, configPath); err != nil {
+				t.Fatalf("rejected config set changed managed digest: %v", err)
+			}
+		})
+	}
+}
+
+func TestManagedConfigSetRejectsUnrelatedSchemaDriftAtomically(t *testing.T) {
+	minimum := 1
+	for _, test := range []struct {
+		name       string
+		parameters []string
+		types      map[string]ParamType
+		staleValue string
+		want       string
+	}{
+		{
+			name:       "removed declaration",
+			parameters: []string{"target"},
+			types:      map[string]ParamType{"target": {Kind: "string"}},
+			staleValue: "legacy",
+			want:       `has no parameter "stale"`,
+		},
+		{
+			name:       "tightened type constraint",
+			parameters: []string{"target", "stale"},
+			types: map[string]ParamType{
+				"target": {Kind: "string"},
+				"stale":  {Kind: "int", Constraints: configschema.Constraints{Minimum: &minimum}},
+			},
+			staleValue: "0",
+			want:       "at least 1",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reg := map[string]Module{
+				"demo": {
+					Name: "demo", EnvPrefix: "DEMO",
+					Parameters: test.parameters, Types: test.types,
+				},
+			}
+			workspace := t.TempDir()
+			if err := os.MkdirAll(stateDir(workspace), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			configPath := workspaceConfigPath(workspace)
+			body := "modules:\n  demo:\n    config:\n      target: before\n      stale: " + test.staleValue + "\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\n"
+			if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeManagedConfigState(workspace, "test"); err != nil {
+				t.Fatal(err)
+			}
+			statePath := managedConfigStatePath(stateDir(workspace))
+			beforeConfig, err := os.ReadFile(configPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeState, err := os.ReadFile(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = setManagedConfigScalar(workspace, configPath,
+				[]string{"modules", "demo", "config", "target"}, "after", true, reg)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("schema drift error = %v, want %q", err, test.want)
+			}
+			afterConfig, readErr := os.ReadFile(configPath)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			afterState, readErr := os.ReadFile(statePath)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(afterConfig) != string(beforeConfig) || string(afterState) != string(beforeState) {
+				t.Fatal("rejected config set changed the managed config or its digest state")
+			}
+			if err := validateManagedConfig(workspace, configPath); err != nil {
+				t.Fatalf("rejected config set invalidated managed state: %v", err)
+			}
+		})
+	}
+}
+
+func TestManagedConfigSetSchemaCheckDoesNotRequireResolutionInputsOrLock(t *testing.T) {
+	reg := map[string]Module{
+		"demo": {
+			Name: "demo", EnvPrefix: "DEMO",
+			Parameters:    []string{"target", "token"},
+			InputRequired: []string{"DEMO_TOKEN"},
+			Required:      []string{"DEMO_TOKEN"},
+			Types: map[string]ParamType{
+				"target": {Kind: "string"},
+				"token":  {Kind: "string"},
+			},
+		},
+	}
+	workspace := t.TempDir()
+	if err := os.MkdirAll(stateDir(workspace), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := workspaceConfigPath(workspace)
+	// Both the Module token and global email are input_required. Config set
+	// still has to stage an unrelated valid value for --defer; resolution and
+	// its lock belong to the later plan/apply boundary.
+	if err := os.WriteFile(configPath, []byte("modules:\n  demo:\n    config:\n      target: before\nglobal:\n  base_domain: nas.test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeManagedConfigState(workspace, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := setManagedConfigScalar(workspace, configPath,
+		[]string{"modules", "demo", "config", "target"}, "after", true, reg); err != nil {
+		t.Fatalf("deferred schema-only set was rejected: %v", err)
+	}
+	settings, err := config.Settings(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := settings["modules.demo.config.target"]; got != "after" {
+		t.Fatalf("stored target = %q, want after", got)
+	}
+	if _, err := os.Stat(projectLockPath(configPath)); !os.IsNotExist(err) {
+		t.Fatalf("schema-only config set created or required a resolution lock: %v", err)
+	}
+}
+
+func TestManagedConfigSetRedactsOrdinarySecretValueAliasesOnSchemaDrift(t *testing.T) {
+	reg := map[string]Module{
+		"demo": {
+			Name: "demo", EnvPrefix: "DEMO",
+			Parameters: []string{"target", "source", "stale"},
+			Types: map[string]ParamType{
+				"target": {Kind: "string"},
+				"source": {Kind: "string"},
+				"stale":  {Kind: "int"},
+			},
+		},
+	}
+	workspace := t.TempDir()
+	if err := os.MkdirAll(stateDir(workspace), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := workspaceConfigPath(workspace)
+	const secret = "ultra-private-schema-value"
+	body := "modules:\n  demo:\n    config:\n      target: before\n      stale: " + secret + "\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\nsecrets:\n  DEMO_SOURCE: " + secret + "\n"
+	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeManagedConfigState(workspace, "test"); err != nil {
+		t.Fatal(err)
+	}
+	beforeConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeState, err := os.ReadFile(managedConfigStatePath(stateDir(workspace)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = setManagedConfigScalar(workspace, configPath,
+		[]string{"modules", "demo", "config", "target"}, "after", true, reg)
+	if err == nil || !strings.Contains(err.Error(), "DEMO_STALE") {
+		t.Fatalf("secret-alias schema error = %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("secret-alias schema error leaked source value: %v", err)
+	}
+	afterConfig, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	afterState, readErr := os.ReadFile(managedConfigStatePath(stateDir(workspace)))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(afterConfig) != string(beforeConfig) || string(afterState) != string(beforeState) {
+		t.Fatal("rejected secret-alias set changed config or managed digest")
 	}
 }

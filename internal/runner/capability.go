@@ -158,7 +158,7 @@ func (a *app) selectCapabilityProvider(moduleName, capability string, definition
 			provider = definition.ConfiguredProvider(a)
 		}
 		if provider == "" {
-			return "", fmt.Errorf("%s requires %s capability, but %s is not set;\nset %s to one of: %s",
+			return "", unresolvedBindingErrorf("%s requires %s capability, but %s is not set;\nset %s to one of: %s",
 				moduleName, capability, definition.ConfigKey, definition.ConfigKey, a.listCapabilityProviders(capability))
 		}
 		return provider, nil
@@ -169,6 +169,21 @@ func (a *app) selectCapabilityProvider(moduleName, capability string, definition
 			candidates = append(candidates, name)
 		}
 	}
+	if a.lock != nil {
+		if locked := a.lock.Bindings[moduleName][capability]; locked != "" {
+			lockedModule, known := a.reg[locked]
+			if !known {
+				return "", fmt.Errorf("locked %s provider %q is not a known module", capability, locked)
+			}
+			if _, provides := lockedModule.providedCapability(capability); !provides {
+				return "", fmt.Errorf("locked provider %q does not provide capability %q", locked, capability)
+			}
+			if !a.moduleEnabled(locked) {
+				return "", fmt.Errorf("locked %s provider %q is disabled", capability, locked)
+			}
+			return locked, nil
+		}
+	}
 	switch len(candidates) {
 	case 1:
 		return candidates[0], nil
@@ -176,7 +191,7 @@ func (a *app) selectCapabilityProvider(moduleName, capability string, definition
 		return "", fmt.Errorf("%s requires %s capability, but no enabled module provides it;\nenable one of: %s",
 			moduleName, capability, a.listCapabilityProviders(capability))
 	default:
-		return "", fmt.Errorf("%s requires %s capability, but %s all provide it;\nset %s to the one this deployment should use",
+		return "", unresolvedBindingErrorf("%s requires %s capability, but %s all provide it;\nset %s to the one this deployment should use",
 			moduleName, capability, strings.Join(candidates, ", "), definition.ConfigKey)
 	}
 }
@@ -186,13 +201,16 @@ func (a *app) selectCapabilityProvider(moduleName, capability string, definition
 // the module's own preference order.
 func (a *app) resolveCapabilityInterface(moduleName string, mod Module, dep RequiredCapability, provider string, capability ProvidedCapability) (string, error) {
 	key := paramEnvKey(moduleName, mod.EnvPrefix, dep.InterfaceSelectedBy)
+	if err := a.rejectSourceSensitiveSelector(key, moduleName+"."+dep.InterfaceSelectedBy); err != nil {
+		return "", err
+	}
 	requested := strings.ToLower(strings.TrimSpace(a.env[key]))
 	iface := ""
 	switch {
 	case requested != "" && requested != "auto":
 		if !contains(dep.AnyOf, requested) {
 			return "", fmt.Errorf("%s.%s is %q, but %s supports [%s];\nset %s.%s to one of: %s, auto",
-				moduleName, dep.InterfaceSelectedBy, requested, moduleName, strings.Join(dep.AnyOf, ","),
+				moduleName, dep.InterfaceSelectedBy, a.resolvedValueForError(key, requested), moduleName, strings.Join(dep.AnyOf, ","),
 				moduleName, dep.InterfaceSelectedBy, strings.Join(dep.AnyOf, ", "))
 		}
 		iface = requested
@@ -232,7 +250,7 @@ func (a *app) resolveCapabilityInterface(moduleName string, mod Module, dep Requ
 	// invariant rather than trusting the admission rule from a distance.
 	if !contains(capability.Interfaces, iface) {
 		return "", fmt.Errorf("%s requires %s protocol %q, but provider %s offers [%s]",
-			moduleName, dep.Name, iface, provider, strings.Join(capability.Interfaces, ","))
+			moduleName, dep.Name, a.resolvedValueForError(key, iface), provider, strings.Join(capability.Interfaces, ","))
 	}
 	a.env[key] = iface
 	return iface, nil

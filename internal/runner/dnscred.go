@@ -76,21 +76,31 @@ func (a *app) materializeDNSCredentials() error {
 
 func (a *app) materializeEngineCredentials(registry *dns.Registry, engine string) error {
 	prefix := a.envPrefixFor(engine)
-	configured := strings.TrimSpace(a.env[prefix+"_DNS_PROVIDER"])
+	providerKey := prefix + "_DNS_PROVIDER"
+	configured := strings.TrimSpace(a.env[providerKey])
 	if configured == "" {
 		// Whether a platform is mandatory is the module's own business, declared
 		// through its generic config requirement metadata and enforced at the
 		// matching resolution stage.
 		return nil
 	}
+	if err := a.rejectSourceSensitiveSelector(providerKey, engine+".dns_provider"); err != nil {
+		return err
+	}
 	platform, ok := registry.Lookup(configured)
 	if !ok {
+		if a.resolvedValueIsSensitive(providerKey) {
+			return fmt.Errorf("%s: dns_provider %q is not a known DNS platform; choose a supported provider", engine, "<redacted>")
+		}
 		return fmt.Errorf("%s: dns_provider %q is not a known DNS platform;\nset services.%s.env.dns_provider to one of: %s",
-			engine, configured, engine, strings.Join(registry.NamesFor(engine), ", "))
+			engine, a.resolvedValueForError(providerKey, configured), engine, strings.Join(registry.NamesFor(engine), ", "))
 	}
 	if !platform.Supports(engine) {
+		if a.resolvedValueIsSensitive(providerKey) {
+			return fmt.Errorf("%s: dns_provider %q is known but unsupported by this engine; choose a supported provider", engine, "<redacted>")
+		}
 		return fmt.Errorf("%s: dns_provider %q is a known platform, but %s cannot address it;\nset services.%s.env.dns_provider to one of: %s",
-			engine, platform.Name, engine, engine, strings.Join(registry.NamesFor(engine), ", "))
+			engine, a.resolvedValueForError(providerKey, platform.Name), engine, engine, strings.Join(registry.NamesFor(engine), ", "))
 	}
 	// Record the resolved canonical name so a hook never has to redo alias
 	// resolution, and so `plan` output shows what an alias resolved to.
@@ -103,7 +113,7 @@ func (a *app) materializeEngineCredentials(registry *dns.Registry, engine string
 		if strings.TrimSpace(a.env[target]) != "" {
 			// Explicitly given for this engine. Claim ownership so the value
 			// is scoped to this module even if it arrived as a bare user secret.
-			a.setEnvOwner(target, engine)
+			a.claimUserSecretOwner(target, engine)
 			a.markSensitive(target)
 			continue
 		}
@@ -118,8 +128,11 @@ func (a *app) materializeEngineCredentials(registry *dns.Registry, engine string
 		}
 	}
 	if len(missing) > 0 {
+		if a.resolvedValueIsSensitive(providerKey) {
+			return fmt.Errorf("%s: dns_provider %q needs credentials; configure its required keys under secrets or the engine-specific secret namespace", engine, "<redacted>")
+		}
 		return fmt.Errorf("%s: dns_provider %q needs %s;\nadd %s under secrets: to share it with every engine using this platform, or %s to give %s its own account",
-			engine, platform.Name, strings.Join(missing, ", "),
+			engine, a.resolvedValueForError(providerKey, platform.Name), strings.Join(missing, ", "),
 			strings.ToLower(missing[0]), strings.ToLower(prefix+"_"+missing[0]), engine)
 	}
 	return nil

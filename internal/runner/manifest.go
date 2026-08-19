@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/config"
@@ -14,6 +16,12 @@ import (
 )
 
 const currentModuleABI = "anas.module-hook/v1"
+
+var (
+	configParameterNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	envPrefixPattern           = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	envKeyPattern              = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
+)
 
 type manifestABI struct {
 	Supports []string `yaml:"supports"`
@@ -346,7 +354,252 @@ func loadRegistryDir(modulesRoot string) (map[string]Module, error) {
 		}
 		reg[mod.Name] = mod
 	}
+	if err := validateRegistryParameterRuntimeKeys(reg); err != nil {
+		return nil, err
+	}
 	return reg, nil
+}
+
+// validateRegistryParameterRuntimeKeys makes ownership unambiguous before any
+// config path is resolved. policyOwnerForEnv intentionally searches the whole
+// installed registry (not only today's enabled graph), so two Module bundles
+// cannot safely advertise parameters that produce the same exact environment
+// key even when only one is currently selected.
+func validateRegistryParameterRuntimeKeys(reg map[string]Module) error {
+	type parameterOwner struct{ module, parameter string }
+	seen := map[string]parameterOwner{}
+	register := func(key string, owner parameterOwner) error {
+		if previous, duplicate := seen[key]; duplicate && previous != owner {
+			return fmt.Errorf("config parameter ownership collision: %s.%s and %s.%s both resolve to runtime key %s",
+				previous.module, previous.parameter, owner.module, owner.parameter, key)
+		}
+		seen[key] = owner
+		return nil
+	}
+	for _, parameter := range globalConfig.Parameters {
+		if err := register(parameterEnvKey(globalModuleName, parameter, reg), parameterOwner{globalModuleName, parameter}); err != nil {
+			return err
+		}
+	}
+	reservedRuntimeKeys := registryReservedRuntimeKeys(reg)
+	reservedNamespaceKeys := registryReservedNamespaceKeys()
+	for _, key := range reservedRuntimeKeys {
+		// A global parameter may also be host-derived. Its declared global owner
+		// is already the stronger reservation, so keep that owner rather than
+		// manufacturing a collision between two core subsystems.
+		if _, globallyOwned := seen[key]; globallyOwned {
+			continue
+		}
+		seen[key] = parameterOwner{module: runnerScope, parameter: "reserved"}
+	}
+	names := make([]string, 0, len(reg))
+	for name := range reg {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	type prefixOwner struct{ module, prefix string }
+	prefixes := []prefixOwner{}
+	for _, name := range names {
+		mod := reg[name]
+		for _, pattern := range mod.Exports {
+			for _, key := range registryProtectedExportKeys(reg) {
+				if matchEnvPattern([]string{pattern}, key) {
+					return fmt.Errorf("module %q config.exports pattern %q overlaps runner-owned runtime key %s", name, pattern, key)
+				}
+			}
+		}
+		for _, prefix := range uniqueStrings([]string{defaultEnvPrefix(mod.EnvPrefix), defaultEnvPrefix(name)}) {
+			if prefix == "ANAS" || strings.HasPrefix(prefix, "ANAS_") {
+				return fmt.Errorf("module %q environment prefix %s overlaps the runner-reserved ANAS namespace", name, prefix)
+			}
+			for _, parameter := range globalConfig.Parameters {
+				key := parameterEnvKey(globalModuleName, parameter, reg)
+				if strings.HasPrefix(key, prefix+"_") {
+					return fmt.Errorf("module %q environment prefix %s overlaps global parameter runtime key %s", name, prefix, key)
+				}
+			}
+			for _, key := range reservedNamespaceKeys {
+				if strings.HasPrefix(key, prefix+"_") {
+					return fmt.Errorf("module %q environment prefix %s overlaps runner-owned runtime key %s", name, prefix, key)
+				}
+			}
+			// Config-core defaults include historical module-shaped keys such as
+			// NEXTCLOUD_APPSTORE_URL and LLNG_DOCKER_HUB_REGISTRY. A Module's
+			// default name prefix remains compatible with those read-only global
+			// overrides; an explicit custom prefix may not claim their namespace.
+			// configBaseEnvWithRegistry reserves every exact key even while unset,
+			// so the compatible default prefix still cannot overwrite one by Hook.
+			if prefix != defaultEnvPrefix(name) {
+				for _, key := range configCoreReservedRuntimeKeys() {
+					if strings.HasPrefix(key, prefix+"_") {
+						return fmt.Errorf("module %q environment prefix %s overlaps config-owned runtime key %s", name, prefix, key)
+					}
+				}
+			}
+			for _, previous := range prefixes {
+				if previous.module == name {
+					continue
+				}
+				if strings.HasPrefix(prefix+"_", previous.prefix+"_") || strings.HasPrefix(previous.prefix+"_", prefix+"_") {
+					return fmt.Errorf("module environment prefix collision: %s (%s) overlaps %s (%s)",
+						previous.module, previous.prefix, name, prefix)
+				}
+			}
+			prefixes = append(prefixes, prefixOwner{name, prefix})
+		}
+		parameters := append([]string{}, mod.Parameters...)
+		sort.Strings(parameters)
+		for _, parameter := range parameters {
+			key := moduleParamEnvKey(name, mod.EnvPrefix, mod.Exports, parameter)
+			if err := register(key, parameterOwner{name, parameter}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// registryReservedRuntimeKeys is the exact-key half of runtime ownership
+// admission. Prefix checks stop an ordinary Module namespace from overlapping
+// core state, but a bare export bypasses that namespace entirely. Registering
+// every core-published exact key before Module parameters are admitted makes
+// exports such as DATA_PATH or ANAS_IAM_PROVIDER collide with their real owner
+// instead of silently replacing it at runtime.
+func registryReservedRuntimeKeys(reg map[string]Module) []string {
+	set := map[string]bool{}
+	add := func(keys ...string) {
+		for _, key := range keys {
+			key = strings.TrimSpace(key)
+			if key != "" {
+				set[key] = true
+			}
+		}
+	}
+
+	add(registryReservedNamespaceKeys()...)
+	add(configCoreReservedRuntimeKeys()...)
+
+	identityInterfaces := map[string]bool{}
+	for _, definition := range capabilityDefinitions {
+		for _, iface := range definition.Interfaces {
+			identityInterfaces[iface] = true
+		}
+	}
+	for name, mod := range reg {
+		add(iamBindingKey(name, "INTERFACE"))
+		add(envIdentityClientPfx + defaultEnvPrefix(name) + "__INTERFACES")
+		for _, iface := range mod.IdentityInterfaces {
+			identityInterfaces[iface] = true
+		}
+		for _, account := range mod.LocalAccounts {
+			usernameKey, passwordKey := localAdminEnvKeys(mod, account.ID)
+			add(usernameKey, passwordKey, localAdminPasswordFileEnvKey(mod, account.ID), localAdminSecretKey(name, account.ID))
+		}
+	}
+	for iface := range identityInterfaces {
+		add(fmt.Sprintf(envIdentityClientsTmpl, defaultEnvPrefix(iface)))
+	}
+
+	out := make([]string, 0, len(set))
+	for key := range set {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// registryReservedNamespaceKeys is deliberately narrower than the exact-key
+// registry above. These values are owned independently of any Module and thus
+// also reserve a namespace prefix. Per-Module IAM/local-admin keys must remain
+// exact-only: an authentik-owned AUTHENTIK_LOCAL_ADMIN__... value, for example,
+// must not make the AUTHENTIK prefix itself illegal.
+func registryReservedNamespaceKeys() []string {
+	keys := []string{
+		"ALL_MODS_NAME", "USE_HOST_LAN_REQUIRED_MODS_NAME", "USE_HOST_LAN_OPTIONAL_MODS_NAME", "DOMAINS",
+		"DATA_PATH", "USER_DATA_PATH", "DOCKER_SOCKET_PATH", "ANAS_RUNTIME_ENTRY_IP",
+		"MODULE_NAME", "ANAS_MODULE_RUNTIME_STATE_PATH",
+		"ANAS_RESOURCE_DATABASE", "ANAS_RESOURCE_USERNAME", "ANAS_RESOURCE_PASSWORD",
+		localAdminCandidateSecretKey,
+		envIAMProvider, envIAMInterfaces, envIdentityClients, envIdentityAppClients,
+	}
+	keys = append(keys, hostEnvKeys...)
+	return uniqueStrings(keys)
+}
+
+func registryProtectedExportKeys(reg map[string]Module) []string {
+	keys := append([]string{}, registryReservedNamespaceKeys()...)
+	keys = append(keys, configCoreReservedRuntimeKeys()...)
+	for _, parameter := range globalConfig.Parameters {
+		keys = append(keys, parameterEnvKey(globalModuleName, parameter, reg))
+	}
+	sort.Strings(keys)
+	return uniqueStrings(keys)
+}
+
+// configCoreReservedRuntimeKeys asks config's own flattening table for every
+// globally owned key it can derive. Seeding both speedup switches and the
+// bootstrap username exercises the conditional defaults without duplicating
+// their key lists here; module-owned compatibility aliases are intentionally
+// excluded through the owner marker.
+func configCoreReservedRuntimeKeys() []string {
+	cfg := &config.File{
+		Administration: config.Administration{Bootstrap: config.BootstrapAdministrator{Username: "reserved"}},
+		Env: map[string]any{
+			"CHINESE_SPEEDUP":       true,
+			"CHINESE_BUILD_SPEEDUP": true,
+		},
+	}
+	_, owners := cfg.BaseEnvWithOwners()
+	keys := make([]string, 0, len(owners))
+	for key, owner := range owners {
+		if owner == "" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// configDefaultOverrideRuntimeKeys are global defaults for which raw env is an
+// intentional override surface. They remain reserved from Module ownership,
+// but are not rejected as caller configuration the way topology/workspace keys
+// are.
+func configDefaultOverrideRuntimeKeys() []string {
+	cfg := &config.File{Env: map[string]any{
+		"CHINESE_SPEEDUP":       true,
+		"CHINESE_BUILD_SPEEDUP": true,
+	}}
+	env, owners := cfg.BaseEnvWithOwners()
+	keys := []string{}
+	for key, owner := range owners {
+		if owner == "" && key != "CHINESE_SPEEDUP" && key != "CHINESE_BUILD_SPEEDUP" {
+			if strings.TrimSpace(env[key]) != "" {
+				keys = append(keys, key)
+			}
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func isRunnerOwnedRuntimeKey(key string, reg map[string]Module) bool {
+	key = config.EnvKey(key)
+	owned := map[string]bool{}
+	for _, reserved := range registryReservedRuntimeKeys(reg) {
+		owned[reserved] = true
+	}
+	for _, parameter := range globalConfig.Parameters {
+		delete(owned, parameterEnvKey(globalModuleName, parameter, reg))
+	}
+	for _, override := range configDefaultOverrideRuntimeKeys() {
+		delete(owned, override)
+	}
+	// Workspace discovery fills these only when the caller did not provide an
+	// override. They stay reserved from Module ownership, but are legitimate
+	// top-level env/secrets inputs and therefore are not caller-forbidden.
+	delete(owned, "DOCKER_SOCKET_PATH")
+	delete(owned, "ANAS_RUNTIME_ENTRY_IP")
+	return owned[key]
 }
 
 // moduleRootCandidate accepts either the bundle directory or the directory above
@@ -509,9 +762,14 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		return Module{}, err
 	}
 
-	envPrefix := manifest.Config.EnvPrefix
+	envPrefix := strings.TrimSpace(manifest.Config.EnvPrefix)
 	if envPrefix == "" {
 		envPrefix = defaultEnvPrefix(manifest.Name)
+	} else {
+		envPrefix = defaultEnvPrefix(envPrefix)
+	}
+	if !envPrefixPattern.MatchString(envPrefix) {
+		return Module{}, fmt.Errorf("module %q config.env_prefix %q is not an environment-safe prefix", dirname, manifest.Config.EnvPrefix)
 	}
 	consumes, err := normalizeEnvPatterns(dirname, "consumes", manifest.Config.Consumes)
 	if err != nil {
@@ -573,6 +831,10 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if err != nil {
 		return Module{}, err
 	}
+	parameters := declaredParameters(manifest.Name, manifest.Config)
+	if err := validateDeclaredParameterRuntimeKeys(dirname, manifest.Name, envPrefix, exports, parameters); err != nil {
+		return Module{}, err
+	}
 	mod := Module{
 		Name:                   manifest.Name,
 		Version:                manifest.Version,
@@ -587,7 +849,7 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		InputRequired:          requirements.InputRequired,
 		Required:               requirements.Required,
 		MustResolve:            requirements.MustResolve,
-		Parameters:             declaredParameters(manifest.Config),
+		Parameters:             parameters,
 		Types:                  types,
 		Consumes:               consumes,
 		Exports:                exports,
@@ -625,6 +887,9 @@ func normalizeParamTypes(module string, in map[string]manifestParamType) (map[st
 		if parameterName == "" {
 			return nil, fmt.Errorf("module %q config.types contains an empty parameter name", module)
 		}
+		if !configParameterNamePattern.MatchString(parameterName) {
+			return nil, fmt.Errorf("module %q config.types parameter name %q is not lower-snake-case", module, name)
+		}
 		if _, exists := out[parameterName]; exists {
 			return nil, fmt.Errorf("module %q config.types declares %s more than once after normalization", module, parameterName)
 		}
@@ -634,6 +899,12 @@ func normalizeParamTypes(module string, in map[string]manifestParamType) (map[st
 		})
 		if err != nil {
 			return nil, fmt.Errorf("module %q config.types.%s %w", module, name, err)
+		}
+		// Absence from config.types is the legacy compatibility spelling for an
+		// undeclared parameter. Once an entry is present, an empty/null mapping is
+		// almost certainly a typo and must not silently collapse back to absence.
+		if !parameter.Declared() {
+			return nil, fmt.Errorf("module %q config.types.%s explicitly declares an empty type", module, name)
 		}
 		out[parameterName] = parameter
 	}
@@ -654,6 +925,9 @@ func normalizeParamTypeDefaults(owner string, defaults map[string]any, types map
 		parameter := strings.ToLower(strings.TrimSpace(name))
 		if parameter == "" {
 			return nil, fmt.Errorf("module %q config.defaults contains an empty parameter name", owner)
+		}
+		if !configParameterNamePattern.MatchString(parameter) {
+			return nil, fmt.Errorf("module %q config.defaults parameter name %q is not lower-snake-case", owner, name)
 		}
 		if _, exists := out[parameter]; exists {
 			return nil, fmt.Errorf("module %q config.defaults declares %s more than once after normalization", owner, parameter)
@@ -696,6 +970,9 @@ func normalizeChangePolicies(owner string, in map[string]manifestChangePolicy) (
 		parameter := strings.ToLower(strings.TrimSpace(name))
 		if parameter == "" {
 			return nil, fmt.Errorf("module %q config.changes contains an empty parameter name", owner)
+		}
+		if !configParameterNamePattern.MatchString(parameter) {
+			return nil, fmt.Errorf("module %q config.changes parameter name %q is not lower-snake-case", owner, name)
 		}
 		if _, exists := out[parameter]; exists {
 			return nil, fmt.Errorf("module %q config.changes declares %s more than once after normalization", owner, parameter)
@@ -923,8 +1200,12 @@ func normalizeRequirementParameters(owner, module, prefix string, exports []stri
 	out := make([]string, 0, len(in))
 	seen := map[string]bool{}
 	for _, raw := range in {
-		if strings.TrimSpace(raw) == "" {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
 			return nil, fmt.Errorf("module %q config.%s contains an empty parameter", owner, field)
+		}
+		if !isEnvKey(trimmed) && !configParameterNamePattern.MatchString(strings.ToLower(trimmed)) {
+			return nil, fmt.Errorf("module %q config.%s parameter name %q is not lower-snake-case or an environment key", owner, field, raw)
 		}
 		key := moduleParamEnvKey(module, prefix, exports, raw)
 		if seen[key] {
@@ -936,13 +1217,29 @@ func normalizeRequirementParameters(owner, module, prefix string, exports []stri
 	return out, nil
 }
 
+func validateDeclaredParameterRuntimeKeys(owner, module, prefix string, exports []string, parameters []string) error {
+	seen := map[string]string{}
+	for _, parameter := range parameters {
+		key := moduleParamEnvKey(module, prefix, exports, parameter)
+		if module == globalScope {
+			key = parameterEnvKey(globalModuleName, parameter, nil)
+		}
+		if previous, duplicate := seen[key]; duplicate && previous != parameter {
+			return fmt.Errorf("module %q config parameters %s and %s both resolve to runtime key %s", owner, previous, parameter, key)
+		}
+		seen[key] = parameter
+	}
+	return nil
+}
+
 func defaultEnvPrefix(module string) string {
 	return strings.ToUpper(strings.ReplaceAll(module, "-", "_"))
 }
 
 // normalizeEnvPatterns validates consumes/exports entries: an exact env key,
 // a prefix glob such as APPS_LIST__*, or a suffix glob such as *_DB_NAME used
-// by capability providers that scan their consumers' declarations.
+// by capability providers that scan their consumers' declarations. A glob has
+// exactly one leading or trailing *, and its non-wildcard stem is env-safe.
 func normalizeEnvPatterns(module, field string, in []string) ([]string, error) {
 	out := []string{}
 	for _, raw := range in {
@@ -950,9 +1247,14 @@ func normalizeEnvPatterns(module, field string, in []string) ([]string, error) {
 		if pattern == "" {
 			return nil, fmt.Errorf("module %q config.%s contains an empty pattern", module, field)
 		}
-		if stars := strings.Count(pattern, "*"); stars > 1 ||
-			(stars == 1 && !strings.HasSuffix(pattern, "*") && !strings.HasPrefix(pattern, "*")) {
-			return nil, fmt.Errorf("module %q config.%s pattern %q may only have one leading or trailing *", module, field, pattern)
+		stem := pattern
+		if strings.HasPrefix(pattern, "*") {
+			stem = strings.TrimPrefix(pattern, "*")
+		} else if strings.HasSuffix(pattern, "*") {
+			stem = strings.TrimSuffix(pattern, "*")
+		}
+		if strings.Contains(stem, "*") || !envKeyPattern.MatchString(stem) {
+			return nil, fmt.Errorf("module %q config.%s pattern %q must be an environment key or one environment-safe stem with a leading or trailing *", module, field, pattern)
 		}
 		out = append(out, pattern)
 	}
@@ -1020,13 +1322,5 @@ func globalParamEnv(key string) string {
 }
 
 func isEnvKey(key string) bool {
-	if strings.Contains(key, ".") {
-		return false
-	}
-	for _, r := range key {
-		if r >= 'a' && r <= 'z' {
-			return false
-		}
-	}
-	return strings.Contains(key, "_") || strings.ToUpper(key) == key
+	return envKeyPattern.MatchString(key)
 }

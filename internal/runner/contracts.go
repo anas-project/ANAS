@@ -348,6 +348,9 @@ func (a *app) resolveContractDependency(consumer string, module Module, dep Cont
 		return "", fmt.Errorf("module %s requires unavailable contract %s", consumer, dep.Name)
 	}
 	key := paramEnvKey(consumer, module.EnvPrefix, dep.SelectedBy)
+	if err := a.rejectSourceSensitiveSelector(key, consumer+"."+dep.SelectedBy); err != nil {
+		return "", err
+	}
 	requested := strings.ToLower(strings.TrimSpace(a.env[key]))
 	if requested == "" {
 		if value := module.Defaults[key]; value != "" {
@@ -383,7 +386,7 @@ func (a *app) resolveContractDependency(consumer string, module Module, dep Cont
 		}
 	}
 	if !contains(dep.Interfaces, requested) || !contains(contract.Interfaces, requested) {
-		return "", fmt.Errorf("%s.%s must be auto or one of %s, got %q", consumer, dep.SelectedBy, strings.Join(dep.Interfaces, ", "), requested)
+		return "", fmt.Errorf("%s.%s must be auto or one of %s, got %q", consumer, dep.SelectedBy, strings.Join(dep.Interfaces, ", "), a.resolvedValueForError(key, requested))
 	}
 
 	candidates := []string{}
@@ -393,8 +396,9 @@ func (a *app) resolveContractDependency(consumer string, module Module, dep Cont
 		}
 	}
 	sort.Strings(candidates)
+	displayRequested := a.resolvedValueForError(key, requested)
 	if len(candidates) == 0 {
-		return "", fmt.Errorf("%s requires %s/%s, but no enabled module provides it", consumer, dep.Name, requested)
+		return "", fmt.Errorf("%s requires %s/%s, but no enabled module provides it", consumer, dep.Name, displayRequested)
 	}
 	provider := ""
 	if a.lock != nil && contains(candidates, a.lock.Bindings[consumer][dep.Name]) {
@@ -415,7 +419,7 @@ func (a *app) resolveContractDependency(consumer string, module Module, dep Cont
 		provider = candidates[0]
 	}
 	if provider == "" {
-		return "", fmt.Errorf("%s requires %s/%s, provided by %s; select one provider explicitly", consumer, dep.Name, requested, strings.Join(candidates, ", "))
+		return "", unresolvedBindingErrorf("%s requires %s/%s, provided by %s; select one provider explicitly", consumer, dep.Name, displayRequested, strings.Join(candidates, ", "))
 	}
 	a.env[key] = requested
 	if a.resolvedBindings == nil {

@@ -111,6 +111,10 @@ func loadGlobalSchema(b []byte) (globalSchema, error) {
 	if err != nil {
 		return globalSchema{}, err
 	}
+	parameters := declaredParameters(globalModuleName, doc.Config)
+	if err := validateDeclaredParameterRuntimeKeys(globalModuleName, globalScope, "", nil, parameters); err != nil {
+		return globalSchema{}, err
+	}
 	return globalSchema{
 		InputRequired: requirements.InputRequired,
 		Required:      requirements.Required,
@@ -118,14 +122,22 @@ func loadGlobalSchema(b []byte) (globalSchema, error) {
 		Defaults:      defaults,
 		Changes:       changes,
 		Types:         types,
-		Parameters:    declaredParameters(doc.Config),
+		Parameters:    parameters,
 	}, nil
 }
 
-// declaredParameters is every parameter a config block names, by the spelling
-// it was written with, gathered from input_required, legacy required,
-// must_resolve, defaults, types, and changes.
-func declaredParameters(cfg manifestConfig) []string {
+// declaredParameters is every addressable parameter a config block names, by
+// the spelling it was written with, gathered from input_required, legacy
+// required, must_resolve, defaults, types, and changes.
+//
+// A legacy requirement may instead be a bare runtime environment key. When it
+// has neither the module prefix nor an explicit parameter declaration that
+// maps back to it, it remains only a runtime requirement. Treating
+// EXTERNAL_TOKEN as a parameter named external_token would advertise
+// module.external_token while that path actually writes MODULE_EXTERNAL_TOKEN.
+// The compatible address for such a value is the existing env.EXTERNAL_TOKEN
+// escape hatch, not a fabricated module parameter.
+func declaredParameters(owner string, cfg manifestConfig) []string {
 	seen := map[string]bool{}
 	out := []string{}
 	add := func(name string) {
@@ -136,15 +148,9 @@ func declaredParameters(cfg manifestConfig) []string {
 		seen[name] = true
 		out = append(out, name)
 	}
-	for _, name := range cfg.InputRequired {
-		add(name)
-	}
-	for _, name := range cfg.Required {
-		add(name)
-	}
-	for _, name := range cfg.MustResolve {
-		add(name)
-	}
+	// Config-name declarations establish the inverse mapping used when a legacy
+	// requirement is spelled as an environment key (DEMO_TOKEN). Without this,
+	// the inventory would expose a second fictitious parameter `demo_token`.
 	for name := range cfg.Defaults {
 		add(name)
 	}
@@ -153,6 +159,62 @@ func declaredParameters(cfg manifestConfig) []string {
 	}
 	for name := range cfg.Changes {
 		add(name)
+	}
+	prefix := strings.TrimSpace(cfg.EnvPrefix)
+	if prefix == "" {
+		prefix = defaultEnvPrefix(owner)
+	}
+	exports := make([]string, 0, len(cfg.Exports))
+	for _, export := range cfg.Exports {
+		exports = append(exports, strings.TrimSpace(export))
+	}
+	runtimeKey := func(name string) string {
+		name = strings.TrimSpace(name)
+		if !isEnvKey(name) {
+			name = strings.ToLower(name)
+		}
+		if owner == globalModuleName {
+			return parameterEnvKey(globalModuleName, name, nil)
+		}
+		return moduleParamEnvKey(owner, prefix, exports, name)
+	}
+	byRuntimeKey := map[string]string{}
+	for _, parameter := range out {
+		byRuntimeKey[runtimeKey(parameter)] = parameter
+	}
+	addRequirement := func(raw string) {
+		if parameter, ok := byRuntimeKey[runtimeKey(raw)]; ok {
+			add(parameter)
+			return
+		}
+		trimmed := strings.TrimSpace(raw)
+		if isEnvKey(trimmed) {
+			// An explicitly exported bare key establishes module ownership and
+			// therefore a reversible parameter address even without another
+			// declaration source.
+			if owner != globalModuleName && contains(exports, trimmed) {
+				add(trimmed)
+				return
+			}
+			if owner == globalModuleName {
+				return
+			}
+			prefixKey := strings.ToUpper(strings.ReplaceAll(prefix, "-", "_")) + "_"
+			if !strings.HasPrefix(trimmed, prefixKey) {
+				return
+			}
+			trimmed = strings.TrimPrefix(trimmed, prefixKey)
+		}
+		add(trimmed)
+	}
+	for _, name := range cfg.InputRequired {
+		addRequirement(name)
+	}
+	for _, name := range cfg.Required {
+		addRequirement(name)
+	}
+	for _, name := range cfg.MustResolve {
+		addRequirement(name)
 	}
 	sort.Strings(out)
 	return out

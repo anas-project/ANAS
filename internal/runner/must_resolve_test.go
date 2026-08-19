@@ -195,6 +195,69 @@ func TestCalculateRedactsSensitiveHookConstraintError(t *testing.T) {
 	}
 }
 
+func TestCalculateRejectsHookSecretKeyCollisionsAtomically(t *testing.T) {
+	mod := Module{
+		Name: "demo", EnvPrefix: "DEMO",
+		Hook: HookConfig{Command: []string{
+			"sh", "-c", `printf '%s' '{"secrets":{"demo_token":"one","DEMO_TOKEN":"two"}}'`,
+		}},
+	}
+	store := &secretStore{values: map[string]string{"EXISTING": "retained"}, metadata: map[string]secretMetadata{}}
+	a := &app{
+		base: t.TempDir(), reg: map[string]Module{"demo": mod}, order: []string{"demo"},
+		env: map[string]string{}, envOwner: map[string]string{}, secrets: store,
+	}
+	seedCalculateGlobalRequirements(a.env)
+	err := a.calculate()
+	if err == nil || !strings.Contains(err.Error(), "calculate secrets") || !strings.Contains(err.Error(), "collide") {
+		t.Fatalf("Hook secret collision error = %v", err)
+	}
+	if len(store.values) != 1 || store.values["EXISTING"] != "retained" {
+		t.Fatalf("rejected Hook secret patch mutated store: %#v", store.values)
+	}
+}
+
+func TestCalculateUsesHookSecretProvenanceBeforeSchemaErrors(t *testing.T) {
+	const secret = "do-not-print-hook-secret"
+	minimumLength := 40
+	for _, test := range []struct {
+		name, parameter, envKey string
+	}{
+		{name: "same key", parameter: "secret", envKey: "DEMO_SECRET"},
+		{name: "same value alias", parameter: "alias", envKey: "DEMO_ALIAS"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mod := Module{
+				Name: "demo", EnvPrefix: "DEMO", Parameters: []string{test.parameter},
+				Types: map[string]ParamType{
+					test.parameter: {Kind: "string", Constraints: configschema.Constraints{MinLength: &minimumLength}},
+				},
+				Changes: map[string]ChangePolicy{test.parameter: {Sensitive: false}},
+				Hook: HookConfig{Command: []string{
+					"sh", "-c", `printf '%s' "$1"`, "anas-test-hook",
+					`{"env":{"` + test.envKey + `":"` + secret + `"},"secrets":{"demo_secret":"` + secret + `"}}`,
+				}},
+			}
+			store := &secretStore{values: map[string]string{}, metadata: map[string]secretMetadata{}}
+			a := &app{
+				base: t.TempDir(), reg: map[string]Module{"demo": mod}, order: []string{"demo"},
+				env: map[string]string{}, envOwner: map[string]string{}, secrets: store,
+			}
+			seedCalculateGlobalRequirements(a.env)
+			err := a.calculate()
+			if err == nil || !strings.Contains(err.Error(), "type or constraints") {
+				t.Fatalf("Hook secret constraint error = %v", err)
+			}
+			if strings.Contains(err.Error(), secret) {
+				t.Fatalf("Hook secret leaked before store merge: %v", err)
+			}
+			if len(store.values) != 0 {
+				t.Fatalf("rejected Hook response mutated secret store: %#v", store.values)
+			}
+		})
+	}
+}
+
 func seedCalculateGlobalRequirements(values map[string]string) {
 	for key, value := range map[string]string{
 		"BASE_DOMAIN": "example.test", "EMAIL": "admin@example.test", "TZ": "UTC",

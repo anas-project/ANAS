@@ -499,7 +499,14 @@ func resolveRemoteModuleLock(workspace, configPath, moduleRoot string, lock *mod
 	if err != nil {
 		return nil, nil, preconditionErrorf("module_root_invalid", "%s", err.Error())
 	}
-	if err := rejectUnimportedConfigSecrets(configPath, reg); err != nil {
+	if err := validateConfigRuntimeKeyCollisions(configPath, reg); err != nil {
+		return nil, nil, preconditionErrorf("config_invalid", "%s", err.Error())
+	}
+	privateStore, err := loadSecretStore(stateDir(workspace))
+	if err != nil {
+		return nil, nil, preconditionErrorf("secrets_unreadable", "%s", err.Error())
+	}
+	if err := rejectUnimportedConfigSecrets(configPath, reg, privateStore.values); err != nil {
 		return nil, nil, preconditionErrorf("config_requires_import", "%s", err.Error())
 	}
 	contracts, err := loadContractRegistry(moduleRoot)
@@ -511,14 +518,14 @@ func resolveRemoteModuleLock(workspace, configPath, moduleRoot string, lock *mod
 		cfg: cfg, reg: reg, contracts: contracts, lock: lock,
 		resolvedBindings: map[string]map[string]string{},
 	}
-	a.env, a.envOwner = cfg.BaseEnvWithOwners()
+	a.env, a.envOwner = configBaseEnvWithRegistry(cfg, reg)
 	if err := a.loadImportedSecrets(); err != nil {
 		return nil, nil, preconditionErrorf("secrets_unreadable", "%s", err.Error())
 	}
 	if err := a.validateContractRegistry(); err != nil {
 		return nil, nil, preconditionErrorf("contract_invalid", "%s", err.Error())
 	}
-	a.order, err = a.resolveOrder(cfg.Modules.Order)
+	a.order, err = a.resolveOrderWithInputValidation(cfg.Modules.Order)
 	if err != nil {
 		return nil, nil, preconditionErrorf("resolution_failed", "%s", err.Error())
 	}

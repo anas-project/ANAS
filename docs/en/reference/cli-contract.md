@@ -61,6 +61,17 @@ or more fields, and rules that depend on workspace or runtime state remain
 resolver, application-service, plan, or Hook validation; they do not make one
 whole field unconditionally input-required.
 
+Import and `config plan` run the same generic dependency, Capability, and
+Contract resolver. Only an omitted/`auto` binding that cannot yet be selected
+uniquely may remain deferred in a draft. An explicitly invalid, unknown,
+disabled, or unsupported provider/interface fails immediately rather than at
+apply time. Structural selectors such as a provider, interface, backend, or DNS
+platform cannot come from `secrets:` or the lifecycle Secret Store: their
+canonical identifier must be persisted in plan and the resolution lock, which
+cannot also preserve plaintext secrecy. Move the selector to ordinary config
+and keep only actual credentials in secret storage. Rejection diagnostics show
+only `<redacted>`.
+
 This projection is **not a JSON Schema document**. JSON Schema `required` is an
 array of object property names, whereas this field describes explicit input for
 one parameter. JSON Schema `default` is an annotation, whereas ANAS actually
@@ -74,13 +85,41 @@ A raw `env.<KEY>` that resolves to a declared parameter follows the same rule;
 only an undeclared raw key remains a permissive compatibility escape hatch.
 
 `config import` also canonicalizes YAML addresses before validation and managed
-persistence. Environment keys use their uppercase runtime spelling; Module
-names, global parameter names, and Module parameter names become lowercase.
-Two source keys that collapse to one address are rejected rather than resolved
-by YAML order. A structured parameter declared as a bare export is moved to its
-canonical `env.<KEY>` address—for example,
+persistence. `env` and `secrets` keys use their uppercase runtime spelling;
+Module names, global parameter names, and Module parameter names become
+lowercase. Two source keys that collapse to one address are rejected rather
+than resolved by YAML order. This includes collisions within `secrets` and
+between `secrets`, `env`, and a structured Module parameter that resolve to the
+same runtime key; diagnostics never echo sensitive candidate values. A
+structured parameter declared as a bare export is moved to its canonical
+`env.<KEY>` address—for example,
 `modules.samba_fs.config.share_dir_name` becomes `env.SHARE_DIR_NAME`—and
 supplying both spellings is a collision. The external source file is unchanged.
+
+Top-level `secrets.<KEY>` is a sensitive spelling of a runtime input, not an
+untyped validation escape hatch. When it maps to a declared parameter, the same
+type, constraints, sensitivity, and change effect apply. Ordinary deployment
+secrets remain in the mode-0600 managed `config.yml`; `credential_rotate`
+inputs and managed local-administrator bootstrap passwords are extracted into
+`.anas/secrets.yml`. Configuration, Secret Store, and integrity state are
+staged and replaced together, so a failed import leaves the old state intact.
+
+A normalized managed configuration can be reimported without supplying an
+extracted secret again: only an existing non-empty Secret Store record of kind
+`lifecycle_managed` may satisfy caller-input requirements in the private
+validation view. Supplying the same value is idempotent; importing a different
+replacement is rejected before writes in favor of the declared credential
+rotation command or `anas admin local rotate`. Records of kind `generated` or
+`local_admin` cannot satisfy an unrelated caller-input requirement. Missing or
+currently invalid lifecycle-managed input makes import or plan fail without
+revealing the value.
+
+`config list` exposes lifecycle-managed presence as `<set>`/`<unset>` in human
+output and as `set: true`/`false` with no `value` field in JSON. `config plan`
+revalidates the private view against the current schema and reports only change
+metadata. Ordinary values supplied through `secrets:` retain their owner's
+declared effect and sensitivity, and no Secret Store plaintext is projected by
+either command.
 
 The M3 `anasd` configuration endpoints will consume this same typed application
 schema. They do not parse CLI JSON and do not maintain per-Module HTTP adapters;

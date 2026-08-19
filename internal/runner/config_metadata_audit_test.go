@@ -51,6 +51,20 @@ func TestValidateModuleConfigMetadataFileCoversEveryDeclarationSource(t *testing
 	}
 }
 
+func TestValidateModuleConfigMetadataFileAllowsLegacyBareEnvRequirementWithoutType(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "module.yml")
+	manifest := `name: demo
+config:
+  required: [EXTERNAL_TOKEN]
+`
+	if err := os.WriteFile(path, []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateModuleConfigMetadataFile(path); err != nil {
+		t.Fatalf("runtime-only legacy environment requirement was treated as an untyped Module parameter: %v", err)
+	}
+}
+
 func TestValidateModuleConfigMetadataFileAcceptsGenericCompleteSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "module.yml")
 	manifest := `name: future-module
@@ -138,6 +152,26 @@ config:
 			manifest: `name: demo
 config:
   input_required: [token]
+  types:
+    token: {kind: string, default_source: generated}
+`,
+			contains: "also has default_source",
+		},
+		{
+			name: "env-key input required and literal",
+			manifest: `name: demo
+config:
+  input_required: [DEMO_TOKEN]
+  defaults: {token: fallback}
+  types: {token: string}
+`,
+			contains: "also has a literal default",
+		},
+		{
+			name: "env-key input required and source",
+			manifest: `name: demo
+config:
+  input_required: [DEMO_TOKEN]
   types:
     token: {kind: string, default_source: generated}
 `,

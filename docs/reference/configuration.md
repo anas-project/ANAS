@@ -14,7 +14,8 @@
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
   上述 139 项。
-- 顶层 `env:` 是开放的 raw-env 逃生口，任意键都能写入，所以“只能用环境变量”的总数
+- 顶层 `env:` 是开放的 raw-env 逃生口，任意合法环境变量键都能写入（输入会规范为大写，
+  并须匹配 `[A-Z_][A-Z0-9_]*`），所以“只能用环境变量”的总数
   理论上不可穷举。下文只列仓库当前明确使用、且没有结构化参数的用户覆盖项。
 
 这里的“已结构化”分两层：
@@ -49,20 +50,33 @@
 | `modules.<module>.identity.login_protocol` | `auto`、`oidc` 或 `saml` | 已使用 |
 | `modules.<module>.administration.local_accounts.<id>.username` | 覆盖 Module 本地账户用户名 | 非法；`fixed_username` 优先，否则使用固定 `admin_{module}` |
 | `modules.<module>.config.<parameter>` | manifest 声明的 module 参数 | 已使用，见下一节 |
-| `env.<KEY>` | 原始环境变量逃生口 | 开放 map，不做键集合校验 |
+| `env.<KEY>` | 原始环境变量逃生口 | 开放 map；不限制键集合，但键必须匹配 `[A-Z_][A-Z0-9_]*` |
 
 `config.Load` 使用 `KnownFields(true)`：除 `secrets`、`modules` 和 `env` 这些有意开放的
 map 外，拼错结构化字段会直接报错，不会静默忽略。`modules.<module>.config` 虽在 YAML
 解码层是 map，但 `config import` 和部署解析会再按 manifest 校验每个键及类型；手写 YAML
 不能绕过 `config set` 的声明检查。
 
-`config import` 在验证和写入受管配置前统一 YAML 地址：`env` 键转换为规范的运行时大写
-拼写，Module 名、global 参数名和 Module 参数名转换为小写。若两个源键规范化后落到同一
-地址（例如 `env.custom_key` 与 `env.CUSTOM_KEY`，或 `modules.TRAEFIK` 与
-`modules.traefik`），导入会拒绝整个文件，而不是按顺序覆盖。声明为 bare export 的结构化
-Module 参数也会迁移到其唯一受管地址；例如源文件中的
+`config import` 在验证和写入受管配置前统一 YAML 地址：`env` 和 `secrets` 键转换为规范的
+运行时大写拼写，Module 名、global 参数名和 Module 参数名转换为小写。若两个源键规范化后
+落到同一地址（例如 `env.custom_key` 与 `env.CUSTOM_KEY`、`secrets.demo_token` 与
+`secrets.DEMO_TOKEN`，或 `modules.TRAEFIK` 与 `modules.traefik`），导入会拒绝整个文件，
+而不是按顺序覆盖。映射到同一运行时键的 `secrets`、`env` 和结构化 Module 参数也不能同时
+出现。声明为 bare export 的结构化 Module 参数会迁移到其唯一受管地址；例如源文件中的
 `modules.samba_fs.config.share_dir_name` 会写成 `env.SHARE_DIR_NAME`。若源文件同时提供这
 两个地址，同样按规范化碰撞拒绝。源文件自身不被修改。
+
+`secrets.<KEY>` 是运行时输入的敏感拼写，不是绕过 schema 的无类型通道。键映射到已声明
+参数时，导入仍应用该参数的类型、constraints、敏感性和变更 effect，且错误不回显候选值。
+用于选择 provider、interface、backend 或 DNS platform 的结构 selector 不能放在 `secrets:` 或
+lifecycle Secret Store；因为其规范标识必须写入 plan/resolution lock，导入与 plan 会安全拒绝并
+要求迁到普通配置。secret 通道只保存实际凭据。
+普通部署 Secret 保留在权限为 0600 的受管 `config.yml`；`credential_rotate` 输入和本地管理
+员 bootstrap 密码则抽取到 `.anas/secrets.yml`。重新导入已规范化配置时，只有 Secret Store
+中 kind 为 `lifecycle_managed` 的现有非空值会在私有校验视图中满足调用方输入要求；
+`generated` 和 `local_admin` 记录不能冒充这类输入。相同值重复导入是幂等的，不同值替换会
+被拒绝并要求走对应轮换流程。`config plan` 按当前 schema 重新校验同一私有视图，`config
+list` 只显示这类值已设置；两者都不投影明文。
 
 未通过安装器选择源时，`module_source` 省略值为 `official`。一行安装脚本会把选择保存到
 `${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`；新建 workspace 或导入未声明该字段的外部

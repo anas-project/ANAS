@@ -79,7 +79,7 @@ func localAdminSecretKey(module, id string) string {
 }
 
 func localAdminEnvKeys(mod Module, id string) (string, string) {
-	prefix := mod.EnvPrefix + "_LOCAL_ADMIN"
+	prefix := defaultEnvPrefix(mod.EnvPrefix) + "_LOCAL_ADMIN"
 	if id != "primary" {
 		prefix += "__" + defaultEnvPrefix(id)
 	}

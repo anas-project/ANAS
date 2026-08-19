@@ -149,6 +149,19 @@ Both `docs/technical*.md` files must cover at least:
 10. hooks, change executors, transactions, rollback, and compensation;
 11. implementation files, unit tests, integration/E2E entry points, and limitations.
 
+`config.env_prefix`, `exports`, and `consumes` must use environment-safe
+upper-snake names. A pattern may contain one leading or trailing `*`, never a
+bare `*`. Default and custom prefixes owned by different Modules must not be
+equal or nested, and must not overlap global, runner-owned, or reserved
+`ANAS_*` namespaces. A calculate Hook's env/secret patch is applied only after
+the whole patch passes ownership, key-canonicalization, and collision checks;
+it cannot overwrite a key owned by another source. Declared parameters are
+revalidated through the common type/constraint schema after both `calculate`
+and `render_env`; private render-only keys remain supported. A Hook secret may
+refresh only an existing `generated/module-hook` record, never
+`lifecycle_managed`, `local_admin`, or another provenance, and an atomic
+rejection does not echo values or free-form provenance.
+
 Technical documentation is maintained inside the Module. The ANAS site publishes mirrors and does not own Module implementation semantics.
 
 ## 5. Generated versus reviewed content

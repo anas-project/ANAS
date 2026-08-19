@@ -308,6 +308,36 @@ administration:
 	}
 }
 
+func TestManifestModuleKeyMappingPreservesSourcePrecedence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	body := "modules:\n  turnsvc:\n    config:\n      port: 5678\n" +
+		"  samba_dc:\n    config:\n      admin_name: module-value\n" +
+		"administration:\n  bootstrap:\n    username: operator\n" +
+		"env:\n  TURNSVC_PORT: raw-compatible\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, owners := cfg.BaseEnvWithOwnersUsing(func(module, parameter string) string {
+		if module == "turnsvc" {
+			return "TURN_" + EnvKey(parameter)
+		}
+		return ""
+	})
+	if env["TURN_PORT"] != "5678" || owners["TURN_PORT"] != "turnsvc" {
+		t.Fatalf("manifest-mapped module value = %q owner=%q", env["TURN_PORT"], owners["TURN_PORT"])
+	}
+	if env["TURNSVC_PORT"] != "raw-compatible" || owners["TURNSVC_PORT"] != "" {
+		t.Fatalf("distinct raw env = %q owner=%q", env["TURNSVC_PORT"], owners["TURNSVC_PORT"])
+	}
+	if env["SAMBA_DC_ADMIN_NAME"] != "operator" || owners["SAMBA_DC_ADMIN_NAME"] != "samba_dc" {
+		t.Fatalf("bootstrap precedence changed: value=%q owner=%q", env["SAMBA_DC_ADMIN_NAME"], owners["SAMBA_DC_ADMIN_NAME"])
+	}
+}
+
 func TestOIDCIsTheDefaultIAMProtocol(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
 	if err := os.WriteFile(path, []byte(`modules:

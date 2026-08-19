@@ -126,7 +126,14 @@ func runLock(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("module_root_invalid", "%s", err.Error())
 	}
-	if err := rejectUnimportedConfigSecrets(opts.cfgPath, reg); err != nil {
+	if err := validateConfigRuntimeKeyCollisions(opts.cfgPath, reg); err != nil {
+		return preconditionErrorf("config_invalid", "%s", err.Error())
+	}
+	privateStore, err := loadSecretStore(opts.base)
+	if err != nil {
+		return preconditionErrorf("secrets_unreadable", "%s", err.Error())
+	}
+	if err := rejectUnimportedConfigSecrets(opts.cfgPath, reg, privateStore.values); err != nil {
 		return preconditionErrorf("config_requires_import", "%s", err.Error())
 	}
 	lockPath := absolutePath(projectLockPath(opts.cfgPath))
@@ -139,7 +146,7 @@ func runLock(args []string, jsonMode bool) error {
 		return preconditionErrorf("contract_root_invalid", "%s", err.Error())
 	}
 	a := &app{workspace: opts.workspace, cfg: cfg, cfgPath: opts.cfgPath, reg: reg, contracts: contracts, lock: lock, resolvedBindings: map[string]map[string]string{}}
-	a.env, a.envOwner = cfg.BaseEnvWithOwners()
+	a.env, a.envOwner = configBaseEnvWithRegistry(cfg, reg)
 	a.base = opts.base
 	if err := a.loadImportedSecrets(); err != nil {
 		return preconditionErrorf("secrets_unreadable", "%s", err.Error())
@@ -147,11 +154,8 @@ func runLock(args []string, jsonMode bool) error {
 	if err := a.validateContractRegistry(); err != nil {
 		return preconditionErrorf("contract_invalid", "%s", err.Error())
 	}
-	a.order, err = a.resolveOrder(cfg.Modules.Order)
+	a.order, err = a.resolveOrderWithInputValidation(cfg.Modules.Order)
 	if err != nil {
-		return preconditionErrorf("resolution_failed", "%s", err.Error())
-	}
-	if err := validateInputRequiredEnv(a.env, a.order, a.reg); err != nil {
 		return preconditionErrorf("resolution_failed", "%s", err.Error())
 	}
 	if err := a.validateVersions(lock); err != nil {
@@ -263,7 +267,15 @@ func runPlan(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("module_root_invalid", "%s", err.Error())
 	}
-	if err := rejectUnimportedConfigSecrets(configPath, reg); err != nil {
+	if err := validateConfigRuntimeKeyCollisions(configPath, reg); err != nil {
+		return preconditionErrorf("config_invalid", "%s", err.Error())
+	}
+	base := stateDir(workspace)
+	privateStore, err := loadSecretStore(base)
+	if err != nil {
+		return preconditionErrorf("secrets_unreadable", "%s", err.Error())
+	}
+	if err := rejectUnimportedConfigSecrets(configPath, reg, privateStore.values); err != nil {
 		return preconditionErrorf("config_requires_import", "%s", err.Error())
 	}
 	contracts, err := loadContractRegistry(located)
@@ -271,19 +283,16 @@ func runPlan(args []string, jsonMode bool) error {
 		return preconditionErrorf("contract_root_invalid", "%s", err.Error())
 	}
 	a := &app{cfg: cfg, cfgPath: configPath, reg: reg, contracts: contracts, resolvedBindings: map[string]map[string]string{}}
-	a.env, a.envOwner = cfg.BaseEnvWithOwners()
-	a.base = stateDir(workspace)
+	a.env, a.envOwner = configBaseEnvWithRegistry(cfg, reg)
+	a.base = base
 	if err := a.loadImportedSecrets(); err != nil {
 		return preconditionErrorf("secrets_unreadable", "%s", err.Error())
 	}
 	if err := a.validateContractRegistry(); err != nil {
 		return preconditionErrorf("contract_invalid", "%s", err.Error())
 	}
-	a.order, err = a.resolveOrder(cfg.Modules.Order)
+	a.order, err = a.resolveOrderWithInputValidation(cfg.Modules.Order)
 	if err != nil {
-		return preconditionErrorf("resolution_failed", "%s", err.Error())
-	}
-	if err := validateInputRequiredEnv(a.env, a.order, a.reg); err != nil {
 		return preconditionErrorf("resolution_failed", "%s", err.Error())
 	}
 	if err := a.validateVersions(&moduleLock{APIVersion: "anas.module-lock/v1", Modules: map[string]moduleLockRecord{}}); err != nil {
@@ -352,7 +361,14 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err != nil {
 		return "", preconditionErrorf("module_root_invalid", "%s", err.Error())
 	}
-	if err := rejectUnimportedConfigSecrets(opts.cfgPath, reg); err != nil {
+	if err := validateConfigRuntimeKeyCollisions(opts.cfgPath, reg); err != nil {
+		return "", preconditionErrorf("config_invalid", "%s", err.Error())
+	}
+	privateStore, err := loadSecretStore(opts.base)
+	if err != nil {
+		return "", preconditionErrorf("secrets_unreadable", "%s", err.Error())
+	}
+	if err := rejectUnimportedConfigSecrets(opts.cfgPath, reg, privateStore.values); err != nil {
 		return "", preconditionErrorf("config_requires_import", "%s", err.Error())
 	}
 	contracts, err := loadContractRegistry(opts.moduleRoot)
@@ -390,7 +406,7 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		reg: reg, contracts: contracts, cfg: cfg, lock: lock, artifactRoot: finalModules,
 		resolvedBindings: map[string]map[string]string{},
 	}
-	a.env, a.envOwner = cfg.BaseEnvWithOwners()
+	a.env, a.envOwner = configBaseEnvWithRegistry(cfg, reg)
 	if err := a.loadImportedSecrets(); err != nil {
 		return "", preconditionErrorf("secrets_unreadable", "%s", err.Error())
 	}
@@ -398,11 +414,8 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err := a.validateContractRegistry(); err != nil {
 		return "", preconditionErrorf("contract_invalid", "%s", err.Error())
 	}
-	a.order, err = a.resolveOrder(cfg.Modules.Order)
+	a.order, err = a.resolveOrderWithInputValidation(cfg.Modules.Order)
 	if err != nil {
-		return "", preconditionErrorf("resolution_failed", "%s", err.Error())
-	}
-	if err := validateInputRequiredEnv(a.env, a.order, a.reg); err != nil {
 		return "", preconditionErrorf("resolution_failed", "%s", err.Error())
 	}
 	total := int64(len(a.order))
@@ -433,6 +446,7 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		return "", preconditionErrorf("secrets_unreadable", "%s", err.Error())
 	}
 	a.secrets = secrets
+	a.sensitiveKeys = nil
 	if err := a.materializeResourceSecrets(); err != nil {
 		return "", preconditionErrorf("resource_invalid", "%s", err.Error())
 	}
@@ -570,7 +584,9 @@ func validateLockedResolution(a *app, lock *moduleLock) error {
 	for module, bindings := range a.resolvedBindings {
 		for capability, provider := range bindings {
 			if lock.Bindings[module][capability] != provider {
-				return fmt.Errorf("%s capability %s resolved to %s but lock records %s; run anas lock", module, capability, provider, lock.Bindings[module][capability])
+				return fmt.Errorf("%s capability %s resolved to %s but lock records %s; run anas lock", module, capability,
+					a.resolvedBindingValueForError(module, capability, provider),
+					a.resolvedBindingValueForError(module, capability, lock.Bindings[module][capability]))
 			}
 		}
 	}

@@ -28,12 +28,28 @@ type app struct {
 	jsonMode       bool
 	skipStartGuard bool
 	useFrozenHooks bool
-	compose        compose.CLI
-	reg            map[string]Module
-	contracts      map[string]Contract
-	cfg            *config.File
-	env            map[string]string
-	envOwner       map[string]string
+	// registryOnlyResolution is used by read-only schema boundaries that already
+	// received a validated registry. They need the exact dependency/capability/
+	// contract/Dynamic-DNS graph, but must not make resolution depend on a second
+	// physical module.yml existence check. Production deployment paths leave it
+	// false and retain the installed-artifact check.
+	registryOnlyResolution bool
+	// allowUnresolvedInputBindings lets an import/config-plan schema boundary
+	// inspect every binding the generic resolver can determine without turning
+	// an otherwise importable, intentionally incomplete configuration into a
+	// full deployment-resolution check. Deterministic dependencies/providers
+	// are still included; an ambiguous or not-yet-configured selector is skipped.
+	allowUnresolvedInputBindings bool
+	compose                      compose.CLI
+	reg                          map[string]Module
+	contracts                    map[string]Contract
+	cfg                          *config.File
+	env                          map[string]string
+	envOwner                     map[string]string
+	// callerInputEnv is captured before workspace/runner-derived values are
+	// published. input_required is a caller contract, so those derived values
+	// must never be able to satisfy it during deployment materialization.
+	callerInputEnv map[string]string
 	deps           map[string][]string
 	order          []string
 	secrets        *secretStore
@@ -397,21 +413,21 @@ func (a *app) execute(actions []string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateConfigRuntimeKeyCollisions(cfgPath, a.reg); err != nil {
+		return err
+	}
 	lock, err := loadModuleLock(a.base)
 	if err != nil {
 		return err
 	}
 	a.lock = lock
 	a.cfg = cfg
-	a.env, a.envOwner = cfg.BaseEnvWithOwners()
+	a.env, a.envOwner = configBaseEnvWithRegistry(cfg, a.reg)
 	if err := a.loadImportedSecrets(); err != nil {
 		return err
 	}
-	a.order, err = a.resolveOrder(cfg.Modules.Order)
+	a.order, err = a.resolveOrderWithInputValidation(cfg.Modules.Order)
 	if err != nil {
-		return err
-	}
-	if err := validateInputRequiredEnv(a.env, a.order, a.reg); err != nil {
 		return err
 	}
 	if renders || contains(actions, "plan") {
@@ -455,6 +471,7 @@ func (a *app) execute(actions []string) error {
 		return err
 	}
 	a.secrets = secrets
+	a.sensitiveKeys = nil
 	if renders {
 		if err := os.RemoveAll(tmp); err != nil {
 			return err
@@ -728,10 +745,10 @@ func (a *app) hostLANRequired() bool {
 }
 
 func (a *app) resolveOrder(mods []string) ([]string, error) {
-	if err := validateConfiguredParameters(a.cfg, a.reg); err != nil {
+	if err := validateConfiguredParameterDeclarations(a.cfg, a.reg); err != nil {
 		return nil, err
 	}
-	if err := normalizeConfiguredParameterEnv(a.env, a.reg); err != nil {
+	if err := normalizeConfiguredParameterEnvWithSensitive(a.env, a.reg, a.sensitiveEnvKeySet()); err != nil {
 		return nil, err
 	}
 	if err := a.checkSingleIAM(); err != nil {
@@ -743,7 +760,10 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 	// on its own, without also listing the module in `modules`.
 	dynamicDNS, err := a.resolveDynamicDNS()
 	if err != nil {
-		return nil, err
+		if !canDeferUnresolvedBinding(a.allowUnresolvedInputBindings, err) {
+			return nil, err
+		}
+		dynamicDNS = ""
 	}
 	if dynamicDNS != "" && !contains(mods, dynamicDNS) {
 		mods = append(append([]string{}, mods...), dynamicDNS)
@@ -767,8 +787,10 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 		if !a.moduleEnabled(name) {
 			return fmt.Errorf("module %q is disabled but required by an enabled module", name)
 		}
-		if err := a.requireModuleManifest(name); err != nil {
-			return err
+		if !a.registryOnlyResolution {
+			if err := a.requireModuleManifest(name); err != nil {
+				return err
+			}
 		}
 		temp[name] = true
 		deps := []string{}
@@ -780,6 +802,9 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 		for _, dep := range mod.RequiresOne {
 			provider, err := a.resolveAlternativeDependency(name, mod, dep)
 			if err != nil {
+				if canDeferUnresolvedBinding(a.allowUnresolvedInputBindings, err) {
+					continue
+				}
 				return err
 			}
 			deps = append(deps, provider)
@@ -787,6 +812,9 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 		for _, dep := range mod.RequiresContracts {
 			provider, err := a.resolveContractDependency(name, mod, dep)
 			if err != nil {
+				if canDeferUnresolvedBinding(a.allowUnresolvedInputBindings, err) {
+					continue
+				}
 				return err
 			}
 			deps = append(deps, provider)
@@ -794,6 +822,9 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 		for _, dep := range mod.RequiresCapabilities {
 			provider, err := a.resolveCapabilityDependency(name, mod, dep)
 			if err != nil {
+				if canDeferUnresolvedBinding(a.allowUnresolvedInputBindings, err) {
+					continue
+				}
 				return err
 			}
 			deps = append(deps, provider)
@@ -897,6 +928,9 @@ func uniqueStrings(in []string) []string {
 
 func (a *app) resolveAlternativeDependency(moduleName string, mod Module, dep AlternativeDependency) (string, error) {
 	key := paramEnvKey(moduleName, mod.EnvPrefix, dep.SelectedBy)
+	if err := a.rejectSourceSensitiveSelector(key, moduleName+"."+dep.SelectedBy); err != nil {
+		return "", err
+	}
 	requested := strings.ToLower(strings.TrimSpace(a.env[key]))
 	provider := requested
 	if provider == "" || provider == "auto" {
@@ -908,10 +942,13 @@ func (a *app) resolveAlternativeDependency(moduleName string, mod Module, dep Al
 		}
 	}
 	if !contains(dep.Providers, provider) {
-		return "", fmt.Errorf("%s.%s must be auto or one of %s, got %q", moduleName, dep.SelectedBy, strings.Join(dep.Providers, ", "), requested)
+		return "", fmt.Errorf("%s.%s must be auto or one of %s, got %q", moduleName, dep.SelectedBy, strings.Join(dep.Providers, ", "), a.resolvedValueForError(key, requested))
 	}
 	if _, ok := a.reg[provider]; !ok {
-		return "", fmt.Errorf("%s requires unknown %s provider %q", moduleName, dep.Capability, provider)
+		return "", fmt.Errorf("%s requires unknown %s provider %q", moduleName, dep.Capability, a.resolvedValueForError(key, provider))
+	}
+	if a.cfg != nil && !a.moduleEnabled(provider) {
+		return "", fmt.Errorf("%s requires disabled %s provider %q", moduleName, dep.Capability, a.resolvedValueForError(key, provider))
 	}
 	a.env[key] = provider
 	if a.resolvedBindings == nil {
@@ -975,6 +1012,7 @@ func (a *app) applyModuleDefaults() {
 		}
 	}
 	a.env["ALL_MODS_NAME"] = strings.Join(a.order, ",")
+	a.setEnvOwner("ALL_MODS_NAME", runnerScope)
 	hostReq := []string{}
 	hostOpt := []string{}
 	for _, name := range a.order {
@@ -988,13 +1026,15 @@ func (a *app) applyModuleDefaults() {
 	}
 	a.env["USE_HOST_LAN_REQUIRED_MODS_NAME"] = strings.Join(hostReq, ",")
 	a.env["USE_HOST_LAN_OPTIONAL_MODS_NAME"] = strings.Join(hostOpt, ",")
+	a.setEnvOwner("USE_HOST_LAN_REQUIRED_MODS_NAME", runnerScope)
+	a.setEnvOwner("USE_HOST_LAN_OPTIONAL_MODS_NAME", runnerScope)
 }
 
 func (a *app) calculate() error {
 	// Defaults plus host/runtime resolvers are materialized before calculate.
 	// Normalize that data through the same schema boundary as caller input so a
 	// source cannot bypass type canonicalization or constraints.
-	if err := normalizeConfiguredParameterEnv(a.env, a.reg); err != nil {
+	if err := normalizeConfiguredParameterEnvWithSensitive(a.env, a.reg, a.sensitiveEnvKeySet()); err != nil {
 		return fmt.Errorf("resolved deployment config: %w", err)
 	}
 	if err := requireKeys(a.env, globalConfig.finalRequirements()); err != nil {
@@ -1015,18 +1055,32 @@ func (a *app) calculate() error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
+		secretPatch, err := canonicalizeHookSecretPatch(resp.Secrets)
+		if err != nil {
+			return fmt.Errorf("%s calculate secrets: %w", name, err)
+		}
+		if err := a.validateCalculateSecretPatch(mod, secretPatch); err != nil {
+			return fmt.Errorf("%s calculate secrets: %w", name, err)
+		}
 		if err := a.applyCalculatePatch(mod, resp.Env); err != nil {
 			return err
 		}
+		// Secret provenance is established by the Hook response, not by the
+		// current manifest's sensitive bit. Mark the canonical key and any env
+		// alias carrying the same value before schema errors can format it.
+		sensitive := a.hookPatchSensitiveEnv(a.env, secretPatch)
 		// Hook output is another parameter source, not an escape hatch around the
 		// common schema. Re-run normalization before enforcing the final invariant.
-		if err := normalizeConfiguredParameterEnv(a.env, a.reg); err != nil {
+		if err := normalizeConfiguredParameterEnvWithSensitive(a.env, a.reg, sensitive); err != nil {
 			return fmt.Errorf("%s calculate patch: %w", name, err)
 		}
 		if err := requireKeys(a.env, mod.finalRequirements()); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
-		a.secrets.Merge(resp.Secrets)
+		a.secrets.mergeCanonicalHookSecrets(name, secretPatch)
+		// The committed secret patch becomes a new source for later Hook and
+		// render aliases; force the next scope calculation to include it.
+		a.sensitiveKeys = nil
 		if name == a.iamProvider {
 			if err := a.validateIAMEndpoints(); err != nil {
 				return err
@@ -1072,7 +1126,13 @@ func (a *app) renderAll(work string) error {
 		if err != nil {
 			return err
 		}
-		applyHookEnv(env, resp.Env)
+		if err := applyHookEnv(env, resp.Env); err != nil {
+			return fmt.Errorf("%s render_env patch: %w", name, err)
+		}
+		sensitive := a.hookPatchSensitiveEnv(env, nil)
+		if err := normalizeConfiguredParameterEnvWithSensitive(env, a.reg, sensitive); err != nil {
+			return fmt.Errorf("%s render_env patch: %w", name, err)
+		}
 		if err := applyHookFiles(dir, resp.Files); err != nil {
 			return err
 		}

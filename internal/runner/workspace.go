@@ -138,6 +138,9 @@ func (a *app) applyWorkspaceEnv() {
 	if a.workspace == "" {
 		return
 	}
+	if a.callerInputEnv == nil {
+		a.callerInputEnv = cloneMap(a.env)
+	}
 	if a.env == nil {
 		a.env = map[string]string{}
 	}

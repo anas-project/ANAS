@@ -111,7 +111,7 @@ func (a *app) applyMacvlanPlan() error {
 	}
 	segment, err := hostSegment(a.env["HOST_IP"], a.env["HOST_SUBNET_MASK"])
 	if err != nil {
-		return err
+		return a.hostNetworkInputError(err, "HOST_IP", "HOST_SUBNET_MASK")
 	}
 	a.setHostEnv("HOST_SEGMENT", segment)
 	a.setHostEnv("VLAN_INTERFACE", macvlanNetworkName)
@@ -126,7 +126,7 @@ func (a *app) applyMacvlanPlan() error {
 	if !addressPinned || a.env["VLAN_BRIDGE_IP"] == "" {
 		vlan, err := calcVLAN(a.env["HOST_IP"], a.env["HOST_SUBNET_MASK"])
 		if err != nil {
-			return err
+			return a.hostNetworkInputError(err, "HOST_IP", "HOST_SUBNET_MASK")
 		}
 		for key, value := range vlan {
 			// A pinned address may sit anywhere in the host segment, and
@@ -186,39 +186,70 @@ func poolAddress(segment string, n uint32) string {
 func (a *app) validateMacvlanPlan() error {
 	_, network, err := net.ParseCIDR(a.env["HOST_SEGMENT"])
 	if err != nil {
-		return fmt.Errorf("invalid HOST_SEGMENT %q: %w", a.env["HOST_SEGMENT"], err)
+		return fmt.Errorf("invalid HOST_SEGMENT %q: %w", a.hostNetworkValueForError("HOST_SEGMENT", a.env["HOST_SEGMENT"]), err)
 	}
 	prefix, _ := network.Mask.Size()
 	broadcast := uint32ToIP(ipToUint32(network.IP) | ^uint32(0)>>uint(prefix))
-	for _, addr := range []struct{ parameter, value string }{
-		{"host_lan_bridge_ip", a.env["VLAN_BRIDGE_IP"]},
-		{"host_lan_ip", a.env["HOST_LAN_IP"]},
+	for _, addr := range []struct{ parameter, key, sourceKey, value string }{
+		{"host_lan_bridge_ip", "VLAN_BRIDGE_IP", "HOST_LAN_BRIDGE_IP", a.env["VLAN_BRIDGE_IP"]},
+		{"host_lan_ip", "HOST_LAN_IP", "HOST_LAN_IP", a.env["HOST_LAN_IP"]},
 	} {
+		displayAddress := a.hostNetworkValueForError(addr.key, addr.value)
+		if displayAddress != "<redacted>" {
+			displayAddress = a.hostNetworkValueForError(addr.sourceKey, addr.value)
+		}
+		displaySegment := a.hostNetworkValueForError("HOST_SEGMENT", a.env["HOST_SEGMENT"])
 		ip := net.ParseIP(addr.value).To4()
 		if ip == nil {
-			return fmt.Errorf("%s must be an IPv4 address, got %q", addr.parameter, addr.value)
+			return fmt.Errorf("%s must be an IPv4 address, got %q", addr.parameter, displayAddress)
 		}
 		if !network.Contains(ip) {
-			return fmt.Errorf("%s %s is outside the host segment %s", addr.parameter, addr.value, a.env["HOST_SEGMENT"])
+			return fmt.Errorf("%s %s is outside the host segment %s", addr.parameter, displayAddress, displaySegment)
 		}
 		for _, taken := range []struct{ name, value string }{
 			{"the host", a.env["HOST_IP"]},
 			{"the default gateway", a.env["DEFAULT_GATEWAY_IP"]},
 		} {
 			if taken.value != "" && ip.Equal(net.ParseIP(taken.value).To4()) {
-				return fmt.Errorf("%s %s is already %s's address", addr.parameter, addr.value, taken.name)
+				return fmt.Errorf("%s %s is already %s's address", addr.parameter, displayAddress, taken.name)
 			}
 		}
 		// A /32 host segment has neither: the single address is the host's own,
 		// and the loop above has already rejected it.
 		if prefix < 31 && (ip.Equal(network.IP.To4()) || ip.Equal(broadcast)) {
-			return fmt.Errorf("%s %s is the network or broadcast address of %s", addr.parameter, addr.value, a.env["HOST_SEGMENT"])
+			return fmt.Errorf("%s %s is the network or broadcast address of %s", addr.parameter, displayAddress, displaySegment)
 		}
 	}
 	if a.env["VLAN_BRIDGE_IP"] == a.env["HOST_LAN_IP"] {
-		return fmt.Errorf("host_lan_ip and host_lan_bridge_ip are both %s; the bridge and the container need separate addresses", a.env["HOST_LAN_IP"])
+		display := a.hostNetworkValueForError("HOST_LAN_IP", a.env["HOST_LAN_IP"])
+		if display != "<redacted>" {
+			display = a.hostNetworkValueForError("HOST_LAN_BRIDGE_IP", a.env["VLAN_BRIDGE_IP"])
+		}
+		return fmt.Errorf("host_lan_ip and host_lan_bridge_ip are both %s; the bridge and the container need separate addresses", display)
 	}
 	return nil
+}
+
+func (a *app) hostNetworkInputError(err error, keys ...string) error {
+	for _, key := range keys {
+		if a.resolvedValueIsSensitive(key) {
+			return fmt.Errorf("invalid host network input <redacted>")
+		}
+	}
+	return err
+}
+
+func (a *app) hostNetworkValueForError(key, value string) string {
+	if a.resolvedValueIsSensitive(key) {
+		return "<redacted>"
+	}
+	// HOST_SEGMENT is derived from these two inputs. Preserve their source
+	// provenance in diagnostics without changing module scoping for the derived
+	// runtime key.
+	if key == "HOST_SEGMENT" && (a.resolvedValueIsSensitive("HOST_IP") || a.resolvedValueIsSensitive("HOST_SUBNET_MASK")) {
+		return "<redacted>"
+	}
+	return value
 }
 
 // setHostEnv publishes a discovered value without overwriting a configured

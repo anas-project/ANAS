@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -501,6 +502,22 @@ func TestNormalizeParamTypesRejectsEmptyAndDuplicateNormalizedNames(t *testing.T
 	}
 }
 
+func TestManifestRejectsExplicitEmptyParameterTypes(t *testing.T) {
+	for name, declaration := range map[string]string{
+		"empty mapping": "{}",
+		"null kind":     "{kind: null}",
+		"null enum":     "{enum: null}",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := writeModuleConfigManifest(t, "  types:\n    mode: "+declaration+"\n")
+			_, err := loadModuleManifest(dir, "example")
+			if err == nil || !strings.Contains(err.Error(), "empty type") {
+				t.Fatalf("error = %v, want explicit empty type rejection", err)
+			}
+		})
+	}
+}
+
 func TestNormalizeParamTypesLoadsConstraintsAndDefaultSource(t *testing.T) {
 	minimum, maximum := 1, 10
 	types, err := normalizeParamTypes("example", map[string]manifestParamType{
@@ -518,6 +535,291 @@ func TestNormalizeParamTypesLoadsConstraintsAndDefaultSource(t *testing.T) {
 		got.DefaultSource != configschema.DefaultSourceRuntime {
 		t.Fatalf("normalized parameter = %+v", got)
 	}
+}
+
+func TestManifestCanonicalizesCustomEnvPrefix(t *testing.T) {
+	dir := writeModuleConfigManifest(t, "  env_prefix: demo-prefix\n  types: {token: string}\n")
+	mod, err := loadModuleManifest(dir, "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mod.EnvPrefix != "DEMO_PREFIX" {
+		t.Fatalf("custom env_prefix = %q, want DEMO_PREFIX", mod.EnvPrefix)
+	}
+}
+
+func TestManifestRejectsUnaddressableConfigNamesAndPrefixes(t *testing.T) {
+	for _, test := range []struct {
+		name, configBlock, want string
+	}{
+		{name: "type name", configBlock: `  types: {"foo.bar": string}
+`, want: "lower-snake-case"},
+		{name: "default name", configBlock: `  defaults: {"foo bar": value}
+`, want: "lower-snake-case"},
+		{name: "change name", configBlock: `  changes: {"foo/bar": {effect: container_recreate}}
+`, want: "lower-snake-case"},
+		{name: "requirement name", configBlock: `  input_required: ["foo.bar"]
+  types: {token: string}
+`, want: "lower-snake-case or an environment key"},
+		{name: "env prefix", configBlock: `  env_prefix: "demo prefix"
+  types: {token: string}
+`, want: "environment-safe prefix"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := writeModuleConfigManifest(t, test.configBlock)
+			_, err := loadModuleManifest(dir, "example")
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestManifestRequirementsUseStrictEnvironmentKeySyntax(t *testing.T) {
+	fields := []struct {
+		name   string
+		values func(Module) []string
+	}{
+		{name: "input_required", values: func(mod Module) []string { return mod.InputRequired }},
+		{name: "required", values: func(mod Module) []string { return mod.Required }},
+		{name: "must_resolve", values: func(mod Module) []string { return mod.MustResolve }},
+	}
+	tests := []struct {
+		name, value, want string
+		valid             bool
+	}{
+		{name: "lower snake parameter", value: "api_token", want: "EXAMPLE_API_TOKEN", valid: true},
+		{name: "exact env key", value: "API_TOKEN_2", want: "API_TOKEN_2", valid: true},
+		{name: "single word env key", value: "TZ", want: "TZ", valid: true},
+		{name: "space", value: "FOO BAR"},
+		{name: "hyphen", value: "FOO-BAR"},
+		{name: "leading digit", value: "9FOO"},
+		{name: "dot", value: "FOO.BAR"},
+		{name: "slash", value: "FOO/BAR"},
+		{name: "assignment", value: "FOO=BAR"},
+		{name: "wildcard", value: "FOO*"},
+	}
+
+	for _, field := range fields {
+		for _, test := range tests {
+			t.Run(field.name+"/"+test.name, func(t *testing.T) {
+				dir := writeModuleConfigManifest(t, fmt.Sprintf("  %s: [%q]\n", field.name, test.value))
+				mod, err := loadModuleManifest(dir, "example")
+				if !test.valid {
+					if err == nil || !strings.Contains(err.Error(), "lower-snake-case or an environment key") {
+						t.Fatalf("error = %v, want strict requirement-name rejection", err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := field.values(mod); !reflect.DeepEqual(got, []string{test.want}) {
+					t.Fatalf("normalized %s = %v, want [%s]", field.name, got, test.want)
+				}
+			})
+		}
+	}
+}
+
+func TestManifestEnvPatternsUseStrictEnvironmentKeySyntax(t *testing.T) {
+	tests := []struct {
+		name, value, want string
+		valid             bool
+	}{
+		{name: "exact", value: "API_TOKEN_2", want: "API_TOKEN_2", valid: true},
+		{name: "single word", value: "TZ", want: "TZ", valid: true},
+		{name: "leading underscore", value: "_PRIVATE", want: "_PRIVATE", valid: true},
+		{name: "trailing wildcard", value: "ANAS_IAM_BINDING_*", want: "ANAS_IAM_BINDING_*", valid: true},
+		{name: "wildcard without separator", value: "APPS_LIST*", want: "APPS_LIST*", valid: true},
+		{name: "leading wildcard", value: "*_DB_NAME", want: "*_DB_NAME", valid: true},
+		{name: "trimmed", value: "  ANAS_TLS_*  ", want: "ANAS_TLS_*", valid: true},
+		{name: "empty"},
+		{name: "lowercase", value: "api_token"},
+		{name: "space", value: "FOO BAR"},
+		{name: "hyphen", value: "FOO-BAR"},
+		{name: "leading digit", value: "9FOO"},
+		{name: "bare wildcard", value: "*"},
+		{name: "embedded wildcard", value: "FOO*BAR"},
+		{name: "multiple wildcards", value: "FOO**"},
+	}
+
+	for _, field := range []string{"exports", "consumes"} {
+		for _, test := range tests {
+			t.Run(field+"/"+test.name, func(t *testing.T) {
+				got, err := normalizeEnvPatterns("example", field, []string{test.value})
+				if !test.valid {
+					if err == nil {
+						t.Fatalf("normalizeEnvPatterns(%q) = %v, want error", test.value, got)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(got, []string{test.want}) {
+					t.Fatalf("normalized pattern = %v, want [%s]", got, test.want)
+				}
+			})
+		}
+	}
+}
+
+func TestBundledManifestEnvironmentDeclarationsUseStrictSyntax(t *testing.T) {
+	reg, err := loadRegistry(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reg) == 0 {
+		t.Fatal("no bundled Module manifests loaded")
+	}
+}
+
+func TestManifestRejectsParametersSharingOneRuntimeKey(t *testing.T) {
+	dir := writeModuleConfigManifest(t, `  env_prefix: demo
+  exports: [TZ]
+  types:
+    timezone: string
+    tz: string
+`)
+	_, err := loadModuleManifest(dir, "example")
+	if err == nil || !strings.Contains(err.Error(), "both resolve to runtime key TZ") {
+		t.Fatalf("runtime-key collision error = %v", err)
+	}
+}
+
+func TestRegistryRejectsParameterRuntimeKeyCollisionsAcrossModules(t *testing.T) {
+	writeRegistry := func(t *testing.T, modules map[string]string) string {
+		t.Helper()
+		root := t.TempDir()
+		for name, configBlock := range modules {
+			dir := filepath.Join(root, name)
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			manifest := `api_version: anas.module/v1
+kind: Module
+name: ` + name + `
+version: 1.0.0
+revision: 1
+status: release
+abi:
+  supports: [anas.module-hook/v1]
+runtime:
+  type: builtin
+config:
+` + configBlock
+			if err := os.WriteFile(filepath.Join(dir, "module.yml"), []byte(manifest), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return root
+	}
+	for name, test := range map[string]struct {
+		modules map[string]string
+		want    string
+	}{
+		"exact runtime key": {
+			modules: map[string]string{
+				"one": "  env_prefix: SHARED\n  types: {token: string}\n",
+				"two": "  env_prefix: SHARED\n  types: {token: string}\n",
+			},
+			want: "prefix collision",
+		},
+		"same prefix different parameters": {
+			modules: map[string]string{
+				"one": "  env_prefix: SHARED\n  types: {alpha: string}\n",
+				"two": "  env_prefix: SHARED\n  types: {beta: string}\n",
+			},
+			want: "prefix collision",
+		},
+		"nested prefixes": {
+			modules: map[string]string{
+				"one": "  env_prefix: SHARED\n  types: {alpha: string}\n",
+				"two": "  env_prefix: SHARED_CHILD\n  types: {beta: string}\n",
+			},
+			want: "prefix collision",
+		},
+		"global namespace": {
+			modules: map[string]string{"one": "  env_prefix: HOST\n  types: {token: string}\n"},
+			want:    "HOST_IP",
+		},
+		"runner namespace": {
+			modules: map[string]string{"one": "  env_prefix: ANAS_RUNTIME\n  types: {token: string}\n"},
+			want:    "runner-reserved",
+		},
+		"runner topology key": {
+			modules: map[string]string{"one": "  env_prefix: ALL\n  types: {token: string}\n"},
+			want:    "ALL_MODS_NAME",
+		},
+		"bare workspace export": {
+			modules: map[string]string{"one": "  exports: [DATA_PATH]\n  types: {data_path: string}\n"},
+			want:    "DATA_PATH",
+		},
+		"bare domains export": {
+			modules: map[string]string{"one": "  exports: [DOMAINS]\n  types: {domains: string}\n"},
+			want:    "DOMAINS",
+		},
+		"bare topology export": {
+			modules: map[string]string{"one": "  exports: [ALL_MODS_NAME]\n  types: {all_mods_name: string}\n"},
+			want:    "ALL_MODS_NAME",
+		},
+		"export-only workspace literal": {
+			modules: map[string]string{"one": "  exports: [DATA_PATH]\n"},
+			want:    "DATA_PATH",
+		},
+		"export-only workspace glob": {
+			modules: map[string]string{"one": "  exports: [DATA_*]\n"},
+			want:    "DATA_PATH",
+		},
+		"export-only global glob": {
+			modules: map[string]string{"one": "  exports: [T*]\n"},
+			want:    "TZ",
+		},
+		"export-only topology literal": {
+			modules: map[string]string{"one": "  exports: [DOMAINS]\n"},
+			want:    "DOMAINS",
+		},
+		"bare config-derived default parameter": {
+			modules: map[string]string{"one": "  exports: [ANAS_IMAGE_REGISTRY]\n  types: {anas_image_registry: string}\n"},
+			want:    "ANAS_IMAGE_REGISTRY",
+		},
+		"hook-only config-derived default export": {
+			modules: map[string]string{"one": "  exports: [GITHUB_DOWNLOAD_PROXY_PREFIX]\n"},
+			want:    "GITHUB_DOWNLOAD_PROXY_PREFIX",
+		},
+		"hook-only config-derived default glob": {
+			modules: map[string]string{"one": "  exports: [NEXTCLOUD_*]\n"},
+			want:    "NEXTCLOUD_APPSTORE_URL",
+		},
+		"hook-only config-derived custom prefix": {
+			modules: map[string]string{"one": "  env_prefix: GITHUB_DOWNLOAD_PROXY\n"},
+			want:    "GITHUB_DOWNLOAD_PROXY_PREFIX",
+		},
+		"appstore config-derived custom prefix": {
+			modules: map[string]string{"one": "  env_prefix: NEXTCLOUD_APPSTORE\n"},
+			want:    "NEXTCLOUD_APPSTORE_URL",
+		},
+		"registry config-derived custom prefix": {
+			modules: map[string]string{"one": "  env_prefix: DOCKER_HUB\n"},
+			want:    "DOCKER_HUB_REGISTRY",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadRegistryDir(writeRegistry(t, test.modules))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("registry ownership error = %v, want %q", err, test.want)
+			}
+		})
+	}
+	t.Run("consuming a runner key remains allowed", func(t *testing.T) {
+		_, err := loadRegistryDir(writeRegistry(t, map[string]string{
+			"one": "  consumes: [DOMAINS]\n  types: {token: string}\n",
+		}))
+		if err != nil {
+			t.Fatalf("registry admission rejected read-only consume: %v", err)
+		}
+	})
 }
 
 func TestManifestRejectsUnknownNestedParameterTypeFields(t *testing.T) {
@@ -620,6 +922,35 @@ func TestManifestSeparatesAllRequirementStages(t *testing.T) {
 	}
 }
 
+func TestLegacyBareEnvRequirementRemainsRuntimeOnly(t *testing.T) {
+	dir := writeModuleConfigManifest(t, "  required: [EXTERNAL_TOKEN]\n")
+	mod, err := loadModuleManifest(dir, "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := mod.Required, []string{"EXTERNAL_TOKEN"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("legacy runtime requirement = %v, want %v", got, want)
+	}
+	if contains(mod.Parameters, "external_token") {
+		t.Fatalf("bare runtime requirement was fabricated as Module parameter: %v", mod.Parameters)
+	}
+
+	newApp := func(env map[string]string) *app {
+		seedCalculateGlobalRequirements(env)
+		return &app{
+			base: t.TempDir(), reg: map[string]Module{"example": mod}, order: []string{"example"},
+			env: env, envOwner: map[string]string{},
+			secrets: &secretStore{values: map[string]string{}, metadata: map[string]secretMetadata{}},
+		}
+	}
+	if err := newApp(map[string]string{}).calculate(); err == nil || !strings.Contains(err.Error(), "EXTERNAL_TOKEN") {
+		t.Fatalf("missing bare legacy requirement error = %v", err)
+	}
+	if err := newApp(map[string]string{"EXTERNAL_TOKEN": "provided"}).calculate(); err != nil {
+		t.Fatalf("bare legacy requirement supplied through its runtime key was rejected: %v", err)
+	}
+}
+
 func TestManifestRejectsMisspelledInputRequired(t *testing.T) {
 	dir := writeModuleConfigManifest(t, `  input_requiredd: [token]
   types: {token: string}
@@ -636,6 +967,14 @@ func TestRuntimeManifestRejectsContradictoryInputRequiredDefaults(t *testing.T) 
   types: {token: string}
 `,
 		`  input_required: [token]
+  types:
+    token: {kind: string, default_source: generated}
+`,
+		`  input_required: [EXAMPLE_TOKEN]
+  defaults: {token: fallback}
+  types: {token: string}
+`,
+		`  input_required: [EXAMPLE_TOKEN]
   types:
     token: {kind: string, default_source: generated}
 `,

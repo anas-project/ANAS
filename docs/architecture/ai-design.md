@@ -246,7 +246,10 @@ Manifest fields:
   `data_migrate` operation.
 
 - `config.env_prefix`: optional environment prefix when it differs from the
-  module name, for example `eturnal` uses `TURN`.
+  module name, for example `eturnal` uses `TURN`. It is canonicalized to an
+  environment-safe upper-snake prefix. Installed Modules may not own equal or
+  nested prefixes, overlap global/runner-owned keys, or claim the reserved
+  `ANAS_*` namespace; registry admission rejects such ownership ambiguity.
 - `config.input_required`: lower-snake-case parameters the caller must provide
   explicitly. This is checked before literal defaults and generic resolvers, so
   it cannot be combined with a default or unconditional `default_source`.
@@ -275,8 +278,10 @@ Manifest fields:
 - `config.consumes`: env keys produced outside the module's dependency closure
   that its rendering and hooks may read. Entries are exact keys or single
   leading/trailing-star globs, for example `APPS_LIST*` or `*_DB_NAME` for a
-  capability provider that scans its consumers' declarations. User secrets
-  must always be claimed here (or match a closure prefix) to be visible.
+  capability provider that scans its consumers' declarations. The non-star
+  stem must be a non-empty upper-snake environment key; bare `*`, embedded or
+  multiple stars, lower-case names, and whitespace are rejected. User secrets
+  must always be claimed here (or be owned by this Module) to be visible.
 - `config.exports`: env keys outside the module's own prefixes that its
   calculate hook publishes, for example `SMAL_SP_*` for SAML SP registration
   or `MYSQL_*` compatibility aliases. Undeclared cross-prefix writes fail.
@@ -328,14 +333,26 @@ module functionality is:
   as `.hook.bin`, so starting an existing release needs no Go toolchain.
 - Apply and re-normalize each calculate Hook patch, then enforce the final
   `must_resolve` invariant. Input-required and legacy-required keys remain part
-  of this final check as well.
+  of this final check as well. An env patch is validated as a whole before it
+  mutates state and may not overwrite a key owned by another source, even when
+  its spelling happens to fall under this Module's prefix.
+- Re-normalize declared parameters after `render_env` as well; render-private
+  undeclared keys remain compatible, while typed values cannot bypass a range,
+  pattern, format, or source-sensitive diagnostic at the last write boundary.
 - Accept hook responses for env patches, generated secrets, immutable files
   written under the rendered module directory, mutable `runtime_files` written
   under the deployment-scoped runtime-state directory, disabled Compose services, render-only
   `internal_env` keys, and after-start `docker cp` operations. Calculate
   patches are validated against the module's prefixes and `config.exports`.
-- Persist generated secrets in `secrets.yml` and reuse them on later
-  runs. Non-calculate hook phases receive only the module-scoped secrets.
+- Persist generated secrets in `secrets.yml` and reuse them on later runs.
+  Secret keys are canonical upper-snake environment keys; a Hook secret patch
+  is canonicalized and checked for aliases/collisions atomically. Secret-source
+  provenance is applied before validating a same-response env patch, so errors
+  stay redacted even if current Module metadata no longer marks the parameter
+  sensitive. A Hook may refresh only a record whose kind/provenance is already
+  `generated/module-hook`; lifecycle-managed, local-administrator, and other
+  records are protected by atomic pre-validation. Non-calculate hook phases
+  receive only module-scoped secrets.
 - Copy module assets into the runtime work directory and write a scoped per-module
   `.env`. The runner does not interpret application configuration templates;
   each container derives its runtime configuration from that environment.

@@ -380,3 +380,47 @@ func TestHostSegmentHasNoWidthRequirement(t *testing.T) {
 		t.Error("expected an invalid host address to be rejected")
 	}
 }
+
+func TestHostNetworkErrorsPreserveSecretSourceProvenance(t *testing.T) {
+	t.Run("invalid source", func(t *testing.T) {
+		const secret = "not-a-secret-ip"
+		a := &app{
+			env:             map[string]string{"HOST_IP": secret, "HOST_SUBNET_MASK": "24"},
+			runnerSensitive: map[string]bool{"HOST_IP": true},
+		}
+		err := a.applyMacvlanPlan()
+		if err == nil || !strings.Contains(err.Error(), "<redacted>") || strings.Contains(err.Error(), secret) {
+			t.Fatalf("host source error = %v", err)
+		}
+	})
+
+	t.Run("valid address outside segment", func(t *testing.T) {
+		const secret = "198.51.100.9"
+		a := &app{
+			env: map[string]string{
+				"HOST_SEGMENT": "192.0.2.0/24", "HOST_LAN_IP": secret,
+				"VLAN_BRIDGE_IP": "192.0.2.2",
+			},
+			runnerSensitive: map[string]bool{"HOST_LAN_IP": true},
+		}
+		err := a.validateMacvlanPlan()
+		if err == nil || !strings.Contains(err.Error(), "<redacted>") || strings.Contains(err.Error(), secret) {
+			t.Fatalf("host cross-field error = %v", err)
+		}
+	})
+
+	t.Run("legacy derived-key source", func(t *testing.T) {
+		const secret = "198.51.100.10"
+		a := &app{
+			env: map[string]string{
+				"HOST_SEGMENT": "192.0.2.0/24", "HOST_LAN_IP": "192.0.2.3",
+				"VLAN_BRIDGE_IP": secret,
+			},
+			runnerSensitive: map[string]bool{"VLAN_BRIDGE_IP": true},
+		}
+		err := a.validateMacvlanPlan()
+		if err == nil || !strings.Contains(err.Error(), "<redacted>") || strings.Contains(err.Error(), secret) {
+			t.Fatalf("legacy bridge source error = %v", err)
+		}
+	})
+}

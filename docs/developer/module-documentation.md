@@ -138,6 +138,14 @@ anas admin local rotate <module> <account-id> --prompt -w /srv/anas
 10. Hook、变更执行器、事务、回滚和失败补偿；
 11. 实现文件、单元测试、集成/E2E 入口和当前限制。
 
+`config.env_prefix`、`exports` 和 `consumes` 必须使用环境变量安全的 upper-snake 命名；通配
+只允许一个前置或末尾 `*`，且禁止裸 `*`。不同 Module 的默认/自定义 prefix 不得相等或
+互相嵌套，也不得覆盖 global、runner-owned 或 `ANAS_*` 命名空间。calculate Hook 的
+env/Secret patch 必须整体通过 ownership、键规范化和碰撞校验后才应用，不能覆盖其他来源
+已拥有的键。`calculate` 与 `render_env` 合并后的已声明参数都重新通过统一 type/constraints
+schema；render 私有键仍可不声明。Hook Secret 只能刷新既有 `generated/module-hook` 记录，不能
+覆盖 `lifecycle_managed`、`local_admin` 或其他来源记录，整包拒绝也不得回显值或自由 provenance。
+
 技术文档必须放在 Module 自己的 `docs/` 中维护。ANAS 核心文档站只发布镜像，不接管 Module 的实现语义。
 
 ## 5. 自动生成与人工审核边界

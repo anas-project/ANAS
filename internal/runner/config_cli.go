@@ -174,7 +174,7 @@ func runConfig(args []string, jsonMode bool) error {
 		// canonical text instead of asking YAML to reinterpret it a second time
 		// (where "null", "1.0" or "[x]" would change meaning).
 		preserveText := targetParamType(target, reg).Declared()
-		if err := setManagedConfigScalar(workspace, *cfgPath, target.YAMLPath, normalizedValue, preserveText); err != nil {
+		if err := setManagedConfigScalar(workspace, *cfgPath, target.YAMLPath, normalizedValue, preserveText, reg); err != nil {
 			return failuref("write_failed", "%s", err.Error())
 		}
 		execution := map[string]any{"status": "stored", "executor": effectExecutor(policy.Effect)}
@@ -530,6 +530,12 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 			return configTarget{}, fmt.Errorf("raw env config path must have two components")
 		}
 		key := config.EnvKey(parts[1])
+		if !envKeyPattern.MatchString(key) {
+			return configTarget{}, fmt.Errorf("env key %q is not a valid environment key", key)
+		}
+		if isRunnerOwnedRuntimeKey(key, reg) {
+			return configTarget{}, fmt.Errorf("env.%s is runner-owned and cannot be supplied by config", key)
+		}
 		module, parameter, err := policyOwnerForEnv(key, reg)
 		if err != nil {
 			return configTarget{}, err
@@ -539,6 +545,13 @@ func resolveConfigTarget(path string, reg map[string]Module) (configTarget, erro
 	if namespace == "modules" {
 		if len(parts) == 4 && strings.EqualFold(parts[2], "config") {
 			parts = []string{namespace, parts[1], parts[3]}
+		} else if len(parts) == 4 && strings.EqualFold(parts[2], "identity") && strings.EqualFold(parts[3], "login_protocol") {
+			module := strings.ToLower(parts[1])
+			parameter, ok := moduleIdentityLoginParameter(module, reg)
+			if !ok {
+				return configTarget{}, fmt.Errorf("module %q does not declare an identity login protocol selector", module)
+			}
+			return resolveModuleTarget(module, parameter, reg)
 		}
 		if len(parts) != 3 {
 			return configTarget{}, fmt.Errorf("module config path must be modules.<module>.<parameter>")
@@ -569,11 +582,20 @@ func resolveModuleTarget(module, parameter string, reg map[string]Module) (confi
 	if err := validateParameter(module, parameter, reg); err != nil {
 		return configTarget{}, err
 	}
+	if key := moduleParamEnvKey(module, mod.EnvPrefix, mod.Exports, parameter); !envKeyPattern.MatchString(key) {
+		return configTarget{}, fmt.Errorf("%s.%s resolves to invalid environment key %q", module, parameter, key)
+	}
 	// A parameter the module declares under a bare env name is set in the top
 	// level `env:` block: every key under `modules.<module>.config` acquires the
 	// module prefix, which would write a variant nothing reads.
 	if key, ok := mod.bareEnvParameter(parameter); ok {
 		return configTarget{YAMLPath: []string{"env", key}, Display: "env." + key, Module: module, Parameter: parameter}, nil
+	}
+	if identityParameter, ok := moduleIdentityLoginParameter(module, reg); ok && parameter == identityParameter {
+		return configTarget{
+			YAMLPath: []string{"modules", module, "identity", "login_protocol"},
+			Display:  module + "." + parameter, Module: module, Parameter: parameter,
+		}, nil
 	}
 	return configTarget{YAMLPath: []string{"modules", module, "config", parameter}, Display: module + "." + parameter, Module: module, Parameter: parameter}, nil
 }
@@ -730,6 +752,10 @@ func targetForSettingPath(path string, reg map[string]Module) configTarget {
 		target, _ := resolveConfigTarget("modules."+parts[1]+"."+parts[3], reg)
 		return target
 	}
+	if len(parts) == 4 && parts[0] == "modules" && parts[2] == "identity" && parts[3] == "login_protocol" {
+		target, _ := resolveConfigTarget(path, reg)
+		return target
+	}
 	return configTarget{Display: path, Module: globalModuleName, Parameter: path}
 }
 
@@ -741,11 +767,18 @@ func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, js
 	if err != nil {
 		return preconditionErrorf("config_invalid", "%s", err.Error())
 	}
+	if err := validateConfigRuntimeKeyCollisions(cfgPath, reg); err != nil {
+		return preconditionErrorf("config_invalid", "%s", err.Error())
+	}
+	lock, err := loadModuleLockFile(projectLockPath(cfgPath))
+	if err != nil {
+		return preconditionErrorf("state_unreadable", "module lock: %s", err.Error())
+	}
 	store, err := loadSecretStore(base)
 	if err != nil {
 		return preconditionErrorf("state_unreadable", "%s", err.Error())
 	}
-	if err := validateLoadedConfigSchema(loaded, reg, store.lifecycleManagedValues()); err != nil {
+	if err := validateLoadedConfigSchema(loaded, reg, store.lifecycleManagedValues(), lock, store.values); err != nil {
 		return preconditionErrorf("config_invalid", "%s", err.Error())
 	}
 	settings, err := config.Settings(cfgPath)

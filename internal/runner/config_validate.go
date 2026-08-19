@@ -45,6 +45,9 @@ func validateParameter(module, parameter string, reg map[string]Module) error {
 	if !known {
 		return nil
 	}
+	if key, bareRequirement := unboundRequirementEnvKeyForParameter(module, parameter, reg); bareRequirement {
+		return fmt.Errorf("%s.%s is a bare runtime requirement, not a Module parameter; set env.%s instead", module, strings.ToLower(strings.TrimSpace(parameter)), key)
+	}
 	// A module that declares nothing has nothing to check against. Treating that
 	// as "everything is wrong" would make an undeclared-but-working module
 	// unconfigurable, which is a worse failure than the one this prevents.
@@ -65,55 +68,161 @@ func validateParameter(module, parameter string, reg map[string]Module) error {
 		"or set env.%s to write an undeclared value", message, module, config.EnvKey(parameter))
 }
 
+// unboundRequirementEnvKeyForParameter identifies the legacy manifest form in
+// which a requirement names a bare environment key directly. The module path
+// for the same lower-case words would add the module prefix and write a
+// different, unused key, so it must not be offered as an alias. Other
+// undeclared parameters on a legacy Module remain compatible.
+func unboundRequirementEnvKeyForParameter(module, parameter string, reg map[string]Module) (string, bool) {
+	mod, ok := reg[module]
+	if !ok {
+		return "", false
+	}
+	parameter = strings.ToLower(strings.TrimSpace(parameter))
+	if parameter == "" || contains(mod.Parameters, parameter) {
+		return "", false
+	}
+	bare := config.EnvKey(parameter)
+	if moduleParamEnvKey(module, mod.EnvPrefix, mod.Exports, parameter) == bare {
+		return "", false
+	}
+	for _, key := range mod.finalRequirements() {
+		if key == bare {
+			return bare, true
+		}
+	}
+	return "", false
+}
+
 // validateConfiguredParameters applies the same declaration and type checks to
 // a whole imported/loaded config that `config set` applies to one path. Without
 // this, hand-written YAML can still create a plausible-looking environment key
 // that no runtime component reads, even though the CLI refuses the same path.
 func validateConfiguredParameters(cfg *config.File, reg map[string]Module) error {
+	return validateConfiguredParameterSchema(cfg, reg)
+}
+
+// validateConfiguredParameterDeclarations checks address ownership without
+// formatting any value. Production whole-config boundaries run this first and
+// then validate the canonical runtime view with source provenance attached;
+// validating values here would expose an equal-value alias before the secret
+// source has been merged into that view.
+func validateConfiguredParameterDeclarations(cfg *config.File, reg map[string]Module) error {
 	if cfg == nil {
 		return nil
 	}
+	if err := validateConfiguredRuntimeKeySyntax(cfg, reg); err != nil {
+		return err
+	}
 	for module, selected := range cfg.Modules.Values {
-		for parameter, raw := range selected.Config {
+		if strings.TrimSpace(selected.Identity.LoginProtocol) != "" {
+			if _, ok := moduleIdentityLoginParameter(module, reg); !ok {
+				return fmt.Errorf("modules.%s.identity.login_protocol is not declared by the Module identity contract", module)
+			}
+		}
+		for parameter := range selected.Config {
 			if err := validateParameter(module, parameter, reg); err != nil {
 				return fmt.Errorf("modules.%s.config.%s: %w", module, parameter, err)
 			}
-			path := fmt.Sprintf("modules.%s.config.%s", module, parameter)
-			if err := validateParameterValue(module, parameter, config.Scalar(raw), reg); err != nil {
-				return parameterValidationError(path, module, parameter, err, reg)
-			}
 		}
 	}
-	for key, raw := range cfg.Env {
+	for key := range cfg.Env {
 		key = config.EnvKey(key)
-		module, parameter, err := policyOwnerForEnv(key, reg)
-		if err != nil {
+		if isRunnerOwnedRuntimeKey(key, reg) {
+			return fmt.Errorf("env.%s is runner-owned and cannot be supplied by config", key)
+		}
+		if _, _, err := policyOwnerForEnv(key, reg); err != nil {
 			return fmt.Errorf("env.%s: %w", key, err)
 		}
-		path := "env." + key
-		if err := validateParameterValue(module, parameter, config.Scalar(raw), reg); err != nil {
-			return parameterValidationError(path, module, parameter, err, reg)
-		}
 	}
-	// `secrets:` is an alternative spelling of a runtime environment input, not
-	// an escape hatch around the owning Module's schema. Values remain redacted
-	// by parameterValidationError whenever the declaration marks them sensitive.
-	for key, raw := range cfg.Secrets {
+	for key := range cfg.Secrets {
 		key = config.EnvKey(key)
-		module, parameter, err := policyOwnerForEnv(key, reg)
-		if err != nil {
-			return fmt.Errorf("secrets.%s: %w", key, err)
+		if isRunnerOwnedRuntimeKey(key, reg) {
+			return fmt.Errorf("secrets.%s is runner-owned and cannot be supplied by config", key)
 		}
-		path := "secrets." + key
-		if err := validateParameterValue(module, parameter, config.Scalar(raw), reg); err != nil {
-			spec := parameterType(module, parameter, reg)
-			if spec.Declared() {
-				return fmt.Errorf("%s does not satisfy its declared %s type or constraints", path, spec.Kind)
-			}
-			return fmt.Errorf("%s does not satisfy its declared type or constraints", path)
+		if _, _, err := policyOwnerForEnv(key, reg); err != nil {
+			return fmt.Errorf("secrets.%s: %w", key, err)
 		}
 	}
 	return nil
+}
+
+// validateConfiguredRuntimeKeySyntax closes the permissive raw/legacy address
+// escape hatch at the actual dotenv boundary. Undeclared legacy parameters are
+// still accepted, but the runtime key they produce must be representable as a
+// single environment assignment and cannot contain newline, '=' or punctuation.
+func validateConfiguredRuntimeKeySyntax(cfg *config.File, reg map[string]Module) error {
+	validateRaw := func(section string, values map[string]any) error {
+		for raw := range values {
+			key := config.EnvKey(raw)
+			if !envKeyPattern.MatchString(key) {
+				return fmt.Errorf("%s key %q is not a valid environment key", section, key)
+			}
+		}
+		return nil
+	}
+	if err := validateRaw("env", cfg.Env); err != nil {
+		return err
+	}
+	if err := validateRaw("secrets", cfg.Secrets); err != nil {
+		return err
+	}
+	for module, selected := range cfg.Modules.Values {
+		mod, known := reg[module]
+		if !known {
+			continue
+		}
+		for parameter := range selected.Config {
+			key := moduleParamEnvKey(module, mod.EnvPrefix, mod.Exports, parameter)
+			if !envKeyPattern.MatchString(key) {
+				return fmt.Errorf("modules.%s.config parameter %q resolves to invalid environment key %q", module, parameter, key)
+			}
+		}
+	}
+	return nil
+}
+
+// validateConfiguredParameterSchema validates a complete desired-state file
+// without running resolution or enforcing required inputs. Source provenance
+// is attached before any value is formatted, so an ordinary `secrets:` value
+// copied into another typed address cannot be echoed by a schema error.
+func validateConfiguredParameterSchema(cfg *config.File, reg map[string]Module, privateTaintSources ...map[string]string) error {
+	if err := validateConfiguredParameterDeclarations(cfg, reg); err != nil {
+		return err
+	}
+	values := configBaseEnv(cfg, reg)
+	sourceSensitive := map[string]bool{}
+	for key := range cfg.Secrets {
+		sourceSensitive[config.EnvKey(key)] = true
+	}
+	markSensitiveValueAliases(values, sourceSensitive)
+	markSensitiveValueAliasesFromSources(values, sourceSensitive, privateTaintSources...)
+	return normalizeConfiguredParameterEnvWithSensitive(values, reg, sourceSensitive)
+}
+
+// markSensitiveValueAliasesFromSources applies confidentiality provenance from
+// values that intentionally are not part of the configuration input view. All
+// Secret Store record kinds participate here: generated Hook material and local
+// administrator credentials may not satisfy input_required, but copying their
+// plaintext into a typed config address still must not make a schema error echo
+// it. Empty values do not taint ordinary unset parameters.
+func markSensitiveValueAliasesFromSources(values map[string]string, sensitive map[string]bool, sources ...map[string]string) {
+	privateValues := map[string]bool{}
+	for _, source := range sources {
+		for _, value := range source {
+			if value != "" {
+				privateValues[value] = true
+			}
+		}
+	}
+	if len(privateValues) == 0 {
+		return
+	}
+	for key, value := range values {
+		if value != "" && privateValues[value] {
+			sensitive[config.EnvKey(key)] = true
+		}
+	}
 }
 
 // parameterValidationError never includes the rejected value when a manifest
@@ -135,15 +244,79 @@ func normalizeConfigInputForPolicy(target configTarget, value string, policy Cha
 	return normalized, err
 }
 
+// validateConfigRuntimeKeyCollisions rejects two explicit YAML addresses that
+// feed the same runtime environment key. Without this boundary, config set can
+// appear to succeed while a pre-existing raw env/secret spelling silently wins
+// (or is silently overwritten) according to flattening order.
+func validateConfigRuntimeKeyCollisions(path string, reg map[string]Module) error {
+	loaded, err := config.Load(path)
+	if err != nil {
+		return err
+	}
+	if err := validateConfiguredRuntimeKeySyntax(loaded, reg); err != nil {
+		return err
+	}
+	settings, err := config.Settings(path)
+	if err != nil {
+		return err
+	}
+	paths := make([]string, 0, len(settings))
+	for settingPath := range settings {
+		paths = append(paths, settingPath)
+	}
+	sort.Strings(paths)
+	seen := map[string]string{}
+	for _, settingPath := range paths {
+		parts := strings.Split(settingPath, ".")
+		keys := []string{}
+		switch {
+		case len(parts) == 2 && (parts[0] == "env" || parts[0] == "secrets"):
+			key := config.EnvKey(parts[1])
+			if isRunnerOwnedRuntimeKey(key, reg) {
+				return fmt.Errorf("%s is runner-owned and cannot be supplied by config", settingPath)
+			}
+			keys = []string{key}
+		case len(parts) == 2 && parts[0] == "global":
+			keys = []string{parameterEnvKey(globalModuleName, strings.ToLower(strings.TrimSpace(parts[1])), reg)}
+		case len(parts) == 4 && parts[0] == "modules" && parts[2] == "config":
+			module := strings.ToLower(strings.TrimSpace(parts[1]))
+			mod, ok := reg[module]
+			if !ok {
+				continue
+			}
+			keys = []string{moduleParamEnvKey(module, mod.EnvPrefix, mod.Exports, strings.ToLower(strings.TrimSpace(parts[3])))}
+		case len(parts) == 4 && parts[0] == "modules" && parts[2] == "identity" && parts[3] == "login_protocol":
+			if key, ok := moduleIdentityLoginRuntimeKey(strings.ToLower(strings.TrimSpace(parts[1])), reg); ok {
+				keys = []string{key}
+			}
+		case settingPath == "administration.bootstrap.username":
+			keys = bootstrapUsernameRuntimeKeys(reg)
+		default:
+			continue
+		}
+		for _, key := range uniqueStrings(keys) {
+			if previous, duplicate := seen[key]; duplicate {
+				return fmt.Errorf("%s and %s both resolve to runtime key %s", previous, settingPath, key)
+			}
+			seen[key] = settingPath
+		}
+	}
+	return nil
+}
+
 // validateLoadedConfigSchema is the common whole-config boundary used before
 // a plan is reported. Without it, plan could claim that an old managed config
 // was applicable after a Module tightened its schema, only for apply to reject
 // it later.
-func validateLoadedConfigSchema(cfg *config.File, reg map[string]Module, lifecycleInputs map[string]string) error {
-	if err := validateConfiguredParameters(cfg, reg); err != nil {
+func validateLoadedConfigSchema(cfg *config.File, reg map[string]Module, lifecycleInputs map[string]string, lock *moduleLock, privateTaintSources ...map[string]string) error {
+	if err := validateConfiguredParameterDeclarations(cfg, reg); err != nil {
 		return err
 	}
-	values := cfg.BaseEnv()
+	values := configBaseEnv(cfg, reg)
+	sourceSensitive := map[string]bool{}
+	for key := range cfg.Secrets {
+		sourceSensitive[config.EnvKey(key)] = true
+	}
 	// Lifecycle-managed credentials deliberately do not live in config.yml.
 	// Merge their private validation view without mutating the loaded config or
 	// projecting values into plan output. The caller is responsible for passing
@@ -160,26 +333,117 @@ func validateLoadedConfigSchema(cfg *config.File, reg map[string]Module, lifecyc
 				return err
 			}
 			values[key] = normalized
+			sourceSensitive[key] = true
 		}
 	}
-	if err := normalizeConfiguredParameterEnv(values, reg); err != nil {
+	markSensitiveValueAliases(values, sourceSensitive)
+	markSensitiveValueAliasesFromSources(values, sourceSensitive, privateTaintSources...)
+	if err := normalizeConfiguredParameterEnvWithSensitive(values, reg, sourceSensitive); err != nil {
 		return err
 	}
-	order := make([]string, 0, len(cfg.Modules.Order))
-	for _, name := range cfg.Modules.Order {
-		selected := cfg.Modules.Values[name]
-		if selected.Enabled == nil || *selected.Enabled {
-			order = append(order, name)
-		}
-	}
-	return validateInputRequiredEnv(values, order, reg)
+	return validateResolvedInputRequiredEnv(cfg, reg, values, lock, sourceSensitive)
 }
 
-// validateInputRequiredEnv checks the unconditional input contract only after
-// the generic resolver has selected the actual enabled Module set and applied
-// alternative structured inputs such as deployment-scoped bindings. This is
-// deliberately manifest-driven: neither the CLI nor anasd needs a branch for
-// any Module name.
+// validateResolvedInputRequiredEnv asks the same resolver used by plan/apply
+// for the effective module order. That includes transitive dependencies,
+// alternative, contract and capability providers, and deployment-scoped
+// Dynamic-DNS selection; validating only cfg.Modules.Order would silently skip
+// caller inputs required by an auto-selected module.
+//
+// resolveOrder is read-only with respect to the workspace. It mutates only this
+// private environment view to publish resolved bindings, and registry-only mode
+// avoids a redundant filesystem admission check without running hooks or any
+// lifecycle operation.
+func validateResolvedInputRequiredEnv(cfg *config.File, reg map[string]Module, values map[string]string, lock *moduleLock, sourceSensitive map[string]bool) error {
+	resolver := &app{
+		cfg: cfg, reg: reg, env: values, lock: lock,
+		resolvedBindings:             map[string]map[string]string{},
+		registryOnlyResolution:       true,
+		allowUnresolvedInputBindings: true,
+		runnerSensitive:              sourceSensitive,
+	}
+	_, err := resolver.resolveOrderWithInputValidation(cfg.Modules.Order)
+	return err
+}
+
+// resolvedValueForError preserves useful diagnostics for ordinary selectors
+// while honoring source-based secrecy. A value loaded from config `secrets:`
+// or the lifecycle Secret Store stays redacted even if a later manifest no
+// longer marks that parameter sensitive.
+func (a *app) resolvedValueForError(key, value string) string {
+	if a.resolvedValueIsSensitive(key) {
+		return "<redacted>"
+	}
+	return value
+}
+
+func (a *app) resolvedValueIsSensitive(key string) bool {
+	return a.sensitiveEnvKeySet()[config.EnvKey(key)]
+}
+
+// rejectSourceSensitiveSelector keeps secret plaintext out of persistent locks
+// and successful plan documents. Structural selectors (provider, interface,
+// backend, DNS platform) are necessarily recorded as their canonical public
+// identifier, so a value whose source promises secrecy cannot safely be used
+// for that job. The caller must move the selector to ordinary configuration;
+// actual credentials remain in config secrets or the lifecycle Secret Store.
+func (a *app) rejectSourceSensitiveSelector(key, display string) error {
+	key = config.EnvKey(key)
+	if strings.TrimSpace(a.env[key]) == "" || !a.resolvedValueIsSensitive(key) {
+		return nil
+	}
+	return fmt.Errorf("%s value <redacted> cannot come from secrets or the lifecycle Secret Store because it selects deployment structure; move it to ordinary configuration", display)
+}
+
+func (a *app) resolvedBindingValueForError(module, binding, value string) string {
+	mod, ok := a.reg[module]
+	if !ok {
+		return value
+	}
+	base := strings.TrimSuffix(binding, ".interface")
+	for _, dep := range mod.RequiresOne {
+		if dep.Capability == base {
+			return a.resolvedValueForError(paramEnvKey(module, mod.EnvPrefix, dep.SelectedBy), value)
+		}
+	}
+	for _, dep := range mod.RequiresContracts {
+		if dep.Name == base {
+			return a.resolvedValueForError(paramEnvKey(module, mod.EnvPrefix, dep.SelectedBy), value)
+		}
+	}
+	for _, dep := range mod.RequiresCapabilities {
+		if dep.Name == base {
+			return a.resolvedValueForError(paramEnvKey(module, mod.EnvPrefix, dep.InterfaceSelectedBy), value)
+		}
+	}
+	return value
+}
+
+// resolveOrderWithInputValidation separates two facts that are easy to blur:
+// resolution decides which Modules are active, while input_required describes
+// values the caller actually supplied. Resolver defaults and published binding
+// values may determine the former, but must never be allowed to satisfy the
+// latter. Keep the pre-resolution view and use only the resolved order from the
+// mutated environment.
+func (a *app) resolveOrderWithInputValidation(modules []string) ([]string, error) {
+	inputValues := cloneMap(a.env)
+	if a.callerInputEnv != nil {
+		inputValues = cloneMap(a.callerInputEnv)
+	}
+	order, err := a.resolveOrder(modules)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateInputRequiredEnv(inputValues, order, a.reg); err != nil {
+		return nil, err
+	}
+	return order, nil
+}
+
+// validateInputRequiredEnv checks the unconditional caller-input contract for
+// the Module set selected by the generic resolver. values must be the snapshot
+// taken before resolver defaults/bindings are published; neither the CLI nor
+// anasd needs a branch for any Module name.
 func validateInputRequiredEnv(values map[string]string, order []string, reg map[string]Module) error {
 	if err := requireKeys(values, globalConfig.InputRequired); err != nil {
 		return fmt.Errorf("deployment config input: %w", err)
@@ -307,6 +571,14 @@ func normalizeValueAgainstParamType(value string, spec ParamType) (string, error
 // owner declared a type. Unknown raw env keys remain untouched as the explicit
 // compatibility escape hatch.
 func normalizeConfiguredParameterEnv(values map[string]string, reg map[string]Module) error {
+	return normalizeConfiguredParameterEnvWithSensitive(values, reg, nil)
+}
+
+// normalizeConfiguredParameterEnvWithSensitive additionally treats keys as
+// secret because of their storage source. Secret Store provenance remains a
+// confidentiality boundary even if a later Module manifest accidentally drops
+// its sensitive policy while tightening the parameter schema.
+func normalizeConfiguredParameterEnvWithSensitive(values map[string]string, reg map[string]Module, sourceSensitive map[string]bool) error {
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
@@ -320,6 +592,9 @@ func normalizeConfiguredParameterEnv(values map[string]string, reg map[string]Mo
 		}
 		normalized, err := normalizeParameterValue(module, parameter, value, reg)
 		if err != nil {
+			if sourceSensitive[config.EnvKey(key)] {
+				return fmt.Errorf("env.%s does not satisfy its declared type or constraints", key)
+			}
 			return parameterValidationError("env."+key, module, parameter, err, reg)
 		}
 		values[key] = normalized

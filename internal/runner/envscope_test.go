@@ -1,6 +1,8 @@
 package runner
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -139,6 +141,63 @@ func TestScopedEnvUserSecretsRequireClaim(t *testing.T) {
 	}
 }
 
+func TestSensitiveScopeDoesNotTrustAnOverlappingPrefix(t *testing.T) {
+	a := &app{
+		reg: map[string]Module{
+			"one": {Name: "one", EnvPrefix: "SHARED", Parameters: []string{"alpha"}, Types: map[string]ParamType{"alpha": {Kind: "string"}}},
+			"two": {
+				Name: "two", EnvPrefix: "SHARED", Parameters: []string{"token"}, Types: map[string]ParamType{"token": {Kind: "string"}},
+				Changes: map[string]ChangePolicy{"token": {Sensitive: true}},
+			},
+		},
+		env: map[string]string{"SHARED_TOKEN": "secret"}, envOwner: map[string]string{"SHARED_TOKEN": "two"},
+	}
+	if _, leaked := a.scopedEnv("one")["SHARED_TOKEN"]; leaked {
+		t.Fatal("module received another owner's sensitive value through an overlapping prefix")
+	}
+	if got := a.scopedEnv("two")["SHARED_TOKEN"]; got != "secret" {
+		t.Fatal("the declared owner did not receive its own sensitive value")
+	}
+}
+
+func TestSensitiveEnvKeySetTaintsEqualValueAliases(t *testing.T) {
+	const secret = "same-secret-plaintext"
+	for name, app := range map[string]*app{
+		"lifecycle provenance": {
+			env:             map[string]string{"SOURCE_SECRET": secret, "DEMO_SELECTOR": secret},
+			runnerSensitive: map[string]bool{"SOURCE_SECRET": true},
+		},
+		"config secrets provenance": {
+			cfg: &config.File{Secrets: map[string]any{"SOURCE_SECRET": secret}},
+			env: map[string]string{"SOURCE_SECRET": secret, "DEMO_SELECTOR": secret},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !app.sensitiveEnvKeySet()["DEMO_SELECTOR"] {
+				t.Fatal("an equal-value alias lost secret source provenance")
+			}
+		})
+	}
+}
+
+func TestCalculatePatchRejectsCrossOwnerOverwriteAtomically(t *testing.T) {
+	a := &app{
+		env:      map[string]string{"HOST_IP": "192.0.2.10"},
+		envOwner: map[string]string{"HOST_IP": globalScope},
+	}
+	mod := Module{Name: "malicious", EnvPrefix: "HOST", Exports: []string{"EXPORTED_OK"}}
+	err := a.applyCalculatePatch(mod, map[string]string{"EXPORTED_OK": "must-not-land", "HOST_IP": "203.0.113.9"})
+	if err == nil || !strings.Contains(err.Error(), "owned by another source") {
+		t.Fatalf("cross-owner patch error = %v", err)
+	}
+	if a.env["HOST_IP"] != "192.0.2.10" {
+		t.Fatalf("Hook overwrote global HOST_IP: %q", a.env["HOST_IP"])
+	}
+	if _, landed := a.env["EXPORTED_OK"]; landed {
+		t.Fatal("rejected Hook patch was applied partially")
+	}
+}
+
 // Per-engine DNS credentials are separated by env prefix alone, with no
 // consumes entry on either side. This is what lets a deployment run two DDNS
 // implementations against the same vendor with different accounts, and it is
@@ -227,5 +286,91 @@ func TestApplyCalculatePatchEnforcesExports(t *testing.T) {
 	// could appear from a bundle with nothing declaring it.
 	if err := a.applyCalculatePatch(a.reg["traefik"], map[string]string{"ANY_GLOBAL": "v"}); err == nil {
 		t.Fatal("an undeclared unprefixed write was accepted")
+	}
+}
+
+func TestHookSecretWriteContractAndPersistedOwnerControlScope(t *testing.T) {
+	alpha := Module{Name: "alpha", EnvPrefix: "ALPHA"}
+	beta := Module{Name: "beta", EnvPrefix: "BETA", Parameters: []string{"token"}}
+	store := &secretStore{values: map[string]string{}, metadata: map[string]secretMetadata{}}
+	a := &app{
+		reg:      map[string]Module{"alpha": alpha, "beta": beta},
+		deps:     map[string][]string{},
+		env:      map[string]string{},
+		envOwner: map[string]string{},
+		secrets:  store,
+	}
+
+	patch := map[string]string{"BETA_TOKEN": "generated-by-alpha"}
+	err := a.validateCalculateSecretPatch(alpha, patch)
+	if err == nil || !strings.Contains(err.Error(), "undeclared secret keys") || !strings.Contains(err.Error(), "BETA_TOKEN") {
+		t.Fatalf("cross-prefix Secret write error = %v", err)
+	}
+	if len(store.values) != 0 || store.dirty {
+		t.Fatalf("rejected Secret write mutated Store: %#v dirty=%t", store.values, store.dirty)
+	}
+	if _, leaked := a.scopedSecrets("beta")["BETA_TOKEN"]; leaked {
+		t.Fatal("a rejected cross-owner Secret key was later delivered by prefix")
+	}
+
+	// Cross-prefix publication remains available through the same exports
+	// contract as Env patches. The producing owner, not the spelling of the
+	// key, controls delivery; a consumer must claim the Secret explicitly.
+	alpha.Exports = []string{"BETA_TOKEN"}
+	a.reg["alpha"] = alpha
+	if err := a.validateCalculateSecretPatch(alpha, patch); err != nil {
+		t.Fatalf("exported cross-prefix Secret write rejected: %v", err)
+	}
+	store.mergeCanonicalHookSecrets("alpha", patch)
+	if got := store.metadata["BETA_TOKEN"]; got != (secretMetadata{Owner: "alpha", Kind: "generated", Provenance: "module-hook"}) {
+		t.Fatalf("cross-prefix Secret owner = %#v", got)
+	}
+	if got := a.scopedSecrets("alpha")["BETA_TOKEN"]; got != "generated-by-alpha" {
+		t.Fatalf("producer did not receive its owned Secret: %q", got)
+	}
+	if _, leaked := a.scopedSecrets("beta")["BETA_TOKEN"]; leaked {
+		t.Fatal("consumer received another owner's Secret from its matching prefix")
+	}
+	beta.Consumes = []string{"BETA_TOKEN"}
+	a.reg["beta"] = beta
+	if got := a.scopedSecrets("beta")["BETA_TOKEN"]; got != "generated-by-alpha" {
+		t.Fatalf("declared consumer did not receive exported Secret: %q", got)
+	}
+}
+
+func TestApplyCalculatePatchRejectsInvalidEnvKeysAtomically(t *testing.T) {
+	mod := Module{Name: "demo", EnvPrefix: "DEMO"}
+	for _, invalid := range []string{
+		"demo_lower",
+		"DEMO-HYPHEN",
+		"DEMO SPACE",
+		"DEMO_EQUALS=value",
+		"DEMO_NEWLINE\nINJECTED",
+	} {
+		t.Run(strings.ReplaceAll(invalid, "\n", `\n`), func(t *testing.T) {
+			a := &app{env: map[string]string{}, envOwner: map[string]string{}}
+			err := a.applyCalculatePatch(mod, map[string]string{
+				invalid:     "malicious",
+				"DEMO_SAFE": "must-not-land",
+			})
+			if err == nil || !strings.Contains(err.Error(), "invalid env keys") {
+				t.Fatalf("invalid Hook Env key error = %v", err)
+			}
+			if len(a.env) != 0 || len(a.envOwner) != 0 {
+				t.Fatalf("invalid Hook Env patch partially landed: env=%#v owners=%#v", a.env, a.envOwner)
+			}
+
+			path := filepath.Join(t.TempDir(), "module.env")
+			if err := writeEnv(path, a.env); err != nil {
+				t.Fatal(err)
+			}
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(contents), "INJECTED") || strings.Contains(string(contents), "must-not-land") {
+				t.Fatalf("invalid Hook key polluted rendered .env: %q", contents)
+			}
+		})
 	}
 }

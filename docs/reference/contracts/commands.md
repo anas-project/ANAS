@@ -366,9 +366,10 @@ anas config secret  list | get <KEY>   [-w WORKSPACE] [--json]
 ```
 
 `config list` 列出每个参数的 `set` 路径、环境变量、类型、输入/解析要求、默认来源、单字段
-约束、当前值状态和变更影响。敏感参数的值只报告 `<set>`/`<unset>`，绝不打印明文；读取凭据
-仍使用 `config secret get`。参数声明属于 Module，不需要 workspace；在 workspace 中调用时还会
-填充当前值。
+约束、当前值状态和变更影响。敏感参数的人类输出只报告 `<set>`/`<unset>`；JSON 只返回
+`set: true`/`false` 并省略 `value`，绝不打印明文。Secret Store 中 kind 为
+`lifecycle_managed` 的记录也按此方式报告 presence。读取凭据仍使用 `config secret get`。参数
+声明属于 Module，不需要 workspace；在 workspace 中调用时还会填充当前值。
 
 `parameters[].type` 取 `string`、`bool`、`int`、`enum` 或 `unknown`。`enum` 项同时
 带非空 `allowed_values`；其他类型省略该字段。`unknown` 是读取旧 Module 和开发中不完整
@@ -403,6 +404,13 @@ constraints 可在单个候选值上完成校验。条件必填、两个或更�
 workspace/运行态的规则仍由 resolver、应用服务、plan 或 Hook 校验，不能把其中一个字段笼统标为
 `input_required`。
 
+import 与 `config plan` 会运行同一个通用依赖/Capability/Contract resolver。只有调用方尚未
+选择且 `auto` 暂时无法唯一解析的 binding 可以作为草稿延后；显式非法、unknown、disabled
+或不受支持的 provider/interface 必须立即失败，不能留到 apply。provider/interface/backend/DNS
+platform 这类结构 selector 不能来自 `secrets:` 或 lifecycle Secret Store：其规范标识必须进入
+plan 与 resolution lock，无法同时承诺明文保密；调用方必须把 selector 移到普通配置，只把实际
+凭据留在 secret 通道。拒绝诊断只显示 `<redacted>`。
+
 这些字段是 ANAS 配置 schema 的 CLI 投影，**不是 JSON Schema 文档**：JSON Schema 的
 `required` 是对象属性名数组，而这里是当前参数的输入要求；JSON Schema 的 `default` 只是
 注解，而 ANAS 会在解析时真正应用默认值；`constraints` 也只支持上列稳定字段，不接受任意
@@ -415,16 +423,27 @@ manifest 中的标准拼写，`int` 去除首尾空白，`string` 保留原文�
 
 `config import` 是已有 workspace 导入外部 YAML 的入口；首次创建也可用
 `anas init WORKSPACE --config SOURCE` 完成同样的导入。两者都不修改源文件。导入先把
-`env` 键写成运行时大写拼写，把 Module 名、global 参数名和 Module 参数名写成
-小写；任何规范化后重复的地址都会让导入失败，不以 YAML 顺序决定胜负。声明为 bare export
-的结构化 Module 参数迁移到 canonical `env.<KEY>`：例如
+`env` 和 `secrets` 键写成运行时大写拼写，把 Module 名、global 参数名和 Module 参数名写成
+小写；任何规范化后重复的地址都会让导入失败，不以 YAML 顺序决定胜负。`secrets` 内部，
+以及映射到同一运行时键的 `secrets`、`env` 和结构化 Module 参数之间都执行该碰撞检查，
+错误不回显敏感值。声明为 bare export 的结构化 Module 参数迁移到 canonical `env.<KEY>`：例如
 `modules.samba_fs.config.share_dir_name` 持久化为 `env.SHARE_DIR_NAME`；若两种地址同时出现，
-按碰撞拒绝。验证规范化配置后，`credential_rotate` 与本地管理员 bootstrap 密码移入
+按碰撞拒绝。`secrets.<KEY>` 映射到已声明参数时仍使用同一类型、constraints、敏感性和变更
+effect，不是无类型的校验逃生口。验证规范化配置后，`credential_rotate` 与本地管理员
+bootstrap 密码移入
 `.anas/secrets.yml`，普通 DNS/API token 等部署 Secret 则保留在 0600 的 workspace
 `config.yml` 中。配置、
 Secret Store 和完整性摘要先全部暂存，再一起替换；任一步失败都保留原状态。`migrate` 仅用于
 把尚未建立 CLI 完整性摘要的当前 workspace 配置纳入该模型，不提供旧 Secret Store 兼容。
 plan/lock/render/apply 拒绝外部 `-c` 和摘要不匹配的手工修改。
+
+抽取后的 `lifecycle_managed` 输入不需要在重新导入受管 `config.yml` 时回填明文：已有的非空
+Secret Store 值只在私有校验视图中满足 `input_required` 并按当前 schema 重新校验。显式重复
+同一值是幂等操作；用不同值重新 import 会在写文件前拒绝，并要求使用声明的凭据轮换命令或
+`anas admin local rotate`。kind 为 `generated` 或 `local_admin` 的记录不能满足无关的调用方输入
+要求；缺失或不符合当前 constraints 的 `lifecycle_managed` 值同样使 import/plan 失败且不泄露
+值。`config plan` 只输出变更路径、effect、sensitive 等元数据；来自 `secrets:` 的普通部署
+Secret 保留其所有者声明的风险策略，任何 Secret Store 明文都不会进入 plan 输出。
 
 `set` and `explain` reject a parameter no manifest declares, naming the closest
 declared one, and exit with the usage code. A raw `env.<KEY>` that maps to a

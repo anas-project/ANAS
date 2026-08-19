@@ -76,7 +76,7 @@ func writeManagedConfigState(workspace, updatedBy string) error {
 	return writeYAMLAtomic(managedConfigStatePath(stateDir(workspace)), &state, 0600)
 }
 
-func setManagedConfigScalar(workspace, configPath string, yamlPath []string, value string, preserveText bool) error {
+func setManagedConfigScalar(workspace, configPath string, yamlPath []string, value string, preserveText bool, reg map[string]Module) error {
 	if err := validateManagedConfig(workspace, configPath); err != nil {
 		return err
 	}
@@ -102,6 +102,20 @@ func setManagedConfigScalar(workspace, configPath string, yamlPath []string, val
 		set = config.SetString
 	}
 	if err := set(tmpPath, yamlPath, value); err != nil {
+		return err
+	}
+	if err := validateConfigRuntimeKeyCollisions(tmpPath, reg); err != nil {
+		return err
+	}
+	loaded, err := config.Load(tmpPath)
+	if err != nil {
+		return err
+	}
+	store, err := loadSecretStore(base)
+	if err != nil {
+		return err
+	}
+	if err := validateConfiguredParameterSchema(loaded, reg, store.values); err != nil {
 		return err
 	}
 	next, err := os.ReadFile(tmpPath)
@@ -145,8 +159,12 @@ func validateManagedConfig(workspace, configPath string) error {
 	return nil
 }
 
-func rejectUnimportedConfigSecrets(path string, reg map[string]Module) error {
-	result, err := normalizeImportedConfig(path, reg)
+func rejectUnimportedConfigSecrets(path string, reg map[string]Module, privateTaint ...map[string]string) error {
+	var sources map[string]string
+	if len(privateTaint) > 0 {
+		sources = privateTaint[0]
+	}
+	result, err := normalizeImportedConfigWithTaint(path, reg, sources)
 	if err != nil {
 		return err
 	}
@@ -161,6 +179,14 @@ func rejectUnimportedConfigSecrets(path string, reg map[string]Module) error {
 }
 
 func normalizeImportedConfig(source string, reg map[string]Module) (configImportResult, error) {
+	return normalizeImportedConfigWithTaint(source, reg, nil)
+}
+
+// normalizeImportedConfigWithTaint is used when importing into an existing
+// workspace. Its private sources never become configuration inputs; they only
+// ensure that early node-level type normalization cannot echo a value already
+// protected by any Secret Store record kind.
+func normalizeImportedConfigWithTaint(source string, reg map[string]Module, privateTaint map[string]string) (configImportResult, error) {
 	b, err := os.ReadFile(source)
 	if err != nil {
 		return configImportResult{}, err
@@ -203,11 +229,14 @@ func normalizeImportedConfig(source string, reg map[string]Module) (configImport
 				return result, fmt.Errorf("global must be a mapping")
 			}
 			chineseSpeedup := mappingValue(global, "chinese_speedup")
-			if chineseSpeedup == nil {
+			rawEnv := mappingValue(root, "env")
+			rawSecrets := mappingValue(root, "secrets")
+			explicitRuntimeValue := mappingValue(rawEnv, "CHINESE_SPEEDUP") != nil || mappingValue(rawSecrets, "CHINESE_SPEEDUP") != nil
+			if chineseSpeedup == nil && !explicitRuntimeValue {
 				global.Content = append(global.Content,
 					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "chinese_speedup"},
 					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: "true"})
-			} else if chineseSpeedup.Kind == yaml.ScalarNode &&
+			} else if chineseSpeedup != nil && chineseSpeedup.Kind == yaml.ScalarNode &&
 				(chineseSpeedup.Tag == "!!null" || strings.TrimSpace(chineseSpeedup.Value) == "") {
 				// YAML null and the empty optional-bool spelling have the same
 				// meaning as omission; persist the resolved default instead.
@@ -224,17 +253,15 @@ func normalizeImportedConfig(source string, reg map[string]Module) (configImport
 			if policy.Effect != "credential_rotate" {
 				continue
 			}
-			key := mod.EnvPrefix + "_" + config.EnvKey(parameter)
-			if bare, ok := mod.bareEnvParameter(parameter); ok {
-				key = bare
-			}
+			key := moduleParamEnvKey(mod.Name, mod.EnvPrefix, mod.Exports, parameter)
 			sensitiveEnv[key] = true
 		}
 		if len(mod.LocalAccounts) == 1 {
 			account := mod.LocalAccounts[0]
 			secret := importedConfigSecret{Key: localAdminSecretKey(mod.Name, account.ID), Owner: mod.Name, Generated: true}
 			_, localPasswordKey := localAdminEnvKeys(mod, account.ID)
-			for _, alias := range []string{localPasswordKey, mod.EnvPrefix + "_ADMIN_PASSWORD", mod.EnvPrefix + "_ADMIN_PWD"} {
+			prefix := defaultEnvPrefix(mod.EnvPrefix)
+			for _, alias := range []string{localPasswordKey, prefix + "_ADMIN_PASSWORD", prefix + "_ADMIN_PWD"} {
 				localEnv[alias] = secret
 			}
 		}
@@ -325,12 +352,10 @@ func normalizeImportedConfig(source string, reg map[string]Module) (configImport
 					if err != nil {
 						return result, err
 					}
-					key := mod.EnvPrefix + "_" + config.EnvKey(parameter)
+					key := moduleParamEnvKey(name, mod.EnvPrefix, mod.Exports, parameter)
 					generated := false
 					if isManagedBootstrap {
 						key, generated = localAdminSecretKey(name, mod.LocalAccounts[0].ID), true
-					} else if bare, ok := mod.bareEnvParameter(parameter); ok {
-						key = bare
 					}
 					if err := importedSecrets.add(importedConfigSecret{Path: path, Key: key, Value: value, Owner: name, Generated: generated}); err != nil {
 						return result, err
@@ -372,7 +397,11 @@ func normalizeImportedConfig(source string, reg map[string]Module) (configImport
 			}
 		}
 	}
-	if err := normalizeImportedParameterNodes(root, reg); err != nil {
+	extractedTaint := make(map[string]string, len(importedSecrets.values))
+	for _, secret := range importedSecrets.values {
+		extractedTaint[secret.Key] = secret.Value
+	}
+	if err := normalizeImportedParameterNodes(root, reg, privateTaint, extractedTaint); err != nil {
 		return result, err
 	}
 
@@ -395,7 +424,15 @@ func normalizeImportedConfig(source string, reg map[string]Module) (configImport
 // runtime consumes. This keeps an imported legacy selector such as MARIADB
 // compatible without leaving the managed config and its rendered environment
 // with different spellings. The traversal is entirely manifest-driven.
-func normalizeImportedParameterNodes(root *yaml.Node, reg map[string]Module) error {
+func normalizeImportedParameterNodes(root *yaml.Node, reg map[string]Module, privateTaintSources ...map[string]string) error {
+	privateValues := map[string]bool{}
+	for _, source := range privateTaintSources {
+		for _, value := range source {
+			if value != "" {
+				privateValues[value] = true
+			}
+		}
+	}
 	normalize := func(path, module, parameter string, value *yaml.Node, sourceSensitive bool) error {
 		spec := parameterType(module, parameter, reg)
 		if !spec.Declared() {
@@ -405,7 +442,7 @@ func normalizeImportedParameterNodes(root *yaml.Node, reg map[string]Module) err
 			return fmt.Errorf("%s must be a scalar %s", path, spec.Kind)
 		}
 		normalizeValue := func(raw string) (string, error) {
-			if sourceSensitive || policyForTarget(configTarget{Display: path, Module: module, Parameter: parameter}, reg).Sensitive {
+			if sourceSensitive || privateValues[raw] || policyForTarget(configTarget{Display: path, Module: module, Parameter: parameter}, reg).Sensitive {
 				return normalizeImportedSensitiveParameter(path, module, parameter, raw, reg)
 			}
 			normalized, err := normalizeParameterValue(module, parameter, raw, reg)
@@ -415,9 +452,10 @@ func normalizeImportedParameterNodes(root *yaml.Node, reg map[string]Module) err
 			return normalized, nil
 		}
 		if value.Kind == yaml.AliasNode {
-			// Keep scalar aliases as aliases. Replacing or mutating their anchor can
-			// unexpectedly change another setting that shares it; the decoded
-			// configuration and runtime env normalization still validate the value.
+			// Do not mutate the shared anchor: it may also feed an unrelated setting.
+			// Expand this declared parameter to its own canonical scalar instead so
+			// the managed YAML, config list and runtime environment all observe the
+			// same value even when the anchor itself is not a declared parameter.
 			target := value.Alias
 			seen := map[*yaml.Node]bool{}
 			for target != nil && target.Kind == yaml.AliasNode && !seen[target] {
@@ -433,10 +471,10 @@ func normalizeImportedParameterNodes(root *yaml.Node, reg map[string]Module) err
 				if err != nil {
 					return err
 				}
-				// A string parameter must remain a string even when its source anchor
-				// was inferred as !!int or !!bool. Expand only this alias instead of
-				// retagging the shared anchor and changing unrelated settings.
-				if spec.Kind == "string" && target.Tag != "!!null" {
+				// Null is the explicit unset spelling and remains an alias so its YAML
+				// semantics are preserved. Every non-null declared value is persisted
+				// as canonical text; config.Load accepts this uniformly for every kind.
+				if target.Tag != "!!null" {
 					*value = yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: normalized}
 				}
 				return nil
@@ -507,6 +545,18 @@ func normalizeImportedParameterNodes(root *yaml.Node, reg map[string]Module) err
 	for i := 0; i+1 < len(modules.Content); i += 2 {
 		module := strings.ToLower(strings.TrimSpace(modules.Content[i].Value))
 		moduleNode := modules.Content[i+1]
+		if identity := mappingValue(moduleNode, "identity"); identity != nil && identity.Kind == yaml.MappingNode {
+			if login := mappingValue(identity, "login_protocol"); login != nil {
+				parameter, ok := moduleIdentityLoginParameter(module, reg)
+				if !ok {
+					return fmt.Errorf("modules.%s.identity.login_protocol is not declared by the Module identity contract", module)
+				}
+				path := "modules." + module + ".identity.login_protocol"
+				if err := normalize(path, module, parameter, login, false); err != nil {
+					return err
+				}
+			}
+		}
 		configNode := mappingValue(moduleNode, "config")
 		if configNode == nil || configNode.Kind != yaml.MappingNode {
 			continue
@@ -579,13 +629,48 @@ func canonicalizeImportedConfigKeys(root *yaml.Node, reg map[string]Module) erro
 			}
 		}
 	}
+	runtimeKeys := make(map[string]string, len(envKeys)+len(secretKeys))
+	registerRuntimeKey := func(key, sourcePath string) error {
+		if previous, duplicate := runtimeKeys[key]; duplicate {
+			return fmt.Errorf("%s and %s both resolve to runtime key %s after canonicalization", previous, sourcePath, key)
+		}
+		runtimeKeys[key] = sourcePath
+		return nil
+	}
+	for key, sourcePath := range envKeys {
+		if err := registerRuntimeKey(key, sourcePath); err != nil {
+			return err
+		}
+	}
+	for key, sourcePath := range secretKeys {
+		if err := registerRuntimeKey(key, sourcePath); err != nil {
+			return err
+		}
+	}
 
 	if global := mappingValue(root, "global"); global != nil {
 		if global.Kind != yaml.MappingNode {
 			return fmt.Errorf("global must be a mapping")
 		}
-		if _, err := canonicalizeImportedMappingKeys(global, "global", canonicalConfigName); err != nil {
+		globalKeys, err := canonicalizeImportedMappingKeys(global, "global", canonicalConfigName)
+		if err != nil {
 			return err
+		}
+		for parameter, sourcePath := range globalKeys {
+			if err := registerRuntimeKey(parameterEnvKey(globalModuleName, parameter, reg), sourcePath); err != nil {
+				return err
+			}
+		}
+	}
+	if administration := mappingValue(root, "administration"); administration != nil && administration.Kind == yaml.MappingNode {
+		if bootstrap := mappingValue(administration, "bootstrap"); bootstrap != nil && bootstrap.Kind == yaml.MappingNode {
+			if username := mappingValue(bootstrap, "username"); username != nil {
+				for _, key := range bootstrapUsernameRuntimeKeys(reg) {
+					if err := registerRuntimeKey(key, "administration.bootstrap.username"); err != nil {
+						return err
+					}
+				}
+			}
 		}
 	}
 
@@ -606,6 +691,27 @@ func canonicalizeImportedConfigKeys(root *yaml.Node, reg map[string]Module) erro
 		if moduleNode.Kind != yaml.MappingNode {
 			continue
 		}
+		mod, known := reg[module]
+		identity := mappingValue(moduleNode, "identity")
+		var identityLogin *yaml.Node
+		if identity != nil {
+			if identity.Kind != yaml.MappingNode {
+				return fmt.Errorf("modules.%s.identity must be a mapping", module)
+			}
+			if _, err := canonicalizeImportedMappingKeys(identity, "modules."+module+".identity", canonicalConfigName); err != nil {
+				return err
+			}
+			identityLogin = mappingValue(identity, "login_protocol")
+			if identityLogin != nil && known {
+				key, supported := moduleIdentityLoginRuntimeKey(module, reg)
+				if !supported {
+					return fmt.Errorf("modules.%s.identity.login_protocol is not declared by the Module identity contract", module)
+				}
+				if err := registerRuntimeKey(key, "modules."+module+".identity.login_protocol"); err != nil {
+					return err
+				}
+			}
+		}
 		configNode := mappingValue(moduleNode, "config")
 		if configNode == nil {
 			continue
@@ -616,7 +722,6 @@ func canonicalizeImportedConfigKeys(root *yaml.Node, reg map[string]Module) erro
 		if _, err := canonicalizeImportedMappingKeys(configNode, "modules."+module+".config", canonicalConfigName); err != nil {
 			return err
 		}
-		mod, known := reg[module]
 		if !known {
 			continue
 		}
@@ -624,16 +729,25 @@ func canonicalizeImportedConfigKeys(root *yaml.Node, reg map[string]Module) erro
 			parameter := configNode.Content[j].Value
 			sourcePath := "modules." + module + ".config." + parameter
 			runtimeKey := moduleParamEnvKey(module, mod.EnvPrefix, mod.Exports, parameter)
-			if previous, duplicate := secretKeys[runtimeKey]; duplicate {
-				return fmt.Errorf("%s and %s both resolve to runtime key %s after canonicalization", previous, sourcePath, runtimeKey)
+			if err := registerRuntimeKey(runtimeKey, sourcePath); err != nil {
+				return err
+			}
+			if identityParameter, supported := moduleIdentityLoginParameter(module, reg); supported && parameter == identityParameter {
+				if identity == nil {
+					identity = ensureMappingValue(moduleNode, "identity")
+				}
+				keyNode, valueNode := configNode.Content[j], configNode.Content[j+1]
+				keyNode.Tag = "!!str"
+				keyNode.Value = "login_protocol"
+				identity.Content = append(identity.Content, keyNode, valueNode)
+				identityLogin = valueNode
+				configNode.Content = append(configNode.Content[:j], configNode.Content[j+2:]...)
+				continue
 			}
 			key, bare := mod.bareEnvParameter(parameter)
 			if !bare {
 				j += 2
 				continue
-			}
-			if previous, duplicate := envKeys[key]; duplicate {
-				return fmt.Errorf("%s and %s both resolve to env.%s after canonicalization", previous, sourcePath, key)
 			}
 			if env == nil {
 				env = ensureMappingValue(root, "env")
@@ -723,14 +837,18 @@ func moduleHasLocalAccount(mod Module, id string) bool {
 }
 
 func importConfigIntoWorkspace(workspace, source string, reg map[string]Module) (configImportResult, error) {
-	result, err := normalizeImportedConfig(source, reg)
-	if err != nil {
-		return result, err
-	}
 	base := stateDir(workspace)
 	store, err := loadSecretStore(base)
 	if err != nil {
+		return configImportResult{}, err
+	}
+	result, err := normalizeImportedConfigWithTaint(source, reg, store.values)
+	if err != nil {
 		return result, err
+	}
+	lock, err := loadModuleLockFile(projectLockPath(workspaceConfigPath(workspace)))
+	if err != nil {
+		return result, fmt.Errorf("module lock: %w", err)
 	}
 	validationSecrets := make([]importedConfigSecret, 0, len(store.values)+len(result.Secrets))
 	for key, value := range store.lifecycleManagedValues() {
@@ -740,7 +858,7 @@ func importConfigIntoWorkspace(workspace, source string, reg map[string]Module) 
 	// input. The replacement guard below remains authoritative when an existing
 	// lifecycle value differs, so validation does not grant rotation by import.
 	validationSecrets = append(validationSecrets, result.Secrets...)
-	if err := validateNormalizedImportedConfig(result.Normalized, reg, validationSecrets...); err != nil {
+	if err := validateNormalizedImportedConfigWithLockAndTaint(result.Normalized, reg, lock, store.values, validationSecrets...); err != nil {
 		return result, err
 	}
 	if err := os.MkdirAll(base, 0700); err != nil {
@@ -781,6 +899,19 @@ func validateConfigImportSource(source string, reg map[string]Module) error {
 }
 
 func validateNormalizedImportedConfig(normalized []byte, reg map[string]Module, extractedSecrets ...importedConfigSecret) error {
+	return validateNormalizedImportedConfigWithLock(normalized, reg, nil, extractedSecrets...)
+}
+
+func validateNormalizedImportedConfigWithLock(normalized []byte, reg map[string]Module, lock *moduleLock, extractedSecrets ...importedConfigSecret) error {
+	return validateNormalizedImportedConfigWithLockAndTaint(normalized, reg, lock, nil, extractedSecrets...)
+}
+
+// validateNormalizedImportedConfigWithLockAndTaint keeps two intentionally
+// separate Secret Store views. Only lifecycle-managed extracted values enter
+// the effective input map and may satisfy input_required. privateTaint contains
+// every pre-existing store record solely so equal-value config aliases inherit
+// source confidentiality while their schema is checked.
+func validateNormalizedImportedConfigWithLockAndTaint(normalized []byte, reg map[string]Module, lock *moduleLock, privateTaint map[string]string, extractedSecrets ...importedConfigSecret) error {
 	validation, err := os.CreateTemp("", "anas-config-import-validation-*.yml")
 	if err != nil {
 		return err
@@ -802,14 +933,26 @@ func validateNormalizedImportedConfig(normalized []byte, reg map[string]Module, 
 	if err != nil {
 		return fmt.Errorf("normalized config is invalid: %w", err)
 	}
-	if err := validateConfiguredParameters(loaded, reg); err != nil {
+	if err := validateConfiguredParameterDeclarations(loaded, reg); err != nil {
 		return fmt.Errorf("normalized config is invalid: %w", err)
 	}
-	values := loaded.BaseEnv()
+	if err := validateConfigRuntimeKeyCollisions(validationPath, reg); err != nil {
+		return fmt.Errorf("normalized config is invalid: %w", err)
+	}
+	values := configBaseEnv(loaded, reg)
+	sourceSensitive := map[string]bool{}
+	for key := range loaded.Secrets {
+		sourceSensitive[config.EnvKey(key)] = true
+	}
 	// credential_rotate inputs were intentionally removed from normalized YAML.
 	// Restore only an in-memory validation view so input_required and constraints
 	// see the same value that will be committed to the lifecycle Secret Store.
+	allExtractedValues := make(map[string]string, len(extractedSecrets))
 	for _, secret := range extractedSecrets {
+		allExtractedValues[secret.Key] = secret.Value
+		if secret.Generated {
+			continue
+		}
 		if strings.TrimSpace(secret.Value) != "" {
 			key := config.EnvKey(secret.Key)
 			module, parameter, err := policyOwnerForEnv(key, reg)
@@ -821,19 +964,15 @@ func validateNormalizedImportedConfig(normalized []byte, reg map[string]Module, 
 				return fmt.Errorf("normalized config is invalid: %w", err)
 			}
 			values[key] = normalized
+			sourceSensitive[key] = true
 		}
 	}
-	if err := normalizeConfiguredParameterEnv(values, reg); err != nil {
+	markSensitiveValueAliases(values, sourceSensitive)
+	markSensitiveValueAliasesFromSources(values, sourceSensitive, privateTaint, allExtractedValues)
+	if err := normalizeConfiguredParameterEnvWithSensitive(values, reg, sourceSensitive); err != nil {
 		return fmt.Errorf("normalized config is invalid: %w", err)
 	}
-	order := make([]string, 0, len(loaded.Modules.Order))
-	for _, name := range loaded.Modules.Order {
-		selected := loaded.Modules.Values[name]
-		if selected.Enabled == nil || *selected.Enabled {
-			order = append(order, name)
-		}
-	}
-	if err := validateInputRequiredEnv(values, order, reg); err != nil {
+	if err := validateResolvedInputRequiredEnv(loaded, reg, values, lock, sourceSensitive); err != nil {
 		return fmt.Errorf("normalized config is invalid: %w", err)
 	}
 	return nil

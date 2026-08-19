@@ -66,6 +66,12 @@ func (a *app) resolveDynamicDNS() (string, error) {
 			return "", fmt.Errorf("dynamic_dns.provider %q is not a dynamic DNS implementation;\nset it to auto, %s",
 				requested, strings.Join(dynamicDNSPreference, " or "))
 		}
+		if _, available := a.reg[requested]; !available {
+			return "", fmt.Errorf("dynamic_dns.provider %q is not an available module", requested)
+		}
+		if !a.moduleEnabled(requested) {
+			return "", fmt.Errorf("dynamic_dns.provider %q is disabled", requested)
+		}
 		if !platform.Supports(requested) {
 			return "", fmt.Errorf("dynamic_dns.provider %q cannot update records at %s;\nuse %s, or choose a vendor %s supports: %s",
 				requested, platform.Name, strings.Join(supportingEngines(platform), " or "),
@@ -79,6 +85,12 @@ func (a *app) resolveDynamicDNS() (string, error) {
 	// existing deployment onto a different updater behind the user's back. The
 	// lock comparison still reports the change when it stops being valid.
 	if locked := a.lockedDynamicDNSProvider(); locked != "" && platform.Supports(locked) {
+		if _, available := a.reg[locked]; !available {
+			return "", fmt.Errorf("locked dynamic DNS provider %q is not an available module", locked)
+		}
+		if !a.moduleEnabled(locked) {
+			return "", fmt.Errorf("locked dynamic DNS provider %q is disabled", locked)
+		}
 		return locked, nil
 	}
 	// An implementation the user already asked to run is preferred over one
@@ -89,7 +101,7 @@ func (a *app) resolveDynamicDNS() (string, error) {
 		}
 	}
 	for _, name := range dynamicDNSPreference {
-		if platform.Supports(name) && a.moduleEnabled(name) {
+		if _, available := a.reg[name]; platform.Supports(name) && available && a.moduleEnabled(name) {
 			return name, nil
 		}
 	}

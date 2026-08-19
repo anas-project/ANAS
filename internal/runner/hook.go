@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/deployment"
@@ -236,10 +237,29 @@ func (a *app) freezeHookBinary(mod Module, dir string) error {
 	return os.RemoveAll(filepath.Join(dir, "hook"))
 }
 
-func applyHookEnv(env map[string]string, patch map[string]string) {
-	for k, v := range patch {
-		env[k] = v
+func invalidHookEnvKeys(patch map[string]string) []string {
+	keys := make([]string, 0, len(patch))
+	for key := range patch {
+		keys = append(keys, key)
 	}
+	sort.Strings(keys)
+	invalid := []string{}
+	for _, key := range keys {
+		if !envKeyPattern.MatchString(key) {
+			invalid = append(invalid, fmt.Sprintf("%q", key))
+		}
+	}
+	return invalid
+}
+
+func applyHookEnv(env map[string]string, patch map[string]string) error {
+	if invalid := invalidHookEnvKeys(patch); len(invalid) > 0 {
+		return fmt.Errorf("hook returned invalid env keys: %s", strings.Join(invalid, ", "))
+	}
+	for key, value := range patch {
+		env[key] = value
+	}
+	return nil
 }
 
 func applyHookFiles(dir string, files map[string]string) error {

@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -103,6 +104,68 @@ func TestConfigListPathsAreSettable(t *testing.T) {
 		if head, rest, _ := strings.Cut(target.Display, "."); head == "global" && !isGlobalParameter(rest) {
 			t.Errorf("listed path %q writes into global: but config.Global has no such field", entry.Path)
 		}
+	}
+}
+
+func TestLegacyBareEnvRequirementHasOnlyRawEnvSetAddress(t *testing.T) {
+	dir := writeModuleConfigManifest(t, "  required: [EXTERNAL_TOKEN]\n")
+	mod, err := loadModuleManifest(dir, "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := map[string]Module{"example": mod}
+
+	entries, err := collectConfigParameters(reg, map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Path == "example.external_token" {
+			t.Fatalf("inventory advertised ineffective Module path %q", entry.Path)
+		}
+		if entry.EnvKey == "EXTERNAL_TOKEN" {
+			t.Fatalf("requirement-only bare env entered the parameter inventory as %q", entry.Path)
+		}
+	}
+	if _, err := resolveConfigTarget("example.external_token", reg); err == nil {
+		t.Fatal("fabricated Module path was accepted by config set resolution")
+	}
+	target, err := resolveConfigTarget("env.EXTERNAL_TOKEN", reg)
+	if err != nil {
+		t.Fatalf("raw env compatibility address was rejected: %v", err)
+	}
+	if target.Display != "env.EXTERNAL_TOKEN" || strings.Join(target.YAMLPath, ".") != "env.EXTERNAL_TOKEN" {
+		t.Fatalf("raw env target = %+v", target)
+	}
+
+	workspace := t.TempDir()
+	if err := os.MkdirAll(stateDir(workspace), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := workspaceConfigPath(workspace)
+	if err := os.WriteFile(configPath, []byte(`modules:
+  example: {}
+global:
+  base_domain: nas.test
+  email: admin@nas.test
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeManagedConfigState(workspace, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := setManagedConfigScalar(workspace, configPath, target.YAMLPath, "provided", false, reg); err != nil {
+		t.Fatalf("setting canonical raw env address: %v", err)
+	}
+	loaded, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := loaded.BaseEnv()["EXTERNAL_TOKEN"]; got != "provided" {
+		t.Fatalf("stored runtime value = %q, want provided", got)
+	}
+	if err := requireKeys(loaded.BaseEnv(), mod.Required); err != nil {
+		t.Fatalf("canonical raw env set did not satisfy runtime requirement: %v", err)
 	}
 }
 

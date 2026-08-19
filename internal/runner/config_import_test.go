@@ -74,6 +74,38 @@ global:
 	}
 }
 
+func TestConfigImportCNSourceRespectsExplicitRawSpeedupOverride(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "external.yml")
+	body := "module_source: official-cn\nmodules:\n  traefik: {}\n" +
+		"global:\n  base_domain: nas.test\n  email: admin@nas.test\n" +
+		"env:\n  CHINESE_SPEEDUP: false\n"
+	if err := os.WriteFile(source, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reg := importTestRegistry(t)
+	result, err := normalizeImportedConfig(source, reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(result.Normalized), "chinese_speedup: true") {
+		t.Fatalf("CN default duplicated explicit raw override:\n%s", result.Normalized)
+	}
+	path := filepath.Join(t.TempDir(), "normalized.yml")
+	if err := os.WriteFile(path, result.Normalized, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := configBaseEnv(loaded, reg)["CHINESE_SPEEDUP"]; got != "false" {
+		t.Fatalf("explicit raw speedup override = %q, want false", got)
+	}
+	if err := validateConfigRuntimeKeyCollisions(path, reg); err != nil {
+		t.Fatalf("normalized override contains duplicate runtime addresses: %v", err)
+	}
+}
+
 func TestConfigImportUsesInstalledCNSourceWhenOmitted(t *testing.T) {
 	preference := filepath.Join(t.TempDir(), "source")
 	if err := os.WriteFile(preference, []byte("official-cn\n"), 0600); err != nil {
@@ -345,6 +377,27 @@ global:
 env:
   SHARE_DIR_NAME: two
 `,
+		"prefixed module and environment": `modules:
+  authentik:
+    config:
+      ldap_enabled: true
+env:
+  AUTHENTIK_LDAP_ENABLED: false
+`,
+		"global and environment": `modules:
+  traefik: {}
+global:
+  timezone: UTC
+env:
+  TZ: Asia/Singapore
+`,
+		"global and secret": `modules:
+  traefik: {}
+global:
+  timezone: UTC
+secrets:
+  TZ: Asia/Singapore
+`,
 	}
 	reg := importTestRegistry(t)
 	for name, body := range tests {
@@ -470,8 +523,38 @@ env:
 	if !strings.Contains(body, `ipv6: &enabled "true"`) {
 		t.Fatalf("global anchor was not canonicalized:\n%s", body)
 	}
-	if !strings.Contains(body, "ldap_enabled: *enabled") {
-		t.Fatalf("typed scalar alias was not preserved:\n%s", body)
+	if !strings.Contains(body, `ldap_enabled: "true"`) {
+		t.Fatalf("typed scalar alias was not expanded to its canonical value:\n%s", body)
+	}
+}
+
+func TestConfigImportCanonicalizesTypedAliasFromUndeclaredAnchor(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "external.yml")
+	if err := os.WriteFile(source, []byte(`global:
+  base_domain: nas.test
+  email: admin@nas.test
+env:
+  LEGACY_SWITCH: &enabled " TRUE "
+modules:
+  authentik:
+    config:
+      ldap_enabled: *enabled
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := normalizeImportedConfig(source, importTestRegistry(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(result.Normalized)
+	if !strings.Contains(body, `LEGACY_SWITCH: &enabled " TRUE "`) {
+		t.Fatalf("normalization unexpectedly rewrote unrelated anchor:\n%s", body)
+	}
+	if !strings.Contains(body, `ldap_enabled: "true"`) {
+		t.Fatalf("typed alias did not persist its canonical bool value:\n%s", body)
+	}
+	if err := validateNormalizedImportedConfig(result.Normalized, importTestRegistry(t)); err != nil {
+		t.Fatalf("canonical alias result is not loadable: %v\n%s", err, body)
 	}
 }
 

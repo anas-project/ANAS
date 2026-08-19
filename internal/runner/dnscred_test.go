@@ -30,6 +30,22 @@ func dnsCredApp(env map[string]string) *app {
 	}
 }
 
+func TestDNSProviderErrorsRedactSourceSensitiveValues(t *testing.T) {
+	for _, rejected := range []string{"TopSecretDNSProvider", "tencentcloud"} {
+		t.Run(rejected, func(t *testing.T) {
+			a := dnsCredApp(map[string]string{"LEGO_DNS_PROVIDER": rejected})
+			a.runnerSensitive = map[string]bool{"LEGO_DNS_PROVIDER": true}
+			err := a.materializeDNSCredentials()
+			if err == nil || !strings.Contains(err.Error(), "<redacted>") {
+				t.Fatalf("dns provider error = %v", err)
+			}
+			if strings.Contains(strings.ToLower(err.Error()), strings.ToLower(rejected)) {
+				t.Fatalf("dns provider error exposed source-sensitive value: %v", err)
+			}
+		})
+	}
+}
+
 // One credential written once drives both engines, because Tencent Cloud uses
 // the same API key for its ACME and its record APIs.
 func TestSharedCredentialReachesEveryEngine(t *testing.T) {
