@@ -78,6 +78,18 @@ declared rotation workflow. `config plan` revalidates the same private view
 against the current schema, while `config list` reports only that such a value
 is set; neither projects plaintext.
 
+The shared schema boundary is not limited to `config set`. Set,
+import/reimport, `config plan`, deployment lock/plan/materialize, and remote
+lock first build the same registry-aware runtime view, then validate address
+uniqueness, environment-key syntax, declarations, types, constraints, and
+caller input. A failure occurs before replacing managed configuration,
+integrity state, the Secret Store, or a lock; `--update-lock` cannot persist a
+lock for a configuration that schema validation subsequently rejects. Values
+from every Secret Store kind propagate source sensitivity to equal-value
+aliases in memory, so a later Module metadata drift cannot make old plaintext
+appear in errors or ordinary projections. Only `lifecycle_managed` records are
+merged into the effective input view.
+
 Without an installer preference, `module_source` defaults to `official`. The one-line installer
 records its choice in `${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`; a new workspace or an import
 whose external file omits the field first persists that choice into managed configuration. The `cn`
@@ -140,6 +152,14 @@ only when that resolver cannot supply the value.
 The `default_source` distribution is `static: 111`, `generated: 9`, `none: 8`,
 `runtime: 4`, `inherited: 4`, and `host: 3`. The 111 `has_default: true`
 entries are exactly the 111 `static` entries.
+
+The current 11 explicit single-field constraints cover timezone and
+language/locale formats, three IPv4 formats, the `1..65535` ranges for
+`eturnal.port`, `meshcentral.mps_port`, and `traefik.base_port`,
+`samba_dc.max_log_size >= 1`, and a non-whitespace requirement for
+`oauth2_proxy.allow_groups`. These declarations preserve already enforced
+runtime rules; unsupported numeric caps, provider-conditional rules, and
+cross-field relationships were not invented merely to populate the schema.
 
 | Owner | Count | Parameters |
 | --- | ---: | --- |

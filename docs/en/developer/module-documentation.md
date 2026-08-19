@@ -254,6 +254,15 @@ go run ./cmd/gen-module-docs --check
 npm run docs:build
 ```
 
+As of 2026-08-19, the built-in release gate fixes a baseline of 18 Modules,
+139 parameters, `unknown=0`, two `input_required` entries, 22 final
+must-resolve entries, and the exact 11 declared constraints. Tests also prove
+that generic set/import/plan/lock/apply paths and calculate/render Hooks use the
+same schema, that no Secret Store kind leaks or masquerades as caller input,
+and that Hook Secrets cannot be rewritten across Module ownership. Adding a
+Module should change only its manifest, inventory, and generated tables—not
+`anasd` or an HTTP handler.
+
 Behavior changes also run the relevant Module unit and integration/E2E tests. Commit Module sources and the allowed localization summaries, not per-Module VitePress mirrors.
 
 - [ ] Every `module.yml` directory has four bilingual documents and `localization.yml`.

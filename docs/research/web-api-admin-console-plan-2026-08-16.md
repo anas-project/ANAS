@@ -2,7 +2,41 @@
 
 日期：2026-08-16
 
-状态：**M0 部分实施（开发骨架），M0.5/M0.6 已实施**。仓库已完成首条只读切片：共享应用层、`anasd`、首批 `/api/v1` 端点及 OpenAPI 契约已经落地；内置配置参数也已补齐类型、输入/解析要求、默认来源和单字段约束投影及 release 校验。它们用于验证架构与契约，尚不是可安装的生产管理面。认证、前端、任务系统、配置 HTTP API、写操作以及安装/发布集成仍未实现。本文除明确标注的 M0/M0.5/M0.6 范围外仍描述目标形态与实施顺序，不是操作指南。
+状态（2026-08-19，基线提交 `3dea4cf`）：**M0 部分实施（只读开发骨架），M0.5/M0.6 已实施并完成边界加固**。仓库已完成共享应用层、`anasd`、首批 `/api/v1` 端点和 OpenAPI 契约；139 项内置配置参数也已补齐类型、输入/解析要求、默认来源和单字段约束，并让 set/import/plan/lock/apply、Hook 与 Secret Store 进入同一通用校验边界。它们用于验证架构与契约，尚不是可安装的生产管理面。认证、前端、任务系统、配置 HTTP API、写操作以及安装/发布集成仍未实现。本文除明确标注的 M0/M0.5/M0.6 范围外仍描述目标形态与实施顺序，不是操作指南。
+
+## 0. 当前落地快照（2026-08-19）
+
+| 范围 | 已完成 | 尚未完成 |
+| --- | --- | --- |
+| M0 只读骨架 | `internal/deployment`、`internal/application`、`internal/api/httpapi`、`cmd/anasd`、workspace registry、OpenAPI；health/system/status/deployment list/detail 共用类型化服务，不调用 CLI 子进程 | 认证、前端、SSE 任务、写操作、安装与 systemd 集成 |
+| M0.5 元数据 | 17 个 global + 122 个 Module 参数全部显式声明类型；`unknown=0`；生成器、四份 Module 参数表和 release gate 共用 inventory | M3 配置 HTTP schema/表单投影 |
+| M0.6 约束语义 | `input_required`、legacy `required`、`must_resolve` 三阶段语义；默认值存在性/来源；范围、长度、pattern、format；所有配置入口的统一规范化与校验 | 条件/跨字段规则继续由 resolver、plan 或 Hook 执行，不伪装成单字段 schema |
+
+当前只读 `anasd` 只接受 registry 中的 workspace ID，HTTP DTO 不返回 workspace、deployment
+或 Secret 的本机路径；daemon 启动和请求 Host 都限制为数值 loopback。生产目录
+`cmd/anasd`、`internal/api/httpapi`、`internal/application`、`internal/deployment` 与
+`internal/configschema` 不包含任何内置 Module 名称或 Module 分支。未来 M3 必须继续消费
+统一 schema，不能破坏这个边界。
+
+配置实现的当前精确基线：
+
+- 139 项参数的类型分布为 `string: 79`、`bool: 22`、`int: 24`、`enum: 14`；
+- `input_required`/CLI `required` 只有 `global.base_domain`、`global.email` 2 项，最终
+  `must_resolve` 共 22 项；有静态默认值或无条件来源的参数不是 caller-input required；
+- 11 项已声明且有运行证据的单字段约束包括 IANA timezone、language/locale、3 个 IPv4、
+  3 个 `1..65535` 端口、`samba_dc.max_log_size >= 1` 和非空白 group pattern；schema 本身还
+  支持 `min_length`/`max_length`；
+- `config set`、import/reimport、`config plan`、deployment lock/plan/materialize 和 remote lock
+  都使用同一声明、地址、类型和 constraints 校验；失败发生在持久化前并保持配置、摘要、
+  Secret Store 与 lock 原子不变；
+- 只有 Secret Store 的 `lifecycle_managed` 记录可以在私有视图中满足 caller input；所有
+  kind 都只作为等值来源的脱敏 taint，不能经错误、list 或 plan 投影明文；
+- calculate/render Hook 的 Env 与 Secret patch 先整包校验键、ownership、exports、碰撞和
+  schema 再应用；Hook 只能刷新本 Module 已拥有的 `generated/module-hook` Secret。
+
+该基线已经通过 `go test ./...`、关键包 `go test -race`、`go vet ./...`、参数 inventory/effect
+脚本、`gen-module-docs --check`、VitePress 构建与版本测试、Module revision 检查，以及
+Linux amd64/arm64 的静态 `anasd` 构建。后续里程碑不得把这些结果解释为 M1—M3 已完成。
 
 ## 1. 结论
 
@@ -555,19 +589,27 @@ OIDC 接入属于 P2，排在本地账号与 §5.2 分级之后。首版只做�
 
 ### M0：服务层与契约骨架（3—5 天）
 
-实施状态（2026-08-18）：**部分实施，开发骨架**。首条切片已完成共享应用层、独立 HTTP 适配器、OpenAPI 契约和只读 daemon 入口；认证、前端、任务与任何写操作不属于这一状态声明。完整 M0 验收仍以本节末尾的测试条件为准。
+实施状态（2026-08-19）：**部分实施，只读开发骨架**。首条切片已完成共享应用层、独立
+HTTP 适配器、OpenAPI 契约和只读 daemon 入口。服务按 registry workspace ID 构造
+workspace-bound application service，部署模型由低层只读包统一提供，HTTP 只做安全 DTO
+投影；它不解析 CLI JSON，也没有逐 Module 适配。认证、前端、任务与任何 HTTP 写操作不属于
+这一状态声明。完整 M0 验收仍以本节末尾的测试条件为准。
 
 - 建 `internal/application`、统一 `Error`、`ProgressEvent`、`WarningEvent`。
 - 先迁移 `version`、`status`、`deployments list`、`deployments inspect` 四个只读操作。
 - CLI 继续输出完全相同的 `anas.dev/cli/v1` 文档。
-- 新增 `api/openapi.yaml`、`cmd/anasd`、healthz 和 system 端点。
-- 建立 API handler、服务层和 CLI contract 的测试模板。
+- 新增 `api/openapi.yaml`、`cmd/anasd`，以及 health、system、workspace status、deployment
+  list/detail 五类 GET 路由；workspace 只由 registry ID 选择。
+- 建立 API handler、服务层和 CLI contract 的测试模板；真实临时 workspace 的端到端测试
+  证明 list/detail 读取同一状态且 DTO 不泄露绝对路径、配置派生摘要或 Secret。
+- daemon 仅监听数值 loopback，handler 同时拒绝非 loopback/域名 Host，避免 M0 无认证阶段
+  被 LAN 暴露或经 DNS rebinding 访问。
 
 验收：现有 Go 测试与 CLI contract 全绿；Web 能读到同一 workspace 的真实状态；**这四条路径不接触全局 `os.Stdout`/`os.Stderr`**（全仓 34 处引用的清理是后续里程碑的持续工作，M0 不承诺）。
 
 ### M0.5：配置元数据回填（3—4 天，可与 M1 并行）
 
-实施状态（2026-08-18）：**已实施**。见 §2.2.2。139 项公开参数（17 global + 122 module）
+实施状态（2026-08-19）：**已实施**。见 §2.2.2。139 项公开参数（17 global + 122 module）
 均有显式类型，`required` 采用保守语义；`globalSchema` 与 Module manifest 进入同一类型投影，
 生成器/release 校验覆盖新增参数。
 
@@ -576,7 +618,8 @@ OIDC 接入属于 P2，排在本地账号与 §5.2 分级之后。首版只做�
 
 ### M0.6：配置解析与约束语义（1—2 天，可与 M1 并行）
 
-实施状态（2026-08-18）：**已实施**。见 §2.2.2。`config list --json` 对 139 项参数统一投影
+实施状态（2026-08-19）：**已实施并完成入口/Secret/Hook 边界加固**。见 §0 与 §2.2.2。
+`config list --json` 对 139 项参数统一投影
 `required`/`input_required`、`must_resolve`、`has_default`、`default_source` 与单字段
 `constraints`；`required` 仅保留为兼容别名。输入必填、解析后必须存在、静态默认值、其他
 无条件来源和条件/跨字段规则不再混用同一个布尔值。
@@ -586,8 +629,10 @@ OIDC 接入属于 P2，排在本地账号与 §5.2 分级之后。首版只做�
 runtime 4、inherited 4、host 3。每项的兼容别名与默认来源完整，输入必填不得和默认值或其他
 无条件来源并存；must-resolve-only 与 source none 的组合用于条件 resolver，不得反推为输入
 必填；约束字段形状由 schema 测试覆盖，当前已声明的数值和 format 代表项通过
-真实 CLI 固定。M3 才提供配置 HTTP API；`anasd`、CLI 与 Web 届时投影同一应用层 schema，
-绝不按 Module 添加 handler。
+真实 CLI 固定。统一校验还覆盖 set/import/config plan、deployment lock/plan/materialize、
+remote lock 和 calculate/render Hook；Secret Store 全部 kind 参与来源脱敏，但只有
+`lifecycle_managed` 能满足 caller input。M3 才提供配置 HTTP API；`anasd`、CLI 与 Web 届时
+投影同一应用层 schema，绝不按 Module 添加 handler。
 
 ### M1：认证、前端壳与只读总览（5—7 天）
 

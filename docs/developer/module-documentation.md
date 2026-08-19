@@ -263,6 +263,12 @@ go run ./cmd/gen-module-docs --check
 npm run docs:build
 ```
 
+截至 2026-08-19，内置发布门已经固定 18 个 Module、139 个参数、`unknown=0`、2 个
+`input_required` 和 22 个最终 must-resolve 参数，并精确比对 11 项已声明 constraints。
+测试还必须证明通用 set/import/plan/lock/apply 路径与 calculate/render Hook 使用同一 schema，
+Secret Store 各 kind 不会泄露或冒充 caller input，Hook Secret 不能跨 Module 改写。新增 Module
+只应改变 manifest/inventory/生成表，不应要求修改 `anasd` 或 HTTP handler。
+
 涉及运行行为的变更还必须执行相应 Module 单测和集成/E2E。提交只包含 Module 源文档及允许提交的 localization 汇总，不提交逐 Module VitePress 镜像。
 
 验收清单：

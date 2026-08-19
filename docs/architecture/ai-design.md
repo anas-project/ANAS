@@ -369,6 +369,29 @@ module functionality is:
 - Create a host macvlan bridge and Docker macvlan network when an enabled module
   declares required host LAN access.
 
+### Implemented validation boundary (2026-08-19)
+
+The common manifest/config schema is now enforced at every supported desired-
+state boundary: config set, import/reimport, config plan, deployment lock/plan/
+materialize, remote lock resolution, and calculate/render Hook output. These
+paths share registry-aware runtime-key mapping, canonical-address collision
+checks, declaration/type/constraint normalization, and the three requirement
+stages. They do not maintain command- or Module-specific copies of the rules.
+
+Secret Store values have two distinct private roles. Only a non-empty
+`lifecycle_managed` record can satisfy caller input; values from every record
+kind taint equal-value aliases as sensitive so metadata drift cannot expose
+plaintext. Hook Env and Secret patches are validated atomically. A new Hook
+Secret is owned by the producing Module, cross-Module writes require the normal
+exports/consumes contract, and only the same owner may refresh an existing
+`generated/module-hook` record.
+
+The current `anasd` read-only slice follows the same generic boundary at the
+service level: workspace registry IDs select an application service, while
+HTTP handlers project safe DTOs. Production `anasd`, HTTP, application,
+deployment, and config-schema packages contain no built-in Module switch.
+Configuration HTTP endpoints remain an M3 task.
+
 ## Current Modules
 
 Use the [Module catalog](/reference/modules) for the maintained stable and

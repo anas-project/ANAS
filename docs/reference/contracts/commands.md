@@ -445,13 +445,16 @@ Secret Store 值只在私有校验视图中满足 `input_required` 并按当前 
 值。`config plan` 只输出变更路径、effect、sensitive 等元数据；来自 `secrets:` 的普通部署
 Secret 保留其所有者声明的风险策略，任何 Secret Store 明文都不会进入 plan 输出。
 
-`set` and `explain` reject a parameter no manifest declares, naming the closest
-declared one, and exit with the usage code. A raw `env.<KEY>` that maps to a
-declared parameter receives the same type validation and normalization; only a
-key that no schema declares remains the permissive compatibility escape hatch.
+所有 Secret Store kind 都是来源敏感 taint：若普通配置值与任一 store 明文相同，set/import/
+plan/lock/apply 的错误及 list/plan 投影仍按敏感值处理；只有 `lifecycle_managed` 会实际合入
+caller-input 视图。set、import/reimport、`config plan`、deployment lock/plan/materialize 和
+remote lock 使用同一套 registry-aware schema；失败不得先改变 config、完整性摘要、Secret
+Store 或 lock。
 
-```text
-```
+`set` 和 `explain` 会拒绝 manifest 未声明的参数，指出最接近的已声明项并使用 usage 退出码。
+映射到已声明参数的 raw `env.<KEY>` 接受相同的类型校验和规范化；只有 schema 完全不认识的
+合法环境键保留宽容兼容入口。旧 Module 若只在 legacy `required` 中声明裸环境键，该键仍只
+能通过 `env.<KEY>` 寻址，不会伪造成无效的 `<module>.<parameter>`。
 
 `set` 与 `explain` 共用同一个完整 `setting` 形状，包括 `type`、枚举时的
 `allowed_values`、`env_key`、输入/解析要求、默认来源和单字段 constraints。类型和元数据

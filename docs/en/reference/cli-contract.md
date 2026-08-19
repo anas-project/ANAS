@@ -121,6 +121,22 @@ metadata. Ordinary values supplied through `secrets:` retain their owner's
 declared effect and sensitivity, and no Secret Store plaintext is projected by
 either command.
 
+Every Secret Store kind is a source-sensitivity taint. If an ordinary config
+value equals any stored plaintext, set/import/plan/lock/apply diagnostics and
+list/plan projections still treat the alias as sensitive; only
+`lifecycle_managed` is actually merged into the caller-input view. Set,
+import/reimport, `config plan`, deployment lock/plan/materialize, and remote
+lock use the same registry-aware schema, and a failure must not first change
+configuration, integrity state, the Secret Store, or a lock.
+
+`set` and `explain` reject a parameter no manifest declares, name the closest
+declared parameter, and use the usage exit code. A raw `env.<KEY>` that maps to
+a declared parameter receives the same type validation and normalization; only
+a valid environment key unknown to every schema remains a permissive escape
+hatch. If a legacy Module names a bare environment key only in legacy
+`required`, it remains addressable solely as `env.<KEY>` and is not projected
+as a nonfunctional `<module>.<parameter>`.
+
 The M3 `anasd` configuration endpoints will consume this same typed application
 schema. They do not parse CLI JSON and do not maintain per-Module HTTP adapters;
 the CLI, HTTP API, and Web form model must stay projections of one schema. The

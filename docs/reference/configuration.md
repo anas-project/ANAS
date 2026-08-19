@@ -78,6 +78,14 @@ lifecycle Secret Store；因为其规范标识必须写入 plan/resolution lock�
 被拒绝并要求走对应轮换流程。`config plan` 按当前 schema 重新校验同一私有视图，`config
 list` 只显示这类值已设置；两者都不投影明文。
 
+统一 schema 边界不只用于 `config set`。当前 set、import/reimport、`config plan`、deployment
+lock/plan/materialize 和 remote lock 都先构造同一个 registry-aware runtime view，再执行地址
+唯一性、环境键语法、声明、类型、constraints 和 caller-input 校验。失败发生在受管文件、
+完整性摘要、Secret Store 或 lock 替换之前；`--update-lock` 也不能先写入一个随后会被 schema
+拒绝的 lock。所有 Secret Store kind 的值都只在内存中为等值 alias 传播敏感来源，因此即使
+Module 升级时遗漏了 `sensitive` 标记，错误和普通投影仍不会回显旧明文；只有
+`lifecycle_managed` 被合入有效输入视图。
+
 未通过安装器选择源时，`module_source` 省略值为 `official`。一行安装脚本会把选择保存到
 `${XDG_CONFIG_HOME:-$HOME/.config}/anas/source`；新建 workspace 或导入未声明该字段的外部
 配置时会先把此选择固化到受管配置。`cn` 会在托管配置中规范化为 `official-cn`；选择
@@ -131,6 +139,12 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 `must_resolve: true`、`default_source: none`；只有 resolver 未能注入时才需要 Module 侧输入。
 `default_source` 分布为 `static: 111`、`generated: 9`、`none: 8`、`runtime: 4`、`inherited: 4`、
 `host: 3`；`has_default: true` 与这 111 个 `static` 项严格对应。
+
+当前 11 项显式单字段约束是：timezone、language/locale format，3 个 IPv4 format，
+`eturnal.port`、`meshcentral.mps_port`、`traefik.base_port` 的 `1..65535`，
+`samba_dc.max_log_size >= 1`，以及 `oauth2_proxy.allow_groups` 至少包含一个非空白字符。
+这些都是已有运行约束的声明化；没有证据的数字上限、条件 provider 规则和跨字段关系没有被
+擅自收紧。
 
 | 所有者 | 数量 | 参数 |
 | --- | ---: | --- |
