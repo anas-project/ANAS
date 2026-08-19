@@ -227,13 +227,46 @@ samba-tool group add 'ROLE_DEPT_ANAS_IT' \
 普通用户至少维护：
 
 - `sAMAccountName`：兼容登录名，必须唯一；
-- `userPrincipalName`：建议为 `<登录名>@<AD域名>`；
+- `userPrincipalName`：必须为 `<sAMAccountName>@<AD DNS realm>`；
 - `displayName`：人员显示名称；
-- `mail`：用于支持邮箱登录的集成应用；
+- `mail`：用户真实、唯一且可投递的主邮箱；没有邮箱时保持为空；
 - `description`：部门、用途或工单号，禁止记录密码；
 - 负责人和到期日：外包、访客、临时账号必须填写。
 
 `sAMAccountName`、`userPrincipalName` 和 `mail` 都可能被当前应用作为登录属性，因此三者必须保持唯一，避免账号误匹配。
+
+### 7.3 UPN 格式
+
+普通用户、管理账号和人工使用的服务账号必须显式设置 UPN，规范形式为：
+
+```text
+<sAMAccountName>@<AD DNS realm>
+```
+
+其中本地部分必须与同一对象的 `sAMAccountName` 完全对应；后缀必须是该 AD 林已接受的
+UPN suffix，默认使用当前 AD DNS realm 的小写形式。例如 AD realm 为
+`LNNJ.COM.CN` 时，`sAMAccountName=wanghailong` 对应
+`userPrincipalName=wanghailong@lnnj.com.cn`。
+
+以下值不符合规范：
+
+- `wangdanyi`：缺少 `@` 和 UPN suffix；
+- `wangdanyi@example.com`：若 `example.com` 不是目录接受的 UPN suffix；
+- `another-name@lnnj.com.cn`：本地部分与 `sAMAccountName=wangdanyi` 不一致。
+
+UPN 不是邮箱字段。即使组织当前让 UPN 与 `mail` 取相同字符串，也必须分别维护
+`userPrincipalName` 和 `mail`；邮件域变更不应自动改变 UPN。UPN 也不是应用的永久身份
+主键。ANAS 应用使用永久身份锚点保持对象身份，OIDC `preferred_username` 使用
+`sAMAccountName`，邮件 claim 使用 `mail`。
+
+`mail` 不得由 UPN 或基础域名自动拼出。未安装邮件 Module、尚未创建邮箱，或地址不能
+实际收信时，`mail` 保持为空。邮件 Module 成功创建用户邮箱或受监控别名后，才把实际
+地址写入目录；改址、迁移和停用邮箱时也必须按邮件生命周期同步更新该属性。应用与 IAM
+不得为了满足必填字段而伪造 `<sAMAccountName>@<域名>`。确实要求 email claim 的应用，
+应在准入或同步阶段明确拒绝缺少 `mail` 的账号并给出可操作错误，而不是发布虚假地址。
+
+内置系统对象或由 AD/Samba 自身管理的特殊主体不适用上述人工账号命名规则。批量审计和
+修复应限定在 ANAS 管理的业务 OU，不能据此重写 `krbtgt`、计算机、信任或系统账号。
 
 ## 8. 权限分配矩阵
 
@@ -279,7 +312,7 @@ samba-tool group add 'ROLE_DEPT_ANAS_IT' \
 ### 10.1 入职或新增成员
 
 1. 根据实名和命名规则创建普通账号到 `OU=People`。
-2. 填写 UPN、显示名、邮箱、部门/用途和负责人。
+2. 按 `<sAMAccountName>@<AD DNS realm>` 填写 UPN，并填写显示名、邮箱、部门/用途和负责人。
 3. 设置临时初始密码，并要求首次登录后修改。
 4. 仅加入必要的 `ROLE_*`、`APP_*` 和 `FS Share RW`。
 5. 如需管理权限，另建 `adm_*` 或 `fsadm_*` 专用账号。

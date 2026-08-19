@@ -218,7 +218,7 @@ docker exec anas_samba_dc samba-tool user rename daneel.wang \
   --upn='daneel.wang@nas.example.com'
 ```
 
-> Replace `example.com` and `nas.example.com` with the real email domain and AD realm before running the commands.
+> Replace `example.com` and `nas.example.com` with the real email domain and AD DNS realm before running the commands. Set every UPN explicitly as `<sAMAccountName>@<AD DNS realm>`; a short username alone is not a valid UPN under this convention.
 
 The example deliberately separates the person's name, login name, and display name:
 
@@ -229,8 +229,8 @@ The example deliberately separates the person's name, login name, and display na
 | Given name | Daneel | `givenName`, set by `--given-name='Daneel'` | Stores the person's given name independently |
 | Surname | Wang | `sn`, set by `--surname='Wang'` | Stores the family name independently; many LDAP clients expect `sn` |
 | Display name | Daneel Wang | `displayName`, set by `--display-name` | Human-friendly UI label that does not change the login name |
-| Email | `daneel.wang@example.com` | `mail` | Used for notifications or email-based sign-in; replace the sample domain |
-| UPN | `daneel.wang@nas.example.com` | `userPrincipalName` | Modern AD sign-in form; the suffix normally follows the real AD realm |
+| Email | `daneel.wang@example.com` | `mail` | A real, unique, deliverable primary mailbox; leave it unset when no mailbox exists |
+| UPN | `daneel.wang@nas.example.com` | `userPrincipalName` | Modern AD sign-in form; the local part must equal `sAMAccountName` and the suffix uses an accepted AD DNS realm |
 
 Perform the addition in this order:
 
@@ -262,7 +262,7 @@ User-creation parameters:
 | `--company='Example'` | company | `company` | Company or organization name |
 | `--job-title` | job title | `title` | Job title; changing a job should not require changing the account name |
 | `--description='...'` | description | `description` | Administrative purpose or owner. Never store a password here |
-| `--mail-address='...'` | mail address | `mail` | Email address; it must be unique if an application accepts email sign-in |
+| `--mail-address='...'` | mail address | `mail` | A real deliverable address; it must be unique if an application accepts email sign-in; omit it when no mailbox exists |
 | `--telephone-number` | telephone number | `telephoneNumber` | Office telephone number |
 | `--physical-delivery-office` | office location | `physicalDeliveryOfficeName` | Physical office location |
 | `--profile-path` | roaming profile path | `profilePath` | Windows roaming-profile path; normally unused by ANAS |
@@ -279,6 +279,7 @@ Profile attributes such as `department` and `surname` do not grant access. Maint
 Additional points:
 
 - `sAMAccountName` must be unique. Use a stable naming convention based on letters, digits, dots, hyphens, or underscores.
+- Set the UPN explicitly to `<sAMAccountName>@<AD DNS realm>`. For realm `LNNJ.COM.CN`, use `daneel.wang@lnnj.com.cn`; `daneel.wang` alone is not a conforming UPN.
 - `--userou='OU=People'` does not need the `DC=...` suffix; Samba completes the current domain DN.
 - `-it` permits an interactive password prompt without putting the password in shell history or process arguments.
 - The password must satisfy `samba-tool domain passwordsettings show`.
@@ -321,7 +322,52 @@ docker exec anas_samba_dc samba-tool user rename daneel.wang \
 | `--force-new-cn` | force a new Common Name | Explicitly changes the CN/RDN and therefore the object DN |
 | `--reset-cn` | reset Common Name | Recomputes CN from given name, initials, and surname |
 
-Replace `nas.example.com` with the real AD realm. `user rename` changes the existing object rather than deleting and recreating it, so the SID remains stable. Nevertheless, inspect LDAP clients before changing a login name or DN because some clients incorrectly treat the old DN as a permanent key. ANAS identity anchors preserve identity only for integrations that consume them.
+Replace `nas.example.com` with the real AD DNS realm. The UPN local part must equal
+`sAMAccountName`, and the suffix must be accepted by the directory. `user rename` changes the
+existing object rather than deleting and recreating it, so the SID remains stable. Nevertheless,
+inspect LDAP clients before changing a login name or DN because some clients incorrectly treat the
+old DN as a permanent key. ANAS identity anchors preserve identity only for integrations that
+consume them.
+
+#### Audit and repair UPNs
+
+Limit the read-only audit to the business-user OU and list both login attributes:
+
+```bash
+docker exec anas_samba_dc ldbsearch \
+  -H /var/lib/samba/private/sam.ldb \
+  -b 'OU=People,DC=nas,DC=example,DC=com' \
+  '(objectClass=user)' sAMAccountName userPrincipalName
+```
+
+For every managed user, verify that `userPrincipalName` is exactly
+`<sAMAccountName>@<AD DNS realm>`. Missing values, values without `@`, unaccepted suffixes, and a
+local part that differs from `sAMAccountName` are all invalid. For example, with
+`sAMAccountName=wangdanyi` and realm `LNNJ.COM.CN`, the correct value is
+`wangdanyi@lnnj.com.cn`; `wangdanyi` alone is invalid.
+
+After checking application dependencies, repair the existing object by its short login name; do
+not delete and recreate it:
+
+```bash
+docker exec anas_samba_dc samba-tool user rename wangdanyi \
+  --upn='wangdanyi@lnnj.com.cn'
+
+docker exec anas_samba_dc samba-tool user show wangdanyi \
+  --attributes=sAMAccountName,userPrincipalName,mail,displayName,distinguishedName
+```
+
+Audits and bulk repairs must exclude built-in system accounts. They must not assume that UPN and
+`mail` are equal: UPN, email, and `sAMAccountName` are separate attributes. OIDC
+`preferred_username` continues to use `sAMAccountName`, so repairing a UPN must not change an
+application's internal user ID.
+
+Do not bulk-populate `mail` merely to make it resemble the UPN. Leave `mail` unset while no mail
+Module is installed or no corresponding mailbox actually exists. After the mail Module provisions
+a deliverable mailbox or monitored alias, write that real address with `--mail-address`; update the
+directory again when the mailbox is renamed, migrated, or disabled. IAM must not fabricate an
+email claim from the UPN. Applications that require email must reject accounts without `mail` with
+an actionable error.
 
 ### 3.3 Password, lock, enablement, and expiry
 

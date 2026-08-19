@@ -220,7 +220,8 @@ docker exec anas_samba_dc samba-tool user rename wanghailong \
   --upn='wanghailong@nas.example.com'
 ```
 
-> 执行前把 `example.com` 和 `nas.example.com` 替换为实际邮箱域和 AD realm。
+> 执行前把 `example.com` 和 `nas.example.com` 替换为实际邮箱域和 AD DNS realm。UPN
+> 必须显式写成 `<sAMAccountName>@<AD DNS realm>`，不能只写短用户名。
 
 本例把“人的姓名”“登录名”和“显示名称”明确分开：
 
@@ -231,8 +232,8 @@ docker exec anas_samba_dc samba-tool user rename wanghailong \
 | 姓 | 王 | `sn`，由 `--surname='王'` 设置 | AD/LDAP 将 family name 单独保存 |
 | 名 | 海龙 | `givenName`，由 `--given-name='海龙'` 设置 | AD/LDAP 将 given name 单独保存 |
 | 显示名 | 王海龙 | `displayName`，由 `--display-name` 设置 | 用户界面按中文姓名顺序展示，不影响登录名 |
-| 邮箱 | `wanghailong@example.com` | `mail` | 供通知或允许邮箱登录的应用使用；必须按实际域替换 |
-| UPN | `wanghailong@nas.example.com` | `userPrincipalName` | 现代 AD 登录格式；后缀通常采用实际 AD realm |
+| 邮箱 | `wanghailong@example.com` | `mail` | 真实、唯一且可投递的主邮箱；没有实际邮箱时不要设置 |
+| UPN | `wanghailong@nas.example.com` | `userPrincipalName` | 现代 AD 登录格式；本地部分必须等于 `sAMAccountName`，后缀采用目录接受的 AD DNS realm |
 
 添加过程按以下顺序执行：
 
@@ -264,7 +265,7 @@ docker exec anas_samba_dc samba-tool user getgroups wanghailong
 | `--company='Example'` | company | `company` | 公司或组织名称 |
 | `--job-title` | job title | `title` | 职位名称；职位变化不应导致账号名变化 |
 | `--description='...'` | description | `description` | 管理备注。可记录用途或负责人，禁止记录密码 |
-| `--mail-address='...'` | mail address | `mail` | 邮箱地址；若允许邮箱登录，必须保证唯一 |
+| `--mail-address='...'` | mail address | `mail` | 真实可投递的邮箱地址；若允许邮箱登录，必须保证唯一；没有实际邮箱时省略 |
 | `--telephone-number` | telephone number | `telephoneNumber` | 办公电话 |
 | `--physical-delivery-office` | office location | `physicalDeliveryOfficeName` | 办公地点 |
 | `--profile-path` | roaming profile path | `profilePath` | Windows 漫游配置文件路径；ANAS 默认不需要 |
@@ -281,6 +282,7 @@ docker exec anas_samba_dc samba-tool user getgroups wanghailong
 注意事项：
 
 - `wanghailong` 是 `sAMAccountName`，必须在域内唯一。建议只使用稳定的英文、数字、点、连字符或下划线命名。
+- UPN 必须显式设置为 `<sAMAccountName>@<AD DNS realm>`。例如 realm 为 `LNNJ.COM.CN` 时，应使用 `wanghailong@lnnj.com.cn`；`wanghailong` 不是合规 UPN。
 - `--userou='OU=People'` 不需要附加域 DN；Samba 会自动补全当前域的 `DC=...`。
 - 省略位置参数中的密码后，`-it` 让命令在终端中安全提示输入密码，避免密码进入 shell 历史和进程参数。
 - 密码必须满足 `samba-tool domain passwordsettings show` 显示的域策略。
@@ -327,7 +329,45 @@ docker exec anas_samba_dc samba-tool user rename wanghailong \
 
 `user rename` 可能同时修改显示属性、登录属性和 CN，但它不是删除重建：对象 SID 保持不变。仍应在修改登录名或 DN 前检查 LDAP 客户端是否错误地把旧 DN 当永久主键。
 
-将示例 UPN 后缀 `nas.example.com` 替换为实际 AD realm。修改 `sAMAccountName`、UPN 或邮箱可能影响登录名和第三方应用匹配，变更前应检查所有依赖方。ANAS 的永久身份锚点可让支持该锚点的应用保持同一身份，但这不能保证所有外部应用都能无感处理登录名变化。
+将示例 UPN 后缀 `nas.example.com` 替换为实际 AD DNS realm。UPN 的本地部分必须与
+`sAMAccountName` 相同，后缀必须是目录接受的 UPN suffix。修改 `sAMAccountName`、UPN
+或邮箱可能影响登录名和第三方应用匹配，变更前应检查所有依赖方。ANAS 的永久身份锚点可
+让支持该锚点的应用保持同一身份，但这不能保证所有外部应用都能无感处理登录名变化。
+
+#### 审计和修复 UPN
+
+先限定业务用户 OU，只读列出短登录名和 UPN：
+
+```bash
+docker exec anas_samba_dc ldbsearch \
+  -H /var/lib/samba/private/sam.ldb \
+  -b 'OU=People,DC=nas,DC=example,DC=com' \
+  '(objectClass=user)' sAMAccountName userPrincipalName
+```
+
+逐个核对 `userPrincipalName` 是否严格等于
+`<sAMAccountName>@<AD DNS realm>`。缺失、没有 `@`、后缀不被目录接受或本地部分不一致
+都应列为异常。例如 `sAMAccountName=wangdanyi`、realm 为 `LNNJ.COM.CN` 时，正确值为
+`wangdanyi@lnnj.com.cn`，只有 `wangdanyi` 是错误值。
+
+确认应用依赖后，用现有对象的短登录名修复，不要删除重建用户：
+
+```bash
+docker exec anas_samba_dc samba-tool user rename wangdanyi \
+  --upn='wangdanyi@lnnj.com.cn'
+
+docker exec anas_samba_dc samba-tool user show wangdanyi \
+  --attributes=sAMAccountName,userPrincipalName,mail,displayName,distinguishedName
+```
+
+审计和批量修复不得覆盖内置系统账号，也不得假定 UPN 与 `mail` 必须相等。UPN、邮箱和
+`sAMAccountName` 是独立属性；OIDC `preferred_username` 仍应取 `sAMAccountName`，修复
+UPN 不应改变应用内部用户 ID。
+
+不要为了让 UPN 和邮箱看起来一致而批量补写 `mail`。未安装邮件 Module 或对应邮箱尚未
+实际创建时，`mail` 应保持为空。邮件 Module 创建可投递邮箱或受监控别名后，再用
+`--mail-address` 回写实际地址；邮箱改址、迁移或停用时同步更新目录。IAM 不得用 UPN
+臆造 email claim；要求邮箱的应用应明确拒绝缺少 `mail` 的账号。
 
 ### 3.3 密码、锁定、启用和到期
 

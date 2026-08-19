@@ -12,8 +12,14 @@
    替代跨系统身份键。
 3. 用户名来自 `sAMAccountName`，显示名来自 `displayName`，邮件来自 `mail`。账号改名
    不得创建新应用身份。
-4. 停用、锁定或不满足目录认证条件的账号必须在授权策略之前被拒绝。
-5. 嵌套组属于正式契约。`用户 -> ROLE_x -> APP_y` 与直接加入 `APP_y` 等价；递归实现
+4. `userPrincipalName` 必须遵循 `<sAMAccountName>@<AD DNS realm>`，但它是目录登录属性，
+   不是应用用户名、邮件地址或永久身份键。Provider 不得因为 UPN 与 `mail` 当前恰好相同
+   而合并两个字段，也不得把 UPN 作为 OIDC `preferred_username` 的默认来源。
+5. `mail` 只表示已存在、唯一且可投递的邮箱。没有邮件 Module 或邮箱尚未创建时允许为空；
+   邮件 Module 在邮箱创建、改址、迁移和停用后负责同步目录属性。Provider 不得从 UPN、
+   `sAMAccountName` 或基础域名臆造 email claim。
+6. 停用、锁定或不满足目录认证条件的账号必须在授权策略之前被拒绝。
+7. 嵌套组属于正式契约。`用户 -> ROLE_x -> APP_y` 与直接加入 `APP_y` 等价；递归实现
    必须能处理循环，不能只检查用户的直接 `memberOf`。
 
 ## 2. 协议和应用注册能力
@@ -80,6 +86,8 @@ Adapter 必须幂等：重复执行会收敛到声明状态；修改 redirect UR
 - 应用 ID、client ID、目录条目 ID、分类和 endpoint 不发生冲突；
 - 所有启用应用的允许组精确为其声明值，`Admins` 不得重复追加；
 - `preferred_username`、`displayName`、mail、anchor 和 groups 的来源、必需性及类型正确；
+- `preferred_username=sAMAccountName`、`email=mail`；UPN 只在应用明确声明需要目录 UPN 时
+  作为单独 claim 发布，不得覆盖前两者或成为应用永久主键；
 - 私钥和 client secret 只进入所属 Provider/应用的 Secret 与 render 环境；
 - Provider Module 的生命周期不是 `deprecated`；若为 `developing`，计划输出必须明确提示
   其尚未达到发布质量。
