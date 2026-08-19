@@ -1,14 +1,34 @@
 package runner
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/configschema"
 )
+
+func pinConfigTestModules(t *testing.T, configPath string, reg map[string]Module, names ...string) {
+	t.Helper()
+	lock := &moduleLock{APIVersion: "anas.module-lock/v1", Modules: map[string]moduleLockRecord{}}
+	for _, name := range names {
+		mod := reg[name]
+		digest, err := moduleBundleDigest(mod.SourceDir)
+		if err != nil {
+			t.Fatalf("digest %s: %v", name, err)
+		}
+		lock.Modules[name] = moduleLockRecord{Version: mod.Version, Revision: mod.Revision, Digest: digest}
+	}
+	if err := saveModuleLockFile(projectLockPath(configPath), lock); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestResolveGlobalAndServiceConfigTargets(t *testing.T) {
 	reg, err := loadRegistry(filepath.Join("..", ".."))
@@ -35,6 +55,45 @@ func TestResolveGlobalAndServiceConfigTargets(t *testing.T) {
 	}
 	if policyForTarget(password, reg).Effect != "credential_rotate" {
 		t.Fatal("LDAP bind password must require credential rotation")
+	}
+}
+
+func TestConfigPlanClassifiesLockAndSecretStoreFailures(t *testing.T) {
+	workspace := newWorkspace(t)
+	lockPath := projectLockPath(workspaceConfigPath(workspace))
+	if err := os.WriteFile(lockPath, []byte("not: [valid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertCode := func(label, want string) {
+		t.Helper()
+		stdout, _, exit := capture(t, "config", "plan", "-w", workspace, "--root", repoRoot(t), "--json")
+		if exit != exitPrecondition {
+			t.Fatalf("%s exit=%d stdout=%s, want %d", label, exit, stdout, exitPrecondition)
+		}
+		doc := requireFailureDocument(t, label, stdout)
+		failure, _ := doc["error"].(map[string]any)
+		if failure["code"] != want {
+			t.Fatalf("%s code=%v, want %s; stdout=%s", label, failure["code"], want, stdout)
+		}
+	}
+	assertCode("config plan invalid lock", "lock_invalid")
+
+	if err := saveModuleLockFile(lockPath, &moduleLock{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir(workspace), "secrets.yml"), []byte("not: [valid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertCode("config plan unreadable secrets", "secrets_unreadable")
+	stdout, _, exit := capture(t, "config", "set", "global.timezone", "UTC",
+		"-w", workspace, "--root", repoRoot(t), "--defer", "--json")
+	if exit != exitPrecondition {
+		t.Fatalf("config set unreadable secrets exit=%d stdout=%s, want %d", exit, stdout, exitPrecondition)
+	}
+	doc := requireFailureDocument(t, "config set unreadable secrets", stdout)
+	failure, _ := doc["error"].(map[string]any)
+	if failure["code"] != "secrets_unreadable" {
+		t.Fatalf("config set unreadable secrets code=%v, want secrets_unreadable; stdout=%s", failure["code"], stdout)
 	}
 }
 
@@ -417,7 +476,7 @@ func TestManagedConfigSetRejectsUnrelatedSchemaDriftAtomically(t *testing.T) {
 	}
 }
 
-func TestManagedConfigSetSchemaCheckDoesNotRequireResolutionInputsOrLock(t *testing.T) {
+func TestManagedConfigSetValidationDoesNotRequireCallerInputsOrLock(t *testing.T) {
 	reg := map[string]Module{
 		"demo": {
 			Name: "demo", EnvPrefix: "DEMO",
@@ -435,9 +494,10 @@ func TestManagedConfigSetSchemaCheckDoesNotRequireResolutionInputsOrLock(t *test
 		t.Fatal(err)
 	}
 	configPath := workspaceConfigPath(workspace)
-	// Both the Module token and global email are input_required. Config set
-	// still has to stage an unrelated valid value for --defer; resolution and
-	// its lock belong to the later plan/apply boundary.
+	// Both the Module token and global email are input_required. Config set can
+	// still stage an unrelated valid value for --defer: it resolves enough of
+	// the topology to run Module validation, but caller-input enforcement and a
+	// persisted lock belong to the later plan/apply boundary.
 	if err := os.WriteFile(configPath, []byte("modules:\n  demo:\n    config:\n      target: before\nglobal:\n  base_domain: nas.test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -457,6 +517,223 @@ func TestManagedConfigSetSchemaCheckDoesNotRequireResolutionInputsOrLock(t *test
 	}
 	if _, err := os.Stat(projectLockPath(configPath)); !os.IsNotExist(err) {
 		t.Fatalf("schema-only config set created or required a resolution lock: %v", err)
+	}
+}
+
+func TestManagedConfigSetValidatesTransitiveHooksInDependencyOrder(t *testing.T) {
+	orderFile := filepath.Join(t.TempDir(), "order")
+	reg := map[string]Module{}
+	for _, name := range []string{"provider", "consumer"} {
+		reg[name] = Module{
+			Name: name, EnvPrefix: strings.ToUpper(name), SourceDir: t.TempDir(),
+			Hook: HookConfig{
+				Command: moduleValidationHookHelperCommand("append-order", orderFile),
+				Phases:  []string{"validate"},
+			},
+		}
+	}
+	consumer := reg["consumer"]
+	consumer.Parameters = []string{"target"}
+	consumer.Types = map[string]ParamType{"target": {Kind: "string"}}
+	consumer.Requires = []Dependency{{Name: "provider"}}
+	reg["consumer"] = consumer
+
+	workspace := t.TempDir()
+	if err := os.MkdirAll(stateDir(workspace), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := workspaceConfigPath(workspace)
+	if err := os.WriteFile(configPath, []byte("modules:\n  consumer:\n    config:\n      target: before\nglobal:\n  base_domain: nas.test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeManagedConfigState(workspace, "test"); err != nil {
+		t.Fatal(err)
+	}
+	pinConfigTestModules(t, configPath, reg, "provider", "consumer")
+	if err := setManagedConfigScalar(workspace, configPath,
+		[]string{"modules", "consumer", "config", "target"}, "after", true, reg); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(orderFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Fields(string(body)), []string{"provider", "consumer"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("config set validation order = %v, want %v", got, want)
+	}
+}
+
+func TestManagedConfigSetCanStageModuleMissingFromExistingLockWithoutExecutingIt(t *testing.T) {
+	existingDir := t.TempDir()
+	newDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(existingDir, "runtime.txt"), []byte("existing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newDir, "runtime.txt"), []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := moduleBundleDigest(existingDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(t.TempDir(), "new-hook-ran")
+	reg := map[string]Module{
+		"existing": {Name: "existing", Version: "1.0.0", Revision: 1, EnvPrefix: "EXISTING", SourceDir: existingDir},
+		"new": {
+			Name: "new", Version: "1.0.0", Revision: 1, EnvPrefix: "NEW", SourceDir: newDir,
+			Parameters: []string{"target"}, Types: map[string]ParamType{"target": {Kind: "string"}},
+			Hook: HookConfig{
+				Command: moduleValidationHookHelperCommand("capture", sentinel),
+				Phases:  []string{"validate"},
+			},
+		},
+	}
+	workspace := t.TempDir()
+	if err := os.MkdirAll(stateDir(workspace), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := workspaceConfigPath(workspace)
+	if err := os.WriteFile(configPath, []byte("modules:\n  existing: {}\nglobal:\n  base_domain: nas.test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeManagedConfigState(workspace, "test"); err != nil {
+		t.Fatal(err)
+	}
+	lock := &moduleLock{
+		APIVersion: "anas.module-lock/v1",
+		Modules: map[string]moduleLockRecord{
+			"existing": {Version: "1.0.0", Revision: 1, Digest: digest},
+		},
+	}
+	if err := saveModuleLockFile(projectLockPath(configPath), lock); err != nil {
+		t.Fatal(err)
+	}
+	if err := setManagedConfigScalar(workspace, configPath,
+		[]string{"modules", "new", "config", "target"}, "staged", true, reg); err != nil {
+		t.Fatalf("stage module outside old lock: %v", err)
+	}
+	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+		t.Fatalf("unlocked new Module Hook executed during config staging: %v", err)
+	}
+	settings, err := config.Settings(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings["modules.new.config.target"] != "staged" {
+		t.Fatalf("new Module config was not staged: %#v", settings)
+	}
+}
+
+func TestManagedConfigSetValidatesModuleInvariantBeforeCommit(t *testing.T) {
+	reg := map[string]Module{
+		"demo": {
+			Name: "demo", EnvPrefix: "DEMO", SourceDir: t.TempDir(), Parameters: []string{"target"},
+			Types: map[string]ParamType{"target": {Kind: "string"}},
+			Hook: HookConfig{
+				Command: moduleValidationHookHelperCommand("reject-env", "DEMO_TARGET", "forbidden"),
+				Phases:  []string{"validate"},
+			},
+		},
+	}
+	workspace := t.TempDir()
+	if err := os.MkdirAll(stateDir(workspace), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := workspaceConfigPath(workspace)
+	if err := os.WriteFile(configPath, []byte("modules:\n  demo:\n    config:\n      target: allowed\nglobal:\n  base_domain: nas.test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeManagedConfigState(workspace, "test"); err != nil {
+		t.Fatal(err)
+	}
+	pinConfigTestModules(t, configPath, reg, "demo")
+	beforeConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeState, err := os.ReadFile(managedConfigStatePath(stateDir(workspace)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = setManagedConfigScalar(workspace, configPath,
+		[]string{"modules", "demo", "config", "target"}, "forbidden", true, reg)
+	if err == nil || !strings.Contains(err.Error(), "DEMO_TARGET is not allowed") {
+		t.Fatalf("config set validation error = %v", err)
+	}
+	afterConfig, _ := os.ReadFile(configPath)
+	afterState, _ := os.ReadFile(managedConfigStatePath(stateDir(workspace)))
+	if !bytes.Equal(afterConfig, beforeConfig) || !bytes.Equal(afterState, beforeState) {
+		t.Fatal("rejected module validation changed managed config or digest")
+	}
+}
+
+func TestConfigSetValidationFailureUsesConfigInvalidContract(t *testing.T) {
+	bundle := t.TempDir()
+	moduleRoot := filepath.Join(bundle, "modules")
+	moduleDir := filepath.Join(moduleRoot, "demo")
+	if err := os.MkdirAll(moduleDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	command, err := json.Marshal(moduleValidationHookHelperCommand("reject-env", "DEMO_TARGET", "forbidden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := fmt.Sprintf(`api_version: anas.module/v1
+kind: Module
+name: demo
+version: 1.0.0
+revision: 1
+status: release
+abi:
+  supports: [anas.module-hook/v1]
+runtime:
+  type: builtin
+config:
+  env_prefix: DEMO
+  types:
+    target: string
+logic:
+  hook:
+    command: %s
+    phases: [validate]
+`, command)
+	if err := os.WriteFile(filepath.Join(moduleDir, "module.yml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+	if err := os.MkdirAll(stateDir(workspace), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := workspaceConfigPath(workspace)
+	before := []byte("modules:\n  demo:\n    config:\n      target: allowed\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\n")
+	if err := os.WriteFile(configPath, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeManagedConfigState(workspace, "test"); err != nil {
+		t.Fatal(err)
+	}
+	reg, err := loadRegistryDir(moduleRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinConfigTestModules(t, configPath, reg, "demo")
+	stdout, _, exit := capture(t, "config", "set", "demo.target", "forbidden",
+		"-w", workspace, "--root", moduleRoot, "--defer", "--json")
+	if exit != exitPrecondition {
+		t.Fatalf("config set validate exit=%d stdout=%s, want %d", exit, stdout, exitPrecondition)
+	}
+	doc := requireSingleDocument(t, "config set validate", stdout)
+	errorDoc, ok := doc["error"].(map[string]any)
+	if !ok || errorDoc["code"] != "config_invalid" {
+		t.Fatalf("config set validate error=%v, want config_invalid; stdout=%s", doc["error"], stdout)
+	}
+	after, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("rejected config set changed managed config")
 	}
 }
 

@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: netbird
 version: 0.76.1
-revision: 4
+revision: 5
 app_version: 0.76.1
 abi:
   supports:
@@ -40,7 +40,7 @@ config:
     domain_prefix: string
     adminer_enabled: bool
     iam_protocol:
-      enum: [auto, oidc]
+      enum: [auto, oidc, saml]
   # Generic client registration and app-launcher metadata published to
   # whichever IAM the deployment selected.
   exports:

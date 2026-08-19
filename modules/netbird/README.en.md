@@ -11,7 +11,7 @@ Incomplete WireGuard overlay network module.
 | Item | Value |
 | --- | --- |
 | Module | `netbird` |
-| Version / revision | `0.76.1-r4` |
+| Version / revision | `0.76.1-r5` |
 | Status | `developing` |
 | Category | `network` |
 | Runtime | `compose` |
@@ -71,7 +71,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `netbird.adminer_enabled` | bool | — | `false` | `static` | `NETBIRD_ADMINER_ENABLED` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `netbird.domain_prefix` | string | — | `netbird` | `static` | `NETBIRD_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `netbird.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `NETBIRD_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | The OIDC issuer and client configuration change together. |
+| `netbird.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `NETBIRD_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | The OIDC issuer and client configuration change together. |
 
 ### Query and modify
 

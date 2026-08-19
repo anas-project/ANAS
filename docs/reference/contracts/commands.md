@@ -83,22 +83,31 @@ anas init [PATH] [-c CONFIG] [--module-root DIR] [--shell-init write|remove] [-y
 ## plan
 
 ```
-anas plan -c config.yml [--module-root DIR] [--json]
+anas plan [-w WORKSPACE] [-c config.yml] [--module-root DIR] [--json]
 ```
 
-只算不写。**不创建也不读取任何运行时状态**，`-w` 只为命令行对称而接受。
+只算不写：Core 不创建或修改 workspace/deployment 状态。`-w` 选择受管 workspace，并非只为
+命令行对称；plan 会校验配置完整性，并在私有校验视图中读取已有 Secret Store 以满足 lifecycle
+input 与敏感 taint。Secret 明文不会进入输出，也不会进入 Module `validate` 请求。
 
 ```json
 {
   "api_version": "anas.dev/cli/v1", "ok": true,
   "config": "/data/ws/config.yml",
   "module_root": "/srv/anas/modules",
-  "modules": ["postgres", "authentik", "nextcloud"],
+  "modules": ["samba_dc", "postgres", "authentik", "nextcloud"],
   "iam": {
     "provider": "authentik",
     "consumers": [{ "module": "nextcloud", "interface": "oidc" }]
   },
-  "capability_bindings": { "nextcloud": { "relational_database": "postgres" } }
+  "capability_bindings": { "nextcloud": { "relational_database": "postgres" } },
+  "module_plans": {
+    "samba_dc": {
+      "requested_mode": "auto",
+      "resolved_mode": "ad_zone",
+      "zone": "example.net"
+    }
+  }
 }
 ```
 
@@ -107,9 +116,20 @@ anas plan -c config.yml [--module-root DIR] [--json]
 `iam.provider` 在无人消费该能力时为 `null` 而不是缺席——调用方总能拿到这个键，
 不必去分辨"没有 IAM"和"这个版本不报告 IAM"。
 
+`module_plans` 也始终存在且为对象；没有 Module 返回 plan metadata 时为 `{}`。其第一层 key
+是 Module 名，第二层是该 Module 的 `validate` Hook 返回并经 Core 接纳的只读、非敏感
+`string -> string` 元数据。它不修改配置，也不表示执行了变更。人类输出使用按 Module 和 key
+排序的 `module plan: <module> key=value ...` 行。
+
+Module `validate` Hook 的非零退出、非法/未知 JSON 字段、mutation response 或不合规 plan
+metadata 都属于配置无法通过当前期望状态校验：`anas plan` 返回 `config_invalid`（退出 4）。
+下文的 `anas config plan` 使用同一边界。当前 CLI **没有** `validation_failed` error code，调用方
+不得按尚未实现的代码分支。
+
 | code | 退出码 | 何时 |
 | --- | --- | --- |
-| `config_missing` / `config_invalid` | 4 | 配置文件不在，或读不出来 |
+| `config_missing` | 4 | 配置文件不存在 |
+| `config_invalid` | 4 | 配置无法解析、违反通用 schema，或 Module `validate` Hook 拒绝期望状态/返回非法 response |
 | `module_root_missing` / `module_root_invalid` | 4 | 找不到 module 目录，或它读不出来 |
 | `resolution_failed` | 4 | 依赖成环、模块未知、被禁用的模块又被依赖 |
 | `version_conflict` | 4 | 版本约束互相打架 |
@@ -451,6 +471,13 @@ caller-input 视图。set、import/reimport、`config plan`、deployment lock/pl
 remote lock 使用同一套 registry-aware schema；失败不得先改变 config、完整性摘要、Secret
 Store 或 lock。
 
+空 lock 的新 workspace，以及已有 lock 的 workspace 在 set/import 暂存新增 Module 时，都不
+会执行尚未 pin 的 Module Hook；已 pin Module 仍按有效依赖顺序校验。`config plan`/`anas plan`
+在首次 lock 前也只做静态 schema 与拓扑投影，不产生 Module validation metadata。后续显式
+`anas lock` 是新 Module 的代码信任转换：它在
+内存中计算候选 lock，执行扩展拓扑的 `validate`，只有校验成功才写 lock。这样既不会在摘要
+校验前执行被篡改的 Hook，也不会让“先改 config / 先改 lock”形成新增 Module 的死锁。
+
 `set` 和 `explain` 会拒绝 manifest 未声明的参数，指出最接近的已声明项并使用 usage 退出码。
 映射到已声明参数的 raw `env.<KEY>` 接受相同的类型校验和规范化；只有 schema 完全不认识的
 合法环境键保留宽容兼容入口。旧 Module 若只在 legacy `required` 中声明裸环境键，该键仍只
@@ -494,12 +521,23 @@ Store 或 lock。
     "path": "global.timezone", "module": "global", "parameter": "timezone",
     "effect": "container_recreate", "apply": "render-and-recreate",
     "sensitive": false, "description": "…"
-  }]
+  }],
+  "module_plans": {
+    "samba_dc": {
+      "requested_mode": "auto",
+      "resolved_mode": "ad_zone",
+      "zone": "example.net"
+    }
+  }
 }
 ```
 
 `change` 取 `add` / `remove` / `change`，是枚举而非为句子挑的动词。
 `applied_at` 在从未成功启动过时为 `null`。
+`module_plans` 与 deployment `plan` 的字段语义相同，且独立于 `changes`；即使
+`matches_last_start: true`，已选择 Module 的校验 metadata 仍可出现。人类输出同样追加排序后的
+`module plan: <module> key=value ...` 行。Module 校验失败统一返回 `config_invalid`（退出 4），
+不返回 `validation_failed`。
 
 `secret list` **只返回键名**，`secret get` 返回值。理由见 README 的"敏感值"。
 
@@ -511,9 +549,13 @@ Store 或 lock。
 | code | 退出码 | 何时 |
 | --- | --- | --- |
 | `usage` | 2 | 路径格式不对、模块未知、参数个数不对 |
-| `config_missing` / `config_invalid` | 4 | 配置文件不在或读不出来 |
+| `config_missing` | 4 | 配置文件不存在 |
+| `config_invalid` | 4 | 配置无法解析、违反通用 schema，或 Module `validate` Hook 拒绝期望状态/返回非法 response |
+| `lock_invalid` | 4 | 已有 lock 文件无法解析 |
+| `lock_stale` | 4 | 已 pin Module 的 version/revision/bundle digest 与当前注册表不一致 |
 | `secret_missing` | 4 | 没有这个生成的 secret |
 | `secrets_unreadable` | 4 | secret store 读不出来 |
+| `state_unreadable` | 4 | 已应用设置指纹等 workspace 状态无法读取 |
 | `write_failed` | 1 | 写配置失败 |
 
 ## admin local
@@ -574,9 +616,15 @@ digest。安装依次校验 artifact/layer media type、manifest/layer digest、
 
 `update` 是改变 lock 中 Module 版本的唯一普通入口。它根据 `modules.<name>.version` 或
 catalog 当前 release 解析完整依赖闭包，写入 OCI manifest、content 和安装树三个 digest，
-并生成 workspace Module 视图。指定 Module 名时，未指定且已有远程 lock 的 Module 保持原
+在内存候选 lock 上执行 defaults 与 Module `validate` 后，再生成 workspace Module 视图。
+指定 Module 名时，未指定且已有远程 lock 的 Module 保持原
 release；不指定时更新配置直接选择的 Module。`sync` 只按现有 lock 恢复缺失缓存和视图，
 不会升级；lock 中的本地 `bundle:<name>` 不会被它偷偷替换为 Registry 包。
+
+当前 lock 与 `module-view.json` 仍是两个独立路径：命令返回写入错误时会恢复两者的旧内容，
+但进程在两次 rename 之间被 `SIGKILL` 或掉电，仍可能留下跨代组合；后续 digest/trust gate 会
+fail closed。彻底消除该窗口需要后续改为单一 generation pointer，并同时串行化 remote writer
+与 reader；在该存储升级完成前，不应并发运行 `module sync/update` 与其他 workspace 写命令。
 
 `--source` 的优先级高于 workspace `module_source`。无二者时使用 `official`。缓存默认在
 用户 cache 目录的 `anas/modules/` 下，`ANAS_MODULE_CACHE` 可覆盖。`--module-root` 与
@@ -607,7 +655,7 @@ release；不指定时更新配置直接选择的 Module。`sync` 只按现有 l
 | `module_source_unavailable` / `module_versions_unavailable` | 1 | catalog、tag list 或所有回退源不可用 |
 | `module_install_failed` / `module_sync_failed` / `module_update_failed` | 1 | 下载、认证或多层 digest/包校验失败 |
 | `module_cache_unavailable` / `module_cache_corrupt` | 1 | 缓存目录不可用，或内容寻址记录/内容损坏 |
-| `module_view_failed` / `write_failed` / `lock_update_failed` | 1 | workspace 视图或 lock 解析/原子写入失败 |
+| `module_view_failed` / `write_failed` / `lock_update_failed` | 1 | workspace 视图或 lock 解析/事务写入失败 |
 
 ## help
 

@@ -8,7 +8,7 @@ SSO portal, application launcher, and OIDC/SAML identity provider.
 | Item | Value |
 | --- | --- |
 | Module | `llng` |
-| Version / revision | `2.23.2-r9` |
+| Version / revision | `2.23.2-r10` |
 | Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |

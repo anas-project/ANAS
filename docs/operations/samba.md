@@ -20,6 +20,79 @@
 
 `AD`是要依赖内网的DNS工作的。`Samba`支持两种DNS解析方式，Samba内置的DNS，或者使用开源的`BIND`DNS服务器。正常情况下Samba内置DNS已经提供了足够可以让`Samba DC`运行起来的功能。`BIND`则可以提供更多的额外功能。
 
+## ANAS 中的应用域与 AD 域
+
+ANAS 将两个命名空间分开：
+
+- `global.base_domain` / `BASE_DOMAIN` 只表示应用和 Web 入口域，用于应用 URL、SSO
+  Cookie、回调地址、Web 证书和公网 DDNS；
+- `modules.samba_dc.config.domain` / `SAMBA_DC_DOMAIN` 表示 AD DNS 域，并决定 Kerberos
+  Realm、Base DN、DC canonical FQDN、UPN 默认 suffix 和成员机信任。
+
+新 workspace 应在首次 provision 前确定两者：
+
+```yaml
+global:
+  base_domain: nas.example.net
+
+modules:
+  samba_dc:
+    config:
+      domain: corp.example.com
+      application_dns_mode: auto
+```
+
+旧配置没有 `modules.samba_dc.config.domain` 时，有效 AD 域继续回退到 `BASE_DOMAIN`。这是
+兼容旧 workspace 原有身份的规则，不是 AD 域重命名功能。
+
+### 应用 DNS mode
+
+Samba DC validate Hook 在 plan 阶段解析 `application_dns_mode`：
+
+| 请求值 | 规则 | 权威 zone |
+| --- | --- | --- |
+| `auto` | 应用域等于 AD 域或是 AD 域的 label 子域时使用 `ad_zone`；其他关系使用 `separate_zone` | 由解析结果决定 |
+| `ad_zone` | 只允许相等或 label 子域关系 | `SAMBA_DC_DOMAIN` |
+| `separate_zone` | 两个域可以无关，但不能完全相同；等域必须使用现有 AD zone | `BASE_DOMAIN` |
+
+`ad_zone` 示例：应用 `cloud.nas.corp.example.com` 在 AD zone `corp.example.com` 内使用
+owner `cloud.nas`，不能只取第一段。`separate_zone` 示例：应用
+`cloud.nas.example.net` 在 zone `nas.example.net` 内使用 owner `cloud`。独立应用 zone 是
+Samba 内部的 split-horizon 权威 zone；它必须是当前 workspace 可完整维护的专用命名空间。
+缺失的公网记录不会被 Samba 继续转发，而会返回不存在。
+
+操作前先看解析计划：
+
+```bash
+anas plan -w /srv/anas
+anas plan -w /srv/anas --json | jq '.module_plans.samba_dc'
+```
+
+计划同时显示 `requested_mode`、`resolved_mode` 和 `zone`，生成 deployment 后还会固化到
+manifest 的 `modules.samba_dc.validation_plan`，可用于审计实际选择。Runner 发送给 Samba
+zone reconciler 的 `DOMAINS` 使用 `inner/<完整 FQDN>/<module>`，只包含声明发布 Web 域的
+Module，不包含 `SAMBA_DC_DOMAIN`。Web A 记录指向 `HOST_IP`。
+
+ANAS 内部 LDAPS 暂时继续使用 `SAMBA_DC_HOST=BASE_DOMAIN` 作为证书覆盖的服务别名，
+reconciler 为它单独维护指向 `SAMBA_DC_HOST_IP` 的 A 记录。该别名不参与 Realm、Base DN、
+SRV 或 Kerberos canonical name；`SAMBA_DC_HOST_IP` 也可能与 Web 记录使用的 `HOST_IP`
+不同。等域时这个名字就是 AD zone apex；当 `SAMBA_DC_HOST == SAMBA_DC_DC_DOMAIN` 时，
+它则与 canonical DC A 重名。这两类记录都由 Samba 自身注册，reconciler 只验证其中存在
+精确的 `SAMBA_DC_HOST_IP`，不 claim、add、replace 或 delete。升级时，旧 reconciler 对这类
+原生记录取得的所有权会被释放而不删除记录；其他无法证明来源、但恰好命中目标的记录仍只
+记录为 legacy observation。
+
+任何 zone 枚举 RPC 失败或无法解析都按“状态未知”停止，而不是按 zone 不存在处理；在写入
+zone 或 A 记录前，reconciler 还会逐个检查 `SAMBA_DC_HOST` 和 `DOMAINS` 的完整 FQDN，拒绝
+会截获这些名称的更近 child zone。只有已提交清单或 durable pending journal 能证明记录
+所有权，显式 DNS 写入失败会撤销 pending，不会把并发出现的人工记录升级为可删除资源。
+
+> [!WARNING]
+> 已有 workspace 所需的 `migrate-service-domain` 与
+> `migrate-application-dns-zone` 迁移器尚未交付。当前不要对已有部署用普通 apply、原始
+> `env` 或手工编辑切换应用域/内部 zone。已 provision 的 `SAMBA_DC_DOMAIN` 永远不支持
+> 原地换域；需要新建目录、迁移身份并重新加入 Samba FS 和其他成员机。
+
 ### AD的最佳实践
 
 `AD`作为一种`LDAP`服务的实现，同样也提供了非常灵活的信息组织形式。参考Dan Holme的最佳实践[<sup>1</sup>](#refer-anchor-1)[<sup>2</sup>](#refer-anchor-2)[<sup>3</sup>](#refer-anchor-3)，我总结了一套适合小型企业和家庭的`AD`使用方法。这里只讨论在一台`DC`上的用户，计算机，群组的管理方法，有关组策略和集群方面，请看`Dan Holme`的视频。

@@ -53,6 +53,7 @@ type Module struct {
 	ManagementSurfaces     []ManagementSurface
 	LocalAccounts          []LocalAccount
 	UseHostLAN             string
+	PublishesDomain        bool
 	Hook                   HookConfig
 	RuntimeType            string
 	ComposeFile            string

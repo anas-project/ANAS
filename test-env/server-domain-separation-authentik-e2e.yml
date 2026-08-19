@@ -1,0 +1,37 @@
+# WP4 parent/child-domain runtime fixture. Web applications live below
+# nas.test.example while the provisioned Samba AD identity is test.example.
+# Its pinned addresses belong to a dedicated network namespace and Docker
+# daemon; the runner detects the remaining host facts from that namespace.
+# Never apply this fixture to a production host.
+modules:
+  samba_dc:
+    config:
+      domain: test.example
+      application_dns_mode: auto
+      netbios_name: AuthDC
+  samba_fs: {}
+  postgres: {}
+  authentik: {}
+  nextcloud:
+    config:
+      talk_enabled: "false"
+      memories_enabled: "false"
+  # These two consumers keep the existing Authentik login-matrix probe usable
+  # from the domain-separation wrapper.
+  meshcentral: {}
+  netbird: {}
+  lam: {}
+  traefik: {}
+identity:
+  iam:
+    provider: authentik
+global:
+  base_domain: nas.test.example
+  email: admin@nas.test.example
+  timezone: Asia/Shanghai
+  virtual_domain: true
+  container_prefix: anas_ds_auth_
+  network_prefix: anas_ds_auth_
+  host_ip: 10.252.10.2
+  host_lan_ip: 10.252.10.250
+  host_lan_bridge_ip: 10.252.10.249

@@ -48,6 +48,61 @@ digest；普通 `plan`、`render` 和 `apply` 不会自动升级。新主机可�
 
 OIDC 是 `identity.iam.default_protocol` 的默认值，只对声明支持 OIDC 的 IAM consumer 生效。Nextcloud 与 MeshCentral 当前默认使用 OIDC；Nextcloud 仍可通过 Module 参数显式选择 SAML。完整清单见 [Module IAM / OIDC 支持](/reference/module-iam-support)。
 
+## 应用域与 Samba AD 域
+
+`global.base_domain`（渲染为 `BASE_DOMAIN`）只定义应用和 Web 入口命名空间：应用 URL、
+SSO Cookie、回调地址、Web 证书和公网 DDNS 都从它派生。Samba 的 AD DNS 域、Kerberos
+Realm、Base DN、DC canonical FQDN 和机器信任则由
+`modules.samba_dc.config.domain`（渲染为 `SAMBA_DC_DOMAIN`）定义。新 workspace 可以在首次
+provision 前显式分开两个域：
+
+```yaml
+global:
+  base_domain: nas.example.net
+
+modules:
+  samba_dc:
+    config:
+      domain: corp.example.com
+      application_dns_mode: auto
+```
+
+为兼容旧配置，省略 `modules.samba_dc.config.domain` 时，Samba Hook 仍把
+`global.base_domain` 作为有效 AD 域。该 fallback 只是让旧配置保持原有含义，不表示以后修改
+`BASE_DOMAIN` 会重命名已 provision 的 AD。
+
+`application_dns_mode` 决定 Samba 内部 DNS 如何承载应用记录：
+
+| 请求值 | 解析规则 | Samba 权威 zone |
+| --- | --- | --- |
+| `auto` | `BASE_DOMAIN` 等于 `SAMBA_DC_DOMAIN`，或是它的 DNS label 子域时解析为 `ad_zone`；其他关系解析为 `separate_zone` | 按解析结果 |
+| `ad_zone` | 只允许上述相等/子域关系；无关域会在 plan 阶段报错 | `SAMBA_DC_DOMAIN` |
+| `separate_zone` | 除两个域完全相同外，不要求父子关系；等域必须使用 `ad_zone` | `BASE_DOMAIN` |
+
+`separate_zone` 是内部 split-horizon 权威 zone，只能用于该 workspace 可完整维护的专用
+`BASE_DOMAIN`。Samba 不会把该 zone 中未受管的名字继续转发到公网；缺失记录会返回不存在。
+公网 DNS/DDNS 仍只管理应用域，不会因此接管 AD 域。
+
+运行 plan 可在修改运行态之前确认 requested、resolved 和 zone：
+
+```bash
+anas plan -w /srv/anas
+anas plan -w /srv/anas --json | jq '.module_plans.samba_dc'
+```
+
+文本输出形如
+`module plan: samba_dc requested_mode=auto resolved_mode=separate_zone zone=nas.example.net`；
+生成 deployment 后，同样的三项会固化在
+`modules.samba_dc.validation_plan`。ANAS 内部 LDAPS 目前继续使用受 Web 证书覆盖的服务别名：
+`SAMBA_DC_HOST=BASE_DOMAIN`，其内部 A 记录指向 `SAMBA_DC_HOST_IP`；它不是 AD Realm 或
+canonical DC 名称。
+
+> [!WARNING]
+> 已有 workspace 的 `migrate-service-domain` 与 `migrate-application-dns-zone` 迁移器尚未
+> 交付。当前只支持在新 workspace 首次 provision 前选择分离域；不要用普通 apply、原始
+> `env` 或手工状态编辑绕过门禁。已 provision 的 `SAMBA_DC_DOMAIN` 不支持原地换域；如需
+> 新 AD 域，必须新建目录、迁移身份并让成员机重新加入。
+
 ## 时区、语言与区域格式
 
 三个全局字段相互独立：

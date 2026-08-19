@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/anas-project/ANAS/internal/topologyschema"
 )
 
 // Capability binding. A capability names a job some module does for others --
@@ -17,8 +19,8 @@ const (
 )
 
 const (
-	interfaceOIDC = "oidc"
-	interfaceSAML = "saml"
+	interfaceOIDC = topologyschema.IAMProtocolOIDC
+	interfaceSAML = topologyschema.IAMProtocolSAML
 	// interfaceHTTP is Traefik's ForwardAuth exchange: the proxy asks an
 	// external endpoint about each request and forwards it only on 2xx.
 	interfaceHTTP = "http"

@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `samba_dc` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `4.23.6-r7` / `anas.module/v1`.
+> 状态：当前实现；对应 `4.23.6-r8` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -17,8 +17,8 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r7` | `` | 3 |
-| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r7` | `` | 3 |
+| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r8` | `` | 3 |
+| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r8` | `` | 3 |
 | `anas_samba_dc_events_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
@@ -41,11 +41,13 @@
 | `samba_dc.anchor_bind_password` | string | — | — | `generated` | `SAMBA_DC_ANCHOR_BIND_PASSWORD` | 否 | 是 | 是 | 否：`rotate-anchor-bind-password` | `credential_rotate` | 身份锚点服务账号密码 |
 | `samba_dc.anchor_scan_interval` | int | — | `300` | `static` | `SAMBA_DC_ANCHOR_SCAN_INTERVAL` | 否 | 否 | 否 | 是 | `container_recreate` | 身份锚点补漏扫描间隔 |
 | `samba_dc.app_filter` | bool | — | `true` | `static` | `SAMBA_DC_APP_FILTER` | 否 | 否 | 否 | 是 | `container_recreate` | 是否按 APP_* Group 过滤应用用户 |
+| `samba_dc.application_dns_mode` | enum (`auto`, `ad_zone`, `separate_zone`) | — | `auto` | `static` | `SAMBA_DC_APPLICATION_DNS_MODE` | 否 | 否 | 否 | 否：`migrate-application-dns-zone` | `data_migrate` | 应用 DNS 权威区模式 |
 | `samba_dc.create_structure` | bool | — | `true` | `static` | `SAMBA_DC_CREATE_STRUCTURE` | 否 | 否 | 否 | 是 | `container_recreate` | 是否创建目录 OU/Group 结构 |
 | `samba_dc.dns_allowed_networks` | string | — | `""` | `static` | `SAMBA_DC_DNS_ALLOWED_NETWORKS` | 否 | 否 | 否 | 是 | `container_recreate` | 允许递归查询的网络 |
 | `samba_dc.dns_cache_size` | string | — | `128M` | `static` | `SAMBA_DC_DNS_CACHE_SIZE` | 否 | 否 | 否 | 是 | `container_recreate` | DNS 缓存上限 |
 | `samba_dc.dns_debug` | bool | — | `false` | `static` | `SAMBA_DC_DNS_DEBUG` | 否 | 否 | 否 | 是 | `container_recreate` | DNS 调试开关 |
 | `samba_dc.dns_forwarders` | string | — | `""` | `static` | `SAMBA_DC_DNS_FORWARDERS` | 否 | 否 | 否 | 是 | `container_recreate` | 上游 DNS 转发器 |
+| `samba_dc.domain` | string | `format: dns_name` | — | `inherited` | `SAMBA_DC_DOMAIN` | 否 | 是 | 否 | 否：`replace-directory-domain` | `immutable` | AD DNS 域（目录身份） |
 | `samba_dc.ldap_bind_name` | string | — | `svc_ldap` | `static` | `SAMBA_DC_LDAP_BIND_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 只读 LDAP 服务账号名 |
 | `samba_dc.ldap_bind_password` | string | — | — | `generated` | `SAMBA_DC_LDAP_BIND_PASSWORD` | 否 | 是 | 是 | 否：`rotate-ldap-bind-password` | `credential_rotate` | 只读 LDAP 服务账号密码 |
 | `samba_dc.log_level` | string | — | `1` | `static` | `SAMBA_DC_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | 日志级别 |
@@ -53,7 +55,7 @@
 | `samba_dc.netbios_name` | string | — | — | `runtime` | `SAMBA_DC_NETBIOS_NAME` | 否 | 是 | 否 | 否：`replace-domain-controller` | `immutable` | 域控制器 NetBIOS 名称 |
 | `samba_dc.password_bind_name` | string | — | `svc_password` | `static` | `SAMBA_DC_PASSWORD_BIND_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 密码回写服务账号名 |
 | `samba_dc.password_bind_password` | string | — | — | `generated` | `SAMBA_DC_PASSWORD_BIND_PASSWORD` | 否 | 是 | 是 | 否：`rotate-password-bind-password` | `credential_rotate` | 密码回写服务账号密码 |
-| `samba_dc.realm` | string | — | — | `inherited` | `SAMBA_DC_REALM` | 否 | 是 | 否 | 否：`migrate-domain` | `immutable` | AD Realm |
+| `samba_dc.realm` | string | — | — | `inherited` | `SAMBA_DC_REALM` | 否 | 是 | 否 | 否：`replace-directory-domain` | `immutable` | 从 AD DNS 域派生的 Realm |
 | `samba_dc.template_homedir` | string | — | `/home/%D/%U` | `static` | `SAMBA_DC_TEMPLATE_HOMEDIR` | 否 | 否 | 否 | 是 | `container_recreate` | 目录用户 home 模板 |
 | `samba_dc.template_shell` | string | — | `/bin/false` | `static` | `SAMBA_DC_TEMPLATE_SHELL` | 否 | 否 | 否 | 是 | `container_recreate` | 目录用户 shell 模板 |
 | `samba_dc.user_complex_pass` | bool | — | `false` | `static` | `SAMBA_DC_USER_COMPLEX_PASS` | 否 | 否 | 否 | 是 | `hot_reload` | 密码复杂度策略 |
@@ -66,6 +68,59 @@
 | `samba_dc.user_password_history` | int | — | `2` | `static` | `SAMBA_DC_USER_PASSWORD_HISTORY` | 否 | 否 | 否 | 是 | `hot_reload` | 密码历史数量 |
 
 参数库存的权威来源是 `module.yml`；CLI 负责合并默认值、类型、required、环境变量映射、敏感性和变更执行器。技术文档不得另造可设置参数。
+
+## 双域与应用 DNS 计划
+
+`BASE_DOMAIN` 只属于应用/Web 命名空间。`SAMBA_DC_DOMAIN` 属于已 provision 的目录身份，
+并派生 `SAMBA_DC_REALM`、`SAMBA_DC_BASE_DN`、`SAMBA_DC_DNS_SEARCH`、
+`SAMBA_DC_DC_DOMAIN` 和默认 UPN suffix。`modules.samba_dc.config.domain` 未设置时，
+`validateDomainDNSConfig` 为旧配置把有效 AD 域回退到 `BASE_DOMAIN`；这个兼容分支不允许对
+已有目录执行重命名。显式 `realm` 必须与 `upper(SAMBA_DC_DOMAIN)` 大小写无关地一致，
+calculate 最终发布大写 Realm。
+
+`application_dns_mode` 的 requested 值和解析结果是两层状态：
+
+| Requested | 校验与解析 | Resolved zone |
+| --- | --- | --- |
+| `auto` | `BASE_DOMAIN == SAMBA_DC_DOMAIN` 或前者是后者的 label 子域时为 `ad_zone`，否则为 `separate_zone` | AD 域或应用域 |
+| `ad_zone` | 只接受相等/label 子域关系 | `SAMBA_DC_DOMAIN` |
+| `separate_zone` | 除等域外不限制域关系；等域必须使用现有 AD zone，应用域还必须是 ANAS 可完整维护的专用内部命名空间 | `BASE_DOMAIN` |
+
+validate Hook 把 `requested_mode`、`resolved_mode` 和 `zone` 写入非敏感 module plan。文本
+`anas plan` 输出 `module plan: samba_dc ...`，JSON 位于
+`module_plans.samba_dc`；物化 deployment 后同一份数据保存在
+`modules.samba_dc.validation_plan`。calculate 同时发布
+`SAMBA_DC_APPLICATION_DNS_MODE`、`SAMBA_DC_APPLICATION_DNS_MODE_RESOLVED` 和
+`SAMBA_DC_APPLICATION_DNS_ZONE`，DNS reconciler 不会在运行期重新猜测域关系。
+
+Runner 到 reconciler 的 `DOMAINS` 是内部协议，只收集声明 `features.domain: true` 的 Web
+Module，并使用 `inner/<完整 FQDN>/<module>`，例如
+`inner/cloud.nas.example.net/nextcloud`。它不包含 `SAMBA_DC_DOMAIN`，也不把 FQDN 截成第一
+段。`ad_zone` 会从完整 FQDN 得到多 label owner（例如 `cloud.nas`），`separate_zone` 则在
+应用 zone 内得到短 owner（例如 `cloud`）。这些 Web A 记录指向 `HOST_IP`。
+
+LDAPS 服务别名走独立记录：兼容期保持 `SAMBA_DC_HOST=BASE_DOMAIN`，并解析到
+`SAMBA_DC_HOST_IP`。它由 Web 证书覆盖，供 ANAS LDAP 消费者使用，但不参与 Realm、Base
+DN、SRV 或 canonical DC FQDN 的计算。`SAMBA_DC_HOST_IP` 可以与 Web 记录使用的
+`HOST_IP` 不同，因此该别名不能塞回 `DOMAINS`。
+
+服务别名在两种情况下会与 Samba 原生 A 记录重合：等域时它是 AD zone apex；或者
+`SAMBA_DC_HOST` 恰好等于 `SAMBA_DC_DC_DOMAIN`（例如 server name 为 `nas`、AD 域为
+`test.example`、应用域为 `nas.test.example`）时，它是 canonical DC 名。ANAS 对这两类
+directory-native 记录都只验证其包含精确的 `SAMBA_DC_HOST_IP`，不 claim、add、replace 或
+delete。升级时，旧版 applied 清单曾错误取得的所有权会被释放而不删除原生记录；其他无法
+证明创建来源的同目标记录仍只写为不可删除的 legacy observation。
+
+zone inventory 的 RPC/解析失败会 fail closed；reconciler 在任何 DNS mutation 前逐个检查
+`SAMBA_DC_HOST` 与 `DOMAINS` FQDN 是否被更近的 child zone 截获。A 记录只有在 committed
+manifest 或 durable pending journal 中有来源证明时才可替换/删除，显式写入失败会撤销
+pending，避免把管理员并发创建的同目标记录提升为 ANAS 所有。
+
+`separate_zone` 由 Samba 内部权威管理；未进入受管记录清单的名字不会继续向公网转发。
+zone 选择和记录清单存入 Samba 持久数据，用于拒绝无迁移的 zone 漂移。当前尚未交付已有
+workspace 所需的 `migrate-service-domain` 和 `migrate-application-dns-zone` 迁移器；只承诺
+新 workspace 在首次 provision 前选择分离域。`SAMBA_DC_DOMAIN` 本身不支持原地换域，
+变更必须新建目录并迁移身份和成员机。
 
 ## 密码策略实现
 
@@ -136,9 +191,13 @@
 ## 测试与实现位置
 
 - [`main_test.go`](../hook/main_test.go)
+- [`zone_script_test.go`](../hook/zone_script_test.go)
+- [`domain_dns.go`](../hook/domain_dns.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 
 ## 当前限制
 
-`realm` 和 `netbios_name` 是不可变身份；密码参数需要专用凭据轮换，不能靠重建容器修改。
+`domain`、`realm` 和 `netbios_name` 是不可变身份；密码参数需要专用凭据轮换，不能靠重建
+容器修改。已有 workspace 的服务域/应用 DNS zone 迁移器尚未交付，不支持用普通 apply
+切换 zone，也不支持原地重命名 AD 域。

@@ -146,6 +146,40 @@ env/Secret patch 必须整体通过 ownership、键规范化和碰撞校验后�
 schema；render 私有键仍可不声明。Hook Secret 只能刷新既有 `generated/module-hook` 记录，不能
 覆盖 `lifecycle_managed`、`local_admin` 或其他来源记录，整包拒绝也不得回显值或自由 provenance。
 
+### Hook phase 与 `validate` ABI
+
+技术文档必须逐项列出 Module 实际实现的 Hook phase，并与 `module.yml` 的声明一致：
+
+```yaml
+logic:
+  hook:
+    command: [go, run, ./hook]
+    phases: [validate, calculate, render_env, services, after_start]
+```
+
+`logic.hook.phases` 的非空列表是精确 allowlist；可用值为 `validate`、`calculate`、
+`render_env`、`runtime_restore`、`services`、`after_start`、`local_account_apply`、
+`local_account_rotate` 和 `local_account_rollback`。省略该字段只保留旧 Hook 的非 `validate`
+兼容生命周期，绝不会推断旧 Hook 已实现配置校验；显式空列表因语义含混而被 manifest
+admission 拒绝。要接收 `validate` 请求，Module 必须在非空列表中显式声明它。
+
+`validate` 在有效拓扑的依赖顺序中运行，只检查期望状态。请求的 `phase` 为 `validate`，
+`env` 是 Module scoped 视图且已删除敏感键及其已知等值 alias，`secrets` 永远是空对象，
+`workdir` 为空；Hook 进程也只继承运行命令所需的最小环境。这是 ABI 的数据和响应边界，
+不是操作系统 sandbox，Module Hook 仍按受信任代码审核。
+
+`validate` response 只有 `plan` 与 `warnings` 可以非空。任何 `env`、`secrets`、`files`、
+`runtime_files`、`disable_services`、`docker_copies` 或 `internal_env` mutation 都拒绝整个校验；
+未知 JSON 字段、多个 JSON 值和无效 JSON 同样拒绝。`warnings` 表示可恢复问题，不使校验失败，
+Runner 以 `module_validation_warning` 输出；内容必须保持非敏感。
+
+`plan` 是只读、非敏感的 `string -> string` 元数据，不会回写配置或环境。每个 Module 最多
+64 项；key 不做 trim 或大小写规范化，必须直接匹配 `^[a-z][a-z0-9_]*$`，且不得指向敏感
+参数。value 会 trim，必须非空、不超过 1024 bytes、不得含控制字符，也不得等于
+Core 已知的 Secret 明文。通过校验的值出现在 deployment/config plan 的
+`module_plans.<module>` 中；物化部署时同一份值冻结到 deployment manifest 的 Module
+`validation_plan`，因此技术文档不得把 `plan` 描述成临时日志或 mutation 指令。
+
 技术文档必须放在 Module 自己的 `docs/` 中维护。ANAS 核心文档站只发布镜像，不接管 Module 的实现语义。
 
 ## 5. 自动生成与人工审核边界
@@ -263,8 +297,8 @@ go run ./cmd/gen-module-docs --check
 npm run docs:build
 ```
 
-截至 2026-08-19，内置发布门已经固定 18 个 Module、139 个参数、`unknown=0`、2 个
-`input_required` 和 22 个最终 must-resolve 参数，并精确比对 11 项已声明 constraints。
+截至 2026-08-19，内置发布门已经固定 18 个 Module、141 个参数、`unknown=0`、2 个
+`input_required` 和 22 个最终 must-resolve 参数，并精确比对 13 项已声明 constraints。
 测试还必须证明通用 set/import/plan/lock/apply 路径与 calculate/render Hook 使用同一 schema，
 Secret Store 各 kind 不会泄露或冒充 caller input，Hook Secret 不能跨 Module 改写。新增 Module
 只应改变 manifest/inventory/生成表，不应要求修改 `anasd` 或 HTTP handler。

@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: llng
 version: 2.23.2
-revision: 9
+revision: 10
 app_version: 2.23.2
 abi:
   supports:
@@ -115,6 +115,7 @@ config:
       description: SAML/OIDC metadata, clients, and proxy routes must change together.
 features:
   generated_secrets: true
+  domain: true
   after_start: copy_portal_logos
 services:
   optional:

@@ -82,6 +82,11 @@ Do not commit `.anas-test/` or generated secrets.
 
    This validates module ordering, module hooks, scoped env generation, generated
    files, persistent secrets, and the absence of legacy host-rendered templates.
+   The `domain-separation-ad-zone.yml` and
+   `domain-separation-separate-zone.yml` matrices additionally pin the two
+   supported Samba DNS topologies. Their assertions keep Web endpoints under
+   `BASE_DOMAIN`, Kerberos/LDAP identity under `SAMBA_DC_DOMAIN`, and the
+   certificate-covered LDAPS service alias on `BASE_DOMAIN`.
 
 3. Docker Compose config tests
 
@@ -364,6 +369,177 @@ Do not commit `.anas-test/` or generated secrets.
     ANAS_TEST_DOMAIN=llng.nas.test \
     ANAS_TEST_ENTRY_IP=10.253.0.2 \
       ./test-env/scripts/server-llng-password-policy-e2e.sh
+    ```
+
+19. Base-domain/Samba-domain separation runtime E2E
+
+    WP4 has two dedicated new-install fixtures. Both include Samba DC, Samba
+    FS, LAM, Nextcloud, and the extra application consumers required by the
+    existing IAM login matrix:
+
+    - `server-domain-separation-authentik-e2e.yml` uses
+      `BASE_DOMAIN=nas.test.example`, `SAMBA_DC_DOMAIN=test.example`, and
+      resolves `auto` to `ad_zone`.
+    - `server-domain-separation-llng-e2e.yml` uses
+      `BASE_DOMAIN=apps.example.test`, `SAMBA_DC_DOMAIN=ad.example.test`, and
+      resolves `auto` to `separate_zone`.
+
+    Import and apply one fixture to a fresh workspace attached to the matching
+    dedicated test network namespace and isolated Docker socket. Do not reuse a
+    workspace whose Samba directory has already been provisioned under another
+    domain. From the repository root, create the Authentik daemon with the
+    fixture's exact network and Docker ranges:
+
+    ```sh
+    sudo env \
+      ANAS_TEST_NETNS=anas-domain-auth-e2e \
+      ANAS_TEST_HOST_VETH=anas-dsa-h \
+      ANAS_TEST_PEER_VETH=anas-dsa-p \
+      ANAS_TEST_HOST_ADDR=10.252.10.1/24 \
+      ANAS_TEST_NS_ADDR=10.252.10.2/24 \
+      ANAS_TEST_NS_GATEWAY=10.252.10.1 \
+      ANAS_TEST_NS_SUBNET=10.252.10.0/24 \
+      ANAS_TEST_DOCKER_SOCKET=/run/anas-domain-auth-e2e-docker.sock \
+      ANAS_TEST_DOCKER_ROOT=/data/anas-domain-auth-e2e-docker \
+      ANAS_TEST_DOCKER_EXEC_ROOT=/run/anas-domain-auth-e2e-docker \
+      ANAS_TEST_DOCKER_CONFIG="$PWD/test-env/server-docker-daemon.json" \
+      ANAS_TEST_DOCKER_UNIT=anas-domain-auth-e2e-docker.service \
+      ANAS_TEST_DOCKER_PID_FILE=/run/anas-domain-auth-e2e-docker.pid \
+      ANAS_TEST_CONTAINERD_NAMESPACE=anas-domain-auth-e2e \
+      ANAS_TEST_CONTAINERD_PLUGINS_NAMESPACE=anas-domain-auth-e2e-plugins \
+      ANAS_TEST_DOCKER_BIP=172.30.10.1/24 \
+      ANAS_TEST_DOCKER_ADDRESS_POOL=172.31.0.0/16 \
+      ./test-env/scripts/server-isolated-docker.sh start
+    ```
+
+    Create the LLNG daemon separately with the `10.252.11.0/24` fixture:
+
+    ```sh
+    sudo env \
+      ANAS_TEST_NETNS=anas-domain-llng-e2e \
+      ANAS_TEST_HOST_VETH=anas-dsl-h \
+      ANAS_TEST_PEER_VETH=anas-dsl-p \
+      ANAS_TEST_HOST_ADDR=10.252.11.1/24 \
+      ANAS_TEST_NS_ADDR=10.252.11.2/24 \
+      ANAS_TEST_NS_GATEWAY=10.252.11.1 \
+      ANAS_TEST_NS_SUBNET=10.252.11.0/24 \
+      ANAS_TEST_DOCKER_SOCKET=/run/anas-domain-llng-e2e-docker.sock \
+      ANAS_TEST_DOCKER_ROOT=/data/anas-domain-llng-e2e-docker \
+      ANAS_TEST_DOCKER_EXEC_ROOT=/run/anas-domain-llng-e2e-docker \
+      ANAS_TEST_DOCKER_CONFIG="$PWD/test-env/server-docker-daemon.json" \
+      ANAS_TEST_DOCKER_UNIT=anas-domain-llng-e2e-docker.service \
+      ANAS_TEST_DOCKER_PID_FILE=/run/anas-domain-llng-e2e-docker.pid \
+      ANAS_TEST_CONTAINERD_NAMESPACE=anas-domain-llng-e2e \
+      ANAS_TEST_CONTAINERD_PLUGINS_NAMESPACE=anas-domain-llng-e2e-plugins \
+      ANAS_TEST_DOCKER_BIP=172.30.11.1/24 \
+      ANAS_TEST_DOCKER_ADDRESS_POOL=172.33.0.0/16 \
+      ./test-env/scripts/server-isolated-docker.sh start
+    ```
+
+    After preparing the Authentik test daemon:
+
+    ```sh
+    export DOCKER_HOST=unix:///run/anas-domain-auth-e2e-docker.sock
+    go run ./cmd/anas init /data/anas-domain-auth-e2e -y
+    go run ./cmd/anas config import \
+      test-env/server-domain-separation-authentik-e2e.yml \
+      -w /data/anas-domain-auth-e2e
+    go build -o /tmp/anas-domain-e2e ./cmd/anas
+    sudo ip netns exec anas-domain-auth-e2e \
+      sudo -u "$USER" -- env HOME="$HOME" \
+        DOCKER_HOST=unix:///run/anas-domain-auth-e2e-docker.sock \
+        /tmp/anas-domain-e2e apply -w /data/anas-domain-auth-e2e \
+          --update-lock --no-snapshot -y
+    ```
+
+    Apply the LLNG fixture with the matching namespace, socket, and workspace:
+
+    ```sh
+    export DOCKER_HOST=unix:///run/anas-domain-llng-e2e-docker.sock
+    go run ./cmd/anas init /data/anas-domain-llng-e2e -y
+    go run ./cmd/anas config import \
+      test-env/server-domain-separation-llng-e2e.yml \
+      -w /data/anas-domain-llng-e2e
+    go build -o /tmp/anas-domain-e2e ./cmd/anas
+    sudo ip netns exec anas-domain-llng-e2e \
+      sudo -u "$USER" -- env HOME="$HOME" \
+        DOCKER_HOST=unix:///run/anas-domain-llng-e2e-docker.sock \
+        /tmp/anas-domain-e2e apply -w /data/anas-domain-llng-e2e \
+          --update-lock --no-snapshot -y
+    ```
+
+    Run `apply` inside the fixture's network namespace so the runner discovers
+    the interface, subnet, gateway, and resolver from that namespace rather
+    than from the physical host. The fixture pins only its isolated container
+    and network prefixes plus the entry, Samba FS, and bridge addresses under
+    `global:`. Do not reuse those test addresses in a production workspace or
+    run the fixture outside its matching namespace/socket.
+
+    The probe wrapper never starts or removes containers. Its `core` level is
+    read-only: it checks the selected requested/resolved DNS mode and persisted
+    zone ownership, AD and application A/SRV records, Realm/Base DN/RootDSE,
+    Samba FS `net ads testjoin`/`wbinfo -t`/`kinit`, LDAPS service-alias
+    hostname and chain verification, service-account bind, Samba FS AD DNS
+    registration, Nextcloud cron CA installation, Authentik worker health and
+    LDAP trust-bundle visibility, and the deployed LAM, Nextcloud, and IAM
+    directory/Web split. `contracts` (the default) also
+    runs the existing IAM runtime-contract probe:
+
+    ```sh
+    ANAS_TEST_DOCKER_SOCKET=/run/anas-domain-auth-e2e-docker.sock \
+      ./test-env/scripts/server-domain-separation-e2e.sh \
+      authentik-ad-zone contracts
+
+    ANAS_TEST_DOCKER_SOCKET=/run/anas-domain-llng-e2e-docker.sock \
+      ./test-env/scripts/server-domain-separation-e2e.sh \
+      llng-separate-zone contracts
+    ```
+
+    `full` explicitly opts into the existing state-changing probes: the
+    provider login matrix and LAM probe create disposable AD accounts and clean
+    them on exit, while the Nextcloud probe rotates the isolated workspace's
+    managed break-glass credential. It therefore requires the exact workspace
+    that owns the running deployment:
+
+    ```sh
+    ANAS_TEST_WORKSPACE=/data/anas-domain-auth-e2e \
+    ANAS_TEST_DOCKER_SOCKET=/run/anas-domain-auth-e2e-docker.sock \
+      ./test-env/scripts/server-domain-separation-e2e.sh \
+      authentik-ad-zone full
+    ```
+
+    Override `ANAS_TEST_CONTAINER_PREFIX` and `ANAS_TEST_ENTRY_IP` only when the
+    corresponding server fixture was changed in the same way. The wrapper
+    still enforces the isolated-Docker data-root guard before touching runtime
+    state.
+
+    Keep init, import, apply, and all probes under the same non-root workspace
+    owner; root is used only to enter the network namespace. When finished,
+    stop the deployment before tearing down its daemon. The stop helper must
+    receive the same scope identifiers used at start:
+
+    ```sh
+    sudo ip netns exec anas-domain-auth-e2e \
+      sudo -u "$USER" -- env HOME="$HOME" \
+        DOCKER_HOST=unix:///run/anas-domain-auth-e2e-docker.sock \
+        /tmp/anas-domain-e2e stop -w /data/anas-domain-auth-e2e
+    sudo env \
+      ANAS_TEST_NETNS=anas-domain-auth-e2e \
+      ANAS_TEST_HOST_VETH=anas-dsa-h \
+      ANAS_TEST_NS_SUBNET=10.252.10.0/24 \
+      ANAS_TEST_DOCKER_UNIT=anas-domain-auth-e2e-docker.service \
+      ./test-env/scripts/server-isolated-docker.sh stop
+
+    sudo ip netns exec anas-domain-llng-e2e \
+      sudo -u "$USER" -- env HOME="$HOME" \
+        DOCKER_HOST=unix:///run/anas-domain-llng-e2e-docker.sock \
+        /tmp/anas-domain-e2e stop -w /data/anas-domain-llng-e2e
+    sudo env \
+      ANAS_TEST_NETNS=anas-domain-llng-e2e \
+      ANAS_TEST_HOST_VETH=anas-dsl-h \
+      ANAS_TEST_NS_SUBNET=10.252.11.0/24 \
+      ANAS_TEST_DOCKER_UNIT=anas-domain-llng-e2e-docker.service \
+      ./test-env/scripts/server-isolated-docker.sh stop
     ```
 
 ## Full Run

@@ -11,7 +11,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `netbird` |
-| 版本 / revision | `0.76.1-r4` |
+| 版本 / revision | `0.76.1-r5` |
 | 状态 | `developing` |
 | 类别 | `network` |
 | 运行时 | `compose` |
@@ -71,7 +71,7 @@ identity:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `netbird.adminer_enabled` | bool | — | `false` | `static` | `NETBIRD_ADMINER_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
 | `netbird.domain_prefix` | string | — | `netbird` | `static` | `NETBIRD_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
-| `netbird.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `NETBIRD_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
+| `netbird.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `NETBIRD_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
 
 ### 查询和修改
 
@@ -107,7 +107,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`0.76.1-r4`（reviewed 2026-08-13）
+- Module version / 版本：`0.76.1-r5`（reviewed 2026-08-13）
 - Timezone / 时区：`partial` — Dashboard, signal, and management receive the module environment; the relay service does not currently receive TZ.
 - Language scope / 语言范围：NetBird Dashboard v2.90.9
 - Selection / 选择方式：`fixed`

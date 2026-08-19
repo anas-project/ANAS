@@ -332,10 +332,14 @@ func writeConfigSkeleton(workspace string) error {
 module_source: %s
 
 modules:
-  samba_dc: {}
+  samba_dc:
+    config:
+      # The AD DNS domain is explicit for new workspaces. It may differ from
+      # global.base_domain, but cannot be renamed after directory provision.
+      domain: example.test
 
 global:
-  # The root every hostname and the Samba realm derive from.
+  # The application and Web-entry namespace.
   base_domain: example.test
   email: admin@example.test
   timezone: UTC

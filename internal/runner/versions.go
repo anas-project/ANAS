@@ -117,7 +117,7 @@ func (l *moduleLock) Save(base string) error {
 	return saveModuleLockFile(moduleLockPath(base), l)
 }
 
-func saveModuleLockFile(path string, l *moduleLock) error {
+func marshalModuleLock(l *moduleLock) ([]byte, error) {
 	if l.APIVersion == "" {
 		l.APIVersion = "anas.module-lock/v1"
 	}
@@ -130,7 +130,11 @@ func saveModuleLockFile(path string, l *moduleLock) error {
 	if l.Bindings == nil {
 		l.Bindings = map[string]map[string]string{}
 	}
-	b, err := yaml.Marshal(l)
+	return yaml.Marshal(l)
+}
+
+func saveModuleLockFile(path string, l *moduleLock) error {
+	b, err := marshalModuleLock(l)
 	if err != nil {
 		return err
 	}

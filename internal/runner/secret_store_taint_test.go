@@ -61,7 +61,7 @@ func TestEverySecretStoreKindTaintsConfigSetAndPlanAliases(t *testing.T) {
 		t.Run(kind+" config set", func(t *testing.T) {
 			workspace := t.TempDir()
 			base := stateDir(workspace)
-			savePrivateStoreValue(t, base, kind, "PRIVATE_SOURCE", private)
+			savePrivateStoreValue(t, base, kind, "PRIVATE_SOURCE", "  "+private+"\n")
 			configPath := workspaceConfigPath(workspace)
 			body := []byte("modules:\n  demo:\n    config:\n      target: before\n      stale: 0\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\n")
 			if err := os.WriteFile(configPath, body, 0o600); err != nil {
@@ -95,7 +95,7 @@ func TestEverySecretStoreKindTaintsConfigSetAndPlanAliases(t *testing.T) {
 		t.Run(kind+" config plan", func(t *testing.T) {
 			workspace := t.TempDir()
 			base := stateDir(workspace)
-			savePrivateStoreValue(t, base, kind, "PRIVATE_SOURCE", private)
+			savePrivateStoreValue(t, base, kind, "PRIVATE_SOURCE", "  "+private+"\n")
 			configPath := workspaceConfigPath(workspace)
 			if err := os.WriteFile(configPath, []byte("modules:\n  demo:\n    config:\n      stale: 0\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\n"), 0o600); err != nil {
 				t.Fatal(err)
@@ -117,7 +117,7 @@ func TestEverySecretStoreKindTaintsImportAndReimportAliases(t *testing.T) {
 			t.Run(kind+" "+name, func(t *testing.T) {
 				workspace := t.TempDir()
 				base := stateDir(workspace)
-				savePrivateStoreValue(t, base, kind, "PRIVATE_SOURCE", private)
+				savePrivateStoreValue(t, base, kind, "PRIVATE_SOURCE", "  "+private+"\n")
 				storePath := filepath.Join(base, "secrets.yml")
 				beforeStore, err := os.ReadFile(storePath)
 				if err != nil {

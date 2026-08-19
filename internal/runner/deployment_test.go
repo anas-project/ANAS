@@ -9,6 +9,45 @@ import (
 	"github.com/anas-project/ANAS/internal/compose"
 )
 
+func TestNormalizedModuleDigestIgnoresBareDeploymentID(t *testing.T) {
+	base := t.TempDir()
+	digests := make([]string, 0, 2)
+	for _, id := range []string{"20260819T010203Z-aaaaaaaa", "20260819T040506Z-bbbbbbbb"} {
+		root := filepath.Join(base, id, "modules", "samba_dc")
+		if err := os.MkdirAll(root, 0700); err != nil {
+			t.Fatal(err)
+		}
+		body := "ANAS_DEPLOYMENT_ID=" + id + "\nSAMBA_DC_DOMAIN=example.test\n"
+		if err := os.WriteFile(filepath.Join(root, ".env"), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		digest, err := normalizedModuleDigest(root, filepath.Join(base, "deployments", id))
+		if err != nil {
+			t.Fatal(err)
+		}
+		digests = append(digests, digest)
+	}
+	if digests[0] != digests[1] {
+		t.Fatalf("deployment identity changed normalized module digest: %v", digests)
+	}
+	changedID := "20260819T070809Z-cccccccc"
+	changedRoot := filepath.Join(base, changedID, "modules", "samba_dc")
+	if err := os.MkdirAll(changedRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	changedBody := "ANAS_DEPLOYMENT_ID=" + changedID + "\nSAMBA_DC_DOMAIN=other.example.test\n"
+	if err := os.WriteFile(filepath.Join(changedRoot, ".env"), []byte(changedBody), 0600); err != nil {
+		t.Fatal(err)
+	}
+	changedDigest, err := normalizedModuleDigest(changedRoot, filepath.Join(base, "deployments", changedID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedDigest == digests[0] {
+		t.Fatal("normalization hid a real rendered configuration change")
+	}
+}
+
 func TestDeploymentChangeBlockers(t *testing.T) {
 	current := &deploymentManifest{Settings: map[string]deploymentSetting{
 		"db.password": {Fingerprint: "old", Effect: "credential_rotate", Apply: "restart"},

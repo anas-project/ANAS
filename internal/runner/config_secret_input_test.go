@@ -350,6 +350,11 @@ func TestSecretSourceAliasesRemainRedactedAtWholeConfigBoundaries(t *testing.T) 
 		assertRedactedConstraintError(t, err, rejected)
 	})
 
+	t.Run("padded private source matches trimmed alias", func(t *testing.T) {
+		err := validateLoadedConfigSchema(baseConfig(), reg, nil, nil, map[string]string{"PRIVATE_SOURCE": "  " + rejected + "\n"})
+		assertRedactedConstraintError(t, err, rejected)
+	})
+
 	for _, kind := range []string{"generated", "local_admin"} {
 		t.Run(kind+" store alias during apply", func(t *testing.T) {
 			base := t.TempDir()

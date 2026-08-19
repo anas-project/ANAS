@@ -106,6 +106,37 @@ func TestCalcSambaFSDerivesUserdataPath(t *testing.T) {
 	}
 }
 
+func TestCalcSambaFSDoesNotDeriveFromApplicationDomain(t *testing.T) {
+	oldDomain := sambaFSTestEnv("all_read_group_write")
+	oldDomain["BASE_DOMAIN"] = "old.apps.example"
+	oldDomain["SAMBA_DC_DOMAIN"] = "ad.internal.example"
+	oldDomain["SAMBA_DC_DNS_SERVER"] = "192.0.2.10"
+	newDomain := cloneMap(oldDomain)
+	newDomain["BASE_DOMAIN"] = "new.apps.example"
+
+	if err := calcSambaFS(oldDomain, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := calcSambaFS(newDomain, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{
+		"SAMBA_FS_ADMIN_USERS",
+		"SAMBA_FS_NETBIOS_NAME",
+		"SAMBA_FS_SHARE_DOMAIN_USERS_ACL",
+		"SAMBA_FS_SHARE_VALID_USERS",
+		"SAMBA_FS_SHARE_WRITE_LIST",
+		"SAMBA_FS_USE_DEFAULT_DOMAIN",
+	} {
+		if oldDomain[key] != newDomain[key] {
+			t.Errorf("%s changed with BASE_DOMAIN: %q != %q", key, oldDomain[key], newDomain[key])
+		}
+	}
+	if _, ok := oldDomain["SAMBA_FS_DNS_SERVER"]; ok {
+		t.Fatal("calculate hook must not synthesize a Samba FS DNS alias")
+	}
+}
+
 // The compose file mounts the derived host path at the fixed container path
 // the share templates are written against; a rename on one side only is the
 // failure mode this guards.

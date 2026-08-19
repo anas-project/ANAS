@@ -168,6 +168,10 @@ func runLock(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("snapshot_policy_invalid", "%s", err.Error())
 	}
+	a.applyModuleDefaults()
+	if err := a.validateModules(); err != nil {
+		return preconditionErrorf("config_invalid", "%s", err.Error())
+	}
 	if err := saveModuleLockFile(lockPath, lock); err != nil {
 		return failuref("write_failed", "%s", err.Error())
 	}
@@ -282,7 +286,11 @@ func runPlan(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("contract_root_invalid", "%s", err.Error())
 	}
-	a := &app{cfg: cfg, cfgPath: configPath, reg: reg, contracts: contracts, resolvedBindings: map[string]map[string]string{}}
+	lock, err := loadModuleLockFile(projectLockPath(configPath))
+	if err != nil {
+		return preconditionErrorf("lock_invalid", "%s", err.Error())
+	}
+	a := &app{cfg: cfg, cfgPath: configPath, reg: reg, contracts: contracts, lock: lock, resolvedBindings: map[string]map[string]string{}}
 	a.env, a.envOwner = configBaseEnvWithRegistry(cfg, reg)
 	a.base = base
 	if err := a.loadImportedSecrets(); err != nil {
@@ -295,13 +303,23 @@ func runPlan(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("resolution_failed", "%s", err.Error())
 	}
-	if err := a.validateVersions(&moduleLock{APIVersion: "anas.module-lock/v1", Modules: map[string]moduleLockRecord{}}); err != nil {
+	if len(lock.Modules) > 0 {
+		if err := validateLockedResolution(a, lock); err != nil {
+			return preconditionErrorf("lock_stale", "%s", err.Error())
+		}
+	} else if err := a.validateVersions(lock); err != nil {
 		return preconditionErrorf("version_conflict", "%s", err.Error())
 	}
 	// Defaults first: a module may supply the DNS vendor its hook would use, and
 	// resolving credentials against a half-populated environment would report
 	// a platform as unset when it is merely defaulted.
 	a.applyModuleDefaults()
+	resolvedOrder := a.order
+	a.order = trustedModuleValidationOrder(resolvedOrder, lock)
+	if err := a.validateModules(); err != nil {
+		return preconditionErrorf("config_invalid", "%s", err.Error())
+	}
+	a.order = resolvedOrder
 	if err := a.materializeDNSCredentials(); err != nil {
 		return preconditionErrorf("dns_credentials_invalid", "%s", err.Error())
 	}
@@ -310,6 +328,7 @@ func runPlan(args []string, jsonMode bool) error {
 		return emitOK(map[string]any{
 			"config": configPath, "module_root": absolutePath(located),
 			"modules": a.order, "iam": a.iamPlanDocument(),
+			"module_plans":        a.moduleValidationPlanDocument(),
 			"capability_bindings": cloneNestedMap(a.resolvedBindings),
 			"dns_platforms":       a.dnsPlanDocument(),
 			"dynamic_dns":         a.dynamicDNSPlanDocument(),
@@ -320,6 +339,7 @@ func runPlan(args []string, jsonMode bool) error {
 	fmt.Print(a.dnsPlanSummary())
 	fmt.Print(a.dynamicDNSPlanSummary())
 	fmt.Print(a.moduleLifecyclePlanSummary())
+	fmt.Print(a.moduleValidationPlanSummary())
 	return nil
 }
 
@@ -396,10 +416,6 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if exists(stagingRoot) || exists(finalRoot) {
 		return "", failuref("deployment_id_collision", "deployment id collision %s", id)
 	}
-	if err := os.MkdirAll(stagingModules, 0700); err != nil {
-		return "", failuref("mkdir_failed", "%s", err.Error())
-	}
-
 	a := &app{
 		workspace: opts.workspace,
 		base:      opts.base, cfgPath: opts.cfgPath, verbose: opts.verbose, jsonMode: jsonMode,
@@ -407,6 +423,8 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		resolvedBindings: map[string]map[string]string{},
 	}
 	a.env, a.envOwner = configBaseEnvWithRegistry(cfg, reg)
+	a.env["ANAS_DEPLOYMENT_ID"] = id
+	a.setEnvOwner("ANAS_DEPLOYMENT_ID", runnerScope)
 	if err := a.loadImportedSecrets(); err != nil {
 		return "", preconditionErrorf("secrets_unreadable", "%s", err.Error())
 	}
@@ -419,6 +437,7 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		return "", preconditionErrorf("resolution_failed", "%s", err.Error())
 	}
 	total := int64(len(a.order))
+	a.applyModuleDefaults()
 	if opts.updateLock {
 		if err := a.validateVersions(lock); err != nil {
 			return "", preconditionErrorf("version_conflict", "%s", err.Error())
@@ -430,13 +449,23 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		if err != nil {
 			return "", preconditionErrorf("snapshot_policy_invalid", "%s", err.Error())
 		}
-		if err := saveModuleLockFile(lockPath, lock); err != nil {
-			return "", failuref("write_failed", "%s", err.Error())
-		}
 	} else if err := validateLockedResolution(a, lock); err != nil {
 		return "", preconditionErrorf("lock_stale", "%s", err.Error())
 	}
-	a.applyModuleDefaults()
+	// An ordinary operation must establish bundle trust before executing an
+	// opt-in Hook. --update-lock is the explicit trust transition, but its new
+	// lock is still kept in memory until validation succeeds.
+	if err := a.validateModules(); err != nil {
+		return "", preconditionErrorf("config_invalid", "%s", err.Error())
+	}
+	if opts.updateLock {
+		if err := saveModuleLockFile(lockPath, lock); err != nil {
+			return "", failuref("write_failed", "%s", err.Error())
+		}
+	}
+	if err := os.MkdirAll(stagingModules, 0700); err != nil {
+		return "", failuref("mkdir_failed", "%s", err.Error())
+	}
 	if err := a.materializeDNSCredentials(); err != nil {
 		return "", preconditionErrorf("dns_credentials_invalid", "%s", err.Error())
 	}
@@ -534,21 +563,8 @@ func validateLockedResolution(a *app, lock *moduleLock) error {
 	if err := validateLockedSnapshot(a.cfg, lock); err != nil {
 		return err
 	}
-	for _, name := range a.order {
-		record, ok := lock.Modules[name]
-		if !ok {
-			return fmt.Errorf("config lock has no module %q; run anas lock", name)
-		}
-		if record.Version != a.reg[name].Version || record.Revision != a.reg[name].Revision {
-			return fmt.Errorf("module %q is locked at %s-r%d but source provides %s-r%d; run anas lock to update explicitly", name, record.Version, record.Revision, a.reg[name].Version, a.reg[name].Revision)
-		}
-		digest, err := moduleBundleDigest(a.reg[name].SourceDir)
-		if err != nil {
-			return err
-		}
-		if record.Digest != digest {
-			return fmt.Errorf("module %q bundle digest does not match config lock; run anas lock to update explicitly", name)
-		}
+	if err := validateLockedModuleBundles(a, lock); err != nil {
+		return err
 	}
 	usedContracts := map[string]bool{}
 	for _, name := range a.order {
@@ -592,6 +608,34 @@ func validateLockedResolution(a *app, lock *moduleLock) error {
 	}
 	return nil
 }
+
+// validateLockedModuleBundles is the executable-code trust gate shared by
+// plan/config-set/materialization. It intentionally runs before any Module
+// Hook; contract/binding checks remain in validateLockedResolution once the
+// caller has the full contract registry.
+func validateLockedModuleBundles(a *app, lock *moduleLock) error {
+	for _, name := range a.order {
+		record, ok := lock.Modules[name]
+		if !ok {
+			return &lockedResolutionError{message: fmt.Sprintf("config lock has no module %q; run anas lock", name)}
+		}
+		if record.Version != a.reg[name].Version || record.Revision != a.reg[name].Revision {
+			return &lockedResolutionError{message: fmt.Sprintf("module %q is locked at %s-r%d but source provides %s-r%d; run anas lock to update explicitly", name, record.Version, record.Revision, a.reg[name].Version, a.reg[name].Revision)}
+		}
+		digest, err := moduleBundleDigest(a.reg[name].SourceDir)
+		if err != nil {
+			return err
+		}
+		if record.Digest != digest {
+			return &lockedResolutionError{message: fmt.Sprintf("module %q bundle digest does not match config lock; run anas lock to update explicitly", name)}
+		}
+	}
+	return nil
+}
+
+type lockedResolutionError struct{ message string }
+
+func (e *lockedResolutionError) Error() string { return e.message }
 
 func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*deploymentManifest, error) {
 	settings, err := config.Settings(cfgPath)
@@ -653,10 +697,12 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 			ArtifactDeployment: id, RenderDigest: digest,
 			DataBreaking: cloneStringListPointer(mod.DataBreaking),
 			RuntimeType:  mod.RuntimeType, ComposeFile: mod.ComposeFile,
-			Hook: mod.Hook, EnvPrefix: mod.EnvPrefix,
-			Consumes:     append([]string{}, mod.Consumes...),
-			Dependencies: append([]string{}, a.deps[name]...),
-			UseHostLAN:   mod.UseHostLAN, Changes: mod.Changes,
+			Hook:           mod.Hook,
+			ValidationPlan: cloneMap(a.modulePlans[name]),
+			EnvPrefix:      mod.EnvPrefix,
+			Consumes:       append([]string{}, mod.Consumes...),
+			Dependencies:   append([]string{}, a.deps[name]...),
+			UseHostLAN:     mod.UseHostLAN, Changes: mod.Changes,
 			Providers:     cloneContractProviders(mod.ContractProviders),
 			LocalAccounts: append([]LocalAccount{}, mod.LocalAccounts...),
 		}
@@ -709,6 +755,11 @@ func normalizedModuleDigest(root, deploymentRoot string) (string, error) {
 		body = bytes.ReplaceAll(body, []byte(deploymentRoot), []byte("$ANAS_DEPLOYMENT"))
 		runtimeState := filepath.ToSlash(filepath.Join("runtime-state", "deployments", filepath.Base(deploymentRoot)))
 		body = bytes.ReplaceAll(body, []byte(runtimeState), []byte("runtime-state/deployments/$ANAS_DEPLOYMENT"))
+		// A deployment ID may also be rendered as a bare environment value
+		// (for example, DNS ownership audit metadata). It is an artifact
+		// identity, not effective module configuration, so normalize it just
+		// like deployment-root bind paths.
+		body = bytes.ReplaceAll(body, []byte(filepath.Base(deploymentRoot)), []byte("$ANAS_DEPLOYMENT_ID"))
 		_, _ = h.Write([]byte(filepath.ToSlash(rel)))
 		_, _ = h.Write([]byte{0})
 		_, _ = h.Write(body)
@@ -1709,6 +1760,7 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 	modulesRoot := filepath.Join(root, "modules")
 	reg := map[string]Module{}
 	deps := map[string][]string{}
+	modulePlans := map[string]map[string]string{}
 	for name, module := range manifest.Modules {
 		artifactDeployment := module.ArtifactDeployment
 		if artifactDeployment == "" {
@@ -1726,6 +1778,9 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 			LocalAccounts:     append([]LocalAccount{}, module.LocalAccounts...),
 		}
 		deps[name] = append([]string{}, module.Dependencies...)
+		if len(module.ValidationPlan) > 0 {
+			modulePlans[name] = cloneMap(module.ValidationPlan)
+		}
 	}
 	secrets, err := loadSecretStore(base)
 	if err != nil {
@@ -1741,6 +1796,7 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 		env:   map[string]string{}, envOwner: map[string]string{},
 		secrets: secrets, localAdmins: localAdmins, useFrozenHooks: true, artifactRoot: modulesRoot,
 		resolvedBindings: cloneNestedMap(manifest.Bindings),
+		modulePlans:      modulePlans,
 	}
 	for _, resource := range manifest.Resources {
 		password := secrets.values[resource.SecretKey]

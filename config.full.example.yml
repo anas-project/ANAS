@@ -3,7 +3,12 @@
 module_source: official
 
 modules:
-  samba_dc: {}
+  samba_dc:
+    config:
+      # AD DNS/Realm identity; immutable after first provision. It may be a
+      # parent of, equal to, or unrelated to global.base_domain.
+      domain: example.com
+      application_dns_mode: auto
   samba_fs: {}
   postgres: {}
   llng: {}

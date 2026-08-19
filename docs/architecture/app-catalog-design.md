@@ -27,12 +27,17 @@
 
 ## 2. 当前实现的问题
 
-现状：`APPS_LIST` 是一组 Hook 之间的口头约定，Runner 完全不参与。
+现状：`APPS_LIST` 的条目和元数据仍是一组 Hook 之间的过渡约定，尚未实现本文设计的
+完整 Runner catalog。Runner 只守住聚合键的所有权边界：声明 `APPS_LIST*` export 的
+Module 只能保留已有列表并追加自己的 Module 名，聚合后的 `APPS_LIST` 归 Runner
+所有；单个 Module 不能覆盖、重排或删除其他条目。这是阶段 A 前的兼容保护，不替代
+后文的清单 schema、校验和两段式发布。
 
-1. **只有两个 Module 参与。** 只有 `nextcloud`
+1. **只有三个 Module 参与。** 只有 `nextcloud`
    （[main.go:207](https://github.com/anas-project/ANAS/blob/master/modules/nextcloud/hook/main.go#L207)）和 `netbird`
-   （[main.go:191](https://github.com/anas-project/ANAS/blob/master/modules/netbird/hook/main.go#L191)）发布条目。
-   `lam`、`meshcentral`、`collabora`、各 Adminer、Traefik dashboard、LLNG
+   （[main.go:191](https://github.com/anas-project/ANAS/blob/master/modules/netbird/hook/main.go#L191)），以及 `meshcentral`
+   （[main.go:191](https://github.com/anas-project/ANAS/blob/master/modules/meshcentral/hook/main.go#L191)）发布条目。
+   `lam`、`collabora`、各 Adminer、Traefik dashboard、LLNG
    Manager、Authentik 自身都不在门户里，用户必须记域名。
 2. **权限写了两份且互不校验。** LLNG 的 `display` 表达式读
    `APPS_LIST__<APP>__ALLOW_GROUPS`
@@ -261,7 +266,7 @@ Provider 在 `render_env` 里读到的永远是完整目录。这与 IAM 注册�
 同构：Runner 先发名单，应用在 `calculate` 里补自己的字段，Provider 在
 `render_env` 里读全量——单向依赖，不成环。
 
-第 2 步意味着 `nextcloud`/`netbird` Hook 里那几行 `APPS_LIST__*` 赋值可以整段
+第 2 步意味着 `nextcloud`/`netbird`/`meshcentral` Hook 里那几行 `APPS_LIST__*` 赋值可以整段
 删掉：它们做的事就是把 `NEXTCLOUD_DOMAIN_FULL` 抄到另一个变量名下。
 
 ## 7. 图标契约
@@ -364,7 +369,7 @@ allow_groups may only narrow the enforced set: APP_nextcloud, Admins
 | A | Runner 契约：清单 `launcher` 段、两段式发布、§9 校验；同时双写旧 `APPS_LIST*` 保持现有 Module 可用 |
 | B | LLNG 改读新契约；图标改挂载，删除 `after_start: copy_portal_logos` 与 `LOGO_PATH`/`LOGO_NAME` |
 | C | Authentik 补分类与图标；策略绑定与门户可见性统一读 §5 的解析结果 |
-| D | 给 `lam`、`meshcentral`、`collabora`、各 Adminer、Traefik dashboard、LLNG Manager、Authentik 自身补 `launcher` 声明；删除 `APPS_LIST*` 与 `nextcloud`/`netbird` Hook 里的对应代码 |
+| D | 给 `lam`、`collabora`、各 Adminer、Traefik dashboard、LLNG Manager、Authentik 自身补 `launcher` 声明；删除 `APPS_LIST*` 与 `nextcloud`/`netbird`/`meshcentral` Hook 里的对应代码 |
 | E | 用户配置覆盖与外部条目 |
 
 A 到 D 之间旧契约保持可用，因此每一阶段都能单独渲染验证；`APPS_LIST` 的删除放在

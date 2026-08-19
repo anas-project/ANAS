@@ -1,64 +1,6 @@
 #!/usr/bin/with-contenv bash
 
-join_domain() {
-  if net ads testjoin >/dev/null 2>&1; then
-    echo "Existing AD membership is valid"
-    return
-  fi
-  while :
-  do
-    echo "Joining AD $SAMBA_DC_DOMAIN ..."
-    sleep 5
-    echo "echo *** | kinit $SAMBA_DC_ADMIN_NAME"
-    echo $SAMBA_DC_ADMIN_PASSWORD | kinit $SAMBA_DC_ADMIN_NAME
-    result=$?
-    if [ $result == 0 ]; then
-      echo "kinit succeeded"
-      echo net ads join -d $SAMBA_FS_LOG_LEVEL -U "$SAMBA_DC_ADMIN_NAME%*****"
-      net ads join -d $SAMBA_FS_LOG_LEVEL -U "$SAMBA_DC_ADMIN_NAME%$SAMBA_DC_ADMIN_PASSWORD"
-
-      # samba-tool domain join $SAMBA_DC_DOMAIN MEMBER -U $SAMBA_DC_ADMIN_NAME --password=$SAMBA_DC_ADMIN_PASSWORD
-      result=$?
-      if [ $result == 0 ]; then
-        return
-      fi
-      echo "Join AD $SAMBA_DC_DOMAIN failed, waiting retry..."
-      sleep 4
-    else
-      echo "kinit failed, waiting retry..."
-      sleep 4
-    fi
-  done
-}
-
-# join_domain() {
-
-#   while :
-#   do
-#     echo "Join AD $SAMBA_DC_DOMAIN"
-
-#     echo "echo *** | kinit $SAMBA_DC_ADMIN_NAME"
-#     echo $SAMBA_DC_ADMIN_PASSWORD | kinit $SAMBA_DC_ADMIN_NAME
-#     result=$?
-#     if [ $result == 0 ]; then
-#       while :
-#       do
-#         echo "Join AD $SAMBA_DC_DOMAIN"
-#         echo samba-tool domain join $SAMBA_DC_DOMAIN MEMBER -U "\"$SAMBA_DC_ADMIN_NAME%******\""
-
-#         samba-tool domain join $SAMBA_DC_DOMAIN MEMBER -U $SAMBA_DC_ADMIN_NAME --password=$SAMBA_DC_ADMIN_PASSWORD
-#         result=$?
-#         if [ $result == 0 ]; then
-#           return
-#         fi
-#         echo "Join AD $SAMBA_DC_DOMAIN failed, waiting retry..."
-#         sleep 4
-#       done
-#     fi
-#     echo "kinit failed, waiting retry..."
-#     sleep 4
-#   done
-# }
+. /usr/local/bin/join_ad.sh
 
 if [ -z "$SAMBA_FS_INTERFACES" ]; then # bind interfaces empty, use default route
   export SAMBA_FS_INTERFACES=$(echo $(/sbin/ip route | awk '/default/ { print $5 }'))
@@ -94,7 +36,7 @@ envsubst "$smbusers_variables" < /etc/samba/smbusers.envsubst > /etc/samba/smbus
 mv /etc/samba/smbusers.tmp /etc/samba/smbusers
 
 krb5_variables='${SAMBA_DC_DC_DOMAIN} ${SAMBA_DC_DOMAIN} ${SAMBA_DC_REALM}'
-for name in SAMBA_DC_DC_DOMAIN SAMBA_DC_DOMAIN SAMBA_DC_REALM; do
+for name in SAMBA_DC_DC_DOMAIN SAMBA_DC_DNS_SEARCH SAMBA_DC_DNS_SERVER SAMBA_DC_DOMAIN SAMBA_DC_REALM; do
   eval 'present=${'"$name"'+x}'
   if [[ "$present" != x ]]; then
     echo "missing required environment variable: $name" >&2
@@ -133,11 +75,7 @@ echo "$HOST_IP  $fs_hostname.$SAMBA_DC_DOMAIN  $fs_hostname" >> /etc/hosts
 # dns
 echo "Setting DNS resolv.conf"
 : > /etc/resolv.conf
-echo "nameserver ${SAMBA_FS_DNS_SERVER:-$SAMBA_DC_DNS_SERVER}" >> /etc/resolv.conf
-for dns in $(echo $HOST_DNS_SERVER | tr " " "\n")
-do
-  echo "nameserver $dns" >> /etc/resolv.conf
-done
+echo "nameserver $SAMBA_DC_DNS_SERVER" >> /etc/resolv.conf
 echo "search $SAMBA_DC_DNS_SEARCH" >> /etc/resolv.conf
 
 # /var/lib/samba is a bind mount that starts empty, so the directories the
@@ -154,7 +92,10 @@ join_domain
 # keep pointing clients at wherever this server used to be. Registering the
 # current address every start is idempotent and costs one LDAP update.
 echo "Registering $SAMBA_FS_HOSTNAME in AD DNS"
-net ads dns register -P || echo "AD DNS registration failed; clients may resolve a stale address" >&2
+if ! net ads dns register -P; then
+  echo "AD DNS registration failed; refusing to start with an unverified member address" >&2
+  exit 1
+fi
 
 echo "Create share"
 mkdir -p /userdata/$SHARE_DIR_NAME

@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `oauth2_proxy` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `7.15.3-r3` / `anas.module/v1`.
+> 状态：当前实现；对应 `7.15.3-r4` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -28,7 +28,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `oauth2_proxy.allow_groups` | string | `pattern: \S` | `Admins` | `static` | `OAUTH2_PROXY_ALLOW_GROUPS` | 否 | 否 | 否 | 是 | `container_recreate` | 允许通过门禁的目录 Group |
 | `oauth2_proxy.domain_prefix` | string | — | `auth-gate` | `static` | `OAUTH2_PROXY_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
-| `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
+| `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
 
 参数库存的权威来源是 `module.yml`；CLI 负责合并默认值、类型、required、环境变量映射、敏感性和变更执行器。技术文档不得另造可设置参数。
 

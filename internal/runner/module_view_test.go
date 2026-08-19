@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,53 @@ import (
 
 	"github.com/anas-project/ANAS/internal/modulestore"
 )
+
+func TestCommitWorkspaceModuleStateRollsBackBothFiles(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(stateDir(workspace), 0700); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(workspace, "config.lock.yml")
+	viewPath := filepath.Join(stateDir(workspace), workspaceModuleViewName)
+	const oldLock = "old lock\n"
+	const oldView = "old view\n"
+	if err := os.WriteFile(lockPath, []byte(oldLock), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(viewPath, []byte(oldView), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalRename := renameImportedFile
+	t.Cleanup(func() { renameImportedFile = originalRename })
+	renames := 0
+	renameImportedFile = func(oldPath, newPath string) error {
+		renames++
+		if renames == 2 {
+			return errors.New("injected view replacement failure")
+		}
+		return os.Rename(oldPath, newPath)
+	}
+	view := modulestore.View{
+		APIVersion: "anas.module-view/v1",
+		Digest:     "sha256:new",
+		ModuleRoot: filepath.Join(workspace, "new-view", "modules"),
+	}
+	if err := commitWorkspaceModuleState(lockPath, workspace, &moduleLock{}, view); err == nil {
+		t.Fatal("commit unexpectedly succeeded")
+	}
+	gotLock, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotView, err := os.ReadFile(viewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotLock) != oldLock || string(gotView) != oldView {
+		t.Fatalf("partial update survived rollback: lock=%q view=%q", gotLock, gotView)
+	}
+}
 
 func TestWorkspaceModuleViewLoadsSymlinkedImmutableBundles(t *testing.T) {
 	repository := repoRoot(t)

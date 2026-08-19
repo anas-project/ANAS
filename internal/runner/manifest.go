@@ -23,6 +23,18 @@ var (
 	envKeyPattern              = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 )
 
+var knownModuleHookPhases = map[string]bool{
+	"validate":               true,
+	"calculate":              true,
+	"render_env":             true,
+	"runtime_restore":        true,
+	"services":               true,
+	"after_start":            true,
+	"local_account_apply":    true,
+	"local_account_rotate":   true,
+	"local_account_rollback": true,
+}
+
 type manifestABI struct {
 	Supports []string `yaml:"supports"`
 }
@@ -477,6 +489,10 @@ func registryReservedRuntimeKeys(reg map[string]Module) []string {
 	}
 
 	add(registryReservedNamespaceKeys()...)
+	// APPS_LIST is the root of a transitional cooperative Module protocol.
+	// Modules may append their own name through an explicit APPS_LIST* export,
+	// but callers may not seed the aggregate through raw env/secrets input.
+	add("APPS_LIST")
 	add(configCoreReservedRuntimeKeys()...)
 
 	identityInterfaces := map[string]bool{}
@@ -517,7 +533,7 @@ func registryReservedNamespaceKeys() []string {
 	keys := []string{
 		"ALL_MODS_NAME", "USE_HOST_LAN_REQUIRED_MODS_NAME", "USE_HOST_LAN_OPTIONAL_MODS_NAME", "DOMAINS",
 		"DATA_PATH", "USER_DATA_PATH", "DOCKER_SOCKET_PATH", "ANAS_RUNTIME_ENTRY_IP",
-		"MODULE_NAME", "ANAS_MODULE_RUNTIME_STATE_PATH",
+		"MODULE_NAME", "ANAS_MODULE_RUNTIME_STATE_PATH", "ANAS_DEPLOYMENT_ID",
 		"ANAS_RESOURCE_DATABASE", "ANAS_RESOURCE_USERNAME", "ANAS_RESOURCE_PASSWORD",
 		localAdminCandidateSecretKey,
 		envIAMProvider, envIAMInterfaces, envIdentityClients, envIdentityAppClients,
@@ -737,6 +753,10 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if !contains(manifest.ABI.Supports, currentModuleABI) {
 		return Module{}, fmt.Errorf("module %q does not support runner ABI %s", dirname, currentModuleABI)
 	}
+	hook, err := normalizeHookConfig(dirname, manifest.Logic.Hook)
+	if err != nil {
+		return Module{}, err
+	}
 	if manifest.Runtime.Type != "builtin" && manifest.Runtime.Type != "compose" {
 		return Module{}, fmt.Errorf("module %q has unsupported runtime type %q", dirname, manifest.Runtime.Type)
 	}
@@ -819,8 +839,18 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		return Module{}, err
 	}
 	for _, account := range localAccounts {
-		if (account.Apply != "" || account.Rotate != "") && len(manifest.Logic.Hook.Command) == 0 {
+		if (account.Apply != "" || account.Rotate != "") && len(hook.Command) == 0 {
 			return Module{}, fmt.Errorf("module %q local account %q declares lifecycle handlers without a module hook", dirname, account.ID)
+		}
+		if account.Apply != "" && !hookSupportsPhase(hook, "local_account_apply") {
+			return Module{}, fmt.Errorf("module %q local account %q declares an apply handler but hook.phases omits local_account_apply", dirname, account.ID)
+		}
+		if account.Rotate != "" {
+			for _, phase := range []string{"local_account_rotate", "local_account_rollback"} {
+				if !hookSupportsPhase(hook, phase) {
+					return Module{}, fmt.Errorf("module %q local account %q declares a rotate handler but hook.phases omits %s", dirname, account.ID, phase)
+				}
+			}
 		}
 	}
 	provisioning, authentication, identityInterfaces, err := normalizeIdentity(dirname, manifest.Identity)
@@ -869,11 +899,44 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		ManagementSurfaces:     managementSurfaces,
 		LocalAccounts:          localAccounts,
 		UseHostLAN:             manifest.Features.HostLAN,
-		Hook:                   manifest.Logic.Hook,
+		PublishesDomain:        manifest.Features.Domain,
+		Hook:                   hook,
 		RuntimeType:            manifest.Runtime.Type,
 		ComposeFile:            composeFile,
 	}
 	return mod, nil
+}
+
+func normalizeHookConfig(module string, hook HookConfig) (HookConfig, error) {
+	if len(hook.Phases) > 0 && len(hook.Command) == 0 {
+		return HookConfig{}, fmt.Errorf("module %q declares hook phases without a hook command", module)
+	}
+	if hook.Phases == nil {
+		return hook, nil
+	}
+	if len(hook.Phases) == 0 {
+		return HookConfig{}, fmt.Errorf("module %q declares an empty hook phase list; omit phases only for legacy v1 behavior", module)
+	}
+	phases := make([]string, 0, len(hook.Phases))
+	seen := map[string]bool{}
+	for _, raw := range hook.Phases {
+		phase := strings.ToLower(strings.TrimSpace(raw))
+		if !knownModuleHookPhases[phase] {
+			known := make([]string, 0, len(knownModuleHookPhases))
+			for name := range knownModuleHookPhases {
+				known = append(known, name)
+			}
+			sort.Strings(known)
+			return HookConfig{}, fmt.Errorf("module %q declares unknown hook phase %q; use one of %s", module, raw, strings.Join(known, ", "))
+		}
+		if seen[phase] {
+			return HookConfig{}, fmt.Errorf("module %q declares hook phase %q more than once", module, phase)
+		}
+		seen[phase] = true
+		phases = append(phases, phase)
+	}
+	hook.Phases = phases
+	return hook, nil
 }
 
 // normalizeParamTypes validates the declarations themselves. A type nobody can

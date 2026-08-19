@@ -28,8 +28,8 @@ func TestConfigListProjectsCompleteParameterSchema(t *testing.T) {
 	}
 	document := requireSingleDocument(t, "config list schema", stdout)
 	raw, ok := document["parameters"].([]any)
-	if !ok || len(raw) != 139 {
-		t.Fatalf("parameters = %T len=%d, want 139", document["parameters"], len(raw))
+	if !ok || len(raw) != 141 {
+		t.Fatalf("parameters = %T len=%d, want 141", document["parameters"], len(raw))
 	}
 
 	byPath := map[string]map[string]any{}
@@ -99,6 +99,7 @@ func TestConfigListProjectsCompleteParameterSchema(t *testing.T) {
 	assertParameterJSON("global.base_domain", map[string]any{
 		"required": true, "input_required": true, "must_resolve": true,
 		"has_default": false, "default_source": "none",
+		"constraints": map[string]any{"format": "dns_name"},
 	})
 	assertParameterJSON("global.timezone", map[string]any{
 		"required": false, "input_required": false, "must_resolve": true,

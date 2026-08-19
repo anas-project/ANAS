@@ -8,17 +8,17 @@ services:
         - CHINESE_BUILD_SPEEDUP
         - APT_MIRROR_URL
         - DOCKER_HUB_REGISTRY
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-fs:4.23.6-r5
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-fs:4.23.6-r6
     restart: unless-stopped
     hostname: ${SAMBA_FS_HOSTNAME}
     cap_add:
       - CAP_NET_ADMIN
-    # Joining the domain needs the AD zone, which only the domain controller's
-    # DNS serves. Without this the container inherits a resolver that cannot
-    # answer for the realm and the join loops on
-    # "kinit: Cannot contact any KDC".
+    # This is the domain controller's numeric host address, so installing it as
+    # the resolver does not itself require DNS. The join helper waits and
+    # rechecks an existing trust while the DC is starting; the DC has no
+    # dependency on this member, so there is no startup cycle.
     dns:
-      - ${LOCAL_DNS_SERVER}
+      - ${SAMBA_DC_DNS_SERVER}
     dns_search:
       - ${SAMBA_DC_DNS_SEARCH}
     env_file:

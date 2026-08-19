@@ -3,6 +3,15 @@ set -euo pipefail
 
 export SAMBA_DC_DOMAIN_ACTION="${SAMBA_DC_DOMAIN_ACTION:-provision}"
 export SAMBA_DC_DOMAIN_MASTER="${SAMBA_DC_DOMAIN_MASTER:-auto}"
+# Preserve one durable upgrade hint before resetting the per-boot readiness
+# gate. The old reconciler owned records but had no resource manifest; the new
+# reconciler may adopt only exact matching records when this hint proves they
+# came from an earlier successful ANAS run.
+if [ -f /var/lib/samba/.anas-zone-ready ] &&
+   [ ! -f /var/lib/samba/.anas-managed-dns-v1.tsv ] &&
+   [ ! -f /var/lib/samba/.anas-application-zone-v1 ]; then
+  touch /var/lib/samba/.anas-legacy-zone-adoption
+fi
 rm -f /var/lib/samba/.anas-zone-ready /run/anas-zone.ready /run/anas-identity-schema.ready
 export SAMBA_DC_BIND_INTERFACES_ONLY="${SAMBA_DC_BIND_INTERFACES_ONLY:-No}"
 export SAMBA_DC_SERVER_STRING="${SAMBA_DC_SERVER_STRING:-'Samba Domain Controller'}"

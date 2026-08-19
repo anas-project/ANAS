@@ -5,6 +5,7 @@
 
 | 文档 | 类型 | 范围 |
 | --- | --- | --- |
+| [Core 实现标准](core-implementation-standard.md) | 强制架构标准 | Core/Module 参数所有权、禁止特判和通用扩展路径 |
 | [Module、Contract 与 Resource](module-contract-resource-design.md) | 当前模型 | 独立发布单元、跨模块协议、持久资源及 Provider operation |
 | [管理员账号系统](admin-account-system.md) | 当前模型与路线图 | 目录管理员、应用角色、本地账号、Secret 与 CLI 生命周期 |
 | [Samba AD 用户、组命名与权限规划](samba-ad-user-planning.md) | 当前目录与权限规范 | 目录结构、部门/角色/应用/资源组命名、账号分类与权限矩阵 |

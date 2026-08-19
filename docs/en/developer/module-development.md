@@ -4,6 +4,12 @@ A module is an independent release and deployment unit. It owns its manifest ide
 
 The frozen deployment must carry everything needed to start. It must not depend on relative paths into a source checkout.
 
+Module parameter semantics belong to the Module, not Core. Put cross-parameter
+checks in the `validate` Hook, derived values in `calculate`, and persistent
+state coordination in lifecycle operations or reconcilers. Never request a
+Core branch for a Module name or direct mutation of its private parameters. See
+the [Core implementation standard](/en/architecture/core-implementation-standard).
+
 Declare hard dependencies explicitly. Use capability providers for alternatives, ordering edges only for ordering, and resource/provider operations for persistent resources. Scope generated environments to the module, its dependency closure, and explicitly consumed keys. Never log secrets or inject unrelated credentials.
 
 ## Management surfaces and local administrators

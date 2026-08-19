@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: authentik
 version: 2026.5.6
-revision: 8
+revision: 9
 app_version: 2026.5.6
 abi:
   supports:
@@ -107,6 +107,7 @@ config:
       description: Every per-application endpoint is derived from this domain, so clients must be reconciled with it.
 features:
   generated_secrets: true
+  domain: true
 management:
   surfaces:
     - id: web

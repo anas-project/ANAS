@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -175,6 +176,22 @@ func runConfig(args []string, jsonMode bool) error {
 		// (where "null", "1.0" or "[x]" would change meaning).
 		preserveText := targetParamType(target, reg).Declared()
 		if err := setManagedConfigScalar(workspace, *cfgPath, target.YAMLPath, normalizedValue, preserveText, reg); err != nil {
+			var lockMismatch *lockedResolutionError
+			if errors.As(err, &lockMismatch) {
+				return preconditionErrorf("lock_stale", "%s", err.Error())
+			}
+			var lockFile *configCandidateLockFileError
+			if errors.As(err, &lockFile) {
+				return preconditionErrorf("lock_invalid", "%s", err.Error())
+			}
+			var secretStore *configCandidateSecretStoreError
+			if errors.As(err, &secretStore) {
+				return preconditionErrorf("secrets_unreadable", "%s", err.Error())
+			}
+			var invalid *configCandidateValidationError
+			if errors.As(err, &invalid) {
+				return preconditionErrorf("config_invalid", "%s", err.Error())
+			}
 			return failuref("write_failed", "%s", err.Error())
 		}
 		execution := map[string]any{"status": "stored", "executor": effectExecutor(policy.Effect)}
@@ -772,13 +789,18 @@ func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, js
 	}
 	lock, err := loadModuleLockFile(projectLockPath(cfgPath))
 	if err != nil {
-		return preconditionErrorf("state_unreadable", "module lock: %s", err.Error())
+		return preconditionErrorf("lock_invalid", "module lock: %s", err.Error())
 	}
 	store, err := loadSecretStore(base)
 	if err != nil {
-		return preconditionErrorf("state_unreadable", "%s", err.Error())
+		return preconditionErrorf("secrets_unreadable", "%s", err.Error())
 	}
-	if err := validateLoadedConfigSchema(loaded, reg, store.lifecycleManagedValues(), lock, store.values); err != nil {
+	validation, err := resolveLoadedConfigSchema(loaded, reg, store.lifecycleManagedValues(), lock, store.values)
+	if err != nil {
+		var lockMismatch *lockedResolutionError
+		if errors.As(err, &lockMismatch) {
+			return preconditionErrorf("lock_stale", "%s", err.Error())
+		}
 		return preconditionErrorf("config_invalid", "%s", err.Error())
 	}
 	settings, err := config.Settings(cfgPath)
@@ -828,10 +850,12 @@ func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, js
 			"applied_at":         nullableString(appliedAt),
 			"matches_last_start": len(changes) == 0,
 			"changes":            changes,
+			"module_plans":       validation.moduleValidationPlanDocument(),
 		})
 	}
 	if len(changes) == 0 {
 		fmt.Println("configuration matches the last successful start")
+		fmt.Print(validation.moduleValidationPlanSummary())
 		return nil
 	}
 	if appliedAt == "" {
@@ -842,6 +866,7 @@ func reportConfigPlan(workspace, cfgPath, base string, reg map[string]Module, js
 	for _, entry := range changes {
 		fmt.Printf("%-7s %-48s %-20s %s\n", entry["change"], entry["key"], entry["effect"], entry["apply"])
 	}
+	fmt.Print(validation.moduleValidationPlanSummary())
 	return nil
 }
 

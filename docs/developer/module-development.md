@@ -11,6 +11,10 @@ Module 是独立的发布和部署单元。它拥有：
 
 Module 不应依赖仓库检出的相对路径才能启动。冻结后的 deployment 必须携带运行所需的 Compose、环境、文件和 Hook 二进制。
 
+Module 参数的业务语义属于 Module，不属于 Core。跨参数校验放入 `validate` Hook，派生值放入
+`calculate` Hook，持久状态协调使用 lifecycle operation/reconciler；不要要求 Core 添加
+Module 名称分支或直接改写私有参数。完整边界见 [Core 实现标准](/architecture/core-implementation-standard)。
+
 ## 依赖和能力
 
 - 硬依赖必须显式声明并参与选择与排序；

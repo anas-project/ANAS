@@ -2,6 +2,7 @@
 
 The detailed design set currently uses Chinese as its source language. It covers:
 
+- the normative [Core implementation standard](/en/architecture/core-implementation-standard);
 - [modules, contracts, resources, and provider operations](/architecture/module-contract-resource-design);
 - [administrator account lifecycle](/architecture/admin-account-system);
 - [IAM capability and protocol selection](/architecture/iam-capability-design);

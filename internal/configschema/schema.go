@@ -33,6 +33,7 @@ const (
 	FormatLanguageTag  = "language_tag"
 	FormatLocale       = "locale"
 	FormatIPv4         = "ipv4"
+	FormatDNSName      = "dns_name"
 )
 
 var defaultSources = map[DefaultSource]struct{}{
@@ -52,6 +53,7 @@ var formats = map[string]formatNormalizer{
 	FormatLanguageTag:  localization.NormalizeLanguage,
 	FormatLocale:       localization.NormalizeLocale,
 	FormatIPv4:         normalizeIPv4,
+	FormatDNSName:      normalizeDNSName,
 }
 
 // Constraints contains the portable, single-parameter subset of the ANAS
@@ -353,6 +355,68 @@ func normalizeIPv4(value string) (string, error) {
 		return "", fmt.Errorf("must be an IPv4 address, not %q", value)
 	}
 	return address.String(), nil
+}
+
+// normalizeDNSName returns the canonical spelling used anywhere ANAS accepts
+// a DNS namespace. Keeping this in the shared parameter schema prevents the
+// application domain and the directory domain from acquiring subtly different
+// validation rules in their respective consumers.
+func normalizeDNSName(value string) (string, error) {
+	name := strings.ToLower(strings.TrimSpace(value))
+	name = strings.TrimSuffix(name, ".")
+	if name == "" {
+		return "", nil
+	}
+	if len(name) > 253 {
+		return "", fmt.Errorf("DNS name is %d bytes; maximum is 253", len(name))
+	}
+	if address, err := netip.ParseAddr(name); err == nil && address.IsValid() {
+		return "", fmt.Errorf("must be a DNS name, not IP address %q", value)
+	}
+	if looksLikeIPv4Name(name) {
+		return "", fmt.Errorf("must be a DNS name, not IP address %q", value)
+	}
+	labels := strings.Split(name, ".")
+	for _, label := range labels {
+		if label == "" {
+			return "", fmt.Errorf("must not contain an empty DNS label")
+		}
+		if len(label) > 63 {
+			return "", fmt.Errorf("DNS label %q is %d bytes; maximum is 63", label, len(label))
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return "", fmt.Errorf("DNS label %q must start and end with a letter or digit", label)
+		}
+		for _, char := range label {
+			if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' {
+				continue
+			}
+			return "", fmt.Errorf("DNS label %q contains unsafe character %q", label, char)
+		}
+	}
+	return name, nil
+}
+
+func looksLikeIPv4Name(value string) bool {
+	parts := strings.Split(value, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" {
+			return false
+		}
+		for _, char := range part {
+			if char < '0' || char > '9' {
+				return false
+			}
+		}
+		n, err := strconv.Atoi(part)
+		if err != nil || n > 255 {
+			return false
+		}
+	}
+	return true
 }
 
 func joinDefaultSources() string {

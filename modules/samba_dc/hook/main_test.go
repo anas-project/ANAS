@@ -53,6 +53,76 @@ func TestCalcSambaDCHostIPDefaultsToHostIP(t *testing.T) {
 	}
 }
 
+func TestDomainDNSPlanModesAndLabelBoundaries(t *testing.T) {
+	tests := []struct {
+		name, base, samba, requested, resolved, zone string
+		wantError                                    string
+	}{
+		{name: "legacy fallback", base: "NAS.Test.", requested: "auto", resolved: "ad_zone", zone: "nas.test"},
+		{name: "application subdomain", base: "nas.lnnj.com.cn", samba: "lnnj.com.cn", requested: "auto", resolved: "ad_zone", zone: "lnnj.com.cn"},
+		{name: "unrelated domains", base: "apps.example.net", samba: "corp.example.com", requested: "auto", resolved: "separate_zone", zone: "apps.example.net"},
+		{name: "explicit separate", base: "nas.lnnj.com.cn", samba: "lnnj.com.cn", requested: "separate_zone", resolved: "separate_zone", zone: "nas.lnnj.com.cn"},
+		{name: "same-name separate zone", base: "lnnj.com.cn", samba: "lnnj.com.cn", requested: "separate_zone", wantError: "same name as the existing AD zone"},
+		{name: "false suffix", base: "evillnnj.com.cn", samba: "lnnj.com.cn", requested: "ad_zone", wantError: "DNS-label subdomain"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			plan, err := validateDomainDNSConfig(map[string]string{
+				"BASE_DOMAIN": test.base, "SAMBA_DC_DOMAIN": test.samba,
+				"SAMBA_DC_APPLICATION_DNS_MODE": test.requested,
+			})
+			if test.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantError) {
+					t.Fatalf("error = %v, want %q", err, test.wantError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.ResolvedMode != test.resolved || plan.Zone != test.zone {
+				t.Fatalf("plan = %+v, want mode=%s zone=%s", plan, test.resolved, test.zone)
+			}
+		})
+	}
+}
+
+func TestCalcSambaDCSeparatesDirectoryAndApplicationDomains(t *testing.T) {
+	env := map[string]string{
+		"BASE_DOMAIN": "nas.lnnj.com.cn", "SAMBA_DC_DOMAIN": "lnnj.com.cn",
+		"SAMBA_DC_APPLICATION_DNS_MODE": "auto", "SERVER_NAME": "dc1", "HOST_IP": "192.0.2.10",
+	}
+	if err := calcSambaDC(env, "", &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"SAMBA_DC_DOMAIN": "lnnj.com.cn", "SAMBA_DC_REALM": "LNNJ.COM.CN",
+		"SAMBA_DC_DNS_SEARCH": "lnnj.com.cn", "SAMBA_DC_DC_DOMAIN": "DC1.lnnj.com.cn",
+		"SAMBA_DC_BASE_DN":                         "DC=lnnj,DC=com,DC=cn",
+		"SAMBA_DC_USER_PRINCIPAL_NAME_BASE_DOMAIN": "lnnj.com.cn",
+		"SAMBA_DC_HOST":                            "nas.lnnj.com.cn", "SAMBA_DC_LDAPS_SERVER_URL": "ldaps://nas.lnnj.com.cn",
+		"SAMBA_DC_APPLICATION_DNS_MODE_RESOLVED": "ad_zone", "SAMBA_DC_APPLICATION_DNS_ZONE": "lnnj.com.cn",
+	}
+	// NetBIOS names are upper-cased before the canonical DC host label is
+	// lower-cased, so assert the actual directory FQDN separately.
+	want["SAMBA_DC_DC_DOMAIN"] = "dc1.lnnj.com.cn"
+	for key, expected := range want {
+		if got := env[key]; got != expected {
+			t.Errorf("%s = %q, want %q", key, got, expected)
+		}
+	}
+}
+
+func TestDomainDNSPlanRejectsRealmDrift(t *testing.T) {
+	_, err := validateDomainDNSConfig(map[string]string{
+		"BASE_DOMAIN": "nas.example.com", "SAMBA_DC_DOMAIN": "example.com",
+		"SAMBA_DC_REALM": "OTHER.EXAMPLE",
+	})
+	if err == nil || !strings.Contains(err.Error(), "SAMBA_DC_REALM") {
+		t.Fatalf("error = %v, want realm mismatch", err)
+	}
+}
+
 func TestHostNetworkCIDRNormalizesHostAddress(t *testing.T) {
 	if got, want := hostNetworkCIDR("192.168.127.117", "24"), "192.168.127.0/24"; got != want {
 		t.Fatalf("hostNetworkCIDR() = %q, want %q", got, want)

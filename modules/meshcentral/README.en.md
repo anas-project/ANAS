@@ -8,7 +8,7 @@ Remote device management with OIDC authentication and LDAPS directory provisioni
 | Item | Value |
 | --- | --- |
 | Module | `meshcentral` |
-| Version / revision | `1.2.4-r6` |
+| Version / revision | `1.2.4-r7` |
 | Status | `release` |
 | Category | `app` |
 | Runtime | `compose` |
@@ -83,7 +83,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | `meshcentral.db_name` | string | — | `meshcentral` | `static` | `MESHCENTRAL_DB_NAME` | no | no | no | no: `migrate-meshcentral-database` | `data_migrate` | The database name is materialized when the database is initialized. |
 | `meshcentral.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `MESHCENTRAL_DB_TYPE` | no | no | no | no: `migrate-meshcentral-database` | `data_migrate` | Changing the selected database does not migrate existing MeshCentral data. |
 | `meshcentral.domain_prefix` | string | — | `meshcentral` | `static` | `MESHCENTRAL_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `meshcentral.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `MESHCENTRAL_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | The OIDC client registration and generated runtime configuration must be reconciled together. |
+| `meshcentral.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `MESHCENTRAL_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | The OIDC client registration and generated runtime configuration must be reconciled together. |
 | `meshcentral.mps_port` | int | `1..65535` | `4433` | `static` | `MESHCENTRAL_MPS_PORT` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
 ### Query and modify

@@ -8,7 +8,7 @@ Active Directory, LDAPS, Kerberos, and BIND9-DLZ DNS provider.
 | Item | Value |
 | --- | --- |
 | Module | `samba_dc` |
-| Version / revision | `4.23.6-r7` |
+| Version / revision | `4.23.6-r8` |
 | Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |
@@ -24,8 +24,16 @@ Active Directory, LDAPS, Kerberos, and BIND9-DLZ DNS provider.
 
 ```yaml
 modules:
-  samba_dc: {}
+  samba_dc:
+    config:
+      domain: example.com
+      application_dns_mode: auto
 ```
+
+`domain` is the AD DNS domain and cannot be renamed in place;
+`global.base_domain` is the application/Web namespace. Legacy configurations
+temporarily inherit `base_domain` when `domain` is absent; new installations
+should set it explicitly.
 
 ## Identity, users, and groups
 
@@ -101,11 +109,13 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | `samba_dc.anchor_bind_password` | string | — | — | `generated` | `SAMBA_DC_ANCHOR_BIND_PASSWORD` | no | yes | yes | no: `rotate-anchor-bind-password` | `credential_rotate` | Update the AD service account and Anchor Worker as one transaction. |
 | `samba_dc.anchor_scan_interval` | int | — | `300` | `static` | `SAMBA_DC_ANCHOR_SCAN_INTERVAL` | no | no | no | yes | `container_recreate` | The reconciliation interval is consumed by the Anchor Worker process. |
 | `samba_dc.app_filter` | bool | — | `true` | `static` | `SAMBA_DC_APP_FILTER` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `samba_dc.application_dns_mode` | enum (`auto`, `ad_zone`, `separate_zone`) | — | `auto` | `static` | `SAMBA_DC_APPLICATION_DNS_MODE` | no | no | no | no: `migrate-application-dns-zone` | `data_migrate` | Application-DNS authoritative-zone mode. |
 | `samba_dc.create_structure` | bool | — | `true` | `static` | `SAMBA_DC_CREATE_STRUCTURE` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `samba_dc.dns_allowed_networks` | string | — | `""` | `static` | `SAMBA_DC_DNS_ALLOWED_NETWORKS` | no | no | no | yes | `container_recreate` | BIND recursion and cache access are restricted to these networks. |
 | `samba_dc.dns_cache_size` | string | — | `128M` | `static` | `SAMBA_DC_DNS_CACHE_SIZE` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `samba_dc.dns_debug` | bool | — | `false` | `static` | `SAMBA_DC_DNS_DEBUG` | no | no | no | yes | `container_recreate` | The named process debug level is selected when the container starts. |
 | `samba_dc.dns_forwarders` | string | — | `""` | `static` | `SAMBA_DC_DNS_FORWARDERS` | no | no | no | yes | `container_recreate` | The generated BIND configuration is installed during container initialization. |
+| `samba_dc.domain` | string | `format: dns_name` | — | `inherited` | `SAMBA_DC_DOMAIN` | no | yes | no | no: `replace-directory-domain` | `immutable` | AD DNS domain (directory identity). |
 | `samba_dc.ldap_bind_name` | string | — | `svc_ldap` | `static` | `SAMBA_DC_LDAP_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `samba_dc.ldap_bind_password` | string | — | — | `generated` | `SAMBA_DC_LDAP_BIND_PASSWORD` | no | yes | yes | no: `rotate-ldap-bind-password` | `credential_rotate` | Update AD and all LDAP consumers as one transaction. |
 | `samba_dc.log_level` | string | — | `1` | `static` | `SAMBA_DC_LOG_LEVEL` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
@@ -113,7 +123,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | `samba_dc.netbios_name` | string | — | — | `runtime` | `SAMBA_DC_NETBIOS_NAME` | no | yes | no | no: `replace-domain-controller` | `immutable` | Changing the DC machine identity requires a controlled replacement. |
 | `samba_dc.password_bind_name` | string | — | `svc_password` | `static` | `SAMBA_DC_PASSWORD_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `samba_dc.password_bind_password` | string | — | — | `generated` | `SAMBA_DC_PASSWORD_BIND_PASSWORD` | no | yes | yes | no: `rotate-password-bind-password` | `credential_rotate` | Update AD and password-capable applications as one transaction. |
-| `samba_dc.realm` | string | — | — | `inherited` | `SAMBA_DC_REALM` | no | yes | no | no: `migrate-domain` | `immutable` | The realm is part of the provisioned AD identity. |
+| `samba_dc.realm` | string | — | — | `inherited` | `SAMBA_DC_REALM` | no | yes | no | no: `replace-directory-domain` | `immutable` | Realm derived from the AD DNS domain. |
 | `samba_dc.template_homedir` | string | — | `/home/%D/%U` | `static` | `SAMBA_DC_TEMPLATE_HOMEDIR` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `samba_dc.template_shell` | string | — | `/bin/false` | `static` | `SAMBA_DC_TEMPLATE_SHELL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `samba_dc.user_complex_pass` | bool | — | `false` | `static` | `SAMBA_DC_USER_COMPLEX_PASS` | no | no | no | yes | `hot_reload` | samba-tool can update the domain policy without restarting Samba. |

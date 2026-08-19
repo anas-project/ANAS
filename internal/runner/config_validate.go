@@ -210,16 +210,14 @@ func markSensitiveValueAliasesFromSources(values map[string]string, sensitive ma
 	privateValues := map[string]bool{}
 	for _, source := range sources {
 		for _, value := range source {
-			if value != "" {
-				privateValues[value] = true
-			}
+			addSensitiveValueForms(privateValues, value)
 		}
 	}
 	if len(privateValues) == 0 {
 		return
 	}
 	for key, value := range values {
-		if value != "" && privateValues[value] {
+		if matchesSensitiveValue(privateValues, value) {
 			sensitive[config.EnvKey(key)] = true
 		}
 	}
@@ -309,8 +307,17 @@ func validateConfigRuntimeKeyCollisions(path string, reg map[string]Module) erro
 // was applicable after a Module tightened its schema, only for apply to reject
 // it later.
 func validateLoadedConfigSchema(cfg *config.File, reg map[string]Module, lifecycleInputs map[string]string, lock *moduleLock, privateTaintSources ...map[string]string) error {
+	_, err := resolveLoadedConfigSchema(cfg, reg, lifecycleInputs, lock, privateTaintSources...)
+	return err
+}
+
+// resolveLoadedConfigSchema retains the read-only validation app so callers
+// that report a plan can expose Module-derived metadata without running the
+// privileged calculate phase or rebuilding the effective topology a second
+// time.
+func resolveLoadedConfigSchema(cfg *config.File, reg map[string]Module, lifecycleInputs map[string]string, lock *moduleLock, privateTaintSources ...map[string]string) (*app, error) {
 	if err := validateConfiguredParameterDeclarations(cfg, reg); err != nil {
-		return err
+		return nil, err
 	}
 	values := configBaseEnv(cfg, reg)
 	sourceSensitive := map[string]bool{}
@@ -326,11 +333,11 @@ func validateLoadedConfigSchema(cfg *config.File, reg map[string]Module, lifecyc
 			key = config.EnvKey(key)
 			module, parameter, err := policyOwnerForEnv(key, reg)
 			if err != nil {
-				return fmt.Errorf("lifecycle secret %s: %w", key, err)
+				return nil, fmt.Errorf("lifecycle secret %s: %w", key, err)
 			}
 			normalized, err := normalizeImportedSensitiveParameter("lifecycle secret "+key, module, parameter, value, reg)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			values[key] = normalized
 			sourceSensitive[key] = true
@@ -339,9 +346,11 @@ func validateLoadedConfigSchema(cfg *config.File, reg map[string]Module, lifecyc
 	markSensitiveValueAliases(values, sourceSensitive)
 	markSensitiveValueAliasesFromSources(values, sourceSensitive, privateTaintSources...)
 	if err := normalizeConfiguredParameterEnvWithSensitive(values, reg, sourceSensitive); err != nil {
-		return err
+		return nil, err
 	}
-	return validateResolvedInputRequiredEnv(cfg, reg, values, lock, sourceSensitive)
+	filterSources := []map[string]string{lifecycleInputs}
+	filterSources = append(filterSources, privateTaintSources...)
+	return resolvedInputValidationApp(cfg, reg, values, lock, sourceSensitive, false, filterSources...)
 }
 
 // validateResolvedInputRequiredEnv asks the same resolver used by plan/apply
@@ -354,16 +363,50 @@ func validateLoadedConfigSchema(cfg *config.File, reg map[string]Module, lifecyc
 // private environment view to publish resolved bindings, and registry-only mode
 // avoids a redundant filesystem admission check without running hooks or any
 // lifecycle operation.
-func validateResolvedInputRequiredEnv(cfg *config.File, reg map[string]Module, values map[string]string, lock *moduleLock, sourceSensitive map[string]bool) error {
+func validateResolvedInputRequiredEnv(cfg *config.File, reg map[string]Module, values map[string]string, lock *moduleLock, sourceSensitive map[string]bool, privateFilterValues ...map[string]string) error {
+	_, err := resolvedInputValidationApp(cfg, reg, values, lock, sourceSensitive, true, privateFilterValues...)
+	return err
+}
+
+func resolvedInputValidationApp(cfg *config.File, reg map[string]Module, values map[string]string, lock *moduleLock, sourceSensitive map[string]bool, allowLockExpansion bool, privateFilterValues ...map[string]string) (*app, error) {
+	_, owners := configBaseEnvWithRegistry(cfg, reg)
+	filterStore := &secretStore{values: map[string]string{}}
+	for _, source := range privateFilterValues {
+		for key, value := range source {
+			filterStore.values[config.EnvKey(key)] = value
+		}
+	}
 	resolver := &app{
-		cfg: cfg, reg: reg, env: values, lock: lock,
+		cfg: cfg, reg: reg, env: values, envOwner: owners, lock: lock,
+		secrets:                      filterStore,
 		resolvedBindings:             map[string]map[string]string{},
 		registryOnlyResolution:       true,
 		allowUnresolvedInputBindings: true,
 		runnerSensitive:              sourceSensitive,
 	}
-	_, err := resolver.resolveOrderWithInputValidation(cfg.Modules.Order)
-	return err
+	order, err := resolver.resolveOrderWithInputValidation(cfg.Modules.Order)
+	if err != nil {
+		return nil, err
+	}
+	resolver.order = order
+	resolver.applyModuleDefaults()
+	pinned := trustedModuleValidationOrder(order, lock)
+	if lock != nil && len(lock.Modules) > 0 {
+		if allowLockExpansion {
+			resolver.order = pinned
+		} else {
+			resolver.order = order
+		}
+		if err := validateLockedModuleBundles(resolver, lock); err != nil {
+			return nil, err
+		}
+	}
+	resolver.order = pinned
+	if err := resolver.validateModules(); err != nil {
+		return nil, err
+	}
+	resolver.order = order
+	return resolver, nil
 }
 
 // resolvedValueForError preserves useful diagnostics for ordinary selectors

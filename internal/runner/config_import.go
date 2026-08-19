@@ -55,6 +55,28 @@ type managedConfigState struct {
 	UpdatedBy  string `yaml:"updated_by"`
 }
 
+type configCandidateValidationError struct{ err error }
+
+func (e *configCandidateValidationError) Error() string { return e.err.Error() }
+func (e *configCandidateValidationError) Unwrap() error { return e.err }
+
+type configCandidateLockFileError struct{ err error }
+
+func (e *configCandidateLockFileError) Error() string { return e.err.Error() }
+func (e *configCandidateLockFileError) Unwrap() error { return e.err }
+
+type configCandidateSecretStoreError struct{ err error }
+
+func (e *configCandidateSecretStoreError) Error() string { return e.err.Error() }
+func (e *configCandidateSecretStoreError) Unwrap() error { return e.err }
+
+func candidateConfigInvalid(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &configCandidateValidationError{err: err}
+}
+
 func managedConfigStatePath(base string) string { return filepath.Join(base, "config-managed.yml") }
 
 func managedConfigStateBytes(configBytes []byte, updatedBy string) []byte {
@@ -102,21 +124,28 @@ func setManagedConfigScalar(workspace, configPath string, yamlPath []string, val
 		set = config.SetString
 	}
 	if err := set(tmpPath, yamlPath, value); err != nil {
-		return err
+		return candidateConfigInvalid(err)
 	}
 	if err := validateConfigRuntimeKeyCollisions(tmpPath, reg); err != nil {
-		return err
+		return candidateConfigInvalid(err)
 	}
 	loaded, err := config.Load(tmpPath)
 	if err != nil {
-		return err
+		return candidateConfigInvalid(err)
 	}
 	store, err := loadSecretStore(base)
 	if err != nil {
-		return err
+		return &configCandidateSecretStoreError{err: err}
 	}
 	if err := validateConfiguredParameterSchema(loaded, reg, store.values); err != nil {
-		return err
+		return candidateConfigInvalid(err)
+	}
+	lock, err := loadModuleLockFile(projectLockPath(configPath))
+	if err != nil {
+		return &configCandidateLockFileError{err: err}
+	}
+	if err := validateDeferredModuleHooks(loaded, reg, store, lock); err != nil {
+		return candidateConfigInvalid(err)
 	}
 	next, err := os.ReadFile(tmpPath)
 	if err != nil {
@@ -428,9 +457,7 @@ func normalizeImportedParameterNodes(root *yaml.Node, reg map[string]Module, pri
 	privateValues := map[string]bool{}
 	for _, source := range privateTaintSources {
 		for _, value := range source {
-			if value != "" {
-				privateValues[value] = true
-			}
+			addSensitiveValueForms(privateValues, value)
 		}
 	}
 	normalize := func(path, module, parameter string, value *yaml.Node, sourceSensitive bool) error {
@@ -442,7 +469,7 @@ func normalizeImportedParameterNodes(root *yaml.Node, reg map[string]Module, pri
 			return fmt.Errorf("%s must be a scalar %s", path, spec.Kind)
 		}
 		normalizeValue := func(raw string) (string, error) {
-			if sourceSensitive || privateValues[raw] || policyForTarget(configTarget{Display: path, Module: module, Parameter: parameter}, reg).Sensitive {
+			if sourceSensitive || matchesSensitiveValue(privateValues, raw) || policyForTarget(configTarget{Display: path, Module: module, Parameter: parameter}, reg).Sensitive {
 				return normalizeImportedSensitiveParameter(path, module, parameter, raw, reg)
 			}
 			normalized, err := normalizeParameterValue(module, parameter, raw, reg)
@@ -972,7 +999,7 @@ func validateNormalizedImportedConfigWithLockAndTaint(normalized []byte, reg map
 	if err := normalizeConfiguredParameterEnvWithSensitive(values, reg, sourceSensitive); err != nil {
 		return fmt.Errorf("normalized config is invalid: %w", err)
 	}
-	if err := validateResolvedInputRequiredEnv(loaded, reg, values, lock, sourceSensitive); err != nil {
+	if err := validateResolvedInputRequiredEnv(loaded, reg, values, lock, sourceSensitive, privateTaint, allExtractedValues); err != nil {
 		return fmt.Errorf("normalized config is invalid: %w", err)
 	}
 	return nil
@@ -983,6 +1010,8 @@ type importFile struct {
 	data []byte
 	mode os.FileMode
 }
+
+var renameImportedFile = os.Rename
 
 func marshalSecretStore(store *secretStore) []byte {
 	doc := secretStoreDocument{APIVersion: "anas.secrets/v2", Secrets: map[string]secretStoreRecord{}}
@@ -1049,7 +1078,7 @@ func commitImportedFiles(files []importFile) error {
 		staged = append(staged, entry)
 	}
 	for i := range staged {
-		if err := os.Rename(staged[i].tmp, staged[i].path); err != nil {
+		if err := renameImportedFile(staged[i].tmp, staged[i].path); err != nil {
 			for j := 0; j < i; j++ {
 				if staged[j].hadTarget {
 					_ = os.WriteFile(staged[j].path, staged[j].old, staged[j].oldMode)

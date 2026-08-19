@@ -1,0 +1,20 @@
+# Parent/child split: Web applications live below nas.test.example while the
+# directory identity remains test.example. auto must reuse the AD zone.
+modules:
+  samba_dc:
+    config:
+      domain: test.example
+      application_dns_mode: auto
+  samba_fs: {}
+  postgres: {}
+  authentik: {}
+  nextcloud: {}
+  lam: {}
+identity:
+  iam:
+    provider: authentik
+global:
+  base_domain: nas.test.example
+  email: admin@nas.test.example
+  timezone: Asia/Shanghai
+  virtual_domain: true

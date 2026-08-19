@@ -6,6 +6,18 @@ set -eu
 cd "$ROOT_DIR"
 log="$REPORT_DIR/static.log"
 
+# Runtime E2E entry points are intentionally not executed by this host-only
+# gate, but their control flow must remain parseable before they reach a test
+# server.
+bash -n ./test-env/scripts/server-domain-separation-e2e.sh
+sh -n ./test-env/scripts/server-isolated-docker.sh
+sh ./test-env/scripts/test-domain-separation-server-configs.sh
+
+if grep -Eq 'anas-test-docker-v3|anas-docker0' ./test-env/scripts/server-isolated-docker.sh; then
+  echo "isolated Docker helper contains a cross-scope legacy cleanup target" >&2
+  exit 1
+fi
+
 if find modules -type f \( -name '*.erb' -o -name '*.j2' -o -name '*.j3' -o -name '*.tmpl' \) -print -quit | grep -q .; then
   echo "legacy template suffixes are forbidden under modules/" >&2
   exit 1

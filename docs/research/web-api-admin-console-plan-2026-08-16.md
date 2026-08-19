@@ -2,14 +2,14 @@
 
 日期：2026-08-16
 
-状态（2026-08-19，基线提交 `3dea4cf`）：**M0 部分实施（只读开发骨架），M0.5/M0.6 已实施并完成边界加固**。仓库已完成共享应用层、`anasd`、首批 `/api/v1` 端点和 OpenAPI 契约；139 项内置配置参数也已补齐类型、输入/解析要求、默认来源和单字段约束，并让 set/import/plan/lock/apply、Hook 与 Secret Store 进入同一通用校验边界。它们用于验证架构与契约，尚不是可安装的生产管理面。认证、前端、任务系统、配置 HTTP API、写操作以及安装/发布集成仍未实现。本文除明确标注的 M0/M0.5/M0.6 范围外仍描述目标形态与实施顺序，不是操作指南。
+状态（2026-08-19，基线提交 `3dea4cf`，清单按当前工作树更新）：**M0 部分实施（只读开发骨架），M0.5/M0.6 已实施并完成边界加固**。仓库已完成共享应用层、`anasd`、首批 `/api/v1` 端点和 OpenAPI 契约；141 项内置配置参数也已补齐类型、输入/解析要求、默认来源和单字段约束，并让 set/import/plan/lock/apply、Hook 与 Secret Store 进入同一通用校验边界。它们用于验证架构与契约，尚不是可安装的生产管理面。认证、前端、任务系统、配置 HTTP API、写操作以及安装/发布集成仍未实现。本文除明确标注的 M0/M0.5/M0.6 范围外仍描述目标形态与实施顺序，不是操作指南。
 
 ## 0. 当前落地快照（2026-08-19）
 
 | 范围 | 已完成 | 尚未完成 |
 | --- | --- | --- |
 | M0 只读骨架 | `internal/deployment`、`internal/application`、`internal/api/httpapi`、`cmd/anasd`、workspace registry、OpenAPI；health/system/status/deployment list/detail 共用类型化服务，不调用 CLI 子进程 | 认证、前端、SSE 任务、写操作、安装与 systemd 集成 |
-| M0.5 元数据 | 17 个 global + 122 个 Module 参数全部显式声明类型；`unknown=0`；生成器、四份 Module 参数表和 release gate 共用 inventory | M3 配置 HTTP schema/表单投影 |
+| M0.5 元数据 | 17 个 global + 124 个 Module 参数全部显式声明类型；`unknown=0`；生成器、四份 Module 参数表和 release gate 共用 inventory | M3 配置 HTTP schema/表单投影 |
 | M0.6 约束语义 | `input_required`、legacy `required`、`must_resolve` 三阶段语义；默认值存在性/来源；范围、长度、pattern、format；所有配置入口的统一规范化与校验 | 条件/跨字段规则继续由 resolver、plan 或 Hook 执行，不伪装成单字段 schema |
 
 当前只读 `anasd` 只接受 registry 中的 workspace ID，HTTP DTO 不返回 workspace、deployment
@@ -20,11 +20,11 @@
 
 配置实现的当前精确基线：
 
-- 139 项参数的类型分布为 `string: 79`、`bool: 22`、`int: 24`、`enum: 14`；
+- 141 项参数的类型分布为 `string: 80`、`bool: 22`、`int: 24`、`enum: 15`；
 - `input_required`/CLI `required` 只有 `global.base_domain`、`global.email` 2 项，最终
   `must_resolve` 共 22 项；有静态默认值或无条件来源的参数不是 caller-input required；
-- 11 项已声明且有运行证据的单字段约束包括 IANA timezone、language/locale、3 个 IPv4、
-  3 个 `1..65535` 端口、`samba_dc.max_log_size >= 1` 和非空白 group pattern；schema 本身还
+- 13 项已声明且有运行证据的单字段约束包括 2 个 DNS name、IANA timezone、language/locale、
+  3 个 IPv4、3 个 `1..65535` 端口、`samba_dc.max_log_size >= 1` 和非空白 group pattern；schema 本身还
   支持 `min_length`/`max_length`；
 - `config set`、import/reimport、`config plan`、deployment lock/plan/materialize 和 remote lock
   都使用同一声明、地址、类型和 constraints 校验；失败发生在持久化前并保持配置、摘要、
@@ -57,7 +57,7 @@ Linux amd64/arm64 的静态 `anasd` 构建。后续里程碑不得把这些结�
 - 部署、配置、Module、快照、备份、本地管理员账户已有相对清晰的领域边界。
 - workspace 有真实的排他/共享文件锁（`internal/runner/deployment.go` 的 `acquireRuntimeLock` / `acquireRuntimeSharedLock`，`syscall.Flock`），可作为第一版串行化变更操作的底层保护——但需要改造，见 §2.2。
 - `config list --json` 已经输出完整类型、输入/解析要求、默认值及来源、单字段 constraints、
-  `set`、`effect`、`apply` 和 `sensitive`；139 项内置参数进入同一 release gate，足以作为
+  `set`、`effect`、`apply` 和 `sensitive`；141 项内置参数进入同一 release gate，足以作为
   M3 表单的统一元数据基础，见 §2.2。
 - 部署制品不可变，活动部署和历史部署状态独立记录，天然适合管理页面展示、激活和回滚。
 - `backup capabilities → plan → create` 已经是“服务端算出可能性，前端只渲染结果”的现成模板。`internal/runner/backup_interactive.go` 的开头注释写明了这一立场：交互式表单不重写规则，只调用同一条非交互路径，“a web layer rendering the same JSON reaches the same conclusions”。Web 备份页应照抄这条链路，而不是另立一套。
@@ -88,8 +88,8 @@ M0.5 实施前是“机制存在，数据不足”。2026-08-18 按完整公开 
 
 | 指标 | 实测值 |
 | --- | --- |
-| `config list --json` 公开参数 | 139（17 个 global + 122 个 module） |
-| 18 个 module 的 `config.defaults` 参数总数 | 104 |
+| `config list --json` 公开参数 | 141（17 个 global + 124 个 module） |
+| 18 个 module 的 `config.defaults` 参数总数 | 105 |
 | Module `config.types` 声明 | **12**（其中 10 项同时有 default） |
 | 声明了 `config.required` 的 module | 2 个，各 1 项 |
 | 声明了 `config.changes` 的 module 参数 | 67 |
@@ -101,7 +101,7 @@ M0.5 实施前是“机制存在，数据不足”。2026-08-18 按完整公开 
 
 M0.5 已完成这项前置工作：
 
-1. 122 个 module 参数与 17 个 global 参数都有显式类型；`config list --json` 的
+1. 124 个 module 参数与 17 个 global 参数都有显式类型；`config list --json` 的
    `type: "unknown"` 数量为 0；
 2. `globalSchema` 保存类型，显式 `string` 与未声明类型不再合并；`unknown` 只保留为旧
    Module/开发态兼容值；
@@ -122,7 +122,7 @@ M0.6 继续消除了“required 一个布尔值同时代表三种事情”的歧
    应用层、plan 或 Hook 校验；
 4. CLI 投影明确不是 JSON Schema：两者的 `required` 和 `default` 语义不同，前端不能把
    这组字段不经转换直接当作 JSON Schema；
-5. shell release gate 固定 139 项基线、字段完整性、兼容别名、默认值/来源互斥和代表性
+5. shell release gate 固定 141 项基线、字段完整性、兼容别名、默认值/来源互斥和代表性
    constraints，防止生成器、CLI 和声明层漂移。
 
 这不表示 M0 已经提供配置 HTTP 端点；当前 `anasd` 仍只有首批只读系统/部署接口。M3 的
@@ -609,7 +609,7 @@ workspace-bound application service，部署模型由低层只读包统一提供
 
 ### M0.5：配置元数据回填（3—4 天，可与 M1 并行）
 
-实施状态（2026-08-19）：**已实施**。见 §2.2.2。139 项公开参数（17 global + 122 module）
+实施状态（2026-08-19）：**已实施**。见 §2.2.2。141 项公开参数（17 global + 124 module）
 均有显式类型，`required` 采用保守语义；`globalSchema` 与 Module manifest 进入同一类型投影，
 生成器/release 校验覆盖新增参数。
 
@@ -619,7 +619,7 @@ workspace-bound application service，部署模型由低层只读包统一提供
 ### M0.6：配置解析与约束语义（1—2 天，可与 M1 并行）
 
 实施状态（2026-08-19）：**已实施并完成入口/Secret/Hook 边界加固**。见 §0 与 §2.2.2。
-`config list --json` 对 139 项参数统一投影
+`config list --json` 对 141 项参数统一投影
 `required`/`input_required`、`must_resolve`、`has_default`、`default_source` 与单字段
 `constraints`；`required` 仅保留为兼容别名。输入必填、解析后必须存在、静态默认值、其他
 无条件来源和条件/跨字段规则不再混用同一个布尔值。
@@ -738,7 +738,7 @@ remote lock 和 calculate/render Hook；Secret Store 全部 kind 参与来源脱
 | **完整级的门槛是 ACME 还是任意可信证书** | **任意可信证书。内部 CA + 管理员安装根证书同样算，否则 `virtual_domain` 部署会被永久困在引导级** |
 | **`anasd` 的能力集** | **M4 首版只做不需要 `CAP_SYS_ADMIN` 的子集；是否授予 ambient capability 作为独立决策，见 §7.4** |
 | **Web 能否创建 workspace** | **不能。`anas init` 保持为终端操作；登录页在无注册 workspace 时显式提示命令，见 §6.1** |
-| **配置元数据够不够驱动表单** | **足够作为 M3 基础。M0.5 为 139 项参数回填显式类型，M0.6 分离输入必填、解析后必有、默认来源和单字段 constraints，并建立 release gate；M3 直接复用统一 schema，绝不按 Module 单独适配，见 §2.2.2** |
+| **配置元数据够不够驱动表单** | **足够作为 M3 基础。M0.5 为 141 项参数回填显式类型，M0.6 分离输入必填、解析后必有、默认来源和单字段 constraints，并建立 release gate；M3 直接复用统一 schema，绝不按 Module 单独适配，见 §2.2.2** |
 
 ## 12. 参考资料
 

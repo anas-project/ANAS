@@ -1,19 +1,19 @@
 # `config.yml` 结构化配置与环境变量清单
 
 本文回答两个问题：哪些设置已经有 `config.yml` 的结构化入口，哪些设置目前只能写入
-顶层 `env:`。清单按 2026-08-18 的当前工作树统计；module 增删参数后应重新运行文末命令，
+顶层 `env:`。清单按 2026-08-19 的当前工作树统计；module 增删参数后应重新运行文末命令，
 不要把本文中的数字当成固定 ABI。
 
 ## 结论
 
-- `anas config list --json` 当前登记 **139** 个可设置参数：17 个 `global` 参数、122 个
+- `anas config list --json` 当前登记 **141** 个可设置参数：17 个 `global` 参数、124 个
   module 参数。
-- 122 个 module 参数中，118 个保存到 `modules.<module>.config.<parameter>`；4 个
+- 124 个 module 参数中，120 个保存到 `modules.<module>.config.<parameter>`；4 个
   `samba_fs` 参数虽然已经在 module manifest 中声明并拥有默认值、类型和变更策略，
   但为了导出裸环境变量，YAML 地址仍是 `env.<KEY>`。
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
-  上述 139 项。
+  上述 141 项。
 - 顶层 `env:` 是开放的 raw-env 逃生口，任意合法环境变量键都能写入（输入会规范为大写，
   并须匹配 `[A-Z_][A-Z0-9_]*`），所以“只能用环境变量”的总数
   理论上不可穷举。下文只列仓库当前明确使用、且没有结构化参数的用户覆盖项。
@@ -108,7 +108,7 @@ Compose project name，同时以该前缀生成容器名；例如默认配置下
 的前缀会生成另一组 project、容器名和跨容器地址，属于静态部署变更，不是现有资源的原地
 重命名；修改前必须先完成显式迁移或清理旧部署。
 
-## 已声明的 139 个参数
+## 已声明的 141 个参数
 
 表中参数都能被 `anas config list` 列出。普通可编辑参数可通过 `anas config set` 设置；
 `credential_rotate`、`data_migrate` 和 `immutable` 只用于 inventory/explain，必须执行专用流程。除特别说明
@@ -117,7 +117,7 @@ Compose project name，同时以该前缀生成容器名；例如默认配置下
 
 JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同时提供
 `allowed_values`。`unknown` 仅为旧 Module 或开发中声明不完整时保留的兼容值，内置 Module
-的 release 校验不允许它出现，因此本节 139 项的 `unknown` 数量为 0。
+的 release 校验不允许它出现，因此本节 141 项的 `unknown` 数量为 0。
 
 配置元数据把“操作者是否必须输入”和“解析后的值是否必须存在”分开：
 
@@ -140,14 +140,15 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 关键字。CLI、未来的 `anasd` 配置 API 和 Web 表单必须消费同一份应用层 schema。
 
 当前发布基线中，`input_required`/`required` 为 `true` 的只有
-`global.base_domain` 和 `global.email` 2 项，`must_resolve` 为 `true` 的共有 22 项。
+`global.base_domain` 和 `global.email` 2 项，`must_resolve` 为 `true` 的共有 23 项。
 `ddns_go.dns_provider` 与 `ddns_updater.dns_provider` 可由 deployment
 `dynamic_dns.dns_provider` 条件注入，因此表现为 `input_required: false`、
 `must_resolve: true`、`default_source: none`；只有 resolver 未能注入时才需要 Module 侧输入。
-`default_source` 分布为 `static: 111`、`generated: 9`、`none: 8`、`runtime: 4`、`inherited: 4`、
-`host: 3`；`has_default: true` 与这 111 个 `static` 项严格对应。
+`default_source` 分布为 `static: 112`、`generated: 9`、`none: 8`、`runtime: 4`、`inherited: 5`、
+`host: 3`；`has_default: true` 与这 112 个 `static` 项严格对应。
 
-当前 11 项显式单字段约束是：timezone、language/locale format，3 个 IPv4 format，
+当前 13 项显式单字段约束是：`global.base_domain` 与 `samba_dc.domain` 的 DNS name format、
+timezone、language/locale format，3 个 IPv4 format，
 `eturnal.port`、`meshcentral.mps_port`、`traefik.base_port` 的 `1..65535`，
 `samba_dc.max_log_size >= 1`，以及 `oauth2_proxy.allow_groups` 至少包含一个非空白字符。
 这些都是已有运行约束的声明化；没有证据的数字上限、条件 provider 规则和跨字段关系没有被
@@ -170,7 +171,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `nextcloud` | 13 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` |
 | `oauth2_proxy` | 3 | `allow_groups`, `domain_prefix`, `iam_protocol` |
 | `postgres` | 3 | `adminer_enabled`, `password`, `username` |
-| `samba_dc` | 38 | `admin_complex_pass`, `admin_lockout_duration`, `admin_lockout_reset_after`, `admin_lockout_threshold`, `admin_max_pass_age`, `admin_min_pass_age`, `admin_min_pass_length`, `admin_name`, `admin_password`, `admin_password_history`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
+| `samba_dc` | 40 | `admin_complex_pass`, `admin_lockout_duration`, `admin_lockout_reset_after`, `admin_lockout_threshold`, `admin_max_pass_age`, `admin_min_pass_age`, `admin_min_pass_length`, `admin_name`, `admin_password`, `admin_password_history`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `application_dns_mode`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `domain`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
 | `samba_fs` | 7 | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` |
 | `traefik` | 2 | `base_port`, `domain_prefix` |
 
@@ -197,17 +198,17 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 ## 参数会产生什么结果
 
 `anas config list --json` 是参数名、环境键、默认值和变更结果的权威机器可读清单。
-当前 139 项按 effect 统计如下；effect 表示**修改已有部署后必须完成的动作**，不是参数
+当前 141 项按 effect 统计如下；effect 表示**修改已有部署后必须完成的动作**，不是参数
 传输到 `.env` 就算应用成功。
 
 | effect | 数量 | 修改结果 |
 | --- | ---: | --- |
 | `container_recreate` | 91 | 重新渲染，并重建受影响容器或 Compose project |
 | `credential_rotate` | 7 | 普通设置和替换导入会被拒绝，必须通过凭据轮换事务同步应用状态与 Secret Store |
-| `data_migrate` | 9 | 普通设置和部署激活会被阻断，必须先迁移持久数据、数据库或成员身份 |
+| `data_migrate` | 10 | 普通设置和部署激活会被阻断，必须先迁移持久数据、数据库或成员身份 |
 | `hot_reload` | 16 | 声明目标是 Samba 管理命令；当前执行器保守地生成新部署并重新 `up` 受影响容器 |
 | `image_rebuild` | 1 | 使用 `anas apply --build` 重建镜像后再部署 |
-| `immutable` | 3 | 通用 `config set` 不允许修改，必须走替换或域迁移流程 |
+| `immutable` | 4 | 通用 `config set` 不允许修改，必须走替换或域迁移流程 |
 | `reconcile` | 12 | 声明目标是应用/API/文件调和；当前执行器通过新部署和容器启动流程完成 |
 
 ### 当前版本的实际执行边界
@@ -263,7 +264,7 @@ Collabora、Nextcloud 和数据库镜像的保留设置都在 Hook、容器脚�
 
 | 所有者 | 参数 | 可观察结果 / 消费边界 |
 | --- | --- | --- |
-| `global` | `base_domain`, `virtual_domain`, `email` | 派生应用 URL、AD realm、ACME/内部 CA 模式和服务联系邮箱 |
+| `global` | `base_domain`, `virtual_domain`, `email` | 派生应用 URL、SSO issuer、ACME/内部 CA 模式和服务联系邮箱；AD 域由 `samba_dc.domain` 独立定义 |
 | `global` | `container_prefix`, `network_prefix` | 改变 Compose project/容器名、网络名和跨容器地址；project 为 `<container_prefix><module>`，不同 workspace 不得复用同一前缀 |
 | `global` | `host_ip`, `dns_server`, `ipv4`, `ipv6` | 改变宿主路由目标、容器 DNS 和 DDNS A/AAAA 意图 |
 | `global` | `host_lan_ip`, `host_lan_bridge_ip`, `host_lan_arp_check` | 固定 host-LAN 容器与宿主桥地址，并控制地址占用探测；三项均为可选，未关闭探测时默认执行 ARP 检查 |
@@ -283,7 +284,7 @@ Collabora、Nextcloud 和数据库镜像的保留设置都在 Hook、容器脚�
 | `nextcloud` | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` | 生成安装/数据库环境，并由 `task.sh` 调和认证、locale、应用开关、PHP 限额和 skeleton 状态 |
 | `oauth2_proxy` | `allow_groups`, `domain_prefix`, `iam_protocol` | 生成 OIDC client、允许组、回调 URL 和 Traefik ForwardAuth middleware |
 | `postgres` | `adminer_enabled`, `password`, `username` | 改变可选 service；账号转换为上游初始化变量，并分别标记迁移/轮换语义 |
-| `samba_dc` | 表中 38 项 | 生成 AD/BIND 配置、目录结构与三类 service account；普通用户域策略与管理员 PSO 均由参数生成，并声明为 `samba-tool` 热更新，但当前版本通过 deployment fallback 应用，身份/密码项走迁移或轮换保护 |
+| `samba_dc` | 表中 40 项 | 由 `domain` 生成 Realm/Base DN/Kerberos 身份，由 `application_dns_mode` 选择应用记录所在权威 zone，并生成 AD/BIND 配置、目录结构与三类 service account；普通用户域策略与管理员 PSO 均由参数生成，并声明为 `samba-tool` 热更新，但当前版本通过 deployment fallback 应用，身份/密码项走迁移或轮换保护 |
 | `samba_fs` | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` | 生成 member join、smb.conf、共享目录/ACL、guest 状态和 WSDD 广播 |
 | `traefik` | `base_port`, `domain_prefix` | 改变入口监听/发布端口、应用派生 URL 和 dashboard router |
 
@@ -412,7 +413,7 @@ test-env/scripts/test-render.sh
 ```
 
 前者拒绝没有运行时消费者的声明参数；若消费者只存在于上游镜像，例外必须同时记录固定
-版本的上游源码证据。其余测试分别验证 139 项 inventory、类型完整性和废弃路径，七类
-effect 的真实 CLI→Hook→render→deployment→Compose/阻断边界，以及全部 139 个参数键在本轮新生成的
+版本的上游源码证据。其余测试分别验证 141 项 inventory、类型完整性和废弃路径，七类
+effect 的真实 CLI→Hook→render→deployment→Compose/阻断边界，以及全部 141 个参数键在本轮新生成的
 Module 部署产物中至少出现一次。`test-lifecycle.sh` 在真实 Docker 上进一步验证
 `container_recreate` 会更换容器 ID。

@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `oauth2_proxy`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `7.15.3-r3` / `anas.module/v1`.
+> Status: current implementation; based on `7.15.3-r4` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -28,7 +28,7 @@ This page records the current implementation, security boundaries, and verificat
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `oauth2_proxy.allow_groups` | string | `pattern: \S` | `Admins` | `static` | `OAUTH2_PROXY_ALLOW_GROUPS` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `oauth2_proxy.domain_prefix` | string | — | `auth-gate` | `static` | `OAUTH2_PROXY_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
-| `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
 

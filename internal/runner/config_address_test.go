@@ -186,6 +186,7 @@ func TestRunnerOwnedRawInputsAreRejectedButConfigOverridesRemainAvailable(t *tes
 		name, section, key string
 	}{
 		{name: "env topology", section: "env", key: "DOMAINS"},
+		{name: "env application list", section: "env", key: "APPS_LIST"},
 		{name: "secret identity topology", section: "secrets", key: "ANAS_IAM_PROVIDER"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -205,6 +206,9 @@ func TestRunnerOwnedRawInputsAreRejectedButConfigOverridesRemainAvailable(t *tes
 	}
 	if _, err := resolveConfigTarget("env.ALL_MODS_NAME", reg); err == nil || !strings.Contains(err.Error(), "runner-owned") {
 		t.Fatalf("config set reserved target error = %v", err)
+	}
+	if _, err := resolveConfigTarget("env.APPS_LIST", reg); err == nil || !strings.Contains(err.Error(), "runner-owned") {
+		t.Fatalf("config set application list target error = %v", err)
 	}
 	if _, err := resolveConfigTarget("env.GHCR_REGISTRY", reg); err != nil {
 		t.Fatalf("configurable build override was rejected: %v", err)

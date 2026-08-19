@@ -1,12 +1,12 @@
 # Structured `config.yml` and environment-variable inventory
 
-This reference distinguishes settings with a structured `config.yml` entry from overrides that currently require top-level `env:`. Counts reflect the 2026-08-18 working tree and are not a fixed ABI.
+This reference distinguishes settings with a structured `config.yml` entry from overrides that currently require top-level `env:`. Counts reflect the 2026-08-19 working tree and are not a fixed ABI.
 
 ## Summary
 
-- `anas config list --json` currently declares **139** configurable parameters: 17 global and 122 module parameters.
-- 118 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
-- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 139 count.
+- `anas config list --json` currently declares **141** configurable parameters: 17 global and 124 module parameters.
+- 120 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
+- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 141 count.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
 
 “Structured” has two layers:
@@ -111,14 +111,14 @@ existing deployment creates a different set of projects, container names, and
 cross-container addresses. It is a static deployment change, not an in-place
 rename, so the old deployment must be explicitly migrated or removed first.
 
-## The 139 declared parameters
+## The 141 declared parameters
 
 Every entry below appears in `anas config list`. Ordinary editable parameters can be addressed by `anas config set`; `credential_rotate`, `data_migrate`, and `immutable` entries are inventory/explain-only and require their dedicated workflow. Global parameters use `global.<parameter>`; ordinary module parameters use `modules.<module>.config.<parameter>`.
 
 The JSON inventory reports `type` as `string`, `bool`, `int`, or `enum`; enum
 entries also provide `allowed_values`. `unknown` remains a compatibility value
 for legacy Modules and incomplete development declarations, but the built-in
-Module release gate rejects it, so all 139 entries in this inventory have an
+Module release gate rejects it, so all 141 entries in this inventory have an
 explicit type.
 
 Configuration metadata separates “the operator must enter a value” from “the
@@ -152,18 +152,19 @@ not support for arbitrary JSON Schema keywords. The CLI, future `anasd`
 configuration API, and Web forms must consume the same application-layer schema.
 
 In the current release baseline, only `global.base_domain` and `global.email`
-have `input_required`/`required` set to true; 22 entries have
+have `input_required`/`required` set to true; 23 entries have
 `must_resolve: true`. `ddns_go.dns_provider` and
 `ddns_updater.dns_provider` can be injected conditionally from deployment
 `dynamic_dns.dns_provider`, so each reports `input_required: false`,
 `must_resolve: true`, and `default_source: none`. Module-local input is needed
 only when that resolver cannot supply the value.
 
-The `default_source` distribution is `static: 111`, `generated: 9`, `none: 8`,
-`runtime: 4`, `inherited: 4`, and `host: 3`. The 111 `has_default: true`
-entries are exactly the 111 `static` entries.
+The `default_source` distribution is `static: 112`, `generated: 9`, `none: 8`,
+`runtime: 4`, `inherited: 5`, and `host: 3`. The 112 `has_default: true`
+entries are exactly the 112 `static` entries.
 
-The current 11 explicit single-field constraints cover timezone and
+The current 13 explicit single-field constraints cover the DNS-name formats
+for `global.base_domain` and `samba_dc.domain`, timezone and
 language/locale formats, three IPv4 formats, the `1..65535` ranges for
 `eturnal.port`, `meshcentral.mps_port`, and `traefik.base_port`,
 `samba_dc.max_log_size >= 1`, and a non-whitespace requirement for
@@ -188,7 +189,7 @@ cross-field relationships were not invented merely to populate the schema.
 | `nextcloud` | 13 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` |
 | `oauth2_proxy` | 3 | `allow_groups`, `domain_prefix`, `iam_protocol` |
 | `postgres` | 3 | `adminer_enabled`, `password`, `username` |
-| `samba_dc` | 38 | `admin_complex_pass`, `admin_lockout_duration`, `admin_lockout_reset_after`, `admin_lockout_threshold`, `admin_max_pass_age`, `admin_min_pass_age`, `admin_min_pass_length`, `admin_name`, `admin_password`, `admin_password_history`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
+| `samba_dc` | 40 | `admin_complex_pass`, `admin_lockout_duration`, `admin_lockout_reset_after`, `admin_lockout_threshold`, `admin_max_pass_age`, `admin_min_pass_age`, `admin_min_pass_length`, `admin_name`, `admin_password`, `admin_password_history`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `application_dns_mode`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `domain`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
 | `samba_fs` | 7 | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` |
 | `traefik` | 2 | `base_port`, `domain_prefix` |
 
@@ -216,16 +217,16 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 
 ## What changing a parameter does
 
-`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. The 139 current entries group by effect as follows. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
+`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. The 141 current entries group by effect as follows. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
 
 | Effect | Count | Change outcome |
 | --- | ---: | --- |
 | `container_recreate` | 91 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 7 | Ordinary setting and replacement import are refused; use a credential-rotation transaction to update application state and the Secret Store together |
-| `data_migrate` | 9 | Ordinary setting and deployment activation are blocked until persistent data, a database, or membership is migrated |
+| `data_migrate` | 10 | Ordinary setting and deployment activation are blocked until persistent data, a database, or membership is migrated |
 | `hot_reload` | 16 | The declared target is a Samba management command; the current executor conservatively creates a deployment and runs Compose `up` for the affected container |
 | `image_rebuild` | 1 | Rebuild with `anas apply --build`, then deploy |
-| `immutable` | 3 | Generic `config set` refuses the change; use a replacement or domain-migration workflow |
+| `immutable` | 4 | Generic `config set` refuses the change; use a replacement or domain-migration workflow |
 | `reconcile` | 12 | The declared target is application/API/file reconciliation; the current executor applies it through a new deployment and container startup |
 
 ### Actual execution boundary in this release
@@ -274,7 +275,7 @@ The table below states what every owner's inputs ultimately change. Each named p
 
 | Owner | Parameters | Observable result / consumer boundary |
 | --- | --- | --- |
-| `global` | `base_domain`, `virtual_domain`, `email` | Derive application URLs, AD realm, ACME/internal-CA mode, and service contact email |
+| `global` | `base_domain`, `virtual_domain`, `email` | Derive application URLs, SSO issuers, ACME/internal-CA mode, and service contact email; `samba_dc.domain` independently defines the AD domain |
 | `global` | `container_prefix`, `network_prefix` | Change the Compose project/container names, network names, and cross-container addresses; the project is `<container_prefix><module>`, and separate workspaces must not reuse one prefix |
 | `global` | `host_ip`, `dns_server`, `ipv4`, `ipv6` | Change host route targets, container DNS, and DDNS A/AAAA intent |
 | `global` | `host_lan_ip`, `host_lan_bridge_ip`, `host_lan_arp_check` | Pin the host-LAN container and host bridge addresses and control occupancy probing; all three are optional, and the ARP check runs unless explicitly disabled |
@@ -294,7 +295,7 @@ The table below states what every owner's inputs ultimately change. Each named p
 | `nextcloud` | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` | Generate installation/database settings; `task.sh` reconciles authentication, locale, apps, PHP limits, and skeleton state |
 | `oauth2_proxy` | `allow_groups`, `domain_prefix`, `iam_protocol` | Generate the OIDC client, allowed groups, callback URL, and Traefik ForwardAuth middleware |
 | `postgres` | `adminer_enabled`, `password`, `username` | Change the optional service and translate credentials to upstream initialization variables with migration/rotation semantics |
-| `samba_dc` | The 38 entries in the inventory table | Generate AD/BIND configuration, directory structure, and three service accounts; both the domain user policy and privileged PSO are parameter-driven and declare a `samba-tool` hot reload but currently use the deployment fallback, while identity/password values remain migration/rotation guarded |
+| `samba_dc` | The 40 entries in the inventory table | Use `domain` for Realm/Base-DN/Kerberos identity and `application_dns_mode` for the authoritative application-record zone, then generate AD/BIND configuration, directory structure, and three service accounts; both the domain user policy and privileged PSO are parameter-driven and declare a `samba-tool` hot reload but currently use the deployment fallback, while identity/password values remain migration/rotation guarded |
 | `samba_fs` | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` | Generate the member join, smb.conf, share directory/ACLs, guest state, and WSDD announcement |
 | `traefik` | `base_port`, `domain_prefix` | Change the entrypoint listen/published port, derived application URLs, and dashboard router |
 
@@ -402,4 +403,4 @@ test-env/scripts/test-parameter-effects.sh
 test-env/scripts/test-render.sh
 ```
 
-The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the 139-entry inventory, complete type declarations, and retired paths; the real CLI→hook→render→deployment→Compose/refusal boundary for all seven effects; and require every one of the 139 parameter keys to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.
+The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the 141-entry inventory, complete type declarations, and retired paths; the real CLI→hook→render→deployment→Compose/refusal boundary for all seven effects; and require every one of the 141 parameter keys to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,19 @@ import (
 )
 
 type HookConfig = deployment.HookConfig
+
+func hookSupportsPhase(hook HookConfig, phase string) bool {
+	if len(hook.Command) == 0 {
+		return false
+	}
+	if len(hook.Phases) == 0 {
+		// Legacy v1 Hooks keep the lifecycle they were published with. validate
+		// is opt-in because an old default/no-op branch is not proof that a
+		// configuration was checked.
+		return phase != "validate"
+	}
+	return contains(hook.Phases, phase)
+}
 
 type hookRequest struct {
 	ABI          string                 `json:"abi"`
@@ -29,6 +43,9 @@ type hookRequest struct {
 func (a *app) runLocalAccountHook(mod Module, phase, workdir string, env map[string]string, operation localAccountOperation, secrets map[string]string) (hookResponse, error) {
 	if len(mod.Hook.Command) == 0 {
 		return hookResponse{}, fmt.Errorf("module %s has no hook for %s", mod.Name, operation.Handler)
+	}
+	if !hookSupportsPhase(mod.Hook, phase) {
+		return hookResponse{}, fmt.Errorf("module %s hook does not declare phase %s for %s", mod.Name, phase, operation.Handler)
 	}
 	req := hookRequest{ABI: currentModuleABI, Phase: phase, Module: mod.Name, Workdir: workdir, Env: env, Secrets: secrets, LocalAccount: &operation}
 	in, err := json.Marshal(req)
@@ -69,6 +86,10 @@ type hookResponse struct {
 	Env     map[string]string `json:"env"`
 	Secrets map[string]string `json:"secrets"`
 	Files   map[string]string `json:"files"`
+	// Plan is non-sensitive, read-only metadata a validate Hook wants Core to
+	// expose in plan output and freeze into the deployment manifest. It is the
+	// only validate response field besides Warnings that may be non-empty.
+	Plan map[string]string `json:"plan"`
 	// RuntimeFiles are mutable, reconstructable files that must never enter the
 	// sealed deployment artifact. The runner writes them below the module's
 	// deployment-scoped runtime-state directory and rebuilds them before start.
@@ -90,7 +111,7 @@ type dockerCopy struct {
 }
 
 func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) (hookResponse, error) {
-	if len(mod.Hook.Command) == 0 {
+	if !hookSupportsPhase(mod.Hook, phase) {
 		return hookResponse{}, nil
 	}
 	secrets := a.secrets.clone()
@@ -145,6 +166,136 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	return resp, nil
 }
 
+// runValidationHook is deliberately separate from runHook. Validation gets no
+// Secret Store view, runs with a minimal process environment, and rejects
+// response fields unknown to this runner so a newer Hook cannot accidentally
+// smuggle a mutation through an older read-only boundary.
+func (a *app) runValidationHook(mod Module, env map[string]string) (hookResponse, error) {
+	if !hookSupportsPhase(mod.Hook, "validate") {
+		return hookResponse{}, nil
+	}
+	req := hookRequest{
+		ABI: currentModuleABI, Phase: "validate", Module: mod.Name,
+		Env: env, Secrets: map[string]string{},
+	}
+	in, err := json.Marshal(req)
+	if err != nil {
+		return hookResponse{}, err
+	}
+	command, err := a.hookCommand(mod, "")
+	if err != nil {
+		return hookResponse{}, err
+	}
+	cmd := exec.Command(command[0], command[1:]...)
+	cmd.Dir = mod.SourceDir
+	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
+	if err != nil {
+		return hookResponse{}, err
+	}
+	cmd.Env = validationHookProcessEnv(cacheDir)
+	cmd.Stdin = bytes.NewReader(in)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		if stderr.Len() > 0 {
+			return hookResponse{}, fmt.Errorf("%s hook validate: %w: %s", mod.Name, err, strings.TrimSpace(stderr.String()))
+		}
+		return hookResponse{}, fmt.Errorf("%s hook validate: %w", mod.Name, err)
+	}
+	if stdout.Len() == 0 {
+		return hookResponse{}, nil
+	}
+	var resp hookResponse
+	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&resp); err != nil {
+		return hookResponse{}, fmt.Errorf("%s hook validate returned invalid JSON: %w", mod.Name, err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return hookResponse{}, fmt.Errorf("%s hook validate returned more than one JSON value", mod.Name)
+		}
+		return hookResponse{}, fmt.Errorf("%s hook validate returned invalid trailing JSON: %w", mod.Name, err)
+	}
+	return resp, nil
+}
+
+func validationHookProcessEnv(cacheDir string) []string {
+	out := []string{"GOCACHE=" + cacheDir}
+	for _, key := range []string{
+		"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL",
+		"ASDF_DATA_DIR", "ASDF_CONFIG_FILE", "MISE_DATA_DIR", "MISE_CONFIG_DIR", "PYENV_ROOT",
+	} {
+		if value := os.Getenv(key); value != "" {
+			out = append(out, key+"="+value)
+		}
+	}
+	return out
+}
+
+func validationHookBuildEnv(base, cacheDir, proxy string) []string {
+	out := []string{"GOCACHE=" + cacheDir}
+	for _, key := range []string{"PATH", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL"} {
+		if value := os.Getenv(key); value != "" {
+			out = append(out, key+"="+value)
+		}
+	}
+	out = append(out,
+		"HOME="+filepath.Join(base, "home"),
+		"GOMODCACHE="+filepath.Join(base, "go-module-cache"),
+		"GOPATH="+filepath.Join(base, "go-path"),
+		"GOENV=off",
+	)
+	if proxy = strings.TrimSpace(proxy); proxy != "" {
+		out = append(out, "GOPROXY="+proxy)
+	}
+	return out
+}
+
+func validationToolchainDiscoveryEnv() []string {
+	out := []string{"GOENV=off"}
+	// Toolchain managers need their own location metadata to resolve a shim.
+	// This discovery command runs no Module code; keep arbitrary tokens and
+	// application environment out while allowing common asdf/mise/pyenv setups.
+	for _, key := range []string{
+		"PATH", "HOME", "ASDF_DATA_DIR", "ASDF_CONFIG_FILE",
+		"MISE_DATA_DIR", "MISE_CONFIG_DIR", "PYENV_ROOT",
+	} {
+		if value := os.Getenv(key); value != "" {
+			out = append(out, key+"="+value)
+		}
+	}
+	return out
+}
+
+func resolveValidationGoBinary(buildGOROOT string) (string, error) {
+	var discoveryErr error
+	if goOnPath, err := exec.LookPath("go"); err == nil {
+		cmd := exec.Command(goOnPath, "env", "GOROOT")
+		cmd.Env = validationToolchainDiscoveryEnv()
+		if output, err := cmd.Output(); err == nil {
+			candidate := filepath.Join(strings.TrimSpace(string(output)), "bin", "go")
+			if exists(candidate) {
+				return candidate, nil
+			}
+			discoveryErr = fmt.Errorf("go env GOROOT returned unusable path %q", strings.TrimSpace(string(output)))
+		} else {
+			discoveryErr = fmt.Errorf("discover host Go toolchain: %w", err)
+		}
+	} else {
+		discoveryErr = fmt.Errorf("find host Go toolchain: %w", err)
+	}
+	// Source-tree development commonly has the build toolchain in the runtime
+	// GOROOT. Treat it as a fallback only: packaged ANAS binaries may retain a
+	// CI-machine GOROOT that does not exist on the target host.
+	candidate := filepath.Join(buildGOROOT, "bin", "go")
+	if exists(candidate) {
+		return candidate, nil
+	}
+	return "", fmt.Errorf("validation Hook build has no usable Go toolchain (%v; build GOROOT candidate %s is unavailable)", discoveryErr, candidate)
+}
+
 // hookCommand resolves the command used to execute a module hook. Hooks
 // declared as `go run <pkg>` are compiled once per run and executed as a
 // binary instead of re-compiling for every phase. Artifact starts prefer the
@@ -197,11 +348,27 @@ func (a *app) ensureHookBinary(mod Module, pkg string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	build := exec.Command("go", "build", "-o", bin, pkg)
+	goBinary := "go"
+	if a.validationBuild {
+		// Resolve shims before clearing HOME, then invoke the concrete compiler
+		// with the private validation environment below.
+		goBinary, err = resolveValidationGoBinary(runtime.GOROOT())
+		if err != nil {
+			return "", fmt.Errorf("%s hook validation build: %w", mod.Name, err)
+		}
+		if err := os.MkdirAll(filepath.Join(a.base, "home"), 0700); err != nil {
+			return "", err
+		}
+	}
+	build := exec.Command(goBinary, "build", "-o", bin, pkg)
 	build.Dir = mod.SourceDir
-	build.Env = append(os.Environ(), "GOCACHE="+cacheDir)
-	if proxy := strings.TrimSpace(a.env["GOPROXY_URL"]); proxy != "" {
-		build.Env = append(build.Env, "GOPROXY="+proxy)
+	if a.validationBuild {
+		build.Env = validationHookBuildEnv(a.base, cacheDir, a.env["GOPROXY_URL"])
+	} else {
+		build.Env = append(os.Environ(), "GOCACHE="+cacheDir)
+		if proxy := strings.TrimSpace(a.env["GOPROXY_URL"]); proxy != "" {
+			build.Env = append(build.Env, "GOPROXY="+proxy)
+		}
 	}
 	var stderr bytes.Buffer
 	build.Stderr = &stderr

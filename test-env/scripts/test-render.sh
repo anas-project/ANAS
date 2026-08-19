@@ -7,6 +7,9 @@ cd "$ROOT_DIR"
 
 rendered_deployments="$RUNTIME_DIR/rendered-parameter-deployments.txt"
 parameter_inventory="$RUNTIME_DIR/rendered-parameter-inventory.json"
+render_root="$RUNTIME_DIR/render-matrix"
+rm -rf "$render_root"
+mkdir -p "$render_root"
 : >"$rendered_deployments"
 
 for config in "$CONFIG_DIR"/*.yml; do
@@ -14,7 +17,7 @@ for config in "$CONFIG_DIR"/*.yml; do
   # Lock fixtures live beside the config they belong to and are not configs
   # themselves; feeding one to `plan` fails on the very first field.
   case "$name" in *.lock) continue ;; esac
-  ws="$RUNTIME_DIR/$name"
+  ws="$render_root/$name"
   log="$REPORT_DIR/render-$name.log"
   make_workspace "$ws" "$config"
   if {
@@ -39,6 +42,91 @@ for config in "$CONFIG_DIR"/*.yml; do
   # deployment would let a stale render hide a newly disconnected parameter.
   latest=$(ls -1dt "$(ws_deployments "$ws")"/* | head -1)
   printf '%s\n' "$latest" >>"$rendered_deployments"
+
+  case "$name" in
+    domain-separation-ad-zone)
+      python3 - "$latest" ad_zone nas.test.example test.example <<'PY'
+import pathlib, sys
+
+deployment = pathlib.Path(sys.argv[1])
+mode, base_domain, ad_domain = sys.argv[2:]
+
+def env(module):
+    values = {}
+    for line in (deployment / "modules" / module / ".env").read_text().splitlines():
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            values[key] = value
+    return values
+
+dc = env("samba_dc")
+assert dc["BASE_DOMAIN"] == base_domain
+assert dc["SAMBA_DC_DOMAIN"] == ad_domain
+assert dc["SAMBA_DC_REALM"] == ad_domain.upper()
+assert dc["SAMBA_DC_BASE_DN"] == "DC=test,DC=example"
+assert dc["SAMBA_DC_APPLICATION_DNS_MODE_RESOLVED"] == mode
+assert dc["SAMBA_DC_APPLICATION_DNS_ZONE"] == ad_domain
+assert dc["SAMBA_DC_HOST"] == base_domain
+assert dc["SAMBA_DC_LDAPS_SERVER_URL_PORT"] == f"ldaps://{base_domain}:636"
+
+fs = env("samba_fs")
+assert fs["SAMBA_DC_DOMAIN"] == ad_domain
+assert fs["SAMBA_DC_REALM"] == ad_domain.upper()
+assert fs["SAMBA_DC_DC_DOMAIN"].endswith("." + ad_domain)
+assert fs["SAMBA_DC_DNS_SEARCH"] == ad_domain
+
+for module, web_key, web_host in (
+    ("lam", "LAM_DOMAIN", "lam." + base_domain),
+    ("nextcloud", "NEXTCLOUD_DOMAIN", "nc." + base_domain),
+    ("authentik", "AUTHENTIK_DOMAIN", "auth." + base_domain),
+):
+    values = env(module)
+    assert values[web_key] == web_host
+    assert values["SAMBA_DC_BASE_DN"] == "DC=test,DC=example"
+PY
+      ;;
+    domain-separation-separate-zone)
+      python3 - "$latest" separate_zone apps.example.test ad.example.test <<'PY'
+import pathlib, sys
+
+deployment = pathlib.Path(sys.argv[1])
+mode, base_domain, ad_domain = sys.argv[2:]
+
+def env(module):
+    values = {}
+    for line in (deployment / "modules" / module / ".env").read_text().splitlines():
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            values[key] = value
+    return values
+
+dc = env("samba_dc")
+assert dc["BASE_DOMAIN"] == base_domain
+assert dc["SAMBA_DC_DOMAIN"] == ad_domain
+assert dc["SAMBA_DC_REALM"] == ad_domain.upper()
+assert dc["SAMBA_DC_BASE_DN"] == "DC=ad,DC=example,DC=test"
+assert dc["SAMBA_DC_APPLICATION_DNS_MODE_RESOLVED"] == mode
+assert dc["SAMBA_DC_APPLICATION_DNS_ZONE"] == base_domain
+assert dc["SAMBA_DC_HOST"] == base_domain
+assert dc["SAMBA_DC_LDAPS_SERVER_URL"] == f"ldaps://{base_domain}"
+
+fs = env("samba_fs")
+assert fs["SAMBA_DC_DOMAIN"] == ad_domain
+assert fs["SAMBA_DC_REALM"] == ad_domain.upper()
+assert fs["SAMBA_DC_DC_DOMAIN"].endswith("." + ad_domain)
+assert fs["SAMBA_DC_DNS_SEARCH"] == ad_domain
+
+for module, web_key, web_host in (
+    ("lam", "LAM_DOMAIN", "lam." + base_domain),
+    ("nextcloud", "NEXTCLOUD_DOMAIN", "nc." + base_domain),
+    ("llng", "LLNG_DOMAIN", "auth." + base_domain),
+):
+    values = env(module)
+    assert values[web_key] == web_host
+    assert values["SAMBA_DC_BASE_USERS_DN"].endswith("DC=ad,DC=example,DC=test")
+PY
+      ;;
+  esac
 done
 
 echo "== every declared parameter reaches a rendered module environment =="
@@ -75,6 +163,6 @@ for parameter in inventory:
         missing.append((parameter["path"], parameter["env_key"]))
 
 assert not missing, "declared parameters absent from fresh renders: " + repr(missing)
-assert len(inventory) == 131, len(inventory)
+assert len(inventory) == 141, len(inventory)
 print(f"observed all {len(inventory)} parameter transports in fresh deployment artifacts")
 PY

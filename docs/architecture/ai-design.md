@@ -20,6 +20,12 @@ The sources of truth are:
 Legacy Ruby configuration and `runner.rb` files are not supported in the Go
 rules.
 
+Core changes must follow the normative
+[Core implementation standard](core-implementation-standard.md). Core owns
+generic orchestration, ABI and security enforcement; it must not interpret or
+rewrite one Module's parameter semantics. Module-specific validation and
+derivation belong to that Module's Hook or lifecycle operation.
+
 ## Current Project Structure
 
 ```text
@@ -203,6 +209,7 @@ services:
 logic:
   hook:
     command: [go, run, ./hook]
+    phases: [validate, calculate, render_env, services, after_start]
 ```
 
 Manifest fields:
@@ -268,7 +275,7 @@ Manifest fields:
 - `config.types.<parameter>.constraints`: portable single-field validation.
   Integers may declare `minimum`/`maximum`; strings may declare
   `min_length`/`max_length`/`pattern`/`format`; supported format identifiers are
-  `iana_timezone`, `language_tag`, `locale`, and `ipv4`. Conditional and
+  `iana_timezone`, `language_tag`, `locale`, `ipv4`, and `dns_name`. Conditional and
   cross-field rules stay in the resolver, application layer, plan, or Hook.
 - `config.types.<parameter>.default_source`: a non-literal source—`host`,
   `runtime`, `inherited`, or `generated`—that may fill omitted input. Literal
@@ -285,10 +292,26 @@ Manifest fields:
 - `config.exports`: env keys outside the module's own prefixes that its
   calculate hook publishes, for example `SMAL_SP_*` for SAML SP registration
   or `MYSQL_*` compatibility aliases. Undeclared cross-prefix writes fail.
+  The legacy `APPS_LIST` root is a constrained cooperative exception: a Module
+  declaring `APPS_LIST*` may preserve the current ordered list and append only
+  its own Module name. The runner owns the merged root; raw `env.APPS_LIST` and
+  `secrets.APPS_LIST`, reordering, replacement, deletion, duplicates, and
+  foreign additions are rejected. Per-application `APPS_LIST__*` metadata
+  remains owned by its publishing Module until the application catalog design
+  replaces this transitional protocol.
 - `features`: capabilities used by humans and future tooling.
 - `services.optional`: compose services filtered by env flags.
-- `logic.hook.command`: command executed from the module directory for
-  `calculate`, `render_env`, `services`, and `after_start` phases.
+- `logic.hook.command`: command executed from the module directory for the
+  phases selected by `logic.hook.phases`.
+- `logic.hook.phases`: optional Hook phase selection. A non-empty list is an
+  exact allowlist. Accepted phase identifiers are `validate`, `calculate`, `render_env`,
+  `runtime_restore`, `services`, `after_start`, `local_account_apply`,
+  `local_account_rotate`, and `local_account_rollback`. When this field is
+  absent, the runner preserves the legacy non-validate lifecycle; an explicit
+  empty list is rejected as ambiguous manifest input. Legacy Hooks are never
+  assumed to validate configuration. A Hook receives
+  `validate` only when a non-empty list explicitly contains it, and an
+  explicitly listed Hook runs only for the phases it declares.
 - `status`: optional; use `experimental` or `inactive` for unfinished modules.
 
 Dependency order guarantees that the upstream Compose project is created first;
@@ -325,8 +348,13 @@ module functionality is:
 - Apply generic host/runtime/inherited resolvers, normalize their values through
   the same type/constraint schema, and enforce legacy `required` immediately
   before each module's calculate Hook.
-- Run module hooks through the `anas.module-hook/v1` JSON protocol. Supported phases are
-  `calculate`, `render_env`, `runtime_restore`, `services`, and `after_start`.
+- Run module hooks through the `anas.module-hook/v1` JSON protocol. Supported
+  phases are `validate`, `calculate`, `render_env`, `runtime_restore`,
+  `services`, `after_start`, `local_account_apply`, `local_account_rotate`, and
+  `local_account_rollback`. A non-empty `logic.hook.phases` list is an exact
+  allowlist. An absent field retains legacy compatibility for every
+  non-validate phase, but does not opt the Hook into `validate`; an explicit
+  empty list is invalid.
   `runtime_restore` reconstructs deployment-scoped mutable files before a
   container starts; those files live outside the sealed artifact. Hooks declared as
   `go run <pkg>` are compiled once per run and frozen into the rendered module

@@ -289,6 +289,51 @@ func TestBundledLocalAdministratorCapabilitiesAreRealAndScoped(t *testing.T) {
 	}
 }
 
+func TestManifestLocalAccountHandlersRequireDeclaredHookPhases(t *testing.T) {
+	for _, test := range []struct {
+		name, lifecycle, phases, want string
+	}{
+		{name: "apply", lifecycle: "        apply: apply-account\n", phases: "[validate]", want: "local_account_apply"},
+		{name: "rotate", lifecycle: "        rotate: rotate-account\n", phases: "[local_account_rollback]", want: "local_account_rotate"},
+		{name: "rollback", lifecycle: "        rotate: rotate-account\n", phases: "[local_account_rotate]", want: "local_account_rollback"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "example")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			manifest := `api_version: anas.module/v1
+kind: Module
+name: example
+version: 1.0.0
+revision: 1
+status: release
+abi:
+  supports: [anas.module-hook/v1]
+runtime:
+  type: builtin
+management:
+  local_accounts:
+    - id: primary
+      purpose: primary
+      credential:
+        container_format: bcrypt
+      lifecycle:
+` + test.lifecycle + `logic:
+  hook:
+    command: [/bin/true]
+    phases: ` + test.phases + "\n"
+			if err := os.WriteFile(filepath.Join(dir, "module.yml"), []byte(manifest), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := loadModuleManifest(dir, "example")
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("local account phase error = %v, want %s", err, test.want)
+			}
+		})
+	}
+}
+
 func TestNextcloudAdministratorPasswordIsNotConfiguration(t *testing.T) {
 	mod, err := loadModuleManifest(filepath.Join("..", "..", "modules", "nextcloud"), "nextcloud")
 	if err != nil {

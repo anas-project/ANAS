@@ -25,9 +25,9 @@ import json, os, re, sys
 
 doc = json.load(open(sys.argv[1]))
 parameters = doc["parameters"]
-assert len(parameters) == 139, len(parameters)
+assert len(parameters) == 141, len(parameters)
 assert sum(item["module"] == "global" for item in parameters) == 17
-assert sum(item["module"] != "global" for item in parameters) == 122
+assert sum(item["module"] != "global" for item in parameters) == 124
 
 removed = {
     "global.basicauth_user",
@@ -90,7 +90,7 @@ for item in parameters:
     if "format" in constraints:
         assert item["type"] == "string", (item["path"], "format", constraints["format"])
         assert constraints["format"] in {
-            "iana_timezone", "language_tag", "locale", "ipv4",
+            "iana_timezone", "language_tag", "locale", "ipv4", "dns_name",
         }, (item["path"], "format", constraints["format"])
 
 # Cover every source spelling and prove that an explicit empty literal remains
@@ -120,11 +120,11 @@ for item in parameters:
     default_source_counts[source] = default_source_counts.get(source, 0) + 1
 assert default_source_counts == {
     "none": 8,
-    "static": 111,
+    "static": 112,
     "host": 3,
     "runtime": 4,
     "generated": 9,
-    "inherited": 4,
+    "inherited": 5,
 }, default_source_counts
 
 # Pin representative portable constraints without requiring every parameter to
@@ -135,6 +135,8 @@ constraint_cases = {
     "global.default_language": {"format": "language_tag"},
     "global.default_locale": {"format": "locale"},
     "global.host_ip": {"format": "ipv4"},
+    "global.base_domain": {"format": "dns_name"},
+    "samba_dc.domain": {"format": "dns_name"},
     "eturnal.port": {"minimum": 1, "maximum": 65535},
     "samba_dc.max_log_size": {"minimum": 1},
     "oauth2_proxy.allow_groups": {"pattern": r"\S"},
@@ -157,10 +159,10 @@ for item in parameters:
     else:
         assert "allowed_values" not in item, (item["path"], kind, item.get("allowed_values"))
 assert type_counts == {
-    "string": 79,
+    "string": 80,
     "bool": 22,
     "int": 24,
-    "enum": 14,
+    "enum": 15,
 }, type_counts
 
 global_types = {
@@ -214,6 +216,7 @@ must_resolve_paths = input_required_paths | {
     "samba_dc.admin_password",
     "samba_dc.administrator_password",
     "samba_dc.anchor_bind_password",
+    "samba_dc.domain",
     "samba_dc.ldap_bind_password",
     "samba_dc.netbios_name",
     "samba_dc.password_bind_password",
@@ -221,7 +224,7 @@ must_resolve_paths = input_required_paths | {
 }
 assert {item["path"] for item in parameters if item["input_required"]} == input_required_paths
 assert {item["path"] for item in parameters if item["required"]} == input_required_paths
-assert len(must_resolve_paths) == 22
+assert len(must_resolve_paths) == 23
 assert {item["path"] for item in parameters if item["must_resolve"]} == must_resolve_paths
 
 # These have no unconditional default source, but the deployment-level
@@ -241,10 +244,10 @@ for item in parameters:
 assert effects == {
     "container_recreate": 91,
     "credential_rotate": 7,
-    "data_migrate": 9,
+    "data_migrate": 10,
     "hot_reload": 16,
     "image_rebuild": 1,
-    "immutable": 3,
+    "immutable": 4,
     "reconcile": 12,
 }, effects
 

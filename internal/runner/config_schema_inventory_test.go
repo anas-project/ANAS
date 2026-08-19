@@ -24,13 +24,14 @@ type bundledSourceEvidence struct {
 
 func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	inventory := loadBundledParameterMetadata(t)
-	if got, want := len(inventory), 139; got != want {
+	if got, want := len(inventory), 141; got != want {
 		t.Fatalf("bundled parameter count = %d, want %d", got, want)
 	}
 
 	minimumOne := 1
 	maximumPort := 65535
 	wantConstraints := map[string]configschema.Constraints{
+		"global.base_domain":        {Format: configschema.FormatDNSName},
 		"global.timezone":           {Format: configschema.FormatIANATimezone},
 		"global.default_language":   {Format: configschema.FormatLanguageTag},
 		"global.default_locale":     {Format: configschema.FormatLocale},
@@ -41,6 +42,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"meshcentral.mps_port":      {Minimum: &minimumOne, Maximum: &maximumPort},
 		"traefik.base_port":         {Minimum: &minimumOne, Maximum: &maximumPort},
 		"samba_dc.max_log_size":     {Minimum: &minimumOne},
+		"samba_dc.domain":           {Format: configschema.FormatDNSName},
 		"oauth2_proxy.allow_groups": {Pattern: `\S`},
 	}
 	gotConstraints := map[string]configschema.Constraints{}
@@ -70,6 +72,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"nextcloud.language":              {configschema.DefaultSourceInherited, "nextcloud calculate"},
 		"nextcloud.locale":                {configschema.DefaultSourceInherited, "nextcloud calculate"},
 		"postgres.password":               {configschema.DefaultSourceGenerated, "calcPostgres"},
+		"samba_dc.domain":                 {configschema.DefaultSourceInherited, "validateDomainDNSConfig/calcSambaDC"},
 		"samba_dc.realm":                  {configschema.DefaultSourceInherited, "calcSambaDC"},
 		"samba_dc.netbios_name":           {configschema.DefaultSourceRuntime, "calcSambaDC"},
 		"samba_dc.admin_password":         {configschema.DefaultSourceGenerated, "calcSambaDC"},
@@ -126,6 +129,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"nextcloud.language":              true,
 		"nextcloud.locale":                true,
 		"postgres.password":               true,
+		"samba_dc.domain":                 true,
 		"samba_dc.realm":                  true,
 		"samba_dc.netbios_name":           true,
 		"samba_dc.admin_password":         true,
@@ -203,7 +207,7 @@ func loadBundledParameterMetadata(t *testing.T) map[string]bundledParameterMetad
 		t.Fatal(err)
 	}
 
-	out := make(map[string]bundledParameterMetadata, 139)
+	out := make(map[string]bundledParameterMetadata, 141)
 	for _, parameter := range globalConfig.Parameters {
 		envKey := parameterEnvKey(globalModuleName, parameter, reg)
 		_, hasDefault := globalConfig.Defaults[envKey]

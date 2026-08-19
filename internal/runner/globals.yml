@@ -28,7 +28,10 @@ config:
     ipv6: "true"
     dns_server: 223.5.5.5
   types:
-    base_domain: string
+    base_domain:
+      kind: string
+      constraints:
+        format: dns_name
     email: string
     timezone:
       kind: string
@@ -72,8 +75,8 @@ config:
   changes:
     base_domain:
       effect: immutable
-      apply: migrate-domain
-      description: Samba realm, SSO issuers, certificates, and application URLs depend on it.
+      apply: migrate-service-domain
+      description: Application URLs, SSO issuers, certificates, cookies, and public DNS depend on it; the Samba directory domain is configured separately.
     timezone:
       effect: container_recreate
       apply: recreate-affected-containers

@@ -204,6 +204,44 @@ func TestIAMExplicitProtocolOutsideAnyOfFails(t *testing.T) {
 	}
 }
 
+func TestBundledNetBirdStructuredSAMLReachesCapabilityResolver(t *testing.T) {
+	reg, err := loadRegistry(repoRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`modules:
+  netbird:
+    identity:
+      login_protocol: saml
+identity:
+  iam:
+    provider: llng
+global:
+  base_domain: nas.test
+  email: admin@nas.test
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Core topology enum rejected a known IAM protocol: %v", err)
+	}
+	if err := validateConfiguredParameterSchema(cfg, reg); err != nil {
+		t.Fatalf("bundled parameter schema rejected the generic IAM selector: %v", err)
+	}
+	env, owners := configBaseEnvWithRegistry(cfg, reg)
+	a := &app{
+		cfg: cfg, reg: reg, env: env, envOwner: owners,
+		resolvedBindings:       map[string]map[string]string{},
+		registryOnlyResolution: true,
+	}
+	_, err = a.resolveOrder(cfg.Modules.Order)
+	if err == nil || !strings.Contains(err.Error(), "netbird supports [oidc]") {
+		t.Fatalf("error = %v, want capability resolver to reject SAML for NetBird", err)
+	}
+}
+
 func TestIAMProviderRequiredAndNeverAutoSelected(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	// llng is the only qualified provider; the runner must still refuse to

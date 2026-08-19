@@ -47,6 +47,73 @@ With an active running deployment, `config set` immediately materializes and act
 
 OIDC is the default `identity.iam.default_protocol` only for IAM consumers that declare OIDC support. Nextcloud and MeshCentral now use OIDC by default; Nextcloud can still select SAML explicitly through its module parameter. See [Module IAM and OIDC support](/en/reference/module-iam-support).
 
+## Application and Samba AD domains
+
+`global.base_domain` (rendered as `BASE_DOMAIN`) defines only the application
+and Web-entry namespace. Application URLs, SSO cookies, redirect URIs, Web
+certificates, and public DDNS derive from it. Samba's AD DNS domain, Kerberos
+realm, Base DN, canonical DC FQDN, and machine trusts derive from
+`modules.samba_dc.config.domain` (rendered as `SAMBA_DC_DOMAIN`). A new
+workspace can separate them before its first provision:
+
+```yaml
+global:
+  base_domain: nas.example.net
+
+modules:
+  samba_dc:
+    config:
+      domain: corp.example.com
+      application_dns_mode: auto
+```
+
+For compatibility with old configuration, omitting
+`modules.samba_dc.config.domain` makes the Samba hook use
+`global.base_domain` as the effective AD domain. This fallback preserves the
+old meaning; it does not make a later `BASE_DOMAIN` change rename a provisioned
+directory.
+
+`application_dns_mode` selects where Samba's internal DNS hosts application
+records:
+
+| Requested value | Resolution rule | Authoritative Samba zone |
+| --- | --- | --- |
+| `auto` | Resolve to `ad_zone` when `BASE_DOMAIN` equals `SAMBA_DC_DOMAIN` or is its DNS-label subdomain; otherwise resolve to `separate_zone` | Selected by the resolved mode |
+| `ad_zone` | Accept only that equal/subdomain relationship; an unrelated domain fails during plan | `SAMBA_DC_DOMAIN` |
+| `separate_zone` | No parent/child relationship is required, but identical domains must use `ad_zone` | `BASE_DOMAIN` |
+
+`separate_zone` is an internal split-horizon authoritative zone and must use a
+dedicated `BASE_DOMAIN` that this workspace can maintain completely. Samba
+does not forward missing names from that zone to public DNS; unmanaged names
+return not found. Public DNS/DDNS continues to manage the application domain,
+not the AD domain.
+
+Inspect the requested mode, resolved mode, and selected zone before changing
+runtime state:
+
+```bash
+anas plan -w /srv/anas
+anas plan -w /srv/anas --json | jq '.module_plans.samba_dc'
+```
+
+Text output is shaped like
+`module plan: samba_dc requested_mode=auto resolved_mode=separate_zone zone=nas.example.net`.
+After materialization, the same fields are frozen under
+`modules.samba_dc.validation_plan` in the deployment manifest. ANAS LDAPS
+consumers currently keep using the Web-certificate-covered service alias:
+`SAMBA_DC_HOST=BASE_DOMAIN`, whose internal A record points to
+`SAMBA_DC_HOST_IP`. That alias is neither the AD realm nor the canonical DC
+name.
+
+> [!WARNING]
+> The existing-workspace `migrate-service-domain` and
+> `migrate-application-dns-zone` migrators have not been delivered. Domain
+> separation is currently supported only before the first provision of a new
+> workspace; do not bypass the guards with ordinary apply, raw `env`, or manual
+> state edits. A provisioned `SAMBA_DC_DOMAIN` cannot be renamed in place. A
+> different AD domain requires a new directory, identity migration, and member
+> rejoin.
+
 ## Timezone, language, and regional formatting
 
 The three global fields are independent:

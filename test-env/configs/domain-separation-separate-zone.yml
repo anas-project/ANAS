@@ -1,0 +1,20 @@
+# Unrelated split: Web applications and the AD identity occupy separate DNS
+# namespaces. auto must create/reconcile the application zone independently.
+modules:
+  samba_dc:
+    config:
+      domain: ad.example.test
+      application_dns_mode: auto
+  samba_fs: {}
+  postgres: {}
+  llng: {}
+  nextcloud: {}
+  lam: {}
+identity:
+  iam:
+    provider: llng
+global:
+  base_domain: apps.example.test
+  email: admin@apps.example.test
+  timezone: Asia/Shanghai
+  virtual_domain: true

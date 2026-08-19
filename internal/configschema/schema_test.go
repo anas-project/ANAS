@@ -57,7 +57,7 @@ func TestNormalizeDefinitionCanonicalizesAndValidatesParameter(t *testing.T) {
 }
 
 func TestSupportedRegistriesAreClosedAndStable(t *testing.T) {
-	if got, want := SupportedFormats(), []string{"iana_timezone", "ipv4", "language_tag", "locale"}; !reflect.DeepEqual(got, want) {
+	if got, want := SupportedFormats(), []string{"dns_name", "iana_timezone", "ipv4", "language_tag", "locale"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("formats = %v, want %v", got, want)
 	}
 	if got, want := SupportedDefaultSources(), []DefaultSource{"generated", "host", "inherited", "runtime"}; !reflect.DeepEqual(got, want) {
@@ -141,6 +141,7 @@ func TestNormalizeClosedFormats(t *testing.T) {
 		{name: "language", format: FormatLanguageTag, value: "pt_BR.UTF-8", want: "pt-BR"},
 		{name: "locale", format: FormatLocale, value: "en_SG.UTF-8", want: "en-SG"},
 		{name: "ipv4", format: FormatIPv4, value: " 192.0.2.10 ", want: "192.0.2.10"},
+		{name: "dns name", format: FormatDNSName, value: " NAS.Example.COM. ", want: "nas.example.com"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			parameter := Parameter{Kind: "string", Constraints: Constraints{Format: test.format}}
@@ -158,9 +159,39 @@ func TestNormalizeClosedFormats(t *testing.T) {
 		{FormatLocale, "locale_!"},
 		{FormatIPv4, "2001:db8::1"},
 		{FormatIPv4, "::ffff:192.0.2.10"},
+		{FormatDNSName, "https://nas.example.com"},
+		{FormatDNSName, "nas.example.com:443"},
+		{FormatDNSName, "*.example.com"},
+		{FormatDNSName, "192.0.2.10"},
+		{FormatDNSName, "192.168.001.001"},
+		{FormatDNSName, "a..example.com"},
+		{FormatDNSName, "-nas.example.com"},
+		{FormatDNSName, "nas-.example.com"},
+		{FormatDNSName, "nas_name.example.com"},
+		{FormatDNSName, "nás.example.com"},
 	} {
 		if _, err := (Parameter{Kind: "string", Constraints: Constraints{Format: test.format}}).Normalize(test.value); err == nil {
 			t.Errorf("%s accepted invalid value %q", test.format, test.value)
+		}
+	}
+}
+
+func TestDNSNameLengthBoundaries(t *testing.T) {
+	parameter := Parameter{Kind: "string", Constraints: Constraints{Format: FormatDNSName}}
+	label63 := strings.Repeat("a", 63)
+	valid253 := strings.Join([]string{label63, label63, label63, strings.Repeat("a", 61)}, ".")
+	if len(valid253) != 253 {
+		t.Fatalf("test DNS name length = %d", len(valid253))
+	}
+	if got, err := parameter.Normalize(valid253 + "."); err != nil || got != valid253 {
+		t.Fatalf("253-byte DNS name = %q, %v", got, err)
+	}
+	for _, invalid := range []string{
+		strings.Repeat("a", 64) + ".example.com",
+		valid253 + "a",
+	} {
+		if _, err := parameter.Normalize(invalid); err == nil {
+			t.Errorf("accepted overlong DNS name/label of %d bytes", len(invalid))
 		}
 	}
 }

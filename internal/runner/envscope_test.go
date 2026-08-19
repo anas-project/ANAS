@@ -198,6 +198,56 @@ func TestCalculatePatchRejectsCrossOwnerOverwriteAtomically(t *testing.T) {
 	}
 }
 
+func TestCalculatePatchMergesApplicationListWithoutGivingOneModuleOwnership(t *testing.T) {
+	a := &app{
+		env:      map[string]string{"APPS_LIST": ""},
+		envOwner: map[string]string{"APPS_LIST": globalScope},
+	}
+	nextcloud := Module{Name: "nextcloud", EnvPrefix: "NEXTCLOUD", Exports: []string{"APPS_LIST*"}}
+	meshcentral := Module{Name: "meshcentral", EnvPrefix: "MESHCENTRAL", Exports: []string{"APPS_LIST*"}}
+
+	if err := a.applyCalculatePatch(nextcloud, map[string]string{
+		"APPS_LIST": "nextcloud", "APPS_LIST__NEXTCLOUD__NAME": "Nextcloud",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.applyCalculatePatch(meshcentral, map[string]string{
+		"APPS_LIST": "nextcloud,meshcentral", "APPS_LIST__MESHCENTRAL__NAME": "MeshCentral",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.env["APPS_LIST"]; got != "nextcloud,meshcentral" {
+		t.Fatalf("APPS_LIST = %q", got)
+	}
+	if got := a.envOwner["APPS_LIST"]; got != runnerScope {
+		t.Fatalf("APPS_LIST owner = %q, want runner", got)
+	}
+	if got := a.envOwner["APPS_LIST__NEXTCLOUD__NAME"]; got != "nextcloud" {
+		t.Fatalf("Nextcloud metadata owner = %q", got)
+	}
+	if got := a.envOwner["APPS_LIST__MESHCENTRAL__NAME"]; got != "meshcentral" {
+		t.Fatalf("MeshCentral metadata owner = %q", got)
+	}
+
+	before := a.env["APPS_LIST"]
+	for name, value := range map[string]string{
+		"delete another module": "meshcentral",
+		"reorder entries":       "meshcentral,nextcloud",
+		"append foreign entry":  "nextcloud,meshcentral,foreign",
+		"duplicate entry":       "nextcloud,meshcentral,meshcentral",
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := a.applyCalculatePatch(meshcentral, map[string]string{"APPS_LIST": value})
+			if err == nil || !strings.Contains(err.Error(), "must preserve APPS_LIST") {
+				t.Fatalf("invalid APPS_LIST error = %v", err)
+			}
+			if got := a.env["APPS_LIST"]; got != before {
+				t.Fatalf("rejected patch changed APPS_LIST to %q", got)
+			}
+		})
+	}
+}
+
 // Per-engine DNS credentials are separated by env prefix alone, with no
 // consumes entry on either side. This is what lets a deployment run two DDNS
 // implementations against the same vendor with different accounts, and it is

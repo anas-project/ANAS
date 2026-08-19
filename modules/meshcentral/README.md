@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `meshcentral` |
-| 版本 / revision | `1.2.4-r6` |
+| 版本 / revision | `1.2.4-r7` |
 | 状态 | `release` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -83,7 +83,7 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 | `meshcentral.db_name` | string | — | `meshcentral` | `static` | `MESHCENTRAL_DB_NAME` | 否 | 否 | 否 | 否：`migrate-meshcentral-database` | `data_migrate` | 应用数据库名 |
 | `meshcentral.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `MESHCENTRAL_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-meshcentral-database` | `data_migrate` | 关系数据库类型或自动选择 |
 | `meshcentral.domain_prefix` | string | — | `meshcentral` | `static` | `MESHCENTRAL_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
-| `meshcentral.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `MESHCENTRAL_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
+| `meshcentral.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `MESHCENTRAL_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
 | `meshcentral.mps_port` | int | `1..65535` | `4433` | `static` | `MESHCENTRAL_MPS_PORT` | 否 | 否 | 否 | 是 | `container_recreate` | MPS 端口 |
 
 ### 查询和修改
@@ -120,7 +120,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`1.2.4-r6`（reviewed 2026-08-13）
+- Module version / 版本：`1.2.4-r7`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — MeshCentral receives TZ through the module .env for process and log timestamps.
 - Language scope / 语言范围：MeshCentral Web UI
 - Selection / 选择方式：`browser`

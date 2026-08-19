@@ -49,9 +49,6 @@ start() {
   dns_upstream=${ANAS_TEST_DNS_UPSTREAM:-$(resolvectl dns "$uplink" 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) { print $i; exit } }')}
   dns_upstream=${dns_upstream:-1.1.1.1}
 
-  systemctl stop anas-test-docker-v3.service 2>/dev/null || true
-  ip link delete anas-docker0 2>/dev/null || true
-
   if ! ip netns list | grep -Eq "^${NS}( |$)"; then
     ip netns add "$NS"
   fi

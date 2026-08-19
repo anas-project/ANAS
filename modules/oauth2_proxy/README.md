@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `oauth2_proxy` |
-| 版本 / revision | `7.15.3-r3` |
+| 版本 / revision | `7.15.3-r4` |
 | 状态 | `release` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
@@ -68,7 +68,7 @@ identity:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `oauth2_proxy.allow_groups` | string | `pattern: \S` | `Admins` | `static` | `OAUTH2_PROXY_ALLOW_GROUPS` | 否 | 否 | 否 | 是 | `container_recreate` | 允许通过门禁的目录 Group |
 | `oauth2_proxy.domain_prefix` | string | — | `auth-gate` | `static` | `OAUTH2_PROXY_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
-| `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
+| `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
 
 ### 查询和修改
 
@@ -104,7 +104,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`7.15.3-r3`（reviewed 2026-08-13）
+- Module version / 版本：`7.15.3-r4`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — oauth2-proxy receives TZ for process and log timestamps.
 - Language scope / 语言范围：oauth2-proxy built-in error and sign-in pages
 - Selection / 选择方式：`fixed`

@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: samba_dc
 version: 4.23.6
-revision: 7
+revision: 8
 app_version: 4.23.6
 abi:
   supports:
@@ -24,6 +24,7 @@ upgrade:
   data_breaking: []
 config:
   must_resolve:
+    - domain
     - realm
     - netbios_name
     - admin_password
@@ -39,6 +40,7 @@ config:
     - ANAS_DIRECTORY_EVENTS_FILE_NAME
   consumes:
     - DOMAINS
+    - ANAS_DEPLOYMENT_ID
     - ANAS_TLS_CERTS_DIR
     - ANAS_TLS_INTERNAL_CA_NAME
     - ANAS_TLS_TRUST_BUNDLE_NAME
@@ -48,6 +50,7 @@ config:
     - LEGO_KEY_NAME
     - ANAS_IDENTITY_APP_CLIENTS
   defaults:
+    application_dns_mode: auto
     app_filter: "true"
     create_structure: "true"
     admin_name: admin
@@ -91,6 +94,16 @@ config:
     # on to keep all of its processes writing to the current file.
     max_log_size: "2048"
   types:
+    domain:
+      kind: string
+      constraints:
+        format: dns_name
+      default_source: inherited
+    application_dns_mode:
+      enum:
+        - auto
+        - ad_zone
+        - separate_zone
     app_filter: bool
     create_structure: bool
     admin_name: string
@@ -148,10 +161,18 @@ config:
       kind: string
       default_source: generated
   changes:
+    domain:
+      effect: immutable
+      apply: replace-directory-domain
+      description: The AD DNS domain is part of the provisioned directory identity and cannot be renamed in place.
+    application_dns_mode:
+      effect: data_migrate
+      apply: migrate-application-dns-zone
+      description: Switching the authoritative Samba zone moves persistent DNS records and requires a managed migration.
     realm:
       effect: immutable
-      apply: migrate-domain
-      description: The realm is part of the provisioned AD identity.
+      apply: replace-directory-domain
+      description: The realm is derived from the provisioned AD DNS domain and is part of the directory identity.
     netbios_name:
       effect: immutable
       apply: replace-domain-controller
@@ -278,3 +299,9 @@ logic:
       - go
       - run
       - ./hook
+    phases:
+      - validate
+      - calculate
+      - render_env
+      - services
+      - after_start

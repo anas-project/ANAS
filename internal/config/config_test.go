@@ -278,6 +278,63 @@ func TestModuleIdentityLoginProtocolMapsToIAMSelector(t *testing.T) {
 	}
 }
 
+func TestTopologyProtocolsUseSharedEnumNormalization(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`modules:
+  nextcloud:
+    identity:
+      login_protocol: " SAML "
+identity:
+  iam:
+    default_protocol: " OIDC "
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Identity.IAM.DefaultProtocol; got != "oidc" {
+		t.Fatalf("default protocol = %q, want oidc", got)
+	}
+	if got := cfg.Modules.Values["nextcloud"].Identity.LoginProtocol; got != "saml" {
+		t.Fatalf("login protocol = %q, want saml", got)
+	}
+}
+
+func TestBlankIAMDefaultProtocolKeepsOIDCDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`identity:
+  iam:
+    default_protocol: "  \t "
+modules:
+  demo: {}
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Identity.IAM.DefaultProtocol; got != "oidc" {
+		t.Fatalf("blank default protocol = %q, want oidc", got)
+	}
+}
+
+func TestUnknownModuleLoginProtocolIsRejectedAtLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte(`modules:
+  nextcloud:
+    identity:
+      login_protocol: ldap
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "modules.nextcloud.identity.login_protocol") {
+		t.Fatalf("error = %v, want login_protocol rejection", err)
+	}
+}
+
 func TestIdentityAndBootstrapAdministratorAreMaterialized(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yml")
 	if err := os.WriteFile(path, []byte(`modules:

@@ -49,14 +49,17 @@ type app struct {
 	// callerInputEnv is captured before workspace/runner-derived values are
 	// published. input_required is a caller contract, so those derived values
 	// must never be able to satisfy it during deployment materialization.
-	callerInputEnv map[string]string
-	deps           map[string][]string
-	order          []string
-	secrets        *secretStore
-	localAdmins    *localAdminState
-	lock           *moduleLock
-	hookBins       map[string]string
-	sensitiveKeys  map[string]bool
+	callerInputEnv   map[string]string
+	deps             map[string][]string
+	order            []string
+	secrets          *secretStore
+	localAdmins      *localAdminState
+	lock             *moduleLock
+	hookBins         map[string]string
+	validationBuild  bool
+	modulesValidated bool
+	modulePlans      map[string]map[string]string
+	sensitiveKeys    map[string]bool
 	// narrowFileScope restricts a rendered .env to what its module declares --
 	// global values, its own prefix, and manifest `config.consumes` -- instead
 	// of everything its dependency closure happens to own. It is a field rather
@@ -431,11 +434,18 @@ func (a *app) execute(actions []string) error {
 		return err
 	}
 	if renders || contains(actions, "plan") {
-		if err := a.validateVersions(lock); err != nil {
+		if len(lock.Modules) > 0 {
+			if err := validateLockedResolution(a, lock); err != nil {
+				return err
+			}
+		} else if err := a.validateVersions(lock); err != nil {
 			return err
 		}
 	}
 	a.applyModuleDefaults()
+	if err := a.validateModules(); err != nil {
+		return err
+	}
 	// Ahead of the plan output, so a platform typo or a half-configured
 	// credential is reported by `plan` rather than by a container in a
 	// restart loop.
@@ -449,6 +459,7 @@ func (a *app) execute(actions []string) error {
 		fmt.Print(a.dnsPlanSummary())
 		fmt.Print(a.dynamicDNSPlanSummary())
 		fmt.Print(a.moduleLifecyclePlanSummary())
+		fmt.Print(a.moduleValidationPlanSummary())
 		return nil
 	}
 	if contains(actions, "stop") {
@@ -1040,6 +1051,9 @@ func (a *app) calculate() error {
 	if err := requireKeys(a.env, globalConfig.finalRequirements()); err != nil {
 		return fmt.Errorf("deployment config: %w", err)
 	}
+	if err := a.validateModules(); err != nil {
+		return err
+	}
 	for _, name := range a.order {
 		mod := a.reg[name]
 		if err := a.publishModuleResources(name); err != nil {
@@ -1088,11 +1102,22 @@ func (a *app) calculate() error {
 		}
 	}
 	domains := []string{}
-	for _, name := range a.order {
-		key := strings.ToUpper(strings.ReplaceAll(name, "-", "_")) + "_DOMAIN"
-		if a.env[key] != "" {
-			domains = append(domains, "inner/"+strings.Split(a.env[key], ".")[0]+"/"+name)
+	seenDomains := map[string]bool{}
+	addDomain := func(fqdn, owner string) {
+		fqdn = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(fqdn), "."))
+		if fqdn == "" || seenDomains[fqdn] {
+			return
 		}
+		seenDomains[fqdn] = true
+		domains = append(domains, "inner/"+fqdn+"/"+owner)
+	}
+	for _, name := range a.order {
+		mod := a.reg[name]
+		if !mod.PublishesDomain {
+			continue
+		}
+		key := strings.ToUpper(strings.ReplaceAll(name, "-", "_")) + "_DOMAIN"
+		addDomain(a.env[key], name)
 	}
 	a.env["DOMAINS"] = strings.Join(domains, ",")
 	// DOMAINS is an input to Samba's zone reconciler, not a deployment-wide

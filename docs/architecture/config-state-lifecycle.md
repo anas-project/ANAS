@@ -68,7 +68,7 @@ runner 现在已经能持久保存随机生成的密钥、声明部分配置的�
 | PostgreSQL | `POSTGRES_USERNAME`、`POSTGRES_PASSWORD` | 官方 entrypoint 只对空 PGDATA 初始化；后改 env 不会改数据库角色密码 | `rotate-credential` 或 SQL reconciler |
 | PostgreSQL | 依赖模块的 `*_DB_NAME` | 生成的 initdb 脚本只在空 PGDATA 执行；数据库已运行后新增模块不会得到新库 | 在线、幂等的 `ensure-databases` reconciler |
 | MariaDB | `MARIADB_ROOT_PASSWORD` | `/config` 首次初始化后，改 env 不会自动改现存 root 密码 | 数据库内轮换后，再原子更新消费者凭据 |
-| Samba DC | `BASE_DOMAIN`、`SAMBA_DC_REALM`、`WORKGROUP`、`NETBIOS_NAME`、provision/join 模式 | `/var/lib/samba/registry.tdb` 存在后不再 provision；这些值构成域身份 | 默认 immutable；只能执行受控域迁移或重建恢复 |
+| Samba DC | `SAMBA_DC_DOMAIN`、`SAMBA_DC_REALM`、`WORKGROUP`、`NETBIOS_NAME`、provision/join 模式 | `/var/lib/samba/registry.tdb` 存在后不再 provision；这些值构成目录域身份，独立于应用命名空间 `BASE_DOMAIN` | 默认 immutable；AD 域不支持原地重命名，只能替换目录并迁移身份；应用域另走 `migrate-service-domain` |
 | Samba DC | `SAMBA_DC_ADMINISTRATOR_PASSWORD` | 只传给首次 `samba-tool domain provision/join` | `samba-tool user setpassword` 轮换 |
 | Samba DC | admin、LDAP bind、password bind 的名称和密码 | 用户不存在时才创建；改密码 env 不会更新 AD；改名称会新建账户并留下旧账户 | 显式 `rename-account`/`rotate-credential`，更新消费者后禁用旧账户 |
 | Samba FS | `SAMBA_FS_HOSTNAME`、域/realm、机器身份 | 已有 `net ads testjoin` 成功时不会重新 join；仅改 env 可能造成配置与机器账户不一致 | `leave/join` reconciler，并处理旧 machine account |

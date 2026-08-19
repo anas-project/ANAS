@@ -159,9 +159,9 @@ type Snapshot struct {
 }
 
 type Global struct {
-	// BaseDomain is the root every hostname and the AD realm derive from:
-	// traefik.<base_domain> for services, upper-cased for the Samba realm. It is
-	// not "the domain" of any one thing, which is what the old name suggested.
+	// BaseDomain is the application and Web-entry namespace: services publish
+	// hostnames beneath it, while directory providers own their identity domain
+	// independently.
 	BaseDomain string `yaml:"base_domain"`
 	Email      string `yaml:"email"`
 	// There is deliberately no data_path. Service data lives at
@@ -395,17 +395,8 @@ func Load(path string) (*File, error) {
 	}
 	cfg.Identity.Directory.Provider = strings.ToLower(strings.TrimSpace(cfg.Identity.Directory.Provider))
 	cfg.Identity.IAM.Provider = strings.ToLower(strings.TrimSpace(cfg.Identity.IAM.Provider))
-	cfg.Identity.IAM.DefaultProtocol = strings.ToLower(strings.TrimSpace(cfg.Identity.IAM.DefaultProtocol))
-	if cfg.Identity.IAM.DefaultProtocol == "" {
-		// OIDC is the deployment default for IAM consumers. A module that does
-		// not implement OIDC is not forced outside its manifest contract: the
-		// capability resolver falls back to that module's declared preference.
-		cfg.Identity.IAM.DefaultProtocol = "oidc"
-	}
-	switch cfg.Identity.IAM.DefaultProtocol {
-	case "oidc", "saml":
-	default:
-		return nil, fmt.Errorf("identity.iam.default_protocol must be oidc or saml")
+	if err := normalizeTopologyParameters(&cfg); err != nil {
+		return nil, err
 	}
 	if cfg.Identity.Directory.Provider != "" && cfg.Identity.Directory.Provider != "samba_dc" {
 		return nil, fmt.Errorf("identity.directory.provider must currently be samba_dc")
@@ -422,16 +413,6 @@ func Load(path string) (*File, error) {
 	}
 	if cfg.Administration.LocalAccounts.PasswordLength < 16 {
 		return nil, fmt.Errorf("administration.local_accounts.password_length must be at least 16")
-	}
-	for name, module := range cfg.Modules.Values {
-		protocol := strings.ToLower(strings.TrimSpace(module.Identity.LoginProtocol))
-		switch protocol {
-		case "", "auto", "oidc", "saml":
-		default:
-			return nil, fmt.Errorf("modules.%s.identity.login_protocol must be auto, oidc or saml", name)
-		}
-		module.Identity.LoginProtocol = protocol
-		cfg.Modules.Values[name] = module
 	}
 	if cfg.DynamicDNS.Provider != "" && cfg.DynamicDNS.DNSProvider == "" {
 		return nil, fmt.Errorf("dynamic_dns.provider is set but dynamic_dns.dns_provider is not; name the DNS vendor the records live at")

@@ -102,12 +102,10 @@ func (a *app) sensitiveEnvKeySet() map[string]bool {
 		secretValues := map[string]bool{}
 		for key, value := range a.secrets.values {
 			out[key] = true
-			if value != "" {
-				secretValues[value] = true
-			}
+			addSensitiveValueForms(secretValues, value)
 		}
 		for key, value := range a.env {
-			if value != "" && secretValues[value] {
+			if matchesSensitiveValue(secretValues, value) {
 				out[key] = true
 			}
 		}
@@ -125,18 +123,37 @@ func (a *app) sensitiveEnvKeySet() map[string]bool {
 func markSensitiveValueAliases(values map[string]string, sensitive map[string]bool) {
 	secretValues := map[string]bool{}
 	for key := range sensitive {
-		if value := values[key]; value != "" {
-			secretValues[value] = true
-		}
+		addSensitiveValueForms(secretValues, values[key])
 	}
 	if len(secretValues) == 0 {
 		return
 	}
 	for key, value := range values {
-		if value != "" && secretValues[value] {
+		if matchesSensitiveValue(secretValues, value) {
 			sensitive[key] = true
 		}
 	}
+}
+
+func addSensitiveValueForms(values map[string]bool, value string) {
+	if value == "" {
+		return
+	}
+	values[value] = true
+	if normalized := strings.TrimSpace(value); normalized != "" {
+		values[normalized] = true
+	}
+}
+
+func matchesSensitiveValue(values map[string]bool, value string) bool {
+	if value == "" {
+		return false
+	}
+	if values[value] {
+		return true
+	}
+	normalized := strings.TrimSpace(value)
+	return normalized != "" && values[normalized]
 }
 
 // hookPatchSensitiveEnv returns a private sensitivity view for validating Hook
@@ -161,33 +178,25 @@ func (a *app) hookPatchSensitiveEnv(values, pendingSecrets map[string]string) ma
 	// a newly returned env alias. Derive the value provenance from the complete
 	// authoritative runtime view, not only from the target map being validated.
 	for key := range base {
-		if value := a.env[key]; value != "" {
-			secretValues[value] = true
-		}
+		addSensitiveValueForms(secretValues, a.env[key])
 	}
 	if a.secrets != nil {
 		for _, value := range a.secrets.values {
-			if value != "" {
-				secretValues[value] = true
-			}
+			addSensitiveValueForms(secretValues, value)
 		}
 	}
 	if a.cfg != nil {
 		for _, raw := range a.cfg.Secrets {
-			if value := config.Scalar(raw); value != "" {
-				secretValues[value] = true
-			}
+			addSensitiveValueForms(secretValues, config.Scalar(raw))
 		}
 	}
 	for key, value := range pendingSecrets {
 		sensitive[key] = true
-		if value != "" {
-			secretValues[value] = true
-		}
+		addSensitiveValueForms(secretValues, value)
 	}
 	markSensitiveValueAliases(values, sensitive)
 	for key, value := range values {
-		if value != "" && secretValues[value] {
+		if matchesSensitiveValue(secretValues, value) {
 			sensitive[key] = true
 		}
 	}
@@ -381,6 +390,7 @@ func (a *app) validateCalculateSecretPatch(mod Module, patch map[string]string) 
 func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 	violations := []string{}
 	conflicts := []string{}
+	invalidApplicationLists := []string{}
 	keys := make([]string, 0, len(patch))
 	for k := range patch {
 		keys = append(keys, k)
@@ -395,6 +405,12 @@ func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 			violations = append(violations, k)
 			continue
 		}
+		if k == "APPS_LIST" {
+			if !validApplicationListAppend(mod.Name, a.env[k], patch[k]) {
+				invalidApplicationLists = append(invalidApplicationLists, k)
+			}
+			continue
+		}
 		if tracked && owner != mod.Name {
 			conflicts = append(conflicts, k)
 		}
@@ -405,12 +421,25 @@ func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 	if len(violations) > 0 {
 		return fmt.Errorf("module %q calculate hook writes undeclared env keys: %s (declare them in module.yml config.exports)", mod.Name, strings.Join(violations, ", "))
 	}
+	if len(invalidApplicationLists) > 0 {
+		return fmt.Errorf("module %q calculate hook must preserve APPS_LIST and append only its own module name", mod.Name)
+	}
 	if len(conflicts) > 0 {
 		return fmt.Errorf("module %q calculate hook tries to overwrite env keys owned by another source: %s", mod.Name, strings.Join(conflicts, ", "))
 	}
 	for _, k := range keys {
 		a.env[k] = patch[k]
-		a.setEnvOwner(k, mod.Name)
+		if k == "APPS_LIST" {
+			// APPS_LIST is a transitional, cooperative launcher protocol. Each
+			// publisher may append only itself; the runner owns the aggregate so
+			// no one Module can later replace or delete another Module's entry.
+			if a.envOwner == nil {
+				a.envOwner = map[string]string{}
+			}
+			a.envOwner[k] = runnerScope
+		} else {
+			a.setEnvOwner(k, mod.Name)
+		}
 	}
 	if len(keys) > 0 {
 		// sensitiveEnvKeySet derives equal-value aliases from a.env. A Hook can
@@ -418,4 +447,42 @@ func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 		a.sensitiveKeys = nil
 	}
 	return nil
+}
+
+func validApplicationListAppend(module, current, next string) bool {
+	currentItems, currentOK := applicationListItems(current)
+	nextItems, nextOK := applicationListItems(next)
+	if !currentOK || !nextOK {
+		return false
+	}
+	want := append([]string{}, currentItems...)
+	if !contains(want, module) {
+		want = append(want, module)
+	}
+	if len(want) != len(nextItems) {
+		return false
+	}
+	for i := range want {
+		if want[i] != nextItems[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func applicationListItems(value string) ([]string, bool) {
+	items := []string{}
+	seen := map[string]bool{}
+	for _, raw := range strings.Split(value, ",") {
+		item := strings.TrimSpace(raw)
+		if item == "" {
+			continue
+		}
+		if seen[item] {
+			return nil, false
+		}
+		seen[item] = true
+		items = append(items, item)
+	}
+	return items, true
 }

@@ -28,7 +28,21 @@
   - `VLAN_SEGMENT` 只在两者都未指定时发布，它是 `docker network create --ip-range`。一旦容器地址被指定，这个范围就没有约束对象了，继续传会让 Docker 拒绝范围外的静态地址。
   - 地址池是自动分配才需要的，所以宿主前缀窄于 /28 的限制也只在自动分配时成立：显式指定地址后 /29、/30 一样可以部署。
 - 路径与名称：`SERVER_NAME`。
-- `DATA_PATH`（应用状态）与 `USER_DATA_PATH`（用户文件）来自工作区布局；`BASE_DOMAIN`、`EMAIL`、`TZ`、容器/镜像/网络前缀等来自全局配置，不算某个业务 Module 的私有输出。
+- `DATA_PATH`（应用状态）与 `USER_DATA_PATH`（用户文件）来自工作区布局；`BASE_DOMAIN`、`EMAIL`、`TZ`、容器/镜像/网络前缀等来自全局配置，不算某个业务 Module 的私有输出。`BASE_DOMAIN` 只表示应用/Web 命名空间，不再定义 Samba AD Realm、Base DN 或机器信任。
+
+## Runner 产生的应用 DNS 拓扑
+
+`DOMAINS` 是 Runner 到 Samba zone reconciler 的内部协议，所有权为 `runner`，只有显式
+`config.consumes` 它的 `samba_dc` 会收到。Runner 只收集声明
+`features.domain: true` 的 Module，并保留完整 FQDN：
+
+```text
+inner/cloud.nas.example.net/nextcloud,inner/auth.nas.example.net/authentik
+```
+
+协议不包含 `SAMBA_DC_DOMAIN`，也不使用旧的“只保留第一个 label”含义。reconciler 按
+`SAMBA_DC_APPLICATION_DNS_ZONE` 计算相对 owner，并把这些 Web A 记录指向 `HOST_IP`。
+`DOMAINS` 是派生值，不能通过顶层 `env:` 配置。
 
 ## lego
 
@@ -39,8 +53,10 @@
 
 ## samba_dc
 
-- 域与主机：`SAMBA_DC_DOMAIN`、`SAMBA_DC_REALM`、`SAMBA_DC_WORKGROUP`、`SAMBA_DC_NETBIOS_NAME`、`SAMBA_DC_DC_NAME`、`SAMBA_DC_DC_DOMAIN`、`SAMBA_DC_HOST`、`SAMBA_DC_HOST_IP`、`SAMBA_DC_INTERFACES`。
-- DNS/LDAPS：`SAMBA_DC_DNS_SERVER`、`SAMBA_DC_DNS_SEARCH`、`SAMBA_DC_DNS_FORWARDERS`、`SAMBA_DC_DNS_ALLOWED_NETWORKS`、`SAMBA_DC_DNS_CACHE_SIZE`、`SAMBA_DC_LDAPS_SERVER_URL`、`SAMBA_DC_LDAPS_SERVER_URL_PORT`、`SAMBA_DC_LDAPS_PORT`。
+- 目录域与主机：`SAMBA_DC_DOMAIN` 来自 `modules.samba_dc.config.domain`，并派生 `SAMBA_DC_REALM`、`SAMBA_DC_WORKGROUP`、`SAMBA_DC_NETBIOS_NAME`、`SAMBA_DC_DC_NAME`、`SAMBA_DC_DC_DOMAIN` 和 `SAMBA_DC_INTERFACES`。旧配置未设置 `domain` 时，有效值回退到 `BASE_DOMAIN`；已 provision 后不支持原地换域。
+- 应用 DNS plan：`SAMBA_DC_APPLICATION_DNS_MODE` 保存 requested 值，`SAMBA_DC_APPLICATION_DNS_MODE_RESOLVED` 保存 `ad_zone`/`separate_zone` 解析结果，`SAMBA_DC_APPLICATION_DNS_ZONE` 保存最终权威 zone。三项还会显示在 `module_plans.samba_dc`，并固化到 deployment 的 `validation_plan`。
+- DNS/LDAPS：`SAMBA_DC_DNS_SERVER`、`SAMBA_DC_DNS_SEARCH`、`SAMBA_DC_DNS_FORWARDERS`、`SAMBA_DC_DNS_ALLOWED_NETWORKS`、`SAMBA_DC_DNS_CACHE_SIZE`、`SAMBA_DC_LDAPS_SERVER_URL`、`SAMBA_DC_LDAPS_SERVER_URL_PORT`、`SAMBA_DC_LDAPS_PORT`。`SAMBA_DC_DNS_SEARCH` 始终使用 AD 域。
+- TLS 服务别名：`SAMBA_DC_HOST` 兼容期保持为 `BASE_DOMAIN`，其独立受管 A 记录指向 `SAMBA_DC_HOST_IP`；它只用于证书覆盖的 LDAPS endpoint，不是 Realm 或 canonical DC FQDN。Web `DOMAINS` 记录使用 `HOST_IP`，两类目标不能混用。
 - 目录根：`SAMBA_DC_BASE_DN`、`SAMBA_DC_BASE_USERS_DN_PREFIX`、`SAMBA_DC_BASE_USERS_DN`、`SAMBA_DC_BASE_GROUPS_DN_PREFIX`、`SAMBA_DC_BASE_GROUPS_DN`、`SAMBA_DC_BASE_GROUPS_ROLE_DN`、`SAMBA_DC_BASE_APP_DN`、`SAMBA_DC_BASE_ADMINS_DN`、`SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN`、`SAMBA_DC_BASE_COMPUTERS_DN`。
 - 管理员：`SAMBA_DC_ADMIN_NAME`、`SAMBA_DC_ADMIN_DN`、`SAMBA_DC_ADMIN_PASSWORD`、`SAMBA_DC_ADMIN_GROUP_NAME`、`SAMBA_DC_ADMIN_GROUP_DN`、`SAMBA_DC_ADMINISTRATOR_NAME`、`SAMBA_DC_ADMINISTRATOR_DN`、`SAMBA_DC_ADMINISTRATOR_PASSWORD`。两个密码分别来自自己的参数，省略时生成两个不同 Secret。
 - 服务绑定：`SAMBA_DC_LDAP_BIND_DN`、`SAMBA_DC_LDAP_BIND_PASSWORD`、`SAMBA_DC_PASSWORD_BIND_DN`、`SAMBA_DC_PASSWORD_BIND_PASSWORD`、`SAMBA_DC_ANCHOR_BIND_DN`、`SAMBA_DC_ANCHOR_BIND_PASSWORD`。
@@ -51,7 +67,20 @@
 
 ## samba_fs
 
-产生 `SAMBA_FS_NETBIOS_NAME`、`SAMBA_FS_DNS_SERVER`、`SAMBA_FS_ADMIN_USERS`、`SAMBA_FS_SHARE_VALID_USERS`、`SAMBA_FS_SHARE_WRITE_LIST`、`SAMBA_FS_SHARE_DOMAIN_USERS_ACL`、`SAMBA_FS_USE_DEFAULT_DOMAIN` 和 `SAMBA_FS_USERDATA_PATH`。它消费 Samba DC 的域、DNS、管理员和组变量。
+产生 `SAMBA_FS_NETBIOS_NAME`、`SAMBA_FS_ADMIN_USERS`、`SAMBA_FS_SHARE_VALID_USERS`、`SAMBA_FS_SHARE_WRITE_LIST`、`SAMBA_FS_SHARE_DOMAIN_USERS_ACL`、`SAMBA_FS_USE_DEFAULT_DOMAIN` 和 `SAMBA_FS_USERDATA_PATH`。它消费 Samba DC 的域、DNS、管理员和组变量。
+
+成员 join 明确使用 `SAMBA_DC_DOMAIN`、`SAMBA_DC_REALM`、`SAMBA_DC_DNS_SEARCH` 和
+`SAMBA_DC_DC_DOMAIN`，不从 `BASE_DOMAIN` 派生。只改变应用域不得让 Samba FS leave/join；
+改变已 provision 的 AD 域则不支持原地完成，必须新建目录和重新加入成员。
+
+Compose 与容器内 resolver 都直接使用 `SAMBA_DC_DNS_SERVER` 和
+`SAMBA_DC_DNS_SEARCH`，不再产生或接受 Samba FS 自有 DNS alias，也不回退到 host/VLAN
+resolver。启动时 `net ads testjoin` 成功便复用现有 trust；只有 trust 无效才 join，且没有
+自动 leave 路径。DC 暂时未 ready 时会等待并重新执行 `testjoin`，避免把连通性失败误判成
+需要 rejoin。`SAMBA_DC_DNS_SERVER` 是数值 DC 地址，安装 resolver 无需预先解析 DC 名称，
+不会形成启动依赖环。join 成功后必须再次通过 `net ads testjoin`，随后
+`net ads dns register -P` 必须成功，否则阻断启动；`wbinfo -t` readiness 检查同一份 AD
+成员机 trust。
 
 文件共享参数 `SHARE_DIR_NAME`、`SHARE_ACCESS_MODE`、`SHARE_GUEST_READ_ONLY`、`USE_DEFAULT_DOMAIN` 归 samba_fs 所有，但以裸名声明：它们是用户在文件管理器里看到的东西，在配置的顶层 `env:` 块里设置。共享树固定挂在容器内的 `/userdata`：这个名字同时是 smb.conf 共享路径和 guest ACL 状态文件的前缀，不可配置。宿主路径 `SAMBA_FS_USERDATA_PATH` 由 `${USER_DATA_PATH}/samba_fs` 推导，**不是** `DATA_PATH`——用户文件属于 `<workspace>/userdata`，而 `<workspace>/data` 会被 restore 整体替换。要把这些文件放到别的盘，把那块盘挂到 `<workspace>/userdata`，一个挂载点解决全部 module 的用户内容；没有 per-module 的路径覆盖，因为那会让某个 module 的文件跑到快照和备份都不知道的地方，同时长得像个普通设置。
 

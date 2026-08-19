@@ -35,21 +35,26 @@ type Module struct {
 	// DataBreaking is frozen from the module's upgrade declaration. A pointer
 	// preserves the distinction between an undeclared list and a declared empty
 	// list, which lead to opposite rollback decisions.
-	DataBreaking  *[]string               `yaml:"data_breaking,omitempty" json:"data_breaking,omitempty"`
-	RuntimeType   string                  `yaml:"runtime" json:"runtime"`
-	ComposeFile   string                  `yaml:"compose_file,omitempty" json:"compose_file,omitempty"`
-	Hook          HookConfig              `yaml:"hook,omitempty" json:"hook,omitempty"`
-	EnvPrefix     string                  `yaml:"env_prefix,omitempty" json:"env_prefix,omitempty"`
-	Consumes      []string                `yaml:"consumes,omitempty" json:"consumes,omitempty"`
-	Dependencies  []string                `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
-	UseHostLAN    string                  `yaml:"host_lan,omitempty" json:"host_lan,omitempty"`
-	Changes       map[string]ChangePolicy `yaml:"changes,omitempty" json:"changes,omitempty"`
-	Providers     []ContractProvider      `yaml:"contract_providers,omitempty" json:"contract_providers,omitempty"`
-	LocalAccounts []LocalAccount          `yaml:"local_accounts,omitempty" json:"local_accounts,omitempty"`
+	DataBreaking   *[]string               `yaml:"data_breaking,omitempty" json:"data_breaking,omitempty"`
+	RuntimeType    string                  `yaml:"runtime" json:"runtime"`
+	ComposeFile    string                  `yaml:"compose_file,omitempty" json:"compose_file,omitempty"`
+	Hook           HookConfig              `yaml:"hook,omitempty" json:"hook,omitempty"`
+	ValidationPlan map[string]string       `yaml:"validation_plan,omitempty" json:"validation_plan,omitempty"`
+	EnvPrefix      string                  `yaml:"env_prefix,omitempty" json:"env_prefix,omitempty"`
+	Consumes       []string                `yaml:"consumes,omitempty" json:"consumes,omitempty"`
+	Dependencies   []string                `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
+	UseHostLAN     string                  `yaml:"host_lan,omitempty" json:"host_lan,omitempty"`
+	Changes        map[string]ChangePolicy `yaml:"changes,omitempty" json:"changes,omitempty"`
+	Providers      []ContractProvider      `yaml:"contract_providers,omitempty" json:"contract_providers,omitempty"`
+	LocalAccounts  []LocalAccount          `yaml:"local_accounts,omitempty" json:"local_accounts,omitempty"`
 }
 
 type HookConfig struct {
 	Command []string `yaml:"command" json:"command"`
+	// Phases is an explicit v1 opt-in list. An absent list preserves the legacy
+	// Hook lifecycle, but never opts a legacy Hook into the read-only validate
+	// phase it could not have known about.
+	Phases []string `yaml:"phases,omitempty" json:"phases,omitempty"`
 }
 
 type ChangePolicy struct {

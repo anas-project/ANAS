@@ -1,6 +1,6 @@
 # `BASE_DOMAIN` 与 `SAMBA_DC_DOMAIN` 分离实施计划
 
-> 状态：实施前设计计划
+> 状态：实施中（WP1-WP3 代码与 WP4 验收入口已落地；WP4 真实服务器执行、WP5 迁移闭环及 WP6 尚未完成）
 > 日期：2026-08-19
 > 目标示例：应用域 `nas.lnnj.com.cn`，AD DNS 域 `lnnj.com.cn`
 
@@ -80,14 +80,28 @@ got BASE_DOMAIN=apps.example.net, SAMBA_DC_DOMAIN=corp.example.com;
 use application_dns_mode=separate_zone or auto
 ```
 
-### 1.2 当前事实与计划项标记
+### 1.2 当前事实与实施进度
 
-本文同时记录“当前仓库事实”和“目标实现”。为避免把计划名称误认为已有代码：
+截至 2026-08-19，本轮已经完成：
 
-- 明确写“当前”的段落描述已存在行为；
-- `validate` Hook、`topology_schema.go`、`domain_dns.go`、DNS 受管资源清单和迁移器均为待实现设计；
-- 本文不再假设 Core 中存在或应新增 `validateSambaDomainDNSConfig`；
-- observed AD/DNS 检查与 `migrate-service-domain`/`migrate-application-dns-zone` 也是待实现生命周期能力。
+- `dns_name` schema、IAM topology enum 单一词汇源、Samba `domain` 与 `application_dns_mode` 参数；
+- v1 显式 opt-in 的通用 Module `validate` phase、Secret/mutation 隔离和非敏感 plan metadata；
+- Samba `validate`/`calculate` 共用 `domain_dns.go`，requested/resolved mode 与 zone 进入 plan 和 deployment manifest；
+- `DOMAINS` 完整 FQDN 协议，以及 `ad_zone`/`separate_zone` 的受管记录、zone 状态、durable mutation journal 与 directory-native record 边界；
+- Samba FS 的 AD-only resolver/Kerberos/join/DNS registration 接线，LAM、Nextcloud、Authentik、LLNG 消费者回归，以及 Nextcloud cron 的内部 CA；
+- 两套新 workspace fixture、真实 import/lock/plan/render 断言和隔离 Docker runtime probe 入口；
+- Samba DC/Samba FS/Nextcloud 及 IAM 消费者 revision、生成文档和中英文操作文档同步。
+
+仍未完成、因此不能视为已有生产 workspace 的发布闭环：
+
+- observed AD 域物化、旧配置基线对齐，以及 `migrate-service-domain`；
+- `migrate-application-dns-zone` 的完整 plan/preflight/rollback；
+- 在 README 指定的两套隔离 daemon 上实际执行 WP4 apply 与 Samba/BIND/LDAPS/IAM runtime E2E；
+- canonical DC FQDN 的独立证书资源（WP6）。
+
+Core 中没有 `validateSambaDomainDNSConfig` 或 Samba 专用域关系分支；组合规则仍由 Module Hook
+拥有。首版 DNS reconciler 已有静态/单元覆盖，但在真实 Samba/BIND 数据库完成 runtime E2E
+前，不宣称旧生产 workspace 可直接启用域分离。
 
 ## 2. 设计原则
 
@@ -148,7 +162,7 @@ if baseDomain == sambaDomain || strings.HasSuffix(baseDomain, "."+sambaDomain) {
 }
 ```
 
-比较前必须先完成小写和末尾点规范化，并使用带 `.` 的 label 边界；`evillnnj.com.cn` 不能被误判为 `lnnj.com.cn` 的子域。显式 `ad_zone` 若不满足等域/子域关系必须在 render 前拒绝；显式 `separate_zone` 对域关系没有限制。
+比较前必须先完成小写和末尾点规范化，并使用带 `.` 的 label 边界；`evillnnj.com.cn` 不能被误判为 `lnnj.com.cn` 的子域。显式 `ad_zone` 若不满足等域/子域关系必须在 render 前拒绝；显式 `separate_zone` 除等域外不限制域关系，等域必须复用现有 AD zone。
 
 ### 3.2 域名规范化
 
@@ -199,14 +213,14 @@ e["SAMBA_DC_DOMAIN"] = domain
 1. `SAMBA_DC_REALM` 必须等于 `strings.ToUpper(SAMBA_DC_DOMAIN)`；若为了兼容旧外部域必须放宽，应做成明确的 legacy 例外，不能静默接受第三套命名空间。
 2. `SAMBA_DC_DC_DOMAIN` 必须位于 AD 域内。
 3. `ad_zone` 模式下，`BASE_DOMAIN` 必须等于 `SAMBA_DC_DOMAIN`，或以 `.` + `SAMBA_DC_DOMAIN` 结尾。
-4. `separate_zone` 模式不限制两个域的关系，但 `BASE_DOMAIN` 必须被声明为 ANAS 独占管理的内部命名空间。
+4. `separate_zone` 模式除等域外不限制两个域的关系；等域必须使用 `ad_zone`，且 `BASE_DOMAIN` 必须被声明为 ANAS 独占管理的内部命名空间。
 5. `SAMBA_DC_HOST` 必须解析到 Samba DC，并被当前 Samba TLS 证书 SAN 覆盖。
 6. 已有 AD 的 observed Realm/Base DN 必须与 requested `samba_dc.domain` 一致，否则停止部署；不提供原地改名旁路。
 7. `auto` 的 resolved mode 必须写入 deployment plan/manifest，实际启动脚本不能自行做第二次、可能不同的判断。
 
 其中 1-4、7 是只依赖 desired config/派生值的规则，由 Samba DC Module 的无副作用 `validate` Hook 在生成 deployment 之前检查；5-6 需要 DNS、证书或 Samba 持久状态，放在同一 Module 的 lifecycle preflight。不要把任一规则只留给容器启动脚本或无限重试。
 
-### 4.1 当前无效配置处理机制与缺口
+### 4.1 实施前基线与当前剩余缺口
 
 当前仓库已经有多层无效配置处理，不是完全依赖 Module 启动后报错：
 
@@ -219,15 +233,15 @@ e["SAMBA_DC_DOMAIN"] = domain
 | Module calculate | Module Hook 返回错误；Core 重新校验 patch | 派生失败、Module 当前自行检查的部分组合、非法导出和 ownership 冲突 |
 | 生命周期门禁 | `immutable`、`data_migrate` 等 change policy | 阻止普通配置修改绕过专用迁移/替换流程 |
 
-当前缺口也要明确：
+计划形成时的缺口及本轮状态如下：
 
-- 没有通用、只读、在 plan 前执行的 Module `validate` phase；
-- Module 专用跨参数检查只能塞进 `calculate`，导致 `config plan` 与 render/apply 的报错时机可能不同，或者被错误地下沉到 Core 特判；
-- `config.Load()` 中仍有 IAM protocol 手写 `switch`，尚未统一使用声明式 enum；
-- 当前没有 `BASE_DOMAIN`/`SAMBA_DC_DOMAIN` 关系、requested/resolved DNS mode 的实现；
-- 当前没有 Samba DNS zone/记录的 ANAS 受管清单，也没有模式迁移器；
-- `immutable` 能阻止配置层变更，但已有 AD 的 observed Realm/Base DN 与 requested domain 对比仍需要 Samba lifecycle preflight 落地；
-- 容器 readiness/启动脚本报错只能作为最后防线，不能代替配置校验和 lifecycle preflight。
+- **已落地**：通用、只读、在 plan 前执行的 Module `validate` phase；
+- **已落地**：Module 跨参数检查不再只能塞进 `calculate`，Samba 校验与派生共用同一 helper；
+- **已落地**：IAM protocol 删除 `config.Load()` 手写值域，统一使用 topology enum；
+- **已落地**：`BASE_DOMAIN`/`SAMBA_DC_DOMAIN` 关系、requested/resolved DNS mode；
+- **部分落地**：Samba DNS zone/记录已有首版 ANAS 受管清单，但完整模式迁移器尚未实现；
+- **未完成**：已有 AD 的 observed Realm/Base DN 与 requested domain 对比仍需要 Samba lifecycle preflight；
+- **持续约束**：容器 readiness/启动脚本报错只能作为最后防线，不能代替配置校验和 lifecycle preflight。
 
 目标校验链统一为：
 
@@ -299,7 +313,10 @@ enum 只解决“这个字符串是不是系统认识的协议”，不能让 `s
 
 ### 4.3 通用 Module `validate` 接口与 Samba 实现
 
-Core 中不新增 `validateSambaDomainDNSConfig`，也不出现 `samba_dc` 名称、域关系或 DNS mode 分支。当前仓库尚无通用 `validate` Hook phase；本计划改为扩展 Module Hook ABI，由 Core 提供统一调度接口，各 Module 实现自己的参数组合校验。
+Core 中不新增 `validateSambaDomainDNSConfig`，也不出现 `samba_dc` 名称、域关系或 DNS mode
+分支；这是 [Core 实现标准](/architecture/core-implementation-standard) 的通用强制边界，而非
+本方案的临时选择。Core 通过 Module Hook ABI 提供统一调度接口，各 Module 实现自己的参数
+组合校验。
 
 项目现有 Module Hook 是进程间 JSON ABI，不是由 Core import Module Go package 后调用的 Go interface。因此接口扩展采用新的 phase：
 
@@ -376,7 +393,7 @@ Samba 实现负责：
 
 1. 读取 Core 已按 Schema 规范化并按 scope 交付的 `BASE_DOMAIN`、`SAMBA_DC_DOMAIN` 和 requested mode；兼容期空 Samba domain 继承 base domain，空 mode 视为 `auto`。
 2. 以 DNS label 边界判断等域/子域关系，将 `auto` 解析成 `ad_zone` 或 `separate_zone`。
-3. 显式 `ad_zone` 配合无关域时报错；显式 `separate_zone` 不限制父子关系。
+3. 显式 `ad_zone` 配合无关域时报错；显式 `separate_zone` 不限制父子关系，但拒绝与 AD zone 完全同名。
 4. 返回 resolved mode 和 zone。`calculate` Hook 必须复用同一个纯函数生成导出环境，不能复制第二套判断；这样 validate 与 render 不会漂移。
 5. 不读取 Samba 数据库、不探测 DNS zone，也不执行迁移。
 
@@ -395,10 +412,18 @@ config.Load / 通用字段与 enum Schema
 
 `validateModules` 应接入 whole-config validation 公共入口，因此覆盖：
 
-- `anas config set` 和 `anas config import` 提交临时配置前；
+- `anas config set` 和 `anas config import` 提交临时配置前，对 lock 已 pin 的活动 Module 执行；
+- 显式 `anas lock` 的代码信任转换：先在内存中形成候选 lock，再对包含新 Module 的完整有效
+  拓扑执行，成功后才提交 lock；
 - `anas config plan` 和 `anas plan`；
 - 带配置文件的 `render/build/apply/start`；
 - anasd 创建 deployment。
+
+空 lock 的新 workspace 以及 set/import 暂存的尚未 pin 新 Module，都不得在信任转换前执行其
+Hook；其静态 schema、
+dependency 与 capability 仍立即校验。这样既避免未锁代码在配置写入路径中执行，也避免
+“必须先改 config 才能生成新 lock、又必须先有 lock 才能改 config”的死锁。新 Module 的组合
+错误最迟在显式 `anas lock` 阶段拒绝，且失败不能提交候选 lock。
 
 未启用 Module 的参数仍做类型、enum、format 等静态 Schema 校验，但不执行 Module `validate`，因为其跨参数运行不变量不属于当前 effective topology。纯 artifact 的 `start/restart` 也不重新执行，因其启动的是已经校验并冻结的 deployment。
 
@@ -458,7 +483,7 @@ relative_name = fqdn 去掉末尾 "." + zone
 
 ### 5.4 `separate_zone` 算法
 
-适用于任意域关系，特别是：
+适用于除等域外的任意域关系，特别是：
 
 ```text
 BASE_DOMAIN=nas.example.net
@@ -536,6 +561,8 @@ Reconciler 用 desired 与 applied 清单求差异：
 - 同名目标变化：replace；
 - Module 移除产生的旧记录：仅在清单证明其由 ANAS 创建时 delete；
 - 人工记录：永不因未出现在 `DOMAINS` 中而删除；
+- 旧 reconciler 没有逐条 creation provenance；升级时同目标既有记录只能记为不可删除的
+  legacy observation，直到显式迁移确认所有权，不能因健康 marker 自动取得 delete 权；
 - Zone：只有清单证明由 ANAS 创建、已无受管记录且完成迁移确认时才允许删除。
 
 ### 5.7 通用实现要求
@@ -764,6 +791,9 @@ Rollback 不只是切回旧 Compose：
 
 ### WP1：配置 schema 与兼容层
 
+实施状态：schema、IAM enum、参数与新配置 fallback 已完成；已有 workspace 的 observed-domain
+物化和基线对齐归 WP5，尚未完成。
+
 主要文件：
 
 - `internal/configschema/schema.go`、测试；
@@ -785,6 +815,9 @@ Rollback 不只是切回旧 Compose：
 交付：可显式配置 AD 域和 requested DNS mode；IAM 单值校验统一进入 Schema；配置层具备 immutable guard，observed AD 双重保护在 lifecycle preflight 工作完成后闭环；相同域配置渲染结果完全兼容。
 
 ### WP2：跨域验证与内部 DNS
+
+实施状态：通用 validate ABI、plan metadata、完整 FQDN 协议和安全 DNS reconciler 已完成；
+zone 切换迁移器与 observed lifecycle preflight 归 WP5，尚未完成。
 
 主要文件：
 
@@ -811,6 +844,9 @@ Rollback 不只是切回旧 Compose：
 
 ### WP3：Kerberos、LDAP 与证书回归
 
+实施状态：生产接线、消费者 contract tests、render 回归、Samba FS post-join/DNS 门禁及
+Nextcloud cron CA 已完成；真实服务器行为由 WP4 runtime probe 最终确认。
+
 主要范围：
 
 - Samba FS krb5 和 join；
@@ -822,6 +858,9 @@ Rollback 不只是切回旧 Compose：
 交付：AD 身份与 Web/SSO 域完全解耦，LDAP 服务别名、Kerberos canonical FQDN 和证书边界明确，所有现有消费者可工作。
 
 ### WP4：新安装 E2E
+
+实施状态：两套 fixture、静态 import/lock/plan、fresh render 和隔离 runtime probe 已交付；
+本轮未启动 Docker，仍需在专用测试服务器实际 apply 并执行 `core/contracts/full`。
 
 新增专用配置：
 
@@ -850,6 +889,8 @@ modules:
 
 ### WP5：已有 workspace 迁移器
 
+实施状态：未开始；因此当前成果只支持全新 workspace，不支持已有生产目录直接切换。
+
 实现：
 
 - domain 物化 migration；
@@ -861,9 +902,14 @@ modules:
 
 ### WP6：独立目录证书资源
 
+实施状态：未开始。
+
 如果 canonical DC LDAPS 属于发布验收范围，落地 certificate Contract 或多证书 provider，再把 Samba DC 切到最小权限独立证书。
 
 ### WP7：文档、版本与发布
+
+实施状态：与已落地代码对应的文档、revision、镜像标签和测试说明已同步；正式发布说明需等
+WP4 真实运行和 WP5/WP6 范围决策后完成。
 
 - 更新中英文配置指南、Samba DC/Samba FS 技术文档和环境变量参考；
 - 更新 `config.example.yml`、`config.full.example.yml`；
@@ -880,7 +926,8 @@ modules:
 - Module manifest 的 Hook phases 拒绝未知/重复值，legacy 未声明状态保持兼容；
 - 通用 `validateModules` 只调用活动且声明 `validate` 的 Module，并按 dependency order 执行；
 - `validate` 只收到 scoped env、不收到 Secret 明文，任何 Env/Secret/file/service mutation response 都被拒绝；
-- `config set/import/plan` 与 render/apply 对同一 Module validation error 给出一致结果；
+- 对 lock 已 pin 的活动 Module，`config set/import/plan` 与 render/apply 对同一 Module validation
+  error 给出一致结果；新增未 pin Module 在显式 `anas lock` 信任转换时拒绝且不写候选 lock；
 - domain 未配置时兼容继承；
 - 显式 domain 优先于 base domain；
 - provision 后任何 domain 差异均被 immutable guard 阻止；
@@ -888,7 +935,7 @@ modules:
 - Web 域名仍从 base domain 派生；
 - 大小写、末尾点和非法 DNS 名称规范化；
 - `auto` 对等域/子域解析为 `ad_zone`，对无关域解析为 `separate_zone`；
-- 显式 `ad_zone` 拒绝无关域和伪后缀域；显式 `separate_zone` 接受任意合法域关系；
+- 显式 `ad_zone` 拒绝无关域和伪后缀域；显式 `separate_zone` 接受除等域外的任意合法域关系，等域必须使用现有 AD zone；
 - `DOMAINS` 保留完整 FQDN；
 - 两种模式的 zone/relative owner 计算覆盖 apex 和多级子域；
 - observed child zone、未认领独立 zone 和模式切换冲突能够被检测。
@@ -944,7 +991,9 @@ modules:
 10. 普通配置修改和 `--allow-risky` 不能改变已有 AD 域。
 11. 已有部署迁移前后 AD SID、identity anchor 和用户数据不变。
 12. 文档、示例、schema、generated docs 和 Module revision 同步。
-13. Core 源码不包含 `samba_dc` 专用配置判断；Samba 域/DNS 组合错误由 Module `validate` 返回，并在 config set/import/plan/render/apply 中一致失败。
+13. Core 源码不包含 `samba_dc` 专用配置判断；Samba 域/DNS 组合错误由 Module `validate`
+    返回。已 pin Module 在 config set/import/plan/render/apply 中一致失败；新增未 pin Module
+    必须在显式 `anas lock` 信任转换中、写 lock 前失败。
 14. IAM protocol 单值由 Core topology enum 规范化，Module 协议子集和 Provider/Consumer 组合仍由 manifest/capability resolver 校验。
 15. `validate` Hook 不能读取 Secret 明文、改变环境或写入 deployment/runtime 状态。
 

@@ -472,10 +472,7 @@ func runModuleUpdate(args []string, jsonMode bool) error {
 		record.Repository = installation.Repository
 		updatedLock.Modules[name] = record
 	}
-	if err := saveModuleLockFile(lockPath, updatedLock); err != nil {
-		return failuref("write_failed", "%s", err.Error())
-	}
-	if err := saveWorkspaceModuleView(workspace, view); err != nil {
+	if err := commitWorkspaceModuleState(lockPath, workspace, updatedLock, view); err != nil {
 		return failuref("write_failed", "%s", err.Error())
 	}
 	emitProgress(jsonMode, "module-update", int64(len(catalogResult.Catalog.Modules)), int64(len(catalogResult.Catalog.Modules)), "modules")
@@ -538,6 +535,10 @@ func resolveRemoteModuleLock(workspace, configPath, moduleRoot string, lock *mod
 	lock.Snapshot, err = resolveSnapshotLock(workspace, cfg)
 	if err != nil {
 		return nil, nil, preconditionErrorf("snapshot_policy_invalid", "%s", err.Error())
+	}
+	a.applyModuleDefaults()
+	if err := a.validateModules(); err != nil {
+		return nil, nil, preconditionErrorf("config_invalid", "%s", err.Error())
 	}
 	return append([]string(nil), a.order...), lock, nil
 }

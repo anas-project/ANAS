@@ -38,6 +38,7 @@ type hookResponse struct {
 	Env             map[string]string `json:"env,omitempty"`
 	Secrets         map[string]string `json:"secrets,omitempty"`
 	Files           map[string]string `json:"files,omitempty"`
+	Plan            map[string]string `json:"plan,omitempty"`
 	DisableServices []string          `json:"disable_services,omitempty"`
 	DockerCopies    []dockerCopy      `json:"docker_copies,omitempty"`
 }
@@ -100,6 +101,19 @@ func handle(req hookRequest) (hookResponse, error) {
 	env := cloneMap(req.Env)
 	secrets := &secretStore{values: cloneMap(req.Secrets)}
 	switch req.Phase {
+	case "validate":
+		if req.Module != "samba_dc" {
+			return hookResponse{}, nil
+		}
+		plan, err := validateDomainDNSConfig(env)
+		if err != nil {
+			return hookResponse{}, err
+		}
+		return hookResponse{Plan: map[string]string{
+			"requested_mode": plan.RequestedMode,
+			"resolved_mode":  plan.ResolvedMode,
+			"zone":           plan.Zone,
+		}}, nil
 	case "calculate":
 		if err := calculate(req.Module, env, req.Workdir, secrets); err != nil {
 			return hookResponse{}, err
@@ -164,10 +178,19 @@ func changed(old, cur map[string]string) map[string]string {
 	return out
 }
 func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
-	domain := e["BASE_DOMAIN"]
+	plan, err := validateDomainDNSConfig(e)
+	if err != nil {
+		return err
+	}
+	domain := plan.SambaDomain
+	baseDomain := plan.BaseDomain
+	e["BASE_DOMAIN"] = baseDomain
 	e["SAMBA_DC_DOMAIN"] = domain
+	e["SAMBA_DC_APPLICATION_DNS_MODE"] = plan.RequestedMode
+	e["SAMBA_DC_APPLICATION_DNS_MODE_RESOLVED"] = plan.ResolvedMode
+	e["SAMBA_DC_APPLICATION_DNS_ZONE"] = plan.Zone
 	e["SAMBA_DC_DNS_SEARCH"] = domain
-	e["SAMBA_DC_REALM"] = defaultValue(e["SAMBA_DC_REALM"], strings.ToUpper(domain))
+	e["SAMBA_DC_REALM"] = strings.ToUpper(domain)
 	e["SAMBA_DC_NETBIOS_NAME"] = strings.ToUpper(defaultValue(e["SAMBA_DC_NETBIOS_NAME"], e["SERVER_NAME"]))
 	e["SAMBA_DC_DC_NAME"] = strings.ToLower(e["SAMBA_DC_NETBIOS_NAME"])
 	e["SAMBA_DC_DC_DOMAIN"] = e["SAMBA_DC_DC_NAME"] + "." + domain
@@ -185,8 +208,8 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 		return err
 	}
 	e["SAMBA_DC_ADMINISTRATOR_PASSWORD"] = administratorPassword
-	e["SAMBA_DC_LDAPS_SERVER_URL"] = defaultValue(e["SAMBA_DC_LDAPS_SERVER_URL"], "ldaps://"+domain)
-	e["SAMBA_DC_HOST"] = domain
+	e["SAMBA_DC_LDAPS_SERVER_URL"] = defaultValue(e["SAMBA_DC_LDAPS_SERVER_URL"], "ldaps://"+baseDomain)
+	e["SAMBA_DC_HOST"] = baseDomain
 	e["SAMBA_DC_HOST_IP"] = defaultValue(e["SAMBA_DC_HOST_IP"], e["HOST_IP"])
 	e["SAMBA_DC_DNS_SERVER"] = e["SAMBA_DC_HOST_IP"]
 	e["SAMBA_DC_DNS_FORWARDERS"] = dnsList(defaultValue(e["SAMBA_DC_DNS_FORWARDERS"], e["HOST_DNS_SERVER"]))

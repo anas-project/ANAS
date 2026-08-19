@@ -162,6 +162,53 @@ refresh only an existing `generated/module-hook` record, never
 `lifecycle_managed`, `local_admin`, or another provenance, and an atomic
 rejection does not echo values or free-form provenance.
 
+### Hook phases and the `validate` ABI
+
+Technical documentation must enumerate the Hook phases a Module actually
+implements and keep them aligned with `module.yml`:
+
+```yaml
+logic:
+  hook:
+    command: [go, run, ./hook]
+    phases: [validate, calculate, render_env, services, after_start]
+```
+
+A non-empty `logic.hook.phases` list is an exact allowlist. Accepted values are
+`validate`, `calculate`, `render_env`, `runtime_restore`, `services`,
+`after_start`, `local_account_apply`, `local_account_rotate`, and
+`local_account_rollback`. Omitting the field retains the legacy non-`validate`
+compatibility lifecycle; it never assumes that an old Hook validates
+configuration. An explicit empty list is rejected as ambiguous manifest input.
+A Module must explicitly include `validate` in a non-empty list to receive that
+request.
+
+`validate` runs in effective-topology dependency order and only inspects desired
+state. Its request has `phase: "validate"`; `env` is the Module-scoped view with
+sensitive keys and known equal-value aliases removed, `secrets` is always an
+empty object, and `workdir` is empty. The Hook process also inherits only the
+minimal environment needed to execute the command. This is an ABI data and
+response boundary, not an operating-system sandbox; Module Hooks remain trusted
+code that must be reviewed accordingly.
+
+Only `plan` and `warnings` may be non-empty in a `validate` response. Any `env`,
+`secrets`, `files`, `runtime_files`, `disable_services`, `docker_copies`, or
+`internal_env` mutation rejects the entire validation. Unknown JSON fields,
+multiple JSON values, and invalid JSON are also rejected. `warnings` report
+recoverable issues and do not fail validation; the runner emits them as
+`module_validation_warning`. Their content must remain non-sensitive.
+
+`plan` is read-only, non-sensitive `string -> string` metadata; it never writes
+back to configuration or environment. Each Module may return at most 64 entries.
+Keys are not trimmed or case-normalized: they must directly match
+`^[a-z][a-z0-9_]*$` and must not identify a sensitive parameter. Values are
+trimmed, must be non-empty, must not exceed 1024 bytes or contain control
+characters, and must not equal plaintext that Core knows is secret. Accepted
+values appear under `module_plans.<module>` in deployment and configuration plan
+output. Materialization freezes the same values into the Module's
+`validation_plan` in the deployment manifest, so technical documentation must
+not describe `plan` as transient logging or a mutation instruction.
+
 Technical documentation is maintained inside the Module. The ANAS site publishes mirrors and does not own Module implementation semantics.
 
 ## 5. Generated versus reviewed content
@@ -255,8 +302,8 @@ npm run docs:build
 ```
 
 As of 2026-08-19, the built-in release gate fixes a baseline of 18 Modules,
-139 parameters, `unknown=0`, two `input_required` entries, 22 final
-must-resolve entries, and the exact 11 declared constraints. Tests also prove
+141 parameters, `unknown=0`, two `input_required` entries, 22 final
+must-resolve entries, and the exact 13 declared constraints. Tests also prove
 that generic set/import/plan/lock/apply paths and calculate/render Hooks use the
 same schema, that no Secret Store kind leaks or masquerades as caller input,
 and that Hook Secrets cannot be rewritten across Module ownership. Adding a
