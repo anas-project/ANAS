@@ -2,6 +2,10 @@
 
 本节面向维护运行中 ANAS 主机的管理员。
 
+> **主机用途约束：** 承载正式服务的生产主机禁止作为测试服务器，也不得在其上运行
+> E2E、回归、实验性部署或会创建临时容器、网络、卷的测试脚本。
+> 需要真实 Linux、Docker 或 Btrfs 的测试必须使用独立的非生产环境。
+
 - [存储](storage.md)：workspace、Btrfs、容量和挂载边界。
 - [网络](networking.md)：域名、Traefik、macvlan 和防火墙。
 - [故障排查](troubleshooting.md)：从 ANAS 状态到容器日志的排查顺序。

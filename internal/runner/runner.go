@@ -520,7 +520,7 @@ func (a *app) execute(actions []string) error {
 				return nil
 			}
 			args := append([]string{"build"}, run.services...)
-			return a.compose.RunFile(run.dir, "anas_"+run.mod.Name, run.mod.ComposeFile, run.env, args...)
+			return a.runCompose(run.dir, run.mod.Name, run.mod.ComposeFile, run.env, args...)
 		}); err != nil {
 			return err
 		}
@@ -544,7 +544,7 @@ func (a *app) execute(actions []string) error {
 				return nil
 			}
 			args := append([]string{"up", "-d", "--remove-orphans"}, run.services...)
-			return a.compose.RunFile(run.dir, "anas_"+run.mod.Name, run.mod.ComposeFile, run.env, args...)
+			return a.runCompose(run.dir, run.mod.Name, run.mod.ComposeFile, run.env, args...)
 		}); err != nil {
 			return err
 		}
@@ -655,7 +655,7 @@ func (a *app) stopRelease(release string, jsonMode bool) error {
 		name := modules[i]
 		emitProgress(jsonMode, "stop-containers", int64(len(modules)-i), total, "modules")
 		dir := filepath.Join(release, name)
-		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
+		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("stop %s: %w", name, err))
 		}
 	}
@@ -721,7 +721,7 @@ func (a *app) stopRemoved(release string) error {
 			continue
 		}
 		dir := filepath.Join(release, name)
-		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
+		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("stop removed module %s: %w", name, err))
 			continue
 		}
@@ -1293,7 +1293,7 @@ func (a *app) relocateDeploymentEnv(env map[string]string) map[string]string {
 }
 
 func (a *app) services(mod Module, dir string, env map[string]string) ([]string, error) {
-	out, err := a.compose.OutputFile(dir, "anas_"+mod.Name, mod.ComposeFile, env, "config", "--services")
+	out, err := a.outputCompose(dir, mod.Name, mod.ComposeFile, env, "config", "--services")
 	if err != nil {
 		return nil, err
 	}

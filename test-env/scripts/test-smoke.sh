@@ -19,6 +19,13 @@ expected_external_health_failure() {
   [ "$1" = "anas_ddns_updater" ] && grep -q 'cloudflare_dns_api_token: test-token-not-a-real-credential' "$config"
 }
 
+compose_project() {
+  module_dir=$1
+  module_name=$2
+  prefix=$(sed -n 's/^CONTAINER_PREFIX=//p' "$module_dir/.env" | head -1)
+  printf '%s%s\n' "${prefix:-anas_}" "$module_name"
+}
+
 cleanup() {
   if [ "$started" -eq 1 ]; then
     if [ -f "$ws/.anas/state/active.yml" ]; then
@@ -27,7 +34,8 @@ cleanup() {
       find "$(ws_deployments "$ws")" -name docker-compose.yml 2>/dev/null | sort -r | while read -r compose_file; do
         module_dir=$(dirname "$compose_file")
         module_name=$(basename "$module_dir")
-        docker compose --project-name "anas_$module_name" -f "$compose_file" --env-file "$module_dir/.env" down --remove-orphans >>"$REPORT_DIR/smoke-stop.log" 2>&1 || true
+        project_name=$(compose_project "$module_dir" "$module_name")
+        docker compose --project-name "$project_name" -f "$compose_file" --env-file "$module_dir/.env" down --remove-orphans >>"$REPORT_DIR/smoke-stop.log" 2>&1 || true
       done
       docker network rm anas_macvlan >>"$REPORT_DIR/smoke-stop.log" 2>&1 || true
     fi
@@ -85,7 +93,7 @@ find "$(ws_deployments "$ws")/$active_id/modules" -mindepth 2 -maxdepth 2 -name 
 while read -r compose_file; do
   module_dir=$(dirname "$compose_file")
   module_name=$(basename "$module_dir")
-  project_name="anas_$module_name"
+  project_name=$(compose_project "$module_dir" "$module_name")
   log="$REPORT_DIR/smoke-ps-$module_name.log"
   if ! docker compose --project-name "$project_name" -f "$compose_file" --env-file "$module_dir/.env" ps --all >"$log" 2>&1; then
     echo "module $module_name status check failed; see $log" >&2

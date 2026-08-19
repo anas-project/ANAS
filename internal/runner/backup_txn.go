@@ -61,7 +61,7 @@ func runningModules(a *app, modulesRoot string) []string {
 	running := []string{}
 	for _, name := range a.releaseModules(modulesRoot) {
 		dir := filepath.Join(modulesRoot, name)
-		out, err := a.compose.OutputFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "ps", "-q")
+		out, err := a.outputCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "ps", "-q")
 		if err != nil {
 			continue
 		}
@@ -115,7 +115,7 @@ func stopModules(a *app, modulesRoot string, modules []string) error {
 	for i := len(modules) - 1; i >= 0; i-- {
 		name := modules[i]
 		dir := filepath.Join(modulesRoot, name)
-		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "stop"); err != nil {
+		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "stop"); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 		}
 	}
@@ -133,7 +133,7 @@ func startModules(a *app, modulesRoot string, modules []string) error {
 	var failures []string
 	for _, name := range modules {
 		dir := filepath.Join(modulesRoot, name)
-		if err := a.compose.RunFile(dir, "anas_"+name, a.releaseComposeFile(name), a.moduleEnv(dir), "start"); err != nil {
+		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "start"); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 		}
 	}

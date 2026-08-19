@@ -4,6 +4,10 @@
 # The entry points remain separate deployments and separate tests; only the AD
 # account setup is shared so they cannot drift into different user semantics.
 
+server_script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd)
+# shellcheck source=server-require-isolated-docker.sh
+source "$server_script_dir/server-require-isolated-docker.sh"
+
 docker_cmd=${DOCKER_CMD:-docker}
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_anchor_}
 dc="${prefix}samba_dc"

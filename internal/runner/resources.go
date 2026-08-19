@@ -64,7 +64,7 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 		env["ANAS_RESOURCE_USERNAME"], _ = request.Spec["principal"].(string)
 		env["ANAS_RESOURCE_PASSWORD"] = request.Password
 		args := resourceEnsureComposeArgs(operation.Service, operation.Command)
-		if err := a.compose.RunFile(providerDir, "anas_"+request.Provider, providerModule.ComposeFile, env, args...); err != nil {
+		if err := a.runCompose(providerDir, request.Provider, providerModule.ComposeFile, env, args...); err != nil {
 			return fmt.Errorf("ensure resource %s.%s through %s: %w", consumer, request.ID, request.Provider, err)
 		}
 		if err := a.saveResourceReady(request, env); err != nil {

@@ -67,6 +67,18 @@ Samba AD 是用户和 Group 来源。Portal 使用目录认证，IAM 向 Consume
 
 生成值和 lifecycle-managed 凭据以稳定逻辑键保存在 workspace 的 `.anas/secrets.yml`（`0600`）；它是受权限保护的明文，不是加密保险库。明文不得写入 README、lock、日志或普通 `config list`。本地管理员名称和 Secret 引用保存在不含密码的 `.anas/local-admins.yml`；Hook 只在所需生命周期阶段取得明文。`bcrypt` 类型只向运行配置持久化 hash，`plaintext_on_bootstrap` 类型通过 `.anas/runtime-secrets/local-admins/<module>/<id>.password` 的 `0600` 临时投影交给应用。snapshot/backup 必须把 Secret Store、账号库存和应用数据保持在同一恢复点。
 
+### 签名密钥泄露与轮换
+
+OIDC/SAML 签名私钥一旦进入终端输出、日志、测试报告、任务记录或其他非 Secret 边界，即使
+没有确认外传，也按可能泄露处理。诊断命令必须按精确键白名单读取配置，禁止递归输出整份
+LLNG 配置；报告只能记录 key ID、指纹和公钥，不得记录私钥正文。
+
+当前不自动轮换运行中的 LLNG 密钥。轮换必须作为单独获批的运维事务：先盘点 RP/SP 是
+动态读取 JWKS/metadata 还是固定证书，备份 workspace Secret 与 LLNG 配置，生成新密钥并
+发布公钥，刷新固定信任方，验证 OIDC/SAML 登录和登出，再在旧 token/assertion 的有效期
+及回滚窗口结束后撤销旧密钥。不支持双密钥过渡的部署必须安排维护窗口。发生疑似泄露但
+尚未获批轮换时，应记录事件、限制任务/日志访问并保留轮换待办，不能静默覆盖 Secret。
+
 ## 数据库支持
 
 | 项目 | 值 |

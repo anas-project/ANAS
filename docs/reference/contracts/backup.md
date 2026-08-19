@@ -52,7 +52,7 @@ active 制品必须包含，理由有三条，每一条单独都足够：
    同时删除了 `hook/` 源码目录，目的正是"无需 Go 工具链即可运行"。`.anas/hook-bin/`
    只是构建缓存，权威副本在这里。
 
-体量上 active 制品约占 data 的 3%（finance 实测 42M vs 1.3G），其中 41M 是 13 个
+体量上 active 制品在一次非生产环境测量中约占 data 的 3%（42M vs 1.3G），其中 41M 是 13 个
 冻结 hook 二进制。
 
 **恢复仍需从 registry 拉取上游基础镜像**，任何模式都不例外。完全离线恢复属二期
@@ -78,7 +78,7 @@ anas backup capabilities [--to <dest>] [--json]
 {
   "api_version": "anas.dev/cli/v1",
   "ok": true,
-  "workspace": "/home/whl/anas-deploy",
+  "workspace": "/srv/anas",
   "source": {
     "fstype": "btrfs",
     "fsid": "3f2a1c8e-...",
@@ -134,7 +134,7 @@ anas backup capabilities [--to <dest>] [--json]
 
 ### 与初稿的偏差二：`copy` 模式也需要权限（初稿写作「目标可写」）
 
-初稿的模式表把 `copy` 的条件写成"目标可写"。ln 实测（普通用户，workspace 里的
+初稿的模式表把 `copy` 的条件写成"目标可写"。历史非生产环境实测（普通用户，workspace 里的
 module 真跑过）：**不成立**。lego 以 root 写入 `data/lego/certs/accounts`（0700
 root）和 `ca.key`、`*.key`（0600 root），普通用户读不到，rsync 退出码 23。
 
@@ -223,7 +223,7 @@ buf->f_fsid.val[0] ^= objectid >> 32;
 buf->f_fsid.val[1] ^= objectid;
 ```
 
-ln 实测（内核 5.15）：
+非生产环境历史实测（内核 5.15）：
 
 | 路径 | `f_fsid` | `st_dev` |
 | --- | --- | --- |
@@ -297,7 +297,7 @@ anas backup plan --to <dest> --mode <mode> [--snapshot <id>] [--parent <id>]
 {
   "api_version": "anas.dev/cli/v1",
   "ok": true,
-  "workspace": "/home/whl/anas-deploy",
+  "workspace": "/srv/anas",
   "mode": "send-file",
   "dest": "/mnt/backup",
   "incremental": true,
@@ -455,11 +455,11 @@ anas backup restore --from <src> -w <workspace> [--backup-id <id>] [--dry-run] [
 {
   "api_version": "anas.dev/cli/v1",
   "ok": true,
-  "workspace": "/home/whl/anas-deploy",
+  "workspace": "/srv/anas",
   "backup_id": "20260729T081504Z-4a1b2c3d",
   "restored": ["config", "state", "secrets", "data", "active_deployment"],
   "verify": { "ok": true, "checked": 6, "problems": [] },
-  "next_steps": ["anas start -w /home/whl/anas-deploy"]
+  "next_steps": ["anas start -w /srv/anas"]
 }
 ```
 

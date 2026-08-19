@@ -329,8 +329,8 @@ anas-backup.timer  → 以 root 执行 anas backup create
 
 ### 测试机
 
-**btrfs 测试在 `ssh whl@ln.hlong.wang -p 2200` 上做**，`/data` 是真实 btrfs（3.7T、
-双设备），不需要 loopback。实测能力：
+本节的 btrfs、snapshot、backup、rollback 和其他 E2E 测试必须在独立的非生产主机执行，
+禁止使用承载正式服务的生产主机。下表为非生产环境历史实测，仅用于说明设计依据：
 
 | 操作 | 结果 |
 | --- | --- |
@@ -339,15 +339,15 @@ anas-backup.timer  → 以 root 执行 anas backup create
 | `btrfs send` | ❌ **需要 root**（`Operation not permitted`） |
 | `go` | ❌ **未安装，需补** |
 
-两条前置：
+后续测试必须迁移到具备真实 btrfs 的独立非生产主机，并满足两条前置：
 
-1. **ln 必须装 Go。** `freezeHookBinary` 让 deployment 不依赖工具链，但 render 阶段仍
+1. **测试主机必须安装 Go。** `freezeHookBinary` 让 deployment 不依赖工具链，但 render 阶段仍
    要 `go build`；回退测试需要两次真实 apply，绕不过去。
 2. **四期的 send 模式测试需要免密 sudo 规则。** 一到三期（快照本身）不需要。
 
-`/data` 下已有 `anas-refactor-test`、`anas-docker-test` 等旧目录，新测试用独立路径。
+测试 workspace 必须使用独立路径，并由对应测试运行负责定向清理。
 
-macOS（APFS）与 finance（ext4）都跳过 btrfs 相关用例。**跳过项必须在 `test-all.sh`
+macOS（APFS）与非 btrfs Linux 环境都跳过 btrfs 相关用例。**跳过项必须在 `test-all.sh`
 汇总中明确列出**，不得静默通过——否则本机全绿、服务器上才炸。
 
 不为 APFS 实现第二套快照后端：APFS 快照是**卷级**而非目录级，没有 `data/` 那种目录
@@ -394,8 +394,8 @@ R10 同样在一期：备份和回滚失败后把服务留在停机状态，是�
 | 脚本 | 覆盖 |
 | --- | --- |
 | `test-env/scripts/test-rollback.sh` | R1、R10（无需 btrfs） |
-| `test-env/scripts/test-snapshot.sh` | R6~R9（需 btrfs，仅 ln） |
-| `test-env/scripts/test-backup.sh` | B1~B8（需 btrfs，仅 ln；B8 需 root） |
+| `test-env/scripts/test-snapshot.sh` | R6~R9（需独立的非生产 btrfs 主机） |
+| `test-env/scripts/test-backup.sh` | B1~B8（需独立的非生产 btrfs 主机；B8 需 root） |
 
 `test-backup.sh` **要跑两遍**，普通用户一遍、root 一遍：`btrfs send` 需要
 `CAP_SYS_ADMIN`，普通用户那遍无法覆盖 send 与 send-file，跳过信息同时打到 stdout
@@ -405,22 +405,22 @@ R10 同样在一期：备份和回滚失败后把服务留在停机状态，是�
 
 ## 验证环境的缺口
 
-**finance 上 `/` 是 ext4（`/dev/sda2`），reflink 不支持。** 二到四期的 btrfs 路径在这台
-机器上跑不起来。分工：
+非 btrfs Linux 环境（例如 ext4 且不支持 reflink）无法执行二到四期的 btrfs 路径。环境
+分工如下：
 
-- **finance** —— 一期（workspace 语义、`anas init` 的非 btrfs 分支）、R1、R10
-- **ln.hlong.wang:2200** —— 二期起的全部 btrfs 用例（`/data` 是真实 btrfs），前提是
-  先装 Go
+- **非 btrfs Linux 测试主机** —— 一期（workspace 语义、`anas init` 的非 btrfs 分支）、R1、R10
+- **独立的非生产 btrfs 测试主机** —— 二期起的全部 btrfs 用例；主机必须预先安装 Go，
+  且不得承载正式服务
 - **本机 macOS** —— 仅单元测试与静态检查，btrfs 用例全部跳过并在汇总中列出
 
 ## 迁移
 
-finance 现状 `-b /home/whl/anas-deploy/runtime` + `data_path:
-/home/whl/anas-deploy/data`，父目录已经是正确形状：
+对于使用旧 `-b <workspace>/runtime` 与 `data_path: <workspace>/data` 结构的部署，父目录已经
+是正确形状时，可将 runtime 目录迁移为受管目录：
 
 ```bash
-mv /home/whl/anas-deploy/runtime /home/whl/anas-deploy/.anas
+mv <workspace>/runtime <workspace>/.anas
 ```
 
 `config.yml` 与 `config.lock.yml` 本就在根上，`data/` 也在。之后 workspace 即
-`/home/whl/anas-deploy`，所有脚本里的 `-b` 参数删除。
+`<workspace>`，所有脚本里的 `-b` 参数删除。

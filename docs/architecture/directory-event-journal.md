@@ -53,7 +53,7 @@ out.
 
 ```json
 {"seq": 1, "ts": "2026-08-08T12:46:12.072033+0800", "op": "Modify",
- "dn": "CN=APP_nextcloud,OU=Apps,OU=Groups,DC=finance,DC=hlong,DC=wang",
+ "dn": "CN=APP_nextcloud,OU=Apps,OU=Groups,DC=example,DC=com",
  "attributes": ["member"]}
 ```
 

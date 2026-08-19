@@ -90,7 +90,8 @@ deployment 无法回收。
 
 `btrfs subvolume create` 与 `snapshot` 普通用户可用，`delete` **不可用**：
 `BTRFS_IOC_SNAP_DESTROY` 要求 CAP_SYS_ADMIN，除非文件系统挂载时带
-`user_subvol_rm_allowed`。在 ln.hlong.wang（内核 5.15，`/data` 未带该选项）实测：
+`user_subvol_rm_allowed`。以下为独立非生产环境的历史实测（内核 5.15，`/data` 未带
+该选项）：
 
 | 操作 | 普通用户 |
 | --- | --- |
@@ -370,7 +371,8 @@ pre-breaking 快照反而被挤掉。要强制建用显式 `--snapshot`。
    回头去保护那个已有的 deployment**——它冻结的是补标之前的空列表。补标只对此后重新
    渲染的 deployment 生效。
 
-   实测（ln，2026-07-31）：先以 `data_breaking: []` 部署 9.0.0，事后把 9.0.0 加进列表，
+   历史实测（独立非生产环境，2026-07-31）：先以 `data_breaking: []` 部署 9.0.0，
+   事后把 9.0.0 加进列表，
    从该 deployment 回滚到 2.5.1 **仍然放行**。改为"升到 9.0.1 的同时声明 9.0.1 断代"，
    回滚立即被拒。
 
@@ -423,8 +425,8 @@ pinned: false
 created_at: 2026-07-29T08:15:04Z
 reason: module_upgrade_breaking    # 枚举，见下
 label: "升级前"                   # 用户自由文本，可空
-source: /home/whl/anas-deploy/data
-path: /home/whl/anas-deploy/snapshots/20260729T081504Z-4a1b2c3d/data
+source: /srv/anas/data
+path: /srv/anas/snapshots/20260729T081504Z-4a1b2c3d/data
 from_deployment: 20260728T041632Z-a9f9519d   # 可选，仅供人读，恢复时不参照
 to_deployment: 20260728T131040Z-cd6fc061     # 同上
 deployment_id: 20260728T131040Z-cd6fc061
@@ -479,7 +481,7 @@ anas snapshot list [--json]
 {
   "api_version": "anas.dev/cli/v1",
   "ok": true,
-  "workspace": "/home/whl/anas-deploy",
+  "workspace": "/srv/anas",
   "keep_auto": 5,
   "snapshots": [
     {
@@ -659,12 +661,12 @@ anas snapshot restore <id> -w <workspace> [--dry-run] [-y] [--json]
 {
   "api_version": "anas.dev/cli/v1",
   "ok": true,
-  "workspace": "/home/whl/anas-deploy",
+  "workspace": "/srv/anas",
   "restored_from": "20260729T081504Z-4a1b2c3d",
   "pre_restore_snapshot": "20260730T093012Z-7f8e9a0b",
   "restored": ["config", "lock", "secrets", "state", "deployment", "data"],
   "deployment_id": "20260728T131040Z-cd6fc061",
-  "next_steps": ["anas start -w /home/whl/anas-deploy"]
+  "next_steps": ["anas start -w /srv/anas"]
 }
 ```
 
@@ -674,7 +676,7 @@ anas snapshot restore <id> -w <workspace> [--dry-run] [-y] [--json]
 不该被迫整体回滚。
 
 ```json
-{ "api_version": "anas.dev/cli/v1", "ok": true, "id": "…", "path": "/home/whl/anas-deploy/snapshots/…/data" }
+{ "api_version": "anas.dev/cli/v1", "ok": true, "id": "…", "path": "/srv/anas/snapshots/…/data" }
 ```
 
 ## 二期
