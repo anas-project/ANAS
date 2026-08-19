@@ -8,7 +8,7 @@ File sync, sharing, online office, Memories, and Talk platform.
 | Item | Value |
 | --- | --- |
 | Module | `nextcloud` |
-| Version / revision | `34.0.2-r7` |
+| Version / revision | `34.0.2-r8` |
 | Status | `release` |
 | Category | `app` |
 | Runtime | `compose` |
@@ -51,6 +51,8 @@ LDAPS provisioning manages users and groups; OIDC is the preferred login protoco
 | Directory password writeback | restricted password-bind identity |
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
+
+Nextcloud does not maintain a second account-password policy. Its minimum-length preflight comes from `samba_dc.user_min_pass_length`; Samba AD remains authoritative for complexity, history, minimum/maximum age, and lockout. Nextcloud-only common-password, HIBP, and character-class account checks are disabled so they cannot reject a password that Samba would accept. Share-link passwords use a separate Nextcloud policy and do not follow the directory-account policy.
 
 ## Administrator login and IAM-outage recovery
 

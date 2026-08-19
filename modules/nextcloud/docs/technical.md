@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `nextcloud` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `34.0.2-r7` / `anas.module/v1`.
+> 状态：当前实现；对应 `34.0.2-r8` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -22,8 +22,8 @@
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_imaginary` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-imaginary:2026.07.30-d5e7ffac6e1a` | `nextcloud` | 0 |
-| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r7` | `nextcloud, db, traefik` | 3 |
-| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r7` | `nextcloud, db` | 1 |
+| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r8` | `nextcloud, db, traefik` | 3 |
+| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r8` | `nextcloud, db` | 1 |
 | `anas_nextcloud-push` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-notify-push:2026.07.30-7c156254927e` | `nextcloud, db, traefik` | 1 |
 | `anas_nextcloud-redis` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-redis:8.10.0-alpine` | `nextcloud` | 1 |
 | `anas_talk` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-talk:2026.07.30-2b9a7d12d3e6` | `nextcloud, traefik` | 1 |
@@ -61,6 +61,8 @@ LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍
 | 目录密码回写 | restricted password-bind identity |
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
+
+`task.sh` 会把 Nextcloud 账号上下文的 `minLength` 同步为 `SAMBA_DC_USER_MIN_PASS_LENGTH`，并将 Nextcloud 独有的常见密码、HIBP、字符类别、历史、过期和登录失败锁定校验关闭。AD 的复杂度是“字符类别满足其一组组合”的目录规则，不能由 Nextcloud 的“逐项强制”开关等价表达，因此复杂度、历史、有效期和锁定始终只由 Samba 执行。首次迁移前会把原账号策略复制到 Nextcloud 34 的 `sharing` 上下文，使共享链接密码策略与目录账号策略解耦。
 
 ## 管理面与 Secret 生命周期
 

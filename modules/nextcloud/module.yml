@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: nextcloud
 version: 34.0.2
-revision: 7
+revision: 8
 app_version: 34.0.2
 abi:
   supports:
@@ -129,6 +129,7 @@ config:
     - SAMBA_DC_USER_EMAIL
     - SAMBA_DC_USER_ENABLED_FILTER
     - SAMBA_DC_USER_LOGIN_ATTRS
+    - SAMBA_DC_USER_MIN_PASS_LENGTH
     - SAMBA_DC_USER_NAME
     - TRAEFIK_BASE_PORT
     - TRAEFIK_HOSTNAME

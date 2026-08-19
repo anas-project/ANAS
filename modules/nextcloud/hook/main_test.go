@@ -239,3 +239,31 @@ func TestSambaAdminsArePromotedAsTheDynamicNextcloudAdminGroup(t *testing.T) {
 		t.Fatal("bootstrap-only local admin membership must not replace the directory role mapping")
 	}
 }
+
+func TestNextcloudAccountPasswordPolicyDefersToSamba(t *testing.T) {
+	task, err := os.ReadFile("../nextcloud/root/usr/local/bin/task.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(task)
+	for _, want := range []string{
+		`--no-interaction --type=integer --value="$SAMBA_DC_USER_MIN_PASS_LENGTH"`,
+		`enforceNonCommonPassword`,
+		`enforceHaveIBeenPwned`,
+		`occ config:app:set password_policy historySize --no-interaction --type=integer --value=0`,
+		`occ config:app:set password_policy expiration --no-interaction --type=integer --value=0`,
+		`occ config:app:set password_policy maximumLoginAttempts --no-interaction --type=integer --value=0`,
+		`--no-interaction --type=array --value='["account","sharing"]'`,
+		`*sharing*) ;;`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Nextcloud password-policy reconciliation is missing %q", want)
+		}
+	}
+	if !strings.Contains(got, `--no-interaction --type=boolean --value=false`) {
+		t.Fatal("Nextcloud-only account password validators are not disabled")
+	}
+	if !strings.Contains(got, `minLength_sharing`) || !strings.Contains(got, `enforceNonCommonPassword_sharing`) {
+		t.Fatal("share-password policy is not preserved before reconciling the account policy")
+	}
+}

@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `nextcloud` |
-| 版本 / revision | `34.0.2-r7` |
+| 版本 / revision | `34.0.2-r8` |
 | 状态 | `release` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -51,6 +51,8 @@ LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍
 | 目录密码回写 | restricted password-bind identity |
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
+
+Nextcloud 的账号密码策略不另建一套规则：界面预检的最小长度来自 `samba_dc.user_min_pass_length`，复杂度、历史、最短/最长有效期和锁定策略由 Samba AD 最终执行。Nextcloud 自带的常见密码、HIBP 和字符类别账号校验会关闭，避免拒绝 Samba 本可接受的密码。共享链接密码使用独立的 Nextcloud 策略，不随目录账号策略变化。
 
 ## 管理员登录与 IAM 故障恢复
 
@@ -141,7 +143,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`34.0.2-r7`（reviewed 2026-08-13）
+- Module version / 版本：`34.0.2-r8`（reviewed 2026-08-13）
 - Timezone / 时区：`partial` — Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
 - Language scope / 语言范围：Nextcloud Web UI
 - Selection / 选择方式：`browser`

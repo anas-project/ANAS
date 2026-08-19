@@ -355,19 +355,51 @@ import_occ "$config_system"
 echo "Set occ background:cron"
 occ background:cron
 
-# password policy
-# if [ "$NEXTCLOUD_USER_COMPLEX_PASS" == 'true' ]; then
-#   occ config:app:set password_policy enforceNumericCharacters --value=1
-#   occ config:app:set password_policy enforceSpecialCharacters --value=0
-#   occ config:app:set password_policy enforceUpperLowerCase --value=1
-# else
-#   occ config:app:set password_policy enforceNumericCharacters --value=0
-#   occ config:app:set password_policy enforceSpecialCharacters --value=0
-#   occ config:app:set password_policy enforceUpperLowerCase --value=0
-# fi
+# Samba AD is authoritative for directory-account passwords. Nextcloud's
+# password_policy app otherwise adds unrelated defaults (common-password and
+# HIBP checks) and models complexity differently from AD's category rule.
+# Preserve the existing policy for share passwords in its own v34 context
+# before making the account context a faithful, non-conflicting AD preflight.
+password_policy_value() {
+  occ config:app:get password_policy "$1" 2>/dev/null || printf '%s\n' "$2"
+}
 
-# occ config:app:set password_policy expiration --value=$NEXTCLOUD_USER_MAX_PASS_AGE
-# occ config:app:set password_policy minLength --value=$NEXTCLOUD_USER_MIN_PASS_LENGTH
+password_contexts=$(password_policy_value passwordContexts '["account"]')
+case "$password_contexts" in
+  *sharing*) ;;
+  *)
+    occ config:app:set password_policy minLength_sharing \
+      --no-interaction --type=integer --value="$(password_policy_value minLength 10)"
+    occ config:app:set password_policy enforceNonCommonPassword_sharing \
+      --no-interaction --type=boolean --value="$(password_policy_value enforceNonCommonPassword true)"
+    occ config:app:set password_policy enforceHaveIBeenPwned_sharing \
+      --no-interaction --type=boolean --value="$(password_policy_value enforceHaveIBeenPwned true)"
+    occ config:app:set password_policy enforceNumericCharacters_sharing \
+      --no-interaction --type=boolean --value="$(password_policy_value enforceNumericCharacters false)"
+    occ config:app:set password_policy enforceSpecialCharacters_sharing \
+      --no-interaction --type=boolean --value="$(password_policy_value enforceSpecialCharacters false)"
+    occ config:app:set password_policy enforceUpperLowerCase_sharing \
+      --no-interaction --type=boolean --value="$(password_policy_value enforceUpperLowerCase false)"
+    occ config:app:set password_policy passwordContexts \
+      --no-interaction --type=array --value='["account","sharing"]'
+    ;;
+esac
+
+occ config:app:set password_policy minLength \
+  --no-interaction --type=integer --value="$SAMBA_DC_USER_MIN_PASS_LENGTH"
+for password_policy_key in \
+  enforceNonCommonPassword \
+  enforceHaveIBeenPwned \
+  enforceNumericCharacters \
+  enforceSpecialCharacters \
+  enforceUpperLowerCase
+do
+  occ config:app:set password_policy "$password_policy_key" \
+    --no-interaction --type=boolean --value=false
+done
+occ config:app:set password_policy historySize --no-interaction --type=integer --value=0
+occ config:app:set password_policy expiration --no-interaction --type=integer --value=0
+occ config:app:set password_policy maximumLoginAttempts --no-interaction --type=integer --value=0
 
 # trusted_proxies
 occ config:system:set trusted_proxies 0 --value=`ping $TRAEFIK_HOSTNAME -c 1 | sed '1{s/[^(]*(//;s/).*//;q}'`
