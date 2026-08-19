@@ -6,6 +6,7 @@
 
 | 文档 | 类型 | 状态 |
 | --- | --- | --- |
+| [`BASE_DOMAIN` 与 `SAMBA_DC_DOMAIN` 分离实施计划（2026-08-19）](./base-domain-samba-domain-separation-plan-2026-08-19.md) | AD/应用域分离、DNS 模式、校验 ABI 与迁移计划 | 实施前设计 |
 | [ANAS 凭据库存与全量轮换范围审计（2026-08-19）](./anas-credential-inventory-and-rotation-scope-2026-08-19.md) | Secret 存储面、轮换能力与安全实施边界 | 待范围确认 |
 | [ANAS Core 与 Module Changelog 方案（2026-08-18）](./changelog-plan-2026-08-18.md) | 变更记录信息模型与发布流水线规划 | 提案 |
 | [使用 `samba-tool` 管理用户、组和管理员（2026-08-17）](./samba-tool-user-group-admin-guide-2026-08-17.md) | Samba AD 操作手册 | 当前 |
