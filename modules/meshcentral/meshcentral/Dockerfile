@@ -25,6 +25,7 @@ RUN set -eux; \
 
 COPY ./config.base.json /opt/anas/config.base.json
 COPY ./configure.js /opt/anas/configure.js
+COPY ./wait-for-oidc.js /opt/anas/wait-for-oidc.js
 COPY ./startup.sh ./startup.sh
 
 ENTRYPOINT ["/bin/bash", "/opt/meshcentral/startup.sh"]

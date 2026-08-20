@@ -1,8 +1,8 @@
 api_version: anas.module-localization/v1
 module: meshcentral
 module_version: 1.2.4
-module_revision: 6
-reviewed_at: 2026-08-13
+module_revision: 7
+reviewed_at: 2026-08-21
 timezone:
   status: container
   mechanism: MeshCentral receives TZ through the module .env for process and log timestamps.

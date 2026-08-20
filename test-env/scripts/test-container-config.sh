@@ -179,6 +179,9 @@ grep -Fq 'setpriv --reuid=1000 --regid=1000 --init-groups ak "$@"' \
   "$ROOT_DIR/modules/authentik/authentik/server-entrypoint.sh" || exit 1
 
 if command -v node >/dev/null 2>&1; then
+  node --test \
+    "$ROOT_DIR/modules/meshcentral/meshcentral/wait-for-oidc.test.js" || exit 1
+
   mkdir -p "$test_dir/meshcentral"
   env \
     MESHCENTRAL_DOMAIN=mesh.example.test \

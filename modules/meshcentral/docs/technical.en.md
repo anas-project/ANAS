@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `meshcentral`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `1.2.4-r6` / `anas.module/v1`.
+> Status: current implementation; based on `1.2.4-r7` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -20,8 +20,19 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_meshcentral` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r6` | `db, traefik` | 5 |
+| `anas_meshcentral` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r7` | `db, traefik` | 5 |
 <!-- generated:compose-topology:end -->
+
+### OIDC startup readiness
+
+After generating the runtime configuration and before launching MeshCentral,
+the entrypoint requests `MESHCENTRAL_OIDC_DISCOVERY_URL`. Startup continues only
+when metadata returns HTTP 200, its issuer matches the binding, and it includes
+authorization, token, and JWKS endpoints. The default limit is 300 attempts at
+two-second intervals; on timeout, the process fails and the Compose restart
+policy retries. This prevents an unavailable IAM Provider from exhausting
+MeshCentral's own three discovery attempts and disabling OIDC for the lifetime
+of that process.
 
 ## Configuration contract
 

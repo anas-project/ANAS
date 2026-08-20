@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: meshcentral
 version: 1.2.4
-revision: 6
+revision: 7
 app_version: 1.2.4
 abi:
   supports:

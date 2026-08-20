@@ -36,4 +36,6 @@ mkdir -p /run/anas
 TRAEFIK_IP="$traefik_ip" node /opt/anas/configure.js \
   /opt/anas/config.base.json /run/anas/config.json
 
+node /opt/anas/wait-for-oidc.js
+
 exec node /opt/meshcentral/meshcentral/meshcentral --configfile /run/anas/config.json

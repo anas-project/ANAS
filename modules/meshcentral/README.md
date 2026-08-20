@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `meshcentral` |
-| 版本 / revision | `1.2.4-r6` |
+| 版本 / revision | `1.2.4-r7` |
 | 状态 | `release` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -111,6 +111,10 @@ anas status -w /srv/anas
 
 不要把 LDAPS provisioning 误写成浏览器 LDAPS 登录。
 
+容器启动时会先验证 IAM OIDC Discovery metadata，并等待 issuer、授权、token 和 JWKS
+端点可用；Provider 暂未就绪时不会让 MeshCentral 启动后静默禁用 OIDC。持续不可用时
+容器退出并由 Compose restart policy 重试。
+
 ## 技术文档
 
 密码存储、环境作用域、Hook、网络、Resource 和测试细节见[技术文档](docs/technical.md)。
@@ -120,7 +124,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`1.2.4-r6`（reviewed 2026-08-13）
+- Module version / 版本：`1.2.4-r7`（reviewed 2026-08-21）
 - Timezone / 时区：`container` — MeshCentral receives TZ through the module .env for process and log timestamps.
 - Language scope / 语言范围：MeshCentral Web UI
 - Selection / 选择方式：`browser`

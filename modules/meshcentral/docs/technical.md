@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `meshcentral` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `1.2.4-r6` / `anas.module/v1`.
+> 状态：当前实现；对应 `1.2.4-r7` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,8 +20,16 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_meshcentral` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r6` | `db, traefik` | 5 |
+| `anas_meshcentral` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r7` | `db, traefik` | 5 |
 <!-- generated:compose-topology:end -->
+
+### OIDC 启动就绪
+
+Entrypoint 在生成运行配置后、启动 MeshCentral 前请求
+`MESHCENTRAL_OIDC_DISCOVERY_URL`。只有 metadata 返回 200、issuer 与绑定一致，并包含
+authorization、token 和 JWKS 端点时才继续启动。默认最多等待 300 次、每次间隔 2 秒；
+超时后进程失败，由 Compose restart policy 重试。这避免 IAM Provider 尚未就绪时触发
+MeshCentral 自身的三次 discovery 失败保护，并在该进程生命周期内永久禁用 OIDC。
 
 ## 配置契约
 

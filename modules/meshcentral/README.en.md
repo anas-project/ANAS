@@ -8,7 +8,7 @@ Remote device management with OIDC authentication and LDAPS directory provisioni
 | Item | Value |
 | --- | --- |
 | Module | `meshcentral` |
-| Version / revision | `1.2.4-r6` |
+| Version / revision | `1.2.4-r7` |
 | Status | `release` |
 | Category | `app` |
 | Runtime | `compose` |
@@ -118,6 +118,11 @@ anas status -w /srv/anas
 ## Current limitations
 
 Do not describe LDAPS provisioning as browser LDAPS login.
+
+At container startup, the module validates the IAM OIDC Discovery metadata and
+waits for the issuer, authorization, token, and JWKS endpoints. If the Provider
+is not ready, MeshCentral is not allowed to start and silently disable OIDC. A
+persistent failure exits the container so the Compose restart policy can retry.
 
 ## Technical documentation
 
