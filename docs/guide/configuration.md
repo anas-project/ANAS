@@ -191,7 +191,7 @@ Runner 会为每个 Consumer 创建独立数据库、用户和稳定生成的凭
 
 DNS API token 等普通部署输入保留在系统管理的 `config.yml` 中；该文件权限为 `0600`，CLI 库存和 plan 对 sensitive 字段脱敏，值通过 `config set` 一类配置命令修改。不要提交含真实 Secret 的外部源文件。
 
-只有 `lifecycle_managed` 凭据会在导入时从 workspace 配置原子剥离：包括 Module 本地管理员密码，以及 Manifest 将变化声明为 `credential_rotate`、必须调用应用 API/CLI 才能正确改变的凭据。它们与系统生成的密码统一保存在版本化 `.anas/secrets.yml`（`0600`），记录稳定逻辑 key、owner、kind 和 provenance。旧 `.anas/secrets.generated.yml` 不受支持，也不会自动迁移。
+只有 `lifecycle_managed` 凭据会在导入时从 workspace 配置原子剥离：包括 Module 本地管理员密码，以及 Manifest 将变化声明为 `credential_rotate`、必须调用应用 API/CLI 才能正确改变的凭据。它们与系统生成的密码统一保存在版本化 `.anas/secrets.yml`（`0600`），记录稳定逻辑 key、owner、kind 和 provenance；deployment 驱动轮换使用的记录还可带 `generation` 与无明文 `rotation_id`。旧 `.anas/secrets.generated.yml` 不受支持，也不会自动迁移。
 
 `config secret list` 只列存储键和类型；只有明确的 `config secret get` 操作会输出明文。导入失败不会修改 `config.yml`、`secrets.yml` 或配置摘要。备份和快照必须把 `config.yml` 与 `secrets.yml` 都按明文敏感数据保护。
 
@@ -284,12 +284,38 @@ render、build 和 apply 会比较摘要，拒绝绕过 CLI 的手工修改。�
 | `config set global.timezone UTC` | 修改并执行/明确 pending | 更新摘要 | 不变 |
 | 修改普通 DNS/API token | 修改 | 更新摘要 | 不变 |
 | `admin local rotate nextcloud` | 不变 | 不变 | 应用验证成功后更新 |
+| `credential rotate eturnal.secret` | 不变 | 不变 | candidate 验证后更新值、代次与 rotation ID |
 | 手工编辑 `config.yml` | 内容改变 | 摘要未同步 | 不变；plan/apply 拒绝 |
 | snapshot/backup restore | 恢复 | 与配置一起恢复 | 一起恢复 |
 
 简言之：`config.yml` 表示“希望部署成什么样”，`config-managed.yml` 证明“这份配置由
 ANAS CLI 合法写入”，`secrets.yml` 保存“不能通过普通 apply 安全改变的凭据和 Runner
 生成的 Secret”。
+
+## Deployment 机器凭据
+
+声明了 `credentials.provides/consumes` 的机器凭据使用无明文库存和 deployment 事务轮换：
+
+```bash
+anas credential list -w /srv/anas
+anas credential rotate eturnal.secret --dry-run -w /srv/anas
+anas credential rotate eturnal.secret -y -w /srv/anas
+anas credential rotate --all --dry-run -w /srv/anas
+```
+
+`list` 不返回值、hash 或 verifier。`--dry-run` 检查 active runtime、Store presence/generation、
+authority、生成策略、Hook ABI 以及 owner/consumer 图，但不生成候选、不写文件，也不调用 Hook 或
+Docker。实际执行在独立 candidate deployment 中协调并验证凭据，成功后一次性提交 Secret Store
+并 promotion；Store 提交前失败会恢复 previous deployment，提交后的中断由下一次排他运行时操作
+自动完成 promotion。
+
+轮换后的 previous deployment 与新 Store 代次不同，普通 `rollback` 会以
+`credential_store_mismatch` 拒绝，`--allow-risky` 不能绕过；当前应恢复包含匹配 Store、deployment
+和数据的 snapshot，而不是只切换制品指针。
+
+当前统一库存只覆盖 active deployment 冻结的机器凭据，首个可执行 provider 是
+`eturnal.secret`。数据库 resource credential、本地管理员和外部 API token 仍分别使用既有边界；
+不能用 `--force` 绕过缺失的 generator、handler 或验证能力。
 
 ## Module 本地管理员
 

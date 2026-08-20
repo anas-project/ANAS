@@ -439,10 +439,10 @@ complete: true           # 最后写入；缺失即中断产物，不可恢复
 
 两处与初稿的偏差，均已按现实修正：
 
-- **删掉 `secret_generation`。** secret store 目前是
-  `secrets.yml` 使用版本化记录并带 owner/kind/provenance 元数据，但当前没有分代（设计文档 §8.3 描述了分代，但未
-  实现），没有可写的代次号。写 `0` 会是一个假测量值，故整个字段不出现。分代落地后
-  再加回来——加字段不升 `api_version`。
+- **不使用单值 `secret_generation`。** `secrets.yml` record 现在可带
+  owner/kind/provenance/generation/rotation_id，但代次属于每个逻辑凭据，不存在能代表整个快照的
+  一个标量。快照已复制该时刻完整 Secret Store；另写 `0` 或最大代次都会是假测量值，因此
+  snapshot metadata 继续不出现该字段。若以后需要索引，应增加按逻辑 ID 的 generation map。
 - **删掉 `recovery_path`。** 它描述的是"回滚时被挪开的原数据位置"。恢复前必建
   `reason: pre_restore` 快照之后，那份被挪开的数据已经在一个具名快照里，恢复成功后
   就地删除；再留一个无人知道含义的目录只会占盘。撤销一次恢复现在走

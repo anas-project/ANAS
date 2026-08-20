@@ -21,7 +21,38 @@ type Manifest struct {
 	Modules           map[string]Module            `yaml:"modules" json:"modules"`
 	Settings          map[string]Setting           `yaml:"settings,omitempty" json:"settings,omitempty"`
 	Resources         []Resource                   `yaml:"resources,omitempty" json:"resources,omitempty"`
-	Snapshot          SnapshotPolicy               `yaml:"snapshot,omitempty" json:"snapshot"`
+	// Credentials freezes logical identities and lifecycle metadata only. Secret
+	// values live in deployment-scoped projections and never enter the manifest.
+	Credentials []Credential   `yaml:"credentials,omitempty" json:"credentials,omitempty"`
+	Snapshot    SnapshotPolicy `yaml:"snapshot,omitempty" json:"snapshot"`
+}
+
+// Credential is the immutable desired-state record used to activate and roll
+// back one deployment. It deliberately contains no value, hash, or verifier.
+type Credential struct {
+	ID                string              `yaml:"id" json:"id"`
+	SecretKey         string              `yaml:"secret_key" json:"secret_key"`
+	Owner             string              `yaml:"owner" json:"owner"`
+	Consumers         []string            `yaml:"consumers,omitempty" json:"consumers,omitempty"`
+	Kind              string              `yaml:"kind" json:"kind"`
+	Authority         string              `yaml:"authority" json:"authority"`
+	RotationMode      string              `yaml:"rotation_mode" json:"rotation_mode"`
+	Generation        uint64              `yaml:"generation" json:"generation"`
+	DesiredProjection string              `yaml:"desired_projection" json:"desired_projection"`
+	Generator         CredentialGenerator `yaml:"generator,omitempty" json:"generator,omitempty"`
+	Lifecycle         CredentialLifecycle `yaml:"lifecycle" json:"lifecycle"`
+	Controls          []string            `yaml:"controls,omitempty" json:"controls,omitempty"`
+}
+
+type CredentialGenerator struct {
+	Kind   string `yaml:"kind,omitempty" json:"kind,omitempty"`
+	Length int    `yaml:"length,omitempty" json:"length,omitempty"`
+}
+
+type CredentialLifecycle struct {
+	Probe     string `yaml:"probe" json:"probe"`
+	Reconcile string `yaml:"reconcile" json:"reconcile"`
+	Verify    string `yaml:"verify" json:"verify"`
 }
 
 type Module struct {
@@ -47,6 +78,31 @@ type Module struct {
 	Changes        map[string]ChangePolicy `yaml:"changes,omitempty" json:"changes,omitempty"`
 	Providers      []ContractProvider      `yaml:"contract_providers,omitempty" json:"contract_providers,omitempty"`
 	LocalAccounts  []LocalAccount          `yaml:"local_accounts,omitempty" json:"local_accounts,omitempty"`
+	// CredentialProviders and CredentialConsumers freeze the Module-side
+	// contract used to interpret the deployment-level credential inventory.
+	// They contain identifiers and lifecycle metadata only, never values.
+	CredentialProviders []CredentialProvider `yaml:"credential_providers,omitempty" json:"credential_providers,omitempty"`
+	CredentialConsumers []CredentialConsumer `yaml:"credential_consumers,omitempty" json:"credential_consumers,omitempty"`
+}
+
+// CredentialProvider is the static capability one Module publishes. Dynamic
+// authority and generation are resolved when a deployment is materialized and
+// live only on Credential.
+type CredentialProvider struct {
+	ID           string              `yaml:"id" json:"id"`
+	SecretKey    string              `yaml:"secret_key" json:"secret_key"`
+	Kind         string              `yaml:"kind" json:"kind"`
+	RotationMode string              `yaml:"rotation_mode" json:"rotation_mode"`
+	Generator    CredentialGenerator `yaml:"generator,omitempty" json:"generator,omitempty"`
+	Lifecycle    CredentialLifecycle `yaml:"lifecycle" json:"lifecycle"`
+	Controls     []string            `yaml:"controls,omitempty" json:"controls,omitempty"`
+}
+
+// CredentialConsumer binds a logical credential to the exact environment key
+// through which the consumer receives the deployment-scoped desired value.
+type CredentialConsumer struct {
+	Credential string `yaml:"credential" json:"credential"`
+	Projection string `yaml:"projection" json:"projection"`
 }
 
 type HookConfig struct {

@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `nextcloud`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `34.0.2-r9` / `anas.module/v1`.
+> Status: current implementation; based on `34.0.2-r10` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -22,8 +22,8 @@ This page records the current implementation, security boundaries, and verificat
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_imaginary` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-imaginary:2026.07.30-d5e7ffac6e1a` | `nextcloud` | 0 |
-| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r9` | `nextcloud, db, traefik` | 3 |
-| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r9` | `nextcloud, db` | 2 |
+| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r10` | `nextcloud, db, traefik` | 3 |
+| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r10` | `nextcloud, db` | 2 |
 | `anas_nextcloud-push` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-notify-push:2026.07.30-7c156254927e` | `nextcloud, db, traefik` | 1 |
 | `anas_nextcloud-redis` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-redis:8.10.0-alpine` | `nextcloud` | 1 |
 | `anas_talk` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-talk:2026.07.30-2b9a7d12d3e6` | `nextcloud, traefik` | 1 |
@@ -105,6 +105,12 @@ anas admin local rotate nextcloud break_glass --prompt -w /srv/anas
 - `TALK_SIGNALING_SECRET`
 - `TURN_SECRET`
 
+`credentials.consumes` explicitly binds `TURN_SECRET` to `eturnal.secret`.
+The declaration is frozen into the deployment and creates an
+Eturnal-to-Nextcloud activation edge. Nextcloud consumes separate candidate and
+previous projections; it neither owns the credential nor implements its
+reconcile handler.
+
 Generated values and lifecycle-managed credentials use stable logical keys in workspace `.anas/secrets.yml` (`0600`). It is permission-protected plaintext, not an encrypted vault. Plaintext must not enter README files, locks, logs, or ordinary `config list`. Local-administrator names and secret references live in password-free `.anas/local-admins.yml`; hooks receive plaintext only for the required lifecycle phase. `bcrypt` accounts persist only a hash in runtime configuration, while `plaintext_on_bootstrap` accounts use a `0600` projection at `.anas/runtime-secrets/local-admins/<module>/<id>.password`. Snapshots/backups must keep the secret store, account inventory, and application data at one recovery point.
 
 ## Database support
@@ -176,6 +182,9 @@ The dependency closure does not grant every environment value. Sensitive values 
 ## Hooks, changes, and rollback
 
 - Hook command: `go run ./hook`
+- Eturnal's credential ready barrier completes before this Module starts. The
+  Nextcloud `after_start` phase then configures Talk TURN from the current
+  deployment projection. Nextcloud is not started when owner verification fails.
 - `credential_rotate`, `data_migrate`, and `immutable` are blocked from ordinary edits; the declared lifecycle operation must update persistent application state.
 - A local-administrator rotation commits the generated secret only after the module handler succeeds; failure keeps or restores the old application credential.
 

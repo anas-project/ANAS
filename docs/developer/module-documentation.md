@@ -146,6 +146,58 @@ env/Secret patch 必须整体通过 ownership、键规范化和碰撞校验后�
 schema；render 私有键仍可不声明。Hook Secret 只能刷新既有 `generated/module-hook` 记录，不能
 覆盖 `lifecycle_managed`、`local_admin` 或其他来源记录，整包拒绝也不得回显值或自由 provenance。
 
+### 静态 credential 声明与 lifecycle ABI
+
+Module 必须用显式声明建立机器凭据关系，Core 不按 `PASSWORD`、`TOKEN` 或 `KEY` 名称猜测：
+
+```yaml
+credentials:
+  provides:
+    - id: eturnal.secret
+      secret_key: TURN_SECRET
+      type: shared_secret
+      rotation_mode: reconcile
+      generation: {kind: hex, length: 16}
+      lifecycle:
+        probe: probe-eturnal-secret
+        reconcile: reconcile-eturnal-secret
+        verify: verify-eturnal-secret
+  consumes:
+    - credential: eturnal.secret
+      projection: TURN_SECRET
+```
+
+Provider ID 必须位于自身 Module 的 lower-case dotted namespace；Secret key 与 projection 必须是
+upper-snake 环境键，consumer projection 还必须出现在 `config.consumes`。`reconcile` provider
+必须声明至少 16 长度的 `password`/`hex` 生成策略、三个 handler，并在 `hook.phases` 中显式列出
+`credential_probe`、`credential_reconcile`、`credential_verify`。Provider ID、Secret key、consumer
+projection 和 control edge 在 registry admission 时检查唯一性与引用完整性。
+
+Materialization 在 calculate 后从 Secret Store provenance 冻结 `authority` 与 `generation`；
+`generated/module-hook` 且 owner 匹配的记录是 `anas`，其他来源是 `external`。deployment manifest
+只保存 ID、owner/consumer、authority、generation、projection、handler 和策略，不保存值、hash
+或 verifier。Credential consumer 会生成 provider→consumer 激活 edge，即使两者没有普通依赖。
+
+Credential Hook 请求在 `credential` 对象中携带 handler、逻辑 ID、Secret key、authority 和
+generation；期望值只放在 stdin JSON 的 `secrets.ANAS_CREDENTIAL_DESIRED`，不放在 metadata、
+宿主 argv、错误或 Hook stderr。响应只能返回：
+
+```json
+{"credential":{"credential_id":"eturnal.secret","status":"match","changed":false}}
+```
+
+Probe/verify 的有效状态为 `match`、`missing`、`mismatch`、`unavailable` 或 `unsupported`；
+reconcile 成功返回 `reconciled`（有 mutation）或 `match`（无需 mutation）。`external` authority
+只能 probe/verify；不匹配必须要求人工处理。任意普通 Hook mutation 字段、未知 JSON 字段、额外
+JSON 值或无效状态都会使 ready barrier 失败。
+
+Module 文档若声明可执行 `reconcile` provider，必须给出当前真实命令：
+`anas credential list`、`anas credential rotate <id> --dry-run` 和实际轮换命令，并说明受影响
+consumer、停机范围、verify 证明的内容与限制。Core 使用 candidate deployment、无明文 journal、
+一次性 Store commit 和自动 crash recovery；文档不得把“存在 Secret Store 值”或只有 probe 的
+记录描述为可轮换。未迁入统一执行器的 resource、本地管理员、overlap/migrate 或 external provider
+必须明确写为 manual/unsupported，并指向其专用流程。
+
 ### Hook phase 与 `validate` ABI
 
 技术文档必须逐项列出 Module 实际实现的 Hook phase，并与 `module.yml` 的声明一致：
@@ -159,9 +211,14 @@ logic:
 
 `logic.hook.phases` 的非空列表是精确 allowlist；可用值为 `validate`、`calculate`、
 `render_env`、`runtime_restore`、`services`、`after_start`、`local_account_apply`、
-`local_account_rotate` 和 `local_account_rollback`。省略该字段只保留旧 Hook 的非 `validate`
-兼容生命周期，绝不会推断旧 Hook 已实现配置校验；显式空列表因语义含混而被 manifest
+`local_account_rotate`、`local_account_rollback`、`credential_probe`、`credential_reconcile` 和
+`credential_verify`。省略该字段只保留旧 Hook 的非 `validate`、非 credential
+兼容生命周期，绝不会推断旧 Hook 已实现配置校验或凭据协调；显式空列表因语义含混而被 manifest
 admission 拒绝。要接收 `validate` 请求，Module 必须在非空列表中显式声明它。
+
+部署激活按依赖顺序逐个 Module 执行；某个 Module 的容器启动、owned credential
+probe/reconcile/verify、`after_start` 和本地管理员协调全部成功后，Runner 才会启动下游 Module。
+技术文档不得把 `after_start` 描述成“全部容器启动后异步执行”的通知。
 
 `validate` 在有效拓扑的依赖顺序中运行，只检查期望状态。请求的 `phase` 为 `validate`，
 `env` 是 Module scoped 视图且已删除敏感键及其已知等值 alias，`secrets` 永远是空对象，

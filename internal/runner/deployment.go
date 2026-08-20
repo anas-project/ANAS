@@ -36,6 +36,7 @@ const (
 type deploymentManifest = deployment.Manifest
 type deploymentModule = deployment.Module
 type deploymentResource = deployment.Resource
+type deploymentCredential = deployment.Credential
 type deploymentSetting = deployment.Setting
 type deploymentSnapshotPolicy = deployment.SnapshotPolicy
 type activeDeploymentState = deployment.ActiveState
@@ -492,6 +493,9 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err := a.calculate(); err != nil {
 		return "", failuref("calculate_failed", "%s", err.Error())
 	}
+	if err := a.prepareDeploymentCredentials(); err != nil {
+		return "", preconditionErrorf("credential_inventory_invalid", "%s", err.Error())
+	}
 	if err := a.secrets.Save(); err != nil {
 		return "", failuref("write_failed", "%s", err.Error())
 	}
@@ -649,6 +653,7 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 		BuildAcceleration: strings.EqualFold(strings.TrimSpace(a.env["CHINESE_BUILD_SPEEDUP"]), "true"),
 		ModuleOrder:       append([]string{}, a.order...), Bindings: cloneNestedMap(a.resolvedBindings),
 		Modules: map[string]deploymentModule{}, Settings: map[string]deploymentSetting{},
+		Credentials: append([]deploymentCredential{}, a.credentials...),
 		Snapshot: deploymentSnapshotPolicy{
 			Source: strings.TrimSpace(a.cfg.Rollback.Snapshot.Source),
 			Root:   strings.TrimSpace(a.cfg.Rollback.Snapshot.Root),
@@ -703,8 +708,10 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 			Consumes:       append([]string{}, mod.Consumes...),
 			Dependencies:   append([]string{}, a.deps[name]...),
 			UseHostLAN:     mod.UseHostLAN, Changes: mod.Changes,
-			Providers:     cloneContractProviders(mod.ContractProviders),
-			LocalAccounts: append([]LocalAccount{}, mod.LocalAccounts...),
+			Providers:           cloneContractProviders(mod.ContractProviders),
+			LocalAccounts:       append([]LocalAccount{}, mod.LocalAccounts...),
+			CredentialProviders: cloneCredentialProviders(mod.CredentialProviders),
+			CredentialConsumers: cloneCredentialConsumers(mod.CredentialConsumers),
 		}
 	}
 	for _, request := range a.resourceRequests {
@@ -964,7 +971,10 @@ func runActive(action string, args []string, jsonMode bool) error {
 	}
 	announceWorkspace(workspace)
 	base := stateDir(workspace)
-	unlock, err := acquireRuntimeSharedLock(base)
+	// Lifecycle commands mutate Docker state. Taking the exclusive runtime lock
+	// also makes them participate in credential crash recovery before they can
+	// start or stop a deployment from an ambiguous transaction phase.
+	unlock, err := acquireRuntimeLock(base)
 	if err != nil {
 		return failuref("lock_failed", "%s", err.Error())
 	}
@@ -980,9 +990,12 @@ func runActive(action string, args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("compose_missing", "%s", err.Error())
 	}
-	a, root, _, err := loadDeploymentApp(base, active.ActiveDeployment, cli)
+	a, root, manifest, err := loadDeploymentApp(base, active.ActiveDeployment, cli)
 	if err != nil {
 		return preconditionErrorf("deployment_unreadable", "%s", err.Error())
+	}
+	if err := credentialStoreConsistencyError(base, manifest); err != nil {
+		return err
 	}
 	selection, err := selectLifecycleModules(a, action, requested)
 	if err != nil {
@@ -1064,20 +1077,28 @@ func startDeployment(a *app, modulesRoot string, selection []string, jsonMode bo
 	done := int64(0)
 	if err := a.eachOf(modulesRoot, selection, func(run moduleRun) error {
 		done++
-		emitProgress(jsonMode, "start-containers", done, total, "modules")
+		emitProgress(jsonMode, "activate-modules", done, total, "modules")
 		if err := a.ensureResourcesFor(run.mod.Name, modulesRoot); err != nil {
 			return err
 		}
-		if run.mod.RuntimeType != "compose" {
-			return nil
+		if run.mod.RuntimeType == "compose" {
+			args := append([]string{"up", "-d", "--remove-orphans"}, run.services...)
+			if err := a.runCompose(run.dir, run.mod.Name, run.mod.ComposeFile, run.env, args...); err != nil {
+				return err
+			}
 		}
-		args := append([]string{"up", "-d", "--remove-orphans"}, run.services...)
-		return a.runCompose(run.dir, run.mod.Name, run.mod.ComposeFile, run.env, args...)
+		if err := a.coordinateModuleCredentials(run.mod, run.dir, run.env); err != nil {
+			return fmt.Errorf("deployment module %s credential barrier: %w", run.mod.Name, err)
+		}
+		// The after-start Hook and local-account reconciliation are the current
+		// Module ready barrier together with credential convergence. Running them here, rather than after every
+		// container is up, prevents a downstream Module from observing an owner
+		// that has started but has not finished its activation work.
+		return a.runAfterStartOf(modulesRoot, []string{run.mod.Name})
 	}); err != nil {
 		return err
 	}
-	emitProgress(jsonMode, "after-start-hooks", 0, total, "modules")
-	return a.runAfterStartOf(modulesRoot, selection)
+	return nil
 }
 
 // activateOptions carries the operator's answers to the questions activation
@@ -1109,6 +1130,9 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	newApp, newRoot, target, err := loadDeploymentApp(base, id, cli)
 	if err != nil {
 		return preconditionErrorf("deployment_unreadable", "%s", err.Error())
+	}
+	if err := credentialStoreConsistencyError(base, target); err != nil {
+		return err
 	}
 	if active.ActiveDeployment == id {
 		if err := startDeployment(newApp, newRoot, newApp.order, opts.json); err != nil {
@@ -1187,16 +1211,10 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	selection := activationStartModules(current, target, runtimeStatus)
 	if err := startDeployment(newApp, newRoot, selection, opts.json); err != nil {
 		_ = saveDeploymentFailure(base, id, err)
-		if oldApp != nil {
-			_ = startDeployment(oldApp, oldRoot, oldApp.order, opts.json)
-		}
-		return failuref("start_failed", "%s", err.Error())
+		return failuref("start_failed", "%s", restorePreviousAfterActivationFailure(newApp, newRoot, oldApp, oldRoot, err, opts.json))
 	}
 	if err := retainRemovedResources(base, current, target); err != nil {
-		if oldApp != nil {
-			_ = startDeployment(oldApp, oldRoot, oldApp.order, opts.json)
-		}
-		return failuref("resource_state_failed", "%s", err.Error())
+		return failuref("resource_state_failed", "%s", restorePreviousAfterActivationFailure(newApp, newRoot, oldApp, oldRoot, err, opts.json))
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -1234,6 +1252,27 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	// been the way back from it.
 	collectAutomaticSnapshots(workspaceOf(base))
 	return nil
+}
+
+// restorePreviousAfterActivationFailure stops every candidate project before
+// reactivating the immutable previous deployment. Starting previous on top of
+// partially activated candidate containers leaves the real runtime ambiguous,
+// especially once credential reconciliation becomes part of the ready barrier.
+func restorePreviousAfterActivationFailure(candidate *app, candidateRoot string, previous *app, previousRoot string, cause error, jsonMode bool) error {
+	parts := []string{cause.Error()}
+	if candidate != nil {
+		if err := candidate.stopRelease(candidateRoot, jsonMode); err != nil {
+			parts = append(parts, "candidate stop failed: "+err.Error())
+		}
+	}
+	if previous != nil {
+		if err := startDeployment(previous, previousRoot, previous.order, jsonMode); err != nil {
+			parts = append(parts, "previous deployment restore failed: "+err.Error())
+		} else {
+			parts = append(parts, "previous deployment restored")
+		}
+	}
+	return fmt.Errorf("%s", strings.Join(parts, "; "))
 }
 
 // snapshotBeforeApply takes the automatic pre-apply snapshot, when the change
@@ -1774,8 +1813,10 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 			Consumes: append([]string{}, module.Consumes...), Changes: module.Changes,
 			UseHostLAN: module.UseHostLAN, Hook: module.Hook,
 			RuntimeType: module.RuntimeType, ComposeFile: module.ComposeFile,
-			ContractProviders: cloneContractProviders(module.Providers),
-			LocalAccounts:     append([]LocalAccount{}, module.LocalAccounts...),
+			ContractProviders:   cloneContractProviders(module.Providers),
+			LocalAccounts:       append([]LocalAccount{}, module.LocalAccounts...),
+			CredentialProviders: cloneCredentialProviders(module.CredentialProviders),
+			CredentialConsumers: cloneCredentialConsumers(module.CredentialConsumers),
 		}
 		deps[name] = append([]string{}, module.Dependencies...)
 		if len(module.ValidationPlan) > 0 {
@@ -1791,12 +1832,13 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 		return nil, "", nil, err
 	}
 	a := &app{
-		base: base, compose: cli, reg: reg, deps: deps,
+		workspace: workspaceOf(base), base: base, compose: cli, reg: reg, deps: deps,
 		order: append([]string{}, manifest.ModuleOrder...),
 		env:   map[string]string{}, envOwner: map[string]string{},
 		secrets: secrets, localAdmins: localAdmins, useFrozenHooks: true, artifactRoot: modulesRoot,
 		resolvedBindings: cloneNestedMap(manifest.Bindings),
 		modulePlans:      modulePlans,
+		credentials:      append([]deploymentCredential{}, manifest.Credentials...),
 	}
 	for _, resource := range manifest.Resources {
 		password := secrets.values[resource.SecretKey]
@@ -1877,6 +1919,15 @@ func acquireRuntimeLock(base string) (func(), error) {
 	}
 	cleanStaleSnapshotTemp(workspaceOf(base))
 	compensateContainerTransactions(base)
+	if txn, recoveryErr := unfinishedCredentialRotation(base); recoveryErr != nil {
+		unlock()
+		return nil, recoveryErr
+	} else if txn != nil {
+		if recoveryErr := recoverCredentialRotation(base, txn, false); recoveryErr != nil {
+			unlock()
+			return nil, fmt.Errorf("%w: automatic recovery failed: %v", credentialRecoveryRequiredError(txn), recoveryErr)
+		}
+	}
 	return unlock, nil
 }
 

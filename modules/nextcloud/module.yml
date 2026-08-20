@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: nextcloud
 version: 34.0.2
-revision: 9
+revision: 10
 app_version: 34.0.2
 abi:
   supports:
@@ -49,6 +49,10 @@ resources:
         credential:
           policy: generated
         deletion_policy: retain
+credentials:
+  consumes:
+    - credential: eturnal.secret
+      projection: TURN_SECRET
 upgrade:
   # Empty, not absent: no release of this module has rewritten its on-disk data
   # format. Absent would mean "unknown" and would block every rollback that

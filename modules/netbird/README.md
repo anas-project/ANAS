@@ -11,7 +11,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `netbird` |
-| 版本 / revision | `0.76.1-r5` |
+| 版本 / revision | `0.76.1-r6` |
 | 状态 | `developing` |
 | 类别 | `network` |
 | 运行时 | `compose` |
@@ -88,6 +88,9 @@ anas config plan -w /srv/anas
 
 持久数据应随 workspace 的 snapshot/backup 一起保护。数据库 Consumer 还必须备份所绑定的数据库 Resource；生成 Secret 和本地管理员状态也必须与数据保持同一恢复点。
 
+`TURN_SECRET` 通过 `credentials.consumes` 显式绑定到 `eturnal.secret`。Runner 只有在 Eturnal 的
+credential ready barrier 验证成功后才启动 NetBird；本 Module 不拥有或自行轮换该值。
+
 ```bash
 anas plan -c /srv/anas/config.yml
 anas config list netbird -w /srv/anas
@@ -107,7 +110,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`0.76.1-r5`（reviewed 2026-08-13）
+- Module version / 版本：`0.76.1-r6`（reviewed 2026-08-13）
 - Timezone / 时区：`partial` — Dashboard, signal, and management receive the module environment; the relay service does not currently receive TZ.
 - Language scope / 语言范围：NetBird Dashboard v2.90.9
 - Selection / 选择方式：`fixed`

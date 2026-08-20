@@ -72,6 +72,13 @@ type app struct {
 	runnerSensitive  map[string]bool
 	resolvedBindings map[string]map[string]string
 	resourceRequests []ResourceRequest
+	// credentials is the value-free deployment inventory. During rendering it
+	// is resolved from static Module declarations; artifact lifecycle commands
+	// load the exact frozen records from deployment.yml.
+	credentials []deploymentCredential
+	// suppressSensitiveOutput is enabled while credential candidate values are
+	// present. Compose and general Hook output are not trusted to redact them.
+	suppressSensitiveOutput bool
 	// iamProvider is the single IAM module serving this deployment, and
 	// iamBindings maps each consumer to its resolved protocol. Both are empty
 	// until a consumer is actually reached during ordering, so an unused
@@ -140,6 +147,8 @@ func dispatch(command string, args []string, jsonMode bool) error {
 		return runConfig(args, jsonMode)
 	case "admin":
 		return runAdmin(args, jsonMode)
+	case "credential":
+		return runCredential(args, jsonMode)
 	case "module":
 		return runModule(args, jsonMode)
 	case "version":
@@ -159,7 +168,7 @@ func dispatch(command string, args []string, jsonMode bool) error {
 var commandNames = []string{
 	"init", "plan", "lock", "render", "build", "apply", "start", "restart",
 	"stop", "rollback", "status", "deployments", "snapshot", "backup", "config", "admin", "module",
-	"version",
+	"credential", "version",
 }
 
 func runVersion(args []string, jsonMode bool) error {
@@ -224,6 +233,8 @@ Usage:
   anas config plan    [-w WORKSPACE]
   anas config secret  list | get <KEY>   [-w WORKSPACE]
   anas admin local list | credential | rotate MODULE [ACCOUNT] [-w WORKSPACE]
+  anas credential list [-w WORKSPACE]
+  anas credential rotate CREDENTIAL_ID|--all [-w WORKSPACE] [--force] [--dry-run] [-y]
   anas module list [--source NAME] [-w WORKSPACE]
   anas module versions NAME [--source NAME] [-w WORKSPACE]
   anas module install NAME@VERSION-rN [--source NAME] [--digest sha256:...]
@@ -840,6 +851,13 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 			}
 			deps = append(deps, provider)
 		}
+		for _, credential := range mod.CredentialConsumers {
+			provider, ok := credentialProviderOwner(a.reg, credential.Credential)
+			if !ok {
+				return fmt.Errorf("module %q consumes credential %s but no installed Module provides it", name, credential.Credential)
+			}
+			deps = append(deps, provider)
+		}
 		if svc, ok := a.cfg.Modules.Values[name]; ok {
 			deps = append(deps, svc.DependsOn...)
 		}
@@ -867,6 +885,17 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 	a.publishIAMEnv(out)
 	a.applyDynamicDNSBinding(dynamicDNS)
 	return stableModuleOrder(out, resolvedDeps, a.reg)
+}
+
+func credentialProviderOwner(reg map[string]Module, id string) (string, bool) {
+	for name, mod := range reg {
+		for _, provider := range mod.CredentialProviders {
+			if provider.ID == id {
+				return name, true
+			}
+		}
+	}
+	return "", false
 }
 
 func stableModuleOrder(initial []string, dependencies map[string][]string, reg map[string]Module) ([]string, error) {
@@ -1092,6 +1121,9 @@ func (a *app) calculate() error {
 			return fmt.Errorf("%s: %w", name, err)
 		}
 		a.secrets.mergeCanonicalHookSecrets(name, secretPatch)
+		if err := a.projectProvidedCredentials(name); err != nil {
+			return fmt.Errorf("%s calculate credentials: %w", name, err)
+		}
 		// The committed secret patch becomes a new source for later Hook and
 		// render aliases; force the next scope calculation to include it.
 		a.sensitiveKeys = nil

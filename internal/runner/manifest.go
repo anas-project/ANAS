@@ -19,6 +19,7 @@ const currentModuleABI = "anas.module-hook/v1"
 
 var (
 	configParameterNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	credentialIDPattern        = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 	envPrefixPattern           = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 	envKeyPattern              = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 )
@@ -33,6 +34,9 @@ var knownModuleHookPhases = map[string]bool{
 	"local_account_apply":    true,
 	"local_account_rotate":   true,
 	"local_account_rollback": true,
+	"credential_probe":       true,
+	"credential_reconcile":   true,
+	"credential_verify":      true,
 }
 
 type manifestABI struct {
@@ -55,6 +59,7 @@ type moduleManifest struct {
 	Contracts    manifestContracts    `yaml:"contracts"`
 	Dependencies manifestDependencies `yaml:"dependencies"`
 	Resources    manifestResources    `yaml:"resources"`
+	Credentials  manifestCredentials  `yaml:"credentials"`
 	Upgrade      manifestUpgrade      `yaml:"upgrade"`
 	Config       manifestConfig       `yaml:"config"`
 	Features     manifestFeatures     `yaml:"features"`
@@ -63,6 +68,26 @@ type moduleManifest struct {
 	Services     manifestServices     `yaml:"services"`
 	Logic        manifestLogic        `yaml:"logic"`
 	Status       string               `yaml:"status"`
+}
+
+type manifestCredentials struct {
+	Provides []manifestCredentialProvider `yaml:"provides"`
+	Consumes []manifestCredentialConsumer `yaml:"consumes"`
+}
+
+type manifestCredentialProvider struct {
+	ID           string                        `yaml:"id"`
+	SecretKey    string                        `yaml:"secret_key"`
+	Type         string                        `yaml:"type"`
+	RotationMode string                        `yaml:"rotation_mode"`
+	Generation   deploymentCredentialGenerator `yaml:"generation"`
+	Lifecycle    deploymentCredentialLifecycle `yaml:"lifecycle"`
+	Controls     []string                      `yaml:"controls"`
+}
+
+type manifestCredentialConsumer struct {
+	Credential string `yaml:"credential"`
+	Projection string `yaml:"projection"`
 }
 
 type manifestRuntime struct {
@@ -369,7 +394,62 @@ func loadRegistryDir(modulesRoot string) (map[string]Module, error) {
 	if err := validateRegistryParameterRuntimeKeys(reg); err != nil {
 		return nil, err
 	}
+	if err := validateRegistryCredentials(reg); err != nil {
+		return nil, err
+	}
 	return reg, nil
+}
+
+func validateRegistryCredentials(reg map[string]Module) error {
+	ownerByID := map[string]string{}
+	ownerByKey := map[string]string{}
+	controlTargets := map[string]deploymentCredential{}
+	names := make([]string, 0, len(reg))
+	for name := range reg {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		mod := reg[name]
+		for _, provider := range mod.CredentialProviders {
+			if previous, duplicate := ownerByID[provider.ID]; duplicate {
+				return fmt.Errorf("credential %s is provided by both %s and %s", provider.ID, previous, name)
+			}
+			if previous, duplicate := ownerByKey[provider.SecretKey]; duplicate {
+				return fmt.Errorf("credential providers %s and %s both own Secret key %s", previous, provider.ID, provider.SecretKey)
+			}
+			ownerByID[provider.ID] = name
+			ownerByKey[provider.SecretKey] = provider.ID
+			controlTargets[provider.ID] = deploymentCredential{ID: provider.ID, Controls: append([]string{}, provider.Controls...)}
+		}
+	}
+	for _, name := range names {
+		mod := reg[name]
+		projectionOwner := map[string]string{}
+		for _, consumer := range mod.CredentialConsumers {
+			if _, ok := ownerByID[consumer.Credential]; !ok {
+				return fmt.Errorf("module %q consumes credential %s but no installed Module provides it", name, consumer.Credential)
+			}
+			if previous, duplicate := projectionOwner[consumer.Projection]; duplicate && previous != consumer.Credential {
+				return fmt.Errorf("module %q projects credentials %s and %s onto %s", name, previous, consumer.Credential, consumer.Projection)
+			}
+			projectionOwner[consumer.Projection] = consumer.Credential
+		}
+		for _, provider := range mod.CredentialProviders {
+			for _, controlled := range provider.Controls {
+				if _, ok := ownerByID[controlled]; !ok {
+					return fmt.Errorf("credential %s controls unknown credential %s", provider.ID, controlled)
+				}
+				if controlled == provider.ID {
+					return fmt.Errorf("credential %s cannot control itself", provider.ID)
+				}
+			}
+		}
+	}
+	if _, err := credentialControlOrder(controlTargets); err != nil {
+		return fmt.Errorf("credential control graph: %w", err)
+	}
+	return nil
 }
 
 // validateRegistryParameterRuntimeKeys makes ownership unambiguous before any
@@ -535,7 +615,7 @@ func registryReservedNamespaceKeys() []string {
 		"DATA_PATH", "USER_DATA_PATH", "DOCKER_SOCKET_PATH", "ANAS_RUNTIME_ENTRY_IP",
 		"MODULE_NAME", "ANAS_MODULE_RUNTIME_STATE_PATH", "ANAS_DEPLOYMENT_ID",
 		"ANAS_RESOURCE_DATABASE", "ANAS_RESOURCE_USERNAME", "ANAS_RESOURCE_PASSWORD",
-		localAdminCandidateSecretKey,
+		localAdminCandidateSecretKey, credentialDesiredSecretKey,
 		envIAMProvider, envIAMInterfaces, envIdentityClients, envIdentityAppClients,
 	}
 	keys = append(keys, hostEnvKeys...)
@@ -799,6 +879,10 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if err != nil {
 		return Module{}, err
 	}
+	credentialProviders, credentialConsumers, err := normalizeCredentialDeclarations(dirname, manifest.Credentials, consumes, hook)
+	if err != nil {
+		return Module{}, err
+	}
 	types, err := normalizeParamTypes(dirname, manifest.Config.Types)
 	if err != nil {
 		return Module{}, err
@@ -898,6 +982,8 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		IdentityAuthentication: authentication,
 		ManagementSurfaces:     managementSurfaces,
 		LocalAccounts:          localAccounts,
+		CredentialProviders:    credentialProviders,
+		CredentialConsumers:    credentialConsumers,
 		UseHostLAN:             manifest.Features.HostLAN,
 		PublishesDomain:        manifest.Features.Domain,
 		Hook:                   hook,
@@ -937,6 +1023,101 @@ func normalizeHookConfig(module string, hook HookConfig) (HookConfig, error) {
 	}
 	hook.Phases = phases
 	return hook, nil
+}
+
+func normalizeCredentialDeclarations(module string, declared manifestCredentials, consumes []string, hook HookConfig) ([]CredentialProvider, []CredentialConsumer, error) {
+	providers := make([]CredentialProvider, 0, len(declared.Provides))
+	providerIDs := map[string]bool{}
+	providerKeys := map[string]bool{}
+	for _, raw := range declared.Provides {
+		id := strings.TrimSpace(raw.ID)
+		if !credentialIDPattern.MatchString(id) || !strings.HasPrefix(id, module+".") {
+			return nil, nil, fmt.Errorf("module %q credential provider id %q must be a lower-case dotted id in the %s namespace", module, raw.ID, module)
+		}
+		if providerIDs[id] {
+			return nil, nil, fmt.Errorf("module %q provides credential %s more than once", module, id)
+		}
+		providerIDs[id] = true
+
+		secretKey := strings.TrimSpace(raw.SecretKey)
+		if !envKeyPattern.MatchString(secretKey) {
+			return nil, nil, fmt.Errorf("module %q credential %s secret_key %q is not an environment key", module, id, raw.SecretKey)
+		}
+		if providerKeys[secretKey] {
+			return nil, nil, fmt.Errorf("module %q provides more than one credential through Secret key %s", module, secretKey)
+		}
+		providerKeys[secretKey] = true
+
+		kind := strings.ToLower(strings.TrimSpace(raw.Type))
+		if !contains([]string{"password", "shared_secret", "token", "key", "certificate"}, kind) {
+			return nil, nil, fmt.Errorf("module %q credential %s has unsupported type %q", module, id, raw.Type)
+		}
+		mode := strings.ToLower(strings.TrimSpace(raw.RotationMode))
+		if !contains([]string{"reconcile", "overlap", "migrate", "external"}, mode) {
+			return nil, nil, fmt.Errorf("module %q credential %s has unsupported rotation_mode %q", module, id, raw.RotationMode)
+		}
+
+		generator := raw.Generation
+		generator.Kind = strings.ToLower(strings.TrimSpace(generator.Kind))
+		lifecycle := raw.Lifecycle
+		lifecycle.Probe = strings.TrimSpace(lifecycle.Probe)
+		lifecycle.Reconcile = strings.TrimSpace(lifecycle.Reconcile)
+		lifecycle.Verify = strings.TrimSpace(lifecycle.Verify)
+		if mode == "reconcile" {
+			if !contains([]string{"password", "hex"}, generator.Kind) || generator.Length < 16 {
+				return nil, nil, fmt.Errorf("module %q credential %s reconcile generation must use password or hex with length at least 16", module, id)
+			}
+			if lifecycle.Probe == "" || lifecycle.Reconcile == "" || lifecycle.Verify == "" {
+				return nil, nil, fmt.Errorf("module %q credential %s reconcile lifecycle requires probe, reconcile, and verify handlers", module, id)
+			}
+			for _, phase := range []string{"credential_probe", "credential_reconcile", "credential_verify"} {
+				if !contains(hook.Phases, phase) {
+					return nil, nil, fmt.Errorf("module %q credential %s requires an explicit %s hook phase", module, id, phase)
+				}
+			}
+		} else if generator.Kind != "" || generator.Length != 0 {
+			return nil, nil, fmt.Errorf("module %q credential %s rotation mode %s must not declare an ANAS generation policy", module, id, mode)
+		}
+		controls := make([]string, 0, len(raw.Controls))
+		for _, controlledRaw := range raw.Controls {
+			controlled := strings.TrimSpace(controlledRaw)
+			if !credentialIDPattern.MatchString(controlled) {
+				return nil, nil, fmt.Errorf("module %q credential %s controls invalid credential id %q", module, id, controlledRaw)
+			}
+			if contains(controls, controlled) {
+				return nil, nil, fmt.Errorf("module %q credential %s declares control edge %s more than once", module, id, controlled)
+			}
+			controls = append(controls, controlled)
+		}
+		providers = append(providers, CredentialProvider{
+			ID: id, SecretKey: secretKey, Kind: kind, RotationMode: mode,
+			Generator: generator, Lifecycle: lifecycle, Controls: controls,
+		})
+	}
+
+	consumers := make([]CredentialConsumer, 0, len(declared.Consumes))
+	consumerIDs := map[string]bool{}
+	for _, raw := range declared.Consumes {
+		id := strings.TrimSpace(raw.Credential)
+		if !credentialIDPattern.MatchString(id) {
+			return nil, nil, fmt.Errorf("module %q consumes invalid credential id %q", module, raw.Credential)
+		}
+		if consumerIDs[id] {
+			return nil, nil, fmt.Errorf("module %q consumes credential %s more than once", module, id)
+		}
+		consumerIDs[id] = true
+		projection := strings.TrimSpace(raw.Projection)
+		if !envKeyPattern.MatchString(projection) {
+			return nil, nil, fmt.Errorf("module %q credential %s projection %q is not an environment key", module, id, raw.Projection)
+		}
+		if !matchEnvPattern(consumes, projection) {
+			return nil, nil, fmt.Errorf("module %q credential %s projection %s must also be declared in config.consumes", module, id, projection)
+		}
+		consumers = append(consumers, CredentialConsumer{Credential: id, Projection: projection})
+	}
+	sort.Slice(providers, func(i, j int) bool { return providers[i].ID < providers[j].ID })
+	sort.Slice(consumers, func(i, j int) bool { return consumers[i].Credential < consumers[j].Credential })
+	return providers, consumers, nil
 }
 
 // normalizeParamTypes validates the declarations themselves. A type nobody can

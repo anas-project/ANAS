@@ -248,7 +248,28 @@ modules:
       - traefik@sha256:...
     secret_refs:
       TRAEFIK_ADMIN_PASSWORD: TRAEFIK_ADMIN_PASSWORD@2
+credentials:
+  - id: postgres.nextcloud
+    secret_key: RESOURCE_NEXTCLOUD_PRIMARY_DATABASE_PASSWORD
+    owner: postgres
+    consumers: [nextcloud]
+    kind: password
+    authority: anas
+    rotation_mode: reconcile
+    generation: 2
+    desired_projection: deployment-secret://postgres.nextcloud
+    generator: {kind: password, length: 32}
+    lifecycle:
+      probe: probe-resource-password
+      reconcile: reconcile-resource-password
+      verify: verify-resource-password
 ```
+
+`credentials` 只冻结逻辑身份、代次和 handler，不含值、hash 或 verifier。candidate deployment
+独立投影、无明文 journal、一次性 Store commit、事务 promotion 与 crash recovery 已由
+`anas credential list/rotate` 串成同一执行边界；Module 静态 `credentials.provides/consumes` 会解析为
+frozen record，结构化 probe/reconcile/verify 则进入逐 Module ready barrier。当前首个生产 provider
+是 `eturnal.secret`；数据库、Samba、本地管理员和其他凭据类型仍待后续阶段接入。
 
 启动旧 deployment 时不再调用 `loadRegistry` 重新解释当前 module manifest。
 runner 只校验 deployment ABI、artifact digest 和本机依赖，然后按
@@ -298,6 +319,11 @@ resolved state vs 当前 active deployment），命中 `credential_rotate`、
 1. 已完成外部迁移/验证后使用 `--allow-risky`，只回退制品；
 2. 存在匹配快照时使用 `--restore-data --yes`，同时恢复数据。
 
+冻结 credential generation/authority 与当前 Secret Store 不一致是更强的门禁：普通
+start/apply/rollback 返回 `credential_store_mismatch`，`--allow-risky` 不能绕过，否则会出现旧应用
+投影与新 Store 并存。当前必须恢复包含匹配 Store、deployment 和数据的 snapshot；未来显式
+credential rollback 才能用同一 journal/executor 事务化恢复应用状态和 Store。
+
 `rollback.snapshot.backend: btrfs` 可把 `global.data_path`（或显式 `source`）
 作为 Btrfs 子卷，在 apply 前停旧 deployment 并创建只读快照。快照只允许
 用于它记录的 `from_deployment -> to_deployment` 边界，不能错配恢复。恢复
@@ -338,8 +364,8 @@ resolve
 image digest 在 materialize 之后才固定，所以最终 manifest 的写入和封印
 必须排在 pin 之后；staging 内容允许变化，进入 deployments 后不允许。
 
-单机 Docker 无法参与原子事务。本方案不建可重放的多阶段 journal 状态
-机——那套机制的复杂度会超过业务本身——而是依靠两条结构性保证做恢复：
+单机 Docker 无法参与原子事务。普通 apply 不建通用、可重放的多阶段 journal 状态机，而是依靠
+两条结构性保证做恢复：
 
 1. `state/active.yml` 只在 verify 通过后原子提交，任何时刻都指向最后
    一个验证过的 deployment；
@@ -353,6 +379,13 @@ generation。journal 降级为诊断性标记文件，记录 deployment ID、当
 显式补偿记录的是宿主机网络（macvlan）这类 Compose project 之外的副作
 用。
 
+凭据轮换是一个有边界的例外：应用内部认证状态、Secret Store commit 和 active pointer 不能靠
+“重新 start 一次”区分提交前后。因此 `.anas/state/transactions/credential-*.yml` 持久记录
+previous/candidate ID、目标代次、phase、Store commit 与 promotion 标志，但不记录值、hash 或
+verifier。Store 提交前的恢复停止 candidate 并激活 previous；Store 提交后依据 Store
+`rotation_id/generation` 完成 candidate promotion。下一次排他运行时操作先自动执行这一恢复，
+恢复失败才拒绝新的写操作。
+
 如果 reconcile 或 verify 失败：
 
 1. 对已更新的稳定 Compose project 用旧 release 再执行 `up -d`；
@@ -361,9 +394,9 @@ generation。journal 降级为诊断性标记文件，记录 deployment ID、当
 4. 将候选标为 failed，不修改 active state；
 5. 新分配但未被任何 release 引用的 secret generation 留待 gc 清理。
 
-存在未完成标记时，`start/stop/restart` 仍然允许运行——`start` 本身就是
-向 active deployment 收敛的恢复动作；被阻塞的只有新的 apply/rollback/gc，
-它们要求先收敛或显式清理标记。
+普通 apply 的诊断标记仍可通过向 active deployment 收敛处理。未完成的 credential journal
+不能被普通生命周期操作跨过：`start/stop/restart` 与其他写操作都先取得排他运行时锁并执行上述
+确定性恢复，只有恢复完成后才继续原操作。
 
 ## 8. 环境变量与 secret 图
 
@@ -565,16 +598,20 @@ verify:
 主可达地址，要么退化为在某个容器内执行的 command 检查。不定义执行上下
 文，示例就是误导。
 
-只有所有 required module 验证通过后才提交 active state。`after_start` 中实际
+当前 Runner 已按 Module 顺序执行
+`up → credential probe/reconcile/verify → after_start/local-account reconciliation`，前一个
+Module 的屏障成功后才启动下游。credential verify 已使用严格结构化 Hook response；通用服务
+健康 verify ABI 尚未完整落地，最终只有所有 required module 验证通过后才提交 active state。
+`after_start` 中实际
 属于验证的逻辑迁到 verify；必须修改外部状态的 reconcile hook 要幂等，并在
 journal 中记录补偿动作。
 
 ## 13. 并发、权限与备份
 
 - `.anas/` 根目录、`snapshots/` 和所有 secret/env 文件保持 `0700/0600`；
-- `state/lock` 上使用 flock：apply/rollback/gc 取排他锁，
-  start/stop/restart 取共享锁，"start 不能与 apply 并发"由锁模式自动
-  成立，不需要额外机制；
+- `state/lock` 上使用 flock：apply/rollback/gc、credential rotate 和
+  start/stop/restart 均取排他锁；只读 inventory/dry-run 可取共享锁。生命周期命令也取排他锁，
+  是为了在操作 Docker 前完成未提交 credential transaction 的自动恢复；
 - release 普通资产在封印后改为只读（`sealDeployment`，rename 进
   `deployments/<id>/` 之前执行）。封印按位清除写权限而非赋固定模式，因此可执行文件
   仍可执行（0755 → 0555）、owner-only 的敏感文件仍是 owner-only（0600 → 0400），其余
@@ -644,7 +681,8 @@ snapshot"，修的正是阶段 1-2 要删除的机制；项目未发布、无兼
 
 ### 阶段 4：事务、验证与恢复
 
-1. 诊断性 journal 标记与收敛式 crash recovery（`start` + `gc`）；
+1. 普通 apply 的诊断性 journal 标记与收敛式 crash recovery；凭据轮换的有界持久 journal、
+   commit 前恢复和 commit 后 promotion 已实现；
 2. module verify contract（含每类 check 的执行上下文）；
 3. reconcile 失败自动补偿旧 release，macvlan 等宿主副作用记录补偿动作；
 4. 基于 manifest 扫描的 release/secret GC；
@@ -662,7 +700,7 @@ snapshot"，修的正是阶段 1-2 要删除的机制；项目未发布、无兼
 8. 每个 service 只拿到声明的 secret，secret store 任意键默认不跨边界；
 9. release 在当前源码 module 已变化或不存在时仍能 start/stop；ABI 区间外
    的 release 被明确拒绝并提示 re-apply；
-10. 两个并发 apply 中只有一个能进入事务；apply 期间 start 被共享锁阻塞；
+10. 两个并发 apply 中只有一个能进入事务；apply 期间 start 被同一排他锁阻塞；
 11. 进程在 seal、reconcile、commit 前后被强制终止后，`start` + `gc`
     能收敛回 active deployment，随后可开始新 apply；
 12. GC 不删除 active/previous/staging 引用的 deployment 或 secret
@@ -680,13 +718,14 @@ snapshot"，修的正是阶段 1-2 要删除的机制；项目未发布、无兼
 - 用 active pointer 取代可变 release 目录；
 - 用项目解析锁 + release lock snapshot 取代全局混合 lock；
 - 用版本化 secret 引用和容器级 env 取代值相等推断与 module 全量 env；
-- 用 verify + 幂等收敛恢复取代“目录 rename 即部署成功”。
+- 用 verify + 幂等收敛恢复取代“目录 rename 即部署成功”；需要区分外部状态提交点的凭据轮换使用
+  有界、无明文的持久 journal。
 
 同时要守住两条克制的边界：第一，release 模型保证的是**制品**可回退，
 数据和外部系统状态不在承诺范围内，rollback 的 change-policy 守卫就是
-这条边界的执行者；第二，这是单机、单用户、Compose 之上薄薄一层的工
-具，事务机制的规模不应超过业务本身——active 指针 + 可丢弃 staging +
-幂等收敛已经覆盖了重型 journal 的绝大部分价值。
+这条边界的执行者；第二，这是单机、单用户、Compose 之上薄薄一层的工具，事务机制的规模不应
+超过业务本身——active 指针 + 可丢弃 staging + 幂等收敛覆盖普通部署；只有像凭据轮换这样同时
+跨应用认证状态、Store 与 active pointer 的操作，才使用限定 schema 和恢复决策的持久 journal。
 
 完成阶段 1 和阶段 2 后，当前两个最严重的状态一致性问题会从结构上消失；
 阶段 3 和阶段 4 则把安全边界与生产可恢复性补齐。

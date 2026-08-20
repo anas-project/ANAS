@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: netbird
 version: 0.76.1
-revision: 5
+revision: 6
 app_version: 0.76.1
 abi:
   supports:
@@ -26,6 +26,10 @@ dependencies:
           - oidc
         prefer:
           - oidc
+credentials:
+  consumes:
+    - credential: eturnal.secret
+      projection: TURN_SECRET
 upgrade:
   # Empty, not absent: no release of this module has rewritten its on-disk data
   # format. Absent would mean "unknown" and would block every rollback that

@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `eturnal` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `1.12.2-r5` / `anas.module/v1`.
+> 状态：当前实现；对应 `1.12.2-r6` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -17,7 +17,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_eturnal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-eturnal:1.12.2-r5` | `` | 0 |
+| `anas_eturnal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-eturnal:1.12.2-r6` | `` | 0 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -46,11 +46,17 @@
 
 没有 Web 管理员入口或本地管理员账号。
 
-本 Module 没有声明由 `anas admin local` 管理的账号；`credential` 和 `rotate` 对它不可用。
+本 Module 没有声明由 `anas admin local` 管理的人员账号。`eturnal.secret` 由 deployment credential
+ready barrier 管理，并通过 `anas credential list/rotate` 暴露无明文库存、dry-run 与主动轮换。
 
 ### Secret 边界
 
 - `TURN_SECRET`
+
+`module.yml` 将 `eturnal.secret` 声明为 `shared_secret/reconcile` provider，使用 16-byte hex
+生成策略和 `TURN_SECRET` 投影；Nextcloud 与 NetBird 是显式 consumer。Materialization 根据 Secret
+Store provenance 冻结 `anas`/`external` authority 和 generation，不把值、hash 或 verifier 写入
+`deployment.yml`。
 
 生成值和 lifecycle-managed 凭据以稳定逻辑键保存在 workspace 的 `.anas/secrets.yml`（`0600`）；它是受权限保护的明文，不是加密保险库。明文不得写入 README、lock、日志或普通 `config list`。本地管理员名称和 Secret 引用保存在不含密码的 `.anas/local-admins.yml`；Hook 只在所需生命周期阶段取得明文。`bcrypt` 类型只向运行配置持久化 hash，`plaintext_on_bootstrap` 类型通过 `.anas/runtime-secrets/local-admins/<module>/<id>.password` 的 `0600` 临时投影交给应用。snapshot/backup 必须把 Secret Store、账号库存和应用数据保持在同一恢复点。
 
@@ -73,6 +79,17 @@
 ## Hook、变更与回滚
 
 - Hook command: `go run ./hook`
+- 精确 phases：`calculate`、`render_env`、`services`、`after_start`、`credential_probe`、
+  `credential_reconcile`、`credential_verify`。
+- Probe 通过 `docker exec -i` 从 stdin 读取期望值，比较运行容器使用的 `eturnal.yml`；容器或配置
+  路径不可用返回 `unavailable`，不得误判为 mismatch。ANAS authority 的 mismatch/missing 才会重启
+  容器并重新 probe；external authority 只允许 probe/verify。
+- Candidate 与 previous 各自携带 `TURN_SECRET` 投影。Candidate 失败时先停止 candidate，再启动
+  previous，由同一幂等屏障把无状态 Eturnal 配置恢复为 previous 的期望值；Store 不在验证前提交。
+- 主动轮换使用无明文 journal 记录 ID、代次和 phase。Store 提交前的中断恢复 previous；Store
+  已提交但 promotion 未完成时，排他运行时操作依据 `rotation_id/generation` 完成 candidate promotion。
+- 成功轮换后，普通 rollback 不能只切回旧制品：previous generation 与 Store 不同会返回
+  `credential_store_mismatch`，当前需恢复匹配 snapshot。
 - `credential_rotate`、`data_migrate` 和 `immutable` 禁止普通编辑；声明的生命周期操作必须更新应用持久状态。
 - 本地管理员轮换只在 Module handler 成功后提交生成 Secret；失败会保留或恢复旧应用凭据。
 
@@ -84,4 +101,5 @@
 
 ## 当前限制
 
-TURN Secret 是机器凭据，不应作为人员密码查询或共享。
+TURN Secret 是机器凭据，不应作为人员密码查询或共享。当前 verify 校验实际运行配置与容器可用性，
+尚未执行完整 TURN 鉴权握手；resource credential、Samba 和本地管理员也尚未迁入这一统一执行器。

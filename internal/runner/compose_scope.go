@@ -51,6 +51,9 @@ func (a *app) runCompose(dir, module, composeFile string, env map[string]string,
 			return err
 		}
 	}
+	if a.suppressSensitiveOutput {
+		return a.compose.RunFileQuiet(dir, project, composeFile, env, args...)
+	}
 	return a.compose.RunFile(dir, project, composeFile, env, args...)
 }
 
@@ -58,6 +61,9 @@ func (a *app) outputCompose(dir, module, composeFile string, env map[string]stri
 	project, err := composeProjectName(module, env)
 	if err != nil {
 		return "", err
+	}
+	if a.suppressSensitiveOutput {
+		return a.compose.OutputFileQuiet(dir, project, composeFile, env, args...)
 	}
 	return a.compose.OutputFile(dir, project, composeFile, env, args...)
 }

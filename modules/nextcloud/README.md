@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `nextcloud` |
-| 版本 / revision | `34.0.2-r9` |
+| 版本 / revision | `34.0.2-r10` |
 | 状态 | `release` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -124,6 +124,9 @@ anas config plan -w /srv/anas
 
 持久数据应随 workspace 的 snapshot/backup 一起保护。数据库 Consumer 还必须备份所绑定的数据库 Resource；生成 Secret 和本地管理员状态也必须与数据保持同一恢复点。
 
+`TURN_SECRET` 通过 `credentials.consumes` 显式绑定到 `eturnal.secret`。Runner 只有在 Eturnal 的
+credential ready barrier 验证成功后才启动 Nextcloud；本 Module 不拥有或自行轮换该值。
+
 ```bash
 anas plan -c /srv/anas/config.yml
 anas config list nextcloud -w /srv/anas
@@ -143,7 +146,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`34.0.2-r9`（reviewed 2026-08-13）
+- Module version / 版本：`34.0.2-r10`（reviewed 2026-08-13）
 - Timezone / 时区：`partial` — Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
 - Language scope / 语言范围：Nextcloud Web UI
 - Selection / 选择方式：`browser`

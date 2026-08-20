@@ -23,21 +23,103 @@ func hookSupportsPhase(hook HookConfig, phase string) bool {
 	}
 	if len(hook.Phases) == 0 {
 		// Legacy v1 Hooks keep the lifecycle they were published with. validate
-		// is opt-in because an old default/no-op branch is not proof that a
-		// configuration was checked.
-		return phase != "validate"
+		// and credential lifecycle phases are opt-in because an old default/no-op
+		// branch is not proof that validation or a credential transition ran.
+		return phase != "validate" && !strings.HasPrefix(phase, "credential_")
 	}
 	return contains(hook.Phases, phase)
 }
 
 type hookRequest struct {
-	ABI          string                 `json:"abi"`
-	Phase        string                 `json:"phase"`
-	Module       string                 `json:"module"`
-	Workdir      string                 `json:"workdir"`
-	Env          map[string]string      `json:"env"`
-	Secrets      map[string]string      `json:"secrets"`
-	LocalAccount *localAccountOperation `json:"local_account,omitempty"`
+	ABI          string                   `json:"abi"`
+	Phase        string                   `json:"phase"`
+	Module       string                   `json:"module"`
+	Workdir      string                   `json:"workdir"`
+	Env          map[string]string        `json:"env"`
+	Secrets      map[string]string        `json:"secrets"`
+	LocalAccount *localAccountOperation   `json:"local_account,omitempty"`
+	Credential   *credentialHookOperation `json:"credential,omitempty"`
+}
+
+// runCredentialHook is deliberately stricter and quieter than the general
+// Hook path. Credential lifecycle stderr and arbitrary response fields are not
+// propagated because either could contain a rejected candidate value.
+func (a *app) runCredentialHook(mod Module, phase, workdir string, env map[string]string, credential deploymentCredential) (credentialHookResult, error) {
+	handler := ""
+	switch phase {
+	case "credential_probe":
+		handler = credential.Lifecycle.Probe
+	case "credential_reconcile":
+		handler = credential.Lifecycle.Reconcile
+	case "credential_verify":
+		handler = credential.Lifecycle.Verify
+	default:
+		return credentialHookResult{}, fmt.Errorf("credential %s requested unsupported hook phase %s", credential.ID, phase)
+	}
+	if handler == "" || !hookSupportsPhase(mod.Hook, phase) {
+		return credentialHookResult{}, fmt.Errorf("module %s has no declared %s handler for credential %s", mod.Name, phase, credential.ID)
+	}
+	desired := env[credential.SecretKey]
+	if desired == "" {
+		return credentialHookResult{}, fmt.Errorf("credential %s desired projection is missing", credential.ID)
+	}
+	requestEnv := cloneMap(env)
+	delete(requestEnv, credential.SecretKey)
+	secrets := a.scopedSecrets(mod.Name)
+	delete(secrets, credential.SecretKey)
+	secrets[credentialDesiredSecretKey] = desired
+	req := hookRequest{
+		ABI: currentModuleABI, Phase: phase, Module: mod.Name, Workdir: workdir,
+		Env: requestEnv, Secrets: secrets,
+		Credential: &credentialHookOperation{
+			Handler: handler, CredentialID: credential.ID, SecretKey: credential.SecretKey,
+			DesiredSecretKey: credentialDesiredSecretKey, Authority: credential.Authority,
+			Generation: credential.Generation,
+		},
+	}
+	in, err := json.Marshal(req)
+	if err != nil {
+		return credentialHookResult{}, err
+	}
+	command, err := a.hookCommand(mod, workdir)
+	if err != nil {
+		return credentialHookResult{}, err
+	}
+	cmd := exec.Command(command[0], command[1:]...)
+	cmd.Dir = mod.SourceDir
+	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
+	if err != nil {
+		return credentialHookResult{}, err
+	}
+	cmd.Env = append(os.Environ(), "GOCACHE="+cacheDir)
+	cmd.Stdin = bytes.NewReader(in)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = io.Discard
+	if err := cmd.Run(); err != nil {
+		return credentialHookResult{}, fmt.Errorf("%s hook %s failed for credential %s", mod.Name, phase, credential.ID)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
+	decoder.DisallowUnknownFields()
+	var resp hookResponse
+	if err := decoder.Decode(&resp); err != nil {
+		return credentialHookResult{}, fmt.Errorf("%s hook %s returned invalid credential response", mod.Name, phase)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return credentialHookResult{}, fmt.Errorf("%s hook %s returned more than one credential response", mod.Name, phase)
+	}
+	if fields := credentialHookMutationFields(resp); len(fields) > 0 {
+		return credentialHookResult{}, fmt.Errorf("%s hook %s returned forbidden fields: %s", mod.Name, phase, strings.Join(fields, ", "))
+	}
+	if resp.Credential == nil || resp.Credential.CredentialID != credential.ID {
+		return credentialHookResult{}, fmt.Errorf("%s hook %s did not identify credential %s", mod.Name, phase, credential.ID)
+	}
+	resp.Credential.Status = strings.ToLower(strings.TrimSpace(resp.Credential.Status))
+	if !contains([]string{"match", "missing", "mismatch", "unavailable", "unsupported", "reconciled"}, resp.Credential.Status) {
+		return credentialHookResult{}, fmt.Errorf("%s hook %s returned an invalid status for credential %s", mod.Name, phase, credential.ID)
+	}
+	return *resp.Credential, nil
 }
 
 func (a *app) runLocalAccountHook(mod Module, phase, workdir string, env map[string]string, operation localAccountOperation, secrets map[string]string) (hookResponse, error) {
@@ -65,9 +147,14 @@ func (a *app) runLocalAccountHook(mod Module, phase, workdir string, env map[str
 	cmd.Env = append(os.Environ(), "GOCACHE="+cacheDir)
 	cmd.Stdin = bytes.NewReader(in)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	cmd.Stdout = &stdout
+	if a.suppressSensitiveOutput {
+		cmd.Stderr = io.Discard
+	} else {
+		cmd.Stderr = &stderr
+	}
 	if err := cmd.Run(); err != nil {
-		if stderr.Len() > 0 {
+		if !a.suppressSensitiveOutput && stderr.Len() > 0 {
 			return hookResponse{}, fmt.Errorf("%s hook %s: %w: %s", mod.Name, phase, err, strings.TrimSpace(stderr.String()))
 		}
 		return hookResponse{}, fmt.Errorf("%s hook %s: %w", mod.Name, phase, err)
@@ -101,7 +188,25 @@ type hookResponse struct {
 	InternalEnv []string `json:"internal_env"`
 	// Warnings report recoverable adaptation problems. They never make the hook
 	// fail; the runner renders them according to the command's output mode.
-	Warnings []string `json:"warnings"`
+	Warnings   []string              `json:"warnings"`
+	Credential *credentialHookResult `json:"credential,omitempty"`
+}
+
+func credentialHookMutationFields(resp hookResponse) []string {
+	fields := []string{}
+	for _, field := range validationMutationFields(resp) {
+		if field != "credential" {
+			fields = append(fields, field)
+		}
+	}
+	if len(resp.Plan) > 0 {
+		fields = append(fields, "plan")
+	}
+	if len(resp.Warnings) > 0 {
+		fields = append(fields, "warnings")
+	}
+	sort.Strings(fields)
+	return fields
 }
 
 type dockerCopy struct {
@@ -146,9 +251,13 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	cmd.Stdin = bytes.NewReader(in)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	if a.suppressSensitiveOutput {
+		cmd.Stderr = io.Discard
+	} else {
+		cmd.Stderr = &stderr
+	}
 	if err := cmd.Run(); err != nil {
-		if stderr.Len() > 0 {
+		if !a.suppressSensitiveOutput && stderr.Len() > 0 {
 			return hookResponse{}, fmt.Errorf("%s hook %s: %w: %s", mod.Name, phase, err, stderr.String())
 		}
 		return hookResponse{}, fmt.Errorf("%s hook %s: %w", mod.Name, phase, err)
@@ -160,8 +269,10 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
 		return hookResponse{}, fmt.Errorf("%s hook %s returned invalid JSON: %w", mod.Name, phase, err)
 	}
-	for _, warning := range resp.Warnings {
-		emitWarning(a.jsonMode, "module_localization_fallback", "%s hook %s: %s", mod.Name, phase, warning)
+	if !a.suppressSensitiveOutput {
+		for _, warning := range resp.Warnings {
+			emitWarning(a.jsonMode, "module_localization_fallback", "%s hook %s: %s", mod.Name, phase, warning)
+		}
 	}
 	return resp, nil
 }

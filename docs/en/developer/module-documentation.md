@@ -162,6 +162,68 @@ refresh only an existing `generated/module-hook` record, never
 `lifecycle_managed`, `local_admin`, or another provenance, and an atomic
 rejection does not echo values or free-form provenance.
 
+### Static credential declarations and lifecycle ABI
+
+Modules establish machine-credential relationships explicitly; Core never
+guesses from names such as `PASSWORD`, `TOKEN`, or `KEY`:
+
+```yaml
+credentials:
+  provides:
+    - id: eturnal.secret
+      secret_key: TURN_SECRET
+      type: shared_secret
+      rotation_mode: reconcile
+      generation: {kind: hex, length: 16}
+      lifecycle:
+        probe: probe-eturnal-secret
+        reconcile: reconcile-eturnal-secret
+        verify: verify-eturnal-secret
+  consumes:
+    - credential: eturnal.secret
+      projection: TURN_SECRET
+```
+
+A provider ID must use its Module's lower-case dotted namespace. Secret keys
+and projections are upper-snake environment keys, and a consumer projection
+must also appear in `config.consumes`. A `reconcile` provider declares a
+`password` or `hex` generation policy of at least 16, all three handlers, and
+explicit `credential_probe`, `credential_reconcile`, and `credential_verify`
+Hook phases. Registry admission checks provider IDs, Secret keys, consumer
+projections, and control-edge references for uniqueness and completeness.
+
+After calculate, materialization freezes authority and generation from Secret
+Store provenance. A matching-owner `generated/module-hook` record is `anas`;
+all other sources are `external`. The deployment manifest stores only IDs,
+owner/consumer relationships, authority, generation, projections, handlers,
+and policy—never values, hashes, or verifiers. A credential consumer creates a
+provider-to-consumer activation edge even without an ordinary dependency.
+
+The credential Hook request carries handler, logical ID, Secret key, authority,
+and generation under `credential`. The desired value exists only in stdin JSON
+as `secrets.ANAS_CREDENTIAL_DESIRED`, never in metadata, host argv, errors, or
+Hook stderr. The only response payload is:
+
+```json
+{"credential":{"credential_id":"eturnal.secret","status":"match","changed":false}}
+```
+
+Probe/verify statuses are `match`, `missing`, `mismatch`, `unavailable`, or
+`unsupported`. A successful reconcile returns `reconciled` with a mutation or
+`match` without one. External authority is probe/verify-only; mismatch requires
+manual action. Ordinary mutation fields, unknown JSON fields, extra JSON
+values, and invalid statuses all fail the ready barrier.
+
+Documentation for an executable `reconcile` provider must show the actual
+`anas credential list`, `anas credential rotate <id> --dry-run`, and rotation
+commands, and state the affected consumers, downtime scope, and what verify
+does and does not prove. Core uses a candidate deployment, value-free journal,
+single Store commit, and automatic crash recovery. A stored value or a
+probe-only record must never be described as rotatable. Resource credentials,
+local administrators, overlap/migrate workflows, and external providers that
+have not migrated to the unified executor must be labeled manual/unsupported
+and point to their specialized workflow.
+
 ### Hook phases and the `validate` ABI
 
 Technical documentation must enumerate the Hook phases a Module actually
@@ -177,11 +239,18 @@ logic:
 A non-empty `logic.hook.phases` list is an exact allowlist. Accepted values are
 `validate`, `calculate`, `render_env`, `runtime_restore`, `services`,
 `after_start`, `local_account_apply`, `local_account_rotate`, and
-`local_account_rollback`. Omitting the field retains the legacy non-`validate`
-compatibility lifecycle; it never assumes that an old Hook validates
-configuration. An explicit empty list is rejected as ambiguous manifest input.
+`local_account_rollback`, plus `credential_probe`, `credential_reconcile`, and
+`credential_verify`. Omitting the field retains the legacy non-`validate`,
+non-credential compatibility lifecycle; it never assumes that an old Hook
+validates configuration or coordinates credentials. An explicit empty list is rejected as ambiguous manifest input.
 A Module must explicitly include `validate` in a non-empty list to receive that
 request.
+
+Deployment activation processes Modules one at a time in dependency order. The
+Runner does not start a downstream Module until the current Module's containers,
+owned-credential probe/reconcile/verify, `after_start` Hook, and local-administrator reconciliation have all succeeded.
+Technical documentation must not describe `after_start` as an asynchronous
+notification sent after every container is already running.
 
 `validate` runs in effective-topology dependency order and only inspects desired
 state. Its request has `phase: "validate"`; `env` is the Module-scoped view with

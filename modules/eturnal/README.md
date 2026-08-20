@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `eturnal` |
-| 版本 / revision | `1.12.2-r5` |
+| 版本 / revision | `1.12.2-r6` |
 | 状态 | `release` |
 | 类别 | `communication` |
 | 运行时 | `compose` |
@@ -44,7 +44,18 @@ modules:
 
 没有 Web 管理员入口或本地管理员账号。
 
-本 Module 没有声明由 `anas admin local` 管理的账号；`credential` 和 `rotate` 对它不可用。
+本 Module 没有声明由 `anas admin local` 管理的人员账号。`eturnal.secret` 是 deployment 管理的
+机器凭据：每次激活都会在下游 Module 启动前自动 probe/verify，只有 ANAS authority 且不匹配时
+才通过重启 Eturnal 幂等协调。可用以下命令查看无明文库存、预演和执行轮换：
+
+```bash
+anas credential list -w /srv/anas
+anas credential rotate eturnal.secret --dry-run -w /srv/anas
+anas credential rotate eturnal.secret -y -w /srv/anas
+```
+
+实际轮换会停止 Eturnal 及受影响的 Nextcloud/NetBird 闭包，验证 candidate 后才一次性提交 Secret
+Store 并 promotion；失败时恢复 previous deployment。
 
 ## 数据库支持
 
@@ -82,7 +93,9 @@ anas status -w /srv/anas
 
 ## 当前限制
 
-TURN Secret 是机器凭据，不应作为人员密码查询或共享。
+TURN Secret 是机器凭据，不应作为人员密码查询或共享。当前 verify 检查运行容器实际读取的
+`eturnal.yml`，尚未执行完整 TURN 鉴权握手；主动轮换因此证明的是运行配置收敛和容器可用性，
+不是端到端 TURN 客户端鉴权。
 
 ## 技术文档
 
@@ -93,7 +106,7 @@ TURN Secret 是机器凭据，不应作为人员密码查询或共享。
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`1.12.2-r5`（reviewed 2026-08-17）
+- Module version / 版本：`1.12.2-r6`（reviewed 2026-08-17）
 - Timezone / 时区：`container` — The TURN service receives TZ for process and log timestamps.
 - Language scope / 语言范围：TURN protocol service
 - Selection / 选择方式：`none`

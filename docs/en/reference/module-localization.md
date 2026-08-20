@@ -10,15 +10,15 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [collabora](#collabora) | 26.4.2-r4 | container | supported | integration | not_consumed | not_consumed | 43 |
 | [ddns_go](#ddns_go) | 6.17.4-r5 | container | supported | application | not_consumed | not_consumed | 2 |
 | [ddns_updater](#ddns_updater) | 2.10.0-r3 | application | fixed | fixed | not_consumed | not_consumed | 1 |
-| [eturnal](#eturnal) | 1.12.2-r5 | container | not_applicable | none | not_applicable | not_applicable | 0 |
+| [eturnal](#eturnal) | 1.12.2-r6 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [freeradius](#freeradius) | 3.2.10-r3 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [lam](#lam) | 9.6.0-r7 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r4 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [llng](#llng) | 2.23.2-r10 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [mariadb](#mariadb) | 12.3.2-r3 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [meshcentral](#meshcentral) | 1.2.4-r7 | container | supported | browser | not_consumed | not_consumed | 30 |
-| [netbird](#netbird) | 0.76.1-r5 | partial | fixed | fixed | not_consumed | not_consumed | 1 |
-| [nextcloud](#nextcloud) | 34.0.2-r9 | partial | supported | browser | fallback | fallback | 58 |
+| [netbird](#netbird) | 0.76.1-r6 | partial | fixed | fixed | not_consumed | not_consumed | 1 |
+| [nextcloud](#nextcloud) | 34.0.2-r10 | partial | supported | browser | fallback | fallback | 58 |
 | [oauth2_proxy](#oauth2_proxy) | 7.15.3-r4 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [postgres](#postgres) | 18.4.0-r3 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [samba_dc](#samba_dc) | 4.23.6-r8 | system | not_applicable | none | not_applicable | not_applicable | 0 |
@@ -70,7 +70,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## eturnal
 
-- **Version / 版本：** `1.12.2-r5`; reviewed 2026-08-17
+- **Version / 版本：** `1.12.2-r6`; reviewed 2026-08-17
 - **Timezone / 时区：** `container` — The TURN service receives TZ for process and log timestamps.
 - **Language / 语言：** `not_applicable`, `none` — TURN protocol service
 - **ANAS globals / 全局默认：** `default_language=not_applicable`; `default_locale=not_applicable`
@@ -143,7 +143,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## netbird
 
-- **Version / 版本：** `0.76.1-r5`; reviewed 2026-08-13
+- **Version / 版本：** `0.76.1-r6`; reviewed 2026-08-13
 - **Timezone / 时区：** `partial` — Dashboard, signal, and management receive the module environment; the relay service does not currently receive TZ.
 - **Language / 语言：** `fixed`, `fixed` — NetBird Dashboard v2.90.9
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -154,7 +154,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## nextcloud
 
-- **Version / 版本：** `34.0.2-r9`; reviewed 2026-08-13
+- **Version / 版本：** `34.0.2-r10`; reviewed 2026-08-13
 - **Timezone / 时区：** `partial` — Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
 - **Language / 语言：** `supported`, `browser` — Nextcloud Web UI
 - **ANAS globals / 全局默认：** `default_language=fallback`; `default_locale=fallback`

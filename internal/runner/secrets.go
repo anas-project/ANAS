@@ -46,6 +46,8 @@ type secretMetadata struct {
 	Owner      string `yaml:"owner" json:"owner"`
 	Kind       string `yaml:"kind" json:"kind"`
 	Provenance string `yaml:"provenance" json:"provenance"`
+	Generation uint64 `yaml:"generation,omitempty" json:"generation,omitempty"`
+	RotationID string `yaml:"rotation_id,omitempty" json:"rotation_id,omitempty"`
 }
 
 type secretStoreDocument struct {
@@ -58,6 +60,8 @@ type secretStoreRecord struct {
 	Owner      string `yaml:"owner"`
 	Kind       string `yaml:"kind"`
 	Provenance string `yaml:"provenance"`
+	Generation uint64 `yaml:"generation,omitempty"`
+	RotationID string `yaml:"rotation_id,omitempty"`
 }
 
 func loadSecretStoreFile(path string) (*secretStore, error) {
@@ -88,7 +92,10 @@ func loadSecretStoreFile(path string) (*secretStore, error) {
 			return nil, fmt.Errorf("secret store keys collide after canonicalization at %s", canonical)
 		}
 		s.values[canonical] = record.Value
-		s.metadata[canonical] = secretMetadata{Owner: record.Owner, Kind: record.Kind, Provenance: record.Provenance}
+		s.metadata[canonical] = secretMetadata{
+			Owner: record.Owner, Kind: record.Kind, Provenance: record.Provenance,
+			Generation: record.Generation, RotationID: record.RotationID,
+		}
 	}
 	return s, nil
 }
@@ -273,7 +280,10 @@ func (s *secretStore) Save() error {
 		if meta.Kind == "" {
 			meta = secretMetadata{Owner: "runner", Kind: "generated", Provenance: "runtime"}
 		}
-		doc.Secrets[k] = secretStoreRecord{Value: s.values[k], Owner: meta.Owner, Kind: meta.Kind, Provenance: meta.Provenance}
+		doc.Secrets[k] = secretStoreRecord{
+			Value: s.values[k], Owner: meta.Owner, Kind: meta.Kind, Provenance: meta.Provenance,
+			Generation: meta.Generation, RotationID: meta.RotationID,
+		}
 	}
 	if err := writeYAMLAtomic(s.path, &doc, 0600); err != nil {
 		return err

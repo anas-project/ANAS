@@ -52,6 +52,8 @@ type Module struct {
 	IdentityAuthentication *IdentityAuthentication
 	ManagementSurfaces     []ManagementSurface
 	LocalAccounts          []LocalAccount
+	CredentialProviders    []CredentialProvider
+	CredentialConsumers    []CredentialConsumer
 	UseHostLAN             string
 	PublishesDomain        bool
 	Hook                   HookConfig
@@ -142,6 +144,30 @@ type ManagementSurface struct {
 }
 
 type LocalAccount = deployment.LocalAccount
+type CredentialProvider = deployment.CredentialProvider
+type CredentialConsumer = deployment.CredentialConsumer
+type deploymentCredentialGenerator = deployment.CredentialGenerator
+type deploymentCredentialLifecycle = deployment.CredentialLifecycle
+
+const credentialDesiredSecretKey = "ANAS_CREDENTIAL_DESIRED"
+
+// credentialHookOperation is value-free metadata for the structured lifecycle
+// ABI. The desired value travels only in hookRequest.Secrets under the
+// dedicated key above.
+type credentialHookOperation struct {
+	Handler          string `json:"handler"`
+	CredentialID     string `json:"credential_id"`
+	SecretKey        string `json:"secret_key"`
+	DesiredSecretKey string `json:"desired_secret_key"`
+	Authority        string `json:"authority"`
+	Generation       uint64 `json:"generation"`
+}
+
+type credentialHookResult struct {
+	CredentialID string `json:"credential_id"`
+	Status       string `json:"status"`
+	Changed      bool   `json:"changed,omitempty"`
+}
 
 // localAccountOperation is ephemeral hook input for a credential transaction.
 // Passwords are intentionally absent; current and candidate values travel in

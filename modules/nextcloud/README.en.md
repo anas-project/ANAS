@@ -8,7 +8,7 @@ File sync, sharing, online office, Memories, and Talk platform.
 | Item | Value |
 | --- | --- |
 | Module | `nextcloud` |
-| Version / revision | `34.0.2-r9` |
+| Version / revision | `34.0.2-r10` |
 | Status | `release` |
 | Category | `app` |
 | Runtime | `compose` |
@@ -131,6 +131,11 @@ Parameters with `editable=false` cannot be completed by ordinary `config set`. A
 ## Storage, backup, and verification
 
 Protect persistent state with the workspace snapshot/backup. Database consumers must also back up their bound database resource; generated secrets and local-administrator state must share the same recovery point.
+
+`TURN_SECRET` is explicitly bound to `eturnal.secret` through
+`credentials.consumes`. The Runner starts Nextcloud only after Eturnal's
+credential ready barrier verifies successfully; this Module neither owns nor
+rotates that value.
 
 ```bash
 anas plan -c /srv/anas/config.yml

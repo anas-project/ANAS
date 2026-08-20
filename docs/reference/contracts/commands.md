@@ -2,7 +2,7 @@
 
 > 状态：**已实现**（`init` / `plan` / `lock` / `render` / `build` / `apply` /
 > `start` / `restart` / `stop` / `rollback` / `status` / `deployments` /
-> `config` / `module`）。
+> `config` / `admin` / `credential` / `module`）。
 > 通用约定（流分离、退出码、枚举、时间与大小、路径、版本、最小信封）见
 > [通用约定](index.md)，本文不再重复。
 > `snapshot` 见 [snapshot.md](snapshot.md)，`backup` 见 [backup.md](backup.md)。
@@ -21,6 +21,8 @@
 - [status](#status)
 - [deployments](#deployments)
 - [config](#config)
+- [credential](#credential)
+- [admin local](#admin-local)
 - [module](#module)
 - [help](#help)
 
@@ -239,6 +241,7 @@ warning 记录到 stderr，`code` 取 `no_snapshot_backend` 或 `data_not_subvol
 | --- | --- | --- |
 | `deployment_not_ready` | 4 | `--deployment` 指的制品状态不是 ready |
 | `guarded_changes` | 4 | 见上 |
+| `credential_store_mismatch` | 4 | 目标 deployment 的凭据代次/authority 与 Store 不一致；不能用 `--allow-risky` 绕过 |
 | `confirmation_required` | 3 | `--no-snapshot`、或无法快照仍要继续，而无从确认 |
 | `start_failed` | 1 | 启动失败；已尽力把旧部署重新拉起 |
 
@@ -274,14 +277,21 @@ anas start|restart|stop [MODULE...] [-w WORKSPACE] [--json]
 `modules` 是 chain 展开后实际操作涉及的 module，按依赖正序列出，不是"停/起了几个"的统计。调用方**不应**期待此外
 的结果字段。未加 `--json` 时 stdout 为空。
 
-进度 `phase`：`stop-containers`、`start-containers`、`after-start-hooks`，
-`unit` 为 `modules`。
+进度 `phase`：停止为 `stop-containers`，启动为 `activate-modules`，`unit` 为
+`modules`。一次 `activate-modules` 包含当前 Module 的容器启动、owned credential
+probe/reconcile/verify 和 after-start/local-admin ready barrier；该屏障成功后才处理下游 Module，
+不再把所有容器启动与 Hook 分成两个全局阶段。
+
+三条生命周期命令取排他运行时锁。若存在未完成 credential transaction，它们先按 Store
+`rotation_id/generation` 自动恢复 previous 或完成 candidate promotion，再执行用户请求。
 
 | code | 退出码 | 何时 |
 | --- | --- | --- |
 | `no_active_deployment` | 4 | 还没 apply 过 |
 | `compose_missing` | 4 | 没有 docker compose |
 | `deployment_unreadable` | 4 | 活跃部署的制品坏了或不在 |
+| `credential_store_mismatch` | 4 | 活跃 deployment 的凭据代次/authority 与 Store 不一致；先恢复匹配快照 |
+| `lock_failed` | 1 | 无法取得运行时锁，或 credential transaction 自动恢复失败 |
 | `start_failed` / `stop_failed` | 1 | 动手之后失败 |
 
 ## rollback
@@ -315,6 +325,7 @@ anas rollback [DEPLOYMENT_ID] -w WORKSPACE [--allow-risky] [--json]
 | `already_active` | 4 | 指定的部署已经是活跃的 |
 | `rollback_data_breaking` | 4 | 目标 module 声明了这次降级会重写磁盘数据；`--allow-risky` **不能**绕过 |
 | `rollback_guarded_changes` | 4 | 跨越守卫变更；`--allow-risky` 可以绕过 |
+| `credential_store_mismatch` | 4 | 目标 deployment 的凭据代次/authority 与 Store 不一致；`--allow-risky` 不能绕过，需恢复匹配快照 |
 
 `rollback_data_breaking` 与 `rollback_guarded_changes` 分成两个码是有意的：
 后者描述的是运行时不知道而操作者可能知道的事，前者描述的是运行时**知道**的事。
@@ -557,6 +568,82 @@ Store 或 lock。
 | `secrets_unreadable` | 4 | secret store 读不出来 |
 | `state_unreadable` | 4 | 已应用设置指纹等 workspace 状态无法读取 |
 | `write_failed` | 1 | 写配置失败 |
+
+## credential
+
+```text
+anas credential list [-w WORKSPACE] [--json]
+anas credential rotate CREDENTIAL_ID [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]
+anas credential rotate --all [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]
+```
+
+`list` 读取 active deployment 冻结的机器凭据库存。它只返回逻辑身份和状态，不返回值、hash、
+verifier 或其他可用于离线猜测的摘要。当前接入范围是声明了
+`credentials.provides/consumes` 的 deployment 凭据；resource credential、本地管理员和外部
+API token 仍分别由原有库存/配置边界管理，不能因为 Secret Store 中存在一个值就被宣称为可轮换。
+
+```json
+{
+  "api_version": "anas.dev/cli/v1", "ok": true,
+  "workspace": "/data/ws", "deployment_id": "20260820T010203Z-deadbeef",
+  "credentials": [{
+    "id": "eturnal.secret", "owner": "eturnal",
+    "consumers": ["netbird", "nextcloud"], "kind": "shared_secret",
+    "authority": "anas", "generation": 2,
+    "rotation_mode": "reconcile", "status": "rotatable"
+  }]
+}
+```
+
+`status` 取 `rotatable` / `manual` / `unsupported` / `orphaned` /
+`recovery_required`。有未完成事务时，`list` 仍可读，并额外返回不含明文的
+`recovery: {transaction_id, phase, credentials[]}`。
+
+`--dry-run` 与实际执行共用 planner，并读取 active state 与 Secret Store presence/generation；
+它不生成随机数、不创建 candidate、不写 journal/Store、不调用 Hook 或 Docker。结果中的
+`executable` 表示 blockers 是否为空：
+
+```json
+{
+  "api_version": "anas.dev/cli/v1", "ok": true,
+  "workspace": "/data/ws", "dry_run": true, "executable": true,
+  "plan": {
+    "previous_deployment": "20260820T010203Z-deadbeef",
+    "credential_order": ["eturnal.secret"],
+    "affected_modules": ["eturnal", "netbird", "nextcloud"],
+    "stop_order": ["nextcloud", "netbird", "eturnal"],
+    "activation_order": ["eturnal", "netbird", "nextcloud"],
+    "blockers": [], "manual": [], "force": false, "all": false
+  }
+}
+```
+
+实际执行要求 active runtime 为 `running`，并在非交互调用中要求 `-y`。Runner 先生成独立
+candidate projection，停止 previous 的全部或受影响闭包，按 ready barrier 顺序执行
+probe/reconcile/verify；只有全部验证通过后才用一次原子 Store Save 提交值、generation 与
+`rotation_id`，随后 promotion candidate。`--all` 选择 active deployment 中所有可执行
+`reconcile` 目标；manual 目标不会被悄悄改写，也没有 `--allow-partial`。
+
+`--force` 仅接管同时具备 ANAS generator、完整 probe/reconcile/verify 和有效 owner/consumer
+图的 external authority 记录。它不是跳过 blocker 的通用开关。
+
+成功 JSON 同时返回 `plan` 与 `rotation`；`rotation.status` 为 `complete`。失败使用
+`error.detail.rotation.status` 区分 `not_started`、`candidate_failed`、`previous_restored`、
+`previous_restore_failed` 与 `recovery_required`。Store 提交前的失败先停止 candidate 并恢复
+previous；Store 提交后不再回写旧 Store，而由下一次排他运行时操作依据 journal 与
+`rotation_id/generation` 自动完成 candidate promotion。任何 journal、JSON、进度或 Hook stderr
+都不得包含凭据值。
+
+| code | 退出码 | 何时 |
+| --- | --- | --- |
+| `usage` | 2 | 子命令、目标数量或 `ID`/`--all` 组合不合法 |
+| `confirmation_required` | 3 | 实际轮换在非 TTY 中未给 `-y`，或交互确认被拒绝 |
+| `no_active_deployment` / `deployment_unreadable` | 4 | 没有可读取的 active deployment |
+| `credential_recovery_required` | 4 | dry-run 发现未完成事务；只读 list 仍可报告恢复状态 |
+| `credential_rotation_blocked` | 4 | planner、运行状态或 Store generation/presence preflight 有 blocker |
+| `runtime_lock_failed` | 4 | 无法取得 workspace 运行时锁或读取待恢复 journal |
+| `compose_missing` | 4 | 实际执行需要 Compose，但宿主不可用 |
+| `credential_rotation_failed` | 1 | candidate、补偿、Store commit 或 promotion 失败；具体状态见 detail |
 
 ## admin local
 

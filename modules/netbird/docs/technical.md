@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `netbird` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `0.76.1-r5` / `anas.module/v1`.
+> 状态：当前实现；对应 `0.76.1-r6` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,7 +20,7 @@
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_dashboard` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-dashboard:2.90.9` | `traefik` | 0 |
-| `anas_management` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r5` | `traefik` | 2 |
+| `anas_management` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r6` | `traefik` | 2 |
 | `anas_relay` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-relay:0.76.1` | `traefik` | 0 |
 | `anas_signal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-signal:0.76.1` | `traefik` | 1 |
 <!-- generated:compose-topology:end -->
@@ -61,6 +61,10 @@
 - `NETBIRD_RELAY_AUTH_SECRET`
 - `TURN_SECRET`
 
+`credentials.consumes` 将 `TURN_SECRET` 显式绑定到 `eturnal.secret`。该声明冻结到 deployment，
+并产生 Eturnal→NetBird 激活 edge；NetBird 只消费 candidate/previous 各自的投影，不拥有该凭据，
+也不实现它的 reconcile handler。
+
 生成值和 lifecycle-managed 凭据以稳定逻辑键保存在 workspace 的 `.anas/secrets.yml`（`0600`）；它是受权限保护的明文，不是加密保险库。明文不得写入 README、lock、日志或普通 `config list`。本地管理员名称和 Secret 引用保存在不含密码的 `.anas/local-admins.yml`；Hook 只在所需生命周期阶段取得明文。`bcrypt` 类型只向运行配置持久化 hash，`plaintext_on_bootstrap` 类型通过 `.anas/runtime-secrets/local-admins/<module>/<id>.password` 的 `0600` 临时投影交给应用。snapshot/backup 必须把 Secret Store、账号库存和应用数据保持在同一恢复点。
 
 ## 数据库支持
@@ -92,6 +96,7 @@
 ## Hook、变更与回滚
 
 - Hook command: `go run ./hook`
+- Eturnal 的 credential ready barrier 在本 Module 启动前完成；owner verify 失败时不会启动 NetBird。
 - `credential_rotate`、`data_migrate` 和 `immutable` 禁止普通编辑；声明的生命周期操作必须更新应用持久状态。
 - 本地管理员轮换只在 Module handler 成功后提交生成 Secret；失败会保留或恢复旧应用凭据。
 

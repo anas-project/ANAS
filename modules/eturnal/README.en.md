@@ -8,7 +8,7 @@ TURN relay for realtime communication modules.
 | Item | Value |
 | --- | --- |
 | Module | `eturnal` |
-| Version / revision | `1.12.2-r5` |
+| Version / revision | `1.12.2-r6` |
 | Status | `release` |
 | Category | `communication` |
 | Runtime | `compose` |
@@ -44,7 +44,21 @@ There is currently no generic `anas user/group/password` command. Directory-back
 
 There is no Web administration surface or local administrator.
 
-This module declares no account managed by `anas admin local`; `credential` and `rotate` are unavailable for it.
+This module declares no human account managed by `anas admin local`.
+`eturnal.secret` is a deployment-managed machine credential: every activation
+probes and verifies it before downstream Modules start, and only an ANAS-owned
+mismatch is reconciled by an idempotent Eturnal restart. The unified
+credential workflow is available through:
+
+```bash
+anas credential list -w /srv/anas
+anas credential rotate eturnal.secret --dry-run -w /srv/anas
+anas credential rotate eturnal.secret -y -w /srv/anas
+```
+
+An actual rotation stops Eturnal and the affected Nextcloud/NetBird closure.
+It commits the Secret Store and promotes the candidate only after verification;
+failure restores the previous deployment.
 
 ## Database support
 
@@ -89,7 +103,11 @@ anas status -w /srv/anas
 
 ## Current limitations
 
-The TURN secret is a machine credential and must not be treated as a human password.
+The TURN secret is a machine credential and must not be treated as a human
+password. Verification checks the `eturnal.yml` used by the running container;
+it does not yet perform a complete TURN authentication exchange. Proactive
+rotation therefore proves running-configuration convergence and container
+availability, not end-to-end TURN client authentication.
 
 ## Technical documentation
 

@@ -196,7 +196,7 @@ The current manifests declare the following compatibility. The runner rejects in
 
 Ordinary deployment inputs such as DNS API tokens remain in the system-managed `config.yml`. The file is `0600`; inventory and plan output redact declared sensitive values, and operators change them through configuration commands such as `config set`. Do not commit an external source containing real secrets.
 
-Only `lifecycle_managed` credentials are atomically extracted during import: module-local administrator passwords and settings whose Manifest effect is `credential_rotate`, where an application API or CLI is required and ordinary apply cannot update the live credential correctly. These values and system-generated passwords share the versioned `.anas/secrets.yml` store (`0600`), with stable logical keys plus owner, kind, and provenance metadata. Legacy `.anas/secrets.generated.yml` is unsupported and is never migrated automatically.
+Only `lifecycle_managed` credentials are atomically extracted during import: module-local administrator passwords and settings whose Manifest effect is `credential_rotate`, where an application API or CLI is required and ordinary apply cannot update the live credential correctly. These values and system-generated passwords share the versioned `.anas/secrets.yml` store (`0600`), with stable logical keys plus owner, kind, and provenance metadata; records committed by deployment-driven rotation may also carry a generation and a value-free rotation ID. Legacy `.anas/secrets.generated.yml` is unsupported and is never migrated automatically.
 
 `config secret list` returns store keys and kinds only; only explicit `config secret get` reveals clear text. A failed import changes none of `config.yml`, `secrets.yml`, or the managed-config digest. Backups and snapshots must protect both files as plaintext-sensitive data.
 
@@ -299,6 +299,7 @@ the matching `config.yml`.
 | `config set global.timezone UTC` | Change and execute, or report pending | Update digest | Unchanged |
 | Change an ordinary DNS/API token | Change | Update digest | Unchanged |
 | `admin local rotate nextcloud` | Unchanged | Unchanged | Update after application verification |
+| `credential rotate eturnal.secret` | Unchanged | Unchanged | Update value, generation, and rotation ID after candidate verification |
 | Edit `config.yml` by hand | Content changes | Digest does not | Unchanged; plan/apply reject |
 | Snapshot/backup restore | Restore | Restore with config | Restore together |
 
@@ -306,6 +307,37 @@ In short, `config.yml` says what the deployment should be,
 `config-managed.yml` proves that the ANAS CLI wrote that desired state, and
 `secrets.yml` stores credentials that ordinary apply cannot safely change plus
 Runner-generated secrets.
+
+## Deployment machine credentials
+
+Machine credentials declared through `credentials.provides/consumes` use a
+value-free inventory and deployment transaction for rotation:
+
+```bash
+anas credential list -w /srv/anas
+anas credential rotate eturnal.secret --dry-run -w /srv/anas
+anas credential rotate eturnal.secret -y -w /srv/anas
+anas credential rotate --all --dry-run -w /srv/anas
+```
+
+`list` never returns a value, hash, or verifier. `--dry-run` checks active
+runtime state, Store presence/generation, authority, generation policy, Hook
+ABI, and the owner/consumer graph without generating a candidate, writing a
+file, or invoking a Hook or Docker. Actual execution coordinates and verifies
+an independent candidate deployment before committing the Secret Store once
+and promoting it. Failure before Store commit restores previous; an
+interruption after commit is completed by the next exclusive runtime operation.
+
+After rotation, previous has an older generation than the Store. Ordinary
+`rollback` fails with `credential_store_mismatch`, and `--allow-risky` cannot
+bypass it. Restore a snapshot containing the matching Store, deployment, and
+data rather than switching only the artifact pointer.
+
+The unified inventory currently covers frozen machine credentials in the
+active deployment, with `eturnal.secret` as the first executable provider.
+Database resource credentials, local administrators, and external API tokens
+still use their existing boundaries. `--force` cannot bypass a missing
+generator, handler, or verification capability.
 
 ## Module-local administrators
 

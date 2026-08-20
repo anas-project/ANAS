@@ -1017,7 +1017,10 @@ func marshalSecretStore(store *secretStore) []byte {
 	doc := secretStoreDocument{APIVersion: "anas.secrets/v2", Secrets: map[string]secretStoreRecord{}}
 	for key, value := range store.values {
 		meta := store.metadata[key]
-		doc.Secrets[key] = secretStoreRecord{Value: value, Owner: meta.Owner, Kind: meta.Kind, Provenance: meta.Provenance}
+		doc.Secrets[key] = secretStoreRecord{
+			Value: value, Owner: meta.Owner, Kind: meta.Kind, Provenance: meta.Provenance,
+			Generation: meta.Generation, RotationID: meta.RotationID,
+		}
 	}
 	b, _ := yaml.Marshal(&doc)
 	return b

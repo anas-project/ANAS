@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"strings"
+	"time"
 )
 
 // The runner sends the module-hook ABI it speaks; this unreleased format has no legacy aliases.
@@ -22,12 +25,13 @@ func supportedABI(v string) bool {
 }
 
 type hookRequest struct {
-	ABI     string            `json:"abi"`
-	Phase   string            `json:"phase"`
-	Module  string            `json:"module"`
-	Workdir string            `json:"workdir"`
-	Env     map[string]string `json:"env"`
-	Secrets map[string]string `json:"secrets"`
+	ABI        string               `json:"abi"`
+	Phase      string               `json:"phase"`
+	Module     string               `json:"module"`
+	Workdir    string               `json:"workdir"`
+	Env        map[string]string    `json:"env"`
+	Secrets    map[string]string    `json:"secrets"`
+	Credential *credentialOperation `json:"credential,omitempty"`
 }
 
 type hookResponse struct {
@@ -36,6 +40,22 @@ type hookResponse struct {
 	Files           map[string]string `json:"files,omitempty"`
 	DisableServices []string          `json:"disable_services,omitempty"`
 	DockerCopies    []dockerCopy      `json:"docker_copies,omitempty"`
+	Credential      *credentialResult `json:"credential,omitempty"`
+}
+
+type credentialOperation struct {
+	Handler          string `json:"handler"`
+	CredentialID     string `json:"credential_id"`
+	SecretKey        string `json:"secret_key"`
+	DesiredSecretKey string `json:"desired_secret_key"`
+	Authority        string `json:"authority"`
+	Generation       uint64 `json:"generation"`
+}
+
+type credentialResult struct {
+	CredentialID string `json:"credential_id"`
+	Status       string `json:"status"`
+	Changed      bool   `json:"changed,omitempty"`
 }
 
 type dockerCopy struct {
@@ -93,6 +113,13 @@ func fail(err error) {
 	os.Exit(1)
 }
 func handle(req hookRequest) (hookResponse, error) {
+	if strings.HasPrefix(req.Phase, "credential_") {
+		result, err := handleCredential(req)
+		if err != nil {
+			return hookResponse{}, err
+		}
+		return hookResponse{Credential: &result}, nil
+	}
 	env := cloneMap(req.Env)
 	secrets := &secretStore{values: cloneMap(req.Secrets)}
 	switch req.Phase {
@@ -114,6 +141,84 @@ func handle(req hookRequest) (hookResponse, error) {
 	default:
 		return hookResponse{}, nil
 	}
+}
+
+const eturnalCredentialID = "eturnal.secret"
+
+var credentialDockerCommand = func(stdin []byte, args ...string) error {
+	cmd := exec.Command("docker", args...)
+	cmd.Stdin = strings.NewReader(string(stdin))
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	return cmd.Run()
+}
+
+var credentialRetryPause = func() { time.Sleep(250 * time.Millisecond) }
+
+func handleCredential(req hookRequest) (credentialResult, error) {
+	operation := req.Credential
+	if req.Module != "eturnal" || operation == nil || operation.CredentialID != eturnalCredentialID {
+		return credentialResult{}, fmt.Errorf("invalid Eturnal credential operation")
+	}
+	expectedHandler := map[string]string{
+		"credential_probe":     "probe-eturnal-secret",
+		"credential_reconcile": "reconcile-eturnal-secret",
+		"credential_verify":    "verify-eturnal-secret",
+	}[req.Phase]
+	if expectedHandler == "" || operation.Handler != expectedHandler || operation.SecretKey != "TURN_SECRET" {
+		return credentialResult{}, fmt.Errorf("invalid Eturnal credential handler")
+	}
+	desired := req.Secrets[operation.DesiredSecretKey]
+	if desired == "" {
+		return credentialResult{}, fmt.Errorf("missing Eturnal desired credential")
+	}
+	container := req.Env["CONTAINER_PREFIX"] + "eturnal"
+	if container == "eturnal" {
+		return credentialResult{}, fmt.Errorf("missing Eturnal container prefix")
+	}
+	if req.Phase == "credential_reconcile" {
+		if operation.Authority != "anas" {
+			return credentialResult{}, fmt.Errorf("Eturnal credential authority is external")
+		}
+		if err := credentialDockerCommand(nil, "restart", container); err != nil {
+			return credentialResult{}, fmt.Errorf("restart Eturnal credential authority")
+		}
+		for attempt := 0; attempt < 20; attempt++ {
+			status := probeEturnalCredential(container, desired)
+			if status == "match" {
+				return credentialResult{CredentialID: eturnalCredentialID, Status: "reconciled", Changed: true}, nil
+			}
+			if status != "unavailable" {
+				return credentialResult{}, fmt.Errorf("Eturnal credential did not converge after restart")
+			}
+			credentialRetryPause()
+		}
+		return credentialResult{}, fmt.Errorf("Eturnal credential authority did not become ready")
+	}
+	return credentialResult{CredentialID: eturnalCredentialID, Status: probeEturnalCredential(container, desired)}, nil
+}
+
+func probeEturnalCredential(container, desired string) string {
+	const script = `IFS= read -r desired || exit 5
+config_dir=${ANAS_CONFIG_DIR:-${ETURNAL_ETC_DIR:-}}
+[ -n "$config_dir" ] || exit 5
+config=$config_dir/eturnal.yml
+[ -f "$config" ] || exit 4
+escaped=$(printf '%s' "$desired" | sed "s/'/''/g")
+grep -Fqx "  secret: '$escaped'" "$config" || exit 3`
+	err := credentialDockerCommand([]byte(desired+"\n"), "exec", "-i", container, "sh", "-c", script)
+	if err == nil {
+		return "match"
+	}
+	if exit, ok := err.(interface{ ExitCode() int }); ok {
+		switch exit.ExitCode() {
+		case 3:
+			return "mismatch"
+		case 4:
+			return "missing"
+		}
+	}
+	return "unavailable"
 }
 func calculate(module string, env map[string]string, workdir string, secrets *secretStore) error {
 	if module != "eturnal" {

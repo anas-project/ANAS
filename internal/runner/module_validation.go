@@ -141,6 +141,9 @@ func validationMutationFields(resp hookResponse) []string {
 	if len(resp.InternalEnv) > 0 {
 		fields = append(fields, "internal_env")
 	}
+	if resp.Credential != nil {
+		fields = append(fields, "credential")
+	}
 	sort.Strings(fields)
 	return fields
 }
