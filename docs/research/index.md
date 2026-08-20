@@ -6,6 +6,7 @@
 
 | 文档 | 类型 | 状态 |
 | --- | --- | --- |
+| [Nextcloud 搜索方案调研（2026-08-20）](./nextcloud-search-solution-research-2026-08-20.md) | 当前搜索基线、全文/SQL/语义方案与 Elasticsearch 实施门槛 | 当前 |
 | [ANAS Module 分类与访问边界分析（2026-08-19）](./module-classification-and-access-boundary-analysis-2026-08-19.md) | 三类主分类、入口级 audience、现有 Module 归类与迁移顺序 | 提案 |
 | [`BASE_DOMAIN` 与 `SAMBA_DC_DOMAIN` 分离实施计划（2026-08-19）](./base-domain-samba-domain-separation-plan-2026-08-19.md) | AD/应用域分离、DNS 模式、校验 ABI 与迁移计划 | 实施中（WP1/WP2 首批） |
 | [BIND 9 开源 Web 管理工具调研（2026-08-19）](./bind9-open-source-web-management-research-2026-08-19.md) | 标准 BIND、Samba BIND9-DLZ 与 Web 管理/监控选型 | 当前 |
