@@ -181,6 +181,15 @@ func TestNextcloudOIDCIsDefaultAndPreservesLDAPProvisioning(t *testing.T) {
 	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__REDIRECT_URIS"]; got != "https://nc.example.test:9000/apps/user_oidc/code" {
 		t.Fatalf("redirect URI = %q", got)
 	}
+	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_URI"]; got != "https://nc.example.test:9000/index.php/apps/user_oidc/backchannel-logout/anas" {
+		t.Fatalf("OIDC back-channel logout URI = %q", got)
+	}
+	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_METHODS"]; got != "backchannel" {
+		t.Fatalf("OIDC logout methods = %q", got)
+	}
+	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_SESSION_REQUIRED"]; got != "true" {
+		t.Fatalf("OIDC session-required flag = %q", got)
+	}
 	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__ALLOW_GROUPS"]; got != "APP_nextcloud,APP_all,Admins" {
 		t.Fatalf("allow groups = %q, want direct, all-app, or administrator access", got)
 	}

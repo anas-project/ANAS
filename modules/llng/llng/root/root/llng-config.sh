@@ -243,6 +243,9 @@ for app in $OIDC_RP_APPS; do
 
     redirect_uri=$(oidc_get_var $app "REDIRECT_URI")
     logout_redirect_uri=$(oidc_get_var $app "LOGOUT_REDIRECT_URI")
+    logout_uri=$(oidc_get_var $app "LOGOUT_URI")
+    logout_type=$(oidc_get_var $app "LOGOUT_TYPE")
+    logout_session_required=$(oidc_get_var $app "LOGOUT_SESSION_REQUIRED")
     redirect_uri_space=$(comma_array_to_space "$redirect_uri")
     logout_redirect_uri_space=$(comma_array_to_space "$logout_redirect_uri")
 
@@ -255,6 +258,13 @@ for app in $OIDC_RP_APPS; do
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsPostLogoutRedirectUris "$logout_redirect_uri_space" \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsBypassConsent 1 \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsLogoutBypassConfirm 1
+
+    if [ -n "$logout_uri" ]; then
+      $lemonldap_ng_cli_addkey \
+            oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsLogoutUrl "$logout_uri" \
+            oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsLogoutType "$logout_type" \
+            oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsLogoutSessionRequired "$logout_session_required"
+    fi
 
     allow_groups=$(oidc_get_var $app "ALLOW_GROUPS")
 

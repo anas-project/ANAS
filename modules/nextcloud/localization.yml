@@ -1,8 +1,8 @@
 api_version: anas.module-localization/v1
 module: nextcloud
 module_version: 34.0.2
-module_revision: 7
-reviewed_at: 2026-08-13
+module_revision: 8
+reviewed_at: 2026-08-21
 timezone:
   status: partial
   mechanism: Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.

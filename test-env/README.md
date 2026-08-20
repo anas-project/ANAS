@@ -281,7 +281,10 @@ Do not commit `.anas-test/` or generated secrets.
     denial, complete the real OIDC callbacks for Nextcloud and MeshCentral,
     compare the resulting user IDs/display names/identity anchors, and validate
     every registered application's generic env, provider translation, and app
-    runtime binding. NetBird is included in the registration/runtime contract;
+    runtime binding. They retain the original Nextcloud cookie after IAM logout:
+    both providers cover browser logout, and Authentik additionally deletes an
+    authenticated session administratively to prove back-channel revocation.
+    NetBird is included in the registration/runtime contract;
     its browser-only dashboard callback remains outside this curl-based session
     probe while the module is marked experimental.
 

@@ -44,6 +44,26 @@ for config in "$CONFIG_DIR"/*.yml; do
   printf '%s\n' "$latest" >>"$rendered_deployments"
 
   case "$name" in
+    iam-saml-authentik)
+      grep -Fq 'ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_BINDINGS=redirect' \
+        "$latest/modules/nextcloud/.env"
+      grep -Fq 'ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_URL=https://nc.saml-authentik.example.test:9000/index.php/apps/user_saml/saml/sls' \
+        "$latest/modules/authentik/.env"
+      grep -Fq 'sls_binding: redirect' "$latest/modules/authentik/blueprints/anas-clients.yaml"
+      grep -Fq 'logout_method: frontchannel_native' "$latest/modules/authentik/blueprints/anas-clients.yaml"
+      grep -Fq 'sign_logout_request: true' "$latest/modules/authentik/blueprints/anas-clients.yaml"
+      grep -Fq 'sign_logout_response: true' "$latest/modules/authentik/blueprints/anas-clients.yaml"
+      ;;
+    iam-saml-llng)
+      grep -Fq 'ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_BINDINGS=redirect' \
+        "$latest/modules/nextcloud/.env"
+      grep -Fq 'ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_URL=https://nc.saml-llng.example.test:9000/index.php/apps/user_saml/saml/sls' \
+        "$latest/modules/llng/.env"
+      grep -Fq 'SAML_SP__NEXTCLOUD__METADATA_URL=' \
+        "$latest/modules/llng/.env"
+      grep -Fq 'https://nc.saml-llng.example.test:9000/apps/user_saml/saml/metadata?idp=1' \
+        "$latest/modules/llng/.env"
+      ;;
     domain-separation-ad-zone)
       python3 - "$latest" ad_zone nas.test.example test.example <<'PY'
 import pathlib, sys

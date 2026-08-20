@@ -25,6 +25,23 @@ func TestApplyNextcloudOIDCBinding(t *testing.T) {
 	}
 }
 
+func TestNextcloudPublishesSAMLSingleLogoutService(t *testing.T) {
+	e := map[string]string{
+		"ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE": "saml",
+		"NEXTCLOUD_DOMAIN_FULL":                  "https://nc.example",
+		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE":     "anasIdentityAnchor",
+	}
+	if err := publishClientRegistration(e, "APP_nextcloud", &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := e["ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_URL"], "https://nc.example/index.php/apps/user_saml/saml/sls"; got != want {
+		t.Fatalf("SAML SLS URL = %q, want %q", got, want)
+	}
+	if got := e["ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_BINDINGS"]; got != "redirect" {
+		t.Fatalf("SAML SLS bindings = %q", got)
+	}
+}
+
 func TestApplyNextcloudSAMLBindingStillSupported(t *testing.T) {
 	e := map[string]string{
 		"ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE":         "saml",

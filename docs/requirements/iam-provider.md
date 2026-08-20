@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-15
-updated: 2026-08-20
+updated: 2026-08-21
 ---
 
 # 新 IAM Provider 准入与实施要求
@@ -40,6 +40,10 @@ updated: 2026-08-20
 - 支持 authorization code flow，OIDC claim 同时可进入 ID token 和 UserInfo；
 - 多值 claim 必须保持稳定 JSON 类型，`groups` 即使只有一个值也必须是数组；
 - 不得要求 Nextcloud、MeshCentral、NetBird 等应用读取 Provider 私有环境变量。
+- 必须区分登出后跳转地址与应用会话通知 endpoint；对声明
+  `OIDC_LOGOUT_URI/OIDC_LOGOUT_METHODS` 的 RP 从交集中选择 back-channel 优先的方法，
+  对声明 `SAML_SLS_URL/SAML_SLS_BINDINGS` 的 SP 选择兼容 binding；不得把普通应用
+  `/logout` 页面当成 back-channel endpoint。
 
 每个应用的允许集合固定为：
 
@@ -90,6 +94,8 @@ Adapter 必须幂等：重复执行会收敛到声明状态；修改 redirect UR
 - 只能选择一个 IAM Provider，并且必须由用户显式选择；
 - Provider 同时声明 OIDC、SAML，应用所选协议存在于双方交集；
 - client ID、redirect/logout URI、issuer/metadata 和必需 claim 非空；
+- OIDC logout method 只能是 `backchannel`/`frontchannel` 且与 endpoint 成对；SAML SLS
+  binding 只能是 `redirect`/`post` 且与 SLS URL 成对；
 - 应用 ID、client ID、目录条目 ID、分类和 endpoint 不发生冲突；
 - 所有启用应用的允许组精确为其声明值，`Admins` 不得重复追加；
 - `preferred_username`、`displayName`、mail、anchor 和 groups 的来源、必需性及类型正确；
@@ -106,6 +112,9 @@ Adapter 必须幂等：重复执行会收敛到声明状态；修改 redirect UR
 - 普通用户不能通过自注册、社交登录或本地数据库绕过 Samba AD；
 - 认证失败、策略拒绝、client 配置变更和管理员操作必须可审计；
 - Provider 不可用时不得静默回退到应用本地账号；应急入口必须使用独立、显式 URL；
+- OIDC back-channel logout token 必须验证签名、`iss`、`aud`、`events`、时间和重放；
+  SAML SLO 必须验证签名、Destination、Issuer、NameID 和 SessionIndex。Redirect SLS
+  只能承诺浏览器参与的 SLO，不能声称后台删会话会同步到 SP；
 - 备份必须覆盖 Provider 配置数据库、密钥和 Secret，恢复后原 anchor 映射保持不变。
 
 ## 6. 强制 E2E 验收矩阵
@@ -128,6 +137,10 @@ Authentik、LLNG 和任何新增 Provider 都必须在相互独立的部署中�
 或门户可见性不算通过。E2E 同时检查通用声明、adapter 生成值和应用容器实际环境，防止
 “声明正确但翻译或部署错误”。
 
+对支持 IAM 发起登出的应用还必须保留原应用 Cookie 验证会话实际失效。OIDC 至少覆盖
+用户从 IAM 登出和管理员无浏览器删 IAM session；SAML Redirect 至少覆盖浏览器完成
+`LogoutRequest -> SLS -> LogoutResponse`，测试名称与文档必须明确不覆盖后台撤销。
+
 ## 7. 新 Provider 实施顺序
 
 1. Module manifest 声明 IAM capability、协议、依赖和生命周期；
@@ -138,3 +151,60 @@ Authentik、LLNG 和任何新增 Provider 都必须在相互独立的部署中�
 6. 建立独立部署 fixture，完整运行上述矩阵；
 7. 文档化密钥轮换、备份恢复、应急登录和弃用迁移后，方可从 `developing` 改为
    `release`。
+
+## 8. IAM 登出会话同步验收清单
+
+以下清单必须按“Provider × 协议 × 应用”分别执行。只有真实 Provider 和应用容器中的
+会话失效断言通过后，才能勾选 E2E 项；静态检查、渲染结果或 HTTP 302 不能替代。每次
+验收应记录测试环境、Provider/应用版本、执行时间和日志或测试报告位置。
+
+### 8.1 通用契约与注册
+
+- [ ] 应用分别发布登录 redirect URI、登出后跳转 URI 和应用会话通知 endpoint，没有
+  把普通 `/logout` 页面用作 back-channel endpoint。
+- [ ] OIDC endpoint 与 methods、SAML SLS URL 与 bindings 成对出现；Runner 拒绝缺项、
+  非法枚举和当前协议不适用的声明。
+- [ ] Provider adapter 只从双方能力交集中选择方法；OIDC 同时可用时优先
+  `backchannel`，SAML 使用 SP 声明的兼容 binding。
+- [ ] Provider 中生成的 RP/SP 配置与通用声明一致，重复 apply 收敛且不会遗留旧 endpoint。
+- [ ] 应用只消费通用 IAM binding，不依赖 Authentik、LLNG 或其他 Provider 私有变量。
+
+### 8.2 OIDC Back-Channel Logout
+
+- [ ] Provider 已登记 RP 的 back-channel logout URI，以及是否要求 session ID。
+- [ ] 应用验证 Logout Token 的签名、`iss`、`aud`、`events`、`iat`/时效、`sid`/`sub`
+  语义和 `jti` 防重放；错误 token 不得终止合法会话。
+- [ ] 用户从 IAM 正常登出后，继续使用登出前保存的应用 Cookie 会被拒绝或要求重新认证。
+- [ ] 管理员在无用户浏览器参与时删除 IAM session 后，原应用 Cookie 同样失效。
+- [ ] 重放、过期、错误 audience/issuer、无 logout event 和无有效 `sid`/`sub` 的 token
+  均被拒绝，并留下可审计记录。
+- [ ] 只撤销目标用户或目标 session；其他用户、其他 client 和不相关 session 保持有效。
+
+### 8.3 SAML Single Logout
+
+- [ ] SP metadata 或通用声明发布准确的 SLS URL 和 binding，Provider 生成值与其一致。
+- [ ] `LogoutRequest`、`LogoutResponse`、Destination、Issuer、NameID、SessionIndex 和签名
+  按当前 binding 验证；篡改、过期或目标错误的消息被拒绝。
+- [ ] 浏览器携带原应用 Cookie 完成 `LogoutRequest -> SLS -> LogoutResponse` 后，原应用
+  会话确实失效。
+- [ ] Redirect/POST 流程的 RelayState 和最终跳转只用于导航，不能代替应用会话撤销。
+- [ ] 仅支持浏览器 SLO 时，测试与文档明确标注“不覆盖管理员后台删 IAM session”；若声称
+  支持后台撤销，必须另有可复现 E2E 证据。
+
+### 8.4 自动化、运维与交付证据
+
+- [ ] Module 单元测试覆盖通用字段发布、adapter 翻译、方法优先级、缺项和非法值。
+- [ ] render/Compose 测试覆盖每个受支持的 Provider × 协议组合，并断言最终容器环境或
+  Provider 配置中的准确 endpoint、method、binding 和签名选项。
+- [ ] 独立真实容器 fixture 覆盖 OIDC 用户登出、OIDC 管理员删 session 和 SAML 浏览器 SLO；
+  测试保存原应用 Cookie 并断言最终会话状态。
+- [ ] 审计日志能够关联 Provider session、client、目标应用、撤销原因和失败校验，但不记录
+  Logout Token、Cookie、client secret 或私钥原文。
+- [ ] Module README、技术文档、环境变量参考和故障排查说明与实际支持范围一致。
+- [ ] 验收记录写明未覆盖项和限制；所有强制项完成后，方可把该组合标记为已支持。
+
+验收记录至少使用以下字段：
+
+| Provider | 协议 | 应用 | Provider/应用版本 | 测试环境 | 自动化用例或日志 | 结果/限制 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `<provider>` | `oidc`/`saml` | `<app>` | `<versions>` | `<fixture>` | `<path-or-run>` | `通过`/`未通过`/`受限` |

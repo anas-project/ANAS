@@ -11,7 +11,7 @@ IAM provider for OIDC and SAML with users and groups synchronized from Samba AD.
 | Item | Value |
 | --- | --- |
 | Module | `authentik` |
-| Version / revision | `2026.5.6-r8` |
+| Version / revision | `2026.5.6-r9` |
 | Status | `developing` |
 | Category | `identity` |
 | Runtime | `compose` |
@@ -36,6 +36,8 @@ modules:
 ## Identity, users, and groups
 
 Samba AD is authoritative for people and groups. An LDAP Source synchronizes users and groups over LDAPS; `ldap_password_writeback` controls whether the restricted service identity may write ordinary user passwords. Consumers use per-application OIDC or SAML endpoints. `Admins` maps to authentik superuser, while `APP_all` and `APP_authentik` grant access only.
+
+For consumers that declare standard logout endpoints, OIDC prefers back-channel logout and registers logout redirect URIs separately; browser logout, administrative session deletion, and account deactivation are all covered. SAML follows the SP's SLS binding; Nextcloud's Redirect SLS uses `frontchannel_native` and requires browser participation.
 
 | Capability | Current declaration |
 | --- | --- |

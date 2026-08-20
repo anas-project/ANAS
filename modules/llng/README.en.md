@@ -8,7 +8,7 @@ SSO portal, application launcher, and OIDC/SAML identity provider.
 | Item | Value |
 | --- | --- |
 | Module | `llng` |
-| Version / revision | `2.23.2-r9` |
+| Version / revision | `2.23.2-r10` |
 | Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |
@@ -33,6 +33,8 @@ modules:
 ## Identity, users, and groups
 
 Samba AD supplies users and groups. The Portal authenticates against the directory, and IAM publishes OIDC/SAML endpoints and group attributes to consumers. `Admins` may enter the Manager.
+
+When an OIDC RP declares a standard logout endpoint, the module prefers LLNG back-channel logout and carries the session-required capability; signing out of the LLNG Portal can therefore revoke capable application sessions such as Nextcloud. SAML continues to import the SLS from SP metadata and signs SLO messages; Redirect SLO requires browser participation.
 
 | Capability | Current declaration |
 | --- | --- |

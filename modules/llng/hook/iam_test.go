@@ -247,32 +247,54 @@ func TestPublishIAMEndpointsRepeatsTheSingletonForEveryConsumer(t *testing.T) {
 
 func TestApplyClientRegistrationsTranslatesToPrivateNames(t *testing.T) {
 	e := map[string]string{
-		"ANAS_IDENTITY_OIDC_CLIENTS":                  "netbird",
-		"ANAS_IDENTITY_SAML_CLIENTS":                  "nextcloud",
-		"ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID":         "netbird",
-		"ANAS_IAM_CLIENT__NETBIRD__CLIENT_SECRET":     "s3cret",
-		"ANAS_IAM_CLIENT__NETBIRD__REDIRECT_URIS":     "https://n.example/auth",
-		"ANAS_IAM_CLIENT__NETBIRD__ATTRIBUTES":        "cn:cn:1,email:email:1",
-		"ANAS_IAM_CLIENT__NEXTCLOUD__SP_METADATA_URL": "https://nc.example/metadata",
-		"ANAS_IAM_CLIENT__NEXTCLOUD__NAME_ID_FORMAT":  "windows",
-		"ANAS_IAM_CLIENT__NEXTCLOUD__ATTRIBUTES":      "cn:cn:1",
+		"ANAS_IDENTITY_OIDC_CLIENTS":                             "netbird",
+		"ANAS_IDENTITY_SAML_CLIENTS":                             "nextcloud",
+		"ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID":                    "netbird",
+		"ANAS_IAM_CLIENT__NETBIRD__CLIENT_SECRET":                "s3cret",
+		"ANAS_IAM_CLIENT__NETBIRD__REDIRECT_URIS":                "https://n.example/auth",
+		"ANAS_IAM_CLIENT__NETBIRD__OIDC_LOGOUT_URI":              "https://n.example/backchannel-logout",
+		"ANAS_IAM_CLIENT__NETBIRD__OIDC_LOGOUT_METHODS":          "backchannel",
+		"ANAS_IAM_CLIENT__NETBIRD__OIDC_LOGOUT_SESSION_REQUIRED": "true",
+		"ANAS_IAM_CLIENT__NETBIRD__ATTRIBUTES":                   "cn:cn:1,email:email:1",
+		"ANAS_IAM_CLIENT__NEXTCLOUD__SP_METADATA_URL":            "https://nc.example/metadata",
+		"ANAS_IAM_CLIENT__NEXTCLOUD__NAME_ID_FORMAT":             "windows",
+		"ANAS_IAM_CLIENT__NEXTCLOUD__ATTRIBUTES":                 "cn:cn:1",
 	}
 	if err := applyClientRegistrations(e); err != nil {
 		t.Fatal(err)
 	}
 	checks := map[string]string{
-		"OIDC_RP_APPS":                      "netbird",
-		"OIDC_RP__NETBIRD__CLIENT_ID":       "netbird",
-		"OIDC_RP__NETBIRD__CLIENT_SECRET":   "s3cret",
-		"OIDC_RP__NETBIRD__ATTR01":          "cn,cn,1",
-		"OIDC_RP__NETBIRD__ATTR02":          "email,email,1",
-		"SAML_SP_APPS":                      "nextcloud",
-		"SAML_SP__NEXTCLOUD__METADATA_URL":  "https://nc.example/metadata",
-		"SAML_SP__NEXTCLOUD__NAMEID_FORMAT": "windows",
+		"OIDC_RP_APPS":                              "netbird",
+		"OIDC_RP__NETBIRD__CLIENT_ID":               "netbird",
+		"OIDC_RP__NETBIRD__CLIENT_SECRET":           "s3cret",
+		"OIDC_RP__NETBIRD__LOGOUT_URI":              "https://n.example/backchannel-logout",
+		"OIDC_RP__NETBIRD__LOGOUT_TYPE":             "back",
+		"OIDC_RP__NETBIRD__LOGOUT_SESSION_REQUIRED": "1",
+		"OIDC_RP__NETBIRD__ATTR01":                  "cn,cn,1",
+		"OIDC_RP__NETBIRD__ATTR02":                  "email,email,1",
+		"SAML_SP_APPS":                              "nextcloud",
+		"SAML_SP__NEXTCLOUD__METADATA_URL":          "https://nc.example/metadata",
+		"SAML_SP__NEXTCLOUD__NAMEID_FORMAT":         "windows",
 	}
 	for key, want := range checks {
 		if e[key] != want {
 			t.Errorf("%s = %q, want %q", key, e[key], want)
+		}
+	}
+}
+
+func TestOIDCBackChannelLogoutIsRendered(t *testing.T) {
+	script, err := os.ReadFile("../llng/root/root/llng-config.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"oidcRPMetaDataOptionsLogoutUrl",
+		"oidcRPMetaDataOptionsLogoutType",
+		"oidcRPMetaDataOptionsLogoutSessionRequired",
+	} {
+		if !strings.Contains(string(script), want) {
+			t.Fatalf("LLNG config script does not set %s", want)
 		}
 	}
 }

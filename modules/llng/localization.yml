@@ -1,8 +1,8 @@
 api_version: anas.module-localization/v1
 module: llng
 module_version: 2.23.2
-module_revision: 9
-reviewed_at: 2026-08-17
+module_revision: 10
+reviewed_at: 2026-08-21
 timezone:
   status: container
   mechanism: LLNG receives TZ through the module .env; no deployment-wide application timezone is forced.

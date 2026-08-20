@@ -193,7 +193,21 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 		b.WriteString("      redirect_uris:\n")
 		for _, uri := range splitCSV(e[src+"REDIRECT_URIS"]) {
 			b.WriteString("        - matching_mode: strict\n")
+			b.WriteString("          redirect_uri_type: authorization\n")
 			b.WriteString("          url: " + yamlString(uri) + "\n")
+		}
+		for _, uri := range splitCSV(e[src+"POST_LOGOUT_REDIRECT_URIS"]) {
+			b.WriteString("        - matching_mode: strict\n")
+			b.WriteString("          redirect_uri_type: logout\n")
+			b.WriteString("          url: " + yamlString(uri) + "\n")
+		}
+		if logoutURI := strings.TrimSpace(e[src+"OIDC_LOGOUT_URI"]); logoutURI != "" {
+			method, err := selectAuthentikOIDCLogoutMethod(e[src+"OIDC_LOGOUT_METHODS"])
+			if err != nil {
+				return "", fmt.Errorf("oidc client %s: %w", app, err)
+			}
+			b.WriteString("      logout_uri: " + yamlString(logoutURI) + "\n")
+			b.WriteString("      logout_method: " + method + "\n")
 		}
 		if profileMapping != "" {
 			// Supplying property_mappings replaces authentik's implicit defaults.
@@ -239,6 +253,17 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 		// certificate published as SAML_SIGNING_CERT useful to the SP.
 		b.WriteString("      sign_assertion: true\n")
 		b.WriteString("      sign_response: true\n")
+		if slsURL := strings.TrimSpace(e[src+"SAML_SLS_URL"]); slsURL != "" {
+			binding, method, err := selectAuthentikSAMLLogout(e[src+"SAML_SLS_BINDINGS"])
+			if err != nil {
+				return "", fmt.Errorf("saml client %s: %w", app, err)
+			}
+			b.WriteString("      sls_url: " + yamlString(slsURL) + "\n")
+			b.WriteString("      sls_binding: " + binding + "\n")
+			b.WriteString("      logout_method: " + method + "\n")
+			b.WriteString("      sign_logout_request: true\n")
+			b.WriteString("      sign_logout_response: true\n")
+		}
 		if len(propertyMappings) != 0 {
 			b.WriteString("      property_mappings:\n")
 			for _, id := range propertyMappings {
@@ -251,6 +276,31 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 		writeAccessPolicyEntries(&b, e, app, s)
 	}
 	return b.String(), nil
+}
+
+func selectAuthentikOIDCLogoutMethod(methods string) (string, error) {
+	for _, preferred := range []string{"backchannel", "frontchannel"} {
+		for _, method := range splitCSV(methods) {
+			if method == preferred {
+				return method, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no supported OIDC logout method in %q", methods)
+}
+
+func selectAuthentikSAMLLogout(bindings string) (binding, method string, err error) {
+	for _, candidate := range splitCSV(bindings) {
+		if candidate == "post" {
+			return "post", "backchannel", nil
+		}
+	}
+	for _, candidate := range splitCSV(bindings) {
+		if candidate == "redirect" {
+			return "redirect", "frontchannel_native", nil
+		}
+	}
+	return "", "", fmt.Errorf("no supported SAML SLS binding in %q", bindings)
 }
 
 // writeOIDCProfileMappingEntry turns the provider-neutral

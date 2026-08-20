@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `llng` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `2.23.2-r9` / `anas.module/v1`.
+> 状态：当前实现；对应 `2.23.2-r10` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,7 +20,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r9` | `traefik, db` | 2 |
+| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r10` | `traefik, db` | 2 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -41,6 +41,10 @@
 ## 身份与授权数据流
 
 Samba AD 是用户和 Group 来源。Portal 使用目录认证，IAM 向 Consumer 发布 OIDC/SAML 端点和 Group 属性。`Admins` 可进入 Manager。
+
+### 应用会话登出
+
+通用 OIDC 登出方法在 `render_env` 中映射为 LLNG 的 `oidcRPMetaDataOptionsLogoutUrl`、`LogoutType=back` 和 `LogoutSessionRequired=1`；`PostLogoutRedirectUris` 与免确认设置继续服务 RP 发起登出，不能替代 back-channel。SAML 从 SP metadata 读取 SLS，保持 `SignSLOMessage=1`；Redirect SLO 仅保证浏览器参与的 IAM 发起登出。
 
 | 能力 | 当前声明 |
 | --- | --- |

@@ -46,12 +46,17 @@ func publishClientRegistration(e map[string]string, allowGroups string, secrets 
 		e[iamClientPrefix+"CLIENT_SECRET"] = secret
 		e[iamClientPrefix+"REDIRECT_URIS"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_oidc/code"
 		e[iamClientPrefix+"POST_LOGOUT_REDIRECT_URIS"] = e["NEXTCLOUD_DOMAIN_FULL"]
+		e[iamClientPrefix+"OIDC_LOGOUT_URI"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/index.php/apps/user_oidc/backchannel-logout/anas"
+		e[iamClientPrefix+"OIDC_LOGOUT_METHODS"] = "backchannel"
+		e[iamClientPrefix+"OIDC_LOGOUT_SESSION_REQUIRED"] = "true"
 		e[iamClientPrefix+"SCOPES"] = "openid,profile,email"
 	case "saml":
 		e[iamClientPrefix+"SP_METADATA_URL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/metadata?idp=1"
 		e[iamClientPrefix+"SP_ENTITY_ID"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/metadata"
 		e[iamClientPrefix+"ACS_URL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_saml/saml/acs"
 		e[iamClientPrefix+"NAME_ID_FORMAT"] = "windows"
+		e[iamClientPrefix+"SAML_SLS_URL"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/index.php/apps/user_saml/saml/sls"
+		e[iamClientPrefix+"SAML_SLS_BINDINGS"] = "redirect"
 	default:
 		return fmt.Errorf("nextcloud requires an oidc or saml IAM binding, got %q", protocol)
 	}

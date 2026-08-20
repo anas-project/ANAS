@@ -1,0 +1,15 @@
+modules:
+  samba_dc: {}
+  postgres: {}
+  llng: {}
+  nextcloud:
+    config:
+      iam_protocol: saml
+identity:
+  iam:
+    provider: llng
+global:
+  base_domain: saml-llng.example.test
+  email: admin@saml-llng.example.test
+  timezone: Asia/Shanghai
+  virtual_domain: true

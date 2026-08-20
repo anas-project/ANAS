@@ -8,7 +8,7 @@ File sync, sharing, online office, Memories, and Talk platform.
 | Item | Value |
 | --- | --- |
 | Module | `nextcloud` |
-| Version / revision | `34.0.2-r7` |
+| Version / revision | `34.0.2-r8` |
 | Status | `release` |
 | Category | `app` |
 | Runtime | `compose` |
@@ -42,6 +42,8 @@ identity:
 ## Identity, users, and groups
 
 LDAPS provisioning manages users and groups; OIDC is the preferred login protocol and SAML remains supported. Consistent directory usernames and `anasIdentityAnchor` link both paths. Samba `Admins` dynamically maps to Nextcloud administration. Ordinary directory password changes use the restricted password-bind identity, never a database administrator.
+
+In OIDC mode the module registers the `user_oidc` back-channel logout endpoint, so IAM browser logout, administrative session revocation, and account deactivation can invalidate the matching Nextcloud session. SAML advertises an HTTP-Redirect SLS and therefore guarantees only browser-mediated IAM-initiated Single Logout, not headless administrative revocation.
 
 | Capability | Current declaration |
 | --- | --- |

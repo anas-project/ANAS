@@ -354,6 +354,11 @@ var requiredEndpointSuffixes = map[string][]string{
 	interfaceSAML: {"SAML_METADATA_URL", "SAML_ENTITY_ID", "SAML_SSO_URL"},
 }
 
+var iamLogoutValues = map[string]map[string]bool{
+	"OIDC_LOGOUT_METHODS": {"backchannel": true, "frontchannel": true},
+	"SAML_SLS_BINDINGS":   {"redirect": true, "post": true},
+}
+
 func iamBindingKey(consumer, suffix string) string {
 	return envIAMBindingPfx + strings.ToUpper(strings.ReplaceAll(consumer, "-", "_")) + "__" + suffix
 }
@@ -515,6 +520,77 @@ func (a *app) validateIAMEndpoints() error {
 			a.iamProvider, strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+// validateIAMClientRegistrations checks the provider-neutral logout contract
+// after every consumer has completed calculate and before the selected IAM
+// translates registrations in render_env. Logout support is optional, but a
+// consumer that declares it must publish a usable endpoint and known values;
+// silently dropping an incomplete declaration would leave an IAM logout with
+// a live application session.
+func (a *app) validateIAMClientRegistrations() error {
+	if a.iamProvider == "" {
+		return nil
+	}
+	for _, consumer := range a.iamConsumers() {
+		prefix := "ANAS_IAM_CLIENT__" + strings.ToUpper(strings.ReplaceAll(consumer, "-", "_")) + "__"
+		switch a.iamBindings[consumer] {
+		case interfaceOIDC:
+			methods := splitIAMLogoutList(a.env[prefix+"OIDC_LOGOUT_METHODS"])
+			uri := strings.TrimSpace(a.env[prefix+"OIDC_LOGOUT_URI"])
+			if len(methods) > 0 && uri == "" {
+				return fmt.Errorf("iam client %s declares OIDC logout methods but %sOIDC_LOGOUT_URI is empty", consumer, prefix)
+			}
+			if uri != "" && len(methods) == 0 {
+				return fmt.Errorf("iam client %s publishes %sOIDC_LOGOUT_URI but no OIDC_LOGOUT_METHODS", consumer, prefix)
+			}
+			if err := validateIAMLogoutValues(consumer, prefix+"OIDC_LOGOUT_METHODS", "OIDC_LOGOUT_METHODS", methods); err != nil {
+				return err
+			}
+			if raw := strings.TrimSpace(a.env[prefix+"OIDC_LOGOUT_SESSION_REQUIRED"]); raw != "" {
+				if len(methods) == 0 {
+					return fmt.Errorf("iam client %s publishes %sOIDC_LOGOUT_SESSION_REQUIRED but no OIDC logout method", consumer, prefix)
+				}
+				if raw != "true" && raw != "false" {
+					return fmt.Errorf("iam client %s publishes invalid %sOIDC_LOGOUT_SESSION_REQUIRED %q; want true or false", consumer, prefix, raw)
+				}
+			}
+		case interfaceSAML:
+			bindings := splitIAMLogoutList(a.env[prefix+"SAML_SLS_BINDINGS"])
+			uri := strings.TrimSpace(a.env[prefix+"SAML_SLS_URL"])
+			if len(bindings) > 0 && uri == "" {
+				return fmt.Errorf("iam client %s declares SAML SLS bindings but %sSAML_SLS_URL is empty", consumer, prefix)
+			}
+			if uri != "" && len(bindings) == 0 {
+				return fmt.Errorf("iam client %s publishes %sSAML_SLS_URL but no SAML_SLS_BINDINGS", consumer, prefix)
+			}
+			if err := validateIAMLogoutValues(consumer, prefix+"SAML_SLS_BINDINGS", "SAML_SLS_BINDINGS", bindings); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateIAMLogoutValues(consumer, key, vocabulary string, values []string) error {
+	allowed := iamLogoutValues[vocabulary]
+	for _, value := range values {
+		if !allowed[value] {
+			return fmt.Errorf("iam client %s publishes unsupported %s value %q", consumer, key, value)
+		}
+	}
+	return nil
+}
+
+func splitIAMLogoutList(raw string) []string {
+	values := []string{}
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.ToLower(strings.TrimSpace(item))
+		if item != "" && !contains(values, item) {
+			values = append(values, item)
+		}
+	}
+	return values
 }
 
 func normalizeProvidedCapabilities(module string, in []manifestProvidedCapability) ([]ProvidedCapability, error) {

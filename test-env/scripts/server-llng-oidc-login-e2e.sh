@@ -15,6 +15,7 @@ expected_outcome=${ANAS_TEST_EXPECTED_OUTCOME:-allowed}
 apps=${ANAS_TEST_APPS:-nextcloud,meshcentral}
 expect_meshcentral_siteadmin=${ANAS_TEST_EXPECT_MESHCENTRAL_SITEADMIN:-false}
 expect_app_admin=${ANAS_TEST_EXPECT_APP_ADMIN:-false}
+logout_mode=${ANAS_TEST_LOGOUT_MODE:-none}
 : "${ANAS_TEST_PASSWORD:?ANAS_TEST_PASSWORD is required}"
 
 nextcloud_url="https://nc.$domain:$entry_port"
@@ -34,6 +35,30 @@ trap 'printf "FAIL: LLNG OIDC E2E line=%s command=%s\n" "$LINENO" "$BASH_COMMAND
 curl_login() {
   curl -skS --connect-timeout 10 --max-time "$http_timeout" "${resolve[@]}" \
     -c "$cookie_jar" -b "$cookie_jar" "$@"
+}
+
+verify_nextcloud_logout() {
+  local attempt meta_status session_after status
+  [ "$logout_mode" = browser ] || {
+    [ "$logout_mode" = none ] && return 0
+    printf 'LLNG supports only browser logout in this E2E, got %s\n' "$logout_mode" >&2
+    return 2
+  }
+  printf '== end LLNG browser session and wait for OIDC back-channel logout ==\n'
+  curl_login -L -o "$body" "https://auth.$domain:$entry_port/?logout=1"
+  for attempt in $(seq 1 30); do
+    status=$(curl_login -o "$body" -w '%{http_code}' -H 'OCS-APIRequest: true' \
+      "$nextcloud_url/ocs/v2.php/cloud/user?format=json" || true)
+    session_after=$(jq -r '.ocs.data.id // empty' "$body" 2>/dev/null || true)
+    meta_status=$(jq -r '.ocs.meta.statuscode // empty' "$body" 2>/dev/null || true)
+    if [ "$status" != 000 ] && [ -n "$meta_status" ] && [ "$session_after" != "$username" ]; then
+      printf 'nextcloud_session=revoked mode=browser status=%s\n' "$status"
+      return 0
+    fi
+    sleep 1
+  done
+  printf 'Nextcloud session remained authenticated after LLNG browser logout\n' >&2
+  return 1
 }
 
 absolute_url() {
@@ -153,6 +178,7 @@ if [[ ",$apps," == *,nextcloud,* ]]; then
       test "$(printf '%s' "$admin_probe_json" | jq -r '.ocs.meta.statuscode')" != "100"
     fi
     printf 'nextcloud_admin_api=%s\n' "$expect_app_admin"
+    verify_nextcloud_logout
   fi
 fi
 

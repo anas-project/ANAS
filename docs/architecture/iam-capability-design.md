@@ -369,12 +369,17 @@ ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID=netbird
 ANAS_IAM_CLIENT__NETBIRD__CLIENT_SECRET=...
 ANAS_IAM_CLIENT__NETBIRD__REDIRECT_URIS=https://netbird.example/auth,...
 ANAS_IAM_CLIENT__NETBIRD__POST_LOGOUT_REDIRECT_URIS=https://netbird.example
+ANAS_IAM_CLIENT__NETBIRD__OIDC_LOGOUT_URI=https://netbird.example/oidc/backchannel-logout
+ANAS_IAM_CLIENT__NETBIRD__OIDC_LOGOUT_METHODS=backchannel,frontchannel
+ANAS_IAM_CLIENT__NETBIRD__OIDC_LOGOUT_SESSION_REQUIRED=true
 ANAS_IAM_CLIENT__NETBIRD__SCOPES=openid,profile,email,groups
 ANAS_IAM_CLIENT__NETBIRD__ALLOW_GROUPS=APP_netbird,APP_all,Admins
 ```
 
 SAML 客户端使用同一前缀，发布 `SP_METADATA_URL`、`SP_ENTITY_ID`、`ACS_URL`、
-`NAME_ID_FORMAT`。两种协议共用 `ALLOW_GROUPS`、`DOMAIN` 和 `ATTRIBUTES`；
+`NAME_ID_FORMAT`；支持 Single Logout 时另外发布 `SAML_SLS_URL` 和
+`SAML_SLS_BINDINGS=redirect,post`。`POST_LOGOUT_REDIRECT_URIS` 只表示 IAM 登出后允许
+跳回的地址，不能替代 OIDC front/back-channel endpoint。两种协议共用 `ALLOW_GROUPS`、`DOMAIN` 和 `ATTRIBUTES`；
 `ATTRIBUTES` 的格式是 `name:source:required` 的逗号列表，由 Provider 翻译成自己
 的属性映射（LLNG 展开成 `ATTR01`/`ATTR02`…）。
 
@@ -393,6 +398,13 @@ Hook 顺序兼容，且不会与 §6.2 的 per-app 端点循环依赖：
 
 端点只依赖消费方名单和协议（Runner 已知），注册请求才依赖端点，因此顺序单向，
 不构成环。
+
+Runner 在所有 `calculate` 完成后、Provider `render_env` 前校验登出声明：OIDC method 与
+`OIDC_LOGOUT_URI` 必须成对，method 只能是 `backchannel`/`frontchannel`，session-required
+只能是布尔值；SAML SLS URL 与 binding 必须成对，binding 只能是 `redirect`/`post`。
+声明为空仍表示应用不支持 IAM 发起的即时登出，Provider 不得把普通 `/logout` 页面猜成
+标准通知 endpoint。环境所有权继续由消费方持有，只有显式消费 `ANAS_IAM_CLIENT_*` 的所选
+Provider 在 render 阶段收到这些字段。
 
 ## 7. 锁文件与切换语义
 

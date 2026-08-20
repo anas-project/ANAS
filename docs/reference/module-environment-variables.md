@@ -110,6 +110,8 @@ resolver。启动时 `net ads testjoin` 成功便复用现有 trust；只有 tru
   文件临时导出上游 `AUTHENTIK_BOOTSTRAP_PASSWORD`，已有安装由 `ak shell` handler 更新。
 - 非敏感启动变量：`AUTHENTIK_BOOTSTRAP_EMAIL`。
 - 每应用 IAM 端点：`ANAS_IAM_BINDING__<MODULE>__OIDC_*` 或 `ANAS_IAM_BINDING__<MODULE>__SAML_*`。
+- 应用会话登出：消费 `ANAS_IAM_CLIENT__<MODULE>__OIDC_LOGOUT_*` 和
+  `SAML_SLS_*`，生成 Authentik `logout_uri/logout_method` 或 `sls_*` blueprint 字段。
 
 LDAP 变量全部从 `SAMBA_DC_*` 计算，Blueprint 只通过 `!Env` 读取 `AUTHENTIK_LDAP_*`，不保存部署 DN 或密码。
 Authentik worker 从 `ANAS_TLS_CERTS_DIR/ANAS_TLS_INTERNAL_CA_NAME` 导入 `anas-samba-ad-ca`，LDAP Source 通过 `peer_certificate` 和 SNI 验证 Samba DC 的 LDAPS 证书；不能依赖空证书字段，因为 Authentik 在该状态下会跳过验证。
@@ -121,6 +123,8 @@ Authentik worker 从 `ANAS_TLS_CERTS_DIR/ANAS_TLS_INTERNAL_CA_NAME` 导入 `anas
 - 动态客户端清单：`OIDC_RP_APPS`、`SAML_SP_APPS`。
 - 每应用私有配置：`OIDC_RP__<MODULE>__*`、`SAML_SP__<MODULE>__*`。
 - 每应用通用端点：`ANAS_IAM_BINDING__<MODULE>__OIDC_*`、`ANAS_IAM_BINDING__<MODULE>__SAML_*`。
+- OIDC 登出私有映射：`OIDC_RP__<MODULE>__LOGOUT_URI`、`LOGOUT_TYPE`、
+  `LOGOUT_SESSION_REQUIRED`；SAML SLS 继续从 `SAML_SP__<MODULE>__METADATA_URL` 导入。
 
 LLNG 从 `ANAS_IDENTITY_OIDC_CLIENTS` 和 `ANAS_IDENTITY_SAML_CLIENTS` 读取最终协议名单。
 
@@ -134,7 +138,8 @@ LLNG 从 `ANAS_IDENTITY_OIDC_CLIENTS` 和 `ANAS_IDENTITY_SAML_CLIENTS` 读取最
 - SAML：`NEXTCLOUD_SAML_IDP_*`、`NEXTCLOUD_SAML_SP_PRIVATE_KEY`、`NEXTCLOUD_SAML_SP_CERT`、`NEXTCLOUD_IAM_HOST`。
 - Redis/Imaginary/Talk：`NEXTCLOUD_REDIS_*`、`NEXTCLOUD_IMAGINARY_*`、`NEXTCLOUD_TALK_*`、`TALK_SIGNALING_SECRET`。
 - 镜像运行别名：`MYSQL_*`、`POSTGRES_*`、`REDIS_HOST`、`PHP_*`、`APACHE_BODY_LIMIT`、`OVERWRITE*`。
-- 应用注册：`ANAS_IAM_CLIENT__NEXTCLOUD__*`、`APPS_LIST__NEXTCLOUD__*`。
+- 应用注册：`ANAS_IAM_CLIENT__NEXTCLOUD__*`、`APPS_LIST__NEXTCLOUD__*`；其中 OIDC
+  发布 `OIDC_LOGOUT_URI/METHODS/SESSION_REQUIRED`，SAML 发布 `SAML_SLS_URL/BINDINGS`。
 
 ## meshcentral
 

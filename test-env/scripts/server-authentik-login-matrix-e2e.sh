@@ -16,13 +16,14 @@ authentik="${prefix}authentik"
 trap cleanup_matrix_users EXIT HUP INT TERM
 
 run_oidc() {
-  local user=$1 outcome=$2 apps=$3 app_admin=${4:-false}
+  local user=$1 outcome=$2 apps=$3 app_admin=${4:-false} logout_mode=${5:-none}
   ANAS_TEST_USERNAME="$user" \
   ANAS_TEST_PASSWORD="$matrix_password" \
   ANAS_TEST_EXPECTED_OUTCOME="$outcome" \
   ANAS_TEST_APPS="$apps" \
   ANAS_TEST_EXPECT_APP_ADMIN="$app_admin" \
   ANAS_TEST_EXPECT_MESHCENTRAL_SITEADMIN="$app_admin" \
+  ANAS_TEST_LOGOUT_MODE="$logout_mode" \
   ANAS_TEST_CONTAINER_PREFIX="$prefix" \
     "$script_dir/server-authentik-oidc-login-e2e.sh"
 }
@@ -52,14 +53,14 @@ ANAS_TEST_IAM_PROVIDER=authentik ANAS_TEST_CONTAINER_PREFIX="$prefix" \
 wait_authentik_users
 
 printf '\n== Authentik: direct APP_nextcloud grant ==\n'
-run_oidc "$direct_user" allowed nextcloud
+run_oidc "$direct_user" allowed nextcloud false browser
 run_oidc "$direct_user" policy-denied meshcentral
 
 printf '\n== Authentik: APP_all grant ==\n'
 run_oidc "$all_user" allowed nextcloud,meshcentral
 
 printf '\n== Authentik: recursive role-to-application grant ==\n'
-run_oidc "$nested_user" allowed nextcloud
+run_oidc "$nested_user" allowed nextcloud false admin
 run_oidc "$nested_user" policy-denied meshcentral
 
 printf '\n== Authentik: Admins grant and application admin mappings ==\n'

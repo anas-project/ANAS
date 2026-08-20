@@ -131,6 +131,29 @@ func TestScopedEnvFiltersByDeclarationRatherThanClosure(t *testing.T) {
 	}
 }
 
+func TestIAMLogoutRegistrationOnlyReachesDeclaringClientAndProvider(t *testing.T) {
+	a := &app{
+		reg: map[string]Module{
+			"nextcloud": {Name: "nextcloud", EnvPrefix: "NEXTCLOUD"},
+			"llng":      {Name: "llng", EnvPrefix: "LLNG", Consumes: []string{"ANAS_IAM_CLIENT_*"}},
+			"traefik":   {Name: "traefik", EnvPrefix: "TRAEFIK"},
+		},
+		env: map[string]string{
+			"ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_URI": "https://nc.example/backchannel-logout",
+		},
+		envOwner: map[string]string{
+			"ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_URI": "nextcloud",
+		},
+	}
+	key := "ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_URI"
+	if a.scopedEnv("nextcloud")[key] == "" || a.scopedEnv("llng")[key] == "" {
+		t.Fatal("logout registration did not reach its declaring client and selected provider")
+	}
+	if _, leaked := a.scopedEnv("traefik")[key]; leaked {
+		t.Fatal("logout registration leaked to an unrelated module")
+	}
+}
+
 func TestScopedEnvUserSecretsRequireClaim(t *testing.T) {
 	a := scopeTestApp()
 	if _, ok := a.scopedEnv("ddns_updater")["DNSPOD_API_KEY"]; !ok {

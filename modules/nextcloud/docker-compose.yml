@@ -8,7 +8,7 @@ services:
         - APT_MIRROR_URL
         - NEXTCLOUD_APT_MIRROR_URL
         - DOCKER_HUB_REGISTRY
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r7
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r8
     container_name: ${CONTAINER_PREFIX}nextcloud
     volumes:
       - "${NEXTCLOUD_BASE_PATH}/nextcloud:/var/www/html"
@@ -61,7 +61,7 @@ services:
       - traefik
 
   anas_nextcloud-cron:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r7
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r8
     container_name: ${CONTAINER_PREFIX}nextcloud_cron
     # user_ldap refreshes directory attributes from background jobs, so cron
     # needs the same CA trust as the web process rather than only shared app

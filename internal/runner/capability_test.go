@@ -401,6 +401,47 @@ func TestIAMEndpointValidationCoversBoundProtocolsOnly(t *testing.T) {
 	}
 }
 
+func TestIAMLogoutClientContractRejectsIncompleteAndUnknownDeclarations(t *testing.T) {
+	a := &app{
+		iamProvider: "llng",
+		iamBindings: map[string]string{"nextcloud": interfaceOIDC},
+		env: map[string]string{
+			"ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_METHODS": "backchannel",
+		},
+	}
+	if err := a.validateIAMClientRegistrations(); err == nil || !strings.Contains(err.Error(), "OIDC_LOGOUT_URI is empty") {
+		t.Fatalf("error = %v, want missing logout URI", err)
+	}
+	a.env["ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_URI"] = "https://nc.example/backchannel-logout"
+	a.env["ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_METHODS"] = "browser-magic"
+	if err := a.validateIAMClientRegistrations(); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("error = %v, want unknown method", err)
+	}
+	a.env["ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_METHODS"] = "backchannel"
+	a.env["ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_SESSION_REQUIRED"] = "true"
+	if err := a.validateIAMClientRegistrations(); err != nil {
+		t.Fatalf("valid logout registration rejected: %v", err)
+	}
+}
+
+func TestIAMSAMLLogoutClientContractRequiresEndpointAndBinding(t *testing.T) {
+	a := &app{
+		iamProvider: "authentik",
+		iamBindings: map[string]string{"nextcloud": interfaceSAML},
+		env: map[string]string{
+			"ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_URL":      "https://nc.example/sls",
+			"ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_BINDINGS": "redirect",
+		},
+	}
+	if err := a.validateIAMClientRegistrations(); err != nil {
+		t.Fatalf("valid SAML logout registration rejected: %v", err)
+	}
+	delete(a.env, "ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_URL")
+	if err := a.validateIAMClientRegistrations(); err == nil || !strings.Contains(err.Error(), "SAML_SLS_URL is empty") {
+		t.Fatalf("error = %v, want missing SLS URL", err)
+	}
+}
+
 func TestIAMEndpointsAreResolvedPerConsumer(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud", "netbird"}, "llng", "", nil))

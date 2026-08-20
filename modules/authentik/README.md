@@ -11,7 +11,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `authentik` |
-| 版本 / revision | `2026.5.6-r8` |
+| 版本 / revision | `2026.5.6-r9` |
 | 状态 | `developing` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
@@ -36,6 +36,8 @@ modules:
 ## 身份、用户与 Group
 
 Samba AD 是人员与组的事实来源。LDAP Source 通过 LDAPS 同步用户和组；`ldap_password_writeback` 控制是否允许 Authentik 使用受限服务账号回写普通用户密码。应用登录使用按 Consumer 生成的 OIDC 或 SAML 端点。`Admins` 映射为 Authentik superuser，`APP_all`/`APP_authentik` 只授予访问权。
+
+对于声明标准登出端点的 Consumer，OIDC 优先使用 back-channel logout，并登记独立的 logout redirect URI；这同时覆盖浏览器登出、管理员删会话和账号停用。SAML 按 SP 声明的 SLS binding 配置；Nextcloud 的 Redirect SLS 使用 `frontchannel_native`，必须由浏览器完成 SLO。
 
 | 能力 | 当前声明 |
 | --- | --- |
@@ -173,7 +175,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2026.5.6-r8`（reviewed 2026-08-13）
+- Module version / 版本：`2026.5.6-r9`（reviewed 2026-08-21）
 - Timezone / 时区：`container` — All long-running authentik services receive the module .env and TZ; no separate application timezone is forced.
 - Language scope / 语言范围：authentik Web UI
 - Selection / 选择方式：`browser`

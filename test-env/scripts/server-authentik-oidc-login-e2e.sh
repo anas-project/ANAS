@@ -20,6 +20,7 @@ expected_outcome=${ANAS_TEST_EXPECTED_OUTCOME:-allowed}
 apps=${ANAS_TEST_APPS:-nextcloud,meshcentral}
 expect_meshcentral_siteadmin=${ANAS_TEST_EXPECT_MESHCENTRAL_SITEADMIN:-false}
 expect_app_admin=${ANAS_TEST_EXPECT_APP_ADMIN:-false}
+logout_mode=${ANAS_TEST_LOGOUT_MODE:-none}
 authentik_ldap_source_slug=${ANAS_TEST_AUTHENTIK_LDAP_SOURCE_SLUG:-samba-ad}
 : "${ANAS_TEST_PASSWORD:?ANAS_TEST_PASSWORD is required}"
 
@@ -43,6 +44,37 @@ trap 'printf "FAIL: Authentik OIDC E2E line=%s command=%s\n" "$LINENO" "$BASH_CO
 curl_auth() {
   curl -skS --connect-timeout 10 --max-time "$http_timeout" "${resolve[@]}" \
     -c "$cookie_jar" -b "$cookie_jar" "$@"
+}
+
+verify_nextcloud_logout() {
+  local attempt meta_status session_after status
+  case "$logout_mode" in
+    browser)
+      printf '== end Authentik browser session and wait for OIDC back-channel logout ==\n'
+      curl_auth -L -o "$body" "https://$authentik_host:$entry_port/if/flow/default-invalidation-flow/"
+      ;;
+    admin)
+      printf '== administratively revoke Authentik session and wait for OIDC back-channel logout ==\n'
+      docker -H "unix://$socket" exec "${prefix}authentik" ak shell -c \
+        "from authentik.core.models import AuthenticatedSession; sessions=AuthenticatedSession.objects.filter(user__username='$username'); assert sessions.exists(); sessions.delete()" \
+        >/dev/null
+      ;;
+    none) return 0 ;;
+    *) printf 'unsupported ANAS_TEST_LOGOUT_MODE: %s\n' "$logout_mode" >&2; return 2 ;;
+  esac
+  for attempt in $(seq 1 30); do
+    status=$(curl_auth -o "$body" -w '%{http_code}' -H 'OCS-APIRequest: true' \
+      "$nextcloud_url/ocs/v2.php/cloud/user?format=json" || true)
+    session_after=$(jq -r '.ocs.data.id // empty' "$body" 2>/dev/null || true)
+    meta_status=$(jq -r '.ocs.meta.statuscode // empty' "$body" 2>/dev/null || true)
+    if [ "$status" != 000 ] && [ -n "$meta_status" ] && [ "$session_after" != "$username" ]; then
+      printf 'nextcloud_session=revoked mode=%s status=%s\n' "$logout_mode" "$status"
+      return 0
+    fi
+    sleep 1
+  done
+  printf 'Nextcloud session remained authenticated after Authentik %s logout\n' "$logout_mode" >&2
+  return 1
 }
 
 wait_for_oidc_providers() {
@@ -253,6 +285,7 @@ else
 fi
 printf 'nextcloud_admin_api=%s\n' "$expect_app_admin"
 printf 'nextcloud_directory_identity=matched anchor=%s\n' "$anchor"
+verify_nextcloud_logout
 fi
 fi
 

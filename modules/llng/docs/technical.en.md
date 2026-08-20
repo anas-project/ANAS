@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `llng`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `2.23.2-r9` / `anas.module/v1`.
+> Status: current implementation; based on `2.23.2-r10` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -20,7 +20,7 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r9` | `traefik, db` | 2 |
+| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r10` | `traefik, db` | 2 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -41,6 +41,10 @@ This page records the current implementation, security boundaries, and verificat
 ## Identity and authorization data flow
 
 Samba AD supplies users and groups. The Portal authenticates against the directory, and IAM publishes OIDC/SAML endpoints and group attributes to consumers. `Admins` may enter the Manager.
+
+### Application-session logout
+
+During `render_env`, the generic OIDC logout contract maps to LLNG's `oidcRPMetaDataOptionsLogoutUrl`, `LogoutType=back`, and `LogoutSessionRequired=1`. `PostLogoutRedirectUris` and bypass-confirm remain RP-initiated-logout settings and do not replace back-channel notification. SAML imports the SLS from SP metadata and keeps `SignSLOMessage=1`; Redirect SLO guarantees only browser-mediated IAM-initiated logout.
 
 | Capability | Current declaration |
 | --- | --- |

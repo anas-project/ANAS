@@ -1133,6 +1133,9 @@ func (a *app) calculate() error {
 			}
 		}
 	}
+	if err := a.validateIAMClientRegistrations(); err != nil {
+		return err
+	}
 	domains := []string{}
 	seenDomains := map[string]bool{}
 	addDomain := func(fqdn, owner string) {

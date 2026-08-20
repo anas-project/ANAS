@@ -1,0 +1,15 @@
+modules:
+  samba_dc: {}
+  postgres: {}
+  authentik: {}
+  nextcloud:
+    config:
+      iam_protocol: saml
+identity:
+  iam:
+    provider: authentik
+global:
+  base_domain: saml-authentik.example.test
+  email: admin@saml-authentik.example.test
+  timezone: Asia/Shanghai
+  virtual_domain: true

@@ -57,10 +57,15 @@ for app in "${app_list[@]}"; do
     "$app" "$provider" "$expected"
 done
 
+test "$(container_env "$iam_container" ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_METHODS)" = backchannel
+test "$(container_env "$iam_container" ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_SESSION_REQUIRED)" = true
+test "$(container_env "$iam_container" ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_URI)" = \
+  "https://nc.${ANAS_TEST_DOMAIN:-nas.test}:${ANAS_TEST_ENTRY_PORT:-9000}/index.php/apps/user_oidc/backchannel-logout/anas"
+
 case "$provider" in
   authentik)
     "$docker_cmd" exec "$iam_container" ak shell -c \
-      "from authentik.core.models import Application; from authentik.policies.models import PolicyBinding; apps='$apps'.split(','); assert all(Application.objects.filter(slug=a).exists() for a in apps); assert all(PolicyBinding.objects.filter(target=Application.objects.get(slug=a)).exists() for a in apps)"
+      "from authentik.core.models import Application; from authentik.policies.models import PolicyBinding; from authentik.providers.oauth2.models import OAuth2Provider, RedirectURIType; apps='$apps'.split(','); assert all(Application.objects.filter(slug=a).exists() for a in apps); assert all(PolicyBinding.objects.filter(target=Application.objects.get(slug=a)).exists() for a in apps); p=OAuth2Provider.objects.get(name='nextcloud'); assert p.logout_method == 'backchannel'; assert p.logout_uri.endswith('/index.php/apps/user_oidc/backchannel-logout/anas'); assert any(uri.redirect_uri_type == RedirectURIType.LOGOUT for uri in p.redirect_uris)"
     ;;
   llng)
     # The generated LLNG configuration, rather than only its input env, must
@@ -70,6 +75,9 @@ case "$provider" in
         'file=$(find /var/lib/lemonldap-ng/conf -maxdepth 1 -name "lmConf-*.json" | sort -V | tail -n 1); jq -r --arg app "$1" ".oidcRPMetaDataOptions[\$app].oidcRPMetaDataOptionsRule // empty" "$file"' \
         iam-contract "$app" | grep -Fq "inGroup('APP_$app')"
     done
+    "$docker_cmd" exec "$iam_container" sh -lc \
+      'file=$(find /var/lib/lemonldap-ng/conf -maxdepth 1 -name "lmConf-*.json" | sort -V | tail -n 1); jq -e '\''(.oidcRPMetaDataOptions.nextcloud.oidcRPMetaDataOptionsLogoutType == "back") and (.oidcRPMetaDataOptions.nextcloud.oidcRPMetaDataOptionsLogoutSessionRequired == 1) and (.oidcRPMetaDataOptions.nextcloud.oidcRPMetaDataOptionsLogoutUrl | endswith("/index.php/apps/user_oidc/backchannel-logout/anas"))'\'' "$file"' \
+      >/dev/null
     ;;
 esac
 

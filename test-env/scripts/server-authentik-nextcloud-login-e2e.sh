@@ -305,3 +305,20 @@ connection_id=$(printf '%s\n' "$connection_id" | tail -n 1 | tr -d '\r')
 test "$connection_id" = "$anchor"
 
 printf 'login=allowed username=%s id=%s identity_anchor=matched\n' "$username" "$session_id"
+
+printf '== end Authentik browser session and complete SAML Redirect SLO ==\n'
+logout_final=$(curl_auth -L -D "$headers" -o "$body" -w '%{url_effective}' \
+  "https://$authentik_host:$entry_port/if/flow/default-invalidation-flow/")
+for attempt in $(seq 1 30); do
+  session_json=$(curl_auth -H 'OCS-APIRequest: true' \
+    "$nextcloud_url/ocs/v2.php/cloud/user?format=json" || true)
+  session_after=$(printf '%s' "$session_json" | jq -r '.ocs.data.id // empty' 2>/dev/null || true)
+  meta_status=$(printf '%s' "$session_json" | jq -r '.ocs.meta.statuscode // empty' 2>/dev/null || true)
+  if [ -n "$meta_status" ] && [ "$session_after" != "$session_id" ]; then
+    printf 'saml_logout=passed final_url=%s\n' "$logout_final"
+    exit 0
+  fi
+  sleep 1
+done
+printf 'Nextcloud SAML session remained authenticated after Authentik logout\n' >&2
+exit 1

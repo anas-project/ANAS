@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `nextcloud` |
-| 版本 / revision | `34.0.2-r7` |
+| 版本 / revision | `34.0.2-r8` |
 | 状态 | `release` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -42,6 +42,8 @@ identity:
 ## 身份、用户与 Group
 
 LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍受支持。两条链路通过一致的目录用户名和 `anasIdentityAnchor` 关联。Samba `Admins` 动态映射 Nextcloud 管理员权限。普通目录密码修改通过受限 password bind 服务账号回写，而不是数据库管理员账号。
+
+OIDC 模式向 IAM 声明 `user_oidc` 的 back-channel logout endpoint；用户从 IAM 登出、管理员撤销 IAM 会话或停用账号时，IAM 会通知 Nextcloud 清除对应应用会话。SAML 模式声明 HTTP-Redirect SLS，仅保证浏览器参与的 IAM 发起 Single Logout，不承诺后台无浏览器撤销。
 
 | 能力 | 当前声明 |
 | --- | --- |
@@ -146,7 +148,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`34.0.2-r7`（reviewed 2026-08-13）
+- Module version / 版本：`34.0.2-r8`（reviewed 2026-08-21）
 - Timezone / 时区：`partial` — Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
 - Language scope / 语言范围：Nextcloud Web UI
 - Selection / 选择方式：`browser`

@@ -7,7 +7,7 @@ OIDC is the current ANAS default IAM integration protocol, but it applies only t
 | `netbird` | Yes | Direct IAM/OIDC consumer | Implemented |
 | `oauth2_proxy` | Yes | Direct IAM/OIDC consumer and ForwardAuth provider | Implemented |
 | `ddns_updater` | Indirect | `oauth2_proxy` through Traefik ForwardAuth | Implemented |
-| `nextcloud` | Yes | Official `user_oidc` by default; LDAPS provisions users/groups; `user_saml` remains an explicit fallback | Implemented without creating a second user backend |
+| `nextcloud` | Yes | Official `user_oidc` by default; LDAPS provisions users/groups; `user_saml` remains an explicit fallback | Implemented; OIDC back-channel propagates IAM logout and administrative revocation, while SAML Redirect SLO covers browser-mediated logout only |
 | `meshcentral` | Yes | IAM/OIDC authentication, LDAPS user/group synchronization, and OIDC group-to-access/site-admin mapping | Implemented |
 | `lam` | No | LDAPS directory-management login | Not an IAM consumer |
 | `authentik` | N/A | IAM provider with fixed `akadmin` break-glass account | Provides OIDC/SAML |
@@ -46,3 +46,5 @@ tests must make clear that the two stores have different state and scope.
 ## Implementation gate
 
 Marking a module as OIDC-implemented requires a manifest interface, provider client registration, redirect URI/scope/claim/group mapping, Secret delivery, application-state verification, and a real browser or HTTP login E2E. `server-authentik-oidc-login-e2e.sh` covers the complete authorization-code login, application sessions, directory identity, and administrator-group mapping for Nextcloud and MeshCentral. `server-authentik-password-policy-e2e.sh` and `server-llng-password-policy-e2e.sh` separately cover provider preflight, Samba's final decision, writeback, safe error mapping, and credential transition. Upstream OIDC or password-change support alone is not implementation evidence for ANAS.
+
+The two OIDC matrices retain the original Nextcloud cookie and verify IAM-initiated logout: Authentik covers browser logout and administrative session deletion, while LLNG covers browser logout. The Authentik SAML fallback E2E covers Redirect SLO. Headless SAML revocation is outside the support contract until Nextcloud formally advertises a POST SLS.

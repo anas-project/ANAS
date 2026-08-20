@@ -127,12 +127,17 @@ func TestBlueprintTranslatesGenericRegistrations(t *testing.T) {
 	e["ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID"] = "netbird"
 	e["ANAS_IAM_CLIENT__NETBIRD__CLIENT_SECRET"] = "s3cret"
 	e["ANAS_IAM_CLIENT__NETBIRD__REDIRECT_URIS"] = "https://netbird.example/auth,https://netbird.example/silent-auth"
+	e["ANAS_IAM_CLIENT__NETBIRD__POST_LOGOUT_REDIRECT_URIS"] = "https://netbird.example"
+	e["ANAS_IAM_CLIENT__NETBIRD__OIDC_LOGOUT_URI"] = "https://netbird.example/backchannel-logout"
+	e["ANAS_IAM_CLIENT__NETBIRD__OIDC_LOGOUT_METHODS"] = "backchannel,frontchannel"
 	e["ANAS_IAM_CLIENT__NETBIRD__ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1,anasIdentityAnchor:anasIdentityAnchor:1"
 	e["ANAS_IAM_CLIENT__NEXTCLOUD__SP_METADATA_URL"] = "https://nc.example/apps/user_saml/saml/metadata?idp=1"
 	e["ANAS_IAM_CLIENT__NEXTCLOUD__SP_ENTITY_ID"] = "https://nc.example/apps/user_saml/saml/metadata"
 	e["ANAS_IAM_CLIENT__NEXTCLOUD__ACS_URL"] = "https://nc.example/apps/user_saml/saml/acs"
 	e["ANAS_IAM_CLIENT__NEXTCLOUD__NAME_ID_FORMAT"] = "windows"
 	e["ANAS_IAM_CLIENT__NEXTCLOUD__ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1"
+	e["ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_URL"] = "https://nc.example/index.php/apps/user_saml/saml/sls"
+	e["ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_BINDINGS"] = "redirect"
 	e["APPS_LIST__NEXTCLOUD__NAME"] = "Nextcloud"
 
 	blueprint, err := renderClientBlueprint(e)
@@ -151,6 +156,10 @@ func TestBlueprintTranslatesGenericRegistrations(t *testing.T) {
 		"grant_types:\n        - authorization_code\n        - refresh_token",
 		"sub_mode: user_uuid",
 		`url: "https://netbird.example/silent-auth"`,
+		"redirect_uri_type: authorization",
+		"redirect_uri_type: logout",
+		`logout_uri: "https://netbird.example/backchannel-logout"`,
+		"logout_method: backchannel",
 		"scope_name: profile",
 		`claims["anasIdentityAnchor"] = request.user.attributes.get("ldap_uniq")`,
 		"- !KeyOf oidc-mapping-netbird-profile",
@@ -167,6 +176,17 @@ func TestBlueprintTranslatesGenericRegistrations(t *testing.T) {
 			t.Fatalf("blueprint missing %q:\n%s", want, blueprint)
 		}
 	}
+	for _, want := range []string{
+		`sls_url: "https://nc.example/index.php/apps/user_saml/saml/sls"`,
+		"sls_binding: redirect",
+		"logout_method: frontchannel_native",
+		"sign_logout_request: true",
+		"sign_logout_response: true",
+	} {
+		if !strings.Contains(blueprint, want) {
+			t.Fatalf("SAML logout blueprint missing %q:\n%s", want, blueprint)
+		}
+	}
 	// PEM material must survive as a literal block, not a mangled scalar.
 	if !strings.Contains(blueprint, "certificate_data: |") ||
 		!strings.Contains(blueprint, "        -----BEGIN CERTIFICATE-----") {
@@ -179,5 +199,15 @@ func TestBlueprintRequiresRegistrationFields(t *testing.T) {
 	// netbird is listed as an OIDC client but published no client id.
 	if _, err := renderClientBlueprint(e); err == nil {
 		t.Fatal("expected a missing CLIENT_ID to be rejected")
+	}
+}
+
+func TestAuthentikPrefersSAMLBackChannelWhenPOSTIsAvailable(t *testing.T) {
+	binding, method, err := selectAuthentikSAMLLogout("redirect,post")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding != "post" || method != "backchannel" {
+		t.Fatalf("SAML logout selection = %s/%s, want post/backchannel", binding, method)
 	}
 }

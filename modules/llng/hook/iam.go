@@ -103,6 +103,13 @@ func applyClientRegistrations(e map[string]string) error {
 		e[dst+"CLIENT_SECRET"] = e[src+"CLIENT_SECRET"]
 		e[dst+"REDIRECT_URI"] = e[src+"REDIRECT_URIS"]
 		e[dst+"LOGOUT_REDIRECT_URI"] = e[src+"POST_LOGOUT_REDIRECT_URIS"]
+		e[dst+"LOGOUT_URI"] = e[src+"OIDC_LOGOUT_URI"]
+		e[dst+"LOGOUT_TYPE"] = selectOIDCLogoutType(e[src+"OIDC_LOGOUT_METHODS"])
+		if e[src+"OIDC_LOGOUT_SESSION_REQUIRED"] == "true" {
+			e[dst+"LOGOUT_SESSION_REQUIRED"] = "1"
+		} else {
+			e[dst+"LOGOUT_SESSION_REQUIRED"] = "0"
+		}
 		e[dst+"ALLOW_GROUPS"] = e[src+"ALLOW_GROUPS"]
 		e[dst+"DOMAIN"] = e[src+"DOMAIN"]
 		applyClientAttributes(e, src, dst)
@@ -121,6 +128,20 @@ func applyClientRegistrations(e map[string]string) error {
 		applyClientAttributes(e, src, dst)
 	}
 	return nil
+}
+
+func selectOIDCLogoutType(methods string) string {
+	for _, preferred := range []string{"backchannel", "frontchannel"} {
+		for _, method := range splitCSV(methods) {
+			if method == preferred {
+				if method == "backchannel" {
+					return "back"
+				}
+				return "front"
+			}
+		}
+	}
+	return ""
 }
 
 // applyClientAttributes expands the generic ATTRIBUTES list

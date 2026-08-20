@@ -1,11 +1,20 @@
 ---
 doc_type: research
 created: 2026-08-20
-updated: 2026-08-20
-evidence_as_of: 2026-08-20
+updated: 2026-08-21
+evidence_as_of: 2026-08-21
 ---
 
 # IAM 登出同步到应用的 OIDC / SAML 方案
+
+## 实施状态（2026-08-21）
+
+- 已扩展通用 client contract，并由 Runner 在 Provider `render_env` 前校验 endpoint、method、binding 和布尔字段的成对关系与枚举值。
+- Nextcloud 已发布官方 `user_oidc` back-channel endpoint 和 `user_saml` Redirect SLS。
+- Authentik blueprint 已登记 authorization/logout 两类 redirect URI、OIDC back-channel 和 SAML `frontchannel_native` + 签名 SLO。
+- LLNG 已把通用 OIDC 声明翻译为 `LogoutUrl`、`LogoutType=back`、`LogoutSessionRequired=1`；原 SAML metadata + 签名路径保留。
+- OIDC 两套真实登录 matrix 已增加保留 Nextcloud Cookie 的登出失效断言；Authentik 同时增加管理员删除 session 用例。Authentik SAML fallback E2E 已增加 Redirect SLO 断言。
+- 静态/模块测试已覆盖契约缺项、非法枚举和 Provider 配置翻译。真实容器 matrix 仍需在对应隔离 Docker fixture 中执行，运行结果不能由静态测试代替。
 
 ## 结论
 
