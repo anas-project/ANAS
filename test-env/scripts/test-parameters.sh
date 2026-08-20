@@ -25,9 +25,9 @@ import json, os, re, sys
 
 doc = json.load(open(sys.argv[1]))
 parameters = doc["parameters"]
-assert len(parameters) == 141, len(parameters)
+assert len(parameters) == 146, len(parameters)
 assert sum(item["module"] == "global" for item in parameters) == 17
-assert sum(item["module"] != "global" for item in parameters) == 124
+assert sum(item["module"] != "global" for item in parameters) == 129
 
 removed = {
     "global.basicauth_user",
@@ -120,7 +120,7 @@ for item in parameters:
     default_source_counts[source] = default_source_counts.get(source, 0) + 1
 assert default_source_counts == {
     "none": 8,
-    "static": 112,
+    "static": 117,
     "host": 3,
     "runtime": 4,
     "generated": 9,
@@ -139,6 +139,7 @@ constraint_cases = {
     "samba_dc.domain": {"format": "dns_name"},
     "eturnal.port": {"minimum": 1, "maximum": 65535},
     "samba_dc.max_log_size": {"minimum": 1},
+    "casdoor.ldap_auto_sync_minutes": {"minimum": 1},
     "oauth2_proxy.allow_groups": {"pattern": r"\S"},
 }
 for path, constraints in constraint_cases.items():
@@ -159,10 +160,10 @@ for item in parameters:
     else:
         assert "allowed_values" not in item, (item["path"], kind, item.get("allowed_values"))
 assert type_counts == {
-    "string": 80,
+    "string": 83,
     "bool": 22,
-    "int": 24,
-    "enum": 15,
+    "int": 25,
+    "enum": 16,
 }, type_counts
 
 global_types = {
@@ -242,13 +243,13 @@ effects = {}
 for item in parameters:
     effects[item["effect"]] = effects.get(item["effect"], 0) + 1
 assert effects == {
-    "container_recreate": 91,
+    "container_recreate": 94,
     "credential_rotate": 7,
-    "data_migrate": 10,
+    "data_migrate": 11,
     "hot_reload": 16,
     "image_rebuild": 1,
     "immutable": 4,
-    "reconcile": 12,
+    "reconcile": 13,
 }, effects
 
 # Every hot_reload/reconcile declaration must be tied to an explicit runtime
@@ -260,6 +261,7 @@ effect_cases = {
     "global.default_locale": ("reconcile", "in_place", "localization"),
     "global.virtual_domain": ("reconcile", "requires_recreate", "certificate_mode"),
     "authentik.domain_prefix": ("reconcile", "requires_recreate", "docker_route"),
+    "casdoor.domain_prefix": ("reconcile", "requires_recreate", "docker_route"),
     "llng.domain_prefix": ("reconcile", "requires_recreate", "docker_route"),
     "lego.dns_provider": ("reconcile", "requires_recreate", "long_lived_env"),
     "nextcloud.domain_prefix": ("reconcile", "requires_recreate", "docker_route"),

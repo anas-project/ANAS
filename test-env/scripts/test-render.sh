@@ -44,6 +44,24 @@ for config in "$CONFIG_DIR"/*.yml; do
   printf '%s\n' "$latest" >>"$rendered_deployments"
 
   case "$name" in
+    iam-casdoor)
+      grep -Fq 'ANAS_IAM_BINDING__NEXTCLOUD__OIDC_DISCOVERY_URL=https://auth.casdoor.example.test:9000/.well-known/openid-configuration' \
+        "$latest/modules/nextcloud/.env"
+      grep -Fq 'ANAS_IAM_CLIENT__NEXTCLOUD__CLIENT_ID=nextcloud' \
+        "$latest/modules/casdoor/.env"
+      grep -Fq 'defaultLanguage = "zh"' "$latest/modules/casdoor/conf/app.conf"
+      grep -Fq '"name": "app-anas-nextcloud"' "$latest/modules/casdoor/conf/init_data.template.json"
+      grep -Fq '"id": "anas-samba-ad"' "$latest/modules/casdoor/conf/init_data.template.json"
+      grep -Fq '"name": "admin_casdoor"' "$latest/modules/casdoor/conf/init_data.template.json"
+      grep -Fq 'CASDOOR_DIRWATCH_EVENTS_DIR=' "$latest/modules/casdoor/.env"
+      grep -Fq 'CASDOOR_DIRWATCH_LDAP_ID=anas/anas-samba-ad' "$latest/modules/casdoor/.env"
+      grep -Fq 'CASDOOR_DIRWATCH_ENDPOINT=http://anas_casdoor:8000' "$latest/modules/casdoor/.env"
+      grep -Fq 'anas_casdoor_dirwatch:' "$latest/modules/casdoor/docker-compose.yml"
+      if grep -Fq 'ANAS_IAM_BINDING__NEXTCLOUD__SAML_SLO_URL=' "$latest/modules/casdoor/.env"; then
+        echo "Casdoor render invented an unsupported SAML SLO endpoint" >&2
+        exit 1
+      fi
+      ;;
     iam-saml-authentik)
       grep -Fq 'ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_BINDINGS=redirect' \
         "$latest/modules/nextcloud/.env"
@@ -183,6 +201,6 @@ for parameter in inventory:
         missing.append((parameter["path"], parameter["env_key"]))
 
 assert not missing, "declared parameters absent from fresh renders: " + repr(missing)
-assert len(inventory) == 141, len(inventory)
+assert len(inventory) == 146, len(inventory)
 print(f"observed all {len(inventory)} parameter transports in fresh deployment artifacts")
 PY

@@ -11,6 +11,7 @@ OIDC is the current ANAS default IAM integration protocol, but it applies only t
 | `meshcentral` | Yes | IAM/OIDC authentication, LDAPS user/group synchronization, and OIDC group-to-access/site-admin mapping | Implemented |
 | `lam` | No | LDAPS directory-management login | Not an IAM consumer |
 | `authentik` | N/A | IAM provider with fixed `akadmin` break-glass account | Provides OIDC/SAML |
+| `casdoor` | N/A | Developing IAM provider with default-template `admin_casdoor` break-glass account | Provides OIDC/SAML and subscribes to Samba directory events; SAML SLO, permanent anchors, and `ALLOW_GROUPS` remain unaccepted |
 | `llng` | N/A | IAM provider | Provides OIDC/SAML |
 | `ddns_go` | No | ANAS-managed local emergency account | No OIDC |
 | `traefik` | No | ANAS-managed local BasicAuth emergency account | No OIDC |

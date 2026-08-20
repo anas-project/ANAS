@@ -171,7 +171,23 @@ Do not commit `.anas-test/` or generated secrets.
      ./test-env/scripts/server-directory-events-e2e.sh
    ```
 
-10. Database resource hot-add test
+10. Casdoor directory event subscription runtime test
+
+    Against an isolated deployment rendered from
+    `server-casdoor-directory-events-e2e.yml`, proves that a Samba account is
+    absent while the Casdoor subscriber is stopped and is imported promptly
+    when the subscriber resumes. It also covers attribute refresh, burst
+    debouncing, health, and cursor durability. The fixture stretches Casdoor's
+    scheduled sync to one day so the event path is the only actor inside the
+    assertion window.
+
+    ```sh
+    DOCKER_HOST=unix:///run/anas-casdoor-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_casdoor_ \
+      ./test-env/scripts/server-casdoor-directory-events-e2e.sh
+    ```
+
+11. Database resource hot-add test
 
     Applies a PostgreSQL/authentik baseline, then adds Nextcloud. It proves the
     runner creates a dedicated `nextcloud` role and database through the

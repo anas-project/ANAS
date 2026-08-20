@@ -707,8 +707,8 @@ case "$NEXTCLOUD_IAM_PROTOCOL" in
         --saml-attribute-mapping-user_id_ldap_mapping="$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE" \
         --idp-entityId="$NEXTCLOUD_SAML_IDP_ENTITY_ID" \
         --idp-singleSignOnService.url="$NEXTCLOUD_SAML_IDP_SSO" \
-        --idp-singleLogoutService.url="$NEXTCLOUD_SAML_IDP_SLO" \
-        --idp-singleLogoutService.responseUrl="$NEXTCLOUD_SAML_IDP_SLO_RESPONSE" \
+        --idp-singleLogoutService.url="${NEXTCLOUD_SAML_IDP_SLO:-}" \
+        --idp-singleLogoutService.responseUrl="${NEXTCLOUD_SAML_IDP_SLO_RESPONSE:-}" \
         --idp-x509cert="$NEXTCLOUD_SAML_IDP_CERT" \
         --sp-x509cert="$NEXTCLOUD_SAML_SP_CERT" \
         --sp-privateKey="$NEXTCLOUD_SAML_SP_PRIVATE_KEY" \

@@ -43,7 +43,7 @@ identity:
 
 LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍受支持。两条链路通过一致的目录用户名和 `anasIdentityAnchor` 关联。Samba `Admins` 动态映射 Nextcloud 管理员权限。普通目录密码修改通过受限 password bind 服务账号回写，而不是数据库管理员账号。
 
-OIDC 模式向 IAM 声明 `user_oidc` 的 back-channel logout endpoint；用户从 IAM 登出、管理员撤销 IAM 会话或停用账号时，IAM 会通知 Nextcloud 清除对应应用会话。SAML 模式声明 HTTP-Redirect SLS，仅保证浏览器参与的 IAM 发起 Single Logout，不承诺后台无浏览器撤销。
+OIDC 模式向 IAM 声明 `user_oidc` 的 back-channel logout endpoint；用户从 IAM 登出、管理员撤销 IAM 会话或停用账号时，IAM 会通知 Nextcloud 清除对应应用会话。SAML 模式声明 HTTP-Redirect SLS；Provider 发布 SLO 时仅保证浏览器参与的 IAM 发起 Single Logout，不承诺后台无浏览器撤销。Provider 不发布 SLO 时只配置本地登出。
 
 | 能力 | 当前声明 |
 | --- | --- |

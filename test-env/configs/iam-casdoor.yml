@@ -1,0 +1,15 @@
+# Casdoor is a developing IAM provider. This render matrix validates the common
+# OIDC registration path without claiming production directory semantics.
+modules:
+  samba_dc: {}
+  postgres: {}
+  nextcloud: {}
+identity:
+  iam:
+    provider: casdoor
+global:
+  base_domain: casdoor.example.test
+  email: admin@casdoor.example.test
+  timezone: Asia/Shanghai
+  default_language: zh-CN
+  virtual_domain: true

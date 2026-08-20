@@ -57,7 +57,7 @@ LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍
 
 ### IAM 发起登出
 
-OIDC 注册发布 `/index.php/apps/user_oidc/backchannel-logout/anas`、`backchannel` 和 session-required 声明。签名 logout token 由官方 `user_oidc` 处理；浏览器登出、管理员删除 IAM session 和账号停用都能撤销对应 Nextcloud session。SAML 注册发布 `/index.php/apps/user_saml/saml/sls` 的 Redirect binding；该链路依赖浏览器完成 `LogoutRequest -> SLS -> LogoutResponse`，后台撤销不在保证范围内。
+OIDC 注册发布 `/index.php/apps/user_oidc/backchannel-logout/anas`、`backchannel` 和 session-required 声明。签名 logout token 由官方 `user_oidc` 处理；浏览器登出、管理员删除 IAM session 和账号停用都能撤销对应 Nextcloud session。SAML 注册发布 `/index.php/apps/user_saml/saml/sls` 的 Redirect binding；Provider 发布可选 SLO 时，该链路依赖浏览器完成 `LogoutRequest -> SLS -> LogoutResponse`，后台撤销不在保证范围内。Provider 未发布 SLO 时 Hook 清除旧端点，`user_saml` 只执行本地登出。
 
 Web 与 cron 容器都会在 ANAS 内部 CA 存在时安装它。`user_ldap` 会在 cron 后台任务中周期更新目录属性，因此 cron 不仅共享 Nextcloud 数据，也必须共享 `/certs` 信任材料；CA 安装或 trust store 更新失败会阻断 cron 启动，公有 CA 则直接使用系统 trust store。
 

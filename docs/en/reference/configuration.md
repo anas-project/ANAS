@@ -1,12 +1,12 @@
 # Structured `config.yml` and environment-variable inventory
 
-This reference distinguishes settings with a structured `config.yml` entry from overrides that currently require top-level `env:`. Counts reflect the 2026-08-19 working tree and are not a fixed ABI.
+This reference distinguishes settings with a structured `config.yml` entry from overrides that currently require top-level `env:`. Counts reflect the 2026-08-21 working tree and are not a fixed ABI.
 
 ## Summary
 
-- `anas config list --json` currently declares **141** configurable parameters: 17 global and 124 module parameters.
-- 120 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
-- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 141 count.
+- `anas config list --json` currently declares **146** configurable parameters: 17 global and 129 module parameters.
+- 125 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
+- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 146 count.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
 
 “Structured” has two layers:
@@ -111,14 +111,14 @@ existing deployment creates a different set of projects, container names, and
 cross-container addresses. It is a static deployment change, not an in-place
 rename, so the old deployment must be explicitly migrated or removed first.
 
-## The 141 declared parameters
+## The 146 declared parameters
 
 Every entry below appears in `anas config list`. Ordinary editable parameters can be addressed by `anas config set`; `credential_rotate`, `data_migrate`, and `immutable` entries are inventory/explain-only and require their dedicated workflow. Global parameters use `global.<parameter>`; ordinary module parameters use `modules.<module>.config.<parameter>`.
 
 The JSON inventory reports `type` as `string`, `bool`, `int`, or `enum`; enum
 entries also provide `allowed_values`. `unknown` remains a compatibility value
 for legacy Modules and incomplete development declarations, but the built-in
-Module release gate rejects it, so all 141 entries in this inventory have an
+Module release gate rejects it, so all 146 entries in this inventory have an
 explicit type.
 
 Configuration metadata separates “the operator must enter a value” from “the
@@ -159,15 +159,15 @@ have `input_required`/`required` set to true; 23 entries have
 `must_resolve: true`, and `default_source: none`. Module-local input is needed
 only when that resolver cannot supply the value.
 
-The `default_source` distribution is `static: 112`, `generated: 9`, `none: 8`,
-`runtime: 4`, `inherited: 5`, and `host: 3`. The 112 `has_default: true`
-entries are exactly the 112 `static` entries.
+The `default_source` distribution is `static: 117`, `generated: 9`, `none: 8`,
+`runtime: 4`, `inherited: 5`, and `host: 3`. The 117 `has_default: true`
+entries are exactly the 117 `static` entries.
 
-The current 13 explicit single-field constraints cover the DNS-name formats
+The current 14 explicit single-field constraints cover the DNS-name formats
 for `global.base_domain` and `samba_dc.domain`, timezone and
 language/locale formats, three IPv4 formats, the `1..65535` ranges for
 `eturnal.port`, `meshcentral.mps_port`, and `traefik.base_port`,
-`samba_dc.max_log_size >= 1`, and a non-whitespace requirement for
+`samba_dc.max_log_size >= 1`, `casdoor.ldap_auto_sync_minutes >= 1`, and a non-whitespace requirement for
 `oauth2_proxy.allow_groups`. These declarations preserve already enforced
 runtime rules; unsupported numeric caps, provider-conditional rules, and
 cross-field relationships were not invented merely to populate the schema.
@@ -176,6 +176,7 @@ cross-field relationships were not invented merely to populate the schema.
 | --- | ---: | --- |
 | `global` | 17 | `base_domain`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `dns_server`, `email`, `host_ip`, `host_lan_arp_check`, `host_lan_bridge_ip`, `host_lan_ip`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
 | `authentik` | 6 | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` |
+| `casdoor` | 4 | `db_name`, `db_type`, `domain_prefix`, `ldap_auto_sync_minutes` |
 | `collabora` | 5 | `admin_password`, `admin_username`, `auto_save`, `domain_prefix`, `log_level` |
 | `ddns_go` | 10 | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` |
 | `ddns_updater` | 10 | `dns_provider`, `domain_prefix`, `forward_auth_interface`, `publicip_dns_providers`, `publicip_fetchers`, `publicip_ipv4_providers`, `publicip_ipv6_providers`, `publicip_providers`, `ttl`, `zone_identifier` |
@@ -217,17 +218,17 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 
 ## What changing a parameter does
 
-`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. The 141 current entries group by effect as follows. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
+`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. The 146 current entries group by effect as follows. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
 
 | Effect | Count | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 91 | Re-render and recreate the affected container or Compose project |
+| `container_recreate` | 94 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 7 | Ordinary setting and replacement import are refused; use a credential-rotation transaction to update application state and the Secret Store together |
-| `data_migrate` | 10 | Ordinary setting and deployment activation are blocked until persistent data, a database, or membership is migrated |
+| `data_migrate` | 11 | Ordinary setting and deployment activation are blocked until persistent data, a database, or membership is migrated |
 | `hot_reload` | 16 | The declared target is a Samba management command; the current executor conservatively creates a deployment and runs Compose `up` for the affected container |
 | `image_rebuild` | 1 | Rebuild with `anas apply --build`, then deploy |
 | `immutable` | 4 | Generic `config set` refuses the change; use a replacement or domain-migration workflow |
-| `reconcile` | 12 | The declared target is application/API/file reconciliation; the current executor applies it through a new deployment and container startup |
+| `reconcile` | 13 | The declared target is application/API/file reconciliation; the current executor applies it through a new deployment and container startup |
 
 ### Actual execution boundary in this release
 
@@ -265,7 +266,7 @@ The following results answer whether the upstream service can apply a change in 
 | `nextcloud.language`, `nextcloud.locale` | Yes | The actual system configuration written by `occ` was immediately readable with the same container ID |
 | `samba_fs.share_access_mode`, `samba_fs.share_guest_read_only` | Yes, with a new handler | `smbcontrol all reload-config` made a running `smbd` publish the changed configuration while ACLs changed online. The existing `fix_perm.sh` cannot yet accept explicit inputs from a new deployment |
 | `nextcloud.memories_enabled` | Conditional | Nextcloud supports online app enable/disable, but enabling may also download a pinned release, modify the database, and start places initialization. This needs a transaction, progress, and verification rather than a lone `occ app:enable` |
-| `authentik.domain_prefix`, `llng.domain_prefix`, `nextcloud.domain_prefix` | No | Their complete effect includes Traefik Docker labels. Docker 24.0.7 cannot change a container label with `docker update`; at least the routed containers must be recreated while IAM clients/metadata are reconciled |
+| `authentik.domain_prefix`, `casdoor.domain_prefix`, `llng.domain_prefix`, `nextcloud.domain_prefix` | No | Their complete effect includes Traefik Docker labels. Docker 24.0.7 cannot change a container label with `docker update`; at least the routed containers must be recreated while IAM clients/metadata are reconciled |
 | `lego.dns_provider` | No | A one-shot `docker exec` can receive a new provider, but PID 1's cron environment retains the old value and later renewals revert to the old provider |
 | `global.virtual_domain` | No | Lego retains the old mode in its long-lived environment, and certificate replacement also requires every TLS consumer to reload or recreate; one certificate command cannot complete the global effect |
 
@@ -282,6 +283,7 @@ The table below states what every owner's inputs ultimately change. Each named p
 | `global` | `timezone`, `default_language`, `default_locale` | Produce final `TZ`/BCP 47 defaults and deliver them only to applications declaring support |
 | `global` | `chinese_speedup`, `chinese_build_speedup` | Select runtime image/download mirrors and build-time image/package mirrors; the latter rebuilds images |
 | `authentik` | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` | Select the database resource and generate IAM URLs/blueprints, LDAP source/writeback, and logging |
+| `casdoor` | `db_name`, `db_type`, `domain_prefix`, `ldap_auto_sync_minutes` | Select the PostgreSQL resource and generate IAM URLs, OIDC/SAML applications, LDAPS import configuration, and the synchronization interval |
 | `collabora` | `admin_username`, `admin_password`, `auto_save`, `domain_prefix`, `log_level` | Map explicitly to upstream `username`/`password` and generate `extra_params`, server name, and route |
 | `ddns_go` | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` | Generate ddns-go desired state, polling arguments, address discovery, local login, and the host-network route |
 | `ddns_updater` | `dns_provider`, `domain_prefix`, `forward_auth_interface`, `publicip_fetchers`, `publicip_providers`, `publicip_ipv4_providers`, `publicip_ipv6_providers`, `publicip_dns_providers`, `ttl`, `zone_identifier` | Generate updater JSON, public-address probes, DNS-provider/Cloudflare-zone configuration, and the IAM-gated route |
@@ -403,4 +405,4 @@ test-env/scripts/test-parameter-effects.sh
 test-env/scripts/test-render.sh
 ```
 
-The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the 141-entry inventory, complete type declarations, and retired paths; the real CLI→hook→render→deployment→Compose/refusal boundary for all seven effects; and require every one of the 141 parameter keys to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.
+The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the 146-entry inventory, complete type declarations, and retired paths; the real CLI→hook→render→deployment→Compose/refusal boundary for all seven effects; and require every one of the 146 parameter keys to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.

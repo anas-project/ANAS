@@ -1,0 +1,78 @@
+services:
+  anas_casdoor:
+    container_name: ${CONTAINER_PREFIX}casdoor
+    build:
+      context: ./casdoor
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r1
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SSL_CERT_FILE: /certs/${ANAS_TLS_TRUST_BUNDLE_NAME}
+    volumes:
+      - "./conf/app.conf:/conf/app.conf:ro"
+      - "./conf/init_data.template.json:/opt/anas/conf/init_data.template.json:ro"
+      - "${CASDOOR_LOCAL_ADMIN__BREAK_GLASS_PASSWORD_FILE}:/run/secrets/casdoor-break-glass-password:ro"
+      - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
+      - "${DATA_PATH}/casdoor/dirwatch:/data/anas-dirwatch"
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=application"
+      - "traefik.http.routers.casdoor.entrypoints=https"
+      - "traefik.http.routers.casdoor.rule=Host(`${CASDOOR_DOMAIN}`)"
+      - "traefik.http.routers.casdoor.tls=true"
+      - "traefik.http.services.casdoor.loadbalancer.server.port=8000"
+    healthcheck:
+      test: ["CMD", "/opt/anas/bin/casdoor-helper", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 90s
+    networks:
+      - traefik
+      - db
+      - casdoor
+
+  # Tails Samba's durable directory-event journal and asks Casdoor to run its
+  # LDAP import immediately after a relevant change. The ordinary periodic
+  # auto-sync remains enabled as the source-of-truth fallback.
+  anas_casdoor_dirwatch:
+    container_name: ${CONTAINER_PREFIX}casdoor_dirwatch
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r1
+    restart: unless-stopped
+    user: "1000:1000"
+    entrypoint: ["/opt/anas/bin/casdoor-helper", "directory-watch"]
+    depends_on:
+      anas_casdoor:
+        condition: service_healthy
+    volumes:
+      - "${CASDOOR_DIRWATCH_EVENTS_DIR}:/var/lib/anas-directory-events:ro"
+      - "${DATA_PATH}/casdoor/dirwatch:/data/anas-dirwatch"
+    env_file:
+      - .env
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/opt/anas/bin/casdoor-helper", "directory-watch", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - casdoor
+
+networks:
+  casdoor:
+    name: ${NETWORK_PREFIX}casdoor
+  db:
+    name: $CASDOOR_NETWORK_DB
+    external: true
+  traefik:
+    name: ${NETWORK_PREFIX}traefik
+    external: true

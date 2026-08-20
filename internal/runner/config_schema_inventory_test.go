@@ -24,26 +24,27 @@ type bundledSourceEvidence struct {
 
 func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	inventory := loadBundledParameterMetadata(t)
-	if got, want := len(inventory), 142; got != want {
+	if got, want := len(inventory), 146; got != want {
 		t.Fatalf("bundled parameter count = %d, want %d", got, want)
 	}
 
 	minimumOne := 1
 	maximumPort := 65535
 	wantConstraints := map[string]configschema.Constraints{
-		"global.base_domain":        {Format: configschema.FormatDNSName},
-		"global.timezone":           {Format: configschema.FormatIANATimezone},
-		"global.default_language":   {Format: configschema.FormatLanguageTag},
-		"global.default_locale":     {Format: configschema.FormatLocale},
-		"global.host_ip":            {Format: configschema.FormatIPv4},
-		"global.host_lan_ip":        {Format: configschema.FormatIPv4},
-		"global.host_lan_bridge_ip": {Format: configschema.FormatIPv4},
-		"eturnal.port":              {Minimum: &minimumOne, Maximum: &maximumPort},
-		"meshcentral.mps_port":      {Minimum: &minimumOne, Maximum: &maximumPort},
-		"traefik.base_port":         {Minimum: &minimumOne, Maximum: &maximumPort},
-		"samba_dc.max_log_size":     {Minimum: &minimumOne},
-		"samba_dc.domain":           {Format: configschema.FormatDNSName},
-		"oauth2_proxy.allow_groups": {Pattern: `\S`},
+		"casdoor.ldap_auto_sync_minutes": {Minimum: &minimumOne},
+		"global.base_domain":             {Format: configschema.FormatDNSName},
+		"global.timezone":                {Format: configschema.FormatIANATimezone},
+		"global.default_language":        {Format: configschema.FormatLanguageTag},
+		"global.default_locale":          {Format: configschema.FormatLocale},
+		"global.host_ip":                 {Format: configschema.FormatIPv4},
+		"global.host_lan_ip":             {Format: configschema.FormatIPv4},
+		"global.host_lan_bridge_ip":      {Format: configschema.FormatIPv4},
+		"eturnal.port":                   {Minimum: &minimumOne, Maximum: &maximumPort},
+		"meshcentral.mps_port":           {Minimum: &minimumOne, Maximum: &maximumPort},
+		"traefik.base_port":              {Minimum: &minimumOne, Maximum: &maximumPort},
+		"samba_dc.max_log_size":          {Minimum: &minimumOne},
+		"samba_dc.domain":                {Format: configschema.FormatDNSName},
+		"oauth2_proxy.allow_groups":      {Pattern: `\S`},
 	}
 	gotConstraints := map[string]configschema.Constraints{}
 	for path, metadata := range inventory {
@@ -207,7 +208,7 @@ func loadBundledParameterMetadata(t *testing.T) map[string]bundledParameterMetad
 		t.Fatal(err)
 	}
 
-	out := make(map[string]bundledParameterMetadata, 142)
+	out := make(map[string]bundledParameterMetadata, 146)
 	for _, parameter := range globalConfig.Parameters {
 		envKey := parameterEnvKey(globalModuleName, parameter, reg)
 		_, hasDefault := globalConfig.Defaults[envKey]

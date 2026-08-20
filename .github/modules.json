@@ -6,6 +6,12 @@
     "shared_contexts": ["go.mod", "go.sum", "contracts"]
   },
   {
+    "module": "casdoor",
+    "repository": "anas-module-casdoor",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
     "module": "collabora",
     "repository": "anas-module-collabora",
     "platforms": ["linux/amd64", "linux/arm64"],

@@ -61,3 +61,24 @@ func TestApplyNextcloudSAMLBindingStillSupported(t *testing.T) {
 		t.Fatalf("SLO response = %q", got)
 	}
 }
+
+func TestApplyNextcloudSAMLBindingWithoutOptionalSLO(t *testing.T) {
+	e := map[string]string{
+		"ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE":         "saml",
+		"ANAS_IAM_BINDING__NEXTCLOUD__SAML_ENTITY_ID":    "https://auth.example/metadata",
+		"ANAS_IAM_BINDING__NEXTCLOUD__SAML_SSO_URL":      "https://auth.example/sso",
+		"ANAS_IAM_BINDING__NEXTCLOUD__SAML_SIGNING_CERT": "cert",
+		"ANAS_IAM_PORTAL_URL":                            "https://auth.example",
+		"NEXTCLOUD_SAML_IDP_SLO":                         "https://stale.example/slo",
+		"NEXTCLOUD_SAML_IDP_SLO_RESPONSE":                "https://stale.example/response",
+	}
+	if err := applyIAMBinding(e); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := e["NEXTCLOUD_SAML_IDP_SLO"]; ok {
+		t.Fatal("stale SAML SLO endpoint was retained")
+	}
+	if _, ok := e["NEXTCLOUD_SAML_IDP_SLO_RESPONSE"]; ok {
+		t.Fatal("stale SAML SLO response endpoint was retained")
+	}
+}

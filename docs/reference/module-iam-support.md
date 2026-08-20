@@ -11,6 +11,7 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 | `meshcentral` | 是 | IAM/OIDC 认证；LDAPS 同步用户/组；OIDC group 映射应用访问和 site-admin | 已实现 |
 | `lam` | 否 | LDAPS 目录管理登录 | 不属于当前 IAM consumer |
 | `authentik` | 不适用 | IAM provider；另有固定 `akadmin` break-glass | 提供 OIDC/SAML，不把自身当普通 consumer |
+| `casdoor` | 不适用 | developing IAM provider；使用默认模板 `admin_casdoor` break-glass | 已接入 OIDC/SAML 注册与 Samba 目录事件触发同步；SAML SLO、永久 anchor 与 `ALLOW_GROUPS` 门禁尚未通过生产验收 |
 | `llng` | 不适用 | IAM provider | 提供 OIDC/SAML，不把自身当普通 consumer |
 | `ddns_go` | 否 | ANAS 托管 local emergency account | 不支持 OIDC |
 | `traefik` | 否 | ANAS 托管本地 BasicAuth emergency account | 不支持 OIDC |
@@ -46,3 +47,5 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 Nextcloud 的 IAM 发起登出由两套 OIDC matrix 保留原 Cookie 验证：Authentik 覆盖浏览器
 登出和管理员删除 session，LLNG 覆盖浏览器登出；SAML fallback 的 Authentik E2E 覆盖
 Redirect SLO。SAML 后台撤销在 Nextcloud 正式声明 POST SLS 前不属于支持范围。
+Provider 没有发布可选 `SAML_SLO_URL`（例如当前 Casdoor 集成）时，Nextcloud 只配置
+SSO 与签名证书，并执行应用本地登出，不得把普通退出页猜成标准 SLO endpoint。

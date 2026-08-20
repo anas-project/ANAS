@@ -1,0 +1,97 @@
+# Casdoor
+
+IAM provider for OIDC and SAML with directory users imported from Samba AD over LDAPS.
+
+> [!WARNING]
+> Lifecycle is `developing` and intended only for development and validation. Permanent directory anchors, per-application group authorization, deactivation propagation, and real client-session revocation have not passed production acceptance.
+
+## Quick facts
+
+<!-- generated:module-facts:start -->
+| Item | Value |
+| --- | --- |
+| Module | `casdoor` |
+| Version / revision | `3.143.0-r1` |
+| Status | `developing` |
+| Category | `identity` |
+| Runtime | `compose` |
+<!-- generated:module-facts:end -->
+
+## Required modules, capabilities, and contracts
+
+| Dependency | Type | Interface/version |
+| --- | --- | --- |
+| `traefik` | Module | — |
+| `samba_dc` | Module | — |
+| `relational_database` | Contract | `>=1.0.0 <2.0.0`; `postgres` |
+| `iam` | Provides capability | `oidc, saml` |
+
+## Minimal configuration
+
+```yaml
+identity:
+  iam:
+    provider: casdoor
+modules:
+  nextcloud: {}
+```
+
+## Identity and protocol behavior
+
+Samba AD remains authoritative. Casdoor imports users and verifies passwords over LDAPS with a restricted read-only bind. A dedicated `casdoor_dirwatch` subscriber tails Samba's durable directory-event journal and triggers an LDAP import after debounce; the default five-minute schedule remains as fallback. This integration does not enable Casdoor LDAP/AD password writeback.
+
+OIDC and SAML consumers are registered through `ANAS_IAM_CLIENT__<APP>__*`. Casdoor does not publish a verified SAML SLO endpoint, so consumers perform local logout. Declared OIDC back-channel URIs are registered, but real session revocation still requires E2E acceptance.
+
+The generic `ALLOW_GROUPS` contract has no verified equivalent Casdoor application policy, and unknown SAML attributes currently fall back to Casdoor's local user ID rather than a verified `anasIdentityAnchor`. These gaps prevent production support.
+
+## Administrator recovery
+
+The `break_glass` account follows ANAS's immutable `admin_{module}` template, producing `admin_casdoor`. Casdoor has no upstream-mandated built-in name, so the manifest does not declare `fixed_username`. Its password is generated independently and can be rotated transactionally.
+
+```bash
+anas admin local credential casdoor break_glass -w /srv/anas
+anas admin local rotate casdoor break_glass -w /srv/anas
+```
+
+## Database support
+
+| Item | Value |
+| --- | --- |
+| Role | Consumer |
+| Interfaces | `postgres` |
+| Default | `postgres` |
+| Resource | `primary_database` |
+| Credential policy | `generated` |
+| Deletion policy | `retain` |
+
+## All configuration parameters
+
+This inventory comes from `module.yml` and `anas config list`.
+
+| Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `casdoor.db_name` | string | — | `casdoor` | `static` | `CASDOOR_DB_NAME` | no | no | no | yes | `container_recreate` | Casdoor database name |
+| `casdoor.db_type` | enum (`auto`, `postgres`) | — | `auto` | `static` | `CASDOOR_DB_TYPE` | no | no | no | no: `migrate-casdoor-database` | `data_migrate` | Relational database interface or automatic selection |
+| `casdoor.domain_prefix` | string | — | `auth` | `static` | `CASDOOR_DOMAIN_PREFIX` | no | no | no | yes | `reconcile` | Service domain prefix and all IAM endpoints |
+| `casdoor.ldap_auto_sync_minutes` | int | `>= 1` | `5` | `static` | `CASDOOR_LDAP_AUTO_SYNC_MINUTES` | no | no | no | yes | `container_recreate` | LDAP automatic synchronization interval in minutes |
+
+### Query and modify
+
+```bash
+anas config list casdoor -w /srv/anas
+anas config explain casdoor.ldap_auto_sync_minutes
+anas config plan -w /srv/anas
+```
+
+## Timezone and language
+
+- Casdoor receives the container timezone.
+- ANAS maps a `zh` global language to `zh` and otherwise selects `en`; users may change the UI language.
+
+## Storage and verification
+
+Casdoor state lives in PostgreSQL, while the directory-subscriber cursor lives under `${DATA_PATH}/casdoor/dirwatch`. Back up the database, cursor, workspace secret store, and local-administrator inventory at the same recovery point.
+
+## Technical documentation
+
+See [technical documentation](docs/technical.en.md) for implementation boundaries and tests.

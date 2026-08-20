@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: casdoor
+module_version: 3.143.0
+module_revision: 1
+reviewed_at: 2026-08-21
+timezone:
+  status: container
+  mechanism: Casdoor receives TZ through the module environment; no separate application timezone is forced.
+language:
+  status: supported
+  scope: Casdoor Web UI default
+  selection: application
+  global_default: applied
+  global_locale: not_consumed
+  upstream_format: Casdoor language code
+  fallback: ANAS maps zh-prefixed defaults to zh and all other values to en; users may change the UI language in Casdoor.
+  supported: [en, zh]
+  evidence:
+    - version: v3.143.0
+      url: https://github.com/casdoor/casdoor/tree/v3.143.0/web/src/locales
+      path: web/src/locales English and Chinese resources
+  notes: This inventory records the two ANAS-selected defaults, not every translation shipped by upstream.

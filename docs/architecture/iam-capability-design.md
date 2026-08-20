@@ -2,11 +2,11 @@
 
 ## 1. 目标与硬约束
 
-ANAS 应允许应用 Module 对接不同 IAM 实现，例如 LemonLDAP::NG（LLNG）和 Authentik，
+ANAS 应允许应用 Module 对接不同 IAM 实现，例如 LemonLDAP::NG（LLNG）、Authentik 和 Casdoor，
 而不在应用 Hook 中按 IAM 名称写分支。
 
 > **实现状态**：阶段 A–D 已全部落地。仓库中的 Keycloak scaffold 已删除，
-> `iam.provider` 在 `llng` 与 `authentik` 之间切换不需要改动任何消费方 Module。
+> `iam.provider` 在 `llng`、`authentik` 与 `casdoor` 之间切换不需要改动任何消费方 Module。
 > 与本文档正文的偏差集中记录在 §12。
 
 本设计遵循四条硬约束，它们决定了后面所有取舍：
@@ -42,15 +42,16 @@ Authelia 当前只提供 OIDC，没有 SAML IdP，因此在本设计下**不具�
 资格**，不进入迁移路径。若其未来提供 SAML IdP，可按 §4.1 的准入条件重新评估，
 届时无需修改任何应用 Module。
 
-已实现的双协议提供方是 LLNG 和 Authentik。Keycloak 虽然也满足准入条件，但仓库
-中原有的 scaffold 已删除，不在支持范围内。
+已实现的双协议提供方是 LLNG、Authentik 和处于 `developing` 的 Casdoor。Keycloak
+虽然也满足准入条件，但仓库中原有的 scaffold 已删除，不在支持范围内。
 
-两者的端点模型正好相反，这不是巧合而是选型标准：Authentik 的 Application 与
+这些实现覆盖两种相反的端点模型，这不是巧合而是选型标准：Authentik 的 Application 与
 Provider 一对一绑定，SAML 端点挂在应用 slug 下
 （`/application/saml/<slug>/metadata/`、
 `/application/saml/<slug>/` 等），每个 Provider 有独立的
-EntityID；OIDC 默认也按应用 slug 生成不同 issuer 与 discovery URL。而 LLNG 的
-IdP 端点是部署级单例，所有 SP 共用。同时支持这两种形状，契约才算真的通用。
+EntityID；OIDC 默认也按应用 slug 生成不同 issuer 与 discovery URL。LLNG 的 IdP
+端点是部署级单例，所有 SP 共用；Casdoor 则是 OIDC issuer/SAML SSO 单例、SAML
+metadata 通过 Application 查询参数区分的混合形状。同时支持这些形状，契约才算真的通用。
 
 因此**不能假设 IdP 端点是部署级单例**。§6.2 的端点契约按消费方发布，以覆盖这
 两种形状；这是准入条件之外，第二个必须由契约而非实现来吸收的差异。上述
@@ -131,7 +132,7 @@ v1/v2 双读：所有 Module 一次性切到 v2，Runner 只认识 v2。
 
 ### 4.1 IAM 提供方与准入条件
 
-LLNG：
+LLNG、Authentik 与 Casdoor 都使用同一能力声明：
 
 ```yaml
 abi:
@@ -383,10 +384,10 @@ SAML 客户端使用同一前缀，发布 `SP_METADATA_URL`、`SP_ENTITY_ID`、`
 `ATTRIBUTES` 的格式是 `name:source:required` 的逗号列表，由 Provider 翻译成自己
 的属性映射（LLNG 展开成 `ATTR01`/`ATTR02`…）。
 
-Provider 的 `render_env` Hook 读取所有通用注册请求，翻译成 LLNG 或 Authentik 的
+Provider 的 `render_env` Hook 读取所有通用注册请求，翻译成 LLNG、Authentik 或 Casdoor 的
 私有配置：LLNG 写 `OIDC_RP_*` / `SAML_SP_*` 供其配置脚本消费，Authentik 生成
-声明式 blueprint 创建 Application 与 Provider 对象。私有变量不得再由应用 Module
-生成。
+声明式 blueprint 创建 Application 与 Provider 对象，Casdoor 生成受管 init data。
+私有变量不得再由应用 Module 生成。
 
 由于当前生命周期先完成所有 `calculate`，再执行所有 `render_env`，这个方向与现有
 Hook 顺序兼容，且不会与 §6.2 的 per-app 端点循环依赖：
@@ -509,8 +510,11 @@ Runner 单元测试：
 | --- | --- | --- | --- | --- | --- |
 | LLNG | OIDC, SAML | 部署级单例 | 成功 | 不适用 | 成功 |
 | Authentik | OIDC, SAML | per-app | 成功 | 不适用 | 成功 |
+| Casdoor | OIDC, SAML | 混合：issuer/SSO 单例，metadata per-app | 单元/渲染已接入，E2E 待验 | 单元/渲染已接入，E2E 待验 | 无 SLO；登录 E2E 待验 |
 
-矩阵必须同时覆盖两种端点形状，否则 §6.2 的按消费方端点契约实际上未被验证。
+矩阵必须同时覆盖两种端点形状，否则 §6.2 的按消费方端点契约实际上未被验证。Casdoor
+保持 `developing`，直到目录永久锚点、`ALLOW_GROUPS`、账号停用传播及真实客户端登录/
+撤销流程通过验收；双协议清单准入本身不代表这些目录与授权语义已经合格。
 "Nextcloud OIDC"列不适用，原因见 §12。
 
 测试不仅检查容器为 running，还应请求 OIDC discovery/SAML metadata，完成一次重定向

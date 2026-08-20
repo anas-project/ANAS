@@ -88,7 +88,6 @@ func applyIAMBinding(e map[string]string) error {
 		for _, field := range []struct{ src, dst string }{
 			{"SAML_ENTITY_ID", "NEXTCLOUD_SAML_IDP_ENTITY_ID"},
 			{"SAML_SSO_URL", "NEXTCLOUD_SAML_IDP_SSO"},
-			{"SAML_SLO_URL", "NEXTCLOUD_SAML_IDP_SLO"},
 			{"SAML_SIGNING_CERT", "NEXTCLOUD_SAML_IDP_CERT"},
 		} {
 			value := e[iamBindingPrefix+field.src]
@@ -97,10 +96,17 @@ func applyIAMBinding(e map[string]string) error {
 			}
 			e[field.dst] = value
 		}
-		// Single logout response URL is optional in the contract; fall back to
-		// the logout endpoint when the provider has no separate response URL.
-		e["NEXTCLOUD_SAML_IDP_SLO_RESPONSE"] = defaultValue(
-			e[iamBindingPrefix+"SAML_SLO_RESPONSE_URL"], e[iamBindingPrefix+"SAML_SLO_URL"])
+		// SLO itself is optional in the generic contract. When absent, omit both
+		// values so Nextcloud performs local logout instead of targeting a stale
+		// or invalid IdP endpoint.
+		if slo := e[iamBindingPrefix+"SAML_SLO_URL"]; slo != "" {
+			e["NEXTCLOUD_SAML_IDP_SLO"] = slo
+			e["NEXTCLOUD_SAML_IDP_SLO_RESPONSE"] = defaultValue(
+				e[iamBindingPrefix+"SAML_SLO_RESPONSE_URL"], slo)
+		} else {
+			delete(e, "NEXTCLOUD_SAML_IDP_SLO")
+			delete(e, "NEXTCLOUD_SAML_IDP_SLO_RESPONSE")
+		}
 	default:
 		return fmt.Errorf("nextcloud requires an oidc or saml IAM binding, got %q", iface)
 	}

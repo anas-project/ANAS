@@ -4,14 +4,15 @@ A change in Active Directory reaches most consumers immediately, because they
 query LDAP live. Consumers that keep a synchronized copy do not: they see the
 change only at their next scheduled sync.
 
-authentik is the consumer that matters here. Its login path binds to LDAP to
-verify the password but never re-reads the account, so group membership and
-attributes come from the last sync. With the source scheduled every two hours,
-a user added to an application group can authenticate successfully and still be
-denied the application. That is exactly how a Nextcloud login failed on
-2026-08-08: the membership was written to AD at 12:46:12, the scheduled sync
-ran at 12:54:20, and every attempt in between was refused with the group
-already correct in the directory.
+authentik and Casdoor both keep synchronized directory copies. authentik's
+login path binds to LDAP to verify the password but never re-reads the account,
+so group membership and attributes come from the last sync. Casdoor likewise
+imports LDAP users into local shadow records. A Samba change can therefore be
+authoritative and still remain invisible to either IAM until its next schedule.
+That is exactly how an authentik-backed Nextcloud login failed on 2026-08-08:
+the membership was written to AD at 12:46:12, the scheduled sync ran at
+12:54:20, and every attempt in between was refused with the group already
+correct in the directory.
 
 The journal closes that window without polling harder.
 
@@ -24,7 +25,8 @@ samba_dc ──► /var/log/samba-audit/dsdb.json      (Samba's own format, priv
              events.jsonl                        (ANAS_DIRECTORY_EVENTS_DIR)
                     │ tailed by each subscriber, each with its own cursor
                     ▼
-             authentik dirwatch ──► Schedule.send()
+             ├─ authentik dirwatch ──► Schedule.send()
+             └─ Casdoor dirwatch ────► local LDAP sync API
 ```
 
 Publishing is a side effect of work the anchor worker already does. It follows
@@ -76,29 +78,33 @@ stages matter.
 | Stage | Setting | Question it answers |
 | --- | --- | --- |
 | Producer | `SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES` | Is this worth telling anyone about? |
-| Subscriber | `AUTHENTIK_DIRWATCH_ATTRIBUTES` | Is this worth a full source sync? |
+| Subscriber | `AUTHENTIK_DIRWATCH_ATTRIBUTES` / `CASDOOR_DIRWATCH_ATTRIBUTES` | Is this worth a full source sync? |
 
 The producer publishes `Add` and `Delete` for any in-scope object, and `Modify`
-only when it touched a watched attribute. The subscriber narrows further:
+only when it touched a watched attribute. Each subscriber narrows further:
 authentik ignores `displayName` and `mail`, which are worth syncing but not
-worth syncing *now*, and acts on membership and account-state changes.
+worth syncing *now*, and acts on membership and account-state changes. Casdoor
+does import those profile fields, so its filter also treats them as immediate.
 
 ## Debounce
 
-authentik has no per-user refresh. The only entry point is a full source sync,
-around 15 seconds at the current directory size, holding a Postgres advisory
-lock. So the subscriber coalesces:
+Neither integration has a safe per-user refresh at this boundary. authentik's
+entry point is a scheduled full source sync; Casdoor's subscriber fetches the
+configured LDAP result set and posts it to the official sync API. Both
+subscribers therefore coalesce:
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `AUTHENTIK_DIRWATCH_DEBOUNCE_SECONDS` | 5 | Collapse a burst into one run |
-| `AUTHENTIK_DIRWATCH_MIN_INTERVAL_SECONDS` | 60 | Floor between consecutive runs |
+| `AUTHENTIK_DIRWATCH_DEBOUNCE_SECONDS` / `CASDOOR_DIRWATCH_DEBOUNCE_SECONDS` | 5 | Collapse a burst into one run |
+| `AUTHENTIK_DIRWATCH_MIN_INTERVAL_SECONDS` / `CASDOOR_DIRWATCH_MIN_INTERVAL_SECONDS` | 60 | Floor between consecutive runs |
 
 Adding five members to a group is one sync, not five.
 
 The cursor is committed only after a trigger fires. A crash between reading an
 event and acting on it replays it rather than losing it; events that could
-never trigger anything advance the cursor immediately.
+never trigger anything advance the cursor immediately. Casdoor's subscriber
+uses the Module-owned Application credential against the private service
+network; the Samba producer never receives an IAM credential.
 
 ## Retention
 
@@ -139,10 +145,10 @@ deployment already observes individually.
 
 ## What this is not
 
-It is an accelerator, not a source of truth. The scheduled sync stays exactly
-as it was, and the anchor worker keeps its own periodic reconciliation. If the
-watcher is stopped, the deployment falls back to its previous behaviour: slower,
-not broken.
+It is an accelerator, not a source of truth. Each IAM's scheduled sync stays
+enabled, and the anchor worker keeps its own periodic reconciliation. If a
+watcher is stopped, the deployment falls back to its previous behaviour:
+slower, not broken.
 
 It does not make syncing cheaper. Latency drops from up to two hours to a few
 seconds, but each trigger is still a full source sync. What it does avoid is

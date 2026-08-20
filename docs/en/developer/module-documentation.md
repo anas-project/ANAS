@@ -386,9 +386,9 @@ go run ./cmd/gen-module-docs --check
 npm run docs:build
 ```
 
-As of 2026-08-19, the built-in release gate fixes a baseline of 18 Modules,
-141 parameters, `unknown=0`, two `input_required` entries, 22 final
-must-resolve entries, and the exact 13 declared constraints. Tests also prove
+As of 2026-08-21, the built-in release gate fixes a baseline of 19 Modules,
+146 parameters, `unknown=0`, two `input_required` entries, 23 final
+must-resolve entries, and the exact 14 declared constraints. Tests also prove
 that generic set/import/plan/lock/apply paths and calculate/render Hooks use the
 same schema, that no Secret Store kind leaks or masquerades as caller input,
 and that Hook Secrets cannot be rewritten across Module ownership. Adding a

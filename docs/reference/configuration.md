@@ -1,19 +1,19 @@
 # `config.yml` 结构化配置与环境变量清单
 
 本文回答两个问题：哪些设置已经有 `config.yml` 的结构化入口，哪些设置目前只能写入
-顶层 `env:`。清单按 2026-08-19 的当前工作树统计；module 增删参数后应重新运行文末命令，
+顶层 `env:`。清单按 2026-08-21 的当前工作树统计；module 增删参数后应重新运行文末命令，
 不要把本文中的数字当成固定 ABI。
 
 ## 结论
 
-- `anas config list --json` 当前登记 **141** 个可设置参数：17 个 `global` 参数、124 个
+- `anas config list --json` 当前登记 **146** 个可设置参数：17 个 `global` 参数、129 个
   module 参数。
-- 124 个 module 参数中，120 个保存到 `modules.<module>.config.<parameter>`；4 个
+- 129 个 module 参数中，125 个保存到 `modules.<module>.config.<parameter>`；4 个
   `samba_fs` 参数虽然已经在 module manifest 中声明并拥有默认值、类型和变更策略，
   但为了导出裸环境变量，YAML 地址仍是 `env.<KEY>`。
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
-  上述 141 项。
+  上述 146 项。
 - 顶层 `env:` 是开放的 raw-env 逃生口，任意合法环境变量键都能写入（输入会规范为大写，
   并须匹配 `[A-Z_][A-Z0-9_]*`），所以“只能用环境变量”的总数
   理论上不可穷举。下文只列仓库当前明确使用、且没有结构化参数的用户覆盖项。
@@ -108,7 +108,7 @@ Compose project name，同时以该前缀生成容器名；例如默认配置下
 的前缀会生成另一组 project、容器名和跨容器地址，属于静态部署变更，不是现有资源的原地
 重命名；修改前必须先完成显式迁移或清理旧部署。
 
-## 已声明的 141 个参数
+## 已声明的 146 个参数
 
 表中参数都能被 `anas config list` 列出。普通可编辑参数可通过 `anas config set` 设置；
 `credential_rotate`、`data_migrate` 和 `immutable` 只用于 inventory/explain，必须执行专用流程。除特别说明
@@ -117,7 +117,7 @@ Compose project name，同时以该前缀生成容器名；例如默认配置下
 
 JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同时提供
 `allowed_values`。`unknown` 仅为旧 Module 或开发中声明不完整时保留的兼容值，内置 Module
-的 release 校验不允许它出现，因此本节 141 项的 `unknown` 数量为 0。
+的 release 校验不允许它出现，因此本节 146 项的 `unknown` 数量为 0。
 
 配置元数据把“操作者是否必须输入”和“解析后的值是否必须存在”分开：
 
@@ -144,13 +144,14 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 `ddns_go.dns_provider` 与 `ddns_updater.dns_provider` 可由 deployment
 `dynamic_dns.dns_provider` 条件注入，因此表现为 `input_required: false`、
 `must_resolve: true`、`default_source: none`；只有 resolver 未能注入时才需要 Module 侧输入。
-`default_source` 分布为 `static: 112`、`generated: 9`、`none: 8`、`runtime: 4`、`inherited: 5`、
-`host: 3`；`has_default: true` 与这 112 个 `static` 项严格对应。
+`default_source` 分布为 `static: 117`、`generated: 9`、`none: 8`、`runtime: 4`、`inherited: 5`、
+`host: 3`；`has_default: true` 与这 117 个 `static` 项严格对应。
 
-当前 13 项显式单字段约束是：`global.base_domain` 与 `samba_dc.domain` 的 DNS name format、
+当前 14 项显式单字段约束是：`global.base_domain` 与 `samba_dc.domain` 的 DNS name format、
 timezone、language/locale format，3 个 IPv4 format，
 `eturnal.port`、`meshcentral.mps_port`、`traefik.base_port` 的 `1..65535`，
-`samba_dc.max_log_size >= 1`，以及 `oauth2_proxy.allow_groups` 至少包含一个非空白字符。
+`samba_dc.max_log_size >= 1`、`casdoor.ldap_auto_sync_minutes >= 1`，以及
+`oauth2_proxy.allow_groups` 至少包含一个非空白字符。
 这些都是已有运行约束的声明化；没有证据的数字上限、条件 provider 规则和跨字段关系没有被
 擅自收紧。
 
@@ -158,6 +159,7 @@ timezone、language/locale format，3 个 IPv4 format，
 | --- | ---: | --- |
 | `global` | 17 | `base_domain`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `dns_server`, `email`, `host_ip`, `host_lan_arp_check`, `host_lan_bridge_ip`, `host_lan_ip`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
 | `authentik` | 6 | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` |
+| `casdoor` | 4 | `db_name`, `db_type`, `domain_prefix`, `ldap_auto_sync_minutes` |
 | `collabora` | 5 | `admin_password`, `admin_username`, `auto_save`, `domain_prefix`, `log_level` |
 | `ddns_go` | 10 | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` |
 | `ddns_updater` | 10 | `dns_provider`, `domain_prefix`, `forward_auth_interface`, `publicip_dns_providers`, `publicip_fetchers`, `publicip_ipv4_providers`, `publicip_ipv6_providers`, `publicip_providers`, `ttl`, `zone_identifier` |
@@ -198,18 +200,18 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 ## 参数会产生什么结果
 
 `anas config list --json` 是参数名、环境键、默认值和变更结果的权威机器可读清单。
-当前 141 项按 effect 统计如下；effect 表示**修改已有部署后必须完成的动作**，不是参数
+当前 146 项按 effect 统计如下；effect 表示**修改已有部署后必须完成的动作**，不是参数
 传输到 `.env` 就算应用成功。
 
 | effect | 数量 | 修改结果 |
 | --- | ---: | --- |
-| `container_recreate` | 91 | 重新渲染，并重建受影响容器或 Compose project |
+| `container_recreate` | 94 | 重新渲染，并重建受影响容器或 Compose project |
 | `credential_rotate` | 7 | 普通设置和替换导入会被拒绝，必须通过凭据轮换事务同步应用状态与 Secret Store |
-| `data_migrate` | 10 | 普通设置和部署激活会被阻断，必须先迁移持久数据、数据库或成员身份 |
+| `data_migrate` | 11 | 普通设置和部署激活会被阻断，必须先迁移持久数据、数据库或成员身份 |
 | `hot_reload` | 16 | 声明目标是 Samba 管理命令；当前执行器保守地生成新部署并重新 `up` 受影响容器 |
 | `image_rebuild` | 1 | 使用 `anas apply --build` 重建镜像后再部署 |
 | `immutable` | 4 | 通用 `config set` 不允许修改，必须走替换或域迁移流程 |
-| `reconcile` | 12 | 声明目标是应用/API/文件调和；当前执行器通过新部署和容器启动流程完成 |
+| `reconcile` | 13 | 声明目标是应用/API/文件调和；当前执行器通过新部署和容器启动流程完成 |
 
 ### 当前版本的实际执行边界
 
@@ -249,7 +251,7 @@ workspace 已有运行中的 active deployment 时，`config set` 会先保存�
 | `nextcloud.language`, `nextcloud.locale` | 可以 | `occ` 写入的实际系统配置可立即读回，容器 ID 不变 |
 | `samba_fs.share_access_mode`, `samba_fs.share_guest_read_only` | 可以，但需新 handler | `smbcontrol all reload-config` 使运行中 `smbd` 发布新配置，ACL 同时在线修改；现有 `fix_perm.sh` 还不能接收新 deployment 的显式输入 |
 | `nextcloud.memories_enabled` | 有条件可以 | Nextcloud 支持在线 app enable/disable；启用时还可能下载固定版本、修改数据库并启动 places 初始化，必须实现事务、进度与 verify，不能只执行一个 `occ app:enable` |
-| `authentik.domain_prefix`, `llng.domain_prefix`, `nextcloud.domain_prefix` | 不可以 | 完整效果包含 Traefik Docker label；Docker 24.0.7 的 `docker update` 不支持修改容器 label，必须至少重建带路由的容器，并同步 IAM client/metadata |
+| `authentik.domain_prefix`, `casdoor.domain_prefix`, `llng.domain_prefix`, `nextcloud.domain_prefix` | 不可以 | 完整效果包含 Traefik Docker label；Docker 24.0.7 的 `docker update` 不支持修改容器 label，必须至少重建带路由的容器，并同步 IAM client/metadata |
 | `lego.dns_provider` | 不可以 | 可以为一次 `docker exec` 临时传入新 provider，但 PID 1 的 cron 环境仍保留旧值，后续续期会退回旧 provider |
 | `global.virtual_domain` | 不可以 | Lego 长期进程仍持有旧模式，而且证书替换后各 TLS 消费者还需各自 reload/recreate；不能靠一次证书脚本完成全局效果 |
 
@@ -271,6 +273,7 @@ Collabora、Nextcloud 和数据库镜像的保留设置都在 Hook、容器脚�
 | `global` | `timezone`, `default_language`, `default_locale` | 生成最终 `TZ`/BCP 47 默认值；只下发给声明支持的应用 |
 | `global` | `chinese_speedup`, `chinese_build_speedup` | 分别切换运行时镜像/下载源和构建期镜像/包源；后者要求重建镜像 |
 | `authentik` | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` | 选择数据库资源，生成 IAM URL/Blueprint、LDAP source/writeback 和日志级别 |
+| `casdoor` | `db_name`, `db_type`, `domain_prefix`, `ldap_auto_sync_minutes` | 选择 PostgreSQL Resource，生成 IAM URL、OIDC/SAML Application、LDAPS 导入配置和同步周期 |
 | `collabora` | `admin_username`, `admin_password`, `auto_save`, `domain_prefix`, `log_level` | 显式映射到上游 `username`/`password`，并生成 `extra_params`、server name 和 Traefik route |
 | `ddns_go` | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` | 生成 ddns-go desired-state 文件、轮询参数、地址发现方式、本地登录和 host-network 路由 |
 | `ddns_updater` | `dns_provider`, `domain_prefix`, `forward_auth_interface`, `publicip_fetchers`, `publicip_providers`, `publicip_ipv4_providers`, `publicip_ipv6_providers`, `publicip_dns_providers`, `ttl`, `zone_identifier` | 生成 updater JSON、公共地址探测器、DNS provider/Cloudflare zone 配置和受 IAM gate 保护的路由 |
@@ -413,7 +416,7 @@ test-env/scripts/test-render.sh
 ```
 
 前者拒绝没有运行时消费者的声明参数；若消费者只存在于上游镜像，例外必须同时记录固定
-版本的上游源码证据。其余测试分别验证 141 项 inventory、类型完整性和废弃路径，七类
-effect 的真实 CLI→Hook→render→deployment→Compose/阻断边界，以及全部 141 个参数键在本轮新生成的
+版本的上游源码证据。其余测试分别验证 146 项 inventory、类型完整性和废弃路径，七类
+effect 的真实 CLI→Hook→render→deployment→Compose/阻断边界，以及全部 146 个参数键在本轮新生成的
 Module 部署产物中至少出现一次。`test-lifecycle.sh` 在真实 Docker 上进一步验证
 `container_recreate` 会更换容器 ID。

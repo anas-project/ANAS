@@ -22,13 +22,14 @@
 | `ddns_updater` | 网络 | 基础域名和通配符记录的 DDNS | 可由 `dynamic_dns.provider` 选择 |
 | `oauth2_proxy` | IAM 网关 | 为没有登录能力的服务增加 OIDC 认证入口 | 需要 IAM Provider 和 Traefik |
 
-## 实验性 Module
+## 非稳定 Module
 
-以下 Module 的 manifest 明确标记为 `experimental`，不应默认用于生产部署：
+以下 Module 的 manifest 标记为 `developing` 或 `experimental`，不应默认用于生产部署：
 
 | Module | 当前边界 |
 | --- | --- |
 | `authentik` | IAM Provider 实现仍处于实验状态 |
+| `casdoor` | OIDC/SAML 注册已接入；目录锚点、Group 门禁、SAML SLO 与真实登录 E2E 尚未完成 |
 | `netbird` | WireGuard overlay 拓扑尚不完整，不属于推荐部署 |
 | `freeradius` | 只有服务骨架，未生成生产客户端和用户策略 |
 

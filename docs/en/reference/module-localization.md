@@ -7,6 +7,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | Module | Version | Timezone | Language | Selection | Global language | Global locale | Count |
 | --- | --- | --- | --- | --- | --- | --- | ---: |
 | [authentik](#authentik) | 2026.5.6-r9 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [casdoor](#casdoor) | 3.143.0-r1 | container | supported | application | applied | not_consumed | 2 |
 | [collabora](#collabora) | 26.4.2-r4 | container | supported | integration | not_consumed | not_consumed | 43 |
 | [ddns_go](#ddns_go) | 6.17.4-r5 | container | supported | application | not_consumed | not_consumed | 2 |
 | [ddns_updater](#ddns_updater) | 2.10.0-r3 | application | fixed | fixed | not_consumed | not_consumed | 1 |
@@ -35,6 +36,17 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 - **Supported / 支持语言：** `cs-CZ`, `de-DE`, `en`, `en-XA`, `es-ES`, `fi-FI`, `fr-FR`, `it-IT`, `ja-JP`, `ko-KR`, `nl-NL`, `pl-PL`, `pt-BR`, `ru-RU`, `tr-TR`, `zh-Hans`, `zh-Hant`
 - **Notes / 说明：** The list describes packaged frontend locales. ANAS does not force a locale and preserves authentik's browser locale selector.
 - **Evidence / 证据：** [2026.5.6 — web/lit-localize.json targetLocales](https://github.com/goauthentik/authentik/blob/version/2026.5.6/web/lit-localize.json)
+
+## casdoor
+
+- **Version / 版本：** `3.143.0-r1`; reviewed 2026-08-21
+- **Timezone / 时区：** `container` — Casdoor receives TZ through the module environment; no separate application timezone is forced.
+- **Language / 语言：** `supported`, `application` — Casdoor Web UI default
+- **ANAS globals / 全局默认：** `default_language=applied`; `default_locale=not_consumed`
+- **Fallback / 回退：** ANAS maps zh-prefixed defaults to zh and all other values to en; users may change the UI language in Casdoor.
+- **Supported / 支持语言：** `en`, `zh`
+- **Notes / 说明：** This inventory records the two ANAS-selected defaults, not every translation shipped by upstream.
+- **Evidence / 证据：** [v3.143.0 — web/src/locales English and Chinese resources](https://github.com/casdoor/casdoor/tree/v3.143.0/web/src/locales)
 
 ## collabora
 

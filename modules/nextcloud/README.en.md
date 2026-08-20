@@ -43,7 +43,7 @@ identity:
 
 LDAPS provisioning manages users and groups; OIDC is the preferred login protocol and SAML remains supported. Consistent directory usernames and `anasIdentityAnchor` link both paths. Samba `Admins` dynamically maps to Nextcloud administration. Ordinary directory password changes use the restricted password-bind identity, never a database administrator.
 
-In OIDC mode the module registers the `user_oidc` back-channel logout endpoint, so IAM browser logout, administrative session revocation, and account deactivation can invalidate the matching Nextcloud session. SAML advertises an HTTP-Redirect SLS and therefore guarantees only browser-mediated IAM-initiated Single Logout, not headless administrative revocation.
+In OIDC mode the module registers the `user_oidc` back-channel logout endpoint, so IAM browser logout, administrative session revocation, and account deactivation can invalidate the matching Nextcloud session. SAML advertises an HTTP-Redirect SLS; when the provider publishes SLO this guarantees only browser-mediated IAM-initiated Single Logout, not headless administrative revocation. Without provider SLO, Nextcloud configures local logout only.
 
 | Capability | Current declaration |
 | --- | --- |

@@ -30,10 +30,10 @@ func TestBundledModuleParametersDeclareTypes(t *testing.T) {
 		}
 	}
 
-	if got, want := len(reg), 18; got != want {
+	if got, want := len(reg), 19; got != want {
 		t.Errorf("bundled module count = %d, want %d", got, want)
 	}
-	if got, want := parameters, 125; got != want {
+	if got, want := parameters, 129; got != want {
 		t.Errorf("bundled module parameter count = %d, want %d", got, want)
 	}
 }
@@ -59,7 +59,7 @@ func TestBundledModuleDefaultsMatchDeclaredTypes(t *testing.T) {
 		}
 	}
 
-	if got, want := defaults, 106; got != want {
+	if got, want := defaults, 110; got != want {
 		t.Errorf("bundled module default count = %d, want %d", got, want)
 	}
 }
