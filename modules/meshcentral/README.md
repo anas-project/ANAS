@@ -1,6 +1,6 @@
 # MeshCentral
 
-使用 OIDC 登录并通过 LDAPS 配置目录用户和 Group 的远程设备管理服务。
+使用 OIDC-only 登录并通过 LDAPS 配置目录用户和 Group 的远程设备管理服务。
 
 ## 快速信息
 
@@ -40,7 +40,7 @@ identity:
 
 ## 身份、用户与 Group
 
-OIDC 是日常登录链路；LDAPS 单独负责 users/groups provisioning。启用应用过滤时，`APP_meshcentral`、`APP_all` 或管理员组可访问，管理员组同时映射 site-admin。
+浏览器认证强制使用 OIDC-only：匿名首页跳转 `/auth-oidc`，登录页不显示密码入口，服务端拒绝本地或 LDAP 密码登录。LDAPS 继续负责目录 users/groups provisioning。启用应用过滤时，`APP_meshcentral`、`APP_all` 或管理员组可访问，管理员组同时映射 site-admin。
 
 | 能力 | 当前声明 |
 | --- | --- |
@@ -109,7 +109,7 @@ anas status -w /srv/anas
 
 ## 当前限制
 
-不要把 LDAPS provisioning 误写成浏览器 LDAPS 登录。
+LDAPS 只用于后端 provisioning，不能作为浏览器登录或 IAM 故障回退。MeshCentral 上游的 `showPasswordLogin=false` 仅隐藏表单，因此 ANAS 镜像还会在服务端拒绝密码登录 POST；升级上游版本时若登录处理器结构变化，镜像构建会失败并要求审查补丁。
 
 容器启动时会先验证 IAM OIDC Discovery metadata，并等待 issuer、授权、token 和 JWKS
 端点可用；Provider 暂未就绪时不会让 MeshCentral 启动后静默禁用 OIDC。持续不可用时

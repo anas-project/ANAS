@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source "$script_dir/server-require-isolated-docker.sh"
+source "$script_dir/server-meshcentral-oidc-only-e2e-lib.sh"
 
 docker_cmd=${DOCKER_CMD:-docker}
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_anchor_}
@@ -142,6 +143,11 @@ PY
   login_outcome=allowed
   printf '%s_oidc_callback_complete final_url=%s\n' "$app" "$login_final_url"
 }
+
+if [[ ",$apps," == *,meshcentral,* ]]; then
+  verify_meshcentral_oidc_only curl_login "$meshcentral_url" \
+    "$cookie_jar" "$headers" "$body"
+fi
 
 if [ "$expected_outcome" = allowed ]; then
   "$docker_cmd" exec "${prefix}samba_dc" samba-tool user show "$username" \

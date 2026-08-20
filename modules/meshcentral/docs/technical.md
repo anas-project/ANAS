@@ -31,6 +31,15 @@ authorization、token 和 JWKS 端点时才继续启动。默认最多等待 300
 超时后进程失败，由 Compose restart policy 重试。这避免 IAM Provider 尚未就绪时触发
 MeshCentral 自身的三次 discovery 失败保护，并在该进程生命周期内永久禁用 OIDC。
 
+### OIDC-only 强制策略
+
+生成配置固定 `showPasswordLogin=false` 和
+`unknownUserRootRedirect=/auth-oidc`。由于上游仅隐藏密码表单，镜像构建还通过
+`enforce-oidc-only.js` 修改固定版本的中心密码认证器和 `handleLoginRequest`：当 OIDC
+策略存在且密码入口关闭时，所有本地和 LDAP 密码认证均被拒绝，HTTP 密码登录返回
+404。补丁只接受精确的上游代码锚点；版本升级导致锚点变化时构建失败，不能静默失去服务端保护。LDAPS 参数仍供后端目录
+provisioning 使用，不构成浏览器登录或故障回退入口。
+
 ## 配置契约
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
@@ -45,7 +54,7 @@ MeshCentral 自身的三次 discovery 失败保护，并在该进程生命周期
 
 ## 身份与授权数据流
 
-OIDC 是日常登录链路；LDAPS 单独负责 users/groups provisioning。启用应用过滤时，`APP_meshcentral`、`APP_all` 或管理员组可访问，管理员组同时映射 site-admin。
+浏览器认证强制使用 OIDC-only；LDAPS 单独负责 users/groups provisioning，不接受本地或 LDAP 密码登录。启用应用过滤时，`APP_meshcentral`、`APP_all` 或管理员组可访问，管理员组同时映射 site-admin。
 
 | 能力 | 当前声明 |
 | --- | --- |
@@ -133,6 +142,8 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 ## 测试与实现位置
 
 - [`main_test.go`](../hook/main_test.go)
+- `enforce-oidc-only.test.js` 校验固定版本源码补丁失败关闭。
+- Authentik 与 LLNG OIDC E2E 共用 `server-meshcentral-oidc-only-e2e-lib.sh`，验证匿名跳转、密码 UI 关闭、密码 POST 返回 404，并继续完成真实 OIDC 登录。
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 

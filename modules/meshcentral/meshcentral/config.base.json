@@ -13,6 +13,8 @@
     "": {
       "agentConfig": ["webSocketMaskOverride=1"],
       "NewAccounts": false,
+      "showPasswordLogin": false,
+      "unknownUserRootRedirect": "/auth-oidc",
       "ipkvm": true,
       "auth": "ldap",
       "ldapOptions": {

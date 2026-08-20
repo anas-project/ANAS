@@ -66,6 +66,8 @@ switch (required("MESHCENTRAL_DB_TYPE")) {
 domain.certUrl = required("TRAEFIK_DOMAIN_FULL");
 domain.title = required("MESHCENTRAL_TITLE");
 domain.title2 = required("MESHCENTRAL_SUBTITLE");
+domain.showPasswordLogin = false;
+domain.unknownUserRootRedirect = "/auth-oidc";
 ldap.url = required("SAMBA_DC_LDAPS_SERVER_URL_PORT");
 ldap.bindDN = required("SAMBA_DC_LDAP_BIND_DN");
 ldap.bindCredentials = required("SAMBA_DC_LDAP_BIND_PASSWORD");

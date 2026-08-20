@@ -10,6 +10,23 @@ state coordination in lifecycle operations or reconcilers. Never request a
 Core branch for a Module name or direct mutation of its private parameters. See
 the [Core implementation standard](/en/architecture/core-implementation-standard).
 
+## Version and revision ownership
+
+`version` follows the normalized upstream application version. `revision`
+identifies a released ANAS image revision for that same upstream version.
+Routine feature, fix, and documentation changes must not increment `revision`
+merely because files changed. After changes merge into `image-release`, the
+release workflow calculates the authoritative value and writes it back to
+`module.yml`, `localization.yml`, the Compose image tag, and generated
+documentation before the release result returns to Git.
+
+The sole reason to change `revision` temporarily in a local branch is an E2E
+run that must build an image distinct from the published image. Keep every
+revision projection consistent during that test; ordinary feature branches
+restore the published revision before commit and let `image-release` choose the
+next formal number. Hook, configuration-rendering, and other tests that need no
+new image do not change the revision.
+
 Declare hard dependencies explicitly. Use capability providers for alternatives, ordering edges only for ordering, and resource/provider operations for persistent resources. Scope generated environments to the module, its dependency closure, and explicitly consumed keys. Never log secrets or inject unrelated credentials.
 
 ## Management surfaces and local administrators
@@ -75,9 +92,15 @@ application credential; do not declare rotation when rollback is unreliable.
 An IAM break-glass account must expose a genuine non-IAM entry point.
 
 Every module README needs an “Administrator access” section covering IAM
-status, local-account support, account ID and purpose, username source, direct
-or recovery entry point, apply/rotate implementation, and limitations. Modules
-without a local account must explicitly explain why. Tests must cover invalid
+status, local-account support, account ID and purpose, physical username and
+its source, direct or recovery entry point, apply/rotate implementation, and
+limitations. Whenever an emergency account exists, document an actionable
+login address (a full URL, or an explicit `<DOMAIN_FULL>` plus fixed path), the
+actual username, and the exact
+`anas admin local credential <module> <account-id> -w <workspace>` command used
+to retrieve its password; never publish the password value. Modules without a
+local account must explicitly explain why and give the real IAM-outage recovery
+path. Tests must cover invalid
 manifests, clear text exclusion from deployment env/lock/manifest, explicit
 sensitive reads, real apply, successful rotation, verification rollback, and
 the direct entry point. Stable support requires a real-container test proving
@@ -85,9 +108,9 @@ the old password fails and the new password succeeds.
 
 Current status is explicit: Authentik declares the fixed `akadmin`
 `break_glass` account, and Traefik declares an ANAS-default `primary` account;
-both have application apply/rotate handlers. Upstream MeshCentral supports local
-accounts only when domain `auth` is unset, while this module selects LDAP and has
-no same-domain local bypass. LAM's main login accepts enabled Samba `Admins`
+both have application apply/rotate handlers. MeshCentral now enforces OIDC-only
+and rejects local and LDAP passwords in its central authenticator, so it has no
+same-domain `break_glass` bypass. LAM's main login accepts enabled Samba `Admins`
 group members using their own directory credentials; its module password only
 protects the username-less configuration/profile editor. Group membership grants
 LAM entry, while Samba AD ACLs and privileged groups still control directory writes.

@@ -180,6 +180,7 @@ grep -Fq 'setpriv --reuid=1000 --regid=1000 --init-groups ak "$@"' \
 
 if command -v node >/dev/null 2>&1; then
   node --test \
+    "$ROOT_DIR/modules/meshcentral/meshcentral/enforce-oidc-only.test.js" \
     "$ROOT_DIR/modules/meshcentral/meshcentral/wait-for-oidc.test.js" || exit 1
 
   mkdir -p "$test_dir/meshcentral"
@@ -235,6 +236,8 @@ if command -v node >/dev/null 2>&1; then
     if (!oidc.groups.required.includes("APP_meshcentral")) process.exit(10);
     if (oidc.custom.claims.uuid !== "anasIdentityAnchor") process.exit(11);
     if (oidc.groups.scope !== "profile") process.exit(12);
+    if (config.domains[""].showPasswordLogin !== false) process.exit(13);
+    if (config.domains[""].unknownUserRootRedirect !== "/auth-oidc") process.exit(14);
   ' "$test_dir/meshcentral/config.json" || exit 1
 fi
 

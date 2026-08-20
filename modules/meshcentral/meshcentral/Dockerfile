@@ -26,6 +26,12 @@ RUN set -eux; \
 COPY ./config.base.json /opt/anas/config.base.json
 COPY ./configure.js /opt/anas/configure.js
 COPY ./wait-for-oidc.js /opt/anas/wait-for-oidc.js
+COPY ./enforce-oidc-only.js /opt/anas/enforce-oidc-only.js
 COPY ./startup.sh ./startup.sh
+
+# MeshCentral's showPasswordLogin setting hides the form but does not disable
+# its password authenticators. Patch the pinned upstream source so the
+# generated OIDC-only configuration is also enforced server-side.
+RUN node /opt/anas/enforce-oidc-only.js /opt/meshcentral/meshcentral/webserver.js
 
 ENTRYPOINT ["/bin/bash", "/opt/meshcentral/startup.sh"]

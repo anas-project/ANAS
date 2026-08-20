@@ -10,6 +10,7 @@ socket=${ANAS_TEST_DOCKER_SOCKET:-/run/anas-anchor-docker.sock}
 export ANAS_TEST_DOCKER_SOCKET=$socket
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source "$script_dir/server-require-isolated-docker.sh"
+source "$script_dir/server-meshcentral-oidc-only-e2e-lib.sh"
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_anchor_}
 entry_ip=${ANAS_TEST_ENTRY_IP:-10.252.0.2}
 entry_port=${ANAS_TEST_ENTRY_PORT:-9000}
@@ -232,6 +233,10 @@ oidc_login() {
 }
 
 wait_for_oidc_providers
+if [[ ",$apps," == *,meshcentral,* ]]; then
+  verify_meshcentral_oidc_only curl_auth "$meshcentral_url" \
+    "$cookie_jar" "$headers" "$body"
+fi
 if [ "$expected_outcome" = auth-denied ]; then
   first_app=${apps%%,*}
   case "$first_app" in

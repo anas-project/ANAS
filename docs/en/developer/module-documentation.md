@@ -51,7 +51,7 @@ The Chinese and English READMEs must have equivalent sections covering at least:
 2. Module, Capability, and Contract dependencies, interfaces, and version constraints;
 3. a minimal example valid under the current `config.yml` schema;
 4. LDAPS, OIDC, SAML, Kerberos, user/group source of truth, synchronization direction, filters, and password writeback;
-5. routine admin login, direct access, private/local admins, and IAM-outage recovery;
+5. routine admin login, direct access, private/local admins, and IAM-outage recovery; when an emergency account exists, its login address, actual username, and password-retrieval command;
 6. real commands for account inspection, credential retrieval, password rotation, configuration inspection, modification, and planning;
 7. database provider/consumer/none, interfaces, defaults, Resource, credential, and deletion policy;
 8. every available configuration parameter;
@@ -130,6 +130,22 @@ anas admin local rotate <module> <account-id> --prompt -w /srv/anas
 ```
 
 Explain plaintext output, transaction behavior, prompt input, and failure behavior. A Module without a declared local account must explicitly say these commands are unavailable.
+
+Emergency-account documentation must be sufficient to log in without reading
+source code. It includes a complete login URL, or an explicit combination of
+`<MODULE_DOMAIN_FULL>` and a fixed path; the Manifest account ID and purpose;
+the physical username and whether it is upstream-fixed or derived from the
+`admin_{module}` template; and the exact `anas admin local credential` command.
+Document how to retrieve the password, never the generated password value. If
+there is no emergency account, state that there is no in-application recovery
+entry point and identify the real IAM, directory, or host recovery procedure.
+
+Revisions shown in READMEs and technical documents are release state, not a
+worktree change counter. Routine feature, fix, and documentation changes do not
+increment them manually; the `image-release` workflow calculates and writes
+back the authoritative revision. A developer changes every revision projection
+temporarily only when a local E2E run must build a distinct test image. Tests
+that need no new image do not change the revision.
 
 Never put a password in argv, an ordinary environment variable, or shell history. Do not present `anas config set` as application-password rotation or directory-user password modification.
 

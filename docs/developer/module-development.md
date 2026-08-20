@@ -15,6 +15,18 @@ Module 参数的业务语义属于 Module，不属于 Core。跨参数校验放�
 `calculate` Hook，持久状态协调使用 lifecycle operation/reconciler；不要要求 Core 添加
 Module 名称分支或直接改写私有参数。完整边界见 [Core 实现标准](/architecture/core-implementation-standard)。
 
+## 版本与 revision 所有权
+
+`version` 跟随规范化的上游应用版本；`revision` 表示同一上游版本下已经发布的 ANAS 镜像
+修订。日常功能、修复和文档提交不得为了“有修改”而手工提升 `revision`。正式值由变更合并到
+`image-release` 后的发布流程计算，并同步写回 `module.yml`、`localization.yml`、Compose 镜像
+标签和生成文档，再随发布结果回到 Git。
+
+本地唯一需要临时修改 `revision` 的场景，是 E2E 必须编译一个不同于已发布镜像的测试版本。
+此时所有 revision 投影必须保持一致；普通功能分支在提交前恢复已发布 revision，由
+`image-release` 决定下一个正式编号。只测试 Hook、配置生成或不需要新镜像的用例，不应修改
+revision。
+
 ## 依赖和能力
 
 - 硬依赖必须显式声明并参与选择与排序；
@@ -87,15 +99,18 @@ management:
 5. IAM Module 的 `break_glass` 必须给出不经过 IAM 的真实入口，例如上游 direct-login URL；
    普通 IAM 登录页不能冒充恢复入口。
 6. Module README 必须有“管理员访问”小节，列出 IAM 状态、本地账号支持状态、账号 ID、
-   purpose、用户名来源、直登/恢复入口、apply/rotate 实现及限制。没有本地账号也必须写明
-   原因，不能靠 Manifest 缺字段让操作者猜测。
+   purpose、物理用户名及其来源、直登/恢复入口、apply/rotate 实现及限制。只要存在应急账号，
+   必须写出可操作的登录地址（完整 URL，或明确的 `<DOMAIN_FULL>` 加固定 path）、实际用户名，
+   以及通过 `anas admin local credential <module> <account-id> -w <workspace>` 获取密码的命令；
+   不得把密码值写进文档。没有本地账号也必须写明原因和 IAM 故障时的真实恢复路径，不能靠
+   Manifest 缺字段让操作者猜测。
 7. 测试至少覆盖：Manifest 非法声明、明文不进入 deployment env/lock/manifest、CLI 查询
    显式敏感、apply 真实更新、rotate 成功、验证失败回滚、直登入口；声明为稳定支持前必须
    在真实容器上验证旧密码失效和新密码成功。
 
 当前状态必须显式记录：Authentik 声明固定 `akadmin` 的 `break_glass`，Traefik 声明模板
-用户名的 `primary`，两者都有真实 apply/rotate handler；MeshCentral 的上游在未设置
-domain `auth` 时支持本地账号，但当前 Module 使用 LDAP，故没有同 domain 本地绕过。
+用户名的 `primary`，两者都有真实 apply/rotate handler；MeshCentral 当前强制 OIDC-only，
+并在中心认证器拒绝本地和 LDAP 密码认证，因此没有同 domain 的 `break_glass` 绕过入口。
 LAM 主登录使用目录账号并限制为已启用的 Samba `Admins` 组成员；每位用户使用自己的
 `sAMAccountName` 和目录密码。其 Module 私有密码只保护无用户名的配置/profile 编辑器。
 `Admins` 只控制能否进入 LAM，实际目录读写能力仍由 Samba AD ACL 和高权限组决定。

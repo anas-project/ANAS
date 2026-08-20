@@ -53,7 +53,7 @@ Module 目录是唯一事实来源。逐 Module VitePress 页面只存在于临�
 2. 依赖：Module、Capability、Contract、接口和版本约束；
 3. 最简配置：符合当前 `config.yml` schema 的可复制示例；
 4. 身份与用户管理：支持的 LDAPS/OIDC/SAML/Kerberos 等协议，用户和 Group 的事实来源、同步方向、过滤规则和密码回写能力；
-5. 管理员登录与 IAM 故障恢复：日常登录、直接入口、私有/本地管理员、IAM 故障时的恢复路径；
+5. 管理员登录与 IAM 故障恢复：日常登录、直接入口、私有/本地管理员、IAM 故障时的恢复路径；有应急账号时必须给出登录地址、实际用户名和密码获取命令；
 6. 管理命令：查询账号、获取凭据、轮换密码、查看配置、修改配置和计划变更的当前真实命令；
 7. 数据库支持：Provider/Consumer/无数据库、支持接口、默认接口、Resource、凭据和删除策略；
 8. 全部配置参数；
@@ -119,6 +119,17 @@ anas admin local rotate <module> <account-id> --prompt -w /srv/anas
 ```
 
 文档必须说明 `credential` 输出明文、`rotate` 是否事务化、`--prompt` 如何读取密码，以及失败后的旧凭据是否仍有效。未声明本地账号的 Module 必须写明这些命令不可用。
+
+应急账号说明必须能让操作者不再查源码即可登录，至少包含：完整登录 URL，或
+`<MODULE_DOMAIN_FULL>` 与固定 path 的明确组合；Manifest 账号 ID 和 purpose；实际物理用户名
+及其是上游固定值还是 `admin_{module}` 模板；精确的 `anas admin local credential` 取密命令。
+文档只能记录取密方法，不能记录生成后的密码值。若没有应急账号，必须明确写出不存在应用内
+恢复入口，以及应恢复 IAM、目录还是通过宿主机执行其他真实流程。
+
+README 和技术文档展示的 revision 是发布状态，不是工作树变化计数。普通功能、修复或文档
+修改不得手工提升 revision；`image-release` 发布流程负责计算并写回正式 revision。只有本地
+E2E 为构建独立测试镜像确实需要新标签时，才临时同步修改 `module.yml`、`localization.yml`、
+Compose 和生成块中的 revision；不需要新镜像的测试不得修改。
 
 不得在示例中把密码放进 argv、普通环境变量或 shell history。`anas config set` 不能被写成应用内部密码轮换或目录用户密码修改命令。
 

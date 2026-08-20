@@ -34,6 +34,18 @@ policy retries. This prevents an unavailable IAM Provider from exhausting
 MeshCentral's own three discovery attempts and disabling OIDC for the lifetime
 of that process.
 
+### OIDC-only enforcement
+
+The generated configuration fixes `showPasswordLogin=false` and
+`unknownUserRootRedirect=/auth-oidc`. Because upstream only hides the password
+form, the image build also uses `enforce-oidc-only.js` to modify the pinned
+version's central password authenticator and `handleLoginRequest`: when OIDC
+exists and password login is hidden, all local and LDAP password authentication
+is rejected, and HTTP password login returns 404. The patch accepts exact
+upstream source anchors, so an incompatible version upgrade fails the build
+instead of silently losing the server-side guard. LDAPS settings remain for
+backend directory provisioning and are not a browser-login or outage fallback.
+
 ## Configuration contract
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
@@ -48,7 +60,7 @@ of that process.
 
 ## Identity and authorization data flow
 
-OIDC is the routine login path; LDAPS separately provisions users and groups. With application filtering, `APP_meshcentral`, `APP_all`, or the administrator group grants access, and the administrator group maps to site-admin.
+Browser authentication is OIDC-only; LDAPS separately provisions users and groups, and local or LDAP password login is rejected. With application filtering, `APP_meshcentral`, `APP_all`, or the administrator group grants access, and the administrator group maps to site-admin.
 
 | Capability | Current declaration |
 | --- | --- |
@@ -136,6 +148,8 @@ The dependency closure does not grant every environment value. Sensitive values 
 ## Tests and implementation locations
 
 - [`main_test.go`](../hook/main_test.go)
+- `enforce-oidc-only.test.js` verifies that the pinned-source patch fails closed.
+- The Authentik and LLNG OIDC E2Es share `server-meshcentral-oidc-only-e2e-lib.sh`; they verify the anonymous redirect, hidden password mode, a 404 password POST, and then complete a real OIDC login.
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 

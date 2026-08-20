@@ -8,7 +8,7 @@ abi:
   supports:
     - anas.module-hook/v1
 title: MeshCentral
-description: Remote device management with OIDC authentication and LDAP directory synchronization.
+description: Remote device management with OIDC-only authentication and LDAP directory synchronization.
 category: app
 status: release
 runtime:

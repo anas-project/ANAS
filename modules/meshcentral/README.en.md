@@ -1,6 +1,6 @@
 # MeshCentral
 
-Remote device management with OIDC authentication and LDAPS directory provisioning.
+Remote device management with OIDC-only authentication and LDAPS directory provisioning.
 
 ## Quick facts
 
@@ -40,7 +40,7 @@ identity:
 
 ## Identity, users, and groups
 
-OIDC is the routine login path; LDAPS separately provisions users and groups. With application filtering, `APP_meshcentral`, `APP_all`, or the administrator group grants access, and the administrator group maps to site-admin.
+Browser authentication is OIDC-only: the anonymous root redirects to `/auth-oidc`, the login page hides password authentication, and the server rejects local or LDAP password login. LDAPS continues to provision directory users and groups. With application filtering, `APP_meshcentral`, `APP_all`, or the administrator group grants access, and the administrator group maps to site-admin.
 
 | Capability | Current declaration |
 | --- | --- |
@@ -117,7 +117,7 @@ anas status -w /srv/anas
 
 ## Current limitations
 
-Do not describe LDAPS provisioning as browser LDAPS login.
+LDAPS is backend provisioning only; it cannot be used for browser login or as an IAM-outage fallback. Upstream MeshCentral's `showPasswordLogin=false` only hides the form, so the ANAS image also rejects password-login POSTs server-side. If an upstream upgrade changes the login handler, the image build fails and requires the patch to be reviewed.
 
 At container startup, the module validates the IAM OIDC Discovery metadata and
 waits for the issuer, authorization, token, and JWKS endpoints. If the Provider
