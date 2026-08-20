@@ -226,6 +226,26 @@ func TestNextcloudRequestsAuthentikSupportedWindowsNameID(t *testing.T) {
 	}
 }
 
+func TestCollaboraWOPIAllowlistCoversTraefikNetwork(t *testing.T) {
+	task, err := os.ReadFile("../nextcloud/root/usr/local/bin/task.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(task)
+	for _, want := range []string{
+		`getent ahostsv4 "$TRAEFIK_HOSTNAME"`,
+		`net_get_interfaces()`,
+		`--arg allowlist "$collabora_wopi_allowlist"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Nextcloud WOPI allowlist reconciliation is missing %q", want)
+		}
+	}
+	if strings.Contains(got, `--arg allowlist "$collabora_ipv4"`) {
+		t.Fatal("WOPI allowlist must not use only the Collabora container IP")
+	}
+}
+
 func TestSambaAdminsArePromotedAsTheDynamicNextcloudAdminGroup(t *testing.T) {
 	task, err := os.ReadFile("../nextcloud/root/usr/local/bin/task.sh")
 	if err != nil {

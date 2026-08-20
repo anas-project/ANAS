@@ -423,11 +423,33 @@ echo "Install collabora office"
 if [ -n "$COLLABORA_DOMAIN_FULL" ]; then
   app_name='richdocuments'
   install_and_enable_app $app_name
-  collabora_ipv4=$(getent ahostsv4 "$COLLABORA_HOSTNAME" | awk 'NR == 1 { print $1 }')
+  traefik_ipv4=$(getent ahostsv4 "$TRAEFIK_HOSTNAME" | awk 'NR == 1 { print $1 }')
+  # Collabora reaches the public Nextcloud URL through Traefik. Docker hairpin
+  # routing can make that request appear from the bridge gateway instead of the
+  # Collabora container IP, so allow the shared Traefik subnet.
+  collabora_wopi_allowlist=$(php -r '
+    $target = ip2long($argv[1]);
+    foreach (net_get_interfaces() as $interface) {
+      foreach (($interface["unicast"] ?? []) as $address) {
+        if (($address["family"] ?? null) !== 2) {
+          continue;
+        }
+        $mask = ip2long($address["netmask"]);
+        if (($target & $mask) === (ip2long($address["address"]) & $mask)) {
+          echo long2ip($target & $mask) . "/" . substr_count(decbin($mask & 0xffffffff), "1");
+          exit;
+        }
+      }
+    }
+  ' "$traefik_ipv4")
+  if [ -z "$collabora_wopi_allowlist" ]; then
+    echo "Unable to determine the Traefik network for the WOPI allowlist" >&2
+    exit 1
+  fi
   # TODO: ipv6
   richdocuments_config=$(jq -n \
     --arg url "$COLLABORA_DOMAIN_FULL" \
-    --arg allowlist "$collabora_ipv4" \
+    --arg allowlist "$collabora_wopi_allowlist" \
     '{apps:{richdocuments:{doc_format:"ooxml",public_wopi_url:$url,wopi_url:$url,wopi_allowlist:$allowlist}}}')
   import_occ "$richdocuments_config"
   occ richdocuments:activate-config

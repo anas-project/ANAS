@@ -49,6 +49,8 @@ This page records the current implementation, security boundaries, and verificat
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
 
+When Collabora is enabled, `task.sh` points `wopi_url` and `public_wopi_url` at Collabora and restricts Nextcloud's `wopi_allowlist` to the shared Traefik network CIDR. The network range covers both the Collabora container address and the bridge gateway address exposed by Docker hairpin routing. Initialization fails instead of falling back to unrestricted WOPI access when that network cannot be determined.
+
 ## Identity and authorization data flow
 
 LDAPS provisioning manages users and groups; OIDC is the preferred login protocol and SAML remains supported. Consistent directory usernames and `anasIdentityAnchor` link both paths. Samba `Admins` dynamically maps to Nextcloud administration. Ordinary directory password changes use the restricted password-bind identity, never a database administrator.

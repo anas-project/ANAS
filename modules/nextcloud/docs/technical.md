@@ -49,6 +49,8 @@
 
 参数库存的权威来源是 `module.yml`；CLI 负责合并默认值、类型、required、环境变量映射、敏感性和变更执行器。技术文档不得另造可设置参数。
 
+启用 Collabora 时，`task.sh` 将 `wopi_url` 和 `public_wopi_url` 指向 Collabora，并把 Nextcloud 的 `wopi_allowlist` 限制为共享 Traefik 网络的 CIDR。使用网络范围是为了同时覆盖 Collabora 容器地址和 Docker hairpin 路由呈现的 bridge gateway 地址；若无法确定该网络，初始化会失败而不会退化为不受限的 WOPI 访问。
+
 ## 身份与授权数据流
 
 LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍受支持。两条链路通过一致的目录用户名和 `anasIdentityAnchor` 关联。Samba `Admins` 动态映射 Nextcloud 管理员权限。普通目录密码修改通过受限 password bind 服务账号回写，而不是数据库管理员账号。
