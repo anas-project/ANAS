@@ -10,7 +10,7 @@ services:
         LAM_DOWNLOAD_URL: ${LAM_DOWNLOAD_URL:-}
         BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX: ${BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX:-}
         DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lam:9.6.0-r8
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lam:9.6.0-r7
     container_name: ${CONTAINER_PREFIX}lam
     restart: unless-stopped
     dns:

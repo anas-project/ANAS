@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `eturnal`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `1.12.2-r6` / `anas.module/v1`.
+> Status: current implementation; based on `1.12.2-r5` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -17,7 +17,7 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_eturnal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-eturnal:1.12.2-r6` | `` | 0 |
+| `anas_eturnal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-eturnal:1.12.2-r5` | `` | 0 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract

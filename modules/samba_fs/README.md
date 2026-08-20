@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `samba_fs` |
-| 版本 / revision | `4.23.6-r6` |
+| 版本 / revision | `4.23.6-r5` |
 | 状态 | `release` |
 | 类别 | `storage` |
 | 运行时 | `compose` |
@@ -98,7 +98,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`4.23.6-r6`（reviewed 2026-08-13）
+- Module version / 版本：`4.23.6-r5`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — The file server receives TZ and includes tzdata; client-visible timestamps are also affected by SMB client behavior.
 - Language scope / 语言范围：SMB protocol service
 - Selection / 选择方式：`client`

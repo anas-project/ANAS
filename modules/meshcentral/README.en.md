@@ -8,7 +8,7 @@ Remote device management with OIDC authentication and LDAPS directory provisioni
 | Item | Value |
 | --- | --- |
 | Module | `meshcentral` |
-| Version / revision | `1.2.4-r8` |
+| Version / revision | `1.2.4-r6` |
 | Status | `release` |
 | Category | `app` |
 | Runtime | `compose` |

@@ -8,7 +8,7 @@ Web administration for Samba AD users, groups, and computer objects.
 | Item | Value |
 | --- | --- |
 | Module | `lam` |
-| Version / revision | `9.6.0-r8` |
+| Version / revision | `9.6.0-r7` |
 | Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |

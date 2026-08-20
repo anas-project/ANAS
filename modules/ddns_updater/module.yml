@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: ddns_updater
 version: 2.10.0
-revision: 4
+revision: 3
 app_version: 2.10.0
 abi:
   supports:

@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `ddns_updater` |
-| 版本 / revision | `2.10.0-r4` |
+| 版本 / revision | `2.10.0-r3` |
 | 状态 | `release` |
 | 类别 | `network` |
 | 运行时 | `compose` |
@@ -122,7 +122,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2.10.0-r4`（reviewed 2026-08-13）
+- Module version / 版本：`2.10.0-r3`（reviewed 2026-08-13）
 - Timezone / 时区：`application` — Upstream officially accepts the IANA TZ environment variable for Web UI and log timestamps.
 - Language scope / 语言范围：DDNS Updater Web UI
 - Selection / 选择方式：`fixed`

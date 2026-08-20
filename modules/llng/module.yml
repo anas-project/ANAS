@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: llng
 version: 2.23.2
-revision: 11
+revision: 9
 app_version: 2.23.2
 abi:
   supports:

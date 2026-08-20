@@ -6,7 +6,7 @@ services:
       args:
         ANAS_IMAGE_REGISTRY: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}
         GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-oauth2-proxy:7.15.3-r5
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-oauth2-proxy:7.15.3-r3
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     restart: unless-stopped
     # The deployment's own resolver, not an upstream one: the identity provider

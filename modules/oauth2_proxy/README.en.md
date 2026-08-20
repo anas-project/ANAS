@@ -8,7 +8,7 @@ OIDC ForwardAuth gate for services without their own login system.
 | Item | Value |
 | --- | --- |
 | Module | `oauth2_proxy` |
-| Version / revision | `7.15.3-r5` |
+| Version / revision | `7.15.3-r3` |
 | Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |

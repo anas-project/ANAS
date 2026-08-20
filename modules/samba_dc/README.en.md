@@ -8,7 +8,7 @@ Active Directory, LDAPS, Kerberos, and BIND9-DLZ DNS provider.
 | Item | Value |
 | --- | --- |
 | Module | `samba_dc` |
-| Version / revision | `4.23.6-r8` |
+| Version / revision | `4.23.6-r7` |
 | Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |

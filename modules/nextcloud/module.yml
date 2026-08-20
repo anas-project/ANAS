@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: nextcloud
 version: 34.0.2
-revision: 11
+revision: 7
 app_version: 34.0.2
 abi:
   supports:

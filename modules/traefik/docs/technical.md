@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `traefik` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.7.10-r5` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.7.10-r4` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -17,7 +17,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r5` | `` | 3 |
+| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r4` | `` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约

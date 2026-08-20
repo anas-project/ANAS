@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: eturnal
 module_version: 1.12.2
-module_revision: 6
+module_revision: 5
 reviewed_at: 2026-08-17
 timezone:
   status: container

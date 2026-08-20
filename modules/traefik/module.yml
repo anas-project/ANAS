@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: traefik
 version: 3.7.10
-revision: 5
+revision: 4
 app_version: 3.7.10
 abi:
   supports:

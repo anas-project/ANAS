@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `lam` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `9.6.0-r8` / `anas.module/v1`.
+> 状态：当前实现；对应 `9.6.0-r7` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -18,7 +18,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_lam` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lam:9.6.0-r8` | `traefik` | 1 |
+| `anas_lam` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lam:9.6.0-r7` | `traefik` | 1 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约

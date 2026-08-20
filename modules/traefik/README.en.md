@@ -8,7 +8,7 @@ HTTPS reverse proxy, routing layer, and dashboard for Web services.
 | Item | Value |
 | --- | --- |
 | Module | `traefik` |
-| Version / revision | `3.7.10-r5` |
+| Version / revision | `3.7.10-r4` |
 | Status | `release` |
 | Category | `network` |
 | Runtime | `compose` |

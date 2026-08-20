@@ -8,7 +8,7 @@ File sync, sharing, online office, Memories, and Talk platform.
 | Item | Value |
 | --- | --- |
 | Module | `nextcloud` |
-| Version / revision | `34.0.2-r11` |
+| Version / revision | `34.0.2-r7` |
 | Status | `release` |
 | Category | `app` |
 | Runtime | `compose` |

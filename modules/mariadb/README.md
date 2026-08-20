@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `mariadb` |
-| 版本 / revision | `12.3.2-r4` |
+| 版本 / revision | `12.3.2-r3` |
 | 状态 | `release` |
 | 类别 | `database` |
 | 运行时 | `compose` |
@@ -105,7 +105,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`12.3.2-r4`（reviewed 2026-08-13）
+- Module version / 版本：`12.3.2-r3`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — MariaDB and optional Adminer receive TZ; this does not populate MariaDB timezone tables or change SQL session time_zone.
 - Language scope / 语言范围：optional Adminer 5.5.0 Web UI; MariaDB itself has no UI language
 - Selection / 选择方式：`browser`

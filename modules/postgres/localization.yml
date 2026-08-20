@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: postgres
 module_version: 18.4.0
-module_revision: 4
+module_revision: 3
 reviewed_at: 2026-08-13
 timezone:
   status: container

@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `netbird`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `0.76.1-r7` / `anas.module/v1`.
+> Status: current implementation; based on `0.76.1-r4` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -20,7 +20,7 @@ This page records the current implementation, security boundaries, and verificat
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_dashboard` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-dashboard:2.90.9` | `traefik` | 0 |
-| `anas_management` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r7` | `traefik` | 2 |
+| `anas_management` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r4` | `traefik` | 2 |
 | `anas_relay` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-relay:0.76.1` | `traefik` | 0 |
 | `anas_signal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-signal:0.76.1` | `traefik` | 1 |
 <!-- generated:compose-topology:end -->

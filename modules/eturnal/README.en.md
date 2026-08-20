@@ -8,7 +8,7 @@ TURN relay for realtime communication modules.
 | Item | Value |
 | --- | --- |
 | Module | `eturnal` |
-| Version / revision | `1.12.2-r6` |
+| Version / revision | `1.12.2-r5` |
 | Status | `release` |
 | Category | `communication` |
 | Runtime | `compose` |
