@@ -1,7 +1,7 @@
 services:
   anas_llng:
     container_name: ${CONTAINER_PREFIX}llng
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r10
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r11
     build:
       context: ./llng
       network: ${DOCKER_BUILD_NETWORK:-default}
@@ -42,6 +42,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=application"
       - "traefik.http.routers.llng.entrypoints=https"
       - "traefik.http.routers.llng.rule=Host(`${LLNG_DOMAIN}`) || Host(`${LLNG_MANAGER_DOMAIN}`) || Host(`${LLNG_TEST_DOMAIN}`)"
       - "traefik.http.routers.llng.tls=true"

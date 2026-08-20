@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `nextcloud`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `34.0.2-r10` / `anas.module/v1`.
+> Status: current implementation; based on `34.0.2-r11` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -22,8 +22,8 @@ This page records the current implementation, security boundaries, and verificat
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_imaginary` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-imaginary:2026.07.30-d5e7ffac6e1a` | `nextcloud` | 0 |
-| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r10` | `nextcloud, db, traefik` | 3 |
-| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r10` | `nextcloud, db` | 2 |
+| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r11` | `nextcloud, db, traefik` | 3 |
+| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r11` | `nextcloud, db` | 2 |
 | `anas_nextcloud-push` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-notify-push:2026.07.30-7c156254927e` | `nextcloud, db, traefik` | 1 |
 | `anas_nextcloud-redis` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-redis:8.10.0-alpine` | `nextcloud` | 1 |
 | `anas_talk` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-talk:2026.07.30-2b9a7d12d3e6` | `nextcloud, traefik` | 1 |
@@ -197,6 +197,10 @@ The dependency closure does not grant every environment value. Sensitive values 
 - [`main_test.go`](../hook/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## Real client IP
+
+Initialization clears stale `trusted_proxies`, then writes the exact resolved Traefik address, explicit upstream proxies, notify_push, and loopback entries. It also pins `forwarded_for_headers` to `HTTP_X_FORWARDED_FOR`. Initialization fails when Traefik cannot be resolved, preventing activity logs, login security controls, and audit events from recording a Docker bridge address.
 
 ## Current limitations
 

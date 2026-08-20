@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `collabora` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `26.4.2-r4` / `anas.module/v1`.
+> 状态：当前实现；对应 `26.4.2-r5` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract

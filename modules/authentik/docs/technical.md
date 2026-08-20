@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `authentik` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `2026.5.6-r9` / `anas.module/v1`.
+> 状态：当前实现；对应 `2026.5.6-r10` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,10 +20,10 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r9` | `traefik, authentik, db` | 3 |
-| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r9` | `authentik, db` | 2 |
-| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r9` | `` | 1 |
-| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r9` | `authentik, db` | 3 |
+| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `traefik, authentik, db` | 3 |
+| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `authentik, db` | 2 |
+| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `` | 1 |
+| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `authentik, db` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -141,6 +141,10 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 - [`main_test.go`](../hook/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## 真实客户端 IP
+
+Server entrypoint 解析 Traefik 的当前 IPv4 地址，并覆盖 Authentik 默认的宽泛私网代理范围，只保留 loopback、精确的 Traefik `/32` 和显式配置的上游代理。Traefik 无法解析时容器拒绝启动，防止事件与登录审计静默退化为 Docker 地址或接受伪造 Header。
 
 ## 当前限制
 

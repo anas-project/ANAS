@@ -151,4 +151,11 @@ else
   rm -f "$config_dir/routes.yml"
 fi
 
+# Traefik always derives forwarded headers for a direct client. Preserve an
+# incoming X-Forwarded-* chain only when the connection came from an explicitly
+# configured upstream proxy; insecure mode is intentionally never enabled.
+if [ -n "${TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS:-}" ]; then
+  set -- "$@" "--entrypoints.https.forwardedHeaders.trustedIPs=${TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS}"
+fi
+
 exec "${ANAS_TRAEFIK_BINARY:-traefik}" "$@"

@@ -1,6 +1,6 @@
 services:
   anas_traefik:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r4
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r5
     build:
       context: ./traefik
       network: ${DOCKER_BUILD_NETWORK:-default}
@@ -26,6 +26,12 @@ services:
       # A directory, not a single file: the entrypoint writes the certificate
       # store and any declared host-network routes as separate documents.
       - --providers.file.directory=/run/anas
+      # Keep a deployment-wide source of client-address evidence even for
+      # applications that do not consume forwarded headers themselves.
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.fields.headers.defaultmode=drop
+      - --accesslog.fields.queryparameters.defaultmode=drop
       - --ping=true
     restart: unless-stopped
     healthcheck:
@@ -50,6 +56,7 @@ services:
       - "traefik.http.routers.api.tls=true"
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=edge"
       - "traefik.docker.network=${NETWORK_PREFIX}traefik"
 
 networks:

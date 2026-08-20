@@ -8,6 +8,7 @@ services:
     labels:
       - traefik.enable=true
       - anas.traefik.instance=${NETWORK_PREFIX}traefik
+      - anas.client-ip.mode=edge
       - traefik.http.routers.netbird-dashboard.rule=Host(`${NETBIRD_DOMAIN}`)
       - traefik.http.routers.netbird-dashboard.tls=true
       - traefik.http.routers.netbird-dashboard.priority=1
@@ -26,6 +27,7 @@ services:
     labels:
       - traefik.enable=true
       - anas.traefik.instance=${NETWORK_PREFIX}traefik
+      - anas.client-ip.mode=edge
       - traefik.http.routers.netbird-signal.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/signalexchange.SignalExchange/`)
       - traefik.http.routers.netbird-signal.tls=true
       - traefik.http.routers.netbird-signal.service=netbird-signal
@@ -50,6 +52,7 @@ services:
     labels:
       - traefik.enable=true
       - anas.traefik.instance=${NETWORK_PREFIX}traefik
+      - anas.client-ip.mode=edge
       - traefik.http.routers.netbird-relay.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/relay`)
       - traefik.http.routers.netbird-relay.tls=true
       - traefik.http.services.netbird-relay.loadbalancer.server.port=33080
@@ -65,7 +68,7 @@ services:
         APT_MIRROR_URL: ${APT_MIRROR_URL:-}
         DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_management
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r6
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r7
     restart: unless-stopped
     env_file:
       - .env
@@ -77,6 +80,7 @@ services:
     labels:
       - traefik.enable=true
       - anas.traefik.instance=${NETWORK_PREFIX}traefik
+      - anas.client-ip.mode=application
       - traefik.http.routers.netbird-api.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/api`)
       - traefik.http.routers.netbird-api.service=netbird-api
       - traefik.http.routers.netbird-api.tls=true

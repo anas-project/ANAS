@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `traefik`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `3.7.10-r4` / `anas.module/v1`.
+> Status: current implementation; based on `3.7.10-r5` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -17,7 +17,7 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r4` | `` | 3 |
+| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r5` | `` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -26,6 +26,7 @@ This page records the current implementation, security boundaries, and verificat
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `traefik.base_port` | int | `1..65535` | `9000` | `static` | `TRAEFIK_BASE_PORT` | no | no | no | yes | `container_recreate` | Published ports and derived application URLs change. |
 | `traefik.domain_prefix` | string | — | `traefik` | `static` | `TRAEFIK_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | The router rule is a Compose label. |
+| `traefik.forwarded_headers_trusted_ips` | string | — | `""` | `static` | `TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS` | no | no | no | yes | `container_recreate` | Comma-separated upstream proxy IPs or CIDRs allowed to supply forwarded client headers. |
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
 
@@ -102,6 +103,20 @@ The dependency closure does not grant every environment value. Sensitive values 
 - [`main_test.go`](../hook/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## Real client IP boundary
+
+The HTTPS entrypoint does not trust request-supplied `X-Forwarded-*` headers by default. Only upstream proxies validated as IPs or CIDRs in `traefik.forwarded_headers_trusted_ips` may supply a forwarded chain, and `forwardedHeaders.insecure` is never enabled. Traefik writes JSON access logs to standard output, retaining client-address evidence while dropping headers and query parameters to avoid collecting sensitive values.
+
+Every Docker-provider route declares `anas.client-ip.mode`: `application` means the backend restores the address using an exact proxy allowlist, while `edge` means the component does not consume a client IP and Traefik's access log is authoritative. Repository tests reject unlabeled routes, whole-RFC1918 trust ranges, and insecure forwarded headers.
+
+| Handling | Modules / entrypoints |
+| --- | --- |
+| Application restoration | Authentik, LAM, LLNG, MeshCentral Web, NetBird Management, the Nextcloud main site, OAuth2 Proxy |
+| Edge recording | Traefik Dashboard, Collabora, DDNS Updater, the DDNS Go dynamic route, MariaDB/Postgres Adminer, NetBird Dashboard/Signal/Relay, Nextcloud Push/Talk |
+| Non-HTTP / not applicable | Eturnal, FreeRADIUS, Lego, MariaDB/Postgres databases, MeshCentral MPS, Samba DC, Samba FS |
+
+Non-HTTP services do not read `X-Forwarded-For`; they use peer information carried by their protocol or the direct socket address and must not inherit HTTP trusted-proxy settings.
 
 ## Current limitations
 

@@ -63,6 +63,13 @@
     "platforms": "linux/amd64,linux/arm64"
   },
   {
+    "module": "oauth2_proxy",
+    "image": "anas-oauth2-proxy",
+    "context": "modules/oauth2_proxy/oauth2_proxy",
+    "dockerfile": "modules/oauth2_proxy/oauth2_proxy/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
     "module": "samba_dc",
     "image": "anas-samba-dc-anchor",
     "context": "modules/samba_dc/anchor_worker",

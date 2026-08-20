@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `meshcentral`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `1.2.4-r7` / `anas.module/v1`.
+> Status: current implementation; based on `1.2.4-r8` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -20,7 +20,7 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_meshcentral` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r7` | `db, traefik` | 5 |
+| `anas_meshcentral` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r8` | `db, traefik` | 5 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -127,6 +127,10 @@ The dependency closure does not grant every environment value. Sensitive values 
 - [`main_test.go`](../hook/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## Real client IP
+
+The startup script resolves Traefik's current address and writes it to MeshCentral `settings.tlsOffload`. MeshCentral accepts offload and forwarded information only from that exact proxy peer, so web auditing uses the real access address. MPS is a separate direct TCP entrypoint and does not use HTTP forwarded headers.
 
 ## Current limitations
 

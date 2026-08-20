@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `authentik`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `2026.5.6-r9` / `anas.module/v1`.
+> Status: current implementation; based on `2026.5.6-r10` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -20,10 +20,10 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r9` | `traefik, authentik, db` | 3 |
-| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r9` | `authentik, db` | 2 |
-| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r9` | `` | 1 |
-| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r9` | `authentik, db` | 3 |
+| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `traefik, authentik, db` | 3 |
+| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `authentik, db` | 2 |
+| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `` | 1 |
+| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `authentik, db` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -141,6 +141,10 @@ The dependency closure does not grant every environment value. Sensitive values 
 - [`main_test.go`](../hook/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## Real client IP
+
+The server entrypoint resolves Traefik's current IPv4 address and overrides Authentik's broad private-network proxy defaults. Only loopback, the exact Traefik `/32`, and explicitly configured upstream proxies remain trusted. The container fails startup when Traefik cannot be resolved, preventing event and login auditing from silently falling back to Docker addresses or accepting forged headers.
 
 ## Current limitations
 

@@ -8,6 +8,30 @@ set -euo pipefail
 # separately at /var/lib/lemonldap-ng/conf and sessions are stored in the DB.
 /usr/local/bin/anas-llng-restore-runtime
 
+# LLNG's Nginx is the application-side trust boundary. Resolve forwarded
+# addresses recursively, but only through the exact Traefik peer and any
+# upstream proxies already validated by the Traefik module hook.
+real_ip_config=/etc/nginx/sites-enabled/00-anas-real-ip.conf
+{
+  printf '%s\n' \
+    'real_ip_header X-Forwarded-For;' \
+    'real_ip_recursive on;' \
+    "set_real_ip_from ${TRAEFIK_HOSTNAME};"
+  if [ -n "${TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS:-}" ]; then
+    IFS=',' read -ra trusted_proxies <<<"$TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS"
+    for proxy in "${trusted_proxies[@]}"; do
+      proxy=$(printf '%s' "$proxy" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+      case "$proxy" in
+        ''|*[!0-9A-Fa-f:./]*)
+          echo "invalid trusted upstream proxy IP or CIDR: $proxy" >&2
+          exit 1
+          ;;
+      esac
+      printf 'set_real_ip_from %s;\n' "$proxy"
+    done
+  fi
+} >"$real_ip_config"
+
 for name in BASE_DOMAIN DB_HOST DB_PASSWORD DB_POST DB_USER LLNG_DB_NAME LLNG_DB_TYPE LLNG_DOMAIN LLNG_DOMAIN_FULL LLNG_LDAP_AUTH_FILTER LLNG_LDAP_MAIL_FILTER LLNG_MANAGER_DOMAIN LLNG_MANAGER_DOMAIN_FULL SAMBA_DC_ADMIN_GROUP_NAME SAMBA_DC_BASE_GROUPS_DN SAMBA_DC_BASE_GROUPS_ROLE_DN SAMBA_DC_BASE_USERS_DN SAMBA_DC_LDAPS_PORT SAMBA_DC_LDAPS_SERVER_URL SAMBA_DC_PASSWORD_BIND_DN SAMBA_DC_PASSWORD_BIND_PASSWORD SAMBA_DC_USER_COMPLEX_PASS SAMBA_DC_USER_MIN_PASS_LENGTH SAMBA_DC_USER_PASSWORD_HISTORY SERVER_NAME TRAEFIK_DOMAIN_FULL; do
   if [ -z "${!name:-}" ]; then
     echo "missing required environment variable: $name" >&2

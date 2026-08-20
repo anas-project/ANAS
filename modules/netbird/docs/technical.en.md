@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `netbird`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `0.76.1-r6` / `anas.module/v1`.
+> Status: current implementation; based on `0.76.1-r7` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -20,7 +20,7 @@ This page records the current implementation, security boundaries, and verificat
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_dashboard` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-dashboard:2.90.9` | `traefik` | 0 |
-| `anas_management` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r6` | `traefik` | 2 |
+| `anas_management` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r7` | `traefik` | 2 |
 | `anas_relay` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-relay:0.76.1` | `traefik` | 0 |
 | `anas_signal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-signal:0.76.1` | `traefik` | 1 |
 <!-- generated:compose-topology:end -->
@@ -108,6 +108,10 @@ The dependency closure does not grant every environment value. Sensitive values 
 - [`main_test.go`](../hook/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## Real client IP
+
+Management startup resolves Traefik and writes its exact `/32` plus explicit upstream proxies to `ReverseProxy.TrustedHTTPProxies`. Resolution failure prevents startup; the module neither relies on positional `TrustedHTTPProxiesCount` inference nor trusts the whole Docker private network. Dashboard, Signal, and Relay do not consume access IPs, so Traefik's JSON access log is the boundary record.
 
 ## Current limitations
 

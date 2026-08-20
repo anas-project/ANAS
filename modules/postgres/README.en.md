@@ -8,7 +8,7 @@ Provider for `relational_database/postgres` with optional Adminer.
 | Item | Value |
 | --- | --- |
 | Module | `postgres` |
-| Version / revision | `18.4.0-r3` |
+| Version / revision | `18.4.0-r4` |
 | Status | `release` |
 | Category | `database` |
 | Runtime | `compose` |

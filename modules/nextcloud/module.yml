@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: nextcloud
 version: 34.0.2
-revision: 10
+revision: 11
 app_version: 34.0.2
 abi:
   supports:
@@ -137,6 +137,7 @@ config:
     - SAMBA_DC_USER_NAME
     - TRAEFIK_BASE_PORT
     - TRAEFIK_HOSTNAME
+    - TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS
     - TURN_DOMAIN
     - TURN_DOMAIN_PORT
     - TURN_PORT

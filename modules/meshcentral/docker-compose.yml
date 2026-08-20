@@ -1,7 +1,7 @@
 services:
   anas_meshcentral:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r7
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r8
     build:
       context: ./${MODULE_NAME}
       network: ${DOCKER_BUILD_NETWORK:-default}
@@ -34,6 +34,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=application"
       - "traefik.http.routers.meshcentral.entrypoints=https"
       - "traefik.http.routers.meshcentral.rule=Host(`${MESHCENTRAL_DOMAIN}`)"
       - "traefik.http.routers.meshcentral.tls=true"

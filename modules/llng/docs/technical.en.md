@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `llng`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `2.23.2-r10` / `anas.module/v1`.
+> Status: current implementation; based on `2.23.2-r11` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -20,7 +20,7 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r10` | `traefik, db` | 2 |
+| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r11` | `traefik, db` | 2 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -142,6 +142,10 @@ The dependency closure does not grant every environment value. Sensitive values 
 - [`iam_test.go`](../hook/iam_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## Real client IP
+
+Container startup enables `real_ip_header X-Forwarded-For` and recursive parsing in LLNG's Nginx. It trusts only `TRAEFIK_HOSTNAME` plus explicit upstream proxy IPs or CIDRs already validated by Traefik. Login history, session auditing, and IP-based rules therefore receive the leftmost untrusted client address instead of a Docker bridge address; an invalid proxy value fails startup.
 
 ## Current limitations
 

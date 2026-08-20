@@ -8,7 +8,7 @@ Provider for `relational_database/mariadb` with optional Adminer.
 | Item | Value |
 | --- | --- |
 | Module | `mariadb` |
-| Version / revision | `12.3.2-r3` |
+| Version / revision | `12.3.2-r4` |
 | Status | `release` |
 | Category | `database` |
 | Runtime | `compose` |

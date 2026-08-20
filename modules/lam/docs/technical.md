@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `lam` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `9.6.0-r7` / `anas.module/v1`.
+> 状态：当前实现；对应 `9.6.0-r8` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -18,7 +18,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_lam` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lam:9.6.0-r7` | `traefik` | 1 |
+| `anas_lam` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-lam:9.6.0-r8` | `traefik` | 1 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -94,6 +94,10 @@ LAM 直接通过 LDAPS 工作。主登录页使用操作者自己的目录用户
 - [`main_test.go`](../hook/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## 真实客户端 IP
+
+自定义镜像启用 Apache `mod_remoteip`。启动配置把 `X-Forwarded-For` 映射为 Apache 客户端地址，但只信任 Traefik 主机和显式上游代理，因此 LAM 的 Web 日志和依赖 `REMOTE_ADDR` 的行为不会记录 Docker bridge 地址。
 
 ## 当前限制
 

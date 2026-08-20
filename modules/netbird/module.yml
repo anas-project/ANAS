@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: netbird
 version: 0.76.1
-revision: 6
+revision: 7
 app_version: 0.76.1
 abi:
   supports:
@@ -60,6 +60,7 @@ config:
     - SAMBA_DC_APP_FILTER
     - TRAEFIK_BASE_PORT
     - TRAEFIK_HOSTNAME
+    - TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS
     - TURN_DOMAIN_PORT
     - ANAS_IAM_BINDING__NETBIRD__*
     - TURN_SECRET

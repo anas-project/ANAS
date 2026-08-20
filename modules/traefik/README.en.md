@@ -8,7 +8,7 @@ HTTPS reverse proxy, routing layer, and dashboard for Web services.
 | Item | Value |
 | --- | --- |
 | Module | `traefik` |
-| Version / revision | `3.7.10-r4` |
+| Version / revision | `3.7.10-r5` |
 | Status | `release` |
 | Category | `network` |
 | Runtime | `compose` |
@@ -73,6 +73,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `traefik.base_port` | int | `1..65535` | `9000` | `static` | `TRAEFIK_BASE_PORT` | no | no | no | yes | `container_recreate` | Published ports and derived application URLs change. |
 | `traefik.domain_prefix` | string | — | `traefik` | `static` | `TRAEFIK_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | The router rule is a Compose label. |
+| `traefik.forwarded_headers_trusted_ips` | string | — | `""` | `static` | `TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS` | no | no | no | yes | `container_recreate` | Comma-separated upstream proxy IPs or CIDRs allowed to supply forwarded client headers. |
 
 ### Query and modify
 

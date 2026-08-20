@@ -35,7 +35,18 @@ waiting_url() { # $1 url
 }
 
 echo "Set hosts"
-traefik_ip=$( ping $TRAEFIK_HOSTNAME -c 1 | sed '1{s/[^(]*(//;s/).*//;q}')
+traefik_ip=
+for _ in $(seq 1 30); do
+  traefik_ip=$(getent ahostsv4 "$TRAEFIK_HOSTNAME" | awk 'NR == 1 { print $1 }' || true)
+  if [ -n "$traefik_ip" ]; then
+    break
+  fi
+  sleep 2
+done
+if [ -z "$traefik_ip" ]; then
+  echo "cannot resolve Traefik host: $TRAEFIK_HOSTNAME" >&2
+  exit 1
+fi
 set_host $NETBIRD_DOMAIN $traefik_ip
 auth_domain=$(printf '%s' "$NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT" | sed -E 's#^[a-z]+://([^/:]+).*#\1#')
 set_host "$auth_domain" "$traefik_ip"
@@ -50,6 +61,20 @@ export NETBIRD_AUTH_TOKEN_ENDPOINT=$(jq -r '.token_endpoint' openid-configuratio
 export NETBIRD_AUTH_DEVICE_AUTH_ENDPOINT=$(jq -r '.device_authorization_endpoint' openid-configuration.json) #not support in llng
 export NETBIRD_AUTH_PKCE_AUTHORIZATION_ENDPOINT=$(jq -r '.authorization_endpoint' openid-configuration.json)
 
+# NetBird must only peel X-Forwarded-For entries supplied by the actual reverse
+# proxy path. Keep the value as JSON so envsubst cannot accidentally turn it
+# into an invalid or overly broad configuration.
+trusted_http_proxies="${traefik_ip}/32"
+if [ -n "${TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS:-}" ]; then
+  trusted_http_proxies="${trusted_http_proxies},${TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS}"
+fi
+export NETBIRD_TRUSTED_HTTP_PROXIES
+NETBIRD_TRUSTED_HTTP_PROXIES=$(printf '%s' "$trusted_http_proxies" | jq -Rsc '
+  split(",")
+  | map(gsub("^[[:space:]]+|[[:space:]]+$"; ""))
+  | map(select(length > 0))
+')
+
 # Read the encryption key
 if test -f 'management.json'; then
     encKey=$(jq -r  ".DataStoreEncryptionKey" management.json)
@@ -60,7 +85,7 @@ fi
 
 mkdir -p /etc/netbird
 
-management_variables='$AUTH_AUDIENCE $AUTH_CLIENT_ID $AUTH_CLIENT_SECRET $AUTH_SUPPORTED_SCOPES $NETBIRD_AUTH_AUTHORITY $NETBIRD_AUTH_DEVICE_AUTH_USE_ID_TOKEN $NETBIRD_AUTH_JWT_CERTS $NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT $NETBIRD_AUTH_PKCE_AUTHORIZATION_ENDPOINT $NETBIRD_AUTH_TOKEN_ENDPOINT $NETBIRD_AUTH_USER_ID_CLAIM $NETBIRD_DATASTORE_ENC_KEY $NETBIRD_DOMAIN_PORT $NETBIRD_MGMT_API_PORT $NETBIRD_RELAY_AUTH_SECRET $NETBIRD_RELAY_ENDPOINT $TURN_DOMAIN_PORT $TURN_SECRET'
+management_variables='$AUTH_AUDIENCE $AUTH_CLIENT_ID $AUTH_CLIENT_SECRET $AUTH_SUPPORTED_SCOPES $NETBIRD_AUTH_AUTHORITY $NETBIRD_AUTH_DEVICE_AUTH_USE_ID_TOKEN $NETBIRD_AUTH_JWT_CERTS $NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT $NETBIRD_AUTH_PKCE_AUTHORIZATION_ENDPOINT $NETBIRD_AUTH_TOKEN_ENDPOINT $NETBIRD_AUTH_USER_ID_CLAIM $NETBIRD_DATASTORE_ENC_KEY $NETBIRD_DOMAIN_PORT $NETBIRD_MGMT_API_PORT $NETBIRD_RELAY_AUTH_SECRET $NETBIRD_RELAY_ENDPOINT $NETBIRD_TRUSTED_HTTP_PROXIES $TURN_DOMAIN_PORT $TURN_SECRET'
 for name in $(printf '%s\n' "$management_variables" | grep -o '[A-Z][A-Z0-9_]*'); do
     eval 'present=${'"$name"'+x}'
     if [[ "$present" != x ]]; then

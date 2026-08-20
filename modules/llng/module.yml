@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: llng
 version: 2.23.2
-revision: 10
+revision: 11
 app_version: 2.23.2
 abi:
   supports:
@@ -98,6 +98,7 @@ config:
     - SAMBA_DC_USER_NAME
     - SAMBA_DC_USER_PASSWORD_HISTORY
     - TRAEFIK_DOMAIN_FULL
+    - TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS
     - TRAEFIK_HOSTNAME
     - ANAS_IDENTITY_OIDC_CLIENTS
     - ANAS_IDENTITY_SAML_CLIENTS

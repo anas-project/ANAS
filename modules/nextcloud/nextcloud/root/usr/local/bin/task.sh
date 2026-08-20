@@ -402,7 +402,32 @@ occ config:app:set password_policy expiration --no-interaction --type=integer --
 occ config:app:set password_policy maximumLoginAttempts --no-interaction --type=integer --value=0
 
 # trusted_proxies
-occ config:system:set trusted_proxies 0 --value=`ping $TRAEFIK_HOSTNAME -c 1 | sed '1{s/[^(]*(//;s/).*//;q}'`
+traefik_proxy_ip=''
+for attempt in $(seq 1 30); do
+  traefik_proxy_ip=$(getent ahostsv4 "$TRAEFIK_HOSTNAME" | awk 'NR == 1 { print $1 }' || true)
+  if [ -n "$traefik_proxy_ip" ]; then
+    break
+  fi
+  sleep 1
+done
+if [ -z "$traefik_proxy_ip" ]; then
+  echo "Unable to resolve Traefik container: $TRAEFIK_HOSTNAME" >&2
+  exit 1
+fi
+occ config:system:delete trusted_proxies >/dev/null 2>&1 || true
+trusted_proxy_index=0
+occ config:system:set trusted_proxies "$trusted_proxy_index" --value="$traefik_proxy_ip"
+trusted_proxy_index=$((trusted_proxy_index + 1))
+if [ -n "${TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS:-}" ]; then
+  IFS=',' read -ra trusted_upstream_proxies <<<"$TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS"
+  for trusted_upstream_proxy in "${trusted_upstream_proxies[@]}"; do
+    trusted_upstream_proxy=$(printf '%s' "$trusted_upstream_proxy" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    [ -n "$trusted_upstream_proxy" ] || continue
+    occ config:system:set trusted_proxies "$trusted_proxy_index" --value="$trusted_upstream_proxy"
+    trusted_proxy_index=$((trusted_proxy_index + 1))
+  done
+fi
+occ config:system:set forwarded_for_headers 0 --value="HTTP_X_FORWARDED_FOR"
 
 # install apps
 # user_app_path='/var/www/userapps'
@@ -541,9 +566,11 @@ if [ -z "$notify_push_ip" ]; then
   echo "Unable to resolve notify_push container: $NEXTCLOUD_PUSH_HOSTNAME" >&2
   exit 1
 fi
-occ config:system:set trusted_proxies 1 --value="$notify_push_ip"
-occ config:system:set trusted_proxies 2 --value="127.0.0.1"
-occ config:system:set trusted_proxies 3 --value="::1"
+occ config:system:set trusted_proxies "$trusted_proxy_index" --value="$notify_push_ip"
+trusted_proxy_index=$((trusted_proxy_index + 1))
+occ config:system:set trusted_proxies "$trusted_proxy_index" --value="127.0.0.1"
+trusted_proxy_index=$((trusted_proxy_index + 1))
+occ config:system:set trusted_proxies "$trusted_proxy_index" --value="::1"
 occ config:app:set notify_push base_endpoint --value="$NEXTCLOUD_DOMAIN_FULL/push"
 
 echo "Set LDAP"

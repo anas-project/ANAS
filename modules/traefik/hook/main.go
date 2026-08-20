@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
+	"strings"
 )
 
 // The runner sends the module-hook ABI it speaks; this unreleased format has no legacy aliases.
@@ -135,7 +137,27 @@ func calculate(module string, env map[string]string, workdir string, secrets *se
 	if err := domainCalc("TRAEFIK", "traefik")(env, workdir, secrets); err != nil {
 		return err
 	}
+	if err := validateTrustedProxyCIDRs(env["TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS"]); err != nil {
+		return err
+	}
 	env["TRAEFIK_DASHBOARD_URL"] = env["TRAEFIK_DOMAIN_FULL"] + "/dashboard/"
+	return nil
+}
+
+func validateTrustedProxyCIDRs(value string) error {
+	for _, raw := range strings.Split(value, ",") {
+		item := strings.TrimSpace(raw)
+		if item == "" {
+			continue
+		}
+		if _, err := netip.ParsePrefix(item); err == nil {
+			continue
+		}
+		if _, err := netip.ParseAddr(item); err == nil {
+			continue
+		}
+		return fmt.Errorf("traefik.forwarded_headers_trusted_ips contains invalid IP or CIDR %q", item)
+	}
 	return nil
 }
 func renderRuntimeEnv(module string, env map[string]string) (map[string]string, error) {

@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: traefik
 version: 3.7.10
-revision: 4
+revision: 5
 app_version: 3.7.10
 abi:
   supports:
@@ -26,6 +26,7 @@ config:
   defaults:
     base_port: "9000"
     domain_prefix: traefik
+    forwarded_headers_trusted_ips: ""
   types:
     base_port:
       kind: int
@@ -33,6 +34,7 @@ config:
         minimum: 1
         maximum: 65535
     domain_prefix: string
+    forwarded_headers_trusted_ips: string
   # Route declarations from modules the Docker provider cannot discover: host
   # networking, non-Docker processes, or anything Traefik must reach by
   # address. Published by the declaring module, rendered by this module's
@@ -53,6 +55,10 @@ config:
       effect: container_recreate
       apply: recreate-traefik
       description: The router rule is a Compose label.
+    forwarded_headers_trusted_ips:
+      effect: container_recreate
+      apply: recreate-traefik-and-routes
+      description: Only these upstream proxy IPs or CIDRs may supply forwarded client headers to Traefik.
 features:
   domain: true
 management:

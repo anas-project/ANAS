@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `netbird` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `0.76.1-r6` / `anas.module/v1`.
+> 状态：当前实现；对应 `0.76.1-r7` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,7 +20,7 @@
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_dashboard` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-dashboard:2.90.9` | `traefik` | 0 |
-| `anas_management` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r6` | `traefik` | 2 |
+| `anas_management` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-netbird-management:0.76.1-r7` | `traefik` | 2 |
 | `anas_relay` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-relay:0.76.1` | `traefik` | 0 |
 | `anas_signal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-netbird-signal:0.76.1` | `traefik` | 1 |
 <!-- generated:compose-topology:end -->
@@ -105,6 +105,10 @@
 - [`main_test.go`](../hook/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## 真实客户端 IP
+
+Management 容器启动时解析 Traefik 地址，把精确 `/32` 与显式上游代理列表写入 `ReverseProxy.TrustedHTTPProxies`。解析失败会阻止启动，不使用 `TrustedHTTPProxiesCount` 的位置推断，也不信任整个 Docker 私网。Dashboard、Signal 和 Relay 不消费访问 IP，以 Traefik JSON 访问日志为边界记录。
 
 ## 当前限制
 

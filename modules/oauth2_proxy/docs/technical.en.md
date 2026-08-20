@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `oauth2_proxy`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `7.15.3-r4` / `anas.module/v1`.
+> Status: current implementation; based on `7.15.3-r5` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -19,7 +19,7 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_oauth2-proxy` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-oauth2-proxy:7.15.3` | `` | 1 |
+| `anas_oauth2-proxy` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-oauth2-proxy:7.15.3-r5` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -91,6 +91,10 @@ The dependency closure does not grant every environment value. Sensitive values 
 - There are currently no hook unit-test files.
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## Real client IP
+
+The ANAS wrapper image resolves Traefik at startup, appends its exact `/32` as `--trusted-proxy-ip`, and validates optional upstream proxy IPs or CIDRs. It no longer trusts all three RFC1918 ranges. Resolution or validation failure keeps the gate closed, preventing forged forwarded headers from changing redirects or authentication context.
 
 ## Current limitations
 

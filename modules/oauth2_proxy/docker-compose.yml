@@ -1,6 +1,12 @@
 services:
   anas_oauth2-proxy:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-oauth2-proxy:7.15.3
+    build:
+      context: ./oauth2_proxy
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        ANAS_IMAGE_REGISTRY: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}
+        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-oauth2-proxy:7.15.3-r5
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     restart: unless-stopped
     # The deployment's own resolver, not an upstream one: the identity provider
@@ -29,20 +35,9 @@ services:
       # Builds redirect URLs from the X-Forwarded-* headers Traefik sets rather
       # than from the address it was reached on. Required in this arrangement.
       - --reverse-proxy=true
-      # Whose X-Forwarded-* headers are believed, and those headers decide where
-      # a sign-in returns to.
-      #
-      # The private ranges rather than this network's exact CIDR, because the
-      # exact one is not knowable: Docker assigns it, and naming it in advance
-      # meant pinning a subnet that collides with whatever else the host runs.
-      # The reachable set is what actually bounds this -- the proxy publishes no
-      # port and sits on one internal network, so the only clients that can
-      # reach it at all are this deployment's own containers. An attacker who is
-      # already one of them has better options than forging a redirect, and
-      # --whitelist-domain still refuses any target outside the base domain.
-      - --trusted-proxy-ip=10.0.0.0/8
-      - --trusted-proxy-ip=172.16.0.0/12
-      - --trusted-proxy-ip=192.168.0.0/16
+      # The image bootstrap resolves TRAEFIK_HOSTNAME at container start and
+      # appends one exact --trusted-proxy-ip address. This keeps redirects and
+      # audit context correct without trusting every RFC1918 container.
       - --http-address=0.0.0.0:4180
       - --provider=oidc
       - --provider-ca-file=/certs/${ANAS_TLS_TRUST_BUNDLE_NAME}
@@ -65,6 +60,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=application"
       # The gate's own router: it must be reachable by name because the OIDC
       # callback and the sign-in page are served from here.
       - "traefik.http.routers.oauth2-proxy.entrypoints=https"

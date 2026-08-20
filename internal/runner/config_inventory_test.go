@@ -14,7 +14,7 @@ func TestTypedConfigParameterInventoryMatchesCLIProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(typed), 141; got != want {
+	if got, want := len(typed), 142; got != want {
 		t.Fatalf("typed inventory count = %d, want %d", got, want)
 	}
 
@@ -70,7 +70,7 @@ func TestLoadConfigParameterInventoryUsesRepositoryRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(entries), 141; got != want {
+	if got, want := len(entries), 142; got != want {
 		t.Fatalf("inventory count = %d, want %d", got, want)
 	}
 }

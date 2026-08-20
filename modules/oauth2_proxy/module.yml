@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: oauth2_proxy
 version: 7.15.3
-revision: 4
+revision: 5
 app_version: 7.15.3
 abi:
   supports:
@@ -76,6 +76,8 @@ config:
     # one, and this module has to trust it to complete OIDC discovery.
     - ANAS_TLS_CERTS_DIR
     - ANAS_TLS_INTERNAL_CA_NAME
+    - TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS
+    - TRAEFIK_HOSTNAME
 features:
   domain: true
   generated_secrets: true

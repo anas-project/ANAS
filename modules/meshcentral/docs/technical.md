@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `meshcentral` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `1.2.4-r7` / `anas.module/v1`.
+> 状态：当前实现；对应 `1.2.4-r8` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,7 +20,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_meshcentral` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r7` | `db, traefik` | 5 |
+| `anas_meshcentral` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-meshcentral:1.2.4-r8` | `db, traefik` | 5 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -127,6 +127,10 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 - [`main_test.go`](../hook/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## 真实客户端 IP
+
+启动脚本解析 Traefik 当前地址并写入 MeshCentral `settings.tlsOffload`。MeshCentral 只接受来自该精确代理邻居的卸载与转发信息，因此 Web 审计使用真实访问地址；MPS 是独立直连 TCP 入口，不经过 HTTP 转发 Header。
 
 ## 当前限制
 

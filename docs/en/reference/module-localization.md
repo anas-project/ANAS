@@ -6,28 +6,28 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 | Module | Version | Timezone | Language | Selection | Global language | Global locale | Count |
 | --- | --- | --- | --- | --- | --- | --- | ---: |
-| [authentik](#authentik) | 2026.5.6-r9 | container | supported | browser | not_consumed | not_consumed | 17 |
-| [collabora](#collabora) | 26.4.2-r4 | container | supported | integration | not_consumed | not_consumed | 43 |
+| [authentik](#authentik) | 2026.5.6-r10 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [collabora](#collabora) | 26.4.2-r5 | container | supported | integration | not_consumed | not_consumed | 43 |
 | [ddns_go](#ddns_go) | 6.17.4-r5 | container | supported | application | not_consumed | not_consumed | 2 |
-| [ddns_updater](#ddns_updater) | 2.10.0-r3 | application | fixed | fixed | not_consumed | not_consumed | 1 |
+| [ddns_updater](#ddns_updater) | 2.10.0-r4 | application | fixed | fixed | not_consumed | not_consumed | 1 |
 | [eturnal](#eturnal) | 1.12.2-r6 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [freeradius](#freeradius) | 3.2.10-r3 | container | not_applicable | none | not_applicable | not_applicable | 0 |
-| [lam](#lam) | 9.6.0-r7 | application | supported | deployment_default | applied | not_consumed | 15 |
+| [lam](#lam) | 9.6.0-r8 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r4 | container | not_applicable | none | not_applicable | not_applicable | 0 |
-| [llng](#llng) | 2.23.2-r10 | container | supported | browser | not_consumed | not_consumed | 17 |
-| [mariadb](#mariadb) | 12.3.2-r3 | container | supported | browser | not_consumed | not_consumed | 47 |
-| [meshcentral](#meshcentral) | 1.2.4-r7 | container | supported | browser | not_consumed | not_consumed | 30 |
-| [netbird](#netbird) | 0.76.1-r6 | partial | fixed | fixed | not_consumed | not_consumed | 1 |
-| [nextcloud](#nextcloud) | 34.0.2-r10 | partial | supported | browser | fallback | fallback | 58 |
-| [oauth2_proxy](#oauth2_proxy) | 7.15.3-r4 | container | fixed | fixed | not_consumed | not_consumed | 1 |
-| [postgres](#postgres) | 18.4.0-r3 | container | supported | browser | not_consumed | not_consumed | 47 |
+| [llng](#llng) | 2.23.2-r11 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [mariadb](#mariadb) | 12.3.2-r4 | container | supported | browser | not_consumed | not_consumed | 47 |
+| [meshcentral](#meshcentral) | 1.2.4-r8 | container | supported | browser | not_consumed | not_consumed | 30 |
+| [netbird](#netbird) | 0.76.1-r7 | partial | fixed | fixed | not_consumed | not_consumed | 1 |
+| [nextcloud](#nextcloud) | 34.0.2-r11 | partial | supported | browser | fallback | fallback | 58 |
+| [oauth2_proxy](#oauth2_proxy) | 7.15.3-r5 | container | fixed | fixed | not_consumed | not_consumed | 1 |
+| [postgres](#postgres) | 18.4.0-r4 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [samba_dc](#samba_dc) | 4.23.6-r8 | system | not_applicable | none | not_applicable | not_applicable | 0 |
 | [samba_fs](#samba_fs) | 4.23.6-r6 | container | not_applicable | client | not_applicable | not_applicable | 0 |
-| [traefik](#traefik) | 3.7.10-r4 | container | fixed | fixed | not_consumed | not_consumed | 1 |
+| [traefik](#traefik) | 3.7.10-r5 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 
 ## authentik
 
-- **Version / 版本：** `2026.5.6-r9`; reviewed 2026-08-13
+- **Version / 版本：** `2026.5.6-r10`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — All long-running authentik services receive the module .env and TZ; no separate application timezone is forced.
 - **Language / 语言：** `supported`, `browser` — authentik Web UI
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -38,7 +38,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## collabora
 
-- **Version / 版本：** `26.4.2-r4`; reviewed 2026-08-13
+- **Version / 版本：** `26.4.2-r5`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — The Collabora service receives TZ through the module .env.
 - **Language / 语言：** `supported`, `integration` — Collabora Online editor UI and document locale
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -60,7 +60,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## ddns_updater
 
-- **Version / 版本：** `2.10.0-r3`; reviewed 2026-08-13
+- **Version / 版本：** `2.10.0-r4`; reviewed 2026-08-13
 - **Timezone / 时区：** `application` — Upstream officially accepts the IANA TZ environment variable for Web UI and log timestamps.
 - **Language / 语言：** `fixed`, `fixed` — DDNS Updater Web UI
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -90,7 +90,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## lam
 
-- **Version / 版本：** `9.6.0-r7`; reviewed 2026-08-13
+- **Version / 版本：** `9.6.0-r8`; reviewed 2026-08-13
 - **Timezone / 时区：** `application` — ANAS writes the IANA TZ value to the LAM profile timeZone setting.
 - **Language / 语言：** `supported`, `deployment_default` — LDAP Account Manager Web UI
 - **ANAS globals / 全局默认：** `default_language=applied`; `default_locale=not_consumed`
@@ -111,7 +111,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## llng
 
-- **Version / 版本：** `2.23.2-r10`; reviewed 2026-08-17
+- **Version / 版本：** `2.23.2-r11`; reviewed 2026-08-17
 - **Timezone / 时区：** `container` — LLNG receives TZ through the module .env; no deployment-wide application timezone is forced.
 - **Language / 语言：** `supported`, `browser` — LemonLDAP::NG Portal and language selector
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -122,7 +122,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## mariadb
 
-- **Version / 版本：** `12.3.2-r3`; reviewed 2026-08-13
+- **Version / 版本：** `12.3.2-r4`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — MariaDB and optional Adminer receive TZ; this does not populate MariaDB timezone tables or change SQL session time_zone.
 - **Language / 语言：** `supported`, `browser` — optional Adminer 5.5.0 Web UI; MariaDB itself has no UI language
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -132,7 +132,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## meshcentral
 
-- **Version / 版本：** `1.2.4-r7`; reviewed 2026-08-13
+- **Version / 版本：** `1.2.4-r8`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — MeshCentral receives TZ through the module .env for process and log timestamps.
 - **Language / 语言：** `supported`, `browser` — MeshCentral Web UI
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -143,7 +143,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## netbird
 
-- **Version / 版本：** `0.76.1-r6`; reviewed 2026-08-13
+- **Version / 版本：** `0.76.1-r7`; reviewed 2026-08-13
 - **Timezone / 时区：** `partial` — Dashboard, signal, and management receive the module environment; the relay service does not currently receive TZ.
 - **Language / 语言：** `fixed`, `fixed` — NetBird Dashboard v2.90.9
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -154,7 +154,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## nextcloud
 
-- **Version / 版本：** `34.0.2-r10`; reviewed 2026-08-13
+- **Version / 版本：** `34.0.2-r11`; reviewed 2026-08-13
 - **Timezone / 时区：** `partial` — Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
 - **Language / 语言：** `supported`, `browser` — Nextcloud Web UI
 - **ANAS globals / 全局默认：** `default_language=fallback`; `default_locale=fallback`
@@ -165,7 +165,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## oauth2_proxy
 
-- **Version / 版本：** `7.15.3-r4`; reviewed 2026-08-13
+- **Version / 版本：** `7.15.3-r5`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — oauth2-proxy receives TZ for process and log timestamps.
 - **Language / 语言：** `fixed`, `fixed` — oauth2-proxy built-in error and sign-in pages
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -175,7 +175,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## postgres
 
-- **Version / 版本：** `18.4.0-r3`; reviewed 2026-08-13
+- **Version / 版本：** `18.4.0-r4`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — PostgreSQL and optional Adminer receive TZ; database timezone remains an independent SQL setting.
 - **Language / 语言：** `supported`, `browser` — optional Adminer 5.5.0 Web UI; PostgreSQL itself has no UI language
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -205,7 +205,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## traefik
 
-- **Version / 版本：** `3.7.10-r4`; reviewed 2026-08-13
+- **Version / 版本：** `3.7.10-r5`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — Traefik receives TZ for process and access-log timestamps.
 - **Language / 语言：** `fixed`, `fixed` — Traefik Proxy built-in Dashboard
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`

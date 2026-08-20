@@ -73,6 +73,16 @@ func TestComposeUsesRenderedTraefikNetworkName(t *testing.T) {
 	if !strings.Contains(string(b), "${ANAS_MODULE_RUNTIME_STATE_PATH}/dynamic:/run/anas") {
 		t.Fatal("Traefik file-provider state is not mounted outside the sealed artifact")
 	}
+	for _, required := range []string{
+		"--accesslog=true",
+		"--accesslog.format=json",
+		"--accesslog.fields.headers.defaultmode=drop",
+		"--accesslog.fields.queryparameters.defaultmode=drop",
+	} {
+		if !strings.Contains(string(b), required) {
+			t.Fatalf("Traefik compose is missing safe access-log option %s", required)
+		}
+	}
 
 	composeFiles, err := filepath.Glob("../../*/docker-compose.yml")
 	if err != nil {
@@ -86,6 +96,14 @@ func TestComposeUsesRenderedTraefikNetworkName(t *testing.T) {
 		if strings.Contains(string(compose), "traefik.docker.network=traefik") {
 			t.Fatalf("%s contains an unrendered Traefik network label", composeFile)
 		}
+		if strings.Contains(string(compose), "forwardedHeaders.insecure") {
+			t.Fatalf("%s enables insecure forwarded-header trust", composeFile)
+		}
+		if strings.Contains(string(compose), "--trusted-proxy-ip=10.0.0.0/8") ||
+			strings.Contains(string(compose), "--trusted-proxy-ip=172.16.0.0/12") ||
+			strings.Contains(string(compose), "--trusted-proxy-ip=192.168.0.0/16") {
+			t.Fatalf("%s trusts an entire private address range for forwarded headers", composeFile)
+		}
 		lines := strings.Split(string(compose), "\n")
 		for i, line := range lines {
 			if !strings.Contains(line, "traefik.enable=true") {
@@ -98,9 +116,26 @@ func TestComposeUsesRenderedTraefikNetworkName(t *testing.T) {
 					break
 				}
 			}
-			if !strings.Contains(strings.Join(lines[i:serviceEnd], "\n"), "anas.traefik.instance=${NETWORK_PREFIX}traefik") {
+			service := strings.Join(lines[i:serviceEnd], "\n")
+			if !strings.Contains(service, "anas.traefik.instance=${NETWORK_PREFIX}traefik") {
 				t.Fatalf("%s has a Traefik-enabled service without an instance isolation label near line %d", composeFile, i+1)
 			}
+			if !strings.Contains(service, "anas.client-ip.mode=application") && !strings.Contains(service, "anas.client-ip.mode=edge") {
+				t.Fatalf("%s has a Traefik-enabled service without a client-IP handling mode near line %d", composeFile, i+1)
+			}
+		}
+	}
+}
+
+func TestTrustedProxyCIDRValidation(t *testing.T) {
+	for _, value := range []string{"", "192.0.2.10", "192.0.2.0/24", "2001:db8::/32", "192.0.2.0/24, 2001:db8::1"} {
+		if err := validateTrustedProxyCIDRs(value); err != nil {
+			t.Fatalf("validateTrustedProxyCIDRs(%q): %v", value, err)
+		}
+	}
+	for _, value := range []string{"proxy.example.com", "0.0.0.0/999", "192.0.2.1,not-an-ip"} {
+		if err := validateTrustedProxyCIDRs(value); err == nil {
+			t.Fatalf("validateTrustedProxyCIDRs(%q) accepted invalid input", value)
 		}
 	}
 }

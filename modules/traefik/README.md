@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `traefik` |
-| 版本 / revision | `3.7.10-r4` |
+| 版本 / revision | `3.7.10-r5` |
 | 状态 | `release` |
 | 类别 | `network` |
 | 运行时 | `compose` |
@@ -73,6 +73,7 @@ anas admin local rotate traefik primary --prompt -w /srv/anas
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `traefik.base_port` | int | `1..65535` | `9000` | `static` | `TRAEFIK_BASE_PORT` | 否 | 否 | 否 | 是 | `container_recreate` | 对外端口基数 |
 | `traefik.domain_prefix` | string | — | `traefik` | `static` | `TRAEFIK_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| `traefik.forwarded_headers_trusted_ips` | string | — | `""` | `static` | `TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS` | 否 | 否 | 否 | 是 | `container_recreate` | 可向 Traefik 提供转发客户端 Header 的上游代理 IP/CIDR，逗号分隔 |
 
 ### 查询和修改
 
@@ -130,7 +131,7 @@ Traefik 本地账号只保护 Dashboard，不代表下游应用管理员。
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`3.7.10-r4`（reviewed 2026-08-13）
+- Module version / 版本：`3.7.10-r5`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — Traefik receives TZ for process and access-log timestamps.
 - Language scope / 语言范围：Traefik Proxy built-in Dashboard
 - Selection / 选择方式：`fixed`

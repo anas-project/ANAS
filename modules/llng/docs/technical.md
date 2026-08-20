@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `llng` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `2.23.2-r10` / `anas.module/v1`.
+> 状态：当前实现；对应 `2.23.2-r11` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,7 +20,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r10` | `traefik, db` | 2 |
+| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r11` | `traefik, db` | 2 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -135,6 +135,10 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 - [`iam_test.go`](../hook/iam_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## 真实客户端 IP
+
+容器启动时在 LLNG Nginx 中启用 `real_ip_header X-Forwarded-For` 和递归解析，只信任 `TRAEFIK_HOSTNAME` 以及 Traefik 已校验的显式上游代理 IP/CIDR。这样登录历史、会话审计和基于 IP 的规则得到最左侧未受信任客户端地址，而不是 Docker bridge 地址；非法代理值会导致启动失败。
 
 ## 当前限制
 

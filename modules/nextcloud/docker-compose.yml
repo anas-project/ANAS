@@ -8,7 +8,7 @@ services:
         - APT_MIRROR_URL
         - NEXTCLOUD_APT_MIRROR_URL
         - DOCKER_HUB_REGISTRY
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r10
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r11
     container_name: ${CONTAINER_PREFIX}nextcloud
     volumes:
       - "${NEXTCLOUD_BASE_PATH}/nextcloud:/var/www/html"
@@ -19,6 +19,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=application"
       - "traefik.http.routers.nextcloud.entrypoints=https"
       - "traefik.http.routers.nextcloud.rule=Host(`${NEXTCLOUD_DOMAIN}`)"
       - "traefik.http.routers.nextcloud.middlewares=nextcloud-dav,nextcloud-webfinger,nextcloud-regex,nextcloud-header"
@@ -60,7 +61,7 @@ services:
       - traefik
 
   anas_nextcloud-cron:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r10
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r11
     container_name: ${CONTAINER_PREFIX}nextcloud_cron
     # user_ldap refreshes directory attributes from background jobs, so cron
     # needs the same CA trust as the web process rather than only shared app
@@ -120,6 +121,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=edge"
       - "traefik.http.routers.nextcloud-push.entrypoints=https"
       - "traefik.http.routers.nextcloud-push.rule=Host(`${NEXTCLOUD_DOMAIN}`) && PathPrefix(`/push`)"
       - "traefik.http.routers.nextcloud-push.tls=true"
@@ -213,6 +215,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=edge"
       - "traefik.http.routers.nextcloud-talk-signaling.entrypoints=https"
       - "traefik.http.routers.nextcloud-talk-signaling.tls=true"
       - "traefik.http.routers.nextcloud-talk-signaling.rule=Host(`${NEXTCLOUD_DOMAIN}`) && PathPrefix(`/talk`)"

@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `meshcentral` |
-| 版本 / revision | `1.2.4-r7` |
+| 版本 / revision | `1.2.4-r8` |
 | 状态 | `release` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -120,7 +120,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`1.2.4-r7`（reviewed 2026-08-13）
+- Module version / 版本：`1.2.4-r8`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — MeshCentral receives TZ through the module .env for process and log timestamps.
 - Language scope / 语言范围：MeshCentral Web UI
 - Selection / 选择方式：`browser`

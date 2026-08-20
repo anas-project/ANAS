@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `traefik` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.7.10-r4` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.7.10-r5` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -17,7 +17,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r4` | `` | 3 |
+| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r5` | `` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -26,6 +26,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `traefik.base_port` | int | `1..65535` | `9000` | `static` | `TRAEFIK_BASE_PORT` | 否 | 否 | 否 | 是 | `container_recreate` | 对外端口基数 |
 | `traefik.domain_prefix` | string | — | `traefik` | `static` | `TRAEFIK_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
+| `traefik.forwarded_headers_trusted_ips` | string | — | `""` | `static` | `TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS` | 否 | 否 | 否 | 是 | `container_recreate` | 可向 Traefik 提供转发客户端 Header 的上游代理 IP/CIDR，逗号分隔 |
 
 参数库存的权威来源是 `module.yml`；CLI 负责合并默认值、类型、required、环境变量映射、敏感性和变更执行器。技术文档不得另造可设置参数。
 
@@ -102,6 +103,20 @@ anas admin local rotate traefik primary --prompt -w /srv/anas
 - [`main_test.go`](../hook/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## 真实客户端 IP 边界
+
+HTTPS entrypoint 默认不信任请求自带的 `X-Forwarded-*`。只有 `traefik.forwarded_headers_trusted_ips` 中通过 IP/CIDR 校验的上游代理可以提供转发链，且不会启用 `forwardedHeaders.insecure`。Traefik 以 JSON 向标准输出记录访问日志，保留客户端地址证据并丢弃 Header 与查询参数，避免日志收集敏感值。
+
+所有 Docker provider 路由必须声明 `anas.client-ip.mode`：`application` 表示后端自身按精确代理清单还原地址，`edge` 表示该组件不消费客户端 IP、以 Traefik 访问日志为准。仓库测试会拒绝漏标路由、全 RFC1918 信任范围和 insecure forwarded headers。
+
+| 处理方式 | Module / 入口 |
+| --- | --- |
+| 应用还原 | Authentik、LAM、LLNG、MeshCentral Web、NetBird Management、Nextcloud 主站、OAuth2 Proxy |
+| 边缘记录 | Traefik Dashboard、Collabora、DDNS Updater、DDNS Go 动态路由、MariaDB/Postgres Adminer、NetBird Dashboard/Signal/Relay、Nextcloud Push/Talk |
+| 非 HTTP / 不适用 | Eturnal、FreeRADIUS、Lego、MariaDB/Postgres 数据库、MeshCentral MPS、Samba DC、Samba FS |
+
+非 HTTP 服务不读取 `X-Forwarded-For`：它们使用各自协议携带的对端信息或直连 socket 地址，不能套用 HTTP 信任代理配置。
 
 ## 当前限制
 

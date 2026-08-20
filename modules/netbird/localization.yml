@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: netbird
 module_version: 0.76.1
-module_revision: 6
+module_revision: 7
 reviewed_at: 2026-08-13
 timezone:
   status: partial

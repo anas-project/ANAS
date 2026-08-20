@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `oauth2_proxy` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `7.15.3-r4` / `anas.module/v1`.
+> 状态：当前实现；对应 `7.15.3-r5` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -19,7 +19,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_oauth2-proxy` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-oauth2-proxy:7.15.3` | `` | 1 |
+| `anas_oauth2-proxy` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-oauth2-proxy:7.15.3-r5` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -91,6 +91,10 @@
 - 当前没有 Hook 单元测试文件。
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
+
+## 真实客户端 IP
+
+ANAS 包装镜像在启动时解析 Traefik 地址，为 oauth2-proxy 追加精确的 `--trusted-proxy-ip=/32`，并校验可选上游代理 IP/CIDR。它不再信任三个完整 RFC1918 范围；解析或校验失败时门禁保持关闭，防止伪造转发 Header 影响回跳地址和认证上下文。
 
 ## 当前限制
 

@@ -85,7 +85,7 @@ RUN download_url="https://github.com/LDAPAccountManager/lam/releases/download/${
     '</VirtualHost>' \
     >/etc/apache2/sites-available/lam.conf \
   && ln -s /etc/apache2/sites-available/lam.conf /etc/apache2/sites-enabled/lam.conf \
-  && a2enmod rewrite \
+  && a2enmod remoteip rewrite \
   && mkdir -p /var/lib/ldap-account-manager/config \
   && chown -R www-data:www-data /var/lib/ldap-account-manager /etc/ldap-account-manager
 
