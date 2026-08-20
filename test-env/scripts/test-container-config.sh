@@ -94,6 +94,20 @@ TURN_SECRET="quote'safe" \
 grep -q "secret: 'quote''safe'" "$test_dir/eturnal/eturnal.yml" || exit 1
 test -x "$test_dir/eturnal-runtime/bin/eturnalctl" || exit 1
 
+# Docker restart preserves the tmpfs backing /opt/eturnal. The entrypoint must
+# reuse its own completed runtime and still regenerate configuration, rather
+# than rejecting the non-empty directory and putting the container in a loop.
+ANAS_CONFIG_DIR="$test_dir/eturnal" \
+ANAS_ETURNAL_RUNTIME_SEED="$test_dir/eturnal-seed" \
+ANAS_ETURNAL_RUNTIME_DIR="$test_dir/eturnal-runtime" \
+TURN_PORT=3478 \
+TURN_RELAY_MIN_PORT=49152 \
+TURN_RELAY_MAX_PORT=49200 \
+TURN_SECRET="restart-safe" \
+  sh "$ROOT_DIR/modules/eturnal/eturnal/anas-entrypoint.sh" /usr/bin/true || exit 1
+grep -q "secret: 'restart-safe'" "$test_dir/eturnal/eturnal.yml" || exit 1
+test -x "$test_dir/eturnal-runtime/bin/eturnalctl" || exit 1
+
 # Every inherited LLNG/Eturnal image volume must have an explicit Compose mount.
 # Otherwise Docker silently creates one anonymous volume per uncovered path.
 for contract in \

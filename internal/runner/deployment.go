@@ -823,6 +823,29 @@ func changedOrAddedModules(current, target *deploymentManifest) []string {
 	return selection
 }
 
+// changedOrRemovedModules is the old-deployment side of an artifact switch.
+// A Compose project is stable across deployments, so every existing service
+// whose rendered artifact changes must be removed before the target is brought
+// up. Otherwise Compose may reuse a container whose env_file still belongs to
+// the previous deployment. Removed modules share the same teardown path.
+func changedOrRemovedModules(current, target *deploymentManifest) []string {
+	if current == nil {
+		return nil
+	}
+	selection := []string{}
+	for _, name := range current.ModuleOrder {
+		previous, ok := current.Modules[name]
+		if !ok {
+			continue
+		}
+		next, exists := target.Modules[name]
+		if !exists || next.RenderDigest == "" || previous.RenderDigest == "" || next.RenderDigest != previous.RenderDigest {
+			selection = append(selection, name)
+		}
+	}
+	return selection
+}
+
 // activationStartModules preserves the activation diff while the active
 // deployment is running. After an explicit whole-deployment stop, however,
 // every target module must be restored: unchanged modules and their external
@@ -1192,9 +1215,6 @@ func activateDeployment(base, id string, opts activateOptions) error {
 				return err
 			}
 		}
-		if err := stopRemovedDeployments(oldApp, oldRoot, target, opts.json); err != nil {
-			return failuref("stop_failed", "%s", err.Error())
-		}
 	}
 	if active.ActiveDeployment == "" && target.BuildAcceleration && !target.ImagesBuilt {
 		return imageRebuildRequiredError([]string{"global.chinese_build_speedup"})
@@ -1209,9 +1229,21 @@ func activateDeployment(base, id string, opts activateOptions) error {
 		runtimeStatus = "stopped"
 	}
 	selection := activationStartModules(current, target, runtimeStatus)
-	if err := startDeployment(newApp, newRoot, selection, opts.json); err != nil {
-		_ = saveDeploymentFailure(base, id, err)
-		return failuref("start_failed", "%s", restorePreviousAfterActivationFailure(newApp, newRoot, oldApp, oldRoot, err, opts.json))
+	if oldApp != nil && runtimeStatus != "stopped" {
+		stopSelection := changedOrRemovedModules(current, target)
+		if err := oldApp.stopModules(oldRoot, stopSelection, opts.json); err != nil {
+			restoreErr := startDeployment(oldApp, oldRoot, stopSelection, opts.json)
+			if restoreErr != nil {
+				return failuref("stop_failed", "%v; previous deployment restore failed: %v", err, restoreErr)
+			}
+			return failuref("stop_failed", "%v; previous deployment restored", err)
+		}
+	}
+	if len(selection) > 0 {
+		if err := startDeployment(newApp, newRoot, selection, opts.json); err != nil {
+			_ = saveDeploymentFailure(base, id, err)
+			return failuref("start_failed", "%s", restorePreviousAfterActivationFailure(newApp, newRoot, oldApp, oldRoot, err, opts.json))
+		}
 	}
 	if err := retainRemovedResources(base, current, target); err != nil {
 		return failuref("resource_state_failed", "%s", restorePreviousAfterActivationFailure(newApp, newRoot, oldApp, oldRoot, err, opts.json))
@@ -1233,7 +1265,7 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	}
 	if err := saveActiveState(base, active); err != nil {
 		if oldApp != nil {
-			_ = startDeployment(oldApp, oldRoot, oldApp.order, opts.json)
+			return failuref("write_failed", "%s", restorePreviousAfterActivationFailure(newApp, newRoot, oldApp, oldRoot, err, opts.json))
 		}
 		return failuref("write_failed", "%s", err.Error())
 	}
@@ -1354,28 +1386,6 @@ func collectAutomaticSnapshots(workspace string) {
 			fmt.Fprintf(os.Stderr, "warning: could not reclaim snapshot %s: %v\n", meta.ID, err)
 		}
 	}
-}
-
-func stopRemovedDeployments(oldApp *app, oldRoot string, target *deploymentManifest, jsonMode bool) error {
-	var errs []error
-	removed := int64(0)
-	for i := len(oldApp.order) - 1; i >= 0; i-- {
-		name := oldApp.order[i]
-		if contains(target.ModuleOrder, name) {
-			continue
-		}
-		mod := oldApp.reg[name]
-		if mod.RuntimeType != "compose" {
-			continue
-		}
-		removed++
-		emitProgress(jsonMode, "stop-removed-modules", removed, 0, "modules")
-		dir := filepath.Join(oldRoot, name)
-		if err := oldApp.runCompose(dir, name, mod.ComposeFile, oldApp.moduleEnv(dir), "down"); err != nil {
-			errs = append(errs, fmt.Errorf("stop removed module %s: %w", name, err))
-		}
-	}
-	return errorsJoin(errs)
 }
 
 func errorsJoin(errs []error) error {

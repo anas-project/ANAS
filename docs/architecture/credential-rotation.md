@@ -95,13 +95,13 @@ apply/verify/rollback，并逐项提交 Secret Store；该实现已删除，不�
 | Module 静态声明 | `module.yml` 已支持 `credentials.provides/consumes`；校验 namespace、Secret key/projection、生成策略、handler、显式 Hook phase、唯一性、引用完整性和 control edge |
 | Frozen credential record | materialization 在 calculate 后从 Secret Store provenance 解析 authority/generation，自动冻结无明文的 ID、Secret key、owner、consumer、mode、projection、generator、lifecycle 与 control edge |
 | 共用 planner | 单项与全量计划共用纯内存 planner；合并 Module dependency 与 credential owner→consumer edge，计算控制顺序、停机逆序、激活正序、单项下游闭包和 blockers |
-| Candidate deployment | 从 active deployment 的**有效**冻结制品复制 candidate；候选值只写 candidate 的 Module `.env`，previous、active pointer 和 Store 不变；candidate 再次封印为只读 |
+| Candidate deployment | 从 active deployment 的**有效**冻结制品复制 candidate；候选值只写 candidate 的 Module `.env`，previous、active pointer 和 Store 不变；candidate 再次封印为只读；跨 deployment 激活先 `down` 受影响旧 Module，再从目标制品 `up`，不允许 Compose 复用旧容器 |
 | Store 提交原语 | Secret Store v2 record 新增可选 `generation`/`rotation_id`；批量提交先完整校验，再只执行一次原子 Save |
 | 持久 journal | `.anas/state/transactions/credential-*.yml` 记录 deployment、ID、代次、phase、Module 进度和恢复状态；不记录值、hash 或 verifier；新的排他操作先自动恢复，恢复失败才阻断 |
 | Module ready barrier | Module 逐个执行 `up → credential probe/reconcile/verify → after_start/local-account reconciliation`；当前 Module 成功后才启动下一个 Module |
 | 结构化 Hook ABI | 新增三个显式 opt-in phase；期望值只通过 stdin JSON 的 `secrets.ANAS_CREDENTIAL_DESIRED` 传递，stderr 不进入 Core 错误；普通 mutation/未知 JSON/多 JSON/无效状态均 fail closed |
-| 首个 provider | `eturnal.secret` 已实现实际运行配置 probe、ANAS-only restart reconcile 与 verify；Nextcloud/NetBird 已声明 consumer，owner verify 前不会启动 |
-| 启动失败补偿 | Candidate 启动失败时先停止 candidate，再重新激活 previous；错误会明确区分 previous 已恢复或恢复失败 |
+| 首个 provider | `eturnal.secret` 已实现实际运行配置 probe、启动窗口有限重试、通过 `eturnalctl reload` 完成 ANAS-only reconcile 与 verify；Hook 不控制容器生命周期；Nextcloud/NetBird 已声明 consumer，owner verify 前不会启动 |
+| 启动失败补偿 | Candidate 启动失败时先 `down` candidate，再从 previous 制品重新 `up`；错误会明确区分 previous 已恢复或恢复失败 |
 
 这些能力现已由同一个生产执行器串接到 `anas credential list/rotate`：planner preflight、candidate
 激活、ready barrier、一次性 Store commit、promotion 与排他锁下的 crash recovery 使用同一冻结
@@ -286,11 +286,22 @@ Anchor Worker。
 3. 复制 active deployment 的非凭据制品，只在 candidate 的 deployment-scoped Secret 投影中写入候选值；
 4. 封印 candidate；previous deployment、active pointer 和 Secret Store 保持不变。
 
+激活 candidate 不能在旧容器仍存在时只执行普通 `docker compose up`。Compose 的 service
+config hash 不保证因 `env_file` 内容变化而变化，可能继续使用旧 deployment 的进程环境。Runner
+因此对所有跨 deployment 切换采用同一规则：先按逆依赖顺序对受影响的旧 Module 执行
+`docker compose down`，确认容器已删除后，再按依赖顺序从目标制品执行 `up`。`down` 不带
+`--volumes`，持久 bind/named volume 不被删除。容器不存在后无需 `--force-recreate`。
+
+相同 immutable deployment 的 `start` 不需要重建；用户态 `restart` 已定义为 `down → up`。
+备份静默是明确例外：它以事务记录对同一 deployment 执行 `compose stop → start`，不切换
+制品或环境。
+
 ### 6.3 `credential rotate --all`
 
 ```text
 stop previous deployment once, in reverse dependency order
 → activate candidate modules one by one, in dependency order
+→ create each affected Compose service from its candidate projection
 → each module reconciles owned credentials before releasing downstream
 → verify deployment-wide authentication and health
 → atomically commit candidate values and generations to Secret Store
@@ -326,7 +337,8 @@ stop affected consumers and owner
 - 当前普通 `rollback DEPLOYMENT` 遇到目标 deployment 与 Store 代次/authority 不一致时返回
   `credential_store_mismatch`，`--allow-risky` 也不能绕过；应恢复包含匹配 Store、deployment 和数据的
   snapshot。未来显式 credential rollback 才会使用同一事务执行器恢复旧投影并提交 Store，不能维护
-  第二套 rollback 密码脚本。
+  第二套 rollback 密码脚本；通过一致性检查的普通 rollback 同样先 `down` 变化/移除的当前 Module，
+  再从目标 deployment `up`，不会复用当前容器。
 
 ## 7. 事务、回滚与崩溃恢复
 
@@ -336,7 +348,8 @@ Candidate 激活或验证失败时：
 
 ```text
 stop candidate modules
-→ activate previous deployment in dependency order
+→ confirm candidate containers are removed
+→ start previous deployment modules in dependency order
 → previous modules reconcile persistent systems back to old desired values
 → verify previous deployment
 → keep previous active and Secret Store unchanged
@@ -453,7 +466,7 @@ candidate failed、previous restored、previous restore failed 和 not started�
 | --- | --- | --- |
 | Frozen credential deployment schema | 已接入 materialization | 从 Module 静态声明生成；authority/generation 来自 Secret Store provenance，manifest 无明文 |
 | 共用无副作用 planner | 已接入 CLI | `--dry-run` 使用真实 planner，并检查 runtime 与 Store presence/generation；零随机、零写入、零 Hook/Docker |
-| Candidate 独立投影与封印 | 已接入生产 executor | previous/Store/active pointer 在验证前不变；只重写 candidate 的 owner/consumer 投影 |
+| Candidate 独立投影与封印 | 已接入生产 executor | previous/Store/active pointer 在验证前不变；只重写 candidate 的 owner/consumer 投影；事务激活、普通 apply/rollback 与补偿恢复统一先 down/remove 旧容器再 up 目标制品 |
 | Journal、代次与一次性 Store commit | 已接入生产 executor | Store 一次 Save 提交全部候选；排他操作自动按 commit 前/后语义恢复或完成 promotion |
 | 顺序 Module ready barrier | 已接入现有 start/apply/rollback | 屏障顺序为 container→credential lifecycle→after-start→local-admin；owner verify 失败不启动 consumer |
 | 结构化 credential Hook ABI | 已实现 | 显式 phase、专用 stdin Secret、严格 response、external 禁止 reconcile；Eturnal 为首个 provider |

@@ -81,9 +81,16 @@ Store provenance 冻结 `anas`/`external` authority 和 generation，不把值�
 - Hook command: `go run ./hook`
 - 精确 phases：`calculate`、`render_env`、`services`、`after_start`、`credential_probe`、
   `credential_reconcile`、`credential_verify`。
-- Probe 通过 `docker exec -i` 从 stdin 读取期望值，比较运行容器使用的 `eturnal.yml`；容器或配置
-  路径不可用返回 `unavailable`，不得误判为 mismatch。ANAS authority 的 mismatch/missing 才会重启
-  容器并重新 probe；external authority 只允许 probe/verify。
+- Probe 通过 `docker exec -i` 从 stdin 读取期望值，比较运行容器使用的 `eturnal.yml`；Compose
+  返回后若 entrypoint 尚未生成配置，会对 `missing`/`unavailable` 做最长 5 秒的有限重试，不把启动
+  窗口误判为 drift。稳定的 ANAS authority mismatch/missing 会通过 stdin 原子改写运行配置并调用
+  Eturnal 原生 `eturnalctl reload`，失败时恢复旧配置；Hook 不调用 `docker restart`，external authority
+  只允许 probe/verify。
+- Reload 能力来自固定上游版本的 [`eturnalctl reload`](https://github.com/processone/eturnal/blob/1.12.2/doc/overview.edoc)；
+  Hook 不自行发明信号、重启策略或容器生命周期协议。
+- Compose 声明了 `restart: unless-stopped`，Docker daemon 或 PID 1 异常恢复仍会重启同一容器，并保留
+  `/opt/eturnal` 的显式 tmpfs。Entrypoint 以完成标记区分自己初始化的 runtime 与意外预置内容：前者
+  可安全复用并重新生成 `eturnal.yml`，后者继续 fail closed。该兼容性不属于凭据切换机制。
 - Candidate 与 previous 各自携带 `TURN_SECRET` 投影。Candidate 失败时先停止 candidate，再启动
   previous，由同一幂等屏障把无状态 Eturnal 配置恢复为 previous 的期望值；Store 不在验证前提交。
 - 主动轮换使用无明文 journal 记录 ID、代次和 phase。Store 提交前的中断恢复 previous；Store

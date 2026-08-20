@@ -4,12 +4,20 @@ set -eu
 
 runtime_seed=${ANAS_ETURNAL_RUNTIME_SEED:-/opt/anas/eturnal-seed}
 runtime_dir=${ANAS_ETURNAL_RUNTIME_DIR:-/opt/eturnal}
+runtime_ready=$runtime_dir/.anas-runtime-ready
 if [ -d "$runtime_seed" ]; then
   if find "$runtime_dir" -mindepth 1 -print -quit | grep -q .; then
-    echo "runtime directory is not empty: $runtime_dir" >&2
-    exit 1
+    # A Docker restart preserves this container's tmpfs. Reuse only a runtime
+    # that this entrypoint completed itself; unrelated/pre-populated content
+    # still fails closed instead of being overlaid with the image seed.
+    if [ ! -f "$runtime_ready" ]; then
+      echo "runtime directory is not an initialized Eturnal runtime: $runtime_dir" >&2
+      exit 1
+    fi
+  else
+    cp -R "$runtime_seed"/. "$runtime_dir"/
+    : >"$runtime_ready"
   fi
-  cp -R "$runtime_seed"/. "$runtime_dir"/
 fi
 
 required() {

@@ -155,6 +155,8 @@ var credentialDockerCommand = func(stdin []byte, args ...string) error {
 
 var credentialRetryPause = func() { time.Sleep(250 * time.Millisecond) }
 
+const credentialProbeAttempts = 20
+
 func handleCredential(req hookRequest) (credentialResult, error) {
 	operation := req.Credential
 	if req.Module != "eturnal" || operation == nil || operation.CredentialID != eturnalCredentialID {
@@ -180,22 +182,78 @@ func handleCredential(req hookRequest) (credentialResult, error) {
 		if operation.Authority != "anas" {
 			return credentialResult{}, fmt.Errorf("Eturnal credential authority is external")
 		}
-		if err := credentialDockerCommand(nil, "restart", container); err != nil {
-			return credentialResult{}, fmt.Errorf("restart Eturnal credential authority")
+		if err := reconcileEturnalCredential(container, desired); err != nil {
+			return credentialResult{}, fmt.Errorf("reload Eturnal credential authority")
 		}
-		for attempt := 0; attempt < 20; attempt++ {
-			status := probeEturnalCredential(container, desired)
-			if status == "match" {
-				return credentialResult{CredentialID: eturnalCredentialID, Status: "reconciled", Changed: true}, nil
-			}
-			if status != "unavailable" {
-				return credentialResult{}, fmt.Errorf("Eturnal credential did not converge after restart")
-			}
-			credentialRetryPause()
+		if status := probeEturnalCredentialEventually(container, desired); status == "match" {
+			return credentialResult{CredentialID: eturnalCredentialID, Status: "reconciled", Changed: true}, nil
 		}
-		return credentialResult{}, fmt.Errorf("Eturnal credential authority did not become ready")
+		return credentialResult{}, fmt.Errorf("Eturnal credential did not converge after reload")
 	}
 	return credentialResult{CredentialID: eturnalCredentialID, Status: probeEturnalCredential(container, desired)}, nil
+}
+
+// Eturnal supports an in-process configuration reload. Keep container
+// lifecycle ownership in Core: the Hook updates only the runtime config and
+// asks eturnalctl to reload it. The previous file is restored if reload fails,
+// so a later probe cannot mistake an unapplied file for live convergence.
+const eturnalCredentialReconcileScript = `set -eu
+IFS= read -r desired || exit 5
+config_dir=${ANAS_CONFIG_DIR:-${ETURNAL_ETC_DIR:-}}
+[ -n "$config_dir" ] || exit 5
+config=$config_dir/eturnal.yml
+[ -f "$config" ] || exit 4
+command -v eturnalctl >/dev/null 2>&1 || exit 5
+if printf '%s' "$desired" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+  exit 5
+fi
+escaped=$(printf '%s' "$desired" | sed "s/'/''/g")
+tmp=$config.anas-credential.tmp
+previous=$config.anas-credential.previous
+cleanup() {
+  rm -f "$tmp"
+  if [ -f "$previous" ]; then
+    mv "$previous" "$config"
+    eturnalctl reload >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup 0 1 2 15
+umask 077
+rm -f "$tmp" "$previous"
+cp "$config" "$previous"
+count=0
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in
+    "  secret:"*)
+      count=$((count + 1))
+      printf "  secret: '%s'\n" "$escaped"
+      ;;
+    *) printf '%s\n' "$line" ;;
+  esac
+done <"$previous" >"$tmp"
+[ "$count" -eq 1 ] || exit 5
+mv "$tmp" "$config"
+eturnalctl reload >/dev/null 2>&1 || exit 6
+rm -f "$previous"`
+
+func reconcileEturnalCredential(container, desired string) error {
+	return credentialDockerCommand([]byte(desired+"\n"), "exec", "-i", container, "sh", "-c", eturnalCredentialReconcileScript)
+}
+
+// Reload is synchronous, but the control command and config observation may
+// still cross a short runtime boundary. Retry only missing/unavailable states.
+func probeEturnalCredentialEventually(container, desired string) string {
+	status := "unavailable"
+	for attempt := 0; attempt < credentialProbeAttempts; attempt++ {
+		status = probeEturnalCredential(container, desired)
+		if status != "missing" && status != "unavailable" {
+			return status
+		}
+		if attempt+1 < credentialProbeAttempts {
+			credentialRetryPause()
+		}
+	}
+	return status
 }
 
 func probeEturnalCredential(container, desired string) string {

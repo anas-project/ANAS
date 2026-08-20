@@ -68,7 +68,7 @@ config:
       sensitive: true
 ```
 
-`apply` 是稳定动作标识，不代表同名执行器已经存在。Manifest 可额外声明 `executor` 与 `verify`；在 Module 专用 handler 落地前，Runner 对安全 effect 使用 `deployment_apply_fallback`，宁可保守重建受影响容器，也不能只写配置后报告成功。新增或修改 effect 时必须同时考虑快照、回滚阻断和应用级验证。
+`apply` 是稳定动作标识，不代表同名执行器已经存在。Manifest 可额外声明 `executor` 与 `verify`；在 Module 专用 handler 落地前，Runner 对安全 effect 使用 `deployment_apply_fallback`，按逆依赖顺序 `down` 变化的旧 Module，再按依赖顺序从新 deployment `up`，不能只写配置后报告成功。普通 rollback 使用同一 remove-before-create 边界。新增或修改 effect 时必须同时考虑快照、回滚阻断和应用级验证。
 
 ## 尚未实现的执行器设计
 

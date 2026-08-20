@@ -3,7 +3,12 @@ package runner
 import (
 	"fmt"
 	"sort"
+	"time"
 )
+
+const credentialBarrierProbeAttempts = 20
+
+var credentialBarrierRetryPause = func() { time.Sleep(250 * time.Millisecond) }
 
 func credentialStoreBlocker(store *secretStore, credential deploymentCredential) string {
 	if store == nil {
@@ -74,7 +79,7 @@ func (a *app) coordinateModuleCredentials(mod Module, workdir string, env map[st
 	}
 	for _, id := range order {
 		credential := owned[id]
-		probe, err := a.runCredentialHook(mod, "credential_probe", workdir, env, credential)
+		probe, err := a.runCredentialHookEventually(mod, "credential_probe", workdir, env, credential)
 		if err != nil {
 			return err
 		}
@@ -109,7 +114,7 @@ func (a *app) coordinateModuleCredentials(mod Module, workdir string, env map[st
 			return fmt.Errorf("credential %s probe returned invalid status %s", id, probe.Status)
 		}
 
-		verified, err := a.runCredentialHook(mod, "credential_verify", workdir, env, credential)
+		verified, err := a.runCredentialHookEventually(mod, "credential_verify", workdir, env, credential)
 		if err != nil {
 			return err
 		}
@@ -118,4 +123,26 @@ func (a *app) coordinateModuleCredentials(mod Module, workdir string, env map[st
 		}
 	}
 	return nil
+}
+
+// Compose up is asynchronous. A provider may be running while its entrypoint
+// has not yet materialized the credential authority/config. Give that startup
+// window a bounded retry before treating missing as drift or unavailable as a
+// hard ready-barrier failure.
+func (a *app) runCredentialHookEventually(mod Module, phase, workdir string, env map[string]string, credential deploymentCredential) (credentialHookResult, error) {
+	var result credentialHookResult
+	for attempt := 0; attempt < credentialBarrierProbeAttempts; attempt++ {
+		var err error
+		result, err = a.runCredentialHook(mod, phase, workdir, env, credential)
+		if err != nil {
+			return credentialHookResult{}, err
+		}
+		if result.Status != "missing" && result.Status != "unavailable" {
+			return result, nil
+		}
+		if attempt+1 < credentialBarrierProbeAttempts {
+			credentialBarrierRetryPause()
+		}
+	}
+	return result, nil
 }

@@ -225,7 +225,7 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 | `container_recreate` | 94 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 7 | Ordinary setting and replacement import are refused; use a credential-rotation transaction to update application state and the Secret Store together |
 | `data_migrate` | 11 | Ordinary setting and deployment activation are blocked until persistent data, a database, or membership is migrated |
-| `hot_reload` | 16 | The declared target is a Samba management command; the current executor conservatively creates a deployment and runs Compose `up` for the affected container |
+| `hot_reload` | 16 | The declared target is a Samba management command; the current executor conservatively creates a deployment and runs Compose `down → up` for the affected container |
 | `image_rebuild` | 1 | Rebuild with `anas apply --build`, then deploy |
 | `immutable` | 4 | Generic `config set` refuses the change; use a replacement or domain-migration workflow |
 | `reconcile` | 13 | The declared target is application/API/file reconciliation; the current executor applies it through a new deployment and container startup |
@@ -237,19 +237,20 @@ An effect states the intended lifecycle semantics; `executor` identifies the pat
 `deployment_apply_fallback` is not another effect; it is the Runner-reported
 name of the executor actually used. When a workspace has a running active
 deployment, `config set` stores the value, renders a new immutable deployment,
-and selects Modules whose render digest changed for Compose `up`. This
-conservative path may recreate containers, so it is not a `hot_reload`.
-Setting the same value still records a deployment but selects no containers for
-`up`. If activation fails, the Runner restarts the previous deployment and
-restores `config.yml` plus its managed digest. Before the initial apply, while
+selects Modules whose render digest changed, removes their old Compose projects
+with `down`, and starts them from the target artifacts with `up`. This
+conservative path recreates containers, so it is not a `hot_reload`. Setting the
+same value still records a deployment but selects no containers for `down` or
+`up`. If activation fails, the Runner removes candidate containers, starts the
+previous deployment, and restores `config.yml` plus its managed digest. Before the initial apply, while
 the workspace is stopped, or with an explicit defer request, the value instead
 enters a pending/deferred state and does not start containers unexpectedly.
 
 | Effect | Current observable execution result |
 | --- | --- |
-| `container_recreate` | Store the value, generate and activate a deployment, and run Compose `up` for Modules whose render digest changed; the real-Docker lifecycle suite also requires the container ID to change |
-| `hot_reload`, `reconcile` | Render the target value into a new deployment and run Compose `up` only for affected Modules, without Compose `build` |
-| `image_rebuild` | Generate a deployment, run Compose `build` before `up`, and record `images_built: true` in its manifest |
+| `container_recreate` | Store the value, generate and activate a deployment, and run Compose `down → up` for Modules whose render digest changed; the real-Docker lifecycle suite also requires the container ID to change |
+| `hot_reload`, `reconcile` | Render the target value into a new deployment and run Compose `down → up` only for affected Modules, without Compose `build` |
+| `image_rebuild` | Generate a deployment, run Compose `build`, then `down → up` changed Modules, and record `images_built: true` in its manifest |
 | `credential_rotate` | Refuse both `config set` and replacement import; leave the Secret Store and runtime unchanged |
 | `data_migrate` | A candidate can be rendered, but ordinary activation stops before any Compose or host-network mutation and reports the parameter and migration operation |
 | `immutable` | Stop at the same pre-runtime boundary and report the replacement/domain-migration operation |

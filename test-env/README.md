@@ -561,6 +561,29 @@ Do not commit `.anas-test/` or generated secrets.
       ./test-env/scripts/server-isolated-docker.sh stop
     ```
 
+20. Credential inventory and rotation E2E
+
+    Runs a built ANAS process through Eturnal's real credential declaration and
+    Hook in a temporary one-module root while using the deterministic Docker
+    command boundary. The temporary copy removes only the unrelated Traefik
+    dependency, whose local-admin HTTPS verification has its own E2E. It covers
+    a transient missing-config startup window, runtime drift repaired through
+    native `eturnalctl reload` without a container restart,
+    ordinary config apply/rollback removal before target `up` (including the
+    exact previous and target immutable deployment artifact directories),
+    value-free inventory, single/`--all`/`--force` dry-runs, stopped-runtime and
+    confirmation guards, injected candidate failure with previous-runtime
+    restoration, successful generation promotion, live credential projection,
+    and rejection of rollback across a committed generation:
+
+    ```sh
+    ./test-env/scripts/test-credential-rotation-e2e.sh
+    ```
+
+    This test is local, creates only `.anas-test/runtime/credential-rotation-e2e`,
+    and never uses SSH or a server Docker socket. Do not copy or run it on `ln`;
+    validate `ln` separately with direct `anas credential` smoke commands.
+
 ## Full Run
 
 ```sh
@@ -576,7 +599,8 @@ capability classification, and a runtime case. `test-parameter-effects.sh`
 then runs every one of those 28 parameters through the real CLI, importer,
 hooks, renderer, deployment diff, and activation flow with a deterministic
 Docker command boundary. It checks the rendered runtime value, affected-module
-Compose `up`, absence of `build`, same-value container idempotency, and
+Compose `down → up` ordering, absence of redundant `--force-recreate`, absence
+of `build`, same-value container idempotency, and
 configuration/deployment recovery after an injected activation failure. The
 server E2E above complements that deterministic matrix by testing the actual
 upstream in-place mechanisms and stable container IDs observed on an isolated

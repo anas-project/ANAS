@@ -208,7 +208,7 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 | `container_recreate` | 94 | 重新渲染，并重建受影响容器或 Compose project |
 | `credential_rotate` | 7 | 普通设置和替换导入会被拒绝，必须通过凭据轮换事务同步应用状态与 Secret Store |
 | `data_migrate` | 11 | 普通设置和部署激活会被阻断，必须先迁移持久数据、数据库或成员身份 |
-| `hot_reload` | 16 | 声明目标是 Samba 管理命令；当前执行器保守地生成新部署并重新 `up` 受影响容器 |
+| `hot_reload` | 16 | 声明目标是 Samba 管理命令；当前执行器保守地生成新部署并对受影响容器执行 `down → up` |
 | `image_rebuild` | 1 | 使用 `anas apply --build` 重建镜像后再部署 |
 | `immutable` | 4 | 通用 `config set` 不允许修改，必须走替换或域迁移流程 |
 | `reconcile` | 13 | 声明目标是应用/API/文件调和；当前执行器通过新部署和容器启动流程完成 |
@@ -221,17 +221,18 @@ effect 是期望的生命周期语义，`executor` 才是当前版本实际会�
 
 `deployment_apply_fallback` 不是新的 effect，而是 Runner 返回的“实际执行器”名称：当
 workspace 已有运行中的 active deployment 时，`config set` 会先保存参数、重新渲染一个
-不可变 deployment，再按 render digest 选择发生变化的 Module 执行 Compose `up`。这条
-保守路径可能重建容器，所以不等同于 `hot_reload`。相同值仍会生成 deployment 记录，但
-不会选择容器执行 `up`；若 activation 失败，Runner 会重启上一 deployment，并恢复
+不可变 deployment，再按 render digest 选择发生变化的 Module，对旧制品执行 Compose `down`
+并从目标制品执行 `up`。这条保守路径会重建容器，所以不等同于 `hot_reload`。相同值仍会生成
+deployment 记录，但不会选择容器执行 `down/up`；若 activation 失败，Runner 会先删除 candidate
+容器，再启动上一 deployment，并恢复
 `config.yml` 及 managed digest。若 workspace 尚未首次 apply、已 stop，或显式要求 defer，
 参数只会分别进入 pending/deferred 状态，不会擅自启动容器。
 
 | effect | 当前可观察执行结果 |
 | --- | --- |
-| `container_recreate` | 写入配置，生成并激活新部署，对 render digest 变化的 Module 执行 Compose `up`；真实 Docker 生命周期测试还要求容器 ID 改变 |
-| `hot_reload`, `reconcile` | 写入并渲染目标值，生成新部署，只对受影响 Module 执行 Compose `up`，不调用 Compose `build` |
-| `image_rebuild` | 生成新部署，先对 Module 执行 Compose `build`，再 `up`；deployment manifest 记录 `images_built: true` |
+| `container_recreate` | 写入配置，生成并激活新部署，对 render digest 变化的 Module 执行 Compose `down → up`；真实 Docker 生命周期测试还要求容器 ID 改变 |
+| `hot_reload`, `reconcile` | 写入并渲染目标值，生成新部署，只对受影响 Module 执行 Compose `down → up`，不调用 Compose `build` |
+| `image_rebuild` | 生成新部署，先对 Module 执行 Compose `build`，再对变化 Module 执行 `down → up`；deployment manifest 记录 `images_built: true` |
 | `credential_rotate` | `config set` 和用不同值重新 import 都被拒绝；Secret Store 与运行时保持不变 |
 | `data_migrate` | 可以生成候选配置，但普通 activation 在执行任何 Compose/宿主网络变更前阻断，并报告参数和迁移操作 |
 | `immutable` | 与 `data_migrate` 一样在运行时边界前阻断，并报告替换/域迁移操作 |

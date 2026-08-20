@@ -51,4 +51,58 @@ if [ "${1:-}" = network ] && [ "${2:-}" = inspect ]; then
   exit 1
 fi
 
+# Credential-rotation E2E opt-in. A real Eturnal container materialises the
+# projected TURN_SECRET during Compose up, then its credential Hook compares a
+# desired value over stdin with the live config through `docker exec -i`. The
+# deterministic boundary models exactly those two observable operations while
+# keeping every secret out of the command log. Other tests do not set the state
+# file and retain the historical no-op behaviour.
+if [ -n "${ANAS_FAKE_DOCKER_ETURNAL_SECRET_FILE:-}" ]; then
+  case " $* " in
+    *" compose "*" down "*)
+      if [ "$(basename -- "$PWD")" = eturnal ]; then
+        rm -f "$ANAS_FAKE_DOCKER_ETURNAL_SECRET_FILE"
+      fi
+      ;;
+    *" compose "*" up "*)
+      if [ "$(basename -- "$PWD")" = eturnal ] && [ -f .env ]; then
+        # A cross-deployment transition must remove the old Compose project
+        # first. Only a create with no live container materialises env_file;
+        # plain `up` over an existing container deliberately preserves the old
+        # value so the E2E detects a missing down/remove boundary.
+        if [ ! -f "$ANAS_FAKE_DOCKER_ETURNAL_SECRET_FILE" ]; then
+          live_secret=$(sed -n 's/^TURN_SECRET=//p' .env | head -n 1)
+          case "$live_secret" in
+            \'*\') live_secret=${live_secret#\'}; live_secret=${live_secret%\'} ;;
+            \"*\") live_secret=${live_secret#\"}; live_secret=${live_secret%\"} ;;
+          esac
+          if [ -n "$live_secret" ]; then
+            umask 077
+            printf '%s' "$live_secret" >"$ANAS_FAKE_DOCKER_ETURNAL_SECRET_FILE"
+          fi
+        fi
+      fi
+      ;;
+  esac
+
+  if [ "${1:-}" = exec ] && printf '%s\n' "$*" | grep -Eq '(^|[[:space:]])[^[:space:]]*eturnal([[:space:]]|$)'; then
+    if [ -n "${ANAS_FAKE_DOCKER_ETURNAL_MISSING_ONCE_MARKER:-}" ] &&
+      [ ! -e "$ANAS_FAKE_DOCKER_ETURNAL_MISSING_ONCE_MARKER" ]; then
+      : >"$ANAS_FAKE_DOCKER_ETURNAL_MISSING_ONCE_MARKER"
+      exit 4
+    fi
+    IFS= read -r desired_secret || exit 5
+    case "$*" in
+      *"eturnalctl reload"*)
+        umask 077
+        printf '%s' "$desired_secret" >"$ANAS_FAKE_DOCKER_ETURNAL_SECRET_FILE"
+        exit 0
+        ;;
+    esac
+    [ -f "$ANAS_FAKE_DOCKER_ETURNAL_SECRET_FILE" ] || exit 4
+    [ "$desired_secret" = "$(cat "$ANAS_FAKE_DOCKER_ETURNAL_SECRET_FILE")" ] || exit 3
+    exit 0
+  fi
+fi
+
 exit 0

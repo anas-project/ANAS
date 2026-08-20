@@ -79,6 +79,18 @@ assert_compose_action() {
     fail "Compose $action was not invoked for $module"
 }
 
+assert_compose_down_before_up() {
+  module=$1
+  down_line=$(grep -nE "docker compose .*--project-name [a-z0-9][a-z0-9_-]*${module}( |$).* down( |$)" "$command_log" | head -1 | cut -d: -f1)
+  up_line=$(grep -nE "docker compose .*--project-name [a-z0-9][a-z0-9_-]*${module}( |$).* up( |$)" "$command_log" | head -1 | cut -d: -f1)
+  [ -n "$down_line" ] || fail "Compose down was not invoked for changed module $module"
+  [ -n "$up_line" ] || fail "Compose up was not invoked for changed module $module"
+  [ "$down_line" -lt "$up_line" ] || fail "Compose up ran before down for changed module $module"
+  if grep -F -- '--force-recreate' "$command_log" >/dev/null; then
+    fail "deployment transition used redundant --force-recreate"
+  fi
+}
+
 assert_no_compose_action() {
   action=$1
   if grep -E "docker compose .* (${action})( |$)" "$command_log" >/dev/null; then
@@ -111,6 +123,7 @@ run_fallback_case() {
   assert_json_effect "$result" "$effect" deployment_apply_fallback
   assert_active_env "$workspace" "$module" "$env_key" "$rendered_value"
   assert_compose_action "$module" up
+  assert_compose_down_before_up "$module"
   assert_no_compose_action build
 }
 
@@ -182,6 +195,7 @@ assert_compose_action lego up
   assert_json_effect "$result" container_recreate deployment_apply_fallback
   assert_active_env "$light_ws" lego TZ UTC
   assert_compose_action lego up
+  assert_compose_down_before_up lego
   assert_no_compose_action build
 
   echo "== reconcile uses the declared deployment fallback and renders the value =="
@@ -190,6 +204,7 @@ assert_compose_action lego up
   assert_json_effect "$result" reconcile deployment_apply_fallback
   assert_active_env "$light_ws" lego DEFAULT_LANGUAGE zh-Hans
   assert_compose_action lego up
+  assert_compose_down_before_up lego
   assert_no_compose_action build
 
   echo "== image_rebuild runs Compose build before activating the new artifact =="
@@ -199,6 +214,7 @@ assert_compose_action lego up
   assert_active_env "$light_ws" lego CHINESE_BUILD_SPEEDUP true
   assert_compose_action lego build
   assert_compose_action lego up
+  assert_compose_down_before_up lego
   build_line=$(grep -nE 'docker compose .*--project-name anaspe_lego( |$).* build( |$)' "$command_log" | head -1 | cut -d: -f1)
   up_line=$(grep -nE 'docker compose .*--project-name anaspe_lego( |$).* up( |$)' "$command_log" | head -1 | cut -d: -f1)
   [ "$build_line" -lt "$up_line" ] || fail "Compose up ran before image build"
@@ -223,6 +239,7 @@ PY
   assert_json_effect "$result" hot_reload deployment_apply_fallback
   assert_active_env "$samba_ws" samba_dc SAMBA_DC_USER_MIN_PASS_LENGTH 10
   assert_compose_action samba_dc up
+  assert_compose_down_before_up samba_dc
   if grep -E 'docker compose .*--project-name anaspes_samba_fs( |$).* up( |$)' "$command_log" >/dev/null; then
     fail "hot_reload restarted unchanged samba_fs"
   fi
@@ -282,6 +299,7 @@ PY
   assert_active_env "$samba_ws" samba_dc SAMBA_DC_USER_LOCKOUT_RESET_AFTER 31
   samba_up_count=$(grep -Ec 'docker compose .*--project-name anaspes_samba_dc( |$).* up( |$)' "$command_log")
   [ "$samba_up_count" -ge 2 ] || fail "failed fallback did not restart the prior deployment"
+  assert_compose_down_before_up samba_dc
 
   echo "== every reconcile parameter reaches the current fallback =="
   run_fallback_case "$samba_ws" samba_fs.share_access_mode all_rw reconcile samba_fs SHARE_ACCESS_MODE all_rw
@@ -335,7 +353,6 @@ PY
 
   echo "== data_migrate materializes a candidate but blocks activation =="
   awk '
-    /ldap_bind_password:/ { next }
     /^  samba_fs: \{\}$/ {
       print "  samba_fs:"
       print "    config:"
@@ -365,15 +382,15 @@ PY
   assert_no_runtime_mutation
 
   echo "== immutable materializes a candidate but blocks activation =="
-  sed '/ldap_bind_password:/d' "$samba_source" |
-    sed 's/base_domain: effects.test/base_domain: replacement.test/' >"$samba_domain_change"
+  sed 's/base_domain: effects.test/base_domain: replacement.test/' \
+    "$samba_source" >"$samba_domain_change"
   anas config import "$samba_domain_change" -w "$samba_ws" >/dev/null
   before=$(active_deployment "$samba_ws")
   reset_commands
   if anas apply -w "$samba_ws" --root "$ROOT_DIR" --update-lock >"$RUNTIME_DIR/parameter-effects-immutable.out" 2>&1; then
     fail "immutable change unexpectedly activated"
   fi
-  grep -q 'global.base_domain (immutable; migrate-domain)' "$RUNTIME_DIR/parameter-effects-immutable.out" ||
+  grep -q 'global.base_domain (immutable; migrate-service-domain)' "$RUNTIME_DIR/parameter-effects-immutable.out" ||
     fail "immutable guard did not report the changed parameter"
   [ "$(active_deployment "$samba_ws")" = "$before" ] || fail "immutable guard changed the active deployment"
   assert_no_runtime_mutation

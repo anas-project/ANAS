@@ -417,7 +417,8 @@ esac
 		t.Fatal(err)
 	}
 	composeScript := filepath.Join(workspace, "compose.sh")
-	composeBody := "#!/bin/sh\ncase \" $* \" in *\" config --services \"*) printf '%s\\n' demo ;; esac\nprintf '%s' \"$DEMO_SECRET\" >&2\n"
+	composeLog := filepath.Join(workspace, "compose.log")
+	composeBody := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + composeLog + "\"\ncase \" $* \" in *\" config --services \"*) printf '%s\\n' demo ;; esac\nprintf '%s' \"$DEMO_SECRET\" >&2\n"
 	if err := os.WriteFile(composeScript, []byte(composeBody), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -532,6 +533,25 @@ esac
 	result, err := executeCredentialRotation(base, testCLI, manifest, plan, false, false, false)
 	if err != nil {
 		t.Fatal(err)
+	}
+	composeCalls, err := os.ReadFile(composeLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed := false
+	for _, call := range strings.Split(strings.TrimSpace(string(composeCalls)), "\n") {
+		if strings.Contains(" "+call+" ", " --force-recreate ") {
+			t.Fatalf("credential activation used redundant force-recreate: %s", call)
+		}
+		if strings.Contains(" "+call+" ", " down ") {
+			removed = true
+		}
+		if strings.Contains(" "+call+" ", " up ") {
+			if !removed {
+				t.Fatalf("credential activation did not remove the previous container first: %s", call)
+			}
+			removed = false
+		}
 	}
 	active, err := loadActiveState(base)
 	if err != nil {

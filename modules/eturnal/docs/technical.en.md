@@ -85,10 +85,23 @@ The dependency closure does not grant every environment value. Sensitive values 
 - Exact phases: `calculate`, `render_env`, `services`, `after_start`,
   `credential_probe`, `credential_reconcile`, and `credential_verify`.
 - Probe reads the desired value from stdin through `docker exec -i` and compares
-  the `eturnal.yml` used by the running container. An unavailable container or
-  config path returns `unavailable`, never mismatch. Only an ANAS-owned
-  mismatch/missing state may restart the container and probe again; external
-  authority is probe/verify-only.
+  the `eturnal.yml` used by the running container. If the entrypoint has not
+  generated the config when Compose returns, `missing`/`unavailable` is retried
+  for up to five seconds instead of being misclassified as drift. A stable
+  ANAS-owned mismatch/missing state atomically updates the runtime config from
+  stdin and invokes Eturnal's native `eturnalctl reload`; a reload failure
+  restores the old file. The Hook never calls `docker restart`, and external
+  authority remains probe/verify-only.
+- Reload uses the pinned upstream
+  [`eturnalctl reload`](https://github.com/processone/eturnal/blob/1.12.2/doc/overview.edoc)
+  contract; the Hook does not invent a signal, restart policy, or container
+  lifecycle protocol.
+- Compose declares `restart: unless-stopped`, so Docker daemon or PID 1 recovery
+  may restart the same container while preserving the explicit `/opt/eturnal`
+  tmpfs. The entrypoint uses a completion marker to distinguish its own
+  initialized runtime, which it can safely reuse while regenerating
+  `eturnal.yml`, from unexpected preloaded content, which still fails closed.
+  This compatibility is not part of credential switching.
 - Candidate and previous deployments retain separate `TURN_SECRET` projections.
   Candidate failure stops the candidate first, then starts previous; the same
   idempotent barrier restores stateless Eturnal configuration to the previous

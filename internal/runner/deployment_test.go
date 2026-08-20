@@ -135,6 +135,29 @@ func TestChangedOrAddedModulesSkipsIdenticalRenderedModules(t *testing.T) {
 	}
 }
 
+func TestChangedOrRemovedModulesSelectsOldArtifactsInDependencyOrder(t *testing.T) {
+	current := &deploymentManifest{
+		ModuleOrder: []string{"postgres", "authentik", "legacy"},
+		Modules: map[string]deploymentModule{
+			"postgres":  {Name: "postgres", RenderDigest: "sha256:postgres"},
+			"authentik": {Name: "authentik", RenderDigest: "sha256:auth-old"},
+			"legacy":    {Name: "legacy", RenderDigest: "sha256:legacy"},
+		},
+	}
+	target := &deploymentManifest{
+		ModuleOrder: []string{"postgres", "authentik", "nextcloud"},
+		Modules: map[string]deploymentModule{
+			"postgres":  {Name: "postgres", RenderDigest: "sha256:postgres"},
+			"authentik": {Name: "authentik", RenderDigest: "sha256:auth-new"},
+			"nextcloud": {Name: "nextcloud", RenderDigest: "sha256:nextcloud"},
+		},
+	}
+	want := []string{"authentik", "legacy"}
+	if got := changedOrRemovedModules(current, target); !reflect.DeepEqual(got, want) {
+		t.Fatalf("deactivation selection = %v, want %v", got, want)
+	}
+}
+
 func TestActivationStartModulesSkipsRunningUnchangedPrerequisites(t *testing.T) {
 	current := &deploymentManifest{
 		ModuleOrder: []string{"lego", "traefik", "postgres"},
