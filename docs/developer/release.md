@@ -231,7 +231,9 @@ anas-mirror-<软件>:<固定版本>
 
 `.github/mirrors.json` 同时保存上游引用、manifest digest 和运行平台。工作流先校验 digest，
 筛选 `linux/amd64`、`linux/arm64` manifest，再复制到 GHCR 和 CNB；即使上游输入写了
-`latest`，也必须附带 digest，ANAS 目标 tag 不得使用 `latest`。
+`latest`，也必须附带 digest，ANAS 目标 tag 不得使用 `latest`。每个 mirror 必须由登记
+Module 的 Compose 活动 service 直接引用，或作为该 Module 已登记派生镜像 Dockerfile 的
+有效 `FROM` 基础镜像；注释和普通文本不算引用。
 
 ## CI 行为
 

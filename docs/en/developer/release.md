@@ -160,7 +160,10 @@ image manifest under the new Module revision tag instead of rebuilding identical
 packaging begins only after every referenced fixed image exists in both registries.
 
 Pinned upstream mirrors use `anas-mirror-<software>:<fixed-version>`. They are validated against the
-catalog digest, copied unchanged, and restored from either registry when only one side exists.
+catalog digest, copied unchanged, and restored from either registry when only one side exists. Each
+mirror must be referenced by an active Compose service for a registered Module or by an effective
+`FROM` instruction in that Module's registered derived-image Dockerfile; comments and plain text do
+not count as references.
 
 ## Source profiles
 

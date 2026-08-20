@@ -221,15 +221,38 @@ jobs:
             ) and
             ([.[].image] | length == (unique | length))
           ' .github/mirrors.json >/dev/null
+
+          mirror_is_dockerfile_base() {
+            local module="$1" expected="$2" dockerfile
+            while IFS= read -r dockerfile; do
+              if awk -v expected="$expected" '
+                toupper($1) == "FROM" {
+                  for (field = 2; field <= NF; field++) {
+                    if ($field == expected) found = 1
+                  }
+                }
+                END { exit !found }
+              ' "$dockerfile"; then
+                return 0
+              fi
+            done < <(jq -r --arg module "$module" '.[] | select(.module == $module) | .dockerfile' .github/images.json)
+            return 1
+          }
+
           while IFS= read -r item; do
             image="$(jq -r '.image' <<<"$item")"
             tag="$(jq -r '.tag' <<<"$item")"
             expected='${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/'"${image}:${tag}"
+            dockerfile_expected='${ANAS_IMAGE_REGISTRY}/'"${image}:${tag}"
             while IFS= read -r module; do
-              if ! grep -Fq "image: ${expected}" "modules/${module}/docker-compose.yml"; then
-                echo "${module}/docker-compose.yml must reference ${expected}" >&2
-                exit 1
+              if grep -Fq "image: ${expected}" "modules/${module}/docker-compose.yml"; then
+                continue
               fi
+              if mirror_is_dockerfile_base "$module" "$dockerfile_expected"; then
+                continue
+              fi
+              echo "${module} must reference ${expected} as a Compose image or ${dockerfile_expected} in a registered Dockerfile FROM" >&2
+              exit 1
             done < <(jq -r '.modules[]' <<<"$item")
           done < <(jq -c '.[]' .github/mirrors.json)
 
