@@ -14,7 +14,9 @@
 3. [测试](testing.md)
 4. [容器镜像发布](release.md)
 5. [文档写作标准](documentation-standard.md)
-6. [Module、Contract 与 Resource 设计](/architecture/module-contract-resource-design)
-7. [CLI JSON 契约](/reference/contracts/)
+6. [应用研究文档规范](research-document-standard.md)
+7. [中国大陆构建、镜像与 CNB 发行](china-mainland-build-and-distribution.md)
+8. [Module、Contract 与 Resource 设计](/architecture/module-contract-resource-design)
+9. [CLI JSON 契约](/reference/contracts/)
 
 旧的 [AI Design Guide](/architecture/ai-design)仍包含大量实现入口，但新增设计应进入具体架构文档，而不是继续扩充一份总览。

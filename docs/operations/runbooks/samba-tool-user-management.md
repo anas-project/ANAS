@@ -1,10 +1,15 @@
-# 使用 `samba-tool` 管理用户、组和管理员
+---
+doc_type: runbook
+status: current
+created: 2026-08-17
+updated: 2026-08-20
+---
 
-日期：2026-08-17
+# 使用 `samba-tool` 管理用户、组和管理员
 
 适用范围：ANAS `samba_dc`（Samba 4.23.6）以及其他以 Samba 作为 Active Directory Domain Controller（AD DC）的环境。本文不适用于仅作为工作组文件服务器的 Samba。
 
-English version: [Manage users, groups, and administrators with `samba-tool`](/en/research/samba-tool-user-group-admin-guide-2026-08-17)
+English version: [Manage users, groups, and administrators with `samba-tool`](/en/operations/runbooks/samba-tool-user-management)
 
 快速导航：[最短操作路径](#_1-结论与最短操作路径) · [Docker 与通用参数](#_2-1-命令结构和-docker-参数) · [用户管理](#_3-创建和维护用户) · [组管理](#_4-创建和管理组) · [管理员范围](#_5-设置管理员-必须先确定管理范围) · [授权模板](#_6-新用户的典型授权模板) · [命令速查](#_9-常用命令速查) · [ANAS 组命名规范](/architecture/samba-ad-user-planning#anas-group-naming)
 
@@ -767,4 +772,4 @@ ANAS 的 Samba 文件服务器当前使用确定性的 `idmap_rid`，不读取�
 - [Microsoft Learn：Active Directory security groups](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-groups)：安全组、分发组、组作用域和内置组定义。
 - [Microsoft Learn：Privileged accounts and groups](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory)：`Domain Admins`、`Administrators`、`Enterprise Admins` 和 `Schema Admins` 的高权限风险。
 - [ANAS Samba AD 用户、组命名与权限规划](/architecture/samba-ad-user-planning#anas-group-naming)：本仓库的目录结构、组命名、账号分类和权限矩阵。
-- [ANAS Samba 与 Active Directory 运维说明](../operations/samba.md)：文件服务组、应用组和 ID 映射约束。
+- [ANAS Samba 与 Active Directory 运维说明](../samba.md)：文件服务组、应用组和 ID 映射约束。

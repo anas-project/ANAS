@@ -1,10 +1,15 @@
-# Manage users, groups, and administrators with `samba-tool`
+---
+doc_type: runbook
+status: current
+created: 2026-08-17
+updated: 2026-08-20
+---
 
-Date: 2026-08-17
+# Manage users, groups, and administrators with `samba-tool`
 
 Applies to: the ANAS `samba_dc` module (Samba 4.23.6) and other Samba Active Directory Domain Controller (AD DC) deployments. This guide does not apply to Samba configured only as a workgroup file server.
 
-中文版本：[使用 `samba-tool` 管理用户、组和管理员](/research/samba-tool-user-group-admin-guide-2026-08-17)
+中文版本：[使用 `samba-tool` 管理用户、组和管理员](/operations/runbooks/samba-tool-user-management)
 
 Quick navigation: [shortest workflow](#_1-summary-and-shortest-workflow) · [Docker and shared options](#_2-1-command-structure-and-docker-options) · [user management](#_3-create-and-maintain-users) · [group management](#_4-create-and-manage-groups) · [administrator scopes](#_5-define-the-administrative-scope-first) · [authorization templates](#_6-typical-authorization-templates) · [command reference](#_9-command-reference) · [ANAS group naming](/architecture/samba-ad-user-planning#anas-group-naming)
 

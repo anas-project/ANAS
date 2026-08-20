@@ -13,8 +13,11 @@ This standard applies to every new or modified file under `docs/`. Identify the 
 | `reference/` | Users and developers | Queryable facts such as settings, modules, and environment variables |
 | `reference/contracts/` | Tool developers | Stable CLI, JSON, and file-format contracts |
 | `developer/` | Contributors | Repository, module, test, release, and documentation workflows |
+| `requirements/` | Product and architecture maintainers | Required outcomes, scope, hard constraints, and acceptance criteria |
 | `architecture/` | Maintainers | Current models, decisions, and explicitly marked proposals |
-| `research/` | Decision makers | Dated research, assessments, and historical reviews |
+| `plans/` | Implementation owners | Milestones, migration order, and remaining work for an agreed objective |
+| `research/` | Decision makers | External investigation, candidate comparison, and technical selection |
+| `reviews/` | Maintainers and reviewers | Reviews and assessments tied to a date, version, or commit baseline |
 | `governance/` | Community | Project policy, registrations, and governance material |
 
 Do not duplicate an entire topic across categories. A guide explains how, a reference lists what, and architecture explains why; connect them with links.
@@ -42,7 +45,7 @@ Do not copy commands or defaults from an old page without verification. Check CL
 
 The [Module documentation generation standard](/en/developer/module-documentation) and [Contract documentation generation standard](/en/developer/contract-documentation) define source files, required sections, generated markers, VitePress mirrors, bilingual output, and CI rules. Never edit a generated mirror directly; versioned Module timezone and language facts live in `modules/*/localization.yml`.
 
-Architecture documents must declare one of these states near the top:
+Requirements, architecture, plans, and reviews must declare their applicable status near the top. Architecture documents use at least one of these states:
 
 - **Current model**: implemented and applicable;
 - **Proposal**: not implemented and not an operating guide;
@@ -53,12 +56,31 @@ Mark proposed commands as unavailable. Explain the boundary when historical and 
 ## 4. Files and structure
 
 - Use lowercase kebab-case filenames such as `backup-and-restore.md`; use `index.md` for section landing pages.
+- Use stable topic-based filenames under `research/`, such as `self-hosted-git-services-research.md`. Never put the creation date, update date, or evidence cutoff in a research filename; update the existing page in place.
+- Only incident records and historical snapshots under `reviews/` use `YYYY-MM-DD-topic.md`. That prefix is the event or review baseline, not the page creation or last-edit date.
+- Requirements, architecture, plans, guides, operations, development, and reference pages use stable filenames. Record plan status and target dates inside the page or its frontmatter.
 - Use one level-one heading per page and do not skip heading levels.
 - Start with the audience and outcome. Put prerequisites before state-changing steps.
 - Keep one primary idea per paragraph and use descriptive level-two headings on longer pages.
 - Tag code fences: `bash`, `yaml`, `json`, or `text`.
 - Use placeholders such as `nas.example.com`, `admin@example.com`, `/srv/anas`, and `replace-me`, never real infrastructure or credentials.
 - Use the project spellings `Module`, `Contract`, `Resource`, `Runner`, `workspace`, and `deployment`.
+
+Every research page starts with this frontmatter:
+
+```yaml
+---
+doc_type: research
+created: 2026-08-15
+updated: 2026-08-20
+evidence_as_of: 2026-08-19
+---
+```
+
+- `created` is the first creation date and never changes during later updates.
+- `updated` is the last substantive change to conclusions, scope, or important facts; formatting-only and link-only edits need not change it.
+- `evidence_as_of` is the last verification date for volatile external facts. Omit it when the research has no dynamic evidence, but do not use `updated` as a substitute.
+- Dates use ISO `YYYY-MM-DD`. A title may mention an evidence cutoff when the prose requires it, but the date is not the page identity.
 
 ## 5. Links and navigation
 
@@ -112,6 +134,7 @@ Reference pages can instead use scope, field or command tables, errors and bound
 ## 8. Pre-commit checklist
 
 - [ ] The category and audience are correct, with no unnecessary duplicate page.
+- [ ] Research uses a stable topic filename and maintains `created`, `updated`, and `evidence_as_of` where needed.
 - [ ] User documentation has matching Chinese and English updates, or the translation boundary is documented.
 - [ ] Generated pages were updated in both languages in the same run and are reachable from both sidebars.
 - [ ] Commands, configuration, versions, and module status were checked against the implementation.

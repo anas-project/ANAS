@@ -1,3 +1,10 @@
+---
+doc_type: requirement
+status: current
+created: 2026-08-15
+updated: 2026-08-20
+---
+
 # 新 IAM Provider 准入与实施要求
 
 本文是 ANAS 引入第三种 IAM 实现时的验收契约。Provider 名称、管理 API 和内部对象

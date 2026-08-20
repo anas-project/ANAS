@@ -1,6 +1,13 @@
-# 开源自部署 S3 兼容文件与对象服务调研（2026-08-15）
+---
+doc_type: research
+created: 2026-08-15
+updated: 2026-08-15
+evidence_as_of: 2026-08-15
+---
 
-本报告按[开源自部署应用研究 Module 规范](./application-research-module-spec.md)研究能够自行部署、对外提供 S3 API 的开源文件网关与对象存储，为 ANAS 后续 Runtime Module 或外部存储资源选型提供依据。动态版本、维护状态和许可证边界采集于 2026-08-15；报告是研究快照，不是当前部署说明。
+# 开源自部署 S3 兼容文件与对象服务调研
+
+本报告按[应用研究文档规范](/developer/research-document-standard)研究能够自行部署、对外提供 S3 API 的开源文件网关与对象存储，为 ANAS 后续 Runtime Module 或外部存储资源选型提供依据。动态版本、维护状态和许可证边界采集于 2026-08-15；报告是研究快照，不是当前部署说明。
 
 ## 1. 结论先行
 

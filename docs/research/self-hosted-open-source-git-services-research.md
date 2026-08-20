@@ -1,6 +1,13 @@
-# 开源自部署 Git 服务全景调研（2026-08-15）
+---
+doc_type: research
+created: 2026-08-15
+updated: 2026-08-15
+evidence_as_of: 2026-08-15
+---
 
-本报告按[开源自部署应用研究 Module 规范](./application-research-module-spec.md)研究团队协作型 Git 服务，为 ANAS 后续 Runtime Module 选型提供依据。动态版本与维护状态采集于 2026-08-15；报告是研究快照，不是当前部署说明。
+# 开源自部署 Git 服务全景调研
+
+本报告按[应用研究文档规范](/developer/research-document-standard)研究团队协作型 Git 服务，为 ANAS 后续 Runtime Module 选型提供依据。动态版本与维护状态采集于 2026-08-15；报告是研究快照，不是当前部署说明。
 
 ## 1. 结论先行
 
@@ -334,4 +341,4 @@ ANAS 应把“代码托管”和“CI 执行”拆为两个安全域，以 **For
 - 没有把商业宣传页中的“enterprise ready”自动解释为社区版 HA、审计或合规能力。
 - 没有把源代码可见的 GitLab EE 专有目录计入严格开源 CE。
 - 没有验证所有第三方迁移器、插件和 mobile app；它们不进入默认能力承诺。
-- 中国大陆的镜像可达性、镜像同步与依赖下载应复用[中国大陆镜像与 CNB 发行方案](./china-mainland-mirrors-and-cnb-distribution-2026-08-11.md)另行实测。
+- 中国大陆的镜像可达性、镜像同步与依赖下载应复用[中国大陆镜像与 CNB 发行方案](/developer/china-mainland-build-and-distribution)另行实测。

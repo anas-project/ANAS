@@ -158,7 +158,7 @@ root）和 `ca.key`、`*.key`（0600 root），普通用户读不到，rsync 退
 容器已经停机之后。
 
 根因不是 btrfs 而是**容器数据归 root**，即
-[workspace-backup-plan.md](../../architecture/workspace-backup-plan.md) §7 已经论证过的那一条，此处
+[workspace-backup.md](../../plans/workspace-backup.md) §7 已经论证过的那一条，此处
 只是它在读取方向上的另一次体现。
 
 ### send 类模式需要两条传输通道

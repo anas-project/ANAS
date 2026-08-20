@@ -1,3 +1,10 @@
+---
+doc_type: research
+created: 2026-08-15
+updated: 2026-08-15
+evidence_as_of: 2026-08-15
+---
+
 > 技术研究报告
 
 # 看板应用接入 Codex、Claude Code 与 Pi Agent
@@ -5,7 +12,7 @@
 *从“主题讨论”到“夜间 / 空闲时自动实现”的事件驱动架构、选型与落地路线*
 
 - **决策对象：** ANAS 历史 Kanban 候选及其 AI Agent 接入方式
-- **基线：** [自托管开源 Kanban 研究](self-hosted-open-source-kanban-research-2026-08-10.md)（2026-08-13 修订）
+- **基线：** [自托管开源 Kanban 研究](self-hosted-open-source-kanban-research.md)（证据截至 2026-08-13）
 - **事实截点：** 2026-08-15；上游动态能力在实施前仍需按锁定版本复核
 - **目标场景：** 新卡片发布主题 → AI 参与讨论 → 形成计划 → 人工或策略批准 → 夜间 / 空闲执行 → 结果回写
 

@@ -6,7 +6,7 @@
 > 状态：一（workspace 语义）、二（`anas init`）、三（snapshot 体系）、
 > 四（breaking 升级自动快照）、五（backup 体系）已落地。本文是总纲，JSON 契约见
 > [CLI 契约](../reference/contracts/)，module 分发见
-> [module-distribution-draft.md](module-distribution-draft.md)（草案，不在本计划内）。
+> [module-distribution-draft.md](../architecture/module-distribution-draft.md)（草案，不在本计划内）。
 
 ## 目标
 
@@ -74,7 +74,7 @@ workspace 自身与 `.anas/` **保持普通目录，不做 subvolume**。理由�
 | [deployment.go:423](https://github.com/anas-project/ANAS/blob/master/internal/runner/deployment.go) | `DataRoot` 不再需要存储，由 workspace 推导 |
 | [runner.go:86-98](https://github.com/anas-project/ANAS/blob/master/internal/runner/runner.go) | `usage()` 十三行帮助文本全部写着 `[-b ~/.anas]`，逐行改为 `[-w <workspace>]` |
 | [deployment.go:1111](https://github.com/anas-project/ANAS/blob/master/internal/runner/deployment.go) | `ensureRuntimeLayout` 现在把 `snapshots` 建在 `base` 内。**目录布局属于一期**：`snapshots/` 移到 `<workspace>/snapshots`，与 `.anas` 平级。留到二期做等于让用户迁移两次目录 |
-| [runtime-release-state-design.md:134](runtime-release-state-design.md)、§13 | §4「推荐运行目录」画的仍是 `~/.anas/` 树，§13 备份单元仍是五项清单，两处均与本计划冲突，随代码同步更新 |
+| [runtime-release-state-design.md:134](../architecture/runtime-release-state-design.md)、§13 | §4「推荐运行目录」画的仍是 `~/.anas/` 树，§13 备份单元仍是五项清单，两处均与本计划冲突，随代码同步更新 |
 
 ## 二、`anas init`
 
@@ -300,7 +300,7 @@ anas-backup.timer  → 以 root 执行 anas backup create
 - **但它独有的价值只剩一条。** 定时用 systemd timer；容器拉起用 Docker 的 restart policy；
   证书续期 lego 容器里的 cron 已在做。剩下无可替代的只有"给 web 服务提供实时状态与 API"。
 - **代价是状态权威分裂。** 本设计建立在"磁盘文件是唯一权威"之上（见
-  [runtime-release-state-design.md](runtime-release-state-design.md) §3），常驻进程天然
+  [runtime-release-state-design.md](../architecture/runtime-release-state-design.md) §3），常驻进程天然
   倾向于在内存里攒状态并与磁盘漂移。
 - **业界在往反方向走**：Docker 的 root 守护进程是长期被批评的设计，podman 正是为去掉它
   而生。"docker 组等于 root"是公认的坑，本项目刚刚验证过。
@@ -323,7 +323,7 @@ anas-backup.timer  → 以 root 执行 anas backup create
 | 四 | 第五节：backup 四种模式、停机事务、交互式 | 异地灾难恢复 |
 | 五 | 第六节：`--json` / 退出码 / 进度输出统一收口 | web 服务可直接调用 |
 
-第五期可与第四期合并。[module 分发](module-distribution-draft.md)不在本计划内。
+第五期可与第四期合并。[module 分发](../architecture/module-distribution-draft.md)不在本计划内。
 
 ## 回退与快照测试
 

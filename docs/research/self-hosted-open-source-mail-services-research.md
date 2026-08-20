@@ -1,8 +1,15 @@
-# 开源自部署完整邮件服务与转发能力调研（2026-08-19）
+---
+doc_type: research
+created: 2026-08-19
+updated: 2026-08-19
+evidence_as_of: 2026-08-19
+---
 
-本报告按[开源自部署应用研究 Module 规范](./application-research-module-spec.md)研究完整邮件服务/套件，并把“邮件服务能否转发”拆成两个问题：一是软件是否能把邮件送到本地或外部目标，二是转发时是否具备受支持的 SRS、退信路由和认证链路，足以面对 Gmail、Outlook 等公网收件系统。动态文档状态采集于 2026-08-19；报告是研究快照，不是生产部署说明。
+# 开源自部署完整邮件服务与转发能力调研
 
-配套阅读：[开源自部署邮件转发与别名服务调研](./self-hosted-open-source-email-forwarding-research-2026-08-19.md)。那份报告比较 Cloudflare Email Routing 式透明转发和 addy.io/SimpleLogin 式隐私 alias；本报告只把转发作为完整邮件服务的一项能力来评分。
+本报告按[应用研究文档规范](/developer/research-document-standard)研究完整邮件服务/套件，并把“邮件服务能否转发”拆成两个问题：一是软件是否能把邮件送到本地或外部目标，二是转发时是否具备受支持的 SRS、退信路由和认证链路，足以面对 Gmail、Outlook 等公网收件系统。动态文档状态采集于 2026-08-19；报告是研究快照，不是生产部署说明。
+
+配套阅读：[开源自部署邮件转发与别名服务调研](./self-hosted-open-source-email-forwarding-research.md)。那份报告比较 Cloudflare Email Routing 式透明转发和 addy.io/SimpleLogin 式隐私 alias；本报告只把转发作为完整邮件服务的一项能力来评分。
 
 ## 1. 结论先行
 
@@ -121,7 +128,7 @@ AI/模型能力不作为本主题评分维度。邮件系统的硬契约是 SMTP
 
 这里的 `A` 不是“保证到达收件箱”，而是“具备进入投递 PoC 的必要产品能力”。对 Mailu、DMS、iRedMail 都必须验证 SRS 仅作用于需要转发的流量、SRS 域有 SPF/MX、旧 secret 仍可解码在途退信、原始 DKIM 未被页脚/主题重写破坏，以及严格 DMARC 发件域到各目标的结果。
 
-这里评的是转发协议就绪度，不是“只为转发部署整个 ANAS Module”的成本。配套[邮件转发与别名服务报告](./self-hosted-open-source-email-forwarding-research-2026-08-19.md)因 Mailu 包含 IMAP/Webmail 等额外状态面，把它的 forward-only Module 适配降为 `C`；这与本表的协议能力 `A-` 使用不同分母。
+这里评的是转发协议就绪度，不是“只为转发部署整个 ANAS Module”的成本。配套[邮件转发与别名服务报告](./self-hosted-open-source-email-forwarding-research.md)因 Mailu 包含 IMAP/Webmail 等额外状态面，把它的 forward-only Module 适配降为 `C`；这与本表的协议能力 `A-` 使用不同分母。
 
 ## 4. 部署与运维门槛
 

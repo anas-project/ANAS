@@ -1,6 +1,13 @@
-# 开源自部署笔记应用全景调研（2026-08-13）
+---
+doc_type: research
+created: 2026-08-13
+updated: 2026-08-13
+evidence_as_of: 2026-08-13
+---
 
-本报告按[开源自部署应用研究 Module 规范](./application-research-module-spec.md)研究“笔记”主题，为 ANAS 选择后续 Runtime Module 提供依据。动态数据采集于 2026-08-13；报告是选型快照，不是当前部署说明。
+# 开源自部署笔记应用全景调研
+
+本报告按[应用研究文档规范](/developer/research-document-standard)研究“笔记”主题，为 ANAS 选择后续 Runtime Module 提供依据。动态数据采集于 2026-08-13；报告是选型快照，不是当前部署说明。
 
 ## 1. 结论先行
 

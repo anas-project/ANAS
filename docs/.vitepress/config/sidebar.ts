@@ -41,7 +41,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       collapsed: true,
       items: [
         { text: '挂载与格式化', link: '/operations/runbooks/mount' },
-        { text: '特权 helper', link: '/operations/runbooks/privileged-helper' }
+        { text: '特权 helper', link: '/operations/runbooks/privileged-helper' },
+        { text: 'samba-tool 用户与组管理', link: '/operations/runbooks/samba-tool-user-management' }
       ]
     }
   ],
@@ -79,6 +80,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Module 升级 SOP', link: '/developer/module-upgrade-sop' },
         { text: '测试', link: '/developer/testing' },
         { text: '镜像发布', link: '/developer/release' },
+        { text: '中国大陆构建与发行', link: '/developer/china-mainland-build-and-distribution' },
+        { text: '应用研究文档规范', link: '/developer/research-document-standard' },
         { text: '文档写作标准', link: '/developer/documentation-standard' },
         { text: '文档站点', link: '/developer/documentation' }
       ]
@@ -95,6 +98,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'IAM 能力', link: '/architecture/iam-capability-design' },
         { text: '应用目录', link: '/architecture/app-catalog-design' },
         { text: '动态 DNS', link: '/architecture/dynamic-dns-capability-design' },
+        { text: '凭据轮换', link: '/architecture/credential-rotation' },
         { text: '运行时与发布状态', link: '/architecture/runtime-release-state-design' },
         { text: '配置状态生命周期', link: '/architecture/config-state-lifecycle' }
       ]
@@ -105,19 +109,51 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       text: '研究与选型',
       items: [
         { text: '索引', link: '/research/' },
-        { text: '应用域与 AD 域分离计划', link: '/research/base-domain-samba-domain-separation-plan-2026-08-19' },
-        { text: '自部署邮件服务调研', link: '/research/self-hosted-open-source-mail-services-research-2026-08-19' },
-        { text: '自部署邮件转发调研', link: '/research/self-hosted-open-source-email-forwarding-research-2026-08-19' },
-        { text: 'Changelog 方案', link: '/research/changelog-plan-2026-08-18' },
-        { text: 'samba-tool 用户与组管理', link: '/research/samba-tool-user-group-admin-guide-2026-08-17' },
-        { text: 'Web API 与管理前端规划', link: '/research/web-api-admin-console-plan-2026-08-16' },
-        { text: '应用研究 Module 规范', link: '/research/application-research-module-spec' },
-        { text: 'S3 兼容存储调研', link: '/research/self-hosted-open-source-s3-compatible-storage-research-2026-08-15' },
-        { text: '自部署 Git 服务调研', link: '/research/self-hosted-open-source-git-services-research-2026-08-15' },
-        { text: 'Super Productivity 同类调研', link: '/research/super-productivity-alternatives-research-2026-08-15' },
-        { text: '自部署笔记应用调研', link: '/research/self-hosted-open-source-notes-research-2026-08-13' },
-        { text: '中国大陆镜像与 CNB', link: '/research/china-mainland-mirrors-and-cnb-distribution-2026-08-11' },
-        { text: '自部署 Kanban 调研', link: '/research/self-hosted-open-source-kanban-research-2026-08-10' }
+        { text: 'IAM 登出与会话同步', link: '/research/iam-logout-application-session-sync' },
+        { text: '自部署 IAM 与 ANAS 适配', link: '/research/self-hosted-open-source-iam-research' },
+        { text: 'Nextcloud 搜索方案', link: '/research/nextcloud-search-solution-research' },
+        { text: 'BIND 9 Web 管理工具', link: '/research/bind9-open-source-web-management-research' },
+        { text: '自部署邮件服务', link: '/research/self-hosted-open-source-mail-services-research' },
+        { text: '自部署邮件转发', link: '/research/self-hosted-open-source-email-forwarding-research' },
+        { text: '看板与 AI Agent', link: '/research/kanban-ai-agent-integration-research' },
+        { text: 'S3 兼容存储', link: '/research/self-hosted-open-source-s3-compatible-storage-research' },
+        { text: '自部署 Git 服务', link: '/research/self-hosted-open-source-git-services-research' },
+        { text: 'Super Productivity Nextcloud SSO', link: '/research/super-productivity-nextcloud-sso-sync-research' },
+        { text: 'Super Productivity 同类项目', link: '/research/super-productivity-alternatives-research' },
+        { text: '自部署笔记应用', link: '/research/self-hosted-open-source-notes-research' },
+        { text: '自部署 Kanban 应用', link: '/research/self-hosted-open-source-kanban-research' }
+      ]
+    }
+  ],
+  '/requirements/': [
+    {
+      text: '需求与验收标准',
+      items: [
+        { text: '索引', link: '/requirements/' },
+        { text: 'IAM Provider 准入要求', link: '/requirements/iam-provider' }
+      ]
+    }
+  ],
+  '/plans/': [
+    {
+      text: '实施计划',
+      items: [
+        { text: '索引', link: '/plans/' },
+        { text: '应用域与 AD 域分离', link: '/plans/domain-separation' },
+        { text: 'Changelog', link: '/plans/changelog-rollout' },
+        { text: 'Web API 与管理前端', link: '/plans/web-api-admin-console' },
+        { text: 'workspace 与备份', link: '/plans/workspace-backup' }
+      ]
+    }
+  ],
+  '/reviews/': [
+    {
+      text: '评审与历史快照',
+      items: [
+        { text: '索引', link: '/reviews/' },
+        { text: 'Module 分类与访问边界', link: '/reviews/2026-08-19-module-classification' },
+        { text: 'Module 镜像升级评估', link: '/reviews/2026-07-29-module-image-upgrade' },
+        { text: '设计问题审查', link: '/reviews/2026-07-19-design-review' }
       ]
     }
   ],
@@ -163,6 +199,7 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Storage', link: '/en/operations/storage' },
         { text: 'Networking', link: '/en/operations/networking' },
         { text: 'Troubleshooting', link: '/en/operations/troubleshooting' },
+        { text: 'samba-tool user and group management', link: '/en/operations/runbooks/samba-tool-user-management' },
         { text: 'Traefik', link: '/en/operations/traefik' }
       ]
     }
@@ -217,9 +254,26 @@ export const enSidebar: DefaultTheme.Sidebar = {
     {
       text: 'Research',
       items: [
-        { text: 'Overview', link: '/en/research/' },
-        { text: 'samba-tool user and group management', link: '/en/research/samba-tool-user-group-admin-guide-2026-08-17' }
+        { text: 'Overview', link: '/en/research/' }
       ]
+    }
+  ],
+  '/en/requirements/': [
+    {
+      text: 'Requirements',
+      items: [{ text: 'Overview', link: '/en/requirements/' }]
+    }
+  ],
+  '/en/plans/': [
+    {
+      text: 'Implementation plans',
+      items: [{ text: 'Overview', link: '/en/plans/' }]
+    }
+  ],
+  '/en/reviews/': [
+    {
+      text: 'Reviews',
+      items: [{ text: 'Overview', link: '/en/reviews/' }]
     }
   ]
 }

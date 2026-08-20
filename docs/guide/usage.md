@@ -155,7 +155,7 @@ global:
 该构建开关作用于 Docker Hub、GHCR、APT、Alpine APK、npm、Go modules 和构建期
 GitHub 下载；修改后必须执行 `anas apply --build`。任何端点都能在 `env` 中显式覆盖；
 完整变量表和 CNB 国内制品发行方案见
-[中国大陆镜像与 CNB 发行方案](/research/china-mainland-mirrors-and-cnb-distribution-2026-08-11)。
+[中国大陆镜像与 CNB 发行方案](/developer/china-mainland-build-and-distribution)。
 
 若不是运行预编译的 `anas`，而是第一次执行 `go run ./cmd/anas`，Go 必须先把 ANAS
 本身编译出来，此时程序尚未读取配置。首次运行需在宿主机执行

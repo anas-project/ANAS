@@ -1,6 +1,13 @@
-# Super Productivity 与同类开源自部署项目调研（2026-08-15）
+---
+doc_type: research
+created: 2026-08-15
+updated: 2026-08-15
+evidence_as_of: 2026-08-15
+---
 
-本报告按[开源自部署应用研究 Module 规范](./application-research-module-spec.md)研究以 Super Productivity 为代表的“个人任务、时间规划与工时跟踪”应用，为 ANAS 后续 Runtime Module 选型提供依据。动态数据采集于 2026-08-15；报告是研究快照，不是当前部署说明。
+# Super Productivity 与同类开源自部署项目调研
+
+本报告按[应用研究文档规范](/developer/research-document-standard)研究以 Super Productivity 为代表的“个人任务、时间规划与工时跟踪”应用，为 ANAS 后续 Runtime Module 选型提供依据。动态数据采集于 2026-08-15；报告是研究快照，不是当前部署说明。
 
 ## 1. 结论先行
 
@@ -70,7 +77,7 @@ search_date: 2026-08-15
 - [awesome-selfhosted：Task Management & To-do Lists](https://awesome-selfhosted.net/tags/task-management--to-do-lists.html)与[Time Tracking](https://awesome-selfhosted.net/tags/time-tracking.html)；
 - [selfh.st Apps](https://selfh.st/apps/)及其项目周报，例如发现 TaskTrove 的[周报条目](https://selfh.st/weekly/2025-09-19/)；
 - GitHub 仓库、release、许可证、Compose 和官方部署/API/认证文档；
-- 已有的[开源自部署 Kanban 调研](./self-hosted-open-source-kanban-research-2026-08-10.md)，用于避免重复把纯团队看板误判为个人效率工具。
+- 已有的[开源自部署 Kanban 调研](./self-hosted-open-source-kanban-research.md)，用于避免重复把纯团队看板误判为个人效率工具。
 
 ### 2.3 从头部商业产品反向发现
 

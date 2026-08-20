@@ -1,4 +1,11 @@
-# 中国大陆镜像与 CNB 发行方案（2026-08-11）
+---
+doc_type: developer
+status: current
+created: 2026-08-11
+updated: 2026-08-20
+---
+
+# 中国大陆镜像与 CNB 发行方案
 
 ## 结论
 

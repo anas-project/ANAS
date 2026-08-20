@@ -167,7 +167,7 @@ global:
 That switch controls Docker Hub, GHCR, APT, Alpine APK, npm, Go modules, and
 build-time GitHub downloads. Changing it requires `anas apply --build`.
 Every generated endpoint can still be overridden under `env`. See the
-[mainland mirror and CNB distribution design](/research/china-mainland-mirrors-and-cnb-distribution-2026-08-11)
+[mainland mirror and CNB distribution design](/developer/china-mainland-build-and-distribution)
 for the endpoint table and production publishing model.
 
 When invoking `go run ./cmd/anas` for the first time instead of using a

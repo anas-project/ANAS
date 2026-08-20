@@ -1,4 +1,11 @@
-# BIND 9 开源 Web 管理工具调研（2026-08-19）
+---
+doc_type: research
+created: 2026-08-19
+updated: 2026-08-19
+evidence_as_of: 2026-08-19
+---
+
+# BIND 9 开源 Web 管理工具调研
 
 本报告研究 BIND 9 的开源 Web 管理工具，并专门判断它们是否适合 ANAS 当前的
 `samba_dc` Module。动态项目状态采集于 2026-08-19；结论是选型快照，不是生产部署说明。
@@ -13,7 +20,7 @@
 2. **现阶段写操作继续使用 `samba-tool dns`；Web 化应进入既有 `anasd` 管理面。** Samba
    官方同时把 `samba-tool dns` 和 Windows DNS MMC 列为 AD DNS 管理路径；前者覆盖 zone
    与 A/AAAA/PTR/CNAME/NS/MX/SRV/TXT 的增删查改。对 ANAS，最稳妥的产品方向是在既有
-   [Web API 与管理前端规划](./web-api-admin-console-plan-2026-08-16.md)中增加一个窄的
+   [Web API 与管理前端规划](/plans/web-api-admin-console)中增加一个窄的
    Samba DNS adapter，而不是再部署一个拥有独立用户、Secret、数据库、审计和升级面的
    DNS 控制台。
 3. **Samba Conductor 是最贴近当前数据面的第三方 PoC 候选，但不能生产化。** 它通过

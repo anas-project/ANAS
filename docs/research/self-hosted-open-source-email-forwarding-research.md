@@ -1,8 +1,15 @@
-# 开源自部署邮件转发与别名服务调研（2026-08-19）
+---
+doc_type: research
+created: 2026-08-19
+updated: 2026-08-19
+evidence_as_of: 2026-08-19
+---
 
-本报告按[开源自部署应用研究 Module 规范](./application-research-module-spec.md)研究“把自有域名收到的邮件转发到既有邮箱”的服务，重点回答哪些方案能替代 **Cloudflare Email Routing**，以及哪些其实是隐私别名平台、完整邮箱套件或只依赖 Cloudflare 的管理层。动态版本、许可证和维护状态采集于 2026-08-19；报告是研究快照，不是已验证的生产部署说明。
+# 开源自部署邮件转发与别名服务调研
 
-配套阅读：[开源自部署完整邮件服务与转发能力调研](./self-hosted-open-source-mail-services-research-2026-08-19.md)。那份报告回答“完整邮箱套件是否也能转发”，本报告则把 forward-only 与 privacy-alias 产品作为主对象。
+本报告按[应用研究文档规范](/developer/research-document-standard)研究“把自有域名收到的邮件转发到既有邮箱”的服务，重点回答哪些方案能替代 **Cloudflare Email Routing**，以及哪些其实是隐私别名平台、完整邮箱套件或只依赖 Cloudflare 的管理层。动态版本、许可证和维护状态采集于 2026-08-19；报告是研究快照，不是已验证的生产部署说明。
+
+配套阅读：[开源自部署完整邮件服务与转发能力调研](./self-hosted-open-source-mail-services-research.md)。那份报告回答“完整邮箱套件是否也能转发”，本报告则把 forward-only 与 privacy-alias 产品作为主对象。
 
 ## 1. 结论先行
 
@@ -410,7 +417,7 @@ SMTP TLS 只保护每一跳，转发器通常可看到未端到端加密的主�
 | mail-forwarding-core | D/观察 | 设计可参考，尚无稳定 release 和整合发行 |
 | Forward Email | D（严格开源口径） | 技术可用但 BUSL 为主且许可文档冲突，不作为开源 Module 基础 |
 
-这里评的是“只为转发而部署一个 ANAS Module”的集成成本，不是单独的 SMTP 协议能力分。Mailu 在配套[完整邮件服务报告](./self-hosted-open-source-mail-services-research-2026-08-19.md)中获得公网转发能力 `A-`，但若仅为 forwarding 部署整个 IMAP/Webmail 栈，本报告按 Module 成本降为 `C`，两者口径并不冲突。iRedMail、mailcow、Stalwart 和 Modoboa 的完整转发表也在该报告维护，本报告未重复列入 core 不表示它们完全不能 forward。
+这里评的是“只为转发而部署一个 ANAS Module”的集成成本，不是单独的 SMTP 协议能力分。Mailu 在配套[完整邮件服务报告](./self-hosted-open-source-mail-services-research.md)中获得公网转发能力 `A-`，但若仅为 forwarding 部署整个 IMAP/Webmail 栈，本报告按 Module 成本降为 `C`，两者口径并不冲突。iRedMail、mailcow、Stalwart 和 Modoboa 的完整转发表也在该报告维护，本报告未重复列入 core 不表示它们完全不能 forward。
 
 ### 9.2 Runtime Module/Resource 边界
 

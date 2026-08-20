@@ -1,3 +1,10 @@
+---
+doc_type: architecture
+status: proposed
+created: 2026-08-19
+updated: 2026-08-20
+---
+
 # ANAS 凭据库存与 deployment 驱动轮换设计
 
 > 状态：目标方案；阶段 A 基础切片已开始实施（2026-08-20）

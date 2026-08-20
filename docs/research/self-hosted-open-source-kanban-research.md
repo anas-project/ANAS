@@ -1,6 +1,13 @@
-# 开源自部署 Kanban 应用全景调研（2026-08-10，2026-08-13 修订）
+---
+doc_type: research
+created: 2026-08-10
+updated: 2026-08-13
+evidence_as_of: 2026-08-13
+---
 
-本报告按[开源自部署应用研究 Module 规范 v1.1](./application-research-module-spec.md)研究 Kanban 主题。首轮事实采集于 2026-08-10；2026-08-13 按规范补做商业基准反向发现、目录补漏、社区/付费边界和同日动态指标刷新。报告是选型快照，不是当前部署说明。
+# 开源自部署 Kanban 应用全景调研
+
+本报告按[应用研究文档规范 v1.1](/developer/research-document-standard)研究 Kanban 主题。首轮事实采集于 2026-08-10；2026-08-13 按规范补做商业基准反向发现、目录补漏、社区/付费边界和同日动态指标刷新。报告是选型快照，不是当前部署说明。
 
 ```yaml
 topic: kanban

@@ -1,4 +1,11 @@
-# Nextcloud 搜索方案调研（2026-08-20）
+---
+doc_type: research
+created: 2026-08-20
+updated: 2026-08-20
+evidence_as_of: 2026-08-20
+---
+
+# Nextcloud 搜索方案调研
 
 本文研究 ANAS 当前 Nextcloud `34.0.2-r10` 的搜索能力、Nextcloud 34 可用的全文与语义搜索路径，以及适合本仓库的后续实现方案。动态资料采集于 2026-08-20；版本和兼容状态是当日快照，不是永久承诺。
 

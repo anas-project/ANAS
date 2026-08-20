@@ -13,7 +13,7 @@
 
 本文是应用目录 schema、角色解析和 LLNG/Authentik Provider 映射的规范来源。Module 为什么
 归入基础支持、平台管理服务或用户应用，由
-[Module 分类与访问边界分析](../research/module-classification-and-access-boundary-analysis-2026-08-19.md)
+[Module 分类与访问边界分析](../reviews/2026-08-19-module-classification.md)
 说明；分类研究不重复定义本文字段。
 
 硬约束：
@@ -36,7 +36,7 @@
 
 ### 1.1 与 Module 三类模型的关系
 
-应用目录消费 [Module 分类与访问边界分析](../research/module-classification-and-access-boundary-analysis-2026-08-19.md)
+应用目录消费 [Module 分类与访问边界分析](../reviews/2026-08-19-module-classification.md)
 定义的主分类，但不把主分类直接翻译成授权：
 
 | Module 主分类 | 默认目录行为 | 例外 |
@@ -84,7 +84,7 @@ Module 只能保留已有列表并追加自己的 Module 名，聚合后的 `APP
 4. **图标机制脆弱。** LLNG 靠 `after_start` 的 `docker cp` 把
    `LOGO_PATH` 拷进容器 htdocs
    （[main.go:165](https://github.com/anas-project/ANAS/blob/master/modules/llng/hook/main.go#L165)）。这是命令式的：容器重建
-   后要重跑，路径依赖渲染产物位置——[design-review-2026-07-19.md](../research/design-review-2026-07-19.md)
+   后要重跑，路径依赖渲染产物位置——[2026-07-19-design-review.md](../reviews/2026-07-19-design-review.md)
    记录的就是 promote 后路径失效导致的启动破坏。Authentik 侧则完全没有图标。
 5. **展示元数据重复。** `module.yml` 已经有 `title`、`description`、`category`，
    Hook 里又硬编码了一份 `NAME`/`DESC`，两者可以漂移。
@@ -408,7 +408,7 @@ Provider 在 `render_env` 里读到的永远是完整目录。这与 IAM 注册�
 
 - Runner 在渲染时把每个条目的图标收敛到产物内的 `apps/icons/<id>.<ext>`，并发布
   `ANAS_APP_ICONS_DIR` 指向 promote 之后的稳定路径。这正是
-  [design-review-2026-07-19.md](../research/design-review-2026-07-19.md) 里那个
+  [2026-07-19-design-review.md](../reviews/2026-07-19-design-review.md) 里那个
   "calculate 阶段用临时渲染路径构造持久值" 缺陷的正解。
 - Provider 的 compose 以只读 bind mount 挂载该目录，容器重建幂等，
   `after_start` 的 `copy_portal_logos` 整个删除。

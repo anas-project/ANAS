@@ -1,16 +1,21 @@
 # Research
 
-Research documents capture dated external investigation, product comparison, and implementation assessment. They are evidence and decision input, not current user instructions.
+This section contains external investigation, candidate comparison, and technical selection only. Requirements, architecture, implementation plans, dated reviews, operating procedures, and development standards live in their own sections.
 
-The current detailed research index is available in [Chinese](/research/). Stable conclusions are promoted into guides, references, or architecture documents.
+Research pages use stable topic-based filenames. Their frontmatter records `created`, `updated`, and, when external facts are volatile, `evidence_as_of`; updating a report does not rename it.
 
-Current additions:
+The detailed reports are currently maintained in Chinese:
 
-- [ANAS Core and Module changelog plan, 2026-08-18 (Chinese)](/research/changelog-plan-2026-08-18) — a **proposal**, not current behavior: none of its commands exist yet. It rejects a hand-maintained root `CHANGELOG.md` and generated Git release notes in favor of per-pull-request YAML change fragments under `.changes/` as the single source of truth, with Core (`vX.Y.Z`) and each Module (`module/<name>/<version>-r<revision>`) deriving separate changelogs from their own immutable tag ranges. It also records how the plan must fit the existing pipeline: `master` pull requests currently have no CI gate to extend, shared contexts make a single `go.mod` bump raise the revision of seventeen Modules at once, and release-mode documentation builds extract `docs/` from the Core tag rather than the working tree.
-- [Manage users, groups, and administrators with `samba-tool`, 2026-08-17](./samba-tool-user-group-admin-guide-2026-08-17.md) — a bilingual ANAS/Samba AD operations guide with detailed command-option, LDAP-attribute, directory-term, group-scope, and administrator-role explanations.
-- [ANAS web API and admin console implementation plan, 2026-08-16 (Chinese)](/research/web-api-admin-console-plan-2026-08-16) — **M0 is partially implemented as a development skeleton**: the shared application layer, `anasd`, the first read-only `/api/v1` endpoints, and their OpenAPI contract are implemented. Authentication, the frontend, jobs, write operations, and installation/release integration remain unimplemented, so this is not yet a deployable admin console. The plan argues for a separate host daemon `anasd` that serves `/api/v1` and an embedded Vue console, with the CLI and HTTP layer sharing one typed Go application service rather than the daemon shelling out to `anas --json`. Its access model is built around one rule: the console's **reachability** must never be a function of the state of the system it manages, while its **capability** may be. So the daemon keeps one fixed admin port permanently and terminates TLS itself instead of handing a port to Traefik; it consumes lego's issuer-neutral `ANAS_TLS_*` certificates and hot-reloads them rather than minting its own; bootstrap runs over plain LAN HTTP with a one-time token and a deliberately minimal endpoint set, ratcheting one-way to HTTPS and full capability once a trusted certificate exists; and a local break-glass account stays available on the direct listener at all times, independent of whether OIDC through Traefik is healthy.
-- [Reusable application research module specification (Chinese)](/research/application-research-module-spec)
-- [Open-source self-hosted S3-compatible file and object services, 2026-08-15 (Chinese)](/research/self-hosted-open-source-s3-compatible-storage-research-2026-08-15)
-- [Open-source self-hosted Git services landscape, 2026-08-15 (Chinese)](/research/self-hosted-open-source-git-services-research-2026-08-15)
-- [Super Productivity and open-source self-hosted alternatives, 2026-08-15 (Chinese)](/research/super-productivity-alternatives-research-2026-08-15)
-- [Open-source self-hosted notes landscape, 2026-08-13 (Chinese)](/research/self-hosted-open-source-notes-research-2026-08-13)
+- [IAM logout and application-session synchronization](/research/iam-logout-application-session-sync)
+- [Self-hosted IAM and ANAS integration](/research/self-hosted-open-source-iam-research)
+- [Super Productivity and zero-configuration Nextcloud synchronization](/research/super-productivity-nextcloud-sso-sync-research)
+- [Nextcloud search solutions](/research/nextcloud-search-solution-research)
+- [BIND 9 web-management tools](/research/bind9-open-source-web-management-research)
+- [Self-hosted mail services](/research/self-hosted-open-source-mail-services-research)
+- [Self-hosted email forwarding](/research/self-hosted-open-source-email-forwarding-research)
+- [Kanban integration with coding agents](/research/kanban-ai-agent-integration-research)
+- [Self-hosted S3-compatible storage](/research/self-hosted-open-source-s3-compatible-storage-research)
+- [Self-hosted Git services](/research/self-hosted-open-source-git-services-research)
+- [Super Productivity alternatives](/research/super-productivity-alternatives-research)
+- [Self-hosted notes applications](/research/self-hosted-open-source-notes-research)
+- [Self-hosted Kanban applications](/research/self-hosted-open-source-kanban-research)
