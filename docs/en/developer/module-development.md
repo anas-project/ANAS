@@ -141,6 +141,12 @@ The image must contain both required clients and application drivers. Translate 
 
 Unit tests must exercise both engine branches, dedicated credentials, and network mapping. Render and Compose tests must cover both interfaces across the matrix, and stable support requires a real-container test of schema initialization, restart, and idempotent re-apply. If upstream supports only one engine, declare only that verified interface.
 
+## Upgrades and compatibility
+
+Design a new Module's initialization, migration, and reconciliation to be idempotent: fresh installation, repeated `apply`, restart, and interruption retry must converge on the same state. Do not add a custom upgrade script when the upstream entrypoint or declarative configuration can perform the adaptation. A necessary script must inspect actual state, be safe to repeat, and declare its applicable versions and removal condition.
+
+A later release may stop accepting sources from before the adaptation and remove the old script, preferably with an upstream major-version upgrade. Raise the `upgrade.from` lower bound in the same release. If the new release also writes disk data that older releases cannot read, list the breaking version in `upgrade.data_breaking`. Follow the [Module upstream upgrade SOP](/en/developer/module-upgrade-sop) for the decision and tests.
+
 ## Documentation, timezone, and language
 
 Every module must maintain `README.md` and `localization.yml` matching the current `module.yml` version. Derive supported languages from pinned source, official documentation, or the exact image, record canonical BCP 47 values, and distinguish browser negotiation, deployment defaults, fixed language, and services without a UI.

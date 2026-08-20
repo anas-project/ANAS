@@ -155,6 +155,12 @@ config:
 
 如果上游应用只支持一个引擎，只在 `interfaces` 中声明实际验证过的 interface。不要为了保持 Manifest 对称而声明未实现的兼容性。
 
+## 升级与兼容
+
+新增 Module 时应让初始化、迁移和 reconcile 幂等：全新安装、重复 `apply`、重启和中断重试应收敛到同一状态。上游入口或声明式配置能完成适配时，不增加自有升级脚本；必须使用脚本时，脚本应检查实际状态、可重复执行，并明确适用版本和删除条件。
+
+后续 release 可以停止兼容适配前的来源版本并删除旧脚本，优先与上游 major 版本升级合并。删除时必须在同一 release 提高 `upgrade.from` 下界；若新版本还改写了旧版本不能读取的磁盘数据，同时在 `upgrade.data_breaking` 标出断代版本。两者的判断和测试按 [Module 上游升级 SOP](/developer/module-upgrade-sop)执行。
+
 ## 文档、时区与语言
 
 每个 Module 必须维护 `README.md` 和与当前 `module.yml` 版本一致的 `localization.yml`。支持语言必须从当前固定版本的源码、官方文档或精确镜像中取证，并以规范 BCP 47 记录；浏览器协商、部署默认、固定语言和无 UI 必须明确区分。
