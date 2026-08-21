@@ -234,7 +234,7 @@ Usage:
   anas config secret  list | get <KEY>   [-w WORKSPACE]
   anas admin local list | credential | rotate MODULE [ACCOUNT] [-w WORKSPACE]
   anas credential list [-w WORKSPACE]
-  anas credential rotate CREDENTIAL_ID|--all [-w WORKSPACE] [--force] [--dry-run] [-y]
+  anas credential rotate CREDENTIAL_ID|--module MODULE|--all [-w WORKSPACE] [--force] [--dry-run] [-y]
   anas module list [--source NAME] [-w WORKSPACE]
   anas module versions NAME [--source NAME] [-w WORKSPACE]
   anas module install NAME@VERSION-rN [--source NAME] [--digest sha256:...]

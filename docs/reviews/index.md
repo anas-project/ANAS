@@ -4,6 +4,7 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [Vikunja Module 设计规范符合性审查](2026-08-21-vikunja-module-design-compliance.md) | 2026-08-21 工作树，Vikunja `2.4.0-r1` | Module 规范与发布门禁审查 |
 | [Module 分类与访问边界分析](2026-08-19-module-classification.md) | 2026-08-19 工作树 | 分类和实现差距审查 |
 | [Module 官方镜像切换与版本升级评估](2026-07-29-module-image-upgrade.md) | 2026-07-29，后续实施更新至 2026-08-02 | 升级评估与实施记录 |
 | [ANAS 设计问题审查报告](2026-07-19-design-review.md) | 2026-07-19 代码基线 | 代码与架构审查 |

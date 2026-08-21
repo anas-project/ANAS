@@ -1,0 +1,47 @@
+services:
+  anas_vikunja:
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
+    build:
+      context: ./vikunja
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
+        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
+        VIKUNJA_VERSION: 2.4.0
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r1
+    restart: unless-stopped
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    env_file:
+      - .env
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=256m
+    volumes:
+      - "${ANAS_TLS_CERTS_DIR}/${ANAS_TLS_INTERNAL_CA_NAME}:/etc/ssl/certs/anas-internal-ca.crt:ro"
+      - "${DATA_PATH}/vikunja/files:/app/vikunja/files"
+    healthcheck:
+      test: ["CMD", "/app/vikunja/anas-vikunja-entrypoint", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 90s
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=application"
+      - "traefik.http.routers.vikunja.entrypoints=https"
+      - "traefik.http.routers.vikunja.rule=Host(`${VIKUNJA_DOMAIN}`)"
+      - "traefik.http.routers.vikunja.tls=true"
+      - "traefik.http.services.vikunja.loadbalancer.server.port=3456"
+    networks:
+      - db
+      - traefik
+
+networks:
+  db:
+    name: ${VIKUNJA_NETWORK_DB}
+    external: true
+  traefik:
+    name: ${NETWORK_PREFIX}traefik
+    external: true

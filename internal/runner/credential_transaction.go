@@ -471,6 +471,11 @@ func rewriteCandidateEnvIdentity(path, candidateID string) error {
 }
 
 func writeCredentialCandidateProjection(root string, manifest *deploymentManifest, credential deploymentCredential, value string) error {
+	if len(credential.Projections) > 0 {
+		return writeFrozenCredentialCandidateProjections(root, manifest, credential, value)
+	}
+	// Backward compatibility for deployments created before frozen projection
+	// sets were added to the v1 manifest.
 	modules := uniqueStrings(append(append([]string{}, credential.Consumers...), credential.Owner))
 	sort.Strings(modules)
 	if len(modules) == 0 {
@@ -515,6 +520,94 @@ func writeCredentialCandidateProjection(root string, manifest *deploymentManifes
 		}
 	}
 	return nil
+}
+
+func writeFrozenCredentialCandidateProjections(root string, manifest *deploymentManifest, credential deploymentCredential, value string) error {
+	oldValue := ""
+	for _, projection := range credential.Projections {
+		if projection.Module != credential.Owner || projection.EnvKey != credential.SecretKey {
+			continue
+		}
+		env, err := parseEnvFile(filepath.Join(root, "modules", projection.Module, ".env"))
+		if err != nil {
+			return fmt.Errorf("read credential %s owner projection: %w", credential.ID, err)
+		}
+		oldValue = env[projection.EnvKey]
+		break
+	}
+	if oldValue == "" {
+		return fmt.Errorf("credential %s frozen owner projection is empty", credential.ID)
+	}
+
+	modules := map[string]bool{}
+	for _, projection := range credential.Projections {
+		if _, ok := manifest.Modules[projection.Module]; !ok {
+			return fmt.Errorf("credential %s references missing projection module %s", credential.ID, projection.Module)
+		}
+		path := filepath.Join(root, "modules", projection.Module, ".env")
+		env, err := parseEnvFile(path)
+		if err != nil {
+			return fmt.Errorf("read credential %s projection for %s: %w", credential.ID, projection.Module, err)
+		}
+		current, ok := env[projection.EnvKey]
+		if !ok || current != oldValue {
+			return fmt.Errorf("credential %s frozen projection %s/%s differs from its owner", credential.ID, projection.Module, projection.EnvKey)
+		}
+		modules[projection.Module] = true
+	}
+
+	names := make([]string, 0, len(modules))
+	for module := range modules {
+		names = append(names, module)
+	}
+	sort.Strings(names)
+	for _, module := range names {
+		if err := rewriteCredentialValueTree(filepath.Join(root, "modules", module), oldValue, value); err != nil {
+			return fmt.Errorf("rewrite credential %s rendered projection for %s: %w", credential.ID, module, err)
+		}
+	}
+	for _, projection := range credential.Projections {
+		path := filepath.Join(root, "modules", projection.Module, ".env")
+		env, err := parseEnvFile(path)
+		if err != nil {
+			return fmt.Errorf("read rewritten credential %s projection for %s: %w", credential.ID, projection.Module, err)
+		}
+		env[projection.EnvKey] = value
+		if err := writeEnv(path, env); err != nil {
+			return fmt.Errorf("write credential %s projection for %s: %w", credential.ID, projection.Module, err)
+		}
+	}
+	return nil
+}
+
+func rewriteCredentialValueTree(root, oldValue, newValue string) error {
+	if oldValue == "" || newValue == "" || oldValue == newValue {
+		return fmt.Errorf("credential projection replacement requires distinct non-empty values")
+	}
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		probe := body
+		if len(probe) > 8192 {
+			probe = probe[:8192]
+		}
+		if bytes.IndexByte(probe, 0) >= 0 || !bytes.Contains(body, []byte(oldValue)) {
+			return nil
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, bytes.ReplaceAll(body, []byte(oldValue), []byte(newValue)), info.Mode().Perm()|0200)
+	})
 }
 
 // commitCredentialStoreRotation performs the only Store write in a successful

@@ -42,6 +42,15 @@ type Credential struct {
 	Generator         CredentialGenerator `yaml:"generator,omitempty" json:"generator,omitempty"`
 	Lifecycle         CredentialLifecycle `yaml:"lifecycle" json:"lifecycle"`
 	Controls          []string            `yaml:"controls,omitempty" json:"controls,omitempty"`
+	// Projections freeze every rendered env location that carried the same
+	// authorized secret value when the deployment was built. This includes
+	// provider-neutral aliases such as an IAM client's registration secret.
+	Projections []CredentialProjection `yaml:"projections,omitempty" json:"projections,omitempty"`
+}
+
+type CredentialProjection struct {
+	Module string `yaml:"module" json:"module"`
+	EnvKey string `yaml:"env_key" json:"env_key"`
 }
 
 type CredentialGenerator struct {

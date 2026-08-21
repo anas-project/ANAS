@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: vikunja
+module_version: 2.4.0
+module_revision: 1
+reviewed_at: 2026-08-21
+timezone:
+  status: configured
+  mechanism: Vikunja service.timezone and the default timezone for new users inherit ANAS TZ; signed-in users may override their own timezone.
+language:
+  status: supported
+  scope: Vikunja Web UI and localized notifications
+  selection: application
+  global_default: fallback
+  global_locale: not_consumed
+  upstream_format: BCP 47-like Vikunja locale key
+  fallback: New users inherit the matched ANAS default language; unsupported values warn and fall back to English, while saved user preferences take precedence.
+  supported: [en, de-DE, de-CH, ru-RU, fr-FR, vi-VN, it-IT, cs-CZ, pl-PL, nl-NL, pt-PT, zh-CN, zh-TW, no-NO, es-ES, da-DK, ja-JP, hu-HU, ar-SA, fa-IR, sl-SI, pt-BR, hr-HR, uk-UA, lt-LT, bg-BG, ko-KR, tr-TR, fi-FI, he-IL, sv-SE, el-GR]
+  evidence:
+    - version: v2.4.0
+      url: https://github.com/go-vikunja/vikunja/blob/v2.4.0/frontend/src/i18n/index.ts
+      path: SUPPORTED_LOCALES and DEFAULT_LANGUAGE
+  notes: Browser language is used when the account has no saved language; the ANAS value is a new-user default and does not override an existing preference. Canonical de-CH maps to Vikunja's upstream de-swiss key.

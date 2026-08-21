@@ -1,6 +1,7 @@
 # Module 上游升级 SOP
 
 本 SOP 适用于升级 Module 的上游版本或运行资产。目标是让升级可重复执行、兼容边界明确，并保留必要的恢复路径。
+执行时使用 [Module 升级检查表](/developer/module-upgrade-checklist) 逐项记录证据和签署结论。
 
 ## 1. 固定范围并检查上游
 

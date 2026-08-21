@@ -1,5 +1,9 @@
 # Module development
 
+Use the [Module design and release checklist](/en/developer/module-design-checklist) when creating,
+upgrading, or reviewing a Module so automated gates, manual review, and real-environment evidence are
+recorded consistently.
+
 A module is an independent release and deployment unit. It owns its manifest identity, version, ABI, dependencies, capabilities, configuration declarations, Compose definition, optional hook, templates, and assets.
 
 The frozen deployment must carry everything needed to start. It must not depend on relative paths into a source checkout.
@@ -28,6 +32,28 @@ next formal number. Hook, configuration-rendering, and other tests that need no
 new image do not change the revision.
 
 Declare hard dependencies explicitly. Use capability providers for alternatives, ordering edges only for ordering, and resource/provider operations for persistent resources. Scope generated environments to the module, its dependency closure, and explicitly consumed keys. Never log secrets or inject unrelated credentials.
+
+## Rotation scopes for ANAS-managed credentials
+
+Every password, shared secret, client secret, or signing/encryption key that ANAS generates, stores,
+or has authority to write into application state must record its owner, consumers, authority, and rotation
+status. A rotatable declaration requires release evidence for three scopes:
+
+1. **single target:** one logical credential or one Module local account;
+2. **all credentials owned by a Module:** an ordered, atomic transaction across that Module's ANAS-managed credentials;
+3. **all credentials in a deployment:** one planner/ready barrier across every credential enrolled in the unified lifecycle.
+
+Each scope must define candidate generation, application-state mutation, probe/verify, Secret Store commit,
+downtime, and rollback. Repeated manual single-target commands are not an atomic Module/deployment rotation.
+
+Current CLI coverage is partial. `anas credential rotate <id>`,
+`anas credential rotate --module MODULE`, and `anas credential rotate --all` cover single-target,
+Module-owner, and deployment batches in the unified `credentials.provides` lifecycle, while
+`anas admin local rotate MODULE [ACCOUNT]` covers one local account. There is no cross-credential-class
+transaction, and `credential rotate --module/--all` excludes Resource credentials, local administrators,
+and external API tokens. Until those scopes are implemented,
+Module documentation and release reviews must mark them manual/unsupported and must not claim that all ANAS
+secrets are rotatable.
 
 ## Bidirectional logout for OIDC/SAML Modules
 

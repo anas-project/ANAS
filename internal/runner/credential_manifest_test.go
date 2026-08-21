@@ -3,6 +3,7 @@ package runner
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -103,14 +104,18 @@ func TestPrepareDeploymentCredentialsFreezesAuthorityGenerationAndProjection(t *
 		Lifecycle: deploymentCredentialLifecycle{Probe: "probe", Reconcile: "reconcile", Verify: "verify"},
 	}
 	a := &app{
-		order: []string{"owner", "consumer"},
+		order: []string{"owner", "iam", "consumer"},
 		reg: map[string]Module{
 			"owner": {Name: "owner", CredentialProviders: []CredentialProvider{provider}},
-			"consumer": {Name: "consumer", CredentialConsumers: []CredentialConsumer{{
+			"iam": {Name: "iam", Consumes: []string{"ANAS_IAM_CLIENT__*"}},
+			"consumer": {Name: "consumer", Consumes: []string{"CONSUMER_SECRET"}, CredentialConsumers: []CredentialConsumer{{
 				Credential: provider.ID, Projection: "CONSUMER_SECRET",
 			}}},
 		},
-		env: map[string]string{"OWNER_SECRET": "value"}, envOwner: map[string]string{},
+		env: map[string]string{
+			"OWNER_SECRET": "value", "ANAS_IAM_CLIENT__OWNER__CLIENT_SECRET": "value",
+		},
+		envOwner: map[string]string{"ANAS_IAM_CLIENT__OWNER__CLIENT_SECRET": "owner"},
 		secrets: &secretStore{
 			values: map[string]string{"OWNER_SECRET": "value"},
 			metadata: map[string]secretMetadata{"OWNER_SECRET": {
@@ -129,6 +134,16 @@ func TestPrepareDeploymentCredentialsFreezesAuthorityGenerationAndProjection(t *
 	}
 	if len(a.credentials) != 1 || a.credentials[0].Authority != "anas" || a.credentials[0].Generation != 1 {
 		t.Fatalf("credentials = %#v", a.credentials)
+	}
+	wantProjections := []deploymentCredentialProjection{
+		{Module: "consumer", EnvKey: "CONSUMER_SECRET"},
+		{Module: "iam", EnvKey: "ANAS_IAM_CLIENT__OWNER__CLIENT_SECRET"},
+		{Module: "owner", EnvKey: "ANAS_IAM_CLIENT__OWNER__CLIENT_SECRET"},
+		{Module: "owner", EnvKey: "CONSUMER_SECRET"},
+		{Module: "owner", EnvKey: "OWNER_SECRET"},
+	}
+	if !reflect.DeepEqual(a.credentials[0].Projections, wantProjections) {
+		t.Fatalf("credential projections = %#v, want %#v", a.credentials[0].Projections, wantProjections)
 	}
 	if a.secrets.metadata["OWNER_SECRET"].Generation != 1 || !a.secrets.dirty {
 		t.Fatalf("metadata = %#v, dirty = %t", a.secrets.metadata["OWNER_SECRET"], a.secrets.dirty)

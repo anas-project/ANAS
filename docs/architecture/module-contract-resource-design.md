@@ -211,6 +211,7 @@ Contract 声明虚假兼容性。
 | `samba_dc` | identity / stable | AD、LDAP 与 DNS Provider；目录 Contract 尚未迁移 |
 | `samba_fs` | storage / stable | 加入 AD 的文件服务 |
 | `traefik` | network / stable | 反向代理和路由入口 |
+| `vikunja` | app / developing | OIDC 任务协作 Consumer；申请一个 `relational_database` Resource |
 
 ### 4.6 IAM Consumer 的登出边界
 

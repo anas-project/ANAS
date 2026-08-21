@@ -180,6 +180,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		{"credential with no subcommand", []string{"credential", "--json"}, 2},
 		{"credential rotate without target", []string{"credential", "rotate", "-w", workspace, "--dry-run", "--json"}, 2},
 		{"credential rotate target and all", []string{"credential", "rotate", "missing", "--all", "-w", workspace, "--dry-run", "--json"}, 2},
+		{"credential rotate target and module", []string{"credential", "rotate", "missing", "--module", "demo", "-w", workspace, "--dry-run", "--json"}, 2},
 		{"module with no subcommand", []string{"module", "--json"}, 2},
 		{"unknown module subcommand", []string{"module", "wat", "--json"}, 2},
 		{"module install without release", []string{"module", "install", "nextcloud", "--json"}, 2},

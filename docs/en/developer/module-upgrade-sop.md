@@ -1,6 +1,8 @@
 # Module upstream upgrade SOP
 
 Use this SOP when upgrading a Module's upstream version or runtime assets. The upgrade must be repeatable, declare its compatibility boundary, and retain the required recovery path.
+Use the [Module upgrade checklist](/en/developer/module-upgrade-checklist) to record evidence and sign off
+each upgrade.
 
 ## 1. Pin the scope and inspect upstream
 

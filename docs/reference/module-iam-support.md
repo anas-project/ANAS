@@ -9,6 +9,7 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 | `ddns_updater` | 间接 | 经 `oauth2_proxy` + Traefik ForwardAuth | 已实现 |
 | `nextcloud` | 是 | 默认使用官方 `user_oidc`；LDAPS provision 用户/组；`user_saml` 保留为显式 fallback | 已实现；具体登出能力按下方固定版本/Provider 矩阵判定 |
 | `meshcentral` | 是 | IAM/OIDC 认证；LDAPS 同步用户/组；OIDC group 映射应用访问和 site-admin | 已实现 |
+| `vikunja` | 是 | IAM/OIDC JIT 建号；`APP_vikunja`/`APP_all` 门禁；本地认证和注册关闭 | developing；Manifest、Provider 注册、Secret、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 |
 | `lam` | 否 | LDAPS 目录管理登录 | 不属于当前 IAM consumer |
 | `authentik` | 不适用 | IAM provider；另有固定 `akadmin` break-glass | 提供 OIDC/SAML，不把自身当普通 consumer |
 | `casdoor` | 不适用 | developing IAM provider；使用默认模板 `admin_casdoor` break-glass | 已接入 OIDC/SAML 注册与 Samba 目录事件触发同步；SAML SLO、永久 anchor 与 `ALLOW_GROUPS` 门禁尚未通过生产验收 |
@@ -29,6 +30,7 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 | Nextcloud `user_oidc 8.10.1` | RP logout + `/index.php/apps/user_oidc/backchannel-logout/anas` | RP-Initiated Logout | `sid` back-channel | 单个 OIDC session；同用户多 session/client 属安全矩阵必测项 | RP logout 需要；back-channel 不需要 | IAM 不可用时本地 session 必须先失效；Provider 不通知时标受限 | Authentik 浏览器/管理员删 session 已有 E2E；LLNG 浏览器已有 E2E；其余管理员撤销、隔离安全矩阵与 Casdoor 通知受限，等待统一矩阵 |
 | Nextcloud `user_saml 8.2.0` | `/index.php/apps/user_saml/saml/sls`, Redirect | SP-Initiated SLO | IdP-Initiated SLO | NameID + SessionIndex | 必须 | 无 SLO 时只本地登出 | Authentik Redirect 已有 E2E；LLNG Redirect 入口已实现待隔离 fixture；Casdoor 明确无 SLO |
 | MeshCentral `1.2.4` | discovery/provider RP logout + post-logout URI | 上游支持 | 无标准 receiver | 应用 Cookie/session | 必须 | 本地 session 先失效；IAM 不可用不得卡住本地退出 | 统一 Playwright 矩阵已实现；`state`、中央 session 结果未在当前主机 fixture 验收，故为“上游支持、待接入” |
+| Vikunja `2.4.0` | discovery `end_session_endpoint` + `id_token_hint` + post-logout URI | 上游支持 | 无标准 receiver | Vikunja server-side session | 必须 | 上游先删除本地 session；组装 Provider 登出 URL 失败不阻断本地退出 | Hook/容器入口单元测试与上游固定版本源码审查已完成；真实浏览器 E2E 待验收 |
 | NetBird Dashboard `2.90.9` | discovery `end_session_endpoint` + post-logout URI | 上游支持 | 无标准 receiver | Dashboard 本地认证状态 | 必须 | 本地状态先失效；无通知不声明 IAM→Module | 统一 Playwright 矩阵已实现；`state`、中央 session 结果未在当前主机 fixture 验收，故为“上游支持、待接入” |
 | oauth2-proxy `7.15.3` | `/oauth2/sign_out` | 仅清网关 Cookie | 无 | oauth2-proxy Cookie；不含 IAM/后端 session | 否 | IAM 停止仍清 Cookie，受保护服务重新认证 | 不发布 `OIDC_LOGOUT_*`，不配置 `backend-logout-url`；IAM 不可用 Playwright case 已实现待隔离 fixture |
 
@@ -36,7 +38,7 @@ Provider 固定为 Authentik `2026.5.6`、LLNG `2.23.2`、Casdoor `3.143.0`。SA
 
 ## 默认解析规则
 
-协议优先级为：Module 显式 `iam_protocol` > 部署 `identity.iam.default_protocol`（仅当 Module 支持）> Module Manifest preference。Nextcloud、MeshCentral、NetBird 和 OAuth2 Proxy 当前都默认选择 OIDC；Nextcloud 可显式切换回 SAML，MeshCentral 只声明 OIDC。
+协议优先级为：Module 显式 `iam_protocol` > 部署 `identity.iam.default_protocol`（仅当 Module 支持）> Module Manifest preference。Nextcloud、MeshCentral、Vikunja、NetBird 和 OAuth2 Proxy 当前都默认选择 OIDC；Nextcloud 可显式切换回 SAML，MeshCentral 和 Vikunja 只声明 OIDC。
 
 ## Samba 目录密码接入规范
 

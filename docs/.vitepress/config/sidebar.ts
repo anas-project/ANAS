@@ -75,9 +75,11 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '概览', link: '/developer/' },
         { text: '仓库结构', link: '/developer/repository-layout' },
         { text: 'Module 开发', link: '/developer/module-development' },
+        { text: 'Module 设计检查表', link: '/developer/module-design-checklist' },
         { text: 'Module 文档规范', link: '/developer/module-documentation' },
         { text: 'Contract 文档规范', link: '/developer/contract-documentation' },
         { text: 'Module 升级 SOP', link: '/developer/module-upgrade-sop' },
+        { text: 'Module 升级检查表', link: '/developer/module-upgrade-checklist' },
         { text: '测试', link: '/developer/testing' },
         { text: '镜像发布', link: '/developer/release' },
         { text: '中国大陆构建与发行', link: '/developer/china-mainland-build-and-distribution' },
@@ -130,7 +132,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       text: '需求与验收标准',
       items: [
         { text: '索引', link: '/requirements/' },
-        { text: 'IAM Provider 准入要求', link: '/requirements/iam-provider' }
+        { text: 'IAM Provider 准入要求', link: '/requirements/iam-provider' },
+        { text: 'Vikunja Module 集成要求', link: '/requirements/vikunja-module' }
       ]
     }
   ],
@@ -151,6 +154,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       text: '评审与历史快照',
       items: [
         { text: '索引', link: '/reviews/' },
+        { text: 'Vikunja Module 设计符合性', link: '/reviews/2026-08-21-vikunja-module-design-compliance' },
         { text: 'Module 分类与访问边界', link: '/reviews/2026-08-19-module-classification' },
         { text: 'Module 镜像升级评估', link: '/reviews/2026-07-29-module-image-upgrade' },
         { text: '设计问题审查', link: '/reviews/2026-07-19-design-review' }
@@ -232,9 +236,11 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Overview', link: '/en/developer/' },
         { text: 'Repository layout', link: '/en/developer/repository-layout' },
         { text: 'Module development', link: '/en/developer/module-development' },
+        { text: 'Module design checklist', link: '/en/developer/module-design-checklist' },
         { text: 'Module documentation standard', link: '/en/developer/module-documentation' },
         { text: 'Contract documentation standard', link: '/en/developer/contract-documentation' },
         { text: 'Module upgrade SOP', link: '/en/developer/module-upgrade-sop' },
+        { text: 'Module upgrade checklist', link: '/en/developer/module-upgrade-checklist' },
         { text: 'Testing', link: '/en/developer/testing' },
         { text: 'Image releases', link: '/en/developer/release' },
         { text: 'Documentation standard', link: '/en/developer/documentation-standard' },

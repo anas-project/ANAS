@@ -1,5 +1,8 @@
 # Module 开发
 
+新建、升级或评审 Module 时，使用 [Module 设计与发布检查表](/developer/module-design-checklist)
+统一记录机械门禁、人工评审和真实环境证据。
+
 ## 基本职责
 
 Module 是独立的发布和部署单元。它拥有：
@@ -39,6 +42,27 @@ revision。
 只声明 Module 实际消费和导出的配置。不要依赖全量环境注入；生成的 `.env` 应只包含当前 Module、依赖闭包和显式声明的键。敏感值不得写入日志或非必要容器。
 
 开始实现前阅读[Module、Contract 与 Resource 设计](/architecture/module-contract-resource-design)和[环境变量契约](/reference/module-environment-variables)。
+
+## ANAS 管理凭据的轮换范围
+
+ANAS 生成、保存或有权写入应用内部状态的密码、shared secret、client
+secret 和签名/加密密钥，都必须记录 owner、consumer、authority 和轮换状态。
+声明为可轮换时，发布验收必须覆盖三个作用域：
+
+1. **单目标**：轮换一个逻辑凭据或一个 Module 本地账号；
+2. **Module 全部**：按依赖顺序原子轮换某 Module 拥有的全部 ANAS-managed 凭据；
+3. **deployment 全部**：用同一 planner/ready barrier 轮换活动部署中所有纳入统一 lifecycle 的凭据。
+
+每个范围都必须说明 candidate 生成、应用内更新、probe/verify、Secret Store 提交、
+停机面和失败回滚。多次手工执行单凭据命令不能冒充 Module/deployment 级原子轮换。
+
+当前 CLI 只部分覆盖这个目标：`anas credential rotate <id>`、
+`anas credential rotate --module MODULE` 与 `anas credential rotate --all` 分别覆盖
+`credentials.provides` 统一 lifecycle 的单目标、Module owner 批次和 deployment 批次；
+`anas admin local rotate MODULE [ACCOUNT]` 覆盖单个本地账号。尚无通用的跨凭据类别事务，
+`credential rotate --module/--all` 也不包含 Resource credential、本地管理员或
+外部 API token。在这些范围实现前，Module 文档和发布检查必须标为 manual/unsupported，
+不得宣称“全部 ANAS Secret 可轮换”。
 
 ## 使用 OIDC/SAML 的 Module：双向登出设计规范
 

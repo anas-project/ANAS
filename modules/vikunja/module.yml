@@ -1,0 +1,156 @@
+api_version: anas.module/v1
+kind: Module
+name: vikunja
+version: 2.4.0
+revision: 1
+app_version: 2.4.0
+abi:
+  supports:
+    - anas.module-hook/v1
+title: Vikunja
+description: Task and project management with OIDC-only authentication, multiple views, API, webhooks, and CalDAV.
+category: app
+status: developing
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  requires:
+    - traefik
+  requires_capabilities:
+    - name: iam
+      interface_selected_by: iam_protocol
+      interfaces:
+        any_of:
+          - oidc
+        prefer:
+          - oidc
+  contracts:
+    - name: relational_database
+      version: ">=1.0.0 <2.0.0"
+      selected_by: db_type
+      interfaces:
+        - postgres
+        - mariadb
+      default: postgres
+credentials:
+  provides:
+    - id: vikunja.service_secret
+      secret_key: VIKUNJA_SERVICE_SECRET
+      type: shared_secret
+      rotation_mode: reconcile
+      generation:
+        kind: hex
+        length: 32
+      lifecycle:
+        probe: probe-vikunja-service-secret
+        reconcile: reconcile-vikunja-service-secret
+        verify: verify-vikunja-service-secret
+    - id: vikunja.oidc_client_secret
+      secret_key: VIKUNJA_OIDC_CLIENT_SECRET
+      type: shared_secret
+      rotation_mode: reconcile
+      generation:
+        kind: hex
+        length: 32
+      lifecycle:
+        probe: probe-vikunja-oidc-client-secret
+        reconcile: reconcile-vikunja-oidc-client-secret
+        verify: verify-vikunja-oidc-client-secret
+resources:
+  requires:
+    - id: primary_database
+      contract: relational_database
+      binding: db_type
+      spec_from:
+        name: db_name
+      spec:
+        principal: vikunja
+        credential:
+          policy: generated
+        deletion_policy: retain
+upgrade:
+  # No pinned release through 2.4.0 declares an on-disk break. Real upgrade and
+  # rollback E2E remains a release gate while this module is developing.
+  data_breaking: []
+config:
+  must_resolve:
+    - language
+  defaults:
+    domain_prefix: tasks
+    db_name: vikunja
+    db_type: auto
+    iam_protocol: auto
+  types:
+    domain_prefix:
+      kind: string
+      constraints:
+        min_length: 1
+        max_length: 63
+        pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+    db_name: string
+    db_type:
+      enum: [auto, postgres, mariadb]
+    iam_protocol:
+      enum: [auto, oidc]
+    language:
+      kind: string
+      default_source: inherited
+  exports:
+    - ANAS_IAM_CLIENT__VIKUNJA__*
+    - APPS_LIST*
+  consumes:
+    - ANAS_IAM_BINDING__VIKUNJA__*
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_INTERNAL_CA_NAME
+    - SAMBA_DC_ADMIN_GROUP_NAME
+    - SAMBA_DC_APP_FILTER
+    - TRAEFIK_BASE_PORT
+  changes:
+    db_type:
+      effect: data_migrate
+      apply: migrate-vikunja-database
+      description: Changing the selected database does not migrate existing Vikunja data.
+    db_name:
+      effect: data_migrate
+      apply: migrate-vikunja-database
+      description: The database name is materialized when the database Resource is initialized.
+    iam_protocol:
+      effect: container_recreate
+      apply: recreate-vikunja
+      description: The OIDC client registration and application configuration must be reconciled together.
+    language:
+      effect: reconcile
+      apply: reconcile-vikunja-localization
+      description: Sets the default UI language for new users without overriding saved user preferences.
+identity:
+  authentication:
+    capability: iam
+    selected_by: iam_protocol
+    interfaces:
+      any_of:
+        - oidc
+      prefer:
+        - oidc
+  application_group: true
+features:
+  generated_secrets: true
+  domain: true
+management:
+  surfaces:
+    - id: web
+      uri_from: VIKUNJA_DOMAIN_FULL
+      authentication:
+        primary: iam
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook
+    phases:
+      - calculate
+      - render_env
+      - credential_probe
+      - credential_reconcile
+      - credential_verify

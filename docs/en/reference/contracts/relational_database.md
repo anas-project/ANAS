@@ -58,7 +58,9 @@ See the [technical implementation](./relational_database-technical.md) for provi
 | provider | `mariadb` | `1.0.0` | `mariadb` | `providers/relational_database/provider.yml` |
 | provider | `postgres` | `1.0.0` | `postgres` | `providers/relational_database/provider.yml` |
 | consumer | `authentik` | `>=1.0.0 <2.0.0` | `postgres` | - |
+| consumer | `casdoor` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `llng` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
 | consumer | `meshcentral` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
 | consumer | `nextcloud` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
+| consumer | `vikunja` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
 <!-- generated:contract-reference:end -->

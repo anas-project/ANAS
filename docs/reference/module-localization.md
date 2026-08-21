@@ -17,7 +17,7 @@
 | [lego](#lego) | 5.3.1-r4 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [llng](#llng) | 2.23.2-r10 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [mariadb](#mariadb) | 12.3.2-r3 | container | supported | browser | not_consumed | not_consumed | 47 |
-| [meshcentral](#meshcentral) | 1.2.4-r6 | container | supported | browser | not_consumed | not_consumed | 30 |
+| [meshcentral](#meshcentral) | 1.2.4-r7 | container | supported | browser | not_consumed | not_consumed | 30 |
 | [netbird](#netbird) | 0.76.1-r4 | partial | fixed | fixed | not_consumed | not_consumed | 1 |
 | [nextcloud](#nextcloud) | 34.0.2-r8 | partial | supported | browser | fallback | fallback | 58 |
 | [oauth2_proxy](#oauth2_proxy) | 7.15.3-r3 | container | fixed | fixed | not_consumed | not_consumed | 1 |
@@ -25,6 +25,7 @@
 | [samba_dc](#samba_dc) | 4.23.6-r7 | system | not_applicable | none | not_applicable | not_applicable | 0 |
 | [samba_fs](#samba_fs) | 4.23.6-r5 | container | not_applicable | client | not_applicable | not_applicable | 0 |
 | [traefik](#traefik) | 3.7.10-r4 | container | fixed | fixed | not_consumed | not_consumed | 1 |
+| [vikunja](#vikunja) | 2.4.0-r1 | configured | supported | application | fallback | not_consumed | 32 |
 
 ## authentik
 
@@ -144,7 +145,7 @@
 
 ## meshcentral
 
-- **Version / 版本：** `1.2.4-r6`; reviewed 2026-08-13
+- **Version / 版本：** `1.2.4-r7`; reviewed 2026-08-21
 - **Timezone / 时区：** `container` — MeshCentral receives TZ through the module .env for process and log timestamps.
 - **Language / 语言：** `supported`, `browser` — MeshCentral Web UI
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -224,3 +225,14 @@
 - **Fallback / 回退：** The built-in Dashboard is English and exposes no supported language selector.
 - **Supported / 支持语言：** `en`
 - **Evidence / 证据：** [v3.7.10 — Dashboard and static configuration expose no localization setting](https://github.com/traefik/traefik/tree/v3.7.10)
+
+## vikunja
+
+- **Version / 版本：** `2.4.0-r1`; reviewed 2026-08-21
+- **Timezone / 时区：** `configured` — Vikunja service.timezone and the default timezone for new users inherit ANAS TZ; signed-in users may override their own timezone.
+- **Language / 语言：** `supported`, `application` — Vikunja Web UI and localized notifications
+- **ANAS globals / 全局默认：** `default_language=fallback`; `default_locale=not_consumed`
+- **Fallback / 回退：** New users inherit the matched ANAS default language; unsupported values warn and fall back to English, while saved user preferences take precedence.
+- **Supported / 支持语言：** `en`, `de-DE`, `de-CH`, `ru-RU`, `fr-FR`, `vi-VN`, `it-IT`, `cs-CZ`, `pl-PL`, `nl-NL`, `pt-PT`, `zh-CN`, `zh-TW`, `no-NO`, `es-ES`, `da-DK`, `ja-JP`, `hu-HU`, `ar-SA`, `fa-IR`, `sl-SI`, `pt-BR`, `hr-HR`, `uk-UA`, `lt-LT`, `bg-BG`, `ko-KR`, `tr-TR`, `fi-FI`, `he-IL`, `sv-SE`, `el-GR`
+- **Notes / 说明：** Browser language is used when the account has no saved language; the ANAS value is a new-user default and does not override an existing preference. Canonical de-CH maps to Vikunja's upstream de-swiss key.
+- **Evidence / 证据：** [v2.4.0 — SUPPORTED_LOCALES and DEFAULT_LANGUAGE](https://github.com/go-vikunja/vikunja/blob/v2.4.0/frontend/src/i18n/index.ts)

@@ -24,7 +24,7 @@ type credentialInventoryRecord struct {
 
 func runCredential(args []string, jsonMode bool) error {
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		return usageErrorf("usage: anas credential list | rotate CREDENTIAL_ID|--all [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]")
+		return usageErrorf("usage: anas credential list | rotate CREDENTIAL_ID|--module MODULE|--all [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]")
 	}
 	switch args[0] {
 	case "list":
@@ -32,7 +32,7 @@ func runCredential(args []string, jsonMode bool) error {
 	case "rotate":
 		return runCredentialRotate(args[1:], jsonMode)
 	default:
-		return usageErrorf("usage: anas credential list | rotate CREDENTIAL_ID|--all [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]")
+		return usageErrorf("usage: anas credential list | rotate CREDENTIAL_ID|--module MODULE|--all [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]")
 	}
 }
 
@@ -89,6 +89,7 @@ func runCredentialList(args []string, jsonMode bool) error {
 func runCredentialRotate(args []string, jsonMode bool) error {
 	fs, workspaceFlag := credentialFlagSet("credential rotate")
 	all := fs.Bool("all", false, "rotate every executable credential")
+	module := fs.String("module", "", "rotate every unified-lifecycle credential owned by a module")
 	force := fs.Bool("force", false, "take over a supported external credential")
 	dryRun := fs.Bool("dry-run", false, "plan without writes, randomness, Hooks, or Docker")
 	yes := fs.Bool("y", false, "accept downtime and rotation")
@@ -96,8 +97,24 @@ func runCredentialRotate(args []string, jsonMode bool) error {
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
-	if *all == (len(positional) == 1) || len(positional) > 1 {
-		return usageErrorf("usage: anas credential rotate CREDENTIAL_ID|--all [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]")
+	selectors := 0
+	if *all {
+		selectors++
+	}
+	if strings.TrimSpace(*module) != "" {
+		selectors++
+	}
+	if len(positional) == 1 {
+		selectors++
+	}
+	if selectors != 1 || len(positional) > 1 {
+		return usageErrorf("usage: anas credential rotate CREDENTIAL_ID|--module MODULE|--all [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]")
+	}
+	makePlan := func(manifest *deploymentManifest) credentialRotationPlan {
+		if strings.TrimSpace(*module) != "" {
+			return planModuleCredentialRotation(manifest, *module, *force)
+		}
+		return planCredentialRotation(manifest, positional, *all, *force)
 	}
 	workspace, err := resolveWorkspace(*workspaceFlag)
 	if err != nil {
@@ -117,7 +134,7 @@ func runCredentialRotate(args []string, jsonMode bool) error {
 		if txn != nil {
 			return preconditionErrorf("credential_recovery_required", "%s", credentialRecoveryRequiredError(txn).Error())
 		}
-		plan := planCredentialRotation(manifest, positional, *all, *force)
+		plan := makePlan(manifest)
 		addCredentialExecutionPreflight(base, manifest, &plan)
 		return emitCredentialPlan(workspace, plan, true, jsonMode)
 	}
@@ -130,7 +147,7 @@ func runCredentialRotate(args []string, jsonMode bool) error {
 	if err != nil {
 		return err
 	}
-	plan := planCredentialRotation(manifest, positional, *all, *force)
+	plan := makePlan(manifest)
 	addCredentialExecutionPreflight(base, manifest, &plan)
 	if len(plan.Blockers) > 0 {
 		return &CLIError{Code: "credential_rotation_blocked", Message: "credential rotation is blocked by preflight", Detail: map[string]any{"plan": plan}, Exit: exitPrecondition}

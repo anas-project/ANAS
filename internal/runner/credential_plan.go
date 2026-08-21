@@ -16,6 +16,8 @@ type credentialPlanFinding struct {
 // same shape so their dependency and blocker semantics cannot diverge.
 type credentialRotationPlan struct {
 	PreviousDeployment string                  `json:"previous_deployment"`
+	Scope              string                  `json:"scope"`
+	Module             string                  `json:"module,omitempty"`
 	CredentialOrder    []string                `json:"credential_order"`
 	AffectedModules    []string                `json:"affected_modules"`
 	StopOrder          []string                `json:"stop_order"`
@@ -27,7 +29,10 @@ type credentialRotationPlan struct {
 }
 
 func planCredentialRotation(manifest *deploymentManifest, selected []string, all, force bool) credentialRotationPlan {
-	plan := credentialRotationPlan{Force: force, All: all}
+	plan := credentialRotationPlan{Force: force, All: all, Scope: "single"}
+	if all {
+		plan.Scope = "deployment"
+	}
 	if manifest == nil {
 		plan.Blockers = append(plan.Blockers, credentialPlanFinding{Reason: "active deployment manifest is unavailable"})
 		return plan
@@ -143,6 +148,48 @@ func planCredentialRotation(manifest *deploymentManifest, selected []string, all
 	return plan
 }
 
+// planModuleCredentialRotation selects the complete unified credential set
+// owned by one active Module and feeds it through the same dependency planner
+// and transaction used by single-target and deployment-wide rotation.
+func planModuleCredentialRotation(manifest *deploymentManifest, module string, force bool) credentialRotationPlan {
+	module = strings.TrimSpace(module)
+	if manifest == nil {
+		return credentialRotationPlan{
+			Scope: "module", Module: module, Force: force,
+			Blockers: []credentialPlanFinding{{Reason: "active deployment manifest is unavailable"}},
+		}
+	}
+	if module == "" {
+		return credentialRotationPlan{
+			PreviousDeployment: manifest.ID, Scope: "module", Force: force,
+			Blockers: []credentialPlanFinding{{Reason: "module selection is empty"}},
+		}
+	}
+	if _, ok := manifest.Modules[module]; !ok {
+		return credentialRotationPlan{
+			PreviousDeployment: manifest.ID, Scope: "module", Module: module, Force: force,
+			Blockers: []credentialPlanFinding{{ID: module, Reason: "module is absent from the active deployment"}},
+		}
+	}
+	ids := []string{}
+	for _, credential := range manifest.Credentials {
+		if credential.Owner == module {
+			ids = append(ids, credential.ID)
+		}
+	}
+	sort.Strings(ids)
+	if len(ids) == 0 {
+		return credentialRotationPlan{
+			PreviousDeployment: manifest.ID, Scope: "module", Module: module, Force: force,
+			Blockers: []credentialPlanFinding{{ID: module, Reason: "module owns no unified-lifecycle credential in the active deployment"}},
+		}
+	}
+	plan := planCredentialRotation(manifest, ids, false, force)
+	plan.Scope = "module"
+	plan.Module = module
+	return plan
+}
+
 func credentialExecutionBlockers(manifest *deploymentManifest, credential deploymentCredential, force bool) []string {
 	reasons := []string{}
 	if credential.ID == "" || credential.SecretKey == "" {
@@ -180,6 +227,24 @@ func credentialExecutionBlockers(manifest *deploymentManifest, credential deploy
 		if _, ok := manifest.Modules[consumer]; !ok {
 			reasons = append(reasons, "credential consumer "+consumer+" is absent from the deployment")
 		}
+	}
+	seenProjections := map[string]bool{}
+	hasOwnerProjection := false
+	for _, projection := range credential.Projections {
+		if _, ok := manifest.Modules[projection.Module]; !ok {
+			reasons = append(reasons, "credential projection module "+projection.Module+" is absent from the deployment")
+		}
+		identity := projection.Module + "\x00" + projection.EnvKey
+		if projection.Module == "" || !envKeyPattern.MatchString(projection.EnvKey) || seenProjections[identity] {
+			reasons = append(reasons, "credential has an invalid or duplicate frozen projection")
+		}
+		seenProjections[identity] = true
+		if projection.Module == credential.Owner && projection.EnvKey == credential.SecretKey {
+			hasOwnerProjection = true
+		}
+	}
+	if len(credential.Projections) > 0 && !hasOwnerProjection {
+		reasons = append(reasons, "credential owner projection is absent from the frozen projection set")
 	}
 	return reasons
 }
@@ -334,6 +399,9 @@ func credentialAffectedModuleClosure(manifest *deploymentManifest, moduleOrder [
 		affected[credential.Owner] = true
 		for _, consumer := range credential.Consumers {
 			affected[consumer] = true
+		}
+		for _, projection := range credential.Projections {
+			affected[projection.Module] = true
 		}
 	}
 	changed := true

@@ -84,19 +84,68 @@ func (a *app) prepareDeploymentCredentials() error {
 				a.env[consumer.Projection] = value
 				a.setEnvOwner(consumer.Projection, owner)
 			}
+			projections := credentialValueProjections(a, provider.ID, owner, provider.SecretKey, value)
 			credentials = append(credentials, deploymentCredential{
 				ID: provider.ID, SecretKey: provider.SecretKey, Owner: owner,
 				Consumers: consumerModules, Kind: provider.Kind, Authority: authority,
 				RotationMode: provider.RotationMode, Generation: metadata.Generation,
 				DesiredProjection: "deployment-secret://" + provider.ID,
 				Generator:         provider.Generator, Lifecycle: provider.Lifecycle,
-				Controls: append([]string{}, provider.Controls...),
+				Controls:    append([]string{}, provider.Controls...),
+				Projections: projections,
 			})
 		}
 	}
 	sort.Slice(credentials, func(i, j int) bool { return credentials[i].ID < credentials[j].ID })
 	a.credentials = credentials
 	return nil
+}
+
+// credentialValueProjections records only locations that the existing env
+// scoping policy already authorizes to receive the value. Equality is safe for
+// generated high-entropy values and captures aliases published by a Module
+// (for example ANAS_IAM_CLIENT__APP__CLIENT_SECRET) without granting a new
+// cross-Module read path.
+func credentialValueProjections(a *app, credentialID, owner, secretKey, value string) []deploymentCredentialProjection {
+	seen := map[string]bool{}
+	projections := []deploymentCredentialProjection{}
+	for _, module := range a.order {
+		for key, projected := range a.scopedEnv(module) {
+			if projected != value {
+				continue
+			}
+			identity := module + "\x00" + key
+			if seen[identity] {
+				continue
+			}
+			seen[identity] = true
+			projections = append(projections, deploymentCredentialProjection{Module: module, EnvKey: key})
+		}
+	}
+	ownerProjection := owner + "\x00" + secretKey
+	if !seen[ownerProjection] {
+		projections = append(projections, deploymentCredentialProjection{Module: owner, EnvKey: secretKey})
+		seen[ownerProjection] = true
+	}
+	for _, module := range a.order {
+		for _, consumer := range a.reg[module].CredentialConsumers {
+			if consumer.Credential != credentialID {
+				continue
+			}
+			identity := module + "\x00" + consumer.Projection
+			if !seen[identity] {
+				projections = append(projections, deploymentCredentialProjection{Module: module, EnvKey: consumer.Projection})
+				seen[identity] = true
+			}
+		}
+	}
+	sort.Slice(projections, func(i, j int) bool {
+		if projections[i].Module == projections[j].Module {
+			return projections[i].EnvKey < projections[j].EnvKey
+		}
+		return projections[i].Module < projections[j].Module
+	})
+	return projections
 }
 
 func cloneCredentialProviders(in []CredentialProvider) []CredentialProvider {

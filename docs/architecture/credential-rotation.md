@@ -313,7 +313,15 @@ stop previous deployment once, in reverse dependency order
 service。不会在每个凭据修改后恢复整个依赖链，因此一个 Module 不会因为上游随后轮换而被重复
 正式启动。
 
-### 6.4 `credential rotate ID`
+### 6.4 `credential rotate --module MODULE`
+
+Module scope 选择 active deployment 中 owner 等于 `MODULE` 的完整
+`credentials.provides` 集合，并复用同一 planner、candidate、ready barrier、Store 单次提交和
+恢复事务。集合中的 manual、external（未显式 `--force`）或 lifecycle 不完整项会阻断整个批次，
+不会退化为逐项命令或静默跳过。停止范围仍按所选凭据的 owner、consumer、冻结别名投影和普通
+依赖闭包计算，不等同于 deployment 全停机。
+
+### 6.5 `credential rotate ID`
 
 单项命令创建同样的 candidate deployment，但只改变一个逻辑凭据，并只停止受影响闭包：
 
@@ -328,7 +336,7 @@ stop affected consumers and owner
 本地管理员命令最终应委托同一执行器；兼容命令 `anas admin local rotate MODULE [ACCOUNT]` 只负责
 把 Module/account 映射为 credential ID 和处理 TTY 输入。
 
-### 6.5 普通 start/restart/rollback
+### 6.6 普通 start/restart/rollback
 
 - `start`/`restart` 先要求当前 deployment 与 Store presence、authority provenance 和 generation
   一致，再运行 probe/reconcile/verify，因此应用侧漂移会被恢复到当前期望值，Store 分裂则 fail closed；
@@ -444,6 +452,7 @@ reconcile 使用容器内本地 Samba 管理能力。Samba Module 通过 ready b
 ```text
 anas credential list [-w WORKSPACE] [--json]
 anas credential rotate CREDENTIAL_ID [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]
+anas credential rotate --module MODULE [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]
 anas credential rotate --all [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]
 ```
 
@@ -452,6 +461,7 @@ anas credential rotate --all [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]
 - `--dry-run` 使用真实 planner，但不生成随机数、不创建 candidate、不调用 Hook/Docker；
 - `--force` 只改变有 ANAS generator 和完整协调器的用户覆盖值之 authority；
 - 非交互实际执行必须 `-y`；
+- `--module` 是一个 Module owner 的原子统一 lifecycle 批次；
 - `--all` 是全部署停机操作，输出必须包含预计停止 Module、激活顺序和 blockers；
 - 不提供明文密码参数、环境变量输入或 `--allow-partial`。
 
@@ -466,12 +476,12 @@ candidate failed、previous restored、previous restore failed 和 not started�
 | --- | --- | --- |
 | Frozen credential deployment schema | 已接入 materialization | 从 Module 静态声明生成；authority/generation 来自 Secret Store provenance，manifest 无明文 |
 | 共用无副作用 planner | 已接入 CLI | `--dry-run` 使用真实 planner，并检查 runtime 与 Store presence/generation；零随机、零写入、零 Hook/Docker |
-| Candidate 独立投影与封印 | 已接入生产 executor | previous/Store/active pointer 在验证前不变；只重写 candidate 的 owner/consumer 投影；事务激活、普通 apply/rollback 与补偿恢复统一先 down/remove 旧容器再 up 目标制品 |
+| Candidate 独立投影与封印 | 已接入生产 executor | previous/Store/active pointer 在验证前不变；重写 candidate 冻结的 owner/consumer/等值授权别名投影及其渲染制品；事务激活、普通 apply/rollback 与补偿恢复统一先 down/remove 旧容器再 up 目标制品 |
 | Journal、代次与一次性 Store commit | 已接入生产 executor | Store 一次 Save 提交全部候选；排他操作自动按 commit 前/后语义恢复或完成 promotion |
 | 顺序 Module ready barrier | 已接入现有 start/apply/rollback | 屏障顺序为 container→credential lifecycle→after-start→local-admin；owner verify 失败不启动 consumer |
 | 结构化 credential Hook ABI | 已实现 | 显式 phase、专用 stdin Secret、严格 response、external 禁止 reconcile；Eturnal 为首个 provider |
 | Previous 启动失败补偿 | 已强化 | candidate 先停止，随后 previous 重新激活；Eturnal 可由同一幂等协调器恢复，其他持久凭据仍未迁移 |
-| `anas credential list/rotate` | 已实现首批 | 无明文 list、共享 planner dry-run、单项/全量执行与结构化失败状态；当前生产 provider 为 Eturnal |
+| `anas credential list/rotate` | 已实现首批 | 无明文 list、共享 planner dry-run、单项/Module owner/全量执行与结构化失败状态；当前接入 provider 为 Eturnal 与 Vikunja service/OIDC secret |
 
 因此当前完成了阶段 A 的 candidate/journal/executor/recovery 闭环和阶段 B 的静态
 schema/ABI/ready-barrier 主干。Eturnal 已获得 deployment 驱动的启动时协调与主动轮换能力；
@@ -483,7 +493,7 @@ schema/ABI/ready-barrier 主干。Eturnal 已获得 deployment 驱动的启动�
 2. 持久事务 journal、rotation ID 和 Secret generation；
 3. 顺序 Module activation 与 ready barrier；
 4. previous deployment 自动恢复；
-5. 单项 ID 和 `--all` 共用 planner/executor。
+5. 单项 ID、`--module MODULE` 和 `--all` 共用 planner/executor。
 
 ### 阶段 B：统一幂等 ABI
 

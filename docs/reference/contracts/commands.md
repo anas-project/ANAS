@@ -574,6 +574,7 @@ Store 或 lock。
 ```text
 anas credential list [-w WORKSPACE] [--json]
 anas credential rotate CREDENTIAL_ID [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]
+anas credential rotate --module MODULE [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]
 anas credential rotate --all [-w WORKSPACE] [--force] [--dry-run] [-y] [--json]
 ```
 
@@ -608,7 +609,7 @@ API token 仍分别由原有库存/配置边界管理，不能因为 Secret Stor
   "api_version": "anas.dev/cli/v1", "ok": true,
   "workspace": "/data/ws", "dry_run": true, "executable": true,
   "plan": {
-    "previous_deployment": "20260820T010203Z-deadbeef",
+    "previous_deployment": "20260820T010203Z-deadbeef", "scope": "single",
     "credential_order": ["eturnal.secret"],
     "affected_modules": ["eturnal", "netbird", "nextcloud"],
     "stop_order": ["nextcloud", "netbird", "eturnal"],
@@ -621,7 +622,9 @@ API token 仍分别由原有库存/配置边界管理，不能因为 Secret Stor
 实际执行要求 active runtime 为 `running`，并在非交互调用中要求 `-y`。Runner 先生成独立
 candidate projection，停止 previous 的全部或受影响闭包，按 ready barrier 顺序执行
 probe/reconcile/verify；只有全部验证通过后才用一次原子 Store Save 提交值、generation 与
-`rotation_id`，随后 promotion candidate。`--all` 选择 active deployment 中所有可执行
+`rotation_id`，随后 promotion candidate。`--module MODULE` 选择该 Module owner 在 active
+deployment 中声明的完整统一 lifecycle 集合；集合中的 manual/unsupported 项会阻断整个批次。
+`--all` 选择 active deployment 中所有可执行
 `reconcile` 目标；manual 目标不会被悄悄改写，也没有 `--allow-partial`。
 
 `--force` 仅接管同时具备 ANAS generator、完整 probe/reconcile/verify 和有效 owner/consumer
@@ -636,7 +639,7 @@ previous；Store 提交后不再回写旧 Store，而由下一次排他运行时
 
 | code | 退出码 | 何时 |
 | --- | --- | --- |
-| `usage` | 2 | 子命令、目标数量或 `ID`/`--all` 组合不合法 |
+| `usage` | 2 | 子命令、目标数量或 `ID`/`--module`/`--all` 组合不合法 |
 | `confirmation_required` | 3 | 实际轮换在非 TTY 中未给 `-y`，或交互确认被拒绝 |
 | `no_active_deployment` / `deployment_unreadable` | 4 | 没有可读取的 active deployment |
 | `credential_recovery_required` | 4 | dry-run 发现未完成事务；只读 list 仍可报告恢复状态 |

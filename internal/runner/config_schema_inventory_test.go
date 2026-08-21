@@ -24,12 +24,14 @@ type bundledSourceEvidence struct {
 
 func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	inventory := loadBundledParameterMetadata(t)
-	if got, want := len(inventory), 146; got != want {
+	if got, want := len(inventory), 151; got != want {
 		t.Fatalf("bundled parameter count = %d, want %d", got, want)
 	}
 
 	minimumOne := 1
 	maximumPort := 65535
+	minimumDNSLabelLength := 1
+	maximumDNSLabelLength := 63
 	wantConstraints := map[string]configschema.Constraints{
 		"casdoor.ldap_auto_sync_minutes": {Minimum: &minimumOne},
 		"global.base_domain":             {Format: configschema.FormatDNSName},
@@ -45,6 +47,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"samba_dc.max_log_size":          {Minimum: &minimumOne},
 		"samba_dc.domain":                {Format: configschema.FormatDNSName},
 		"oauth2_proxy.allow_groups":      {Pattern: `\S`},
+		"vikunja.domain_prefix":          {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
 	}
 	gotConstraints := map[string]configschema.Constraints{}
 	for path, metadata := range inventory {
@@ -81,6 +84,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"samba_dc.ldap_bind_password":     {configschema.DefaultSourceGenerated, "calcSambaDC"},
 		"samba_dc.password_bind_password": {configschema.DefaultSourceGenerated, "calcSambaDC"},
 		"samba_dc.anchor_bind_password":   {configschema.DefaultSourceGenerated, "calcSambaDC"},
+		"vikunja.language":                {configschema.DefaultSourceInherited, "vikunja calculate"},
 	}
 
 	validSources := map[configschema.DefaultSource]bool{}
@@ -138,6 +142,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"samba_dc.ldap_bind_password":     true,
 		"samba_dc.password_bind_password": true,
 		"samba_dc.anchor_bind_password":   true,
+		"vikunja.language":                true,
 	}
 	gotInputRequired := map[string]bool{}
 	gotMustResolveOnly := map[string]bool{}
@@ -199,6 +204,18 @@ func TestBundledParameterConstraintBoundaries(t *testing.T) {
 	if err := allowGroups.Validate(" \t "); err == nil {
 		t.Error("oauth2_proxy.allow_groups accepted a whitespace-only administrative group list")
 	}
+
+	domainPrefix := inventory["vikunja.domain_prefix"].spec
+	for _, value := range []string{"a", "tasks", "task-board", strings.Repeat("a", 63)} {
+		if err := domainPrefix.Validate(value); err != nil {
+			t.Errorf("vikunja.domain_prefix rejected %q: %v", value, err)
+		}
+	}
+	for _, value := range []string{"", "Tasks", "-tasks", "tasks-", "task_board", strings.Repeat("a", 64)} {
+		if err := domainPrefix.Validate(value); err == nil {
+			t.Errorf("vikunja.domain_prefix accepted invalid value %q", value)
+		}
+	}
 }
 
 func loadBundledParameterMetadata(t *testing.T) map[string]bundledParameterMetadata {
@@ -208,7 +225,7 @@ func loadBundledParameterMetadata(t *testing.T) map[string]bundledParameterMetad
 		t.Fatal(err)
 	}
 
-	out := make(map[string]bundledParameterMetadata, 146)
+	out := make(map[string]bundledParameterMetadata, 151)
 	for _, parameter := range globalConfig.Parameters {
 		envKey := parameterEnvKey(globalModuleName, parameter, reg)
 		_, hasDefault := globalConfig.Defaults[envKey]

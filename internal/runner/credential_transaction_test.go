@@ -27,7 +27,7 @@ func TestCredentialCandidateIsIndependentAndValueFreeOutsideProjection(t *testin
 		if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0600); err != nil {
 			t.Fatal(err)
 		}
-		rendered := "artifact=" + filepath.Join(base, "deployments", previousID, "modules", name) + "\n"
+		rendered := "artifact=" + filepath.Join(base, "deployments", previousID, "modules", name) + "\nsecret=previous-plaintext\n"
 		if err := os.WriteFile(filepath.Join(dir, "rendered.conf"), []byte(rendered), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -48,6 +48,10 @@ func TestCredentialCandidateIsIndependentAndValueFreeOutsideProjection(t *testin
 			DesiredProjection: "deployment-secret://provider.shared",
 			Lifecycle: deployment.CredentialLifecycle{
 				Probe: "probe-shared", Reconcile: "reconcile-shared", Verify: "verify-shared",
+			},
+			Projections: []deployment.CredentialProjection{
+				{Module: "consumer", EnvKey: "SHARED_SECRET"},
+				{Module: "provider", EnvKey: "SHARED_SECRET"},
 			},
 		}},
 	}
@@ -110,6 +114,9 @@ func TestCredentialCandidateIsIndependentAndValueFreeOutsideProjection(t *testin
 		}
 		if strings.Contains(string(rendered), previousID) || !strings.Contains(string(rendered), candidate.ID) {
 			t.Fatalf("%s rendered path was not rebased: %s", name, rendered)
+		}
+		if strings.Contains(string(rendered), "previous-plaintext") || !strings.Contains(string(rendered), "candidate-plaintext") {
+			t.Fatalf("%s rendered secret alias was not replaced", name)
 		}
 	}
 	manifestBody, err := os.ReadFile(filepath.Join(base, "deployments", candidate.ID, "deployment.yml"))
@@ -305,6 +312,25 @@ func TestCredentialPlannerMergesActivationAndControlGraphs(t *testing.T) {
 	single := planCredentialRotation(manifest, []string{"postgres.app"}, false, false)
 	if !reflect.DeepEqual(single.AffectedModules, []string{"postgres", "app", "downstream"}) {
 		t.Fatalf("single credential closure = %v", single.AffectedModules)
+	}
+
+	modulePlan := planModuleCredentialRotation(manifest, "postgres", false)
+	if len(modulePlan.Blockers) != 0 {
+		t.Fatalf("module plan blockers = %#v", modulePlan.Blockers)
+	}
+	if modulePlan.Scope != "module" || modulePlan.Module != "postgres" || modulePlan.All {
+		t.Fatalf("module plan scope = %#v", modulePlan)
+	}
+	if !reflect.DeepEqual(modulePlan.CredentialOrder, []string{"postgres.app", "postgres.superuser"}) {
+		t.Fatalf("module credential order = %v", modulePlan.CredentialOrder)
+	}
+	if !reflect.DeepEqual(modulePlan.AffectedModules, []string{"postgres", "app", "downstream"}) {
+		t.Fatalf("module credential closure = %v", modulePlan.AffectedModules)
+	}
+
+	emptyModule := planModuleCredentialRotation(manifest, "app", false)
+	if len(emptyModule.Blockers) != 1 || !strings.Contains(emptyModule.Blockers[0].Reason, "owns no") {
+		t.Fatalf("empty module blockers = %#v", emptyModule.Blockers)
 	}
 }
 

@@ -37,6 +37,7 @@ type deploymentManifest = deployment.Manifest
 type deploymentModule = deployment.Module
 type deploymentResource = deployment.Resource
 type deploymentCredential = deployment.Credential
+type deploymentCredentialProjection = deployment.CredentialProjection
 type deploymentSetting = deployment.Setting
 type deploymentSnapshotPolicy = deployment.SnapshotPolicy
 type activeDeploymentState = deployment.ActiveState

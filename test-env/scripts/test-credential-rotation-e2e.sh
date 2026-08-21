@@ -234,15 +234,16 @@ assert item == {
 PY
 assert_no_secret "$initial_secret" "$base/list-initial.json" "$base/list-initial.txt" "$docker_log"
 
-echo '== single, all, force and missing-target dry-runs share a value-free planner =='
+echo '== single, module, all, force and missing-target dry-runs share a value-free planner =='
 before_dry_id=$(active_deployment)
 before_dry_secret=$(read_secret)
 before_dry_log_lines=$(wc -l <"$docker_log" | tr -d ' ')
 anas credential rotate eturnal.secret -w "$ws" --dry-run --json >"$base/dry-single.json"
+anas credential rotate --module eturnal -w "$ws" --dry-run --json >"$base/dry-module.json"
 anas credential rotate --all -w "$ws" --dry-run --json >"$base/dry-all.json"
 anas credential rotate eturnal.secret -w "$ws" --force --dry-run --json >"$base/dry-force.json"
 anas credential rotate missing.secret -w "$ws" --dry-run --json >"$base/dry-missing.json"
-DRY_SINGLE="$base/dry-single.json" DRY_ALL="$base/dry-all.json" \
+DRY_SINGLE="$base/dry-single.json" DRY_MODULE="$base/dry-module.json" DRY_ALL="$base/dry-all.json" \
 DRY_FORCE="$base/dry-force.json" DRY_MISSING="$base/dry-missing.json" "$PYTHON" - <<'PY'
 import json, os
 def load(name):
@@ -254,8 +255,14 @@ assert single["plan"]["credential_order"] == ["eturnal.secret"], single
 assert single["plan"]["affected_modules"] == ["eturnal"], single
 assert single["plan"]["stop_order"] == ["eturnal"], single
 assert single["plan"]["activation_order"] == ["eturnal"], single
+assert single["plan"]["scope"] == "single", single
+module = load("DRY_MODULE")
+assert module["executable"] is True, module
+assert module["plan"]["scope"] == "module" and module["plan"]["module"] == "eturnal", module
+assert module["plan"]["credential_order"] == ["eturnal.secret"], module
 all_plan = load("DRY_ALL")
 assert all_plan["executable"] is True and all_plan["plan"]["all"] is True, all_plan
+assert all_plan["plan"]["scope"] == "deployment", all_plan
 assert all_plan["plan"]["credential_order"] == ["eturnal.secret"], all_plan
 assert all_plan["plan"]["affected_modules"] == ["eturnal"], all_plan
 force = load("DRY_FORCE")
@@ -267,7 +274,7 @@ PY
 [ "$(active_deployment)" = "$before_dry_id" ] || fail 'dry-run changed the active deployment'
 [ "$(read_secret)" = "$before_dry_secret" ] || fail 'dry-run changed the Secret Store'
 [ "$(wc -l <"$docker_log" | tr -d ' ')" = "$before_dry_log_lines" ] || fail 'dry-run called Docker'
-assert_no_secret "$initial_secret" "$base/dry-single.json" "$base/dry-all.json" \
+assert_no_secret "$initial_secret" "$base/dry-single.json" "$base/dry-module.json" "$base/dry-all.json" \
   "$base/dry-force.json" "$base/dry-missing.json"
 
 echo '== runtime and confirmation preconditions fail before mutation =='
