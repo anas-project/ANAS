@@ -175,7 +175,11 @@ func baseApplication(e map[string]string, app string) map[string]any {
 		"homepageUrl": e["APPS_LIST__"+envName(app)+"__URI"], "organization": "anas",
 		"cert": "anas-signing", "enablePassword": true, "enableSignUp": false,
 		"disableSignin": false, "enableSigninSession": true,
-		"signinMethods": []any{map[string]any{"name": "Password", "displayName": "Password", "rule": "All"}},
+		// Init data is reconciled over existing applications. Emit the empty
+		// value explicitly so removing a declaration, or switching an app from
+		// OIDC to SAML, clears a previously imported back-channel receiver.
+		"backchannelLogoutUri": "",
+		"signinMethods":        []any{map[string]any{"name": "Password", "displayName": "Password", "rule": "All"}},
 	}
 }
 

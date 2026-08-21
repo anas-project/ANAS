@@ -50,7 +50,7 @@ The Chinese and English READMEs must have equivalent sections covering at least:
 1. Module name, version/revision, status, category, and runtime;
 2. Module, Capability, and Contract dependencies, interfaces, and version constraints;
 3. a minimal example valid under the current `config.yml` schema;
-4. LDAPS, OIDC, SAML, Kerberos, user/group source of truth, synchronization direction, filters, and password writeback;
+4. LDAPS, OIDC, SAML, Kerberos, user/group source of truth, synchronization direction, filters, password writeback, and both Module-initiated and IAM-initiated logout capability;
 5. routine admin login, direct access, private/local admins, and IAM-outage recovery; when an emergency account exists, its login address, actual username, and password-retrieval command;
 6. real commands for account inspection, credential retrieval, password rotation, configuration inspection, modification, and planning;
 7. database provider/consumer/none, interfaces, defaults, Resource, credential, and deletion policy;
@@ -59,6 +59,24 @@ The Chinese and English READMEs must have equivalent sections covering at least:
 10. the versioned timezone and language generated block.
 
 Keep an explicit “unsupported/not applicable” section when IAM, database, local-admin, or password-writeback support is absent.
+
+### IAM logout documentation
+
+The identity section of every OIDC or SAML Module must also state:
+
+1. whether clicking logout in the Module performs local logout only or continues with OIDC RP-Initiated Logout / SAML SP-Initiated SLO;
+2. whether IAM Portal logout reaches the Module through OIDC front-/back-channel or SAML IdP-Initiated SLO;
+3. whether browserless administrative IAM-session revocation invalidates the application session;
+4. the registered method/binding, endpoint type, and pinned plugin/application version, without tokens or Secrets;
+5. the revocation scope based on `sid`, `sub`, or `NameID/SessionIndex`, plus browser, SameSite/CSP, TTL, and retry limitations;
+6. the real-session E2E entry point and every uncovered case.
+
+`post_logout_redirect_uri` is navigation only and must not be described as an
+IAM-to-application notification endpoint. A README may claim “bidirectional
+logout” or “administrative revocation” only after satisfying the
+[bidirectional logout requirements](/requirements/module-iam-bidirectional-logout)
+with real-session evidence. A ForwardAuth Module documents IAM, gateway, and
+backend sessions separately and never projects gateway logout onto the backend.
 
 ### Configuration inventory
 
@@ -157,13 +175,21 @@ Both `docs/technical*.md` files must cover at least:
 2. Module, Capability, and Contract dependencies;
 3. Compose service, image/build, network, and volume topology;
 4. the same complete configuration contract as the README;
-5. user, group, LDAPS, OIDC/SAML, identity-anchor, and password-writeback data flow;
+5. user, group, LDAPS, OIDC/SAML, identity-anchor, password-writeback, and both RP/SP-initiated and IAM-initiated logout session flows;
 6. management entries, local admins, and IAM-outage implementation;
 7. Secret lifecycle, storage format, permissions, projection path, hash/plaintext boundary, and logging boundary;
 8. database Contract, Resource identity, provider/consumer, credentials, and deletion policy;
 9. exported and explicitly consumed environment variables;
 10. hooks, change executors, transactions, rollback, and compensation;
 11. implementation files, unit tests, integration/E2E entry points, and limitations.
+
+The logout flow must identify the application session, central IAM session,
+`sid`/`sub` or `NameID`/`SessionIndex`, notification endpoint, signing trust,
+replay store, and failure/degradation boundary. OIDC documentation explains
+Logout Token signature and claim validation. SAML documentation explains
+LogoutRequest/LogoutResponse validation and binding limitations. A
+front-channel- or Redirect-only path explicitly depends on the browser and
+must not imply coverage of administrative back-office revocation.
 
 `config.env_prefix`, `exports`, and `consumes` must use environment-safe
 upper-snake names. A pattern may contain one leading or trailing `*`, never a

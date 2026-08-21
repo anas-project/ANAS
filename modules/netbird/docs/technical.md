@@ -39,6 +39,10 @@
 
 声明为 OIDC Consumer，并需要应用 Group，但管理员角色映射仍是发布阻塞项。
 
+### 登出边界
+
+固定 Dashboard `2.90.9` 的 RP logout 由 discovery endpoint 驱动。统一浏览器矩阵必须验证 `state`、Dashboard 本地 session 先失效、IAM 中央 session 结束且不能静默恢复；通过前只记录“上游支持、待接入”。该版本没有标准 front/back-channel receiver，故不声明 IAM→NetBird。
+
 | 能力 | 当前声明 |
 | --- | --- |
 | Directory / LDAPS | 不支持/不适用 |

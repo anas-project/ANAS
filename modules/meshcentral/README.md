@@ -42,6 +42,8 @@ identity:
 
 浏览器认证强制使用 OIDC-only：匿名首页跳转 `/auth-oidc`，登录页不显示密码入口，服务端拒绝本地或 LDAP 密码登录。LDAPS 继续负责目录 users/groups provisioning。启用应用过滤时，`APP_meshcentral`、`APP_all` 或管理员组可访问，管理员组同时映射 site-admin。
 
+固定 MeshCentral `1.2.4` 包含上游 RP logout 修复，ANAS 注册 post-logout URI，但上游没有标准 IAM→Module 通知 endpoint。因此只在真实浏览器矩阵同时验证 `state`、应用 session 先失效和 IAM 中央 session 结束后标为“应用发起登出”；当前能力状态是“上游支持、待该矩阵验收”，不声明后台双向登出。
+
 | 能力 | 当前声明 |
 | --- | --- |
 | Directory / LDAPS | ldaps (`users, groups`) |

@@ -7,6 +7,10 @@ evidence_as_of: 2026-08-21
 
 # IAM 登出同步到应用的 OIDC / SAML 方案
 
+本文保留方案研究与实施背景；当前规范性 Module 要求、能力分级和发布门禁见
+[使用 OIDC/SAML 的 Module 双向登出要求](../requirements/module-iam-bidirectional-logout.md)，
+Provider 侧要求见[新 IAM Provider 准入与实施要求](../requirements/iam-provider.md)。
+
 ## 实施状态（2026-08-21）
 
 - 已扩展通用 client contract，并由 Runner 在 Provider `render_env` 前校验 endpoint、method、binding 和布尔字段的成对关系与枚举值。
@@ -175,7 +179,7 @@ sign_logout_request: true
 sign_logout_response: true
 ```
 
-选择 `frontchannel_native` 而不是 iframe，减少 CSP、SameSite 和第三方 Cookie 导致 SLS 页面没有真正收到会话 Cookie 的风险。不要配置 `backchannel + redirect`：Authentik 的 SAML back-channel 要求 POST SLS binding，而 Nextcloud metadata 默认只声明 Redirect。
+选择 `frontchannel_native` 而不是 iframe，减少 CSP、SameSite 和第三方 Cookie 导致 SLS 页面没有真正收到会话 Cookie 的风险。不要配置 `backchannel + redirect`；也不能因为 SP 出现 POST SLS 就自动改成 back-channel。HTTP-POST 通常仍由浏览器自动提交，只有 Provider 与 SP 的固定版本正式声明服务端 POST 语义并通过无浏览器 E2E 后，才能单独提升能力。
 
 #### LemonLDAP::NG
 
@@ -186,7 +190,7 @@ sign_logout_response: true
 - Nextcloud 返回 `LogoutResponse` 后本地会话失效；
 - RelayState 最终落到安全的登录页，不形成循环。
 
-SAML 的边界要明确：浏览器发起 IAM 登出时可以通过 Redirect SLO 同步；管理员在后台删除会话时没有浏览器，Redirect SLO 无法可靠执行。若未来必须实现 SAML 的后台强制撤销，需要确认/扩展 Nextcloud 对 POST SLS 的正式支持，再在 Authentik 选择 `backchannel`。在此之前，管理员强制撤销应以 OIDC back-channel 为推荐路径。
+SAML 的边界要明确：浏览器发起 IAM 登出时可以通过 Redirect/POST SLO 同步；管理员在后台删除会话时没有浏览器，两者都不能自动视为可靠执行。若未来必须实现 SAML 后台强制撤销，需要 Provider 与 Nextcloud 的固定版本正式提供服务端通知语义并通过无浏览器 E2E，不能仅凭 POST binding 选择 `backchannel`。在此之前，管理员强制撤销应以 OIDC back-channel 为推荐路径。
 
 ## 验收测试
 
@@ -217,4 +221,4 @@ OIDC 再增加管理员撤销用例：不使用用户浏览器删除 IAM session
 
 ## 最终建议
 
-默认协议继续选 OIDC，并以 back-channel logout 作为“完整登出”的准入条件。SAML 保留为 Nextcloud fallback，支持浏览器参与的 SLO，但在未具备 POST SLS/back-channel 前，不承诺后台撤销能立即清除 Nextcloud 会话。
+默认协议继续选 OIDC，并以 back-channel logout 作为“完整登出”的准入条件。SAML 保留为 Nextcloud fallback，支持浏览器参与的 SLO，但在没有单独验证的标准服务端通知通道前，不承诺后台撤销能立即清除 Nextcloud 会话。

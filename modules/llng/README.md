@@ -34,7 +34,7 @@ modules:
 
 Samba AD 是用户和 Group 来源。Portal 使用目录认证，IAM 向 Consumer 发布 OIDC/SAML 端点和 Group 属性。`Admins` 可进入 Manager。
 
-OIDC RP 声明标准 logout endpoint 时，Module 优先配置 LLNG back-channel logout，并传递 session-required 能力；从 LLNG Portal 登出会同步撤销 Nextcloud 等支持方的应用会话。SAML 继续从 SP metadata 导入 SLS，并签名 SLO 消息；Redirect SLO 需要浏览器参与。
+固定 LLNG `2.23.2` 在 OIDC RP 声明标准 endpoint 时配置 back-channel logout 和 session-required；从 Portal 登出可同步撤销通过 E2E 的应用会话。SAML 从 SP metadata 导入 SLS 并签名 SLO，Redirect/POST 均需要浏览器。每次 apply 会先删除旧 `LogoutUrl`、OIDC RP、SAML SLS/SP 元数据，再按当前协议重建，覆盖声明消失、换域名、协议切换和重复 apply。
 
 | 能力 | 当前声明 |
 | --- | --- |

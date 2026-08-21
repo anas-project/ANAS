@@ -1,7 +1,7 @@
 # Module、Contract 与 Resource 架构
 
 状态：实施基线
-日期：2026-08-12
+日期：2026-08-21
 
 ## 1. 目标
 
@@ -211,6 +211,27 @@ Contract 声明虚假兼容性。
 | `samba_dc` | identity / stable | AD、LDAP 与 DNS Provider；目录 Contract 尚未迁移 |
 | `samba_fs` | storage / stable | 加入 AD 的文件服务 |
 | `traefik` | network / stable | 反向代理和路由入口 |
+
+### 4.6 IAM Consumer 的登出边界
+
+OIDC/SAML Consumer 的登录和登出都属于 Module 与 IAM capability 的互操作边界。Core 只解析
+effective interface、校验通用注册字段并把声明交给所选 Provider；应用会话如何创建、关联和
+撤销仍由 Consumer Module 所有。
+
+Module 必须用 Provider-neutral 的 `ANAS_IAM_BINDING__<APP>__*` 与
+`ANAS_IAM_CLIENT__<APP>__*` 表达：
+
+- Module -> IAM：OIDC RP-Initiated Logout 或 SAML SP-Initiated SLO；
+- IAM -> Module：OIDC front-/back-channel logout 或 SAML IdP-Initiated SLO；
+- 导航回调与应用会话通知 endpoint 是两类不同字段；
+- 支持方法为空表示固定上游版本不支持 IAM 主动即时登出，Provider 与 Core 都不得猜测路径；
+- 双向登出是否成立必须按 `Provider × 协议 × Module` 用真实应用会话验证。
+
+Core 不认识 Nextcloud、MeshCentral 或某个插件的 logout URL，也不验证 Logout Token/SAML
+消息；这些是 Module/上游应用的协议实现。Core 可以机械校验 URI 与 method/binding 成对、枚举
+合法、字段属于当前 binding，并保证只有选中的 Provider 获得注册请求。详细字段、安全和发布
+门禁见[使用 OIDC/SAML 的 Module 双向登出要求](/requirements/module-iam-bidirectional-logout)
+与[Module 开发规范](/developer/module-development)。
 
 ## 5. Contract
 

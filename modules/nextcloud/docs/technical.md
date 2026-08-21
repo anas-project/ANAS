@@ -57,7 +57,7 @@ LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍
 
 ### IAM 发起登出
 
-OIDC 注册发布 `/index.php/apps/user_oidc/backchannel-logout/anas`、`backchannel` 和 session-required 声明。签名 logout token 由官方 `user_oidc` 处理；浏览器登出、管理员删除 IAM session 和账号停用都能撤销对应 Nextcloud session。SAML 注册发布 `/index.php/apps/user_saml/saml/sls` 的 Redirect binding；Provider 发布可选 SLO 时，该链路依赖浏览器完成 `LogoutRequest -> SLS -> LogoutResponse`，后台撤销不在保证范围内。Provider 未发布 SLO 时 Hook 清除旧端点，`user_saml` 只执行本地登出。
+固定 `user_oidc 8.10.1` 注册 `/index.php/apps/user_oidc/backchannel-logout/anas`、`backchannel` 与 session-required，并保存 ID Token/`sid` 以进行会话粒度撤销；Module 登出同时使用已注册 post-logout URI。管理员删除 IAM session/停用账号只有在 Provider 固定版本真实发送通知的 E2E 通过后才计为后台双向登出。固定 `user_saml 8.2.0` 注册 `/index.php/apps/user_saml/saml/sls` 的 Redirect binding；Redirect/POST 都是浏览器 SLO，不能推断为后台撤销。Provider 未发布 SLO（当前 Casdoor）时 Hook 清除旧端点并仅本地登出。每次 apply 会重建当前协议声明，清掉旧域名和相反协议字段。
 
 Web 与 cron 容器都会在 ANAS 内部 CA 存在时安装它。`user_ldap` 会在 cron 后台任务中周期更新目录属性，因此 cron 不仅共享 Nextcloud 数据，也必须共享 `/certs` 信任材料；CA 安装或 trust store 更新失败会阻断 cron 启动，公有 CA 则直接使用系统 trust store。
 

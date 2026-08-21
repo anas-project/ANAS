@@ -2,6 +2,7 @@ package runner
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -536,6 +537,12 @@ func (a *app) validateIAMClientRegistrations() error {
 		prefix := "ANAS_IAM_CLIENT__" + strings.ToUpper(strings.ReplaceAll(consumer, "-", "_")) + "__"
 		switch a.iamBindings[consumer] {
 		case interfaceOIDC:
+			if err := rejectIAMClientFields(a.env, consumer, prefix, []string{"SAML_SLS_URL", "SAML_SLS_BINDINGS"}, interfaceOIDC); err != nil {
+				return err
+			}
+			if err := validateIAMHTTPSList(consumer, prefix+"POST_LOGOUT_REDIRECT_URIS", a.env[prefix+"POST_LOGOUT_REDIRECT_URIS"]); err != nil {
+				return err
+			}
 			methods := splitIAMLogoutList(a.env[prefix+"OIDC_LOGOUT_METHODS"])
 			uri := strings.TrimSpace(a.env[prefix+"OIDC_LOGOUT_URI"])
 			if len(methods) > 0 && uri == "" {
@@ -547,6 +554,11 @@ func (a *app) validateIAMClientRegistrations() error {
 			if err := validateIAMLogoutValues(consumer, prefix+"OIDC_LOGOUT_METHODS", "OIDC_LOGOUT_METHODS", methods); err != nil {
 				return err
 			}
+			if uri != "" {
+				if err := validateIAMHTTPSURL(consumer, prefix+"OIDC_LOGOUT_URI", uri); err != nil {
+					return err
+				}
+			}
 			if raw := strings.TrimSpace(a.env[prefix+"OIDC_LOGOUT_SESSION_REQUIRED"]); raw != "" {
 				if len(methods) == 0 {
 					return fmt.Errorf("iam client %s publishes %sOIDC_LOGOUT_SESSION_REQUIRED but no OIDC logout method", consumer, prefix)
@@ -556,6 +568,11 @@ func (a *app) validateIAMClientRegistrations() error {
 				}
 			}
 		case interfaceSAML:
+			if err := rejectIAMClientFields(a.env, consumer, prefix, []string{
+				"POST_LOGOUT_REDIRECT_URIS", "OIDC_LOGOUT_URI", "OIDC_LOGOUT_METHODS", "OIDC_LOGOUT_SESSION_REQUIRED",
+			}, interfaceSAML); err != nil {
+				return err
+			}
 			bindings := splitIAMLogoutList(a.env[prefix+"SAML_SLS_BINDINGS"])
 			uri := strings.TrimSpace(a.env[prefix+"SAML_SLS_URL"])
 			if len(bindings) > 0 && uri == "" {
@@ -567,7 +584,43 @@ func (a *app) validateIAMClientRegistrations() error {
 			if err := validateIAMLogoutValues(consumer, prefix+"SAML_SLS_BINDINGS", "SAML_SLS_BINDINGS", bindings); err != nil {
 				return err
 			}
+			if uri != "" {
+				if err := validateIAMHTTPSURL(consumer, prefix+"SAML_SLS_URL", uri); err != nil {
+					return err
+				}
+			}
 		}
+	}
+	return nil
+}
+
+func rejectIAMClientFields(env map[string]string, consumer, prefix string, suffixes []string, activeInterface string) error {
+	for _, suffix := range suffixes {
+		key := prefix + suffix
+		if strings.TrimSpace(env[key]) != "" {
+			return fmt.Errorf("iam client %s publishes stale %s for active %s interface", consumer, key, activeInterface)
+		}
+	}
+	return nil
+}
+
+func validateIAMHTTPSList(consumer, key, raw string) error {
+	for _, value := range strings.Split(raw, ",") {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if err := validateIAMHTTPSURL(consumer, key, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateIAMHTTPSURL(consumer, key, raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return fmt.Errorf("iam client %s publishes invalid %s %q; want an absolute HTTPS URL", consumer, key, raw)
 	}
 	return nil
 }

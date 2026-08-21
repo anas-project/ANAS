@@ -42,7 +42,7 @@ modules:
 
 Samba AD 仍是人员和目录账号的事实来源。Casdoor 使用受限只读 Bind 经 LDAPS 导入用户并远程校验密码。独立 `casdoor_dirwatch` 订阅 Samba 的持久目录事件日志，经过防抖后立即触发一次 LDAP 导入；默认每 5 分钟的周期同步继续保留为兜底。本实现不启用 Casdoor 的 LDAP/AD 密码写回，也不把 Casdoor 本地用户记录当作目录权威。
 
-OIDC 和 SAML Consumer 会按通用 `ANAS_IAM_CLIENT__<APP>__*` 注册。Casdoor 当前不发布 SAML SLO；Consumer 只能执行应用本地登出。OIDC back-channel URI 会在 Consumer 明确声明时登记，但真实会话撤销仍待 E2E 验证。
+固定 Casdoor `3.143.0` 按通用 `ANAS_IAM_CLIENT__<APP>__*` 注册 OIDC/SAML Consumer。当前不发布未经验证的 SAML SLO，Consumer 只能本地登出。OIDC back-channel URI 仅在 Consumer 明确声明时登记；声明消失或协议切换会显式写空旧 URI，但真实通知与会话撤销仍待 E2E 验证。
 
 通用 `ALLOW_GROUPS` 尚未找到可证明等价的 Casdoor Application 策略，因此本模块不会伪装成已执行按应用 Group 门禁。未知 SAML 属性只能映射到 Casdoor 本地用户 ID，而非已验证的 `anasIdentityAnchor`；需要永久身份锚点的部署不得将此状态视为生产支持。
 

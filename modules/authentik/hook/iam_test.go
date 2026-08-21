@@ -194,6 +194,16 @@ func TestBlueprintTranslatesGenericRegistrations(t *testing.T) {
 	}
 }
 
+func TestSAMLPostLogoutRemainsBrowserMediated(t *testing.T) {
+	binding, method, err := selectAuthentikSAMLLogout("post")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding != "post" || method != "frontchannel_native" {
+		t.Fatalf("binding/method = %q/%q, want post/frontchannel_native", binding, method)
+	}
+}
+
 func TestBlueprintRequiresRegistrationFields(t *testing.T) {
 	e := boundEnv()
 	// netbird is listed as an OIDC client but published no client id.
@@ -202,12 +212,12 @@ func TestBlueprintRequiresRegistrationFields(t *testing.T) {
 	}
 }
 
-func TestAuthentikPrefersSAMLBackChannelWhenPOSTIsAvailable(t *testing.T) {
+func TestAuthentikTreatsPreferredSAMLPostAsBrowserBinding(t *testing.T) {
 	binding, method, err := selectAuthentikSAMLLogout("redirect,post")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if binding != "post" || method != "backchannel" {
-		t.Fatalf("SAML logout selection = %s/%s, want post/backchannel", binding, method)
+	if binding != "post" || method != "frontchannel_native" {
+		t.Fatalf("SAML logout selection = %s/%s, want post/frontchannel_native", binding, method)
 	}
 }

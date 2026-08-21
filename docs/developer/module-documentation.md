@@ -52,7 +52,7 @@ Module 目录是唯一事实来源。逐 Module VitePress 页面只存在于临�
 1. 快速信息：Module 名、版本/revision、状态、类别和运行时；
 2. 依赖：Module、Capability、Contract、接口和版本约束；
 3. 最简配置：符合当前 `config.yml` schema 的可复制示例；
-4. 身份与用户管理：支持的 LDAPS/OIDC/SAML/Kerberos 等协议，用户和 Group 的事实来源、同步方向、过滤规则和密码回写能力；
+4. 身份与用户管理：支持的 LDAPS/OIDC/SAML/Kerberos 等协议，用户和 Group 的事实来源、同步方向、过滤规则、密码回写能力，以及应用发起/IAM 发起两个方向的登出能力；
 5. 管理员登录与 IAM 故障恢复：日常登录、直接入口、私有/本地管理员、IAM 故障时的恢复路径；有应急账号时必须给出登录地址、实际用户名和密码获取命令；
 6. 管理命令：查询账号、获取凭据、轮换密码、查看配置、修改配置和计划变更的当前真实命令；
 7. 数据库支持：Provider/Consumer/无数据库、支持接口、默认接口、Resource、凭据和删除策略；
@@ -61,6 +61,23 @@ Module 目录是唯一事实来源。逐 Module VitePress 页面只存在于临�
 10. 版本化的时区与语言生成块。
 
 如果 Module 没有 IAM、数据库、本地管理员或密码回写能力，也必须保留相应章节并明确写“不支持/不适用”，不能省略后让读者猜测。
+
+### IAM 登出说明
+
+使用 OIDC 或 SAML 的 Module，其“身份与用户管理”章节必须另外记录：
+
+1. 用户从 Module 点击退出时，是只清本地会话，还是继续执行 OIDC RP-Initiated Logout / SAML SP-Initiated SLO；
+2. 用户从 IAM Portal 退出时，Module 是否接受 OIDC front-/back-channel 或 SAML IdP-Initiated SLO；
+3. 管理员无用户浏览器参与地撤销 IAM session 时，应用会话是否失效；
+4. 实际登记的 method/binding、endpoint 类型和固定插件/应用版本，不能记录 Secret 或 token；
+5. 按 `sid`、`sub`、`NameID/SessionIndex` 的撤销范围及浏览器、SameSite/CSP、TTL、重试限制；
+6. 真实会话 E2E 的脚本/测试入口和未覆盖项。
+
+`post_logout_redirect_uri` 只能写成退出后导航，不得描述为 IAM 通知应用的 endpoint。只有
+满足[使用 OIDC/SAML 的 Module 双向登出要求](/requirements/module-iam-bidirectional-logout)
+并具备真实会话证据时，README 才能使用“支持双向登出”或“支持后台撤销”。经
+ForwardAuth 接入的 Module 必须分别说明 IAM、认证网关和后端应用会话，不能把网关退出能力
+投影为后端能力。
 
 ### 配置参数表
 
@@ -141,13 +158,18 @@ Compose 和生成块中的 revision；不需要新镜像的测试不得修改。
 2. Module、Capability、Contract 依赖；
 3. Compose service、镜像/build、网络和 volume 拓扑；
 4. 与 README 一致的完整配置契约；
-5. 用户、Group、LDAPS、OIDC/SAML、身份锚点和密码回写数据流；
+5. 用户、Group、LDAPS、OIDC/SAML、身份锚点、密码回写，以及 RP/SP 发起和 IAM 发起登出的会话数据流；
 6. 管理入口、本地管理员和 IAM 故障恢复的实现；
 7. Secret 生命周期、存储格式、权限、投影路径、hash/明文边界和日志边界；
 8. 数据库 Contract、Resource identity、Provider/Consumer、凭据和删除策略；
 9. 导出与显式消费的环境变量，禁止把依赖闭包误写成无限环境变量授权；
 10. Hook、变更执行器、事务、回滚和失败补偿；
 11. 实现文件、单元测试、集成/E2E 入口和当前限制。
+
+技术文档的登出数据流必须画清或写清应用会话、IAM 中央会话、`sid`/`sub` 或
+`NameID`/`SessionIndex`、通知 endpoint、签名信任、重放存储和失败降级边界。OIDC 必须说明
+Logout Token 的签名/claim 校验；SAML 必须说明 LogoutRequest/LogoutResponse 校验和 binding
+限制。只支持 front-channel/Redirect 时必须明确依赖浏览器，不得暗示管理员后台撤销已覆盖。
 
 `config.env_prefix`、`exports` 和 `consumes` 必须使用环境变量安全的 upper-snake 命名；通配
 只允许一个前置或末尾 `*`，且禁止裸 `*`。不同 Module 的默认/自定义 prefix 不得相等或

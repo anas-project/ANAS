@@ -40,7 +40,7 @@ modules:
 
 Samba AD remains authoritative. Casdoor imports users and verifies passwords over LDAPS with a restricted read-only bind. A dedicated `casdoor_dirwatch` subscriber tails Samba's durable directory-event journal and triggers an LDAP import after debounce; the default five-minute schedule remains as fallback. This integration does not enable Casdoor LDAP/AD password writeback.
 
-OIDC and SAML consumers are registered through `ANAS_IAM_CLIENT__<APP>__*`. Casdoor does not publish a verified SAML SLO endpoint, so consumers perform local logout. Declared OIDC back-channel URIs are registered, but real session revocation still requires E2E acceptance.
+Pinned Casdoor `3.143.0` registers OIDC and SAML consumers through `ANAS_IAM_CLIENT__<APP>__*`. It publishes no unverified SAML SLO endpoint, so consumers perform local logout. A back-channel URI is registered only when explicitly declared; declaration removal or protocol switching writes an explicit empty value to clear the old URI, while actual notification and session revocation still require E2E acceptance.
 
 The generic `ALLOW_GROUPS` contract has no verified equivalent Casdoor application policy, and unknown SAML attributes currently fall back to Casdoor's local user ID rather than a verified `anasIdentityAnchor`. These gaps prevent production support.
 

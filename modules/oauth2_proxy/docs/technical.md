@@ -36,6 +36,10 @@
 
 自身不保存人员用户。它作为 OIDC Consumer 登录所选 IAM，并使用 `allow_groups` 限制访问。
 
+### 登出边界
+
+固定 `7.15.3` 的 `/oauth2/sign_out` 只清除 oauth2-proxy 网关 Cookie。IAM Cookie 和后端业务 session 不在其撤销范围。Hook 不发布 `OIDC_LOGOUT_*`，也不设置会在 Cookie 清理前无超时调用 IAM 的 `backend-logout-url`；统一浏览器 E2E 会暂停 IAM，验证本地 Cookie 仍先失效且受保护服务重新要求认证。
+
 | 能力 | 当前声明 |
 | --- | --- |
 | Directory / LDAPS | 不支持/不适用 |

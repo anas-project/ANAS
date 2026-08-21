@@ -36,6 +36,10 @@ This page records the current implementation, security boundaries, and verificat
 
 It stores no human users. It is an OIDC consumer of the selected IAM and enforces `allow_groups`.
 
+### Logout boundary
+
+Pinned `7.15.3` limits `/oauth2/sign_out` to clearing the oauth2-proxy gateway cookie. The IAM cookie and protected backend business session are outside its revocation scope. The hook publishes no `OIDC_LOGOUT_*` fields and does not set `backend-logout-url`, whose unbounded IAM call happens before cookie clearing. The unified browser E2E pauses IAM and verifies that the local cookie is invalidated first and the protected service requires authentication again.
+
 | Capability | Current declaration |
 | --- | --- |
 | Directory / LDAPS | unsupported/not applicable |

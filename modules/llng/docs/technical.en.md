@@ -44,7 +44,7 @@ Samba AD supplies users and groups. The Portal authenticates against the directo
 
 ### Application-session logout
 
-During `render_env`, the generic OIDC logout contract maps to LLNG's `oidcRPMetaDataOptionsLogoutUrl`, `LogoutType=back`, and `LogoutSessionRequired=1`. `PostLogoutRedirectUris` and bypass-confirm remain RP-initiated-logout settings and do not replace back-channel notification. SAML imports the SLS from SP metadata and keeps `SignSLOMessage=1`; Redirect SLO guarantees only browser-mediated IAM-initiated logout.
+For pinned `2.23.2`, `render_env` maps the generic OIDC logout contract to `oidcRPMetaDataOptionsLogoutUrl`, `LogoutType=back`, and `LogoutSessionRequired=1`. `PostLogoutRedirectUris` and bypass-confirm serve only RP-initiated logout and do not replace back-channel notification. SAML imports the SLS and keeps `SignSLOMessage=1`; Redirect and POST guarantee only browser-mediated SLO. The startup script deletes the complete OIDC RP/exported-variable and SAML SP registries before rebuilding the current client contract, so old endpoints and opposite-protocol configuration cannot survive.
 
 | Capability | Current declaration |
 | --- | --- |

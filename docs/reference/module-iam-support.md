@@ -7,7 +7,7 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 | `netbird` | 是 | 直接消费 IAM/OIDC | 已实现 |
 | `oauth2_proxy` | 是 | 直接消费 IAM/OIDC，并为 ForwardAuth consumer 提供门禁 | 已实现 |
 | `ddns_updater` | 间接 | 经 `oauth2_proxy` + Traefik ForwardAuth | 已实现 |
-| `nextcloud` | 是 | 默认使用官方 `user_oidc`；LDAPS provision 用户/组；`user_saml` 保留为显式 fallback | 已实现；OIDC back-channel 同步 IAM 登出和后台撤销，SAML Redirect SLO 仅覆盖浏览器参与登出 |
+| `nextcloud` | 是 | 默认使用官方 `user_oidc`；LDAPS provision 用户/组；`user_saml` 保留为显式 fallback | 已实现；具体登出能力按下方固定版本/Provider 矩阵判定 |
 | `meshcentral` | 是 | IAM/OIDC 认证；LDAPS 同步用户/组；OIDC group 映射应用访问和 site-admin | 已实现 |
 | `lam` | 否 | LDAPS 目录管理登录 | 不属于当前 IAM consumer |
 | `authentik` | 不适用 | IAM provider；另有固定 `akadmin` break-glass | 提供 OIDC/SAML，不把自身当普通 consumer |
@@ -19,6 +19,20 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 | `postgres`, `mariadb` | 否 | 数据库凭据/Adminer | 不是 IAM 登录 |
 | `samba_dc`, `samba_fs` | 否 | AD/LDAP/Kerberos/SMB | 不是 OIDC Web consumer |
 | `eturnal`, `freeradius`, `lego` | 否 | TURN/RADIUS/无交互 UI | 不适用 |
+
+## 固定版本登出矩阵
+
+“已通过”只表示表中列出的固定 Provider/Consumer 与场景；“受限”不会被汇总成双向登出。统一浏览器入口是 `test-env/scripts/server-iam-logout-matrix-e2e.sh`，脱敏 JSON 写入 `test-env/reports/iam-logout-*.json`。
+
+| Consumer 固定版本 | endpoint / binding | Module→IAM | IAM→Module | session 粒度 | 浏览器 | 故障/降级结果 | 验收状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Nextcloud `user_oidc 8.10.1` | RP logout + `/index.php/apps/user_oidc/backchannel-logout/anas` | RP-Initiated Logout | `sid` back-channel | 单个 OIDC session；同用户多 session/client 属安全矩阵必测项 | RP logout 需要；back-channel 不需要 | IAM 不可用时本地 session 必须先失效；Provider 不通知时标受限 | Authentik 浏览器/管理员删 session 已有 E2E；LLNG 浏览器已有 E2E；其余管理员撤销、隔离安全矩阵与 Casdoor 通知受限，等待统一矩阵 |
+| Nextcloud `user_saml 8.2.0` | `/index.php/apps/user_saml/saml/sls`, Redirect | SP-Initiated SLO | IdP-Initiated SLO | NameID + SessionIndex | 必须 | 无 SLO 时只本地登出 | Authentik Redirect 已有 E2E；LLNG Redirect 入口已实现待隔离 fixture；Casdoor 明确无 SLO |
+| MeshCentral `1.2.4` | discovery/provider RP logout + post-logout URI | 上游支持 | 无标准 receiver | 应用 Cookie/session | 必须 | 本地 session 先失效；IAM 不可用不得卡住本地退出 | 统一 Playwright 矩阵已实现；`state`、中央 session 结果未在当前主机 fixture 验收，故为“上游支持、待接入” |
+| NetBird Dashboard `2.90.9` | discovery `end_session_endpoint` + post-logout URI | 上游支持 | 无标准 receiver | Dashboard 本地认证状态 | 必须 | 本地状态先失效；无通知不声明 IAM→Module | 统一 Playwright 矩阵已实现；`state`、中央 session 结果未在当前主机 fixture 验收，故为“上游支持、待接入” |
+| oauth2-proxy `7.15.3` | `/oauth2/sign_out` | 仅清网关 Cookie | 无 | oauth2-proxy Cookie；不含 IAM/后端 session | 否 | IAM 停止仍清 Cookie，受保护服务重新认证 | 不发布 `OIDC_LOGOUT_*`，不配置 `backend-logout-url`；IAM 不可用 Playwright case 已实现待隔离 fixture |
+
+Provider 固定为 Authentik `2026.5.6`、LLNG `2.23.2`、Casdoor `3.143.0`。SAML HTTP-POST 与 Redirect 都是浏览器 binding，不能由 `post` 字面值推断为后台撤销。Casdoor 只登记显式 OIDC back-channel URI并在声明消失/协议切换时清理旧值，不发布未经 E2E 的 SAML SLO。
 
 ## 默认解析规则
 
@@ -42,10 +56,14 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 
 ## 后续实现门槛
 
+OIDC/SAML Module 的本地登出、应用发起登出、浏览器双向登出和后台双向登出必须按
+[使用 OIDC/SAML 的 Module 双向登出要求](/requirements/module-iam-bidirectional-logout)
+分别判定；本表中的“OIDC 已实现”不自动表示双向登出或管理员后台撤销已实现。
+
 把一个 Module 标为“OIDC 已实现”至少需要：Manifest OIDC interface、provider client registration、redirect URI/scope/claim/group 映射、Secret 传递、应用内验证和真实浏览器/HTTP 登录 E2E。Nextcloud 与 MeshCentral 由 `server-authentik-oidc-login-e2e.sh` 覆盖完整授权码登录、应用 session、目录身份和管理员组映射。Samba 密码接入分别由 `server-authentik-password-policy-e2e.sh` 和 `server-llng-password-policy-e2e.sh` 覆盖 Provider 页面预检、目录最终裁决、写回、错误映射和凭据切换。仅因为上游软件声称支持 OIDC 或改密，不能修改本表的实现状态。
 
-Nextcloud 的 IAM 发起登出由两套 OIDC matrix 保留原 Cookie 验证：Authentik 覆盖浏览器
+Nextcloud 的 IAM 发起登出由两套 OIDC matrix 保留原 Cookie 验证并阻止静默恢复：Authentik 覆盖浏览器
 登出和管理员删除 session，LLNG 覆盖浏览器登出；SAML fallback 的 Authentik E2E 覆盖
-Redirect SLO。SAML 后台撤销在 Nextcloud 正式声明 POST SLS 前不属于支持范围。
+Redirect SLO。现有 Redirect/POST SLS 都按浏览器 binding 处理；没有单独通过无浏览器 E2E 的正式服务端撤销能力时，SAML 后台撤销不属于支持范围。
 Provider 没有发布可选 `SAML_SLO_URL`（例如当前 Casdoor 集成）时，Nextcloud 只配置
 SSO 与签名证书，并执行应用本地登出，不得把普通退出页猜成标准 SLO endpoint。

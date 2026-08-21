@@ -49,6 +49,36 @@ test-env/
   reports/    Generated logs and command output.
 ```
 
+### IAM logout browser matrix
+
+The logout matrix pins `@playwright/test` to `1.55.0` and disables screenshots,
+video, and traces so credentials, cookies, SAML messages, and tokens cannot enter
+artifacts. Its custom reporter redacts query payloads and writes each JSON report
+with mode `0600` under `test-env/reports/`. Install the matching browser once:
+
+```sh
+npx playwright install chromium
+```
+
+With an already-applied fixture on a dedicated test Docker socket, run all
+applicable consumers for that provider/protocol:
+
+```sh
+ANAS_TEST_DOCKER_SOCKET=/run/anas-anchor-docker.sock \
+ANAS_TEST_IAM_PROVIDER=authentik \
+ANAS_TEST_IAM_PROTOCOL=oidc \
+ANAS_TEST_USERNAME='<fixture-user>' \
+ANAS_TEST_PASSWORD="$(< /path/to/0600-password-file)" \
+./test-env/scripts/server-iam-logout-matrix-e2e.sh
+```
+
+Use `ANAS_TEST_APPS` to select cases. Nextcloud runs Module- and IAM-initiated
+logout; MeshCentral and NetBird assert RP logout `state`, local invalidation, and
+central-session termination; oauth2-proxy pauses the selected IAM container and
+asserts local gateway-cookie clearing. SAML runs Nextcloud Redirect SLO and the
+Casdoor no-SLO/local-only result. The Shell fixture retains responsibility for
+container lifecycle and administrative session/account actions.
+
 Runtime state is written under `.anas-test/` at the refactor root:
 
 ```text

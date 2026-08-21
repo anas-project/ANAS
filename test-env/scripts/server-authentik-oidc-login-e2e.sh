@@ -48,7 +48,7 @@ curl_auth() {
 }
 
 verify_nextcloud_logout() {
-  local attempt meta_status session_after status
+	local attempt final meta_status session_after status
   case "$logout_mode" in
     browser)
       printf '== end Authentik browser session and wait for OIDC back-channel logout ==\n'
@@ -70,7 +70,15 @@ verify_nextcloud_logout() {
     meta_status=$(jq -r '.ocs.meta.statuscode // empty' "$body" 2>/dev/null || true)
     if [ "$status" != 000 ] && [ -n "$meta_status" ] && [ "$session_after" != "$username" ]; then
       printf 'nextcloud_session=revoked mode=%s status=%s\n' "$logout_mode" "$status"
-      return 0
+      final=$(curl_auth -L -o "$body" -w '%{url_effective}' "$nextcloud_url/apps/user_oidc/login/1")
+      case "$final" in
+        "https://$authentik_host:$entry_port"/if/flow/default-authentication-flow/*)
+          printf 'silent_reauthentication=blocked mode=%s\n' "$logout_mode"
+          return 0
+          ;;
+      esac
+      printf 'Nextcloud silently restored a session after Authentik %s logout: %s\n' "$logout_mode" "$final" >&2
+      return 1
     fi
     sleep 1
   done

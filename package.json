@@ -5,9 +5,11 @@
     "docs:dev": "node scripts/ci/dev-docs.mjs",
     "docs:build": "node scripts/ci/build-versioned-docs.mjs",
     "docs:test-versions": "node scripts/ci/docs-version-test.mjs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "e2e:iam-logout": "playwright test --config test-env/playwright/iam-logout.config.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "1.55.0",
     "vitepress": "1.6.4"
   }
 }

@@ -44,7 +44,7 @@ Samba AD 是用户和 Group 来源。Portal 使用目录认证，IAM 向 Consume
 
 ### 应用会话登出
 
-通用 OIDC 登出方法在 `render_env` 中映射为 LLNG 的 `oidcRPMetaDataOptionsLogoutUrl`、`LogoutType=back` 和 `LogoutSessionRequired=1`；`PostLogoutRedirectUris` 与免确认设置继续服务 RP 发起登出，不能替代 back-channel。SAML 从 SP metadata 读取 SLS，保持 `SignSLOMessage=1`；Redirect SLO 仅保证浏览器参与的 IAM 发起登出。
+固定 `2.23.2` 中，通用 OIDC 登出方法在 `render_env` 映射为 `oidcRPMetaDataOptionsLogoutUrl`、`LogoutType=back` 和 `LogoutSessionRequired=1`；`PostLogoutRedirectUris` 与免确认设置只服务 RP 发起登出，不能替代 back-channel。SAML 从 SP metadata 读取 SLS并保持 `SignSLOMessage=1`；Redirect/POST 都只保证浏览器 SLO。启动配置脚本先删除整个 `oidcRPMetaDataOptions`/`oidcRPMetaDataExportedVars` 与 SAML SP registry，再从当前 Client 契约重建，确保旧 endpoint 和相反协议配置不残留。
 
 | 能力 | 当前声明 |
 | --- | --- |

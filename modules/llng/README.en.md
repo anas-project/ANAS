@@ -34,7 +34,7 @@ modules:
 
 Samba AD supplies users and groups. The Portal authenticates against the directory, and IAM publishes OIDC/SAML endpoints and group attributes to consumers. `Admins` may enter the Manager.
 
-When an OIDC RP declares a standard logout endpoint, the module prefers LLNG back-channel logout and carries the session-required capability; signing out of the LLNG Portal can therefore revoke capable application sessions such as Nextcloud. SAML continues to import the SLS from SP metadata and signs SLO messages; Redirect SLO requires browser participation.
+Pinned LLNG `2.23.2` configures back-channel logout and session-required when an OIDC RP declares a standard endpoint; Portal logout can revoke application sessions whose E2E has passed. SAML imports the SLS from SP metadata and signs SLO messages; Redirect and POST both require a browser. Every apply first removes old `LogoutUrl`, OIDC RP, and SAML SLS/SP metadata, then rebuilds the current protocol, covering declaration removal, domain changes, protocol switches, and repeated apply.
 
 | Capability | Current declaration |
 | --- | --- |

@@ -44,6 +44,8 @@ identity:
 
 It declares an OIDC consumer and application group, but administrator-role mapping remains a release blocker.
 
+Pinned Dashboard `2.90.9` discovers the provider logout endpoint and initiates RP logout, but exposes no standard IAM-to-Dashboard notification endpoint. ANAS upgrades it to “Module-initiated logout” only after the browser matrix verifies `state`, local-session invalidation first, and termination of the central session. The current status is “upstream support, integration pending”; browserless bidirectional logout is not declared.
+
 | Capability | Current declaration |
 | --- | --- |
 | Directory / LDAPS | unsupported/not applicable |

@@ -37,7 +37,7 @@ modules:
 
 Samba AD 是人员与组的事实来源。LDAP Source 通过 LDAPS 同步用户和组；`ldap_password_writeback` 控制是否允许 Authentik 使用受限服务账号回写普通用户密码。应用登录使用按 Consumer 生成的 OIDC 或 SAML 端点。`Admins` 映射为 Authentik superuser，`APP_all`/`APP_authentik` 只授予访问权。
 
-对于声明标准登出端点的 Consumer，OIDC 优先使用 back-channel logout，并登记独立的 logout redirect URI；这同时覆盖浏览器登出、管理员删会话和账号停用。SAML 按 SP 声明的 SLS binding 配置；Nextcloud 的 Redirect SLS 使用 `frontchannel_native`，必须由浏览器完成 SLO。
+固定 Authentik `2026.5.6` 对声明标准端点的 OIDC Consumer 优先使用 back-channel logout，并登记独立 logout redirect URI；是否覆盖浏览器登出、管理员删 session 和账号停用按具体 Consumer E2E 分别记录。SAML Redirect 和 POST 都是浏览器 binding，统一映射为 `frontchannel_native`，绝不把普通 POST 解释为后台撤销。
 
 | 能力 | 当前声明 |
 | --- | --- |

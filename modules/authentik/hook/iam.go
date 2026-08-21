@@ -292,7 +292,11 @@ func selectAuthentikOIDCLogoutMethod(methods string) (string, error) {
 func selectAuthentikSAMLLogout(bindings string) (binding, method string, err error) {
 	for _, candidate := range splitCSV(bindings) {
 		if candidate == "post" {
-			return "post", "backchannel", nil
+			// SAML HTTP-POST is a browser binding. It carries a form through the
+			// user agent and must never be advertised as a server-to-server
+			// revocation channel merely because authentik calls its option
+			// "backchannel".
+			return "post", "frontchannel_native", nil
 		}
 	}
 	for _, candidate := range splitCSV(bindings) {

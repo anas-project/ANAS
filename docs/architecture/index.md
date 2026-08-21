@@ -10,7 +10,7 @@
 | [Module、Contract 与 Resource](module-contract-resource-design.md) | 当前模型 | 独立发布单元、跨模块协议、持久资源及 Provider operation |
 | [管理员账号系统](admin-account-system.md) | 当前模型与路线图 | 目录管理员、应用角色、本地账号、Secret 与 CLI 生命周期 |
 | [Samba AD 用户、组命名与权限规划](samba-ad-user-planning.md) | 当前目录与权限规范 | 目录结构、部门/角色/应用/资源组命名、账号分类与权限矩阵 |
-| [IAM 能力](iam-capability-design.md) | 当前模型 | IAM provider、OIDC/SAML 协议选择与绑定 |
+| [IAM 能力](iam-capability-design.md) | 当前模型 | IAM provider、OIDC/SAML 协议选择、绑定与双向登出注册 |
 | [应用目录](app-catalog-design.md) | 设计 | 门户条目、可见性与执行点授权映射 |
 | [动态 DNS 能力](dynamic-dns-capability-design.md) | 当前模型 | DDNS 实现选择、凭据和 Web 认证 |
 | [凭据轮换](credential-rotation.md) | 目标方案与实施基线 | deployment 驱动的凭据协调、轮换和回滚 |

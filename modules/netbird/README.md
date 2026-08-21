@@ -44,6 +44,8 @@ identity:
 
 声明为 OIDC Consumer，并需要应用 Group，但管理员角色映射仍是发布阻塞项。
 
+固定 Dashboard `2.90.9` 从 discovery 读取 logout endpoint 并发起 RP logout，但没有标准 IAM→Dashboard 通知 endpoint。ANAS 只在浏览器矩阵验证 `state`、本地 session 先失效和中央 session 结束后升级为“应用发起登出”；当前为“上游支持、待接入”，不声明后台双向登出。
+
 | 能力 | 当前声明 |
 | --- | --- |
 | Directory / LDAPS | 不支持/不适用 |

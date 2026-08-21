@@ -41,6 +41,8 @@ identity:
 
 It stores no human users. It is an OIDC consumer of the selected IAM and enforces `allow_groups`.
 
+Pinned `7.15.3` guarantees only that `/oauth2/sign_out` clears the gateway cookie; the IAM cookie and any protected backend session are separate state. The module publishes no `OIDC_LOGOUT_*` fields and does not configure `backend-logout-url`, whose unbounded IAM request runs before cookie clearing. Local logout must therefore still succeed while IAM is down and the protected route must require authentication again, without claiming that the IAM or backend-business session ended.
+
 | Capability | Current declaration |
 | --- | --- |
 | Directory / LDAPS | unsupported/not applicable |

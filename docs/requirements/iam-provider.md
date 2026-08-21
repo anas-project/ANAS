@@ -10,6 +10,10 @@ updated: 2026-08-21
 本文是 ANAS 引入第三种 IAM 实现时的验收契约。Provider 名称、管理 API 和内部对象
 模型可以不同，但不得要求应用 Module 感知具体实现。
 
+应用 Consumer 侧如何发起登出、暴露会话通知 endpoint、验证 OIDC Logout Token/SAML SLO
+消息并证明应用会话失效，见[使用 OIDC/SAML 的 Module 双向登出要求](module-iam-bidirectional-logout.md)。
+Provider 与 Module 两侧必须同时通过，组合能力才能标为双向登出已支持。
+
 ## 1. 身份与目录硬约束
 
 1. Samba AD 是业务用户、业务组、账号启停状态和目录属性的唯一事实来源。IAM 本地

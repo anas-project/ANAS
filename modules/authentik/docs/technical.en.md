@@ -45,7 +45,7 @@ Samba AD is authoritative for people and groups. An LDAP Source synchronizes use
 
 ### Application-session logout
 
-The OIDC blueprint labels authorization and post-logout callbacks as `authorization` and `logout`, then selects the strongest declared `logout_uri/logout_method`, preferring `backchannel`. Authentik browser logout, administrative session deletion, and account deactivation therefore send a signed logout token to capable RPs. SAML maps a Redirect SLS to `frontchannel_native` and signs LogoutRequest/LogoutResponse messages; only a POST SLS can select headless `backchannel` logout.
+For pinned `2026.5.6`, the OIDC blueprint labels authorization and post-logout callbacks as `authorization` and `logout`, then selects the strongest declared `logout_uri/logout_method`, preferring `backchannel`. Whether browser logout, administrative session deletion, or account disable sends a valid signed token to a particular RP is decided by that pinned consumer's E2E. Both SAML Redirect and POST map to browser-mediated `frontchannel_native` and sign LogoutRequest/LogoutResponse messages; HTTP-POST is not a headless channel.
 
 | Capability | Current declaration |
 | --- | --- |

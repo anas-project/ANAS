@@ -297,6 +297,11 @@ func TestOIDCBackChannelLogoutIsRendered(t *testing.T) {
 			t.Fatalf("LLNG config script does not set %s", want)
 		}
 	}
+	for _, want := range []string{".oidcRPMetaDataOptions", ".oidcRPMetaDataExportedVars", ".samlSPMetaDataOptions"} {
+		if !strings.Contains(string(script), "del(.locationRules, "+want) && !strings.Contains(string(script), ", "+want) {
+			t.Fatalf("LLNG config script does not clear stale registry %s before rebuilding", want)
+		}
+	}
 }
 
 func TestApplyClientRegistrationsRequiresMandatoryFields(t *testing.T) {

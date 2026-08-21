@@ -36,7 +36,7 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 
 ## IAM 契约
 
-- OIDC：发布部署级 issuer/discovery，按 Consumer 注册 client、redirect URI 与显式 back-channel URI。
+- OIDC：固定 `3.143.0` 发布部署级 issuer/discovery，按 Consumer 注册 client、redirect URI 与显式 back-channel URI；声明消失或切换 SAML 时用空值清理旧 URI，真实通知仍为受限/待验收。
 - SAML：发布 metadata、SSO 和签名证书；不发布未经证实的 SLO。
 - 授权：当前不执行 `ALLOW_GROUPS`，不得声称按应用 Group 门禁。
 - 属性：常用用户名、邮件和 Group 有明确映射；未知属性退回 `$user.id`，不等于已验证的 Samba 永久锚点。

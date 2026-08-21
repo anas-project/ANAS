@@ -57,7 +57,7 @@ LDAPS provisioning manages users and groups; OIDC is the preferred login protoco
 
 ### IAM-initiated logout
 
-The OIDC registration publishes `/index.php/apps/user_oidc/backchannel-logout/anas`, the `backchannel` method, and session-required support. The official `user_oidc` app handles the signed logout token, so browser logout, administrative IAM-session deletion, and account deactivation can revoke the matching Nextcloud session. SAML publishes `/index.php/apps/user_saml/saml/sls` with Redirect binding. When the provider publishes optional SLO, that path requires the browser to complete `LogoutRequest -> SLS -> LogoutResponse` and does not guarantee headless administrative revocation. Without provider SLO, the hook clears stale endpoints and `user_saml` performs local logout only.
+Pinned `user_oidc 8.10.1` registers `/index.php/apps/user_oidc/backchannel-logout/anas`, `backchannel`, and session-required support, preserving the ID Token/`sid` for session-granular revocation; Module logout also uses the registered post-logout URI. Administrative session deletion or account disable counts as browserless bidirectional logout only after the pinned provider actually emits the notification in E2E. Pinned `user_saml 8.2.0` registers `/index.php/apps/user_saml/saml/sls` with Redirect binding. Redirect and POST are both browser SLO, never inferred to be headless revocation. When a provider publishes no SLO (current Casdoor), the hook removes stale endpoints and keeps logout local. Every apply rebuilds the current protocol declaration and removes old-domain and opposite-protocol fields.
 
 Both the web and cron containers install the ANAS internal CA when it is
 present. Because `user_ldap` periodically refreshes directory attributes from

@@ -41,6 +41,8 @@ identity:
 
 自身不保存人员用户。它作为 OIDC Consumer 登录所选 IAM，并使用 `allow_groups` 限制访问。
 
+固定 `7.15.3` 的 `/oauth2/sign_out` 只保证清除网关 Cookie；IAM Cookie 与受保护后端自身 session 是不同状态。Module 不发布 `OIDC_LOGOUT_*`，也不配置会在清 Cookie 前用无超时请求 IAM 的 `backend-logout-url`。因此 IAM 停止时本地登出仍应成功，后续访问重新要求认证，但不宣称结束 IAM 或后端业务 session。
+
 | 能力 | 当前声明 |
 | --- | --- |
 | Directory / LDAPS | 不支持/不适用 |

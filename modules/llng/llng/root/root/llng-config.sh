@@ -38,11 +38,13 @@ lemonldap_ng_cli_set="$lemonldap_ng_cli -yes 1 -force 1 set"
 lemonldap_ng_cli_addkey="$lemonldap_ng_cli -yes 1 -force 1 addKey"
 lemonldap_ng_cli_delkey="$lemonldap_ng_cli -yes 1 -force 1 delKey"
 
-# delete apps
+# Rebuild every ANAS RP/SP registry from the current runner contract. Clearing
+# both protocols first is what removes stale LogoutUrl/SLS data after a
+# declaration disappears, a domain changes, or a client switches protocol.
 config_version=$( $lemonldap_ng_cli info | grep -oP 'Num\s+:\s+\K\d+' )
 
 cat /var/lib/lemonldap-ng/conf/lmConf-$config_version.json \
-  | jq 'del(.locationRules, .samlSPMetaDataXML, .samlSPMetaDataOptions, .samlSPMetaDataExportedAttributes, .applicationList."1apps")' \
+  | jq 'del(.locationRules, .oidcRPMetaDataOptions, .oidcRPMetaDataExportedVars, .samlSPMetaDataXML, .samlSPMetaDataOptions, .samlSPMetaDataExportedAttributes, .applicationList."1apps")' \
   | jq --arg domain "$LLNG_MANAGER_DOMAIN" --arg group "$SAMBA_DC_ADMIN_GROUP_NAME" '. + {locationRules: {($domain): {default: "inGroup(\"\($group)\")"}}}' \
   > /tmp/config_new.json
 mv /tmp/config_new.json /var/lib/lemonldap-ng/conf/lmConf-$config_version.json

@@ -39,6 +39,10 @@ This page records the current implementation, security boundaries, and verificat
 
 It declares an OIDC consumer and application group, but administrator-role mapping remains a release blocker.
 
+### Logout boundary
+
+Pinned Dashboard `2.90.9` drives RP logout from the discovery endpoint. The unified browser matrix must verify `state`, Dashboard-local session invalidation first, central IAM-session termination, and failure of silent recovery; until then its status is “upstream support, integration pending.” This version exposes no standard front/back-channel receiver, so IAM-to-NetBird logout is not declared.
+
 | Capability | Current declaration |
 | --- | --- |
 | Directory / LDAPS | unsupported/not applicable |

@@ -48,9 +48,15 @@ while IFS= read -r item; do
   image="$(jq -r '.image' <<<"$item")"
   tag="$(jq -r '.tag' <<<"$item")"
   expected='${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/'"${image}:${tag}"
+  expected_from='${ANAS_IMAGE_REGISTRY}/'"${image}:${tag}"
   while IFS= read -r module; do
-    if ! grep -Fq "image: ${expected}" "modules/${module}/docker-compose.yml"; then
-      echo "${module}/docker-compose.yml must reference ${expected}" >&2
+    # A module may wrap the mirrored upstream image in its own published
+    # runtime image (for example oauth2-proxy's local-first bootstrap). In
+    # that case the immutable mirror belongs in the Dockerfile FROM rather
+    # than as the Compose runtime image.
+    if ! grep -Fq "image: ${expected}" "modules/${module}/docker-compose.yml" &&
+       ! grep -R -Fq --include='Dockerfile' "FROM ${expected_from}" "modules/${module}"; then
+      echo "${module} Compose or Dockerfile must reference ${expected}" >&2
       exit 1
     fi
   done < <(jq -r '.modules[]' <<<"$item")

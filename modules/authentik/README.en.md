@@ -37,7 +37,7 @@ modules:
 
 Samba AD is authoritative for people and groups. An LDAP Source synchronizes users and groups over LDAPS; `ldap_password_writeback` controls whether the restricted service identity may write ordinary user passwords. Consumers use per-application OIDC or SAML endpoints. `Admins` maps to authentik superuser, while `APP_all` and `APP_authentik` grant access only.
 
-For consumers that declare standard logout endpoints, OIDC prefers back-channel logout and registers logout redirect URIs separately; browser logout, administrative session deletion, and account deactivation are all covered. SAML follows the SP's SLS binding; Nextcloud's Redirect SLS uses `frontchannel_native` and requires browser participation.
+Pinned Authentik `2026.5.6` prefers OIDC back-channel logout for consumers that declare a standard endpoint and registers logout redirects separately; browser logout, administrative session deletion, and account deactivation are credited per consumer only after their E2Es pass. Both SAML Redirect and POST are browser bindings and map to `frontchannel_native`; an ordinary POST is never interpreted as browserless revocation.
 
 | Capability | Current declaration |
 | --- | --- |

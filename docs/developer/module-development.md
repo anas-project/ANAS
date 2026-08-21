@@ -40,6 +40,75 @@ revision。
 
 开始实现前阅读[Module、Contract 与 Resource 设计](/architecture/module-contract-resource-design)和[环境变量契约](/reference/module-environment-variables)。
 
+## 使用 OIDC/SAML 的 Module：双向登出设计规范
+
+任何直接消费 `iam` capability 并使用 OIDC 或 SAML 建立应用会话的 Module，都必须在设计
+阶段分别回答以下问题：
+
+1. 用户从应用点击退出时，应用会话是否失效，IAM 中央会话是否也失效？
+2. 用户从 IAM 退出时，IAM 能否通知应用并使原应用会话失效？
+3. 管理员在无用户浏览器参与时撤销 IAM session，应用会话是否立即失效？
+
+详细安全和验收规则以[使用 OIDC/SAML 的 Module 双向登出要求](/requirements/module-iam-bidirectional-logout)
+为准。Module 设计必须遵守以下边界。
+
+### Provider-neutral 注册
+
+Module 只读取自己的 `ANAS_IAM_BINDING__<APP>__*`，并在 `calculate` Hook 发布自己的
+`ANAS_IAM_CLIENT__<APP>__*`。不得按 Provider 名称分支，也不得生成 LLNG、Authentik、
+Casdoor 或其他实现的私有字段。
+
+OIDC Module 支持 IAM 主动登出时发布：
+
+```dotenv
+ANAS_IAM_CLIENT__<APP>__POST_LOGOUT_REDIRECT_URIS=https://app.example/logged-out
+ANAS_IAM_CLIENT__<APP>__OIDC_LOGOUT_URI=https://app.example/oidc/backchannel-logout
+ANAS_IAM_CLIENT__<APP>__OIDC_LOGOUT_METHODS=backchannel,frontchannel
+ANAS_IAM_CLIENT__<APP>__OIDC_LOGOUT_SESSION_REQUIRED=true
+```
+
+SAML Module 支持 SLO 时发布：
+
+```dotenv
+ANAS_IAM_CLIENT__<APP>__SAML_SLS_URL=https://app.example/saml/sls
+ANAS_IAM_CLIENT__<APP>__SAML_SLS_BINDINGS=redirect,post
+```
+
+URI 与 method/binding 必须成对。`POST_LOGOUT_REDIRECT_URIS` 只是导航允许列表，不能替代
+OIDC 通知 endpoint；普通 `/logout` 页面不能冒充 back-channel。协议切换、域名变化和重复
+apply 必须清除另一协议或旧域名的残留字段。
+
+### OIDC 实现边界
+
+- Module 发起登出必须通过 discovery 的 `end_session_endpoint`，使用标准
+  `id_token_hint`/`client_id`、已登记的 `post_logout_redirect_uri` 和随机 `state`；应用会话
+  必须在离开应用前失效。
+- IAM 发起登出优先声明 back-channel。Endpoint 必须验证 Logout Token 的签名、算法、
+  `iss`、`aud`、`events`、时间、`jti` 防重放和 `sid`/`sub`，并只撤销目标应用会话。
+- 只支持 front-channel 时必须明确浏览器、iframe、SameSite/CSP 限制，并标注不支持管理员
+  无浏览器后台撤销。
+- 上游固定版本没有标准通知 endpoint 时，Module 必须省略 `OIDC_LOGOUT_*`，明确记录“仅
+  本地登出”或“只支持应用发起登出”，不得自建一个不符合标准的猜测路径。
+
+### SAML 实现边界
+
+- SP 发起登出必须使用 IAM binding/metadata 发布的 SLO URL，保存并使用登录时的 `NameID`、
+  format 和 `SessionIndex`，验证签名、Destination、Issuer、`InResponseTo`、状态和时效。
+- IdP 发起登出只有在固定应用版本正式暴露 SLS 时才能声明。Redirect SLS 只保证浏览器参与
+  的双向登出；管理员无浏览器撤销必须有正式 POST/back-channel 支持和独立真实 E2E。
+- Provider 不发布可选 `SAML_SLO_URL` 时，Module 必须清除旧值并执行本地登出，不能继续
+  调用历史 endpoint。
+
+### 发布门禁
+
+双向登出是 `Provider × 协议 × Module` 的组合能力，不是看到 discovery/metadata 或配置字段
+就算完成。Module 单元测试必须覆盖字段发布、协议切换、缺项和非法值；真实容器 E2E 必须
+保存登出前应用 Cookie，并分别验证应用发起、IAM 发起和声称支持时的管理员无浏览器撤销。
+只检查 302、退出页或 token TTL 不算通过。
+
+经 `oauth2-proxy`/ForwardAuth 间接接入的 Module 必须分别说明 IAM 会话、网关 Cookie 和后端
+应用会话的失效范围；网关支持退出不自动证明后端应用支持双向登出。
+
 ## 管理界面与本地管理员账号
 
 每个有管理界面的 Module 都必须先判断实际登录拓扑，再决定是否声明

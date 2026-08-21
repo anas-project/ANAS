@@ -82,3 +82,38 @@ func TestApplyNextcloudSAMLBindingWithoutOptionalSLO(t *testing.T) {
 		t.Fatal("stale SAML SLO response endpoint was retained")
 	}
 }
+
+func TestNextcloudProtocolSwitchRebuildsRegistration(t *testing.T) {
+	e := map[string]string{
+		"ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE": "oidc",
+		"NEXTCLOUD_DOMAIN_FULL":                  "https://old.example",
+		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE":     "anasIdentityAnchor",
+	}
+	secrets := &secretStore{values: map[string]string{}}
+	if err := publishClientRegistration(e, "APP_nextcloud", secrets); err != nil {
+		t.Fatal(err)
+	}
+	e["ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE"] = "saml"
+	e["NEXTCLOUD_DOMAIN_FULL"] = "https://new.example"
+	if err := publishClientRegistration(e, "APP_nextcloud", secrets); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"POST_LOGOUT_REDIRECT_URIS", "OIDC_LOGOUT_URI", "OIDC_LOGOUT_METHODS", "OIDC_LOGOUT_SESSION_REQUIRED"} {
+		if got := e[iamClientPrefix+suffix]; got != "" {
+			t.Errorf("stale OIDC %s = %q after SAML switch", suffix, got)
+		}
+	}
+	if got := e[iamClientPrefix+"SAML_SLS_URL"]; got != "https://new.example/index.php/apps/user_saml/saml/sls" {
+		t.Fatalf("SAML SLS URL = %q after domain/protocol switch", got)
+	}
+
+	e["ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE"] = "oidc"
+	if err := publishClientRegistration(e, "APP_nextcloud", secrets); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"SAML_SLS_URL", "SAML_SLS_BINDINGS", "SP_METADATA_URL", "SP_ENTITY_ID", "ACS_URL"} {
+		if got := e[iamClientPrefix+suffix]; got != "" {
+			t.Errorf("stale SAML %s = %q after OIDC switch", suffix, got)
+		}
+	}
+}

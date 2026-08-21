@@ -442,6 +442,57 @@ func TestIAMSAMLLogoutClientContractRequiresEndpointAndBinding(t *testing.T) {
 	}
 }
 
+func TestIAMLogoutClientContractRequiresAbsoluteHTTPSURLs(t *testing.T) {
+	prefix := "ANAS_IAM_CLIENT__NEXTCLOUD__"
+	a := &app{
+		iamProvider: "llng",
+		iamBindings: map[string]string{"nextcloud": interfaceOIDC},
+		env: map[string]string{
+			prefix + "POST_LOGOUT_REDIRECT_URIS": "https://nc.example/logout, /relative",
+		},
+	}
+	if err := a.validateIAMClientRegistrations(); err == nil || !strings.Contains(err.Error(), "absolute HTTPS URL") {
+		t.Fatalf("error = %v, want relative post-logout redirect URI rejected", err)
+	}
+	a.env[prefix+"POST_LOGOUT_REDIRECT_URIS"] = "http://nc.example/logout"
+	if err := a.validateIAMClientRegistrations(); err == nil || !strings.Contains(err.Error(), "absolute HTTPS URL") {
+		t.Fatalf("error = %v, want insecure post-logout redirect URI rejected", err)
+	}
+	a.env[prefix+"POST_LOGOUT_REDIRECT_URIS"] = "https://nc.example/logout"
+	a.env[prefix+"OIDC_LOGOUT_URI"] = "http://nc.example/backchannel"
+	a.env[prefix+"OIDC_LOGOUT_METHODS"] = "backchannel"
+	if err := a.validateIAMClientRegistrations(); err == nil || !strings.Contains(err.Error(), "absolute HTTPS URL") {
+		t.Fatalf("error = %v, want insecure back-channel URI rejected", err)
+	}
+	a.env[prefix+"OIDC_LOGOUT_URI"] = "https://nc.example/backchannel"
+	if err := a.validateIAMClientRegistrations(); err != nil {
+		t.Fatalf("valid HTTPS logout registration rejected: %v", err)
+	}
+}
+
+func TestIAMLogoutClientContractRejectsOppositeProtocolFields(t *testing.T) {
+	prefix := "ANAS_IAM_CLIENT__NEXTCLOUD__"
+	a := &app{
+		iamProvider: "authentik",
+		iamBindings: map[string]string{"nextcloud": interfaceOIDC},
+		env: map[string]string{
+			prefix + "SAML_SLS_URL":      "https://nc.example/sls",
+			prefix + "SAML_SLS_BINDINGS": "redirect",
+		},
+	}
+	if err := a.validateIAMClientRegistrations(); err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("error = %v, want stale SAML declaration rejected after switch to OIDC", err)
+	}
+	a.iamBindings["nextcloud"] = interfaceSAML
+	delete(a.env, prefix+"SAML_SLS_URL")
+	delete(a.env, prefix+"SAML_SLS_BINDINGS")
+	a.env[prefix+"OIDC_LOGOUT_URI"] = "https://nc.example/backchannel"
+	a.env[prefix+"OIDC_LOGOUT_METHODS"] = "backchannel"
+	if err := a.validateIAMClientRegistrations(); err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("error = %v, want stale OIDC declaration rejected after switch to SAML", err)
+	}
+}
+
 func TestIAMEndpointsAreResolvedPerConsumer(t *testing.T) {
 	reg := iamFixtureRegistry(t)
 	a := newIAMApp(reg, iamConfig([]string{"nextcloud", "netbird"}, "llng", "", nil))

@@ -100,6 +100,14 @@ func TestMeshcentralPublishesOIDCRegistration(t *testing.T) {
 	if err := calcMeshcentral(env, "", secrets); err != nil {
 		t.Fatal(err)
 	}
+	if env[meshcentralIAMClientPrefix+"POST_LOGOUT_REDIRECT_URIS"] == "" {
+		t.Fatal("MeshCentral must register its fixed-version RP post-logout URI")
+	}
+	for _, suffix := range []string{"OIDC_LOGOUT_URI", "OIDC_LOGOUT_METHODS"} {
+		if got := env[meshcentralIAMClientPrefix+suffix]; got != "" {
+			t.Fatalf("MeshCentral must not invent an IAM-to-Module receiver: %s=%q", suffix, got)
+		}
+	}
 	checks := map[string]string{
 		"ANAS_IAM_CLIENT__MESHCENTRAL__INTERFACE":     "oidc",
 		"ANAS_IAM_CLIENT__MESHCENTRAL__CLIENT_ID":     "meshcentral",

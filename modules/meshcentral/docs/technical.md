@@ -56,6 +56,10 @@ provisioning 使用，不构成浏览器登录或故障回退入口。
 
 浏览器认证强制使用 OIDC-only；LDAPS 单独负责 users/groups provisioning，不接受本地或 LDAP 密码登录。启用应用过滤时，`APP_meshcentral`、`APP_all` 或管理员组可访问，管理员组同时映射 site-admin。
 
+### 登出边界
+
+固定 `1.2.4` 使用上游 RP logout 与已注册 post-logout URI。`server-iam-logout-matrix-e2e.sh` 必须捕获 Provider logout 导航并验证非空 `state`、本地 session 先失效、中央 session 不可静默恢复；通过前只记录“上游支持、待接入”。该版本没有标准 front/back-channel receiver，故不声明 IAM→MeshCentral 或后台双向登出。
+
 | 能力 | 当前声明 |
 | --- | --- |
 | Directory / LDAPS | ldaps (`users, groups`) |

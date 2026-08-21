@@ -29,6 +29,16 @@ const (
 // the deployment selected.
 func publishClientRegistration(e map[string]string, allowGroups string, secrets *secretStore) error {
 	protocol := defaultValue(defaultValue(e[iamBindingPrefix+"INTERFACE"], e["NEXTCLOUD_IAM_PROTOCOL"]), "oidc")
+	// calculate may be applied repeatedly to the same environment during a
+	// protocol or domain migration. Rebuild the protocol-specific registration
+	// so the selected provider never sees endpoints from the previous mode.
+	for _, suffix := range []string{
+		"CLIENT_ID", "CLIENT_SECRET", "REDIRECT_URIS", "POST_LOGOUT_REDIRECT_URIS",
+		"OIDC_LOGOUT_URI", "OIDC_LOGOUT_METHODS", "OIDC_LOGOUT_SESSION_REQUIRED", "SCOPES",
+		"SP_METADATA_URL", "SP_ENTITY_ID", "ACS_URL", "NAME_ID_FORMAT", "SAML_SLS_URL", "SAML_SLS_BINDINGS",
+	} {
+		delete(e, iamClientPrefix+suffix)
+	}
 	e[iamClientPrefix+"INTERFACE"] = protocol
 	e[iamClientPrefix+"ATTRIBUTES"] = "name:displayName:1,preferred_username:sAMAccountName:1,email:mail:1," + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":1"
 	e[iamClientPrefix+"ALLOW_GROUPS"] = allowGroups
@@ -71,6 +81,9 @@ func applyIAMBinding(e map[string]string) error {
 	e["NEXTCLOUD_IAM_PROTOCOL"] = iface
 	switch iface {
 	case "oidc":
+		for _, key := range []string{"NEXTCLOUD_SAML_IDP_ENTITY_ID", "NEXTCLOUD_SAML_IDP_SSO", "NEXTCLOUD_SAML_IDP_SLO", "NEXTCLOUD_SAML_IDP_SLO_RESPONSE", "NEXTCLOUD_SAML_IDP_CERT"} {
+			delete(e, key)
+		}
 		for _, field := range []struct{ src, dst string }{
 			{"OIDC_ISSUER_URL", "NEXTCLOUD_OIDC_ISSUER_URL"},
 			{"OIDC_DISCOVERY_URL", "NEXTCLOUD_OIDC_DISCOVERY_URL"},
@@ -85,6 +98,9 @@ func applyIAMBinding(e map[string]string) error {
 			return fmt.Errorf("nextcloud OIDC client credentials are empty")
 		}
 	case "saml":
+		for _, key := range []string{"NEXTCLOUD_OIDC_ISSUER_URL", "NEXTCLOUD_OIDC_DISCOVERY_URL"} {
+			delete(e, key)
+		}
 		for _, field := range []struct{ src, dst string }{
 			{"SAML_ENTITY_ID", "NEXTCLOUD_SAML_IDP_ENTITY_ID"},
 			{"SAML_SSO_URL", "NEXTCLOUD_SAML_IDP_SSO"},

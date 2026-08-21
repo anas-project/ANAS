@@ -42,6 +42,8 @@ identity:
 
 Browser authentication is OIDC-only: the anonymous root redirects to `/auth-oidc`, the login page hides password authentication, and the server rejects local or LDAP password login. LDAPS continues to provision directory users and groups. With application filtering, `APP_meshcentral`, `APP_all`, or the administrator group grants access, and the administrator group maps to site-admin.
 
+Pinned MeshCentral `1.2.4` contains the upstream RP-logout fix and ANAS registers its post-logout URI, but upstream exposes no standard IAM-to-Module notification endpoint. ANAS upgrades this to “Module-initiated logout” only when the browser matrix verifies `state`, local-session invalidation first, and termination of the central IAM session. Its current status is “upstream support, matrix acceptance pending”; browserless bidirectional logout is not declared.
+
 | Capability | Current declaration |
 | --- | --- |
 | Directory / LDAPS | ldaps (`users, groups`) |

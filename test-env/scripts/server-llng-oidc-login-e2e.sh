@@ -39,7 +39,7 @@ curl_login() {
 }
 
 verify_nextcloud_logout() {
-  local attempt meta_status session_after status
+	local attempt final meta_status session_after status
   [ "$logout_mode" = browser ] || {
     [ "$logout_mode" = none ] && return 0
     printf 'LLNG supports only browser logout in this E2E, got %s\n' "$logout_mode" >&2
@@ -54,7 +54,15 @@ verify_nextcloud_logout() {
     meta_status=$(jq -r '.ocs.meta.statuscode // empty' "$body" 2>/dev/null || true)
     if [ "$status" != 000 ] && [ -n "$meta_status" ] && [ "$session_after" != "$username" ]; then
       printf 'nextcloud_session=revoked mode=browser status=%s\n' "$status"
-      return 0
+      final=$(curl_login -L -o "$body" -w '%{url_effective}' "$nextcloud_url/apps/user_oidc/login/1")
+      case "$final" in
+        "https://auth.$domain:$entry_port"/*)
+          printf 'silent_reauthentication=blocked mode=browser\n'
+          return 0
+          ;;
+      esac
+      printf 'Nextcloud silently restored a session after LLNG browser logout: %s\n' "$final" >&2
+      return 1
     fi
     sleep 1
   done

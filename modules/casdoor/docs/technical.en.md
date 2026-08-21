@@ -36,7 +36,7 @@ The integration imports users and verifies passwords remotely but does not enabl
 
 ## IAM boundaries
 
-OIDC publishes issuer/discovery and registers per-consumer clients. SAML publishes metadata, SSO, and the signing certificate without inventing SLO. `ALLOW_GROUPS` is not enforced, and unknown SAML attributes fall back to `$user.id`, which is not a verified Samba permanent anchor.
+Pinned `3.143.0` publishes OIDC issuer/discovery and registers per-consumer clients; removing the declaration or switching to SAML emits an empty back-channel URI to clear stale imported state, while actual notification remains restricted/pending acceptance. SAML publishes metadata, SSO, and the signing certificate without inventing SLO. `ALLOW_GROUPS` is not enforced, and unknown SAML attributes fall back to `$user.id`, which is not a verified Samba permanent anchor.
 
 ## Local administrator lifecycle
 

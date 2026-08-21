@@ -90,6 +90,9 @@ func TestRenderInitDataRegistersDirectoryAndClients(t *testing.T) {
 	if saml["type"] != "SAML" || saml["samlReplyUrl"] != "https://paper.example/acs" {
 		t.Fatalf("SAML application = %#v", saml)
 	}
+	if saml["backchannelLogoutUri"] != "" {
+		t.Fatalf("SAML application retained stale back-channel logout URI: %#v", saml)
+	}
 	if len(doc.LDPs) != 1 || doc.LDPs[0]["host"] != "samba_dc" || doc.LDPs[0]["enableSsl"] != true {
 		t.Fatalf("LDAP configuration = %#v", doc.LDPs)
 	}
@@ -101,6 +104,19 @@ func TestRenderInitDataRegistersDirectoryAndClients(t *testing.T) {
 	// that application access policy has been enforced.
 	if _, ok := oidc["tags"]; ok {
 		t.Fatalf("unsupported group policy unexpectedly rendered: %#v", oidc["tags"])
+	}
+}
+
+func TestRemovedOIDCLogoutDeclarationClearsImportedURI(t *testing.T) {
+	e := casdoorTestEnv()
+	delete(e, "ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_URI")
+	delete(e, "ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_METHODS")
+	application, err := oidcApplication(e, "nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := application["backchannelLogoutUri"]; !ok || got != "" {
+		t.Fatalf("backchannelLogoutUri = %#v (present %v), want explicit empty value", got, ok)
 	}
 }
 

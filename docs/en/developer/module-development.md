@@ -29,6 +29,90 @@ new image do not change the revision.
 
 Declare hard dependencies explicitly. Use capability providers for alternatives, ordering edges only for ordering, and resource/provider operations for persistent resources. Scope generated environments to the module, its dependency closure, and explicitly consumed keys. Never log secrets or inject unrelated credentials.
 
+## Bidirectional logout for OIDC/SAML Modules
+
+Every Module that consumes the `iam` capability and establishes an application
+session through OIDC or SAML must design and verify three distinct cases:
+
+1. logging out from the application invalidates both the application session
+   and the central IAM session;
+2. logging out from IAM notifies the application and invalidates its session;
+3. when claimed as supported, administrative IAM-session revocation invalidates
+   the application session without the user's browser.
+
+The normative security and acceptance rules are in the
+[bidirectional logout requirements for OIDC/SAML Modules](/requirements/module-iam-bidirectional-logout).
+
+### Provider-neutral registration
+
+A Module reads only its own `ANAS_IAM_BINDING__<APP>__*` values and publishes
+its own `ANAS_IAM_CLIENT__<APP>__*` request from the `calculate` Hook. It must
+not branch on a Provider name or generate LLNG-, Authentik-, Casdoor-, or other
+Provider-private settings.
+
+An OIDC Module that accepts IAM-initiated logout publishes:
+
+```dotenv
+ANAS_IAM_CLIENT__<APP>__POST_LOGOUT_REDIRECT_URIS=https://app.example/logged-out
+ANAS_IAM_CLIENT__<APP>__OIDC_LOGOUT_URI=https://app.example/oidc/backchannel-logout
+ANAS_IAM_CLIENT__<APP>__OIDC_LOGOUT_METHODS=backchannel,frontchannel
+ANAS_IAM_CLIENT__<APP>__OIDC_LOGOUT_SESSION_REQUIRED=true
+```
+
+A SAML Module that supports SLO publishes:
+
+```dotenv
+ANAS_IAM_CLIENT__<APP>__SAML_SLS_URL=https://app.example/saml/sls
+ANAS_IAM_CLIENT__<APP>__SAML_SLS_BINDINGS=redirect,post
+```
+
+URI and method/binding declarations are paired. `POST_LOGOUT_REDIRECT_URIS`
+is only a navigation allowlist and never replaces an OIDC notification
+endpoint. A normal `/logout` page is not a back-channel endpoint. Protocol
+switches, domain changes, and repeated apply must remove stale fields from the
+other protocol or former domain.
+
+### OIDC boundary
+
+- Module-initiated logout uses the discovery `end_session_endpoint`, standard
+  `id_token_hint`/`client_id`, a registered `post_logout_redirect_uri`, and a
+  random verified `state`. The local application session is invalid before
+  leaving the application.
+- IAM-initiated logout prefers back-channel. The endpoint verifies Logout Token
+  signature and algorithm, `iss`, `aud`, `events`, time, replay-safe `jti`, and
+  `sid`/`sub`, then revokes only the target application session.
+- A front-channel-only implementation documents browser, iframe,
+  SameSite/CSP limitations and does not claim browserless administrative
+  revocation.
+- If the pinned upstream version has no standard notification endpoint, omit
+  `OIDC_LOGOUT_*` and explicitly state “local logout only” or
+  “Module-initiated logout only”. Never invent a guessed endpoint.
+
+### SAML boundary
+
+- SP-initiated logout uses the SLO URL from its binding/metadata, retains the
+  login `NameID`, format, and `SessionIndex`, and verifies signature,
+  Destination, Issuer, `InResponseTo`, status, and time.
+- IdP-initiated logout is declared only when the pinned application version
+  exposes a real SLS. Redirect SLS guarantees browser-mediated bidirectional
+  logout only. Browserless administration requires real POST/back-channel
+  support and a separate real E2E.
+- When the Provider omits optional `SAML_SLO_URL`, clear stale configuration
+  and perform local logout instead of calling a historical endpoint.
+
+### Release gate
+
+Bidirectional logout is a `Provider × protocol × Module` capability. Unit tests
+cover field publication, protocol switching, missing pairs, and invalid values.
+Real-container E2E retains the pre-logout application Cookie and verifies
+Module-initiated logout, IAM-initiated logout, and—when claimed—browserless
+administrative revocation. A 302, logout page, or token TTL is not evidence of
+session invalidation.
+
+A Module behind `oauth2-proxy` or ForwardAuth documents IAM-session, gateway
+Cookie, and backend-application-session invalidation separately. Gateway
+logout alone does not prove backend bidirectional logout.
+
 ## Management surfaces and local administrators
 
 Every module with a management surface must classify the application's real

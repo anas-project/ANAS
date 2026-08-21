@@ -45,7 +45,7 @@ Samba AD 是人员与组的事实来源。LDAP Source 通过 LDAPS 同步用户�
 
 ### 应用会话登出
 
-OIDC blueprint 把授权回调和登出后回调分别标为 `authorization`/`logout`，并从通用契约选择 `backchannel` 优先的 `logout_uri/logout_method`。因此 Authentik 的浏览器登出、管理员删 session 和账号停用都会向支持的 RP 发送签名 logout token。SAML 将 Redirect SLS 映射为 `frontchannel_native` 并签名 LogoutRequest/LogoutResponse；POST SLS 才可选择无浏览器的 `backchannel`。
+固定 `2026.5.6` 的 OIDC blueprint 把授权回调和登出后回调分别标为 `authorization`/`logout`，并从通用契约选择 `backchannel` 优先的 `logout_uri/logout_method`。浏览器登出、管理员删 session 和账号停用是否向某个 RP 发送有效签名 logout token，由该 Consumer 固定版本 E2E 判定。SAML Redirect/POST 均映射为浏览器参与的 `frontchannel_native` 并签名 LogoutRequest/LogoutResponse；HTTP-POST 不是后台通道。
 
 | 能力 | 当前声明 |
 | --- | --- |

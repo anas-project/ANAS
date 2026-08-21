@@ -62,6 +62,10 @@ backend directory provisioning and are not a browser-login or outage fallback.
 
 Browser authentication is OIDC-only; LDAPS separately provisions users and groups, and local or LDAP password login is rejected. With application filtering, `APP_meshcentral`, `APP_all`, or the administrator group grants access, and the administrator group maps to site-admin.
 
+### Logout boundary
+
+Pinned `1.2.4` uses the upstream RP-logout implementation and the registered post-logout URI. `server-iam-logout-matrix-e2e.sh` must capture provider logout navigation and verify non-empty `state`, local-session invalidation first, and failure of silent central-session recovery; until that passes the status remains “upstream support, integration pending.” This version has no standard front/back-channel receiver, so IAM-to-MeshCentral or browserless bidirectional logout is not declared.
+
 | Capability | Current declaration |
 | --- | --- |
 | Directory / LDAPS | ldaps (`users, groups`) |
