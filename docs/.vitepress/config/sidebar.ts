@@ -85,6 +85,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '测试', link: '/developer/testing' },
         { text: '镜像发布', link: '/developer/release' },
         { text: '中国大陆构建与发行', link: '/developer/china-mainland-build-and-distribution' },
+        { text: '需求编写规范', link: '/developer/requirement-authoring' },
         { text: '应用研究文档规范', link: '/developer/research-document-standard' },
         { text: '文档写作标准', link: '/developer/documentation-standard' },
         { text: '文档站点', link: '/developer/documentation' }
@@ -103,6 +104,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '应用目录', link: '/architecture/app-catalog-design' },
         { text: '动态 DNS', link: '/architecture/dynamic-dns-capability-design' },
         { text: 'Object Storage 能力', link: '/architecture/object-storage-capability-design' },
+        { text: 'Forgejo Module', link: '/architecture/forgejo-module-design' },
         { text: '凭据轮换', link: '/architecture/credential-rotation' },
         { text: '运行时与发布状态', link: '/architecture/runtime-release-state-design' },
         { text: '配置状态生命周期', link: '/architecture/config-state-lifecycle' }
@@ -136,6 +138,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: '索引', link: '/requirements/' },
         { text: 'IAM Provider 准入要求', link: '/requirements/iam-provider' },
+        { text: 'Web API 与管理前端要求', link: '/requirements/web-api-admin-console' },
+        { text: 'Forgejo Module 集成要求', link: '/requirements/forgejo-module' },
         { text: 'Vikunja Module 集成要求', link: '/requirements/vikunja-module' },
         { text: 'VersityGW S3 Module', link: '/requirements/versitygw-module' }
       ]
@@ -150,6 +154,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Changelog', link: '/plans/changelog-rollout' },
         { text: 'Web API 与管理前端', link: '/plans/web-api-admin-console' },
         { text: 'workspace 与备份', link: '/plans/workspace-backup' },
+        { text: 'Forgejo Module', link: '/plans/forgejo-module' },
         { text: 'VersityGW S3 Module', link: '/plans/versitygw-module' }
       ]
     }

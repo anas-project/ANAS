@@ -4,6 +4,7 @@ This section tracks implementation order, milestones, migrations, and remaining 
 
 - [Application-domain and Samba AD domain separation](/plans/domain-separation)
 - [Core and Module changelog rollout](/plans/changelog-rollout)
-- [Web API and admin console](/plans/web-api-admin-console)
+- [Web API and admin console](/plans/web-api-admin-console) — milestones and remaining work; acceptance criteria live in the [requirements document](/requirements/web-api-admin-console)
 - [VersityGW S3-compatible Module](/plans/versitygw-module)
 - [Workspace and backup system](/plans/workspace-backup)
+- [Forgejo Module, Incus VM runner, and security switches](/plans/forgejo-module)

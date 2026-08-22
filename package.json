@@ -5,6 +5,8 @@
     "docs:dev": "node scripts/ci/dev-docs.mjs",
     "docs:build": "node scripts/ci/build-versioned-docs.mjs",
     "docs:test-versions": "node scripts/ci/docs-version-test.mjs",
+    "docs:check-requirements": "node scripts/ci/requirement-coverage.mjs",
+    "docs:test-requirements": "node scripts/ci/requirement-coverage-test.mjs",
     "docs:preview": "vitepress preview docs",
     "e2e:iam-logout": "playwright test --config test-env/playwright/iam-logout.config.mjs"
   },

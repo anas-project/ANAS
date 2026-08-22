@@ -53,6 +53,8 @@ jobs:
           go run ./cmd/gen-module-docs --check
           go run ./cmd/gen-contract-docs --check
           go test ./cmd/materialize-module-docs
+          npm run docs:test-requirements
+          npm run docs:check-requirements
 
       - name: Build with VitePress
         env:

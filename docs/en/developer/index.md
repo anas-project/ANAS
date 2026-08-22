@@ -13,6 +13,8 @@ Read [repository layout](repository-layout.md), [module development](module-deve
 [Module upstream upgrade SOP](module-upgrade-sop.md), the
 [Module upgrade checklist](module-upgrade-checklist.md), [testing](testing.md),
 [ANAS, Module, and container releases](release.md), the
-[documentation standard](documentation-standard.md), and the
-[architecture overview](/en/architecture/). The detailed Chinese design documents remain normative
+[documentation standard](documentation-standard.md), the
+[requirement authoring standard (Chinese)](/developer/requirement-authoring) — how a traceable
+requirement matrix is produced, what makes a statement a requirement, and how verification methods
+are chosen — and the [architecture overview](/en/architecture/). The detailed Chinese design documents remain normative
 while English translations are completed.

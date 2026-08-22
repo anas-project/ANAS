@@ -15,3 +15,9 @@ secrets.yml
 config.lnnj.com.cn.yml
 test-env/reports/*
 !test-env/reports/.gitkeep
+
+# Binaries built into the repository root. Anchored with a leading slash so the
+# pattern cannot also match the cmd/<name>/ source directories.
+/anas
+/anasd
+/anas-helper
