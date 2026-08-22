@@ -716,11 +716,17 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 		}
 	}
 	for _, request := range a.resourceRequests {
-		manifest.Resources = append(manifest.Resources, deploymentResource{
+		resource := deploymentResource{
 			Consumer: request.Consumer, ID: request.ID, Contract: request.Contract, ContractVersion: request.ContractVersion,
 			Provider: request.Provider, Interface: request.Interface,
-			Spec: request.Spec, SecretKey: request.SecretKey,
-		})
+			Spec: request.Spec,
+		}
+		if request.Contract == "relational_database" {
+			resource.SecretKey = request.SecretKey
+		} else {
+			resource.CredentialSecretKey = request.SecretKey
+		}
+		manifest.Resources = append(manifest.Resources, resource)
 	}
 	for path, value := range settings {
 		target := targetForSettingPath(path, a.reg)
@@ -1852,14 +1858,18 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 		credentials:      append([]deploymentCredential{}, manifest.Credentials...),
 	}
 	for _, resource := range manifest.Resources {
-		password := secrets.values[resource.SecretKey]
-		if password == "" {
-			return nil, "", nil, fmt.Errorf("resource %s.%s secret %s is missing", resource.Consumer, resource.ID, resource.SecretKey)
+		secretKey := resource.CredentialSecretKey
+		if secretKey == "" {
+			secretKey = resource.SecretKey
+		}
+		credential := secrets.values[secretKey]
+		if credential == "" {
+			return nil, "", nil, fmt.Errorf("resource %s.%s secret %s is missing", resource.Consumer, resource.ID, secretKey)
 		}
 		a.resourceRequests = append(a.resourceRequests, ResourceRequest{
 			Consumer: resource.Consumer, ID: resource.ID, Contract: resource.Contract, ContractVersion: resource.ContractVersion,
 			Provider: resource.Provider, Interface: resource.Interface,
-			Spec: resource.Spec, SecretKey: resource.SecretKey, Password: password,
+			Spec: resource.Spec, SecretKey: secretKey, Credential: credential,
 		})
 	}
 	if err := a.restoreLocalAdminPasswordFiles(); err != nil {

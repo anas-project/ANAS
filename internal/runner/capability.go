@@ -15,8 +15,9 @@ import (
 // how the single provider is chosen, and that difference is data here rather
 // than a branch: see capabilityDefinitions.
 const (
-	capabilityIAM         = "iam"
-	capabilityForwardAuth = "forward_auth"
+	capabilityIAM           = "iam"
+	capabilityForwardAuth   = "forward_auth"
+	capabilityObjectStorage = "object_storage"
 )
 
 const (
@@ -25,6 +26,8 @@ const (
 	// interfaceHTTP is Traefik's ForwardAuth exchange: the proxy asks an
 	// external endpoint about each request and forwards it only on 2xx.
 	interfaceHTTP = "http"
+	// interfaceS3 is the AWS Signature Version 4 object-storage HTTP API.
+	interfaceS3 = "s3"
 )
 
 // Provider selection policies.
@@ -59,6 +62,23 @@ type capabilityDefinition struct {
 	DefaultInterface func(a *app) string
 	// ConfigKey names the config field in error messages.
 	ConfigKey string
+	// ImplicitInterface permits the shortest consumer declaration (`name`
+	// only) for a capability whose data ABI has exactly one stable interface.
+	// Existing multi-interface capabilities keep requiring an explicit
+	// interface_selected_by selector and any_of list.
+	ImplicitInterface string
+	// Outputs declares provider-neutral runtime values that the runner projects
+	// into a consumer-owned binding namespace after the selected provider's
+	// calculate Hook. Capability outputs are connection facts, not Resources:
+	// they do not create buckets or manage per-consumer credentials.
+	Outputs map[string]capabilityOutputDefinition
+}
+
+type capabilityOutputDefinition struct {
+	ProviderPrefix string
+	BindingPrefix  string
+	Required       []string
+	Sensitive      []string
 }
 
 var capabilityDefinitions = map[string]capabilityDefinition{
@@ -81,6 +101,27 @@ var capabilityDefinitions = map[string]capabilityDefinition{
 		RequireAll: []string{interfaceHTTP},
 		Selection:  selectionAuto,
 		ConfigKey:  "forward_auth.provider",
+	},
+	// Object storage has one currently supported wire interface. Consumers may
+	// therefore depend on it with only `name: object_storage`; the selected
+	// provider publishes one normalized S3 connection record which is projected
+	// into an isolated per-consumer binding namespace.
+	capabilityObjectStorage: {
+		Interfaces:        []string{interfaceS3},
+		RequireAll:        []string{interfaceS3},
+		Selection:         selectionAuto,
+		ConfigKey:         "modules",
+		ImplicitInterface: interfaceS3,
+		Outputs: map[string]capabilityOutputDefinition{
+			interfaceS3: {
+				ProviderPrefix: "ANAS_OBJECT_STORAGE_S3_",
+				BindingPrefix:  "ANAS_OBJECT_STORAGE_BINDING__",
+				Required: []string{
+					"ENDPOINT", "REGION", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "PATH_STYLE",
+				},
+				Sensitive: []string{"SECRET_ACCESS_KEY"},
+			},
+		},
 	},
 }
 
@@ -203,9 +244,12 @@ func (a *app) selectCapabilityProvider(moduleName, capability string, definition
 // parameter wins, then the deployment default when the module supports it, then
 // the module's own preference order.
 func (a *app) resolveCapabilityInterface(moduleName string, mod Module, dep RequiredCapability, provider string, capability ProvidedCapability) (string, error) {
-	key := paramEnvKey(moduleName, mod.EnvPrefix, dep.InterfaceSelectedBy)
-	if err := a.rejectSourceSensitiveSelector(key, moduleName+"."+dep.InterfaceSelectedBy); err != nil {
-		return "", err
+	key := ""
+	if dep.InterfaceSelectedBy != "" {
+		key = paramEnvKey(moduleName, mod.EnvPrefix, dep.InterfaceSelectedBy)
+		if err := a.rejectSourceSensitiveSelector(key, moduleName+"."+dep.InterfaceSelectedBy); err != nil {
+			return "", err
+		}
 	}
 	requested := strings.ToLower(strings.TrimSpace(a.env[key]))
 	iface := ""
@@ -255,7 +299,9 @@ func (a *app) resolveCapabilityInterface(moduleName string, mod Module, dep Requ
 		return "", fmt.Errorf("%s requires %s protocol %q, but provider %s offers [%s]",
 			moduleName, dep.Name, a.resolvedValueForError(key, iface), provider, strings.Join(capability.Interfaces, ","))
 	}
-	a.env[key] = iface
+	if key != "" {
+		a.env[key] = iface
+	}
 	return iface, nil
 }
 
@@ -293,6 +339,82 @@ func (a *app) describeCapabilityProviders(capability string) string {
 		out = append(out, fmt.Sprintf("%s[%s]", name, strings.Join(provided.Interfaces, ",")))
 	}
 	return strings.Join(out, ", ")
+}
+
+func capabilityOutputBindingKey(definition capabilityOutputDefinition, consumer, suffix string) string {
+	return definition.BindingPrefix + defaultEnvPrefix(consumer) + "__" + suffix
+}
+
+// publishCapabilityOutputs copies a selected provider's normalized connection
+// facts into consumer-owned binding namespaces. It runs immediately after the
+// provider calculate Hook, so later consumer Hooks can read only their own
+// projection without knowing the provider Module name or private env prefix.
+func (a *app) publishCapabilityOutputs(provider string) error {
+	capabilityNames := make([]string, 0, len(capabilityDefinitions))
+	for name := range capabilityDefinitions {
+		capabilityNames = append(capabilityNames, name)
+	}
+	sort.Strings(capabilityNames)
+	consumerNames := make([]string, 0, len(a.resolvedBindings))
+	for consumer := range a.resolvedBindings {
+		consumerNames = append(consumerNames, consumer)
+	}
+	sort.Strings(consumerNames)
+
+	for _, capabilityName := range capabilityNames {
+		definition := capabilityDefinitions[capabilityName]
+		if len(definition.Outputs) == 0 || a.capabilityProviders[capabilityName] != provider {
+			continue
+		}
+		for _, consumer := range consumerNames {
+			binding := a.resolvedBindings[consumer]
+			if binding[capabilityName] != provider {
+				continue
+			}
+			iface := binding[capabilityName+".interface"]
+			output, ok := definition.Outputs[iface]
+			if !ok {
+				return fmt.Errorf("capability %s/%s has no registered output ABI", capabilityName, iface)
+			}
+			setBinding := func(key, value string, sensitive bool) error {
+				if existing := a.env[key]; existing != "" && existing != value {
+					return fmt.Errorf("%s binding output %s conflicts with an existing value", capabilityName, key)
+				}
+				if owner, tracked := a.envOwner[key]; tracked && owner != consumer {
+					return fmt.Errorf("%s binding output %s is owned by another source", capabilityName, key)
+				}
+				a.env[key] = value
+				a.setEnvOwner(key, consumer)
+				if sensitive {
+					a.markSensitive(key)
+				}
+				return nil
+			}
+			interfaceKey := capabilityOutputBindingKey(output, consumer, "INTERFACE")
+			if err := setBinding(interfaceKey, iface, false); err != nil {
+				return err
+			}
+			for _, suffix := range output.Required {
+				sourceKey := output.ProviderPrefix + suffix
+				value := strings.TrimSpace(a.env[sourceKey])
+				if value == "" {
+					return fmt.Errorf("%s provider %s did not publish required output %s", capabilityName, provider, sourceKey)
+				}
+				if owner := a.envOwner[sourceKey]; owner != provider {
+					return fmt.Errorf("%s provider %s does not own required output %s", capabilityName, provider, sourceKey)
+				}
+				targetKey := capabilityOutputBindingKey(output, consumer, suffix)
+				sensitive := contains(output.Sensitive, suffix)
+				if err := setBinding(targetKey, value, sensitive); err != nil {
+					return err
+				}
+				if sensitive {
+					a.markSensitive(sourceKey)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // checkSingleIAM rejects a config that would start two IAMs at once. Listing an
@@ -702,16 +824,20 @@ func normalizeRequiredCapabilities(module string, in []manifestRequiredCapabilit
 			return nil, fmt.Errorf("module %q requires capability %q more than once", module, name)
 		}
 		seen[name] = true
-		selectedBy := strings.TrimSpace(capability.InterfaceSelectedBy)
-		if selectedBy == "" {
-			return nil, fmt.Errorf("module %q requires_capabilities %q has no interface_selected_by parameter", module, name)
-		}
 		anyOf, err := normalizeInterfaceList(module, "requires_capabilities."+name+".interfaces.any_of", known, capability.Interfaces.AnyOf)
 		if err != nil {
 			return nil, err
 		}
 		if len(anyOf) == 0 {
-			return nil, fmt.Errorf("module %q requires_capabilities %q has an empty any_of", module, name)
+			implicit := capabilityDefinitions[name].ImplicitInterface
+			if implicit == "" {
+				return nil, fmt.Errorf("module %q requires_capabilities %q has an empty any_of", module, name)
+			}
+			anyOf = []string{implicit}
+		}
+		selectedBy := strings.TrimSpace(capability.InterfaceSelectedBy)
+		if selectedBy == "" && capabilityDefinitions[name].ImplicitInterface == "" {
+			return nil, fmt.Errorf("module %q requires_capabilities %q has no interface_selected_by parameter", module, name)
 		}
 		prefer, err := normalizeInterfaceList(module, "requires_capabilities."+name+".interfaces.prefer", known, capability.Interfaces.Prefer)
 		if err != nil {

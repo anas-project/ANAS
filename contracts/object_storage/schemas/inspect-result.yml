@@ -1,0 +1,6 @@
+type: object
+additional_properties: false
+required: [exists, ready]
+properties:
+  exists: {type: boolean}
+  ready: {type: boolean}

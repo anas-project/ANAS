@@ -164,7 +164,11 @@ type Resource struct {
 	Provider        string         `yaml:"provider" json:"provider"`
 	Interface       string         `yaml:"interface" json:"interface"`
 	Spec            map[string]any `yaml:"spec" json:"spec"`
-	SecretKey       string         `yaml:"password_secret" json:"password_secret"`
+	// SecretKey is the relational_database v1 compatibility field. New
+	// Contracts use CredentialSecretKey so deployment artifacts do not describe
+	// every generated credential as a database password.
+	SecretKey           string `yaml:"password_secret,omitempty" json:"password_secret,omitempty"`
+	CredentialSecretKey string `yaml:"credential_secret,omitempty" json:"credential_secret,omitempty"`
 }
 
 type Setting struct {

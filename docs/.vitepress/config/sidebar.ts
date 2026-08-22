@@ -57,6 +57,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Module 环境变量', link: '/reference/module-environment-variables' },
         { text: 'Module IAM / OIDC 支持', link: '/reference/module-iam-support' },
         { text: 'CLI JSON 契约', link: '/reference/contracts/' },
+        { text: 'object_storage Contract', link: '/reference/contracts/object_storage' },
         { text: 'relational_database Contract', link: '/reference/contracts/relational_database' },
         { text: 'identity Contract', link: '/reference/contracts/identity' },
         { text: 'certificate Contract', link: '/reference/contracts/certificate' }
@@ -75,6 +76,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '概览', link: '/developer/' },
         { text: '仓库结构', link: '/developer/repository-layout' },
         { text: 'Module 开发', link: '/developer/module-development' },
+        { text: 'Capability 开发标准', link: '/developer/capability-development' },
         { text: 'Module 设计检查表', link: '/developer/module-design-checklist' },
         { text: 'Module 文档规范', link: '/developer/module-documentation' },
         { text: 'Contract 文档规范', link: '/developer/contract-documentation' },
@@ -100,6 +102,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'IAM 能力', link: '/architecture/iam-capability-design' },
         { text: '应用目录', link: '/architecture/app-catalog-design' },
         { text: '动态 DNS', link: '/architecture/dynamic-dns-capability-design' },
+        { text: 'Object Storage 能力', link: '/architecture/object-storage-capability-design' },
         { text: '凭据轮换', link: '/architecture/credential-rotation' },
         { text: '运行时与发布状态', link: '/architecture/runtime-release-state-design' },
         { text: '配置状态生命周期', link: '/architecture/config-state-lifecycle' }
@@ -133,7 +136,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: '索引', link: '/requirements/' },
         { text: 'IAM Provider 准入要求', link: '/requirements/iam-provider' },
-        { text: 'Vikunja Module 集成要求', link: '/requirements/vikunja-module' }
+        { text: 'Vikunja Module 集成要求', link: '/requirements/vikunja-module' },
+        { text: 'VersityGW S3 Module', link: '/requirements/versitygw-module' }
       ]
     }
   ],
@@ -145,7 +149,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '应用域与 AD 域分离', link: '/plans/domain-separation' },
         { text: 'Changelog', link: '/plans/changelog-rollout' },
         { text: 'Web API 与管理前端', link: '/plans/web-api-admin-console' },
-        { text: 'workspace 与备份', link: '/plans/workspace-backup' }
+        { text: 'workspace 与备份', link: '/plans/workspace-backup' },
+        { text: 'VersityGW S3 Module', link: '/plans/versitygw-module' }
       ]
     }
   ],
@@ -218,6 +223,7 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Module catalog', link: '/en/reference/modules' },
         { text: 'Module timezone and language', link: '/en/reference/module-localization' },
         { text: 'Module IAM and OIDC support', link: '/en/reference/module-iam-support' },
+        { text: 'object_storage Contract', link: '/en/reference/contracts/object_storage' },
         { text: 'relational_database Contract', link: '/en/reference/contracts/relational_database' },
         { text: 'identity Contract', link: '/en/reference/contracts/identity' },
         { text: 'certificate Contract', link: '/en/reference/contracts/certificate' }

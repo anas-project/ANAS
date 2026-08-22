@@ -8,6 +8,7 @@ Identify the layer before making a change:
 - a resource is persistent state managed through provider operations.
 
 Read [repository layout](repository-layout.md), [module development](module-development.md), the
+[normative Capability development standard](/developer/capability-development) (currently in Chinese), the
 [Module design and release checklist](module-design-checklist.md), the
 [Module upstream upgrade SOP](module-upgrade-sop.md), the
 [Module upgrade checklist](module-upgrade-checklist.md), [testing](testing.md),

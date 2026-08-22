@@ -583,6 +583,14 @@ func registryReservedRuntimeKeys(reg map[string]Module) []string {
 	}
 	for name, mod := range reg {
 		add(iamBindingKey(name, "INTERFACE"))
+		for _, definition := range capabilityDefinitions {
+			for _, output := range definition.Outputs {
+				add(capabilityOutputBindingKey(output, name, "INTERFACE"))
+				for _, suffix := range output.Required {
+					add(capabilityOutputBindingKey(output, name, suffix))
+				}
+			}
+		}
 		add(envIdentityClientPfx + defaultEnvPrefix(name) + "__INTERFACES")
 		for _, iface := range mod.IdentityInterfaces {
 			identityInterfaces[iface] = true
@@ -590,6 +598,15 @@ func registryReservedRuntimeKeys(reg map[string]Module) []string {
 		for _, account := range mod.LocalAccounts {
 			usernameKey, passwordKey := localAdminEnvKeys(mod, account.ID)
 			add(usernameKey, passwordKey, localAdminPasswordFileEnvKey(mod, account.ID), localAdminSecretKey(name, account.ID))
+		}
+		for _, resource := range mod.Resources {
+			if resource.Contract != "object_storage" {
+				continue
+			}
+			prefix := objectStorageResourcePrefix(name, resource.ID)
+			for _, suffix := range []string{"INTERFACE", "ENDPOINT", "REGION", "BUCKET", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "PATH_STYLE"} {
+				add(prefix + suffix)
+			}
 		}
 	}
 	for iface := range identityInterfaces {
@@ -615,6 +632,7 @@ func registryReservedNamespaceKeys() []string {
 		"DATA_PATH", "USER_DATA_PATH", "DOCKER_SOCKET_PATH", "ANAS_RUNTIME_ENTRY_IP",
 		"MODULE_NAME", "ANAS_MODULE_RUNTIME_STATE_PATH", "ANAS_DEPLOYMENT_ID",
 		"ANAS_RESOURCE_DATABASE", "ANAS_RESOURCE_USERNAME", "ANAS_RESOURCE_PASSWORD",
+		"ANAS_RESOURCE_BUCKET", "ANAS_RESOURCE_ACCESS_KEY_ID", "ANAS_RESOURCE_SECRET_ACCESS_KEY",
 		localAdminCandidateSecretKey, credentialDesiredSecretKey,
 		envIAMProvider, envIAMInterfaces, envIdentityClients, envIdentityAppClients,
 	}

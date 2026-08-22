@@ -259,7 +259,7 @@ func TestHandlerListsAndInspectsARegisteredWorkspaceThroughApplicationService(t 
 					"socket": filepath.Join(registeredPath, "private", "database.sock"),
 					"dsn":    "password=manifest-secret",
 				},
-				SecretKey: "secret-store-key",
+				SecretKey: "secret-store-key", CredentialSecretKey: "object-secret-store-key",
 			},
 		},
 		Snapshot: deployment.SnapshotPolicy{
@@ -306,7 +306,7 @@ func TestHandlerListsAndInspectsARegisteredWorkspaceThroughApplicationService(t 
 		"config_fingerprint", "sha256:config-secret",
 		"render_digest", "sha256:render-secret",
 		`"fingerprint"`, "sha256:setting-secret",
-		`"password_secret"`, "secret-store-key",
+		`"password_secret"`, `"credential_secret"`, "secret-store-key", "object-secret-store-key",
 		`"spec"`, "password=manifest-secret",
 		"failure-secret",
 	} {
@@ -418,7 +418,7 @@ func TestDeploymentDetailUsesSafeProjection(t *testing.T) {
 				DataBreaking: &dataBreaking,
 			}},
 			Settings:  map[string]deployment.Setting{"app.token": {Fingerprint: "sha256:value", Module: "app", Parameter: "token", Effect: "restart"}},
-			Resources: []deployment.Resource{{Consumer: "app", ID: "db", Contract: "database", Provider: "postgres", Spec: map[string]any{"socket": filepath.Join(paths[0], "db.sock")}, SecretKey: "super-secret-key"}},
+			Resources: []deployment.Resource{{Consumer: "app", ID: "db", Contract: "database", Provider: "postgres", Spec: map[string]any{"socket": filepath.Join(paths[0], "db.sock")}, SecretKey: "super-secret-key", CredentialSecretKey: "object-secret-key"}},
 			Snapshot:  deployment.SnapshotPolicy{Backend: "btrfs", Source: filepath.Join(paths[0], "data"), Root: "/snapshots/private", KeepAuto: 3},
 		},
 		State: deployment.State{ID: "dep-1", Status: "failed", CreatedAt: "2026-08-18T01:00:00Z", Failure: "password=secret at " + filepath.Join(paths[0], "state")},
@@ -431,7 +431,7 @@ func TestDeploymentDetailUsesSafeProjection(t *testing.T) {
 	}
 	body := response.Body.String()
 	for _, forbidden := range []string{
-		paths[0], "/snapshots/private", "super-secret-key", "password=secret", "compose_file", "\"hook\"", "\"spec\"", "password_secret", "deployment_path",
+		paths[0], "/snapshots/private", "super-secret-key", "object-secret-key", "password=secret", "compose_file", "\"hook\"", "\"spec\"", "password_secret", "credential_secret", "deployment_path",
 		"config_fingerprint", "render_digest", "\"fingerprint\":", "sha256:abc", "sha256:render-secret", "sha256:value",
 	} {
 		if strings.Contains(body, forbidden) {

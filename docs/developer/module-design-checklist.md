@@ -4,6 +4,7 @@
 
 本检查表供新建、升级或评审 ANAS Module 时使用。它汇总现有的
 [Module 开发规范](/developer/module-development)、
+[Capability 开发标准](/developer/capability-development)、
 [Module、Contract 与 Resource 设计](/architecture/module-contract-resource-design)、
 [Core 实现标准](/architecture/core-implementation-standard)、
 [Module 文档规范](/developer/module-documentation)和
@@ -34,6 +35,9 @@
 ## 3. 依赖、Contract 与 Resource
 
 - [ ] `[M]` 硬依赖仅用于真正必须的具体 Module；可替换 Provider 使用 Capability 或 Contract 解析。
+- [ ] `[A/M]` Capability 名称与 interface 已在中立 registry 定义；Consumer 只声明 `any_of`、`prefer` 和 interface selector，不列举或读取具体 Provider。
+- [ ] `[A/M]` Capability 绑定只承担 Provider/interface 选择、依赖排序和锁定；持久 Resource、版本化 operation 与跨 Module Secret 使用对应 Contract/Resource/Credential ABI。
+- [ ] `[A/E]` Capability 的零/一/多 Provider、interface 不兼容、lock 稳定性、环境作用域和真实 Provider × Consumer 行为已有证据。
 - [ ] `[A/M]` Contract 名称、版本范围、interface、`selected_by` 和默认 Provider 准确，Consumer 不读取 Provider 私有文件或管理凭据。
 - [ ] `[A/M]` 每个持久对象都有稳定 Resource ID、最小权限 principal、独立凭据和明确 `deletion_policy`；默认不随 Consumer 删除数据。
 - [ ] `[E]` Provider `ensure` 可重复执行，新增 Consumer 不重启 Provider 或已有 Consumer。

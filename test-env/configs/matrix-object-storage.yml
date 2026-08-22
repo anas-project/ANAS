@@ -1,0 +1,8 @@
+modules:
+  traefik: {}
+  versitygw: {}
+global:
+  base_domain: objects.test
+  email: admin@objects.test
+  timezone: Asia/Singapore
+  virtual_domain: true

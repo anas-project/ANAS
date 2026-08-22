@@ -30,6 +30,7 @@
 | --- | --- |
 | `authentik` | IAM Provider 实现仍处于实验状态 |
 | `casdoor` | OIDC/SAML 注册已接入；目录锚点、Group 门禁、SAML SLO 与真实登录 E2E 尚未完成 |
+| `versitygw` | 专用 POSIX 目录的 path-style S3 API、共享 Capability 与 per-Resource 独立 bucket/凭据已实现；真实客户端、恢复、升级和多架构镜像验收待完成 |
 | `netbird` | WireGuard overlay 拓扑尚不完整，不属于推荐部署 |
 | `freeradius` | 只有服务骨架，未生成生产客户端和用户策略 |
 

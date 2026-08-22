@@ -653,6 +653,7 @@ cleanup.
   it as a container smoke test with
   `ANAS_TEST_CONFIG=test-env/configs/matrix-auth.yml ANAS_TEST_WORKSPACE=.anas-test/runtime/matrix-auth ./test-env/scripts/test-smoke.sh`.
 - `matrix-storage.yml`: Samba domain and file service.
+- `matrix-object-storage.yml`: Traefik and the VersityGW S3-compatible POSIX gateway.
 - `matrix-apps.yml`: user-facing application stack.
 - `matrix-network.yml`: network, certificate, DNS, TURN, VPN, and RADIUS modules.
 - `matrix-db.yml`: database modules.

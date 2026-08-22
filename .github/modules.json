@@ -114,6 +114,12 @@
     "shared_contexts": ["go.mod", "go.sum", "contracts"]
   },
   {
+    "module": "versitygw",
+    "repository": "anas-module-versitygw",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
     "module": "vikunja",
     "repository": "anas-module-vikunja",
     "platforms": ["linux/amd64", "linux/arm64"],

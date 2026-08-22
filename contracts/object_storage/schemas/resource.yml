@@ -1,0 +1,19 @@
+type: object
+additional_properties: false
+required: [bucket, credential, deletion_policy]
+properties:
+  bucket:
+    type: string
+    pattern: "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+  access_key_id:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$"
+  credential:
+    type: object
+    additional_properties: false
+    required: [policy]
+    properties:
+      policy:
+        enum: [generated]
+  deletion_policy:
+    enum: [retain, delete]

@@ -78,7 +78,7 @@ type ResourceRequest struct {
 	Interface       string
 	Spec            map[string]any
 	SecretKey       string
-	Password        string
+	Credential      string
 }
 
 func loadContractRegistry(moduleRoot string) (map[string]Contract, error) {
@@ -433,8 +433,54 @@ func (a *app) resolveContractDependency(consumer string, module Module, dep Cont
 	return provider, nil
 }
 
-func resourceSecretKey(consumer, id string) string {
-	return "RESOURCE_" + defaultEnvPrefix(consumer) + "_" + defaultEnvPrefix(id) + "_PASSWORD"
+func resourceSecretKey(consumer, id, contract string) string {
+	suffix := "PASSWORD"
+	if contract == "object_storage" {
+		suffix = "SECRET_ACCESS_KEY"
+	}
+	return "RESOURCE_" + defaultEnvPrefix(consumer) + "_" + defaultEnvPrefix(id) + "_" + suffix
+}
+
+func objectStorageAccessKeyID(consumer, id string) string {
+	value := "ANAS_" + defaultEnvPrefix(consumer) + "_" + defaultEnvPrefix(id)
+	if len(value) <= 64 {
+		return value
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(consumer+"."+id)))
+	return value[:47] + "_" + digest[:16]
+}
+
+func validObjectStorageBucket(value string) bool {
+	if len(value) < 3 || len(value) > 63 || !regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*[a-z0-9]$`).MatchString(value) {
+		return false
+	}
+	if strings.Contains(value, "..") || strings.Contains(value, ".-") || strings.Contains(value, "-.") {
+		return false
+	}
+	parts := strings.Split(value, ".")
+	if len(parts) == 4 {
+		ipv4 := true
+		for _, part := range parts {
+			if part == "" || len(part) > 3 {
+				ipv4 = false
+				break
+			}
+			for _, digit := range part {
+				if digit < '0' || digit > '9' {
+					ipv4 = false
+					break
+				}
+			}
+		}
+		if ipv4 {
+			return false
+		}
+	}
+	return true
+}
+
+func objectStorageResourcePrefix(consumer, id string) string {
+	return "ANAS_OBJECT_STORAGE_RESOURCE__" + defaultEnvPrefix(consumer) + "__" + defaultEnvPrefix(id) + "__"
 }
 
 func cloneContractProviders(in []ContractProvider) []ContractProvider {
@@ -457,6 +503,8 @@ func cloneContractProviders(in []ContractProvider) []ContractProvider {
 // later, after the provider's calculate hook has derived its host and network.
 func (a *app) materializeResourceSecrets() error {
 	a.resourceRequests = nil
+	objectBuckets := map[string]string{}
+	objectAccessKeys := map[string]string{}
 	for _, consumer := range a.order {
 		module := a.reg[consumer]
 		for _, required := range module.Resources {
@@ -490,15 +538,55 @@ func (a *app) materializeResourceSecrets() error {
 					return fmt.Errorf("resource %s.%s deletion_policy must be retain or delete", consumer, required.ID)
 				}
 			}
-			secretKey := resourceSecretKey(consumer, required.ID)
-			password, err := a.secrets.Ensure(secretKey, func() (string, error) { return randomPassword(32) })
+			if required.Contract == "relational_database" || required.Contract == "object_storage" {
+				credential, ok := spec["credential"].(map[string]any)
+				policy, _ := credential["policy"].(string)
+				if !ok || policy != "generated" {
+					return fmt.Errorf("resource %s.%s credential.policy must be generated", consumer, required.ID)
+				}
+			}
+			if required.Contract == "object_storage" {
+				bucket, _ := spec["bucket"].(string)
+				if !validObjectStorageBucket(bucket) {
+					return fmt.Errorf("resource %s.%s object storage bucket %q is invalid", consumer, required.ID, bucket)
+				}
+				accessKey, _ := spec["access_key_id"].(string)
+				if accessKey == "" {
+					accessKey = objectStorageAccessKeyID(consumer, required.ID)
+					spec["access_key_id"] = accessKey
+				}
+				if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$`).MatchString(accessKey) {
+					return fmt.Errorf("resource %s.%s object storage access_key_id is invalid", consumer, required.ID)
+				}
+				policy, _ := spec["deletion_policy"].(string)
+				if policy != "retain" && policy != "delete" {
+					return fmt.Errorf("resource %s.%s deletion_policy must be retain or delete", consumer, required.ID)
+				}
+				identity := consumer + "." + required.ID
+				if previous := objectBuckets[bucket]; previous != "" {
+					return fmt.Errorf("object storage resources %s and %s use the same bucket %s", previous, identity, bucket)
+				}
+				if previous := objectAccessKeys[accessKey]; previous != "" {
+					return fmt.Errorf("object storage resources %s and %s use the same access_key_id %s", previous, identity, accessKey)
+				}
+				objectBuckets[bucket], objectAccessKeys[accessKey] = identity, identity
+			}
+			secretKey := resourceSecretKey(consumer, required.ID, required.Contract)
+			credentialLength := 32
+			if required.Contract == "object_storage" {
+				credentialLength = 40
+			}
+			credential, err := a.secrets.Ensure(secretKey, func() (string, error) { return randomPassword(credentialLength) })
 			if err != nil {
 				return err
 			}
+			a.secrets.SetWithMetadata(secretKey, credential, secretMetadata{
+				Owner: consumer, Kind: required.Contract + "_resource", Provenance: "generated-resource",
+			})
 			a.resourceRequests = append(a.resourceRequests, ResourceRequest{
 				Consumer: consumer, ID: required.ID, Contract: required.Contract, ContractVersion: contract.Version,
 				Provider: provider, Interface: iface, Spec: spec,
-				SecretKey: secretKey, Password: password,
+				SecretKey: secretKey, Credential: credential,
 			})
 		}
 	}
@@ -518,21 +606,45 @@ func (a *app) publishModuleResources(consumer string) error {
 		if request.Consumer != consumer {
 			continue
 		}
-		if request.Contract != "relational_database" {
+		values := map[string]string{}
+		sensitive := ""
+		switch request.Contract {
+		case "relational_database":
+			name, _ := request.Spec["name"].(string)
+			principal, _ := request.Spec["principal"].(string)
+			providerPrefix := defaultEnvPrefix(request.Interface)
+			consumerPrefix := defaultEnvPrefix(consumer)
+			values = map[string]string{
+				consumerPrefix + "_DB_TYPE":     request.Interface,
+				consumerPrefix + "_DB_HOST":     a.env[providerPrefix+"_HOST"],
+				consumerPrefix + "_DB_PORT":     a.env[providerPrefix+"_PORT"],
+				consumerPrefix + "_DB_NAME":     name,
+				consumerPrefix + "_DB_USERNAME": principal,
+				consumerPrefix + "_DB_PASSWORD": request.Credential,
+				consumerPrefix + "_NETWORK_DB":  a.env[providerPrefix+"_NETWORK_NAME"],
+			}
+			sensitive = consumerPrefix + "_DB_PASSWORD"
+		case "object_storage":
+			bucket, _ := request.Spec["bucket"].(string)
+			accessKey, _ := request.Spec["access_key_id"].(string)
+			providerPrefix := "ANAS_OBJECT_STORAGE_" + defaultEnvPrefix(request.Interface) + "_"
+			resourcePrefix := objectStorageResourcePrefix(consumer, request.ID)
+			pathStyle := a.env[providerPrefix+"PATH_STYLE"]
+			if pathStyle != "true" && pathStyle != "false" {
+				return fmt.Errorf("resource %s.%s provider %s published invalid path-style value", request.Consumer, request.ID, request.Provider)
+			}
+			values = map[string]string{
+				resourcePrefix + "INTERFACE":         request.Interface,
+				resourcePrefix + "ENDPOINT":          a.env[providerPrefix+"ENDPOINT"],
+				resourcePrefix + "REGION":            a.env[providerPrefix+"REGION"],
+				resourcePrefix + "BUCKET":            bucket,
+				resourcePrefix + "ACCESS_KEY_ID":     accessKey,
+				resourcePrefix + "SECRET_ACCESS_KEY": request.Credential,
+				resourcePrefix + "PATH_STYLE":        pathStyle,
+			}
+			sensitive = resourcePrefix + "SECRET_ACCESS_KEY"
+		default:
 			continue
-		}
-		name, _ := request.Spec["name"].(string)
-		principal, _ := request.Spec["principal"].(string)
-		providerPrefix := defaultEnvPrefix(request.Interface)
-		consumerPrefix := defaultEnvPrefix(consumer)
-		values := map[string]string{
-			consumerPrefix + "_DB_TYPE":     request.Interface,
-			consumerPrefix + "_DB_HOST":     a.env[providerPrefix+"_HOST"],
-			consumerPrefix + "_DB_PORT":     a.env[providerPrefix+"_PORT"],
-			consumerPrefix + "_DB_NAME":     name,
-			consumerPrefix + "_DB_USERNAME": principal,
-			consumerPrefix + "_DB_PASSWORD": request.Password,
-			consumerPrefix + "_NETWORK_DB":  a.env[providerPrefix+"_NETWORK_NAME"],
 		}
 		for key, value := range values {
 			if value == "" {
@@ -541,7 +653,7 @@ func (a *app) publishModuleResources(consumer string) error {
 			a.env[key] = value
 			a.setEnvOwner(key, consumer)
 		}
-		a.markSensitive(consumerPrefix + "_DB_PASSWORD")
+		a.markSensitive(sensitive)
 	}
 	return nil
 }

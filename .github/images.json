@@ -103,5 +103,12 @@
     "context": "modules/traefik/traefik",
     "dockerfile": "modules/traefik/traefik/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "module": "versitygw",
+    "image": "anas-versitygw",
+    "context": "modules/versitygw/versitygw",
+    "dockerfile": "modules/versitygw/versitygw/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64"
   }
 ]

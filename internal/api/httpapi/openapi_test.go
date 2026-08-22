@@ -125,7 +125,7 @@ func TestOpenAPIDeploymentProjectionOmitsSensitivePersistedFields(t *testing.T) 
 	assertPropertiesAbsent(t, schemas, "DeploymentModule",
 		"render_digest", "compose_file", "hook", "changes", "contract_providers", "local_accounts")
 	assertPropertiesAbsent(t, schemas, "DeploymentSetting", "fingerprint")
-	assertPropertiesAbsent(t, schemas, "DeploymentResource", "spec", "password_secret")
+	assertPropertiesAbsent(t, schemas, "DeploymentResource", "spec", "password_secret", "credential_secret")
 	assertPropertiesAbsent(t, schemas, "DeploymentSnapshotPolicy", "source", "root")
 	assertPropertiesAbsent(t, schemas, "DeploymentDetailResponse", "workspace", "deployment_path")
 }

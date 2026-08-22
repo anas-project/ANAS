@@ -1,7 +1,7 @@
 # Module、Contract 与 Resource 架构
 
 状态：实施基线
-日期：2026-08-21
+日期：2026-08-22
 
 ## 1. 目标
 
@@ -14,7 +14,7 @@ ANAS 将部署单元、跨模块协议和外部持久资源分成三个不同概
 Runner 负责解析绑定、保存密钥与资源状态、调用 Provider 操作以及执行 Module
 生命周期。Runner 不实现 PostgreSQL、MariaDB、ACME 或 IAM 的具体协议。
 
-本设计首先落地 `relational_database`，并为 `certificate`、`identity` 等后续
+本设计首先落地 `relational_database` 与 `object_storage`，并为 `certificate`、`identity` 等后续
 Contract 保留相同扩展模型。
 
 ## 2. 不变量
@@ -211,6 +211,7 @@ Contract 声明虚假兼容性。
 | `samba_dc` | identity / stable | AD、LDAP 与 DNS Provider；目录 Contract 尚未迁移 |
 | `samba_fs` | storage / stable | 加入 AD 的文件服务 |
 | `traefik` | network / stable | 反向代理和路由入口 |
+| `versitygw` | storage / developing | 专用 POSIX backend 的 S3 API；同时提供共享连接 Capability 与 per-Resource `object_storage/s3` Contract |
 | `vikunja` | app / developing | OIDC 任务协作 Consumer；申请一个 `relational_database` Resource |
 
 ### 4.6 IAM Consumer 的登出边界
@@ -298,7 +299,8 @@ Contract schema 版本变化只决定协议兼容性；真实资源迁移仍由 
 
 ### 5.4 Contract 集合
 
-- `relational_database`：本次完整实现。
+- `relational_database`：已实现。
+- `object_storage`：已实现 per-Resource bucket、principal、credential、ensure/inspect/rotate 与 retain。
 - `certificate`：本次只提供占位 schema；后续定义证书申请、检查、续期和撤销，
   由 `lego` 等实现。
 - `identity`：本次只提供占位 schema；后续定义认证接口、客户端注册和元数据，
@@ -413,6 +415,14 @@ MariaDB Provider 必须幂等完成：
 
 只有显式 Resource 删除操作才调用 Provider `delete`。删除前必须显示目标数据库、
 Provider、Consumer 和不可恢复影响，并要求确认。
+
+### 7.5 object_storage Resource
+
+对象存储请求至少包含 bucket、generated credential policy 与 deletion policy；省略
+`access_key_id` 时 Runner 从 `<consumer>.<resource_id>` 确定性派生。Result 包含 endpoint、
+region、bucket、access key ID、secret reference 与 path-style。VersityGW Provider 通过私有
+Admin API 创建/校正 `user` principal、secret 和 bucket owner；已存在 bucket 的 owner 不匹配
+时必须失败，不得自动转移。移除声明沿用 `retained`，当前不隐式删除 bucket 或对象。
 
 ## 8. Runner 职责
 

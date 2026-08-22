@@ -387,8 +387,8 @@ go run ./cmd/gen-module-docs --check
 npm run docs:build
 ```
 
-截至 2026-08-21，内置发布门已经固定 20 个 Module、151 个参数、`unknown=0`、2 个
-`input_required` 和 23 个最终 must-resolve 参数，并精确比对 15 项已声明 constraints。
+截至 2026-08-22，内置发布门已经固定 21 个 Module、156 个参数、`unknown=0`、2 个
+`input_required` 和 24 个最终 must-resolve 参数，并精确比对 19 项已声明 constraints。
 测试还必须证明通用 set/import/plan/lock/apply 路径与 calculate/render Hook 使用同一 schema，
 Secret Store 各 kind 不会泄露或冒充 caller input，Hook Secret 不能跨 Module 改写。新增 Module
 只应改变 manifest/inventory/生成表，不应要求修改 `anasd` 或 HTTP handler。

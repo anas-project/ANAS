@@ -37,6 +37,9 @@ revision。
 - 仅排序关系不能隐式选择另一个 Module；
 - 持久资源通过 Resource/Provider operation 管理，而不是共享数据库密码约定。
 
+新增或修改 `capabilities.provides`、`dependencies.requires_capabilities`、Runner capability
+registry 或 capability binding 时，必须遵守 [Capability 开发标准](/developer/capability-development)。
+
 ## 配置与 Secret
 
 只声明 Module 实际消费和导出的配置。不要依赖全量环境注入；生成的 `.env` 应只包含当前 Module、依赖闭包和显式声明的键。敏感值不得写入日志或非必要容器。

@@ -201,6 +201,6 @@ for parameter in inventory:
         missing.append((parameter["path"], parameter["env_key"]))
 
 assert not missing, "declared parameters absent from fresh renders: " + repr(missing)
-assert len(inventory) == 146, len(inventory)
+assert len(inventory) == 156, len(inventory)
 print(f"observed all {len(inventory)} parameter transports in fresh deployment artifacts")
 PY

@@ -1,0 +1,108 @@
+api_version: anas.module/v1
+kind: Module
+name: versitygw
+version: 1.7.0
+revision: 2
+app_version: 1.7.0
+abi:
+  supports:
+    - anas.module-hook/v1
+title: VersityGW S3 gateway
+description: S3-compatible API backed by a dedicated POSIX directory.
+category: storage
+status: developing
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  requires:
+    - traefik
+capabilities:
+  provides:
+    - name: object_storage
+      interfaces:
+        - s3
+contracts:
+  provides:
+    - name: object_storage
+      version: 1.0.0
+      interface: s3
+      implementation: providers/object_storage/provider.yml
+upgrade:
+  # Upstream has not declared an incompatible on-disk transition for this
+  # first packaged version. The module remains developing until a real upgrade
+  # and restore run has established a longer rollback history.
+  data_breaking: []
+config:
+  must_resolve:
+    - root_secret_key
+  consumes:
+    - TRAEFIK_BASE_PORT
+  exports:
+    - ANAS_OBJECT_STORAGE_S3_ENDPOINT
+    - ANAS_OBJECT_STORAGE_S3_REGION
+    - ANAS_OBJECT_STORAGE_S3_ACCESS_KEY_ID
+    - ANAS_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY
+    - ANAS_OBJECT_STORAGE_S3_PATH_STYLE
+  defaults:
+    domain_prefix: s3
+    region: us-east-1
+    root_access_key: ANASROOT
+    read_only: "false"
+  types:
+    domain_prefix:
+      kind: string
+      constraints:
+        min_length: 1
+        max_length: 63
+        pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+    region:
+      kind: string
+      constraints:
+        min_length: 1
+        max_length: 64
+        pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+    root_access_key:
+      kind: string
+      constraints:
+        min_length: 3
+        max_length: 64
+        pattern: '^[A-Za-z0-9._-]+$'
+    root_secret_key:
+      kind: string
+      default_source: generated
+      constraints:
+        min_length: 16
+        max_length: 128
+    read_only: bool
+  changes:
+    domain_prefix:
+      effect: container_recreate
+      apply: recreate-versitygw
+      description: The Traefik host rule and public S3 endpoint change.
+    region:
+      effect: container_recreate
+      apply: recreate-versitygw
+      description: SigV4 requests must use the same region after the gateway restarts.
+    root_access_key:
+      effect: container_recreate
+      apply: recreate-versitygw
+      description: Recreating the container replaces the root credential identifier.
+    root_secret_key:
+      effect: container_recreate
+      apply: recreate-versitygw
+      sensitive: true
+      description: If omitted, the Hook persists an independent random root secret in the Secret Store.
+    read_only:
+      effect: container_recreate
+      apply: recreate-versitygw
+      description: The upstream global read-only guard is evaluated when the process starts.
+features:
+  generated_secrets: true
+  domain: true
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

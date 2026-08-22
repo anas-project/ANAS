@@ -1,0 +1,90 @@
+services:
+  anas_versitygw:
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r2
+    build:
+      context: ./versitygw
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        GHCR_REGISTRY: ${GHCR_REGISTRY:-ghcr.io}
+    container_name: ${CONTAINER_PREFIX}versitygw
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      # The entrypoint owns only the mounted directory, then drops to 1000:1000.
+      - CHOWN
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges
+    environment:
+      ROOT_ACCESS_KEY: ${VERSITYGW_ROOT_ACCESS_KEY}
+      ROOT_SECRET_KEY: ${VERSITYGW_ROOT_SECRET_KEY}
+      VGW_BACKEND: posix
+      VGW_BACKEND_ARG: /data/objects
+      VGW_IAM_DIR: /data/iam
+      VGW_HEALTH: /_anas_health
+      VGW_PORT: ":7070"
+      # The management listener is reachable only on the private Compose
+      # network. It has no host port and no Traefik router.
+      VGW_ADMIN_PORT: ":7071"
+      VGW_READ_ONLY: ${VERSITYGW_READ_ONLY}
+      VGW_REGION: ${VERSITYGW_REGION}
+      VERSITYGW_RUNTIME_UID: "1000"
+      VERSITYGW_RUNTIME_GID: "1000"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:7070/_anas_health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=edge"
+      - "traefik.http.routers.versitygw.entrypoints=https"
+      - "traefik.http.routers.versitygw.rule=Host(`${VERSITYGW_DOMAIN}`)"
+      - "traefik.http.routers.versitygw.tls=true"
+      - "traefik.http.services.versitygw.loadbalancer.server.port=7070"
+    tmpfs:
+      - /tmp:mode=0700,uid=1000,gid=1000,size=64m
+    volumes:
+      - "${VERSITYGW_OBJECTS_PATH}:/data/objects"
+      - "${VERSITYGW_IAM_PATH}:/data/iam"
+    networks:
+      - default
+
+  anas_versitygw_provision:
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r2
+    restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
+    env_file:
+      - .env
+    environment:
+      ADMIN_ACCESS_KEY: ${VERSITYGW_ROOT_ACCESS_KEY}
+      ADMIN_SECRET_KEY: ${VERSITYGW_ROOT_SECRET_KEY}
+      ADMIN_ENDPOINT_URL: http://${VERSITYGW_HOSTNAME}:7071
+      VGW_REGION: ${VERSITYGW_REGION}
+      ANAS_RESOURCE_BUCKET: ${ANAS_RESOURCE_BUCKET:-}
+      ANAS_RESOURCE_ACCESS_KEY_ID: ${ANAS_RESOURCE_ACCESS_KEY_ID:-}
+      ANAS_RESOURCE_SECRET_ACCESS_KEY: ${ANAS_RESOURCE_SECRET_ACCESS_KEY:-}
+    entrypoint: ["/bin/sh", "/operations/provision.sh"]
+    tmpfs:
+      - /tmp:mode=0700,size=16m
+    volumes:
+      - "./providers/object_storage:/operations:ro"
+    networks:
+      - default
+
+networks:
+  default:
+    external: true
+    name: ${NETWORK_PREFIX}traefik

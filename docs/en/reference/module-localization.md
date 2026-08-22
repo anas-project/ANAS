@@ -25,6 +25,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [samba_dc](#samba_dc) | 4.23.6-r7 | system | not_applicable | none | not_applicable | not_applicable | 0 |
 | [samba_fs](#samba_fs) | 4.23.6-r5 | container | not_applicable | client | not_applicable | not_applicable | 0 |
 | [traefik](#traefik) | 3.7.10-r4 | container | fixed | fixed | not_consumed | not_consumed | 1 |
+| [versitygw](#versitygw) | 1.7.0-r2 | container | not_applicable | none | not_consumed | not_consumed | 0 |
 | [vikunja](#vikunja) | 2.4.0-r1 | configured | supported | application | fallback | not_consumed | 32 |
 
 ## authentik
@@ -225,6 +226,17 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 - **Fallback / 回退：** The built-in Dashboard is English and exposes no supported language selector.
 - **Supported / 支持语言：** `en`
 - **Evidence / 证据：** [v3.7.10 — Dashboard and static configuration expose no localization setting](https://github.com/traefik/traefik/tree/v3.7.10)
+
+## versitygw
+
+- **Version / 版本：** `1.7.0-r2`; reviewed 2026-08-22
+- **Timezone / 时区：** `container` — The gateway receives TZ through the Module .env for process and access-log timestamps.
+- **Language / 语言：** `not_applicable`, `none` — S3 HTTP protocol service
+- **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
+- **Fallback / 回退：** S3 responses are protocol-defined and the Module exposes no WebUI.
+- **Supported / 支持语言：** not applicable / 不适用
+- **Notes / 说明：** Client tools choose their own display language; it is not a gateway setting.
+- **Evidence / 证据：** [1.7.0 — cmd/versitygw CLI and S3 API server; WebUI is not enabled by this Module](https://github.com/versity/versitygw/tree/v1.7.0)
 
 ## vikunja
 

@@ -1,0 +1,18 @@
+api_version: anas.provider/v1
+kind: ContractProvider
+contract: object_storage
+contract_version: 1.0.0
+interface: s3
+operations:
+  ensure:
+    runtime: compose_run
+    service: anas_versitygw_provision
+    command: [ensure]
+  inspect:
+    runtime: compose_run
+    service: anas_versitygw_provision
+    command: [inspect]
+  rotate_credential:
+    runtime: compose_run
+    service: anas_versitygw_provision
+    command: [rotate_credential]

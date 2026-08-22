@@ -1,0 +1,10 @@
+type: object
+additional_properties: false
+required: [endpoint, region, bucket, access_key_id, secret_access_key_secret, path_style]
+properties:
+  endpoint: {type: string}
+  region: {type: string}
+  bucket: {type: string}
+  access_key_id: {type: string}
+  secret_access_key_secret: {type: string}
+  path_style: {type: boolean}

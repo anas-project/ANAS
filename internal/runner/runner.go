@@ -1124,6 +1124,9 @@ func (a *app) calculate() error {
 		if err := a.projectProvidedCredentials(name); err != nil {
 			return fmt.Errorf("%s calculate credentials: %w", name, err)
 		}
+		if err := a.publishCapabilityOutputs(name); err != nil {
+			return fmt.Errorf("%s calculate capability outputs: %w", name, err)
+		}
 		// The committed secret patch becomes a new source for later Hook and
 		// render aliases; force the next scope calculation to include it.
 		a.sensitiveKeys = nil

@@ -24,7 +24,7 @@ type bundledSourceEvidence struct {
 
 func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	inventory := loadBundledParameterMetadata(t)
-	if got, want := len(inventory), 151; got != want {
+	if got, want := len(inventory), 156; got != want {
 		t.Fatalf("bundled parameter count = %d, want %d", got, want)
 	}
 
@@ -32,6 +32,10 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	maximumPort := 65535
 	minimumDNSLabelLength := 1
 	maximumDNSLabelLength := 63
+	minimumAccessKeyLength := 3
+	maximumCredentialIDLength := 64
+	minimumSecretLength := 16
+	maximumSecretLength := 128
 	wantConstraints := map[string]configschema.Constraints{
 		"casdoor.ldap_auto_sync_minutes": {Minimum: &minimumOne},
 		"global.base_domain":             {Format: configschema.FormatDNSName},
@@ -44,6 +48,10 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"eturnal.port":                   {Minimum: &minimumOne, Maximum: &maximumPort},
 		"meshcentral.mps_port":           {Minimum: &minimumOne, Maximum: &maximumPort},
 		"traefik.base_port":              {Minimum: &minimumOne, Maximum: &maximumPort},
+		"versitygw.domain_prefix":        {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"versitygw.region":               {MinLength: &minimumDNSLabelLength, MaxLength: &maximumCredentialIDLength, Pattern: `^[A-Za-z0-9][A-Za-z0-9._-]*$`},
+		"versitygw.root_access_key":      {MinLength: &minimumAccessKeyLength, MaxLength: &maximumCredentialIDLength, Pattern: `^[A-Za-z0-9._-]+$`},
+		"versitygw.root_secret_key":      {MinLength: &minimumSecretLength, MaxLength: &maximumSecretLength},
 		"samba_dc.max_log_size":          {Minimum: &minimumOne},
 		"samba_dc.domain":                {Format: configschema.FormatDNSName},
 		"oauth2_proxy.allow_groups":      {Pattern: `\S`},
@@ -85,6 +93,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"samba_dc.password_bind_password": {configschema.DefaultSourceGenerated, "calcSambaDC"},
 		"samba_dc.anchor_bind_password":   {configschema.DefaultSourceGenerated, "calcSambaDC"},
 		"vikunja.language":                {configschema.DefaultSourceInherited, "vikunja calculate"},
+		"versitygw.root_secret_key":       {configschema.DefaultSourceGenerated, "versitygw calculate"},
 	}
 
 	validSources := map[configschema.DefaultSource]bool{}
@@ -143,6 +152,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"samba_dc.password_bind_password": true,
 		"samba_dc.anchor_bind_password":   true,
 		"vikunja.language":                true,
+		"versitygw.root_secret_key":       true,
 	}
 	gotInputRequired := map[string]bool{}
 	gotMustResolveOnly := map[string]bool{}
@@ -205,15 +215,51 @@ func TestBundledParameterConstraintBoundaries(t *testing.T) {
 		t.Error("oauth2_proxy.allow_groups accepted a whitespace-only administrative group list")
 	}
 
-	domainPrefix := inventory["vikunja.domain_prefix"].spec
-	for _, value := range []string{"a", "tasks", "task-board", strings.Repeat("a", 63)} {
-		if err := domainPrefix.Validate(value); err != nil {
-			t.Errorf("vikunja.domain_prefix rejected %q: %v", value, err)
+	for _, path := range []string{"versitygw.domain_prefix", "vikunja.domain_prefix"} {
+		domainPrefix := inventory[path].spec
+		for _, value := range []string{"a", "tasks", "task-board", strings.Repeat("a", 63)} {
+			if err := domainPrefix.Validate(value); err != nil {
+				t.Errorf("%s rejected %q: %v", path, value, err)
+			}
+		}
+		for _, value := range []string{"", "Tasks", "-tasks", "tasks-", "task_board", strings.Repeat("a", 64)} {
+			if err := domainPrefix.Validate(value); err == nil {
+				t.Errorf("%s accepted invalid value %q", path, value)
+			}
 		}
 	}
-	for _, value := range []string{"", "Tasks", "-tasks", "tasks-", "task_board", strings.Repeat("a", 64)} {
-		if err := domainPrefix.Validate(value); err == nil {
-			t.Errorf("vikunja.domain_prefix accepted invalid value %q", value)
+
+	region := inventory["versitygw.region"].spec
+	for _, value := range []string{"us-east-1", "garage.local", "R1_custom"} {
+		if err := region.Validate(value); err != nil {
+			t.Errorf("versitygw.region rejected %q: %v", value, err)
+		}
+	}
+	for _, value := range []string{"", "region/name", strings.Repeat("a", 65)} {
+		if err := region.Validate(value); err == nil {
+			t.Errorf("versitygw.region accepted invalid value %q", value)
+		}
+	}
+
+	accessKey := inventory["versitygw.root_access_key"].spec
+	for _, value := range []string{"ANASROOT", "key_01", "abc"} {
+		if err := accessKey.Validate(value); err != nil {
+			t.Errorf("versitygw.root_access_key rejected %q: %v", value, err)
+		}
+	}
+	for _, value := range []string{"ab", "key with spaces", strings.Repeat("a", 65)} {
+		if err := accessKey.Validate(value); err == nil {
+			t.Errorf("versitygw.root_access_key accepted invalid value %q", value)
+		}
+	}
+
+	secret := inventory["versitygw.root_secret_key"].spec
+	if err := secret.Validate(strings.Repeat("s", 16)); err != nil {
+		t.Errorf("versitygw.root_secret_key rejected its minimum length: %v", err)
+	}
+	for _, value := range []string{strings.Repeat("s", 15), strings.Repeat("s", 129)} {
+		if err := secret.Validate(value); err == nil {
+			t.Errorf("versitygw.root_secret_key accepted invalid length %d", len(value))
 		}
 	}
 }
@@ -225,7 +271,7 @@ func loadBundledParameterMetadata(t *testing.T) map[string]bundledParameterMetad
 		t.Fatal(err)
 	}
 
-	out := make(map[string]bundledParameterMetadata, 151)
+	out := make(map[string]bundledParameterMetadata, 156)
 	for _, parameter := range globalConfig.Parameters {
 		envKey := parameterEnvKey(globalModuleName, parameter, reg)
 		_, hasDefault := globalConfig.Defaults[envKey]

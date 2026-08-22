@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: versitygw
+module_version: 1.7.0
+module_revision: 2
+reviewed_at: 2026-08-22
+timezone:
+  status: container
+  mechanism: The gateway receives TZ through the Module .env for process and access-log timestamps.
+language:
+  status: not_applicable
+  scope: S3 HTTP protocol service
+  selection: none
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: none
+  fallback: S3 responses are protocol-defined and the Module exposes no WebUI.
+  supported: []
+  evidence:
+    - version: 1.7.0
+      url: https://github.com/versity/versitygw/tree/v1.7.0
+      path: cmd/versitygw CLI and S3 API server; WebUI is not enabled by this Module
+  notes: Client tools choose their own display language; it is not a gateway setting.

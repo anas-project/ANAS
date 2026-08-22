@@ -20,9 +20,14 @@ This is the human-readable index of `modules/*/module.yml`. Manifests remain aut
 | `ddns_go`, `ddns_updater` | alternative dynamic DNS implementations |
 | `oauth2_proxy` | OIDC gate for services without their own login |
 
-## Experimental modules
+## Non-stable modules
 
-`authentik`, `netbird`, and `freeradius` are explicitly marked `experimental`. NetBird remains an incomplete overlay-network scaffold; FreeRADIUS does not generate production client or user policy.
+`authentik`, `netbird`, and `freeradius` are explicitly marked `experimental`.
+`casdoor` and `versitygw` are `developing`; VersityGW provides a path-style S3 API
+over a dedicated POSIX directory, normalized `object_storage/s3` capability bindings,
+and per-Resource isolated buckets and credentials. It remains gated on the listed
+real-client, architecture, restore, and upgrade E2E evidence. NetBird remains an
+incomplete overlay-network scaffold; FreeRADIUS does not generate production client or user policy.
 
 Select modules as a YAML mapping and let the runner resolve dependencies and contract providers:
 

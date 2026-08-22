@@ -1,0 +1,7 @@
+api_version: anas.contract-documentation/v1
+contract: object_storage
+status: implemented
+reviewed_at: 2026-08-22
+summary:
+  zh: 为 Module 提供独立 bucket、独立访问凭据与幂等对象存储生命周期。
+  en: Provides modules with an independent bucket, access credential, and idempotent object-storage lifecycle.

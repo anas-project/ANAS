@@ -48,6 +48,40 @@ config:
   defaults:
     auth_interface: auto
 `
+	fixtureObjectStorageProvider = `api_version: anas.module/v1
+kind: Module
+name: versitygw
+version: 1.7.0
+revision: 1
+status: developing
+abi:
+  supports: [anas.module-hook/v1]
+runtime:
+  type: builtin
+capabilities:
+  provides:
+    - name: object_storage
+      interfaces: [s3]
+config:
+  exports:
+    - ANAS_OBJECT_STORAGE_S3_*
+`
+	// object_storage/s3 is the single-interface shorthand: a consumer names
+	// only the capability and receives a normalized private binding.
+	fixtureObjectStorageConsumer = `api_version: anas.module/v1
+kind: Module
+name: archive
+version: 1.0.0
+revision: 1
+status: developing
+abi:
+  supports: [anas.module-hook/v1]
+runtime:
+  type: builtin
+dependencies:
+  requires_capabilities:
+    - name: object_storage
+`
 )
 
 func forwardAuthApp(t *testing.T, manifests map[string]string, cfg *config.File) *app {
@@ -94,6 +128,109 @@ func TestAutoSelectionBindsTheOnlyProvider(t *testing.T) {
 	// Auto-selecting forward_auth must not disturb the IAM bookkeeping.
 	if a.iamProvider != "" {
 		t.Fatalf("iamProvider = %q, want empty", a.iamProvider)
+	}
+}
+
+func TestObjectStorageCapabilityNameOnlyBindsAndProjectsS3Outputs(t *testing.T) {
+	a := forwardAuthApp(t, map[string]string{
+		"core":      fixtureCoreModule,
+		"versitygw": fixtureObjectStorageProvider,
+		"archive":   fixtureObjectStorageConsumer,
+	}, &config.File{Modules: config.NewModuleSelection("archive")})
+
+	order, err := a.resolveOrder([]string{"archive"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if indexOf(order, "versitygw") > indexOf(order, "archive") {
+		t.Fatalf("object storage provider ordered after consumer: %v", order)
+	}
+	if got := a.resolvedBindings["archive"]["object_storage"]; got != "versitygw" {
+		t.Fatalf("binding = %q, want versitygw", got)
+	}
+	if got := a.resolvedBindings["archive"]["object_storage.interface"]; got != "s3" {
+		t.Fatalf("interface = %q, want s3", got)
+	}
+
+	sources := map[string]string{
+		"ANAS_OBJECT_STORAGE_S3_ENDPOINT":          "https://s3.nas.test:443",
+		"ANAS_OBJECT_STORAGE_S3_REGION":            "us-east-1",
+		"ANAS_OBJECT_STORAGE_S3_ACCESS_KEY_ID":     "ANASROOT",
+		"ANAS_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY": "private-secret",
+		"ANAS_OBJECT_STORAGE_S3_PATH_STYLE":        "true",
+	}
+	for key, value := range sources {
+		a.env[key] = value
+		a.setEnvOwner(key, "versitygw")
+	}
+	if err := a.publishCapabilityOutputs("versitygw"); err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]string{
+		"ANAS_OBJECT_STORAGE_BINDING__ARCHIVE__INTERFACE":         "s3",
+		"ANAS_OBJECT_STORAGE_BINDING__ARCHIVE__ENDPOINT":          "https://s3.nas.test:443",
+		"ANAS_OBJECT_STORAGE_BINDING__ARCHIVE__REGION":            "us-east-1",
+		"ANAS_OBJECT_STORAGE_BINDING__ARCHIVE__ACCESS_KEY_ID":     "ANASROOT",
+		"ANAS_OBJECT_STORAGE_BINDING__ARCHIVE__SECRET_ACCESS_KEY": "private-secret",
+		"ANAS_OBJECT_STORAGE_BINDING__ARCHIVE__PATH_STYLE":        "true",
+	}
+	consumerEnv := a.scopedEnv("archive")
+	for key, value := range want {
+		if consumerEnv[key] != value {
+			t.Errorf("consumer binding %s = %q, want %q", key, consumerEnv[key], value)
+		}
+	}
+	if _, leaked := consumerEnv["ANAS_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY"]; leaked {
+		t.Fatal("consumer received the provider-side S3 secret namespace")
+	}
+	if got := a.scopedEnv("core")["ANAS_OBJECT_STORAGE_BINDING__ARCHIVE__SECRET_ACCESS_KEY"]; got != "" {
+		t.Fatal("object storage binding secret leaked to an unrelated module")
+	}
+	if !isRunnerOwnedRuntimeKey("ANAS_OBJECT_STORAGE_BINDING__ARCHIVE__SECRET_ACCESS_KEY", a.reg) {
+		t.Fatal("object storage consumer binding is not reserved from caller input")
+	}
+}
+
+func TestObjectStorageCapabilityRejectsIncompleteProviderOutput(t *testing.T) {
+	a := forwardAuthApp(t, map[string]string{
+		"core":      fixtureCoreModule,
+		"versitygw": fixtureObjectStorageProvider,
+		"archive":   fixtureObjectStorageConsumer,
+	}, &config.File{Modules: config.NewModuleSelection("archive")})
+	if _, err := a.resolveOrder([]string{"archive"}); err != nil {
+		t.Fatal(err)
+	}
+	a.env["ANAS_OBJECT_STORAGE_S3_ENDPOINT"] = "https://s3.nas.test"
+	a.setEnvOwner("ANAS_OBJECT_STORAGE_S3_ENDPOINT", "versitygw")
+	err := a.publishCapabilityOutputs("versitygw")
+	if err == nil || !strings.Contains(err.Error(), "ANAS_OBJECT_STORAGE_S3_REGION") {
+		t.Fatalf("error = %v, want missing normalized S3 output", err)
+	}
+}
+
+func TestObjectStorageCapabilityRejectsSpoofedProviderOutput(t *testing.T) {
+	a := forwardAuthApp(t, map[string]string{
+		"core":      fixtureCoreModule,
+		"versitygw": fixtureObjectStorageProvider,
+		"archive":   fixtureObjectStorageConsumer,
+	}, &config.File{Modules: config.NewModuleSelection("archive")})
+	if _, err := a.resolveOrder([]string{"archive"}); err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range map[string]string{
+		"ANAS_OBJECT_STORAGE_S3_ENDPOINT":          "https://attacker.invalid",
+		"ANAS_OBJECT_STORAGE_S3_REGION":            "us-east-1",
+		"ANAS_OBJECT_STORAGE_S3_ACCESS_KEY_ID":     "attacker",
+		"ANAS_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY": "attacker-secret",
+		"ANAS_OBJECT_STORAGE_S3_PATH_STYLE":        "true",
+	} {
+		a.env[key] = value
+		a.setEnvOwner(key, globalScope)
+	}
+	err := a.publishCapabilityOutputs("versitygw")
+	if err == nil || !strings.Contains(err.Error(), "does not own required output") {
+		t.Fatalf("error = %v, want spoofed provider output rejection", err)
 	}
 }
 
