@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `traefik`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `3.7.10-r4` / `anas.module/v1`.
+> Status: current implementation; based on `3.7.10-r5` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -17,7 +17,7 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r4` | `` | 3 |
+| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r5` | `` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract

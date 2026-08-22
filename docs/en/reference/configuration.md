@@ -1,12 +1,12 @@
 # Structured `config.yml` and environment-variable inventory
 
-This reference distinguishes settings with a structured `config.yml` entry from overrides that currently require top-level `env:`. Counts reflect the 2026-08-21 working tree and are not a fixed ABI.
+This reference distinguishes settings with a structured `config.yml` entry from overrides that currently require top-level `env:`. Counts reflect the 2026-08-22 working tree and are not a fixed ABI.
 
 ## Summary
 
-- `anas config list --json` currently declares **156** configurable parameters: 17 global and 139 module parameters.
-- 135 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
-- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 156 count.
+- `anas config list --json` currently declares **172** configurable parameters: 17 global and 155 module parameters.
+- 151 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
+- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 172 count.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
 
 “Structured” has two layers:
@@ -111,14 +111,14 @@ existing deployment creates a different set of projects, container names, and
 cross-container addresses. It is a static deployment change, not an in-place
 rename, so the old deployment must be explicitly migrated or removed first.
 
-## The 156 declared parameters
+## The 172 declared parameters
 
 Every entry below appears in `anas config list`. Ordinary editable parameters can be addressed by `anas config set`; `credential_rotate`, `data_migrate`, and `immutable` entries are inventory/explain-only and require their dedicated workflow. Global parameters use `global.<parameter>`; ordinary module parameters use `modules.<module>.config.<parameter>`.
 
 The JSON inventory reports `type` as `string`, `bool`, `int`, or `enum`; enum
 entries also provide `allowed_values`. `unknown` remains a compatibility value
 for legacy Modules and incomplete development declarations, but the built-in
-Module release gate rejects it, so all 156 entries in this inventory have an
+Module release gate rejects it, so all 172 entries in this inventory have an
 explicit type.
 
 Configuration metadata separates “the operator must enter a value” from “the
@@ -152,25 +152,27 @@ not support for arbitrary JSON Schema keywords. The CLI, future `anasd`
 configuration API, and Web forms must consume the same application-layer schema.
 
 In the current release baseline, only `global.base_domain` and `global.email`
-have `input_required`/`required` set to true; 24 entries have
+have `input_required`/`required` set to true; 26 entries have
 `must_resolve: true`. `ddns_go.dns_provider` and
 `ddns_updater.dns_provider` can be injected conditionally from deployment
 `dynamic_dns.dns_provider`, so each reports `input_required: false`,
 `must_resolve: true`, and `default_source: none`. Module-local input is needed
 only when that resolver cannot supply the value.
 
-The `default_source` distribution is `static: 125`, `generated: 10`, `none: 8`,
-`runtime: 4`, `inherited: 6`, and `host: 3`. The 125 `has_default: true`
-entries are exactly the 125 `static` entries.
+The `default_source` distribution is `static: 140`, `generated: 10`, `none: 8`,
+`runtime: 4`, `inherited: 7`, and `host: 3`. The 140 `has_default: true`
+entries are exactly the 140 `static` entries.
 
-The current 19 explicit single-field constraints cover the DNS-name formats
+The current 23 explicit single-field constraints cover the DNS-name formats
 for `global.base_domain` and `samba_dc.domain`, timezone and
 language/locale formats, three IPv4 formats, the `1..65535` ranges for
-`eturnal.port`, `meshcentral.mps_port`, and `traefik.base_port`,
+`eturnal.port`, `forgejo.ssh_port`, `meshcentral.mps_port`, and `traefik.base_port`,
 `samba_dc.max_log_size >= 1`, `casdoor.ldap_auto_sync_minutes >= 1`, a non-whitespace requirement for
 `oauth2_proxy.allow_groups`; the 1..63-character DNS-label patterns for
-`versitygw.domain_prefix` and `vikunja.domain_prefix`; and character/length
-constraints for the VersityGW region, root access key, and root secret. These declarations preserve already enforced
+`forgejo.domain_prefix`, `forgejo.actions_incus_profile`, `versitygw.domain_prefix`, and `vikunja.domain_prefix`;
+the pinned-fingerprint pattern for `forgejo.actions_runner_image`;
+and character/length constraints for the VersityGW region, root access key, and root secret.
+These declarations preserve already enforced
 runtime rules; unsupported numeric caps, provider-conditional rules, and
 cross-field relationships were not invented merely to populate the schema.
 
@@ -183,6 +185,7 @@ cross-field relationships were not invented merely to populate the schema.
 | `ddns_go` | 10 | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` |
 | `ddns_updater` | 10 | `dns_provider`, `domain_prefix`, `forward_auth_interface`, `publicip_dns_providers`, `publicip_fetchers`, `publicip_ipv4_providers`, `publicip_ipv6_providers`, `publicip_providers`, `ttl`, `zone_identifier` |
 | `eturnal` | 2 | `domain_prefix`, `port` |
+| `forgejo` | 16 | `actions_allowed_scopes`, `actions_enabled`, `actions_incus_client_cert_b64`, `actions_incus_client_key_b64`, `actions_incus_endpoint`, `actions_incus_profile`, `actions_incus_server_cert_b64`, `actions_runner_image`, `custom_git_hooks_enabled`, `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `local_path_import_enabled`, `ssh_port` |
 | `lam` | 3 | `admin_password`, `domain_prefix`, `language` |
 | `lego` | 2 | `dns_provider`, `dns_server` |
 | `llng` | 8 | `adminer_enabled`, `db_name`, `db_type`, `domain_prefix`, `enable_test`, `log_level`, `manager_domain_prefix`, `test_domain_prefix` |
@@ -222,17 +225,17 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 
 ## What changing a parameter does
 
-`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. The 156 current entries group by effect as follows. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
+`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. The 155 current Module parameters group by effect as follows. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
 
 | Effect | Count | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 101 | Re-render and recreate the affected container or Compose project |
+| `container_recreate` | 114 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 7 | Ordinary setting and replacement import are refused; use a credential-rotation transaction to update application state and the Secret Store together |
-| `data_migrate` | 13 | Ordinary setting and deployment activation are blocked until persistent data, a database, or membership is migrated |
+| `data_migrate` | 15 | Ordinary setting and deployment activation are blocked until persistent data, a database, or membership is migrated |
 | `hot_reload` | 16 | The declared target is a Samba management command; the current executor conservatively creates a deployment and runs Compose `down → up` for the affected container |
 | `image_rebuild` | 1 | Rebuild with `anas apply --build`, then deploy |
 | `immutable` | 4 | Generic `config set` refuses the change; use a replacement or domain-migration workflow |
-| `reconcile` | 14 | The declared target is application/API/file reconciliation; the current executor applies it through a new deployment and container startup |
+| `reconcile` | 15 | The declared target is application/API/file reconciliation; the current executor applies it through a new deployment and container startup |
 
 ### Actual execution boundary in this release
 
@@ -411,4 +414,4 @@ test-env/scripts/test-parameter-effects.sh
 test-env/scripts/test-render.sh
 ```
 
-The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the 156-entry inventory, complete type declarations, and retired paths; the real CLI→hook→render→deployment→Compose/refusal boundary for all seven effects; and require every one of the 156 parameter keys to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.
+The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the 172-entry inventory, complete type declarations, and retired paths; the real CLI→hook→render→deployment→Compose/refusal boundary for all seven effects; and require every one of the 172 parameter keys to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.

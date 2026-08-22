@@ -1,0 +1,40 @@
+api_version: anas.contract/v1
+kind: Contract
+name: compute
+version: 1.0.0
+interfaces:
+  - incus_vm
+resource:
+  schema: schemas/instance.yml
+  identity:
+    - provider_project
+    - instance_id
+operations:
+  create:
+    request_schema: schemas/create-request.yml
+    result_schema: schemas/instance-result.yml
+    required: true
+  inspect:
+    request_schema: schemas/instance-request.yml
+    result_schema: schemas/instance-result.yml
+    required: true
+  start:
+    request_schema: schemas/instance-request.yml
+    result_schema: schemas/instance-result.yml
+    required: true
+  exec_stdin:
+    request_schema: schemas/exec-request.yml
+    result_schema: schemas/exec-result.yml
+    required: true
+  stop:
+    request_schema: schemas/instance-request.yml
+    result_schema: schemas/instance-result.yml
+    required: true
+  delete:
+    request_schema: schemas/instance-request.yml
+    result_schema: schemas/delete-result.yml
+    required: true
+  list_managed:
+    request_schema: schemas/list-request.yml
+    result_schema: schemas/list-result.yml
+    required: true

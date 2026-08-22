@@ -57,6 +57,7 @@ See the [technical implementation](docs/technical.en.md) for provider operations
 | provider | `postgres` | `1.0.0` | `postgres` | `providers/relational_database/provider.yml` |
 | consumer | `authentik` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `casdoor` | `>=1.0.0 <2.0.0` | `postgres` | - |
+| consumer | `forgejo` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
 | consumer | `llng` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
 | consumer | `meshcentral` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
 | consumer | `nextcloud` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |

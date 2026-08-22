@@ -1,0 +1,7 @@
+type: object
+additional_properties: false
+required: [instances]
+properties:
+  instances:
+    type: array
+    items: {$ref: instance-result.yml}

@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `casdoor` 的协议契约、安全边界和验证入口。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.143.0-r1` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.143.0-r2` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -11,8 +11,8 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r1` | `traefik, db, casdoor` | 5 |
-| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r1` | `casdoor` | 2 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r2` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r2` | `casdoor` | 2 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约

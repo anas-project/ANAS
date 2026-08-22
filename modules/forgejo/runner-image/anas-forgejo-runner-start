@@ -1,0 +1,54 @@
+#!/bin/sh
+set -eu
+
+url=
+uuid=
+handle=
+label=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --url|--uuid|--handle|--label)
+            option=$1
+            [ "$#" -ge 2 ] || exit 64
+            value=$2
+            case "$value" in
+                *[!A-Za-z0-9_./:@-]*|'') exit 64 ;;
+            esac
+            case "$option" in
+                --url) url=$value ;;
+                --uuid) uuid=$value ;;
+                --handle) handle=$value ;;
+                --label) label=$value ;;
+            esac
+            shift 2
+            ;;
+        *) exit 64 ;;
+    esac
+done
+[ -n "$url" ] && [ -n "$uuid" ] && [ -n "$handle" ] && [ -n "$label" ] || exit 64
+case "$url" in https://*|http://*) ;; *) exit 64 ;; esac
+
+token_dir=/run/anas-actions-token
+token_file=$token_dir/runner-token
+unit=anas-forgejo-one-job.service
+if systemctl is-active --quiet "$unit"; then
+    exit 0
+fi
+install -d -o runner-agent -g runner-agent -m 0700 "$token_dir"
+umask 077
+dd of="$token_file" bs=41 count=1 status=none
+[ "$(wc -c < "$token_file")" -eq 40 ] || exit 65
+LC_ALL=C grep -Eq '^[0-9a-f]{40}$' "$token_file" || exit 65
+chown runner-agent:runner-agent "$token_file"
+chmod 0600 "$token_file"
+
+systemctl reset-failed "$unit" 2>/dev/null || true
+systemd-run --unit="$unit" --collect --no-block \
+    --uid=runner-agent --gid=runner-agent \
+    --property=RuntimeMaxSec=1h --property=TimeoutStopSec=30s \
+    --setenv=HOME=/home/runner-agent \
+    --setenv=DOCKER_HOST=unix:///run/anas-podman/podman.sock \
+    /usr/local/libexec/anas-forgejo-one-job \
+    /usr/local/bin/forgejo-runner -c /etc/forgejo-runner/config.yml one-job \
+    --url "$url" --uuid "$uuid" --token-url "file://$token_file" \
+    --label "$label" --handle "$handle" --wait

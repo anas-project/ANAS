@@ -22,10 +22,10 @@ This is the human-readable index of `modules/*/module.yml`. Manifests remain aut
 
 ## Non-stable modules
 
-`authentik`, `netbird`, and `freeradius` are explicitly marked `experimental`.
-`casdoor` and `versitygw` are `developing`; VersityGW provides a path-style S3 API
-over a dedicated POSIX directory, normalized `object_storage/s3` capability bindings,
-and per-Resource isolated buckets and credentials. It remains gated on the listed
+`authentik`, `netbird`, and `freeradius` are explicitly marked `experimental`. `casdoor`, `forgejo`, and `versitygw` are
+`developing`; Forgejo has its manifest, OIDC, recovery administrator, database, HTTP/SSH topology, and unit tests,
+while VersityGW provides a path-style S3 API over a dedicated POSIX directory, normalized
+`object_storage/s3` capability bindings, and per-Resource isolated buckets and credentials. Both remain gated on their listed
 real-client, architecture, restore, and upgrade E2E evidence. NetBird remains an
 incomplete overlay-network scaffold; FreeRADIUS does not generate production client or user policy.
 

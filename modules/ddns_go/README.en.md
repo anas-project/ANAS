@@ -8,7 +8,7 @@ Dynamic DNS updater with a Web UI, host IPv6 discovery, and strong Chinese DNS-v
 | Item | Value |
 | --- | --- |
 | Module | `ddns_go` |
-| Version / revision | `6.17.4-r5` |
+| Version / revision | `6.17.4-r6` |
 | Status | `release` |
 | Category | `network` |
 | Runtime | `compose` |

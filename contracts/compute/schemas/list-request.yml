@@ -1,0 +1,8 @@
+type: object
+additional_properties: false
+required: [provider, interface, provider_project, managed_prefix]
+properties:
+  provider: {type: string}
+  interface: {enum: [incus_vm]}
+  provider_project: {type: string}
+  managed_prefix: {type: string, pattern: "^anas-[a-z0-9-]+$"}

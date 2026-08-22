@@ -4,7 +4,7 @@ This document describes the first POSIX-backend implementation. See the
 [English README](../README.en.md) for configuration and client operations.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `1.7.0-r2` / `anas.module/v1`.
+> Status: current implementation; based on `1.7.0-r3` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required Modules, capabilities, and contracts
@@ -23,8 +23,8 @@ manages per-Resource IAM users, buckets, and credentials.
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_versitygw` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r2` | `default` | 2 |
-| `anas_versitygw_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r2` | `default` | 1 |
+| `anas_versitygw` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r3` | `default` | 2 |
+| `anas_versitygw_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r3` | `default` | 1 |
 <!-- generated:compose-topology:end -->
 
 The resident `anas_versitygw` service and one-shot `anas_versitygw_provision` job join the external

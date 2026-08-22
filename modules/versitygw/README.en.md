@@ -9,7 +9,7 @@ filesystem gateway, not a distributed object store.
 | Item | Value |
 | --- | --- |
 | Module | `versitygw` |
-| Version / revision | `1.7.0-r2` |
+| Version / revision | `1.7.0-r3` |
 | Status | `developing` |
 | Category | `storage` |
 | Runtime | `compose` |

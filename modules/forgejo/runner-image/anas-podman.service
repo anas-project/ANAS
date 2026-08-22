@@ -1,0 +1,28 @@
+[Unit]
+Description=ANAS one-job rootless Podman API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=runner-engine
+Group=actions-engine
+SupplementaryGroups=runner-engine
+RuntimeDirectory=anas-podman
+RuntimeDirectoryMode=0770
+UMask=0007
+Environment=HOME=/home/runner-engine
+Environment=XDG_RUNTIME_DIR=/run/anas-podman/xdg
+ExecStartPre=/usr/bin/install -d -o runner-engine -g actions-engine -m 0700 /run/anas-podman/xdg
+ExecStart=/usr/bin/podman system service --time=0 unix:///run/anas-podman/podman.sock
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=false
+ProtectSystem=strict
+ReadWritePaths=/home/runner-engine /run/anas-podman
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

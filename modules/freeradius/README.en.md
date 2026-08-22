@@ -11,7 +11,7 @@ FreeRADIUS service scaffold for development and integration testing only.
 | Item | Value |
 | --- | --- |
 | Module | `freeradius` |
-| Version / revision | `3.2.10-r3` |
+| Version / revision | `3.2.10-r4` |
 | Status | `developing` |
 | Category | `network` |
 | Runtime | `compose` |

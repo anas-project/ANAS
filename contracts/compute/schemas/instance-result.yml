@@ -1,0 +1,7 @@
+type: object
+additional_properties: false
+required: [provider_project, instance_id, state]
+properties:
+  provider_project: {type: string}
+  instance_id: {type: string}
+  state: {enum: [creating, stopped, running, deleting, missing, error]}

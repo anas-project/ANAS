@@ -4,7 +4,7 @@
 [中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `2.4.0-r1` / `anas.module/v1`.
+> 状态：当前实现；对应 `2.4.0-r2` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,7 +20,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_vikunja` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r1` | `db, traefik` | 2 |
+| `anas_vikunja` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r2` | `db, traefik` | 2 |
 <!-- generated:compose-topology:end -->
 
 `anas_vikunja` 只在 Traefik network 的 `3456/tcp` 提供 Web/API，没有宿主端口。`db` 是

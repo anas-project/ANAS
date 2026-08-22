@@ -3,7 +3,7 @@
 本文记录 `versitygw` 首期 POSIX backend 实现。用户配置与客户端操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `1.7.0-r2` / `anas.module/v1`.
+> 状态：当前实现；对应 `1.7.0-r3` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -21,8 +21,8 @@ Capability 发布统一服务级连接信息；Contract Provider 管理 per-Reso
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_versitygw` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r2` | `default` | 2 |
-| `anas_versitygw_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r2` | `default` | 1 |
+| `anas_versitygw` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r3` | `default` | 2 |
+| `anas_versitygw_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r3` | `default` | 1 |
 <!-- generated:compose-topology:end -->
 
 常驻 `anas_versitygw` 与一次性 `anas_versitygw_provision` 连接 Traefik external network，没有

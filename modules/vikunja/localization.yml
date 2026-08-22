@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: vikunja
 module_version: 2.4.0
-module_revision: 1
+module_revision: 2
 reviewed_at: 2026-08-21
 timezone:
   status: configured

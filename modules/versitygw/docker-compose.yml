@@ -1,6 +1,6 @@
 services:
   anas_versitygw:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r2
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r3
     build:
       context: ./versitygw
       network: ${DOCKER_BUILD_NETWORK:-default}
@@ -59,7 +59,7 @@ services:
       - default
 
   anas_versitygw_provision:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r2
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-versitygw:1.7.0-r3
     restart: "no"
     read_only: true
     cap_drop:

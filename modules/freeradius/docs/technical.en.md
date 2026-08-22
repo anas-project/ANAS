@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `freeradius`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `3.2.10-r3` / `anas.module/v1`.
+> Status: current implementation; based on `3.2.10-r4` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts

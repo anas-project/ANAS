@@ -1,0 +1,180 @@
+services:
+  anas_forgejo:
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
+    build:
+      context: ./forgejo
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        FORGEJO_REGISTRY: ${FORGEJO_REGISTRY:-codeberg.org}
+        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-docker.io}
+        FORGEJO_VERSION: 15.0.7
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r1
+    restart: unless-stopped
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    # Do not use the module-wide env_file here: Incus credentials belong only
+    # to the controller and must never enter the Forgejo application container.
+    environment:
+      TZ: ${TZ}
+      FORGEJO__ACTIONS__ENABLED: ${FORGEJO__ACTIONS__ENABLED}
+      FORGEJO__DATABASE__DB_TYPE: ${FORGEJO__DATABASE__DB_TYPE}
+      FORGEJO__DATABASE__HOST: ${FORGEJO__DATABASE__HOST}
+      FORGEJO__DATABASE__NAME: ${FORGEJO__DATABASE__NAME}
+      FORGEJO__DATABASE__PASSWD: ${FORGEJO__DATABASE__PASSWD}
+      FORGEJO__DATABASE__SSL_MODE: ${FORGEJO__DATABASE__SSL_MODE}
+      FORGEJO__DATABASE__USER: ${FORGEJO__DATABASE__USER}
+      FORGEJO__I18N__LANGS: ${FORGEJO__I18N__LANGS}
+      FORGEJO__I18N__NAMES: ${FORGEJO__I18N__NAMES}
+      FORGEJO__LOG__MODE: ${FORGEJO__LOG__MODE}
+      FORGEJO__MAILER__ENABLED: ${FORGEJO__MAILER__ENABLED}
+      FORGEJO__OAUTH2_CLIENT__ACCOUNT_LINKING: ${FORGEJO__OAUTH2_CLIENT__ACCOUNT_LINKING}
+      FORGEJO__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION: ${FORGEJO__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION}
+      FORGEJO__OAUTH2_CLIENT__OPENID_CONNECT_SCOPES: ${FORGEJO__OAUTH2_CLIENT__OPENID_CONNECT_SCOPES}
+      FORGEJO__OAUTH2_CLIENT__REGISTER_EMAIL_CONFIRM: ${FORGEJO__OAUTH2_CLIENT__REGISTER_EMAIL_CONFIRM}
+      FORGEJO__OAUTH2_CLIENT__UPDATE_AVATAR: ${FORGEJO__OAUTH2_CLIENT__UPDATE_AVATAR}
+      FORGEJO__OAUTH2_CLIENT__USERNAME: ${FORGEJO__OAUTH2_CLIENT__USERNAME}
+      FORGEJO__SECURITY__DISABLE_GIT_HOOKS: ${FORGEJO__SECURITY__DISABLE_GIT_HOOKS}
+      FORGEJO__SECURITY__IMPORT_LOCAL_PATHS: ${FORGEJO__SECURITY__IMPORT_LOCAL_PATHS}
+      FORGEJO__SECURITY__INSTALL_LOCK: ${FORGEJO__SECURITY__INSTALL_LOCK}
+      FORGEJO__SECURITY__PASSWORD_HASH_ALGO: ${FORGEJO__SECURITY__PASSWORD_HASH_ALGO}
+      FORGEJO__SECURITY__REVERSE_PROXY_TRUSTED_PROXIES: ${FORGEJO__SECURITY__REVERSE_PROXY_TRUSTED_PROXIES}
+      FORGEJO__SECURITY__SECRET_KEY: ${FORGEJO__SECURITY__SECRET_KEY}
+      FORGEJO__SERVER__DOMAIN: ${FORGEJO__SERVER__DOMAIN}
+      FORGEJO__SERVER__HTTP_PORT: ${FORGEJO__SERVER__HTTP_PORT}
+      FORGEJO__SERVER__LFS_START_SERVER: ${FORGEJO__SERVER__LFS_START_SERVER}
+      FORGEJO__SERVER__PROTOCOL: ${FORGEJO__SERVER__PROTOCOL}
+      FORGEJO__SERVER__ROOT_URL: ${FORGEJO__SERVER__ROOT_URL}
+      FORGEJO__SERVER__SSH_DOMAIN: ${FORGEJO__SERVER__SSH_DOMAIN}
+      FORGEJO__SERVER__SSH_LISTEN_PORT: ${FORGEJO__SERVER__SSH_LISTEN_PORT}
+      FORGEJO__SERVER__SSH_PORT: ${FORGEJO__SERVER__SSH_PORT}
+      FORGEJO__SERVER__START_SSH_SERVER: ${FORGEJO__SERVER__START_SSH_SERVER}
+      FORGEJO__SERVICE__ALLOW_ONLY_EXTERNAL_REGISTRATION: ${FORGEJO__SERVICE__ALLOW_ONLY_EXTERNAL_REGISTRATION}
+      FORGEJO__SERVICE__DEFAULT_ALLOW_CREATE_ORGANIZATION: ${FORGEJO__SERVICE__DEFAULT_ALLOW_CREATE_ORGANIZATION}
+      FORGEJO__SERVICE__DEFAULT_USER_VISIBILITY: ${FORGEJO__SERVICE__DEFAULT_USER_VISIBILITY}
+      FORGEJO__SERVICE__DISABLE_REGISTRATION: ${FORGEJO__SERVICE__DISABLE_REGISTRATION}
+      FORGEJO__SERVICE__ENABLE_BASIC_AUTHENTICATION: ${FORGEJO__SERVICE__ENABLE_BASIC_AUTHENTICATION}
+      FORGEJO__SERVICE__ENABLE_INTERNAL_SIGNIN: ${FORGEJO__SERVICE__ENABLE_INTERNAL_SIGNIN}
+      FORGEJO__SERVICE__EXTERNAL_USER_DISABLE_FEATURES: ${FORGEJO__SERVICE__EXTERNAL_USER_DISABLE_FEATURES}
+      FORGEJO__SERVICE__REGISTER_EMAIL_CONFIRM: ${FORGEJO__SERVICE__REGISTER_EMAIL_CONFIRM}
+      FORGEJO__SESSION__PROVIDER: ${FORGEJO__SESSION__PROVIDER}
+      FORGEJO__TIME__DEFAULT_UI_LOCATION: ${FORGEJO__TIME__DEFAULT_UI_LOCATION}
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=256m
+    volumes:
+      - "${ANAS_TLS_CERTS_DIR}/${ANAS_TLS_INTERNAL_CA_NAME}:/etc/ssl/certs/anas-internal-ca.crt:ro"
+      - "${DATA_PATH}/forgejo:/var/lib/gitea"
+    ports:
+      - "${FORGEJO_SSH_PORT}:2222"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/anas-forgejo-entrypoint", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 120s
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=application"
+      - "traefik.http.routers.forgejo.entrypoints=https"
+      - "traefik.http.routers.forgejo.rule=Host(`${FORGEJO_DOMAIN}`)"
+      - "traefik.http.routers.forgejo.tls=true"
+      - "traefik.http.services.forgejo.loadbalancer.server.port=3000"
+    depends_on:
+      anas_forgejo_actions_preflight:
+        condition: service_completed_successfully
+    networks:
+      - actions-control
+      - db
+      - traefik
+
+  anas_forgejo_actions_preflight:
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_actions_preflight
+    build:
+      context: ./actions-controller
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-docker.io}
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1
+    command: ["preflight"]
+    restart: "no"
+    environment:
+      FORGEJO_ACTIONS_ENABLED: ${FORGEJO_ACTIONS_ENABLED}
+      FORGEJO_ALLOWED_SCOPES: ${FORGEJO_ACTIONS_ALLOWED_SCOPES}
+      FORGEJO_PASSWORD: ${FORGEJO_ACTIONS_CONTROLLER_PASSWORD}
+      FORGEJO_RUNNER_IMAGE: ${FORGEJO_ACTIONS_RUNNER_IMAGE}
+      FORGEJO_RUNNER_URL: ${FORGEJO_DOMAIN_FULL}
+      FORGEJO_URL: http://anas_forgejo:3000
+      FORGEJO_USERNAME: anas_actions_controller
+      INCUS_CLIENT_CERT_B64: ${FORGEJO_ACTIONS_INCUS_CLIENT_CERT_B64}
+      INCUS_CLIENT_KEY_B64: ${FORGEJO_ACTIONS_INCUS_CLIENT_KEY_B64}
+      INCUS_ENDPOINT: ${FORGEJO_ACTIONS_INCUS_ENDPOINT}
+      INCUS_RUNNER_PROFILE: ${FORGEJO_ACTIONS_INCUS_PROFILE}
+      INCUS_SERVER_CERT_B64: ${FORGEJO_ACTIONS_INCUS_SERVER_CERT_B64}
+    user: 65532:65532
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /run:mode=0700,uid=65532,gid=65532,size=16m
+      - /tmp:mode=1777,size=32m
+    networks:
+      - actions-control
+
+  anas_forgejo_actions_controller:
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_actions_controller
+    build:
+      context: ./actions-controller
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-docker.io}
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1
+    restart: on-failure:5
+    depends_on:
+      anas_forgejo:
+        condition: service_healthy
+      anas_forgejo_actions_preflight:
+        condition: service_completed_successfully
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    environment:
+      FORGEJO_ACTIONS_ENABLED: ${FORGEJO_ACTIONS_ENABLED}
+      FORGEJO_ACTIONS_STATE_PATH: /var/lib/anas-actions/state.json
+      FORGEJO_ALLOWED_SCOPES: ${FORGEJO_ACTIONS_ALLOWED_SCOPES}
+      FORGEJO_PASSWORD: ${FORGEJO_ACTIONS_CONTROLLER_PASSWORD}
+      FORGEJO_RUNNER_IMAGE: ${FORGEJO_ACTIONS_RUNNER_IMAGE}
+      FORGEJO_RUNNER_URL: ${FORGEJO_DOMAIN_FULL}
+      FORGEJO_URL: http://anas_forgejo:3000
+      FORGEJO_USERNAME: anas_actions_controller
+      INCUS_CLIENT_CERT_B64: ${FORGEJO_ACTIONS_INCUS_CLIENT_CERT_B64}
+      INCUS_CLIENT_KEY_B64: ${FORGEJO_ACTIONS_INCUS_CLIENT_KEY_B64}
+      INCUS_ENDPOINT: ${FORGEJO_ACTIONS_INCUS_ENDPOINT}
+      INCUS_RUNNER_PROFILE: ${FORGEJO_ACTIONS_INCUS_PROFILE}
+      INCUS_SERVER_CERT_B64: ${FORGEJO_ACTIONS_INCUS_SERVER_CERT_B64}
+    user: 65532:65532
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /run:mode=0700,uid=65532,gid=65532,size=16m
+      - /tmp:mode=1777,size=32m
+    volumes:
+      - forgejo_actions_state:/var/lib/anas-actions
+    networks:
+      - actions-control
+
+networks:
+  actions-control:
+  db:
+    name: ${FORGEJO_NETWORK_DB}
+    external: true
+  traefik:
+    name: ${NETWORK_PREFIX}traefik
+    external: true
+
+volumes:
+  forgejo_actions_state:

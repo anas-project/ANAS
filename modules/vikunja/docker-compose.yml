@@ -8,7 +8,7 @@ services:
         DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
         GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
         VIKUNJA_VERSION: 2.4.0
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r2
     restart: unless-stopped
     dns:
       - ${LOCAL_DNS_SERVER}

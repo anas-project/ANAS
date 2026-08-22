@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: versitygw
 module_version: 1.7.0
-module_revision: 2
+module_revision: 3
 reviewed_at: 2026-08-22
 timezone:
   status: container

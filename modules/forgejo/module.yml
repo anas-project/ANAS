@@ -1,0 +1,240 @@
+api_version: anas.module/v1
+kind: Module
+name: forgejo
+version: 15.0.7
+revision: 1
+app_version: 15.0.7
+abi:
+  supports:
+    - anas.module-hook/v1
+title: Forgejo
+description: Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication.
+category: app
+status: developing
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  requires:
+    - traefik
+  requires_capabilities:
+    - name: iam
+      interface_selected_by: iam_protocol
+      interfaces:
+        any_of:
+          - oidc
+        prefer:
+          - oidc
+  contracts:
+    - name: relational_database
+      version: ">=1.0.0 <2.0.0"
+      selected_by: db_type
+      interfaces:
+        - postgres
+        - mariadb
+      default: postgres
+credentials:
+  provides:
+    # Forgejo's auth-source CLI cannot prove a transactional rollback. Keep the
+    # secret in inventory, but require the documented manual migration flow.
+    - id: forgejo.oidc_client_secret
+      secret_key: FORGEJO_OIDC_CLIENT_SECRET
+      type: shared_secret
+      rotation_mode: migrate
+    - id: forgejo.actions_controller_password
+      secret_key: FORGEJO_ACTIONS_CONTROLLER_PASSWORD
+      type: password
+      rotation_mode: migrate
+resources:
+  requires:
+    - id: primary_database
+      contract: relational_database
+      binding: db_type
+      spec_from:
+        name: db_name
+      spec:
+        principal: forgejo
+        credential:
+          policy: generated
+        deletion_policy: retain
+upgrade:
+  # No pinned release through 15.0.7 declares an ANAS-owned on-disk break.
+  # Restore and rollback E2E remains a release gate while this module develops.
+  data_breaking: []
+config:
+  must_resolve:
+    - language
+  defaults:
+    actions_allowed_scopes: ""
+    actions_enabled: false
+    actions_incus_client_cert_b64: ""
+    actions_incus_client_key_b64: ""
+    actions_incus_endpoint: ""
+    actions_incus_profile: anas-forgejo-runner
+    actions_incus_server_cert_b64: ""
+    actions_runner_image: ""
+    custom_git_hooks_enabled: false
+    domain_prefix: git
+    db_name: forgejo
+    db_type: auto
+    iam_protocol: auto
+    local_path_import_enabled: false
+    ssh_port: "2222"
+  types:
+    actions_allowed_scopes: string
+    actions_enabled: bool
+    actions_incus_client_cert_b64: string
+    actions_incus_client_key_b64: string
+    actions_incus_endpoint: string
+    actions_incus_profile:
+      kind: string
+      constraints:
+        min_length: 1
+        max_length: 63
+        pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+    actions_incus_server_cert_b64: string
+    actions_runner_image:
+      kind: string
+      constraints:
+        pattern: '^(?:[0-9a-f]{64})?$'
+    custom_git_hooks_enabled: bool
+    domain_prefix:
+      kind: string
+      constraints:
+        min_length: 1
+        max_length: 63
+        pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+    db_name: string
+    db_type:
+      enum: [auto, postgres, mariadb]
+    iam_protocol:
+      enum: [auto, oidc]
+    language:
+      kind: string
+      default_source: inherited
+    local_path_import_enabled: bool
+    ssh_port:
+      kind: int
+      constraints:
+        minimum: 1
+        maximum: 65535
+  exports:
+    - ANAS_IAM_CLIENT__FORGEJO__*
+    - APPS_LIST*
+  consumes:
+    - ANAS_IAM_BINDING__FORGEJO__*
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_INTERNAL_CA_NAME
+    - SAMBA_DC_ADMIN_GROUP_NAME
+    - SAMBA_DC_APP_FILTER
+    - TRAEFIK_BASE_PORT
+  changes:
+    actions_allowed_scopes:
+      effect: container_recreate
+      apply: reconcile-forgejo-actions
+      description: Changes the organization/repository scopes authorized to consume ANAS Runner compute.
+    actions_enabled:
+      effect: container_recreate
+      apply: reconcile-forgejo-actions
+      description: The only Actions feature switch; reconciles the Forgejo server and one-job Runner controller together.
+    actions_incus_client_cert_b64:
+      effect: container_recreate
+      apply: reconcile-forgejo-actions
+      sensitive: true
+      description: Project-scoped restricted Incus TLS client certificate used only by the Actions controller.
+    actions_incus_client_key_b64:
+      effect: container_recreate
+      apply: reconcile-forgejo-actions
+      sensitive: true
+      description: Project-scoped restricted Incus TLS client key used only by the Actions controller.
+    actions_incus_endpoint:
+      effect: container_recreate
+      apply: reconcile-forgejo-actions
+      description: HTTPS endpoint of the independent Incus VM host.
+    actions_incus_profile:
+      effect: container_recreate
+      apply: reconcile-forgejo-actions
+      description: Fixed restricted Incus profile used for one-job Runner VMs.
+    actions_incus_server_cert_b64:
+      effect: container_recreate
+      apply: reconcile-forgejo-actions
+      sensitive: true
+      description: Pinned Incus server certificate consumed only by the Actions controller.
+    actions_runner_image:
+      effect: container_recreate
+      apply: reconcile-forgejo-actions
+      description: Pinned SHA-256 fingerprint of the approved Incus Runner VM image.
+    custom_git_hooks_enabled:
+      effect: container_recreate
+      apply: recreate-forgejo
+      description: Enables repository custom Git hooks; disabled by default because hooks execute server-side code as the Forgejo user.
+    db_type:
+      effect: data_migrate
+      apply: migrate-forgejo-database
+      description: Changing the selected database does not migrate existing Forgejo data.
+    db_name:
+      effect: data_migrate
+      apply: migrate-forgejo-database
+      description: The database name is materialized when the database Resource is initialized.
+    domain_prefix:
+      effect: container_recreate
+      apply: recreate-forgejo
+      description: Public HTTP, SSH clone metadata, proxy routing, and OIDC callback URLs change together.
+    iam_protocol:
+      effect: container_recreate
+      apply: recreate-forgejo
+      description: The OIDC registration and Forgejo authentication source must be reconciled together.
+    language:
+      effect: reconcile
+      apply: reconcile-forgejo-localization
+      description: Sets the default UI language without overriding browser or saved user preferences.
+    local_path_import_enabled:
+      effect: container_recreate
+      apply: recreate-forgejo
+      description: Enables imports from paths already visible inside the Forgejo container; no additional host path is mounted.
+    ssh_port:
+      effect: container_recreate
+      apply: recreate-forgejo
+      description: Changes both the published host port and advertised SSH clone URLs.
+identity:
+  authentication:
+    capability: iam
+    selected_by: iam_protocol
+    interfaces:
+      any_of:
+        - oidc
+      prefer:
+        - oidc
+  application_group: true
+features:
+  generated_secrets: true
+  domain: true
+management:
+  surfaces:
+    - id: web
+      uri_from: FORGEJO_DOMAIN_FULL
+      authentication:
+        primary: iam
+    - id: local_recovery
+      uri_from: FORGEJO_LOCAL_RECOVERY_URL
+      authentication:
+        primary: local
+  local_accounts:
+    - id: break_glass
+      purpose: break_glass
+      credential:
+        policy: generated_per_module
+        container_format: bcrypt
+      lifecycle:
+        apply: apply-forgejo-break-glass
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook
+    phases:
+      - calculate
+      - render_env
+      - after_start
+      - local_account_apply

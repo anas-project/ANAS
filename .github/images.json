@@ -28,6 +28,20 @@
     "platforms": "linux/amd64,linux/arm64"
   },
   {
+    "module": "forgejo",
+    "image": "anas-forgejo",
+    "context": "modules/forgejo/forgejo",
+    "dockerfile": "modules/forgejo/forgejo/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "module": "forgejo",
+    "image": "anas-forgejo-actions-controller",
+    "context": "modules/forgejo/actions-controller",
+    "dockerfile": "modules/forgejo/actions-controller/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
     "module": "lam",
     "image": "anas-lam",
     "context": "modules/lam/lam",
@@ -109,6 +123,13 @@
     "image": "anas-versitygw",
     "context": "modules/versitygw/versitygw",
     "dockerfile": "modules/versitygw/versitygw/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "module": "vikunja",
+    "image": "anas-vikunja",
+    "context": "modules/vikunja/vikunja",
+    "dockerfile": "modules/vikunja/vikunja/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   }
 ]

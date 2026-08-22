@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `lego` |
-| 版本 / revision | `5.3.1-r4` |
+| 版本 / revision | `5.3.1-r5` |
 | 状态 | `release` |
 | 类别 | `certificate` |
 | 运行时 | `compose` |
@@ -112,7 +112,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`5.3.1-r4`（reviewed 2026-08-13）
+- Module version / 版本：`5.3.1-r5`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — The certificate worker receives TZ for process and log timestamps.
 - Language scope / 语言范围：certificate automation CLI
 - Selection / 选择方式：`none`

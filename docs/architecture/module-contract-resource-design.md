@@ -199,6 +199,7 @@ Contract 声明虚假兼容性。
 | `ddns_updater` | network / stable | 受 forward-auth 保护的动态 DNS 更新器 |
 | `eturnal` | communication / stable | TURN 服务 |
 | `freeradius` | network / experimental | RADIUS 服务脚手架 |
+| `forgejo` | app / developing | OIDC Git 协作 Consumer；申请一个 `relational_database` Resource |
 | `lam` | identity / stable | LDAP 账号管理 UI |
 | `lego` | certificate / stable | 当前证书实现；尚未迁移到 `certificate` Contract |
 | `llng` | identity / stable | IAM Provider；申请一个 `relational_database` Resource |

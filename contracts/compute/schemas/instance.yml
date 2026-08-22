@@ -1,0 +1,27 @@
+type: object
+additional_properties: false
+required: [provider_project, instance_id, image, cpu, memory_mib, disk_gib, lifecycle]
+properties:
+  provider_project:
+    type: string
+    pattern: "^[a-z][a-z0-9-]{0,62}$"
+  instance_id:
+    type: string
+    pattern: "^anas-[a-z0-9-]{1,58}$"
+  image:
+    type: string
+    pattern: "^[a-f0-9]{64}$"
+  cpu:
+    type: integer
+    minimum: 1
+  memory_mib:
+    type: integer
+    minimum: 512
+  disk_gib:
+    type: integer
+    minimum: 4
+  lifecycle:
+    enum: [ephemeral_one_job]
+  workload_id:
+    type: string
+    pattern: "^[A-Za-z0-9._:-]{1,128}$"

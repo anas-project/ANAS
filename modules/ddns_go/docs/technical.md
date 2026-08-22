@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `ddns_go` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `6.17.4-r5` / `anas.module/v1`.
+> 状态：当前实现；对应 `6.17.4-r6` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -17,7 +17,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_ddns-go` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ddns-go:6.17.4-r5` | `` | 1 |
+| `anas_ddns-go` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ddns-go:6.17.4-r6` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约

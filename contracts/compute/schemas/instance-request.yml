@@ -1,0 +1,8 @@
+type: object
+additional_properties: false
+required: [provider, interface, provider_project, instance_id]
+properties:
+  provider: {type: string}
+  interface: {enum: [incus_vm]}
+  provider_project: {type: string}
+  instance_id: {type: string}

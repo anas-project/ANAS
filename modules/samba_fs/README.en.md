@@ -8,7 +8,7 @@ SMB file server joined to Samba AD.
 | Item | Value |
 | --- | --- |
 | Module | `samba_fs` |
-| Version / revision | `4.23.6-r5` |
+| Version / revision | `4.23.6-r6` |
 | Status | `release` |
 | Category | `storage` |
 | Runtime | `compose` |

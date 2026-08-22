@@ -1,0 +1,8 @@
+#!/bin/sh
+set -u
+
+token_file=/run/anas-actions-token/runner-token
+"$@"
+status=$?
+rm -f "$token_file"
+exit "$status"

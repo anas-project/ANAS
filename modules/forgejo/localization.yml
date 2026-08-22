@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: forgejo
+module_version: 15.0.7
+module_revision: 1
+reviewed_at: 2026-08-22
+timezone:
+  status: configured
+  mechanism: Forgejo time.DEFAULT_UI_LOCATION inherits ANAS TZ; signed-in users may retain their own UI preference.
+language:
+  status: supported
+  scope: Forgejo Web UI
+  selection: application
+  global_default: fallback
+  global_locale: not_consumed
+  upstream_format: Forgejo locale key from the pinned i18n LANGS list
+  fallback: The matched ANAS language is moved to the first position; unmatched values warn and fall back to en-US, while browser and saved user choices take precedence.
+  supported: [en-US, zh-CN, zh-HK, zh-TW, da, de-DE, nds, fr-FR, nl-NL, lv-LV, ru-RU, uk-UA, ja-JP, es-ES, pt-BR, pt-PT, pl-PL, bg, it-IT, fi-FI, fil, eo, tr-TR, cs-CZ, sl, sv-SE, ko-KR, el-GR, fa-IR, hu-HU, id-ID]
+  evidence:
+    - version: v15.0
+      url: https://forgejo.org/docs/v15.0/admin/config-cheat-sheet/
+      path: i18n LANGS and NAMES
+  notes: Forgejo uses the first configured locale only when the browser does not match a listed locale. The hook keeps the complete pinned list and reorders the selected default instead of removing choices.

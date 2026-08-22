@@ -1,0 +1,7 @@
+type: object
+additional_properties: false
+required: [provider, interface, spec]
+properties:
+  provider: {type: string}
+  interface: {enum: [incus_vm]}
+  spec: {$ref: instance.yml}

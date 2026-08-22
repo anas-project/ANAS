@@ -24,7 +24,7 @@ type bundledSourceEvidence struct {
 
 func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	inventory := loadBundledParameterMetadata(t)
-	if got, want := len(inventory), 156; got != want {
+	if got, want := len(inventory), 172; got != want {
 		t.Fatalf("bundled parameter count = %d, want %d", got, want)
 	}
 
@@ -38,6 +38,10 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	maximumSecretLength := 128
 	wantConstraints := map[string]configschema.Constraints{
 		"casdoor.ldap_auto_sync_minutes": {Minimum: &minimumOne},
+		"forgejo.actions_incus_profile":  {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"forgejo.actions_runner_image":   {Pattern: `^(?:[0-9a-f]{64})?$`},
+		"forgejo.domain_prefix":          {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"forgejo.ssh_port":               {Minimum: &minimumOne, Maximum: &maximumPort},
 		"global.base_domain":             {Format: configschema.FormatDNSName},
 		"global.timezone":                {Format: configschema.FormatIANATimezone},
 		"global.default_language":        {Format: configschema.FormatLanguageTag},
@@ -78,6 +82,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"global.host_lan_ip":              {configschema.DefaultSourceRuntime, "app.applyMacvlanPlan"},
 		"global.host_lan_bridge_ip":       {configschema.DefaultSourceRuntime, "app.applyMacvlanPlan"},
 		"collabora.admin_password":        {configschema.DefaultSourceGenerated, "ensureCollaboraPassword"},
+		"forgejo.language":                {configschema.DefaultSourceInherited, "forgejo calculate"},
 		"lam.admin_password":              {configschema.DefaultSourceGenerated, "ensureLAMPassword"},
 		"lam.language":                    {configschema.DefaultSourceInherited, "calcLAM"},
 		"mariadb.root_password":           {configschema.DefaultSourceGenerated, "calcMariaDB"},
@@ -137,6 +142,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"collabora.admin_password":        true,
 		"ddns_go.dns_provider":            true,
 		"ddns_updater.dns_provider":       true,
+		"forgejo.language":                true,
 		"lam.admin_password":              true,
 		"lam.language":                    true,
 		"mariadb.root_password":           true,
@@ -185,7 +191,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 func TestBundledParameterConstraintBoundaries(t *testing.T) {
 	inventory := loadBundledParameterMetadata(t)
 
-	for _, path := range []string{"eturnal.port", "meshcentral.mps_port", "traefik.base_port"} {
+	for _, path := range []string{"eturnal.port", "forgejo.ssh_port", "meshcentral.mps_port", "traefik.base_port"} {
 		spec := inventory[path].spec
 		for _, value := range []string{"1", "65535"} {
 			if err := spec.Validate(value); err != nil {
@@ -215,7 +221,7 @@ func TestBundledParameterConstraintBoundaries(t *testing.T) {
 		t.Error("oauth2_proxy.allow_groups accepted a whitespace-only administrative group list")
 	}
 
-	for _, path := range []string{"versitygw.domain_prefix", "vikunja.domain_prefix"} {
+	for _, path := range []string{"forgejo.domain_prefix", "versitygw.domain_prefix", "vikunja.domain_prefix"} {
 		domainPrefix := inventory[path].spec
 		for _, value := range []string{"a", "tasks", "task-board", strings.Repeat("a", 63)} {
 			if err := domainPrefix.Validate(value); err != nil {
@@ -271,7 +277,7 @@ func loadBundledParameterMetadata(t *testing.T) map[string]bundledParameterMetad
 		t.Fatal(err)
 	}
 
-	out := make(map[string]bundledParameterMetadata, 156)
+	out := make(map[string]bundledParameterMetadata, 172)
 	for _, parameter := range globalConfig.Parameters {
 		envKey := parameterEnvKey(globalModuleName, parameter, reg)
 		_, hasDefault := globalConfig.Defaults[envKey]

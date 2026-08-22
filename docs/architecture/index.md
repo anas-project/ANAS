@@ -14,6 +14,7 @@
 | [应用目录](app-catalog-design.md) | 设计 | 门户条目、可见性与执行点授权映射 |
 | [动态 DNS 能力](dynamic-dns-capability-design.md) | 当前模型 | DDNS 实现选择、凭据和 Web 认证 |
 | [Object Storage 能力](object-storage-capability-design.md) | 已实施设计 | `object_storage/s3` 自动绑定、统一配置投影与 Secret 边界 |
+| [Forgejo Module](forgejo-module-design.md) | 当前设计决策与 Runner 提案 | OIDC-only 身份边界、Actions 授权、Incus 单作业 VM Runner 与安全开关 |
 | [凭据轮换](credential-rotation.md) | 目标方案与实施基线 | deployment 驱动的凭据协调、轮换和回滚 |
 | [运行时与发布状态](runtime-release-state-design.md) | 已实施设计记录 | deployment 制品、锁和持久状态 |
 | [配置状态生命周期](config-state-lifecycle.md) | 审计与路线图 | desired、applied、observed state 的边界 |

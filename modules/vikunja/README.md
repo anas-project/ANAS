@@ -9,7 +9,7 @@ Webhook 和 CalDAV。
 | 项目 | 值 |
 | --- | --- |
 | Module | `vikunja` |
-| 版本 / revision | `2.4.0-r1` |
+| 版本 / revision | `2.4.0-r2` |
 | 状态 | `developing` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -177,7 +177,7 @@ Secret 保存在调用方自己的 Secret 存储中。Webhook 接收端必须验
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2.4.0-r1`（reviewed 2026-08-21）
+- Module version / 版本：`2.4.0-r2`（reviewed 2026-08-21）
 - Timezone / 时区：`configured` — Vikunja service.timezone and the default timezone for new users inherit ANAS TZ; signed-in users may override their own timezone.
 - Language scope / 语言范围：Vikunja Web UI and localized notifications
 - Selection / 选择方式：`application`

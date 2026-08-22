@@ -8,7 +8,7 @@ Dynamic DNS updater for the base domain and wildcard records.
 | Item | Value |
 | --- | --- |
 | Module | `ddns_updater` |
-| Version / revision | `2.10.0-r3` |
+| Version / revision | `2.10.0-r4` |
 | Status | `release` |
 | Category | `network` |
 | Runtime | `compose` |

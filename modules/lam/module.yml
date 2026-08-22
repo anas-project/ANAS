@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: lam
 version: 9.6.0
-revision: 7
+revision: 8
 app_version: 9.6.0
 abi:
   supports:

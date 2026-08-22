@@ -1,17 +1,17 @@
 ---
 doc_type: research
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-21
 evidence_as_of: 2026-08-15
 ---
 
 # 开源自部署 Git 服务全景调研
 
-本报告按[应用研究文档规范](/developer/research-document-standard)研究团队协作型 Git 服务，为 ANAS 后续 Runtime Module 选型提供依据。动态版本与维护状态采集于 2026-08-15；报告是研究快照，不是当前部署说明。
+本报告按[应用研究文档规范](/developer/research-document-standard)研究团队协作型 Git 服务，为 ANAS 后续 Runtime Module 选型提供依据。动态版本与维护状态采集于 2026-08-15；Forgejo stable/LTS 版本在 Module 集成时于 2026-08-21 单独复核。报告是研究快照，不是当前部署说明。
 
 ## 1. 结论先行
 
-1. **ANAS 默认候选应是 Forgejo LTS**。它覆盖仓库、Issue、Pull Request、Wiki、项目板、软件包/容器仓库、Actions、REST API、OIDC 和 LDAP，单机部署与备份边界清楚；治理在非营利组织 Codeberg e.V. 下，Forgejo 9 起采用 GPL-3.0-or-later。当前建议 PoC `15.0.6` LTS，而不是自动跟随 `latest`。
+1. **ANAS 默认候选应是 Forgejo LTS**。它覆盖仓库、Issue、Pull Request、Wiki、项目板、软件包/容器仓库、Actions、REST API、OIDC 和 LDAP，单机部署与备份边界清楚；治理在非营利组织 Codeberg e.V. 下，Forgejo 9 起采用 GPL-3.0-or-later。当前建议 PoC `15.0.7` LTS，而不是自动跟随 `latest`。
 2. **Gitea 是同等级备选，不是“旧版 Forgejo”**。它同样轻量、生态更大、MIT 许可，并有公司提供 Enterprise 与支持；当前社区版 `1.27.2` 功能很完整。若团队重视宽松许可、既有 Gitea 运维经验或商业支持路径，优先验证 Gitea；若重视非营利治理、完整自由软件边界和 LTS，优先 Forgejo。
 3. **不要假设二者还能无损互换**。Forgejo 自 2024 年成为硬分叉；从 Gitea 1.23+ 迁入 Forgejo 已不再是官方保证的透明升级路径。Git 仓库本身易迁移，Issue、PR、用户、Actions、制品和权限元数据并不天然可逆。
 4. **OneDev 是“较轻的一体化 DevOps”候选**。社区版原生提供 CI、代码搜索、包仓库、OpenID/LDAP、AI users/workspaces，约 2 GB 内存级别即可试验；但 HA、S3/独立存储、审计和多种安全扫描在 Enterprise，项目与维护者生态也明显小于 Gitea/GitLab。
@@ -88,7 +88,7 @@ search_date: 2026-08-15
 
 | 项目 | 当日稳定版本信号 | 许可证 / 治理信号 | 快照判断 |
 | --- | --- | --- | --- |
-| Forgejo | [`16.0.2` stable、`15.0.6` LTS](https://forgejo.org/releases/)；LTS 支持至 2027-07-15 | 9+ 为 [GPL-3.0-or-later](https://forgejo.org/2024-08-gpl/)；域名与治理在非营利 [Codeberg e.V.](https://forgejo.org/faq/) | 活跃，首选 LTS 路径 |
+| Forgejo | [`16.0.3` stable、`15.0.7` LTS](https://forgejo.org/releases/)；LTS 支持至 2027-07-15 | 9+ 为 [GPL-3.0-or-later](https://forgejo.org/2024-08-gpl/)；域名与治理在非营利 [Codeberg e.V.](https://forgejo.org/faq/) | 活跃，首选 LTS 路径 |
 | Gitea | [`1.27.2`](https://github.com/go-gitea/gitea/releases/tag/v1.27.2)，2026-08-13 | [MIT](https://github.com/go-gitea/gitea/blob/main/LICENSE)，公司支持、社区版 + Enterprise | 活跃，生态规模大 |
 | OneDev | [`16.5.0`](https://github.com/theonedev/onedev/releases/tag/v16.5.0)，2026-08-09 | [MIT 社区核心](https://github.com/theonedev/onedev)，公司提供 Enterprise | 活跃，发行频率高但生态较小 |
 | GitLab | [`19.2`](https://about.gitlab.com/whats-new/19-2/)，2026-07-16 | CE 为 MIT；统一 EE 仓库含 source-available 专有目录 | 活跃，开放核心边界最复杂 |
@@ -276,7 +276,7 @@ SQLite 对单人小实例完全可用，但 ANAS 正式 Module 更适合复用 r
 
 ### 阶段 0：冻结输入
 
-- Forgejo 固定 `15.0.6` LTS 的多架构镜像 digest；分别核验 amd64、arm64 manifest；
+- Forgejo 固定 `15.0.7` LTS 的多架构镜像 digest；分别核验 amd64、arm64 manifest；
 - Gitea 对照固定 `1.27.2` digest；不使用 `latest`；
 - 记录许可证、SBOM/签名可用性、上游支持期、最低跨版本升级路径；
 - 明确测试域名、SSH 端口、OIDC client、PostgreSQL database 和备份目标。

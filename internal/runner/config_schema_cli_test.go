@@ -28,8 +28,8 @@ func TestConfigListProjectsCompleteParameterSchema(t *testing.T) {
 	}
 	document := requireSingleDocument(t, "config list schema", stdout)
 	raw, ok := document["parameters"].([]any)
-	if !ok || len(raw) != 156 {
-		t.Fatalf("parameters = %T len=%d, want 156", document["parameters"], len(raw))
+	if !ok || len(raw) != 172 {
+		t.Fatalf("parameters = %T len=%d, want 172", document["parameters"], len(raw))
 	}
 
 	byPath := map[string]map[string]any{}

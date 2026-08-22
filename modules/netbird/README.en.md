@@ -11,7 +11,7 @@ Incomplete WireGuard overlay network module.
 | Item | Value |
 | --- | --- |
 | Module | `netbird` |
-| Version / revision | `0.76.1-r4` |
+| Version / revision | `0.76.1-r5` |
 | Status | `developing` |
 | Category | `network` |
 | Runtime | `compose` |

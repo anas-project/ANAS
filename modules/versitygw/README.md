@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `versitygw` |
-| 版本 / revision | `1.7.0-r2` |
+| 版本 / revision | `1.7.0-r3` |
 | 状态 | `developing` |
 | 类别 | `storage` |
 | 运行时 | `compose` |
@@ -202,7 +202,7 @@ path-style addressing；virtual-host style 需要 `*.s3.<base_domain>` DNS/证�
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`1.7.0-r2`（reviewed 2026-08-22）
+- Module version / 版本：`1.7.0-r3`（reviewed 2026-08-22）
 - Timezone / 时区：`container` — The gateway receives TZ through the Module .env for process and access-log timestamps.
 - Language scope / 语言范围：S3 HTTP protocol service
 - Selection / 选择方式：`none`

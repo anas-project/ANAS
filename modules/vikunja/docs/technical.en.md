@@ -4,7 +4,7 @@ This document records the `vikunja` implementation, security boundary, and verif
 module maintainers. See the [English README](../README.en.md) for user operations.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `2.4.0-r1` / `anas.module/v1`.
+> Status: current implementation; based on `2.4.0-r2` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Module, capability, and contract dependencies
@@ -20,7 +20,7 @@ module maintainers. See the [English README](../README.en.md) for user operation
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_vikunja` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r1` | `db, traefik` | 2 |
+| `anas_vikunja` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r2` | `db, traefik` | 2 |
 <!-- generated:compose-topology:end -->
 
 `anas_vikunja` exposes Web/API only as `3456/tcp` on the Traefik network and publishes no host port. `db` is
