@@ -75,7 +75,9 @@
 - **废弃需求**：保留该行并标 `已废弃`，不删除、不复用编号；同时从归属表移除。旧提交与测试里引用的编号必须仍能查到它当初是什么。
 - **拆分需求**：原条目标 `已废弃`，新增两条新编号，在废弃行里写明被哪两条取代。
 
-每一种都要跑 `npm run docs:check-requirements`。
+每一种都要跑 `npm run docs:check-requirements`，再跑 `npm run docs:requirement-status`——
+增删需求或标记退出会改变索引的完成度，那一列是生成的，见
+[文档写作标准](/developer/documentation-standard) §4。
 
 ## 相关文档
 
