@@ -14,6 +14,10 @@ state coordination in lifecycle operations or reconcilers. Never request a
 Core branch for a Module name or direct mutation of its private parameters. See
 the [Core implementation standard](/en/architecture/core-implementation-standard).
 
+Use a [Module-specific command](/en/reference/module-commands) only for an explicit administrator operation that
+does not belong to generic lifecycle or Contract semantics. Commands must use typed parameters and a fixed executor;
+they must not expose shell, argv, Docker, systemd, or SSH pass-through behavior.
+
 ## Version and revision ownership
 
 `version` follows the normalized upstream application version. `revision`

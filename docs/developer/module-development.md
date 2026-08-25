@@ -18,6 +18,10 @@ Module 参数的业务语义属于 Module，不属于 Core。跨参数校验放�
 `calculate` Hook，持久状态协调使用 lifecycle operation/reconciler；不要要求 Core 添加
 Module 名称分支或直接改写私有参数。完整边界见 [Core 实现标准](/architecture/core-implementation-standard)。
 
+只有确实需要管理员显式调用、且不属于通用生命周期或 Contract 的特有运维动作，才使用
+[Module 专属命令](/reference/module-commands)。命令必须声明类型化参数和固定 executor；不得以命令
+为名暴露 shell、argv、Docker、systemd 或 SSH 透传。
+
 ## 版本与 revision 所有权
 
 `version` 跟随规范化的上游应用版本；`revision` 表示同一上游版本下已经发布的 ANAS 镜像

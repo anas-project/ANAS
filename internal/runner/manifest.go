@@ -16,6 +16,7 @@ import (
 )
 
 const currentModuleABI = "anas.module-hook/v1"
+const currentModuleCommandABI = "anas.module-command/v1"
 
 var (
 	configParameterNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -314,8 +315,39 @@ type manifestIdentityAuthentication struct {
 }
 
 type manifestManagement struct {
-	Surfaces      []manifestManagementSurface `yaml:"surfaces"`
-	LocalAccounts []manifestLocalAccount      `yaml:"local_accounts"`
+	Surfaces        []manifestManagementSurface `yaml:"surfaces"`
+	LocalAccounts   []manifestLocalAccount      `yaml:"local_accounts"`
+	CommandExecutor manifestCommandExecutor     `yaml:"command_executor"`
+	Commands        []manifestModuleCommand     `yaml:"commands"`
+}
+
+type manifestCommandExecutor struct {
+	Command []string `yaml:"command"`
+}
+
+type manifestModuleCommand struct {
+	ID             string                     `yaml:"id"`
+	Title          string                     `yaml:"title"`
+	Description    string                     `yaml:"description"`
+	Handler        string                     `yaml:"handler"`
+	Mode           string                     `yaml:"mode"`
+	Risk           string                     `yaml:"risk"`
+	RuntimeState   string                     `yaml:"runtime_state"`
+	Lock           string                     `yaml:"lock"`
+	TimeoutSeconds int                        `yaml:"timeout_seconds"`
+	Cancellable    any                        `yaml:"cancellable"`
+	Parameters     []manifestCommandParameter `yaml:"parameters"`
+	Env            []string                   `yaml:"env"`
+	Secrets        []string                   `yaml:"secrets"`
+}
+
+type manifestCommandParameter struct {
+	Name        string            `yaml:"name"`
+	Title       string            `yaml:"title"`
+	Description string            `yaml:"description"`
+	Type        manifestParamType `yaml:"type"`
+	Required    bool              `yaml:"required"`
+	Default     any               `yaml:"default"`
 }
 
 type manifestManagementSurface struct {
@@ -940,6 +972,10 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if err != nil {
 		return Module{}, err
 	}
+	commandExecutor, commands, err := normalizeModuleCommands(dir, dirname, envPrefix, consumes, manifest.ABI.Supports, manifest.Management)
+	if err != nil {
+		return Module{}, err
+	}
 	for _, account := range localAccounts {
 		if (account.Apply != "" || account.Rotate != "") && len(hook.Command) == 0 {
 			return Module{}, fmt.Errorf("module %q local account %q declares lifecycle handlers without a module hook", dirname, account.ID)
@@ -1002,6 +1038,8 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		LocalAccounts:          localAccounts,
 		CredentialProviders:    credentialProviders,
 		CredentialConsumers:    credentialConsumers,
+		CommandExecutor:        commandExecutor,
+		Commands:               commands,
 		UseHostLAN:             manifest.Features.HostLAN,
 		PublishesDomain:        manifest.Features.Domain,
 		Hook:                   hook,

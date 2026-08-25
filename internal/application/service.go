@@ -24,19 +24,37 @@ type Service struct {
 	workspace string
 	reader    deploymentReader
 	version   VersionResult
+	events    EventSink
+	executor  moduleCommandExecutor
 }
+
+var _ ModuleCommandService = (*Service)(nil)
 
 func NewService(workspace string) *Service {
 	workspace = filepath.Clean(workspace)
 	return &Service{
 		workspace: workspace,
 		reader:    deployment.NewReader(workspace),
+		events:    NopEventSink{},
+		executor:  processModuleCommandExecutor{},
 		version: VersionResult{
 			Version: buildinfo.Version,
 			Commit:  buildinfo.Commit,
 			Date:    buildinfo.Date,
 		},
 	}
+}
+
+// WithEventSink configures the adapter-facing event stream for subsequent
+// calls. The executor protocol remains internal; adapters only receive typed,
+// validated progress and warning events.
+func (s *Service) WithEventSink(events EventSink) *Service {
+	if events == nil {
+		s.events = NopEventSink{}
+	} else {
+		s.events = events
+	}
+	return s
 }
 
 func (s *Service) Version(ctx context.Context) (VersionResult, error) {

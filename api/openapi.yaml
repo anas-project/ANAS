@@ -20,6 +20,7 @@ tags:
   - name: Service
   - name: Workspace
   - name: Deployments
+  - name: Modules
 paths:
   /healthz:
     get:
@@ -150,6 +151,66 @@ paths:
           $ref: "#/components/responses/InternalProblem"
         "504":
           $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/modules/{module}/commands:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - $ref: "#/components/parameters/ModuleName"
+    get:
+      operationId: listModuleCommands
+      summary: List commands frozen for one Module in the active deployment
+      description: Returns only public descriptors and local availability; it does not contact the managed service.
+      tags: [Modules]
+      responses:
+        "200":
+          description: Public Module Command descriptors in stable command-ID order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleCommandListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/modules/{module}/commands/{command}:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - $ref: "#/components/parameters/ModuleName"
+      - $ref: "#/components/parameters/ModuleCommandID"
+    get:
+      operationId: getModuleCommand
+      summary: Read one command frozen for a Module in the active deployment
+      tags: [Modules]
+      responses:
+        "200":
+          description: One public Module Command descriptor and its local availability.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleCommandDetailResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
 components:
   parameters:
     WorkspaceID:
@@ -171,6 +232,24 @@ components:
         type: string
         minLength: 1
         maxLength: 255
+    ModuleName:
+      name: module
+      in: path
+      required: true
+      description: Module name in the active deployment.
+      schema:
+        type: string
+        pattern: "^[a-z][a-z0-9_]*$"
+    ModuleCommandID:
+      name: command
+      in: path
+      required: true
+      description: Stable Module-local command ID.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 63
+        pattern: "^[a-z][a-z0-9-]{0,62}$"
     Limit:
       name: limit
       in: query
@@ -509,6 +588,142 @@ components:
           $ref: "#/components/schemas/NullableString"
         keep_auto:
           type: integer
+    ModuleCommandListResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, active_deployment, items]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+        active_deployment:
+          $ref: "#/components/schemas/NullableString"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModuleCommand"
+    ModuleCommandDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, command]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+        command:
+          $ref: "#/components/schemas/ModuleCommand"
+    ModuleCommand:
+      type: object
+      additionalProperties: false
+      required:
+        - module
+        - release
+        - deployment_id
+        - id
+        - title
+        - description
+        - mode
+        - risk
+        - runtime_state
+        - lock
+        - timeout_seconds
+        - cancellable
+        - parameters
+        - digest
+        - available
+      properties:
+        module:
+          type: string
+        release:
+          type: string
+        deployment_id:
+          type: string
+        id:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{0,62}$"
+        title:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string
+          enum: [query, change]
+        risk:
+          type: string
+          enum: [normal, destructive]
+        runtime_state:
+          type: string
+          enum: [running, stopped, any]
+        lock:
+          type: string
+          enum: [module_read, module_write, workspace_write]
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 3600
+        cancellable:
+          type: string
+          enum: ["false", "true", safe_points]
+        parameters:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModuleCommandParameter"
+        digest:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+        available:
+          type: boolean
+        unavailable_reason:
+          type: string
+    ModuleCommandParameter:
+      type: object
+      additionalProperties: false
+      required: [name, title, description, type, allowed_values, constraints, required]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{0,62}$"
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [string, int, bool, enum]
+        allowed_values:
+          type: array
+          items:
+            type: string
+          uniqueItems: true
+        constraints:
+          $ref: "#/components/schemas/ModuleCommandConstraints"
+        required:
+          type: boolean
+        default:
+          oneOf:
+            - type: string
+            - type: integer
+            - type: boolean
+    ModuleCommandConstraints:
+      type: object
+      additionalProperties: false
+      properties:
+        minimum:
+          type: integer
+        maximum:
+          type: integer
+        min_length:
+          type: integer
+          minimum: 0
+        max_length:
+          type: integer
+          minimum: 0
+        pattern:
+          type: string
+        format:
+          type: string
     NullableString:
       type: [string, "null"]
     NullableTimestamp:

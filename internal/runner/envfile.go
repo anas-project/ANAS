@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/anas-project/ANAS/internal/dotenv"
 )
 
 // globalEnvFile is the deployment-wide environment, written beside the
@@ -101,70 +103,5 @@ func isPlainEnvValue(v string) bool {
 // runner-side inverse of quoteEnv and is used when starting from a rendered
 // release without recalculating the environment.
 func parseEnvFile(path string) (map[string]string, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	env := map[string]string{}
-	for i, line := range strings.Split(string(b), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		eq := strings.Index(line, "=")
-		if eq <= 0 {
-			return nil, fmt.Errorf("%s:%d: invalid env line", path, i+1)
-		}
-		value, err := unquoteEnv(line[eq+1:])
-		if err != nil {
-			return nil, fmt.Errorf("%s:%d: %w", path, i+1, err)
-		}
-		env[line[:eq]] = value
-	}
-	return env, nil
-}
-
-func unquoteEnv(raw string) (string, error) {
-	if len(raw) >= 2 && strings.HasPrefix(raw, "'") && strings.HasSuffix(raw, "'") {
-		inner := raw[1 : len(raw)-1]
-		if strings.Contains(inner, "'") {
-			return "", fmt.Errorf("invalid single-quoted value %q", raw)
-		}
-		return inner, nil
-	}
-	if len(raw) >= 2 && strings.HasPrefix(raw, `"`) && strings.HasSuffix(raw, `"`) {
-		inner := raw[1 : len(raw)-1]
-		var b strings.Builder
-		for i := 0; i < len(inner); i++ {
-			c := inner[i]
-			switch c {
-			case '\\':
-				if i+1 >= len(inner) {
-					return "", fmt.Errorf("trailing backslash in %q", raw)
-				}
-				i++
-				switch inner[i] {
-				case '\\':
-					b.WriteByte('\\')
-				case '"':
-					b.WriteByte('"')
-				case 'n':
-					b.WriteByte('\n')
-				case 'r':
-					b.WriteByte('\r')
-				default:
-					return "", fmt.Errorf("unsupported escape \\%c in %q", inner[i], raw)
-				}
-			case '$':
-				if i+1 < len(inner) && inner[i+1] == '$' {
-					i++
-				}
-				b.WriteByte('$')
-			default:
-				b.WriteByte(c)
-			}
-		}
-		return b.String(), nil
-	}
-	return raw, nil
+	return dotenv.ParseFile(path)
 }

@@ -42,7 +42,7 @@ npm run docs:test-requirements && npm run docs:check-requirements && npm run doc
 
 | 范围 | 已完成 | 尚未完成 |
 | --- | --- | --- |
-| M0 只读骨架 | `internal/deployment`、`internal/application`、`internal/api/httpapi`、`cmd/anasd`、workspace registry、OpenAPI；health/system/status/deployment list/detail 共用类型化服务，不调用 CLI 子进程 | 认证、前端、SSE 任务、写操作、安装与 systemd 集成 |
+| M0 只读骨架 | `internal/deployment`、`internal/application`、`internal/api/httpapi`、`cmd/anasd`、workspace registry、OpenAPI；health/system/status/deployment list/detail 与 Module Command list/detail 共用类型化服务，不调用 CLI 子进程 | 认证、前端、SSE 任务、写操作、安装与 systemd 集成 |
 | M0.5 元数据 | 17 个 global + 155 个 Module 参数全部显式声明类型；`unknown=0`；生成器、四份 Module 参数表和 release gate 共用 inventory | M3 配置 HTTP schema/表单投影 |
 | M0.6 约束语义 | `input_required`、legacy `required`、`must_resolve` 三阶段语义；默认值存在性/来源；范围、长度、pattern、format；所有配置入口的统一规范化与校验 | 条件/跨字段规则继续由 resolver、plan 或 Hook 执行，不伪装成单字段 schema |
 
@@ -77,7 +77,7 @@ Linux amd64/arm64 的静态 `anasd` 构建。后续里程碑不得把这些结�
 
 ### M0：服务层与契约骨架（3—5 天）— 部分实施
 
-已完成共享应用层、独立 HTTP 适配器、OpenAPI 契约与只读 daemon 入口：`version`/`status`/`deployments list`/`deployments inspect` 四个只读用例已抽出，CLI 输出不变；`api/openapi.yaml`、`cmd/anasd` 与 health、system、workspace status、deployment list/detail 五类 GET 路由就绪；workspace 只由 registry ID 选择；daemon 仅监听数值 loopback 且 handler 拒绝非 loopback/域名 Host。认证、前端、任务与任何写操作不在此状态内。
+已完成共享应用层、独立 HTTP 适配器、OpenAPI 契约与只读 daemon 入口：`version`/`status`/`deployments list`/`deployments inspect` 以及 Module Command list/detail 只读用例已抽出，CLI 输出不变；`api/openapi.yaml`、`cmd/anasd` 与 health、system、workspace status、deployment list/detail、Module Command list/detail GET 路由就绪；workspace 只由 registry ID 选择；daemon 仅监听数值 loopback 且 handler 拒绝非 loopback/域名 Host。认证、前端、任务与任何写操作（包括 Module Command invoke）不在此状态内。
 
 验收：要求文档 §3（架构与代码边界）、§4.1（通用约定）、§7.2（输入边界）；另加本阶段特有的两条——现有 Go 测试与 CLI contract 全绿，且这四条路径不接触全局 `os.Stdout`/`os.Stderr`（全仓 34 处引用的清理是后续持续工作，M0 不承诺）。
 
@@ -139,7 +139,7 @@ Linux amd64/arm64 的静态 `anasd` 构建。后续里程碑不得把这些结�
 
 1. 抽取 `Version`、`Status`、`ListDeployments`、`InspectDeployment` 四个类型化用例。
 2. 现有 CLI 通过这些用例输出原有 JSON，契约零变化。
-3. 新增 `anasd`，实现 `/healthz`、`/api/v1/system`、`/api/v1/workspaces/{ws}/status`、部署列表与详情。
+3. 新增 `anasd`，实现 `/healthz`、`/api/v1/system`、`/api/v1/workspaces/{ws}/status`、部署列表/详情与 Module Command 列表/详情。
 4. workspace 只从服务启动配置注册，API 不接受路径。
 5. 暂不做前端、认证写操作与异步任务；开发环境仅监听 loopback。
 6. 同一 PR 修改 [CLI 契约索引](/reference/contracts/)中“面向……将来的 web 服务”那句话（要求文档 §1.3）。

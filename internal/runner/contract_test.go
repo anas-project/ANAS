@@ -162,6 +162,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		// regression in the shared plumbing fails against them too.
 		{"snapshot list", []string{"snapshot", "list", "-w", workspace, "--json"}, 0},
 		{"backup capabilities", []string{"backup", "capabilities", "-w", workspace, "--json"}, 0},
+		{"module commands", []string{"module", "commands", "-w", workspace, "--json"}, 0},
 
 		// ---- 2: usage --------------------------------------------------
 		{"unknown command", []string{"frobnicate", "--json"}, 2},

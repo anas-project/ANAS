@@ -4,6 +4,8 @@
 // schema merely to inspect a deployment.
 package deployment
 
+import "github.com/anas-project/ANAS/internal/configschema"
+
 const (
 	ManifestAPIVersion = "anas.deployment/v1"
 	StateAPIVersion    = "anas.state/v2"
@@ -92,6 +94,46 @@ type Module struct {
 	// They contain identifiers and lifecycle metadata only, never values.
 	CredentialProviders []CredentialProvider `yaml:"credential_providers,omitempty" json:"credential_providers,omitempty"`
 	CredentialConsumers []CredentialConsumer `yaml:"credential_consumers,omitempty" json:"credential_consumers,omitempty"`
+	CommandExecutor     CommandExecutor      `yaml:"command_executor,omitempty" json:"command_executor,omitempty"`
+	Commands            []ModuleCommand      `yaml:"commands,omitempty" json:"commands,omitempty"`
+}
+
+// CommandExecutor identifies the one executable entry point frozen for a
+// Module's administrator-facing commands. Command is internal execution
+// metadata and must not be projected by public HTTP DTOs.
+type CommandExecutor struct {
+	Command []string `yaml:"command,omitempty" json:"command,omitempty"`
+	Digest  string   `yaml:"digest,omitempty" json:"digest,omitempty"`
+}
+
+// ModuleCommand is the immutable command contract frozen into a deployment.
+// Handler and input key lists are deliberately persisted so an old deployment
+// never has to consult today's Module source, but adapters expose a safe
+// projection that omits them.
+type ModuleCommand struct {
+	ID             string                   `yaml:"id" json:"id"`
+	Title          string                   `yaml:"title" json:"title"`
+	Description    string                   `yaml:"description" json:"description"`
+	Handler        string                   `yaml:"handler" json:"handler"`
+	Mode           string                   `yaml:"mode" json:"mode"`
+	Risk           string                   `yaml:"risk" json:"risk"`
+	RuntimeState   string                   `yaml:"runtime_state" json:"runtime_state"`
+	Lock           string                   `yaml:"lock" json:"lock"`
+	TimeoutSeconds int                      `yaml:"timeout_seconds" json:"timeout_seconds"`
+	Cancellable    string                   `yaml:"cancellable" json:"cancellable"`
+	Parameters     []ModuleCommandParameter `yaml:"parameters,omitempty" json:"parameters,omitempty"`
+	Env            []string                 `yaml:"env,omitempty" json:"env,omitempty"`
+	Secrets        []string                 `yaml:"secrets,omitempty" json:"secrets,omitempty"`
+	Digest         string                   `yaml:"digest" json:"digest"`
+}
+
+type ModuleCommandParameter struct {
+	Name        string                 `yaml:"name" json:"name"`
+	Title       string                 `yaml:"title" json:"title"`
+	Description string                 `yaml:"description" json:"description"`
+	Type        configschema.Parameter `yaml:"type" json:"type"`
+	Required    bool                   `yaml:"required,omitempty" json:"required"`
+	Default     any                    `yaml:"default,omitempty" json:"default,omitempty"`
 }
 
 // CredentialProvider is the static capability one Module publishes. Dynamic

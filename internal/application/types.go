@@ -3,11 +3,24 @@
 package application
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
+	"github.com/anas-project/ANAS/internal/configschema"
 	"github.com/anas-project/ANAS/internal/deployment"
 )
+
+// ModuleCommandService is the transport-neutral boundary used by the CLI and
+// read-only anasd queries. Once authenticated jobs exist, anasd invocation uses
+// this same boundary. Adapters must not duplicate command resolution,
+// validation, locking, or executor invocation.
+type ModuleCommandService interface {
+	ListModuleCommands(context.Context, ListModuleCommandsRequest) (ListModuleCommandsResult, error)
+	GetModuleCommand(context.Context, GetModuleCommandRequest) (EffectiveModuleCommand, error)
+	PrepareModuleCommand(context.Context, PrepareModuleCommandRequest) (PrepareModuleCommandResult, error)
+	InvokeModuleCommand(context.Context, InvokeModuleCommandRequest) (InvokeModuleCommandResult, error)
+}
 
 type ErrorKind string
 
@@ -118,6 +131,86 @@ type InspectDeploymentResult struct {
 	Deployment     *deployment.Manifest `json:"deployment"`
 	State          deployment.State     `json:"state"`
 	RawManifest    []byte               `json:"-"`
+}
+
+type ListModuleCommandsRequest struct {
+	Module string
+}
+
+type ModuleCommandParameter struct {
+	Name        string                 `json:"name"`
+	Title       string                 `json:"title"`
+	Description string                 `json:"description"`
+	Type        configschema.Parameter `json:"type"`
+	Required    bool                   `json:"required"`
+	Default     any                    `json:"default,omitempty"`
+}
+
+// ModuleCommandDescriptor is the safe adapter-facing projection. Internal
+// handler names, executable paths and env/Secret input keys intentionally do
+// not exist on this type, so an HTTP adapter cannot expose them by accident.
+type ModuleCommandDescriptor struct {
+	ID             string                   `json:"id"`
+	Title          string                   `json:"title"`
+	Description    string                   `json:"description"`
+	Mode           string                   `json:"mode"`
+	Risk           string                   `json:"risk"`
+	RuntimeState   string                   `json:"runtime_state"`
+	Lock           string                   `json:"lock"`
+	TimeoutSeconds int                      `json:"timeout_seconds"`
+	Cancellable    string                   `json:"cancellable"`
+	Parameters     []ModuleCommandParameter `json:"parameters"`
+	Digest         string                   `json:"digest"`
+}
+
+type EffectiveModuleCommand struct {
+	Module            string                  `json:"module"`
+	Release           string                  `json:"release"`
+	DeploymentID      string                  `json:"deployment_id"`
+	Command           ModuleCommandDescriptor `json:"command"`
+	Available         bool                    `json:"available"`
+	UnavailableReason string                  `json:"unavailable_reason,omitempty"`
+}
+
+type ListModuleCommandsResult struct {
+	ActiveDeployment *string                  `json:"active_deployment"`
+	Commands         []EffectiveModuleCommand `json:"commands"`
+}
+
+type GetModuleCommandRequest struct {
+	Module  string
+	Command string
+}
+
+type InvokeModuleCommandRequest struct {
+	Module        string
+	Command       string
+	Parameters    map[string]any
+	CommandDigest string
+	Confirmed     bool
+}
+
+type PrepareModuleCommandRequest struct {
+	Module        string
+	Command       string
+	Parameters    map[string]any
+	CommandDigest string
+}
+
+type PrepareModuleCommandResult struct {
+	DeploymentID string                  `json:"deployment_id"`
+	Module       string                  `json:"module"`
+	Release      string                  `json:"release"`
+	Command      ModuleCommandDescriptor `json:"command"`
+	Parameters   map[string]any          `json:"parameters"`
+}
+
+type InvokeModuleCommandResult struct {
+	DeploymentID string         `json:"deployment_id"`
+	Module       string         `json:"module"`
+	Command      string         `json:"command"`
+	Changed      bool           `json:"changed"`
+	Result       map[string]any `json:"result"`
 }
 
 func nullableString(value string) *string {

@@ -161,6 +161,8 @@ type DeploymentService interface {
 | 部署 | `POST /api/v1/workspaces/{ws}/actions/apply` | apply 任务；`allow_risky` 为显式布尔字段 |
 | 部署 | `POST /api/v1/workspaces/{ws}/actions/rollback` | 明确目标、风险确认后创建任务 |
 | Module | `GET /api/v1/workspaces/{ws}/modules` | 配置态、版本、运行态、健康、入口地址 |
+| Module Command | `GET /api/v1/workspaces/{ws}/modules/{module}/commands`、`/{command}` | 活动 deployment 冻结的公开 descriptor 与本地可用性；不含 handler、路径或输入键 |
+| Module Command | `POST /api/v1/workspaces/{ws}/modules/{module}/commands/{command}/actions/invoke` | 认证/job/审计完成后启用；M0 未认证监听器禁止开放 |
 | Module | `POST /api/v1/workspaces/{ws}/modules/actions/{start\|stop\|restart}` | body 传目标列表；返回依赖 chain 预览或任务 |
 | 配置 | `GET /api/v1/workspaces/{ws}/config` | 规范化配置、字段 schema、ETag；敏感值只报 set/unset |
 | 配置 | `POST /api/v1/workspaces/{ws}/config/validate` | 校验候选配置并返回变更计划，不写入 |

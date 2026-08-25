@@ -197,7 +197,10 @@ func runVersion(args []string, jsonMode bool) error {
 
 func runHelp(jsonMode bool) error {
 	if jsonMode {
-		return emitOK(map[string]any{"commands": commandNames, "module_abi": currentModuleABI})
+		return emitOK(map[string]any{
+			"commands": commandNames, "module_abi": currentModuleABI,
+			"module_command_abi": currentModuleCommandABI,
+		})
 	}
 	usage()
 	return nil
@@ -240,6 +243,8 @@ Usage:
   anas module install NAME@VERSION-rN [--source NAME] [--digest sha256:...]
   anas module sync [-w WORKSPACE]
   anas module update [MODULE...] [-w WORKSPACE]
+  anas module commands [MODULE] [-w WORKSPACE]
+  anas module invoke MODULE COMMAND [-w WORKSPACE] [--param NAME=VALUE]... [-y]
   anas version [--json]
 
 Workspace:
@@ -1180,6 +1185,9 @@ func (a *app) renderAll(work string) error {
 			return err
 		}
 		if err := a.freezeHookBinary(mod, dir); err != nil {
+			return err
+		}
+		if err := a.freezeModuleCommandBinary(mod, dir); err != nil {
 			return err
 		}
 		env := a.scopedEnv(name)

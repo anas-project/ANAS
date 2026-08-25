@@ -68,6 +68,7 @@ Linux `amd64` 与 `arm64` 两个二进制，不按架构拆成两个 Module 版�
 | `hook/` Go 源码 | 审计、开发回退和未覆盖平台的本地编译输入 |
 | `hook/bin/linux-amd64/anas-hook` | x86-64 Linux 预编译 hook |
 | `hook/bin/linux-arm64/anas-hook` | ARM64 Linux 预编译 hook |
+| `command/` 与 `command/bin/<platform>/anas-module-command` | 声明 Module Command 时的可审计源码与双架构冻结 executor |
 | Docker build context | Dockerfile、入口脚本、配置模板和本地构建输入 |
 | `providers/` | capability provider 声明和实现脚本 |
 | `contracts/` | Runner 所需的 Contract manifests 与 schema；workspace 视图按名称去重 |
@@ -91,6 +92,7 @@ source:
 compatibility:
   module_api: anas.module/v1
   hook_abis: [anas.module-hook/v1]
+  command_abis: [anas.module-command/v1]
 context_digest: sha256:<发布输入摘要>
 content_digest: sha256:<解包 payload 摘要>
 images:

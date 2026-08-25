@@ -156,7 +156,7 @@ go run ./cmd/package-module \
 ```
 
 包内包含 `package.yml`、`module.yml`、`docker-compose.yml`、Module hook 源码、两套
-预编译 hook、Docker build context、provider、运行期 Contract schema、asset 和 Module 运行文件；不包含 README、
+预编译 hook，以及声明时的 Module Command 源码和两套预编译 executor、Docker build context、provider、运行期 Contract schema、asset 和 Module 运行文件；不包含 README、
 本地化文档、测试、缓存及本地构建残留。完整字段、digest 语义和安全边界见
 [Module 独立编译、发布与安装源](../architecture/module-distribution-draft.md)。
 

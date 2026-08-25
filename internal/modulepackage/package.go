@@ -44,6 +44,11 @@ type moduleManifest struct {
 	ABI        struct {
 		Supports []string `yaml:"supports"`
 	} `yaml:"abi"`
+	Management struct {
+		CommandExecutor struct {
+			Command []string `yaml:"command"`
+		} `yaml:"command_executor"`
+	} `yaml:"management"`
 }
 
 type composeDocument struct {
@@ -58,8 +63,9 @@ type SourceMetadata struct {
 }
 
 type CompatibilityMetadata struct {
-	ModuleAPI string   `yaml:"module_api" json:"module_api"`
-	HookABIs  []string `yaml:"hook_abis,omitempty" json:"hook_abis,omitempty"`
+	ModuleAPI   string   `yaml:"module_api" json:"module_api"`
+	HookABIs    []string `yaml:"hook_abis,omitempty" json:"hook_abis,omitempty"`
+	CommandABIs []string `yaml:"command_abis,omitempty" json:"command_abis,omitempty"`
 }
 
 type PackageMetadata struct {
@@ -267,6 +273,13 @@ func Build(opts BuildOptions) (BuildResult, error) {
 			}
 		}
 	}
+	command := manifest.Management.CommandExecutor.Command
+	if contains(manifest.ABI.Supports, "anas.module-command/v1") && len(command) == 3 && command[0] == "go" && command[1] == "run" &&
+		filepath.ToSlash(filepath.Clean(command[2])) == "command" && !opts.SkipHookBuild {
+		if err := buildCommandExecutors(root, stage, entry.Module, platforms); err != nil {
+			return BuildResult{}, err
+		}
+	}
 
 	contentDigest, err := digestDirectory(stage)
 	if err != nil {
@@ -290,7 +303,11 @@ func Build(opts BuildOptions) (BuildResult, error) {
 			Repository: "https://github.com/anas-project/ANAS",
 			Commit:     commit,
 		},
-		Compatibility: CompatibilityMetadata{ModuleAPI: manifest.APIVersion, HookABIs: manifest.ABI.Supports},
+		Compatibility: CompatibilityMetadata{
+			ModuleAPI:   manifest.APIVersion,
+			HookABIs:    filterABIs(manifest.ABI.Supports, "anas.module-hook/"),
+			CommandABIs: filterABIs(manifest.ABI.Supports, "anas.module-command/"),
+		},
 		ContextDigest: "sha256:" + contextDigest,
 		ContentDigest: "sha256:" + contentDigest,
 		Images:        images,
@@ -340,6 +357,36 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func filterABIs(values []string, prefix string) []string {
+	out := []string{}
+	for _, value := range values {
+		if strings.HasPrefix(value, prefix) {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func buildCommandExecutors(root, stage, module string, platforms []string) error {
+	for _, platform := range platforms {
+		osName, arch, err := splitPlatform(platform)
+		if err != nil {
+			return err
+		}
+		output := filepath.Join(stage, "command", "bin", osName+"-"+arch, "anas-module-command")
+		if err := os.MkdirAll(filepath.Dir(output), 0755); err != nil {
+			return err
+		}
+		cmd := exec.Command("go", "build", "-trimpath", "-ldflags=-s -w", "-o", output, "./modules/"+module+"/command")
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+osName, "GOARCH="+arch)
+		if body, buildErr := cmd.CombinedOutput(); buildErr != nil {
+			return fmt.Errorf("build %s command executor for %s: %w\n%s", module, platform, buildErr, body)
+		}
+	}
+	return nil
 }
 
 func runtimeTrackedFiles(root, module string) ([]string, error) {

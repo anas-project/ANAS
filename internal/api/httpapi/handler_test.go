@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/anas-project/ANAS/internal/application"
+	"github.com/anas-project/ANAS/internal/configschema"
 	"github.com/anas-project/ANAS/internal/deployment"
 )
 
@@ -24,12 +25,18 @@ type fakeQueryService struct {
 	listErr       error
 	inspect       application.InspectDeploymentResult
 	inspectErr    error
+	commands      application.ListModuleCommandsResult
+	commandsErr   error
+	command       application.EffectiveModuleCommand
+	commandErr    error
 	listRequests  []application.ListDeploymentsRequest
 	inspectIDs    []string
 	statusCalls   int
 	versionCalls  int
 	inspectCalls  int
 	deploymentIDs []string
+	commandLists  []application.ListModuleCommandsRequest
+	commandGets   []application.GetModuleCommandRequest
 }
 
 func (service *fakeQueryService) Version(context.Context) (application.VersionResult, error) {
@@ -51,6 +58,16 @@ func (service *fakeQueryService) InspectDeployment(_ context.Context, request ap
 	service.inspectCalls++
 	service.inspectIDs = append(service.inspectIDs, request.DeploymentID)
 	return service.inspect, service.inspectErr
+}
+
+func (service *fakeQueryService) ListModuleCommands(_ context.Context, request application.ListModuleCommandsRequest) (application.ListModuleCommandsResult, error) {
+	service.commandLists = append(service.commandLists, request)
+	return service.commands, service.commandsErr
+}
+
+func (service *fakeQueryService) GetModuleCommand(_ context.Context, request application.GetModuleCommandRequest) (application.EffectiveModuleCommand, error) {
+	service.commandGets = append(service.commandGets, request)
+	return service.command, service.commandErr
 }
 
 func TestHealthzDoesNotConstructAService(t *testing.T) {
@@ -175,6 +192,56 @@ func TestStatusResolvesRegisteredIDWithoutReturningPath(t *testing.T) {
 	decodeResponse(t, response, &document)
 	if document.WorkspaceID != "main" || document.ActiveDeployment == nil || *document.ActiveDeployment != active || document.VerifiedAt != nil || len(document.PreviousDeployments) != 1 {
 		t.Fatalf("status response = %#v", document)
+	}
+}
+
+func TestModuleCommandRoutesUseIndependentSafeHTTPDTOs(t *testing.T) {
+	registry, paths := testRegistry(t, "main")
+	active := "dep-commands"
+	command := application.EffectiveModuleCommand{
+		Module: "demo", Release: "1.2.3-r4", DeploymentID: active, Available: true,
+		Command: application.ModuleCommandDescriptor{
+			ID: "doctor", Title: "Inspect service", Description: "Read safe diagnostics.",
+			Mode: "query", Risk: "normal", RuntimeState: "running", Lock: "module_read",
+			TimeoutSeconds: 20, Cancellable: "true", Digest: "sha256:public-descriptor",
+			Parameters: []application.ModuleCommandParameter{{
+				Name: "verbose", Title: "Verbose", Description: "Include safe details.",
+				Type: configschema.Parameter{Kind: "bool"}, Default: false,
+			}},
+		},
+	}
+	service := &fakeQueryService{
+		commands: application.ListModuleCommandsResult{ActiveDeployment: &active, Commands: []application.EffectiveModuleCommand{command}},
+		command:  command,
+	}
+	handler := NewHandler(registry, func(string) QueryService { return service })
+
+	list := serveRequest(handler, http.MethodGet, "/api/v1/workspaces/main/modules/demo/commands")
+	if list.Code != http.StatusOK {
+		t.Fatalf("list = %d, %s", list.Code, list.Body.String())
+	}
+	var listDocument moduleCommandListResponse
+	decodeResponse(t, list, &listDocument)
+	if listDocument.WorkspaceID != "main" || listDocument.ActiveDeployment == nil || len(listDocument.Items) != 1 || listDocument.Items[0].ID != "doctor" {
+		t.Fatalf("list document = %#v", listDocument)
+	}
+
+	detail := serveRequest(handler, http.MethodGet, "/api/v1/workspaces/main/modules/demo/commands/doctor")
+	if detail.Code != http.StatusOK {
+		t.Fatalf("detail = %d, %s", detail.Code, detail.Body.String())
+	}
+	var detailDocument moduleCommandDetailResponse
+	decodeResponse(t, detail, &detailDocument)
+	if detailDocument.Command.Module != "demo" || detailDocument.Command.Parameters[0].Type != "bool" {
+		t.Fatalf("detail document = %#v", detailDocument)
+	}
+	for _, forbidden := range []string{paths[0], "handler", "executor", "env", "secret", ".command.bin"} {
+		if strings.Contains(strings.ToLower(list.Body.String()+detail.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("Module Command HTTP DTO exposed %q: list=%s detail=%s", forbidden, list.Body.String(), detail.Body.String())
+		}
+	}
+	if len(service.commandLists) != 1 || service.commandLists[0].Module != "demo" || len(service.commandGets) != 1 || service.commandGets[0].Command != "doctor" {
+		t.Fatalf("application requests = %#v / %#v", service.commandLists, service.commandGets)
 	}
 }
 
@@ -337,6 +404,8 @@ func TestRoutesRejectUnsupportedOrMalformedQueries(t *testing.T) {
 		"/api/v1/workspaces/main/status?workspace=/tmp/outside",
 		"/api/v1/workspaces/main/deployments?workspace=/tmp/outside",
 		"/api/v1/workspaces/main/deployments/dep-1?path=/tmp/outside",
+		"/api/v1/workspaces/main/modules/demo/commands?workspace=/tmp/outside",
+		"/api/v1/workspaces/main/modules/demo/commands/doctor?path=/tmp/outside",
 		"/api/v1/workspaces/main/deployments?limit=1;a=2",
 	}
 	for _, path := range paths {
@@ -345,7 +414,7 @@ func TestRoutesRejectUnsupportedOrMalformedQueries(t *testing.T) {
 			t.Errorf("%s = %d, %s", path, response.Code, response.Body.String())
 		}
 	}
-	if service.versionCalls != 0 || service.statusCalls != 0 || len(service.listRequests) != 0 || service.inspectCalls != 0 {
+	if service.versionCalls != 0 || service.statusCalls != 0 || len(service.listRequests) != 0 || service.inspectCalls != 0 || len(service.commandLists) != 0 || len(service.commandGets) != 0 {
 		t.Fatalf("unsupported query reached application: %#v", service)
 	}
 }
@@ -497,6 +566,7 @@ func TestRoutingRejectsUnknownWorkspacesTraversalAndMethods(t *testing.T) {
 		{method: http.MethodGet, path: "/api/v1/workspaces/main/deployments/../outside", status: 404},
 		{method: http.MethodGet, path: "/api/v1/workspaces/main/unknown", status: 404},
 		{method: http.MethodPost, path: "/api/v1/workspaces/main/status", status: 405, allow: "GET"},
+		{method: http.MethodPost, path: "/api/v1/workspaces/main/modules/demo/commands/doctor", status: 405, allow: "GET"},
 		{method: http.MethodHead, path: "/healthz", status: 405, allow: "GET"},
 	}
 	for _, test := range tests {
@@ -505,8 +575,8 @@ func TestRoutingRejectsUnknownWorkspacesTraversalAndMethods(t *testing.T) {
 			t.Errorf("%s %s = %d, allow %q, body %s", test.method, test.path, response.Code, response.Header().Get("Allow"), response.Body.String())
 		}
 	}
-	if service.inspectCalls != 0 || service.statusCalls != 0 {
-		t.Fatalf("rejected routes reached application: inspect=%d status=%d", service.inspectCalls, service.statusCalls)
+	if service.inspectCalls != 0 || service.statusCalls != 0 || len(service.commandLists) != 0 || len(service.commandGets) != 0 {
+		t.Fatalf("rejected routes reached application: %#v", service)
 	}
 }
 

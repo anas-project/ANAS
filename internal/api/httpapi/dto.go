@@ -51,6 +51,58 @@ type deploymentDetailResponse struct {
 	State       deploymentStateDTO `json:"state"`
 }
 
+type moduleCommandListResponse struct {
+	APIVersion       string             `json:"api_version"`
+	WorkspaceID      string             `json:"workspace_id"`
+	ActiveDeployment *string            `json:"active_deployment"`
+	Items            []moduleCommandDTO `json:"items"`
+}
+
+type moduleCommandDetailResponse struct {
+	APIVersion  string           `json:"api_version"`
+	WorkspaceID string           `json:"workspace_id"`
+	Command     moduleCommandDTO `json:"command"`
+}
+
+type moduleCommandDTO struct {
+	Module            string                      `json:"module"`
+	Release           string                      `json:"release"`
+	DeploymentID      string                      `json:"deployment_id"`
+	ID                string                      `json:"id"`
+	Title             string                      `json:"title"`
+	Description       string                      `json:"description"`
+	Mode              string                      `json:"mode"`
+	Risk              string                      `json:"risk"`
+	RuntimeState      string                      `json:"runtime_state"`
+	Lock              string                      `json:"lock"`
+	TimeoutSeconds    int                         `json:"timeout_seconds"`
+	Cancellable       string                      `json:"cancellable"`
+	Parameters        []moduleCommandParameterDTO `json:"parameters"`
+	Digest            string                      `json:"digest"`
+	Available         bool                        `json:"available"`
+	UnavailableReason string                      `json:"unavailable_reason,omitempty"`
+}
+
+type moduleCommandParameterDTO struct {
+	Name          string                      `json:"name"`
+	Title         string                      `json:"title"`
+	Description   string                      `json:"description"`
+	Type          string                      `json:"type"`
+	AllowedValues []string                    `json:"allowed_values"`
+	Constraints   moduleCommandConstraintsDTO `json:"constraints"`
+	Required      bool                        `json:"required"`
+	Default       any                         `json:"default,omitempty"`
+}
+
+type moduleCommandConstraintsDTO struct {
+	Minimum   *int   `json:"minimum,omitempty"`
+	Maximum   *int   `json:"maximum,omitempty"`
+	MinLength *int   `json:"min_length,omitempty"`
+	MaxLength *int   `json:"max_length,omitempty"`
+	Pattern   string `json:"pattern,omitempty"`
+	Format    string `json:"format,omitempty"`
+}
+
 // deploymentDTO is intentionally not the persisted Manifest type. In
 // particular it omits snapshot source/root, compose and hook paths, resource
 // specs, secret-store keys, and digests derived from secret-bearing inputs.
@@ -144,6 +196,45 @@ func newDeploymentDetailResponse(workspaceID string, result application.InspectD
 		APIVersion: APIVersion, WorkspaceID: workspaceID,
 		Deployment: newDeploymentDTO(result.Deployment),
 		State:      newDeploymentStateDTO(result.State),
+	}
+}
+
+func newModuleCommandListResponse(workspaceID string, result application.ListModuleCommandsResult) moduleCommandListResponse {
+	items := make([]moduleCommandDTO, 0, len(result.Commands))
+	for _, command := range result.Commands {
+		items = append(items, newModuleCommandDTO(command))
+	}
+	return moduleCommandListResponse{
+		APIVersion: APIVersion, WorkspaceID: workspaceID,
+		ActiveDeployment: result.ActiveDeployment, Items: items,
+	}
+}
+
+func newModuleCommandDetailResponse(workspaceID string, result application.EffectiveModuleCommand) moduleCommandDetailResponse {
+	return moduleCommandDetailResponse{APIVersion: APIVersion, WorkspaceID: workspaceID, Command: newModuleCommandDTO(result)}
+}
+
+func newModuleCommandDTO(command application.EffectiveModuleCommand) moduleCommandDTO {
+	parameters := make([]moduleCommandParameterDTO, 0, len(command.Command.Parameters))
+	for _, parameter := range command.Command.Parameters {
+		parameters = append(parameters, moduleCommandParameterDTO{
+			Name: parameter.Name, Title: parameter.Title, Description: parameter.Description,
+			Type: parameter.Type.Kind, AllowedValues: append([]string{}, parameter.Type.Enum...),
+			Constraints: moduleCommandConstraintsDTO{
+				Minimum: parameter.Type.Constraints.Minimum, Maximum: parameter.Type.Constraints.Maximum,
+				MinLength: parameter.Type.Constraints.MinLength, MaxLength: parameter.Type.Constraints.MaxLength,
+				Pattern: parameter.Type.Constraints.Pattern, Format: parameter.Type.Constraints.Format,
+			},
+			Required: parameter.Required, Default: parameter.Default,
+		})
+	}
+	return moduleCommandDTO{
+		Module: command.Module, Release: command.Release, DeploymentID: command.DeploymentID,
+		ID: command.Command.ID, Title: command.Command.Title, Description: command.Command.Description,
+		Mode: command.Command.Mode, Risk: command.Command.Risk, RuntimeState: command.Command.RuntimeState,
+		Lock: command.Command.Lock, TimeoutSeconds: command.Command.TimeoutSeconds, Cancellable: command.Command.Cancellable,
+		Parameters: parameters, Digest: command.Command.Digest,
+		Available: command.Available, UnavailableReason: command.UnavailableReason,
 	}
 }
 

@@ -3,6 +3,7 @@ package application
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/anas-project/ANAS/internal/deployment"
+	"gopkg.in/yaml.v3"
 )
 
 func TestVersionAndFreshWorkspaceStatus(t *testing.T) {
@@ -226,6 +228,102 @@ func TestServiceHonorsCanceledContext(t *testing.T) {
 	}
 	if _, err := service.InspectDeployment(ctx, InspectDeploymentRequest{DeploymentID: "dep"}); !errors.Is(err, context.Canceled) {
 		t.Errorf("InspectDeployment error = %v", err)
+	}
+	if _, err := service.ListModuleCommands(ctx, ListModuleCommandsRequest{}); !errors.Is(err, context.Canceled) {
+		t.Errorf("ListModuleCommands error = %v", err)
+	}
+	if _, err := service.GetModuleCommand(ctx, GetModuleCommandRequest{Module: "demo", Command: "doctor"}); !errors.Is(err, context.Canceled) {
+		t.Errorf("GetModuleCommand error = %v", err)
+	}
+}
+
+func TestListModuleCommandsUsesFrozenSafeProjectionAndDetectsExecutorTampering(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	id := "dep-commands"
+	executor := filepath.Join(workspace, ".anas", "deployments", id, "modules", "demo", ".command.bin")
+	writeApplicationFile(t, executor, []byte("trusted executor"))
+	if err := os.Chmod(executor, 0555); err != nil {
+		t.Fatal(err)
+	}
+	writeApplicationFile(t, filepath.Join(filepath.Dir(executor), ".env"), []byte("DEMO_ENDPOINT=https://incus.test:8443\n"))
+	secretStorePath := filepath.Join(workspace, ".anas", "secrets.yml")
+	writeApplicationFile(t, secretStorePath, []byte("api_version: anas.secrets/v2\nsecrets:\n  DEMO_PRIVATE_KEY:\n    value: fixture-secret\n"))
+	executorDigest, err := applicationFileDigest(executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := deployment.ModuleCommand{
+		ID: "doctor", Title: "Inspect service", Description: "Read safe diagnostics.", Handler: "private_handler",
+		Mode: "query", Risk: "normal", RuntimeState: "running", Lock: "module_read", TimeoutSeconds: 15,
+		Cancellable: "true", Env: []string{"DEMO_ENDPOINT"}, Secrets: []string{"DEMO_PRIVATE_KEY"},
+	}
+	command.Digest, err = deployment.CommandDigest(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := deployment.Manifest{
+		APIVersion: deployment.ManifestAPIVersion, ID: id, ModuleOrder: []string{"demo"},
+		Modules: map[string]deployment.Module{"demo": {
+			Name: "demo", Version: "1.0.0", Revision: 2, ArtifactDeployment: id,
+			CommandExecutor: deployment.CommandExecutor{Command: []string{"./.command.bin"}, Digest: executorDigest},
+			Commands:        []deployment.ModuleCommand{command},
+		}},
+	}
+	body, err := yaml.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeApplicationFile(t, filepath.Join(workspace, ".anas", "deployments", id, "deployment.yml"), body)
+	writeApplicationFile(t, filepath.Join(workspace, ".anas", "state", "active.yml"), []byte("api_version: anas.state/v2\nactive_deployment: dep-commands\nruntime_status: running\n"))
+
+	service := NewService(workspace)
+	result, err := service.ListModuleCommands(context.Background(), ListModuleCommandsRequest{Module: "demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ActiveDeployment == nil || *result.ActiveDeployment != id || len(result.Commands) != 1 || !result.Commands[0].Available {
+		t.Fatalf("commands = %#v", result)
+	}
+	detail, err := service.GetModuleCommand(context.Background(), GetModuleCommandRequest{Module: "demo", Command: "doctor"})
+	if err != nil || detail.Command.ID != "doctor" || !detail.Available {
+		t.Fatalf("command detail = %#v, %v", detail, err)
+	}
+	_, err = service.GetModuleCommand(context.Background(), GetModuleCommandRequest{Module: "demo", Command: "missing"})
+	if appErr := requireApplicationError(t, err); appErr.Code != "module_command_not_found" {
+		t.Fatalf("missing command error = %#v", appErr)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"private_handler", "DEMO_ENDPOINT", "DEMO_PRIVATE_KEY", ".command.bin", workspace} {
+		if bytes.Contains(encoded, []byte(private)) {
+			t.Fatalf("safe projection exposed %q: %s", private, encoded)
+		}
+	}
+	writeApplicationFile(t, secretStorePath, []byte("api_version: anas.secrets/v2\nsecrets: {}\n"))
+	missingSecret, err := service.ListModuleCommands(context.Background(), ListModuleCommandsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missingSecret.Commands) != 1 || missingSecret.Commands[0].Available || missingSecret.Commands[0].UnavailableReason != "missing_secret" {
+		t.Fatalf("missing-secret commands = %#v", missingSecret.Commands)
+	}
+	writeApplicationFile(t, secretStorePath, []byte("api_version: anas.secrets/v2\nsecrets:\n  DEMO_PRIVATE_KEY:\n    value: fixture-secret\n"))
+
+	if err := os.Chmod(executor, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(executor, []byte("tampered"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	tampered, err := service.ListModuleCommands(context.Background(), ListModuleCommandsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tampered.Commands) != 1 || tampered.Commands[0].Available || tampered.Commands[0].UnavailableReason != "executor_digest_mismatch" {
+		t.Fatalf("tampered commands = %#v", tampered.Commands)
 	}
 }
 

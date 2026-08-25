@@ -81,6 +81,31 @@ func TestDocumentationExclusionsAreScopedToCatalogRoots(t *testing.T) {
 	}
 }
 
+func TestBuildCommandExecutorsFreezesEachTargetPlatform(t *testing.T) {
+	root := t.TempDir()
+	commandDir := filepath.Join(root, "modules", "demo", "command")
+	if err := os.MkdirAll(commandDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/module-command-fixture\n\ngo 1.25\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(commandDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	stage := t.TempDir()
+	if err := buildCommandExecutors(root, stage, "demo", []string{"linux/amd64", "linux/arm64"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, architecture := range []string{"amd64", "arm64"} {
+		path := filepath.Join(stage, "command", "bin", "linux-"+architecture, "anas-module-command")
+		info, err := os.Stat(path)
+		if err != nil || info.Size() == 0 || info.Mode().Perm()&0111 == 0 {
+			t.Fatalf("%s command executor: info=%v err=%v", architecture, info, err)
+		}
+	}
+}
+
 func TestExpandContextFilesExcludesExplicitDocumentationFile(t *testing.T) {
 	root := t.TempDir()
 	documentation := filepath.Join("contracts", "database", "documentation.yml")

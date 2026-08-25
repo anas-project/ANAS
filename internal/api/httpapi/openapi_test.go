@@ -36,6 +36,8 @@ func TestOpenAPITracksImplementedReadOnlySurface(t *testing.T) {
 		"/api/v1/system",
 		"/api/v1/workspaces/{ws}/deployments",
 		"/api/v1/workspaces/{ws}/deployments/{id}",
+		"/api/v1/workspaces/{ws}/modules/{module}/commands",
+		"/api/v1/workspaces/{ws}/modules/{module}/commands/{command}",
 		"/api/v1/workspaces/{ws}/status",
 		"/healthz",
 	}
@@ -43,11 +45,13 @@ func TestOpenAPITracksImplementedReadOnlySurface(t *testing.T) {
 		t.Fatalf("OpenAPI paths = %v, want %v", gotPaths, wantPaths)
 	}
 	wantResponses := map[string][]string{
-		"/healthz":                                 {"200", "400", "405"},
-		"/api/v1/system":                           {"200", "400", "405", "408", "500", "504"},
-		"/api/v1/workspaces/{ws}/status":           {"200", "400", "404", "405", "408", "500", "504"},
-		"/api/v1/workspaces/{ws}/deployments":      {"200", "400", "404", "405", "408", "500", "504"},
-		"/api/v1/workspaces/{ws}/deployments/{id}": {"200", "400", "404", "405", "408", "412", "500", "504"},
+		"/healthz":                                                    {"200", "400", "405"},
+		"/api/v1/system":                                              {"200", "400", "405", "408", "500", "504"},
+		"/api/v1/workspaces/{ws}/status":                              {"200", "400", "404", "405", "408", "500", "504"},
+		"/api/v1/workspaces/{ws}/deployments":                         {"200", "400", "404", "405", "408", "500", "504"},
+		"/api/v1/workspaces/{ws}/deployments/{id}":                    {"200", "400", "404", "405", "408", "412", "500", "504"},
+		"/api/v1/workspaces/{ws}/modules/{module}/commands":           {"200", "400", "404", "405", "408", "412", "500", "504"},
+		"/api/v1/workspaces/{ws}/modules/{module}/commands/{command}": {"200", "400", "404", "405", "408", "412", "500", "504"},
 	}
 	for path, want := range wantResponses {
 		pathItem := objectAt(t, paths, path)
@@ -128,6 +132,7 @@ func TestOpenAPIDeploymentProjectionOmitsSensitivePersistedFields(t *testing.T) 
 	assertPropertiesAbsent(t, schemas, "DeploymentResource", "spec", "password_secret", "credential_secret")
 	assertPropertiesAbsent(t, schemas, "DeploymentSnapshotPolicy", "source", "root")
 	assertPropertiesAbsent(t, schemas, "DeploymentDetailResponse", "workspace", "deployment_path")
+	assertPropertiesAbsent(t, schemas, "ModuleCommand", "handler", "executor", "env", "secrets", "workspace")
 }
 
 func assertPropertiesAbsent(t *testing.T, schemas map[string]any, schemaName string, names ...string) {

@@ -21,6 +21,9 @@ func applicationCLIError(err error) error {
 	case application.ErrorKindInvalidArgument:
 		return cliErrorf(exitUsage, appErr.Code, "%s", appErr.Message)
 	case application.ErrorKindNotFound, application.ErrorKindFailedPrecondition:
+		if appErr.Code == "module_command_confirmation_required" {
+			return confirmationErrorf("%s", appErr.Message)
+		}
 		return preconditionErrorf(appErr.Code, "%s", appErr.Message)
 	case application.ErrorKindInternal:
 		// An unreadable persisted state is an unmet machine precondition in the

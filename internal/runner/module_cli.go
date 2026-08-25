@@ -2,12 +2,14 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 
+	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/modulesource"
 	"github.com/anas-project/ANAS/internal/modulestore"
@@ -21,7 +23,7 @@ var (
 
 func runModule(args []string, jsonMode bool) error {
 	if len(args) == 0 {
-		return usageErrorf("usage: anas module list|versions|install|sync|update ...")
+		return usageErrorf("usage: anas module list|versions|install|sync|update|commands|invoke ...")
 	}
 	switch args[0] {
 	case "list":
@@ -34,9 +36,152 @@ func runModule(args []string, jsonMode bool) error {
 		return runModuleSync(args[1:], jsonMode)
 	case "update":
 		return runModuleUpdate(args[1:], jsonMode)
+	case "commands":
+		return runModuleCommands(args[1:], jsonMode)
+	case "invoke":
+		return runModuleInvoke(args[1:], jsonMode)
 	default:
 		return usageErrorf("unknown module subcommand %q", args[0])
 	}
+}
+
+type moduleCommandParamFlags []string
+
+func (values *moduleCommandParamFlags) String() string { return strings.Join(*values, ",") }
+
+func (values *moduleCommandParamFlags) Set(value string) error {
+	*values = append(*values, value)
+	return nil
+}
+
+type moduleCommandCLISink struct{ jsonMode bool }
+
+func (sink moduleCommandCLISink) Progress(event application.ProgressEvent) {
+	emitProgress(sink.jsonMode, event.Phase, event.Current, event.Total, event.Unit)
+}
+
+func (sink moduleCommandCLISink) Warning(event application.WarningEvent) {
+	emitWarning(sink.jsonMode, event.Code, "%s", event.Message)
+}
+
+func (moduleCommandCLISink) Log(application.LogEvent) {}
+
+func runModuleInvoke(args []string, jsonMode bool) error {
+	fs := flag.NewFlagSet("module invoke", flag.ContinueOnError)
+	workspaceFlag := fs.String("w", "", "workspace path")
+	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
+	var parameters moduleCommandParamFlags
+	fs.Var(&parameters, "param", "module command parameter NAME=VALUE (repeatable)")
+	yes := fs.Bool("y", false, "confirm a destructive command")
+	fs.BoolVar(yes, "yes", false, "confirm a destructive command")
+	registerJSONFlag(fs)
+	positional, err := parseInterspersed(fs, args)
+	if err != nil {
+		return usageErrorf("module invoke: %v", err)
+	}
+	if len(positional) != 2 {
+		return usageErrorf("usage: anas module invoke MODULE COMMAND [-w WORKSPACE] [--param NAME=VALUE]... [-y] [--json]")
+	}
+	provided := make(map[string]any, len(parameters))
+	for _, assignment := range parameters {
+		name, value, ok := strings.Cut(assignment, "=")
+		name = strings.TrimSpace(name)
+		if !ok || name == "" {
+			return usageErrorf("--param must use NAME=VALUE")
+		}
+		if _, duplicate := provided[name]; duplicate {
+			return usageErrorf("--param %s was supplied more than once", name)
+		}
+		provided[name] = value
+	}
+	workspace, err := resolveWorkspace(*workspaceFlag)
+	if err != nil {
+		return usageErrorf("%s", err.Error())
+	}
+	service := application.NewService(workspace).WithEventSink(moduleCommandCLISink{jsonMode: jsonMode})
+	prepared, err := service.PrepareModuleCommand(context.Background(), application.PrepareModuleCommandRequest{
+		Module: positional[0], Command: positional[1], Parameters: provided,
+	})
+	if err != nil {
+		return applicationCLIError(err)
+	}
+	confirmed := prepared.Command.Risk != "destructive"
+	if !confirmed {
+		parameterJSON, marshalErr := json.Marshal(prepared.Parameters)
+		if marshalErr != nil {
+			return failuref("module_command_failed", "encode normalized parameters: %s", marshalErr.Error())
+		}
+		prompt := fmt.Sprintf(
+			"%s\n%s\nTarget: deployment %s, %s %s\nParameters: %s",
+			prepared.Command.Title, prepared.Command.Description, prepared.DeploymentID,
+			prepared.Module, prepared.Release, parameterJSON,
+		)
+		if err := confirmDestructive(prompt, *yes); err != nil {
+			return err
+		}
+		confirmed = true
+	}
+	result, err := service.InvokeModuleCommand(context.Background(), application.InvokeModuleCommandRequest{
+		Module: prepared.Module, Command: prepared.Command.ID, Parameters: prepared.Parameters,
+		CommandDigest: prepared.Command.Digest, Confirmed: confirmed,
+	})
+	if err != nil {
+		return applicationCLIError(err)
+	}
+	if jsonMode {
+		return emitOK(map[string]any{
+			"workspace": workspace, "deployment_id": result.DeploymentID,
+			"module": result.Module, "command": result.Command,
+			"changed": result.Changed, "result": result.Result,
+		})
+	}
+	body, err := json.MarshalIndent(result.Result, "", "  ")
+	if err != nil {
+		return failuref("module_command_failed", "encode command result: %s", err.Error())
+	}
+	fmt.Printf("%s %s: changed=%t\n%s\n", result.Module, result.Command, result.Changed, body)
+	return nil
+}
+
+func runModuleCommands(args []string, jsonMode bool) error {
+	fs := flag.NewFlagSet("module commands", flag.ContinueOnError)
+	workspaceFlag := fs.String("w", "", "workspace path")
+	fs.StringVar(workspaceFlag, "workspace", "", "workspace path")
+	registerJSONFlag(fs)
+	positional, err := parseInterspersed(fs, args)
+	if err != nil {
+		return usageErrorf("module commands: %v", err)
+	}
+	if len(positional) > 1 {
+		return usageErrorf("usage: anas module commands [MODULE] [-w WORKSPACE] [--json]")
+	}
+	workspace, err := resolveWorkspace(*workspaceFlag)
+	if err != nil {
+		return usageErrorf("%s", err.Error())
+	}
+	request := application.ListModuleCommandsRequest{}
+	if len(positional) == 1 {
+		request.Module = positional[0]
+	}
+	result, err := application.NewService(workspace).ListModuleCommands(context.Background(), request)
+	if err != nil {
+		return applicationCLIError(err)
+	}
+	if jsonMode {
+		return emitOK(map[string]any{
+			"active_deployment": result.ActiveDeployment,
+			"commands":          result.Commands,
+		})
+	}
+	for _, command := range result.Commands {
+		availability := "available"
+		if !command.Available {
+			availability = "unavailable:" + command.UnavailableReason
+		}
+		fmt.Printf("%s\t%s\t%s\t%s\t%s\n", command.Module, command.Command.ID, command.Command.Mode, command.Command.Risk, availability)
+		fmt.Printf("  %s — %s\n", command.Command.Title, command.Command.Description)
+	}
+	return nil
 }
 
 type moduleRemoteFlags struct {

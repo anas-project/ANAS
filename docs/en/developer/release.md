@@ -131,7 +131,7 @@ module/<name>/<version>-r<revision>
 
 One reproducible bundle contains `package.yml`, `module.yml`, Compose, runtime/build files,
 providers/assets, runtime Contract schemas, hook source, and precompiled Linux `amd64` and `arm64`
-hooks. It excludes README, Module/Contract technical documentation, Contract `documentation.yml`,
+hooks. A command-bearing Module also carries its command source and precompiled executor for both platforms. It excludes README, Module/Contract technical documentation, Contract `documentation.yml`,
 localization inventory, tests, caches, and host build residue.
 
 ```bash

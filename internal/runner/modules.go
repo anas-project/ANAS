@@ -54,6 +54,8 @@ type Module struct {
 	LocalAccounts          []LocalAccount
 	CredentialProviders    []CredentialProvider
 	CredentialConsumers    []CredentialConsumer
+	CommandExecutor        CommandExecutor
+	Commands               []ModuleCommand
 	UseHostLAN             string
 	PublishesDomain        bool
 	Hook                   HookConfig
@@ -148,6 +150,9 @@ type CredentialProvider = deployment.CredentialProvider
 type CredentialConsumer = deployment.CredentialConsumer
 type deploymentCredentialGenerator = deployment.CredentialGenerator
 type deploymentCredentialLifecycle = deployment.CredentialLifecycle
+type CommandExecutor = deployment.CommandExecutor
+type ModuleCommand = deployment.ModuleCommand
+type ModuleCommandParameter = deployment.ModuleCommandParameter
 
 const credentialDesiredSecretKey = "ANAS_CREDENTIAL_DESIRED"
 

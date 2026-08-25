@@ -29,6 +29,8 @@ type QueryService interface {
 	Status(context.Context) (application.StatusResult, error)
 	ListDeployments(context.Context, application.ListDeploymentsRequest) (application.ListDeploymentsResult, error)
 	InspectDeployment(context.Context, application.InspectDeploymentRequest) (application.InspectDeploymentResult, error)
+	ListModuleCommands(context.Context, application.ListModuleCommandsRequest) (application.ListModuleCommandsResult, error)
+	GetModuleCommand(context.Context, application.GetModuleCommandRequest) (application.EffectiveModuleCommand, error)
 }
 
 // ServiceFactory binds an application query service to one canonical
@@ -104,9 +106,37 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.deployments(w, r, workspaceID, service)
 	case len(segments) == 6 && segments[4] == "deployments" && segments[5] != "":
 		h.deployment(w, r, workspaceID, segments[5], service)
+	case len(segments) == 7 && segments[4] == "modules" && segments[5] != "" && segments[6] == "commands":
+		h.moduleCommands(w, r, workspaceID, segments[5], service)
+	case len(segments) == 8 && segments[4] == "modules" && segments[5] != "" && segments[6] == "commands" && segments[7] != "":
+		h.moduleCommand(w, r, workspaceID, segments[5], segments[7], service)
 	default:
 		writeProblem(w, http.StatusNotFound, "not_found", "resource was not found")
 	}
+}
+
+func (h *handler) moduleCommands(w http.ResponseWriter, r *http.Request, workspaceID, moduleName string, service QueryService) {
+	if _, ok := supportedQuery(w, r); !ok {
+		return
+	}
+	result, err := service.ListModuleCommands(r.Context(), application.ListModuleCommandsRequest{Module: moduleName})
+	if err != nil {
+		writeApplicationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newModuleCommandListResponse(workspaceID, result))
+}
+
+func (h *handler) moduleCommand(w http.ResponseWriter, r *http.Request, workspaceID, moduleName, commandID string, service QueryService) {
+	if _, ok := supportedQuery(w, r); !ok {
+		return
+	}
+	result, err := service.GetModuleCommand(r.Context(), application.GetModuleCommandRequest{Module: moduleName, Command: commandID})
+	if err != nil {
+		writeApplicationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newModuleCommandDetailResponse(workspaceID, result))
 }
 
 func validLoopbackHost(value string) bool {
@@ -346,6 +376,14 @@ func publicErrorDetail(err *application.Error, status int) string {
 		return "cursor is invalid"
 	case "invalid_limit":
 		return "limit is invalid"
+	case "invalid_module":
+		return "module name is invalid"
+	case "invalid_module_command":
+		return "module command ID is invalid"
+	case "module_not_active":
+		return "module is not present in the active deployment"
+	case "module_command_not_found":
+		return "module command was not found"
 	case "deployment_missing":
 		if status == http.StatusNotFound {
 			return "deployment was not found"

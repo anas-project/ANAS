@@ -704,6 +704,10 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 	manifest.ConfigFingerprint = fmt.Sprintf("sha256:%x", sha256.Sum256(b))
 	for _, name := range a.order {
 		mod := a.reg[name]
+		commandExecutor, err := frozenModuleCommandExecutor(mod, filepath.Join(a.base, "staging", id, "modules", name))
+		if err != nil {
+			return nil, err
+		}
 		digest, err := normalizedModuleDigest(
 			filepath.Join(a.base, "staging", id, "modules", name),
 			filepath.Join(a.base, "deployments", id),
@@ -727,6 +731,8 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 			LocalAccounts:       append([]LocalAccount{}, mod.LocalAccounts...),
 			CredentialProviders: cloneCredentialProviders(mod.CredentialProviders),
 			CredentialConsumers: cloneCredentialConsumers(mod.CredentialConsumers),
+			CommandExecutor:     commandExecutor,
+			Commands:            cloneModuleCommands(mod.Commands),
 		}
 	}
 	for _, request := range a.resourceRequests {
@@ -1848,6 +1854,8 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 			LocalAccounts:       append([]LocalAccount{}, module.LocalAccounts...),
 			CredentialProviders: cloneCredentialProviders(module.CredentialProviders),
 			CredentialConsumers: cloneCredentialConsumers(module.CredentialConsumers),
+			CommandExecutor:     module.CommandExecutor,
+			Commands:            cloneModuleCommands(module.Commands),
 		}
 		deps[name] = append([]string{}, module.Dependencies...)
 		if len(module.ValidationPlan) > 0 {
