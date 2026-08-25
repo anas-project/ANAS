@@ -11,6 +11,14 @@ image builds, and optional smoke checks.
 > be used as a test server. Do not run this suite or any server E2E on such a
 > host. Use a dedicated non-production environment instead.
 
+The repository currently provides local aggregate tests and individual server
+E2E scripts; it does not yet provide a single SSH command that provisions a
+target, deploys every fixture, runs a selected suite, collects reports, and
+cleans up. The target workflow and implementation milestones are defined in the
+[document-driven test automation requirements](../docs/requirements/document-driven-test-automation.md)
+and [plan](../docs/plans/document-driven-test-automation.md). Until that runner
+exists, do not describe the manual server scripts as one-click remote testing.
+
 ## Mandatory isolation boundary
 
 Every test that creates or removes containers needs its own workspace,
@@ -22,10 +30,13 @@ in `com.docker.compose.project.working_dir`.
 Server E2Es additionally source `server-require-isolated-docker.sh`. They accept
 only an explicitly named ANAS test Unix socket whose daemon reports a test-scoped
 `DockerRootDir`; the default Docker socket and a test-named symlink to the
-production data root are rejected. Concurrent runs need distinct sockets,
-daemon data roots, workspaces, prefixes, and ports. Cleanup must use the current
-run's Compose project or labels; global Docker prune and generic `anas_` prefix
-cleanup are forbidden.
+production data root are rejected. `server-isolated-docker.sh` also starts a
+dedicated containerd inside the same network namespace; starting only dockerd in
+the namespace is insufficient because host-network containers inherit the
+containerd/shim network namespace. Concurrent runs need distinct Docker and
+containerd sockets/data roots/units, workspaces, prefixes, and ports. Cleanup
+must use the current run's Compose project or labels; global Docker prune and
+generic `anas_` prefix cleanup are forbidden.
 
 Run the deterministic guards with:
 
@@ -424,7 +435,8 @@ Do not commit `.anas-test/` or generated secrets.
 
     WP4 has two dedicated new-install fixtures. Both include Samba DC, Samba
     FS, LAM, Nextcloud, and the extra application consumers required by the
-    existing IAM login matrix:
+    existing IAM login matrix. The LLNG fixture also includes Eturnal so one
+    fresh first activation covers the current TURN credential barrier:
 
     - `server-domain-separation-authentik-e2e.yml` uses
       `BASE_DOMAIN=nas.test.example`, `SAMBA_DC_DOMAIN=test.example`, and
@@ -435,9 +447,10 @@ Do not commit `.anas-test/` or generated secrets.
 
     Import and apply one fixture to a fresh workspace attached to the matching
     dedicated test network namespace and isolated Docker socket. Do not reuse a
-    workspace whose Samba directory has already been provisioned under another
-    domain. From the repository root, create the Authentik daemon with the
-    fixture's exact network and Docker ranges:
+    workspace or seed it with a historical lock/Secret Store: this E2E validates
+    only a current-version new installation, not compatibility or migration from
+    an earlier release. From the repository root, create the Authentik daemon
+    with the fixture's exact network and Docker ranges:
 
     ```sh
     sudo env \
@@ -454,6 +467,10 @@ Do not commit `.anas-test/` or generated secrets.
       ANAS_TEST_DOCKER_CONFIG="$PWD/test-env/server-docker-daemon.json" \
       ANAS_TEST_DOCKER_UNIT=anas-domain-auth-e2e-docker.service \
       ANAS_TEST_DOCKER_PID_FILE=/run/anas-domain-auth-e2e-docker.pid \
+      ANAS_TEST_CONTAINERD_UNIT=anas-domain-auth-e2e-containerd.service \
+      ANAS_TEST_CONTAINERD_SOCKET=/run/anas-domain-auth-e2e-containerd.sock \
+      ANAS_TEST_CONTAINERD_ROOT=/data/anas-domain-auth-e2e-containerd \
+      ANAS_TEST_CONTAINERD_STATE=/run/anas-domain-auth-e2e-containerd \
       ANAS_TEST_CONTAINERD_NAMESPACE=anas-domain-auth-e2e \
       ANAS_TEST_CONTAINERD_PLUGINS_NAMESPACE=anas-domain-auth-e2e-plugins \
       ANAS_TEST_DOCKER_BIP=172.30.10.1/24 \
@@ -478,6 +495,10 @@ Do not commit `.anas-test/` or generated secrets.
       ANAS_TEST_DOCKER_CONFIG="$PWD/test-env/server-docker-daemon.json" \
       ANAS_TEST_DOCKER_UNIT=anas-domain-llng-e2e-docker.service \
       ANAS_TEST_DOCKER_PID_FILE=/run/anas-domain-llng-e2e-docker.pid \
+      ANAS_TEST_CONTAINERD_UNIT=anas-domain-llng-e2e-containerd.service \
+      ANAS_TEST_CONTAINERD_SOCKET=/run/anas-domain-llng-e2e-containerd.sock \
+      ANAS_TEST_CONTAINERD_ROOT=/data/anas-domain-llng-e2e-containerd \
+      ANAS_TEST_CONTAINERD_STATE=/run/anas-domain-llng-e2e-containerd \
       ANAS_TEST_CONTAINERD_NAMESPACE=anas-domain-llng-e2e \
       ANAS_TEST_CONTAINERD_PLUGINS_NAMESPACE=anas-domain-llng-e2e-plugins \
       ANAS_TEST_DOCKER_BIP=172.30.11.1/24 \
@@ -531,7 +552,11 @@ Do not commit `.anas-test/` or generated secrets.
     hostname and chain verification, service-account bind, Samba FS AD DNS
     registration, Nextcloud cron CA installation, Authentik worker health and
     LDAP trust-bundle visibility, and the deployed LAM, Nextcloud, and IAM
-    directory/Web split. `contracts` (the default) also
+    directory/Web split. For the LLNG fixture, the probe additionally verifies
+    that both private-key projections reached the live LLNG config and that
+    Eturnal's generated runtime credential matches `TURN_SECRET`; the documented
+    setup reaches this probe through one fresh `apply`, without a prewarm or
+    manual restart. `contracts` (the default) also
     runs the existing IAM runtime-contract probe:
 
     ```sh
@@ -577,6 +602,8 @@ Do not commit `.anas-test/` or generated secrets.
       ANAS_TEST_HOST_VETH=anas-dsa-h \
       ANAS_TEST_NS_SUBNET=10.252.10.0/24 \
       ANAS_TEST_DOCKER_UNIT=anas-domain-auth-e2e-docker.service \
+      ANAS_TEST_CONTAINERD_UNIT=anas-domain-auth-e2e-containerd.service \
+      ANAS_TEST_CONTAINERD_SOCKET=/run/anas-domain-auth-e2e-containerd.sock \
       ./test-env/scripts/server-isolated-docker.sh stop
 
     sudo ip netns exec anas-domain-llng-e2e \
@@ -588,6 +615,8 @@ Do not commit `.anas-test/` or generated secrets.
       ANAS_TEST_HOST_VETH=anas-dsl-h \
       ANAS_TEST_NS_SUBNET=10.252.11.0/24 \
       ANAS_TEST_DOCKER_UNIT=anas-domain-llng-e2e-docker.service \
+      ANAS_TEST_CONTAINERD_UNIT=anas-domain-llng-e2e-containerd.service \
+      ANAS_TEST_CONTAINERD_SOCKET=/run/anas-domain-llng-e2e-containerd.sock \
       ./test-env/scripts/server-isolated-docker.sh stop
     ```
 

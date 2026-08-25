@@ -23,6 +23,10 @@ modules:
   # the domain-separation wrapper.
   meshcentral: {}
   netbird: {}
+  # Keep the current-version TURN credential barrier in the same fresh-install
+  # runtime path as LLNG and Samba FS. The E2E applies this fixture once without
+  # prewarming the container, then verifies the live generated credential.
+  eturnal: {}
   lam: {}
   traefik: {}
 identity:

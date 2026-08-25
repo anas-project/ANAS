@@ -13,6 +13,16 @@ bash -n ./test-env/scripts/server-domain-separation-e2e.sh
 sh -n ./test-env/scripts/server-isolated-docker.sh
 sh ./test-env/scripts/test-domain-separation-server-configs.sh
 
+for isolation_marker in \
+  '/usr/bin/containerd' \
+  '--containerd="$CONTAINERD_SOCKET"' \
+  'ip netns pids "$NS"'; do
+  if ! grep -Fq -- "$isolation_marker" ./test-env/scripts/server-isolated-docker.sh; then
+    printf 'isolated Docker helper is missing required containerd boundary: %s\n' "$isolation_marker" >&2
+    exit 1
+  fi
+done
+
 if grep -Eq 'anas-test-docker-v3|anas-docker0' ./test-env/scripts/server-isolated-docker.sh; then
   echo "isolated Docker helper contains a cross-scope legacy cleanup target" >&2
   exit 1

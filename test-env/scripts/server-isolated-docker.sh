@@ -15,6 +15,10 @@ EXEC_ROOT=${ANAS_TEST_DOCKER_EXEC_ROOT:-/run/anas-docker-test}
 CONFIG=${ANAS_TEST_DOCKER_CONFIG:-/home/whl/anas-refactor-test/test-env/server-docker-daemon.json}
 UNIT=${ANAS_TEST_DOCKER_UNIT:-anas-test-docker-netns.service}
 PID_FILE=${ANAS_TEST_DOCKER_PID_FILE:-/run/anas-docker-test.pid}
+CONTAINERD_UNIT=${ANAS_TEST_CONTAINERD_UNIT:-anas-test-containerd-netns.service}
+CONTAINERD_SOCKET=${ANAS_TEST_CONTAINERD_SOCKET:-/run/anas-containerd-test.sock}
+CONTAINERD_ROOT=${ANAS_TEST_CONTAINERD_ROOT:-/data/anas-containerd-test}
+CONTAINERD_STATE=${ANAS_TEST_CONTAINERD_STATE:-/run/anas-containerd-test}
 CONTAINERD_NAMESPACE=${ANAS_TEST_CONTAINERD_NAMESPACE:-anas-test}
 CONTAINERD_PLUGINS_NAMESPACE=${ANAS_TEST_CONTAINERD_PLUGINS_NAMESPACE:-anas-test-plugins}
 DOCKER_BIP=${ANAS_TEST_DOCKER_BIP:-172.30.0.1/24}
@@ -32,11 +36,24 @@ uplink_interface() {
 }
 
 status() {
+  mismatch=false
+  systemctl is-active "$CONTAINERD_UNIT" 2>/dev/null || true
   systemctl is-active "$UNIT" 2>/dev/null || true
   ip netns list | grep -F "$NS" || true
+  netns_pids=" $(ip netns pids "$NS" 2>/dev/null | tr '\n' ' ') "
+  for service in "$CONTAINERD_UNIT" "$UNIT"; do
+    service_pid=$(systemctl show --property=MainPID --value "$service" 2>/dev/null || true)
+    if [ -n "$service_pid" ] && [ "$service_pid" != 0 ]; then
+      case "$netns_pids" in
+        *" $service_pid "*) printf '%s pid=%s netns=%s\n' "$service" "$service_pid" "$NS" ;;
+        *) printf '%s pid=%s netns=MISMATCH\n' "$service" "$service_pid" >&2; mismatch=true ;;
+      esac
+    fi
+  done
   if [ -S "$SOCKET" ]; then
     docker -H "unix://$SOCKET" info --format 'root={{.DockerRootDir}} driver={{.Driver}} server={{.ServerVersion}}'
   fi
+  [ "$mismatch" = false ]
 }
 
 start() {
@@ -89,12 +106,31 @@ start() {
     iptables -A FORWARD -i "$uplink" -o "$HOST_VETH" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
   systemctl stop "$UNIT" 2>/dev/null || true
+  systemctl stop "$CONTAINERD_UNIT" 2>/dev/null || true
   systemctl reset-failed "$UNIT" 2>/dev/null || true
+  systemctl reset-failed "$CONTAINERD_UNIT" 2>/dev/null || true
+  mkdir -p "$CONTAINERD_ROOT" "$CONTAINERD_STATE"
+  systemd-run --unit="${CONTAINERD_UNIT%.service}" --collect --property=Restart=on-failure \
+    /usr/bin/nsenter --net="/var/run/netns/$NS" /usr/bin/containerd \
+    --address="$CONTAINERD_SOCKET" \
+    --root="$CONTAINERD_ROOT" \
+    --state="$CONTAINERD_STATE"
+
+  i=0
+  until ctr --address "$CONTAINERD_SOCKET" version >/dev/null 2>&1; do
+    i=$((i + 1))
+    if [ "$i" -ge 30 ]; then
+      journalctl -u "$CONTAINERD_UNIT" -n 100 --no-pager >&2
+      exit 1
+    fi
+    sleep 2
+  done
   systemd-run --unit="${UNIT%.service}" --collect --property=Restart=on-failure \
     /usr/bin/nsenter --net="/var/run/netns/$NS" /usr/bin/dockerd \
     --config-file="$CONFIG" \
     --data-root="$DATA_ROOT" \
     --exec-root="$EXEC_ROOT" \
+    --containerd="$CONTAINERD_SOCKET" \
     --containerd-namespace="$CONTAINERD_NAMESPACE" \
     --containerd-plugins-namespace="$CONTAINERD_PLUGINS_NAMESPACE" \
     --pidfile="$PID_FILE" \
@@ -120,11 +156,13 @@ stop() {
   require_root
   uplink=$(uplink_interface)
   systemctl stop "$UNIT" 2>/dev/null || true
+  systemctl stop "$CONTAINERD_UNIT" 2>/dev/null || true
   iptables -t nat -D POSTROUTING -s "$NS_SUBNET" -o "$uplink" -j MASQUERADE 2>/dev/null || true
   iptables -D FORWARD -i "$HOST_VETH" -o "$uplink" -j ACCEPT 2>/dev/null || true
   iptables -D FORWARD -i "$uplink" -o "$HOST_VETH" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
   ip link delete "$HOST_VETH" 2>/dev/null || true
   ip netns delete "$NS" 2>/dev/null || true
+  rm -f "$SOCKET" "$PID_FILE" "$CONTAINERD_SOCKET"
   rm -rf "/etc/netns/$NS"
 }
 

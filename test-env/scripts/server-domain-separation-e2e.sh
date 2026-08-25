@@ -133,11 +133,14 @@ fs=$(container samba_fs)
 lego=$(container lego)
 lam=$(container lam)
 iam=$(container "$iam_provider")
+eturnal=
 nextcloud=$(container nextcloud)
 nextcloud_cron=$(container nextcloud_cron)
 authentik_worker=
 if [[ "$iam_provider" == authentik ]]; then
   authentik_worker=$(container authentik_worker)
+else
+  eturnal=$(container eturnal)
 fi
 base_dn=$(domain_to_dn "$samba_domain")
 
@@ -148,12 +151,16 @@ required_containers=("$dc" "$fs" "$lego" "$lam" "$iam" "$nextcloud" "$nextcloud_
 if [[ -n "$authentik_worker" ]]; then
   required_containers+=("$authentik_worker")
 fi
+if [[ -n "$eturnal" ]]; then
+  required_containers+=("$eturnal")
+fi
 for target in "${required_containers[@]}"; do
   state=$("$docker_cmd" inspect --format '{{.State.Status}}' "$target")
   health=$("$docker_cmd" inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$target")
+  restarts=$("$docker_cmd" inspect --format '{{.RestartCount}}' "$target")
   [[ "$state" == running ]] || fail "$target is $state"
   [[ "$health" != unhealthy && "$health" != starting ]] || fail "$target health is $health"
-  printf '%s state=%s health=%s\n' "$target" "$state" "$health"
+  printf '%s state=%s health=%s restarts=%s\n' "$target" "$state" "$health" "$restarts"
 done
 
 section "directory and Web-domain contract"
@@ -396,6 +403,9 @@ case "$iam_provider" in
     assert_eq LLNG_LDAPS_URL \
       "$(container_env "$iam" SAMBA_DC_LDAPS_SERVER_URL)" "ldaps://$base_domain"
     "$docker_cmd" exec "$iam" sh -ceu '
+      test -n "$LLNG_SAML_SERVICE_PRIVATE_KEY"
+      test -n "$LLNG_OIDC_SERVICE_PRIVATE_KEY"
+      test "$LLNG_SAML_SERVICE_PRIVATE_KEY" = "$LLNG_OIDC_SERVICE_PRIVATE_KEY"
       file=$(find /var/lib/lemonldap-ng/conf -maxdepth 1 -name "lmConf-*.json" | sort -V | tail -n 1)
       test -n "$file"
       jq -e '\''
@@ -405,9 +415,24 @@ case "$iam_provider" in
         .ldapBase == env.SAMBA_DC_BASE_USERS_DN and
         .ldapGroupBase == env.SAMBA_DC_BASE_GROUPS_DN and
         .managerDn == env.SAMBA_DC_PASSWORD_BIND_DN and
-        .ldapVerify == "require"
+        .ldapVerify == "require" and
+        (.samlServicePrivateKeySig | length > 0) and
+        (.oidcServicePrivateKeySig | length > 0)
       '\'' "$file" >/dev/null
     '
+    printf 'llng_private_key_projection=ok\n'
+
+    section "Eturnal first-activation credential readiness"
+    "$docker_cmd" exec "$eturnal" sh -ceu '
+      config_dir=${ANAS_CONFIG_DIR:-${ETURNAL_ETC_DIR:-}}
+      test -n "$config_dir"
+      config=$config_dir/eturnal.yml
+      test -s "$config"
+      test -n "$TURN_SECRET"
+      escaped=$(printf "%s" "$TURN_SECRET" | sed "s/'\''/'\'''\''/g")
+      grep -Fqx "  secret: '\''$escaped'\''" "$config"
+    '
+    printf 'eturnal_live_credential=match prewarm=not-used\n'
     ;;
 esac
 
