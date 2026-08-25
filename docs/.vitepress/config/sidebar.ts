@@ -53,14 +53,16 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '概览', link: '/reference/' },
         { text: '配置结构', link: '/reference/configuration' },
         { text: 'Module 目录', link: '/reference/modules' },
+        { text: 'Module 专属命令', link: '/reference/module-commands' },
         { text: 'Module 时区与语言', link: '/reference/module-localization' },
         { text: 'Module 环境变量', link: '/reference/module-environment-variables' },
         { text: 'Module IAM / OIDC 支持', link: '/reference/module-iam-support' },
         { text: 'CLI JSON 契约', link: '/reference/contracts/' },
-        { text: 'object_storage Contract', link: '/reference/contracts/object_storage' },
-        { text: 'relational_database Contract', link: '/reference/contracts/relational_database' },
-        { text: 'identity Contract', link: '/reference/contracts/identity' },
-        { text: 'certificate Contract', link: '/reference/contracts/certificate' }
+        { text: 'object_storage Contract', link: '/reference/module-contracts/object_storage' },
+        { text: 'relational_database Contract', link: '/reference/module-contracts/relational_database' },
+        { text: 'identity Contract', link: '/reference/module-contracts/identity' },
+        { text: 'certificate Contract', link: '/reference/module-contracts/certificate' },
+        { text: 'compute Contract', link: '/reference/module-contracts/compute' }
       ]
     },
     {
@@ -105,6 +107,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '动态 DNS', link: '/architecture/dynamic-dns-capability-design' },
         { text: 'Object Storage 能力', link: '/architecture/object-storage-capability-design' },
         { text: 'Forgejo Module', link: '/architecture/forgejo-module-design' },
+        { text: 'AI Agent 编排', link: '/architecture/ai-agent-orchestration-design' },
         { text: '凭据轮换', link: '/architecture/credential-rotation' },
         { text: '运行时与发布状态', link: '/architecture/runtime-release-state-design' },
         { text: '配置状态生命周期', link: '/architecture/config-state-lifecycle' }
@@ -141,7 +144,11 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Web API 与管理前端要求', link: '/requirements/web-api-admin-console' },
         { text: 'Forgejo Module 集成要求', link: '/requirements/forgejo-module' },
         { text: 'Vikunja Module 集成要求', link: '/requirements/vikunja-module' },
-        { text: 'VersityGW S3 Module', link: '/requirements/versitygw-module' }
+        { text: 'VersityGW S3 Module', link: '/requirements/versitygw-module' },
+        { text: 'Incus compute Provider', link: '/requirements/incus-module' },
+        { text: 'Module IAM 双向登出', link: '/requirements/module-iam-bidirectional-logout' },
+        { text: '需求 ID 矩阵采用范围', link: '/requirements/requirement-id-adoption' },
+        { text: '文档驱动测试自动化', link: '/requirements/document-driven-test-automation' }
       ]
     }
   ],
@@ -155,7 +162,10 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Web API 与管理前端', link: '/plans/web-api-admin-console' },
         { text: 'workspace 与备份', link: '/plans/workspace-backup' },
         { text: 'Forgejo Module', link: '/plans/forgejo-module' },
-        { text: 'VersityGW S3 Module', link: '/plans/versitygw-module' }
+        { text: 'VersityGW S3 Module', link: '/plans/versitygw-module' },
+        { text: 'Incus compute Provider', link: '/plans/incus-module' },
+        { text: '需求 ID 矩阵采用', link: '/plans/requirement-id-adoption' },
+        { text: '文档驱动测试自动化', link: '/plans/document-driven-test-automation' }
       ]
     }
   ],
@@ -224,14 +234,17 @@ export const enSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: 'Overview', link: '/en/reference/' },
         { text: 'Configuration structure', link: '/en/reference/configuration' },
-        { text: 'CLI contract', link: '/en/reference/cli-contract' },
+        { text: 'CLI JSON contracts', link: '/en/reference/contracts/' },
         { text: 'Module catalog', link: '/en/reference/modules' },
+        { text: 'Module-specific commands', link: '/en/reference/module-commands' },
+        { text: 'Module environment variables', link: '/en/reference/module-environment-variables' },
         { text: 'Module timezone and language', link: '/en/reference/module-localization' },
         { text: 'Module IAM and OIDC support', link: '/en/reference/module-iam-support' },
-        { text: 'object_storage Contract', link: '/en/reference/contracts/object_storage' },
-        { text: 'relational_database Contract', link: '/en/reference/contracts/relational_database' },
-        { text: 'identity Contract', link: '/en/reference/contracts/identity' },
-        { text: 'certificate Contract', link: '/en/reference/contracts/certificate' }
+        { text: 'object_storage Contract', link: '/en/reference/module-contracts/object_storage' },
+        { text: 'relational_database Contract', link: '/en/reference/module-contracts/relational_database' },
+        { text: 'identity Contract', link: '/en/reference/module-contracts/identity' },
+        { text: 'certificate Contract', link: '/en/reference/module-contracts/certificate' },
+        { text: 'compute Contract', link: '/en/reference/module-contracts/compute' }
       ]
     },
     {
@@ -263,7 +276,11 @@ export const enSidebar: DefaultTheme.Sidebar = {
     {
       text: 'Architecture',
       items: [
-        { text: 'Overview', link: '/en/architecture/' }
+        { text: 'Overview', link: '/en/architecture/' },
+        { text: 'Core implementation standard', link: '/en/architecture/core-implementation-standard' },
+        { text: 'Module, Contract, Resource', link: '/en/architecture/module-contract-resource-design' },
+        { text: 'IAM capability design', link: '/en/architecture/iam-capability-design' },
+        { text: 'Object storage capability design', link: '/en/architecture/object-storage-capability-design' }
       ]
     }
   ],
