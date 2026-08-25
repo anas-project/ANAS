@@ -8,6 +8,10 @@
 
 | 文档 | 范围 | 创建 | 证据截至 |
 | --- | --- | --- | --- |
+| [Module 专属命令能力现状与设计](./module-command-capability-design.md) | Module 命令发现、类型化参数、CLI/anasd 共享调用与 Forgejo/Incus 运维边界 | 2026-08-22 | 2026-08-22 |
+| [ANAS 审计整改任务清单](./comprehensive-project-audit.md) | 审计结论复核、已修复项、被否决建议与可独立执行的整改任务 | 2026-08-22 | 2026-08-23 |
+| [Mastodon 相关开源自部署服务](./mastodon-related-self-hosted-services-research.md) | Mastodon、兼容联邦微博与相邻 ActivityPub 服务选型 | 2026-08-21 | 2026-08-21 |
+| [LLNG Passkey/WebAuthn 与 Samba 共享边界](./llng-passkey-webauthn-samba-sharing.md) | LLNG 分阶段启用、凭据存储与多 IAM 共享边界 | 2026-08-21 | 2026-08-21 |
 | [IAM 登出与应用会话同步](./iam-logout-application-session-sync.md) | OIDC/SAML 全局登出与应用会话撤销 | 2026-08-20 | 2026-08-20 |
 | [开源自部署 IAM 与 ANAS 适配](./self-hosted-open-source-iam-research.md) | 第三方身份、Passkey、密码写回、应用门户和 Provider 选型 | 2026-08-20 | 2026-08-20 |
 | [Super Productivity 与 Nextcloud 零配置同步](./super-productivity-nextcloud-sso-sync-research.md) | OIDC/SAML、Login Flow v2 与 BFF 方案 | 2026-08-20 | 2026-08-20 |

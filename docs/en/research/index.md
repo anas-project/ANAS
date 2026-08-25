@@ -4,8 +4,9 @@ This section contains external investigation, candidate comparison, and technica
 
 Research pages use stable topic-based filenames. Their frontmatter records `created`, `updated`, and, when external facts are volatile, `evidence_as_of`; updating a report does not rename it.
 
-The detailed reports are currently maintained in Chinese:
-
+- [Comprehensive project audit report](/research/comprehensive-project-audit)
+- [Mastodon and ActivityPub self-hosted services](/research/mastodon-related-self-hosted-services-research)
+- [LLNG Passkey/WebAuthn and Samba sharing boundary](/research/llng-passkey-webauthn-samba-sharing)
 - [IAM logout and application-session synchronization](/research/iam-logout-application-session-sync)
 - [Self-hosted IAM and ANAS integration](/research/self-hosted-open-source-iam-research)
 - [Super Productivity and zero-configuration Nextcloud synchronization](/research/super-productivity-nextcloud-sso-sync-research)

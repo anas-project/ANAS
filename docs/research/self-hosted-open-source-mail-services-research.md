@@ -259,7 +259,7 @@ alias.example.com MX ─────────► 专用转发服务或已验�
 
 [SMTP RFC 5321](https://www.rfc-editor.org/rfc/rfc5321)的 MX preference 用于选择适当下一跳和故障转移，不是收件人路由规则。以下配置不会表达“真实用户去 Mailu、随机 alias 去转发器”：
 
-```dns
+```text
 example.com. MX 10 mailu.example.net.
 example.com. MX 20 forwarder.example.net.
 ```
