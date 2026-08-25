@@ -7,4 +7,4 @@ This section covers an existing ANAS workspace:
 - [Backup and restore](backup-and-restore.md)
 - [Complete task guide](usage.md)
 
-Machine-readable output, exit codes, and field definitions belong to the [CLI contract](/en/reference/cli-contract), not to task-oriented guides.
+Machine-readable output, exit codes, and field definitions belong to the [CLI JSON contracts](/en/reference/contracts/), not to task-oriented guides.

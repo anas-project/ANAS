@@ -30,7 +30,7 @@ contracts/<name>/
 | `README.md` / `README.en.md` | 面向使用方的语义、能力、示例、错误和运维边界 |
 | `docs/technical.md` / `docs/technical.en.md` | Provider/Consumer、幂等、Secret、生命周期、兼容性和测试实现 |
 
-`contracts/<name>/` 是唯一事实来源。`docs/reference/contracts/` 下的文件是生成镜像，不得直接编辑，也不得在生成页面中维护源目录没有的独立事实。
+`contracts/<name>/` 是唯一事实来源。`docs/reference/module-contracts/` 下的文件是生成镜像，不得直接编辑，也不得在生成页面中维护源目录没有的独立事实。
 
 ## 2. 命名、身份与版本
 
@@ -135,7 +135,7 @@ README 中的生成块使用：
 
 生成器只能替换该块。缺失生成块时可以追加；重复、反向或不平衡标记必须失败。标记外 README 和 `docs/technical*.md` 是人工审核源文件，生成器不得覆盖其语义内容。
 
-生成后的 `docs/reference/contracts/*.md` 必须带有“请勿直接编辑”提示。修复站点页面时必须修改 Contract 源文档或生成器后重新生成，不能直接修生成镜像。
+生成后的 `docs/reference/module-contracts/*.md` 必须带有“请勿直接编辑”提示。修复站点页面时必须修改 Contract 源文档或生成器后重新生成，不能直接修生成镜像。
 
 ## 8. VitePress 输出规则
 
@@ -143,8 +143,8 @@ README 中的生成块使用：
 
 | Contract 源文件 | 中文站点输出 | 英文站点输出 |
 | --- | --- | --- |
-| `README.md` / `README.en.md` | `docs/reference/contracts/<name>.md` | `docs/en/reference/contracts/<name>.md` |
-| `docs/technical.md` / `docs/technical.en.md` | `docs/reference/contracts/<name>-technical.md` | `docs/en/reference/contracts/<name>-technical.md` |
+| `README.md` / `README.en.md` | `docs/reference/module-contracts/<name>.md` | `docs/en/reference/module-contracts/<name>.md` |
+| `docs/technical.md` / `docs/technical.en.md` | `docs/reference/module-contracts/<name>-technical.md` | `docs/en/reference/module-contracts/<name>-technical.md` |
 
 生成器必须把源 README 的 `docs/technical*.md` 链接改写为对应站点技术页，并把技术文档返回 `../README*.md` 的链接改写为站点用户页。源目录和 VitePress 镜像必须同时无死链。
 

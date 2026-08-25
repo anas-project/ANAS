@@ -12,6 +12,7 @@ This standard applies to every new or modified file under `docs/`. Identify the 
 | `operations/runbooks/` | On-call operators | Host procedures with checks, risk, validation, and recovery |
 | `reference/` | Users and developers | Queryable facts such as settings, modules, and environment variables |
 | `reference/contracts/` | Tool developers | Stable CLI, JSON, and file-format contracts |
+| `reference/module-contracts/` | Tool developers | Module Contract mirrors generated from `contracts/<name>/` |
 | `developer/` | Contributors | Repository, module, test, release, and documentation workflows |
 | `requirements/` | Product and architecture maintainers | Required outcomes, scope, hard constraints, and acceptance criteria |
 | `architecture/` | Maintainers | Current models, decisions, and explicitly marked proposals |

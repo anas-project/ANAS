@@ -30,7 +30,7 @@ contracts/<name>/
 | `README.md` / `README.en.md` | Consumer-facing semantics, capability, examples, errors, and operating boundaries |
 | `docs/technical.md` / `docs/technical.en.md` | Provider/Consumer implementation, idempotency, Secrets, lifecycle, compatibility, and tests |
 
-`contracts/<name>/` is the sole source of truth. Files under `docs/reference/contracts/` are generated mirrors and must not be edited directly or contain independent facts.
+`contracts/<name>/` is the sole source of truth. Files under `docs/reference/module-contracts/` are generated mirrors and must not be edited directly or contain independent facts.
 
 ## 2. Naming, identity, and versioning
 
@@ -124,7 +124,7 @@ README generated blocks use:
 
 Only this block may be replaced. A missing block may be appended; duplicate, reversed, or unbalanced markers fail. README content outside the block and `docs/technical*.md` are reviewed sources.
 
-Generated files under `docs/reference/contracts/` carry a do-not-edit warning. Fix the Contract source or generator and regenerate instead of patching a mirror.
+Generated files under `docs/reference/module-contracts/` carry a do-not-edit warning. Fix the Contract source or generator and regenerate instead of patching a mirror.
 
 ## 8. VitePress output
 
@@ -132,8 +132,8 @@ Each Contract generates four pages:
 
 | Contract source | Chinese site output | English site output |
 | --- | --- | --- |
-| `README.md` / `README.en.md` | `docs/reference/contracts/<name>.md` | `docs/en/reference/contracts/<name>.md` |
-| `docs/technical.md` / `docs/technical.en.md` | `docs/reference/contracts/<name>-technical.md` | `docs/en/reference/contracts/<name>-technical.md` |
+| `README.md` / `README.en.md` | `docs/reference/module-contracts/<name>.md` | `docs/en/reference/module-contracts/<name>.md` |
+| `docs/technical.md` / `docs/technical.en.md` | `docs/reference/module-contracts/<name>-technical.md` | `docs/en/reference/module-contracts/<name>-technical.md` |
 
 Rewrite `docs/technical*.md` links in README mirrors to the site technical page and rewrite `../README*.md` links in technical mirrors to the site user page. Both source and site layouts must be dead-link free.
 

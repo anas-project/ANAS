@@ -149,7 +149,6 @@ anas lock [-w WORKSPACE] [-c config.yml] [--json]
   "api_version": "anas.dev/cli/v1", "ok": true,
   "workspace": "/data/ws", "config": "/data/ws/config.yml",
   "lock_path": "/data/ws/config.lock.yml",
-  "modules": ["postgres", "traefik"],
   "modules": [{ "name": "postgres", "version": "16.4.0", "revision": 1, "app_version": "16.4", "digest": "sha256:…" }],
   "iam": { "provider": null, "consumers": [] },
   "capability_bindings": {},
@@ -557,6 +556,10 @@ Store 或 lock。
 `ANAS_WORKSPACE` 指的那个 workspace 的 secret——在操作者以为问的是另一个部署的
 时候读出这一个部署的密钥，不是可以交给参数顺序去决定的事。
 
+M3 的 `anasd` 配置端点消费同一套带类型的应用 schema：它不解析 CLI JSON，也不为每个
+Module 维护 HTTP 适配器；CLI、HTTP API 与 Web 表单模型必须保持同一 schema 的投影。
+当前 M0 守护进程尚未暴露配置 HTTP 端点。
+
 | code | 退出码 | 何时 |
 | --- | --- | --- |
 | `usage` | 2 | 路径格式不对、模块未知、参数个数不对 |
@@ -693,6 +696,8 @@ anas module versions NAME [--source NAME] [-w WORKSPACE] [--json]
 anas module install NAME@VERSION-rN [--source NAME] [--digest sha256:...] [--json]
 anas module sync [-w WORKSPACE] [--source NAME] [--json]
 anas module update [MODULE...] [-w WORKSPACE] [--source NAME] [--json]
+anas module commands [MODULE] [-w WORKSPACE] [--json]
+anas module invoke MODULE COMMAND [-w WORKSPACE] [--param NAME=VALUE]... [-y] [--json]
 ```
 
 `list` 读取 `anas.module-catalog/v1`；`versions` 读取 Module OCI repository 的标准 tag
@@ -720,6 +725,29 @@ fail closed。彻底消除该窗口需要后续改为单一 generation pointer�
 用户 cache 目录的 `anas/modules/` 下，`ANAS_MODULE_CACHE` 可覆盖。`--module-root` 与
 `ANAS_MODULE_ROOT` 仍优先于 workspace 远程视图，供源码开发使用。
 
+`commands` 不访问 Module Registry，而是只读取活动 deployment 中冻结的 Module Command descriptor
+和 executor 摘要。省略 Module 时按 deployment module order、command ID 排序列出全部命令；没有活动
+deployment 或没有命令时返回空数组。输出只含公开命令说明、类型化参数、digest 与可用性，不含内部
+handler、executor 路径、env/Secret key 或注入值。远程服务健康必须通过 Module 声明的 query 命令
+检查，发现本身不连接远程服务。完整字段与安全边界见[Module 专属命令](/reference/module-commands)。
+
+`invoke` 只接受活动 deployment 中冻结的 Module/command ID 和重复 `--param NAME=VALUE`。CLI 不解释
+handler 或 executor：共享 application service 完成类型规范化、digest 重检、运行态、env/Secret
+白名单、锁、timeout 和 executor ABI。destructive 命令在非 TTY 必须 `-y`；TTY 确认显示公开说明、
+deployment/release 与规范化参数。原始 executor stdout/stderr 不透传；`--json` 的 stdout 仍只有一个
+最终信封，验证后的 progress/warning 作为 JSONL 写 stderr。
+
+当前未认证只读的 anasd M0 为命令发现暴露独立的 GET list/detail DTO，但没有 invoke 端点。
+
+```json
+{
+  "api_version": "anas.dev/cli/v1", "ok": true,
+  "workspace": "/srv/anas", "deployment_id": "20260822T120000Z-ab12cd34",
+  "module": "forgejo", "command": "incus-doctor",
+  "changed": false, "result": {"project_state": "ready"}
+}
+```
+
 ```json
 {
   "api_version": "anas.dev/cli/v1",
@@ -746,6 +774,13 @@ fail closed。彻底消除该窗口需要后续改为单一 generation pointer�
 | `module_install_failed` / `module_sync_failed` / `module_update_failed` | 1 | 下载、认证或多层 digest/包校验失败 |
 | `module_cache_unavailable` / `module_cache_corrupt` | 1 | 缓存目录不可用，或内容寻址记录/内容损坏 |
 | `module_view_failed` / `write_failed` / `lock_update_failed` | 1 | workspace 视图或 lock 解析/事务写入失败 |
+| `invalid_module` | 2 | `commands` 的 Module 名不合法 |
+| `invalid_module_command` / `module_command_invalid_parameter` | 2 | invoke 目标格式、重复/未知/缺失或类型化参数非法 |
+| `confirmation_required` | 3 | destructive invoke 在非 TTY 未提供 `-y`，或 TTY 确认被拒绝 |
+| `module_not_active` / `module_commands_unavailable` | 4 | 指定 Module 不在活动 deployment，或活动制品无法读取 |
+| `no_active_deployment` | 4 | invoke 时 workspace 没有活动 deployment；commands 发现仍成功返回空列表 |
+| `module_command_not_found` / `module_command_unavailable` / `module_command_changed` / `module_command_busy` | 4 | 命令不存在、前置检查失败、确认后 descriptor 已变化或锁等待被取消 |
+| `module_command_timeout` / `module_command_failed` / `module_command_protocol_error` | 1 | executor 超时、失败或违反有界 JSONL ABI |
 
 ## help
 
@@ -759,7 +794,8 @@ anas help [--json]
 {
   "api_version": "anas.dev/cli/v1", "ok": true,
   "commands": ["init", "plan", "lock", "render", "…"],
-  "module_abi": "anas.module-hook/v1"
+  "module_abi": "anas.module-hook/v1",
+  "module_command_abi": "anas.module-command/v1"
 }
 ```
 

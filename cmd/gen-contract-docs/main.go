@@ -172,9 +172,9 @@ func run(root string, check bool) error {
 			if err := update(path, []byte(want), check, &stale); err != nil {
 				return err
 			}
-			site := filepath.Join(root, "docs", "reference", "contracts", docs[i].Manifest.Name+".md")
+			site := filepath.Join(root, "docs", "reference", "module-contracts", docs[i].Manifest.Name+".md")
 			if english {
-				site = filepath.Join(root, "docs", "en", "reference", "contracts", docs[i].Manifest.Name+".md")
+				site = filepath.Join(root, "docs", "en", "reference", "module-contracts", docs[i].Manifest.Name+".md")
 			}
 			banner := "> This page is generated from the Contract root README. Do not edit it directly.\n\n"
 			if !english {
@@ -190,9 +190,9 @@ func run(root string, check bool) error {
 			if readErr != nil {
 				return fmt.Errorf("%s: every Contract needs bilingual technical documentation: %w", technicalSource, readErr)
 			}
-			technicalSite := filepath.Join(root, "docs", "reference", "contracts", docs[i].Manifest.Name+"-technical.md")
+			technicalSite := filepath.Join(root, "docs", "reference", "module-contracts", docs[i].Manifest.Name+"-technical.md")
 			if english {
-				technicalSite = filepath.Join(root, "docs", "en", "reference", "contracts", docs[i].Manifest.Name+"-technical.md")
+				technicalSite = filepath.Join(root, "docs", "en", "reference", "module-contracts", docs[i].Manifest.Name+"-technical.md")
 			}
 			technicalBanner := "> This page is generated from the Contract technical documentation. Do not edit it directly.\n\n"
 			if !english {
