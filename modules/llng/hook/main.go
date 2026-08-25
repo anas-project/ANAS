@@ -138,12 +138,6 @@ func renderEnv(module string, env map[string]string, workdir string, secrets *se
 	return map[string]string{}, moduleLLNG(env, workdir)
 }
 func disabledServices(module string, env map[string]string) []string {
-	if module != "llng" {
-		return nil
-	}
-	if env["LLNG_ADMINER_ENABLED"] != "true" {
-		return []string{"LLNG_adminer", "anas_LLNG_adminer"}
-	}
 	return nil
 }
 func afterStart(module string, env map[string]string) []dockerCopy {

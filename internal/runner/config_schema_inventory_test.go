@@ -24,7 +24,7 @@ type bundledSourceEvidence struct {
 
 func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	inventory := loadBundledParameterMetadata(t)
-	if got, want := len(inventory), 172; got != want {
+	if got, want := len(inventory), 170; got != want {
 		t.Fatalf("bundled parameter count = %d, want %d", got, want)
 	}
 
@@ -277,7 +277,7 @@ func loadBundledParameterMetadata(t *testing.T) map[string]bundledParameterMetad
 		t.Fatal(err)
 	}
 
-	out := make(map[string]bundledParameterMetadata, 172)
+	out := make(map[string]bundledParameterMetadata, 170)
 	for _, parameter := range globalConfig.Parameters {
 		envKey := parameterEnvKey(globalModuleName, parameter, reg)
 		_, hasDefault := globalConfig.Defaults[envKey]

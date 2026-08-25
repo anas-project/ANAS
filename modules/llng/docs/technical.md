@@ -27,7 +27,6 @@
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `llng.adminer_enabled` | bool | — | `false` | `static` | `LLNG_ADMINER_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
 | `llng.db_name` | string | — | `lemonldap_ng` | `static` | `LLNG_DB_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 应用数据库名 |
 | `llng.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `LLNG_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-llng-database` | `data_migrate` | 关系数据库类型或自动选择 |
 | `llng.domain_prefix` | string | — | `auth` | `static` | `LLNG_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
@@ -41,6 +40,7 @@
 ## 身份与授权数据流
 
 Samba AD 是用户和 Group 来源。Portal 使用目录认证，IAM 向 Consumer 发布 OIDC/SAML 端点和 Group 属性。`Admins` 可进入 Manager。
+OIDC issuer 保留固定 `2.23.2` discovery 返回的尾斜杠，Consumer 必须按该精确值校验；discovery URL 仍为 Portal 根路径下的 `/.well-known/openid-configuration`。
 
 ### 应用会话登出
 
@@ -60,6 +60,13 @@ Samba AD 是用户和 Group 来源。Portal 使用目录认证，IAM 向 Consume
 当前没有独立的本地 `break_glass`。Manager 与 Portal 共用目录认证；IAM 或目录故障时需要从主机侧修复，不能依赖不存在的本地密码。
 
 本 Module 没有声明由 `anas admin local` 管理的账号；`credential` 和 `rotate` 对它不可用。
+
+### Portal Documentation 菜单
+
+`lmConf.json` 为两个 Documentation 应用写入
+`inGroup("{{SAMBA_DC_ADMIN_GROUP_NAME}}")`，覆盖全新安装；`llng-config.sh` 在每次启动时
+对当前持久配置再次写入同一规则，覆盖升级前遗留的 `display=on`。两个子应用都不可见时，
+普通用户不会看到空的 Documentation 分类，管理员仍可使用本地文档和官方站点入口。
 
 ### Secret 边界
 
@@ -137,6 +144,8 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 ## 测试与实现位置
 
 - [`iam_test.go`](../hook/iam_test.go)
+- [`lmConf.json`](../llng/root/root/lmConf.json)
+- [`llng-config.sh`](../llng/root/root/llng-config.sh)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 

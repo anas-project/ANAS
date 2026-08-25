@@ -43,8 +43,12 @@ services:
       - --provider-ca-file=/certs/${ANAS_TLS_TRUST_BUNDLE_NAME}
       - --oidc-issuer-url=${OAUTH2_PROXY_OIDC_ISSUER_URL}
       - --client-id=${OAUTH2_PROXY_CLIENT_ID}
-      - --client-secret=${OAUTH2_PROXY_CLIENT_SECRET}
-      - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET}
+      # --client-secret and --cookie-secret are deliberately absent: a flag
+      # value lands in the host process table, where any local user can read it
+      # with ps. oauth2-proxy reads every flag from an OAUTH2_PROXY_<FLAG>
+      # environment variable of the same name, and the env_file above already
+      # carries OAUTH2_PROXY_CLIENT_SECRET and OAUTH2_PROXY_COOKIE_SECRET, so
+      # the secrets reach the process without ever being an argument.
       - --redirect-url=${OAUTH2_PROXY_REDIRECT_URL}
       # One cookie for the whole deployment, so signing in once covers every
       # gated service under the base domain.

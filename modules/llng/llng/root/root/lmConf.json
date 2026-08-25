@@ -19,7 +19,7 @@
       "localdoc": {
         "options": {
           "description": "Documentation supplied with LemonLDAP::NG",
-          "display": "on",
+          "display": "inGroup(\"{{SAMBA_DC_ADMIN_GROUP_NAME}}\")",
           "logo": "help.png",
           "name": "Local documentation",
           "uri": "{{LLNG_MANAGER_DOMAIN_FULL}}/doc/"
@@ -29,7 +29,7 @@
       "officialwebsite": {
         "options": {
           "description": "Official LemonLDAP::NG Website",
-          "display": "on",
+          "display": "inGroup(\"{{SAMBA_DC_ADMIN_GROUP_NAME}}\")",
           "logo": "network.png",
           "name": "Official Website",
           "uri": "https://lemonldap-ng.org/"

@@ -211,13 +211,12 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 
 | effect | 数量 | 修改结果 |
 | --- | ---: | --- |
-| `container_recreate` | 114 | 重新渲染，并重建受影响容器或 Compose project |
+| `container_recreate` | 102 | 重新渲染，并重建受影响容器或 Compose project |
 | `credential_rotate` | 7 | 普通设置和替换导入会被拒绝，必须通过凭据轮换事务同步应用状态与 Secret Store |
 | `data_migrate` | 15 | 普通设置和部署激活会被阻断，必须先迁移持久数据、数据库或成员身份 |
 | `hot_reload` | 16 | 声明目标是 Samba 管理命令；当前执行器保守地生成新部署并对受影响容器执行 `down → up` |
-| `image_rebuild` | 1 | 使用 `anas apply --build` 重建镜像后再部署 |
-| `immutable` | 4 | 通用 `config set` 不允许修改，必须走替换或域迁移流程 |
-| `reconcile` | 15 | 声明目标是应用/API/文件调和；当前执行器通过新部署和容器启动流程完成 |
+| `immutable` | 3 | 通用 `config set` 不允许修改，必须走替换或域迁移流程 |
+| `reconcile` | 12 | 声明目标是应用/API/文件调和；当前执行器通过新部署和容器启动流程完成 |
 
 ### 当前版本的实际执行边界
 

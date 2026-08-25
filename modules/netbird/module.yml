@@ -38,12 +38,15 @@ upgrade:
 config:
   defaults:
     domain_prefix: netbird
-    adminer_enabled: "false"
     iam_protocol: auto
   types:
     domain_prefix: string
-    adminer_enabled: bool
     iam_protocol:
+      # Deliberately wider than the interfaces netbird actually implements.
+      # login_protocol is the generic cross-module IAM selector, so the schema
+      # accepts every protocol the core topology knows and lets the capability
+      # resolver produce the useful refusal ("netbird supports [oidc]") instead
+      # of a bare enum error. See TestBundledNetBirdStructuredSAMLReachesCapabilityResolver.
       enum: [auto, oidc, saml]
   # Generic client registration and app-launcher metadata published to
   # whichever IAM the deployment selected.
@@ -74,10 +77,6 @@ identity:
 features:
   generated_secrets: true
   domain: true
-services:
-  optional:
-    - name: NETBIRD_adminer
-      enabled_by: adminer_enabled
 logic:
   hook:
     command:

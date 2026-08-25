@@ -27,7 +27,6 @@ This page records the current implementation, security boundaries, and verificat
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `llng.adminer_enabled` | bool | — | `false` | `static` | `LLNG_ADMINER_ENABLED` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `llng.db_name` | string | — | `lemonldap_ng` | `static` | `LLNG_DB_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `llng.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `LLNG_DB_TYPE` | no | no | no | no: `migrate-llng-database` | `data_migrate` | Existing LLNG data must be migrated explicitly. |
 | `llng.domain_prefix` | string | — | `auth` | `static` | `LLNG_DOMAIN_PREFIX` | no | no | no | yes | `reconcile` | SAML/OIDC metadata, clients, and proxy routes must change together. |
@@ -41,6 +40,7 @@ This page records the current implementation, security boundaries, and verificat
 ## Identity and authorization data flow
 
 Samba AD supplies users and groups. The Portal authenticates against the directory, and IAM publishes OIDC/SAML endpoints and group attributes to consumers. `Admins` may enter the Manager.
+The OIDC issuer preserves the trailing slash returned by pinned `2.23.2` discovery, which consumers must compare exactly; the discovery URL remains `/.well-known/openid-configuration` below the Portal root.
 
 ### Application-session logout
 
@@ -60,6 +60,15 @@ There is currently no generic `anas user/group/password` command. Directory-back
 There is no independent local `break_glass` account. Manager and Portal share directory authentication; recover IAM or the directory from the host instead of relying on a nonexistent local password.
 
 This module declares no account managed by `anas admin local`; `credential` and `rotate` are unavailable for it.
+
+### Portal Documentation menu
+
+`lmConf.json` assigns `inGroup("{{SAMBA_DC_ADMIN_GROUP_NAME}}")` to both
+Documentation applications for new installations. On every startup,
+`llng-config.sh` reapplies the same rule to the current persistent configuration,
+replacing an older revision's `display=on`. When neither child application is
+visible, ordinary users do not receive an empty Documentation category, while
+administrators retain both the local-documentation and official-site entries.
 
 ### Secret boundaries
 
@@ -144,6 +153,8 @@ The dependency closure does not grant every environment value. Sensitive values 
 ## Tests and implementation locations
 
 - [`iam_test.go`](../hook/iam_test.go)
+- [`lmConf.json`](../llng/root/root/lmConf.json)
+- [`llng-config.sh`](../llng/root/root/llng-config.sh)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 

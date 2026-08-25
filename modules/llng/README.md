@@ -51,6 +51,10 @@ Samba AD 是用户和 Group 来源。Portal 使用目录认证，IAM 向 Consume
 
 本 Module 没有声明由 `anas admin local` 管理的账号；`credential` 和 `rotate` 对它不可用。
 
+Portal 的 `Documentation` 分类只向 Samba 管理员组显示。Module 会在首次初始化和每次
+容器启动时同时写入该显示规则，因此从旧 revision 升级后，普通用户也不会继续看到
+`Local documentation` 或 `Official Website` 入口。
+
 ## 数据库支持
 
 | 项目 | 值 |
@@ -70,7 +74,6 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `llng.adminer_enabled` | bool | — | `false` | `static` | `LLNG_ADMINER_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
 | `llng.db_name` | string | — | `lemonldap_ng` | `static` | `LLNG_DB_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 应用数据库名 |
 | `llng.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `LLNG_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-llng-database` | `data_migrate` | 关系数据库类型或自动选择 |
 | `llng.domain_prefix` | string | — | `auth` | `static` | `LLNG_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
@@ -83,8 +86,8 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 
 ```bash
 anas config list llng -w /srv/anas
-anas config explain llng.adminer_enabled
-anas config set llng.adminer_enabled false -w /srv/anas
+anas config explain llng.enable_test
+anas config set llng.enable_test false -w /srv/anas
 anas config plan -w /srv/anas
 ```
 

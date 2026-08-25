@@ -56,6 +56,15 @@ $lemonldap_ng_cli_addkey \
       "locationRules/$LLNG_DOMAIN" '(?#checkUser)^/checkuser' "inGroup(\"$SAMBA_DC_ADMIN_GROUP_NAME\")" \
       "locationRules/$LLNG_DOMAIN" 'default' 'accept'
 
+# The upstream starter configuration publishes its documentation links to
+# every authenticated user. Keep them available to administrators, but enforce
+# the same Samba group boundary on both fresh installs and persisted configs
+# upgraded from an earlier ANAS image.
+documentation_rule="inGroup(\"$SAMBA_DC_ADMIN_GROUP_NAME\")"
+$lemonldap_ng_cli_addkey \
+      applicationList/99doc/localdoc/options display "$documentation_rule" \
+      applicationList/99doc/officialwebsite/options display "$documentation_rule"
+
 if var_true "${LLNG_ENABLE_TEST}" ; then
   $lemonldap_ng_cli_addkey \
         "locationRules/$LLNG_TEST_DOMAIN" 'default' 'accept' \

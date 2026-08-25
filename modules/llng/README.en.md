@@ -51,6 +51,11 @@ There is no independent local `break_glass` account. Manager and Portal share di
 
 This module declares no account managed by `anas admin local`; `credential` and `rotate` are unavailable for it.
 
+The Portal displays the `Documentation` category only to the Samba administrator
+group. The module writes this display rule during initial provisioning and on
+every container start, so ordinary users also lose the `Local documentation`
+and `Official Website` entries after upgrading from an older revision.
+
 ## Database support
 
 | Item | Value |
@@ -70,7 +75,6 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `llng.adminer_enabled` | bool | — | `false` | `static` | `LLNG_ADMINER_ENABLED` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `llng.db_name` | string | — | `lemonldap_ng` | `static` | `LLNG_DB_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `llng.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `LLNG_DB_TYPE` | no | no | no | no: `migrate-llng-database` | `data_migrate` | Existing LLNG data must be migrated explicitly. |
 | `llng.domain_prefix` | string | — | `auth` | `static` | `LLNG_DOMAIN_PREFIX` | no | no | no | yes | `reconcile` | SAML/OIDC metadata, clients, and proxy routes must change together. |
@@ -83,8 +87,8 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 
 ```bash
 anas config list llng -w /srv/anas
-anas config explain llng.adminer_enabled
-anas config set llng.adminer_enabled false -w /srv/anas
+anas config explain llng.enable_test
+anas config set llng.enable_test false -w /srv/anas
 anas config plan -w /srv/anas
 ```
 

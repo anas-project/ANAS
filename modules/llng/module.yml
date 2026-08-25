@@ -57,7 +57,6 @@ config:
     log_level: warn
     db_name: lemonldap_ng
     enable_test: "true"
-    adminer_enabled: "false"
     db_type: auto
   types:
     domain_prefix: string
@@ -66,7 +65,6 @@ config:
     log_level: string
     db_name: string
     enable_test: bool
-    adminer_enabled: bool
     db_type:
       enum: [auto, postgres, mariadb]
   # Endpoints this module publishes for its bound consumers. The runner checks
@@ -118,10 +116,6 @@ features:
   generated_secrets: true
   domain: true
   after_start: copy_portal_logos
-services:
-  optional:
-    - name: LLNG_adminer
-      enabled_by: adminer_enabled
 logic:
   hook:
     command:

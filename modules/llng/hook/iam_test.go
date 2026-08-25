@@ -138,6 +138,30 @@ func TestDisabledTestSiteDoesNotDeleteNestedLocationRulesThroughCLI(t *testing.T
 	}
 }
 
+func TestDocumentationMenuIsRestrictedToSambaAdministrators(t *testing.T) {
+	template, err := os.ReadFile("../llng/root/root/lmConf.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminRule := `"display": "inGroup(\"{{SAMBA_DC_ADMIN_GROUP_NAME}}\")"`
+	if got := strings.Count(string(template), adminRule); got != 2 {
+		t.Fatalf("initial LLNG documentation entries using the administrator display rule = %d, want 2", got)
+	}
+
+	script, err := os.ReadFile("../llng/root/root/llng-config.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`applicationList/99doc/localdoc/options display "$documentation_rule"`,
+		`applicationList/99doc/officialwebsite/options display "$documentation_rule"`,
+	} {
+		if !strings.Contains(string(script), want) {
+			t.Fatalf("persisted LLNG configuration does not enforce %q", want)
+		}
+	}
+}
+
 func TestOIDCClientsBypassConsent(t *testing.T) {
 	script, err := os.ReadFile("../llng/root/root/llng-config.sh")
 	if err != nil {

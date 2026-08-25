@@ -71,7 +71,6 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `netbird.adminer_enabled` | bool | — | `false` | `static` | `NETBIRD_ADMINER_ENABLED` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `netbird.domain_prefix` | string | — | `netbird` | `static` | `NETBIRD_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `netbird.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `NETBIRD_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | The OIDC issuer and client configuration change together. |
 
@@ -79,8 +78,8 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 
 ```bash
 anas config list netbird -w /srv/anas
-anas config explain netbird.adminer_enabled
-anas config set netbird.adminer_enabled false -w /srv/anas
+anas config explain netbird.iam_protocol
+anas config set netbird.iam_protocol oidc -w /srv/anas
 anas config plan -w /srv/anas
 ```
 

@@ -229,13 +229,12 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 
 | Effect | Count | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 114 | Re-render and recreate the affected container or Compose project |
+| `container_recreate` | 102 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 7 | Ordinary setting and replacement import are refused; use a credential-rotation transaction to update application state and the Secret Store together |
 | `data_migrate` | 15 | Ordinary setting and deployment activation are blocked until persistent data, a database, or membership is migrated |
 | `hot_reload` | 16 | The declared target is a Samba management command; the current executor conservatively creates a deployment and runs Compose `down → up` for the affected container |
-| `image_rebuild` | 1 | Rebuild with `anas apply --build`, then deploy |
-| `immutable` | 4 | Generic `config set` refuses the change; use a replacement or domain-migration workflow |
-| `reconcile` | 15 | The declared target is application/API/file reconciliation; the current executor applies it through a new deployment and container startup |
+| `immutable` | 3 | Generic `config set` refuses the change; use a replacement or domain-migration workflow |
+| `reconcile` | 12 | The declared target is application/API/file reconciliation; the current executor applies it through a new deployment and container startup |
 
 ### Actual execution boundary in this release
 

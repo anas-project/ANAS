@@ -131,12 +131,6 @@ func renderEnv(module string, env map[string]string, workdir string) (map[string
 	return map[string]string{}, moduleNetbird(env, workdir)
 }
 func disabledServices(module string, env map[string]string) []string {
-	if module != "netbird" {
-		return nil
-	}
-	if env["NETBIRD_ADMINER_ENABLED"] != "true" {
-		return []string{"NETBIRD_adminer", "anas_NETBIRD_adminer"}
-	}
 	return nil
 }
 func afterStart(module string, env map[string]string) []dockerCopy {
