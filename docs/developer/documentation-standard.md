@@ -45,7 +45,12 @@
 
 Module 与 Contract 的源文件、必需章节、生成标记、VitePress 镜像、双语和 CI 规则分别以 [Module 文档生成标准](/developer/module-documentation) 与 [Contract 文档生成标准](/developer/contract-documentation) 为准。生成镜像不得直接编辑；Module 的版本化时区和语言事实以 `modules/*/localization.yml` 为准。
 
-需求、架构、计划和评审文档必须在开头说明适用状态。设计文档至少使用以下状态之一：
+需求、架构、计划和评审文档必须在开头说明适用状态。声明写在 frontmatter 的 `status:` 字段，
+或标题下前 14 行内的 `状态：` / `Status:` 行（允许 `> **状态：…**` 这类引用块与强调写法）。
+`npm run docs:check-status` 在文档 CI 中门禁这一条，覆盖 `architecture/`、`requirements/`
+与 `plans/`，索引页除外。
+
+设计文档至少使用以下状态之一：
 
 - **当前模型**：已经实现并仍适用；
 - **提案**：尚未实现，不能作为操作指南；
@@ -253,6 +258,7 @@ evidence_as_of: 2026-08-19
 - [ ] 示例不包含真实凭据、主机信息或个人数据。
 - [ ] 新页面已加入侧边栏，移动页面的旧链接已修复。
 - [ ] 需求或计划文档变更后，已运行 `npm run docs:check-requirements`（需求归属与 e2e 记录一致性）。
+- [ ] 新增架构、需求或计划文档后，已运行 `npm run docs:check-status`（开头必须声明状态）。
 - [ ] 已运行 `npm run docs:build`，且相关代码测试通过。
 
 文档站点的本地预览、构建和发布方式见[文档站点](documentation.md)。

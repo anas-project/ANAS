@@ -55,6 +55,8 @@ jobs:
           go test ./cmd/materialize-module-docs
           npm run docs:test-requirements
           npm run docs:check-requirements
+          npm run docs:test-status
+          npm run docs:check-status
           npm run docs:check-requirement-status
 
       - name: Build with VitePress
