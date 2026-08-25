@@ -1,7 +1,8 @@
 # 特权操作与 helper（草案）
 
 > **状态：§3–§4 的网络部分已实现**（`cmd/anas-helper`），sudoers 与生成脚本已删除。
-> §5 的流式 `btrfs send` 和 §4 里的 `subvolume delete` 仍是草案。
+> §5 的流式 `btrfs send` 和 §4 里的 `subvolume delete` 仍是草案；§3 的按能力拆分二进制
+> 与 §3.2 的 btrfs 授权决策是后补的设计决定，尚未实现。
 >
 > 现状原本是一处隐式 `sudo`（macvlan 桥）加若干处显式的"权限不够就报错"。本文说明
 > 把前者收进一个受限 helper 的做法，以及为什么**不是**所有特权操作都该跟着进去。
@@ -48,27 +49,42 @@
 
 ## 3. helper 的形态
 
-一个小二进制 `anas-helper`，只做几件具名的事，**不接受任意脚本或命令**。已实现：
+**一个 capability 一个二进制**，每个只做几件具名的事，**不接受任意脚本或命令**。
+
+已实现，`anas-helper`（`CAP_NET_ADMIN`）：
 
 ```
 anas-helper bridge up   --parent <iface> --name <bridge> --address <cidr> [--route <cidr>]...
 anas-helper bridge down --name <bridge>
 ```
 
-计划中（见 §4）：
+计划中，**另一个二进制** `anas-btrfs-helper`（`CAP_SYS_ADMIN`，见 §4）：
 
 ```
-anas-helper subvolume del --path <path>
-anas-helper btrfs send    --subvolume <path> [--parent <path>]   # 输出到 stdout，见 §5
+anas-btrfs-helper subvolume del --path <path>
+anas-btrfs-helper send          --subvolume <path> [--parent <path>]   # 输出到 stdout，见 §5
 ```
 
-参数在 helper 内部校验：接口名必须匹配 `^anas[a-z0-9_]*$`，路径必须落在工作区内，
+### 3.1 为什么不是同一个二进制
+
+授权的粒度就是二进制的粒度——装给谁、给哪个文件 setcap、哪个 unit 能 exec 它，说的
+都是文件。把 btrfs 那两条并进 `anas-helper`，它就得同时持 `CAP_NET_ADMIN` 和
+`CAP_SYS_ADMIN`，而后者能 mount、setns、加载 BPF，实践中等价于 root。结果是本来最
+安全的那条路径（建桥：单一能力、无产物、幂等）被拉到和 root 同一档，且每次 `anas
+apply` 都在走它。拆成两个文件，日常交互路径就永远只碰得到 `CAP_NET_ADMIN`。
+
+**规则：新的特权操作若需要现有 helper 之外的能力，一律另开二进制，不往已有的里加。**
+
+`anas-helper` 保持现名而不改叫 `anas-net-helper`：它已发布、已被安装器和
+`findHostNetHelper` 的候选路径处理，改名的迁移成本换不来任何安全收益。
+
+参数在各自的 helper 内部校验：接口名必须匹配 `^anas[a-z0-9_]*$`，路径必须落在工作区内，
 地址必须是带前缀长度的合法 IPv4 CIDR（`ip addr add 192.168.1.50 dev x` 是合法的且
 意为 `/32`，用在桥地址上会静默产生一个到不了容器的接口）。这是它和今天那个方案的**实质区别**——今天 sudoers 授权 root
 执行一个**位于用户可写目录、内容由 anas 自己生成**的脚本，[runbook](../operations/runbooks/privileged-helper.md)
 自己标注了这是弱点。对运行 anas 的用户来说，那已经约等于 root。
 
-### 3.1 授权机制
+### 3.2 授权机制
 
 两种，取决于调用场景：
 
@@ -90,7 +106,22 @@ exec `ip`。这样两个场景共用一个实现，而且不必引入 netlink �
 -v /:/host --privileged` 即可拿下整机），而 anas 真正需要的只有 `CAP_NET_ADMIN` 一个
 能力。用等价于 root 的组去换它不成比例，也与本仓库一贯收紧特权的方向相反。
 
-### 3.2 安装与升级
+**两个二进制用不同的机制，不是都 setcap：**
+
+| 二进制 | 能力 | 怎么拿到 | 为什么 |
+| --- | --- | --- | --- |
+| `anas-helper` | `CAP_NET_ADMIN` | file capability（`setcap`） | 交互式 `anas apply` 要用，没有 unit 可依附。单一能力、无产物、幂等，值得这个代价 |
+| `anas-btrfs-helper` | `CAP_SYS_ADMIN` | **只由 systemd `AmbientCapabilities=` 授予，不 setcap** | 一个任何本地用户都能 exec 的、持 `CAP_SYS_ADMIN` 的 setcap 二进制，本身就是一个常驻待用的提权原语。不创建它，这个面就不存在 |
+
+代价是明确的：`subvolume delete` 和流式 `send` 只在 unit 里能力齐备时可用，交互式
+`anas backup` / `anas prune` 仍会撞上 §2 的显式门禁。这是有意的取舍——备份和保留策略
+本来就该由 timer 驱动，而把 `CAP_SYS_ADMIN` 钉在一个文件上换来的那点交互便利，不值得
+在宿主上留一个永久的提权原语。
+
+对应的要求：helper 不可用时，anas 必须分清并报出是**二进制没装**还是**能力没给**
+（即不在 unit 里运行）。两者的处置完全不同，混成一句"权限不足"会把人引向错误的修复。
+
+### 3.3 安装与升级
 
 `install.sh` 已经有 sudo 分支往 `/usr/local/bin` 装二进制，多两步（**已实现**）：
 
@@ -99,25 +130,33 @@ install -m 0755 anas-helper /usr/local/lib/anas/anas-helper
 setcap cap_net_admin+ep /usr/local/lib/anas/anas-helper
 ```
 
-发布归档里同时打包 `anas` 和 `anas-helper`（`scripts/ci/build-anas-release.sh`），
-安装器在 helper 存在时才装它，所以旧版本归档也能被新安装器处理。
+`anas-btrfs-helper` 装进同一目录，但**没有对应的 `setcap` 行**——它的能力来自调用它的
+unit（§3.2）。安装器不得"顺手"给它 setcap：
 
-**升级必须重新 setcap**：替换二进制会丢掉 xattr，而失去能力后的失败模式是"桥建不
-起来"，离原因很远。安装器负责这件事；`setcap` 不可用时它会装好二进制并打印那一行
+```sh
+install -m 0755 anas-btrfs-helper /usr/local/lib/anas/anas-btrfs-helper
+```
+
+发布归档里同时打包 `anas` 和各个 helper（`scripts/ci/build-anas-release.sh`），
+安装器对每个 helper 都是"存在才装"，所以旧版本归档也能被新安装器处理。
+
+**升级必须重新 setcap**（只针对 `anas-helper`）：替换二进制会丢掉 xattr，而失去能力
+后的失败模式是"桥建不起来"，离原因很远。安装器负责这件事；`setcap` 不可用时它会装好二进制并打印那一行
 让人手工执行。
 
-某些文件系统（部分 NFS、noxattr 挂载）不支持 file capability。那种环境退回 systemd
-unit 方案或保留 sudoers。
+某些文件系统（部分 NFS、noxattr 挂载）不支持 file capability。那种环境下 `anas-helper`
+退回 systemd unit 方案或保留 sudoers；`anas-btrfs-helper` 不受影响，它本来就不依赖
+xattr。
 
 ## 4. 收编范围
 
-| 操作 | 进 helper | 理由 |
+| 操作 | 进哪个 helper | 理由 |
 | --- | --- | --- |
-| 桥、路由（`CAP_NET_ADMIN`） | ✅ | 不产生产物，幂等，宿主级 |
-| `btrfs subvolume delete` | ✅ | 不产生文件，只回收空间；性质接近网络类。而且现在的失败模式很糟——快照能建不能删，空间只涨不落 |
-| `btrfs send`（流式，见 §5） | ✅ | 产物由非特权父进程写，属主天然正确 |
-| `btrfs receive` | ❌ | 按定义以 root 创建 subvolume 并设属主，产物就是特权产物 |
-| `rsync` 恢复属主（copy 模式） | ❌ | 同上：产物必须是多 UID、root 拥有的树 |
+| 桥、路由（`CAP_NET_ADMIN`） | `anas-helper` | 不产生产物，幂等，宿主级 |
+| `btrfs subvolume delete` | `anas-btrfs-helper` | 不产生文件，只回收空间；性质接近网络类。而且现在的失败模式很糟——快照能建不能删，空间只涨不落 |
+| `btrfs send`（流式，见 §5） | `anas-btrfs-helper` | 产物由非特权父进程写，属主天然正确 |
+| `btrfs receive` | ❌ 都不进 | 按定义以 root 创建 subvolume 并设属主，产物就是特权产物 |
+| `rsync` 恢复属主（copy 模式） | ❌ 都不进 | 同上：产物必须是多 UID、root 拥有的树 |
 
 后两项保持现在的显式门禁：探测、报 `insufficient_privilege`、由操作者决定以 root
 运行或授予 `CAP_SYS_ADMIN`。
@@ -127,7 +166,7 @@ unit 方案或保留 sudoers。
 `btrfs send` 需要 `CAP_SYS_ADMIN`，但它的**输出**是一段字节流，不必由特权进程落盘：
 
 ```
-helper（持 CAP_SYS_ADMIN）  ──stdout──>  anas（普通用户）──> 写入备份文件
+anas-btrfs-helper（持 CAP_SYS_ADMIN）  ──stdout──>  anas（普通用户）──> 写入备份文件
 ```
 
 这样三件事同时成立：产物属主正确、主进程不需要 `CAP_SYS_ADMIN`、backup.go 那条
@@ -138,12 +177,12 @@ helper（持 CAP_SYS_ADMIN）  ──stdout──>  anas（普通用户）──
 
 ## 6. 开机 unit
 
-同一个 helper 顺带解决另一个缺口：**`anas_bridge` 活不过重启**。它是 `ip link add`
+`anas-helper` 顺带解决另一个缺口：**`anas_bridge` 活不过重启**。它是 `ip link add`
 建的宿主接口，重启就没了，而仓库里没有任何开机集成会重建它。重启后容器靠 restart
 policy 起来、在局域网上可访问，但宿主↔容器不通，容器因此解析不了 DC 的 DNS，
 winbind 和 Kerberos 会退化。
 
-一个 oneshot unit（`After=network-online.target`）在开机时调用同一个 helper 重建桥和
+一个 oneshot unit（`After=network-online.target`）在开机时调用同一个 `anas-helper` 重建桥和
 路由即可。地址从制品的 `.global.env` 读，与部署保持一致。
 
 ## 7. 不变量
@@ -172,5 +211,8 @@ resolver 配置。** 已经是 helper 参数校验里的硬性检查，两个方
 2. file capability 在目标发行版的 `/usr/local/lib` 下是否可靠（xattr 支持、各发行版
    打包工具是否保留）。
 3. 流式 send 的吞吐是否受管道影响（预计不受，`btrfs send` 本来就写 stdout）。
-4. `subvolume delete` 收进 helper 后，`user_subvol_rm_allowed` 那条提示是否还需要保留
+4. `subvolume delete` 收进 `anas-btrfs-helper` 后，`user_subvol_rm_allowed` 那条提示是否还需要保留
    （helper 可用时不需要，但 helper 未安装时仍要）。
+5. **只靠 `AmbientCapabilities=` 的那条路径**（§3.2）：确认 unit 里启动的
+   `anas-btrfs-helper` 拿得到 `CAP_SYS_ADMIN` 并能 exec `btrfs`，且同一个二进制被普通
+   用户直接执行时干净地失败——报"能力没给"而不是"二进制没装"。
