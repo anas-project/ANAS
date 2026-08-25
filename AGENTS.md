@@ -9,10 +9,20 @@
 - When the user explicitly asks for a "git 提交", commit the requested changes and then merge the working branch into `master`. Before finishing, review the current conversation for discussed or agreed implementation items that remain incomplete, and clearly remind the user about them.
 - At the end of every response, include a concise "下一步" section that tells the user what to do next. If no user action is required, explicitly state that no further action is needed.
 
+## Response style
+
+- Default to concise, direct responses. Lead with the outcome or answer.
+- For ordinary questions, use no more than 3–6 sentences or 5 bullets unless additional detail is necessary to complete the task safely and correctly.
+- Preserve required facts, decisions, material caveats, verification results, and next actions. Omit repeated context, generic reassurance, unnecessary introductions, and optional background first.
+- Use headings, tables, and long explanations only when they materially improve comprehension or the user requests them.
+
 - Implementation work is driven by `docs/plans/<topic>.md`: it names the current milestone, the
   verification commands, and what is blocked. Acceptance criteria are not in the plan — they live in
   the paired `docs/requirements/<topic>.md` requirement matrix and are addressed by stable IDs.
   Keep the plan's checklist current as you work; `npm run docs:check-requirements` gates consistency.
+- The status column of `docs/requirements/index.md` is generated, not written: after changing a
+  requirement matrix, a milestone status, or the set of requirement/plan documents, run
+  `npm run docs:requirement-status`. `npm run docs:check-requirement-status` gates it in CI.
 
 ## Code reuse and dependencies
 

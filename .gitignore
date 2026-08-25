@@ -21,3 +21,11 @@ test-env/reports/*
 /anas
 /anasd
 /anas-helper
+
+# macOS Finder metadata. Contributors without a global ignore would otherwise
+# commit one of these into every directory they open in Finder.
+.DS_Store
+
+# Claude Code local state: per-machine settings and scratch worktrees.
+.claude/settings.local.json
+.claude/worktrees/
