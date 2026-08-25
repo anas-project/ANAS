@@ -418,6 +418,19 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if exists(stagingRoot) || exists(finalRoot) {
 		return "", failuref("deployment_id_collision", "deployment id collision %s", id)
 	}
+	// Every failure between here and the promote below leaves a partially built
+	// artifact under staging/, and nothing else ever sweeps it: the runtime lock
+	// cleans snapshot temporaries and container transactions, not this tree. A
+	// deployment that fails on a bad credential or an unreachable registry would
+	// otherwise leave its whole rendered tree, secrets included, on disk forever.
+	// Removal is safe even after sealDeployment, which clears write bits on
+	// regular files but not on the directories that actually govern unlink.
+	promoted := false
+	defer func() {
+		if !promoted {
+			_ = os.RemoveAll(stagingRoot)
+		}
+	}()
 	a := &app{
 		workspace: opts.workspace,
 		base:      opts.base, cfgPath: opts.cfgPath, verbose: opts.verbose, jsonMode: jsonMode,
@@ -554,6 +567,7 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err := os.Rename(stagingRoot, finalRoot); err != nil {
 		return "", failuref("promote_failed", "%s", err.Error())
 	}
+	promoted = true
 	state := deploymentState{
 		APIVersion: activeStateVersion, ID: id, Status: "ready",
 		CreatedAt: manifest.CreatedAt,
