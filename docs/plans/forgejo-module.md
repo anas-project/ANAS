@@ -77,6 +77,11 @@ physical NIC、cloud-init secret 与任意 device。Incus credential 只投影�
 network/profile/storage；验证防火墙、DNS、最小 egress 和 crash 回收。当前 Contract 状态保持 `proposal`，
 不能把 Go 适配器单测等同于通用 Contract 已发布。
 
+> **拆分说明。** 通用 Provider Module（`modules/incus`）、多消费者隔离和内嵌 Incus 客户端的迁移已
+> 独立跟踪，见[Incus compute Provider 实施计划](/plans/incus-module)与其[要求](/requirements/incus-module)。
+> 本里程碑此后只负责 Forgejo **作为消费者**接入：controller 通过 Contract 调用、行为等价性和
+> Forgejo 侧的连通性验收；Provider 自身的实现、隔离与证书轮换不再在本文重复跟踪。
+
 ## 5. M3：Actions 单开关与 one-job VM 执行面
 
 - 重新引入唯一的 `forgejo.actions_enabled`；一次调和同时改变 Actions 服务端、controller 与 Runner

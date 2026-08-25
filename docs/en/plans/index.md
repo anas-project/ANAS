@@ -8,3 +8,5 @@ This section tracks implementation order, milestones, migrations, and remaining 
 - [VersityGW S3-compatible Module](/plans/versitygw-module)
 - [Workspace and backup system](/plans/workspace-backup)
 - [Forgejo Module, Incus VM runner, and security switches](/plans/forgejo-module)
+- [Incus compute Provider Module](/plans/incus-module)
+- [Document-driven test automation](/plans/document-driven-test-automation)
