@@ -7,6 +7,7 @@ modules:
   authentik: {}
   nextcloud: {}
   collabora: {}
+  forgejo: {}
   meshcentral: {}
   vikunja: {}
 identity:

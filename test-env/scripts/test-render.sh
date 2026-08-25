@@ -44,6 +44,21 @@ for config in "$CONFIG_DIR"/*.yml; do
   printf '%s\n' "$latest" >>"$rendered_deployments"
 
   case "$name" in
+    matrix-apps)
+      if grep -Fq 'FORGEJO_ACTIONS_ENABLED=' "$latest/modules/forgejo/.env"; then
+        echo "Forgejo render exposed the incomplete server-only Actions switch" >&2
+        exit 1
+      fi
+      grep -Fqx 'FORGEJO__ACTIONS__ENABLED=false' "$latest/modules/forgejo/.env"
+      grep -Fqx 'FORGEJO_CUSTOM_GIT_HOOKS_ENABLED=false' "$latest/modules/forgejo/.env"
+      grep -Fqx 'FORGEJO_LOCAL_PATH_IMPORT_ENABLED=false' "$latest/modules/forgejo/.env"
+      grep -Fqx 'FORGEJO__SECURITY__DISABLE_GIT_HOOKS=true' "$latest/modules/forgejo/.env"
+      grep -Fqx 'FORGEJO__SECURITY__IMPORT_LOCAL_PATHS=false' "$latest/modules/forgejo/.env"
+      if grep -Eq '^FORGEJO__[a-z]' "$latest/modules/forgejo/.env"; then
+        echo "Forgejo render emitted a non-canonical lowercase environment key" >&2
+        exit 1
+      fi
+      ;;
     iam-casdoor)
       grep -Fq 'ANAS_IAM_BINDING__NEXTCLOUD__OIDC_DISCOVERY_URL=https://auth.casdoor.example.test:9000/.well-known/openid-configuration' \
         "$latest/modules/nextcloud/.env"
@@ -201,6 +216,6 @@ for parameter in inventory:
         missing.append((parameter["path"], parameter["env_key"]))
 
 assert not missing, "declared parameters absent from fresh renders: " + repr(missing)
-assert len(inventory) == 156, len(inventory)
+assert len(inventory) == 164, len(inventory)
 print(f"observed all {len(inventory)} parameter transports in fresh deployment artifacts")
 PY

@@ -9,6 +9,7 @@ OIDC is the current ANAS default IAM integration protocol, but it applies only t
 | `ddns_updater` | Indirect | `oauth2_proxy` through Traefik ForwardAuth | Implemented |
 | `nextcloud` | Yes | Official `user_oidc` by default; LDAPS provisions users/groups; `user_saml` remains an explicit fallback | Implemented; exact logout capability is decided by the pinned provider/version matrix below |
 | `meshcentral` | Yes | IAM/OIDC authentication, LDAPS user/group synchronization, and OIDC group-to-access/site-admin mapping | Implemented |
+| `forgejo` | Yes | IAM/OIDC JIT accounts; `APP_forgejo`/`APP_all` gate; administrator-group to site-admin mapping; managed break-glass retained | Developing: manifest, provider registration, hook, and application configuration are implemented; real browser/database E2E remains pending |
 | `vikunja` | Yes | IAM/OIDC JIT account creation; `APP_vikunja`/`APP_all` access gate; local authentication and registration disabled | Developing: manifest, provider registration, secrets, hook, and application configuration are implemented; real browser/database E2E remains pending |
 | `lam` | No | LDAPS directory-management login | Not an IAM consumer |
 | `authentik` | N/A | IAM provider with fixed `akadmin` break-glass account | Provides OIDC/SAML |
@@ -30,6 +31,7 @@ OIDC is the current ANAS default IAM integration protocol, but it applies only t
 | Nextcloud `user_oidc 8.10.1` | RP logout + `/index.php/apps/user_oidc/backchannel-logout/anas` | RP-Initiated Logout | `sid` back-channel | One OIDC session; multiple sessions/clients are mandatory security-matrix cases | RP logout yes; back-channel no | Local session must fail first while IAM is unavailable; missing provider notification is restricted | Existing Authentik browser/admin-delete and LLNG browser E2Es; remaining administrative cases, isolation security matrix, and Casdoor notification are restricted pending the unified matrix |
 | Nextcloud `user_saml 8.2.0` | `/index.php/apps/user_saml/saml/sls`, Redirect | SP-Initiated SLO | IdP-Initiated SLO | NameID + SessionIndex | Required | Local logout only when no SLO is published | Existing Authentik Redirect E2E; LLNG Redirect entry implemented pending isolated fixture; Casdoor explicitly has no SLO |
 | MeshCentral `1.2.4` | discovery/provider RP logout + post-logout URI | Upstream support | No standard receiver | Application cookie/session | Required | Local session first; IAM outage must not block local logout | Unified Playwright case implemented; `state` and central-session outcome are unaccepted on the current host, so status is “upstream support, integration pending” |
+| Forgejo `15.0.7` | `/user/logout` | Application session only | No standard receiver | Forgejo database session | No | Clears the local session; no claim that the IAM session is also cleared | Hook/container-helper unit tests and pinned documentation review complete; real browser E2E remains pending |
 | Vikunja `2.4.0` | discovery `end_session_endpoint` + `id_token_hint` + post-logout URI | Upstream support | No standard receiver | Vikunja server-side session | Required | Upstream deletes the local session first; failure to build the provider logout URL does not block local logout | Hook/container-entrypoint unit tests and pinned upstream-source review complete; real browser E2E remains pending |
 | NetBird Dashboard `2.90.9` | discovery `end_session_endpoint` + post-logout URI | Upstream support | No standard receiver | Dashboard local authentication state | Required | Local state first; no IAM→Module claim without notification | Unified Playwright case implemented; `state` and central-session outcome are unaccepted on the current host, so status is “upstream support, integration pending” |
 | oauth2-proxy `7.15.3` | `/oauth2/sign_out` | Gateway cookie only | None | oauth2-proxy cookie, excluding IAM/backend sessions | No | IAM-down sign-out still clears the cookie and the protected service reauthenticates | Publishes no `OIDC_LOGOUT_*` and configures no `backend-logout-url`; IAM-down Playwright case implemented pending isolated fixture |
@@ -38,7 +40,7 @@ Providers are pinned to Authentik `2026.5.6`, LLNG `2.23.2`, and Casdoor `3.143.
 
 ## Default resolution
 
-The precedence is explicit module `iam_protocol`, then `identity.iam.default_protocol` when supported by the module, then the manifest preference. Nextcloud, MeshCentral, Vikunja, NetBird, and OAuth2 Proxy now choose OIDC by default. Nextcloud can be switched explicitly to SAML; MeshCentral and Vikunja declare OIDC only.
+The precedence is explicit module `iam_protocol`, then `identity.iam.default_protocol` when supported by the module, then the manifest preference. Nextcloud, MeshCentral, Forgejo, Vikunja, NetBird, and OAuth2 Proxy now choose OIDC by default. Nextcloud can be switched explicitly to SAML; MeshCentral, Forgejo, and Vikunja declare OIDC only.
 
 ## Samba directory password integration
 

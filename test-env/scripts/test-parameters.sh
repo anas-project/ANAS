@@ -25,9 +25,9 @@ import json, os, re, sys
 
 doc = json.load(open(sys.argv[1]))
 parameters = doc["parameters"]
-assert len(parameters) == 146, len(parameters)
+assert len(parameters) == 164, len(parameters)
 assert sum(item["module"] == "global" for item in parameters) == 17
-assert sum(item["module"] != "global" for item in parameters) == 129
+assert sum(item["module"] != "global" for item in parameters) == 147
 
 removed = {
     "global.basicauth_user",
