@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `authentik` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `2026.5.6-r10` / `anas.module/v1`.
+> 状态：当前实现；对应 `2026.5.6-r14` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,11 +20,22 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `traefik, authentik, db` | 3 |
-| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `authentik, db` | 2 |
-| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `` | 1 |
-| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `authentik, db` | 3 |
+| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `traefik, authentik, db` | 3 |
+| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 2 |
+| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `` | 1 |
+| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 3 |
 <!-- generated:compose-topology:end -->
+
+首次启动会在主服务内执行完整数据库迁移；主服务健康检查给予 600 秒启动窗口，避免在受支持的
+4 vCPU / 3 GiB 基线环境中把仍在推进的冷启动迁移误判为失败。该窗口不改变迁移失败后的
+5 次常规健康重试。
+
+worker 健康检查还要求 `/blueprints/anas` 下的每个 blueprint 已存在对应实例、状态为
+`successful`，且 Authentik 记录的 `last_applied_hash` 与挂载文件 SHA-512 一致。依赖
+Authentik 的 Module 因而不会在 OIDC Provider 尚未可发现时启动。
+
+`after_start` Hook 最多等待 10 分钟读取同一 ready marker；Runner 只有在该屏障通过后才会
+启动下游 Module，因而 Compose 内健康状态与 Module 间依赖顺序使用同一权威判据。
 
 ## 配置契约
 

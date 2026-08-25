@@ -5,10 +5,16 @@ services:
       context: ./vikunja
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
+        CHINESE_BUILD_SPEEDUP: ${CHINESE_BUILD_SPEEDUP:-false}
+        APK_MIRROR_URL: ${APK_MIRROR_URL:-}
+        NPM_REGISTRY_URL: ${NPM_REGISTRY_URL:-https://registry.npmjs.org}
+        GOPROXY_URL: ${GOPROXY_URL:-}
+        BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX: ${BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX:-}
         DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
         GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
+        GHCR_REGISTRY: ${GHCR_REGISTRY:-ghcr.io}
         VIKUNJA_VERSION: 2.4.0
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r2
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r4
     restart: unless-stopped
     dns:
       - ${LOCAL_DNS_SERVER}

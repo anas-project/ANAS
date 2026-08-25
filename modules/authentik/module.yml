@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: authentik
 version: 2026.5.6
-revision: 10
+revision: 14
 app_version: 2026.5.6
 abi:
   supports:
@@ -136,3 +136,10 @@ logic:
       - go
       - run
       - ./hook
+    phases:
+      - calculate
+      - render_env
+      - after_start
+      - local_account_apply
+      - local_account_rotate
+      - local_account_rollback

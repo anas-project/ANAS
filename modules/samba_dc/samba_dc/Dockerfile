@@ -71,7 +71,21 @@ RUN apt-get update \
 
 COPY root/ /
 
-RUN chmod +x \
+RUN chmod 0755 \
+  /etc \
+  /etc/bind \
+  /etc/cont-init.d \
+  /etc/services.d \
+  /etc/services.d/named \
+  /etc/services.d/samba_dc \
+  /usr \
+  /usr/bin \
+  /usr/local \
+  /usr/local/bin \
+  /var \
+  /var/cache \
+  /var/cache/bind-source \
+  && chmod +x \
   /usr/bin/with-contenv \
   /etc/services.d/samba_dc/run \
   /etc/services.d/named/run \

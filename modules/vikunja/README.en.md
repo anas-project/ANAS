@@ -9,7 +9,7 @@ webhooks, and CalDAV.
 | Item | Value |
 | --- | --- |
 | Module | `vikunja` |
-| Version / revision | `2.4.0-r2` |
+| Version / revision | `2.4.0-r4` |
 | Status | `developing` |
 | Category | `app` |
 | Runtime | `compose` |
@@ -52,12 +52,14 @@ Local password login and public registration are disabled. With Samba applicatio
 members of `APP_vikunja`, `APP_all`, or the administrator group can complete IAM login. Switching IAM
 providers can change `(issuer, sub)` and create another account; this release does not merge them.
 
-Vikunja `2.4.0` stores the login ID Token. Logout first deletes the Vikunja server-side session, then uses the
-cached discovery `end_session_endpoint` with `id_token_hint`, `client_id`, and the registered post-logout URI.
-An unavailable IAM or URL-build failure does not preserve the local session. This version has no standard
+Vikunja `2.4.0-r4` stores the login ID Token. The pinned ANAS source patch captures the current token/provider,
+then immediately clears the browser token, authentication state, and local cache. It next uses the captured
+token for a best-effort server-session deletion bounded to five seconds and builds the RP-Initiated Logout
+request from cached discovery metadata with `id_token_hint`, `client_id`, and the registered post-logout URI.
+An unavailable IAM or server logout cannot restore the local session. This version has no standard
 IAM-to-Vikunja front- or back-channel receiver, so the module publishes no `OIDC_LOGOUT_*` fields and makes
-no bidirectional-logout or administrator-revocation claim. RP-Initiated Logout remains “upstream supported,
-pending acceptance” until the real-browser matrix passes.
+no bidirectional-logout or administrator-revocation claim. r4 remains “fix implemented, pending acceptance”
+until the real-browser regression passes.
 
 | Capability | Current declaration |
 | --- | --- |
@@ -77,7 +79,10 @@ Vikunja; manage directory accounts and passwords in Samba AD/LAM or another dire
 
 This module has no `management.local_accounts` declaration or application break-glass account, so
 `anas admin local credential/rotate` is unavailable. Recover IAM, directory, internal DNS, or the internal CA
-chain instead of bypassing authentication with a local password.
+chain instead of bypassing authentication with a local password. `<VIKUNJA_DOMAIN_FULL>/login` is only the
+ordinary login page; with `auth.local.enabled=false` it exposes no usable local-password form, and there is no
+preset username or password. Upstream has CLI user-management commands, but this Module does not declare,
+manage, or rotate such an account, and temporarily enabling local auth is not a supported recovery procedure.
 
 ## Database support
 
@@ -176,11 +181,3 @@ acceptance boundary.
 
 See the [technical documentation](docs/technical.en.md) for image entrypoint, secrets, environment scope,
 hooks, networks, and tests.
-
-<!-- generated:localization:start -->
-## Timezone and language
-
-> Generated from `localization.yml`; do not edit manually.
-
-- Module version: `2.4.0-r1` (reviewed 2026-08-21)
-<!-- generated:localization:end -->

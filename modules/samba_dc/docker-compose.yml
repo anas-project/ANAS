@@ -8,7 +8,7 @@ services:
         - CHINESE_BUILD_SPEEDUP
         - APT_MIRROR_URL
         - DOCKER_HUB_REGISTRY
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r8
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r10
     restart: unless-stopped
     network_mode: host
     env_file:
@@ -49,7 +49,7 @@ services:
         - CHINESE_BUILD_SPEEDUP
         - APT_MIRROR_URL
         - DOCKER_HUB_REGISTRY
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r8
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r10
     restart: unless-stopped
     env_file:
       - .env

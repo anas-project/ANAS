@@ -236,7 +236,7 @@ prepare_zone() {
 query_a_records() {
   local name="$1"
   samba-tool dns query 127.0.0.1 "$zone" "$name" A -U "$credentials" 2>/dev/null |
-    awk '$1 == "A:" { print $2 }' || true
+    awk '$1 == "A:" { print $2 }' | sort -u || true
 }
 
 # A missing name and an unreachable DNS RPC endpoint both make a direct query
@@ -246,7 +246,10 @@ query_a_records() {
 query_a_records_verified() {
   local name="$1" output
   if output=$(samba-tool dns query 127.0.0.1 "$zone" "$name" A -U "$credentials" 2>/dev/null); then
-    printf '%s\n' "$output" | awk '$1 == "A:" { print $2 }'
+    # Samba may expose equivalent records with different internal flags. DNS
+    # ownership is about the address set, so compare unique values rather than
+    # rejecting harmless duplicate encodings of the same A target.
+    printf '%s\n' "$output" | awk '$1 == "A:" { print $2 }' | sort -u
     return 0
   fi
   samba-tool dns query 127.0.0.1 "$zone" @ ALL -U "$credentials" >/dev/null 2>&1 || return 1
@@ -516,6 +519,19 @@ verify_a_record() {
   host "$fqdn" 127.0.0.1 2>/dev/null | grep -Fq "has address $target"
 }
 
+publish_directory_native_records() {
+  # BIND starts only after ANAS has reconciled the application zone. Samba's
+  # first automatic DNS update can therefore run while port 53 is still
+  # unavailable and its normal retry may occur after Compose's health window.
+  # Re-publish the directory-owned DC records once BIND is accepting queries.
+  # Use Samba's RPC updater rather than nsupdate/GSS: the latter can fail while
+  # the directory is otherwise healthy when the isolated runtime has no usable
+  # Kerberos credential cache yet.
+  samba_dnsupdate --all-names --use-samba-tool \
+    --current-ip="$SAMBA_DC_HOST_IP" \
+    --rpc-server-ip="$SAMBA_DC_HOST_IP" >/dev/null 2>&1
+}
+
 build_desired_records() {
   : > "$desired_state"
   # BASE_DOMAIN is the certificate-covered LDAPS service alias. It may use a
@@ -570,6 +586,10 @@ main() {
   touch /var/lib/samba/.anas-zone-ready
   retry 60 "DNS service did not become ready" dns_ready
   printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf
+
+  retry 30 "Samba directory-native DNS update did not complete" publish_directory_native_records
+  retry 30 "Samba canonical DC record $SAMBA_DC_DC_DOMAIN did not publish $SAMBA_DC_HOST_IP" \
+    verify_a_record "$SAMBA_DC_DC_DOMAIN" "$SAMBA_DC_HOST_IP"
 
   local managed_zone fqdn record_type target owner applied
   while IFS=$'\t' read -r managed_zone fqdn record_type target owner applied; do

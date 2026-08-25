@@ -1,0 +1,39 @@
+# Dedicated Vikunja release-gate fixture. Run only with the isolated
+# anas-vikunja-test Docker daemon described in docs/plans/vikunja-module.md.
+modules:
+  samba_dc:
+    config:
+      anchor_scan_interval: "30"
+      # Keep the directory realm distinct from the application DNS zone. This
+      # exercises the supported separate-zone path and avoids treating the AD
+      # zone apex as an application service address.
+      domain: ad.vikunja.test
+      application_dns_mode: separate_zone
+  postgres: {}
+  authentik: {}
+  vikunja:
+    config:
+      db_type: postgres
+  traefik: {}
+identity:
+  iam:
+    provider: authentik
+global:
+  chinese_speedup: true
+  chinese_build_speedup: true
+  container_prefix: anas_vik_
+  network_prefix: anas_vik_
+  base_domain: vikunja.test
+  email: admin@vikunja.test
+  timezone: Asia/Shanghai
+  default_language: zh-CN
+  host_ip: 10.253.20.2
+  virtual_domain: true
+env:
+  APT_MIRROR_URL: https://mirrors.aliyun.com
+  APK_MIRROR_URL: https://mirrors.aliyun.com
+  NPM_REGISTRY_URL: https://registry.npmmirror.com
+  # DaoCloud's allowlist does not currently include vikunja/vikunja. Keep the
+  # remaining China build defaults, but use a registry that carries the pinned
+  # upstream image for this release gate.
+  DOCKER_HUB_REGISTRY: dockerproxy.net

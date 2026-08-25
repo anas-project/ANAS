@@ -156,6 +156,19 @@ grep -q seeded "$test_dir/llng-nginx/portal-nginx.conf" || exit 1
 test -d "$test_dir/llng-psessions/lock" || exit 1
 test -d "$test_dir/llng-sessions/lock" || exit 1
 
+# A Samba image assembled from a cached or copied rootfs must keep the standard
+# top-level runtime trees traversable. In particular, named runs as the bind
+# user and cannot read /etc/bind/named.conf when /etc or /etc/bind inherits a
+# restrictive build-context mode.
+samba_dockerfile="$ROOT_DIR/modules/samba_dc/samba_dc/Dockerfile"
+grep -Fq 'RUN chmod 0755' "$samba_dockerfile" || exit 1
+for runtime_dir in /etc/bind /etc/services.d /usr/bin /usr/local/bin /var/cache /var/cache/bind-source; do
+  grep -Fq "  $runtime_dir" "$samba_dockerfile" || {
+    echo "Samba image does not normalize traversal permission for $runtime_dir" >&2
+    exit 1
+  }
+done
+
 # A fresh Nextcloud volume exposes HTTP before its post-install tasks have
 # downloaded notify_push. The sidecar must wait for the executable instead of
 # entering a restart loop with exit 127.
@@ -179,6 +192,22 @@ awk '
   server && /condition: service_healthy/ { found = 1 }
   END { exit !found }
 ' "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
+grep -Fq 'test -f /tmp/anas-blueprints.ready && ak healthcheck' \
+  "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
+grep -Fq '/opt/anas/bin/wait-blueprints &' \
+  "$ROOT_DIR/modules/authentik/authentik/worker-entrypoint.sh" || exit 1
+grep -Fq 'instance.last_applied_hash == source_hash' \
+  "$ROOT_DIR/modules/authentik/authentik/blueprints-ready.py" || exit 1
+
+# The initial migration set can exceed the old three-minute effective health
+# window on the supported 4-vCPU/3-GiB server baseline. Keep the server's cold
+# start grace period distinct from the worker's steady-state health policy.
+awk '
+  /^  anas_authentik:/ { server = 1; next }
+  server && /^  [^ ]/ { exit }
+  server && /start_period: 600s/ { found = 1 }
+  END { exit !found }
+' "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
 
 # The managed break-glass projection is deliberately root:root 0600. The
 # server entrypoint must read it as root and drop privileges before launching
@@ -191,6 +220,14 @@ awk '
 ' "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
 grep -Fq 'setpriv --reuid=1000 --regid=1000 --init-groups ak "$@"' \
   "$ROOT_DIR/modules/authentik/authentik/server-entrypoint.sh" || exit 1
+
+# Vikunja's scratch image has no passwd database, so a symbolic `USER root`
+# fails before the entrypoint can repair the attachment mount and drop UID.
+grep -Fxq 'USER 0:0' "$ROOT_DIR/modules/vikunja/vikunja/Dockerfile" || exit 1
+if grep -Fxq 'USER root' "$ROOT_DIR/modules/vikunja/vikunja/Dockerfile"; then
+  echo "Vikunja scratch image uses an unresolved symbolic user" >&2
+  exit 1
+fi
 
 if command -v node >/dev/null 2>&1; then
   node --test \

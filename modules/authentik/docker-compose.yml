@@ -1,7 +1,7 @@
 services:
   anas_authentik_init:
     container_name: ${CONTAINER_PREFIX}authentik_init
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14
     user: root
     entrypoint: ["/bin/sh", "-c"]
     command: ["mkdir -p /data && chown -R 1000:1000 /data"]
@@ -16,7 +16,7 @@ services:
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
         GHCR_REGISTRY: ${GHCR_REGISTRY:-ghcr.io}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14
     restart: unless-stopped
     # The managed bootstrap password is projected as root:root 0600. The
     # entrypoint reads it once, then immediately drops back to authentik's
@@ -51,7 +51,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 120s
+      # A cold database applies the complete migration history before the
+      # backend can answer health checks. On the supported 4-vCPU/3-GiB test
+      # baseline this can exceed three minutes without indicating a failure.
+      start_period: 600s
     networks:
       - traefik
       - authentik
@@ -59,7 +62,7 @@ services:
 
   anas_authentik_worker:
     container_name: ${CONTAINER_PREFIX}authentik_worker
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14
     restart: unless-stopped
     # Import the trust anchor before the worker discovers the Samba AD
     # blueprint. authentik deliberately skips LDAP TLS verification when
@@ -86,7 +89,7 @@ services:
     dns:
       - ${LOCAL_DNS_SERVER}
     healthcheck:
-      test: ["CMD", "ak", "healthcheck"]
+      test: ["CMD-SHELL", "test -f /tmp/anas-blueprints.ready && ak healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -101,7 +104,7 @@ services:
   # long-lived token, and this needs no credential at all.
   anas_authentik_dirwatch:
     container_name: ${CONTAINER_PREFIX}authentik_dirwatch
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14
     restart: unless-stopped
     entrypoint: ["python3", "/opt/anas/bin/directory-watch"]
     depends_on:

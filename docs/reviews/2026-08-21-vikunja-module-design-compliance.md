@@ -15,10 +15,24 @@
 | D2 `iam_protocol` | 已修复 | 公开 enum 已收窄为 `[auto, oidc]` |
 | D3 `domain_prefix` | 已修复 | 声明 1..63 长度与 DNS label pattern，并进入统一 constraints inventory |
 | D4 全局库存 | 已修复 | 架构清单加入 Vikunja；中英文统计、参数表、effect 与约束数同步为 20/151/15 |
-| D5 Secret 轮换 | 实现已修复，E2E 待验收 | 两项 Secret 接入单目标、`--module vikunja`、deployment `--all` 的 candidate/Store 事务；真实 IAM 登录轮换仍为 release gate |
+| D5 Secret 轮换 | 已修复并完成 E2E | 两项单目标、`--module vikunja`、deployment `--all` 的真实 candidate，以及 candidate 失败后 previous 恢复均已通过 |
 
 因此本页下方“待修复偏差”保留为审查发现的历史记录，不再表示当前代码仍缺少 D1–D5 实现。
-Module 仍为 `developing`，因为真实容器、IAM、数据库、备份恢复和升级/回滚证据尚未完成。
+Module 仍为 `developing`，等待显式发布决定；需求矩阵与真实发布验收已经完成。
+
+## 真实环境补充（2026-08-23）
+
+- D1—D4 修复在 `2.4.0-r3` 上继续通过生成器、schema/Hook 测试和真实容器验证：Hook phase
+  allowlist 显式存在，`iam_protocol` 只有 `auto/oidc`，`domain_prefix` 有 DNS label 约束，全局
+  Module/配置库存包含 Vikunja 并同步为 20/151。
+- amd64 非 root/read-only runtime、arm64 交叉构建、PostgreSQL 冷启动与重启持久性通过。
+- Authentik 五账号授权矩阵、Chromium 直接组登录、API v2、附件、CalDAV 与 HMAC webhook 通过。
+- 两项单目标、Module 范围和 deployment `--all` 的真实轮换成功；service secret 轮换后旧 JWT
+  返回 401，OIDC secret/Module/`--all` 后全新授权码登录成功。
+- Chromium 验证正常 RP logout 携带 `id_token_hint`/post-logout URI；IAM-down 时本地 token 也会
+  立即清除，R-022 已关闭。
+- PostgreSQL 与 MariaDB 均完成真实 r4→r3→r4 往返；恢复、API/Webhook/CalDAV、轮换失败补偿、
+  1k/10k 负载与真实 Chromium 首屏均已通过。需求状态为 `28/28`。
 
 ## 结论
 
@@ -27,7 +41,7 @@ Module 仍为 `developing`，因为真实容器、IAM、数据库、备份恢复
 Manifest、数据库 Resource、Provider-neutral OIDC、Secret 作用域、持久化、非 root 运行、
 本地化和双语 Module 文档的主体设计符合当前规范。所有已运行的机械门禁通过。
 审查快照当时在 Manifest 精确性、单字段约束、凭据轮换和全局文档清单中发现五项偏差；
-实现修复状态见上表。真实容器验收仍未完成。
+实现修复状态见上表。真实容器、双数据库、双 IAM、恢复、升级/回滚、凭据轮换和负载验收均已完成。
 
 ## 通过项
 

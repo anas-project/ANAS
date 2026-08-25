@@ -36,7 +36,7 @@ func TestLLNGSeparatedDomainContract(t *testing.T) {
 	if got, want := env["LLNG_MANAGER_DOMAIN_FULL"], "https://login-manager.apps.example.test:443"; got != want {
 		t.Fatalf("LLNG manager URL = %q, want %q", got, want)
 	}
-	if got, want := env["ANAS_IAM_BINDING__NEXTCLOUD__OIDC_ISSUER_URL"], "https://login.apps.example.test:443"; got != want {
+	if got, want := env["ANAS_IAM_BINDING__NEXTCLOUD__OIDC_ISSUER_URL"], "https://login.apps.example.test:443/"; got != want {
 		t.Fatalf("LLNG OIDC issuer = %q, want %q", got, want)
 	}
 	for key, want := range map[string]string{

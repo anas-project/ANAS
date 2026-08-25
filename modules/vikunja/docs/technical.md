@@ -4,7 +4,7 @@
 [中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `2.4.0-r2` / `anas.module/v1`.
+> 状态：当前实现；对应 `2.4.0-r4` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,19 +20,24 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_vikunja` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r2` | `db, traefik` | 2 |
+| `anas_vikunja` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r4` | `db, traefik` | 2 |
 <!-- generated:compose-topology:end -->
 
 `anas_vikunja` 只在 Traefik network 的 `3456/tcp` 提供 Web/API，没有宿主端口。`db` 是
 Runner 解析的 PostgreSQL 或 MariaDB external network。容器使用部署 DNS 访问 IAM 域名，并把
 ANAS 内部 CA 只读挂载到 Go system-roots 目录。
 
-上游 `vikunja/vikunja:2.4.0` 是 scratch image，固定以 uid 1000 运行；Docker 首次创建 bind
-mount 时目录却属于 root。ANAS image 增加静态 `anas-vikunja-entrypoint`：root 阶段只创建并
-`lchown` `/app/vikunja/files` 树，随后设置 groups/gid/uid 为 `1000:1000`、umask 为 `0027`，
-再 `exec` 未修改的上游二进制。rootfs 为 read-only，只有附件 volume 与 `/tmp` tmpfs 可写。
+镜像从上游 `v2.4.0` commit `907850f` 的源码压缩包构建，并用固定 SHA-256 校验；只应用
+`0001-logout-local-session-first.patch`，构建阶段运行补丁自带的两个 Vitest 回归用例。最终仍是
+scratch runtime。Docker 首次创建 bind mount 时目录属于 root，因此 Dockerfile 用数值身份
+`0:0` 启动静态 `anas-vikunja-entrypoint`：root 阶段只创建并 `lchown`
+`/app/vikunja/files` 树，随后设置 groups/gid/uid 为 `1000:1000`、umask 为 `0027`，再 `exec`
+补丁后的 Vikunja 二进制。rootfs 为 read-only，只有附件 volume 与 `/tmp` tmpfs 可写。
+入口在启动业务进程前通过通用 IAM binding 的 discovery URL 等待 Provider 就绪，最多 60 次、
+每次间隔 2 秒；这不包含 LLNG/Authentik 分支，超时后仍失败关闭。
 
-健康检查通过同一入口先降权，再执行上游 `vikunja healthcheck`，覆盖 API 与数据库连接。OIDC provider 不可用会在
+健康检查通过同一入口先降权，先要求主进程的本地 `/api/v1/info` 已返回 `200`，再执行上游
+`vikunja healthcheck` 覆盖 API 与数据库连接；这个前置门禁避免健康检查子进程与空库/升级迁移并发。OIDC provider 不可用会在
 v2 health status 中表现为 degraded；配置的 `requireavailability=true` 还会让首次初始化失败
 关闭并由 Compose restart policy 重试。
 
@@ -72,10 +77,14 @@ team 与权限继续由 Vikunja 数据库拥有；没有 LDAPS、Group 同步或
 
 ### 登出边界
 
-2.4.0 在 Vikunja session 中保存 provider key 和原始 ID Token。logout handler 先读出它们，
-构造含 `id_token_hint`、`client_id`、`post_logout_redirect_uri` 的 RP-Initiated Logout URL，再删除
-并提交本地 session。URL 解析失败只记录分类错误，不阻塞本地删除；缓存的
-`end_session_endpoint` 避免 IAM 故障时重新 discovery 阻塞退出。
+2.4.0 在 Vikunja session 中保存 provider key 和原始 ID Token。r4 前端补丁先捕获 bearer token
+和 provider key，立即执行 `removeToken()`、清空 `localStorage`、重置 Pinia authenticated/user/
+session 状态并写入 `justLoggedOut`；这些操作发生在任何 awaited HTTP 请求之前。随后用捕获的
+bearer token 调用 `/api/v1/user/logout`，并将请求 timeout 限制为 5 秒。后端读出 ID Token，构造
+含 `id_token_hint`、`client_id`、`post_logout_redirect_uri` 的 RP-Initiated Logout URL，再删除并
+提交服务端 session。URL 解析失败只记录分类错误，不阻塞服务端删除；缓存的
+`end_session_endpoint` 避免 IAM 故障时重新 discovery。HTTP 失败或超时只会跳过服务端/IAM
+注销，不会恢复已经删除的浏览器本地状态。
 
 该版本没有接收 OIDC Logout Token 或 front-channel iframe 的标准 endpoint。Hook 因此省略
 `OIDC_LOGOUT_URI/METHODS/SESSION_REQUIRED`；IAM 主动退出和管理员无浏览器撤销不能清除已存在的
@@ -89,7 +98,8 @@ Vikunja session。真实浏览器尚需验证 `state`、旧 Cookie、IAM Cookie 
 | `web` | `VIKUNJA_DOMAIN_FULL` | `iam` |
 
 没有 `management.local_accounts` 或真实 direct-login recovery path。IAM 故障必须恢复 IAM、
-目录、DNS 或内部 CA。
+目录、DNS 或内部 CA。普通 `/login` 页面在 `auth.local.enabled=false` 时不提供本地密码入口；
+上游 CLI 虽能创建用户，但 Module 没有预置、托管或轮换应急用户。
 
 ### Secret 边界
 
@@ -165,6 +175,8 @@ Runner-owned globals（包括 `TZ`、`DEFAULT_LANGUAGE`、`LOCAL_DNS_SERVER` 和
 - [`main_test.go`](../hook/main_test.go)：数据库映射、OIDC registration/binding、稳定 Secret、
   credential candidate probe、应用组、登出字段省略、语言 fallback 和失败关闭。
 - [`entrypoint.go`](../vikunja/entrypoint.go)：附件权限初始化与不可逆降权。
+- [`0001-logout-local-session-first.patch`](../vikunja/patches/0001-logout-local-session-first.patch)：
+  本地优先登出实现和两个上游前端回归测试。
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 - [Vikunja Module 集成要求](../../../docs/requirements/vikunja-module.md)

@@ -1,9 +1,42 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
+
+func TestAfterStartWaitsForBlueprintReadiness(t *testing.T) {
+	originalProbe := runBlueprintReadyProbe
+	originalPause := blueprintReadyRetryPause
+	t.Cleanup(func() {
+		runBlueprintReadyProbe = originalProbe
+		blueprintReadyRetryPause = originalPause
+	})
+	attempts := 0
+	runBlueprintReadyProbe = func(container string) error {
+		attempts++
+		if container != "anas_authentik_worker" {
+			t.Fatalf("container = %q", container)
+		}
+		if attempts < 3 {
+			return errors.New("not ready")
+		}
+		return nil
+	}
+	blueprintReadyRetryPause = func() {}
+
+	if _, err := handle(hookRequest{
+		Module: "authentik",
+		Phase:  "after_start",
+		Env:    map[string]string{"CONTAINER_PREFIX": "anas_"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts = %d, want 3", attempts)
+	}
+}
 
 func TestCalcDirectoryWatchSubscribesToThePublishedJournal(t *testing.T) {
 	env := map[string]string{

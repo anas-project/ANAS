@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `authentik`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `2026.5.6-r10` / `anas.module/v1`.
+> Status: current implementation; based on `2026.5.6-r14` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -20,11 +20,23 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `traefik, authentik, db` | 3 |
-| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `authentik, db` | 2 |
-| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `` | 1 |
-| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r10` | `authentik, db` | 3 |
+| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `traefik, authentik, db` | 3 |
+| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 2 |
+| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `` | 1 |
+| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 3 |
 <!-- generated:compose-topology:end -->
+
+The first server start applies the complete database migration history. Its health check has a
+600-second start window so a progressing cold migration is not misclassified as failed on the
+supported 4-vCPU / 3-GiB baseline. The five normal health retries still apply after that window.
+
+The worker health check also requires every blueprint under `/blueprints/anas` to have a matching
+`successful` instance whose recorded `last_applied_hash` matches the mounted file's SHA-512 digest.
+Modules that depend on Authentik therefore cannot start before their OIDC provider is discoverable.
+
+The `after_start` hook waits up to ten minutes for the same marker. The runner starts downstream
+modules only after that barrier succeeds, so Compose health and cross-module ordering share one
+authoritative readiness condition.
 
 ## Configuration contract
 

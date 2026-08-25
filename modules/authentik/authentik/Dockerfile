@@ -15,4 +15,6 @@ USER 1000:1000
 # and environment variables mounted at runtime.
 COPY --chmod=0755 directory_watch.py /opt/anas/bin/directory-watch
 COPY --chmod=0755 worker-entrypoint.sh /opt/anas/bin/worker-entrypoint
+COPY --chmod=0444 blueprints-ready.py /opt/anas/bin/blueprints-ready.py
+COPY --chmod=0755 wait-blueprints.sh /opt/anas/bin/wait-blueprints
 COPY --chmod=0755 server-entrypoint.sh /opt/anas/bin/server-entrypoint

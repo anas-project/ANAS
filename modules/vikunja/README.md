@@ -9,7 +9,7 @@ Webhook 和 CalDAV。
 | 项目 | 值 |
 | --- | --- |
 | Module | `vikunja` |
-| 版本 / revision | `2.4.0-r2` |
+| 版本 / revision | `2.4.0-r4` |
 | 状态 | `developing` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -51,12 +51,13 @@ Vikunja 使用 OIDC Authorization Code Flow。Module 注册 confidential client�
 或管理员组成员可以在 IAM 完成登录；切换 IAM Provider 可能改变 `(issuer, sub)` 并创建新账号，
 当前不自动合并。
 
-Vikunja `2.4.0` 会保存登录时的 ID Token。用户退出时先删除 Vikunja 服务端 session，再从已
-缓存的 discovery metadata 读取 `end_session_endpoint`，携带 `id_token_hint`、`client_id` 和已
-登记的 post-logout URI 发起 RP-Initiated Logout。IAM 不可用或 URL 构造失败不会阻止本地
-session 失效。当前版本没有标准 IAM→Vikunja front-/back-channel receiver，所以 Module 不发布
-`OIDC_LOGOUT_*`，不声明双向登出或管理员后台撤销；真实浏览器 E2E 完成前，应用发起登出仍标为
-“上游支持、待验收”。
+Vikunja `2.4.0-r4` 会保存登录时的 ID Token。ANAS 的固定源码补丁在用户点击退出后先捕获当前
+token/provider，再立即删除浏览器 token、认证状态和本地缓存；随后用已捕获 token 在最多 5 秒内
+尽力删除 Vikunja 服务端 session，并从缓存的 discovery metadata 生成携带 `id_token_hint`、
+`client_id` 和已登记 post-logout URI 的 RP-Initiated Logout 请求。IAM 或服务端注销不可用不会
+恢复本地 session。当前版本没有标准 IAM→Vikunja front-/back-channel receiver，所以 Module
+不发布 `OIDC_LOGOUT_*`，不声明双向登出或管理员后台撤销；r4 真实浏览器复验完成前仍标为
+“修复已实现、待验收”。
 
 | 能力 | 当前声明 |
 | --- | --- |
@@ -76,7 +77,10 @@ session 失效。当前版本没有标准 IAM→Vikunja front-/back-channel rece
 
 本 Module 没有 `management.local_accounts`，也没有应用内 break-glass 账号；
 `anas admin local credential/rotate` 对它不可用。IAM 故障时应恢复 IAM、目录、内部 DNS 或
-内部 CA 链路，不能用本地密码绕过。
+内部 CA 链路，不能用本地密码绕过。`<VIKUNJA_DOMAIN_FULL>/login` 只是普通登录页；在
+`auth.local.enabled=false` 下不会提供可用的本地密码表单，也不存在预置用户名或密码。虽然上游
+CLI 能创建本地用户，当前 Module 未声明、托管或轮换这类账号，临时开启本地认证不属于受支持的
+应急流程。
 
 ## 数据库支持
 
@@ -177,7 +181,7 @@ Secret 保存在调用方自己的 Secret 存储中。Webhook 接收端必须验
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2.4.0-r2`（reviewed 2026-08-21）
+- Module version / 版本：`2.4.0-r4`（reviewed 2026-08-21）
 - Timezone / 时区：`configured` — Vikunja service.timezone and the default timezone for new users inherit ANAS TZ; signed-in users may override their own timezone.
 - Language scope / 语言范围：Vikunja Web UI and localized notifications
 - Selection / 选择方式：`application`

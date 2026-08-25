@@ -8,7 +8,11 @@
     "docs:check-requirements": "node scripts/ci/requirement-coverage.mjs",
     "docs:test-requirements": "node scripts/ci/requirement-coverage-test.mjs",
     "docs:preview": "vitepress preview docs",
-    "e2e:iam-logout": "playwright test --config test-env/playwright/iam-logout.config.mjs"
+    "e2e:iam-logout": "playwright test --config test-env/playwright/iam-logout.config.mjs",
+    "e2e:vikunja-browser": "playwright test --config test-env/playwright/vikunja-browser.config.mjs",
+    "e2e:vikunja-llng-browser": "playwright test --config test-env/playwright/vikunja-llng-browser.config.mjs",
+    "e2e:vikunja-authentik-matrix-browser": "playwright test --config test-env/playwright/vikunja-authentik-matrix-browser.config.mjs",
+    "e2e:vikunja-load-browser": "playwright test --config test-env/playwright/vikunja-load-browser.config.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.55.0",

@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `samba_dc`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `4.23.6-r8` / `anas.module/v1`.
+> Status: current implementation; based on `4.23.6-r10` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -17,8 +17,8 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r8` | `` | 3 |
-| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r8` | `` | 3 |
+| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r10` | `` | 3 |
+| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r10` | `` | 3 |
 | `anas_samba_dc_events_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
@@ -124,12 +124,21 @@ recorded by an earlier reconciler is released without deleting the native
 record. Other exact-target records whose creation provenance cannot be proven
 remain non-deletable legacy observations.
 
+BIND starts only after application-zone reconciliation. If Samba's first
+automatic DNS update runs before BIND listens on port 53, its background retry
+may occur after the Compose health window. Once BIND is ready, the reconciler
+therefore runs `samba_dnsupdate --all-names --use-samba-tool` once over Samba RPC and verifies that
+`SAMBA_DC_DC_DOMAIN` resolves exactly to `SAMBA_DC_HOST_IP` before publishing
+its ready marker.
+
 Zone-inventory RPC or parse failures fail closed. Before any DNS mutation, the
 reconciler checks every `SAMBA_DC_HOST` and `DOMAINS` FQDN for a closer child
 zone that would intercept it. An A record may be replaced or deleted only when
 its provenance is present in the committed manifest or durable pending journal;
 an explicit write failure withdraws pending ownership instead of promoting a
-concurrent administrator-created target to ANAS ownership.
+concurrent administrator-created target to ANAS ownership. Samba RPC may return
+duplicate A entries for one address with different internal flags; comparisons
+deduplicate by address, while any different address still fails closed.
 
 Samba is internally authoritative for a `separate_zone`; names absent from the
 managed record inventory are not forwarded to public DNS. The selected zone

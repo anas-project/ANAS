@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `samba_dc` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `4.23.6-r8` / `anas.module/v1`.
+> 状态：当前实现；对应 `4.23.6-r10` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -17,8 +17,8 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r8` | `` | 3 |
-| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r8` | `` | 3 |
+| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r10` | `` | 3 |
+| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r10` | `` | 3 |
 | `anas_samba_dc_events_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
@@ -111,10 +111,16 @@ directory-native 记录都只验证其包含精确的 `SAMBA_DC_HOST_IP`，不 c
 delete。升级时，旧版 applied 清单曾错误取得的所有权会被释放而不删除原生记录；其他无法
 证明创建来源的同目标记录仍只写为不可删除的 legacy observation。
 
+BIND 只会在 application zone reconciliation 完成后启动；如果 Samba 的首次自动 DNS update
+发生在 BIND 尚未监听 53 端口时，后台重试可能晚于 Compose health window。reconciler 因此在
+BIND ready 后显式通过 Samba RPC 执行一次 `samba_dnsupdate --all-names --use-samba-tool`，并在发布 ready marker 前验证
+`SAMBA_DC_DC_DOMAIN` 精确解析到 `SAMBA_DC_HOST_IP`。
+
 zone inventory 的 RPC/解析失败会 fail closed；reconciler 在任何 DNS mutation 前逐个检查
 `SAMBA_DC_HOST` 与 `DOMAINS` FQDN 是否被更近的 child zone 截获。A 记录只有在 committed
 manifest 或 durable pending journal 中有来源证明时才可替换/删除，显式写入失败会撤销
-pending，避免把管理员并发创建的同目标记录提升为 ANAS 所有。
+pending，避免把管理员并发创建的同目标记录提升为 ANAS 所有。Samba RPC 可能为同一地址返回
+不同内部 flags 的重复 A 项；比较前会按地址去重，但出现任意其他地址仍会 fail closed。
 
 `separate_zone` 由 Samba 内部权威管理；未进入受管记录清单的名字不会继续向公网转发。
 zone 选择和记录清单存入 Samba 持久数据，用于拒绝无迁移的 zone 漂移。当前尚未交付已有

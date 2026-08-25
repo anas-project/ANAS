@@ -8,6 +8,7 @@ modules:
   nextcloud: {}
   collabora: {}
   meshcentral: {}
+  vikunja: {}
 identity:
   iam:
     provider: authentik

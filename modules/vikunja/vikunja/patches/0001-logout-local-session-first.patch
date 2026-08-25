@@ -1,0 +1,166 @@
+diff --git a/frontend/src/stores/auth.ts b/frontend/src/stores/auth.ts
+index e1173bf..cb006c0 100644
+--- a/frontend/src/stores/auth.ts
++++ b/frontend/src/stores/auth.ts
+@@ -549,24 +549,35 @@ export const useAuthStore = defineStore('auth', () => {
+ 		const {disconnect} = useWebSocket()
+ 		disconnect()
+ 
++		// Capture the credentials and provider before clearing browser state. The
++		// server logout is best-effort and must never be able to block local logout.
++		const logoutToken = getToken()
++		const loggedInVia = getLoggedInVia()
++
++		removeToken()
++		window.localStorage.clear() // Clear all settings and history we might have saved in local storage.
++		lastUserInfoRefresh.value = null
++		currentSessionId.value = null
++		setAuthenticated(false)
++		setUser(null)
++		sessionStorage.setItem(JUST_LOGGED_OUT_KEY, 'true')
++
+ 		// Revoke the server session so the refresh token can't be reused.
+-		// Best-effort: if the network call fails, still clean up locally.
++		// Use the captured bearer token because local storage is already empty.
++		// Best-effort and bounded: failures must not undo or delay local logout
++		// indefinitely.
+ 		let oidcLogoutUrl = ''
+ 		try {
+-			const HTTP = AuthenticatedHTTPFactory()
+-			const {data} = await HTTP.post('user/logout')
++			const HTTP = HTTPFactory()
++			const {data} = await HTTP.post('user/logout', undefined, {
++				headers: logoutToken ? {Authorization: `Bearer ${logoutToken}`} : undefined,
++				timeout: 5_000,
++			})
+ 			oidcLogoutUrl = data?.oidc_logout_url ?? ''
+ 		} catch (_e) {
+ 			// Ignore — session will expire naturally
+ 		}
+ 
+-		removeToken()
+-		const loggedInVia = getLoggedInVia()
+-		window.localStorage.clear() // Clear all settings and history we might have saved in local storage.
+-		lastUserInfoRefresh.value = null
+-
+-		sessionStorage.setItem(JUST_LOGGED_OUT_KEY, 'true')
+-
+ 		// Redirect to the OIDC provider to end its session too. Prefer the
+ 		// server-built RP-Initiated Logout URL, falling back to the static one.
+ 		// These full-page redirects return the user to the login page, so we
+diff --git a/frontend/src/stores/auth.logout.test.ts b/frontend/src/stores/auth.logout.test.ts
+new file mode 100644
+index 0000000..e507988
+--- /dev/null
++++ b/frontend/src/stores/auth.logout.test.ts
+@@ -0,0 +1,110 @@
++import {beforeEach, describe, expect, it, vi} from 'vitest'
++import {createPinia, setActivePinia} from 'pinia'
++
++import {useAuthStore} from './auth'
++
++const {
++	postMock,
++	routerPushMock,
++	redirectToProviderOnLogoutMock,
++	disconnectMock,
++} = vi.hoisted(() => ({
++	postMock: vi.fn(),
++	routerPushMock: vi.fn(),
++	redirectToProviderOnLogoutMock: vi.fn(() => false),
++	disconnectMock: vi.fn(),
++}))
++
++vi.mock('@/helpers/auth', () => ({
++	refreshToken: vi.fn(),
++	getToken: vi.fn(() => localStorage.getItem('token')),
++	saveToken: vi.fn(),
++	removeToken: vi.fn(() => localStorage.removeItem('token')),
++}))
++
++vi.mock('@/router', () => ({
++	default: {push: routerPushMock},
++}))
++
++vi.mock('@/composables/useWebSocket', () => ({
++	useWebSocket: () => ({disconnect: disconnectMock, connect: vi.fn()}),
++}))
++
++vi.mock('@/helpers/fetcher', () => ({
++	HTTPFactory: () => ({
++		post: postMock,
++		get: vi.fn().mockResolvedValue({data: {}}),
++		request: vi.fn().mockResolvedValue({data: {}}),
++		interceptors: {
++			request: {use: vi.fn()},
++			response: {use: vi.fn()},
++		},
++	}),
++	AuthenticatedHTTPFactory: () => ({
++		post: vi.fn().mockResolvedValue({data: {}}),
++		get: vi.fn().mockResolvedValue({data: {}}),
++		request: vi.fn().mockResolvedValue({data: {}}),
++		interceptors: {
++			request: {use: vi.fn()},
++			response: {use: vi.fn()},
++		},
++	}),
++	getApiBaseUrl: () => 'http://localhost/api/v1/',
++}))
++
++vi.mock('@/helpers/redirectToProvider', () => ({
++	getRedirectUrlFromCurrentFrontendPath: vi.fn(),
++	redirectToProvider: vi.fn(),
++	redirectToProviderOnLogout: redirectToProviderOnLogoutMock,
++}))
++
++describe('auth store logout', () => {
++	beforeEach(() => {
++		setActivePinia(createPinia())
++		localStorage.clear()
++		sessionStorage.clear()
++		postMock.mockReset()
++		routerPushMock.mockReset().mockResolvedValue(undefined)
++		redirectToProviderOnLogoutMock.mockReset().mockReturnValue(false)
++		disconnectMock.mockReset()
++	})
++
++	it('clears the local session before the server logout resolves', async () => {
++		let resolvePost: (value: unknown) => void = () => undefined
++		postMock.mockImplementation(() => new Promise(resolve => {
++			resolvePost = resolve
++		}))
++		localStorage.setItem('token', 'captured-user-token')
++		localStorage.setItem('loggedInViaProvider', 'anas')
++
++		const store = useAuthStore()
++		store.setAuthenticated(true)
++		const logoutPromise = store.logout()
++
++		expect(localStorage.getItem('token')).toBeNull()
++		expect(store.authenticated).toBe(false)
++		expect(sessionStorage.getItem('justLoggedOut')).toBe('true')
++		expect(postMock).toHaveBeenCalledWith('user/logout', undefined, {
++			headers: {Authorization: 'Bearer captured-user-token'},
++			timeout: 5_000,
++		})
++		expect(routerPushMock).not.toHaveBeenCalled()
++
++		resolvePost({data: {}})
++		await logoutPromise
++		expect(routerPushMock).toHaveBeenCalledWith({name: 'user.login'})
++	})
++
++	it('stays locally logged out when the server logout fails', async () => {
++		postMock.mockRejectedValue(new Error('server unavailable'))
++		localStorage.setItem('token', 'captured-user-token')
++
++		const store = useAuthStore()
++		store.setAuthenticated(true)
++		await store.logout()
++
++		expect(localStorage.getItem('token')).toBeNull()
++		expect(store.authenticated).toBe(false)
++		expect(routerPushMock).toHaveBeenCalledWith({name: 'user.login'})
++	})
++})

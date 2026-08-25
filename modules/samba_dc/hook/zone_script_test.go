@@ -726,7 +726,7 @@ ensure_managed_a_record app.example.test 10.0.0.8 nextcloud
 	}
 }
 
-func TestAnasZoneDirectoryNativeApexIsObservedNotDeleted(t *testing.T) {
+func TestAnasZoneDuplicateDirectoryNativeApexIsObservedNotDeleted(t *testing.T) {
 	root := t.TempDir()
 	bin := filepath.Join(root, "bin")
 	if err := os.MkdirAll(bin, 0o700); err != nil {
@@ -735,6 +735,7 @@ func TestAnasZoneDirectoryNativeApexIsObservedNotDeleted(t *testing.T) {
 	fake := `#!/bin/sh
 if [ "$1" = dns ] && [ "$2" = query ]; then
   printf '    A: 10.0.0.8 (flags=0, serial=1, ttl=900)\n'
+  printf '    A: 10.0.0.8 (flags=f0, serial=2, ttl=900)\n'
   exit 0
 fi
 if [ "$1" = dns ] && [ "$2" = delete ]; then
@@ -904,6 +905,35 @@ test ! -e "$FAKE_DELETE_LOG"
 	output, err := exec.Command("bash", "-c", command, "anas-zone-test", anasZoneScriptPath(), bin, managed, desired, deleteLog).CombinedOutput()
 	if err != nil {
 		t.Fatalf("legacy observation ownership: %v\n%s", err, output)
+	}
+}
+
+func TestAnasZonePublishesDirectoryNativeRecordsAfterBindStarts(t *testing.T) {
+	bin := t.TempDir()
+	log := filepath.Join(bin, "dnsupdate.log")
+	fake := `#!/bin/sh
+printf '%s\n' "$*" > "$FAKE_DNSUPDATE_LOG"
+`
+	if err := os.WriteFile(filepath.Join(bin, "samba_dnsupdate"), []byte(fake), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const command = `set -eu
+export ANAS_ZONE_LIB_ONLY=true
+export SAMBA_DC_ADMINISTRATOR_NAME=test-administrator
+export SAMBA_DC_ADMINISTRATOR_PASSWORD=test-password
+export SAMBA_DC_DOMAIN=ad.example.test
+export SAMBA_DC_HOST_IP=10.0.0.2
+export FAKE_DNSUPDATE_LOG="$3"
+export PATH="$2:$PATH"
+. "$1"
+publish_directory_native_records
+test "$(cat "$FAKE_DNSUPDATE_LOG")" = "--all-names --use-samba-tool --current-ip=10.0.0.2 --rpc-server-ip=10.0.0.2"
+`
+	output, err := exec.Command(
+		"bash", "-c", command, "anas-zone-test", anasZoneScriptPath(), bin, log,
+	).CombinedOutput()
+	if err != nil {
+		t.Fatalf("publish directory-native records: %v\n%s", err, output)
 	}
 }
 

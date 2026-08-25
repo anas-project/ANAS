@@ -2,14 +2,15 @@
 doc_type: requirement
 status: current
 created: 2026-08-21
-updated: 2026-08-21
+updated: 2026-08-23
 ---
 
 # Vikunja Module 集成要求
 
 本文规定 ANAS 集成 Vikunja 时必须交付的用户结果、边界、安全约束和验收标准。候选比较与
 选型证据见[自托管开源看板与项目管理方案调研](../research/self-hosted-open-source-kanban-research.md)；
-本文不重复调研结论，也不把实现进度当作需求。
+实施顺序和执行证据见[Vikunja Module 实施计划](/plans/vikunja-module)。本文不重复调研结论，
+也不把实现进度当作需求。
 
 关键词“必须”“不得”“应该”具有规范性。
 
@@ -137,3 +138,38 @@ Webhook。
 
 完成 §8.1 只代表实现进入 `developing`。只有 §8.2 全部有可复现证据、升级/回滚边界已记录，
 才可以把 Module 提升为 `release`。
+
+## 9. 需求矩阵
+
+本矩阵是规范来源，正文是解释；两者冲突时以矩阵为准。
+
+| ID | 要求 | 验证方式 |
+| --- | --- | --- |
+| `VIK-R-001` | `vikunja` 必须是固定 `2.4.0` 上游与固定镜像 revision 的 `app` Module；真实发布验收完成前保持 `developing`，不得使用 `latest` | 静态 |
+| `VIK-R-002` | Vikunja 只能通过 Traefik HTTPS 暴露，不得发布额外宿主端口；容器必须使用部署 DNS、信任内部 CA 且不得关闭 OIDC TLS 验证 | 静态 + 单元 |
+| `VIK-R-003` | 健康检查必须验证 HTTP 服务和数据库；Vikunja 业务进程必须以非 root 运行，初始化入口降权后不得保留额外权限 | 单元 |
+| `VIK-R-004` | Module 必须消费 `relational_database >=1.0.0 <2.0.0`，支持 `postgres` 与 `mariadb`、默认 PostgreSQL，并把 MariaDB binding 映射为上游 `mysql` | 单元 |
+| `VIK-R-005` | `primary_database` 必须使用独立数据库/principal/生成凭据和 `retain` 删除策略；修改 `db_type` 或 `db_name` 必须进入显式迁移而不是自动切库 | 单元 + 审阅 |
+| `VIK-R-006` | 附件必须保存在 workspace 受管数据树；数据库、附件、Secret Store 和 deployment metadata 必须能在同一恢复点恢复 | 单元 + 文档 |
+| `VIK-R-007` | Vikunja 只能消费自身通用 `ANAS_IAM_BINDING__VIKUNJA__*`，不得按 Authentik、LLNG、Casdoor 等 Provider 名称分支 | 单元 |
+| `VIK-R-008` | OIDC 必须使用 confidential Authorization Code client、`openid profile email` scope 和精确 `<VIKUNJA_DOMAIN_FULL>/auth/openid/anas` 回调；client secret 必须稳定托管且不进入普通产物或日志 | 单元 |
+| `VIK-R-009` | 默认必须关闭本地认证与开放注册，且不得声明虚假的本地 break-glass 账号 | 单元 + 文档 |
+| `VIK-R-010` | 首次 OIDC 登录必须可用通用 email/name/`preferred_username` claim JIT 建号；文档必须说明切换 issuer 可能创建新账号且首期不自动合并 | 单元 + 文档 |
+| `VIK-R-011` | 开启应用过滤时，IAM 必须只允许 `APP_vikunja`、`APP_all` 或管理员组成员完成授权；关闭过滤时不得额外收紧 | 单元 |
+| `VIK-R-012` | ANAS 不得自动生成管理员 API token；用户 token 与 webhook Secret 必须最小权限、保持在调用方边界且不得跨 Module 或进入日志 | 单元 + 文档 |
+| `VIK-R-013` | 服务时区与新用户默认时区必须继承全局时区；默认语言必须匹配固定支持清单，不支持值告警并回退英语且不覆盖用户偏好 | 单元 |
+| `VIK-R-014` | Vikunja 发起登出时必须先删除本地 session，再使用 discovery、`id_token_hint` 和登记的 post-logout URI 发起 RP-Initiated Logout；IAM 故障不得保留本地 session | 单元 |
+| `VIK-R-015` | 上游没有标准 IAM 主动登出 receiver 时不得发布 `OIDC_LOGOUT_*` 或宣称双向/后台撤销；真实浏览器验收前只能标为“上游支持、待验收” | 单元 + 文档 |
+| `VIK-R-016` | 中英文 README/技术文档必须覆盖最简配置、账号、迁移、存储恢复、轮换、API/Webhook/CalDAV、移动端限制及所有参数，并保持生成清单同步 | 静态 |
+| `VIK-R-017` | amd64 与 arm64 镜像必须可构建；amd64 真实容器必须启动、健康、无异常重启且业务进程为非 root | CI + e2e |
+| `VIK-R-018` | PostgreSQL 必须完成空库安装、应用重启、数据库重启和固定版本升级/回滚边界验收，数据不得丢失 | e2e |
+| `VIK-R-019` | MariaDB 必须完成空库安装、`mysql` 映射、应用重启、数据库重启和固定版本升级/回滚边界验收，数据不得丢失 | e2e |
+| `VIK-R-020` | Authentik 必须用真实浏览器流程验证 OIDC 登录、JIT 建号、直接组/`APP_all`/管理员允许、无组拒绝、禁用账号拒绝和本地注册关闭 | e2e |
+| `VIK-R-021` | LLNG 必须用真实浏览器流程验证 OIDC 登录、JIT 建号、直接组/`APP_all`/管理员允许、无组拒绝、禁用账号拒绝和本地注册关闭 | e2e |
+| `VIK-R-022` | 真实浏览器必须验证 Vikunja 发起登出会清除本地 session、携带 `id_token_hint`/post-logout URI，并在 IAM 不可用时仍清除本地 session | e2e |
+| `VIK-R-023` | 从空恢复点恢复后必须保留 project、task、comment、attachment、OIDC 关联、API token 与 webhook 配置 | e2e |
+| `VIK-R-024` | 最小权限 API token 必须完成 project/task/comment/attachment 读写 smoke test；CalDAV 必须完成发现和任务读取 | e2e |
+| `VIK-R-025` | webhook 必须完成签名投递验证，错误签名必须拒绝，且 webhook Secret 不得进入普通容器日志或测试报告 | e2e |
+| `VIK-R-026` | 两项 Vikunja 凭据必须分别单目标轮换，并完成 `--module vikunja` 与 `--all` candidate 事务；两端同步、Store 单次提交、会话影响和 previous 恢复必须有证据 | e2e |
+| `VIK-R-027` | 必须记录 idle/load CPU、内存、首屏以及 1k/10k task 样本的可复现结果，并明确测试服务器规格与数据生成方式 | e2e |
+| `VIK-R-028` | Hook/入口测试必须覆盖数据库映射、稳定 Secret、OIDC 注册/binding、应用组、凭据生命周期、不发布伪 logout receiver、语言 fallback 和 Compose 安全边界 | 单元 |

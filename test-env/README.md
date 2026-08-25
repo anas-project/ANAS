@@ -614,6 +614,113 @@ Do not commit `.anas-test/` or generated secrets.
     and never uses SSH or a server Docker socket. Do not copy or run it on `ln`;
     validate `ln` separately with direct `anas credential` smoke commands.
 
+21. Vikunja release-gate E2E
+
+    Run `server-vikunja-e2e.sh` only with the dedicated Vikunja Docker socket
+    and data root. Its `api` mode covers project/task/comment/attachment CRUD
+    and CalDAV; `webhook` starts the no-log HMAC receiver inside the isolated
+    network namespace and checks wrong-signature rejection. When either mode
+    creates an API token from `ANAS_TEST_JWT`, its exit trap deletes that token;
+    a supplied `ANAS_TEST_API_TOKEN` remains caller-owned. `build-runtime`
+    accepts the `ANAS_TEST_*_REGISTRY`, package mirror, GOPROXY, and GitHub
+    download-proxy variables matching the Vikunja Dockerfile so cross-builds
+    use the same configured sources as the deployed image. Run
+    `server-vikunja-oidc-e2e.sh authentik` or `server-vikunja-oidc-e2e.sh llng`
+    for the provider-specific curl authorization-code matrix. The real-browser
+    release gates are separate and must also pass:
+
+    ```sh
+    npm run e2e:vikunja-authentik-matrix-browser
+    npm run e2e:vikunja-llng-browser
+    ```
+
+    Both browser suites use five isolated contexts for direct `APP_vikunja`,
+    `APP_all`, `Admins`, no-application-group, and disabled-directory-user
+    cases. They disable screenshot, trace, and video artifacts and write only a
+    sanitized mode-0600 JSON report. Use the OIDC script's `setup-authentik`
+    or `setup` mode to create disposable accounts without pre-creating JIT
+    users, then use `cleanup` with the same suffix after the browser run.
+
+    `upgrade` makes the fixed-version boundary reproducible. It first verifies
+    that a historical deployment with stale credential generations is rejected
+    with `credential_store_mismatch` without changing the active deployment or
+    object counts. It then rolls back to an explicitly supplied compatible
+    deployment, checks `data_touched=false`, revision metadata, health and the
+    database object-count vector, and rolls forward to the original deployment.
+    Run the script inside the dedicated network namespace and supply deployment
+    IDs from that disposable workspace only:
+
+    ```sh
+    ANAS_TEST_WORKSPACE=/data/anas-vikunja-e2e \
+    ANAS_TEST_ANAS_CMD=/tmp/anas-vikunja-e2e \
+    ANAS_TEST_UPGRADE_DEPLOYMENT=<current-r4-id> \
+    ANAS_TEST_ROLLBACK_DEPLOYMENT=<compatible-r3-id> \
+    ANAS_TEST_INCOMPATIBLE_ROLLBACK_DEPLOYMENT=<stale-credential-r3-id> \
+      ./test-env/scripts/server-vikunja-e2e.sh upgrade
+    ```
+
+    The cleanup trap attempts to return to `ANAS_TEST_UPGRADE_DEPLOYMENT` if a
+    failure occurs after the compatible rollback. Raw JSON and stderr reports
+    are mode `0600`; they contain IDs and error codes, never Secret values.
+
+    `restore` is the disaster-recovery gate, not another restart probe. It
+    seeds a project, task, comment, attachment, user API token, and webhook;
+    takes and verifies a Btrfs snapshot backup; restores it into a generated
+    empty workspace below `ANAS_TEST_RESTORE_ROOT`; starts that workspace; and
+    compares the active deployment, Secret Store digest, database object-count
+    vector, attachment bytes, OIDC issuer/subject, API-token access, and webhook
+    configuration. It then performs a fresh OIDC login against the restored
+    IAM/application data, returns to the source workspace, removes the seed,
+    and deletes the generated backup, workspace, and source snapshot. Supply a
+    disposable user's mode-0600 shell session artifact and its path explicitly:
+
+    ```sh
+    set -a
+    source /path/to/vikunja-restore-session.env
+    set +a
+    ANAS_TEST_WORKSPACE=/data/anas-vikunja-e2e \
+    ANAS_TEST_ANAS_CMD=/tmp/anas-vikunja-e2e \
+    ANAS_TEST_RESTORE_ROOT=/data/anas-vikunja-test-restore-e2e \
+    ANAS_TEST_OIDC_SESSION_FILE=/path/to/vikunja-restore-session.env \
+      ./test-env/scripts/server-vikunja-e2e.sh restore
+    ```
+
+    The session artifact must define `ANAS_TEST_USERNAME`,
+    `ANAS_TEST_PASSWORD`, and `ANAS_TEST_JWT`; the script sources the shell
+    escaping and never treats it as a Docker env file. On Btrfs mounts without
+    `user_subvol_rm_allowed`, cleanup uses passwordless sudo only for the exact
+    generated `run.*` and automatic snapshot paths.
+
+    `npm run e2e:vikunja-browser` is the separate Chromium gate for the actual
+    UI login and logout behavior. Store its sanitized report under the ignored
+    `test-env/reports/` tree, disable screenshots/traces, and never transform a
+    shell-escaped session file into Docker `--env-file` input by copying lines;
+    source it in the server shell and write only the decoded disposable
+    username/password to a mode-0600 browser env file.
+    The Vikunja browser test matches only an exact visible logout label and
+    excludes the username trigger, including when a disposable username itself
+    contains `logout`. It dispatches the click without waiting for the
+    deliberately unreachable IAM navigation, then independently asserts local
+    storage cleanup and the Vikunja logout request.
+
+    `load` creates eight temporary projects so eight workers never race
+    Vikunja's per-project task-index allocator. It first seeds 125 tasks per
+    project (1k total), then extends each project to 1,250 tasks (10k total),
+    recording write throughput, 20-sample API p50/p95/max, and a no-stream
+    container CPU/memory sample at idle, 1k, and 10k. It deletes all eight
+    projects and its generated API token on exit. Because a 10k run can outlive
+    a JWT, pass `ANAS_TEST_PASSWORD` and `ANAS_TEST_OIDC_SESSION_FILE` as well
+    as `ANAS_TEST_JWT`; token cleanup refreshes the disposable OIDC session
+    before retrying deletion if the first delete receives an expired-session
+    response. For the Chromium first-screen gate required by `VIK-R-027`, set
+    `ANAS_TEST_LOAD_HOLD_FILE` so the server script keeps the 10k fixture until
+    `<hold-file>.release` exists, then run `npm run e2e:vikunja-load-browser`
+    through the test-server SSH tunnel. The browser test performs a fresh OIDC
+    login, records navigation/first-screen/API timings, and verifies the
+    authenticated `/api/v2/tasks` response reports exactly 10,000 tasks. Always
+    create the release file even after a browser failure so the server script
+    deletes its projects and API token.
+
 ## Full Run
 
 ```sh

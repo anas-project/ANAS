@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The runner sends the module-hook ABI it speaks; this unreleased format has no legacy aliases.
@@ -122,9 +124,38 @@ func handle(req hookRequest) (hookResponse, error) {
 			return hookResponse{}, err
 		}
 		return hookResponse{Env: changed(req.Env, env), Files: files}, nil
+	case "after_start":
+		if err := waitForBlueprintReadiness(env); err != nil {
+			return hookResponse{}, err
+		}
+		return hookResponse{}, nil
 	default:
 		return hookResponse{}, nil
 	}
+}
+
+const blueprintReadyAttempts = 120
+
+var runBlueprintReadyProbe = func(container string) error {
+	cmd := exec.Command("docker", "exec", container, "test", "-f", "/tmp/anas-blueprints.ready")
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	return cmd.Run()
+}
+
+var blueprintReadyRetryPause = func() { time.Sleep(5 * time.Second) }
+
+func waitForBlueprintReadiness(env map[string]string) error {
+	container := env["CONTAINER_PREFIX"] + "authentik_worker"
+	for attempt := 0; attempt < blueprintReadyAttempts; attempt++ {
+		if err := runBlueprintReadyProbe(container); err == nil {
+			return nil
+		}
+		if attempt+1 < blueprintReadyAttempts {
+			blueprintReadyRetryPause()
+		}
+	}
+	return fmt.Errorf("authentik blueprints did not become ready in container %s", container)
 }
 
 // calcDirectoryWatch subscribes authentik to the directory event journal so a

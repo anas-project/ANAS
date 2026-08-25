@@ -4,7 +4,7 @@ This document records the `vikunja` implementation, security boundary, and verif
 module maintainers. See the [English README](../README.en.md) for user operations.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `2.4.0-r2` / `anas.module/v1`.
+> Status: current implementation; based on `2.4.0-r4` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Module, capability, and contract dependencies
@@ -20,20 +20,25 @@ module maintainers. See the [English README](../README.en.md) for user operation
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_vikunja` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r2` | `db, traefik` | 2 |
+| `anas_vikunja` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r4` | `db, traefik` | 2 |
 <!-- generated:compose-topology:end -->
 
 `anas_vikunja` exposes Web/API only as `3456/tcp` on the Traefik network and publishes no host port. `db` is
 the resolved PostgreSQL or MariaDB external network. Deployment DNS resolves the IAM public name, and the ANAS
 internal CA is mounted read-only into the Go system-roots directory.
 
-The upstream `vikunja/vikunja:2.4.0` scratch image runs as uid 1000, while Docker creates a new bind mount as
-root. The ANAS image adds a static `anas-vikunja-entrypoint`: its root phase creates and `lchown`s only
-`/app/vikunja/files`, then sets groups/gid/uid to `1000:1000`, applies umask `0027`, and execs the unmodified
-upstream binary. The root filesystem is read-only; only the attachment volume and `/tmp` tmpfs are writable.
+The image builds the upstream `v2.4.0` commit `907850f` source archive after checking its fixed SHA-256. It
+applies only `0001-logout-local-session-first.patch` and runs the patch's two Vitest regressions during the
+build; the final runtime remains scratch. Docker creates a new bind mount as root, so the Dockerfile starts the
+static `anas-vikunja-entrypoint` with numeric identity `0:0`. Its root phase creates and `lchown`s only
+`/app/vikunja/files`, then sets groups/gid/uid to `1000:1000`, applies umask `0027`, and execs the patched
+Vikunja binary. The root filesystem is read-only; only the attachment volume and `/tmp` tmpfs are writable.
+Before starting the application process, the entrypoint waits on the discovery URL from the generic IAM binding
+for up to 60 attempts at two-second intervals. This contains no LLNG/Authentik branch and still fails closed on timeout.
 
-The healthcheck uses the same entrypoint to drop privileges before the upstream `vikunja healthcheck` command
-verifies the API and database. An unavailable OIDC provider appears
+The healthcheck uses the same entrypoint to drop privileges, requires the main process's local `/api/v1/info`
+to return `200`, and only then runs the upstream `vikunja healthcheck` to verify the API and database. This
+readiness gate prevents the healthcheck subprocess from racing a fresh-install or upgrade migration. An unavailable OIDC provider appears
 as degraded in v2 health; configured `requireavailability=true` also fails closed during initial provider setup
 and lets the Compose restart policy retry.
 
@@ -73,10 +78,14 @@ application teams and permissions. There is no LDAPS, group synchronization, or 
 
 ### Logout boundary
 
-Vikunja 2.4.0 stores the provider key and raw ID Token in its session. Logout reads them, builds an
-RP-Initiated Logout URL containing `id_token_hint`, `client_id`, and `post_logout_redirect_uri`, then deletes and
-commits the local session. URL errors are classified and logged without blocking deletion; the cached
-`end_session_endpoint` avoids a blocking discovery request while IAM is unavailable.
+Vikunja 2.4.0 stores the provider key and raw ID Token in its session. The r4 frontend patch first captures the
+bearer token and provider key, immediately calls `removeToken()`, clears `localStorage`, resets the Pinia
+authenticated/user/session state, and stores `justLoggedOut`; all of this happens before any awaited HTTP
+request. It then calls `/api/v1/user/logout` with the captured bearer and a five-second timeout. The backend
+reads the ID Token, builds an RP-Initiated Logout URL containing `id_token_hint`, `client_id`, and
+`post_logout_redirect_uri`, then deletes and commits the server session. URL errors do not block server-side
+deletion, and cached `end_session_endpoint` metadata avoids live discovery. HTTP failure or timeout skips the
+server/IAM step without restoring the already-cleared browser state.
 
 This version has no standard endpoint for an OIDC Logout Token or front-channel iframe. The hook therefore omits
 `OIDC_LOGOUT_URI/METHODS/SESSION_REQUIRED`; IAM-initiated logout and administrator revocation without a browser
@@ -90,7 +99,9 @@ cookie, and retry boundary, so bidirectional logout is not claimed.
 | `web` | `VIKUNJA_DOMAIN_FULL` | `iam` |
 
 There is no `management.local_accounts` declaration or direct-login recovery path. Recover IAM, directory, DNS,
-or the internal CA when authentication is unavailable.
+or the internal CA when authentication is unavailable. The ordinary `/login` page exposes no local-password
+path while `auth.local.enabled=false`; upstream CLI user commands exist, but the Module neither presets,
+manages, nor rotates an emergency user.
 
 ### Secret boundary
 
@@ -169,6 +180,8 @@ passwords nor another consumer binding.
   credential candidate probes, application groups, omitted logout receiver fields, language fallback, and
   fail-closed behavior.
 - [`entrypoint.go`](../vikunja/entrypoint.go): attachment permission initialization and irreversible privilege drop.
+- [`0001-logout-local-session-first.patch`](../vikunja/patches/0001-logout-local-session-first.patch):
+  local-first logout implementation and two upstream frontend regression tests.
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 - [Vikunja module integration requirements](../../../docs/requirements/vikunja-module.md)

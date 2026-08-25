@@ -1,0 +1,36 @@
+# Dedicated MariaDB + LLNG half of the Vikunja release gate. It reuses the
+# isolated daemon only after the Authentik fixture has been stopped.
+modules:
+  samba_dc:
+    config:
+      anchor_scan_interval: "30"
+      domain: ad.vikunja-llng.test
+      application_dns_mode: separate_zone
+  mariadb: {}
+  llng:
+    config:
+      db_type: mariadb
+      enable_test: "false"
+  vikunja:
+    config:
+      db_type: mariadb
+  traefik: {}
+identity:
+  iam:
+    provider: llng
+global:
+  chinese_speedup: true
+  chinese_build_speedup: true
+  container_prefix: anas_vikl_
+  network_prefix: anas_vikl_
+  base_domain: vikunja-llng.test
+  email: admin@vikunja-llng.test
+  timezone: Asia/Shanghai
+  default_language: zh-CN
+  host_ip: 10.253.20.2
+  virtual_domain: true
+env:
+  APT_MIRROR_URL: https://mirrors.aliyun.com
+  APK_MIRROR_URL: https://mirrors.aliyun.com
+  NPM_REGISTRY_URL: https://registry.npmmirror.com
+  DOCKER_HUB_REGISTRY: dockerproxy.net

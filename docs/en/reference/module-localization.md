@@ -6,7 +6,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 | Module | Version | Timezone | Language | Selection | Global language | Global locale | Count |
 | --- | --- | --- | --- | --- | --- | --- | ---: |
-| [authentik](#authentik) | 2026.5.6-r10 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [authentik](#authentik) | 2026.5.6-r14 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [casdoor](#casdoor) | 3.143.0-r2 | container | supported | application | applied | not_consumed | 2 |
 | [collabora](#collabora) | 26.4.2-r5 | container | supported | integration | not_consumed | not_consumed | 43 |
 | [ddns_go](#ddns_go) | 6.17.4-r6 | container | supported | application | not_consumed | not_consumed | 2 |
@@ -23,15 +23,15 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [nextcloud](#nextcloud) | 34.0.2-r9 | partial | supported | browser | fallback | fallback | 58 |
 | [oauth2_proxy](#oauth2_proxy) | 7.15.3-r4 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [postgres](#postgres) | 18.4.0-r4 | container | supported | browser | not_consumed | not_consumed | 47 |
-| [samba_dc](#samba_dc) | 4.23.6-r8 | system | not_applicable | none | not_applicable | not_applicable | 0 |
+| [samba_dc](#samba_dc) | 4.23.6-r10 | system | not_applicable | none | not_applicable | not_applicable | 0 |
 | [samba_fs](#samba_fs) | 4.23.6-r6 | container | not_applicable | client | not_applicable | not_applicable | 0 |
 | [traefik](#traefik) | 3.7.10-r5 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [versitygw](#versitygw) | 1.7.0-r3 | container | not_applicable | none | not_consumed | not_consumed | 0 |
-| [vikunja](#vikunja) | 2.4.0-r2 | configured | supported | application | fallback | not_consumed | 32 |
+| [vikunja](#vikunja) | 2.4.0-r4 | configured | supported | application | fallback | not_consumed | 32 |
 
 ## authentik
 
-- **Version / 版本：** `2026.5.6-r10`; reviewed 2026-08-21
+- **Version / 版本：** `2026.5.6-r14`; reviewed 2026-08-21
 - **Timezone / 时区：** `container` — All long-running authentik services receive the module .env and TZ; no separate application timezone is forced.
 - **Language / 语言：** `supported`, `browser` — authentik Web UI
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -211,7 +211,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## samba_dc
 
-- **Version / 版本：** `4.23.6-r8`; reviewed 2026-08-13
+- **Version / 版本：** `4.23.6-r10`; reviewed 2026-08-13
 - **Timezone / 时区：** `system` — Startup validates TZ against /usr/share/zoneinfo and installs /etc/localtime and /etc/timezone.
 - **Language / 语言：** `not_applicable`, `none` — directory, Kerberos, and DNS protocol services
 - **ANAS globals / 全局默认：** `default_language=not_applicable`; `default_locale=not_applicable`
@@ -252,7 +252,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## vikunja
 
-- **Version / 版本：** `2.4.0-r2`; reviewed 2026-08-21
+- **Version / 版本：** `2.4.0-r4`; reviewed 2026-08-21
 - **Timezone / 时区：** `configured` — Vikunja service.timezone and the default timezone for new users inherit ANAS TZ; signed-in users may override their own timezone.
 - **Language / 语言：** `supported`, `application` — Vikunja Web UI and localized notifications
 - **ANAS globals / 全局默认：** `default_language=fallback`; `default_locale=not_consumed`

@@ -236,6 +236,9 @@ func TestPublishIAMEndpointsRepeatsTheSingletonForEveryConsumer(t *testing.T) {
 	if got := e["ANAS_IAM_BINDING__NETBIRD__OIDC_DISCOVERY_URL"]; got != "https://auth.nas.test:9000/.well-known/openid-configuration" {
 		t.Fatalf("netbird discovery = %q", got)
 	}
+	if got := e["ANAS_IAM_BINDING__NETBIRD__OIDC_ISSUER_URL"]; got != "https://auth.nas.test:9000/" {
+		t.Fatalf("netbird issuer = %q", got)
+	}
 	if got := e["ANAS_IAM_BINDING__NEXTCLOUD__SAML_SSO_URL"]; got != "https://auth.nas.test:9000/saml/singleSignOn" {
 		t.Fatalf("nextcloud sso = %q", got)
 	}

@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: vikunja
 version: 2.4.0
-revision: 2
+revision: 4
 app_version: 2.4.0
 abi:
   supports:

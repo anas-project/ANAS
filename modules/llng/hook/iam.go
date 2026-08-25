@@ -61,7 +61,7 @@ func publishIAMEndpoints(e map[string]string) error {
 	if len(consumers) == 0 {
 		return nil
 	}
-	base := e["LLNG_DOMAIN_FULL"]
+	base := strings.TrimRight(e["LLNG_DOMAIN_FULL"], "/")
 	if base == "" {
 		return fmt.Errorf("LLNG_DOMAIN_FULL is empty; cannot publish IAM endpoints")
 	}
@@ -70,7 +70,10 @@ func publishIAMEndpoints(e map[string]string) error {
 		p := iamBindingPrefix + envName(app) + "__"
 		switch iface := e[p+"INTERFACE"]; iface {
 		case "oidc":
-			e[p+"OIDC_ISSUER_URL"] = base
+			// LLNG 2.23.2 advertises the portal root with a trailing slash in
+			// discovery. OIDC issuer comparison is byte-for-byte, so publish
+			// that exact value rather than the route's slashless base URL.
+			e[p+"OIDC_ISSUER_URL"] = base + "/"
 			e[p+"OIDC_DISCOVERY_URL"] = base + "/.well-known/openid-configuration"
 		case "saml":
 			e[p+"SAML_METADATA_URL"] = base + "/saml/metadata"
