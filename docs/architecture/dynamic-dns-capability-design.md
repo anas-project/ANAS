@@ -1,5 +1,8 @@
 # 动态 DNS 能力设计
 
+> 状态：**当前模型**。`ddns_go` 与 `ddns_updater` 两个 Module 与 Runner 的 capability 解析
+> 均已实现，`dynamic_dns.provider` 切换实现不需要改动消费方。
+
 ## 1. 目标与硬约束
 
 ANAS 应允许部署声明"把我自己的 A/AAAA 记录保持最新"，而不指定由哪个程序去做，

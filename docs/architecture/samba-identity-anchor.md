@@ -1,5 +1,8 @@
 # Samba AD identity anchor
 
+> Status: **current model**. `mS-DS-ConsistencyGuid` and `anasIdentityAnchor` are both in use;
+> consuming Modules reference the anchor through their `module.yml` contracts.
+
 ANAS maintains two representations of one immutable identity:
 
 | Purpose | LDAP attribute | Format |

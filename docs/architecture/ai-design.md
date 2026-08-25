@@ -1,5 +1,10 @@
 # ANAS AI Design Guide
 
+> Status: **historical**. This is the legacy overview kept for its implementation entry points.
+> New design work belongs in a specific document under `docs/architecture/`, not in further
+> additions here; where this page disagrees with a current architecture or contract document,
+> the latter wins.
+
 This document is written for AI coding agents and maintainers working on ANAS.
 It describes the current Go project structure, the module structure, and the rules
 for designing or modifying modules.

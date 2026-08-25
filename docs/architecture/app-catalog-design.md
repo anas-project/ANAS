@@ -1,5 +1,8 @@
 # 应用目录（Application Catalog）设计
 
+> 状态：**提案**，当前不可执行。文中的 `ANAS_APP_CATALOG`、`ANAS_APP_ICONS_DIR`、
+> `ACCESS_ROLE`、`ACCESS_VIA` 等契约在仓库中尚无实现。
+
 ## 1. 目标与硬约束
 
 部署里的服务应当以**面向用户的应用列表**呈现：用户登录门户后看到自己有权访问
@@ -271,7 +274,7 @@ PostgreSQL 超级用户、MariaDB root 或 Consumer resource password，也不�
 | --- | --- | --- | --- |
 | 内置 Module 输入 | `audience: administrators` + `access.role: platform_admin` + 实际 `access.via` | Adminer 使用 `forward_auth`，LLNG Test 使用 `native_group` | Module 作者声明；用户只能隐藏，不能放宽或改执行点 |
 | 外部链接输入 | 同一 audience/role，`access.via: external` | 路由器管理页 | 只控制目录可见性，`plan` 标记 `catalog_visibility_only` |
-| Runner 规范化结果 | 保留 `ACCESS_ROLE=platform_admin`，另生成具体 `ALLOW_GROUPS` | 当前通常为 `Admins` | 物理值是输出，不回写 Manifest/config |
+| Runner 规范化结果 | 保留 `ACCESS_ROLE=platform_admin`，另生成具体 `ALLOW_GROUPS` | ForwardAuth 消费位置取 `SAMBA_DC_ADMIN_GROUP_NAME` 的解析值，默认 `Admins` | 物理值是输出，不回写 Manifest/config |
 | Provider/执行点 | 按接口使用组名或 DN | 见下表 | 目录显示和真实执行点必须使用同一角色事实 |
 
 | 消费位置 | Runner 应提供的事实 |

@@ -1,5 +1,7 @@
 # IAM 多实现与协议能力设计
 
+> 状态：**当前模型**。阶段 A–D 已全部落地，详见下方实现状态说明。
+
 ## 1. 目标与硬约束
 
 ANAS 应允许应用 Module 对接不同 IAM 实现，例如 LemonLDAP::NG（LLNG）、Authentik 和 Casdoor，

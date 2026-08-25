@@ -1,5 +1,7 @@
 # ANAS 配置、初始化与持久状态通用方案
 
+> 状态：**历史记录**。这是配置状态建设前的审计与路线图，不是现行操作手册。
+
 > [!WARNING]
 > 这是配置状态建设前的审计与路线图，不是现行操作手册。文中的 `module.lock.yml`、`release/`、独立 `config-applied.yml` 和尚未实现的 reconciler 命令属于历史基线或提案；当前行为以[配置指南](/guide/configuration)、[配置生命周期](config-cli-lifecycle.md)和[命令契约](/reference/contracts/)为准。
 

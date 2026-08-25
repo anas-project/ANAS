@@ -1,5 +1,7 @@
 # ANAS 运行时、Deployment 制品与状态记录统一方案
 
+> 状态：**历史记录**。描述基线提交 `a6d3318`，不代表当前工作树。
+
 > [!NOTE]
 > 这是从基线提交 `a6d3318` 推导当前 deployment 架构的实施设计记录。文中的“当前实现”和 `module.lock.yml`、`release.previous` 等名称描述该历史基线，不代表现在的工作树；现行命令和磁盘格式以[命令契约](/reference/contracts/)为准。
 

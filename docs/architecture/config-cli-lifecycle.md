@@ -1,5 +1,7 @@
 # CLI 配置修改与生效生命周期
 
+> 状态：**当前模型与提案混合**，逐项区分见下方说明。
+
 > [!IMPORTANT]
 > 本页同时记录当前实现与后续设计。受控的 `config import`、`config migrate`、`config set` 自动 deployment 执行与管理员专用轮换已实现；Module 专用 `config_apply` handler、任意 `secret rotate` 和 `config import-state` 仍是设计提案。
 
