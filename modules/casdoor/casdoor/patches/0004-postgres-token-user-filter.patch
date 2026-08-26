@@ -1,0 +1,15 @@
+diff --git a/object/token.go b/object/token.go
+--- a/object/token.go
++++ b/object/token.go
+@@ -234 +234 @@ func GetActiveTokensByUser(organization, username string) ([]*Token, error) {
+-	err := ormer.Engine.Where("organization = ? and user = ? and expires_in > 0", organization, username).Find(&tokens)
++	err := ormer.Engine.Where(map[string]interface{}{"organization": organization, "user": username}).And("expires_in > 0").Find(&tokens)
+@@ -239 +239 @@ func ExpireTokenByUser(owner, username string) (bool, error) {
+-	affected, err := ormer.Engine.Where("organization = ? and user = ?", owner, username).Cols("expires_in").Update(&Token{ExpiresIn: 0})
++	affected, err := ormer.Engine.Where(map[string]interface{}{"organization": owner, "user": username}).Cols("expires_in").Update(&Token{ExpiresIn: 0})
+diff --git a/object/notification.go b/object/notification.go
+--- a/object/notification.go
++++ b/object/notification.go
+@@ -83 +83 @@ func GetTokensByUser(owner, username string) ([]*Token, error) {
+-	err := ormer.Engine.Where("organization = ? and user = ?", owner, username).Find(&tokens)
++	err := ormer.Engine.Where(map[string]interface{}{"organization": owner, "user": username}).Find(&tokens)

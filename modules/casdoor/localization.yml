@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: casdoor
 module_version: 3.143.0
-module_revision: 6
+module_revision: 7
 reviewed_at: 2026-08-27
 timezone:
   status: container

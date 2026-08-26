@@ -38,11 +38,12 @@ Casdoor 只经 Traefik HTTPS 提供公网入口，不发布额外宿主端口。
 `retain`。改变数据库类型或名称必须进入显式迁移，不得静默切换到空数据库。数据库、签名密钥、
 Consumer Secret、目录订阅游标、本地管理员库存和 deployment metadata 必须纳入一致的备份恢复点。
 
-ANAS revision 6 必须从 Casdoor `3.143.0` 对应提交
+ANAS revision 7 必须从 Casdoor `3.143.0` 对应提交
 `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` 构建并校验源码归档 SHA-256
-`365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460`。仓库补丁只允许扩展
-SAML 模板对已同步 `displayName` 和 `externalId` 的读取；固定提交、校验和、补丁和最终服务端替换
-都必须有静态测试，构建代理不得改变源码身份。
+`365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460`。仓库补丁集只允许扩展
+SAML 模板对已同步 `displayName`/`externalId` 的读取，以及完成 OIDC `sid`、用户/管理员
+back-channel、两分钟 Logout Token、失败可观测性和 PostgreSQL 保留列安全查询；固定提交、校验和、
+每个补丁和最终服务端替换都必须有静态测试，构建代理不得改变源码身份。
 
 生成 Secret 必须使用加密随机源并在重复 calculate/render 时保持稳定。LDAP Bind 密码、数据库
 密码、签名私钥、Consumer Secret、订阅器 API Secret 和恢复密码不得进入普通日志、计划、
@@ -111,7 +112,7 @@ stdin 进入 Helper；更新后必须回读 bcrypt 验证，失败必须恢复�
 
 | ID | 要求 | 验证方式 |
 | --- | --- | --- |
-| `CASDOOR-R-001` | Module 必须固定 Casdoor `3.143.0` 提交、源码 SHA-256、最小 SAML 目录属性补丁与 ANAS revision `6`，不得使用 `latest`；发布验收未完成时状态必须为 `developing` | CI |
+| `CASDOOR-R-001` | Module 必须固定 Casdoor `3.143.0` 提交、源码 SHA-256、受控 SAML/OIDC/PostgreSQL 兼容补丁集与 ANAS revision `7`，不得使用 `latest`；发布验收未完成时状态必须为 `developing` | CI |
 | `CASDOOR-R-002` | Module 必须提供通用 `iam` Capability 的 `oidc`、`saml` 接口，并显式依赖 Traefik、Samba DC 和 `relational_database` Contract | CI |
 | `CASDOOR-R-003` | Casdoor 必须使用独立 PostgreSQL Resource 和生成凭据，删除策略为 `retain`；改变数据库类型或名称必须进入显式迁移 | 单元 |
 | `CASDOOR-R-004` | Casdoor 只经 Traefik HTTPS 暴露，业务进程与目录订阅器以非 root 运行，健康检查必须访问应用 HTTP health endpoint | 单元 |

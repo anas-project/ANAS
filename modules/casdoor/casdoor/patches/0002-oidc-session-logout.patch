@@ -1,0 +1,197 @@
+diff --git a/controllers/account.go b/controllers/account.go
+index 4958aa6..b292bed 100644
+--- a/controllers/account.go
++++ b/controllers/account.go
+@@ -371 +371 @@ func (c *ApiController) Signup() {
+-		code, err := object.GetOAuthCode(userId, clientId, "", "password", responseType, redirectUri, scope, state, nonce, codeChallenge, "", c.Ctx.Request.Host, c.GetAcceptLanguage())
++		code, err := object.GetOAuthCode(userId, clientId, "", "password", responseType, redirectUri, scope, state, nonce, codeChallenge, "", c.Ctx.Input.CruSession.SessionID(context.Background()), c.Ctx.Request.Host, c.GetAcceptLanguage())
+@@ -446 +446 @@ func (c *ApiController) Logout() {
+-		object.SendBackchannelLogout(bcOwner, bcUsername, "", c.Ctx.Request.Host)
++		object.SendBackchannelLogout(bcOwner, bcUsername, beegoSessionId, c.Ctx.Request.Host)
+@@ -502 +502 @@ func (c *ApiController) Logout() {
+-		object.SendBackchannelLogout(token.Organization, token.User, "", c.Ctx.Request.Host)
++		object.SendBackchannelLogout(token.Organization, token.User, beegoSessionId, c.Ctx.Request.Host)
+diff --git a/controllers/auth.go b/controllers/auth.go
+index 2453dbf..a6269b5 100644
+--- a/controllers/auth.go
++++ b/controllers/auth.go
+@@ -187 +187 @@ func (c *ApiController) HandleLoggedIn(application *object.Application, user *ob
+-			code, err := object.GetOAuthCode(userId, clientId, form.Provider, form.SigninMethod, responseType, redirectUri, scope, state, nonce, codeChallenge, resource, c.Ctx.Request.Host, c.GetAcceptLanguage())
++			code, err := object.GetOAuthCode(userId, clientId, form.Provider, form.SigninMethod, responseType, redirectUri, scope, state, nonce, codeChallenge, resource, c.Ctx.Input.CruSession.SessionID(context.Background()), c.Ctx.Request.Host, c.GetAcceptLanguage())
+diff --git a/controllers/consent.go b/controllers/consent.go
+index f872f43..294ec8d 100644
+--- a/controllers/consent.go
++++ b/controllers/consent.go
+@@ -17,0 +18 @@ import (
++	"context"
+@@ -216,0 +218 @@ func (c *ApiController) GrantConsent() {
++		c.Ctx.Input.CruSession.SessionID(context.Background()),
+diff --git a/controllers/session.go b/controllers/session.go
+index 7f5ad1b..2bf652f 100644
+--- a/controllers/session.go
++++ b/controllers/session.go
+@@ -150 +150,5 @@ func (c *ApiController) DeleteSession() {
+-		c.Data["json"] = wrapActionResponse(object.DeleteSessionId(util.GetSessionId(session.Owner, session.Name, session.Application), sessionId))
++		deleted, err := object.DeleteSessionId(util.GetSessionId(session.Owner, session.Name, session.Application), sessionId)
++		if err == nil && deleted {
++			object.SendBackchannelLogout(session.Owner, session.Name, sessionId, c.Ctx.Request.Host)
++		}
++		c.Data["json"] = wrapActionResponse(deleted, err)
+@@ -155 +159,12 @@ func (c *ApiController) DeleteSession() {
+-	c.Data["json"] = wrapActionResponse(object.DeleteSession(util.GetSessionId(session.Owner, session.Name, session.Application), curSessionId))
++	storedSession, err := object.GetSingleSession(util.GetSessionId(session.Owner, session.Name, session.Application))
++	if err != nil {
++		c.ResponseError(err.Error())
++		return
++	}
++	deleted, err := object.DeleteSession(util.GetSessionId(session.Owner, session.Name, session.Application), curSessionId)
++	if err == nil && deleted && storedSession != nil {
++		for _, id := range storedSession.SessionId {
++			object.SendBackchannelLogout(session.Owner, session.Name, id, c.Ctx.Request.Host)
++		}
++	}
++	c.Data["json"] = wrapActionResponse(deleted, err)
+diff --git a/object/token_jwt.go b/object/token_jwt.go
+index b6e61f5..782c160 100644
+--- a/object/token_jwt.go
++++ b/object/token_jwt.go
+@@ -31,0 +32 @@ type Claims struct {
++	Sid       string `json:"sid,omitempty"`
+@@ -157,0 +159 @@ type ClaimsShort struct {
++	Sid       string `json:"sid,omitempty"`
+@@ -178,0 +181 @@ type ClaimsWithoutThirdIdp struct {
++	Sid       string `json:"sid,omitempty"`
+@@ -312,0 +316 @@ func getShortClaims(claims Claims) ClaimsShort {
++		Sid:              claims.Sid,
+@@ -326,0 +331 @@ func getClaimsWithoutThirdIdp(claims Claims) ClaimsWithoutThirdIdp {
++		Sid:                 claims.Sid,
+@@ -405,0 +411,3 @@ func getClaimsCustom(claims Claims, tokenField []string, tokenAttributes []*JwtI
++	if claims.Sid != "" {
++		res["sid"] = claims.Sid
++	}
+@@ -508,0 +517,4 @@ func generateJwtToken(application *Application, user *User, provider string, sig
++	return generateJwtTokenWithSession(application, user, provider, signinMethod, nonce, scope, resource, host, "")
++}
++
++func generateJwtTokenWithSession(application *Application, user *User, provider string, signinMethod string, nonce string, scope string, resource string, host string, sessionId string) (string, string, string, error) {
+@@ -534,0 +547 @@ func generateJwtToken(application *Application, user *User, provider string, sig
++		Sid:       sessionId,
+diff --git a/object/token_logout.go b/object/token_logout.go
+index 21589f2..516ea3b 100644
+--- a/object/token_logout.go
++++ b/object/token_logout.go
+@@ -39,19 +39 @@ func generateLogoutToken(application *Application, user *User, sessionId string,
+-
+-	events := map[string]interface{}{
+-		"http://schemas.openid.net/event/backchannel-logout": map[string]interface{}{},
+-	}
+-
+-	claims := LogoutTokenClaims{
+-		Events: events,
+-		RegisteredClaims: jwt.RegisteredClaims{
+-			Issuer:   originBackend,
+-			Subject:  user.Id,
+-			Audience: []string{application.ClientId},
+-			IssuedAt: jwt.NewNumericDate(nowTime),
+-			ID:       util.GetId(application.Owner, util.GenerateId()),
+-		},
+-	}
+-
+-	if sessionId != "" {
+-		claims.Sid = sessionId
+-	}
++	claims := newLogoutTokenClaims(application, user, sessionId, originBackend, nowTime)
+@@ -87,0 +70,24 @@ func generateLogoutToken(application *Application, user *User, sessionId string,
++func newLogoutTokenClaims(application *Application, user *User, sessionId string, issuer string, nowTime time.Time) LogoutTokenClaims {
++
++	events := map[string]interface{}{
++		"http://schemas.openid.net/event/backchannel-logout": map[string]interface{}{},
++	}
++
++	claims := LogoutTokenClaims{
++		Events: events,
++		RegisteredClaims: jwt.RegisteredClaims{
++			Issuer:    issuer,
++			Subject:   user.Id,
++			Audience:  []string{application.ClientId},
++			ExpiresAt: jwt.NewNumericDate(nowTime.Add(2 * time.Minute)),
++			IssuedAt:  jwt.NewNumericDate(nowTime),
++			ID:        util.GetId(application.Owner, util.GenerateId()),
++		},
++	}
++
++	if sessionId != "" {
++		claims.Sid = sessionId
++	}
++	return claims
++}
++
+diff --git a/object/token_logout_test.go b/object/token_logout_test.go
+new file mode 100644
+index 0000000..247fb00
+--- /dev/null
++++ b/object/token_logout_test.go
+@@ -0,0 +1,36 @@
++package object
++
++import (
++	"testing"
++	"time"
++)
++
++func TestNewLogoutTokenClaims(t *testing.T) {
++	now := time.Unix(1_800_000_000, 0)
++	claims := newLogoutTokenClaims(
++		&Application{Owner: "admin", ClientId: "nextcloud"},
++		&User{Id: "directory-user-id"},
++		"session-id",
++		"https://auth.example.test",
++		now,
++	)
++	if claims.Issuer != "https://auth.example.test" || claims.Subject != "directory-user-id" {
++		t.Fatalf("logout identity claims = %#v", claims)
++	}
++	if len(claims.Audience) != 1 || claims.Audience[0] != "nextcloud" || claims.Sid != "session-id" {
++		t.Fatalf("logout audience/session claims = %#v", claims)
++	}
++	if claims.IssuedAt == nil || !claims.IssuedAt.Time.Equal(now) || claims.ExpiresAt == nil || !claims.ExpiresAt.Time.Equal(now.Add(2*time.Minute)) {
++		t.Fatalf("logout time claims = %#v", claims)
++	}
++	if claims.ID == "" || claims.Events["http://schemas.openid.net/event/backchannel-logout"] == nil {
++		t.Fatalf("logout replay/event claims = %#v", claims)
++	}
++}
++
++func TestCustomClaimsIncludeSessionID(t *testing.T) {
++	claims := getClaimsCustom(Claims{User: &User{}, Sid: "session-id"}, nil, nil)
++	if claims["sid"] != "session-id" {
++		t.Fatalf("sid = %#v", claims["sid"])
++	}
++}
+diff --git a/object/token_oauth_util.go b/object/token_oauth_util.go
+index 348dff5..ce41eb1 100644
+--- a/object/token_oauth_util.go
++++ b/object/token_oauth_util.go
+@@ -302 +302 @@ func CheckOAuthLogin(clientId string, responseType string, redirectUri string, s
+-func GetOAuthCode(userId string, clientId string, provider string, signinMethod string, responseType string, redirectUri string, scope string, state string, nonce string, challenge string, resource string, host string, lang string) (*Code, error) {
++func GetOAuthCode(userId string, clientId string, provider string, signinMethod string, responseType string, redirectUri string, scope string, state string, nonce string, challenge string, resource string, sessionId string, host string, lang string) (*Code, error) {
+@@ -355 +355 @@ func GetOAuthCode(userId string, clientId string, provider string, signinMethod
+-	accessToken, refreshToken, tokenName, err := generateJwtToken(application, user, provider, signinMethod, nonce, scope, resource, host)
++	accessToken, refreshToken, tokenName, err := generateJwtTokenWithSession(application, user, provider, signinMethod, nonce, scope, resource, host, sessionId)
+diff --git a/object/token_standard_jwt.go b/object/token_standard_jwt.go
+index 0c4d2ec..c491d4b 100644
+--- a/object/token_standard_jwt.go
++++ b/object/token_standard_jwt.go
+@@ -32,0 +33 @@ type ClaimsStandard struct {
++	Sid                 string      `json:"sid,omitempty"`
+@@ -54,0 +56 @@ func getStandardClaims(claims Claims) ClaimsStandard {
++		Sid:              claims.Sid,
+diff --git a/routers/static_filter.go b/routers/static_filter.go
+index 1a24208..ea175ff 100644
+--- a/routers/static_filter.go
++++ b/routers/static_filter.go
+@@ -18,0 +19 @@ import (
++	stdcontext "context"
+@@ -124 +125 @@ func fastAutoSignin(ctx *context.Context) (string, error) {
+-	code, err := object.GetOAuthCode(userId, clientId, "", "autoSignin", responseType, redirectUri, scope, state, nonce, codeChallenge, resource, ctx.Request.Host, getAcceptLanguage(ctx))
++	code, err := object.GetOAuthCode(userId, clientId, "", "autoSignin", responseType, redirectUri, scope, state, nonce, codeChallenge, resource, ctx.Input.CruSession.SessionID(stdcontext.Background()), ctx.Request.Host, getAcceptLanguage(ctx))

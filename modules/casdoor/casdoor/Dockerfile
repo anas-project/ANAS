@@ -18,7 +18,13 @@ RUN apk add --no-cache ca-certificates curl patch tar && \
     tar -xzf /tmp/casdoor.tar.gz --strip-components=1 && \
     rm /tmp/casdoor.tar.gz
 COPY patches/0001-saml-directory-attributes.patch /tmp/0001-saml-directory-attributes.patch
+COPY patches/0002-oidc-session-logout.patch /tmp/0002-oidc-session-logout.patch
+COPY patches/0003-oidc-logout-delivery-logging.patch /tmp/0003-oidc-logout-delivery-logging.patch
+COPY patches/0004-postgres-token-user-filter.patch /tmp/0004-postgres-token-user-filter.patch
 RUN patch -p1 < /tmp/0001-saml-directory-attributes.patch && \
+    patch -p1 < /tmp/0002-oidc-session-logout.patch && \
+    patch -p1 < /tmp/0003-oidc-logout-delivery-logging.patch && \
+    patch -p1 < /tmp/0004-postgres-token-user-filter.patch && \
     if [ -n "$GOPROXY_URL" ]; then go env -w GOPROXY="$GOPROXY_URL"; fi && \
     go mod download && \
     CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \

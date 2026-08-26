@@ -13,7 +13,7 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 | `vikunja` | 是 | IAM/OIDC JIT 建号；`APP_vikunja`/`APP_all` 门禁；本地认证和注册关闭 | developing；Manifest、Provider 注册、Secret、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 |
 | `lam` | 否 | LDAPS 目录管理登录 | 不属于当前 IAM consumer |
 | `authentik` | 不适用 | IAM provider；另有固定 `akadmin` break-glass | 提供 OIDC/SAML，不把自身当普通 consumer |
-| `casdoor` | 不适用 | developing IAM provider；使用默认模板 `admin_casdoor` break-glass | 已接入 OIDC/SAML 注册与 Samba 目录事件触发同步；SAML SLO、永久 anchor 与 `ALLOW_GROUPS` 门禁尚未通过生产验收 |
+| `casdoor` | 不适用 | developing IAM provider；使用默认模板 `admin_casdoor` break-glass | OIDC/SAML 登录、Samba 目录收敛、永久 anchor、`ALLOW_GROUPS` 门禁及 OIDC exact-`sid` 会话撤销已有真实 E2E；固定版本不发布 SAML SLO，M5 发布验收未完成 |
 | `llng` | 不适用 | IAM provider | 提供 OIDC/SAML，不把自身当普通 consumer |
 | `ddns_go` | 否 | ANAS 托管 local emergency account | 不支持 OIDC |
 | `traefik` | 否 | ANAS 托管本地 BasicAuth emergency account | 不支持 OIDC |
@@ -28,7 +28,7 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 
 | Consumer 固定版本 | endpoint / binding | Module→IAM | IAM→Module | session 粒度 | 浏览器 | 故障/降级结果 | 验收状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Nextcloud `user_oidc 8.10.1` | RP logout + `/index.php/apps/user_oidc/backchannel-logout/anas` | RP-Initiated Logout | `sid` back-channel | 单个 OIDC session；同用户多 session/client 属安全矩阵必测项 | RP logout 需要；back-channel 不需要 | IAM 不可用时本地 session 必须先失效；Provider 不通知时标受限 | Authentik 浏览器/管理员删 session 已有 E2E；LLNG 浏览器已有 E2E；其余管理员撤销、隔离安全矩阵与 Casdoor 通知受限，等待统一矩阵 |
+| Nextcloud `user_oidc 8.10.1` | RP logout + `/index.php/apps/user_oidc/backchannel-logout/anas` | RP-Initiated Logout | `sid` back-channel | 单个 OIDC session；同用户多 session/client 属安全矩阵必测项 | RP logout 需要；back-channel 不需要 | IAM 不可用时本地 session 必须先失效；Provider 不通知时标受限 | Authentik 浏览器/管理员删 session 已有 E2E；LLNG 浏览器已有 E2E；Casdoor Provider 已通过真实标准 Consumer 的用户/管理员 exact-`sid`、多会话隔离和重放矩阵，固定 Nextcloud receiver 仍等待统一矩阵复验 |
 | Nextcloud `user_saml 8.2.0` | `/index.php/apps/user_saml/saml/sls`, Redirect | SP-Initiated SLO | IdP-Initiated SLO | NameID + SessionIndex | 必须 | 无 SLO 时只本地登出 | Authentik Redirect 已有 E2E；LLNG Redirect 入口已实现待隔离 fixture；Casdoor 明确无 SLO |
 | MeshCentral `1.2.4` | discovery/provider RP logout + post-logout URI | 上游支持 | 无标准 receiver | 应用 Cookie/session | 必须 | 本地 session 先失效；IAM 不可用不得卡住本地退出 | 统一 Playwright 矩阵已实现；`state`、中央 session 结果未在当前主机 fixture 验收，故为“上游支持、待接入” |
 | Forgejo `15.0.7` | `/user/logout` | 仅清应用 session | 无标准 receiver | Forgejo database session | 否 | 本地 session 清除；不声明 IAM session 同步失效 | Hook/容器 helper 单元测试与固定版本文档审查已完成；真实浏览器 E2E 待验收 |
@@ -36,7 +36,7 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 | NetBird Dashboard `2.90.9` | discovery `end_session_endpoint` + post-logout URI | 上游支持 | 无标准 receiver | Dashboard 本地认证状态 | 必须 | 本地状态先失效；无通知不声明 IAM→Module | 统一 Playwright 矩阵已实现；`state`、中央 session 结果未在当前主机 fixture 验收，故为“上游支持、待接入” |
 | oauth2-proxy `7.15.3` | `/oauth2/sign_out` | 仅清网关 Cookie | 无 | oauth2-proxy Cookie；不含 IAM/后端 session | 否 | IAM 停止仍清 Cookie，受保护服务重新认证 | 不发布 `OIDC_LOGOUT_*`，不配置 `backend-logout-url`；IAM 不可用 Playwright case 已实现待隔离 fixture |
 
-Provider 固定为 Authentik `2026.5.6`、LLNG `2.23.2`、Casdoor `3.143.0`。SAML HTTP-POST 与 Redirect 都是浏览器 binding，不能由 `post` 字面值推断为后台撤销。Casdoor 只登记显式 OIDC back-channel URI并在声明消失/协议切换时清理旧值，不发布未经 E2E 的 SAML SLO。
+Provider 固定为 Authentik `2026.5.6`、LLNG `2.23.2`、Casdoor `3.143.0`。SAML HTTP-POST 与 Redirect 都是浏览器 binding，不能由 `post` 字面值推断为后台撤销。Casdoor 只登记显式 OIDC back-channel URI，并在声明消失/协议切换时清理旧值；用户/管理员 exact-`sid` 通知已通过真实标准 Consumer E2E。固定版本没有 SAML SLO 消费路径，因此不发布 SLO。
 
 ## 默认解析规则
 
@@ -68,6 +68,9 @@ OIDC/SAML Module 的本地登出、应用发起登出、浏览器双向登出和
 
 Nextcloud 的 IAM 发起登出由两套 OIDC matrix 保留原 Cookie 验证并阻止静默恢复：Authentik 覆盖浏览器
 登出和管理员删除 session，LLNG 覆盖浏览器登出；SAML fallback 的 Authentik E2E 覆盖
-Redirect SLO。现有 Redirect/POST SLS 都按浏览器 binding 处理；没有单独通过无浏览器 E2E 的正式服务端撤销能力时，SAML 后台撤销不属于支持范围。
+Redirect SLO。Casdoor 的标准 Consumer fixture 另行覆盖用户退出、管理员删 session、同用户双 session、
+其他用户隔离和 Logout Token 重放；它证明 Provider 行为，不替代固定 Nextcloud receiver 的统一矩阵。
+现有 Redirect/POST SLS 都按浏览器 binding 处理；没有单独通过无浏览器 E2E 的正式服务端撤销能力时，
+SAML 后台撤销不属于支持范围。
 Provider 没有发布可选 `SAML_SLO_URL`（例如当前 Casdoor 集成）时，Nextcloud 只配置
 SSO 与签名证书，并执行应用本地登出，不得把普通退出页猜成标准 SLO endpoint。

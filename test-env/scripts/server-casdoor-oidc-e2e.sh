@@ -187,13 +187,14 @@ PY
     --arg anchor_key "$anchor_claim" --arg anchor "$expected_anchor" \
     --arg sub "$expected_sub" '
       .iss == $issuer and (.aud | index($client) != null) and .nonce == $nonce and
+      (.sid | type) == "string" and (.sid | length) > 0 and
       .sub == $sub and .preferred_username == $username and .name == $display and
       .displayName == $display and .email == $email and .[$anchor_key] == $anchor and
       (.groups | type) == "array" and (.groups | index($group) != null) and
       (.exp | type) == "number" and .exp > now and (.iat | type) == "number" and .iat <= now
     ' "$claims_file" >/dev/null; then
     jq --arg anchor_key "$anchor_claim" \
-      '{iss,aud,nonce,sub,preferred_username,name,displayName,email,groups,
+      '{iss,aud,nonce,sid,sub,preferred_username,name,displayName,email,groups,
         exp,iat,anchor: .[$anchor_key]}' "$claims_file" >&2
     return 1
   fi

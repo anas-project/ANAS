@@ -1,0 +1,37 @@
+diff --git a/object/token_logout.go b/object/token_logout.go
+index 516ea3b..592199c 100644
+--- a/object/token_logout.go
++++ b/object/token_logout.go
+@@ -18,0 +19 @@ import (
++	"log"
+@@ -99 +100,6 @@ func SendBackchannelLogout(organization, username, sessionId, host string) {
+-	if err != nil || len(tokens) == 0 {
++	if err != nil {
++		log.Printf("OIDC back-channel logout: active-token lookup failed: %v", err)
++		return
++	}
++	if len(tokens) == 0 {
++		log.Printf("OIDC back-channel logout: no active token routes the notification")
+@@ -113 +119,5 @@ func SendBackchannelLogout(organization, username, sessionId, host string) {
+-		if err != nil || application == nil || application.BackchannelLogoutUri == "" {
++		if err != nil {
++			log.Printf("OIDC back-channel logout: application lookup failed for %s: %v", appId, err)
++			continue
++		}
++		if application == nil || application.BackchannelLogoutUri == "" {
+@@ -118 +128,6 @@ func SendBackchannelLogout(organization, username, sessionId, host string) {
+-		if err != nil || user == nil {
++		if err != nil {
++			log.Printf("OIDC back-channel logout: user lookup failed: %v", err)
++			continue
++		}
++		if user == nil {
++			log.Printf("OIDC back-channel logout: user lookup returned no record")
+@@ -123,0 +139 @@ func SendBackchannelLogout(organization, username, sessionId, host string) {
++			log.Printf("OIDC back-channel logout: token generation failed for %s: %v", appId, err)
+@@ -134,0 +151 @@ func postBackchannelLogout(logoutUri, logoutToken string) {
++		log.Printf("OIDC back-channel logout: POST failed: %v", err)
+@@ -137,0 +155,3 @@ func postBackchannelLogout(logoutUri, logoutToken string) {
++	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
++		log.Printf("OIDC back-channel logout: endpoint returned HTTP %d", resp.StatusCode)
++	}

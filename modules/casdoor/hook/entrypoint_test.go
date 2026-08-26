@@ -56,6 +56,9 @@ func TestServerBuildPinsAndVerifiesPatchedUpstreamSource(t *testing.T) {
 		"365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460",
 		"sha256sum -c -",
 		"patches/0001-saml-directory-attributes.patch",
+		"patches/0002-oidc-session-logout.patch",
+		"patches/0003-oidc-logout-delivery-logging.patch",
+		"patches/0004-postgres-token-user-filter.patch",
 		"patch -p1",
 		"COPY --from=casdoor-server /out/server /server",
 	} {
@@ -71,6 +74,49 @@ func TestServerBuildPinsAndVerifiesPatchedUpstreamSource(t *testing.T) {
 	for _, required := range []string{"$user.displayName", "$user.externalId"} {
 		if !strings.Contains(string(patch), required) {
 			t.Fatalf("Casdoor SAML patch does not contain %q", required)
+		}
+	}
+
+	logoutPatch, err := os.ReadFile("../casdoor/patches/0002-oidc-session-logout.patch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`Sid       string ` + "`json:\"sid,omitempty\"`",
+		"generateJwtTokenWithSession",
+		"SendBackchannelLogout(session.Owner, session.Name, sessionId",
+		"ExpiresAt: jwt.NewNumericDate(nowTime.Add(2 * time.Minute))",
+	} {
+		if !strings.Contains(string(logoutPatch), required) {
+			t.Fatalf("Casdoor OIDC logout patch does not contain %q", required)
+		}
+	}
+
+	deliveryPatch, err := os.ReadFile("../casdoor/patches/0003-oidc-logout-delivery-logging.patch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"active-token lookup failed",
+		"token generation failed",
+		"POST failed",
+		"endpoint returned HTTP",
+	} {
+		if !strings.Contains(string(deliveryPatch), required) {
+			t.Fatalf("Casdoor OIDC logout delivery patch does not contain %q", required)
+		}
+	}
+
+	postgresPatch, err := os.ReadFile("../casdoor/patches/0004-postgres-token-user-filter.patch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`Where(map[string]interface{}{"organization": organization, "user": username})`,
+		`Where(map[string]interface{}{"organization": owner, "user": username})`,
+	} {
+		if !strings.Contains(string(postgresPatch), required) {
+			t.Fatalf("Casdoor PostgreSQL token filter patch does not contain %q", required)
 		}
 	}
 }

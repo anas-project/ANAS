@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `casdoor` 的协议契约、安全边界和验证入口。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.143.0-r6` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.143.0-r7` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -11,8 +11,8 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r6` | `traefik, db, casdoor` | 5 |
-| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r6` | `casdoor` | 3 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r7` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r7` | `casdoor` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -28,7 +28,7 @@
 
 Hook 生成 Casdoor `app.conf` 和初始化数据模板。PostgreSQL DSN 显式包含 `dbname`。容器启动时 Helper 从 `0600` 临时投影读取恢复密码，生成 bcrypt 后的 `/tmp/init_data.json`，再以 UID/GID `1000` 启动上游进程。由于上游先初始化 LDAP 自动同步器、后导入 init data，entrypoint 会短暂启动一次以提交表结构与托管对象，再启动正式进程；镜像移除容器内无意义的 `lsof` old-instance 探测，避免 bootstrap 子进程把自己杀死。初始化数据为 built-in 恢复管理员显式开启特权确认，并给 `anas` 组织创建不可注册的内部目录 Application；PostgreSQL 是唯一受支持的数据接口。
 
-r6 以 Casdoor `3.143.0` 对应提交 `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` 为源码输入，构建前校验归档 SHA-256 `365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460`，再应用仓库内 `casdoor/patches/0001-saml-directory-attributes.patch`。补丁只为上游 SAML 模板解析增加 `displayName` 和 `externalId`，使属性来自已经同步的目录字段；镜像仍以固定官方 `3.143.0` 运行时为基础。构建同时接受全局下载代理和 Go proxy，但固定提交与校验和不随镜像源变化。
+r7 以 Casdoor `3.143.0` 对应提交 `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` 为源码输入，构建前校验归档 SHA-256 `365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460`，再顺序应用仓库内四个受控补丁：SAML 模板读取 `displayName/externalId`；OIDC ID Token 绑定 Beego session `sid`，用户退出和管理员删 session 发出两分钟 Logout Token；delivery 失败记录不含凭据的原因；token 查询使用 XORM 字段条件，避免 PostgreSQL 把未引用的 `user` 解析为当前数据库用户。镜像仍以固定官方 `3.143.0` 运行时为基础；构建代理不改变提交与校验和。
 
 ## LDAP、目录事件与权威边界
 
@@ -36,11 +36,11 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 
 由于上游会保留既有 Group，订阅器使用同一受限 Bind 经受信任 LDAPS 查询 `ALLOW_GROUPS`，以 AD matching rule `1.2.840.113556.1.4.1941` 计算直接和递归成员，再权威覆盖受管用户 Group。缺失组、重复/缺失锚点或任何 Casdoor 补丁失败都会使整批失败并保留游标重试。默认 5 分钟的上游自动同步不关闭，因此订阅器仍是低延迟加速器。
 
-当前仅导入和远程认证，不启用密码写回。删除事件把影子记录标为禁止和删除，停用事件标为禁止，两者都清空 Group；重新启用或同锚点改名会复用并恢复原记录。该收敛逻辑已有单元证据，但仍必须通过真实同步 E2E 后才能提升生命周期。
+当前仅导入和远程认证，不启用密码写回。删除事件把影子记录标为禁止和删除，停用事件标为禁止，两者都清空 Group；重新启用或同锚点改名会复用并恢复原记录。该收敛逻辑已通过真实目录与 OIDC/SAML E2E；生命周期仍由恢复、升级和密钥轮换等 M5 验收阻塞。
 
 ## IAM 契约
 
-- OIDC：固定 `3.143.0` 发布部署级 issuer/discovery，按 Consumer 注册 client、redirect URI 与显式 back-channel URI；access token 有效期为 1 小时，refresh token 为 30 天；声明消失或切换 SAML 时用空值清理旧 URI，真实通知仍为受限/待验收。
+- OIDC：固定 `3.143.0` 发布部署级 issuer/discovery，按 Consumer 注册 client、redirect URI 与显式 back-channel URI；access token 有效期为 1 小时，refresh token 为 30 天；ID Token 与 Logout Token 使用同一 `sid`，Logout Token 为 RS256 且带 `iss/aud/sub/iat/exp/jti/events`。声明消失或切换 SAML 时用空值清理旧 URI。
 - SAML：发布 metadata、SSO 和签名证书；不发布未经证实的 SLO。
 - 授权：把每个 `ALLOW_GROUPS` 建成 `anas` 组织的同名 Group/Role，并为 Consumer 建立 Approved Application Permission；Casdoor 在登录签发前检查这些组。
 - 属性：OIDC 使用 `JWT-Custom`/RS256，注册的永久锚点 claim 取自 `ExternalId`，Group 由 Role 名称发出；不可变 Casdoor User ID 继续作为稳定 `sub`。SAML 的注册锚点映射到 `$user.externalId`、Group 映射到 `$user.roles`。未知 SAML 来源被省略；SAML NameID 仍是用户名，Consumer 的稳定关联必须使用显式锚点属性。
@@ -64,11 +64,12 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 - [`server-casdoor-directory-authority-e2e.sh`](../../../test-env/scripts/server-casdoor-directory-authority-e2e.sh)（2026-08-26 在同一隔离环境通过）
 - [`server-casdoor-oidc-e2e.sh`](../../../test-env/scripts/server-casdoor-oidc-e2e.sh)（2026-08-27 在同一隔离环境通过）
 - [`server-casdoor-saml-e2e.sh`](../../../test-env/scripts/server-casdoor-saml-e2e.sh)（2026-08-27 在同一隔离环境通过）
+- [`server-casdoor-oidc-logout-e2e.sh`](../../../test-env/scripts/server-casdoor-oidc-logout-e2e.sh)（2026-08-27 在同一隔离环境通过真实 Consumer、多 session、管理员 API、签名、重放与配置恢复矩阵）
 - [`module.yml`](../module.yml)
 
 ## 当前限制
 
-状态为 `developing`。目录订阅和真实 OIDC/SAML E2E 已验证新增、属性刷新、事件防抖、游标恢复、删除/停用、Group 门禁、永久锚点、改名复用及应用权限。仍必须完成 OIDC 会话撤销、SAML SLO 范围决策、恢复登录、备份恢复、多架构生命周期与密钥轮换 E2E，才能评估生产支持。
+状态为 `developing`。目录订阅和真实 OIDC/SAML E2E 已验证新增、属性刷新、事件防抖、游标恢复、删除/停用、Group 门禁、永久锚点、改名复用、应用权限及 OIDC exact-`sid` 会话撤销。固定版本没有 SAML LogoutRequest/LogoutResponse 消费路径，因此 SLO endpoint/binding 保持不发布；恢复登录、备份恢复、多架构生命周期与密钥轮换 E2E 仍未完成。
 
 规范性要求、稳定需求 ID、里程碑归属和逐项执行记录见
 [Casdoor IAM Provider 集成要求](../../../docs/requirements/casdoor-iam.md)与
