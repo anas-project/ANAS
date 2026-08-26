@@ -9,7 +9,8 @@ updated: 2026-08-26
 
 验收依据是[Casdoor IAM Provider 集成要求](/requirements/casdoor-iam)的需求矩阵。通用架构依据为
 [IAM Capability 设计](/architecture/iam-capability-design)；没有另建 Casdoor 专属架构文档。
-M1、M2 已完成，当前里程碑为 M3：目录权威收敛、真实登录、Group 门禁与永久锚点。
+M1、M2 已完成，M3 的目录权威收敛已通过真实 Samba/Casdoor E2E；当前继续实施真实协议登录、
+Group 门禁与 Consumer 永久身份验收。
 
 服务器地址与连接信息只登记在 Git 忽略的 `docs/private/test-servers.md`。远程测试只能在用户明确
 指定的服务器执行，并必须使用独立 network namespace、Docker socket、data-root 和 workspace，
@@ -33,11 +34,13 @@ M1、M2 已完成，当前里程碑为 M3：目录权威收敛、真实登录、
   失败重试、原子游标和受限 profile 刷新。
 - 2026-08-26 在用户明确指定服务器的隔离 Docker daemon 完成新增用户、profile 更新、突发合并和
   游标重启恢复 E2E；测试脚本清理一次性目录账号。
-- M3 已落地待真实 E2E 验收的实现：目录订阅器按永久锚点收敛改名/停用/删除，把 Samba 锚点写入
+- M3 已落地并通过目录权威 E2E 的实现：目录订阅器按永久锚点收敛改名/停用/删除，把 Samba 锚点写入
   Casdoor `ExternalId` 而不修改其不可变 User ID，并直接查询受信任
   LDAPS 计算递归受管组，并以 Casdoor Group/Role/Application Permission 执行 `ALLOW_GROUPS`；
   OIDC custom claim 与 SAML 属性均从同一永久锚点和受管 Role 发出。
-- 当前仍不发布未经验证的 SAML SLO；M3 代码通过单元测试不等于真实登录和应用权限验收通过。
+- 2026-08-26 在同一隔离环境复验事件订阅，并完成目录权威 E2E：直接/递归组加入与移除、账号
+  停用/恢复、改名和删除均收敛；恢复与改名保持 Casdoor 不可变 User ID 和 Samba `ExternalId`。
+- 当前仍不发布未经验证的 SAML SLO；目录权威 E2E 通过不等于真实登录、凭据拒绝和应用权限验收通过。
 
 ## 3. M3 实施检查表
 
@@ -68,13 +71,13 @@ M1、M2 已完成，当前里程碑为 M3：目录权威收敛、真实登录、
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
 | --- | --- | --- | --- | --- |
-| R-014 | `test-env/scripts/server-casdoor-directory-events-e2e.sh` | 用户明确指定服务器，专用 network namespace 与隔离 Docker daemon | 2026-08-26 | **通过**：新增导入、profile 刷新、三事件合并、游标重启恢复与清理通过 |
-| R-015 | `test-env/scripts/server-casdoor-directory-authority-e2e.sh` | Samba AD + Casdoor，隔离 Docker daemon | — | 脚本已编写，待执行：删除、停用状态；凭据拒绝仍由登录 E2E 覆盖 |
-| R-016 | `test-env/scripts/server-casdoor-directory-authority-e2e.sh` | Samba AD + Casdoor，隔离 Docker daemon | — | 脚本已编写，待执行：直接组、递归组、加入与撤权传播 |
+| R-014 | `test-env/scripts/server-casdoor-directory-events-e2e.sh` | 用户明确指定服务器；专用 netns、workspace、Docker socket 与 data-root | 2026-08-26 | **通过**：停止订阅时保持陈旧，恢复后新增导入、profile 刷新、三事件合并为一次同步、游标重启不重放与清理通过 |
+| R-015 | `test-env/scripts/server-casdoor-directory-authority-e2e.sh` | 同一隔离 Samba AD + Casdoor | 2026-08-26 | **部分通过**：停用清组、恢复原身份、删除后禁用/软删除/清组均通过；旧凭据与新 token/assertion 拒绝仍待真实登录 E2E |
+| R-016 | `test-env/scripts/server-casdoor-directory-authority-e2e.sh` | 同一隔离 Samba AD + Casdoor | 2026-08-26 | **部分通过**：直接与递归组加入、移除均传播；撤权后停止签发应用凭据仍待真实登录 E2E |
 | R-019 | 待新增 `test-env/scripts/server-casdoor-oidc-e2e.sh` | Casdoor + 真实 OIDC Consumer + 浏览器 | — | 待实现 |
 | R-022 | 待新增 `test-env/scripts/server-casdoor-saml-e2e.sh` | Casdoor + 真实 SAML SP + 浏览器 | — | 待实现 |
-| R-023 | `server-casdoor-oidc-e2e.sh` + `server-casdoor-saml-e2e.sh` | Samba 六类账号矩阵 + OIDC/SAML Consumer | — | 待实现：`APP_*`、`APP_all`、`Admins`、递归组、无组、禁用 |
-| R-024 | 待新增 `test-env/scripts/server-casdoor-anchor-e2e.sh` | Samba 改名 + OIDC/SAML Consumer | — | 待实现 |
+| R-023 | `server-casdoor-directory-authority-e2e.sh` + 待新增协议 E2E | Samba 六类账号矩阵 + OIDC/SAML Consumer | 2026-08-26 | **部分通过**：递归受管组与禁用本地状态通过；`APP_all`、`Admins`、无组拒绝及协议签发仍待实现 |
+| R-024 | `server-casdoor-directory-authority-e2e.sh` + 待新增协议 E2E | Samba 改名 + OIDC/SAML Consumer | 2026-08-26 | **部分通过**：改名保持 Samba 锚点、Casdoor 不可变 User ID 且旧名消失；Consumer 复用原应用身份仍待实现 |
 | R-025 | `server-casdoor-oidc-e2e.sh` + `server-casdoor-saml-e2e.sh` | 管理员授权、普通组不提权、移组撤权 | — | 待实现 |
 | R-027 | 待新增 `test-env/scripts/server-casdoor-oidc-logout-e2e.sh` | Casdoor + back-channel OIDC Consumer | — | 待实现：用户正常退出 |
 | R-028 | `test-env/scripts/server-casdoor-oidc-logout-e2e.sh` | Casdoor + back-channel OIDC Consumer | — | 待实现：管理员无浏览器删 session |
@@ -105,8 +108,10 @@ bash -n test-env/scripts/server-casdoor-directory-authority-e2e.sh
 
 ## 8. 当前阻塞与风险
 
-- Casdoor 的 Group/Role/Application Permission 映射已经单元验证，但直接组、递归组、拒绝、撤权和
-  `Admins` 应用权限仍缺真实 Consumer E2E，M3 不能据此标记完成。
-- 删除、停用、Group 撤权和永久锚点改名已有确定性收敛实现，最终状态及旧凭据拒绝仍缺真实 E2E 证据。
+- Casdoor 的 Group/Role/Application Permission 映射已经单元验证，直接组、递归组、移除和禁用的
+  Casdoor 状态已经目录权威 E2E 验证；拒绝、凭据签发停止和 `Admins` 应用权限仍缺真实 Consumer E2E，
+  M3 不能据此标记完成。
+- 删除、停用、Group 撤权和永久锚点改名已通过最终状态 E2E；旧凭据拒绝、OIDC/SAML Consumer
+  复用原应用身份且不重复建号仍缺真实协议证据。
 - OIDC back-channel 目前只有注册和清理单元证据；真实通知、管理员删 session 和应用 Cookie 失效未验收。
 - 固定版本 SAML SLO 能力尚未验证，因此当前正确行为仍是不发布 SLO，而不是把该方向标记为支持。
