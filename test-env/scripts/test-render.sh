@@ -71,6 +71,11 @@ for config in "$CONFIG_DIR"/*.yml; do
       grep -Fq 'CASDOOR_DIRWATCH_EVENTS_DIR=' "$latest/modules/casdoor/.env"
       grep -Fq 'CASDOOR_DIRWATCH_LDAP_ID=anas/anas-samba-ad' "$latest/modules/casdoor/.env"
       grep -Fq 'CASDOOR_DIRWATCH_ENDPOINT=http://anas_casdoor:8000' "$latest/modules/casdoor/.env"
+      grep -Fq 'CASDOOR_DIRWATCH_MANAGED_GROUPS=APP_nextcloud,APP_all,Admins' "$latest/modules/casdoor/.env"
+      grep -Fq 'CASDOOR_DIRWATCH_IDENTITY_ANCHOR_ATTRIBUTE=anasIdentityAnchor' "$latest/modules/casdoor/.env"
+      grep -Fq '"name": "permission-app-anas-nextcloud"' "$latest/modules/casdoor/conf/init_data.template.json"
+      grep -Fq '"value": "Id"' "$latest/modules/casdoor/conf/init_data.template.json"
+      grep -Fq '"value": "Roles"' "$latest/modules/casdoor/conf/init_data.template.json"
       grep -Fq 'anas_casdoor_dirwatch:' "$latest/modules/casdoor/docker-compose.yml"
       if grep -Fq 'ANAS_IAM_BINDING__NEXTCLOUD__SAML_SLO_URL=' "$latest/modules/casdoor/.env"; then
         echo "Casdoor render invented an unsupported SAML SLO endpoint" >&2

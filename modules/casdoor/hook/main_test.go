@@ -26,7 +26,8 @@ func TestCalculatePublishesCasdoorAndLDAPConfiguration(t *testing.T) {
 		"CASDOOR_LDAP_AUTO_SYNC_MINUTES": "5", "DEFAULT_LANGUAGE": "zh-CN",
 		"SAMBA_DC_LDAPS_SERVER_URL": "ldaps://samba_dc/", "SAMBA_DC_LDAPS_PORT": "636",
 		"SAMBA_DC_LDAP_BIND_DN": "CN=svc,DC=example,DC=test", "SAMBA_DC_LDAP_BIND_PASSWORD": "ldap-secret",
-		"SAMBA_DC_BASE_USERS_DN": "OU=Users,DC=example,DC=test", "SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE": "anasIdentityAnchor",
+		"SAMBA_DC_BASE_USERS_DN": "OU=Users,DC=example,DC=test", "SAMBA_DC_BASE_GROUPS_DN": "OU=Groups,DC=example,DC=test",
+		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE": "anasIdentityAnchor", "SAMBA_DC_GROUP_CLASS_FILTER": "(objectClass=group)",
 		"SAMBA_DC_USER_CLASS_FILTER": "(objectClass=user)", "SAMBA_DC_USER_ENABLED_FILTER": "(!(userAccountControl:1.2.840.113556.1.4.803:=2))",
 		"ANAS_DIRECTORY_EVENTS_DIR": "/srv/anas/data/samba_dc/events", "ANAS_DIRECTORY_EVENTS_FILE_NAME": "events.jsonl",
 		"DATA_PATH": "/srv/anas/data",
@@ -54,6 +55,9 @@ func TestCalculatePublishesCasdoorAndLDAPConfiguration(t *testing.T) {
 		e["CASDOOR_DIRWATCH_DEBOUNCE_SECONDS"] == "" || e["CASDOOR_DIRWATCH_MIN_INTERVAL_SECONDS"] == "" {
 		t.Fatal("directory watcher API credentials or debounce settings are missing")
 	}
+	if got, want := e["CASDOOR_DIRWATCH_IDENTITY_ANCHOR_ATTRIBUTE"], "anasIdentityAnchor"; got != want {
+		t.Fatalf("directory watcher identity anchor = %q, want %q", got, want)
+	}
 	for _, key := range []string{"CASDOOR_PORTAL_CLIENT_ID", "CASDOOR_PORTAL_CLIENT_SECRET", "CASDOOR_SIGNING_KEY", "CASDOOR_SIGNING_CERT"} {
 		if secrets.values[key] == "" {
 			t.Fatalf("secret %s was not generated", key)
@@ -75,5 +79,23 @@ func TestRenderAppConfIncludesPostgresDatabaseNameInDSN(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "dbname=casdoor") {
 		t.Fatalf("PostgreSQL DSN is missing the database name:\n%s", rendered)
+	}
+}
+
+func TestRenderPhasePublishesManagedGroupsAfterConsumerAggregation(t *testing.T) {
+	e := casdoorTestEnv()
+	e["CASDOOR_DB_HOST"] = "postgres"
+	e["CASDOOR_DB_PORT"] = "5432"
+	e["CASDOOR_DB_USERNAME"] = "casdoor"
+	e["CASDOOR_DB_PASSWORD"] = "db-secret"
+	e["CASDOOR_DB_NAME"] = "casdoor"
+	e["CASDOOR_DEFAULT_LANGUAGE"] = "en"
+
+	response, err := handle(hookRequest{ABI: "anas.module-hook/v1", Phase: "render_env", Module: "casdoor", Env: e})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := response.Env["CASDOOR_DIRWATCH_MANAGED_GROUPS"], "APP_nextcloud,APP_paperless"; got != want {
+		t.Fatalf("managed groups = %q, want %q", got, want)
 	}
 }

@@ -7,7 +7,7 @@ services:
       args:
         DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
         GOPROXY_URL: ${GOPROXY_URL:-}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r3
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r4
     restart: unless-stopped
     env_file:
       - .env
@@ -45,7 +45,7 @@ services:
   # auto-sync remains enabled as the source-of-truth fallback.
   anas_casdoor_dirwatch:
     container_name: ${CONTAINER_PREFIX}casdoor_dirwatch
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r3
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r4
     restart: unless-stopped
     user: "1000:1000"
     entrypoint: ["/opt/anas/bin/casdoor-helper", "directory-watch"]
@@ -55,8 +55,13 @@ services:
     volumes:
       - "${CASDOOR_DIRWATCH_EVENTS_DIR}:/var/lib/anas-directory-events:ro"
       - "${DATA_PATH}/casdoor/dirwatch:/data/anas-dirwatch"
+      - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
     env_file:
       - .env
+    environment:
+      SSL_CERT_FILE: /certs/${ANAS_TLS_TRUST_BUNDLE_NAME}
+    dns:
+      - ${LOCAL_DNS_SERVER}
     security_opt:
       - no-new-privileges:true
     healthcheck:

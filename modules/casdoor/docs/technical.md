@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `casdoor` 的协议契约、安全边界和验证入口。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.143.0-r3` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.143.0-r4` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -11,8 +11,8 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r3` | `traefik, db, casdoor` | 5 |
-| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r3` | `casdoor` | 2 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r4` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r4` | `casdoor` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -30,16 +30,18 @@ Hook 生成 Casdoor `app.conf` 和初始化数据模板。PostgreSQL DSN 显式�
 
 ## LDAP、目录事件与权威边界
 
-LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永久锚点属性已存在。`anas_casdoor_dirwatch` 以只读方式跟随 `ANAS_DIRECTORY_EVENTS_DIR`，按独立游标恢复、过滤并防抖事件，然后使用 Module 自己的受管 Application 凭据调用本地 Casdoor `get-ldap-users` 与 `sync-ldap-users` API。上游对既有用户只刷新 Group，因此订阅器还会按本批事件 DN 定位用户，通过受限 `update-user?columns=displayName,email` 刷新目录 profile；不覆盖密码、权限或其他人工字段。只有全部 API 同步成功后才提交游标；失败会重试。默认 5 分钟的上游自动同步不关闭，因此订阅器只是低延迟加速器。
+LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永久锚点属性已存在。`anas_casdoor_dirwatch` 以只读方式跟随 `ANAS_DIRECTORY_EVENTS_DIR`，按独立游标恢复、过滤并防抖事件，然后使用 Module 自己的受管 Application 凭据调用本地 Casdoor API。每批同步先读取目录和 Casdoor 影子用户，以永久锚点关联改名用户；随后执行上游 LDAP 导入，并收敛 `id/name/ldap/properties/groups/isForbidden/isDeleted`。目录属性只合并到 `properties`，不删除人工属性；`displayName/email` 仍只为本批相关用户刷新，密码和人工权限不被覆盖。
 
-当前仅导入和远程认证，不启用密码写回。Casdoor 会保留导入后的本地影子记录；因此账号删除/停用、Group 撤权和锚点稳定性必须通过真实同步 E2E 后才能提升生命周期。
+由于上游会保留既有 Group，订阅器使用同一受限 Bind 经受信任 LDAPS 查询 `ALLOW_GROUPS`，以 AD matching rule `1.2.840.113556.1.4.1941` 计算直接和递归成员，再权威覆盖受管用户 Group。缺失组、重复/缺失锚点或任何 Casdoor 补丁失败都会使整批失败并保留游标重试。默认 5 分钟的上游自动同步不关闭，因此订阅器仍是低延迟加速器。
+
+当前仅导入和远程认证，不启用密码写回。删除事件把影子记录标为禁止和删除，停用事件标为禁止，两者都清空 Group；重新启用或同锚点改名会复用并恢复原记录。该收敛逻辑已有单元证据，但仍必须通过真实同步 E2E 后才能提升生命周期。
 
 ## IAM 契约
 
 - OIDC：固定 `3.143.0` 发布部署级 issuer/discovery，按 Consumer 注册 client、redirect URI 与显式 back-channel URI；声明消失或切换 SAML 时用空值清理旧 URI，真实通知仍为受限/待验收。
 - SAML：发布 metadata、SSO 和签名证书；不发布未经证实的 SLO。
-- 授权：当前不执行 `ALLOW_GROUPS`，不得声称按应用 Group 门禁。
-- 属性：常用用户名、邮件和 Group 有明确映射；未知属性退回 `$user.id`，不等于已验证的 Samba 永久锚点。
+- 授权：把每个 `ALLOW_GROUPS` 建成 `anas` 组织的同名 Group/Role，并为 Consumer 建立 Approved Application Permission；Casdoor 在登录签发前检查这些组。
+- 属性：OIDC 使用 `JWT-Custom`/RS256，永久锚点进入 User ID（因此也是 `sub`）并可按注册 claim 发出，Group 由 Role 名称发出；SAML 的注册锚点映射到 `$user.id`、Group 映射到 `$user.roles`。未知 SAML 来源被省略；SAML NameID 仍是用户名，Consumer 的稳定关联必须使用显式锚点属性。
 
 ## 管理面与 Secret 生命周期
 
@@ -57,6 +59,7 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 - [`helper/main_test.go`](../casdoor/helper/main_test.go)
 - [`helper/directory_watch_test.go`](../casdoor/helper/directory_watch_test.go)
 - [`server-casdoor-directory-events-e2e.sh`](../../../test-env/scripts/server-casdoor-directory-events-e2e.sh)（2026-08-26 在显式指定服务器的隔离 Docker daemon 通过）
+- [`server-casdoor-directory-authority-e2e.sh`](../../../test-env/scripts/server-casdoor-directory-authority-e2e.sh)（已编写，待指定服务器执行）
 - [`module.yml`](../module.yml)
 
 ## 当前限制

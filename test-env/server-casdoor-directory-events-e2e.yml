@@ -5,6 +5,9 @@ modules:
     config:
       # Keep the scheduled fallback out of the event-driven test window.
       ldap_auto_sync_minutes: "1440"
+  # Supplies a real Consumer registration and APP_nextcloud ALLOW_GROUPS so
+  # the same isolated deployment can run directory-authority and OIDC E2Es.
+  nextcloud: {}
   traefik: {}
 identity:
   iam:

@@ -105,7 +105,7 @@ stdin 进入 Helper；更新后必须回读 bcrypt 验证，失败必须恢复�
 
 | ID | 要求 | 验证方式 |
 | --- | --- | --- |
-| `CASDOOR-R-001` | Module 必须固定 Casdoor `3.143.0` 与 ANAS revision `3`，不得使用 `latest`；发布验收未完成时状态必须为 `developing` | CI |
+| `CASDOOR-R-001` | Module 必须固定 Casdoor `3.143.0` 与 ANAS revision `4`，不得使用 `latest`；发布验收未完成时状态必须为 `developing` | CI |
 | `CASDOOR-R-002` | Module 必须提供通用 `iam` Capability 的 `oidc`、`saml` 接口，并显式依赖 Traefik、Samba DC 和 `relational_database` Contract | CI |
 | `CASDOOR-R-003` | Casdoor 必须使用独立 PostgreSQL Resource 和生成凭据，删除策略为 `retain`；改变数据库类型或名称必须进入显式迁移 | 单元 |
 | `CASDOOR-R-004` | Casdoor 只经 Traefik HTTPS 暴露，业务进程与目录订阅器以非 root 运行，健康检查必须访问应用 HTTP health endpoint | 单元 |

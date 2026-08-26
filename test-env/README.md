@@ -216,7 +216,8 @@ Do not commit `.anas-test/` or generated secrets.
 10. Casdoor directory event subscription runtime test
 
     Against an isolated deployment rendered from
-    `server-casdoor-directory-events-e2e.yml`, proves that a Samba account is
+    `server-casdoor-directory-events-e2e.yml` (including a real Nextcloud
+    Consumer registration), proves that a Samba account is
     absent while the Casdoor subscriber is stopped and is imported promptly
     when the subscriber resumes. It also covers attribute refresh, burst
     debouncing, health, and cursor durability. The fixture stretches Casdoor's
@@ -227,6 +228,20 @@ Do not commit `.anas-test/` or generated secrets.
     DOCKER_HOST=unix:///run/anas-casdoor-docker.sock \
     ANAS_TEST_CONTAINER_PREFIX=anas_casdoor_ \
       ./test-env/scripts/server-casdoor-directory-events-e2e.sh
+    ```
+
+10a. Casdoor directory authority reconciliation runtime test
+
+    Against an isolated Casdoor deployment with a Consumer declaring
+    `APP_nextcloud`, verifies permanent-anchor assignment, direct and recursive
+    group convergence and revocation, disable/re-enable, rename continuity,
+    and soft-delete convergence. Protocol login and final application
+    authorization remain separate E2Es.
+
+    ```sh
+    DOCKER_HOST=unix:///run/anas-casdoor-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_casdoor_ \
+      ./test-env/scripts/server-casdoor-directory-authority-e2e.sh
     ```
 
 11. Database resource hot-add test

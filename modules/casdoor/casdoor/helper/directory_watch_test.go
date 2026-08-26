@@ -23,6 +23,12 @@ type fakeDirectorySyncer struct {
 	err   error
 }
 
+type fakeMembershipResolver map[string][]string
+
+func (resolver fakeMembershipResolver) groupsByAnchor() (map[string][]string, error) {
+	return resolver, nil
+}
+
 func (syncer *fakeDirectorySyncer) sync(_ []directoryEvent) error {
 	syncer.calls++
 	return syncer.err
@@ -32,11 +38,14 @@ func testDirectoryWatchSettings(t *testing.T) directoryWatchSettings {
 	t.Helper()
 	root := t.TempDir()
 	return directoryWatchSettings{
+		ldapID:          "anas/anas-samba-ad",
 		eventFile:       filepath.Join(root, "events.jsonl"),
 		cursorFile:      filepath.Join(root, "cursor.json"),
 		healthFile:      filepath.Join(root, "health.json"),
 		operations:      csvSet("Add,Modify,Delete", false),
 		attributes:      csvSet("member,userAccountControl,sAMAccountName,anasIdentityAnchor", true),
+		identityAnchor:  "anasIdentityAnchor",
+		ldapUserBaseDN:  "OU=People,DC=example,DC=test",
 		debounce:        5 * time.Second,
 		minimumInterval: time.Minute,
 		pollInterval:    time.Second,
@@ -160,6 +169,7 @@ func TestDirectoryJournalCursorSurvivesRestartAndRotation(t *testing.T) {
 
 func TestCasdoorLDAPSyncerUsesBasicAuthAndPostsFetchedUsers(t *testing.T) {
 	var calls []string
+	getUsersCalls := 0
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		username, password, ok := request.BasicAuth()
 		if !ok || username != "client-id" || password != "client-secret" {
@@ -172,7 +182,17 @@ func TestCasdoorLDAPSyncerUsesBasicAuthAndPostsFetchedUsers(t *testing.T) {
 			if got := request.URL.Query().Get("id"); got != "anas/anas-samba-ad" {
 				t.Errorf("LDAP id = %q", got)
 			}
-			body = `{"status":"ok","data":{"users":[{"uid":"alice","cn":"Alice","displayName":"Alice Example","email":"alice@example.test"}]}}`
+			body = `{"status":"ok","data":{"users":[{"uid":"alice","cn":"Alice","uuid":"alice","displayName":"Alice Example","email":"alice@example.test","attributes":{"anasIdentityAnchor":"11111111-1111-1111-1111-111111111111","distinguishedName":"CN=alice,OU=People,DC=example,DC=test"}}]}}`
+		case "/api/get-users":
+			getUsersCalls++
+			if got := request.URL.Query().Get("owner"); got != "anas" {
+				t.Errorf("managed user owner = %q", got)
+			}
+			if getUsersCalls == 1 {
+				body = `{"status":"ok","data":[]}`
+			} else {
+				body = `{"status":"ok","data":[{"id":"temporary-id","name":"alice","ldap":"alice","displayName":"Alice","email":"old@example.test","properties":{"anasIdentityAnchor":"11111111-1111-1111-1111-111111111111","distinguishedName":"CN=alice,OU=People,DC=example,DC=test"},"groups":[]}]}`
+			}
 		case "/api/sync-ldap-users":
 			if got := request.URL.Query().Get("id"); got != "anas/anas-samba-ad" {
 				t.Errorf("LDAP id = %q", got)
@@ -189,15 +209,22 @@ func TestCasdoorLDAPSyncerUsesBasicAuthAndPostsFetchedUsers(t *testing.T) {
 			if got := request.URL.Query().Get("id"); got != "anas/alice" {
 				t.Errorf("user id = %q", got)
 			}
-			if got := request.URL.Query().Get("columns"); got != "displayName,email" {
+			if got := request.URL.Query().Get("columns"); got != "id,groups,displayName,email" {
 				t.Errorf("updated columns = %q", got)
 			}
-			var profile map[string]string
+			var profile map[string]any
 			if err := json.NewDecoder(request.Body).Decode(&profile); err != nil {
 				t.Errorf("decode profile: %v", err)
 			}
 			if profile["displayName"] != "Alice Example" || profile["email"] != "alice@example.test" {
 				t.Errorf("profile = %#v", profile)
+			}
+			if profile["id"] != "11111111-1111-1111-1111-111111111111" {
+				t.Errorf("identity anchor = %#v", profile["id"])
+			}
+			groups, ok := profile["groups"].([]any)
+			if !ok || len(groups) != 1 || groups[0] != "anas/APP_nextcloud" {
+				t.Errorf("managed groups = %#v", profile["groups"])
 			}
 			body = `{"status":"ok","data":"Affected"}`
 		default:
@@ -211,11 +238,156 @@ func TestCasdoorLDAPSyncerUsesBasicAuthAndPostsFetchedUsers(t *testing.T) {
 	settings.ldapID = "anas/anas-samba-ad"
 	settings.clientID = "client-id"
 	settings.clientSecret = "client-secret"
-	syncer := &casdoorLDAPSyncer{settings: settings, client: client}
+	syncer := &casdoorLDAPSyncer{
+		settings: settings,
+		client:   client,
+		memberships: fakeMembershipResolver{
+			"11111111-1111-1111-1111-111111111111": {"anas/APP_nextcloud"},
+		},
+	}
 	if err := syncer.sync([]directoryEvent{{DN: "CN=alice,OU=People,DC=example,DC=test", Operation: "Modify", Attributes: []string{"displayName"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(calls, ","); got != "GET /api/get-ldap-users,POST /api/sync-ldap-users,POST /api/update-user" {
+	if got := strings.Join(calls, ","); got != "GET /api/get-ldap-users,GET /api/get-users,POST /api/sync-ldap-users,GET /api/get-users,POST /api/update-user" {
 		t.Fatalf("API calls = %s", got)
+	}
+}
+
+func TestPreSyncDeleteForbidsDeletesAndRemovesGroups(t *testing.T) {
+	settings := testDirectoryWatchSettings(t)
+	managed := []casdoorManagedUser{{
+		ID: "11111111-1111-1111-1111-111111111111", Name: "alice", LDAP: "alice",
+		Properties: map[string]string{
+			"anasIdentityAnchor": "11111111-1111-1111-1111-111111111111",
+			"distinguishedName":  "CN=alice,OU=People,DC=example,DC=test",
+		},
+		Groups: []string{"anas/APP_nextcloud"},
+	}}
+	patches, err := planPreSyncUserPatches([]directoryEvent{{
+		Operation: "Delete", DN: "CN=alice,OU=People,DC=example,DC=test",
+	}}, nil, managed, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(patches) != 1 || patches[0].body["isForbidden"] != true || patches[0].body["isDeleted"] != true {
+		t.Fatalf("delete patches = %#v", patches)
+	}
+	groups, ok := patches[0].body["groups"].([]string)
+	if !ok || len(groups) != 0 {
+		t.Fatalf("deleted user groups = %#v", patches[0].body["groups"])
+	}
+}
+
+func TestPreSyncDisableForbidsWithoutDeleting(t *testing.T) {
+	settings := testDirectoryWatchSettings(t)
+	managed := []casdoorManagedUser{{
+		ID: "11111111-1111-1111-1111-111111111111", Name: "alice", LDAP: "alice",
+		Properties: map[string]string{
+			"anasIdentityAnchor": "11111111-1111-1111-1111-111111111111",
+			"distinguishedName":  "CN=alice,OU=People,DC=example,DC=test",
+		},
+		Groups: []string{"anas/APP_nextcloud"},
+	}}
+	patches, err := planPreSyncUserPatches([]directoryEvent{{
+		Operation: "Modify", DN: "CN=alice,OU=People,DC=example,DC=test",
+		Attributes: []string{"userAccountControl"},
+	}}, nil, managed, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(patches) != 1 || patches[0].body["isForbidden"] != true {
+		t.Fatalf("disable patches = %#v", patches)
+	}
+	if _, deleted := patches[0].body["isDeleted"]; deleted {
+		t.Fatalf("disable unexpectedly deleted user: %#v", patches[0])
+	}
+	if groups, ok := patches[0].body["groups"].([]string); !ok || len(groups) != 0 {
+		t.Fatalf("disabled user groups = %#v", patches[0].body["groups"])
+	}
+}
+
+func TestPreSyncRenameUsesPermanentAnchor(t *testing.T) {
+	settings := testDirectoryWatchSettings(t)
+	directory := []casdoorDirectoryUser{{
+		UID: "alice-renamed", UUID: "alice-renamed",
+		Attributes: map[string]string{
+			"anasIdentityAnchor": "11111111-1111-1111-1111-111111111111",
+			"distinguishedName":  "CN=alice-renamed,OU=People,DC=example,DC=test",
+		},
+	}}
+	managed := []casdoorManagedUser{{
+		ID: "11111111-1111-1111-1111-111111111111", Name: "alice", LDAP: "alice",
+		Properties: map[string]string{"anasIdentityAnchor": "11111111-1111-1111-1111-111111111111"},
+	}}
+	patches, err := planPreSyncUserPatches(nil, directory, managed, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(patches) != 1 || patches[0].target != "anas/alice" || patches[0].body["name"] != "alice-renamed" || patches[0].body["ldap"] != "alice-renamed" {
+		t.Fatalf("rename patches = %#v", patches)
+	}
+}
+
+func TestPostSyncGroupRemovalIsAuthoritative(t *testing.T) {
+	settings := testDirectoryWatchSettings(t)
+	directory := []casdoorDirectoryUser{{
+		UID: "alice", UUID: "alice",
+		Attributes: map[string]string{
+			"anasIdentityAnchor": "11111111-1111-1111-1111-111111111111",
+			"distinguishedName":  "CN=alice,OU=People,DC=example,DC=test",
+		},
+	}}
+	managed := []casdoorManagedUser{{
+		ID: "11111111-1111-1111-1111-111111111111", Name: "alice", LDAP: "alice",
+		Properties: directory[0].Attributes, Groups: []string{"anas/APP_nextcloud"},
+	}}
+	patches, err := planPostSyncUserPatches(nil, directory, managed, map[string][]string{}, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(patches) != 1 {
+		t.Fatalf("group removal patches = %#v", patches)
+	}
+	groups, ok := patches[0].body["groups"].([]string)
+	if !ok || len(groups) != 0 {
+		t.Fatalf("authoritative groups = %#v", patches[0].body["groups"])
+	}
+}
+
+func TestPostSyncPreservesManualProperties(t *testing.T) {
+	settings := testDirectoryWatchSettings(t)
+	directory := []casdoorDirectoryUser{{
+		UID: "alice", UUID: "alice",
+		Attributes: map[string]string{
+			"anasIdentityAnchor": "11111111-1111-1111-1111-111111111111",
+			"distinguishedName":  "CN=alice,OU=People,DC=example,DC=test",
+		},
+	}}
+	managed := []casdoorManagedUser{{
+		ID: "11111111-1111-1111-1111-111111111111", Name: "alice", LDAP: "alice",
+		Properties: map[string]string{
+			"anasIdentityAnchor": "11111111-1111-1111-1111-111111111111",
+			"manual":             "keep-me",
+		},
+	}}
+	patches, err := planPostSyncUserPatches(nil, directory, managed, nil, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(patches) != 1 {
+		t.Fatalf("property patches = %#v", patches)
+	}
+	properties, ok := patches[0].body["properties"].(map[string]string)
+	if !ok || properties["manual"] != "keep-me" || properties["distinguishedName"] == "" {
+		t.Fatalf("merged properties = %#v", patches[0].body["properties"])
+	}
+}
+
+func TestRecursiveGroupFiltersEscapeLDAPValues(t *testing.T) {
+	if got, want := managedGroupFilter("(objectClass=group)", "APP_(finance)"), "(&(objectClass=group)(cn=APP_\\28finance\\29))"; got != want {
+		t.Fatalf("managed group filter = %q, want %q", got, want)
+	}
+	if got := recursiveGroupUserFilter("(&(objectClass=user)(anchor=*))", "CN=APP_all,OU=Groups,DC=example,DC=test"); !strings.Contains(got, "memberOf:"+recursiveMembershipOID+":=") {
+		t.Fatalf("recursive user filter = %q", got)
 	}
 }

@@ -8,28 +8,40 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
 
 type directoryWatchSettings struct {
-	eventFile       string
-	cursorFile      string
-	healthFile      string
-	endpoint        string
-	ldapID          string
-	clientID        string
-	clientSecret    string
-	operations      map[string]bool
-	attributes      map[string]bool
-	debounce        time.Duration
-	minimumInterval time.Duration
-	pollInterval    time.Duration
+	eventFile        string
+	cursorFile       string
+	healthFile       string
+	endpoint         string
+	ldapID           string
+	clientID         string
+	clientSecret     string
+	ldapHost         string
+	ldapPort         string
+	ldapBindDN       string
+	ldapBindPassword string
+	ldapUserBaseDN   string
+	ldapGroupBaseDN  string
+	ldapUserFilter   string
+	ldapGroupFilter  string
+	identityAnchor   string
+	managedGroups    []string
+	operations       map[string]bool
+	attributes       map[string]bool
+	debounce         time.Duration
+	minimumInterval  time.Duration
+	pollInterval     time.Duration
 }
 
 func directoryWatchSettingsFromEnv() (directoryWatchSettings, error) {
@@ -58,27 +70,53 @@ func directoryWatchSettingsFromEnv() (directoryWatchSettings, error) {
 	}
 
 	settings := directoryWatchSettings{
-		eventFile:       defaultString(os.Getenv("CASDOOR_DIRWATCH_EVENT_FILE"), "/var/lib/anas-directory-events/events.jsonl"),
-		cursorFile:      defaultString(os.Getenv("CASDOOR_DIRWATCH_CURSOR_FILE"), "/data/anas-dirwatch/cursor.json"),
-		healthFile:      defaultString(os.Getenv("CASDOOR_DIRWATCH_HEALTH_FILE"), "/data/anas-dirwatch/health.json"),
-		endpoint:        strings.TrimRight(strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_ENDPOINT")), "/"),
-		ldapID:          strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_ID")),
-		clientID:        os.Getenv("CASDOOR_DIRWATCH_CLIENT_ID"),
-		clientSecret:    os.Getenv("CASDOOR_DIRWATCH_CLIENT_SECRET"),
-		operations:      csvSet(defaultString(os.Getenv("CASDOOR_DIRWATCH_OPERATIONS"), "Add,Modify,Delete"), false),
-		attributes:      csvSet(os.Getenv("CASDOOR_DIRWATCH_ATTRIBUTES"), true),
-		debounce:        debounce,
-		minimumInterval: minimumInterval,
-		pollInterval:    pollInterval,
+		eventFile:        defaultString(os.Getenv("CASDOOR_DIRWATCH_EVENT_FILE"), "/var/lib/anas-directory-events/events.jsonl"),
+		cursorFile:       defaultString(os.Getenv("CASDOOR_DIRWATCH_CURSOR_FILE"), "/data/anas-dirwatch/cursor.json"),
+		healthFile:       defaultString(os.Getenv("CASDOOR_DIRWATCH_HEALTH_FILE"), "/data/anas-dirwatch/health.json"),
+		endpoint:         strings.TrimRight(strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_ENDPOINT")), "/"),
+		ldapID:           strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_ID")),
+		clientID:         os.Getenv("CASDOOR_DIRWATCH_CLIENT_ID"),
+		clientSecret:     os.Getenv("CASDOOR_DIRWATCH_CLIENT_SECRET"),
+		ldapHost:         strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_HOST")),
+		ldapPort:         strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_PORT")),
+		ldapBindDN:       strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_BIND_DN")),
+		ldapBindPassword: os.Getenv("CASDOOR_DIRWATCH_LDAP_BIND_PASSWORD"),
+		ldapUserBaseDN:   strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_USER_BASE_DN")),
+		ldapGroupBaseDN:  strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_GROUP_BASE_DN")),
+		ldapUserFilter:   strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_USER_FILTER")),
+		ldapGroupFilter:  defaultString(os.Getenv("CASDOOR_DIRWATCH_LDAP_GROUP_FILTER"), "(objectClass=group)"),
+		identityAnchor:   strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_IDENTITY_ANCHOR_ATTRIBUTE")),
+		managedGroups:    csvList(os.Getenv("CASDOOR_DIRWATCH_MANAGED_GROUPS")),
+		operations:       csvSet(defaultString(os.Getenv("CASDOOR_DIRWATCH_OPERATIONS"), "Add,Modify,Delete"), false),
+		attributes:       csvSet(os.Getenv("CASDOOR_DIRWATCH_ATTRIBUTES"), true),
+		debounce:         debounce,
+		minimumInterval:  minimumInterval,
+		pollInterval:     pollInterval,
 	}
 	for key, value := range map[string]string{
-		"CASDOOR_DIRWATCH_ENDPOINT":      settings.endpoint,
-		"CASDOOR_DIRWATCH_LDAP_ID":       settings.ldapID,
-		"CASDOOR_DIRWATCH_CLIENT_ID":     settings.clientID,
-		"CASDOOR_DIRWATCH_CLIENT_SECRET": settings.clientSecret,
+		"CASDOOR_DIRWATCH_ENDPOINT":                  settings.endpoint,
+		"CASDOOR_DIRWATCH_LDAP_ID":                   settings.ldapID,
+		"CASDOOR_DIRWATCH_CLIENT_ID":                 settings.clientID,
+		"CASDOOR_DIRWATCH_CLIENT_SECRET":             settings.clientSecret,
+		"CASDOOR_DIRWATCH_IDENTITY_ANCHOR_ATTRIBUTE": settings.identityAnchor,
 	} {
 		if value == "" {
 			return directoryWatchSettings{}, fmt.Errorf("%s is required", key)
+		}
+	}
+	if len(settings.managedGroups) > 0 {
+		for key, value := range map[string]string{
+			"CASDOOR_DIRWATCH_LDAP_HOST":          settings.ldapHost,
+			"CASDOOR_DIRWATCH_LDAP_PORT":          settings.ldapPort,
+			"CASDOOR_DIRWATCH_LDAP_BIND_DN":       settings.ldapBindDN,
+			"CASDOOR_DIRWATCH_LDAP_BIND_PASSWORD": settings.ldapBindPassword,
+			"CASDOOR_DIRWATCH_LDAP_USER_BASE_DN":  settings.ldapUserBaseDN,
+			"CASDOOR_DIRWATCH_LDAP_GROUP_BASE_DN": settings.ldapGroupBaseDN,
+			"CASDOOR_DIRWATCH_LDAP_USER_FILTER":   settings.ldapUserFilter,
+		} {
+			if value == "" {
+				return directoryWatchSettings{}, fmt.Errorf("%s is required when managed groups are configured", key)
+			}
 		}
 	}
 	return settings, nil
@@ -102,6 +140,19 @@ func csvSet(value string, fold bool) map[string]bool {
 			item = strings.ToLower(item)
 		}
 		result[item] = true
+	}
+	return result
+}
+
+func csvList(value string) []string {
+	result := []string{}
+	seen := map[string]bool{}
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" && !seen[item] {
+			seen[item] = true
+			result = append(result, item)
+		}
 	}
 	return result
 }
@@ -224,8 +275,9 @@ type directorySyncer interface {
 }
 
 type casdoorLDAPSyncer struct {
-	settings directoryWatchSettings
-	client   *http.Client
+	settings    directoryWatchSettings
+	client      *http.Client
+	memberships directoryMembershipResolver
 }
 
 type casdoorAPIResponse struct {
@@ -277,10 +329,30 @@ func (syncer *casdoorLDAPSyncer) requestWithQuery(method, action string, query u
 }
 
 type casdoorDirectoryUser struct {
-	UID         string `json:"uid"`
-	CN          string `json:"cn"`
-	DisplayName string `json:"displayName"`
-	Email       string `json:"email"`
+	UID         string            `json:"uid"`
+	CN          string            `json:"cn"`
+	UUID        string            `json:"uuid"`
+	DisplayName string            `json:"displayName"`
+	Email       string            `json:"email"`
+	Attributes  map[string]string `json:"attributes"`
+}
+
+type casdoorManagedUser struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	LDAP        string            `json:"ldap"`
+	DisplayName string            `json:"displayName"`
+	Email       string            `json:"email"`
+	Properties  map[string]string `json:"properties"`
+	Groups      []string          `json:"groups"`
+	IsForbidden bool              `json:"isForbidden"`
+	IsDeleted   bool              `json:"isDeleted"`
+}
+
+type casdoorUserPatch struct {
+	target  string
+	columns []string
+	body    map[string]any
 }
 
 func (syncer *casdoorLDAPSyncer) sync(events []directoryEvent) error {
@@ -297,58 +369,324 @@ func (syncer *casdoorLDAPSyncer) sync(events []directoryEvent) error {
 	if len(directory.Users) == 0 || directory.Users[0] != '[' {
 		return fmt.Errorf("Casdoor LDAP response did not contain a user array")
 	}
-	if _, err = syncer.request(http.MethodPost, "sync-ldap-users", syncer.settings.ldapID, bytes.NewReader(directory.Users)); err != nil {
-		return err
-	}
-
 	var users []casdoorDirectoryUser
 	if err := json.Unmarshal(directory.Users, &users); err != nil {
 		return fmt.Errorf("decode Casdoor LDAP user profiles: %w", err)
 	}
-	changedNames := directoryEventNames(events)
+	if _, err := indexDirectoryUsers(users, syncer.settings.identityAnchor); err != nil {
+		return err
+	}
+	memberships := syncer.memberships
+	if memberships == nil {
+		memberships = emptyDirectoryMembershipResolver{}
+	}
+	groupsByAnchor, err := memberships.groupsByAnchor()
+	if err != nil {
+		return err
+	}
+	managed, err := syncer.getManagedUsers()
+	if err != nil {
+		return err
+	}
+	preSync, err := planPreSyncUserPatches(events, users, managed, syncer.settings)
+	if err != nil {
+		return err
+	}
+	if err := syncer.applyUserPatches(preSync); err != nil {
+		return err
+	}
+
+	syncResponse, err := syncer.request(http.MethodPost, "sync-ldap-users", syncer.settings.ldapID, bytes.NewReader(directory.Users))
+	if err != nil {
+		return err
+	}
+	var syncResult struct {
+		Failed []json.RawMessage `json:"failed"`
+	}
+	if len(syncResponse.Data) != 0 && string(syncResponse.Data) != "null" {
+		if err := json.Unmarshal(syncResponse.Data, &syncResult); err != nil {
+			return fmt.Errorf("decode Casdoor LDAP sync result: %w", err)
+		}
+		if len(syncResult.Failed) > 0 {
+			return fmt.Errorf("Casdoor LDAP sync reported %d failed users", len(syncResult.Failed))
+		}
+	}
+	managed, err = syncer.getManagedUsers()
+	if err != nil {
+		return err
+	}
+	postSync, err := planPostSyncUserPatches(events, users, managed, groupsByAnchor, syncer.settings)
+	if err != nil {
+		return err
+	}
+	return syncer.applyUserPatches(postSync)
+}
+
+func (syncer *casdoorLDAPSyncer) getManagedUsers() ([]casdoorManagedUser, error) {
 	owner, _, ok := strings.Cut(syncer.settings.ldapID, "/")
 	if !ok || owner == "" {
-		return fmt.Errorf("invalid Casdoor LDAP id %q", syncer.settings.ldapID)
+		return nil, fmt.Errorf("invalid Casdoor LDAP id %q", syncer.settings.ldapID)
 	}
+	query := url.Values{}
+	query.Set("owner", owner)
+	response, err := syncer.requestWithQuery(http.MethodGet, "get-users", query, nil)
+	if err != nil {
+		return nil, err
+	}
+	var users []casdoorManagedUser
+	if err := json.Unmarshal(response.Data, &users); err != nil {
+		return nil, fmt.Errorf("decode Casdoor managed users: %w", err)
+	}
+	result := users[:0]
 	for _, user := range users {
-		if !changedNames[strings.ToLower(user.UID)] && !changedNames[strings.ToLower(user.CN)] {
-			continue
+		if user.LDAP != "" || user.Properties[syncer.settings.identityAnchor] != "" {
+			result = append(result, user)
 		}
-		username := user.UID
-		if username == "" {
-			username = user.CN
-		}
-		if username == "" {
-			continue
-		}
-		displayName := user.DisplayName
-		if displayName == "" {
-			displayName = user.CN
-		}
-		profile, err := json.Marshal(map[string]string{
-			"displayName": displayName,
-			"email":       user.Email,
-		})
+	}
+	return result, nil
+}
+
+func (syncer *casdoorLDAPSyncer) applyUserPatches(patches []casdoorUserPatch) error {
+	for _, patch := range patches {
+		body, err := json.Marshal(patch.body)
 		if err != nil {
 			return err
 		}
 		query := url.Values{}
-		query.Set("id", owner+"/"+username)
-		query.Set("columns", "displayName,email")
-		if _, err := syncer.requestWithQuery(http.MethodPost, "update-user", query, bytes.NewReader(profile)); err != nil {
-			return fmt.Errorf("refresh Casdoor LDAP profile %s: %w", username, err)
+		query.Set("id", patch.target)
+		query.Set("columns", strings.Join(patch.columns, ","))
+		if _, err := syncer.requestWithQuery(http.MethodPost, "update-user", query, bytes.NewReader(body)); err != nil {
+			return fmt.Errorf("reconcile Casdoor directory user %s: %w", patch.target, err)
 		}
 	}
 	return nil
 }
 
+func indexDirectoryUsers(users []casdoorDirectoryUser, anchorAttribute string) (map[string]casdoorDirectoryUser, error) {
+	result := map[string]casdoorDirectoryUser{}
+	for _, user := range users {
+		anchor := strings.TrimSpace(user.Attributes[anchorAttribute])
+		if anchor == "" {
+			return nil, fmt.Errorf("directory user %s has no %s", directoryUsername(user), anchorAttribute)
+		}
+		if _, exists := result[anchor]; exists {
+			return nil, fmt.Errorf("directory returned duplicate identity anchor %s", anchor)
+		}
+		result[anchor] = user
+	}
+	return result, nil
+}
+
+func indexManagedUsers(users []casdoorManagedUser, anchorAttribute string) (map[string]casdoorManagedUser, error) {
+	result := map[string]casdoorManagedUser{}
+	for _, user := range users {
+		anchor := strings.TrimSpace(user.Properties[anchorAttribute])
+		if anchor == "" {
+			anchor = strings.TrimSpace(user.ID)
+		}
+		if anchor == "" {
+			continue
+		}
+		if existing, exists := result[anchor]; exists && existing.Name != user.Name {
+			return nil, fmt.Errorf("Casdoor users %s and %s share identity anchor %s", existing.Name, user.Name, anchor)
+		}
+		result[anchor] = user
+	}
+	return result, nil
+}
+
+func planPreSyncUserPatches(events []directoryEvent, directory []casdoorDirectoryUser, managed []casdoorManagedUser, settings directoryWatchSettings) ([]casdoorUserPatch, error) {
+	directoryByAnchor, err := indexDirectoryUsers(directory, settings.identityAnchor)
+	if err != nil {
+		return nil, err
+	}
+	managedByAnchor, err := indexManagedUsers(managed, settings.identityAnchor)
+	if err != nil {
+		return nil, err
+	}
+	patches := []casdoorUserPatch{}
+	for anchor, directoryUser := range directoryByAnchor {
+		managedUser, exists := managedByAnchor[anchor]
+		if !exists {
+			continue
+		}
+		patch := newUserPatch(settings, managedUser)
+		patch.setString("name", managedUser.Name, directoryUsername(directoryUser))
+		patch.setString("id", managedUser.ID, anchor)
+		patch.setString("ldap", managedUser.LDAP, directoryUser.UUID)
+		patch.setBool("isForbidden", managedUser.IsForbidden, false)
+		patch.setBool("isDeleted", managedUser.IsDeleted, false)
+		patch.setProperties(managedUser.Properties, directoryUser.Attributes)
+		if patch.changed() {
+			patches = append(patches, patch.patch)
+		}
+	}
+
+	currentDNs := map[string]bool{}
+	for _, user := range directory {
+		if dn := strings.ToLower(strings.TrimSpace(user.Attributes["distinguishedName"])); dn != "" {
+			currentDNs[dn] = true
+		}
+	}
+	for _, event := range events {
+		eventDN := strings.ToLower(strings.TrimSpace(event.DN))
+		if eventDN == "" || currentDNs[eventDN] || !dnWithinBase(event.DN, settings.ldapUserBaseDN) {
+			continue
+		}
+		deleted := event.Operation == "Delete"
+		disabled := event.Operation == "Modify" && hasDirectoryAttribute(event, "userAccountControl")
+		if !deleted && !disabled {
+			continue
+		}
+		for _, managedUser := range managed {
+			managedDN := strings.ToLower(strings.TrimSpace(managedUser.Properties["distinguishedName"]))
+			if managedDN != eventDN && !strings.EqualFold(managedUser.Name, directoryEventName(event)) {
+				continue
+			}
+			patch := newUserPatch(settings, managedUser)
+			patch.setBool("isForbidden", managedUser.IsForbidden, true)
+			if deleted {
+				patch.setBool("isDeleted", managedUser.IsDeleted, true)
+			}
+			patch.setGroups(managedUser.Groups, []string{})
+			if patch.changed() {
+				patches = append(patches, patch.patch)
+			}
+			break
+		}
+	}
+	return patches, nil
+}
+
+func planPostSyncUserPatches(events []directoryEvent, directory []casdoorDirectoryUser, managed []casdoorManagedUser, groupsByAnchor map[string][]string, settings directoryWatchSettings) ([]casdoorUserPatch, error) {
+	directoryByAnchor, err := indexDirectoryUsers(directory, settings.identityAnchor)
+	if err != nil {
+		return nil, err
+	}
+	managedByAnchor, err := indexManagedUsers(managed, settings.identityAnchor)
+	if err != nil {
+		return nil, err
+	}
+	managedByName := map[string]casdoorManagedUser{}
+	for _, user := range managed {
+		managedByName[strings.ToLower(user.Name)] = user
+	}
+	changedNames := directoryEventNames(events)
+	patches := []casdoorUserPatch{}
+	for anchor, directoryUser := range directoryByAnchor {
+		managedUser, exists := managedByAnchor[anchor]
+		if !exists {
+			managedUser, exists = managedByName[strings.ToLower(directoryUsername(directoryUser))]
+		}
+		if !exists {
+			return nil, fmt.Errorf("Casdoor did not create directory user %s", directoryUsername(directoryUser))
+		}
+		patch := newUserPatch(settings, managedUser)
+		patch.setString("name", managedUser.Name, directoryUsername(directoryUser))
+		patch.setString("id", managedUser.ID, anchor)
+		patch.setString("ldap", managedUser.LDAP, directoryUser.UUID)
+		patch.setBool("isForbidden", managedUser.IsForbidden, false)
+		patch.setBool("isDeleted", managedUser.IsDeleted, false)
+		patch.setProperties(managedUser.Properties, directoryUser.Attributes)
+		patch.setGroups(managedUser.Groups, groupsByAnchor[anchor])
+		if changedNames[strings.ToLower(directoryUser.UID)] || changedNames[strings.ToLower(directoryUser.CN)] {
+			displayName := directoryUser.DisplayName
+			if displayName == "" {
+				displayName = directoryUser.CN
+			}
+			patch.setString("displayName", managedUser.DisplayName, displayName)
+			patch.setString("email", managedUser.Email, directoryUser.Email)
+		}
+		if patch.changed() {
+			patches = append(patches, patch.patch)
+		}
+	}
+	return patches, nil
+}
+
+type userPatchBuilder struct {
+	patch casdoorUserPatch
+}
+
+func newUserPatch(settings directoryWatchSettings, user casdoorManagedUser) *userPatchBuilder {
+	owner, _, _ := strings.Cut(settings.ldapID, "/")
+	return &userPatchBuilder{patch: casdoorUserPatch{target: owner + "/" + user.Name, body: map[string]any{}}}
+}
+
+func (builder *userPatchBuilder) setString(column, current, desired string) {
+	if current != desired {
+		builder.patch.columns = append(builder.patch.columns, column)
+		builder.patch.body[column] = desired
+	}
+}
+
+func (builder *userPatchBuilder) setBool(column string, current, desired bool) {
+	if current != desired {
+		builder.patch.columns = append(builder.patch.columns, column)
+		builder.patch.body[column] = desired
+	}
+}
+
+func (builder *userPatchBuilder) setProperties(current, desired map[string]string) {
+	merged := maps.Clone(current)
+	if merged == nil {
+		merged = map[string]string{}
+	}
+	for key, value := range desired {
+		merged[key] = value
+	}
+	if !maps.Equal(current, merged) {
+		builder.patch.columns = append(builder.patch.columns, "properties")
+		builder.patch.body["properties"] = merged
+	}
+}
+
+func (builder *userPatchBuilder) setGroups(current, desired []string) {
+	if desired == nil {
+		desired = []string{}
+	}
+	if !slices.Equal(current, desired) {
+		builder.patch.columns = append(builder.patch.columns, "groups")
+		builder.patch.body["groups"] = desired
+	}
+}
+
+func (builder *userPatchBuilder) changed() bool {
+	return len(builder.patch.columns) > 0
+}
+
+func directoryUsername(user casdoorDirectoryUser) string {
+	if user.UID != "" {
+		return user.UID
+	}
+	return user.CN
+}
+
+func directoryEventName(event directoryEvent) string {
+	firstRDN, _, _ := strings.Cut(event.DN, ",")
+	_, value, _ := strings.Cut(firstRDN, "=")
+	return strings.TrimSpace(value)
+}
+
+func hasDirectoryAttribute(event directoryEvent, wanted string) bool {
+	for _, attribute := range event.Attributes {
+		if strings.EqualFold(attribute, wanted) {
+			return true
+		}
+	}
+	return false
+}
+
+func dnWithinBase(dn, base string) bool {
+	dn, base = strings.ToLower(strings.TrimSpace(dn)), strings.ToLower(strings.TrimSpace(base))
+	return dn == base || strings.HasSuffix(dn, ","+base)
+}
+
 func directoryEventNames(events []directoryEvent) map[string]bool {
 	result := map[string]bool{}
 	for _, event := range events {
-		firstRDN, _, _ := strings.Cut(event.DN, ",")
-		_, value, ok := strings.Cut(firstRDN, "=")
-		if ok && strings.TrimSpace(value) != "" {
-			result[strings.ToLower(strings.TrimSpace(value))] = true
+		if value := directoryEventName(event); value != "" {
+			result[strings.ToLower(value)] = true
 		}
 	}
 	return result
@@ -515,7 +853,11 @@ func runDirectoryWatch(args []string) error {
 		return fmt.Errorf("directory-watch accepts only --healthcheck or --get-user ID")
 	}
 
-	syncer := &casdoorLDAPSyncer{settings: settings, client: &http.Client{Timeout: 2 * time.Minute}}
+	memberships := directoryMembershipResolver(emptyDirectoryMembershipResolver{})
+	if len(settings.managedGroups) > 0 {
+		memberships = &ldapDirectoryMembershipResolver{settings: settings}
+	}
+	syncer := &casdoorLDAPSyncer{settings: settings, client: &http.Client{Timeout: 2 * time.Minute}, memberships: memberships}
 	watcher := newDirectoryWatcher(settings, syncer)
 	defer watcher.reader.close()
 	log.Printf("watching %s for ldap=%s (debounce=%s min-interval=%s)", settings.eventFile, settings.ldapID, settings.debounce, settings.minimumInterval)

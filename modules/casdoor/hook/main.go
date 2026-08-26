@@ -105,19 +105,23 @@ func handle(req hookRequest) (hookResponse, error) {
 	if req.Module != "casdoor" {
 		return hookResponse{}, nil
 	}
+	env := cloneMap(req.Env)
 	switch req.Phase {
 	case "local_account_apply", "local_account_rotate", "local_account_rollback":
 		return hookResponse{}, handleLocalAccount(req)
 	case "calculate":
-		env := cloneMap(req.Env)
 		secrets := &secretStore{values: cloneMap(req.Secrets)}
 		if err := calcCasdoor(env, secrets); err != nil {
 			return hookResponse{}, err
 		}
 		return hookResponse{Env: changed(req.Env, env), Secrets: changed(req.Secrets, secrets.values)}, nil
 	case "render_env":
-		files, err := renderCasdoor(req.Env)
-		return hookResponse{Files: files}, err
+		// Consumer registrations are aggregated after the provider calculate
+		// phase. Publish their managed groups here, when the complete IAM
+		// registration set is available to both init-data and the env file.
+		env["CASDOOR_DIRWATCH_MANAGED_GROUPS"] = strings.Join(managedIAMGroups(env), ",")
+		files, err := renderCasdoor(env)
+		return hookResponse{Env: changed(req.Env, env), Files: files}, err
 	default:
 		return hookResponse{}, nil
 	}
@@ -135,7 +139,8 @@ func calcCasdoor(e map[string]string, secrets *secretStore) error {
 	if err := requireKeys(e, []string{
 		"CASDOOR_DB_HOST", "CASDOOR_DB_PORT", "CASDOOR_DB_USERNAME", "CASDOOR_DB_PASSWORD", "CASDOOR_DB_NAME",
 		"SAMBA_DC_LDAPS_SERVER_URL", "SAMBA_DC_LDAPS_PORT", "SAMBA_DC_LDAP_BIND_DN",
-		"SAMBA_DC_LDAP_BIND_PASSWORD", "SAMBA_DC_BASE_USERS_DN", "SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE",
+		"SAMBA_DC_LDAP_BIND_PASSWORD", "SAMBA_DC_BASE_USERS_DN", "SAMBA_DC_BASE_GROUPS_DN",
+		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE", "SAMBA_DC_GROUP_CLASS_FILTER",
 	}); err != nil {
 		return err
 	}
@@ -188,6 +193,16 @@ func calcDirectoryWatch(e map[string]string) {
 	e["CASDOOR_DIRWATCH_LDAP_ID"] = "anas/anas-samba-ad"
 	e["CASDOOR_DIRWATCH_CLIENT_ID"] = e["CASDOOR_PORTAL_CLIENT_ID"]
 	e["CASDOOR_DIRWATCH_CLIENT_SECRET"] = e["CASDOOR_PORTAL_CLIENT_SECRET"]
+	e["CASDOOR_DIRWATCH_LDAP_HOST"] = e["CASDOOR_LDAP_HOST"]
+	e["CASDOOR_DIRWATCH_LDAP_PORT"] = e["CASDOOR_LDAP_PORT"]
+	e["CASDOOR_DIRWATCH_LDAP_BIND_DN"] = e["CASDOOR_LDAP_BIND_DN"]
+	e["CASDOOR_DIRWATCH_LDAP_BIND_PASSWORD"] = e["CASDOOR_LDAP_BIND_PASSWORD"]
+	e["CASDOOR_DIRWATCH_LDAP_USER_BASE_DN"] = e["CASDOOR_LDAP_BASE_DN"]
+	e["CASDOOR_DIRWATCH_LDAP_GROUP_BASE_DN"] = e["SAMBA_DC_BASE_GROUPS_DN"]
+	e["CASDOOR_DIRWATCH_LDAP_USER_FILTER"] = e["CASDOOR_LDAP_FILTER"]
+	e["CASDOOR_DIRWATCH_LDAP_GROUP_FILTER"] = defaultValue(e["SAMBA_DC_GROUP_CLASS_FILTER"], "(objectClass=group)")
+	e["CASDOOR_DIRWATCH_IDENTITY_ANCHOR_ATTRIBUTE"] = e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"]
+	e["CASDOOR_DIRWATCH_MANAGED_GROUPS"] = strings.Join(managedIAMGroups(e), ",")
 	e["CASDOOR_DIRWATCH_OPERATIONS"] = defaultValue(
 		e["CASDOOR_DIRWATCH_OPERATIONS"], "Add,Modify,Delete")
 	e["CASDOOR_DIRWATCH_ATTRIBUTES"] = defaultValue(

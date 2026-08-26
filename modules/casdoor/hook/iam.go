@@ -83,6 +83,7 @@ func renderInitData(e map[string]string) (string, error) {
 		}
 		applications = append(applications, application)
 	}
+	groups, roles, permissions := managedIAMAccessObjects(e)
 
 	port := 0
 	if _, err := fmt.Sscan(e["CASDOOR_LDAP_PORT"], &port); err != nil || port <= 0 {
@@ -120,10 +121,10 @@ func renderInitData(e map[string]string) (string, error) {
 			"allowSelfSignedCert": false, "username": e["CASDOOR_LDAP_BIND_DN"],
 			"password": e["CASDOOR_LDAP_BIND_PASSWORD"], "baseDn": e["CASDOOR_LDAP_BASE_DN"],
 			"filter": e["CASDOOR_LDAP_FILTER"], "filterFields": []string{"sAMAccountName", "mail"},
-			"passwordType": "plain", "autoSync": autoSync,
+			"passwordType": "plain", "autoSync": autoSync, "customAttributes": ldapCustomAttributes(e),
 		}},
-		"providers": []any{}, "models": []any{}, "permissions": []any{}, "groups": []any{},
-		"roles": []any{}, "syncers": []any{}, "tokens": []any{}, "webhooks": []any{},
+		"providers": []any{}, "models": []any{}, "permissions": permissions, "groups": groups,
+		"roles": roles, "syncers": []any{}, "tokens": []any{}, "webhooks": []any{},
 	}
 	b, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
@@ -151,9 +152,11 @@ func oidcApplication(e map[string]string, app string) (map[string]any, error) {
 	result["clientSecret"] = e[prefix+"CLIENT_SECRET"]
 	result["redirectUris"] = append(splitCSV(e[prefix+"REDIRECT_URIS"]), splitCSV(e[prefix+"POST_LOGOUT_REDIRECT_URIS"])...)
 	result["grantTypes"] = []string{"authorization_code", "refresh_token"}
-	result["tokenFormat"] = "JWT"
+	result["tokenFormat"] = "JWT-Custom"
 	result["tokenSigningMethod"] = "RS256"
-	result["tokenFields"] = []string{"owner", "name", "displayName", "email", "groups", "properties"}
+	result["tokenFields"] = []string{"Name", "DisplayName", "Email"}
+	result["tokenAttributes"] = oidcTokenAttributes(
+		e[prefix+"ATTRIBUTES"], e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"])
 	if uri := strings.TrimSpace(e[prefix+"OIDC_LOGOUT_URI"]); uri != "" && strings.Contains(e[prefix+"OIDC_LOGOUT_METHODS"], "backchannel") {
 		result["backchannelLogoutUri"] = uri
 	}
@@ -172,7 +175,8 @@ func samlApplication(e map[string]string, app string) (map[string]any, error) {
 	result["enableSamlPostBinding"] = true
 	result["enableSamlAssertionSignature"] = true
 	result["samlHashAlgorithm"] = "SHA256"
-	result["samlAttributes"] = samlAttributes(e[prefix+"ATTRIBUTES"])
+	result["samlAttributes"] = samlAttributes(
+		e[prefix+"ATTRIBUTES"], e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"])
 	return result, nil
 }
 
@@ -194,24 +198,148 @@ func baseApplication(e map[string]string, app string) map[string]any {
 	}
 }
 
-func samlAttributes(attributes string) []any {
+func samlAttributes(attributes, identityAnchor string) []any {
 	out := []any{}
-	for _, raw := range splitCSV(attributes) {
-		parts := strings.Split(raw, ":")
-		if len(parts) < 2 || strings.TrimSpace(parts[0]) == "" {
-			continue
-		}
-		claim, source := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
-		value := "$user.id"
-		switch strings.ToLower(source) {
-		case "samaccountname", "username", "uid":
+	for _, attribute := range parseIAMAttributes(attributes) {
+		value := ""
+		switch strings.ToLower(attribute.source) {
+		case "samaccountname", "username", "uid", "preferred_username":
 			value = "$user.name"
 		case "mail", "email":
 			value = "$user.email"
 		case "groups", "group":
-			value = "$user.groups"
+			// Managed Casdoor roles have the exact Samba group names while
+			// their backing Casdoor group IDs remain owner-qualified.
+			value = "$user.roles"
+		case strings.ToLower(identityAnchor):
+			value = "$user.id"
 		}
-		out = append(out, map[string]any{"name": claim, "nameFormat": "Unspecified", "value": value})
+		if value == "" {
+			continue
+		}
+		out = append(out, map[string]any{"name": attribute.claim, "nameFormat": "Unspecified", "value": value})
 	}
 	return out
+}
+
+type iamAttribute struct {
+	claim  string
+	source string
+}
+
+func parseIAMAttributes(attributes string) []iamAttribute {
+	result := []iamAttribute{}
+	for _, raw := range splitCSV(attributes) {
+		parts := strings.Split(raw, ":")
+		if len(parts) < 2 {
+			continue
+		}
+		claim, source := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+		if claim != "" && source != "" {
+			result = append(result, iamAttribute{claim: claim, source: source})
+		}
+	}
+	return result
+}
+
+func oidcTokenAttributes(attributes, identityAnchor string) []any {
+	result := []any{}
+	seenClaims := map[string]bool{}
+	for _, attribute := range parseIAMAttributes(attributes) {
+		field := ""
+		typeName := "String"
+		switch strings.ToLower(attribute.source) {
+		case "samaccountname", "username", "uid", "preferred_username":
+			field = "Name"
+		case "cn", "name", "displayname":
+			field = "DisplayName"
+		case "mail", "email":
+			field = "Email"
+		case "groups", "group":
+			field, typeName = "Roles", "Array"
+		case strings.ToLower(identityAnchor):
+			field = "Id"
+		default:
+			field = "Properties." + attribute.source
+		}
+		result = append(result, map[string]any{
+			"name": attribute.claim, "category": "Existing Field", "value": field, "type": typeName,
+		})
+		seenClaims[attribute.claim] = true
+	}
+	if !seenClaims["groups"] {
+		result = append(result, map[string]any{
+			"name": "groups", "category": "Existing Field", "value": "Roles", "type": "Array",
+		})
+	}
+	return result
+}
+
+func ldapCustomAttributes(e map[string]string) map[string]string {
+	result := map[string]string{
+		e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"]: e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"],
+		"distinguishedName":                     "distinguishedName",
+	}
+	for _, app := range append(splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]), splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])...) {
+		prefix := iamClientPrefix + envName(app) + "__"
+		for _, attribute := range parseIAMAttributes(e[prefix+"ATTRIBUTES"]) {
+			switch strings.ToLower(attribute.source) {
+			case "samaccountname", "username", "uid", "preferred_username", "cn", "name", "displayname", "mail", "email", "groups", "group":
+				continue
+			}
+			result[attribute.source] = attribute.source
+		}
+	}
+	return result
+}
+
+func managedIAMGroups(e map[string]string) []string {
+	seen := map[string]bool{}
+	result := []string{}
+	for _, app := range append(splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]), splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])...) {
+		prefix := iamClientPrefix + envName(app) + "__"
+		for _, group := range splitCSV(e[prefix+"ALLOW_GROUPS"]) {
+			if !seen[group] {
+				seen[group] = true
+				result = append(result, group)
+			}
+		}
+	}
+	return result
+}
+
+func managedIAMAccessObjects(e map[string]string) ([]any, []any, []any) {
+	groups := []any{}
+	roles := []any{}
+	permissions := []any{}
+	for _, group := range managedIAMGroups(e) {
+		groupID := "anas/" + group
+		groups = append(groups, map[string]any{
+			"owner": "anas", "name": group, "displayName": group,
+			"type": "Virtual", "isTopGroup": true, "isEnabled": true,
+		})
+		roles = append(roles, map[string]any{
+			"owner": "anas", "name": group, "displayName": group,
+			"groups": []string{groupID}, "isEnabled": true,
+		})
+	}
+	for _, app := range append(splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]), splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])...) {
+		prefix := iamClientPrefix + envName(app) + "__"
+		allowed := splitCSV(e[prefix+"ALLOW_GROUPS"])
+		if len(allowed) == 0 {
+			continue
+		}
+		groupIDs := make([]string, 0, len(allowed))
+		for _, group := range allowed {
+			groupIDs = append(groupIDs, "anas/"+group)
+		}
+		permissions = append(permissions, map[string]any{
+			"owner": "anas", "name": "permission-" + appName(app),
+			"displayName": "ANAS access for " + app, "description": "Managed from ANAS_IAM_CLIENT ALLOW_GROUPS",
+			"groups": groupIDs, "model": "built-in/user-model-built-in", "resourceType": "Application",
+			"resources": []string{appName(app)}, "actions": []string{"Read"}, "effect": "Allow",
+			"isEnabled": true, "submitter": "admin", "approver": "admin", "state": "Approved",
+		})
+	}
+	return groups, roles, permissions
 }

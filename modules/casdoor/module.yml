@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: casdoor
 version: 3.143.0
-revision: 3
+revision: 4
 app_version: 3.143.0
 abi:
   supports:
@@ -67,6 +67,7 @@ config:
     - ANAS_TLS_CERTS_DIR
     - ANAS_TLS_TRUST_BUNDLE_NAME
     - SAMBA_DC_BASE_USERS_DN
+    - SAMBA_DC_BASE_GROUPS_DN
     - SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE
     - SAMBA_DC_LDAP_BIND_DN
     - SAMBA_DC_LDAP_BIND_PASSWORD
@@ -74,6 +75,7 @@ config:
     - SAMBA_DC_LDAPS_SERVER_URL
     - SAMBA_DC_USER_CLASS_FILTER
     - SAMBA_DC_USER_ENABLED_FILTER
+    - SAMBA_DC_GROUP_CLASS_FILTER
     - ANAS_DIRECTORY_EVENTS_DIR
     - ANAS_DIRECTORY_EVENTS_FILE_NAME
     - TRAEFIK_BASE_PORT

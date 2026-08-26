@@ -3,7 +3,7 @@
 提供 OIDC 与 SAML 的 IAM Provider，并通过 LDAPS 从 Samba AD 导入目录用户。
 
 > [!WARNING]
-> 当前生命周期为 `developing`，只用于开发与验证。目录永久锚点、按应用 Group 授权、账号停用传播和真实客户端会话撤销尚未满足生产验收。
+> 当前生命周期为 `developing`，只用于开发与验证。目录永久锚点、按应用 Group 授权和账号停用传播已有实现但尚未完成真实 E2E；客户端会话撤销也未满足生产验收。
 
 ## 快速信息
 
@@ -11,7 +11,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `casdoor` |
-| 版本 / revision | `3.143.0-r3` |
+| 版本 / revision | `3.143.0-r4` |
 | 状态 | `developing` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
@@ -40,11 +40,11 @@ modules:
 
 ## 身份与协议行为
 
-Samba AD 仍是人员和目录账号的事实来源。Casdoor 使用受限只读 Bind 经 LDAPS 导入用户并远程校验密码。独立 `casdoor_dirwatch` 订阅 Samba 的持久目录事件日志，经过防抖后立即触发一次 LDAP 导入；对本批事件涉及的用户，再通过受限 `update-user` 列刷新 `displayName` 和邮件，弥补上游同步只更新既有用户 Group 的限制。默认每 5 分钟的周期同步继续保留为兜底。本实现不启用 Casdoor 的 LDAP/AD 密码写回，也不把 Casdoor 本地用户记录当作目录权威。
+Samba AD 仍是人员和目录账号的事实来源。Casdoor 使用受限只读 Bind 经 LDAPS 导入用户并远程校验密码。独立 `casdoor_dirwatch` 订阅 Samba 的持久目录事件日志，经过防抖后立即触发一次 LDAP 导入；它以 `anasIdentityAnchor` 关联影子用户，确定性收敛改名、停用、删除和 Group 撤权，并只对本批事件涉及的用户刷新 `displayName` 和邮件。订阅器还经受信任 LDAPS 直接计算声明的递归组成员，避免上游同步保留旧 Group。默认每 5 分钟的周期同步继续保留为兜底。本实现不启用 Casdoor 的 LDAP/AD 密码写回，也不把 Casdoor 本地用户记录当作目录权威。
 
 固定 Casdoor `3.143.0` 按通用 `ANAS_IAM_CLIENT__<APP>__*` 注册 OIDC/SAML Consumer。当前不发布未经验证的 SAML SLO，Consumer 只能本地登出。OIDC back-channel URI 仅在 Consumer 明确声明时登记；声明消失或协议切换会显式写空旧 URI，但真实通知与会话撤销仍待 E2E 验证。
 
-通用 `ALLOW_GROUPS` 尚未找到可证明等价的 Casdoor Application 策略，因此本模块不会伪装成已执行按应用 Group 门禁。未知 SAML 属性只能映射到 Casdoor 本地用户 ID，而非已验证的 `anasIdentityAnchor`；需要永久身份锚点的部署不得将此状态视为生产支持。
+通用 `ALLOW_GROUPS` 被渲染为同名 Casdoor Group/Role 和按 Consumer 区分的 Application Permission；无命中组、禁用或已删除用户会在签发前被拒绝。订阅器把 Casdoor User ID 固定为 Samba `anasIdentityAnchor`，OIDC `sub`/自定义 claim 与 SAML 显式锚点属性使用该值，Group claim 来自同名 Role；未知 SAML 来源会被省略，不会冒充永久锚点。上述协议和授权结果仍须真实 Consumer E2E 后才能计为生产支持。
 
 ## 管理员登录与 IAM 故障恢复
 
@@ -115,7 +115,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`3.143.0-r3`（reviewed 2026-08-26）
+- Module version / 版本：`3.143.0-r4`（reviewed 2026-08-26）
 - Timezone / 时区：`container` — Casdoor receives TZ through the module environment; no separate application timezone is forced.
 - Language scope / 语言范围：Casdoor Web UI default
 - Selection / 选择方式：`application`
