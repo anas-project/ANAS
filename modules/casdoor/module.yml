@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: casdoor
 version: 3.143.0
-revision: 2
+revision: 3
 app_version: 3.143.0
 abi:
   supports:

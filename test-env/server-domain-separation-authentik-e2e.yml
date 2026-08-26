@@ -2,7 +2,8 @@
 # nas.test.example while the provisioned Samba AD identity is test.example.
 # Its pinned addresses belong to a dedicated network namespace and Docker
 # daemon; the runner detects the remaining host facts from that namespace.
-# Never apply this fixture to a production host.
+# Apply only to a dedicated non-production host or a server explicitly named
+# by the user/operator for this test run; all isolation guards still apply.
 modules:
   samba_dc:
     config:

@@ -11,7 +11,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `casdoor` |
-| 版本 / revision | `3.143.0-r2` |
+| 版本 / revision | `3.143.0-r3` |
 | 状态 | `developing` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
@@ -40,7 +40,7 @@ modules:
 
 ## 身份与协议行为
 
-Samba AD 仍是人员和目录账号的事实来源。Casdoor 使用受限只读 Bind 经 LDAPS 导入用户并远程校验密码。独立 `casdoor_dirwatch` 订阅 Samba 的持久目录事件日志，经过防抖后立即触发一次 LDAP 导入；默认每 5 分钟的周期同步继续保留为兜底。本实现不启用 Casdoor 的 LDAP/AD 密码写回，也不把 Casdoor 本地用户记录当作目录权威。
+Samba AD 仍是人员和目录账号的事实来源。Casdoor 使用受限只读 Bind 经 LDAPS 导入用户并远程校验密码。独立 `casdoor_dirwatch` 订阅 Samba 的持久目录事件日志，经过防抖后立即触发一次 LDAP 导入；对本批事件涉及的用户，再通过受限 `update-user` 列刷新 `displayName` 和邮件，弥补上游同步只更新既有用户 Group 的限制。默认每 5 分钟的周期同步继续保留为兜底。本实现不启用 Casdoor 的 LDAP/AD 密码写回，也不把 Casdoor 本地用户记录当作目录权威。
 
 固定 Casdoor `3.143.0` 按通用 `ANAS_IAM_CLIENT__<APP>__*` 注册 OIDC/SAML Consumer。当前不发布未经验证的 SAML SLO，Consumer 只能本地登出。OIDC back-channel URI 仅在 Consumer 明确声明时登记；声明消失或协议切换会显式写空旧 URI，但真实通知与会话撤销仍待 E2E 验证。
 
@@ -112,7 +112,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`3.143.0-r2`（reviewed 2026-08-21）
+- Module version / 版本：`3.143.0-r3`（reviewed 2026-08-26）
 - Timezone / 时区：`container` — Casdoor receives TZ through the module environment; no separate application timezone is forced.
 - Language scope / 语言范围：Casdoor Web UI default
 - Selection / 选择方式：`application`

@@ -220,7 +220,7 @@ func (reader *directoryJournalReader) readOpen() ([]directoryEvent, error) {
 }
 
 type directorySyncer interface {
-	sync() error
+	sync([]directoryEvent) error
 }
 
 type casdoorLDAPSyncer struct {
@@ -235,12 +235,16 @@ type casdoorAPIResponse struct {
 }
 
 func (syncer *casdoorLDAPSyncer) request(method, action, id string, body io.Reader) (casdoorAPIResponse, error) {
+	query := url.Values{}
+	query.Set("id", id)
+	return syncer.requestWithQuery(method, action, query, body)
+}
+
+func (syncer *casdoorLDAPSyncer) requestWithQuery(method, action string, query url.Values, body io.Reader) (casdoorAPIResponse, error) {
 	endpoint, err := url.Parse(syncer.settings.endpoint + "/api/" + action)
 	if err != nil {
 		return casdoorAPIResponse{}, err
 	}
-	query := endpoint.Query()
-	query.Set("id", id)
 	endpoint.RawQuery = query.Encode()
 	req, err := http.NewRequest(method, endpoint.String(), body)
 	if err != nil {
@@ -272,7 +276,14 @@ func (syncer *casdoorLDAPSyncer) request(method, action, id string, body io.Read
 	return envelope, nil
 }
 
-func (syncer *casdoorLDAPSyncer) sync() error {
+type casdoorDirectoryUser struct {
+	UID         string `json:"uid"`
+	CN          string `json:"cn"`
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
+}
+
+func (syncer *casdoorLDAPSyncer) sync(events []directoryEvent) error {
 	response, err := syncer.request(http.MethodGet, "get-ldap-users", syncer.settings.ldapID, nil)
 	if err != nil {
 		return err
@@ -286,8 +297,61 @@ func (syncer *casdoorLDAPSyncer) sync() error {
 	if len(directory.Users) == 0 || directory.Users[0] != '[' {
 		return fmt.Errorf("Casdoor LDAP response did not contain a user array")
 	}
-	_, err = syncer.request(http.MethodPost, "sync-ldap-users", syncer.settings.ldapID, bytes.NewReader(directory.Users))
-	return err
+	if _, err = syncer.request(http.MethodPost, "sync-ldap-users", syncer.settings.ldapID, bytes.NewReader(directory.Users)); err != nil {
+		return err
+	}
+
+	var users []casdoorDirectoryUser
+	if err := json.Unmarshal(directory.Users, &users); err != nil {
+		return fmt.Errorf("decode Casdoor LDAP user profiles: %w", err)
+	}
+	changedNames := directoryEventNames(events)
+	owner, _, ok := strings.Cut(syncer.settings.ldapID, "/")
+	if !ok || owner == "" {
+		return fmt.Errorf("invalid Casdoor LDAP id %q", syncer.settings.ldapID)
+	}
+	for _, user := range users {
+		if !changedNames[strings.ToLower(user.UID)] && !changedNames[strings.ToLower(user.CN)] {
+			continue
+		}
+		username := user.UID
+		if username == "" {
+			username = user.CN
+		}
+		if username == "" {
+			continue
+		}
+		displayName := user.DisplayName
+		if displayName == "" {
+			displayName = user.CN
+		}
+		profile, err := json.Marshal(map[string]string{
+			"displayName": displayName,
+			"email":       user.Email,
+		})
+		if err != nil {
+			return err
+		}
+		query := url.Values{}
+		query.Set("id", owner+"/"+username)
+		query.Set("columns", "displayName,email")
+		if _, err := syncer.requestWithQuery(http.MethodPost, "update-user", query, bytes.NewReader(profile)); err != nil {
+			return fmt.Errorf("refresh Casdoor LDAP profile %s: %w", username, err)
+		}
+	}
+	return nil
+}
+
+func directoryEventNames(events []directoryEvent) map[string]bool {
+	result := map[string]bool{}
+	for _, event := range events {
+		firstRDN, _, _ := strings.Cut(event.DN, ",")
+		_, value, ok := strings.Cut(firstRDN, "=")
+		if ok && strings.TrimSpace(value) != "" {
+			result[strings.ToLower(strings.TrimSpace(value))] = true
+		}
+	}
+	return result
 }
 
 type directoryWatchHealth struct {
@@ -306,6 +370,7 @@ type directoryWatcher struct {
 	cursor        int64
 	uncommitted   int64
 	pendingSince  time.Time
+	pendingEvents []directoryEvent
 	lastTriggered time.Time
 	health        directoryWatchHealth
 }
@@ -334,6 +399,7 @@ func (watcher *directoryWatcher) poll(now time.Time) (bool, error) {
 		}
 		if interestingDirectoryEvent(event, watcher.settings) {
 			matched = true
+			watcher.pendingEvents = append(watcher.pendingEvents, event)
 			log.Printf("directory change seq=%d op=%s dn=%s attrs=%s", event.Seq, event.Operation, event.DN, strings.Join(event.Attributes, ","))
 		}
 	}
@@ -351,10 +417,11 @@ func (watcher *directoryWatcher) poll(now time.Time) (bool, error) {
 	if !watcher.lastTriggered.IsZero() && now.Sub(watcher.lastTriggered) < watcher.settings.minimumInterval {
 		return false, nil
 	}
-	if err := watcher.syncer.sync(); err != nil {
+	if err := watcher.syncer.sync(watcher.pendingEvents); err != nil {
 		return false, err
 	}
 	watcher.pendingSince = time.Time{}
+	watcher.pendingEvents = nil
 	watcher.lastTriggered = now
 	watcher.health.LastTriggerAt = time.Now().Unix()
 	watcher.health.TriggerCount++

@@ -29,6 +29,11 @@ section() { printf '\n== %s ==\n' "$1"; }
 dc_exec() { docker exec "$dc" "$@"; }
 dc_exec_stdin() { docker exec -i "$dc" "$@"; }
 
+ldap_modify() {
+  dc_exec_stdin bash -lc \
+    'exec ldbmodify -H ldap://127.0.0.1 -U "${SAMBA_DC_ADMIN_NAME}%${SAMBA_DC_ADMIN_PASSWORD}"'
+}
+
 samba_tool() {
   dc_exec bash -lc \
     'exec samba-tool "$@" -H ldap://127.0.0.1 -U "${SAMBA_DC_ADMIN_NAME}%${SAMBA_DC_ADMIN_PASSWORD}"' \
@@ -130,7 +135,7 @@ user_dn=$(entry_dn user "$user")
 test -n "$user_dn"
 display_name="Casdoor Event ${suffix}"
 printf 'dn: %s\nchangetype: modify\nreplace: displayName\ndisplayName: %s\n' \
-  "$user_dn" "$display_name" | dc_exec_stdin ldbmodify -H /var/lib/samba/private/sam.ldb >/dev/null
+  "$user_dn" "$display_name" | ldap_modify >/dev/null
 wait_for_field "$user" displayName "$display_name"
 printf 'Casdoor refreshed displayName through the event path\n'
 

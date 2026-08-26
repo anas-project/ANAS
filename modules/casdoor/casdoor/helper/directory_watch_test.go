@@ -23,7 +23,7 @@ type fakeDirectorySyncer struct {
 	err   error
 }
 
-func (syncer *fakeDirectorySyncer) sync() error {
+func (syncer *fakeDirectorySyncer) sync(_ []directoryEvent) error {
 	syncer.calls++
 	return syncer.err
 }
@@ -165,15 +165,18 @@ func TestCasdoorLDAPSyncerUsesBasicAuthAndPostsFetchedUsers(t *testing.T) {
 		if !ok || username != "client-id" || password != "client-secret" {
 			t.Errorf("basic auth = %q/%q ok=%v", username, password, ok)
 		}
-		if got := request.URL.Query().Get("id"); got != "anas/anas-samba-ad" {
-			t.Errorf("LDAP id = %q", got)
-		}
 		calls = append(calls, request.Method+" "+request.URL.Path)
 		body := ""
 		switch request.URL.Path {
 		case "/api/get-ldap-users":
-			body = `{"status":"ok","data":{"users":[{"uid":"alice"}]}}`
+			if got := request.URL.Query().Get("id"); got != "anas/anas-samba-ad" {
+				t.Errorf("LDAP id = %q", got)
+			}
+			body = `{"status":"ok","data":{"users":[{"uid":"alice","cn":"Alice","displayName":"Alice Example","email":"alice@example.test"}]}}`
 		case "/api/sync-ldap-users":
+			if got := request.URL.Query().Get("id"); got != "anas/anas-samba-ad" {
+				t.Errorf("LDAP id = %q", got)
+			}
 			var users []map[string]any
 			if err := json.NewDecoder(request.Body).Decode(&users); err != nil {
 				t.Errorf("decode posted users: %v", err)
@@ -182,6 +185,21 @@ func TestCasdoorLDAPSyncerUsesBasicAuthAndPostsFetchedUsers(t *testing.T) {
 				t.Errorf("posted users = %#v", users)
 			}
 			body = `{"status":"ok","data":{"exist":[],"failed":[]}}`
+		case "/api/update-user":
+			if got := request.URL.Query().Get("id"); got != "anas/alice" {
+				t.Errorf("user id = %q", got)
+			}
+			if got := request.URL.Query().Get("columns"); got != "displayName,email" {
+				t.Errorf("updated columns = %q", got)
+			}
+			var profile map[string]string
+			if err := json.NewDecoder(request.Body).Decode(&profile); err != nil {
+				t.Errorf("decode profile: %v", err)
+			}
+			if profile["displayName"] != "Alice Example" || profile["email"] != "alice@example.test" {
+				t.Errorf("profile = %#v", profile)
+			}
+			body = `{"status":"ok","data":"Affected"}`
 		default:
 			return &http.Response{StatusCode: http.StatusNotFound, Status: "404 Not Found", Body: io.NopCloser(strings.NewReader("not found")), Header: make(http.Header)}, nil
 		}
@@ -194,10 +212,10 @@ func TestCasdoorLDAPSyncerUsesBasicAuthAndPostsFetchedUsers(t *testing.T) {
 	settings.clientID = "client-id"
 	settings.clientSecret = "client-secret"
 	syncer := &casdoorLDAPSyncer{settings: settings, client: client}
-	if err := syncer.sync(); err != nil {
+	if err := syncer.sync([]directoryEvent{{DN: "CN=alice,OU=People,DC=example,DC=test", Operation: "Modify", Attributes: []string{"displayName"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(calls, ","); got != "GET /api/get-ldap-users,POST /api/sync-ldap-users" {
+	if got := strings.Join(calls, ","); got != "GET /api/get-ldap-users,POST /api/sync-ldap-users,POST /api/update-user" {
 		t.Fatalf("API calls = %s", got)
 	}
 }

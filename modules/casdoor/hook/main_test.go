@@ -60,3 +60,20 @@ func TestCalculatePublishesCasdoorAndLDAPConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderAppConfIncludesPostgresDatabaseNameInDSN(t *testing.T) {
+	e := casdoorTestEnv()
+	e["CASDOOR_DB_HOST"] = "postgres"
+	e["CASDOOR_DB_PORT"] = "5432"
+	e["CASDOOR_DB_USERNAME"] = "casdoor"
+	e["CASDOOR_DB_PASSWORD"] = "db-secret"
+	e["CASDOOR_DB_NAME"] = "casdoor"
+
+	rendered, err := renderAppConf(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "dbname=casdoor") {
+		t.Fatalf("PostgreSQL DSN is missing the database name:\n%s", rendered)
+	}
+}

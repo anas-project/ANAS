@@ -329,8 +329,9 @@ anas-backup.timer  → 以 root 执行 anas backup create
 
 ### 测试机
 
-本节的 btrfs、snapshot、backup、rollback 和其他 E2E 测试必须在独立的非生产主机执行，
-禁止使用承载正式服务的生产主机。下表为非生产环境历史实测，仅用于说明设计依据：
+本节的 btrfs、snapshot、backup、rollback 和其他 E2E 测试默认在独立的非生产主机执行；用户或
+操作者为本次运行明确指定准确服务器时也可以使用该目标。无论目标用途如何，都必须使用独立
+workspace 和定向清理，不得操作既有子卷或业务数据。下表为非生产环境历史实测，仅用于说明设计依据：
 
 | 操作 | 结果 |
 | --- | --- |
@@ -339,7 +340,7 @@ anas-backup.timer  → 以 root 执行 anas backup create
 | `btrfs send` | ❌ **需要 root**（`Operation not permitted`） |
 | `go` | ❌ **未安装，需补** |
 
-后续测试必须迁移到具备真实 btrfs 的独立非生产主机，并满足两条前置：
+后续测试必须迁移到具备真实 btrfs 的已授权目标，并满足两条前置：
 
 1. **测试主机必须安装 Go。** `freezeHookBinary` 让 deployment 不依赖工具链，但 render 阶段仍
    要 `go build`；回退测试需要两次真实 apply，绕不过去。
@@ -409,8 +410,8 @@ R10 同样在一期：备份和回滚失败后把服务留在停机状态，是�
 分工如下：
 
 - **非 btrfs Linux 测试主机** —— 一期（workspace 语义、`anas init` 的非 btrfs 分支）、R1、R10
-- **独立的非生产 btrfs 测试主机** —— 二期起的全部 btrfs 用例；主机必须预先安装 Go，
-  且不得承载正式服务
+- **已授权的 btrfs 测试主机** —— 二期起的全部 btrfs 用例；主机必须预先安装 Go，默认使用
+  独立非生产主机；承载正式服务时必须由用户或操作者为本次运行明确指定
 - **本机 macOS** —— 仅单元测试与静态检查，btrfs 用例全部跳过并在汇总中列出
 
 ## 迁移

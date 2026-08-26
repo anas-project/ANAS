@@ -137,7 +137,7 @@ git diff --check
 
 如 Module 含独立 helper/entrypoint 包，再运行对应单元测试和 Linux
 amd64/arm64 编译。命令通过只能证明机械契约，不能替代真实登录、恢复、
-升级或数据安全证据。Docker/E2E 必须使用隔离的非生产 daemon、workspace、
+升级或数据安全证据。Docker/E2E 必须在已授权目标上使用隔离的 daemon、workspace、
 Compose project 前缀和端口范围。
 
 ## 14. 评审结论模板

@@ -14,21 +14,14 @@ global:
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
+  container_prefix: anas_casdoor_
+  network_prefix: anas_casdoor_
+  host_ip: 10.252.0.2
 env:
-  CONTAINER_PREFIX: anas_casdoor_
-  NETWORK_PREFIX: anas_casdoor_
   CHINESE_SPEEDUP: "true"
   CHINESE_BUILD_SPEEDUP: "true"
   APT_MIRROR_URL: https://mirrors.aliyun.com
   APK_MIRROR_URL: https://mirrors.aliyun.com
   NPM_REGISTRY_URL: https://registry.npmmirror.com
-  DOCKER_SOCKET_PATH: /run/anas-casdoor-docker.sock
   NETWORK_NAMESPACE_PATH: /run/netns/anas-casdoor
-  HOST_IP: 10.252.0.2
-  INTERFACE: anas-c-peer
-  DEFAULT_GATEWAY_IP: 10.252.0.1
-  HOST_SUBNET_MASK: "24"
-  LOCAL_DNS_SERVER: 10.252.0.2
-  SAMBA_DC_HOST_IP: 10.252.0.2
-  SAMBA_DC_INTERFACES: anas-c-peer
   SAMBA_DC_ANCHOR_SCAN_INTERVAL: "300"

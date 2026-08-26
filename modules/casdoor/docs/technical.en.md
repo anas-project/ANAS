@@ -3,7 +3,7 @@
 This document records the protocol contract, security boundaries, and verification points for maintainers.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `3.143.0-r2` / `anas.module/v1`.
+> Status: current implementation; based on `3.143.0-r3` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose topology
@@ -11,8 +11,8 @@ This document records the protocol contract, security boundaries, and verificati
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r2` | `traefik, db, casdoor` | 5 |
-| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r2` | `casdoor` | 2 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r3` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r3` | `casdoor` | 2 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -26,11 +26,11 @@ This document records the protocol contract, security boundaries, and verificati
 
 ## Data and startup flow
 
-The hook renders `app.conf` and an init-data template. At startup the helper reads the projected recovery password and replaces it with bcrypt in `/tmp/init_data.json`. Because upstream initializes LDAP auto-synchronizers before importing init data, the entrypoint briefly starts Casdoor to commit tables and managed objects, then starts the long-running process as UID/GID 1000. This makes the committed LDAP record visible to the synchronizer on first deployment and after configuration changes. PostgreSQL is the only supported database interface.
+The hook renders `app.conf` with an explicit PostgreSQL `dbname` and an init-data template. At startup the helper reads the projected recovery password and replaces it with bcrypt in `/tmp/init_data.json`. Because upstream initializes LDAP auto-synchronizers before importing init data, the entrypoint briefly starts Casdoor to commit tables and managed objects, then starts the long-running process as UID/GID 1000. The image removes the meaningless in-container `lsof` old-instance lookup so the bootstrap child cannot kill itself. Init data explicitly consents to the privileged built-in recovery administrator and creates a non-signup internal directory Application for the `anas` organization. PostgreSQL is the only supported database interface.
 
 ## LDAP, directory events, and authority boundary
 
-The LDAP connection uses trusted LDAPS and a filter that excludes disabled accounts and requires the Samba anchor attribute. `anas_casdoor_dirwatch` follows `ANAS_DIRECTORY_EVENTS_DIR` read-only with its own durable cursor, filtering and debouncing changes before it calls the local Casdoor `get-ldap-users` and `sync-ldap-users` APIs with this module's managed Application credential. The cursor is committed only after a successful sync; failures retry. Casdoor's default five-minute automatic sync remains enabled, so the subscriber is a low-latency accelerator.
+The LDAP connection uses trusted LDAPS and a filter that excludes disabled accounts and requires the Samba anchor attribute. `anas_casdoor_dirwatch` follows `ANAS_DIRECTORY_EVENTS_DIR` read-only with its own durable cursor, filtering and debouncing changes before it calls the local Casdoor `get-ldap-users` and `sync-ldap-users` APIs with this module's managed Application credential. Because upstream updates only groups on existing users, the subscriber also identifies users named by the current event batch and refreshes only `displayName,email` through restricted `update-user` columns; passwords, permissions, and other manual fields are untouched. The cursor is committed only after all calls succeed; failures retry. Casdoor's default five-minute automatic sync remains enabled, so the subscriber is a low-latency accelerator.
 
 The integration imports users and verifies passwords remotely but does not enable password writeback. Casdoor retains local shadow records, so deletion/deactivation propagation and anchor stability still require real synchronization E2E.
 
@@ -44,7 +44,7 @@ Pinned `3.143.0` publishes OIDC issuer/discovery and registers per-consumer clie
 
 ## Environment ownership
 
-The module exports `ANAS_IAM_BINDING_*` and `ANAS_IAM_PORTAL_URL`, and explicitly consumes TLS, Samba LDAPS, `ANAS_DIRECTORY_EVENTS_*`, IAM consumer registrations, and the application catalog. The sensitive bind password and the Casdoor Application secret used by the subscriber stay inside this module; the Samba producer holds no Casdoor credential.
+The module exports `ANAS_IAM_BINDING_*` and `ANAS_IAM_PORTAL_URL`, and explicitly consumes TLS, Samba LDAPS, `ANAS_DIRECTORY_EVENTS_*`, IAM consumer registrations, and the application catalog. Image builds forward the global `GOPROXY_URL` to the directory-event helper's Go builder instead of hard-coding a dependency on `proxy.golang.org`. The sensitive bind password and the Casdoor Application secret used by the subscriber stay inside this module; the Samba producer holds no Casdoor credential.
 
 ## Tests and implementation
 
@@ -53,8 +53,8 @@ The module exports `ANAS_IAM_BINDING_*` and `ANAS_IAM_PORTAL_URL`, and explicitl
 - [`local_admin_test.go`](../hook/local_admin_test.go)
 - [`helper/main_test.go`](../casdoor/helper/main_test.go)
 - [`helper/directory_watch_test.go`](../casdoor/helper/directory_watch_test.go)
-- [`server-casdoor-directory-events-e2e.sh`](../../../test-env/scripts/server-casdoor-directory-events-e2e.sh) (written, not run)
+- [`server-casdoor-directory-events-e2e.sh`](../../../test-env/scripts/server-casdoor-directory-events-e2e.sh) (passed 2026-08-26 on an isolated Docker daemon of the explicitly designated server)
 
 ## Current limitations
 
-Lifecycle remains `developing`. The directory-subscription E2E has been written but intentionally not run yet. That script plus real OIDC/SAML login, directory synchronization and deactivation, group authorization, permanent anchors, OIDC revocation, and recovery login require E2E acceptance before production evaluation.
+Lifecycle remains `developing`. The directory-subscription E2E now covers creates, existing-user profile refresh, burst debounce, and cursor recovery; deletion/deactivation propagation is still unaccepted. Real OIDC/SAML login, group authorization, permanent anchors, OIDC revocation, and recovery login also require E2E acceptance before production evaluation.

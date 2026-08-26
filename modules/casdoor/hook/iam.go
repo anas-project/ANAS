@@ -63,6 +63,11 @@ func renderInitData(e map[string]string) (string, error) {
 		"grantTypes":    []string{"authorization_code", "refresh_token"},
 		"redirectUris":  []string{e["CASDOOR_DOMAIN_FULL"] + "/callback"},
 		"signinMethods": []any{map[string]any{"name": "Password", "displayName": "Password", "rule": "All"}},
+	}, map[string]any{
+		"owner": "admin", "name": "app-anas-directory", "displayName": "ANAS Directory",
+		"organization": "anas", "cert": "anas-signing", "enablePassword": true,
+		"enableSignUp":  false,
+		"signinMethods": []any{map[string]any{"name": "Password", "displayName": "Password", "rule": "All"}},
 	}}
 	for _, app := range splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]) {
 		application, err := oidcApplication(e, app)
@@ -87,10 +92,16 @@ func renderInitData(e map[string]string) (string, error) {
 	if _, err := fmt.Sscan(e["CASDOOR_LDAP_AUTO_SYNC_MINUTES"], &autoSync); err != nil || autoSync <= 0 {
 		return "", fmt.Errorf("invalid CASDOOR_LDAP_AUTO_SYNC_MINUTES %q", e["CASDOOR_LDAP_AUTO_SYNC_MINUTES"])
 	}
+	builtInOrganization := organization("built-in", "Built-in")
+	// Casdoor rejects managed users in its built-in organization unless the
+	// organization explicitly consents to privileged accounts.
+	builtInOrganization["hasPrivilegeConsent"] = true
+	anasOrganization := organization("anas", "ANAS")
+	anasOrganization["defaultApplication"] = "app-anas-directory"
 	doc := map[string]any{
 		"organizations": []any{
-			organization("built-in", "Built-in"),
-			organization("anas", "ANAS"),
+			builtInOrganization,
+			anasOrganization,
 		},
 		"applications": applications,
 		"users": []any{map[string]any{

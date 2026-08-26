@@ -134,7 +134,7 @@ git diff --check
 
 Also test standalone helper/entrypoint packages and Linux amd64/arm64 compilation when present. Passing
 commands prove mechanical contracts only; they do not replace real login, restore, upgrade, or data-safety
-evidence. Docker/E2E must use an isolated non-production daemon, workspace, Compose project prefix, and
+evidence. Docker/E2E must use an isolated daemon, workspace, Compose project prefix, and
 port range.
 
 ## 14. Review result template

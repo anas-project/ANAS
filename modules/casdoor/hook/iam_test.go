@@ -68,19 +68,29 @@ func TestRenderInitDataRegistersDirectoryAndClients(t *testing.T) {
 		t.Fatalf("password placeholder count = %d", count)
 	}
 	var doc struct {
-		Applications []map[string]any `json:"applications"`
-		LDPs         []map[string]any `json:"ldaps"`
-		Users        []map[string]any `json:"users"`
+		Organizations []map[string]any `json:"organizations"`
+		Applications  []map[string]any `json:"applications"`
+		LDPs          []map[string]any `json:"ldaps"`
+		Users         []map[string]any `json:"users"`
 	}
 	if err := json.Unmarshal([]byte(rendered), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Applications) != 3 {
-		t.Fatalf("applications = %d, want 3", len(doc.Applications))
+	if len(doc.Applications) != 4 {
+		t.Fatalf("applications = %d, want 4", len(doc.Applications))
+	}
+	if len(doc.Organizations) != 2 || doc.Organizations[0]["name"] != "built-in" || doc.Organizations[0]["hasPrivilegeConsent"] != true {
+		t.Fatalf("built-in organization does not consent to the managed recovery administrator: %#v", doc.Organizations)
+	}
+	if doc.Organizations[1]["name"] != "anas" || doc.Organizations[1]["defaultApplication"] != "app-anas-directory" {
+		t.Fatalf("ANAS organization does not select the managed directory application: %#v", doc.Organizations[1])
 	}
 	byName := map[string]map[string]any{}
 	for _, app := range doc.Applications {
 		byName[app["name"].(string)] = app
+	}
+	if directory := byName["app-anas-directory"]; directory["organization"] != "anas" || directory["enableSignUp"] != false {
+		t.Fatalf("managed directory application = %#v", directory)
 	}
 	oidc := byName["app-anas-nextcloud"]
 	if oidc["type"] != "OIDC" || oidc["clientId"] != "nextcloud-id" || oidc["backchannelLogoutUri"] != "https://cloud.example/backchannel" {

@@ -1,9 +1,9 @@
 # Directory event journal
 
-> Status: **partially implemented**. The dirwatch side is in place — `AUTHENTIK_DIRWATCH_*`
-> and `CASDOOR_DIRWATCH_*` are implemented in the authentik and casdoor hooks. The audit
-> follower and `ANCHOR_EVENT_MAX_BYTES` are still design only, and the Casdoor directory-event
-> E2E script is written but has not been run.
+> Status: **partially implemented**. The Samba audit follower plus the
+> `AUTHENTIK_DIRWATCH_*` and `CASDOOR_DIRWATCH_*` subscribers are implemented.
+> Casdoor's create/profile/debounce/cursor E2E passed on 2026-08-26;
+> `ANCHOR_EVENT_MAX_BYTES` and deletion/deactivation acceptance remain open.
 
 A change in Active Directory reaches most consumers immediately, because they
 query LDAP live. Consumers that keep a synchronized copy do not: they see the

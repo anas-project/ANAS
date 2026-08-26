@@ -7,9 +7,10 @@ The test flow intentionally skips legacy Ruby comparison. It validates the
 refactor on its own through static tests, rendering, Docker Compose validation,
 image builds, and optional smoke checks.
 
-> **Production host restriction:** a host carrying production services must not
-> be used as a test server. Do not run this suite or any server E2E on such a
-> host. Use a dedicated non-production environment instead.
+> **Target authorization:** use a dedicated non-production host by default. A
+> host carrying production services may be used only when the user or operator
+> explicitly names that exact server for the current test run. Explicit target
+> selection authorizes the host; it does not disable any isolation guard below.
 
 The repository currently provides local aggregate tests and individual server
 E2E scripts; it does not yet provide a single SSH command that provisions a
@@ -770,7 +771,7 @@ of `build`, same-value container idempotency, and
 configuration/deployment recovery after an injected activation failure. The
 server E2E above complements that deterministic matrix by testing the actual
 upstream in-place mechanisms and stable container IDs observed on an isolated
-non-production Docker daemon.
+Docker daemon on an authorized target.
 
 ## Test Server Cleanup
 

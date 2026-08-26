@@ -2,7 +2,7 @@
 doc_type: plan
 status: proposed
 created: 2026-08-25
-updated: 2026-08-25
+updated: 2026-08-26
 ---
 
 # 文档驱动测试自动化实施计划
@@ -43,7 +43,7 @@ updated: 2026-08-25
 
 - [ ] 定义 Git 忽略的本地 target profile 和可提交的无 Secret 示例文件。
 - [ ] profile 只引用 SSH config alias；验证 known-host 绑定，不在参数中拼接密码、私钥路径或关闭校验。
-- [ ] 在专用测试服务器安装非生产标记和固定动词的特权 helper，审计测试账号的 sudo/组权限。
+- [ ] 支持“已登记目标”和“已授权用户为本次运行明确指定准确目标”两种授权来源，并在服务器安装固定动词的特权 helper，审计测试账号的 sudo/组权限。
 - [ ] 支持 committed source 与“基准 commit + worktree patch”两种源包，并在两端校验内容摘要。
 - [ ] 为每个 `run-id` 分配独立 workspace、端口、网络、containerd、Docker 和报告目录。
 - [ ] 复用 `server-require-isolated-docker.sh` 与 Compose workspace owner guard，不另造较弱检查。
@@ -82,11 +82,11 @@ updated: 2026-08-25
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
 | --- | --- | --- | --- | --- |
-| R-017 | 待新增远程运行器拒绝测试 | 未登记、缺标记与生产标记三类目标 | — | 待执行 |
+| R-017 | 待新增远程运行器目标授权测试 | 已登记目标、单次明确指定目标，以及两者均无；显式生产目标还须验证隔离门禁 | — | 待执行 |
 | R-019 | 待新增源包传输 E2E | commit 与 worktree patch 两种来源 | — | 待执行 |
 | R-020 | 待新增并发隔离 E2E | 同一专用服务器两个 `run-id` | — | 待执行 |
 | R-021 | 复用并扩展 `test-server-docker-isolation.sh` | 错误 socket/data-root/workspace owner | — | 待执行 |
-| R-023 | 待新增 `remote-test` 全流程 E2E | 专用非生产服务器 + Vikunja suite | — | 待执行 |
+| R-023 | 待新增 `remote-test` 全流程 E2E | 已授权服务器 + Vikunja suite | — | 待执行 |
 | R-025 | 待新增 SSH 中断恢复 E2E | 传输、部署、测试、收集各阶段断连 | — | 待执行 |
 | R-026 | 待新增清理范围 E2E | 成功、失败保留、到期清理与相邻运行 | — | 待执行 |
 | R-029 | 待新增远程 Secret 泄漏 E2E | Shell、Playwright、报告与源包扫描 | — | 待执行 |
@@ -111,5 +111,5 @@ M0 以后必须把新增用例 schema、生成器和溯源门禁的确定性测�
 
 - 当前没有统一用例 schema、生成 catalog 或需求到测试实现的双向门禁。
 - 已有服务器脚本的环境变量、部署准备和报告格式不完全一致，尚不能由一个入口可靠编排。
-- 私有测试服务器已有 SSH 和隔离 Docker 资料，但还没有机器可读 target profile、非生产标记协议和
+- 私有测试服务器已有 SSH 和隔离 Docker 资料，但还没有机器可读 target profile、单次明确授权协议和
   受约束特权 helper；在完成权限审计前不能把现有 root 脚本直接暴露给自动运行器。

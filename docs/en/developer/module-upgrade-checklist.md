@@ -80,7 +80,7 @@ git diff --check
 
 - [ ] Compose parsing, Module/helper unit tests, and image builds pass on every declared platform.
 - [ ] Fresh install, minimum and previous upgrades, repeated apply, restart, interrupted retry, and rollback/restore use real data.
-- [ ] Health, main business flows, dependencies, IAM/credential rotation, and backup/restore pass in an isolated non-production Docker environment.
+- [ ] Health, main business flows, dependencies, IAM/credential rotation, and backup/restore pass in an isolated Docker environment on an authorized target.
 
 ## 9. Sign-off
 

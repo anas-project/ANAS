@@ -1,8 +1,8 @@
 api_version: anas.module-localization/v1
 module: casdoor
 module_version: 3.143.0
-module_revision: 2
-reviewed_at: 2026-08-21
+module_revision: 3
+reviewed_at: 2026-08-26
 timezone:
   status: container
   mechanism: Casdoor receives TZ through the module environment; no separate application timezone is forced.

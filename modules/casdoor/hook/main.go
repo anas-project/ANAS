@@ -262,7 +262,7 @@ func renderAppConf(e map[string]string) (string, error) {
 	if err := requireKeys(e, []string{"CASDOOR_DOMAIN_FULL", "CASDOOR_DB_HOST", "CASDOOR_DB_PORT", "CASDOOR_DB_USERNAME", "CASDOOR_DB_PASSWORD", "CASDOOR_DB_NAME"}); err != nil {
 		return "", err
 	}
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s sslmode=disable", e["CASDOOR_DB_HOST"], e["CASDOOR_DB_PORT"], e["CASDOOR_DB_USERNAME"], e["CASDOOR_DB_PASSWORD"])
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", e["CASDOOR_DB_HOST"], e["CASDOOR_DB_PORT"], e["CASDOOR_DB_USERNAME"], e["CASDOOR_DB_PASSWORD"], e["CASDOOR_DB_NAME"])
 	return strings.Join([]string{
 		"appname = casdoor",
 		"httpport = 8000",

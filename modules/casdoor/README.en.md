@@ -11,7 +11,7 @@ IAM provider for OIDC and SAML with directory users imported from Samba AD over 
 | Item | Value |
 | --- | --- |
 | Module | `casdoor` |
-| Version / revision | `3.143.0-r2` |
+| Version / revision | `3.143.0-r3` |
 | Status | `developing` |
 | Category | `identity` |
 | Runtime | `compose` |
@@ -38,7 +38,7 @@ modules:
 
 ## Identity and protocol behavior
 
-Samba AD remains authoritative. Casdoor imports users and verifies passwords over LDAPS with a restricted read-only bind. A dedicated `casdoor_dirwatch` subscriber tails Samba's durable directory-event journal and triggers an LDAP import after debounce; the default five-minute schedule remains as fallback. This integration does not enable Casdoor LDAP/AD password writeback.
+Samba AD remains authoritative. Casdoor imports users and verifies passwords over LDAPS with a restricted read-only bind. A dedicated `casdoor_dirwatch` subscriber tails Samba's durable directory-event journal and triggers an LDAP import after debounce. It then refreshes `displayName` and email through restricted `update-user` columns for users named by that event batch, compensating for upstream synchronization updating only groups on existing users. The default five-minute schedule remains as fallback. This integration does not enable Casdoor LDAP/AD password writeback.
 
 Pinned Casdoor `3.143.0` registers OIDC and SAML consumers through `ANAS_IAM_CLIENT__<APP>__*`. It publishes no unverified SAML SLO endpoint, so consumers perform local logout. A back-channel URI is registered only when explicitly declared; declaration removal or protocol switching writes an explicit empty value to clear the old URI, while actual notification and session revocation still require E2E acceptance.
 

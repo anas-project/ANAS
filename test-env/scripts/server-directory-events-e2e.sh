@@ -31,6 +31,11 @@ section() { printf '\n== %s ==\n' "$1"; }
 dc_exec() { docker exec "$dc" "$@"; }
 dc_exec_stdin() { docker exec -i "$dc" "$@"; }
 
+ldap_modify() {
+  dc_exec_stdin bash -lc \
+    'exec ldbmodify -H ldap://127.0.0.1 -U "${SAMBA_DC_ADMIN_NAME}%${SAMBA_DC_ADMIN_PASSWORD}"'
+}
+
 entry_dn() {
   dc_exec bash -lc \
     'exec samba-tool "$1" show "$2" --attributes=distinguishedName -H ldap://127.0.0.1 -U "${SAMBA_DC_ADMIN_NAME}%${SAMBA_DC_ADMIN_PASSWORD}"' \
@@ -181,7 +186,7 @@ mark=$(journal_seq)
 user_dn=$(entry_dn user "$user")
 test -n "$user_dn"
 printf 'dn: %s\nchangetype: modify\nreplace: description\ndescription: directory-events-e2e\n' \
-  "$user_dn" | dc_exec_stdin ldbmodify -H /var/lib/samba/private/sam.ldb >/dev/null
+  "$user_dn" | ldap_modify >/dev/null
 sleep 8
 if journal_since "$mark" | grep -Fq "CN=$user,"; then
   journal_since "$mark" >&2

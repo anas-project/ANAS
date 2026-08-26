@@ -13,11 +13,17 @@ The target workflow is documented in the normative Chinese
 and [implementation plan](/plans/document-driven-test-automation). An agent may
 generate complete tests from requirements and machine-readable cases; generated
 tests still need the same traceability, negative/fault-path validation, real
-execution, and review as human-written tests. The planned SSH runner will use a
-registered dedicated non-production target to transfer an identified source
+execution, and review as human-written tests. The planned SSH runner will use
+either a registered dedicated target or the exact server explicitly named by
+the user for that run to transfer an identified source
 bundle, deploy into a per-run isolated Docker environment, execute a selected
 suite, collect sanitized reports, and clean up only that run's resources. This
 single-command remote runner is not implemented yet.
+
+A dedicated non-production target remains the default. Explicitly naming a
+server authorizes that target even when it carries production services, but it
+never bypasses the isolated Docker daemon, workspace, network, port-range, and
+scoped-cleanup boundaries or authorizes mutation of existing resources.
 
 Dated reports are evidence, not permanent operating instructions. Promote durable conclusions into maintained documentation, and keep raw logs or host-specific records in controlled CI artifacts, issue attachments, or an external private system rather than under `docs/`.
 

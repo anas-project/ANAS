@@ -25,3 +25,33 @@ func TestEntrypointBootstrapsBeforeStartingLDAPSynchronizer(t *testing.T) {
 		t.Fatal("entrypoint does not prepare the unprivileged directory watcher state")
 	}
 }
+
+func TestHelperBuildUsesConfiguredGoProxy(t *testing.T) {
+	dockerfile, err := os.ReadFile("../casdoor/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"ARG GOPROXY_URL", `go env -w GOPROXY="$GOPROXY_URL"`, "go mod download"} {
+		if !strings.Contains(string(dockerfile), required) {
+			t.Fatalf("Casdoor helper Dockerfile does not contain %q", required)
+		}
+	}
+
+	compose, err := os.ReadFile("../docker-compose.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(compose), "GOPROXY_URL: ${GOPROXY_URL:-}") {
+		t.Fatal("Casdoor Compose build does not forward GOPROXY_URL")
+	}
+}
+
+func TestImageDisablesCasdoorOldInstanceLookup(t *testing.T) {
+	dockerfile, err := os.ReadFile("../casdoor/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(dockerfile), "rm -f /usr/bin/lsof") {
+		t.Fatal("Casdoor image can kill its bootstrap child through the old-instance lookup")
+	}
+}

@@ -316,8 +316,9 @@ ddns_go local administrator ready: anas admin local credential ddns_go
 - Authentik 真实容器测试：`akadmin` bootstrap、`ak shell` 轮换及旧密码失效；
 - Traefik 真实容器测试：Dashboard BasicAuth 新密码生效、旧密码失效；
 - 轮换成功和失败回滚测试；
-- `test-all.sh` 与服务器身份/DDNS E2E 必须在独立的非生产测试主机执行，禁止使用承载
-  正式服务的生产主机。
+- `test-all.sh` 与服务器身份/DDNS E2E 默认在独立的非生产测试主机执行；用户或操作者为本次
+  运行明确指定准确服务器时也可以使用该目标，但仍必须满足测试 daemon、workspace、网络、端口和
+  定向清理隔离要求，不得改动既有资源。
 
 ## 10. 实施阶段
 
