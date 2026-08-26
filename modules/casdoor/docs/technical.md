@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `casdoor` 的协议契约、安全边界和验证入口。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.143.0-r5` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.143.0-r6` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -11,8 +11,8 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r5` | `traefik, db, casdoor` | 5 |
-| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r5` | `casdoor` | 3 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r6` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r6` | `casdoor` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -28,6 +28,8 @@
 
 Hook 生成 Casdoor `app.conf` 和初始化数据模板。PostgreSQL DSN 显式包含 `dbname`。容器启动时 Helper 从 `0600` 临时投影读取恢复密码，生成 bcrypt 后的 `/tmp/init_data.json`，再以 UID/GID `1000` 启动上游进程。由于上游先初始化 LDAP 自动同步器、后导入 init data，entrypoint 会短暂启动一次以提交表结构与托管对象，再启动正式进程；镜像移除容器内无意义的 `lsof` old-instance 探测，避免 bootstrap 子进程把自己杀死。初始化数据为 built-in 恢复管理员显式开启特权确认，并给 `anas` 组织创建不可注册的内部目录 Application；PostgreSQL 是唯一受支持的数据接口。
 
+r6 以 Casdoor `3.143.0` 对应提交 `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` 为源码输入，构建前校验归档 SHA-256 `365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460`，再应用仓库内 `casdoor/patches/0001-saml-directory-attributes.patch`。补丁只为上游 SAML 模板解析增加 `displayName` 和 `externalId`，使属性来自已经同步的目录字段；镜像仍以固定官方 `3.143.0` 运行时为基础。构建同时接受全局下载代理和 Go proxy，但固定提交与校验和不随镜像源变化。
+
 ## LDAP、目录事件与权威边界
 
 LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永久锚点属性已存在。`anas_casdoor_dirwatch` 以只读方式跟随 `ANAS_DIRECTORY_EVENTS_DIR`，按独立游标恢复、过滤并防抖事件，然后使用 Module 自己的受管 Application 凭据调用本地 Casdoor API。每批同步先读取目录和 Casdoor 影子用户，以永久锚点关联改名用户；随后执行上游 LDAP 导入，并收敛 `externalId/name/ldap/properties/groups/isForbidden/isDeleted`。`externalId` 保存 Samba 永久锚点，Casdoor 的不可变 `id` 不被修改；目录属性只合并到 `properties`，不删除人工属性；`displayName/email` 仍只为本批相关用户刷新，密码和人工权限不被覆盖。
@@ -38,7 +40,7 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 
 ## IAM 契约
 
-- OIDC：固定 `3.143.0` 发布部署级 issuer/discovery，按 Consumer 注册 client、redirect URI 与显式 back-channel URI；声明消失或切换 SAML 时用空值清理旧 URI，真实通知仍为受限/待验收。
+- OIDC：固定 `3.143.0` 发布部署级 issuer/discovery，按 Consumer 注册 client、redirect URI 与显式 back-channel URI；access token 有效期为 1 小时，refresh token 为 30 天；声明消失或切换 SAML 时用空值清理旧 URI，真实通知仍为受限/待验收。
 - SAML：发布 metadata、SSO 和签名证书；不发布未经证实的 SLO。
 - 授权：把每个 `ALLOW_GROUPS` 建成 `anas` 组织的同名 Group/Role，并为 Consumer 建立 Approved Application Permission；Casdoor 在登录签发前检查这些组。
 - 属性：OIDC 使用 `JWT-Custom`/RS256，注册的永久锚点 claim 取自 `ExternalId`，Group 由 Role 名称发出；不可变 Casdoor User ID 继续作为稳定 `sub`。SAML 的注册锚点映射到 `$user.externalId`、Group 映射到 `$user.roles`。未知 SAML 来源被省略；SAML NameID 仍是用户名，Consumer 的稳定关联必须使用显式锚点属性。
@@ -59,12 +61,14 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 - [`helper/main_test.go`](../casdoor/helper/main_test.go)
 - [`helper/directory_watch_test.go`](../casdoor/helper/directory_watch_test.go)
 - [`server-casdoor-directory-events-e2e.sh`](../../../test-env/scripts/server-casdoor-directory-events-e2e.sh)（2026-08-26 在显式指定服务器的隔离 Docker daemon 通过）
-- [`server-casdoor-directory-authority-e2e.sh`](../../../test-env/scripts/server-casdoor-directory-authority-e2e.sh)（已编写，待指定服务器执行）
+- [`server-casdoor-directory-authority-e2e.sh`](../../../test-env/scripts/server-casdoor-directory-authority-e2e.sh)（2026-08-26 在同一隔离环境通过）
+- [`server-casdoor-oidc-e2e.sh`](../../../test-env/scripts/server-casdoor-oidc-e2e.sh)（2026-08-27 在同一隔离环境通过）
+- [`server-casdoor-saml-e2e.sh`](../../../test-env/scripts/server-casdoor-saml-e2e.sh)（2026-08-27 在同一隔离环境通过）
 - [`module.yml`](../module.yml)
 
 ## 当前限制
 
-状态为 `developing`。目录订阅 E2E 已验证新增、既有用户属性刷新、突发防抖与游标重启恢复；账号删除/停用传播仍未验收。还必须完成真实浏览器/HTTP OIDC 与 SAML 登录、Group 门禁、永久锚点、OIDC 会话撤销和恢复登录 E2E，才能评估生产支持。
+状态为 `developing`。目录订阅和真实 OIDC/SAML E2E 已验证新增、属性刷新、事件防抖、游标恢复、删除/停用、Group 门禁、永久锚点、改名复用及应用权限。仍必须完成 OIDC 会话撤销、SAML SLO 范围决策、恢复登录、备份恢复、多架构生命周期与密钥轮换 E2E，才能评估生产支持。
 
 规范性要求、稳定需求 ID、里程碑归属和逐项执行记录见
 [Casdoor IAM Provider 集成要求](../../../docs/requirements/casdoor-iam.md)与

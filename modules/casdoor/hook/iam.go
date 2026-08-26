@@ -7,9 +7,11 @@ import (
 )
 
 const (
-	iamBindingPrefix    = "ANAS_IAM_BINDING__"
-	iamClientPrefix     = "ANAS_IAM_CLIENT__"
-	passwordPlaceholder = "__ANAS_BREAK_GLASS_PASSWORD_HASH__"
+	iamBindingPrefix          = "ANAS_IAM_BINDING__"
+	iamClientPrefix           = "ANAS_IAM_CLIENT__"
+	passwordPlaceholder       = "__ANAS_BREAK_GLASS_PASSWORD_HASH__"
+	accessTokenExpireInHours  = 1
+	refreshTokenExpireInHours = 24 * 30
 )
 
 func envName(app string) string { return strings.ToUpper(strings.ReplaceAll(app, "-", "_")) }
@@ -62,6 +64,7 @@ func renderInitData(e map[string]string) (string, error) {
 		"clientSecret": e["CASDOOR_PORTAL_CLIENT_SECRET"], "tokenFormat": "JWT",
 		"grantTypes":    []string{"authorization_code", "refresh_token"},
 		"redirectUris":  []string{e["CASDOOR_DOMAIN_FULL"] + "/callback"},
+		"expireInHours": accessTokenExpireInHours, "refreshExpireInHours": refreshTokenExpireInHours,
 		"signinMethods": []any{map[string]any{"name": "Password", "displayName": "Password", "rule": "All"}},
 	}, map[string]any{
 		"owner": "admin", "name": "app-anas-directory", "displayName": "ANAS Directory",
@@ -190,6 +193,7 @@ func baseApplication(e map[string]string, app string) map[string]any {
 		"homepageUrl": e["APPS_LIST__"+envName(app)+"__URI"], "organization": "anas",
 		"cert": "anas-signing", "enablePassword": true, "enableSignUp": false,
 		"disableSignin": false, "enableSigninSession": true,
+		"expireInHours": accessTokenExpireInHours, "refreshExpireInHours": refreshTokenExpireInHours,
 		// Init data is reconciled over existing applications. Emit the empty
 		// value explicitly so removing a declaration, or switching an app from
 		// OIDC to SAML, clears a previously imported back-channel receiver.
@@ -200,11 +204,14 @@ func baseApplication(e map[string]string, app string) map[string]any {
 
 func samlAttributes(attributes, identityAnchor string) []any {
 	out := []any{}
+	seenClaims := map[string]bool{}
 	for _, attribute := range parseIAMAttributes(attributes) {
 		value := ""
 		switch strings.ToLower(attribute.source) {
 		case "samaccountname", "username", "uid", "preferred_username":
 			value = "$user.name"
+		case "cn", "name", "displayname":
+			value = "$user.displayName"
 		case "mail", "email":
 			value = "$user.email"
 		case "groups", "group":
@@ -218,6 +225,10 @@ func samlAttributes(attributes, identityAnchor string) []any {
 			continue
 		}
 		out = append(out, map[string]any{"name": attribute.claim, "nameFormat": "Unspecified", "value": value})
+		seenClaims[attribute.claim] = true
+	}
+	if !seenClaims["groups"] {
+		out = append(out, map[string]any{"name": "groups", "nameFormat": "Unspecified", "value": "$user.roles"})
 	}
 	return out
 }

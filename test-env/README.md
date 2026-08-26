@@ -244,6 +244,35 @@ Do not commit `.anas-test/` or generated secrets.
       ./test-env/scripts/server-casdoor-directory-authority-e2e.sh
     ```
 
+10b. Casdoor OIDC Authorization Code runtime test
+
+    Uses a real confidential Consumer registration to exchange an authorization
+    code and verify the RS256 ID token against discovery/JWKS. The shared Samba
+    matrix covers direct `APP_nextcloud`, `APP_all`, `Admins`, recursive groups,
+    no-group and disabled denial, then disable, group removal, rename, and delete.
+    The Consumer fixture keys materialized accounts by `anasIdentityAnchor` and
+    verifies the final application permission without printing its client secret.
+
+    ```sh
+    DOCKER_HOST=unix:///run/anas-casdoor-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_casdoor_ \
+      ./test-env/scripts/server-casdoor-oidc-e2e.sh
+    ```
+
+10c. Casdoor SAML SP-initiated runtime test
+
+    Uses the pinned Go SAML Consumer fixture to generate a Redirect-binding
+    AuthnRequest and validate the POST response, assertion signature, metadata
+    trust, request ID, Destination, Issuer, Audience, NameID, time conditions,
+    directory attributes, groups, permanent anchor, and final application
+    permission against the same Samba lifecycle matrix.
+
+    ```sh
+    DOCKER_HOST=unix:///run/anas-casdoor-docker.sock \
+    ANAS_TEST_CONTAINER_PREFIX=anas_casdoor_ \
+      ./test-env/scripts/server-casdoor-saml-e2e.sh
+    ```
+
 11. Database resource hot-add test
 
     Applies a PostgreSQL/authentik baseline, then adds Nextcloud. It proves the

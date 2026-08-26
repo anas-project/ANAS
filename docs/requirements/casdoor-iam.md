@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-26
-updated: 2026-08-26
+updated: 2026-08-27
 ---
 
 # Casdoor IAM Provider 集成要求
@@ -37,6 +37,12 @@ Casdoor 只经 Traefik HTTPS 提供公网入口，不发布额外宿主端口。
 业务数据库必须来自 `relational_database` Contract 的独立 PostgreSQL Resource，删除策略为
 `retain`。改变数据库类型或名称必须进入显式迁移，不得静默切换到空数据库。数据库、签名密钥、
 Consumer Secret、目录订阅游标、本地管理员库存和 deployment metadata 必须纳入一致的备份恢复点。
+
+ANAS revision 6 必须从 Casdoor `3.143.0` 对应提交
+`1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` 构建并校验源码归档 SHA-256
+`365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460`。仓库补丁只允许扩展
+SAML 模板对已同步 `displayName` 和 `externalId` 的读取；固定提交、校验和、补丁和最终服务端替换
+都必须有静态测试，构建代理不得改变源码身份。
 
 生成 Secret 必须使用加密随机源并在重复 calculate/render 时保持稳定。LDAP Bind 密码、数据库
 密码、签名私钥、Consumer Secret、订阅器 API Secret 和恢复密码不得进入普通日志、计划、
@@ -105,7 +111,7 @@ stdin 进入 Helper；更新后必须回读 bcrypt 验证，失败必须恢复�
 
 | ID | 要求 | 验证方式 |
 | --- | --- | --- |
-| `CASDOOR-R-001` | Module 必须固定 Casdoor `3.143.0` 与 ANAS revision `5`，不得使用 `latest`；发布验收未完成时状态必须为 `developing` | CI |
+| `CASDOOR-R-001` | Module 必须固定 Casdoor `3.143.0` 提交、源码 SHA-256、最小 SAML 目录属性补丁与 ANAS revision `6`，不得使用 `latest`；发布验收未完成时状态必须为 `developing` | CI |
 | `CASDOOR-R-002` | Module 必须提供通用 `iam` Capability 的 `oidc`、`saml` 接口，并显式依赖 Traefik、Samba DC 和 `relational_database` Contract | CI |
 | `CASDOOR-R-003` | Casdoor 必须使用独立 PostgreSQL Resource 和生成凭据，删除策略为 `retain`；改变数据库类型或名称必须进入显式迁移 | 单元 |
 | `CASDOOR-R-004` | Casdoor 只经 Traefik HTTPS 暴露，业务进程与目录订阅器以非 root 运行，健康检查必须访问应用 HTTP health endpoint | 单元 |
@@ -122,7 +128,7 @@ stdin 进入 Helper；更新后必须回读 bcrypt 验证，失败必须恢复�
 | `CASDOOR-R-015` | 真实目录 E2E 必须验证账号删除和停用在限定时间内传播到 Casdoor，且旧账号不能继续认证或签发新 token/assertion | e2e |
 | `CASDOOR-R-016` | 真实目录 E2E 必须验证组加入、移除和递归组变化传播，并在撤权后停止签发对应应用凭据 | e2e |
 | `CASDOOR-R-017` | OIDC 必须发布部署级 issuer/discovery，并为每个 Consumer 注册 confidential client、精确 redirect URI 和 post-logout redirect URI | 单元 |
-| `CASDOOR-R-018` | OIDC Application 配置必须使用 RS256，并把用户名、显示名、邮件、组和扩展属性列入 token 字段 | 单元 |
+| `CASDOOR-R-018` | OIDC Application 配置必须使用 RS256、非零且受管的 token 有效期，并把用户名、显示名、邮件、组和扩展属性列入 token 字段 | 单元 |
 | `CASDOOR-R-019` | 真实 OIDC Authorization Code 登录必须验证允许与拒绝账号、claim、应用建号和最终应用权限，不能以 HTTP 302 代替 | e2e |
 | `CASDOOR-R-020` | SAML 必须发布按 Consumer 区分的 metadata/entity ID、SSO URL 和签名证书，并注册精确 SP entity ID、ACS URL、POST binding 与 assertion 签名 | 单元 |
 | `CASDOOR-R-021` | SAML 属性映射必须显式处理用户名、邮件和组；未知来源不得冒充已验证的 Samba 永久锚点 | 单元 |

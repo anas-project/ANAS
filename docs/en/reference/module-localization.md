@@ -7,7 +7,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | Module | Version | Timezone | Language | Selection | Global language | Global locale | Count |
 | --- | --- | --- | --- | --- | --- | --- | ---: |
 | [authentik](#authentik) | 2026.5.6-r14 | container | supported | browser | not_consumed | not_consumed | 17 |
-| [casdoor](#casdoor) | 3.143.0-r5 | container | supported | application | applied | not_consumed | 2 |
+| [casdoor](#casdoor) | 3.143.0-r6 | container | supported | application | applied | not_consumed | 2 |
 | [collabora](#collabora) | 26.4.2-r5 | container | supported | integration | not_consumed | not_consumed | 43 |
 | [ddns_go](#ddns_go) | 6.17.4-r6 | container | supported | application | not_consumed | not_consumed | 2 |
 | [ddns_updater](#ddns_updater) | 2.10.0-r4 | application | fixed | fixed | not_consumed | not_consumed | 1 |
@@ -42,7 +42,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## casdoor
 
-- **Version / 版本：** `3.143.0-r5`; reviewed 2026-08-26
+- **Version / 版本：** `3.143.0-r6`; reviewed 2026-08-27
 - **Timezone / 时区：** `container` — Casdoor receives TZ through the module environment; no separate application timezone is forced.
 - **Language / 语言：** `supported`, `application` — Casdoor Web UI default
 - **ANAS globals / 全局默认：** `default_language=applied`; `default_locale=not_consumed`

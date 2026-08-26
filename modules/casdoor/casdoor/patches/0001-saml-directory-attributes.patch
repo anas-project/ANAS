@@ -1,0 +1,8 @@
+diff --git a/object/user_util.go b/object/user_util.go
+index fc9bdb0..614239d 100644
+--- a/object/user_util.go
++++ b/object/user_util.go
+@@ -1139,0 +1140 @@ func replaceAttributeValue(user *User, value string) []string {
++	valueList = replaceAttributeValues("$user.displayName", user.DisplayName, valueList)
+@@ -1142,0 +1144 @@ func replaceAttributeValue(user *User, value string) []string {
++	valueList = replaceAttributeValues("$user.externalId", user.ExternalId, valueList)

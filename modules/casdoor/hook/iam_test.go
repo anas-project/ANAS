@@ -101,6 +101,9 @@ func TestRenderInitDataRegistersDirectoryAndClients(t *testing.T) {
 	if oidc["type"] != "OIDC" || oidc["clientId"] != "nextcloud-id" || oidc["backchannelLogoutUri"] != "https://cloud.example/backchannel" {
 		t.Fatalf("OIDC application = %#v", oidc)
 	}
+	if oidc["expireInHours"] != float64(accessTokenExpireInHours) || oidc["refreshExpireInHours"] != float64(refreshTokenExpireInHours) {
+		t.Fatalf("OIDC token lifetime = %#v", oidc)
+	}
 	if oidc["tokenFormat"] != "JWT-Custom" || oidc["tokenSigningMethod"] != "RS256" {
 		t.Fatalf("OIDC token format = %#v", oidc)
 	}
@@ -187,6 +190,19 @@ func TestOIDCManagedGroupsClaimIsAlwaysPublished(t *testing.T) {
 	attributes := oidcTokenAttributes(
 		"preferred_username:sAMAccountName:1", "anasIdentityAnchor")
 	assertTokenAttribute(t, attributes, "groups", "Roles", "Array")
+}
+
+func TestSAMLManagedGroupsAttributeIsAlwaysPublished(t *testing.T) {
+	attributes := samlAttributes(
+		"preferred_username:sAMAccountName:1", "anasIdentityAnchor")
+	assertSAMLAttribute(t, attributes, "groups", "$user.roles")
+}
+
+func TestSAMLDirectoryAttributesUsePatchedTemplates(t *testing.T) {
+	attributes := samlAttributes(
+		"name:displayName:1,anchor:anasIdentityAnchor:1", "anasIdentityAnchor")
+	assertSAMLAttribute(t, attributes, "name", "$user.displayName")
+	assertSAMLAttribute(t, attributes, "anchor", "$user.externalId")
 }
 
 func TestOIDCClientCredentialsAreRequired(t *testing.T) {
