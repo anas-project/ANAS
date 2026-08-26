@@ -106,6 +106,9 @@ anas status -w /srv/anas
 ## 技术文档
 
 实现、安全边界与测试入口见[技术文档](docs/technical.md)。
+发布要求、未完成项和 E2E 证据分别见
+[Casdoor IAM Provider 集成要求](../../docs/requirements/casdoor-iam.md)与
+[Casdoor IAM Provider 实施计划](../../docs/plans/casdoor-iam.md)。
 
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language

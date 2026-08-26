@@ -62,3 +62,8 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 ## 当前限制
 
 状态为 `developing`。目录订阅 E2E 已验证新增、既有用户属性刷新、突发防抖与游标重启恢复；账号删除/停用传播仍未验收。还必须完成真实浏览器/HTTP OIDC 与 SAML 登录、Group 门禁、永久锚点、OIDC 会话撤销和恢复登录 E2E，才能评估生产支持。
+
+规范性要求、稳定需求 ID、里程碑归属和逐项执行记录见
+[Casdoor IAM Provider 集成要求](../../../docs/requirements/casdoor-iam.md)与
+[Casdoor IAM Provider 实施计划](../../../docs/plans/casdoor-iam.md)。本节只保留面向 Module 维护者的
+限制摘要，不作为完成状态的来源。
