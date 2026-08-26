@@ -212,7 +212,7 @@ func samlAttributes(attributes, identityAnchor string) []any {
 			// their backing Casdoor group IDs remain owner-qualified.
 			value = "$user.roles"
 		case strings.ToLower(identityAnchor):
-			value = "$user.id"
+			value = "$user.externalId"
 		}
 		if value == "" {
 			continue
@@ -258,7 +258,7 @@ func oidcTokenAttributes(attributes, identityAnchor string) []any {
 		case "groups", "group":
 			field, typeName = "Roles", "Array"
 		case strings.ToLower(identityAnchor):
-			field = "Id"
+			field = "ExternalId"
 		default:
 			field = "Properties." + attribute.source
 		}

@@ -11,7 +11,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `casdoor` |
-| 版本 / revision | `3.143.0-r4` |
+| 版本 / revision | `3.143.0-r5` |
 | 状态 | `developing` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
@@ -44,7 +44,7 @@ Samba AD 仍是人员和目录账号的事实来源。Casdoor 使用受限只读
 
 固定 Casdoor `3.143.0` 按通用 `ANAS_IAM_CLIENT__<APP>__*` 注册 OIDC/SAML Consumer。当前不发布未经验证的 SAML SLO，Consumer 只能本地登出。OIDC back-channel URI 仅在 Consumer 明确声明时登记；声明消失或协议切换会显式写空旧 URI，但真实通知与会话撤销仍待 E2E 验证。
 
-通用 `ALLOW_GROUPS` 被渲染为同名 Casdoor Group/Role 和按 Consumer 区分的 Application Permission；无命中组、禁用或已删除用户会在签发前被拒绝。订阅器把 Casdoor User ID 固定为 Samba `anasIdentityAnchor`，OIDC `sub`/自定义 claim 与 SAML 显式锚点属性使用该值，Group claim 来自同名 Role；未知 SAML 来源会被省略，不会冒充永久锚点。上述协议和授权结果仍须真实 Consumer E2E 后才能计为生产支持。
+通用 `ALLOW_GROUPS` 被渲染为同名 Casdoor Group/Role 和按 Consumer 区分的 Application Permission；无命中组、禁用或已删除用户会在签发前被拒绝。订阅器把 Samba `anasIdentityAnchor` 写入 Casdoor `ExternalId`，OIDC 自定义 claim 与 SAML 显式锚点属性使用该值，Group claim 来自同名 Role；Casdoor 不可变 User ID 继续作为稳定 `sub`，同锚点改名会复用原记录。未知 SAML 来源会被省略，不会冒充永久锚点。上述协议和授权结果仍须真实 Consumer E2E 后才能计为生产支持。
 
 ## 管理员登录与 IAM 故障恢复
 
@@ -115,7 +115,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`3.143.0-r4`（reviewed 2026-08-26）
+- Module version / 版本：`3.143.0-r5`（reviewed 2026-08-26）
 - Timezone / 时区：`container` — Casdoor receives TZ through the module environment; no separate application timezone is forced.
 - Language scope / 语言范围：Casdoor Web UI default
 - Selection / 选择方式：`application`

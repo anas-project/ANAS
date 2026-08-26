@@ -191,7 +191,7 @@ func TestCasdoorLDAPSyncerUsesBasicAuthAndPostsFetchedUsers(t *testing.T) {
 			if getUsersCalls == 1 {
 				body = `{"status":"ok","data":[]}`
 			} else {
-				body = `{"status":"ok","data":[{"id":"temporary-id","name":"alice","ldap":"alice","displayName":"Alice","email":"old@example.test","properties":{"anasIdentityAnchor":"11111111-1111-1111-1111-111111111111","distinguishedName":"CN=alice,OU=People,DC=example,DC=test"},"groups":[]}]}`
+				body = `{"status":"ok","data":[{"id":"casdoor-stable-id","name":"alice","ldap":"alice","displayName":"Alice","email":"old@example.test","properties":{"anasIdentityAnchor":"11111111-1111-1111-1111-111111111111","distinguishedName":"CN=alice,OU=People,DC=example,DC=test"},"groups":[]}]}`
 			}
 		case "/api/sync-ldap-users":
 			if got := request.URL.Query().Get("id"); got != "anas/anas-samba-ad" {
@@ -209,7 +209,7 @@ func TestCasdoorLDAPSyncerUsesBasicAuthAndPostsFetchedUsers(t *testing.T) {
 			if got := request.URL.Query().Get("id"); got != "anas/alice" {
 				t.Errorf("user id = %q", got)
 			}
-			if got := request.URL.Query().Get("columns"); got != "id,groups,displayName,email" {
+			if got := request.URL.Query().Get("columns"); got != "externalId,groups,displayName,email" {
 				t.Errorf("updated columns = %q", got)
 			}
 			var profile map[string]any
@@ -219,8 +219,11 @@ func TestCasdoorLDAPSyncerUsesBasicAuthAndPostsFetchedUsers(t *testing.T) {
 			if profile["displayName"] != "Alice Example" || profile["email"] != "alice@example.test" {
 				t.Errorf("profile = %#v", profile)
 			}
-			if profile["id"] != "11111111-1111-1111-1111-111111111111" {
-				t.Errorf("identity anchor = %#v", profile["id"])
+			if profile["externalId"] != "11111111-1111-1111-1111-111111111111" {
+				t.Errorf("identity anchor = %#v", profile["externalId"])
+			}
+			if _, mutatesID := profile["id"]; mutatesID {
+				t.Errorf("immutable Casdoor ID was patched: %#v", profile)
 			}
 			groups, ok := profile["groups"].([]any)
 			if !ok || len(groups) != 1 || groups[0] != "anas/APP_nextcloud" {
@@ -256,7 +259,7 @@ func TestCasdoorLDAPSyncerUsesBasicAuthAndPostsFetchedUsers(t *testing.T) {
 func TestPreSyncDeleteForbidsDeletesAndRemovesGroups(t *testing.T) {
 	settings := testDirectoryWatchSettings(t)
 	managed := []casdoorManagedUser{{
-		ID: "11111111-1111-1111-1111-111111111111", Name: "alice", LDAP: "alice",
+		ID: "casdoor-stable-id", ExternalID: "11111111-1111-1111-1111-111111111111", Name: "alice", LDAP: "alice",
 		Properties: map[string]string{
 			"anasIdentityAnchor": "11111111-1111-1111-1111-111111111111",
 			"distinguishedName":  "CN=alice,OU=People,DC=example,DC=test",
@@ -316,7 +319,7 @@ func TestPreSyncRenameUsesPermanentAnchor(t *testing.T) {
 		},
 	}}
 	managed := []casdoorManagedUser{{
-		ID: "11111111-1111-1111-1111-111111111111", Name: "alice", LDAP: "alice",
+		ID: "casdoor-stable-id", ExternalID: "11111111-1111-1111-1111-111111111111", Name: "alice", LDAP: "alice",
 		Properties: map[string]string{"anasIdentityAnchor": "11111111-1111-1111-1111-111111111111"},
 	}}
 	patches, err := planPreSyncUserPatches(nil, directory, managed, settings)
@@ -325,6 +328,9 @@ func TestPreSyncRenameUsesPermanentAnchor(t *testing.T) {
 	}
 	if len(patches) != 1 || patches[0].target != "anas/alice" || patches[0].body["name"] != "alice-renamed" || patches[0].body["ldap"] != "alice-renamed" {
 		t.Fatalf("rename patches = %#v", patches)
+	}
+	if _, mutatesID := patches[0].body["id"]; mutatesID {
+		t.Fatalf("rename mutated immutable Casdoor ID: %#v", patches[0])
 	}
 }
 

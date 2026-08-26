@@ -27,13 +27,14 @@ M1、M2 已完成，当前里程碑为 M3：目录权威收敛、真实登录、
 
 ## 2. 已完成落地快照
 
-- M1 已固定 Casdoor `3.143.0-r4`，接入 PostgreSQL Resource、Traefik、OIDC/SAML registration、
+- M1 已固定 Casdoor `3.143.0-r5`，接入 PostgreSQL Resource、Traefik、OIDC/SAML registration、
   稳定 Secret 和 `admin_casdoor` 本地恢复账号；Hook/Helper 单元测试覆盖已声明边界。
 - M2 已接入 Samba 持久目录事件日志，完成事件过滤、防抖、最小间隔、日志轮换、不完整尾记录、
   失败重试、原子游标和受限 profile 刷新。
 - 2026-08-26 在用户明确指定服务器的隔离 Docker daemon 完成新增用户、profile 更新、突发合并和
   游标重启恢复 E2E；测试脚本清理一次性目录账号。
-- M3 已落地待真实 E2E 验收的实现：目录订阅器按永久锚点收敛改名/停用/删除，直接查询受信任
+- M3 已落地待真实 E2E 验收的实现：目录订阅器按永久锚点收敛改名/停用/删除，把 Samba 锚点写入
+  Casdoor `ExternalId` 而不修改其不可变 User ID，并直接查询受信任
   LDAPS 计算递归受管组，并以 Casdoor Group/Role/Application Permission 执行 `ALLOW_GROUPS`；
   OIDC custom claim 与 SAML 属性均从同一永久锚点和受管 Role 发出。
 - 当前仍不发布未经验证的 SAML SLO；M3 代码通过单元测试不等于真实登录和应用权限验收通过。

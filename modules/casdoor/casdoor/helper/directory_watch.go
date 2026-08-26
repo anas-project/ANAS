@@ -339,6 +339,7 @@ type casdoorDirectoryUser struct {
 
 type casdoorManagedUser struct {
 	ID          string            `json:"id"`
+	ExternalID  string            `json:"externalId"`
 	Name        string            `json:"name"`
 	LDAP        string            `json:"ldap"`
 	DisplayName string            `json:"displayName"`
@@ -482,7 +483,7 @@ func indexManagedUsers(users []casdoorManagedUser, anchorAttribute string) (map[
 	for _, user := range users {
 		anchor := strings.TrimSpace(user.Properties[anchorAttribute])
 		if anchor == "" {
-			anchor = strings.TrimSpace(user.ID)
+			anchor = strings.TrimSpace(user.ExternalID)
 		}
 		if anchor == "" {
 			continue
@@ -512,7 +513,7 @@ func planPreSyncUserPatches(events []directoryEvent, directory []casdoorDirector
 		}
 		patch := newUserPatch(settings, managedUser)
 		patch.setString("name", managedUser.Name, directoryUsername(directoryUser))
-		patch.setString("id", managedUser.ID, anchor)
+		patch.setString("externalId", managedUser.ExternalID, anchor)
 		patch.setString("ldap", managedUser.LDAP, directoryUser.UUID)
 		patch.setBool("isForbidden", managedUser.IsForbidden, false)
 		patch.setBool("isDeleted", managedUser.IsDeleted, false)
@@ -583,7 +584,7 @@ func planPostSyncUserPatches(events []directoryEvent, directory []casdoorDirecto
 		}
 		patch := newUserPatch(settings, managedUser)
 		patch.setString("name", managedUser.Name, directoryUsername(directoryUser))
-		patch.setString("id", managedUser.ID, anchor)
+		patch.setString("externalId", managedUser.ExternalID, anchor)
 		patch.setString("ldap", managedUser.LDAP, directoryUser.UUID)
 		patch.setBool("isForbidden", managedUser.IsForbidden, false)
 		patch.setBool("isDeleted", managedUser.IsDeleted, false)

@@ -108,13 +108,13 @@ func TestRenderInitDataRegistersDirectoryAndClients(t *testing.T) {
 	if !ok || len(tokenAttributes) != 5 {
 		t.Fatalf("OIDC token attributes = %#v", oidc["tokenAttributes"])
 	}
-	assertTokenAttribute(t, tokenAttributes, "anchor", "Id", "String")
+	assertTokenAttribute(t, tokenAttributes, "anchor", "ExternalId", "String")
 	assertTokenAttribute(t, tokenAttributes, "groups", "Roles", "Array")
 	saml := byName["app-anas-paperless"]
 	if saml["type"] != "SAML" || saml["samlReplyUrl"] != "https://paper.example/acs" {
 		t.Fatalf("SAML application = %#v", saml)
 	}
-	assertSAMLAttribute(t, saml["samlAttributes"], "anchor", "$user.id")
+	assertSAMLAttribute(t, saml["samlAttributes"], "anchor", "$user.externalId")
 	assertSAMLAttribute(t, saml["samlAttributes"], "groups", "$user.roles")
 	if saml["backchannelLogoutUri"] != "" {
 		t.Fatalf("SAML application retained stale back-channel logout URI: %#v", saml)

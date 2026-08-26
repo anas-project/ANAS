@@ -99,11 +99,12 @@ samba_tool group addmembers APP_nextcloud "$nested_group" >/dev/null
 direct_anchor=$(wait_for_anchor "$direct_user")
 nested_anchor=$(wait_for_anchor "$nested_user")
 wait_for_user_state "$direct_user" \
-  ".id == \"$direct_anchor\" and (.groups | index(\"anas/APP_nextcloud\") != null)" \
+  ".externalId == \"$direct_anchor\" and (.id | length) > 0 and (.groups | index(\"anas/APP_nextcloud\") != null)" \
   'direct group and permanent anchor'
 wait_for_user_state "$nested_user" \
-  ".id == \"$nested_anchor\" and (.groups | index(\"anas/APP_nextcloud\") != null)" \
+  ".externalId == \"$nested_anchor\" and (.id | length) > 0 and (.groups | index(\"anas/APP_nextcloud\") != null)" \
   'recursive group and permanent anchor'
+direct_casdoor_id=$(casdoor_user "$direct_user" | jq -er '.id')
 printf 'direct and recursive memberships use the stamped permanent anchors\n'
 
 section "group removals are authoritative"
@@ -124,17 +125,17 @@ wait_for_user_state "$direct_user" \
   '.isForbidden == true and (.groups | length) == 0' 'disabled and groups cleared'
 samba_tool user enable "$direct_user" >/dev/null
 wait_for_user_state "$direct_user" \
-  ".id == \"$direct_anchor\" and .isForbidden == false and .isDeleted == false and (.groups | index(\"anas/APP_nextcloud\") != null)" \
+  ".id == \"$direct_casdoor_id\" and .externalId == \"$direct_anchor\" and .isForbidden == false and .isDeleted == false and (.groups | index(\"anas/APP_nextcloud\") != null)" \
   're-enabled with original anchor and group'
 printf 'disable cleared access and re-enable restored the same identity\n'
 
 section "rename reuses the permanent identity"
 samba_tool user rename "$direct_user" --samaccountname="$renamed_user" >/dev/null
 wait_for_user_state "$renamed_user" \
-  ".id == \"$direct_anchor\" and .name == \"$renamed_user\" and (.groups | index(\"anas/APP_nextcloud\") != null)" \
+  ".id == \"$direct_casdoor_id\" and .externalId == \"$direct_anchor\" and .name == \"$renamed_user\" and (.groups | index(\"anas/APP_nextcloud\") != null)" \
   'renamed with original anchor'
 test "$(casdoor_user "$direct_user" | jq -r '.name // empty')" != "$direct_user"
-printf 'rename preserved the anchor and did not retain the old Casdoor name\n'
+printf 'rename preserved the Samba anchor and immutable Casdoor identity without retaining the old name\n'
 
 section "delete forbids, soft-deletes, and clears access"
 samba_tool user delete "$renamed_user" >/dev/null

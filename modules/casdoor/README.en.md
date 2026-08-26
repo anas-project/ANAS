@@ -11,7 +11,7 @@ IAM provider for OIDC and SAML with directory users imported from Samba AD over 
 | Item | Value |
 | --- | --- |
 | Module | `casdoor` |
-| Version / revision | `3.143.0-r4` |
+| Version / revision | `3.143.0-r5` |
 | Status | `developing` |
 | Category | `identity` |
 | Runtime | `compose` |
@@ -42,7 +42,7 @@ Samba AD remains authoritative. Casdoor imports users and verifies passwords ove
 
 Pinned Casdoor `3.143.0` registers OIDC and SAML consumers through `ANAS_IAM_CLIENT__<APP>__*`. It publishes no unverified SAML SLO endpoint, so consumers perform local logout. A back-channel URI is registered only when explicitly declared; declaration removal or protocol switching writes an explicit empty value to clear the old URI, while actual notification and session revocation still require E2E acceptance.
 
-The generic `ALLOW_GROUPS` contract is rendered as same-name Casdoor Groups/Roles plus a per-consumer Application Permission. The subscriber sets the Casdoor User ID to the Samba `anasIdentityAnchor`; OIDC `sub` and custom claims, and the explicit SAML anchor attribute, use that value while group claims come from same-name Roles. Unknown SAML sources are omitted instead of being presented as a permanent anchor. Real consumer E2E is still required before these paths count as production support.
+The generic `ALLOW_GROUPS` contract is rendered as same-name Casdoor Groups/Roles plus a per-consumer Application Permission. The subscriber writes the Samba `anasIdentityAnchor` to Casdoor `ExternalId`; OIDC custom claims and the explicit SAML anchor attribute use that value while group claims come from same-name Roles. Casdoor's immutable User ID remains the stable OIDC `sub`, and a same-anchor rename reuses that record. Unknown SAML sources are omitted instead of being presented as a permanent anchor. Real consumer E2E is still required before these paths count as production support.
 
 ## Administrator recovery
 

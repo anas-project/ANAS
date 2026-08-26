@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `casdoor` 的协议契约、安全边界和验证入口。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.143.0-r4` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.143.0-r5` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -11,8 +11,8 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r4` | `traefik, db, casdoor` | 5 |
-| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r4` | `casdoor` | 3 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r5` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r5` | `casdoor` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -30,7 +30,7 @@ Hook 生成 Casdoor `app.conf` 和初始化数据模板。PostgreSQL DSN 显式�
 
 ## LDAP、目录事件与权威边界
 
-LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永久锚点属性已存在。`anas_casdoor_dirwatch` 以只读方式跟随 `ANAS_DIRECTORY_EVENTS_DIR`，按独立游标恢复、过滤并防抖事件，然后使用 Module 自己的受管 Application 凭据调用本地 Casdoor API。每批同步先读取目录和 Casdoor 影子用户，以永久锚点关联改名用户；随后执行上游 LDAP 导入，并收敛 `id/name/ldap/properties/groups/isForbidden/isDeleted`。目录属性只合并到 `properties`，不删除人工属性；`displayName/email` 仍只为本批相关用户刷新，密码和人工权限不被覆盖。
+LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永久锚点属性已存在。`anas_casdoor_dirwatch` 以只读方式跟随 `ANAS_DIRECTORY_EVENTS_DIR`，按独立游标恢复、过滤并防抖事件，然后使用 Module 自己的受管 Application 凭据调用本地 Casdoor API。每批同步先读取目录和 Casdoor 影子用户，以永久锚点关联改名用户；随后执行上游 LDAP 导入，并收敛 `externalId/name/ldap/properties/groups/isForbidden/isDeleted`。`externalId` 保存 Samba 永久锚点，Casdoor 的不可变 `id` 不被修改；目录属性只合并到 `properties`，不删除人工属性；`displayName/email` 仍只为本批相关用户刷新，密码和人工权限不被覆盖。
 
 由于上游会保留既有 Group，订阅器使用同一受限 Bind 经受信任 LDAPS 查询 `ALLOW_GROUPS`，以 AD matching rule `1.2.840.113556.1.4.1941` 计算直接和递归成员，再权威覆盖受管用户 Group。缺失组、重复/缺失锚点或任何 Casdoor 补丁失败都会使整批失败并保留游标重试。默认 5 分钟的上游自动同步不关闭，因此订阅器仍是低延迟加速器。
 
@@ -41,7 +41,7 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 - OIDC：固定 `3.143.0` 发布部署级 issuer/discovery，按 Consumer 注册 client、redirect URI 与显式 back-channel URI；声明消失或切换 SAML 时用空值清理旧 URI，真实通知仍为受限/待验收。
 - SAML：发布 metadata、SSO 和签名证书；不发布未经证实的 SLO。
 - 授权：把每个 `ALLOW_GROUPS` 建成 `anas` 组织的同名 Group/Role，并为 Consumer 建立 Approved Application Permission；Casdoor 在登录签发前检查这些组。
-- 属性：OIDC 使用 `JWT-Custom`/RS256，永久锚点进入 User ID（因此也是 `sub`）并可按注册 claim 发出，Group 由 Role 名称发出；SAML 的注册锚点映射到 `$user.id`、Group 映射到 `$user.roles`。未知 SAML 来源被省略；SAML NameID 仍是用户名，Consumer 的稳定关联必须使用显式锚点属性。
+- 属性：OIDC 使用 `JWT-Custom`/RS256，注册的永久锚点 claim 取自 `ExternalId`，Group 由 Role 名称发出；不可变 Casdoor User ID 继续作为稳定 `sub`。SAML 的注册锚点映射到 `$user.externalId`、Group 映射到 `$user.roles`。未知 SAML 来源被省略；SAML NameID 仍是用户名，Consumer 的稳定关联必须使用显式锚点属性。
 
 ## 管理面与 Secret 生命周期
 
