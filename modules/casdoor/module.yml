@@ -2,15 +2,15 @@ api_version: anas.module/v1
 kind: Module
 name: casdoor
 version: 3.143.0
-revision: 7
+revision: 8
 app_version: 3.143.0
 abi:
   supports:
     - anas.module-hook/v1
 title: Casdoor
-description: Developing IAM provider serving OIDC and SAML with Samba AD-backed sign-in.
+description: Release IAM provider serving OIDC and SAML with Samba AD-backed sign-in.
 category: identity
-status: developing
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml
@@ -31,6 +31,31 @@ dependencies:
       interfaces:
         - postgres
       default: postgres
+credentials:
+  provides:
+    - id: casdoor.signing_key
+      secret_key: CASDOOR_SIGNING_MATERIAL
+      type: key
+      rotation_mode: overlap
+      generation:
+        kind: x509_rsa_bundle
+        length: 2048
+        overlap_seconds: 3600
+      lifecycle:
+        probe: probe-casdoor-signing-key
+        reconcile: reconcile-casdoor-signing-key
+        verify: verify-casdoor-signing-key
+    - id: casdoor.portal_client_secret
+      secret_key: CASDOOR_PORTAL_CLIENT_SECRET
+      type: shared_secret
+      rotation_mode: reconcile
+      generation:
+        kind: hex
+        length: 32
+      lifecycle:
+        probe: probe-casdoor-portal-client-secret
+        reconcile: reconcile-casdoor-portal-client-secret
+        verify: verify-casdoor-portal-client-secret
 resources:
   requires:
     - id: primary_database
@@ -120,3 +145,12 @@ logic:
       - go
       - run
       - ./hook
+    phases:
+      - calculate
+      - render_env
+      - local_account_apply
+      - local_account_rotate
+      - local_account_rollback
+      - credential_probe
+      - credential_reconcile
+      - credential_verify

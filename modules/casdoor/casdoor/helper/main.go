@@ -29,7 +29,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: casdoor-helper <render-init|set-password|healthcheck|exec-as|directory-watch>")
+		return fmt.Errorf("usage: casdoor-helper <render-init|set-password|credential|healthcheck|service-healthcheck|exec-as|directory-watch>")
 	}
 	switch args[0] {
 	case "render-init":
@@ -42,8 +42,19 @@ func run(args []string) error {
 			return fmt.Errorf("set-password requires owner and username")
 		}
 		return setPassword(args[1], args[2], os.Stdin)
+	case "credential":
+		if len(args) != 3 {
+			return fmt.Errorf("credential requires an action and kind")
+		}
+		status, err := reconcileCredential(args[1], args[2], os.Stdin)
+		if err == nil {
+			fmt.Print(status)
+		}
+		return err
 	case "healthcheck":
-		return healthcheck()
+		return healthcheck(true)
+	case "service-healthcheck":
+		return healthcheck(false)
 	case "exec-as":
 		if len(args) < 4 {
 			return fmt.Errorf("exec-as requires uid, gid, and a command")
@@ -94,10 +105,21 @@ func renderInit(templatePath, passwordPath, outputPath string) error {
 		return fmt.Errorf("init template must contain exactly one password placeholder")
 	}
 	rendered := bytes.Replace(template, []byte(passwordPlaceholder), hash, 1)
-	var doc any
+	var doc map[string]interface{}
 	if err := json.Unmarshal(rendered, &doc); err != nil {
 		return fmt.Errorf("validate rendered init data: %w", err)
 	}
+	if bytes.Contains(rendered, []byte(signingCertificatePlaceholder)) ||
+		bytes.Contains(rendered, []byte(signingPrivateKeyPlaceholder)) {
+		if err := applySigningMaterial(doc, os.Getenv("CASDOOR_SIGNING_MATERIAL"), time.Now().UTC()); err != nil {
+			return err
+		}
+	}
+	rendered, err = json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("render init data: %w", err)
+	}
+	rendered = append(rendered, '\n')
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0700); err != nil {
 		return err
 	}
@@ -161,7 +183,12 @@ func postgresDSN() string {
 		os.Getenv("CASDOOR_DB_NAME"))
 }
 
-func healthcheck() error {
+func healthcheck(requireReady bool) error {
+	if requireReady {
+		if _, err := os.Stat("/tmp/anas-casdoor-ready"); err != nil {
+			return fmt.Errorf("Casdoor runtime credential projection is not ready")
+		}
+	}
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get("http://127.0.0.1:8000/api/health")
 	if err != nil {

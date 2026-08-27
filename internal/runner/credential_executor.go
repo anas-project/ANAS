@@ -2,12 +2,19 @@ package runner
 
 import (
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/hex"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/anas-project/ANAS/internal/compose"
 )
@@ -175,7 +182,7 @@ func generateCredentialRotationCandidates(selected []deploymentCredential, store
 	values := map[string]credentialCandidateValue{}
 	storeValues := map[string]credentialStoreCandidate{}
 	for _, credential := range selected {
-		value, err := generateCredentialValue(credential)
+		value, err := generateCredentialValueWithPrevious(credential, store.values[credential.SecretKey])
 		if err != nil {
 			return nil, nil, err
 		}
@@ -199,6 +206,21 @@ func generateCredentialRotationCandidates(selected []deploymentCredential, store
 }
 
 func generateCredentialValue(credential deploymentCredential) (string, error) {
+	return generateCredentialValueWithPrevious(credential, "")
+}
+
+type x509CredentialTrust struct {
+	Certificate string `json:"certificate"`
+	RetainUntil string `json:"retain_until"`
+}
+
+type x509CredentialBundle struct {
+	PrivateKey          string                `json:"private_key"`
+	Certificate         string                `json:"certificate"`
+	TrustedCertificates []x509CredentialTrust `json:"trusted_certificates,omitempty"`
+}
+
+func generateCredentialValueWithPrevious(credential deploymentCredential, previous string) (string, error) {
 	switch credential.Generator.Kind {
 	case "password":
 		return randomPassword(credential.Generator.Length)
@@ -208,9 +230,127 @@ func generateCredentialValue(credential deploymentCredential) (string, error) {
 			return "", fmt.Errorf("generate credential %s: %w", credential.ID, err)
 		}
 		return hex.EncodeToString(body), nil
+	case "rsa_private_key":
+		bits := credential.Generator.Length
+		if bits < 2048 {
+			return "", fmt.Errorf("credential %s RSA key size must be at least 2048 bits", credential.ID)
+		}
+		key, err := rsa.GenerateKey(rand.Reader, bits)
+		if err != nil {
+			return "", fmt.Errorf("generate credential %s: %w", credential.ID, err)
+		}
+		return string(pem.EncodeToMemory(&pem.Block{
+			Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key),
+		})), nil
+	case "x509_rsa_bundle":
+		return generateX509CredentialBundle(credential, previous)
 	default:
 		return "", fmt.Errorf("credential %s has unsupported generator %q", credential.ID, credential.Generator.Kind)
 	}
+}
+
+func generateX509CredentialBundle(credential deploymentCredential, previous string) (string, error) {
+	bits := credential.Generator.Length
+	if bits < 2048 {
+		return "", fmt.Errorf("credential %s RSA key size must be at least 2048 bits", credential.ID)
+	}
+	key, err := rsa.GenerateKey(rand.Reader, bits)
+	if err != nil {
+		return "", fmt.Errorf("generate credential %s: %w", credential.ID, err)
+	}
+	now := time.Now().UTC()
+	certificate, err := newX509CredentialCertificate(key, now)
+	if err != nil {
+		return "", fmt.Errorf("generate credential %s certificate: %w", credential.ID, err)
+	}
+	bundle := x509CredentialBundle{
+		PrivateKey: string(pem.EncodeToMemory(&pem.Block{
+			Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key),
+		})),
+		Certificate: certificate,
+	}
+	if strings.TrimSpace(previous) != "" {
+		var old x509CredentialBundle
+		if err := json.Unmarshal([]byte(previous), &old); err != nil {
+			return "", fmt.Errorf("credential %s previous X.509 bundle is invalid", credential.ID)
+		}
+		if err := validateX509CredentialBundle(old); err != nil {
+			return "", fmt.Errorf("credential %s previous X.509 bundle is invalid: %w", credential.ID, err)
+		}
+		for _, trusted := range old.TrustedCertificates {
+			deadline, err := time.Parse(time.RFC3339, trusted.RetainUntil)
+			if err == nil && deadline.After(now) && trusted.Certificate != "" {
+				bundle.TrustedCertificates = append(bundle.TrustedCertificates, trusted)
+			}
+		}
+		bundle.TrustedCertificates = append(bundle.TrustedCertificates, x509CredentialTrust{
+			Certificate: old.Certificate,
+			RetainUntil: now.Add(time.Duration(credential.Generator.OverlapSeconds) * time.Second).Format(time.RFC3339),
+		})
+	}
+	body, err := json.Marshal(bundle)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func validateX509CredentialBundle(bundle x509CredentialBundle) error {
+	privateBlock, _ := pem.Decode([]byte(bundle.PrivateKey))
+	certificateBlock, _ := pem.Decode([]byte(bundle.Certificate))
+	if privateBlock == nil || privateBlock.Type != "RSA PRIVATE KEY" ||
+		certificateBlock == nil || certificateBlock.Type != "CERTIFICATE" {
+		return fmt.Errorf("keypair PEM is invalid")
+	}
+	privateKey, err := x509.ParsePKCS1PrivateKey(privateBlock.Bytes)
+	if err != nil {
+		return fmt.Errorf("private key: %w", err)
+	}
+	certificate, err := x509.ParseCertificate(certificateBlock.Bytes)
+	if err != nil {
+		return fmt.Errorf("certificate: %w", err)
+	}
+	publicKey, ok := certificate.PublicKey.(*rsa.PublicKey)
+	if !ok || publicKey.E != privateKey.PublicKey.E || publicKey.N.Cmp(privateKey.PublicKey.N) != 0 {
+		return fmt.Errorf("certificate does not match private key")
+	}
+	for index, trust := range bundle.TrustedCertificates {
+		block, _ := pem.Decode([]byte(trust.Certificate))
+		if block == nil || block.Type != "CERTIFICATE" {
+			return fmt.Errorf("trusted certificate %d is invalid", index)
+		}
+		if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+			return fmt.Errorf("trusted certificate %d: %w", index, err)
+		}
+		if _, err := time.Parse(time.RFC3339, trust.RetainUntil); err != nil {
+			return fmt.Errorf("trusted certificate %d retention deadline is invalid", index)
+		}
+	}
+	return nil
+}
+
+func newX509CredentialCertificate(key *rsa.PrivateKey, now time.Time) (string, error) {
+	serialBytes := make([]byte, 16)
+	if _, err := rand.Read(serialBytes); err != nil {
+		return "", err
+	}
+	serialBytes[0] &= 0x7f
+	serial := new(big.Int).SetBytes(serialBytes)
+	if serial.Sign() == 0 {
+		serial.SetInt64(1)
+	}
+	template := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "ANAS managed signing"},
+		NotBefore:    now.Add(-time.Hour),
+		NotAfter:     now.AddDate(10, 0, 0),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		return "", err
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), nil
 }
 
 func stopCredentialModules(a *app, root string, txn *credentialRotationTransaction, jsonMode bool) error {

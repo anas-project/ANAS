@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `casdoor` 的协议契约、安全边界和验证入口。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.143.0-r7` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.143.0-r8` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -11,8 +11,8 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r7` | `traefik, db, casdoor` | 5 |
-| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r7` | `casdoor` | 3 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r8` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r8` | `casdoor` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -26,9 +26,20 @@
 
 ## 数据与启动流程
 
-Hook 生成 Casdoor `app.conf` 和初始化数据模板。PostgreSQL DSN 显式包含 `dbname`。容器启动时 Helper 从 `0600` 临时投影读取恢复密码，生成 bcrypt 后的 `/tmp/init_data.json`，再以 UID/GID `1000` 启动上游进程。由于上游先初始化 LDAP 自动同步器、后导入 init data，entrypoint 会短暂启动一次以提交表结构与托管对象，再启动正式进程；镜像移除容器内无意义的 `lsof` old-instance 探测，避免 bootstrap 子进程把自己杀死。初始化数据为 built-in 恢复管理员显式开启特权确认，并给 `anas` 组织创建不可注册的内部目录 Application；PostgreSQL 是唯一受支持的数据接口。
+Hook 生成 Casdoor `app.conf` 和初始化数据模板。PostgreSQL DSN 显式包含 `dbname`。容器启动时 Helper 从 `0600` 临时投影读取恢复密码，生成 bcrypt 后的 `/tmp/init_data.json`，再以 UID/GID `1000` 启动上游进程。由于上游先初始化 LDAP 自动同步器、后导入 init data，entrypoint 会短暂启动一次以提交表结构与托管对象，再启动正式进程；entrypoint 删除容器内无意义的 `lsof` old-instance 探测和上次启动遗留的 init 文件，避免 bootstrap 子进程把自己杀死或因 UID 1000 文件权限失败。正式进程 HTTP 可用后再次投影并回读恢复管理员密码，只有成功后才创建 readiness marker；普通健康检查同时要求 marker，直接 Docker 重启因此也是自包含的。初始化数据为 built-in 恢复管理员显式开启特权确认，并给 `anas` 组织创建不可注册的内部目录 Application；PostgreSQL 是唯一受支持的数据接口。
 
-r7 以 Casdoor `3.143.0` 对应提交 `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` 为源码输入，构建前校验归档 SHA-256 `365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460`，再顺序应用仓库内四个受控补丁：SAML 模板读取 `displayName/externalId`；OIDC ID Token 绑定 Beego session `sid`，用户退出和管理员删 session 发出两分钟 Logout Token；delivery 失败记录不含凭据的原因；token 查询使用 XORM 字段条件，避免 PostgreSQL 把未引用的 `user` 解析为当前数据库用户。镜像仍以固定官方 `3.143.0` 运行时为基础；构建代理不改变提交与校验和。
+r8 以 Casdoor `3.143.0` 对应提交 `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` 为源码输入，构建前校验归档 SHA-256 `365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460`，再顺序应用仓库内四个受控补丁：SAML 模板读取 `displayName/externalId`；OIDC ID Token 绑定 Beego session `sid`，用户退出和管理员删 session 发出两分钟 Logout Token；delivery 失败记录不含凭据的原因；token 查询使用 XORM 字段条件，避免 PostgreSQL 把未引用的 `user` 解析为当前数据库用户。镜像仍以固定官方 `3.143.0` 运行时为基础；构建代理不改变提交与校验和。Go 构建 stage 固定在 `BUILDPLATFORM` 并用 BuildKit 的 `TARGETOS/TARGETARCH` 交叉编译，最终目标 stage 不执行 `RUN`；amd64 真实部署和 arm64 固定源码构建/非特权目标运行探针均已通过。
+
+## 受管凭据生命周期
+
+`CASDOOR_SIGNING_MATERIAL` 是含当前 RSA 私钥、证书和限时旧证书的 Secret JSON bundle。部署清单只冻结
+Secret 投影位置和公开证书投影位置，不记录值；候选部署同步更新 `CASDOOR_SIGNING_CERT`。Helper 以证书
+SHA-256 指纹命名当前 Casdoor Cert，并把 Application 引用原子切换到新名称。轮换后一小时内保留旧
+JWKS key；从 r7 升级时还保留旧 `anas-signing` alias，直到其证书退出信任窗口。
+
+`CASDOOR_PORTAL_CLIENT_SECRET` 通过同一 credential transaction 更新 built-in Portal Application。
+probe/reconcile/verify 都从 stdin 读取候选，错误不包含值；候选启动、应用回读和健康验证全部通过后才
+提交 Secret Store。失败时恢复上一 deployment、数据库值和 Store generation。
 
 ## LDAP、目录事件与权威边界
 
@@ -36,7 +47,7 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 
 由于上游会保留既有 Group，订阅器使用同一受限 Bind 经受信任 LDAPS 查询 `ALLOW_GROUPS`，以 AD matching rule `1.2.840.113556.1.4.1941` 计算直接和递归成员，再权威覆盖受管用户 Group。缺失组、重复/缺失锚点或任何 Casdoor 补丁失败都会使整批失败并保留游标重试。默认 5 分钟的上游自动同步不关闭，因此订阅器仍是低延迟加速器。
 
-当前仅导入和远程认证，不启用密码写回。删除事件把影子记录标为禁止和删除，停用事件标为禁止，两者都清空 Group；重新启用或同锚点改名会复用并恢复原记录。该收敛逻辑已通过真实目录与 OIDC/SAML E2E；生命周期仍由恢复、升级和密钥轮换等 M5 验收阻塞。
+当前仅导入和远程认证，不启用密码写回。删除事件把影子记录标为禁止和删除，停用事件标为禁止，两者都清空 Group；重新启用或同锚点改名会复用并恢复原记录。该收敛逻辑已通过真实目录与 OIDC/SAML E2E。
 
 ## IAM 契约
 
@@ -65,11 +76,15 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 - [`server-casdoor-oidc-e2e.sh`](../../../test-env/scripts/server-casdoor-oidc-e2e.sh)（2026-08-27 在同一隔离环境通过）
 - [`server-casdoor-saml-e2e.sh`](../../../test-env/scripts/server-casdoor-saml-e2e.sh)（2026-08-27 在同一隔离环境通过）
 - [`server-casdoor-oidc-logout-e2e.sh`](../../../test-env/scripts/server-casdoor-oidc-logout-e2e.sh)（2026-08-27 在同一隔离环境通过真实 Consumer、多 session、管理员 API、签名、重放与配置恢复矩阵）
+- [`server-casdoor-local-admin-e2e.sh`](../../../test-env/scripts/server-casdoor-local-admin-e2e.sh)（2026-08-27 在最新 r8 通过恢复登录、成功轮换和失败回滚）
+- [`server-casdoor-restore-e2e.sh`](../../../test-env/scripts/server-casdoor-restore-e2e.sh)（2026-08-27 通过 Btrfs snapshot 到空 workspace 恢复与原身份登录）
+- [`server-casdoor-lifecycle-e2e.sh`](../../../test-env/scripts/server-casdoor-lifecycle-e2e.sh)（2026-08-27 通过 amd64 冷启动/重启/升级/回滚及 arm64 构建/运行）
+- [`server-casdoor-key-rotation-e2e.sh`](../../../test-env/scripts/server-casdoor-key-rotation-e2e.sh)（2026-08-27 通过签名与 Portal Secret 轮换、重叠信任和失败恢复）
 - [`module.yml`](../module.yml)
 
 ## 当前限制
 
-状态为 `developing`。目录订阅和真实 OIDC/SAML E2E 已验证新增、属性刷新、事件防抖、游标恢复、删除/停用、Group 门禁、永久锚点、改名复用、应用权限及 OIDC exact-`sid` 会话撤销。固定版本没有 SAML LogoutRequest/LogoutResponse 消费路径，因此 SLO endpoint/binding 保持不发布；恢复登录、备份恢复、多架构生命周期与密钥轮换 E2E 仍未完成。
+状态为 `release`。固定版本没有 SAML LogoutRequest/LogoutResponse 消费路径，因此 SLO endpoint/binding 保持不发布；不启用目录密码写回，不支持静默切换数据库，也不把 Casdoor 本地 User ID 当作 Samba 永久锚点。其余声明能力和发布验收范围见需求矩阵与实施计划。
 
 规范性要求、稳定需求 ID、里程碑归属和逐项执行记录见
 [Casdoor IAM Provider 集成要求](../../../docs/requirements/casdoor-iam.md)与

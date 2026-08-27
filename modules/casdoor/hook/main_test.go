@@ -1,9 +1,14 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestManifestSubscribesToDirectoryEventJournal(t *testing.T) {
@@ -58,10 +63,49 @@ func TestCalculatePublishesCasdoorAndLDAPConfiguration(t *testing.T) {
 	if got, want := e["CASDOOR_DIRWATCH_IDENTITY_ANCHOR_ATTRIBUTE"], "anasIdentityAnchor"; got != want {
 		t.Fatalf("directory watcher identity anchor = %q, want %q", got, want)
 	}
-	for _, key := range []string{"CASDOOR_PORTAL_CLIENT_ID", "CASDOOR_PORTAL_CLIENT_SECRET", "CASDOOR_SIGNING_KEY", "CASDOOR_SIGNING_CERT"} {
+	for _, key := range []string{"CASDOOR_PORTAL_CLIENT_ID", "CASDOOR_PORTAL_CLIENT_SECRET", "CASDOOR_SIGNING_MATERIAL"} {
 		if secrets.values[key] == "" {
 			t.Fatalf("secret %s was not generated", key)
 		}
+	}
+	if e["CASDOOR_SIGNING_CERT"] == "" || e["CASDOOR_SIGNING_KEY"] != "" {
+		t.Fatal("signing certificate was not published or the private key escaped its managed material")
+	}
+	firstMaterial, firstCertificate := secrets.values["CASDOOR_SIGNING_MATERIAL"], e["CASDOOR_SIGNING_CERT"]
+	secondEnv := cloneMap(e)
+	if err := calcCasdoor(secondEnv, secrets); err != nil {
+		t.Fatal(err)
+	}
+	if secrets.values["CASDOOR_SIGNING_MATERIAL"] != firstMaterial || secondEnv["CASDOOR_SIGNING_CERT"] != firstCertificate {
+		t.Fatal("repeated calculate changed managed signing material")
+	}
+}
+
+func TestCalculateMigratesLegacySigningKeypairWithoutChangingCertificate(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := newSigningCertificate(key, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateKey := string(pem.EncodeToMemory(&pem.Block{
+		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}))
+	secrets := &secretStore{values: map[string]string{
+		"CASDOOR_SIGNING_KEY": privateKey, "CASDOOR_SIGNING_CERT": certificate,
+	}}
+	env := map[string]string{}
+	if err := ensureSigningKeypair(env, secrets); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := parseSigningMaterial(secrets.values["CASDOOR_SIGNING_MATERIAL"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.PrivateKey != privateKey || bundle.Certificate != certificate || env["CASDOOR_SIGNING_CERT"] != certificate {
+		t.Fatal("legacy signing keypair changed during managed-material migration")
 	}
 }
 

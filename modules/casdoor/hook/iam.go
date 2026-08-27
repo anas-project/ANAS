@@ -52,7 +52,7 @@ func renderInitData(e map[string]string) (string, error) {
 	if err := requireKeys(e, []string{
 		"CASDOOR_DOMAIN_FULL", "CASDOOR_PORTAL_CLIENT_ID", "CASDOOR_PORTAL_CLIENT_SECRET",
 		"CASDOOR_LOCAL_ADMIN__BREAK_GLASS_USERNAME",
-		"CASDOOR_SIGNING_CERT", "CASDOOR_SIGNING_KEY", "CASDOOR_LDAP_HOST", "CASDOOR_LDAP_PORT",
+		"CASDOOR_SIGNING_CERT", "CASDOOR_SIGNING_MATERIAL", "CASDOOR_LDAP_HOST", "CASDOOR_LDAP_PORT",
 		"CASDOOR_LDAP_BIND_DN", "CASDOOR_LDAP_BIND_PASSWORD", "CASDOOR_LDAP_BASE_DN", "CASDOOR_LDAP_FILTER",
 	}); err != nil {
 		return "", err
@@ -116,7 +116,7 @@ func renderInitData(e map[string]string) (string, error) {
 		"certs": []any{map[string]any{
 			"owner": "admin", "name": "anas-signing", "displayName": "ANAS signing key",
 			"scope": "JWT", "type": "x509", "cryptoAlgorithm": "RS256", "bitSize": 2048,
-			"expireInYears": 10, "certificate": e["CASDOOR_SIGNING_CERT"], "privateKey": e["CASDOOR_SIGNING_KEY"],
+			"expireInYears": 10, "certificate": "__ANAS_SIGNING_CERTIFICATE__", "privateKey": "__ANAS_SIGNING_PRIVATE_KEY__",
 		}},
 		"ldaps": []any{map[string]any{
 			"id": "anas-samba-ad", "owner": "anas", "serverName": "Samba AD",

@@ -66,7 +66,8 @@ func credentialStoreConsistencyError(base string, manifest *deploymentManifest) 
 func (a *app) coordinateModuleCredentials(mod Module, workdir string, env map[string]string) error {
 	owned := map[string]deploymentCredential{}
 	for _, credential := range a.credentials {
-		if credential.Owner == mod.Name && credential.RotationMode == "reconcile" {
+		if credential.Owner == mod.Name &&
+			(credential.RotationMode == "reconcile" || credential.RotationMode == "overlap") {
 			owned[credential.ID] = credential
 		}
 	}

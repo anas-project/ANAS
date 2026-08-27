@@ -5,6 +5,7 @@ package runner
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -354,7 +355,14 @@ func materializeCredentialCandidate(base string, txn *credentialRotationTransact
 			}
 			credential.Authority = value.Authority
 		}
+		previousValue, err := frozenCredentialOwnerValue(stagingRoot, credential)
+		if err != nil {
+			return nil, err
+		}
 		if err := writeCredentialCandidateProjection(stagingRoot, candidate, credential, value.Value); err != nil {
+			return nil, err
+		}
+		if err := writeCredentialPublicCandidateProjections(stagingRoot, candidate, credential, previousValue, value.Value); err != nil {
 			return nil, err
 		}
 		candidate.Credentials[index] = credential
@@ -390,6 +398,61 @@ func materializeCredentialCandidate(base string, txn *credentialRotationTransact
 		return nil, err
 	}
 	return candidate, nil
+}
+
+func frozenCredentialOwnerValue(root string, credential deploymentCredential) (string, error) {
+	if len(credential.Projections) == 0 {
+		return "", nil
+	}
+	for _, projection := range credential.Projections {
+		if projection.Module != credential.Owner || projection.EnvKey != credential.SecretKey {
+			continue
+		}
+		env, err := parseEnvFile(filepath.Join(root, "modules", projection.Module, ".env"))
+		if err != nil {
+			return "", fmt.Errorf("read credential %s owner projection: %w", credential.ID, err)
+		}
+		value := env[projection.EnvKey]
+		if value == "" {
+			return "", fmt.Errorf("credential %s frozen owner projection is empty", credential.ID)
+		}
+		return value, nil
+	}
+	return "", fmt.Errorf("credential %s frozen owner projection is absent", credential.ID)
+}
+
+func writeCredentialPublicCandidateProjections(root string, manifest *deploymentManifest, credential deploymentCredential, previousValue, candidateValue string) error {
+	if len(credential.PublicProjections) == 0 {
+		return nil
+	}
+	if credential.Generator.Kind != "x509_rsa_bundle" || previousValue == "" {
+		return fmt.Errorf("credential %s public projections require frozen X.509 bundle values", credential.ID)
+	}
+	var previous, candidate x509CredentialBundle
+	if err := json.Unmarshal([]byte(previousValue), &previous); err != nil || strings.TrimSpace(previous.Certificate) == "" {
+		return fmt.Errorf("credential %s previous X.509 bundle is invalid", credential.ID)
+	}
+	if err := json.Unmarshal([]byte(candidateValue), &candidate); err != nil || strings.TrimSpace(candidate.Certificate) == "" {
+		return fmt.Errorf("credential %s candidate X.509 bundle is invalid", credential.ID)
+	}
+	for _, projection := range credential.PublicProjections {
+		if _, ok := manifest.Modules[projection.Module]; !ok {
+			return fmt.Errorf("credential %s references missing public projection module %s", credential.ID, projection.Module)
+		}
+		path := filepath.Join(root, "modules", projection.Module, ".env")
+		env, err := parseEnvFile(path)
+		if err != nil {
+			return fmt.Errorf("read credential %s public projection for %s: %w", credential.ID, projection.Module, err)
+		}
+		if env[projection.EnvKey] != previous.Certificate {
+			return fmt.Errorf("credential %s public projection %s/%s differs from its certificate", credential.ID, projection.Module, projection.EnvKey)
+		}
+		env[projection.EnvKey] = candidate.Certificate
+		if err := writeEnv(path, env); err != nil {
+			return fmt.Errorf("write credential %s public projection for %s: %w", credential.ID, projection.Module, err)
+		}
+	}
+	return nil
 }
 
 func cloneDeploymentManifest(in *deploymentManifest) (*deploymentManifest, error) {

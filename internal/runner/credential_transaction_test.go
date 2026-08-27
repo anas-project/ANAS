@@ -148,6 +148,89 @@ func TestCredentialCandidateIsIndependentAndValueFreeOutsideProjection(t *testin
 	}
 }
 
+func TestX509CredentialCandidateAdvancesPublicCertificateAndRetainsOldTrust(t *testing.T) {
+	base := filepath.Join(t.TempDir(), ".anas")
+	if err := ensureRuntimeLayout(base); err != nil {
+		t.Fatal(err)
+	}
+	previousID := "20260820T010203Z-feedface"
+	previousRoot := filepath.Join(base, "deployments", previousID)
+	previousValue := `{"private_key":"old-key","certificate":"old-cert"}`
+	candidateValue := `{"private_key":"new-key","certificate":"new-cert","trusted_certificates":[{"certificate":"old-cert","retain_until":"2026-08-20T02:02:03Z"}]}`
+	for name, env := range map[string]map[string]string{
+		"provider": {
+			"ANAS_DEPLOYMENT_ID": previousID, "SIGNING_MATERIAL": previousValue,
+			"SIGNING_CERT": "old-cert",
+		},
+		"consumer": {"ANAS_DEPLOYMENT_ID": previousID, "SAML_SIGNING_CERT": "old-cert"},
+	} {
+		dir := filepath.Join(previousRoot, "modules", name)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeEnv(filepath.Join(dir, ".env"), env); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := &deploymentManifest{
+		APIVersion: deploymentAPIVersion, ID: previousID, CreatedAt: "2026-08-20T01:02:03Z",
+		ModuleOrder: []string{"provider", "consumer"},
+		Modules: map[string]deploymentModule{
+			"provider": {Name: "provider", RuntimeType: "builtin", ArtifactDeployment: previousID},
+			"consumer": {Name: "consumer", RuntimeType: "builtin", ArtifactDeployment: previousID, Dependencies: []string{"provider"}},
+		},
+		Credentials: []deploymentCredential{{
+			ID: "provider.signing", SecretKey: "SIGNING_MATERIAL", Owner: "provider", Consumers: []string{"consumer"},
+			Kind: "key", Authority: "anas", RotationMode: "overlap", Generation: 1,
+			DesiredProjection: "deployment-secret://provider.signing",
+			Generator:         deployment.CredentialGenerator{Kind: "x509_rsa_bundle", Length: 2048, OverlapSeconds: 3600},
+			Lifecycle:         deployment.CredentialLifecycle{Probe: "probe", Reconcile: "reconcile", Verify: "verify"},
+			Projections:       []deployment.CredentialProjection{{Module: "provider", EnvKey: "SIGNING_MATERIAL"}},
+			PublicProjections: []deployment.CredentialProjection{
+				{Module: "consumer", EnvKey: "SAML_SIGNING_CERT"},
+				{Module: "provider", EnvKey: "SIGNING_CERT"},
+			},
+		}},
+	}
+	if err := writeYAMLAtomic(filepath.Join(previousRoot, "deployment.yml"), manifest, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(deploymentConfigSourcePath(previousRoot), []byte("modules: {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := sealDeployment(previousRoot); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveActiveState(base, &activeDeploymentState{ActiveDeployment: previousID}); err != nil {
+		t.Fatal(err)
+	}
+	txn, err := beginCredentialRotationTransaction(base, previousID, manifest.Credentials)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := materializeCredentialCandidate(base, txn, map[string]credentialCandidateValue{
+		"provider.signing": {Value: candidateValue},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerEnv, err := parseEnvFile(filepath.Join(base, "deployments", candidate.ID, "modules", "provider", ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumerEnv, err := parseEnvFile(filepath.Join(base, "deployments", candidate.ID, "modules", "consumer", ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if providerEnv["SIGNING_MATERIAL"] != candidateValue || providerEnv["SIGNING_CERT"] != "new-cert" ||
+		consumerEnv["SAML_SIGNING_CERT"] != "new-cert" {
+		t.Fatalf("candidate X.509 projections = provider %#v consumer %#v", providerEnv, consumerEnv)
+	}
+	if !strings.Contains(providerEnv["SIGNING_MATERIAL"], `"certificate":"old-cert"`) {
+		t.Fatal("candidate signing bundle lost its old trust overlap")
+	}
+}
+
 func TestCredentialJournalIsAutomaticallyRecoveredBeforeNewExclusiveWrite(t *testing.T) {
 	base := filepath.Join(t.TempDir(), ".anas")
 	if err := ensureRuntimeLayout(base); err != nil {

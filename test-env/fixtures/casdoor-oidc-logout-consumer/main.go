@@ -29,6 +29,8 @@ const logoutEvent = "http://schemas.openid.net/event/backchannel-logout"
 type config struct {
 	issuer                string
 	internalOrigin        string
+	application           string
+	organization          string
 	clientID              string
 	clientSecret          string
 	redirectURI           string
@@ -101,9 +103,12 @@ type fixture struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal(errors.New("usage: casdoor-oidc-logout-consumer serve|login|probe|user-logout|configure|restore|admin-delete|evidence|replay"))
+		fatal(errors.New("usage: casdoor-oidc-logout-consumer serve|login|token-login|verify-token|probe|user-logout|configure|restore|admin-delete|admin-login|evidence|replay"))
 	}
-	config, err := loadConfig()
+	command := os.Args[1]
+	requireConsumer := command != "admin-login"
+	requireBackchannel := command != "admin-login" && command != "token-login" && command != "verify-token"
+	config, err := loadConfig(requireConsumer, requireBackchannel)
 	if err != nil {
 		fatal(err)
 	}
@@ -112,6 +117,10 @@ func main() {
 		err = serve(config, os.Args[2:])
 	case "login":
 		err = login(config, os.Args[2:])
+	case "token-login":
+		err = tokenLogin(config, os.Args[2:])
+	case "verify-token":
+		err = verifyToken(config, os.Args[2:])
 	case "probe":
 		err = probe(config, os.Args[2:])
 	case "user-logout":
@@ -122,6 +131,8 @@ func main() {
 		err = configureApplication(config, os.Args[2:], true)
 	case "admin-delete":
 		err = adminDelete(config, os.Args[2:])
+	case "admin-login":
+		err = adminLogin(config, os.Args[2:])
 	case "evidence":
 		err = evidence(config, os.Args[2:])
 	case "replay":
@@ -134,10 +145,12 @@ func main() {
 	}
 }
 
-func loadConfig() (config, error) {
+func loadConfig(requireConsumer, requireBackchannel bool) (config, error) {
 	result := config{
 		issuer:                strings.TrimRight(os.Getenv("CASDOOR_FIXTURE_ISSUER"), "/"),
 		internalOrigin:        strings.TrimRight(os.Getenv("CASDOOR_FIXTURE_INTERNAL_ORIGIN"), "/"),
+		application:           defaultString(os.Getenv("CASDOOR_FIXTURE_APPLICATION"), "app-anas-nextcloud"),
+		organization:          defaultString(os.Getenv("CASDOOR_FIXTURE_ORGANIZATION"), "anas"),
 		clientID:              os.Getenv("CASDOOR_FIXTURE_CLIENT_ID"),
 		redirectURI:           os.Getenv("CASDOOR_FIXTURE_REDIRECT_URI"),
 		backchannelURI:        os.Getenv("CASDOOR_FIXTURE_BACKCHANNEL_URI"),
@@ -152,8 +165,14 @@ func loadConfig() (config, error) {
 		}
 		result.clientSecret = strings.TrimSpace(string(secret))
 	}
-	if result.issuer == "" || result.internalOrigin == "" || result.clientID == "" || result.clientSecret == "" || result.redirectURI == "" || result.backchannelURI == "" {
-		return result, errors.New("fixture issuer, internal origin, client ID/secret, redirect URI and back-channel URI are required")
+	if result.issuer == "" || result.internalOrigin == "" {
+		return result, errors.New("fixture issuer and internal origin are required")
+	}
+	if requireConsumer && (result.clientID == "" || result.clientSecret == "" || result.redirectURI == "") {
+		return result, errors.New("fixture issuer, internal origin, client ID/secret and redirect URI are required")
+	}
+	if requireBackchannel && result.backchannelURI == "" {
+		return result, errors.New("fixture back-channel URI is required")
 	}
 	return result, nil
 }
@@ -424,7 +443,7 @@ func login(config config, args []string) error {
 	query.Set("nonce", nonce)
 	loginURL.RawQuery = query.Encode()
 	payload := map[string]interface{}{
-		"application": "app-anas-nextcloud", "organization": "anas", "username": *username,
+		"application": config.application, "organization": config.organization, "username": *username,
 		"password": strings.TrimSpace(string(passwordBytes)), "autoSignin": false, "type": "code", "signinMethod": "Password",
 	}
 	var loginResponse struct {
@@ -472,6 +491,140 @@ func login(config config, args []string) error {
 		return err
 	}
 	return json.NewEncoder(os.Stdout).Encode(map[string]string{"username": *username, "sub": session.Sub, "sid": session.SID})
+}
+
+func tokenLogin(config config, args []string) error {
+	flags := flag.NewFlagSet("token-login", flag.ContinueOnError)
+	username := flags.String("username", "", "Casdoor username")
+	passwordFile := flags.String("password-file", "", "password file")
+	stateFile := flags.String("state-file", "", "optional output login state")
+	tokenFile := flags.String("token-file", "", "optional private ID token output")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if *username == "" || *passwordFile == "" {
+		return errors.New("username and password-file are required")
+	}
+	passwordBytes, err := os.ReadFile(*passwordFile)
+	if err != nil {
+		return err
+	}
+	client, err := config.httpClient(true)
+	if err != nil {
+		return err
+	}
+	state, err := randomID()
+	if err != nil {
+		return err
+	}
+	nonce, err := randomID()
+	if err != nil {
+		return err
+	}
+	loginURL, _ := url.Parse(config.issuer + "/api/login")
+	query := loginURL.Query()
+	query.Set("clientId", config.clientID)
+	query.Set("responseType", "code")
+	query.Set("redirectUri", config.redirectURI)
+	query.Set("scope", "openid email profile")
+	query.Set("state", state)
+	query.Set("nonce", nonce)
+	loginURL.RawQuery = query.Encode()
+	payload := map[string]interface{}{
+		"application": config.application, "organization": config.organization, "username": *username,
+		"password": strings.TrimSpace(string(passwordBytes)), "autoSignin": false, "type": "code", "signinMethod": "Password",
+	}
+	var loginResponse struct {
+		Status string `json:"status"`
+		Data   string `json:"data"`
+		Msg    string `json:"msg"`
+	}
+	response, err := doJSON(client, http.MethodPost, loginURL.String(), payload, &loginResponse)
+	if err != nil {
+		return err
+	}
+	if response.StatusCode != http.StatusOK || loginResponse.Status != "ok" || loginResponse.Data == "" {
+		return fmt.Errorf("Casdoor login failed: status=%d response=%s/%s", response.StatusCode, loginResponse.Status, loginResponse.Msg)
+	}
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {config.clientID},
+		"client_secret": {config.clientSecret},
+		"code":          {loginResponse.Data},
+		"redirect_uri":  {config.redirectURI},
+	}
+	tokenResponse, err := client.PostForm(config.issuer+"/api/login/oauth/access_token", form)
+	if err != nil {
+		return err
+	}
+	defer tokenResponse.Body.Close()
+	var tokens struct {
+		IDToken string `json:"id_token"`
+		Error   string `json:"error"`
+	}
+	if json.NewDecoder(tokenResponse.Body).Decode(&tokens) != nil || tokenResponse.StatusCode != http.StatusOK || tokens.Error != "" || tokens.IDToken == "" {
+		return errors.New("authorization code exchange failed")
+	}
+	claims, err := verifyJWT(client, config, tokens.IDToken)
+	if err != nil {
+		return err
+	}
+	if claimString(claims, "nonce") != nonce || claimString(claims, "sub") == "" || claimString(claims, "sid") == "" {
+		return errors.New("ID token nonce, sub or sid is invalid")
+	}
+	header, err := jwtHeader(tokens.IDToken)
+	if err != nil {
+		return err
+	}
+	result := map[string]interface{}{
+		"username": *username, "sub": claimString(claims, "sub"), "sid": claimString(claims, "sid"),
+		"issuer": claimString(claims, "iss"), "audience": claimStrings(claims["aud"]),
+		"signature": "RS256/JWKS", "kid": claimString(header, "kid"), "expires": claimInt64(claims, "exp"),
+	}
+	if *tokenFile != "" {
+		if err := writePrivateText(*tokenFile, tokens.IDToken+"\n"); err != nil {
+			return err
+		}
+	}
+	if *stateFile != "" {
+		if err := writePrivateJSON(*stateFile, result); err != nil {
+			return err
+		}
+	}
+	return json.NewEncoder(os.Stdout).Encode(result)
+}
+
+func verifyToken(config config, args []string) error {
+	flags := flag.NewFlagSet("verify-token", flag.ContinueOnError)
+	tokenFile := flags.String("token-file", "", "private ID token input")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if *tokenFile == "" || flags.NArg() != 0 {
+		return errors.New("token-file is required and positional arguments are not accepted")
+	}
+	raw, err := os.ReadFile(*tokenFile)
+	if err != nil {
+		return err
+	}
+	token := strings.TrimSpace(string(raw))
+	client, err := config.httpClient(true)
+	if err != nil {
+		return err
+	}
+	claims, err := verifyJWT(client, config, token)
+	if err != nil {
+		return err
+	}
+	header, err := jwtHeader(token)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+		"verification": "accepted", "kid": claimString(header, "kid"),
+		"sub": claimString(claims, "sub"), "sid": claimString(claims, "sid"),
+		"issuer": claimString(claims, "iss"), "audience": claimStrings(claims["aud"]),
+	})
 }
 
 func probe(config config, args []string) error {
@@ -542,6 +695,9 @@ func configureApplication(config config, args []string, restore bool) error {
 		return err
 	}
 	var application map[string]interface{}
+	applicationID := "admin/" + config.application
+	applicationURL := config.issuer + "/api/get-application?id=" + url.QueryEscape(applicationID)
+	updateURL := config.issuer + "/api/update-application?id=" + url.QueryEscape(applicationID)
 	if restore {
 		if err := readJSONFile(*backup, &application); err != nil {
 			return err
@@ -549,7 +705,7 @@ func configureApplication(config config, args []string, restore bool) error {
 		application["redirectUris"] = config.managedRedirectURIs
 		application["backchannelLogoutUri"] = config.managedBackchannelURI
 	} else {
-		if _, err := getJSON(admin, config.issuer+"/api/get-application?id=admin%2Fapp-anas-nextcloud", &application); err != nil {
+		if _, err := getJSON(admin, applicationURL, &application); err != nil {
 			return err
 		}
 		if err := writePrivateJSON(*backup, application["data"]); err != nil {
@@ -568,7 +724,7 @@ func configureApplication(config config, args []string, restore bool) error {
 		application["backchannelLogoutUri"] = config.backchannelURI
 	}
 	var result map[string]interface{}
-	response, err := doJSON(admin, http.MethodPost, config.issuer+"/api/update-application?id=admin%2Fapp-anas-nextcloud", application, &result)
+	response, err := doJSON(admin, http.MethodPost, updateURL, application, &result)
 	if err != nil {
 		return err
 	}
@@ -576,7 +732,7 @@ func configureApplication(config config, args []string, restore bool) error {
 		return fmt.Errorf("update application failed: %#v", result)
 	}
 	var verified map[string]interface{}
-	if _, err := getJSON(admin, config.issuer+"/api/get-application?id=admin%2Fapp-anas-nextcloud", &verified); err != nil {
+	if _, err := getJSON(admin, applicationURL, &verified); err != nil {
 		return err
 	}
 	verifiedApplication, ok := verified["data"].(map[string]interface{})
@@ -593,7 +749,7 @@ func configureApplication(config config, args []string, restore bool) error {
 	if verifiedApplication["backchannelLogoutUri"] != expectedBackchannel || (expectedRedirect != "" && !interfaceSliceContains(verifiedRedirects, expectedRedirect)) {
 		return errors.New("updated application logout/redirect fields were not persisted")
 	}
-	return json.NewEncoder(os.Stdout).Encode(map[string]string{"application": "app-anas-nextcloud", "configuration": map[bool]string{false: "fixture", true: "restored"}[restore]})
+	return json.NewEncoder(os.Stdout).Encode(map[string]string{"application": config.application, "configuration": map[bool]string{false: "fixture", true: "restored"}[restore]})
 }
 
 func adminDelete(config config, args []string) error {
@@ -619,12 +775,12 @@ func adminDelete(config config, args []string) error {
 			SessionID   []string `json:"sessionId"`
 		} `json:"data"`
 	}
-	if _, err := getJSON(admin, config.issuer+"/api/get-sessions?owner=anas", &sessionsResponse); err != nil {
+	if _, err := getJSON(admin, config.issuer+"/api/get-sessions?owner="+url.QueryEscape(config.organization), &sessionsResponse); err != nil {
 		return err
 	}
 	found := false
 	for _, session := range sessionsResponse.Data {
-		if session.Name == state.Username && session.Application == "app-anas-nextcloud" && stringSliceContains(session.SessionID, state.SID) {
+		if session.Name == state.Username && session.Application == config.application && stringSliceContains(session.SessionID, state.SID) {
 			found = true
 			break
 		}
@@ -641,19 +797,19 @@ func adminDelete(config config, args []string) error {
 			ExpiresIn    int    `json:"expiresIn"`
 		} `json:"data"`
 	}
-	if _, err := getJSON(admin, config.issuer+"/api/get-tokens?owner=admin&organization=anas", &tokensResponse); err != nil {
+	if _, err := getJSON(admin, config.issuer+"/api/get-tokens?owner=admin&organization="+url.QueryEscape(config.organization), &tokensResponse); err != nil {
 		return err
 	}
 	activeTokens := 0
 	for _, token := range tokensResponse.Data {
-		if token.Application == "app-anas-nextcloud" && token.Organization == "anas" && token.User == state.Username && token.ExpiresIn > 0 {
+		if token.Application == config.application && token.Organization == config.organization && token.User == state.Username && token.ExpiresIn > 0 {
 			activeTokens++
 		}
 	}
 	if activeTokens == 0 {
 		return errors.New("target session has no active OIDC token for back-channel routing")
 	}
-	payload := map[string]string{"owner": "anas", "name": state.Username, "application": "app-anas-nextcloud"}
+	payload := map[string]string{"owner": config.organization, "name": state.Username, "application": config.application}
 	var result map[string]interface{}
 	endpoint := config.issuer + "/api/delete-session?sessionId=" + url.QueryEscape(state.SID)
 	response, err := doJSON(admin, http.MethodPost, endpoint, payload, &result)
@@ -664,6 +820,31 @@ func adminDelete(config config, args []string) error {
 		return fmt.Errorf("delete session failed: %#v", result)
 	}
 	return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"username": state.Username, "sid": state.SID, "active_tokens": activeTokens, "admin_delete": "accepted"})
+}
+
+func adminLogin(config config, args []string) error {
+	flags := flag.NewFlagSet("admin-login", flag.ContinueOnError)
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("admin-login accepts no positional arguments")
+	}
+	admin, err := adminClient(config)
+	if err != nil {
+		return err
+	}
+	var account map[string]interface{}
+	if _, err := getJSON(admin, config.issuer+"/api/get-account", &account); err != nil {
+		return err
+	}
+	user, ok := account["data"].(map[string]interface{})
+	if !ok || user["owner"] != "built-in" || user["name"] != "admin_casdoor" || user["isAdmin"] != true {
+		return errors.New("signed-in recovery account identity or privilege is invalid")
+	}
+	return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+		"login": "accepted", "owner": "built-in", "username": "admin_casdoor", "is_admin": true,
+	})
 }
 
 func evidence(config config, args []string) error {
@@ -722,7 +903,7 @@ func adminClient(config config) (*http.Client, error) {
 		return nil, err
 	}
 	if response.StatusCode != http.StatusOK || result["status"] != "ok" {
-		return nil, fmt.Errorf("admin login failed: %#v", result)
+		return nil, errors.New("admin login was rejected")
 	}
 	return client, nil
 }
@@ -732,8 +913,8 @@ func verifyJWT(client *http.Client, config config, token string) (map[string]int
 	if len(parts) != 3 {
 		return nil, errors.New("JWT is not compact")
 	}
-	var header map[string]interface{}
-	if err := decodeJWTPart(parts[0], &header); err != nil {
+	header, err := jwtHeader(token)
+	if err != nil {
 		return nil, err
 	}
 	if header["alg"] != "RS256" || claimString(header, "kid") == "" {
@@ -793,6 +974,18 @@ func verifyJWT(client *http.Client, config config, token string) (map[string]int
 		return nil, errors.New("JWT issuer, audience or expiry invalid")
 	}
 	return claims, nil
+}
+
+func jwtHeader(token string) (map[string]interface{}, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil, errors.New("JWT is not compact")
+	}
+	var header map[string]interface{}
+	if err := decodeJWTPart(parts[0], &header); err != nil {
+		return nil, err
+	}
+	return header, nil
 }
 
 func validateLogoutClaims(claims map[string]interface{}, raw string) (logoutEvidence, error) {
@@ -877,6 +1070,19 @@ func writePrivateJSON(path string, value interface{}) error {
 	}
 	defer file.Close()
 	return json.NewEncoder(file).Encode(value)
+}
+
+func writePrivateText(path, value string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = io.WriteString(file, value)
+	return err
 }
 
 func readJSONFile(path string, value interface{}) error {
@@ -976,6 +1182,13 @@ func splitNonempty(value string) []string {
 		}
 	}
 	return result
+}
+
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func fatal(err error) {

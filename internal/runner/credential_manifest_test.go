@@ -1,6 +1,9 @@
 package runner
 
 import (
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +12,155 @@ import (
 
 	"github.com/anas-project/ANAS/internal/config"
 )
+
+func TestOverlapCredentialAcceptsAndGeneratesRSAKey(t *testing.T) {
+	dir := t.TempDir()
+	manifest := `api_version: anas.module/v1
+kind: Module
+name: demo
+version: 1.0.0
+revision: 1
+abi:
+  supports: [anas.module-hook/v1]
+status: release
+runtime:
+  type: builtin
+credentials:
+  provides:
+    - id: demo.signing_key
+      secret_key: DEMO_SIGNING_KEY
+      type: key
+      rotation_mode: overlap
+      generation: {kind: rsa_private_key, length: 2048, overlap_seconds: 3600}
+      lifecycle: {probe: probe-key, reconcile: reconcile-key, verify: verify-key}
+logic:
+  hook:
+    command: [sh, -c, "exit 0"]
+    phases: [credential_probe, credential_reconcile, credential_verify]
+`
+	if err := os.WriteFile(filepath.Join(dir, "module.yml"), []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := loadModuleManifest(dir, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := mod.CredentialProviders[0]
+	credential := deploymentCredential{
+		ID: provider.ID, Generator: provider.Generator,
+	}
+	value, err := generateCredentialValue(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode([]byte(value))
+	if block == nil || block.Type != "RSA PRIVATE KEY" {
+		t.Fatalf("generated key PEM block = %#v", block)
+	}
+	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key.N.BitLen() != 2048 || key.PublicKey.E != 65537 {
+		t.Fatalf("generated RSA key = %d bits, exponent %d", key.N.BitLen(), key.PublicKey.E)
+	}
+	credential.Owner = "demo"
+	credential.SecretKey = provider.SecretKey
+	credential.Authority = "anas"
+	credential.RotationMode = "overlap"
+	credential.DesiredProjection = "deployment-secret://demo.signing_key"
+	credential.Lifecycle = provider.Lifecycle
+	credential.Projections = []deploymentCredentialProjection{{Module: "demo", EnvKey: provider.SecretKey}}
+	plan := planCredentialRotation(&deploymentManifest{
+		ID: "demo-deployment", ModuleOrder: []string{"demo"},
+		Modules:     map[string]deploymentModule{"demo": {Name: "demo"}},
+		Credentials: []deploymentCredential{credential},
+	}, []string{credential.ID}, false, false)
+	if len(plan.Blockers) != 0 || !reflect.DeepEqual(plan.CredentialOrder, []string{credential.ID}) {
+		t.Fatalf("overlap rotation plan = %#v", plan)
+	}
+	store := &secretStore{
+		values: map[string]string{provider.SecretKey: value},
+		metadata: map[string]secretMetadata{provider.SecretKey: {
+			Owner: "demo", Kind: "generated", Provenance: "module-hook", Generation: credential.Generation,
+		}},
+	}
+	records := credentialInventory(&deploymentManifest{
+		ID: "demo-deployment", Modules: map[string]deploymentModule{"demo": {Name: "demo"}},
+		Credentials: []deploymentCredential{credential},
+	}, nil, store)
+	if len(records) != 1 || records[0].Status != "rotatable" {
+		t.Fatalf("overlap credential inventory = %#v", records)
+	}
+}
+
+func TestX509RotationRejectsCorruptedPreviousBundle(t *testing.T) {
+	credential := deploymentCredential{
+		ID: "demo.signing_key",
+		Generator: deploymentCredentialGenerator{
+			Kind: "x509_rsa_bundle", Length: 2048, OverlapSeconds: 3600,
+		},
+	}
+	previous, err := generateCredentialValue(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle x509CredentialBundle
+	if err := json.Unmarshal([]byte(previous), &bundle); err != nil {
+		t.Fatal(err)
+	}
+	bundle.Certificate = "not a certificate"
+	corrupt, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := generateCredentialValueWithPrevious(credential, string(corrupt)); err == nil {
+		t.Fatal("corrupted previous X.509 bundle was accepted")
+	}
+}
+
+func TestPrepareDeploymentCredentialsFreezesX509PublicProjections(t *testing.T) {
+	bundle := `{"private_key":"private","certificate":"public-certificate"}`
+	provider := CredentialProvider{
+		ID: "owner.signing", SecretKey: "OWNER_SIGNING_MATERIAL", Kind: "key", RotationMode: "overlap",
+		Generator: deploymentCredentialGenerator{Kind: "x509_rsa_bundle", Length: 2048, OverlapSeconds: 3600},
+		Lifecycle: deploymentCredentialLifecycle{Probe: "probe", Reconcile: "reconcile", Verify: "verify"},
+	}
+	a := &app{
+		order: []string{"owner", "consumer"},
+		reg: map[string]Module{
+			"owner":    {Name: "owner", CredentialProviders: []CredentialProvider{provider}},
+			"consumer": {Name: "consumer", Consumes: []string{"SAML_SIGNING_CERT"}},
+		},
+		env: map[string]string{
+			"OWNER_SIGNING_MATERIAL": bundle,
+			"OWNER_SIGNING_CERT":     "public-certificate",
+			"SAML_SIGNING_CERT":      "public-certificate",
+		},
+		envOwner: map[string]string{
+			"OWNER_SIGNING_MATERIAL": "owner",
+			"OWNER_SIGNING_CERT":     "owner",
+			"SAML_SIGNING_CERT":      "owner",
+		},
+		secrets: &secretStore{
+			values: map[string]string{"OWNER_SIGNING_MATERIAL": bundle},
+			metadata: map[string]secretMetadata{"OWNER_SIGNING_MATERIAL": {
+				Owner: "owner", Kind: "generated", Provenance: "module-hook",
+			}},
+		},
+	}
+	if err := a.prepareDeploymentCredentials(); err != nil {
+		t.Fatal(err)
+	}
+	want := []deploymentCredentialProjection{
+		{Module: "consumer", EnvKey: "SAML_SIGNING_CERT"},
+		{Module: "owner", EnvKey: "OWNER_SIGNING_CERT"},
+		{Module: "owner", EnvKey: "SAML_SIGNING_CERT"},
+	}
+	if !reflect.DeepEqual(a.credentials[0].PublicProjections, want) {
+		t.Fatalf("public projections = %#v, want %#v", a.credentials[0].PublicProjections, want)
+	}
+}
 
 func TestModuleCredentialDeclarationsRequireExplicitLifecyclePhases(t *testing.T) {
 	dir := t.TempDir()
@@ -107,7 +259,7 @@ func TestPrepareDeploymentCredentialsFreezesAuthorityGenerationAndProjection(t *
 		order: []string{"owner", "iam", "consumer"},
 		reg: map[string]Module{
 			"owner": {Name: "owner", CredentialProviders: []CredentialProvider{provider}},
-			"iam": {Name: "iam", Consumes: []string{"ANAS_IAM_CLIENT__*"}},
+			"iam":   {Name: "iam", Consumes: []string{"ANAS_IAM_CLIENT__*"}},
 			"consumer": {Name: "consumer", Consumes: []string{"CONSUMER_SECRET"}, CredentialConsumers: []CredentialConsumer{{
 				Credential: provider.ID, Projection: "CONSUMER_SECRET",
 			}}},

@@ -12,14 +12,26 @@ func TestEntrypointBootstrapsBeforeStartingLDAPSynchronizer(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string(b)
+	removeInit := "rm -f /tmp/init_data.json"
+	renderInit := "/opt/anas/bin/casdoor-helper render-init"
 	bootstrap := `/opt/anas/bin/casdoor-helper exec-as 1000 1000 "$@" &`
 	longRunning := `exec /opt/anas/bin/casdoor-helper exec-as 1000 1000 "$@"`
+	removeInitAt, renderInitAt := strings.Index(script, removeInit), strings.Index(script, renderInit)
+	if removeInitAt < 0 || renderInitAt < 0 || removeInitAt >= renderInitAt {
+		t.Fatal("entrypoint does not recreate the UID-1000-owned init data on process restart")
+	}
 	bootstrapAt, longRunningAt := strings.Index(script, bootstrap), strings.Index(script, longRunning)
 	if bootstrapAt < 0 || longRunningAt < 0 || bootstrapAt >= longRunningAt {
 		t.Fatalf("entrypoint must import init data in a bootstrap process before the long-running process:\n%s", script)
 	}
-	if !strings.Contains(script, "casdoor-helper healthcheck") || !strings.Contains(script, `kill -TERM "$bootstrap_pid"`) {
+	if !strings.Contains(script, "casdoor-helper service-healthcheck") || !strings.Contains(script, `kill -TERM "$bootstrap_pid"`) {
 		t.Fatal("entrypoint does not verify and stop the bootstrap process")
+	}
+	setPassword := "casdoor-helper set-password built-in"
+	readyMarker := "touch /tmp/anas-casdoor-ready"
+	setPasswordAt, readyMarkerAt := strings.LastIndex(script, setPassword), strings.LastIndex(script, readyMarker)
+	if setPasswordAt < 0 || readyMarkerAt < 0 || setPasswordAt >= readyMarkerAt {
+		t.Fatal("entrypoint publishes readiness before reconciling the recovery administrator")
 	}
 	if !strings.Contains(script, "mkdir -p /data/anas-dirwatch") || !strings.Contains(script, "chown 1000:1000 /data/anas-dirwatch") {
 		t.Fatal("entrypoint does not prepare the unprivileged directory watcher state")
@@ -60,7 +72,7 @@ func TestServerBuildPinsAndVerifiesPatchedUpstreamSource(t *testing.T) {
 		"patches/0003-oidc-logout-delivery-logging.patch",
 		"patches/0004-postgres-token-user-filter.patch",
 		"patch -p1",
-		"COPY --from=casdoor-server /out/server /server",
+		"COPY --chmod=0755 --from=casdoor-server /out/server /server",
 	} {
 		if !strings.Contains(string(dockerfile), required) {
 			t.Fatalf("Casdoor server Dockerfile does not contain %q", required)
@@ -122,11 +134,32 @@ func TestServerBuildPinsAndVerifiesPatchedUpstreamSource(t *testing.T) {
 }
 
 func TestImageDisablesCasdoorOldInstanceLookup(t *testing.T) {
+	entrypoint, err := os.ReadFile("../casdoor/entrypoint.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(entrypoint), "rm -f /usr/bin/lsof") {
+		t.Fatal("Casdoor image can kill its bootstrap child through the old-instance lookup")
+	}
+}
+
+func TestImageCrossCompilesWithoutExecutingTargetArchitecture(t *testing.T) {
 	dockerfile, err := os.ReadFile("../casdoor/Dockerfile")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(dockerfile), "rm -f /usr/bin/lsof") {
-		t.Fatal("Casdoor image can kill its bootstrap child through the old-instance lookup")
+	for _, required := range []string{
+		"FROM --platform=$BUILDPLATFORM",
+		"ARG TARGETARCH",
+		`GOOS="$TARGETOS" GOARCH="$TARGETARCH"`,
+		"COPY --chmod=0755 --from=casdoor-server",
+		"COPY --chmod=0755 --from=helper",
+	} {
+		if !strings.Contains(string(dockerfile), required) {
+			t.Fatalf("Casdoor Dockerfile cannot cross-build without target emulation; missing %q", required)
+		}
+	}
+	if strings.Contains(string(dockerfile), "ARG TARGETARCH=amd64") {
+		t.Fatal("Casdoor Dockerfile overrides BuildKit's automatic target architecture")
 	}
 }

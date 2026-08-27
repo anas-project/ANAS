@@ -258,9 +258,9 @@ func credentialInventory(manifest *deploymentManifest, txn *credentialRotationTr
 		case credentialStoreBlocker(store, credential) != "":
 			record.Status = "unsupported"
 			record.Reasons = []string{credentialStoreBlocker(store, credential)}
-		case credential.RotationMode != "reconcile":
+		case credential.RotationMode != "reconcile" && credential.RotationMode != "overlap":
 			record.Status = "manual"
-			record.Reasons = []string{"rotation mode " + credential.RotationMode + " is not executable by reconcile"}
+			record.Reasons = []string{"rotation mode " + credential.RotationMode + " is not executable by managed rotation"}
 		case credential.Authority != "anas":
 			record.Status = "manual"
 			record.Reasons = []string{"credential authority is external"}
