@@ -8,7 +8,12 @@ go test ./...
 
 Use the relevant scripts under `test-env/` for integration behavior. Tests that need Docker, real DNS, networking, or remote hosts require an explicit isolated environment.
 
-The target workflow is documented in the normative Chinese
+Machine-readable catalogs are now available under `test-env/cases/<topic>/cases.yml`;
+their generated README files and bidirectional requirement/implementation links
+are checked by `npm run docs:check-requirements`. Generate or check them with
+`npm run test-cases:generate` and `npm run test-cases:check`.
+
+The full workflow is documented in the normative Chinese
 [document-driven test automation requirements](/requirements/document-driven-test-automation)
 and [implementation plan](/plans/document-driven-test-automation). An agent may
 generate complete tests from requirements and machine-readable cases; generated

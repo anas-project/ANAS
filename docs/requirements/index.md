@@ -5,6 +5,7 @@
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
 | [新 IAM Provider 准入与实施要求](iam-provider.md) | 目录、OIDC/SAML、身份锚点、安全和 E2E 验收 | 无矩阵（未采用 ID） |
+| [Samba 目录事件订阅与实时同步要求](directory-event-subscription.md) | IAM Provider 与所有 LDAP/LDAPS Module 的事件订阅、可靠消费、全量兜底和实时同步验收 | 0/12 已完成 |
 | [Casdoor IAM Provider 集成要求](casdoor-iam.md) | Casdoor Module、Samba 同步、OIDC/SAML、授权、会话和发布验收 | 40/40 已完成 |
 | [使用 OIDC/SAML 的 Module 双向登出要求](module-iam-bidirectional-logout.md) | RP/SP 发起登出、IAM 发起登出、通用注册、安全和真实会话 E2E | 无矩阵（未采用 ID） |
 | [Web API 与管理前端要求](web-api-admin-console.md) | 管理控制台的范围、访问与证书、认证与角色、安全和验收 | 11/100 已完成 |
@@ -14,7 +15,7 @@
 | [Incus compute Provider Module 集成要求](incus-module.md) | `compute/incus_vm` Provider、多消费者隔离、Secret 注入边界与 Forgejo 迁移 | 0/28 已完成 |
 | [VersityGW S3 兼容 Module 集成要求](versitygw-module.md) | `object_storage/s3` Capability、per-Resource bucket/凭据、POSIX backend、安全和验收 | 30/32 已完成 |
 | [需求 ID 矩阵采用范围与门禁要求](requirement-id-adoption.md) | 门禁可见性、豁免清单、双向登出矩阵范围与迁移后的扫描边界 | 4/14 已完成 |
-| [文档驱动测试生成与远程执行要求](document-driven-test-automation.md) | 需求到用例/完整测试代码、SSH 专用服务器执行、隔离与报告证据 | 0/32 已完成 |
+| [文档驱动测试生成与远程执行要求](document-driven-test-automation.md) | 需求到用例/完整测试代码、SSH 专用服务器执行、隔离与报告证据 | 8/32 已完成 |
 
 > [!IMPORTANT]
 > **「状态」列是生成的，不要手改。** 它由需求矩阵与配套计划的里程碑状态算出：

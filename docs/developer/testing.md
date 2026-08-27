@@ -14,10 +14,17 @@ go test ./...
 
 ### 需求、用例与 Agent 生成
 
-当前仓库已经用稳定需求 ID、计划里程碑和 e2e 执行记录约束范围，但测试代码和服务器执行入口仍主要
-人工组织。目标流程见[文档驱动测试生成与远程执行要求](/requirements/document-driven-test-automation)
-及其[实施计划](/plans/document-driven-test-automation)：需求矩阵生成机器可读用例清单和可阅读 catalog，
-Agent 再根据需求与用例生成或更新完整测试代码。
+仓库使用稳定需求 ID、计划里程碑和 `test-env/cases/<topic>/cases.yml` 约束验证范围。用例 catalog
+显式声明采用的 `requirement_scope`、fixture、能力、实现入口、可观察断言、反例、清理和需求复核摘要；
+同目录 README 由 catalog 生成。格式和命令见 `test-env/cases/README.md`，
+规范见[文档驱动测试生成与远程执行要求](/requirements/document-driven-test-automation)及其
+[实施计划](/plans/document-driven-test-automation)。
+
+```bash
+npm run test-cases:digests  # 需求变化后显示待复核的新摘要，不写文件
+npm run test-cases:generate
+npm run test-cases:check
+```
 
 Agent 不限于生成测试脚手架，可以生成完整 Go、Shell、Python 和 Playwright 测试。“完整生成”只说明
 代码的产出方式，不代表测试已经证明需求；生成代码仍必须声明需求/用例 ID、断言外部可观察结果，

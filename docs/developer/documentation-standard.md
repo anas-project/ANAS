@@ -146,6 +146,12 @@ Module 与 Contract 的源文件、必需章节、生成标记、VitePress 镜�
 （`docs/requirements/<主题>.md` 由 `docs/plans/<主题>.md` 交付）；尚未采用 ID 的需求文档会被跳过，
 但已有矩阵却缺少配套计划的会报错——那意味着它的需求不会被任何阶段调度。
 
+采用机器可读测试用例的主题还必须在 `test-env/cases/<主题>/cases.yml` 中声明本轮
+`requirement_scope`。用例使用稳定 `<需求前缀>-T-<三位序号>`，映射需求 ID、实现文件和可发现命令；
+实现文件用 `TEST_CASES:` 注释反向声明用例 ID。同目录 README 由
+`go run ./cmd/gen-test-case-docs` 生成，`npm run docs:check-requirements` 同时检查需求归属和用例 catalog。
+需求文字或验证方式改变会使逐用例摘要失效，必须先复核用例和断言，再显式更新摘要。
+
 ### 文档 frontmatter
 
 `requirements/` 文档使用：

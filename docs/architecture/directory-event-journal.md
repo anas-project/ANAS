@@ -2,8 +2,9 @@
 
 > Status: **partially implemented**. The Samba audit follower plus the
 > `AUTHENTIK_DIRWATCH_*` and `CASDOOR_DIRWATCH_*` subscribers are implemented.
-> Casdoor's create/profile/debounce/cursor E2E passed on 2026-08-26;
-> `ANCHOR_EVENT_MAX_BYTES` and deletion/deactivation acceptance remain open.
+> The product contract now requires every IAM provider and every direct LDAP/LDAPS
+> consumer to subscribe; the remaining consumers and full retention-gap acceptance
+> are tracked in the directory-event-subscription plan.
 
 A change in Active Directory reaches most consumers immediately, because they
 query LDAP live. Consumers that keep a synchronized copy do not: they see the
@@ -31,7 +32,8 @@ samba_dc ──► /var/log/samba-audit/dsdb.json      (Samba's own format, priv
                     │ tailed by each subscriber, each with its own cursor
                     ▼
              ├─ authentik dirwatch ──► Schedule.send()
-             └─ Casdoor dirwatch ────► local LDAP sync API
+             ├─ Casdoor dirwatch ────► local LDAP sync API
+             └─ each IAM/LDAP Module ─► refresh, invalidate, or controlled sync
 ```
 
 Publishing is a side effect of work the anchor worker already does. It follows
@@ -150,10 +152,11 @@ deployment already observes individually.
 
 ## What this is not
 
-It is an accelerator, not a source of truth. Each IAM's scheduled sync stays
-enabled, and the anchor worker keeps its own periodic reconciliation. If a
-watcher is stopped, the deployment falls back to its previous behaviour:
-slower, not broken.
+It is an accelerator, not a source of truth. Each consumer that stores a directory
+copy keeps a scheduled full sync or equivalent reconciliation, and the anchor worker
+keeps its own periodic reconciliation. The fallback repairs missed history, but an
+event subscriber is still mandatory: normal operation must not wait for the next
+schedule or login to observe a Samba change.
 
 It does not make syncing cheaper. Latency drops from up to two hours to a few
 seconds, but each trigger is still a full source sync. What it does avoid is

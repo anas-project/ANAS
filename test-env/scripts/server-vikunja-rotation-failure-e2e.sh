@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# TEST_CASES: VIK-T-011
 set -Eeuo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)

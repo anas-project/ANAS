@@ -79,8 +79,30 @@
 增删需求或标记退出会改变索引的完成度，那一列是生成的，见
 [文档写作标准](/developer/documentation-standard) §4。
 
+## 8. 从需求生成测试用例
+
+需求矩阵与同名实施计划完成后，Agent 读取需求全文、矩阵、计划和引用契约，在
+`test-env/cases/<主题>/cases.yml` 中生成机器可读用例。矩阵决定“必须验证什么”，计划提供里程碑、
+环境和已有执行入口；fixture、前置条件、步骤、外部可观察断言、反例和清理由 Agent 补全，不能只机械
+复制两张表。
+
+把本轮采用的需求放入 `requirement_scope`。每个自动验证需求至少映射一个 active 用例，`e2e` 需求至少
+映射一个 e2e 级用例；测试实现文件必须用 `TEST_CASES:` 反向声明用例 ID。Agent 可以直接生成完整测试
+代码，不限于脚手架，但生成代码仍要通过反例/故障路径、真实执行和普通代码审阅。
+
+```bash
+npm run test-cases:digests
+npm run test-cases:generate
+npm run test-cases:check
+```
+
+`cases.yml` 是测试设计的机器来源，同目录 README 是生成视图，原始执行报告进入 Git 忽略的
+`test-env/reports/`。需求正文或验证方式改变后摘要会失效；先复核用例和测试断言，再更新摘要，不能用
+批量刷新掩盖语义变化。
+
 ## 相关文档
 
 - [文档写作标准](/developer/documentation-standard) §4：目录分工、ID 性质、实施检查表、frontmatter
 - [Web API 与管理前端要求](/requirements/web-api-admin-console)：一份完整的需求矩阵实例
 - [Web API 与管理前端实施计划](/plans/web-api-admin-console)：配套的归属表与实现检查表
+- `test-env/cases/README.md`：用例 schema、生成和双向溯源规则

@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-15
-updated: 2026-08-21
+updated: 2026-08-27
 ---
 
 # 新 IAM Provider 准入与实施要求
@@ -81,6 +81,12 @@ ACL 决定。`APP_all` 和 `APP_<应用名>` 始终只授予访问权，绝不�
 
 ## 3. 通用目录和 Adapter
 
+所有 IAM Provider 都必须订阅 Samba 发布的持久目录事件，并按
+[Samba 目录事件订阅与实时同步要求](directory-event-subscription.md)处理相关的用户、组、账号状态和
+身份属性变更。事件订阅是强制接入能力，不得只依赖定时 LDAP Source Sync、登录时查询或人工
+reconcile。Provider 必须用独立持久游标消费事件，并在有界时间内触发增量刷新、缓存失效或 Source
+Sync；周期 LDAP 全量同步仍必须保留为一致性兜底，Samba AD 仍是唯一事实来源。
+
 Runner 拥有 Provider 无关的应用目录与 IAM 注册事实，包括应用 ID、协议、URL、分类、
 标签、图标、claim、允许组和可见性。新增 IAM 需要实现一个 adapter，将这些事实翻译为
 自身的 client/RP/SP、策略和门户条目：
@@ -149,7 +155,7 @@ Authentik、LLNG 和任何新增 Provider 都必须在相互独立的部署中�
 
 1. Module manifest 声明 IAM capability、协议、依赖和生命周期；
 2. 实现通用 endpoint 发布与 client registration adapter；
-3. 实现 Samba AD Source、递归组、账号状态和固定 claim mapping；
+3. 实现 Samba AD Source、递归组、账号状态、固定 claim mapping 和持久目录事件订阅；
 4. 加入 Runner 静态/渲染/Secret 边界校验；
 5. 为每个可登录应用生成注册和门户目录条目；
 6. 建立独立部署 fixture，完整运行上述矩阵；

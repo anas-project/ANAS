@@ -9,7 +9,7 @@ updated: 2026-08-23
 
 本文规定 ANAS 把现有 Incus 适配逻辑提取为独立 `incus` Provider Module 时必须交付的结果、边界和
 验收标准。设计背景见 [Forgejo Module 设计](/architecture/forgejo-module-design) §4 与
-[AI Agent 编排设计](/architecture/ai-agent-orchestration-design) §6.2；施工顺序见
+[AI Agent 编排设计](/architecture/ai-agent-orchestration-design) §5.2；施工顺序见
 [Incus compute Provider 实施计划](/plans/incus-module)。Contract 定义以
 [`contracts/compute/contract.yml`](https://github.com/anas-project/ANAS/blob/master/contracts/compute/contract.yml)
 为准，本文不复制其字段。

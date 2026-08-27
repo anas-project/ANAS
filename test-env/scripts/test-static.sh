@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# TEST_CASES: VIK-T-001
 set -eu
 
 . "$(dirname -- "$0")/common.sh"

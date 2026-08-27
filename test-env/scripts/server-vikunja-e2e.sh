@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# TEST_CASES: VIK-T-002, VIK-T-003, VIK-T-004, VIK-T-008, VIK-T-009, VIK-T-010, VIK-T-011, VIK-T-012
 set -euo pipefail
 
 # Release-gate probes for a Vikunja deployment. The script intentionally

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# TEST_CASES: VIK-T-005, VIK-T-006
 set -Eeuo pipefail
 
 # Browser-facing Authentik authorization-code and Vikunja callback E2E. The

@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
 
+// TEST_CASES: VIK-T-007
+
 const username = process.env.ANAS_TEST_USERNAME;
 const password = process.env.ANAS_TEST_PASSWORD;
 const domain = process.env.ANAS_TEST_DOMAIN || "vikunja.test";
