@@ -1,11 +1,11 @@
 module github.com/anas-project/ANAS/modules/casdoor/helper
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/go-ldap/ldap/v3 v3.4.6
 	github.com/lib/pq v1.10.9
-	golang.org/x/crypto v0.36.0
+	golang.org/x/crypto v0.52.0
 )
 
 require (
