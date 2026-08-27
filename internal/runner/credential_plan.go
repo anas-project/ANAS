@@ -59,7 +59,7 @@ func planCredentialRotation(manifest *deploymentManifest, selected []string, all
 	if all {
 		for _, credential := range manifest.Credentials {
 			switch {
-			case credential.RotationMode != "reconcile":
+			case credential.RotationMode != "reconcile" && credential.RotationMode != "overlap":
 				plan.Manual = append(plan.Manual, credentialPlanFinding{ID: credential.ID, Reason: "rotation mode " + credential.RotationMode + " is not reconcile"})
 			case credential.Authority != "anas" && !force:
 				plan.Manual = append(plan.Manual, credentialPlanFinding{ID: credential.ID, Reason: "credential authority is external"})
@@ -81,8 +81,8 @@ func planCredentialRotation(manifest *deploymentManifest, selected []string, all
 				plan.Blockers = append(plan.Blockers, credentialPlanFinding{ID: id, Reason: "credential is absent from the active deployment"})
 				continue
 			}
-			if credential.RotationMode != "reconcile" {
-				plan.Blockers = append(plan.Blockers, credentialPlanFinding{ID: id, Reason: "rotation mode " + credential.RotationMode + " is not executable by reconcile"})
+			if credential.RotationMode != "reconcile" && credential.RotationMode != "overlap" {
+				plan.Blockers = append(plan.Blockers, credentialPlanFinding{ID: id, Reason: "rotation mode " + credential.RotationMode + " is not executable by managed rotation"})
 				continue
 			}
 			if credential.Authority != "anas" && !force {
@@ -209,10 +209,17 @@ func credentialExecutionBlockers(manifest *deploymentManifest, credential deploy
 		if credential.Generator.Length < 16 {
 			reasons = append(reasons, "hex generator length must be at least 16 bytes")
 		}
+	case "rsa_private_key", "x509_rsa_bundle":
+		if credential.Generator.Length < 2048 {
+			reasons = append(reasons, "RSA private-key generator size must be at least 2048 bits")
+		}
 	case "":
 		reasons = append(reasons, "ANAS generation policy is missing")
 	default:
 		reasons = append(reasons, "ANAS generation policy is unsupported")
+	}
+	if credential.RotationMode == "overlap" && credential.Generator.OverlapSeconds < 1 {
+		reasons = append(reasons, "overlap rotation requires a positive trust window")
 	}
 	if credential.Lifecycle.Probe == "" || credential.Lifecycle.Reconcile == "" || credential.Lifecycle.Verify == "" {
 		reasons = append(reasons, "probe, reconcile, and verify handlers are all required")
@@ -245,6 +252,21 @@ func credentialExecutionBlockers(manifest *deploymentManifest, credential deploy
 	}
 	if len(credential.Projections) > 0 && !hasOwnerProjection {
 		reasons = append(reasons, "credential owner projection is absent from the frozen projection set")
+	}
+	seenPublicProjections := map[string]bool{}
+	for _, projection := range credential.PublicProjections {
+		if credential.Generator.Kind != "x509_rsa_bundle" {
+			reasons = append(reasons, "public certificate projections require an X.509 bundle generator")
+			break
+		}
+		if _, ok := manifest.Modules[projection.Module]; !ok {
+			reasons = append(reasons, "credential public projection module "+projection.Module+" is absent from the deployment")
+		}
+		identity := projection.Module + "\x00" + projection.EnvKey
+		if projection.Module == "" || !envKeyPattern.MatchString(projection.EnvKey) || seenPublicProjections[identity] {
+			reasons = append(reasons, "credential has an invalid or duplicate frozen public projection")
+		}
+		seenPublicProjections[identity] = true
 	}
 	return reasons
 }

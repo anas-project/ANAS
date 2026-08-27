@@ -13,7 +13,7 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 | `vikunja` | 是 | IAM/OIDC JIT 建号；`APP_vikunja`/`APP_all` 门禁；本地认证和注册关闭 | developing；Manifest、Provider 注册、Secret、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 |
 | `lam` | 否 | LDAPS 目录管理登录 | 不属于当前 IAM consumer |
 | `authentik` | 不适用 | IAM provider；另有固定 `akadmin` break-glass | 提供 OIDC/SAML，不把自身当普通 consumer |
-| `casdoor` | 不适用 | developing IAM provider；使用默认模板 `admin_casdoor` break-glass | OIDC/SAML 登录、Samba 目录收敛、永久 anchor、`ALLOW_GROUPS` 门禁及 OIDC exact-`sid` 会话撤销已有真实 E2E；固定版本不发布 SAML SLO，M5 发布验收未完成 |
+| `casdoor` | 不适用 | release IAM provider；使用默认模板 `admin_casdoor` break-glass | OIDC/SAML 登录、Samba 目录收敛、永久 anchor、`ALLOW_GROUPS` 门禁、OIDC exact-`sid` 会话撤销、空 workspace 恢复、多架构生命周期及受管凭据轮换已有真实 E2E；固定版本不发布 SAML SLO |
 | `llng` | 不适用 | IAM provider | 提供 OIDC/SAML，不把自身当普通 consumer |
 | `ddns_go` | 否 | ANAS 托管 local emergency account | 不支持 OIDC |
 | `traefik` | 否 | ANAS 托管本地 BasicAuth emergency account | 不支持 OIDC |

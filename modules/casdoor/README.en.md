@@ -2,8 +2,12 @@
 
 IAM provider for OIDC and SAML with directory users imported from Samba AD over LDAPS.
 
-> [!WARNING]
-> Lifecycle is `developing` and intended only for development and validation. Permanent directory anchors, per-application group authorization, deactivation propagation, and OIDC session revocation have real E2E acceptance; recovery, backup, upgrade, key rotation, and release lifecycle acceptance remain incomplete.
+> [!NOTE]
+> Lifecycle is `release`. Real E2E covers permanent directory anchors,
+> per-application group authorization, deactivation propagation, OIDC session
+> revocation, recovery administration, empty-workspace restore, multi-platform
+> lifecycle, and managed credential rotation. The pinned version does not
+> support SAML SLO, so no SLO endpoint or binding is published.
 
 ## Quick facts
 
@@ -11,8 +15,8 @@ IAM provider for OIDC and SAML with directory users imported from Samba AD over 
 | Item | Value |
 | --- | --- |
 | Module | `casdoor` |
-| Version / revision | `3.143.0-r7` |
-| Status | `developing` |
+| Version / revision | `3.143.0-r8` |
+| Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |
 <!-- generated:module-facts:end -->
@@ -40,9 +44,9 @@ modules:
 
 Samba AD remains authoritative. Casdoor imports users and verifies passwords over LDAPS with a restricted read-only bind. A dedicated `casdoor_dirwatch` subscriber tails Samba's durable directory-event journal and triggers an LDAP import after debounce. It correlates shadow users by `anasIdentityAnchor`, deterministically reconciles renames, deactivation, deletion, and group revocation, and refreshes `displayName` and email only for users named by that event batch. It also resolves declared recursive group membership directly over trusted LDAPS so upstream group merging cannot retain stale access. The default five-minute schedule remains as fallback. This integration does not enable Casdoor LDAP/AD password writeback.
 
-Pinned Casdoor `3.143.0` registers OIDC and SAML consumers through `ANAS_IAM_CLIENT__<APP>__*`. Revision r7 builds from upstream commit `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` and source archive checksum `365d61c…f9460`. Four controlled patches under `casdoor/patches/` add the SAML `displayName/externalId` templates, exact-`sid` OIDC user/admin back-channel delivery, two-minute Logout Tokens, delivery diagnostics, and PostgreSQL reserved-column-safe queries. OIDC access tokens are managed at one hour and refresh tokens at 30 days. A back-channel URI is registered only when explicitly declared, while declaration removal or protocol switching clears the old URI. Real consumer E2E passed user logout, exact administrative session deletion, saved-cookie revocation, session isolation, signed claims, and replay rejection. The pinned version has no SAML LogoutRequest/LogoutResponse consumer path, so it publishes no SLO endpoint or binding and SAML consumers perform local logout.
+Pinned Casdoor `3.143.0` registers OIDC and SAML consumers through `ANAS_IAM_CLIENT__<APP>__*`. Revision r8 builds from upstream commit `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` and source archive checksum `365d61c…f9460`. Four controlled patches under `casdoor/patches/` add the SAML `displayName/externalId` templates, exact-`sid` OIDC user/admin back-channel delivery, two-minute Logout Tokens, delivery diagnostics, and PostgreSQL reserved-column-safe queries. OIDC access tokens are managed at one hour and refresh tokens at 30 days. A back-channel URI is registered only when explicitly declared, while declaration removal or protocol switching clears the old URI. Real consumer E2E passed user logout, exact administrative session deletion, saved-cookie revocation, session isolation, signed claims, and replay rejection. The pinned version has no SAML LogoutRequest/LogoutResponse consumer path, so it publishes no SLO endpoint or binding and SAML consumers perform local logout.
 
-The generic `ALLOW_GROUPS` contract is rendered as same-name Casdoor Groups/Roles plus a per-consumer Application Permission. The subscriber writes the Samba `anasIdentityAnchor` to Casdoor `ExternalId`; OIDC custom claims and the explicit SAML anchor attribute use that value while group claims come from same-name Roles. Casdoor's immutable User ID remains the stable OIDC `sub`, and a same-anchor rename reuses that record. Unknown SAML sources are omitted instead of being presented as a permanent anchor. Real consumer E2E covers signatures, attributes, group admission, rename reuse, application-account materialization, administrator mapping, and OIDC session revocation; this does not complete recovery, key rotation, or release acceptance.
+The generic `ALLOW_GROUPS` contract is rendered as same-name Casdoor Groups/Roles plus a per-consumer Application Permission. The subscriber writes the Samba `anasIdentityAnchor` to Casdoor `ExternalId`; OIDC custom claims and the explicit SAML anchor attribute use that value while group claims come from same-name Roles. Casdoor's immutable User ID remains the stable OIDC `sub`, and a same-anchor rename reuses that record. Unknown SAML sources are omitted instead of being presented as a permanent anchor. Real consumer E2E covers signatures, attributes, group admission, rename reuse, application-account materialization, administrator mapping, and OIDC session revocation; the implementation plan records restore, upgrade/rollback, and credential-rotation evidence.
 
 ## Administrator recovery
 
@@ -52,6 +56,21 @@ The `break_glass` account follows ANAS's immutable `admin_{module}` template, pr
 anas admin local credential casdoor break_glass -w /srv/anas
 anas admin local rotate casdoor break_glass -w /srv/anas
 ```
+
+## Credential rotation
+
+Casdoor declares two ANAS-managed credentials. `casdoor.signing_key` has a
+one-hour X.509 trust overlap; `casdoor.portal_client_secret` invalidates its old
+value as soon as the candidate passes verification. Inspect a dry-run first:
+
+```bash
+anas credential rotate casdoor.signing_key -w /srv/anas --dry-run --json
+anas credential rotate casdoor.signing_key -w /srv/anas -y --json
+anas credential rotate casdoor.portal_client_secret -w /srv/anas -y --json
+```
+
+See the [Casdoor IAM operations runbook](../../docs/en/operations/casdoor-iam.md)
+for post-rotation checks, failure recovery, and backup procedures.
 
 ## Database support
 

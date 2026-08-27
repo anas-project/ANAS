@@ -28,6 +28,7 @@ type hookRequest struct {
 	Env          map[string]string      `json:"env"`
 	Secrets      map[string]string      `json:"secrets"`
 	LocalAccount *localAccountOperation `json:"local_account,omitempty"`
+	Credential   *credentialOperation   `json:"credential,omitempty"`
 }
 
 type localAccountOperation struct {
@@ -38,10 +39,26 @@ type localAccountOperation struct {
 	CandidateSecretKey string `json:"candidate_secret_key"`
 }
 
+type credentialOperation struct {
+	Handler          string `json:"handler"`
+	CredentialID     string `json:"credential_id"`
+	SecretKey        string `json:"secret_key"`
+	DesiredSecretKey string `json:"desired_secret_key"`
+	Authority        string `json:"authority"`
+	Generation       uint64 `json:"generation"`
+}
+
+type credentialResult struct {
+	CredentialID string `json:"credential_id"`
+	Status       string `json:"status"`
+	Changed      bool   `json:"changed,omitempty"`
+}
+
 type hookResponse struct {
-	Env     map[string]string `json:"env,omitempty"`
-	Secrets map[string]string `json:"secrets,omitempty"`
-	Files   map[string]string `json:"files,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	Secrets    map[string]string `json:"secrets,omitempty"`
+	Files      map[string]string `json:"files,omitempty"`
+	Credential *credentialResult `json:"credential,omitempty"`
 }
 
 type secretStore struct{ values map[string]string }
@@ -104,6 +121,13 @@ func supportedABI(value string) bool {
 func handle(req hookRequest) (hookResponse, error) {
 	if req.Module != "casdoor" {
 		return hookResponse{}, nil
+	}
+	if strings.HasPrefix(req.Phase, "credential_") {
+		result, err := handleCredential(req)
+		if err != nil {
+			return hookResponse{}, err
+		}
+		return hookResponse{Credential: &result}, nil
 	}
 	env := cloneMap(req.Env)
 	switch req.Phase {
@@ -219,43 +243,113 @@ func calcDirectoryWatch(e map[string]string) {
 }
 
 func ensureSigningKeypair(e map[string]string, secrets *secretStore) error {
-	privateKey, err := secrets.Ensure("CASDOOR_SIGNING_KEY", func() (string, error) {
+	if secrets.values["CASDOOR_SIGNING_MATERIAL"] == "" {
+		legacyKey := secrets.values["CASDOOR_SIGNING_KEY"]
+		legacyCertificate := secrets.values["CASDOOR_SIGNING_CERT"]
+		if (strings.TrimSpace(legacyKey) == "") != (strings.TrimSpace(legacyCertificate) == "") {
+			return fmt.Errorf("legacy Casdoor signing keypair is incomplete")
+		}
+		if strings.TrimSpace(legacyKey) != "" {
+			body, err := json.Marshal(signingMaterial{
+				PrivateKey: legacyKey, Certificate: legacyCertificate,
+			})
+			if err != nil {
+				return err
+			}
+			if _, err := parseSigningMaterial(string(body)); err != nil {
+				return fmt.Errorf("migrate legacy Casdoor signing keypair: %w", err)
+			}
+			secrets.values["CASDOOR_SIGNING_MATERIAL"] = string(body)
+		}
+	}
+	material, err := secrets.Ensure("CASDOOR_SIGNING_MATERIAL", func() (string, error) {
 		key, err := rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
 			return "", err
 		}
-		return string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})), nil
+		certificate, err := newSigningCertificate(key, time.Now().UTC())
+		if err != nil {
+			return "", err
+		}
+		body, err := json.Marshal(signingMaterial{
+			PrivateKey:  string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})),
+			Certificate: certificate,
+		})
+		return string(body), err
 	})
 	if err != nil {
 		return err
 	}
-	certificate, err := secrets.Ensure("CASDOOR_SIGNING_CERT", func() (string, error) {
-		block, _ := pem.Decode([]byte(privateKey))
-		if block == nil {
-			return "", fmt.Errorf("invalid Casdoor signing key")
-		}
-		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-		if err != nil {
-			return "", err
-		}
-		template := &x509.Certificate{
-			SerialNumber: big.NewInt(time.Now().UnixNano()),
-			Subject:      pkix.Name{CommonName: e["CASDOOR_DOMAIN"]},
-			NotBefore:    time.Now().Add(-time.Hour),
-			NotAfter:     time.Now().Add(10 * 365 * 24 * time.Hour),
-			KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		}
-		der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
-		if err != nil {
-			return "", err
-		}
-		return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), nil
-	})
+	bundle, err := parseSigningMaterial(material)
 	if err != nil {
 		return err
 	}
-	e["CASDOOR_SIGNING_KEY"], e["CASDOOR_SIGNING_CERT"] = privateKey, certificate
+	e["CASDOOR_SIGNING_MATERIAL"] = material
+	e["CASDOOR_SIGNING_CERT"] = bundle.Certificate
 	return nil
+}
+
+type signingTrust struct {
+	Certificate string `json:"certificate"`
+	RetainUntil string `json:"retain_until"`
+}
+
+type signingMaterial struct {
+	PrivateKey          string         `json:"private_key"`
+	Certificate         string         `json:"certificate"`
+	TrustedCertificates []signingTrust `json:"trusted_certificates,omitempty"`
+}
+
+func parseSigningMaterial(material string) (signingMaterial, error) {
+	var bundle signingMaterial
+	if err := json.Unmarshal([]byte(material), &bundle); err != nil {
+		return bundle, fmt.Errorf("invalid Casdoor signing material")
+	}
+	block, _ := pem.Decode([]byte(bundle.PrivateKey))
+	if block == nil || block.Type != "RSA PRIVATE KEY" {
+		return bundle, fmt.Errorf("invalid Casdoor signing key")
+	}
+	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		return bundle, err
+	}
+	certBlock, _ := pem.Decode([]byte(bundle.Certificate))
+	if certBlock == nil || certBlock.Type != "CERTIFICATE" {
+		return bundle, fmt.Errorf("invalid Casdoor signing certificate")
+	}
+	certificate, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return bundle, err
+	}
+	public, ok := certificate.PublicKey.(*rsa.PublicKey)
+	if !ok || public.E != key.PublicKey.E || public.N.Cmp(key.PublicKey.N) != 0 {
+		return bundle, fmt.Errorf("Casdoor signing certificate does not match its private key")
+	}
+	return bundle, nil
+}
+
+func newSigningCertificate(key *rsa.PrivateKey, now time.Time) (string, error) {
+	serialBytes := make([]byte, 16)
+	if _, err := rand.Read(serialBytes); err != nil {
+		return "", err
+	}
+	serialBytes[0] &= 0x7f
+	serial := new(big.Int).SetBytes(serialBytes)
+	if serial.Sign() == 0 {
+		serial.SetInt64(1)
+	}
+	template := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "ANAS managed signing"},
+		NotBefore:    now.Add(-time.Hour),
+		NotAfter:     now.AddDate(10, 0, 0),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		return "", err
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), nil
 }
 
 func renderCasdoor(e map[string]string) (map[string]string, error) {

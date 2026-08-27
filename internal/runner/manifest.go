@@ -1119,9 +1119,16 @@ func normalizeCredentialDeclarations(module string, declared manifestCredentials
 		lifecycle.Probe = strings.TrimSpace(lifecycle.Probe)
 		lifecycle.Reconcile = strings.TrimSpace(lifecycle.Reconcile)
 		lifecycle.Verify = strings.TrimSpace(lifecycle.Verify)
-		if mode == "reconcile" {
-			if !contains([]string{"password", "hex"}, generator.Kind) || generator.Length < 16 {
-				return nil, nil, fmt.Errorf("module %q credential %s reconcile generation must use password or hex with length at least 16", module, id)
+		if mode == "reconcile" || mode == "overlap" {
+			validGenerator := contains([]string{"password", "hex"}, generator.Kind) && generator.Length >= 16
+			if generator.Kind == "rsa_private_key" || generator.Kind == "x509_rsa_bundle" {
+				validGenerator = generator.Length >= 2048
+			}
+			if !validGenerator {
+				return nil, nil, fmt.Errorf("module %q credential %s managed generation must use password/hex of at least 16 bytes or an RSA private key of at least 2048 bits", module, id)
+			}
+			if mode == "overlap" && generator.OverlapSeconds < 1 {
+				return nil, nil, fmt.Errorf("module %q credential %s overlap generation requires overlap_seconds", module, id)
 			}
 			if lifecycle.Probe == "" || lifecycle.Reconcile == "" || lifecycle.Verify == "" {
 				return nil, nil, fmt.Errorf("module %q credential %s reconcile lifecycle requires probe, reconcile, and verify handlers", module, id)

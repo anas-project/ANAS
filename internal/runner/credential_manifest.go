@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -85,20 +86,57 @@ func (a *app) prepareDeploymentCredentials() error {
 				a.setEnvOwner(consumer.Projection, owner)
 			}
 			projections := credentialValueProjections(a, provider.ID, owner, provider.SecretKey, value)
+			publicProjections, err := credentialPublicProjections(a, provider.Generator, value)
+			if err != nil {
+				return fmt.Errorf("credential %s public projection: %w", provider.ID, err)
+			}
 			credentials = append(credentials, deploymentCredential{
 				ID: provider.ID, SecretKey: provider.SecretKey, Owner: owner,
 				Consumers: consumerModules, Kind: provider.Kind, Authority: authority,
 				RotationMode: provider.RotationMode, Generation: metadata.Generation,
 				DesiredProjection: "deployment-secret://" + provider.ID,
 				Generator:         provider.Generator, Lifecycle: provider.Lifecycle,
-				Controls:    append([]string{}, provider.Controls...),
-				Projections: projections,
+				Controls:          append([]string{}, provider.Controls...),
+				Projections:       projections,
+				PublicProjections: publicProjections,
 			})
 		}
 	}
 	sort.Slice(credentials, func(i, j int) bool { return credentials[i].ID < credentials[j].ID })
 	a.credentials = credentials
 	return nil
+}
+
+func credentialPublicProjections(a *app, generator deploymentCredentialGenerator, value string) ([]deploymentCredentialProjection, error) {
+	if generator.Kind != "x509_rsa_bundle" {
+		return nil, nil
+	}
+	var bundle x509CredentialBundle
+	if err := json.Unmarshal([]byte(value), &bundle); err != nil || strings.TrimSpace(bundle.Certificate) == "" {
+		return nil, fmt.Errorf("X.509 bundle has no valid public certificate")
+	}
+	seen := map[string]bool{}
+	projections := []deploymentCredentialProjection{}
+	for _, module := range a.order {
+		for key, projected := range a.scopedEnv(module) {
+			if projected != bundle.Certificate {
+				continue
+			}
+			identity := module + "\x00" + key
+			if seen[identity] {
+				continue
+			}
+			seen[identity] = true
+			projections = append(projections, deploymentCredentialProjection{Module: module, EnvKey: key})
+		}
+	}
+	sort.Slice(projections, func(i, j int) bool {
+		if projections[i].Module == projections[j].Module {
+			return projections[i].EnvKey < projections[j].EnvKey
+		}
+		return projections[i].Module < projections[j].Module
+	})
+	return projections, nil
 }
 
 // credentialValueProjections records only locations that the existing env

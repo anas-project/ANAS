@@ -13,7 +13,7 @@ func casdoorTestEnv() map[string]string {
 		"CASDOOR_PORTAL_CLIENT_SECRET":                          "portal-secret",
 		"CASDOOR_LOCAL_ADMIN__BREAK_GLASS_USERNAME":             "admin_casdoor",
 		"CASDOOR_SIGNING_CERT":                                  "certificate",
-		"CASDOOR_SIGNING_KEY":                                   "private-key",
+		"CASDOOR_SIGNING_MATERIAL":                              "managed-material",
 		"CASDOOR_LDAP_HOST":                                     "samba_dc",
 		"CASDOOR_LDAP_PORT":                                     "636",
 		"CASDOOR_LDAP_BIND_DN":                                  "CN=svc,OU=Service Accounts,DC=example,DC=com",

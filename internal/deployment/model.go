@@ -48,6 +48,10 @@ type Credential struct {
 	// authorized secret value when the deployment was built. This includes
 	// provider-neutral aliases such as an IAM client's registration secret.
 	Projections []CredentialProjection `yaml:"projections,omitempty" json:"projections,omitempty"`
+	// PublicProjections freezes non-sensitive X.509 certificate locations that
+	// must advance with an x509_rsa_bundle candidate. The certificate may be
+	// published to protocol consumers; the matching private key never is.
+	PublicProjections []CredentialProjection `yaml:"public_projections,omitempty" json:"public_projections,omitempty"`
 }
 
 type CredentialProjection struct {
@@ -56,8 +60,9 @@ type CredentialProjection struct {
 }
 
 type CredentialGenerator struct {
-	Kind   string `yaml:"kind,omitempty" json:"kind,omitempty"`
-	Length int    `yaml:"length,omitempty" json:"length,omitempty"`
+	Kind           string `yaml:"kind,omitempty" json:"kind,omitempty"`
+	Length         int    `yaml:"length,omitempty" json:"length,omitempty"`
+	OverlapSeconds int    `yaml:"overlap_seconds,omitempty" json:"overlap_seconds,omitempty"`
 }
 
 type CredentialLifecycle struct {
