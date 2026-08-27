@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 
+// TEST_CASES: VIK-T-012
+
 const username = process.env.ANAS_TEST_USERNAME;
 const password = process.env.ANAS_TEST_PASSWORD;
 const domain = process.env.ANAS_TEST_DOMAIN || "vikunja.test";

@@ -5,6 +5,7 @@
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
 | [应用域与 Samba AD 域分离](domain-separation.md) | 参数契约、DNS 模式、迁移与验收 | 实施中 |
+| [Samba 目录事件订阅与实时同步](directory-event-subscription.md) | IAM Provider 与所有 LDAP/LDAPS Module 的订阅接入、可靠消费、全量兜底和 E2E | 实施中 |
 | [Core 与 Module Changelog](changelog-rollout.md) | change fragment、发布产物和流水线 | 提案 |
 | [Web API 与管理前端](web-api-admin-console.md) | 管理面里程碑与剩余工作；验收依据见[要求](/requirements/web-api-admin-console) | 部分实施 |
 | [Module 专属命令能力](module-command-capability.md) | manifest/deployment 冻结、共享执行服务、CLI/anasd 与 Forgejo/Incus 验收 | 实施中 |

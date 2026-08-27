@@ -2,6 +2,14 @@
 
 OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capability 且支持 OIDC 的 Module 生效。不支持 OIDC 的 Module 不会被强制改用 OIDC；它按 Manifest 支持范围回退或继续使用自己的认证方式。
 
+## Samba 目录事件订阅规范
+
+所有 IAM Provider，以及所有直接使用 LDAP/LDAPS 读取 Samba 用户、组、账号状态或目录属性的
+Module，都必须订阅 Samba 发布的持久目录事件，不能只等待定时同步或下一次登录。消费者按自身
+关注属性处理 `Add`、`Modify`、`Delete`，通过增量刷新、缓存失效或受控 Source Sync 在声明的最大
+传播时间内收敛；保存目录副本的消费者还必须保留周期 LDAP 全量同步兜底。完整可靠性、安全和 E2E
+要求见[Samba 目录事件订阅与实时同步要求](../requirements/directory-event-subscription.md)。
+
 | Module | 是否可用 OIDC 登录 | 当前认证路径 | 结论 |
 | --- | --- | --- | --- |
 | `netbird` | 是 | 直接消费 IAM/OIDC | 已实现 |

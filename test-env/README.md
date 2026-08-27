@@ -55,6 +55,7 @@ uncovered paths.
 
 ```text
 test-env/
+  cases/      Machine-readable test cases and generated review catalogs.
   configs/    Test matrix configs.
   scripts/    Repeatable test commands.
   upgrades/   Historical module lock fixtures for upgrade validation.

@@ -44,7 +44,7 @@ modules:
         digest: sha256:fc86688b2f12b21cae897a1ccbdcd4d785a8cf8a1233b24e79b6673805b118c6
     samba_dc:
         version: 4.23.6
-        revision: 5
+        revision: 6
         app_version: 4.23.6
         source: bundle:samba_dc
         digest: sha256:aaff909e3f93daf269979e9bc64d874c7ad29f602343577e9a6eaa8e482a8765

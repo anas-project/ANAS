@@ -9,7 +9,7 @@ updated: 2026-08-23
 
 验收依据是[Incus compute Provider Module 集成要求](/requirements/incus-module)的需求矩阵；设计依据是
 [Forgejo Module 设计](/architecture/forgejo-module-design) §4 与
-[AI Agent 编排设计](/architecture/ai-agent-orchestration-design) §6.2。
+[AI Agent 编排设计](/architecture/ai-agent-orchestration-design) §5.2。
 
 本计划把原属 [Forgejo Module 实施计划](/plans/forgejo-module) M2 的“Incus compute contract 与
 Provider”拆出来独立跟踪：Contract 已经存在，缺的是 Provider Module 与多消费者隔离，而这两项同时
@@ -88,7 +88,7 @@ Provider”拆出来独立跟踪：Contract 已经存在，缺的是 Provider Mo
 - 文档写明两档的边界差异（共享内核 vs 独立 guest kernel），Provider 不自动降级；
 - 与 M4 同一 golden task 记录两档的墙钟与内存基线。
 
-需求来源：[AI Agent 编排设计](/architecture/ai-agent-orchestration-design) §6.3 把执行面默认档定为
+需求来源：[AI Agent 编排设计](/architecture/ai-agent-orchestration-design) §5.3 把执行面默认档定为
 非特权系统容器，VM 保留为可选强边界。
 
 验收：要求文档 §7bis。

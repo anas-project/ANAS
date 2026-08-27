@@ -1,6 +1,6 @@
 ---
 doc_type: plan
-status: proposed
+status: implementing
 created: 2026-08-25
 updated: 2026-08-26
 ---
@@ -9,13 +9,13 @@ updated: 2026-08-26
 
 验收依据是[文档驱动测试生成与远程执行要求](/requirements/document-driven-test-automation)的需求矩阵。
 本主题没有独立架构文档；生成链、SSH 信任边界、隔离生命周期和报告契约已经由要求文档规定。
-当前下一里程碑是 M0。
+M0 已完成，当前下一里程碑是 M1。
 
 ## 1. 需求归属与状态
 
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
-| M0：用例模型、生成文档与双向溯源门禁 | R-001—R-008 | 未开始 |
+| M0：用例模型、生成文档与双向溯源门禁 | R-001—R-008 | 已完成 |
 | M1：Agent 完整测试生成与独立有效性门禁 | R-009—R-014 | 未开始 |
 | M2：SSH 目标、源包和服务器隔离预检 | R-015—R-022 | 未开始 |
 | M3：一键远程运行、恢复、清理与报告 | R-023—R-031 | 未开始 |
@@ -23,12 +23,13 @@ updated: 2026-08-26
 
 ## 2. M0 检查表
 
-- [ ] 定义 `test-env/cases/` 下的机器可读用例 schema、稳定用例 ID 和废弃规则。
-- [ ] 从用例清单生成可阅读的 Markdown catalog，生成文件标明来源且禁止手改。
-- [ ] 扩展需求门禁，校验需求、用例、实现文件和可发现执行命令的双向关系。
-- [ ] 为需求文本摘要增加待复核状态，区分无语义措辞变化与需要重新验收的变化。
-- [ ] 先迁移一个纯单元主题和一个服务器 e2e 主题，验证 schema 不只适配单一测试框架。
-- [ ] 将生成器单元测试、catalog `--check` 和覆盖门禁接入文档 CI。
+- [x] 定义 `test-env/cases/` 下的严格机器可读用例 schema、稳定用例 ID 和废弃/替代规则。
+- [x] 从用例清单生成可阅读的 Markdown catalog，生成文件标明来源且 `--check` 拒绝手改漂移。
+- [x] 扩展需求门禁，校验 scope、需求、用例、实现文件、`TEST_CASES` 反向标记和可发现执行命令。
+- [x] 为每个用例记录其引用需求的内容摘要；需求变化时门禁要求 Agent 显式复核并更新摘要。
+- [x] 迁移自动化工具自身的纯单元用例组和 Vikunja 的静态/单元及服务器 e2e 发布用例组。
+- [x] 将生成器单元测试、catalog `--check` 和覆盖门禁接入 `docs:test-requirements` 与
+      `docs:check-requirements`，因而复用现有文档 CI。
 
 ## 3. M1 检查表
 
@@ -97,6 +98,9 @@ updated: 2026-08-26
 文档阶段使用：
 
 ```bash
+npm run test-cases:digests
+npm run test-cases:generate
+npm run test-cases:check
 npm run docs:test-requirements
 npm run docs:check-requirements
 npm run docs:requirement-status
@@ -104,12 +108,20 @@ npm run docs:check-requirement-status
 npm run docs:build
 ```
 
-M0 以后必须把新增用例 schema、生成器和溯源门禁的确定性测试加入这里；M3 以后再加入远程运行器的
-本地契约测试和专用服务器 E2E 命令。
+M0 的确定性测试位于 `internal/testcasecatalog`，生成入口是 `cmd/gen-test-case-docs`。M3 以后再加入
+远程运行器的本地契约测试和服务器 E2E 命令。
+
+M0 于 2026-08-26 通过：
+
+- `go test ./internal/testcasecatalog ./cmd/gen-test-case-docs`；
+- `npm run test-cases:check`（2 个主题、16 个 active 用例）；
+- `npm run docs:test-requirements`、`npm run docs:check-requirements`；
+- `npm run docs:check-requirement-status`、`npm run docs:build`。
 
 ## 9. 当前阻塞
 
-- 当前没有统一用例 schema、生成 catalog 或需求到测试实现的双向门禁。
+- M1 尚未实现 Agent 生成完整测试时的 diff/反例/变异验证工作流；M0 目前只迁移了自动化工具和
+  Vikunja，其他主题仍需逐步加入明确的 `requirement_scope`。
 - 已有服务器脚本的环境变量、部署准备和报告格式不完全一致，尚不能由一个入口可靠编排。
 - 私有测试服务器已有 SSH 和隔离 Docker 资料，但还没有机器可读 target profile、单次明确授权协议和
   受约束特权 helper；在完成权限审计前不能把现有 root 脚本直接暴露给自动运行器。
