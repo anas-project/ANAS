@@ -38,9 +38,9 @@ ANAS 的管理员不能再由一个全局 `admin` 字符串和一份共享密码
 用户加入 `Domain Admins`、`FS Admins`，也不授予宿主机或数据库超级权限；这些仍由各自
 的高权限组和 ACL 独立控制。
 
-**管理控制台一旦部署会扩大这条契约的含义。** [Web API 与管理前端](/plans/web-api-admin-console)
-规划把 `Admins` 直接映射为控制台的 `owner` 角色，而控制台能控制 Docker、恢复数据和读取
-凭据——正是上一段划到契约之外的宿主机级权限。该控制台**当前不可执行**，所以今天的
+**管理控制台一旦部署会扩大这条契约的含义。** 管理控制台把 `Admins` 直接映射为控制台的
+`owner` 角色，而控制台能控制 Docker、恢复数据和读取凭据——正是上一段划到契约之外的
+宿主机级权限。该控制台**当前不可执行**，所以今天的
 `Admins` 仍然只有上述应用级含义；但它一旦部署，加入 `Admins` 就同时授予宿主机控制权，
 组成员必须按这个更高的标准审视，不能沿用“只是应用管理员”的旧判断。控制台据此授权时，
 审计记录必须写明授权来源是目录组而不是只记用户名。
@@ -320,32 +320,36 @@ ddns_go local administrator ready: anas admin local credential ddns_go
   运行明确指定准确服务器时也可以使用该目标，但仍必须满足测试 daemon、workspace、网络、端口和
   定向清理隔离要求，不得改动既有资源。
 
-## 10. 实施阶段
+## 10. 当前覆盖范围
 
-1. `management.local_accounts`、随机 Secret、只读 CLI，迁移 ddns-go；
-2. 轮换 handler 与事务；
-3. provisioning/authentication Manifest 归一化并迁移 Nextcloud；
-4. provider-neutral 管理角色和授权 CLI；
-5. 移除旧的共享管理员字段。
+本节说明这套机制**今天覆盖到哪里**。施工顺序不在这里：它随进度反复改写，属于实施计划。
 
-当前已完成阶段 1、阶段 2（对有真实 handler 的 ddns-go、Traefik、Nextcloud 与
-Authentik）、阶段 3 的
-Manifest/配置表达，以及本地管理员状态的 snapshot/backup 一致性。Nextcloud 已不再复用
-Samba 管理员密码：首次安装使用运行时 Secret 文件，已有安装由真实 occ handler 更新；
-默认用户名由 ANAS 固定模板直接解析为 `admin_nextcloud` 并锁定。
+**已纳入托管账号**：ddns-go、Traefik、Nextcloud、Authentik。四者都有真实的应用级 rotate
+handler，因此 `management.local_accounts`、随机 Secret、只读 CLI 与轮换事务对它们成立。
+Manifest 的 provisioning/authentication 归一化与本地管理员状态的 snapshot/backup 一致性同样成立。
 
-仓库已有 `server-authentik-oidc-login-e2e.sh` 覆盖 Nextcloud 与 MeshCentral 的完整 OIDC
-授权码登录、应用 session、目录 anchor 和管理员组映射；原
-`server-authentik-nextcloud-login-e2e.sh` 保留覆盖 Nextcloud SAML fallback。
-`server-nextcloud-local-admin-e2e.sh` 覆盖
-真实 occ apply/rotate、旧密码失效、新密码验证和恢复入口。它们需要完整服务器环境，本地
-单元测试不会冒充运行过这些链路。LAM 主登录使用已启用的 Samba `Admins` 组成员各自的
-目录凭据；`lam` 是服务器 profile 名，LAM 私有密码仅保护配置编辑器。`Admins` 授予
-LAM 的完整应用管理入口，但目录读写权限仍由 Samba AD ACL 和高权限组决定。Collabora 使用
-`admin_collabora` 规则名与 Module 私有密码；其密码省略时独立随机生成，但尚无可验证
-回滚的 rotate handler，因此不加入托管账号。LLNG 的旧密码变量没有上游消费者，当前
-Manager 仅接受 AD 和目录管理员组，不声明虚假的 `break_glass`。MeshCentral 上游在未设置 domain `auth` 时支持本地账号，但本 Module
-保留 `auth: ldap` 做目录同步并增加 OIDC strategy，同一 domain 仍没有可声称的本地绕过入口。仍未完成的是 Authentik/Traefik
-新增 handler 的真实服务器 E2E、阶段 4 的 provider-neutral 角色授权 CLI，以及阶段 5 中
-不属于本地账号的其余共享字段移除。这些能力继续如实标为未实现；尤其不会给没有
-应用级 handler 的 Module 伪造 rotate 或 rename 能力。
+Nextcloud 不再复用 Samba 管理员密码：首次安装使用运行时 Secret 文件，已有安装由真实 occ handler
+更新；默认用户名由 ANAS 固定模板直接解析为 `admin_nextcloud` 并锁定。
+
+**未纳入，以及为什么**：
+
+- **Collabora** 使用 `admin_collabora` 规则名与 Module 私有密码，密码省略时独立随机生成，但**没有
+  可验证回滚的 rotate handler**，因此不进托管账号。
+- **LAM** 主登录使用已启用的 Samba `Admins` 组成员各自的目录凭据；`lam` 是服务器 profile 名，
+  LAM 私有密码仅保护配置编辑器。`Admins` 授予 LAM 的完整应用管理入口，但目录读写权限仍由
+  Samba AD ACL 和高权限组决定。
+- **LLNG** 的旧密码变量没有上游消费者；Manager 仅接受 AD 和目录管理员组，不声明虚假的
+  `break_glass`。
+- **MeshCentral** 上游在未设置 domain `auth` 时支持本地账号，但本 Module 保留 `auth: ldap` 做目录
+  同步并增加 OIDC strategy，同一 domain 仍没有可声称的本地绕过入口。
+
+**尚未实现的机制**：provider-neutral 的管理角色与授权 CLI；以及移除不属于本地账号的其余共享管理员
+字段。Authentik 与 Traefik 的新增 handler 还没有真实服务器 E2E。
+
+这条边界是硬的：**没有应用级 handler 的 Module 不会被伪造出 rotate 或 rename 能力**，它们如实标为
+未实现，而不是靠一个只改配置文件、无法验证生效的动作冒充。
+
+**已有的真实服务器 E2E**：`server-authentik-oidc-login-e2e.sh` 覆盖 Nextcloud 与 MeshCentral 的完整
+OIDC 授权码登录、应用 session、目录 anchor 和管理员组映射；`server-authentik-nextcloud-login-e2e.sh`
+保留覆盖 Nextcloud SAML fallback；`server-nextcloud-local-admin-e2e.sh` 覆盖真实 occ apply/rotate、
+旧密码失效、新密码验证和恢复入口。它们需要完整服务器环境，本地单元测试不会冒充运行过这些链路。

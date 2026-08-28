@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"net/netip"
 	"os"
 	"strings"
@@ -13,7 +14,22 @@ import (
 
 const oauth2ProxyBinary = "/bin/oauth2-proxy"
 
+const healthCheckFlag = "--health-check="
+
 func main() {
+	// The upstream image is distroless: no shell, no curl, nothing a
+	// CMD-SHELL healthcheck could run. This binary is already the entrypoint,
+	// so it is also the only thing available to probe with. The URL comes from
+	// the caller rather than being hardcoded here, because the listen address
+	// is set by a flag in docker-compose.yml and a second copy of the port in
+	// this file would be free to drift from it.
+	if len(os.Args) == 2 && strings.HasPrefix(os.Args[1], healthCheckFlag) {
+		if err := probe(strings.TrimPrefix(os.Args[1], healthCheckFlag), 3*time.Second); err != nil {
+			fatalf("%v", err)
+		}
+		return
+	}
+
 	host := strings.TrimSpace(os.Getenv("TRAEFIK_HOSTNAME"))
 	if host == "" {
 		fatalf("TRAEFIK_HOSTNAME is required")
@@ -84,6 +100,25 @@ func trustedProxyArgs(peer netip.Addr, upstreams string) ([]string, error) {
 		args = append(args, "--trusted-proxy-ip="+value)
 	}
 	return args, nil
+}
+
+// probe reports whether the gate is answering. A gate that is up but not
+// serving is the failure that matters here: everything behind it returns 500
+// rather than degrading, so "the container is running" is not the question.
+func probe(url string, timeout time.Duration) error {
+	if url == "" {
+		return fmt.Errorf("--health-check requires a URL")
+	}
+	client := &http.Client{Timeout: timeout}
+	response, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("health check %s: %w", url, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		return fmt.Errorf("health check %s: status %d", url, response.StatusCode)
+	}
+	return nil
 }
 
 func fatalf(format string, args ...any) {

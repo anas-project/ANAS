@@ -12,9 +12,9 @@ updated: 2026-08-28
 > 命令仍是提案，当前不可执行。更新：2026-08-28。
 
 本文面向 ANAS Core 与 Module 维护者，说明 Module Command 的职责边界、领域模型、冻结机制、调用
-ABI 和安全决策。它满足[需求矩阵](/requirements/module-command-capability)中的
+ABI 和安全决策。它满足[需求矩阵](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-command-capability.md)中的
 `MCMD-R-001`—`MCMD-R-034`；稳定的用户与机器接口以[参考文档](/reference/module-commands)为准，
-尚未完成的施工顺序只在[实施计划](/plans/module-command-capability)中维护。
+尚未完成的施工顺序只在[实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/module-command-capability.md)中维护。
 
 ## 1. 设计摘要与适用状态
 
@@ -353,8 +353,9 @@ POST body：
 - `anasd` 的角色策略可以让命令“已声明但当前 actor 不可调用”；列表可显示
   `authorized: false`，不得靠返回 404 隐藏审计相关事实。
 
-只读 GET list/detail 可以在 M0 复用安全 DTO；POST invoke/job 必须等 Web 管理 API 进入认证、任务与
-审计里程碑。当前 M0 未认证，不能提前只加一个 POST handler 绕开整体安全门槛。
+只读 GET list/detail 复用既有的安全 DTO，这在 `anasd` 仍是未认证的只读 API 时是成立的；
+POST invoke/job 必须等 Web 管理 API 具备认证、任务与审计能力之后才能出现。在那之前单独加一个
+POST handler，等于绕开整体安全门槛。
 
 ## 10. 锁、并发、取消与幂等
 
@@ -389,7 +390,7 @@ POST body：
 
 ## 12. Forgejo / Incus 命令集提案
 
-> 状态：**提案，当前不可执行**。发布条件和验收进度见实施计划 M4。
+> 状态：**提案，当前不可执行**。发布条件与验收进度见[实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/module-command-capability.md)，本文不复制。
 
 Forgejo 首批命令拆成两组，分别使用不同权限来源：
 
@@ -423,7 +424,7 @@ VM、执行 daemon stop、返回最终可验证状态。它不能只是把 `syst
 
 未落地部分只有两组：anasd 认证后的 invoke/job，以及 Forgejo/Incus 命令和独立 KVM 宿主验收。
 二者都必须继续满足本文的共享应用服务、最小权限、冻结制品、脱敏和 fail-closed 决策；具体里程碑、
-阻塞项与验证记录只在[实施计划](/plans/module-command-capability)中更新，本文不复制阶段进度。
+阻塞项与验证记录只在[实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/module-command-capability.md)中更新，本文不复制阶段进度。
 
 ## 15. 最终决策摘要
 

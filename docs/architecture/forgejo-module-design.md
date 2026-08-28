@@ -1,12 +1,11 @@
 # Forgejo Module 设计
 
-> 状态：**当前设计决策与 M2/M3 实现**。Forgejo 应用、controller、Incus adapter 和 guest image 资产
-> 已进入实现；独立 Incus/KVM 与真实 one-job E2E 尚未完成，不能视为 release 能力。更新：2026-08-22。
+> 状态：**当前模型与明确标注的未实现部分**。Forgejo 应用、controller、Incus adapter 和 guest image
+> 资产已实现；独立 Incus/KVM 隔离与真实 one-job E2E 尚未完成，不能视为 release 能力。更新：2026-08-22。
 
 本文记录 Forgejo Module 的身份、Actions 授权、Runner 隔离和高风险功能开关设计。当前实现事实以
 [`modules/forgejo/module.yml`](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/module.yml)和
-[技术实现](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/docs/technical.md)为准；施工顺序见
-[Forgejo Module 实施计划](/plans/forgejo-module)。
+[技术实现](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/docs/technical.md)为准。
 
 ## 1. 边界与目标
 
@@ -55,12 +54,12 @@ API/CLI；当前固定版没有本 Module 可声明的 SAML source。
 - 不实现 LDAP auth source、LDAP 用户/Group 同步、SAML 或 anchor reconciler。
 
 未来升级只有在固定上游版本同时提供 LDAP immutable UUID 和受支持的 OIDC/SAML existing-user linking
-接口后，才重新发起设计评审；这不是当前实施计划中的待办项。
+接口后，才重新发起设计评审。
 
 ## 3. Actions 授权模型
 
 Actions server 与 Runner 是同一个产品功能。管理员只应看到一个 ANAS 功能开关：
-`forgejo.actions_enabled`。M3 已把它重新接入配置 inventory，并把同一值同时投影到 Forgejo 服务端、
+`forgejo.actions_enabled`。它已接入配置 inventory，同一个值同时投影到 Forgejo 服务端、
 Runner controller 与 Runner desired state。默认值为 `false`；Incus credential、scope、profile 或
 固定 image fingerprint 缺失时 Hook 拒绝开启，不能形成只能开启服务端的半功能状态。
 

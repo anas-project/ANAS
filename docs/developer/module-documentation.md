@@ -73,11 +73,20 @@ Module 目录是唯一事实来源。逐 Module VitePress 页面只存在于临�
 5. 按 `sid`、`sub`、`NameID/SessionIndex` 的撤销范围及浏览器、SameSite/CSP、TTL、重试限制；
 6. 真实会话 E2E 的脚本/测试入口和未覆盖项。
 
-`post_logout_redirect_uri` 只能写成退出后导航，不得描述为 IAM 通知应用的 endpoint。只有
-满足[使用 OIDC/SAML 的 Module 双向登出要求](/requirements/module-iam-bidirectional-logout)
-并具备真实会话证据时，README 才能使用“支持双向登出”或“支持后台撤销”。经
-ForwardAuth 接入的 Module 必须分别说明 IAM、认证网关和后端应用会话，不能把网关退出能力
+`post_logout_redirect_uri` 只能写成退出后导航，不得描述为 IAM 通知应用的 endpoint。
+
+“支持双向登出”和“支持后台撤销”是两个独立的、有门槛的措辞，不能凭配置字段存在就写上：
+
+| 措辞 | 写上它的前提 |
+| --- | --- |
+| 支持双向登出 | 应用发起和 IAM 发起两个方向都有真实会话 E2E：保存登出前 Cookie，操作后访问受保护资源断言未认证。302、退出页文字和 token TTL 都不算 |
+| 支持后台撤销 | 另有一次「管理员无用户浏览器参与地删除 IAM session」的 E2E。OIDC 需要 back-channel；SAML Redirect binding **不满足**，必须写明不覆盖 |
+
+经 ForwardAuth 接入的 Module 必须分别说明 IAM、认证网关和后端应用会话，不能把网关退出能力
 投影为后端能力。
+
+完整判定口径见[使用 OIDC/SAML 的 Module 双向登出要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md)
+§8（强制验收矩阵）与 §9（发布门禁）。
 
 ### 配置参数表
 

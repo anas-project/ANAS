@@ -70,8 +70,30 @@ session through OIDC or SAML must design and verify three distinct cases:
 3. when claimed as supported, administrative IAM-session revocation invalidates
    the application session without the user's browser.
 
-The normative security and acceptance rules are in the
-[bidirectional logout requirements for OIDC/SAML Modules](/requirements/module-iam-bidirectional-logout).
+Before a Module reaches `release` it must, in order:
+
+1. Inventory every standard logout mechanism the pinned upstream version offers and declare the
+   real capability. Unsupported directions are left explicitly empty; a mechanism upstream supports
+   but ANAS has not wired up records the reason, the risk, and the conditions for adding it —
+   "empty" and "upstream does not have it" are different statements.
+2. Prove through Hook/Runner tests that field publication, protocol switching, missing fields, and
+   invalid values are handled correctly.
+3. Complete a real-session E2E for every direction it claims. A Module claiming OIDC administrative
+   revocation must cover "administrator deletes the session with no browser involved"; a SAML
+   Redirect binding must state in writing that it does not cover that case.
+4. Record the logout entry point, both directions, method/binding, administrative revocation, and
+   the limits in the Chinese and English README.
+5. Record session identifiers, data flow, signature validation, replay protection, failure
+   degradation, implementation files, and test entry points in both technical documents.
+6. Update the [Module IAM and OIDC support matrix](/en/reference/module-iam-support).
+
+Evidence is recorded per `Provider × protocol × Module` combination in six columns: versions
+(Provider, application, plugin, Module revision), environment, automation entry point, session
+assertion, limitations, and result. "Configuration succeeded" never substitutes for a session result.
+
+The normative source is the Chinese
+[bidirectional logout requirements for OIDC/SAML Modules](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md)
+in the repository under `dev-docs/`; this section summarises the Module-author side of it.
 
 ### Provider-neutral registration
 

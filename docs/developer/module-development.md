@@ -80,8 +80,8 @@ secret 和签名/加密密钥，都必须记录 owner、consumer、authority 和
 2. 用户从 IAM 退出时，IAM 能否通知应用并使原应用会话失效？
 3. 管理员在无用户浏览器参与时撤销 IAM session，应用会话是否立即失效？
 
-详细安全和验收规则以[使用 OIDC/SAML 的 Module 双向登出要求](/requirements/module-iam-bidirectional-logout)
-为准。Module 设计必须遵守以下边界。
+Module 设计必须遵守以下边界。规范来源是[使用 OIDC/SAML 的 Module 双向登出要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md)（仓库
+`dev-docs/`，不在本站发布），本节是它对 Module 作者那一面的摘要；两者冲突以要求文档的需求矩阵为准。
 
 ### Provider-neutral 注册
 
@@ -139,6 +139,20 @@ apply 必须清除另一协议或旧域名的残留字段。
 
 经 `oauth2-proxy`/ForwardAuth 间接接入的 Module 必须分别说明 IAM 会话、网关 Cookie 和后端
 应用会话的失效范围；网关支持退出不自动证明后端应用支持双向登出。
+
+进入 `release` 前必须逐条完成：
+
+1. 按固定上游版本盘点全部标准 logout 机制并声明真实能力。不支持的方向明确留空；上游支持但
+   尚未接入的，记录原因、风险和后续接入条件——留空和「上游没有」是两回事。
+2. Hook/Runner 测试证明通用字段发布、协议切换、缺项和非法值处理正确。
+3. 每个声称支持的方向完成真实会话 E2E。OIDC 声称后台撤销时必须覆盖「管理员无浏览器删除
+   session」；SAML Redirect binding 必须明确写出它不覆盖该场景。
+4. README 中英文记录登出入口、两个方向、method/binding、后台撤销能力和限制。
+5. 技术文档中英文记录会话标识、数据流、签名验证、重放保护、失败降级、实现文件和测试入口。
+6. 在[Module IAM / OIDC 支持清单](/reference/module-iam-support)中更新状态。
+
+验收证据按 `Provider × 协议 × Module` 逐组合记录六列：版本（Provider／应用／插件／Module
+revision）、环境、自动化入口、会话断言、限制、结果。「配置成功」不能代替会话结果。
 
 ## 管理界面与本地管理员账号
 

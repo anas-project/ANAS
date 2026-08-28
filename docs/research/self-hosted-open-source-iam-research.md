@@ -85,7 +85,7 @@ questions:
 
 ## 3. ANAS 的不可放宽约束
 
-本轮结论继承[新 IAM Provider 准入与实施要求](../requirements/iam-provider.md)与[IAM 多实现与协议能力设计](../architecture/iam-capability-design.md)：
+本轮结论继承[新 IAM Provider 准入与实施要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/iam-provider.md)与[IAM 多实现与协议能力设计](../architecture/iam-capability-design.md)：
 
 - Samba AD 是业务用户、组、启停状态、目录属性和密码的唯一事实来源；IAM 本地用户只能是安装或故障恢复账号。
 - 跨系统永久身份键是 `mS-DS-ConsistencyGuid` 的文本投影 `anasIdentityAnchor`，不能改用邮箱、用户名、UPN、`objectGUID`、外部 IdP `sub` 或微信 `openid/unionid`。
@@ -165,7 +165,7 @@ IAM -> Module：OP-Initiated Logout
 | **NetBird** | ✅ | ◐ 只登记登出后跳转地址，未完成 RP-Initiated Logout 验收 | ❌ 未发布标准应用会话通知 endpoint | 不能宣称双向同步 |
 | **oauth2-proxy** | ✅ | ❌ 当前 ANAS 只配置本地 sign-out 所需客户端信息和跳转地址，未验收中央 SSO logout | ❌ 未发布标准应用会话通知 endpoint | 不能宣称双向同步；经 ForwardAuth 的 Module 跟随此限制 |
 
-因此选择 IAM 时必须按 `Provider × Module × 方向` 判断。即使 Keycloak、WSO2 或 ZITADEL 的上游协议实现完整，只要应用 Module 没有 back-channel/front-channel endpoint，IAM 也无法主动清除应用 Cookie；反过来，Nextcloud 暴露了 endpoint，但 Provider adapter 未登记或未发 token，同样不能完成同步。ANAS 的详细契约和测试口径见 [IAM 登出同步到应用的 OIDC / SAML 方案](iam-logout-application-session-sync.md)、[使用 OIDC/SAML 的 Module 双向登出要求](../requirements/module-iam-bidirectional-logout.md)与[新 IAM Provider 准入与实施要求](../requirements/iam-provider.md#8-iam-登出会话同步验收清单)。
+因此选择 IAM 时必须按 `Provider × Module × 方向` 判断。即使 Keycloak、WSO2 或 ZITADEL 的上游协议实现完整，只要应用 Module 没有 back-channel/front-channel endpoint，IAM 也无法主动清除应用 Cookie；反过来，Nextcloud 暴露了 endpoint，但 Provider adapter 未登记或未发 token，同样不能完成同步。ANAS 的详细契约和测试口径见 [IAM 登出同步到应用的 OIDC / SAML 方案](iam-logout-application-session-sync.md)、[使用 OIDC/SAML 的 Module 双向登出要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md)与[新 IAM Provider 准入与实施要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/iam-provider.md#8-iam-登出会话同步验收清单)。
 
 ## 5. 分项研究
 

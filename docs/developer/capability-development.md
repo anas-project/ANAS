@@ -100,8 +100,8 @@ Capability 的机器事实来源是 Runner registry 和 Module manifests；设�
 - 绑定变更、锁、失败、降级、弃用和迁移语义；
 - synthetic resolver 测试和真实 Provider × interface × Consumer E2E 矩阵。
 
-功能实施必须按仓库工作流建立 `docs/requirements/<topic>.md` 与配对的
-`docs/plans/<topic>.md`，使用稳定 requirement ID 分配验收范围。只新增或澄清本开发标准、
+功能实施必须按仓库工作流建立 `dev-docs/requirements/<topic>.md` 与配对的
+`dev-docs/plans/<topic>.md`，使用稳定 requirement ID 分配验收范围。只新增或澄清本开发标准、
 不改变运行行为时，不必为了文档改动虚构功能计划。
 
 专项文档不得复制易漂移的 Provider/Consumer 清单；清单以当前 manifests 为准。需要面向人
@@ -259,7 +259,7 @@ config:
 应用目录 schema 里的 `enabled_if` 引用的是**变量**而不是参数，在渲染期求值，可以依赖 Hook 的输出。
 因此它**不能**用作依赖条件——依赖顺序必须在任何 Hook 运行之前就确定。
 
-详细约束见[条件 Capability 依赖要求](/requirements/conditional-capability-dependency)。
+以上是使用这套机制需要知道的全部约束。规范来源是[条件 Capability 依赖要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/conditional-capability-dependency.md)的需求矩阵（仓库 `dev-docs/`，不在本站发布），冲突时以矩阵为准。
 
 ### 6.2 无序依赖：`ordering`
 
@@ -307,7 +307,7 @@ config:
 的 calculate 之后、且归 Consumer 所有，上面的过滤覆盖不到，会留下一个静默的洞。两种情况都在 Manifest
 加载期失败。
 
-详细约束见[无序 Capability 依赖要求](/requirements/weak-capability-dependency)。
+以上是使用这套机制需要知道的全部约束。规范来源是[无序 Capability 依赖要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/weak-capability-dependency.md)的需求矩阵（仓库 `dev-docs/`，不在本站发布），冲突时以矩阵为准。
 
 ## 7. Runner registry 与解析
 

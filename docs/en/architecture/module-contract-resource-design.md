@@ -266,7 +266,7 @@ mechanically check that a URI and its method/binding come in pairs, that
 enumerations are valid, that the fields belong to the current binding, and that
 only the selected provider receives the registration request. The detailed
 fields, security, and release gates are in
-[bidirectional logout requirements for modules using OIDC/SAML](/requirements/module-iam-bidirectional-logout)
+[bidirectional logout requirements for modules using OIDC/SAML](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md)
 and the [module development standard](/en/developer/module-development).
 
 ## 5. Contract

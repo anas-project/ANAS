@@ -1,30 +1,28 @@
-# IANA Private Enterprise Number application draft
+# IANA Private Enterprise Number 申请草案
 
-Use the official application form at
-<https://www.iana.org/assignments/enterprise-numbers/assignment/apply/>. The
-registration is free. IANA sends a confirmation email and normally assigns the
-number within seven days after confirmation when no further information is
-needed.
+使用官方申请表
+<https://www.iana.org/assignments/enterprise-numbers/assignment/apply/>。注册免费。
+IANA 会发一封确认邮件；确认之后，如果不需要补充材料，通常七天内完成号码分配。
 
-## Information the owner must supply
+## 需要由项目所有者填写的信息
 
-The repository must not guess or publish personal contact data. Before filing,
-the project owner fills in:
+仓库不得猜测或公开任何个人联系资料。提交前由项目所有者填写下列字段（字段名是表单原文，
+不翻译）：
 
 ```text
-Assignee name / organization: <legal organization or responsible person>
-Assignee postal address:      <required>
-Assignee country:             <required>
-Assignee phone:               <optional>
+Assignee name / organization: <法定组织或负责人>
+Assignee postal address:      <必填>
+Assignee country:             <必填>
+Assignee phone:               <可选>
 
-Contact name:                 <responsible maintainer>
-Contact postal address:       <required>
-Contact country:              <required>
-Contact email:                <required and monitored>
-Contact phone/fax:            <optional>
+Contact name:                 <负责的维护者>
+Contact postal address:       <必填>
+Contact country:              <必填>
+Contact email:                <必填，且需有人查收>
+Contact phone/fax:            <可选>
 ```
 
-Suggested purpose text if IANA asks for clarification:
+IANA 要求说明用途时，建议使用下面这段（提交时保持英文原文）：
 
 ```text
 ANAS requires a Private Enterprise Number to allocate globally unique object
@@ -32,10 +30,9 @@ identifiers for LDAP/Active Directory schema extensions and related identity,
 management and telemetry protocol objects maintained by the project.
 ```
 
-## Allocation plan after assignment
+## 分配到号码之后的规划
 
-If IANA assigns PEN `<PEN>`, record the assignee and registry URL in this file
-and reserve:
+若 IANA 分配的 PEN 为 `<PEN>`，在本文件中记录 assignee 与注册表 URL，并预留：
 
 ```text
 1.3.6.1.4.1.<PEN>.1     LDAP/Active Directory schema
@@ -45,22 +42,17 @@ and reserve:
 1.3.6.1.4.1.<PEN>.3     protocol identifiers
 ```
 
-Each allocation must be added to a repository OID table before code uses it.
-Never reuse a retired OID for a new meaning.
+每一项分配都必须先进入仓库的 OID 表，代码才能使用。已废弃的 OID 不得改作他用。
 
-## Relationship to the current AD schema OID
+## 与当前 AD schema OID 的关系
 
-`anasIdentityAnchor` currently uses Microsoft's GUID-derived schema OID root,
-documented in [samba-identity-anchor.md](../architecture/samba-identity-anchor.md). That root is
-already globally unique and valid for private AD forests. Obtaining a PEN does
-not authorize changing an OID already installed in a released forest.
+`anasIdentityAnchor` 目前使用 Microsoft 的 GUID 派生 schema OID 根，见
+[samba-identity-anchor.md](/architecture/samba-identity-anchor)。那个根本身就是全局唯一的，
+对私有 AD 林合法。拿到 PEN **不构成**修改一个已经装进已发布林的 OID 的授权。
 
-Because ANAS has not yet released this schema, the project owner may choose one
-of two policies before the first production release:
+由于 ANAS 尚未发布该 schema，项目所有者可以在首次生产发布之前二选一：
 
-1. keep the GUID-derived OID permanently and use the PEN only for future
-   allocations; or
-2. wait for the PEN, replace the constants and wipe every test forest before
-   release.
+1. 永久保留 GUID 派生的 OID，PEN 只用于今后的分配；或
+2. 等 PEN 到手，替换常量，并在发布前清空全部测试林。
 
-After the first production schema installation, policy 1 becomes mandatory.
+**首次生产环境安装 schema 之后，只能走第 1 条。**

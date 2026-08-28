@@ -7,7 +7,7 @@ updated: 2026-08-28
 
 # Changelog standard
 
-This standard defines where ANAS Core and Module changelogs live, how entries are written, when they must be written, and how releases process them. Goals, hard constraints, and acceptance criteria are in the [changelog requirements](/requirements/changelog) (Chinese); the delivery order is in the [changelog implementation plan](/plans/changelog) (Chinese).
+This standard defines where ANAS Core and Module changelogs live, how entries are written, when they must be written, and how releases process them. Goals, hard constraints, and acceptance criteria are in the [changelog requirements](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/changelog.md) (Chinese); the delivery order is in the [changelog implementation plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/changelog.md) (Chinese).
 
 The mechanism described here is **not implemented yet** and is not executable today; the plan document tracks progress.
 
@@ -216,7 +216,7 @@ The first is the dangerous one: CI silently accepts a page that failed to render
 
 ## 11. Related documents
 
-- [Changelog requirements](/requirements/changelog) (Chinese): goals, hard constraints, requirement matrix
-- [Changelog implementation plan](/plans/changelog) (Chinese): milestones and remaining work
+- [Changelog requirements](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/changelog.md) (Chinese): goals, hard constraints, requirement matrix
+- [Changelog implementation plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/changelog.md) (Chinese): milestones and remaining work
 - [ANAS, Module and container releases](/en/developer/release): changelog steps in the release procedure
 - [Documentation standard](/en/developer/documentation-standard): bilingual and directory rules

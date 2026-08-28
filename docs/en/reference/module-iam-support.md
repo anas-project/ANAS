@@ -66,7 +66,7 @@ tests must make clear that the two stores have different state and scope.
 
 Local logout, Module-initiated logout, browser-mediated bidirectional logout,
 and browserless bidirectional logout are evaluated separately under the
-[OIDC/SAML Module bidirectional logout requirements](/requirements/module-iam-bidirectional-logout).
+[OIDC/SAML Module bidirectional logout requirements](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md).
 “OIDC implemented” in this table does not automatically mean that
 bidirectional logout or administrative revocation is implemented.
 

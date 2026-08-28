@@ -72,11 +72,21 @@ The identity section of every OIDC or SAML Module must also state:
 6. the real-session E2E entry point and every uncovered case.
 
 `post_logout_redirect_uri` is navigation only and must not be described as an
-IAM-to-application notification endpoint. A README may claim “bidirectional
-logout” or “administrative revocation” only after satisfying the
-[bidirectional logout requirements](/requirements/module-iam-bidirectional-logout)
-with real-session evidence. A ForwardAuth Module documents IAM, gateway, and
-backend sessions separately and never projects gateway logout onto the backend.
+IAM-to-application notification endpoint.
+
+“Bidirectional logout” and “administrative revocation” are two separate claims, each with its own
+bar. The presence of a configuration field never earns either of them:
+
+| Claim | What must be true first |
+| --- | --- |
+| Bidirectional logout | Real-session E2E in both directions — application-initiated and IAM-initiated: keep the pre-logout Cookie, then assert an authenticated resource comes back unauthenticated. A 302, logout-page text, or a token TTL does not count |
+| Administrative revocation | A further E2E where an administrator deletes the IAM session with no user browser involved. OIDC needs back-channel; a SAML Redirect binding **does not qualify** and must say so |
+
+A ForwardAuth Module documents IAM, gateway, and backend sessions separately and
+never projects gateway logout onto the backend.
+
+The full criteria are §8 (acceptance matrix) and §9 (release gate) of the Chinese
+[bidirectional logout requirements](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md).
 
 ### Configuration inventory
 

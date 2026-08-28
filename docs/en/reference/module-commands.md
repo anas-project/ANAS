@@ -1,9 +1,11 @@
 # Module-specific commands
 
-> Status: M1/M2 implement strict manifest validation, deployment freezing,
-> read-only discovery, the shared execution service, strict ABI, locking, and
-> `anas module commands|invoke`; anasd M0 also exposes read-only list/detail. anasd invoke/jobs and Forgejo/Incus commands remain tracked by the
-> [implementation plan](/plans/module-command-capability).
+> Status: **partially implemented**. Strict manifest validation, deployment freezing, read-only
+> discovery, the shared execution service, strict ABI, locking, and `anas module commands|invoke`
+> are in place; `anasd` exposes only unauthenticated read-only list/detail.
+> **Not yet delivered**: the `anasd` invoke and job endpoints, and the Forgejo and Incus commands.
+> This page describes what is implemented; delivery order lives in the
+> [implementation plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/module-command-capability.md) under `dev-docs/`.
 
 A Module Command publishes an administrator operation that belongs to one Module. It does not replace Core
 start/stop/restart, automatic lifecycle hooks, or inter-Module Contract operations, and it never exposes an arbitrary
@@ -50,5 +52,6 @@ freeze a platform binary so deployed commands do not depend on a Go toolchain. A
 Linux capability, Docker socket, or systemd authority; privileged actions require a Core-owned named helper or a
 separate least-privilege remote maintenance credential.
 
-The normative requirements are in the
-[Module command capability requirements](/requirements/module-command-capability).
+The normative source is the requirement matrix in the Chinese
+[Module command capability requirements](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-command-capability.md)
+under `dev-docs/`; where this page and the matrix disagree, the matrix wins.

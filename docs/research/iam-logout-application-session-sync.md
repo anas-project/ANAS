@@ -8,8 +8,8 @@ evidence_as_of: 2026-08-21
 # IAM 登出同步到应用的 OIDC / SAML 方案
 
 本文保留方案研究与实施背景；当前规范性 Module 要求、能力分级和发布门禁见
-[使用 OIDC/SAML 的 Module 双向登出要求](../requirements/module-iam-bidirectional-logout.md)，
-Provider 侧要求见[新 IAM Provider 准入与实施要求](../requirements/iam-provider.md)。
+[使用 OIDC/SAML 的 Module 双向登出要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md)，
+Provider 侧要求见[新 IAM Provider 准入与实施要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/iam-provider.md)。
 
 ## 实施状态（2026-08-21）
 

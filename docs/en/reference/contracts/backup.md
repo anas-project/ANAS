@@ -184,7 +184,7 @@ happen after the containers were already stopped.
 
 The root cause is not btrfs but **container data being owned by root** — the same
 point already argued in
-[workspace-backup.md](/plans/workspace-backup) §7; this is just its other
+[workspace-backup.md](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/archived/workspace-backup.md) §7; this is just its other
 appearance, on the read side.
 
 ### The send family needs two transfer channels

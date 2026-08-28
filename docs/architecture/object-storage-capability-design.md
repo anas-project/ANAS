@@ -1,6 +1,7 @@
 # Object Storage Capability 设计
 
-状态：M1.1 Capability 与 M1.2 Resource 已实施，真实 S3/恢复 E2E 待完成
+状态：**当前模型**。Capability 声明与 Resource 模型已实施；真实 S3 客户端互操作与恢复
+E2E 只能在真实环境判定，尚未执行。
 日期：2026-08-22
 
 ## 1. 目标
@@ -91,5 +92,5 @@ Runner 为 `<consumer>.<resource_id>` 生成唯一 AK/SK 并只投影
 
 synthetic Runner 测试覆盖 name-only 声明、唯一 Provider 自动绑定、依赖顺序、binding 记录、
 必填输出、Secret 隔离和缺失输出 fail-closed。Module Hook 测试覆盖统一字段与私有字段一致性。
-真实 AWS CLI/SDK、重启持久性和空机恢复仍按
-[VersityGW 实施计划](/plans/versitygw-module)的 M2 执行。
+真实 AWS CLI/SDK 互操作、重启持久性和空机恢复只能在真实环境判定，不在 synthetic 测试的
+覆盖范围内。

@@ -7,9 +7,23 @@ updated: 2026-08-28
 
 # Changelog 规范
 
-本规范定义 ANAS Core 与 Module 变更记录的位置、写法、写入时机和发布处理。目标、硬约束与验收标准见[Changelog 要求](/requirements/changelog)；落地顺序见[Changelog 实施计划](/plans/changelog)。
+本规范定义 ANAS Core 与 Module 变更记录的位置、写法、写入时机和发布处理。
 
-本规范描述的机制**尚未实现**，当前不可执行；实现进度以计划文档为准。
+**目标**：让 Core 与每个 Module 都有面向用户、可追溯到具体发布身份的变更记录，而且这份记录本身
+就是文档，不是需要另一套工具才能读懂的中间格式。
+
+**评估后明确不做的**（理解本规范为什么长这样，这几条比正文更关键）：
+
+- 不引入 `.changes/` 之类的 change fragment 中间格式；
+- 不要求每个提交都写变更记录——强制时刻是分支合并回 `master`；
+- 不依赖强制 PR：`master` 未启用分支保护，约一半变更走本地合并；
+- 不为一轮批量 Module 发布的每个 Module 创建 GitHub Release；
+- 第一阶段不修改 `anas.module-catalog/v1`；
+- 不在 CI 内调用 LLM 直接生成并发布未经人审的正文。
+
+本规范描述的机制**尚未实现**，当前不可执行。完整需求矩阵（`CHLOG-R-<序号>`，规范来源）见
+[Changelog 要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/changelog.md)，落地顺序与剩余工作见
+[Changelog 实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/changelog.md)；两份都在仓库 `dev-docs/` 下，不在本站发布。
 
 ## 1. 事实源
 
@@ -214,7 +228,7 @@ ${{ github.event.pull_request.base.sha }}
 
 ## 11. 相关文档
 
-- [Changelog 要求](/requirements/changelog)：目标、硬约束与需求矩阵
-- [Changelog 实施计划](/plans/changelog)：里程碑与剩余工作
+- [Changelog 要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/changelog.md)：需求矩阵（规范来源），仓库 `dev-docs/`
+- [Changelog 实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/changelog.md)：里程碑与剩余工作，仓库 `dev-docs/`
 - [ANAS、Module 与容器发布](/developer/release)：发布流程中的变更记录步骤
 - [文档写作标准](/developer/documentation-standard)：双语与目录分类规则

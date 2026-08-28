@@ -111,4 +111,4 @@ isolation, and fail-closed behavior on a missing output. Module hook tests cover
 the consistency of the unified fields with the private ones. Real AWS CLI/SDK
 usage, persistence across restarts, and bare-machine restore are still to be
 carried out under M2 of the
-[VersityGW implementation plan](/plans/versitygw-module).
+[VersityGW implementation plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/versitygw-module.md).

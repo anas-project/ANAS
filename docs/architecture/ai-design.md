@@ -423,7 +423,7 @@ The current `anasd` read-only slice follows the same generic boundary at the
 service level: workspace registry IDs select an application service, while
 HTTP handlers project safe DTOs. Production `anasd`, HTTP, application,
 deployment, and config-schema packages contain no built-in Module switch.
-Configuration HTTP endpoints remain an M3 task.
+Configuration HTTP endpoints are not implemented.
 
 ## Current Modules
 

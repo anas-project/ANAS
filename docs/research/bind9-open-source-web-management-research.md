@@ -20,7 +20,7 @@ evidence_as_of: 2026-08-19
 2. **现阶段写操作继续使用 `samba-tool dns`；Web 化应进入既有 `anasd` 管理面。** Samba
    官方同时把 `samba-tool dns` 和 Windows DNS MMC 列为 AD DNS 管理路径；前者覆盖 zone
    与 A/AAAA/PTR/CNAME/NS/MX/SRV/TXT 的增删查改。对 ANAS，最稳妥的产品方向是在既有
-   [Web API 与管理前端要求](/requirements/web-api-admin-console)中增加一个窄的
+   [Web API 与管理前端要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/web-api-admin-console.md)中增加一个窄的
    Samba DNS adapter，而不是再部署一个拥有独立用户、Secret、数据库、审计和升级面的
    DNS 控制台。
 3. **Samba Conductor 是最贴近当前数据面的第三方 PoC 候选，但不能生产化。** 它通过

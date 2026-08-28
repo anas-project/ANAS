@@ -123,8 +123,11 @@ Nextcloud `admin` 权限，移组后也随 LDAP 组映射撤销。初始化脚�
 同一规则适用于其他 Module：`Admins` 必须显式映射为应用的最高应用级角色；`APP_all`
 和 `APP_*` 仅授予登录权。这里的“应用级”不包含 Samba `Domain Admins`、宿主机 root、
 数据库超级用户或 `FS Admins`。LAM 是典型边界：`Admins` 获得完整 LAM 入口，但目录写入
-仍服从该用户的 AD ACL。各 Module 的具体映射与实现状态以
-[`iam-provider.md`](../requirements/iam-provider.md) 为准。
+仍服从该用户的 AD ACL。**逐 Module 的当前实现状态**（哪些 Module 已接 OIDC、哪些还在用自身认证、
+各自的组映射与密码写回口径）见[Module IAM / OIDC 支持清单](/reference/module-iam-support)——那张表
+随实现更新，是这件事的可查询事实来源。新 Provider 的准入条件另有规范来源：[新 IAM Provider 准入与
+实施要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/iam-provider.md)
+（仓库 `dev-docs/`，不在本站发布）。
 
 嵌套组是目录授权契约的一部分。`用户 -> ROLE_X -> APP_nextcloud` 必须与用户直接加入
 `APP_nextcloud` 等价；实现必须递归解析成员关系、处理循环且不能仅查看用户对象上的直接

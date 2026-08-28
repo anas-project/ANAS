@@ -233,7 +233,7 @@ Module 必须用 Provider-neutral 的 `ANAS_IAM_BINDING__<APP>__*` 与
 Core 不认识 Nextcloud、MeshCentral 或某个插件的 logout URL，也不验证 Logout Token/SAML
 消息；这些是 Module/上游应用的协议实现。Core 可以机械校验 URI 与 method/binding 成对、枚举
 合法、字段属于当前 binding，并保证只有选中的 Provider 获得注册请求。详细字段、安全和发布
-门禁见[使用 OIDC/SAML 的 Module 双向登出要求](/requirements/module-iam-bidirectional-logout)
+门禁见[使用 OIDC/SAML 的 Module 双向登出要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md)
 与[Module 开发规范](/developer/module-development)。
 
 ## 5. Contract

@@ -8,7 +8,7 @@ OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capabi
 Module，都必须订阅 Samba 发布的持久目录事件，不能只等待定时同步或下一次登录。消费者按自身
 关注属性处理 `Add`、`Modify`、`Delete`，通过增量刷新、缓存失效或受控 Source Sync 在声明的最大
 传播时间内收敛；保存目录副本的消费者还必须保留周期 LDAP 全量同步兜底。完整可靠性、安全和 E2E
-要求见[Samba 目录事件订阅与实时同步要求](../requirements/directory-event-subscription.md)。
+要求见[Samba 目录事件订阅与实时同步要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)。
 
 | Module | 是否可用 OIDC 登录 | 当前认证路径 | 结论 |
 | --- | --- | --- | --- |
@@ -69,7 +69,7 @@ Provider 固定为 Authentik `2026.5.6`、LLNG `2.23.2`、Casdoor `3.143.0`。SA
 ## 后续实现门槛
 
 OIDC/SAML Module 的本地登出、应用发起登出、浏览器双向登出和后台双向登出必须按
-[使用 OIDC/SAML 的 Module 双向登出要求](/requirements/module-iam-bidirectional-logout)
+[使用 OIDC/SAML 的 Module 双向登出要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md)
 分别判定；本表中的“OIDC 已实现”不自动表示双向登出或管理员后台撤销已实现。
 
 把一个 Module 标为“OIDC 已实现”至少需要：Manifest OIDC interface、provider client registration、redirect URI/scope/claim/group 映射、Secret 传递、应用内验证和真实浏览器/HTTP 登录 E2E。Nextcloud 与 MeshCentral 由 `server-authentik-oidc-login-e2e.sh` 覆盖完整授权码登录、应用 session、目录身份和管理员组映射。Samba 密码接入分别由 `server-authentik-password-policy-e2e.sh` 和 `server-llng-password-policy-e2e.sh` 覆盖 Provider 页面预检、目录最终裁决、写回、错误映射和凭据切换。仅因为上游软件声称支持 OIDC 或改密，不能修改本表的实现状态。

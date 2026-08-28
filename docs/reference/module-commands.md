@@ -1,8 +1,9 @@
 # Module 专属命令
 
-> 状态：M1/M2 已实现 manifest 校验、deployment 冻结、只读发现、共享执行服务、严格 ABI、锁和
-> `anas module commands|invoke`，且 anasd M0 已提供只读 list/detail；anasd invoke/job 与 Forgejo/Incus 命令按
-> [实施计划](/plans/module-command-capability)后续里程碑交付。
+> 状态：**部分实现**。已实现 manifest 校验、deployment 冻结、只读发现、共享执行服务、严格 ABI、
+> 锁和 `anas module commands|invoke`；`anasd` 只提供未认证的只读 list/detail。
+> **尚未交付**：`anasd` 的 invoke 与 job 端点、Forgejo 与 Incus 的具体命令。本页描述的都是已实现
+> 的部分；施工顺序见仓库 `dev-docs/` 下的[实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/module-command-capability.md)。
 
 Module Command 允许少数 Module 发布自身特有的管理员操作，例如 Forgejo Runner project 诊断。
 它不替代 Core 的 start/stop/restart、自动 lifecycle hook 或 Module 间 Contract operation，也不提供
@@ -122,4 +123,5 @@ HTTP 使用独立的 `anas.dev/api/v1` DTO，而不是复用 CLI 信封；DTO �
 - `anasd` 当前 M0 未认证且只读，只开放 list/detail、不开放 invoke；后续 HTTP adapter 必须复用 application service、job、
   认证、角色和审计，不能执行 `anas --json` 子进程。
 
-完整规范来源是[Module 专属命令能力要求](/requirements/module-command-capability)。
+完整规范来源是[Module 专属命令能力要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-command-capability.md)的需求矩阵
+（仓库 `dev-docs/`，不在本站发布）；本页与它冲突时以矩阵为准。
