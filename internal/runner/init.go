@@ -458,7 +458,7 @@ func writeShellInit(workspace string, yes bool) (string, bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return path, false, failuref("mkdir_failed", "%s", err.Error())
 	}
-	if err := os.WriteFile(path, []byte(current), 0644); err != nil {
+	if err := atomicWriteProfile(path, []byte(current)); err != nil {
 		return path, false, failuref("write_failed", "%s", err.Error())
 	}
 	fmt.Fprintf(os.Stderr, "wrote %s; new shells pick it up, or run: source %s\n", path, path)
@@ -482,11 +482,97 @@ func removeShellInit() (string, bool, error) {
 		fmt.Fprintf(os.Stderr, "%s has no anas block\n", path)
 		return path, false, nil
 	}
-	if err := os.WriteFile(path, []byte(replaceShellInitBlock(current, "")), 0644); err != nil {
+	if err := atomicWriteProfile(path, []byte(replaceShellInitBlock(current, ""))); err != nil {
 		return path, false, failuref("write_failed", "%s", err.Error())
 	}
 	fmt.Fprintf(os.Stderr, "removed the anas block from %s\n", path)
 	return path, true, nil
+}
+
+// atomicWriteProfile replaces a shell profile without ever leaving a truncated
+// one behind. os.WriteFile opens with O_TRUNC and then writes: a process killed
+// between the two destroys a file the user did not ask anas to touch, and a
+// broken ~/.bashrc is a problem in every future shell, not just this command.
+//
+// Three details matter as much as the atomicity:
+//
+//   - The path is resolved through symlinks first. Having ~/.bashrc symlinked
+//     into a dotfiles repository is ordinary, and renaming onto the link itself
+//     would silently replace the link with a regular file -- worse than the
+//     truncation this is fixing, because nothing reports it.
+//   - The mode is taken from the existing file. os.WriteFile leaves an existing
+//     file's mode alone; a rename imposes the temporary file's instead, so the
+//     old mode has to be read and reapplied.
+//   - The temporary file goes in the target's own directory. Rename does not
+//     cross filesystems, and a home directory can be a separate mount.
+func atomicWriteProfile(path string, body []byte) error {
+	target, err := resolveProfileTarget(path)
+	if err != nil {
+		return err
+	}
+
+	mode := os.FileMode(0644)
+	if info, err := os.Stat(target); err == nil {
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	temp, err := os.CreateTemp(filepath.Dir(target), ".anas-profile-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+
+	if err := temp.Chmod(mode); err != nil {
+		temp.Close()
+		return err
+	}
+	if _, err := temp.Write(body); err != nil {
+		temp.Close()
+		return err
+	}
+	// Sync before the rename: the rename is atomic with respect to readers, but
+	// only a synced file guarantees the new contents survive a power loss that
+	// follows it.
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, target)
+}
+
+// resolveProfileTarget follows symlinks to the file the rename must land on, so
+// a managed dotfile keeps being a symlink and its target keeps being the thing
+// that changes.
+func resolveProfileTarget(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+
+	// The profile does not exist yet, or it is a symlink whose target does not.
+	// Either way the directory has to be resolved so the temporary file lands on
+	// the same filesystem as the rename destination.
+	dir, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return "", err
+	}
+	if link, err := os.Readlink(path); err == nil {
+		// A dangling symlink still names the file the user's dotfiles manage.
+		if !filepath.IsAbs(link) {
+			link = filepath.Join(dir, link)
+		}
+		return link, nil
+	}
+	return filepath.Join(dir, filepath.Base(path)), nil
 }
 
 func extractShellInitBlock(content string) (string, bool) {
