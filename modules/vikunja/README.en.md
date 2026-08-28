@@ -174,7 +174,7 @@ durable inbox, idempotency, and reconciliation instead of assuming unlimited del
 - Resource database credentials, local administrators, and external API tokens are outside the unified
   `credential rotate --module/--all` lifecycle. Vikunja declares no local administrator, and users own API tokens.
 
-See the [Vikunja module integration requirements](../../docs/requirements/vikunja-module.md) for the complete
+See the [Vikunja module integration requirements](../../dev-docs/requirements/vikunja-module.md) for the complete
 acceptance boundary.
 
 ## Technical documentation

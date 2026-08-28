@@ -140,7 +140,7 @@ daemon Runner，也不提供 `host` label。独立 Incus/KVM、真实防火墙/e
 - [`module.yml`](../module.yml) 与 [`docker-compose.yml`](../docker-compose.yml)。
 
 设计决策见[Forgejo Module 设计](/architecture/forgejo-module-design)，剩余工作与明确排除项见
-[Forgejo Module 实施计划](/plans/forgejo-module)。
+[Forgejo Module 实施计划](../../../dev-docs/plans/forgejo-module.md)。
 
 提升 `release` 前还需完成 PostgreSQL/MariaDB、amd64/arm64、LLNG/Authentik 浏览器登录、IAM-down、
 HTTP/SSH clone/push、LFS、Package、备份恢复和前一 LTS patch/minor 升级回滚 E2E。

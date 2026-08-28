@@ -220,13 +220,13 @@ type RequiredCapability struct {
 	// parameter is true the dependency is in every respect an ordinary one: it
 	// contributes an ordering edge, it fails resolution when no provider serves
 	// it, and its binding is recorded. The condition decides existence, never
-	// strength -- see docs/requirements/conditional-capability-dependency.md.
+	// strength -- see dev-docs/requirements/conditional-capability-dependency.md.
 	EnabledBy string
 	// Ordering is normalized to orderingBefore or orderingAny, never empty.
 	// orderingAny drops only the ordering edge: the provider stays mandatory and
 	// its binding is still recorded, so this is not the existing
 	// dependencies.requires[].optional, which gives up the opposite half.
-	// See docs/requirements/weak-capability-dependency.md.
+	// See dev-docs/requirements/weak-capability-dependency.md.
 	Ordering string
 }
 

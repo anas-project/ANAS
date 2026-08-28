@@ -1,5 +1,5 @@
 # Dedicated Vikunja release-gate fixture. Run only with the isolated
-# anas-vikunja-test Docker daemon described in docs/plans/vikunja-module.md.
+# anas-vikunja-test Docker daemon described in dev-docs/plans/vikunja-module.md.
 modules:
   samba_dc:
     config:

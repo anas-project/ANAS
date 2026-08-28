@@ -125,7 +125,7 @@ clone/push、LFS、Package、OIDC 登录和本地恢复登录。
 选型与范围依据见[自托管开源 Git 服务研究](../../docs/research/self-hosted-open-source-git-services-research.md)，
 当前实现见[技术文档](docs/technical.md)，设计决策与剩余工作分别见
 [Forgejo Module 设计](../../docs/architecture/forgejo-module-design.md)和
-[实施计划](../../docs/plans/forgejo-module.md)。
+[实施计划](../../dev-docs/plans/forgejo-module.md)。
 
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language

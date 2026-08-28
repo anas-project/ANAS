@@ -87,6 +87,6 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 状态为 `release`。固定版本没有 SAML LogoutRequest/LogoutResponse 消费路径，因此 SLO endpoint/binding 保持不发布；不启用目录密码写回，不支持静默切换数据库，也不把 Casdoor 本地 User ID 当作 Samba 永久锚点。其余声明能力和发布验收范围见需求矩阵与实施计划。
 
 规范性要求、稳定需求 ID、里程碑归属和逐项执行记录见
-[Casdoor IAM Provider 集成要求](../../../docs/requirements/casdoor-iam.md)与
-[Casdoor IAM Provider 实施计划](../../../docs/plans/casdoor-iam.md)。本节只保留面向 Module 维护者的
+[Casdoor IAM Provider 集成要求](../../../dev-docs/requirements/casdoor-iam.md)与
+[Casdoor IAM Provider 实施计划](../../../dev-docs/plans/archived/casdoor-iam.md)。本节只保留面向 Module 维护者的
 限制摘要，不作为完成状态的来源。

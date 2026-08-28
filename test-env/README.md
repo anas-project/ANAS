@@ -12,12 +12,13 @@ image builds, and optional smoke checks.
 > explicitly names that exact server for the current test run. Explicit target
 > selection authorizes the host; it does not disable any isolation guard below.
 
-The repository currently provides local aggregate tests and individual server
-E2E scripts; it does not yet provide a single SSH command that provisions a
-target, deploys every fixture, runs a selected suite, collects reports, and
-cleans up. The target workflow and implementation milestones are defined in the
-[document-driven test automation requirements](../docs/requirements/document-driven-test-automation.md)
-and [plan](../docs/plans/document-driven-test-automation.md). Until that runner
+The repository now provides the M2 read-only SSH preflight and source-packaging
+contract under [`remote/`](remote/README.md), plus local aggregate tests and
+individual server E2E scripts. It does not yet provide the M3 single command
+that transfers a package, provisions an isolated target, runs a selected suite,
+collects reports, and cleans up. The target workflow and implementation milestones are defined in the
+[document-driven test automation requirements](../dev-docs/requirements/document-driven-test-automation.md)
+and [plan](../dev-docs/plans/document-driven-test-automation.md). Until that runner
 exists, do not describe the manual server scripts as one-click remote testing.
 
 ## Mandatory isolation boundary
@@ -57,6 +58,7 @@ uncovered paths.
 test-env/
   cases/      Machine-readable test cases and generated review catalogs.
   configs/    Test matrix configs.
+  remote/     SSH target, helper and preflight examples plus setup instructions.
   scripts/    Repeatable test commands.
   upgrades/   Historical module lock fixtures for upgrade validation.
   reports/    Generated logs and command output.

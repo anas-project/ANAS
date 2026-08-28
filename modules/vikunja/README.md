@@ -170,7 +170,7 @@ Secret 保存在调用方自己的 Secret 存储中。Webhook 接收端必须验
 - Resource 数据库凭据、本地管理员和外部 API token 不属于 `credential rotate --module/--all`
   的统一 lifecycle 范围；Vikunja 当前没有本地管理员声明，API token 由应用用户管理。
 
-完整验收口径见 [Vikunja Module 集成要求](../../docs/requirements/vikunja-module.md)。
+完整验收口径见 [Vikunja Module 集成要求](../../dev-docs/requirements/vikunja-module.md)。
 
 ## 技术文档
 

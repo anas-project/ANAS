@@ -105,7 +105,7 @@ LFS and built-in SSH are enabled. The Web port is Compose-private and the v15 im
 storage, and external search remain out of scope.
 
 Design decisions are recorded in the [Forgejo Module design](/architecture/forgejo-module-design). Remaining work
-and explicit exclusions are tracked in the [Forgejo Module implementation plan](/plans/forgejo-module).
+and explicit exclusions are tracked in the [Forgejo Module implementation plan](../../../dev-docs/plans/forgejo-module.md).
 
 Unit tests cover database mapping, locale fallback, OIDC metadata, secret stability, stdin boundaries, symlink-safe
 ownership, local-admin bootstrap, and auth-source reconciliation. Database/architecture matrices, browser OIDC,

@@ -184,7 +184,7 @@ passwords nor another consumer binding.
   local-first logout implementation and two upstream frontend regression tests.
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
-- [Vikunja module integration requirements](../../../docs/requirements/vikunja-module.md)
+- [Vikunja module integration requirements](../../../dev-docs/requirements/vikunja-module.md)
 
 Release promotion still requires PostgreSQL/MariaDB, amd64/arm64, Authentik/LLNG real-browser login/logout,
 IAM-down, backup/restore, API/webhook, and previous patch/minor upgrade/rollback E2E.

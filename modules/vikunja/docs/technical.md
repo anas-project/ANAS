@@ -179,7 +179,7 @@ Runner-owned globals（包括 `TZ`、`DEFAULT_LANGUAGE`、`LOCAL_DNS_SERVER` 和
   本地优先登出实现和两个上游前端回归测试。
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
-- [Vikunja Module 集成要求](../../../docs/requirements/vikunja-module.md)
+- [Vikunja Module 集成要求](../../../dev-docs/requirements/vikunja-module.md)
 
 提升到 `release` 前还必须完成 PostgreSQL/MariaDB、amd64/arm64、Authenticator/LLNG 真实浏览器
 登录登出、IAM-down、备份恢复、API/webhook 和前一 patch/minor 升级回滚 E2E。

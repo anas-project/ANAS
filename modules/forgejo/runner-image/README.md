@@ -16,4 +16,4 @@ forgejo-runner -c /etc/forgejo-runner/config.yml one-job --url ... --uuid ... --
 
 `runner-agent` owns the token and Runner process; `runner-engine` owns the rootless Podman daemon. Jobs may control only that disposable VM's rootless engine. The image exposes no `host` label, privileged container, arbitrary Runner volume, inbound listener, ANAS mount, or host socket. Network egress and project quotas are enforced by the restricted Incus profile/project, not by image metadata.
 
-The repository assets and unit tests do not replace the external image build and real Incus/KVM isolation E2E. Those remain release gates in `docs/plans/forgejo-module.md`.
+The repository assets and unit tests do not replace the external image build and real Incus/KVM isolation E2E. Those remain release gates in `dev-docs/plans/forgejo-module.md`.
