@@ -101,6 +101,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: '设计索引', link: '/architecture/' },
         { text: 'Module、Contract 与 Resource', link: '/architecture/module-contract-resource-design' },
+        { text: 'Module 专属命令能力设计', link: '/architecture/module-command-capability-design' },
         { text: '管理员账号系统', link: '/architecture/admin-account-system' },
         { text: 'Samba AD 用户与组规范', link: '/architecture/samba-ad-user-planning' },
         { text: 'IAM 能力', link: '/architecture/iam-capability-design' },
@@ -118,21 +119,31 @@ export const zhSidebar: DefaultTheme.Sidebar = {
   '/research/': [
     {
       text: '研究与选型',
+      items: [{ text: '索引', link: '/research/' }]
+    },
+    {
+      text: '应用与产品选型',
       items: [
-        { text: '索引', link: '/research/' },
-        { text: 'IAM 登出与会话同步', link: '/research/iam-logout-application-session-sync' },
+        { text: 'Mastodon 相关自部署服务', link: '/research/mastodon-related-self-hosted-services-research' },
         { text: '自部署 IAM 与 ANAS 适配', link: '/research/self-hosted-open-source-iam-research' },
-        { text: 'Nextcloud 搜索方案', link: '/research/nextcloud-search-solution-research' },
         { text: 'BIND 9 Web 管理工具', link: '/research/bind9-open-source-web-management-research' },
         { text: '自部署邮件服务', link: '/research/self-hosted-open-source-mail-services-research' },
         { text: '自部署邮件转发', link: '/research/self-hosted-open-source-email-forwarding-research' },
-        { text: '看板与 AI Agent', link: '/research/kanban-ai-agent-integration-research' },
         { text: 'S3 兼容存储', link: '/research/self-hosted-open-source-s3-compatible-storage-research' },
         { text: '自部署 Git 服务', link: '/research/self-hosted-open-source-git-services-research' },
-        { text: 'Super Productivity Nextcloud SSO', link: '/research/super-productivity-nextcloud-sso-sync-research' },
         { text: 'Super Productivity 同类项目', link: '/research/super-productivity-alternatives-research' },
         { text: '自部署笔记应用', link: '/research/self-hosted-open-source-notes-research' },
         { text: '自部署 Kanban 应用', link: '/research/self-hosted-open-source-kanban-research' }
+      ]
+    },
+    {
+      text: '功能与集成可行性',
+      items: [
+        { text: 'LLNG Passkey 与 Samba 边界', link: '/research/llng-passkey-webauthn-samba-sharing' },
+        { text: 'IAM 登出与会话同步', link: '/research/iam-logout-application-session-sync' },
+        { text: 'Super Productivity Nextcloud SSO', link: '/research/super-productivity-nextcloud-sso-sync-research' },
+        { text: 'Nextcloud 搜索方案', link: '/research/nextcloud-search-solution-research' },
+        { text: '看板与 AI Agent', link: '/research/kanban-ai-agent-integration-research' }
       ]
     }
   ],
@@ -176,6 +187,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       text: '评审与历史快照',
       items: [
         { text: '索引', link: '/reviews/' },
+        { text: '综合项目审计与整改状态', link: '/reviews/2026-08-23-comprehensive-project-audit' },
         { text: 'Vikunja Module 设计符合性', link: '/reviews/2026-08-21-vikunja-module-design-compliance' },
         { text: 'Module 分类与访问边界', link: '/reviews/2026-08-19-module-classification' },
         { text: 'Module 镜像升级评估', link: '/reviews/2026-07-29-module-image-upgrade' },

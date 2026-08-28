@@ -4,6 +4,7 @@ Chinese is the source language for the detailed design set. The pages below link
 
 - the normative [Core implementation standard](/en/architecture/core-implementation-standard);
 - [modules, contracts, resources, and provider operations](/en/architecture/module-contract-resource-design);
+- [module-specific commands, typed parameters, and shared CLI/API execution](/architecture/module-command-capability-design);
 - [administrator account lifecycle](/architecture/admin-account-system);
 - [IAM capability, protocol selection, and bidirectional logout registration](/en/architecture/iam-capability-design);
 - [application catalog visibility and authorization](/architecture/app-catalog-design);

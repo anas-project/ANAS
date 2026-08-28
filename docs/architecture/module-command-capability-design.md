@@ -1,52 +1,56 @@
 ---
-doc_type: research
+doc_type: architecture
+status: current
 created: 2026-08-22
-updated: 2026-08-23
-evidence_as_of: 2026-08-22
+updated: 2026-08-28
 ---
 
-# Module 专属命令能力现状与设计
+# Module 专属命令能力设计
 
-> 实施更新（2026-08-23）：本文记录的初始缺口已经按 M1/M2 落地；当前已有 manifest/deployment
-> 冻结、`anas module commands|invoke`、共享 application service，以及 anasd M0 只读 GET list/detail。
-> HTTP invoke/job 与 Forgejo/Incus 实际命令仍受后续安全和真实宿主里程碑约束。规范现状以
-> [参考文档](/reference/module-commands)和[实施计划](/plans/module-command-capability)为准。
+> 状态：**当前模型与明确标注的演进方案**。Manifest/deployment 冻结、CLI 发现与调用、共享
+> application service，以及 anasd 只读 list/detail 已实现；HTTP invoke/job 与 Forgejo/Incus
+> 命令仍是提案，当前不可执行。更新：2026-08-28。
 
-## 1. 结论
+本文面向 ANAS Core 与 Module 维护者，说明 Module Command 的职责边界、领域模型、冻结机制、调用
+ABI 和安全决策。它满足[需求矩阵](/requirements/module-command-capability)中的
+`MCMD-R-001`—`MCMD-R-034`；稳定的用户与机器接口以[参考文档](/reference/module-commands)为准，
+尚未完成的施工顺序只在[实施计划](/plans/module-command-capability)中维护。
 
-本次调研开始时，ANAS **没有**“由单个 Module 声明、可发现、带类型参数，并可同时被 `anas` 与
-`anasd` 调用”的专属命令机制。
+## 1. 设计摘要与适用状态
 
-现有机制只能覆盖相邻场景：
+Module Command 是由单个 Module 声明、可发现、带类型参数，并由 `anas` 与 `anasd` 共享应用服务的
+管理面能力。Module 在 manifest 中声明命令元数据、参数 schema、风险与执行约束；Core 从活动
+deployment 读取冻结定义并校验，再通过 `anas.module-command/v1` 结构化 ABI 调用冻结的 executor。
+调用方只能提交命令 ID 和类型化参数，不能提交可执行文件、argv、shell、环境变量名或宿主路径。
+
+当前实现包括 manifest/deployment 模型、artifact 完整性、list/describe/invoke 应用服务、CLI
+`anas module commands|invoke` 和 anasd 只读 list/detail。anasd 的 POST invoke/job 以及 Forgejo/Incus
+实际命令尚未实现；本文对应章节仅定义演进边界，不能作为当前操作指南。
+
+Module Command 与相邻机制保持以下职责分离：
 
 - `anas start|stop|restart` 是 Core 固定的通用 Module 生命周期，不允许 Module 增加命令；
 - `anas module list|versions|install|sync|update` 管理 Module 包，不执行 Module 运维动作；
 - `logic.hook` 只接受 Core 枚举的生命周期 phase，不能发布用户可调用的命令；
 - Contract Provider operation 是 Module 之间的资源协议，不是管理员命令；
-- `anasd` M0 只有只读查询，后续写操作虽然已有共享应用服务和 job 方向，但没有 Module
-  命令发现或调用模型。
-
-建议新增 **Module Command**：Module 在 manifest 中声明命令元数据、参数 schema、风险与执行约束，
-Core 从活动 deployment 发现并校验命令，再通过 `anas.module-command/v1` 结构化 ABI 调用被冻结的
-Module executor。CLI 与 HTTP 只能调用命令 ID，永远不能传可执行文件、argv、shell、环境变量名或
-宿主路径。
+- `anasd` 的只读 list/detail 已接入共享模型；写调用必须等待认证、授权、job 和审计边界完成。
 
 这是一种可选的 Module 管理面能力，不改变普通 Module 的职责，也不把 Incus 变成所有 Module 都必须
 理解的通用生命周期。
 
-## 2. 现状证据与缺口
+## 2. 相邻机制与职责边界
 
-| 现有边界 | 已有能力 | 为什么不能直接复用 |
+| 边界 | 当前能力 | 与 Module Command 的分工 |
 | --- | --- | --- |
 | `internal/runner/runner.go` | Core 固定枚举 CLI 命令 | Module 不能注册子命令 |
 | `internal/runner/module_cli.go` | Module 包发现、安装、同步、更新 | 管的是分发，不是部署实例的运维动作 |
 | `logic.hook` / `anas.module-hook/v1` | `calculate`、`after_start`、凭据等固定 phase | phase 由 Core 触发；增加任意 phase 会被 manifest 校验拒绝 |
 | Contract Provider operation | `compose_run` 执行类型化资源 operation | 调用方是 Consumer/Runner，不是管理员；语义属于跨 Module Contract |
-| `internal/application` | CLI/HTTP 可共享的类型化 use case | 当前只抽出了版本和 deployment 只读查询 |
-| `internal/api/httpapi` / OpenAPI M0 | 注册 workspace 的只读 HTTP API | 未实现命令发现、job、认证、授权和写操作 |
-| deployment manifest | 冻结 runtime、hook、provider 与凭据声明 | 尚未冻结 Module Command 定义和 executor |
+| `internal/application` | 已提供共享的 Module Command list/describe/invoke use case | CLI 与 HTTP adapter 必须复用，不能分别实现校验、锁或执行 |
+| `internal/api/httpapi` / OpenAPI | 已提供只读 list/detail | invoke 仍受认证、授权、job 与审计前置条件约束 |
+| deployment manifest | 已冻结 descriptor、handler、executor 与摘要 | 发现和执行只读取活动 deployment，不回读源码或 Module cache |
 
-因此不应把 Forgejo 的 Incus 运维临时塞进 `anas forgejo ...`、新增 Core 专用命令，或让
+因此不能把 Forgejo 的 Incus 运维塞进 `anas forgejo ...`、新增 Core 专用命令，或让
 `anasd` 执行 `anas --json` 子进程。前两种会把产品特例固化进 Core，后一种违反 CLI/HTTP 共享
 应用服务的既有约束。
 
@@ -96,7 +100,7 @@ flowchart LR
 
 ## 5. Manifest 规范
 
-建议在既有 `management` 下增加命令声明和统一 executor。命令存在时，`abi.supports` 必须同时声明
+命令声明和统一 executor 位于既有 `management` 下。命令存在时，`abi.supports` 必须同时声明
 `anas.module-command/v1`；不声明命令的旧 Module 仍只需要 `anas.module-hook/v1`。
 
 ```yaml
@@ -288,7 +292,7 @@ anas module invoke MODULE COMMAND [-w WORKSPACE] [--param NAME=VALUE]... [-y] [-
 - destructive 命令在 TTY 显示标题、说明、目标 deployment/release 和规范化参数；非 TTY 必须 `-y`；
 - `--json` stdout 继续只输出一个 `anas.dev/cli/v1` 信封，进度走 stderr JSONL；不得把 executor
   的内部协议直接透传；
-- 建议错误码：`module_command_not_found`、`module_command_unavailable`、
+- 当前错误码为：`module_command_not_found`、`module_command_unavailable`、
   `module_command_invalid_parameter`、`module_command_confirmation_required`、
   `module_command_busy`、`module_command_timeout`、`module_command_failed`、
   `module_command_protocol_error`。
@@ -313,9 +317,16 @@ anas module invoke MODULE COMMAND [-w WORKSPACE] [--param NAME=VALUE]... [-y] [-
 `anasd` 不执行 `anas module invoke --json` 子进程，而是调用同一个
 `application.ModuleCommandService`：
 
+当前已实现的只读端点：
+
 ```text
 GET  /api/v1/workspaces/{ws}/modules/{module}/commands
 GET  /api/v1/workspaces/{ws}/modules/{module}/commands/{command}
+```
+
+认证、授权、job 与审计基础设施完成后才可实现的提案端点：
+
+```text
 POST /api/v1/workspaces/{ws}/modules/{module}/commands/{command}/actions/invoke
 ```
 
@@ -376,9 +387,11 @@ POST body：
 - Module 包是受信代码边界，但“包已签名”不代表所有命令都可由所有管理员执行；anasd 仍需按 mode、
   risk 和未来的 command-level role policy 授权与审计。
 
-## 12. Forgejo / Incus 命令集建议
+## 12. Forgejo / Incus 命令集提案
 
-Forgejo 首批命令建议拆成两组，明确不同权限来源：
+> 状态：**提案，当前不可执行**。发布条件和验收进度见实施计划 M4。
+
+Forgejo 首批命令拆成两组，分别使用不同权限来源：
 
 | 命令 | mode / risk | 语义 | 所需权限 |
 | --- | --- | --- | --- |
@@ -388,7 +401,7 @@ Forgejo 首批命令建议拆成两组，明确不同权限来源：
 | `incus-daemon-start` | change / normal | 启动远程 incusd，等待 API ready 后执行 doctor | 单独的 service start 权限 |
 | `incus-daemon-stop` | change / destructive | 先阻止新作业并 drain；确认无 managed VM 后停止，`force` 需二次确认 | 单独的 service stop 权限 |
 
-不建议发布 `incus exec`、`incus config`、`systemctl` 或 `ssh` 透传命令。若 daemon 在 ANAS 本机，使用
+不得发布 `incus exec`、`incus config`、`systemctl` 或 `ssh` 透传命令。若 daemon 在 ANAS 本机，使用
 Core named helper；若在设计要求的独立 KVM 宿主，Forgejo executor 应使用固定远程 service-manager
 协议或受限 SSH subsystem，并在 Forgejo requirement matrix 中单独定义凭据创建、轮换、撤销和恢复。
 
@@ -406,27 +419,16 @@ VM、执行 daemon stop、返回最终可验证状态。它不能只是把 `syst
 - deployment 必须保存完整 descriptor、executor 相对路径和摘要，使旧 deployment 在源码升级后仍能发现
   与执行原来的命令。
 
-## 14. 推荐实施顺序
+## 14. 演进边界
 
-1. 先建立配对的 `docs/requirements/module-command-capability.md` 与
-   `docs/plans/module-command-capability.md`，给发现、校验、安全、CLI、HTTP 和 Forgejo 场景分配稳定
-   requirement ID；本报告不代替验收矩阵。
-2. 扩展 manifest/Module/deployment model、严格校验、artifact 冻结和包预编译，先只做发现测试。
-3. 在 `internal/application` 实现 list/describe/invoke、参数复用、EventSink、context、锁与 fake executor；
-   再接 `anas module commands|invoke`，保持 CLI v1 信封不变。
-4. M0 可先接只读 OpenAPI list/detail；anasd 认证、角色、job、审计与可取消锁完成后再接 invoke，
-   不得在当前 M0 直接开放写入口。
-5. 最后给 Forgejo 增加 `incus-doctor` 与 `incus-runner-reconcile`；远程 daemon start/stop 只有在独立
-   maintenance credential 和真实 KVM E2E 完成后发布。
-
-最低验证应覆盖 manifest unknown-field/重复 ID/类型错误、descriptor 冻结、摘要篡改、CLI/HTTP 同一
-service、secret 不出现在 DTO/job/log、确认与授权、锁冲突、context 取消、executor 协议畸形/超限、
-幂等重放、daemon 重启 unknown outcome，以及 Forgejo 独立 Incus/KVM E2E。
+未落地部分只有两组：anasd 认证后的 invoke/job，以及 Forgejo/Incus 命令和独立 KVM 宿主验收。
+二者都必须继续满足本文的共享应用服务、最小权限、冻结制品、脱敏和 fail-closed 决策；具体里程碑、
+阻塞项与验证记录只在[实施计划](/plans/module-command-capability)中更新，本文不复制阶段进度。
 
 ## 15. 最终决策摘要
 
 采用“声明式 Module Command”，不采用 Core 特判 Forgejo、任意 shell/argv、动态插件注册或 CLI
 子进程桥接。v1 只从活动 deployment 执行冻结 executor，参数复用现有类型系统，secret 只按声明从
-Secret Store 注入；CLI 同步调用共享应用服务，anasd 通过同一服务创建 job。Forgejo 的 runner project
-维护与 incusd daemon 启停必须分开授权，后者在没有最小权限维护通道前保持不可用，而不是借用
-controller certificate 或扩大 anasd 权限。
+Secret Store 注入；CLI 已同步调用共享应用服务，anasd 的未来 job 也必须使用同一服务。Forgejo 的
+runner project 维护与 incusd daemon 启停必须分开授权，后者在没有最小权限维护通道前保持不可用，
+不能借用 controller certificate 或扩大 anasd 权限。

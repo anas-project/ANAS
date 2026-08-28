@@ -8,7 +8,7 @@ updated: 2026-08-23
 # Module 专属命令能力实施计划
 
 验收依据是[Module 专属命令能力要求](/requirements/module-command-capability)的需求矩阵，现状分析和
-协议草案见[Module 专属命令能力现状与设计](/research/module-command-capability-design)。M1/M2 已完成；
+架构决策见[Module 专属命令能力设计](/architecture/module-command-capability-design)。M1/M2 已完成；
 当前下一里程碑是 M3，但受 anasd 认证/job 基础设施约束，M4 受独立 Incus/KVM 宿主约束。
 
 ## 1. 需求归属与状态

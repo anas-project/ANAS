@@ -8,7 +8,7 @@ updated: 2026-08-23
 # Module 专属命令能力要求
 
 本文规定 Module 发布管理员可调用命令时的声明、发现、执行、安全和适配器边界。现状分析与设计理由见
-[Module 专属命令能力现状与设计](/research/module-command-capability-design)，实施顺序见
+[Module 专属命令能力设计](/architecture/module-command-capability-design)，实施顺序见
 [Module 专属命令能力实施计划](/plans/module-command-capability)。本文的需求矩阵是验收规范来源。
 
 ## 1. 产品边界

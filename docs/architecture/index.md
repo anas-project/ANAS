@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | [Core 实现标准](core-implementation-standard.md) | 强制架构标准 | Core/Module 参数所有权、禁止特判和通用扩展路径 |
 | [Module、Contract 与 Resource](module-contract-resource-design.md) | 当前模型 | 独立发布单元、跨模块协议、持久资源及 Provider operation |
+| [Module 专属命令能力设计](module-command-capability-design.md) | 当前模型与明确标注的演进方案 | 命令发现、类型化参数、CLI/anasd 共享调用与执行边界 |
 | [管理员账号系统](admin-account-system.md) | 当前模型与路线图 | 目录管理员、应用角色、本地账号、Secret 与 CLI 生命周期 |
 | [Samba AD 用户、组命名与权限规划](samba-ad-user-planning.md) | 当前目录与权限规范 | 目录结构、部门/角色/应用/资源组命名、账号分类与权限矩阵 |
 | [IAM 能力](iam-capability-design.md) | 当前模型 | IAM provider、OIDC/SAML 协议选择、绑定与双向登出注册 |
