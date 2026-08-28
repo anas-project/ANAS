@@ -52,7 +52,7 @@ func TestRunGeneratesAndChecksCatalog(t *testing.T) {
 
 func TestRunRejectsStaleRequirementDigest(t *testing.T) {
 	root := writeFixture(t, "e2e", "DEMO-T-001, DEMO-T-002")
-	path := filepath.Join(root, "docs", "requirements", "demo.md")
+	path := filepath.Join(root, "dev-docs", "requirements", "demo.md")
 	changed := strings.Replace(fixtureRequirements, "返回可观察结果", "返回新的可观察结果", 1)
 	if err := os.WriteFile(path, []byte(changed), 0o644); err != nil {
 		t.Fatal(err)
@@ -164,8 +164,8 @@ func writeFixture(t *testing.T, secondLevel, markerIDs string) string {
 	t.Helper()
 	root := t.TempDir()
 	for _, dir := range []string{
-		"docs/requirements",
-		"docs/plans",
+		"dev-docs/requirements",
+		"dev-docs/plans",
 		"test-env/cases/demo",
 		"impl",
 	} {
@@ -179,8 +179,8 @@ func writeFixture(t *testing.T, secondLevel, markerIDs string) string {
 			t.Fatal(err)
 		}
 	}
-	write("docs/requirements/demo.md", fixtureRequirements)
-	write("docs/plans/demo.md", "# Demo plan\n")
+	write("dev-docs/requirements/demo.md", fixtureRequirements)
+	write("dev-docs/plans/demo.md", "# Demo plan\n")
 	write("package.json", `{"scripts":{}}`)
 	write("impl/catalog_test.go", "package impl\n\n// TEST_CASES: "+markerIDs+"\n")
 
@@ -197,8 +197,8 @@ func writeFixture(t *testing.T, secondLevel, markerIDs string) string {
 	catalog := `api_version: anas.test-cases/v1
 topic: demo
 title: Demo cases
-requirement_document: docs/requirements/demo.md
-plan_document: docs/plans/demo.md
+requirement_document: dev-docs/requirements/demo.md
+plan_document: dev-docs/plans/demo.md
 requirement_scope:
   - DEMO-R-001
   - DEMO-R-002

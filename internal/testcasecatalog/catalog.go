@@ -251,13 +251,16 @@ func validateCatalog(root string, catalog *Catalog, allCases map[string]*TestCas
 	if strings.TrimSpace(catalog.Title) == "" {
 		add("title is required")
 	}
-	wantRequirement := filepath.ToSlash(filepath.Join("docs", "requirements", catalog.Topic+".md"))
-	wantPlan := filepath.ToSlash(filepath.Join("docs", "plans", catalog.Topic+".md"))
+	wantRequirement := filepath.ToSlash(filepath.Join("dev-docs", "requirements", catalog.Topic+".md"))
+	wantPlan := filepath.ToSlash(filepath.Join("dev-docs", "plans", catalog.Topic+".md"))
+	// A topic whose milestones are all done has its plan archived. The pairing
+	// still has to find it; it is simply no longer an active plan.
+	wantArchivedPlan := filepath.ToSlash(filepath.Join("dev-docs", "plans", "archived", catalog.Topic+".md"))
 	if catalog.RequirementDocument != wantRequirement {
 		add("requirement_document must be %q", wantRequirement)
 	}
-	if catalog.PlanDocument != wantPlan {
-		add("plan_document must be %q", wantPlan)
+	if catalog.PlanDocument != wantPlan && catalog.PlanDocument != wantArchivedPlan {
+		add("plan_document must be %q or %q", wantPlan, wantArchivedPlan)
 	}
 	requirementPath, requirementErr := safeRepoPath(root, catalog.RequirementDocument)
 	if requirementErr != nil {

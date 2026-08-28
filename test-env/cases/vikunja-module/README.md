@@ -2,9 +2,9 @@
 
 # Vikunja Module 发布验收用例
 
-> 需求来源：[`vikunja-module.md`](../../../docs/requirements/vikunja-module.md)
+> 需求来源：[`vikunja-module.md`](../../../dev-docs/requirements/vikunja-module.md)
 >
-> 实施计划：[`vikunja-module.md`](../../../docs/plans/vikunja-module.md)
+> 实施计划：[`vikunja-module.md`](../../../dev-docs/plans/vikunja-module.md)
 > 本文由同目录 `cases.yml` 生成；修改用例后运行 `go run ./cmd/gen-test-case-docs`。
 
 ## 覆盖总览

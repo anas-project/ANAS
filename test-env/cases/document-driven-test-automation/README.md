@@ -2,9 +2,9 @@
 
 # 文档驱动测试自动化 M0 用例
 
-> 需求来源：[`document-driven-test-automation.md`](../../../docs/requirements/document-driven-test-automation.md)
+> 需求来源：[`document-driven-test-automation.md`](../../../dev-docs/requirements/document-driven-test-automation.md)
 >
-> 实施计划：[`document-driven-test-automation.md`](../../../docs/plans/document-driven-test-automation.md)
+> 实施计划：[`document-driven-test-automation.md`](../../../dev-docs/plans/document-driven-test-automation.md)
 > 本文由同目录 `cases.yml` 生成；修改用例后运行 `go run ./cmd/gen-test-case-docs`。
 
 ## 覆盖总览

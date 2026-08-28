@@ -1,8 +1,8 @@
 api_version: anas.test-cases/v1
 topic: meshcentral-oidc-only
 title: MeshCentral OIDC-only 验收用例
-requirement_document: docs/requirements/meshcentral-oidc-only.md
-plan_document: docs/plans/meshcentral-oidc-only.md
+requirement_document: dev-docs/requirements/meshcentral-oidc-only.md
+plan_document: dev-docs/plans/archived/meshcentral-oidc-only.md
 requirement_scope:
   - MCO-R-001
   - MCO-R-002

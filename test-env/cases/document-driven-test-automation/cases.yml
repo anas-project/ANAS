@@ -1,8 +1,8 @@
 api_version: anas.test-cases/v1
 topic: document-driven-test-automation
 title: 文档驱动测试自动化 M0 用例
-requirement_document: docs/requirements/document-driven-test-automation.md
-plan_document: docs/plans/document-driven-test-automation.md
+requirement_document: dev-docs/requirements/document-driven-test-automation.md
+plan_document: dev-docs/plans/document-driven-test-automation.md
 requirement_scope:
   - TESTAUTO-R-001
   - TESTAUTO-R-002

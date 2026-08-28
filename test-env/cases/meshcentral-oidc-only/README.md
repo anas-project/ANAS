@@ -2,9 +2,9 @@
 
 # MeshCentral OIDC-only 验收用例
 
-> 需求来源：[`meshcentral-oidc-only.md`](../../../docs/requirements/meshcentral-oidc-only.md)
+> 需求来源：[`meshcentral-oidc-only.md`](../../../dev-docs/requirements/meshcentral-oidc-only.md)
 >
-> 实施计划：[`meshcentral-oidc-only.md`](../../../docs/plans/meshcentral-oidc-only.md)
+> 实施计划：[`meshcentral-oidc-only.md`](../../../dev-docs/plans/archived/meshcentral-oidc-only.md)
 > 本文由同目录 `cases.yml` 生成；修改用例后运行 `go run ./cmd/gen-test-case-docs`。
 
 ## 覆盖总览

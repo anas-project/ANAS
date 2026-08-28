@@ -1,8 +1,8 @@
 api_version: anas.test-cases/v1
 topic: vikunja-module
 title: Vikunja Module 发布验收用例
-requirement_document: docs/requirements/vikunja-module.md
-plan_document: docs/plans/vikunja-module.md
+requirement_document: dev-docs/requirements/vikunja-module.md
+plan_document: dev-docs/plans/vikunja-module.md
 requirement_scope:
   - VIK-R-001
   - VIK-R-002
