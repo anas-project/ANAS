@@ -1,0 +1,132 @@
+# Gates every change to master. The other workflows are release-branch or
+# deploy paths: anas-release.yml only fires on anas-release, container-images.yml
+# only on image-release, and docs.yml only on pull requests and the deploy
+# trigger. master itself had no automated check, and roughly half of the changes
+# reaching it are local merges rather than pull requests, so this workflow runs
+# on both.
+#
+# Nothing here may need a Docker daemon, a real host, or the network: test-env/
+# integration scripts belong to a machine with those, and putting them in a
+# required gate keeps it permanently red.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  documentation-sources:
+    name: Documentation sources
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install dependencies
+        run: npm ci
+
+      # These are the checks that need no site build. docs.yml owns the build
+      # itself, and it only runs on pull requests and the deploy trigger, so
+      # keeping them here is what gives a direct push to master any coverage.
+      - name: Validate documentation sources
+        run: |
+          go run ./cmd/gen-module-docs --check
+          go run ./cmd/gen-contract-docs --check
+          npm run docs:test-versions
+          npm run docs:test-requirements
+          npm run docs:check-requirements
+          npm run docs:test-status
+          npm run docs:check-status
+          npm run docs:check-requirement-status
+          npm run docs:check-plan-status
+
+  scripts:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Each script builds its own Git fixture under mktemp, so none of them
+      # reads this repository's history and a shallow checkout is enough.
+      - name: Test release version calculator
+        run: bash scripts/ci/anas-release-version-test.sh
+
+      - name: Test installer
+        run: bash scripts/ci/install-test.sh
+
+      - name: Test release verifier
+        run: bash scripts/ci/verify-anas-release-test.sh
+
+      - name: Test module revision calculator
+        run: bash scripts/ci/module-revisions-test.sh
+
+      - name: Test container image scanner
+        run: bash scripts/ci/scan-image-test.sh
+
+  vulnerabilities:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+    # Reporting only for now. Turn this into a gate once the false-positive rate
+    # on this dependency set is known; a scanner that blocks merges from day one
+    # gets disabled instead of triaged.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Pinned, not @latest: an unpinned scanner changes what it reports without
+      # any commit in this repository, so a red run could not be traced to a
+      # change. Bump it deliberately.
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+
+      - name: Run govulncheck
+        run: govulncheck ./...

@@ -16,6 +16,7 @@ on:
       - "go.mod"
       - "go.sum"
       - "scripts/ci/runtime-image.sh"
+      - "scripts/ci/scan-image.sh"
       - "scripts/ci/install-crane.sh"
       - "scripts/ci/module-revisions.sh"
       - "scripts/ci/module-revisions-test.sh"
@@ -35,6 +36,7 @@ on:
       - "go.mod"
       - "go.sum"
       - "scripts/ci/runtime-image.sh"
+      - "scripts/ci/scan-image.sh"
       - "scripts/ci/install-crane.sh"
       - "scripts/ci/module-revisions.sh"
       - "scripts/ci/module-revisions-test.sh"
@@ -526,6 +528,17 @@ jobs:
           docker buildx imagetools inspect "$GHCR_IMAGE" >/dev/null
           docker buildx imagetools inspect "$CNB_IMAGE" >/dev/null
 
+      # Reporting only, and deliberately after publish rather than before: the
+      # image this scans is the one that shipped, and a scanner failure must not
+      # be able to abort a release. See scripts/ci/scan-image.sh for the switch
+      # that turns it into a gate.
+      - name: Scan the published image for known vulnerabilities
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+        run: bash scripts/ci/scan-image.sh "$GHCR_IMAGE"
+
   mirror:
     needs: prepare
     if: needs.prepare.outputs.mirror_count != '0'
@@ -622,6 +635,17 @@ jobs:
         run: |
           bash scripts/ci/runtime-image.sh validate "$GHCR_IMAGE" "${{ matrix.platforms }}"
           bash scripts/ci/runtime-image.sh validate "$CNB_IMAGE" "${{ matrix.platforms }}"
+
+      # Reporting only, and deliberately after publish rather than before: the
+      # image this scans is the one that shipped, and a scanner failure must not
+      # be able to abort a release. See scripts/ci/scan-image.sh for the switch
+      # that turns it into a gate.
+      - name: Scan the published image for known vulnerabilities
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ matrix.tag }}
+        run: bash scripts/ci/scan-image.sh "$GHCR_IMAGE"
 
   package:
     needs: [prepare, build, mirror]

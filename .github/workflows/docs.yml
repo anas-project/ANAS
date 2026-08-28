@@ -48,23 +48,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate documentation sources
-        run: |
-          go run ./cmd/gen-module-docs --check
-          go run ./cmd/gen-contract-docs --check
-          go test ./cmd/materialize-module-docs
-          npm run docs:test-requirements
-          npm run docs:check-requirements
-          npm run docs:test-status
-          npm run docs:check-status
-          npm run docs:check-requirement-status
-
+      # Source-consistency gates (generators, requirement coverage, status
+      # columns, version selection) live in ci.yml, which also runs on pushes to
+      # master. This workflow owns the part that needs an actual build: the dead
+      # link check that only VitePress can perform.
       - name: Build with VitePress
         env:
           DOCS_PUBLISH_RELEASES: ${{ (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch') && 'true' || 'false' }}
-        run: |
-          npm run docs:test-versions
-          npm run docs:build
+        run: npm run docs:build
 
       - name: Setup GitHub Pages
         id: pages
