@@ -2,14 +2,23 @@
 // document. Index pages are excluded: they list documents rather than describe
 // a design, so they have no implementation status of their own.
 
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { checkDocumentStatus, parseDocumentStatus } from './document-status-lib.mjs'
+import { requirementScopes } from './requirement-docs-lib.mjs'
 
-const directories = ['docs/architecture', 'docs/requirements', 'docs/plans']
+// Archived plans are included: a finished plan still has to say so at the top,
+// and its directory is exactly where a reader is most likely to mistake a
+// historical baseline for current instructions.
+const directories = ['docs/architecture']
+for (const { requirementsDir, plansDir, archivedPlansDir } of requirementScopes()) {
+  directories.push(requirementsDir, plansDir, archivedPlansDir)
+}
+
 const documents = []
 
 for (const directory of directories) {
+  if (!existsSync(directory)) continue
   for (const name of readdirSync(directory).sort()) {
     if (!name.endsWith('.md') || name === 'index.md') continue
     const path = join(directory, name)

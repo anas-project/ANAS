@@ -16,13 +16,19 @@
 - Preserve required facts, decisions, material caveats, verification results, and next actions. Omit repeated context, generic reassurance, unnecessary introductions, and optional background first.
 - Use headings, tables, and long explanations only when they materially improve comprehension or the user requests them.
 
-- Implementation work is driven by `docs/plans/<topic>.md`: it names the current milestone, the
+- Implementation work is driven by `dev-docs/plans/<topic>.md`: it names the current milestone, the
   verification commands, and what is blocked. Acceptance criteria are not in the plan — they live in
-  the paired `docs/requirements/<topic>.md` requirement matrix and are addressed by stable IDs.
+  the paired `dev-docs/requirements/<topic>.md` requirement matrix and are addressed by stable IDs.
   Keep the plan's checklist current as you work; `npm run docs:check-requirements` gates consistency.
-- The status column of `docs/requirements/index.md` is generated, not written: after changing a
+- Read `dev-docs/requirements/index.md` and `dev-docs/plans/index.md` before opening any document
+  under them. Both have a generated status column, so one screen tells you which documents are live
+  and which are finished; `dev-docs/plans/archived/` holds plans whose milestones are all done.
+- The status column of `dev-docs/requirements/index.md` is generated, not written: after changing a
   requirement matrix, a milestone status, or the set of requirement/plan documents, run
   `npm run docs:requirement-status`. `npm run docs:check-requirement-status` gates it in CI.
+  The plan index works the same way: `npm run docs:plan-status` regenerates it from each plan's
+  frontmatter `status` (`proposed` / `implementing` / `partial` / `done`), gated by
+  `npm run docs:check-plan-status`.
 
 ## Code reuse and dependencies
 

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -552,7 +553,7 @@ func renderModule(docsRoot string, build moduleBuild) error {
 }
 
 func renderUserPage(m manifest, release, ref, source string, versions []string, english, fixed bool) []byte {
-	body := rewriteUserLinks(source)
+	body := rewriteUserLinks(source, m.Name, ref)
 	return renderPage(m, release, ref, body, versions, english, fixed, false)
 }
 
@@ -609,9 +610,10 @@ func renderVersionNavigation(module, release string, versions []string, english,
 	return fmt.Sprintf("**%s：** `%s`（%s） · [%s](%s) · [%s](%stechnical)  \n**%s：** %s", label, release, mode, userLabel, pageBase, technicalLabel, pageBase, availableLabel, versionList)
 }
 
-func rewriteUserLinks(source string) string {
+func rewriteUserLinks(source, module, ref string) string {
 	source = strings.ReplaceAll(source, "](docs/technical.md)", "](./technical)")
 	source = strings.ReplaceAll(source, "](docs/technical.en.md)", "](./technical)")
+	source = rewriteRepositoryLinks(source, module, ref, "../../dev-docs/")
 	return strings.ReplaceAll(source, "](../../docs/", "](/")
 }
 
@@ -621,8 +623,24 @@ func rewriteTechnicalLinks(source, module, ref string, english bool) string {
 	re := regexp.MustCompile(`\]\(\.\./([^)]+)\)`)
 	return re.ReplaceAllStringFunc(source, func(match string) string {
 		parts := re.FindStringSubmatch(match)
-		return "](" + "https://github.com/anas-project/ANAS/blob/" + ref + "/modules/" + module + "/" + parts[1] + ")"
+		return "](" + repositoryBlobURL(ref, path.Join("modules", module, parts[1])) + ")"
 	})
+}
+
+// Development artefacts under dev-docs/ are repository-only: they are not part
+// of the documentation site, so a relative link into them would render as a dead
+// link on the published page. Point those at the repository instead, where the
+// file actually exists.
+func rewriteRepositoryLinks(source, module, ref, prefix string) string {
+	re := regexp.MustCompile(`\]\(` + regexp.QuoteMeta(prefix) + `([^)]+)\)`)
+	return re.ReplaceAllStringFunc(source, func(match string) string {
+		parts := re.FindStringSubmatch(match)
+		return "](" + repositoryBlobURL(ref, path.Join("modules", module, prefix+parts[1])) + ")"
+	})
+}
+
+func repositoryBlobURL(ref, repositoryPath string) string {
+	return "https://github.com/anas-project/ANAS/blob/" + ref + "/" + path.Clean(repositoryPath)
 }
 
 func renderAliasPage(title, source, target string, english bool) []byte {

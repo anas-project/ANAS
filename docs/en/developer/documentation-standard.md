@@ -1,6 +1,6 @@
 # Documentation standard
 
-This standard applies to every new or modified file under `docs/`. Identify the audience, document type, and source of truth before choosing a location or writing content.
+This standard applies to every new or modified file under `docs/` and `dev-docs/`. Identify the audience, document type, and source of truth before choosing a location or writing content.
 
 ## 1. Classify the document first
 
@@ -14,19 +14,61 @@ This standard applies to every new or modified file under `docs/`. Identify the 
 | `reference/contracts/` | Tool developers | Stable CLI, JSON, and file-format contracts |
 | `reference/module-contracts/` | Tool developers | Module Contract mirrors generated from `contracts/<name>/` |
 | `developer/` | Contributors | Repository, module, test, release, and documentation workflows |
-| `requirements/` | Product and architecture maintainers | Required outcomes, scope, hard constraints, and acceptance criteria |
 | `architecture/` | Maintainers | Current models, decisions, and explicitly marked proposals |
-| `plans/` | Implementation owners | Milestones, migration order, and remaining work for an agreed objective |
 | `research/` | Decision makers | External investigation, candidate comparison, and technical selection |
-| `reviews/` | Maintainers and reviewers | Reviews and assessments tied to a date, version, or commit baseline |
 | `governance/` | Community | Project policy, registrations, and governance material |
 
 Do not duplicate an entire topic across categories. A guide explains how, a reference lists what, and architecture explains why; connect them with links.
+
+### Development artefacts live outside `docs/`
+
+Requirements, implementation plans, and point-in-time reviews are development
+artefacts rather than material for people deploying ANAS, so they are not part of
+the documentation site. They live in `dev-docs/` at the repository root, beside
+`contracts/` and `modules/`:
+
+| Directory | Primary audience | Content |
+| --- | --- | --- |
+| `dev-docs/requirements/` | Product and architecture maintainers | Required outcomes, scope, hard constraints, and acceptance criteria |
+| `dev-docs/plans/` | Implementation owners | Milestones, migration order, and remaining work for an agreed objective |
+| `dev-docs/reviews/` | Maintainers and reviewers | Reviews and assessments tied to a date, version, or commit baseline |
+
+Requirements and plans private to one Module live in `modules/<name>/dev-docs/`;
+only ANAS-wide or cross-Module topics belong in the repository-level `dev-docs/`.
+The test is whether the constraint the document states still means anything once
+that Module is removed. A topic must not exist in both locations;
+`npm run docs:check-requirements` gates that.
+
+These three categories are **not mirrored in English**. They are development
+artefacts read by contributors, and they are maintained in Chinese only.
+Plans declare their state in frontmatter, with `status` limited to `proposed`,
+`implementing`, `partial`, or `done`. The body may still carry a quote block with
+detail for the reader, but frontmatter is the only machine-readable source, and
+`npm run docs:check-plan-status` gates the index column against it. A plan whose
+milestones are all done moves to `dev-docs/plans/archived/`; its requirement
+document stays where it is, because an implemented requirement is a regression
+baseline rather than history.
+
+
+`dev-docs/` is read on GitHub and is never rendered by the site. Links inside it
+use repository-relative paths; links from `docs/` into it use the full repository
+URL (`https://github.com/anas-project/ANAS/blob/master/dev-docs/...`), because a
+relative path there fails the site build as a dead link.
+
+**When a site page cites a conclusion from `dev-docs/`, state the conclusion on the
+page and keep the link only as the source.** A site page has to stand on its own: a
+reader should never have to leave the site and open an unpublished development
+artefact to understand a rule. State the conclusion, then close with one sentence
+naming the normative source and saying it wins on conflict — do not let "see X"
+stand in for the conclusion itself. Because the source wins, the summary should carry
+the criteria and boundaries rather than copy whole paragraphs; copying creates a
+second body of text to keep in sync.
 
 ## 2. Chinese and English
 
 - Changes to user-facing `getting-started`, `guide`, `operations`, and core `reference` pages must update the matching English page under `/en/`.
 - Mirrors use the same relative path and section structure.
+- Requirements, plans, and reviews under `dev-docs/` are development artefacts kept in Chinese only; the bilingual rule does not apply to them.
 - AI agents, generators, and other automation follow the same rule: create or update the Chinese page and its `docs/en/` mirror in one task. Never leave translation to a later task after generating a single-language page.
 - A generator must treat both language files as one atomic output set. Its `--check` mode fails when either file is missing or stale, and every new generated page needs tests and sidebar entries for both languages.
 - Chinese is currently the source language for detailed architecture. When a full translation is not practical, update the English architecture or research index with an accurate summary and link to the Chinese source.
@@ -58,7 +100,7 @@ Mark proposed commands as unavailable. Explain the boundary when historical and 
 
 - Use lowercase kebab-case filenames such as `backup-and-restore.md`; use `index.md` for section landing pages.
 - Use stable topic-based filenames under `research/`, such as `self-hosted-git-services-research.md`. Never put the creation date, update date, or evidence cutoff in a research filename; update the existing page in place.
-- Only incident records and historical snapshots under `reviews/` use `YYYY-MM-DD-topic.md`. That prefix is the event or review baseline, not the page creation or last-edit date.
+- Only incident records and historical snapshots under `dev-docs/reviews/` use `YYYY-MM-DD-topic.md`. That prefix is the event or review baseline, not the page creation or last-edit date.
 - Requirements, architecture, plans, guides, operations, development, and reference pages use stable filenames. Record plan status and target dates inside the page or its frontmatter.
 - Use one level-one heading per page and do not skip heading levels.
 - Start with the audience and outcome. Put prerequisites before state-changing steps.

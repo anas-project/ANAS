@@ -1,7 +1,7 @@
 // Consistency checks between a requirement matrix and the plan that delivers it.
 //
-// The matrix in docs/requirements/<topic>.md is the normative source: one row per
-// requirement, each with a stable ID. The plan in docs/plans/<topic>.md assigns
+// The matrix in <scope>/requirements/<topic>.md is the normative source: one row per
+// requirement, each with a stable ID. The plan in <scope>/plans/<topic>.md assigns
 // every ID to a milestone and records e2e evidence. Nothing keeps the two in step
 // on its own -- a requirement added to the matrix but never assigned is simply
 // never delivered, and it looks fine in review because both documents read well

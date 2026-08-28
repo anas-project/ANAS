@@ -1,34 +1,42 @@
 // Checks every requirement matrix against the plan that delivers it.
 //
-// Pairing is by filename: docs/requirements/<topic>.md is delivered by
-// docs/plans/<topic>.md. A requirement document without a matrix is skipped --
+// Pairing is by filename: dev-docs/requirements/<topic>.md is delivered by
+// dev-docs/plans/<topic>.md, and a Module-private topic pairs the same way under
+// modules/<name>/dev-docs/. A requirement document without a matrix is skipped --
 // not every document has adopted IDs yet -- but one that has a matrix and no
 // paired plan is an error, because nothing would ever schedule its requirements.
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, existsSync } from 'node:fs'
 import {
   parseRequirementMatrix,
   parseMilestoneAssignments,
   parseE2eRecords,
   checkRequirementCoverage
 } from './requirement-coverage-lib.mjs'
+import { collectRequirementDocuments, requirementScopes } from './requirement-docs-lib.mjs'
 
-const requirementsDir = 'docs/requirements'
-const plansDir = 'docs/plans'
+const { documents, errors: locationErrors } = collectRequirementDocuments(requirementScopes())
 
-const failures = []
+const failures = [...locationErrors]
 let checkedDocuments = 0
 let checkedRequirements = 0
 
-for (const name of readdirSync(requirementsDir).sort()) {
-  if (!name.endsWith('.md') || name === 'index.md') continue
+const archivedTopics = []
 
-  const requirementPath = join(requirementsDir, name)
+for (const { requirementPath, planPath, archived } of documents) {
   const matrix = parseRequirementMatrix(readFileSync(requirementPath, 'utf8'))
   if (matrix.requirements.length === 0) continue
 
-  const planPath = join(plansDir, name)
+  // An archived plan's assignment table is a record of what was delivered, not a
+  // schedule. Holding it to the consistency rules would force edits to a
+  // finished document every time the matrix gains a regression note. The topics
+  // are listed rather than dropped, because a silently unchecked document is how
+  // the drift this gate exists to catch gets in.
+  if (archived) {
+    archivedTopics.push(`${requirementPath} ↔ ${planPath}`)
+    continue
+  }
+
   if (!existsSync(planPath)) {
     failures.push(`${requirementPath}: 有需求矩阵但缺少配套计划 ${planPath}`)
     continue
@@ -51,7 +59,7 @@ for (const name of readdirSync(requirementsDir).sort()) {
   }
 
   const retiredNote = retired > 0 ? `，另有 ${retired} 项已废弃` : ''
-  console.log(`${name}: ${checked} 项需求全部有归属，e2e 记录一致${retiredNote}`)
+  console.log(`${requirementPath}: ${checked} 项需求全部有归属，e2e 记录一致${retiredNote}`)
 }
 
 if (failures.length > 0) {
@@ -62,6 +70,11 @@ if (failures.length > 0) {
     '\n新增或废弃需求时同步更新计划文档的实现检查表。'
   )
   process.exit(1)
+}
+
+if (archivedTopics.length > 0) {
+  console.log(`\n已归档主题（计划已完成，不参与一致性校验）：${archivedTopics.length} 份`)
+  for (const line of archivedTopics) console.log(`  ${line}`)
 }
 
 if (checkedDocuments === 0) {

@@ -128,8 +128,26 @@ func TestRewriteTechnicalLinksUsesImmutableRef(t *testing.T) {
 }
 
 func TestRewriteUserLinksMapsRepositoryDocsIntoSite(t *testing.T) {
-	got := rewriteUserLinks("[support](../../docs/reference/module-iam-support.md#password)")
+	got := rewriteUserLinks("[support](../../docs/reference/module-iam-support.md#password)", "demo", "deadbeef")
 	want := "[support](/reference/module-iam-support.md#password)"
+	if got != want {
+		t.Fatalf("rewritten link = %q, want %q", got, want)
+	}
+}
+
+// dev-docs/ is not part of the site, so a relative link into it must leave the
+// page pointing at the repository rather than at a path VitePress cannot resolve.
+func TestRewriteUserLinksSendsDevDocsToRepository(t *testing.T) {
+	got := rewriteUserLinks("[requirements](../../dev-docs/requirements/demo.md)", "demo", "deadbeef")
+	want := "[requirements](https://github.com/anas-project/ANAS/blob/deadbeef/dev-docs/requirements/demo.md)"
+	if got != want {
+		t.Fatalf("rewritten link = %q, want %q", got, want)
+	}
+}
+
+func TestRewriteTechnicalLinksNormalizesParentSegments(t *testing.T) {
+	got := rewriteTechnicalLinks("[plan](../../../dev-docs/plans/demo.md)", "demo", "deadbeef", false)
+	want := "[plan](https://github.com/anas-project/ANAS/blob/deadbeef/dev-docs/plans/demo.md)"
 	if got != want {
 		t.Fatalf("rewritten link = %q, want %q", got, want)
 	}

@@ -35,7 +35,8 @@ features:
 - 第一次使用：从[快速开始](/getting-started/quick-start)开始。
 - 已经运行 ANAS：查看[使用指南](/guide/)和[运维文档](/operations/)。
 - 开发 Module 或 Runner：查看[开发者指南](/developer/)和[架构设计](/architecture/)。
-- 参与产品和技术决策：分别查看[需求与验收](/requirements/)、[研究与选型](/research/)、
-  [实施计划](/plans/)和[评审与历史快照](/reviews/)。
+- 参与产品和技术决策：查看[研究与选型](/research/)。需求、实施计划和时间点评审是开发过程工件，
+  不在本站发布，见仓库的
+  [`dev-docs/`](https://github.com/anas-project/ANAS/tree/master/dev-docs)。
 
 `docs/` 中只保留持续维护且可以公开发布的内容。带主机地址、临时凭据或单次验证过程的记录应放在受控的 Issue、CI artifact 或外部私有系统中；稳定结论再整理进当前指南、参考或设计文档。

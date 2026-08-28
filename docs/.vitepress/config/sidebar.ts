@@ -147,59 +147,6 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       ]
     }
   ],
-  '/requirements/': [
-    {
-      text: '需求与验收标准',
-      items: [
-        { text: '索引', link: '/requirements/' },
-        { text: 'IAM Provider 准入要求', link: '/requirements/iam-provider' },
-        { text: 'Changelog 要求', link: '/requirements/changelog' },
-        { text: 'Web API 与管理前端要求', link: '/requirements/web-api-admin-console' },
-        { text: 'Forgejo Module 集成要求', link: '/requirements/forgejo-module' },
-        { text: 'Vikunja Module 集成要求', link: '/requirements/vikunja-module' },
-        { text: 'VersityGW S3 Module', link: '/requirements/versitygw-module' },
-        { text: 'Incus compute Provider', link: '/requirements/incus-module' },
-        { text: 'Module IAM 双向登出', link: '/requirements/module-iam-bidirectional-logout' },
-        { text: '需求 ID 矩阵采用范围', link: '/requirements/requirement-id-adoption' },
-        { text: '文档驱动测试自动化', link: '/requirements/document-driven-test-automation' },
-        { text: '条件 Capability 依赖', link: '/requirements/conditional-capability-dependency' },
-        { text: '无序 Capability 依赖', link: '/requirements/weak-capability-dependency' }
-      ]
-    }
-  ],
-  '/plans/': [
-    {
-      text: '实施计划',
-      items: [
-        { text: '索引', link: '/plans/' },
-        { text: '应用域与 AD 域分离', link: '/plans/domain-separation' },
-        { text: 'Changelog', link: '/plans/changelog' },
-        { text: 'Web API 与管理前端', link: '/plans/web-api-admin-console' },
-        { text: 'workspace 与备份', link: '/plans/workspace-backup' },
-        { text: 'Forgejo Module', link: '/plans/forgejo-module' },
-        { text: 'VersityGW S3 Module', link: '/plans/versitygw-module' },
-        { text: 'Incus compute Provider', link: '/plans/incus-module' },
-        { text: 'Module IAM 双向登出', link: '/plans/module-iam-bidirectional-logout' },
-        { text: '需求 ID 矩阵采用', link: '/plans/requirement-id-adoption' },
-        { text: '文档驱动测试自动化', link: '/plans/document-driven-test-automation' },
-        { text: '条件 Capability 依赖', link: '/plans/conditional-capability-dependency' },
-        { text: '无序 Capability 依赖', link: '/plans/weak-capability-dependency' }
-      ]
-    }
-  ],
-  '/reviews/': [
-    {
-      text: '评审与历史快照',
-      items: [
-        { text: '索引', link: '/reviews/' },
-        { text: '综合项目审计与整改状态', link: '/reviews/2026-08-23-comprehensive-project-audit' },
-        { text: 'Vikunja Module 设计符合性', link: '/reviews/2026-08-21-vikunja-module-design-compliance' },
-        { text: 'Module 分类与访问边界', link: '/reviews/2026-08-19-module-classification' },
-        { text: 'Module 镜像升级评估', link: '/reviews/2026-07-29-module-image-upgrade' },
-        { text: '设计问题审查', link: '/reviews/2026-07-19-design-review' }
-      ]
-    }
-  ],
   '/governance/': [
     {
       text: '项目治理',
@@ -312,22 +259,13 @@ export const enSidebar: DefaultTheme.Sidebar = {
       ]
     }
   ],
-  '/en/requirements/': [
+  '/en/governance/': [
     {
-      text: 'Requirements',
-      items: [{ text: 'Overview', link: '/en/requirements/' }]
-    }
-  ],
-  '/en/plans/': [
-    {
-      text: 'Implementation plans',
-      items: [{ text: 'Overview', link: '/en/plans/' }]
-    }
-  ],
-  '/en/reviews/': [
-    {
-      text: 'Reviews',
-      items: [{ text: 'Overview', link: '/en/reviews/' }]
+      text: 'Project governance',
+      items: [
+        { text: 'Overview', link: '/en/governance/' },
+        { text: 'IANA PEN application', link: '/en/governance/iana-pen-application' }
+      ]
     }
   ]
 }

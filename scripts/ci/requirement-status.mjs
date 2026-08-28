@@ -1,25 +1,34 @@
-// Generates the status column of docs/requirements/index.md from the documents
-// themselves, so nobody maintains a completion figure by hand.
+// Generates the status column of dev-docs/requirements/index.md from the
+// documents themselves, so nobody maintains a completion figure by hand.
+//
+// Only the repository-level scope is rendered: Module-private requirements under
+// modules/<name>/dev-docs/ belong to that Module's own index, not to this one.
+// The coverage gate still checks them.
 //
 // Run with --check in CI to fail when the checked-in column differs from the
 // calculation, the same contract gen-module-docs uses for its parameter tables.
 
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { documentStatus, renderIndex, missingRows, milestoneStates } from './requirement-status-lib.mjs'
+import { collectRequirementDocuments, requirementScopes, repositoryScopeLabel } from './requirement-docs-lib.mjs'
 
-const requirementsDir = 'docs/requirements'
-const plansDir = 'docs/plans'
+const requirementsDir = 'dev-docs/requirements'
 const indexPath = join(requirementsDir, 'index.md')
 
 const rows = new Map()
 const errors = []
 
-for (const name of readdirSync(requirementsDir).sort()) {
-  if (!name.endsWith('.md') || name === 'index.md') continue
-  const planPath = join(plansDir, name)
+const { documents, errors: locationErrors } = collectRequirementDocuments(requirementScopes())
+errors.push(...locationErrors)
+
+// An archived plan still carries the milestone table this column is computed
+// from, so archiving a finished topic must not blank out its completion figure.
+for (const { scope, topic, requirementPath, planPath } of documents) {
+  if (scope !== repositoryScopeLabel) continue
+  const name = `${topic}.md`
   const status = documentStatus(
-    readFileSync(join(requirementsDir, name), 'utf8'),
+    readFileSync(requirementPath, 'utf8'),
     existsSync(planPath) ? readFileSync(planPath, 'utf8') : null
   )
   if (status.kind === 'bad-state') {
@@ -31,7 +40,7 @@ for (const name of readdirSync(requirementsDir).sort()) {
   }
   if (status.kind === 'unassigned') {
     errors.push(
-      `${join(requirementsDir, name)}: ${status.unassigned} 项需求没有里程碑归属，` +
+      `${requirementPath}: ${status.unassigned} 项需求没有里程碑归属，` +
       '先跑 npm run docs:check-requirements'
     )
     continue

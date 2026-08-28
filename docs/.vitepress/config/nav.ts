@@ -11,9 +11,6 @@ export const zhNav: DefaultTheme.NavItem[] = [
     text: '项目资料',
     items: [
       { text: '研究与选型', link: '/research/' },
-      { text: '需求与验收', link: '/requirements/' },
-      { text: '实施计划', link: '/plans/' },
-      { text: '评审与历史快照', link: '/reviews/' },
       { text: '项目治理', link: '/governance/' }
     ]
   }
@@ -30,9 +27,7 @@ export const enNav: DefaultTheme.NavItem[] = [
     text: 'Project',
     items: [
       { text: 'Research', link: '/en/research/' },
-      { text: 'Requirements', link: '/en/requirements/' },
-      { text: 'Implementation plans', link: '/en/plans/' },
-      { text: 'Reviews', link: '/en/reviews/' }
+      { text: 'Governance', link: '/en/governance/' }
     ]
   }
 ]

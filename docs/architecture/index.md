@@ -1,8 +1,8 @@
 # ANAS 功能设计
 
 本目录包含当前架构说明、设计决策和明确标注的演进方案。实现状态以代码、Module manifest
-和 `docs/reference/contracts/` 为准；外部调研、需求、实施计划和时间点评审分别放在
-`docs/research/`、`docs/requirements/`、`docs/plans/` 和 `docs/reviews/`。
+和 `docs/reference/contracts/` 为准；外部调研放在 `docs/research/`，需求、实施计划和时间点评审
+是开发过程工件，放在仓库根的 `dev-docs/`，不在本站发布。
 
 | 文档 | 类型 | 范围 |
 | --- | --- | --- |
@@ -25,4 +25,4 @@
 
 设计文档出现“建议”“未来”或“提案”时，不应当成可执行命令。用户操作以使用指南和参考契约为准。
 
-跨分类入口：[需求与验收](/requirements/) · [实施计划](/plans/) · [研究与选型](/research/) · [评审与历史快照](/reviews/)
+跨分类入口：[研究与选型](/research/) · [开发过程工件](https://github.com/anas-project/ANAS/tree/master/dev-docs)
