@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# TEST_CASES: MCO-T-002
 set -euo pipefail
 
 # Exercise the complete browser-facing Authentik authorization-code flow for

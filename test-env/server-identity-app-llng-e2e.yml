@@ -19,21 +19,10 @@ global:
   email: admin@llng.nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
-env:
-  CONTAINER_PREFIX: anas_llng_
-  NETWORK_PREFIX: anas_llng_
-  CHINESE_SPEEDUP: "true"
-  CHINESE_BUILD_SPEEDUP: "true"
-  APT_MIRROR_URL: https://mirrors.aliyun.com
-  APK_MIRROR_URL: https://mirrors.aliyun.com
-  NPM_REGISTRY_URL: https://registry.npmmirror.com
-  DOCKER_SOCKET_PATH: /run/anas-llng-docker.sock
-  NETWORK_NAMESPACE_PATH: /run/netns/anas-llng
-  HOST_IP: 10.253.0.2
-  INTERFACE: anas-l-peer
-  DEFAULT_GATEWAY_IP: 10.253.0.1
-  HOST_SUBNET_MASK: "24"
-  LOCAL_DNS_SERVER: 10.253.0.2
-  SAMBA_DC_HOST_IP: 10.253.0.2
-  SAMBA_DC_INTERFACES: anas-l-peer
-  SAMBA_DC_ANCHOR_SCAN_INTERVAL: "300"
+  container_prefix: anas_llng_
+  network_prefix: anas_llng_
+  host_ip: 10.253.0.2
+  host_lan_ip: 10.253.0.250
+  host_lan_bridge_ip: 10.253.0.249
+  chinese_speedup: true
+  chinese_build_speedup: true

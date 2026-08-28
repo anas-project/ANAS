@@ -14,6 +14,7 @@
 | [Incus compute Provider](incus-module.md) | `incus` Provider Module、多消费者隔离、Forgejo 迁移与真实宿主验收；验收依据见[要求](/requirements/incus-module) | 未开始 |
 | [Forgejo Module](forgejo-module.md) | 安全开关、Incus compute、单作业 Runner 与发布门禁 | 部分实施 |
 | [Vikunja Module](vikunja-module.md) | 多架构、双数据库、双 IAM、恢复、凭据轮换与负载发布验收 | 实施中 |
+| [MeshCentral OIDC-only](meshcentral-oidc-only.md) | 服务端密码拒绝、双 IAM 真实 OIDC 与账号映射验收 | 已完成 |
 | [需求 ID 矩阵采用](requirement-id-adoption.md) | 门禁豁免清单、双向登出矩阵与迁移后扫描边界；验收依据见[要求](/requirements/requirement-id-adoption) | 未开始 |
 | [文档驱动测试自动化](document-driven-test-automation.md) | Agent 生成完整测试、需求/用例/代码溯源、SSH 一键服务器执行与报告 | 提案 |
 

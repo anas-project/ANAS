@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# TEST_CASES: MCO-T-002, MCO-T-003
 
 # Shared browser-facing assertions for every IAM provider's MeshCentral E2E.
 # The caller supplies its curl wrapper so provider-specific DNS and cookie

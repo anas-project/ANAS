@@ -17,21 +17,10 @@ global:
   email: admin@nas.test
   timezone: Asia/Shanghai
   virtual_domain: true
-env:
-  CONTAINER_PREFIX: anas_anchor_
-  NETWORK_PREFIX: anas_anchor_
-  CHINESE_SPEEDUP: "true"
-  CHINESE_BUILD_SPEEDUP: "true"
-  APT_MIRROR_URL: https://mirrors.aliyun.com
-  APK_MIRROR_URL: https://mirrors.aliyun.com
-  NPM_REGISTRY_URL: https://registry.npmmirror.com
-  DOCKER_SOCKET_PATH: /run/anas-anchor-docker.sock
-  NETWORK_NAMESPACE_PATH: /run/netns/anas-anchor
-  HOST_IP: 10.252.0.2
-  INTERFACE: anas-a-peer
-  DEFAULT_GATEWAY_IP: 10.252.0.1
-  HOST_SUBNET_MASK: "24"
-  LOCAL_DNS_SERVER: 10.252.0.2
-  SAMBA_DC_HOST_IP: 10.252.0.2
-  SAMBA_DC_INTERFACES: anas-a-peer
-  SAMBA_DC_ANCHOR_SCAN_INTERVAL: "300"
+  container_prefix: anas_anchor_
+  network_prefix: anas_anchor_
+  host_ip: 10.252.0.2
+  host_lan_ip: 10.252.0.250
+  host_lan_bridge_ip: 10.252.0.249
+  chinese_speedup: true
+  chinese_build_speedup: true
