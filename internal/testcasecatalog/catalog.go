@@ -511,7 +511,12 @@ func scanImplementationMarkers(root string) (map[string]map[string]bool, error) 
 		}
 		if entry.IsDir() {
 			name := entry.Name()
-			if name == ".git" || name == "node_modules" || name == "reports" || name == ".vitepress" {
+			// .anas-test holds rendered deployments produced by the local test
+			// suite, and a rendered deployment contains a copy of every module's
+			// source. Scanning it reports each marker a second time under a path
+			// no catalog will ever list, so a developer who has run the tests sees
+			// the gate fail on files they did not write.
+			if name == ".git" || name == "node_modules" || name == "reports" || name == ".vitepress" || name == ".anas-test" {
 				return filepath.SkipDir
 			}
 			return nil
