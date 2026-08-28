@@ -20,6 +20,13 @@ const (
 	capabilityObjectStorage = "object_storage"
 )
 
+// Ordering vocabulary for a capability dependency. Both values keep the provider
+// mandatory; they differ only in whether resolution must place it first.
+const (
+	orderingBefore = "before"
+	orderingAny    = "any"
+)
+
 const (
 	interfaceOIDC = topologyschema.IAMProtocolOIDC
 	interfaceSAML = topologyschema.IAMProtocolSAML
@@ -186,7 +193,98 @@ func (a *app) resolveCapabilityDependency(moduleName string, mod Module, dep Req
 	}
 	a.resolvedBindings[moduleName][dep.Name] = provider
 	a.resolvedBindings[moduleName][dep.Name+".interface"] = iface
+	// A conditional dependency records the switch that produced it, in the same
+	// place and the same shape as the interface it resolved to. Without it the
+	// only visible effect of flipping an optional service on is that an
+	// unrelated module appears in the deployment, and neither `plan` nor a lock
+	// error can say which parameter asked for it.
+	if dep.EnabledBy != "" {
+		a.resolvedBindings[moduleName][dep.Name+".enabled_by"] = dep.EnabledBy
+	}
 	return provider, nil
+}
+
+// calculateEnvFor is the environment a module's calculate Hook may read.
+//
+// calculate is the privileged stage and normally receives all of a.env
+// (internal/runner/hook.go documents why). An unordered dependency punches one
+// hole in that: its provider may not have run yet, so anything the provider owns
+// is present or absent depending on where resolution happened to place it. A
+// Hook reading such a key would work on the author's machine and fail on a
+// deployment whose topology sorted differently.
+//
+// Removing those keys turns the race into a stable absence. The Hook breaks the
+// first time it runs instead of the first time someone else runs it, and the
+// consumer is pushed to read the value at render time, where the second pass
+// makes it deterministic.
+//
+// Ownership is the right filter rather than the provider's prefix: a provider
+// publishes through config.exports as well, and applyCalculatePatch records
+// every key it writes under the module's name either way.
+func (a *app) calculateEnvFor(name string) map[string]string {
+	providers := a.unorderedProvidersFor(name)
+	if len(providers) == 0 {
+		return a.env
+	}
+	out := make(map[string]string, len(a.env))
+	for key, value := range a.env {
+		if owner, tracked := a.envOwner[key]; tracked && providers[owner] {
+			continue
+		}
+		out[key] = value
+	}
+	return out
+}
+
+// unorderedProvidersFor names the modules this one depends on without requiring
+// them to resolve first. It reads the binding recorded during resolution rather
+// than re-selecting, so it cannot disagree with the order that was produced.
+func (a *app) unorderedProvidersFor(name string) map[string]bool {
+	out := map[string]bool{}
+	for _, dep := range a.reg[name].RequiresCapabilities {
+		if dep.Ordering != orderingAny {
+			continue
+		}
+		if provider := a.resolvedBindings[name][dep.Name]; provider != "" {
+			out[provider] = true
+		}
+	}
+	return out
+}
+
+// conditionalPullReason explains why a module is in the deployment when nothing
+// selected it directly: some consumer's optional service asked for a capability
+// it provides. It reads the binding record rather than keeping a second map, so
+// the explanation cannot drift from the resolution that produced it.
+//
+// Empty means no conditional dependency accounts for this module, which is the
+// ordinary case and must stay silent -- an explanation offered for a module the
+// operator chose themselves would be noise at best and wrong at worst.
+func (a *app) conditionalPullReason(provider string) string {
+	consumers := make([]string, 0, len(a.resolvedBindings))
+	for consumer := range a.resolvedBindings {
+		consumers = append(consumers, consumer)
+	}
+	sort.Strings(consumers)
+	for _, consumer := range consumers {
+		bindings := a.resolvedBindings[consumer]
+		capabilities := make([]string, 0, len(bindings))
+		for key := range bindings {
+			capabilities = append(capabilities, key)
+		}
+		sort.Strings(capabilities)
+		for _, capability := range capabilities {
+			if strings.Contains(capability, ".") || bindings[capability] != provider {
+				continue
+			}
+			parameter, ok := bindings[capability+".enabled_by"]
+			if !ok {
+				continue
+			}
+			return fmt.Sprintf("%s.%s is on, which requires a %s provider", consumer, parameter, capability)
+		}
+	}
+	return ""
 }
 
 // selectCapabilityProvider applies the capability's selection policy.
@@ -807,7 +905,7 @@ func normalizeProvidedCapabilities(module string, in []manifestProvidedCapabilit
 	return out, nil
 }
 
-func normalizeRequiredCapabilities(module string, in []manifestRequiredCapability) ([]RequiredCapability, error) {
+func normalizeRequiredCapabilities(module string, in []manifestRequiredCapability, types map[string]ParamType) ([]RequiredCapability, error) {
 	out := []RequiredCapability{}
 	seen := map[string]bool{}
 	for _, capability := range in {
@@ -849,11 +947,109 @@ func normalizeRequiredCapabilities(module string, in []manifestRequiredCapabilit
 					module, name, item, strings.Join(anyOf, ","))
 			}
 		}
+		enabledBy, err := normalizeCapabilityCondition(module, name, capability.EnabledBy, types)
+		if err != nil {
+			return nil, err
+		}
+		ordering, err := normalizeCapabilityOrdering(module, name, capability.Ordering)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, RequiredCapability{
 			Name: name, InterfaceSelectedBy: selectedBy, AnyOf: anyOf, Prefer: prefer,
+			EnabledBy: enabledBy, Ordering: ordering,
 		})
 	}
 	return out, nil
+}
+
+// normalizeCapabilityCondition admits only a boolean parameter this same module
+// declares. The three rejections are not stylistic:
+//
+// A parameter belonging to another module, or a raw environment key, could not
+// be evaluated where this condition is read: the dependency graph is built
+// before any other module's values are known.
+//
+// A parameter absent from config.types would be a name nobody validates, and a
+// misspelled name here does not fail loudly -- it silently evaluates to false,
+// which for the first consumer of this field means an authentication gateway
+// quietly disappearing.
+//
+// A non-boolean parameter would need a truthiness rule, and every truthiness
+// rule turns some legitimate value into an accidental false for the same silent
+// consequence.
+func normalizeCapabilityCondition(module, capability, declared string, types map[string]ParamType) (string, error) {
+	parameter := strings.ToLower(strings.TrimSpace(declared))
+	if parameter == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(parameter, "global.") || isEnvKey(declared) {
+		return "", fmt.Errorf("module %q requires_capabilities %q enabled_by %q must name a parameter of this module, not a global or environment key",
+			module, capability, declared)
+	}
+	if !configParameterNamePattern.MatchString(parameter) {
+		return "", fmt.Errorf("module %q requires_capabilities %q enabled_by %q is not lower-snake-case",
+			module, capability, declared)
+	}
+	declaredType, ok := types[parameter]
+	if !ok {
+		return "", fmt.Errorf("module %q requires_capabilities %q enabled_by %q is not declared in config.types",
+			module, capability, parameter)
+	}
+	if strings.TrimSpace(declaredType.Kind) != "bool" {
+		return "", fmt.Errorf("module %q requires_capabilities %q enabled_by %q must be a bool parameter",
+			module, capability, parameter)
+	}
+	return parameter, nil
+}
+
+// normalizeCapabilityOrdering closes the vocabulary to two values so a typo can
+// never be read as the permissive one. Absent means orderingBefore, which is why
+// every existing declaration keeps its behaviour untouched.
+func normalizeCapabilityOrdering(module, capability, declared string) (string, error) {
+	value := strings.ToLower(strings.TrimSpace(declared))
+	switch value {
+	case "":
+		return orderingBefore, nil
+	case orderingBefore:
+		return orderingBefore, nil
+	case orderingAny:
+	default:
+		return "", fmt.Errorf("module %q requires_capabilities %q ordering %q must be %s or %s",
+			module, capability, declared, orderingBefore, orderingAny)
+	}
+	// A capability with a registered output ABI is projected into the consumer's
+	// binding namespace only after the provider's calculate Hook, and those keys
+	// belong to the consumer rather than the provider -- so dropping the ordering
+	// edge would make them present or absent by luck, and the ownership filter
+	// that protects the provider's own keys would not notice. Refusing the pair
+	// keeps that from being a silent hole; making the projection order-free is a
+	// separate piece of work.
+	if len(capabilityDefinitions[capability].Outputs) > 0 {
+		return "", fmt.Errorf("module %q requires_capabilities %q cannot use ordering %s: %s publishes a projected output ABI, which is only available after its provider resolves",
+			module, capability, orderingAny, capability)
+	}
+	return orderingAny, nil
+}
+
+// capabilityRequired evaluates a conditional dependency's condition.
+//
+// It reads the declared default itself rather than trusting a.env to carry it,
+// because it cannot: applyModuleDefaults runs after resolveOrder and iterates
+// the resolved order, so at this point a.env holds only values the operator
+// wrote down. Reading a.env alone would make an unset parameter look empty --
+// false for a switch whose declared default is true, and vice versa once such a
+// module exists.
+func (a *app) capabilityRequired(moduleName string, mod Module, dep RequiredCapability) bool {
+	if dep.EnabledBy == "" {
+		return true
+	}
+	key := paramEnvKey(moduleName, mod.EnvPrefix, dep.EnabledBy)
+	value := strings.TrimSpace(a.env[key])
+	if value == "" {
+		value = strings.TrimSpace(mod.Defaults[key])
+	}
+	return strings.EqualFold(value, "true")
 }
 
 // normalizeInterfaceList lowercases and de-duplicates protocol identifiers,

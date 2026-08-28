@@ -636,6 +636,14 @@ func validateLockedModuleBundles(a *app, lock *moduleLock) error {
 	for _, name := range a.order {
 		record, ok := lock.Modules[name]
 		if !ok {
+			// "run anas lock" is actionable only once the operator knows why the
+			// module is here at all. Turning on a database console and being told
+			// the lock is missing an authentication proxy reads like a bug unless
+			// the sentence names the switch that pulled it in.
+			if reason := a.conditionalPullReason(name); reason != "" {
+				return &lockedResolutionError{message: fmt.Sprintf(
+					"config lock has no module %q; it entered this deployment because %s; run anas lock", name, reason)}
+			}
 			return &lockedResolutionError{message: fmt.Sprintf("config lock has no module %q; run anas lock", name)}
 		}
 		if record.Version != a.reg[name].Version || record.Revision != a.reg[name].Revision {

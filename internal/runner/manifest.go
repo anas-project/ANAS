@@ -152,6 +152,19 @@ type manifestRequiredCapability struct {
 	Name                string                       `yaml:"name"`
 	InterfaceSelectedBy string                       `yaml:"interface_selected_by"`
 	Interfaces          manifestCapabilityInterfaces `yaml:"interfaces"`
+	// EnabledBy names a boolean parameter of this same module. Absent means the
+	// dependency is unconditional; present means it exists only while that
+	// parameter is true. It is spelled like services.optional[].enabled_by
+	// because it is the same idea at the same granularity -- one of this
+	// module's own switches deciding whether an optional piece exists.
+	EnabledBy string `yaml:"enabled_by"`
+	// Ordering says whether the provider has to be resolved before this module.
+	// "before" (the default) is an ordinary dependency; "any" keeps the provider
+	// mandatory but stops it contributing an ordering edge, which is what lets a
+	// gateway guard the very database its own identity provider runs on. The
+	// field names what is given up rather than calling the dependency weak: the
+	// provider is still required, so "weak" would describe the wrong half.
+	Ordering string `yaml:"ordering"`
 }
 
 type manifestCapabilityInterfaces struct {
@@ -952,7 +965,7 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if err != nil {
 		return Module{}, err
 	}
-	requiresCapabilities, err := normalizeRequiredCapabilities(dirname, manifest.Dependencies.RequiresCapabilities)
+	requiresCapabilities, err := normalizeRequiredCapabilities(dirname, manifest.Dependencies.RequiresCapabilities, types)
 	if err != nil {
 		return Module{}, err
 	}

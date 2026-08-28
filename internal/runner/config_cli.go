@@ -178,7 +178,12 @@ func runConfig(args []string, jsonMode bool) error {
 		if err := setManagedConfigScalar(workspace, *cfgPath, target.YAMLPath, normalizedValue, preserveText, reg); err != nil {
 			var lockMismatch *lockedResolutionError
 			if errors.As(err, &lockMismatch) {
-				return preconditionErrorf("lock_stale", "%s", err.Error())
+				// The generic advice is to run `anas lock`, but this command can
+				// do it in one step. A parameter that changes which Modules
+				// resolve is the case where an operator most needs to be told
+				// that, because nothing about setting a value suggests the lock
+				// is involved.
+				return preconditionErrorf("lock_stale", "%s, or rerun this command with --update-lock", err.Error())
 			}
 			var lockFile *configCandidateLockFileError
 			if errors.As(err, &lockFile) {

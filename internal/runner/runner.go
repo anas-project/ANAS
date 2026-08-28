@@ -797,6 +797,11 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 	}
 	seen := map[string]bool{}
 	temp := map[string]bool{}
+	// Providers named only by unordered dependencies. In this resolver a module
+	// joins the deployment by being visited through an edge, so dropping the edge
+	// would drop the requirement too. Collecting them here keeps presence and
+	// ordering separable, which is the whole point of the field.
+	unordered := map[string]bool{}
 	resolvedDeps := map[string][]string{}
 	var out []string
 	var visit func(string) error
@@ -847,12 +852,29 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 			deps = append(deps, provider)
 		}
 		for _, dep := range mod.RequiresCapabilities {
+			// A condition decides whether the dependency exists, nothing else.
+			// Skipping the whole iteration is what makes that true: once past
+			// this line a conditional dependency and an unconditional one run
+			// the same code, so there is no second resolution path that could
+			// drift into treating one of them as merely advisory.
+			if !a.capabilityRequired(name, mod, dep) {
+				continue
+			}
 			provider, err := a.resolveCapabilityDependency(name, mod, dep)
 			if err != nil {
 				if canDeferUnresolvedBinding(a.allowUnresolvedInputBindings, err) {
 					continue
 				}
 				return err
+			}
+			// Resolution has already happened by this point, and deliberately so:
+			// an unordered dependency still fails when nothing provides it and
+			// still records its binding. Only the edge is withheld, which is what
+			// lets a gateway guard the database its own identity provider needs
+			// without the two of them forming a cycle.
+			if dep.Ordering == orderingAny {
+				unordered[provider] = true
+				continue
 			}
 			deps = append(deps, provider)
 		}
@@ -884,6 +906,28 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 		}
 		if err := visit(mod); err != nil {
 			return nil, err
+		}
+	}
+	// Draining these after the ordered traversal is what supplies presence
+	// without reintroducing the cycle: every module that named one is already
+	// resolved by now, so a path leading back to it terminates at once instead of
+	// re-entering an in-progress visit. The loop repeats because an unordered
+	// provider may name unordered providers of its own.
+	for {
+		pending := []string{}
+		for name := range unordered {
+			if !seen[name] {
+				pending = append(pending, name)
+			}
+		}
+		if len(pending) == 0 {
+			break
+		}
+		sort.Strings(pending)
+		for _, name := range pending {
+			if err := visit(name); err != nil {
+				return nil, err
+			}
 		}
 	}
 	a.deps = resolvedDeps
@@ -1099,7 +1143,7 @@ func (a *app) calculate() error {
 		if err := requireKeys(a.env, mod.preHookRequirements()); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
-		resp, err := a.runHook(mod, "calculate", a.releaseDirFor(name), a.localAdminHookEnv(name, a.env))
+		resp, err := a.runHook(mod, "calculate", a.releaseDirFor(name), a.localAdminHookEnv(name, a.calculateEnvFor(name)))
 		if err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
