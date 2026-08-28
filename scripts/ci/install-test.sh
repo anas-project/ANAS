@@ -136,5 +136,42 @@ if PATH="$fixture/bin:$PATH" \
   exit 1
 fi
 
+# README.md documents `curl ... | sh`, so a dropped connection hands sh a prefix of
+# this file. Every prefix must be inert: main() is invoked only from the last
+# line, so no truncation may install a binary, write a source preference, or call
+# setcap. Checking every cut point is what keeps a future top-level statement from
+# quietly reintroducing the half-installed system.
+truncation_root="$fixture/truncation"
+mkdir -p "$truncation_root"
+total_lines="$(wc -l <"$repo_root/install.sh")"
+for (( cut = 1; cut < total_lines; cut++ )); do
+  prefix="$truncation_root/install-$cut.sh"
+  head -n "$cut" "$repo_root/install.sh" >"$prefix"
+  target="$truncation_root/dir-$cut"
+  preference="$truncation_root/config-$cut/source"
+  mkdir -p "$target"
+  PATH="$fixture/bin:$PATH" \
+    ANAS_INSTALL_FIXTURE_ARCH=x86_64 \
+    ANAS_INSTALL_FIXTURE_RELEASE="$release_root" \
+    ANAS_INSTALL_SOURCE=github \
+    ANAS_INSTALL_DIR="$target" \
+    ANAS_SOURCE_CONFIG="$preference" \
+    sh "$prefix" >/dev/null 2>&1 || true
+  if [[ -n "$(ls -A "$target")" ]]; then
+    echo "install.sh truncated after line $cut installed something into $target" >&2
+    exit 1
+  fi
+  if [[ -e "$preference" ]]; then
+    echo "install.sh truncated after line $cut wrote the source preference" >&2
+    exit 1
+  fi
+done
+
+# The guarantee above rests entirely on main being invoked from the final line.
+if [[ "$(tail -n 1 "$repo_root/install.sh")" != 'main "$@"' ]]; then
+  echo 'install.sh must end with: main "$@"' >&2
+  exit 1
+fi
+
 sh -n "$repo_root/install.sh"
 echo "ANAS installer tests passed"
