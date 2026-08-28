@@ -89,6 +89,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '中国大陆构建与发行', link: '/developer/china-mainland-build-and-distribution' },
         { text: '需求编写规范', link: '/developer/requirement-authoring' },
         { text: '应用研究文档规范', link: '/developer/research-document-standard' },
+        { text: 'Changelog 规范', link: '/developer/changelog-standard' },
         { text: '文档写作标准', link: '/developer/documentation-standard' },
         { text: '文档站点', link: '/developer/documentation' }
       ]
@@ -141,6 +142,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: '索引', link: '/requirements/' },
         { text: 'IAM Provider 准入要求', link: '/requirements/iam-provider' },
+        { text: 'Changelog 要求', link: '/requirements/changelog' },
         { text: 'Web API 与管理前端要求', link: '/requirements/web-api-admin-console' },
         { text: 'Forgejo Module 集成要求', link: '/requirements/forgejo-module' },
         { text: 'Vikunja Module 集成要求', link: '/requirements/vikunja-module' },
@@ -158,7 +160,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: '索引', link: '/plans/' },
         { text: '应用域与 AD 域分离', link: '/plans/domain-separation' },
-        { text: 'Changelog', link: '/plans/changelog-rollout' },
+        { text: 'Changelog', link: '/plans/changelog' },
         { text: 'Web API 与管理前端', link: '/plans/web-api-admin-console' },
         { text: 'workspace 与备份', link: '/plans/workspace-backup' },
         { text: 'Forgejo Module', link: '/plans/forgejo-module' },
@@ -267,6 +269,7 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Module upgrade checklist', link: '/en/developer/module-upgrade-checklist' },
         { text: 'Testing', link: '/en/developer/testing' },
         { text: 'Image releases', link: '/en/developer/release' },
+        { text: 'Changelog standard', link: '/en/developer/changelog-standard' },
         { text: 'Documentation standard', link: '/en/developer/documentation-standard' },
         { text: 'Documentation site', link: '/en/developer/documentation' }
       ]

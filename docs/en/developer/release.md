@@ -6,6 +6,16 @@ bundles, derived container images, and pinned upstream mirrors are released toge
 `image-release`. The [Chinese release guide](../../developer/release.md) is the normative, detailed
 runbook.
 
+## Changelogs
+
+Both release lines process changelogs; the rules are in the [changelog standard](/en/developer/changelog-standard). Three points matter at release time:
+
+- **Unreleased content lives in `master.md`** — under `docs/changelog/` for Core and `modules/<name>/changelog/` for Modules, in Chinese and English. Whoever merges a branch back into `master` summarizes the user-visible changes it introduces; individual commits are not required to carry entries.
+- **The release pipeline performs the rename; do not rename locally.** The target filename depends on the release identity: a Module's `revision` is computed in `prepare` and the Core version by `scripts/ci/anas-release-version.sh`, neither of which exists before the release branch is pushed. The pipeline renames the file, recreates an empty `master.md`, and pushes the result back to `master`.
+- **Tidy up before pushing the release branch.** Read through the entries accumulated this round, merge duplicates, make wording consistent, and drop entries that were changed and then reverted. Entries summarized independently by separate branches are not guaranteed to be coherent.
+
+A release aborts and creates no tags when a component in the batch has no entries and was not classified as a repackage. Modules repackaged only because `shared_contexts`, the packager, or catalog entries changed are classified automatically and need no manual entry or waiver.
+
 ## ANAS Core
 
 The first automatic `.github/workflows/anas-release.yml` publication is `0.1.0`. Later automatic

@@ -20,8 +20,9 @@
 9. [文档写作标准](documentation-standard.md)
 10. [需求编写规范](requirement-authoring.md)
 11. [应用研究文档规范](research-document-standard.md)
-12. [中国大陆构建、镜像与 CNB 发行](china-mainland-build-and-distribution.md)
-13. [Module、Contract 与 Resource 设计](/architecture/module-contract-resource-design)
-14. [CLI JSON 契约](/reference/contracts/)
+12. [Changelog 规范](changelog-standard.md)
+13. [中国大陆构建、镜像与 CNB 发行](china-mainland-build-and-distribution.md)
+14. [Module、Contract 与 Resource 设计](/architecture/module-contract-resource-design)
+15. [CLI JSON 契约](/reference/contracts/)
 
 旧的 [AI Design Guide](/architecture/ai-design)仍包含大量实现入口，但新增设计应进入具体架构文档，而不是继续扩充一份总览。

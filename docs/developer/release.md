@@ -4,6 +4,16 @@ ANAS 有两条发布链路：Core 二进制从专用 `anas-release` 分支按自
 派生容器镜像和上游 mirror 从 `image-release` 按变更上下文发布。Module 与容器属于同一
 事务，不能单独留下一个引用不存在镜像的 bundle。
 
+## 变更记录
+
+两条发布链路都会处理变更记录，规则见[Changelog 规范](/developer/changelog-standard)。发布相关的三条要点：
+
+- **未发布内容写在 `master.md`。** Core 在 `docs/changelog/`，Module 在 `modules/<name>/changelog/`，中英文各一份。分支合并回 `master` 时由合并者总结该分支的用户可见变更，不要求每个提交都写。
+- **改名由发布流水线执行，不要在本地改。** 目标文件名依赖发布身份：Module 的 `revision` 由 `prepare` 阶段计算，Core 的版本号由 `scripts/ci/anas-release-version.sh` 计算，推送发布分支之前都还不存在。流水线改名后重建空的 `master.md`，并把结果推回 `master`。
+- **推发布分支之前先整理。** 通读本轮累积的条目，合并重复描述、统一措辞、删掉改了又回退的条目。各分支独立总结出来的条目不保证彼此协调。
+
+本批发布的组件缺少条目且未被归类为重新打包时，发布会中止且不打 tag。只因 `shared_contexts`、打包器或 catalog 条目变化而重新打包的 Module 自动归类，无需人工撰写或豁免。
+
 ## ANAS Core 发布
 
 工作流为 `.github/workflows/anas-release.yml`。第一次自动发布为 `0.1.0`；之后以最新的
