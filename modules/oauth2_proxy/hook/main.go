@@ -162,14 +162,9 @@ func registerIAMClient(e map[string]string, secrets *secretStore) error {
 	e[iamClientPrefix+"ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1,email:email:1"
 	e[iamClientPrefix+"DOMAIN"] = e["OAUTH2_PROXY_DOMAIN"]
 
-	groups := strings.TrimSpace(e["OAUTH2_PROXY_ALLOW_GROUPS"])
-	if groups == "" {
-		return fmt.Errorf("oauth2_proxy: allow_groups is empty, which would put an unrestricted gate in front of administrative interfaces;\nset modules.oauth2_proxy.config.allow_groups to at least one group")
-	}
-	// The administrator group's real name comes from the directory rather than
-	// being assumed, so renaming it there does not silently open the gate.
-	if admin := strings.TrimSpace(e["SAMBA_DC_ADMIN_GROUP_NAME"]); admin != "" {
-		groups = strings.ReplaceAll(groups, "Admins", admin)
+	groups, err := platformAdminGroup(e)
+	if err != nil {
+		return err
 	}
 	e[iamClientPrefix+"ALLOW_GROUPS"] = groups
 
@@ -183,6 +178,38 @@ func registerIAMClient(e map[string]string, secrets *secretStore) error {
 	}
 	e["OAUTH2_PROXY_COOKIE_SECRET"] = cookieSecret
 	return nil
+}
+
+// The contract's own name for the platform_admin group, used when no directory
+// Module is deployed to name it. Every other consumer of the role falls back to
+// the same literal.
+const platformAdminGroupFallback = "Admins"
+
+// platformAdminGroup resolves the platform_admin role to the physical group name
+// for this consumption point.
+//
+// It is deliberately not a parameter. Everything behind this gate is an
+// administrative interface, so widening it is never a deployment choice: one
+// edit would widen every gated service at once -- Adminer among them -- and
+// nothing would report it. The application catalogue design settles this: an
+// entry declares a semantic role, and the Runner resolves that role to physical
+// facts. For a forward_auth entry the fact is the administrator group's name.
+//
+// The directory Module is the authority on that name, so renaming the group
+// there moves the gate with it instead of silently opening it.
+func platformAdminGroup(e map[string]string) (string, error) {
+	group := strings.TrimSpace(e["SAMBA_DC_ADMIN_GROUP_NAME"])
+	if group == "" {
+		group = strings.TrimSpace(platformAdminGroupFallback)
+	}
+	// Fail closed. The fallback makes this unreachable today; it is here so that
+	// a later change to the resolution cannot turn an administrative gate into an
+	// open one without saying so. An empty allow list is not a permissive
+	// default, it is no gate at all.
+	if group == "" {
+		return "", fmt.Errorf("oauth2_proxy: the platform_admin role resolved to no group, which would put an unrestricted gate in front of administrative interfaces;\ndeploy a directory Module so SAMBA_DC_ADMIN_GROUP_NAME names the administrator group")
+	}
+	return group, nil
 }
 
 func readIAMBinding(e map[string]string) error {

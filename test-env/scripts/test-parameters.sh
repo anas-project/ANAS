@@ -140,7 +140,6 @@ constraint_cases = {
     "eturnal.port": {"minimum": 1, "maximum": 65535},
     "samba_dc.max_log_size": {"minimum": 1},
     "casdoor.ldap_auto_sync_minutes": {"minimum": 1},
-    "oauth2_proxy.allow_groups": {"pattern": r"\S"},
 }
 for path, constraints in constraint_cases.items():
     assert by_path[path].get("constraints") == constraints, (

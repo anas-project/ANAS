@@ -24,7 +24,7 @@ type bundledSourceEvidence struct {
 
 func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	inventory := loadBundledParameterMetadata(t)
-	if got, want := len(inventory), 172; got != want {
+	if got, want := len(inventory), 171; got != want {
 		t.Fatalf("bundled parameter count = %d, want %d", got, want)
 	}
 
@@ -58,7 +58,6 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"versitygw.root_secret_key":      {MinLength: &minimumSecretLength, MaxLength: &maximumSecretLength},
 		"samba_dc.max_log_size":          {Minimum: &minimumOne},
 		"samba_dc.domain":                {Format: configschema.FormatDNSName},
-		"oauth2_proxy.allow_groups":      {Pattern: `\S`},
 		"vikunja.domain_prefix":          {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
 	}
 	gotConstraints := map[string]configschema.Constraints{}
@@ -211,14 +210,6 @@ func TestBundledParameterConstraintBoundaries(t *testing.T) {
 	}
 	if err := maxLogSize.Validate("0"); err == nil {
 		t.Error("samba_dc.max_log_size accepted 0, which disables Samba's reopen-after-rename behavior")
-	}
-
-	allowGroups := inventory["oauth2_proxy.allow_groups"].spec
-	if err := allowGroups.Validate("NAS Admins"); err != nil {
-		t.Errorf("oauth2_proxy.allow_groups rejected a non-empty group list: %v", err)
-	}
-	if err := allowGroups.Validate(" \t "); err == nil {
-		t.Error("oauth2_proxy.allow_groups accepted a whitespace-only administrative group list")
 	}
 
 	for _, path := range []string{"forgejo.domain_prefix", "versitygw.domain_prefix", "vikunja.domain_prefix"} {

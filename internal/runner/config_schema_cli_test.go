@@ -28,8 +28,8 @@ func TestConfigListProjectsCompleteParameterSchema(t *testing.T) {
 	}
 	document := requireSingleDocument(t, "config list schema", stdout)
 	raw, ok := document["parameters"].([]any)
-	if !ok || len(raw) != 172 {
-		t.Fatalf("parameters = %T len=%d, want 172", document["parameters"], len(raw))
+	if !ok || len(raw) != 171 {
+		t.Fatalf("parameters = %T len=%d, want 171", document["parameters"], len(raw))
 	}
 
 	byPath := map[string]map[string]any{}
@@ -228,7 +228,6 @@ func TestConfigInputValidationCoversRequiredAndConstraintBoundaries(t *testing.T
 		{path: "eturnal.port", value: "0", want: "at least 1"},
 		{path: "eturnal.port", value: "65536", want: "at most 65535"},
 		{path: "samba_dc.max_log_size", value: "0", want: "at least 1"},
-		{path: "oauth2_proxy.allow_groups", value: " \t ", want: "must match pattern"},
 	} {
 		target, err := resolveConfigTarget(test.path, reg)
 		if err != nil {

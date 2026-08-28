@@ -26,7 +26,6 @@
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `oauth2_proxy.allow_groups` | string | `pattern: \S` | `Admins` | `static` | `OAUTH2_PROXY_ALLOW_GROUPS` | 否 | 否 | 否 | 是 | `container_recreate` | 允许通过门禁的目录 Group |
 | `oauth2_proxy.domain_prefix` | string | — | `auth-gate` | `static` | `OAUTH2_PROXY_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
 | `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
 
@@ -34,7 +33,12 @@
 
 ## 身份与授权数据流
 
-自身不保存人员用户。它作为 OIDC Consumer 登录所选 IAM，并使用 `allow_groups` 限制访问。
+自身不保存人员用户。它作为 OIDC Consumer 登录所选 IAM，只放行管理员组的成员。
+
+**放行哪些 Group 不是参数。** 这道门后面全是管理界面，所以答案固定为 `platform_admin` 角色，
+Hook 把它解析成目录里管理员组的真实名称（`SAMBA_DC_ADMIN_GROUP_NAME`，没有目录 Module 时回落到
+契约名 `Admins`）。做成可配置意味着一次修改同时放宽所有受这道门保护的服务——包括 Adminer——而且
+没有任何提示。要让某个入口对非管理员开放，应扩展应用目录的 `audience` 词汇，而不是改宽这道门。
 
 ### 登出边界
 
@@ -44,7 +48,7 @@
 | --- | --- |
 | Directory / LDAPS | 不支持/不适用 |
 | IAM | oidc |
-| Group | `allow_groups` |
+| Group | `platform_admin` 角色（派生，不可配置） |
 | 目录密码回写 | 不支持/不适用 |
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。

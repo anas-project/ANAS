@@ -26,7 +26,6 @@ This page records the current implementation, security boundaries, and verificat
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `oauth2_proxy.allow_groups` | string | `pattern: \S` | `Admins` | `static` | `OAUTH2_PROXY_ALLOW_GROUPS` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `oauth2_proxy.domain_prefix` | string | — | `auth-gate` | `static` | `OAUTH2_PROXY_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
@@ -34,7 +33,16 @@ This page records the current implementation, security boundaries, and verificat
 
 ## Identity and authorization data flow
 
-It stores no human users. It is an OIDC consumer of the selected IAM and enforces `allow_groups`.
+It stores no human users. It is an OIDC consumer of the selected IAM and admits only members of the
+administrator group.
+
+**Which groups pass is not a parameter.** Everything behind this gate is an administrative interface,
+so the answer is fixed to the `platform_admin` role, which the hook resolves to the directory's real
+administrator group name (`SAMBA_DC_ADMIN_GROUP_NAME`, falling back to the contract name `Admins`
+when no directory module is deployed). Making it configurable would let one edit widen every service
+behind the gate at once -- Adminer included -- with nothing to announce it. To open an entry to
+non-administrators, extend the application catalogue's `audience` vocabulary instead of widening
+this gate.
 
 ### Logout boundary
 
@@ -44,7 +52,7 @@ Pinned `7.15.3` limits `/oauth2/sign_out` to clearing the oauth2-proxy gateway c
 | --- | --- |
 | Directory / LDAPS | unsupported/not applicable |
 | IAM | oidc |
-| Group | `allow_groups` |
+| Group | `platform_admin` role (derived, not configurable) |
 | Directory password writeback | unsupported/not applicable |
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.

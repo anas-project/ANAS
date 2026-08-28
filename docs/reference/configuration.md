@@ -1,19 +1,19 @@
 # `config.yml` 结构化配置与环境变量清单
 
 本文回答两个问题：哪些设置已经有 `config.yml` 的结构化入口，哪些设置目前只能写入
-顶层 `env:`。清单按 2026-08-22 的当前工作树统计；module 增删参数后应重新运行文末命令，
+顶层 `env:`。清单按 2026-08-28 的当前工作树统计；module 增删参数后应重新运行文末命令，
 不要把本文中的数字当成固定 ABI。
 
 ## 结论
 
-- `anas config list --json` 当前登记 **172** 个可设置参数：17 个 `global` 参数、155 个
+- `anas config list --json` 当前登记 **171** 个可设置参数：17 个 `global` 参数、154 个
   module 参数。
-- 155 个 module 参数中，151 个保存到 `modules.<module>.config.<parameter>`；4 个
+- 154 个 module 参数中，150 个保存到 `modules.<module>.config.<parameter>`；4 个
   `samba_fs` 参数虽然已经在 module manifest 中声明并拥有默认值、类型和变更策略，
   但为了导出裸环境变量，YAML 地址仍是 `env.<KEY>`。
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
-  上述 172 项。
+  上述 171 项。
 - 顶层 `env:` 是开放的 raw-env 逃生口，任意合法环境变量键都能写入（输入会规范为大写，
   并须匹配 `[A-Z_][A-Z0-9_]*`），所以“只能用环境变量”的总数
   理论上不可穷举。下文只列仓库当前明确使用、且没有结构化参数的用户覆盖项。
@@ -108,7 +108,7 @@ Compose project name，同时以该前缀生成容器名；例如默认配置下
 的前缀会生成另一组 project、容器名和跨容器地址，属于静态部署变更，不是现有资源的原地
 重命名；修改前必须先完成显式迁移或清理旧部署。
 
-## 已声明的 172 个参数
+## 已声明的 171 个参数
 
 表中参数都能被 `anas config list` 列出。普通可编辑参数可通过 `anas config set` 设置；
 `credential_rotate`、`data_migrate` 和 `immutable` 只用于 inventory/explain，必须执行专用流程。除特别说明
@@ -117,7 +117,7 @@ Compose project name，同时以该前缀生成容器名；例如默认配置下
 
 JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同时提供
 `allowed_values`。`unknown` 仅为旧 Module 或开发中声明不完整时保留的兼容值，内置 Module
-的 release 校验不允许它出现，因此本节 172 项的 `unknown` 数量为 0。
+的 release 校验不允许它出现，因此本节 171 项的 `unknown` 数量为 0。
 
 配置元数据把“操作者是否必须输入”和“解析后的值是否必须存在”分开：
 
@@ -147,11 +147,10 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 `default_source` 分布为 `static: 140`、`generated: 10`、`none: 8`、`runtime: 4`、`inherited: 7`、
 `host: 3`；`has_default: true` 与这 140 个 `static` 项严格对应。
 
-当前 23 项显式单字段约束是：`global.base_domain` 与 `samba_dc.domain` 的 DNS name format、
+当前 22 项显式单字段约束是：`global.base_domain` 与 `samba_dc.domain` 的 DNS name format、
 timezone、language/locale format，3 个 IPv4 format，
 `eturnal.port`、`forgejo.ssh_port`、`meshcentral.mps_port`、`traefik.base_port` 的 `1..65535`，
-`samba_dc.max_log_size >= 1`、`casdoor.ldap_auto_sync_minutes >= 1`、
-`oauth2_proxy.allow_groups` 至少包含一个非空白字符，`forgejo.domain_prefix`、
+`samba_dc.max_log_size >= 1`、`casdoor.ldap_auto_sync_minutes >= 1`、`forgejo.domain_prefix`、
 `forgejo.actions_incus_profile` 的 DNS label pattern、`forgejo.actions_runner_image` 的固定指纹 pattern、
 `versitygw.domain_prefix`、`vikunja.domain_prefix` 的 1..63 字符 DNS label pattern，以及
 VersityGW region、root access key 和 root secret 的字符/长度约束。
@@ -175,7 +174,7 @@ VersityGW region、root access key 和 root secret 的字符/长度约束。
 | `meshcentral` | 5 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `mps_port` |
 | `netbird` | 3 | `adminer_enabled`, `domain_prefix`, `iam_protocol` |
 | `nextcloud` | 13 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` |
-| `oauth2_proxy` | 3 | `allow_groups`, `domain_prefix`, `iam_protocol` |
+| `oauth2_proxy` | 2 | `domain_prefix`, `iam_protocol` |
 | `postgres` | 3 | `adminer_enabled`, `password`, `username` |
 | `samba_dc` | 40 | `admin_complex_pass`, `admin_lockout_duration`, `admin_lockout_reset_after`, `admin_lockout_threshold`, `admin_max_pass_age`, `admin_min_pass_age`, `admin_min_pass_length`, `admin_name`, `admin_password`, `admin_password_history`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `application_dns_mode`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `domain`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
 | `samba_fs` | 7 | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` |
@@ -206,12 +205,12 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 ## 参数会产生什么结果
 
 `anas config list --json` 是参数名、环境键、默认值和变更结果的权威机器可读清单。
-当前 155 个 Module 参数按 effect 统计如下；effect 表示**修改已有部署后必须完成的动作**，不是参数
+当前 154 个 Module 参数按 effect 统计如下；effect 表示**修改已有部署后必须完成的动作**，不是参数
 传输到 `.env` 就算应用成功。
 
 | effect | 数量 | 修改结果 |
 | --- | ---: | --- |
-| `container_recreate` | 102 | 重新渲染，并重建受影响容器或 Compose project |
+| `container_recreate` | 101 | 重新渲染，并重建受影响容器或 Compose project |
 | `credential_rotate` | 7 | 普通设置和替换导入会被拒绝，必须通过凭据轮换事务同步应用状态与 Secret Store |
 | `data_migrate` | 15 | 普通设置和部署激活会被阻断，必须先迁移持久数据、数据库或成员身份 |
 | `hot_reload` | 16 | 声明目标是 Samba 管理命令；当前执行器保守地生成新部署并对受影响容器执行 `down → up` |
@@ -291,7 +290,7 @@ Collabora、Nextcloud 和数据库镜像的保留设置都在 Hook、容器脚�
 | `meshcentral` | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `mps_port` | 生成数据库、OIDC/LDAP 配置、Web route 和 MPS 发布端口 |
 | `netbird` | `adminer_enabled`, `domain_prefix`, `iam_protocol` | 改变可选 service、NetBird URL 和 Runner 选择的 IAM interface |
 | `nextcloud` | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` | 生成安装/数据库环境，并由 `task.sh` 调和认证、locale、应用开关、PHP 限额和 skeleton 状态 |
-| `oauth2_proxy` | `allow_groups`, `domain_prefix`, `iam_protocol` | 生成 OIDC client、允许组、回调 URL 和 Traefik ForwardAuth middleware |
+| `oauth2_proxy` | `domain_prefix`, `iam_protocol` | 生成 OIDC client、回调 URL 和 Traefik ForwardAuth middleware；放行的组由 `platform_admin` 角色派生，不是参数 |
 | `postgres` | `adminer_enabled`, `password`, `username` | 改变可选 service；账号转换为上游初始化变量，并分别标记迁移/轮换语义 |
 | `samba_dc` | 表中 40 项 | 由 `domain` 生成 Realm/Base DN/Kerberos 身份，由 `application_dns_mode` 选择应用记录所在权威 zone，并生成 AD/BIND 配置、目录结构与三类 service account；普通用户域策略与管理员 PSO 均由参数生成，并声明为 `samba-tool` 热更新，但当前版本通过 deployment fallback 应用，身份/密码项走迁移或轮换保护 |
 | `samba_fs` | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` | 生成 member join、smb.conf、共享目录/ACL、guest 状态和 WSDD 广播 |
@@ -423,7 +422,7 @@ test-env/scripts/test-render.sh
 ```
 
 前者拒绝没有运行时消费者的声明参数；若消费者只存在于上游镜像，例外必须同时记录固定
-版本的上游源码证据。其余测试分别验证 172 项 inventory、类型完整性和废弃路径，七类
-effect 的真实 CLI→Hook→render→deployment→Compose/阻断边界，以及全部 172 个参数键在本轮新生成的
+版本的上游源码证据。其余测试分别验证 171 项 inventory、类型完整性和废弃路径，七类
+effect 的真实 CLI→Hook→render→deployment→Compose/阻断边界，以及全部 171 个参数键在本轮新生成的
 Module 部署产物中至少出现一次。`test-lifecycle.sh` 在真实 Docker 上进一步验证
 `container_recreate` 会更换容器 ID。

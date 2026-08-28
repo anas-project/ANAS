@@ -28,6 +28,12 @@ dependencies:
   # user database, so it is an ordinary OIDC client of whichever IAM is
   # selected. Group membership is enforced by the IAM through the existing
   # ANAS_IAM_CLIENT__*__ALLOW_GROUPS contract, so no group logic lives here.
+  #
+  # Which groups pass is not a parameter. Everything behind this gate is an
+  # administrative interface, so the answer is the platform_admin role, and the
+  # Hook resolves that to the directory's real administrator group name. Making
+  # it configurable would let one edit widen every gated service at once --
+  # Adminer included -- with nothing to announce it.
   requires_capabilities:
     - name: iam
       interface_selected_by: iam_protocol
@@ -45,22 +51,10 @@ config:
   defaults:
     domain_prefix: auth-gate
     iam_protocol: auto
-    # Only members of these groups may pass the gate. The default is the
-    # administrator group because the services behind this gate are
-    # administrative interfaces.
-    allow_groups: Admins
   types:
     domain_prefix: string
     iam_protocol:
       enum: [auto, oidc, saml]
-    # The runtime accepts a group list, which the current scalar type model
-    # cannot express without losing valid combinations. It can still enforce
-    # the unconditional safety rule that at least one non-whitespace character
-    # is present before the Hook registers an administrative access gate.
-    allow_groups:
-      kind: string
-      constraints:
-        pattern: '\S'
   # The middleware name protected modules attach to their routers, and the URL
   # of the gate itself.
   exports:

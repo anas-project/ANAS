@@ -39,7 +39,16 @@ identity:
 
 ## Identity, users, and groups
 
-It stores no human users. It is an OIDC consumer of the selected IAM and enforces `allow_groups`.
+It stores no human users. It is an OIDC consumer of the selected IAM and admits only members of the
+administrator group.
+
+**Which groups pass is not a parameter.** Everything behind this gate is an administrative interface,
+so the answer is fixed to the `platform_admin` role, which the hook resolves to the directory's real
+administrator group name (`SAMBA_DC_ADMIN_GROUP_NAME`, falling back to the contract name `Admins`
+when no directory module is deployed). Making it configurable would let one edit widen every service
+behind the gate at once -- Adminer included -- with nothing to announce it. To open an entry to
+non-administrators, extend the application catalogue's `audience` vocabulary instead of widening
+this gate.
 
 Pinned `7.15.3` guarantees only that `/oauth2/sign_out` clears the gateway cookie; the IAM cookie and any protected backend session are separate state. The module publishes no `OIDC_LOGOUT_*` fields and does not configure `backend-logout-url`, whose unbounded IAM request runs before cookie clearing. Local logout must therefore still succeed while IAM is down and the protected route must require authentication again, without claiming that the IAM or backend-business session ended.
 
@@ -47,7 +56,7 @@ Pinned `7.15.3` guarantees only that `/oauth2/sign_out` clears the gateway cooki
 | --- | --- |
 | Directory / LDAPS | unsupported/not applicable |
 | IAM | oidc |
-| Group | `allow_groups` |
+| Group | `platform_admin` role (derived, not configurable) |
 | Directory password writeback | unsupported/not applicable |
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
@@ -68,7 +77,6 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `oauth2_proxy.allow_groups` | string | `pattern: \S` | `Admins` | `static` | `OAUTH2_PROXY_ALLOW_GROUPS` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `oauth2_proxy.domain_prefix` | string | — | `auth-gate` | `static` | `OAUTH2_PROXY_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
@@ -76,8 +84,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 
 ```bash
 anas config list oauth2_proxy -w /srv/anas
-anas config explain oauth2_proxy.allow_groups
-anas config set oauth2_proxy.allow_groups Admins -w /srv/anas
+anas config explain oauth2_proxy.domain_prefix
 anas config plan -w /srv/anas
 ```
 

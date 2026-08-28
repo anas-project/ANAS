@@ -16,7 +16,7 @@
 
 本文是应用目录 schema、角色解析和 LLNG/Authentik Provider 映射的规范来源。Module 为什么
 归入基础支持、平台管理服务或用户应用，由
-[Module 分类与访问边界分析](../reviews/2026-08-19-module-classification.md)
+[Module 分类与访问边界分析](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-08-19-module-classification.md)
 说明；分类研究不重复定义本文字段。
 
 硬约束：
@@ -39,7 +39,7 @@
 
 ### 1.1 与 Module 三类模型的关系
 
-应用目录消费 [Module 分类与访问边界分析](../reviews/2026-08-19-module-classification.md)
+应用目录消费 [Module 分类与访问边界分析](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-08-19-module-classification.md)
 定义的主分类，但不把主分类直接翻译成授权：
 
 | Module 主分类 | 默认目录行为 | 例外 |
@@ -87,7 +87,7 @@ Module 只能保留已有列表并追加自己的 Module 名，聚合后的 `APP
 4. **图标机制脆弱。** LLNG 靠 `after_start` 的 `docker cp` 把
    `LOGO_PATH` 拷进容器 htdocs
    （[main.go:165](https://github.com/anas-project/ANAS/blob/master/modules/llng/hook/main.go#L165)）。这是命令式的：容器重建
-   后要重跑，路径依赖渲染产物位置——[2026-07-19-design-review.md](../reviews/2026-07-19-design-review.md)
+   后要重跑，路径依赖渲染产物位置——[2026-07-19-design-review.md](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-07-19-design-review.md)
    记录的就是 promote 后路径失效导致的启动破坏。Authentik 侧则完全没有图标。
 5. **展示元数据重复。** `module.yml` 已经有 `title`、`description`、`category`，
    Hook 里又硬编码了一份 `NAME`/`DESC`，两者可以漂移。
@@ -285,11 +285,13 @@ PostgreSQL 超级用户、MariaDB root 或 Consumer resource password，也不�
 
 因此管理员入口不得在 Manifest 或顶层外部链接中写 `allow_groups: Admins`，更不能写完整 DN。
 `ANAS_APP_ENTRY__*__ALLOW_GROUPS=Admins` 可以出现在 Runner 解析后的环境契约中，这是预期输出。
-当前 `oauth2_proxy.allow_groups` 仍是物理配置且默认 `Admins`；迁移期间 Runner 必须验证它与
-`platform_admin` 的解析结果一致，最终应由角色绑定派生而不是由用户重复维护。
+ForwardAuth 网关已经按这条规则运作：`oauth2_proxy` 不再有 `allow_groups` 参数，Hook 直接把
+`platform_admin` 解析成目录里管理员组的真实名称（`SAMBA_DC_ADMIN_GROUP_NAME`，没有目录 Module 时
+回落到契约名 `Admins`），解析不出组名即拒绝部署。这道门后面全是管理界面，放宽它从来不是部署选择：
+可配置意味着一次修改同时放宽所有受保护服务，而没有任何提示。
 
-截至本文版本，这些 launcher 字段仍是目标 schema，当前 Manifest parser、Adminer
-ForwardAuth 路由和角色派生尚未实现，不能把设计示例误读成已生效配置。
+截至本文版本，launcher 字段仍是目标 schema，Manifest parser 尚未实现，不能把设计示例误读成已生效
+配置；Adminer 的 ForwardAuth 路由与上述角色派生已经落地。
 
 `identity.application_group: true`（已存在）与 `launcher.publish` 是两件事：前者
 决定 Samba AD 里是否创建 `APP_<module>` 组，后者决定是否进门户。一个应用可以有组
@@ -411,7 +413,7 @@ Provider 在 `render_env` 里读到的永远是完整目录。这与 IAM 注册�
 
 - Runner 在渲染时把每个条目的图标收敛到产物内的 `apps/icons/<id>.<ext>`，并发布
   `ANAS_APP_ICONS_DIR` 指向 promote 之后的稳定路径。这正是
-  [2026-07-19-design-review.md](../reviews/2026-07-19-design-review.md) 里那个
+  [2026-07-19-design-review.md](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-07-19-design-review.md) 里那个
   "calculate 阶段用临时渲染路径构造持久值" 缺陷的正解。
 - Provider 的 compose 以只读 bind mount 挂载该目录，容器重建幂等，
   `after_start` 的 `copy_portal_logos` 整个删除。

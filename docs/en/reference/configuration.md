@@ -4,9 +4,9 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 
 ## Summary
 
-- `anas config list --json` currently declares **172** configurable parameters: 17 global and 155 module parameters.
-- 151 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
-- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 172 count.
+- `anas config list --json` currently declares **171** configurable parameters: 17 global and 154 module parameters.
+- 150 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
+- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 171 count.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
 
 “Structured” has two layers:
@@ -111,14 +111,14 @@ existing deployment creates a different set of projects, container names, and
 cross-container addresses. It is a static deployment change, not an in-place
 rename, so the old deployment must be explicitly migrated or removed first.
 
-## The 172 declared parameters
+## The 171 declared parameters
 
 Every entry below appears in `anas config list`. Ordinary editable parameters can be addressed by `anas config set`; `credential_rotate`, `data_migrate`, and `immutable` entries are inventory/explain-only and require their dedicated workflow. Global parameters use `global.<parameter>`; ordinary module parameters use `modules.<module>.config.<parameter>`.
 
 The JSON inventory reports `type` as `string`, `bool`, `int`, or `enum`; enum
 entries also provide `allowed_values`. `unknown` remains a compatibility value
 for legacy Modules and incomplete development declarations, but the built-in
-Module release gate rejects it, so all 172 entries in this inventory have an
+Module release gate rejects it, so all 171 entries in this inventory have an
 explicit type.
 
 Configuration metadata separates “the operator must enter a value” from “the
@@ -163,12 +163,11 @@ The `default_source` distribution is `static: 140`, `generated: 10`, `none: 8`,
 `runtime: 4`, `inherited: 7`, and `host: 3`. The 140 `has_default: true`
 entries are exactly the 140 `static` entries.
 
-The current 23 explicit single-field constraints cover the DNS-name formats
+The current 22 explicit single-field constraints cover the DNS-name formats
 for `global.base_domain` and `samba_dc.domain`, timezone and
 language/locale formats, three IPv4 formats, the `1..65535` ranges for
 `eturnal.port`, `forgejo.ssh_port`, `meshcentral.mps_port`, and `traefik.base_port`,
-`samba_dc.max_log_size >= 1`, `casdoor.ldap_auto_sync_minutes >= 1`, a non-whitespace requirement for
-`oauth2_proxy.allow_groups`; the 1..63-character DNS-label patterns for
+`samba_dc.max_log_size >= 1`, `casdoor.ldap_auto_sync_minutes >= 1`; the 1..63-character DNS-label patterns for
 `forgejo.domain_prefix`, `forgejo.actions_incus_profile`, `versitygw.domain_prefix`, and `vikunja.domain_prefix`;
 the pinned-fingerprint pattern for `forgejo.actions_runner_image`;
 and character/length constraints for the VersityGW region, root access key, and root secret.
@@ -193,7 +192,7 @@ cross-field relationships were not invented merely to populate the schema.
 | `meshcentral` | 5 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `mps_port` |
 | `netbird` | 3 | `adminer_enabled`, `domain_prefix`, `iam_protocol` |
 | `nextcloud` | 13 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` |
-| `oauth2_proxy` | 3 | `allow_groups`, `domain_prefix`, `iam_protocol` |
+| `oauth2_proxy` | 2 | `domain_prefix`, `iam_protocol` |
 | `postgres` | 3 | `adminer_enabled`, `password`, `username` |
 | `samba_dc` | 40 | `admin_complex_pass`, `admin_lockout_duration`, `admin_lockout_reset_after`, `admin_lockout_threshold`, `admin_max_pass_age`, `admin_min_pass_age`, `admin_min_pass_length`, `admin_name`, `admin_password`, `admin_password_history`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `application_dns_mode`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `domain`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
 | `samba_fs` | 7 | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` |
@@ -225,11 +224,11 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 
 ## What changing a parameter does
 
-`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. The 155 current Module parameters group by effect as follows. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
+`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. The 154 current Module parameters group by effect as follows. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
 
 | Effect | Count | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 102 | Re-render and recreate the affected container or Compose project |
+| `container_recreate` | 101 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 7 | Ordinary setting and replacement import are refused; use a credential-rotation transaction to update application state and the Secret Store together |
 | `data_migrate` | 15 | Ordinary setting and deployment activation are blocked until persistent data, a database, or membership is migrated |
 | `hot_reload` | 16 | The declared target is a Samba management command; the current executor conservatively creates a deployment and runs Compose `down → up` for the affected container |
@@ -302,7 +301,7 @@ The table below states what every owner's inputs ultimately change. Each named p
 | `meshcentral` | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `mps_port` | Generate database, OIDC/LDAP configuration, web route, and MPS published port |
 | `netbird` | `adminer_enabled`, `domain_prefix`, `iam_protocol` | Change the optional service, NetBird URLs, and Runner-selected IAM interface |
 | `nextcloud` | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` | Generate installation/database settings; `task.sh` reconciles authentication, locale, apps, PHP limits, and skeleton state |
-| `oauth2_proxy` | `allow_groups`, `domain_prefix`, `iam_protocol` | Generate the OIDC client, allowed groups, callback URL, and Traefik ForwardAuth middleware |
+| `oauth2_proxy` | `domain_prefix`, `iam_protocol` | Generate the OIDC client, callback URL, and Traefik ForwardAuth middleware; the admitted groups are derived from the `platform_admin` role rather than configured |
 | `postgres` | `adminer_enabled`, `password`, `username` | Change the optional service and translate credentials to upstream initialization variables with migration/rotation semantics |
 | `samba_dc` | The 40 entries in the inventory table | Use `domain` for Realm/Base-DN/Kerberos identity and `application_dns_mode` for the authoritative application-record zone, then generate AD/BIND configuration, directory structure, and three service accounts; both the domain user policy and privileged PSO are parameter-driven and declare a `samba-tool` hot reload but currently use the deployment fallback, while identity/password values remain migration/rotation guarded |
 | `samba_fs` | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` | Generate the member join, smb.conf, share directory/ACLs, guest state, and WSDD announcement |
@@ -413,4 +412,4 @@ test-env/scripts/test-parameter-effects.sh
 test-env/scripts/test-render.sh
 ```
 
-The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the 172-entry inventory, complete type declarations, and retired paths; the real CLI→hook→render→deployment→Compose/refusal boundary for all seven effects; and require every one of the 172 parameter keys to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.
+The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the 171-entry inventory, complete type declarations, and retired paths; the real CLI→hook→render→deployment→Compose/refusal boundary for all seven effects; and require every one of the 171 parameter keys to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.
