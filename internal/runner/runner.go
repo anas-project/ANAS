@@ -1418,7 +1418,11 @@ func (a *app) services(mod Module, dir string, env map[string]string) ([]string,
 		return nil, err
 	}
 	if len(resp.DisableServices) > 0 {
-		services = remove(services, resp.DisableServices...)
+		disable, err := resolveDisableServices(mod.Name, services, resp.DisableServices)
+		if err != nil {
+			return nil, err
+		}
+		services = remove(services, disable...)
 	}
 	for _, provider := range mod.ContractProviders {
 		services = remove(services, provider.OperationSvcs...)

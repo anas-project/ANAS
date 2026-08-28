@@ -150,7 +150,7 @@ func disabledServices(module string, env map[string]string) []string {
 		return nil
 	}
 	if env["NEXTCLOUD_TALK_ENABLED"] != "true" {
-		return []string{"talk", "anas_talk"}
+		return []string{"talk"}
 	}
 	return nil
 }

@@ -134,7 +134,7 @@ func disabledServices(module string, env map[string]string) []string {
 		return nil
 	}
 	if env["MARIADB_ADMINER_ENABLED"] != "true" {
-		return []string{"mariadb_adminer", "anas_mariadb_adminer"}
+		return []string{"mariadb_adminer"}
 	}
 	return nil
 }

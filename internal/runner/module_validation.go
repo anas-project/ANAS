@@ -118,6 +118,71 @@ func (a *app) validateModules() error {
 	return nil
 }
 
+// Compose services in this repository are named with an "anas_" prefix, while a
+// manifest's services.optional and a hook's disable_services name them without
+// it. Both spellings have to resolve to the same service, and neither may
+// resolve to nothing.
+const composeServicePrefix = "anas_"
+
+// resolveComposeService returns the real Compose service a declared name refers
+// to, or "" when nothing answers to it.
+func resolveComposeService(services map[string]bool, name string) string {
+	if services[name] {
+		return name
+	}
+	if prefixed := composeServicePrefix + name; services[prefixed] {
+		return prefixed
+	}
+	return ""
+}
+
+// resolveDisableServices maps the names a hook asked to disable onto the real
+// Compose services, and rejects any that match nothing.
+//
+// Both halves matter. Removing an unknown name used to be a silent no-op, and
+// that silence is the whole problem: a service renamed in Compose leaves the
+// hook still "disabling" a name nothing answers to, the optional service comes
+// up anyway, and the only symptom is a parameter that appears to do nothing --
+// exactly how llng and netbird carried a dead adminer_enabled for half a year.
+// Resolving rather than matching exactly is the other half: a hook that returns
+// the unprefixed name is now correct instead of quietly ineffective, so there is
+// no longer a reason to return both spellings and hope one lands.
+func resolveDisableServices(module string, composeServices []string, disable []string) ([]string, error) {
+	if len(disable) == 0 {
+		return nil, nil
+	}
+	known := make(map[string]bool, len(composeServices))
+	for _, name := range composeServices {
+		known[name] = true
+	}
+
+	var unknown []string
+	seen := make(map[string]bool, len(disable))
+	resolved := make([]string, 0, len(disable))
+	for _, name := range disable {
+		actual := resolveComposeService(known, name)
+		if actual == "" {
+			unknown = append(unknown, name)
+			continue
+		}
+		if seen[actual] {
+			continue
+		}
+		seen[actual] = true
+		resolved = append(resolved, actual)
+	}
+
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		available := append([]string(nil), composeServices...)
+		sort.Strings(available)
+		return nil, failuref("hook_disable_services_unknown",
+			"module %s hook asked to disable %s, which its compose file does not define; available services: %s",
+			module, strings.Join(unknown, ", "), strings.Join(available, ", "))
+	}
+	return resolved, nil
+}
+
 func validationMutationFields(resp hookResponse) []string {
 	fields := []string{}
 	if len(resp.Env) > 0 {

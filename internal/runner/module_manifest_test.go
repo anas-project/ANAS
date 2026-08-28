@@ -200,9 +200,21 @@ func TestModulesUseManifestRule(t *testing.T) {
 				t.Fatalf("%s change parameter %q has invalid effect %q", entry.Name(), key, policy.Effect)
 			}
 		}
+		var composeServices map[string]bool
+		if manifest.Runtime.Type == "compose" && manifest.Runtime.ComposeFile != "" {
+			composeServices = readComposeServiceNames(t, entry.Name(), filepath.Join(dir, manifest.Runtime.ComposeFile))
+		}
 		for _, svc := range manifest.Services.Optional {
 			if looksLikeEnvParam(svc.EnabledBy) {
 				t.Fatalf("%s optional enabled_by %q should use lower snake_case", entry.Name(), svc.EnabledBy)
+			}
+			// Declaring an optional service that no Compose service answers to is
+			// a silent no-op, which is how llng and netbird carried a dead
+			// adminer_enabled parameter -- visible in the generated parameter
+			// tables, doing nothing when set -- for half a year.
+			if composeServices != nil && resolveComposeService(composeServices, svc.Name) == "" {
+				t.Fatalf("%s declares optional service %q, which is not in %s (tried %q too)",
+					entry.Name(), svc.Name, manifest.Runtime.ComposeFile, composeServicePrefix+svc.Name)
 			}
 		}
 		if len(manifest.Logic.Hook.Command) > 0 {
@@ -1192,6 +1204,32 @@ dependencies:
 	if err == nil || !strings.Contains(err.Error(), "field before not found") {
 		t.Fatalf("error = %v, want strict rejection of dependencies.before", err)
 	}
+}
+
+// readComposeServiceNames returns the service names a Module's Compose file
+// defines. It parses only the top-level services map: the point is the set of
+// names, not the service bodies, and the bodies use variable interpolation this
+// test has no environment for.
+func readComposeServiceNames(t *testing.T, module, path string) map[string]bool {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("%s compose file: %v", module, err)
+	}
+	var compose struct {
+		Services map[string]yaml.Node `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(b, &compose); err != nil {
+		t.Fatalf("%s compose file is invalid: %v", module, err)
+	}
+	if len(compose.Services) == 0 {
+		t.Fatalf("%s compose file defines no services", module)
+	}
+	names := make(map[string]bool, len(compose.Services))
+	for name := range compose.Services {
+		names[name] = true
+	}
+	return names
 }
 
 func looksLikeEnvParam(key string) bool {

@@ -134,7 +134,7 @@ func disabledServices(module string, env map[string]string) []string {
 		return nil
 	}
 	if env["POSTGRES_ADMINER_ENABLED"] != "true" {
-		return []string{"postgres_adminer", "anas_postgres_adminer"}
+		return []string{"postgres_adminer"}
 	}
 	return nil
 }
