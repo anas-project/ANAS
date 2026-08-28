@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -28,7 +29,11 @@ const defaultVersionLimit = 5
 var (
 	releaseTagPattern  = regexp.MustCompile(`^module/([a-z0-9_]+)/(.+)-r([1-9][0-9]*)$`)
 	versionLinePattern = regexp.MustCompile(`(?m)^- Module version / 版本：.*$`)
+	siteLinkPattern    = regexp.MustCompile(`\]\((/[^)]*)\)`)
 )
+
+// repositoryBlobBase addresses documentation that the built site cannot serve.
+const repositoryBlobBase = "https://github.com/anas-project/ANAS/blob/"
 
 type manifest struct {
 	Name        string `yaml:"name"`
@@ -177,8 +182,17 @@ func run(root, docsRoot string, limit int, releaseMode bool) error {
 		})
 	}
 
+	// Release builds pair the current Module tree with the core `docs/` tree of
+	// the released core tag, so Module documentation may legitimately reference
+	// core pages the site does not contain yet. Builds that take both trees from
+	// the same source have no such gap: there an unresolvable link is an
+	// authoring error and must keep failing the dead-link check.
+	resolves := siteLinkResolver(alwaysResolves)
+	if releaseMode {
+		resolves = documentationPageResolver(docsRoot)
+	}
 	for _, build := range builds {
-		if err := renderModule(docsRoot, build); err != nil {
+		if err := renderModule(docsRoot, build, resolves); err != nil {
 			return err
 		}
 	}
@@ -505,7 +519,7 @@ func normalizeTopologyRelease(value, releaseID string) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderModule(docsRoot string, build moduleBuild) error {
+func renderModule(docsRoot string, build moduleBuild, resolves siteLinkResolver) error {
 	current := fmt.Sprintf("%s-r%d", build.Manifest.Version, build.Manifest.Revision)
 	versions := make([]string, 0, len(build.Pages))
 	for _, page := range build.Pages {
@@ -522,10 +536,10 @@ func renderModule(docsRoot string, build moduleBuild) error {
 		if english {
 			readme, technical = build.Current.ReadmeEN, build.Current.TechnicalEN
 		}
-		if err := writePage(filepath.Join(base, "index.md"), renderUserPage(build.Manifest, current, "master", readme, versions, english, false)); err != nil {
+		if err := writePage(filepath.Join(base, "index.md"), renderUserPage(build.Manifest, current, "master", readme, versions, english, false, resolves)); err != nil {
 			return err
 		}
-		if err := writePage(filepath.Join(base, "technical.md"), renderTechnicalPage(build.Manifest, current, "master", technical, versions, english, false)); err != nil {
+		if err := writePage(filepath.Join(base, "technical.md"), renderTechnicalPage(build.Manifest, current, "master", technical, versions, english, false, resolves)); err != nil {
 			return err
 		}
 		for _, page := range build.Pages {
@@ -535,10 +549,10 @@ func renderModule(docsRoot string, build moduleBuild) error {
 			if english {
 				pageReadme, pageTechnical = page.Release.Docs.ReadmeEN, page.Release.Docs.TechnicalEN
 			}
-			if err := writePage(filepath.Join(releaseBase, "index.md"), renderUserPage(build.Manifest, page.Release.ID(), page.Release.Commit, pageReadme, versions, english, true)); err != nil {
+			if err := writePage(filepath.Join(releaseBase, "index.md"), renderUserPage(build.Manifest, page.Release.ID(), page.Release.Commit, pageReadme, versions, english, true, resolves)); err != nil {
 				return err
 			}
-			if err := writePage(filepath.Join(releaseBase, "technical.md"), renderTechnicalPage(build.Manifest, page.Release.ID(), page.Release.Commit, pageTechnical, versions, english, true)); err != nil {
+			if err := writePage(filepath.Join(releaseBase, "technical.md"), renderTechnicalPage(build.Manifest, page.Release.ID(), page.Release.Commit, pageTechnical, versions, english, true, resolves)); err != nil {
 				return err
 			}
 		}
@@ -551,13 +565,13 @@ func renderModule(docsRoot string, build moduleBuild) error {
 	return nil
 }
 
-func renderUserPage(m manifest, release, ref, source string, versions []string, english, fixed bool) []byte {
-	body := rewriteUserLinks(source)
+func renderUserPage(m manifest, release, ref, source string, versions []string, english, fixed bool, resolves siteLinkResolver) []byte {
+	body := rewriteSiteLinks(rewriteUserLinks(source), ref, resolves)
 	return renderPage(m, release, ref, body, versions, english, fixed, false)
 }
 
-func renderTechnicalPage(m manifest, release, ref, source string, versions []string, english, fixed bool) []byte {
-	body := rewriteTechnicalLinks(source, m.Name, ref, english)
+func renderTechnicalPage(m manifest, release, ref, source string, versions []string, english, fixed bool, resolves siteLinkResolver) []byte {
+	body := rewriteSiteLinks(rewriteTechnicalLinks(source, m.Name, ref, english), ref, resolves)
 	return renderPage(m, release, ref, body, versions, english, fixed, true)
 }
 
@@ -615,14 +629,129 @@ func rewriteUserLinks(source string) string {
 	return strings.ReplaceAll(source, "](../../docs/", "](/")
 }
 
+// siteLinkResolver reports whether a site-absolute Module link still addresses
+// a page of the documentation tree currently being built.
+type siteLinkResolver func(target string) bool
+
+// alwaysResolves keeps the dead-link check strict for builds whose Module and
+// core documentation come from the same tree.
+func alwaysResolves(string) bool { return true }
+
+// documentationPageResolver answers against the disposable --docs-root, which is
+// the exact tree VitePress renders and therefore the only authority on whether a
+// link resolves.
+func documentationPageResolver(docsRoot string) siteLinkResolver {
+	return func(target string) bool {
+		page, _ := splitSiteLink(target)
+		for _, candidate := range sitePageCandidates(page) {
+			info, err := os.Stat(filepath.Join(docsRoot, filepath.FromSlash(candidate)))
+			if err == nil && !info.IsDir() {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// rewriteSiteLinks redirects site-absolute links the built site cannot serve to
+// the repository copy, mirroring how rewriteTechnicalLinks addresses files that
+// are not published as pages at all.
+func rewriteSiteLinks(source, ref string, resolves siteLinkResolver) string {
+	return siteLinkPattern.ReplaceAllStringFunc(source, func(match string) string {
+		target := siteLinkPattern.FindStringSubmatch(match)[1]
+		page, _ := splitSiteLink(target)
+		// Pages this command generates are written to --docs-root as the build
+		// progresses, so their absence here proves nothing; assets are never
+		// dead-link checked and must keep their site paths.
+		if generatedModuleRoute(page) || !sitePage(page) || resolves(target) {
+			return match
+		}
+		return "](" + repositoryDocumentURL(target, ref) + ")"
+	})
+}
+
+// splitSiteLink separates the page path from the anchor or query that VitePress
+// ignores when it resolves a link.
+func splitSiteLink(target string) (string, string) {
+	if index := strings.IndexAny(target, "#?"); index >= 0 {
+		return target[:index], target[index:]
+	}
+	return target, ""
+}
+
+// sitePageCandidates lists the source files VitePress would accept for a link,
+// which may omit the extension or name a directory index.
+func sitePageCandidates(page string) []string {
+	route := strings.TrimPrefix(page, "/")
+	switch {
+	case route == "" || strings.HasSuffix(route, "/"):
+		return []string{route + "index.md"}
+	case strings.HasSuffix(route, ".md"):
+		return []string{route}
+	case strings.HasSuffix(route, ".html"):
+		return []string{strings.TrimSuffix(route, ".html") + ".md"}
+	}
+	return []string{route + ".md", route + "/index.md"}
+}
+
+// sitePage excludes public assets, which are served verbatim and would be
+// destroyed by a repository fallback.
+func sitePage(page string) bool {
+	base := page
+	if index := strings.LastIndex(base, "/"); index >= 0 {
+		base = base[index+1:]
+	}
+	dot := strings.LastIndex(base, ".")
+	if dot < 0 {
+		return true
+	}
+	return base[dot:] == ".md" || base[dot:] == ".html"
+}
+
+// generatedModuleRoute reports whether a link addresses a page this command
+// generates rather than a page of the core documentation tree.
+func generatedModuleRoute(page string) bool {
+	route := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(page, "/"), "en/"), ".md")
+	return route == "reference/modules" || strings.HasPrefix(route, "reference/modules/")
+}
+
+// repositoryDocumentURL addresses the core document behind a site path, so the
+// reader still reaches the content the Module documentation cited.
+func repositoryDocumentURL(target, ref string) string {
+	page, suffix := splitSiteLink(target)
+	document := strings.TrimPrefix(page, "/")
+	switch {
+	case document == "" || strings.HasSuffix(document, "/"):
+		document += "index.md"
+	case strings.HasSuffix(document, ".html"):
+		document = strings.TrimSuffix(document, ".html") + ".md"
+	case !strings.HasSuffix(document, ".md"):
+		document += ".md"
+	}
+	return repositoryBlobBase + ref + "/docs/" + document + suffix
+}
+
 func rewriteTechnicalLinks(source, module, ref string, english bool) string {
 	source = strings.ReplaceAll(source, "](../README.md)", "](./)")
 	source = strings.ReplaceAll(source, "](../README.en.md)", "](./)")
+	// Technical documentation sits one directory deeper than a README, so core
+	// documentation is three levels up. Map it into the site exactly as
+	// rewriteUserLinks does: a page the site publishes must not send readers to
+	// the repository, and rewriteSiteLinks still redirects the ones it cannot
+	// serve.
+	source = strings.ReplaceAll(source, "](../../../docs/", "](/")
 	re := regexp.MustCompile(`\]\(\.\./([^)]+)\)`)
 	return re.ReplaceAllStringFunc(source, func(match string) string {
 		parts := re.FindStringSubmatch(match)
-		return "](" + "https://github.com/anas-project/ANAS/blob/" + ref + "/modules/" + module + "/" + parts[1] + ")"
+		return "](" + repositoryBlobBase + ref + "/" + repositoryFilePath(module, parts[1]) + ")"
 	})
+}
+
+// repositoryFilePath resolves a technical-documentation link against the Module
+// directory. Links that reach past it — test-env scripts, for example — must be
+// collapsed here, because GitHub serves no blob path that still contains `..`.
+func repositoryFilePath(module, target string) string {
+	return path.Clean("modules/" + module + "/" + target)
 }
 
 func renderAliasPage(title, source, target string, english bool) []byte {

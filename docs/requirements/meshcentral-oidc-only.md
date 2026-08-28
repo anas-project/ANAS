@@ -8,7 +8,7 @@ updated: 2026-08-28
 # MeshCentral OIDC-only 验收要求
 
 本文规定 MeshCentral 关闭密码认证后的安全边界和双 IAM 真实运行验收。实现细节见
-[MeshCentral 技术文档](../../modules/meshcentral/docs/technical.md)，执行进度见
+[MeshCentral 技术文档](/reference/modules/meshcentral/technical)，执行进度见
 [MeshCentral OIDC-only 实施计划](/plans/meshcentral-oidc-only)。
 
 ## 1. 认证边界

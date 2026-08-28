@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -140,5 +141,110 @@ func TestRenderVersionNavigationLinksToDirectoryIndex(t *testing.T) {
 	want := "](/reference/modules/demo/2.0.0-r1/)"
 	if !strings.Contains(got, want) {
 		t.Fatalf("version navigation = %q, want link containing %q", got, want)
+	}
+}
+
+func TestRewriteSiteLinksFallsBackToTheRepositoryWhenThePageIsAbsent(t *testing.T) {
+	absent := func(string) bool { return false }
+	cases := map[string]string{
+		"[design](/architecture/forgejo-module-design)":      "[design](https://github.com/anas-project/ANAS/blob/master/docs/architecture/forgejo-module-design.md)",
+		"[runbook](/en/operations/casdoor-iam.md)":           "[runbook](https://github.com/anas-project/ANAS/blob/master/docs/en/operations/casdoor-iam.md)",
+		"[support](/reference/module-iam-support.md#passwd)": "[support](https://github.com/anas-project/ANAS/blob/master/docs/reference/module-iam-support.md#passwd)",
+		"[index](/research/)":                                "[index](https://github.com/anas-project/ANAS/blob/master/docs/research/index.md)",
+	}
+	for source, want := range cases {
+		if got := rewriteSiteLinks(source, "master", absent); got != want {
+			t.Errorf("rewriteSiteLinks(%q) = %q, want %q", source, got, want)
+		}
+	}
+}
+
+func TestRewriteSiteLinksUsesTheSnapshotRef(t *testing.T) {
+	got := rewriteSiteLinks("[design](/architecture/forgejo-module-design)", "deadbeef", func(string) bool { return false })
+	if !strings.Contains(got, "/blob/deadbeef/docs/architecture/forgejo-module-design.md") {
+		t.Fatalf("rewritten link = %q", got)
+	}
+}
+
+func TestRewriteSiteLinksKeepsLinksTheSiteCanServe(t *testing.T) {
+	absent := func(string) bool { return false }
+	// Generated Module pages are written to --docs-root as the build proceeds and
+	// assets are never dead-link checked, so neither may be rewritten away.
+	for _, source := range []string{
+		"[other](/reference/modules/casdoor/)",
+		"[catalog](/reference/modules)",
+		"[english](/en/reference/modules/casdoor/technical)",
+		"[diagram](/research/assets/topology.svg)",
+		"[upstream](https://example.invalid/docs/guide)",
+		"[sibling](./technical)",
+	} {
+		if got := rewriteSiteLinks(source, "master", absent); got != source {
+			t.Errorf("rewriteSiteLinks(%q) = %q, want it unchanged", source, got)
+		}
+	}
+	resolvable := "[support](/reference/module-iam-support.md)"
+	if got := rewriteSiteLinks(resolvable, "master", alwaysResolves); got != resolvable {
+		t.Errorf("rewriteSiteLinks(%q) = %q, want it unchanged", resolvable, got)
+	}
+}
+
+func TestDocumentationPageResolverAcceptsEveryVitePressPageForm(t *testing.T) {
+	docsRoot := t.TempDir()
+	for _, name := range []string{"reference/module-iam-support.md", "architecture/index.md", "operations/casdoor-iam.md"} {
+		if err := writePage(filepath.Join(docsRoot, filepath.FromSlash(name)), []byte("# page\n")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resolves := documentationPageResolver(docsRoot)
+	for _, target := range []string{
+		"/reference/module-iam-support.md",
+		"/reference/module-iam-support",
+		"/reference/module-iam-support.html",
+		"/reference/module-iam-support#anchor",
+		"/architecture/",
+		"/architecture",
+		"/operations/casdoor-iam",
+	} {
+		if !resolves(target) {
+			t.Errorf("resolves(%q) = false, want true", target)
+		}
+	}
+	for _, target := range []string{"/architecture/forgejo-module-design", "/operations/", "/reference/module-iam-support/nested"} {
+		if resolves(target) {
+			t.Errorf("resolves(%q) = true, want false", target)
+		}
+	}
+}
+
+func TestRewriteTechnicalLinksCollapsesPathsThatLeaveTheModule(t *testing.T) {
+	got := rewriteTechnicalLinks("[e2e](../../../test-env/scripts/server-casdoor-oidc-e2e.sh)", "casdoor", "master", false)
+	want := "[e2e](https://github.com/anas-project/ANAS/blob/master/test-env/scripts/server-casdoor-oidc-e2e.sh)"
+	if got != want {
+		t.Fatalf("rewritten link = %q, want %q", got, want)
+	}
+	// GitHub serves no blob path that still contains a parent segment.
+	if strings.Contains(got, "..") {
+		t.Fatalf("rewritten link kept a parent segment: %q", got)
+	}
+}
+
+func TestRewriteTechnicalLinksKeepsModuleRelativePathsUnderTheModule(t *testing.T) {
+	got := rewriteTechnicalLinks("[hook](../hook/main.go)", "casdoor", "deadbeef", false)
+	want := "[hook](https://github.com/anas-project/ANAS/blob/deadbeef/modules/casdoor/hook/main.go)"
+	if got != want {
+		t.Fatalf("rewritten link = %q, want %q", got, want)
+	}
+}
+
+func TestRewriteTechnicalLinksMapsCoreDocumentationIntoTheSite(t *testing.T) {
+	got := rewriteTechnicalLinks("[requirement](../../../docs/requirements/casdoor-iam.md)", "casdoor", "master", false)
+	want := "[requirement](/requirements/casdoor-iam.md)"
+	if got != want {
+		t.Fatalf("rewritten link = %q, want %q", got, want)
+	}
+	// The site link then falls under the same resolver as a README link.
+	fallback := rewriteSiteLinks(got, "master", func(string) bool { return false })
+	if fallback != "[requirement](https://github.com/anas-project/ANAS/blob/master/docs/requirements/casdoor-iam.md)" {
+		t.Fatalf("fallback = %q", fallback)
 	}
 }
