@@ -17,6 +17,23 @@ runtime:
 dependencies:
   requires:
     - traefik
+  # Only while the Adminer console exists. Adminer authenticates against the
+  # database itself, but its sign-in form accepts an arbitrary target host, so a
+  # publicly routed one is a way into the internal Docker network rather than
+  # merely an unguarded page.
+  #
+  # ordering: any because the gateway needs an IAM, the IAM needs a relational
+  # database, and that database is this module -- a strong edge here is a cycle
+  # in every single-database deployment. The provider stays mandatory; only the
+  # ordering is given up, and nothing here reads it before rendering.
+  requires_capabilities:
+    - name: forward_auth
+      enabled_by: adminer_enabled
+      ordering: any
+      interface_selected_by: forward_auth_interface
+      interfaces:
+        any_of:
+          - http
 contracts:
   provides:
     - name: relational_database
@@ -33,11 +50,19 @@ config:
     - root_password
   defaults:
     adminer_enabled: "false"
+    forward_auth_interface: auto
   types:
     adminer_enabled: bool
+    forward_auth_interface:
+      enum: [auto, http]
     root_password:
       kind: string
       default_source: generated
+  # Required, not merely tidy: an unordered dependency drops its provider from
+  # this module's dependency closure, so closure and prefix visibility no longer
+  # reach anything oauth2_proxy publishes. This claim is the only route left.
+  consumes:
+    - ANAS_FORWARD_AUTH_MIDDLEWARE
   # MySQL-compatibility aliases published for consumers that expect MYSQL_*.
   exports:
     - MYSQL_*
@@ -51,6 +76,10 @@ config:
       effect: container_recreate
       apply: recreate-mariadb-project
       description: The optional Compose service set changes.
+    forward_auth_interface:
+      effect: container_recreate
+      apply: recreate-mariadb-project
+      description: The gateway binding changes with the selected interface.
 services:
   optional:
     - name: mariadb_adminer

@@ -58,6 +58,7 @@ root 密码是 Provider 管理凭据，不是 Module 本地管理员。Adminer �
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `mariadb.adminer_enabled` | bool | — | `false` | `static` | `MARIADB_ADMINER_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
+| `mariadb.forward_auth_interface` | enum (`auto`, `http`) | — | `auto` | `static` | `MARIADB_FORWARD_AUTH_INTERFACE` | 否 | 否 | 否 | 是 | `container_recreate` | Adminer 所用认证网关的接口，`auto` 由 Runner 选择 |
 | `mariadb.root_password` | string | — | — | `generated` | `MARIADB_ROOT_PASSWORD` | 否 | 是 | 是 | 否：`rotate-mariadb-root-password` | `credential_rotate` | 数据库 root 密码 |
 
 ### 查询和修改

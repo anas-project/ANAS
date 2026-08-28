@@ -58,6 +58,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `mariadb.adminer_enabled` | bool | — | `false` | `static` | `MARIADB_ADMINER_ENABLED` | no | no | no | yes | `container_recreate` | The optional Compose service set changes. |
+| `mariadb.forward_auth_interface` | enum (`auto`, `http`) | — | `auto` | `static` | `MARIADB_FORWARD_AUTH_INTERFACE` | no | no | no | yes | `container_recreate` | The gateway binding changes with the selected interface. |
 | `mariadb.root_password` | string | — | — | `generated` | `MARIADB_ROOT_PASSWORD` | no | yes | yes | no: `rotate-mariadb-root-password` | `credential_rotate` | MYSQL_ROOT_PASSWORD only initializes an empty data directory. |
 
 ### Query and modify

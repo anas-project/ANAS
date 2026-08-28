@@ -58,6 +58,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `postgres.adminer_enabled` | bool | — | `false` | `static` | `POSTGRES_ADMINER_ENABLED` | no | no | no | yes | `container_recreate` | The optional Compose service set changes. |
+| `postgres.forward_auth_interface` | enum (`auto`, `http`) | — | `auto` | `static` | `POSTGRES_FORWARD_AUTH_INTERFACE` | no | no | no | yes | `container_recreate` | The gateway binding changes with the selected interface. |
 | `postgres.password` | string | — | — | `generated` | `POSTGRES_PASSWORD` | no | yes | yes | no: `rotate-postgres-password` | `credential_rotate` | Change the database role and consumers before recreating containers. |
 | `postgres.username` | string | — | `postgres` | `static` | `POSTGRES_USERNAME` | no | no | no | no: `migrate-postgres-owner` | `data_migrate` | POSTGRES_USER only initializes an empty data directory. |
 

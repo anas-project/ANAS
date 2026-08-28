@@ -58,6 +58,7 @@ modules:
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `postgres.adminer_enabled` | bool | — | `false` | `static` | `POSTGRES_ADMINER_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Adminer |
+| `postgres.forward_auth_interface` | enum (`auto`, `http`) | — | `auto` | `static` | `POSTGRES_FORWARD_AUTH_INTERFACE` | 否 | 否 | 否 | 是 | `container_recreate` | Adminer 所用认证网关的接口，`auto` 由 Runner 选择 |
 | `postgres.password` | string | — | — | `generated` | `POSTGRES_PASSWORD` | 否 | 是 | 是 | 否：`rotate-postgres-password` | `credential_rotate` | 管理员或服务密码 |
 | `postgres.username` | string | — | `postgres` | `static` | `POSTGRES_USERNAME` | 否 | 否 | 否 | 否：`migrate-postgres-owner` | `data_migrate` | 数据库管理员用户名 |
 
