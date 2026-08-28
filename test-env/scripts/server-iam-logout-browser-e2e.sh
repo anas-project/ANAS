@@ -19,4 +19,5 @@ export ANAS_TEST_REPORT_FILE=${ANAS_TEST_REPORT_FILE:-$report_dir/iam-logout-${A
 
 cd "$repo_root"
 npm run e2e:iam-logout
+node test-env/playwright/validate-sanitized-report.mjs "$ANAS_TEST_REPORT_FILE"
 printf 'IAM logout browser report: %s\n' "$ANAS_TEST_REPORT_FILE"

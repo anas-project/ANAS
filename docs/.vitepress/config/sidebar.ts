@@ -177,6 +177,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Forgejo Module', link: '/plans/forgejo-module' },
         { text: 'VersityGW S3 Module', link: '/plans/versitygw-module' },
         { text: 'Incus compute Provider', link: '/plans/incus-module' },
+        { text: 'Module IAM 双向登出', link: '/plans/module-iam-bidirectional-logout' },
         { text: '需求 ID 矩阵采用', link: '/plans/requirement-id-adoption' },
         { text: '文档驱动测试自动化', link: '/plans/document-driven-test-automation' }
       ]

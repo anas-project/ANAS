@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-22
-updated: 2026-08-23
+updated: 2026-08-28
 ---
 
 # 需求 ID 矩阵采用实施计划
@@ -10,15 +10,15 @@ updated: 2026-08-23
 验收依据是[需求 ID 矩阵采用范围与门禁要求](/requirements/requirement-id-adoption)的需求矩阵。
 本主题没有独立架构文档——它改的是文档门禁脚本和文档存放位置，不引入运行时机制。
 
-M3（索引状态列生成）已落地。M0 与 M2 相互独立，M1 依赖 M0 的豁免清单落地（否则新增矩阵的同时另外
-两份文档会立刻让门禁变红）。
+M1（双向登出需求矩阵）与 M3（索引状态列生成）已落地。M0 与 M2 仍可独立推进；
+`module-iam-bidirectional-logout` 已直接采用矩阵，因此无需等待豁免清单即可接受门禁检查。
 
 ## 1. 里程碑
 
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
 | M0：门禁可见性与豁免清单 | R-001—R-003、R-008—R-009、R-014 | 未开始 |
-| M1：双向登出需求矩阵 | R-004—R-005 | 未开始 |
+| M1：双向登出需求矩阵 | R-004—R-005 | 已完成 |
 | M2：迁移后的扫描边界 | R-006—R-007 | 未开始 |
 | M3：索引状态列生成 | R-010—R-013 | 已完成 |
 
@@ -39,15 +39,15 @@ M3（索引状态列生成）已落地。M0 与 M2 相互独立，M1 依赖 M0 �
 
 ## 3. M1 检查表
 
-- [ ] 按[需求编写规范](/developer/requirement-authoring) §1 的顺序处理
+- [x] 按[需求编写规范](/developer/requirement-authoring) §1 的顺序处理
       `docs/requirements/module-iam-bidirectional-logout.md`：先补散文中缺失的组合结论，再抽断言。
-- [ ] 枚举当前 Provider（`llng`、`authentik`、`casdoor`）× 已接入 Module × 登出方向（IAM→应用、
+- [x] 枚举当前 Provider（`llng`、`authentik`、`casdoor`）× 已接入 Module × 登出方向（IAM→应用、
       应用→IAM）的完整组合空间，逐格判定支持与否。
-- [ ] 分配 `LOGOUT-R-###` 前缀的稳定 ID，受支持与不支持的组合各自成行。
-- [ ] 新建 `docs/plans/module-iam-bidirectional-logout.md`，包含归属表与 e2e 执行记录表。
-- [ ] 标注 `e2e` 的条目在执行记录表中给出脚本名（未实现时写「待补 `<脚本名>`」）。
-- [ ] 从豁免清单中移除该文档。
-- [ ] 通过 `npm run docs:check-requirements`。
+- [x] 分配 `LOGOUT-R-###` 前缀的稳定 ID，受支持与不支持的组合各自成行。
+- [x] 新建 `docs/plans/module-iam-bidirectional-logout.md`，包含归属表与 e2e 执行记录表。
+- [x] 标注 `e2e` 的条目在执行记录表中给出脚本名；待执行项明确记录为待跑。
+- [x] 该文档已直接采用矩阵，M0 豁免清单无需登记或移除它。
+- [x] 通过 `npm run docs:check-requirements`（2026-08-28：双向登出 42 项均有唯一归属及 e2e 记录）。
 
 ## 4. M2 检查表
 

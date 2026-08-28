@@ -64,10 +64,13 @@ test-env/
 
 ### IAM logout browser matrix
 
-The logout matrix pins `@playwright/test` to `1.55.0` and disables screenshots,
+The logout matrix pins `@playwright/test` to `1.62.1` and disables screenshots,
 video, and traces so credentials, cookies, SAML messages, and tokens cannot enter
 artifacts. Its custom reporter redacts query payloads and writes each JSON report
-with mode `0600` under `test-env/reports/`. Install the matching browser once:
+with mode `0600` under `test-env/reports/`. The shell entry rejects an empty report,
+an unset/mismatched provider, consumer, direction or fixed version, a non-passing
+result, unsafe file permissions, or an unredacted credential/message. Install the
+matching browser once:
 
 ```sh
 npx playwright install chromium

@@ -11,6 +11,7 @@
     "docs:test-status": "node scripts/ci/document-status-test.mjs",
     "docs:preview": "vitepress preview docs",
     "e2e:iam-logout": "playwright test --config test-env/playwright/iam-logout.config.mjs",
+    "test:iam-logout-report": "node --test test-env/playwright/sanitized-reporter.test.mjs",
     "docs:requirement-status": "node scripts/ci/requirement-status.mjs",
     "docs:check-requirement-status": "node scripts/ci/requirement-status.mjs --check",
     "test-cases:generate": "go run ./cmd/gen-test-case-docs",

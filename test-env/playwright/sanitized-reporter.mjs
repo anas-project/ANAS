@@ -21,7 +21,7 @@ export default class SanitizedReporter {
 
   onTestEnd(test, result) {
     this.results.push({
-      title: test.title,
+      title: redact(test.title),
       status: result.status,
       duration_ms: result.duration,
       errors: result.errors.map((error) => redact(error.message)),
@@ -39,6 +39,7 @@ export default class SanitizedReporter {
         provider: process.env.ANAS_TEST_IAM_PROVIDER || "unset",
         protocol: process.env.ANAS_TEST_IAM_PROTOCOL || "unset",
         application: process.env.ANAS_TEST_APP || "unset",
+        origin: process.env.ANAS_TEST_LOGOUT_ORIGIN || "unset",
         provider_version: process.env.ANAS_TEST_PROVIDER_VERSION || "fixture-managed",
         application_version: process.env.ANAS_TEST_APP_VERSION || "fixture-managed",
       },

@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-21
-updated: 2026-08-21
+updated: 2026-08-28
 ---
 
 # 使用 OIDC/SAML 的 Module 双向登出要求
@@ -362,7 +362,59 @@ token 过期时间都不能替代。
 - 把 OIDC Session Management、SAML binding 名称或 Provider 私有“back-channel”开关本身当作
   无浏览器撤销证据。
 
-## 11. 规范依据
+## 11. Provider × Module × 登出方向需求矩阵
+
+本矩阵是验收规范来源。固定 Provider 版本为 Authentik `2026.5.6`、LLNG `2.23.2`、
+Casdoor `3.143.0`；Consumer 版本与 endpoint 以[支持清单](../reference/module-iam-support.md#固定版本登出矩阵)
+为准。表中的“不支持”同样是必须保持的结论：对应 Module 不得发布通知 endpoint，也不得把本地
+Cookie 清理写成 IAM 会话已结束。Nextcloud 的 OIDC 与 SAML 是两个独立组合，不能互相代替证据。
+
+| ID | 要求 | 验证方式 |
+| --- | --- | --- |
+| `LOGOUT-R-001` | Authentik × Nextcloud OIDC × Module→IAM 必须完成 RP-Initiated Logout，先撤销 Nextcloud 会话，再结束中央会话并阻止静默恢复 | e2e |
+| `LOGOUT-R-002` | Authentik × Nextcloud OIDC × IAM→Module 必须使用标准 back-channel Logout Token 按 `sid` 撤销目标会话，并覆盖 Portal 登出和管理员无浏览器删 session | e2e |
+| `LOGOUT-R-003` | Authentik × Nextcloud SAML × Module→IAM 必须使用签名 Redirect SLO 完成 SP-Initiated Logout；不得把 HTTP-POST 字样解释为无浏览器撤销 | e2e |
+| `LOGOUT-R-004` | Authentik × Nextcloud SAML × IAM→Module 必须通过真实浏览器完成 IdP-Initiated Redirect SLO，并明确不覆盖管理员无浏览器删 session | e2e |
+| `LOGOUT-R-005` | Authentik × MeshCentral OIDC × Module→IAM 只有在 `state`、本地先失效、中央会话结束和不能静默恢复全部通过后才能声明“支持应用发起登出”；此前必须标为“上游支持、待接入” | e2e |
+| `LOGOUT-R-006` | Authentik × MeshCentral OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-007` | Authentik × Forgejo OIDC × Module→IAM 不支持：固定版本 `/user/logout` 只撤销 Forgejo session，不得声明结束 Authentik 中央会话 | 单元 + 审阅 |
+| `LOGOUT-R-008` | Authentik × Forgejo OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-009` | Authentik × Vikunja OIDC × Module→IAM 必须从 discovery 使用 `end_session_endpoint` 和原 `id_token_hint`，先撤销本地 session；IAM 不可用时本地登出仍须成功 | e2e |
+| `LOGOUT-R-010` | Authentik × Vikunja OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-011` | Authentik × NetBird Dashboard OIDC × Module→IAM 只有在 `state`、本地先失效、中央会话结束和不能静默恢复全部通过后才能声明“支持应用发起登出”；此前必须标为“上游支持、待接入” | e2e |
+| `LOGOUT-R-012` | Authentik × NetBird Dashboard OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-013` | Authentik × oauth2-proxy OIDC × Module→IAM 不支持：`/oauth2/sign_out` 只清网关 Cookie，IAM 不可用时也必须本地成功，不得配置无超时 `backend-logout-url` 冒充全局登出 | e2e |
+| `LOGOUT-R-014` | Authentik × oauth2-proxy OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*`，且不得声称后端业务 session 已撤销 | 单元 + 审阅 |
+| `LOGOUT-R-015` | LLNG × Nextcloud OIDC × Module→IAM 必须完成 RP-Initiated Logout，先撤销 Nextcloud 会话，再结束中央会话并阻止静默恢复 | e2e |
+| `LOGOUT-R-016` | LLNG × Nextcloud OIDC × IAM→Module 必须使用标准 back-channel Logout Token 按 `sid` 撤销目标会话；浏览器 Portal 登出与管理员无浏览器撤销必须分别记录真实结果 | e2e |
+| `LOGOUT-R-017` | LLNG × Nextcloud SAML × Module→IAM 必须使用签名 Redirect SLO 完成 SP-Initiated Logout；不得把 HTTP-POST 字样解释为无浏览器撤销 | e2e |
+| `LOGOUT-R-018` | LLNG × Nextcloud SAML × IAM→Module 必须通过真实浏览器完成 IdP-Initiated Redirect SLO，并明确不覆盖管理员无浏览器删 session | e2e |
+| `LOGOUT-R-019` | LLNG × MeshCentral OIDC × Module→IAM 只有在 `state`、本地先失效、中央会话结束和不能静默恢复全部通过后才能声明“支持应用发起登出”；此前必须标为“上游支持、待接入” | e2e |
+| `LOGOUT-R-020` | LLNG × MeshCentral OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-021` | LLNG × Forgejo OIDC × Module→IAM 不支持：固定版本 `/user/logout` 只撤销 Forgejo session，不得声明结束 LLNG 中央会话 | 单元 + 审阅 |
+| `LOGOUT-R-022` | LLNG × Forgejo OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-023` | LLNG × Vikunja OIDC × Module→IAM 必须从 discovery 使用 `end_session_endpoint` 和原 `id_token_hint`，先撤销本地 session；IAM 不可用时本地登出仍须成功 | e2e |
+| `LOGOUT-R-024` | LLNG × Vikunja OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-025` | LLNG × NetBird Dashboard OIDC × Module→IAM 只有在 `state`、本地先失效、中央会话结束和不能静默恢复全部通过后才能声明“支持应用发起登出”；此前必须标为“上游支持、待接入” | e2e |
+| `LOGOUT-R-026` | LLNG × NetBird Dashboard OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-027` | LLNG × oauth2-proxy OIDC × Module→IAM 不支持：`/oauth2/sign_out` 只清网关 Cookie，IAM 不可用时也必须本地成功，不得配置无超时 `backend-logout-url` 冒充全局登出 | e2e |
+| `LOGOUT-R-028` | LLNG × oauth2-proxy OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*`，且不得声称后端业务 session 已撤销 | 单元 + 审阅 |
+| `LOGOUT-R-029` | Casdoor × Nextcloud OIDC × Module→IAM 必须完成 RP-Initiated Logout，先撤销 Nextcloud 会话，再结束中央会话并阻止静默恢复 | e2e |
+| `LOGOUT-R-030` | Casdoor × Nextcloud OIDC × IAM→Module 必须使用标准 back-channel Logout Token 按 exact `sid` 撤销目标会话；Provider 标准 Consumer 证据不得替代固定 Nextcloud receiver 复验 | e2e |
+| `LOGOUT-R-031` | Casdoor × Nextcloud SAML × Module→IAM 不支持：固定 Provider 没有 SAML SLO 消费路径，Nextcloud 必须只做本地登出且清除旧 IdP SLO 配置 | 单元 + 源码审阅 |
+| `LOGOUT-R-032` | Casdoor × Nextcloud SAML × IAM→Module 不支持：Provider 不得发布未经验证的 SLO endpoint/binding，Nextcloud 不得保留旧 SLS 注册 | 单元 + 源码审阅 |
+| `LOGOUT-R-033` | Casdoor × MeshCentral OIDC × Module→IAM 只有在 `state`、本地先失效、中央会话结束和不能静默恢复全部通过后才能声明“支持应用发起登出”；此前必须标为“上游支持、待接入” | e2e |
+| `LOGOUT-R-034` | Casdoor × MeshCentral OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-035` | Casdoor × Forgejo OIDC × Module→IAM 不支持：固定版本 `/user/logout` 只撤销 Forgejo session，不得声明结束 Casdoor 中央会话 | 单元 + 审阅 |
+| `LOGOUT-R-036` | Casdoor × Forgejo OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-037` | Casdoor × Vikunja OIDC × Module→IAM 必须从 discovery 使用 `end_session_endpoint` 和原 `id_token_hint`，先撤销本地 session；IAM 不可用时本地登出仍须成功 | e2e |
+| `LOGOUT-R-038` | Casdoor × Vikunja OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-039` | Casdoor × NetBird Dashboard OIDC × Module→IAM 只有在 `state`、本地先失效、中央会话结束和不能静默恢复全部通过后才能声明“支持应用发起登出”；此前必须标为“上游支持、待接入” | e2e |
+| `LOGOUT-R-040` | Casdoor × NetBird Dashboard OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*` | 单元 + 审阅 |
+| `LOGOUT-R-041` | Casdoor × oauth2-proxy OIDC × Module→IAM 不支持：`/oauth2/sign_out` 只清网关 Cookie，IAM 不可用时也必须本地成功，不得配置无超时 `backend-logout-url` 冒充全局登出 | e2e |
+| `LOGOUT-R-042` | Casdoor × oauth2-proxy OIDC × IAM→Module 不支持：固定版本没有标准通知 receiver，Module 必须省略全部 `OIDC_LOGOUT_*`，且不得声称后端业务 session 已撤销 | 单元 + 审阅 |
+
+## 12. 规范依据
 
 - [OpenID Connect RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0-final.html)
 - [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0-final.html)

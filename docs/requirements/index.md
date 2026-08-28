@@ -8,7 +8,7 @@
 | [Changelog 要求](changelog.md) | Core 与 Module 变更记录的位置、写入时机、发布改名与门禁 | 0/33 已完成 |
 | [Samba 目录事件订阅与实时同步要求](directory-event-subscription.md) | IAM Provider 与所有 LDAP/LDAPS Module 的事件订阅、可靠消费、全量兜底和实时同步验收 | 0/12 已完成 |
 | [Casdoor IAM Provider 集成要求](casdoor-iam.md) | Casdoor Module、Samba 同步、OIDC/SAML、授权、会话和发布验收 | 40/40 已完成 |
-| [使用 OIDC/SAML 的 Module 双向登出要求](module-iam-bidirectional-logout.md) | RP/SP 发起登出、IAM 发起登出、通用注册、安全和真实会话 E2E | 无矩阵（未采用 ID） |
+| [使用 OIDC/SAML 的 Module 双向登出要求](module-iam-bidirectional-logout.md) | RP/SP 发起登出、IAM 发起登出、通用注册、安全和真实会话 E2E | 20/42 已完成 |
 | [Web API 与管理前端要求](web-api-admin-console.md) | 管理控制台的范围、访问与证书、认证与角色、安全和验收 | 11/100 已完成 |
 | [Module 专属命令能力要求](module-command-capability.md) | Module 命令声明、发现、类型化执行、CLI/anasd 共享服务与权限边界 | 23/34 已完成 |
 | [Forgejo Module 集成要求](forgejo-module.md) | 代码托管、OIDC、Actions 单开关、Incus one-job VM Runner 与安全验收 | 11/36 已完成 |
@@ -16,7 +16,7 @@
 | [MeshCentral OIDC-only 验收要求](meshcentral-oidc-only.md) | 服务端密码拒绝、双 IAM OIDC、revision 与恢复账号边界 | 7/7 已完成 |
 | [Incus compute Provider Module 集成要求](incus-module.md) | `compute/incus_vm` Provider、多消费者隔离、Secret 注入边界与 Forgejo 迁移 | 0/28 已完成 |
 | [VersityGW S3 兼容 Module 集成要求](versitygw-module.md) | `object_storage/s3` Capability、per-Resource bucket/凭据、POSIX backend、安全和验收 | 30/32 已完成 |
-| [需求 ID 矩阵采用范围与门禁要求](requirement-id-adoption.md) | 门禁可见性、豁免清单、双向登出矩阵范围与迁移后的扫描边界 | 4/14 已完成 |
+| [需求 ID 矩阵采用范围与门禁要求](requirement-id-adoption.md) | 门禁可见性、豁免清单、双向登出矩阵范围与迁移后的扫描边界 | 6/14 已完成 |
 | [文档驱动测试生成与远程执行要求](document-driven-test-automation.md) | 需求到用例/完整测试代码、SSH 专用服务器执行、隔离与报告证据 | 8/32 已完成 |
 
 > [!IMPORTANT]
