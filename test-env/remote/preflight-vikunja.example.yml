@@ -1,0 +1,7 @@
+architecture: amd64
+min_disk_bytes: 21474836480
+min_memory_bytes: 8589934592
+ports: []
+dns_names: []
+routes: []
+capabilities: [docker, btrfs, playwright]

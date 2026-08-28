@@ -1,0 +1,8 @@
+api_version: anas.remote-test-targets/v1
+targets:
+  dedicated-test:
+    # This is an SSH config Host alias, never user@host or an IP address.
+    ssh_alias: anas-test
+    remote_work_root: /srv/anas-e2e
+    capabilities: [amd64, docker, btrfs, playwright]
+    max_concurrency: 2

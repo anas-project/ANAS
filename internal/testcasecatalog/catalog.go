@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -22,7 +23,7 @@ import (
 )
 
 const (
-	catalogAPI = "anas.test-cases/v1"
+	catalogAPI = "anas.test-cases/v2"
 	readmeName = "README.md"
 )
 
@@ -39,6 +40,7 @@ type Options struct {
 	Root         string
 	Check        bool
 	PrintDigests bool
+	ReviewBase   string
 	Output       io.Writer
 }
 
@@ -57,28 +59,42 @@ type Catalog struct {
 }
 
 type TestCase struct {
-	ID                string         `yaml:"id"`
-	Title             string         `yaml:"title"`
-	Status            string         `yaml:"status"`
-	ReplacedBy        []string       `yaml:"replaced_by,omitempty"`
-	Level             string         `yaml:"level,omitempty"`
-	Requirements      []string       `yaml:"requirements,omitempty"`
-	RequirementDigest string         `yaml:"requirement_digest,omitempty"`
-	Fixture           string         `yaml:"fixture,omitempty"`
-	Capabilities      []string       `yaml:"capabilities,omitempty"`
-	Preconditions     []string       `yaml:"preconditions,omitempty"`
-	Steps             []string       `yaml:"steps,omitempty"`
-	Implementation    Implementation `yaml:"implementation,omitempty"`
-	Assertions        []string       `yaml:"assertions,omitempty"`
-	NegativeCases     []string       `yaml:"negative_cases,omitempty"`
-	Cleanup           []string       `yaml:"cleanup,omitempty"`
-	Timeout           string         `yaml:"timeout,omitempty"`
-	SensitiveData     string         `yaml:"sensitive_data,omitempty"`
+	ID                   string         `yaml:"id"`
+	Title                string         `yaml:"title"`
+	Status               string         `yaml:"status"`
+	ReplacedBy           []string       `yaml:"replaced_by,omitempty"`
+	Level                string         `yaml:"level,omitempty"`
+	Requirements         []string       `yaml:"requirements,omitempty"`
+	RequirementDigest    string         `yaml:"requirement_digest,omitempty"`
+	ImplementationDigest string         `yaml:"implementation_digest,omitempty"`
+	Fixture              string         `yaml:"fixture,omitempty"`
+	Capabilities         []string       `yaml:"capabilities,omitempty"`
+	Preconditions        []string       `yaml:"preconditions,omitempty"`
+	Steps                []string       `yaml:"steps,omitempty"`
+	Implementation       Implementation `yaml:"implementation,omitempty"`
+	Assertions           []string       `yaml:"assertions,omitempty"`
+	Oracle               Oracle         `yaml:"oracle,omitempty"`
+	NegativeCases        []string       `yaml:"negative_cases,omitempty"`
+	Validity             Validity       `yaml:"validity,omitempty"`
+	Cleanup              []string       `yaml:"cleanup,omitempty"`
+	Timeout              string         `yaml:"timeout,omitempty"`
+	SensitiveData        string         `yaml:"sensitive_data,omitempty"`
 }
 
 type Implementation struct {
 	Files    []string `yaml:"files"`
 	Commands []string `yaml:"commands"`
+}
+
+type Oracle struct {
+	Sources []string `yaml:"sources"`
+}
+
+type Validity struct {
+	Method             string   `yaml:"method"`
+	Commands           []string `yaml:"commands,omitempty"`
+	Evidence           string   `yaml:"evidence,omitempty"`
+	ManualReviewReason string   `yaml:"manual_review_reason,omitempty"`
 }
 
 type requirement struct {
@@ -121,9 +137,10 @@ func Run(options Options) error {
 	allCases := make(map[string]*TestCase)
 	caseCatalog := make(map[string]*Catalog)
 	var validationErrors []string
+	skipDigests := options.PrintDigests || options.ReviewBase != ""
 	for i := range catalogs {
 		catalog := &catalogs[i]
-		validationErrors = append(validationErrors, validateCatalog(root, catalog, allCases, caseCatalog, options.PrintDigests)...)
+		validationErrors = append(validationErrors, validateCatalog(root, catalog, allCases, caseCatalog, skipDigests)...)
 	}
 	validationErrors = append(validationErrors, validateReplacements(allCases)...)
 	validationErrors = append(validationErrors, validateImplementationMarkers(root, allCases, caseCatalog)...)
@@ -141,7 +158,12 @@ func Run(options Options) error {
 					validationErrors = append(validationErrors, fmt.Sprintf("%s: %v", testCase.ID, digestErr))
 					continue
 				}
-				fmt.Fprintf(options.Output, "%s %s\n", testCase.ID, digest)
+				implementationDigest, digestErr := digestImplementation(root, &testCase)
+				if digestErr != nil {
+					validationErrors = append(validationErrors, fmt.Sprintf("%s: %v", testCase.ID, digestErr))
+					continue
+				}
+				fmt.Fprintf(options.Output, "%s requirement_digest=%s implementation_digest=%s\n", testCase.ID, digest, implementationDigest)
 			}
 		}
 	}
@@ -152,6 +174,9 @@ func Run(options Options) error {
 	}
 	if options.PrintDigests {
 		return nil
+	}
+	if options.ReviewBase != "" {
+		return renderReviewDiff(root, catalogs, options.ReviewBase, options.Output)
 	}
 
 	var stale []string
@@ -232,7 +257,7 @@ func loadCatalogs(root string) ([]Catalog, error) {
 	return catalogs, nil
 }
 
-func validateCatalog(root string, catalog *Catalog, allCases map[string]*TestCase, caseCatalog map[string]*Catalog, printDigests bool) []string {
+func validateCatalog(root string, catalog *Catalog, allCases map[string]*TestCase, caseCatalog map[string]*Catalog, skipDigests bool) []string {
 	var errs []string
 	path := relativePath(root, catalog.manifestPath)
 	add := func(format string, args ...any) {
@@ -253,8 +278,6 @@ func validateCatalog(root string, catalog *Catalog, allCases map[string]*TestCas
 	}
 	wantRequirement := filepath.ToSlash(filepath.Join("dev-docs", "requirements", catalog.Topic+".md"))
 	wantPlan := filepath.ToSlash(filepath.Join("dev-docs", "plans", catalog.Topic+".md"))
-	// A topic whose milestones are all done has its plan archived. The pairing
-	// still has to find it; it is simply no longer an active plan.
 	wantArchivedPlan := filepath.ToSlash(filepath.Join("dev-docs", "plans", "archived", catalog.Topic+".md"))
 	if catalog.RequirementDocument != wantRequirement {
 		add("requirement_document must be %q", wantRequirement)
@@ -309,6 +332,7 @@ func validateCatalog(root string, catalog *Catalog, allCases map[string]*TestCas
 
 	covered := make(map[string][]string)
 	coveredByE2E := make(map[string]bool)
+	coveredByNegativePath := make(map[string]bool)
 	for i := range catalog.Cases {
 		testCase := &catalog.Cases[i]
 		if _, exists := allCases[testCase.ID]; exists {
@@ -326,11 +350,14 @@ func validateCatalog(root string, catalog *Catalog, allCases map[string]*TestCas
 		}
 		switch testCase.Status {
 		case "active":
-			errs = append(errs, validateActiveCase(root, path, catalog, testCase, byRequirement, scope, printDigests)...)
+			errs = append(errs, validateActiveCase(root, path, catalog, testCase, byRequirement, scope, skipDigests)...)
 			for _, id := range testCase.Requirements {
 				covered[id] = append(covered[id], testCase.ID)
 				if testCase.Level == "e2e" {
 					coveredByE2E[id] = true
+				}
+				if len(testCase.NegativeCases) > 0 {
+					coveredByNegativePath[id] = true
 				}
 			}
 		case "retired":
@@ -353,11 +380,14 @@ func validateCatalog(root string, catalog *Catalog, allCases map[string]*TestCas
 		if strings.Contains(requirement.Verification, "e2e") && !coveredByE2E[id] {
 			add("e2e requirement %s has no e2e-level test case", id)
 		}
+		if requiresNegativePath(requirement.Text) && !coveredByNegativePath[id] {
+			add("risk-sensitive requirement %s has no negative or fault-injection case", id)
+		}
 	}
 	return errs
 }
 
-func validateActiveCase(root, manifestPath string, catalog *Catalog, testCase *TestCase, byRequirement map[string]requirement, scope map[string]bool, printDigests bool) []string {
+func validateActiveCase(root, manifestPath string, catalog *Catalog, testCase *TestCase, byRequirement map[string]requirement, scope map[string]bool, skipDigests bool) []string {
 	var errs []string
 	add := func(format string, args ...any) {
 		errs = append(errs, fmt.Sprintf("%s: %s: %s", manifestPath, testCase.ID, fmt.Sprintf(format, args...)))
@@ -388,7 +418,7 @@ func validateActiveCase(root, manifestPath string, catalog *Catalog, testCase *T
 			add("requirement %s is outside requirement_scope", id)
 		}
 	}
-	if !printDigests {
+	if !skipDigests {
 		expected, err := digestRequirements(byRequirement, testCase.Requirements)
 		if err == nil && testCase.RequirementDigest != expected {
 			add("requirement_digest is stale: got %q, want %q; review the requirement change before updating it", testCase.RequirementDigest, expected)
@@ -422,6 +452,12 @@ func validateActiveCase(root, manifestPath string, catalog *Catalog, testCase *T
 			add("implementation file %q is not a regular file", name)
 		}
 	}
+	if !skipDigests {
+		expected, err := digestImplementation(root, testCase)
+		if err == nil && testCase.ImplementationDigest != expected {
+			add("implementation_digest is stale: got %q, want %q; review the implementation diff before updating it", testCase.ImplementationDigest, expected)
+		}
+	}
 	if len(testCase.Implementation.Commands) == 0 {
 		add("implementation.commands must not be empty")
 	}
@@ -433,9 +469,11 @@ func validateActiveCase(root, manifestPath string, catalog *Catalog, testCase *T
 	if len(testCase.Assertions) == 0 {
 		add("assertions must not be empty")
 	}
+	errs = append(errs, validateOracle(manifestPath, testCase)...)
 	if testCase.NegativeCases == nil {
 		add("negative_cases must be declared, use [] when none")
 	}
+	errs = append(errs, validateValidity(root, manifestPath, testCase)...)
 	if len(testCase.Cleanup) == 0 {
 		add("cleanup must not be empty")
 	}
@@ -446,6 +484,89 @@ func validateActiveCase(root, manifestPath string, catalog *Catalog, testCase *T
 		add("sensitive_data is required")
 	}
 	return errs
+}
+
+func validateOracle(manifestPath string, testCase *TestCase) []string {
+	var errs []string
+	add := func(format string, args ...any) {
+		errs = append(errs, fmt.Sprintf("%s: %s: %s", manifestPath, testCase.ID, fmt.Sprintf(format, args...)))
+	}
+	strongSources := map[string]bool{
+		"api": true, "database": true, "error-contract": true, "filesystem": true,
+		"network": true, "report": true, "return-value": true, "runtime": true, "ui": true,
+	}
+	weakSources := map[string]bool{"exit-status": true, "generation": true, "logs": true}
+	seen := make(map[string]bool)
+	hasStrongSource := false
+	if len(testCase.Oracle.Sources) == 0 {
+		add("oracle.sources must not be empty")
+	}
+	for _, source := range testCase.Oracle.Sources {
+		if seen[source] {
+			add("oracle.sources repeats %q", source)
+			continue
+		}
+		seen[source] = true
+		if strongSources[source] {
+			hasStrongSource = true
+		} else if !weakSources[source] {
+			add("oracle source %q is unsupported", source)
+		}
+	}
+	if len(testCase.Oracle.Sources) > 0 && !hasStrongSource {
+		add("oracle must include an externally observable source; exit-status, logs, or generation alone cannot prove behavior")
+	}
+	return errs
+}
+
+func validateValidity(root, manifestPath string, testCase *TestCase) []string {
+	var errs []string
+	add := func(format string, args ...any) {
+		errs = append(errs, fmt.Sprintf("%s: %s: %s", manifestPath, testCase.ID, fmt.Sprintf(format, args...)))
+	}
+	switch testCase.Validity.Method {
+	case "mutation", "counterexample", "fault-injection":
+		if len(testCase.Validity.Commands) == 0 {
+			add("validity.commands must not be empty for %s evidence", testCase.Validity.Method)
+		}
+		for _, command := range testCase.Validity.Commands {
+			if err := validateCommand(root, command); err != nil {
+				add("validity command %q: %v", command, err)
+			}
+		}
+		if strings.TrimSpace(testCase.Validity.Evidence) == "" {
+			add("validity.evidence is required for %s evidence", testCase.Validity.Method)
+		}
+		if strings.TrimSpace(testCase.Validity.ManualReviewReason) != "" {
+			add("validity.manual_review_reason is only allowed when method is manual")
+		}
+	case "manual":
+		if len(testCase.Validity.Commands) > 0 {
+			add("validity.commands must be empty when method is manual")
+		}
+		if strings.TrimSpace(testCase.Validity.Evidence) != "" {
+			add("validity.evidence must be empty when method is manual")
+		}
+		if strings.TrimSpace(testCase.Validity.ManualReviewReason) == "" {
+			add("validity.manual_review_reason is required when method is manual")
+		}
+	default:
+		add("validity.method must be mutation, counterexample, fault-injection, or manual")
+	}
+	return errs
+}
+
+func requiresNegativePath(text string) bool {
+	lower := strings.ToLower(text)
+	for _, marker := range []string{
+		"拒绝", "安全", "回滚", "故障", "降级", "恢复",
+		"reject", "denial", "security", "rollback", "failure", "degrad", "recover",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateReplacements(allCases map[string]*TestCase) []string {
@@ -516,10 +637,12 @@ func scanImplementationMarkers(root string) (map[string]map[string]bool, error) 
 			name := entry.Name()
 			// .anas-test holds rendered deployments produced by the local test
 			// suite, and a rendered deployment contains a copy of every module's
-			// source. Scanning it reports each marker a second time under a path
-			// no catalog will ever list, so a developer who has run the tests sees
-			// the gate fail on files they did not write.
-			if name == ".git" || name == "node_modules" || name == "reports" || name == ".vitepress" || name == ".anas-test" {
+			// source. .claude holds agent worktrees, which are whole checkouts of
+			// this repository. Either way the walk finds a second copy of the tree
+			// and reports every marker again under a path no catalog will ever
+			// list, so a developer who has run the tests -- or has a worktree open
+			// -- sees the gate fail on files they did not write.
+			if name == ".git" || name == "node_modules" || name == "reports" || name == ".vitepress" || name == ".anas-test" || name == ".claude" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -785,6 +908,31 @@ func digestRequirements(byID map[string]requirement, ids []string) (string, erro
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
+func digestImplementation(root string, testCase *TestCase) (string, error) {
+	files := append([]string(nil), testCase.Implementation.Files...)
+	sort.Strings(files)
+	commands := append([]string(nil), testCase.Implementation.Commands...)
+	sort.Strings(commands)
+	hash := sha256.New()
+	for _, name := range files {
+		full, err := safeRepoPath(root, name)
+		if err != nil {
+			return "", fmt.Errorf("implementation file %q: %w", name, err)
+		}
+		data, err := os.ReadFile(full)
+		if err != nil {
+			return "", fmt.Errorf("read implementation file %q: %w", name, err)
+		}
+		fmt.Fprintf(hash, "file\x00%s\x00%d\x00", name, len(data))
+		_, _ = hash.Write(data)
+		_, _ = hash.Write([]byte{'\n'})
+	}
+	for _, command := range commands {
+		fmt.Fprintf(hash, "command\x00%s\n", command)
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+}
+
 func isAutomaticallyVerified(verification string) bool {
 	for _, marker := range []string{"单元", "契约", "e2e", "CI", "静态"} {
 		if strings.Contains(verification, marker) {
@@ -792,6 +940,126 @@ func isAutomaticallyVerified(verification string) bool {
 		}
 	}
 	return false
+}
+
+func renderReviewDiff(root string, catalogs []Catalog, base string, output io.Writer) error {
+	if strings.TrimSpace(base) != base || base == "" || strings.HasPrefix(base, "-") || strings.ContainsAny(base, "\r\n") {
+		return errors.New("review base must be one non-empty Git revision without surrounding whitespace")
+	}
+	resolved, err := gitOutput(root, "rev-parse", "--verify", "--end-of-options", base+"^{commit}")
+	if err != nil {
+		return fmt.Errorf("resolve review base %q: %w", base, err)
+	}
+	baseCommit := strings.TrimSpace(string(resolved))
+
+	requirementPaths := make([]string, 0, len(catalogs))
+	casePaths := make([]string, 0, len(catalogs))
+	implementationSet := make(map[string]bool)
+	for _, catalog := range catalogs {
+		requirementPaths = append(requirementPaths, catalog.RequirementDocument)
+		casePaths = append(casePaths, relativePath(root, catalog.manifestPath))
+		for _, testCase := range catalog.Cases {
+			if testCase.Status != "active" {
+				continue
+			}
+			for _, name := range testCase.Implementation.Files {
+				implementationSet[name] = true
+			}
+		}
+	}
+	implementationPaths := make([]string, 0, len(implementationSet))
+	for name := range implementationSet {
+		implementationPaths = append(implementationPaths, name)
+	}
+	sort.Strings(requirementPaths)
+	sort.Strings(casePaths)
+	sort.Strings(implementationPaths)
+
+	sections := []struct {
+		title string
+		paths []string
+	}{
+		{title: "需求差异", paths: requirementPaths},
+		{title: "用例差异", paths: casePaths},
+		{title: "测试代码差异", paths: implementationPaths},
+	}
+	fmt.Fprintf(output, "# 测试变更审阅补丁\n\n基线：`%s`（`%s`）\n", base, baseCommit)
+	for _, section := range sections {
+		fmt.Fprintf(output, "\n## %s\n\n", section.title)
+		diff, diffErr := gitDiff(root, baseCommit, section.paths)
+		if diffErr != nil {
+			return fmt.Errorf("render %s: %w", section.title, diffErr)
+		}
+		if len(diff) == 0 {
+			fmt.Fprintln(output, "无差异。")
+			continue
+		}
+		fmt.Fprintln(output, "```diff")
+		_, _ = output.Write(diff)
+		if diff[len(diff)-1] != '\n' {
+			fmt.Fprintln(output)
+		}
+		fmt.Fprintln(output, "```")
+	}
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "## 审阅结论")
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "- 确认需求语义、用例步骤和测试断言按上述三层差异一致演进。")
+	fmt.Fprintln(output, "- 确认 oracle 读取外部可观察状态，而不是只看退出码、日志或生成动作。")
+	fmt.Fprintln(output, "- 确认 mock/fixture 没有复制被测实现逻辑，validity 证据能在行为缺失或损坏时失败。")
+	return nil
+}
+
+func gitDiff(root, base string, paths []string) ([]byte, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	args := []string{"diff", "--no-ext-diff", "--unified=3", base, "--"}
+	args = append(args, paths...)
+	trackedDiff, err := gitOutput(root, args...)
+	if err != nil {
+		return nil, err
+	}
+	otherArgs := []string{"ls-files", "--others", "--exclude-standard", "--"}
+	otherArgs = append(otherArgs, paths...)
+	untrackedOutput, err := gitOutput(root, otherArgs...)
+	if err != nil {
+		return nil, err
+	}
+	var diff bytes.Buffer
+	diff.Write(trackedDiff)
+	for _, name := range strings.Split(strings.TrimSuffix(string(untrackedOutput), "\n"), "\n") {
+		if name == "" {
+			continue
+		}
+		full, pathErr := safeRepoPath(root, name)
+		if pathErr != nil {
+			return nil, pathErr
+		}
+		data, readErr := os.ReadFile(full)
+		if readErr != nil {
+			return nil, readErr
+		}
+		content := string(data)
+		lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+		if len(data) == 0 {
+			lines = nil
+		}
+		fmt.Fprintf(&diff, "diff --git a/%s b/%s\nnew file mode 100644\n--- /dev/null\n+++ b/%s\n@@ -0,0 +1,%d @@\n", name, name, name, len(lines))
+		for _, line := range lines {
+			fmt.Fprintf(&diff, "+%s\n", line)
+		}
+	}
+	return diff.Bytes(), nil
+}
+
+func gitOutput(root string, args ...string) ([]byte, error) {
+	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return output, nil
 }
 
 func renderCatalog(catalog Catalog) []byte {
@@ -825,8 +1093,17 @@ func renderCatalog(catalog Catalog) []byte {
 		fmt.Fprintf(&out, "- 级别：`%s`\n", testCase.Level)
 		fmt.Fprintf(&out, "- 覆盖需求：%s\n", codeList(testCase.Requirements))
 		fmt.Fprintf(&out, "- 需求复核摘要：`%s`\n", testCase.RequirementDigest)
+		fmt.Fprintf(&out, "- 实现复核摘要：`%s`\n", testCase.ImplementationDigest)
 		fmt.Fprintf(&out, "- Fixture：%s\n", testCase.Fixture)
 		fmt.Fprintf(&out, "- 目标能力：%s\n", codeList(testCase.Capabilities))
+		fmt.Fprintf(&out, "- Oracle 来源：%s\n", codeList(testCase.Oracle.Sources))
+		fmt.Fprintf(&out, "- 有效性证明：`%s`\n", testCase.Validity.Method)
+		if testCase.Validity.Evidence != "" {
+			fmt.Fprintf(&out, "- 有效性证据：%s\n", testCase.Validity.Evidence)
+		}
+		if testCase.Validity.ManualReviewReason != "" {
+			fmt.Fprintf(&out, "- 人工复核理由：%s\n", testCase.Validity.ManualReviewReason)
+		}
 		fmt.Fprintf(&out, "- 超时：`%s`\n", testCase.Timeout)
 		fmt.Fprintf(&out, "- 敏感数据：%s\n", testCase.SensitiveData)
 		renderList(&out, "前置条件", testCase.Preconditions)
@@ -842,6 +1119,16 @@ func renderCatalog(catalog Catalog) []byte {
 			fmt.Fprintln(&out, command)
 		}
 		fmt.Fprintln(&out, "```")
+		if len(testCase.Validity.Commands) > 0 {
+			fmt.Fprintln(&out)
+			fmt.Fprintln(&out, "有效性验证入口：")
+			fmt.Fprintln(&out)
+			fmt.Fprintln(&out, "```bash")
+			for _, command := range testCase.Validity.Commands {
+				fmt.Fprintln(&out, command)
+			}
+			fmt.Fprintln(&out, "```")
+		}
 	}
 	return []byte(out.String())
 }

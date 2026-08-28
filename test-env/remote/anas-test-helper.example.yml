@@ -1,0 +1,9 @@
+api_version: anas.remote-test-helper/v1
+remote_work_root: /srv/anas-e2e
+capabilities: [amd64, docker, btrfs, playwright]
+max_concurrency: 2
+port_base: 20000
+port_block_size: 128
+test_user: anas-test
+docker_host: unix:///run/anas-e2e/docker.sock
+compose_workspace_guard: true

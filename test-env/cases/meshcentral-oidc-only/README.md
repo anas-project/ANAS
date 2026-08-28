@@ -20,8 +20,12 @@
 - 级别：`unit`
 - 覆盖需求：`MCO-R-001`、`MCO-R-005`
 - 需求复核摘要：`sha256:c8ccbc50102245fdb2d2fd903b6a3cc0b620eabf9f87c8df49f47f7078a34f06`
+- 实现复核摘要：`sha256:6563a89a3134c9520a28762cd7b5bc70a5e1da86d7b6bc0378472b4d881b38d1`
 - Fixture：固定 MeshCentral 上游登录处理器片段与仓库双 Provider YAML fixture
 - 目标能力：`node`、`go`、`module-manifest`
+- Oracle 来源：`return-value`、`error-contract`、`filesystem`
+- 有效性证明：`counterexample`
+- 有效性证据：固定上游片段的锚点和 fixture 所有权被主动破坏时，补丁或导入必须失败
 - 超时：`10m`
 - 敏感数据：只使用合成源码片段和无 Secret 的 fixture
 
@@ -55,13 +59,24 @@ node modules/meshcentral/meshcentral/enforce-oidc-only.test.js
 go test ./internal/runner -run TestServerIdentityFixturesUsePublicConfiguration
 ```
 
+有效性验证入口：
+
+```bash
+node modules/meshcentral/meshcentral/enforce-oidc-only.test.js
+go test ./internal/runner -run TestServerIdentityFixturesUsePublicConfiguration
+```
+
 ## `MCO-T-002` Authentik OIDC-only 与账号映射
 
 - 级别：`e2e`
 - 覆盖需求：`MCO-R-002`、`MCO-R-003`、`MCO-R-005`
 - 需求复核摘要：`sha256:6c24c448188d47a57f8163acd4ad26e352a748e1a2e5c00fc6907b3c88355ab7`
+- 实现复核摘要：`sha256:103f898ec20476189bc7e3715b18a8b2973408aa7904038f39238f48a313a691`
 - Fixture：finance 专用 Docker daemon 中的 Samba AD、PostgreSQL、Authentik、MeshCentral 与 Traefik
 - 目标能力：`docker`、`authentik`、`oidc`、`postgres`
+- Oracle 来源：`api`、`database`、`runtime`
+- 有效性证明：`counterexample`
+- 有效性证据：测试真实提交本地密码 POST 并要求 HTTP 拒绝，同时从数据库读取 OIDC 账号映射
 - 超时：`2h`
 - 敏感数据：管理员密码只从容器环境传入子进程，不写报告
 
@@ -95,13 +110,23 @@ go test ./internal/runner -run TestServerIdentityFixturesUsePublicConfiguration
 bash test-env/scripts/server-authentik-oidc-login-e2e.sh
 ```
 
+有效性验证入口：
+
+```bash
+bash test-env/scripts/server-authentik-oidc-login-e2e.sh
+```
+
 ## `MCO-T-003` LLNG OIDC-only 与账号映射
 
 - 级别：`e2e`
 - 覆盖需求：`MCO-R-002`、`MCO-R-004`、`MCO-R-005`
 - 需求复核摘要：`sha256:be4c2735a5f3b086fb7f248491063fad8e02057cc38e9717118271946b7bd5b2`
+- 实现复核摘要：`sha256:6e5542dcd0fbf05b0fff2502a860a27b1546267d419372c8922eb7ba27b4c336`
 - Fixture：finance 专用 Docker daemon 中的 Samba AD、PostgreSQL、LLNG、MeshCentral 与 Traefik
 - 目标能力：`docker`、`llng`、`oidc`、`postgres`
+- Oracle 来源：`api`、`database`、`runtime`
+- 有效性证明：`counterexample`
+- 有效性证据：测试真实提交本地密码 POST 并要求 HTTP 拒绝，同时从数据库读取 OIDC 账号映射
 - 超时：`2h`
 - 敏感数据：管理员密码只从容器环境传入子进程，不写报告
 
@@ -130,6 +155,12 @@ bash test-env/scripts/server-authentik-oidc-login-e2e.sh
 - 停止 LLNG deployment；恢复测试副本 revision；保留 0600 脱敏报告
 
 执行入口：
+
+```bash
+bash test-env/scripts/server-llng-oidc-login-e2e.sh
+```
+
+有效性验证入口：
 
 ```bash
 bash test-env/scripts/server-llng-oidc-login-e2e.sh

@@ -1,6 +1,6 @@
 <!-- Generated from cases.yml by cmd/gen-test-case-docs. DO NOT EDIT. -->
 
-# 文档驱动测试自动化 M0 用例
+# 文档驱动测试自动化 M0—M2 用例
 
 > 需求来源：[`document-driven-test-automation.md`](../../../dev-docs/requirements/document-driven-test-automation.md)
 >
@@ -15,14 +15,29 @@
 | `TESTAUTO-T-002` | unit | `TESTAUTO-R-005`、`TESTAUTO-R-006` | internal/testcasecatalog/catalog_test.go |
 | `TESTAUTO-T-003` | unit | `TESTAUTO-R-007` | internal/testcasecatalog/catalog_test.go |
 | `TESTAUTO-T-004` | unit | `TESTAUTO-R-008` | internal/testcasecatalog/catalog_test.go |
+| `TESTAUTO-T-005` | ci | `TESTAUTO-R-009`、`TESTAUTO-R-010` | internal/testcasecatalog/catalog_test.go |
+| `TESTAUTO-T-006` | unit | `TESTAUTO-R-011` | internal/testcasecatalog/catalog_test.go |
+| `TESTAUTO-T-007` | unit | `TESTAUTO-R-012` | internal/testcasecatalog/catalog_test.go |
+| `TESTAUTO-T-008` | unit | `TESTAUTO-R-013` | internal/testcasecatalog/catalog_test.go |
+| `TESTAUTO-T-009` | unit | `TESTAUTO-R-014` | internal/testcasecatalog/catalog_test.go |
+| `TESTAUTO-T-010` | contract | `TESTAUTO-R-015`、`TESTAUTO-R-016` | internal/remotetest/profile_test.go |
+| `TESTAUTO-T-011` | e2e | `TESTAUTO-R-017` | internal/remotetest/profile_test.go |
+| `TESTAUTO-T-012` | contract | `TESTAUTO-R-018`、`TESTAUTO-R-022` | internal/remotetest/preflight_test.go<br>cmd/remote-test/main.go<br>cmd/anas-test-helper/main.go<br>test-env/scripts/install-remote-test-helper.sh |
+| `TESTAUTO-T-013` | e2e | `TESTAUTO-R-019` | internal/remotetest/source_test.go |
+| `TESTAUTO-T-014` | e2e | `TESTAUTO-R-020` | internal/remotetest/preflight_test.go |
+| `TESTAUTO-T-015` | e2e | `TESTAUTO-R-021` | test-env/scripts/test-server-docker-isolation.sh<br>test-env/scripts/test-compose-project-isolation.sh |
 
 ## `TESTAUTO-T-001` 用例 schema、稳定 ID 与需求覆盖
 
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-002`、`TESTAUTO-R-003`、`TESTAUTO-R-004`
 - 需求复核摘要：`sha256:cddf7bd5e986bd30b8cd12b0345a9539abadf5177a057bccacf032e10840ea0c`
+- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
 - Fixture：临时仓库中的需求矩阵、计划和 cases.yml
 - 目标能力：`go`、`filesystem`
+- Oracle 来源：`error-contract`、`filesystem`
+- 有效性证明：`counterexample`
+- 有效性证据：单元测试构造缺字段、未知字段、重复 ID 和覆盖层级错误的 catalog，并要求校验器逐项拒绝
 - 超时：`1m`
 - 敏感数据：不使用敏感数据
 
@@ -54,13 +69,23 @@
 go test ./internal/testcasecatalog
 ```
 
+有效性验证入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
 ## `TESTAUTO-T-002` 用例到实现文件和执行命令的双向发现
 
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-005`、`TESTAUTO-R-006`
 - 需求复核摘要：`sha256:76f8dc8d79ef0f639a6e5c925c2ee276edc8024aa39d72dbae6eb5686b5b39d3`
+- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
 - Fixture：带 TEST_CASES 标记和可发现命令的临时仓库
 - 目标能力：`go`、`filesystem`
+- Oracle 来源：`error-contract`、`filesystem`
+- 有效性证明：`counterexample`
+- 有效性证据：单元测试删除反向标记、加入悬空 ID 和不存在命令，并要求校验器失败
 - 超时：`1m`
 - 敏感数据：不使用敏感数据
 
@@ -92,13 +117,23 @@ go test ./internal/testcasecatalog
 go test ./internal/testcasecatalog
 ```
 
+有效性验证入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
 ## `TESTAUTO-T-003` 人类可读用例文档生成和陈旧检查
 
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-007`
 - 需求复核摘要：`sha256:cd6c1645cdf9ea27694d84edbb6c906a466bd3acc7adb963147a89f99f7da09f`
+- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
 - Fixture：可生成 README 的临时用例 catalog
 - 目标能力：`go`、`filesystem`
+- Oracle 来源：`filesystem`、`error-contract`
+- 有效性证明：`counterexample`
+- 有效性证据：单元测试先生成 README，再注入手工漂移并要求 --check 返回错误
 - 超时：`1m`
 - 敏感数据：不使用敏感数据
 
@@ -129,13 +164,23 @@ go test ./internal/testcasecatalog
 go test ./internal/testcasecatalog
 ```
 
+有效性验证入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
 ## `TESTAUTO-T-004` 需求变更触发用例复核
 
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-008`
 - 需求复核摘要：`sha256:5ac5cd27bd4e9a3828c722a52a56590588a2249ced5fb1164ed01496bf649d07`
+- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
 - Fixture：已记录逐用例需求摘要的临时 catalog
 - 目标能力：`go`、`sha256`、`filesystem`
+- Oracle 来源：`return-value`、`error-contract`
+- 有效性证明：`counterexample`
+- 有效性证据：单元测试改变需求正文并证明旧摘要失败，同时只读摘要命令仍可输出候选值
 - 超时：`1m`
 - 敏感数据：不使用敏感数据
 
@@ -164,4 +209,544 @@ go test ./internal/testcasecatalog
 
 ```bash
 go test ./internal/testcasecatalog
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
+## `TESTAUTO-T-005` Agent 完整测试生成采用统一验收门禁
+
+- 级别：`ci`
+- 覆盖需求：`TESTAUTO-R-009`、`TESTAUTO-R-010`
+- 需求复核摘要：`sha256:9026ea47af3e93372dc297407d2bd96e86c807a87cd59d2ea005cf089011cb56`
+- 实现复核摘要：`sha256:c6b1fb391124e64346d898ac23f2c861250ef59ce7914fc810ad0315e7ab3165`
+- Fixture：Agent 提交的完整 Go、Shell、Python 或 Playwright 测试补丁
+- 目标能力：`go`、`git`、`ci`
+- Oracle 来源：`error-contract`、`report`
+- 有效性证明：`counterexample`
+- 有效性证据：fixture 中缺失文件、命令和标记的完整用例均导致与人工代码相同的校验失败
+- 超时：`2m`
+- 敏感数据：不把真实数据或 Secret 放入生成输入、测试代码和 diff
+
+前置条件：
+
+- 需求与用例已经明确，生成代码仍处于普通工作区 diff 中
+
+执行步骤：
+
+- 由 Agent 直接生成或修改完整测试实现及断言，不创建仅含 TODO 的脚手架
+- 执行与人工测试相同的编译、静态检查、catalog 溯源和测试命令
+- 通过 review diff 审阅需求、用例与测试代码的对应关系
+
+可观察断言：
+
+- 流程允许完整测试代码进入普通补丁并由同一 CI 门禁验证
+- 生成来源不会绕过编译、静态、溯源、执行或审阅要求
+
+反例与故障路径：
+
+- 缺少实现文件、执行入口或双向标记的生成结果被 catalog 门禁拒绝
+
+清理：
+
+- 单元测试删除临时仓库；Agent 保留普通 Git diff 供审阅
+
+执行入口：
+
+```bash
+go test ./internal/testcasecatalog ./cmd/gen-test-case-docs
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
+## `TESTAUTO-T-006` 实现摘要与三层 review diff 防止静默覆盖
+
+- 级别：`unit`
+- 覆盖需求：`TESTAUTO-R-011`
+- 需求复核摘要：`sha256:d8c3c1304989f5b959a601b87abf4d18a3f7674e5495efc71d099b2534f5def2`
+- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- Fixture：已提交基线以及分别修改过的需求、cases.yml 和测试实现
+- 目标能力：`go`、`git`、`sha256`、`filesystem`
+- Oracle 来源：`filesystem`、`error-contract`、`report`
+- 有效性证明：`counterexample`
+- 有效性证据：单元测试直接改变实现文件并要求摘要门禁失败，再检查三层 diff 包含全部改动
+- 超时：`2m`
+- 敏感数据：审阅补丁只处理仓库文件，不读取 Git ignored Secret
+
+前置条件：
+
+- 无。
+
+执行步骤：
+
+- 修改已审阅测试实现但保留旧 implementation_digest 并执行 --check
+- 从 HEAD 生成需求差异、用例差异和测试代码差异三段式审阅补丁
+- 审阅补丁后才使用 --print-digests 更新摘要
+
+可观察断言：
+
+- 任一实现文件或执行命令变化都会使旧实现摘要失效
+- review diff 同时包含需求、用例和测试代码段，并包含未跟踪实现文件
+
+反例与故障路径：
+
+- 改变已审阅断言但不更新 implementation_digest 时门禁失败
+
+清理：
+
+- Go 测试框架删除临时 Git 仓库
+
+执行入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
+## `TESTAUTO-T-007` 外部可观察 oracle 拒绝弱断言
+
+- 级别：`unit`
+- 覆盖需求：`TESTAUTO-R-012`
+- 需求复核摘要：`sha256:f0ea19e1a1c398a054387067f67e82288a86e52f9217fd94d17990026fb0e87f`
+- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- Fixture：分别声明强 oracle 和仅退出码/日志 oracle 的临时 catalog
+- 目标能力：`go`
+- Oracle 来源：`error-contract`
+- 有效性证明：`counterexample`
+- 有效性证据：单元测试将强 oracle 替换为 exit-status 与 logs 并要求门禁拒绝
+- 超时：`1m`
+- 敏感数据：不使用敏感数据
+
+前置条件：
+
+- 无。
+
+执行步骤：
+
+- 校验 oracle source 枚举，并判断每个 active 用例至少包含一个外部可观察来源
+
+可观察断言：
+
+- API、数据库、文件、UI、运行时、报告或返回契约可作为行为 oracle
+- 退出码、日志或生成动作可以辅助诊断，但不能单独证明功能通过
+
+反例与故障路径：
+
+- 把 oracle 改为仅 exit-status、logs 和 generation 时校验失败
+
+清理：
+
+- Go 测试框架删除临时仓库
+
+执行入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
+## `TESTAUTO-T-008` 风险需求必须具备反例或故障注入覆盖
+
+- 级别：`unit`
+- 覆盖需求：`TESTAUTO-R-013`
+- 需求复核摘要：`sha256:bfbaf16ebef3200e3e60e5fce7b474ad9e8fdabdce30ad52e9d7548e252c02f2`
+- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- Fixture：包含拒绝、安全、回滚、故障降级和恢复措辞的需求矩阵
+- 目标能力：`go`
+- Oracle 来源：`error-contract`
+- 有效性证明：`counterexample`
+- 有效性证据：单元测试清空拒绝需求的负向场景并要求覆盖门禁报告准确需求 ID
+- 超时：`1m`
+- 敏感数据：不使用敏感数据
+
+前置条件：
+
+- 无。
+
+执行步骤：
+
+- 解析采用范围内的风险需求，并检查是否至少有覆盖它且声明 negative_cases 的 active 用例
+
+可观察断言：
+
+- 每项风险需求至少由一个反例或故障注入用例覆盖
+
+反例与故障路径：
+
+- 清空风险需求对应的 negative_cases 后校验必须失败
+
+清理：
+
+- Go 测试框架删除临时仓库
+
+执行入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
+## `TESTAUTO-T-009` 变异、反例、故障注入或人工理由有效性证明
+
+- 级别：`unit`
+- 覆盖需求：`TESTAUTO-R-014`
+- 需求复核摘要：`sha256:2a3feb7cf8e5e66226cf78b720309288cc005fcecba0cfbd3dda865a9889f7f0`
+- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- Fixture：使用四种 validity method 的临时 catalog
+- 目标能力：`go`
+- Oracle 来源：`error-contract`
+- 有效性证明：`counterexample`
+- 有效性证据：单元测试分别移除自动命令和人工理由并要求门禁拒绝
+- 超时：`1m`
+- 敏感数据：不使用敏感数据
+
+前置条件：
+
+- 无。
+
+执行步骤：
+
+- 校验自动有效性证明包含可发现命令和行为破坏证据说明
+- 校验无法自动验证时必须使用 manual 并记录具体复核理由
+
+可观察断言：
+
+- mutation、counterexample 和 fault-injection 都必须有可执行入口与证据
+- manual 不能伪装成自动证据且不能缺少人工复核理由
+
+反例与故障路径：
+
+- 删除自动证据命令或 manual_review_reason 时门禁失败
+
+清理：
+
+- Go 测试框架删除临时仓库
+
+执行入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/testcasecatalog
+```
+
+## `TESTAUTO-T-010` Git ignored target profile 与严格 SSH host-key 契约
+
+- 级别：`contract`
+- 覆盖需求：`TESTAUTO-R-015`、`TESTAUTO-R-016`
+- 需求复核摘要：`sha256:bd5a39d2c3abc16df55b071b80e60c9f57c82d8c05ab2cc9fc3ba3ef16b5af3f`
+- 实现复核摘要：`sha256:12ce25394c0d2c95014f0a47d7c6b9bec10f9ca9ae5a205dc97c537cb82d2195`
+- Fixture：临时 Git 仓库中的 0600 targets.local.yml、SSH config 展开结果与 known_hosts
+- 目标能力：`go`、`git`、`ssh`
+- Oracle 来源：`filesystem`、`error-contract`
+- 有效性证明：`counterexample`
+- 有效性证据：契约测试逐项构造不安全 profile 与 SSH 展开结果并要求解析或命令构造失败
+- 超时：`2m`
+- 敏感数据：只使用 example.invalid 和伪造公钥；不读取操作者真实 SSH 配置
+
+前置条件：
+
+- 无。
+
+执行步骤：
+
+- 严格解析只含 alias、远端根、能力和并发的本地 target profile
+- 校验文件位于 test-env/remote、被 Git ignore 且权限为 0600
+- 用 ssh -G 展开 alias，强制 BatchMode 和 StrictHostKeyChecking 并核对 known-host 绑定
+
+可观察断言：
+
+- profile 的未知字段、认证材料、user@host、宽泛路径、宽松权限和被 Git 跟踪状态均被拒绝
+- SSH 命令不含私钥参数、未知 host 自动接受或 /dev/null known-host 绕过
+
+反例与故障路径：
+
+- 注入 password 字段、root@example、默认 Docker 式宽泛路径和关闭 host-key 校验
+
+清理：
+
+- Go 测试框架删除临时 Git 仓库和 known_hosts
+
+执行入口：
+
+```bash
+npm run test-remote-contract
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/remotetest
+```
+
+## `TESTAUTO-T-011` 已登记目标与本次显式目标授权
+
+- 级别：`e2e`
+- 覆盖需求：`TESTAUTO-R-017`
+- 需求复核摘要：`sha256:ba57b7823fe1c1e00fd4b81d19362a430bb519df4e99ea12010caacf4b6e54c1`
+- 实现复核摘要：`sha256:55d1c9bd071650f20c8659015239e2a5ee2908ace51c4500e185619e7e6618b0`
+- Fixture：同一进程中的已登记目标、未登记目标和本次显式授权请求
+- 目标能力：`go`
+- Oracle 来源：`return-value`、`error-contract`
+- 有效性证明：`counterexample`
+- 有效性证据：进程级测试覆盖两种成功授权和三种失败组合，不读取任何历史运行状态
+- 超时：`1m`
+- 敏感数据：alias 与路径均为合成值
+
+前置条件：
+
+- 无。
+
+执行步骤：
+
+- 用 profile 名称解析已登记目标
+- 用 ssh-target、authorize-target、远端根、能力和并发解析单次目标
+- 分别省略授权、混合两种来源和让两个显式 alias 不一致
+
+可观察断言：
+
+- 只有已登记目标或当前调用中被准确重复的显式 alias 可以进入预检
+- 单次显式目标不会写回 profile，生产目标也不会绕过后续隔离与容量校验
+
+反例与故障路径：
+
+- 无授权来源、两种来源同时出现或复用不同 alias 时拒绝
+
+清理：
+
+- 全部请求只存在于测试进程内
+
+执行入口：
+
+```bash
+go test ./internal/remotetest
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/remotetest
+```
+
+## `TESTAUTO-T-012` 固定特权 helper 与部署前综合预检
+
+- 级别：`contract`
+- 覆盖需求：`TESTAUTO-R-018`、`TESTAUTO-R-022`
+- 需求复核摘要：`sha256:a5239e18d3f9d8405af3791ee4b443d4128d4a7538ca8f5300069d967250b0a6`
+- 实现复核摘要：`sha256:4948a4b0ddd5638537e2e971964283e4d95afb1a0e72e97c5cc53808cd3a9fe2`
+- Fixture：root-owned helper 配置契约、合成 host facts 与只读 preflight CLI
+- 目标能力：`go`、`ssh`、`sudo`、`docker`
+- Oracle 来源：`error-contract`、`report`、`runtime`
+- 有效性证明：`counterexample`
+- 有效性证据：单元契约注入完整的不安全 host facts，证明预检在 allocation 和源包阶段前失败
+- 超时：`2m`
+- 敏感数据：host facts 只含能力与容量，不含地址、凭据或私有连接信息
+
+前置条件：
+
+- 真实服务器使用安装脚本把 helper、配置和既有 Docker guard 固定到 root-owned 路径
+
+执行步骤：
+
+- 通过固定 sudo helper preflight 动词收集架构、容量、端口、DNS、路由、能力与配额
+- 审计 SSH 账号 UID、组、任意 sudo、helper owner/mode，并要求既有 Docker 与 Compose guard 状态
+- 任一检查失败时在本地生成源包和任何远端部署动作之前结束
+
+可观察断言：
+
+- helper 只接受固定 preflight 动词和具名标量，不接受 shell、远端路径或位置参数
+- root 账号、docker/root/wheel/sudo/admin 组、任意 passwordless sudo、非 root-owned helper 均拒绝
+- 架构、磁盘、内存、端口、DNS、路由、能力、并发和两层隔离全部通过后才返回 allocation
+
+反例与故障路径：
+
+- 同时破坏容量、网络、能力、配额、账号权限和隔离状态并要求聚合失败
+
+清理：
+
+- 契约测试不连接服务器；安装脚本仅由服务器管理员显式执行
+
+执行入口：
+
+```bash
+npm run test-remote-contract
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/remotetest
+```
+
+## `TESTAUTO-T-013` commit 与 base commit 加 worktree patch 源包往返
+
+- 级别：`e2e`
+- 覆盖需求：`TESTAUTO-R-019`
+- 需求复核摘要：`sha256:7a9bcaa3f014f57f53181b024578428bdeebc4100d71290b073ca95925448ac4`
+- 实现复核摘要：`sha256:d7141f6a2bde46e54ee28f12eae9b3f1304b470846a310f6347e4b40a650cf50`
+- Fixture：含已提交文件、已修改跟踪文件和未跟踪文件的临时 Git 仓库
+- 目标能力：`go`、`git`、`tar`、`sha256`
+- Oracle 来源：`filesystem`、`error-contract`
+- 有效性证明：`counterexample`
+- 有效性证据：E2E roundtrip 修改跟踪文件并加入未跟踪文件，另用错误摘要证明接收端 fail closed
+- 超时：`2m`
+- 敏感数据：Git ignored 文件不进入 worktree bundle；fixture 只含合成文本
+
+前置条件：
+
+- 无。
+
+执行步骤：
+
+- 分别构建 committed bundle 与 base commit 加 binary patch/untracked tar 的 worktree bundle
+- 在独立临时目录模拟服务器端校验 bundle 和组件摘要后物化
+- 比对发送端/接收端 source digest、base commit、文件内容和 bundle 权限
+
+可观察断言：
+
+- 两种源包都记录不可变 base commit 与内容组件摘要
+- worktree 修改和未跟踪文件在接收端精确重建，bundle 为 0600
+- bundle 或组件摘要不一致时在创建目标目录前拒绝
+
+反例与故障路径：
+
+- 使用错误接收摘要物化 bundle 时拒绝且目标目录不存在
+
+清理：
+
+- Go 测试框架删除临时仓库、bundle 和接收目录
+
+执行入口：
+
+```bash
+go test ./internal/remotetest
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/remotetest
+```
+
+## `TESTAUTO-T-014` run-id 并发资源分配
+
+- 级别：`e2e`
+- 覆盖需求：`TESTAUTO-R-020`
+- 需求复核摘要：`sha256:7788b34b1fb44a0f0f68d6f4c2f8cd55d44f3477b21438ba576dc2c567c0c850`
+- 实现复核摘要：`sha256:1b75c80c8789e94500cb7d1309205a0e6b5d454326a6b29d4c9f645614a4b908`
+- Fixture：同一 target 的两个 run-id 和两个并发 slot
+- 目标能力：`go`
+- Oracle 来源：`return-value`、`filesystem`
+- 有效性证明：`counterexample`
+- 有效性证据：E2E 分配测试同时比较两个运行的全部资源字段与端口范围
+- 超时：`1m`
+- 敏感数据：不使用敏感数据
+
+前置条件：
+
+- 无。
+
+执行步骤：
+
+- 为两个 run-id 分配 workspace、端口块、前缀、netns、Docker、containerd 和报告路径并逐字段比较
+
+可观察断言：
+
+- 每项可变资源都包含 run-id 或独占 slot，两个端口块不重叠
+- run-id、slot、端口范围和远端 test root 的边界错误全部拒绝
+
+反例与故障路径：
+
+- 复用 slot、越界 slot、宽泛根路径或溢出端口块时拒绝
+
+清理：
+
+- 分配为纯值计算，不创建真实资源
+
+执行入口：
+
+```bash
+go test ./internal/remotetest
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/remotetest
+```
+
+## `TESTAUTO-T-015` 既有 Docker 双重隔离与 Compose workspace owner 门禁
+
+- 级别：`e2e`
+- 覆盖需求：`TESTAUTO-R-021`
+- 需求复核摘要：`sha256:9c68b5e13d83e188bbbd9e77a35cc3095d4b699d0dcd269ef4e1546266c4c3ba`
+- 实现复核摘要：`sha256:25c23166f3ec34f303684923702372cb128a42be867e525211985c6ddc0efa2c`
+- Fixture：fake Docker daemon facts、两个 ANAS workspace 与冲突 Compose owner 标签
+- 目标能力：`shell`、`go`、`fake-docker`
+- Oracle 来源：`error-contract`、`filesystem`、`runtime`
+- 有效性证明：`counterexample`
+- 有效性证据：现有确定性 E2E 使用 fake Docker 注入四类隔离破坏并断言零个越界变更命令
+- 超时：`10m`
+- 敏感数据：fake Docker 日志只含合成路径和项目名
+
+前置条件：
+
+- 无。
+
+执行步骤：
+
+- 运行 server-require-isolated-docker.sh 的 socket/data-root 反例测试
+- 运行 Runner Compose project 跨 workspace owner 冲突 E2E
+
+可观察断言：
+
+- 默认 Docker socket、生产 data-root 和仅测试命名但指向生产 root 的 socket 全部拒绝
+- 冲突 Compose project 在任何 mutating Docker 命令之前拒绝，邻接 workspace 不受影响
+
+反例与故障路径：
+
+- 默认 socket、生产 data-root、跨 workspace project owner 和并发前缀冲突
+
+清理：
+
+- 脚本删除 .anas-test 下的临时 workspace 和报告
+
+执行入口：
+
+```bash
+./test-env/scripts/test-server-docker-isolation.sh
+./test-env/scripts/test-compose-project-isolation.sh
+```
+
+有效性验证入口：
+
+```bash
+./test-env/scripts/test-server-docker-isolation.sh
+./test-env/scripts/test-compose-project-isolation.sh
 ```

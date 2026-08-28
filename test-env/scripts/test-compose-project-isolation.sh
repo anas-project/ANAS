@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# TEST_CASES: TESTAUTO-T-015
 # Deterministic E2E for the Docker Compose workspace boundary. It proves that
 # custom container prefixes scope project names, cleanup addresses only that
 # scope, and a reused project name cannot mutate another workspace.

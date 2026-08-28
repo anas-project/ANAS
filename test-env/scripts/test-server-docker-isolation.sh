@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# TEST_CASES: TESTAUTO-T-015
 set -eu
 
 . "$(dirname -- "$0")/common.sh"

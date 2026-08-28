@@ -14,7 +14,8 @@ import (
 
 func main() {
 	check := flag.Bool("check", false, "fail if generated test case documentation is stale")
-	printDigests := flag.Bool("print-digests", false, "print reviewed requirement digests without writing files")
+	printDigests := flag.Bool("print-digests", false, "print current requirement and implementation digests without writing files")
+	reviewBase := flag.String("review-diff", "", "print requirement, case, and test implementation diffs from a Git revision")
 	root := flag.String("root", "", "repository root (auto-detected by default)")
 	flag.Parse()
 
@@ -25,13 +26,20 @@ func main() {
 			fatal(err)
 		}
 	}
-	if *check && *printDigests {
-		fatal(errors.New("--check and --print-digests cannot be used together"))
+	selectedModes := 0
+	for _, selected := range []bool{*check, *printDigests, *reviewBase != ""} {
+		if selected {
+			selectedModes++
+		}
+	}
+	if selectedModes > 1 {
+		fatal(errors.New("--check, --print-digests, and --review-diff cannot be used together"))
 	}
 	if err := testcasecatalog.Run(testcasecatalog.Options{
 		Root:         *root,
 		Check:        *check,
 		PrintDigests: *printDigests,
+		ReviewBase:   *reviewBase,
 		Output:       os.Stdout,
 	}); err != nil {
 		fatal(err)

@@ -15,6 +15,9 @@ secrets.yml
 config.lnnj.com.cn.yml
 test-env/reports/*
 !test-env/reports/.gitkeep
+# Per-machine remote-test targets and generated source bundles never enter Git.
+test-env/remote/*.local.yml
+test-env/.remote-test/
 
 # Binaries built into the repository root. Anchored with a leading slash so the
 # pattern cannot also match the cmd/<name>/ source directories.
