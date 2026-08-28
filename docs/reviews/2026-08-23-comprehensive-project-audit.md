@@ -310,38 +310,37 @@ Cookie。**
 
 ### T7 [P1] `requires_capabilities` 需要条件依赖（阻塞 T4）
 
+> **2026-08-28：需求文档已立项，本条转为实施。** 验收依据见
+> [条件 Capability 依赖要求](/requirements/conditional-capability-dependency)（19 条，前缀
+> `CONDDEP`），实施顺序见[条件 Capability 依赖实施计划](/plans/conditional-capability-dependency)。
+> 下面保留基线时的问题描述与已定决策，作为立项理由的记录；**执行以那两份文档为准，不要以本节为准**。
+
 **定位**：`internal/runner/capability.go:800-855`（`requires_capabilities` 解析）、
 `modules/*/module.yml` 的 `requires_capabilities` 段
 
-**现状**：`requires_capabilities` 是无条件的，没有 `enabled_by` 之类的开关。后果是「某个可选服务
-需要某个 Capability」这件事无法表达：要么让整个 Module 强制依赖（会波及所有不开该可选服务的部署），
-要么完全不声明（现状，开了可选服务也无人提醒）。
-
-**第一个真实用例是 T4**：postgres/mariadb 只有在 `adminer_enabled=true` 时才需要 `forward_auth`。
-本轮已确定 Adminer 走这条路，所以这条从 P2 提到 P1——T4 等它。
-
-**要做什么**：这是**核心 schema 与解析器的改动，不是一个小补丁**，应当先立需求文档再实现。按本轮
-确定的存放规则（见 T8），它属于 ANAS 自身能力，放仓库根 `dev-docs/requirements/`；迁移未完成前
-先放 `docs/requirements/`。
-
-需求文档至少要回答：
-
-- 条件用什么表达？复用 `services.optional` 已有的 `enabled_by`（指向一个 bool 配置参数），还是引入
-  独立字段？
-- 条件不满足时 `interface_selected_by` 参数如何处理——是忽略还是必须为空？
-- `anas plan` 的输出如何呈现「因为你开了 X 所以现在需要 Y」？这是这个特性面向用户的主要价值。
-- 已有的无条件声明（`ddns_updater` 的 `forward_auth`）用什么写法表达。**本轮已确定不考虑兼容
-  迁移**，所以如果新语法更好，直接改写 `ddns_updater`，不必为旧写法保留解析分支。
+**现状**：`requires_capabilities` 是无条件的。后果是「某个可选服务需要某个 Capability」这件事无法
+表达：要么让整个 Module 强制依赖（会波及所有不开该可选服务的部署），要么完全不声明（现状，开了
+可选服务也无人提醒）。第一个真实用例是 T4——postgres/mariadb 只有在 `adminer_enabled=true` 时才需要
+`forward_auth`。
 
 **已定**：条件依赖一旦成立就进入依赖序列，此后与无条件依赖**完全等价**——照常参与拓扑排序、
 照常影响启动顺序、照常在 Provider 缺失时失败。「条件」只决定这条依赖**是否存在**，不改变它存在
-之后的任何语义。`adminer_enabled=true` 的 postgres 必须排在 oauth2_proxy 之后，不因为依赖是条件性
-的而被降级为软依赖。这一条写进需求矩阵。
+之后的任何语义。已写入 `CONDDEP-R-002`、`CONDDEP-R-003`。
 
-**不要做什么**：不要在没有需求文档的情况下先改 `capability.go`。这个字段一旦发布就进入 Module
-manifest 的兼容契约。
+**立项时读代码新发现的三件事**（基线审计没有涉及，都进了需求矩阵）：
 
-**依赖**：无前置。**阻塞 T4。**
+1. **不能复用既有的 `dependencies.requires[].optional`**，它的语义正好相反：`resolveOrder`
+   （`runner.go:822`）把 optional 依赖整个排除出依赖图，**不产生排序边**。那是「碰巧在场就检查」，
+   不是「条件成立就必须在场」。见要求文档 §2。
+2. **条件必须在 `applyModuleDefaults` 之前可判定**。`resolveOrder` 跑在它之前
+   （`deployment.go:450` vs `:454`），而 `applyModuleDefaults` 自己要遍历 `a.order` 才能填值——先有
+   顺序才有默认值。所以判定时 `a.env` 里只有用户显式配置过的值，条件求值必须自己回落到
+   `a.reg[name].Defaults`。见要求文档 §4、`CONDDEP-R-006`。
+3. **翻转条件会让 lock 陈旧**。Provider 进 `moduleLock.Modules`、绑定进 `moduleLock.Bindings`，
+   所以 `adminer_enabled` 现有的 `changes.effect: container_recreate` 描述不了这件事。见要求文档 §6、
+   `CONDDEP-R-013`、`CONDDEP-R-014`。
+
+**依赖**：无前置。**阻塞 T4**——T4 的第 1 步就是本特性的 M2。
 
 ---
 

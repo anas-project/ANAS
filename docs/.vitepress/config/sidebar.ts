@@ -161,7 +161,9 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Incus compute Provider', link: '/requirements/incus-module' },
         { text: 'Module IAM 双向登出', link: '/requirements/module-iam-bidirectional-logout' },
         { text: '需求 ID 矩阵采用范围', link: '/requirements/requirement-id-adoption' },
-        { text: '文档驱动测试自动化', link: '/requirements/document-driven-test-automation' }
+        { text: '文档驱动测试自动化', link: '/requirements/document-driven-test-automation' },
+        { text: '条件 Capability 依赖', link: '/requirements/conditional-capability-dependency' },
+        { text: '无序 Capability 依赖', link: '/requirements/weak-capability-dependency' }
       ]
     }
   ],
@@ -179,7 +181,9 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Incus compute Provider', link: '/plans/incus-module' },
         { text: 'Module IAM 双向登出', link: '/plans/module-iam-bidirectional-logout' },
         { text: '需求 ID 矩阵采用', link: '/plans/requirement-id-adoption' },
-        { text: '文档驱动测试自动化', link: '/plans/document-driven-test-automation' }
+        { text: '文档驱动测试自动化', link: '/plans/document-driven-test-automation' },
+        { text: '条件 Capability 依赖', link: '/plans/conditional-capability-dependency' },
+        { text: '无序 Capability 依赖', link: '/plans/weak-capability-dependency' }
       ]
     }
   ],

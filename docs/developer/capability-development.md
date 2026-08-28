@@ -208,6 +208,107 @@ Capability 是硬依赖。没有可用 Provider、Provider 被禁用或没有兼
 必须在 plan/lock 阶段失败；不得退回未认证、本地共享密码或功能残缺的隐式模式。确需可选
 能力时，应把可选性建模为显式 Module 配置和拓扑规则，而不是吞掉解析错误。
 
+### 6.1 条件依赖：`enabled_by`
+
+Consumer 的**可选服务**需要某个 Capability 时，用 `enabled_by` 声明条件：
+
+```yaml
+dependencies:
+  requires_capabilities:
+    - name: forward_auth
+      enabled_by: adminer_enabled
+      interface_selected_by: forward_auth_interface
+      interfaces:
+        any_of: [http]
+
+config:
+  defaults:
+    adminer_enabled: "false"
+  types:
+    adminer_enabled: bool
+```
+
+**条件只决定这条依赖是否存在，不改变它存在之后的任何语义。** 条件成立时它就是一条普通的硬
+依赖：照常参与拓扑排序、Provider 缺失照常失败、绑定照常写入 lock。**不存在「弱条件依赖」这种
+中间态**——一个只在运气好时才被满足的安全网关不是安全网关。
+
+`enabled_by` 必须命名**本 Module 自己的一个 `bool` 参数**，且该参数必须在 `config.types` 中声明。
+三条限制各有原因，不是风格约束：
+
+- **别的 Module 的参数或裸环境变量**在读取这个条件的时刻还不存在——依赖图先于其他 Module 的值
+  建立；
+- **未在 `config.types` 声明的参数名**没有任何东西校验，而这里拼错名字不会响亮地失败，它会静默
+  求值为 false；对这个字段的第一个使用者来说，那意味着一道认证网关无声消失；
+- **非布尔参数**需要一套「真值」规则，而任何真值规则都会把某些合法取值意外变成 false，后果同上。
+
+省略 `enabled_by` 即无条件，既有声明的行为不变。
+
+**与另外两个「可选」机制的区别**——三者不是同一件事的三种写法：
+
+| 机制 | 引用什么 | 求值时机 |
+| --- | --- | --- |
+| `requires_capabilities[].enabled_by` | 本 Module 的 bool 配置参数 | 解析依赖顺序时，早于一切 Hook |
+| `services.optional[].enabled_by` | 本 Module 的配置参数 | 声明式；实际禁用由 Hook 的 `disable_services` 执行 |
+| `dependencies.requires[].optional` | 无条件字段，修饰的是 Module 依赖 | **语义相反**：optional 依赖被排除出依赖图，不产生排序边，只在该 Module 恰好也被部署时检查版本 |
+
+`requires_capabilities[].enabled_by` 与 `services.optional[].enabled_by` 同名同义是有意的：同一个
+粒度（本 Module 的一个开关），同一个求值时机。**`dependencies.requires[].optional` 不是它们的
+简写**——它表达「碰巧在场就顺带检查」，条件依赖表达「条件成立就必须在场且必须排在前面」，两者不
+可互换。
+
+应用目录 schema 里的 `enabled_if` 引用的是**变量**而不是参数，在渲染期求值，可以依赖 Hook 的输出。
+因此它**不能**用作依赖条件——依赖顺序必须在任何 Hook 运行之前就确定。
+
+详细约束见[条件 Capability 依赖要求](/requirements/conditional-capability-dependency)。
+
+### 6.2 无序依赖：`ordering`
+
+Provider 必须在部署里、但**不需要排在 Consumer 前面**时，用 `ordering: any`：
+
+```yaml
+dependencies:
+  requires_capabilities:
+    - name: forward_auth
+      ordering: any
+      interface_selected_by: forward_auth_interface
+      interfaces:
+        any_of: [http]
+
+config:
+  consumes:
+    - ANAS_FORWARD_AUTH_MIDDLEWARE
+```
+
+它存在的理由是**守门人依赖被守卫者**这类环：网关要守卫数据库，网关自己又需要 IAM，而 IAM 需要那个
+数据库。强依赖在这里必然成环，而这不是接线接错了，是这类关系的固有形状。
+
+**放弃的只有顺序，不是要求。** Provider 缺失、被禁用或没有兼容 interface 时照样在 `plan` 阶段失败，
+绑定照样记录、照样进 lock。字段命名的是被放弃的东西——**不要读成「这条依赖可有可无」**，那是
+`dependencies.requires[].optional` 的语义，见下表。
+
+| 机制 | 存在性 | 排序边 |
+| --- | --- | --- |
+| `dependencies.requires[].optional` | **不强制** | 无 |
+| `requires_capabilities`（缺省） | 强制 | 有 |
+| `requires_capabilities[].ordering: any` | 强制 | **无** |
+
+使用它要接受两条约束：
+
+- **Consumer 的 calculate Hook 读不到该 Provider 拥有的任何键。** Runner 会主动把它们从 calculate
+  环境中移除，不是靠自觉。理由是 Provider 可能还没跑，那些键的有无取决于解析顺序；一个稳定的缺失
+  比一个时有时无的值好得多——错误会在作者第一次运行时暴露，而不是在别人的拓扑上。
+  **渲染期不受此限**：`calculate` 与 `renderAll` 是两趟，渲染读的是所有 Hook 跑完后的完整环境，
+  所以 Compose 变量、模板照常取值。
+- **必须显式声明 `consumes`。** 去掉排序边同时也把 Provider 移出了 Consumer 的依赖闭包，闭包与前缀
+  可见性都不再覆盖它，显式声明是唯一剩下的通路。
+
+两处限制：Contract 依赖与 `resources.requires` **不得**使用（Resource 是 Provider 的 Hook 真实创建
+的持久对象，顺序是语义的一部分）；注册了 output ABI 的 Capability 也不得使用——那些键投影在 Provider
+的 calculate 之后、且归 Consumer 所有，上面的过滤覆盖不到，会留下一个静默的洞。两种情况都在 Manifest
+加载期失败。
+
+详细约束见[无序 Capability 依赖要求](/requirements/weak-capability-dependency)。
+
 ## 7. Runner registry 与解析
 
 新增通用 Capability 必须在中立 registry 中增加 `capabilityDefinition`。定义至少包含：
