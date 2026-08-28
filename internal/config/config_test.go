@@ -610,6 +610,115 @@ env:
 	}
 }
 
+// The temporary file is what a killed process leaves behind, so it must not be
+// something the next run reuses, and it must not change the config's mode.
+func TestSetScalarLeavesNoTemporaryFileAndKeepsMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(path, []byte("modules:\n  samba_dc: {}\nglobal:\n  base_domain: nas.example.com\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetScalar(path, []string{"global", "email"}, "admin@example.com"); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "config.yml" {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("directory holds %v, want only config.yml", names)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// os.CreateTemp always makes 0600 files; a config the operator kept at 0640
+	// must not silently narrow, and one at 0600 must not silently widen.
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("mode = %v, want the original 0600", info.Mode().Perm())
+	}
+}
+
+// A rejected edit must not leave the temporary file behind either.
+func TestSetScalarRemovesTemporaryFileWhenTheResultIsInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	original := "modules:\n  samba_dc: {}\nglobal:\n  base_domain: nas.example.com\n"
+	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A key Load rejects, so the write happens and the validation fails after it.
+	err := SetScalar(path, []string{"global", "not_a_real_setting"}, "x")
+	if err == nil {
+		t.Fatal("SetScalar accepted a key the loader rejects")
+	}
+	if !strings.Contains(err.Error(), "updated config is invalid") {
+		t.Fatalf("error = %v, want the validation failure", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "config.yml" {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("directory holds %v after a rejected edit, want only config.yml", names)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != original {
+		t.Fatalf("config was modified by a rejected edit:\n%s", body)
+	}
+}
+
+// The point of a unique temporary name. A crash between the write and the
+// rename leaves a file behind; with a fixed name the next edit reuses it, and if
+// that leftover came from a run as another user the edit fails with a
+// permission error that never mentions the stale file responsible for it.
+func TestSetScalarIgnoresAnUnwritableLeftoverTemporaryFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the file mode that makes the leftover unwritable")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(path, []byte("modules:\n  samba_dc: {}\nglobal:\n  base_domain: nas.example.com\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Exactly the name the previous implementation would pick.
+	leftover := filepath.Join(dir, ".config.yml.tmp")
+	if err := os.WriteFile(leftover, []byte("debris from a killed run\n"), 0400); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetScalar(path, []string{"global", "email"}, "admin@example.com"); err != nil {
+		t.Fatalf("SetScalar was blocked by a leftover temporary file: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.BaseEnv()["EMAIL"]; got != "admin@example.com" {
+		t.Fatalf("email = %q, want the value just written", got)
+	}
+	if body, err := os.ReadFile(leftover); err != nil || string(body) != "debris from a killed run\n" {
+		t.Fatalf("the leftover file was reused: body=%q err=%v", body, err)
+	}
+}
+
 func TestSetStringPreservesExplicitYAMLLookingValues(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")

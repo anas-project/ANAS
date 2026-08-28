@@ -145,12 +145,32 @@ func setScalarNode(path string, keys []string, value *yaml.Node) error {
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".tmp")
-	if err := os.WriteFile(tmp, out.Bytes(), info.Mode().Perm()); err != nil {
+	// A unique temporary name, not a fixed one. With a fixed ".<name>.tmp" a
+	// rename that never happened -- a killed process, a full disk -- leaves the
+	// file behind in the user's config directory, and the next run silently
+	// writes over it. That is harmless until the leftover belongs to root, at
+	// which point every later edit fails with a permission error that says
+	// nothing about the stale file causing it.
+	temp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := temp.Name()
+	defer os.Remove(tmp)
+
+	// CreateTemp always uses 0600; the config keeps whatever mode it already had.
+	if err := temp.Chmod(info.Mode().Perm()); err != nil {
+		temp.Close()
+		return err
+	}
+	if _, err := temp.Write(out.Bytes()); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
 		return err
 	}
 	if _, err := Load(tmp); err != nil {
-		_ = os.Remove(tmp)
 		return fmt.Errorf("updated config is invalid: %w", err)
 	}
 	return os.Rename(tmp, path)
