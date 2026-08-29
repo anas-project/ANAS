@@ -2,7 +2,7 @@
 
 > Status: **partially implemented**. Strict manifest validation, deployment freezing, read-only
 > discovery, the shared execution service, strict ABI, locking, and `anas module commands|invoke`
-> are in place; `anasd` exposes only unauthenticated read-only list/detail.
+> are in place; M1A `anasd` exposes read-only list/detail only in full state over HTTPS with an owner session.
 > **Not yet delivered**: the `anasd` invoke and job endpoints, and the Forgejo and Incus commands.
 > This page describes what is implemented; delivery order lives in the
 > [implementation plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/module-command-capability.md) under `dev-docs/`.
@@ -41,9 +41,10 @@ missing terminal output, and reflected Secret values fail closed. Raw stderr is 
 adapted to CLI stderr, leaving one final `anas.dev/cli/v1` envelope on JSON stdout. Timeout or cancellation terminates
 the executor process group.
 
-The read-only M0 daemon exposes `GET /api/v1/workspaces/{ws}/modules/{module}/commands` and the corresponding
+The M1A daemon remains read-only and exposes `GET /api/v1/workspaces/{ws}/modules/{module}/commands` and the corresponding
 `/{command}` detail route with independent `anas.dev/api/v1` DTOs. They contain no handler, executor, input key,
-injected value, or host path. The unauthenticated listener has no invoke route; a future POST must connect this same
+injected value, or host path. Production starts in bootstrap; these discovery routes are available only in full state
+over HTTPS with an owner session, and there is no invoke route. A future POST must connect this same
 `application.ModuleCommandService` to authentication, roles, jobs, audit, digest/idempotency checks, and destructive
 reauthentication instead of launching the CLI.
 

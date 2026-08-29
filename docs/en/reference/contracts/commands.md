@@ -673,7 +673,7 @@ not something argument order gets to decide.
 The M3 `anasd` configuration endpoints consume this same typed application
 schema: they do not parse CLI JSON and do not maintain a per-module HTTP
 adapter, and the CLI, the HTTP API, and the web form model must stay
-projections of one schema. The current M0 daemon does not yet expose
+projections of one schema. The current M1A daemon does not yet expose
 configuration HTTP endpoints.
 
 | code | Exit code | When |
@@ -900,8 +900,9 @@ canonicalized parameters. Raw executor stdout/stderr is not passed through; with
 `--json`, stdout still carries only one final envelope, and validated
 progress/warnings are written to stderr as JSONL.
 
-The current unauthenticated read-only anasd M0 exposes separate GET
-list/detail DTOs for command discovery, but no invoke endpoint.
+The current read-only anasd M1A exposes separate GET list/detail DTOs for
+command discovery only in full state over HTTPS with an owner session, and no
+invoke endpoint.
 
 ```json
 {

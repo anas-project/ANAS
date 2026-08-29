@@ -78,7 +78,7 @@ updated: 2026-08-23
 
 ## 8. 当前阻塞
 
-- anasd 当前 M0 仍是未认证只读 API；M3 不能提前开放 POST invoke。
+- anasd 当前已具备 M1A 认证边界与 M1B 持久任务/只读查询底座，但 job execution 与写操作审计尚未开放；M3 不能提前开放 POST invoke。
 - 当前没有可用的独立 Incus/KVM 宿主和 service-manager maintenance credential；M4 只能先做单元边界，
   不能完成真实 daemon start/stop 验收。
 - 工作区存在其他进行中的 Forgejo、compute contract 与文档改动；实现必须避免覆盖这些改动，并在

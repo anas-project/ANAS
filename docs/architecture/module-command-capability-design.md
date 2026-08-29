@@ -353,8 +353,8 @@ POST body：
 - `anasd` 的角色策略可以让命令“已声明但当前 actor 不可调用”；列表可显示
   `authorized: false`，不得靠返回 404 隐藏审计相关事实。
 
-只读 GET list/detail 复用既有的安全 DTO，这在 `anasd` 仍是未认证的只读 API 时是成立的；
-POST invoke/job 必须等 Web 管理 API 具备认证、任务与审计能力之后才能出现。在那之前单独加一个
+只读 GET list/detail 复用既有的安全 DTO；M1A 起只在 full 状态经 HTTPS 和 owner 会话开放。
+POST invoke/job 必须等 Web 管理 API 具备任务与写操作审计边界之后才能出现。在那之前单独加一个
 POST handler，等于绕开整体安全门槛。
 
 ## 10. 锁、并发、取消与幂等

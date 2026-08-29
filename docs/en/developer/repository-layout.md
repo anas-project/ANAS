@@ -2,7 +2,7 @@
 
 ```text
 cmd/anas/             CLI entry point
-cmd/anasd/            Web API daemon entry point (M0 development skeleton)
+cmd/anasd/            Web API daemon entry point (M1A management channel and local-auth foundation)
 internal/             internal Go implementation, platform adapters, and tests
 internal/application/ typed use cases shared by CLI and HTTP
 internal/deployment/  read-only deployment state model and store

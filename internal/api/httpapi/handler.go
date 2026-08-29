@@ -1,4 +1,5 @@
-// Package httpapi exposes the read-only M0 application queries over HTTP.
+// Package httpapi exposes read-only application queries plus the M1A console
+// authentication and route-policy boundary over HTTP.
 package httpapi
 
 import (
@@ -39,79 +40,119 @@ type QueryService interface {
 type ServiceFactory func(workspacePath string) QueryService
 
 type handler struct {
-	registry *Registry
-	factory  ServiceFactory
+	registry   *Registry
+	factory    ServiceFactory
+	security   SecurityOptions
+	auth       ConsoleAuthenticator
+	enrollment *EnrollmentOptions
+	jobs       *jobHTTPState
+	authHTTP   authHTTPState
+	routes     []routeSpec
 }
 
 func NewHandler(registry *Registry, factory ServiceFactory) http.Handler {
+	handler, err := NewHandlerWithSecurity(registry, factory, legacySecurityOptions())
+	if err != nil {
+		panic(err)
+	}
+	return handler
+}
+
+func NewHandlerWithSecurity(registry *Registry, factory ServiceFactory, security SecurityOptions) (http.Handler, error) {
+	return newHandler(registry, factory, security, nil, nil, nil)
+}
+
+func NewHandlerWithAuthentication(registry *Registry, factory ServiceFactory, security SecurityOptions, auth ConsoleAuthenticator) (http.Handler, error) {
+	if auth == nil {
+		return nil, errors.New("console authenticator is required")
+	}
+	return newHandler(registry, factory, security, auth, nil, nil)
+}
+
+func NewHandlerWithEnrollment(registry *Registry, factory ServiceFactory, security SecurityOptions, auth DirectAuthenticator, enrollment EnrollmentOptions) (http.Handler, error) {
+	if auth == nil {
+		return nil, errors.New("console authenticator is required")
+	}
+	if err := enrollment.validate(); err != nil {
+		return nil, err
+	}
+	return newHandler(registry, factory, security, auth, &enrollment, nil)
+}
+
+// NewHandlerWithJobQueries adds the durable read-only job history and event
+// stream surface. The SecurityOptions authorizer remains the single
+// authentication boundary, so this constructor can be used with bootstrap,
+// enrollment-recovery, or owner authentication.
+func NewHandlerWithJobQueries(registry *Registry, factory ServiceFactory, security SecurityOptions, auth ConsoleAuthenticator, jobs JobQueryOptions) (http.Handler, error) {
+	jobState, err := newJobHTTPState(jobs)
+	if err != nil {
+		return nil, err
+	}
+	return newHandler(registry, factory, security, auth, nil, jobState)
+}
+
+// NewHandlerWithEnrollmentAndJobQueries composes the enrollment workflow and
+// durable read-only job surface without weakening either dependency's startup
+// validation.
+func NewHandlerWithEnrollmentAndJobQueries(registry *Registry, factory ServiceFactory, security SecurityOptions, auth DirectAuthenticator, enrollment EnrollmentOptions, jobs JobQueryOptions) (http.Handler, error) {
+	if auth == nil {
+		return nil, errors.New("console authenticator is required")
+	}
+	if err := enrollment.validate(); err != nil {
+		return nil, err
+	}
+	jobState, err := newJobHTTPState(jobs)
+	if err != nil {
+		return nil, err
+	}
+	return newHandler(registry, factory, security, auth, &enrollment, jobState)
+}
+
+func newHandler(registry *Registry, factory ServiceFactory, security SecurityOptions, auth ConsoleAuthenticator, enrollment *EnrollmentOptions, jobs *jobHTTPState) (http.Handler, error) {
 	if registry == nil {
 		registry = &Registry{paths: map[string]string{}, ids: []string{}}
 	}
-	return &handler{registry: registry, factory: factory}
+	security, err := normalizeSecurityOptions(security)
+	if err != nil {
+		return nil, err
+	}
+	h := &handler{
+		registry:   registry,
+		factory:    factory,
+		security:   security,
+		auth:       auth,
+		enrollment: enrollment,
+		jobs:       jobs,
+		authHTTP:   newAuthHTTPState(),
+	}
+	h.routes = h.routeSpecs()
+	if err := validateRouteSpecs(h.routes); err != nil {
+		return nil, err
+	}
+	return h, nil
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "no-store")
-	if !validLoopbackHost(r.Host) {
-		writeProblem(w, http.StatusBadRequest, "invalid_host", "request Host must be a numeric loopback IP")
+	setSecurityHeaders(w.Header(), r.TLS != nil)
+	if h.security.Listener == ListenerDirect {
+		stripDirectProxyHeaders(r.Header)
+	}
+	if !h.security.HostAllowed(r) {
+		writeProblem(w, http.StatusBadRequest, "invalid_host", "request Host is not allowed")
 		return
 	}
+	h.dispatch(w, r)
+}
 
-	switch r.URL.Path {
-	case "/healthz":
-		if !requireGET(w, r) {
-			return
-		}
-		if _, ok := supportedQuery(w, r); !ok {
-			return
-		}
-		writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
-		return
-	case "/api/v1/system":
-		if !requireGET(w, r) {
-			return
-		}
-		if _, ok := supportedQuery(w, r); !ok {
-			return
-		}
-		h.system(w, r)
-		return
-	}
-
-	segments := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-	if len(segments) < 5 || segments[0] != "api" || segments[1] != "v1" || segments[2] != "workspaces" {
-		writeProblem(w, http.StatusNotFound, "not_found", "resource was not found")
-		return
-	}
-	if !requireGET(w, r) {
-		return
-	}
-	workspaceID := segments[3]
-	workspacePath, ok := h.registry.Resolve(workspaceID)
-	if !ok {
-		writeProblem(w, http.StatusNotFound, "workspace_not_found", "workspace was not found")
-		return
-	}
-	service := h.service(workspacePath)
-	if service == nil {
-		writeProblem(w, http.StatusInternalServerError, "internal_error", "query service is unavailable")
-		return
-	}
-
-	switch {
-	case len(segments) == 5 && segments[4] == "status":
-		h.status(w, r, workspaceID, service)
-	case len(segments) == 5 && segments[4] == "deployments":
-		h.deployments(w, r, workspaceID, service)
-	case len(segments) == 6 && segments[4] == "deployments" && segments[5] != "":
-		h.deployment(w, r, workspaceID, segments[5], service)
-	case len(segments) == 7 && segments[4] == "modules" && segments[5] != "" && segments[6] == "commands":
-		h.moduleCommands(w, r, workspaceID, segments[5], service)
-	case len(segments) == 8 && segments[4] == "modules" && segments[5] != "" && segments[6] == "commands" && segments[7] != "":
-		h.moduleCommand(w, r, workspaceID, segments[5], segments[7], service)
-	default:
-		writeProblem(w, http.StatusNotFound, "not_found", "resource was not found")
+func setSecurityHeaders(header http.Header, isTLS bool) {
+	header.Set("Cache-Control", "no-store")
+	header.Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'")
+	header.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+	header.Set("Referrer-Policy", "no-referrer")
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("X-Frame-Options", "DENY")
+	if isTLS {
+		header.Set("Strict-Transport-Security", "max-age=31536000")
 	}
 }
 

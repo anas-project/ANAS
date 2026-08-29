@@ -2,7 +2,7 @@
 
 ```text
 cmd/anas/             CLI 入口
-cmd/anasd/            Web API 守护进程入口（M0 开发骨架）
+cmd/anasd/            Web API 守护进程入口（M1A 管理通道与本地认证底座）
 internal/             Go 内部实现、平台适配与测试
 internal/application/ CLI 与 HTTP 共享的类型化用例
 internal/deployment/  只读部署状态模型与存储

@@ -3,6 +3,7 @@
 参考文档定义字段、格式和稳定接口，适合查找，不代替任务指南。
 
 - [配置结构](configuration.md)：`config.yml` 的结构化字段和环境变量映射。
+- [`anasd` 服务配置](anasd-service-configuration.md)：固定管理端口、监听、workspace registry、console store 与证书消费契约。
 - [Module 目录](modules.md)：稳定与实验性 Module 的能力边界。
 - [Module 环境变量](module-environment-variables.md)：Runner 与 Module 之间的变量契约。
 - [Module 专属命令](module-commands.md)：Module 命令声明、只读发现和安全边界。

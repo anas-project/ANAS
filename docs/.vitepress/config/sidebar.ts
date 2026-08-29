@@ -52,6 +52,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: '概览', link: '/reference/' },
         { text: '配置结构', link: '/reference/configuration' },
+        { text: '`anasd` 服务配置', link: '/reference/anasd-service-configuration' },
         { text: 'Module 目录', link: '/reference/modules' },
         { text: 'Module 专属命令', link: '/reference/module-commands' },
         { text: 'Module 时区与语言', link: '/reference/module-localization' },
@@ -200,6 +201,7 @@ export const enSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: 'Overview', link: '/en/reference/' },
         { text: 'Configuration structure', link: '/en/reference/configuration' },
+        { text: '`anasd` service configuration', link: '/en/reference/anasd-service-configuration' },
         { text: 'CLI JSON contracts', link: '/en/reference/contracts/' },
         { text: 'Module catalog', link: '/en/reference/modules' },
         { text: 'Module-specific commands', link: '/en/reference/module-commands' },

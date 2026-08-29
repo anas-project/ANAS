@@ -1,7 +1,7 @@
 # Module 专属命令
 
 > 状态：**部分实现**。已实现 manifest 校验、deployment 冻结、只读发现、共享执行服务、严格 ABI、
-> 锁和 `anas module commands|invoke`；`anasd` 只提供未认证的只读 list/detail。
+> 锁和 `anas module commands|invoke`；M1A `anasd` 只在 full 状态经 HTTPS 和 owner 会话提供只读 list/detail。
 > **尚未交付**：`anasd` 的 invoke 与 job 端点、Forgejo 与 Incus 的具体命令。本页描述的都是已实现
 > 的部分；施工顺序见仓库 `dev-docs/` 下的[实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/module-command-capability.md)。
 
@@ -103,7 +103,7 @@ stdout 限制为 1 MiB 严格 JSON Lines：零到多个 `progress`/`warning` 后
 
 ## anasd
 
-当前只读 M0 可以通过注册的 workspace ID 发现同一批活动命令：
+当前 M1A `anasd` 仍只读，并可通过注册的 workspace ID 发现同一批活动命令：
 
 ```text
 GET /api/v1/workspaces/{ws}/modules/{module}/commands
@@ -111,7 +111,8 @@ GET /api/v1/workspaces/{ws}/modules/{module}/commands/{command}
 ```
 
 HTTP 使用独立的 `anas.dev/api/v1` DTO，而不是复用 CLI 信封；DTO 同样不含 handler、executor、输入键、
-注入值或宿主路径。当前未认证监听器不提供 POST invoke。后续写入口必须把同一个
+注入值或宿主路径。生产入口默认从 bootstrap 状态启动；上述命令发现路由仅在 full 状态经 HTTPS 和
+owner 会话开放，并且没有 POST invoke。后续写入口必须把同一个
 `application.ModuleCommandService` 接到认证、角色、job、审计、digest/幂等键和 destructive 重认证，
 不能调用 `anas module invoke --json` 子进程。
 
@@ -120,7 +121,7 @@ HTTP 使用独立的 `anas.dev/api/v1` DTO，而不是复用 CLI 信封；DTO �
 - command descriptor、executor 路径和摘要冻结进 `deployment.yml`，二进制进入 Module render digest；
 - 命令声明本身不授予 root、sudo、Linux capability、Docker socket 或 systemd 权限；
 - 本机高权限动作必须经固定目标/动词的 Core named helper；远程维护使用独立最小权限凭据；
-- `anasd` 当前 M0 未认证且只读，只开放 list/detail、不开放 invoke；后续 HTTP adapter 必须复用 application service、job、
+- `anasd` 当前 M1A 仍只读；list/detail 只在 full 状态经 HTTPS 和 owner 会话开放，不开放 invoke；后续 HTTP adapter 必须复用 application service、job、
   认证、角色和审计，不能执行 `anas --json` 子进程。
 
 完整规范来源是[Module 专属命令能力要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-command-capability.md)的需求矩阵

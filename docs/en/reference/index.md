@@ -6,6 +6,7 @@ Reference documentation defines fields, formats, and stable interfaces. Use the 
 - [Module catalog](modules.md): stable and experimental module boundaries.
 - [Module-specific commands](module-commands.md): command declarations, discovery, and security boundaries.
 - [Configuration structure](configuration.md): the current detailed `config.yml` and environment-variable inventory.
+- [`anasd` service configuration](anasd-service-configuration.md): fixed management port, listeners, workspace registry, console store, and certificate-consumer contract.
 - [Module environment variables](module-environment-variables.md): the runner-to-module variable contract.
 - Module Contract reference: [relational_database](module-contracts/relational_database.md), [object_storage](module-contracts/object_storage.md), [identity](module-contracts/identity.md), [certificate](module-contracts/certificate.md), [compute](module-contracts/compute.md), all generated from `contracts/<name>/`.
 

@@ -25,8 +25,9 @@ import (
 )
 
 const (
-	deploymentAPIVersion = deployment.ManifestAPIVersion
-	activeStateVersion   = deployment.StateAPIVersion
+	deploymentAPIVersion  = deployment.ManifestAPIVersion
+	activeStateVersion    = deployment.StateAPIVersion
+	runtimeLockRetryDelay = 25 * time.Millisecond
 )
 
 // The json tags are not decoration: `deployments inspect --json` emits these
@@ -1964,7 +1965,16 @@ func workspaceOf(base string) string { return filepath.Dir(base) }
 // them again leaves services down, and the next command to take this lock is
 // the first opportunity anything has to notice.
 func acquireRuntimeLock(base string) (func(), error) {
-	unlock, err := acquireRuntimeLockMode(base, syscall.LOCK_EX)
+	return acquireRuntimeLockContext(context.Background(), base)
+}
+
+// acquireRuntimeLockContext is the service-facing variant of
+// acquireRuntimeLock. It polls an advisory lock rather than entering a
+// non-interruptible Flock call so an abandoned HTTP request or canceled job
+// never leaves a goroutine waiting forever. Recovery still runs only after the
+// exclusive lock is held.
+func acquireRuntimeLockContext(ctx context.Context, base string) (func(), error) {
+	unlock, err := acquireRuntimeLockModeContext(ctx, base, syscall.LOCK_EX)
 	if err != nil {
 		return nil, err
 	}
@@ -1983,10 +1993,20 @@ func acquireRuntimeLock(base string) (func(), error) {
 }
 
 func acquireRuntimeSharedLock(base string) (func(), error) {
-	return acquireRuntimeLockMode(base, syscall.LOCK_SH)
+	return acquireRuntimeSharedLockContext(context.Background(), base)
 }
 
-func acquireRuntimeLockMode(base string, mode int) (func(), error) {
+func acquireRuntimeSharedLockContext(ctx context.Context, base string) (func(), error) {
+	return acquireRuntimeLockModeContext(ctx, base, syscall.LOCK_SH)
+}
+
+func acquireRuntimeLockModeContext(ctx context.Context, base string, mode int) (func(), error) {
+	if ctx == nil {
+		return nil, errors.New("lock runtime state: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("lock runtime state: %w", err)
+	}
 	if err := ensureRuntimeLayout(base); err != nil {
 		return nil, err
 	}
@@ -1994,9 +2014,28 @@ func acquireRuntimeLockMode(base string, mode int) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(file.Fd()), mode); err != nil {
-		_ = file.Close()
-		return nil, fmt.Errorf("lock runtime state: %w", err)
+	for {
+		err = syscall.Flock(int(file.Fd()), mode|syscall.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+			_ = file.Close()
+			return nil, fmt.Errorf("lock runtime state: %w", err)
+		}
+		timer := time.NewTimer(runtimeLockRetryDelay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			_ = file.Close()
+			return nil, fmt.Errorf("lock runtime state: %w", ctx.Err())
+		case <-timer.C:
+		}
 	}
 	return func() {
 		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)

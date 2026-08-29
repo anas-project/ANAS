@@ -558,7 +558,7 @@ Store 或 lock。
 
 M3 的 `anasd` 配置端点消费同一套带类型的应用 schema：它不解析 CLI JSON，也不为每个
 Module 维护 HTTP 适配器；CLI、HTTP API 与 Web 表单模型必须保持同一 schema 的投影。
-当前 M0 守护进程尚未暴露配置 HTTP 端点。
+当前 M1A 守护进程尚未暴露配置 HTTP 端点。
 
 | code | 退出码 | 何时 |
 | --- | --- | --- |
@@ -737,7 +737,8 @@ handler 或 executor：共享 application service 完成类型规范化、digest
 deployment/release 与规范化参数。原始 executor stdout/stderr 不透传；`--json` 的 stdout 仍只有一个
 最终信封，验证后的 progress/warning 作为 JSONL 写 stderr。
 
-当前未认证只读的 anasd M0 为命令发现暴露独立的 GET list/detail DTO，但没有 invoke 端点。
+当前只读的 anasd M1A 为命令发现暴露独立的 GET list/detail DTO；它们只在 full 状态经 HTTPS 和 owner
+会话开放，且没有 invoke 端点。
 
 ```json
 {

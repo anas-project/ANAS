@@ -178,6 +178,7 @@ func TestEveryCommandEmitsOneDocumentAndTheDocumentedExitCode(t *testing.T) {
 		{"status with a stray argument", []string{"status", "-w", workspace, "extra", "--json"}, 2},
 		{"secret get without a key", []string{"config", "secret", "get", "-w", workspace, "--json"}, 2},
 		{"admin with no subcommand", []string{"admin", "--json"}, 2},
+		{"console with no subcommand", []string{"console", "--json"}, 2},
 		{"credential with no subcommand", []string{"credential", "--json"}, 2},
 		{"credential rotate without target", []string{"credential", "rotate", "-w", workspace, "--dry-run", "--json"}, 2},
 		{"credential rotate target and all", []string{"credential", "rotate", "missing", "--all", "-w", workspace, "--dry-run", "--json"}, 2},

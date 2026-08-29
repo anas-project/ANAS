@@ -2,22 +2,38 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: ANAS Web API
-  version: 0.1.0-m0
+  version: 0.3.0-m1b
   description: |
-    Read-only M0 API for the ANAS administration daemon. This contract is
-    versioned independently from the CLI JSON contract: HTTP responses use
+    M1B API for the ANAS administration daemon. This contract is versioned
+    independently from the CLI JSON contract: HTTP responses use
     `anas.dev/api/v1`, while the CLI continues to use `anas.dev/cli/v1`.
 
     Workspaces are registered when `anasd` starts. Callers address them only by
     opaque workspace ID; request and response DTOs never contain host filesystem
-    paths. Authentication, write operations, jobs, and the web frontend are not
-    part of M0.
+    paths. M1A adds bootstrap exchange and local-owner authentication while the
+    workspace surface remains read-only. Route visibility and transport are
+    state-dependent. M1B adds durable job history and event replay plus the
+    certificate-bound bootstrap-to-enrollment handoff and initial local-owner
+    creation. A disallowed state, listener, or transport is deliberately
+    indistinguishable from an unknown path and returns 404.
 servers:
-  - url: http://127.0.0.1:8080
-    description: Default loopback-only development listener
+  - url: http://{host}:8080
+    description: Bootstrap plaintext listener on the fixed default management port.
+    variables:
+      host:
+        default: 127.0.0.1
+        description: A numeric local address accepted by the configured Host policy.
+  - url: https://{host}:8080
+    description: TLS listener on the same fixed management port after a certificate is available.
+    variables:
+      host:
+        default: anas.example
+        description: A DNS name or numeric local address accepted by the configured Host policy.
 security: []
 tags:
   - name: Service
+  - name: Authentication
+  - name: Jobs
   - name: Workspace
   - name: Deployments
   - name: Modules
@@ -28,6 +44,15 @@ paths:
       summary: Check whether the daemon is alive
       description: Does not inspect Docker, Btrfs, tools, or any workspace.
       tags: [Service]
+      security: []
+      x-anas-permission: public
+      x-anas-scope: service
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        bootstrap: {authentication: none, transports: [plaintext, tls]}
+        enrollment: {authentication: none, transports: [plaintext, tls]}
+        full: {authentication: none, transports: [plaintext, tls]}
       responses:
         "200":
           description: The daemon is alive.
@@ -38,12 +63,23 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequestProblem"
         "405":
-          $ref: "#/components/responses/MethodNotAllowedProblem"
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
   /api/v1/system:
     get:
       operationId: getSystem
-      summary: Read daemon build information and M0 capabilities
+      summary: Read daemon build information and current capabilities
       tags: [Service]
+      security: []
+      x-anas-permission: public
+      x-anas-scope: service
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        bootstrap: {authentication: none, transports: [plaintext, tls]}
+        enrollment: {authentication: none, transports: [plaintext, tls]}
+        full: {authentication: none, transports: [tls]}
       responses:
         "200":
           description: Build information, capability flags, and registered workspace IDs.
@@ -53,12 +89,538 @@ paths:
                 $ref: "#/components/schemas/SystemResponse"
         "400":
           $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
         "405":
-          $ref: "#/components/responses/MethodNotAllowedProblem"
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
         "408":
           $ref: "#/components/responses/RequestCanceledProblem"
         "500":
           $ref: "#/components/responses/InternalProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/auth/csrf:
+    get:
+      operationId: issuePreAuthCSRF
+      summary: Issue a short-lived pre-authentication CSRF token
+      description: |
+        Sets a host-only, HttpOnly, SameSite=Strict `anas_preauth_csrf`
+        cookie and returns the same value in `csrf_token`. The caller must send
+        both values, unchanged, when exchanging a bootstrap token or logging in.
+        The cookie is Secure in enrollment and full states, but is intentionally
+        not Secure during plaintext bootstrap.
+      tags: [Authentication]
+      security: []
+      x-anas-permission: auth.csrf
+      x-anas-scope: service
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        bootstrap: {authentication: none, transports: [plaintext, tls]}
+        enrollment: {authentication: none, transports: [tls]}
+        full: {authentication: none, transports: [tls]}
+      responses:
+        "200":
+          description: A pre-authentication CSRF token valid for ten minutes.
+          headers:
+            Set-Cookie:
+              description: Host-only `anas_preauth_csrf`; HttpOnly; SameSite=Strict; Path=/; no Domain; Secure except during bootstrap.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CSRFResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+  /api/v1/auth/bootstrap/exchange:
+    post:
+      operationId: exchangeBootstrapToken
+      summary: Atomically exchange a one-use bootstrap token for a session
+      description: |
+        Requires an exact same-origin `Origin` header plus the same CSRF value
+        in the `anas_preauth_csrf` cookie and `X-CSRF-Token` header. On success,
+        consumes the bootstrap token, deletes the pre-authentication cookie, and
+        sets the host-only `anas_bootstrap_session` cookie. The session token is
+        never returned in the JSON response.
+      tags: [Authentication]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - preAuthCSRFCookie: []
+          csrfHeader: []
+      x-anas-permission: auth.bootstrap.exchange
+      x-anas-scope: service
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        bootstrap: {authentication: none, transports: [plaintext, tls]}
+        enrollment: {authentication: none, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BootstrapExchangeRequest"
+      responses:
+        "200":
+          description: The bootstrap session was created and the one-use token was consumed.
+          headers:
+            Set-Cookie:
+              description: Host-only `anas_bootstrap_session` plus deletion of `anas_preauth_csrf`; HttpOnly; SameSite=Strict; Path=/; no Domain; Secure in enrollment.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapSessionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+  /api/v1/auth/enrollment/handoffs:
+    post:
+      operationId: issueEnrollmentHandoff
+      summary: Issue a one-use handoff bound to the validated TLS endpoint
+      description: |
+        Requires the promoted bootstrap session, its session-bound CSRF token,
+        and the exact source Origin. The server selects the validated target
+        origin and certificate SPKI digest; clients cannot override either
+        binding. The returned handoff is short-lived and shown only once.
+      tags: [Authentication]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - bootstrapSessionCookie: []
+          csrfHeader: []
+      x-anas-permission: auth.enrollment.handoff
+      x-anas-scope: service
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        enrollment: {authentication: bootstrap, transports: [plaintext, tls]}
+      responses:
+        "201":
+          description: A certificate-bound, one-use enrollment handoff was issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnrollmentHandoffResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "409":
+          $ref: "#/components/responses/ConflictProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+  /api/v1/auth/enrollment/exchange:
+    post:
+      operationId: exchangeEnrollmentHandoff
+      summary: Exchange a certificate-bound handoff for an enrollment session
+      description: |
+        Accepts only a form-encoded handoff and an exact canonical source Origin.
+        Cookies, Authorization headers, query parameters, target-origin input,
+        and SPKI input are rejected. The request must arrive at the validated TLS
+        origin to which the handoff was bound. Success sets both an HttpOnly
+        enrollment session cookie and a separate same-origin SPA-readable CSRF
+        cookie, then redirects to the target origin root. No credential is
+        returned in the URL or a JSON response.
+      tags: [Authentication]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security: []
+      x-anas-permission: auth.enrollment.exchange
+      x-anas-scope: service
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        enrollment: {authentication: none, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/EnrollmentHandoffExchangeRequest"
+      responses:
+        "303":
+          description: The handoff was consumed, a TLS-only enrollment session was created, and the browser is redirected to the target origin root.
+          headers:
+            Set-Cookie:
+              description: >-
+                Two host-only cookies: HttpOnly `__Host-anas_enrollment_session`
+                and SPA-readable `__Host-anas_enrollment_csrf`; both Secure;
+                SameSite=Strict; Path=/; no Domain.
+              schema:
+                type: string
+            Location:
+              description: Absolute URL of the validated target origin root.
+              schema:
+                type: string
+                format: uri
+                pattern: "^https://[^/]+/$"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "409":
+          $ref: "#/components/responses/ConflictProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedFormMediaTypeProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+  /api/v1/auth/enrollment/owner:
+    post:
+      operationId: createInitialLocalOwner
+      summary: Atomically create the initial local owner and enter full mode
+      description: |
+        Requires the TLS-only enrollment session, an exact match between the
+        SPA-readable enrollment CSRF cookie and `X-CSRF-Token`, validation of
+        that CSRF value against the server-side session digest, the exact
+        enrollment transaction, and an exact same-origin Origin.
+        Owner persistence, credential revocation, and the state transition use a
+        recoverable commit so a restart cannot expose a partial result.
+      tags: [Authentication]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - enrollmentSessionCookie: []
+          enrollmentCSRFCookie: []
+          csrfHeader: []
+      x-anas-permission: auth.enrollment.owner
+      x-anas-scope: service
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        enrollment: {authentication: enrollment, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnrollmentOwnerRequest"
+      responses:
+        "201":
+          description: The initial owner was created, enrollment credentials were revoked, and full mode was published.
+          headers:
+            Set-Cookie:
+              description: Deletion of the enrollment session, enrollment CSRF, and promoted bootstrap session cookies.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnrollmentOwnerResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+  /api/v1/auth/login:
+    post:
+      operationId: loginLocalOwner
+      summary: Create a local-owner session on the direct TLS listener
+      description: |
+        Requires an exact same-origin `Origin` header and pre-authentication
+        double-submit CSRF. On success, deletes the pre-authentication cookie and
+        sets a host-only, Secure, HttpOnly, SameSite=Strict
+        `__Host-anas_local_session` cookie. The session token is never returned in JSON.
+      tags: [Authentication]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - preAuthCSRFCookie: []
+          csrfHeader: []
+      x-anas-permission: auth.local.login
+      x-anas-scope: service
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        full: {authentication: none, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalLoginRequest"
+      responses:
+        "200":
+          description: A local-owner session was created.
+          headers:
+            Set-Cookie:
+              description: Host-only `__Host-anas_local_session` plus deletion of `anas_preauth_csrf`; Secure; HttpOnly; SameSite=Strict; Path=/; no Domain.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalSessionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+  /api/v1/auth/logout:
+    post:
+      operationId: logoutLocalOwner
+      summary: Revoke the current local-owner session
+      description: Requires the session-bound CSRF token and an exact same-origin `Origin` header.
+      tags: [Authentication]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+      x-anas-permission: auth.local.logout
+      x-anas-scope: service
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "204":
+          description: The session was revoked; the response has no body.
+          headers:
+            Set-Cookie:
+              description: Deletes the host-only `__Host-anas_local_session` cookie using Secure; HttpOnly; SameSite=Strict; Path=/; no Domain.
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+  /api/v1/jobs:
+    get:
+      operationId: listJobs
+      summary: List durable jobs visible to the current principal
+      description: |
+        Returns newest jobs first. Bootstrap and enrollment recovery sessions
+        see only jobs created for the same transaction. A full owner sees jobs
+        for every workspace still registered by the server. Filtering happens
+        before pagination, and the cursor is an opaque stable continuation.
+      tags: [Jobs]
+      security:
+        - bootstrapSessionCookie: []
+        - localSessionCookie: []
+      x-anas-permission: job.list
+      x-anas-scope: workspace
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
+        enrollment: {authentication: bootstrap, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One authorization-filtered page of durable job summaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/jobs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/JobID"
+    get:
+      operationId: getJob
+      summary: Read a durable job and its safe final outcome
+      description: |
+        Applies the same workspace and principal scope as the list endpoint.
+        The transport projection deliberately omits the persisted request and
+        raw creator identity while retaining safe warnings, result, and error.
+      tags: [Jobs]
+      security:
+        - bootstrapSessionCookie: []
+        - localSessionCookie: []
+      x-anas-permission: job.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
+        enrollment: {authentication: bootstrap, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "200":
+          description: The safe projection of one authorized durable job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetailResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/jobs/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/JobID"
+    get:
+      operationId: streamJobEvents
+      summary: Replay and follow a durable job event stream
+      description: |
+        Replays persisted events after Last-Event-ID, then follows the durable
+        journal with heartbeat comments. Each event uses its durable numeric ID.
+        A terminal job closes once all retained events have been replayed. A
+        subsequent request whose Last-Event-ID is caught up, or a terminal job
+        with no replayable events, returns 204 so browser EventSource clients
+        stop reconnecting. An expired cursor returns a machine-readable 410
+        problem before streaming;
+        a retention gap detected later is emitted as an SSE `gap` event before
+        the connection closes. SSE connections have an explicit process-wide
+        limit and per-write deadline independent of ordinary JSON timeouts.
+        While a stream is open, every replay batch, poll, and heartbeat boundary
+        rechecks the current capability state, the same route policy, the live
+        session, and job-object authorization without extending session idle
+        expiry. Revocation, expiry, password rotation, a capability-state change,
+        or loss of object access closes the established stream without an SSE
+        authentication error payload.
+      tags: [Jobs]
+      security:
+        - bootstrapSessionCookie: []
+        - localSessionCookie: []
+      x-anas-permission: job.events.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
+        enrollment: {authentication: bootstrap, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      parameters:
+        - $ref: "#/components/parameters/LastEventID"
+      responses:
+        "200":
+          description: A replayed and optionally live Server-Sent Event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "204":
+          description: The terminal job has no events to replay beyond the supplied cursor; EventSource clients stop reconnecting. The response has no body.
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "406":
+          $ref: "#/components/responses/NotAcceptableProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "410":
+          $ref: "#/components/responses/EventGapProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
         "504":
           $ref: "#/components/responses/DeadlineProblem"
   /api/v1/workspaces/{ws}/status:
@@ -68,6 +630,15 @@ paths:
       operationId: getWorkspaceStatus
       summary: Read the active and previous deployment state
       tags: [Workspace]
+      security:
+        - {}
+        - localSessionCookie: []
+      x-anas-permission: workspace.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
       responses:
         "200":
           description: The current workspace status. A new workspace returns a null active deployment.
@@ -77,10 +648,14 @@ paths:
                 $ref: "#/components/schemas/WorkspaceStatusResponse"
         "400":
           $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
         "404":
           $ref: "#/components/responses/NotFoundProblem"
         "405":
-          $ref: "#/components/responses/MethodNotAllowedProblem"
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
         "408":
           $ref: "#/components/responses/RequestCanceledProblem"
         "500":
@@ -94,6 +669,15 @@ paths:
       operationId: listDeployments
       summary: List deployment state in reverse chronological order
       tags: [Deployments]
+      security:
+        - {}
+        - localSessionCookie: []
+      x-anas-permission: workspace.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
@@ -106,10 +690,14 @@ paths:
                 $ref: "#/components/schemas/DeploymentListResponse"
         "400":
           $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
         "404":
           $ref: "#/components/responses/NotFoundProblem"
         "405":
-          $ref: "#/components/responses/MethodNotAllowedProblem"
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
         "408":
           $ref: "#/components/responses/RequestCanceledProblem"
         "500":
@@ -130,6 +718,15 @@ paths:
         from configuration, rendered trees, or other secret-bearing inputs are
         omitted as well, so the read API cannot act as an offline guessing oracle.
       tags: [Deployments]
+      security:
+        - {}
+        - localSessionCookie: []
+      x-anas-permission: workspace.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
       responses:
         "200":
           description: Safe deployment metadata and state.
@@ -139,10 +736,14 @@ paths:
                 $ref: "#/components/schemas/DeploymentDetailResponse"
         "400":
           $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
         "404":
           $ref: "#/components/responses/NotFoundProblem"
         "405":
-          $ref: "#/components/responses/MethodNotAllowedProblem"
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
         "408":
           $ref: "#/components/responses/RequestCanceledProblem"
         "412":
@@ -160,6 +761,15 @@ paths:
       summary: List commands frozen for one Module in the active deployment
       description: Returns only public descriptors and local availability; it does not contact the managed service.
       tags: [Modules]
+      security:
+        - {}
+        - localSessionCookie: []
+      x-anas-permission: workspace.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
       responses:
         "200":
           description: Public Module Command descriptors in stable command-ID order.
@@ -169,10 +779,14 @@ paths:
                 $ref: "#/components/schemas/ModuleCommandListResponse"
         "400":
           $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
         "404":
           $ref: "#/components/responses/NotFoundProblem"
         "405":
-          $ref: "#/components/responses/MethodNotAllowedProblem"
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
         "408":
           $ref: "#/components/responses/RequestCanceledProblem"
         "412":
@@ -190,6 +804,15 @@ paths:
       operationId: getModuleCommand
       summary: Read one command frozen for a Module in the active deployment
       tags: [Modules]
+      security:
+        - {}
+        - localSessionCookie: []
+      x-anas-permission: workspace.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
       responses:
         "200":
           description: One public Module Command descriptor and its local availability.
@@ -199,10 +822,14 @@ paths:
                 $ref: "#/components/schemas/ModuleCommandDetailResponse"
         "400":
           $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
         "404":
           $ref: "#/components/responses/NotFoundProblem"
         "405":
-          $ref: "#/components/responses/MethodNotAllowedProblem"
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
         "408":
           $ref: "#/components/responses/RequestCanceledProblem"
         "412":
@@ -212,7 +839,91 @@ paths:
         "504":
           $ref: "#/components/responses/DeadlineProblem"
 components:
+  securitySchemes:
+    preAuthCSRFCookie:
+      type: apiKey
+      in: cookie
+      name: anas_preauth_csrf
+      description: |
+        Host-only double-submit cookie issued by `GET /api/v1/auth/csrf`.
+        Its value must exactly match `X-CSRF-Token`.
+      x-anas-cookie-attributes:
+        host_only: true
+        http_only: true
+        same_site: Strict
+        path: /
+        secure: state-dependent
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: The matching pre-authentication/session CSRF value; enrollment reads it from the dedicated same-origin CSRF cookie rather than a JSON exchange response.
+    bootstrapSessionCookie:
+      type: apiKey
+      in: cookie
+      name: anas_bootstrap_session
+      description: |
+        Host-only bootstrap session credential issued by token exchange. It is
+        HttpOnly and SameSite=Strict, has Path=/ and no Domain, and is Secure
+        when issued in enrollment. A promoted session authorizes only the
+        enrollment handoff route for its original transaction.
+      x-anas-cookie-attributes:
+        host_only: true
+        http_only: true
+        same_site: Strict
+        path: /
+        secure: state-dependent
+    enrollmentSessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-anas_enrollment_session
+      description: |
+        Host-only enrollment credential issued only at the validated TLS target.
+        It is Secure, HttpOnly and SameSite=Strict, has Path=/ and no Domain.
+      x-anas-cookie-attributes:
+        host_only: true
+        http_only: true
+        same_site: Strict
+        path: /
+        secure: always
+    enrollmentCSRFCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-anas_enrollment_csrf
+      description: |
+        Host-only double-submit credential issued only at the validated TLS
+        target. It is Secure and SameSite=Strict, has Path=/ and no Domain, and
+        is intentionally not HttpOnly so the same-origin SPA can copy it into
+        `X-CSRF-Token`. The server also validates its digest as part of the
+        HttpOnly enrollment session.
+      x-anas-cookie-attributes:
+        host_only: true
+        http_only: false
+        same_site: Strict
+        path: /
+        secure: always
+    localSessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-anas_local_session
+      description: |
+        Host-only local-owner session credential. It is Secure, HttpOnly and
+        SameSite=Strict, has Path=/ and no Domain.
+      x-anas-cookie-attributes:
+        host_only: true
+        http_only: true
+        same_site: Strict
+        path: /
+        secure: always
   parameters:
+    Origin:
+      name: Origin
+      in: header
+      required: true
+      description: Exactly one canonical origin equal to the current request scheme and Host.
+      schema:
+        type: string
+        format: uri
     WorkspaceID:
       name: ws
       in: path
@@ -250,11 +961,29 @@ components:
         minLength: 1
         maxLength: 63
         pattern: "^[a-z][a-z0-9-]{0,62}$"
+    JobID:
+      name: id
+      in: path
+      required: true
+      description: Opaque durable job ID, never a workspace path or command argument.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
+    LastEventID:
+      name: Last-Event-ID
+      in: header
+      required: false
+      description: Durable decimal event ID after which replay resumes.
+      schema:
+        type: string
+        pattern: "^(0|[1-9][0-9]{0,19})$"
+        maxLength: 20
     Limit:
       name: limit
       in: query
       required: false
-      description: Maximum number of deployments to return.
+      description: Maximum number of list items to return.
       schema:
         type: integer
         format: int32
@@ -272,13 +1001,31 @@ components:
         maxLength: 512
   responses:
     BadRequestProblem:
-      description: The Host is not a numeric loopback address, a path parameter is invalid, or the query string is malformed or unsupported.
+      description: The Host or Origin is invalid, a path or body value is invalid, or the query string is malformed or unsupported.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnauthorizedProblem:
+      description: The credential is missing, expired, invalid, or otherwise unauthenticated.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ForbiddenProblem:
+      description: Origin, CSRF, or authorization validation failed.
       content:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
     NotFoundProblem:
-      description: The registered workspace or deployment does not exist.
+      description: The resource does not exist, or the route is hidden for the current state, listener, or transport.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ConflictProblem:
+      description: The validated enrollment certificate or another required state transition prerequisite is not ready.
       content:
         application/problem+json:
           schema:
@@ -289,14 +1036,69 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
-    MethodNotAllowedProblem:
-      description: The route only accepts GET.
+    GetMethodNotAllowedProblem:
+      description: The route only accepts GET in the current state and transport.
       headers:
         Allow:
           required: true
           schema:
             type: string
             const: GET
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PostMethodNotAllowedProblem:
+      description: The route only accepts POST in the current state and transport.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+            const: POST
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PayloadTooLargeProblem:
+      description: The authentication request body exceeds 4096 bytes.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnsupportedMediaTypeProblem:
+      description: The request Content-Type is not application/json.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnsupportedFormMediaTypeProblem:
+      description: The request Content-Type is not application/x-www-form-urlencoded.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotAcceptableProblem:
+      description: The requested representation does not allow text/event-stream.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    EventGapProblem:
+      description: Last-Event-ID refers to events no longer retained for this job.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/EventGapProblem"
+    TooManyRequestsProblem:
+      description: An authentication rate limit or the global SSE connection limit was reached.
+      headers:
+        Retry-After:
+          required: true
+          description: Seconds until another attempt should be made.
+          schema:
+            type: integer
+            minimum: 1
       content:
         application/problem+json:
           schema:
@@ -308,7 +1110,13 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     InternalProblem:
-      description: The daemon could not read or map the requested state.
+      description: The daemon could not read state, authorize, map, or encode the response.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ServiceUnavailableProblem:
+      description: Authentication state, persistence, or auditing is unavailable.
       content:
         application/problem+json:
           schema:
@@ -323,6 +1131,137 @@ components:
     APIVersion:
       type: string
       const: anas.dev/api/v1
+    ControlPlaneState:
+      type: string
+      enum: [bootstrap, enrollment, full]
+    BootstrapExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          writeOnly: true
+          description: The one-use bootstrap token printed by the local CLI.
+    EnrollmentHandoffExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [handoff]
+      properties:
+        handoff:
+          type: string
+          minLength: 1
+          writeOnly: true
+          description: The one-use handoff returned at the plaintext source origin.
+    EnrollmentOwnerRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 1
+          format: password
+          writeOnly: true
+    LocalLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 1
+          format: password
+          writeOnly: true
+    CSRFResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, csrf_token, expires_at]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        csrf_token:
+          type: string
+          minLength: 1
+          description: Echo this value in X-CSRF-Token; it is also set in the pre-authentication cookie.
+        expires_at:
+          type: string
+          format: date-time
+    BootstrapSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, csrf_token, expires_at, idle_expires_at, state, transaction_id]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        csrf_token:
+          type: string
+          minLength: 1
+          description: Session-bound CSRF value; the session token itself is only in the HttpOnly cookie.
+        expires_at:
+          type: string
+          format: date-time
+        idle_expires_at:
+          type: string
+          format: date-time
+        state:
+          $ref: "#/components/schemas/ControlPlaneState"
+        transaction_id:
+          type: string
+          minLength: 1
+    EnrollmentHandoffResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, handoff, target_origin, form_action, expires_at]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        handoff:
+          type: string
+          minLength: 1
+          description: One-use credential displayed only in this response and never persisted in plaintext.
+        target_origin:
+          type: string
+          format: uri
+          pattern: "^https://"
+        form_action:
+          type: string
+          format: uri
+          pattern: "^https://"
+        expires_at:
+          type: string
+          format: date-time
+    EnrollmentOwnerResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, state]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        state:
+          type: string
+          const: full
+    LocalSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, csrf_token, expires_at, idle_expires_at, state]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        csrf_token:
+          type: string
+          minLength: 1
+          description: Session-bound CSRF value; the session token itself is only in the HttpOnly cookie.
+        expires_at:
+          type: string
+          format: date-time
+        idle_expires_at:
+          type: string
+          format: date-time
+        state:
+          type: string
+          const: full
     HealthResponse:
       type: object
       additionalProperties: false
@@ -367,6 +1306,199 @@ components:
         read_only:
           type: boolean
           const: true
+    JobListResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, items, next_cursor]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobSummary"
+        next_cursor:
+          $ref: "#/components/schemas/NullableString"
+    JobDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, job]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        job:
+          $ref: "#/components/schemas/JobDetail"
+    JobSummary:
+      type: object
+      additionalProperties: false
+      required: [id, kind, workspace_id, mutating, status, progress, created_at, revision]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        kind:
+          type: string
+          minLength: 1
+        workspace_id:
+          type: string
+          minLength: 1
+        mutating:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+          minimum: 0
+    JobDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - kind
+        - workspace_id
+        - mutating
+        - status
+        - progress
+        - created_at
+        - revision
+        - warnings
+        - needs_compensation_check
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        kind:
+          type: string
+          minLength: 1
+        workspace_id:
+          type: string
+          minLength: 1
+        mutating:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+          minimum: 0
+        warnings:
+          type: array
+          items:
+            type: string
+        result:
+          type: object
+          additionalProperties: true
+        error:
+          $ref: "#/components/schemas/JobError"
+        needs_compensation_check:
+          type: boolean
+      description: Deliberately omits the persisted request and raw creator identity.
+    JobStatus:
+      type: string
+      enum: [queued, running, succeeded, failed, canceled, interrupted]
+    JobError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          minLength: 1
+        message:
+          type: string
+    JobEvent:
+      type: object
+      additionalProperties: false
+      required: [api_version, id, job_id, timestamp, kind]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        id:
+          type: integer
+          minimum: 1
+        job_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        kind:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+      description: JSON object serialized in each SSE `job` event's data field.
+    EventGapProblem:
+      type: object
+      additionalProperties: false
+      required:
+        - api_version
+        - type
+        - title
+        - status
+        - detail
+        - code
+        - job_id
+        - requested_after
+        - pruned_through
+        - oldest_available
+        - latest_id
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          const: 410
+        detail:
+          type: string
+        code:
+          type: string
+          const: event_gap
+        job_id:
+          type: string
+        requested_after:
+          type: integer
+          minimum: 0
+        pruned_through:
+          type: integer
+          minimum: 0
+        oldest_available:
+          type: integer
+          minimum: 0
+        latest_id:
+          type: integer
+          minimum: 0
     WorkspaceStatusResponse:
       type: object
       additionalProperties: false

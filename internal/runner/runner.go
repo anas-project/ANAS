@@ -147,6 +147,8 @@ func dispatch(command string, args []string, jsonMode bool) error {
 		return runConfig(args, jsonMode)
 	case "admin":
 		return runAdmin(args, jsonMode)
+	case "console":
+		return runConsole(args, jsonMode)
 	case "credential":
 		return runCredential(args, jsonMode)
 	case "module":
@@ -167,7 +169,7 @@ func dispatch(command string, args []string, jsonMode bool) error {
 // what can be invoked rather than trying to render the same paragraphs.
 var commandNames = []string{
 	"init", "plan", "lock", "render", "build", "apply", "start", "restart",
-	"stop", "rollback", "status", "deployments", "snapshot", "backup", "config", "admin", "module",
+	"stop", "rollback", "status", "deployments", "snapshot", "backup", "config", "admin", "console", "module",
 	"credential", "version",
 }
 
@@ -236,6 +238,8 @@ Usage:
   anas config plan    [-w WORKSPACE]
   anas config secret  list | get <KEY>   [-w WORKSPACE]
   anas admin local list | credential | rotate MODULE [ACCOUNT] [-w WORKSPACE]
+  anas console token [--config /etc/anas/anasd.yml] [--ttl 20m]
+  anas console tls --self-signed [--config /etc/anas/anasd.yml] [--ttl 20m]
   anas credential list [-w WORKSPACE]
   anas credential rotate CREDENTIAL_ID|--module MODULE|--all [-w WORKSPACE] [--force] [--dry-run] [-y]
   anas module list [--source NAME] [-w WORKSPACE]
