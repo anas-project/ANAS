@@ -28,8 +28,16 @@ func TestConfigListProjectsCompleteParameterSchema(t *testing.T) {
 	}
 	document := requireSingleDocument(t, "config list schema", stdout)
 	raw, ok := document["parameters"].([]any)
-	if !ok || len(raw) != 171 {
-		t.Fatalf("parameters = %T len=%d, want 171", document["parameters"], len(raw))
+	if !ok {
+		t.Fatalf("parameters = %T, want array", document["parameters"])
+	}
+	wantInventory, err := LoadConfigParameterInventory(repoRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPaths := make(map[string]bool, len(wantInventory))
+	for _, entry := range wantInventory {
+		wantPaths[entry.Path] = true
 	}
 
 	byPath := map[string]map[string]any{}
@@ -49,6 +57,9 @@ func TestConfigListProjectsCompleteParameterSchema(t *testing.T) {
 		path, _ := item["path"].(string)
 		if path == "" {
 			t.Fatalf("parameter has no path: %#v", item)
+		}
+		if _, exists := byPath[path]; exists {
+			t.Errorf("parameter path %s appears more than once", path)
 		}
 		byPath[path] = item
 		for _, field := range []string{"required", "input_required", "must_resolve", "has_default"} {
@@ -82,6 +93,9 @@ func TestConfigListProjectsCompleteParameterSchema(t *testing.T) {
 				}
 			}
 		}
+	}
+	if gotPaths := pathSet(byPath); !reflect.DeepEqual(gotPaths, wantPaths) {
+		t.Errorf("config list paths = %v, want repository inventory paths %v", sortedBoolKeys(gotPaths), sortedBoolKeys(wantPaths))
 	}
 
 	assertParameterJSON := func(path string, want map[string]any) {
@@ -123,6 +137,23 @@ func TestConfigListProjectsCompleteParameterSchema(t *testing.T) {
 	if _, exists := byPath["ddns_updater.ttl"]["constraints"]; exists {
 		t.Error("conditional ddns_updater.ttl rule was incorrectly projected as an unconditional constraint")
 	}
+}
+
+func pathSet(entries map[string]map[string]any) map[string]bool {
+	paths := make(map[string]bool, len(entries))
+	for path := range entries {
+		paths[path] = true
+	}
+	return paths
+}
+
+func sortedBoolKeys(entries map[string]bool) []string {
+	keys := make([]string, 0, len(entries))
+	for key := range entries {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func TestConfigExplainUsesTheSameSchemaProjection(t *testing.T) {

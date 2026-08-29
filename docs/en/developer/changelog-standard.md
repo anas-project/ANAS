@@ -144,7 +144,7 @@ RELEASE_SHA                        "master advanced independently; merge master 
                                     image-release before synchronizing it back"
 ```
 
-At 9–21 branch merges into `master` per week, `master` advancing during the window it takes to build multi-architecture images for 22 Modules is routine. The `image-release` branch already contains a `Merge branch 'master' into image-release`, which is evidence that this recovery path has been used. A failed sync is tolerable for revision recalculation — it is recomputed next time — but not for the rename.
+At 9–21 branch merges into `master` per week, `master` advancing during the window it takes to build multi-architecture images for every catalog Module is routine. The `image-release` branch already contains a `Merge branch 'master' into image-release`, which is evidence that this recovery path has been used. A failed sync is tolerable for revision recalculation — it is recomputed next time — but not for the rename.
 
 Therefore:
 

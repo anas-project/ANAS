@@ -45,10 +45,9 @@ for config in "$CONFIG_DIR"/*.yml; do
 
   case "$name" in
     matrix-apps)
-      if grep -Fq 'FORGEJO_ACTIONS_ENABLED=' "$latest/modules/forgejo/.env"; then
-        echo "Forgejo render exposed the incomplete server-only Actions switch" >&2
-        exit 1
-      fi
+	  # M3 now intentionally exposes one shared Actions switch for both the
+	  # Forgejo server and Runner controller; the matrix keeps it disabled.
+	  grep -Fqx 'FORGEJO_ACTIONS_ENABLED=false' "$latest/modules/forgejo/.env"
       grep -Fqx 'FORGEJO__ACTIONS__ENABLED=false' "$latest/modules/forgejo/.env"
       grep -Fqx 'FORGEJO_CUSTOM_GIT_HOOKS_ENABLED=false' "$latest/modules/forgejo/.env"
       grep -Fqx 'FORGEJO_LOCAL_PATH_IMPORT_ENABLED=false' "$latest/modules/forgejo/.env"
@@ -221,6 +220,5 @@ for parameter in inventory:
         missing.append((parameter["path"], parameter["env_key"]))
 
 assert not missing, "declared parameters absent from fresh renders: " + repr(missing)
-assert len(inventory) == 164, len(inventory)
 print(f"observed all {len(inventory)} parameter transports in fresh deployment artifacts")
 PY

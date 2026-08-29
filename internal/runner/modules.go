@@ -10,10 +10,14 @@ import (
 )
 
 type Module struct {
+	APIVersion   string
 	Name         string
 	Version      string
 	Revision     int
 	AppVersion   string
+	Title        string
+	Description  string
+	Category     string
 	Lifecycle    string
 	UpgradeFrom  string
 	DataBreaking *[]string

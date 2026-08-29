@@ -3,7 +3,10 @@
 本标准规定 Module 文档的源文件、必需内容、自动生成边界、VitePress 映射、双语要求和 CI 验证。关键词“必须”“不得”“应该”具有规范性；新建 Module、升级 Module 或修改生成器时都必须遵守。
 
 > [!IMPORTANT]
-> `cmd/gen-module-docs` 维护 README 的快速信息与时区/语言标记块、技术文档的实现身份与 Compose 拓扑标记块，以及 localization 汇总；`cmd/materialize-module-docs` 在 VitePress 构建使用的临时源目录中生成逐 Module 页面、目录、导航数据和有限的版本历史。生成页面不写回或提交到正式 `docs/`。
+> `cmd/gen-module-docs` 维护 README 的快速信息与时区/语言标记块、技术文档的实现身份与 Compose
+> 拓扑标记块、参数表机器列、全局目录/统计/架构生成块、localization 汇总和 inventory golden；
+> `cmd/materialize-module-docs` 在 VitePress 构建使用的临时源目录中生成逐 Module 页面、目录、导航
+> 数据和有限的版本历史。临时生成页面不写回或提交到正式 `docs/`。
 
 ## 1. 源文件结构
 
@@ -127,11 +130,17 @@ manifest 的 `input_required` 声明“进入解析流程前必须由调用者�
 Module 只维护声明和通用校验规则；M3 的 `anasd` 配置 API 复用统一 schema，绝不增加逐
 Module 的 HTTP 适配。
 
-参数不得只出现在技术文档中。新增、删除、改名、改变类型/required 或改变默认值时，中英文
-README 和技术文档必须在同一变更中更新。
+参数不得只出现在技术文档中。新增、删除、改名、改变类型/required 或改变默认值时，
+`module.yml`、实际消费实现、中英文 README 和技术文档必须在同一变更中更新；正式 `revision`
+由发布流程计算，不在功能分支手工提升。
 
-配置表位于人工审核区。`gen-module-docs` 会用统一参数库存校验四张表的机器派生列是否一致，
-但不得在没有生成标记时改写表格；“作用”列及跨字段、迁移和安全语义始终由维护者审核。
+配置表位于人工审核区，但列所有权不同：最后一列“作用/Purpose”以及跨字段、迁移和安全语义由
+维护者审核；其余列由统一参数 inventory 派生。普通 `gen-module-docs` 保留作用文本并重写已有行的
+机器列，`--check` 只读比较。新增参数时，维护者必须先在四张表中复制一行并填写正确的路径和中英文
+作用文本；删除或重命名时必须同步处理旧路径。缺少作用文本或仍存在未声明路径会阻断生成和发布，
+删除最后一个参数时必须移除参数表；可以保留“无参数”说明，但空表同样会被拒绝。生成器不得用
+占位文本编造语义。
+完整步骤见 [Module 开发：修改 Module 参数](/developer/module-development#修改-module-参数)。
 
 ### 管理员与密码命令
 
@@ -328,7 +337,10 @@ Core 已知的 Secret 明文。通过校验的值出现在 deployment/config pla
 <!-- generated:compose-topology:end -->
 ```
 
-`module-facts` 与 `module-identity` 来自 `module.yml`，`compose-topology` 来自 manifest 指定的 Compose 文件，`localization` 来自 `localization.yml`。标记外内容属于人工审核区。新增生成块必须使用唯一名称 `generated:<section>`，同时支持缺失、重复、反向和不平衡标记检查。不得用生成器覆盖整份人工 README。
+`module-facts` 与 `module-identity` 来自 `module.yml`，`compose-topology` 来自 manifest 指定的
+Compose 文件，`localization` 来自 `localization.yml`。除 §3 明确规定的参数表机器列外，标记外内容
+属于人工审核区。新增生成块必须使用唯一名称 `generated:<section>`，同时支持缺失、重复、反向和
+不平衡标记检查。不得用生成器覆盖整份人工 README。
 
 ## 7. VitePress 输出规则
 
@@ -343,6 +355,9 @@ Core 已知的 Secret 明文。通过校验的值出现在 deployment/config pla
 
 - `/reference/modules` 与 `/en/reference/modules`：从所有 `module.yml` 生成的目录；
 - `docs/reference/module-localization.md` 与英文镜像；
+- 中英文 `reference/configuration.md` 中的 inventory 统计与 `architecture/module-contract-resource-design.md`
+  中的当前 Module 表；
+- `internal/runner/testdata/builtin-inventory.golden.json`：完整、排序后的 Module 名与参数路径 surface；
 - 临时的 `.vitepress/generated/module-docs.json`，供中英文侧边栏和版本链接使用。
 
 VitePress 输出必须带“由 Module 源文档生成，请勿直接编辑”提示。生成器必须改写 README 与 technical 之间的相对链接，保证源目录和站点镜像都无死链。技术页面可以通过用户页面进入，不要求在侧边栏平铺全部技术页。
@@ -358,20 +373,25 @@ Module 目录和侧边栏中的名称、状态、类别、版本和链接必须�
 1. 枚举所有包含 `module.yml` 的目录，而不是维护硬编码名单；
 2. 校验目录名、manifest name、localization module 和文档归属一致；
 3. `materialize-module-docs` 在缺少四份双语源文档或 `localization.yml` 时失败；
-4. 在内存中预检四份源文档的全部标记，再更新允许的生成标记块；缺失、重复、反向或不平衡标记不得造成部分写入；
+4. 在内存中预检四份源文档的全部标记和参数表，再更新允许的生成标记块与参数机器列；缺失、重复、
+   反向、不平衡标记或参数表错误不得造成部分写入；
 5. `materialize-module-docs` 在临时目录中一次性生成全部中英文 VitePress 页面、目录和导航数据；
 6. 使用确定性排序和稳定格式；
-7. `gen-module-docs --check` 不写文件，并在源生成块、localization 汇总、四份参数表的
-   机器派生列过期，或任一内置 Module 参数缺少显式类型时失败；
+7. 普通 `gen-module-docs` 写回标记块、持久汇总、golden 和已有参数行的机器派生列；
+   `--check` 不写文件，并在任一输出过期、任一参数表缺少人工作用文本，或任一内置 Module 参数
+   缺少显式类型时失败；
 8. Module 类型审计覆盖 `required`、`defaults`、`types`、`changes` 的并集，不能只检查有
    默认值的参数；global 参数由 runner 的完整 inventory 验收覆盖；
-9. 不删除或覆盖标记外的人工内容。
+9. `--print-managed-files` 只读输出排序后的仓库相对路径，发布工作流必须按该闭集暂存生成结果，
+   不得另维护一份容易漏项的文件清单；
+10. 不删除或覆盖标记外的人工内容。
 
 生成与检查命令：
 
 ```bash
 go run ./cmd/gen-module-docs
 go run ./cmd/gen-module-docs --check
+go run ./cmd/gen-module-docs --print-managed-files
 npm run docs:build
 ```
 
@@ -396,13 +416,20 @@ go run ./cmd/gen-module-docs --check
 npm run docs:build
 ```
 
-截至 2026-08-22，内置发布门已经固定 22 个 Module、172 个参数、`unknown=0`、2 个
-`input_required` 和 26 个最终 must-resolve 参数，并精确比对 23 项已声明 constraints。
+内置发布门从统一 inventory 派生 Module、参数、类型、默认来源、解析阶段和 constraints 统计，
+并用一份完整路径 golden 审核 surface 变化；release inventory 必须保持 `unknown=0`。
 测试还必须证明通用 set/import/plan/lock/apply 路径与 calculate/render Hook 使用同一 schema，
 Secret Store 各 kind 不会泄露或冒充 caller input，Hook Secret 不能跨 Module 改写。新增 Module
 只应改变 manifest/inventory/生成表，不应要求修改 `anasd` 或 HTTP handler。
 
-涉及运行行为的变更还必须执行相应 Module 单测和集成/E2E。提交只包含 Module 源文档及允许提交的 localization 汇总，不提交逐 Module VitePress 镜像。
+涉及运行行为的变更还必须执行相应 Module 单测和集成/E2E。持久生成结果由
+`--print-managed-files` 声明并允许提交；不得提交临时逐 Module VitePress 镜像。
+
+`image-release` 发布在最终 revision 计算完成后重新运行生成器，按 `--print-managed-files` 暂存
+全部结果，与 manifest、Compose 和 localization revision 一起由 Bot 提交到 `image-release`。
+提交后工作树必须为空，并再次执行只读检查；制品全部成功后，发布提交才安全快进到 `master` 并同步
+CNB。任何分支分叉都必须失败，不能 force push。该发布物化不能代替功能分支上的人工 Purpose 审核
+和 `--check` 门禁。
 
 验收清单：
 

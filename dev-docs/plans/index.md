@@ -37,5 +37,6 @@
 | [workspace 与备份体系](archived/workspace-backup.md) | [备份与恢复指南](../../docs/guide/backup-and-restore.md)、[backup 契约](../../docs/reference/contracts/backup.md) | 已完成（已归档） |
 | [Casdoor IAM Provider](archived/casdoor-iam.md) | [需求矩阵](../requirements/casdoor-iam.md)、[IAM Capability 设计](../../docs/architecture/iam-capability-design.md)、[Casdoor 运维 Runbook](../../docs/operations/casdoor-iam.md) | 已完成（已归档） |
 | [MeshCentral OIDC-only](archived/meshcentral-oidc-only.md) | [需求矩阵](../requirements/meshcentral-oidc-only.md)、[Module IAM 支持清单](../../docs/reference/module-iam-support.md) | 已完成（已归档） |
+| [内置 Module 与配置 Inventory](archived/builtin-inventory.md) | [需求矩阵](../requirements/builtin-inventory.md)、[Module 目录](../../docs/reference/modules.md)、[配置参考](../../docs/reference/configuration.md) | 已完成（已归档） |
 
 计划使用稳定主题文件名。创建日期、更新时间、状态和目标里程碑写在文档内，不因日常更新重命名。

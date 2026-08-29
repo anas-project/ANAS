@@ -35,6 +35,53 @@ restore the published revision before commit and let `image-release` choose the
 next formal number. Hook, configuration-rendering, and other tests that need no
 new image do not change the revision.
 
+## Changing Module parameters
+
+The machine contract for a Module parameter is declared only under `config` in
+`modules/<name>/module.yml`. The parameter set is the union of keys in `types`,
+`defaults`, `input_required`, the compatibility field `required`, `must_resolve`,
+and `changes`; every built-in parameter must have an explicit
+`types.<parameter>` declaration. Make a change in this order:
+
+1. Declare `string`, `bool`, `int`, or `enum` under `config.types`, adding
+   `constraints` and a non-literal `default_source` where needed. Put literal
+   defaults only in `config.defaults`.
+2. Add a parameter to `input_required` only when the caller must supply it, and
+   to `must_resolve` when the final resolved value must be non-empty. Do not add
+   the legacy `required` form in new code.
+3. Record the real runtime impact with `effect`, `apply`, and a description in
+   `config.changes`; add `sensitive: true` for a secret. Enforce cross-field
+   rules in the `validate` Hook or shared application layer, and derive values
+   in the `calculate` Hook.
+4. Update the actual consumer in Compose, hooks, templates, tests, and any
+   migration or compatibility logic. A rename needs an explicit migration or
+   rejection path; it is not merely a delete plus an add.
+5. Add, remove, or rename the same path in the parameter tables in `README.md`,
+   `README.en.md`, `docs/technical.md`, and `docs/technical.en.md`. For an
+   addition, copy an existing row and set the first path cell and the final
+   reviewed Purpose cell; the generator rewrites the intermediate type,
+   default, constraint, environment, and effect columns. When removing the last
+   parameter from a Module, remove the parameter table from all four documents.
+   An explicit no-parameters section may remain, but an empty table or stale row
+   may not.
+
+Run from the repository root:
+
+```bash
+go run ./cmd/gen-module-docs
+go run ./cmd/gen-module-docs --check
+go test ./internal/runner ./cmd/gen-module-docs
+```
+
+Normal generation preserves the four reviewed Purpose cells while refreshing
+machine columns, global Module catalogs, configuration statistics,
+architecture tables, and the inventory golden; `--check` is strictly read-only.
+Do not edit those global generated blocks, the golden, or a formal `revision`
+by hand. A feature branch must still commit complete semantics and documentation
+that pass `--check`. The `image-release` workflow regenerates every persistent
+output after calculating the final revision, commits it to the release branch,
+and safely fast-forwards it back to `master` only after all artifacts succeed.
+
 Declare hard dependencies explicitly. Use capability providers for alternatives, ordering edges only for ordering, and resource/provider operations for persistent resources. Scope generated environments to the module, its dependency closure, and explicitly consumed keys. Never log secrets or inject unrelated credentials.
 
 ## Rotation scopes for ANAS-managed credentials

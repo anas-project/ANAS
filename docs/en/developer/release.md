@@ -117,9 +117,19 @@ entries, or the established packager implementation increments the revision once
 Module/Contract technical documentation, Contract `documentation.yml`, localization inventory,
 tests, caches, and local build residue do not increment it. The calculator normalizes the top-level
 manifest revision and catalog-owned Compose image tags because they are generated results, then
-regenerates all four bilingual Module documents. A YAML service-level check verifies every reference
-to a catalog-owned image before the metadata and documentation checks pass; a tag in a comment cannot
-satisfy an active service reference.
+regenerates parameter-table machine columns, all four bilingual Module documents, the global Module
+catalogs, configuration statistics, architecture tables, localization summaries, and the inventory
+golden. New parameters must already have reviewed bilingual Purpose text in all four tables; release
+automation never invents that meaning. The workflow stages the generator's complete
+`--print-managed-files` set, commits it with manifest/Compose/localization revision projections, then
+requires a clean worktree and a second `--check`. A YAML service-level check verifies every reference
+to a catalog-owned image; a tag in a comment cannot satisfy an active service reference.
+
+The Bot pushes this prepared commit to `image-release` before artifacts are built, and every build
+uses that exact commit. A failed build therefore leaves the candidate commit available for an
+idempotent retry but creates no successful-release tag and does not update `master`. After all
+artifacts succeed, the workflow fast-forwards `master` and synchronizes the Git refs to CNB. Branch
+divergence fails; the workflow never force-pushes.
 
 Preview or verify the result locally:
 

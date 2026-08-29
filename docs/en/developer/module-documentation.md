@@ -3,7 +3,12 @@
 This standard defines Module documentation sources, required content, generation boundaries, VitePress mapping, bilingual output, and CI validation. “Must”, “must not”, and “should” are normative for new Modules, Module upgrades, and generator changes.
 
 > [!IMPORTANT]
-> `cmd/gen-module-docs` maintains README quick facts and timezone/language blocks, technical-document identity and Compose-topology blocks, and localization summaries. `cmd/materialize-module-docs` creates per-Module pages, catalogs, navigation data, and bounded version history inside the disposable VitePress source tree. Generated pages are neither written back nor committed under the real `docs/` tree.
+> `cmd/gen-module-docs` maintains README quick facts and timezone/language blocks, technical-document
+> identity and Compose-topology blocks, parameter-table machine columns, global catalog/statistics/
+> architecture blocks, localization summaries, and the inventory golden. `cmd/materialize-module-docs`
+> creates per-Module pages, catalogs, navigation data, and bounded version history inside the disposable
+> VitePress source tree. Those temporary pages are neither written back nor committed under the real
+> `docs/` tree.
 
 ## 1. Source layout
 
@@ -138,13 +143,24 @@ differ. Modules maintain declarations and generic validation rules. The M3
 HTTP adapters.
 
 Configuration must not exist only in technical documentation. Additions,
-removals, renames, type/required changes, and default changes update both
-READMEs and both technical documents together.
+removals, renames, type/required changes, and default changes update
+`module.yml`, the real consumer, both READMEs, and both technical documents in
+the same change. The release workflow calculates the formal `revision`; a
+feature branch does not increment it by hand.
 
-Configuration tables remain reviewed content. `gen-module-docs` validates the
-machine-derived columns in all four tables against the shared inventory, but it
-must not rewrite an unmarked table. Purpose, cross-field, migration, and security
-semantics remain maintainer-reviewed.
+Configuration tables are reviewed content with split column ownership. The
+final Purpose column and cross-field, migration, and security semantics remain
+maintainer-reviewed; every other column is projected from the shared parameter
+inventory. Normal `gen-module-docs` preserves Purpose while rewriting machine
+columns for existing rows, and `--check` compares without writing. For a new
+parameter, first copy a row in all four tables and provide the correct path and
+bilingual Purpose. Remove the old path for a deletion or rename. Missing Purpose
+or an undeclared leftover path blocks generation and release; the generator
+also rejects an empty table after the final parameter is removed, so remove the
+table; an explicit no-parameters section may remain. It must not invent
+semantics with a placeholder. See
+[Module development: Changing Module parameters](/en/developer/module-development#changing-module-parameters)
+for the complete procedure.
 
 ### Administrator and password commands
 
@@ -362,7 +378,12 @@ A generator may modify only explicitly marked blocks. The current blocks are:
 <!-- generated:compose-topology:end -->
 ```
 
-`module-facts` and `module-identity` come from `module.yml`, `compose-topology` comes from the manifest-selected Compose file, and `localization` comes from `localization.yml`. Content outside markers is reviewed prose. New blocks use a unique `generated:<section>` name and must detect missing, duplicate, reversed, and unbalanced markers. Never replace an entire reviewed README.
+`module-facts` and `module-identity` come from `module.yml`, `compose-topology`
+comes from the manifest-selected Compose file, and `localization` comes from
+`localization.yml`. Except for the parameter-table machine columns explicitly
+defined in §3, content outside markers is reviewed prose. New blocks use a
+unique `generated:<section>` name and must detect missing, duplicate, reversed,
+and unbalanced markers. Never replace an entire reviewed README.
 
 ## 7. VitePress output
 
@@ -373,7 +394,10 @@ The documentation build maps sources inside its disposable VitePress tree as fol
 | `README.md` / `README.en.md` | `/reference/modules/<name>/` | `/en/reference/modules/<name>/` |
 | `docs/technical.md` / `docs/technical.en.md` | `/reference/modules/<name>/technical` | `/en/reference/modules/<name>/technical` |
 
-It also generates the bilingual Module catalogs plus a temporary `.vitepress/generated/module-docs.json` used by the sidebar and version links. The existing localization summaries remain checked by `gen-module-docs`.
+It also generates the bilingual Module catalogs and localization summaries,
+the inventory blocks in both configuration references and architecture pages,
+and `internal/runner/testdata/builtin-inventory.golden.json`. A temporary
+`.vitepress/generated/module-docs.json` supplies sidebar and version links.
 
 Every site mirror carries a generated-file warning. Rewrite README-to-technical links so both source and site layouts remain valid. Technical pages may be reached from the user page instead of being flattened into the sidebar.
 
@@ -388,16 +412,25 @@ The two Module documentation commands divide responsibility as follows:
 1. enumerate every directory containing `module.yml`;
 2. validate directory, manifest, localization, and document ownership;
 3. make `materialize-module-docs` fail when a current bilingual source document or `localization.yml` is missing;
-4. preflight every marker in all four source documents in memory, then update only allowed generated blocks without leaving partial writes after a missing, duplicate, reversed, or unbalanced marker;
+4. preflight every marker and parameter table in all four source documents in
+   memory, then update allowed generated blocks and parameter machine columns
+   without leaving partial writes after a marker or table error;
 5. let `materialize-module-docs` generate all bilingual pages, catalogs, and navigation data atomically in the disposable tree;
 6. use deterministic ordering and formatting;
-7. make `gen-module-docs --check` read-only and fail for stale source blocks, stale localization summaries, stale machine-derived columns in any of the four parameter tables, or any built-in Module parameter without an explicit type;
+7. make normal `gen-module-docs` write marked blocks, persistent summaries, the
+   golden, and machine-derived columns for existing parameter rows; make
+   `--check` read-only and fail for any stale output, a parameter table missing
+   reviewed Purpose, or a built-in Module parameter without an explicit type;
 8. audit the union of Module `required`, `defaults`, `types`, and `changes` rather than checking only parameters with defaults; the runner's complete-inventory acceptance covers global parameters;
-9. preserve all reviewed content outside markers.
+9. make `--print-managed-files` print a sorted, repository-relative closed set
+   without writing; the release workflow stages this list instead of maintaining
+   a second list that can omit new outputs;
+10. preserve all reviewed content outside markers.
 
 ```bash
 go run ./cmd/gen-module-docs
 go run ./cmd/gen-module-docs --check
+go run ./cmd/gen-module-docs --print-managed-files
 npm run docs:build
 ```
 
@@ -422,16 +455,28 @@ go run ./cmd/gen-module-docs --check
 npm run docs:build
 ```
 
-As of 2026-08-22, the built-in release gate fixes a baseline of 22 Modules,
-172 parameters, `unknown=0`, two `input_required` entries, 26 final
-must-resolve entries, and the exact 23 declared constraints. Tests also prove
+The built-in release gate derives Module, parameter, type, default-source,
+resolution-phase, and constraint statistics from the unified inventory and
+reviews surface changes through one complete path golden; a release inventory
+must keep `unknown=0`. Tests also prove
 that generic set/import/plan/lock/apply paths and calculate/render Hooks use the
 same schema, that no Secret Store kind leaks or masquerades as caller input,
 and that Hook Secrets cannot be rewritten across Module ownership. Adding a
 Module should change only its manifest, inventory, and generated tables—not
 `anasd` or an HTTP handler.
 
-Behavior changes also run the relevant Module unit and integration/E2E tests. Commit Module sources and the allowed localization summaries, not per-Module VitePress mirrors.
+Behavior changes also run the relevant Module unit and integration/E2E tests.
+Persistent generated results declared by `--print-managed-files` may be
+committed; disposable per-Module VitePress mirrors must not be committed.
+
+After calculating the final revision, an `image-release` publication reruns the
+generator, stages its complete `--print-managed-files` set, and commits those
+files together with manifest, Compose, and localization revision projections to
+`image-release`. The worktree must be clean after that commit and a second
+read-only check must pass. Only after every artifact succeeds does the workflow
+safely fast-forward the release commit to `master` and synchronize CNB. Any
+branch divergence fails instead of force-pushing. This release materialization
+does not replace reviewed Purpose text or the feature-branch `--check` gate.
 
 - [ ] Every `module.yml` directory has four bilingual documents and `localization.yml`.
 - [ ] Both languages have the same structure, commands, defaults, support status, and risks.

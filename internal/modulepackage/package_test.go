@@ -31,6 +31,37 @@ func TestCatalogCoversEveryModule(t *testing.T) {
 	}
 }
 
+func TestValidateCatalogRejectsInvalidModuleSets(t *testing.T) {
+	root := t.TempDir()
+	moduleDir := filepath.Join(root, "modules", "alpha")
+	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "module.yml"), []byte("name: alpha\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	valid := CatalogEntry{Module: "alpha", Repository: "anas-module-alpha", Platforms: []string{"linux/amd64"}}
+	if err := ValidateCatalog(root, []CatalogEntry{valid}); err != nil {
+		t.Fatalf("valid catalog rejected: %v", err)
+	}
+
+	for name, entries := range map[string][]CatalogEntry{
+		"empty identity": {{}},
+		"duplicate":      {valid, valid},
+		"missing":        {},
+		"extra": {
+			valid,
+			{Module: "beta", Repository: "anas-module-beta", Platforms: []string{"linux/amd64"}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := ValidateCatalog(root, entries); err == nil {
+				t.Fatalf("ValidateCatalog accepted %s Module set: %#v", name, entries)
+			}
+		})
+	}
+}
+
 func TestRuntimeTrackedFilesExcludeDocumentationAndTests(t *testing.T) {
 	files, err := runtimeTrackedFiles(repositoryRoot(t), "nextcloud")
 	if err != nil {

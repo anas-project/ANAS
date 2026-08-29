@@ -140,7 +140,9 @@ bash scripts/ci/module-revisions.sh --base "$LAST_SUCCESSFUL_RELEASE_SHA" --writ
 
 同一上游版本的发布上下文变化时 revision 恰好增加一次；`version` 变化或新增 Module 时
 revision 为 `1`。生成值由 `github-actions[bot]` 同步写入 `module.yml`、存在时的
-`localization.yml` 和 Compose 中的派生镜像 tag。
+`localization.yml` 和 Compose 中的派生镜像 tag。随后生成器刷新参数表机器列、四份双语 Module
+文档、全局 Module 目录、配置统计、架构表、localization 汇总和 inventory golden；工作流按生成器
+输出的完整文件清单提交并推回 `image-release`，制品都从该提交构建。
 
 全部制品成功后创建：
 
@@ -151,7 +153,8 @@ module/<name>/<version>-r<revision>
 ```
 
 前两个 tag 是下次计算使用的成功边界；第三个提供单 Module 版本到源码 commit 的历史
-映射。失败不会创建这些 tag，也不会同步 `master`。
+映射。生成后的候选提交在制品构建前进入 `image-release`，因此构建失败时会保留供幂等重试；失败
+不会创建成功 tag，也不会同步 `master`。
 
 ## Module 打包内容
 
@@ -201,9 +204,12 @@ README、Module/Contract 技术文档、Contract `documentation.yml`、`localiza
 全部相关镜像。
 
 revision 计算会规范化 `module.yml` 的顶层 `revision` 和 Compose 中由 Module catalog 管理的
-派生镜像 tag；这些字段是计算结果而不是发布原因。计算完成后，文档生成器从最终 manifest
-与 Compose 同步四份双语文档，并用 YAML service 视图逐一核对所有 catalog 自有镜像引用，
-再由 metadata/documentation 两个 `--check` 验证后提交；注释中的 tag 不能代替活动 service。
+派生镜像 tag；这些字段是计算结果而不是发布原因。计算完成后，文档生成器从最终 inventory、
+manifest 与 Compose 同步全部持久输出。普通模式可在保留人工“作用/Purpose”时刷新参数表机器列；
+新增参数仍必须在发布前补齐四张表的中英文作用文本。工作流使用
+`gen-module-docs --print-managed-files` 暂存完整输出闭集，Bot 提交后要求工作树为空并再次执行
+`--check`。YAML service 视图还会逐一核对所有 catalog 自有镜像引用；注释中的 tag 不能代替活动
+service。
 
 本地预览和校验：
 
@@ -250,7 +256,8 @@ Module 的 Compose 活动 service 直接引用，或作为该 Module 已登记�
 - 普通 `master` push：不发布 Module 或容器；
 - 目标为 `image-release` 的 PR：计算候选 revision、构建受影响镜像和 Module bundle，
   但不提交、不推 Registry；bundle 作为 Actions artifact 供检查；
-- `image-release` push：自动提交 revision，发布自上次成功 tag 以来变化的 Module；
+- `image-release` push：自动提交 revision 与全部持久生成文档，发布自上次成功 tag 以来变化的
+  Module；全部制品成功后安全快进 `master` 并同步 Git 到 CNB；
 - 首次没有成功 tag：发布全部 Module、派生镜像和 mirror；
 - `workflow_dispatch module=all`：完成首次/失败发布，并允许 finalize；
 - `workflow_dispatch module=<name>`：只补发或恢复指定 Module，不推进全局成功基准；

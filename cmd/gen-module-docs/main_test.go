@@ -12,7 +12,7 @@ import (
 )
 
 func TestValidateRejectsStaleModuleVersion(t *testing.T) {
-	m := manifest{Name: "demo", Version: "2.0", Revision: 1, Title: "Demo"}
+	m := runner.BuiltinModuleInventoryEntry{Name: "demo", Version: "2.0", Revision: 1, Title: "Demo"}
 	inv := validInventory()
 	inv.ModuleVersion = "1.0"
 	if err := validate(m, inv); err == nil || !strings.Contains(err.Error(), "stale") {
@@ -21,7 +21,7 @@ func TestValidateRejectsStaleModuleVersion(t *testing.T) {
 }
 
 func TestValidateRejectsStaleModuleRevision(t *testing.T) {
-	m := manifest{Name: "demo", Version: "1.0", Revision: 2, Title: "Demo"}
+	m := runner.BuiltinModuleInventoryEntry{Name: "demo", Version: "1.0", Revision: 2, Title: "Demo"}
 	inv := validInventory()
 	if err := validate(m, inv); err == nil || !strings.Contains(err.Error(), "module_revision") {
 		t.Fatalf("validate returned %v, want stale revision error", err)
@@ -29,7 +29,7 @@ func TestValidateRejectsStaleModuleRevision(t *testing.T) {
 }
 
 func TestValidateRejectsNonCanonicalLanguage(t *testing.T) {
-	m := manifest{Name: "demo", Version: "1.0", Revision: 1, Title: "Demo"}
+	m := runner.BuiltinModuleInventoryEntry{Name: "demo", Version: "1.0", Revision: 1, Title: "Demo"}
 	inv := validInventory()
 	inv.Language.Supported = []string{"zh_cn"}
 	if err := validate(m, inv); err == nil || !strings.Contains(err.Error(), "canonical") {
@@ -75,6 +75,15 @@ runtime:
   compose_file: docker-compose.yml
 upgrade:
   data_breaking: []
+config:
+  defaults:
+    enabled: "true"
+  types:
+    enabled: bool
+  changes:
+    enabled:
+      effect: container_recreate
+      apply: recreate-demo
 `
 	inventoryYAML := `api_version: anas.module-localization/v1
 module: demo
@@ -96,10 +105,10 @@ language:
 		"module.yml":                             manifestYAML,
 		"localization.yml":                       inventoryYAML,
 		"docker-compose.yml":                     "services:\n  demo:\n    image: example/demo:1.0-r1\n",
-		"README.md":                              "# Demo\n\n## 快速信息\n\n" + factsBlockStart + "\nold\n" + factsBlockEnd + "\n\n" + blockStart + "\nold localization\n" + blockEnd + "\n",
-		"README.en.md":                           "# Demo\n\n## Quick facts\n\n" + factsBlockStart + "\nold\n" + factsBlockEnd + "\n",
-		filepath.Join("docs", "technical.md"):    "# Demo\n\n" + identityBlockStart + "\nold\n" + identityBlockEnd + "\n\n## Compose 拓扑\n\n" + topologyBlockStart + "\nold\n" + topologyBlockEnd + "\n",
-		filepath.Join("docs", "technical.en.md"): "# Demo\n\n" + identityBlockStart + "\nold\n" + identityBlockEnd + "\n\n## Compose topology\n\n" + topologyBlockStart + "\nold\n" + topologyBlockEnd + "\n",
+		"README.md":                              "# Demo\n\n## 快速信息\n\n" + factsBlockStart + "\nold\n" + factsBlockEnd + "\n\n## 所有可用配置参数\n\n| 路径 | 作用 |\n| --- | --- |\n| `demo.enabled` | 控制 Demo 服务。 |\n\n" + blockStart + "\nold localization\n" + blockEnd + "\n",
+		"README.en.md":                           "# Demo\n\n## Quick facts\n\n" + factsBlockStart + "\nold\n" + factsBlockEnd + "\n\n## All configuration parameters\n\n| Path | Purpose |\n| --- | --- |\n| `demo.enabled` | Controls the Demo service. |\n",
+		filepath.Join("docs", "technical.md"):    "# Demo\n\n" + identityBlockStart + "\nold\n" + identityBlockEnd + "\n\n## 配置契约\n\n| 路径 | 作用 |\n| --- | --- |\n| `demo.enabled` | 控制 Demo 服务。 |\n\n## Compose 拓扑\n\n" + topologyBlockStart + "\nold\n" + topologyBlockEnd + "\n",
+		filepath.Join("docs", "technical.en.md"): "# Demo\n\n" + identityBlockStart + "\nold\n" + identityBlockEnd + "\n\n## Configuration contract\n\n| Path | Purpose |\n| --- | --- |\n| `demo.enabled` | Controls the Demo service. |\n\n## Compose topology\n\n" + topologyBlockStart + "\nold\n" + topologyBlockEnd + "\n",
 	}
 	for name, body := range documents {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(moduleDir, name)), 0o755); err != nil {
@@ -109,12 +118,43 @@ language:
 			t.Fatal(err)
 		}
 	}
+	if err := writeGeneratorFixtureScaffolding(root); err != nil {
+		t.Fatal(err)
+	}
+	managed, err := managedOutputPaths(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantManaged := []string{
+		"docs/architecture/module-contract-resource-design.md",
+		"docs/en/architecture/module-contract-resource-design.md",
+		"docs/en/reference/configuration.md",
+		"docs/en/reference/module-localization.md",
+		"docs/en/reference/modules.md",
+		"docs/reference/configuration.md",
+		"docs/reference/module-localization.md",
+		"docs/reference/modules.md",
+		"internal/runner/testdata/builtin-inventory.golden.json",
+		"modules/demo/README.en.md",
+		"modules/demo/README.md",
+		"modules/demo/docs/technical.en.md",
+		"modules/demo/docs/technical.md",
+	}
+	if strings.Join(managed, "\n") != strings.Join(wantManaged, "\n") {
+		t.Fatalf("managed files =\n%s\nwant\n%s", strings.Join(managed, "\n"), strings.Join(wantManaged, "\n"))
+	}
+	if err := run(root, true); err == nil || !strings.Contains(err.Error(), "parameter table is stale") {
+		t.Fatalf("check accepted stale machine-derived parameter columns: %v", err)
+	}
 	if err := run(root, false); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{
 		filepath.Join(root, "docs", "reference", "module-localization.md"),
 		filepath.Join(root, "docs", "en", "reference", "module-localization.md"),
+		filepath.Join(root, "docs", "reference", "modules.md"),
+		filepath.Join(root, "docs", "en", "reference", "modules.md"),
+		filepath.Join(root, "internal", "runner", "testdata", "builtin-inventory.golden.json"),
 		filepath.Join(moduleDir, "README.md"),
 		filepath.Join(moduleDir, "README.en.md"),
 		filepath.Join(moduleDir, "docs", "technical.md"),
@@ -131,6 +171,16 @@ language:
 	if err := run(root, true); err != nil {
 		t.Fatalf("paired generated references failed check: %v", err)
 	}
+	goldenPath := filepath.Join(root, "internal", "runner", "testdata", "builtin-inventory.golden.json")
+	if err := os.WriteFile(goldenPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(root, true); err == nil || !strings.Contains(err.Error(), goldenPath) {
+		t.Fatalf("check accepted stale built-in inventory golden: %v", err)
+	}
+	if err := run(root, false); err != nil {
+		t.Fatalf("regenerate built-in inventory golden: %v", err)
+	}
 	if err := os.Remove(filepath.Join(root, "docs", "en", "reference", "module-localization.md")); err != nil {
 		t.Fatal(err)
 	}
@@ -145,10 +195,22 @@ func TestLoadModulesRejectsParameterWithoutDeclaredType(t *testing.T) {
 	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	manifestYAML := `name: demo
+	manifestYAML := `api_version: anas.module/v1
+kind: Module
+name: demo
 version: "1.0"
 revision: 1
 title: Demo
+description: Demo module.
+abi:
+  supports: [anas.module-hook/v1]
+status: release
+category: test
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+upgrade:
+  data_breaking: []
 config:
   defaults:
     enabled: "true"
@@ -157,10 +219,57 @@ config:
 		t.Fatal(err)
 	}
 
-	_, err := loadModules(root)
+	if err := os.WriteFile(filepath.Join(moduleDir, "docker-compose.yml"), []byte("services:\n  demo:\n    image: example/demo:1.0-r1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePublicationCatalog(root); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runner.LoadBuiltinInventory(root)
 	if err == nil || !strings.Contains(err.Error(), "enabled") || !strings.Contains(err.Error(), "declared types") {
 		t.Fatalf("loadModules error = %v, want missing type metadata", err)
 	}
+}
+
+func writeGeneratorFixtureScaffolding(root string) error {
+	if err := writePublicationCatalog(root); err != nil {
+		return err
+	}
+	configuration := "# Configuration\n\n" +
+		"<!-- generated:configuration-summary:start -->\nold\n<!-- generated:configuration-summary:end -->\n\n" +
+		"<!-- generated:configuration-owners:start -->\nold\n<!-- generated:configuration-owners:end -->\n\n" +
+		"<!-- generated:configuration-constraints:start -->\nold\n<!-- generated:configuration-constraints:end -->\n\n" +
+		"<!-- generated:configuration-bare-parameters:start -->\nold\n<!-- generated:configuration-bare-parameters:end -->\n\n" +
+		"<!-- generated:configuration-effects:start -->\nold\n<!-- generated:configuration-effects:end -->\n"
+	architecture := "# Architecture\n\n<!-- generated:builtin-module-inventory:start -->\nold\n<!-- generated:builtin-module-inventory:end -->\n"
+	for path, body := range map[string]string{
+		filepath.Join(root, "docs", "reference", "configuration.md"):                            configuration,
+		filepath.Join(root, "docs", "en", "reference", "configuration.md"):                      configuration,
+		filepath.Join(root, "docs", "architecture", "module-contract-resource-design.md"):       architecture,
+		filepath.Join(root, "docs", "en", "architecture", "module-contract-resource-design.md"): architecture,
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writePublicationCatalog(root string) error {
+	path := filepath.Join(root, ".github", "modules.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(`[{
+  "module": "demo",
+  "repository": "anas-module-demo",
+  "platforms": ["linux/amd64"],
+  "shared_contexts": []
+}]
+`), 0o644)
 }
 
 func TestRequiredGeneratedBlockRejectsMissingDuplicateAndReversedMarkers(t *testing.T) {
@@ -279,6 +388,64 @@ manual after
 	}
 }
 
+func TestSyncParameterTableRejectsMissingReviewedPurpose(t *testing.T) {
+	module := moduleDoc{Parameters: []runner.ConfigParameterInventoryEntry{{
+		Path: "demo.enabled", Type: "bool", EnvKey: "DEMO_ENABLED", Editable: true,
+		Effect: "container_recreate",
+	}}}
+	base := `# Demo
+
+## All configuration parameters
+
+| Path | Purpose |
+| --- | --- |
+| ` + "`demo.enabled`" + ` | |
+`
+	_, err := syncParameterTable(base, module, true, "## All configuration parameters")
+	if err == nil || !strings.Contains(err.Error(), "no reviewed purpose") {
+		t.Fatalf("syncParameterTable error = %v, want missing reviewed purpose", err)
+	}
+}
+
+func TestSyncParameterTableRejectsMissingAndRemovedPaths(t *testing.T) {
+	module := moduleDoc{Parameters: []runner.ConfigParameterInventoryEntry{{
+		Path: "demo.enabled", Type: "bool", EnvKey: "DEMO_ENABLED", Editable: true,
+		Effect: "container_recreate",
+	}}}
+	for name, rows := range map[string]string{
+		"missing": "| `demo.other` | Other purpose. |\n",
+		"removed": "| `demo.enabled` | Enabled purpose. |\n| `demo.removed` | Removed purpose. |\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			base := "# Demo\n\n## All configuration parameters\n\n| Path | Purpose |\n| --- | --- |\n" + rows
+			_, err := syncParameterTable(base, module, true, "## All configuration parameters")
+			if err == nil {
+				t.Fatalf("syncParameterTable accepted %s parameter surface", name)
+			}
+		})
+	}
+}
+
+func TestSyncParameterTableRejectsRowsAfterLastParameterIsRemoved(t *testing.T) {
+	base := `# Demo
+
+## All configuration parameters
+
+| Path | Purpose |
+| --- | --- |
+| ` + "`demo.removed`" + ` | Removed purpose. |
+`
+	_, err := syncParameterTable(base, moduleDoc{}, true, "## All configuration parameters")
+	if err == nil || !strings.Contains(err.Error(), "undeclared path demo.removed") {
+		t.Fatalf("syncParameterTable error = %v, want removed final path rejection", err)
+	}
+	noParameters := "# Demo\n\n## All configuration parameters\n\nThis Module has no parameters.\n"
+	got, err := syncParameterTable(noParameters, moduleDoc{}, true, "## All configuration parameters")
+	if err != nil || got != noParameters {
+		t.Fatalf("no-parameter explanation changed: got %q, error %v", got, err)
+	}
+}
+
 func TestSplitMarkdownRowPreservesEscapedPipe(t *testing.T) {
 	cells := splitMarkdownRow("| `demo.pattern` | Match left \\| right |")
 	if len(cells) != 2 || cells[1] != `Match left \| right` {
@@ -288,7 +455,11 @@ func TestSplitMarkdownRowPreservesEscapedPipe(t *testing.T) {
 
 func TestBundledParameterTablesMatchGeneratedInventory(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
-	modules, err := loadModules(root)
+	builtin, err := runner.LoadBuiltinInventory(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modules, err := loadModules(root, builtin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,6 +502,40 @@ func TestBundledParameterTablesMatchGeneratedInventory(t *testing.T) {
 	}
 	if tables != expectedTables || rows != expectedRows {
 		t.Fatalf("parameter documentation coverage = %d tables/%d rows; want %d/%d", tables, rows, expectedTables, expectedRows)
+	}
+}
+
+func TestModuleReleaseWorkflowStagesManagedOutputsBeforePublishing(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	body, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "container-images.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(body)
+	for _, trigger := range []string{
+		`"internal/config/config.go"`,
+		`"internal/moduledocs/**"`,
+		`"internal/runner/**"`,
+		`"modules/**"`,
+	} {
+		if count := strings.Count(workflow, trigger); count != 2 {
+			t.Errorf("release workflow trigger %s occurs %d times, want pull_request and push", trigger, count)
+		}
+	}
+
+	writeAt := strings.Index(workflow, `bash scripts/ci/module-revisions.sh --base "$base_sha" --write`)
+	generateAt := strings.Index(workflow, "go run ./cmd/gen-module-docs\n")
+	managedAt := strings.Index(workflow, "go run ./cmd/gen-module-docs --print-managed-files")
+	commitAt := strings.Index(workflow, `git commit -m "chore(release): update Module metadata and generated docs"`)
+	cleanAt := strings.Index(workflow, `release_status="$(git status --porcelain)"`)
+	if writeAt < 0 || generateAt < writeAt || managedAt < generateAt || commitAt < managedAt || cleanAt < commitAt {
+		t.Fatalf("release preparation order is incomplete: write=%d generate=%d managed=%d commit=%d clean=%d", writeAt, generateAt, managedAt, commitAt, cleanAt)
+	}
+	postCommit := workflow[cleanAt:]
+	checkAt := strings.Index(postCommit, "go run ./cmd/gen-module-docs --check")
+	pushAt := strings.Index(postCommit, "git push origin HEAD:refs/heads/image-release")
+	if checkAt < 0 || pushAt < checkAt {
+		t.Fatalf("release workflow must check the clean prepared commit before pushing: check=%d push=%d", checkAt, pushAt)
 	}
 }
 

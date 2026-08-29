@@ -21,7 +21,7 @@ English version: [Manage users, groups, and administrators with `samba-tool`](/e
 2. 按需加入应用、文件访问或业务角色组；
 3. 只有确有管理职责时，才把专用管理账号加入对应管理员组。
 
-以下是最常用的一组命令。第 1 节只保留操作路径；Docker、Samba 用户和组参数分别在后面的唯一章节解释，避免同一参数维护多份说明。默认 Samba DC 容器名为 `anas_samba_dc`；它受 [`global.container_prefix`](/reference/configuration#已声明的-151-个参数) 影响。自定义部署先按 [§2 操作前检查](#_2-操作前检查) 找到实际容器名。
+以下是最常用的一组命令。第 1 节只保留操作路径；Docker、Samba 用户和组参数分别在后面的唯一章节解释，避免同一参数维护多份说明。默认 Samba DC 容器名为 `anas_samba_dc`；它受 [`global.container_prefix`](/reference/configuration#已声明参数) 影响。自定义部署先按 [§2 操作前检查](#_2-操作前检查) 找到实际容器名。
 
 ### 1.1 创建王海龙的普通账号
 

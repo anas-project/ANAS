@@ -157,7 +157,7 @@ master 不是 RELEASE_SHA 的祖先      报错退出
     synchronizing it back"
 ```
 
-按每周 9 ~ 21 个分支合入 `master` 的速度，构建 22 个 Module 多架构镜像的窗口期内 `master` 前进是常态。`image-release` 分支上已经存在 `Merge branch 'master' into image-release`，是这条恢复路径被实际用过的证据。对 revision 重算而言同步失败可以容忍——下次会重新计算；对改名则不能。
+按每周 9 ~ 21 个分支合入 `master` 的速度，构建全部 catalog Module 多架构镜像的窗口期内 `master` 前进是常态。`image-release` 分支上已经存在 `Merge branch 'master' into image-release`，是这条恢复路径被实际用过的证据。对 revision 重算而言同步失败可以容忍——下次会重新计算；对改名则不能。
 
 因此：
 

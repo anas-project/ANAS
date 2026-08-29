@@ -7,6 +7,7 @@
 | [新 IAM Provider 准入与实施要求](iam-provider.md) | 目录、OIDC/SAML、身份锚点、安全和 E2E 验收 | 无矩阵（未采用 ID） |
 | [Changelog 要求](changelog.md) | Core 与 Module 变更记录的位置、写入时机、发布改名与门禁 | 0/33 已完成 |
 | [Compose 执行边界要求](compose-execution-boundary.md) | Docker endpoint 绑定、Compose 子进程失败归因与补偿输出边界 | 2/17 已完成 |
+| [内置 Module 与配置 Inventory 要求](builtin-inventory.md) | Module 集合、配置参数、派生统计、文档目录与发布门禁的单一逻辑事实边界 | 18/18 已完成 |
 | [条件 Capability 依赖要求](conditional-capability-dependency.md) | 可选服务的 Capability 依赖声明、求值时机、锁与 `plan` 输出边界 | 19/19 已完成 |
 | [无序 Capability 依赖要求](weak-capability-dependency.md) | 存在性强制但不参与排序的依赖、calculate 与渲染两阶段边界、守门人成环的解法 | 15/15 已完成 |
 | [Samba 目录事件订阅与实时同步要求](directory-event-subscription.md) | IAM Provider 与所有 LDAP/LDAPS Module 的事件订阅、可靠消费、全量兜底和实时同步验收 | 0/12 已完成 |

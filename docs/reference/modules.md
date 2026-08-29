@@ -1,62 +1,33 @@
+---
+editLink: false
+lastUpdated: false
+---
+
 # Module 目录
 
-本页是 `modules/*/module.yml` 的人类可读索引。版本和实验状态以各 Module manifest 为准。
+本页由当前 Module manifests 生成；仓库页面与文档构建期使用同一个 renderer，不维护第二份映射清单。
 
-## 稳定 Module
-
-| Module | 类别 | 作用 | 主要关系 |
-| --- | --- | --- | --- |
-| `lego` | 证书 | 申请和保存通配符证书，并维护内部 CA 资料 | DNS 凭据按 Provider 配置 |
-| `traefik` | 网络 | HTTPS 反向代理、Dashboard 和声明式路由 | 依赖 `lego` |
-| `samba_dc` | 身份/DNS | AD 域控制器、LDAP、Kerberos 和 BIND9-DLZ DNS | 依赖 `lego` |
-| `samba_fs` | 存储 | 加入域的 SMB 文件共享 | 依赖 `samba_dc`，需要 host LAN |
-| `postgres` | 数据库 | PostgreSQL 和可选 Adminer | 提供 `relational_database` Contract |
-| `mariadb` | 数据库 | MariaDB 和可选 Adminer | 提供 `relational_database` Contract |
-| `eturnal` | 通信 | TURN 服务 | 由实时通信应用使用 |
-| `nextcloud` | 应用 | 文件同步、分享、Talk、Memories、Imaginary 等 | 需要 Traefik、TURN、目录和关系数据库能力 |
-| `collabora` | 应用 | Nextcloud 在线文档编辑后端 | 依赖 `nextcloud` |
-| `llng` | IAM | LemonLDAP::NG 门户、OIDC/SAML Provider 和应用启动器 | 需要 Traefik、目录和关系数据库能力 |
-| `lam` | 管理 | LDAP Account Manager Web 管理界面 | 需要 Traefik 和 Samba 目录 |
-| `meshcentral` | 应用 | 使用 LDAP 的远程设备管理 | 需要 Traefik、目录和关系数据库能力 |
-| `ddns_go` | 网络 | 支持 IPv4/IPv6 和多家中国 DNS 厂商的 DDNS | 可由 `dynamic_dns.provider` 选择 |
-| `ddns_updater` | 网络 | 基础域名和通配符记录的 DDNS | 可由 `dynamic_dns.provider` 选择 |
-| `oauth2_proxy` | IAM 网关 | 为没有登录能力的服务增加 OIDC 认证入口 | 需要 IAM Provider 和 Traefik |
-
-## 非稳定 Module
-
-以下 Module 的 manifest 标记为 `developing` 或 `experimental`，不应默认用于生产部署：
-
-| Module | 当前边界 |
-| --- | --- |
-| `authentik` | IAM Provider 实现仍处于实验状态 |
-| `casdoor` | OIDC/SAML 注册已接入；目录锚点、Group 门禁、SAML SLO 与真实登录 E2E 尚未完成 |
-| `forgejo` | Git 协作、OIDC、本地恢复和数据库集成已实现；真实浏览器、双数据库、双架构及恢复/升级 E2E 待完成 |
-| `versitygw` | 专用 POSIX 目录的 path-style S3 API、共享 Capability 与 per-Resource 独立 bucket/凭据已实现；真实客户端、恢复、升级和多架构镜像验收待完成 |
-| `netbird` | WireGuard overlay 拓扑尚不完整，不属于推荐部署 |
-| `freeradius` | 只有服务骨架，未生成生产客户端和用户策略 |
-
-## 选择与配置
-
-Module 在 `config.yml` 中以映射选择：
-
-```yaml
-modules:
-  traefik: {}
-  nextcloud:
-    config:
-      domain_prefix: cloud
-      db_type: auto
-```
-
-不要手工复制依赖清单。Runner 会根据 `requires`、Contract Provider 和配置选择解析完整顺序。查看最终结果：
-
-```bash
-anas plan -c /srv/anas/config.yml
-```
-
-查看可设置参数：
-
-```bash
-anas config list <module>
-anas config explain <module>.<parameter>
-```
+| Module | Version | Status | Category | Description |
+| --- | --- | --- | --- | --- |
+| [authentik](/reference/modules/authentik/) | `2026.5.6-r14` | `developing` | `identity` | Identity provider serving OIDC and SAML with per-application endpoints. |
+| [Casdoor](/reference/modules/casdoor/) | `3.143.0-r8` | `release` | `identity` | Release IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
+| [Collabora Online](/reference/modules/collabora/) | `26.4.2-r5` | `release` | `app` | Online document editing backend for Nextcloud. |
+| [DDNS-GO](/reference/modules/ddns_go/) | `6.17.4-r6` | `release` | `network` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
+| [DDNS Updater](/reference/modules/ddns_updater/) | `2.10.0-r4` | `release` | `network` | Dynamic DNS updater for the base domain and wildcard host. |
+| [Eturnal TURN](/reference/modules/eturnal/) | `1.12.2-r6` | `release` | `communication` | TURN service used by realtime communication modules. |
+| [Forgejo](/reference/modules/forgejo/) | `15.0.7-r1` | `developing` | `app` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
+| [FreeRADIUS](/reference/modules/freeradius/) | `3.2.10-r4` | `developing` | `network` | RADIUS server module scaffold. |
+| [LDAP Account Manager](/reference/modules/lam/) | `9.6.0-r8` | `release` | `identity` | Web UI for LDAP account administration. |
+| [Lego ACME certificates](/reference/modules/lego/) | `5.3.1-r5` | `release` | `certificate` | Issues and stores wildcard certificates used by Traefik and domain services. |
+| [LemonLDAP::NG](/reference/modules/llng/) | `2.23.2-r11` | `release` | `identity` | SSO portal, SAML/OIDC identity provider, and app launcher. |
+| [MariaDB](/reference/modules/mariadb/) | `12.3.2-r4` | `release` | `database` | MariaDB database service with optional Adminer UI. |
+| [MeshCentral](/reference/modules/meshcentral/) | `1.2.4-r8` | `release` | `app` | Remote device management with OIDC-only authentication and LDAP directory synchronization. |
+| [NetBird](/reference/modules/netbird/) | `0.76.1-r5` | `developing` | `network` | Incomplete WireGuard overlay network scaffold; excluded from recommended deployments. |
+| [Nextcloud](/reference/modules/nextcloud/) | `34.0.2-r9` | `release` | `app` | File sync, sharing, office integration, memories, and Talk. |
+| [OAuth2 Proxy](/reference/modules/oauth2_proxy/) | `7.15.3-r4` | `release` | `identity` | Authenticated gate in front of services that have no login of their own. |
+| [PostgreSQL](/reference/modules/postgres/) | `18.4.0-r4` | `release` | `database` | PostgreSQL database service with optional Adminer UI. |
+| [Samba domain controller and DNS](/reference/modules/samba_dc/) | `4.23.6-r10` | `release` | `identity` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |
+| [Samba file server](/reference/modules/samba_fs/) | `4.23.6-r6` | `release` | `storage` | File sharing service joined to the Samba domain. |
+| [Traefik reverse proxy](/reference/modules/traefik/) | `3.7.10-r5` | `release` | `network` | HTTPS reverse proxy and dashboard for all web-facing services. |
+| [VersityGW S3 gateway](/reference/modules/versitygw/) | `1.7.0-r3` | `developing` | `storage` | S3-compatible API backed by a dedicated POSIX directory. |
+| [Vikunja](/reference/modules/vikunja/) | `2.4.0-r4` | `developing` | `app` | Task and project management with OIDC-only authentication, multiple views, API, webhooks, and CalDAV. |

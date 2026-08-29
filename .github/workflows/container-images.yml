@@ -11,8 +11,12 @@ on:
       - "cmd/package-module/**"
       - "cmd/gen-module-docs/**"
       - "contracts/**"
+      - "internal/config/config.go"
+      - "internal/configschema/**"
       - "internal/localization/**"
+      - "internal/moduledocs/**"
       - "internal/modulepackage/**"
+      - "internal/runner/**"
       - "go.mod"
       - "go.sum"
       - "scripts/ci/runtime-image.sh"
@@ -31,8 +35,12 @@ on:
       - "cmd/package-module/**"
       - "cmd/gen-module-docs/**"
       - "contracts/**"
+      - "internal/config/config.go"
+      - "internal/configschema/**"
       - "internal/localization/**"
+      - "internal/moduledocs/**"
       - "internal/modulepackage/**"
+      - "internal/runner/**"
       - "go.mod"
       - "go.sum"
       - "scripts/ci/runtime-image.sh"
@@ -148,18 +156,27 @@ jobs:
               if [[ -f "modules/${module}/localization.yml" ]]; then
                 git add -- "modules/${module}/localization.yml"
               fi
-              git add -- \
-                "modules/${module}/README.md" \
-                "modules/${module}/README.en.md" \
-                "modules/${module}/docs/technical.md" \
-                "modules/${module}/docs/technical.en.md"
             done < <(jq -r '.[].module' .github/modules.json | LC_ALL=C sort -u)
-            git add -- docs/reference/module-localization.md docs/en/reference/module-localization.md
+
+            while IFS= read -r generated_file; do
+              git add -- "$generated_file"
+            done < <(go run ./cmd/gen-module-docs --print-managed-files)
 
             if ! git diff --cached --quiet; then
               git config user.name 'github-actions[bot]'
               git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-              git commit -m "chore(images): calculate release revisions"
+              git commit -m "chore(release): update Module metadata and generated docs"
+            fi
+
+            release_status="$(git status --porcelain)"
+            if [[ -n "$release_status" ]]; then
+              echo "Release preparation left uncommitted files:" >&2
+              printf '%s\n' "$release_status" >&2
+              exit 1
+            fi
+            go run ./cmd/gen-module-docs --check
+
+            if [[ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]]; then
               git push origin HEAD:refs/heads/image-release
             fi
           fi

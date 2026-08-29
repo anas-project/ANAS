@@ -1,19 +1,20 @@
 # `config.yml` 结构化配置与环境变量清单
 
 本文回答两个问题：哪些设置已经有 `config.yml` 的结构化入口，哪些设置目前只能写入
-顶层 `env:`。清单按 2026-08-28 的当前工作树统计；module 增删参数后应重新运行文末命令，
-不要把本文中的数字当成固定 ABI。
+顶层 `env:`。本页的 inventory 统计由当前工作树生成，不是固定 ABI。
 
 ## 结论
 
-- `anas config list --json` 当前登记 **171** 个可设置参数：17 个 `global` 参数、154 个
-  module 参数。
-- 154 个 module 参数中，150 个保存到 `modules.<module>.config.<parameter>`；4 个
-  `samba_fs` 参数虽然已经在 module manifest 中声明并拥有默认值、类型和变更策略，
-  但为了导出裸环境变量，YAML 地址仍是 `env.<KEY>`。
+<!-- generated:configuration-summary:start -->
+- 内置 Module：`22`
+- 已声明参数：共 `171` 个（全局 `17` 个、Module 所有 `154` 个；结构化 Module 参数 `150` 个、裸 `env.*` 参数 `4` 个）
+- 解析阶段：`input_required` `2` 个、`must_resolve` `26` 个、未知类型 `0` 个
+- 类型分布：`bool` `24`、`enum` `22`、`int` `26`、`string` `99`
+- 默认值来源分布：`generated` `10`、`host` `3`、`inherited` `7`、`none` `8`、`runtime` `4`、`static` `139`
+<!-- generated:configuration-summary:end -->
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
-  上述 171 项。
+  上述参数 inventory。
 - 顶层 `env:` 是开放的 raw-env 逃生口，任意合法环境变量键都能写入（输入会规范为大写，
   并须匹配 `[A-Z_][A-Z0-9_]*`），所以“只能用环境变量”的总数
   理论上不可穷举。下文只列仓库当前明确使用、且没有结构化参数的用户覆盖项。
@@ -30,7 +31,7 @@
 | --- | --- | --- |
 | `module_source` | Module 分发 profile：`official`、`official-cn` 或简写 `cn` | 已用于 catalog、下载、缓存、lock 与 CN 默认 |
 | `modules.<module>` | 请求启用的 module 及其配置 | 已使用 |
-| `global.*` | 17 个部署级参数，详见下一节 | 已使用 |
+| `global.*` | 部署级参数，详见下一节 | 已使用 |
 | `administration.bootstrap.username` | 引导管理员用户名 | 已使用 |
 | `administration.local_accounts.username_template` | 本地管理员全局用户名模板 | 非法；用户名由 ANAS 管理 |
 | `administration.local_accounts.password_length` | 生成密码长度，最小 16 | 已使用 |
@@ -108,7 +109,7 @@ Compose project name，同时以该前缀生成容器名；例如默认配置下
 的前缀会生成另一组 project、容器名和跨容器地址，属于静态部署变更，不是现有资源的原地
 重命名；修改前必须先完成显式迁移或清理旧部署。
 
-## 已声明的 171 个参数
+## 已声明参数
 
 表中参数都能被 `anas config list` 列出。普通可编辑参数可通过 `anas config set` 设置；
 `credential_rotate`、`data_migrate` 和 `immutable` 只用于 inventory/explain，必须执行专用流程。除特别说明
@@ -117,7 +118,7 @@ Compose project name，同时以该前缀生成容器名；例如默认配置下
 
 JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同时提供
 `allowed_values`。`unknown` 仅为旧 Module 或开发中声明不完整时保留的兼容值，内置 Module
-的 release 校验不允许它出现，因此本节 171 项的 `unknown` 数量为 0。
+的 release 校验不允许它出现；当前数量见生成摘要。
 
 配置元数据把“操作者是否必须输入”和“解析后的值是否必须存在”分开：
 
@@ -139,48 +140,65 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 只是注解；`constraints` 也只是统一配置 schema 的稳定投影，不承诺接受任意 JSON Schema
 关键字。CLI、未来的 `anasd` 配置 API 和 Web 表单必须消费同一份应用层 schema。
 
-当前发布基线中，`input_required`/`required` 为 `true` 的只有
-`global.base_domain` 和 `global.email` 2 项，`must_resolve` 为 `true` 的共有 26 项。
 `ddns_go.dns_provider` 与 `ddns_updater.dns_provider` 可由 deployment
 `dynamic_dns.dns_provider` 条件注入，因此表现为 `input_required: false`、
 `must_resolve: true`、`default_source: none`；只有 resolver 未能注入时才需要 Module 侧输入。
-`default_source` 分布为 `static: 140`、`generated: 10`、`none: 8`、`runtime: 4`、`inherited: 7`、
-`host: 3`；`has_default: true` 与这 140 个 `static` 项严格对应。
 
-当前 22 项显式单字段约束是：`global.base_domain` 与 `samba_dc.domain` 的 DNS name format、
-timezone、language/locale format，3 个 IPv4 format，
-`eturnal.port`、`forgejo.ssh_port`、`meshcentral.mps_port`、`traefik.base_port` 的 `1..65535`，
-`samba_dc.max_log_size >= 1`、`casdoor.ldap_auto_sync_minutes >= 1`、`forgejo.domain_prefix`、
-`forgejo.actions_incus_profile` 的 DNS label pattern、`forgejo.actions_runner_image` 的固定指纹 pattern、
-`versitygw.domain_prefix`、`vikunja.domain_prefix` 的 1..63 字符 DNS label pattern，以及
-VersityGW region、root access key 和 root secret 的字符/长度约束。
-这些都是已有运行约束的声明化；没有证据的数字上限、条件 provider 规则和跨字段关系没有被
-擅自收紧。
+<!-- generated:configuration-constraints:start -->
+当前显式可移植约束：`22` 项。
 
-| 所有者 | 数量 | 参数 |
+| 参数路径 | 可移植约束 |
+| --- | --- |
+| `casdoor.ldap_auto_sync_minutes` | <code>minimum=1</code> |
+| `eturnal.port` | <code>minimum=1; maximum=65535</code> |
+| `forgejo.actions_incus_profile` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+| `forgejo.actions_runner_image` | <code>pattern=&#34;^(?:[0-9a-f]{64})?$&#34;</code> |
+| `forgejo.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+| `forgejo.ssh_port` | <code>minimum=1; maximum=65535</code> |
+| `global.base_domain` | <code>format=&#34;dns_name&#34;</code> |
+| `global.default_language` | <code>format=&#34;language_tag&#34;</code> |
+| `global.default_locale` | <code>format=&#34;locale&#34;</code> |
+| `global.host_ip` | <code>format=&#34;ipv4&#34;</code> |
+| `global.host_lan_bridge_ip` | <code>format=&#34;ipv4&#34;</code> |
+| `global.host_lan_ip` | <code>format=&#34;ipv4&#34;</code> |
+| `global.timezone` | <code>format=&#34;iana_timezone&#34;</code> |
+| `meshcentral.mps_port` | <code>minimum=1; maximum=65535</code> |
+| `samba_dc.domain` | <code>format=&#34;dns_name&#34;</code> |
+| `samba_dc.max_log_size` | <code>minimum=1</code> |
+| `traefik.base_port` | <code>minimum=1; maximum=65535</code> |
+| `versitygw.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+| `versitygw.region` | <code>min_length=1; max_length=64; pattern=&#34;^[A-Za-z0-9][A-Za-z0-9._-]*$&#34;</code> |
+| `versitygw.root_access_key` | <code>min_length=3; max_length=64; pattern=&#34;^[A-Za-z0-9._-]+$&#34;</code> |
+| `versitygw.root_secret_key` | <code>min_length=16; max_length=128</code> |
+| `vikunja.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+<!-- generated:configuration-constraints:end -->
+
+<!-- generated:configuration-owners:start -->
+| Owner | 参数数 | 参数路径 |
 | --- | ---: | --- |
-| `global` | 17 | `base_domain`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `dns_server`, `email`, `host_ip`, `host_lan_arp_check`, `host_lan_bridge_ip`, `host_lan_ip`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
-| `authentik` | 6 | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` |
-| `casdoor` | 4 | `db_name`, `db_type`, `domain_prefix`, `ldap_auto_sync_minutes` |
-| `collabora` | 5 | `admin_password`, `admin_username`, `auto_save`, `domain_prefix`, `log_level` |
-| `ddns_go` | 10 | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` |
-| `ddns_updater` | 10 | `dns_provider`, `domain_prefix`, `forward_auth_interface`, `publicip_dns_providers`, `publicip_fetchers`, `publicip_ipv4_providers`, `publicip_ipv6_providers`, `publicip_providers`, `ttl`, `zone_identifier` |
-| `eturnal` | 2 | `domain_prefix`, `port` |
-| `forgejo` | 16 | `actions_allowed_scopes`, `actions_enabled`, `actions_incus_client_cert_b64`, `actions_incus_client_key_b64`, `actions_incus_endpoint`, `actions_incus_profile`, `actions_incus_server_cert_b64`, `actions_runner_image`, `custom_git_hooks_enabled`, `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `local_path_import_enabled`, `ssh_port` |
-| `lam` | 3 | `admin_password`, `domain_prefix`, `language` |
-| `lego` | 2 | `dns_provider`, `dns_server` |
-| `llng` | 8 | `adminer_enabled`, `db_name`, `db_type`, `domain_prefix`, `enable_test`, `log_level`, `manager_domain_prefix`, `test_domain_prefix` |
-| `mariadb` | 2 | `adminer_enabled`, `root_password` |
-| `meshcentral` | 5 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `mps_port` |
-| `netbird` | 3 | `adminer_enabled`, `domain_prefix`, `iam_protocol` |
-| `nextcloud` | 13 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` |
-| `oauth2_proxy` | 2 | `domain_prefix`, `iam_protocol` |
-| `postgres` | 3 | `adminer_enabled`, `password`, `username` |
-| `samba_dc` | 40 | `admin_complex_pass`, `admin_lockout_duration`, `admin_lockout_reset_after`, `admin_lockout_threshold`, `admin_max_pass_age`, `admin_min_pass_age`, `admin_min_pass_length`, `admin_name`, `admin_password`, `admin_password_history`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `application_dns_mode`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `domain`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
-| `samba_fs` | 7 | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` |
-| `traefik` | 3 | `base_port`, `domain_prefix`, `forwarded_headers_trusted_ips` |
-| `versitygw` | 5 | `domain_prefix`, `read_only`, `region`, `root_access_key`, `root_secret_key` |
-| `vikunja` | 5 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language` |
+| `global` | 17 | `global.base_domain`<br>`global.chinese_build_speedup`<br>`global.chinese_speedup`<br>`global.container_prefix`<br>`global.default_language`<br>`global.default_locale`<br>`global.dns_server`<br>`global.email`<br>`global.host_ip`<br>`global.host_lan_arp_check`<br>`global.host_lan_bridge_ip`<br>`global.host_lan_ip`<br>`global.ipv4`<br>`global.ipv6`<br>`global.network_prefix`<br>`global.timezone`<br>`global.virtual_domain` |
+| `authentik` | 6 | `authentik.db_name`<br>`authentik.db_type`<br>`authentik.domain_prefix`<br>`authentik.ldap_enabled`<br>`authentik.ldap_password_writeback`<br>`authentik.log_level` |
+| `casdoor` | 4 | `casdoor.db_name`<br>`casdoor.db_type`<br>`casdoor.domain_prefix`<br>`casdoor.ldap_auto_sync_minutes` |
+| `collabora` | 5 | `collabora.admin_password`<br>`collabora.admin_username`<br>`collabora.auto_save`<br>`collabora.domain_prefix`<br>`collabora.log_level` |
+| `ddns_go` | 10 | `ddns_go.dns_provider`<br>`ddns_go.domain_prefix`<br>`ddns_go.interval`<br>`ddns_go.ipv4_gettype`<br>`ddns_go.ipv4_interface`<br>`ddns_go.ipv4_urls`<br>`ddns_go.ipv6_gettype`<br>`ddns_go.ipv6_interface`<br>`ddns_go.ipv6_urls`<br>`ddns_go.web_enabled` |
+| `ddns_updater` | 10 | `ddns_updater.dns_provider`<br>`ddns_updater.domain_prefix`<br>`ddns_updater.forward_auth_interface`<br>`ddns_updater.publicip_dns_providers`<br>`ddns_updater.publicip_fetchers`<br>`ddns_updater.publicip_ipv4_providers`<br>`ddns_updater.publicip_ipv6_providers`<br>`ddns_updater.publicip_providers`<br>`ddns_updater.ttl`<br>`ddns_updater.zone_identifier` |
+| `eturnal` | 2 | `eturnal.domain_prefix`<br>`eturnal.port` |
+| `forgejo` | 16 | `forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_incus_client_cert_b64`<br>`forgejo.actions_incus_client_key_b64`<br>`forgejo.actions_incus_endpoint`<br>`forgejo.actions_incus_profile`<br>`forgejo.actions_incus_server_cert_b64`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.ssh_port` |
+| `lam` | 3 | `lam.admin_password`<br>`lam.domain_prefix`<br>`lam.language` |
+| `lego` | 2 | `lego.dns_provider`<br>`lego.dns_server` |
+| `llng` | 7 | `llng.db_name`<br>`llng.db_type`<br>`llng.domain_prefix`<br>`llng.enable_test`<br>`llng.log_level`<br>`llng.manager_domain_prefix`<br>`llng.test_domain_prefix` |
+| `mariadb` | 3 | `mariadb.adminer_enabled`<br>`mariadb.forward_auth_interface`<br>`mariadb.root_password` |
+| `meshcentral` | 5 | `meshcentral.db_name`<br>`meshcentral.db_type`<br>`meshcentral.domain_prefix`<br>`meshcentral.iam_protocol`<br>`meshcentral.mps_port` |
+| `netbird` | 2 | `netbird.domain_prefix`<br>`netbird.iam_protocol` |
+| `nextcloud` | 13 | `nextcloud.db_name`<br>`nextcloud.db_type`<br>`nextcloud.domain_prefix`<br>`nextcloud.iam_protocol`<br>`nextcloud.language`<br>`nextcloud.locale`<br>`nextcloud.log_level`<br>`nextcloud.memories_enabled`<br>`nextcloud.memory_limit`<br>`nextcloud.phone_region`<br>`nextcloud.rm_skeleton_files`<br>`nextcloud.talk_enabled`<br>`nextcloud.upload_max_size` |
+| `oauth2_proxy` | 2 | `oauth2_proxy.domain_prefix`<br>`oauth2_proxy.iam_protocol` |
+| `postgres` | 4 | `postgres.adminer_enabled`<br>`postgres.forward_auth_interface`<br>`postgres.password`<br>`postgres.username` |
+| `samba_dc` | 40 | `samba_dc.admin_complex_pass`<br>`samba_dc.admin_lockout_duration`<br>`samba_dc.admin_lockout_reset_after`<br>`samba_dc.admin_lockout_threshold`<br>`samba_dc.admin_max_pass_age`<br>`samba_dc.admin_min_pass_age`<br>`samba_dc.admin_min_pass_length`<br>`samba_dc.admin_name`<br>`samba_dc.admin_password`<br>`samba_dc.admin_password_history`<br>`samba_dc.administrator_password`<br>`samba_dc.anchor_bind_name`<br>`samba_dc.anchor_bind_password`<br>`samba_dc.anchor_scan_interval`<br>`samba_dc.app_filter`<br>`samba_dc.application_dns_mode`<br>`samba_dc.create_structure`<br>`samba_dc.dns_allowed_networks`<br>`samba_dc.dns_cache_size`<br>`samba_dc.dns_debug`<br>`samba_dc.dns_forwarders`<br>`samba_dc.domain`<br>`samba_dc.ldap_bind_name`<br>`samba_dc.ldap_bind_password`<br>`samba_dc.log_level`<br>`samba_dc.max_log_size`<br>`samba_dc.netbios_name`<br>`samba_dc.password_bind_name`<br>`samba_dc.password_bind_password`<br>`samba_dc.realm`<br>`samba_dc.template_homedir`<br>`samba_dc.template_shell`<br>`samba_dc.user_complex_pass`<br>`samba_dc.user_lockout_duration`<br>`samba_dc.user_lockout_reset_after`<br>`samba_dc.user_lockout_threshold`<br>`samba_dc.user_max_pass_age`<br>`samba_dc.user_min_pass_age`<br>`samba_dc.user_min_pass_length`<br>`samba_dc.user_password_history` |
+| `samba_fs` | 7 | `env.SHARE_ACCESS_MODE`<br>`env.SHARE_DIR_NAME`<br>`env.SHARE_GUEST_READ_ONLY`<br>`env.USE_DEFAULT_DOMAIN`<br>`samba_fs.hostname`<br>`samba_fs.log_level`<br>`samba_fs.wsdd_log_level` |
+| `traefik` | 3 | `traefik.base_port`<br>`traefik.domain_prefix`<br>`traefik.forwarded_headers_trusted_ips` |
+| `versitygw` | 5 | `versitygw.domain_prefix`<br>`versitygw.read_only`<br>`versitygw.region`<br>`versitygw.root_access_key`<br>`versitygw.root_secret_key` |
+| `vikunja` | 5 | `vikunja.db_name`<br>`vikunja.db_type`<br>`vikunja.domain_prefix`<br>`vikunja.iam_protocol`<br>`vikunja.language` |
+<!-- generated:configuration-owners:end -->
 
 Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass` Secret 和应用 handler
 管理，不能写入 YAML。
@@ -188,16 +206,18 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 `global.default_service_root_password` 已删除。LAM、Collabora、Samba DC 等 Module 各自
 拥有密码参数；省略时分别生成独立 Secret，不再存在跨应用共享管理员密码。
 
-`samba_fs` 的以下 4 项是特殊情况。它们有 manifest 元数据，不能算“未声明 raw env”，
+`samba_fs` 的以下声明项是特殊情况。它们有 manifest 元数据，不能算“未声明 raw env”，
 但因为 `config.exports` 要求发布裸键，受管配置中的 canonical YAML 地址只能是顶层
 `env:`；`config import` 可接受结构化源地址，但会在持久化前迁移到这里：
 
+<!-- generated:configuration-bare-parameters:start -->
 | YAML 地址 | 所有者 | 环境变量 |
 | --- | --- | --- |
 | `env.SHARE_ACCESS_MODE` | `samba_fs` | `SHARE_ACCESS_MODE` |
 | `env.SHARE_DIR_NAME` | `samba_fs` | `SHARE_DIR_NAME` |
 | `env.SHARE_GUEST_READ_ONLY` | `samba_fs` | `SHARE_GUEST_READ_ONLY` |
 | `env.USE_DEFAULT_DOMAIN` | `samba_fs` | `USE_DEFAULT_DOMAIN` |
+<!-- generated:configuration-bare-parameters:end -->
 
 例如 `anas config set samba_fs.share_guest_read_only Yes` 接受逻辑参数路径，但写回文件时
 会落到 `env.SHARE_GUEST_READ_ONLY`。
@@ -205,17 +225,17 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 ## 参数会产生什么结果
 
 `anas config list --json` 是参数名、环境键、默认值和变更结果的权威机器可读清单。
-当前 154 个 Module 参数按 effect 统计如下；effect 表示**修改已有部署后必须完成的动作**，不是参数
-传输到 `.env` 就算应用成功。
 
-| effect | 数量 | 修改结果 |
+<!-- generated:configuration-effects:start -->
+| Module 参数 effect | 参数数 | 修改结果 |
 | --- | ---: | --- |
 | `container_recreate` | 101 | 重新渲染，并重建受影响容器或 Compose project |
-| `credential_rotate` | 7 | 普通设置和替换导入会被拒绝，必须通过凭据轮换事务同步应用状态与 Secret Store |
-| `data_migrate` | 15 | 普通设置和部署激活会被阻断，必须先迁移持久数据、数据库或成员身份 |
-| `hot_reload` | 16 | 声明目标是 Samba 管理命令；当前执行器保守地生成新部署并对受影响容器执行 `down → up` |
-| `immutable` | 3 | 通用 `config set` 不允许修改，必须走替换或域迁移流程 |
-| `reconcile` | 12 | 声明目标是应用/API/文件调和；当前执行器通过新部署和容器启动流程完成 |
+| `credential_rotate` | 7 | 通过凭据轮换事务同步应用状态与 Secret Store |
+| `data_migrate` | 15 | 激活前迁移持久数据、数据库或成员身份 |
+| `hot_reload` | 16 | 通过声明的管理命令应用；当前执行器可能保守地重建容器 |
+| `immutable` | 3 | 使用替换或专用迁移流程 |
+| `reconcile` | 12 | 通过 Module 生命周期调和应用、API 或文件状态 |
+<!-- generated:configuration-effects:end -->
 
 ### 当前版本的实际执行边界
 
@@ -422,7 +442,7 @@ test-env/scripts/test-render.sh
 ```
 
 前者拒绝没有运行时消费者的声明参数；若消费者只存在于上游镜像，例外必须同时记录固定
-版本的上游源码证据。其余测试分别验证 171 项 inventory、类型完整性和废弃路径，七类
-effect 的真实 CLI→Hook→render→deployment→Compose/阻断边界，以及全部 171 个参数键在本轮新生成的
+版本的上游源码证据。其余测试分别验证完整 inventory、类型完整性和废弃路径，所有已声明
+effect 的真实 CLI→Hook→render→deployment→Compose/阻断边界，以及每个参数键在本轮新生成的
 Module 部署产物中至少出现一次。`test-lifecycle.sh` 在真实 Docker 上进一步验证
 `container_recreate` 会更换容器 ID。

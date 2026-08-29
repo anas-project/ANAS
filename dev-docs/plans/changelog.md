@@ -22,13 +22,13 @@ updated: 2026-08-28
 
 ## 2. M0 检查表：前置排除与文件骨架
 
-先做排除，再建文件。顺序反了会在建骨架的那一刻就触发 22 个 Module 的 revision 提升。
+先做排除，再建文件。顺序反了会在建骨架的那一刻就触发全部 catalog Module 的 revision 提升。
 
 - [ ] `scripts/ci/module-revisions.sh` 的 `runtime_path()` 排除 `modules/*/changelog/`，并在 `module-revisions-test.sh` 中补用例。
 - [ ] `internal/modulepackage` 的 `excludedRuntimeDirectory()` 同时排除 `docs` 与 `changelog` 两个目录名，补 `package_test.go` 用例断言变更记录不进制品、不进 digest。
 - [ ] 用上述两项验证：只修改某 Module 的 `changelog/master.md` 时，`module-revisions.sh --print` 对该 Module 输出 `unchanged`。
 - [ ] 建立 `docs/changelog/master.md` 与 `master.en.md`，内容只有 `# Unreleased`。
-- [ ] 为 `.github/modules.json` 中全部 22 个 Module 建立 `modules/<name>/changelog/master.md` 与 `master.en.md`。
+- [ ] 为 `.github/modules.json` 中全部 Module 建立 `modules/<name>/changelog/master.md` 与 `master.en.md`。
 - [ ] 在[Changelog 规范](../../docs/developer/changelog-standard.md)中固化分节顺序与条目写法。
 
 ## 3. M1 检查表：写入时机与覆盖检查

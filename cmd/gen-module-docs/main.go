@@ -16,6 +16,7 @@ import (
 
 	"github.com/anas-project/ANAS/internal/configschema"
 	"github.com/anas-project/ANAS/internal/localization"
+	"github.com/anas-project/ANAS/internal/moduledocs"
 	"github.com/anas-project/ANAS/internal/runner"
 	"gopkg.in/yaml.v3"
 )
@@ -31,21 +32,6 @@ const (
 	topologyBlockStart = "<!-- generated:compose-topology:start -->"
 	topologyBlockEnd   = "<!-- generated:compose-topology:end -->"
 )
-
-type manifest struct {
-	APIVersion  string `yaml:"api_version"`
-	Name        string `yaml:"name"`
-	Version     string `yaml:"version"`
-	Revision    int    `yaml:"revision"`
-	Title       string `yaml:"title"`
-	Description string `yaml:"description"`
-	Status      string `yaml:"status"`
-	Category    string `yaml:"category"`
-	Runtime     struct {
-		Type        string `yaml:"type"`
-		ComposeFile string `yaml:"compose_file"`
-	} `yaml:"runtime"`
-}
 
 type composeDocument struct {
 	Services map[string]composeService `yaml:"services"`
@@ -94,7 +80,7 @@ type evidenceInfo struct {
 
 type moduleDoc struct {
 	Dir        string
-	Manifest   manifest
+	Manifest   runner.BuiltinModuleInventoryEntry
 	Inventory  inventory
 	Compose    composeDocument
 	Parameters []runner.ConfigParameterInventoryEntry
@@ -107,14 +93,28 @@ type imageCatalogEntry struct {
 
 func main() {
 	check := flag.Bool("check", false, "fail if generated documentation is stale")
+	printManagedFiles := flag.Bool("print-managed-files", false, "print repository-relative generated files without writing them")
 	root := flag.String("root", "", "repository root (auto-detected by default)")
 	flag.Parse()
+	if *check && *printManagedFiles {
+		fatal(errors.New("--check and --print-managed-files are mutually exclusive"))
+	}
 	if *root == "" {
 		var err error
 		*root, err = findRepoRoot()
 		if err != nil {
 			fatal(err)
 		}
+	}
+	if *printManagedFiles {
+		paths, err := managedOutputPaths(*root)
+		if err != nil {
+			fatal(err)
+		}
+		for _, path := range paths {
+			fmt.Println(path)
+		}
+		return
 	}
 	if err := run(*root, *check); err != nil {
 		fatal(err)
@@ -144,9 +144,31 @@ func findRepoRoot() (string, error) {
 }
 
 func run(root string, check bool) error {
-	modules, err := loadModules(root)
+	outputs, err := renderOutputs(root, !check)
 	if err != nil {
 		return err
+	}
+	var stale []string
+	for path, content := range outputs {
+		if err := update(path, content, check, &stale); err != nil {
+			return err
+		}
+	}
+	if len(stale) > 0 {
+		sort.Strings(stale)
+		return fmt.Errorf("generated module documentation is stale:\n  %s\nrun: go run ./cmd/gen-module-docs", strings.Join(stale, "\n  "))
+	}
+	return nil
+}
+
+func renderOutputs(root string, projectParameterTables bool) (map[string][]byte, error) {
+	builtin, err := runner.LoadBuiltinInventory(root)
+	if err != nil {
+		return nil, fmt.Errorf("load built-in inventory: %w", err)
+	}
+	modules, err := loadModules(root, builtin)
+	if err != nil {
+		return nil, err
 	}
 	outputs := make(map[string][]byte)
 	for _, module := range modules {
@@ -163,37 +185,83 @@ func run(root string, check bool) error {
 		} {
 			current, readErr := os.ReadFile(document.Path)
 			if readErr != nil {
-				return readErr
+				return nil, readErr
 			}
-			if len(module.Parameters) > 0 {
-				projected, projectErr := syncParameterTable(string(current), module, document.English, document.ParameterHeading)
+			base := string(current)
+			if len(module.Parameters) > 0 || strings.Contains(base, document.ParameterHeading+"\n") {
+				projected, projectErr := syncParameterTable(base, module, document.English, document.ParameterHeading)
 				if projectErr != nil {
-					return fmt.Errorf("%s: validate parameter table: %w", document.Path, projectErr)
+					return nil, fmt.Errorf("%s: validate parameter table: %w", document.Path, projectErr)
 				}
-				if projected != string(current) {
-					return fmt.Errorf("%s: parameter table is stale; update its machine-derived columns and reviewed purpose text together", document.Path)
+				if projected != base && !projectParameterTables {
+					return nil, fmt.Errorf("%s: parameter table is stale; update its machine-derived columns and reviewed purpose text together", document.Path)
 				}
+				base = projected
 			}
-			want, transformErr := document.Transform(string(current), module)
+			want, transformErr := document.Transform(base, module)
 			if transformErr != nil {
-				return fmt.Errorf("%s: %w", document.Path, transformErr)
+				return nil, fmt.Errorf("%s: %w", document.Path, transformErr)
 			}
 			outputs[document.Path] = []byte(want)
 		}
 	}
 	outputs[filepath.Join(root, "docs", "reference", "module-localization.md")] = renderReference(modules, false)
 	outputs[filepath.Join(root, "docs", "en", "reference", "module-localization.md")] = renderReference(modules, true)
-	var stale []string
-	for path, content := range outputs {
-		if err := update(path, content, check, &stale); err != nil {
-			return err
+	catalogEntries := make([]moduledocs.CatalogEntry, 0, len(builtin.Modules))
+	for _, module := range builtin.Modules {
+		catalogEntries = append(catalogEntries, moduledocs.CatalogEntry{
+			Name: module.Name, Title: module.Title, Version: module.Version, Revision: module.Revision,
+			Status: module.Status, Category: module.Category, Description: module.Description,
+		})
+	}
+	outputs[filepath.Join(root, "docs", "reference", "modules.md")] = moduledocs.RenderCatalog(catalogEntries, false)
+	outputs[filepath.Join(root, "docs", "en", "reference", "modules.md")] = moduledocs.RenderCatalog(catalogEntries, true)
+	for _, document := range []struct {
+		Path      string
+		English   bool
+		Transform func(string, runner.BuiltinInventory, bool) (string, error)
+	}{
+		{filepath.Join(root, "docs", "reference", "configuration.md"), false, moduledocs.SyncConfiguration},
+		{filepath.Join(root, "docs", "en", "reference", "configuration.md"), true, moduledocs.SyncConfiguration},
+		{filepath.Join(root, "docs", "architecture", "module-contract-resource-design.md"), false, moduledocs.SyncArchitectureModules},
+		{filepath.Join(root, "docs", "en", "architecture", "module-contract-resource-design.md"), true, moduledocs.SyncArchitectureModules},
+	} {
+		current, readErr := os.ReadFile(document.Path)
+		if readErr != nil {
+			return nil, readErr
 		}
+		want, transformErr := document.Transform(string(current), builtin, document.English)
+		if transformErr != nil {
+			return nil, fmt.Errorf("%s: %w", document.Path, transformErr)
+		}
+		outputs[document.Path] = []byte(want)
 	}
-	if len(stale) > 0 {
-		sort.Strings(stale)
-		return fmt.Errorf("generated module documentation is stale:\n  %s\nrun: go run ./cmd/gen-module-docs", strings.Join(stale, "\n  "))
+	surface, err := json.MarshalIndent(builtin.Surface(), "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode built-in inventory golden: %w", err)
 	}
-	return nil
+	outputs[filepath.Join(root, "internal", "runner", "testdata", "builtin-inventory.golden.json")] = append(surface, '\n')
+	return outputs, nil
+}
+
+func managedOutputPaths(root string) ([]string, error) {
+	outputs, err := renderOutputs(root, true)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(outputs))
+	for path := range outputs {
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil, err
+		}
+		if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+			return nil, fmt.Errorf("generated path escapes repository root: %s", path)
+		}
+		paths = append(paths, filepath.ToSlash(relative))
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
 func update(path string, want []byte, check bool, stale *[]string) error {
@@ -214,29 +282,9 @@ func update(path string, want []byte, check bool, stale *[]string) error {
 	return os.WriteFile(path, want, 0o644)
 }
 
-func loadModules(root string) ([]moduleDoc, error) {
-	entries, err := os.ReadDir(filepath.Join(root, "modules"))
-	if err != nil {
-		return nil, err
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		manifestPath := filepath.Join(root, "modules", entry.Name(), "module.yml")
-		if !exists(manifestPath) {
-			continue
-		}
-		if err := runner.ValidateModuleConfigMetadataFile(manifestPath); err != nil {
-			return nil, fmt.Errorf("%s: %w", manifestPath, err)
-		}
-	}
-	parameterInventory, err := runner.LoadConfigParameterInventory(root)
-	if err != nil {
-		return nil, fmt.Errorf("load configuration parameter inventory: %w", err)
-	}
+func loadModules(root string, builtin runner.BuiltinInventory) ([]moduleDoc, error) {
 	parametersByModule := map[string][]runner.ConfigParameterInventoryEntry{}
-	for _, parameter := range parameterInventory {
+	for _, parameter := range builtin.Parameters {
 		if parameter.Module != "global" {
 			parametersByModule[parameter.Module] = append(parametersByModule[parameter.Module], parameter)
 		}
@@ -246,19 +294,8 @@ func loadModules(root string) ([]moduleDoc, error) {
 		return nil, err
 	}
 	var modules []moduleDoc
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		dir := filepath.Join(root, "modules", entry.Name())
-		manifestPath := filepath.Join(dir, "module.yml")
-		if !exists(manifestPath) {
-			continue
-		}
-		var m manifest
-		if err := decodeYAML(manifestPath, &m, false); err != nil {
-			return nil, err
-		}
+	for _, m := range builtin.Modules {
+		dir := filepath.Join(root, "modules", m.Name)
 		var inv inventory
 		inventoryPath := filepath.Join(dir, "localization.yml")
 		if err := decodeYAML(inventoryPath, &inv, true); err != nil {
@@ -268,7 +305,7 @@ func loadModules(root string) ([]moduleDoc, error) {
 			return nil, fmt.Errorf("%s: %w", inventoryPath, err)
 		}
 		var compose composeDocument
-		composeFile := m.Runtime.ComposeFile
+		composeFile := m.ComposeFile
 		if composeFile == "" {
 			composeFile = "docker-compose.yml"
 		}
@@ -287,10 +324,9 @@ func loadModules(root string) ([]moduleDoc, error) {
 			Parameters: parametersByModule[m.Name],
 		})
 	}
+	// BuiltinInventory is already sorted, but keep moduleDoc ordering explicit
+	// for callers that construct an inventory directly in tests.
 	sort.Slice(modules, func(i, j int) bool { return modules[i].Manifest.Name < modules[j].Manifest.Name })
-	if len(modules) == 0 {
-		return nil, errors.New("no modules found")
-	}
 	return modules, nil
 }
 
@@ -390,11 +426,11 @@ func syncEnglishTechnical(base string, module moduleDoc) (string, error) {
 }
 
 func syncParameterTable(base string, module moduleDoc, english bool, heading string) (string, error) {
-	if len(module.Parameters) == 0 {
-		return base, nil
-	}
 	tableStart, tableEnd, err := markdownTableBounds(base, heading)
 	if err != nil {
+		if len(module.Parameters) == 0 && strings.Contains(err.Error(), "has no parameter table") {
+			return base, nil
+		}
 		return "", err
 	}
 	lines := strings.Split(strings.TrimSpace(base[tableStart:tableEnd]), "\n")
@@ -429,7 +465,11 @@ func syncParameterTable(base string, module moduleDoc, english bool, heading str
 		if _, duplicate := purposeByPath[path]; duplicate {
 			return "", fmt.Errorf("%s parameter table repeats %s", heading, path)
 		}
-		purposeByPath[path] = cells[len(header)-1]
+		purpose := strings.TrimSpace(cells[len(header)-1])
+		if purpose == "" {
+			return "", fmt.Errorf("%s parameter table has no reviewed purpose for %s", heading, path)
+		}
+		purposeByPath[path] = purpose
 	}
 	parameters := append([]runner.ConfigParameterInventoryEntry(nil), module.Parameters...)
 	sort.Slice(parameters, func(i, j int) bool { return parameters[i].Path < parameters[j].Path })
@@ -692,14 +732,14 @@ func renderModuleFacts(module moduleDoc, english bool) string {
 		fmt.Fprintf(&out, "| Version / revision | `%s` |\n", release)
 		fmt.Fprintf(&out, "| Status | `%s` |\n", m.Status)
 		fmt.Fprintf(&out, "| Category | `%s` |\n", m.Category)
-		fmt.Fprintf(&out, "| Runtime | `%s` |\n", m.Runtime.Type)
+		fmt.Fprintf(&out, "| Runtime | `%s` |\n", m.RuntimeType)
 	} else {
 		out.WriteString("| 项目 | 值 |\n| --- | --- |\n")
 		fmt.Fprintf(&out, "| Module | `%s` |\n", m.Name)
 		fmt.Fprintf(&out, "| 版本 / revision | `%s` |\n", release)
 		fmt.Fprintf(&out, "| 状态 | `%s` |\n", m.Status)
 		fmt.Fprintf(&out, "| 类别 | `%s` |\n", m.Category)
-		fmt.Fprintf(&out, "| 运行时 | `%s` |\n", m.Runtime.Type)
+		fmt.Fprintf(&out, "| 运行时 | `%s` |\n", m.RuntimeType)
 	}
 	fmt.Fprintf(&out, "%s\n", factsBlockEnd)
 	return out.String()
@@ -818,7 +858,7 @@ func decodeYAML(path string, out any, strict bool) error {
 	return nil
 }
 
-func validate(m manifest, inv inventory) error {
+func validate(m runner.BuiltinModuleInventoryEntry, inv inventory) error {
 	if m.Name == "" || m.Version == "" || m.Title == "" {
 		return errors.New("module.yml must declare name, version, and title")
 	}

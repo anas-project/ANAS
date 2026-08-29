@@ -34,6 +34,40 @@ Module 名称分支或直接改写私有参数。完整边界见 [Core 实现标
 `image-release` 决定下一个正式编号。只测试 Hook、配置生成或不需要新镜像的用例，不应修改
 revision。
 
+## 修改 Module 参数
+
+Module 参数的机器契约只在 `modules/<name>/module.yml` 的 `config` 下声明。参数集合是
+`types`、`defaults`、`input_required`、兼容字段 `required`、`must_resolve` 与 `changes` 中键的
+并集；每个内置参数都必须有显式 `types.<parameter>`。修改时按以下顺序完成：
+
+1. 在 `config.types` 声明 `string`、`bool`、`int` 或 `enum`，并在需要时写
+   `constraints` 与非字面量 `default_source`；字面量默认值只写入 `config.defaults`。
+2. 只有调用者必须输入时才加入 `input_required`；最终解析结果必须非空时加入
+   `must_resolve`。不要为新代码增加旧式 `required`。
+3. 在 `config.changes` 写明 `effect`、`apply` 和真实运行影响；敏感参数同时声明
+   `sensitive: true`。跨字段规则由 `validate` Hook 或共享应用层执行，派生值由
+   `calculate` Hook 产生。
+4. 同步 Compose、Hook、模板、测试和迁移/兼容逻辑中的实际消费方。参数重命名不是简单删除再新增，
+   必须说明旧配置如何迁移或被拒绝。
+5. 在 `README.md`、`README.en.md`、`docs/technical.md`、`docs/technical.en.md` 的参数表中
+   增加、删除或重命名同一路径。新增时可复制一行，只填写正确的第一列路径和最后一列人工审核的
+   “作用/Purpose”；生成器会重写中间的类型、默认值、约束、环境变量和 effect 等机器列。删除
+   Module 的最后一个参数时，同时移除四份文档中的参数表；可以保留明确说明“无参数”的章节，
+   但不能留下空表或旧行。
+
+然后在仓库根目录运行：
+
+```bash
+go run ./cmd/gen-module-docs
+go run ./cmd/gen-module-docs --check
+go test ./internal/runner ./cmd/gen-module-docs
+```
+
+普通生成模式保留四张表的人工“作用/Purpose”，刷新机器列及全局 Module 目录、配置统计、架构表和
+inventory golden；`--check` 完全只读。不要手改这些全局生成块、golden 或正式 `revision`。
+功能分支仍应提交可通过 `--check` 的完整语义和文档；`image-release` 发布会在计算最终 revision 后
+再次生成全部持久输出，由 Bot 提交到发布分支，并在制品全部成功后安全快进回 `master`。
+
 ## 依赖和能力
 
 - 硬依赖必须显式声明并参与选择与排序；

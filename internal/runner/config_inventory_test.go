@@ -14,9 +14,6 @@ func TestTypedConfigParameterInventoryMatchesCLIProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(typed), 171; got != want {
-		t.Fatalf("typed inventory count = %d, want %d", got, want)
-	}
 
 	for _, entry := range typed {
 		target := configTarget{Display: entry.Path, Module: entry.Module, Parameter: entry.Parameter}
@@ -66,11 +63,27 @@ func TestTypedConfigParameterInventoryMatchesCLIProjection(t *testing.T) {
 }
 
 func TestLoadConfigParameterInventoryUsesRepositoryRoot(t *testing.T) {
-	entries, err := LoadConfigParameterInventory("../..")
+	reg, err := loadRegistry("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(entries), 171; got != want {
-		t.Fatalf("inventory count = %d, want %d", got, want)
+	want, err := configParameterInventory(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadConfigParameterInventory("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantByPath := make(map[string]ConfigParameterInventoryEntry, len(want))
+	for _, entry := range want {
+		wantByPath[entry.Path] = entry
+	}
+	gotByPath := make(map[string]ConfigParameterInventoryEntry, len(got))
+	for _, entry := range got {
+		gotByPath[entry.Path] = entry
+	}
+	if !reflect.DeepEqual(gotByPath, wantByPath) {
+		t.Fatal("public inventory does not match the repository-root registry projection")
 	}
 }

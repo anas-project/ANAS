@@ -1017,10 +1017,14 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		return Module{}, err
 	}
 	mod := Module{
+		APIVersion:             manifest.APIVersion,
 		Name:                   manifest.Name,
 		Version:                manifest.Version,
 		Revision:               manifest.Revision,
 		AppVersion:             strings.TrimSpace(manifest.AppVersion),
+		Title:                  strings.TrimSpace(manifest.Title),
+		Description:            strings.TrimSpace(manifest.Description),
+		Category:               strings.TrimSpace(manifest.Category),
 		Lifecycle:              manifest.Status,
 		UpgradeFrom:            manifest.Upgrade.From,
 		DataBreaking:           cloneStringListPointer(manifest.Upgrade.DataBreaking),

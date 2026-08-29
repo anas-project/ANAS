@@ -21,6 +21,8 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/anas-project/ANAS/internal/moduledocs"
+	"github.com/anas-project/ANAS/internal/runner"
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,10 +45,6 @@ type manifest struct {
 	Description string `yaml:"description"`
 	Category    string `yaml:"category"`
 	Status      string `yaml:"status"`
-}
-
-type catalogEntry struct {
-	Module string `json:"module"`
 }
 
 type documentBundle struct {
@@ -134,9 +132,6 @@ func run(root, docsRoot string, limit int, releaseMode bool) error {
 	if err != nil {
 		return err
 	}
-	if err := validateCatalog(root, modules); err != nil {
-		return err
-	}
 
 	releases, err := loadReleases(root)
 	if err != nil {
@@ -208,39 +203,21 @@ type currentModule struct {
 }
 
 func loadCurrentModules(root string) ([]currentModule, error) {
-	entries, err := os.ReadDir(filepath.Join(root, "modules"))
+	inventory, err := runner.LoadBuiltinInventory(root)
 	if err != nil {
 		return nil, err
 	}
-	var modules []currentModule
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		dir := filepath.Join(root, "modules", entry.Name())
-		manifestPath := filepath.Join(dir, "module.yml")
-		if _, err := os.Stat(manifestPath); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, err
-		}
-		var item manifest
-		if err := decodeYAML(manifestPath, &item); err != nil {
-			return nil, err
-		}
-		if item.Name != entry.Name() || item.Version == "" || item.Revision < 1 || item.Title == "" {
-			return nil, fmt.Errorf("%s: directory/name, version, revision, and title must be valid", manifestPath)
-		}
+	modules := make([]currentModule, 0, len(inventory.Modules))
+	for _, item := range inventory.Modules {
+		dir := filepath.Join(root, "modules", item.Name)
 		docs, err := readBundleFromDisk(dir)
 		if err != nil {
 			return nil, err
 		}
-		modules = append(modules, currentModule{Manifest: item, Docs: docs})
-	}
-	sort.Slice(modules, func(i, j int) bool { return modules[i].Manifest.Name < modules[j].Manifest.Name })
-	if len(modules) == 0 {
-		return nil, errors.New("no Modules found")
+		modules = append(modules, currentModule{Manifest: manifest{
+			Name: item.Name, Version: item.Version, Revision: item.Revision,
+			Title: item.Title, Description: item.Description, Category: item.Category, Status: item.Status,
+		}, Docs: docs})
 	}
 	return modules, nil
 }
@@ -256,44 +233,6 @@ func readBundleFromDisk(dir string) (documentBundle, error) {
 		values[i] = string(data)
 	}
 	return documentBundle{values[0], values[1], values[2], values[3]}, nil
-}
-
-func validateCatalog(root string, modules []currentModule) error {
-	data, err := os.ReadFile(filepath.Join(root, ".github", "modules.json"))
-	if err != nil {
-		return err
-	}
-	var entries []catalogEntry
-	if err := json.Unmarshal(data, &entries); err != nil {
-		return fmt.Errorf(".github/modules.json: %w", err)
-	}
-	want := make(map[string]bool, len(modules))
-	for _, item := range modules {
-		want[item.Manifest.Name] = true
-	}
-	seen := make(map[string]bool, len(entries))
-	for _, entry := range entries {
-		if entry.Module == "" || seen[entry.Module] {
-			return fmt.Errorf(".github/modules.json contains an empty or duplicate Module %q", entry.Module)
-		}
-		seen[entry.Module] = true
-	}
-	var differences []string
-	for name := range want {
-		if !seen[name] {
-			differences = append(differences, "missing from .github/modules.json: "+name)
-		}
-	}
-	for name := range seen {
-		if !want[name] {
-			differences = append(differences, "missing modules/"+name+"/module.yml")
-		}
-	}
-	if len(differences) > 0 {
-		sort.Strings(differences)
-		return errors.New(strings.Join(differences, "\n"))
-	}
-	return nil
 }
 
 func loadReleases(root string) ([]moduleRelease, error) {
@@ -777,26 +716,24 @@ func renderAliasPage(title, source, target string, english bool) []byte {
 }
 
 func renderCatalogs(docsRoot string, builds []moduleBuild) error {
+	entries := make([]moduledocs.CatalogEntry, 0, len(builds))
+	for _, build := range builds {
+		entries = append(entries, moduledocs.CatalogEntry{
+			Name:        build.Manifest.Name,
+			Title:       build.Manifest.Title,
+			Version:     build.Manifest.Version,
+			Revision:    build.Manifest.Revision,
+			Status:      build.Manifest.Status,
+			Category:    build.Manifest.Category,
+			Description: build.Manifest.Description,
+		})
+	}
 	for _, english := range []bool{false, true} {
-		var out strings.Builder
-		if english {
-			out.WriteString("---\neditLink: false\nlastUpdated: false\n---\n\n# Module catalog\n\nThis page is generated at documentation build time from the current Module manifests. Module pages are generated from their source READMEs; do not maintain a second mapping list.\n\n")
-		} else {
-			out.WriteString("---\neditLink: false\nlastUpdated: false\n---\n\n# Module 目录\n\n本页在文档构建时由当前 Module manifests 生成。Module 页面直接来自各自的 README，不维护第二份映射清单。\n\n")
-		}
-		out.WriteString("| Module | Version | Status | Category | Description |\n| --- | --- | --- | --- | --- |\n")
-		for _, build := range builds {
-			link := "/reference/modules/" + build.Manifest.Name + "/"
-			if english {
-				link = "/en" + link
-			}
-			fmt.Fprintf(&out, "| [%s](%s) | `%s-r%d` | `%s` | `%s` | %s |\n", build.Manifest.Title, link, build.Manifest.Version, build.Manifest.Revision, build.Manifest.Status, build.Manifest.Category, strings.ReplaceAll(build.Manifest.Description, "|", "\\|"))
-		}
 		path := filepath.Join(docsRoot, "reference", "modules.md")
 		if english {
 			path = filepath.Join(docsRoot, "en", "reference", "modules.md")
 		}
-		if err := writePage(path, []byte(out.String())); err != nil {
+		if err := writePage(path, moduledocs.RenderCatalog(entries, english)); err != nil {
 			return err
 		}
 	}

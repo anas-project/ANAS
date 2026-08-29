@@ -214,29 +214,32 @@ Every directory is a module that can be packaged on its own. The "protocol role"
 describes only the current implementation, and claims no false compatibility for
 a placeholder contract that has not been migrated.
 
-| Module | Category / status | Responsibility and current protocol role |
-| --- | --- | --- |
-| `authentik` | identity / experimental | IAM provider; requests one `relational_database` resource |
-| `collabora` | app / stable | Nextcloud online document backend |
-| `ddns_go` | network / stable | A dynamic DNS provider implementation |
-| `ddns_updater` | network / stable | A dynamic DNS updater protected by forward auth |
-| `eturnal` | communication / stable | TURN service |
-| `freeradius` | network / experimental | RADIUS service scaffolding |
-| `forgejo` | app / developing | OIDC Git collaboration consumer; requests one `relational_database` resource |
-| `lam` | identity / stable | LDAP account management UI |
-| `lego` | certificate / stable | The current certificate implementation; not yet migrated to the `certificate` contract |
-| `llng` | identity / stable | IAM provider; requests one `relational_database` resource |
-| `mariadb` | database / stable | The `relational_database/mariadb` provider |
-| `meshcentral` | app / stable | Device management consumer; requests one `relational_database` resource |
-| `netbird` | network / experimental | WireGuard overlay and OIDC consumer scaffolding |
-| `nextcloud` | app / stable | File collaboration consumer; requests one `relational_database` resource |
-| `oauth2_proxy` | identity / stable | OIDC consumer providing the forward-auth capability |
-| `postgres` | database / stable | The `relational_database/postgres` provider |
-| `samba_dc` | identity / stable | AD, LDAP, and DNS provider; the directory contract has not been migrated |
-| `samba_fs` | storage / stable | AD-joined file service |
-| `traefik` | network / stable | Reverse proxy and routing entry point |
-| `versitygw` | storage / developing | S3 API over a dedicated POSIX backend; provides both a shared connection capability and a per-resource `object_storage/s3` contract |
-| `vikunja` | app / developing | OIDC task collaboration consumer; requests one `relational_database` resource |
+<!-- generated:builtin-module-inventory:start -->
+| Name | Category | Status | Description |
+| --- | --- | --- | --- |
+| [`authentik`](/en/reference/modules/authentik/) | `identity` | `developing` | Identity provider serving OIDC and SAML with per-application endpoints. |
+| [`casdoor`](/en/reference/modules/casdoor/) | `identity` | `release` | Release IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
+| [`collabora`](/en/reference/modules/collabora/) | `app` | `release` | Online document editing backend for Nextcloud. |
+| [`ddns_go`](/en/reference/modules/ddns_go/) | `network` | `release` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
+| [`ddns_updater`](/en/reference/modules/ddns_updater/) | `network` | `release` | Dynamic DNS updater for the base domain and wildcard host. |
+| [`eturnal`](/en/reference/modules/eturnal/) | `communication` | `release` | TURN service used by realtime communication modules. |
+| [`forgejo`](/en/reference/modules/forgejo/) | `app` | `developing` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
+| [`freeradius`](/en/reference/modules/freeradius/) | `network` | `developing` | RADIUS server module scaffold. |
+| [`lam`](/en/reference/modules/lam/) | `identity` | `release` | Web UI for LDAP account administration. |
+| [`lego`](/en/reference/modules/lego/) | `certificate` | `release` | Issues and stores wildcard certificates used by Traefik and domain services. |
+| [`llng`](/en/reference/modules/llng/) | `identity` | `release` | SSO portal, SAML/OIDC identity provider, and app launcher. |
+| [`mariadb`](/en/reference/modules/mariadb/) | `database` | `release` | MariaDB database service with optional Adminer UI. |
+| [`meshcentral`](/en/reference/modules/meshcentral/) | `app` | `release` | Remote device management with OIDC-only authentication and LDAP directory synchronization. |
+| [`netbird`](/en/reference/modules/netbird/) | `network` | `developing` | Incomplete WireGuard overlay network scaffold; excluded from recommended deployments. |
+| [`nextcloud`](/en/reference/modules/nextcloud/) | `app` | `release` | File sync, sharing, office integration, memories, and Talk. |
+| [`oauth2_proxy`](/en/reference/modules/oauth2_proxy/) | `identity` | `release` | Authenticated gate in front of services that have no login of their own. |
+| [`postgres`](/en/reference/modules/postgres/) | `database` | `release` | PostgreSQL database service with optional Adminer UI. |
+| [`samba_dc`](/en/reference/modules/samba_dc/) | `identity` | `release` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |
+| [`samba_fs`](/en/reference/modules/samba_fs/) | `storage` | `release` | File sharing service joined to the Samba domain. |
+| [`traefik`](/en/reference/modules/traefik/) | `network` | `release` | HTTPS reverse proxy and dashboard for all web-facing services. |
+| [`versitygw`](/en/reference/modules/versitygw/) | `storage` | `developing` | S3-compatible API backed by a dedicated POSIX directory. |
+| [`vikunja`](/en/reference/modules/vikunja/) | `app` | `developing` | Task and project management with OIDC-only authentication, multiple views, API, webhooks, and CalDAV. |
+<!-- generated:builtin-module-inventory:end -->
 
 ### 4.6 The logout boundary for IAM consumers
 

@@ -45,8 +45,8 @@ func TestGlobalSchemaParses(t *testing.T) {
 		t.Fatalf("global final requirements = %v, want %v", got, want)
 	}
 	parameters := config.GlobalParameters()
-	if len(parameters) != 17 || len(schema.Types) != len(parameters) {
-		t.Fatalf("global parameters/types = %d/%d, want 17/17", len(parameters), len(schema.Types))
+	if len(schema.Types) != len(parameters) {
+		t.Fatalf("global parameters/types = %d/%d; every parameter must declare exactly one type", len(parameters), len(schema.Types))
 	}
 	boolParameters := map[string]bool{
 		"host_lan_arp_check": true, "chinese_speedup": true, "chinese_build_speedup": true,

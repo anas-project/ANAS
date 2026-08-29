@@ -18,23 +18,14 @@ func TestBundledModuleParametersDeclareTypes(t *testing.T) {
 	}
 	sort.Strings(names)
 
-	parameters := 0
 	for _, name := range names {
 		mod := reg[name]
-		parameters += len(mod.Parameters)
 		for _, parameter := range mod.Parameters {
 			spec, ok := mod.Types[parameter]
 			if !ok || !spec.Declared() {
 				t.Errorf("%s.%s has no explicit config.types declaration", name, parameter)
 			}
 		}
-	}
-
-	if got, want := len(reg), 22; got != want {
-		t.Errorf("bundled module count = %d, want %d", got, want)
-	}
-	if got, want := parameters, 154; got != want {
-		t.Errorf("bundled module parameter count = %d, want %d", got, want)
 	}
 }
 
@@ -44,7 +35,6 @@ func TestBundledModuleDefaultsMatchDeclaredTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	defaults := 0
 	for name, mod := range reg {
 		for _, parameter := range mod.Parameters {
 			key := parameterEnvKey(name, parameter, reg)
@@ -52,14 +42,9 @@ func TestBundledModuleDefaultsMatchDeclaredTypes(t *testing.T) {
 			if !ok {
 				continue
 			}
-			defaults++
 			if err := validateParameterValue(name, parameter, value, reg); err != nil {
 				t.Errorf("%s default %q is invalid: %v", name+"."+parameter, value, err)
 			}
 		}
-	}
-
-	if got, want := defaults, 132; got != want {
-		t.Errorf("bundled module default count = %d, want %d", got, want)
 	}
 }

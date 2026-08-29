@@ -191,29 +191,32 @@ modules:
 每个目录都是可单独打包的 Module；“协议角色”只描述当前实现，不为未迁移的占位
 Contract 声明虚假兼容性。
 
-| Module | 类别 / 状态 | 职责与当前协议角色 |
-| --- | --- | --- |
-| `authentik` | identity / experimental | IAM Provider；申请一个 `relational_database` Resource |
-| `collabora` | app / stable | Nextcloud 在线文档后端 |
-| `ddns_go` | network / stable | 动态 DNS Provider 实现 |
-| `ddns_updater` | network / stable | 受 forward-auth 保护的动态 DNS 更新器 |
-| `eturnal` | communication / stable | TURN 服务 |
-| `freeradius` | network / experimental | RADIUS 服务脚手架 |
-| `forgejo` | app / developing | OIDC Git 协作 Consumer；申请一个 `relational_database` Resource |
-| `lam` | identity / stable | LDAP 账号管理 UI |
-| `lego` | certificate / stable | 当前证书实现；尚未迁移到 `certificate` Contract |
-| `llng` | identity / stable | IAM Provider；申请一个 `relational_database` Resource |
-| `mariadb` | database / stable | `relational_database/mariadb` Provider |
-| `meshcentral` | app / stable | 设备管理 Consumer；申请一个 `relational_database` Resource |
-| `netbird` | network / experimental | WireGuard overlay 与 OIDC Consumer 脚手架 |
-| `nextcloud` | app / stable | 文件协作 Consumer；申请一个 `relational_database` Resource |
-| `oauth2_proxy` | identity / stable | OIDC Consumer，提供 forward-auth capability |
-| `postgres` | database / stable | `relational_database/postgres` Provider |
-| `samba_dc` | identity / stable | AD、LDAP 与 DNS Provider；目录 Contract 尚未迁移 |
-| `samba_fs` | storage / stable | 加入 AD 的文件服务 |
-| `traefik` | network / stable | 反向代理和路由入口 |
-| `versitygw` | storage / developing | 专用 POSIX backend 的 S3 API；同时提供共享连接 Capability 与 per-Resource `object_storage/s3` Contract |
-| `vikunja` | app / developing | OIDC 任务协作 Consumer；申请一个 `relational_database` Resource |
+<!-- generated:builtin-module-inventory:start -->
+| Name | 类别 | 状态 | 描述 |
+| --- | --- | --- | --- |
+| [`authentik`](/reference/modules/authentik/) | `identity` | `developing` | Identity provider serving OIDC and SAML with per-application endpoints. |
+| [`casdoor`](/reference/modules/casdoor/) | `identity` | `release` | Release IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
+| [`collabora`](/reference/modules/collabora/) | `app` | `release` | Online document editing backend for Nextcloud. |
+| [`ddns_go`](/reference/modules/ddns_go/) | `network` | `release` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
+| [`ddns_updater`](/reference/modules/ddns_updater/) | `network` | `release` | Dynamic DNS updater for the base domain and wildcard host. |
+| [`eturnal`](/reference/modules/eturnal/) | `communication` | `release` | TURN service used by realtime communication modules. |
+| [`forgejo`](/reference/modules/forgejo/) | `app` | `developing` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
+| [`freeradius`](/reference/modules/freeradius/) | `network` | `developing` | RADIUS server module scaffold. |
+| [`lam`](/reference/modules/lam/) | `identity` | `release` | Web UI for LDAP account administration. |
+| [`lego`](/reference/modules/lego/) | `certificate` | `release` | Issues and stores wildcard certificates used by Traefik and domain services. |
+| [`llng`](/reference/modules/llng/) | `identity` | `release` | SSO portal, SAML/OIDC identity provider, and app launcher. |
+| [`mariadb`](/reference/modules/mariadb/) | `database` | `release` | MariaDB database service with optional Adminer UI. |
+| [`meshcentral`](/reference/modules/meshcentral/) | `app` | `release` | Remote device management with OIDC-only authentication and LDAP directory synchronization. |
+| [`netbird`](/reference/modules/netbird/) | `network` | `developing` | Incomplete WireGuard overlay network scaffold; excluded from recommended deployments. |
+| [`nextcloud`](/reference/modules/nextcloud/) | `app` | `release` | File sync, sharing, office integration, memories, and Talk. |
+| [`oauth2_proxy`](/reference/modules/oauth2_proxy/) | `identity` | `release` | Authenticated gate in front of services that have no login of their own. |
+| [`postgres`](/reference/modules/postgres/) | `database` | `release` | PostgreSQL database service with optional Adminer UI. |
+| [`samba_dc`](/reference/modules/samba_dc/) | `identity` | `release` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |
+| [`samba_fs`](/reference/modules/samba_fs/) | `storage` | `release` | File sharing service joined to the Samba domain. |
+| [`traefik`](/reference/modules/traefik/) | `network` | `release` | HTTPS reverse proxy and dashboard for all web-facing services. |
+| [`versitygw`](/reference/modules/versitygw/) | `storage` | `developing` | S3-compatible API backed by a dedicated POSIX directory. |
+| [`vikunja`](/reference/modules/vikunja/) | `app` | `developing` | Task and project management with OIDC-only authentication, multiple views, API, webhooks, and CalDAV. |
+<!-- generated:builtin-module-inventory:end -->
 
 ### 4.6 IAM Consumer 的登出边界
 

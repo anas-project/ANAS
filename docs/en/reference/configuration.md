@@ -1,12 +1,17 @@
 # Structured `config.yml` and environment-variable inventory
 
-This reference distinguishes settings with a structured `config.yml` entry from overrides that currently require top-level `env:`. Counts reflect the 2026-08-22 working tree and are not a fixed ABI.
+This reference distinguishes settings with a structured `config.yml` entry from overrides that currently require top-level `env:`. Inventory statistics are generated from the current working tree and are not a fixed ABI.
 
 ## Summary
 
-- `anas config list --json` currently declares **171** configurable parameters: 17 global and 154 module parameters.
-- 150 module parameters live at `modules.<module>.config.<parameter>`. Four declared `samba_fs` parameters use `env.<KEY>` because they intentionally export bare environment names.
-- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the 171 count.
+<!-- generated:configuration-summary:start -->
+- Built-in Modules: `22`
+- Declared parameters: `171` total (`17` global and `154` Module-owned; `150` structured Module parameters and `4` bare `env.*` parameters)
+- Resolution phases: `input_required` `2`, `must_resolve` `26`, unknown types `0`
+- Type distribution: `bool` `24`, `enum` `22`, `int` `26`, `string` `99`
+- Default-source distribution: `generated` `10`, `host` `3`, `inherited` `7`, `none` `8`, `runtime` `4`, `static` `139`
+<!-- generated:configuration-summary:end -->
+- Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the parameter inventory.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
 
 “Structured” has two layers:
@@ -20,7 +25,7 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 | --- | --- | --- |
 | `module_source` | Module distribution profile: `official`, `official-cn`, or the `cn` shorthand | used for catalog, download, cache, lock, and CN defaults |
 | `modules.<module>` | Requested modules and their settings | used |
-| `global.*` | 17 deployment-wide parameters | used |
+| `global.*` | deployment-wide parameters | used |
 | `administration.bootstrap.username` | Bootstrap administrator username | used |
 | `administration.local_accounts.username_template` | Global local-administrator username template | invalid; usernames are ANAS-managed |
 | `administration.local_accounts.password_length` | Generated length, minimum 16 | used |
@@ -111,15 +116,14 @@ existing deployment creates a different set of projects, container names, and
 cross-container addresses. It is a static deployment change, not an in-place
 rename, so the old deployment must be explicitly migrated or removed first.
 
-## The 171 declared parameters
+## Declared parameters
 
 Every entry below appears in `anas config list`. Ordinary editable parameters can be addressed by `anas config set`; `credential_rotate`, `data_migrate`, and `immutable` entries are inventory/explain-only and require their dedicated workflow. Global parameters use `global.<parameter>`; ordinary module parameters use `modules.<module>.config.<parameter>`.
 
 The JSON inventory reports `type` as `string`, `bool`, `int`, or `enum`; enum
 entries also provide `allowed_values`. `unknown` remains a compatibility value
 for legacy Modules and incomplete development declarations, but the built-in
-Module release gate rejects it, so all 171 entries in this inventory have an
-explicit type.
+Module release gate rejects it; the current `unknown` count is in the generated summary.
 
 Configuration metadata separates “the operator must enter a value” from “the
 resolved value must exist”:
@@ -151,54 +155,67 @@ an annotation. `constraints` is a stable projection of the shared ANAS schema,
 not support for arbitrary JSON Schema keywords. The CLI, future `anasd`
 configuration API, and Web forms must consume the same application-layer schema.
 
-In the current release baseline, only `global.base_domain` and `global.email`
-have `input_required`/`required` set to true; 26 entries have
-`must_resolve: true`. `ddns_go.dns_provider` and
+`ddns_go.dns_provider` and
 `ddns_updater.dns_provider` can be injected conditionally from deployment
 `dynamic_dns.dns_provider`, so each reports `input_required: false`,
 `must_resolve: true`, and `default_source: none`. Module-local input is needed
 only when that resolver cannot supply the value.
 
-The `default_source` distribution is `static: 140`, `generated: 10`, `none: 8`,
-`runtime: 4`, `inherited: 7`, and `host: 3`. The 140 `has_default: true`
-entries are exactly the 140 `static` entries.
+<!-- generated:configuration-constraints:start -->
+Current explicit portable constraints: `22`.
 
-The current 22 explicit single-field constraints cover the DNS-name formats
-for `global.base_domain` and `samba_dc.domain`, timezone and
-language/locale formats, three IPv4 formats, the `1..65535` ranges for
-`eturnal.port`, `forgejo.ssh_port`, `meshcentral.mps_port`, and `traefik.base_port`,
-`samba_dc.max_log_size >= 1`, `casdoor.ldap_auto_sync_minutes >= 1`; the 1..63-character DNS-label patterns for
-`forgejo.domain_prefix`, `forgejo.actions_incus_profile`, `versitygw.domain_prefix`, and `vikunja.domain_prefix`;
-the pinned-fingerprint pattern for `forgejo.actions_runner_image`;
-and character/length constraints for the VersityGW region, root access key, and root secret.
-These declarations preserve already enforced
-runtime rules; unsupported numeric caps, provider-conditional rules, and
-cross-field relationships were not invented merely to populate the schema.
+| Parameter path | Portable constraints |
+| --- | --- |
+| `casdoor.ldap_auto_sync_minutes` | <code>minimum=1</code> |
+| `eturnal.port` | <code>minimum=1; maximum=65535</code> |
+| `forgejo.actions_incus_profile` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+| `forgejo.actions_runner_image` | <code>pattern=&#34;^(?:[0-9a-f]{64})?$&#34;</code> |
+| `forgejo.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+| `forgejo.ssh_port` | <code>minimum=1; maximum=65535</code> |
+| `global.base_domain` | <code>format=&#34;dns_name&#34;</code> |
+| `global.default_language` | <code>format=&#34;language_tag&#34;</code> |
+| `global.default_locale` | <code>format=&#34;locale&#34;</code> |
+| `global.host_ip` | <code>format=&#34;ipv4&#34;</code> |
+| `global.host_lan_bridge_ip` | <code>format=&#34;ipv4&#34;</code> |
+| `global.host_lan_ip` | <code>format=&#34;ipv4&#34;</code> |
+| `global.timezone` | <code>format=&#34;iana_timezone&#34;</code> |
+| `meshcentral.mps_port` | <code>minimum=1; maximum=65535</code> |
+| `samba_dc.domain` | <code>format=&#34;dns_name&#34;</code> |
+| `samba_dc.max_log_size` | <code>minimum=1</code> |
+| `traefik.base_port` | <code>minimum=1; maximum=65535</code> |
+| `versitygw.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+| `versitygw.region` | <code>min_length=1; max_length=64; pattern=&#34;^[A-Za-z0-9][A-Za-z0-9._-]*$&#34;</code> |
+| `versitygw.root_access_key` | <code>min_length=3; max_length=64; pattern=&#34;^[A-Za-z0-9._-]+$&#34;</code> |
+| `versitygw.root_secret_key` | <code>min_length=16; max_length=128</code> |
+| `vikunja.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+<!-- generated:configuration-constraints:end -->
 
-| Owner | Count | Parameters |
+<!-- generated:configuration-owners:start -->
+| Owner | Parameters | Parameter paths |
 | --- | ---: | --- |
-| `global` | 17 | `base_domain`, `chinese_build_speedup`, `chinese_speedup`, `container_prefix`, `default_language`, `default_locale`, `dns_server`, `email`, `host_ip`, `host_lan_arp_check`, `host_lan_bridge_ip`, `host_lan_ip`, `ipv4`, `ipv6`, `network_prefix`, `timezone`, `virtual_domain` |
-| `authentik` | 6 | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` |
-| `casdoor` | 4 | `db_name`, `db_type`, `domain_prefix`, `ldap_auto_sync_minutes` |
-| `collabora` | 5 | `admin_password`, `admin_username`, `auto_save`, `domain_prefix`, `log_level` |
-| `ddns_go` | 10 | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` |
-| `ddns_updater` | 10 | `dns_provider`, `domain_prefix`, `forward_auth_interface`, `publicip_dns_providers`, `publicip_fetchers`, `publicip_ipv4_providers`, `publicip_ipv6_providers`, `publicip_providers`, `ttl`, `zone_identifier` |
-| `eturnal` | 2 | `domain_prefix`, `port` |
-| `forgejo` | 16 | `actions_allowed_scopes`, `actions_enabled`, `actions_incus_client_cert_b64`, `actions_incus_client_key_b64`, `actions_incus_endpoint`, `actions_incus_profile`, `actions_incus_server_cert_b64`, `actions_runner_image`, `custom_git_hooks_enabled`, `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `local_path_import_enabled`, `ssh_port` |
-| `lam` | 3 | `admin_password`, `domain_prefix`, `language` |
-| `lego` | 2 | `dns_provider`, `dns_server` |
-| `llng` | 8 | `adminer_enabled`, `db_name`, `db_type`, `domain_prefix`, `enable_test`, `log_level`, `manager_domain_prefix`, `test_domain_prefix` |
-| `mariadb` | 2 | `adminer_enabled`, `root_password` |
-| `meshcentral` | 5 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `mps_port` |
-| `netbird` | 3 | `adminer_enabled`, `domain_prefix`, `iam_protocol` |
-| `nextcloud` | 13 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language`, `locale`, `log_level`, `memories_enabled`, `memory_limit`, `phone_region`, `rm_skeleton_files`, `talk_enabled`, `upload_max_size` |
-| `oauth2_proxy` | 2 | `domain_prefix`, `iam_protocol` |
-| `postgres` | 3 | `adminer_enabled`, `password`, `username` |
-| `samba_dc` | 40 | `admin_complex_pass`, `admin_lockout_duration`, `admin_lockout_reset_after`, `admin_lockout_threshold`, `admin_max_pass_age`, `admin_min_pass_age`, `admin_min_pass_length`, `admin_name`, `admin_password`, `admin_password_history`, `administrator_password`, `anchor_bind_name`, `anchor_bind_password`, `anchor_scan_interval`, `app_filter`, `application_dns_mode`, `create_structure`, `dns_allowed_networks`, `dns_cache_size`, `dns_debug`, `dns_forwarders`, `domain`, `ldap_bind_name`, `ldap_bind_password`, `log_level`, `max_log_size`, `netbios_name`, `password_bind_name`, `password_bind_password`, `realm`, `template_homedir`, `template_shell`, `user_complex_pass`, `user_lockout_duration`, `user_lockout_reset_after`, `user_lockout_threshold`, `user_max_pass_age`, `user_min_pass_age`, `user_min_pass_length`, `user_password_history` |
-| `samba_fs` | 7 | `hostname`, `log_level`, `share_access_mode`, `share_dir_name`, `share_guest_read_only`, `use_default_domain`, `wsdd_log_level` |
-| `traefik` | 3 | `base_port`, `domain_prefix`, `forwarded_headers_trusted_ips` |
-| `versitygw` | 5 | `domain_prefix`, `read_only`, `region`, `root_access_key`, `root_secret_key` |
-| `vikunja` | 5 | `db_name`, `db_type`, `domain_prefix`, `iam_protocol`, `language` |
+| `global` | 17 | `global.base_domain`<br>`global.chinese_build_speedup`<br>`global.chinese_speedup`<br>`global.container_prefix`<br>`global.default_language`<br>`global.default_locale`<br>`global.dns_server`<br>`global.email`<br>`global.host_ip`<br>`global.host_lan_arp_check`<br>`global.host_lan_bridge_ip`<br>`global.host_lan_ip`<br>`global.ipv4`<br>`global.ipv6`<br>`global.network_prefix`<br>`global.timezone`<br>`global.virtual_domain` |
+| `authentik` | 6 | `authentik.db_name`<br>`authentik.db_type`<br>`authentik.domain_prefix`<br>`authentik.ldap_enabled`<br>`authentik.ldap_password_writeback`<br>`authentik.log_level` |
+| `casdoor` | 4 | `casdoor.db_name`<br>`casdoor.db_type`<br>`casdoor.domain_prefix`<br>`casdoor.ldap_auto_sync_minutes` |
+| `collabora` | 5 | `collabora.admin_password`<br>`collabora.admin_username`<br>`collabora.auto_save`<br>`collabora.domain_prefix`<br>`collabora.log_level` |
+| `ddns_go` | 10 | `ddns_go.dns_provider`<br>`ddns_go.domain_prefix`<br>`ddns_go.interval`<br>`ddns_go.ipv4_gettype`<br>`ddns_go.ipv4_interface`<br>`ddns_go.ipv4_urls`<br>`ddns_go.ipv6_gettype`<br>`ddns_go.ipv6_interface`<br>`ddns_go.ipv6_urls`<br>`ddns_go.web_enabled` |
+| `ddns_updater` | 10 | `ddns_updater.dns_provider`<br>`ddns_updater.domain_prefix`<br>`ddns_updater.forward_auth_interface`<br>`ddns_updater.publicip_dns_providers`<br>`ddns_updater.publicip_fetchers`<br>`ddns_updater.publicip_ipv4_providers`<br>`ddns_updater.publicip_ipv6_providers`<br>`ddns_updater.publicip_providers`<br>`ddns_updater.ttl`<br>`ddns_updater.zone_identifier` |
+| `eturnal` | 2 | `eturnal.domain_prefix`<br>`eturnal.port` |
+| `forgejo` | 16 | `forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_incus_client_cert_b64`<br>`forgejo.actions_incus_client_key_b64`<br>`forgejo.actions_incus_endpoint`<br>`forgejo.actions_incus_profile`<br>`forgejo.actions_incus_server_cert_b64`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.ssh_port` |
+| `lam` | 3 | `lam.admin_password`<br>`lam.domain_prefix`<br>`lam.language` |
+| `lego` | 2 | `lego.dns_provider`<br>`lego.dns_server` |
+| `llng` | 7 | `llng.db_name`<br>`llng.db_type`<br>`llng.domain_prefix`<br>`llng.enable_test`<br>`llng.log_level`<br>`llng.manager_domain_prefix`<br>`llng.test_domain_prefix` |
+| `mariadb` | 3 | `mariadb.adminer_enabled`<br>`mariadb.forward_auth_interface`<br>`mariadb.root_password` |
+| `meshcentral` | 5 | `meshcentral.db_name`<br>`meshcentral.db_type`<br>`meshcentral.domain_prefix`<br>`meshcentral.iam_protocol`<br>`meshcentral.mps_port` |
+| `netbird` | 2 | `netbird.domain_prefix`<br>`netbird.iam_protocol` |
+| `nextcloud` | 13 | `nextcloud.db_name`<br>`nextcloud.db_type`<br>`nextcloud.domain_prefix`<br>`nextcloud.iam_protocol`<br>`nextcloud.language`<br>`nextcloud.locale`<br>`nextcloud.log_level`<br>`nextcloud.memories_enabled`<br>`nextcloud.memory_limit`<br>`nextcloud.phone_region`<br>`nextcloud.rm_skeleton_files`<br>`nextcloud.talk_enabled`<br>`nextcloud.upload_max_size` |
+| `oauth2_proxy` | 2 | `oauth2_proxy.domain_prefix`<br>`oauth2_proxy.iam_protocol` |
+| `postgres` | 4 | `postgres.adminer_enabled`<br>`postgres.forward_auth_interface`<br>`postgres.password`<br>`postgres.username` |
+| `samba_dc` | 40 | `samba_dc.admin_complex_pass`<br>`samba_dc.admin_lockout_duration`<br>`samba_dc.admin_lockout_reset_after`<br>`samba_dc.admin_lockout_threshold`<br>`samba_dc.admin_max_pass_age`<br>`samba_dc.admin_min_pass_age`<br>`samba_dc.admin_min_pass_length`<br>`samba_dc.admin_name`<br>`samba_dc.admin_password`<br>`samba_dc.admin_password_history`<br>`samba_dc.administrator_password`<br>`samba_dc.anchor_bind_name`<br>`samba_dc.anchor_bind_password`<br>`samba_dc.anchor_scan_interval`<br>`samba_dc.app_filter`<br>`samba_dc.application_dns_mode`<br>`samba_dc.create_structure`<br>`samba_dc.dns_allowed_networks`<br>`samba_dc.dns_cache_size`<br>`samba_dc.dns_debug`<br>`samba_dc.dns_forwarders`<br>`samba_dc.domain`<br>`samba_dc.ldap_bind_name`<br>`samba_dc.ldap_bind_password`<br>`samba_dc.log_level`<br>`samba_dc.max_log_size`<br>`samba_dc.netbios_name`<br>`samba_dc.password_bind_name`<br>`samba_dc.password_bind_password`<br>`samba_dc.realm`<br>`samba_dc.template_homedir`<br>`samba_dc.template_shell`<br>`samba_dc.user_complex_pass`<br>`samba_dc.user_lockout_duration`<br>`samba_dc.user_lockout_reset_after`<br>`samba_dc.user_lockout_threshold`<br>`samba_dc.user_max_pass_age`<br>`samba_dc.user_min_pass_age`<br>`samba_dc.user_min_pass_length`<br>`samba_dc.user_password_history` |
+| `samba_fs` | 7 | `env.SHARE_ACCESS_MODE`<br>`env.SHARE_DIR_NAME`<br>`env.SHARE_GUEST_READ_ONLY`<br>`env.USE_DEFAULT_DOMAIN`<br>`samba_fs.hostname`<br>`samba_fs.log_level`<br>`samba_fs.wsdd_log_level` |
+| `traefik` | 3 | `traefik.base_port`<br>`traefik.domain_prefix`<br>`traefik.forwarded_headers_trusted_ips` |
+| `versitygw` | 5 | `versitygw.domain_prefix`<br>`versitygw.read_only`<br>`versitygw.region`<br>`versitygw.root_access_key`<br>`versitygw.root_secret_key` |
+| `vikunja` | 5 | `vikunja.db_name`<br>`vikunja.db_type`<br>`vikunja.domain_prefix`<br>`vikunja.iam_protocol`<br>`vikunja.language` |
+<!-- generated:configuration-owners:end -->
 
 The Nextcloud administrator password is not a configuration parameter. It is
 owned by the managed `break_glass` Secret and application handler and cannot be
@@ -208,32 +225,36 @@ written in YAML.
 Samba DC own their password parameters and generate independent Secrets when
 those parameters are omitted; no cross-application administrator password remains.
 
-Four `samba_fs` parameters have manifest metadata, but their canonical managed
+The following declared `samba_fs` parameters have manifest metadata, but their canonical managed
 YAML address is top-level `env:` because `config.exports` publishes a bare
 name. `config import` may accept a structured source address, but migrates it
 here before persistence:
 
-| YAML address | Owner | Environment key |
+<!-- generated:configuration-bare-parameters:start -->
+| YAML path | Owner | Environment key |
 | --- | --- | --- |
 | `env.SHARE_ACCESS_MODE` | `samba_fs` | `SHARE_ACCESS_MODE` |
 | `env.SHARE_DIR_NAME` | `samba_fs` | `SHARE_DIR_NAME` |
 | `env.SHARE_GUEST_READ_ONLY` | `samba_fs` | `SHARE_GUEST_READ_ONLY` |
 | `env.USE_DEFAULT_DOMAIN` | `samba_fs` | `USE_DEFAULT_DOMAIN` |
+<!-- generated:configuration-bare-parameters:end -->
 
 For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the logical parameter path but writes `env.SHARE_GUEST_READ_ONLY`.
 
 ## What changing a parameter does
 
-`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. The 154 current Module parameters group by effect as follows. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
+`anas config list --json` is the authoritative machine-readable inventory for parameter names, environment keys, defaults, and change outcomes. An effect describes the action required on an existing deployment; transporting a value into `.env` does not by itself mean it was applied.
 
-| Effect | Count | Change outcome |
+<!-- generated:configuration-effects:start -->
+| Module parameter effect | Parameters | Change outcome |
 | --- | ---: | --- |
 | `container_recreate` | 101 | Re-render and recreate the affected container or Compose project |
-| `credential_rotate` | 7 | Ordinary setting and replacement import are refused; use a credential-rotation transaction to update application state and the Secret Store together |
-| `data_migrate` | 15 | Ordinary setting and deployment activation are blocked until persistent data, a database, or membership is migrated |
-| `hot_reload` | 16 | The declared target is a Samba management command; the current executor conservatively creates a deployment and runs Compose `down → up` for the affected container |
-| `immutable` | 3 | Generic `config set` refuses the change; use a replacement or domain-migration workflow |
-| `reconcile` | 12 | The declared target is application/API/file reconciliation; the current executor applies it through a new deployment and container startup |
+| `credential_rotate` | 7 | Use a credential-rotation transaction to update application state and the Secret Store together |
+| `data_migrate` | 15 | Migrate persistent data, a database, or membership before activation |
+| `hot_reload` | 16 | Apply through the declared management command; the current executor may conservatively recreate the container |
+| `immutable` | 3 | Use a replacement or dedicated migration workflow |
+| `reconcile` | 12 | Reconcile application, API, or file state through the Module lifecycle |
+<!-- generated:configuration-effects:end -->
 
 ### Actual execution boundary in this release
 
@@ -412,4 +433,4 @@ test-env/scripts/test-parameter-effects.sh
 test-env/scripts/test-render.sh
 ```
 
-The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the 171-entry inventory, complete type declarations, and retired paths; the real CLI→hook→render→deployment→Compose/refusal boundary for all seven effects; and require every one of the 171 parameter keys to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.
+The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the complete inventory, type declarations, retired paths, the real CLI→hook→render→deployment→Compose/refusal boundary for every declared effect, and require each parameter key to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.
