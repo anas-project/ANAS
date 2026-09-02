@@ -17,6 +17,9 @@ allowed_dns_hosts:
 workspaces:
   - id: main
     path: /srv/anas/./workspace
+backup_targets:
+  - id: usb
+    path: /mnt/./backup
 tls:
   lego:
     base_domain: Example.Test
@@ -42,6 +45,9 @@ tls:
 	}
 	if config.ConsoleStore != "/srv/anas/.anas/console" || config.Workspaces[0].Path != "/srv/anas/workspace" {
 		t.Fatalf("normalized paths = store %q, workspace %q", config.ConsoleStore, config.Workspaces[0].Path)
+	}
+	if !reflect.DeepEqual(config.BackupTargets, []BackupTarget{{ID: "usb", Path: "/mnt/backup"}}) {
+		t.Fatalf("backup targets = %#v", config.BackupTargets)
 	}
 	if config.TLS.Lego == nil || config.TLS.Lego.BaseDomain != "example.test" || config.TLS.Lego.Certificate != "/srv/anas/certs/anas.crt" || config.TLS.Temporary == nil || config.TLS.Temporary.IPAddresses[0] != "192.0.2.10" {
 		t.Fatalf("TLS paths = %#v", config.TLS)
@@ -136,6 +142,12 @@ func TestParseRejectsInvalidDocuments(t *testing.T) {
 		{name: "relative workspace", source: validSource() + "workspaces: [{id: main, path: srv/main}]\n", message: "absolute path"},
 		{name: "duplicate workspace ID", source: validSource() + "workspaces: [{id: main, path: /srv/main}, {id: main, path: /srv/lab}]\n", message: "registered more than once"},
 		{name: "duplicate clean workspace path", source: validSource() + "workspaces: [{id: main, path: /srv/main}, {id: lab, path: /srv/./main}]\n", message: "same path"},
+		{name: "bad backup target ID", source: validSource() + "backup_targets: [{id: ../usb, path: /mnt/backup}]\n", message: "backup target ID"},
+		{name: "relative backup target", source: validSource() + "backup_targets: [{id: usb, path: mnt/backup}]\n", message: "absolute path"},
+		{name: "duplicate backup target ID", source: validSource() + "backup_targets: [{id: usb, path: /mnt/a}, {id: usb, path: /mnt/b}]\n", message: "registered more than once"},
+		{name: "duplicate backup target path", source: validSource() + "backup_targets: [{id: usb, path: /mnt/a}, {id: archive, path: /mnt/./a}]\n", message: "overlapping paths"},
+		{name: "backup target overlaps store", source: validSource() + "backup_targets: [{id: archive, path: /var/lib/anas}]\n", message: "overlap console_store"},
+		{name: "backup target inside workspace", source: validSource() + "workspaces: [{id: main, path: /srv/main}]\nbackup_targets: [{id: archive, path: /srv/main/backups}]\n", message: "overlap registered workspace"},
 		{name: "partial lego pair", source: validSource() + "tls: {lego: {base_domain: example.test, certificate: /certs/anas.crt, issuer: /certs/issuer.crt, trust_bundle: /certs/trust.crt, issuer_marker: /certs/.issuer}}\n", message: "tls.lego.private_key"},
 		{name: "relative lego path", source: validSource() + "tls: {lego: {base_domain: example.test, certificate: cert.pem, private_key: /certs/key.pem, issuer: /certs/issuer.crt, trust_bundle: /certs/trust.crt, issuer_marker: /certs/.issuer}}\n", message: "tls.lego.certificate"},
 		{name: "same lego pair path", source: validSource() + "tls: {lego: {base_domain: example.test, certificate: /certs/pair.pem, private_key: /certs/pair.pem, issuer: /certs/issuer.crt, trust_bundle: /certs/trust.crt, issuer_marker: /certs/.issuer}}\n", message: "different paths"},
@@ -275,6 +287,68 @@ func TestLoadRejectsConsoleStoreThatResolvesInsideWorkspace(t *testing.T) {
 	}
 	_, err := Load(path, CurrentUIDFilePolicy())
 	if err == nil || !strings.Contains(err.Error(), "resolves inside registered workspace") {
+		t.Fatalf("Load error = %v", err)
+	}
+}
+
+func TestLoadRejectsBackupTargetThatResolvesAcrossWorkspace(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "backup-alias")
+	if err := os.Symlink(workspace, alias); err != nil {
+		t.Skipf("symlink fixture unavailable: %v", err)
+	}
+	path := filepath.Join(root, "anasd.yml")
+	source := "api_version: " + APIVersion + "\n" +
+		"console_store: " + filepath.Join(root, "console") + "\n" +
+		"workspaces: [{id: main, path: " + workspace + "}]\n" +
+		"backup_targets: [{id: archive, path: " + filepath.Join(alias, "backups") + "}]\n"
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path, CurrentUIDFilePolicy())
+	if err == nil || !strings.Contains(err.Error(), "resolves across registered workspace") {
+		t.Fatalf("Load error = %v", err)
+	}
+}
+
+func TestParseRejectsOverlappingBackupTargets(t *testing.T) {
+	root := t.TempDir()
+	source := "api_version: " + APIVersion + "\n" +
+		"console_store: " + filepath.Join(root, "console") + "\n" +
+		"backup_targets:\n" +
+		"  - {id: archive, path: " + filepath.Join(root, "backups") + "}\n" +
+		"  - {id: nested, path: " + filepath.Join(root, "backups", "nested") + "}\n"
+	_, err := Parse([]byte(source))
+	if err == nil || !strings.Contains(err.Error(), "overlapping paths") {
+		t.Fatalf("Parse error = %v", err)
+	}
+}
+
+func TestLoadRejectsBackupTargetsWhoseSymlinksOverlap(t *testing.T) {
+	root := t.TempDir()
+	archive := filepath.Join(root, "archive")
+	if err := os.MkdirAll(archive, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "archive-alias")
+	if err := os.Symlink(archive, alias); err != nil {
+		t.Skipf("symlink fixture unavailable: %v", err)
+	}
+	path := filepath.Join(root, "anasd.yml")
+	source := "api_version: " + APIVersion + "\n" +
+		"console_store: " + filepath.Join(root, "console") + "\n" +
+		"backup_targets:\n" +
+		"  - {id: archive, path: " + archive + "}\n" +
+		"  - {id: alias, path: " + alias + "}\n"
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path, CurrentUIDFilePolicy())
+	if err == nil || !strings.Contains(err.Error(), "resolve across overlapping paths") {
 		t.Fatalf("Load error = %v", err)
 	}
 }

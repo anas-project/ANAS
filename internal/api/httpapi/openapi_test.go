@@ -54,45 +54,54 @@ func TestOpenAPITracksImplementedSurface(t *testing.T) {
 		t.Fatalf("OpenAPI routes = %v, handler routes = %v", gotRoutes, wantRoutes)
 	}
 	wantResponses := map[string][]string{
-		"GET /":                                                           {"200", "308", "400", "404", "405", "500"},
-		"GET /assets/emergency.css":                                       {"200", "400", "404", "405", "500"},
-		"GET /assets/emergency.js":                                        {"200", "400", "404", "405", "500"},
-		"GET /assets/main.css":                                            {"200", "400", "404", "405", "500"},
-		"GET /assets/main.js":                                             {"200", "400", "404", "405", "500"},
-		"GET /emergency":                                                  {"200", "400", "404", "405", "500"},
-		"GET /healthz":                                                    {"200", "400", "405", "500"},
-		"GET /api/v1/audit-events":                                        {"200", "400", "401", "403", "404", "405", "408", "500", "503", "504"},
-		"GET /api/v1/system":                                              {"200", "400", "404", "405", "408", "500", "503", "504"},
-		"GET /api/v1/system/ca":                                           {"200", "400", "401", "403", "404", "405", "500", "503"},
-		"GET /api/v1/auth/csrf":                                           {"200", "400", "404", "405", "500"},
-		"GET /api/v1/auth/session":                                        {"200", "400", "401", "403", "404", "405", "500", "503"},
-		"POST /api/v1/auth/bootstrap/exchange":                            {"200", "400", "401", "403", "404", "405", "413", "415", "429", "500", "503"},
-		"POST /api/v1/auth/enrollment/handoffs":                           {"201", "400", "401", "403", "404", "405", "409", "500", "503"},
-		"POST /api/v1/auth/enrollment/exchange":                           {"303", "400", "401", "403", "404", "405", "409", "413", "415", "500", "503"},
-		"POST /api/v1/auth/enrollment/owner":                              {"201", "400", "401", "403", "404", "405", "413", "415", "500", "503"},
-		"POST /api/v1/auth/login":                                         {"200", "400", "401", "403", "404", "405", "413", "415", "429", "500", "503"},
-		"POST /api/v1/auth/logout":                                        {"204", "400", "401", "403", "404", "405", "500", "503"},
-		"POST /api/v1/auth/step-up":                                       {"200", "400", "401", "403", "404", "405", "408", "413", "415", "429", "500", "503", "504"},
-		"GET /api/v1/jobs":                                                {"200", "400", "401", "403", "404", "405", "408", "500", "503", "504"},
-		"GET /api/v1/jobs/{id}":                                           {"200", "400", "401", "403", "404", "405", "408", "500", "503", "504"},
-		"GET /api/v1/jobs/{id}/events":                                    {"200", "204", "400", "401", "403", "404", "405", "406", "408", "410", "429", "500", "503", "504"},
-		"POST /api/v1/jobs/{id}/cancel":                                   {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/plans":                              {"200", "400", "401", "403", "404", "405", "408", "413", "415", "428", "429", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/actions/apply":                      {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "428", "429", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/actions/rollback":                   {"200", "202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "428", "429", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/modules/actions/{action}":           {"200", "202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "428", "429", "500", "503", "504"},
-		"GET /api/v1/workspaces/{ws}/modules":                             {"200", "400", "401", "403", "404", "405", "408", "412", "500", "503", "504"},
-		"GET /api/v1/catalog/modules":                                     {"200", "400", "401", "403", "404", "405", "408", "412", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/actions/update-modules":             {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/modules/{module}/actions/{action}":  {"202", "400", "401", "403", "404", "405", "408", "409", "412", "413", "415", "428", "429", "500", "503", "504"},
-		"GET /api/v1/workspaces/{ws}/config":                              {"200", "400", "401", "403", "404", "405", "408", "412", "500", "503", "504"},
-		"PUT /api/v1/workspaces/{ws}/config":                              {"200", "400", "401", "403", "404", "405", "408", "412", "413", "415", "428", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/config/validate":                    {"200", "400", "401", "403", "404", "405", "408", "412", "413", "415", "500", "503", "504"},
-		"GET /api/v1/workspaces/{ws}/status":                              {"200", "400", "401", "403", "404", "405", "408", "500", "504"},
-		"GET /api/v1/workspaces/{ws}/deployments":                         {"200", "400", "401", "403", "404", "405", "408", "500", "504"},
-		"GET /api/v1/workspaces/{ws}/deployments/{id}":                    {"200", "400", "401", "403", "404", "405", "408", "412", "500", "504"},
-		"GET /api/v1/workspaces/{ws}/modules/{module}/commands":           {"200", "400", "401", "403", "404", "405", "408", "412", "500", "504"},
-		"GET /api/v1/workspaces/{ws}/modules/{module}/commands/{command}": {"200", "400", "401", "403", "404", "405", "408", "412", "500", "504"},
+		"GET /":                                                                       {"200", "308", "400", "404", "405", "500"},
+		"GET /assets/emergency.css":                                                   {"200", "400", "404", "405", "500"},
+		"GET /assets/emergency.js":                                                    {"200", "400", "404", "405", "500"},
+		"GET /assets/main.css":                                                        {"200", "400", "404", "405", "500"},
+		"GET /assets/main.js":                                                         {"200", "400", "404", "405", "500"},
+		"GET /emergency":                                                              {"200", "400", "404", "405", "500"},
+		"GET /healthz":                                                                {"200", "400", "405", "500"},
+		"GET /api/v1/audit-events":                                                    {"200", "400", "401", "403", "404", "405", "408", "500", "503", "504"},
+		"GET /api/v1/system":                                                          {"200", "400", "404", "405", "408", "500", "503", "504"},
+		"GET /api/v1/system/ca":                                                       {"200", "400", "401", "403", "404", "405", "500", "503"},
+		"GET /api/v1/auth/csrf":                                                       {"200", "400", "404", "405", "500"},
+		"GET /api/v1/auth/session":                                                    {"200", "400", "401", "403", "404", "405", "500", "503"},
+		"POST /api/v1/auth/bootstrap/exchange":                                        {"200", "400", "401", "403", "404", "405", "413", "415", "429", "500", "503"},
+		"POST /api/v1/auth/enrollment/handoffs":                                       {"201", "400", "401", "403", "404", "405", "409", "500", "503"},
+		"POST /api/v1/auth/enrollment/exchange":                                       {"303", "400", "401", "403", "404", "405", "409", "413", "415", "500", "503"},
+		"POST /api/v1/auth/enrollment/owner":                                          {"201", "400", "401", "403", "404", "405", "413", "415", "500", "503"},
+		"POST /api/v1/auth/login":                                                     {"200", "400", "401", "403", "404", "405", "413", "415", "429", "500", "503"},
+		"POST /api/v1/auth/logout":                                                    {"204", "400", "401", "403", "404", "405", "500", "503"},
+		"POST /api/v1/auth/step-up":                                                   {"200", "400", "401", "403", "404", "405", "408", "413", "415", "429", "500", "503", "504"},
+		"GET /api/v1/jobs":                                                            {"200", "400", "401", "403", "404", "405", "408", "500", "503", "504"},
+		"GET /api/v1/jobs/{id}":                                                       {"200", "400", "401", "403", "404", "405", "408", "500", "503", "504"},
+		"GET /api/v1/jobs/{id}/events":                                                {"200", "204", "400", "401", "403", "404", "405", "406", "408", "410", "429", "500", "503", "504"},
+		"POST /api/v1/jobs/{id}/cancel":                                               {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/plans":                                          {"200", "400", "401", "403", "404", "405", "408", "413", "415", "428", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/actions/apply":                                  {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "428", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/actions/rollback":                               {"200", "202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "428", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/modules/actions/{action}":                       {"200", "202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "428", "429", "500", "503", "504"},
+		"GET /api/v1/workspaces/{ws}/modules":                                         {"200", "400", "401", "403", "404", "405", "408", "412", "500", "503", "504"},
+		"GET /api/v1/catalog/modules":                                                 {"200", "400", "401", "403", "404", "405", "408", "412", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/actions/update-modules":                         {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/modules/{module}/actions/{action}":              {"202", "400", "401", "403", "404", "405", "408", "409", "412", "413", "415", "428", "429", "500", "503", "504"},
+		"GET /api/v1/workspaces/{ws}/config":                                          {"200", "400", "401", "403", "404", "405", "408", "412", "500", "503", "504"},
+		"PUT /api/v1/workspaces/{ws}/config":                                          {"200", "400", "401", "403", "404", "405", "408", "412", "413", "415", "428", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/config/validate":                                {"200", "400", "401", "403", "404", "405", "408", "412", "413", "415", "500", "503", "504"},
+		"GET /api/v1/workspaces/{ws}/status":                                          {"200", "400", "401", "403", "404", "405", "408", "500", "504"},
+		"GET /api/v1/workspaces/{ws}/deployments":                                     {"200", "400", "401", "403", "404", "405", "408", "500", "504"},
+		"GET /api/v1/workspaces/{ws}/deployments/{id}":                                {"200", "400", "401", "403", "404", "405", "408", "412", "500", "504"},
+		"GET /api/v1/workspaces/{ws}/modules/{module}/commands":                       {"200", "400", "401", "403", "404", "405", "408", "412", "500", "504"},
+		"GET /api/v1/workspaces/{ws}/modules/{module}/commands/{command}":             {"200", "400", "401", "403", "404", "405", "408", "412", "500", "504"},
+		"POST /api/v1/workspaces/{ws}/terminal-action-previews":                       {"200", "400", "401", "403", "404", "405", "408", "412", "413", "415", "500", "503", "504"},
+		"GET /api/v1/workspaces/{ws}/snapshots":                                       {"200", "400", "401", "403", "404", "405", "408", "412", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/snapshots":                                      {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/snapshots/{id}/actions/{action}":                {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/backup-plans":                                   {"200", "400", "401", "403", "404", "405", "408", "412", "413", "415", "500", "503", "504"},
+		"GET /api/v1/workspaces/{ws}/backups":                                         {"200", "400", "401", "403", "404", "405", "408", "412", "500", "503", "504"},
+		"GET /api/v1/workspaces/{ws}/local-admins":                                    {"200", "400", "401", "403", "404", "405", "408", "412", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/local-admins/{module}/{account}/actions/rotate": {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/local-admins/{module}/{account}/reveal":         {"200", "400", "401", "403", "404", "405", "408", "409", "412", "413", "415", "428", "500", "503", "504"},
 	}
 	if len(wantResponses) != len(inventory) {
 		t.Fatalf("response contract covers %d routes, handler has %d", len(wantResponses), len(inventory))
@@ -322,7 +331,7 @@ func TestOpenAPISystemCertificateAccessContract(t *testing.T) {
 	system := objectAt(t, objectAt(t, paths, "/api/v1/system"), "get")
 	assertJSONResponseSchema(t, system, "200", "#/components/schemas/SystemResponse")
 	systemResponse := objectAt(t, schemas, "SystemResponse")
-	assertRequiredNames(t, systemResponse, "api_version", "build", "capabilities", "workspace_ids", "certificate_issuer", "console_state", "listener", "direct_recovery_urls", "proxy_url")
+	assertRequiredNames(t, systemResponse, "api_version", "build", "capabilities", "workspace_ids", "backup_target_ids", "certificate_issuer", "console_state", "listener", "direct_recovery_urls", "proxy_url")
 	issuer := objectAt(t, objectAt(t, systemResponse, "properties"), "certificate_issuer")
 	if got := stringSliceAt(t, issuer, "enum"); !reflect.DeepEqual(got, []string{"none", "temporary", "internal", "acme"}) {
 		t.Fatalf("certificate issuer enum = %v", got)
@@ -1009,6 +1018,71 @@ func assertRequiredPropertiesAreUnique(t *testing.T, schemas map[string]any) {
 			if _, exists := properties[name]; !exists {
 				t.Errorf("%s requires undeclared property %q", schemaName, name)
 			}
+		}
+	}
+}
+
+func TestOpenAPIMaintenanceDescriptorUsesClosedTypedTargets(t *testing.T) {
+	document := readOpenAPIDocument(t)
+	paths := objectAt(t, document, "paths")
+	for _, absent := range []string{
+		"/api/v1/workspaces/{ws}/snapshots/{id}/actions/restore",
+		"/api/v1/workspaces/{ws}/backups/{id}/actions/restore",
+		"/api/v1/workspaces/{ws}/backups/{id}/actions/verify",
+	} {
+		if _, exists := paths[absent]; exists {
+			t.Errorf("OpenAPI exposes terminal-only execution route %s", absent)
+		}
+	}
+
+	schemas := objectAt(t, objectAt(t, document, "components"), "schemas")
+	request := objectAt(t, schemas, "TerminalActionRequest")
+	oneOf, ok := request["oneOf"].([]any)
+	if !ok || len(oneOf) != 5 {
+		t.Fatalf("TerminalActionRequest.oneOf = %#v, want five typed operations", request["oneOf"])
+	}
+	wantRefs := []string{
+		"#/components/schemas/TerminalBackupCreateRequest",
+		"#/components/schemas/TerminalBackupRestoreRequest",
+		"#/components/schemas/TerminalBackupVerifyRequest",
+		"#/components/schemas/TerminalSnapshotDeleteRequest",
+		"#/components/schemas/TerminalSnapshotRestoreRequest",
+	}
+	gotRefs := make([]string, 0, len(oneOf))
+	for _, raw := range oneOf {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("TerminalActionRequest.oneOf item is %T", raw)
+		}
+		ref, _ := item["$ref"].(string)
+		gotRefs = append(gotRefs, ref)
+	}
+	sort.Strings(gotRefs)
+	if !reflect.DeepEqual(gotRefs, wantRefs) {
+		t.Errorf("terminal descriptor variants = %v, want %v", gotRefs, wantRefs)
+	}
+
+	for _, name := range []string{
+		"TerminalBackupCreateRequest", "TerminalBackupRestoreRequest", "TerminalBackupVerifyRequest",
+		"TerminalSnapshotDeleteRequest", "TerminalSnapshotRestoreRequest",
+	} {
+		schema := objectAt(t, schemas, name)
+		if schema["additionalProperties"] != false {
+			t.Errorf("%s is not a closed object", name)
+		}
+		properties := objectAt(t, schema, "properties")
+		for _, forbidden := range []string{"path", "workspace", "argv", "shell", "command", "password", "secret"} {
+			if _, exists := properties[forbidden]; exists {
+				t.Errorf("%s accepts forbidden property %q", name, forbidden)
+			}
+		}
+	}
+
+	response := objectAt(t, schemas, "TerminalActionPreviewResponse")
+	required := stringSliceAt(t, response, "required")
+	for _, name := range []string{"operation", "workspace_id", "target", "impact", "argv", "display", "cli_contract"} {
+		if !slices.Contains(required, name) {
+			t.Errorf("TerminalActionPreviewResponse does not require %q", name)
 		}
 	}
 }

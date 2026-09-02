@@ -7,7 +7,7 @@ updated: 2026-09-03
 
 # ANAS Web API 与管理前端实施计划
 
-> 状态：**部分实施（129/149）**。M0（只读骨架）、M0.5（配置元数据）、M0.6（约束语义）、M1A（管理通道与本地认证底座）、M1B（首次引导后端闭环）、M1C（前端壳与完整引导体验）、M1.5（Traefik/OIDC 受信入口）、M2（生命周期与任务扩展）和 M3（Module 管理）已落地；当前入口为 M4。安装发布集成仍属 M5。
+> 状态：**部分实施（141/149）**。M0（只读骨架）、M0.5（配置元数据）、M0.6（约束语义）、M1A（管理通道与本地认证底座）、M1B（首次引导后端闭环）、M1C（前端壳与完整引导体验）、M1.5（Traefik/OIDC 受信入口）、M2（生命周期与任务扩展）、M3（Module 管理）和 M4（快照、备份与账户）已落地；当前入口为 M5。
 > 日期：2026-08-16，更新：2026-09-03
 
 需求：[Web API 与管理前端要求](../requirements/web-api-admin-console.md)。该特性不单独建架构文档，
@@ -22,7 +22,7 @@ updated: 2026-09-03
 
 ## 1. 给实施者
 
-**当前入口：M4。** M0、M0.5、M0.6、M1A、M1B、M1C、M1.5、M2、M3 已落地（见 §2 落地快照）。首版特权边界已经确定为“不需要 `CAP_SYS_ADMIN` 的子集”，不再阻塞 M4；Traefik/OIDC 支线已达到 M5 汇合所需退出条件。
+**当前入口：M5。** M0、M0.5、M0.6、M1A、M1B、M1C、M1.5、M2、M3、M4 已落地（见 §2 落地快照）。首版特权边界保持为“不需要 `CAP_SYS_ADMIN` 的子集”；Traefik/OIDC 支线已达到 M5 汇合所需退出条件。
 
 **规范来源是要求文档的 §10 需求矩阵**，不是本文。本文只回答「先做什么」。每个里程碑的精确范围以 §5.1 的需求 ID 归属为准；里程碑正文里的章节指针只是阅读入口。
 
@@ -48,7 +48,7 @@ npm run docs:check-requirement-status && npm run docs:check-plan-status
 - 本文的进度描述必须与代码一致。宁可写「未开始」，不要写一个没验证过的「已完成」。
 
 
-## 2. 当前落地快照（2026-09-03，工作树基于 `c9e9a12`）
+## 2. 当前落地快照（2026-09-03，M4 工作树基于 `0a2e0f9`）
 
 | 范围 | 已完成 | 尚未完成 |
 | --- | --- | --- |
@@ -61,6 +61,7 @@ npm run docs:check-requirement-status && npm run docs:check-plan-status
 | M1.5 Traefik/OIDC 支线（已完成） | 独立 TLS-only 受信 listener；客户端 CA + SPKI pin + 精确源 IP；固定身份头拒绝重复/歧义且直连剥离；proxy session、`platform_admin → owner` 与目录组审计；不超过 5 分钟且动作/主体/plan 绑定的一次性 step-up；本地登录/应急路由 proxy `404`；`anas console status` 与访问页恢复地址；oauth2-proxy 双 bridge；Traefik 命名 mTLS `serversTransport` 与稳定 Secret-Store 客户端身份；R-072/R-101/R-114/R-122 真实 Linux e2e | 无（M1.5 已完成；安装自动接线仍属 M5） |
 | M2 生命周期与任务扩展（已完成） | workspace status 改为 Compose 派生的实时聚合与逐 Module runtime/health；start/stop/restart/rollback 由 CLI 与 daemon 共用类型化应用服务，HTTP 先返回 deployment/digest 绑定的服务端 preview，再以精确有序 chain 入队幂等持久任务并在运行时锁内复核漂移；cancel 只在 executor 注册的安全阶段接受，Unix 子进程组按 TERM→2 秒宽限→KILL，终态后重新取得运行时锁执行 snapshot/container/credential 补偿检查；完整级 SPA 展示 runner 展开的真实 chain 后才允许确认；R-031/R-034/R-057/R-124 已通过 Linux 静态二进制测试，R-124 另经实际 Chrome Beta UI 验证 | 无（M2 已完成） |
 | M3 Module 管理（已完成） | CLI、daemon HTTP 与 job executor 共用类型化 Module 管理服务；完整级开放 Module 状态、catalog、sync/update 与强配置 ETag 绑定的 enable/disable；配置事务发布前 fail-closed 审计并复用既有 CAS/WAL；deployment 冻结公开 HTTP(S) 管理入口；SPA 展示配置/安装/期望/部署/目录版本、实时运行/健康/容器数、依赖和入口地址；OpenAPI 双向覆盖与路径泄漏负向测试已通过 | 无（M3 已完成） |
+| M4 快照、备份与账户（已完成） | CLI、daemon HTTP 与 job executor 共用类型化 snapshot/backup/local-admin 服务；快照 create/pin/unpin/verify 与备份计划/创建使用持久任务和高危 step-up，备份目标只接受 root-owned 配置中的 opaque allowlist ID；owner 列表、随机密码轮换与一次性 reveal 完成审计、无缓存及失焦/到期销毁；restore/delete 等特权操作只返回服务端构造的 argv 与安全显示命令，不开放 Web 执行路由；SPA 已接入维护页；R-133/R-155 已通过真实 Linux/Btrfs/Docker e2e | 无（M4 已完成；扩展 ambient capability 子集须另立需求） |
 
 当前生产 `anasd` 只接受 root-owned 服务配置与 registry 中的 workspace ID，HTTP DTO 不返回 workspace、deployment
 或 Secret 的本机路径；默认 `lan` 静态绑定 `0.0.0.0` 与可用时的 `[::]`，数值 Host 必须匹配连接实际命中的本机地址，配置允许的 DNS Host 才可按名访问。服务从 `console_store` 读取持久单向 capability state：首次为 `bootstrap`，验证通过的 lego 证书推进到 `enrollment`，首个本地 owner 的可恢复提交再推进到 `full`；既有 M0 workspace 查询只在 `full` 状态经 HTTPS 与 owner 会话开放。配置 GET/validate/PUT 在 bootstrap 的直连明文或 TLS、以及 full 的直连 TLS 上开放；三者统一要求 bootstrap/local 会话、workspace scope 与权限，validate/PUT 另外要求 Origin/CSRF。M0 和 enrollment 保持默认 `404`。配置保存只提交 desired config、Secret Store 与 managed state；Plan 不写运行态，bootstrap Apply 只入队持久任务。生产目录
@@ -159,7 +160,7 @@ M1B 应用服务、HTTP/OpenAPI 契约、事务恢复与负向测试，不是 M0
 
 验收：要求文档 §4.1—§4.2 中 Module/catalog 与列表范围。
 
-### M4：快照、备份与账户
+### M4：快照、备份与账户 — 已实施
 
 - 迁移 snapshot、backup、local admin 用例；首版明确只交付不需要 `CAP_SYS_ADMIN` 的子集。
 - 对暂不支持的 restore/delete 等特权操作，由服务端类型化 preview API 返回影响摘要、argv 与安全转义的确切终端命令；前端不拼接命令，也不保留必然失败的 Web 按钮或执行写路由。
@@ -201,12 +202,16 @@ M1B 应用服务、HTTP/OpenAPI 契约、事务恢复与负向测试，不是 M0
 
 17. M2 已完成：status 不再把 deployment 文件中的状态伪装成实时值，而是从当前 Compose 运行态投影聚合和逐 Module 健康；start/stop/restart/rollback 的 CLI 与 daemon 共用类型化 preview/execute 服务，HTTP、OpenAPI、幂等任务和锁内漂移复核完整接线。生命周期取消仅在安全阶段生效，Unix 外部命令以独立进程组 TERM→宽限期→KILL，随后在运行时锁内执行补偿检查并清除标记。Linux run19 用四个静态测试制品验证实际子进程组、executor cancel/compensation、冻结依赖展开与 HTTP 精确 chain/rollback 契约；Chrome Beta 再从生产构建 SPA 选择 `db`，看到服务端返回的 `db → app`，并成功提交精确有序确认链。远端一次性上传目录、本地二进制、浏览器夹具和结果文件均已清理。
 
+18. M3 已完成：Module 状态、catalog、sync/update、enable/disable 已迁到 CLI/daemon/job executor 共用的类型化服务；配置事务继续使用强 ETag、CAS/WAL 与 fail-closed 审计，HTTP DTO 和前端仅展示公开版本、配置态、运行态、健康、依赖和入口地址，不泄露本机路径。
+
+19. M4 已完成：snapshot create/pin/unpin/verify、backup plan/create 与 local admin list/rotate/reveal 已接入类型化应用服务、HTTP/OpenAPI、持久任务和维护页；备份目标由 root-owned 配置以 opaque ID allowlist，路径不进入 API，restore/delete 等首版不执行的特权操作只返回服务端 argv/显示命令。密码 reveal 使用一次性响应、`no-store` 和前端失焦/到期销毁；高危操作绑定当前状态的单次 step-up 并写全量审计。R-133/R-155 已在真实 Linux/Btrfs/Docker 环境通过，验证服务端描述符到真实 CLI argv 的往返、dry-run 无变更，以及包含 userdata 的快照恢复后数据回退且 Docker 部署可显式重启；远端制品、挂载、loop 设备、容器和一次性目录均已清理。
+
 下一步按依赖顺序实施：
 
-1. 进入 M3，把 Module enable/disable、catalog、sync/update 接到类型化应用服务和任务 API，并补 UI 的版本、配置态、实时运行态、健康与入口地址。
+1. 进入 M5，完成全局 OpenAPI/分页/e2e 回归、可复现前端发布流水线、`anasd` 双架构静态发布目标，以及 install/upgrade/uninstall 的 root-owned 服务配置与 systemd 集成。
 2. 当前 audit 零值生产策略继续保留全部历史且不运行周期删除；将来若启用非零保留策略，须先把相同 Options 传给 daemon 与 CLI 的全部协作 Writer，并接入周期维护。
 
-M2 已完成，当前进入 M3；已接受的 LAN 明文风险不改变写入原子性、审计和任务生命周期要求。
+M4 已完成，当前进入 M5；已接受的 LAN 明文风险不改变写入原子性、审计和任务生命周期要求。
 
 ## 5. 实现检查表
 
@@ -228,10 +233,10 @@ M2 已完成，当前进入 M3；已接受的 LAN 明文风险不改变写入原
 | M1.5 | R-072、R-100、R-101、R-105—R-107、R-109—R-111、R-114、R-122 | 已完成 |
 | M2 | R-023、R-031、R-034、R-057、R-124 | 已完成 |
 | M3 | R-032 | 已完成 |
-| M4 | R-047、R-115—R-116、R-123、R-127、R-132、R-133、R-144、R-149、R-150、R-152、R-155 | 未开始 |
+| M4 | R-047、R-115—R-116、R-123、R-127、R-132、R-133、R-144、R-149、R-150、R-152、R-155 | 已完成 |
 | M5 | R-005、R-008、R-045、R-053、R-154、R-160—R-162 | 未开始 |
 
-覆盖统计：149 项有效需求全部有归属，其中已完成 129 项；R-052、R-141、R-158、R-159 四项复合要求已废弃并由原子要求取代。**每个有效 ID 必须恰好归属一个里程碑**；新增或废弃需求时同步更新本表，否则门禁会拒绝。
+覆盖统计：149 项有效需求全部有归属，其中已完成 141 项；R-052、R-141、R-158、R-159 四项复合要求已废弃并由原子要求取代。**每个有效 ID 必须恰好归属一个里程碑**；新增或废弃需求时同步更新本表，否则门禁会拒绝。
 
 ### 5.2 CI 门禁
 
@@ -239,15 +244,15 @@ M2 已完成，当前进入 M3；已接受的 LAN 明文风险不改变写入原
 
 | 门禁 | 命令 | 最近验证基线 |
 | --- | --- | --- |
-| 单元测试 | `go test ./...` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）全仓通过 |
-| 竞态 | `go test -race ./internal/application ./internal/api/httpapi ./internal/consolejobs ./internal/jobexecutor ./internal/processgroup ./internal/runner ./cmd/anasd` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过；M1.5 的认证/Hook 竞态基线仍为 `2c03c6d` |
-| 静态检查 | `go vet ./...` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过 |
-| 参数 inventory / effect | `go run ./cmd/gen-module-docs --check` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过 |
-| 前端构建 | `npm --prefix web run build` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过：OpenAPI 生成、类型检查、13 个测试文件 43 个用例、主 SPA 与独立应急包构建全部通过 |
+| 单元测试 | `go test ./...` | M4 工作树（基于 HEAD `0a2e0f9`，2026-09-03）全仓通过 |
+| 竞态 | `go test -race ./internal/application ./internal/api/httpapi ./internal/consoleauth ./internal/consolejobs ./internal/jobexecutor ./internal/processgroup ./internal/runner ./cmd/anasd` | M4 工作树（基于 HEAD `0a2e0f9`，2026-09-03）通过 |
+| 静态检查 | `go vet ./...` | M4 工作树（基于 HEAD `0a2e0f9`，2026-09-03）通过 |
+| 参数 inventory / effect | `go run ./cmd/gen-module-docs --check` | M4 工作树（基于 HEAD `0a2e0f9`，2026-09-03）通过 |
+| 前端构建 | `npm --prefix web run build` | M4 工作树（基于 HEAD `0a2e0f9`，2026-09-03）通过：OpenAPI 生成、类型检查、15 个测试文件 51 个用例、主 SPA 与独立应急包构建全部通过 |
 | 前端生产依赖审计 | `cd web && npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org` | 工作树（HEAD `2c03c6d`，2026-09-01）通过：0 个已知漏洞；项目镜像不提供 npm audit API，因此审计显式使用官方 registry |
-| 需求/计划一致性 | `npm run docs:test-requirements && npm run docs:check-requirements && npm run docs:test-status && npm run docs:check-requirement-status && npm run docs:check-plan-status` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过：149 项有效要求全部有归属，M3 完成后 129 项已完成，另有 4 项已废弃 |
-| 文档构建 | `npm run docs:build` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过 |
-| 静态交叉编译 | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /private/tmp/anasd-m3-verify-linux-amd64 ./cmd/anasd`；arm64 同命令改 `GOARCH` 与输出名 | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）两架构静态 ELF 通过，临时二进制已清理 |
+| 需求/计划一致性 | `npm run docs:test-requirements && npm run docs:check-requirements && npm run docs:test-status && npm run docs:check-requirement-status && npm run docs:check-plan-status` | M4 工作树（基于 HEAD `0a2e0f9`，2026-09-03）通过：149 项有效要求全部有归属，M4 完成后 141 项已完成，另有 4 项已废弃 |
+| 文档构建 | `npm run docs:build` | M4 工作树（基于 HEAD `0a2e0f9`，2026-09-03）通过 |
+| 静态交叉编译 | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /private/tmp/anasd-m4-verify-linux-amd64 ./cmd/anasd`；arm64 同命令改 `GOARCH` 与输出名 | M4 工作树（基于 HEAD `0a2e0f9`，2026-09-03）两架构静态 ELF 通过，临时二进制已清理 |
 
 ### 5.3 e2e 执行记录
 
@@ -274,8 +279,8 @@ CI 查不了这些——它们需要真实 Docker、Btrfs、域名或主机。**
 | R-124 | `test-env/scripts/server-console-m2-lifecycle-e2e.sh`；`test-env/helpers/console-m2-browser-fixture`；Google Chrome Beta | Linux 契约测试与 R-057 同一 run19；macOS 26.1、Google Chrome Beta 153.0.8010.12，生产构建 SPA 由 loopback `127.0.0.1:7794` 夹具提供，未改变既有 ZeroOmega 配置 | 2026-09-03 | 通过：Linux runner/HTTP 测试证明请求 `db` 由冻结 deployment 展开为有序 `db,app`，客户端交换顺序或部署/digest 漂移均拒绝；实际 Chrome Beta 页面显示 `db → app` 后才出现确认入口，提交体保留 requested `db` 并精确回送 confirmed `db,app`，创建 `deployment.restart` 作业；夹具、结果文件和监听已清理 |
 | R-125 | `test-env/scripts/server-console-job-refresh-e2e.sh`；`test-env/scripts/server-console-config-ui-e2e.sh`；`test-env/scripts/server-console-m1c-browser-e2e.sh`；`test-env/helpers/console-jobs-fixture`；Google Chrome Beta | run13 明文 bootstrap 基线及 R-103 的 run17 明文/HTTPS 环境 | 2026-09-02 | 通过：run13 先证明整页刷新后任务由服务端恢复；run17 再证明 `GET /api/v1/auth/session` 恢复 bootstrap/full 认证并轮换 CSRF，刷新后配置写入口、任务列表与详情均恢复。bootstrap/full apply 通过 SSE 实时显示 0%/99%/100% 和 started/progress/warning/succeeded，并以 job GET 对账；刷新后成功保存 `global.timezone=Asia/Singapore`，不再回退到 token/password 输入 |
 | R-131 | `test-env/scripts/server-console-m1c-browser-e2e.sh`；`test-env/helpers/console-jobs-fixture`；Google Chrome Beta | 与 R-103 相同；同一 run17 覆盖明文 bootstrap 与 HTTPS full | 2026-09-02 | 通过：bootstrap 普通 apply `job_cb55b784718b815664198038fe6bf933`、full 普通 apply `job_a2a94aac1e273b8089900beef1c8ec8d` 均在 99% 原样显示 `modules.m1c_fixture.config.marker (data_migrate; migrate-m1c-fixture-marker)`；输入 `APPLY` 并重新生成 confirmation/本地 step-up 后，bootstrap `job_d3899c7c246c1a93f9f6b2166595c524` 与 full `job_01e418223946c09a00ee78e0e8e58e17` 均成功到 100% |
-| R-133 | 待补 | | | |
-| R-155 | 待补 | | | |
+| R-133 | `test-env/scripts/server-console-m4-maintenance-e2e.sh`；`internal/runner/maintenance_application_e2e_test.go` | `finance.hlong.wang`；Ubuntu 26.04、Linux 7.0.0-30-generic、x86_64；sudo；Docker 29.7.2、btrfs-progs 6.17.1；当前 M4 工作树 Linux/amd64 静态 `anas` 与 runner 测试二进制 | 2026-09-03 | 通过：五种服务端 terminal descriptor 均以结构化 argv 往返真实 CLI parser；snapshot restore/delete、backup restore 和 local-admin rotate 两种 descriptor 的 shell-safe 显示与 argv 保持一致；真实 snapshot/backup restore dry-run 及 confirmation/parser 夹具均未产生变更。`anas` SHA-256 `7788975818613e56b365189336bfa5a83c298fdc6f7439d0114543200338db99`，runner 测试二进制 SHA-256 `537f9b76cd1b5bec8f651260a6994eb8f1d259bd9a663ff63162c5a8750227aa`；远端一次性目录已清理 |
+| R-155 | `test-env/scripts/server-console-m4-maintenance-e2e.sh`；`internal/runner/maintenance_application_e2e_test.go` | 与 R-133 相同；512 MiB loop-backed Btrfs workspace 与真实 Docker 部署 | 2026-09-03 | 通过：创建包含 userdata 的真实 Btrfs 快照后修改 userdata，restore 将数据恢复到快照内容；restore 按既有契约停止部署，随后显式 `anas start` 成功重新启动 Docker deployment；测试脚本 SHA-256 `d813e99f4b906f125fe621c2bde5b0c94848a0ba7468e83425bd9a439abd8d8d`，测试后无残留 `anasm4_` 容器、挂载、loop 设备、工作目录或上传目录 |
 | R-162 | 待补 | | | |
 
 脚本放在 `test-env/scripts/`，命名沿用既有的 `server-<主题>-e2e.sh`。
@@ -291,6 +296,7 @@ AGENTS.md 要求功能变更与文档在同一次改动中保持一致。以下�
 | 安装文档写明「引导窗口不具备机密性」与两个访问地址（R-105） | 已完成（2026-09-03） |
 | [服务配置参考](../../docs/reference/anasd-service-configuration.md)写明完整级 DNS、lego 不增加管理面 IP SAN（R-064） | 已完成（2026-08-29） |
 | `anasd` root-owned 服务配置与 workspace 外 console store 运维文档（R-157） | 已完成（2026-08-29） |
+| [服务配置参考](../../docs/reference/anasd-service-configuration.md)及英文版写明 `backup_targets` opaque ID allowlist、绝对路径与重叠/符号链接拒绝规则（M4） | 已完成（2026-09-03） |
 | systemd root 身份/可写路径与安装升级卸载文档（R-154、R-162） | 未开始 |
 
 ## 6. 支线依赖与退出条件
@@ -300,4 +306,4 @@ AGENTS.md 要求功能变更与文档在同一次改动中保持一致。以下�
 | Traefik 到代理身份监听器的不可旁路传输 | 仅 M1.5 | Unix socket、mTLS 或等价机制已有集成测试；仅有来源 IP allowlist 不算完成 |
 | OIDC 近期认证证明的标准化转发字段 | 仅 M1.5 高危操作 | 能验证 issuer、subject、认证时间并绑定单次 StepUpProof；否则代理入口不开放高危操作 |
 
-M4 首版范围已固定为不需要 `CAP_SYS_ADMIN` 的子集，不再等待 ambient capability 决策。直连 M1A—M4 不等待 Traefik/OIDC 支线；M5 与首版完成状态必须等待 M1.5 达到上述退出条件。
+M4 已按不需要 `CAP_SYS_ADMIN` 的首版子集完成；将来扩展 ambient capability 范围须另立需求和威胁模型。直连 M1A—M4 不等待 Traefik/OIDC 支线；M5 与首版完成状态依赖的 M1.5 退出条件已经满足。

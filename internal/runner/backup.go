@@ -106,6 +106,7 @@ type backupDestInfo struct {
 
 type backupEstimate struct {
 	DataBytes             int64 `json:"data_bytes"`
+	UserDataBytes         int64 `json:"userdata_bytes"`
 	StateBytes            int64 `json:"state_bytes"`
 	ActiveDeploymentBytes int64 `json:"active_deployment_bytes"`
 	TotalBytes            int64 `json:"total_bytes"`
@@ -463,14 +464,15 @@ func directoryIsWritable(dir string) bool {
 func estimateBackupSize(workspace string) (backupEstimate, bool) {
 	base := stateDir(workspace)
 	dataBytes, dataReadable := measureTree(dataDir(workspace))
+	userDataBytes, userDataReadable := measureTree(userDataDir(workspace))
 	stateBytes, _ := measureTree(filepath.Join(base, "state"))
 	secretBytes, _ := measureTree(filepath.Join(base, "secrets.yml"))
-	estimate := backupEstimate{DataBytes: dataBytes, StateBytes: stateBytes + secretBytes}
+	estimate := backupEstimate{DataBytes: dataBytes, UserDataBytes: userDataBytes, StateBytes: stateBytes + secretBytes}
 	if active, err := loadActiveState(base); err == nil && active.ActiveDeployment != "" {
 		estimate.ActiveDeploymentBytes, _ = measureTree(deploymentArtifactDir(base, active.ActiveDeployment))
 	}
-	estimate.TotalBytes = estimate.DataBytes + estimate.StateBytes + estimate.ActiveDeploymentBytes
-	return estimate, dataReadable
+	estimate.TotalBytes = estimate.DataBytes + estimate.UserDataBytes + estimate.StateBytes + estimate.ActiveDeploymentBytes
+	return estimate, dataReadable && userDataReadable
 }
 
 // measureTree returns the size of a tree and whether every part of it was

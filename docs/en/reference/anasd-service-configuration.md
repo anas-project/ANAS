@@ -14,6 +14,9 @@ console_store: /var/lib/anas/console
 workspaces:
   - id: main
     path: /srv/anas
+backup_targets:
+  - id: local_archive
+    path: /srv/anas-backups
 tls:
   lego:
     base_domain: example.test
@@ -57,6 +60,7 @@ The paths are illustrative; lego fields must point at the deployment's actual pu
 | `allowed_dns_hosts` | Exact additional ASCII DNS Hosts; IPs, ports, and wildcards are rejected. A numeric Host must still equal the local address actually reached by that connection. |
 | `console_store` | Absolute audit, monotonic capability-state, authentication, and job-event state path. The directory is `0700`, private state files are `0600`, and it must be outside every workspace so snapshot/backup/restore cannot overwrite control-plane state. |
 | `workspaces` | Server-owned `id -> absolute path` registrations. API clients submit IDs only. Each workspace must exist and contain `.anas/`. |
+| `backup_targets` | Root-owned `id -> absolute path` backup-destination allowlist. Browsers and API clients select an ID and cannot submit or replace its host path. IDs and paths are unique, and no target may overlap the console store, a workspace, or another target. |
 | `tls.lego` | Long-lived certificate, key, issuer, trust bundle, independent `anas-internal-ca.crt`, and `.issuer` marker published by lego. `anasd` consumes and validates them; it does not issue long-lived certificates. |
 | `tls.temporary` | Optional temporary self-signed leaf paths and explicit SANs. At least one `dns_names` or concrete `ip_addresses` entry is required; no host, interface, or environment discovery occurs. Filenames must be the fixed names shown above for explicit CLI generation. |
 | `trusted_proxy.bind_address` / `port` | Optional separate TLS-only listener. The address is an IP literal and the port differs from the direct port. It accepts no plaintext and never reuses the direct listener. |
@@ -68,6 +72,8 @@ The paths are illustrative; lego fields must point at the deployment's actual pu
 When both sources are configured, a valid lego certificate takes priority. Every handshake uses dynamic `GetCertificate` state. A new pair is published atomically only after its key match, validity, ServerAuth usage, SANs, chain, and issuer marker validate. A failed update keeps the last-known-good pair; it never downgrades to the temporary certificate or expands plaintext capabilities.
 
 The service configuration is read only when `anasd` starts; changing its port, mode, Hosts, workspaces, store, trusted proxy, or TLS paths requires a restart. Direct serving-certificate artifacts at those paths are the exception: later TLS handshakes revalidate and hot-swap them without restarting the daemon.
+
+At startup, `backup_targets` paths are cleaned and any resolvable symlink boundaries are checked. The daemon refuses to start when either the direct or resolved path contains, or is contained by, the control plane, a workspace, or another backup target. Capability, plan, list, and terminal-descriptor HTTP requests use public target IDs rather than root-configured paths; only a server-generated descriptor `argv` may include the registered canonical path required by the CLI invocation.
 
 `allowed_dns_hosts` is not derived from `tls.lego.base_domain`. Full-state direct access uses `anas.<base_domain>`: administrators must add that name to `allowed_dns_hosts` and make it resolvable by client DNS. The lego leaf must cover both `<base_domain>` and `anas.<base_domain>`; the long-lived CA/ACME flow must not add an `IP:` SAN for the console in `ca.sh`. TLS by numeric address is limited to concrete addresses explicitly declared for the short-lived self-signed candidate under `tls.temporary`.
 

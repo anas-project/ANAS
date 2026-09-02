@@ -67,6 +67,14 @@ const (
 	PermissionModuleCatalogRead   Permission = "module.catalog.read"
 	PermissionModuleUpdate        Permission = "module.update"
 	PermissionModuleConfig        Permission = "module.config"
+	PermissionSnapshotRead        Permission = "snapshot.read"
+	PermissionSnapshotChange      Permission = "snapshot.change"
+	PermissionBackupRead          Permission = "backup.read"
+	PermissionBackupPlan          Permission = "backup.plan"
+	PermissionLocalAdminRead      Permission = "local_admin.read"
+	PermissionLocalAdminRotate    Permission = "local_admin.rotate"
+	PermissionLocalAdminReveal    Permission = "local_admin.reveal"
+	PermissionTerminalPreview     Permission = "terminal_action.preview"
 )
 
 type ObjectScope string

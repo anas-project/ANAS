@@ -365,6 +365,48 @@ func (store *Store) AuthenticateLocalStepUp(ctx context.Context, request LocalSt
 	}, nil
 }
 
+// ConsumeLocalStepUp validates and removes a proof in the same authentication
+// state transaction. Synchronous high-risk console operations use this path;
+// durable jobs consume their proof atomically with job creation instead.
+func (store *Store) ConsumeLocalStepUp(ctx context.Context, request LocalStepUpAuthenticationRequest) (LocalStepUpBinding, error) {
+	origin, err := NormalizeOrigin(request.Origin)
+	if err != nil || validateLocalStepUpBinding(request.Action, request.WorkspaceID, request.TargetID, request.StateDigest) != nil {
+		return LocalStepUpBinding{}, ErrStepUpUnauthorized
+	}
+	unlock, err := store.lock(ctx)
+	if err != nil {
+		return LocalStepUpBinding{}, err
+	}
+	defer unlock()
+	state, err := store.loadLocalState()
+	if err != nil {
+		return LocalStepUpBinding{}, err
+	}
+	now := store.currentTime()
+	sessionDigest := credentialDigest(request.SessionToken)
+	session, exists := state.Sessions[sessionDigest]
+	if !exists || !digestMatches(sessionDigest, request.SessionToken) || !now.Before(session.ExpiresAt) ||
+		!now.Before(session.IdleExpiresAt) || session.Origin != origin {
+		return LocalStepUpBinding{}, ErrStepUpUnauthorized
+	}
+	digest := credentialDigest(request.Token)
+	record, exists := state.StepUps[digest]
+	if !exists || !digestMatches(digest, request.Token) || !now.Before(record.ExpiresAt) ||
+		record.SessionDigest != sessionDigest || record.Action != request.Action || record.WorkspaceID != request.WorkspaceID ||
+		record.TargetID != request.TargetID || record.StateDigest != request.StateDigest {
+		return LocalStepUpBinding{}, ErrStepUpUnauthorized
+	}
+	binding := LocalStepUpBinding{
+		Digest: digest, SessionDigest: record.SessionDigest, Action: record.Action, WorkspaceID: record.WorkspaceID,
+		TargetID: record.TargetID, StateDigest: record.StateDigest, CreatedAt: record.CreatedAt, ExpiresAt: record.ExpiresAt,
+	}
+	delete(state.StepUps, digest)
+	if err := store.writeLocalState(state); err != nil {
+		return LocalStepUpBinding{}, err
+	}
+	return binding, nil
+}
+
 func pruneExpiredLocalStepUps(state *localStateFile, now time.Time) {
 	for digest, record := range state.StepUps {
 		if !now.Before(record.ExpiresAt) {

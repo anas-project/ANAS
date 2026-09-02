@@ -29,6 +29,11 @@ const (
 	KindModuleUpdate       = "module.update"
 	KindModuleEnable       = "module.enable"
 	KindModuleDisable      = "module.disable"
+	KindSnapshotCreate     = "snapshot.create"
+	KindSnapshotPin        = "snapshot.pin"
+	KindSnapshotUnpin      = "snapshot.unpin"
+	KindSnapshotVerify     = "snapshot.verify"
+	KindLocalAdminRotate   = "local_admin.rotate"
 	defaultPollInterval    = 250 * time.Millisecond
 	terminalWriteTimeout   = 10 * time.Second
 )
@@ -53,27 +58,29 @@ type DeploymentFactory func(workspacePath string, events application.EventSink) 
 type ModuleFactory = application.ModuleManagementServiceFactory
 
 type Options struct {
-	Store             Store
-	Audit             deploymentaudit.Sink
-	Workspaces        []Workspace
-	DeploymentFactory DeploymentFactory
-	ModuleFactory     ModuleFactory
-	PollInterval      time.Duration
-	OnError           func(error)
+	Store              Store
+	Audit              deploymentaudit.Sink
+	Workspaces         []Workspace
+	DeploymentFactory  DeploymentFactory
+	ModuleFactory      ModuleFactory
+	MaintenanceFactory application.MaintenanceServiceFactory
+	PollInterval       time.Duration
+	OnError            func(error)
 }
 
 type Executor struct {
-	store             Store
-	audit             deploymentaudit.Sink
-	workspaces        map[string]string
-	deploymentFactory DeploymentFactory
-	moduleFactory     ModuleFactory
-	pollInterval      time.Duration
-	onError           func(error)
-	wakeMu            sync.Mutex
-	wake              map[string]chan struct{}
-	runningMu         sync.Mutex
-	running           map[string]context.CancelFunc
+	store              Store
+	audit              deploymentaudit.Sink
+	workspaces         map[string]string
+	deploymentFactory  DeploymentFactory
+	moduleFactory      ModuleFactory
+	maintenanceFactory application.MaintenanceServiceFactory
+	pollInterval       time.Duration
+	onError            func(error)
+	wakeMu             sync.Mutex
+	wake               map[string]chan struct{}
+	runningMu          sync.Mutex
+	running            map[string]context.CancelFunc
 }
 
 func New(options Options) (*Executor, error) {
@@ -106,8 +113,8 @@ func New(options Options) (*Executor, error) {
 	}
 	return &Executor{
 		store: options.Store, audit: options.Audit, workspaces: workspaces, deploymentFactory: options.DeploymentFactory,
-		moduleFactory: options.ModuleFactory,
-		pollInterval:  options.PollInterval, onError: options.OnError, wake: wake,
+		moduleFactory: options.ModuleFactory, maintenanceFactory: options.MaintenanceFactory,
+		pollInterval: options.PollInterval, onError: options.OnError, wake: wake,
 		running: make(map[string]context.CancelFunc),
 	}, nil
 }
@@ -346,6 +353,74 @@ func (executor *Executor) execute(daemonContext context.Context, workspacePath s
 			break
 		}
 		result, operationErr = moduleJobResult(job.WorkspaceID, configured)
+	case KindSnapshotCreate:
+		request, err := decodeSnapshotCreateRequest(job.Request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		service := executor.maintenanceService(workspacePath, events)
+		if service == nil {
+			operationErr = errors.New("maintenance service is unavailable")
+			break
+		}
+		created, err := service.CreateSnapshot(jobContext, request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		result, operationErr = maintenanceJobResult(job.WorkspaceID, created)
+	case KindSnapshotPin, KindSnapshotUnpin:
+		request, err := decodeSnapshotPinRequest(job.Request, job.Kind)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		service := executor.maintenanceService(workspacePath, events)
+		if service == nil {
+			operationErr = errors.New("maintenance service is unavailable")
+			break
+		}
+		updated, err := service.SetSnapshotPinned(jobContext, request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		result, operationErr = maintenanceJobResult(job.WorkspaceID, updated)
+	case KindSnapshotVerify:
+		request, err := decodeSnapshotVerifyRequest(job.Request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		service := executor.maintenanceService(workspacePath, events)
+		if service == nil {
+			operationErr = errors.New("maintenance service is unavailable")
+			break
+		}
+		verified, err := service.VerifySnapshots(jobContext, request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		result, operationErr = maintenanceJobResult(job.WorkspaceID, verified)
+	case KindLocalAdminRotate:
+		request, err := decodeLocalAdminTarget(job.Request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		service := executor.maintenanceService(workspacePath, events)
+		if service == nil {
+			operationErr = errors.New("maintenance service is unavailable")
+			break
+		}
+		rotated, err := service.RotateLocalAdmin(jobContext, request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		result, operationErr = maintenanceJobResult(job.WorkspaceID, rotated)
 	default:
 		operationErr = fmt.Errorf("unsupported durable job kind %q", job.Kind)
 	}
@@ -479,6 +554,13 @@ func (executor *Executor) moduleService(workspacePath string, events application
 	return executor.moduleFactory(workspacePath, events)
 }
 
+func (executor *Executor) maintenanceService(workspacePath string, events application.EventSink) application.MaintenanceService {
+	if executor == nil || executor.maintenanceFactory == nil {
+		return nil
+	}
+	return executor.maintenanceFactory(workspacePath, events)
+}
+
 type moduleConfigCommitObserver struct {
 	sink deploymentaudit.Sink
 	job  consolejobs.Job
@@ -592,6 +674,39 @@ func decodeModuleEnabledRequest(value map[string]any, kind string) (application.
 	return request, nil
 }
 
+func decodeSnapshotCreateRequest(value map[string]any) (application.SnapshotCreateRequest, error) {
+	var request application.SnapshotCreateRequest
+	if err := decodeStoredRequest(value, &request); err != nil {
+		return application.SnapshotCreateRequest{}, errors.New("stored snapshot create request is invalid")
+	}
+	return request, nil
+}
+
+func decodeSnapshotPinRequest(value map[string]any, kind string) (application.SnapshotPinRequest, error) {
+	var request application.SnapshotPinRequest
+	if err := decodeStoredRequest(value, &request); err != nil || request.SnapshotID == "" ||
+		kind == KindSnapshotPin && !request.Pinned || kind == KindSnapshotUnpin && request.Pinned {
+		return application.SnapshotPinRequest{}, errors.New("stored snapshot pin request is invalid")
+	}
+	return request, nil
+}
+
+func decodeSnapshotVerifyRequest(value map[string]any) (application.SnapshotVerifyRequest, error) {
+	var request application.SnapshotVerifyRequest
+	if err := decodeStoredRequest(value, &request); err != nil || request.SnapshotID == "" {
+		return application.SnapshotVerifyRequest{}, errors.New("stored snapshot verify request is invalid")
+	}
+	return request, nil
+}
+
+func decodeLocalAdminTarget(value map[string]any) (application.LocalAdminTarget, error) {
+	var request application.LocalAdminTarget
+	if err := decodeStoredRequest(value, &request); err != nil || request.Module == "" || request.Account == "" {
+		return application.LocalAdminTarget{}, errors.New("stored local administrator request is invalid")
+	}
+	return request, nil
+}
+
 func decodeStoredRequest(value map[string]any, target any) error {
 	body, err := json.Marshal(value)
 	if err != nil {
@@ -631,6 +746,16 @@ func moduleJobResult(workspaceID string, value any) (map[string]any, error) {
 	return result, nil
 }
 
+func maintenanceJobResult(workspaceID string, value any) (map[string]any, error) {
+	result, err := jsonObject(value)
+	if err != nil {
+		return nil, err
+	}
+	result["workspace_id"] = workspaceID
+	delete(result, "workspace")
+	return result, nil
+}
+
 func publicJobError(err error, kind string) *consolejobs.JobError {
 	fallbackCode, message := "deployment_failed", "deployment operation failed"
 	switch kind {
@@ -646,6 +771,14 @@ func publicJobError(err error, kind string) *consolejobs.JobError {
 		fallbackCode, message = "module_update_failed", "Module update failed"
 	case KindModuleEnable, KindModuleDisable:
 		fallbackCode, message = "module_config_failed", "Module configuration failed"
+	case KindSnapshotCreate:
+		fallbackCode, message = "snapshot_create_failed", "snapshot creation failed"
+	case KindSnapshotPin, KindSnapshotUnpin:
+		fallbackCode, message = "snapshot_update_failed", "snapshot metadata update failed"
+	case KindSnapshotVerify:
+		fallbackCode, message = "snapshot_verify_failed", "snapshot verification failed"
+	case KindLocalAdminRotate:
+		fallbackCode, message = "local_admin_rotate_failed", "local administrator rotation failed"
 	}
 	if applicationError, ok := application.ErrorOf(err); ok && applicationError.Code != "" {
 		jobError := &consolejobs.JobError{Code: applicationError.Code, Message: message}

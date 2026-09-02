@@ -48,6 +48,7 @@ type Config struct {
 	AllowedDNSHosts []string            `yaml:"allowed_dns_hosts,omitempty"`
 	ConsoleStore    string              `yaml:"console_store"`
 	Workspaces      []Workspace         `yaml:"workspaces,omitempty"`
+	BackupTargets   []BackupTarget      `yaml:"backup_targets,omitempty"`
 	TLS             TLSConfig           `yaml:"tls,omitempty"`
 	TrustedProxy    *TrustedProxyConfig `yaml:"trusted_proxy,omitempty"`
 }
@@ -57,6 +58,13 @@ type Config struct {
 // responsibilities; this package establishes the static schema and absolute
 // path boundary.
 type Workspace struct {
+	ID   string `yaml:"id"`
+	Path string `yaml:"path"`
+}
+
+// BackupTarget registers a public ID to a root-selected destination path.
+// Browser requests can name the ID but can never submit or replace Path.
+type BackupTarget struct {
 	ID   string `yaml:"id"`
 	Path string `yaml:"path"`
 }
@@ -191,6 +199,41 @@ func (config *Config) validateAndNormalize() error {
 		}
 	}
 
+	seenBackupIDs := make(map[string]struct{}, len(config.BackupTargets))
+	seenBackupPaths := make(map[string]string, len(config.BackupTargets))
+	for index := range config.BackupTargets {
+		target := &config.BackupTargets[index]
+		if err := validateWorkspaceID(target.ID); err != nil {
+			return fmt.Errorf("backup_targets[%d]: backup target ID: %w", index, err)
+		}
+		if _, exists := seenBackupIDs[target.ID]; exists {
+			return fmt.Errorf("backup target ID %q is registered more than once", target.ID)
+		}
+		path, err := normalizeAbsolutePath(fmt.Sprintf("backup target %q path", target.ID), target.Path)
+		if err != nil {
+			return err
+		}
+		for previousPath, previousID := range seenBackupPaths {
+			if pathsOverlap(previousPath, path) {
+				return fmt.Errorf("backup targets %q and %q use overlapping paths", previousID, target.ID)
+			}
+		}
+		if pathsOverlap(config.ConsoleStore, path) {
+			return fmt.Errorf("backup target %q must not overlap console_store", target.ID)
+		}
+		for _, workspace := range config.Workspaces {
+			if pathsOverlap(workspace.Path, path) {
+				return fmt.Errorf("backup target %q must not overlap registered workspace %q", target.ID, workspace.ID)
+			}
+		}
+		target.Path = path
+		seenBackupIDs[target.ID] = struct{}{}
+		seenBackupPaths[path] = target.ID
+	}
+	if config.BackupTargets == nil {
+		config.BackupTargets = []BackupTarget{}
+	}
+
 	if err := normalizeTLSConfig(&config.TLS); err != nil {
 		return err
 	}
@@ -198,6 +241,10 @@ func (config *Config) validateAndNormalize() error {
 		return err
 	}
 	return nil
+}
+
+func pathsOverlap(left, right string) bool {
+	return pathWithin(left, right) || pathWithin(right, left)
 }
 
 func normalizeTrustedProxyConfig(config *Config) error {
@@ -419,6 +466,7 @@ func validateResolvedStorageBoundary(config Config) error {
 	if err != nil {
 		return fmt.Errorf("resolve console_store: %w", err)
 	}
+	resolvedWorkspaces := make(map[string]string, len(config.Workspaces))
 	for _, workspace := range config.Workspaces {
 		resolvedWorkspace, err := filepath.EvalSymlinks(workspace.Path)
 		if err != nil {
@@ -427,6 +475,28 @@ func validateResolvedStorageBoundary(config Config) error {
 		if pathWithin(resolvedStore, resolvedWorkspace) {
 			return fmt.Errorf("console_store resolves inside registered workspace %q; snapshots and restores must not reach control-plane state", workspace.ID)
 		}
+		resolvedWorkspaces[workspace.ID] = resolvedWorkspace
+	}
+	resolvedTargets := make(map[string]string, len(config.BackupTargets))
+	for _, target := range config.BackupTargets {
+		resolvedTarget, err := resolvePathAllowMissing(target.Path)
+		if err != nil {
+			return fmt.Errorf("resolve backup target %q: %w", target.ID, err)
+		}
+		if pathsOverlap(resolvedStore, resolvedTarget) {
+			return fmt.Errorf("backup target %q resolves across console_store", target.ID)
+		}
+		for workspaceID, resolvedWorkspace := range resolvedWorkspaces {
+			if pathsOverlap(resolvedWorkspace, resolvedTarget) {
+				return fmt.Errorf("backup target %q resolves across registered workspace %q", target.ID, workspaceID)
+			}
+		}
+		for previousID, previousTarget := range resolvedTargets {
+			if pathsOverlap(previousTarget, resolvedTarget) {
+				return fmt.Errorf("backup targets %q and %q resolve across overlapping paths", previousID, target.ID)
+			}
+		}
+		resolvedTargets[target.ID] = resolvedTarget
 	}
 	return nil
 }

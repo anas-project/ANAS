@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/anas-project/ANAS/internal/api/httpapi"
+	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/audit"
 	"github.com/anas-project/ANAS/internal/consoleaudit"
 	"github.com/anas-project/ANAS/internal/consoleauth"
@@ -153,10 +154,18 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	for index, workspace := range config.Workspaces {
 		executorWorkspaces[index] = jobexecutor.Workspace{ID: workspace.ID, Path: workspace.Path}
 	}
+	backupTargets := make([]application.BackupTarget, len(config.BackupTargets))
+	backupTargetIDs := make([]string, len(config.BackupTargets))
+	for index, target := range config.BackupTargets {
+		backupTargets[index] = application.BackupTarget{ID: target.ID, Path: target.Path}
+		backupTargetIDs[index] = target.ID
+	}
+	maintenanceFactory := runner.NewWorkspaceMaintenanceServiceFactory(backupTargets)
 	executor, err := jobexecutor.New(jobexecutor.Options{
 		Store: jobStore, Audit: deploymentAudit, Workspaces: executorWorkspaces,
-		DeploymentFactory: runner.NewWorkspaceDeploymentServiceWithEvents,
-		ModuleFactory:     runner.NewWorkspaceModuleManagementService,
+		DeploymentFactory:  runner.NewWorkspaceDeploymentServiceWithEvents,
+		ModuleFactory:      runner.NewWorkspaceModuleManagementService,
+		MaintenanceFactory: maintenanceFactory,
 		OnError: func(err error) {
 			if logger != nil {
 				logger.Printf("console job executor: %v", err)
@@ -230,8 +239,9 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	configOptions := httpapi.ConfigOptions{Factory: runner.NewWorkspaceConfigService, Audit: configAuditSink{writer: auditWriter, logger: logger}}
 	deploymentOptions := httpapi.DeploymentOptions{
 		PlanFactory: runner.NewWorkspaceDeploymentPlanService, ServiceFactory: runner.NewWorkspaceDeploymentService,
-		ModuleFactory: runner.NewWorkspaceModuleManagementService,
-		Store:         jobStore, Audit: deploymentAudit,
+		ModuleFactory:      runner.NewWorkspaceModuleManagementService,
+		MaintenanceFactory: maintenanceFactory,
+		Store:              jobStore, Audit: deploymentAudit,
 		StepUp: authStore, Notify: executor.Notify,
 	}
 	auditOptions := httpapi.AuditQueryOptions{Store: auditWriter}
@@ -251,6 +261,7 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		}(),
 		DirectRecoveryURLs: consoleStatus.DirectRecoveryURLs,
 		ProxyURL:           consoleStatus.ProxyURL,
+		BackupTargetIDs:    backupTargetIDs,
 	}
 	handler, err := httpapi.NewHandlerWithEnrollmentJobsConfigAndDeployment(registry, queryFactory, httpapi.SecurityOptions{
 		State:       stateProvider,

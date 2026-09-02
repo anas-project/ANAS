@@ -104,3 +104,41 @@ func TestProxyStepUpRejectsStaleOIDCAuthentication(t *testing.T) {
 		t.Fatalf("stale OIDC authentication error = %v", err)
 	}
 }
+
+func TestConsumeProxyStepUpIsAssertionBoundAndSingleUse(t *testing.T) {
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	store, err := Open(filepath.Join(t.TempDir(), "auth"), AuditSinkFunc(func(context.Context, AuditEvent) error { return nil }), StoreOptions{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := ProxyIdentity{
+		Issuer: "https://iam.example.test", Subject: "subject-123", SemanticRole: "platform_admin",
+		DirectoryGroup: "NAS Admins", AuthenticatedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour), AssertionDigest: strings.Repeat("a", 64),
+	}
+	session, err := store.RefreshProxySession(context.Background(), ProxySessionRefreshRequest{Origin: "https://anas.example.test", Identity: identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := store.IssueProxyStepUp(context.Background(), ProxyStepUpRequest{
+		SessionToken: session.Token, CSRFToken: session.CSRFToken, Origin: session.Origin, Identity: identity,
+		Action: "local_admin.reveal", WorkspaceID: "main", TargetID: "lad_" + strings.Repeat("a", 64), StateDigest: strings.Repeat("b", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ProxyStepUpAuthenticationRequest{
+		SessionToken: session.Token, Origin: session.Origin, Identity: identity, Token: proof.Token,
+		Action: proof.Action, WorkspaceID: proof.WorkspaceID, TargetID: proof.TargetID, StateDigest: proof.StateDigest,
+	}
+	changed := request
+	changed.Identity.AssertionDigest = strings.Repeat("c", 64)
+	if _, err := store.ConsumeProxyStepUp(context.Background(), changed); !errors.Is(err, ErrStepUpUnauthorized) {
+		t.Fatalf("changed assertion consume error = %v", err)
+	}
+	if _, err := store.ConsumeProxyStepUp(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ConsumeProxyStepUp(context.Background(), request); !errors.Is(err, ErrStepUpUnauthorized) {
+		t.Fatalf("second consume error = %v", err)
+	}
+}

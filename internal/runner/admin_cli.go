@@ -3,6 +3,7 @@ package runner
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/compose"
 	"github.com/anas-project/ANAS/internal/config"
 )
@@ -210,6 +212,13 @@ func newLocalAdminPassword(prompt bool, length int) (string, error) {
 }
 
 func rotateLocalAdministrator(base string, record localAdminRecord, candidate string) error {
+	return rotateLocalAdministratorContext(context.Background(), base, record, candidate, application.NopEventSink{}, false)
+}
+
+func rotateLocalAdministratorContext(ctx context.Context, base string, record localAdminRecord, candidate string, events application.EventSink, restricted bool) error {
+	if ctx == nil {
+		return errors.New("local administrator rotation context is required")
+	}
 	active, err := loadActiveState(base)
 	if err != nil || active.ActiveDeployment == "" {
 		return fmt.Errorf("no active deployment")
@@ -218,6 +227,8 @@ func rotateLocalAdministrator(base string, record localAdminRecord, candidate st
 	if err != nil {
 		return err
 	}
+	a.commandContext, a.events = ctx, events
+	a.restrictedProcessEnvironment = restricted
 	mod, ok := a.reg[record.Module]
 	if !ok {
 		return fmt.Errorf("module %s is not active", record.Module)

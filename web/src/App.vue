@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// REQUIREMENTS: CONSOLE-R-070 CONSOLE-R-087 CONSOLE-R-088 CONSOLE-R-100 CONSOLE-R-101 CONSOLE-R-103 CONSOLE-R-104 CONSOLE-R-106 CONSOLE-R-114 CONSOLE-R-122 CONSOLE-R-125 CONSOLE-R-126 CONSOLE-R-129 CONSOLE-R-130 CONSOLE-R-131
+// REQUIREMENTS: CONSOLE-R-070 CONSOLE-R-087 CONSOLE-R-088 CONSOLE-R-100 CONSOLE-R-101 CONSOLE-R-103 CONSOLE-R-104 CONSOLE-R-106 CONSOLE-R-114 CONSOLE-R-122 CONSOLE-R-123 CONSOLE-R-125 CONSOLE-R-126 CONSOLE-R-127 CONSOLE-R-129 CONSOLE-R-130 CONSOLE-R-131 CONSOLE-R-133 CONSOLE-R-150
 import { computed, onMounted, ref } from "vue"
 
 import {
@@ -22,6 +22,7 @@ import WorkspaceDeployment from "./deployment/WorkspaceDeployment.vue"
 import { initialLocale, messages, type Locale } from "./i18n/messages"
 import WorkspaceJobs from "./jobs/WorkspaceJobs.vue"
 import WorkspaceLifecycle from "./lifecycle/WorkspaceLifecycle.vue"
+import WorkspaceMaintenance from "./maintenance/WorkspaceMaintenance.vue"
 import WorkspaceModules from "./modules/WorkspaceModules.vue"
 
 type SystemResponse = components["schemas"]["SystemResponse"]
@@ -359,6 +360,16 @@ onMounted(async () => {
         :csrf="sessionCSRF"
         :locale="locale"
         :refresh-revision="configRevision"
+        @job-created="jobsRevision += 1"
+      />
+
+      <WorkspaceMaintenance
+        v-if="phase === 'authenticated' && system"
+        :workspace-ids="system.workspace_ids"
+        :backup-target-ids="system.backup_target_ids"
+        :csrf="sessionCSRF"
+        :locale="locale"
+        :authentication-source="system.listener === 'trusted_proxy' ? 'oidc_proxy' : 'local'"
         @job-created="jobsRevision += 1"
       />
 
