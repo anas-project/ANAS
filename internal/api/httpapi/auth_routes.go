@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -14,8 +15,13 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/consoleauth"
+	"github.com/anas-project/ANAS/internal/consolejobs"
+	"github.com/anas-project/ANAS/internal/deployment"
+	"github.com/anas-project/ANAS/internal/deploymentaudit"
 )
 
 const (
@@ -31,12 +37,14 @@ type ConsoleAuthenticator interface {
 	ExchangeBootstrapToken(context.Context, consoleauth.ExchangeBootstrapTokenRequest) (consoleauth.BootstrapSessionCredential, error)
 	LoginLocal(context.Context, consoleauth.LocalLoginRequest) (consoleauth.LocalSessionCredential, error)
 	AuthenticateLocal(context.Context, consoleauth.LocalAuthenticationRequest) (consoleauth.LocalPrincipal, error)
+	RefreshLocalSession(context.Context, consoleauth.LocalSessionRefreshRequest) (consoleauth.LocalSessionCredential, error)
 	LogoutLocal(context.Context, consoleauth.LocalLogoutRequest) error
 }
 
 type BootstrapSessionAuthenticator interface {
 	CurrentBootstrapTransaction(context.Context, consoleauth.ConsoleState) (string, error)
 	AuthenticateBootstrap(context.Context, consoleauth.BootstrapAuthenticationRequest) (consoleauth.BootstrapPrincipal, error)
+	RefreshBootstrapSession(context.Context, consoleauth.BootstrapSessionRefreshRequest) (consoleauth.BootstrapSessionCredential, error)
 }
 
 type EnrollmentSessionAuthenticator interface {
@@ -55,6 +63,8 @@ type authHTTPState struct {
 	exchangeGlobal    *attemptLimiter
 	loginPerClient    *attemptLimiter
 	loginGlobal       *attemptLimiter
+	stepUpPerClient   *attemptLimiter
+	stepUpGlobal      *attemptLimiter
 	loginWork         chan struct{}
 	random            io.Reader
 }
@@ -65,6 +75,8 @@ func newAuthHTTPState() authHTTPState {
 		exchangeGlobal:    newAttemptLimiter(120, time.Minute),
 		loginPerClient:    newAttemptLimiter(5, 5*time.Minute),
 		loginGlobal:       newAttemptLimiter(30, time.Minute),
+		stepUpPerClient:   newAttemptLimiter(5, 5*time.Minute),
+		stepUpGlobal:      newAttemptLimiter(30, time.Minute),
 		loginWork:         make(chan struct{}, 2),
 		random:            rand.Reader,
 	}
@@ -83,6 +95,22 @@ type authSessionResponse struct {
 	IdleExpiresAt time.Time `json:"idle_expires_at"`
 	State         string    `json:"state"`
 	TransactionID string    `json:"transaction_id,omitempty"`
+}
+
+type localStepUpRequest struct {
+	Password     string `json:"password"`
+	Action       string `json:"action"`
+	WorkspaceID  string `json:"workspace_id"`
+	DeploymentID string `json:"deployment_id,omitempty"`
+}
+
+type localStepUpResponse struct {
+	APIVersion   string    `json:"api_version"`
+	Proof        string    `json:"proof"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	Action       string    `json:"action"`
+	WorkspaceID  string    `json:"workspace_id"`
+	DeploymentID string    `json:"deployment_id,omitempty"`
 }
 
 func (h *handler) issuePreAuthCSRF(w http.ResponseWriter, r *http.Request, _ map[string]string) {
@@ -151,6 +179,124 @@ func (h *handler) exchangeBootstrapToken(w http.ResponseWriter, r *http.Request,
 		ExpiresAt: credential.ExpiresAt, IdleExpiresAt: credential.IdleExpiresAt,
 		State: string(credential.State), TransactionID: credential.TransactionID,
 	})
+}
+
+func (h *handler) refreshAuthSession(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+	if _, ok := supportedQuery(w, r); !ok {
+		return
+	}
+	if h.auth == nil {
+		writeProblem(w, http.StatusServiceUnavailable, "authentication_unavailable", "authentication is unavailable")
+		return
+	}
+	state, stateOK := ConsoleStateFromContext(r.Context())
+	principal, principalOK := PrincipalFromContext(r.Context())
+	origin, err := canonicalRequestOrigin(r)
+	if !stateOK || !principalOK || err != nil {
+		writeProblem(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		return
+	}
+
+	var response authSessionResponse
+	switch state {
+	case StateBootstrap, StateEnrollment:
+		bootstrapAuth, ok := h.auth.(BootstrapSessionAuthenticator)
+		if !ok || principal.Source != "bootstrap" || principal.TransactionID == "" {
+			writeProblem(w, http.StatusServiceUnavailable, "authentication_unavailable", "authentication is unavailable")
+			return
+		}
+		sessionToken, ok := uniqueCookieValue(r, bootstrapSessionCookie)
+		if !ok {
+			writeProblem(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+			return
+		}
+		authState := consoleauth.StateBootstrap
+		if state == StateEnrollment {
+			authState = consoleauth.StateEnrollment
+		}
+		credential, refreshErr := bootstrapAuth.RefreshBootstrapSession(r.Context(), consoleauth.BootstrapSessionRefreshRequest{
+			SessionToken: sessionToken, Origin: origin, TransactionID: principal.TransactionID,
+			State: authState, Route: r.URL.Path,
+		})
+		if refreshErr != nil {
+			writeSessionRefreshError(w, refreshErr)
+			return
+		}
+		response = authSessionResponse{
+			APIVersion: APIVersion, CSRFToken: credential.CSRFToken,
+			ExpiresAt: credential.ExpiresAt, IdleExpiresAt: credential.IdleExpiresAt,
+			State: string(credential.State), TransactionID: credential.TransactionID,
+		}
+	case StateFull:
+		if principal.Role != "owner" {
+			writeProblem(w, http.StatusForbidden, "forbidden", "request is not permitted")
+			return
+		}
+		switch principal.Source {
+		case "local":
+			sessionToken, ok := uniqueCookieValue(r, localSessionCookie)
+			if !ok {
+				writeProblem(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+				return
+			}
+			credential, refreshErr := h.auth.RefreshLocalSession(r.Context(), consoleauth.LocalSessionRefreshRequest{
+				SessionToken: sessionToken, Origin: origin,
+			})
+			if refreshErr != nil {
+				writeSessionRefreshError(w, refreshErr)
+				return
+			}
+			response = authSessionResponse{
+				APIVersion: APIVersion, CSRFToken: credential.CSRFToken,
+				ExpiresAt: credential.ExpiresAt, IdleExpiresAt: credential.IdleExpiresAt,
+				State: string(StateFull),
+			}
+		case "oidc_proxy":
+			proxyAuth, ok := h.auth.(ProxyAuthenticator)
+			if !ok {
+				writeProblem(w, http.StatusServiceUnavailable, "authentication_unavailable", "authentication is unavailable")
+				return
+			}
+			sessionToken, _ := uniqueCookieValue(r, proxySessionCookie)
+			credential, refreshErr := proxyAuth.RefreshProxySession(r.Context(), consoleauth.ProxySessionRefreshRequest{
+				SessionToken: sessionToken, Origin: origin, Identity: proxyIdentityFromPrincipal(principal),
+			})
+			if refreshErr != nil {
+				writeSessionRefreshError(w, refreshErr)
+				return
+			}
+			cookie, cookieErr := consoleauth.SessionCookie(proxySessionCookie, credential.Token, consoleauth.StateFull, credential.ExpiresAt)
+			if cookieErr != nil {
+				writeProblem(w, http.StatusInternalServerError, "authentication_unavailable", "authentication is unavailable")
+				return
+			}
+			http.SetCookie(w, cookie)
+			response = authSessionResponse{
+				APIVersion: APIVersion, CSRFToken: credential.CSRFToken,
+				ExpiresAt: credential.ExpiresAt, IdleExpiresAt: credential.IdleExpiresAt,
+				State: string(StateFull),
+			}
+		default:
+			writeProblem(w, http.StatusForbidden, "forbidden", "request is not permitted")
+			return
+		}
+	default:
+		writeProblem(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func writeSessionRefreshError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, consoleauth.ErrOriginMismatch), errors.Is(err, consoleauth.ErrRouteNotAllowed):
+		writeProblem(w, http.StatusForbidden, "forbidden", "request is not permitted")
+	case errors.Is(err, consoleauth.ErrSessionUnauthorized), errors.Is(err, consoleauth.ErrCredentialExpired),
+		errors.Is(err, consoleauth.ErrTransactionMismatch), errors.Is(err, consoleauth.ErrStateMismatch):
+		writeProblem(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+	default:
+		writeProblem(w, http.StatusServiceUnavailable, "authentication_unavailable", "authentication is unavailable")
+	}
 }
 
 func (h *handler) loginLocal(w http.ResponseWriter, r *http.Request, _ map[string]string) {
@@ -242,6 +388,133 @@ func (h *handler) logoutLocal(w http.ResponseWriter, r *http.Request, _ map[stri
 	expired, _ := consoleauth.ExpiredSessionCookie(localSessionCookie, consoleauth.StateFull)
 	http.SetCookie(w, expired)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *handler) issueLocalStepUp(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+	if _, ok := supportedQuery(w, r); !ok {
+		return
+	}
+	if h.deploymentHTTP == nil || h.deploymentHTTP.stepUp == nil {
+		writeProblem(w, http.StatusServiceUnavailable, "authentication_unavailable", "step-up authentication is unavailable")
+		return
+	}
+	principal, ok := PrincipalFromContext(r.Context())
+	if !ok || principal.Role != "owner" {
+		writeProblem(w, http.StatusForbidden, "step_up_source_invalid", "this authentication source cannot issue a step-up proof")
+		return
+	}
+	cookieName := localSessionCookie
+	if principal.Source == "oidc_proxy" {
+		cookieName = proxySessionCookie
+	}
+	sessionToken, ok := uniqueCookieValue(r, cookieName)
+	if !ok {
+		writeProblem(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		return
+	}
+	origin, ok := requireSameRequestOrigin(w, r)
+	if !ok {
+		return
+	}
+	clientKey := directClientKey(r)
+	if principal.Source == "oidc_proxy" {
+		clientKey = principal.ID
+	}
+	if !allowAuthAttempt(w, h.authHTTP.stepUpPerClient, clientKey) || !allowAuthAttempt(w, h.authHTTP.stepUpGlobal, "global") {
+		return
+	}
+	select {
+	case h.authHTTP.loginWork <- struct{}{}:
+		defer func() { <-h.authHTTP.loginWork }()
+	default:
+		w.Header().Set("Retry-After", "1")
+		writeProblem(w, http.StatusTooManyRequests, "authentication_rate_limited", "too many authentication attempts")
+		return
+	}
+	var body localStepUpRequest
+	if !decodeAuthJSON(w, r, &body) {
+		return
+	}
+	if body.Action != deploymentaudit.ActionApply || body.WorkspaceID == "" || len(body.WorkspaceID) > 256 ||
+		body.DeploymentID != "" && (utf8.RuneCountInString(body.DeploymentID) > 255 || deployment.ValidateID(body.DeploymentID) != nil) {
+		body.Password = ""
+		writeProblem(w, http.StatusBadRequest, "step_up_request_invalid", "step-up action or target is invalid")
+		return
+	}
+	workspacePath, registered := h.registry.Resolve(body.WorkspaceID)
+	if !registered {
+		body.Password = ""
+		writeProblem(w, http.StatusNotFound, "workspace_not_found", "workspace was not found")
+		return
+	}
+	service := h.deploymentHTTP.planFactory(workspacePath)
+	if service == nil {
+		body.Password = ""
+		writeProblem(w, http.StatusServiceUnavailable, "deployment_unavailable", "deployment planning is unavailable")
+		return
+	}
+	plan, err := service.Plan(r.Context(), application.PlanRequest{})
+	if err != nil {
+		body.Password = ""
+		writeApplicationError(w, err)
+		return
+	}
+	if !validDeploymentPlanBinding(plan.ConfigValidator, plan.Digest) {
+		body.Password = ""
+		writeProblem(w, http.StatusInternalServerError, "plan_binding_invalid", "deployment plan is unavailable")
+		return
+	}
+	stateDigest := deploymentStepUpStateDigest(body.WorkspaceID, body.DeploymentID, plan.ConfigValidator, plan.Digest)
+	var credential consoleauth.LocalStepUpCredential
+	switch principal.Source {
+	case "local":
+		if principal.ID != consolejobs.PrincipalLocalOwner || body.Password == "" {
+			body.Password = ""
+			writeProblem(w, http.StatusBadRequest, "step_up_request_invalid", "local step-up requires the current local password")
+			return
+		}
+		credential, err = h.deploymentHTTP.stepUp.IssueLocalStepUp(r.Context(), consoleauth.LocalStepUpRequest{
+			SessionToken: sessionToken, CSRFToken: r.Header.Get(csrfHeaderName), Origin: origin, Password: body.Password,
+			Action: body.Action, WorkspaceID: body.WorkspaceID, TargetID: body.DeploymentID, StateDigest: stateDigest,
+		})
+	case "oidc_proxy":
+		proxyStepUp, available := h.deploymentHTTP.stepUp.(ProxyDeploymentStepUpAuthenticator)
+		if !available || body.Password != "" {
+			body.Password = ""
+			writeProblem(w, http.StatusForbidden, "step_up_source_invalid", "proxy step-up does not accept a password")
+			return
+		}
+		credential, err = proxyStepUp.IssueProxyStepUp(r.Context(), consoleauth.ProxyStepUpRequest{
+			SessionToken: sessionToken, CSRFToken: r.Header.Get(csrfHeaderName), Origin: origin,
+			Identity: proxyIdentityFromPrincipal(principal), Action: body.Action, WorkspaceID: body.WorkspaceID,
+			TargetID: body.DeploymentID, StateDigest: stateDigest,
+		})
+	default:
+		writeProblem(w, http.StatusForbidden, "step_up_source_invalid", "this authentication source cannot issue a step-up proof")
+		return
+	}
+	body.Password = ""
+	if err != nil {
+		switch {
+		case errors.Is(err, consoleauth.ErrInvalidCredentials), errors.Is(err, consoleauth.ErrOwnerNotConfigured):
+			writeProblem(w, http.StatusUnauthorized, "invalid_credentials", "local credentials are invalid")
+		case errors.Is(err, consoleauth.ErrSessionUnauthorized), errors.Is(err, consoleauth.ErrCredentialExpired):
+			writeProblem(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
+		case errors.Is(err, consoleauth.ErrCSRFMismatch), errors.Is(err, consoleauth.ErrOriginMismatch):
+			writeProblem(w, http.StatusForbidden, "csrf_mismatch", "request CSRF or origin validation failed")
+		case errors.Is(err, consoleauth.ErrStepUpUnauthorized) && principal.Source == "oidc_proxy":
+			writeProblem(w, http.StatusPreconditionRequired, "recent_auth_required", "a new identity-provider authentication is required")
+		case errors.Is(err, consoleauth.ErrStepUpUnauthorized):
+			writeProblem(w, http.StatusBadRequest, "step_up_request_invalid", "step-up action or target is invalid")
+		default:
+			writeProblem(w, http.StatusServiceUnavailable, "authentication_unavailable", "authentication is unavailable")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, localStepUpResponse{
+		APIVersion: APIVersion, Proof: credential.Token, ExpiresAt: credential.ExpiresAt,
+		Action: credential.Action, WorkspaceID: credential.WorkspaceID, DeploymentID: credential.TargetID,
+	})
 }
 
 // LocalOwnerAuthorizer authenticates host-only local-session cookies and does
@@ -531,15 +804,25 @@ func decodeAuthJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 		return false
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maximumAuthRequestBytes)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			writeProblem(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body is too large")
 		} else {
 			writeProblem(w, http.StatusBadRequest, "invalid_json", "request body must be one valid JSON object")
 		}
+		return false
+	}
+	defer clear(body)
+	if validateUniqueJSONKeys(body) != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_json", "request body must be one valid JSON object")
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_json", "request body must be one valid JSON object")
 		return false
 	}
 	var extra any

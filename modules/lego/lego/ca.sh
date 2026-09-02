@@ -103,8 +103,7 @@ publish_ca_only() {
 # by an earlier version of this script is still on disk, and a certificate that
 # is still current is deliberately never rewritten.
 harden_key() {
-  [ -f "$OUT/$LEGO_KEY_NAME" ] || return 0
-  chmod 0600 "$OUT/$LEGO_KEY_NAME"
+  [ ! -f "$OUT/$LEGO_KEY_NAME" ] || chmod 0600 "$OUT/$LEGO_KEY_NAME"
 }
 
 ensure_ca

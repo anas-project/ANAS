@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/consoleauth"
+	"github.com/anas-project/ANAS/internal/webui"
 )
 
 type routeHandler func(http.ResponseWriter, *http.Request, map[string]string)
@@ -32,6 +33,22 @@ func (h *handler) routeSpecs() []routeSpec {
 		StateEnrollment: {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
 		StateFull:       {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportTLS}},
 	}
+	internalCAAccess := map[ConsoleState]RouteAccess{
+		StateEnrollment: {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+		StateFull:       {Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}},
+	}
+	consoleRootAccess := map[ConsoleState]RouteAccess{
+		StateM0:         {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+		StateBootstrap:  {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+		StateEnrollment: {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+		StateFull:       {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+	}
+	consoleAssetAccess := map[ConsoleState]RouteAccess{
+		StateM0:         {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+		StateBootstrap:  {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+		StateEnrollment: {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportTLS}},
+		StateFull:       {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportTLS}},
+	}
 	workspaceAccess := map[ConsoleState]RouteAccess{
 		StateM0:   {Authentication: AuthenticationNone, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
 		StateFull: {Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}},
@@ -41,7 +58,48 @@ func (h *handler) routeSpecs() []routeSpec {
 		StateEnrollment: {Authentication: AuthenticationBootstrap, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
 		StateFull:       {Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}},
 	}
-	return []routeSpec{
+	configAccess := map[ConsoleState]RouteAccess{
+		StateBootstrap: {Authentication: AuthenticationBootstrap, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+		StateFull:      {Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}},
+	}
+	auditAccess := map[ConsoleState]RouteAccess{
+		StateFull: {Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}},
+	}
+	planAccess := map[ConsoleState]RouteAccess{
+		StateBootstrap: {Authentication: AuthenticationBootstrap, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+	}
+	applyAccess := map[ConsoleState]RouteAccess{
+		StateBootstrap: {Authentication: AuthenticationBootstrap, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+	}
+	if h.deploymentHTTP != nil && h.deploymentHTTP.stepUp != nil {
+		planAccess[StateFull] = RouteAccess{Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}}
+		applyAccess[StateFull] = RouteAccess{Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}}
+	}
+	routes := []routeSpec{
+		{
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/", Permission: PermissionConsoleUI, Scope: ScopeService, Listeners: allListeners, Access: consoleRootAccess},
+			handler: h.consoleRoot,
+		},
+		{
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: consoleMainScriptPath, Permission: PermissionConsoleUI, Scope: ScopeService, Listeners: allListeners, Access: consoleAssetAccess},
+			handler: webAssetHandler(webui.MainJavaScript),
+		},
+		{
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: consoleMainStylesPath, Permission: PermissionConsoleUI, Scope: ScopeService, Listeners: allListeners, Access: consoleAssetAccess},
+			handler: webAssetHandler(webui.MainStyles),
+		},
+		{
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: consoleRecoveryPath, Permission: PermissionConsoleUI, Scope: ScopeService, Listeners: directOnly, Access: consoleAssetAccess},
+			handler: webAssetHandler(webui.RecoveryIndex),
+		},
+		{
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: consoleRecoveryScriptPath, Permission: PermissionConsoleUI, Scope: ScopeService, Listeners: directOnly, Access: consoleAssetAccess},
+			handler: webAssetHandler(webui.RecoveryScript),
+		},
+		{
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: consoleRecoveryStylesPath, Permission: PermissionConsoleUI, Scope: ScopeService, Listeners: directOnly, Access: consoleAssetAccess},
+			handler: webAssetHandler(webui.RecoveryStyles),
+		},
 		{
 			policy: RoutePolicy{Method: http.MethodGet, Pattern: "/healthz", Permission: PermissionPublic, Scope: ScopeService, Listeners: allListeners, Access: publicAllStates},
 			handler: func(w http.ResponseWriter, r *http.Request, _ map[string]string) {
@@ -59,6 +117,10 @@ func (h *handler) routeSpecs() []routeSpec {
 				}
 				h.system(w, r)
 			},
+		},
+		{
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/system/ca", Permission: PermissionSystemCA, Scope: ScopeService, Listeners: allListeners, Access: internalCAAccess},
+			handler: h.downloadInternalCA,
 		},
 		{
 			policy: RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/workspaces/{ws}/status", Permission: PermissionWorkspaceRead, Scope: ScopeWorkspace, Listeners: allListeners, Access: workspaceAccess},
@@ -106,16 +168,32 @@ func (h *handler) routeSpecs() []routeSpec {
 			},
 		},
 		{
-			policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/jobs", Permission: PermissionJobList, Scope: ScopeWorkspace, Listeners: directOnly, Access: jobAccess},
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/workspaces/{ws}/config", Permission: PermissionConfigRead, Scope: ScopeWorkspace, Listeners: allListeners, Access: configAccess},
+			handler: h.getConfig,
+		},
+		{
+			policy:  RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/config/validate", Permission: PermissionConfigValidate, Scope: ScopeWorkspace, Listeners: allListeners, Access: configAccess},
+			handler: h.validateConfig,
+		},
+		{
+			policy:  RoutePolicy{Method: http.MethodPut, Pattern: "/api/v1/workspaces/{ws}/config", Permission: PermissionConfigWrite, Scope: ScopeWorkspace, Listeners: allListeners, Access: configAccess},
+			handler: h.putConfig,
+		},
+		{
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/jobs", Permission: PermissionJobList, Scope: ScopeWorkspace, Listeners: allListeners, Access: jobAccess},
 			handler: h.listJobs,
 		},
 		{
-			policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/jobs/{id}", Permission: PermissionJobRead, Scope: ScopeWorkspace, Listeners: directOnly, Access: jobAccess},
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/jobs/{id}", Permission: PermissionJobRead, Scope: ScopeWorkspace, Listeners: allListeners, Access: jobAccess},
 			handler: h.getJob,
 		},
 		{
-			policy:  RoutePolicy{Method: http.MethodGet, Pattern: jobEventsRoutePattern, Permission: PermissionJobEventsRead, Scope: ScopeWorkspace, Listeners: directOnly, Access: jobAccess},
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: jobEventsRoutePattern, Permission: PermissionJobEventsRead, Scope: ScopeWorkspace, Listeners: allListeners, Access: jobAccess},
 			handler: h.streamJobEvents,
+		},
+		{
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/audit-events", Permission: PermissionAuditList, Scope: ScopeService, Listeners: allListeners, Access: auditAccess},
+			handler: h.listAuditEvents,
 		},
 		{
 			policy: RoutePolicy{
@@ -127,6 +205,17 @@ func (h *handler) routeSpecs() []routeSpec {
 				},
 			},
 			handler: h.issuePreAuthCSRF,
+		},
+		{
+			policy: RoutePolicy{
+				Method: http.MethodGet, Pattern: "/api/v1/auth/session", Permission: PermissionAuthSession, Scope: ScopeService, Listeners: allListeners,
+				Access: map[ConsoleState]RouteAccess{
+					StateBootstrap:  {Authentication: AuthenticationBootstrap, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+					StateEnrollment: {Authentication: AuthenticationBootstrap, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+					StateFull:       {Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}},
+				},
+			},
+			handler: h.refreshAuthSession,
 		},
 		{
 			policy: RoutePolicy{
@@ -184,6 +273,31 @@ func (h *handler) routeSpecs() []routeSpec {
 			handler: h.logoutLocal,
 		},
 	}
+	if h.deploymentHTTP != nil {
+		if h.deploymentHTTP.stepUp != nil {
+			routes = append(routes, routeSpec{
+				policy: RoutePolicy{
+					Method: http.MethodPost, Pattern: "/api/v1/auth/step-up", Permission: PermissionAuthStepUp,
+					Scope: ScopeService, Listeners: allListeners,
+					Access: map[ConsoleState]RouteAccess{
+						StateFull: {Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}},
+					},
+				},
+				handler: h.issueLocalStepUp,
+			})
+		}
+		routes = append(routes,
+			routeSpec{
+				policy:  RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/plans", Permission: PermissionDeploymentPlan, Scope: ScopeWorkspace, Listeners: allListeners, Access: planAccess},
+				handler: h.planDeployment,
+			},
+			routeSpec{
+				policy:  RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/actions/apply", Permission: PermissionDeploymentApply, Scope: ScopeWorkspace, Listeners: allListeners, Access: applyAccess},
+				handler: h.applyDeployment,
+			},
+		)
+	}
+	return routes
 }
 
 func validateRouteSpecs(routes []routeSpec) error {
@@ -226,7 +340,15 @@ func (h *handler) dispatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = withConsoleState(r, state)
+	if h.security.Listener == ListenerTrustedProxy && state != StateFull {
+		writeProblem(w, http.StatusNotFound, "not_found", "resource was not found")
+		return
+	}
 	transport := requestTransport(r)
+	if state == StateFull && transport == TransportPlaintext && plaintextCarriesCredentialOrBody(r) {
+		writeProblem(w, http.StatusNotFound, "not_found", "resource was not found")
+		return
+	}
 	eligible := matches[:0]
 	for _, match := range matches {
 		access, allowed := match.route.policy.Access[state]
@@ -346,7 +468,9 @@ func uniqueStrings(values []string) []string {
 // functions. Tests use it to ensure a new route cannot bypass the state,
 // permission, object-scope, and transport gates.
 func RouteInventory(registry *Registry, factory ServiceFactory) ([]RoutePolicy, error) {
-	h := &handler{registry: registry, factory: factory}
+	// Inventory describes the complete production contract. Runtime handlers
+	// still omit deployment routes unless their audited dependencies validate.
+	h := &handler{registry: registry, factory: factory, deploymentHTTP: &deploymentHTTPState{stepUp: routeInventoryStepUp{}}}
 	routes := h.routeSpecs()
 	if err := validateRouteSpecs(routes); err != nil {
 		return nil, err

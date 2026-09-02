@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `oauth2_proxy` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `7.15.3-r4` / `anas.module/v1`.
+> 状态：当前实现；对应 `7.15.3-r5` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -19,13 +19,15 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_oauth2-proxy` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-oauth2-proxy:7.15.3-r4` | `` | 1 |
+| `anas_oauth2-proxy` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-oauth2-proxy:7.15.3-r5` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `oauth2_proxy.console_proxy_enabled` | bool | — | `false` | `static` | `OAUTH2_PROXY_CONSOLE_PROXY_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否发布受 OIDC 与 mTLS 保护的 ANAS 控制台路由 |
+| `oauth2_proxy.console_proxy_port` | int | `1..65535` | `8443` | `static` | `OAUTH2_PROXY_CONSOLE_PROXY_PORT` | 否 | 否 | 否 | 是 | `container_recreate` | anasd 受信代理监听端口 |
 | `oauth2_proxy.domain_prefix` | string | — | `auth-gate` | `static` | `OAUTH2_PROXY_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
 | `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
 
@@ -75,6 +77,10 @@ Hook 把它解析成目录里管理员组的真实名称（`SAMBA_DC_ADMIN_GROUP
 ### 导出
 
 - `ANAS_FORWARD_AUTH_*`
+- `ANAS_PROXY_PLATFORM_ADMIN_GROUP`
+- `ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__*`
+- `ANAS_TRAEFIK_SERVERS_TRANSPORT__ANAS_CONSOLE_MTLS__*`
+- `ANAS_CONSOLE_PROXY_PUBLIC_URL`
 - `ANAS_IAM_CLIENT__OAUTH2_PROXY__*`
 
 ### 显式消费
@@ -85,6 +91,7 @@ Hook 把它解析成目录里管理员组的真实名称（`SAMBA_DC_ADMIN_GROUP
 - `SAMBA_DC_ADMIN_GROUP_NAME`
 - `ANAS_TLS_CERTS_DIR`
 - `ANAS_TLS_INTERNAL_CA_NAME`
+- `TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS`
 
 依赖闭包不会自动授予全部环境变量。敏感值只有在所有权或 `config.consumes` 明确允许时才进入该 Module 的 Hook/容器作用域。
 
@@ -96,11 +103,14 @@ Hook 把它解析成目录里管理员组的真实名称（`SAMBA_DC_ADMIN_GROUP
 
 ## 测试与实现位置
 
-- 当前没有 Hook 单元测试文件。
+- [`main_test.go`](../hook/main_test.go)
+- [`main_test.go`](../oauth2_proxy/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 
-## 真实客户端 IP
+## 控制台身份 bridge 与真实客户端 IP
+
+oauth2-proxy 进程绑定 loopback `4181`；包装进程在 `4180` 处理普通浏览器/callback，在 `4182` 处理 Traefik ForwardAuth。两条 bridge 先删除调用方提交的固定身份头和响应 Authorization。只有 `4182` 在上游返回 2xx 后解析 oauth2-proxy 提供的已验证 ID token，要求 issuer、稳定 subject、数值 `auth_time`/`exp` 和解析后的 `platform_admin` 目录组，再覆盖七个固定 Header。原 bearer assertion 只在请求链内用于绑定 session/step-up，不落盘、不写日志。
 
 ANAS 包装镜像在启动时解析 Traefik 地址，为 oauth2-proxy 追加精确的 `--trusted-proxy-ip=/32`，并校验可选上游代理 IP/CIDR。它不再信任三个完整 RFC1918 范围；解析或校验失败时门禁保持关闭，防止伪造转发 Header 影响回跳地址和认证上下文。
 

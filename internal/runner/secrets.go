@@ -35,11 +35,27 @@ type secretStore struct {
 }
 
 func loadSecretStore(base string) (*secretStore, error) {
+	store, _, _, err := loadSecretStoreSnapshot(base)
+	return store, err
+}
+
+// loadSecretStoreSnapshot returns the exact bytes used to construct the
+// in-memory store. Configuration CAS must compare this same generation rather
+// than re-reading the path after parsing and accidentally accepting a race.
+func loadSecretStoreSnapshot(base string) (*secretStore, []byte, bool, error) {
 	path := filepath.Join(base, "secrets.yml")
-	if !exists(path) && exists(filepath.Join(base, "secrets.generated.yml")) {
-		return nil, fmt.Errorf("unsupported legacy secret store secrets.generated.yml; this ANAS version requires a fresh workspace using .anas/secrets.yml")
+	body, _, present, _, err := readConfigTransactionTarget(path, configTransactionMaxSecretsSize)
+	if err != nil {
+		return nil, nil, false, err
 	}
-	return loadSecretStoreFile(path)
+	if !present && exists(filepath.Join(base, "secrets.generated.yml")) {
+		return nil, nil, false, fmt.Errorf("unsupported legacy secret store secrets.generated.yml; this ANAS version requires a fresh workspace using .anas/secrets.yml")
+	}
+	store, err := parseSecretStoreBytes(path, body)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	return store, body, present, nil
 }
 
 type secretMetadata struct {
@@ -65,14 +81,18 @@ type secretStoreRecord struct {
 }
 
 func loadSecretStoreFile(path string) (*secretStore, error) {
-	s := &secretStore{path: path, values: map[string]string{}, metadata: map[string]secretMetadata{}}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return s, nil
+			return parseSecretStoreBytes(path, nil)
 		}
 		return nil, err
 	}
+	return parseSecretStoreBytes(path, b)
+}
+
+func parseSecretStoreBytes(path string, b []byte) (*secretStore, error) {
+	s := &secretStore{path: path, values: map[string]string{}, metadata: map[string]secretMetadata{}}
 	if len(b) == 0 {
 		return s, nil
 	}

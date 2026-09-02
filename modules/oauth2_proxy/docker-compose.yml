@@ -6,7 +6,7 @@ services:
       args:
         ANAS_IMAGE_REGISTRY: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}
         GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-oauth2-proxy:7.15.3-r4
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-oauth2-proxy:7.15.3-r5
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     restart: unless-stopped
     # The deployment's own resolver, not an upstream one: the identity provider
@@ -38,7 +38,10 @@ services:
       # The image bootstrap resolves TRAEFIK_HOSTNAME at container start and
       # appends one exact --trusted-proxy-ip address. This keeps redirects and
       # audit context correct without trusting every RFC1918 container.
-      - --http-address=0.0.0.0:4180
+      # oauth2-proxy itself is loopback-only. The bootstrap exposes two
+      # deliberately different bridges: 4180 for browser/callback traffic and
+      # 4182 for Traefik ForwardAuth identity assertions.
+      - --http-address=127.0.0.1:4181
       - --provider=oidc
       - --provider-ca-file=/certs/${ANAS_TLS_TRUST_BUNDLE_NAME}
       - --oidc-issuer-url=${OAUTH2_PROXY_OIDC_ISSUER_URL}
@@ -61,6 +64,9 @@ services:
       - --scope=openid profile email
       - --skip-provider-button=true
       - --set-xauthrequest=true
+      # The internal bridge consumes the verified ID token from this response
+      # header and replaces it with ANAS's fixed, closed identity contract.
+      - --set-authorization-header=true
     # The gate is the one service whose failure is not a degradation: every
     # route behind it returns 500 instead of falling back, so "the container is
     # running" is not the question Compose needs answered. /ping is
@@ -89,9 +95,9 @@ services:
       # The middleware every protected service attaches. The address is the
       # container rather than the public URL so Traefik does not loop back
       # through itself, which would also require it to trust the internal CA.
-      - "traefik.http.middlewares.${ANAS_FORWARD_AUTH_MIDDLEWARE_NAME}.forwardauth.address=http://${CONTAINER_PREFIX}${MODULE_NAME}:4180/"
+      - "traefik.http.middlewares.${ANAS_FORWARD_AUTH_MIDDLEWARE_NAME}.forwardauth.address=http://${CONTAINER_PREFIX}${MODULE_NAME}:4182/"
       - "traefik.http.middlewares.${ANAS_FORWARD_AUTH_MIDDLEWARE_NAME}.forwardauth.trustForwardHeader=true"
-      - "traefik.http.middlewares.${ANAS_FORWARD_AUTH_MIDDLEWARE_NAME}.forwardauth.authResponseHeaders=X-Auth-Request-User,X-Auth-Request-Email,X-Auth-Request-Preferred-Username"
+      - "traefik.http.middlewares.${ANAS_FORWARD_AUTH_MIDDLEWARE_NAME}.forwardauth.authResponseHeaders=X-Anas-Identity-Issuer,X-Anas-Identity-Subject,X-Anas-Identity-Role,X-Anas-Identity-Group,X-Anas-Identity-Auth-Time,X-Anas-Identity-Expires-At,X-Anas-Identity-Assertion"
 
 networks:
   default:

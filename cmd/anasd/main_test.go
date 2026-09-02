@@ -224,6 +224,14 @@ func TestTemporaryCertificateIsNotAnEnrollmentTarget(t *testing.T) {
 	if _, err := currentLegoEnrollmentTarget(context.Background(), manager, "https://anas.example.test:8080"); err == nil {
 		t.Fatal("temporary certificate was accepted as an enrollment target")
 	}
+	material, err := currentConsoleCertificate(context.Background(), manager)
+	if err != nil || material.Issuer != httpapi.CertificateIssuerTemporary || len(material.InternalCAPEM) != 0 {
+		t.Fatalf("temporary certificate status = %#v, %v", material, err)
+	}
+	withoutTLS, err := currentConsoleCertificate(context.Background(), nil)
+	if err != nil || withoutTLS.Issuer != httpapi.CertificateIssuerNone {
+		t.Fatalf("certificate status without TLS = %#v, %v", withoutTLS, err)
+	}
 }
 
 func TestHTTPServerTimeouts(t *testing.T) {

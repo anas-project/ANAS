@@ -185,7 +185,11 @@ func writeSynthesizedMeta(workspace, destRoot, deploymentID string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(metaDir, snapshotMetaConfigStateName), managedConfigStateBytes(configBytes, "backup"), 0600); err != nil {
+	stateBytes, err := managedConfigStateBytes(configBytes, "backup")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(metaDir, snapshotMetaConfigStateName), stateBytes, 0600); err != nil {
 		return err
 	}
 	if err := copySecretStore(base, filepath.Join(metaDir, snapshotMetaSecretsName)); err != nil {

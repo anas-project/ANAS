@@ -2,7 +2,6 @@ package runner
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -239,11 +238,11 @@ func (a *app) reportDynamicDNSOverlaps() {
 	if len(overlaps) == 0 {
 		return
 	}
-	fmt.Fprintf(os.Stderr,
-		"warning: more than one dynamic DNS updater maintains these records:\n  %s\n"+
+	a.warning("dynamic_dns_overlap",
+		"more than one dynamic DNS updater maintains these records:\n  %s\n"+
 			"they will usually agree and leave the record alone, but they poll different\n"+
 			"endpoints, so a host with several global IPv6 addresses can see them disagree\n"+
-			"and the record flap. Give them different vendors, or run only one.\n",
+			"and the record flap. Give them different vendors, or run only one.",
 		strings.Join(overlaps, "\n  "))
 }
 

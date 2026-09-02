@@ -8,6 +8,7 @@ package runner
 // confirmation (3) from an unmet precondition (4).
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -118,6 +119,11 @@ func runSnapshotList(args []string, jsonMode bool) error {
 	if err != nil {
 		return err
 	}
+	unlock, err := acquireWorkspaceConfigReadLock(context.Background(), stateDir(workspace))
+	if err != nil {
+		return failuref("lock_failed", "%s", err.Error())
+	}
+	defer unlock()
 	all, err := listSnapshots(workspace)
 	if err != nil {
 		return failuref("scan_failed", "%s", err.Error())
@@ -180,6 +186,11 @@ func runSnapshotShow(args []string, jsonMode bool) error {
 	if err != nil {
 		return err
 	}
+	unlock, err := acquireWorkspaceConfigReadLock(context.Background(), stateDir(workspace))
+	if err != nil {
+		return failuref("lock_failed", "%s", err.Error())
+	}
+	defer unlock()
 	meta, err := loadSnapshot(workspace, positional[0])
 	if err != nil {
 		return err

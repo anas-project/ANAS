@@ -6,7 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/anas-project/ANAS/internal/audit"
@@ -29,6 +33,7 @@ func consoleBootstrapRoutePatterns() []string {
 	return []string{
 		"/api/v1/system",
 		"/api/v1/system/ca",
+		"/api/v1/auth/session",
 		"/api/v1/workspaces",
 		"/api/v1/catalog/modules",
 		"/api/v1/workspaces/{ws}/modules",
@@ -49,16 +54,125 @@ func runConsole(args []string, jsonMode bool) error {
 
 func runConsoleWithPolicy(args []string, jsonMode bool, policy consoleconfig.FileSecurityPolicy) error {
 	if len(args) == 0 {
-		return usageErrorf("usage: anas console token | tls --self-signed [--config PATH] [--ttl DURATION]")
+		return usageErrorf("usage: anas console status | token | tls --self-signed [--config PATH] [--ttl DURATION]")
 	}
 	switch args[0] {
+	case "status":
+		return runConsoleStatus(args[1:], jsonMode, policy)
 	case "token":
 		return runConsoleToken(args[1:], jsonMode, policy)
 	case "tls":
 		return runConsoleTLS(args[1:], jsonMode, policy)
 	default:
-		return usageErrorf("usage: anas console token | tls --self-signed [--config PATH] [--ttl DURATION]")
+		return usageErrorf("usage: anas console status | token | tls --self-signed [--config PATH] [--ttl DURATION]")
 	}
+}
+
+// ConsoleStatus describes the operator-visible direct recovery and trusted
+// proxy entry points derived from the root-managed service configuration.
+type ConsoleStatus struct {
+	Mode               consoleconfig.Mode
+	DirectRecoveryURLs []string
+	ProxyURL           string
+	BindsAllInterfaces bool
+}
+
+func runConsoleStatus(args []string, jsonMode bool, policy consoleconfig.FileSecurityPolicy) error {
+	flags := flag.NewFlagSet("console status", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	configPath := flags.String("config", defaultConsoleConfigPath, "root-managed anasd service configuration")
+	flags.StringVar(configPath, "c", defaultConsoleConfigPath, "root-managed anasd service configuration")
+	registerJSONFlag(flags)
+	positional, err := parseInterspersed(flags, args)
+	if err != nil || len(positional) != 0 {
+		return usageErrorf("usage: anas console status [--config PATH] [--json]")
+	}
+	config, err := loadConsoleCLIConfig(*configPath, policy)
+	if err != nil {
+		return err
+	}
+	status, err := ConfiguredConsoleStatus(config, net.InterfaceAddrs)
+	if err != nil {
+		return failuref("console_status_failed", "discover direct management addresses: %v", err)
+	}
+	if jsonMode {
+		return emitOK(map[string]any{
+			"mode": status.Mode, "direct_recovery_urls": status.DirectRecoveryURLs,
+			"proxy_url": status.ProxyURL, "recovery_entry": "direct",
+			"binds_all_interfaces": status.BindsAllInterfaces,
+		})
+	}
+	fmt.Printf("Direct recovery (local owner):\n")
+	for _, address := range status.DirectRecoveryURLs {
+		fmt.Printf("  %s\n", address)
+	}
+	if status.ProxyURL != "" {
+		fmt.Printf("Traefik / OIDC: %s\n", status.ProxyURL)
+	}
+	if status.BindsAllInterfaces {
+		fmt.Println("Exposure: LAN mode binds every IPv4/IPv6 interface; firewall and interface isolation are the administrator's responsibility.")
+	}
+	return nil
+}
+
+// ConfiguredConsoleStatus derives canonical operator entry points without
+// consulting request-controlled Host or forwarding headers.
+func ConfiguredConsoleStatus(config consoleconfig.Config, interfaceAddrs func() ([]net.Addr, error)) (ConsoleStatus, error) {
+	scheme := "http"
+	if config.TLS.Lego != nil || config.TLS.Temporary != nil {
+		scheme = "https"
+	}
+	seen := map[string]struct{}{}
+	direct := make([]string, 0, len(config.AllowedDNSHosts)+4)
+	appendURL := func(host string) {
+		origin := scheme + "://" + net.JoinHostPort(host, strconv.Itoa(config.Port))
+		if _, exists := seen[origin]; !exists {
+			seen[origin] = struct{}{}
+			direct = append(direct, origin)
+		}
+	}
+	for _, host := range config.AllowedDNSHosts {
+		appendURL(host)
+	}
+	addresses, err := interfaceAddrs()
+	if err != nil {
+		return ConsoleStatus{}, err
+	}
+	var ips []string
+	for _, address := range addresses {
+		var ip net.IP
+		switch value := address.(type) {
+		case *net.IPNet:
+			ip = value.IP
+		case *net.IPAddr:
+			ip = value.IP
+		default:
+			raw, _, found := strings.Cut(address.String(), "/")
+			if found {
+				ip = net.ParseIP(raw)
+			}
+		}
+		if ip == nil || ip.IsUnspecified() || config.Mode == consoleconfig.ModeLoopback && !ip.IsLoopback() {
+			continue
+		}
+		ips = append(ips, ip.String())
+	}
+	sort.Strings(ips)
+	for _, ip := range ips {
+		appendURL(ip)
+	}
+	if len(direct) == 0 {
+		if config.Mode == consoleconfig.ModeLoopback {
+			appendURL("127.0.0.1")
+		} else {
+			return ConsoleStatus{}, errors.New("no configured DNS host or local IP address is available")
+		}
+	}
+	proxyURL := ""
+	if config.TrustedProxy != nil {
+		proxyURL = config.TrustedProxy.PublicURL
+	}
+	return ConsoleStatus{Mode: config.Mode, DirectRecoveryURLs: direct, ProxyURL: proxyURL, BindsAllInterfaces: config.Mode == consoleconfig.ModeLAN}, nil
 }
 
 type consoleCommandFlags struct {

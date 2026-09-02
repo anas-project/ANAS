@@ -205,7 +205,21 @@ func sanitizeJobError(input *JobError) (*JobError, error) {
 	if len(input.Message) > 4096 {
 		return nil, invalidError("job error message is too long")
 	}
-	return &JobError{Code: input.Code, Message: sanitizeText(input.Message)}, nil
+	var detail *JobErrorDetail
+	if input.Detail != nil {
+		if len(input.Detail.Blocked) == 0 || len(input.Detail.Blocked) > 256 {
+			return nil, invalidError("job error blocked detail must contain between 1 and 256 items")
+		}
+		blocked := make([]string, len(input.Detail.Blocked))
+		for index, item := range input.Detail.Blocked {
+			if len(item) == 0 || len(item) > 4096 {
+				return nil, invalidError("job error blocked detail item has an invalid length")
+			}
+			blocked[index] = sanitizeText(item)
+		}
+		detail = &JobErrorDetail{Blocked: blocked}
+	}
+	return &JobError{Code: input.Code, Message: sanitizeText(input.Message), Detail: detail}, nil
 }
 
 func sanitizeWarnings(input []string) ([]string, error) {

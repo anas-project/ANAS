@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>ANAS Console</title>
+    <script type="module" crossorigin src="/assets/main.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/main.css">
+  </head>
+  <body>
+    <div id="app">
+      <aside class="boot-warning" role="alert" data-lan-risk-banner>
+        局域网明文引导可能暴露在所有网卡上，主动攻击者可劫持首次配置。请确认防火墙边界；也可使用
+        <code>ssh -L</code> 或 <code>anas console tls --self-signed</code>。
+      </aside>
+      <p>正在加载 ANAS Console…</p>
+    </div>
+  </body>
+</html>

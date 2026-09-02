@@ -16,6 +16,7 @@ const (
 	EnrollmentSessionCookieName = "__Host-anas_enrollment_session"
 	EnrollmentCSRFCookieName    = "__Host-anas_enrollment_csrf"
 	LocalSessionCookieName      = "__Host-anas_local_session"
+	ProxySessionCookieName      = "__Host-anas_proxy_session"
 )
 
 // SessionCookie returns a host-only, HttpOnly, SameSite=Strict session cookie.

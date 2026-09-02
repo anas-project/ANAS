@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: oauth2_proxy
 version: 7.15.3
-revision: 4
+revision: 5
 app_version: 7.15.3
 abi:
   supports:
@@ -51,14 +51,26 @@ config:
   defaults:
     domain_prefix: auth-gate
     iam_protocol: auto
+    console_proxy_enabled: false
+    console_proxy_port: "8443"
   types:
     domain_prefix: string
     iam_protocol:
       enum: [auto, oidc, saml]
+    console_proxy_enabled: bool
+    console_proxy_port:
+      kind: int
+      constraints:
+        minimum: 1
+        maximum: 65535
   # The middleware name protected modules attach to their routers, and the URL
   # of the gate itself.
   exports:
     - ANAS_FORWARD_AUTH_*
+    - ANAS_PROXY_PLATFORM_ADMIN_GROUP
+    - ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__*
+    - ANAS_TRAEFIK_SERVERS_TRANSPORT__ANAS_CONSOLE_MTLS__*
+    - ANAS_CONSOLE_PROXY_PUBLIC_URL
     - ANAS_IAM_CLIENT__OAUTH2_PROXY__*
   consumes:
     - ANAS_TLS_TRUST_BUNDLE_NAME

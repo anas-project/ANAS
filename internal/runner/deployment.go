@@ -51,14 +51,23 @@ type deploymentIndex struct {
 }
 
 type prepareOptions struct {
-	workspace  string
-	base       string
-	cfgPath    string
-	moduleRoot string
-	verbose    bool
-	updateLock bool
+	workspace                    string
+	base                         string
+	cfgPath                      string
+	moduleRoot                   string
+	verbose                      bool
+	updateLock                   bool
+	context                      context.Context
+	events                       application.EventSink
+	restrictedProcessEnvironment bool
 	// modules narrows which images `build` builds. Empty means all of them.
 	modules []string
+}
+
+type runtimeRecoveryOptions struct {
+	ctx                          context.Context
+	events                       application.EventSink
+	restrictedProcessEnvironment bool
 }
 
 func projectLockPath(configPath string) string {
@@ -102,10 +111,18 @@ func parsePrepareOptions(name string, args []string) (prepareOptions, error) {
 	// A workspace owns its config, so -c is only needed to point at one that
 	// lives elsewhere.
 	out.cfgPath = absolutePath(configPathFor(workspace, out.cfgPath))
+	return out, nil
+}
+
+// finalizePrepareOptions reads the managed configuration and workspace Module
+// view only after the caller holds the runtime lock. Keeping these checks out
+// of flag parsing prevents a config PUT transaction from being observed
+// between its config, Secret Store, and managed-digest publishes.
+func finalizePrepareOptions(out prepareOptions) (prepareOptions, error) {
 	if !exists(out.cfgPath) {
 		return out, preconditionErrorf("config_missing", "config %s does not exist", out.cfgPath)
 	}
-	if err := validateManagedConfig(workspace, out.cfgPath); err != nil {
+	if err := validateManagedConfig(out.workspace, out.cfgPath); err != nil {
 		return out, preconditionErrorf("config_not_managed", "%s", err.Error())
 	}
 	root, err := locateModuleRootForWorkspace(out.moduleRoot, out.workspace)
@@ -118,6 +135,15 @@ func parsePrepareOptions(name string, args []string) (prepareOptions, error) {
 
 func runLock(args []string, jsonMode bool) error {
 	opts, err := parsePrepareOptions("lock", args)
+	if err != nil {
+		return err
+	}
+	unlock, err := acquireRuntimeLock(opts.base)
+	if err != nil {
+		return failuref("lock_failed", "%s", err.Error())
+	}
+	defer unlock()
+	opts, err = finalizePrepareOptions(opts)
 	if err != nil {
 		return err
 	}
@@ -252,97 +278,19 @@ func runPlan(args []string, jsonMode bool) error {
 		return usageErrorf("%s", err.Error())
 	}
 	configPath := absolutePath(configPathFor(workspace, *cfgPath))
-	if err := validateManagedConfig(workspace, configPath); err != nil {
-		return preconditionErrorf("config_not_managed", "%s", err.Error())
-	}
 	explicit := *moduleRoot
 	if explicit == "" {
 		explicit = *rootAlias
 	}
-	located, err := locateModuleRootForWorkspace(explicit, workspace)
+	service := newCLIDeploymentPlanService(workspace, configPath, explicit, moduleCommandCLISink{jsonMode: jsonMode})
+	result, err := service.Plan(context.Background(), application.PlanRequest{})
 	if err != nil {
-		return preconditionErrorf("module_root_missing", "%s", err.Error())
+		return applicationCLIError(err)
 	}
-	if !exists(configPath) {
-		return preconditionErrorf("config_missing", "config %s does not exist", configPath)
-	}
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return preconditionErrorf("config_invalid", "%s", err.Error())
-	}
-	reg, err := loadRegistryDir(located)
-	if err != nil {
-		return preconditionErrorf("module_root_invalid", "%s", err.Error())
-	}
-	if err := validateConfigRuntimeKeyCollisions(configPath, reg); err != nil {
-		return preconditionErrorf("config_invalid", "%s", err.Error())
-	}
-	base := stateDir(workspace)
-	privateStore, err := loadSecretStore(base)
-	if err != nil {
-		return preconditionErrorf("secrets_unreadable", "%s", err.Error())
-	}
-	if err := rejectUnimportedConfigSecrets(configPath, reg, privateStore.values); err != nil {
-		return preconditionErrorf("config_requires_import", "%s", err.Error())
-	}
-	contracts, err := loadContractRegistry(located)
-	if err != nil {
-		return preconditionErrorf("contract_root_invalid", "%s", err.Error())
-	}
-	lock, err := loadModuleLockFile(projectLockPath(configPath))
-	if err != nil {
-		return preconditionErrorf("lock_invalid", "%s", err.Error())
-	}
-	a := &app{cfg: cfg, cfgPath: configPath, reg: reg, contracts: contracts, lock: lock, resolvedBindings: map[string]map[string]string{}}
-	a.env, a.envOwner = configBaseEnvWithRegistry(cfg, reg)
-	a.base = base
-	if err := a.loadImportedSecrets(); err != nil {
-		return preconditionErrorf("secrets_unreadable", "%s", err.Error())
-	}
-	if err := a.validateContractRegistry(); err != nil {
-		return preconditionErrorf("contract_invalid", "%s", err.Error())
-	}
-	a.order, err = a.resolveOrderWithInputValidation(cfg.Modules.Order)
-	if err != nil {
-		return preconditionErrorf("resolution_failed", "%s", err.Error())
-	}
-	if len(lock.Modules) > 0 {
-		if err := validateLockedResolution(a, lock); err != nil {
-			return preconditionErrorf("lock_stale", "%s", err.Error())
-		}
-	} else if err := a.validateVersions(lock); err != nil {
-		return preconditionErrorf("version_conflict", "%s", err.Error())
-	}
-	// Defaults first: a module may supply the DNS vendor its hook would use, and
-	// resolving credentials against a half-populated environment would report
-	// a platform as unset when it is merely defaulted.
-	a.applyModuleDefaults()
-	resolvedOrder := a.order
-	a.order = trustedModuleValidationOrder(resolvedOrder, lock)
-	if err := a.validateModules(); err != nil {
-		return preconditionErrorf("config_invalid", "%s", err.Error())
-	}
-	a.order = resolvedOrder
-	if err := a.materializeDNSCredentials(); err != nil {
-		return preconditionErrorf("dns_credentials_invalid", "%s", err.Error())
-	}
-	a.reportDynamicDNSOverlaps()
 	if jsonMode {
-		return emitOK(map[string]any{
-			"config": configPath, "module_root": absolutePath(located),
-			"modules": a.order, "iam": a.iamPlanDocument(),
-			"module_plans":        a.moduleValidationPlanDocument(),
-			"capability_bindings": cloneNestedMap(a.resolvedBindings),
-			"dns_platforms":       a.dnsPlanDocument(),
-			"dynamic_dns":         a.dynamicDNSPlanDocument(),
-		})
+		return emitOK(planResultCLIMap(result))
 	}
-	fmt.Println(strings.Join(a.order, "\n"))
-	fmt.Print(a.iamPlanSummary())
-	fmt.Print(a.dnsPlanSummary())
-	fmt.Print(a.dynamicDNSPlanSummary())
-	fmt.Print(a.moduleLifecyclePlanSummary())
-	fmt.Print(a.moduleValidationPlanSummary())
+	fmt.Print(planResultCLIText(result))
 	return nil
 }
 
@@ -357,6 +305,10 @@ func runPrepare(action string, args []string, jsonMode bool) error {
 		return failuref("lock_failed", "%s", err.Error())
 	}
 	defer unlock()
+	opts, err = finalizePrepareOptions(opts)
+	if err != nil {
+		return err
+	}
 	id, err := materializeDeployment(opts, action == "build", jsonMode)
 	if err != nil {
 		return err
@@ -436,7 +388,9 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		workspace: opts.workspace,
 		base:      opts.base, cfgPath: opts.cfgPath, verbose: opts.verbose, jsonMode: jsonMode,
 		reg: reg, contracts: contracts, cfg: cfg, lock: lock, artifactRoot: finalModules,
-		resolvedBindings: map[string]map[string]string{},
+		commandContext: opts.context, events: opts.events,
+		restrictedProcessEnvironment: opts.restrictedProcessEnvironment,
+		resolvedBindings:             map[string]map[string]string{},
 	}
 	a.env, a.envOwner = configBaseEnvWithRegistry(cfg, reg)
 	a.env["ANAS_DEPLOYMENT_ID"] = id
@@ -498,7 +452,7 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err := a.materializeLocalAccounts(); err != nil {
 		return "", preconditionErrorf("local_admin_invalid", "%s", err.Error())
 	}
-	emitProgress(jsonMode, "calculate", 0, total, "modules")
+	a.progress(jsonMode, "calculate", 0, total, "modules")
 	// Part of the calculate stage, and reported as such: it is the derivation
 	// every module hook reads from, so a host it cannot describe is a failure of
 	// the same step rather than a new contract code.
@@ -517,14 +471,14 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err := a.localAdmins.Save(); err != nil {
 		return "", failuref("write_failed", "%s", err.Error())
 	}
-	emitProgress(jsonMode, "render", 0, total, "modules")
+	a.progress(jsonMode, "render", 0, total, "modules")
 	if err := a.renderAll(stagingModules); err != nil {
 		return "", failuref("render_failed", "%s", err.Error())
 	}
-	emitProgress(jsonMode, "render", total, total, "modules")
+	a.progress(jsonMode, "render", total, total, "modules")
 
 	if build {
-		cli, err := compose.Detect()
+		cli, err := detectComposeForExecution(opts.context, opts.restrictedProcessEnvironment)
 		if err != nil {
 			return "", preconditionErrorf("compose_missing", "%s", err.Error())
 		}
@@ -537,7 +491,7 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		done := int64(0)
 		if err := a.eachOf(stagingModules, selection, func(run moduleRun) error {
 			done++
-			emitProgress(jsonMode, "build-images", done, total, "modules")
+			a.progress(jsonMode, "build-images", done, total, "modules")
 			if run.mod.RuntimeType != "compose" {
 				return nil
 			}
@@ -561,7 +515,7 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err := copyFileMode(opts.cfgPath, deploymentConfigSourcePath(stagingRoot), 0600); err != nil {
 		return "", failuref("write_failed", "preserve the config this deployment was built from: %v", err)
 	}
-	emitProgress(jsonMode, "seal", 0, 0, "deployments")
+	a.progress(jsonMode, "seal", 0, 0, "deployments")
 	if err := sealDeployment(stagingRoot); err != nil {
 		return "", failuref("seal_failed", "%s", err.Error())
 	}
@@ -932,71 +886,35 @@ func runApply(args []string, jsonMode bool) error {
 		return usageErrorf("%s", err.Error())
 	}
 	announceWorkspace(workspace)
-	base := stateDir(workspace)
+	configPath := ""
 	if *deploymentID == "" {
-		*cfgPath = absolutePath(configPathFor(workspace, *cfgPath))
+		configPath = absolutePath(configPathFor(workspace, *cfgPath))
 	} else if *cfgPath != "" {
 		return usageErrorf("apply accepts either -c config.yml or --deployment ID, not both")
-	}
-	unlock, err := acquireRuntimeLock(base)
-	if err != nil {
-		return failuref("lock_failed", "%s", err.Error())
-	}
-	defer unlock()
-	before, err := loadActiveState(base)
-	if err != nil {
-		return preconditionErrorf("state_unreadable", "%s", err.Error())
-	}
-	if *deploymentID == "" {
-		explicit := *moduleRoot
-		if explicit == "" {
-			explicit = *rootAlias
-		}
-		located, err := locateModuleRootForWorkspace(explicit, workspace)
-		if err != nil {
-			return preconditionErrorf("module_root_missing", "%s", err.Error())
-		}
-		if !exists(*cfgPath) {
-			return preconditionErrorf("config_missing", "config %s does not exist", *cfgPath)
-		}
-		opts := prepareOptions{workspace: workspace, base: base, cfgPath: *cfgPath, moduleRoot: located, updateLock: *updateLock}
-		id, err := materializeDeployment(opts, *build, jsonMode)
-		if err != nil {
-			return err
-		}
-		*deploymentID = id
 	} else {
-		if err := validateDeploymentID(*deploymentID); err != nil {
-			return usageErrorf("%s", err.Error())
-		}
-		state, err := loadDeploymentState(base, *deploymentID)
-		if err != nil {
-			return preconditionErrorf("deployment_missing", "%s", err.Error())
-		}
-		if state.Status != "ready" {
-			return preconditionErrorf("deployment_not_ready",
-				"deployment %s has status %q; apply --deployment requires ready", *deploymentID, state.Status)
-		}
+		configPath = workspaceConfigPath(workspace)
 	}
-	if err := activateDeployment(base, *deploymentID, activateOptions{
-		allowRisky: *allowRisky, snapshot: *snapshot, noSnapshot: *noSnapshot,
-		yes: *yes, json: jsonMode,
-	}); err != nil {
-		return err
+	explicit := *moduleRoot
+	if explicit == "" {
+		explicit = *rootAlias
 	}
-	after, err := loadActiveState(base)
+	service := newCLIDeploymentPlanService(workspace, configPath, explicit, moduleCommandCLISink{jsonMode: jsonMode})
+	result, err := service.Apply(context.Background(), application.ApplyRequest{
+		DeploymentID: *deploymentID, Build: *build, UpdateLock: *updateLock,
+		AllowRisky: *allowRisky, Snapshot: *snapshot, NoSnapshot: *noSnapshot, Confirmed: *yes,
+	})
 	if err != nil {
-		return preconditionErrorf("state_unreadable", "%s", err.Error())
+		return applicationCLIError(err)
 	}
 	if jsonMode {
 		return emitOK(map[string]any{
-			"workspace": workspace, "deployment_id": *deploymentID,
-			"previous_deployment": nullableString(before.ActiveDeployment),
-			"activated_at":        after.ActivatedAt,
-			"deployment_path":     filepath.Join(base, "deployments", *deploymentID),
+			"workspace": result.Workspace, "deployment_id": result.DeploymentID,
+			"previous_deployment": result.PreviousDeployment,
+			"activated_at":        result.ActivatedAt,
+			"deployment_path":     result.DeploymentPath,
 		})
 	}
-	fmt.Println(*deploymentID)
+	fmt.Println(result.DeploymentID)
 	return nil
 }
 
@@ -1136,7 +1054,7 @@ func startDeployment(a *app, modulesRoot string, selection []string, jsonMode bo
 	done := int64(0)
 	if err := a.eachOf(modulesRoot, selection, func(run moduleRun) error {
 		done++
-		emitProgress(jsonMode, "activate-modules", done, total, "modules")
+		a.progress(jsonMode, "activate-modules", done, total, "modules")
 		if err := a.ensureResourcesFor(run.mod.Name, modulesRoot); err != nil {
 			return err
 		}
@@ -1174,11 +1092,14 @@ type activateOptions struct {
 	yes        bool
 	// json selects JSON Lines for the progress and warning records activation
 	// writes to stderr. It never changes what activation does.
-	json bool
+	json                         bool
+	ctx                          context.Context
+	events                       application.EventSink
+	restrictedProcessEnvironment bool
 }
 
 func activateDeployment(base, id string, opts activateOptions) error {
-	cli, err := compose.Detect()
+	cli, err := detectComposeForExecution(opts.ctx, opts.restrictedProcessEnvironment)
 	if err != nil {
 		return preconditionErrorf("compose_missing", "%s", err.Error())
 	}
@@ -1190,6 +1111,8 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	if err != nil {
 		return preconditionErrorf("deployment_unreadable", "%s", err.Error())
 	}
+	newApp.commandContext, newApp.events = opts.ctx, opts.events
+	newApp.restrictedProcessEnvironment = opts.restrictedProcessEnvironment
 	if err := credentialStoreConsistencyError(base, target); err != nil {
 		return err
 	}
@@ -1212,6 +1135,8 @@ func activateDeployment(base, id string, opts activateOptions) error {
 		if err != nil {
 			return preconditionErrorf("deployment_unreadable", "%s", err.Error())
 		}
+		oldApp.commandContext, oldApp.events = opts.ctx, opts.events
+		oldApp.restrictedProcessEnvironment = opts.restrictedProcessEnvironment
 		if !opts.rollback {
 			changes := settingChangesWithEffect(current, target, "image_rebuild")
 			if len(changes) > 0 && !target.ImagesBuilt {
@@ -1318,7 +1243,7 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	// Retention runs only after active is committed, so a failed apply never
 	// spends a keep_auto slot and never reclaims the snapshot that would have
 	// been the way back from it.
-	collectAutomaticSnapshots(workspaceOf(base))
+	collectAutomaticSnapshots(workspaceOf(base), opts.events, opts.json, opts.ctx, opts.restrictedProcessEnvironment)
 	return nil
 }
 
@@ -1364,14 +1289,14 @@ func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot
 	}
 	workspace := workspaceOf(base)
 	if opts.noSnapshot {
-		emitWarning(opts.json, trigger.reason, "%s", trigger.detail)
-		emitWarning(opts.json, "no_snapshot_requested",
+		deploymentWarning(opts.events, opts.json, trigger.reason, "%s", trigger.detail)
+		deploymentWarning(opts.events, opts.json, "no_snapshot_requested",
 			"--no-snapshot gives up the only way back to the current data")
 		return false, confirmDestructive("Apply without a data snapshot", opts.yes)
 	}
 	if code, reason := snapshotUnavailable(workspace, target); code != "" {
-		emitWarning(opts.json, trigger.reason, "%s", trigger.detail)
-		emitWarning(opts.json, code,
+		deploymentWarning(opts.events, opts.json, trigger.reason, "%s", trigger.detail)
+		deploymentWarning(opts.events, opts.json, code,
 			"%s, so no snapshot can be taken and the current data cannot be recovered afterwards", reason)
 		return false, confirmDestructive("Apply anyway, with no way back to the current data", opts.yes)
 	}
@@ -1385,7 +1310,8 @@ func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot
 	// listing snapshots rather than by following a pointer.
 	if _, err := createSnapshot(workspace, snapshotOptions{
 		kind: snapshotKindAuto, reason: trigger.reason,
-		from: current.ID, to: target.ID, json: opts.json,
+		from: current.ID, to: target.ID, json: opts.json, events: opts.events,
+		ctx: opts.ctx, restrictedProcessEnvironment: opts.restrictedProcessEnvironment,
 	}); err != nil {
 		_ = startDeployment(oldApp, oldRoot, oldApp.order, opts.json)
 		return false, err
@@ -1410,18 +1336,29 @@ func snapshotUnavailable(workspace string, target *deploymentManifest) (string, 
 // collectAutomaticSnapshots applies the keep_auto policy. Failures are reported
 // and swallowed: a deployment that is up and verified must not be reported as
 // failed because some older snapshot could not be reclaimed.
-func collectAutomaticSnapshots(workspace string) {
+func collectAutomaticSnapshots(workspace string, events application.EventSink, jsonMode bool, ctx context.Context, restricted bool) {
 	all, err := listSnapshots(workspace)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not scan snapshots for collection: %v\n", err)
+		deploymentWarning(events, jsonMode, "snapshot_collection_failed", "could not scan snapshots for collection: %v", err)
 		return
 	}
 	collect, _, _ := snapshotsToPrune(all, workspaceKeepAuto(workspace))
 	for _, meta := range collect {
-		if err := deleteSnapshot(workspace, meta.ID); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not reclaim snapshot %s: %v\n", meta.ID, err)
+		if err := deleteSnapshotWithOptions(workspace, meta.ID, snapshotOptions{
+			ctx: ctx, events: events, restrictedProcessEnvironment: restricted,
+		}); err != nil {
+			deploymentWarning(events, jsonMode, "snapshot_reclaim_failed", "could not reclaim snapshot %s: %v", meta.ID, err)
 		}
 	}
+}
+
+func deploymentWarning(events application.EventSink, jsonMode bool, code, format string, args ...any) {
+	message := fmt.Sprintf(format, args...)
+	if events != nil {
+		events.Warning(application.WarningEvent{Code: code, Message: message})
+		return
+	}
+	emitWarning(jsonMode, code, "%s", message)
 }
 
 func errorsJoin(errs []error) error {
@@ -1974,17 +1911,42 @@ func acquireRuntimeLock(base string) (func(), error) {
 // never leaves a goroutine waiting forever. Recovery still runs only after the
 // exclusive lock is held.
 func acquireRuntimeLockContext(ctx context.Context, base string) (func(), error) {
+	return acquireRuntimeLockWithRecovery(ctx, base, runtimeRecoveryOptions{ctx: ctx})
+}
+
+func acquireRuntimeLockForApplication(ctx context.Context, base string, events application.EventSink, restricted bool) (func(), error) {
+	return acquireRuntimeLockWithRecovery(ctx, base, runtimeRecoveryOptions{
+		ctx: ctx, events: events, restrictedProcessEnvironment: restricted,
+	})
+}
+
+func acquireRuntimeLockWithRecovery(ctx context.Context, base string, recovery runtimeRecoveryOptions) (func(), error) {
 	unlock, err := acquireRuntimeLockModeContext(ctx, base, syscall.LOCK_EX)
 	if err != nil {
 		return nil, err
 	}
-	cleanStaleSnapshotTemp(workspaceOf(base))
-	compensateContainerTransactions(base)
+	if recoveryErr := recoverWorkspaceConfigTransaction(workspaceOf(base)); recoveryErr != nil {
+		unlock()
+		return nil, recoveryErr
+	}
+	cleanStaleSnapshotTempWithOptions(workspaceOf(base), snapshotOptions{
+		ctx: recovery.ctx, events: recovery.events,
+		restrictedProcessEnvironment: recovery.restrictedProcessEnvironment,
+	})
+	if err := ctx.Err(); err != nil {
+		unlock()
+		return nil, err
+	}
+	compensateContainerTransactionsWithOptions(base, recovery)
+	if err := ctx.Err(); err != nil {
+		unlock()
+		return nil, err
+	}
 	if txn, recoveryErr := unfinishedCredentialRotation(base); recoveryErr != nil {
 		unlock()
 		return nil, recoveryErr
 	} else if txn != nil {
-		if recoveryErr := recoverCredentialRotation(base, txn, false); recoveryErr != nil {
+		if recoveryErr := recoverCredentialRotationForApplication(base, txn, recovery); recoveryErr != nil {
 			unlock()
 			return nil, fmt.Errorf("%w: automatic recovery failed: %v", credentialRecoveryRequiredError(txn), recoveryErr)
 		}

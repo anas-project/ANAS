@@ -25,6 +25,19 @@ func acquireModuleCommandLock(ctx context.Context, workspace, module, scope stri
 	if err != nil {
 		return nil, err
 	}
+	// Config PUT publishes config.yml, Secret Store, and managed state through
+	// a redo journal owned by the runner package. This package cannot safely
+	// replay that journal, but it must never read command secrets from a
+	// partially published generation. Fail closed until a runner entry point
+	// takes the workspace lock and completes recovery.
+	transactionPath := filepath.Join(stateDir, "config-write-transaction")
+	if _, transactionErr := os.Lstat(transactionPath); transactionErr == nil {
+		workspaceUnlock()
+		return nil, errModuleCommandConfigRecoveryRequired
+	} else if !os.IsNotExist(transactionErr) {
+		workspaceUnlock()
+		return nil, fmt.Errorf("inspect workspace configuration transaction: %w", transactionErr)
+	}
 	if scope == "workspace_write" {
 		return workspaceUnlock, nil
 	}

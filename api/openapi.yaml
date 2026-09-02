@@ -2,9 +2,9 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: ANAS Web API
-  version: 0.3.0-m1b
+  version: 0.6.0-m15
   description: |
-    M1B API for the ANAS administration daemon. This contract is versioned
+    M1.5 API for the ANAS administration daemon. This contract is versioned
     independently from the CLI JSON contract: HTTP responses use
     `anas.dev/api/v1`, while the CLI continues to use `anas.dev/cli/v1`.
 
@@ -12,10 +12,19 @@ info:
     opaque workspace ID; request and response DTOs never contain host filesystem
     paths. M1A adds bootstrap exchange and local-owner authentication while the
     workspace surface remains read-only. Route visibility and transport are
-    state-dependent. M1B adds durable job history and event replay plus the
+    state-dependent. M1B adds durable job history and event replay, the
     certificate-bound bootstrap-to-enrollment handoff and initial local-owner
-    creation. A disallowed state, listener, or transport is deliberately
-    indistinguishable from an unknown path and returns 404.
+    creation, synchronous managed-configuration read/validation/atomic save,
+    audited typed deployment planning, bootstrap first-apply jobs, and local
+    owner step-up for full-state direct apply. M1C adds a separately built Vue
+    console shell plus an independent recovery bundle, both served from
+    immutable assets embedded in `anasd`. M1.5 adds a
+    separate mTLS trusted-proxy listener whose verified OIDC directory identity
+    receives the same management capabilities while local-account routes remain
+    direct-listener only.
+    Saving desired configuration does not apply it. A disallowed
+    state, listener, or transport is deliberately indistinguishable from an
+    unknown path and returns 404.
 servers:
   - url: http://{host}:8080
     description: Bootstrap plaintext listener on the fixed default management port.
@@ -32,12 +41,198 @@ servers:
 security: []
 tags:
   - name: Service
+  - name: Console
   - name: Authentication
   - name: Jobs
   - name: Workspace
+  - name: Configuration
   - name: Deployments
   - name: Modules
 paths:
+  /:
+    get:
+      operationId: getConsole
+      summary: Serve the console shell or redirect an enrolled plaintext request
+      description: |
+        M0/bootstrap plaintext and all allowed TLS requests receive the embedded
+        main console shell. Enrollment/full plaintext requests are redirected to
+        the canonical HTTPS origin from root-owned service configuration.
+        Credentialed/body-carrying full plaintext requests remain hidden with
+        404, and no query or user-controlled host value is propagated.
+      tags: [Console]
+      security: []
+      x-anas-permission: console.ui.read
+      x-anas-scope: service
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        bootstrap: {authentication: none, transports: [plaintext, tls]}
+        enrollment: {authentication: none, transports: [plaintext, tls]}
+        full: {authentication: none, transports: [plaintext, tls]}
+      responses:
+        "200":
+          description: Embedded main console HTML.
+          content:
+            text/html:
+              schema:
+                type: string
+        "308":
+          description: Redirect to the configured canonical HTTPS origin root.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+  /assets/main.js:
+    get:
+      operationId: getConsoleMainJavaScript
+      summary: Read the embedded main console JavaScript bundle
+      tags: [Console]
+      security: []
+      x-anas-permission: console.ui.read
+      x-anas-scope: service
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        bootstrap: {authentication: none, transports: [plaintext, tls]}
+        enrollment: {authentication: none, transports: [tls]}
+        full: {authentication: none, transports: [tls]}
+      responses:
+        "200":
+          description: Embedded ECMAScript module.
+          content:
+            text/javascript:
+              schema: {type: string}
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+  /assets/main.css:
+    get:
+      operationId: getConsoleMainStyles
+      summary: Read the embedded main console stylesheet
+      tags: [Console]
+      security: []
+      x-anas-permission: console.ui.read
+      x-anas-scope: service
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        bootstrap: {authentication: none, transports: [plaintext, tls]}
+        enrollment: {authentication: none, transports: [tls]}
+        full: {authentication: none, transports: [tls]}
+      responses:
+        "200":
+          description: Embedded main console stylesheet.
+          content:
+            text/css:
+              schema: {type: string}
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+  /emergency:
+    get:
+      operationId: getConsoleRecovery
+      summary: Serve the independent recovery interface
+      description: This package uses browser APIs only and does not import the main Vue bundle.
+      tags: [Console]
+      security: []
+      x-anas-permission: console.ui.read
+      x-anas-scope: service
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        bootstrap: {authentication: none, transports: [plaintext, tls]}
+        enrollment: {authentication: none, transports: [tls]}
+        full: {authentication: none, transports: [tls]}
+      responses:
+        "200":
+          description: Embedded recovery HTML.
+          content:
+            text/html:
+              schema: {type: string}
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+  /assets/emergency.js:
+    get:
+      operationId: getConsoleRecoveryJavaScript
+      summary: Read the independent recovery JavaScript bundle
+      tags: [Console]
+      security: []
+      x-anas-permission: console.ui.read
+      x-anas-scope: service
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        bootstrap: {authentication: none, transports: [plaintext, tls]}
+        enrollment: {authentication: none, transports: [tls]}
+        full: {authentication: none, transports: [tls]}
+      responses:
+        "200":
+          description: Embedded recovery ECMAScript module.
+          content:
+            text/javascript:
+              schema: {type: string}
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+  /assets/emergency.css:
+    get:
+      operationId: getConsoleRecoveryStyles
+      summary: Read the independent recovery stylesheet
+      tags: [Console]
+      security: []
+      x-anas-permission: console.ui.read
+      x-anas-scope: service
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        bootstrap: {authentication: none, transports: [plaintext, tls]}
+        enrollment: {authentication: none, transports: [tls]}
+        full: {authentication: none, transports: [tls]}
+      responses:
+        "200":
+          description: Embedded recovery stylesheet.
+          content:
+            text/css:
+              schema: {type: string}
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
   /healthz:
     get:
       operationId: getHealth
@@ -97,8 +292,56 @@ paths:
           $ref: "#/components/responses/RequestCanceledProblem"
         "500":
           $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
         "504":
           $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/system/ca:
+    get:
+      operationId: downloadInternalCA
+      summary: Download the validated public ANAS internal CA
+      description: |
+        Returns only the independently configured and TLS-manager-validated
+        `anas-internal-ca.crt`; no filesystem path or private material is
+        exposed. The CA remains available when the serving issuer is ACME.
+      tags: [Service]
+      security:
+        - {}
+        - localSessionCookie: []
+      x-anas-permission: system.ca.read
+      x-anas-scope: service
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        enrollment: {authentication: none, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "200":
+          description: The public internal trust anchor.
+          headers:
+            Content-Disposition:
+              required: true
+              schema:
+                type: string
+                const: 'attachment; filename="anas-internal-ca.crt"'
+          content:
+            application/pem-certificate-chain:
+              schema:
+                type: string
+                contentMediaType: application/pem-certificate-chain
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
   /api/v1/auth/csrf:
     get:
       operationId: issuePreAuthCSRF
@@ -138,6 +381,48 @@ paths:
           $ref: "#/components/responses/GetMethodNotAllowedProblem"
         "500":
           $ref: "#/components/responses/InternalProblem"
+  /api/v1/auth/session:
+    get:
+      operationId: refreshAuthSession
+      summary: Recover an authenticated browser session and rotate its CSRF token
+      description: |
+        Uses only the host-only HttpOnly bootstrap or local-owner session cookie.
+        The exact request origin must still match the durable session binding.
+        On success, atomically invalidates the previous SPA-visible CSRF value,
+        returns a replacement, and extends only the idle lifetime without
+        changing the absolute session expiry. The response is never cacheable.
+      tags: [Authentication]
+      security:
+        - bootstrapSessionCookie: []
+        - localSessionCookie: []
+      x-anas-permission: auth.session.refresh
+      x-anas-scope: service
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
+        enrollment: {authentication: bootstrap, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "200":
+          description: The existing authenticated session was recovered and its CSRF token was rotated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionRefreshResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
   /api/v1/auth/bootstrap/exchange:
     post:
       operationId: exchangeBootstrapToken
@@ -460,6 +745,116 @@ paths:
           $ref: "#/components/responses/InternalProblem"
         "503":
           $ref: "#/components/responses/ServiceUnavailableProblem"
+  /api/v1/auth/step-up:
+    post:
+      operationId: issueLocalStepUp
+      summary: Re-verify the local owner and issue a deployment step-up proof
+      description: |
+        Full-state direct-listener only. Re-verifies the current local-owner
+        password, resolves the registered workspace, and computes the current
+        deployment-plan state binding on the server. The returned 256-bit proof
+        expires within five minutes and is bound to the current session,
+        action, workspace, optional deployment ID, config validator, and plan
+        digest. Only its digest and binding are persisted. The password and raw
+        proof never enter audit or job records. Trusted-proxy identities cannot
+        use this route and must wait for the recent-auth assertion contract.
+      tags: [Authentication]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+      x-anas-permission: auth.step_up
+      x-anas-scope: service
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalStepUpRequest"
+      responses:
+        "200":
+          description: A short-lived, one-use, session- and state-bound step-up proof.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalStepUpResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/audit-events:
+    get:
+      operationId: listAuditEvents
+      summary: List durable audit events visible to the current owner
+      description: |
+        Returns retained events newest first from the verified audit store.
+        Service-wide events and events for currently registered workspaces are
+        visible to a full-state owner; events naming an unregistered workspace
+        are filtered before pagination. The opaque cursor continues after the
+        last event in the preceding page. Configuration attempt, authorized,
+        and terminal records remain separate evidence; a missing terminal is
+        never interpreted as success or failure, and `indeterminate` remains a
+        distinct recorded outcome.
+      tags: [Audit]
+      security:
+        - localSessionCookie: []
+      x-anas-permission: audit.list
+      x-anas-scope: service
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One authorization-filtered page of retained audit events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
   /api/v1/jobs:
     get:
       operationId: listJobs
@@ -475,7 +870,7 @@ paths:
         - localSessionCookie: []
       x-anas-permission: job.list
       x-anas-scope: workspace
-      x-anas-listeners: [direct]
+      x-anas-listeners: [direct, trusted_proxy]
       x-anas-state-access:
         bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
         enrollment: {authentication: bootstrap, transports: [plaintext, tls]}
@@ -524,7 +919,7 @@ paths:
         - localSessionCookie: []
       x-anas-permission: job.read
       x-anas-scope: workspace
-      x-anas-listeners: [direct]
+      x-anas-listeners: [direct, trusted_proxy]
       x-anas-state-access:
         bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
         enrollment: {authentication: bootstrap, transports: [plaintext, tls]}
@@ -583,7 +978,7 @@ paths:
         - localSessionCookie: []
       x-anas-permission: job.events.read
       x-anas-scope: workspace
-      x-anas-listeners: [direct]
+      x-anas-listeners: [direct, trusted_proxy]
       x-anas-state-access:
         bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
         enrollment: {authentication: bootstrap, transports: [plaintext, tls]}
@@ -617,6 +1012,350 @@ paths:
           $ref: "#/components/responses/EventGapProblem"
         "429":
           $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/plans:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    post:
+      operationId: planWorkspaceDeployment
+      summary: Compute and durably record a deployment plan
+      description: |
+        Computes against the registered workspace and its immutable Module
+        view, without changing the running environment. The succeeded plan job
+        and every lifecycle transition are durably audited before commit. The
+        response contains a 256-bit one-use confirmation proof; only its digest
+        and exact actor/source/transaction/workspace/config/plan binding are
+        persisted. Host paths and internal content digests are never returned.
+      tags: [Deployments]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - bootstrapSessionCookie: []
+          csrfHeader: []
+        - localSessionCookie: []
+          csrfHeader: []
+      x-anas-permission: deployment.plan
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeploymentPlanRequest"
+      responses:
+        "200":
+          description: A completed durable plan and short-lived one-use confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentPlanResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "428":
+          $ref: "#/components/responses/PreconditionRequiredProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/actions/apply:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    post:
+      operationId: applyWorkspaceDeployment
+      summary: Consume a plan confirmation and enqueue deployment apply
+      description: |
+        Bootstrap uses its transaction-bound plan confirmation. Full-state
+        direct sessions must additionally send the local step-up proof used to
+        obtain that plan confirmation. Step-up and confirmation consumption,
+        apply-job creation, and idempotency registration are one jobs.lock
+        transaction preceded by a durable audit intent. Raw proofs are never
+        persisted. An identical Idempotency-Key retry returns the original job
+        without consuming either proof again; a changed request or a second key
+        returns 409. Trusted-proxy full apply remains hidden.
+      tags: [Deployments]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - bootstrapSessionCookie: []
+          csrfHeader: []
+        - localSessionCookie: []
+          csrfHeader: []
+      x-anas-permission: deployment.apply
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeploymentApplyRequest"
+      responses:
+        "202":
+          description: The apply job was durably queued, or an identical existing job was returned.
+          headers:
+            Location:
+              description: Relative URL of the durable job resource.
+              required: true
+              schema:
+                type: string
+                pattern: "^/api/v1/jobs/[^/]+$"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentApplyResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "409":
+          $ref: "#/components/responses/ConflictProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "428":
+          $ref: "#/components/responses/PreconditionRequiredProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/config:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    get:
+      operationId: getWorkspaceConfig
+      summary: Read the normalized desired configuration and its field metadata
+      description: |
+        Returns a public projection of the current desired configuration. Raw
+        Secret Store values, `secrets`, sensitive defaults, and sensitive field
+        values are never returned. A sensitive field is represented only by its
+        `set` or `unset` state in the field metadata. When the configuration is
+        already managed, the response carries the strong ETag that a subsequent
+        PUT must copy byte-for-byte into If-Match. A first, unmanaged workspace
+        has no ETag. The response is never cacheable.
+      tags: [Configuration]
+      security:
+        - bootstrapSessionCookie: []
+        - localSessionCookie: []
+      x-anas-permission: config.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "200":
+          description: The normalized public configuration and schema projection.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            ETag:
+              $ref: "#/components/headers/ManagedConfigETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigSnapshotResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/ConfigMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+    put:
+      operationId: putWorkspaceConfig
+      summary: Atomically save a normalized desired configuration
+      description: |
+        Validates and saves desired state only; it does not plan, apply, or
+        otherwise change the running environment. An already managed
+        configuration requires exactly one strong If-Match value copied from
+        GET. The first managed write instead requires exactly
+        `If-None-Match: *`. Sending both header families, multiple values, or a
+        malformed entity tag is a 400. Omitting the required family or using
+        the family for the other lifecycle state is a 428. A weak If-Match,
+        wildcard If-Match, non-wildcard If-None-Match, stale validator, or a manual
+        edit to config.yml is a 412. The configuration file, Secret Store, and
+        managed state are committed as one recoverable transaction. Each actual
+        generation receives a fresh random opaque validator; its internal
+        content digest is never exposed. The
+        response is never cacheable.
+      tags: [Configuration]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/ConfigIfMatch"
+        - $ref: "#/components/parameters/ConfigIfNoneMatch"
+      security:
+        - bootstrapSessionCookie: []
+          csrfHeader: []
+        - localSessionCookie: []
+          csrfHeader: []
+      x-anas-permission: config.write
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigCandidate"
+      responses:
+        "200":
+          description: The new managed desired configuration; no apply was started.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+            ETag:
+              $ref: "#/components/headers/ManagedConfigETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigPutResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/ConfigMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "428":
+          $ref: "#/components/responses/PreconditionRequiredProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ConfigPutServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/config/validate:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    post:
+      operationId: validateWorkspaceConfig
+      summary: Validate a configuration draft without saving it
+      description: |
+        Applies the same schema, resolver, sensitive-field, and guarded-effect
+        rules as PUT and returns the normalized public candidate plus its change
+        plan. It returns the current base validator but deliberately does not
+        mint a candidate validator before commit. It does not write
+        configuration, Secret Store, managed state, jobs, or the running
+        environment. The response is never cacheable.
+      tags: [Configuration]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - bootstrapSessionCookie: []
+          csrfHeader: []
+        - localSessionCookie: []
+          csrfHeader: []
+      x-anas-permission: config.validate
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigCandidate"
+      responses:
+        "200":
+          description: The normalized candidate and change plan; nothing was written.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigValidationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
         "500":
           $ref: "#/components/responses/InternalProblem"
         "503":
@@ -915,6 +1654,34 @@ components:
         same_site: Strict
         path: /
         secure: always
+    proxySessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-anas_proxy_session
+      description: |
+        Host-only, Secure, HttpOnly and SameSite=Strict session bound to the
+        stable issuer+subject received on the mTLS trusted-proxy listener.
+      x-anas-cookie-attributes:
+        host_only: true
+        http_only: true
+        same_site: Strict
+        path: /
+        secure: always
+  headers:
+    CacheControlNoStore:
+      description: This representation contains administrative state and must not be stored by browsers or intermediaries.
+      schema:
+        type: string
+        const: no-store
+    ManagedConfigETag:
+      description: |
+        Strong opaque 256-bit random generation validator. It is absent from GET
+        only while the workspace has no managed configuration, and is always
+        present after a successful PUT. Weak validators are never emitted, and
+        the internal config.yml content digest is never exposed.
+      schema:
+        type: string
+        pattern: '^"cfgv-[0-9a-f]{64}"$'
   parameters:
     Origin:
       name: Origin
@@ -999,6 +1766,37 @@ components:
         type: string
         minLength: 1
         maxLength: 512
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Opaque caller-selected key scoped to principal, method, canonical path, and workspace.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
+        pattern: "^[!-~]+$"
+    ConfigIfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: |
+        Required only when replacing an existing managed configuration. Supply
+        exactly one strong ETag returned by GET. Lists, weak tags, and `*` are
+        rejected; do not send this header together with If-None-Match.
+      schema:
+        type: string
+        pattern: '^"cfgv-[0-9a-f]{64}"$'
+    ConfigIfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: |
+        Required only for the first managed configuration and must be exactly
+        `*`. Do not send this header together with If-Match.
+      schema:
+        type: string
+        const: "*"
   responses:
     BadRequestProblem:
       description: The Host or Origin is invalid, a path or body value is invalid, or the query string is malformed or unsupported.
@@ -1031,7 +1829,13 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     PreconditionProblem:
-      description: Deployment metadata exists but is invalid or unreadable.
+      description: A supplied entity validator is not strong and current, or persisted state fails its required integrity precondition.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PreconditionRequiredProblem:
+      description: The condition header required for the current managed-config lifecycle state is missing or the wrong header family was used.
       content:
         application/problem+json:
           schema:
@@ -1060,8 +1864,20 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
+    ConfigMethodNotAllowedProblem:
+      description: The configuration resource only accepts GET or PUT in the current state and transport.
+      headers:
+        Allow:
+          required: true
+          schema:
+            type: string
+            const: GET, PUT
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
     PayloadTooLargeProblem:
-      description: The authentication request body exceeds 4096 bytes.
+      description: The request body exceeds the route-specific bounded input limit.
       content:
         application/problem+json:
           schema:
@@ -1121,6 +1937,18 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
+    ConfigPutServiceUnavailableProblem:
+      description: |
+        Configuration persistence or auditing is unavailable. A problem whose
+        `code` is `config_recovery_required` has an indeterminate commit result:
+        the redo WAL may already be durable and a later supported reader may
+        finish rolling it forward. The client must GET the configuration and
+        inspect its current ETag/state before deciding whether to retry. Other
+        503 codes describe a write that was not published.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
     DeadlineProblem:
       description: The request deadline expired before the query completed.
       content:
@@ -1131,9 +1959,232 @@ components:
     APIVersion:
       type: string
       const: anas.dev/api/v1
+    EmptyObject:
+      type: object
+      additionalProperties: false
+    DeploymentPlanRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        step_up_proof:
+          type: string
+          pattern: "^sup_[A-Za-z0-9_-]{43}$"
+          writeOnly: true
+          description: Required in full state and forbidden during bootstrap.
+        deployment_id:
+          type: string
+          maxLength: 255
+          description: Optional existing ready deployment target bound into the full-state step-up proof.
+    PlanDigest:
+      type: string
+      description: Stable SHA-256 digest of the complete typed plan and opaque config validator.
+      pattern: "^[0-9a-f]{64}$"
+    DeploymentPlanResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, job, plan, confirmation]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+          minLength: 1
+        job:
+          $ref: "#/components/schemas/JobSummary"
+        plan:
+          $ref: "#/components/schemas/DeploymentPlan"
+        confirmation:
+          $ref: "#/components/schemas/DeploymentConfirmation"
+    DeploymentPlan:
+      type: object
+      additionalProperties: false
+      required:
+        - config_validator
+        - digest
+        - modules
+        - iam
+        - module_plans
+        - capability_bindings
+        - dns_platforms
+        - dns_credential_compatibility
+        - dynamic_dns
+        - module_lifecycles
+      properties:
+        config_validator:
+          $ref: "#/components/schemas/ConfigValidator"
+        digest:
+          $ref: "#/components/schemas/PlanDigest"
+        modules:
+          type: array
+          items:
+            type: string
+        iam:
+          $ref: "#/components/schemas/DeploymentPlanIAM"
+        module_plans:
+          $ref: "#/components/schemas/NestedStringMap"
+        capability_bindings:
+          $ref: "#/components/schemas/NestedStringMap"
+        dns_platforms:
+          $ref: "#/components/schemas/StringMap"
+        dns_credential_compatibility:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeploymentDNSCredentialCompatibility"
+        dynamic_dns:
+          $ref: "#/components/schemas/DeploymentDynamicDNS"
+        module_lifecycles:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeploymentModuleLifecycle"
+    DeploymentPlanIAM:
+      type: object
+      additionalProperties: false
+      required: [provider, consumers]
+      properties:
+        provider:
+          type: [string, "null"]
+        consumers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeploymentPlanIAMConsumer"
+    DeploymentPlanIAMConsumer:
+      type: object
+      additionalProperties: false
+      required: [module, interface]
+      properties:
+        module:
+          type: string
+        interface:
+          type: string
+    DeploymentDNSCredentialCompatibility:
+      type: object
+      additionalProperties: false
+      required: [left, right, platform, compatibility]
+      properties:
+        left:
+          type: string
+        right:
+          type: string
+        platform:
+          type: string
+        compatibility:
+          type: string
+    DeploymentDynamicDNS:
+      type: object
+      additionalProperties: false
+      required: [provider, self_managed, automatic]
+      properties:
+        provider:
+          type: [string, "null"]
+        self_managed:
+          type: array
+          items:
+            type: string
+        automatic:
+          type: boolean
+    DeploymentModuleLifecycle:
+      type: object
+      additionalProperties: false
+      required: [module, status]
+      properties:
+        module:
+          type: string
+        status:
+          type: string
+    StringMap:
+      type: object
+      additionalProperties:
+        type: string
+    NestedStringMap:
+      type: object
+      additionalProperties:
+        $ref: "#/components/schemas/StringMap"
+    DeploymentConfirmation:
+      type: object
+      additionalProperties: false
+      required: [token, expires_at, action, plan_job_id, config_validator, plan_digest]
+      properties:
+        token:
+          type: string
+          pattern: "^cnf_[0-9a-f]{64}$"
+          description: One-use 256-bit proof returned only here and never persisted in plaintext.
+        expires_at:
+          type: string
+          format: date-time
+        action:
+          type: string
+          const: deployment.apply
+        plan_job_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        config_validator:
+          $ref: "#/components/schemas/ConfigValidator"
+        plan_digest:
+          $ref: "#/components/schemas/PlanDigest"
+    DeploymentApplyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - plan_job_id
+        - confirmation_token
+        - expected_config_validator
+        - expected_plan_digest
+        - allow_risky
+      properties:
+        plan_job_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        confirmation_token:
+          type: string
+          pattern: "^cnf_[0-9a-f]{64}$"
+          writeOnly: true
+        step_up_proof:
+          type: string
+          pattern: "^sup_[A-Za-z0-9_-]{43}$"
+          writeOnly: true
+          description: Required for full-state direct apply and forbidden during bootstrap.
+        expected_config_validator:
+          $ref: "#/components/schemas/ConfigValidator"
+        expected_plan_digest:
+          $ref: "#/components/schemas/PlanDigest"
+        deployment_id:
+          type: string
+          maxLength: 255
+        build:
+          type: boolean
+          default: false
+        update_lock:
+          type: boolean
+          default: false
+        allow_risky:
+          type: boolean
+          description: Explicit even when false; omission is rejected.
+        snapshot:
+          type: boolean
+          default: false
+        no_snapshot:
+          type: boolean
+          default: false
+    DeploymentApplyResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, job, existing]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        job:
+          $ref: "#/components/schemas/JobSummary"
+        existing:
+          type: boolean
     ControlPlaneState:
       type: string
       enum: [bootstrap, enrollment, full]
+    ConsoleRuntimeState:
+      type: string
+      enum: [m0, bootstrap, enrollment, full]
+      description: Public capability state used by the console shell to select the safe entry flow.
     BootstrapExchangeRequest:
       type: object
       additionalProperties: false
@@ -1174,6 +2225,51 @@ components:
           minLength: 1
           format: password
           writeOnly: true
+    LocalStepUpRequest:
+      type: object
+      additionalProperties: false
+      required: [action, workspace_id]
+      properties:
+        password:
+          type: string
+          minLength: 1
+          format: password
+          writeOnly: true
+          description: Required only for the direct local-owner source; forbidden on the trusted-proxy source.
+        action:
+          type: string
+          const: deployment.apply
+        workspace_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        deployment_id:
+          type: string
+          maxLength: 255
+    LocalStepUpResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, proof, expires_at, action, workspace_id]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        proof:
+          type: string
+          pattern: "^sup_[A-Za-z0-9_-]{43}$"
+          description: Returned once; only its SHA-256 digest is persisted.
+        expires_at:
+          type: string
+          format: date-time
+        action:
+          type: string
+          const: deployment.apply
+        workspace_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        deployment_id:
+          type: string
+          maxLength: 255
     CSRFResponse:
       type: object
       additionalProperties: false
@@ -1262,6 +2358,10 @@ components:
         state:
           type: string
           const: full
+    SessionRefreshResponse:
+      oneOf:
+        - $ref: "#/components/schemas/BootstrapSessionResponse"
+        - $ref: "#/components/schemas/LocalSessionResponse"
     HealthResponse:
       type: object
       additionalProperties: false
@@ -1273,7 +2373,7 @@ components:
     SystemResponse:
       type: object
       additionalProperties: false
-      required: [api_version, build, capabilities, workspace_ids]
+      required: [api_version, build, capabilities, workspace_ids, certificate_issuer, console_state, listener, direct_recovery_urls, proxy_url]
       properties:
         api_version:
           $ref: "#/components/schemas/APIVersion"
@@ -1286,6 +2386,29 @@ components:
           items:
             type: string
           uniqueItems: true
+        certificate_issuer:
+          type: string
+          enum: [none, temporary, internal, acme]
+          description: Current validated serving-certificate source; `internal` is a supported trusted mode, not an error state.
+        console_state:
+          $ref: "#/components/schemas/ConsoleRuntimeState"
+        listener:
+          type: string
+          enum: [direct, trusted_proxy]
+          description: Physical listener that served this representation; the SPA uses it to avoid publishing local-login UI on the proxy entry.
+        direct_recovery_urls:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            format: uri
+            pattern: "^https?://"
+          description: Server-derived direct-listener origins shown as plain recovery references, never as a local-login fallback link on the trusted-proxy origin.
+        proxy_url:
+          type: [string, "null"]
+          format: uri
+          pattern: "^https://"
+          description: Configured Traefik/OIDC public origin, or null when the trusted-proxy listener is disabled.
     BuildInfo:
       type: object
       additionalProperties: false
@@ -1305,7 +2428,310 @@ components:
       properties:
         read_only:
           type: boolean
-          const: true
+          description: False when the configured service exposes a supported mutating application service such as managed configuration writes.
+    ConfigValidator:
+      type: string
+      description: Opaque 256-bit random managed-config generation validator without ETag quoting.
+      pattern: "^cfgv-[0-9a-f]{64}$"
+    ConfigPublicDocument:
+      type: object
+      description: |
+        JSON-compatible normalized desired state. The server accepts and emits
+        only registered structural and schema-addressed fields. The raw
+        `secrets` mapping and every effective sensitive value are excluded.
+      not:
+        required: [secrets]
+      additionalProperties: true
+    ConfigSensitiveUnchanged:
+      type: object
+      additionalProperties: false
+      required: [operation]
+      properties:
+        operation:
+          type: string
+          const: unchanged
+    ConfigSensitiveUnset:
+      type: object
+      additionalProperties: false
+      required: [operation]
+      properties:
+        operation:
+          type: string
+          const: unset
+    ConfigSensitiveSet:
+      type: object
+      additionalProperties: false
+      required: [operation, value]
+      properties:
+        operation:
+          type: string
+          const: set
+        value:
+          type: string
+          writeOnly: true
+          description: The replacement secret; accepted only in a request and never echoed.
+    ConfigSensitiveMutation:
+      description: Explicit, non-ambiguous operation for one schema-declared sensitive field.
+      oneOf:
+        - $ref: "#/components/schemas/ConfigSensitiveUnchanged"
+        - $ref: "#/components/schemas/ConfigSensitiveSet"
+        - $ref: "#/components/schemas/ConfigSensitiveUnset"
+    ConfigCandidate:
+      type: object
+      additionalProperties: false
+      required: [config]
+      properties:
+        config:
+          $ref: "#/components/schemas/ConfigPublicDocument"
+        sensitive:
+          type: object
+          description: |
+            Map keyed only by schema-declared sensitive field path. Omission of
+            a path is treated as unchanged; supplied values must use exactly one
+            tagged operation.
+          propertyNames:
+            type: string
+            minLength: 1
+            maxLength: 512
+          additionalProperties:
+            $ref: "#/components/schemas/ConfigSensitiveMutation"
+    ConfigConstraints:
+      type: object
+      additionalProperties: false
+      properties:
+        minimum:
+          type: integer
+        maximum:
+          type: integer
+        min_length:
+          type: integer
+          minimum: 0
+        max_length:
+          type: integer
+          minimum: 0
+        pattern:
+          type: string
+        format:
+          type: string
+          enum: [iana_timezone, language_tag, locale, ipv4, dns_name]
+    ConfigField:
+      type: object
+      additionalProperties: false
+      allOf:
+        - if:
+            required: [sensitive]
+            properties:
+              sensitive:
+                const: true
+          then:
+            required: [sensitive_state]
+            not:
+              required: [default]
+      required:
+        - path
+        - document_path
+        - module
+        - parameter
+        - type
+        - allowed_values
+        - has_default
+        - default_source
+        - input_required
+        - must_resolve
+        - constraints
+        - sensitive
+        - editable
+        - effect
+      properties:
+        path:
+          type: string
+          minLength: 1
+        document_path:
+          type: array
+          minItems: 1
+          description: Canonical path of this field inside the public config document.
+          items:
+            type: string
+            minLength: 1
+        module:
+          type: string
+          minLength: 1
+        parameter:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum: [unknown, string, bool, int, enum]
+        allowed_values:
+          type: array
+          items:
+            type: string
+          uniqueItems: true
+        default:
+          type: string
+          description: Omitted for sensitive fields and when no public literal default is available.
+        has_default:
+          type: boolean
+        default_source:
+          type: string
+          enum: [none, static, host, runtime, inherited, generated]
+        input_required:
+          type: boolean
+        must_resolve:
+          type: boolean
+        constraints:
+          $ref: "#/components/schemas/ConfigConstraints"
+        sensitive:
+          type: boolean
+        sensitive_state:
+          type: string
+          enum: [set, unset]
+          description: Present only for an effective sensitive field; never contains its value.
+        editable:
+          type: boolean
+          description: False for guarded effects and effective sensitive aliases that cannot be safely round-tripped.
+        edit_command:
+          type: string
+          description: Safe operator guidance, not executable argv supplied by the client.
+        effect:
+          type: string
+          minLength: 1
+        apply:
+          type: string
+        description:
+          type: string
+    ConfigChange:
+      type: object
+      additionalProperties: false
+      required: [path, change, effect, sensitive, editable]
+      properties:
+        path:
+          type: string
+          minLength: 1
+        change:
+          type: string
+          enum: [add, change, remove]
+        effect:
+          type: string
+          minLength: 1
+        apply:
+          type: string
+        sensitive:
+          type: boolean
+        editable:
+          type: boolean
+    ConfigSnapshotResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, managed, config, available_modules, fields]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+          minLength: 1
+        managed:
+          type: boolean
+        config:
+          $ref: "#/components/schemas/ConfigPublicDocument"
+        available_modules:
+          type: array
+          description: Canonically ordered registry Module names available for selection, including Modules with no configuration fields.
+          items:
+            type: string
+            minLength: 1
+          uniqueItems: true
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigField"
+    ConfigValidationResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, config, changes]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+          minLength: 1
+        base_validator:
+          $ref: "#/components/schemas/ConfigValidator"
+        config:
+          $ref: "#/components/schemas/ConfigPublicDocument"
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigChange"
+    ConfigPutResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, validator, config, available_modules, fields, changes]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+          minLength: 1
+        previous_validator:
+          $ref: "#/components/schemas/ConfigValidator"
+        validator:
+          $ref: "#/components/schemas/ConfigValidator"
+        config:
+          $ref: "#/components/schemas/ConfigPublicDocument"
+        available_modules:
+          type: array
+          description: Canonically ordered registry Module names available for selection.
+          items:
+            type: string
+            minLength: 1
+          uniqueItems: true
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigField"
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigChange"
+    AuditEventListResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, items, next_cursor]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        next_cursor:
+          $ref: "#/components/schemas/NullableString"
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [sequence, timestamp, type]
+      properties:
+        sequence:
+          type: integer
+          format: int64
+          minimum: 1
+        timestamp:
+          type: string
+          format: date-time
+        type:
+          type: string
+          minLength: 1
+        actor:
+          type: string
+        workspace_id:
+          type: string
+        outcome:
+          type: string
+        details:
+          type: object
+          description: Value-safe details after the audit writer's mandatory credential redaction.
+          additionalProperties: true
     JobListResponse:
       type: object
       additionalProperties: false
@@ -1433,6 +2859,21 @@ components:
           minLength: 1
         message:
           type: string
+        detail:
+          $ref: "#/components/schemas/JobErrorDetail"
+    JobErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [blocked]
+      properties:
+        blocked:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items:
+            type: string
+            minLength: 1
+            maxLength: 4096
     JobEvent:
       type: object
       additionalProperties: false

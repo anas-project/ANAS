@@ -21,11 +21,11 @@
 | [meshcentral](#meshcentral) | 1.2.4-r8 | container | supported | browser | not_consumed | not_consumed | 30 |
 | [netbird](#netbird) | 0.76.1-r5 | partial | fixed | fixed | not_consumed | not_consumed | 1 |
 | [nextcloud](#nextcloud) | 34.0.2-r9 | partial | supported | browser | fallback | fallback | 58 |
-| [oauth2_proxy](#oauth2_proxy) | 7.15.3-r4 | container | fixed | fixed | not_consumed | not_consumed | 1 |
+| [oauth2_proxy](#oauth2_proxy) | 7.15.3-r5 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [postgres](#postgres) | 18.4.0-r4 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [samba_dc](#samba_dc) | 4.23.6-r10 | system | not_applicable | none | not_applicable | not_applicable | 0 |
 | [samba_fs](#samba_fs) | 4.23.6-r6 | container | not_applicable | client | not_applicable | not_applicable | 0 |
-| [traefik](#traefik) | 3.7.10-r5 | container | fixed | fixed | not_consumed | not_consumed | 1 |
+| [traefik](#traefik) | 3.7.10-r6 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [versitygw](#versitygw) | 1.7.0-r3 | container | not_applicable | none | not_consumed | not_consumed | 0 |
 | [vikunja](#vikunja) | 2.4.0-r4 | configured | supported | application | fallback | not_consumed | 32 |
 
@@ -191,7 +191,7 @@
 
 ## oauth2_proxy
 
-- **Version / 版本：** `7.15.3-r4`; reviewed 2026-08-13
+- **Version / 版本：** `7.15.3-r5`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — oauth2-proxy receives TZ for process and log timestamps.
 - **Language / 语言：** `fixed`, `fixed` — oauth2-proxy built-in error and sign-in pages
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -231,7 +231,7 @@
 
 ## traefik
 
-- **Version / 版本：** `3.7.10-r5`; reviewed 2026-08-13
+- **Version / 版本：** `3.7.10-r6`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — Traefik receives TZ for process and access-log timestamps.
 - **Language / 语言：** `fixed`, `fixed` — Traefik Proxy built-in Dashboard
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`

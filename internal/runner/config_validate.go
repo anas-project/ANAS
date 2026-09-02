@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -364,11 +365,19 @@ func resolveLoadedConfigSchema(cfg *config.File, reg map[string]Module, lifecycl
 // avoids a redundant filesystem admission check without running hooks or any
 // lifecycle operation.
 func validateResolvedInputRequiredEnv(cfg *config.File, reg map[string]Module, values map[string]string, lock *moduleLock, sourceSensitive map[string]bool, privateFilterValues ...map[string]string) error {
-	_, err := resolvedInputValidationApp(cfg, reg, values, lock, sourceSensitive, true, privateFilterValues...)
+	return validateResolvedInputRequiredEnvContext(context.Background(), cfg, reg, values, lock, sourceSensitive, privateFilterValues...)
+}
+
+func validateResolvedInputRequiredEnvContext(ctx context.Context, cfg *config.File, reg map[string]Module, values map[string]string, lock *moduleLock, sourceSensitive map[string]bool, privateFilterValues ...map[string]string) error {
+	_, err := resolvedInputValidationAppContext(ctx, cfg, reg, values, lock, sourceSensitive, true, privateFilterValues...)
 	return err
 }
 
 func resolvedInputValidationApp(cfg *config.File, reg map[string]Module, values map[string]string, lock *moduleLock, sourceSensitive map[string]bool, allowLockExpansion bool, privateFilterValues ...map[string]string) (*app, error) {
+	return resolvedInputValidationAppContext(context.Background(), cfg, reg, values, lock, sourceSensitive, allowLockExpansion, privateFilterValues...)
+}
+
+func resolvedInputValidationAppContext(ctx context.Context, cfg *config.File, reg map[string]Module, values map[string]string, lock *moduleLock, sourceSensitive map[string]bool, allowLockExpansion bool, privateFilterValues ...map[string]string) (*app, error) {
 	_, owners := configBaseEnvWithRegistry(cfg, reg)
 	filterStore := &secretStore{values: map[string]string{}}
 	for _, source := range privateFilterValues {
@@ -378,6 +387,7 @@ func resolvedInputValidationApp(cfg *config.File, reg map[string]Module, values 
 	}
 	resolver := &app{
 		cfg: cfg, reg: reg, env: values, envOwner: owners, lock: lock,
+		commandContext:               ctx,
 		secrets:                      filterStore,
 		resolvedBindings:             map[string]map[string]string{},
 		registryOnlyResolution:       true,

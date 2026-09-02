@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // fakeBtrfs makes the snapshot bookkeeping testable on whatever filesystem the
@@ -208,6 +210,14 @@ func TestRestoreRewindsDataAndLeavesAWayBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	snapshotStateBody, err := os.ReadFile(snapshotMetaEntry(snapshotRoot(workspace, meta.ID), snapshotMetaConfigStateName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshotState managedConfigState
+	if err := yaml.Unmarshal(snapshotStateBody, &snapshotState); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dataDir(workspace), "marker"), []byte("after"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -234,6 +244,17 @@ func TestRestoreRewindsDataAndLeavesAWayBack(t *testing.T) {
 	got, err = os.ReadFile(workspaceConfigPath(workspace))
 	if err != nil || string(got) != "modules:\n  core: {}\n" {
 		t.Fatalf("config = %q, %v", got, err)
+	}
+	restoredStateBody, err := os.ReadFile(managedConfigStatePath(stateDir(workspace)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restoredState managedConfigState
+	if err := yaml.Unmarshal(restoredStateBody, &restoredState); err != nil {
+		t.Fatal(err)
+	}
+	if !validManagedConfigValidator(restoredState.Validator) || restoredState.Validator == snapshotState.Validator {
+		t.Fatalf("restore did not rotate config validator: snapshot=%q restored=%q", snapshotState.Validator, restoredState.Validator)
 	}
 	// The restore itself has to be undoable.
 	if outcome.PreRestoreSnapshot == "" {

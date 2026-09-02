@@ -60,13 +60,20 @@ func (sink AuthSink) Record(ctx context.Context, event consoleauth.AuditEvent) e
 		return audit.ErrUnavailable
 	}
 	details := map[string]any{
-		"reason":           event.Reason,
-		"transaction_id":   event.TransactionID,
-		"origin":           event.Origin,
-		"target_origin":    event.TargetOrigin,
-		"state":            string(event.State),
-		"replaced_token":   event.ReplacedToken,
-		"revoked_sessions": event.RevokedSessions,
+		"reason":            event.Reason,
+		"transaction_id":    event.TransactionID,
+		"origin":            event.Origin,
+		"target_origin":     event.TargetOrigin,
+		"state":             string(event.State),
+		"replaced_token":    event.ReplacedToken,
+		"revoked_sessions":  event.RevokedSessions,
+		"authorized_action": event.AuthorizedAction,
+		"workspace_id":      event.WorkspaceID,
+		"target_id":         event.TargetID,
+		"identity_issuer":   event.IdentityIssuer,
+		"identity_subject":  event.IdentitySubject,
+		"semantic_role":     event.SemanticRole,
+		"directory_group":   event.DirectoryGroup,
 	}
 	_, err := sink.Writer.AppendContext(ctx, audit.Event{
 		Timestamp: event.OccurredAt,

@@ -12,10 +12,15 @@ type healthResponse struct {
 }
 
 type systemResponse struct {
-	APIVersion   string             `json:"api_version"`
-	Build        systemBuild        `json:"build"`
-	Capabilities systemCapabilities `json:"capabilities"`
-	WorkspaceIDs []string           `json:"workspace_ids"`
+	APIVersion         string             `json:"api_version"`
+	Build              systemBuild        `json:"build"`
+	Capabilities       systemCapabilities `json:"capabilities"`
+	WorkspaceIDs       []string           `json:"workspace_ids"`
+	CertificateIssuer  CertificateIssuer  `json:"certificate_issuer"`
+	ConsoleState       ConsoleState       `json:"console_state"`
+	Listener           ListenerIdentity   `json:"listener"`
+	DirectRecoveryURLs []string           `json:"direct_recovery_urls"`
+	ProxyURL           *string            `json:"proxy_url"`
 }
 
 type systemBuild struct {

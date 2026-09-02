@@ -978,29 +978,38 @@ func normalizeRequiredCapabilities(module string, in []manifestRequiredCapabilit
 // A non-boolean parameter would need a truthiness rule, and every truthiness
 // rule turns some legitimate value into an accidental false for the same silent
 // consequence.
-func normalizeCapabilityCondition(module, capability, declared string, types map[string]ParamType) (string, error) {
+// normalizeEnabledBy validates a conditional-dependency switch. It is shared by
+// requires_capabilities, contract dependencies and resource requirements
+// because the rule is the same in all three: the switch must be one of this
+// module's own declared bool parameters, so a condition can never be answered
+// by a global, an environment key, or another module.
+func normalizeEnabledBy(module, field, subject, declared string, types map[string]ParamType) (string, error) {
 	parameter := strings.ToLower(strings.TrimSpace(declared))
 	if parameter == "" {
 		return "", nil
 	}
 	if strings.HasPrefix(parameter, "global.") || isEnvKey(declared) {
-		return "", fmt.Errorf("module %q requires_capabilities %q enabled_by %q must name a parameter of this module, not a global or environment key",
-			module, capability, declared)
+		return "", fmt.Errorf("module %q %s %q enabled_by %q must name a parameter of this module, not a global or environment key",
+			module, field, subject, declared)
 	}
 	if !configParameterNamePattern.MatchString(parameter) {
-		return "", fmt.Errorf("module %q requires_capabilities %q enabled_by %q is not lower-snake-case",
-			module, capability, declared)
+		return "", fmt.Errorf("module %q %s %q enabled_by %q is not lower-snake-case",
+			module, field, subject, declared)
 	}
 	declaredType, ok := types[parameter]
 	if !ok {
-		return "", fmt.Errorf("module %q requires_capabilities %q enabled_by %q is not declared in config.types",
-			module, capability, parameter)
+		return "", fmt.Errorf("module %q %s %q enabled_by %q is not declared in config.types",
+			module, field, subject, parameter)
 	}
 	if strings.TrimSpace(declaredType.Kind) != "bool" {
-		return "", fmt.Errorf("module %q requires_capabilities %q enabled_by %q must be a bool parameter",
-			module, capability, parameter)
+		return "", fmt.Errorf("module %q %s %q enabled_by %q must be a bool parameter",
+			module, field, subject, parameter)
 	}
 	return parameter, nil
+}
+
+func normalizeCapabilityCondition(module, capability, declared string, types map[string]ParamType) (string, error) {
+	return normalizeEnabledBy(module, "requires_capabilities", capability, declared, types)
 }
 
 // normalizeCapabilityOrdering closes the vocabulary to two values so a typo can

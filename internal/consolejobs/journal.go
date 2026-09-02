@@ -3,6 +3,8 @@ package consolejobs
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,6 +40,12 @@ const (
 	recordJobUpdated       recordKind = "job_updated"
 	recordEventAdded       recordKind = "event_added"
 	recordEventsPruned     recordKind = "events_pruned"
+	recordSnapshotBegin    recordKind = "snapshot_begin"
+	recordJobSnapshot      recordKind = "job_state"
+	recordIdempotencyState recordKind = "idempotency_state"
+	recordEventCursor      recordKind = "event_cursor"
+	recordEventSnapshot    recordKind = "event_state"
+	recordSnapshotEnd      recordKind = "snapshot_end"
 )
 
 type journalRecord struct {
@@ -50,6 +58,8 @@ type journalRecord struct {
 	Idempotency   *persistedIdempotency `json:"idempotency,omitempty"`
 	Event         *Event                `json:"event,omitempty"`
 	Prune         *eventPrune           `json:"prune,omitempty"`
+	Cursor        *eventCursor          `json:"cursor,omitempty"`
+	Snapshot      *snapshotBoundary     `json:"snapshot,omitempty"`
 }
 
 type persistedIdempotency struct {
@@ -69,9 +79,43 @@ type eventPrune struct {
 	Reason  string `json:"reason"`
 }
 
+type eventCursor struct {
+	JobID         string `json:"job_id"`
+	PrunedThrough uint64 `json:"pruned_through"`
+	LatestEventID uint64 `json:"latest_event_id"`
+}
+
+// snapshotBoundary appears once at the beginning and once at the sealed end
+// of a compacted generation. Digest is empty in snapshot_begin and contains
+// the chained semantic digest in snapshot_end.
+type snapshotBoundary struct {
+	Generation       uint64 `json:"generation"`
+	SourceSequence   uint64 `json:"source_sequence"`
+	LastEventID      uint64 `json:"last_event_id"`
+	JobCount         uint64 `json:"job_count"`
+	IdempotencyCount uint64 `json:"idempotency_count"`
+	EventCount       uint64 `json:"event_count"`
+	Digest           string `json:"digest,omitempty"`
+}
+
+type snapshotProgress struct {
+	boundary            snapshotBoundary
+	jobCount            uint64
+	idempotencyCount    uint64
+	eventCount          uint64
+	lastRetainedEventID uint64
+	digest              [sha256.Size]byte
+	cursors             map[string]struct{}
+	idempotencyJobs     map[string]struct{}
+}
+
 type storeState struct {
 	initialized        bool
+	compacted          bool
+	hasObsoleteHistory bool
+	obsoleteRevision   uint64
 	storeID            string
+	generation         uint64
 	lastRecordSequence uint64
 	lastEventID        uint64
 	jobs               map[string]Job
@@ -79,6 +123,7 @@ type storeState struct {
 	events             map[string][]Event
 	prunedThrough      map[string]uint64
 	latestEventByJob   map[string]uint64
+	snapshot           *snapshotProgress
 }
 
 func newStoreState() *storeState {
@@ -94,7 +139,11 @@ func newStoreState() *storeState {
 func (state *storeState) clone() *storeState {
 	result := newStoreState()
 	result.initialized = state.initialized
+	result.compacted = state.compacted
+	result.hasObsoleteHistory = state.hasObsoleteHistory
+	result.obsoleteRevision = state.obsoleteRevision
 	result.storeID = state.storeID
+	result.generation = state.generation
 	result.lastRecordSequence = state.lastRecordSequence
 	result.lastEventID = state.lastEventID
 	for id, job := range state.jobs {
@@ -116,6 +165,18 @@ func (state *storeState) clone() *storeState {
 	for jobID, latest := range state.latestEventByJob {
 		result.latestEventByJob[jobID] = latest
 	}
+	if state.snapshot != nil {
+		progress := *state.snapshot
+		progress.cursors = make(map[string]struct{}, len(state.snapshot.cursors))
+		for jobID := range state.snapshot.cursors {
+			progress.cursors[jobID] = struct{}{}
+		}
+		progress.idempotencyJobs = make(map[string]struct{}, len(state.snapshot.idempotencyJobs))
+		for jobID := range state.snapshot.idempotencyJobs {
+			progress.idempotencyJobs[jobID] = struct{}{}
+		}
+		result.snapshot = &progress
+	}
 	return result
 }
 
@@ -125,6 +186,9 @@ func recoverJournal(file journalFile) (*storeState, error) {
 	}
 	state := newStoreState()
 	if _, err := applyJournalTail(file, state, 0); err != nil {
+		return nil, err
+	}
+	if err := state.validateRecovered(); err != nil {
 		return nil, err
 	}
 	return state, nil
@@ -168,6 +232,9 @@ func refreshJournal(file journalFile, state *storeState, snapshot journalSnapsho
 	if err != nil {
 		return nil, journalSnapshot{}, err
 	}
+	if err := fresh.validateRecovered(); err != nil {
+		return nil, journalSnapshot{}, err
+	}
 	info, err = file.Stat()
 	if err != nil {
 		return nil, journalSnapshot{}, fmt.Errorf("inspect refreshed journal: %w", err)
@@ -180,6 +247,16 @@ func refreshJournal(file journalFile, state *storeState, snapshot journalSnapsho
 		return nil, journalSnapshot{}, errors.New("journal changed during incremental refresh")
 	}
 	return fresh, refreshed, nil
+}
+
+func (state *storeState) validateRecovered() error {
+	if state.snapshot != nil {
+		return errors.New("journal has an incomplete compacted snapshot")
+	}
+	if state.lastRecordSequence != 0 && !state.initialized {
+		return errors.New("journal is missing its initialization record")
+	}
+	return nil
 }
 
 func recoverJournalWithSnapshot(file journalFile) (*storeState, journalSnapshot, error) {
@@ -316,6 +393,9 @@ func (state *storeState) apply(record journalRecord) error {
 	if record.RecordedAt.IsZero() {
 		return errors.New("recorded_at is required")
 	}
+	if state.snapshot != nil && !isSnapshotContinuation(record.Kind) {
+		return errors.New("ordinary journal record appeared before snapshot_end")
+	}
 	var err error
 	if record.Kind != recordStoreInitialized {
 		if !state.initialized {
@@ -336,6 +416,18 @@ func (state *storeState) apply(record journalRecord) error {
 		err = state.applyEvent(record)
 	case recordEventsPruned:
 		err = state.applyPrune(record)
+	case recordSnapshotBegin:
+		err = state.applySnapshotBegin(record)
+	case recordJobSnapshot:
+		err = state.applyJobSnapshot(record)
+	case recordIdempotencyState:
+		err = state.applyIdempotencySnapshot(record)
+	case recordEventCursor:
+		err = state.applyEventCursor(record)
+	case recordEventSnapshot:
+		err = state.applyEventSnapshot(record)
+	case recordSnapshotEnd:
+		err = state.applySnapshotEnd(record)
 	default:
 		err = fmt.Errorf("unknown record kind %q", record.Kind)
 	}
@@ -346,8 +438,21 @@ func (state *storeState) apply(record journalRecord) error {
 	return nil
 }
 
+func isSnapshotContinuation(kind recordKind) bool {
+	switch kind {
+	case recordJobSnapshot, recordIdempotencyState, recordEventCursor, recordEventSnapshot, recordSnapshotEnd:
+		return true
+	default:
+		return false
+	}
+}
+
+func hasSnapshotFields(record journalRecord) bool {
+	return record.Cursor != nil || record.Snapshot != nil
+}
+
 func (state *storeState) applyInitialized(record journalRecord) error {
-	if state.initialized || record.Sequence != 1 || record.Job != nil || record.Idempotency != nil || record.Event != nil || record.Prune != nil {
+	if state.initialized || record.Sequence != 1 || record.Job != nil || record.Idempotency != nil || record.Event != nil || record.Prune != nil || hasSnapshotFields(record) {
 		return errors.New("invalid or duplicate store_initialized record")
 	}
 	if !hexDigestPattern.MatchString(record.StoreID) {
@@ -359,7 +464,7 @@ func (state *storeState) applyInitialized(record journalRecord) error {
 }
 
 func (state *storeState) applyJobCreated(record journalRecord) error {
-	if record.Job == nil || record.Idempotency == nil || record.Event != nil || record.Prune != nil {
+	if record.Job == nil || record.Idempotency == nil || record.Event != nil || record.Prune != nil || hasSnapshotFields(record) {
 		return errors.New("job_created record has invalid fields")
 	}
 	job := cloneJob(*record.Job)
@@ -385,7 +490,7 @@ func (state *storeState) applyJobCreated(record journalRecord) error {
 }
 
 func (state *storeState) applyJobUpdated(record journalRecord) error {
-	if record.Job == nil || record.Idempotency != nil || record.Event != nil || record.Prune != nil {
+	if record.Job == nil || record.Idempotency != nil || record.Event != nil || record.Prune != nil || hasSnapshotFields(record) {
 		return errors.New("job_updated record has invalid fields")
 	}
 	next := cloneJob(*record.Job)
@@ -406,11 +511,15 @@ func (state *storeState) applyJobUpdated(record journalRecord) error {
 		return fmt.Errorf("job %s has invalid status update %s -> %s", next.ID, previous.Status, next.Status)
 	}
 	state.jobs[next.ID] = next
+	state.hasObsoleteHistory = true
+	if state.obsoleteRevision != ^uint64(0) {
+		state.obsoleteRevision++
+	}
 	return nil
 }
 
 func (state *storeState) applyEvent(record journalRecord) error {
-	if record.Event == nil || record.Job != nil || record.Idempotency != nil || record.Prune != nil {
+	if record.Event == nil || record.Job != nil || record.Idempotency != nil || record.Prune != nil || hasSnapshotFields(record) {
 		return errors.New("event_added record has invalid fields")
 	}
 	event := cloneEvent(*record.Event)
@@ -424,14 +533,8 @@ func (state *storeState) applyEvent(record journalRecord) error {
 	if event.ID == 0 || event.ID != state.lastEventID+1 {
 		return fmt.Errorf("event ID is %d, want %d", event.ID, state.lastEventID+1)
 	}
-	if event.Timestamp.IsZero() {
-		return errors.New("event timestamp is required")
-	}
-	if err := validateIdentifier("event kind", event.Kind, 128); err != nil {
+	if err := validatePersistedEvent(event); err != nil {
 		return err
-	}
-	if !payloadIsSanitized(event.Data) {
-		return errors.New("event data is not sanitized")
 	}
 	state.events[event.JobID] = append(state.events[event.JobID], event)
 	state.lastEventID = event.ID
@@ -440,7 +543,7 @@ func (state *storeState) applyEvent(record journalRecord) error {
 }
 
 func (state *storeState) applyPrune(record journalRecord) error {
-	if record.Prune == nil || record.Job != nil || record.Idempotency != nil || record.Event != nil {
+	if record.Prune == nil || record.Job != nil || record.Idempotency != nil || record.Event != nil || hasSnapshotFields(record) {
 		return errors.New("events_pruned record has invalid fields")
 	}
 	prune := *record.Prune
@@ -457,6 +560,241 @@ func (state *storeState) applyPrune(record journalRecord) error {
 	firstRetained := sort.Search(len(events), func(index int) bool { return events[index].ID > prune.Through })
 	state.events[prune.JobID] = append([]Event(nil), events[firstRetained:]...)
 	state.prunedThrough[prune.JobID] = prune.Through
+	state.hasObsoleteHistory = true
+	if state.obsoleteRevision != ^uint64(0) {
+		state.obsoleteRevision++
+	}
+	return nil
+}
+
+func (state *storeState) applySnapshotBegin(record journalRecord) error {
+	if record.Snapshot == nil || record.Job != nil || record.Idempotency != nil || record.Event != nil || record.Prune != nil || record.Cursor != nil {
+		return errors.New("snapshot_begin record has invalid fields")
+	}
+	if state.snapshot != nil || state.compacted || record.Sequence != 2 || len(state.jobs) != 0 || len(state.idempotency) != 0 || len(state.events) != 0 {
+		return errors.New("snapshot_begin must immediately follow store_initialized")
+	}
+	boundary := *record.Snapshot
+	if boundary.Generation == 0 || boundary.SourceSequence == 0 || boundary.Digest != "" {
+		return errors.New("snapshot_begin has invalid generation, source sequence, or digest")
+	}
+	progress := &snapshotProgress{
+		boundary:        boundary,
+		cursors:         make(map[string]struct{}),
+		idempotencyJobs: make(map[string]struct{}),
+	}
+	digest, err := advanceSnapshotDigest(progress.digest, record)
+	if err != nil {
+		return err
+	}
+	progress.digest = digest
+	state.snapshot = progress
+	return nil
+}
+
+func (state *storeState) applyJobSnapshot(record journalRecord) error {
+	if state.snapshot == nil || record.Job == nil || record.Idempotency != nil || record.Event != nil || record.Prune != nil || record.Cursor != nil || record.Snapshot != nil {
+		return errors.New("job_state record has invalid fields")
+	}
+	job := cloneJob(*record.Job)
+	if err := validatePersistedJob(job); err != nil {
+		return err
+	}
+	if _, exists := state.jobs[job.ID]; exists {
+		return fmt.Errorf("snapshot job %s already exists", job.ID)
+	}
+	if state.snapshot.jobCount >= state.snapshot.boundary.JobCount {
+		return errors.New("snapshot contains more jobs than declared")
+	}
+	digest, err := advanceSnapshotDigest(state.snapshot.digest, record)
+	if err != nil {
+		return err
+	}
+	state.jobs[job.ID] = job
+	state.snapshot.jobCount++
+	state.snapshot.digest = digest
+	return nil
+}
+
+func (state *storeState) applyIdempotencySnapshot(record journalRecord) error {
+	if state.snapshot == nil || record.Idempotency == nil || record.Job != nil || record.Event != nil || record.Prune != nil || record.Cursor != nil || record.Snapshot != nil {
+		return errors.New("idempotency_state record has invalid fields")
+	}
+	item := *record.Idempotency
+	job, exists := state.jobs[item.JobID]
+	if !exists {
+		return fmt.Errorf("snapshot idempotency references missing job %s", item.JobID)
+	}
+	if err := validatePersistedIdempotency(item, job); err != nil {
+		return err
+	}
+	if _, exists := state.idempotency[item.Identity]; exists {
+		return errors.New("snapshot idempotency identity already exists")
+	}
+	if _, exists := state.snapshot.idempotencyJobs[item.JobID]; exists {
+		return fmt.Errorf("snapshot job %s has multiple idempotency identities", item.JobID)
+	}
+	if state.snapshot.idempotencyCount >= state.snapshot.boundary.IdempotencyCount {
+		return errors.New("snapshot contains more idempotency records than declared")
+	}
+	digest, err := advanceSnapshotDigest(state.snapshot.digest, record)
+	if err != nil {
+		return err
+	}
+	state.idempotency[item.Identity] = item
+	state.snapshot.idempotencyJobs[item.JobID] = struct{}{}
+	state.snapshot.idempotencyCount++
+	state.snapshot.digest = digest
+	return nil
+}
+
+func (state *storeState) applyEventCursor(record journalRecord) error {
+	if state.snapshot == nil || record.Cursor == nil || record.Job != nil || record.Idempotency != nil || record.Event != nil || record.Prune != nil || record.Snapshot != nil {
+		return errors.New("event_cursor record has invalid fields")
+	}
+	cursor := *record.Cursor
+	if _, exists := state.jobs[cursor.JobID]; !exists {
+		return fmt.Errorf("snapshot cursor references missing job %s", cursor.JobID)
+	}
+	if _, exists := state.snapshot.cursors[cursor.JobID]; exists {
+		return fmt.Errorf("snapshot job %s has multiple event cursors", cursor.JobID)
+	}
+	if cursor.PrunedThrough > cursor.LatestEventID || cursor.LatestEventID > state.snapshot.boundary.LastEventID {
+		return fmt.Errorf("snapshot event cursor for job %s is invalid", cursor.JobID)
+	}
+	if cursor.LatestEventID == 0 && cursor.PrunedThrough != 0 {
+		return fmt.Errorf("snapshot empty event cursor for job %s has a prune watermark", cursor.JobID)
+	}
+	digest, err := advanceSnapshotDigest(state.snapshot.digest, record)
+	if err != nil {
+		return err
+	}
+	state.prunedThrough[cursor.JobID] = cursor.PrunedThrough
+	state.latestEventByJob[cursor.JobID] = cursor.LatestEventID
+	state.snapshot.cursors[cursor.JobID] = struct{}{}
+	state.snapshot.digest = digest
+	return nil
+}
+
+func (state *storeState) applyEventSnapshot(record journalRecord) error {
+	if state.snapshot == nil || record.Event == nil || record.Job != nil || record.Idempotency != nil || record.Prune != nil || record.Cursor != nil || record.Snapshot != nil {
+		return errors.New("event_state record has invalid fields")
+	}
+	event := cloneEvent(*record.Event)
+	if _, exists := state.jobs[event.JobID]; !exists {
+		return fmt.Errorf("snapshot event references missing job %s", event.JobID)
+	}
+	if _, exists := state.snapshot.cursors[event.JobID]; !exists {
+		return fmt.Errorf("snapshot event for job %s precedes its cursor", event.JobID)
+	}
+	if err := validatePersistedEvent(event); err != nil {
+		return err
+	}
+	if event.ID <= state.snapshot.lastRetainedEventID || event.ID > state.snapshot.boundary.LastEventID {
+		return fmt.Errorf("snapshot retained event ID %d is out of order or range", event.ID)
+	}
+	if event.ID <= state.prunedThrough[event.JobID] || event.ID > state.latestEventByJob[event.JobID] {
+		return fmt.Errorf("snapshot retained event ID %d is outside job %s cursor", event.ID, event.JobID)
+	}
+	if state.snapshot.eventCount >= state.snapshot.boundary.EventCount {
+		return errors.New("snapshot contains more events than declared")
+	}
+	digest, err := advanceSnapshotDigest(state.snapshot.digest, record)
+	if err != nil {
+		return err
+	}
+	state.events[event.JobID] = append(state.events[event.JobID], event)
+	state.snapshot.eventCount++
+	state.snapshot.lastRetainedEventID = event.ID
+	state.snapshot.digest = digest
+	return nil
+}
+
+func (state *storeState) applySnapshotEnd(record journalRecord) error {
+	if state.snapshot == nil || record.Snapshot == nil || record.Job != nil || record.Idempotency != nil || record.Event != nil || record.Prune != nil || record.Cursor != nil {
+		return errors.New("snapshot_end record has invalid fields")
+	}
+	completed := *record.Snapshot
+	started := state.snapshot.boundary
+	wantDigest := hex.EncodeToString(state.snapshot.digest[:])
+	if completed.Generation != started.Generation || completed.SourceSequence != started.SourceSequence ||
+		completed.LastEventID != started.LastEventID || completed.JobCount != started.JobCount ||
+		completed.IdempotencyCount != started.IdempotencyCount || completed.EventCount != started.EventCount ||
+		!hexDigestPattern.MatchString(completed.Digest) || completed.Digest != wantDigest {
+		return errors.New("snapshot_end does not match the sealed snapshot")
+	}
+	if state.snapshot.jobCount != started.JobCount || state.snapshot.idempotencyCount != started.IdempotencyCount || state.snapshot.eventCount != started.EventCount {
+		return errors.New("snapshot record counts do not match snapshot_begin")
+	}
+	if uint64(len(state.snapshot.cursors)) != started.JobCount || uint64(len(state.snapshot.idempotencyJobs)) != started.JobCount || started.IdempotencyCount != started.JobCount {
+		return errors.New("snapshot must contain one cursor and one idempotency identity per job")
+	}
+	var latestGlobal uint64
+	for jobID := range state.jobs {
+		latest := state.latestEventByJob[jobID]
+		if latest > latestGlobal {
+			latestGlobal = latest
+		}
+		events := state.events[jobID]
+		if len(events) == 0 {
+			if latest != 0 && state.prunedThrough[jobID] != latest {
+				return fmt.Errorf("snapshot job %s is missing its latest retained event", jobID)
+			}
+			continue
+		}
+		if events[len(events)-1].ID != latest {
+			return fmt.Errorf("snapshot job %s latest event does not match its cursor", jobID)
+		}
+	}
+	if latestGlobal != started.LastEventID {
+		return fmt.Errorf("snapshot global event watermark is %d, want %d", latestGlobal, started.LastEventID)
+	}
+	state.lastEventID = started.LastEventID
+	state.generation = started.Generation
+	state.compacted = true
+	state.hasObsoleteHistory = false
+	state.obsoleteRevision = 0
+	state.snapshot = nil
+	return nil
+}
+
+func advanceSnapshotDigest(current [sha256.Size]byte, record journalRecord) ([sha256.Size]byte, error) {
+	payload := struct {
+		Kind        recordKind            `json:"kind"`
+		Job         *Job                  `json:"job,omitempty"`
+		Idempotency *persistedIdempotency `json:"idempotency,omitempty"`
+		Event       *Event                `json:"event,omitempty"`
+		Cursor      *eventCursor          `json:"cursor,omitempty"`
+		Snapshot    *snapshotBoundary     `json:"snapshot,omitempty"`
+	}{
+		Kind: record.Kind, Job: record.Job, Idempotency: record.Idempotency,
+		Event: record.Event, Cursor: record.Cursor, Snapshot: record.Snapshot,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("encode snapshot digest input: %w", err)
+	}
+	hash := sha256.New()
+	_, _ = hash.Write(current[:])
+	_, _ = hash.Write(body)
+	var next [sha256.Size]byte
+	copy(next[:], hash.Sum(nil))
+	return next, nil
+}
+
+func validatePersistedEvent(event Event) error {
+	if event.ID == 0 || event.Timestamp.IsZero() {
+		return errors.New("event ID and timestamp are required")
+	}
+	if err := validateIdentifier("event job ID", event.JobID, 256); err != nil {
+		return err
+	}
+	if err := validateIdentifier("event kind", event.Kind, 128); err != nil {
+		return err
+	}
+	if !payloadIsSanitized(event.Data) {
+		return errors.New("event data is not sanitized")
+	}
 	return nil
 }
 

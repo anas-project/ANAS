@@ -3,6 +3,7 @@ package consoleauth
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // SetOwnerPassword replaces the independent local-owner Argon2id record and
@@ -28,6 +29,7 @@ func (store *Store) SetOwnerPassword(ctx context.Context, password string) error
 	revokedSessions := len(state.Sessions)
 	state.OwnerPasswordPHC = passwordPHC
 	state.Sessions = map[string]localSessionRecord{}
+	state.StepUps = map[string]localStepUpRecord{}
 	event := AuditEvent{
 		Action: AuditOwnerPasswordSet, Outcome: AuditSuccess, RevokedSessions: revokedSessions,
 	}
@@ -80,8 +82,10 @@ func (store *Store) LoginLocal(ctx context.Context, request LocalLoginRequest) (
 	for digest, session := range state.Sessions {
 		if !now.Before(session.ExpiresAt) || !now.Before(session.IdleExpiresAt) {
 			delete(state.Sessions, digest)
+			deleteLocalSessionStepUps(&state, digest)
 		}
 	}
+	pruneExpiredLocalStepUps(&state, now)
 	if len(state.Sessions) >= 1024 {
 		return LocalSessionCredential{}, store.failWithAudit(ctx, AuditEvent{Action: AuditLocalLogin, Reason: "session_capacity", Origin: origin}, ErrSessionUnauthorized)
 	}
@@ -150,6 +154,53 @@ func (store *Store) AuthenticateLocal(ctx context.Context, request LocalAuthenti
 	}, nil
 }
 
+// RefreshLocalSession atomically rotates the SPA-visible CSRF credential while
+// preserving the HttpOnly session token and absolute lifetime.
+func (store *Store) RefreshLocalSession(ctx context.Context, request LocalSessionRefreshRequest) (LocalSessionCredential, error) {
+	origin, err := NormalizeOrigin(request.Origin)
+	if err != nil {
+		return LocalSessionCredential{}, ErrOriginMismatch
+	}
+	if request.SessionToken == "" {
+		return LocalSessionCredential{}, ErrSessionUnauthorized
+	}
+	csrfToken, err := store.newCredential()
+	if err != nil {
+		return LocalSessionCredential{}, err
+	}
+	unlock, err := store.lock(ctx)
+	if err != nil {
+		return LocalSessionCredential{}, err
+	}
+	defer unlock()
+	state, err := store.loadLocalState()
+	if err != nil {
+		return LocalSessionCredential{}, err
+	}
+	digest := credentialDigest(request.SessionToken)
+	record, exists := state.Sessions[digest]
+	if !exists || !digestMatches(digest, request.SessionToken) {
+		return LocalSessionCredential{}, ErrSessionUnauthorized
+	}
+	now := store.currentTime()
+	if !now.Before(record.ExpiresAt) || !now.Before(record.IdleExpiresAt) {
+		return LocalSessionCredential{}, ErrCredentialExpired
+	}
+	if record.Origin != origin {
+		return LocalSessionCredential{}, ErrOriginMismatch
+	}
+	record.CSRFDigest = credentialDigest(csrfToken)
+	record.IdleExpiresAt = nextIdleExpiry(now, record.ExpiresAt, LocalSessionIdleTTL)
+	state.Sessions[digest] = record
+	if err := store.writeLocalState(state); err != nil {
+		return LocalSessionCredential{}, fmt.Errorf("persist local session refresh: %w", err)
+	}
+	return LocalSessionCredential{
+		CSRFToken: csrfToken, Origin: record.Origin, CreatedAt: record.CreatedAt,
+		ExpiresAt: record.ExpiresAt, IdleExpiresAt: record.IdleExpiresAt,
+	}, nil
+}
+
 func (store *Store) LogoutLocal(ctx context.Context, request LocalLogoutRequest) error {
 	origin, err := NormalizeOrigin(request.Origin)
 	if err != nil {
@@ -173,6 +224,7 @@ func (store *Store) LogoutLocal(ctx context.Context, request LocalLogoutRequest)
 		return store.failWithAudit(ctx, AuditEvent{Action: AuditLocalLogout, Reason: "csrf_mismatch", Origin: origin}, ErrCSRFMismatch)
 	}
 	delete(state.Sessions, digest)
+	deleteLocalSessionStepUps(&state, digest)
 	if err := store.recordAudit(ctx, AuditEvent{Action: AuditLocalLogout, Outcome: AuditSuccess, Origin: origin, RevokedSessions: 1}); err != nil {
 		return err
 	}
@@ -196,6 +248,7 @@ func (store *Store) RevokeLocalSessions(ctx context.Context) error {
 	}
 	revoked := len(state.Sessions)
 	state.Sessions = map[string]localSessionRecord{}
+	state.StepUps = map[string]localStepUpRecord{}
 	if err := store.recordAudit(ctx, AuditEvent{Action: AuditLocalRevoke, Outcome: AuditSuccess, RevokedSessions: revoked}); err != nil {
 		return err
 	}
@@ -203,4 +256,137 @@ func (store *Store) RevokeLocalSessions(ctx context.Context) error {
 		return store.failWithAudit(ctx, AuditEvent{Action: AuditLocalRevoke, Reason: "persist_failed"}, err)
 	}
 	return nil
+}
+
+// IssueLocalStepUp re-verifies the current owner password and persists only a
+// digest of the returned proof. The proof is bound to the exact local session,
+// action, registered workspace, typed target, and server-computed state digest.
+func (store *Store) IssueLocalStepUp(ctx context.Context, request LocalStepUpRequest) (LocalStepUpCredential, error) {
+	origin, err := NormalizeOrigin(request.Origin)
+	auditEvent := AuditEvent{
+		Action: AuditLocalStepUp, Origin: origin, AuthorizedAction: request.Action,
+		WorkspaceID: request.WorkspaceID, TargetID: request.TargetID,
+	}
+	if err != nil || len(request.Password) > maximumPasswordBytes ||
+		validateLocalStepUpBinding(request.Action, request.WorkspaceID, request.TargetID, request.StateDigest) != nil {
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "invalid_request"), ErrStepUpUnauthorized)
+	}
+	unlock, err := store.lock(ctx)
+	if err != nil {
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "store_unavailable"), err)
+	}
+	defer unlock()
+	state, err := store.loadLocalState()
+	if err != nil {
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "state_unavailable"), err)
+	}
+	sessionDigest := credentialDigest(request.SessionToken)
+	session, exists := state.Sessions[sessionDigest]
+	now := store.currentTime()
+	switch {
+	case !exists || !digestMatches(sessionDigest, request.SessionToken):
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "session_not_found"), ErrSessionUnauthorized)
+	case !now.Before(session.ExpiresAt) || !now.Before(session.IdleExpiresAt):
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "session_expired"), ErrCredentialExpired)
+	case session.Origin != origin:
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "origin_mismatch"), ErrOriginMismatch)
+	case !digestMatches(session.CSRFDigest, request.CSRFToken):
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "csrf_mismatch"), ErrCSRFMismatch)
+	}
+	verified, err := VerifyPassword(state.OwnerPasswordPHC, request.Password)
+	if err != nil {
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "state_unavailable"), err)
+	}
+	if !verified {
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "invalid_credentials"), ErrInvalidCredentials)
+	}
+	pruneExpiredLocalStepUps(&state, now)
+	if len(state.StepUps) >= 1024 {
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "step_up_capacity"), ErrStepUpUnauthorized)
+	}
+	random, err := store.newCredential()
+	if err != nil {
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "random_failed"), err)
+	}
+	token := "sup_" + random
+	digest := credentialDigest(token)
+	record := localStepUpRecord{
+		SessionDigest: sessionDigest, Action: request.Action, WorkspaceID: request.WorkspaceID,
+		TargetID: request.TargetID, StateDigest: request.StateDigest, CreatedAt: now, ExpiresAt: now.Add(LocalStepUpTTL),
+	}
+	state.StepUps[digest] = record
+	if err := store.recordAudit(ctx, withAuditOutcome(auditEvent, AuditSuccess)); err != nil {
+		return LocalStepUpCredential{}, err
+	}
+	if err := store.writeLocalState(state); err != nil {
+		return LocalStepUpCredential{}, store.failWithAudit(ctx, withAuditReason(auditEvent, "persist_failed"), err)
+	}
+	return LocalStepUpCredential{
+		Token: token, Digest: digest, SessionDigest: sessionDigest, Action: record.Action,
+		WorkspaceID: record.WorkspaceID, TargetID: record.TargetID, StateDigest: record.StateDigest,
+		CreatedAt: record.CreatedAt, ExpiresAt: record.ExpiresAt,
+	}, nil
+}
+
+// AuthenticateLocalStepUp validates without consuming. Consumption is later
+// recorded atomically with confirmation consumption and apply-job creation in
+// the durable job store.
+func (store *Store) AuthenticateLocalStepUp(ctx context.Context, request LocalStepUpAuthenticationRequest) (LocalStepUpBinding, error) {
+	origin, err := NormalizeOrigin(request.Origin)
+	if err != nil || validateLocalStepUpBinding(request.Action, request.WorkspaceID, request.TargetID, request.StateDigest) != nil {
+		return LocalStepUpBinding{}, ErrStepUpUnauthorized
+	}
+	unlock, err := store.lock(ctx)
+	if err != nil {
+		return LocalStepUpBinding{}, err
+	}
+	defer unlock()
+	state, err := store.loadLocalState()
+	if err != nil {
+		return LocalStepUpBinding{}, err
+	}
+	now := store.currentTime()
+	sessionDigest := credentialDigest(request.SessionToken)
+	session, exists := state.Sessions[sessionDigest]
+	if !exists || !digestMatches(sessionDigest, request.SessionToken) || !now.Before(session.ExpiresAt) ||
+		!now.Before(session.IdleExpiresAt) || session.Origin != origin {
+		return LocalStepUpBinding{}, ErrStepUpUnauthorized
+	}
+	digest := credentialDigest(request.Token)
+	record, exists := state.StepUps[digest]
+	if !exists || !digestMatches(digest, request.Token) || !now.Before(record.ExpiresAt) ||
+		record.SessionDigest != sessionDigest || record.Action != request.Action || record.WorkspaceID != request.WorkspaceID ||
+		record.TargetID != request.TargetID || record.StateDigest != request.StateDigest {
+		return LocalStepUpBinding{}, ErrStepUpUnauthorized
+	}
+	return LocalStepUpBinding{
+		Digest: digest, SessionDigest: record.SessionDigest, Action: record.Action, WorkspaceID: record.WorkspaceID,
+		TargetID: record.TargetID, StateDigest: record.StateDigest, CreatedAt: record.CreatedAt, ExpiresAt: record.ExpiresAt,
+	}, nil
+}
+
+func pruneExpiredLocalStepUps(state *localStateFile, now time.Time) {
+	for digest, record := range state.StepUps {
+		if !now.Before(record.ExpiresAt) {
+			delete(state.StepUps, digest)
+		}
+	}
+}
+
+func deleteLocalSessionStepUps(state *localStateFile, sessionDigest string) {
+	for digest, record := range state.StepUps {
+		if record.SessionDigest == sessionDigest {
+			delete(state.StepUps, digest)
+		}
+	}
+}
+
+func withAuditReason(event AuditEvent, reason string) AuditEvent {
+	event.Reason = reason
+	return event
+}
+
+func withAuditOutcome(event AuditEvent, outcome AuditOutcome) AuditEvent {
+	event.Outcome = outcome
+	return event
 }

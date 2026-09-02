@@ -6,14 +6,18 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/anas-project/ANAS/internal/consoleconfig"
 	"github.com/anas-project/ANAS/internal/protocolmux"
 )
 
@@ -22,6 +26,102 @@ const maximumConsoleConnections = 256
 type componentResult struct {
 	name string
 	err  error
+}
+
+type exactSourceListener struct {
+	net.Listener
+	allowed map[string]struct{}
+}
+
+func (listener exactSourceListener) Accept() (net.Conn, error) {
+	for {
+		connection, err := listener.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		host, _, splitErr := net.SplitHostPort(connection.RemoteAddr().String())
+		if splitErr == nil {
+			if before, _, found := strings.Cut(host, "%"); found {
+				host = before
+			}
+			if ip := net.ParseIP(host); ip != nil {
+				if _, ok := listener.allowed[ip.String()]; ok {
+					return connection, nil
+				}
+			}
+		}
+		_ = connection.Close()
+	}
+}
+
+func newTrustedProxyTLSConfig(base *tls.Config, config consoleconfig.TrustedProxyConfig) (*tls.Config, error) {
+	if base == nil || base.GetCertificate == nil {
+		return nil, errors.New("dynamic TLS configuration is required")
+	}
+	caPEM, err := os.ReadFile(config.ClientCA)
+	if err != nil {
+		return nil, fmt.Errorf("read trusted proxy client CA: %w", err)
+	}
+	if block, _ := pem.Decode(caPEM); block == nil || block.Type != "CERTIFICATE" {
+		return nil, errors.New("trusted proxy client CA contains no PEM certificate")
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return nil, errors.New("trusted proxy client CA could not be parsed")
+	}
+	allowed := make(map[string]struct{}, len(config.ClientSPKISHA256))
+	for _, digest := range config.ClientSPKISHA256 {
+		allowed[digest] = struct{}{}
+	}
+	result := base.Clone()
+	result.ClientAuth = tls.RequireAndVerifyClientCert
+	result.ClientCAs = pool
+	result.VerifyConnection = func(state tls.ConnectionState) error {
+		if len(state.PeerCertificates) == 0 {
+			return errors.New("trusted proxy client certificate is missing")
+		}
+		digest := sha256.Sum256(state.PeerCertificates[0].RawSubjectPublicKeyInfo)
+		if _, ok := allowed[hex.EncodeToString(digest[:])]; !ok {
+			return errors.New("trusted proxy client certificate is not pinned")
+		}
+		return nil
+	}
+	return result, nil
+}
+
+func serveTrustedProxyTLS(ctx context.Context, root net.Listener, handler http.Handler, tlsConfig *tls.Config, allowedSources []string, logger *log.Logger) error {
+	if root == nil || handler == nil || tlsConfig == nil {
+		return errors.New("trusted proxy listener, handler, and TLS configuration are required")
+	}
+	allowed := make(map[string]struct{}, len(allowedSources))
+	for _, source := range allowedSources {
+		allowed[source] = struct{}{}
+	}
+	server := newHTTPServer("", handler)
+	if logger != nil {
+		server.ErrorLog = logger
+	}
+	listener := tls.NewListener(exactSourceListener{Listener: root, allowed: allowed}, tlsConfig)
+	result := make(chan error, 1)
+	go func() { result <- server.Serve(listener) }()
+	select {
+	case err := <-result:
+		if ctx.Err() == nil {
+			return fmt.Errorf("trusted proxy TLS server stopped unexpectedly: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+	}
+	shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownContext); err != nil {
+		_ = server.Close()
+		return fmt.Errorf("shut down trusted proxy TLS server: %w", err)
+	}
+	if err := <-result; err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
+		return fmt.Errorf("trusted proxy TLS server: %w", err)
+	}
+	return nil
 }
 
 type selectedCertificateContextKey struct{}

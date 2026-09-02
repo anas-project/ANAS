@@ -1,8 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/hex"
+	"encoding/pem"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,12 +15,127 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func TestTransportClientIdentityIsStableAndOnlyMaterializedForTraefik(t *testing.T) {
+	env := map[string]string{
+		"ANAS_TRAEFIK_SERVERS_TRANSPORT__ANAS_CONSOLE_MTLS__SERVER_NAME": "anas.example.test",
+		"TRAEFIK_LOCAL_ADMIN_USERNAME":                                   "admin_traefik", "TRAEFIK_LOCAL_ADMIN_PASSWORD": "secret",
+	}
+	secrets := &secretStore{values: map[string]string{}}
+	if err := calculate("traefik", env, "", secrets); err != nil {
+		t.Fatal(err)
+	}
+	key := transportIdentitySecretKey("ANAS_CONSOLE_MTLS")
+	first := secrets.values[key]
+	if first == "" {
+		t.Fatal("transport identity was not persisted in the scoped Secret Store")
+	}
+	if err := calculate("traefik", env, "", secrets); err != nil {
+		t.Fatal(err)
+	}
+	if secrets.values[key] != first {
+		t.Fatal("recalculation rotated the transport identity")
+	}
+	files, err := renderRuntimeEnv("traefik", env, secrets.values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := "dynamic/client-identities/ANAS_CONSOLE_MTLS/"
+	if files[root+"ca.key"] != "" || files[root+"ca.crt"] == "" || files[root+"client.crt"] == "" || files[root+"client.key"] == "" {
+		t.Fatalf("materialized transport files = %v", files)
+	}
+	caBlock, _ := pem.Decode([]byte(files[root+"ca.crt"]))
+	clientBlock, _ := pem.Decode([]byte(files[root+"client.crt"]))
+	if caBlock == nil || clientBlock == nil {
+		t.Fatal("transport certificates are not PEM")
+	}
+	ca, err := x509.ParseCertificate(caBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := x509.ParseCertificate(clientBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(ca)
+	if _, err := client.Verify(x509.VerifyOptions{Roots: pool, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+		t.Fatalf("client identity does not verify: %v", err)
+	}
+	digest := sha256.Sum256(client.RawSubjectPublicKeyInfo)
+	if got := strings.TrimSpace(files[root+"client.spki-sha256"]); got != hex.EncodeToString(digest[:]) {
+		t.Fatalf("client SPKI file = %q", got)
+	}
+}
+
+func TestEntrypointRendersMutualTLSUpstreamTransport(t *testing.T) {
+	configDir := t.TempDir()
+	identityDir := filepath.Join(configDir, "client-identities", "ANAS_CONSOLE_MTLS")
+	if err := os.MkdirAll(identityDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ca.crt", "client.crt", "client.key", "client.spki-sha256"} {
+		if err := os.WriteFile(filepath.Join(identityDir, name), []byte("fixture\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	command := exec.Command("/bin/sh", "../traefik/anas-entrypoint.sh")
+	command.Env = append(os.Environ(),
+		"ANAS_CONFIG_DIR="+configDir,
+		"ANAS_TRAEFIK_BINARY=/usr/bin/true",
+		"LEGO_CERT_NAME=example.test.crt",
+		"LEGO_KEY_NAME=example.test.key",
+		"ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__RULE=Host(`anas.example.test`)",
+		"ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__URL=https://host.docker.internal:8443",
+		"ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__MIDDLEWARES=anas-forward-auth@docker",
+		"ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__SERVERS_TRANSPORT=ANAS_CONSOLE_MTLS",
+		"ANAS_TRAEFIK_SERVERS_TRANSPORT__ANAS_CONSOLE_MTLS__SERVER_NAME=anas.example.test",
+		"ANAS_TRAEFIK_SERVERS_TRANSPORT__ANAS_CONSOLE_MTLS__ROOT_CAS=/certs/anas-trust-bundle.crt",
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("entrypoint: %v\n%s", err, output)
+	}
+	routes, err := os.ReadFile(filepath.Join(configDir, "routes.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(routes)
+	for _, want := range []string{
+		`serversTransport: "ANAS_CONSOLE_MTLS"`,
+		"serversTransports:",
+		`serverName: "anas.example.test"`,
+		`- "/certs/anas-trust-bundle.crt"`,
+		`certFile: "` + configDir + `/client-identities/ANAS_CONSOLE_MTLS/client.crt"`,
+		`keyFile: "` + configDir + `/client-identities/ANAS_CONSOLE_MTLS/client.key"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("routes.yml is missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestEntrypointRejectsUnpinnedUpstreamTransport(t *testing.T) {
+	command := exec.Command("/bin/sh", "../traefik/anas-entrypoint.sh")
+	command.Env = append(os.Environ(),
+		"ANAS_CONFIG_DIR="+t.TempDir(),
+		"ANAS_TRAEFIK_BINARY=/usr/bin/true",
+		"LEGO_CERT_NAME=example.test.crt",
+		"LEGO_KEY_NAME=example.test.key",
+		"ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__RULE=Host(`anas.example.test`)",
+		"ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__URL=https://host.docker.internal:8443",
+		"ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__SERVERS_TRANSPORT=ANAS_CONSOLE_MTLS",
+		"ANAS_TRAEFIK_SERVERS_TRANSPORT__ANAS_CONSOLE_MTLS__SERVER_NAME=anas.example.test",
+	)
+	if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "ROOT_CAS") {
+		t.Fatalf("incomplete transport result err=%v output=%s", err, output)
+	}
+}
+
 func TestRenderRuntimeEnvUsesOnlyManagedDashboardCredential(t *testing.T) {
 	files, err := renderRuntimeEnv("traefik", map[string]string{
 		"TRAEFIK_LOCAL_ADMIN_USERNAME": "admin_traefik",
 		"TRAEFIK_LOCAL_ADMIN_PASSWORD": "s3cret",
 		"BASICAUTH_PASSWD":             "must-not-win",
-	})
+	}, map[string]string{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +145,7 @@ func TestRenderRuntimeEnvUsesOnlyManagedDashboardCredential(t *testing.T) {
 	if err := verifyTraefikAuthFile([]byte(files["dynamic/dashboard-auth.yml"]), "admin_traefik", "s3cret"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := renderRuntimeEnv("traefik", map[string]string{}); err == nil {
+	if _, err := renderRuntimeEnv("traefik", map[string]string{}, map[string]string{}); err == nil {
 		t.Fatal("missing managed credential was accepted")
 	}
 }

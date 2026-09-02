@@ -335,6 +335,46 @@ func TestConsoleCommandUsageAndTTLBounds(t *testing.T) {
 	}
 }
 
+func TestConsoleStatusPublishesDirectRecoveryAndProxyAddresses(t *testing.T) {
+	config := consoleconfig.Config{
+		Mode: consoleconfig.ModeLAN, Port: 8080, AllowedDNSHosts: []string{"anas.example.test"},
+		TLS:          consoleconfig.TLSConfig{Temporary: &consoleconfig.TemporaryTLSPaths{}},
+		TrustedProxy: &consoleconfig.TrustedProxyConfig{PublicURL: "https://anas.example.test:9000"},
+	}
+	status, err := ConfiguredConsoleStatus(config, func() ([]net.Addr, error) {
+		return []net.Addr{
+			&net.IPNet{IP: net.ParseIP("192.0.2.10"), Mask: net.CIDRMask(24, 32)},
+			&net.IPNet{IP: net.ParseIP("2001:db8::10"), Mask: net.CIDRMask(64, 128)},
+		}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"https://anas.example.test:8080",
+		"https://192.0.2.10:8080",
+		"https://[2001:db8::10]:8080",
+	}
+	if !reflect.DeepEqual(status.DirectRecoveryURLs, want) || status.ProxyURL != "https://anas.example.test:9000" || !status.BindsAllInterfaces {
+		t.Fatalf("console status = %#v, want direct=%v", status, want)
+	}
+}
+
+func TestConsoleStatusLoopbackDoesNotPublishLANAddresses(t *testing.T) {
+	status, err := ConfiguredConsoleStatus(consoleconfig.Config{Mode: consoleconfig.ModeLoopback, Port: 8080}, func() ([]net.Addr, error) {
+		return []net.Addr{
+			&net.IPNet{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(8, 32)},
+			&net.IPNet{IP: net.ParseIP("192.0.2.10"), Mask: net.CIDRMask(24, 32)},
+		}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(status.DirectRecoveryURLs, []string{"http://127.0.0.1:8080"}) || status.BindsAllInterfaces {
+		t.Fatalf("loopback console status = %#v", status)
+	}
+}
+
 type consoleCLIFixture struct {
 	configPath      string
 	store           string

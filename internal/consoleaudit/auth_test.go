@@ -26,6 +26,9 @@ func TestAuthSinkMapsOnlyClosedNonCredentialFields(t *testing.T) {
 		State:           consoleauth.StateBootstrap,
 		ReplacedToken:   true,
 		RevokedSessions: 1,
+		AuthorizedAction: "deployment.apply",
+		WorkspaceID:      "main",
+		TargetID:         "deployment-a",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +44,9 @@ func TestAuthSinkMapsOnlyClosedNonCredentialFields(t *testing.T) {
 		if strings.Contains(key, "password") || strings.Contains(key, "csrf") || strings.Contains(key, "token_value") || strings.Contains(key, "session_token") {
 			t.Fatalf("credential-shaped field crossed adapter: %q", key)
 		}
+	}
+	if event.Details["authorized_action"] != "deployment.apply" || event.Details["workspace_id"] != "main" || event.Details["target_id"] != "deployment-a" {
+		t.Fatalf("authorization binding details = %#v", event.Details)
 	}
 }
 

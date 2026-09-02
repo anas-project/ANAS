@@ -134,6 +134,8 @@
     "nextcloud.rm_skeleton_files",
     "nextcloud.talk_enabled",
     "nextcloud.upload_max_size",
+    "oauth2_proxy.console_proxy_enabled",
+    "oauth2_proxy.console_proxy_port",
     "oauth2_proxy.domain_prefix",
     "oauth2_proxy.iam_protocol",
     "postgres.adminer_enabled",

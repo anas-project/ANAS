@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `traefik` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.7.10-r5` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.7.10-r6` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -17,7 +17,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r5` | `` | 3 |
+| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r6` | `` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -88,6 +88,7 @@ anas admin local rotate traefik primary --prompt -w /srv/anas
 - `LEGO_EMAIL`
 - `LEGO_KEY_NAME`
 - `ANAS_TRAEFIK_ROUTE__*`
+- `ANAS_TRAEFIK_SERVERS_TRANSPORT__*`
 
 依赖闭包不会自动授予全部环境变量。敏感值只有在所有权或 `config.consumes` 明确允许时才进入该 Module 的 Hook/容器作用域。
 
@@ -105,6 +106,8 @@ anas admin local rotate traefik primary --prompt -w /srv/anas
 - [`docker-compose.yml`](../docker-compose.yml)
 
 ## 真实客户端 IP 边界
+
+命名 `serversTransport` 与真实客户端 IP 信任是两条独立边界。前者为 Traefik 到后端生成专属 Secret-Store CA/client identity，并把 CA 公钥、client cert/key 和 SPKI 摘要以 `0600` runtime 文件投影；CA 私钥不投影。entrypoint 只有在 `SERVER_NAME`、`ROOT_CAS`、CA、client cert/key 与摘要完整时才生成 mTLS transport。来源 IP 或普通 HTTPS 不能替代这个客户端身份。
 
 HTTPS entrypoint 默认不信任请求自带的 `X-Forwarded-*`。只有 `traefik.forwarded_headers_trusted_ips` 中通过 IP/CIDR 校验的上游代理可以提供转发链，且不会启用 `forwardedHeaders.insecure`。Traefik 以 JSON 向标准输出记录访问日志，保留客户端地址证据并丢弃 Header 与查询参数，避免日志收集敏感值。
 

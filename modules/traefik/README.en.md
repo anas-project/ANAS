@@ -8,7 +8,7 @@ HTTPS reverse proxy, routing layer, and dashboard for Web services.
 | Item | Value |
 | --- | --- |
 | Module | `traefik` |
-| Version / revision | `3.7.10-r5` |
+| Version / revision | `3.7.10-r6` |
 | Status | `release` |
 | Category | `network` |
 | Runtime | `compose` |
@@ -96,6 +96,9 @@ ANAS_TRAEFIK_ROUTE__<NAME>__URL           required
 ANAS_TRAEFIK_ROUTE__<NAME>__MIDDLEWARES   optional, comma-separated
 ANAS_TRAEFIK_ROUTE__<NAME>__ENTRYPOINTS   optional, default https
 ANAS_TRAEFIK_ROUTE__<NAME>__TLS           optional, default true
+ANAS_TRAEFIK_ROUTE__<NAME>__SERVERS_TRANSPORT optional, named mTLS upstream transport
+ANAS_TRAEFIK_SERVERS_TRANSPORT__<NAME>__SERVER_NAME required backend TLS SNI/certificate name
+ANAS_TRAEFIK_SERVERS_TRANSPORT__<NAME>__ROOT_CAS    required CA file below `/certs/`
 ```
 
 The declaring module must publish `ANAS_TRAEFIK_ROUTE__*` in `config.exports`. `<NAME>` is normalized into a router name. Values render as quoted YAML scalars, escaping backslashes and quotes; newlines are rejected to prevent YAML structure injection.
@@ -107,6 +110,8 @@ env:
 ```
 
 The route-declaring module decides whether to attach ForwardAuth. The Traefik dashboard's local administrator protects only the dashboard, not these upstream routes.
+
+Once a route references `SERVERS_TRANSPORT`, the Hook creates a stable dedicated CA and client certificate for that name in the Secret Store. Only the public CA, client cert/key, and SPKI digest are projected under Traefik-only `dynamic/client-identities/<NAME>/`; the CA private key never enters runtime state. The entrypoint requires all transport fields and all four projected files, then generates a `serversTransport` that both verifies backend CA/SNI and presents the client certificate. Any incomplete declaration stops container startup.
 
 ## Timezone and language
 

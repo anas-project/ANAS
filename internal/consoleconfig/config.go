@@ -7,12 +7,15 @@ package consoleconfig
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -39,13 +42,14 @@ const (
 // Config is the root-managed, host-level configuration for anasd. It is not a
 // workspace desired-state document and must not be populated from config.yml.
 type Config struct {
-	APIVersion      string      `yaml:"api_version"`
-	Mode            Mode        `yaml:"mode"`
-	Port            int         `yaml:"port"`
-	AllowedDNSHosts []string    `yaml:"allowed_dns_hosts,omitempty"`
-	ConsoleStore    string      `yaml:"console_store"`
-	Workspaces      []Workspace `yaml:"workspaces,omitempty"`
-	TLS             TLSConfig   `yaml:"tls,omitempty"`
+	APIVersion      string              `yaml:"api_version"`
+	Mode            Mode                `yaml:"mode"`
+	Port            int                 `yaml:"port"`
+	AllowedDNSHosts []string            `yaml:"allowed_dns_hosts,omitempty"`
+	ConsoleStore    string              `yaml:"console_store"`
+	Workspaces      []Workspace         `yaml:"workspaces,omitempty"`
+	TLS             TLSConfig           `yaml:"tls,omitempty"`
+	TrustedProxy    *TrustedProxyConfig `yaml:"trusted_proxy,omitempty"`
 }
 
 // Workspace registers a public ID to a server-selected host path. Filesystem
@@ -62,6 +66,21 @@ type TLSConfig struct {
 	Temporary *TemporaryTLSPaths `yaml:"temporary,omitempty"`
 }
 
+// TrustedProxyConfig defines the physically separate TLS-only listener used
+// by Traefik. Exact source IPs are defense in depth; client-certificate
+// verification and an explicit leaf SPKI allowlist establish proxy identity.
+type TrustedProxyConfig struct {
+	BindAddress        string   `yaml:"bind_address"`
+	Port               int      `yaml:"port"`
+	PublicURL          string   `yaml:"public_url"`
+	AllowedSourceIPs   []string `yaml:"allowed_source_ips"`
+	AllowedDNSHosts    []string `yaml:"allowed_dns_hosts"`
+	OIDCIssuer         string   `yaml:"oidc_issuer"`
+	PlatformAdminGroup string   `yaml:"platform_admin_group"`
+	ClientCA           string   `yaml:"client_ca"`
+	ClientSPKISHA256   []string `yaml:"client_spki_sha256"`
+}
+
 // LegoTLSPaths names the complete files produced by the lego certificate
 // contract. Every field is required when this block is present so serving-pair,
 // chain, trust, identity, and issuer-source validation fail closed together.
@@ -71,6 +90,7 @@ type LegoTLSPaths struct {
 	PrivateKey  string `yaml:"private_key"`
 	Issuer      string `yaml:"issuer"`
 	TrustBundle string `yaml:"trust_bundle"`
+	InternalCA  string `yaml:"internal_ca"`
 	IssuerMark  string `yaml:"issuer_marker"`
 }
 
@@ -174,7 +194,130 @@ func (config *Config) validateAndNormalize() error {
 	if err := normalizeTLSConfig(&config.TLS); err != nil {
 		return err
 	}
+	if err := normalizeTrustedProxyConfig(config); err != nil {
+		return err
+	}
 	return nil
+}
+
+func normalizeTrustedProxyConfig(config *Config) error {
+	proxy := config.TrustedProxy
+	if proxy == nil {
+		return nil
+	}
+	if config.TLS.Lego == nil && config.TLS.Temporary == nil {
+		return errors.New("trusted_proxy requires a configured TLS serving certificate")
+	}
+	if proxy.Port < 1 || proxy.Port > 65535 || proxy.Port == config.Port {
+		return errors.New("trusted_proxy.port must be between 1 and 65535 and differ from the direct port")
+	}
+	if proxy.BindAddress == "" || strings.TrimSpace(proxy.BindAddress) != proxy.BindAddress || strings.Contains(proxy.BindAddress, "%") {
+		return errors.New("trusted_proxy.bind_address must be an IP literal without a zone")
+	}
+	bindIP := net.ParseIP(proxy.BindAddress)
+	if bindIP == nil {
+		return errors.New("trusted_proxy.bind_address must be an IP literal")
+	}
+	proxy.BindAddress = bindIP.String()
+	if len(proxy.AllowedSourceIPs) == 0 {
+		return errors.New("trusted_proxy.allowed_source_ips must contain at least one exact IP")
+	}
+	seenIPs := map[string]struct{}{}
+	for index, value := range proxy.AllowedSourceIPs {
+		if value == "" || strings.TrimSpace(value) != value || strings.Contains(value, "%") {
+			return fmt.Errorf("trusted_proxy.allowed_source_ips[%d] must be an exact IP literal", index)
+		}
+		ip := net.ParseIP(value)
+		if ip == nil || ip.IsUnspecified() {
+			return fmt.Errorf("trusted_proxy.allowed_source_ips[%d] must be a concrete IP literal", index)
+		}
+		canonical := ip.String()
+		if _, exists := seenIPs[canonical]; exists {
+			return fmt.Errorf("trusted_proxy.allowed_source_ips contains duplicate address %q", canonical)
+		}
+		seenIPs[canonical] = struct{}{}
+		proxy.AllowedSourceIPs[index] = canonical
+	}
+	if len(proxy.AllowedDNSHosts) == 0 {
+		return errors.New("trusted_proxy.allowed_dns_hosts must contain at least one exact host")
+	}
+	seenHosts := map[string]struct{}{}
+	for index, value := range proxy.AllowedDNSHosts {
+		host, err := normalizeDNSHost(value)
+		if err != nil {
+			return fmt.Errorf("trusted_proxy.allowed_dns_hosts[%d]: %w", index, err)
+		}
+		if _, exists := seenHosts[host]; exists {
+			return fmt.Errorf("trusted_proxy.allowed_dns_hosts contains duplicate host %q", host)
+		}
+		seenHosts[host] = struct{}{}
+		proxy.AllowedDNSHosts[index] = host
+	}
+	publicURL, err := normalizeTrustedProxyPublicURL(proxy.PublicURL, seenHosts)
+	if err != nil {
+		return err
+	}
+	proxy.PublicURL = publicURL
+	issuer, err := url.Parse(proxy.OIDCIssuer)
+	if err != nil || issuer.Scheme != "https" || issuer.Host == "" || issuer.User != nil || issuer.RawQuery != "" || issuer.Fragment != "" || issuer.String() != proxy.OIDCIssuer {
+		return errors.New("trusted_proxy.oidc_issuer must be a canonical HTTPS URL")
+	}
+	if proxy.PlatformAdminGroup == "" || len(proxy.PlatformAdminGroup) > 512 || strings.TrimSpace(proxy.PlatformAdminGroup) != proxy.PlatformAdminGroup || strings.ContainsAny(proxy.PlatformAdminGroup, "\r\n\x00,") {
+		return errors.New("trusted_proxy.platform_admin_group is invalid")
+	}
+	proxy.ClientCA, err = normalizeAbsolutePath("trusted_proxy.client_ca", proxy.ClientCA)
+	if err != nil {
+		return err
+	}
+	if len(proxy.ClientSPKISHA256) == 0 {
+		return errors.New("trusted_proxy.client_spki_sha256 must contain at least one SHA-256 digest")
+	}
+	seenDigests := map[string]struct{}{}
+	for index, value := range proxy.ClientSPKISHA256 {
+		if len(value) != 64 || value != strings.ToLower(value) {
+			return fmt.Errorf("trusted_proxy.client_spki_sha256[%d] must be 64 lowercase hexadecimal characters", index)
+		}
+		if _, err := hex.DecodeString(value); err != nil {
+			return fmt.Errorf("trusted_proxy.client_spki_sha256[%d] is invalid", index)
+		}
+		if _, exists := seenDigests[value]; exists {
+			return fmt.Errorf("trusted_proxy.client_spki_sha256 contains duplicate digest %q", value)
+		}
+		seenDigests[value] = struct{}{}
+	}
+	return nil
+}
+
+func normalizeTrustedProxyPublicURL(value string, allowedHosts map[string]struct{}) (string, error) {
+	if value == "" || strings.TrimSpace(value) != value {
+		return "", errors.New("trusted_proxy.public_url must be a canonical HTTPS origin")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" && parsed.Path != "/" {
+		return "", errors.New("trusted_proxy.public_url must be a canonical HTTPS origin")
+	}
+	host, err := normalizeDNSHost(parsed.Hostname())
+	if err != nil {
+		return "", errors.New("trusted_proxy.public_url must use an allowed DNS host")
+	}
+	if _, ok := allowedHosts[host]; !ok {
+		return "", errors.New("trusted_proxy.public_url host must appear in trusted_proxy.allowed_dns_hosts")
+	}
+	port := parsed.Port()
+	if strings.Contains(parsed.Host, ":") && port == "" {
+		return "", errors.New("trusted_proxy.public_url has an invalid port")
+	}
+	if port != "" {
+		value, parseErr := strconv.Atoi(port)
+		if parseErr != nil || value < 1 || value > 65535 {
+			return "", errors.New("trusted_proxy.public_url has an invalid port")
+		}
+		parsed.Host = net.JoinHostPort(host, port)
+	} else {
+		parsed.Host = host
+	}
+	parsed.Path = ""
+	return parsed.String(), nil
 }
 
 func normalizeTLSConfig(config *TLSConfig) error {
@@ -202,6 +345,10 @@ func normalizeTLSConfig(config *TLSConfig) error {
 			return err
 		}
 		config.Lego.TrustBundle, err = normalizeAbsolutePath("tls.lego.trust_bundle", config.Lego.TrustBundle)
+		if err != nil {
+			return err
+		}
+		config.Lego.InternalCA, err = normalizeAbsolutePath("tls.lego.internal_ca", config.Lego.InternalCA)
 		if err != nil {
 			return err
 		}

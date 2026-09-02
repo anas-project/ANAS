@@ -2,9 +2,11 @@ package consoletls
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -39,10 +41,11 @@ type testLeaf struct {
 }
 
 type testMaterial struct {
-	leaf   testLeaf
-	issuer []byte
-	trust  []byte
-	source Source
+	leaf       testLeaf
+	issuer     []byte
+	trust      []byte
+	internalCA []byte
+	source     Source
 }
 
 func TestManagerLoadsInternalSnapshotAndReturnsDefensiveCertificate(t *testing.T) {
@@ -66,6 +69,14 @@ func TestManagerLoadsInternalSnapshotAndReturnsDefensiveCertificate(t *testing.T
 	}
 	if snapshot.NotBefore() != material.leaf.certificate.NotBefore || snapshot.NotAfter() != material.leaf.certificate.NotAfter {
 		t.Fatal("snapshot validity did not match leaf")
+	}
+	internalCA := snapshot.InternalCAPEM()
+	if !bytes.Equal(internalCA, material.internalCA) {
+		t.Fatal("snapshot did not expose the validated internal CA")
+	}
+	internalCA[0] ^= 0xff
+	if bytes.Equal(internalCA, snapshot.InternalCAPEM()) {
+		t.Fatal("InternalCAPEM returned mutable snapshot storage")
 	}
 	chain := snapshot.CertificateChain()
 	if len(chain) != 1 || !bytes.Equal(chain[0], material.leaf.certificate.Raw) {
@@ -95,6 +106,49 @@ func TestManagerLoadsInternalSnapshotAndReturnsDefensiveCertificate(t *testing.T
 	}
 }
 
+func TestGetCertificateClonePreservesTLSDefaultSignatureAlgorithms(t *testing.T) {
+	baseDomain := "example.test"
+	material := newInternalMaterial(t, baseDomain, leafOptions{})
+	candidate := writeCandidate(t, t.TempDir(), "lego", baseDomain, material, true)
+	manager := newTestManager(t, Options{Lego: &candidate})
+	if err := manager.Reload(); err != nil {
+		t.Fatal(err)
+	}
+
+	certificate, err := manager.GetCertificate(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if certificate.SupportedSignatureAlgorithms != nil {
+		t.Fatalf("SupportedSignatureAlgorithms = %#v, want nil TLS defaults", certificate.SupportedSignatureAlgorithms)
+	}
+
+	serverNet, clientNet := net.Pipe()
+	server := tls.Server(serverNet, &tls.Config{
+		MinVersion:     tls.VersionTLS12,
+		GetCertificate: manager.GetCertificate,
+	})
+	client := tls.Client(clientNet, &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: true, // The test exercises certificate selection, not PKI validation.
+	})
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	serverResult := make(chan error, 1)
+	go func() {
+		serverResult <- server.HandshakeContext(ctx)
+	}()
+	if err := client.HandshakeContext(ctx); err != nil {
+		t.Fatalf("client handshake with cloned certificate: %v", err)
+	}
+	if err := <-serverResult; err != nil {
+		t.Fatalf("server handshake with cloned certificate: %v", err)
+	}
+}
+
 func TestManagerBuildsACMEServiceChainWithoutTrustAnchor(t *testing.T) {
 	baseDomain := "example.test"
 	material := newACMEMaterial(t, baseDomain, leafOptions{})
@@ -118,6 +172,9 @@ func TestManagerBuildsACMEServiceChainWithoutTrustAnchor(t *testing.T) {
 	}
 	if bytes.Equal(chain[len(chain)-1], trustCertificates[0].Raw) {
 		t.Fatal("service chain included the trust anchor")
+	}
+	if !bytes.Equal(snapshot.InternalCAPEM(), material.internalCA) {
+		t.Fatal("ACME snapshot did not retain the independent internal CA")
 	}
 }
 
@@ -193,10 +250,14 @@ func TestStrictCandidateValidationRejectsInvalidMaterial(t *testing.T) {
 		},
 		{
 			name:     "untrusted chain",
-			material: func(t *testing.T) testMaterial { return newInternalMaterial(t, baseDomain, leafOptions{}) },
+			material: func(t *testing.T) testMaterial { return newACMEMaterial(t, baseDomain, leafOptions{}) },
 			mutate: func(t *testing.T, candidate Candidate) {
 				other := newRootAuthority(t, "other root")
-				writeFile(t, candidate.TrustBundlePath, other.pem, 0o644)
+				internalCA, err := os.ReadFile(candidate.InternalCAPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, candidate.TrustBundlePath, append(append([]byte{}, other.pem...), internalCA...), 0o644)
 			},
 			want: "unknown authority",
 		},
@@ -207,6 +268,15 @@ func TestStrictCandidateValidationRejectsInvalidMaterial(t *testing.T) {
 				writeFile(t, candidate.IssuerMarkerPath, []byte("acme\n"), 0o644)
 			},
 			want: "declared source",
+		},
+		{
+			name:     "internal CA absent from trust bundle",
+			material: func(t *testing.T) testMaterial { return newACMEMaterial(t, baseDomain, leafOptions{}) },
+			mutate: func(t *testing.T, candidate Candidate) {
+				root := newRootAuthority(t, "replacement public root")
+				writeFile(t, candidate.TrustBundlePath, root.pem, 0o644)
+			},
+			want: "absent from the trust bundle",
 		},
 	}
 	for _, test := range tests {
@@ -338,7 +408,7 @@ func TestReloadKeepsLastKnownGoodAcrossPartialAndMissingUpdate(t *testing.T) {
 	baseDomain := "example.test"
 	root := newRootAuthority(t, "internal root")
 	firstLeaf := newLeafCertificate(t, root, baseDomain, leafOptions{})
-	firstMaterial := testMaterial{leaf: firstLeaf, issuer: root.pem, trust: root.pem, source: SourceInternal}
+	firstMaterial := testMaterial{leaf: firstLeaf, issuer: root.pem, trust: root.pem, internalCA: root.pem, source: SourceInternal}
 	candidate := writeCandidate(t, t.TempDir(), "lego", baseDomain, firstMaterial, true)
 	manager := newTestManager(t, Options{Lego: &candidate})
 	if err := manager.Reload(); err != nil {
@@ -418,6 +488,11 @@ func TestCandidateSourceAndIdentityPolicies(t *testing.T) {
 	if _, err := NewManager(Options{Lego: &lego}); err == nil || !strings.Contains(err.Error(), "explicit issuer marker") {
 		t.Fatalf("NewManager error = %v, want explicit issuer marker error", err)
 	}
+	lego = writeCandidate(t, t.TempDir(), "lego-alias", baseDomain, internalMaterial, true)
+	lego.InternalCAPath = lego.IssuerPath
+	if _, err := NewManager(Options{Lego: &lego}); err == nil || !strings.Contains(err.Error(), "must be distinct") {
+		t.Fatalf("NewManager alias error = %v", err)
+	}
 
 	temporaryMaterial := newTemporaryMaterial(t, baseDomain)
 	temporary := writeCandidate(t, t.TempDir(), "temporary", baseDomain, temporaryMaterial, false)
@@ -447,7 +522,7 @@ func TestGetCertificateRefreshesChangesAndKeepsLastKnownGood(t *testing.T) {
 	root := newRootAuthority(t, "internal root")
 	firstLeaf := newLeafCertificate(t, root, baseDomain, leafOptions{})
 	candidate := writeCandidate(t, t.TempDir(), "lego", baseDomain, testMaterial{
-		leaf: firstLeaf, issuer: root.pem, trust: root.pem, source: SourceInternal,
+		leaf: firstLeaf, issuer: root.pem, trust: root.pem, internalCA: root.pem, source: SourceInternal,
 	}, true)
 	var warningCount atomic.Int64
 	manager := newTestManager(t, Options{
@@ -532,7 +607,7 @@ func TestGetCertificateIsSafeDuringConcurrentReloads(t *testing.T) {
 	root := newRootAuthority(t, "internal root")
 	firstLeaf := newLeafCertificate(t, root, baseDomain, leafOptions{})
 	secondLeaf := newLeafCertificate(t, root, baseDomain, leafOptions{})
-	candidate := writeCandidate(t, t.TempDir(), "lego", baseDomain, testMaterial{leaf: firstLeaf, issuer: root.pem, trust: root.pem, source: SourceInternal}, true)
+	candidate := writeCandidate(t, t.TempDir(), "lego", baseDomain, testMaterial{leaf: firstLeaf, issuer: root.pem, trust: root.pem, internalCA: root.pem, source: SourceInternal}, true)
 	manager := newTestManager(t, Options{Lego: &candidate})
 	if err := manager.Reload(); err != nil {
 		t.Fatal(err)
@@ -757,14 +832,16 @@ func newTemporaryIPMaterial(t *testing.T, address net.IP) testMaterial {
 func newInternalMaterial(t *testing.T, baseDomain string, options leafOptions) testMaterial {
 	t.Helper()
 	root := newRootAuthority(t, "internal root")
-	return testMaterial{leaf: newLeafCertificate(t, root, baseDomain, options), issuer: root.pem, trust: root.pem, source: SourceInternal}
+	return testMaterial{leaf: newLeafCertificate(t, root, baseDomain, options), issuer: root.pem, trust: root.pem, internalCA: root.pem, source: SourceInternal}
 }
 
 func newACMEMaterial(t *testing.T, baseDomain string, options leafOptions) testMaterial {
 	t.Helper()
 	root := newRootAuthority(t, "public root")
 	intermediate := newIntermediateAuthority(t, root, "ACME intermediate")
-	return testMaterial{leaf: newLeafCertificate(t, intermediate, baseDomain, options), issuer: intermediate.pem, trust: root.pem, source: SourceACME}
+	internal := newRootAuthority(t, "internal root")
+	trust := append(append([]byte{}, root.pem...), internal.pem...)
+	return testMaterial{leaf: newLeafCertificate(t, intermediate, baseDomain, options), issuer: intermediate.pem, trust: trust, internalCA: internal.pem, source: SourceACME}
 }
 
 func nextSerial() *big.Int {
@@ -801,6 +878,9 @@ func candidatePaths(directory, prefix, baseDomain string, source Source, marker 
 		Source:          source,
 		BaseDomain:      baseDomain,
 	}
+	if source != SourceTemporary {
+		candidate.InternalCAPath = filepath.Join(directory, prefix+".internal-ca.crt")
+	}
 	if marker {
 		candidate.IssuerMarkerPath = filepath.Join(directory, prefix+".issuer")
 	}
@@ -813,6 +893,9 @@ func writeCandidateFiles(t *testing.T, candidate Candidate, material testMateria
 	writeFile(t, candidate.PrivateKeyPath, material.leaf.privateKeyPEM, 0o600)
 	writeFile(t, candidate.IssuerPath, material.issuer, 0o644)
 	writeFile(t, candidate.TrustBundlePath, material.trust, 0o644)
+	if candidate.InternalCAPath != "" {
+		writeFile(t, candidate.InternalCAPath, material.internalCA, 0o644)
+	}
 	if marker {
 		writeFile(t, candidate.IssuerMarkerPath, []byte(string(material.source)+"\n"), 0o644)
 	}

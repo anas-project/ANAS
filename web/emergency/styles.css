@@ -1,0 +1,39 @@
+:root {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #e9f4ed;
+  background: #101713;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+main {
+  width: min(680px, calc(100% - 2rem));
+  margin: 12vh auto 0;
+  padding: clamp(1.25rem, 5vw, 3rem);
+  border: 1px solid #486154;
+  border-radius: 1rem;
+  background: #17231d;
+}
+
+.eyebrow {
+  color: #8ed5b4;
+  font-size: 0.8rem;
+  letter-spacing: 0.16em;
+}
+
+button,
+a {
+  color: #d4f8e7;
+}
+
+button {
+  margin-right: 1rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid #6b8e7c;
+  border-radius: 0.5rem;
+  background: #20372c;
+}

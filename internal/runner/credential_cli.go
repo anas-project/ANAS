@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"path/filepath"
@@ -58,7 +59,7 @@ func runCredentialList(args []string, jsonMode bool) error {
 		return usageErrorf("%s", err.Error())
 	}
 	base := stateDir(workspace)
-	unlock, err := acquireRuntimeSharedLock(base)
+	unlock, err := acquireWorkspaceConfigReadLock(context.Background(), base)
 	if err != nil {
 		return preconditionErrorf("runtime_lock_failed", "%s", err.Error())
 	}
@@ -122,7 +123,7 @@ func runCredentialRotate(args []string, jsonMode bool) error {
 	}
 	base := stateDir(workspace)
 	if *dryRun {
-		unlock, err := acquireRuntimeSharedLock(base)
+		unlock, err := acquireWorkspaceConfigReadLock(context.Background(), base)
 		if err != nil {
 			return preconditionErrorf("runtime_lock_failed", "%s", err.Error())
 		}

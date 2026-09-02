@@ -16,6 +16,7 @@ const (
 	enrollmentCommitFileName = "bootstrap-enrollment-commit.json"
 	ownerCommitFileName      = "owner-enrollment-commit.json"
 	localFileName            = "local.json"
+	proxyFileName            = "proxy.json"
 	lockFileName             = "auth.lock"
 	maximumStateBytes        = 8 << 20
 )

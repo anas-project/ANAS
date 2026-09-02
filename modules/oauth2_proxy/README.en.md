@@ -8,7 +8,7 @@ OIDC ForwardAuth gate for services without their own login system.
 | Item | Value |
 | --- | --- |
 | Module | `oauth2_proxy` |
-| Version / revision | `7.15.3-r4` |
+| Version / revision | `7.15.3-r5` |
 | Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |
@@ -77,6 +77,8 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `oauth2_proxy.console_proxy_enabled` | bool | — | `false` | `static` | `OAUTH2_PROXY_CONSOLE_PROXY_ENABLED` | no | no | no | yes | `container_recreate` | Publish the OIDC- and mTLS-protected ANAS console route. |
+| `oauth2_proxy.console_proxy_port` | int | `1..65535` | `8443` | `static` | `OAUTH2_PROXY_CONSOLE_PROXY_PORT` | no | no | no | yes | `container_recreate` | Trusted-proxy listener port exposed by anasd. |
 | `oauth2_proxy.domain_prefix` | string | — | `auth-gate` | `static` | `OAUTH2_PROXY_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
@@ -97,6 +99,12 @@ Parameters with `editable=false` cannot be completed by ordinary `config set`. A
 - Language status: `fixed`
 - Supported languages (1): `en`
 - Fallback: Built-in pages are English; protected applications manage their own language.
+
+## ANAS console trusted proxy
+
+With `oauth2_proxy.console_proxy_enabled: true`, the Hook publishes `https://anas.<base_domain>:<TRAEFIK_BASE_PORT>`, the existing `ANAS_FORWARD_AUTH_*` middleware, and the `ANAS_CONSOLE_MTLS` transport. Its backend is the host's `console_proxy_port`. The route is disabled by default so it cannot appear before `anasd` has a client CA, SPKI allowlist, and exact Traefik source IP.
+
+oauth2-proxy itself listens only on container loopback port `4181`. The wrapper separately exposes browser/callback bridge `4180` and Traefik-ForwardAuth-only identity bridge `4182`. Both remove request-supplied ANAS identity headers. Only the identity bridge reads the fixed issuer, subject, `auth_time`, `exp`, and administrator group from oauth2-proxy's verified bearer ID-token response, then overwrites seven `X-Anas-Identity-*` headers. The raw assertion is never logged or written to the Secret Store. `anasd` is not an OIDC client and never receives an IdP password.
 
 ## Storage, backup, and verification
 

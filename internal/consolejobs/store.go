@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,23 +22,26 @@ import (
 var errStoreClosed = errors.New("console job store is closed")
 
 type Store struct {
-	gate          chan struct{}
-	done          chan struct{}
-	closeSignal   sync.Once
-	directory     string
-	journalPath   string
-	lockPath      string
-	directoryFile *os.File
-	file          journalFile
-	lockFile      *os.File
-	options       Options
-	state         *storeState
-	journal       journalSnapshot
-	receipts      *journalReceiptHandle
-	nextPruneAt   time.Time
-	now           func() time.Time
-	unavailable   error
-	closed        bool
+	gate                    chan struct{}
+	done                    chan struct{}
+	closeSignal             sync.Once
+	directory               string
+	journalPath             string
+	lockPath                string
+	directoryFile           *os.File
+	file                    journalFile
+	lockFile                *os.File
+	options                 Options
+	state                   *storeState
+	journal                 journalSnapshot
+	receipts                *journalReceiptHandle
+	compaction              journalCompactionOperations
+	nextCompactionBytes     int64
+	checkedObsoleteRevision uint64
+	nextPruneAt             time.Time
+	now                     func() time.Time
+	unavailable             error
+	closed                  bool
 }
 
 func Open(directory string, options Options) (*Store, error) {
@@ -120,6 +125,10 @@ func OpenContext(ctx context.Context, directory string, options Options) (*Store
 	if err != nil {
 		return unlockOnError(err)
 	}
+	compaction := defaultJournalCompactionOperations()
+	if err := cleanupStaleCompactionFile(directoryFile, filepath.Join(directory, JournalCompactionFilename), compaction); err != nil {
+		return unlockOnError(err)
+	}
 
 	journalPath := filepath.Join(directory, JournalFilename)
 	file, fileCreated, err := openSecureNamedFile(journalPath, JournalFilename)
@@ -160,6 +169,7 @@ func OpenContext(ctx context.Context, directory string, options Options) (*Store
 		options:       resolved,
 		state:         state,
 		journal:       journal,
+		compaction:    compaction,
 		now:           time.Now,
 	}
 	store.gate <- struct{}{}
@@ -195,6 +205,7 @@ func OpenContext(ctx context.Context, directory string, options Options) (*Store
 		}
 	}
 	store.updateNextPruneAt()
+	store.resetCompactionBoundary()
 	if err := store.verifyPaths(); err != nil {
 		return closeFile(err)
 	}
@@ -219,74 +230,306 @@ func OpenContext(ctx context.Context, directory string, options Options) (*Store
 // read-compatible and never changes running jobs; the daemon calls this only
 // while holding the process-wide execution lease.
 func (store *Store) RecoverInterruptedJobs(ctx context.Context, lease *ExecutionLease) error {
+	return store.RecoverInterruptedJobsObserved(ctx, lease, nil)
+}
+
+func (store *Store) RecoverInterruptedJobsObserved(ctx context.Context, lease *ExecutionLease, observer JobCommitObserver) error {
 	if store == nil {
 		return ErrUnavailable
 	}
 	return lease.withOwnership(store.directory, func() error {
 		return store.withState(ctx, func() error {
 			records := store.interruptionRecords(store.now().UTC())
+			for _, record := range records {
+				if record.Job == nil {
+					return store.markUnavailable(errors.New("interruption record has no job"))
+				}
+				previousJob, exists := store.state.jobs[record.Job.ID]
+				if !exists {
+					return store.markUnavailable(errors.New("interruption record references a missing job"))
+				}
+				previous := cloneJob(previousJob)
+				if err := observeJobCommit(ctx, observer, JobCommitIntent{
+					Operation: JobCommitTransition, Previous: &previous, Next: cloneJob(*record.Job),
+				}); err != nil {
+					return err
+				}
+			}
 			return store.persistRecords(ctx, records)
 		})
 	})
 }
 
 func (store *Store) CreateOrGet(ctx context.Context, spec CreateSpec) (CreateResult, error) {
+	return store.CreateOrGetObserved(ctx, spec, nil)
+}
+
+// CreateOrGetObserved is CreateOrGet with a fail-closed pre-commit observer.
+// Idempotent hits do not invoke the observer because no job state is changed.
+func (store *Store) CreateOrGetObserved(ctx context.Context, spec CreateSpec, observer JobCommitObserver) (CreateResult, error) {
 	prepared, idempotency, err := prepareCreate(spec)
 	if err != nil {
 		return CreateResult{}, err
 	}
 	var result CreateResult
 	err = store.withState(ctx, func() error {
-		if existing, found := store.state.idempotency[idempotency.Identity]; found {
-			job, exists := store.state.jobs[existing.JobID]
-			if !exists {
-				return store.markUnavailable(errors.New("idempotency index references a missing job"))
-			}
-			if existing.RequestDigest != idempotency.RequestDigest {
-				return &IdempotencyConflictError{ExistingJobID: existing.JobID}
-			}
-			result = CreateResult{Job: cloneJob(job), Existing: true}
-			return nil
-		}
-		queued := 0
-		for _, job := range store.state.jobs {
-			if job.Status == StatusQueued {
-				queued++
-			}
-		}
-		if queued >= store.options.MaxQueuedJobs {
-			return &CapacityError{Resource: "queued jobs", Limit: store.options.MaxQueuedJobs, Current: queued}
-		}
-		jobID, err := store.newJobID()
-		if err != nil {
-			return err
-		}
-		now := store.now().UTC()
-		job := Job{
-			ID:          jobID,
-			Kind:        prepared.Kind,
-			WorkspaceID: prepared.WorkspaceID,
-			Mutating:    prepared.Mutating,
-			Status:      StatusQueued,
-			CreatedBy:   prepared.Idempotency.Principal,
-			CreatedAt:   now,
-			Request:     prepared.Request,
-			Progress:    0,
-			Revision:    1,
-		}
-		idempotency.JobID = jobID
-		record := journalRecord{Kind: recordJobCreated, RecordedAt: now, Job: &job, Idempotency: &idempotency}
-		if err := store.persistRecords(ctx, []journalRecord{record}); err != nil {
-			return err
-		}
-		result = CreateResult{Job: cloneJob(job)}
-		return nil
+		created, err := store.createOrGetPrepared(ctx, prepared, idempotency, nil, observer, nil)
+		result = created
+		return err
 	})
 	return result, err
 }
 
 func (store *Store) Create(ctx context.Context, spec CreateSpec) (CreateResult, error) {
 	return store.CreateOrGet(ctx, spec)
+}
+
+// CreateOrGetConfirmed consumes a server-issued confirmation and creates the
+// mutating job in the same jobs.lock transaction. Idempotent retries are
+// resolved first and therefore neither require nor re-consume the one-time
+// token. A different key cannot consume a digest already attached to a job.
+func (store *Store) CreateOrGetConfirmed(ctx context.Context, spec CreateSpec, confirmation ConfirmationInput) (CreateResult, error) {
+	return store.CreateOrGetConfirmedObserved(ctx, spec, confirmation, nil)
+}
+
+// CreateOrGetConfirmedObserved performs confirmation consumption, audit
+// observation, idempotency registration, and job creation under one jobs.lock
+// transaction. Observer failure leaves the proof unconsumed.
+func (store *Store) CreateOrGetConfirmedObserved(ctx context.Context, spec CreateSpec, confirmation ConfirmationInput, observer JobCommitObserver) (CreateResult, error) {
+	for _, key := range []string{
+		ConfirmationDigestRequestKey, ConfirmationPlanJobRequestKey, ConfirmationIdentitySourceRequestKey,
+		ConfirmationTransactionRequestKey, ConfirmationActionRequestKey, StepUpDigestRequestKey,
+	} {
+		if _, exists := spec.Request[key]; exists {
+			return CreateResult{}, invalidError("job request uses a reserved confirmation field")
+		}
+	}
+	prepared, idempotency, err := prepareCreate(spec)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	if err := validateConfirmationInput(confirmation, prepared.WorkspaceID); err != nil {
+		return CreateResult{}, err
+	}
+	if !prepared.Mutating || confirmation.Actor != prepared.Idempotency.Principal || confirmation.Action != prepared.Kind {
+		return CreateResult{}, fmt.Errorf("%w: confirmation authorization does not match job", ErrConfirmationInvalid)
+	}
+	var result CreateResult
+	var confirmationDigest string
+	err = store.withState(ctx, func() error {
+		created, err := store.createOrGetPrepared(ctx, prepared, idempotency, func(jobSpec *CreateSpec) error {
+			digest, err := store.validateConfirmationLocked(confirmation)
+			if err != nil {
+				return err
+			}
+			if jobSpec.Request == nil {
+				jobSpec.Request = map[string]any{}
+			}
+			jobSpec.Request[ConfirmationDigestRequestKey] = digest
+			jobSpec.Request[ConfirmationPlanJobRequestKey] = confirmation.PlanJobID
+			jobSpec.Request[ConfirmationIdentitySourceRequestKey] = confirmation.IdentitySource
+			jobSpec.Request[ConfirmationTransactionRequestKey] = confirmation.TransactionID
+			jobSpec.Request[ConfirmationActionRequestKey] = confirmation.Action
+			if confirmation.StepUp != nil {
+				jobSpec.Request[StepUpDigestRequestKey] = DigestRequest([]byte(confirmation.StepUp.Token))
+			}
+			confirmationDigest = digest
+			return nil
+		}, observer, func(intent *JobCommitIntent) {
+			intent.PlanJobID = confirmation.PlanJobID
+			intent.ConfirmationDigest = confirmationDigest
+		})
+		result = created
+		return err
+	})
+	return result, err
+}
+
+func (store *Store) createOrGetPrepared(
+	ctx context.Context,
+	prepared CreateSpec,
+	idempotency persistedIdempotency,
+	beforeCreate func(*CreateSpec) error,
+	observer JobCommitObserver,
+	decorateIntent func(*JobCommitIntent),
+) (CreateResult, error) {
+	if existing, found := store.state.idempotency[idempotency.Identity]; found {
+		job, exists := store.state.jobs[existing.JobID]
+		if !exists {
+			return CreateResult{}, store.markUnavailable(errors.New("idempotency index references a missing job"))
+		}
+		if existing.RequestDigest != idempotency.RequestDigest {
+			return CreateResult{}, &IdempotencyConflictError{ExistingJobID: existing.JobID}
+		}
+		return CreateResult{Job: cloneJob(job), Existing: true}, nil
+	}
+	if beforeCreate != nil {
+		if err := beforeCreate(&prepared); err != nil {
+			return CreateResult{}, err
+		}
+	}
+	queued := 0
+	for _, job := range store.state.jobs {
+		if job.Status == StatusQueued {
+			queued++
+		}
+	}
+	if queued >= store.options.MaxQueuedJobs {
+		return CreateResult{}, &CapacityError{Resource: "queued jobs", Limit: store.options.MaxQueuedJobs, Current: queued}
+	}
+	jobID, err := store.newJobID()
+	if err != nil {
+		return CreateResult{}, err
+	}
+	now := store.now().UTC()
+	job := Job{
+		ID: jobID, Kind: prepared.Kind, WorkspaceID: prepared.WorkspaceID, Mutating: prepared.Mutating,
+		Status: StatusQueued, CreatedBy: prepared.Idempotency.Principal, CreatedAt: now,
+		Request: prepared.Request, Progress: 0, Revision: 1,
+	}
+	idempotency.JobID = jobID
+	intent := JobCommitIntent{Operation: JobCommitCreate, Next: cloneJob(job)}
+	if decorateIntent != nil {
+		decorateIntent(&intent)
+	}
+	if err := observeJobCommit(ctx, observer, intent); err != nil {
+		return CreateResult{}, err
+	}
+	record := journalRecord{Kind: recordJobCreated, RecordedAt: now, Job: &job, Idempotency: &idempotency}
+	if err := store.persistRecords(ctx, []journalRecord{record}); err != nil {
+		return CreateResult{}, err
+	}
+	return CreateResult{Job: cloneJob(job)}, nil
+}
+
+func validateConfirmationInput(input ConfirmationInput, workspaceID string) error {
+	for name, value := range map[string]string{
+		"plan job ID": input.PlanJobID, "plan kind": input.PlanKind, "token": input.Token,
+		"actor": input.Actor, "identity source": input.IdentitySource, "action": input.Action,
+		"workspace ID": input.WorkspaceID, "config validator": input.ConfigValidator, "plan digest": input.PlanDigest,
+	} {
+		if strings.TrimSpace(value) == "" || len(value) > 512 {
+			return fmt.Errorf("%w: %s is invalid", ErrConfirmationInvalid, name)
+		}
+	}
+	if input.WorkspaceID != workspaceID {
+		return fmt.Errorf("%w: workspace binding does not match job", ErrConfirmationInvalid)
+	}
+	if !validConfirmationProof(input.Token) {
+		return fmt.Errorf("%w: token must be a 256-bit server proof", ErrConfirmationInvalid)
+	}
+	if !hexDigestPattern.MatchString(input.PlanDigest) {
+		return fmt.Errorf("%w: plan digest is invalid", ErrConfirmationInvalid)
+	}
+	validatorDigest, hasValidatorPrefix := strings.CutPrefix(input.ConfigValidator, "cfgv-")
+	if !hasValidatorPrefix || !hexDigestPattern.MatchString(validatorDigest) {
+		return fmt.Errorf("%w: config validator is invalid", ErrConfirmationInvalid)
+	}
+	if len(input.TransactionID) > 256 {
+		return fmt.Errorf("%w: transaction binding is invalid", ErrConfirmationInvalid)
+	}
+	if input.StepUp != nil {
+		if !validStepUpProof(input.StepUp.Token) || !hexDigestPattern.MatchString(input.StepUp.SessionDigest) ||
+			!hexDigestPattern.MatchString(input.StepUp.StateDigest) || len(input.StepUp.TargetID) > 256 {
+			return fmt.Errorf("%w: step-up binding is invalid", ErrStepUpInvalid)
+		}
+	}
+	return nil
+}
+
+func validConfirmationProof(value string) bool {
+	if len(value) != len("cnf_")+64 || !strings.HasPrefix(value, "cnf_") {
+		return false
+	}
+	raw := value[len("cnf_"):]
+	_, err := hex.DecodeString(raw)
+	return err == nil && raw == strings.ToLower(raw)
+}
+
+func validStepUpProof(value string) bool {
+	if !strings.HasPrefix(value, "sup_") {
+		return false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(value, "sup_"))
+	return err == nil && len(raw) == 32
+}
+
+func (store *Store) validateConfirmationLocked(input ConfirmationInput) (string, error) {
+	plan, exists := store.state.jobs[input.PlanJobID]
+	if !exists || plan.Kind != input.PlanKind || plan.Status != StatusSucceeded || plan.WorkspaceID != input.WorkspaceID {
+		return "", fmt.Errorf("%w: plan job is unavailable", ErrConfirmationInvalid)
+	}
+	tokenDigest := DigestRequest([]byte(input.Token))
+	binding, ok := nestedStringMap(plan.Result, "confirmation")
+	if !ok {
+		return "", fmt.Errorf("%w: plan job has no confirmation", ErrConfirmationInvalid)
+	}
+	want := map[string]string{
+		"proof_digest": tokenDigest, "actor": input.Actor, "identity_source": input.IdentitySource,
+		"transaction_id": input.TransactionID, "action": input.Action, "workspace_id": input.WorkspaceID,
+		"config_validator": input.ConfigValidator, "plan_digest": input.PlanDigest,
+	}
+	for key, value := range want {
+		if binding[key] != value {
+			return "", fmt.Errorf("%w: confirmation binding changed", ErrConfirmationInvalid)
+		}
+	}
+	if input.StepUp == nil {
+		if binding["step_up_digest"] != "" {
+			return "", fmt.Errorf("%w: confirmation requires step-up", ErrStepUpInvalid)
+		}
+	} else {
+		stepUpDigest := DigestRequest([]byte(input.StepUp.Token))
+		stepUpWant := map[string]string{
+			"step_up_digest": stepUpDigest, "step_up_principal_digest": input.StepUp.SessionDigest,
+			"step_up_action": input.Action, "step_up_workspace_id": input.WorkspaceID,
+			"step_up_target_id": input.StepUp.TargetID, "step_up_state_digest": input.StepUp.StateDigest,
+		}
+		for key, value := range stepUpWant {
+			if binding[key] != value {
+				return "", fmt.Errorf("%w: step-up binding changed", ErrStepUpInvalid)
+			}
+		}
+		expiresAt, err := time.Parse(time.RFC3339Nano, binding["step_up_expires_at"])
+		if err != nil || !expiresAt.After(store.now().UTC()) {
+			return "", fmt.Errorf("%w: step-up proof expired", ErrStepUpInvalid)
+		}
+		for _, job := range store.state.jobs {
+			if digest, _ := job.Request[StepUpDigestRequestKey].(string); digest == stepUpDigest {
+				return "", ErrStepUpConsumed
+			}
+		}
+	}
+	expiresAt, err := time.Parse(time.RFC3339Nano, binding["expires_at"])
+	if err != nil || !expiresAt.After(store.now().UTC()) {
+		return "", fmt.Errorf("%w: confirmation expired", ErrConfirmationInvalid)
+	}
+	for _, job := range store.state.jobs {
+		if digest, _ := job.Request[ConfirmationDigestRequestKey].(string); digest == tokenDigest {
+			return "", ErrConfirmationConsumed
+		}
+	}
+	return tokenDigest, nil
+}
+
+func nestedStringMap(parent map[string]any, key string) (map[string]string, bool) {
+	value, exists := parent[key]
+	if !exists {
+		return nil, false
+	}
+	raw, ok := value.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	result := make(map[string]string, len(raw))
+	for field, candidate := range raw {
+		text, ok := candidate.(string)
+		if !ok {
+			return nil, false
+		}
+		result[field] = text
+	}
+	return result, true
 }
 
 func (store *Store) Get(ctx context.Context, jobID string) (Job, error) {
@@ -324,6 +567,10 @@ func (store *Store) List(ctx context.Context) ([]Job, error) {
 }
 
 func (store *Store) Start(ctx context.Context, jobID string) (Job, error) {
+	return store.StartObserved(ctx, jobID, nil)
+}
+
+func (store *Store) StartObserved(ctx context.Context, jobID string, observer JobCommitObserver) (Job, error) {
 	if err := validateIdentifier("job ID", jobID, 256); err != nil {
 		return Job{}, err
 	}
@@ -344,6 +591,12 @@ func (store *Store) Start(ctx context.Context, jobID string) (Job, error) {
 		updated.Status = StatusRunning
 		updated.StartedAt = &now
 		updated.Revision++
+		previous := cloneJob(job)
+		if err := observeJobCommit(ctx, observer, JobCommitIntent{
+			Operation: JobCommitStart, Previous: &previous, Next: cloneJob(updated),
+		}); err != nil {
+			return err
+		}
 		record := journalRecord{Kind: recordJobUpdated, RecordedAt: now, Job: &updated}
 		if err := store.persistRecords(ctx, []journalRecord{record}); err != nil {
 			return err
@@ -355,6 +608,10 @@ func (store *Store) Start(ctx context.Context, jobID string) (Job, error) {
 }
 
 func (store *Store) ClaimNext(ctx context.Context, workspaceID string) (Job, bool, error) {
+	return store.ClaimNextObserved(ctx, workspaceID, nil)
+}
+
+func (store *Store) ClaimNextObserved(ctx context.Context, workspaceID string, observer JobCommitObserver) (Job, bool, error) {
 	if err := validateIdentifier("workspace ID", workspaceID, 256); err != nil {
 		return Job{}, false, err
 	}
@@ -378,10 +635,16 @@ func (store *Store) ClaimNext(ctx context.Context, workspaceID string) (Job, boo
 		if err := store.canStart(*candidate); err != nil {
 			return err
 		}
+		previous := cloneJob(*candidate)
 		now := store.now().UTC()
 		candidate.Status = StatusRunning
 		candidate.StartedAt = &now
 		candidate.Revision++
+		if err := observeJobCommit(ctx, observer, JobCommitIntent{
+			Operation: JobCommitStart, Previous: &previous, Next: cloneJob(*candidate),
+		}); err != nil {
+			return err
+		}
 		record := journalRecord{Kind: recordJobUpdated, RecordedAt: now, Job: candidate}
 		if err := store.persistRecords(ctx, []journalRecord{record}); err != nil {
 			return err
@@ -433,6 +696,10 @@ func (store *Store) UpdateRunning(ctx context.Context, jobID string, update Prog
 }
 
 func (store *Store) Transition(ctx context.Context, jobID string, target Status, input TransitionInput) (Job, error) {
+	return store.TransitionObserved(ctx, jobID, target, input, nil)
+}
+
+func (store *Store) TransitionObserved(ctx context.Context, jobID string, target Status, input TransitionInput, observer JobCommitObserver) (Job, error) {
 	if err := validateIdentifier("job ID", jobID, 256); err != nil {
 		return Job{}, err
 	}
@@ -484,6 +751,12 @@ func (store *Store) Transition(ctx context.Context, jobID string, target Status,
 		now := store.now().UTC()
 		updated.FinishedAt = &now
 		updated.Revision++
+		previous := cloneJob(job)
+		if err := observeJobCommit(ctx, observer, JobCommitIntent{
+			Operation: JobCommitTransition, Previous: &previous, Next: cloneJob(updated),
+		}); err != nil {
+			return err
+		}
 		if err := store.persistRecords(ctx, []journalRecord{{Kind: recordJobUpdated, RecordedAt: now, Job: &updated}}); err != nil {
 			return err
 		}
@@ -491,6 +764,16 @@ func (store *Store) Transition(ctx context.Context, jobID string, target Status,
 		return nil
 	})
 	return result, err
+}
+
+func observeJobCommit(ctx context.Context, observer JobCommitObserver, intent JobCommitIntent) error {
+	if observer == nil {
+		return nil
+	}
+	if ctx == nil {
+		return invalidError("context is nil")
+	}
+	return observer.BeforeJobCommit(ctx, intent)
 }
 
 func (store *Store) AcknowledgeCompensation(ctx context.Context, jobID, warning string) (Job, error) {
@@ -639,7 +922,7 @@ func (store *Store) Close() error {
 	}
 	store.closed = true
 	var integrityErr error
-	if err := store.verifyPaths(); err != nil {
+	if err := store.verifyPathsForClose(); err != nil {
 		integrityErr = store.markUnavailable(fmt.Errorf("verify paths before close: %w", err))
 	}
 	var fileErr, lockErr, directoryErr error
@@ -849,8 +1132,11 @@ func (store *Store) withState(ctx context.Context, action func() error) (returnE
 			returnErr = errors.Join(returnErr, unlockErr)
 		}
 	}()
-	if err := store.verifyPaths(); err != nil {
-		return store.markUnavailable(fmt.Errorf("verify job store paths after lock: %w", err))
+	if err := store.verifyStablePaths(); err != nil {
+		return store.markUnavailable(fmt.Errorf("verify stable job store paths after lock: %w", err))
+	}
+	if err := store.ensureCanonicalJournalLocked(); err != nil {
+		return store.markUnavailable(fmt.Errorf("adopt canonical job journal: %w", err))
 	}
 	previousState := store.state
 	fresh, journal, err := refreshJournal(store.file, store.state, store.journal, store.receipts)
@@ -894,41 +1180,87 @@ func (store *Store) persistRecords(ctx context.Context, records []journalRecord)
 	if err := ctx.Err(); err != nil {
 		return &PersistenceError{Operation: "persist job journal", Cause: err}
 	}
-	if err := store.appendRecordsLocked(records); err != nil {
+	prospective, body, err := store.prepareJournalRecords(records)
+	if err != nil {
 		if errors.Is(err, ErrInvalid) {
 			return err
 		}
+		return store.markUnavailable(err)
+	}
+	if store.shouldCompactBeforeAppend(len(body)) {
+		projectedBytes := store.journal.completeBytes
+		if int64(len(body)) > math.MaxInt64-projectedBytes {
+			projectedBytes = math.MaxInt64
+		} else {
+			projectedBytes += int64(len(body))
+		}
+		if prospective.hasObsoleteHistory && prospective.obsoleteRevision != store.checkedObsoleteRevision {
+			recordedAt := store.now().UTC()
+			compactedBytes, measureErr := measureCompactedJournal(ctx, prospective, recordedAt)
+			if measureErr != nil {
+				return &PersistenceError{Operation: "measure compacted job journal", Cause: measureErr}
+			}
+			if projectedBytes > compactedBytes && projectedBytes-compactedBytes >= store.minimumCompactionSavings() {
+				committed, err := store.compactJournalStateLocked(ctx, prospective, recordedAt)
+				if committed {
+					return nil
+				}
+				if err != nil {
+					if store.unavailable != nil {
+						return err
+					}
+					return &PersistenceError{Operation: "compact job journal before append", Cause: err}
+				}
+				return nil
+			}
+			store.checkedObsoleteRevision = prospective.obsoleteRevision
+		}
+		store.advanceCompactionBoundary(projectedBytes)
+	}
+	if err := store.commitJournalAppendLocked(prospective, body); err != nil {
 		return store.markUnavailable(err)
 	}
 	return nil
 }
 
 func (store *Store) appendRecordsLocked(records []journalRecord) error {
-	before := store.journal
+	prospective, body, err := store.prepareJournalRecords(records)
+	if err != nil {
+		return err
+	}
+	return store.commitJournalAppendLocked(prospective, body)
+}
+
+func (store *Store) prepareJournalRecords(records []journalRecord) (*storeState, []byte, error) {
 	prospective := store.state.clone()
 	var body []byte
 	for _, record := range records {
 		record.SchemaVersion = JournalVersion
 		record.Sequence = prospective.lastRecordSequence + 1
 		if record.Sequence == 0 {
-			return errors.New("journal record sequence space exhausted")
+			return nil, nil, errors.New("journal record sequence space exhausted")
 		}
 		if record.RecordedAt.IsZero() {
 			record.RecordedAt = store.now().UTC()
 		}
 		if err := prospective.apply(record); err != nil {
-			return fmt.Errorf("prepare journal record: %w", err)
+			return nil, nil, fmt.Errorf("prepare journal record: %w", err)
 		}
 		line, err := json.Marshal(record)
 		if err != nil {
-			return fmt.Errorf("encode journal record: %w", err)
+			return nil, nil, fmt.Errorf("encode journal record: %w", err)
 		}
 		line = append(line, '\n')
 		if err := validateJournalAppendSize(len(body), len(line)); err != nil {
-			return err
+			return nil, nil, err
 		}
 		body = append(body, line...)
 	}
+	return prospective, body, nil
+}
+
+func (store *Store) commitJournalAppendLocked(prospective *storeState, body []byte) error {
+	before := store.journal
 	info, err := store.file.Stat()
 	if err != nil {
 		return fmt.Errorf("inspect journal before append: %w", err)
@@ -1015,13 +1347,42 @@ func (store *Store) acquireGate(ctx context.Context) error {
 func (store *Store) releaseGate() { store.gate <- struct{}{} }
 
 func (store *Store) verifyPaths() error {
-	if err := verifyOpenDirectory(store.directoryFile, store.directory); err != nil {
-		return err
-	}
-	if err := verifyOpenNamedFile(store.lockFile, store.lockPath, LockFilename); err != nil {
+	if err := store.verifyStablePaths(); err != nil {
 		return err
 	}
 	return verifyOpenNamedFile(store.file, store.journalPath, JournalFilename)
+}
+
+func (store *Store) verifyStablePaths() error {
+	if err := verifyOpenDirectory(store.directoryFile, store.directory); err != nil {
+		return err
+	}
+	return verifyOpenNamedFile(store.lockFile, store.lockPath, LockFilename)
+}
+
+func (store *Store) verifyPathsForClose() error {
+	if err := store.verifyStablePaths(); err != nil {
+		return err
+	}
+	locked, err := tryLockFile(store.lockFile)
+	if err != nil {
+		return fmt.Errorf("try job store lock before close: %w", err)
+	}
+	if !locked {
+		// Another supported Store may be between rename and descriptor adoption.
+		// Closing this descriptor is safe; path identity is verified by the peer
+		// while it holds jobs.lock, so do not race that transition here.
+		return nil
+	}
+	var verifyErr error
+	if err := store.verifyStablePaths(); err != nil {
+		verifyErr = err
+	} else if err := store.ensureCanonicalJournalLocked(); err != nil {
+		verifyErr = err
+	} else {
+		verifyErr = store.verifyPaths()
+	}
+	return errors.Join(verifyErr, unlockFile(store.lockFile))
 }
 
 func (store *Store) markUnavailable(cause error) error {

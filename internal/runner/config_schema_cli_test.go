@@ -482,7 +482,7 @@ global:
 	}
 
 	// Import validates before its transactional write set is staged. A failed
-	// replacement must preserve both the desired config and its managed digest.
+	// replacement must preserve both the desired config and its managed state.
 	workspace := newWorkspace(t)
 	configPath := workspaceConfigPath(workspace)
 	statePath := managedConfigStatePath(stateDir(workspace))

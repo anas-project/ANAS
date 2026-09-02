@@ -20,6 +20,8 @@ func applicationCLIError(err error) error {
 	switch appErr.Kind {
 	case application.ErrorKindInvalidArgument:
 		return cliErrorf(exitUsage, appErr.Code, "%s", appErr.Message)
+	case application.ErrorKindPreconditionRequired:
+		return confirmationErrorf("%s", appErr.Message)
 	case application.ErrorKindNotFound, application.ErrorKindFailedPrecondition:
 		if appErr.Code == "module_command_confirmation_required" {
 			return confirmationErrorf("%s", appErr.Message)

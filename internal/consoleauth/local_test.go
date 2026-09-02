@@ -196,6 +196,42 @@ func TestLocalObserveOnlyAuthenticationDoesNotExtendIdleExpiry(t *testing.T) {
 	}
 }
 
+func TestLocalSessionRefreshRotatesCSRFAcrossRestart(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "auth")
+	audit := &memoryAudit{}
+	clock := newTestClock()
+	store := openTestStore(t, directory, audit, clock)
+	if err := store.SetOwnerPassword(context.Background(), "owner-password"); err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.LoginLocal(context.Background(), LocalLoginRequest{
+		Password: "owner-password", Origin: "https://anas.example",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(20 * time.Minute)
+	refreshed, err := store.RefreshLocalSession(context.Background(), LocalSessionRefreshRequest{
+		SessionToken: session.Token, Origin: session.Origin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.CSRFToken == "" || refreshed.CSRFToken == session.CSRFToken || refreshed.ExpiresAt != session.ExpiresAt || refreshed.IdleExpiresAt.Sub(session.CreatedAt) != 50*time.Minute {
+		t.Fatalf("refreshed credential = %#v", refreshed)
+	}
+	restarted := openTestStore(t, directory, audit, clock)
+	request := LocalAuthenticationRequest{SessionToken: session.Token, Origin: session.Origin, RequireCSRF: true}
+	request.CSRFToken = session.CSRFToken
+	if _, err := restarted.AuthenticateLocal(context.Background(), request); !errors.Is(err, ErrCSRFMismatch) {
+		t.Fatalf("old CSRF error = %v", err)
+	}
+	request.CSRFToken = refreshed.CSRFToken
+	if _, err := restarted.AuthenticateLocal(context.Background(), request); err != nil {
+		t.Fatalf("new CSRF authentication = %v", err)
+	}
+}
+
 func TestLocalAuditFailureDoesNotCommitSessionOrRevocation(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "auth")
 	audit := &memoryAudit{}
@@ -251,4 +287,75 @@ func TestLocalLoginWithoutOwnerFailsClosedAndIsAudited(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(directory, localFileName)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("login without owner wrote state: %v", err)
 	}
+}
+
+func TestLocalStepUpIsSessionStateBoundAuditedAndDigestOnly(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "auth")
+	audit := &memoryAudit{}
+	clock := newTestClock()
+	store := openTestStore(t, directory, audit, clock)
+	if err := store.SetOwnerPassword(context.Background(), "owner-password"); err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.LoginLocal(context.Background(), LocalLoginRequest{Password: "owner-password", Origin: "https://anas.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := LocalStepUpRequest{
+		SessionToken: session.Token, CSRFToken: session.CSRFToken, Origin: session.Origin, Password: "owner-password",
+		Action: "deployment.apply", WorkspaceID: "main", TargetID: "deployment-a", StateDigest: strings.Repeat("a", 64),
+	}
+	audit.FailNext()
+	if _, err := store.IssueLocalStepUp(context.Background(), request); !errors.Is(err, ErrAuditUnavailable) {
+		t.Fatalf("step-up audit error = %v", err)
+	}
+	state, err := store.loadLocalState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.StepUps) != 0 {
+		t.Fatalf("failed audit persisted step-up proof: %#v", state.StepUps)
+	}
+	credential, err := store.IssueLocalStepUp(context.Background(), request)
+	request.Password = ""
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(credential.Token, "sup_") || credential.ExpiresAt.Sub(credential.CreatedAt) != LocalStepUpTTL ||
+		credential.SessionDigest != credentialDigest(session.Token) {
+		t.Fatalf("step-up credential = %#v", credential)
+	}
+	assertFileOmits(t, filepath.Join(directory, localFileName), credential.Token, "owner-password", session.Token, session.CSRFToken)
+
+	authentication := LocalStepUpAuthenticationRequest{
+		SessionToken: session.Token, Origin: session.Origin, Token: credential.Token,
+		Action: credential.Action, WorkspaceID: credential.WorkspaceID, TargetID: credential.TargetID, StateDigest: credential.StateDigest,
+	}
+	restarted := openTestStore(t, directory, audit, clock)
+	binding, err := restarted.AuthenticateLocalStepUp(context.Background(), authentication)
+	if err != nil || binding.Digest != credential.Digest || binding.SessionDigest != credential.SessionDigest {
+		t.Fatalf("step-up binding = %#v, %v", binding, err)
+	}
+	drifted := authentication
+	drifted.StateDigest = strings.Repeat("b", 64)
+	if _, err := restarted.AuthenticateLocalStepUp(context.Background(), drifted); !errors.Is(err, ErrStepUpUnauthorized) {
+		t.Fatalf("drifted state error = %v", err)
+	}
+	if err := restarted.LogoutLocal(context.Background(), LocalLogoutRequest{
+		SessionToken: session.Token, CSRFToken: session.CSRFToken, Origin: session.Origin,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := restarted.AuthenticateLocalStepUp(context.Background(), authentication); !errors.Is(err, ErrStepUpUnauthorized) {
+		t.Fatalf("logged-out step-up error = %v", err)
+	}
+	for _, event := range audit.Events() {
+		if event.Action == AuditLocalStepUp && event.Outcome == AuditSuccess {
+			if event.AuthorizedAction != "deployment.apply" || event.WorkspaceID != "main" || event.TargetID != "deployment-a" {
+				t.Fatalf("step-up audit event = %#v", event)
+			}
+			return
+		}
+	}
+	t.Fatal("successful step-up audit event was not recorded")
 }

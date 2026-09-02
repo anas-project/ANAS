@@ -34,28 +34,29 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	minimumSecretLength := 16
 	maximumSecretLength := 128
 	wantConstraints := map[string]configschema.Constraints{
-		"casdoor.ldap_auto_sync_minutes": {Minimum: &minimumOne},
-		"forgejo.actions_incus_profile":  {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
-		"forgejo.actions_runner_image":   {Pattern: `^(?:[0-9a-f]{64})?$`},
-		"forgejo.domain_prefix":          {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
-		"forgejo.ssh_port":               {Minimum: &minimumOne, Maximum: &maximumPort},
-		"global.base_domain":             {Format: configschema.FormatDNSName},
-		"global.timezone":                {Format: configschema.FormatIANATimezone},
-		"global.default_language":        {Format: configschema.FormatLanguageTag},
-		"global.default_locale":          {Format: configschema.FormatLocale},
-		"global.host_ip":                 {Format: configschema.FormatIPv4},
-		"global.host_lan_ip":             {Format: configschema.FormatIPv4},
-		"global.host_lan_bridge_ip":      {Format: configschema.FormatIPv4},
-		"eturnal.port":                   {Minimum: &minimumOne, Maximum: &maximumPort},
-		"meshcentral.mps_port":           {Minimum: &minimumOne, Maximum: &maximumPort},
-		"traefik.base_port":              {Minimum: &minimumOne, Maximum: &maximumPort},
-		"versitygw.domain_prefix":        {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
-		"versitygw.region":               {MinLength: &minimumDNSLabelLength, MaxLength: &maximumCredentialIDLength, Pattern: `^[A-Za-z0-9][A-Za-z0-9._-]*$`},
-		"versitygw.root_access_key":      {MinLength: &minimumAccessKeyLength, MaxLength: &maximumCredentialIDLength, Pattern: `^[A-Za-z0-9._-]+$`},
-		"versitygw.root_secret_key":      {MinLength: &minimumSecretLength, MaxLength: &maximumSecretLength},
-		"samba_dc.max_log_size":          {Minimum: &minimumOne},
-		"samba_dc.domain":                {Format: configschema.FormatDNSName},
-		"vikunja.domain_prefix":          {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"casdoor.ldap_auto_sync_minutes":  {Minimum: &minimumOne},
+		"forgejo.actions_incus_profile":   {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"forgejo.actions_runner_image":    {Pattern: `^(?:[0-9a-f]{64})?$`},
+		"forgejo.domain_prefix":           {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"forgejo.ssh_port":                {Minimum: &minimumOne, Maximum: &maximumPort},
+		"global.base_domain":              {Format: configschema.FormatDNSName},
+		"global.timezone":                 {Format: configschema.FormatIANATimezone},
+		"global.default_language":         {Format: configschema.FormatLanguageTag},
+		"global.default_locale":           {Format: configschema.FormatLocale},
+		"global.host_ip":                  {Format: configschema.FormatIPv4},
+		"global.host_lan_ip":              {Format: configschema.FormatIPv4},
+		"global.host_lan_bridge_ip":       {Format: configschema.FormatIPv4},
+		"eturnal.port":                    {Minimum: &minimumOne, Maximum: &maximumPort},
+		"meshcentral.mps_port":            {Minimum: &minimumOne, Maximum: &maximumPort},
+		"oauth2_proxy.console_proxy_port": {Minimum: &minimumOne, Maximum: &maximumPort},
+		"traefik.base_port":               {Minimum: &minimumOne, Maximum: &maximumPort},
+		"versitygw.domain_prefix":         {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"versitygw.region":                {MinLength: &minimumDNSLabelLength, MaxLength: &maximumCredentialIDLength, Pattern: `^[A-Za-z0-9][A-Za-z0-9._-]*$`},
+		"versitygw.root_access_key":       {MinLength: &minimumAccessKeyLength, MaxLength: &maximumCredentialIDLength, Pattern: `^[A-Za-z0-9._-]+$`},
+		"versitygw.root_secret_key":       {MinLength: &minimumSecretLength, MaxLength: &maximumSecretLength},
+		"samba_dc.max_log_size":           {Minimum: &minimumOne},
+		"samba_dc.domain":                 {Format: configschema.FormatDNSName},
+		"vikunja.domain_prefix":           {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
 	}
 	gotConstraints := map[string]configschema.Constraints{}
 	for path, metadata := range inventory {
@@ -187,7 +188,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 func TestBundledParameterConstraintBoundaries(t *testing.T) {
 	inventory := loadBundledParameterMetadata(t)
 
-	for _, path := range []string{"eturnal.port", "forgejo.ssh_port", "meshcentral.mps_port", "traefik.base_port"} {
+	for _, path := range []string{"eturnal.port", "forgejo.ssh_port", "meshcentral.mps_port", "oauth2_proxy.console_proxy_port", "traefik.base_port"} {
 		spec := inventory[path].spec
 		for _, value := range []string{"1", "65535"} {
 			if err := spec.Validate(value); err != nil {

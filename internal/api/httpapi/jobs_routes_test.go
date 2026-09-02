@@ -16,6 +16,7 @@ import (
 
 	"github.com/anas-project/ANAS/internal/consoleauth"
 	"github.com/anas-project/ANAS/internal/consolejobs"
+	"github.com/anas-project/ANAS/internal/deploymentaudit"
 )
 
 type fakeJobQueryStore struct {
@@ -844,4 +845,24 @@ func createHTTPJob(t *testing.T, store *consolejobs.Store, principal, workspaceI
 
 func strconvUint(value uint64) string {
 	return strconv.FormatUint(value, 10)
+}
+
+func TestDeploymentPlanJobDetailHidesPrivateConfirmationBinding(t *testing.T) {
+	job := consolejobs.Job{
+		Kind: deploymentaudit.ActionPlan,
+		Result: map[string]any{
+			"plan":         map[string]any{"digest": deploymentTestDigest},
+			"confirmation": map[string]any{"proof_digest": strings.Repeat("a", 64)},
+		},
+	}
+	detail := newJobDetailDTO(job)
+	if _, exposed := detail.Result["confirmation"]; exposed {
+		t.Fatalf("public plan job detail exposed confirmation binding: %#v", detail.Result)
+	}
+	if _, retained := detail.Result["plan"]; !retained {
+		t.Fatalf("public plan result was removed: %#v", detail.Result)
+	}
+	if _, retained := job.Result["confirmation"]; !retained {
+		t.Fatal("DTO projection mutated durable job result")
+	}
 }

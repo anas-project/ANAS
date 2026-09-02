@@ -133,7 +133,7 @@ func TestHandlerAcceptsOnlyNumericLoopbackHosts(t *testing.T) {
 	}
 }
 
-func TestSystemReportsOnlyBuildCapabilitiesAndWorkspaceIDs(t *testing.T) {
+func TestSystemReportsOnlyPublicBuildCapabilitiesCertificateAndWorkspaceIDs(t *testing.T) {
 	registry, paths := testRegistry(t, "main", "lab")
 	service := &fakeQueryService{version: application.VersionResult{Version: "1.2.3", Commit: "abc", Date: "2026-08-18"}}
 	var factoryPaths []string
@@ -160,10 +160,12 @@ func TestSystemReportsOnlyBuildCapabilitiesAndWorkspaceIDs(t *testing.T) {
 		Capabilities struct {
 			ReadOnly bool `json:"read_only"`
 		} `json:"capabilities"`
-		WorkspaceIDs []string `json:"workspace_ids"`
+		WorkspaceIDs      []string          `json:"workspace_ids"`
+		CertificateIssuer CertificateIssuer `json:"certificate_issuer"`
+		ConsoleState      ConsoleState      `json:"console_state"`
 	}
 	decodeResponse(t, response, &document)
-	if document.APIVersion != APIVersion || document.Build.Version != "1.2.3" || !document.Capabilities.ReadOnly || strings.Join(document.WorkspaceIDs, ",") != "main,lab" {
+	if document.APIVersion != APIVersion || document.Build.Version != "1.2.3" || !document.Capabilities.ReadOnly || strings.Join(document.WorkspaceIDs, ",") != "main,lab" || document.CertificateIssuer != CertificateIssuerNone || document.ConsoleState != StateM0 {
 		t.Fatalf("system body = %#v", document)
 	}
 	if len(factoryPaths) != 1 || factoryPaths[0] != "" {

@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `oauth2_proxy`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `7.15.3-r4` / `anas.module/v1`.
+> Status: current implementation; based on `7.15.3-r5` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -19,13 +19,15 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_oauth2-proxy` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-oauth2-proxy:7.15.3-r4` | `` | 1 |
+| `anas_oauth2-proxy` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-oauth2-proxy:7.15.3-r5` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `oauth2_proxy.console_proxy_enabled` | bool | — | `false` | `static` | `OAUTH2_PROXY_CONSOLE_PROXY_ENABLED` | no | no | no | yes | `container_recreate` | Publish the OIDC- and mTLS-protected ANAS console route. |
+| `oauth2_proxy.console_proxy_port` | int | `1..65535` | `8443` | `static` | `OAUTH2_PROXY_CONSOLE_PROXY_PORT` | no | no | no | yes | `container_recreate` | Trusted-proxy listener port exposed by anasd. |
 | `oauth2_proxy.domain_prefix` | string | — | `auth-gate` | `static` | `OAUTH2_PROXY_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
@@ -79,6 +81,10 @@ This module neither consumes nor provides a relational-database contract.
 ### Exports
 
 - `ANAS_FORWARD_AUTH_*`
+- `ANAS_PROXY_PLATFORM_ADMIN_GROUP`
+- `ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__*`
+- `ANAS_TRAEFIK_SERVERS_TRANSPORT__ANAS_CONSOLE_MTLS__*`
+- `ANAS_CONSOLE_PROXY_PUBLIC_URL`
 - `ANAS_IAM_CLIENT__OAUTH2_PROXY__*`
 
 ### Explicit consumes
@@ -89,6 +95,7 @@ This module neither consumes nor provides a relational-database contract.
 - `SAMBA_DC_ADMIN_GROUP_NAME`
 - `ANAS_TLS_CERTS_DIR`
 - `ANAS_TLS_INTERNAL_CA_NAME`
+- `TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS`
 
 The dependency closure does not grant every environment value. Sensitive values enter this module's hook/container scope only through ownership or an explicit `config.consumes` claim.
 
@@ -100,11 +107,14 @@ The dependency closure does not grant every environment value. Sensitive values 
 
 ## Tests and implementation locations
 
-- There are currently no hook unit-test files.
+- [`main_test.go`](../hook/main_test.go)
+- [`main_test.go`](../oauth2_proxy/main_test.go)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 
-## Real client IP
+## Console identity bridge and real client IP
+
+oauth2-proxy binds loopback port `4181`; the wrapper uses `4180` for ordinary browser/callback traffic and `4182` for Traefik ForwardAuth. Both bridges first delete caller-supplied fixed identity headers and response Authorization. Only `4182`, after a 2xx upstream result, parses oauth2-proxy's verified ID token and requires the issuer, stable subject, numeric `auth_time`/`exp`, and resolved `platform_admin` directory group before overwriting seven fixed headers. The raw bearer assertion exists only in the request chain to bind sessions and step-up; it is neither persisted nor logged.
 
 The ANAS wrapper image resolves Traefik at startup, appends its exact `/32` as `--trusted-proxy-ip`, and validates optional upstream proxy IPs or CIDRs. It no longer trusts all three RFC1918 ranges. Resolution or validation failure keeps the gate closed, preventing forged forwarded headers from changing redirects or authentication context.
 

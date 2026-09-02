@@ -26,6 +26,9 @@ import (
 	"github.com/anas-project/ANAS/internal/consolelistener"
 	"github.com/anas-project/ANAS/internal/consolestate"
 	"github.com/anas-project/ANAS/internal/consoletls"
+	"github.com/anas-project/ANAS/internal/deploymentaudit"
+	"github.com/anas-project/ANAS/internal/jobexecutor"
+	"github.com/anas-project/ANAS/internal/runner"
 )
 
 const defaultServiceConfigPath = "/etc/anas/anasd.yml"
@@ -138,12 +141,40 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		return fmt.Errorf("initialize console jobs: %w", err)
 	}
 	defer jobStore.Close()
+	deploymentAudit := deploymentAuditSink{writer: auditWriter, logger: logger}
 	jobRecoveryContext, cancelJobRecovery := context.WithTimeout(ctx, consolejobs.DefaultLockTimeout)
-	err = jobStore.RecoverInterruptedJobs(jobRecoveryContext, executionLease)
+	err = jobStore.RecoverInterruptedJobsObserved(jobRecoveryContext, executionLease, deploymentaudit.ObserveJobCommit(deploymentAudit, deploymentaudit.Event{
+		Stage: deploymentaudit.StageJobInterruptedAuthorized, FailureCode: "daemon_restarted",
+	}))
 	cancelJobRecovery()
 	if err != nil {
 		return fmt.Errorf("recover interrupted console jobs: %w", err)
 	}
+	executorWorkspaces := make([]jobexecutor.Workspace, len(config.Workspaces))
+	for index, workspace := range config.Workspaces {
+		executorWorkspaces[index] = jobexecutor.Workspace{ID: workspace.ID, Path: workspace.Path}
+	}
+	executor, err := jobexecutor.New(jobexecutor.Options{
+		Store: jobStore, Audit: deploymentAudit, Workspaces: executorWorkspaces,
+		DeploymentFactory: runner.NewWorkspaceDeploymentServiceWithEvents,
+		OnError: func(err error) {
+			if logger != nil {
+				logger.Printf("console job executor: %v", err)
+			}
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("configure console job executor: %w", err)
+	}
+	executorContext, cancelExecutor := context.WithCancel(ctx)
+	executorDone := make(chan error, 1)
+	go func() { executorDone <- executor.Run(executorContext) }()
+	defer func() {
+		cancelExecutor()
+		if executorErr := <-executorDone; executorErr != nil && logger != nil {
+			logger.Printf("console job executor stopped: %v", executorErr)
+		}
+	}()
 
 	tlsManager, err := newTLSManager(config.TLS, logger)
 	if err != nil {
@@ -171,20 +202,17 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		return err
 	}
 	hostPolicy := httpapi.DirectHostPolicy{Mode: hostMode, AllowedDNSHosts: config.AllowedDNSHosts}
-	handler, err := httpapi.NewHandlerWithEnrollmentAndJobQueries(registry, func(workspacePath string) httpapi.QueryService {
+	queryFactory := func(workspacePath string) httpapi.QueryService {
 		return application.NewService(workspacePath)
-	}, httpapi.SecurityOptions{
-		State: func(ctx context.Context) (httpapi.ConsoleState, error) {
-			state, err := stateStore.Current(ctx)
-			if err != nil {
-				return "", err
-			}
-			return httpCapabilityState(state)
-		},
-		HostAllowed: hostPolicy.Allowed,
-		Listener:    httpapi.ListenerDirect,
-		Authorize:   httpapi.DirectSessionAuthorizer(authStore),
-	}, authStore, httpapi.EnrollmentOptions{
+	}
+	stateProvider := func(ctx context.Context) (httpapi.ConsoleState, error) {
+		state, err := stateStore.Current(ctx)
+		if err != nil {
+			return "", err
+		}
+		return httpCapabilityState(state)
+	}
+	enrollmentOptions := httpapi.EnrollmentOptions{
 		Workflow:      authStore,
 		CurrentTarget: currentEnrollmentTarget,
 		CurrentConnectionTarget: func(ctx context.Context) (httpapi.EnrollmentTarget, error) {
@@ -197,13 +225,64 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 			_, err := stateStore.Transition(ctx, consolestate.StateFull, "enrollment-owner")
 			return err
 		},
-	}, httpapi.JobQueryOptions{
-		Store: jobStore,
-	})
+	}
+	jobOptions := httpapi.JobQueryOptions{Store: jobStore}
+	configOptions := httpapi.ConfigOptions{Factory: runner.NewWorkspaceConfigService, Audit: configAuditSink{writer: auditWriter, logger: logger}}
+	deploymentOptions := httpapi.DeploymentOptions{
+		PlanFactory: runner.NewWorkspaceDeploymentPlanService, Store: jobStore, Audit: deploymentAudit,
+		StepUp: authStore, Notify: executor.Notify,
+	}
+	auditOptions := httpapi.AuditQueryOptions{Store: auditWriter}
+	consoleStatus, err := runner.ConfiguredConsoleStatus(config, net.InterfaceAddrs)
+	if err != nil {
+		return fmt.Errorf("discover direct management addresses: %w", err)
+	}
+	systemOptions := httpapi.SystemOptions{
+		CurrentCertificate: func(ctx context.Context) (httpapi.CertificateMaterial, error) {
+			return currentConsoleCertificate(ctx, tlsManager)
+		},
+		CanonicalHTTPSOrigin: func() string {
+			if enrollmentOriginErr != nil {
+				return ""
+			}
+			return enrollmentOrigin
+		}(),
+		DirectRecoveryURLs: consoleStatus.DirectRecoveryURLs,
+		ProxyURL:           consoleStatus.ProxyURL,
+	}
+	handler, err := httpapi.NewHandlerWithEnrollmentJobsConfigAndDeployment(registry, queryFactory, httpapi.SecurityOptions{
+		State:       stateProvider,
+		HostAllowed: hostPolicy.Allowed,
+		Listener:    httpapi.ListenerDirect,
+		Authorize:   httpapi.DirectSessionAuthorizer(authStore),
+	}, authStore, enrollmentOptions, jobOptions, configOptions, deploymentOptions, auditOptions, systemOptions)
 	if err != nil {
 		return fmt.Errorf("configure HTTP routes: %w", err)
 	}
 	tlsConfig := dynamicTLSConfig(tlsManager)
+	var proxyHandler http.Handler
+	var proxyTLSConfig *tls.Config
+	if config.TrustedProxy != nil {
+		authorizeProxy, authErr := httpapi.TrustedProxyAuthorizer(httpapi.TrustedProxyOptions{
+			Authenticator: authStore, ExpectedIssuer: config.TrustedProxy.OIDCIssuer,
+			ExpectedDirectoryGroup: config.TrustedProxy.PlatformAdminGroup,
+		})
+		if authErr != nil {
+			return fmt.Errorf("configure trusted proxy authentication: %w", authErr)
+		}
+		proxyHostPolicy := httpapi.ExactDNSHostPolicy{AllowedDNSHosts: config.TrustedProxy.AllowedDNSHosts}
+		proxyHandler, err = httpapi.NewHandlerWithEnrollmentJobsConfigAndDeployment(registry, queryFactory, httpapi.SecurityOptions{
+			State: stateProvider, HostAllowed: proxyHostPolicy.Allowed,
+			Listener: httpapi.ListenerTrustedProxy, Authorize: authorizeProxy,
+		}, authStore, enrollmentOptions, jobOptions, configOptions, deploymentOptions, auditOptions, systemOptions)
+		if err != nil {
+			return fmt.Errorf("configure trusted proxy HTTP routes: %w", err)
+		}
+		proxyTLSConfig, err = newTrustedProxyTLSConfig(tlsConfig, *config.TrustedProxy)
+		if err != nil {
+			return fmt.Errorf("configure trusted proxy TLS: %w", err)
+		}
+	}
 
 	specs, err := consolelistener.Specs(config.Mode, config.Port)
 	if err != nil {
@@ -221,7 +300,38 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	if enrollmentOriginErr == nil {
 		go monitorEnrollmentCertificate(ctx, stateStore, authStore, currentEnrollmentTarget, logger)
 	}
-	return serveConsolePort(ctx, listeners, handler, tlsConfig, logger)
+	if config.TrustedProxy == nil {
+		return serveConsolePort(ctx, listeners, handler, tlsConfig, logger)
+	}
+	proxyNetwork := "tcp6"
+	if net.ParseIP(config.TrustedProxy.BindAddress).To4() != nil {
+		proxyNetwork = "tcp4"
+	}
+	proxyListeners, err := consolelistener.ListenAll(ctx, []consolelistener.Spec{{
+		Network: proxyNetwork, Address: net.JoinHostPort(config.TrustedProxy.BindAddress, strconv.Itoa(config.TrustedProxy.Port)),
+	}}, listen)
+	if err != nil {
+		closeRootListeners(listeners)
+		return err
+	}
+	proxyListener := proxyListeners[0]
+	if logger != nil {
+		logger.Printf("trusted proxy management listener %s (TLS-only mTLS)", proxyListener.Addr())
+	}
+	serviceContext, cancelServices := context.WithCancel(ctx)
+	defer cancelServices()
+	results := make(chan error, 2)
+	go func() { results <- serveConsolePort(serviceContext, listeners, handler, tlsConfig, logger) }()
+	go func() {
+		results <- serveTrustedProxyTLS(serviceContext, proxyListener, proxyHandler, proxyTLSConfig, config.TrustedProxy.AllowedSourceIPs, logger)
+	}()
+	first := <-results
+	cancelServices()
+	second := <-results
+	if first != nil {
+		return first
+	}
+	return second
 }
 
 func advanceToEnrollmentIfReady(
@@ -349,6 +459,7 @@ func newTLSManager(config consoleconfig.TLSConfig, logger *log.Logger) (*console
 			PrivateKeyPath:   config.Lego.PrivateKey,
 			IssuerPath:       config.Lego.Issuer,
 			TrustBundlePath:  config.Lego.TrustBundle,
+			InternalCAPath:   config.Lego.InternalCA,
 			IssuerMarkerPath: config.Lego.IssuerMark,
 			BaseDomain:       config.Lego.BaseDomain,
 		}
@@ -408,6 +519,31 @@ func currentLegoEnrollmentTarget(ctx context.Context, manager *consoletls.Manage
 		return httpapi.EnrollmentTarget{}, errors.New("validated lego certificate is not ready")
 	}
 	return httpapi.EnrollmentTarget{Origin: origin, SPKISHA256: snapshot.SPKISHA256Hex()}, nil
+}
+
+func currentConsoleCertificate(ctx context.Context, manager *consoletls.Manager) (httpapi.CertificateMaterial, error) {
+	if err := ctx.Err(); err != nil {
+		return httpapi.CertificateMaterial{}, err
+	}
+	if manager == nil {
+		return httpapi.CertificateMaterial{Issuer: httpapi.CertificateIssuerNone}, nil
+	}
+	snapshot, ok := manager.Current()
+	if !ok {
+		return httpapi.CertificateMaterial{Issuer: httpapi.CertificateIssuerNone}, nil
+	}
+	material := httpapi.CertificateMaterial{InternalCAPEM: snapshot.InternalCAPEM()}
+	switch snapshot.Source() {
+	case consoletls.SourceInternal:
+		material.Issuer = httpapi.CertificateIssuerInternal
+	case consoletls.SourceACME:
+		material.Issuer = httpapi.CertificateIssuerACME
+	case consoletls.SourceTemporary:
+		material.Issuer = httpapi.CertificateIssuerTemporary
+	default:
+		return httpapi.CertificateMaterial{}, fmt.Errorf("unsupported console certificate source %q", snapshot.Source())
+	}
+	return material, nil
 }
 
 func selectedConnectionEnrollmentTarget(ctx context.Context, origin string) (httpapi.EnrollmentTarget, error) {

@@ -50,6 +50,9 @@ func TestGateFollowsTheDirectoryAdministratorGroup(t *testing.T) {
 	if got := env[iamClientPrefix+"ALLOW_GROUPS"]; got != "NAS Admins" {
 		t.Fatalf("allow groups = %q, want the directory's administrator group", got)
 	}
+	if got := env["ANAS_PROXY_PLATFORM_ADMIN_GROUP"]; got != "NAS Admins" {
+		t.Fatalf("proxy assertion group = %q, want the resolved administrator group", got)
+	}
 }
 
 func TestGateFallsBackToTheRoleGroupNameWithoutADirectory(t *testing.T) {
@@ -95,5 +98,40 @@ func TestGateIgnoresAnyLeftoverAllowGroupsValue(t *testing.T) {
 	}
 	if got := env[iamClientPrefix+"ALLOW_GROUPS"]; got != "Admins" {
 		t.Fatalf("allow groups = %q, want the derived administrator group", got)
+	}
+}
+
+func TestEnabledConsoleProxyPublishesForwardAuthAndMutualTLSTraefikRoute(t *testing.T) {
+	env := map[string]string{
+		"OAUTH2_PROXY_CONSOLE_PROXY_ENABLED": "true", "OAUTH2_PROXY_CONSOLE_PROXY_PORT": "8443",
+		"BASE_DOMAIN": "example.test", "TRAEFIK_BASE_PORT": "9000",
+		"ANAS_TLS_TRUST_BUNDLE_NAME":   "anas-trust-bundle.crt",
+		"ANAS_FORWARD_AUTH_MIDDLEWARE": "anas-forward-auth@docker",
+	}
+	if err := publishConsoleRoute(env); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__RULE":                         "Host(`anas.example.test`)",
+		"ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__URL":                          "https://host.docker.internal:8443",
+		"ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__MIDDLEWARES":                  "anas-forward-auth@docker",
+		"ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__SERVERS_TRANSPORT":            "ANAS_CONSOLE_MTLS",
+		"ANAS_TRAEFIK_SERVERS_TRANSPORT__ANAS_CONSOLE_MTLS__SERVER_NAME": "anas.example.test",
+		"ANAS_TRAEFIK_SERVERS_TRANSPORT__ANAS_CONSOLE_MTLS__ROOT_CAS":    "/certs/anas-trust-bundle.crt",
+		"ANAS_CONSOLE_PROXY_PUBLIC_URL":                                  "https://anas.example.test:9000",
+	}
+	for name, value := range want {
+		if got := env[name]; got != value {
+			t.Errorf("%s = %q, want %q", name, got, value)
+		}
+	}
+	compose, err := os.ReadFile("../docker-compose.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"--http-address=127.0.0.1:4181", "--set-authorization-header=true", ":4182/", "X-Anas-Identity-Issuer", "X-Anas-Identity-Assertion"} {
+		if !strings.Contains(string(compose), value) {
+			t.Errorf("oauth2_proxy compose is missing %q", value)
+		}
 	}
 }

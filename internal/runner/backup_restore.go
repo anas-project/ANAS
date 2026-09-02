@@ -118,11 +118,19 @@ func restoreBackup(workspace, dest string, manifest *backupManifest, all []backu
 	restored := []string{}
 	emitProgress(jsonMode, "restore-metadata", 0, 5, "files")
 	metaDir := filepath.Join(source.root, "meta")
+	restoredConfig, err := os.ReadFile(filepath.Join(metaDir, snapshotMetaConfigName))
+	if err != nil {
+		return nil, failuref("restore_failed", "read backup config.yml: %v", err)
+	}
+	restoredState, err := managedConfigStateBytes(restoredConfig, "backup-restore")
+	if err != nil {
+		return nil, failuref("restore_failed", "create managed config state: %v", err)
+	}
 	if err := copyFileMode(filepath.Join(metaDir, snapshotMetaConfigName), workspaceConfigPath(workspace), 0600); err != nil {
 		return nil, failuref("restore_failed", "restore config.yml: %v", err)
 	}
 	restored = append(restored, "config")
-	if err := copyFileMode(filepath.Join(metaDir, snapshotMetaConfigStateName), managedConfigStatePath(base), 0600); err != nil {
+	if err := os.WriteFile(managedConfigStatePath(base), restoredState, 0600); err != nil {
 		return nil, failuref("restore_failed", "restore managed config state: %v", err)
 	}
 	if err := copyFileMode(filepath.Join(metaDir, snapshotMetaLockName), projectLockPath(workspaceConfigPath(workspace)), 0600); err != nil {

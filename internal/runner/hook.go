@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,13 @@ import (
 )
 
 type HookConfig = deployment.HookConfig
+
+func (a *app) subprocessContext() context.Context {
+	if a != nil && a.commandContext != nil {
+		return a.commandContext
+	}
+	return context.Background()
+}
 
 func hookSupportsPhase(hook HookConfig, phase string) bool {
 	if len(hook.Command) == 0 {
@@ -85,13 +93,13 @@ func (a *app) runCredentialHook(mod Module, phase, workdir string, env map[strin
 	if err != nil {
 		return credentialHookResult{}, err
 	}
-	cmd := exec.Command(command[0], command[1:]...)
+	cmd := exec.CommandContext(a.subprocessContext(), command[0], command[1:]...)
 	cmd.Dir = mod.SourceDir
 	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
 	if err != nil {
 		return credentialHookResult{}, err
 	}
-	cmd.Env = append(os.Environ(), "GOCACHE="+cacheDir)
+	cmd.Env = a.commandEnvironment(map[string]string{"GOCACHE": cacheDir})
 	cmd.Stdin = bytes.NewReader(in)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -138,13 +146,13 @@ func (a *app) runLocalAccountHook(mod Module, phase, workdir string, env map[str
 	if err != nil {
 		return hookResponse{}, err
 	}
-	cmd := exec.Command(command[0], command[1:]...)
+	cmd := exec.CommandContext(a.subprocessContext(), command[0], command[1:]...)
 	cmd.Dir = mod.SourceDir
 	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
 	if err != nil {
 		return hookResponse{}, err
 	}
-	cmd.Env = append(os.Environ(), "GOCACHE="+cacheDir)
+	cmd.Env = a.commandEnvironment(map[string]string{"GOCACHE": cacheDir})
 	cmd.Stdin = bytes.NewReader(in)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -241,13 +249,13 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	if err != nil {
 		return hookResponse{}, err
 	}
-	cmd := exec.Command(command[0], command[1:]...)
+	cmd := exec.CommandContext(a.subprocessContext(), command[0], command[1:]...)
 	cmd.Dir = mod.SourceDir
 	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
 	if err != nil {
 		return hookResponse{}, err
 	}
-	cmd.Env = append(os.Environ(), "GOCACHE="+cacheDir)
+	cmd.Env = a.commandEnvironment(map[string]string{"GOCACHE": cacheDir})
 	cmd.Stdin = bytes.NewReader(in)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -271,7 +279,7 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	}
 	if !a.suppressSensitiveOutput {
 		for _, warning := range resp.Warnings {
-			emitWarning(a.jsonMode, "module_localization_fallback", "%s hook %s: %s", mod.Name, phase, warning)
+			a.warning("module_localization_fallback", "%s hook %s: %s", mod.Name, phase, warning)
 		}
 	}
 	return resp, nil
@@ -297,7 +305,8 @@ func (a *app) runValidationHook(mod Module, env map[string]string) (hookResponse
 	if err != nil {
 		return hookResponse{}, err
 	}
-	cmd := exec.Command(command[0], command[1:]...)
+	commandContext := a.subprocessContext()
+	cmd := exec.CommandContext(commandContext, command[0], command[1:]...)
 	cmd.Dir = mod.SourceDir
 	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
 	if err != nil {
@@ -308,6 +317,9 @@ func (a *app) runValidationHook(mod Module, env map[string]string) (hookResponse
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
+		if contextErr := commandContext.Err(); contextErr != nil {
+			return hookResponse{}, contextErr
+		}
 		if stderr.Len() > 0 {
 			return hookResponse{}, fmt.Errorf("%s hook validate: %w: %s", mod.Name, err, strings.TrimSpace(stderr.String()))
 		}
@@ -381,9 +393,13 @@ func validationToolchainDiscoveryEnv() []string {
 }
 
 func resolveValidationGoBinary(buildGOROOT string) (string, error) {
+	return resolveValidationGoBinaryContext(context.Background(), buildGOROOT)
+}
+
+func resolveValidationGoBinaryContext(ctx context.Context, buildGOROOT string) (string, error) {
 	var discoveryErr error
 	if goOnPath, err := exec.LookPath("go"); err == nil {
-		cmd := exec.Command(goOnPath, "env", "GOROOT")
+		cmd := exec.CommandContext(ctx, goOnPath, "env", "GOROOT")
 		cmd.Env = validationToolchainDiscoveryEnv()
 		if output, err := cmd.Output(); err == nil {
 			candidate := filepath.Join(strings.TrimSpace(string(output)), "bin", "go")
@@ -391,6 +407,8 @@ func resolveValidationGoBinary(buildGOROOT string) (string, error) {
 				return candidate, nil
 			}
 			discoveryErr = fmt.Errorf("go env GOROOT returned unusable path %q", strings.TrimSpace(string(output)))
+		} else if contextErr := ctx.Err(); contextErr != nil {
+			return "", contextErr
 		} else {
 			discoveryErr = fmt.Errorf("discover host Go toolchain: %w", err)
 		}
@@ -463,7 +481,7 @@ func (a *app) ensureHookBinary(mod Module, pkg string) (string, error) {
 	if a.validationBuild {
 		// Resolve shims before clearing HOME, then invoke the concrete compiler
 		// with the private validation environment below.
-		goBinary, err = resolveValidationGoBinary(runtime.GOROOT())
+		goBinary, err = resolveValidationGoBinaryContext(a.subprocessContext(), runtime.GOROOT())
 		if err != nil {
 			return "", fmt.Errorf("%s hook validation build: %w", mod.Name, err)
 		}
@@ -471,19 +489,24 @@ func (a *app) ensureHookBinary(mod Module, pkg string) (string, error) {
 			return "", err
 		}
 	}
-	build := exec.Command(goBinary, "build", "-o", bin, pkg)
+	buildContext := a.subprocessContext()
+	build := exec.CommandContext(buildContext, goBinary, "build", "-o", bin, pkg)
 	build.Dir = mod.SourceDir
 	if a.validationBuild {
 		build.Env = validationHookBuildEnv(a.base, cacheDir, a.env["GOPROXY_URL"])
 	} else {
-		build.Env = append(os.Environ(), "GOCACHE="+cacheDir)
+		buildEnv := map[string]string{"GOCACHE": cacheDir}
 		if proxy := strings.TrimSpace(a.env["GOPROXY_URL"]); proxy != "" {
-			build.Env = append(build.Env, "GOPROXY="+proxy)
+			buildEnv["GOPROXY"] = proxy
 		}
+		build.Env = a.commandEnvironment(buildEnv)
 	}
 	var stderr bytes.Buffer
 	build.Stderr = &stderr
 	if err := build.Run(); err != nil {
+		if contextErr := buildContext.Err(); contextErr != nil {
+			return "", contextErr
+		}
 		if stderr.Len() > 0 {
 			return "", fmt.Errorf("%s hook build: %w: %s", mod.Name, err, stderr.String())
 		}
@@ -558,13 +581,15 @@ func applyHookRuntimeFiles(dir string, files map[string]string) error {
 	return nil
 }
 
-func runDockerCopies(copies []dockerCopy) error {
+func (a *app) runDockerCopies(copies []dockerCopy) error {
 	for _, cp := range copies {
 		if cp.Source == "" || cp.Container == "" || cp.Destination == "" {
 			continue
 		}
 		target := cp.Container + ":" + cp.Destination
-		if err := exec.Command("docker", "cp", cp.Source, target).Run(); err != nil {
+		cmd := exec.CommandContext(a.subprocessContext(), "docker", "cp", cp.Source, target)
+		cmd.Env = a.commandEnvironment(nil)
+		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("docker cp %s %s: %w", cp.Source, target, err)
 		}
 	}

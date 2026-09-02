@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -65,6 +66,8 @@ func runConfig(args []string, jsonMode bool) error {
 		} else {
 			*cfgPath = ""
 		}
+		// Absence of a workspace is a supported discovery mode for `list`.
+		err = nil
 	default:
 		workspace, err = resolveWorkspace(*workspaceFlag)
 		if err != nil {
@@ -72,6 +75,27 @@ func runConfig(args []string, jsonMode bool) error {
 		}
 		base = stateDir(workspace)
 		*cfgPath = absolutePath(configPathFor(workspace, *cfgPath))
+	}
+	// Resolve the workspace Module view and its registry only after entering
+	// the same lock domain as config PUT and module update. Otherwise a command
+	// can parse an old registry, wait for a concurrent view update, and then
+	// operate on the new workspace generation with stale schema metadata.
+	var unlock func()
+	switch subcommand {
+	case "import", "migrate", "set":
+		unlock, err = acquireRuntimeLock(base)
+	case "plan":
+		unlock, err = acquireWorkspaceConfigReadLock(context.Background(), base)
+	case "list":
+		if workspace != "" && *cfgPath != "" {
+			unlock, err = acquireWorkspaceConfigReadLock(context.Background(), base)
+		}
+	}
+	if err != nil {
+		return preconditionErrorf("runtime_lock_failed", "%s", err.Error())
+	}
+	if unlock != nil {
+		defer unlock()
 	}
 	root, err := locateModuleRootForWorkspace(*rootFlag, workspace)
 	if err != nil {
@@ -87,11 +111,6 @@ func runConfig(args []string, jsonMode bool) error {
 		if len(positional) != 1 {
 			return usageErrorf("usage: anas config import SOURCE [-w <workspace>] [--json]")
 		}
-		unlock, lockErr := acquireRuntimeLock(base)
-		if lockErr != nil {
-			return preconditionErrorf("runtime_lock_failed", "%s", lockErr.Error())
-		}
-		defer unlock()
 		source := absolutePath(positional[0])
 		result, err := importConfigIntoWorkspace(workspace, source, reg)
 		if err != nil {
@@ -106,11 +125,6 @@ func runConfig(args []string, jsonMode bool) error {
 		if len(positional) != 0 {
 			return usageErrorf("usage: anas config migrate [-w <workspace>] [--json]")
 		}
-		unlock, lockErr := acquireRuntimeLock(base)
-		if lockErr != nil {
-			return preconditionErrorf("runtime_lock_failed", "%s", lockErr.Error())
-		}
-		defer unlock()
 		source := workspaceConfigPath(workspace)
 		result, err := importConfigIntoWorkspace(workspace, source, reg)
 		if err != nil {
@@ -162,11 +176,6 @@ func runConfig(args []string, jsonMode bool) error {
 		if !exists(*cfgPath) {
 			return preconditionErrorf("config_missing", "config %s does not exist", *cfgPath)
 		}
-		unlock, lockErr := acquireRuntimeLock(base)
-		if lockErr != nil {
-			return preconditionErrorf("runtime_lock_failed", "%s", lockErr.Error())
-		}
-		defer unlock()
 		rollback, err := captureManagedConfigFiles(*cfgPath, updateLock)
 		if err != nil {
 			return failuref("state_unreadable", "%s", err.Error())
@@ -298,7 +307,7 @@ func runConfig(args []string, jsonMode bool) error {
 // captureManagedConfigFiles makes config set transactional with deployment
 // activation. Runtime activation already compensates by restarting the prior
 // deployment when the new one fails; this restores the matching desired state
-// and managed digest so a later apply cannot retry a rejected value silently.
+// and managed state so a later apply cannot retry a rejected value silently.
 func captureManagedConfigFiles(configPath string, includeLock bool) (func() error, error) {
 	type saved struct {
 		path    string
@@ -482,7 +491,13 @@ func runConfigSecret(args []string, jsonMode bool) error {
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
-	store, err := loadSecretStore(stateDir(workspace))
+	base := stateDir(workspace)
+	unlock, lockErr := acquireWorkspaceConfigReadLock(context.Background(), base)
+	if lockErr != nil {
+		return preconditionErrorf("runtime_lock_failed", "%s", lockErr.Error())
+	}
+	defer unlock()
+	store, err := loadSecretStore(base)
 	if err != nil {
 		return preconditionErrorf("secrets_unreadable", "%s", err.Error())
 	}

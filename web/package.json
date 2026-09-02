@@ -1,0 +1,29 @@
+{
+  "name": "@anas/console-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate:api": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json && tsc --noEmit -p emergency/tsconfig.json",
+    "test": "vitest run",
+    "build:main": "vite build",
+    "build:emergency": "vite build --config vite.emergency.config.ts",
+    "build": "npm run generate:api && npm run typecheck && npm run test && npm run build:main && npm run build:emergency"
+  },
+  "dependencies": {
+    "openapi-fetch": "0.17.0",
+    "vue": "3.5.42"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.8",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "vite": "8.2.2",
+    "vitest": "4.1.11",
+    "vue-tsc": "3.3.11"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

@@ -2,7 +2,11 @@ package runner
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,9 +54,10 @@ func (s *importedSecretSet) add(secret importedConfigSecret) error {
 }
 
 type managedConfigState struct {
-	APIVersion string `yaml:"api_version"`
-	Digest     string `yaml:"digest"`
-	UpdatedBy  string `yaml:"updated_by"`
+	APIVersion    string `yaml:"api_version"`
+	ContentDigest string `yaml:"digest"`
+	Validator     string `yaml:"validator,omitempty"`
+	UpdatedBy     string `yaml:"updated_by"`
 }
 
 type configCandidateValidationError struct{ err error }
@@ -79,10 +84,39 @@ func candidateConfigInvalid(err error) error {
 
 func managedConfigStatePath(base string) string { return filepath.Join(base, "config-managed.yml") }
 
-func managedConfigStateBytes(configBytes []byte, updatedBy string) []byte {
-	state := managedConfigState{APIVersion: "anas.config/v1", Digest: fmt.Sprintf("sha256:%x", sha256.Sum256(configBytes)), UpdatedBy: updatedBy}
-	b, _ := yaml.Marshal(&state)
-	return b
+func newManagedConfigValidator() (string, error) {
+	var random [32]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	return "cfgv-" + hex.EncodeToString(random[:]), nil
+}
+
+func validManagedConfigValidator(value string) bool {
+	if len(value) != len("cfgv-")+64 || !strings.HasPrefix(value, "cfgv-") {
+		return false
+	}
+	_, err := hex.DecodeString(value[len("cfgv-"):])
+	return err == nil
+}
+
+func managedConfigStateBytes(configBytes []byte, updatedBy string) ([]byte, error) {
+	validator, err := newManagedConfigValidator()
+	if err != nil {
+		return nil, err
+	}
+	return managedConfigStateBytesWithValidator(configBytes, updatedBy, validator)
+}
+
+func managedConfigStateBytesWithValidator(configBytes []byte, updatedBy, validator string) ([]byte, error) {
+	if !validManagedConfigValidator(validator) {
+		return nil, errors.New("managed config validator is invalid")
+	}
+	state := managedConfigState{
+		APIVersion: "anas.config/v1", ContentDigest: fmt.Sprintf("sha256:%x", sha256.Sum256(configBytes)),
+		Validator: validator, UpdatedBy: updatedBy,
+	}
+	return yaml.Marshal(&state)
 }
 
 func writeManagedConfigState(workspace, updatedBy string) error {
@@ -90,7 +124,10 @@ func writeManagedConfigState(workspace, updatedBy string) error {
 	if err != nil {
 		return err
 	}
-	stateBytes := managedConfigStateBytes(b, updatedBy)
+	stateBytes, err := managedConfigStateBytes(b, updatedBy)
+	if err != nil {
+		return err
+	}
 	var state managedConfigState
 	if err := yaml.Unmarshal(stateBytes, &state); err != nil {
 		return err
@@ -151,9 +188,13 @@ func setManagedConfigScalar(workspace, configPath string, yamlPath []string, val
 	if err != nil {
 		return err
 	}
+	stateBytes, err := managedConfigStateBytes(next, "config-set")
+	if err != nil {
+		return err
+	}
 	return commitImportedFiles([]importFile{
 		{path: configPath, data: next, mode: 0600},
-		{path: managedConfigStatePath(base), data: managedConfigStateBytes(next, "config-set"), mode: 0600},
+		{path: managedConfigStatePath(base), data: stateBytes, mode: 0600},
 	})
 }
 
@@ -182,7 +223,7 @@ func validateManagedConfig(workspace, configPath string) error {
 		return fmt.Errorf("workspace managed-config state is invalid; re-import the external source")
 	}
 	digest := fmt.Sprintf("sha256:%x", sha256.Sum256(b))
-	if digest != state.Digest {
+	if digest != state.ContentDigest {
 		return fmt.Errorf("workspace config was modified outside ANAS CLI; re-import the external source or restore it using `anas config` commands")
 	}
 	return nil
@@ -906,10 +947,14 @@ func importConfigIntoWorkspace(workspace, source string, reg map[string]Module) 
 		}
 	}
 
+	stateBytes, err := managedConfigStateBytes(result.Normalized, "config-import")
+	if err != nil {
+		return result, err
+	}
 	files := []importFile{
 		{path: workspaceConfigPath(workspace), data: result.Normalized, mode: 0600},
 		{path: store.path, data: marshalSecretStore(store), mode: 0600},
-		{path: managedConfigStatePath(base), data: managedConfigStateBytes(result.Normalized, "config-import"), mode: 0600},
+		{path: managedConfigStatePath(base), data: stateBytes, mode: 0600},
 	}
 	if err := commitImportedFiles(files); err != nil {
 		return result, err
@@ -939,6 +984,10 @@ func validateNormalizedImportedConfigWithLock(normalized []byte, reg map[string]
 // every pre-existing store record solely so equal-value config aliases inherit
 // source confidentiality while their schema is checked.
 func validateNormalizedImportedConfigWithLockAndTaint(normalized []byte, reg map[string]Module, lock *moduleLock, privateTaint map[string]string, extractedSecrets ...importedConfigSecret) error {
+	return validateNormalizedImportedConfigWithLockAndTaintContext(context.Background(), normalized, reg, lock, privateTaint, extractedSecrets...)
+}
+
+func validateNormalizedImportedConfigWithLockAndTaintContext(ctx context.Context, normalized []byte, reg map[string]Module, lock *moduleLock, privateTaint map[string]string, extractedSecrets ...importedConfigSecret) error {
 	validation, err := os.CreateTemp("", "anas-config-import-validation-*.yml")
 	if err != nil {
 		return err
@@ -999,7 +1048,7 @@ func validateNormalizedImportedConfigWithLockAndTaint(normalized []byte, reg map
 	if err := normalizeConfiguredParameterEnvWithSensitive(values, reg, sourceSensitive); err != nil {
 		return fmt.Errorf("normalized config is invalid: %w", err)
 	}
-	if err := validateResolvedInputRequiredEnv(loaded, reg, values, lock, sourceSensitive, privateTaint, allExtractedValues); err != nil {
+	if err := validateResolvedInputRequiredEnvContext(ctx, loaded, reg, values, lock, sourceSensitive, privateTaint, allExtractedValues); err != nil {
 		return fmt.Errorf("normalized config is invalid: %w", err)
 	}
 	return nil

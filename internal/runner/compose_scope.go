@@ -1,7 +1,9 @@
 package runner
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,7 +54,15 @@ func (a *app) runCompose(dir, module, composeFile string, env map[string]string,
 		}
 	}
 	if a.suppressSensitiveOutput {
+		if a.restrictedProcessEnvironment {
+			return a.compose.RunFileContext(a.subprocessContext(), dir, project, composeFile, a.commandEnvironment(env), io.Discard, io.Discard, args...)
+		}
 		return a.compose.RunFileQuiet(dir, project, composeFile, env, args...)
+	}
+	if a.restrictedProcessEnvironment {
+		// Compose output is not a typed event and may contain rendered values.
+		// Daemon jobs publish explicit progress/warnings instead of forwarding it.
+		return a.compose.RunFileContext(a.subprocessContext(), dir, project, composeFile, a.commandEnvironment(env), io.Discard, io.Discard, args...)
 	}
 	return a.compose.RunFile(dir, project, composeFile, env, args...)
 }
@@ -63,13 +73,25 @@ func (a *app) outputCompose(dir, module, composeFile string, env map[string]stri
 		return "", err
 	}
 	if a.suppressSensitiveOutput {
+		if a.restrictedProcessEnvironment {
+			return a.compose.OutputFileContext(a.subprocessContext(), dir, project, composeFile, a.commandEnvironment(env), true, args...)
+		}
 		return a.compose.OutputFileQuiet(dir, project, composeFile, env, args...)
+	}
+	if a.restrictedProcessEnvironment {
+		return a.compose.OutputFileContext(a.subprocessContext(), dir, project, composeFile, a.commandEnvironment(env), false, args...)
 	}
 	return a.compose.OutputFile(dir, project, composeFile, env, args...)
 }
 
 func (a *app) ensureComposeProjectOwner(project string) error {
-	owners, err := inspectComposeProjectOwners(project)
+	var owners []string
+	var err error
+	if a.restrictedProcessEnvironment {
+		owners, err = dockerComposeProjectOwnersContext(a.subprocessContext(), a.commandEnvironment(nil), project)
+	} else {
+		owners, err = inspectComposeProjectOwners(project)
+	}
 	if err != nil {
 		return fmt.Errorf("inspect Compose project %q ownership: %w", project, err)
 	}
@@ -93,6 +115,21 @@ func (a *app) ensureComposeProjectOwner(project string) error {
 	return nil
 }
 
+func dockerComposeProjectOwnersContext(ctx context.Context, environment []string, project string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "docker", "ps", "--all",
+		"--filter", "label=com.docker.compose.project="+project,
+		"--format", `{{.Label "com.docker.compose.project.working_dir"}}`)
+	cmd.Env = append([]string(nil), environment...)
+	out, err := cmd.Output()
+	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return nil, contextErr
+		}
+		return nil, err
+	}
+	return parseComposeProjectOwners(out), nil
+}
+
 func dockerComposeProjectOwners(project string) ([]string, error) {
 	cmd := exec.Command("docker", "ps", "--all",
 		"--filter", "label=com.docker.compose.project="+project,
@@ -102,6 +139,10 @@ func dockerComposeProjectOwners(project string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseComposeProjectOwners(out), nil
+}
+
+func parseComposeProjectOwners(out []byte) []string {
 	seen := map[string]bool{}
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
@@ -115,7 +156,7 @@ func dockerComposeProjectOwners(project string) ([]string, error) {
 		owners = append(owners, owner)
 	}
 	sort.Strings(owners)
-	return owners, nil
+	return owners
 }
 
 func composeWorkingDirWorkspace(dir string) (string, bool) {

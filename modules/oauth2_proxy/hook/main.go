@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -136,7 +137,32 @@ func calculate(e map[string]string, secrets *secretStore) error {
 	if err := registerIAMClient(e, secrets); err != nil {
 		return err
 	}
-	return readIAMBinding(e)
+	if err := readIAMBinding(e); err != nil {
+		return err
+	}
+	return publishConsoleRoute(e)
+}
+
+func publishConsoleRoute(e map[string]string) error {
+	if e["OAUTH2_PROXY_CONSOLE_PROXY_ENABLED"] != "true" {
+		return nil
+	}
+	port, err := strconv.Atoi(e["OAUTH2_PROXY_CONSOLE_PROXY_PORT"])
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("oauth2_proxy.console_proxy_port must be between 1 and 65535")
+	}
+	host := "anas." + e["BASE_DOMAIN"]
+	if e["BASE_DOMAIN"] == "" || e["ANAS_TLS_TRUST_BUNDLE_NAME"] == "" {
+		return fmt.Errorf("oauth2_proxy console route requires BASE_DOMAIN and ANAS_TLS_TRUST_BUNDLE_NAME")
+	}
+	e["ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__RULE"] = "Host(`" + host + "`)"
+	e["ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__URL"] = "https://host.docker.internal:" + strconv.Itoa(port)
+	e["ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__MIDDLEWARES"] = e["ANAS_FORWARD_AUTH_MIDDLEWARE"]
+	e["ANAS_TRAEFIK_ROUTE__ANAS_CONSOLE__SERVERS_TRANSPORT"] = "ANAS_CONSOLE_MTLS"
+	e["ANAS_TRAEFIK_SERVERS_TRANSPORT__ANAS_CONSOLE_MTLS__SERVER_NAME"] = host
+	e["ANAS_TRAEFIK_SERVERS_TRANSPORT__ANAS_CONSOLE_MTLS__ROOT_CAS"] = "/certs/" + e["ANAS_TLS_TRUST_BUNDLE_NAME"]
+	e["ANAS_CONSOLE_PROXY_PUBLIC_URL"] = "https://" + host + ":" + e["TRAEFIK_BASE_PORT"]
+	return nil
 }
 
 // registerIAMClient publishes this module's OIDC client request. Access control
@@ -167,6 +193,9 @@ func registerIAMClient(e map[string]string, secrets *secretStore) error {
 		return err
 	}
 	e[iamClientPrefix+"ALLOW_GROUPS"] = groups
+	// The bootstrap bridge independently verifies the resolved physical group
+	// before it emits the semantic platform_admin role to Traefik.
+	e["ANAS_PROXY_PLATFORM_ADMIN_GROUP"] = groups
 
 	cookieSecret, err := secrets.Ensure("OAUTH2_PROXY_COOKIE_SECRET", func() (string, error) {
 		// oauth2-proxy requires exactly 16, 24, or 32 bytes for the AES-CFB

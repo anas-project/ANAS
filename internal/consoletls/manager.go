@@ -42,6 +42,7 @@ const (
 	FileRolePrivateKey  FileRole = "private_key"
 	FileRoleIssuer      FileRole = "issuer"
 	FileRoleTrustBundle FileRole = "trust_bundle"
+	FileRoleInternalCA  FileRole = "internal_ca"
 	FileRoleIssuerMark  FileRole = "issuer_marker"
 )
 
@@ -62,6 +63,7 @@ type Candidate struct {
 	PrivateKeyPath      string
 	IssuerPath          string
 	TrustBundlePath     string
+	InternalCAPath      string
 	IssuerMarkerPath    string
 	Source              Source
 	BaseDomain          string
@@ -88,6 +90,7 @@ type Snapshot struct {
 	spkiSHA256  [sha256.Size]byte
 	leafDER     []byte
 	chainDER    [][]byte
+	internalCA  []byte
 	dnsNames    []string
 	notBefore   time.Time
 	notAfter    time.Time
@@ -146,6 +149,17 @@ func (s *Snapshot) CertificateChain() [][]byte {
 	return cloneByteSlices(s.chainDER)
 }
 
+// InternalCAPEM returns the validated public lego internal trust anchor. It
+// remains available when the serving certificate has moved to ACME so clients
+// can still install the stable ANAS trust root. Temporary certificates never
+// expose an internal CA.
+func (s *Snapshot) InternalCAPEM() []byte {
+	if s == nil {
+		return nil
+	}
+	return append([]byte{}, s.internalCA...)
+}
+
 // Leaf returns a newly parsed copy of the validated leaf certificate.
 func (s *Snapshot) Leaf() *x509.Certificate {
 	if s == nil {
@@ -198,6 +212,9 @@ func NewManager(options Options) (*Manager, error) {
 		}
 		if candidate.IssuerMarkerPath == "" {
 			return nil, fmt.Errorf("lego certificate candidate requires an explicit issuer marker path")
+		}
+		if candidate.InternalCAPath == "" {
+			return nil, fmt.Errorf("lego certificate candidate requires an explicit internal CA path")
 		}
 		if candidate.Source == SourceTemporary {
 			return nil, fmt.Errorf("lego certificate candidate cannot use temporary source")
@@ -305,6 +322,9 @@ func (m *Manager) candidatePaths() []string {
 			candidate.IssuerPath,
 			candidate.TrustBundlePath,
 		)
+		if candidate.InternalCAPath != "" {
+			paths = append(paths, candidate.InternalCAPath)
+		}
 		if candidate.IssuerMarkerPath != "" {
 			paths = append(paths, candidate.IssuerMarkerPath)
 		}
@@ -391,7 +411,10 @@ func (m *Manager) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error)
 func cloneTLSCertificate(source tls.Certificate) *tls.Certificate {
 	clone := source
 	clone.Certificate = cloneByteSlices(source.Certificate)
-	clone.SupportedSignatureAlgorithms = append([]tls.SignatureScheme{}, source.SupportedSignatureAlgorithms...)
+	// nil means "use the TLS stack defaults" while a non-nil empty slice
+	// means "support no signature algorithms". Preserve that distinction or
+	// every real handshake using an otherwise-valid cloned certificate fails.
+	clone.SupportedSignatureAlgorithms = append([]tls.SignatureScheme(nil), source.SupportedSignatureAlgorithms...)
 	clone.OCSPStaple = append([]byte{}, source.OCSPStaple...)
 	clone.SignedCertificateTimestamps = cloneByteSlices(source.SignedCertificateTimestamps)
 	if len(clone.Certificate) > 0 {

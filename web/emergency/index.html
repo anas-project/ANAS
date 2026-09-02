@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>ANAS Recovery / 应急恢复</title>
+  </head>
+  <body>
+    <main data-emergency-ui>
+      <p class="eyebrow">ANAS RECOVERY</p>
+      <h1>应急恢复 / Recovery</h1>
+      <p>此界面不依赖主 SPA，可用于确认守护进程是否仍可达。</p>
+      <p>This interface is independent from the main SPA and can verify that the daemon is reachable.</p>
+      <button id="health-check" type="button">检查 / Check</button>
+      <output id="health-result" aria-live="polite">—</output>
+      <p><a href="/">返回主控制台 / Return to console</a></p>
+    </main>
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>

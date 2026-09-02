@@ -9,17 +9,95 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"io"
 	"math/big"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/anas-project/ANAS/internal/consoleconfig"
 )
+
+func TestTrustedProxyTLSRequiresCAValidatedPinnedClientIdentity(t *testing.T) {
+	ca, caKey := testCertificateAuthority(t)
+	allowed := testClientLeaf(t, ca, caKey, 2)
+	other := testClientLeaf(t, ca, caKey, 3)
+	caPath := filepath.Join(t.TempDir(), "client-ca.crt")
+	if err := os.WriteFile(caPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(allowed.RawSubjectPublicKeyInfo)
+	config, err := newTrustedProxyTLSConfig(rejectingTLSConfig(), consoleconfig.TrustedProxyConfig{
+		ClientCA: caPath, ClientSPKISHA256: []string{hex.EncodeToString(digest[:])},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.ClientAuth != tls.RequireAndVerifyClientCert || config.ClientCAs == nil {
+		t.Fatalf("trusted proxy TLS policy = auth %v CAs=%v", config.ClientAuth, config.ClientCAs)
+	}
+	if err := config.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{allowed}}); err != nil {
+		t.Fatalf("pinned client rejected: %v", err)
+	}
+	if err := config.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{other}}); err == nil {
+		t.Fatal("unlisted client signed by the same CA was accepted")
+	}
+	if err := config.VerifyConnection(tls.ConnectionState{}); err == nil {
+		t.Fatal("missing client certificate was accepted")
+	}
+}
+
+func testCertificateAuthority(t *testing.T) (*x509.Certificate, ed25519.PrivateKey) {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "test client CA"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, publicKey, privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return certificate, privateKey
+}
+
+func testClientLeaf(t *testing.T, ca *x509.Certificate, caKey ed25519.PrivateKey, serial int64) *x509.Certificate {
+	t.Helper()
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(serial), Subject: pkix.Name{CommonName: "traefik-client"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, ca, publicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return certificate
+}
 
 func TestServeConsolePortShutsDownAllAddresses(t *testing.T) {
 	listeners := []net.Listener{newBlockingListener(), newBlockingListener()}

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -37,6 +38,12 @@ func runAdmin(args []string, jsonMode bool) error {
 	base := stateDir(workspace)
 	if action == "rotate" {
 		unlock, lockErr := acquireRuntimeLock(base)
+		if lockErr != nil {
+			return preconditionErrorf("runtime_lock_failed", "%s", lockErr.Error())
+		}
+		defer unlock()
+	} else {
+		unlock, lockErr := acquireWorkspaceConfigReadLock(context.Background(), base)
 		if lockErr != nil {
 			return preconditionErrorf("runtime_lock_failed", "%s", lockErr.Error())
 		}

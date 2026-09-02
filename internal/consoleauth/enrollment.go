@@ -20,6 +20,7 @@ func EnrollmentRecoveryRoutePatterns() []string {
 	return []string{
 		"/api/v1/system",
 		"/api/v1/system/ca",
+		"/api/v1/auth/session",
 		"/api/v1/jobs",
 		"/api/v1/jobs/{id}",
 		"/api/v1/jobs/{id}/events",

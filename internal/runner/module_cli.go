@@ -199,12 +199,27 @@ func registerModuleRemoteFlags(fs *flag.FlagSet, flags *moduleRemoteFlags) {
 }
 
 func resolveModuleSource(source, workspace string) (modulesource.Profile, string, error) {
+	return resolveModuleSourceWithWorkspaceLock(source, workspace, false)
+}
+
+// resolveModuleSourceWithWorkspaceLock keeps workspace-backed source
+// selection in the same consistency domain as config PUT. Callers that
+// already hold the exclusive runtime lock pass workspaceLocked=true to avoid
+// recursively acquiring the advisory lock.
+func resolveModuleSourceWithWorkspaceLock(source, workspace string, workspaceLocked bool) (modulesource.Profile, string, error) {
 	resolvedWorkspace := ""
 	if strings.TrimSpace(source) == "" && strings.TrimSpace(workspace) != "" {
 		var err error
 		resolvedWorkspace, err = resolveWorkspace(workspace)
 		if err != nil {
 			return modulesource.Profile{}, "", usageErrorf("%s", err.Error())
+		}
+		if !workspaceLocked {
+			unlock, lockErr := acquireWorkspaceConfigReadLock(context.Background(), stateDir(resolvedWorkspace))
+			if lockErr != nil {
+				return modulesource.Profile{}, "", failuref("lock_failed", "%s", lockErr.Error())
+			}
+			defer unlock()
 		}
 		cfg, err := config.Load(workspaceConfigPath(resolvedWorkspace))
 		if err != nil {
@@ -416,7 +431,12 @@ func runModuleSync(args []string, jsonMode bool) error {
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
-	profile, _, err := resolveModuleSource(flags.source, workspace)
+	unlock, err := acquireRuntimeLock(stateDir(workspace))
+	if err != nil {
+		return failuref("lock_failed", "%s", err.Error())
+	}
+	defer unlock()
+	profile, _, err := resolveModuleSourceWithWorkspaceLock(flags.source, workspace, true)
 	if err != nil {
 		return err
 	}
@@ -490,6 +510,11 @@ func runModuleUpdate(args []string, jsonMode bool) error {
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
+	unlock, err := acquireRuntimeLock(stateDir(workspace))
+	if err != nil {
+		return failuref("lock_failed", "%s", err.Error())
+	}
+	defer unlock()
 	configPath := workspaceConfigPath(workspace)
 	if err := validateManagedConfig(workspace, configPath); err != nil {
 		return preconditionErrorf("config_not_managed", "%s", err.Error())
@@ -498,7 +523,7 @@ func runModuleUpdate(args []string, jsonMode bool) error {
 	if err != nil {
 		return preconditionErrorf("config_invalid", "%s", err.Error())
 	}
-	profile, _, err := resolveModuleSource(flags.source, workspace)
+	profile, _, err := resolveModuleSourceWithWorkspaceLock(flags.source, workspace, true)
 	if err != nil {
 		return err
 	}

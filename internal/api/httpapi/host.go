@@ -22,6 +22,27 @@ type DirectHostPolicy struct {
 	AllowedDNSHosts []string
 }
 
+// ExactDNSHostPolicy is used behind Traefik, where the public Host names the
+// gateway rather than the private listener address. IP Hosts and unlisted DNS
+// aliases are always rejected.
+type ExactDNSHostPolicy struct {
+	AllowedDNSHosts []string
+}
+
+func (policy ExactDNSHostPolicy) Allowed(r *http.Request) bool {
+	host, _, isIP, ok := splitRequestHost(r.Host)
+	if !ok || isIP {
+		return false
+	}
+	canonical := canonicalDNSHost(host)
+	for _, allowed := range policy.AllowedDNSHosts {
+		if canonical != "" && canonical == canonicalDNSHost(allowed) {
+			return true
+		}
+	}
+	return false
+}
+
 func (policy DirectHostPolicy) Allowed(r *http.Request) bool {
 	requestHost, requestPort, isIP, ok := splitRequestHost(r.Host)
 	if !ok {

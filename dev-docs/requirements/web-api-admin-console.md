@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-16
-updated: 2026-08-29
+updated: 2026-09-03
 ---
 
 # ANAS Web API 与管理前端要求
@@ -74,6 +74,8 @@ updated: 2026-08-29
 当前状态与精确基线见[实施计划](../plans/web-api-admin-console.md)的落地快照。对后续实现的约束：
 
 - 配置 GET/validate/PUT **必须**消费与 CLI 相同的应用层 schema，**不得**为每个 Module 编写独立 HTTP 适配，也**不得**从 CLI JSON 反解析元数据。新增 Module 参数只改声明与统一投影，不改 handler 分支。
+- 字段投影必须返回其在公开配置文档中的规范 `document_path`；前端只按该路径读写内存草稿，不得复制 runner 对 global、env、Module config 或 identity 字段的寻址规则。
+- 配置 GET/PUT 必须同时投影 registry 中规范排序的 `available_modules`，包括没有配置字段的 Module；前端不得把“有字段”误当成“可选择”的必要条件。
 - CLI 投影**不是** JSON Schema：两者的 `required` 与 `default` 语义不同，前端不得不经转换直接当作 JSON Schema 使用。
 - 条件必填、跨字段关系与依赖运行态的规则继续由 resolver、plan 或 Hook 校验，不得伪装成单字段 schema。
 
@@ -144,7 +146,7 @@ type DeploymentService interface {
 
 - 基础路径 `/api/v1`。只读且快速的请求同步返回 `200`；改变宿主机或可能超过数秒的请求创建任务，返回 `202`、`job` 与 `Location`。
 - 错误使用 `application/problem+json`，保留现有枚举（`guarded_changes`、`confirmation_required`、`lock_stale` 等）。
-- 配置写入**必须**使用条件请求：已有托管配置携带 `If-Match`，首次托管携带 `If-None-Match: *`，冲突返回 `412`。**ETag 直接使用 `internal/runner/config_import.go` 的 `managedConfigState.Digest`**（`config.yml` 的 sha256，`validateManagedConfig` 已用它拒绝 ANAS 之外的手工修改），不得新造——这样“浏览器并发写入”与“有人 vim 改过”落在同一条错误路径。
+- 配置写入**必须**使用条件请求：已有托管配置携带 `If-Match`，首次托管携带 `If-None-Match: *`，冲突返回 `412`。ETag 是每个实际 generation 由 CSPRNG 生成并持久化的 256-bit opaque validator；`config.yml` 的 SHA-256 只留在 managed state 内检测 ANAS 之外的手工修改，不得出现在 ETag、HTTP body 或审计。零变更 PUT 保持 validator，配置或 Secret Store 的实际提交、CLI 写入和 restore 都必须轮换。
 - 创建变更任务的 POST **必须**支持 `Idempotency-Key`。作用域是认证主体、HTTP 方法、规范化路径与
   workspace ID；同一 key 与同一请求摘要返回原 job/result，同一 key 搭配不同摘要返回 `409`。
   幂等记录与 job 同步持久化并至少保留到 job 过期，服务重启不得丢失。重试先查已有幂等记录，
@@ -177,7 +179,7 @@ type DeploymentService interface {
 | Module Command | `GET /api/v1/workspaces/{ws}/modules/{module}/commands`、`/{command}` | API | 活动 deployment 冻结的公开 descriptor 与本地可用性；不含 handler、路径或输入键 |
 | Module Command | `POST /api/v1/workspaces/{ws}/modules/{module}/commands/{command}/actions/invoke` | API | 认证/job/审计完成后启用；M0 未认证监听器禁止开放 |
 | Module | `POST /api/v1/workspaces/{ws}/modules/actions/{start\|stop\|restart}` | API | body 传目标列表；返回依赖 chain 预览或任务 |
-| 配置 | `GET /api/v1/workspaces/{ws}/config` | API | 规范化配置、字段 schema、ETag；敏感值只报 set/unset |
+| 配置 | `GET /api/v1/workspaces/{ws}/config` | API | 规范化配置、registry `available_modules`、含规范 `document_path` 的字段 schema、ETag；敏感值只报 set/unset |
 | 配置 | `POST /api/v1/workspaces/{ws}/config/validate` | API | 校验候选配置并返回变更计划，不写入 |
 | 配置 | `PUT /api/v1/workspaces/{ws}/config` | API | 原子写入；已有配置要求 `If-Match`，首次托管要求 `If-None-Match: *` |
 | Module 市场 | `GET /api/v1/catalog/modules`、`POST /api/v1/workspaces/{ws}/actions/update-modules` | API | 目录；同步/更新任务 |
@@ -226,16 +228,59 @@ TERM，超过宽限期后 KILL，并进入与崩溃相同的补偿检查，不�
 
 两条约束排除了直接选用 SQLite：`scripts/ci/build-anas-release.sh` 以 `CGO_ENABLED=0` 交叉编译 amd64/arm64（cgo 驱动会破坏该路径）；当前直接依赖只有 `yaml.v3`、`semver/v3`、`x/crypto`、`x/text` 四个，`modernc.org/sqlite` 会一次性引入数十个包并扩大一个近 root 服务的攻击面。
 
-**MVP 使用 root 管理的 `console_store` 下的 append-only JSONL 存放任务、事件与审计，并把存储层放在接口后面**；该目录必须位于所有注册 workspace 之外，确有审计检索需求时再换 `modernc.org/sqlite`（保持 `CGO_ENABLED=0`）。最小审计 writer 与脱敏器必须在 LAN bootstrap/auth 开放前初始化，任务与事件流随后复用同一存储边界。追加必须串行化，在返回持久化成功前完成 flush/fsync；启动时允许截断最后一条未完成记录，但中间损坏必须隔离并报错，不能跳过后继续。
+**MVP 使用 root 管理的 `console_store`：任务/事件与审计都在单个 generation 内使用 append-only JSONL，分别只允许在 `jobs.lock` / `audit.lock` 下以 crash-safe sealed checkpoint 受控换代；两者的存储层都放在接口后面**。该目录必须位于所有注册 workspace 之外，确有审计检索需求时再换 `modernc.org/sqlite`（保持 `CGO_ENABLED=0`）。最小审计 writer 与脱敏器必须在 LAN bootstrap/auth 开放前初始化，任务与事件流随后复用同一目录安全边界。追加必须串行化，在返回持久化成功前完成 flush/fsync；启动时允许截断最后一条未完成记录，但中间损坏或未封口 checkpoint 必须隔离并报错，不能跳过后继续。
 
-所有受支持的 journal writer 必须通过 `consolejobs.Store` 并遵守 `jobs.lock`；能写 root-owned `0600` journal 且刻意绕过 advisory lock、在一次受支持 append 的检查窗口内并发改写前缀的本地进程是 root 等价对手，不属于该缓存完整性保证，服务也不宣称抵抗已取得本机 root 的攻击者。在这个边界内，未变化查询复用已验证状态；同进程协作 Store 只有在有界 append receipt 链完整证明全部增长时才从已验证 offset 增量应用 tail。未知或跨进程增长、receipt 缺失/过期、文件缩短或原位变化必须 fail closed 或回退全量校验，不能让每次 SSE poll 无条件从头扫描完整历史。
+所有受支持的任务/事件 journal writer 必须通过 `consolejobs.Store` 并遵守 `jobs.lock`；审计 writer 使用独立的 `audit.Writer`/`audit.lock`，两者只共享 root-managed `console_store` 的目录安全边界，不共享文件、锁或保留策略。能写 root-owned `0600` journal 且刻意绕过 advisory lock、在一次受支持 append 的检查窗口内并发改写前缀的本地进程是 root 等价对手，不属于该缓存完整性保证，服务也不宣称抵抗已取得本机 root 的攻击者。在这个边界内，未变化查询复用已验证状态；只有 `consolejobs.Store` 的同进程协作增长在有界 append receipt 链完整证明全部增长时才从已验证 offset 增量应用 tail。未知或跨进程增长、receipt 缺失/过期、文件缩短或原位变化必须 fail closed 或回退全量校验，不能让每次 SSE poll 无条件从头扫描完整历史；审计 Writer 发现 canonical inode 换代时必须在 `audit.lock` 下验证 generation 与无回退水位后换 FD。
 
-候选 record 与原子追加批次在写盘前校验尺寸，journal 读取也必须在聚合完整行前按同一 record 上限有界拒绝；调用方提供的聚合 warning/result 超限返回 `ErrInvalid`，不得把未受损的 Store 永久标记为 unavailable。任务事件设容量与保留期，审计保留策略独立；过期的 `Last-Event-ID` 返回可机读的事件缺口错误。逻辑 prune 必须配套 crash-safe compaction 或 segment rotation 来实际回收磁盘，不能只追加 prune record 后让物理 JSONL 无限增长。由于 `console_store` 不属于任何 workspace，它不得进入 workspace 的 snapshot/backup/restore 内容，恢复操作也不得覆盖正在执行任务与审计记录。无论哪种存储，控制面元数据都**不得**替代 workspace 中的 YAML 状态或成为部署真相源；密码 PHC 与 credential digest 使用独立的 0600 认证状态文件，原始密码、token、session 与 CSRF 值不持久化。当前没有需要加密的控制面持久化数据，因此不得为了满足抽象表述生成一个没有调用方的长期“加密密钥”；将来若引入这类数据，必须另立密钥生命周期与威胁模型要求。
+新建 envelope-format audit store 时必须先持久化 checksummed pristine metadata slot，再 fsync `audit.jsonl` 中带相同 StoreID 的 header；pristine 状态携带当次策略，且 generation、`last_sequence`、`pruned_through` 均为 0、`last_recorded_at` 为空，首次非零策略随后固定。首次初始化只允许有限恢复：空 lock 与既存空 journal（兼容旧格式时也包括可明确识别为旧 Event 编码、没有完整 record 的单条残尾）可视为从未初始化；首槽写入 torn 且没有有效 revision 时只能配对既存的精确空 journal，覆盖重写 revision 1；唯一例外是 journal 能完整验证为旧 Event-only 格式，此时可按其既有水位/commit time 重试首次 metadata 迁移。已有有效 pristine 首槽时，仅可用其中同一个 StoreID/策略补完既存空或可证明为同 StoreID 规范 header 的 partial journal。完整 envelope header 却没有有效 metadata 必须拒绝；非空 torn 首槽配任何 partial journal 也必须拒绝且不得截断。锁元数据使用两个固定 512-byte slot，每槽带递增 revision 与覆盖 revision/metadata 的 SHA-256；更新只能交替 `WriteAt` 且永不 truncate。恢复选择 revision 最高的完整有效槽，最新槽 torn 时回退旧槽，初始化完成后没有有效槽必须 fail closed；旧单行 lock metadata 迁移到双槽时也要保留完整旧前缀，若新槽 torn 则回退该前缀。元数据还保存 generation、`last_sequence`、`pruned_through`、`last_recorded_at` 与首次非零 MaxEvents/Retention 策略 identity；每次产生新已确认状态的 append/compaction 都要在释放锁和返回成功前同步更新。journal 已持久而 metadata 仍旧是合法的后续 crash window，但只能在完整验证同 lineage 的 journal 确为前进状态后接受并写新槽追平；journal 缺失、为空或相对 metadata 发生 lineage、水位/commit time 回退时必须拒绝打开。策略不匹配的新 Open 和已打开旧 Writer 的后续 refresh 也必须 fail closed。
+
+候选 record 与原子追加批次在写盘前校验尺寸，journal 读取也必须在聚合完整行前按同一 record 上限有界拒绝；调用方提供的聚合 warning/result 或审计事件超限分别返回 `ErrInvalid` / `ErrInvalidEvent`，不得把未受损的 Store/Writer 永久标记为 unavailable。任务事件设容量与保留期；审计使用独立的最大事件数与保留期策略，只能按 Writer 自有 commit time 淘汰连续 sequence 前缀，不能信任调用方提供的 occurrence timestamp。兼容旧 Event-only audit journal 时，旧格式没有独立 commit clock，恢复必须以 journal inode mtime 作为 legacy `recorded_at`，首次 append 例外地强制迁移为 sealed envelope generation；除这次一次性迁移外，自动换代只有在存在 obsolete history 且实测回收收益达到门槛时才发生。具体生产保留值在启用删除前另行冻结，不写成需求常量。过期的 `Last-Event-ID` 返回可机读的事件缺口错误。逻辑 prune 必须配套 crash-safe compaction 或 segment rotation 来实际回收磁盘，不能只追加 prune record 后让物理 JSONL 无限增长。由于 `console_store` 不属于任何 workspace，它不得进入 workspace 的 snapshot/backup/restore 内容，恢复操作也不得覆盖正在执行任务与审计记录。无论哪种存储，控制面元数据都**不得**替代 workspace 中的 YAML 状态或成为部署真相源；密码 PHC 与 credential digest 使用独立的 0600 认证状态文件，原始密码、token、session 与 CSRF 值不持久化。当前没有需要加密的控制面持久化数据，因此不得为了满足抽象表述生成一个没有调用方的长期“加密密钥”；将来若引入这类数据，必须另立密钥生命周期与威胁模型要求。
 
 配置 API 对敏感字段使用显式三态操作：`unchanged`、`set`、`unset`；不得用空字符串猜测意图。
-配置、Secret Store 与 managed digest 作为一个提交单元，任一步失败都保持原状态。已有托管配置缺少
-`If-Match` 返回 `428`，摘要失配返回 `412`；首次托管只接受 `If-None-Match: *`。ETag 使用带引号的
-强实体标签。
+配置、Secret Store 与 managed state 作为一个 redo-only 提交单元：WAL manifest 发布前失败保持三者
+原 tuple；发布后不回滚，受支持 reader 必须在持锁恢复完成前等待或 fail closed，不得向调用方暴露混合
+generation，最终收敛到 manifest 记录的新 tuple。已有托管配置缺少
+`If-Match` 返回 `428`，validator 失配返回 `412`；首次托管只接受 `If-None-Match: *`。ETag 使用带引号的
+强实体标签。validate 只返回当前 base validator，不在提交前生成候选 validator；旧 managed state 缺少
+validator 时，首个受支持配置读写者必须先在 workspace 排他运行时锁内校验内部内容摘要并原子补写随机
+validator，迁移完成前不得向客户端回退暴露旧摘要。
+
+HTTP 候选是封闭、规范化的写边界：敏感操作必须严格匹配三态 tagged union，未知字段即使值为空
+mapping 也不得借 Module 自定义解码绕过；Module/参数/environment key 必须使用规范拼写，本地账户
+占位是只读集合。JSON object 不承诺成员顺序，而 YAML `modules` mapping 的顺序参与部署解析，因此
+API 把候选 Module object 解释为集合：保留仍存在 Module 的当前相对顺序，新增 Module 按规范名称
+排序追加，删除自然移除；纯 JSON 往返若没有可写语义变化，必须保留原受管字节与 validator。Module
+集合的新增/删除必须进入 validate、PUT 与 authorized intent 的无值变更摘要。
+
+CAS 后的 Hook/审计窗口不能授权静默覆盖不遵守 advisory lock 的手工编辑。WAL 发布前必须再次核对
+config、Secret Store 与 managed state 仍是 CAS/候选准备时见到的完整旧 tuple；不匹配按 `412` 拒绝且
+不发布 WAL。事务 manifest、stage 与目标读取均按 role 设显式尺寸上限，恢复在分配或读取 oversized
+image 前 fail closed 并保留证据。
+
+审计 journal 与 workspace 配置事务是两个独立持久化域，不宣称存在跨 journal 原子提交。每次配置
+PUT 先从 CSPRNG 生成至少 128 bit 的唯一、不可猜 `operation_id`，用它关联 write-ahead 审计和配置 WAL：先持久记录只含
+operation ID、actor/workspace 的脱敏 `attempt`，失败则连
+请求体都不解析；候选配置在 workspace 运行时锁内通过 CAS 和校验后，再于配置 WAL 落盘前持久
+`authorized` intent。intent 只含同一 operation ID、actor、workspace、当前/候选 validator 和不带值的变更摘要；
+它写入失败必须否决配置提交。若需要 WAL，其 manifest 也持久同一 operation ID。
+
+`success`/`failure` 终态事件只是对已持久 write-ahead 证据的补充，带同一 operation ID，并使用与
+HTTP 请求取消分离的有界 context 追加。它失败不得回滚已提交的 workspace，也不得把已确认的
+成功对外改报为失败，但失败必须写入 daemon 自身的结构化错误日志而不能静默丢弃。
+
+只有配置 WAL manifest 已发布，或 manifest rename 后目录 fsync 使其持久性存疑时，本次结果才是
+`indeterminate`（错误码 `config_recovery_required`）；WAL 前失败仍是 `failure`。下一个配置读写者必须先在
+workspace 排他锁下完成恢复。MVP 不事后改写该 operation 的历史 `indeterminate`，也不伪造一条与当时
+请求同步的成功/失败终态；审计查询将它与当前 managed validator 分开展示。查询同样不得因缺少独立
+terminal 记录而推断配置成功或失败。
+
+审计查询只在 `full` 状态经 TLS 对 owner 开放，必须通过 `audit.Writer` 的受支持只读接口取得已经过
+lineage、canonical inode、lock metadata 与跨进程换代校验的 retained state，不得由 handler 直接扫描
+`audit.jsonl`。结果按 sequence 新到旧排列，支持 `limit` 与 opaque `cursor`；服务级事件和当前已注册
+workspace 的事件可见，已移除或未知 workspace 的事件必须在分页前过滤。请求 principal 必须同时具有
+owner role 与非空 identity source；响应只投影 writer 已脱敏的 sequence/time/type/actor/workspace/outcome/details。
+配置操作的 `attempt`、`authorized` 与 terminal 保持独立事件，`indeterminate` 保持原 outcome，terminal
+缺失不得被查询层合成为成功或失败。
 
 ## 5. 访问路径、证书与认证
 
@@ -298,7 +343,10 @@ handoff，不能重新开放配置或 apply。
 transaction、源 bootstrap origin、目标 HTTPS origin 与当前证书 SPKI；handoff 明文不得进入 URL、日志或浏览器持久存储，
 服务端只持久化摘要和绑定元数据。浏览器以顶层 form POST 的请求体把 handoff 发送到 HTTPS exchange
 （不使用 query、fragment、CORS fetch 或持久存储），在 HTTPS 源原子兑换为 15 分钟的 Secure
-enrollment session。exchange 成功后必须同时设置 HttpOnly 的 `__Host-anas_enrollment_session` 与同源
+enrollment session。承载该顶层表单的响应必须使用 `Referrer-Policy: strict-origin`：同为 HTTPS 时保留
+精确源 origin 供 exchange 校验，但不泄露源路径或查询；不得使用会让真实浏览器把跨源 POST 的
+`Origin` 降为 `null` 的 `no-referrer`。exchange 成功后必须同时设置 HttpOnly 的
+`__Host-anas_enrollment_session` 与同源
 SPA 可读取的 `__Host-anas_enrollment_csrf`；两者均为 `Secure`、`SameSite=Strict`、`Path=/`、不设
 `Domain`，随后以 `303` 跳转到目标 HTTPS origin 的根路径，CSRF 值不得进入 URL 或 JSON。SPA 从 CSRF
 Cookie 读取值并复制到 `X-CSRF-Token`；首个 `owner` 的密码只允许在该 session 中提交，且请求必须满足
@@ -354,9 +402,9 @@ token/session、篡改 Module 与初始配置、劫持首次 apply 或抢先完�
 公网接口都会一起监听。该暴露和 bootstrap 明文风险属于已接受产品决策，安装文档、CLI status 与
 引导风险横幅必须直说；接口隔离和防火墙由管理员负责。
 
-Traefik 运行时**可以额外**提供 `https://anas.<base_domain>/`，与直连地址并存。这条路不需要新机制：`modules/traefik/traefik/anas-entrypoint.sh` 已有面向非 Docker 宿主进程的 `ANAS_TRAEFIK_ROUTE__<NAME>__{RULE,URL,MIDDLEWARES,ENTRYPOINTS,TLS}` 声明，管理面正属于这一类。
+Traefik 运行时**可以额外**提供 `https://anas.<base_domain>/`，与直连地址并存。`modules/traefik/traefik/anas-entrypoint.sh` 的声明式路由支持 `ANAS_TRAEFIK_ROUTE__<NAME>__SERVERS_TRANSPORT`，并从 `ANAS_TRAEFIK_SERVERS_TRANSPORT__<NAME>__{SERVER_NAME,ROOT_CAS}` 生成后端 transport。管理面使用 `anas-trust-bundle.crt` 校验上游证书，并把 `serverName` 固定为 `anas.<base_domain>`。
 
-**但当前仍有一个缺口**：该路由生成器不输出 `serversTransport`，Traefik 反连 `anasd` 会因证书名不匹配握手失败。打通需要扩展 entrypoint，增加 `__SERVERS_TRANSPORT` 字段并定义一个信任 `anas-trust-bundle.crt`、覆盖 `serverName` 为 `anas.<base_domain>` 的 transport。这个 transport 只解决 Traefik 对上游的校验，**不能单独证明请求来自 Traefik**；代理身份监听器还必须按 §5.5/R-072 使用受控 Unix socket、mTLS client credential 或等价不可旁路通道。因此先交付直连固定端口；Traefik 路由与两条身份边界作为 P2 的 M1.5 支线，可与直连 M2—M4 并行，但必须在 M5 汇合后才能宣告首版完成。
+后端 transport 的服务端校验不能单独证明请求来自 Traefik。M1.5 因此还为每个命名 transport 在 Secret Store 生成稳定的专属 CA/client credential，只把 CA 公钥、客户端 cert/key 与 SPKI 摘要投影到 Traefik 专用 runtime；代理身份监听器同时要求客户端 CA 验证、叶 SPKI allowlist 和精确源 IP。直连固定端口与这条支线仍可独立推进，但必须在 M5 汇合后才能宣告首版完成。
 
 ### 5.5 认证与角色
 
@@ -397,6 +445,8 @@ Traefik 运行时**可以额外**提供 `https://anas.<base_domain>/`，与直�
 
 OIDC 会话必须提交由受信 forward-auth 路径产生、绑定同一稳定 subject 且带近期认证时间的一次性 step-up assertion。在该 assertion 契约落地前，经 Traefik 的入口不得开放需要 step-up 的操作，不能静默退化成普通 OIDC 会话或要求用户输入不属于他的本地密码。preview 返回的 confirmation token 必须短时、单次，并绑定 actor、认证来源、action、workspace、目标 ID 与当前状态摘要；执行端点校验 token 与 step-up，状态变化后返回冲突。唯一没有既有密码可重新验证的场景是 bootstrap 首次 apply：它的 confirmation 改为绑定 bootstrap session、transaction、候选配置和 plan 摘要，不伪造一个不存在的 owner/OIDC proof。前端确认词只是交互层，不是授权凭据。
 
+首次 apply 使用的 plan 摘要必须由服务端对完整类型化计划和当时的 opaque config validator 计算；不得把内部配置内容摘要、本机路径或客户端可自造的摘要作为绑定材料。配置 generation 或计划结果变化后，旧 confirmation 必须因绑定漂移而失效。
+
 ### 5.6 应急 UI 包
 
 主 SPA 构建损坏或与 API 版本不兼容时，恢复入口也会渲染不出来。因此**应急 UI 必须是独立的小型嵌入包，而不是完整 SPA 的一个路由**。它与 §5.5 正交：直连监听器平时提供的就是完整 SPA，应急包只在主 SPA 无法渲染时接管。配套：引导级/应急端点集在路由层用显式允许列表强制，不散落在各 handler；应急模式运行在不含 `CAP_SYS_ADMIN` 操作的缩减能力集下。
@@ -426,7 +476,7 @@ OIDC 会话必须提交由受信 forward-auth 路径产生、绑定同一稳定 
 
 ### 6.2 关键交互
 
-- 配置编辑流程为“编辑草稿 → 服务端 validate → 展示变更效果/依赖/风险 → 保存 → 可选 apply”；改一个输入框**不得**立即改变运行环境。
+- 配置编辑流程为“编辑草稿 → 服务端 validate → 展示变更效果/依赖/风险 → 保存 → 可选 apply”；改一个输入框**不得**立即改变运行环境。字段必须使用服务端投影的规范 `document_path` 修改公开文档；任意后续编辑都使既有 validate 结果失效，保存只能提交最近一次验证通过的规范化候选，并按托管状态携带 GET 的强 ETag 或 `If-None-Match: *`。
 - **`credential_rotate`、`data_migrate`、`immutable` 三类字段在 Web 上同样不可写入。** `config set` 对它们直接拒绝（usage 错误），没有绕过开关；能绕过的是 apply 阶段的 `--allow-risky`（`guarded_changes`，退出码 4）。这是两个不同的闸门：配置页对这三类字段只读并显示其 `apply` 指向的迁移流程，二次确认只出现在 apply 的 `allow_risky` 上。若 Web 允许重新认证后写入 immutable 值，Web 适配器就比 CLI 权限更大，推翻 §1.1 的共享服务层前提。
 - `allow_risky` 确认需要输入简短确认词并提交服务端 confirmation token，不得只用普通确认框，并须原样展示 `error.detail.blocked` 每一项；bootstrap 首次 apply 使用 §5.5 的 transaction 绑定确认，full 状态使用认证来源感知 step-up。
 - 快照恢复、备份恢复与删除先展示 workspace、目标 ID、是否触碰 `data/`、是否触碰 `userdata/`、是否可撤销。
@@ -449,7 +499,7 @@ OIDC 会话必须提交由受信 forward-auth 路径产生、绑定同一稳定 
 - 密码使用 Argon2id；持久会话 token 至少 256 bit、服务端只存摘要，登录成功后轮换；默认空闲期限 30 分钟、绝对期限 12 小时。退出、密码轮换、管理员删除或权限来源撤销立即使相关会话失效。enrollment/full **session** Cookie 设 `Secure`、`HttpOnly`、`SameSite=Strict`、`Path=/` 且不设 `Domain`；enrollment 的独立 double-submit CSRF Cookie 属性相同但刻意不设 `HttpOnly`，只供同源 SPA 复制到请求头。明文 bootstrap session 是唯一可不带 `Secure` 的例外，但仍须 `HttpOnly`、`SameSite=Strict`、严格 Host/Origin、CSRF 与状态 allowlist。进入 `enrollment` 后 bootstrap session Cookie 只在同一 transaction 的 job/events、CA、handoff 过渡端点接受，进入 `full` 后完全拒绝。
 - bootstrap token/session/handoff 遵循 §5.2 的单次兑换与绝对 TTL；走可选的 `anas console tls --self-signed` 时，CLI 与临时证书指纹一同打印 token。
 - 限制请求体大小、登录频率、并发任务数与 SSE 连接数；设置 HTTP header/read/write/idle timeout。SSE 建连后还必须在每个 replay batch、poll 与 heartbeat 边界以当前 capability state 重新执行同一路由策略、实时 session 校验与 job 对象授权；这种周期观察不得续期 bootstrap/local session 的 idle TTL。session 撤销或过期、密码轮换、capability state 改变或对象权限丢失后，已建立的流立即静默关闭，不发送可能泄露认证状态的 SSE 错误载荷。
-- 浏览器入口只接受服务配置允许的 Host/Origin，默认不开放 CORS；除 §5.2 明确定义且绑定源/目标/SPKI 的 enrollment exchange 外，写请求必须严格同源并校验 CSRF。HTTPS 响应设置 CSP（至少 `default-src 'self'`、`frame-ancestors 'none'`）、`X-Content-Type-Options: nosniff`、严格 Referrer-Policy 与 HSTS。任务日志按不可信文本渲染，不得以 HTML 注入页面。SSE 使用独立于普通响应的写入期限、周期 heartbeat 与显式连接上限，不能被普通 `WriteTimeout` 静默截断。
+- 浏览器入口只接受服务配置允许的 Host/Origin，默认不开放 CORS；除 §5.2 明确定义且绑定源/目标/SPKI 的 enrollment exchange 外，写请求必须严格同源并校验 CSRF。HTTPS 响应设置 CSP（至少 `default-src 'self'`、`frame-ancestors 'none'`）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin` 与 HSTS；该策略只发送 origin、不发送路径或查询，并保证 HTTPS→HTTPS 顶层 handoff POST 保留精确非 `null` Origin。任务日志按不可信文本渲染，不得以 HTML 注入页面。SSE 使用独立于普通响应的写入期限、周期 heartbeat 与显式连接上限，不能被普通 `WriteTimeout` 静默截断。
 
 ### 7.2 输入边界
 
@@ -476,7 +526,7 @@ OIDC 会话必须提交由受信 forward-auth 路径产生、绑定同一稳定 
 ### 7.5 审计
 
 - 所有经控制台执行的登录、凭据 reveal、密码轮换、配置写入与部署进入**不可由 API 修改**的审计日志；请求体先脱敏。首版标为“终端提示”的恢复/删除只记录 descriptor 已生成并准备返回，不能声称客户端已收到或浏览器已展示，更不能在不知道 CLI 是否执行时虚构成功审计事件。
-- 审计按暴露顺序交付：LAN wildcard 开放前覆盖 bootstrap token/session、登录尝试与状态转换；首次写操作开放前覆盖 config/plan/apply、confirmation 与 job 状态；后续每个功能在对应路由开放前接入同一审计接口。
+- 审计按暴露顺序交付：LAN wildcard 开放前覆盖 bootstrap token/session、登录尝试与状态转换；配置 PUT 按 §4.4 先持久 `attempt` 和 `authorized` intent；plan/apply 路由开放前再覆盖 confirmation 签发/消费、job 创建/状态转换与失败。后续每个功能在对应路由开放前接入同一审计接口。
 - 首版 `anasd` 以 root 身份运行：它必须读取 root:root 0600 的 TLS 私钥、访问 Docker socket并读写注册 workspace；不得同时声称使用一个无法读取这些路径的非特权 service user。systemd unit 使用明确的只读/可写路径和可用的 hardening 选项，服务配置由 root 管理且不得从请求或子进程环境覆盖。Docker socket 权限近似 root，部署文档必须明确这一事实，**不得**把加入 `docker` 组描述成安全沙箱。
 
 ## 8. 测试要求
@@ -528,6 +578,7 @@ OIDC 会话必须提交由受信 forward-auth 路径产生、绑定同一稳定 
 | `anasd` 的能力集 | 首版只做不需要 `CAP_SYS_ADMIN` 的子集；是否授予 ambient capability 作为独立决策（§7.4） |
 | Web 能否创建 workspace | 不能。`anas init` 写宿主机路径而 API 不接受路径输入，保持为终端操作（§6.1） |
 | 配置元数据够不够驱动表单 | 够。参数 inventory 由 release gate 动态校验 `unknown=0`，数量与分布由统一 inventory 派生而不是稳定契约。schema 已分离输入必填、解析后必有、默认来源与单字段 constraints；配置 HTTP API 直接复用统一 schema，不按 Module 适配（§2.2） |
+| 配置与审计如何原子提交 | 不伪造跨 journal 原子性。单次 PUT 的唯一 operation ID 贯穿脱敏 attempt、锁内 authorized intent、配置 WAL 与补充 terminal；前两者是否决门，terminal 不能回滚已提交配置。只有 durable/存疑的 WAL publish 后才记 `indeterminate`并由下次持锁恢复；历史 outcome 不事后改写，查询不从 terminal 缺失猜测结果（§4.4、§7.5） |
 
 ## 10. 需求矩阵（规范来源）
 
@@ -585,7 +636,7 @@ ID 一经分配即固定，章节重排、措辞修改都不改动它；废弃�
 | `CONSOLE-R-040` | 改变宿主机或可能超过数秒的请求返回 `202` 加 `job` 与 `Location` | 契约 |
 | `CONSOLE-R-041` | 错误使用 `application/problem+json` 并保留现有错误枚举 | 契约 |
 | `CONSOLE-R-042` | 已有 managed config 的 PUT 必须携带强 `If-Match`；首次托管必须携带 `If-None-Match: *`；缺失正确条件头返回 `428`，失配返回 `412` | 契约 |
-| `CONSOLE-R-043` | ETag 是带双引号的强实体标签，opaque value 精确使用 `managedConfigState.Digest`，不得使用 weak ETag 或另造摘要 | 单元 |
+| `CONSOLE-R-043` | ETag 是带双引号的强实体标签，opaque value 使用 managed state 中持久化的 `cfgv-` 加 256-bit CSPRNG validator；内部 config content digest 不得出现在 ETag、HTTP body 或审计，也不得使用 weak ETag | 单元 |
 | `CONSOLE-R-044` | workspace 外手工修改 `config.yml` 同样触发 `412` | e2e |
 | `CONSOLE-R-045` | 列表端点支持 `limit` 与 `cursor` | 契约 |
 | `CONSOLE-R-046` | API 不接受未注册的 workspace 路径，只接受 registry ID | 契约 |
@@ -597,11 +648,13 @@ ID 一经分配即固定，章节重排、措辞修改都不改动它；废弃�
 | `CONSOLE-R-052` | 密码哈希与加密密钥存于独立 0600 文件；由 R-163 取代（已废弃） | 单元 |
 | `CONSOLE-R-053` | §4.2 中标为 `API` 的行是必需 surface，OpenAPI 与实际路由双向覆盖方法、请求、响应、权限和状态；标为 `终端提示` 的操作不得注册对应写路由 | 契约 |
 | `CONSOLE-R-054` | 创建变更任务的 POST 按 principal + method + canonical path + workspace 持久化 `Idempotency-Key`；重试先返回原 job 而不重复消费 confirmation，同 key 异请求返回 `409`，首次创建原子提交 confirmation/job/key | 契约 |
-| `CONSOLE-R-055` | 配置 PUT 对 sensitive 字段只接受 `unchanged`/`set(value)`/`unset`，普通配置、Secret Store 与 managed digest 全有或全无提交 | 单元 |
+| `CONSOLE-R-055` | 配置 PUT 对 sensitive 字段只接受 `unchanged`/`set(value)`/`unset`；普通配置、Secret Store 与 managed state 使用 redo-only WAL：manifest 发布前失败保持旧 tuple，发布后不回滚，受支持 reader 在持锁恢复前等待或 fail closed、不得暴露混合 generation，最终收敛到 manifest 记录的新 tuple | 单元 |
 | `CONSOLE-R-056` | HTTP 请求 context 只负责持久化入队；返回 `202` 或客户端断开后任务使用独立 job-owned context | 单元 |
 | `CONSOLE-R-057` | 取消只在安全阶段生效，外部命令按进程组 TERM→宽限期→KILL，并进入补偿检查 | e2e |
-| `CONSOLE-R-058` | 所有受支持 writer 经 `consolejobs.Store`/`jobs.lock` 串行追加并在成功响应前 flush/fsync；启动可截断残尾但拒绝中间损坏；只有完整 receipt 链证明的同进程协作增长从验证 offset 增量应用 tail，未知增长或原位变化全量重验/fail closed；读取完整行前及 record/批次写前均有界限长，调用方超限只返回 `ErrInvalid`、不毒化 Store；本地 root 绕锁并发篡改不在缓存完整性威胁模型内；磁盘满给出结构化失败 | 单元 |
-| `CONSOLE-R-059` | 任务事件与审计采用独立容量/保留策略，逻辑 prune 通过 crash-safe compaction/segment rotation 实际回收磁盘；过期 `Last-Event-ID` 返回可机读事件缺口，workspace 恢复不得覆盖 console store | e2e |
+| `CONSOLE-R-058` | 所有受支持任务/事件 writer 经 `consolejobs.Store`/`jobs.lock` 串行追加并在成功响应前 flush/fsync；审计使用独立 `audit.Writer`/`audit.lock`；启动可截断残尾但拒绝中间损坏；只有 job journal 的完整 receipt 链证明的同进程协作增长从验证 offset 增量应用 tail，未知增长或原位变化全量重验/fail closed；读取完整行前及 record/批次写前均有界限长，调用方超限只返回 `ErrInvalid`/`ErrInvalidEvent`、不毒化 Store/Writer；本地 root 绕锁并发篡改不在缓存完整性威胁模型内；磁盘满给出保留底层原因的结构化失败 | 单元 |
+| `CONSOLE-R-059` | 任务事件与审计采用相互独立的容量/保留策略；任务事件的逻辑 prune 与审计轮转均通过 crash-safe compaction/segment rotation 实际回收磁盘；过期 `Last-Event-ID` 返回可机读事件缺口，workspace snapshot/backup/restore 不包含且不得覆盖 console store | e2e |
+| `CONSOLE-R-168` | job journal checkpoint 分块保留 StoreID、job/idempotency、retained events、全局及逐 job 水位；被识别为 checkpoint 的 generation 只有 counts 与 SHA-256 seal 完整匹配才可恢复；temp fsync、原子 rename 与目录 fsync 后才确认 prospective 事务提交并截断旧 inode；已打开的旧 Store 发现 canonical inode 换代时，必须在 `jobs.lock` 下全量验证且只接受 sealed、更高 generation、相对已验证状态无语义回退的替代，再更换 FD/receipt，receipt 不得跨 inode；已确认提交后的 rename hook 或旧 inode 清理错误不得向业务写入方虚报事务失败；自动触发按预计大小跨越内部边界后测量 prospective checkpoint 的实际收益，不得对无 obsolete history 或收益不足的 journal 反复重写 | 单元 |
+| `CONSOLE-R-169` | 新建 envelope-format audit store 先持久化 checksummed pristine `audit.lock` slot（固定 StoreID，generation/sequence/prune=0、无 commit time，并携带当次策略），再 fsync 匹配 header；首次非零 MaxEvents/Retention identity 随后固定。空 lock 只可配对既存空 journal 或可明确识别的旧 Event 单条无完整 record 残尾；首槽 torn 且无有效 revision 时只可配对精确空 journal 并重写 revision 1，或在 journal 完整验证为旧 Event-only 格式时按既有水位/commit time 重试首次迁移。有效 pristine 首槽仅可用原 StoreID/策略补完空或可证明同 StoreID 的规范 partial header。完整 header 无有效 metadata 必须拒绝；非空 torn 首槽配 partial journal 也必须拒绝且不截断。固定 lock inode 内两个 512-byte slot 各带递增 revision 与 SHA-256，更新交替 `WriteAt` 且永不 truncate；恢复选最高完整有效 revision，最新槽 torn 时回退旧槽，初始化后无有效槽 fail closed，旧单行 metadata 迁移的新槽 torn 时也回退旧完整前缀。metadata 还保存 generation、`last_sequence`、`pruned_through`、`last_recorded_at`；每个新已确认 append/compaction 在解锁和成功返回前更新。journal 可在后续 crash window 中领先旧 metadata，但 Open 仅在完整验证同 lineage 前进后写新槽追平；journal 缺失/空、相对 metadata 回退或 policy mismatch 均 fail closed。保留策略按 Writer commit time prospective prune 连续前缀，全量淘汰后仍不复用 sequence；旧 Event-only journal 以 inode mtime 作为 legacy `recorded_at`，首次 append 例外地强制迁移为 sealed envelope generation，除此之外自动换代只在存在 obsolete history 且实际节省达到门槛时触发。checkpoint 封存 StoreID、generation、连续 retained suffix、各 retained `recorded_at`、event count 与 SHA-256 seal，retained 时间不得倒退且 snapshot begin/end time 必须精确相等；只有 temp fsync、原子 rename、目录 fsync 后才确认提交并截断旧 inode，旧 Writer 只接受同 lineage、更高 generation 且 retained event/水位无回退的替代。reserved temp path 在 rename 前可留下安全残留并由下一次锁内 Open/Compact 清理，危险类型不删除并 fail closed；只有尚未尝试 rename 且 temp 清理全部成功的取消不毒化 Writer，其他 ENOSPC、路径替换、跨进程或歧义故障均 fail closed；调用方 timestamp 不影响保留，超限不毒化 Writer | 单元 |
 
 ### 10.4 访问路径与证书
 
@@ -617,7 +670,7 @@ ID 一经分配即固定，章节重排、措辞修改都不改动它；废弃�
 | `CONSOLE-R-067` | 管理端口记录在 `anasd` 服务配置中，不出现在 workspace 的 `config.yml` | 审阅 |
 | `CONSOLE-R-068` | 直连策略默认值为 `lan` 且取值只能是持久化的 `lan`/`loopback`；`lan` 绑定 IPv4 wildcard 与启用时的 IPv6 wildcard，数值 Host 须匹配连接实际命中的本机地址；`loopback` 只绑定 loopback，策略不随网卡、Traefik、IAM、管理员、workspace 或证书状态变化 | 单元 |
 | `CONSOLE-R-069` | `virtual_domain` 部署经内部 CA 可到达完整级，不被困在引导级 | e2e |
-| `CONSOLE-R-070` | `GET /api/v1/system` 返回当前证书签发者，界面不得把内部 CA 显示为“证书有问题” | 契约 |
+| `CONSOLE-R-070` | `GET /api/v1/system` 返回当前证书签发者以及 `m0`/`bootstrap`/`enrollment`/`full` 闭集运行状态，界面据此选择入口且不得把内部 CA 显示为“证书有问题” | 契约 |
 | `CONSOLE-R-071` | TLS 热重载只在新 cert/key 完整校验后原子切换；失败继续使用 last-known-good 并告警 | 单元 |
 | `CONSOLE-R-072` | 代理身份监听器必须经受控 Unix socket、mTLS 或等价不可旁路通道到达；来源 IP allowlist 本身不构成身份信任 | e2e |
 
@@ -638,7 +691,7 @@ ID 一经分配即固定，章节重排、措辞修改都不改动它；废弃�
 | `CONSOLE-R-090` | CLI 生成至少 256-bit、只存摘要、默认 20 分钟且限制在 15–30 分钟的 bootstrap token；token 原子单次兑换 session，并发最多一个成功 | 单元 |
 | `CONSOLE-R-091` | `anasd` 持久化 `bootstrap → enrollment → full` 单向状态机；自动事件不得触发逆向转换 | 单元 |
 | `CONSOLE-R-092` | bootstrap/enrollment 路由采用显式状态 allowlist并限定同一 transaction；enrollment 重新兑换 token 只恢复 job/events、CA、handoff，不恢复 config/apply；未声明路由在非 full 状态返回 `404` | 契约 |
-| `CONSOLE-R-093` | bootstrap session 经一次性、短时、绑定 transaction/源 bootstrap origin/目标 HTTPS origin/证书 SPKI 的 handoff 换取 Secure enrollment session；exchange 是唯一跨源写例外，不接受 Cookie/Authorization/普通 CSRF，只接受精确匹配绑定源的非 null Origin，并在消费前校验目标 Host/origin/该连接实际选中证书的 SPKI，直连 TLS 禁用 session resumption 以保证每条连接都执行选证书与 SPKI 记录；原值只由顶层 form POST body 传递且不进入 URL、日志或持久存储；成功时设置 HttpOnly session Cookie 与同源 SPA 可读的独立 CSRF Cookie，以 `303` 跳转目标根路径且不在 URL/JSON 返回 CSRF；owner POST 要求 CSRF Cookie 与请求头精确相等并通过服务端 session digest 校验 | e2e |
+| `CONSOLE-R-093` | bootstrap session 经一次性、短时、绑定 transaction/源 bootstrap origin/目标 HTTPS origin/证书 SPKI 的 handoff 换取 Secure enrollment session；exchange 是唯一跨源写例外，不接受 Cookie/Authorization/普通 CSRF，只接受精确匹配绑定源的非 null Origin，并在消费前校验目标 Host/origin/该连接实际选中证书的 SPKI，直连 TLS 禁用 session resumption 以保证每条连接都执行选证书与 SPKI 记录；源顶层表单响应使用 `Referrer-Policy: strict-origin`，使 HTTPS→HTTPS POST 保留精确 Origin 且不泄露路径/查询；原值只由顶层 form POST body 传递且不进入 URL、日志或持久存储；成功时设置 HttpOnly session Cookie 与同源 SPA 可读的独立 CSRF Cookie，以 `303` 跳转目标根路径且不在 URL/JSON 返回 CSRF；owner POST 要求 CSRF Cookie 与请求头精确相等并通过服务端 session digest 校验 | e2e |
 
 ### 10.6 认证与角色
 
@@ -662,14 +715,14 @@ ID 一经分配即固定，章节重排、措辞修改都不改动它；废弃�
 | `CONSOLE-R-115` | 高危 preview 签发短时单次 confirmation；full 状态绑定 StepUpProof，bootstrap 按 R-118 绑定引导授权；两者都绑定主体/session/workspace/action/target/状态摘要，缺失返回 `428`，过期/已用/漂移返回 `409` | 契约 |
 | `CONSOLE-R-116` | 持久会话 token 至少 256 bit且只存摘要，默认 idle 30 分钟/absolute 12 小时；退出、改密、删管理员或撤权立即失效 | 单元 |
 | `CONSOLE-R-117` | full 状态的直连高危操作通过重新验证当前本地密码取得不超过 5 分钟、单次且动作绑定的 StepUpProof | 单元 |
-| `CONSOLE-R-118` | bootstrap 首次 apply 的 confirmation 绑定当前 bootstrap session、transaction、候选配置与 plan 摘要，不要求尚不存在的 owner 密码或 OIDC proof | 单元 |
+| `CONSOLE-R-118` | bootstrap 首次 apply 的 confirmation 绑定当前 bootstrap session、transaction、opaque config validator 与服务端完整类型化 plan 摘要；不得使用内部内容摘要、本机路径或客户端自造摘要，配置 generation/计划变化后旧 confirmation 失效，且不要求尚不存在的 owner 密码或 OIDC proof | 单元 |
 | `CONSOLE-R-119` | 每条路由注册时声明权限、对象作用域与允许状态，未声明默认拒绝；该注册门禁在 LAN wildcard 开放前生效 | 单元 |
 
 ### 10.7 前端
 
 | ID | 要求 | 验证 |
 | --- | --- | --- |
-| `CONSOLE-R-120` | 配置编辑走草稿 → validate → 展示变更计划 → 保存；改输入框不得即时改变运行环境 | e2e |
+| `CONSOLE-R-120` | 配置编辑按服务端 `available_modules`/`document_path` 走 Module 选择与内存草稿 → validate → 展示变更计划 → 保存；任意后续编辑使旧验证结果失效，保存只提交最近验证通过的规范化候选并使用 GET 强 ETag/首次 `If-None-Match: *`；改输入框不得即时改变运行环境 | e2e |
 | `CONSOLE-R-121` | `credential_rotate`/`data_migrate`/`immutable` 三类字段在 Web 上只读，不可写入 | 单元 |
 | `CONSOLE-R-122` | `allow_risky` 需认证来源感知 step-up、确认词与服务端 confirmation，并原样展示 `error.detail.blocked` 每一项 | e2e |
 | `CONSOLE-R-123` | 快照/备份恢复与删除前展示 workspace、目标 ID、是否触碰 `data/`、是否触碰 `userdata/`、是否可撤销 | 审阅 |
@@ -704,15 +757,26 @@ ID 一经分配即固定，章节重排、措辞修改都不改动它；废弃�
 | `CONSOLE-R-153` | 审计与任务记录中的请求体先脱敏 | 单元 |
 | `CONSOLE-R-154` | 首版 systemd unit 明确以 root 运行并限制可写路径；部署文档说明 TLS 私钥、workspace 与 Docker socket 权限近似 root | 审阅 |
 | `CONSOLE-R-155` | `userdata/` 默认不恢复的既有语义保持不变 | e2e |
-| `CONSOLE-R-156` | 浏览器入口校验 Host/Origin、默认禁 CORS并设置 CSP/frame-ancestors/nosniff/Referrer-Policy/HSTS；任务日志只按不可信文本渲染 | 单元 |
+| `CONSOLE-R-156` | 浏览器入口校验 Host/Origin、默认禁 CORS并设置 CSP/frame-ancestors/nosniff/`Referrer-Policy: strict-origin`/HSTS；该 referrer 策略不得泄露路径/查询，且须为 HTTPS→HTTPS 顶层 handoff POST 保留精确非 `null` Origin；任务日志只按不可信文本渲染 | 单元 |
 | `CONSOLE-R-157` | `anasd` 服务配置与认证密钥由 root 管理且不受请求/环境覆盖；root-managed `console_store` 位于所有注册 workspace 外并明确排除于 snapshot/backup/restore | 审阅 |
 | `CONSOLE-R-158` | LAN wildcard 开放前认证事件与后续状态转换的复合审计要求；由 R-166、R-167 取代（已废弃） | 单元 |
-| `CONSOLE-R-159` | 首次 config/plan/apply 开放前，配置写入、confirmation、job 创建/状态转换与失败已写入持久审计并脱敏 | 单元 |
+| `CONSOLE-R-159` | 首次 config/plan/apply 开放前覆盖配置、confirmation 与 job 全流程的复合审计要求；由 R-170—R-174 取代（已废弃） | 单元 |
 | `CONSOLE-R-163` | 密码 PHC 与服务端 credential digest 只持久化于 root-managed `console_store` 中独立的 0600 普通认证状态文件；原始密码、token、session 与 CSRF 值不得持久化 | 单元 |
 | `CONSOLE-R-164` | session Cookie 构造器对 enrollment/full 设置 `Secure`/`HttpOnly`/`SameSite=Strict`/`Path=/` 且无 Domain；bootstrap 只允许省略 `Secure`，其余属性相同；enrollment 的独立 CSRF Cookie 同样为 host-only、`Secure`/`SameSite=Strict`/`Path=/`，但必须可由同源 SPA 读取且不得携带 session token | 单元 |
 | `CONSOLE-R-165` | 直连明文 bootstrap 的认证写路由必须经过允许的 Host、精确同源 Origin 与 double-submit CSRF 校验，且不开放 CORS | 单元 |
 | `CONSOLE-R-166` | LAN wildcard 开放前，bootstrap token/session 的签发、兑换、认证失败、撤销及本地登录成功/失败已接入持久审计并脱敏 | 单元 |
 | `CONSOLE-R-167` | 每次成功提交 `bootstrap → enrollment → full` 状态转换前必须持久审计 from/to、actor 与固定 reason；审计失败则状态转换不提交；认证 WAL 持久化后的快照/publish/仲裁/回滚不继承请求取消且保持有界 | 单元 |
+| `CONSOLE-R-170` | 每次配置 PUT 在解析 precondition/请求体或调用配置应用服务前，必须从 CSPRNG 生成至少 128 bit 的唯一 `operation_id` 并持久记录只含该 ID 与 actor/workspace 的脱敏 `attempt`；追加失败返回 `audit_unavailable` 且不得修改 workspace | 单元 |
+| `CONSOLE-R-171` | 配置 PUT 在 workspace 运行时锁内通过 CAS 与候选校验后、在任何配置 WAL 发布前，必须持久含同一 `operation_id`、actor/workspace、当前/候选 opaque validator 及不带值变更摘要的 `authorized` intent；追加失败否决本次提交 | 单元 |
+| `CONSOLE-R-172` | 配置 PUT 的 terminal 审计带同一 `operation_id`，且是使用 `context.WithoutCancel` 派生的独立有界 timeout context 所做的非否决性补充追加；追加失败不回滚已提交配置、不改写已确定的 HTTP 结果，但必须写入 daemon 结构化错误日志；审计查询不得从 terminal 缺失推断成功或失败 | 单元 |
+| `CONSOLE-R-173` | 配置 WAL manifest 必须持久同一 `operation_id`；只有 manifest 已发布或 rename 后目录 fsync 使持久性存疑时，API/terminal 审计才表达 `indeterminate`/`config_recovery_required`，WAL 前失败表达 `failure`；后续配置读写者在读取状态前持排他锁完成恢复，但 MVP 不事后改写或补造该 operation 的历史 outcome | 单元 |
+| `CONSOLE-R-174` | plan/apply 路由在对外开放前，confirmation 签发/消费、job 创建/状态转换与执行失败必须已接入持久、脱敏的审计接口；任一未覆盖时路由保持未开放 | 单元 |
+| `CONSOLE-R-175` | 配置 HTTP 候选必须严格匹配 sensitive tagged union，并拒绝非规范 Module/参数/environment key、未知 Module 子字段（包括空 mapping）及对只读 local-account 占位集合的增删；拒绝发生在 observer/WAL 前且不修改 workspace | 单元 |
+| `CONSOLE-R-176` | 配置 API 必须保留仍选中 Module 的既有 YAML 相对顺序、把新增 Module 按规范名确定性追加，并让无可写语义变化的 JSON 往返保持原受管字节/validator；Module 集合增删必须进入 validate、PUT 与 authorized intent 的无值 change summary | 单元 |
+| `CONSOLE-R-177` | 配置 PUT 在 authorized 后、WAL 发布前重新核对 config/Secret Store/managed state 仍与 CAS/候选准备时的完整旧 tuple 一致；任一非协作改动返回 `412 config_precondition_failed`，不得发布 WAL 或覆盖改动 | 单元 |
+| `CONSOLE-R-178` | 配置事务对 manifest、各 role 的 stage 与目标读取设置显式尺寸上限；新事务不得产生超限 image，恢复必须在读取 oversized/sparse image 前 fail closed、不得改写目标并保留 WAL 证据 | 单元 |
+| `CONSOLE-R-179` | 每个实际配置 generation（含 Secret Store-only 提交、CLI 写入和 snapshot/backup restore）轮换随机 validator，零变更 PUT 保持不变；validate 不生成候选 validator；缺少 validator 的旧 managed state 只可在 workspace 排他运行时锁内校验内部 digest 后原子迁移，迁移前不得把旧 digest 暴露给客户端 | 单元 |
+| `CONSOLE-R-180` | `GET /api/v1/audit-events` 只在 full+TLS 对带非空 identity source 的 owner 开放，经 `audit.Writer` 持锁刷新后的 verified state 查询；服务事件和已注册 workspace 事件在分页前做对象过滤，按 sequence 倒序支持 `limit`/opaque cursor，保留独立 attempt/authorized/terminal/indeterminate 且不从 terminal 缺失推断 outcome | 单元 |
 
 ### 10.9 发布
 

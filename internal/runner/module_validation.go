@@ -111,7 +111,7 @@ func (a *app) validateModules() error {
 			return fmt.Errorf("%s config validation: %w", name, err)
 		}
 		for _, warning := range resp.Warnings {
-			emitWarning(a.jsonMode, "module_validation_warning", "%s config validation: %s", name, warning)
+			a.warning("module_validation_warning", "%s config validation: %s", name, warning)
 		}
 	}
 	a.modulesValidated = true

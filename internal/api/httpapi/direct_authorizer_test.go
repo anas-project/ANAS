@@ -29,7 +29,7 @@ func TestDirectSessionAuthorizerBindsBootstrapStateTransactionAndRoutePattern(t 
 	}
 	policy := RoutePolicy{
 		Method: http.MethodPost, Pattern: routePattern,
-		Permission: PermissionWorkspaceRead, Scope: ScopeWorkspace,
+		Permission: PermissionConfigValidate, Scope: ScopeWorkspace,
 		Listeners: []ListenerIdentity{ListenerDirect},
 		Access: map[ConsoleState]RouteAccess{
 			StateBootstrap: {Authentication: AuthenticationBootstrap, Transports: []RequestTransport{TransportPlaintext}},

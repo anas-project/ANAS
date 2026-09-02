@@ -1,12 +1,16 @@
 package runner
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/anas-project/ANAS/internal/compose"
 )
@@ -38,6 +42,46 @@ func ensureMacvlan(env map[string]string, _ compose.CLI) error {
 	}
 	if err := exec.Command("docker", networkCreateArgs(name, env)...).Run(); err != nil {
 		_ = runHostNetHelper(env, bridgeDownArgs(env)...)
+		return fmt.Errorf("create docker macvlan network: %w", err)
+	}
+	return nil
+}
+
+func (a *app) ensureMacvlan() error {
+	if a == nil {
+		return errors.New("network application is unavailable")
+	}
+	if !a.restrictedProcessEnvironment {
+		return ensureMacvlan(a.env, a.compose)
+	}
+	ctx := a.subprocessContext()
+	environment := a.commandEnvironment(nil)
+	name := a.env["VLAN_INTERFACE"]
+	matches, exists, err := inspectMacvlanContext(ctx, environment, name, a.env)
+	if err != nil {
+		return err
+	}
+	if exists && !matches {
+		return fmt.Errorf("docker network %q exists with different macvlan settings; refusing to replace it automatically. Stop the deployment first (anas stop), which removes the network, then apply the new addressing", name)
+	}
+	if !exists {
+		if err := checkLANAddressConflictsContext(ctx, environment, a.env); err != nil {
+			return err
+		}
+	}
+	if err := runHostNetHelperContext(ctx, environment, a.env, bridgeUpArgs(a.env)...); err != nil {
+		return fmt.Errorf("create macvlan bridge: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, "docker", networkCreateArgs(name, a.env)...)
+	cmd.Env = environment
+	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+	if err := cmd.Run(); err != nil {
+		cleanupContext, cancelCleanup := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelCleanup()
+		_ = runHostNetHelperContext(cleanupContext, environment, a.env, bridgeDownArgs(a.env)...)
 		return fmt.Errorf("create docker macvlan network: %w", err)
 	}
 	return nil
@@ -137,6 +181,29 @@ func checkLANAddressConflicts(env map[string]string) error {
 	return nil
 }
 
+func checkLANAddressConflictsContext(ctx context.Context, environment []string, env map[string]string) error {
+	if strings.EqualFold(strings.TrimSpace(env["HOST_LAN_ARP_CHECK"]), "false") {
+		return nil
+	}
+	for _, addr := range hostLANAddresses(env) {
+		mac, err := arpProbeContext(ctx, environment, env["NETWORK_NAMESPACE_PATH"], addr)
+		if err != nil {
+			if contextErr := ctx.Err(); contextErr != nil {
+				return contextErr
+			}
+			continue
+		}
+		if mac != "" {
+			return fmt.Errorf("%s is already in use on the local segment by %s. "+
+				"Choose a free address with `anas config set global.host_lan_ip <address>` "+
+				"(and global.host_lan_bridge_ip for the bridge), or exclude this address from "+
+				"the router's DHCP pool. Set global.host_lan_arp_check to false to skip this check",
+				addr, mac)
+		}
+	}
+	return nil
+}
+
 // arpProbe returns the hardware address answering for addr, or "" when nothing
 // does.
 //
@@ -161,6 +228,32 @@ func arpProbe(namespacePath, addr string) (string, error) {
 	}
 	out, err := neigh.Output()
 	if err != nil {
+		return "", err
+	}
+	return reachableNeighbour(string(out)), nil
+}
+
+func arpProbeContext(ctx context.Context, environment []string, namespacePath, addr string) (string, error) {
+	if strings.TrimSpace(addr) == "" {
+		return "", nil
+	}
+	ping, err := probeCommandContext(ctx, environment, namespacePath, "ping", "-c", "1", "-W", "1", addr)
+	if err != nil {
+		return "", err
+	}
+	_ = ping.Run()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	neigh, err := probeCommandContext(ctx, environment, namespacePath, "ip", "-4", "neigh", "show", addr)
+	if err != nil {
+		return "", err
+	}
+	out, err := neigh.Output()
+	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return "", contextErr
+		}
 		return "", err
 	}
 	return reachableNeighbour(string(out)), nil
@@ -211,6 +304,21 @@ func probeCommand(namespacePath, name string, args ...string) (*exec.Cmd, error)
 	}
 	full := append([]string{"nsenter", "--net=" + filepath.Clean(namespacePath), name}, args...)
 	return exec.Command("sudo", full...), nil
+}
+
+func probeCommandContext(ctx context.Context, environment []string, namespacePath, name string, args ...string) (*exec.Cmd, error) {
+	var cmd *exec.Cmd
+	if namespacePath == "" {
+		cmd = exec.CommandContext(ctx, name, args...)
+	} else {
+		if !filepath.IsAbs(namespacePath) {
+			return nil, fmt.Errorf("NETWORK_NAMESPACE_PATH must be absolute: %q", namespacePath)
+		}
+		full := append([]string{"nsenter", "--net=" + filepath.Clean(namespacePath), name}, args...)
+		cmd = exec.CommandContext(ctx, "sudo", full...)
+	}
+	cmd.Env = append([]string(nil), environment...)
+	return cmd, nil
 }
 
 // hostNetHelperArgs is the command that applies one bridge operation.
@@ -281,6 +389,23 @@ func runHostNetHelper(env map[string]string, args ...string) error {
 	return cmd.Run()
 }
 
+func runHostNetHelperContext(ctx context.Context, environment []string, env map[string]string, args ...string) error {
+	commandArgs, err := hostNetHelperArgs(env["NETWORK_NAMESPACE_PATH"], args...)
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, commandArgs[0], commandArgs[1:]...)
+	cmd.Env = append([]string(nil), environment...)
+	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+	if err := cmd.Run(); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
+		return err
+	}
+	return nil
+}
+
 func removeMacvlan(env map[string]string) error {
 	bridge := env["VLAN_BRIDGE_INTERFACE"]
 	if bridge == "" {
@@ -301,6 +426,44 @@ func removeMacvlan(env map[string]string) error {
 		return fmt.Errorf("inspect docker macvlan network %q: %w", name, err)
 	}
 	if err := runHostNetHelper(env, bridgeDownArgs(env)...); err != nil {
+		return fmt.Errorf("remove macvlan bridge: %w", err)
+	}
+	return nil
+}
+
+func (a *app) removeMacvlan() error {
+	if a == nil {
+		return errors.New("network application is unavailable")
+	}
+	if !a.restrictedProcessEnvironment {
+		return removeMacvlan(a.env)
+	}
+	ctx := a.subprocessContext()
+	environment := a.commandEnvironment(nil)
+	bridge := a.env["VLAN_BRIDGE_INTERFACE"]
+	if bridge == "" {
+		return nil
+	}
+	name := a.env["VLAN_INTERFACE"]
+	if name == "" {
+		name = macvlanNetworkName
+	}
+	inspect := exec.CommandContext(ctx, "docker", "network", "inspect", name)
+	inspect.Env = environment
+	inspect.Stdout, inspect.Stderr = io.Discard, io.Discard
+	if err := inspect.Run(); err == nil {
+		remove := exec.CommandContext(ctx, "docker", "network", "rm", name)
+		remove.Env = environment
+		remove.Stdout, remove.Stderr = io.Discard, io.Discard
+		if err := remove.Run(); err != nil {
+			return fmt.Errorf("remove docker macvlan network %q: %w", name, err)
+		}
+	} else if contextErr := ctx.Err(); contextErr != nil {
+		return contextErr
+	} else if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
+		return fmt.Errorf("inspect docker macvlan network %q: %w", name, err)
+	}
+	if err := runHostNetHelperContext(ctx, environment, a.env, bridgeDownArgs(a.env)...); err != nil {
 		return fmt.Errorf("remove macvlan bridge: %w", err)
 	}
 	return nil
@@ -327,6 +490,38 @@ func inspectMacvlan(name string, env map[string]string) (matches, exists bool, e
 		}
 		return false, false, fmt.Errorf("inspect docker network %q: %w", name, cmdErr)
 	}
+	var networks []dockerNetworkInspect
+	if err := json.Unmarshal(out, &networks); err != nil || len(networks) != 1 {
+		return false, true, fmt.Errorf("inspect docker network %q returned invalid data", name)
+	}
+	n := networks[0]
+	if n.Driver != "macvlan" || n.Options["parent"] != env["INTERFACE"] || len(n.IPAM.Config) == 0 {
+		return false, true, nil
+	}
+	ipam := n.IPAM.Config[0]
+	return ipam.Subnet == env["HOST_SEGMENT"] &&
+		ipam.IPRange == env["VLAN_SEGMENT"] &&
+		ipam.Gateway == env["VLAN_GATEWAY_IP"] &&
+		ipam.AuxAddress["bridge"] == env["VLAN_BRIDGE_IP"], true, nil
+}
+
+func inspectMacvlanContext(ctx context.Context, environment []string, name string, env map[string]string) (matches, exists bool, err error) {
+	cmd := exec.CommandContext(ctx, "docker", "network", "inspect", name)
+	cmd.Env = append([]string(nil), environment...)
+	out, cmdErr := cmd.Output()
+	if cmdErr != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return false, false, contextErr
+		}
+		if exitErr, ok := cmdErr.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return false, false, nil
+		}
+		return false, false, fmt.Errorf("inspect docker network %q: %w", name, cmdErr)
+	}
+	return inspectMacvlanOutput(name, env, out)
+}
+
+func inspectMacvlanOutput(name string, env map[string]string, out []byte) (matches, exists bool, err error) {
 	var networks []dockerNetworkInspect
 	if err := json.Unmarshal(out, &networks); err != nil || len(networks) != 1 {
 		return false, true, fmt.Errorf("inspect docker network %q returned invalid data", name)

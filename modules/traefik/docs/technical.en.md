@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `traefik`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `3.7.10-r5` / `anas.module/v1`.
+> Status: current implementation; based on `3.7.10-r6` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -17,7 +17,7 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r5` | `` | 3 |
+| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r6` | `` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -88,6 +88,7 @@ This module neither consumes nor provides a relational-database contract.
 - `LEGO_EMAIL`
 - `LEGO_KEY_NAME`
 - `ANAS_TRAEFIK_ROUTE__*`
+- `ANAS_TRAEFIK_SERVERS_TRANSPORT__*`
 
 The dependency closure does not grant every environment value. Sensitive values enter this module's hook/container scope only through ownership or an explicit `config.consumes` claim.
 
@@ -105,6 +106,8 @@ The dependency closure does not grant every environment value. Sensitive values 
 - [`docker-compose.yml`](../docker-compose.yml)
 
 ## Real client IP boundary
+
+Named `serversTransport` and forwarded-client-IP trust are separate boundaries. The former creates a dedicated Secret-Store CA/client identity for Traefik-to-backend traffic and projects only the public CA, client cert/key, and SPKI digest as `0600` runtime files; the CA private key is never projected. The entrypoint generates an mTLS transport only when `SERVER_NAME`, `ROOT_CAS`, CA, client cert/key, and digest are complete. A source IP or ordinary HTTPS cannot replace this client identity.
 
 The HTTPS entrypoint does not trust request-supplied `X-Forwarded-*` headers by default. Only upstream proxies validated as IPs or CIDRs in `traefik.forwarded_headers_trusted_ips` may supply a forwarded chain, and `forwardedHeaders.insecure` is never enabled. Traefik writes JSON access logs to standard output, retaining client-address evidence while dropping headers and query parameters to avoid collecting sensitive values.
 

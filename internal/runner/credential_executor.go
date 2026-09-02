@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -493,10 +494,18 @@ func promoteCredentialCandidate(base string, txn *credentialRotationTransaction)
 // exclusive lock. Before Store commit it restores previous; after an atomic
 // Store commit it finishes candidate activation and promotion.
 func recoverCredentialRotation(base string, txn *credentialRotationTransaction, jsonMode bool) error {
-	return recoverCredentialRotationUsing(base, txn, nil, jsonMode)
+	return recoverCredentialRotationUsingOptions(base, txn, nil, jsonMode, runtimeRecoveryOptions{})
 }
 
 func recoverCredentialRotationUsing(base string, txn *credentialRotationTransaction, suppliedCLI *compose.CLI, jsonMode bool) error {
+	return recoverCredentialRotationUsingOptions(base, txn, suppliedCLI, jsonMode, runtimeRecoveryOptions{})
+}
+
+func recoverCredentialRotationForApplication(base string, txn *credentialRotationTransaction, opts runtimeRecoveryOptions) error {
+	return recoverCredentialRotationUsingOptions(base, txn, nil, false, opts)
+}
+
+func recoverCredentialRotationUsingOptions(base string, txn *credentialRotationTransaction, suppliedCLI *compose.CLI, jsonMode bool, opts runtimeRecoveryOptions) error {
 	if txn == nil || txn.Phase == credentialPhaseComplete {
 		return nil
 	}
@@ -537,7 +546,11 @@ func recoverCredentialRotationUsing(base string, txn *credentialRotationTransact
 	}
 	var cli compose.CLI
 	if suppliedCLI == nil {
-		cli, err = compose.Detect()
+		ctx := opts.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		cli, err = detectComposeForExecution(ctx, opts.restrictedProcessEnvironment)
 		if err != nil {
 			return err
 		}
@@ -549,12 +562,16 @@ func recoverCredentialRotationUsing(base string, txn *credentialRotationTransact
 		return err
 	}
 	previousApp.suppressSensitiveOutput = true
+	previousApp.commandContext, previousApp.events = opts.ctx, opts.events
+	previousApp.restrictedProcessEnvironment = opts.restrictedProcessEnvironment
 	if committed {
 		candidateApp, candidateModules, _, err := loadDeploymentApp(base, txn.CandidateDeployment, cli)
 		if err != nil {
 			return err
 		}
 		candidateApp.suppressSensitiveOutput = true
+		candidateApp.commandContext, candidateApp.events = opts.ctx, opts.events
+		candidateApp.restrictedProcessEnvironment = opts.restrictedProcessEnvironment
 		if err := startDeployment(candidateApp, candidateModules, txn.AffectedModules, jsonMode); err != nil {
 			return err
 		}
@@ -576,6 +593,8 @@ func recoverCredentialRotationUsing(base string, txn *credentialRotationTransact
 		candidateApp, candidateModules, _, _ = loadDeploymentApp(base, txn.CandidateDeployment, cli)
 		if candidateApp != nil {
 			candidateApp.suppressSensitiveOutput = true
+			candidateApp.commandContext, candidateApp.events = opts.ctx, opts.events
+			candidateApp.restrictedProcessEnvironment = opts.restrictedProcessEnvironment
 		}
 	}
 	recoveryErr := compensateCredentialRotation(base, txn, candidateApp, candidateModules, previousApp, previousModules,

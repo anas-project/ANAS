@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -427,6 +428,60 @@ func TestCompleteInitialOwnerFailureInjectionNeverPublishesPartialAuthentication
 				t.Fatalf("enrollment state not restored: %v", err)
 			}
 		})
+	}
+}
+
+// CONSOLE-R-082 and CONSOLE-R-091 require the first-owner commit and the
+// enrollment -> full publish to remain a single serialized transition even
+// when two daemon/store views race with the same still-valid enrollment
+// credential. Exactly one caller may publish; the loser must observe the owner
+// installed by the winner instead of invoking a second transition callback.
+func TestCompleteInitialOwnerSerializesConcurrentCommits(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "auth")
+	audit := &memoryAudit{}
+	clock := newTestClock()
+	first := openTestStore(t, directory, audit, clock)
+	second := openTestStore(t, directory, audit, clock)
+	session := enrollmentSessionForOwner(t, first, "txn-concurrent-owner")
+	stores := []*Store{first, second}
+	start := make(chan struct{})
+	results := make(chan error, len(stores))
+	var callbacks atomic.Int32
+	for _, store := range stores {
+		go func(store *Store) {
+			<-start
+			results <- store.CompleteInitialOwner(context.Background(), CompleteInitialOwnerRequest{
+				SessionToken: session.Token, CSRFToken: session.CSRFToken, Origin: session.Origin,
+				TransactionID: session.TransactionID, Password: "correct horse battery staple",
+			}, func(context.Context) error {
+				callbacks.Add(1)
+				return nil
+			})
+		}(store)
+	}
+	close(start)
+	var successes int
+	for range stores {
+		err := <-results
+		if err == nil {
+			successes++
+		} else if !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("concurrent owner commit error = %v", err)
+		}
+	}
+	if successes != 1 || callbacks.Load() != 1 {
+		t.Fatalf("successes=%d transition callbacks=%d", successes, callbacks.Load())
+	}
+	if _, err := first.LoginLocal(context.Background(), LocalLoginRequest{
+		Password: "correct horse battery staple", Origin: session.Origin,
+	}); err != nil {
+		t.Fatalf("winning owner credential is unusable: %v", err)
+	}
+	if _, err := second.AuthenticateEnrollment(context.Background(), EnrollmentAuthenticationRequest{
+		SessionToken: session.Token, CSRFToken: session.CSRFToken, Origin: session.Origin,
+		TransactionID: session.TransactionID, Route: EnrollmentOwnerRoute, RequireCSRF: true,
+	}); !errors.Is(err, ErrSessionUnauthorized) {
+		t.Fatalf("losing store view retained enrollment credentials: %v", err)
 	}
 }
 

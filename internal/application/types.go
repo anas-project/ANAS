@@ -25,17 +25,22 @@ type ModuleCommandService interface {
 type ErrorKind string
 
 const (
-	ErrorKindInvalidArgument    ErrorKind = "invalid_argument"
-	ErrorKindNotFound           ErrorKind = "not_found"
-	ErrorKindFailedPrecondition ErrorKind = "failed_precondition"
-	ErrorKindInternal           ErrorKind = "internal"
+	ErrorKindInvalidArgument      ErrorKind = "invalid_argument"
+	ErrorKindNotFound             ErrorKind = "not_found"
+	ErrorKindFailedPrecondition   ErrorKind = "failed_precondition"
+	ErrorKindPreconditionRequired ErrorKind = "precondition_required"
+	ErrorKindInternal             ErrorKind = "internal"
 )
 
 type Error struct {
 	Kind    ErrorKind
 	Code    string
 	Message string
-	Cause   error
+	// Detail remains transport-neutral runner metadata. Adapters must expose
+	// only an explicit safe allowlist; arbitrary CLI detail may contain local
+	// implementation data that does not belong in an HTTP response.
+	Detail map[string]any
+	Cause  error
 }
 
 func (e *Error) Error() string {

@@ -214,6 +214,66 @@ func (store *Store) AuthenticateBootstrap(ctx context.Context, request Bootstrap
 	}, nil
 }
 
+// RefreshBootstrapSession atomically rotates the CSRF credential while
+// preserving the HttpOnly session token and its absolute lifetime. The caller
+// still has to pass every server-owned binding because this method is a
+// durable authentication boundary, not a credential lookup shortcut.
+func (store *Store) RefreshBootstrapSession(ctx context.Context, request BootstrapSessionRefreshRequest) (BootstrapSessionCredential, error) {
+	origin, err := NormalizeOrigin(request.Origin)
+	if err != nil {
+		return BootstrapSessionCredential{}, ErrOriginMismatch
+	}
+	if request.SessionToken == "" || validateTransactionID(request.TransactionID) != nil ||
+		validateBootstrapStateValue(request.State) != nil || request.Route == "" {
+		return BootstrapSessionCredential{}, ErrSessionUnauthorized
+	}
+	csrfToken, err := store.newCredential()
+	if err != nil {
+		return BootstrapSessionCredential{}, err
+	}
+	unlock, err := store.lock(ctx)
+	if err != nil {
+		return BootstrapSessionCredential{}, err
+	}
+	defer unlock()
+	state, err := store.loadBootstrapState()
+	if err != nil {
+		return BootstrapSessionCredential{}, err
+	}
+	digest := credentialDigest(request.SessionToken)
+	record, exists := state.Sessions[digest]
+	if !exists || !digestMatches(digest, request.SessionToken) {
+		return BootstrapSessionCredential{}, ErrSessionUnauthorized
+	}
+	now := store.currentTime()
+	if !now.Before(record.ExpiresAt) || !now.Before(record.IdleExpiresAt) {
+		return BootstrapSessionCredential{}, ErrCredentialExpired
+	}
+	if record.Origin != origin {
+		return BootstrapSessionCredential{}, ErrOriginMismatch
+	}
+	if record.TransactionID != request.TransactionID {
+		return BootstrapSessionCredential{}, ErrTransactionMismatch
+	}
+	if record.State != request.State {
+		return BootstrapSessionCredential{}, ErrStateMismatch
+	}
+	if !routeAllowed(record.AllowedRoutes, request.Route) {
+		return BootstrapSessionCredential{}, ErrRouteNotAllowed
+	}
+	record.CSRFDigest = credentialDigest(csrfToken)
+	record.IdleExpiresAt = nextIdleExpiry(now, record.ExpiresAt, BootstrapSessionIdleTTL)
+	state.Sessions[digest] = record
+	if err := store.writeBootstrapState(state); err != nil {
+		return BootstrapSessionCredential{}, fmt.Errorf("persist bootstrap session refresh: %w", err)
+	}
+	return BootstrapSessionCredential{
+		CSRFToken: csrfToken, TransactionID: record.TransactionID, Origin: record.Origin,
+		State: record.State, AllowedRoutes: cloneRoutes(record.AllowedRoutes), CreatedAt: record.CreatedAt,
+		ExpiresAt: record.ExpiresAt, IdleExpiresAt: record.IdleExpiresAt,
+	}, nil
+}
+
 // CurrentBootstrapTransaction returns the transaction represented by the sole
 // active bootstrap token or session. It is a read-only bridge for route
 // authorizers; AuthenticateBootstrap still rechecks the value under a fresh

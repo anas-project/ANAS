@@ -1,5 +1,6 @@
-// Package httpapi exposes read-only application queries plus the M1A console
-// authentication and route-policy boundary over HTTP.
+// Package httpapi exposes typed application queries, audited deployment and
+// configuration operations, and the console authentication/route-policy
+// boundary over HTTP.
 package httpapi
 
 import (
@@ -40,14 +41,18 @@ type QueryService interface {
 type ServiceFactory func(workspacePath string) QueryService
 
 type handler struct {
-	registry   *Registry
-	factory    ServiceFactory
-	security   SecurityOptions
-	auth       ConsoleAuthenticator
-	enrollment *EnrollmentOptions
-	jobs       *jobHTTPState
-	authHTTP   authHTTPState
-	routes     []routeSpec
+	registry       *Registry
+	factory        ServiceFactory
+	config         *configHTTPState
+	security       SecurityOptions
+	auth           ConsoleAuthenticator
+	enrollment     *EnrollmentOptions
+	jobs           *jobHTTPState
+	deploymentHTTP *deploymentHTTPState
+	audit          *auditHTTPState
+	systemHTTP     *systemHTTPState
+	authHTTP       authHTTPState
+	routes         []routeSpec
 }
 
 func NewHandler(registry *Registry, factory ServiceFactory) http.Handler {
@@ -59,14 +64,35 @@ func NewHandler(registry *Registry, factory ServiceFactory) http.Handler {
 }
 
 func NewHandlerWithSecurity(registry *Registry, factory ServiceFactory, security SecurityOptions) (http.Handler, error) {
-	return newHandler(registry, factory, security, nil, nil, nil)
+	return newHandler(registry, factory, security, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func NewHandlerWithAuthentication(registry *Registry, factory ServiceFactory, security SecurityOptions, auth ConsoleAuthenticator) (http.Handler, error) {
 	if auth == nil {
 		return nil, errors.New("console authenticator is required")
 	}
-	return newHandler(registry, factory, security, auth, nil, nil)
+	return newHandler(registry, factory, security, auth, nil, nil, nil, nil, nil, nil)
+}
+
+// NewHandlerWithConfig adds the synchronous desired-configuration surface to
+// a handler whose authentication policy is supplied by SecurityOptions.
+func NewHandlerWithConfig(registry *Registry, factory ServiceFactory, security SecurityOptions, config ConfigOptions) (http.Handler, error) {
+	configState, err := newConfigHTTPState(config)
+	if err != nil {
+		return nil, err
+	}
+	return newHandler(registry, factory, security, nil, nil, nil, configState, nil, nil, nil)
+}
+
+// NewHandlerWithDeployment exposes only the audited deployment routes in
+// addition to the base query surface. It is primarily useful to compose a
+// listener whose authentication is already supplied by SecurityOptions.
+func NewHandlerWithDeployment(registry *Registry, factory ServiceFactory, security SecurityOptions, deployment DeploymentOptions) (http.Handler, error) {
+	deploymentState, err := newDeploymentHTTPState(deployment)
+	if err != nil {
+		return nil, err
+	}
+	return newHandler(registry, factory, security, nil, nil, nil, nil, deploymentState, nil, nil)
 }
 
 func NewHandlerWithEnrollment(registry *Registry, factory ServiceFactory, security SecurityOptions, auth DirectAuthenticator, enrollment EnrollmentOptions) (http.Handler, error) {
@@ -76,7 +102,7 @@ func NewHandlerWithEnrollment(registry *Registry, factory ServiceFactory, securi
 	if err := enrollment.validate(); err != nil {
 		return nil, err
 	}
-	return newHandler(registry, factory, security, auth, &enrollment, nil)
+	return newHandler(registry, factory, security, auth, &enrollment, nil, nil, nil, nil, nil)
 }
 
 // NewHandlerWithJobQueries adds the durable read-only job history and event
@@ -88,7 +114,18 @@ func NewHandlerWithJobQueries(registry *Registry, factory ServiceFactory, securi
 	if err != nil {
 		return nil, err
 	}
-	return newHandler(registry, factory, security, auth, nil, jobState)
+	return newHandler(registry, factory, security, auth, nil, jobState, nil, nil, nil, nil)
+}
+
+// NewHandlerWithAuditQueries adds the durable full-state audit history surface.
+// Route policy and object filtering still enforce owner authentication and
+// registered-workspace visibility.
+func NewHandlerWithAuditQueries(registry *Registry, factory ServiceFactory, security SecurityOptions, auditQuery AuditQueryOptions) (http.Handler, error) {
+	auditState, err := newAuditHTTPState(auditQuery)
+	if err != nil {
+		return nil, err
+	}
+	return newHandler(registry, factory, security, nil, nil, nil, nil, nil, auditState, nil)
 }
 
 // NewHandlerWithEnrollmentAndJobQueries composes the enrollment workflow and
@@ -105,10 +142,88 @@ func NewHandlerWithEnrollmentAndJobQueries(registry *Registry, factory ServiceFa
 	if err != nil {
 		return nil, err
 	}
-	return newHandler(registry, factory, security, auth, &enrollment, jobState)
+	return newHandler(registry, factory, security, auth, &enrollment, jobState, nil, nil, nil, nil)
 }
 
-func newHandler(registry *Registry, factory ServiceFactory, security SecurityOptions, auth ConsoleAuthenticator, enrollment *EnrollmentOptions, jobs *jobHTTPState) (http.Handler, error) {
+// NewHandlerWithEnrollmentJobQueriesAndConfig composes the complete direct
+// console surface used by anasd. Configuration validation and writes stay
+// synchronous, while ConfigOptions supplies the independent application and
+// durable-audit boundaries required before a write can be published.
+func NewHandlerWithEnrollmentJobQueriesAndConfig(
+	registry *Registry,
+	factory ServiceFactory,
+	security SecurityOptions,
+	auth DirectAuthenticator,
+	enrollment EnrollmentOptions,
+	jobs JobQueryOptions,
+	config ConfigOptions,
+	auditQuery AuditQueryOptions,
+) (http.Handler, error) {
+	if auth == nil {
+		return nil, errors.New("console authenticator is required")
+	}
+	if err := enrollment.validate(); err != nil {
+		return nil, err
+	}
+	jobState, err := newJobHTTPState(jobs)
+	if err != nil {
+		return nil, err
+	}
+	configState, err := newConfigHTTPState(config)
+	if err != nil {
+		return nil, err
+	}
+	auditState, err := newAuditHTTPState(auditQuery)
+	if err != nil {
+		return nil, err
+	}
+	return newHandler(registry, factory, security, auth, &enrollment, jobState, configState, nil, auditState, nil)
+}
+
+// NewHandlerWithEnrollmentJobsConfigAndDeployment composes the production
+// direct-console surface, including audited plan/first-apply routes.
+func NewHandlerWithEnrollmentJobsConfigAndDeployment(
+	registry *Registry,
+	factory ServiceFactory,
+	security SecurityOptions,
+	auth DirectAuthenticator,
+	enrollment EnrollmentOptions,
+	jobs JobQueryOptions,
+	config ConfigOptions,
+	deployment DeploymentOptions,
+	auditQuery AuditQueryOptions,
+	systemOptions SystemOptions,
+) (http.Handler, error) {
+	if auth == nil {
+		return nil, errors.New("console authenticator is required")
+	}
+	if err := enrollment.validate(); err != nil {
+		return nil, err
+	}
+	jobState, err := newJobHTTPState(jobs)
+	if err != nil {
+		return nil, err
+	}
+	configState, err := newConfigHTTPState(config)
+	if err != nil {
+		return nil, err
+	}
+	deploymentState, err := newDeploymentHTTPState(deployment)
+	if err != nil {
+		return nil, err
+	}
+	auditState, err := newAuditHTTPState(auditQuery)
+	if err != nil {
+		return nil, err
+	}
+	systemState, err := newSystemHTTPState(systemOptions)
+	if err != nil {
+		return nil, err
+	}
+	return newHandler(registry, factory, security, auth, &enrollment, jobState, configState, deploymentState, auditState, systemState)
+}
+
+func newHandler(registry *Registry, factory ServiceFactory, security SecurityOptions, auth ConsoleAuthenticator, enrollment *EnrollmentOptions, jobs *jobHTTPState, config *configHTTPState, deployment *deploymentHTTPState, auditState *auditHTTPState, systemState *systemHTTPState) (http.Handler, error) {
 	if registry == nil {
 		registry = &Registry{paths: map[string]string{}, ids: []string{}}
 	}
@@ -117,13 +232,17 @@ func newHandler(registry *Registry, factory ServiceFactory, security SecurityOpt
 		return nil, err
 	}
 	h := &handler{
-		registry:   registry,
-		factory:    factory,
-		security:   security,
-		auth:       auth,
-		enrollment: enrollment,
-		jobs:       jobs,
-		authHTTP:   newAuthHTTPState(),
+		registry:       registry,
+		factory:        factory,
+		config:         config,
+		security:       security,
+		auth:           auth,
+		enrollment:     enrollment,
+		jobs:           jobs,
+		deploymentHTTP: deployment,
+		audit:          auditState,
+		systemHTTP:     systemState,
+		authHTTP:       newAuthHTTPState(),
 	}
 	h.routes = h.routeSpecs()
 	if err := validateRouteSpecs(h.routes); err != nil {
@@ -148,7 +267,7 @@ func setSecurityHeaders(header http.Header, isTLS bool) {
 	header.Set("Cache-Control", "no-store")
 	header.Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'")
 	header.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-	header.Set("Referrer-Policy", "no-referrer")
+	header.Set("Referrer-Policy", "strict-origin")
 	header.Set("X-Content-Type-Options", "nosniff")
 	header.Set("X-Frame-Options", "DENY")
 	if isTLS {
@@ -248,6 +367,11 @@ func validNumericPort(port string) bool {
 }
 
 func (h *handler) system(w http.ResponseWriter, r *http.Request) {
+	state, ok := ConsoleStateFromContext(r.Context())
+	if !ok {
+		writeProblem(w, http.StatusInternalServerError, "state_unavailable", "control-plane state is unavailable")
+		return
+	}
 	service := h.service("")
 	if service == nil {
 		writeProblem(w, http.StatusInternalServerError, "internal_error", "query service is unavailable")
@@ -258,11 +382,30 @@ func (h *handler) system(w http.ResponseWriter, r *http.Request) {
 		writeApplicationError(w, err)
 		return
 	}
+	material, err := h.systemHTTP.certificate(r.Context())
+	if err != nil {
+		writeProblem(w, http.StatusServiceUnavailable, "certificate_unavailable", "certificate information is unavailable")
+		return
+	}
+	var proxyURL *string
+	directRecoveryURLs := []string{}
+	if h.systemHTTP != nil {
+		directRecoveryURLs = append([]string{}, h.systemHTTP.directRecoveryURLs...)
+	}
+	if h.systemHTTP != nil && h.systemHTTP.proxyURL != "" {
+		value := h.systemHTTP.proxyURL
+		proxyURL = &value
+	}
 	writeJSON(w, http.StatusOK, systemResponse{
-		APIVersion:   APIVersion,
-		Build:        systemBuild{Version: result.Version, Commit: result.Commit, Date: result.Date},
-		Capabilities: systemCapabilities{ReadOnly: true},
-		WorkspaceIDs: h.registry.IDs(),
+		APIVersion:         APIVersion,
+		Build:              systemBuild{Version: result.Version, Commit: result.Commit, Date: result.Date},
+		Capabilities:       systemCapabilities{ReadOnly: h.config == nil},
+		WorkspaceIDs:       h.registry.IDs(),
+		CertificateIssuer:  material.Issuer,
+		ConsoleState:       state,
+		Listener:           h.security.Listener,
+		DirectRecoveryURLs: directRecoveryURLs,
+		ProxyURL:           proxyURL,
 	})
 }
 
@@ -401,6 +544,14 @@ func writeApplicationError(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	case application.ErrorKindFailedPrecondition:
 		status = http.StatusPreconditionFailed
+	case application.ErrorKindPreconditionRequired:
+		status = http.StatusPreconditionRequired
+	}
+	if applicationError.Kind == application.ErrorKindInternal &&
+		(applicationError.Code == "audit_unavailable" || applicationError.Code == "config_recovery_required" ||
+			applicationError.Code == "config_unavailable" || applicationError.Code == "secrets_unavailable" ||
+			applicationError.Code == "runtime_lock_unavailable") {
+		status = http.StatusServiceUnavailable
 	}
 	code := applicationError.Code
 	if code == "" {

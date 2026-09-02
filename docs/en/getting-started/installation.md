@@ -128,4 +128,19 @@ anas --help
 anas version
 ```
 
+## Record the management-console entries
+
+`anasd` in `lan` mode binds every IPv4/IPv6 interface. Initial setup is intentionally reachable over plaintext HTTP from another device on the network; this bootstrap window **has no confidentiality and does not resist an active attacker**. Administrators own host firewall and interface isolation. If that boundary is unacceptable, use `loopback` with `ssh -L`, or first generate temporary TLS on the NAS with `sudo anas console tls --self-signed`.
+
+As soon as the service configuration is installed and `anasd` starts, record both entry points:
+
+```bash
+sudo anas console status
+```
+
+- `Direct recovery (local owner)` is the IAM-independent recovery entry and belongs in the operations record.
+- `Traefik / OIDC` is the normal management entry after the trusted proxy is enabled; it is omitted when unconfigured.
+
+The proxy entry never publishes a local-account sign-in link. During an IAM outage, use the recorded direct address with the local administrator. See [`anasd` service configuration](../reference/anasd-service-configuration.md) for the complete fields and mTLS setup.
+
 Then continue with the [first deployment](quick-start.md).

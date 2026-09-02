@@ -19,6 +19,20 @@ import (
 
 type app struct {
 	root string
+	// events receives transport-neutral progress and warnings for application
+	// service callers. Legacy CLI paths leave it nil and keep their established
+	// stdout/stderr rendering.
+	events application.EventSink
+	// restrictedProcessEnvironment is enabled only for daemon-owned jobs. CLI
+	// compatibility keeps its inherited environment until each CLI contract is
+	// migrated explicitly; anasd receives only the service whitelist plus the
+	// rendered deployment environment.
+	restrictedProcessEnvironment bool
+	// commandContext bounds subprocesses reachable through an application
+	// service. CLI callers leave it nil and retain their existing background
+	// lifecycle; request-backed services set it explicitly so validation Hooks
+	// cannot outlive cancellation while holding a workspace lock.
+	commandContext context.Context
 	// workspace is the deployment root; base is its .anas state directory.
 	workspace      string
 	base           string
@@ -97,6 +111,23 @@ type app struct {
 	artifactRoot string
 	// dnsReg is the DNS platform registry, loaded on first use.
 	dnsReg *dns.Registry
+}
+
+func (a *app) warning(code, format string, args ...any) {
+	message := fmt.Sprintf(format, args...)
+	if a != nil && a.events != nil {
+		a.events.Warning(application.WarningEvent{Code: code, Message: message})
+		return
+	}
+	emitWarning(a != nil && a.jsonMode, code, "%s", message)
+}
+
+func (a *app) progress(jsonMode bool, phase string, current, total int64, unit string) {
+	if a != nil && a.events != nil {
+		a.events.Progress(application.ProgressEvent{Phase: phase, Current: current, Total: total, Unit: unit})
+		return
+	}
+	emitProgress(jsonMode, phase, current, total, unit)
 }
 
 // Main is the single place the contract's output rules are applied. Every
@@ -238,6 +269,7 @@ Usage:
   anas config plan    [-w WORKSPACE]
   anas config secret  list | get <KEY>   [-w WORKSPACE]
   anas admin local list | credential | rotate MODULE [ACCOUNT] [-w WORKSPACE]
+  anas console status [--config /etc/anas/anasd.yml]
   anas console token [--config /etc/anas/anasd.yml] [--ttl 20m]
   anas console tls --self-signed [--config /etc/anas/anasd.yml] [--ttl 20m]
   anas credential list [-w WORKSPACE]
@@ -520,7 +552,7 @@ func (a *app) runAfterStartOf(release string, names []string) error {
 		if err := a.applyLocalAdministrators(mod, dir, a.moduleEnv(dir)); err != nil {
 			return err
 		}
-		if err := runDockerCopies(resp.DockerCopies); err != nil {
+		if err := a.runDockerCopies(resp.DockerCopies); err != nil {
 			return err
 		}
 	}
@@ -572,7 +604,7 @@ func (a *app) stopRelease(release string, jsonMode bool) error {
 		}
 	}
 	if a.hostLANRequired() {
-		if err := removeMacvlan(a.env); err != nil {
+		if err := a.removeMacvlan(); err != nil {
 			stopErrors = append(stopErrors, err)
 		}
 	}
@@ -640,7 +672,7 @@ func (a *app) stopRemoved(release string) error {
 		stoppedAny = true
 	}
 	if stoppedAny && len(stopErrors) == 0 && !a.hostLANRequired() {
-		if err := removeMacvlan(a.env); err != nil {
+		if err := a.removeMacvlan(); err != nil {
 			stopErrors = append(stopErrors, err)
 		}
 	}
@@ -1202,7 +1234,7 @@ func (a *app) ensureHostLAN() error {
 	if !a.hostLANRequired() {
 		return nil
 	}
-	return ensureMacvlan(a.env, a.compose)
+	return a.ensureMacvlan()
 }
 
 type moduleRun struct {

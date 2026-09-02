@@ -4,6 +4,7 @@
 package consolejobs
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,16 +15,21 @@ import (
 )
 
 const (
-	JournalFilename        = "jobs.jsonl"
-	LockFilename           = "jobs.lock"
-	ExecutionLeaseFilename = "jobs.execution.lock"
-	JournalVersion         = 1
+	JournalFilename           = "jobs.jsonl"
+	JournalCompactionFilename = "jobs.jsonl.compacting"
+	LockFilename              = "jobs.lock"
+	ExecutionLeaseFilename    = "jobs.execution.lock"
+	JournalVersion            = 1
 
 	DefaultEventCapacity  = 1024
 	DefaultEventRetention = 7 * 24 * time.Hour
 	DefaultMaxQueuedJobs  = 1024
 	DefaultMaxRunningJobs = 32
 	DefaultLockTimeout    = 30 * time.Second
+	// DefaultJournalCompactionThreshold sets the projected-size boundaries at
+	// which the Store measures whether a prospective crash-safe checkpoint would
+	// reclaim enough obsolete history to replace the business append.
+	DefaultJournalCompactionThreshold = int64(64 << 20)
 )
 
 // PrincipalKind identifies the closed set of transaction-scoped principals
@@ -97,8 +103,16 @@ func (status Status) terminal() bool {
 }
 
 type JobError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    string          `json:"code"`
+	Message string          `json:"message"`
+	Detail  *JobErrorDetail `json:"detail,omitempty"`
+}
+
+// JobErrorDetail is deliberately a closed public projection. Runner errors
+// can carry richer local metadata, but durable jobs expose only fields that
+// have an explicit browser use case and sanitization boundary.
+type JobErrorDetail struct {
+	Blocked []string `json:"blocked"`
 }
 
 type Job struct {
@@ -149,6 +163,76 @@ type CreateResult struct {
 	Existing bool
 }
 
+// JobCommitOperation identifies a durable lifecycle state change that can be
+// observed immediately before the corresponding journal record is committed.
+// Observers are used by callers that must fail closed when an audit record
+// cannot be persisted.
+type JobCommitOperation string
+
+const (
+	JobCommitCreate     JobCommitOperation = "create"
+	JobCommitStart      JobCommitOperation = "start"
+	JobCommitTransition JobCommitOperation = "transition"
+)
+
+// JobCommitIntent is a defensive snapshot of the lifecycle change about to be
+// committed. Mutating either job does not alter the store's in-memory state.
+// ConfirmationDigest is the digest of the one-time proof, never the proof.
+type JobCommitIntent struct {
+	Operation          JobCommitOperation
+	Previous           *Job
+	Next               Job
+	PlanJobID          string
+	ConfirmationDigest string
+}
+
+type JobCommitObserver interface {
+	BeforeJobCommit(context.Context, JobCommitIntent) error
+}
+
+type JobCommitObserverFunc func(context.Context, JobCommitIntent) error
+
+func (observe JobCommitObserverFunc) BeforeJobCommit(ctx context.Context, intent JobCommitIntent) error {
+	return observe(ctx, intent)
+}
+
+// ConfirmationInput identifies a server-computed plan job and the exact
+// binding an apply request expects to consume. The raw token is never
+// persisted; CreateOrGetConfirmed stores only its SHA-256 digest in the apply
+// job's already-redacted request payload.
+type ConfirmationInput struct {
+	PlanJobID       string
+	PlanKind        string
+	Token           string
+	Actor           string
+	IdentitySource  string
+	TransactionID   string
+	Action          string
+	WorkspaceID     string
+	ConfigValidator string
+	PlanDigest      string
+	StepUp          *StepUpInput
+}
+
+// StepUpInput carries the raw proof only across the in-memory authorization
+// boundary. CreateOrGetConfirmed persists its digest and consumes it in the
+// same jobs.lock transaction as the confirmation and apply job.
+type StepUpInput struct {
+	Token         string
+	SessionDigest string
+	TargetID      string
+	StateDigest   string
+}
+
+const (
+	ConfirmationDigestRequestKey         = "_confirmation_digest"
+	ConfirmationPlanJobRequestKey        = "_confirmation_plan_job_id"
+	ConfirmationIdentitySourceRequestKey = "_confirmation_identity_source"
+	ConfirmationTransactionRequestKey    = "_confirmation_transaction_id"
+	ConfirmationActionRequestKey         = "_confirmation_action"
+	StepUpDigestRequestKey               = "_step_up_digest"
+)
+
 type TransitionInput struct {
 	Progress               *int
 	Warnings               []string
@@ -181,15 +265,16 @@ type EventPage struct {
 }
 
 type Options struct {
-	EventCapacity  int
-	EventRetention time.Duration
-	MaxQueuedJobs  int
-	MaxRunningJobs int
-	LockTimeout    time.Duration
+	EventCapacity              int
+	EventRetention             time.Duration
+	MaxQueuedJobs              int
+	MaxRunningJobs             int
+	LockTimeout                time.Duration
+	JournalCompactionThreshold int64
 }
 
 func (options Options) withDefaults() (Options, error) {
-	if options.EventCapacity < 0 || options.EventRetention < 0 || options.MaxQueuedJobs < 0 || options.MaxRunningJobs < 0 || options.LockTimeout < 0 {
+	if options.EventCapacity < 0 || options.EventRetention < 0 || options.MaxQueuedJobs < 0 || options.MaxRunningJobs < 0 || options.LockTimeout < 0 || options.JournalCompactionThreshold < 0 {
 		return Options{}, invalidError("store options must not be negative")
 	}
 	if options.EventCapacity == 0 {
@@ -206,6 +291,9 @@ func (options Options) withDefaults() (Options, error) {
 	}
 	if options.LockTimeout == 0 {
 		options.LockTimeout = DefaultLockTimeout
+	}
+	if options.JournalCompactionThreshold == 0 {
+		options.JournalCompactionThreshold = DefaultJournalCompactionThreshold
 	}
 	return options, nil
 }

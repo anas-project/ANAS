@@ -108,11 +108,19 @@ func restoreSnapshot(workspace string, meta *snapshotMeta, restoreUserData, json
 
 	restored := []string{}
 	emitProgress(jsonMode, "restore-metadata", 0, 5, "files")
+	restoredConfig, err := os.ReadFile(snapshotMetaEntry(root, snapshotMetaConfigName))
+	if err != nil {
+		return nil, failuref("restore_failed", "read snapshot config.yml: %v", err)
+	}
+	restoredState, err := managedConfigStateBytes(restoredConfig, "snapshot-restore")
+	if err != nil {
+		return nil, failuref("restore_failed", "create managed config state: %v", err)
+	}
 	if err := copyFileMode(snapshotMetaEntry(root, snapshotMetaConfigName), workspaceConfigPath(workspace), 0600); err != nil {
 		return nil, failuref("restore_failed", "restore config.yml: %v", err)
 	}
 	restored = append(restored, "config")
-	if err := copyFileMode(snapshotMetaEntry(root, snapshotMetaConfigStateName), managedConfigStatePath(base), 0600); err != nil {
+	if err := os.WriteFile(managedConfigStatePath(base), restoredState, 0600); err != nil {
 		return nil, failuref("restore_failed", "restore managed config state: %v", err)
 	}
 	if err := copyFileMode(snapshotMetaEntry(root, snapshotMetaLockName), projectLockPath(workspaceConfigPath(workspace)), 0600); err != nil {

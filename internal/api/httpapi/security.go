@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // ConsoleState is the persisted control-plane capability state. StateM0 is a
@@ -38,17 +39,27 @@ type Permission string
 
 const (
 	PermissionPublic             Permission = "public"
+	PermissionConsoleUI          Permission = "console.ui.read"
+	PermissionSystemCA           Permission = "system.ca.read"
 	PermissionWorkspaceRead      Permission = "workspace.read"
 	PermissionAuthCSRF           Permission = "auth.csrf"
+	PermissionAuthSession        Permission = "auth.session.refresh"
 	PermissionAuthExchange       Permission = "auth.bootstrap.exchange"
 	PermissionAuthLogin          Permission = "auth.local.login"
 	PermissionAuthLogout         Permission = "auth.local.logout"
+	PermissionAuthStepUp         Permission = "auth.step_up"
 	PermissionEnrollmentHandoff  Permission = "auth.enrollment.handoff"
 	PermissionEnrollmentExchange Permission = "auth.enrollment.exchange"
 	PermissionEnrollmentOwner    Permission = "auth.enrollment.owner"
 	PermissionJobList            Permission = "job.list"
 	PermissionJobRead            Permission = "job.read"
 	PermissionJobEventsRead      Permission = "job.events.read"
+	PermissionAuditList          Permission = "audit.list"
+	PermissionConfigRead         Permission = "config.read"
+	PermissionConfigValidate     Permission = "config.validate"
+	PermissionConfigWrite        Permission = "config.write"
+	PermissionDeploymentPlan     Permission = "deployment.plan"
+	PermissionDeploymentApply    Permission = "deployment.apply"
 )
 
 type ObjectScope string
@@ -91,10 +102,18 @@ type AuthorizationRequest struct {
 }
 
 type Principal struct {
-	ID            string
-	Role          string
-	Source        string
-	TransactionID string
+	ID                string
+	Role              string
+	Source            string
+	TransactionID     string
+	Issuer            string
+	Subject           string
+	SemanticRole      string
+	DirectoryGroup    string
+	AuthenticatedAt   time.Time
+	IdentityExpiresAt time.Time
+	AssertionDigest   string
+	SessionDigest     string
 }
 
 var (
@@ -224,6 +243,13 @@ var directProxyHeaders = []string{
 	"X-Auth-Request-Groups",
 	"X-Remote-User",
 	"Remote-User",
+	"X-Anas-Identity-Issuer",
+	"X-Anas-Identity-Subject",
+	"X-Anas-Identity-Role",
+	"X-Anas-Identity-Group",
+	"X-Anas-Identity-Auth-Time",
+	"X-Anas-Identity-Expires-At",
+	"X-Anas-Identity-Assertion",
 }
 
 func stripDirectProxyHeaders(header http.Header) {

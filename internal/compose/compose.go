@@ -2,6 +2,7 @@ package compose
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -19,6 +20,30 @@ func Detect() (CLI, error) {
 	}
 	if err := exec.Command("docker-compose", "-v").Run(); err == nil {
 		return CLI{Bin: []string{"docker-compose"}}, nil
+	}
+	return CLI{}, fmt.Errorf("docker compose is not installed")
+}
+
+// DetectContext is the service-facing detector: cancellation reaches the
+// probe and the caller supplies the complete environment instead of inheriting
+// the daemon process.
+func DetectContext(ctx context.Context, environment []string) (CLI, error) {
+	for _, candidate := range []struct {
+		bin  string
+		args []string
+		cli  CLI
+	}{
+		{bin: "docker", args: []string{"compose", "version"}, cli: CLI{Bin: []string{"docker", "compose"}}},
+		{bin: "docker-compose", args: []string{"-v"}, cli: CLI{Bin: []string{"docker-compose"}}},
+	} {
+		cmd := exec.CommandContext(ctx, candidate.bin, candidate.args...)
+		cmd.Env = append([]string(nil), environment...)
+		if err := cmd.Run(); err == nil {
+			return candidate.cli, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return CLI{}, err
+		}
 	}
 	return CLI{}, fmt.Errorf("docker compose is not installed")
 }
@@ -49,6 +74,13 @@ func (c CLI) RunFileQuiet(dir, project, composeFile string, env map[string]strin
 	return cmd.Run()
 }
 
+func (c CLI) RunFileContext(ctx context.Context, dir, project, composeFile string, environment []string, stdout, stderr io.Writer, args ...string) error {
+	cmd := c.fileCommandContext(ctx, dir, project, composeFile, environment, args...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
+}
+
 func (c CLI) fileCommand(dir, project, composeFile string, env map[string]string, args ...string) *exec.Cmd {
 	full := append([]string{}, c.Bin...)
 	full = append(full, "--project-name", project, "--env-file", ".env")
@@ -65,6 +97,19 @@ func (c CLI) fileCommand(dir, project, composeFile string, env map[string]string
 	return cmd
 }
 
+func (c CLI) fileCommandContext(ctx context.Context, dir, project, composeFile string, environment []string, args ...string) *exec.Cmd {
+	full := append([]string{}, c.Bin...)
+	full = append(full, "--project-name", project, "--env-file", ".env")
+	if composeFile != "" {
+		full = append(full, "--file", composeFile)
+	}
+	full = append(full, args...)
+	cmd := exec.CommandContext(ctx, full[0], full[1:]...)
+	cmd.Dir = dir
+	cmd.Env = append([]string(nil), environment...)
+	return cmd
+}
+
 func (c CLI) Output(dir, project string, env map[string]string, args ...string) (string, error) {
 	return c.OutputFile(dir, project, "", env, args...)
 }
@@ -77,6 +122,28 @@ func (c CLI) OutputFile(dir, project, composeFile string, env map[string]string,
 // --services`) while discarding untrusted stderr during credential handling.
 func (c CLI) OutputFileQuiet(dir, project, composeFile string, env map[string]string, args ...string) (string, error) {
 	return c.outputFile(dir, project, composeFile, env, true, args...)
+}
+
+func (c CLI) OutputFileContext(ctx context.Context, dir, project, composeFile string, environment []string, quiet bool, args ...string) (string, error) {
+	cmd := c.fileCommandContext(ctx, dir, project, composeFile, environment, args...)
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	if quiet {
+		cmd.Stderr = io.Discard
+	} else {
+		cmd.Stderr = &errb
+	}
+	err := cmd.Run()
+	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return out.String(), contextErr
+		}
+		if quiet {
+			return out.String(), err
+		}
+		return out.String(), fmt.Errorf("%w: %s", err, strings.TrimSpace(errb.String()))
+	}
+	return out.String(), nil
 }
 
 func (c CLI) outputFile(dir, project, composeFile string, env map[string]string, quiet bool, args ...string) (string, error) {

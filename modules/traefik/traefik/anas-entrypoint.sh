@@ -46,6 +46,28 @@ route_value() {
   eval 'printf "%s" "${ANAS_TRAEFIK_ROUTE__'"$1"'__'"$2"'-}"'
 }
 
+transport_value() {
+  eval 'printf "%s" "${ANAS_TRAEFIK_SERVERS_TRANSPORT__'"$1"'__'"$2"'-}"'
+}
+
+is_simple_name() {
+  case "$1" in
+    ""|*[!A-Za-z0-9_-]*) return 1 ;;
+  esac
+}
+
+is_cert_path() {
+  case "$1" in
+    /certs/*)
+      basename=${1#/certs/}
+      case "$basename" in
+        ""|*/*|.*|*..*|*[!A-Za-z0-9._-]*) return 1 ;;
+      esac
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 required LEGO_CERT_NAME
 required LEGO_KEY_NAME
 
@@ -84,21 +106,78 @@ mv "$config_dir/cert.yml.tmp" "$config_dir/cert.yml"
 #   ANAS_TRAEFIK_ROUTE__<NAME>__MIDDLEWARES   optional, comma-separated
 #   ANAS_TRAEFIK_ROUTE__<NAME>__ENTRYPOINTS   optional, defaults to https
 #   ANAS_TRAEFIK_ROUTE__<NAME>__TLS           optional, defaults to true
+#   ANAS_TRAEFIK_ROUTE__<NAME>__SERVERS_TRANSPORT optional, declared below
+#
+# A named upstream transport is closed rather than best-effort: once selected,
+# server CA verification and the expected SNI name are required. The Hook
+# materializes a stable, Secret-Store-backed client identity below the
+# Traefik-only runtime state; unlike /certs, it is not mounted into other
+# modules and does not change across deployment/rollback directories.
+#
+#   ANAS_TRAEFIK_SERVERS_TRANSPORT__<NAME>__SERVER_NAME
+#   ANAS_TRAEFIK_SERVERS_TRANSPORT__<NAME>__ROOT_CAS
 #
 # <NAME> is restricted to the characters an environment variable may hold, so
 # it needs no separate validation; the enumeration pattern below is the check.
 routes=$(env | sed -n 's/^ANAS_TRAEFIK_ROUTE__\([A-Za-z0-9_]*\)__RULE=.*/\1/p' | sort -u)
+transports=$(env | sed -n 's/^ANAS_TRAEFIK_SERVERS_TRANSPORT__\([A-Za-z0-9_]*\)__SERVER_NAME=.*/\1/p' | sort -u)
 
 # Validate every field first, in this shell, so a rejection actually stops the
 # container from starting with a half-written route file.
 for route in $routes; do
-  for field in RULE URL MIDDLEWARES ENTRYPOINTS TLS; do
+  for field in RULE URL MIDDLEWARES ENTRYPOINTS TLS SERVERS_TRANSPORT; do
     reject_line_breaks "$route.$field" "$(route_value "$route" "$field")"
   done
   if [ -z "$(route_value "$route" URL)" ]; then
     printf 'traefik route %s declares a rule but no upstream URL\n' "$route" >&2
     exit 1
   fi
+  transport=$(route_value "$route" SERVERS_TRANSPORT)
+  if [ -n "$transport" ]; then
+    if ! is_simple_name "$transport"; then
+      printf 'traefik route %s has invalid servers transport name %s\n' "$route" "$transport" >&2
+      exit 1
+    fi
+    case " $transports " in
+      *" $transport "*) ;;
+      *) printf 'traefik route %s references undeclared servers transport %s\n' "$route" "$transport" >&2; exit 1 ;;
+    esac
+  fi
+done
+
+for transport in $transports; do
+  for field in SERVER_NAME ROOT_CAS; do
+    value=$(transport_value "$transport" "$field")
+    reject_line_breaks "$transport.$field" "$value"
+    if [ -z "$value" ]; then
+      printf 'traefik servers transport %s is missing %s\n' "$transport" "$field" >&2
+      exit 1
+    fi
+  done
+  server_name=$(transport_value "$transport" SERVER_NAME)
+  case "$server_name" in
+    *[!A-Za-z0-9.-]*|.*|*..*|*.)
+      printf 'traefik servers transport %s has invalid server name %s\n' "$transport" "$server_name" >&2
+      exit 1
+      ;;
+  esac
+  for field in ROOT_CAS; do
+    value=$(transport_value "$transport" "$field")
+    if ! is_cert_path "$value"; then
+      printf 'traefik servers transport %s field %s must be a simple /certs basename\n' "$transport" "$field" >&2
+      exit 1
+    fi
+  done
+done
+
+for transport in $transports; do
+  identity_dir="$config_dir/client-identities/$transport"
+  for artifact in ca.crt client.crt client.key client.spki-sha256; do
+    if [ ! -s "$identity_dir/$artifact" ]; then
+      printf 'traefik servers transport %s is missing managed client identity artifact %s\n' "$transport" "$artifact" >&2
+      exit 1
+    fi
+  done
 done
 
 if [ -n "$routes" ]; then
@@ -140,9 +219,26 @@ if [ -n "$routes" ]; then
     printf '  services:\n'
     for route in $routes; do
       name=$(printf '%s' "$route" | tr 'A-Z_' 'a-z-')
-      printf '    %s:\n      loadBalancer:\n        servers:\n' "$name"
+      printf '    %s:\n      loadBalancer:\n' "$name"
+      transport=$(route_value "$route" SERVERS_TRANSPORT)
+      if [ -n "$transport" ]; then
+        printf '        serversTransport: %s\n' "$(yaml_string "$transport")"
+      fi
+      printf '        servers:\n'
       printf '          - url: %s\n' "$(yaml_string "$(route_value "$route" URL)")"
     done
+    if [ -n "$transports" ]; then
+      printf '  serversTransports:\n'
+      for transport in $transports; do
+        identity_dir="$config_dir/client-identities/$transport"
+        printf '    %s:\n' "$transport"
+        printf '      serverName: %s\n' "$(yaml_string "$(transport_value "$transport" SERVER_NAME)")"
+        printf '      rootCAs:\n        - %s\n' "$(yaml_string "$(transport_value "$transport" ROOT_CAS)")"
+        printf '      certificates:\n'
+        printf '        - certFile: %s\n' "$(yaml_string "$identity_dir/client.crt")"
+        printf '          keyFile: %s\n' "$(yaml_string "$identity_dir/client.key")"
+      done
+    fi
   } > "$config_dir/routes.yml.tmp"
   mv "$config_dir/routes.yml.tmp" "$config_dir/routes.yml"
 else

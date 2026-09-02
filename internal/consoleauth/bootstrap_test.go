@@ -200,6 +200,50 @@ func TestBootstrapSessionSurvivesRestartWithoutAbsoluteRenewal(t *testing.T) {
 	}
 }
 
+func TestBootstrapSessionRefreshRotatesCSRFAcrossRestart(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "auth")
+	audit := &memoryAudit{}
+	clock := newTestClock()
+	store := openTestStore(t, directory, audit, clock)
+	issued, err := store.IssueBootstrapToken(context.Background(), IssueBootstrapTokenRequest{
+		TTL: DefaultBootstrapTokenTTL, TransactionID: "txn-refresh", State: StateBootstrap,
+		AllowedRoutes: []string{"/api/v1/auth/session", "/api/v1/workspaces/{ws}/config"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.ExchangeBootstrapToken(context.Background(), ExchangeBootstrapTokenRequest{
+		Token: issued.Token, Origin: "http://192.0.2.20:8080",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(20 * time.Minute)
+	refreshed, err := store.RefreshBootstrapSession(context.Background(), BootstrapSessionRefreshRequest{
+		SessionToken: session.Token, Origin: session.Origin, TransactionID: session.TransactionID,
+		State: session.State, Route: "/api/v1/auth/session",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.CSRFToken == "" || refreshed.CSRFToken == session.CSRFToken || refreshed.ExpiresAt != session.ExpiresAt || refreshed.IdleExpiresAt.Sub(session.CreatedAt) != 50*time.Minute {
+		t.Fatalf("refreshed credential = %#v", refreshed)
+	}
+	restarted := openTestStore(t, directory, audit, clock)
+	request := BootstrapAuthenticationRequest{
+		SessionToken: session.Token, Origin: session.Origin, TransactionID: session.TransactionID,
+		State: session.State, Route: "/api/v1/workspaces/{ws}/config", RequireCSRF: true,
+	}
+	request.CSRFToken = session.CSRFToken
+	if _, err := restarted.AuthenticateBootstrap(context.Background(), request); !errors.Is(err, ErrCSRFMismatch) {
+		t.Fatalf("old CSRF error = %v", err)
+	}
+	request.CSRFToken = refreshed.CSRFToken
+	if _, err := restarted.AuthenticateBootstrap(context.Background(), request); err != nil {
+		t.Fatalf("new CSRF authentication = %v", err)
+	}
+}
+
 func TestBootstrapObserveOnlyAuthenticationDoesNotExtendIdleExpiry(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "auth")
 	audit := &memoryAudit{}

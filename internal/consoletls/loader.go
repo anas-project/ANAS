@@ -70,6 +70,22 @@ func validateCandidateConfig(candidate Candidate) error {
 			return err
 		}
 	}
+	if candidate.InternalCAPath != "" {
+		if err := validateArtifactPath("internal CA", candidate.InternalCAPath); err != nil {
+			return err
+		}
+		paths := []string{candidate.CertificatePath, candidate.PrivateKeyPath, candidate.IssuerPath, candidate.TrustBundlePath, candidate.InternalCAPath, candidate.IssuerMarkerPath}
+		seen := make(map[string]struct{}, len(paths))
+		for _, path := range paths {
+			if path == "" {
+				continue
+			}
+			if _, exists := seen[path]; exists {
+				return fmt.Errorf("lego certificate artifact paths must be distinct")
+			}
+			seen[path] = struct{}{}
+		}
+	}
 	if candidate.IssuerMarkerPath != "" {
 		if err := validateArtifactPath("issuer marker", candidate.IssuerMarkerPath); err != nil {
 			return err
@@ -205,7 +221,7 @@ func loadCandidate(candidate Candidate, check FileSecurityCheck, now time.Time) 
 	if err != nil {
 		return nil, err
 	}
-	artifacts := make([]artifact, 0, 5)
+	artifacts := make([]artifact, 0, 6)
 	read := func(path string, role FileRole, maximum int64) ([]byte, error) {
 		item, err := readArtifact(path, role, maximum, check)
 		if err != nil {
@@ -230,6 +246,13 @@ func loadCandidate(candidate Candidate, check FileSecurityCheck, now time.Time) 
 	trustBundlePEM, err := read(candidate.TrustBundlePath, FileRoleTrustBundle, maximumTrustBundleBytes)
 	if err != nil {
 		return nil, err
+	}
+	var internalCAPEM []byte
+	if candidate.InternalCAPath != "" {
+		internalCAPEM, err = read(candidate.InternalCAPath, FileRoleInternalCA, maximumArtifactBytes)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	source := candidate.Source
@@ -261,6 +284,25 @@ func loadCandidate(candidate Candidate, check FileSecurityCheck, now time.Time) 
 	trustCertificates, err := parseCertificatePEM(trustBundlePEM, FileRoleTrustBundle)
 	if err != nil {
 		return nil, err
+	}
+	if len(internalCAPEM) != 0 {
+		internalCertificates, err := parseCertificatePEM(internalCAPEM, FileRoleInternalCA)
+		if err != nil {
+			return nil, err
+		}
+		if len(internalCertificates) != 1 {
+			return nil, fmt.Errorf("internal CA PEM must contain exactly one certificate")
+		}
+		internalCA := internalCertificates[0]
+		if !internalCA.IsCA || !internalCA.BasicConstraintsValid || internalCA.KeyUsage&x509.KeyUsageCertSign == 0 || !selfSigned(internalCA) {
+			return nil, fmt.Errorf("internal CA certificate must be a self-signed certificate authority")
+		}
+		if now := now.UTC(); now.Before(internalCA.NotBefore) || now.After(internalCA.NotAfter) {
+			return nil, fmt.Errorf("internal CA certificate is not valid at the current time")
+		}
+		if !containsCertificate(trustCertificates, internalCA) {
+			return nil, fmt.Errorf("internal CA certificate is absent from the trust bundle")
+		}
 	}
 
 	pair, err := tls.X509KeyPair(certificatePEM, privateKeyPEM)
@@ -348,6 +390,7 @@ func loadCandidate(candidate Candidate, check FileSecurityCheck, now time.Time) 
 		spkiSHA256:  spki,
 		leafDER:     append([]byte{}, leaf.Raw...),
 		chainDER:    cloneByteSlices(serviceChain),
+		internalCA:  append([]byte{}, internalCAPEM...),
 		dnsNames:    append([]string{}, leaf.DNSNames...),
 		notBefore:   leaf.NotBefore,
 		notAfter:    leaf.NotAfter,

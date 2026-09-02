@@ -15,6 +15,10 @@ var (
 	ErrWorkspaceBusy        = errors.New("workspace mutation already running")
 	ErrCompensationRequired = errors.New("workspace compensation check required")
 	ErrCapacity             = errors.New("console job capacity reached")
+	ErrConfirmationInvalid  = errors.New("console job confirmation is invalid")
+	ErrConfirmationConsumed = errors.New("console job confirmation was already consumed")
+	ErrStepUpInvalid        = errors.New("console job step-up proof is invalid")
+	ErrStepUpConsumed       = errors.New("console job step-up proof was already consumed")
 )
 
 type PersistenceError struct {

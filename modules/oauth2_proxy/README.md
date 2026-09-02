@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `oauth2_proxy` |
-| 版本 / revision | `7.15.3-r4` |
+| 版本 / revision | `7.15.3-r5` |
 | 状态 | `release` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
@@ -73,6 +73,8 @@ Hook 把它解析成目录里管理员组的真实名称（`SAMBA_DC_ADMIN_GROUP
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `oauth2_proxy.console_proxy_enabled` | bool | — | `false` | `static` | `OAUTH2_PROXY_CONSOLE_PROXY_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否发布受 OIDC 与 mTLS 保护的 ANAS 控制台路由 |
+| `oauth2_proxy.console_proxy_port` | int | `1..65535` | `8443` | `static` | `OAUTH2_PROXY_CONSOLE_PROXY_PORT` | 否 | 否 | 否 | 是 | `container_recreate` | anasd 受信代理监听端口 |
 | `oauth2_proxy.domain_prefix` | string | — | `auth-gate` | `static` | `OAUTH2_PROXY_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
 | `oauth2_proxy.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `OAUTH2_PROXY_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
 
@@ -85,6 +87,12 @@ anas config plan -w /srv/anas
 ```
 
 `editable=false` 的参数不能用普通 `config set` 完成；表中的专用流程名称是生命周期声明，不保证存在同名通用子命令。原始 `env.<KEY>` 仅是兼容逃生口，不能用来轮换应用内部密码。
+
+## ANAS 控制台受信代理
+
+设置 `oauth2_proxy.console_proxy_enabled: true` 后，Hook 发布 `https://anas.<base_domain>:<TRAEFIK_BASE_PORT>`、现有 `ANAS_FORWARD_AUTH_*` 中间件和 `ANAS_CONSOLE_MTLS` transport，后端指向宿主的 `console_proxy_port`。默认关闭，避免在 `anasd` 的 mTLS client CA、SPKI allowlist 与精确 Traefik 源 IP 尚未配置时提前发布入口。
+
+oauth2-proxy 本体只监听容器 loopback `4181`；包装进程分别暴露浏览器/callback bridge `4180` 和仅供 Traefik ForwardAuth 的 identity bridge `4182`。两条 bridge 都删除请求携带的 ANAS 身份头。只有 identity bridge 会从 oauth2-proxy 已验证响应中的 bearer ID token 读取固定 issuer、subject、`auth_time`、`exp` 和管理员组，再覆盖输出七个 `X-Anas-Identity-*` Header；原 assertion 不写日志或 Secret Store。`anasd` 不是 OIDC 客户端，也不接收 IdP 密码。
 
 ## 存储、备份与验证
 
@@ -109,7 +117,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`7.15.3-r4`（reviewed 2026-08-13）
+- Module version / 版本：`7.15.3-r5`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — oauth2-proxy receives TZ for process and log timestamps.
 - Language scope / 语言范围：oauth2-proxy built-in error and sign-in pages
 - Selection / 选择方式：`fixed`

@@ -6,10 +6,10 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 
 <!-- generated:configuration-summary:start -->
 - Built-in Modules: `22`
-- Declared parameters: `171` total (`17` global and `154` Module-owned; `150` structured Module parameters and `4` bare `env.*` parameters)
+- Declared parameters: `173` total (`17` global and `156` Module-owned; `152` structured Module parameters and `4` bare `env.*` parameters)
 - Resolution phases: `input_required` `2`, `must_resolve` `26`, unknown types `0`
-- Type distribution: `bool` `24`, `enum` `22`, `int` `26`, `string` `99`
-- Default-source distribution: `generated` `10`, `host` `3`, `inherited` `7`, `none` `8`, `runtime` `4`, `static` `139`
+- Type distribution: `bool` `25`, `enum` `22`, `int` `27`, `string` `99`
+- Default-source distribution: `generated` `10`, `host` `3`, `inherited` `7`, `none` `8`, `runtime` `4`, `static` `141`
 <!-- generated:configuration-summary:end -->
 - Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the parameter inventory.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
@@ -162,7 +162,7 @@ configuration API, and Web forms must consume the same application-layer schema.
 only when that resolver cannot supply the value.
 
 <!-- generated:configuration-constraints:start -->
-Current explicit portable constraints: `22`.
+Current explicit portable constraints: `23`.
 
 | Parameter path | Portable constraints |
 | --- | --- |
@@ -180,6 +180,7 @@ Current explicit portable constraints: `22`.
 | `global.host_lan_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.timezone` | <code>format=&#34;iana_timezone&#34;</code> |
 | `meshcentral.mps_port` | <code>minimum=1; maximum=65535</code> |
+| `oauth2_proxy.console_proxy_port` | <code>minimum=1; maximum=65535</code> |
 | `samba_dc.domain` | <code>format=&#34;dns_name&#34;</code> |
 | `samba_dc.max_log_size` | <code>minimum=1</code> |
 | `traefik.base_port` | <code>minimum=1; maximum=65535</code> |
@@ -208,7 +209,7 @@ Current explicit portable constraints: `22`.
 | `meshcentral` | 5 | `meshcentral.db_name`<br>`meshcentral.db_type`<br>`meshcentral.domain_prefix`<br>`meshcentral.iam_protocol`<br>`meshcentral.mps_port` |
 | `netbird` | 2 | `netbird.domain_prefix`<br>`netbird.iam_protocol` |
 | `nextcloud` | 13 | `nextcloud.db_name`<br>`nextcloud.db_type`<br>`nextcloud.domain_prefix`<br>`nextcloud.iam_protocol`<br>`nextcloud.language`<br>`nextcloud.locale`<br>`nextcloud.log_level`<br>`nextcloud.memories_enabled`<br>`nextcloud.memory_limit`<br>`nextcloud.phone_region`<br>`nextcloud.rm_skeleton_files`<br>`nextcloud.talk_enabled`<br>`nextcloud.upload_max_size` |
-| `oauth2_proxy` | 2 | `oauth2_proxy.domain_prefix`<br>`oauth2_proxy.iam_protocol` |
+| `oauth2_proxy` | 4 | `oauth2_proxy.console_proxy_enabled`<br>`oauth2_proxy.console_proxy_port`<br>`oauth2_proxy.domain_prefix`<br>`oauth2_proxy.iam_protocol` |
 | `postgres` | 4 | `postgres.adminer_enabled`<br>`postgres.forward_auth_interface`<br>`postgres.password`<br>`postgres.username` |
 | `samba_dc` | 40 | `samba_dc.admin_complex_pass`<br>`samba_dc.admin_lockout_duration`<br>`samba_dc.admin_lockout_reset_after`<br>`samba_dc.admin_lockout_threshold`<br>`samba_dc.admin_max_pass_age`<br>`samba_dc.admin_min_pass_age`<br>`samba_dc.admin_min_pass_length`<br>`samba_dc.admin_name`<br>`samba_dc.admin_password`<br>`samba_dc.admin_password_history`<br>`samba_dc.administrator_password`<br>`samba_dc.anchor_bind_name`<br>`samba_dc.anchor_bind_password`<br>`samba_dc.anchor_scan_interval`<br>`samba_dc.app_filter`<br>`samba_dc.application_dns_mode`<br>`samba_dc.create_structure`<br>`samba_dc.dns_allowed_networks`<br>`samba_dc.dns_cache_size`<br>`samba_dc.dns_debug`<br>`samba_dc.dns_forwarders`<br>`samba_dc.domain`<br>`samba_dc.ldap_bind_name`<br>`samba_dc.ldap_bind_password`<br>`samba_dc.log_level`<br>`samba_dc.max_log_size`<br>`samba_dc.netbios_name`<br>`samba_dc.password_bind_name`<br>`samba_dc.password_bind_password`<br>`samba_dc.realm`<br>`samba_dc.template_homedir`<br>`samba_dc.template_shell`<br>`samba_dc.user_complex_pass`<br>`samba_dc.user_lockout_duration`<br>`samba_dc.user_lockout_reset_after`<br>`samba_dc.user_lockout_threshold`<br>`samba_dc.user_max_pass_age`<br>`samba_dc.user_min_pass_age`<br>`samba_dc.user_min_pass_length`<br>`samba_dc.user_password_history` |
 | `samba_fs` | 7 | `env.SHARE_ACCESS_MODE`<br>`env.SHARE_DIR_NAME`<br>`env.SHARE_GUEST_READ_ONLY`<br>`env.USE_DEFAULT_DOMAIN`<br>`samba_fs.hostname`<br>`samba_fs.log_level`<br>`samba_fs.wsdd_log_level` |
@@ -248,7 +249,7 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 <!-- generated:configuration-effects:start -->
 | Module parameter effect | Parameters | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 101 | Re-render and recreate the affected container or Compose project |
+| `container_recreate` | 103 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 7 | Use a credential-rotation transaction to update application state and the Secret Store together |
 | `data_migrate` | 15 | Migrate persistent data, a database, or membership before activation |
 | `hot_reload` | 16 | Apply through the declared management command; the current executor may conservatively recreate the container |

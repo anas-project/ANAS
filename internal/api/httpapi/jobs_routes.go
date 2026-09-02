@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/anas-project/ANAS/internal/consolejobs"
+	"github.com/anas-project/ANAS/internal/deploymentaudit"
 )
 
 const (
@@ -715,9 +716,19 @@ func newJobSummaryDTO(job consolejobs.Job) jobSummaryDTO {
 
 func newJobDetailDTO(job consolejobs.Job) jobDetailDTO {
 	warnings := append([]string{}, job.Warnings...)
+	result := make(map[string]any, len(job.Result))
+	for key, value := range job.Result {
+		if job.Kind == deploymentaudit.ActionPlan && key == "confirmation" {
+			continue
+		}
+		result[key] = value
+	}
+	if len(result) == 0 {
+		result = nil
+	}
 	return jobDetailDTO{
 		jobSummaryDTO: newJobSummaryDTO(job), Warnings: warnings,
-		Result: job.Result, Error: job.Error, NeedsCompensationCheck: job.NeedsCompensationCheck,
+		Result: result, Error: job.Error, NeedsCompensationCheck: job.NeedsCompensationCheck,
 	}
 }
 

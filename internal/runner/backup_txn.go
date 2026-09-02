@@ -19,12 +19,13 @@ package runner
 // module would find a backup had started it for them.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/anas-project/ANAS/internal/compose"
+	"github.com/anas-project/ANAS/internal/application"
 )
 
 const containerTransactionKind = "backup_containers"
@@ -153,6 +154,10 @@ func startModules(a *app, modulesRoot string, modules []string) error {
 // a failure of `anas apply` would replace one problem with two. The record is
 // left in place so the next command tries again.
 func compensateContainerTransactions(base string) {
+	compensateContainerTransactionsWithOptions(base, runtimeRecoveryOptions{})
+}
+
+func compensateContainerTransactionsWithOptions(base string, opts runtimeRecoveryOptions) {
 	entries, err := os.ReadDir(transactionsDir(base))
 	if err != nil {
 		return
@@ -173,11 +178,10 @@ func compensateContainerTransactions(base string) {
 			_ = os.Remove(path)
 			continue
 		}
-		fmt.Fprintf(os.Stderr,
-			"warning: a backup started at %s stopped %d module(s) and did not start them again; starting them now\n",
-			txn.StartedAt, len(txn.Modules))
-		if err := resumeStoppedModules(base, &txn); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not start %s: %v\n", strings.Join(txn.Modules, ", "), err)
+		containerRecoveryWarning(opts.events, "container_recovery_started",
+			"a backup stopped %d module(s) and did not start them again; starting them now", len(txn.Modules))
+		if err := resumeStoppedModulesWithOptions(base, &txn, opts); err != nil {
+			containerRecoveryWarning(opts.events, "container_recovery_failed", "could not restart interrupted modules: %v", err)
 			continue
 		}
 		_ = os.Remove(path)
@@ -185,7 +189,15 @@ func compensateContainerTransactions(base string) {
 }
 
 func resumeStoppedModules(base string, txn *containerTransaction) error {
-	cli, err := compose.Detect()
+	return resumeStoppedModulesWithOptions(base, txn, runtimeRecoveryOptions{})
+}
+
+func resumeStoppedModulesWithOptions(base string, txn *containerTransaction, opts runtimeRecoveryOptions) error {
+	ctx := opts.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cli, err := detectComposeForExecution(ctx, opts.restrictedProcessEnvironment)
 	if err != nil {
 		return err
 	}
@@ -204,5 +216,16 @@ func resumeStoppedModules(base string, txn *containerTransaction) error {
 	if err != nil {
 		return err
 	}
+	a.commandContext, a.events = ctx, opts.events
+	a.restrictedProcessEnvironment = opts.restrictedProcessEnvironment
 	return startModules(a, modulesRoot, txn.Modules)
+}
+
+func containerRecoveryWarning(events application.EventSink, code, format string, args ...any) {
+	message := fmt.Sprintf(format, args...)
+	if events != nil {
+		events.Warning(application.WarningEvent{Code: code, Message: message})
+		return
+	}
+	fmt.Fprintf(os.Stderr, "warning: %s\n", message)
 }

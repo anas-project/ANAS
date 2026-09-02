@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/anas-project/ANAS/internal/config"
 )
@@ -413,6 +414,15 @@ func TestModuleValidationHookHelper(t *testing.T) {
 		if req.Env[args[1]] == args[2] {
 			moduleValidationHookHelperFail("%s is not allowed", args[1])
 		}
+		fmt.Print(`{}`)
+	case "block":
+		if len(args) != 2 {
+			moduleValidationHookHelperFail("block requires a started path")
+		}
+		if err := os.WriteFile(args[1], []byte("started"), 0600); err != nil {
+			moduleValidationHookHelperFail("record block start: %v", err)
+		}
+		time.Sleep(10 * time.Minute)
 		fmt.Print(`{}`)
 	default:
 		moduleValidationHookHelperFail("unknown helper action %q", args[0])

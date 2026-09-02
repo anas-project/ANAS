@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -13,12 +14,36 @@ func TestEveryRouteDeclaresSecurityMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inventory) != 17 {
-		t.Fatalf("route inventory contains %d routes, want 17", len(inventory))
+	if len(inventory) != 32 {
+		t.Fatalf("route inventory contains %d routes, want 32", len(inventory))
 	}
 	for _, policy := range inventory {
 		if err := validateRoutePolicy(policy); err != nil {
 			t.Errorf("%s %s: %v", policy.Method, policy.Pattern, err)
+		}
+	}
+}
+
+func TestFullPlaintextRejectsCredentialsAndBodiesEvenOnHealth(t *testing.T) {
+	handler, err := NewHandlerWithSecurity(nil, nil, SecurityOptions{
+		InitialState: StateFull,
+		HostAllowed:  func(*http.Request) bool { return true },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []*http.Request{
+		httptest.NewRequest(http.MethodGet, "/healthz", strings.NewReader("body")),
+		httptest.NewRequest(http.MethodGet, "/healthz", nil),
+		httptest.NewRequest(http.MethodGet, "/healthz", nil),
+	}
+	tests[1].Header.Set("Cookie", "session=secret")
+	tests[2].Header.Set("Authorization", "Bearer secret")
+	for _, request := range tests {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("credentialed/body health = %d, %s", response.Code, response.Body.String())
 		}
 	}
 }
@@ -36,6 +61,9 @@ func TestSecurityHeadersDistinguishPlaintextAndTLS(t *testing.T) {
 			t.Errorf("plaintext response omitted %s", name)
 		}
 	}
+	if policy := plainResponse.Header().Get("Referrer-Policy"); policy != "strict-origin" {
+		t.Fatalf("Referrer-Policy = %q, want strict-origin so the HTTPS enrollment handoff keeps an exact Origin without leaking a path", policy)
+	}
 
 	tlsRequest := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	tlsRequest.TLS = &tls.ConnectionState{}
@@ -43,6 +71,9 @@ func TestSecurityHeadersDistinguishPlaintextAndTLS(t *testing.T) {
 	handler.ServeHTTP(tlsResponse, tlsRequest)
 	if tlsResponse.Header().Get("Strict-Transport-Security") == "" {
 		t.Fatal("TLS response omitted HSTS")
+	}
+	if policy := tlsResponse.Header().Get("Referrer-Policy"); policy != "strict-origin" {
+		t.Fatalf("TLS Referrer-Policy = %q, want strict-origin", policy)
 	}
 }
 
@@ -123,6 +154,8 @@ func TestDirectListenerStripsForgedIdentityHeaders(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/main/status", nil)
 	request.TLS = &tls.ConnectionState{}
 	request.Header.Set("X-Forwarded-User", "forged-owner")
+	request.Header.Set(proxySubjectHeader, "forged-subject")
+	request.Header.Set(proxyAssertionHeader, "forged-assertion")
 	request.Header.Set("Forwarded", "for=127.0.0.1;proto=https")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -131,6 +164,9 @@ func TestDirectListenerStripsForgedIdentityHeaders(t *testing.T) {
 	}
 	if observed != "" {
 		t.Fatalf("authorizer observed forged identity %q", observed)
+	}
+	if request.Header.Get(proxySubjectHeader) != "" || request.Header.Get(proxyAssertionHeader) != "" {
+		t.Fatal("direct listener retained trusted-proxy identity headers")
 	}
 }
 

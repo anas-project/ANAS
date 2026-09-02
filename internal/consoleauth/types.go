@@ -15,12 +15,16 @@ const (
 	MinimumBootstrapTokenTTL = 15 * time.Minute
 	MaximumBootstrapTokenTTL = 30 * time.Minute
 
-	BootstrapSessionAbsoluteTTL = 2 * time.Hour
-	BootstrapSessionIdleTTL     = 30 * time.Minute
-	EnrollmentHandoffTTL        = 5 * time.Minute
-	EnrollmentSessionTTL        = 15 * time.Minute
-	LocalSessionAbsoluteTTL     = 12 * time.Hour
-	LocalSessionIdleTTL         = 30 * time.Minute
+	BootstrapSessionAbsoluteTTL  = 2 * time.Hour
+	BootstrapSessionIdleTTL      = 30 * time.Minute
+	EnrollmentHandoffTTL         = 5 * time.Minute
+	EnrollmentSessionTTL         = 15 * time.Minute
+	LocalSessionAbsoluteTTL      = 12 * time.Hour
+	LocalSessionIdleTTL          = 30 * time.Minute
+	LocalStepUpTTL               = 5 * time.Minute
+	ProxySessionAbsoluteTTL      = 12 * time.Hour
+	ProxySessionIdleTTL          = 30 * time.Minute
+	ProxyRecentAuthenticationTTL = 5 * time.Minute
 
 	credentialRandomBytes = 32
 )
@@ -38,6 +42,7 @@ var (
 	ErrOwnerNotConfigured  = errors.New("local owner is not configured")
 	ErrInvalidCredentials  = errors.New("local credentials are invalid")
 	ErrHandoffUnauthorized = errors.New("enrollment handoff is unauthorized")
+	ErrStepUpUnauthorized  = errors.New("step-up proof is unauthorized")
 	ErrRecoveryRequired    = errors.New("authentication transaction recovery is required")
 )
 
@@ -68,6 +73,9 @@ const (
 	AuditLocalLogin        AuditAction = "local_owner.login"
 	AuditLocalLogout       AuditAction = "local_session.logout"
 	AuditLocalRevoke       AuditAction = "local_session.revoke"
+	AuditLocalStepUp       AuditAction = "local_owner.step_up"
+	AuditProxySession      AuditAction = "proxy_session.refresh"
+	AuditProxyStepUp       AuditAction = "proxy_identity.step_up"
 )
 
 type AuditOutcome string
@@ -81,16 +89,23 @@ const (
 // it difficult for callers to accidentally include a token, password, session,
 // CSRF value, or password hash.
 type AuditEvent struct {
-	Action          AuditAction
-	Outcome         AuditOutcome
-	OccurredAt      time.Time
-	Reason          string
-	TransactionID   string
-	Origin          string
-	TargetOrigin    string
-	State           ConsoleState
-	ReplacedToken   bool
-	RevokedSessions int
+	Action           AuditAction
+	Outcome          AuditOutcome
+	OccurredAt       time.Time
+	Reason           string
+	TransactionID    string
+	Origin           string
+	TargetOrigin     string
+	State            ConsoleState
+	ReplacedToken    bool
+	RevokedSessions  int
+	AuthorizedAction string
+	WorkspaceID      string
+	TargetID         string
+	IdentityIssuer   string
+	IdentitySubject  string
+	SemanticRole     string
+	DirectoryGroup   string
 }
 
 type AuditSink interface {
@@ -143,6 +158,18 @@ type BootstrapSessionCredential struct {
 	CreatedAt     time.Time
 	ExpiresAt     time.Time
 	IdleExpiresAt time.Time
+}
+
+// BootstrapSessionRefreshRequest rotates the SPA-visible CSRF credential for
+// an already authenticated HttpOnly bootstrap session. Route remains part of
+// the request so the store independently preserves the session's closed
+// bootstrap surface at this state-changing boundary.
+type BootstrapSessionRefreshRequest struct {
+	SessionToken  string
+	Origin        string
+	TransactionID string
+	State         ConsoleState
+	Route         string
 }
 
 type BootstrapAuthenticationRequest struct {
@@ -241,6 +268,13 @@ type LocalSessionCredential struct {
 	IdleExpiresAt time.Time
 }
 
+// LocalSessionRefreshRequest rotates the SPA-visible CSRF credential for an
+// already authenticated HttpOnly local-owner session.
+type LocalSessionRefreshRequest struct {
+	SessionToken string
+	Origin       string
+}
+
 type LocalAuthenticationRequest struct {
 	SessionToken string
 	CSRFToken    string
@@ -264,3 +298,123 @@ type LocalPrincipal struct {
 	ExpiresAt     time.Time
 	IdleExpiresAt time.Time
 }
+
+// LocalStepUpRequest is assembled by a trusted HTTP adapter after it resolves
+// the registered workspace and computes StateDigest from server-owned state.
+// Password and credential values never cross the audit boundary.
+type LocalStepUpRequest struct {
+	SessionToken string
+	CSRFToken    string
+	Origin       string
+	Password     string
+	Action       string
+	WorkspaceID  string
+	TargetID     string
+	StateDigest  string
+}
+
+type LocalStepUpCredential struct {
+	Token         string
+	Digest        string
+	SessionDigest string
+	Action        string
+	WorkspaceID   string
+	TargetID      string
+	StateDigest   string
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+}
+
+type LocalStepUpAuthenticationRequest struct {
+	SessionToken string
+	Origin       string
+	Token        string
+	Action       string
+	WorkspaceID  string
+	TargetID     string
+	StateDigest  string
+}
+
+type LocalStepUpBinding struct {
+	Digest        string
+	SessionDigest string
+	Action        string
+	WorkspaceID   string
+	TargetID      string
+	StateDigest   string
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+}
+
+// ProxyIdentity is the closed identity contract produced only after the HTTP
+// adapter has parsed one unambiguous trusted-proxy header set. AssertionDigest
+// is SHA-256 of the opaque recent-authentication assertion; the assertion
+// itself never crosses into persistent authentication state or audit.
+type ProxyIdentity struct {
+	Issuer          string
+	Subject         string
+	SemanticRole    string
+	DirectoryGroup  string
+	AuthenticatedAt time.Time
+	ExpiresAt       time.Time
+	AssertionDigest string
+}
+
+type ProxySessionRefreshRequest struct {
+	SessionToken string
+	Origin       string
+	Identity     ProxyIdentity
+}
+
+type ProxySessionCredential struct {
+	Token         string
+	CSRFToken     string
+	Origin        string
+	Identity      ProxyIdentity
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+	IdleExpiresAt time.Time
+}
+
+type ProxyAuthenticationRequest struct {
+	SessionToken string
+	CSRFToken    string
+	Origin       string
+	Identity     ProxyIdentity
+	RequireCSRF  bool
+	ObserveOnly  bool
+}
+
+type ProxyPrincipal struct {
+	SessionDigest string
+	Origin        string
+	Identity      ProxyIdentity
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+	IdleExpiresAt time.Time
+}
+
+type ProxyStepUpRequest struct {
+	SessionToken string
+	CSRFToken    string
+	Origin       string
+	Identity     ProxyIdentity
+	Action       string
+	WorkspaceID  string
+	TargetID     string
+	StateDigest  string
+}
+
+type ProxyStepUpAuthenticationRequest struct {
+	SessionToken string
+	Origin       string
+	Identity     ProxyIdentity
+	Token        string
+	Action       string
+	WorkspaceID  string
+	TargetID     string
+	StateDigest  string
+}
+
+type ProxyStepUpCredential = LocalStepUpCredential
+type ProxyStepUpBinding = LocalStepUpBinding

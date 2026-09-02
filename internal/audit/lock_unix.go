@@ -66,3 +66,22 @@ func unlockAuditFile(file *os.File) error {
 		return err
 	}
 }
+
+func tryAuditLock(file *os.File) (bool, error) {
+	if file == nil {
+		return false, errors.New("audit lock descriptor is unavailable")
+	}
+	for {
+		err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		switch {
+		case err == nil:
+			return true, nil
+		case errors.Is(err, syscall.EINTR):
+			continue
+		case errors.Is(err, syscall.EWOULDBLOCK), errors.Is(err, syscall.EAGAIN):
+			return false, nil
+		default:
+			return false, err
+		}
+	}
+}

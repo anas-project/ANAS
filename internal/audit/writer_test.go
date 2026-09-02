@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -157,6 +158,67 @@ func TestAppendAssignsDurableIncreasingSequences(t *testing.T) {
 	events := readEvents(t, filepath.Join(dir, Filename))
 	if got := []uint64{events[0].Sequence, events[1].Sequence, events[2].Sequence}; !reflect.DeepEqual(got, []uint64{1, 2, 3}) {
 		t.Fatalf("persisted sequences = %v", got)
+	}
+}
+
+func TestListRefreshesAcrossWritersAndReturnsDefensiveCopies(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "audit")
+	first, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+
+	if _, err := first.Append(Event{
+		Type: "workspace.config.put", Actor: "owner", WorkspaceID: "main", Outcome: "authorized",
+		Details: map[string]any{"operation_id": "cfg-one", "password": "must-not-survive"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := second.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Sequence != 1 || events[0].Details["operation_id"] != "cfg-one" || events[0].Details[redactedMapKey] != Redacted {
+		t.Fatalf("listed events = %#v", events)
+	}
+	events[0].Actor = "mutated"
+	events[0].Details["operation_id"] = "mutated"
+
+	if _, err := first.Append(Event{Type: "local_owner.login", Actor: "owner", Outcome: "success"}); err != nil {
+		t.Fatal(err)
+	}
+	events, err = second.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].Actor != "owner" || events[0].Details["operation_id"] != "cfg-one" || events[1].Sequence != 2 {
+		t.Fatalf("refreshed events = %#v", events)
+	}
+}
+
+func TestListCancellationDoesNotPoisonWriter(t *testing.T) {
+	writer, err := Open(filepath.Join(t.TempDir(), "audit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := writer.List(canceled); !errors.Is(err, context.Canceled) || !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("canceled List error = %v", err)
+	}
+	if _, err := writer.Append(Event{Type: "after.cancellation"}); err != nil {
+		t.Fatalf("writer was poisoned by canceled List: %v", err)
+	}
+	events, err := writer.List(context.Background())
+	if err != nil || len(events) != 1 {
+		t.Fatalf("List after cancellation = %#v, %v", events, err)
 	}
 }
 
@@ -504,6 +566,10 @@ func TestAppendRejectsInvalidEventsWithoutWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer writer.Close()
+	before, err := os.ReadFile(filepath.Join(dir, Filename))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, event := range []Event{
 		{},
 		{Sequence: 10, Type: "caller-sequence"},
@@ -513,8 +579,8 @@ func TestAppendRejectsInvalidEventsWithoutWriting(t *testing.T) {
 			t.Errorf("Append(%#v) error = %v, want ErrInvalidEvent", event, err)
 		}
 	}
-	if body, err := os.ReadFile(filepath.Join(dir, Filename)); err != nil || len(body) != 0 {
-		t.Fatalf("log after invalid events = %q, %v", body, err)
+	if body, err := os.ReadFile(filepath.Join(dir, Filename)); err != nil || !reflect.DeepEqual(body, before) {
+		t.Fatalf("log changed after invalid events: before=%q after=%q err=%v", before, body, err)
 	}
 }
 
@@ -569,11 +635,26 @@ func readEvents(t *testing.T, path string) []Event {
 	if len(lines) == 1 && lines[0] == "" {
 		return nil
 	}
-	events := make([]Event, len(lines))
+	events := make([]Event, 0, len(lines))
 	for index, line := range lines {
-		if err := json.Unmarshal([]byte(line), &events[index]); err != nil {
+		var envelope struct {
+			RecordKind string `json:"record_kind"`
+			Event      *Event `json:"event"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
 			t.Fatalf("decode line %d: %v", index+1, err)
 		}
+		if envelope.RecordKind != "" {
+			if envelope.Event != nil {
+				events = append(events, *envelope.Event)
+			}
+			continue
+		}
+		var event Event
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatalf("decode legacy line %d: %v", index+1, err)
+		}
+		events = append(events, event)
 	}
 	return events
 }

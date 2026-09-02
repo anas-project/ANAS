@@ -103,6 +103,9 @@ type ContractDependency struct {
 	SelectedBy string
 	Interfaces []string
 	Default    string
+	// EnabledBy names the boolean parameter of the consuming module that
+	// decides whether this contract is required at all. Empty means always.
+	EnabledBy string
 }
 
 // ContractProvider is a provider implementation shipped inside one module.
@@ -112,11 +115,12 @@ type ContractProvider = deployment.ContractProvider
 type ProviderOperation = deployment.ProviderOperation
 
 type ResourceRequirement struct {
-	ID       string
-	Contract string
-	Binding  string
-	Spec     map[string]any
-	SpecFrom map[string]string
+	ID        string
+	Contract  string
+	Binding   string
+	Spec      map[string]any
+	SpecFrom  map[string]string
+	EnabledBy string
 }
 
 func (m Module) providedContract(name, iface string) (ContractProvider, bool) {

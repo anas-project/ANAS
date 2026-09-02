@@ -31,6 +31,7 @@ package runner
 //	    data/             a read-only Btrfs snapshot of <workspace>/data
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -42,6 +43,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/config"
 )
 
@@ -262,15 +264,29 @@ type snapshotOptions struct {
 	pinned bool
 	// from and to describe the transition a snapshot was taken during, when
 	// there is one. Neither participates in restoring it.
-	from string
-	to   string
-	json bool
+	from   string
+	to     string
+	json   bool
+	events application.EventSink
+	ctx    context.Context
+	// restrictedProcessEnvironment marks daemon-owned snapshot work. Its
+	// subprocesses receive only the service whitelist and are bound to the job
+	// context; legacy CLI and tests keep their established injected commands.
+	restrictedProcessEnvironment bool
 	// includeUserData is off by default, including for every automatic
 	// snapshot. Those exist to make a deployment reversible, and user content
 	// is not part of a deployment: capturing it would invite a restore that
 	// deletes documents written since, which is not something a rollback
 	// should ever be able to do by accident.
 	includeUserData bool
+}
+
+func snapshotProgress(opts snapshotOptions, phase string, current, total int64, unit string) {
+	if opts.events != nil {
+		opts.events.Progress(application.ProgressEvent{Phase: phase, Current: current, Total: total, Unit: unit})
+		return
+	}
+	emitProgress(opts.json, phase, current, total, unit)
 }
 
 // createSnapshot builds a snapshot in snapshots/.tmp-<id>/, flushes it, renames
@@ -318,7 +334,7 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 	}
 	cleanup := func() { _ = removeSnapshotTree(tmp) }
 
-	emitProgress(opts.json, "copy-metadata", 0, 5, "files")
+	snapshotProgress(opts, "copy-metadata", 0, 5, "files")
 	if err := copyFileMode(configSource, snapshotMetaEntry(tmp, snapshotMetaConfigName), 0600); err != nil {
 		cleanup()
 		return nil, err
@@ -328,7 +344,12 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 		cleanup()
 		return nil, err
 	}
-	if err := os.WriteFile(snapshotMetaEntry(tmp, snapshotMetaConfigStateName), managedConfigStateBytes(configBytes, "snapshot"), 0600); err != nil {
+	stateBytes, err := managedConfigStateBytes(configBytes, "snapshot")
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+	if err := os.WriteFile(snapshotMetaEntry(tmp, snapshotMetaConfigStateName), stateBytes, 0600); err != nil {
 		cleanup()
 		return nil, err
 	}
@@ -353,17 +374,17 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 		cleanup()
 		return nil, err
 	}
-	emitProgress(opts.json, "copy-metadata", 5, 5, "files")
+	snapshotProgress(opts, "copy-metadata", 5, 5, "files")
 
-	emitProgress(opts.json, "copy-deployment", 0, 0, "bytes")
-	method, err := copyDeploymentTree(artifact, snapshotArtifactDir(tmp))
+	snapshotProgress(opts, "copy-deployment", 0, 0, "bytes")
+	method, err := copyDeploymentTreeContext(opts.ctx, opts.restrictedProcessEnvironment, artifact, snapshotArtifactDir(tmp))
 	if err != nil {
 		cleanup()
 		return nil, failuref("deployment_copy_failed", "copy deployment %s into the snapshot: %v", deploymentID, err)
 	}
 
-	emitProgress(opts.json, "snapshot-data", 0, 0, "bytes")
-	if err := runBtrfs("subvolume", "snapshot", "-r", source, snapshotDataPath(tmp)); err != nil {
+	snapshotProgress(opts, "snapshot-data", 0, 0, "bytes")
+	if err := runSnapshotBtrfs(opts, "subvolume", "snapshot", "-r", source, snapshotDataPath(tmp)); err != nil {
 		cleanup()
 		return nil, failuref("data_snapshot_failed", "create Btrfs data snapshot: %v", err)
 	}
@@ -382,8 +403,8 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 		// snapshotting what can be snapshotted and saying what was left out.
 		userEntry.Reason = coverageReasonNotSubvolume
 	default:
-		emitProgress(opts.json, "snapshot-userdata", 0, 0, "bytes")
-		if err := runBtrfs("subvolume", "snapshot", "-r", userSource, snapshotUserDataPath(tmp)); err != nil {
+		snapshotProgress(opts, "snapshot-userdata", 0, 0, "bytes")
+		if err := runSnapshotBtrfs(opts, "subvolume", "snapshot", "-r", userSource, snapshotUserDataPath(tmp)); err != nil {
 			cleanup()
 			return nil, failuref("userdata_snapshot_failed", "create Btrfs user data snapshot: %v", err)
 		}
@@ -478,10 +499,27 @@ func copyDeploymentStateFile(base, id, dst string) error {
 // deployment artifacts are sealed read-only: a hard link shares the inode, so
 // an in-place write to the deployment would otherwise rewrite the snapshot too.
 func copyDeploymentTree(src, dst string) (string, error) {
+	return copyDeploymentTreeContext(nil, false, src, dst)
+}
+
+func copyDeploymentTreeContext(ctx context.Context, restricted bool, src, dst string) (string, error) {
 	// --reflink=always rather than auto: auto silently degrades to a full copy,
 	// which would make the recorded tier a lie.
-	if err := exec.Command("cp", "-a", "--reflink=always", src, dst).Run(); err == nil {
+	var command *exec.Cmd
+	if restricted {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		command = exec.CommandContext(ctx, "cp", "-a", "--reflink=always", src, dst)
+		command.Env = restrictedBaseProcessEnvironment()
+		command.Stdout, command.Stderr = io.Discard, io.Discard
+	} else {
+		command = exec.Command("cp", "-a", "--reflink=always", src, dst)
+	}
+	if err := command.Run(); err == nil {
 		return "reflink", nil
+	} else if restricted && ctx.Err() != nil {
+		return "", ctx.Err()
 	}
 	if err := os.RemoveAll(dst); err != nil {
 		return "", err
@@ -502,6 +540,30 @@ func copyDeploymentTree(src, dst string) (string, error) {
 		return "", err
 	}
 	return "copy", nil
+}
+
+func runSnapshotBtrfs(opts snapshotOptions, args ...string) error {
+	if !opts.restrictedProcessEnvironment {
+		return runBtrfs(args...)
+	}
+	ctx := opts.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd := exec.CommandContext(ctx, "btrfs", args...)
+	cmd.Env = restrictedBaseProcessEnvironment()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
+		message := strings.TrimSpace(string(output))
+		if message != "" {
+			return fmt.Errorf("%w: %s", err, message)
+		}
+		return err
+	}
+	return nil
 }
 
 func copyTree(src, dst string, file func(from, to string) error) error {
@@ -570,6 +632,10 @@ func fileDigest(path string) (string, error) {
 // first and through btrfs: a read-only snapshot's contents cannot be unlinked,
 // so an ordinary recursive delete fails on every file in it.
 func removeSnapshotTree(root string) error {
+	return removeSnapshotTreeWithOptions(root, snapshotOptions{})
+}
+
+func removeSnapshotTreeWithOptions(root string, opts snapshotOptions) error {
 	// Every captured tree, not just data: a received or snapshotted subvolume
 	// is read-only, so os.RemoveAll cannot touch what is inside it and the
 	// delete fails with a bare "Read-only file system". Missing userdata here
@@ -582,7 +648,7 @@ func removeSnapshotTree(root string) error {
 		if err := btrfsSubvolumeShow(path); err != nil {
 			continue
 		}
-		if err := runBtrfs("subvolume", "delete", path); err != nil {
+		if err := runSnapshotBtrfs(opts, "subvolume", "delete", path); err != nil {
 			return describeSubvolumeDeleteFailure(path, err)
 		}
 	}
@@ -615,6 +681,10 @@ func describeSubvolumeDeleteFailure(path string, cause error) error {
 // under the exclusive runtime lock, so it can never race a create in progress:
 // the create holds that same lock for its whole duration.
 func cleanStaleSnapshotTemp(workspace string) {
+	cleanStaleSnapshotTempWithOptions(workspace, snapshotOptions{})
+}
+
+func cleanStaleSnapshotTempWithOptions(workspace string, opts snapshotOptions) {
 	entries, err := os.ReadDir(snapshotsDir(workspace))
 	if err != nil {
 		return
@@ -624,13 +694,23 @@ func cleanStaleSnapshotTemp(workspace string) {
 			continue
 		}
 		path := filepath.Join(snapshotsDir(workspace), entry.Name())
-		if err := removeSnapshotTree(path); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not remove interrupted snapshot %s: %v\n", path, err)
+		if err := removeSnapshotTreeWithOptions(path, opts); err != nil {
+			if opts.events != nil {
+				opts.events.Warning(application.WarningEvent{
+					Code: "snapshot_recovery_failed", Message: fmt.Sprintf("could not remove interrupted snapshot: %v", err),
+				})
+			} else {
+				fmt.Fprintf(os.Stderr, "warning: could not remove interrupted snapshot %s: %v\n", path, err)
+			}
 		}
 	}
 }
 
 func deleteSnapshot(workspace, id string) error {
+	return deleteSnapshotWithOptions(workspace, id, snapshotOptions{})
+}
+
+func deleteSnapshotWithOptions(workspace, id string, opts snapshotOptions) error {
 	if err := validateSnapshotID(id); err != nil {
 		return err
 	}
@@ -638,7 +718,7 @@ func deleteSnapshot(workspace, id string) error {
 	if !exists(root) {
 		return preconditionErrorf("snapshot_missing", "no snapshot %s in %s", id, snapshotsDir(workspace))
 	}
-	if err := removeSnapshotTree(root); err != nil {
+	if err := removeSnapshotTreeWithOptions(root, opts); err != nil {
 		if _, ok := err.(*CLIError); ok {
 			return err
 		}

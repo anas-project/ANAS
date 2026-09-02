@@ -24,6 +24,7 @@ tls:
     private_key: /srv/anas/certs/anas.key
     issuer: /srv/anas/certs/issuer.crt
     trust_bundle: /srv/anas/certs/trust.crt
+    internal_ca: /srv/anas/certs/anas-internal-ca.crt
     issuer_marker: /srv/anas/certs/.issuer
   temporary:
     certificate: /var/lib/anas/temp.crt
@@ -61,6 +62,59 @@ console_store: /var/lib/anas/console
 	}
 }
 
+func TestParseTrustedProxyRequiresExactSourceAndPinnedMutualTLSIdentity(t *testing.T) {
+	source := `api_version: anas.console-config/v1
+mode: lan
+port: 8080
+console_store: /var/lib/anas/console
+allowed_dns_hosts: [anas.example.test]
+tls:
+  temporary:
+    certificate: /var/lib/anas/temporary/console.crt
+    private_key: /var/lib/anas/temporary/console.key
+    dns_names: [anas.example.test]
+trusted_proxy:
+  bind_address: 0.0.0.0
+  port: 8443
+  public_url: https://ANAS.EXAMPLE.TEST:9000/
+  allowed_source_ips: [172.19.0.2]
+  allowed_dns_hosts: [ANAS.EXAMPLE.TEST.]
+  oidc_issuer: https://iam.example.test
+  platform_admin_group: NAS Admins
+  client_ca: /var/lib/anas/traefik/client-identities/ANAS_CONSOLE_MTLS/ca.crt
+  client_spki_sha256: [0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef]
+`
+	config, err := Parse([]byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := config.TrustedProxy
+	if proxy == nil || proxy.PublicURL != "https://anas.example.test:9000" || proxy.BindAddress != "0.0.0.0" || !reflect.DeepEqual(proxy.AllowedDNSHosts, []string{"anas.example.test"}) {
+		t.Fatalf("trusted proxy = %#v", proxy)
+	}
+	for name, replacement := range map[string]string{
+		"source CIDR":          "allowed_source_ips: [172.19.0.0/24]",
+		"unlisted public host": "public_url: https://other.example.test:9000",
+		"non HTTPS public URL": "public_url: http://ANAS.EXAMPLE.TEST:9000/",
+		"missing client pin":   "client_spki_sha256: []",
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := source
+			switch name {
+			case "source CIDR":
+				candidate = strings.Replace(candidate, "allowed_source_ips: [172.19.0.2]", replacement, 1)
+			case "unlisted public host", "non HTTPS public URL":
+				candidate = strings.Replace(candidate, "public_url: https://ANAS.EXAMPLE.TEST:9000/", replacement, 1)
+			case "missing client pin":
+				candidate = strings.Replace(candidate, "client_spki_sha256: [0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef]", replacement, 1)
+			}
+			if _, err := Parse([]byte(candidate)); err == nil {
+				t.Fatal("invalid trusted proxy configuration was accepted")
+			}
+		})
+	}
+}
+
 func TestParseRejectsInvalidDocuments(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -87,6 +141,7 @@ func TestParseRejectsInvalidDocuments(t *testing.T) {
 		{name: "same lego pair path", source: validSource() + "tls: {lego: {base_domain: example.test, certificate: /certs/pair.pem, private_key: /certs/pair.pem, issuer: /certs/issuer.crt, trust_bundle: /certs/trust.crt, issuer_marker: /certs/.issuer}}\n", message: "different paths"},
 		{name: "missing lego base domain", source: validSource() + "tls: {lego: {certificate: /certs/cert.pem, private_key: /certs/key.pem, issuer: /certs/issuer.crt, trust_bundle: /certs/trust.crt, issuer_marker: /certs/.issuer}}\n", message: "base_domain"},
 		{name: "missing lego issuer", source: validSource() + "tls: {lego: {base_domain: example.test, certificate: /certs/cert.pem, private_key: /certs/key.pem, trust_bundle: /certs/trust.crt, issuer_marker: /certs/.issuer}}\n", message: "tls.lego.issuer must be an absolute path"},
+		{name: "missing lego internal CA", source: validSource() + "tls: {lego: {base_domain: example.test, certificate: /certs/cert.pem, private_key: /certs/key.pem, issuer: /certs/issuer.crt, trust_bundle: /certs/trust.crt, issuer_marker: /certs/.issuer}}\n", message: "tls.lego.internal_ca must be an absolute path"},
 		{name: "partial temporary pair", source: validSource() + "tls: {temporary: {private_key: /certs/key.pem, ip_addresses: [192.0.2.10]}}\n", message: "tls.temporary.certificate"},
 		{name: "temporary without SAN", source: validSource() + "tls: {temporary: {certificate: /certs/cert.pem, private_key: /certs/key.pem}}\n", message: "at least one explicit"},
 		{name: "temporary unspecified IP", source: validSource() + "tls: {temporary: {certificate: /certs/cert.pem, private_key: /certs/key.pem, ip_addresses: [0.0.0.0]}}\n", message: "concrete IP"},

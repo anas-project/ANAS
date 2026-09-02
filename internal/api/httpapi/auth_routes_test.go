@@ -228,6 +228,60 @@ func TestLocalLogoutRequiresSessionBoundOriginAndCSRF(t *testing.T) {
 	}
 }
 
+func TestLocalSessionRefreshRotatesCSRFWithoutReturningSessionToken(t *testing.T) {
+	auth := newFakeConsoleAuthenticator()
+	handler := newAuthenticationHandler(t, StateFull, ListenerDirect, auth)
+	origin := "https://anas.example"
+	request := httptest.NewRequest(http.MethodGet, origin+"/api/v1/auth/session", nil)
+	request.AddCookie(&http.Cookie{Name: localSessionCookie, Value: "session-value"})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("refresh = %d, %s", response.Code, response.Body.String())
+	}
+	if auth.authenticateCalls != 1 || auth.refreshLocalCalls != 1 || auth.lastRefreshLocal.SessionToken != "session-value" || auth.lastRefreshLocal.Origin != origin {
+		t.Fatalf("refresh authentication = auth %d refresh %d request %#v", auth.authenticateCalls, auth.refreshLocalCalls, auth.lastRefreshLocal)
+	}
+	var body authSessionResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.State != string(StateFull) || body.CSRFToken != auth.localCredential.CSRFToken || body.TransactionID != "" || strings.Contains(response.Body.String(), "session-value") {
+		t.Fatalf("refresh body = %#v, raw %s", body, response.Body.String())
+	}
+}
+
+func TestTrustedProxySessionBootstrapSetsOnlyProxySessionCookie(t *testing.T) {
+	auth := newFakeConsoleAuthenticator()
+	now := time.Now().UTC()
+	principal := Principal{
+		ID: "oidc:subject", Role: "owner", Source: "oidc_proxy", Issuer: "https://iam.example.test", Subject: "subject-123",
+		SemanticRole: "platform_admin", DirectoryGroup: "NAS Admins", AuthenticatedAt: now.Add(-time.Minute),
+		IdentityExpiresAt: now.Add(time.Hour), AssertionDigest: strings.Repeat("a", 64),
+	}
+	handler, err := NewHandlerWithAuthentication(nil, nil, SecurityOptions{
+		InitialState: StateFull, HostAllowed: func(*http.Request) bool { return true }, Listener: ListenerTrustedProxy,
+		Authorize: func(*http.Request, AuthorizationRequest) (Principal, error) { return principal, nil },
+	}, auth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "https://anas.example.test:9000/api/v1/auth/session", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || auth.refreshProxyCalls != 1 {
+		t.Fatalf("proxy session = %d calls=%d body=%s", response.Code, auth.refreshProxyCalls, response.Body.String())
+	}
+	cookie := findResponseCookie(t, response.Result(), proxySessionCookie)
+	if cookie.Value != auth.proxyCredential.Token || !cookie.Secure || !cookie.HttpOnly || cookie.Domain != "" || cookie.SameSite != http.SameSiteStrictMode {
+		t.Fatalf("proxy session cookie = %#v", cookie)
+	}
+	if strings.Contains(response.Body.String(), auth.proxyCredential.Token) || strings.Contains(response.Body.String(), principal.AssertionDigest) {
+		t.Fatalf("proxy session response leaked credential material: %s", response.Body.String())
+	}
+}
+
 func TestAuthenticationAttemptsAreRateLimited(t *testing.T) {
 	auth := newFakeConsoleAuthenticator()
 	httpHandler := newAuthenticationHandler(t, StateBootstrap, ListenerDirect, auth)
@@ -300,20 +354,27 @@ func findResponseCookie(t *testing.T, response *http.Response, name string) *htt
 }
 
 type fakeConsoleAuthenticator struct {
-	bootstrapCredential consoleauth.BootstrapSessionCredential
-	localCredential     consoleauth.LocalSessionCredential
-	exchangeErr         error
-	loginErr            error
-	authenticateErr     error
-	logoutErr           error
-	exchangeCalls       int
-	loginCalls          int
-	authenticateCalls   int
-	logoutCalls         int
-	lastExchange        consoleauth.ExchangeBootstrapTokenRequest
-	lastLogin           consoleauth.LocalLoginRequest
-	lastAuthenticate    consoleauth.LocalAuthenticationRequest
-	lastLogout          consoleauth.LocalLogoutRequest
+	bootstrapCredential    consoleauth.BootstrapSessionCredential
+	localCredential        consoleauth.LocalSessionCredential
+	proxyCredential        consoleauth.ProxySessionCredential
+	exchangeErr            error
+	loginErr               error
+	authenticateErr        error
+	refreshLocalErr        error
+	logoutErr              error
+	exchangeCalls          int
+	loginCalls             int
+	authenticateCalls      int
+	refreshLocalCalls      int
+	refreshProxyCalls      int
+	authenticateProxyCalls int
+	logoutCalls            int
+	lastExchange           consoleauth.ExchangeBootstrapTokenRequest
+	lastLogin              consoleauth.LocalLoginRequest
+	lastAuthenticate       consoleauth.LocalAuthenticationRequest
+	lastRefreshLocal       consoleauth.LocalSessionRefreshRequest
+	lastRefreshProxy       consoleauth.ProxySessionRefreshRequest
+	lastLogout             consoleauth.LocalLogoutRequest
 }
 
 func newFakeConsoleAuthenticator() *fakeConsoleAuthenticator {
@@ -327,7 +388,24 @@ func newFakeConsoleAuthenticator() *fakeConsoleAuthenticator {
 			Token: "server-local-session", CSRFToken: "local-csrf", Origin: "https://anas.example:8443",
 			CreatedAt: now, ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(30 * time.Minute),
 		},
+		proxyCredential: consoleauth.ProxySessionCredential{
+			Token: "server-proxy-session", CSRFToken: "proxy-csrf", Origin: "https://anas.example.test:9000",
+			CreatedAt: now, ExpiresAt: now.Add(time.Hour), IdleExpiresAt: now.Add(30 * time.Minute),
+		},
 	}
+}
+
+func (auth *fakeConsoleAuthenticator) RefreshProxySession(_ context.Context, request consoleauth.ProxySessionRefreshRequest) (consoleauth.ProxySessionCredential, error) {
+	auth.refreshProxyCalls++
+	auth.lastRefreshProxy = request
+	credential := auth.proxyCredential
+	credential.Identity = request.Identity
+	return credential, nil
+}
+
+func (auth *fakeConsoleAuthenticator) AuthenticateProxy(context.Context, consoleauth.ProxyAuthenticationRequest) (consoleauth.ProxyPrincipal, error) {
+	auth.authenticateProxyCalls++
+	return consoleauth.ProxyPrincipal{}, nil
 }
 
 func (auth *fakeConsoleAuthenticator) ExchangeBootstrapToken(_ context.Context, request consoleauth.ExchangeBootstrapTokenRequest) (consoleauth.BootstrapSessionCredential, error) {
@@ -348,6 +426,12 @@ func (auth *fakeConsoleAuthenticator) AuthenticateLocal(_ context.Context, reque
 	return consoleauth.LocalPrincipal{}, auth.authenticateErr
 }
 
+func (auth *fakeConsoleAuthenticator) RefreshLocalSession(_ context.Context, request consoleauth.LocalSessionRefreshRequest) (consoleauth.LocalSessionCredential, error) {
+	auth.refreshLocalCalls++
+	auth.lastRefreshLocal = request
+	return auth.localCredential, auth.refreshLocalErr
+}
+
 func (auth *fakeConsoleAuthenticator) LogoutLocal(_ context.Context, request consoleauth.LocalLogoutRequest) error {
 	auth.logoutCalls++
 	auth.lastLogout = request
@@ -355,3 +439,4 @@ func (auth *fakeConsoleAuthenticator) LogoutLocal(_ context.Context, request con
 }
 
 var _ ConsoleAuthenticator = (*fakeConsoleAuthenticator)(nil)
+var _ ProxyAuthenticator = (*fakeConsoleAuthenticator)(nil)

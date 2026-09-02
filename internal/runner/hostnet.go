@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -41,7 +42,7 @@ func (a *app) applyHostNetwork() error {
 		a.setHostEnv("HOST_DNS_SERVER", defaultString(resolvNameservers(), a.env["DNS_SERVER"]))
 	}
 	if a.env["HOST_IP"] == "" || a.env["INTERFACE"] == "" || a.env["HOST_SUBNET_MASK"] == "" {
-		host, err := detectHostNetwork(a.env["HOST_IP"])
+		host, err := a.detectHostNetwork(a.env["HOST_IP"])
 		if err != nil {
 			return err
 		}
@@ -295,6 +296,18 @@ type hostNetwork struct {
 
 func detectHostNetwork(preferred string) (hostNetwork, error) {
 	gateway, ifaceName := defaultRoute()
+	return detectHostNetworkWithRoute(preferred, gateway, ifaceName)
+}
+
+func (a *app) detectHostNetwork(preferred string) (hostNetwork, error) {
+	if a == nil || !a.restrictedProcessEnvironment {
+		return detectHostNetwork(preferred)
+	}
+	gateway, ifaceName := defaultRouteContext(a.subprocessContext(), a.commandEnvironment(nil))
+	return detectHostNetworkWithRoute(preferred, gateway, ifaceName)
+}
+
+func detectHostNetworkWithRoute(preferred, gateway, ifaceName string) (hostNetwork, error) {
 	ifaces, _ := net.Interfaces()
 	for _, iface := range ifaces {
 		if ifaceName != "" && iface.Name != ifaceName {
@@ -341,6 +354,20 @@ func defaultRoute() (gateway, iface string) {
 	if err != nil {
 		return "", ""
 	}
+	return parseDefaultRoute(out)
+}
+
+func defaultRouteContext(ctx context.Context, environment []string) (gateway, iface string) {
+	cmd := exec.CommandContext(ctx, "ip", "-4", "route", "show", "default")
+	cmd.Env = append([]string(nil), environment...)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", ""
+	}
+	return parseDefaultRoute(out)
+}
+
+func parseDefaultRoute(out []byte) (gateway, iface string) {
 	fields := strings.Fields(string(out))
 	for i, f := range fields {
 		if f == "via" && i+1 < len(fields) {

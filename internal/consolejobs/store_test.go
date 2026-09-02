@@ -3,6 +3,7 @@ package consolejobs
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -42,6 +43,239 @@ func TestCreateOrGetIdempotency(t *testing.T) {
 	var conflict *IdempotencyConflictError
 	if !errors.As(err, &conflict) || conflict.ExistingJobID != first.Job.ID {
 		t.Fatalf("different digest error = %#v, want existing job %s", err, first.Job.ID)
+	}
+}
+
+func TestCreateOrGetConfirmedConsumesOnceAndRetriesBeforeTokenValidation(t *testing.T) {
+	store, directory := openStoreForTest(t, Options{})
+	token := "cnf_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	confirmation := createConfirmationPlanForTest(t, store, "workspace-a", token, time.Now().UTC().Add(time.Minute))
+	spec := testCreateSpec("confirmed-apply", "workspace-a", true)
+	spec.Kind = "deployment.apply"
+
+	first, err := store.CreateOrGetConfirmed(context.Background(), spec, confirmation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Existing || first.Job.Request[ConfirmationDigestRequestKey] != DigestRequest([]byte(token)) {
+		t.Fatalf("confirmed create = %#v", first)
+	}
+
+	retryConfirmation := confirmation
+	retryConfirmation.Token = "cnf_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	retry, err := store.CreateOrGetConfirmed(context.Background(), spec, retryConfirmation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !retry.Existing || retry.Job.ID != first.Job.ID {
+		t.Fatalf("confirmed retry = %#v, want existing %s", retry, first.Job.ID)
+	}
+
+	secondSpec := testCreateSpec("different-idempotency-key", "workspace-a", true)
+	secondSpec.Kind = "deployment.apply"
+	if _, err := store.CreateOrGetConfirmed(context.Background(), secondSpec, confirmation); !errors.Is(err, ErrConfirmationConsumed) {
+		t.Fatalf("second confirmation consumption error = %v, want ErrConfirmationConsumed", err)
+	}
+
+	body, err := os.ReadFile(filepath.Join(directory, JournalFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(body, []byte(token)) {
+		t.Fatal("job journal persisted raw confirmation proof")
+	}
+}
+
+func TestCreateOrGetConfirmedRejectsBindingDriftAndExpiry(t *testing.T) {
+	store, _ := openStoreForTest(t, Options{})
+	token := "cnf_1111111111111111111111111111111111111111111111111111111111111111"
+	confirmation := createConfirmationPlanForTest(t, store, "workspace-a", token, time.Now().UTC().Add(time.Minute))
+	spec := testCreateSpec("binding-drift", "workspace-a", true)
+	spec.Kind = "deployment.apply"
+
+	drifted := confirmation
+	drifted.ConfigValidator += "changed"
+	if _, err := store.CreateOrGetConfirmed(context.Background(), spec, drifted); !errors.Is(err, ErrConfirmationInvalid) {
+		t.Fatalf("binding drift error = %v, want ErrConfirmationInvalid", err)
+	}
+
+	expired := createConfirmationPlanForTest(t, store, "workspace-a", "cnf_2222222222222222222222222222222222222222222222222222222222222222", time.Now().UTC().Add(-time.Second))
+	expiredSpec := testCreateSpec("expired", "workspace-a", true)
+	expiredSpec.Kind = "deployment.apply"
+	if _, err := store.CreateOrGetConfirmed(context.Background(), expiredSpec, expired); !errors.Is(err, ErrConfirmationInvalid) {
+		t.Fatalf("expired confirmation error = %v, want ErrConfirmationInvalid", err)
+	}
+
+	wrongActor := confirmation
+	wrongActor.Actor = "different-operator"
+	if _, err := store.CreateOrGetConfirmed(context.Background(), spec, wrongActor); !errors.Is(err, ErrConfirmationInvalid) {
+		t.Fatalf("actor mismatch error = %v, want ErrConfirmationInvalid", err)
+	}
+	wrongAction := confirmation
+	wrongAction.Action = "deployment.rollback"
+	if _, err := store.CreateOrGetConfirmed(context.Background(), spec, wrongAction); !errors.Is(err, ErrConfirmationInvalid) {
+		t.Fatalf("action mismatch error = %v, want ErrConfirmationInvalid", err)
+	}
+}
+
+func TestCreateOrGetConfirmedConsumesStepUpWithConfirmation(t *testing.T) {
+	store, directory := openStoreForTest(t, Options{})
+	confirmationToken := "cnf_4444444444444444444444444444444444444444444444444444444444444444"
+	stepUpToken := "sup_" + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+	confirmation := createStepUpConfirmationPlanForTest(t, store, "workspace-a", confirmationToken, stepUpToken, time.Now().UTC().Add(time.Minute))
+	spec := testCreateSpec("step-up-apply", "workspace-a", true)
+	spec.Kind = "deployment.apply"
+
+	auditErr := errors.New("audit unavailable")
+	if _, err := store.CreateOrGetConfirmedObserved(context.Background(), spec, confirmation, JobCommitObserverFunc(func(context.Context, JobCommitIntent) error {
+		return auditErr
+	})); !errors.Is(err, auditErr) {
+		t.Fatalf("failed observed step-up create = %v", err)
+	}
+	created, err := store.CreateOrGetConfirmed(context.Background(), spec, confirmation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Job.Request[StepUpDigestRequestKey] != DigestRequest([]byte(stepUpToken)) {
+		t.Fatalf("created request = %#v", created.Job.Request)
+	}
+	driftedSpec := testCreateSpec("step-up-drift", "workspace-a", true)
+	driftedSpec.Kind = "deployment.apply"
+	drifted := confirmation
+	drifted.StepUp = &StepUpInput{
+		Token: stepUpToken, SessionDigest: strings.Repeat("b", 64), TargetID: confirmation.StepUp.TargetID,
+		StateDigest: confirmation.StepUp.StateDigest,
+	}
+	if _, err := store.CreateOrGetConfirmed(context.Background(), driftedSpec, drifted); !errors.Is(err, ErrStepUpInvalid) {
+		t.Fatalf("step-up drift error = %v, want ErrStepUpInvalid", err)
+	}
+	secondSpec := testCreateSpec("step-up-second", "workspace-a", true)
+	secondSpec.Kind = "deployment.apply"
+	if _, err := store.CreateOrGetConfirmed(context.Background(), secondSpec, confirmation); !errors.Is(err, ErrStepUpConsumed) {
+		t.Fatalf("second step-up consumption error = %v, want ErrStepUpConsumed", err)
+	}
+	body, err := os.ReadFile(filepath.Join(directory, JournalFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(body, []byte(stepUpToken)) {
+		t.Fatal("job journal persisted raw step-up proof")
+	}
+}
+
+func TestObservedCreateFailsClosedWithoutRegisteringIdempotency(t *testing.T) {
+	store, _ := openStoreForTest(t, Options{})
+	spec := testCreateSpec("observed-create", "workspace-a", true)
+	auditErr := errors.New("audit unavailable")
+	calls := 0
+	observer := JobCommitObserverFunc(func(_ context.Context, intent JobCommitIntent) error {
+		calls++
+		if intent.Operation != JobCommitCreate || intent.Previous != nil || intent.Next.Status != StatusQueued {
+			t.Fatalf("create intent = %#v", intent)
+		}
+		intent.Next.Request["value"] = "observer mutation"
+		return auditErr
+	})
+
+	if _, err := store.CreateOrGetObserved(context.Background(), spec, observer); !errors.Is(err, auditErr) {
+		t.Fatalf("observed create error = %v, want audit failure", err)
+	}
+	jobs, err := store.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 0 || calls != 1 {
+		t.Fatalf("jobs after audit failure = %#v, observer calls = %d", jobs, calls)
+	}
+
+	created, err := store.CreateOrGetObserved(context.Background(), spec, JobCommitObserverFunc(func(_ context.Context, intent JobCommitIntent) error {
+		intent.Next.Request["value"] = "observer mutation"
+		return nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Existing || created.Job.Request["value"] != "observed-create" {
+		t.Fatalf("created job = %#v", created)
+	}
+	if _, err := store.CreateOrGetObserved(context.Background(), spec, JobCommitObserverFunc(func(context.Context, JobCommitIntent) error {
+		t.Fatal("idempotent lookup invoked observer")
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestObservedConfirmedCreateLeavesProofUnconsumedOnAuditFailure(t *testing.T) {
+	store, _ := openStoreForTest(t, Options{})
+	token := "cnf_3333333333333333333333333333333333333333333333333333333333333333"
+	confirmation := createConfirmationPlanForTest(t, store, "workspace-a", token, time.Now().UTC().Add(time.Minute))
+	spec := testCreateSpec("observed-confirmation", "workspace-a", true)
+	spec.Kind = "deployment.apply"
+	auditErr := errors.New("audit unavailable")
+
+	_, err := store.CreateOrGetConfirmedObserved(context.Background(), spec, confirmation, JobCommitObserverFunc(func(_ context.Context, intent JobCommitIntent) error {
+		if intent.PlanJobID != confirmation.PlanJobID || intent.ConfirmationDigest != DigestRequest([]byte(token)) {
+			t.Fatalf("confirmation intent = %#v", intent)
+		}
+		return auditErr
+	}))
+	if !errors.Is(err, auditErr) {
+		t.Fatalf("confirmed create error = %v, want audit failure", err)
+	}
+
+	created, err := store.CreateOrGetConfirmedObserved(context.Background(), spec, confirmation, JobCommitObserverFunc(func(_ context.Context, intent JobCommitIntent) error {
+		if intent.Next.Request[ConfirmationDigestRequestKey] != DigestRequest([]byte(token)) {
+			t.Fatalf("confirmation digest missing from intent: %#v", intent.Next.Request)
+		}
+		return nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Existing {
+		t.Fatal("confirmation was consumed by failed audit attempt")
+	}
+}
+
+func TestObservedLifecycleTransitionsFailClosed(t *testing.T) {
+	store, _ := openStoreForTest(t, Options{})
+	job := createJobForTest(t, store, testCreateSpec("observed-lifecycle", "workspace-a", true))
+	auditErr := errors.New("audit unavailable")
+	failing := JobCommitObserverFunc(func(context.Context, JobCommitIntent) error { return auditErr })
+
+	if _, found, err := store.ClaimNextObserved(context.Background(), "workspace-a", failing); !errors.Is(err, auditErr) || found {
+		t.Fatalf("failed claim = found %v, error %v", found, err)
+	}
+	queued, err := store.Get(context.Background(), job.ID)
+	if err != nil || queued.Status != StatusQueued {
+		t.Fatalf("job after failed claim = %#v, error %v", queued, err)
+	}
+
+	running, found, err := store.ClaimNextObserved(context.Background(), "workspace-a", JobCommitObserverFunc(func(_ context.Context, intent JobCommitIntent) error {
+		if intent.Operation != JobCommitStart || intent.Previous == nil || intent.Previous.Status != StatusQueued || intent.Next.Status != StatusRunning {
+			t.Fatalf("start intent = %#v", intent)
+		}
+		return nil
+	}))
+	if err != nil || !found || running.Status != StatusRunning {
+		t.Fatalf("successful claim = %#v, found %v, error %v", running, found, err)
+	}
+
+	if _, err := store.TransitionObserved(context.Background(), job.ID, StatusSucceeded, TransitionInput{}, failing); !errors.Is(err, auditErr) {
+		t.Fatalf("failed transition error = %v, want audit failure", err)
+	}
+	stillRunning, err := store.Get(context.Background(), job.ID)
+	if err != nil || stillRunning.Status != StatusRunning {
+		t.Fatalf("job after failed transition = %#v, error %v", stillRunning, err)
+	}
+	if _, err := store.TransitionObserved(context.Background(), job.ID, StatusSucceeded, TransitionInput{}, JobCommitObserverFunc(func(_ context.Context, intent JobCommitIntent) error {
+		if intent.Operation != JobCommitTransition || intent.Previous == nil || intent.Previous.Status != StatusRunning || intent.Next.Status != StatusSucceeded {
+			t.Fatalf("terminal intent = %#v", intent)
+		}
+		return nil
+	})); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -150,13 +384,20 @@ func TestJobStateTransitions(t *testing.T) {
 		t.Fatalf("failed transition without error = %v, want ErrInvalid", err)
 	}
 	failed, err := store.Transition(ctx, failedJob.ID, StatusFailed, TransitionInput{
-		Error: &JobError{Code: "command_failed", Message: "token=should-not-survive"},
+		Error: &JobError{
+			Code: "command_failed", Message: "token=should-not-survive",
+			Detail: &JobErrorDetail{Blocked: []string{"global.base_domain (immutable; migrate-service-domain)"}},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if failed.Status != StatusFailed || failed.Error == nil || failed.Error.Code != "command_failed" || strings.Contains(failed.Error.Message, "should-not-survive") {
 		t.Fatalf("failed job = %+v", failed)
+	}
+	if failed.Error.Detail == nil || len(failed.Error.Detail.Blocked) != 1 ||
+		failed.Error.Detail.Blocked[0] != "global.base_domain (immutable; migrate-service-domain)" {
+		t.Fatalf("failed job blocked detail = %+v", failed.Error.Detail)
 	}
 }
 
@@ -196,7 +437,25 @@ func TestRestartInterruptsRunningJobsAndRequiresCompensation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lease.Close()
-	if err := reopened.RecoverInterruptedJobs(ctx, lease); err != nil {
+	auditErr := errors.New("recovery audit unavailable")
+	if err := reopened.RecoverInterruptedJobsObserved(ctx, lease, JobCommitObserverFunc(func(_ context.Context, intent JobCommitIntent) error {
+		if intent.Operation != JobCommitTransition || intent.Previous == nil || intent.Previous.Status != StatusRunning || intent.Next.Status != StatusInterrupted {
+			t.Fatalf("recovery intent = %#v", intent)
+		}
+		return auditErr
+	})); !errors.Is(err, auditErr) {
+		t.Fatalf("recovery audit error = %v, want audit failure", err)
+	}
+	stillRunning, err = reopened.Get(ctx, running.ID)
+	if err != nil || stillRunning.Status != StatusRunning {
+		t.Fatalf("failed recovery changed job = %#v, error %v", stillRunning, err)
+	}
+	if err := reopened.RecoverInterruptedJobsObserved(ctx, lease, JobCommitObserverFunc(func(_ context.Context, intent JobCommitIntent) error {
+		if intent.Next.Error == nil || intent.Next.Error.Code != "daemon_restarted" {
+			t.Fatalf("recovery audit omitted failure code: %#v", intent.Next)
+		}
+		return nil
+	})); err != nil {
 		t.Fatal(err)
 	}
 	interrupted, err := reopened.Get(ctx, running.ID)
@@ -844,6 +1103,70 @@ func openStoreForTest(t *testing.T, options Options) (*Store, string) {
 		}
 	})
 	return store, directory
+}
+
+func createConfirmationPlanForTest(t *testing.T, store *Store, workspaceID, token string, expiresAt time.Time) ConfirmationInput {
+	t.Helper()
+	validator := "cfgv-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	planDigest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	planSpec := testCreateSpec("plan-"+DigestRequest([]byte(token)), workspaceID, false)
+	planSpec.Kind = "deployment.plan"
+	plan, err := store.CreateOrGet(context.Background(), planSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Start(context.Background(), plan.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Transition(context.Background(), plan.Job.ID, StatusSucceeded, TransitionInput{
+		Result: map[string]any{"confirmation": map[string]any{
+			"proof_digest": DigestRequest([]byte(token)), "actor": "operator", "identity_source": "local",
+			"transaction_id": "transaction-a", "action": "deployment.apply", "workspace_id": workspaceID,
+			"config_validator": validator, "plan_digest": planDigest, "expires_at": expiresAt.Format(time.RFC3339Nano),
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return ConfirmationInput{
+		PlanJobID: plan.Job.ID, PlanKind: "deployment.plan", Token: token, Actor: "operator",
+		IdentitySource: "local", TransactionID: "transaction-a", Action: "deployment.apply", WorkspaceID: workspaceID,
+		ConfigValidator: validator, PlanDigest: planDigest,
+	}
+}
+
+func createStepUpConfirmationPlanForTest(t *testing.T, store *Store, workspaceID, token, stepUpToken string, expiresAt time.Time) ConfirmationInput {
+	t.Helper()
+	validator := "cfgv-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	planDigest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	stepUp := &StepUpInput{
+		Token: stepUpToken, SessionDigest: strings.Repeat("a", 64), TargetID: "deployment-a", StateDigest: strings.Repeat("c", 64),
+	}
+	planSpec := testCreateSpec("step-up-plan-"+DigestRequest([]byte(token)), workspaceID, false)
+	planSpec.Kind = "deployment.plan"
+	plan, err := store.CreateOrGet(context.Background(), planSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Start(context.Background(), plan.Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Transition(context.Background(), plan.Job.ID, StatusSucceeded, TransitionInput{
+		Result: map[string]any{"confirmation": map[string]any{
+			"proof_digest": DigestRequest([]byte(token)), "actor": "operator", "identity_source": "local",
+			"transaction_id": "", "action": "deployment.apply", "workspace_id": workspaceID,
+			"config_validator": validator, "plan_digest": planDigest, "expires_at": expiresAt.Format(time.RFC3339Nano),
+			"step_up_digest": DigestRequest([]byte(stepUpToken)), "step_up_principal_digest": stepUp.SessionDigest,
+			"step_up_action": "deployment.apply", "step_up_workspace_id": workspaceID, "step_up_target_id": stepUp.TargetID,
+			"step_up_state_digest": stepUp.StateDigest, "step_up_expires_at": expiresAt.Format(time.RFC3339Nano),
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return ConfirmationInput{
+		PlanJobID: plan.Job.ID, PlanKind: "deployment.plan", Token: token, Actor: "operator",
+		IdentitySource: "local", Action: "deployment.apply", WorkspaceID: workspaceID,
+		ConfigValidator: validator, PlanDigest: planDigest, StepUp: stepUp,
+	}
 }
 
 func testCreateSpec(key, workspaceID string, mutating bool) CreateSpec {

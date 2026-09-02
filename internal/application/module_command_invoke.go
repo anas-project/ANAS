@@ -92,6 +92,11 @@ func (s *Service) InvokeModuleCommand(ctx context.Context, req InvokeModuleComma
 		if contextError(ctx) != nil {
 			return InvokeModuleCommandResult{}, contextError(ctx)
 		}
+		if errors.Is(err, errModuleCommandConfigRecoveryRequired) {
+			return InvokeModuleCommandResult{}, newError(
+				ErrorKindInternal, "config_recovery_required", "workspace configuration recovery is required", err,
+			)
+		}
 		return InvokeModuleCommandResult{}, newError(ErrorKindFailedPrecondition, "module_command_busy", "module command could not acquire the runtime lock", err)
 	}
 	defer unlock()

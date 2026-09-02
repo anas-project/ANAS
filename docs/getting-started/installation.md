@@ -134,4 +134,19 @@ anas --help
 anas version
 ```
 
+## 记录管理控制台入口
+
+`anasd` 的 `lan` 模式会绑定全部 IPv4/IPv6 接口。首次引导允许同网设备立即通过明文 HTTP 配置 NAS；这个引导窗口**不具备机密性或抗主动劫持能力**，主机防火墙与接口隔离由管理员负责。若不接受该边界，改用 `loopback` 配合 `ssh -L`，或先在 NAS 上生成临时 TLS：`sudo anas console tls --self-signed`。
+
+服务配置完成并启动后立即记录两个地址：
+
+```bash
+sudo anas console status
+```
+
+- `Direct recovery (local owner)`：不依赖 IAM 的直连恢复入口，应保存到运维记录。
+- `Traefik / OIDC`：启用受信代理后的日常管理入口；未配置时不会显示。
+
+代理入口不提供本地账号登录链接。IAM 故障时，从已记录的直连地址使用本地管理员恢复；完整字段与 mTLS 配置见 [`anasd` 服务配置](../reference/anasd-service-configuration.md)。
+
 接下来执行[首次部署](quick-start.md)。

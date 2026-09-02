@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: traefik
 version: 3.7.10
-revision: 5
+revision: 6
 app_version: 3.7.10
 abi:
   supports:
@@ -46,6 +46,7 @@ config:
     - LEGO_EMAIL
     - LEGO_KEY_NAME
     - ANAS_TRAEFIK_ROUTE__*
+    - ANAS_TRAEFIK_SERVERS_TRANSPORT__*
   changes:
     base_port:
       effect: container_recreate

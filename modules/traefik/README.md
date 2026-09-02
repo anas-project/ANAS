@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `traefik` |
-| 版本 / revision | `3.7.10-r5` |
+| 版本 / revision | `3.7.10-r6` |
 | 状态 | `release` |
 | 类别 | `network` |
 | 运行时 | `compose` |
@@ -96,6 +96,9 @@ ANAS_TRAEFIK_ROUTE__<NAME>__URL           必填
 ANAS_TRAEFIK_ROUTE__<NAME>__MIDDLEWARES   可选，逗号分隔
 ANAS_TRAEFIK_ROUTE__<NAME>__ENTRYPOINTS   可选，默认 https
 ANAS_TRAEFIK_ROUTE__<NAME>__TLS           可选，默认 true
+ANAS_TRAEFIK_ROUTE__<NAME>__SERVERS_TRANSPORT 可选，命名的 mTLS 上游 transport
+ANAS_TRAEFIK_SERVERS_TRANSPORT__<NAME>__SERVER_NAME 必填，后端 TLS SNI/证书名
+ANAS_TRAEFIK_SERVERS_TRANSPORT__<NAME>__ROOT_CAS    必填，`/certs/` 下的 CA 文件
 ```
 
 声明方必须在自己的 `config.exports` 中发布 `ANAS_TRAEFIK_ROUTE__*`。`<NAME>` 会规范化为 router 名；值按带引号 YAML scalar 渲染，反斜杠和双引号会转义，换行会被拒绝以阻止 YAML 结构注入。
@@ -107,6 +110,8 @@ env:
 ```
 
 是否附加 ForwardAuth 由声明路由的 Module 决定。Traefik Dashboard 的本地管理员只保护 Dashboard，不会自动保护这些上游路由。
+
+引用 `SERVERS_TRANSPORT` 后，Hook 会在 Secret Store 为该名称生成稳定的专属 CA 与客户端证书。只有 CA 公钥、client cert/key 和 SPKI 摘要投影到 Traefik 专用 `dynamic/client-identities/<NAME>/`；CA 私钥不会进入 runtime。entrypoint 要求 transport 字段与四个投影文件全部存在，随后生成同时校验后端 CA/SNI 并出示客户端证书的 `serversTransport`；缺项时容器拒绝启动。
 
 ## 存储、备份与验证
 
@@ -131,7 +136,7 @@ Traefik 本地账号只保护 Dashboard，不代表下游应用管理员。
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`3.7.10-r5`（reviewed 2026-08-13）
+- Module version / 版本：`3.7.10-r6`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — Traefik receives TZ for process and access-log timestamps.
 - Language scope / 语言范围：Traefik Proxy built-in Dashboard
 - Selection / 选择方式：`fixed`

@@ -17,3 +17,7 @@ func lockAuditFile(context.Context, <-chan struct{}, *os.File) error {
 func unlockAuditFile(*os.File) error {
 	return errors.New("cross-process audit unlocking is unavailable on this platform")
 }
+
+func tryAuditLock(*os.File) (bool, error) {
+	return false, errors.New("cross-process audit locking is unavailable on this platform")
+}
