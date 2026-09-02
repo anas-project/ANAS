@@ -26,7 +26,7 @@ This page is generated from the current Module manifests. The checked-in page an
 | [Nextcloud](/en/reference/modules/nextcloud/) | `34.0.2-r9` | `release` | `app` | File sync, sharing, office integration, memories, and Talk. |
 | [OAuth2 Proxy](/en/reference/modules/oauth2_proxy/) | `7.15.3-r5` | `release` | `identity` | Authenticated gate in front of services that have no login of their own. |
 | [PostgreSQL](/en/reference/modules/postgres/) | `18.4.0-r4` | `release` | `database` | PostgreSQL database service with optional Adminer UI. |
-| [Samba domain controller and DNS](/en/reference/modules/samba_dc/) | `4.23.6-r10` | `release` | `identity` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |
+| [Samba domain controller and DNS](/en/reference/modules/samba_dc/) | `4.23.6-r11` | `release` | `identity` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |
 | [Samba file server](/en/reference/modules/samba_fs/) | `4.23.6-r6` | `release` | `storage` | File sharing service joined to the Samba domain. |
 | [Traefik reverse proxy](/en/reference/modules/traefik/) | `3.7.10-r6` | `release` | `network` | HTTPS reverse proxy and dashboard for all web-facing services. |
 | [VersityGW S3 gateway](/en/reference/modules/versitygw/) | `1.7.0-r3` | `developing` | `storage` | S3-compatible API backed by a dedicated POSIX directory. |

@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `samba_dc` |
-| 版本 / revision | `4.23.6-r10` |
+| 版本 / revision | `4.23.6-r11` |
 | 状态 | `release` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
@@ -45,6 +45,16 @@ modules:
 | 目录密码回写 | 目录事实来源；由 ACL 与密码策略控制 |
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
+
+## PEN 66678 identity-anchor 迁移
+
+r11 将 `anasIdentityAnchor` 的正式 OID 固定为 `1.3.6.1.4.1.66678.1.2.1`；全新 r11 安装会直接使用该 OID。已有 pre-r11 workspace 若仍采用旧 GUID 派生 OID，不能直接普通 apply，必须按[离线迁移 Runbook](../../docs/guide/migrate-identity-anchor-oid.md)执行：
+
+- 预拉取并渲染精确的 `4.23.6-r11` 候选部署，随后停止整个 workspace，并在宿主机确认 DC、worker、Consumer、计划任务和人工 LDAP/LDB 会话等全部 writer 已停止；
+- 创建真实冷快照，记录工具返回的 snapshot ID，并通过 `anas snapshot verify` 后才执行迁移；
+- 将迁移证据写到 Samba 数据卷之外的受保护持久目录，先运行只读 `--check`，再只执行一次 `--execute`；
+- 启动后验证新 GUID ACL、`svc_anchor` 的真实写入、anchor worker 健康和每个 Consumer 的账户映射；
+- `--execute` 开始后若有任何失败，恢复整个 Samba 数据卷快照，禁止只恢复 `sam.ldb` 或手工续改。
 
 ## 管理员登录与 IAM 故障恢复
 
@@ -186,7 +196,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`4.23.6-r10`（reviewed 2026-08-13）
+- Module version / 版本：`4.23.6-r11`（reviewed 2026-08-13）
 - Timezone / 时区：`system` — Startup validates TZ against /usr/share/zoneinfo and installs /etc/localtime and /etc/timezone.
 - Language scope / 语言范围：directory, Kerberos, and DNS protocol services
 - Selection / 选择方式：`none`

@@ -91,6 +91,7 @@ RUN chmod 0755 \
   /etc/services.d/named/run \
   /usr/local/bin/anas-entrypoint.sh \
   /usr/local/bin/install-identity-schema.sh \
+  /usr/local/bin/migrate-identity-anchor-oid.sh \
   /usr/local/bin/structure.sh \
   /usr/local/bin/anas_zone.sh \
   /etc/cont-init.d/11-samba_dc.sh \

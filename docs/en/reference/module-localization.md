@@ -23,7 +23,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [nextcloud](#nextcloud) | 34.0.2-r9 | partial | supported | browser | fallback | fallback | 58 |
 | [oauth2_proxy](#oauth2_proxy) | 7.15.3-r5 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [postgres](#postgres) | 18.4.0-r4 | container | supported | browser | not_consumed | not_consumed | 47 |
-| [samba_dc](#samba_dc) | 4.23.6-r10 | system | not_applicable | none | not_applicable | not_applicable | 0 |
+| [samba_dc](#samba_dc) | 4.23.6-r11 | system | not_applicable | none | not_applicable | not_applicable | 0 |
 | [samba_fs](#samba_fs) | 4.23.6-r6 | container | not_applicable | client | not_applicable | not_applicable | 0 |
 | [traefik](#traefik) | 3.7.10-r6 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [versitygw](#versitygw) | 1.7.0-r3 | container | not_applicable | none | not_consumed | not_consumed | 0 |
@@ -211,7 +211,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## samba_dc
 
-- **Version / 版本：** `4.23.6-r10`; reviewed 2026-08-13
+- **Version / 版本：** `4.23.6-r11`; reviewed 2026-08-13
 - **Timezone / 时区：** `system` — Startup validates TZ against /usr/share/zoneinfo and installs /etc/localtime and /etc/timezone.
 - **Language / 语言：** `not_applicable`, `none` — directory, Kerberos, and DNS protocol services
 - **ANAS globals / 全局默认：** `default_language=not_applicable`; `default_locale=not_applicable`

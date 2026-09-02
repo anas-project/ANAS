@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: samba_dc
 module_version: 4.23.6
-module_revision: 10
+module_revision: 11
 reviewed_at: 2026-08-13
 timezone:
   status: system

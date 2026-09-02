@@ -24,6 +24,103 @@ func TestStructureDoesNotGrantBootstrapAdminApplicationGroups(t *testing.T) {
 	}
 }
 
+func TestIdentityAnchorSchemaUsesRegisteredPENAndGuardsLegacyForests(t *testing.T) {
+	installerPath := filepath.Join("..", "samba_dc", "root", "usr", "local", "bin", "install-identity-schema.sh")
+	installer, err := os.ReadFile(installerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(installer)
+	for _, required := range []string{
+		`ANAS_SCHEMA_OID_ROOT="1.3.6.1.4.1.66678.1"`,
+		`ANAS_IDENTITY_ANCHOR_OID="${ANAS_SCHEMA_OID_ROOT}.2.1"`,
+		`ANAS_IDENTITY_ANCHOR_SCHEMA_GUID="db3786ae-3261-4d44-a2a1-588bfe3e41c5"`,
+		`ANAS_IDENTITY_ANCHOR_SCHEMA_GUID_B64="roY322EyRE2ioViL/j5BxQ=="`,
+		`ANAS_IDENTITY_ANCHOR_LEGACY_OID="1.2.840.113556.1.8000.2554.17237.23501.51519.17672.44223.1228429.7407401.2.1"`,
+		`/var/lib/samba/.anas-identity-anchor-oid-migration.in-progress`,
+		`/var/lib/samba/.anas-identity-anchor-oid-migration.in-progress.new`,
+		`(!(isDefunct=TRUE))`,
+		`(&(objectClass=classSchema)(governsID=${ANAS_IDENTITY_ANCHOR_OID}))`,
+		`(schemaIDGUID=${ANAS_IDENTITY_ANCHOR_SCHEMA_GUID})`,
+		`requires the documented offline PEN 66678 migration`,
+		`is absent from the joined forest; install the ANAS schema on its schema master`,
+		`attributeSyntax: 2.5.5.12`,
+		`oMSyntax: 64`,
+		`isSingleValued: TRUE`,
+		`rangeLower: 36`,
+		`rangeUpper: 36`,
+		`searchFlags: 1`,
+		`mayContain: ${ANAS_IDENTITY_ANCHOR_NAME}`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("%s does not contain %q", installerPath, required)
+		}
+	}
+	if strings.Contains(text, `ANAS_SCHEMA_OID_ROOT="1.2.840.113556.1.8000`) {
+		t.Fatal("fresh schema installation still allocates from the retired GUID-derived root")
+	}
+}
+
+func TestIdentityAnchorOIDMigrationIsGuardedAndPreservesValues(t *testing.T) {
+	migrationPath := filepath.Join("..", "samba_dc", "root", "usr", "local", "bin", "migrate-identity-anchor-oid.sh")
+	migration, err := os.ReadFile(migrationPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(migration)
+	for _, required := range []string{
+		`mode=check`,
+		`--execute requires a safe --snapshot-id`,
+		`--execute requires --backup-dir on storage outside /var/lib/samba`,
+		`backup evidence must be outside the Samba data volume`,
+		`migration supports exactly one domain controller`,
+		`Samba is running`,
+		`duplicate identity-anchor values exist`,
+		`readonly in_progress_marker="/var/lib/samba/.anas-identity-anchor-oid-migration.in-progress"`,
+		`readonly pending_marker="${in_progress_marker}.new"`,
+		`an earlier identity-anchor OID migration did not finish`,
+		`replace: isDefunct`,
+		`replace: lDAPDisplayName`,
+		`ldbrename`,
+		`identity-anchor DN/value set changed during migration`,
+		`no migration is needed`,
+		`schema is neither the exact supported legacy state nor the completed PEN 66678 state`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("%s does not contain %q", migrationPath, required)
+		}
+	}
+	defunct := strings.Index(text, `replace: isDefunct`)
+	displayRename := strings.Index(text, `replace: lDAPDisplayName`)
+	objectRename := strings.LastIndex(text, `ldbrename`)
+	addReplacement := strings.Index(text, `dn: ${legacy_dn}
+objectClass: attributeSchema`)
+	if !(defunct < displayRename && displayRename < objectRename && objectRename < addReplacement) {
+		t.Fatalf("unsafe schema replacement order: defunct=%d display=%d rdn=%d add=%d", defunct, displayRename, objectRename, addReplacement)
+	}
+	markerWrite := strings.Index(text, `mv "$pending_marker" "$in_progress_marker"`)
+	firstValueDelete := strings.Index(text, `ldbmodify -H "$samdb" "$delete_ldif"`)
+	if markerWrite < 0 || firstValueDelete < 0 || markerWrite >= firstValueDelete {
+		t.Fatalf("durable in-progress marker must precede the first directory mutation: marker=%d delete=%d", markerWrite, firstValueDelete)
+	}
+
+	structurePath := filepath.Join("..", "samba_dc", "root", "usr", "local", "bin", "structure.sh")
+	structure, err := os.ReadFile(structurePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	structureText := string(structure)
+	for _, required := range []string{
+		`printable_anchor_attribute_guid="db3786ae-3261-4d44-a2a1-588bfe3e41c5"`,
+		`legacy_printable_anchor_attribute_guid="7108c5a7-2290-45e0-9eba-eef087be58e3"`,
+		`samba-tool dsacl delete`,
+	} {
+		if !strings.Contains(structureText, required) {
+			t.Fatalf("%s does not contain %q", structurePath, required)
+		}
+	}
+}
+
 func TestCalcSambaDCHostIPDefaultsToHostIP(t *testing.T) {
 	env := map[string]string{
 		"BASE_DOMAIN":      "nas.test",
