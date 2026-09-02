@@ -35,6 +35,7 @@ type SystemOptions struct {
 	CanonicalHTTPSOrigin string
 	DirectRecoveryURLs   []string
 	ProxyURL             string
+	BackupTargetIDs      []string
 }
 
 type systemHTTPState struct {
@@ -42,6 +43,7 @@ type systemHTTPState struct {
 	canonicalHTTPSOrigin string
 	directRecoveryURLs   []string
 	proxyURL             string
+	backupTargetIDs      []string
 }
 
 func newSystemHTTPState(options SystemOptions) (*systemHTTPState, error) {
@@ -71,6 +73,17 @@ func newSystemHTTPState(options SystemOptions) (*systemHTTPState, error) {
 			return nil, errors.New("proxy URL must be an exact normalized https origin")
 		}
 		state.proxyURL = origin
+	}
+	seenBackupTargets := make(map[string]struct{}, len(options.BackupTargetIDs))
+	for _, id := range options.BackupTargetIDs {
+		if id == "" || len(id) > 64 {
+			return nil, errors.New("backup target ID is invalid")
+		}
+		if _, exists := seenBackupTargets[id]; exists {
+			return nil, errors.New("backup target IDs must be unique")
+		}
+		seenBackupTargets[id] = struct{}{}
+		state.backupTargetIDs = append(state.backupTargetIDs, id)
 	}
 	return state, nil
 }

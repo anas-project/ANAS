@@ -106,6 +106,22 @@ func (stepUp *fakeDeploymentStepUp) AuthenticateLocalStepUp(_ context.Context, r
 	}, nil
 }
 
+func (stepUp *fakeDeploymentStepUp) ConsumeLocalStepUp(ctx context.Context, request consoleauth.LocalStepUpAuthenticationRequest) (consoleauth.LocalStepUpBinding, error) {
+	binding, err := stepUp.AuthenticateLocalStepUp(ctx, request)
+	if err == nil {
+		stepUp.credential.Token = ""
+	}
+	return binding, err
+}
+
+func (stepUp *fakeDeploymentStepUp) ConsumeProxyStepUp(ctx context.Context, request consoleauth.ProxyStepUpAuthenticationRequest) (consoleauth.ProxyStepUpBinding, error) {
+	binding, err := stepUp.AuthenticateProxyStepUp(ctx, request)
+	if err == nil {
+		stepUp.credential.Token = ""
+	}
+	return binding, err
+}
+
 func (sink *recordingDeploymentAuditSink) RecordDeploymentEvent(_ context.Context, event deploymentaudit.Event) error {
 	sink.events = append(sink.events, event)
 	if event.Stage == sink.failStage {

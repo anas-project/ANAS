@@ -31,6 +31,44 @@ type fakeModuleService struct {
 	configure func(context.Context, application.ModuleEnabledRequest, application.ConfigCommitObserver) (application.ModuleEnabledResult, error)
 }
 
+type fakeMaintenanceService struct {
+	create func(context.Context, application.SnapshotCreateRequest) (application.SnapshotRecord, error)
+}
+
+func (*fakeMaintenanceService) ListSnapshots(context.Context) (application.SnapshotListResult, error) {
+	return application.SnapshotListResult{}, nil
+}
+func (service *fakeMaintenanceService) CreateSnapshot(ctx context.Context, request application.SnapshotCreateRequest) (application.SnapshotRecord, error) {
+	return service.create(ctx, request)
+}
+func (*fakeMaintenanceService) SetSnapshotPinned(context.Context, application.SnapshotPinRequest) (application.SnapshotRecord, error) {
+	return application.SnapshotRecord{}, nil
+}
+func (*fakeMaintenanceService) VerifySnapshots(context.Context, application.SnapshotVerifyRequest) (application.SnapshotVerifyResult, error) {
+	return application.SnapshotVerifyResult{}, nil
+}
+func (*fakeMaintenanceService) PlanBackup(context.Context, application.BackupPlanRequest) (application.BackupPlanResult, error) {
+	return application.BackupPlanResult{}, nil
+}
+func (*fakeMaintenanceService) ListBackups(context.Context, application.BackupListRequest) (application.BackupListResult, error) {
+	return application.BackupListResult{}, nil
+}
+func (*fakeMaintenanceService) ListLocalAdmins(context.Context) (application.LocalAdminListResult, error) {
+	return application.LocalAdminListResult{}, nil
+}
+func (*fakeMaintenanceService) RotateLocalAdmin(context.Context, application.LocalAdminTarget) (application.LocalAdminRecord, error) {
+	return application.LocalAdminRecord{}, nil
+}
+func (*fakeMaintenanceService) RevealLocalAdmin(context.Context, application.LocalAdminTarget) (application.LocalAdminCredential, error) {
+	return application.LocalAdminCredential{}, nil
+}
+func (*fakeMaintenanceService) PreviewTerminalAction(context.Context, application.TerminalActionRequest) (application.TerminalActionDescriptor, error) {
+	return application.TerminalActionDescriptor{}, nil
+}
+func (*fakeMaintenanceService) StepUpStateDigest(context.Context, string, string) (string, error) {
+	return "", nil
+}
+
 func (*fakeModuleService) ListModules(context.Context) (application.ModuleListResult, error) {
 	return application.ModuleListResult{}, nil
 }
@@ -447,6 +485,68 @@ func TestExecutorDispatchesModuleJobsAndAuditsConfigCommit(t *testing.T) {
 	}
 	if !commitFound {
 		t.Fatalf("Module config commit audit was not bound: %#v", events)
+	}
+}
+
+func TestExecutorDispatchesTypedMaintenanceJobAndProjectsPublicResult(t *testing.T) {
+	store := openExecutorStore(t)
+	payload, err := jsonObject(application.SnapshotCreateRequest{Label: "before upgrade", IncludeUserData: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.CreateOrGet(context.Background(), consolejobs.CreateSpec{
+		Kind: KindSnapshotCreate, WorkspaceID: "main", Mutating: true, Request: payload,
+		Idempotency: consolejobs.IdempotencyInput{Principal: consolejobs.PrincipalLocalOwner, Method: "POST", CanonicalPath: "/snapshots", Key: "snapshot", RequestDigest: consolejobs.DigestRequest([]byte("snapshot"))},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var received application.SnapshotCreateRequest
+	executor, err := New(Options{
+		Store: store, Audit: deploymentaudit.SinkFunc(func(context.Context, deploymentaudit.Event) error { return nil }),
+		Workspaces: []Workspace{{ID: "main", Path: "/private/workspace"}}, PollInterval: 5 * time.Millisecond,
+		DeploymentFactory: func(string, application.EventSink) application.DeploymentService {
+			return &fakeDeploymentService{apply: func(context.Context, application.ApplyRequest) (application.ApplyResult, error) {
+				return application.ApplyResult{}, nil
+			}}
+		},
+		MaintenanceFactory: func(path string, _ application.EventSink) application.MaintenanceService {
+			if path != "/private/workspace" {
+				t.Fatalf("maintenance factory path = %q", path)
+			}
+			return &fakeMaintenanceService{create: func(_ context.Context, request application.SnapshotCreateRequest) (application.SnapshotRecord, error) {
+				received = request
+				return application.SnapshotRecord{ID: "snap-1", Modules: map[string]string{}}, nil
+			}}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- executor.Run(ctx) }()
+	executor.Notify("main")
+	completed := waitForJobStatus(t, store, created.Job.ID, consolejobs.StatusSucceeded)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if received.Label != "before upgrade" || received.IncludeUserData || completed.Result["workspace_id"] != "main" || completed.Result["id"] != "snap-1" {
+		t.Fatalf("maintenance request/result = %#v / %#v", received, completed.Result)
+	}
+	body, _ := json.Marshal(completed.Result)
+	if bytes.Contains(body, []byte("/private/workspace")) {
+		t.Fatalf("maintenance job result exposed host path: %s", body)
+	}
+}
+
+func TestMaintenanceStoredRequestsRejectArbitraryFieldsAndPasswords(t *testing.T) {
+	if _, err := decodeSnapshotCreateRequest(map[string]any{"label": "safe", "argv": []string{"sh"}}); err == nil {
+		t.Fatal("snapshot request accepted arbitrary argv")
+	}
+	if _, err := decodeLocalAdminTarget(map[string]any{"module": "demo", "account": "primary", "password": "chosen"}); err == nil {
+		t.Fatal("local administrator rotation accepted a caller password")
 	}
 }
 

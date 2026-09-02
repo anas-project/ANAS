@@ -941,6 +941,181 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{ws}/backup-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Probe capabilities and calculate a backup plan without executing it */
+        post: operations["planBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        /** List backups under one registered target */
+        get: operations["listBackups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/local-admins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        /** List local Module administrator identities without credentials */
+        get: operations["listLocalAdministrators"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/local-admins/{module}/{account}/actions/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                /** @description Module name in the active deployment. */
+                module: components["parameters"]["ModuleName"];
+                /** @description Stable local-administrator record ID, never a username or password. */
+                account: components["parameters"]["LocalAdminAccount"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue random local-administrator credential rotation
+         * @description The body is empty; caller-selected passwords are never accepted.
+         */
+        post: operations["rotateLocalAdministrator"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/local-admins/{module}/{account}/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                /** @description Module name in the active deployment. */
+                module: components["parameters"]["ModuleName"];
+                /** @description Stable local-administrator record ID, never a username or password. */
+                account: components["parameters"]["LocalAdminAccount"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reveal one credential after consuming a state-bound step-up proof */
+        post: operations["revealLocalAdministrator"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/terminal-action-previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate an exact descriptor for one terminal-only operation without executing it */
+        post: operations["previewTerminalAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        /** List snapshots and their current health */
+        get: operations["listSnapshots"];
+        put?: never;
+        /** Queue creation of a snapshot */
+        post: operations["createSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/snapshots/{id}/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                /** @description Snapshot ID selected from the workspace snapshot list, never a path. */
+                id: components["parameters"]["SnapshotID"];
+                action: components["parameters"]["SnapshotAction"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue snapshot pin, unpin or verification */
+        post: operations["changeSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -948,6 +1123,256 @@ export interface components {
         /** @constant */
         APIVersion: "anas.dev/api/v1";
         EmptyObject: Record<string, never>;
+        /** @description Opaque root-configured backup destination ID, never a host path. */
+        BackupTargetID: string;
+        MaintenanceSnapshotID: string;
+        BackupID: string;
+        BackupPlanID: string;
+        SnapshotCreateRequest: {
+            label?: string;
+            /** @description Explicit opt-in; user data is not captured when false. */
+            include_userdata: boolean;
+        };
+        SnapshotActionRequest: {
+            /** @description Used only by pin and unpin; verify requires an empty object. */
+            label?: string;
+        };
+        SnapshotListResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            workspace_id: string;
+            keep_auto: number;
+            snapshots: components["schemas"]["SnapshotRecord"][];
+        };
+        SnapshotRecord: {
+            id: components["schemas"]["MaintenanceSnapshotID"];
+            kind: string;
+            pinned: boolean;
+            created_at: string;
+            reason: string;
+            label: string;
+            deployment_id: string;
+            complete: boolean;
+            config_matches_current: boolean;
+            /** Format: int64 */
+            size_bytes: number | null;
+            modules: {
+                [key: string]: string;
+            };
+            healthy: boolean;
+            includes_userdata: boolean;
+        };
+        BackupPlanRequest: {
+            target_id: components["schemas"]["BackupTargetID"];
+            /** @enum {string} */
+            mode?: "snapshot" | "send" | "send-file" | "copy";
+            snapshot_id?: components["schemas"]["MaintenanceSnapshotID"];
+            parent_backup_id?: components["schemas"]["BackupID"];
+            no_stop: boolean;
+            /** @description Explicitly omit user data; false preserves the default inclusion. */
+            skip_userdata: boolean;
+        };
+        BackupPlanResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            workspace_id: string;
+            target_id: components["schemas"]["BackupTargetID"];
+            plan_id: components["schemas"]["BackupPlanID"];
+            capabilities: components["schemas"]["BackupCapabilities"];
+            plan: components["schemas"]["BackupPlan"];
+        };
+        BackupCapabilities: {
+            source: components["schemas"]["BackupSource"];
+            target: components["schemas"]["BackupTarget"];
+            tools: {
+                [key: string]: boolean;
+            };
+            privileged: boolean;
+            estimate: components["schemas"]["BackupEstimate"];
+            modes: components["schemas"]["BackupMode"][];
+            recommended: string;
+        };
+        BackupSource: {
+            fs_type: string;
+            data_is_subvolume: boolean;
+            data_is_mountpoint: boolean;
+            data_fully_readable: boolean;
+        };
+        BackupTarget: {
+            id: components["schemas"]["BackupTargetID"];
+            exists: boolean;
+            writable: boolean;
+            fs_type: string;
+            /** Format: int64 */
+            free_bytes: number | null;
+        };
+        BackupEstimate: {
+            /** Format: int64 */
+            data_bytes: number;
+            /** Format: int64 */
+            userdata_bytes: number;
+            /** Format: int64 */
+            state_bytes: number;
+            /** Format: int64 */
+            active_deployment_bytes: number;
+            /** Format: int64 */
+            total_bytes: number;
+        };
+        BackupMode: {
+            id: string;
+            available: boolean;
+            reason?: string;
+            incremental: boolean;
+            parents: string[];
+            notes: string[];
+        };
+        BackupPlan: {
+            mode: string;
+            incremental: boolean;
+            parent?: string;
+            /** Format: int64 */
+            transfer_bytes: number;
+            /** Format: int64 */
+            dest_free_after_bytes: number | null;
+            includes: string[];
+            excludes: string[];
+            stop_containers: boolean;
+            containers_to_stop: string[];
+            estimated_downtime_seconds: number;
+            warnings: components["schemas"]["BackupWarning"][];
+            actions: components["schemas"]["BackupAction"][];
+        };
+        BackupWarning: {
+            code: string;
+        };
+        BackupAction: {
+            step: number;
+            op: string;
+            /** @description Omitted by the HTTP projection when the CLI value is a host path. */
+            target?: string;
+            count?: number;
+        };
+        BackupListResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            workspace_id: string;
+            target_id: components["schemas"]["BackupTargetID"];
+            backups: components["schemas"]["BackupRecord"][];
+        };
+        BackupRecord: {
+            id: components["schemas"]["BackupID"];
+            mode: string;
+            created_at: string;
+            source_snapshot?: string;
+            incremental: boolean;
+            parent?: string;
+            /** Format: int64 */
+            size_bytes: number;
+            deployment_id: string;
+            modules: {
+                [key: string]: string;
+            };
+            complete: boolean;
+            chain_broken: boolean;
+            includes_userdata: boolean;
+        };
+        LocalAdminListResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            workspace_id: string;
+            accounts: components["schemas"]["LocalAdminRecord"][];
+        };
+        LocalAdminRecord: {
+            /** @description Opaque server-generated target bound into credential-reveal step-up proofs. */
+            target_id: string;
+            module: string;
+            account: string;
+            purpose: string;
+            username: string;
+            url: string;
+        };
+        LocalAdminRevealRequest: {
+            step_up_proof: string;
+        };
+        LocalAdminRevealResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            workspace_id: string;
+            module: string;
+            account: string;
+            purpose: string;
+            username: string;
+            url: string;
+            /** @description Sensitive one-time display value; the response is always marked Cache-Control no-store. */
+            password: string;
+        };
+        TerminalActionRequest: components["schemas"]["TerminalSnapshotRestoreRequest"] | components["schemas"]["TerminalSnapshotDeleteRequest"] | components["schemas"]["TerminalBackupCreateRequest"] | components["schemas"]["TerminalBackupRestoreRequest"] | components["schemas"]["TerminalBackupVerifyRequest"];
+        TerminalSnapshotRestoreRequest: {
+            /** @constant */
+            operation: "snapshot.restore";
+            snapshot: components["schemas"]["TerminalSnapshotRestoreTarget"];
+        };
+        TerminalSnapshotDeleteRequest: {
+            /** @constant */
+            operation: "snapshot.delete";
+            snapshot: components["schemas"]["TerminalSnapshotDeleteTarget"];
+        };
+        TerminalSnapshotRestoreTarget: {
+            id: components["schemas"]["MaintenanceSnapshotID"];
+            restore_userdata: boolean;
+        };
+        TerminalSnapshotDeleteTarget: {
+            id: components["schemas"]["MaintenanceSnapshotID"];
+            force: boolean;
+        };
+        TerminalBackupCreateRequest: {
+            /** @constant */
+            operation: "backup.create";
+            backup: components["schemas"]["TerminalBackupCreateTarget"];
+        };
+        TerminalBackupRestoreRequest: {
+            /** @constant */
+            operation: "backup.restore";
+            backup: components["schemas"]["TerminalBackupExistingTarget"];
+        };
+        TerminalBackupVerifyRequest: {
+            /** @constant */
+            operation: "backup.verify";
+            backup: components["schemas"]["TerminalBackupExistingTarget"];
+        };
+        TerminalBackupCreateTarget: {
+            target_id: components["schemas"]["BackupTargetID"];
+            plan_id: components["schemas"]["BackupPlanID"];
+            /** @enum {string} */
+            mode: "snapshot" | "send" | "send-file" | "copy";
+            snapshot_id?: components["schemas"]["MaintenanceSnapshotID"];
+            parent_backup_id?: components["schemas"]["BackupID"];
+            no_stop: boolean;
+            /** @description Explicitly omit user data; false preserves backup create's default inclusion. */
+            skip_userdata: boolean;
+        };
+        TerminalBackupExistingTarget: {
+            target_id: components["schemas"]["BackupTargetID"];
+            backup_id: components["schemas"]["BackupID"];
+        };
+        TerminalActionPreviewResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            workspace_id: string;
+            /** @enum {string} */
+            operation: "snapshot.restore" | "snapshot.delete" | "backup.create" | "backup.restore" | "backup.verify";
+            target: components["schemas"]["TerminalActionTarget"];
+            impact: components["schemas"]["TerminalActionImpact"];
+            argv: string[];
+            /** @description POSIX-shell-safe display that losslessly round-trips to argv. */
+            display: string;
+            cli_contract: string;
+        };
+        TerminalActionTarget: {
+            snapshot_id?: components["schemas"]["MaintenanceSnapshotID"];
+            backup_target_id?: components["schemas"]["BackupTargetID"];
+            backup_plan_id?: components["schemas"]["BackupPlanID"];
+            backup_id?: components["schemas"]["BackupID"];
+        };
+        TerminalActionImpact: {
+            data: boolean;
+            userdata: boolean;
+            reversible: boolean;
+        };
         DeploymentPlanRequest: {
             /** @description Required in full state and forbidden during bootstrap. */
             step_up_proof?: string;
@@ -1114,10 +1539,13 @@ export interface components {
              * @description Required only for the direct local-owner source; forbidden on the trusted-proxy source.
              */
             password?: string;
-            /** @constant */
-            action: "deployment.apply";
+            /** @enum {string} */
+            action: "deployment.apply" | "local_admin.reveal";
             workspace_id: string;
+            /** @description Optional target for deployment.apply; mutually exclusive with target_id. */
             deployment_id?: string;
+            /** @description Required for local_admin.reveal; opaque server-generated target from the local-administrator list and mutually exclusive with deployment_id. */
+            target_id?: string;
         };
         LocalStepUpResponse: {
             api_version: components["schemas"]["APIVersion"];
@@ -1125,10 +1553,11 @@ export interface components {
             proof: string;
             /** Format: date-time */
             expires_at: string;
-            /** @constant */
-            action: "deployment.apply";
+            /** @enum {string} */
+            action: "deployment.apply" | "local_admin.reveal";
             workspace_id: string;
             deployment_id?: string;
+            target_id?: string;
         };
         CSRFResponse: {
             api_version: components["schemas"]["APIVersion"];
@@ -1185,6 +1614,8 @@ export interface components {
             build: components["schemas"]["BuildInfo"];
             capabilities: components["schemas"]["SystemCapabilities"];
             workspace_ids: string[];
+            /** @description Root-configured backup destination IDs; host paths are never exposed. */
+            backup_target_ids: components["schemas"]["BackupTargetID"][];
             /**
              * @description Current validated serving-certificate source; `internal` is a supported trusted mode, not an error state.
              * @enum {string}
@@ -1649,6 +2080,17 @@ export interface components {
         };
     };
     responses: {
+        /** @description The job was durably queued, or an identical existing job was returned. */
+        AcceptedJob: {
+            headers: {
+                /** @description Relative URL of the durable job resource. */
+                Location: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["DeploymentApplyResponse"];
+            };
+        };
         /** @description The Host or Origin is invalid, a path or body value is invalid, or the query string is malformed or unsupported. */
         BadRequestProblem: {
             headers: {
@@ -1860,6 +2302,13 @@ export interface components {
         DeploymentID: string;
         /** @description Module name in the active deployment. */
         ModuleName: string;
+        /** @description Snapshot ID selected from the workspace snapshot list, never a path. */
+        SnapshotID: string;
+        SnapshotAction: "pin" | "unpin" | "verify";
+        /** @description Stable local-administrator record ID, never a username or password. */
+        LocalAdminAccount: string;
+        /** @description ID of a backup target configured in the root-owned daemon service configuration. */
+        BackupTargetIDQuery: components["schemas"]["BackupTargetID"];
         /** @description Stable Module-local command ID. */
         ModuleCommandID: string;
         /** @description Opaque durable job ID, never a workspace path or command argument. */
@@ -3306,6 +3755,359 @@ export interface operations {
             408: components["responses"]["RequestCanceledProblem"];
             412: components["responses"]["PreconditionProblem"];
             500: components["responses"]["InternalProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    planBackup: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Current capabilities and a non-executing plan bound to plan_id. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupPlanResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            412: components["responses"]["PreconditionProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    listBackups: {
+        parameters: {
+            query: {
+                /** @description ID of a backup target configured in the root-owned daemon service configuration. */
+                target_id: components["parameters"]["BackupTargetIDQuery"];
+            };
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Backups from the selected registered target. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["GetMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            412: components["responses"]["PreconditionProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    listLocalAdministrators: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public local-administrator records; password is not part of this schema. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalAdminListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["GetMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            412: components["responses"]["PreconditionProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    rotateLocalAdministrator: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                /** @description Module name in the active deployment. */
+                module: components["parameters"]["ModuleName"];
+                /** @description Stable local-administrator record ID, never a username or password. */
+                account: components["parameters"]["LocalAdminAccount"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmptyObject"];
+            };
+        };
+        responses: {
+            202: components["responses"]["AcceptedJob"];
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    revealLocalAdministrator: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                /** @description Module name in the active deployment. */
+                module: components["parameters"]["ModuleName"];
+                /** @description Stable local-administrator record ID, never a username or password. */
+                account: components["parameters"]["LocalAdminAccount"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalAdminRevealRequest"];
+            };
+        };
+        responses: {
+            /** @description One short-lived representation containing the credential. */
+            200: {
+                headers: {
+                    "Cache-Control": components["headers"]["CacheControlNoStore"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalAdminRevealResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            412: components["responses"]["PreconditionProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            428: components["responses"]["PreconditionRequiredProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    previewTerminalAction: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TerminalActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Exact server-generated argv, display, impact and CLI contract; no action was executed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalActionPreviewResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            412: components["responses"]["PreconditionProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    listSnapshots: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Snapshot metadata, health and user-data capture state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["GetMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            412: components["responses"]["PreconditionProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    createSnapshot: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnapshotCreateRequest"];
+            };
+        };
+        responses: {
+            202: components["responses"]["AcceptedJob"];
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    changeSnapshot: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                /** @description Snapshot ID selected from the workspace snapshot list, never a path. */
+                id: components["parameters"]["SnapshotID"];
+                action: components["parameters"]["SnapshotAction"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnapshotActionRequest"];
+            };
+        };
+        responses: {
+            202: components["responses"]["AcceptedJob"];
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
             504: components["responses"]["DeadlineProblem"];
         };
     };

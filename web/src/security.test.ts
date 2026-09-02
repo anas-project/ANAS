@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import appSource from "./App.vue?raw"
 import jobsSource from "./jobs/WorkspaceJobs.vue?raw"
+import maintenanceSource from "./maintenance/WorkspaceMaintenance.vue?raw"
 
 const sourceModules = import.meta.glob(["./**/*.ts", "./**/*.vue", "../emergency/**/*.ts"], {
   query: "?raw",
@@ -50,5 +51,12 @@ describe("browser security and recovery boundaries", () => {
     expect(jobsSource).toContain("{{ event.text }}")
     expect(jobsSource).toContain("{{ warning }}")
     expect(jobsSource).not.toContain("v-html")
+  })
+
+  it("renders terminal commands only from the server descriptor", () => {
+    expect(maintenanceSource).toContain("previewTerminalAction")
+    expect(maintenanceSource).toContain("{{ descriptor.display }}")
+    expect(maintenanceSource).toContain("descriptor.argv")
+    expect(maintenanceSource).not.toMatch(/(?:display|argv)\s*[:=]\s*[^\n]*(?:join|`anas|\"anas|'anas)/)
   })
 })

@@ -184,6 +184,45 @@ func (store *Store) AuthenticateProxyStepUp(ctx context.Context, request ProxySt
 	return ProxyStepUpBinding{Digest: digest, SessionDigest: record.SessionDigest, Action: record.Action, WorkspaceID: record.WorkspaceID, TargetID: record.TargetID, StateDigest: record.StateDigest, CreatedAt: record.CreatedAt, ExpiresAt: record.ExpiresAt}, nil
 }
 
+// ConsumeProxyStepUp is the synchronous counterpart to the job store's proof
+// consumption. It revalidates the current proxy identity and removes the proof
+// before the protected response can be returned.
+func (store *Store) ConsumeProxyStepUp(ctx context.Context, request ProxyStepUpAuthenticationRequest) (ProxyStepUpBinding, error) {
+	if _, err := store.AuthenticateProxy(ctx, ProxyAuthenticationRequest{SessionToken: request.SessionToken, Origin: request.Origin, Identity: request.Identity, ObserveOnly: true}); err != nil {
+		return ProxyStepUpBinding{}, err
+	}
+	if validateLocalStepUpBinding(request.Action, request.WorkspaceID, request.TargetID, request.StateDigest) != nil {
+		return ProxyStepUpBinding{}, ErrStepUpUnauthorized
+	}
+	unlock, err := store.lock(ctx)
+	if err != nil {
+		return ProxyStepUpBinding{}, err
+	}
+	defer unlock()
+	state, err := store.loadProxyState()
+	if err != nil {
+		return ProxyStepUpBinding{}, err
+	}
+	digest := credentialDigest(request.Token)
+	record, exists := state.StepUps[digest]
+	sessionDigest := credentialDigest(request.SessionToken)
+	if !exists || !digestMatches(digest, request.Token) || !store.currentTime().Before(record.ExpiresAt) ||
+		record.SessionDigest != sessionDigest || record.AssertionDigest != request.Identity.AssertionDigest ||
+		record.Action != request.Action || record.WorkspaceID != request.WorkspaceID || record.TargetID != request.TargetID ||
+		record.StateDigest != request.StateDigest {
+		return ProxyStepUpBinding{}, ErrStepUpUnauthorized
+	}
+	binding := ProxyStepUpBinding{
+		Digest: digest, SessionDigest: record.SessionDigest, Action: record.Action, WorkspaceID: record.WorkspaceID,
+		TargetID: record.TargetID, StateDigest: record.StateDigest, CreatedAt: record.CreatedAt, ExpiresAt: record.ExpiresAt,
+	}
+	delete(state.StepUps, digest)
+	if err := store.writeProxyState(state); err != nil {
+		return ProxyStepUpBinding{}, err
+	}
+	return binding, nil
+}
+
 func proxySessionMatchesIdentity(record proxySessionRecord, identity ProxyIdentity) bool {
 	return record.Issuer == identity.Issuer && record.Subject == identity.Subject && record.SemanticRole == identity.SemanticRole && record.DirectoryGroup == identity.DirectoryGroup
 }

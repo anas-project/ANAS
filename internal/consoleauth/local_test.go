@@ -359,3 +359,37 @@ func TestLocalStepUpIsSessionStateBoundAuditedAndDigestOnly(t *testing.T) {
 	}
 	t.Fatal("successful step-up audit event was not recorded")
 }
+
+func TestConsumeLocalStepUpIsAtomicAndSingleUse(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "auth")
+	store := openTestStore(t, directory, &memoryAudit{}, newTestClock())
+	if err := store.SetOwnerPassword(context.Background(), "owner-password"); err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.LoginLocal(context.Background(), LocalLoginRequest{Password: "owner-password", Origin: "https://anas.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := store.IssueLocalStepUp(context.Background(), LocalStepUpRequest{
+		SessionToken: session.Token, CSRFToken: session.CSRFToken, Origin: session.Origin, Password: "owner-password",
+		Action: "local_admin.reveal", WorkspaceID: "main", TargetID: "lad_" + strings.Repeat("a", 64), StateDigest: strings.Repeat("b", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := LocalStepUpAuthenticationRequest{
+		SessionToken: session.Token, Origin: session.Origin, Token: credential.Token,
+		Action: credential.Action, WorkspaceID: credential.WorkspaceID, TargetID: credential.TargetID, StateDigest: credential.StateDigest,
+	}
+	binding, err := store.ConsumeLocalStepUp(context.Background(), request)
+	if err != nil || binding.Digest != credential.Digest {
+		t.Fatalf("consumed binding = %#v, %v", binding, err)
+	}
+	if _, err := store.ConsumeLocalStepUp(context.Background(), request); !errors.Is(err, ErrStepUpUnauthorized) {
+		t.Fatalf("second consume error = %v", err)
+	}
+	restarted := openTestStore(t, directory, &memoryAudit{}, newTestClock())
+	if _, err := restarted.AuthenticateLocalStepUp(context.Background(), request); !errors.Is(err, ErrStepUpUnauthorized) {
+		t.Fatalf("consumed proof survived restart: %v", err)
+	}
+}

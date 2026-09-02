@@ -16,6 +16,7 @@ type systemResponse struct {
 	Build              systemBuild        `json:"build"`
 	Capabilities       systemCapabilities `json:"capabilities"`
 	WorkspaceIDs       []string           `json:"workspace_ids"`
+	BackupTargetIDs    []string           `json:"backup_target_ids"`
 	CertificateIssuer  CertificateIssuer  `json:"certificate_issuer"`
 	ConsoleState       ConsoleState       `json:"console_state"`
 	Listener           ListenerIdentity   `json:"listener"`

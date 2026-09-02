@@ -148,6 +148,11 @@ func buildBackupPlan(workspace string, opts backupOptions) (*backupPlan, error) 
 
 	plan.Includes = []string{"config", "lock", "secrets", "state", "deployment", "data"}
 	plan.Excludes = []string{"history_deployments", "caches", "snapshots"}
+	if opts.skipUserData {
+		plan.Excludes = append(plan.Excludes, "userdata")
+	} else {
+		plan.Includes = append(plan.Includes, "userdata")
+	}
 
 	// An existing snapshot is already frozen, so nothing has to stop for it.
 	plan.StopContainers = plan.existingSnapshot == nil && !opts.noStop
@@ -162,6 +167,9 @@ func buildBackupPlan(workspace string, opts backupOptions) (*backupPlan, error) 
 	}
 
 	transfer := caps.Estimate.TotalBytes
+	if opts.skipUserData {
+		transfer -= caps.Estimate.UserDataBytes
+	}
 	if plan.Incremental {
 		// An increment carries only what changed, and nothing here can know
 		// that in advance without walking both trees. Reporting the full size

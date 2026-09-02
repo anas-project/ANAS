@@ -102,6 +102,7 @@ type localStepUpRequest struct {
 	Action       string `json:"action"`
 	WorkspaceID  string `json:"workspace_id"`
 	DeploymentID string `json:"deployment_id,omitempty"`
+	TargetID     string `json:"target_id,omitempty"`
 }
 
 type localStepUpResponse struct {
@@ -111,6 +112,7 @@ type localStepUpResponse struct {
 	Action       string    `json:"action"`
 	WorkspaceID  string    `json:"workspace_id"`
 	DeploymentID string    `json:"deployment_id,omitempty"`
+	TargetID     string    `json:"target_id,omitempty"`
 }
 
 func (h *handler) issuePreAuthCSRF(w http.ResponseWriter, r *http.Request, _ map[string]string) {
@@ -435,7 +437,7 @@ func (h *handler) issueLocalStepUp(w http.ResponseWriter, r *http.Request, _ map
 	if !decodeAuthJSON(w, r, &body) {
 		return
 	}
-	if body.Action != deploymentaudit.ActionApply || body.WorkspaceID == "" || len(body.WorkspaceID) > 256 ||
+	if body.WorkspaceID == "" || len(body.WorkspaceID) > 256 || body.DeploymentID != "" && body.TargetID != "" ||
 		body.DeploymentID != "" && (utf8.RuneCountInString(body.DeploymentID) > 255 || deployment.ValidateID(body.DeploymentID) != nil) {
 		body.Password = ""
 		writeProblem(w, http.StatusBadRequest, "step_up_request_invalid", "step-up action or target is invalid")
@@ -447,24 +449,57 @@ func (h *handler) issueLocalStepUp(w http.ResponseWriter, r *http.Request, _ map
 		writeProblem(w, http.StatusNotFound, "workspace_not_found", "workspace was not found")
 		return
 	}
-	service := h.deploymentHTTP.planFactory(workspacePath)
-	if service == nil {
+	targetID := body.TargetID
+	stateDigest := ""
+	var err error
+	switch body.Action {
+	case deploymentaudit.ActionApply:
+		if body.TargetID != "" {
+			body.Password = ""
+			writeProblem(w, http.StatusBadRequest, "step_up_request_invalid", "deployment step-up target is invalid")
+			return
+		}
+		targetID = body.DeploymentID
+		service := h.deploymentHTTP.planFactory(workspacePath)
+		if service == nil {
+			body.Password = ""
+			writeProblem(w, http.StatusServiceUnavailable, "deployment_unavailable", "deployment planning is unavailable")
+			return
+		}
+		plan, planErr := service.Plan(r.Context(), application.PlanRequest{})
+		if planErr != nil {
+			body.Password = ""
+			writeApplicationError(w, planErr)
+			return
+		}
+		if !validDeploymentPlanBinding(plan.ConfigValidator, plan.Digest) {
+			body.Password = ""
+			writeProblem(w, http.StatusInternalServerError, "plan_binding_invalid", "deployment plan is unavailable")
+			return
+		}
+		stateDigest = deploymentStepUpStateDigest(body.WorkspaceID, body.DeploymentID, plan.ConfigValidator, plan.Digest)
+	case deploymentaudit.ActionLocalAdminReveal:
+		if body.DeploymentID != "" || body.TargetID == "" || len(body.TargetID) > 256 {
+			body.Password = ""
+			writeProblem(w, http.StatusBadRequest, "step_up_request_invalid", "local administrator step-up target is invalid")
+			return
+		}
+		maintenance, available := h.workspaceMaintenanceService(w, body.WorkspaceID, application.NopEventSink{})
+		if !available {
+			body.Password = ""
+			return
+		}
+		stateDigest, err = maintenance.StepUpStateDigest(r.Context(), body.Action, targetID)
+		if err != nil {
+			body.Password = ""
+			writeApplicationError(w, err)
+			return
+		}
+	default:
 		body.Password = ""
-		writeProblem(w, http.StatusServiceUnavailable, "deployment_unavailable", "deployment planning is unavailable")
+		writeProblem(w, http.StatusBadRequest, "step_up_request_invalid", "step-up action is invalid")
 		return
 	}
-	plan, err := service.Plan(r.Context(), application.PlanRequest{})
-	if err != nil {
-		body.Password = ""
-		writeApplicationError(w, err)
-		return
-	}
-	if !validDeploymentPlanBinding(plan.ConfigValidator, plan.Digest) {
-		body.Password = ""
-		writeProblem(w, http.StatusInternalServerError, "plan_binding_invalid", "deployment plan is unavailable")
-		return
-	}
-	stateDigest := deploymentStepUpStateDigest(body.WorkspaceID, body.DeploymentID, plan.ConfigValidator, plan.Digest)
 	var credential consoleauth.LocalStepUpCredential
 	switch principal.Source {
 	case "local":
@@ -475,7 +510,7 @@ func (h *handler) issueLocalStepUp(w http.ResponseWriter, r *http.Request, _ map
 		}
 		credential, err = h.deploymentHTTP.stepUp.IssueLocalStepUp(r.Context(), consoleauth.LocalStepUpRequest{
 			SessionToken: sessionToken, CSRFToken: r.Header.Get(csrfHeaderName), Origin: origin, Password: body.Password,
-			Action: body.Action, WorkspaceID: body.WorkspaceID, TargetID: body.DeploymentID, StateDigest: stateDigest,
+			Action: body.Action, WorkspaceID: body.WorkspaceID, TargetID: targetID, StateDigest: stateDigest,
 		})
 	case "oidc_proxy":
 		proxyStepUp, available := h.deploymentHTTP.stepUp.(ProxyDeploymentStepUpAuthenticator)
@@ -487,7 +522,7 @@ func (h *handler) issueLocalStepUp(w http.ResponseWriter, r *http.Request, _ map
 		credential, err = proxyStepUp.IssueProxyStepUp(r.Context(), consoleauth.ProxyStepUpRequest{
 			SessionToken: sessionToken, CSRFToken: r.Header.Get(csrfHeaderName), Origin: origin,
 			Identity: proxyIdentityFromPrincipal(principal), Action: body.Action, WorkspaceID: body.WorkspaceID,
-			TargetID: body.DeploymentID, StateDigest: stateDigest,
+			TargetID: targetID, StateDigest: stateDigest,
 		})
 	default:
 		writeProblem(w, http.StatusForbidden, "step_up_source_invalid", "this authentication source cannot issue a step-up proof")
@@ -511,10 +546,16 @@ func (h *handler) issueLocalStepUp(w http.ResponseWriter, r *http.Request, _ map
 		}
 		return
 	}
-	writeJSON(w, http.StatusOK, localStepUpResponse{
+	response := localStepUpResponse{
 		APIVersion: APIVersion, Proof: credential.Token, ExpiresAt: credential.ExpiresAt,
-		Action: credential.Action, WorkspaceID: credential.WorkspaceID, DeploymentID: credential.TargetID,
-	})
+		Action: credential.Action, WorkspaceID: credential.WorkspaceID,
+	}
+	if body.Action == deploymentaudit.ActionApply {
+		response.DeploymentID = credential.TargetID
+	} else {
+		response.TargetID = credential.TargetID
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 // LocalOwnerAuthorizer authenticates host-only local-session cookies and does

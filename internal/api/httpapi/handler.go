@@ -389,8 +389,10 @@ func (h *handler) system(w http.ResponseWriter, r *http.Request) {
 	}
 	var proxyURL *string
 	directRecoveryURLs := []string{}
+	backupTargetIDs := []string{}
 	if h.systemHTTP != nil {
 		directRecoveryURLs = append([]string{}, h.systemHTTP.directRecoveryURLs...)
+		backupTargetIDs = append([]string{}, h.systemHTTP.backupTargetIDs...)
 	}
 	if h.systemHTTP != nil && h.systemHTTP.proxyURL != "" {
 		value := h.systemHTTP.proxyURL
@@ -401,6 +403,7 @@ func (h *handler) system(w http.ResponseWriter, r *http.Request) {
 		Build:              systemBuild{Version: result.Version, Commit: result.Commit, Date: result.Date},
 		Capabilities:       systemCapabilities{ReadOnly: h.config == nil},
 		WorkspaceIDs:       h.registry.IDs(),
+		BackupTargetIDs:    backupTargetIDs,
 		CertificateIssuer:  material.Issuer,
 		ConsoleState:       state,
 		Listener:           h.security.Listener,

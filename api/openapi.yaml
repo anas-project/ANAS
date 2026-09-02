@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: ANAS Web API
-  version: 0.7.0-m2
+  version: 0.7.0-m4
   description: |
     M2 API for the ANAS administration daemon. This contract is versioned
     independently from the CLI JSON contract: HTTP responses use
@@ -23,6 +23,9 @@ info:
     receives the same management capabilities while local-account routes remain
     direct-listener only. M2 adds live container health, dependency-expanded
     Module lifecycle previews and durable start/stop/restart/rollback jobs.
+    M3 adds typed Module catalog, configuration and update operations. M4 adds
+    the non-privileged snapshot, backup planning/listing and local-administrator
+    surface plus server-generated terminal-only action descriptors.
     Saving desired configuration does not apply it. A disallowed
     state, listener, or transport is deliberately indistinguishable from an
     unknown path and returns 404.
@@ -49,6 +52,7 @@ tags:
   - name: Configuration
   - name: Deployments
   - name: Modules
+  - name: Maintenance
 paths:
   /:
     get:
@@ -2080,6 +2084,368 @@ paths:
           $ref: "#/components/responses/InternalProblem"
         "504":
           $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/backup-plans:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    post:
+      operationId: planBackup
+      summary: Probe capabilities and calculate a backup plan without executing it
+      tags: [Maintenance]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: backup.plan
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupPlanRequest"
+      responses:
+        "200":
+          description: Current capabilities and a non-executing plan bound to plan_id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupPlanResponse"
+        "400": { $ref: "#/components/responses/BadRequestProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "405": { $ref: "#/components/responses/PostMethodNotAllowedProblem" }
+        "408": { $ref: "#/components/responses/RequestCanceledProblem" }
+        "412": { $ref: "#/components/responses/PreconditionProblem" }
+        "413": { $ref: "#/components/responses/PayloadTooLargeProblem" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaTypeProblem" }
+        "500": { $ref: "#/components/responses/InternalProblem" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableProblem" }
+        "504": { $ref: "#/components/responses/DeadlineProblem" }
+  /api/v1/workspaces/{ws}/backups:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    get:
+      operationId: listBackups
+      summary: List backups under one registered target
+      tags: [Maintenance]
+      parameters:
+        - $ref: "#/components/parameters/BackupTargetIDQuery"
+      security:
+        - localSessionCookie: []
+        - proxySessionCookie: []
+      x-anas-permission: backup.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "200":
+          description: Backups from the selected registered target.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupListResponse"
+        "400": { $ref: "#/components/responses/BadRequestProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "405": { $ref: "#/components/responses/GetMethodNotAllowedProblem" }
+        "408": { $ref: "#/components/responses/RequestCanceledProblem" }
+        "412": { $ref: "#/components/responses/PreconditionProblem" }
+        "500": { $ref: "#/components/responses/InternalProblem" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableProblem" }
+        "504": { $ref: "#/components/responses/DeadlineProblem" }
+  /api/v1/workspaces/{ws}/local-admins:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    get:
+      operationId: listLocalAdministrators
+      summary: List local Module administrator identities without credentials
+      tags: [Maintenance]
+      security:
+        - localSessionCookie: []
+        - proxySessionCookie: []
+      x-anas-permission: local_admin.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "200":
+          description: Public local-administrator records; password is not part of this schema.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalAdminListResponse"
+        "400": { $ref: "#/components/responses/BadRequestProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "405": { $ref: "#/components/responses/GetMethodNotAllowedProblem" }
+        "408": { $ref: "#/components/responses/RequestCanceledProblem" }
+        "412": { $ref: "#/components/responses/PreconditionProblem" }
+        "500": { $ref: "#/components/responses/InternalProblem" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableProblem" }
+        "504": { $ref: "#/components/responses/DeadlineProblem" }
+  /api/v1/workspaces/{ws}/local-admins/{module}/{account}/actions/rotate:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - $ref: "#/components/parameters/ModuleName"
+      - $ref: "#/components/parameters/LocalAdminAccount"
+    post:
+      operationId: rotateLocalAdministrator
+      summary: Queue random local-administrator credential rotation
+      description: The body is empty; caller-selected passwords are never accepted.
+      tags: [Maintenance]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: local_admin.rotate
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmptyObject"
+      responses:
+        "202": { $ref: "#/components/responses/AcceptedJob" }
+        "400": { $ref: "#/components/responses/BadRequestProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "405": { $ref: "#/components/responses/PostMethodNotAllowedProblem" }
+        "408": { $ref: "#/components/responses/RequestCanceledProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "413": { $ref: "#/components/responses/PayloadTooLargeProblem" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaTypeProblem" }
+        "429": { $ref: "#/components/responses/TooManyRequestsProblem" }
+        "500": { $ref: "#/components/responses/InternalProblem" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableProblem" }
+        "504": { $ref: "#/components/responses/DeadlineProblem" }
+  /api/v1/workspaces/{ws}/local-admins/{module}/{account}/reveal:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - $ref: "#/components/parameters/ModuleName"
+      - $ref: "#/components/parameters/LocalAdminAccount"
+    post:
+      operationId: revealLocalAdministrator
+      summary: Reveal one credential after consuming a state-bound step-up proof
+      tags: [Maintenance]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: local_admin.reveal
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalAdminRevealRequest"
+      responses:
+        "200":
+          description: One short-lived representation containing the credential.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControlNoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalAdminRevealResponse"
+        "400": { $ref: "#/components/responses/BadRequestProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "405": { $ref: "#/components/responses/PostMethodNotAllowedProblem" }
+        "408": { $ref: "#/components/responses/RequestCanceledProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "412": { $ref: "#/components/responses/PreconditionProblem" }
+        "413": { $ref: "#/components/responses/PayloadTooLargeProblem" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaTypeProblem" }
+        "428": { $ref: "#/components/responses/PreconditionRequiredProblem" }
+        "500": { $ref: "#/components/responses/InternalProblem" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableProblem" }
+        "504": { $ref: "#/components/responses/DeadlineProblem" }
+  /api/v1/workspaces/{ws}/terminal-action-previews:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    post:
+      operationId: previewTerminalAction
+      summary: Generate an exact descriptor for one terminal-only operation without executing it
+      tags: [Maintenance]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: terminal_action.preview
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TerminalActionRequest"
+      responses:
+        "200":
+          description: Exact server-generated argv, display, impact and CLI contract; no action was executed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TerminalActionPreviewResponse"
+        "400": { $ref: "#/components/responses/BadRequestProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "405": { $ref: "#/components/responses/PostMethodNotAllowedProblem" }
+        "408": { $ref: "#/components/responses/RequestCanceledProblem" }
+        "412": { $ref: "#/components/responses/PreconditionProblem" }
+        "413": { $ref: "#/components/responses/PayloadTooLargeProblem" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaTypeProblem" }
+        "500": { $ref: "#/components/responses/InternalProblem" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableProblem" }
+        "504": { $ref: "#/components/responses/DeadlineProblem" }
+  /api/v1/workspaces/{ws}/snapshots:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    get:
+      operationId: listSnapshots
+      summary: List snapshots and their current health
+      tags: [Maintenance]
+      security:
+        - localSessionCookie: []
+        - proxySessionCookie: []
+      x-anas-permission: snapshot.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "200":
+          description: Snapshot metadata, health and user-data capture state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotListResponse"
+        "400": { $ref: "#/components/responses/BadRequestProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "405": { $ref: "#/components/responses/GetMethodNotAllowedProblem" }
+        "408": { $ref: "#/components/responses/RequestCanceledProblem" }
+        "412": { $ref: "#/components/responses/PreconditionProblem" }
+        "500": { $ref: "#/components/responses/InternalProblem" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableProblem" }
+        "504": { $ref: "#/components/responses/DeadlineProblem" }
+    post:
+      operationId: createSnapshot
+      summary: Queue creation of a snapshot
+      tags: [Maintenance]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: snapshot.change
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnapshotCreateRequest"
+      responses:
+        "202": { $ref: "#/components/responses/AcceptedJob" }
+        "400": { $ref: "#/components/responses/BadRequestProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "405": { $ref: "#/components/responses/PostMethodNotAllowedProblem" }
+        "408": { $ref: "#/components/responses/RequestCanceledProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "413": { $ref: "#/components/responses/PayloadTooLargeProblem" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaTypeProblem" }
+        "429": { $ref: "#/components/responses/TooManyRequestsProblem" }
+        "500": { $ref: "#/components/responses/InternalProblem" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableProblem" }
+        "504": { $ref: "#/components/responses/DeadlineProblem" }
+  /api/v1/workspaces/{ws}/snapshots/{id}/actions/{action}:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - $ref: "#/components/parameters/SnapshotID"
+      - $ref: "#/components/parameters/SnapshotAction"
+    post:
+      operationId: changeSnapshot
+      summary: Queue snapshot pin, unpin or verification
+      tags: [Maintenance]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: snapshot.change
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SnapshotActionRequest"
+      responses:
+        "202": { $ref: "#/components/responses/AcceptedJob" }
+        "400": { $ref: "#/components/responses/BadRequestProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "405": { $ref: "#/components/responses/PostMethodNotAllowedProblem" }
+        "408": { $ref: "#/components/responses/RequestCanceledProblem" }
+        "409": { $ref: "#/components/responses/ConflictProblem" }
+        "413": { $ref: "#/components/responses/PayloadTooLargeProblem" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaTypeProblem" }
+        "429": { $ref: "#/components/responses/TooManyRequestsProblem" }
+        "500": { $ref: "#/components/responses/InternalProblem" }
+        "503": { $ref: "#/components/responses/ServiceUnavailableProblem" }
+        "504": { $ref: "#/components/responses/DeadlineProblem" }
 components:
   securitySchemes:
     preAuthCSRFCookie:
@@ -2221,6 +2587,40 @@ components:
       schema:
         type: string
         pattern: "^[a-z][a-z0-9_]*$"
+    SnapshotID:
+      name: id
+      in: path
+      required: true
+      description: Snapshot ID selected from the workspace snapshot list, never a path.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        pattern: "^[A-Za-z0-9._-]+$"
+    SnapshotAction:
+      name: action
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [pin, unpin, verify]
+    LocalAdminAccount:
+      name: account
+      in: path
+      required: true
+      description: Stable local-administrator record ID, never a username or password.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: "^[A-Za-z0-9._-]+$"
+    BackupTargetIDQuery:
+      name: target_id
+      in: query
+      required: true
+      description: ID of a backup target configured in the root-owned daemon service configuration.
+      schema:
+        $ref: "#/components/schemas/BackupTargetID"
     ModuleCommandID:
       name: command
       in: path
@@ -2319,6 +2719,19 @@ components:
         type: string
         pattern: '^"cfgv-[0-9a-f]{64}"$'
   responses:
+    AcceptedJob:
+      description: The job was durably queued, or an identical existing job was returned.
+      headers:
+        Location:
+          required: true
+          description: Relative URL of the durable job resource.
+          schema:
+            type: string
+            pattern: "^/api/v1/jobs/[^/]+$"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DeploymentApplyResponse"
     BadRequestProblem:
       description: The Host or Origin is invalid, a path or body value is invalid, or the query string is malformed or unsupported.
       content:
@@ -2483,6 +2896,474 @@ components:
     EmptyObject:
       type: object
       additionalProperties: false
+    BackupTargetID:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+      description: Opaque root-configured backup destination ID, never a host path.
+    MaintenanceSnapshotID:
+      type: string
+      minLength: 1
+      maxLength: 255
+      pattern: "^[A-Za-z0-9._-]+$"
+    BackupID:
+      type: string
+      minLength: 1
+      maxLength: 255
+      pattern: "^[A-Za-z0-9._-]+$"
+    BackupPlanID:
+      type: string
+      pattern: "^bkp_[0-9a-f]{64}$"
+    SnapshotCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [include_userdata]
+      properties:
+        label:
+          type: string
+          maxLength: 255
+        include_userdata:
+          type: boolean
+          description: Explicit opt-in; user data is not captured when false.
+    SnapshotActionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+          maxLength: 255
+          description: Used only by pin and unpin; verify requires an empty object.
+    SnapshotListResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, keep_auto, snapshots]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+        keep_auto:
+          type: integer
+          minimum: 0
+        snapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/SnapshotRecord"
+    SnapshotRecord:
+      type: object
+      additionalProperties: false
+      required: [id, kind, pinned, created_at, reason, label, deployment_id, complete, config_matches_current, size_bytes, modules, healthy, includes_userdata]
+      properties:
+        id:
+          $ref: "#/components/schemas/MaintenanceSnapshotID"
+        kind:
+          type: string
+        pinned:
+          type: boolean
+        created_at:
+          type: string
+        reason:
+          type: string
+        label:
+          type: string
+        deployment_id:
+          type: string
+        complete:
+          type: boolean
+        config_matches_current:
+          type: boolean
+        size_bytes:
+          type: [integer, "null"]
+          format: int64
+          minimum: 0
+        modules:
+          type: object
+          additionalProperties:
+            type: string
+        healthy:
+          type: boolean
+        includes_userdata:
+          type: boolean
+    BackupPlanRequest:
+      type: object
+      additionalProperties: false
+      required: [target_id, no_stop, skip_userdata]
+      properties:
+        target_id:
+          $ref: "#/components/schemas/BackupTargetID"
+        mode:
+          type: string
+          enum: [snapshot, send, send-file, copy]
+        snapshot_id:
+          $ref: "#/components/schemas/MaintenanceSnapshotID"
+        parent_backup_id:
+          $ref: "#/components/schemas/BackupID"
+        no_stop:
+          type: boolean
+        skip_userdata:
+          type: boolean
+          description: Explicitly omit user data; false preserves the default inclusion.
+    BackupPlanResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, target_id, plan_id, capabilities, plan]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+        target_id:
+          $ref: "#/components/schemas/BackupTargetID"
+        plan_id:
+          $ref: "#/components/schemas/BackupPlanID"
+        capabilities:
+          $ref: "#/components/schemas/BackupCapabilities"
+        plan:
+          $ref: "#/components/schemas/BackupPlan"
+    BackupCapabilities:
+      type: object
+      additionalProperties: false
+      required: [source, target, tools, privileged, estimate, modes, recommended]
+      properties:
+        source:
+          $ref: "#/components/schemas/BackupSource"
+        target:
+          $ref: "#/components/schemas/BackupTarget"
+        tools:
+          type: object
+          additionalProperties:
+            type: boolean
+        privileged:
+          type: boolean
+        estimate:
+          $ref: "#/components/schemas/BackupEstimate"
+        modes:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupMode"
+        recommended:
+          type: string
+    BackupSource:
+      type: object
+      additionalProperties: false
+      required: [fs_type, data_is_subvolume, data_is_mountpoint, data_fully_readable]
+      properties:
+        fs_type: { type: string }
+        data_is_subvolume: { type: boolean }
+        data_is_mountpoint: { type: boolean }
+        data_fully_readable: { type: boolean }
+    BackupTarget:
+      type: object
+      additionalProperties: false
+      required: [id, exists, writable, fs_type, free_bytes]
+      properties:
+        id:
+          $ref: "#/components/schemas/BackupTargetID"
+        exists: { type: boolean }
+        writable: { type: boolean }
+        fs_type: { type: string }
+        free_bytes:
+          type: [integer, "null"]
+          format: int64
+          minimum: 0
+    BackupEstimate:
+      type: object
+      additionalProperties: false
+      required: [data_bytes, userdata_bytes, state_bytes, active_deployment_bytes, total_bytes]
+      properties:
+        data_bytes: { type: integer, format: int64, minimum: 0 }
+        userdata_bytes: { type: integer, format: int64, minimum: 0 }
+        state_bytes: { type: integer, format: int64, minimum: 0 }
+        active_deployment_bytes: { type: integer, format: int64, minimum: 0 }
+        total_bytes: { type: integer, format: int64, minimum: 0 }
+    BackupMode:
+      type: object
+      additionalProperties: false
+      required: [id, available, incremental, parents, notes]
+      properties:
+        id: { type: string }
+        available: { type: boolean }
+        reason: { type: string }
+        incremental: { type: boolean }
+        parents:
+          type: array
+          items: { type: string }
+        notes:
+          type: array
+          items: { type: string }
+    BackupPlan:
+      type: object
+      additionalProperties: false
+      required: [mode, incremental, transfer_bytes, dest_free_after_bytes, includes, excludes, stop_containers, containers_to_stop, estimated_downtime_seconds, warnings, actions]
+      properties:
+        mode: { type: string }
+        incremental: { type: boolean }
+        parent: { type: string }
+        transfer_bytes: { type: integer, format: int64, minimum: 0 }
+        dest_free_after_bytes:
+          type: [integer, "null"]
+          format: int64
+        includes:
+          type: array
+          items: { type: string }
+        excludes:
+          type: array
+          items: { type: string }
+        stop_containers: { type: boolean }
+        containers_to_stop:
+          type: array
+          items: { type: string }
+        estimated_downtime_seconds: { type: integer, minimum: 0 }
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupWarning"
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupAction"
+    BackupWarning:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: { type: string }
+    BackupAction:
+      type: object
+      additionalProperties: false
+      required: [step, op]
+      properties:
+        step: { type: integer, minimum: 1 }
+        op: { type: string }
+        target:
+          type: string
+          description: Omitted by the HTTP projection when the CLI value is a host path.
+        count: { type: integer, minimum: 0 }
+    BackupListResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, target_id, backups]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id: { type: string }
+        target_id:
+          $ref: "#/components/schemas/BackupTargetID"
+        backups:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupRecord"
+    BackupRecord:
+      type: object
+      additionalProperties: false
+      required: [id, mode, created_at, incremental, size_bytes, deployment_id, modules, complete, chain_broken, includes_userdata]
+      properties:
+        id:
+          $ref: "#/components/schemas/BackupID"
+        mode: { type: string }
+        created_at: { type: string }
+        source_snapshot: { type: string }
+        incremental: { type: boolean }
+        parent: { type: string }
+        size_bytes: { type: integer, format: int64, minimum: 0 }
+        deployment_id: { type: string }
+        modules:
+          type: object
+          additionalProperties: { type: string }
+        complete: { type: boolean }
+        chain_broken: { type: boolean }
+        includes_userdata: { type: boolean }
+    LocalAdminListResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, accounts]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id: { type: string }
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/LocalAdminRecord"
+    LocalAdminRecord:
+      type: object
+      additionalProperties: false
+      required: [target_id, module, account, purpose, username, url]
+      properties:
+        target_id:
+          type: string
+          pattern: "^lad_[0-9a-f]{64}$"
+          description: Opaque server-generated target bound into credential-reveal step-up proofs.
+        module: { type: string }
+        account: { type: string }
+        purpose: { type: string }
+        username: { type: string }
+        url: { type: string }
+    LocalAdminRevealRequest:
+      type: object
+      additionalProperties: false
+      required: [step_up_proof]
+      properties:
+        step_up_proof:
+          type: string
+          pattern: "^sup_[A-Za-z0-9_-]{43}$"
+          writeOnly: true
+    LocalAdminRevealResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, module, account, purpose, username, url, password]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id: { type: string }
+        module: { type: string }
+        account: { type: string }
+        purpose: { type: string }
+        username: { type: string }
+        url: { type: string }
+        password:
+          type: string
+          minLength: 1
+          description: Sensitive one-time display value; the response is always marked Cache-Control no-store.
+    TerminalActionRequest:
+      oneOf:
+        - $ref: "#/components/schemas/TerminalSnapshotRestoreRequest"
+        - $ref: "#/components/schemas/TerminalSnapshotDeleteRequest"
+        - $ref: "#/components/schemas/TerminalBackupCreateRequest"
+        - $ref: "#/components/schemas/TerminalBackupRestoreRequest"
+        - $ref: "#/components/schemas/TerminalBackupVerifyRequest"
+    TerminalSnapshotRestoreRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, snapshot]
+      properties:
+        operation: { const: snapshot.restore }
+        snapshot:
+          $ref: "#/components/schemas/TerminalSnapshotRestoreTarget"
+    TerminalSnapshotDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, snapshot]
+      properties:
+        operation: { const: snapshot.delete }
+        snapshot:
+          $ref: "#/components/schemas/TerminalSnapshotDeleteTarget"
+    TerminalSnapshotRestoreTarget:
+      type: object
+      additionalProperties: false
+      required: [id, restore_userdata]
+      properties:
+        id:
+          $ref: "#/components/schemas/MaintenanceSnapshotID"
+        restore_userdata: { type: boolean }
+    TerminalSnapshotDeleteTarget:
+      type: object
+      additionalProperties: false
+      required: [id, force]
+      properties:
+        id:
+          $ref: "#/components/schemas/MaintenanceSnapshotID"
+        force: { type: boolean }
+    TerminalBackupCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, backup]
+      properties:
+        operation: { const: backup.create }
+        backup:
+          $ref: "#/components/schemas/TerminalBackupCreateTarget"
+    TerminalBackupRestoreRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, backup]
+      properties:
+        operation: { const: backup.restore }
+        backup:
+          $ref: "#/components/schemas/TerminalBackupExistingTarget"
+    TerminalBackupVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, backup]
+      properties:
+        operation: { const: backup.verify }
+        backup:
+          $ref: "#/components/schemas/TerminalBackupExistingTarget"
+    TerminalBackupCreateTarget:
+      type: object
+      additionalProperties: false
+      required: [target_id, plan_id, mode, no_stop, skip_userdata]
+      properties:
+        target_id:
+          $ref: "#/components/schemas/BackupTargetID"
+        plan_id:
+          $ref: "#/components/schemas/BackupPlanID"
+        mode:
+          type: string
+          enum: [snapshot, send, send-file, copy]
+        snapshot_id:
+          $ref: "#/components/schemas/MaintenanceSnapshotID"
+        parent_backup_id:
+          $ref: "#/components/schemas/BackupID"
+        no_stop: { type: boolean }
+        skip_userdata:
+          type: boolean
+          description: Explicitly omit user data; false preserves backup create's default inclusion.
+    TerminalBackupExistingTarget:
+      type: object
+      additionalProperties: false
+      required: [target_id, backup_id]
+      properties:
+        target_id:
+          $ref: "#/components/schemas/BackupTargetID"
+        backup_id:
+          $ref: "#/components/schemas/BackupID"
+    TerminalActionPreviewResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, operation, target, impact, argv, display, cli_contract]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id: { type: string }
+        operation:
+          type: string
+          enum: [snapshot.restore, snapshot.delete, backup.create, backup.restore, backup.verify]
+        target:
+          $ref: "#/components/schemas/TerminalActionTarget"
+        impact:
+          $ref: "#/components/schemas/TerminalActionImpact"
+        argv:
+          type: array
+          minItems: 1
+          items: { type: string }
+        display:
+          type: string
+          minLength: 1
+          description: POSIX-shell-safe display that losslessly round-trips to argv.
+        cli_contract:
+          type: string
+          minLength: 1
+    TerminalActionTarget:
+      type: object
+      additionalProperties: false
+      properties:
+        snapshot_id:
+          $ref: "#/components/schemas/MaintenanceSnapshotID"
+        backup_target_id:
+          $ref: "#/components/schemas/BackupTargetID"
+        backup_plan_id:
+          $ref: "#/components/schemas/BackupPlanID"
+        backup_id:
+          $ref: "#/components/schemas/BackupID"
+    TerminalActionImpact:
+      type: object
+      additionalProperties: false
+      required: [data, userdata, reversible]
+      properties:
+        data: { type: boolean }
+        userdata: { type: boolean }
+        reversible: { type: boolean }
     DeploymentPlanRequest:
       type: object
       additionalProperties: false
@@ -2881,7 +3762,7 @@ components:
           description: Required only for the direct local-owner source; forbidden on the trusted-proxy source.
         action:
           type: string
-          const: deployment.apply
+          enum: [deployment.apply, local_admin.reveal]
         workspace_id:
           type: string
           minLength: 1
@@ -2889,6 +3770,13 @@ components:
         deployment_id:
           type: string
           maxLength: 255
+          description: Optional target for deployment.apply; mutually exclusive with target_id.
+        target_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+          pattern: "^lad_[0-9a-f]{64}$"
+          description: Required for local_admin.reveal; opaque server-generated target from the local-administrator list and mutually exclusive with deployment_id.
     LocalStepUpResponse:
       type: object
       additionalProperties: false
@@ -2905,7 +3793,7 @@ components:
           format: date-time
         action:
           type: string
-          const: deployment.apply
+          enum: [deployment.apply, local_admin.reveal]
         workspace_id:
           type: string
           minLength: 1
@@ -2913,6 +3801,10 @@ components:
         deployment_id:
           type: string
           maxLength: 255
+        target_id:
+          type: string
+          minLength: 1
+          maxLength: 256
     CSRFResponse:
       type: object
       additionalProperties: false
@@ -3016,7 +3908,7 @@ components:
     SystemResponse:
       type: object
       additionalProperties: false
-      required: [api_version, build, capabilities, workspace_ids, certificate_issuer, console_state, listener, direct_recovery_urls, proxy_url]
+      required: [api_version, build, capabilities, workspace_ids, backup_target_ids, certificate_issuer, console_state, listener, direct_recovery_urls, proxy_url]
       properties:
         api_version:
           $ref: "#/components/schemas/APIVersion"
@@ -3028,6 +3920,12 @@ components:
           type: array
           items:
             type: string
+          uniqueItems: true
+        backup_target_ids:
+          type: array
+          description: Root-configured backup destination IDs; host paths are never exposed.
+          items:
+            $ref: "#/components/schemas/BackupTargetID"
           uniqueItems: true
         certificate_issuer:
           type: string

@@ -339,6 +339,22 @@ func (h *handler) routeSpecs() []routeSpec {
 				},
 			)
 		}
+		if h.deploymentHTTP.maintenanceFactory != nil {
+			maintenanceAccess := map[ConsoleState]RouteAccess{
+				StateFull: {Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}},
+			}
+			routes = append(routes,
+				routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/terminal-action-previews", Permission: PermissionTerminalPreview, Scope: ScopeWorkspace, Listeners: allListeners, Access: maintenanceAccess}, handler: h.previewTerminalAction},
+				routeSpec{policy: RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/workspaces/{ws}/snapshots", Permission: PermissionSnapshotRead, Scope: ScopeWorkspace, Listeners: allListeners, Access: maintenanceAccess}, handler: h.listSnapshots},
+				routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/snapshots", Permission: PermissionSnapshotChange, Scope: ScopeWorkspace, Listeners: allListeners, Access: maintenanceAccess}, handler: h.createSnapshot},
+				routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/snapshots/{id}/actions/{action}", Permission: PermissionSnapshotChange, Scope: ScopeWorkspace, Listeners: allListeners, Access: maintenanceAccess}, handler: h.snapshotAction},
+				routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/backup-plans", Permission: PermissionBackupPlan, Scope: ScopeWorkspace, Listeners: allListeners, Access: maintenanceAccess}, handler: h.planBackup},
+				routeSpec{policy: RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/workspaces/{ws}/backups", Permission: PermissionBackupRead, Scope: ScopeWorkspace, Listeners: allListeners, Access: maintenanceAccess}, handler: h.listBackups},
+				routeSpec{policy: RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/workspaces/{ws}/local-admins", Permission: PermissionLocalAdminRead, Scope: ScopeWorkspace, Listeners: allListeners, Access: maintenanceAccess}, handler: h.listLocalAdmins},
+				routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/local-admins/{module}/{account}/actions/rotate", Permission: PermissionLocalAdminRotate, Scope: ScopeWorkspace, Listeners: allListeners, Access: maintenanceAccess}, handler: h.rotateLocalAdmin},
+				routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/local-admins/{module}/{account}/reveal", Permission: PermissionLocalAdminReveal, Scope: ScopeWorkspace, Listeners: allListeners, Access: maintenanceAccess}, handler: h.revealLocalAdmin},
+			)
+		}
 	}
 	return routes
 }
@@ -516,9 +532,10 @@ func RouteInventory(registry *Registry, factory ServiceFactory) ([]RoutePolicy, 
 	h := &handler{registry: registry, factory: factory, jobs: &jobHTTPState{
 		cancel: func(context.Context, string) (consolejobs.Job, error) { return consolejobs.Job{}, nil },
 	}, deploymentHTTP: &deploymentHTTPState{
-		stepUp:         routeInventoryStepUp{},
-		serviceFactory: func(string) application.DeploymentService { return nil },
-		moduleFactory:  func(string, application.EventSink) application.ModuleManagementService { return nil },
+		stepUp:             routeInventoryStepUp{},
+		serviceFactory:     func(string) application.DeploymentService { return nil },
+		moduleFactory:      func(string, application.EventSink) application.ModuleManagementService { return nil },
+		maintenanceFactory: func(string, application.EventSink) application.MaintenanceService { return nil },
 	}}
 	routes := h.routeSpecs()
 	if err := validateRouteSpecs(routes); err != nil {

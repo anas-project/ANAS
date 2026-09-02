@@ -21,19 +21,27 @@ const (
 	StageConfirmationIssueAuthorized            Stage = "confirmation_issue_authorized"
 	StageConfirmationConsumeAndCreateAuthorized Stage = "confirmation_consume_and_job_create_authorized"
 	StageModuleConfigCommitAuthorized           Stage = "module_config_commit_authorized"
+	StageTerminalDescriptorReadyAuthorized      Stage = "terminal_descriptor_ready_authorized"
+	StageCredentialRevealAuthorized             Stage = "credential_reveal_authorized"
 )
 
 const (
-	ActionPlan          = "deployment.plan"
-	ActionApply         = "deployment.apply"
-	ActionStart         = "deployment.start"
-	ActionStop          = "deployment.stop"
-	ActionRestart       = "deployment.restart"
-	ActionRollback      = "deployment.rollback"
-	ActionModuleSync    = "module.sync"
-	ActionModuleUpdate  = "module.update"
-	ActionModuleEnable  = "module.enable"
-	ActionModuleDisable = "module.disable"
+	ActionPlan             = "deployment.plan"
+	ActionApply            = "deployment.apply"
+	ActionStart            = "deployment.start"
+	ActionStop             = "deployment.stop"
+	ActionRestart          = "deployment.restart"
+	ActionRollback         = "deployment.rollback"
+	ActionModuleSync       = "module.sync"
+	ActionModuleUpdate     = "module.update"
+	ActionModuleEnable     = "module.enable"
+	ActionModuleDisable    = "module.disable"
+	ActionSnapshotCreate   = "snapshot.create"
+	ActionSnapshotPin      = "snapshot.pin"
+	ActionSnapshotUnpin    = "snapshot.unpin"
+	ActionSnapshotVerify   = "snapshot.verify"
+	ActionLocalAdminRotate = "local_admin.rotate"
+	ActionLocalAdminReveal = "local_admin.reveal"
 )
 
 // Event contains bindings and digests only. Raw confirmation proofs, request
