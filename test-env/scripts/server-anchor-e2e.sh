@@ -156,7 +156,7 @@ dc_exec ldbsearch -H /var/lib/samba/private/sam.ldb \
   -b "CN=Schema,CN=Configuration,$(dc_exec printenv SAMBA_DC_BASE_DN)" \
   '(lDAPDisplayName=anasIdentityAnchor)' attributeID \
   | awk '/^ / { line = line substr($0, 2); next } { if (line != "") print line; line = $0 } END { if (line != "") print line }' \
-  | grep -Fq '1.2.840.113556.1.8000.2554.17237.23501.51519.17672.44223.1228429.7407401.2.1'
+  | grep -Fq '1.3.6.1.4.1.66678.1.2.1'
 printf 'dc=%s worker=%s\n' "$dc_state" "$worker_state"
 
 section "audit-triggered user stamping"

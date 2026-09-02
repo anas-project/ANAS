@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: samba_dc
 version: 4.23.6
-revision: 10
+revision: 11
 app_version: 4.23.6
 abi:
   supports:
@@ -18,10 +18,10 @@ dependencies:
   requires:
     - lego
 upgrade:
-  # Empty, not absent: no release of this module has rewritten its on-disk data
-  # format. Absent would mean "unknown" and would block every rollback that
-  # changes the version. See docs/contracts/snapshot.md.
-  data_breaking: []
+  # r11 replaces the deployed pre-PEN AD schema object. Older artifacts cannot
+  # safely start against the migrated directory; rollback requires a snapshot
+  # restore rather than an artifact-only downgrade.
+  data_breaking: ["4.23.6"]
 config:
   must_resolve:
     - domain

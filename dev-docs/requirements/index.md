@@ -11,6 +11,7 @@
 | [条件 Capability 依赖要求](conditional-capability-dependency.md) | 可选服务的 Capability 依赖声明、求值时机、锁与 `plan` 输出边界 | 19/19 已完成 |
 | [无序 Capability 依赖要求](weak-capability-dependency.md) | 存在性强制但不参与排序的依赖、calculate 与渲染两阶段边界、守门人成环的解法 | 15/15 已完成 |
 | [Samba 目录事件订阅与实时同步要求](directory-event-subscription.md) | IAM Provider 与所有 LDAP/LDAPS Module 的事件订阅、可靠消费、全量兜底和实时同步验收 | 0/12 已完成 |
+| [Samba 身份锚点 OID 与既有目录迁移要求](samba-identity-anchor.md) | PEN/OID 注册、正式 schema、新旧目录迁移、ACL、Consumer 连续性与恢复验收 | 12/12 已完成 |
 | [Casdoor IAM Provider 集成要求](casdoor-iam.md) | Casdoor Module、Samba 同步、OIDC/SAML、授权、会话和发布验收 | 40/40 已完成 |
 | [使用 OIDC/SAML 的 Module 双向登出要求](module-iam-bidirectional-logout.md) | RP/SP 发起登出、IAM 发起登出、通用注册、安全和真实会话 E2E | 20/42 已完成 |
 | [Web API 与管理前端要求](web-api-admin-console.md) | 管理控制台的范围、访问与证书、认证与角色、安全和验收 | 128/149 已完成 |

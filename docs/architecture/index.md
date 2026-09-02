@@ -11,6 +11,7 @@
 | [Module 专属命令能力设计](module-command-capability-design.md) | 当前模型与明确标注的演进方案 | 命令发现、类型化参数、CLI/anasd 共享调用与执行边界 |
 | [管理员账号系统](admin-account-system.md) | 当前模型与路线图 | 目录管理员、应用角色、本地账号、Secret 与 CLI 生命周期 |
 | [Samba AD 用户、组命名与权限规划](samba-ad-user-planning.md) | 当前目录与权限规范 | 目录结构、部门/角色/应用/资源组命名、账号分类与权限矩阵 |
+| [Samba AD identity anchor](samba-identity-anchor.md) | 当前实现与迁移规范 | 永久身份锚点、PEN OID、schema/ACL 契约与 legacy 单 DC 迁移 |
 | [IAM 能力](iam-capability-design.md) | 当前模型 | IAM provider、OIDC/SAML 协议选择、绑定与双向登出注册 |
 | [应用目录](app-catalog-design.md) | 设计 | 门户条目、可见性与执行点授权映射 |
 | [动态 DNS 能力](dynamic-dns-capability-design.md) | 当前模型 | DDNS 实现选择、凭据和 Web 认证 |
