@@ -180,6 +180,37 @@ func TestJobObjectAuthorizationAndDetailRedaction(t *testing.T) {
 	}
 }
 
+func TestJobCancelDelegatesOnlyAfterObjectAuthorization(t *testing.T) {
+	registry, _ := testRegistry(t, "main")
+	principal := mustTransactionPrincipal(t, consolejobs.PrincipalBootstrap, "txn-cancel")
+	job := consolejobs.Job{
+		ID: "job-cancel", Kind: deploymentaudit.ActionApply, WorkspaceID: "main", CreatedBy: principal,
+		CreatedAt: time.Now().UTC(), Status: consolejobs.StatusRunning, Revision: 2,
+	}
+	store := &fakeJobQueryStore{jobs: []consolejobs.Job{job}}
+	calls := 0
+	handler := newJobTestHandler(t, registry, store, StateBootstrap, Principal{
+		ID: principal, Role: "bootstrap", Source: "bootstrap", TransactionID: "txn-cancel",
+	}, JobQueryOptions{Cancel: func(_ context.Context, id string) (consolejobs.Job, error) {
+		calls++
+		if id != job.ID {
+			t.Fatalf("cancel ID = %q", id)
+		}
+		job.Status = consolejobs.StatusCanceled
+		return job, nil
+	}})
+	request := httptest.NewRequest(http.MethodPost, "https://nas.example/api/v1/jobs/job-cancel/cancel", strings.NewReader(`{}`))
+	request.TLS = &tls.ConnectionState{}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "https://nas.example")
+	request.Header.Set(csrfHeaderName, "csrf-token")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted || calls != 1 || response.Header().Get("Location") != "/api/v1/jobs/job-cancel" {
+		t.Fatalf("cancel = %d calls=%d location=%q body=%s", response.Code, calls, response.Header().Get("Location"), response.Body.String())
+	}
+}
+
 func TestJobEventsReplayReconnectAndIndependentWriteDeadlines(t *testing.T) {
 	registry, _ := testRegistry(t, "main")
 	store := openHTTPJobStore(t, consolejobs.Options{EventCapacity: 10})

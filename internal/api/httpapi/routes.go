@@ -7,7 +7,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/consoleauth"
+	"github.com/anas-project/ANAS/internal/consolejobs"
 	"github.com/anas-project/ANAS/internal/webui"
 )
 
@@ -70,6 +72,9 @@ func (h *handler) routeSpecs() []routeSpec {
 	}
 	applyAccess := map[ConsoleState]RouteAccess{
 		StateBootstrap: {Authentication: AuthenticationBootstrap, Transports: []RequestTransport{TransportPlaintext, TransportTLS}},
+	}
+	lifecycleAccess := map[ConsoleState]RouteAccess{
+		StateFull: {Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}},
 	}
 	if h.deploymentHTTP != nil && h.deploymentHTTP.stepUp != nil {
 		planAccess[StateFull] = RouteAccess{Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}}
@@ -273,6 +278,12 @@ func (h *handler) routeSpecs() []routeSpec {
 			handler: h.logoutLocal,
 		},
 	}
+	if h.jobs != nil && h.jobs.cancel != nil {
+		routes = append(routes, routeSpec{
+			policy:  RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/jobs/{id}/cancel", Permission: PermissionJobCancel, Scope: ScopeWorkspace, Listeners: allListeners, Access: jobAccess},
+			handler: h.cancelJob,
+		})
+	}
 	if h.deploymentHTTP != nil {
 		if h.deploymentHTTP.stepUp != nil {
 			routes = append(routes, routeSpec{
@@ -296,6 +307,18 @@ func (h *handler) routeSpecs() []routeSpec {
 				handler: h.applyDeployment,
 			},
 		)
+		if h.deploymentHTTP.serviceFactory != nil {
+			routes = append(routes,
+				routeSpec{
+					policy:  RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/modules/actions/{action}", Permission: PermissionDeploymentLifecycle, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess},
+					handler: h.moduleLifecycle,
+				},
+				routeSpec{
+					policy:  RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/actions/rollback", Permission: PermissionDeploymentRollback, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess},
+					handler: h.rollbackDeployment,
+				},
+			)
+		}
 	}
 	return routes
 }
@@ -470,7 +493,12 @@ func uniqueStrings(values []string) []string {
 func RouteInventory(registry *Registry, factory ServiceFactory) ([]RoutePolicy, error) {
 	// Inventory describes the complete production contract. Runtime handlers
 	// still omit deployment routes unless their audited dependencies validate.
-	h := &handler{registry: registry, factory: factory, deploymentHTTP: &deploymentHTTPState{stepUp: routeInventoryStepUp{}}}
+	h := &handler{registry: registry, factory: factory, jobs: &jobHTTPState{
+		cancel: func(context.Context, string) (consolejobs.Job, error) { return consolejobs.Job{}, nil },
+	}, deploymentHTTP: &deploymentHTTPState{
+		stepUp:         routeInventoryStepUp{},
+		serviceFactory: func(string) application.DeploymentService { return nil },
+	}}
 	routes := h.routeSpecs()
 	if err := validateRouteSpecs(routes); err != nil {
 		return nil, err

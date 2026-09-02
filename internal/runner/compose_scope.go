@@ -116,7 +116,7 @@ func (a *app) ensureComposeProjectOwner(project string) error {
 }
 
 func dockerComposeProjectOwnersContext(ctx context.Context, environment []string, project string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "docker", "ps", "--all",
+	cmd := externalCommandContext(ctx, "docker", "ps", "--all",
 		"--filter", "label=com.docker.compose.project="+project,
 		"--format", `{{.Label "com.docker.compose.project.working_dir"}}`)
 	cmd.Env = append([]string(nil), environment...)

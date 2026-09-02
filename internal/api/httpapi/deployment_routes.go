@@ -33,6 +33,7 @@ const (
 var errDeploymentAuditUnavailable = errors.New("deployment audit unavailable")
 
 type DeploymentJobStore interface {
+	LookupIdempotency(context.Context, string, consolejobs.IdempotencyInput) (consolejobs.Job, bool, error)
 	CreateOrGetObserved(context.Context, consolejobs.CreateSpec, consolejobs.JobCommitObserver) (consolejobs.CreateResult, error)
 	CreateOrGetConfirmedObserved(context.Context, consolejobs.CreateSpec, consolejobs.ConfirmationInput, consolejobs.JobCommitObserver) (consolejobs.CreateResult, error)
 	StartObserved(context.Context, string, consolejobs.JobCommitObserver) (consolejobs.Job, error)
@@ -62,6 +63,7 @@ func (routeInventoryStepUp) AuthenticateLocalStepUp(context.Context, consoleauth
 
 type DeploymentOptions struct {
 	PlanFactory     application.DeploymentPlanServiceFactory
+	ServiceFactory  application.DeploymentServiceFactory
 	Store           DeploymentJobStore
 	Audit           deploymentaudit.Sink
 	StepUp          DeploymentStepUpAuthenticator
@@ -72,6 +74,7 @@ type DeploymentOptions struct {
 
 type deploymentHTTPState struct {
 	planFactory     application.DeploymentPlanServiceFactory
+	serviceFactory  application.DeploymentServiceFactory
 	store           DeploymentJobStore
 	audit           deploymentaudit.Sink
 	stepUp          DeploymentStepUpAuthenticator
@@ -108,6 +111,7 @@ func newDeploymentHTTPState(options DeploymentOptions) (*deploymentHTTPState, er
 	}
 	return &deploymentHTTPState{
 		planFactory: options.PlanFactory, store: options.Store, audit: options.Audit, notify: options.Notify,
+		serviceFactory:  options.ServiceFactory,
 		stepUp:          options.StepUp,
 		confirmationTTL: options.ConfirmationTTL, maxRequestBytes: options.MaxRequestBytes, now: time.Now,
 	}, nil

@@ -947,84 +947,20 @@ func runActive(action string, args []string, jsonMode bool) error {
 		return usageErrorf("%s", err.Error())
 	}
 	announceWorkspace(workspace)
-	base := stateDir(workspace)
-	// Lifecycle commands mutate Docker state. Taking the exclusive runtime lock
-	// also makes them participate in credential crash recovery before they can
-	// start or stop a deployment from an ambiguous transaction phase.
-	unlock, err := acquireRuntimeLock(base)
+	service := newCLIDeploymentPlanService(workspace, workspaceConfigPath(workspace), "", moduleCommandCLISink{jsonMode: jsonMode})
+	result, err := service.ExecuteLifecycle(context.Background(), application.LifecycleRequest{
+		Action: application.LifecycleAction(action), Modules: requested,
+	})
 	if err != nil {
-		return failuref("lock_failed", "%s", err.Error())
-	}
-	defer unlock()
-	active, err := loadActiveState(base)
-	if err != nil {
-		return preconditionErrorf("state_unreadable", "%s", err.Error())
-	}
-	if active.ActiveDeployment == "" {
-		return preconditionErrorf("no_active_deployment", "no active deployment; run anas apply first")
-	}
-	cli, err := compose.Detect()
-	if err != nil {
-		return preconditionErrorf("compose_missing", "%s", err.Error())
-	}
-	a, root, manifest, err := loadDeploymentApp(base, active.ActiveDeployment, cli)
-	if err != nil {
-		return preconditionErrorf("deployment_unreadable", "%s", err.Error())
-	}
-	if err := credentialStoreConsistencyError(base, manifest); err != nil {
-		return err
-	}
-	selection, err := selectLifecycleModules(a, action, requested)
-	if err != nil {
-		return usageErrorf("%s", err.Error())
-	}
-	// A named selection is expanded to its dependency-safe chain and leaves the
-	// macvlan bridge alone; the whole-deployment path still tears it down,
-	// because then there is nothing left to use it.
-	partial := len(requested) > 0
-	wholeDeployment := !partial || len(selection) == len(a.order)
-	stop := func() error {
-		if partial {
-			return a.stopModules(root, selection, jsonMode)
-		}
-		return a.stopRelease(root, jsonMode)
-	}
-	switch action {
-	case "start":
-		if err := startDeployment(a, root, selection, jsonMode); err != nil {
-			return failuref("start_failed", "%s", err.Error())
-		}
-	case "restart":
-		if err := stop(); err != nil {
-			return failuref("stop_failed", "%s", err.Error())
-		}
-		if err := startDeployment(a, root, selection, jsonMode); err != nil {
-			return failuref("start_failed", "%s", err.Error())
-		}
-	case "stop":
-		if err := stop(); err != nil {
-			return failuref("stop_failed", "%s", err.Error())
-		}
-	default:
-		return usageErrorf("unknown lifecycle action %q", action)
-	}
-	if wholeDeployment {
-		if action == "stop" {
-			active.RuntimeStatus = "stopped"
-		} else {
-			active.RuntimeStatus = "running"
-		}
-		if err := saveActiveState(base, active); err != nil {
-			return failuref("write_failed", "record runtime status: %s", err.Error())
-		}
+		return applicationCLIError(err)
 	}
 	// start, restart and stop have no natural result: they either put the
 	// deployment in the requested state or they did not. The envelope plus the
 	// identifiers is the whole document, rather than a payload invented so it
 	// would look substantial.
 	return emitEmptyOK(jsonMode, map[string]any{
-		"workspace": workspace, "action": action,
-		"deployment_id": active.ActiveDeployment, "modules": selection,
+		"workspace": result.Workspace, "action": result.Action,
+		"deployment_id": result.DeploymentID, "modules": result.Modules,
 	})
 }
 
@@ -1484,51 +1420,25 @@ func runDeploymentRollback(args []string, jsonMode bool) error {
 		return usageErrorf("%s", err.Error())
 	}
 	announceWorkspace(workspace)
-	base := stateDir(workspace)
-	active, err := loadActiveState(base)
-	if err != nil {
-		return preconditionErrorf("state_unreadable", "%s", err.Error())
-	}
 	target := ""
 	if len(positional) == 1 {
 		target = positional[0]
 		if err := validateDeploymentID(target); err != nil {
 			return usageErrorf("%s", err.Error())
 		}
-	} else if len(active.PreviousDeployments) > 0 {
-		target = active.PreviousDeployments[0]
 	}
-	if target == "" {
-		return preconditionErrorf("no_previous_deployment", "no previous deployment to roll back to")
-	}
-	if target == active.ActiveDeployment {
-		return preconditionErrorf("already_active", "deployment %s is already active", target)
-	}
-	unlock, err := acquireRuntimeLock(base)
+	service := newCLIDeploymentPlanService(workspace, workspaceConfigPath(workspace), "", moduleCommandCLISink{jsonMode: jsonMode})
+	result, err := service.Rollback(context.Background(), application.RollbackRequest{
+		DeploymentID: target, AllowRisky: *allowRisky,
+	})
 	if err != nil {
-		return failuref("lock_failed", "%s", err.Error())
-	}
-	defer unlock()
-	// Rollback never touches data. It swaps the artifact, which is the right
-	// answer whenever the data is fine and the configuration or the version is
-	// not — by far the most common reason to roll back. Rewinding data is
-	// `anas snapshot restore`, a different operation with a different blast
-	// radius, and offering it here as a flag made the destructive case one
-	// typo away from the safe one.
-	if err := activateDeployment(base, target, activateOptions{
-		allowRisky: *allowRisky, rollback: true, json: jsonMode,
-	}); err != nil {
-		return err
-	}
-	after, err := loadActiveState(base)
-	if err != nil {
-		return preconditionErrorf("state_unreadable", "%s", err.Error())
+		return applicationCLIError(err)
 	}
 	return emitEmptyOK(jsonMode, map[string]any{
-		"workspace": workspace, "deployment_id": target,
-		"previous_deployment": nullableString(active.ActiveDeployment),
-		"activated_at":        after.ActivatedAt,
-		"data_touched":        false,
+		"workspace": result.Workspace, "deployment_id": result.DeploymentID,
+		"previous_deployment": result.PreviousDeployment,
+		"activated_at":        result.ActivatedAt,
+		"data_touched":        result.DataTouched,
 	})
 }
 

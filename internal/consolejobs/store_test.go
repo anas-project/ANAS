@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -398,6 +399,95 @@ func TestJobStateTransitions(t *testing.T) {
 	if failed.Error.Detail == nil || len(failed.Error.Detail.Blocked) != 1 ||
 		failed.Error.Detail.Blocked[0] != "global.base_domain (immutable; migrate-service-domain)" {
 		t.Fatalf("failed job blocked detail = %+v", failed.Error.Detail)
+	}
+}
+
+func TestCancelQueuedObservedCommitsEventAndTerminalStateAtomically(t *testing.T) {
+	store, _ := openStoreForTest(t, Options{})
+	ctx := context.Background()
+	job := createJobForTest(t, store, testCreateSpec("cancel-queued-atomic", "workspace-a", true))
+	jobError := &JobError{Code: "job_canceled", Message: "job was canceled before execution"}
+	if _, err := store.Transition(ctx, job.ID, StatusCanceled, TransitionInput{Error: jobError}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("non-atomic queued cancellation error = %v, want conflict", err)
+	}
+
+	canceled, err := store.CancelQueuedObserved(ctx, job.ID, TransitionInput{Error: jobError}, EventInput{
+		Kind: "canceled", Data: map[string]any{"stage": "queued"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canceled.Status != StatusCanceled || canceled.Error == nil || canceled.Error.Code != "job_canceled" {
+		t.Fatalf("canceled job = %#v", canceled)
+	}
+	page, err := store.Replay(ctx, job.ID, ReplayOptions{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Events) != 1 || page.Events[0].Kind != "canceled" || page.Events[0].Data["stage"] != "queued" {
+		t.Fatalf("cancellation events = %#v", page.Events)
+	}
+	if _, err := store.Start(ctx, job.ID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("start canceled job error = %v, want conflict", err)
+	}
+
+	auditFailure := errors.New("audit unavailable")
+	rejected := createJobForTest(t, store, testCreateSpec("cancel-queued-audit-failure", "workspace-b", true))
+	if _, err := store.CancelQueuedObserved(ctx, rejected.ID, TransitionInput{Error: jobError}, EventInput{
+		Kind: "canceled", Data: map[string]any{"stage": "queued"},
+	}, JobCommitObserverFunc(func(context.Context, JobCommitIntent) error { return auditFailure })); !errors.Is(err, auditFailure) {
+		t.Fatalf("audit failure = %v, want %v", err, auditFailure)
+	}
+	unchanged, err := store.Get(ctx, rejected.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedEvents, err := store.Replay(ctx, rejected.ID, ReplayOptions{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != StatusQueued || len(rejectedEvents.Events) != 0 {
+		t.Fatalf("audit-rejected cancellation committed state=%s events=%#v", unchanged.Status, rejectedEvents.Events)
+	}
+}
+
+func TestCancelQueuedObservedLosesCleanlyToWorkerClaim(t *testing.T) {
+	for iteration := 0; iteration < 100; iteration++ {
+		store, _ := openStoreForTest(t, Options{})
+		job := createJobForTest(t, store, testCreateSpec(fmt.Sprintf("cancel-claim-%d", iteration), "workspace-a", true))
+		start := make(chan struct{})
+		results := make(chan error, 2)
+		go func() {
+			<-start
+			_, resultsErr := store.Start(context.Background(), job.ID)
+			results <- resultsErr
+		}()
+		go func() {
+			<-start
+			_, resultsErr := store.CancelQueuedObserved(context.Background(), job.ID, TransitionInput{
+				Error: &JobError{Code: "job_canceled", Message: "job was canceled before execution"},
+			}, EventInput{Kind: "canceled", Data: map[string]any{"stage": "queued"}}, nil)
+			results <- resultsErr
+		}()
+		close(start)
+		first, second := <-results, <-results
+		if (first == nil) == (second == nil) || (first != nil && !errors.Is(first, ErrConflict)) || (second != nil && !errors.Is(second, ErrConflict)) {
+			t.Fatalf("iteration %d errors = %v, %v; want one success and one conflict", iteration, first, second)
+		}
+		stored, err := store.Get(context.Background(), job.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, err := store.Replay(context.Background(), job.ID, ReplayOptions{Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stored.Status == StatusRunning && len(page.Events) != 0 {
+			t.Fatalf("iteration %d running job has stale cancellation event: %#v", iteration, page.Events)
+		}
+		if stored.Status == StatusCanceled && (len(page.Events) != 1 || page.Events[0].Kind != "canceled") {
+			t.Fatalf("iteration %d canceled job events = %#v", iteration, page.Events)
+		}
 	}
 }
 

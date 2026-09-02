@@ -358,7 +358,7 @@ func defaultRoute() (gateway, iface string) {
 }
 
 func defaultRouteContext(ctx context.Context, environment []string) (gateway, iface string) {
-	cmd := exec.CommandContext(ctx, "ip", "-4", "route", "show", "default")
+	cmd := externalCommandContext(ctx, "ip", "-4", "route", "show", "default")
 	cmd.Env = append([]string(nil), environment...)
 	out, err := cmd.Output()
 	if err != nil {

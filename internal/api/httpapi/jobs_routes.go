@@ -41,6 +41,7 @@ type JobQueryStore interface {
 // are per stream rather than inherited from the ordinary JSON handler timeout.
 type JobQueryOptions struct {
 	Store              JobQueryStore
+	Cancel             func(context.Context, string) (consolejobs.Job, error)
 	MaxSSEConnections  int
 	SSEHeartbeat       time.Duration
 	SSEPollInterval    time.Duration
@@ -50,6 +51,7 @@ type JobQueryOptions struct {
 
 type jobHTTPState struct {
 	store        JobQueryStore
+	cancel       func(context.Context, string) (consolejobs.Job, error)
 	connections  chan struct{}
 	heartbeat    time.Duration
 	pollInterval time.Duration
@@ -87,7 +89,7 @@ func newJobHTTPState(options JobQueryOptions) (*jobHTTPState, error) {
 		return nil, errors.New("SSE replay batch size must not exceed 1000")
 	}
 	return &jobHTTPState{
-		store: options.Store, connections: make(chan struct{}, options.MaxSSEConnections),
+		store: options.Store, cancel: options.Cancel, connections: make(chan struct{}, options.MaxSSEConnections),
 		heartbeat: options.SSEHeartbeat, pollInterval: options.SSEPollInterval,
 		writeTimeout: options.SSEWriteTimeout, replayBatch: options.SSEReplayBatchSize,
 	}, nil
@@ -100,6 +102,11 @@ type jobListResponse struct {
 }
 
 type jobDetailResponse struct {
+	APIVersion string       `json:"api_version"`
+	Job        jobDetailDTO `json:"job"`
+}
+
+type jobCancelResponse struct {
 	APIVersion string       `json:"api_version"`
 	Job        jobDetailDTO `json:"job"`
 }
@@ -231,6 +238,34 @@ func (h *handler) getJob(w http.ResponseWriter, r *http.Request, params map[stri
 		return
 	}
 	writeJSON(w, http.StatusOK, jobDetailResponse{APIVersion: APIVersion, Job: newJobDetailDTO(job)})
+}
+
+func (h *handler) cancelJob(w http.ResponseWriter, r *http.Request, params map[string]string) {
+	if h.jobs == nil || h.jobs.cancel == nil {
+		writeProblem(w, http.StatusServiceUnavailable, "job_cancel_unavailable", "job cancellation is unavailable")
+		return
+	}
+	if _, ok := supportedQuery(w, r); !ok {
+		return
+	}
+	if !h.decodeEmptyDeploymentRequest(w, r) {
+		return
+	}
+	principal, state, ok := h.jobRequestPrincipal(w, r)
+	if !ok {
+		return
+	}
+	job, ok := h.authorizedJob(w, r, params["id"], state, principal)
+	if !ok {
+		return
+	}
+	canceled, err := h.jobs.cancel(r.Context(), job.ID)
+	if err != nil {
+		writeJobStoreError(w, err)
+		return
+	}
+	w.Header().Set("Location", "/api/v1/jobs/"+job.ID)
+	writeJSON(w, http.StatusAccepted, jobCancelResponse{APIVersion: APIVersion, Job: newJobDetailDTO(canceled)})
 }
 
 func (h *handler) streamJobEvents(w http.ResponseWriter, r *http.Request, params map[string]string) {

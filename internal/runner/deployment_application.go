@@ -28,6 +28,9 @@ type workspaceDeploymentPlanApplication struct {
 
 var _ application.DeploymentPlanService = (*workspaceDeploymentPlanApplication)(nil)
 var _ application.DeploymentApplyService = (*workspaceDeploymentPlanApplication)(nil)
+var _ application.DeploymentLifecycleService = (*workspaceDeploymentPlanApplication)(nil)
+var _ application.DeploymentRollbackService = (*workspaceDeploymentPlanApplication)(nil)
+var _ application.DeploymentCompensationService = (*workspaceDeploymentPlanApplication)(nil)
 
 // NewWorkspaceDeploymentPlanService returns the daemon-facing deployment plan
 // service. It resolves Modules only through the workspace's persisted immutable
@@ -309,6 +312,332 @@ func (service *workspaceDeploymentPlanApplication) Apply(ctx context.Context, re
 		PreviousDeployment: applicationNullableString(before.ActiveDeployment),
 		ActivatedAt:        after.ActivatedAt, DeploymentPath: filepath.Join(base, "deployments", deploymentID),
 	}, nil
+}
+
+func (service *workspaceDeploymentPlanApplication) PreviewLifecycle(ctx context.Context, request application.LifecyclePreviewRequest) (application.LifecyclePreviewResult, error) {
+	if ctx == nil {
+		return application.LifecyclePreviewResult{}, deploymentApplicationError("lifecycle_canceled", errors.New("nil context"))
+	}
+	if service == nil {
+		return application.LifecyclePreviewResult{}, deploymentApplicationError("lifecycle_unavailable", errors.New("deployment lifecycle service is unavailable"))
+	}
+	if !validLifecycleAction(request.Action) {
+		return application.LifecyclePreviewResult{}, &application.Error{
+			Kind: application.ErrorKindInvalidArgument, Code: "lifecycle_action_invalid", Message: "lifecycle action must be start, stop, or restart",
+		}
+	}
+	base := stateDir(service.workspace)
+	unlock, err := acquireWorkspaceConfigReadLock(ctx, base)
+	if err != nil {
+		return application.LifecyclePreviewResult{}, deploymentApplicationError(service.applicationLockCode(), err)
+	}
+	defer unlock()
+	return service.previewLifecycleLocked(ctx, request)
+}
+
+func (service *workspaceDeploymentPlanApplication) previewLifecycleLocked(ctx context.Context, request application.LifecyclePreviewRequest) (application.LifecyclePreviewResult, error) {
+	base := stateDir(service.workspace)
+	active, err := loadActiveState(base)
+	if err != nil {
+		return application.LifecyclePreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("state_unreadable", "%s", err.Error()))
+	}
+	if active.ActiveDeployment == "" {
+		return application.LifecyclePreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("no_active_deployment", "no active deployment; run anas apply first"))
+	}
+	cli, err := detectComposeForExecution(ctx, service.daemon)
+	if err != nil {
+		return application.LifecyclePreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("compose_missing", "%s", err.Error()))
+	}
+	a, _, manifest, err := loadDeploymentApp(base, active.ActiveDeployment, cli)
+	if err != nil {
+		return application.LifecyclePreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("deployment_unreadable", "%s", err.Error()))
+	}
+	if err := credentialStoreConsistencyError(base, manifest); err != nil {
+		return application.LifecyclePreviewResult{}, deploymentApplicationErrorFromCLI(err)
+	}
+	requested := normalizeLifecycleModules(request.Modules)
+	affected, err := selectLifecycleModules(a, string(request.Action), requested)
+	if err != nil {
+		return application.LifecyclePreviewResult{}, deploymentApplicationErrorFromCLI(usageErrorf("%s", err.Error()))
+	}
+	result := application.LifecyclePreviewResult{
+		Workspace: service.workspace, DeploymentID: active.ActiveDeployment, Action: request.Action,
+		RequestedModules: requested, AffectedModules: affected,
+	}
+	result.Digest, err = lifecyclePreviewDigest(result)
+	if err != nil {
+		return application.LifecyclePreviewResult{}, deploymentApplicationError("lifecycle_digest_failed", err)
+	}
+	return result, nil
+}
+
+func (service *workspaceDeploymentPlanApplication) ExecuteLifecycle(ctx context.Context, request application.LifecycleRequest) (application.LifecycleResult, error) {
+	if ctx == nil {
+		return application.LifecycleResult{}, deploymentApplicationError("lifecycle_canceled", errors.New("nil context"))
+	}
+	if service == nil || !validLifecycleAction(request.Action) {
+		return application.LifecycleResult{}, &application.Error{
+			Kind: application.ErrorKindInvalidArgument, Code: "lifecycle_action_invalid", Message: "lifecycle action must be start, stop, or restart",
+		}
+	}
+	if service.daemon && (!request.Confirmed || request.ExpectedDeploymentID == "" || !validDeploymentPlanDigest(request.ExpectedDigest)) {
+		return application.LifecycleResult{}, &application.Error{
+			Kind: application.ErrorKindPreconditionRequired, Code: "lifecycle_confirmation_required",
+			Message: "lifecycle execution requires a confirmed dependency-chain preview",
+		}
+	}
+	base := stateDir(service.workspace)
+	unlock, err := acquireRuntimeLockForApplication(ctx, base, service.events, service.daemon)
+	if err != nil {
+		return application.LifecycleResult{}, deploymentApplicationError(service.applicationLockCode(), err)
+	}
+	defer unlock()
+	preview, err := service.previewLifecycleLocked(ctx, application.LifecyclePreviewRequest{Action: request.Action, Modules: request.Modules})
+	if err != nil {
+		return application.LifecycleResult{}, err
+	}
+	if service.daemon && (preview.DeploymentID != request.ExpectedDeploymentID || preview.Digest != request.ExpectedDigest || !equalStringSlices(preview.AffectedModules, request.ExpectedModules)) {
+		return application.LifecycleResult{}, &application.Error{
+			Kind: application.ErrorKindFailedPrecondition, Code: "lifecycle_preview_changed",
+			Message: "active deployment or lifecycle dependency chain changed after confirmation",
+		}
+	}
+	cli, err := detectComposeForExecution(ctx, service.daemon)
+	if err != nil {
+		return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("compose_missing", "%s", err.Error()))
+	}
+	active, err := loadActiveState(base)
+	if err != nil {
+		return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("state_unreadable", "%s", err.Error()))
+	}
+	a, root, _, err := loadDeploymentApp(base, active.ActiveDeployment, cli)
+	if err != nil {
+		return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("deployment_unreadable", "%s", err.Error()))
+	}
+	a.commandContext, a.events = ctx, service.events
+	a.restrictedProcessEnvironment = service.daemon
+	partial := len(preview.RequestedModules) > 0
+	wholeDeployment := !partial || len(preview.AffectedModules) == len(a.order)
+	stop := func() error {
+		if partial {
+			return a.stopModules(root, preview.AffectedModules, service.jsonMode)
+		}
+		return a.stopRelease(root, service.jsonMode)
+	}
+	switch request.Action {
+	case application.LifecycleStart:
+		err = startDeployment(a, root, preview.AffectedModules, service.jsonMode)
+		if err != nil {
+			err = failuref("start_failed", "%s", err.Error())
+		}
+	case application.LifecycleRestart:
+		if err = stop(); err != nil {
+			err = failuref("stop_failed", "%s", err.Error())
+		} else if err = startDeployment(a, root, preview.AffectedModules, service.jsonMode); err != nil {
+			err = failuref("start_failed", "%s", err.Error())
+		}
+	case application.LifecycleStop:
+		if err = stop(); err != nil {
+			err = failuref("stop_failed", "%s", err.Error())
+		}
+	}
+	if err != nil {
+		return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(err)
+	}
+	if wholeDeployment {
+		if request.Action == application.LifecycleStop {
+			active.RuntimeStatus = "stopped"
+		} else {
+			active.RuntimeStatus = "running"
+		}
+		if err := saveActiveState(base, active); err != nil {
+			return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(failuref("write_failed", "record runtime status: %s", err.Error()))
+		}
+	}
+	return application.LifecycleResult{
+		Workspace: service.workspace, DeploymentID: active.ActiveDeployment, Action: request.Action,
+		Modules: append([]string{}, preview.AffectedModules...),
+	}, nil
+}
+
+func (service *workspaceDeploymentPlanApplication) PreviewRollback(ctx context.Context, request application.RollbackPreviewRequest) (application.RollbackPreviewResult, error) {
+	if ctx == nil {
+		return application.RollbackPreviewResult{}, deploymentApplicationError("rollback_canceled", errors.New("nil context"))
+	}
+	base := stateDir(service.workspace)
+	unlock, err := acquireWorkspaceConfigReadLock(ctx, base)
+	if err != nil {
+		return application.RollbackPreviewResult{}, deploymentApplicationError(service.applicationLockCode(), err)
+	}
+	defer unlock()
+	return service.previewRollbackLocked(request)
+}
+
+func (service *workspaceDeploymentPlanApplication) previewRollbackLocked(request application.RollbackPreviewRequest) (application.RollbackPreviewResult, error) {
+	base := stateDir(service.workspace)
+	active, err := loadActiveState(base)
+	if err != nil {
+		return application.RollbackPreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("state_unreadable", "%s", err.Error()))
+	}
+	target := request.DeploymentID
+	if target == "" && len(active.PreviousDeployments) > 0 {
+		target = active.PreviousDeployments[0]
+	}
+	if target == "" {
+		return application.RollbackPreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("no_previous_deployment", "no previous deployment to roll back to"))
+	}
+	if err := validateDeploymentID(target); err != nil {
+		return application.RollbackPreviewResult{}, deploymentApplicationErrorFromCLI(usageErrorf("%s", err.Error()))
+	}
+	if target == active.ActiveDeployment {
+		return application.RollbackPreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("already_active", "deployment %s is already active", target))
+	}
+	targetManifest, err := loadDeploymentManifest(filepath.Join(base, "deployments", target))
+	if err != nil {
+		return application.RollbackPreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("deployment_unreadable", "%s", err.Error()))
+	}
+	var guarded []string
+	if active.ActiveDeployment != "" {
+		current, err := loadDeploymentManifest(filepath.Join(base, "deployments", active.ActiveDeployment))
+		if err != nil {
+			return application.RollbackPreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("deployment_unreadable", "%s", err.Error()))
+		}
+		guarded = deploymentChangeBlockers(current, targetManifest)
+	}
+	result := application.RollbackPreviewResult{
+		Workspace: service.workspace, ActiveDeployment: active.ActiveDeployment, TargetDeployment: target,
+		GuardedChanges: guarded, DataTouched: false,
+	}
+	result.Digest, err = rollbackPreviewDigest(result)
+	if err != nil {
+		return application.RollbackPreviewResult{}, deploymentApplicationError("rollback_digest_failed", err)
+	}
+	return result, nil
+}
+
+func (service *workspaceDeploymentPlanApplication) Rollback(ctx context.Context, request application.RollbackRequest) (application.RollbackResult, error) {
+	if ctx == nil {
+		return application.RollbackResult{}, deploymentApplicationError("rollback_canceled", errors.New("nil context"))
+	}
+	if service.daemon && (!request.Confirmed || request.ExpectedActiveDeployment == "" || !validDeploymentPlanDigest(request.ExpectedDigest)) {
+		return application.RollbackResult{}, &application.Error{
+			Kind: application.ErrorKindPreconditionRequired, Code: "rollback_confirmation_required",
+			Message: "rollback requires a confirmed impact preview",
+		}
+	}
+	base := stateDir(service.workspace)
+	unlock, err := acquireRuntimeLockForApplication(ctx, base, service.events, service.daemon)
+	if err != nil {
+		return application.RollbackResult{}, deploymentApplicationError(service.applicationLockCode(), err)
+	}
+	defer unlock()
+	preview, err := service.previewRollbackLocked(application.RollbackPreviewRequest{DeploymentID: request.DeploymentID})
+	if err != nil {
+		return application.RollbackResult{}, err
+	}
+	if service.daemon && (preview.ActiveDeployment != request.ExpectedActiveDeployment || preview.Digest != request.ExpectedDigest) {
+		return application.RollbackResult{}, &application.Error{
+			Kind: application.ErrorKindFailedPrecondition, Code: "rollback_preview_changed",
+			Message: "active deployment or rollback impact changed after confirmation",
+		}
+	}
+	if err := activateDeployment(base, preview.TargetDeployment, activateOptions{
+		allowRisky: request.AllowRisky, rollback: true, yes: request.Confirmed, json: service.jsonMode,
+		ctx: ctx, events: service.events, restrictedProcessEnvironment: service.daemon,
+	}); err != nil {
+		return application.RollbackResult{}, deploymentApplicationErrorFromCLI(err)
+	}
+	after, err := loadActiveState(base)
+	if err != nil {
+		return application.RollbackResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("state_unreadable", "%s", err.Error()))
+	}
+	return application.RollbackResult{
+		Workspace: service.workspace, DeploymentID: preview.TargetDeployment,
+		PreviousDeployment: applicationNullableString(preview.ActiveDeployment), ActivatedAt: after.ActivatedAt, DataTouched: false,
+	}, nil
+}
+
+func (service *workspaceDeploymentPlanApplication) CheckCompensation(ctx context.Context) error {
+	if ctx == nil {
+		return deploymentApplicationError("compensation_canceled", errors.New("nil context"))
+	}
+	if service == nil {
+		return deploymentApplicationError("compensation_unavailable", errors.New("deployment compensation service is unavailable"))
+	}
+	unlocked, err := acquireRuntimeLockForApplication(ctx, stateDir(service.workspace), service.events, service.daemon)
+	if err != nil {
+		return deploymentApplicationError(service.applicationLockCode(), err)
+	}
+	unlocked()
+	return nil
+}
+
+func (service *workspaceDeploymentPlanApplication) applicationLockCode() string {
+	if service != nil && service.lockCode != "" {
+		return service.lockCode
+	}
+	return "runtime_lock_unavailable"
+}
+
+func validLifecycleAction(action application.LifecycleAction) bool {
+	switch action {
+	case application.LifecycleStart, application.LifecycleStop, application.LifecycleRestart:
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeLifecycleModules(modules []string) []string {
+	result := make([]string, 0, len(modules))
+	seen := map[string]bool{}
+	for _, module := range modules {
+		module = strings.ToLower(strings.TrimSpace(module))
+		if module != "" && !seen[module] {
+			seen[module] = true
+			result = append(result, module)
+		}
+	}
+	return result
+}
+
+func lifecyclePreviewDigest(result application.LifecyclePreviewResult) (string, error) {
+	return digestApplicationValue(struct {
+		DeploymentID     string                      `json:"deployment_id"`
+		Action           application.LifecycleAction `json:"action"`
+		RequestedModules []string                    `json:"requested_modules"`
+		AffectedModules  []string                    `json:"affected_modules"`
+	}{result.DeploymentID, result.Action, result.RequestedModules, result.AffectedModules})
+}
+
+func rollbackPreviewDigest(result application.RollbackPreviewResult) (string, error) {
+	return digestApplicationValue(struct {
+		ActiveDeployment string   `json:"active_deployment"`
+		TargetDeployment string   `json:"target_deployment"`
+		GuardedChanges   []string `json:"guarded_changes"`
+		DataTouched      bool     `json:"data_touched"`
+	}{result.ActiveDeployment, result.TargetDeployment, result.GuardedChanges, result.DataTouched})
+}
+
+func digestApplicationValue(value any) (string, error) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(body)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func equalStringSlices(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (service *workspaceDeploymentPlanApplication) rejectDaemonNetworkNamespace(moduleRoot string) error {

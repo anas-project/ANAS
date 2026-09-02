@@ -44,12 +44,20 @@ func TestStatusMapsPersistedEmptyStringsToNull(t *testing.T) {
 	workspace := t.TempDir()
 	writeApplicationFile(t, filepath.Join(workspace, ".anas", "state", "active.yml"), []byte("api_version: anas.state/v2\nactive_deployment: dep-2\nruntime_status: running\nprevious_deployments: [dep-1]\nactivated_at: 2026-08-18T01:02:03Z\n"))
 
-	status, err := NewService(workspace).Status(context.Background())
+	healthy := false
+	probe := staticRuntimeProbe{summary: RuntimeSummary{
+		Status: "degraded", Healthy: &healthy,
+		Modules: []ModuleRuntimeStatus{{Module: "demo", Runtime: "running", Health: "unhealthy", Containers: 1}},
+	}}
+	status, err := NewService(workspace).WithRuntimeProbe(probe).Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.ActiveDeployment == nil || *status.ActiveDeployment != "dep-2" || status.RuntimeStatus == nil || *status.RuntimeStatus != "running" {
+	if status.ActiveDeployment == nil || *status.ActiveDeployment != "dep-2" || status.RuntimeStatus == nil || *status.RuntimeStatus != "degraded" || status.RuntimeHealthy == nil || *status.RuntimeHealthy {
 		t.Fatalf("status = %#v", status)
+	}
+	if len(status.ModuleRuntime) != 1 || status.ModuleRuntime[0].Health != "unhealthy" {
+		t.Fatalf("module runtime = %#v", status.ModuleRuntime)
 	}
 	if status.VerifiedAt != nil || status.Transaction != nil {
 		t.Fatalf("empty optional values were not null: %#v", status)
@@ -57,6 +65,37 @@ func TestStatusMapsPersistedEmptyStringsToNull(t *testing.T) {
 	if !reflect.DeepEqual(status.PreviousDeployments, []string{"dep-1"}) {
 		t.Fatalf("previous = %v", status.PreviousDeployments)
 	}
+}
+
+func TestStatusNeverUsesPersistedRuntimeStatusWhenProbeIsUnavailableOrFails(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	writeApplicationFile(t, filepath.Join(workspace, ".anas", "state", "active.yml"), []byte("api_version: anas.state/v2\nactive_deployment: dep-2\nruntime_status: running\nprevious_deployments: []\n"))
+
+	withoutProbe, err := NewService(workspace).Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutProbe.RuntimeStatus == nil || *withoutProbe.RuntimeStatus != "unknown" || withoutProbe.RuntimeProbeError == nil || *withoutProbe.RuntimeProbeError != "runtime_probe_unavailable" {
+		t.Fatalf("status without probe = %#v", withoutProbe)
+	}
+
+	failed, err := NewService(workspace).WithRuntimeProbe(staticRuntimeProbe{err: errors.New("docker unavailable")}).Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.RuntimeStatus == nil || *failed.RuntimeStatus != "unknown" || failed.RuntimeProbeError == nil || *failed.RuntimeProbeError != "runtime_probe_failed" {
+		t.Fatalf("status after failed probe = %#v", failed)
+	}
+}
+
+type staticRuntimeProbe struct {
+	summary RuntimeSummary
+	err     error
+}
+
+func (probe staticRuntimeProbe) InspectRuntime(context.Context, string, string) (RuntimeSummary, error) {
+	return probe.summary, probe.err
 }
 
 func TestListDeploymentsPaginatesStableDescendingOrder(t *testing.T) {

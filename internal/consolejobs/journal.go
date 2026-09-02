@@ -832,7 +832,7 @@ func validatePersistedJob(job Job) error {
 	if job.Status == StatusFailed && job.Error == nil {
 		return errors.New("failed job requires a structured error")
 	}
-	if job.NeedsCompensationCheck && job.Status != StatusFailed && job.Status != StatusInterrupted {
+	if job.NeedsCompensationCheck && job.Status != StatusFailed && job.Status != StatusCanceled && job.Status != StatusInterrupted {
 		return errors.New("only failed or interrupted jobs may require compensation")
 	}
 	if !payloadIsSanitized(job.Request) || !payloadIsSanitized(job.Result) {
@@ -861,7 +861,7 @@ func validPersistedJobUpdate(previous, next Job) bool {
 			return next.StartedAt != nil && previous.StartedAt != nil && next.StartedAt.Equal(*previous.StartedAt) &&
 				next.FinishedAt == nil && next.Error == nil && next.Result == nil && !next.NeedsCompensationCheck
 		}
-		if (previous.Status == StatusInterrupted || previous.Status == StatusFailed) && previous.NeedsCompensationCheck && !next.NeedsCompensationCheck {
+		if (previous.Status == StatusInterrupted || previous.Status == StatusFailed || previous.Status == StatusCanceled) && previous.NeedsCompensationCheck && !next.NeedsCompensationCheck {
 			before := cloneJob(previous)
 			before.Revision = next.Revision
 			before.NeedsCompensationCheck = false
@@ -871,7 +871,7 @@ func validPersistedJobUpdate(previous, next Job) bool {
 		return false
 	}
 	if previous.Status == StatusQueued {
-		return next.Status == StatusRunning
+		return next.Status == StatusRunning || next.Status == StatusCanceled
 	}
 	return previous.Status == StatusRunning && next.Status.terminal()
 }

@@ -21,6 +21,7 @@ import WorkspaceConfig from "./config/WorkspaceConfig.vue"
 import WorkspaceDeployment from "./deployment/WorkspaceDeployment.vue"
 import { initialLocale, messages, type Locale } from "./i18n/messages"
 import WorkspaceJobs from "./jobs/WorkspaceJobs.vue"
+import WorkspaceLifecycle from "./lifecycle/WorkspaceLifecycle.vue"
 
 type SystemResponse = components["schemas"]["SystemResponse"]
 type Phase = EntryPhase | "bootstrap-ready" | "authenticated" | "proxy-auth"
@@ -340,6 +341,14 @@ onMounted(async () => {
         :console-state="deploymentConsoleState"
         :authentication-source="system.listener === 'trusted_proxy' ? 'oidc_proxy' : 'local'"
         :config-revision="configRevision"
+        @job-created="jobsRevision += 1"
+      />
+
+      <WorkspaceLifecycle
+        v-if="phase === 'authenticated' && system"
+        :workspace-ids="system.workspace_ids"
+        :csrf="sessionCSRF"
+        :locale="locale"
         @job-created="jobsRevision += 1"
       />
 

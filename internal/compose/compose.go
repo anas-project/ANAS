@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/anas-project/ANAS/internal/processgroup"
 )
 
 type CLI struct {
@@ -37,6 +39,7 @@ func DetectContext(ctx context.Context, environment []string) (CLI, error) {
 		{bin: "docker-compose", args: []string{"-v"}, cli: CLI{Bin: []string{"docker-compose"}}},
 	} {
 		cmd := exec.CommandContext(ctx, candidate.bin, candidate.args...)
+		processgroup.Configure(cmd)
 		cmd.Env = append([]string(nil), environment...)
 		if err := cmd.Run(); err == nil {
 			return candidate.cli, nil
@@ -105,6 +108,7 @@ func (c CLI) fileCommandContext(ctx context.Context, dir, project, composeFile s
 	}
 	full = append(full, args...)
 	cmd := exec.CommandContext(ctx, full[0], full[1:]...)
+	processgroup.Configure(cmd)
 	cmd.Dir = dir
 	cmd.Env = append([]string(nil), environment...)
 	return cmd

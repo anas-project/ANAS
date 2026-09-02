@@ -93,7 +93,7 @@ func (a *app) runCredentialHook(mod Module, phase, workdir string, env map[strin
 	if err != nil {
 		return credentialHookResult{}, err
 	}
-	cmd := exec.CommandContext(a.subprocessContext(), command[0], command[1:]...)
+	cmd := externalCommandContext(a.subprocessContext(), command[0], command[1:]...)
 	cmd.Dir = mod.SourceDir
 	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
 	if err != nil {
@@ -146,7 +146,7 @@ func (a *app) runLocalAccountHook(mod Module, phase, workdir string, env map[str
 	if err != nil {
 		return hookResponse{}, err
 	}
-	cmd := exec.CommandContext(a.subprocessContext(), command[0], command[1:]...)
+	cmd := externalCommandContext(a.subprocessContext(), command[0], command[1:]...)
 	cmd.Dir = mod.SourceDir
 	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
 	if err != nil {
@@ -249,7 +249,7 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	if err != nil {
 		return hookResponse{}, err
 	}
-	cmd := exec.CommandContext(a.subprocessContext(), command[0], command[1:]...)
+	cmd := externalCommandContext(a.subprocessContext(), command[0], command[1:]...)
 	cmd.Dir = mod.SourceDir
 	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
 	if err != nil {
@@ -306,7 +306,7 @@ func (a *app) runValidationHook(mod Module, env map[string]string) (hookResponse
 		return hookResponse{}, err
 	}
 	commandContext := a.subprocessContext()
-	cmd := exec.CommandContext(commandContext, command[0], command[1:]...)
+	cmd := externalCommandContext(commandContext, command[0], command[1:]...)
 	cmd.Dir = mod.SourceDir
 	cacheDir, err := filepath.Abs(filepath.Join(a.base, "go-build-cache"))
 	if err != nil {
@@ -399,7 +399,7 @@ func resolveValidationGoBinary(buildGOROOT string) (string, error) {
 func resolveValidationGoBinaryContext(ctx context.Context, buildGOROOT string) (string, error) {
 	var discoveryErr error
 	if goOnPath, err := exec.LookPath("go"); err == nil {
-		cmd := exec.CommandContext(ctx, goOnPath, "env", "GOROOT")
+		cmd := externalCommandContext(ctx, goOnPath, "env", "GOROOT")
 		cmd.Env = validationToolchainDiscoveryEnv()
 		if output, err := cmd.Output(); err == nil {
 			candidate := filepath.Join(strings.TrimSpace(string(output)), "bin", "go")
@@ -490,7 +490,7 @@ func (a *app) ensureHookBinary(mod Module, pkg string) (string, error) {
 		}
 	}
 	buildContext := a.subprocessContext()
-	build := exec.CommandContext(buildContext, goBinary, "build", "-o", bin, pkg)
+	build := externalCommandContext(buildContext, goBinary, "build", "-o", bin, pkg)
 	build.Dir = mod.SourceDir
 	if a.validationBuild {
 		build.Env = validationHookBuildEnv(a.base, cacheDir, a.env["GOPROXY_URL"])
@@ -587,7 +587,7 @@ func (a *app) runDockerCopies(copies []dockerCopy) error {
 			continue
 		}
 		target := cp.Container + ":" + cp.Destination
-		cmd := exec.CommandContext(a.subprocessContext(), "docker", "cp", cp.Source, target)
+		cmd := externalCommandContext(a.subprocessContext(), "docker", "cp", cp.Source, target)
 		cmd.Env = a.commandEnvironment(nil)
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("docker cp %s %s: %w", cp.Source, target, err)

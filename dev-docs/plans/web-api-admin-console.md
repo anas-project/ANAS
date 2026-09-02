@@ -7,7 +7,7 @@ updated: 2026-09-03
 
 # ANAS Web API 与管理前端实施计划
 
-> 状态：**部分实施（123/149）**。M0（只读骨架）、M0.5（配置元数据）、M0.6（约束语义）、M1A（管理通道与本地认证底座）、M1B（首次引导后端闭环）、M1C（前端壳与完整引导体验）和 M1.5（Traefik/OIDC 受信入口）已落地；当前入口为 M2。安装发布集成仍属 M5。
+> 状态：**部分实施（128/149）**。M0（只读骨架）、M0.5（配置元数据）、M0.6（约束语义）、M1A（管理通道与本地认证底座）、M1B（首次引导后端闭环）、M1C（前端壳与完整引导体验）、M1.5（Traefik/OIDC 受信入口）和 M2（生命周期与任务扩展）已落地；当前入口为 M3。安装发布集成仍属 M5。
 > 日期：2026-08-16，更新：2026-09-03
 
 需求：[Web API 与管理前端要求](../requirements/web-api-admin-console.md)。该特性不单独建架构文档，
@@ -22,7 +22,7 @@ updated: 2026-09-03
 
 ## 1. 给实施者
 
-**当前入口：M2。** M0、M0.5、M0.6、M1A、M1B、M1C、M1.5 已落地（见 §2 落地快照）。首版特权边界已经确定为“不需要 `CAP_SYS_ADMIN` 的子集”，不再阻塞 M4；Traefik/OIDC 支线已达到 M5 汇合所需退出条件。
+**当前入口：M3。** M0、M0.5、M0.6、M1A、M1B、M1C、M1.5、M2 已落地（见 §2 落地快照）。首版特权边界已经确定为“不需要 `CAP_SYS_ADMIN` 的子集”，不再阻塞 M4；Traefik/OIDC 支线已达到 M5 汇合所需退出条件。
 
 **规范来源是要求文档的 §10 需求矩阵**，不是本文。本文只回答「先做什么」。每个里程碑的精确范围以 §5.1 的需求 ID 归属为准；里程碑正文里的章节指针只是阅读入口。
 
@@ -48,7 +48,7 @@ npm run docs:check-requirement-status && npm run docs:check-plan-status
 - 本文的进度描述必须与代码一致。宁可写「未开始」，不要写一个没验证过的「已完成」。
 
 
-## 2. 当前落地快照（2026-09-03，工作树基于 `2c03c6d`）
+## 2. 当前落地快照（2026-09-03，工作树基于 `171634c`）
 
 | 范围 | 已完成 | 尚未完成 |
 | --- | --- | --- |
@@ -59,6 +59,7 @@ npm run docs:check-requirement-status && npm run docs:check-plan-status
 | M1B 首次引导后端闭环（已完成） | 持久 `bootstrap → enrollment → full` 状态机；可恢复的 enrollment 推进与首个 owner 原子提交及浏览器 `303` handoff；durable job/event JSONL core、有界同进程 append receipt、未知增长全量重验、sealed checkpoint 物理 compaction、跨 generation Store 换代、进程生命周期执行租约与显式崩溃恢复；audit 独立 MaxEvents/Retention storage primitive、sealed generation compaction、跨进程 Writer 换代及 full-owner 分页查询，生产策略固定为 `MaxEvents=0`、`Retention=0`；只读 job 查询、SSE 重放/缺口与存续重认证；配置 GET/validate/PUT 的 schema 投影、随机 opaque 强 ETag、敏感值三态与 crash-safe 原子提交，R-044 外部手改 `412` 已通过真实 daemon HTTP e2e；运行时 `LOCK_NB` 非阻塞取锁；CLI 共用的类型化 Plan/Apply core、workspace 固定 Module view、基于 opaque validator 的稳定 plan digest、Apply 锁内漂移复核与 daemon 子进程受限环境/可取消 context；daemon 生命周期持久 job executor、每 workspace 串行 Claim、job-owned context、终态前事件；audit-before-commit 覆盖 confirmation 签发/消费、job 创建/running/terminal、失败与启动恢复；Plan、bootstrap 首次 Apply 及 full 直连本地 step-up/Apply HTTP/OpenAPI；step-up 与 confirmation/幂等原子消费；内部 CA 下载、证书 issuer 状态与规范 HTTPS redirect；R-049、R-059、R-063/R-069、R-093、R-102 均已通过真实 Linux/浏览器 e2e | M1C 嵌入式双语前端与完整引导体验 |
 | M1C 前端壳与完整引导体验（已完成） | 独立 `web/` Vue 3/TypeScript/Vite 工程与锁文件；由 OpenAPI 生成类型并使用 `openapi-fetch`；确定文件名的主包和不依赖 Vue 的独立应急包由 `go:embed` 进入 `anasd`；根页面/固定资产路由有显式 state/transport/listener policy 与 OpenAPI 双向覆盖；公开 `console_state` 驱动 M0/bootstrap/enrollment/full 入口；明文界面持续显示不可关闭的中英双语 LAN 风险横幅；bootstrap token 只在内存中交换，enrollment handoff 只经已验证的顶层 form POST，HTTPS owner 创建、本地登录、双语错误码映射与未知码回退、DNS 凭据轮换提醒、内部 CA 下载入口及无 workspace `anas init` 指引已接入；workspace 选择、schema 分组字段、Module 增删、敏感值显式 set/unset、受保护字段只读、纯内存草稿、validate 变更预览和强 ETag/首次创建条件保存已接入；plan preview、bootstrap/full step-up、guarded retry与幂等 apply 已接入；认证会话可在整页刷新后恢复并轮换 CSRF，部署与任务抽屉通过 SSE 实时更新且以任务 GET 终态对账；独立应急 UI、真实 Casdoor 运行/停止时的本地登录及 bootstrap/full 风险确认均已通过真实 daemon + Google Chrome Beta e2e | 无（M1C 已完成） |
 | M1.5 Traefik/OIDC 支线（已完成） | 独立 TLS-only 受信 listener；客户端 CA + SPKI pin + 精确源 IP；固定身份头拒绝重复/歧义且直连剥离；proxy session、`platform_admin → owner` 与目录组审计；不超过 5 分钟且动作/主体/plan 绑定的一次性 step-up；本地登录/应急路由 proxy `404`；`anas console status` 与访问页恢复地址；oauth2-proxy 双 bridge；Traefik 命名 mTLS `serversTransport` 与稳定 Secret-Store 客户端身份；R-072/R-101/R-114/R-122 真实 Linux e2e | 无（M1.5 已完成；安装自动接线仍属 M5） |
+| M2 生命周期与任务扩展（已完成） | workspace status 改为 Compose 派生的实时聚合与逐 Module runtime/health；start/stop/restart/rollback 由 CLI 与 daemon 共用类型化应用服务，HTTP 先返回 deployment/digest 绑定的服务端 preview，再以精确有序 chain 入队幂等持久任务并在运行时锁内复核漂移；cancel 只在 executor 注册的安全阶段接受，Unix 子进程组按 TERM→2 秒宽限→KILL，终态后重新取得运行时锁执行 snapshot/container/credential 补偿检查；完整级 SPA 展示 runner 展开的真实 chain 后才允许确认；R-031/R-034/R-057/R-124 已通过 Linux 静态二进制测试，R-124 另经实际 Chrome Beta UI 验证 | 无（M2 已完成） |
 
 当前生产 `anasd` 只接受 root-owned 服务配置与 registry 中的 workspace ID，HTTP DTO 不返回 workspace、deployment
 或 Secret 的本机路径；默认 `lan` 静态绑定 `0.0.0.0` 与可用时的 `[::]`，数值 Host 必须匹配连接实际命中的本机地址，配置允许的 DNS Host 才可按名访问。服务从 `console_store` 读取持久单向 capability state：首次为 `bootstrap`，验证通过的 lego 证书推进到 `enrollment`，首个本地 owner 的可恢复提交再推进到 `full`；既有 M0 workspace 查询只在 `full` 状态经 HTTPS 与 owner 会话开放。配置 GET/validate/PUT 在 bootstrap 的直连明文或 TLS、以及 full 的直连 TLS 上开放；三者统一要求 bootstrap/local 会话、workspace scope 与权限，validate/PUT 另外要求 Origin/CSRF。M0 和 enrollment 保持默认 `404`。配置保存只提交 desired config、Secret Store 与 managed state；Plan 不写运行态，bootstrap Apply 只入队持久任务。生产目录
@@ -142,7 +143,7 @@ M1B 应用服务、HTTP/OpenAPI 契约、事务恢复与负向测试，不是 M0
 
 验收：要求文档 §5.4—§5.5 的代理入口、恢复路径、角色映射和 step-up 约束。当前实现已满足不可旁路传输边界并开放独立代理身份监听器；本支线不阻塞 M2—M4 的直连管理路径。M5 仍是直连主线与本支线的最终汇合门禁。
 
-### M2：生命周期与任务扩展
+### M2：生命周期与任务扩展 — 已实施
 
 - 把 start/stop/restart/rollback 全部迁到类型化应用服务和任务 API，与 M1B 的 plan/apply 一起关闭生命周期服务化总要求，补齐容器实时状态与健康探测。
 - 任务取消只在声明安全的阶段生效；外部命令按进程组 TERM→宽限期→KILL 并进入补偿检查。
@@ -175,7 +176,7 @@ M1B 应用服务、HTTP/OpenAPI 契约、事务恢复与负向测试，不是 M0
 
 验收：直连主线与 M1.5 在此汇合；要求文档 §8 与 §10.9、全部 149 项有效需求归属、CI 门禁和 e2e 证据完整，才可把首版标为完成。
 
-## 4. M1B/M1C 已完成与下一步
+## 4. 已完成与下一步
 
 本轮已完成：
 
@@ -197,12 +198,14 @@ M1B 应用服务、HTTP/OpenAPI 契约、事务恢复与负向测试，不是 M0
 
 16. M1.5 已完成：`anasd` 的第二个 TLS-only listener 同时要求精确源 IP、客户端 CA 和叶 SPKI pin；Traefik 命名 `serversTransport` 使用稳定 Secret-Store 客户端身份，oauth2-proxy identity bridge 覆盖七个固定身份字段。完整级 proxy 与直连共用能力面，但本地登录、引导、注册和应急 UI 在 proxy 源返回 `404`。proxy session 把 issuer+subject 映射为 `owner`，审计保留语义角色与物理目录组；高危动作只用最近 5 分钟 OIDC `auth_time` 签发 assertion/subject/plan 绑定的一次性 proof，不接收 IdP 密码。run18 在真实 Linux 上验证无证书、错误 SPKI 与明文均无法进入 listener；陈旧认证返回 `428`，proof 跨 assertion 或消费后复用失败，普通 Apply 原样保留 guarded blocker，新的 proxy step-up + confirmation 成功完成 `allow_risky`。服务、容器、端口和上传目录均已清理。
 
+17. M2 已完成：status 不再把 deployment 文件中的状态伪装成实时值，而是从当前 Compose 运行态投影聚合和逐 Module 健康；start/stop/restart/rollback 的 CLI 与 daemon 共用类型化 preview/execute 服务，HTTP、OpenAPI、幂等任务和锁内漂移复核完整接线。生命周期取消仅在安全阶段生效，Unix 外部命令以独立进程组 TERM→宽限期→KILL，随后在运行时锁内执行补偿检查并清除标记。Linux run19 用四个静态测试制品验证实际子进程组、executor cancel/compensation、冻结依赖展开与 HTTP 精确 chain/rollback 契约；Chrome Beta 再从生产构建 SPA 选择 `db`，看到服务端返回的 `db → app`，并成功提交精确有序确认链。远端一次性上传目录、本地二进制、浏览器夹具和结果文件均已清理。
+
 下一步按依赖顺序实施：
 
-1. 进入 M2，把 start/stop/restart/rollback 接到类型化应用服务和任务 API，并补进程组取消与补偿 e2e。
+1. 进入 M3，把 Module enable/disable、catalog、sync/update 接到类型化应用服务和任务 API，并补 UI 的版本、配置态、实时运行态、健康与入口地址。
 2. 当前 audit 零值生产策略继续保留全部历史且不运行周期删除；将来若启用非零保留策略，须先把相同 Options 传给 daemon 与 CLI 的全部协作 Writer，并接入周期维护。
 
-M1.5 已完成，当前进入 M2；已接受的 LAN 明文风险不改变写入原子性、审计和任务生命周期要求。
+M2 已完成，当前进入 M3；已接受的 LAN 明文风险不改变写入原子性、审计和任务生命周期要求。
 
 ## 5. 实现检查表
 
@@ -222,12 +225,12 @@ M1.5 已完成，当前进入 M2；已接受的 LAN 明文风险不改变写入�
 | M1C / R-125 | R-125 | 已完成 |
 | M1C（其余） | R-004、R-010、R-070、R-087、R-088、R-103、R-104、R-113、R-126、R-128—R-131、R-156 | 已完成 |
 | M1.5 | R-072、R-100、R-101、R-105—R-107、R-109—R-111、R-114、R-122 | 已完成 |
-| M2 | R-023、R-031、R-034、R-057、R-124 | 未开始 |
+| M2 | R-023、R-031、R-034、R-057、R-124 | 已完成 |
 | M3 | R-032 | 未开始 |
 | M4 | R-047、R-115—R-116、R-123、R-127、R-132、R-133、R-144、R-149、R-150、R-152、R-155 | 未开始 |
 | M5 | R-005、R-008、R-045、R-053、R-154、R-160—R-162 | 未开始 |
 
-覆盖统计：149 项有效需求全部有归属，其中已完成 123 项；R-052、R-141、R-158、R-159 四项复合要求已废弃并由原子要求取代。**每个有效 ID 必须恰好归属一个里程碑**；新增或废弃需求时同步更新本表，否则门禁会拒绝。
+覆盖统计：149 项有效需求全部有归属，其中已完成 128 项；R-052、R-141、R-158、R-159 四项复合要求已废弃并由原子要求取代。**每个有效 ID 必须恰好归属一个里程碑**；新增或废弃需求时同步更新本表，否则门禁会拒绝。
 
 ### 5.2 CI 门禁
 
@@ -235,15 +238,15 @@ M1.5 已完成，当前进入 M2；已接受的 LAN 明文风险不改变写入�
 
 | 门禁 | 命令 | 最近验证基线 |
 | --- | --- | --- |
-| 单元测试 | `go test ./...` | 仅含本控制台提交的候选快照（基于 HEAD `2c03c6d`，2026-09-03）全仓通过 |
-| 竞态 | `go test -race ./internal/consoleauth ./internal/api/httpapi ./internal/consoleconfig ./internal/runner ./cmd/anasd ./modules/oauth2_proxy/hook ./modules/traefik/hook`；oauth2-proxy 嵌套模块另跑 `go test -race ./...` | 工作树（HEAD `2c03c6d`，2026-09-03）通过；嵌套模块的 `httptest` 监听在沙箱外重跑通过 |
-| 静态检查 | `go vet ./...` | 工作树（HEAD `2c03c6d`，2026-09-03）通过 |
-| 参数 inventory / effect | `go run ./cmd/gen-module-docs --check` | 工作树（HEAD `2c03c6d`，2026-09-03）通过；oauth2-proxy 与 Traefik 的生成文档已同步新 revision 与参数 |
-| 前端构建 | `npm --prefix web run build` | 工作树（HEAD `2c03c6d`，2026-09-03）通过：OpenAPI 生成、类型检查、11 个测试文件 38 个用例、主 SPA 与独立应急包构建全部通过 |
+| 单元测试 | `go test ./...` | M2 工作树（基于 HEAD `171634c`，2026-09-03）全仓通过 |
+| 竞态 | `go test -race ./internal/application ./internal/api/httpapi ./internal/consolejobs ./internal/jobexecutor ./internal/processgroup ./internal/runner ./cmd/anasd` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过；M1.5 的认证/Hook 竞态基线仍为 `2c03c6d` |
+| 静态检查 | `go vet ./...` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过 |
+| 参数 inventory / effect | `go run ./cmd/gen-module-docs --check` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过 |
+| 前端构建 | `npm --prefix web run build` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过：OpenAPI 生成、类型检查、12 个测试文件 40 个用例、主 SPA 与独立应急包构建全部通过 |
 | 前端生产依赖审计 | `cd web && npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org` | 工作树（HEAD `2c03c6d`，2026-09-01）通过：0 个已知漏洞；项目镜像不提供 npm audit API，因此审计显式使用官方 registry |
-| 需求/计划一致性 | `npm run docs:test-requirements && npm run docs:check-requirements && npm run docs:test-status && npm run docs:check-requirement-status && npm run docs:check-plan-status` | 工作树（HEAD `2c03c6d`，2026-09-03）通过：149 项有效要求全部有归属，M1.5 完成后 123 项已完成，另有 4 项已废弃 |
-| 文档构建 | `npm run docs:build` | 工作树（HEAD `2c03c6d`，2026-09-03）通过 |
-| 静态交叉编译 | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /private/tmp/anasd-m15-verify-linux-amd64 ./cmd/anasd`；arm64 同命令改 `GOARCH` 与输出名 | 工作树（HEAD `2c03c6d`，2026-09-03）两架构静态 ELF 通过，临时二进制已清理 |
+| 需求/计划一致性 | `npm run docs:test-requirements && npm run docs:check-requirements && npm run docs:test-status && npm run docs:check-requirement-status && npm run docs:check-plan-status` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过：149 项有效要求全部有归属，M2 完成后 128 项已完成，另有 4 项已废弃 |
+| 文档构建 | `npm run docs:build` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过 |
+| 静态交叉编译 | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /private/tmp/anasd-m2-verify-linux-amd64 ./cmd/anasd`；arm64 同命令改 `GOARCH` 与输出名 | M2 工作树（基于 HEAD `171634c`，2026-09-03）两架构静态 ELF 通过，临时二进制已清理 |
 
 ### 5.3 e2e 执行记录
 
@@ -253,7 +256,7 @@ CI 查不了这些——它们需要真实 Docker、Btrfs、域名或主机。**
 | --- | --- | --- | --- | --- |
 | R-044 | `test-env/scripts/server-console-config-manual-edit-e2e.sh` | `finance.hlong.wang`；Ubuntu 26.04、Linux 7.0.0-30-generic、x86_64、tmpfs；root；当前工作树 Linux/amd64 静态二进制 | 2026-08-31 | 通过：bootstrap session 先取得强 ETag，外部追加修改 `config.yml` 后 GET 与携带旧 ETag 的 PUT 均返回 `412 config_precondition_failed`；外部字节与 managed state 摘要保持不变；上传制品 SHA-256 校验通过并已清理远端临时目录 |
 | R-049 | `test-env/scripts/server-console-execution-lease-e2e.sh` | `finance.hlong.wang`；Ubuntu 26.04、Linux 7.0.0-30-generic、x86_64、tmpfs；root；当前工作树 Linux/amd64 静态二进制 | 2026-08-31 | 通过：普通 Store reader 与竞争 daemon 均未改写租约持有者的活动 `running` job；竞争 daemon 退出码为 1；持有者退出后新 daemon 恢复为 `interrupted`，`needs_compensation_check=true`，审计原因为 `daemon_restarted`；上传制品 SHA-256 校验通过并已清理远端临时目录 |
-| R-057 | 待补 | | | |
+| R-057 | `test-env/scripts/server-console-m2-lifecycle-e2e.sh` | `finance.hlong.wang`；Ubuntu 26.04、Linux 7.0.0-30-generic、x86_64；sudo；当前工作树交叉编译的 processgroup、jobexecutor、runner、httpapi Linux/amd64 测试二进制 | 2026-09-03 | 通过：真实 shell 父子进程组忽略 TERM 后进入宽限并被组 KILL；持久 `deployment.restart` 任务在已注册安全阶段接受 cancel，终态为 `canceled`，后代进程全部消失；executor 随后重新取得 workspace 运行时锁执行 snapshot/container/credential 补偿检查并清除 `needs_compensation_check`；上传 SHA-256 一致，一次性远端目录与本地制品已清理 |
 | R-059 | `test-env/scripts/server-console-storage-isolation-e2e.sh` | `finance.hlong.wang`；Ubuntu 26.04、Linux 7.0.0-30-generic、x86_64、tmpfs backing + 512 MiB Btrfs loop workspace；root；当前工作树 Linux/amd64 静态二进制与专用 fixture | 2026-08-31 | 通过：job 容量 1、audit 容量 2 的独立策略分别保留 1/2 条，物理 compaction 将 journal 从 527021/525029 bytes 缩至 2219/920 bytes；过期游标返回 `410 event_gap`（`pruned_through=1`、`latest_id=2`）；snapshot create/restore 与 backup create/restore 均未包含或覆盖 workspace 外 console store；上传制品 SHA-256 校验通过，测试后无残留 daemon、挂载、loop 设备、工作目录或上传目录 |
 | R-063 | `test-env/scripts/server-console-internal-ca-e2e.sh` | `finance.hlong.wang`；Ubuntu 26.04、Linux 7.0.0-30-generic、x86_64、tmpfs；root；OpenSSL 3.5.5；当前工作树 Linux/amd64 静态二进制 | 2026-08-31 | 通过：初始 internal leaf、热换 internal leaf、切换 ACME leaf 的下一次握手 SPKI 依次变化；`certificate_issuer=acme`，稳定内部 CA 仍可由 owner 下载；daemon PID 不变、无重启；e2e 发现并修复 cloned `tls.Certificate` 的 nil 签名算法语义缺陷，修复后二进制 SHA-256 为 `8c4d3ebf196ea0c10c5e8c45b16e7356a39a37a97fdbfaa03ce1ddacd030657f`，测试目录已清理 |
 | R-069 | `test-env/scripts/server-console-internal-ca-e2e.sh` | `finance.hlong.wang`；Ubuntu 26.04、Linux 7.0.0-30-generic、x86_64、tmpfs；root；OpenSSL 3.5.5；当前工作树 Linux/amd64 静态二进制 | 2026-08-31 | 通过：`virtual_domain=true` 经真实内部 CA 进入 enrollment，CA 下载与配置 root 一致；handoff issuance/exchange 为 `201/303`，首个 owner 为 `201` 并进入 `full`，full 明文 system 为 `404`；handoff、CSRF 与 owner 密码原文均未进入 console store；随后切换 ACME 仍保持 full，上传制品已校验并清理 |
@@ -267,7 +270,7 @@ CI 查不了这些——它们需要真实 Docker、Btrfs、域名或主机。**
 | R-114 | `test-env/scripts/server-console-trusted-proxy-e2e.sh` | 与 R-072 相同；固定 issuer/subject/`platform_admin`/`Admins` identity，使用不同一次性 assertion 模拟 oauth2-proxy 已验证转发 | 2026-09-03 | 通过：`auth_time` 超过 5 分钟返回 `428 recent_auth_required`；新 proof 跨 assertion 用于 plan 返回 `409 step_up_invalid`，绑定 assertion 的 proof 可签发 confirmation，但第一次 Apply 消费后复用返回 `409 step_up_consumed`；全部 proxy step-up 请求不含密码，审计记录 `semantic_role=platform_admin` 与 `directory_group=Admins` |
 | R-120 | `test-env/scripts/server-console-config-ui-e2e.sh`；Google Chrome Beta | `finance.hlong.wang`；Ubuntu 26.04、Linux 7.0.0-30-generic、x86_64、root；当前工作树 Linux/amd64 静态二进制；macOS 26.1、Google Chrome Beta 153.0.8010.12、ZeroOmega SOCKS5 `127.0.0.1:1080`；LAN wildcard `192.168.0.222:7794` 明文 bootstrap | 2026-09-01 | 通过：一次性 token 兑换成功；`global.timezone=Asia/Singapore` 与无字段 `freeradius` validate 预览精确显示两项变更；后续编辑立即移除旧预览和保存入口，重新 validate 后保存 2 项；服务端结构化验证 desired config 已更新，deployments/data/userdata 摘要未变且 daemon 保持运行；真实 e2e 发现并修复未声明 `env` 原值因 YAML 风格变化被误判为篡改的问题，远端 fixture/upload、本地临时 token 与 SSH SOCKS 代理均已清理 |
 | R-122 | `test-env/scripts/server-console-trusted-proxy-e2e.sh` | 与 R-072 相同；专用 `data_migrate` guarded-change fixture，daemon job executor 执行真实 plan/apply | 2026-09-03 | 通过：普通 proxy Apply 失败且 job detail 的 `error.detail.blocked` 精确保留唯一原始项 `modules.proxy_fixture.config.marker (data_migrate; migrate-proxy-fixture-marker)`；重新取得来源感知 step-up 与服务端 confirmation 后，`allow_risky=true` job `job_72fa256ef5e5675d9d4381b30c002711` 成功，普通失败 job 为 `job_b2e3581bd3264191c9ad82372f637243` |
-| R-124 | 待补 | | | |
+| R-124 | `test-env/scripts/server-console-m2-lifecycle-e2e.sh`；`test-env/helpers/console-m2-browser-fixture`；Google Chrome Beta | Linux 契约测试与 R-057 同一 run19；macOS 26.1、Google Chrome Beta 153.0.8010.12，生产构建 SPA 由 loopback `127.0.0.1:7794` 夹具提供，未改变既有 ZeroOmega 配置 | 2026-09-03 | 通过：Linux runner/HTTP 测试证明请求 `db` 由冻结 deployment 展开为有序 `db,app`，客户端交换顺序或部署/digest 漂移均拒绝；实际 Chrome Beta 页面显示 `db → app` 后才出现确认入口，提交体保留 requested `db` 并精确回送 confirmed `db,app`，创建 `deployment.restart` 作业；夹具、结果文件和监听已清理 |
 | R-125 | `test-env/scripts/server-console-job-refresh-e2e.sh`；`test-env/scripts/server-console-config-ui-e2e.sh`；`test-env/scripts/server-console-m1c-browser-e2e.sh`；`test-env/helpers/console-jobs-fixture`；Google Chrome Beta | run13 明文 bootstrap 基线及 R-103 的 run17 明文/HTTPS 环境 | 2026-09-02 | 通过：run13 先证明整页刷新后任务由服务端恢复；run17 再证明 `GET /api/v1/auth/session` 恢复 bootstrap/full 认证并轮换 CSRF，刷新后配置写入口、任务列表与详情均恢复。bootstrap/full apply 通过 SSE 实时显示 0%/99%/100% 和 started/progress/warning/succeeded，并以 job GET 对账；刷新后成功保存 `global.timezone=Asia/Singapore`，不再回退到 token/password 输入 |
 | R-131 | `test-env/scripts/server-console-m1c-browser-e2e.sh`；`test-env/helpers/console-jobs-fixture`；Google Chrome Beta | 与 R-103 相同；同一 run17 覆盖明文 bootstrap 与 HTTPS full | 2026-09-02 | 通过：bootstrap 普通 apply `job_cb55b784718b815664198038fe6bf933`、full 普通 apply `job_a2a94aac1e273b8089900beef1c8ec8d` 均在 99% 原样显示 `modules.m1c_fixture.config.marker (data_migrate; migrate-m1c-fixture-marker)`；输入 `APPLY` 并重新生成 confirmation/本地 step-up 后，bootstrap `job_d3899c7c246c1a93f9f6b2166595c524` 与 full `job_01e418223946c09a00ee78e0e8e58e17` 均成功到 100% |
 | R-133 | 待补 | | | |

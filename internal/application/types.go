@@ -106,13 +106,35 @@ type VersionResult struct {
 }
 
 type StatusResult struct {
-	Workspace           string   `json:"workspace"`
-	ActiveDeployment    *string  `json:"active_deployment"`
-	RuntimeStatus       *string  `json:"runtime_status"`
-	ActivatedAt         *string  `json:"activated_at"`
-	VerifiedAt          *string  `json:"verified_at"`
-	Transaction         *string  `json:"transaction"`
-	PreviousDeployments []string `json:"previous_deployments"`
+	Workspace           string                `json:"workspace"`
+	ActiveDeployment    *string               `json:"active_deployment"`
+	RuntimeStatus       *string               `json:"runtime_status"`
+	RuntimeHealthy      *bool                 `json:"runtime_healthy"`
+	RuntimeProbeError   *string               `json:"runtime_probe_error"`
+	ModuleRuntime       []ModuleRuntimeStatus `json:"module_runtime"`
+	ActivatedAt         *string               `json:"activated_at"`
+	VerifiedAt          *string               `json:"verified_at"`
+	Transaction         *string               `json:"transaction"`
+	PreviousDeployments []string              `json:"previous_deployments"`
+}
+
+// RuntimeProbe reads the live container runtime. Persisted active.yml state is
+// deployment history and must never be presented as current container health.
+type RuntimeProbe interface {
+	InspectRuntime(context.Context, string, string) (RuntimeSummary, error)
+}
+
+type RuntimeSummary struct {
+	Status  string                `json:"status"`
+	Healthy *bool                 `json:"healthy"`
+	Modules []ModuleRuntimeStatus `json:"modules"`
+}
+
+type ModuleRuntimeStatus struct {
+	Module     string `json:"module"`
+	Runtime    string `json:"runtime"`
+	Health     string `json:"health"`
+	Containers int    `json:"containers"`
 }
 
 type ListDeploymentsRequest struct {

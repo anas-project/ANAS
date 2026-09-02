@@ -510,7 +510,7 @@ func copyDeploymentTreeContext(ctx context.Context, restricted bool, src, dst st
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		command = exec.CommandContext(ctx, "cp", "-a", "--reflink=always", src, dst)
+		command = externalCommandContext(ctx, "cp", "-a", "--reflink=always", src, dst)
 		command.Env = restrictedBaseProcessEnvironment()
 		command.Stdout, command.Stderr = io.Discard, io.Discard
 	} else {
@@ -550,7 +550,7 @@ func runSnapshotBtrfs(opts snapshotOptions, args ...string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	cmd := exec.CommandContext(ctx, "btrfs", args...)
+	cmd := externalCommandContext(ctx, "btrfs", args...)
 	cmd.Env = restrictedBaseProcessEnvironment()
 	output, err := cmd.CombinedOutput()
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -19,7 +20,10 @@ import (
 )
 
 type fakeDeploymentService struct {
-	apply func(context.Context, application.ApplyRequest) (application.ApplyResult, error)
+	apply      func(context.Context, application.ApplyRequest) (application.ApplyResult, error)
+	lifecycle  func(context.Context, application.LifecycleRequest) (application.LifecycleResult, error)
+	rollback   func(context.Context, application.RollbackRequest) (application.RollbackResult, error)
+	compensate func(context.Context) error
 }
 
 type recordingDeploymentAudit struct {
@@ -47,6 +51,141 @@ func (*fakeDeploymentService) Plan(context.Context, application.PlanRequest) (ap
 
 func (service *fakeDeploymentService) Apply(ctx context.Context, request application.ApplyRequest) (application.ApplyResult, error) {
 	return service.apply(ctx, request)
+}
+
+func (*fakeDeploymentService) PreviewLifecycle(context.Context, application.LifecyclePreviewRequest) (application.LifecyclePreviewResult, error) {
+	return application.LifecyclePreviewResult{}, nil
+}
+
+func (service *fakeDeploymentService) ExecuteLifecycle(ctx context.Context, request application.LifecycleRequest) (application.LifecycleResult, error) {
+	if service.lifecycle == nil {
+		return application.LifecycleResult{}, errors.New("unexpected lifecycle call")
+	}
+	return service.lifecycle(ctx, request)
+}
+
+func (*fakeDeploymentService) PreviewRollback(context.Context, application.RollbackPreviewRequest) (application.RollbackPreviewResult, error) {
+	return application.RollbackPreviewResult{}, nil
+}
+
+func (service *fakeDeploymentService) Rollback(ctx context.Context, request application.RollbackRequest) (application.RollbackResult, error) {
+	if service.rollback == nil {
+		return application.RollbackResult{}, errors.New("unexpected rollback call")
+	}
+	return service.rollback(ctx, request)
+}
+
+func (service *fakeDeploymentService) CheckCompensation(ctx context.Context) error {
+	if service.compensate != nil {
+		return service.compensate(ctx)
+	}
+	return nil
+}
+
+func TestExecutorCancelsRunningJobOnlyAtRegisteredStageAndChecksCompensation(t *testing.T) {
+	store := openExecutorStore(t)
+	job := createApplyJob(t, store, "main", "cancel-running", application.ApplyRequest{})
+	started := make(chan struct{})
+	compensated := make(chan struct{})
+	var startOnce, compensationOnce sync.Once
+	executor, err := New(Options{
+		Store: store, Audit: deploymentaudit.SinkFunc(func(context.Context, deploymentaudit.Event) error { return nil }),
+		Workspaces: []Workspace{{ID: "main", Path: "/main"}}, PollInterval: 5 * time.Millisecond,
+		DeploymentFactory: func(string, application.EventSink) application.DeploymentService {
+			return &fakeDeploymentService{
+				apply: func(ctx context.Context, _ application.ApplyRequest) (application.ApplyResult, error) {
+					startOnce.Do(func() { close(started) })
+					<-ctx.Done()
+					return application.ApplyResult{}, ctx.Err()
+				},
+				compensate: func(context.Context) error {
+					compensationOnce.Do(func() { close(compensated) })
+					return nil
+				},
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- executor.Run(ctx) }()
+	executor.Notify("main")
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		stop()
+		t.Fatal("job did not enter its cancellable execution stage")
+	}
+	if _, err := executor.Cancel(context.Background(), job.ID); err != nil {
+		stop()
+		t.Fatal(err)
+	}
+	select {
+	case <-compensated:
+	case <-time.After(2 * time.Second):
+		stop()
+		t.Fatal("canceled job did not enter compensation check")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		stored, err := store.Get(context.Background(), job.ID)
+		if err != nil {
+			stop()
+			t.Fatal(err)
+		}
+		if stored.Status == consolejobs.StatusCanceled && !stored.NeedsCompensationCheck {
+			break
+		}
+		if time.Now().After(deadline) {
+			stop()
+			t.Fatalf("canceled job compensation was not acknowledged: %#v", stored)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	stop()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.Replay(context.Background(), job.ID, consolejobs.ReplayOptions{Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"started", "cancel_requested", "canceled"}
+	if len(page.Events) != len(want) {
+		t.Fatalf("cancellation events = %#v", page.Events)
+	}
+	for index, kind := range want {
+		if page.Events[index].Kind != kind {
+			t.Fatalf("event %d = %q, want %q", index, page.Events[index].Kind, kind)
+		}
+	}
+}
+
+func TestExecutorCancelsQueuedJobWithoutStartingIt(t *testing.T) {
+	store := openExecutorStore(t)
+	job := createApplyJob(t, store, "main", "cancel-queued", application.ApplyRequest{})
+	executor, err := New(Options{
+		Store: store, Audit: deploymentaudit.SinkFunc(func(context.Context, deploymentaudit.Event) error { return nil }),
+		Workspaces: []Workspace{{ID: "main", Path: "/main"}},
+		DeploymentFactory: func(string, application.EventSink) application.DeploymentService {
+			return &fakeDeploymentService{apply: func(context.Context, application.ApplyRequest) (application.ApplyResult, error) {
+				t.Fatal("queued canceled job was executed")
+				return application.ApplyResult{}, nil
+			}}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canceled, err := executor.Cancel(context.Background(), job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canceled.Status != consolejobs.StatusCanceled || canceled.StartedAt != nil || canceled.NeedsCompensationCheck {
+		t.Fatalf("queued cancellation = %#v", canceled)
+	}
 }
 
 func TestExecutorRunsApplyFromDaemonContextAndPersistsEventsBeforeSuccess(t *testing.T) {
@@ -131,6 +270,59 @@ func TestExecutorRunsApplyFromDaemonContextAndPersistsEventsBeforeSuccess(t *tes
 		if event.Action != deploymentaudit.ActionApply || event.Actor != "local-owner" || event.IdentitySource != "local" || event.WorkspaceID != "main" || event.JobID != job.ID || event.PlanJobID == "" || event.ConfigValidator != request.ExpectedConfigValidator || event.PlanDigest != request.ExpectedPlanDigest {
 			t.Fatalf("deployment audit binding = %#v", event)
 		}
+	}
+}
+
+func TestExecutorDispatchesTypedLifecycleJobWithoutCLIProcess(t *testing.T) {
+	store := openExecutorStore(t)
+	request := application.LifecycleRequest{
+		Action: application.LifecycleRestart, Modules: []string{"db"}, ExpectedDeploymentID: "dep-active",
+		ExpectedDigest: strings.Repeat("a", 64), ExpectedModules: []string{"db", "app"},
+	}
+	payload, err := jsonObject(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.CreateOrGet(context.Background(), consolejobs.CreateSpec{
+		Kind: KindDeploymentRestart, WorkspaceID: "main", Mutating: true, Request: payload,
+		Idempotency: consolejobs.IdempotencyInput{
+			Principal: consolejobs.PrincipalLocalOwner, Method: "POST", CanonicalPath: "/lifecycle/restart",
+			Key: "restart", RequestDigest: consolejobs.DigestRequest([]byte("restart")),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var received application.LifecycleRequest
+	executor, err := New(Options{
+		Store: store, Audit: deploymentaudit.SinkFunc(func(context.Context, deploymentaudit.Event) error { return nil }),
+		Workspaces: []Workspace{{ID: "main", Path: "/main"}}, PollInterval: 5 * time.Millisecond,
+		DeploymentFactory: func(string, application.EventSink) application.DeploymentService {
+			return &fakeDeploymentService{
+				apply: func(context.Context, application.ApplyRequest) (application.ApplyResult, error) {
+					return application.ApplyResult{}, nil
+				},
+				lifecycle: func(_ context.Context, incoming application.LifecycleRequest) (application.LifecycleResult, error) {
+					received = incoming
+					return application.LifecycleResult{DeploymentID: incoming.ExpectedDeploymentID, Action: incoming.Action, Modules: incoming.ExpectedModules}, nil
+				},
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- executor.Run(ctx) }()
+	executor.Notify("main")
+	completed := waitForJobStatus(t, store, created.Job.ID, consolejobs.StatusSucceeded)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !received.Confirmed || !reflect.DeepEqual(received.ExpectedModules, []string{"db", "app"}) || completed.Result["action"] != "restart" {
+		t.Fatalf("typed lifecycle request = %#v, result = %#v", received, completed.Result)
 	}
 }
 
@@ -224,7 +416,7 @@ func TestPublicJobErrorProjectsOnlyGuardedChangeBlockers(t *testing.T) {
 	projected := publicJobError(&application.Error{
 		Kind: application.ErrorKindFailedPrecondition, Code: "guarded_changes", Message: "private runner message",
 		Detail: map[string]any{"blocked": blockers, "private_path": "/srv/anas"},
-	})
+	}, KindDeploymentApply)
 	if projected.Code != "guarded_changes" || projected.Message != "deployment apply failed" || projected.Detail == nil {
 		t.Fatalf("projected job error = %#v", projected)
 	}
@@ -242,7 +434,7 @@ func TestPublicJobErrorProjectsOnlyGuardedChangeBlockers(t *testing.T) {
 	other := publicJobError(&application.Error{
 		Kind: application.ErrorKindFailedPrecondition, Code: "plan_changed", Message: "changed",
 		Detail: map[string]any{"blocked": blockers},
-	})
+	}, KindDeploymentApply)
 	if other.Detail != nil {
 		t.Fatalf("non-guarded error exposed blocker detail: %#v", other)
 	}

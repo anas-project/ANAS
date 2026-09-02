@@ -504,6 +504,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/jobs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque durable job ID, never a workspace path or command argument. */
+                id: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a queued job or request cancellation at a safe execution stage
+         * @description Queued jobs transition directly to canceled. A running job accepts the
+         *     request only while its executor-owned context is registered at a safe
+         *     stage; otherwise the request returns 409 without changing execution.
+         *     Accepted running cancellation sends TERM to each active external
+         *     command process group, waits the grace period, sends KILL, and runs the
+         *     workspace compensation check before clearing its durable marker.
+         */
+        post: operations["cancelJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{ws}/plans": {
         parameters: {
             query?: never;
@@ -556,6 +584,62 @@ export interface paths {
          *     returns 409. Trusted-proxy full apply remains hidden.
          */
         post: operations["applyWorkspaceDeployment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/modules/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                action: "start" | "stop" | "restart";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview or enqueue a dependency-safe Module lifecycle action
+         * @description A request containing only `modules` returns the runner-expanded chain.
+         *     To execute, repeat the exact deployment ID, digest, and affected Module
+         *     list returned by that preview and supply Idempotency-Key. The handler
+         *     recomputes the preview before enqueue, and the job-owned application
+         *     service recomputes it again under the runtime lock before touching
+         *     containers. An empty modules list means the whole active deployment.
+         */
+        post: operations["manageWorkspaceModules"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/actions/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview or enqueue an artifact-only deployment rollback
+         * @description A request containing only an explicit deployment_id returns guarded
+         *     changes and confirms that data is not touched. To execute, repeat the
+         *     active deployment, preview digest, target deployment, and exact guarded
+         *     change list, select allow_risky explicitly, and supply Idempotency-Key.
+         *     The job revalidates that impact under the runtime lock.
+         */
+        post: operations["rollbackWorkspaceDeployment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -850,6 +934,52 @@ export interface components {
             api_version: components["schemas"]["APIVersion"];
             job: components["schemas"]["JobSummary"];
             existing: boolean;
+        };
+        LifecycleActionRequest: {
+            modules: string[];
+            /** @description Required only when executing a previously returned preview. */
+            expected_deployment_id?: string;
+            expected_digest?: components["schemas"]["PlanDigest"];
+            /** @description Required only for execution and must exactly equal preview.affected_modules in order. */
+            confirmed_modules?: string[];
+        };
+        LifecyclePreviewResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            workspace_id: string;
+            preview: components["schemas"]["LifecyclePreview"];
+        };
+        LifecyclePreview: {
+            deployment_id: string;
+            /** @enum {string} */
+            action: "start" | "stop" | "restart";
+            requested_modules: string[];
+            affected_modules: string[];
+            digest: components["schemas"]["PlanDigest"];
+        };
+        RollbackActionRequest: {
+            deployment_id: string;
+            /** @description Required only when executing a previously returned preview. */
+            expected_active_deployment?: string;
+            expected_digest?: components["schemas"]["PlanDigest"];
+            /** @description Required only for execution and explicit even when false. */
+            allow_risky?: boolean;
+            /** @description Required only for execution and must equal the preview target. */
+            confirmed_deployment_id?: string;
+            /** @description Required only for execution and must exactly equal preview.guarded_changes in order. */
+            confirmed_guarded_changes?: string[];
+        };
+        RollbackPreviewResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            workspace_id: string;
+            preview: components["schemas"]["RollbackPreview"];
+        };
+        RollbackPreview: {
+            active_deployment: string;
+            target_deployment: string;
+            guarded_changes: string[];
+            /** @constant */
+            data_touched: false;
+            digest: components["schemas"]["PlanDigest"];
         };
         /** @enum {string} */
         ControlPlaneState: "bootstrap" | "enrollment" | "full";
@@ -1200,9 +1330,26 @@ export interface components {
             api_version: components["schemas"]["APIVersion"];
             workspace_id: string;
             active_deployment: components["schemas"]["NullableString"];
+            /**
+             * @description Live Compose-derived aggregate; never copied from active.yml.
+             * @enum {string|null}
+             */
+            runtime_status: "running" | "stopped" | "degraded" | "not_applicable" | "unknown" | null;
+            runtime_healthy: components["schemas"]["NullableBoolean"];
+            /** @enum {string|null} */
+            runtime_probe_error: "runtime_probe_unavailable" | "runtime_probe_failed" | null;
+            module_runtime: components["schemas"]["ModuleRuntimeStatus"][];
             activated_at: components["schemas"]["NullableTimestamp"];
             verified_at: components["schemas"]["NullableTimestamp"];
             previous_deployments: string[];
+        };
+        ModuleRuntimeStatus: {
+            module: string;
+            /** @enum {string} */
+            runtime: "running" | "stopped" | "degraded" | "not_applicable";
+            /** @enum {string} */
+            health: "healthy" | "unhealthy" | "starting" | "none" | "not_applicable";
+            containers: number;
         };
         DeploymentListResponse: {
             api_version: components["schemas"]["APIVersion"];
@@ -1336,6 +1483,7 @@ export interface components {
             format?: string;
         };
         NullableString: string | null;
+        NullableBoolean: boolean | null;
         NullableTimestamp: string | null;
         Problem: {
             api_version: components["schemas"]["APIVersion"];
@@ -1571,6 +1719,8 @@ export interface components {
         Cursor: string;
         /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
         IdempotencyKey: string;
+        /** @description Required when a confirmed preview is submitted for job creation; omit for preview-only requests. */
+        OptionalIdempotencyKey: string;
         /**
          * @description Required only when replacing an existing managed configuration. Supply
          *     exactly one strong ETag returned by GET. Lists, weak tags, and `*` are
@@ -2282,6 +2432,50 @@ export interface operations {
             504: components["responses"]["DeadlineProblem"];
         };
     };
+    cancelJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+            };
+            path: {
+                /** @description Opaque durable job ID, never a workspace path or command argument. */
+                id: components["parameters"]["JobID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["EmptyObject"];
+            };
+        };
+        responses: {
+            /** @description The queued job was canceled or a safe-stage cancellation request was delivered. */
+            202: {
+                headers: {
+                    /** @description Relative URL of the durable job resource. */
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDetailResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
     planWorkspaceDeployment: {
         parameters: {
             query?: never;
@@ -2347,6 +2541,121 @@ export interface operations {
         };
         responses: {
             /** @description The apply job was durably queued, or an identical existing job was returned. */
+            202: {
+                headers: {
+                    /** @description Relative URL of the durable job resource. */
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentApplyResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            428: components["responses"]["PreconditionRequiredProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    manageWorkspaceModules: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Required when a confirmed preview is submitted for job creation; omit for preview-only requests. */
+                "Idempotency-Key"?: components["parameters"]["OptionalIdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                action: "start" | "stop" | "restart";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LifecycleActionRequest"];
+            };
+        };
+        responses: {
+            /** @description The current dependency-expanded action preview. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifecyclePreviewResponse"];
+                };
+            };
+            /** @description The lifecycle job was durably queued, or an identical existing job was returned. */
+            202: {
+                headers: {
+                    /** @description Relative URL of the durable job resource. */
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentApplyResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            428: components["responses"]["PreconditionRequiredProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    rollbackWorkspaceDeployment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Required when a confirmed preview is submitted for job creation; omit for preview-only requests. */
+                "Idempotency-Key"?: components["parameters"]["OptionalIdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollbackActionRequest"];
+            };
+        };
+        responses: {
+            /** @description The current rollback impact preview. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RollbackPreviewResponse"];
+                };
+            };
+            /** @description The rollback job was durably queued, or an identical existing job was returned. */
             202: {
                 headers: {
                     /** @description Relative URL of the durable job resource. */

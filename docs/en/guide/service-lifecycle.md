@@ -26,6 +26,17 @@ anas deployments inspect <id> -w /srv/anas
 
 For named modules, the runner expands prerequisites or dependants and processes the complete chain in dependency-safe order.
 
+The full administration console can also run `start`, `stop`, and `restart`. After a named Module is selected,
+the browser requests a server preview and displays the complete ordered chain expanded by the Runner from the
+active deployment. A durable job is created only after that exact chain is confirmed. An empty selection means
+the whole active deployment. If the deployment, digest, or dependency graph changes before confirmation, the
+server rejects the stale preview. Runtime and health shown by the console come from a live Compose probe rather
+than deployment state files.
+
+A running lifecycle job accepts cancellation only during a server-declared safe stage. Cancellation terminates
+the whole external process group and runs a compensation check after the terminal job state. A job that has
+already entered an unsafe stage rejects cancellation instead of pretending that execution stopped.
+
 ## Roll back
 
 A deployment rollback fixes a bad artifact or configuration. A snapshot restore fixes persistent data that has already changed:

@@ -610,7 +610,7 @@ func validPersistedJobAdvance(previous, next Job) bool {
 
 	switch previous.Status {
 	case StatusQueued:
-		if next.Status == StatusRunning {
+		if next.Status == StatusRunning || next.Status == StatusCanceled {
 			return validPersistedJobUpdate(previous, next)
 		}
 		return next.Status.terminal() && next.StartedAt != nil && next.Revision-previous.Revision >= 2

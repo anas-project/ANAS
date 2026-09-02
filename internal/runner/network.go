@@ -75,7 +75,7 @@ func (a *app) ensureMacvlan() error {
 	if exists {
 		return nil
 	}
-	cmd := exec.CommandContext(ctx, "docker", networkCreateArgs(name, a.env)...)
+	cmd := externalCommandContext(ctx, "docker", networkCreateArgs(name, a.env)...)
 	cmd.Env = environment
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
 	if err := cmd.Run(); err != nil {
@@ -309,13 +309,13 @@ func probeCommand(namespacePath, name string, args ...string) (*exec.Cmd, error)
 func probeCommandContext(ctx context.Context, environment []string, namespacePath, name string, args ...string) (*exec.Cmd, error) {
 	var cmd *exec.Cmd
 	if namespacePath == "" {
-		cmd = exec.CommandContext(ctx, name, args...)
+		cmd = externalCommandContext(ctx, name, args...)
 	} else {
 		if !filepath.IsAbs(namespacePath) {
 			return nil, fmt.Errorf("NETWORK_NAMESPACE_PATH must be absolute: %q", namespacePath)
 		}
 		full := append([]string{"nsenter", "--net=" + filepath.Clean(namespacePath), name}, args...)
-		cmd = exec.CommandContext(ctx, "sudo", full...)
+		cmd = externalCommandContext(ctx, "sudo", full...)
 	}
 	cmd.Env = append([]string(nil), environment...)
 	return cmd, nil
@@ -394,7 +394,7 @@ func runHostNetHelperContext(ctx context.Context, environment []string, env map[
 	if err != nil {
 		return err
 	}
-	cmd := exec.CommandContext(ctx, commandArgs[0], commandArgs[1:]...)
+	cmd := externalCommandContext(ctx, commandArgs[0], commandArgs[1:]...)
 	cmd.Env = append([]string(nil), environment...)
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
 	if err := cmd.Run(); err != nil {
@@ -448,11 +448,11 @@ func (a *app) removeMacvlan() error {
 	if name == "" {
 		name = macvlanNetworkName
 	}
-	inspect := exec.CommandContext(ctx, "docker", "network", "inspect", name)
+	inspect := externalCommandContext(ctx, "docker", "network", "inspect", name)
 	inspect.Env = environment
 	inspect.Stdout, inspect.Stderr = io.Discard, io.Discard
 	if err := inspect.Run(); err == nil {
-		remove := exec.CommandContext(ctx, "docker", "network", "rm", name)
+		remove := externalCommandContext(ctx, "docker", "network", "rm", name)
 		remove.Env = environment
 		remove.Stdout, remove.Stderr = io.Discard, io.Discard
 		if err := remove.Run(); err != nil {
@@ -506,7 +506,7 @@ func inspectMacvlan(name string, env map[string]string) (matches, exists bool, e
 }
 
 func inspectMacvlanContext(ctx context.Context, environment []string, name string, env map[string]string) (matches, exists bool, err error) {
-	cmd := exec.CommandContext(ctx, "docker", "network", "inspect", name)
+	cmd := externalCommandContext(ctx, "docker", "network", "inspect", name)
 	cmd.Env = append([]string(nil), environment...)
 	out, cmdErr := cmd.Output()
 	if cmdErr != nil {

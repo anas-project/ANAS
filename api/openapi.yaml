@@ -2,9 +2,9 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: ANAS Web API
-  version: 0.6.0-m15
+  version: 0.7.0-m2
   description: |
-    M1.5 API for the ANAS administration daemon. This contract is versioned
+    M2 API for the ANAS administration daemon. This contract is versioned
     independently from the CLI JSON contract: HTTP responses use
     `anas.dev/api/v1`, while the CLI continues to use `anas.dev/cli/v1`.
 
@@ -21,7 +21,8 @@ info:
     immutable assets embedded in `anasd`. M1.5 adds a
     separate mTLS trusted-proxy listener whose verified OIDC directory identity
     receives the same management capabilities while local-account routes remain
-    direct-listener only.
+    direct-listener only. M2 adds live container health, dependency-expanded
+    Module lifecycle previews and durable start/stop/restart/rollback jobs.
     Saving desired configuration does not apply it. A disallowed
     state, listener, or transport is deliberately indistinguishable from an
     unknown path and returns 404.
@@ -1018,6 +1019,82 @@ paths:
           $ref: "#/components/responses/ServiceUnavailableProblem"
         "504":
           $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/jobs/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/JobID"
+    post:
+      operationId: cancelJob
+      summary: Cancel a queued job or request cancellation at a safe execution stage
+      description: |
+        Queued jobs transition directly to canceled. A running job accepts the
+        request only while its executor-owned context is registered at a safe
+        stage; otherwise the request returns 409 without changing execution.
+        Accepted running cancellation sends TERM to each active external
+        command process group, waits the grace period, sends KILL, and runs the
+        workspace compensation check before clearing its durable marker.
+      tags: [Jobs]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - bootstrapSessionCookie: []
+          csrfHeader: []
+        - enrollmentSessionCookie: []
+          csrfHeader: []
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: job.cancel
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        bootstrap: {authentication: bootstrap, transports: [plaintext, tls]}
+        enrollment: {authentication: bootstrap, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmptyObject"
+      responses:
+        "202":
+          description: The queued job was canceled or a safe-stage cancellation request was delivered.
+          headers:
+            Location:
+              description: Relative URL of the durable job resource.
+              required: true
+              schema:
+                type: string
+                pattern: "^/api/v1/jobs/[^/]+$"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetailResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "409":
+          $ref: "#/components/responses/ConflictProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
   /api/v1/workspaces/{ws}/plans:
     parameters:
       - $ref: "#/components/parameters/WorkspaceID"
@@ -1123,6 +1200,173 @@ paths:
       responses:
         "202":
           description: The apply job was durably queued, or an identical existing job was returned.
+          headers:
+            Location:
+              description: Relative URL of the durable job resource.
+              required: true
+              schema:
+                type: string
+                pattern: "^/api/v1/jobs/[^/]+$"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentApplyResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "409":
+          $ref: "#/components/responses/ConflictProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "428":
+          $ref: "#/components/responses/PreconditionRequiredProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/modules/actions/{action}:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - name: action
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [start, stop, restart]
+    post:
+      operationId: manageWorkspaceModules
+      summary: Preview or enqueue a dependency-safe Module lifecycle action
+      description: |
+        A request containing only `modules` returns the runner-expanded chain.
+        To execute, repeat the exact deployment ID, digest, and affected Module
+        list returned by that preview and supply Idempotency-Key. The handler
+        recomputes the preview before enqueue, and the job-owned application
+        service recomputes it again under the runtime lock before touching
+        containers. An empty modules list means the whole active deployment.
+      tags: [Modules]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/OptionalIdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: deployment.lifecycle
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LifecycleActionRequest"
+      responses:
+        "200":
+          description: The current dependency-expanded action preview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecyclePreviewResponse"
+        "202":
+          description: The lifecycle job was durably queued, or an identical existing job was returned.
+          headers:
+            Location:
+              description: Relative URL of the durable job resource.
+              required: true
+              schema:
+                type: string
+                pattern: "^/api/v1/jobs/[^/]+$"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentApplyResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "409":
+          $ref: "#/components/responses/ConflictProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "428":
+          $ref: "#/components/responses/PreconditionRequiredProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/actions/rollback:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    post:
+      operationId: rollbackWorkspaceDeployment
+      summary: Preview or enqueue an artifact-only deployment rollback
+      description: |
+        A request containing only an explicit deployment_id returns guarded
+        changes and confirms that data is not touched. To execute, repeat the
+        active deployment, preview digest, target deployment, and exact guarded
+        change list, select allow_risky explicitly, and supply Idempotency-Key.
+        The job revalidates that impact under the runtime lock.
+      tags: [Deployments]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/OptionalIdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: deployment.rollback
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RollbackActionRequest"
+      responses:
+        "200":
+          description: The current rollback impact preview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RollbackPreviewResponse"
+        "202":
+          description: The rollback job was durably queued, or an identical existing job was returned.
           headers:
             Location:
               description: Relative URL of the durable job resource.
@@ -1776,6 +2020,16 @@ components:
         minLength: 1
         maxLength: 256
         pattern: "^[!-~]+$"
+    OptionalIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Required when a confirmed preview is submitted for job creation; omit for preview-only requests.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
+        pattern: "^[!-~]+$"
     ConfigIfMatch:
       name: If-Match
       in: header
@@ -2178,6 +2432,128 @@ components:
           $ref: "#/components/schemas/JobSummary"
         existing:
           type: boolean
+    LifecycleActionRequest:
+      type: object
+      additionalProperties: false
+      required: [modules]
+      properties:
+        modules:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+        expected_deployment_id:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Required only when executing a previously returned preview.
+        expected_digest:
+          $ref: "#/components/schemas/PlanDigest"
+        confirmed_modules:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+          description: Required only for execution and must exactly equal preview.affected_modules in order.
+    LifecyclePreviewResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, preview]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+          minLength: 1
+        preview:
+          $ref: "#/components/schemas/LifecyclePreview"
+    LifecyclePreview:
+      type: object
+      additionalProperties: false
+      required: [deployment_id, action, requested_modules, affected_modules, digest]
+      properties:
+        deployment_id:
+          type: string
+          minLength: 1
+          maxLength: 255
+        action:
+          type: string
+          enum: [start, stop, restart]
+        requested_modules:
+          type: array
+          items:
+            type: string
+        affected_modules:
+          type: array
+          items:
+            type: string
+        digest:
+          $ref: "#/components/schemas/PlanDigest"
+    RollbackActionRequest:
+      type: object
+      additionalProperties: false
+      required: [deployment_id]
+      properties:
+        deployment_id:
+          type: string
+          minLength: 1
+          maxLength: 255
+        expected_active_deployment:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Required only when executing a previously returned preview.
+        expected_digest:
+          $ref: "#/components/schemas/PlanDigest"
+        allow_risky:
+          type: boolean
+          description: Required only for execution and explicit even when false.
+        confirmed_deployment_id:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Required only for execution and must equal the preview target.
+        confirmed_guarded_changes:
+          type: array
+          items:
+            type: string
+          description: Required only for execution and must exactly equal preview.guarded_changes in order.
+    RollbackPreviewResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, preview]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+          minLength: 1
+        preview:
+          $ref: "#/components/schemas/RollbackPreview"
+    RollbackPreview:
+      type: object
+      additionalProperties: false
+      required: [active_deployment, target_deployment, guarded_changes, data_touched, digest]
+      properties:
+        active_deployment:
+          type: string
+          minLength: 1
+          maxLength: 255
+        target_deployment:
+          type: string
+          minLength: 1
+          maxLength: 255
+        guarded_changes:
+          type: array
+          items:
+            type: string
+        data_touched:
+          type: boolean
+          const: false
+        digest:
+          $ref: "#/components/schemas/PlanDigest"
     ControlPlaneState:
       type: string
       enum: [bootstrap, enrollment, full]
@@ -2947,6 +3323,10 @@ components:
         - api_version
         - workspace_id
         - active_deployment
+        - runtime_status
+        - runtime_healthy
+        - runtime_probe_error
+        - module_runtime
         - activated_at
         - verified_at
         - previous_deployments
@@ -2957,6 +3337,19 @@ components:
           type: string
         active_deployment:
           $ref: "#/components/schemas/NullableString"
+        runtime_status:
+          type: [string, "null"]
+          enum: [running, stopped, degraded, not_applicable, unknown, null]
+          description: Live Compose-derived aggregate; never copied from active.yml.
+        runtime_healthy:
+          $ref: "#/components/schemas/NullableBoolean"
+        runtime_probe_error:
+          type: [string, "null"]
+          enum: [runtime_probe_unavailable, runtime_probe_failed, null]
+        module_runtime:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModuleRuntimeStatus"
         activated_at:
           $ref: "#/components/schemas/NullableTimestamp"
         verified_at:
@@ -2965,6 +3358,22 @@ components:
           type: array
           items:
             type: string
+    ModuleRuntimeStatus:
+      type: object
+      additionalProperties: false
+      required: [module, runtime, health, containers]
+      properties:
+        module:
+          type: string
+        runtime:
+          type: string
+          enum: [running, stopped, degraded, not_applicable]
+        health:
+          type: string
+          enum: [healthy, unhealthy, starting, none, not_applicable]
+        containers:
+          type: integer
+          minimum: 0
     DeploymentListResponse:
       type: object
       additionalProperties: false
@@ -3299,6 +3708,8 @@ components:
           type: string
     NullableString:
       type: [string, "null"]
+    NullableBoolean:
+      type: [boolean, "null"]
     NullableTimestamp:
       type: [string, "null"]
     Problem:

@@ -23,6 +23,7 @@ type deploymentReader interface {
 type Service struct {
 	workspace string
 	reader    deploymentReader
+	runtime   RuntimeProbe
 	version   VersionResult
 	events    EventSink
 	executor  moduleCommandExecutor
@@ -57,6 +58,13 @@ func (s *Service) WithEventSink(events EventSink) *Service {
 	return s
 }
 
+// WithRuntimeProbe binds a live runtime inspector. A nil probe remains an
+// explicit unknown result; Status never falls back to persisted RuntimeStatus.
+func (s *Service) WithRuntimeProbe(probe RuntimeProbe) *Service {
+	s.runtime = probe
+	return s
+}
+
 func (s *Service) Version(ctx context.Context) (VersionResult, error) {
 	if err := contextError(ctx); err != nil {
 		return VersionResult{}, err
@@ -73,15 +81,37 @@ func (s *Service) Status(ctx context.Context) (StatusResult, error) {
 		return StatusResult{}, newError(ErrorKindInternal, "state_unreadable", fmt.Sprintf("read active deployment state: %v", err), err)
 	}
 	previous := append([]string{}, active.PreviousDeployments...)
-	return StatusResult{
+	result := StatusResult{
 		Workspace:           s.workspace,
 		ActiveDeployment:    nullableString(active.ActiveDeployment),
-		RuntimeStatus:       nullableString(active.RuntimeStatus),
+		ModuleRuntime:       []ModuleRuntimeStatus{},
 		ActivatedAt:         nullableString(active.ActivatedAt),
 		VerifiedAt:          nullableString(active.VerifiedAt),
 		Transaction:         nullableString(active.Transaction),
 		PreviousDeployments: previous,
-	}, nil
+	}
+	if active.ActiveDeployment == "" {
+		result.RuntimeStatus = nullableString("stopped")
+		return result, nil
+	}
+	if s.runtime == nil {
+		result.RuntimeStatus = nullableString("unknown")
+		result.RuntimeProbeError = nullableString("runtime_probe_unavailable")
+		return result, nil
+	}
+	runtime, runtimeErr := s.runtime.InspectRuntime(ctx, s.workspace, active.ActiveDeployment)
+	if runtimeErr != nil {
+		if contextError(ctx) != nil {
+			return StatusResult{}, contextError(ctx)
+		}
+		result.RuntimeStatus = nullableString("unknown")
+		result.RuntimeProbeError = nullableString("runtime_probe_failed")
+		return result, nil
+	}
+	result.RuntimeStatus = nullableString(runtime.Status)
+	result.RuntimeHealthy = runtime.Healthy
+	result.ModuleRuntime = append([]ModuleRuntimeStatus{}, runtime.Modules...)
+	return result, nil
 }
 
 func (s *Service) ListDeployments(ctx context.Context, req ListDeploymentsRequest) (ListDeploymentsResult, error) {

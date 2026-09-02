@@ -34,12 +34,23 @@ type systemCapabilities struct {
 }
 
 type statusResponse struct {
-	APIVersion          string   `json:"api_version"`
-	WorkspaceID         string   `json:"workspace_id"`
-	ActiveDeployment    *string  `json:"active_deployment"`
-	ActivatedAt         *string  `json:"activated_at"`
-	VerifiedAt          *string  `json:"verified_at"`
-	PreviousDeployments []string `json:"previous_deployments"`
+	APIVersion          string             `json:"api_version"`
+	WorkspaceID         string             `json:"workspace_id"`
+	ActiveDeployment    *string            `json:"active_deployment"`
+	RuntimeStatus       *string            `json:"runtime_status"`
+	RuntimeHealthy      *bool              `json:"runtime_healthy"`
+	RuntimeProbeError   *string            `json:"runtime_probe_error"`
+	ModuleRuntime       []moduleRuntimeDTO `json:"module_runtime"`
+	ActivatedAt         *string            `json:"activated_at"`
+	VerifiedAt          *string            `json:"verified_at"`
+	PreviousDeployments []string           `json:"previous_deployments"`
+}
+
+type moduleRuntimeDTO struct {
+	Module     string `json:"module"`
+	Runtime    string `json:"runtime"`
+	Health     string `json:"health"`
+	Containers int    `json:"containers"`
 }
 
 type deploymentListResponse struct {
@@ -175,10 +186,20 @@ type deploymentStateDTO struct {
 
 func newStatusResponse(workspaceID string, result application.StatusResult) statusResponse {
 	previous := append([]string{}, result.PreviousDeployments...)
+	moduleRuntime := make([]moduleRuntimeDTO, 0, len(result.ModuleRuntime))
+	for _, module := range result.ModuleRuntime {
+		moduleRuntime = append(moduleRuntime, moduleRuntimeDTO{
+			Module: module.Module, Runtime: module.Runtime, Health: module.Health, Containers: module.Containers,
+		})
+	}
 	return statusResponse{
 		APIVersion:          APIVersion,
 		WorkspaceID:         workspaceID,
 		ActiveDeployment:    result.ActiveDeployment,
+		RuntimeStatus:       result.RuntimeStatus,
+		RuntimeHealthy:      result.RuntimeHealthy,
+		RuntimeProbeError:   result.RuntimeProbeError,
+		ModuleRuntime:       moduleRuntime,
 		ActivatedAt:         result.ActivatedAt,
 		VerifiedAt:          result.VerifiedAt,
 		PreviousDeployments: previous,

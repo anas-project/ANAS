@@ -20,16 +20,23 @@ import (
 )
 
 const (
-	KindDeploymentApply  = "deployment.apply"
-	defaultPollInterval  = 250 * time.Millisecond
-	terminalWriteTimeout = 10 * time.Second
+	KindDeploymentApply    = "deployment.apply"
+	KindDeploymentStart    = "deployment.start"
+	KindDeploymentStop     = "deployment.stop"
+	KindDeploymentRestart  = "deployment.restart"
+	KindDeploymentRollback = "deployment.rollback"
+	defaultPollInterval    = 250 * time.Millisecond
+	terminalWriteTimeout   = 10 * time.Second
 )
 
 type Store interface {
+	Get(context.Context, string) (consolejobs.Job, error)
 	ClaimNextObserved(context.Context, string, consolejobs.JobCommitObserver) (consolejobs.Job, bool, error)
 	AppendEvent(context.Context, string, consolejobs.EventInput) (consolejobs.Event, error)
 	UpdateRunning(context.Context, string, consolejobs.ProgressUpdate) (consolejobs.Job, error)
 	TransitionObserved(context.Context, string, consolejobs.Status, consolejobs.TransitionInput, consolejobs.JobCommitObserver) (consolejobs.Job, error)
+	CancelQueuedObserved(context.Context, string, consolejobs.TransitionInput, consolejobs.EventInput, consolejobs.JobCommitObserver) (consolejobs.Job, error)
+	AcknowledgeCompensation(context.Context, string, string) (consolejobs.Job, error)
 }
 
 type Workspace struct {
@@ -57,6 +64,8 @@ type Executor struct {
 	onError           func(error)
 	wakeMu            sync.Mutex
 	wake              map[string]chan struct{}
+	runningMu         sync.Mutex
+	running           map[string]context.CancelFunc
 }
 
 func New(options Options) (*Executor, error) {
@@ -90,7 +99,44 @@ func New(options Options) (*Executor, error) {
 	return &Executor{
 		store: options.Store, audit: options.Audit, workspaces: workspaces, deploymentFactory: options.DeploymentFactory,
 		pollInterval: options.PollInterval, onError: options.OnError, wake: wake,
+		running: make(map[string]context.CancelFunc),
 	}, nil
+}
+
+// Cancel accepts cancellation only while the job is queued or while execute
+// has explicitly registered its job-owned context as a safe cancellation
+// stage. A running job outside that window is left untouched.
+func (executor *Executor) Cancel(ctx context.Context, jobID string) (consolejobs.Job, error) {
+	if executor == nil || executor.store == nil {
+		return consolejobs.Job{}, errors.New("job executor is unavailable")
+	}
+	job, err := executor.store.Get(ctx, jobID)
+	if err != nil {
+		return consolejobs.Job{}, err
+	}
+	switch job.Status {
+	case consolejobs.StatusQueued:
+		return executor.store.CancelQueuedObserved(ctx, job.ID, consolejobs.TransitionInput{
+			Error: &consolejobs.JobError{Code: "job_canceled", Message: "job was canceled before execution"},
+		}, consolejobs.EventInput{Kind: "canceled", Data: map[string]any{"stage": "queued"}},
+			executor.jobAuditObserver(deploymentaudit.StageJobCanceledAuthorized, "job_canceled"))
+	case consolejobs.StatusRunning:
+		executor.runningMu.Lock()
+		cancel := executor.running[job.ID]
+		if cancel == nil {
+			executor.runningMu.Unlock()
+			return consolejobs.Job{}, fmt.Errorf("%w: job is not at a safe cancellation stage", consolejobs.ErrConflict)
+		}
+		if _, err := executor.store.AppendEvent(ctx, job.ID, consolejobs.EventInput{Kind: "cancel_requested", Data: map[string]any{"stage": "execution"}}); err != nil {
+			executor.runningMu.Unlock()
+			return consolejobs.Job{}, err
+		}
+		cancel()
+		executor.runningMu.Unlock()
+		return job, nil
+	default:
+		return consolejobs.Job{}, fmt.Errorf("%w: job is already terminal", consolejobs.ErrConflict)
+	}
 }
 
 // Notify avoids waiting for the periodic durable-store poll after a request
@@ -167,11 +213,21 @@ func (executor *Executor) runWorkspace(ctx context.Context, workspaceID, workspa
 func (executor *Executor) execute(daemonContext context.Context, workspacePath string, job consolejobs.Job) {
 	jobContext, cancelJob := context.WithCancel(daemonContext)
 	defer cancelJob()
+	registered := false
+	defer func() {
+		if registered {
+			executor.unregisterRunning(job.ID)
+		}
+	}()
 	events := &durableEventSink{ctx: jobContext, cancel: cancelJob, store: executor.store, jobID: job.ID}
 	if err := events.append("started", map[string]any{"kind": job.Kind}); err != nil {
 		executor.report(fmt.Errorf("persist job %s start event: %w", job.ID, err))
 		return
 	}
+	executor.runningMu.Lock()
+	executor.running[job.ID] = cancelJob
+	executor.runningMu.Unlock()
+	registered = true
 
 	var result map[string]any
 	operationErr := error(nil)
@@ -194,17 +250,62 @@ func (executor *Executor) execute(daemonContext context.Context, workspacePath s
 			break
 		}
 		result, operationErr = jsonObject(applied)
+	case KindDeploymentStart, KindDeploymentStop, KindDeploymentRestart:
+		request, err := decodeLifecycleRequest(job.Request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		request.Confirmed = true
+		service := executor.deploymentFactory(workspacePath, events)
+		if service == nil {
+			operationErr = errors.New("deployment service is unavailable")
+			break
+		}
+		executed, err := service.ExecuteLifecycle(jobContext, request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		result, operationErr = jsonObject(executed)
+	case KindDeploymentRollback:
+		request, err := decodeRollbackRequest(job.Request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		request.Confirmed = true
+		service := executor.deploymentFactory(workspacePath, events)
+		if service == nil {
+			operationErr = errors.New("deployment service is unavailable")
+			break
+		}
+		rolledBack, err := service.Rollback(jobContext, request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		result, operationErr = jsonObject(rolledBack)
 	default:
 		operationErr = fmt.Errorf("unsupported durable job kind %q", job.Kind)
 	}
 	if eventErr := events.Err(); eventErr != nil {
 		operationErr = errors.Join(operationErr, fmt.Errorf("persist task event: %w", eventErr))
 	}
+	cancellationErr := executor.completeRunning(job.ID, jobContext)
+	registered = false
+	if operationErr == nil && cancellationErr != nil {
+		operationErr = cancellationErr
+	}
 
 	terminalContext, cancelTerminal := context.WithTimeout(context.WithoutCancel(daemonContext), terminalWriteTimeout)
 	defer cancelTerminal()
 	if daemonContext.Err() != nil {
 		executor.finishInterrupted(terminalContext, job, operationErr)
+		return
+	}
+	if errors.Is(operationErr, context.Canceled) {
+		executor.finishCanceled(terminalContext, workspacePath, job, operationErr)
 		return
 	}
 	if operationErr != nil {
@@ -225,8 +326,56 @@ func (executor *Executor) execute(daemonContext context.Context, workspacePath s
 	}
 }
 
+func (executor *Executor) unregisterRunning(jobID string) {
+	executor.runningMu.Lock()
+	delete(executor.running, jobID)
+	executor.runningMu.Unlock()
+}
+
+// completeRunning linearizes safe-stage removal against Cancel. If Cancel
+// acquired runningMu first, the context is canceled before this method can
+// remove the entry. If this method acquired it first, Cancel observes no safe
+// stage and returns a conflict.
+func (executor *Executor) completeRunning(jobID string, ctx context.Context) error {
+	executor.runningMu.Lock()
+	delete(executor.running, jobID)
+	err := ctx.Err()
+	executor.runningMu.Unlock()
+	return err
+}
+
+func (executor *Executor) finishCanceled(ctx context.Context, workspacePath string, job consolejobs.Job, cause error) {
+	jobError := &consolejobs.JobError{Code: "job_canceled", Message: "job execution was canceled"}
+	if _, err := executor.store.AppendEvent(ctx, job.ID, consolejobs.EventInput{
+		Kind: "canceled", Data: map[string]any{"error": map[string]any{"code": jobError.Code, "message": jobError.Message}},
+	}); err != nil {
+		executor.report(fmt.Errorf("persist job %s cancellation event: %w", job.ID, err))
+		return
+	}
+	if _, err := executor.store.TransitionObserved(ctx, job.ID, consolejobs.StatusCanceled, consolejobs.TransitionInput{
+		Error: jobError, NeedsCompensationCheck: true,
+	}, executor.jobAuditObserver(deploymentaudit.StageJobCanceledAuthorized, jobError.Code)); err != nil {
+		executor.report(fmt.Errorf("persist job %s canceled state: %w", job.ID, err))
+		return
+	}
+	compensationContext, cancelCompensation := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteTimeout)
+	defer cancelCompensation()
+	service := executor.deploymentFactory(workspacePath, application.NopEventSink{})
+	if service == nil {
+		executor.report(fmt.Errorf("job %s compensation service is unavailable after %v", job.ID, cause))
+		return
+	}
+	if err := service.CheckCompensation(compensationContext); err != nil {
+		executor.report(fmt.Errorf("job %s compensation check failed after %v: %w", job.ID, cause, err))
+		return
+	}
+	if _, err := executor.store.AcknowledgeCompensation(compensationContext, job.ID, "workspace compensation check completed"); err != nil {
+		executor.report(fmt.Errorf("acknowledge job %s compensation check: %w", job.ID, err))
+	}
+}
+
 func (executor *Executor) finishFailed(ctx context.Context, job consolejobs.Job, cause error) {
-	jobError := publicJobError(cause)
+	jobError := publicJobError(cause, job.Kind)
 	if _, err := executor.store.AppendEvent(ctx, job.ID, consolejobs.EventInput{
 		Kind: "failed", Data: map[string]any{"error": map[string]any{"code": jobError.Code, "message": jobError.Message}},
 	}); err != nil {
@@ -303,6 +452,41 @@ func decodeApplyRequest(value map[string]any) (application.ApplyRequest, error) 
 	return request, nil
 }
 
+func decodeLifecycleRequest(value map[string]any) (application.LifecycleRequest, error) {
+	var request application.LifecycleRequest
+	if err := decodeStoredRequest(value, &request); err != nil {
+		return application.LifecycleRequest{}, errors.New("stored lifecycle request is invalid")
+	}
+	if request.Action != application.LifecycleStart && request.Action != application.LifecycleStop && request.Action != application.LifecycleRestart {
+		return application.LifecycleRequest{}, errors.New("stored lifecycle request has an invalid action")
+	}
+	return request, nil
+}
+
+func decodeRollbackRequest(value map[string]any) (application.RollbackRequest, error) {
+	var request application.RollbackRequest
+	if err := decodeStoredRequest(value, &request); err != nil {
+		return application.RollbackRequest{}, errors.New("stored rollback request is invalid")
+	}
+	return request, nil
+}
+
+func decodeStoredRequest(value map[string]any, target any) error {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return errors.New("stored request has trailing data")
+	}
+	return nil
+}
+
 func jsonObject(value any) (map[string]any, error) {
 	body, err := json.Marshal(value)
 	if err != nil {
@@ -315,9 +499,18 @@ func jsonObject(value any) (map[string]any, error) {
 	return result, nil
 }
 
-func publicJobError(err error) *consolejobs.JobError {
+func publicJobError(err error, kind string) *consolejobs.JobError {
+	fallbackCode, message := "deployment_failed", "deployment operation failed"
+	switch kind {
+	case KindDeploymentApply:
+		fallbackCode, message = "apply_failed", "deployment apply failed"
+	case KindDeploymentStart, KindDeploymentStop, KindDeploymentRestart:
+		fallbackCode, message = "lifecycle_failed", "deployment lifecycle operation failed"
+	case KindDeploymentRollback:
+		fallbackCode, message = "rollback_failed", "deployment rollback failed"
+	}
 	if applicationError, ok := application.ErrorOf(err); ok && applicationError.Code != "" {
-		jobError := &consolejobs.JobError{Code: applicationError.Code, Message: "deployment apply failed"}
+		jobError := &consolejobs.JobError{Code: applicationError.Code, Message: message}
 		if applicationError.Code == "guarded_changes" {
 			if blocked := publicBlockedChanges(applicationError.Detail["blocked"]); len(blocked) > 0 {
 				jobError.Detail = &consolejobs.JobErrorDetail{Blocked: blocked}
@@ -325,7 +518,7 @@ func publicJobError(err error) *consolejobs.JobError {
 		}
 		return jobError
 	}
-	return &consolejobs.JobError{Code: "apply_failed", Message: "deployment apply failed"}
+	return &consolejobs.JobError{Code: fallbackCode, Message: message}
 }
 
 func publicBlockedChanges(value any) []string {

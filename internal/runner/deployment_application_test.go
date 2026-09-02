@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +14,65 @@ import (
 	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/modulestore"
 )
+
+func TestWorkspaceLifecyclePreviewExpandsFrozenDependenciesAndRejectsDrift(t *testing.T) {
+	workspace := newWorkspace(t)
+	bin := t.TempDir()
+	docker := filepath.Join(bin, "docker")
+	if err := os.WriteFile(docker, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	writeLifecycleDeploymentFixture(t, workspace, "dep-one")
+	if err := saveActiveState(stateDir(workspace), &activeDeploymentState{ActiveDeployment: "dep-one", RuntimeStatus: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	service := NewWorkspaceDeploymentService(workspace)
+	preview, err := service.PreviewLifecycle(context.Background(), application.LifecyclePreviewRequest{
+		Action: application.LifecycleRestart, Modules: []string{"db"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(preview.AffectedModules, ",") != "db,app" || preview.Digest == "" {
+		t.Fatalf("expanded lifecycle preview = %#v", preview)
+	}
+	_, err = service.ExecuteLifecycle(context.Background(), application.LifecycleRequest{
+		Action: application.LifecycleRestart, Modules: []string{"db"}, Confirmed: true,
+		ExpectedDeploymentID: preview.DeploymentID, ExpectedDigest: preview.Digest, ExpectedModules: []string{"db"},
+	})
+	assertDeploymentApplicationCode(t, err, application.ErrorKindFailedPrecondition, "lifecycle_preview_changed")
+
+	writeLifecycleDeploymentFixture(t, workspace, "dep-two")
+	if err := saveActiveState(stateDir(workspace), &activeDeploymentState{ActiveDeployment: "dep-two", RuntimeStatus: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.ExecuteLifecycle(context.Background(), application.LifecycleRequest{
+		Action: application.LifecycleRestart, Modules: []string{"db"}, Confirmed: true,
+		ExpectedDeploymentID: preview.DeploymentID, ExpectedDigest: preview.Digest, ExpectedModules: preview.AffectedModules,
+	})
+	assertDeploymentApplicationCode(t, err, application.ErrorKindFailedPrecondition, "lifecycle_preview_changed")
+}
+
+func writeLifecycleDeploymentFixture(t *testing.T, workspace, id string) {
+	t.Helper()
+	root := filepath.Join(stateDir(workspace), "deployments", id)
+	for _, module := range []string{"db", "app"} {
+		if err := os.MkdirAll(filepath.Join(root, "modules", module), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := &deploymentManifest{
+		APIVersion: deploymentAPIVersion, ID: id, ModuleOrder: []string{"db", "app"},
+		Modules: map[string]deploymentModule{
+			"db":  {Name: "db", RuntimeType: "builtin"},
+			"app": {Name: "app", RuntimeType: "builtin", Dependencies: []string{"db"}},
+		},
+	}
+	if err := writeYAMLAtomic(filepath.Join(root, "deployment.yml"), manifest, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestWorkspaceDeploymentPlanUsesPersistedViewAndOpaqueValidatorDigest(t *testing.T) {
 	workspace := newWorkspace(t)

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/anas-project/ANAS/internal/api/httpapi"
-	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/audit"
 	"github.com/anas-project/ANAS/internal/consoleaudit"
 	"github.com/anas-project/ANAS/internal/consoleauth"
@@ -203,7 +202,7 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	}
 	hostPolicy := httpapi.DirectHostPolicy{Mode: hostMode, AllowedDNSHosts: config.AllowedDNSHosts}
 	queryFactory := func(workspacePath string) httpapi.QueryService {
-		return application.NewService(workspacePath)
+		return runner.NewWorkspaceQueryService(workspacePath)
 	}
 	stateProvider := func(ctx context.Context) (httpapi.ConsoleState, error) {
 		state, err := stateStore.Current(ctx)
@@ -226,10 +225,11 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 			return err
 		},
 	}
-	jobOptions := httpapi.JobQueryOptions{Store: jobStore}
+	jobOptions := httpapi.JobQueryOptions{Store: jobStore, Cancel: executor.Cancel}
 	configOptions := httpapi.ConfigOptions{Factory: runner.NewWorkspaceConfigService, Audit: configAuditSink{writer: auditWriter, logger: logger}}
 	deploymentOptions := httpapi.DeploymentOptions{
-		PlanFactory: runner.NewWorkspaceDeploymentPlanService, Store: jobStore, Audit: deploymentAudit,
+		PlanFactory: runner.NewWorkspaceDeploymentPlanService, ServiceFactory: runner.NewWorkspaceDeploymentService,
+		Store: jobStore, Audit: deploymentAudit,
 		StepUp: authStore, Notify: executor.Notify,
 	}
 	auditOptions := httpapi.AuditQueryOptions{Store: auditWriter}

@@ -14,8 +14,8 @@ func TestEveryRouteDeclaresSecurityMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inventory) != 32 {
-		t.Fatalf("route inventory contains %d routes, want 32", len(inventory))
+	if len(inventory) != 35 {
+		t.Fatalf("route inventory contains %d routes, want 35", len(inventory))
 	}
 	for _, policy := range inventory {
 		if err := validateRoutePolicy(policy); err != nil {

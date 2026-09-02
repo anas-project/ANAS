@@ -3,18 +3,15 @@
 package application
 
 import (
-	"os"
 	"os/exec"
-	"time"
+
+	"github.com/anas-project/ANAS/internal/processgroup"
 )
 
 func configureModuleCommandProcess(command *exec.Cmd) {
-	command.WaitDelay = 5 * time.Second
+	processgroup.Configure(command)
 }
 
 func terminateModuleCommandProcess(command *exec.Cmd) error {
-	if command.Process == nil {
-		return os.ErrProcessDone
-	}
-	return command.Process.Kill()
+	return processgroup.Terminate(command)
 }

@@ -17,13 +17,18 @@ const (
 	StageJobSucceededAuthorized                 Stage = "job_succeeded_authorized"
 	StageJobFailedAuthorized                    Stage = "job_failed_authorized"
 	StageJobInterruptedAuthorized               Stage = "job_interrupted_authorized"
+	StageJobCanceledAuthorized                  Stage = "job_canceled_authorized"
 	StageConfirmationIssueAuthorized            Stage = "confirmation_issue_authorized"
 	StageConfirmationConsumeAndCreateAuthorized Stage = "confirmation_consume_and_job_create_authorized"
 )
 
 const (
-	ActionPlan  = "deployment.plan"
-	ActionApply = "deployment.apply"
+	ActionPlan     = "deployment.plan"
+	ActionApply    = "deployment.apply"
+	ActionStart    = "deployment.start"
+	ActionStop     = "deployment.stop"
+	ActionRestart  = "deployment.restart"
+	ActionRollback = "deployment.rollback"
 )
 
 // Event contains bindings and digests only. Raw confirmation proofs, request
@@ -96,6 +101,9 @@ func ObserveJobCommit(sink Sink, template Event) consolejobs.JobCommitObserver {
 		}
 		if event.PlanDigest == "" {
 			event.PlanDigest, _ = job.Request["expected_plan_digest"].(string)
+			if event.PlanDigest == "" {
+				event.PlanDigest, _ = job.Request["expected_digest"].(string)
+			}
 		}
 		return sink.RecordDeploymentEvent(ctx, event)
 	})

@@ -176,8 +176,11 @@ func TestSystemReportsOnlyPublicBuildCapabilitiesCertificateAndWorkspaceIDs(t *t
 func TestStatusResolvesRegisteredIDWithoutReturningPath(t *testing.T) {
 	registry, paths := testRegistry(t, "main")
 	active, activated := "dep-2", "2026-08-18T01:00:00Z"
+	runtime, probeError, healthy := "degraded", "runtime_probe_failed", false
 	service := &fakeQueryService{status: application.StatusResult{
 		Workspace: paths[0], ActiveDeployment: &active, ActivatedAt: &activated,
+		RuntimeStatus: &runtime, RuntimeHealthy: &healthy, RuntimeProbeError: &probeError,
+		ModuleRuntime:       []application.ModuleRuntimeStatus{{Module: "demo", Runtime: "running", Health: "unhealthy", Containers: 1}},
 		PreviousDeployments: []string{"dep-1"},
 	}}
 	var gotPath string
@@ -192,7 +195,9 @@ func TestStatusResolvesRegisteredIDWithoutReturningPath(t *testing.T) {
 	}
 	var document statusResponse
 	decodeResponse(t, response, &document)
-	if document.WorkspaceID != "main" || document.ActiveDeployment == nil || *document.ActiveDeployment != active || document.VerifiedAt != nil || len(document.PreviousDeployments) != 1 {
+	if document.WorkspaceID != "main" || document.ActiveDeployment == nil || *document.ActiveDeployment != active || document.VerifiedAt != nil || len(document.PreviousDeployments) != 1 ||
+		document.RuntimeStatus == nil || *document.RuntimeStatus != "degraded" || document.RuntimeHealthy == nil || *document.RuntimeHealthy ||
+		document.RuntimeProbeError == nil || *document.RuntimeProbeError != "runtime_probe_failed" || len(document.ModuleRuntime) != 1 {
 		t.Fatalf("status response = %#v", document)
 	}
 }

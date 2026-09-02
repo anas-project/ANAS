@@ -264,6 +264,36 @@ func (store *Store) CreateOrGet(ctx context.Context, spec CreateSpec) (CreateRes
 	return store.CreateOrGetObserved(ctx, spec, nil)
 }
 
+// LookupIdempotency resolves a retry before callers repeat mutable-state
+// preview or confirmation work. A miss is only advisory; CreateOrGet remains
+// the atomic arbiter if another creator wins the race afterwards.
+func (store *Store) LookupIdempotency(ctx context.Context, workspaceID string, input IdempotencyInput) (Job, bool, error) {
+	_, idempotency, err := prepareCreate(CreateSpec{
+		Kind: "idempotency.lookup", WorkspaceID: workspaceID, Idempotency: input,
+	})
+	if err != nil {
+		return Job{}, false, err
+	}
+	var result Job
+	found := false
+	err = store.withState(ctx, func() error {
+		existing, ok := store.state.idempotency[idempotency.Identity]
+		if !ok {
+			return nil
+		}
+		if existing.RequestDigest != idempotency.RequestDigest {
+			return &IdempotencyConflictError{ExistingJobID: existing.JobID}
+		}
+		job, ok := store.state.jobs[existing.JobID]
+		if !ok {
+			return store.markUnavailable(errors.New("idempotency index references a missing job"))
+		}
+		result, found = cloneJob(job), true
+		return nil
+	})
+	return result, found, err
+}
+
 // CreateOrGetObserved is CreateOrGet with a fail-closed pre-commit observer.
 // Idempotent hits do not invoke the observer because no job state is changed.
 func (store *Store) CreateOrGetObserved(ctx context.Context, spec CreateSpec, observer JobCommitObserver) (CreateResult, error) {
@@ -727,8 +757,8 @@ func (store *Store) TransitionObserved(ctx context.Context, jobID string, target
 	if target == StatusSucceeded && jobError != nil {
 		return Job{}, invalidError("succeeded transition must not include an error")
 	}
-	if input.NeedsCompensationCheck && target != StatusFailed && target != StatusInterrupted {
-		return Job{}, invalidError("only failed or interrupted jobs may require compensation")
+	if input.NeedsCompensationCheck && target != StatusFailed && target != StatusCanceled && target != StatusInterrupted {
+		return Job{}, invalidError("only failed, canceled, or interrupted jobs may require compensation")
 	}
 	var result Job
 	err = store.withState(ctx, func() error {
@@ -766,6 +796,86 @@ func (store *Store) TransitionObserved(ctx context.Context, jobID string, target
 	return result, err
 }
 
+// CancelQueuedObserved atomically verifies that a job is still queued,
+// persists its final event, and commits the canceled terminal state. Keeping
+// the status check and both records under jobs.lock prevents a worker claim
+// from racing a cancellation based on a stale queued read.
+func (store *Store) CancelQueuedObserved(ctx context.Context, jobID string, input TransitionInput, eventInput EventInput, observer JobCommitObserver) (Job, error) {
+	if err := validateIdentifier("job ID", jobID, 256); err != nil {
+		return Job{}, err
+	}
+	if err := validateIdentifier("event kind", eventInput.Kind, 128); err != nil {
+		return Job{}, err
+	}
+	if input.Progress != nil && (*input.Progress < 0 || *input.Progress > 100) {
+		return Job{}, invalidError("progress must be between 0 and 100")
+	}
+	warnings, err := sanitizeWarnings(input.Warnings)
+	if err != nil {
+		return Job{}, err
+	}
+	resultPayload, err := sanitizePayload(input.Result)
+	if err != nil {
+		return Job{}, err
+	}
+	jobError, err := sanitizeJobError(input.Error)
+	if err != nil {
+		return Job{}, err
+	}
+	eventData, err := sanitizePayload(eventInput.Data)
+	if err != nil {
+		return Job{}, err
+	}
+	var result Job
+	err = store.withState(ctx, func() error {
+		job, exists := store.state.jobs[jobID]
+		if !exists {
+			return fmt.Errorf("%w: %s", ErrNotFound, jobID)
+		}
+		if job.Status != StatusQueued {
+			return fmt.Errorf("%w: job %s is %s, want queued", ErrConflict, jobID, job.Status)
+		}
+		if store.state.lastEventID == ^uint64(0) {
+			return store.markUnavailable(errors.New("event ID space exhausted"))
+		}
+		now := store.now().UTC()
+		updated := cloneJob(job)
+		updated.Status = StatusCanceled
+		if input.Progress != nil {
+			updated.Progress = *input.Progress
+		}
+		updated.Warnings = append(updated.Warnings, warnings...)
+		updated.Result = resultPayload
+		updated.Error = jobError
+		updated.NeedsCompensationCheck = input.NeedsCompensationCheck
+		updated.FinishedAt = &now
+		updated.Revision++
+		previous := cloneJob(job)
+		if err := observeJobCommit(ctx, observer, JobCommitIntent{
+			Operation: JobCommitTransition, Previous: &previous, Next: cloneJob(updated),
+		}); err != nil {
+			return err
+		}
+		event := Event{
+			ID: store.state.lastEventID + 1, JobID: jobID, Timestamp: now,
+			Kind: eventInput.Kind, Data: eventData,
+		}
+		records := []journalRecord{{Kind: recordEventAdded, RecordedAt: now, Event: &event}}
+		preview := store.state.clone()
+		preview.events[jobID] = append(preview.events[jobID], cloneEvent(event))
+		preview.lastEventID = event.ID
+		preview.latestEventByJob[jobID] = event.ID
+		records = append(records, store.pruneRecords(preview, now)...)
+		records = append(records, journalRecord{Kind: recordJobUpdated, RecordedAt: now, Job: &updated})
+		if err := store.persistRecords(ctx, records); err != nil {
+			return err
+		}
+		result = cloneJob(updated)
+		return nil
+	})
+	return result, err
+}
+
 func observeJobCommit(ctx context.Context, observer JobCommitObserver, intent JobCommitIntent) error {
 	if observer == nil {
 		return nil
@@ -790,7 +900,7 @@ func (store *Store) AcknowledgeCompensation(ctx context.Context, jobID, warning 
 		if !exists {
 			return fmt.Errorf("%w: %s", ErrNotFound, jobID)
 		}
-		if !job.NeedsCompensationCheck || (job.Status != StatusInterrupted && job.Status != StatusFailed) {
+		if !job.NeedsCompensationCheck || (job.Status != StatusInterrupted && job.Status != StatusFailed && job.Status != StatusCanceled) {
 			return fmt.Errorf("%w: job %s has no pending compensation check", ErrConflict, jobID)
 		}
 		updated := cloneJob(job)
