@@ -1326,6 +1326,265 @@ paths:
           $ref: "#/components/responses/ServiceUnavailableProblem"
         "504":
           $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/modules:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    get:
+      operationId: listWorkspaceModules
+      summary: List configured, installed, deployed, and live Module state
+      description: |
+        Combines the managed configuration, immutable Module view, active
+        deployment manifest, and live container status without exposing host
+        paths. The strong ETag is the current managed-config generation and is
+        required by Module enable and disable actions.
+      tags: [Modules]
+      security:
+        - localSessionCookie: []
+        - proxySessionCookie: []
+      x-anas-permission: module.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "200":
+          description: Public Module state in canonical Module-name order.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ManagedConfigETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/catalog/modules:
+    get:
+      operationId: listModuleCatalog
+      summary: Read the Module catalog selected by a workspace
+      description: |
+        `workspace_id` selects a registered workspace and therefore its
+        root-managed Module source policy. It may be omitted only when exactly
+        one workspace is registered. Source profiles and cache paths cannot be
+        supplied by the caller.
+      tags: [Modules]
+      parameters:
+        - name: workspace_id
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+      security:
+        - localSessionCookie: []
+        - proxySessionCookie: []
+      x-anas-permission: module.catalog.read
+      x-anas-scope: service
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "200":
+          description: Public catalog metadata and available Module releases.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleCatalogResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/actions/update-modules:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    post:
+      operationId: updateWorkspaceModules
+      summary: Enqueue Module synchronization or catalog update
+      description: |
+        `sync` restores the immutable workspace view from its exact lock.
+        `update` refreshes selected Modules (or all selected Modules when the
+        array is omitted) from the workspace's configured source. Both modes
+        are durable, idempotent, single-writer jobs.
+      tags: [Modules]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: module.update
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModuleUpdateRequest"
+      responses:
+        "202":
+          description: The Module job was durably queued, or an identical existing job was returned.
+          headers:
+            Location:
+              description: Relative URL of the durable job resource.
+              required: true
+              schema:
+                type: string
+                pattern: "^/api/v1/jobs/[^/]+$"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentApplyResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "409":
+          $ref: "#/components/responses/ConflictProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/modules/{module}/actions/{action}:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - $ref: "#/components/parameters/ModuleName"
+      - name: action
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [enable, disable]
+    post:
+      operationId: configureWorkspaceModule
+      summary: Enqueue a CAS-protected Module enable or disable action
+      description: |
+        The request body must be an empty JSON object. `If-Match` must contain
+        the strong ETag returned by the Module list. The durable job performs a
+        second CAS check and writes fail-closed audit immediately before the
+        existing configuration WAL publishes the new desired state.
+      tags: [Modules]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ModuleConfigIfMatch"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: module.config
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "202":
+          description: The Module configuration job was durably queued, or an identical existing job was returned.
+          headers:
+            Location:
+              description: Relative URL of the durable job resource.
+              required: true
+              schema:
+                type: string
+                pattern: "^/api/v1/jobs/[^/]+$"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentApplyResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "409":
+          $ref: "#/components/responses/ConflictProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "428":
+          $ref: "#/components/responses/PreconditionRequiredProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
   /api/v1/workspaces/{ws}/actions/rollback:
     parameters:
       - $ref: "#/components/parameters/WorkspaceID"
@@ -2051,6 +2310,14 @@ components:
       schema:
         type: string
         const: "*"
+    ModuleConfigIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Exactly one strong managed-configuration ETag returned by the Module list; weak tags, lists, and `*` are rejected.
+      schema:
+        type: string
+        pattern: '^"cfgv-[0-9a-f]{64}"$'
   responses:
     BadRequestProblem:
       description: The Host or Origin is invalid, a path or body value is invalid, or the query string is malformed or unsupported.
@@ -3585,6 +3852,137 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ModuleCommand"
+    ModuleListResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, active_deployment, modules]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+          minLength: 1
+        active_deployment:
+          $ref: "#/components/schemas/NullableString"
+        modules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModuleState"
+    ModuleState:
+      type: object
+      additionalProperties: false
+      required: [name, configuration_state, installed_release, desired_release, deployed_release, runtime, health, containers, dependencies, entry_points]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9_]*$"
+        configuration_state:
+          type: string
+          enum: [available, selected, dependency]
+        installed_release:
+          $ref: "#/components/schemas/NullableString"
+        desired_release:
+          $ref: "#/components/schemas/NullableString"
+        deployed_release:
+          $ref: "#/components/schemas/NullableString"
+        runtime:
+          type: string
+          minLength: 1
+        health:
+          type: string
+          minLength: 1
+        containers:
+          type: integer
+          minimum: 0
+        dependencies:
+          type: array
+          items:
+            type: string
+          uniqueItems: true
+        entry_points:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModuleManagementSurface"
+    ModuleManagementSurface:
+      type: object
+      additionalProperties: false
+      required: [id, uri, authentication]
+      properties:
+        id:
+          type: string
+          minLength: 1
+        uri:
+          type: string
+          format: uri
+          pattern: "^https?://"
+        authentication:
+          type: string
+    ModuleCatalogResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, catalog]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+          minLength: 1
+        catalog:
+          $ref: "#/components/schemas/ModuleCatalog"
+    ModuleCatalog:
+      type: object
+      additionalProperties: false
+      required: [source, catalog_reference, catalog_digest, source_commit, modules]
+      properties:
+        source:
+          type: string
+          minLength: 1
+        catalog_reference:
+          type: string
+          minLength: 1
+        catalog_digest:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+        source_commit:
+          type: string
+        modules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModuleCatalogEntry"
+    ModuleCatalogEntry:
+      type: object
+      additionalProperties: false
+      required: [module, release, repository, platforms]
+      properties:
+        module:
+          type: string
+          pattern: "^[a-z][a-z0-9_]*$"
+        release:
+          type: string
+          minLength: 1
+        repository:
+          type: string
+          minLength: 1
+        platforms:
+          type: array
+          items:
+            type: string
+          uniqueItems: true
+    ModuleUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [sync, update]
+        modules:
+          type: array
+          description: Valid only for update mode; omission updates all selected Modules.
+          items:
+            type: string
+            pattern: "^[a-z][a-z0-9_]*$"
+          uniqueItems: true
     ModuleCommandDetailResponse:
       type: object
       additionalProperties: false

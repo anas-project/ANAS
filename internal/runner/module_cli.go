@@ -306,28 +306,27 @@ func runModuleList(args []string, jsonMode bool) error {
 	if len(positional) != 0 {
 		return usageErrorf("usage: anas module list [--source NAME] [-w WORKSPACE] [--json]")
 	}
-	profile, _, err := resolveModuleSource(flags.source, flags.workspace)
+	workspace := ""
+	if strings.TrimSpace(flags.workspace) != "" {
+		workspace, err = resolveWorkspace(flags.workspace)
+		if err != nil {
+			return usageErrorf("%s", err.Error())
+		}
+	}
+	result, err := newCLIModuleManagementService(workspace, moduleCommandCLISink{jsonMode: jsonMode}).CatalogModules(
+		context.Background(), application.ModuleCatalogRequest{Source: flags.source, CacheDir: flags.cacheDir},
+	)
 	if err != nil {
-		return err
+		return applicationCLIError(err)
 	}
-	store, err := newModuleStore(flags.cacheDir)
-	if err != nil {
-		return err
-	}
-	result, fetchErr := store.FetchCatalog(context.Background(), profile)
-	if fetchErr != nil {
-		return failuref("module_source_unavailable", "%s", fetchErr.Error())
-	}
-	modules := append([]modulestore.CatalogModule(nil), result.Catalog.Modules...)
-	sort.Slice(modules, func(i, j int) bool { return modules[i].Module < modules[j].Module })
 	if jsonMode {
 		return emitOK(map[string]any{
-			"source": profile.Name, "catalog_reference": result.Reference,
-			"catalog_digest": result.OCIDigest, "source_commit": result.Catalog.SourceCommit,
-			"modules": modules,
+			"source": result.Source, "catalog_reference": result.CatalogReference,
+			"catalog_digest": result.CatalogDigest, "source_commit": result.SourceCommit,
+			"modules": result.Modules,
 		})
 	}
-	for _, module := range modules {
+	for _, module := range result.Modules {
 		fmt.Printf("%s\t%s\t%s\t%s\n", module.Module, module.Release, module.Repository, strings.Join(module.Platforms, ","))
 	}
 	return nil
@@ -431,70 +430,23 @@ func runModuleSync(args []string, jsonMode bool) error {
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
-	unlock, err := acquireRuntimeLock(stateDir(workspace))
+	result, err := newCLIModuleManagementService(workspace, moduleCommandCLISink{jsonMode: jsonMode}).SyncModules(
+		context.Background(), application.ModuleSyncRequest{Source: flags.source, CacheDir: flags.cacheDir},
+	)
 	if err != nil {
-		return failuref("lock_failed", "%s", err.Error())
+		return applicationCLIError(err)
 	}
-	defer unlock()
-	profile, _, err := resolveModuleSourceWithWorkspaceLock(flags.source, workspace, true)
-	if err != nil {
-		return err
-	}
-	lockPath := projectLockPath(workspaceConfigPath(workspace))
-	lock, err := loadModuleLockFile(lockPath)
-	if err != nil {
-		return preconditionErrorf("lock_invalid", "%s", err.Error())
-	}
-	if len(lock.Modules) == 0 {
-		return preconditionErrorf("lock_missing", "config lock has no Modules; run `anas module update -w %s`", workspace)
-	}
-	store, err := newModuleStore(flags.cacheDir)
-	if err != nil {
-		return err
-	}
-	installations := map[string]modulestore.Installation{}
-	names := sortedLockModuleNames(lock)
-	for index, name := range names {
-		record := lock.Modules[name]
-		if record.OCIDigest == "" || record.ContentDigest == "" || !strings.HasPrefix(record.Source, "oci://") {
-			return preconditionErrorf("module_lock_local", "module %s is locked to a local bundle; module sync will not replace it with a Registry package", name)
-		}
-		emitProgress(jsonMode, "module-sync", int64(index), int64(len(names)), "modules")
-		installation, cached, cacheErr := store.Cached(record.OCIDigest)
-		if cacheErr != nil {
-			return failuref("module_cache_corrupt", "%s", cacheErr.Error())
-		}
-		if !cached {
-			installation, err = store.InstallLocked(context.Background(), profile, record.Source, name,
-				formatModuleRelease(record.Version, record.Revision), record.Repository, record.OCIDigest)
-			if err != nil {
-				return failuref("module_sync_failed", "%s", err.Error())
-			}
-		}
-		if installation.Name != name || installation.Repository != record.Repository ||
-			installation.ContentDigest != record.ContentDigest || installation.Metadata.Version != record.Version || installation.Metadata.Revision != record.Revision {
-			return preconditionErrorf("module_lock_mismatch", "installed Module %s does not match config lock", name)
-		}
-		installations[name] = installation
-	}
-	view, err := store.BuildView(installations)
+	view, err := loadWorkspaceModuleView(workspace)
 	if err != nil {
 		return failuref("module_view_failed", "%s", err.Error())
 	}
-	if err := validateRemoteViewAgainstLock(view, lock); err != nil {
-		return preconditionErrorf("module_lock_mismatch", "%s", err.Error())
-	}
-	if err := saveWorkspaceModuleView(workspace, view); err != nil {
-		return failuref("write_failed", "%s", err.Error())
-	}
-	emitProgress(jsonMode, "module-sync", int64(len(names)), int64(len(names)), "modules")
 	if jsonMode {
 		return emitOK(map[string]any{
-			"workspace": workspace, "source": profile.Name, "module_root": absolutePath(view.ModuleRoot),
-			"view_digest": view.Digest, "modules": moduleInstallationDocument(installations),
+			"workspace": workspace, "source": result.Source, "module_root": absolutePath(result.ModuleRoot),
+			"view_digest": result.ViewDigest, "modules": moduleInstallationDocument(view.Installations),
 		})
 	}
-	fmt.Println(view.ModuleRoot)
+	fmt.Println(result.ModuleRoot)
 	return nil
 }
 
@@ -510,150 +462,24 @@ func runModuleUpdate(args []string, jsonMode bool) error {
 	if err != nil {
 		return usageErrorf("%s", err.Error())
 	}
-	unlock, err := acquireRuntimeLock(stateDir(workspace))
+	result, err := newCLIModuleManagementService(workspace, moduleCommandCLISink{jsonMode: jsonMode}).UpdateModules(
+		context.Background(), application.ModuleUpdateRequest{Modules: positional, Source: flags.source, CacheDir: flags.cacheDir},
+	)
 	if err != nil {
-		return failuref("lock_failed", "%s", err.Error())
+		return applicationCLIError(err)
 	}
-	defer unlock()
-	configPath := workspaceConfigPath(workspace)
-	if err := validateManagedConfig(workspace, configPath); err != nil {
-		return preconditionErrorf("config_not_managed", "%s", err.Error())
-	}
-	cfg, err := config.Load(configPath)
+	updatedLock, err := loadModuleLockFile(result.LockPath)
 	if err != nil {
-		return preconditionErrorf("config_invalid", "%s", err.Error())
+		return failuref("lock_invalid", "%s", err.Error())
 	}
-	profile, _, err := resolveModuleSourceWithWorkspaceLock(flags.source, workspace, true)
-	if err != nil {
-		return err
-	}
-	store, err := newModuleStore(flags.cacheDir)
-	if err != nil {
-		return err
-	}
-	catalogResult, err := store.FetchCatalog(context.Background(), profile)
-	if err != nil {
-		return failuref("module_source_unavailable", "%s", err.Error())
-	}
-	lockPath := projectLockPath(configPath)
-	lock, err := loadModuleLockFile(lockPath)
-	if err != nil {
-		return preconditionErrorf("lock_invalid", "%s", err.Error())
-	}
-	targets := map[string]bool{}
-	if len(positional) == 0 {
-		for _, name := range cfg.Modules.Order {
-			targets[name] = true
-		}
-	} else {
-		for _, name := range positional {
-			if _, exists := cfg.Modules.Values[name]; !exists {
-				return usageErrorf("module %q is not selected in config.yml", name)
-			}
-			targets[name] = true
-		}
-	}
-	installations := map[string]modulestore.Installation{}
-	for index, catalogModule := range catalogResult.Catalog.Modules {
-		release := catalogModule.Release
-		expectedDigest := ""
-		if existing, ok := lock.Modules[catalogModule.Module]; ok && existing.OCIDigest != "" && !targets[catalogModule.Module] {
-			release = formatModuleRelease(existing.Version, existing.Revision)
-			expectedDigest = existing.OCIDigest
-		} else if selected, ok := cfg.Modules.Values[catalogModule.Module]; ok && strings.TrimSpace(selected.Version) != "" {
-			release = strings.TrimSpace(selected.Version)
-			if _, parseErr := modulestore.ParseRelease(release); parseErr != nil {
-				return preconditionErrorf("config_invalid", "modules.%s.version: %s", catalogModule.Module, parseErr.Error())
-			}
-		}
-		emitProgress(jsonMode, "module-update", int64(index), int64(len(catalogResult.Catalog.Modules)), "modules")
-		if expectedDigest != "" {
-			if cached, ok, cacheErr := store.Cached(expectedDigest); cacheErr != nil {
-				return failuref("module_cache_corrupt", "%s", cacheErr.Error())
-			} else if ok {
-				installations[catalogModule.Module] = cached
-				continue
-			}
-			existing := lock.Modules[catalogModule.Module]
-			installation, installErr := store.InstallLocked(context.Background(), profile, existing.Source,
-				catalogModule.Module, release, existing.Repository, expectedDigest)
-			if installErr != nil {
-				return failuref("module_update_failed", "%s", installErr.Error())
-			}
-			installations[catalogModule.Module] = installation
-			continue
-		}
-		installation, installErr := store.Install(context.Background(), profile, catalogModule.Module, release, expectedDigest)
-		if installErr != nil {
-			return failuref("module_update_failed", "%s", installErr.Error())
-		}
-		installations[catalogModule.Module] = installation
-	}
-	// An explicitly targeted update must not make unrelated locked Modules
-	// unrestorable merely because current catalog discovery no longer lists them.
-	// Keep those modules at their exact immutable lock identities.
-	for name, record := range lock.Modules {
-		if _, present := installations[name]; present || targets[name] {
-			continue
-		}
-		if record.OCIDigest == "" || record.ContentDigest == "" || !strings.HasPrefix(record.Source, "oci://") {
-			continue
-		}
-		installation, cached, cacheErr := store.Cached(record.OCIDigest)
-		if cacheErr != nil {
-			return failuref("module_cache_corrupt", "%s", cacheErr.Error())
-		}
-		if !cached {
-			installation, err = store.InstallLocked(context.Background(), profile, record.Source, name,
-				formatModuleRelease(record.Version, record.Revision), record.Repository, record.OCIDigest)
-			if err != nil {
-				return failuref("module_update_failed", "%s", err.Error())
-			}
-		}
-		installations[name] = installation
-	}
-	for target := range targets {
-		if _, ok := installations[target]; !ok {
-			return preconditionErrorf("module_not_found", "Module %s is not present in source %s", target, profile.Name)
-		}
-	}
-	provisional, err := store.BuildView(installations)
-	if err != nil {
-		return failuref("module_view_failed", "%s", err.Error())
-	}
-	resolvedOrder, updatedLock, err := resolveRemoteModuleLock(workspace, configPath, provisional.ModuleRoot, lock)
-	if err != nil {
-		return err
-	}
-	resolvedInstallations := map[string]modulestore.Installation{}
-	for _, name := range resolvedOrder {
-		resolvedInstallations[name] = installations[name]
-	}
-	view, err := store.BuildView(resolvedInstallations)
-	if err != nil {
-		return failuref("module_view_failed", "%s", err.Error())
-	}
-	for _, name := range resolvedOrder {
-		installation := resolvedInstallations[name]
-		record := updatedLock.Modules[name]
-		record.Source = installation.ImmutableReference
-		record.OCIDigest = installation.OCIDigest
-		record.ContentDigest = installation.ContentDigest
-		record.Repository = installation.Repository
-		updatedLock.Modules[name] = record
-	}
-	if err := commitWorkspaceModuleState(lockPath, workspace, updatedLock, view); err != nil {
-		return failuref("write_failed", "%s", err.Error())
-	}
-	emitProgress(jsonMode, "module-update", int64(len(catalogResult.Catalog.Modules)), int64(len(catalogResult.Catalog.Modules)), "modules")
 	if jsonMode {
 		return emitOK(map[string]any{
-			"workspace": workspace, "source": profile.Name, "lock_path": lockPath,
-			"module_root": absolutePath(view.ModuleRoot), "view_digest": view.Digest,
+			"workspace": workspace, "source": result.Source, "lock_path": result.LockPath,
+			"module_root": absolutePath(result.ModuleRoot), "view_digest": result.ViewDigest,
 			"modules": moduleLockDocument(updatedLock),
 		})
 	}
-	fmt.Println(lockPath)
+	fmt.Println(result.LockPath)
 	return nil
 }
 

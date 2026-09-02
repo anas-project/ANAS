@@ -56,3 +56,29 @@ func TestDeploymentAuditSinkFailsClosed(t *testing.T) {
 		t.Fatalf("invalid event error = %v, want audit unavailable", err)
 	}
 }
+
+func TestDeploymentAuditAcceptsLifecycleAndModuleCommitBindings(t *testing.T) {
+	appender := &recordingConfigAuditAppender{}
+	sink := deploymentAuditSink{writer: appender}
+	lifecycle := deploymentaudit.Event{
+		Stage: deploymentaudit.StageJobSucceededAuthorized, Action: deploymentaudit.ActionRestart,
+		Actor: "local-owner", WorkspaceID: "default", JobID: "job-restart",
+	}
+	if err := sink.RecordDeploymentEvent(context.Background(), lifecycle); err != nil {
+		t.Fatalf("lifecycle audit: %v", err)
+	}
+	module := deploymentaudit.Event{
+		Stage: deploymentaudit.StageModuleConfigCommitAuthorized, Action: deploymentaudit.ActionModuleEnable,
+		Actor: "local-owner", WorkspaceID: "default", JobID: "job-enable", TargetID: "demo",
+		OperationID:              "cfg-0123456789abcdef0123456789abcdef",
+		ConfigValidator:          "cfgv-" + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		CandidateConfigValidator: "cfgv-" + "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+	}
+	if err := sink.RecordDeploymentEvent(context.Background(), module); err != nil {
+		t.Fatalf("Module commit audit: %v", err)
+	}
+	if len(appender.events) != 2 || appender.events[1].Details["target_id"] != "demo" ||
+		appender.events[1].Details["candidate_config_validator"] != module.CandidateConfigValidator {
+		t.Fatalf("persisted Module audit = %#v", appender.events)
+	}
+}

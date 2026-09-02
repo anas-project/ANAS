@@ -191,6 +191,60 @@ h1 {
   padding: 0.9rem;
 }
 
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
+  gap: 0.85rem;
+  margin-top: 1.25rem;
+}
+
+.module-card {
+  min-width: 0;
+  border: 1px solid #dce5e0;
+  border-radius: 0.9rem;
+  padding: 1rem;
+}
+
+.module-card-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.module-card-heading h3 {
+  margin: 0 0 0.4rem;
+}
+
+.module-card-heading .text-button {
+  margin-top: 0;
+}
+
+.module-state-list {
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+
+.module-state-list dd {
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+
+.module-entry-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.module-entry-points a {
+  border-radius: 999px;
+  padding: 0.45rem 0.7rem;
+  color: #164f3d;
+  background: #e6f5ed;
+  text-decoration: none;
+}
+
 .plan-grid h4,
 .plan-grid p,
 .compact-list {

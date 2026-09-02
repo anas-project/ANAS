@@ -37,6 +37,24 @@ A running lifecycle job accepts cancellation only during a server-declared safe 
 the whole external process group and runs a compensation check after the terminal job state. A job that has
 already entered an unsafe stage rejects cancellation instead of pretending that execution stopped.
 
+## Module management
+
+The full administration console combines four kinds of Module state: selection in desired configuration, the
+installed release in the immutable Module view, the release and entry points frozen in the active deployment,
+and live Compose runtime, health, and container counts. Entry points are public HTTP(S) addresses frozen while
+the deployment is materialized; the page does not re-derive them from current configuration or expose host paths.
+
+Enable and disable use the strong configuration ETag and update desired configuration only; they never apply
+implicitly. A stale action is rejected if configuration changes before its durable job executes. Catalog update
+and lock-based sync are also durable, idempotent, per-workspace serialized jobs. Generate a plan and explicitly
+confirm apply after an update to change the runtime. The corresponding CLI workflow remains available:
+
+```bash
+anas module list -w /srv/anas
+anas module update -w /srv/anas
+anas module sync -w /srv/anas
+```
+
 ## Roll back
 
 A deployment rollback fixes a bad artifact or configuration. A snapshot restore fixes persistent data that has already changed:

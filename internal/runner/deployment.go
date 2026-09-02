@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -667,6 +668,10 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 	manifest.ConfigFingerprint = fmt.Sprintf("sha256:%x", sha256.Sum256(b))
 	for _, name := range a.order {
 		mod := a.reg[name]
+		managementSurfaces, err := freezeManagementSurfaces(mod, a.env)
+		if err != nil {
+			return nil, err
+		}
 		commandExecutor, err := frozenModuleCommandExecutor(mod, filepath.Join(a.base, "staging", id, "modules", name))
 		if err != nil {
 			return nil, err
@@ -692,6 +697,7 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 			UseHostLAN:     mod.UseHostLAN, Changes: mod.Changes,
 			Providers:           cloneContractProviders(mod.ContractProviders),
 			LocalAccounts:       append([]LocalAccount{}, mod.LocalAccounts...),
+			ManagementSurfaces:  managementSurfaces,
 			CredentialProviders: cloneCredentialProviders(mod.CredentialProviders),
 			CredentialConsumers: cloneCredentialConsumers(mod.CredentialConsumers),
 			CommandExecutor:     commandExecutor,
@@ -721,6 +727,21 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 	}
 	inheritUnchangedModuleArtifacts(a.base, manifest)
 	return manifest, nil
+}
+
+func freezeManagementSurfaces(module Module, env map[string]string) ([]deployment.ManagementSurface, error) {
+	result := make([]deployment.ManagementSurface, 0, len(module.ManagementSurfaces))
+	for _, surface := range module.ManagementSurfaces {
+		value := strings.TrimSpace(env[surface.URIFrom])
+		parsed, err := url.Parse(value)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
+			return nil, fmt.Errorf("module %s management surface %s did not resolve to a public HTTP(S) URI", module.Name, surface.ID)
+		}
+		result = append(result, deployment.ManagementSurface{
+			ID: surface.ID, URI: parsed.String(), Authentication: surface.Authentication,
+		})
+	}
+	return result, nil
 }
 
 // normalizedModuleDigest identifies the effective rendered module while

@@ -319,6 +319,26 @@ func (h *handler) routeSpecs() []routeSpec {
 				},
 			)
 		}
+		if h.deploymentHTTP.moduleFactory != nil {
+			routes = append(routes,
+				routeSpec{
+					policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/workspaces/{ws}/modules", Permission: PermissionModuleRead, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess},
+					handler: h.listModules,
+				},
+				routeSpec{
+					policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/catalog/modules", Permission: PermissionModuleCatalogRead, Scope: ScopeService, Listeners: allListeners, Access: lifecycleAccess},
+					handler: h.catalogModules,
+				},
+				routeSpec{
+					policy:  RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/actions/update-modules", Permission: PermissionModuleUpdate, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess},
+					handler: h.updateModules,
+				},
+				routeSpec{
+					policy:  RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/modules/{module}/actions/{action}", Permission: PermissionModuleConfig, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess},
+					handler: h.configureModule,
+				},
+			)
+		}
 	}
 	return routes
 }
@@ -498,6 +518,7 @@ func RouteInventory(registry *Registry, factory ServiceFactory) ([]RoutePolicy, 
 	}, deploymentHTTP: &deploymentHTTPState{
 		stepUp:         routeInventoryStepUp{},
 		serviceFactory: func(string) application.DeploymentService { return nil },
+		moduleFactory:  func(string, application.EventSink) application.ModuleManagementService { return nil },
 	}}
 	routes := h.routeSpecs()
 	if err := validateRouteSpecs(routes); err != nil {

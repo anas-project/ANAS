@@ -20,35 +20,43 @@ const (
 	StageJobCanceledAuthorized                  Stage = "job_canceled_authorized"
 	StageConfirmationIssueAuthorized            Stage = "confirmation_issue_authorized"
 	StageConfirmationConsumeAndCreateAuthorized Stage = "confirmation_consume_and_job_create_authorized"
+	StageModuleConfigCommitAuthorized           Stage = "module_config_commit_authorized"
 )
 
 const (
-	ActionPlan     = "deployment.plan"
-	ActionApply    = "deployment.apply"
-	ActionStart    = "deployment.start"
-	ActionStop     = "deployment.stop"
-	ActionRestart  = "deployment.restart"
-	ActionRollback = "deployment.rollback"
+	ActionPlan          = "deployment.plan"
+	ActionApply         = "deployment.apply"
+	ActionStart         = "deployment.start"
+	ActionStop          = "deployment.stop"
+	ActionRestart       = "deployment.restart"
+	ActionRollback      = "deployment.rollback"
+	ActionModuleSync    = "module.sync"
+	ActionModuleUpdate  = "module.update"
+	ActionModuleEnable  = "module.enable"
+	ActionModuleDisable = "module.disable"
 )
 
 // Event contains bindings and digests only. Raw confirmation proofs, request
 // values, paths, command output, and error text do not cross this boundary.
 type Event struct {
-	Stage           Stage
-	Action          string
-	Actor           string
-	IdentitySource  string
-	IdentityIssuer  string
-	IdentitySubject string
-	SemanticRole    string
-	DirectoryGroup  string
-	TransactionID   string
-	WorkspaceID     string
-	JobID           string
-	PlanJobID       string
-	ConfigValidator string
-	PlanDigest      string
-	FailureCode     string
+	Stage                    Stage
+	Action                   string
+	Actor                    string
+	IdentitySource           string
+	IdentityIssuer           string
+	IdentitySubject          string
+	SemanticRole             string
+	DirectoryGroup           string
+	TransactionID            string
+	WorkspaceID              string
+	JobID                    string
+	PlanJobID                string
+	ConfigValidator          string
+	PlanDigest               string
+	FailureCode              string
+	TargetID                 string
+	OperationID              string
+	CandidateConfigValidator string
 }
 
 type Sink interface {
@@ -98,6 +106,12 @@ func ObserveJobCommit(sink Sink, template Event) consolejobs.JobCommitObserver {
 		}
 		if event.ConfigValidator == "" {
 			event.ConfigValidator, _ = job.Request["expected_config_validator"].(string)
+		}
+		if event.TargetID == "" {
+			event.TargetID, _ = job.Request["module"].(string)
+		}
+		if event.OperationID == "" {
+			event.OperationID, _ = job.Request["operation_id"].(string)
 		}
 		if event.PlanDigest == "" {
 			event.PlanDigest, _ = job.Request["expected_plan_digest"].(string)

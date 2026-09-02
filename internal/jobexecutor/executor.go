@@ -25,6 +25,10 @@ const (
 	KindDeploymentStop     = "deployment.stop"
 	KindDeploymentRestart  = "deployment.restart"
 	KindDeploymentRollback = "deployment.rollback"
+	KindModuleSync         = "module.sync"
+	KindModuleUpdate       = "module.update"
+	KindModuleEnable       = "module.enable"
+	KindModuleDisable      = "module.disable"
 	defaultPollInterval    = 250 * time.Millisecond
 	terminalWriteTimeout   = 10 * time.Second
 )
@@ -46,11 +50,14 @@ type Workspace struct {
 
 type DeploymentFactory func(workspacePath string, events application.EventSink) application.DeploymentService
 
+type ModuleFactory = application.ModuleManagementServiceFactory
+
 type Options struct {
 	Store             Store
 	Audit             deploymentaudit.Sink
 	Workspaces        []Workspace
 	DeploymentFactory DeploymentFactory
+	ModuleFactory     ModuleFactory
 	PollInterval      time.Duration
 	OnError           func(error)
 }
@@ -60,6 +67,7 @@ type Executor struct {
 	audit             deploymentaudit.Sink
 	workspaces        map[string]string
 	deploymentFactory DeploymentFactory
+	moduleFactory     ModuleFactory
 	pollInterval      time.Duration
 	onError           func(error)
 	wakeMu            sync.Mutex
@@ -98,7 +106,8 @@ func New(options Options) (*Executor, error) {
 	}
 	return &Executor{
 		store: options.Store, audit: options.Audit, workspaces: workspaces, deploymentFactory: options.DeploymentFactory,
-		pollInterval: options.PollInterval, onError: options.OnError, wake: wake,
+		moduleFactory: options.ModuleFactory,
+		pollInterval:  options.PollInterval, onError: options.OnError, wake: wake,
 		running: make(map[string]context.CancelFunc),
 	}, nil
 }
@@ -286,6 +295,57 @@ func (executor *Executor) execute(daemonContext context.Context, workspacePath s
 			break
 		}
 		result, operationErr = jsonObject(rolledBack)
+	case KindModuleSync:
+		request, err := decodeModuleSyncRequest(job.Request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		service := executor.moduleService(workspacePath, events)
+		if service == nil {
+			operationErr = errors.New("Module management service is unavailable")
+			break
+		}
+		synced, err := service.SyncModules(jobContext, request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		result, operationErr = moduleJobResult(job.WorkspaceID, synced)
+	case KindModuleUpdate:
+		request, err := decodeModuleUpdateRequest(job.Request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		service := executor.moduleService(workspacePath, events)
+		if service == nil {
+			operationErr = errors.New("Module management service is unavailable")
+			break
+		}
+		updated, err := service.UpdateModules(jobContext, request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		result, operationErr = moduleJobResult(job.WorkspaceID, updated)
+	case KindModuleEnable, KindModuleDisable:
+		request, err := decodeModuleEnabledRequest(job.Request, job.Kind)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		service := executor.moduleService(workspacePath, events)
+		if service == nil {
+			operationErr = errors.New("Module management service is unavailable")
+			break
+		}
+		configured, err := service.SetModuleEnabled(jobContext, request, executor.moduleConfigObserver(job))
+		if err != nil {
+			operationErr = err
+			break
+		}
+		result, operationErr = moduleJobResult(job.WorkspaceID, configured)
 	default:
 		operationErr = fmt.Errorf("unsupported durable job kind %q", job.Kind)
 	}
@@ -412,6 +472,39 @@ func (executor *Executor) jobAuditObserver(stage deploymentaudit.Stage, failureC
 	return deploymentaudit.ObserveJobCommit(executor.audit, deploymentaudit.Event{Stage: stage, FailureCode: failureCode})
 }
 
+func (executor *Executor) moduleService(workspacePath string, events application.EventSink) application.ModuleManagementService {
+	if executor == nil || executor.moduleFactory == nil {
+		return nil
+	}
+	return executor.moduleFactory(workspacePath, events)
+}
+
+type moduleConfigCommitObserver struct {
+	sink deploymentaudit.Sink
+	job  consolejobs.Job
+}
+
+func (executor *Executor) moduleConfigObserver(job consolejobs.Job) application.ConfigCommitObserver {
+	return &moduleConfigCommitObserver{sink: executor.audit, job: job}
+}
+
+func (observer *moduleConfigCommitObserver) BeforeConfigCommit(ctx context.Context, intent application.ConfigCommitIntent) error {
+	if observer == nil || observer.sink == nil {
+		return errors.New("Module configuration audit sink is unavailable")
+	}
+	operationID, _ := observer.job.Request["operation_id"].(string)
+	if operationID == "" || operationID != intent.OperationID {
+		return errors.New("Module configuration audit operation ID does not match commit intent")
+	}
+	module, _ := observer.job.Request["module"].(string)
+	return observer.sink.RecordDeploymentEvent(ctx, deploymentaudit.Event{
+		Stage: deploymentaudit.StageModuleConfigCommitAuthorized, Action: observer.job.Kind,
+		Actor: observer.job.CreatedBy, WorkspaceID: observer.job.WorkspaceID, JobID: observer.job.ID,
+		TargetID: module, OperationID: operationID, ConfigValidator: intent.CurrentValidator,
+		CandidateConfigValidator: intent.CandidateValidator,
+	})
+}
+
 func (executor *Executor) report(err error) {
 	if err != nil && executor.onError != nil {
 		executor.onError(err)
@@ -471,6 +564,34 @@ func decodeRollbackRequest(value map[string]any) (application.RollbackRequest, e
 	return request, nil
 }
 
+func decodeModuleSyncRequest(value map[string]any) (application.ModuleSyncRequest, error) {
+	var request application.ModuleSyncRequest
+	if err := decodeStoredRequest(value, &request); err != nil {
+		return application.ModuleSyncRequest{}, errors.New("stored Module sync request is invalid")
+	}
+	return request, nil
+}
+
+func decodeModuleUpdateRequest(value map[string]any) (application.ModuleUpdateRequest, error) {
+	var request application.ModuleUpdateRequest
+	if err := decodeStoredRequest(value, &request); err != nil {
+		return application.ModuleUpdateRequest{}, errors.New("stored Module update request is invalid")
+	}
+	return request, nil
+}
+
+func decodeModuleEnabledRequest(value map[string]any, kind string) (application.ModuleEnabledRequest, error) {
+	var request application.ModuleEnabledRequest
+	if err := decodeStoredRequest(value, &request); err != nil {
+		return application.ModuleEnabledRequest{}, errors.New("stored Module configuration request is invalid")
+	}
+	if request.Module == "" || request.OperationID == "" || request.ExpectedConfigValidator == "" ||
+		kind == KindModuleEnable && !request.Enabled || kind == KindModuleDisable && request.Enabled {
+		return application.ModuleEnabledRequest{}, errors.New("stored Module configuration request is invalid")
+	}
+	return request, nil
+}
+
 func decodeStoredRequest(value map[string]any, target any) error {
 	body, err := json.Marshal(value)
 	if err != nil {
@@ -499,6 +620,17 @@ func jsonObject(value any) (map[string]any, error) {
 	return result, nil
 }
 
+func moduleJobResult(workspaceID string, value any) (map[string]any, error) {
+	result, err := jsonObject(value)
+	if err != nil {
+		return nil, err
+	}
+	// Application services retain the CLI's path-rich result. Durable console
+	// jobs must expose only the registered public workspace identifier.
+	result["workspace"] = workspaceID
+	return result, nil
+}
+
 func publicJobError(err error, kind string) *consolejobs.JobError {
 	fallbackCode, message := "deployment_failed", "deployment operation failed"
 	switch kind {
@@ -508,6 +640,12 @@ func publicJobError(err error, kind string) *consolejobs.JobError {
 		fallbackCode, message = "lifecycle_failed", "deployment lifecycle operation failed"
 	case KindDeploymentRollback:
 		fallbackCode, message = "rollback_failed", "deployment rollback failed"
+	case KindModuleSync:
+		fallbackCode, message = "module_sync_failed", "Module synchronization failed"
+	case KindModuleUpdate:
+		fallbackCode, message = "module_update_failed", "Module update failed"
+	case KindModuleEnable, KindModuleDisable:
+		fallbackCode, message = "module_config_failed", "Module configuration failed"
 	}
 	if applicationError, ok := application.ErrorOf(err); ok && applicationError.Code != "" {
 		jobError := &consolejobs.JobError{Code: applicationError.Code, Message: message}

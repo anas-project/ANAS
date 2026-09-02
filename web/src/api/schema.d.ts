@@ -619,6 +619,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{ws}/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List configured, installed, deployed, and live Module state
+         * @description Combines the managed configuration, immutable Module view, active
+         *     deployment manifest, and live container status without exposing host
+         *     paths. The strong ETag is the current managed-config generation and is
+         *     required by Module enable and disable actions.
+         */
+        get: operations["listWorkspaceModules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the Module catalog selected by a workspace
+         * @description `workspace_id` selects a registered workspace and therefore its
+         *     root-managed Module source policy. It may be omitted only when exactly
+         *     one workspace is registered. Source profiles and cache paths cannot be
+         *     supplied by the caller.
+         */
+        get: operations["listModuleCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/actions/update-modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue Module synchronization or catalog update
+         * @description `sync` restores the immutable workspace view from its exact lock.
+         *     `update` refreshes selected Modules (or all selected Modules when the
+         *     array is omitted) from the workspace's configured source. Both modes
+         *     are durable, idempotent, single-writer jobs.
+         */
+        post: operations["updateWorkspaceModules"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/modules/{module}/actions/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                /** @description Module name in the active deployment. */
+                module: components["parameters"]["ModuleName"];
+                action: "enable" | "disable";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue a CAS-protected Module enable or disable action
+         * @description The request body must be an empty JSON object. `If-Match` must contain
+         *     the strong ETag returned by the Module list. The durable job performs a
+         *     second CAS check and writes fail-closed audit immediately before the
+         *     existing configuration WAL publishes the new desired state.
+         */
+        post: operations["configureWorkspaceModule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{ws}/actions/rollback": {
         parameters: {
             query?: never;
@@ -1435,6 +1539,55 @@ export interface components {
             active_deployment: components["schemas"]["NullableString"];
             items: components["schemas"]["ModuleCommand"][];
         };
+        ModuleListResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            workspace_id: string;
+            active_deployment: components["schemas"]["NullableString"];
+            modules: components["schemas"]["ModuleState"][];
+        };
+        ModuleState: {
+            name: string;
+            /** @enum {string} */
+            configuration_state: "available" | "selected" | "dependency";
+            installed_release: components["schemas"]["NullableString"];
+            desired_release: components["schemas"]["NullableString"];
+            deployed_release: components["schemas"]["NullableString"];
+            runtime: string;
+            health: string;
+            containers: number;
+            dependencies: string[];
+            entry_points: components["schemas"]["ModuleManagementSurface"][];
+        };
+        ModuleManagementSurface: {
+            id: string;
+            /** Format: uri */
+            uri: string;
+            authentication: string;
+        };
+        ModuleCatalogResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            workspace_id: string;
+            catalog: components["schemas"]["ModuleCatalog"];
+        };
+        ModuleCatalog: {
+            source: string;
+            catalog_reference: string;
+            catalog_digest: string;
+            source_commit: string;
+            modules: components["schemas"]["ModuleCatalogEntry"][];
+        };
+        ModuleCatalogEntry: {
+            module: string;
+            release: string;
+            repository: string;
+            platforms: string[];
+        };
+        ModuleUpdateRequest: {
+            /** @enum {string} */
+            mode: "sync" | "update";
+            /** @description Valid only for update mode; omission updates all selected Modules. */
+            modules?: string[];
+        };
         ModuleCommandDetailResponse: {
             api_version: components["schemas"]["APIVersion"];
             workspace_id: string;
@@ -1732,6 +1885,8 @@ export interface components {
          *     `*`. Do not send this header together with If-Match.
          */
         ConfigIfNoneMatch: "*";
+        /** @description Exactly one strong managed-configuration ETag returned by the Module list; weak tags, lists, and `*` are rejected. */
+        ModuleConfigIfMatch: string;
     };
     requestBodies: never;
     headers: {
@@ -2616,6 +2771,173 @@ export interface operations {
             405: components["responses"]["PostMethodNotAllowedProblem"];
             408: components["responses"]["RequestCanceledProblem"];
             409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            428: components["responses"]["PreconditionRequiredProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    listWorkspaceModules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public Module state in canonical Module-name order. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ManagedConfigETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["GetMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            412: components["responses"]["PreconditionProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    listModuleCatalog: {
+        parameters: {
+            query?: {
+                workspace_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public catalog metadata and available Module releases. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleCatalogResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["GetMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            412: components["responses"]["PreconditionProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    updateWorkspaceModules: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModuleUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The Module job was durably queued, or an identical existing job was returned. */
+            202: {
+                headers: {
+                    /** @description Relative URL of the durable job resource. */
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentApplyResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    configureWorkspaceModule: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Exactly one strong managed-configuration ETag returned by the Module list; weak tags, lists, and `*` are rejected. */
+                "If-Match": components["parameters"]["ModuleConfigIfMatch"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                /** @description Module name in the active deployment. */
+                module: components["parameters"]["ModuleName"];
+                action: "enable" | "disable";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The Module configuration job was durably queued, or an identical existing job was returned. */
+            202: {
+                headers: {
+                    /** @description Relative URL of the durable job resource. */
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentApplyResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            412: components["responses"]["PreconditionProblem"];
             413: components["responses"]["PayloadTooLargeProblem"];
             415: components["responses"]["UnsupportedMediaTypeProblem"];
             428: components["responses"]["PreconditionRequiredProblem"];

@@ -7,7 +7,7 @@ updated: 2026-09-03
 
 # ANAS Web API 与管理前端实施计划
 
-> 状态：**部分实施（128/149）**。M0（只读骨架）、M0.5（配置元数据）、M0.6（约束语义）、M1A（管理通道与本地认证底座）、M1B（首次引导后端闭环）、M1C（前端壳与完整引导体验）、M1.5（Traefik/OIDC 受信入口）和 M2（生命周期与任务扩展）已落地；当前入口为 M3。安装发布集成仍属 M5。
+> 状态：**部分实施（129/149）**。M0（只读骨架）、M0.5（配置元数据）、M0.6（约束语义）、M1A（管理通道与本地认证底座）、M1B（首次引导后端闭环）、M1C（前端壳与完整引导体验）、M1.5（Traefik/OIDC 受信入口）、M2（生命周期与任务扩展）和 M3（Module 管理）已落地；当前入口为 M4。安装发布集成仍属 M5。
 > 日期：2026-08-16，更新：2026-09-03
 
 需求：[Web API 与管理前端要求](../requirements/web-api-admin-console.md)。该特性不单独建架构文档，
@@ -22,7 +22,7 @@ updated: 2026-09-03
 
 ## 1. 给实施者
 
-**当前入口：M3。** M0、M0.5、M0.6、M1A、M1B、M1C、M1.5、M2 已落地（见 §2 落地快照）。首版特权边界已经确定为“不需要 `CAP_SYS_ADMIN` 的子集”，不再阻塞 M4；Traefik/OIDC 支线已达到 M5 汇合所需退出条件。
+**当前入口：M4。** M0、M0.5、M0.6、M1A、M1B、M1C、M1.5、M2、M3 已落地（见 §2 落地快照）。首版特权边界已经确定为“不需要 `CAP_SYS_ADMIN` 的子集”，不再阻塞 M4；Traefik/OIDC 支线已达到 M5 汇合所需退出条件。
 
 **规范来源是要求文档的 §10 需求矩阵**，不是本文。本文只回答「先做什么」。每个里程碑的精确范围以 §5.1 的需求 ID 归属为准；里程碑正文里的章节指针只是阅读入口。
 
@@ -48,7 +48,7 @@ npm run docs:check-requirement-status && npm run docs:check-plan-status
 - 本文的进度描述必须与代码一致。宁可写「未开始」，不要写一个没验证过的「已完成」。
 
 
-## 2. 当前落地快照（2026-09-03，工作树基于 `171634c`）
+## 2. 当前落地快照（2026-09-03，工作树基于 `c9e9a12`）
 
 | 范围 | 已完成 | 尚未完成 |
 | --- | --- | --- |
@@ -60,6 +60,7 @@ npm run docs:check-requirement-status && npm run docs:check-plan-status
 | M1C 前端壳与完整引导体验（已完成） | 独立 `web/` Vue 3/TypeScript/Vite 工程与锁文件；由 OpenAPI 生成类型并使用 `openapi-fetch`；确定文件名的主包和不依赖 Vue 的独立应急包由 `go:embed` 进入 `anasd`；根页面/固定资产路由有显式 state/transport/listener policy 与 OpenAPI 双向覆盖；公开 `console_state` 驱动 M0/bootstrap/enrollment/full 入口；明文界面持续显示不可关闭的中英双语 LAN 风险横幅；bootstrap token 只在内存中交换，enrollment handoff 只经已验证的顶层 form POST，HTTPS owner 创建、本地登录、双语错误码映射与未知码回退、DNS 凭据轮换提醒、内部 CA 下载入口及无 workspace `anas init` 指引已接入；workspace 选择、schema 分组字段、Module 增删、敏感值显式 set/unset、受保护字段只读、纯内存草稿、validate 变更预览和强 ETag/首次创建条件保存已接入；plan preview、bootstrap/full step-up、guarded retry与幂等 apply 已接入；认证会话可在整页刷新后恢复并轮换 CSRF，部署与任务抽屉通过 SSE 实时更新且以任务 GET 终态对账；独立应急 UI、真实 Casdoor 运行/停止时的本地登录及 bootstrap/full 风险确认均已通过真实 daemon + Google Chrome Beta e2e | 无（M1C 已完成） |
 | M1.5 Traefik/OIDC 支线（已完成） | 独立 TLS-only 受信 listener；客户端 CA + SPKI pin + 精确源 IP；固定身份头拒绝重复/歧义且直连剥离；proxy session、`platform_admin → owner` 与目录组审计；不超过 5 分钟且动作/主体/plan 绑定的一次性 step-up；本地登录/应急路由 proxy `404`；`anas console status` 与访问页恢复地址；oauth2-proxy 双 bridge；Traefik 命名 mTLS `serversTransport` 与稳定 Secret-Store 客户端身份；R-072/R-101/R-114/R-122 真实 Linux e2e | 无（M1.5 已完成；安装自动接线仍属 M5） |
 | M2 生命周期与任务扩展（已完成） | workspace status 改为 Compose 派生的实时聚合与逐 Module runtime/health；start/stop/restart/rollback 由 CLI 与 daemon 共用类型化应用服务，HTTP 先返回 deployment/digest 绑定的服务端 preview，再以精确有序 chain 入队幂等持久任务并在运行时锁内复核漂移；cancel 只在 executor 注册的安全阶段接受，Unix 子进程组按 TERM→2 秒宽限→KILL，终态后重新取得运行时锁执行 snapshot/container/credential 补偿检查；完整级 SPA 展示 runner 展开的真实 chain 后才允许确认；R-031/R-034/R-057/R-124 已通过 Linux 静态二进制测试，R-124 另经实际 Chrome Beta UI 验证 | 无（M2 已完成） |
+| M3 Module 管理（已完成） | CLI、daemon HTTP 与 job executor 共用类型化 Module 管理服务；完整级开放 Module 状态、catalog、sync/update 与强配置 ETag 绑定的 enable/disable；配置事务发布前 fail-closed 审计并复用既有 CAS/WAL；deployment 冻结公开 HTTP(S) 管理入口；SPA 展示配置/安装/期望/部署/目录版本、实时运行/健康/容器数、依赖和入口地址；OpenAPI 双向覆盖与路径泄漏负向测试已通过 | 无（M3 已完成） |
 
 当前生产 `anasd` 只接受 root-owned 服务配置与 registry 中的 workspace ID，HTTP DTO 不返回 workspace、deployment
 或 Secret 的本机路径；默认 `lan` 静态绑定 `0.0.0.0` 与可用时的 `[::]`，数值 Host 必须匹配连接实际命中的本机地址，配置允许的 DNS Host 才可按名访问。服务从 `console_store` 读取持久单向 capability state：首次为 `bootstrap`，验证通过的 lego 证书推进到 `enrollment`，首个本地 owner 的可恢复提交再推进到 `full`；既有 M0 workspace 查询只在 `full` 状态经 HTTPS 与 owner 会话开放。配置 GET/validate/PUT 在 bootstrap 的直连明文或 TLS、以及 full 的直连 TLS 上开放；三者统一要求 bootstrap/local 会话、workspace scope 与权限，validate/PUT 另外要求 Origin/CSRF。M0 和 enrollment 保持默认 `404`。配置保存只提交 desired config、Secret Store 与 managed state；Plan 不写运行态，bootstrap Apply 只入队持久任务。生产目录
@@ -151,7 +152,7 @@ M1B 应用服务、HTTP/OpenAPI 契约、事务恢复与负向测试，不是 M0
 
 验收：要求文档 §2、§4.3 与 §6.2 的完整生命周期范围；取消、崩溃恢复、CLI/Web 并发与环境隔离均有验证证据。
 
-### M3：Module 管理
+### M3：Module 管理 — 已实施
 
 - Module enable/disable、catalog、sync/update 使用类型化服务与任务 API。
 - 在 UI 中呈现版本、配置态、运行态、健康和入口地址。
@@ -226,11 +227,11 @@ M2 已完成，当前进入 M3；已接受的 LAN 明文风险不改变写入原
 | M1C（其余） | R-004、R-010、R-070、R-087、R-088、R-103、R-104、R-113、R-126、R-128—R-131、R-156 | 已完成 |
 | M1.5 | R-072、R-100、R-101、R-105—R-107、R-109—R-111、R-114、R-122 | 已完成 |
 | M2 | R-023、R-031、R-034、R-057、R-124 | 已完成 |
-| M3 | R-032 | 未开始 |
+| M3 | R-032 | 已完成 |
 | M4 | R-047、R-115—R-116、R-123、R-127、R-132、R-133、R-144、R-149、R-150、R-152、R-155 | 未开始 |
 | M5 | R-005、R-008、R-045、R-053、R-154、R-160—R-162 | 未开始 |
 
-覆盖统计：149 项有效需求全部有归属，其中已完成 128 项；R-052、R-141、R-158、R-159 四项复合要求已废弃并由原子要求取代。**每个有效 ID 必须恰好归属一个里程碑**；新增或废弃需求时同步更新本表，否则门禁会拒绝。
+覆盖统计：149 项有效需求全部有归属，其中已完成 129 项；R-052、R-141、R-158、R-159 四项复合要求已废弃并由原子要求取代。**每个有效 ID 必须恰好归属一个里程碑**；新增或废弃需求时同步更新本表，否则门禁会拒绝。
 
 ### 5.2 CI 门禁
 
@@ -238,15 +239,15 @@ M2 已完成，当前进入 M3；已接受的 LAN 明文风险不改变写入原
 
 | 门禁 | 命令 | 最近验证基线 |
 | --- | --- | --- |
-| 单元测试 | `go test ./...` | M2 工作树（基于 HEAD `171634c`，2026-09-03）全仓通过 |
-| 竞态 | `go test -race ./internal/application ./internal/api/httpapi ./internal/consolejobs ./internal/jobexecutor ./internal/processgroup ./internal/runner ./cmd/anasd` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过；M1.5 的认证/Hook 竞态基线仍为 `2c03c6d` |
-| 静态检查 | `go vet ./...` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过 |
-| 参数 inventory / effect | `go run ./cmd/gen-module-docs --check` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过 |
-| 前端构建 | `npm --prefix web run build` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过：OpenAPI 生成、类型检查、12 个测试文件 40 个用例、主 SPA 与独立应急包构建全部通过 |
+| 单元测试 | `go test ./...` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）全仓通过 |
+| 竞态 | `go test -race ./internal/application ./internal/api/httpapi ./internal/consolejobs ./internal/jobexecutor ./internal/processgroup ./internal/runner ./cmd/anasd` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过；M1.5 的认证/Hook 竞态基线仍为 `2c03c6d` |
+| 静态检查 | `go vet ./...` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过 |
+| 参数 inventory / effect | `go run ./cmd/gen-module-docs --check` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过 |
+| 前端构建 | `npm --prefix web run build` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过：OpenAPI 生成、类型检查、13 个测试文件 43 个用例、主 SPA 与独立应急包构建全部通过 |
 | 前端生产依赖审计 | `cd web && npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org` | 工作树（HEAD `2c03c6d`，2026-09-01）通过：0 个已知漏洞；项目镜像不提供 npm audit API，因此审计显式使用官方 registry |
-| 需求/计划一致性 | `npm run docs:test-requirements && npm run docs:check-requirements && npm run docs:test-status && npm run docs:check-requirement-status && npm run docs:check-plan-status` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过：149 项有效要求全部有归属，M2 完成后 128 项已完成，另有 4 项已废弃 |
-| 文档构建 | `npm run docs:build` | M2 工作树（基于 HEAD `171634c`，2026-09-03）通过 |
-| 静态交叉编译 | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /private/tmp/anasd-m2-verify-linux-amd64 ./cmd/anasd`；arm64 同命令改 `GOARCH` 与输出名 | M2 工作树（基于 HEAD `171634c`，2026-09-03）两架构静态 ELF 通过，临时二进制已清理 |
+| 需求/计划一致性 | `npm run docs:test-requirements && npm run docs:check-requirements && npm run docs:test-status && npm run docs:check-requirement-status && npm run docs:check-plan-status` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过：149 项有效要求全部有归属，M3 完成后 129 项已完成，另有 4 项已废弃 |
+| 文档构建 | `npm run docs:build` | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）通过 |
+| 静态交叉编译 | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /private/tmp/anasd-m3-verify-linux-amd64 ./cmd/anasd`；arm64 同命令改 `GOARCH` 与输出名 | M3 工作树（基于 HEAD `c9e9a12`，2026-09-03）两架构静态 ELF 通过，临时二进制已清理 |
 
 ### 5.3 e2e 执行记录
 

@@ -26,6 +26,31 @@ type fakeDeploymentService struct {
 	compensate func(context.Context) error
 }
 
+type fakeModuleService struct {
+	update    func(context.Context, application.ModuleUpdateRequest) (application.ModuleUpdateResult, error)
+	configure func(context.Context, application.ModuleEnabledRequest, application.ConfigCommitObserver) (application.ModuleEnabledResult, error)
+}
+
+func (*fakeModuleService) ListModules(context.Context) (application.ModuleListResult, error) {
+	return application.ModuleListResult{}, nil
+}
+
+func (*fakeModuleService) CatalogModules(context.Context, application.ModuleCatalogRequest) (application.ModuleCatalogResult, error) {
+	return application.ModuleCatalogResult{}, nil
+}
+
+func (*fakeModuleService) SyncModules(context.Context, application.ModuleSyncRequest) (application.ModuleSyncResult, error) {
+	return application.ModuleSyncResult{}, nil
+}
+
+func (service *fakeModuleService) UpdateModules(ctx context.Context, request application.ModuleUpdateRequest) (application.ModuleUpdateResult, error) {
+	return service.update(ctx, request)
+}
+
+func (service *fakeModuleService) SetModuleEnabled(ctx context.Context, request application.ModuleEnabledRequest, observer application.ConfigCommitObserver) (application.ModuleEnabledResult, error) {
+	return service.configure(ctx, request, observer)
+}
+
 type recordingDeploymentAudit struct {
 	mu     sync.Mutex
 	events []deploymentaudit.Event
@@ -323,6 +348,105 @@ func TestExecutorDispatchesTypedLifecycleJobWithoutCLIProcess(t *testing.T) {
 	}
 	if !received.Confirmed || !reflect.DeepEqual(received.ExpectedModules, []string{"db", "app"}) || completed.Result["action"] != "restart" {
 		t.Fatalf("typed lifecycle request = %#v, result = %#v", received, completed.Result)
+	}
+}
+
+func TestExecutorDispatchesModuleJobsAndAuditsConfigCommit(t *testing.T) {
+	store := openExecutorStore(t)
+	updatePayload, err := jsonObject(application.ModuleUpdateRequest{Modules: []string{"demo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.CreateOrGet(context.Background(), consolejobs.CreateSpec{
+		Kind: KindModuleUpdate, WorkspaceID: "main", Mutating: true, Request: updatePayload,
+		Idempotency: consolejobs.IdempotencyInput{Principal: consolejobs.PrincipalLocalOwner, Method: "POST", CanonicalPath: "/update-modules", Key: "update", RequestDigest: consolejobs.DigestRequest([]byte("update"))},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validator := "cfgv-" + strings.Repeat("a", 64)
+	candidateValidator := "cfgv-" + strings.Repeat("b", 64)
+	configurePayload, err := jsonObject(application.ModuleEnabledRequest{
+		Module: "demo", Enabled: true, ExpectedConfigValidator: validator, OperationID: "cfg-0123456789abcdef0123456789abcdef",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured, err := store.CreateOrGet(context.Background(), consolejobs.CreateSpec{
+		Kind: KindModuleEnable, WorkspaceID: "main", Mutating: true, Request: configurePayload,
+		Idempotency: consolejobs.IdempotencyInput{Principal: consolejobs.PrincipalLocalOwner, Method: "POST", CanonicalPath: "/enable", Key: "enable", RequestDigest: consolejobs.DigestRequest([]byte("enable"))},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	auditSink := &recordingDeploymentAudit{}
+	var receivedUpdate application.ModuleUpdateRequest
+	var receivedConfigure application.ModuleEnabledRequest
+	executor, err := New(Options{
+		Store: store, Audit: auditSink,
+		Workspaces: []Workspace{{ID: "main", Path: "/private/workspace"}}, PollInterval: 5 * time.Millisecond,
+		DeploymentFactory: func(string, application.EventSink) application.DeploymentService {
+			return &fakeDeploymentService{apply: func(context.Context, application.ApplyRequest) (application.ApplyResult, error) {
+				return application.ApplyResult{}, nil
+			}}
+		},
+		ModuleFactory: func(path string, _ application.EventSink) application.ModuleManagementService {
+			if path != "/private/workspace" {
+				t.Fatalf("Module factory path = %q", path)
+			}
+			return &fakeModuleService{
+				update: func(_ context.Context, request application.ModuleUpdateRequest) (application.ModuleUpdateResult, error) {
+					receivedUpdate = request
+					return application.ModuleUpdateResult{Workspace: path, Source: "official", ViewDigest: "view"}, nil
+				},
+				configure: func(ctx context.Context, request application.ModuleEnabledRequest, observer application.ConfigCommitObserver) (application.ModuleEnabledResult, error) {
+					receivedConfigure = request
+					if err := observer.BeforeConfigCommit(ctx, application.ConfigCommitIntent{
+						OperationID: request.OperationID, CurrentValidator: validator, CandidateValidator: candidateValidator,
+					}); err != nil {
+						return application.ModuleEnabledResult{}, err
+					}
+					return application.ModuleEnabledResult{Workspace: path, Module: request.Module, Enabled: request.Enabled, PreviousValidator: validator, ConfigValidator: candidateValidator}, nil
+				},
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- executor.Run(ctx) }()
+	executor.Notify("main")
+	updateJob := waitForJobStatus(t, store, updated.Job.ID, consolejobs.StatusSucceeded)
+	configureJob := waitForJobStatus(t, store, configured.Job.ID, consolejobs.StatusSucceeded)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(receivedUpdate.Modules, []string{"demo"}) || receivedConfigure.Module != "demo" || !receivedConfigure.Enabled {
+		t.Fatalf("Module requests update=%#v configure=%#v", receivedUpdate, receivedConfigure)
+	}
+	for _, job := range []consolejobs.Job{updateJob, configureJob} {
+		if job.Result["workspace"] != "main" {
+			t.Fatalf("Module result exposed private workspace: %#v", job.Result)
+		}
+		body, _ := json.Marshal(job.Result)
+		if bytes.Contains(body, []byte("/private/workspace")) {
+			t.Fatalf("Module result exposed host path: %s", body)
+		}
+	}
+	events := auditSink.snapshot()
+	commitFound := false
+	for _, event := range events {
+		if event.Stage == deploymentaudit.StageModuleConfigCommitAuthorized {
+			commitFound = event.Action == deploymentaudit.ActionModuleEnable && event.TargetID == "demo" &&
+				event.OperationID == receivedConfigure.OperationID && event.ConfigValidator == validator && event.CandidateConfigValidator == candidateValidator
+		}
+	}
+	if !commitFound {
+		t.Fatalf("Module config commit audit was not bound: %#v", events)
 	}
 }
 

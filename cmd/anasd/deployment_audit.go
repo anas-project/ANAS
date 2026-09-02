@@ -28,16 +28,19 @@ func (sink deploymentAuditSink) RecordDeploymentEvent(ctx context.Context, event
 		"job_id": event.JobID,
 	}
 	for key, value := range map[string]string{
-		"identity_source":  event.IdentitySource,
-		"identity_issuer":  event.IdentityIssuer,
-		"identity_subject": event.IdentitySubject,
-		"semantic_role":    event.SemanticRole,
-		"directory_group":  event.DirectoryGroup,
-		"transaction_id":   event.TransactionID,
-		"plan_job_id":      event.PlanJobID,
-		"config_validator": event.ConfigValidator,
-		"plan_digest":      event.PlanDigest,
-		"failure_code":     event.FailureCode,
+		"identity_source":            event.IdentitySource,
+		"identity_issuer":            event.IdentityIssuer,
+		"identity_subject":           event.IdentitySubject,
+		"semantic_role":              event.SemanticRole,
+		"directory_group":            event.DirectoryGroup,
+		"transaction_id":             event.TransactionID,
+		"plan_job_id":                event.PlanJobID,
+		"config_validator":           event.ConfigValidator,
+		"plan_digest":                event.PlanDigest,
+		"failure_code":               event.FailureCode,
+		"target_id":                  event.TargetID,
+		"operation_id":               event.OperationID,
+		"candidate_config_validator": event.CandidateConfigValidator,
 	} {
 		if value != "" {
 			details[key] = value
@@ -59,10 +62,11 @@ func validDeploymentAuditEvent(event deploymentaudit.Event) bool {
 	if event.Actor == "" || event.WorkspaceID == "" || event.JobID == "" ||
 		len(event.Actor) > 512 || len(event.WorkspaceID) > 256 || len(event.JobID) > 256 ||
 		len(event.IdentitySource) > 512 || len(event.IdentityIssuer) > 1024 || len(event.IdentitySubject) > 512 ||
-		len(event.SemanticRole) > 128 || len(event.DirectoryGroup) > 512 || len(event.TransactionID) > 256 || len(event.PlanJobID) > 256 || len(event.FailureCode) > 128 {
+		len(event.SemanticRole) > 128 || len(event.DirectoryGroup) > 512 || len(event.TransactionID) > 256 || len(event.PlanJobID) > 256 || len(event.FailureCode) > 128 ||
+		len(event.TargetID) > 256 || len(event.OperationID) > 256 {
 		return false
 	}
-	if event.Action != deploymentaudit.ActionPlan && event.Action != deploymentaudit.ActionApply {
+	if !validDeploymentAuditAction(event.Action) {
 		return false
 	}
 	switch event.Stage {
@@ -74,6 +78,7 @@ func validDeploymentAuditEvent(event deploymentaudit.Event) bool {
 			return false
 		}
 	case deploymentaudit.StageJobInterruptedAuthorized:
+	case deploymentaudit.StageJobCanceledAuthorized:
 	case deploymentaudit.StageConfirmationIssueAuthorized:
 		if event.Action != deploymentaudit.ActionPlan || event.PlanJobID == "" || event.ConfigValidator == "" || event.PlanDigest == "" {
 			return false
@@ -82,13 +87,46 @@ func validDeploymentAuditEvent(event deploymentaudit.Event) bool {
 		if event.Action != deploymentaudit.ActionApply || event.PlanJobID == "" || event.ConfigValidator == "" || event.PlanDigest == "" {
 			return false
 		}
+	case deploymentaudit.StageModuleConfigCommitAuthorized:
+		if event.Action != deploymentaudit.ActionModuleEnable && event.Action != deploymentaudit.ActionModuleDisable ||
+			event.TargetID == "" || !validConfigAuditOperationID(event.OperationID) ||
+			event.ConfigValidator == "" || event.CandidateConfigValidator == "" {
+			return false
+		}
 	default:
 		return false
 	}
 	if event.ConfigValidator != "" && !validDeploymentConfigValidator(event.ConfigValidator) {
 		return false
 	}
+	if event.CandidateConfigValidator != "" && !validDeploymentConfigValidator(event.CandidateConfigValidator) {
+		return false
+	}
+	if event.OperationID != "" && !validConfigAuditOperationID(event.OperationID) {
+		return false
+	}
+	if (event.Action == deploymentaudit.ActionModuleEnable || event.Action == deploymentaudit.ActionModuleDisable) && event.TargetID == "" {
+		return false
+	}
 	return event.PlanDigest == "" || validLowerHexDigest(event.PlanDigest)
+}
+
+func validDeploymentAuditAction(action string) bool {
+	switch action {
+	case deploymentaudit.ActionPlan,
+		deploymentaudit.ActionApply,
+		deploymentaudit.ActionStart,
+		deploymentaudit.ActionStop,
+		deploymentaudit.ActionRestart,
+		deploymentaudit.ActionRollback,
+		deploymentaudit.ActionModuleSync,
+		deploymentaudit.ActionModuleUpdate,
+		deploymentaudit.ActionModuleEnable,
+		deploymentaudit.ActionModuleDisable:
+		return true
+	default:
+		return false
+	}
 }
 
 func validDeploymentConfigValidator(value string) bool {

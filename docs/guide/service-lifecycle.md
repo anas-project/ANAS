@@ -34,6 +34,23 @@ anas deployments inspect <id> -w /srv/anas
 运行中的生命周期任务只在服务端声明的安全阶段接受取消。取消会终止整个外部命令进程组，并在任务
 终态后执行补偿检查；已经进入不安全阶段的任务会拒绝取消，而不是伪装成已停止。
 
+## Module 管理
+
+完整级管理控制台的 Module 管理页把四类状态放在一起展示：期望配置中的选择状态、不可变 Module
+视图中的安装版本、活动 deployment 冻结的版本与入口地址，以及实时 Compose 运行态、健康和容器数。
+管理入口来自活动 deployment 物化时冻结的公开 HTTP(S) 地址；页面不会从当前配置重新推导地址，也不
+暴露宿主机路径。
+
+“启用/禁用”只通过强配置 ETag 修改期望配置，不会隐式 apply；配置在任务执行前已变化时，旧操作会被
+拒绝。目录更新和按 lock 同步同样创建持久、幂等、每 workspace 串行的任务。更新完成后仍需单独生成
+plan 并确认 apply，运行环境才会改变。CLI 的对应流程保持不变：
+
+```bash
+anas module list -w /srv/anas
+anas module update -w /srv/anas
+anas module sync -w /srv/anas
+```
+
 ## 回滚
 
 deployment 回滚解决“发布制品或配置有问题”，数据快照恢复解决“持久数据已经被改变”。两者不是同一个操作：

@@ -63,6 +63,10 @@ const (
 	PermissionDeploymentApply     Permission = "deployment.apply"
 	PermissionDeploymentLifecycle Permission = "deployment.lifecycle"
 	PermissionDeploymentRollback  Permission = "deployment.rollback"
+	PermissionModuleRead          Permission = "module.read"
+	PermissionModuleCatalogRead   Permission = "module.catalog.read"
+	PermissionModuleUpdate        Permission = "module.update"
+	PermissionModuleConfig        Permission = "module.config"
 )
 
 type ObjectScope string

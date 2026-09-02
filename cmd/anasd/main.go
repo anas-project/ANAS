@@ -156,6 +156,7 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	executor, err := jobexecutor.New(jobexecutor.Options{
 		Store: jobStore, Audit: deploymentAudit, Workspaces: executorWorkspaces,
 		DeploymentFactory: runner.NewWorkspaceDeploymentServiceWithEvents,
+		ModuleFactory:     runner.NewWorkspaceModuleManagementService,
 		OnError: func(err error) {
 			if logger != nil {
 				logger.Printf("console job executor: %v", err)
@@ -229,7 +230,8 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	configOptions := httpapi.ConfigOptions{Factory: runner.NewWorkspaceConfigService, Audit: configAuditSink{writer: auditWriter, logger: logger}}
 	deploymentOptions := httpapi.DeploymentOptions{
 		PlanFactory: runner.NewWorkspaceDeploymentPlanService, ServiceFactory: runner.NewWorkspaceDeploymentService,
-		Store: jobStore, Audit: deploymentAudit,
+		ModuleFactory: runner.NewWorkspaceModuleManagementService,
+		Store:         jobStore, Audit: deploymentAudit,
 		StepUp: authStore, Notify: executor.Notify,
 	}
 	auditOptions := httpapi.AuditQueryOptions{Store: auditWriter}
