@@ -15,12 +15,14 @@ type moduleListResponse struct {
 	WorkspaceID      string                    `json:"workspace_id"`
 	ActiveDeployment *string                   `json:"active_deployment"`
 	Modules          []application.ModuleState `json:"modules"`
+	NextCursor       *string                   `json:"next_cursor"`
 }
 
 type moduleCatalogResponse struct {
 	APIVersion  string                          `json:"api_version"`
 	WorkspaceID string                          `json:"workspace_id"`
 	Catalog     application.ModuleCatalogResult `json:"catalog"`
+	NextCursor  *string                         `json:"next_cursor"`
 }
 
 type moduleUpdateHTTPRequest struct {
@@ -29,7 +31,8 @@ type moduleUpdateHTTPRequest struct {
 }
 
 func (h *handler) listModules(w http.ResponseWriter, r *http.Request, params map[string]string) {
-	if _, ok := supportedQuery(w, r); !ok {
+	pagination, ok := parseListPagination(w, r)
+	if !ok {
 		return
 	}
 	service, ok := h.workspaceModuleService(w, params["ws"], application.NopEventSink{})
@@ -56,16 +59,22 @@ func (h *handler) listModules(w http.ResponseWriter, r *http.Request, params map
 			result.Modules[index].EntryPoints = []application.ModuleManagementSurface{}
 		}
 	}
+	modules, next, err := paginateList(result.Modules, pagination, "modules\x00"+params["ws"], func(module application.ModuleState) string { return module.Name })
+	if err != nil {
+		writePaginatedListError(w)
+		return
+	}
 	writeJSON(w, http.StatusOK, moduleListResponse{
-		APIVersion: APIVersion, WorkspaceID: params["ws"], ActiveDeployment: result.ActiveDeployment, Modules: result.Modules,
+		APIVersion: APIVersion, WorkspaceID: params["ws"], ActiveDeployment: result.ActiveDeployment, Modules: modules, NextCursor: next,
 	})
 }
 
 func (h *handler) catalogModules(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	query, ok := supportedQuery(w, r, "workspace_id")
+	pagination, ok := parseListPagination(w, r, "workspace_id")
 	if !ok {
 		return
 	}
+	query := r.URL.Query()
 	workspaceID := ""
 	if values, present := query["workspace_id"]; present {
 		if len(values) != 1 || values[0] == "" {
@@ -96,7 +105,13 @@ func (h *handler) catalogModules(w http.ResponseWriter, r *http.Request, _ map[s
 	for index := range result.Modules {
 		result.Modules[index].Platforms = nonNilStrings(result.Modules[index].Platforms)
 	}
-	writeJSON(w, http.StatusOK, moduleCatalogResponse{APIVersion: APIVersion, WorkspaceID: workspaceID, Catalog: result})
+	modules, next, err := paginateList(result.Modules, pagination, "catalog-modules\x00"+workspaceID, func(module application.ModuleCatalogEntry) string { return module.Module })
+	if err != nil {
+		writePaginatedListError(w)
+		return
+	}
+	result.Modules = modules
+	writeJSON(w, http.StatusOK, moduleCatalogResponse{APIVersion: APIVersion, WorkspaceID: workspaceID, Catalog: result, NextCursor: next})
 }
 
 func (h *handler) updateModules(w http.ResponseWriter, r *http.Request, params map[string]string) {

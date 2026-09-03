@@ -15,7 +15,7 @@ updated: 2026-09-03
 该特性**不单独建架构文档**：设计与被否决的替代方案写在 §3—§5 与 §9 决策记录里；
 文中的 `/architecture/*` 链接指向相邻系统的既有约束，改到对应部分时才需要读。
 
-落地顺序、里程碑与剩余工作见[Web API 与管理前端实施计划](../plans/web-api-admin-console.md)；
+落地顺序、里程碑与验证记录见[Web API 与管理前端实施计划](../plans/archived/web-api-admin-console.md)；
 该计划按需求 ID 划分各阶段范围，并在其实现检查表中记录覆盖与执行证据。
 
 「必须／不得」是约束，「应当」是有正当理由可偏离的默认。除计划文档标注为已实施的部分外，本文描述的能力**当前不可执行**，不是操作指南。
@@ -71,7 +71,7 @@ updated: 2026-09-03
 
 元数据回填之前是“机制存在、数据不足”：141 项公开参数中 Module 只有 12 项声明 `config.types`，17 项全局参数为 0 项（`globalSchema` 当时没有 `Types` 字段），且 `paramTypeDocument` 对“未声明”与“声明为 string”返回同一个 `"string"`，消费者无法区分。
 
-当前状态与精确基线见[实施计划](../plans/web-api-admin-console.md)的落地快照。对后续实现的约束：
+当前状态与精确基线见[实施计划](../plans/archived/web-api-admin-console.md)的落地快照。对后续实现的约束：
 
 - 配置 GET/validate/PUT **必须**消费与 CLI 相同的应用层 schema，**不得**为每个 Module 编写独立 HTTP 适配，也**不得**从 CLI JSON 反解析元数据。新增 Module 参数只改声明与统一投影，不改 handler 分支。
 - 字段投影必须返回其在公开配置文档中的规范 `document_path`；前端只按该路径读写内存草稿，不得复制 runner 对 global、env、Module config 或 identity 字段的寻址规则。
@@ -585,7 +585,7 @@ OIDC 会话必须提交由受信 forward-auth 路径产生、绑定同一稳定 
 
 **本矩阵是规范来源，正文是解释。** 两者冲突以矩阵为准。正文可以为了读得顺随意改写，不影响契约。
 
-ID 一经分配即固定，章节重排、措辞修改都不改动它；废弃的需求保留行并标 `已废弃`，编号不复用。实施进度与执行记录不在本文，见[实施计划](../plans/web-api-admin-console.md)的实现检查表。
+ID 一经分配即固定，章节重排、措辞修改都不改动它；废弃的需求保留行并标 `已废弃`，编号不复用。实施进度与执行记录不在本文，见[实施计划](../plans/archived/web-api-admin-console.md)的实现检查表。
 
 验证方式：`单元` = Go/前端单元或表驱动测试；`契约` = OpenAPI 或 CLI contract 测试；`e2e` = `test-env/` 中需要真实 Docker/Btrfs/浏览器/主机的脚本；`CI` = 构建、静态 inventory 或发布流水线属性；`审阅` = 无法自动判定，PR 中人工确认。
 

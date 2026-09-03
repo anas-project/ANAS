@@ -37,7 +37,10 @@ archive_dir="anas_linux_${arch}"
 tar -xzf "$archive" -C "$work_dir" \
   "$archive_dir/release.json" \
   "$archive_dir/anas" \
-  "$archive_dir/anas-helper"
+  "$archive_dir/anasd" \
+  "$archive_dir/anas-helper" \
+  "$archive_dir/anasd.service" \
+  "$archive_dir/anasd.yml"
 
 manifest="$work_dir/$archive_dir/release.json"
 jq -e \
@@ -76,9 +79,17 @@ verify_go_metadata() {
 }
 
 binary="$work_dir/$archive_dir/anas"
+daemon="$work_dir/$archive_dir/anasd"
 helper="$work_dir/$archive_dir/anas-helper"
 verify_go_metadata "$binary" github.com/anas-project/ANAS/cmd/anas
+verify_go_metadata "$daemon" github.com/anas-project/ANAS/cmd/anasd
 verify_go_metadata "$helper" github.com/anas-project/ANAS/cmd/anas-helper
+
+grep -Fq 'User=root' "$work_dir/$archive_dir/anasd.service"
+grep -Fq 'Group=root' "$work_dir/$archive_dir/anasd.service"
+grep -Fq 'ProtectSystem=strict' "$work_dir/$archive_dir/anasd.service"
+grep -Fq 'ReadWritePaths=' "$work_dir/$archive_dir/anasd.service"
+grep -Fq 'api_version: anas.console-config/v1' "$work_dir/$archive_dir/anasd.yml"
 
 reported="$("$binary" version --json)"
 jq -e \

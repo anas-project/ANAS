@@ -73,6 +73,7 @@ func TestOpenAPITracksImplementedSurface(t *testing.T) {
 		"POST /api/v1/auth/login":                                                     {"200", "400", "401", "403", "404", "405", "413", "415", "429", "500", "503"},
 		"POST /api/v1/auth/logout":                                                    {"204", "400", "401", "403", "404", "405", "500", "503"},
 		"POST /api/v1/auth/step-up":                                                   {"200", "400", "401", "403", "404", "405", "408", "413", "415", "429", "500", "503", "504"},
+		"GET /api/v1/workspaces":                                                      {"200", "400", "401", "403", "404", "405", "408", "500", "504"},
 		"GET /api/v1/jobs":                                                            {"200", "400", "401", "403", "404", "405", "408", "500", "503", "504"},
 		"GET /api/v1/jobs/{id}":                                                       {"200", "400", "401", "403", "404", "405", "408", "500", "503", "504"},
 		"GET /api/v1/jobs/{id}/events":                                                {"200", "204", "400", "401", "403", "404", "405", "406", "408", "410", "429", "500", "503", "504"},
@@ -156,6 +157,53 @@ func TestOpenAPITracksImplementedSurface(t *testing.T) {
 	}
 	if description, _ := objectAt(t, responses, "ConfigPutServiceUnavailableProblem")["description"].(string); !strings.Contains(description, "config_recovery_required") {
 		t.Fatalf("config PUT 503 description does not document indeterminate recovery: %q", description)
+	}
+}
+
+func TestOpenAPIListOperationsDeclarePagination(t *testing.T) {
+	document := readOpenAPIDocument(t)
+	paths := objectAt(t, document, "paths")
+	want := map[string]string{
+		"/api/v1/workspaces":                                "WorkspaceListResponse",
+		"/api/v1/workspaces/{ws}/deployments":               "DeploymentListResponse",
+		"/api/v1/workspaces/{ws}/modules":                   "ModuleListResponse",
+		"/api/v1/catalog/modules":                           "ModuleCatalogResponse",
+		"/api/v1/workspaces/{ws}/modules/{module}/commands": "ModuleCommandListResponse",
+		"/api/v1/workspaces/{ws}/snapshots":                 "SnapshotListResponse",
+		"/api/v1/workspaces/{ws}/backups":                   "BackupListResponse",
+		"/api/v1/workspaces/{ws}/local-admins":              "LocalAdminListResponse",
+		"/api/v1/jobs":                                      "JobListResponse",
+		"/api/v1/audit-events":                              "AuditEventListResponse",
+	}
+	for path, schemaName := range want {
+		operation := objectAt(t, objectAt(t, paths, path), "get")
+		parameters, ok := operation["parameters"].([]any)
+		if !ok {
+			t.Errorf("GET %s parameters = %T", path, operation["parameters"])
+			continue
+		}
+		refs := make(map[string]bool, len(parameters))
+		for _, raw := range parameters {
+			if parameter, ok := raw.(map[string]any); ok {
+				if ref, ok := parameter["$ref"].(string); ok {
+					refs[ref] = true
+				}
+			}
+		}
+		for _, ref := range []string{"#/components/parameters/Limit", "#/components/parameters/Cursor"} {
+			if !refs[ref] {
+				t.Errorf("GET %s does not declare %s", path, ref)
+			}
+		}
+		responseSchema := objectAt(t, objectAt(t, objectAt(t, objectAt(t, operation, "responses"), "200"), "content"), "application/json")
+		if got := objectAt(t, responseSchema, "schema")["$ref"]; got != "#/components/schemas/"+schemaName {
+			t.Errorf("GET %s response schema = %v", path, got)
+		}
+		schema := objectAt(t, objectAt(t, objectAt(t, document, "components"), "schemas"), schemaName)
+		required := stringSliceAt(t, schema, "required")
+		if !slices.Contains(required, "next_cursor") {
+			t.Errorf("%s does not require next_cursor", schemaName)
+		}
 	}
 }
 

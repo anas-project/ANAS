@@ -81,6 +81,29 @@ Every TLS artifact must be a root-owned, regular, non-symlink file. Private keys
 
 Last-known-good state exists only in memory in the current `anasd` process. After a restart, at least one candidate must validate from disk. If none does, TLS handshakes fail, while plaintext HTTP remains constrained by the current console state and route allowlist and gains no additional capability.
 
+## systemd privilege boundary
+
+The release `anasd.service` explicitly uses `User=root` and `Group=root`, sets `UMask=0077`,
+`NoNewPrivileges=true`, and `ProtectSystem=strict`, and limits its default writable paths to the
+control-plane state and standard workspace/backup roots: `/var/lib/anas`, `/srv/anas`, and
+`/srv/anas-backups`. If service configuration uses another workspace, backup target, or console
+store, add those exact directories to `ReadWritePaths` in a systemd drop-in. Do not remove
+`ProtectSystem` and make the whole host writable again.
+
+Running as root is not a low-privilege sandbox. `anasd` reads root-only TLS private keys, modifies
+workspace configuration, deployments, snapshots, and backups, and may connect to the Docker socket.
+The Docker socket can create privileged containers and mount host paths, so its authority is
+effectively root. A principal that can replace workspace content or a TLS private key can likewise
+control service output or the management entry. Access to these paths, `/etc/anas/anasd.yml`, and
+`/var/run/docker.sock` must therefore be limited to trusted administrators. The unit's writable-path
+restriction protects against accidental writes; it is not a boundary against malicious root or a
+Docker administrator.
+
+The installer creates the first root-owned `0600` configuration, preserves it during upgrades, and
+updates only binaries and the unit. Uninstall preserves configuration, workspaces, and console state
+by default; `--purge` removes only service configuration and source preference, never state or user
+data.
+
 ## Listener and bootstrap risk
 
 `lan` binds `0.0.0.0` and, where supported, `[::]`. It means every interface, not “a detected LAN”: Wi-Fi, VPNs, container bridges, and public interfaces can all be included. Plaintext bootstrap HTTP has no confidentiality and does not resist an active attacker. Administrators own interface isolation and firewall policy. This is the accepted boundary that makes a new NAS immediately reachable from another device on its network.

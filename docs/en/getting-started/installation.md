@@ -15,9 +15,12 @@ You also need:
 
 The installer currently supports Linux only and detects `x86_64`/`amd64` and
 `aarch64`/`arm64`. It downloads the matching static binary, verifies it against the Release
-`SHA256SUMS`, then runs the downloaded binary and requires its reported version to match the Release
-tag before replacing an existing installation or writing source preferences. It installs the binary
-as `/usr/local/bin/anas` and invokes `sudo` only when the destination is not writable.
+`SHA256SUMS`, then runs the downloaded CLI and requires its reported version to match the Release tag
+before replacing an existing installation or writing source preferences. It installs
+`/usr/local/bin/anas` and `/usr/local/bin/anasd`. The default installation also creates the root-owned
+`/etc/anas/anasd.yml` (`0600`), installs `anasd.service`, and starts it. Consequently, service
+installation explicitly invokes `sudo` even when the binary directory itself is writable; the
+service configuration, unit, and root daemon identity require that boundary.
 
 Install from GitHub and keep GitHub/GHCR as the default distribution source:
 
@@ -51,15 +54,33 @@ mirrors. Once a workspace is initialized, its own `config.yml` retains the sourc
 workspace or changing the installer preference cannot silently change an existing deployment. An
 explicit `module_source` in the external configuration always wins.
 
-To avoid `sudo`, install into a writable directory already present in `PATH`:
+The initial service configuration uses `lan`, management port `8080`, `/var/lib/anas/console`, and an
+empty workspace registry. Set `ANAS_MANAGEMENT_PORT` during the first installation to select another
+port. Register a workspace created by `anas init` in `/etc/anas/anasd.yml`, then restart the service.
+Running the same installer upgrades the CLI, daemon, and unit without replacing an existing service
+configuration.
+
+To avoid `sudo`, install into a writable directory already present in `PATH`. A custom install
+directory installs the binaries without creating a systemd service by default:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-project/ANAS/master/install.sh | sh -s -- --install-dir "$HOME/.local/bin"
 ```
 
-The script requires `curl`, `tar`, `install`, and either `sha256sum` or `shasum`. Automation can set
-`ANAS_INSTALL_SOURCE=github|cn` and `ANAS_INSTALL_DIR`; the CLI also accepts a temporary
+The script requires `curl`, `tar`, `install`, and either `sha256sum` or `shasum`; default service
+installation also requires `systemctl`. Automation can set `ANAS_INSTALL_SOURCE=github|cn`,
+`ANAS_INSTALL_DIR`, and `ANAS_MANAGEMENT_PORT`; the CLI also accepts a temporary
 `ANAS_DEFAULT_SOURCE=official|official-cn` override.
+
+Uninstalling stops and disables the service and removes the Core binaries and unit while preserving
+workspaces, console state, and service configuration:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-project/ANAS/master/install.sh | sh -s -- --uninstall
+```
+
+Add `--purge` to remove `/etc/anas/anasd.yml` and the current user's source preference. Even purge
+does not remove workspaces or control-plane state under `/var/lib/anas`.
 
 ## Select a Module source
 
@@ -89,7 +110,8 @@ installed-tree digests, so ordinary sync/apply never follows a moved tag.
 
 ## Module installation and cache
 
-Core releases contain the binary only. During first initialization, ANAS bootstraps Module packages
+Core releases contain the CLI, the daemon with its embedded management UI, the narrow helper, a
+service-configuration example, and a systemd unit, but no Module bundle. During first initialization, ANAS bootstraps Module packages
 from the configured source when no local bundles are available, then resolves the deployment lock:
 
 ```bash

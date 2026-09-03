@@ -16,7 +16,6 @@
 | [Compose 执行边界](compose-execution-boundary.md) | Docker endpoint 绑定、Compose 首因错误保留与补偿结果分层 | 提案 |
 | [条件 Capability 依赖](conditional-capability-dependency.md) | Manifest 条件字段、解析器、锁与输出，Adminer 作为第一个消费者；验收依据见[要求](../requirements/conditional-capability-dependency.md) | 实施中 |
 | [无序 Capability 依赖](weak-capability-dependency.md) | `ordering` 字段、calculate 环境隔离、解除 Adminer 成环阻塞；验收依据见[要求](../requirements/weak-capability-dependency.md) | 实施中 |
-| [Web API 与管理前端](web-api-admin-console.md) | 管理面里程碑与剩余工作；验收依据见[要求](../requirements/web-api-admin-console.md) | 部分实施 |
 | [Module 专属命令能力](module-command-capability.md) | manifest/deployment 冻结、共享执行服务、CLI/anasd 与 Forgejo/Incus 验收 | 实施中 |
 | [VersityGW S3 兼容 Module](versitygw-module.md) | S3 Module、Capability/Resource、独立 bucket/凭据、客户端与恢复验收 | 实施中 |
 | [Incus compute Provider](incus-module.md) | `incus` Provider Module、多消费者隔离、Forgejo 迁移与真实宿主验收；验收依据见[要求](../requirements/incus-module.md) | 提案 |
@@ -39,5 +38,6 @@
 | [MeshCentral OIDC-only](archived/meshcentral-oidc-only.md) | [需求矩阵](../requirements/meshcentral-oidc-only.md)、[Module IAM 支持清单](../../docs/reference/module-iam-support.md) | 已完成（已归档） |
 | [内置 Module 与配置 Inventory](archived/builtin-inventory.md) | [需求矩阵](../requirements/builtin-inventory.md)、[Module 目录](../../docs/reference/modules.md)、[配置参考](../../docs/reference/configuration.md) | 已完成（已归档） |
 | [Samba 身份锚点 OID 与既有目录迁移](archived/samba-identity-anchor.md) | [需求矩阵](../requirements/samba-identity-anchor.md)、[OID 注册表](../../docs/governance/oid-registry.md)、[迁移 Runbook](../../docs/guide/migrate-identity-anchor-oid.md) | 已完成（已归档） |
+| [Web API 与管理前端](archived/web-api-admin-console.md) | 管理面首版里程碑与验证记录；验收依据见[要求](../requirements/web-api-admin-console.md) | 已完成（已归档） |
 
 计划使用稳定主题文件名。创建日期、更新时间、状态和目标里程碑写在文档内，不因日常更新重命名。

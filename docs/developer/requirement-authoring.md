@@ -104,5 +104,5 @@ npm run test-cases:check
 
 - [文档写作标准](/developer/documentation-standard) §4：目录分工、ID 性质、实施检查表、frontmatter
 - [Web API 与管理前端要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/web-api-admin-console.md)：一份完整的需求矩阵实例
-- [Web API 与管理前端实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/web-api-admin-console.md)：配套的归属表与实现检查表
+- [Web API 与管理前端实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/archived/web-api-admin-console.md)：配套的归属表与实现检查表
 - `test-env/cases/README.md`：用例 schema、生成和双向溯源规则

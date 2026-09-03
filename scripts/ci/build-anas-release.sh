@@ -47,6 +47,24 @@ CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
   -o "${stage_dir}/anas" \
   ./cmd/anas
 
+# anasd embeds the already-built Vite output. The release workflow builds and
+# verifies that output in its Node stage before either architecture is compiled.
+for asset in \
+  internal/webui/dist/main/index.html \
+  internal/webui/dist/main/assets/main.js \
+  internal/webui/dist/emergency/index.html \
+  internal/webui/dist/emergency/assets/emergency.js; do
+  [[ -s "$asset" ]] || {
+    echo "embedded console asset is missing; run the frontend release stage: $asset" >&2
+    exit 2
+  }
+done
+CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
+  -trimpath \
+  -ldflags "-s -w -X github.com/anas-project/ANAS/internal/buildinfo.Version=${version} -X github.com/anas-project/ANAS/internal/buildinfo.Commit=${commit} -X github.com/anas-project/ANAS/internal/buildinfo.Date=${build_date}" \
+  -o "${stage_dir}/anasd" \
+  ./cmd/anasd
+
 # anas-helper ships beside anas because it is the one part that has to be
 # installed root-owned and granted a capability. Building it here rather than
 # separately keeps the two from drifting apart in a release.
@@ -56,15 +74,20 @@ CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
   -o "${stage_dir}/anas-helper" \
   ./cmd/anas-helper
 
+install -m 0644 packaging/systemd/anasd.service "${stage_dir}/anasd.service"
+install -m 0600 packaging/anasd/anasd.yml "${stage_dir}/anasd.yml"
+
 printf '{\n  "api_version": "anas.release/v1",\n  "version": "%s",\n  "commit": "%s",\n  "build_date": "%s",\n  "os": "linux",\n  "architecture": "%s"\n}\n' \
   "$version" "$commit" "$build_date" "$arch" >"${stage_dir}/release.json"
 
-tar \
-  --sort=name \
-  --mtime='@0' \
-  --owner=0 \
-  --group=0 \
-  --numeric-owner \
-  -C "$stage_root" \
-  -czf "${output_dir}/${archive}.tar.gz" \
-  "$archive"
+find "$stage_dir" -type d -exec chmod 0755 {} +
+find "$stage_dir" -exec touch -t 197001010000 {} +
+(
+  cd "$stage_root"
+  LC_ALL=C find "$archive" -print | LC_ALL=C sort >"$stage_root/files"
+)
+if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+  tar --no-recursion --no-xattrs --owner=0 --group=0 --numeric-owner -C "$stage_root" -cf - -T "$stage_root/files" | gzip -n >"${output_dir}/${archive}.tar.gz"
+else
+  tar --no-recursion --no-xattrs --uid 0 --gid 0 --uname root --gname root -C "$stage_root" -cf - -T "$stage_root/files" | gzip -n >"${output_dir}/${archive}.tar.gz"
+fi

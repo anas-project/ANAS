@@ -8,6 +8,24 @@ import (
 	"github.com/anas-project/ANAS/internal/consoleauth"
 )
 
+func (h *handler) listWorkspaces(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+	pagination, ok := parseListPagination(w, r)
+	if !ok {
+		return
+	}
+	ids := h.registry.IDs()
+	items := make([]workspaceListItem, 0, len(ids))
+	for _, id := range ids {
+		items = append(items, workspaceListItem{ID: id})
+	}
+	items, next, err := paginateList(items, pagination, "workspaces", func(item workspaceListItem) string { return item.ID })
+	if err != nil {
+		writePaginatedListError(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, workspaceListResponse{APIVersion: APIVersion, Items: items, NextCursor: next})
+}
+
 const internalCAFilename = "anas-internal-ca.crt"
 
 type CertificateIssuer string

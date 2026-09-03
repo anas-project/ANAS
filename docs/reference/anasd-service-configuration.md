@@ -82,6 +82,23 @@ trusted_proxy:
 
 last-known-good 只保存在当前 `anasd` 进程内；服务重启后仍必须从磁盘验证出至少一个候选证书。没有有效候选时 TLS 握手失败，但明文 HTTP 仍只按当前 console state 和路由 allowlist 处理，不会因此开放额外能力。
 
+## systemd 权限边界
+
+正式 Release 的 `anasd.service` 显式使用 `User=root`/`Group=root`，设置 `UMask=0077`、
+`NoNewPrivileges=true`、`ProtectSystem=strict`，并把默认可写范围限制为控制面状态、标准
+workspace 与备份根：`/var/lib/anas`、`/srv/anas`、`/srv/anas-backups`。如果服务配置使用
+其他 workspace、backup target 或 console store，管理员必须用 systemd drop-in 为精确目录
+扩展 `ReadWritePaths`；不能通过移除 `ProtectSystem` 把整台主机重新变为可写。
+
+root 身份不是低权限沙箱。`anasd` 需要读取 root-only TLS 私钥、修改 workspace 中的配置、
+deployment、快照与备份制品，并可连接 Docker socket。Docker socket 本身允许创建特权容器、
+挂载宿主路径，实际权限近似 root；能替换 workspace 内容或 TLS 私钥的主体也能控制服务输出或
+管理入口。因此这些路径、`/etc/anas/anasd.yml` 与 `/var/run/docker.sock` 的访问权必须只授予
+受信任管理员。unit 的写路径限制是误写防护，不是对恶意 root 或 Docker 管理员的安全边界。
+
+安装器首次创建 root-owned `0600` 配置，升级时保留其内容，只更新二进制和 unit。卸载默认保留
+配置、workspace 与 console state；`--purge` 也只删除服务配置和源偏好，不删除状态或用户数据。
+
 ## 监听与引导风险
 
 `lan` 会绑定 `0.0.0.0`，并在系统支持时绑定 `[::]`。它表示全部接口，不是“识别出的局域网”：Wi-Fi、VPN、容器网桥和公网接口都可能被包含。首次引导明文 HTTP 不具备机密性或抗主动劫持能力；接口隔离和防火墙由管理员负责。这是 NAS 启动后可立即从同网设备访问的已接受产品边界。
