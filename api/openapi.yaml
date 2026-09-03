@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: ANAS Web API
-  version: 0.7.0-m4
+  version: 0.8.0-m5
   description: |
     M2 API for the ANAS administration daemon. This contract is versioned
     independently from the CLI JSON contract: HTTP responses use
@@ -25,7 +25,8 @@ info:
     Module lifecycle previews and durable start/stop/restart/rollback jobs.
     M3 adds typed Module catalog, configuration and update operations. M4 adds
     the non-privileged snapshot, backup planning/listing and local-administrator
-    surface plus server-generated terminal-only action descriptors.
+    surface plus server-generated terminal-only action descriptors. M5 closes
+    the required API surface and applies opaque cursor pagination to every list.
     Saving desired configuration does not apply it. A disallowed
     state, listener, or transport is deliberately indistinguishable from an
     unknown path and returns 404.
@@ -1342,6 +1343,9 @@ paths:
         paths. The strong ETag is the current managed-config generation and is
         required by Module enable and disable actions.
       tags: [Modules]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
       security:
         - localSessionCookie: []
         - proxySessionCookie: []
@@ -1399,6 +1403,8 @@ paths:
             minLength: 1
             maxLength: 64
             pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
       security:
         - localSessionCookie: []
         - proxySessionCookie: []
@@ -1869,6 +1875,39 @@ paths:
           $ref: "#/components/responses/ServiceUnavailableProblem"
         "504":
           $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces:
+    get:
+      operationId: listWorkspaces
+      summary: List registered workspace IDs without exposing host paths
+      tags: [Workspace]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      security:
+        - {}
+        - localSessionCookie: []
+        - proxySessionCookie: []
+      x-anas-permission: workspace.read
+      x-anas-scope: service
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        m0: {authentication: none, transports: [plaintext, tls]}
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "200":
+          description: One page of opaque registered workspace IDs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceListResponse"
+        "400": { $ref: "#/components/responses/BadRequestProblem" }
+        "401": { $ref: "#/components/responses/UnauthorizedProblem" }
+        "403": { $ref: "#/components/responses/ForbiddenProblem" }
+        "404": { $ref: "#/components/responses/NotFoundProblem" }
+        "405": { $ref: "#/components/responses/GetMethodNotAllowedProblem" }
+        "408": { $ref: "#/components/responses/RequestCanceledProblem" }
+        "500": { $ref: "#/components/responses/InternalProblem" }
+        "504": { $ref: "#/components/responses/DeadlineProblem" }
   /api/v1/workspaces/{ws}/status:
     parameters:
       - $ref: "#/components/parameters/WorkspaceID"
@@ -2007,6 +2046,9 @@ paths:
       summary: List commands frozen for one Module in the active deployment
       description: Returns only public descriptors and local availability; it does not contact the managed service.
       tags: [Modules]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
       security:
         - {}
         - localSessionCookie: []
@@ -2137,6 +2179,8 @@ paths:
       tags: [Maintenance]
       parameters:
         - $ref: "#/components/parameters/BackupTargetIDQuery"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
       security:
         - localSessionCookie: []
         - proxySessionCookie: []
@@ -2169,6 +2213,9 @@ paths:
       operationId: listLocalAdministrators
       summary: List local Module administrator identities without credentials
       tags: [Maintenance]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
       security:
         - localSessionCookie: []
         - proxySessionCookie: []
@@ -2340,6 +2387,9 @@ paths:
       operationId: listSnapshots
       summary: List snapshots and their current health
       tags: [Maintenance]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
       security:
         - localSessionCookie: []
         - proxySessionCookie: []
@@ -2893,6 +2943,10 @@ components:
     APIVersion:
       type: string
       const: anas.dev/api/v1
+    NextCursor:
+      type: [string, "null"]
+      minLength: 1
+      maxLength: 512
     EmptyObject:
       type: object
       additionalProperties: false
@@ -2937,7 +2991,7 @@ components:
     SnapshotListResponse:
       type: object
       additionalProperties: false
-      required: [api_version, workspace_id, keep_auto, snapshots]
+      required: [api_version, workspace_id, keep_auto, snapshots, next_cursor]
       properties:
         api_version:
           $ref: "#/components/schemas/APIVersion"
@@ -2950,6 +3004,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SnapshotRecord"
+        next_cursor:
+          $ref: "#/components/schemas/NextCursor"
     SnapshotRecord:
       type: object
       additionalProperties: false
@@ -3143,7 +3199,7 @@ components:
     BackupListResponse:
       type: object
       additionalProperties: false
-      required: [api_version, workspace_id, target_id, backups]
+      required: [api_version, workspace_id, target_id, backups, next_cursor]
       properties:
         api_version:
           $ref: "#/components/schemas/APIVersion"
@@ -3154,6 +3210,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BackupRecord"
+        next_cursor:
+          $ref: "#/components/schemas/NextCursor"
     BackupRecord:
       type: object
       additionalProperties: false
@@ -3177,7 +3235,7 @@ components:
     LocalAdminListResponse:
       type: object
       additionalProperties: false
-      required: [api_version, workspace_id, accounts]
+      required: [api_version, workspace_id, accounts, next_cursor]
       properties:
         api_version:
           $ref: "#/components/schemas/APIVersion"
@@ -3186,6 +3244,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/LocalAdminRecord"
+        next_cursor:
+          $ref: "#/components/schemas/NextCursor"
     LocalAdminRecord:
       type: object
       additionalProperties: false
@@ -4481,6 +4541,29 @@ components:
         latest_id:
           type: integer
           minimum: 0
+    WorkspaceListResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, items, next_cursor]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceListItem"
+        next_cursor:
+          $ref: "#/components/schemas/NextCursor"
+    WorkspaceListItem:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
     WorkspaceStatusResponse:
       type: object
       additionalProperties: false
@@ -4738,7 +4821,7 @@ components:
     ModuleCommandListResponse:
       type: object
       additionalProperties: false
-      required: [api_version, workspace_id, active_deployment, items]
+      required: [api_version, workspace_id, active_deployment, items, next_cursor]
       properties:
         api_version:
           $ref: "#/components/schemas/APIVersion"
@@ -4750,10 +4833,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ModuleCommand"
+        next_cursor:
+          $ref: "#/components/schemas/NextCursor"
     ModuleListResponse:
       type: object
       additionalProperties: false
-      required: [api_version, workspace_id, active_deployment, modules]
+      required: [api_version, workspace_id, active_deployment, modules, next_cursor]
       properties:
         api_version:
           $ref: "#/components/schemas/APIVersion"
@@ -4766,6 +4851,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ModuleState"
+        next_cursor:
+          $ref: "#/components/schemas/NextCursor"
     ModuleState:
       type: object
       additionalProperties: false
@@ -4818,7 +4905,7 @@ components:
     ModuleCatalogResponse:
       type: object
       additionalProperties: false
-      required: [api_version, workspace_id, catalog]
+      required: [api_version, workspace_id, catalog, next_cursor]
       properties:
         api_version:
           $ref: "#/components/schemas/APIVersion"
@@ -4827,6 +4914,8 @@ components:
           minLength: 1
         catalog:
           $ref: "#/components/schemas/ModuleCatalog"
+        next_cursor:
+          $ref: "#/components/schemas/NextCursor"
     ModuleCatalog:
       type: object
       additionalProperties: false

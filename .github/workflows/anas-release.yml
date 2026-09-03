@@ -6,13 +6,19 @@ on:
     paths:
       - "cmd/anas/**"
       - "cmd/anas-helper/**"
+      - "cmd/anasd/**"
       - "cmd/gen-contract-docs/**"
       - "contracts/**"
       - "internal/**"
+      - "web/**"
+      - "api/openapi.yaml"
+      - "packaging/**"
       - "install.sh"
       - "go.mod"
       - "go.sum"
       - "scripts/ci/build-anas-release.sh"
+      - "scripts/ci/build-console-web.sh"
+      - "scripts/ci/console-web-reproducibility-test.sh"
       - "scripts/ci/anas-release-version.sh"
       - "scripts/ci/anas-release-version-test.sh"
       - "scripts/ci/install-test.sh"
@@ -134,8 +140,35 @@ jobs:
           go run ./cmd/gen-contract-docs --check
           go test ./...
 
-  build:
+  web:
     needs: validate
+    if: needs.validate.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm --prefix web ci
+
+      - name: Build frontend twice and verify reproducibility
+        run: bash scripts/ci/console-web-reproducibility-test.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anas-console-web
+          path: internal/webui/dist
+          if-no-files-found: error
+
+  build:
+    needs: [validate, web]
     if: needs.validate.outputs.publish == 'true'
     runs-on: ubuntu-latest
     strategy:
@@ -151,6 +184,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: anas-console-web
+          path: internal/webui/dist
 
       - uses: docker/setup-qemu-action@v3
         if: matrix.goarch == 'arm64'

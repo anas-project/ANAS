@@ -18,6 +18,7 @@ type snapshotListResponse struct {
 	WorkspaceID string                       `json:"workspace_id"`
 	KeepAuto    int                          `json:"keep_auto"`
 	Snapshots   []application.SnapshotRecord `json:"snapshots"`
+	NextCursor  *string                      `json:"next_cursor"`
 }
 
 type backupPlanResponse struct {
@@ -34,12 +35,14 @@ type backupListResponse struct {
 	WorkspaceID string                     `json:"workspace_id"`
 	TargetID    string                     `json:"target_id"`
 	Backups     []application.BackupRecord `json:"backups"`
+	NextCursor  *string                    `json:"next_cursor"`
 }
 
 type localAdminListResponse struct {
 	APIVersion  string                         `json:"api_version"`
 	WorkspaceID string                         `json:"workspace_id"`
 	Accounts    []application.LocalAdminRecord `json:"accounts"`
+	NextCursor  *string                        `json:"next_cursor"`
 }
 
 type localAdminRevealRequest struct {
@@ -77,7 +80,8 @@ type proxyMaintenanceStepUpConsumer interface {
 }
 
 func (h *handler) listSnapshots(w http.ResponseWriter, r *http.Request, params map[string]string) {
-	if _, ok := supportedQuery(w, r); !ok {
+	pagination, ok := parseListPagination(w, r)
+	if !ok {
 		return
 	}
 	service, ok := h.workspaceMaintenanceService(w, params["ws"], application.NopEventSink{})
@@ -92,7 +96,12 @@ func (h *handler) listSnapshots(w http.ResponseWriter, r *http.Request, params m
 	if result.Snapshots == nil {
 		result.Snapshots = []application.SnapshotRecord{}
 	}
-	writeJSON(w, http.StatusOK, snapshotListResponse{APIVersion: APIVersion, WorkspaceID: params["ws"], KeepAuto: result.KeepAuto, Snapshots: result.Snapshots})
+	snapshots, next, err := paginateList(result.Snapshots, pagination, "snapshots\x00"+params["ws"], func(snapshot application.SnapshotRecord) string { return snapshot.ID })
+	if err != nil {
+		writePaginatedListError(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshotListResponse{APIVersion: APIVersion, WorkspaceID: params["ws"], KeepAuto: result.KeepAuto, Snapshots: snapshots, NextCursor: next})
 }
 
 func (h *handler) createSnapshot(w http.ResponseWriter, r *http.Request, params map[string]string) {
@@ -163,10 +172,11 @@ func (h *handler) planBackup(w http.ResponseWriter, r *http.Request, params map[
 }
 
 func (h *handler) listBackups(w http.ResponseWriter, r *http.Request, params map[string]string) {
-	query, ok := supportedQuery(w, r, "target_id")
+	pagination, ok := parseListPagination(w, r, "target_id")
 	if !ok {
 		return
 	}
+	query := r.URL.Query()
 	targetIDs := query["target_id"]
 	if len(targetIDs) != 1 || targetIDs[0] == "" {
 		writeProblem(w, http.StatusBadRequest, "backup_target_invalid", "target_id must contain one registered backup target ID")
@@ -184,11 +194,17 @@ func (h *handler) listBackups(w http.ResponseWriter, r *http.Request, params map
 	if result.Backups == nil {
 		result.Backups = []application.BackupRecord{}
 	}
-	writeJSON(w, http.StatusOK, backupListResponse{APIVersion: APIVersion, WorkspaceID: params["ws"], TargetID: result.TargetID, Backups: result.Backups})
+	backups, next, err := paginateList(result.Backups, pagination, "backups\x00"+params["ws"]+"\x00"+result.TargetID, func(backup application.BackupRecord) string { return backup.ID })
+	if err != nil {
+		writePaginatedListError(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, backupListResponse{APIVersion: APIVersion, WorkspaceID: params["ws"], TargetID: result.TargetID, Backups: backups, NextCursor: next})
 }
 
 func (h *handler) listLocalAdmins(w http.ResponseWriter, r *http.Request, params map[string]string) {
-	if _, ok := supportedQuery(w, r); !ok {
+	pagination, ok := parseListPagination(w, r)
+	if !ok {
 		return
 	}
 	service, ok := h.workspaceMaintenanceService(w, params["ws"], application.NopEventSink{})
@@ -203,7 +219,12 @@ func (h *handler) listLocalAdmins(w http.ResponseWriter, r *http.Request, params
 	if result.Accounts == nil {
 		result.Accounts = []application.LocalAdminRecord{}
 	}
-	writeJSON(w, http.StatusOK, localAdminListResponse{APIVersion: APIVersion, WorkspaceID: params["ws"], Accounts: result.Accounts})
+	accounts, next, err := paginateList(result.Accounts, pagination, "local-admins\x00"+params["ws"], func(account application.LocalAdminRecord) string { return account.TargetID })
+	if err != nil {
+		writePaginatedListError(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, localAdminListResponse{APIVersion: APIVersion, WorkspaceID: params["ws"], Accounts: accounts, NextCursor: next})
 }
 
 func (h *handler) rotateLocalAdmin(w http.ResponseWriter, r *http.Request, params map[string]string) {

@@ -14,9 +14,11 @@ ANAS 面向 Linux 主机，运行服务需要 Docker Engine 和 Docker Compose v
 ## 一行命令安装主程序
 
 安装脚本目前只支持 Linux，并自动识别 `x86_64`/`amd64` 与 `aarch64`/`arm64`。脚本从
-Release 下载对应静态二进制，使用同一 Release 的 `SHA256SUMS` 校验后安装到
-`/usr/local/bin/anas`。覆盖现有程序或写入源偏好之前，安装器还会实际运行下载的二进制，
-确认其自报版本与 Release tag 一致；仅当目标目录不可写时调用 `sudo`。
+Release 下载对应静态归档，使用同一 Release 的 `SHA256SUMS` 校验后安装
+`/usr/local/bin/anas` 与 `/usr/local/bin/anasd`。覆盖现有程序或写入源偏好之前，安装器还会
+实际运行下载的 CLI，确认其自报版本与 Release tag 一致。默认安装还会以 root 创建
+`/etc/anas/anasd.yml`（`0600`）、安装并启动 `anasd.service`；因此即使二进制目录可写，
+服务安装仍会明确调用 `sudo`。这是为了满足服务配置、systemd unit 与 daemon root 身份的权限边界。
 
 从 GitHub 安装并把 GitHub/GHCR 设为后续默认源：
 
@@ -48,16 +50,31 @@ global:
 自身的 `config.yml`，换机或修改安装器默认值不会静默改变现有部署。外部配置中显式写出的
 `module_source` 始终优先。
 
+默认服务配置使用 `lan`、管理端口 `8080`、`/var/lib/anas/console`，且初始 workspace 清单为空。
+首次安装时可用 `ANAS_MANAGEMENT_PORT` 选择其他端口；随后通过
+`/etc/anas/anasd.yml` 注册 `anas init` 创建的 workspace 并重启服务。同一安装命令可升级
+CLI、daemon 和 unit，但不会覆盖已有服务配置。
+
 无权使用 `/usr/local/bin` 或不希望调用 `sudo` 时，可以安装到用户目录（并确保该目录在
-`PATH` 中）：
+`PATH` 中）。自定义安装目录默认只安装二进制，不创建 systemd 服务：
 
 ```bash
 curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-project/ANAS/master/install.sh | sh -s -- --install-dir "$HOME/.local/bin"
 ```
 
-安装脚本依赖 `curl`、`tar`、`install`，以及 `sha256sum` 或 `shasum`。可用
-`ANAS_INSTALL_SOURCE=github|cn`、`ANAS_INSTALL_DIR` 做非交互覆盖；程序侧可用
+安装脚本依赖 `curl`、`tar`、`install`，以及 `sha256sum` 或 `shasum`；默认服务安装还需要
+`systemctl`。可用 `ANAS_INSTALL_SOURCE=github|cn`、`ANAS_INSTALL_DIR`、
+`ANAS_MANAGEMENT_PORT` 做非交互覆盖；程序侧可用
 `ANAS_DEFAULT_SOURCE=official|official-cn` 临时覆盖安装器默认值。
+
+卸载会停止/禁用服务并删除 Core 二进制与 unit，但保留 workspace、console state 和服务配置：
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-project/ANAS/master/install.sh | sh -s -- --uninstall
+```
+
+追加 `--purge` 会删除 `/etc/anas/anasd.yml` 与当前用户的源偏好；即使 purge 也不会删除
+workspace 或 `/var/lib/anas` 中的控制面状态。
 
 ## 选择 Module 源
 
@@ -94,7 +111,8 @@ digest 和安装树 digest，普通 `sync` / `apply` 不会静默追踪移动后
 
 ## Module 安装与缓存
 
-ANAS Core release 只包含二进制。首次初始化会在找不到本地 Module bundle 时，根据外部
+ANAS Core release 包含 CLI、嵌入管理前端的 daemon、最小权限 helper、服务配置样例和
+systemd unit，不包含 Module bundle。首次初始化会在找不到本地 Module bundle 时，根据外部
 配置自动引导下载；随后显式解析并写 lock：
 
 ```bash

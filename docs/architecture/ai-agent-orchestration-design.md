@@ -603,7 +603,7 @@ issue 评论、PR 与 Actions run 本身就是**人类可读的记录面**，因
 | 执行作业 | 一个独立运行（`job` + `run_event`） | 运行视图：工具调用、文件变更、测试输出、diff、耗时与花费，可实时跟随 |
 
 首期入口是 Module 命令（`agent job show --follow`、`agent session show`），
-[管理前端](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/web-api-admin-console.md)可用后升级为页面；状态评论里给出这两个视图的链接。
+[管理前端](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/archived/web-api-admin-console.md)已可用；状态评论里给出这两个视图的链接。
 
 #### 8.1.0 上下文怎么拼：不要把 Agent 自己说过的话喂回去
 
@@ -661,7 +661,7 @@ Agent 的工具调用、文件读写、命令执行是高频事件，**不发评
 | Forgejo Actions + Runner | 可选执行后端（§5.4）；默认不使用，但与 `ai_agent` 共用 `incus` Provider |
 | `incus` Provider | 两个消费者（Actions Runner、`ai_agent`），各自独立 project 与证书 |
 | [目录事件日志](/architecture/directory-event-journal) | 新增 Forgejo 订阅者以消除组变更的登录延迟（§6.2） |
-| 控制台 | [Web API 与管理前端](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/web-api-admin-console.md) 未实现，Agent 状态与配置首期走 Module 命令 |
+| 控制台 | [Web API 与管理前端](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/archived/web-api-admin-console.md) 已实现；Agent 状态与配置仍可首期走 Module 命令 |
 | `llm_gateway`（提案） | 统一模型 key、预算与审计；需要独立选型文档后再立项 |
 
 ## 10. 安全边界

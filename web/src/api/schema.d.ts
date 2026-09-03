@@ -823,6 +823,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List registered workspace IDs without exposing host paths */
+        get: operations["listWorkspaces"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{ws}/status": {
         parameters: {
             query?: never;
@@ -1122,6 +1139,7 @@ export interface components {
     schemas: {
         /** @constant */
         APIVersion: "anas.dev/api/v1";
+        NextCursor: string | null;
         EmptyObject: Record<string, never>;
         /** @description Opaque root-configured backup destination ID, never a host path. */
         BackupTargetID: string;
@@ -1142,6 +1160,7 @@ export interface components {
             workspace_id: string;
             keep_auto: number;
             snapshots: components["schemas"]["SnapshotRecord"][];
+            next_cursor: components["schemas"]["NextCursor"];
         };
         SnapshotRecord: {
             id: components["schemas"]["MaintenanceSnapshotID"];
@@ -1255,6 +1274,7 @@ export interface components {
             workspace_id: string;
             target_id: components["schemas"]["BackupTargetID"];
             backups: components["schemas"]["BackupRecord"][];
+            next_cursor: components["schemas"]["NextCursor"];
         };
         BackupRecord: {
             id: components["schemas"]["BackupID"];
@@ -1277,6 +1297,7 @@ export interface components {
             api_version: components["schemas"]["APIVersion"];
             workspace_id: string;
             accounts: components["schemas"]["LocalAdminRecord"][];
+            next_cursor: components["schemas"]["NextCursor"];
         };
         LocalAdminRecord: {
             /** @description Opaque server-generated target bound into credential-reveal step-up proofs. */
@@ -1861,6 +1882,14 @@ export interface components {
             oldest_available: number;
             latest_id: number;
         };
+        WorkspaceListResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            items: components["schemas"]["WorkspaceListItem"][];
+            next_cursor: components["schemas"]["NextCursor"];
+        };
+        WorkspaceListItem: {
+            id: string;
+        };
         WorkspaceStatusResponse: {
             api_version: components["schemas"]["APIVersion"];
             workspace_id: string;
@@ -1969,12 +1998,14 @@ export interface components {
             workspace_id: string;
             active_deployment: components["schemas"]["NullableString"];
             items: components["schemas"]["ModuleCommand"][];
+            next_cursor: components["schemas"]["NextCursor"];
         };
         ModuleListResponse: {
             api_version: components["schemas"]["APIVersion"];
             workspace_id: string;
             active_deployment: components["schemas"]["NullableString"];
             modules: components["schemas"]["ModuleState"][];
+            next_cursor: components["schemas"]["NextCursor"];
         };
         ModuleState: {
             name: string;
@@ -1999,6 +2030,7 @@ export interface components {
             api_version: components["schemas"]["APIVersion"];
             workspace_id: string;
             catalog: components["schemas"]["ModuleCatalog"];
+            next_cursor: components["schemas"]["NextCursor"];
         };
         ModuleCatalog: {
             source: string;
@@ -3231,7 +3263,12 @@ export interface operations {
     };
     listWorkspaceModules: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum number of list items to return. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor returned as `next_cursor` by the preceding page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
             header?: never;
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
@@ -3267,6 +3304,10 @@ export interface operations {
         parameters: {
             query?: {
                 workspace_id?: string;
+                /** @description Maximum number of list items to return. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor returned as `next_cursor` by the preceding page. */
+                cursor?: components["parameters"]["Cursor"];
             };
             header?: never;
             path?: never;
@@ -3587,6 +3628,39 @@ export interface operations {
             504: components["responses"]["DeadlineProblem"];
         };
     };
+    listWorkspaces: {
+        parameters: {
+            query?: {
+                /** @description Maximum number of list items to return. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor returned as `next_cursor` by the preceding page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of opaque registered workspace IDs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["GetMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            500: components["responses"]["InternalProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
     getWorkspaceStatus: {
         parameters: {
             query?: never;
@@ -3690,7 +3764,12 @@ export interface operations {
     };
     listModuleCommands: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum number of list items to return. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor returned as `next_cursor` by the preceding page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
             header?: never;
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
@@ -3805,6 +3884,10 @@ export interface operations {
             query: {
                 /** @description ID of a backup target configured in the root-owned daemon service configuration. */
                 target_id: components["parameters"]["BackupTargetIDQuery"];
+                /** @description Maximum number of list items to return. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor returned as `next_cursor` by the preceding page. */
+                cursor?: components["parameters"]["Cursor"];
             };
             header?: never;
             path: {
@@ -3838,7 +3921,12 @@ export interface operations {
     };
     listLocalAdministrators: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum number of list items to return. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor returned as `next_cursor` by the preceding page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
             header?: never;
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
@@ -4003,7 +4091,12 @@ export interface operations {
     };
     listSnapshots: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum number of list items to return. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor returned as `next_cursor` by the preceding page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
             header?: never;
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */

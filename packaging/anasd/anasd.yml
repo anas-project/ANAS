@@ -1,0 +1,7 @@
+api_version: anas.console-config/v1
+mode: lan
+port: 8080
+allowed_dns_hosts: []
+console_store: /var/lib/anas/console
+workspaces: []
+backup_targets: []

@@ -276,7 +276,8 @@ func setSecurityHeaders(header http.Header, isTLS bool) {
 }
 
 func (h *handler) moduleCommands(w http.ResponseWriter, r *http.Request, workspaceID, moduleName string, service QueryService) {
-	if _, ok := supportedQuery(w, r); !ok {
+	pagination, ok := parseListPagination(w, r)
+	if !ok {
 		return
 	}
 	result, err := service.ListModuleCommands(r.Context(), application.ListModuleCommandsRequest{Module: moduleName})
@@ -284,7 +285,13 @@ func (h *handler) moduleCommands(w http.ResponseWriter, r *http.Request, workspa
 		writeApplicationError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, newModuleCommandListResponse(workspaceID, result))
+	commands, next, err := paginateList(result.Commands, pagination, "module-commands\x00"+workspaceID+"\x00"+moduleName, func(command application.EffectiveModuleCommand) string { return command.Command.ID })
+	if err != nil {
+		writePaginatedListError(w)
+		return
+	}
+	result.Commands = commands
+	writeJSON(w, http.StatusOK, newModuleCommandListResponse(workspaceID, result, next))
 }
 
 func (h *handler) moduleCommand(w http.ResponseWriter, r *http.Request, workspaceID, moduleName, commandID string, service QueryService) {
@@ -461,31 +468,11 @@ func (h *handler) service(workspacePath string) QueryService {
 }
 
 func paginationRequest(w http.ResponseWriter, r *http.Request) (application.ListDeploymentsRequest, bool) {
-	query, ok := supportedQuery(w, r, "limit", "cursor")
+	pagination, ok := parseListPagination(w, r)
 	if !ok {
 		return application.ListDeploymentsRequest{}, false
 	}
-	request := application.ListDeploymentsRequest{Limit: defaultPageLimit}
-	if values, present := query["limit"]; present {
-		if len(values) != 1 || values[0] == "" {
-			writeProblem(w, http.StatusBadRequest, "invalid_limit", "limit must be a single integer between 1 and 100")
-			return request, false
-		}
-		limit, err := strconv.Atoi(values[0])
-		if err != nil || limit < 1 || limit > maximumPageLimit {
-			writeProblem(w, http.StatusBadRequest, "invalid_limit", "limit must be an integer between 1 and 100")
-			return request, false
-		}
-		request.Limit = limit
-	}
-	if values, present := query["cursor"]; present {
-		if len(values) != 1 || values[0] == "" || len(values[0]) > maximumCursorLen {
-			writeProblem(w, http.StatusBadRequest, "invalid_cursor", "cursor must be a single non-empty value no longer than 512 bytes")
-			return request, false
-		}
-		request.Cursor = values[0]
-	}
-	return request, true
+	return application.ListDeploymentsRequest{Limit: pagination.Limit, Cursor: pagination.Cursor}, true
 }
 
 func supportedQuery(w http.ResponseWriter, r *http.Request, allowed ...string) (url.Values, bool) {

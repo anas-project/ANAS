@@ -128,6 +128,10 @@ func (h *handler) routeSpecs() []routeSpec {
 			handler: h.downloadInternalCA,
 		},
 		{
+			policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/workspaces", Permission: PermissionWorkspaceRead, Scope: ScopeService, Listeners: allListeners, Access: workspaceAccess},
+			handler: h.listWorkspaces,
+		},
+		{
 			policy: RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/workspaces/{ws}/status", Permission: PermissionWorkspaceRead, Scope: ScopeWorkspace, Listeners: allListeners, Access: workspaceAccess},
 			handler: func(w http.ResponseWriter, r *http.Request, params map[string]string) {
 				service, ok := h.workspaceService(w, params["ws"])

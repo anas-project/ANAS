@@ -29,12 +29,17 @@ EOF
 
 printf '#!/usr/bin/env sh\nexit 0\n' >"$stage/$archive_dir/anas-helper"
 chmod 0755 "$stage/$archive_dir/anas-helper"
+printf '#!/usr/bin/env sh\nexit 0\n' >"$stage/$archive_dir/anasd"
+chmod 0755 "$stage/$archive_dir/anasd"
+cp "$repo_root/packaging/systemd/anasd.service" "$stage/$archive_dir/anasd.service"
+cp "$repo_root/packaging/anasd/anasd.yml" "$stage/$archive_dir/anasd.yml"
 cat >"$fixture/bin/go" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "$1" == version && "$2" == -m && -n "${3:-}" ]]
 case "${3##*/}" in
   anas) package=github.com/anas-project/ANAS/cmd/anas ;;
+  anasd) package=github.com/anas-project/ANAS/cmd/anasd ;;
   anas-helper) package=github.com/anas-project/ANAS/cmd/anas-helper ;;
   *) exit 2 ;;
 esac

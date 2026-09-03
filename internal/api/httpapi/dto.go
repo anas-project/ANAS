@@ -34,6 +34,16 @@ type systemCapabilities struct {
 	ReadOnly bool `json:"read_only"`
 }
 
+type workspaceListItem struct {
+	ID string `json:"id"`
+}
+
+type workspaceListResponse struct {
+	APIVersion string              `json:"api_version"`
+	Items      []workspaceListItem `json:"items"`
+	NextCursor *string             `json:"next_cursor"`
+}
+
 type statusResponse struct {
 	APIVersion          string             `json:"api_version"`
 	WorkspaceID         string             `json:"workspace_id"`
@@ -73,6 +83,7 @@ type moduleCommandListResponse struct {
 	WorkspaceID      string             `json:"workspace_id"`
 	ActiveDeployment *string            `json:"active_deployment"`
 	Items            []moduleCommandDTO `json:"items"`
+	NextCursor       *string            `json:"next_cursor"`
 }
 
 type moduleCommandDetailResponse struct {
@@ -226,14 +237,14 @@ func newDeploymentDetailResponse(workspaceID string, result application.InspectD
 	}
 }
 
-func newModuleCommandListResponse(workspaceID string, result application.ListModuleCommandsResult) moduleCommandListResponse {
+func newModuleCommandListResponse(workspaceID string, result application.ListModuleCommandsResult, nextCursor *string) moduleCommandListResponse {
 	items := make([]moduleCommandDTO, 0, len(result.Commands))
 	for _, command := range result.Commands {
 		items = append(items, newModuleCommandDTO(command))
 	}
 	return moduleCommandListResponse{
 		APIVersion: APIVersion, WorkspaceID: workspaceID,
-		ActiveDeployment: result.ActiveDeployment, Items: items,
+		ActiveDeployment: result.ActiveDeployment, Items: items, NextCursor: nextCursor,
 	}
 }
 
