@@ -38,7 +38,6 @@
 | [Casdoor IAM Provider](archived/casdoor-iam.md) | [需求矩阵](../requirements/casdoor-iam.md)、[IAM Capability 设计](../../docs/architecture/iam-capability-design.md)、[Casdoor 运维 Runbook](../../docs/operations/casdoor-iam.md) | 已完成（已归档） |
 | [MeshCentral OIDC-only](archived/meshcentral-oidc-only.md) | [需求矩阵](../requirements/meshcentral-oidc-only.md)、[Module IAM 支持清单](../../docs/reference/module-iam-support.md) | 已完成（已归档） |
 | [内置 Module 与配置 Inventory](archived/builtin-inventory.md) | [需求矩阵](../requirements/builtin-inventory.md)、[Module 目录](../../docs/reference/modules.md)、[配置参考](../../docs/reference/configuration.md) | 已完成（已归档） |
-| [Samba 身份锚点 OID 与既有目录迁移](archived/samba-identity-anchor.md) | [需求矩阵](../requirements/samba-identity-anchor.md)、[OID 注册表](../../docs/governance/oid-registry.md)、[迁移 Runbook](../../docs/guide/migrate-identity-anchor-oid.md) | 已完成（已归档） |
 | [Web API 与管理前端](archived/web-api-admin-console.md) | 管理面首版里程碑与验证记录；验收依据见[要求](../requirements/web-api-admin-console.md) | 已完成（已归档） |
 | [Samba 身份锚点 OID 与既有目录迁移](archived/samba-identity-anchor.md) | [需求矩阵](../requirements/samba-identity-anchor.md)、[OID 注册表](../../docs/governance/oid-registry.md)、[迁移 Runbook](../../docs/guide/migrate-identity-anchor-oid.md) | 已完成（已归档） |
 | [AI Agent 编排](ai-agent.md) | `ai_agent` Module、Forgejo 协作面接入、权限与执行面、排程与记录；验收依据见[要求](../requirements/ai-agent.md) | 提案 |
