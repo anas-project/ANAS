@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
+	"time"
 
 	"github.com/anas-project/ANAS/internal/audit"
 	"github.com/anas-project/ANAS/internal/consoleaudit"
@@ -23,11 +26,23 @@ func main() {
 }
 
 func run(args []string) error {
-	if len(args) != 2 || args[0] != "seed-full" && args[0] != "set-owner" {
-		return errors.New("usage: console-auth-fixture seed-full|set-owner ABSOLUTE_CONSOLE_STORE")
+	if len(args) != 2 {
+		return errors.New("usage: console-auth-fixture seed-full|set-owner|revoke-sessions|report-sessions ABSOLUTE_CONSOLE_STORE")
+	}
+	needsPassword := args[0] == "seed-full" || args[0] == "set-owner"
+	switch args[0] {
+	case "seed-full", "set-owner", "revoke-sessions", "report-sessions":
+	default:
+		return errors.New("usage: console-auth-fixture seed-full|set-owner|revoke-sessions|report-sessions ABSOLUTE_CONSOLE_STORE")
+	}
+	// report-sessions never opens the audit or capability stores: it must be
+	// safe to run repeatedly beside a live daemon without recording anything
+	// that would look like console activity.
+	if args[0] == "report-sessions" {
+		return reportSessions(args[1])
 	}
 	password := os.Getenv(passwordEnvironment)
-	if password == "" {
+	if needsPassword && password == "" {
 		return fmt.Errorf("%s is required", passwordEnvironment)
 	}
 	os.Unsetenv(passwordEnvironment)
@@ -86,6 +101,13 @@ func run(args []string) error {
 			return fmt.Errorf("replace owner password: %w", err)
 		}
 		password = ""
+	case "revoke-sessions":
+		if state != consolestate.StateFull {
+			return fmt.Errorf("revoke-sessions requires full state, got %s", state)
+		}
+		if err := authStore.RevokeLocalSessions(ctx); err != nil {
+			return fmt.Errorf("revoke local sessions: %w", err)
+		}
 	}
 
 	if err := writer.Close(); err != nil {
@@ -96,5 +118,60 @@ func run(args []string) error {
 		"api_version": "anas.console-auth-fixture/v1",
 		"command":     args[0],
 		"state":       state,
+	})
+}
+
+// localSessionReport mirrors only the two instants consoleauth reports to the
+// browser. The full record layout stays private to that package; a test that
+// needs to prove an idle window did or did not slide needs nothing more, and a
+// narrow view here cannot drift into asserting the store's internals.
+type localSessionReport struct {
+	Sessions map[string]struct {
+		CreatedAt     time.Time `json:"created_at"`
+		ExpiresAt     time.Time `json:"expires_at"`
+		IdleExpiresAt time.Time `json:"idle_expires_at"`
+	} `json:"sessions"`
+}
+
+func reportSessions(directory string) error {
+	if !filepath.IsAbs(directory) {
+		return errors.New("console store path must be absolute")
+	}
+	raw, err := os.ReadFile(filepath.Join(filepath.Clean(directory), "local.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return json.NewEncoder(os.Stdout).Encode(map[string]any{
+				"api_version": "anas.console-auth-fixture/v1",
+				"command":     "report-sessions",
+				"sessions":    []any{},
+			})
+		}
+		return fmt.Errorf("read local authentication state: %w", err)
+	}
+	var report localSessionReport
+	if err := json.Unmarshal(raw, &report); err != nil {
+		return fmt.Errorf("decode local authentication state: %w", err)
+	}
+	digests := make([]string, 0, len(report.Sessions))
+	for digest := range report.Sessions {
+		digests = append(digests, digest)
+	}
+	sort.Strings(digests)
+	sessions := make([]map[string]string, 0, len(digests))
+	for _, digest := range digests {
+		record := report.Sessions[digest]
+		sessions = append(sessions, map[string]string{
+			// The digest is already a one-way value; it identifies a record
+			// across two readings without exposing the session token.
+			"digest":          digest,
+			"created_at":      record.CreatedAt.UTC().Format(time.RFC3339Nano),
+			"expires_at":      record.ExpiresAt.UTC().Format(time.RFC3339Nano),
+			"idle_expires_at": record.IdleExpiresAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	return json.NewEncoder(os.Stdout).Encode(map[string]any{
+		"api_version": "anas.console-auth-fixture/v1",
+		"command":     "report-sessions",
+		"sessions":    sessions,
 	})
 }

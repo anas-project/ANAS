@@ -24,6 +24,7 @@ test-env/.remote-test/
 /anas
 /anasd
 /anas-helper
+/actions-controller
 
 # macOS Finder metadata. Contributors without a global ignore would otherwise
 # commit one of these into every directory they open in Finder.

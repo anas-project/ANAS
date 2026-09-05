@@ -224,6 +224,14 @@ crash-safety 文件系统与 flock 代码提取为 `internal/securefs`（其中 
 
 验收：R-185、R-186（`web/src/api/session.test.ts`）。
 
+浏览器行为无法由单元测试证明，`test-env/scripts/server-console-session-expiry-e2e.sh` 补上真机脚本：
+`snapshot` 在操作者登录后记录会话的 `idle_expires_at`，静置 26 分钟后 `verify-idle` 断言该时刻**没有前移**
+——只有已认证请求能推动它，而操作者一次都没点，因此这是「前端没有轮询认证路由」的服务端证据；`revoke`
+则在控制台仍开着时吊销全部本地会话，验证下一次交互落回登录页。`console-auth-fixture` 为此新增
+`revoke-sessions` 与 `report-sessions` 两个只读/吊销命令。**该脚本尚未在真实服务器执行**，因此 §5.3 没有
+它的执行记录，两条要求的验证方式仍记为单元。
+
+
 ## 4. 已完成与下一步
 
 本轮已完成：
