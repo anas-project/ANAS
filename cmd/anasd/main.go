@@ -163,9 +163,10 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	maintenanceFactory := runner.NewWorkspaceMaintenanceServiceFactory(backupTargets)
 	executor, err := jobexecutor.New(jobexecutor.Options{
 		Store: jobStore, Audit: deploymentAudit, Workspaces: executorWorkspaces,
-		DeploymentFactory:  runner.NewWorkspaceDeploymentServiceWithEvents,
-		ModuleFactory:      runner.NewWorkspaceModuleManagementService,
-		MaintenanceFactory: maintenanceFactory,
+		DeploymentFactory:    runner.NewWorkspaceDeploymentServiceWithEvents,
+		ModuleFactory:        runner.NewWorkspaceModuleManagementService,
+		MaintenanceFactory:   maintenanceFactory,
+		ModuleCommandFactory: application.NewModuleCommandServiceFactory(),
 		OnError: func(err error) {
 			if logger != nil {
 				logger.Printf("console job executor: %v", err)
@@ -239,9 +240,10 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	configOptions := httpapi.ConfigOptions{Factory: runner.NewWorkspaceConfigService, Audit: configAuditSink{writer: auditWriter, logger: logger}}
 	deploymentOptions := httpapi.DeploymentOptions{
 		PlanFactory: runner.NewWorkspaceDeploymentPlanService, ServiceFactory: runner.NewWorkspaceDeploymentService,
-		ModuleFactory:      runner.NewWorkspaceModuleManagementService,
-		MaintenanceFactory: maintenanceFactory,
-		Store:              jobStore, Audit: deploymentAudit,
+		ModuleFactory:        runner.NewWorkspaceModuleManagementService,
+		MaintenanceFactory:   maintenanceFactory,
+		ModuleCommandFactory: application.NewModuleCommandServiceFactory(),
+		Store:                jobStore, Audit: deploymentAudit,
 		StepUp: authStore, Notify: executor.Notify,
 	}
 	auditOptions := httpapi.AuditQueryOptions{Store: auditWriter}
@@ -263,12 +265,22 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		ProxyURL:           consoleStatus.ProxyURL,
 		BackupTargetIDs:    backupTargetIDs,
 	}
-	handler, err := httpapi.NewHandlerWithEnrollmentJobsConfigAndDeployment(registry, queryFactory, httpapi.SecurityOptions{
+	// The direct and trusted-proxy listeners differ only in their security
+	// options; every surface below is identical, which is what keeps
+	// CONSOLE-R-100 (same capabilities at both gates) true by construction.
+	consoleSurfaces := httpapi.Options{
+		Registry: registry, Factory: queryFactory, Auth: authStore,
+		Enrollment: &enrollmentOptions, Jobs: &jobOptions, Config: &configOptions,
+		Deployment: &deploymentOptions, Audit: &auditOptions, System: &systemOptions,
+	}
+	directOptions := consoleSurfaces
+	directOptions.Security = httpapi.SecurityOptions{
 		State:       stateProvider,
 		HostAllowed: hostPolicy.Allowed,
 		Listener:    httpapi.ListenerDirect,
 		Authorize:   httpapi.DirectSessionAuthorizer(authStore),
-	}, authStore, enrollmentOptions, jobOptions, configOptions, deploymentOptions, auditOptions, systemOptions)
+	}
+	handler, err := httpapi.New(directOptions)
 	if err != nil {
 		return fmt.Errorf("configure HTTP routes: %w", err)
 	}
@@ -284,10 +296,12 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 			return fmt.Errorf("configure trusted proxy authentication: %w", authErr)
 		}
 		proxyHostPolicy := httpapi.ExactDNSHostPolicy{AllowedDNSHosts: config.TrustedProxy.AllowedDNSHosts}
-		proxyHandler, err = httpapi.NewHandlerWithEnrollmentJobsConfigAndDeployment(registry, queryFactory, httpapi.SecurityOptions{
+		proxyOptions := consoleSurfaces
+		proxyOptions.Security = httpapi.SecurityOptions{
 			State: stateProvider, HostAllowed: proxyHostPolicy.Allowed,
 			Listener: httpapi.ListenerTrustedProxy, Authorize: authorizeProxy,
-		}, authStore, enrollmentOptions, jobOptions, configOptions, deploymentOptions, auditOptions, systemOptions)
+		}
+		proxyHandler, err = httpapi.New(proxyOptions)
 		if err != nil {
 			return fmt.Errorf("configure trusted proxy HTTP routes: %w", err)
 		}

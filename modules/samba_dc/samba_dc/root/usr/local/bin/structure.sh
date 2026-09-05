@@ -176,7 +176,8 @@ fi
 samba-tool user setexpiry "$SAMBA_DC_ANCHOR_BIND_NAME" --noexpiry
 anchor_bind_sid=$(samba-tool user show "$SAMBA_DC_ANCHOR_BIND_NAME" | sed -n 's/^objectSid: //p')
 binary_anchor_attribute_guid="23773dc2-b63a-11d2-90e1-00c04fd91ab1"
-printable_anchor_attribute_guid="7108c5a7-2290-45e0-9eba-eef087be58e3"
+printable_anchor_attribute_guid="db3786ae-3261-4d44-a2a1-588bfe3e41c5"
+legacy_printable_anchor_attribute_guid="7108c5a7-2290-45e0-9eba-eef087be58e3"
 for attribute_guid in "$binary_anchor_attribute_guid" "$printable_anchor_attribute_guid"; do
   anchor_write_ace="(OA;CI;WP;$attribute_guid;;$anchor_bind_sid)"
   for anchor_base in "$SAMBA_DC_BASE_USERS_DN" "$SAMBA_DC_BASE_GROUPS_DN"; do
@@ -184,6 +185,15 @@ for attribute_guid in "$binary_anchor_attribute_guid" "$printable_anchor_attribu
       samba-tool dsacl set --objectdn="$anchor_base" --sddl="$anchor_write_ace"
     fi
   done
+done
+# The pre-PEN printable attribute is retained only as a defunct schema history
+# object.  Its object-specific write ACE no longer grants a useful operation
+# and must not survive the migration to the replacement schemaIDGUID.
+legacy_anchor_write_ace="(OA;CI;WP;$legacy_printable_anchor_attribute_guid;;$anchor_bind_sid)"
+for anchor_base in "$SAMBA_DC_BASE_USERS_DN" "$SAMBA_DC_BASE_GROUPS_DN"; do
+  if samba-tool dsacl get --objectdn="$anchor_base" | grep -Fq "$legacy_anchor_write_ace"; then
+    samba-tool dsacl delete --objectdn="$anchor_base" --sddl="$legacy_anchor_write_ace"
+  fi
 done
 
 # The right above is inherited by everything in OU=People, and the admin account

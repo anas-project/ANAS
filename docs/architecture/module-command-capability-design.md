@@ -244,6 +244,12 @@ descriptor 的规范 JSON 应计算 `command_digest`。CLI 确认和 HTTP `If-Ma
 
 ## 7. 调用 ABI
 
+> [!IMPORTANT]
+> 本节的 executor 协议与 §10 的取消语义已由[统一动作 ABI `anas.action/v1`](action-abi.md) 取代。
+> 那份设计把「一次调用 = 一次前台执行」改成「每次调用创建一个 job」，以支持 Web 端断连后任务
+> 继续执行、重连后重放事件。本节保留作为当时的推理记录，实现以新 ABI 为准。
+
+
 Core 启动冻结 executor 时 argv 只能是 manifest 中的固定 `command_executor.command`，请求经 stdin
 发送：
 

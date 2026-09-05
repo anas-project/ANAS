@@ -202,6 +202,7 @@ Contract 声明虚假兼容性。
 | [`eturnal`](/reference/modules/eturnal/) | `communication` | `release` | TURN service used by realtime communication modules. |
 | [`forgejo`](/reference/modules/forgejo/) | `app` | `developing` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
 | [`freeradius`](/reference/modules/freeradius/) | `network` | `developing` | RADIUS server module scaffold. |
+| [`incus`](/reference/modules/incus/) | `compute` | `developing` | Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract. |
 | [`lam`](/reference/modules/lam/) | `identity` | `release` | Web UI for LDAP account administration. |
 | [`lego`](/reference/modules/lego/) | `certificate` | `release` | Issues and stores wildcard certificates used by Traefik and domain services. |
 | [`llng`](/reference/modules/llng/) | `identity` | `release` | SSO portal, SAML/OIDC identity provider, and app launcher. |

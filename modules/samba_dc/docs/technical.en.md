@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `samba_dc`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `4.23.6-r10` / `anas.module/v1`.
+> Status: current implementation; based on `4.23.6-r11` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -17,8 +17,8 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r10` | `` | 3 |
-| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r10` | `` | 3 |
+| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r11` | `` | 3 |
+| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r11` | `` | 3 |
 | `anas_samba_dc_events_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
@@ -167,6 +167,20 @@ It is authoritative for people, groups, service identities, and identity anchors
 | Directory password writeback | authoritative directory; controlled by ACLs and password policy |
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
+
+## PEN 66678 schema-migration contract
+
+In r11, the current `anasIdentityAnchor` uses `attributeID=1.3.6.1.4.1.66678.1.2.1` and `schemaIDGUID=db3786ae-3261-4d44-a2a1-588bfe3e41c5`. The legacy OID `1.2.840.113556.1.8000.2554.17237.23501.51519.17672.44223.1228429.7407401.2.1` and GUID `7108c5a7-2290-45e0-9eba-eef087be58e3` remain only on the renamed defunct schema object and are never reused. The migrator is [`migrate-identity-anchor-oid.sh`](../samba_dc/root/usr/local/bin/migrate-identity-anchor-oid.sh) and supports only one writable DC that owns the Schema Master FSMO role.
+
+This is an offline maintenance transaction with full-volume rollback:
+
+1. Render, but do not start, the exact `4.23.6-r11` candidate before the upgrade. Stop the whole workspace and exclude every host-level writer: the DC, worker, Consumers, backups, scheduled jobs, and interactive LDAP/LDB sessions. An in-container check cannot prove that the host is quiesced.
+2. After quiescence, create a real cold snapshot, preserve the snapshot ID actually returned by the tool, and require a successful `anas snapshot verify`. `--snapshot-id` only records an audit label and does not prove that a snapshot exists or is restorable.
+3. After read-only `--check` confirms the exact legacy state, `--execute` exports legacy values, removes class links, marks the old object defunct in a dedicated operation, changes `lDAPDisplayName` and the RDN separately, creates the new schema object, restores values, and rebuilds the class links.
+4. `--execute` requires an explicit `--backup-dir /mnt/anas-migration-evidence/<new-dir>` outside the Samba data volume. It must be a new per-execution child directory; because it contains DNs and stable identifiers, protect it as sensitive directory data.
+5. Final-state `--check` validates the final/legacy schema, User/Group class links, Windows `bytes_le` equality between every text anchor and `mS-DS-ConsistencyGuid`, and global uniqueness. After r11 starts, also prove that OU ACLs use the new GUID and omit the legacy GUID, perform a real `svc_anchor` write, check worker health, and validate every Consumer for duplicate accounts or authorization drift.
+
+If any step fails after `--execute` starts, stop retrying and restore the validated **entire Samba data-volume snapshot**. Never delete the migration marker, restore only `sam.ldb`, or hand-edit forward from a checkpoint. External evidence is not rolled back with the data volume and must be retained for investigation. See the [migration runbook](../../../docs/en/guide/migrate-identity-anchor-oid.md) for the complete commands and acceptance order.
 
 ## Management surfaces and secret lifecycle
 

@@ -122,6 +122,12 @@ type manifestContractDependency struct {
 	SelectedBy string   `yaml:"selected_by"`
 	Interfaces []string `yaml:"interfaces"`
 	Default    string   `yaml:"default"`
+	// EnabledBy names a boolean parameter of this same module, exactly as it
+	// does for requires_capabilities. Absent means the contract is always
+	// required; present means it is required only while that switch is on, so
+	// a module with an optional subsystem does not force every deployment to
+	// run a provider it will never call.
+	EnabledBy string `yaml:"enabled_by"`
 }
 
 type manifestResources struct {
@@ -129,11 +135,12 @@ type manifestResources struct {
 }
 
 type manifestResourceRequirement struct {
-	ID       string            `yaml:"id"`
-	Contract string            `yaml:"contract"`
-	Binding  string            `yaml:"binding"`
-	Spec     map[string]any    `yaml:"spec"`
-	SpecFrom map[string]string `yaml:"spec_from"`
+	ID        string            `yaml:"id"`
+	Contract  string            `yaml:"contract"`
+	Binding   string            `yaml:"binding"`
+	Spec      map[string]any    `yaml:"spec"`
+	SpecFrom  map[string]string `yaml:"spec_from"`
+	EnabledBy string            `yaml:"enabled_by"`
 }
 
 type manifestCapabilities struct {
@@ -969,7 +976,7 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if err != nil {
 		return Module{}, err
 	}
-	requiresContracts, err := normalizeContractDependencies(dirname, manifest.Dependencies.Contracts)
+	requiresContracts, err := normalizeContractDependencies(dirname, manifest.Dependencies.Contracts, types)
 	if err != nil {
 		return Module{}, err
 	}
@@ -977,7 +984,7 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 	if err != nil {
 		return Module{}, err
 	}
-	resources, err := normalizeResourceRequirements(dirname, manifest.Resources.Requires, requiresContracts)
+	resources, err := normalizeResourceRequirements(dirname, manifest.Resources.Requires, requiresContracts, types)
 	if err != nil {
 		return Module{}, err
 	}

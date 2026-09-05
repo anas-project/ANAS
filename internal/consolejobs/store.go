@@ -1418,20 +1418,6 @@ func validateJournalAppendSize(transactionBytes, recordBytes int) error {
 	return nil
 }
 
-func writeAll(writer io.Writer, body []byte) error {
-	for len(body) != 0 {
-		written, err := writer.Write(body)
-		if err != nil {
-			return err
-		}
-		if written <= 0 || written > len(body) {
-			return io.ErrShortWrite
-		}
-		body = body[written:]
-	}
-	return nil
-}
-
 func (store *Store) acquireGate(ctx context.Context) error {
 	select {
 	case <-store.done:

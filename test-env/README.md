@@ -177,13 +177,12 @@ Do not commit `.anas-test/` or generated secrets.
 
    This is intentionally the last step because it touches Docker runtime state.
 
-7. Runtime upgrade tests
+7. Historical lock compatibility smoke tests
 
-   Starts a baseline release, writes migration probe data into persisted
-   volumes, stops it, seeds an older `module.lock.yml`, starts the current release
-   with `--build`, checks required containers are running, checks host data
-   markers still exist, runs service-level data probes, and verifies
-   `module.lock.yml` was updated to current module versions:
+   Starts the current worktree, writes probe data, injects an older
+   `module.lock.yml`, and applies the current worktree again. This checks lock,
+   render, and persisted-mount compatibility, but it does **not** execute an old
+   binary or old Module artifact and therefore is not release-upgrade E2E evidence:
 
    ```sh
    ./test-env/scripts/test-upgrade.sh previous-patch
@@ -849,7 +848,7 @@ The removed `openldap` and `phpldapadmin` modules are not part of this matrix.
 
 ## Upgrade Validation
 
-Upgrade tests are based on module lock fixtures:
+Fast lock compatibility checks are based on module lock fixtures:
 
 - `upgrades/supported/previous-patch.lock.yml`: one-step older versions.
 - `upgrades/supported/mixed-old.lock.yml`: mixed older versions across modules.
@@ -857,9 +856,8 @@ Upgrade tests are based on module lock fixtures:
   rejected as a downgrade.
 
 `test-upgrade-render.sh` is safe for fast validation because it only runs
-`plan` and `render`. `test-upgrade.sh` starts a baseline, seeds persisted probe
-data, injects an older lock, starts the upgraded release, and verifies migration
-signals:
+`plan` and `render`. `test-upgrade.sh` runs the worktree on both sides of an
+older-lock injection and verifies compatibility signals:
 
 - required containers are running;
 - persisted host data markers remain present;
@@ -871,3 +869,29 @@ For module-specific migrations, add assertions to
 `scripts/test-upgrade-probes.sh`. Prefer direct service probes, such as SQL,
 LDAP, HTTP health endpoints, or file checks inside mounted volumes, over log
 string matching.
+
+Real release-to-release tests are registered in `upgrades/catalog.yml` and
+validated with `go run ./cmd/check-upgrade-tests`. Core suites extract a Git
+tag, build that historical CLI, let it create a workspace and deployment, and
+then advance the same workspace with the worktree CLI. Module suites use
+`scripts/server-module-upgrade-e2e.sh` with explicit old/new binaries and
+Module roots on an isolated Docker daemon; they seed old persisted data, upgrade,
+verify, roll back to the immutable old deployment, and reapply the new one.
+The old endpoint pulls its published `version-rN` images instead of rebuilding
+floating Dockerfile inputs; only the worktree endpoint is built during the run.
+An exact-version historical compatibility helper may temporarily repair test
+namespace topology for a known old release, but it is retired before current
+code starts and records evidence that the immutable old artifact was unchanged.
+Each old/new `anas` must have the `anas-helper` built from the same source beside
+it; the runner rejects either endpoint before image builds when that pair is absent.
+The runner must share the explicitly selected ANAS test network namespace with
+that daemon. It leaves mode-`0600` JSON, JUnit, and Markdown evidence beside the
+removed workspace at `${workspace}.reports`.
+
+If the dedicated Docker client config declares a build proxy, its `noProxy`
+must include `localhost`, `127.0.0.1`, `10.0.0.0/8`, `172.16.0.0/12`, and
+`192.168.0.0/16` (or `*`). Docker injects client proxy settings into created
+containers as well as builds; without these exclusions, Traefik can send a
+private Docker backend request to the outbound build proxy. The Module upgrade
+runner checks this boundary before creating the old stack. Internal HTTPS probes
+also use direct connections even when the runner process has proxy variables.

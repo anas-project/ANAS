@@ -759,6 +759,12 @@ func (a *app) resolveOrder(mods []string) ([]string, error) {
 			deps = append(deps, provider)
 		}
 		for _, dep := range mod.RequiresContracts {
+			// Same rule as the capability loop below: a switched-off contract
+			// dependency does not exist, so it contributes neither a provider
+			// nor an ordering edge.
+			if !a.contractRequired(name, mod, dep.EnabledBy) {
+				continue
+			}
 			provider, err := a.resolveContractDependency(name, mod, dep)
 			if err != nil {
 				if canDeferUnresolvedBinding(a.allowUnresolvedInputBindings, err) {

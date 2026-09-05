@@ -2126,6 +2126,89 @@ paths:
           $ref: "#/components/responses/InternalProblem"
         "504":
           $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/modules/{module}/commands/{command}/actions/invoke:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - $ref: "#/components/parameters/ModuleName"
+      - $ref: "#/components/parameters/ModuleCommandID"
+    post:
+      operationId: invokeModuleCommand
+      summary: Enqueue a durable job that runs one Module command
+      description: |
+        The invocation is bound to `command_digest`, the digest the command
+        endpoints return for the descriptor frozen by the active deployment. A
+        digest that no longer matches returns `412`, so a redeploy or Module
+        upgrade between reading and invoking cannot silently run a different
+        command. Commands whose descriptor declares `risk: destructive` require
+        a single-use `step_up_proof` bound to this action, workspace, target,
+        deployment and digest; other commands reject a proof rather than
+        consuming one they do not need. Resolution, parameter validation, and
+        runtime locking happen in the shared application service, so the console
+        never gains a capability the CLI does not have.
+      tags: [Modules]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: module_command.invoke
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModuleCommandInvokeRequest"
+      responses:
+        "202":
+          description: The Module command job was durably queued, or an identical existing job was returned.
+          headers:
+            Location:
+              description: Relative URL of the durable job resource.
+              required: true
+              schema:
+                type: string
+                pattern: "^/api/v1/jobs/[^/]+$"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentApplyResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "409":
+          $ref: "#/components/responses/ConflictProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "428":
+          $ref: "#/components/responses/PreconditionRequiredProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
   /api/v1/workspaces/{ws}/backup-plans:
     parameters:
       - $ref: "#/components/parameters/WorkspaceID"
@@ -4981,6 +5064,33 @@ components:
           type: string
         command:
           $ref: "#/components/schemas/ModuleCommand"
+    ModuleCommandInvokeRequest:
+      type: object
+      additionalProperties: false
+      required: [command_digest]
+      properties:
+        command_digest:
+          description: |
+            The `digest` of the descriptor read from the command endpoints. The
+            server refuses the invocation when the active deployment no longer
+            freezes that exact descriptor.
+          type: string
+          minLength: 1
+          maxLength: 256
+        parameters:
+          description: |
+            Typed parameter values normalized and validated against the frozen
+            descriptor. Keys not declared by the descriptor are rejected; the
+            server never accepts argv, a shell string, or an environment.
+          type: object
+          additionalProperties: true
+        step_up_proof:
+          description: |
+            Required only for a descriptor declaring `risk: destructive`, and
+            rejected for any other command.
+          type: string
+          minLength: 1
+          maxLength: 256
     ModuleCommand:
       type: object
       additionalProperties: false

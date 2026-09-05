@@ -18,12 +18,13 @@
 | [无序 Capability 依赖](weak-capability-dependency.md) | `ordering` 字段、calculate 环境隔离、解除 Adminer 成环阻塞；验收依据见[要求](../requirements/weak-capability-dependency.md) | 实施中 |
 | [Module 专属命令能力](module-command-capability.md) | manifest/deployment 冻结、共享执行服务、CLI/anasd 与 Forgejo/Incus 验收 | 实施中 |
 | [VersityGW S3 兼容 Module](versitygw-module.md) | S3 Module、Capability/Resource、独立 bucket/凭据、客户端与恢复验收 | 实施中 |
-| [Incus compute Provider](incus-module.md) | `incus` Provider Module、多消费者隔离、Forgejo 迁移与真实宿主验收；验收依据见[要求](../requirements/incus-module.md) | 提案 |
+| [Incus compute Provider](incus-module.md) | Contract 改形、`incus` Provider Module、Core 支持、共享客户端与 Forgejo 迁移；验收依据见[要求](../requirements/incus-module.md) | 实施中 |
 | [Forgejo Module](forgejo-module.md) | 安全开关、Incus compute、单作业 Runner 与发布门禁 | 实施中 |
 | [Vikunja Module](vikunja-module.md) | 多架构、双数据库、双 IAM、恢复、凭据轮换与负载发布验收 | 实施中 |
 | [Module IAM 双向登出](module-iam-bidirectional-logout.md) | 全部内置 IAM Consumer 的 Provider × 协议 × 登出方向能力与真实会话 E2E | 实施中 |
 | [需求 ID 矩阵采用](requirement-id-adoption.md) | 门禁豁免清单、双向登出矩阵与迁移后扫描边界；验收依据见[要求](../requirements/requirement-id-adoption.md) | 实施中 |
 | [文档驱动测试自动化](document-driven-test-automation.md) | Agent 生成完整测试、需求/用例/代码溯源、SSH 一键服务器执行与报告 | 实施中 |
+| [版本升级 E2E 测试](upgrade-testing.md) | Core、Web 与全部内置 Module 的真实旧版升级、数据往返和发布门禁；验收依据见[要求](../requirements/upgrade-testing.md) | 实施中 |
 
 ## 已归档
 
@@ -38,5 +39,7 @@
 | [MeshCentral OIDC-only](archived/meshcentral-oidc-only.md) | [需求矩阵](../requirements/meshcentral-oidc-only.md)、[Module IAM 支持清单](../../docs/reference/module-iam-support.md) | 已完成（已归档） |
 | [内置 Module 与配置 Inventory](archived/builtin-inventory.md) | [需求矩阵](../requirements/builtin-inventory.md)、[Module 目录](../../docs/reference/modules.md)、[配置参考](../../docs/reference/configuration.md) | 已完成（已归档） |
 | [Web API 与管理前端](archived/web-api-admin-console.md) | 管理面首版里程碑与验证记录；验收依据见[要求](../requirements/web-api-admin-console.md) | 已完成（已归档） |
+| [Samba 身份锚点 OID 与既有目录迁移](archived/samba-identity-anchor.md) | [需求矩阵](../requirements/samba-identity-anchor.md)、[OID 注册表](../../docs/governance/oid-registry.md)、[迁移 Runbook](../../docs/guide/migrate-identity-anchor-oid.md) | 已完成（已归档） |
+| [AI Agent 编排](ai-agent.md) | `ai_agent` Module、Forgejo 协作面接入、权限与执行面、排程与记录；验收依据见[要求](../requirements/ai-agent.md) | 提案 |
 
 计划使用稳定主题文件名。创建日期、更新时间、状态和目标里程碑写在文档内，不因日常更新重命名。

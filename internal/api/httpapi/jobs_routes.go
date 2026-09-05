@@ -376,6 +376,10 @@ func (h *handler) streamJobEvents(w http.ResponseWriter, r *http.Request, params
 			}
 			lastID = event.ID
 		}
+		// Each event is delivered once. The heartbeat branch returns to the top
+		// of this loop without replaying, so a page left in place there would be
+		// re-sent on every heartbeat for the lifetime of a running job.
+		page.Events = nil
 		if lastID < page.LatestID {
 			page, err = h.jobs.store.Replay(r.Context(), job.ID, consolejobs.ReplayOptions{AfterID: &lastID, Limit: h.jobs.replayBatch})
 			if !h.handleStreamingReplayError(w, flusher, err) {

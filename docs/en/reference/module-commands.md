@@ -1,9 +1,9 @@
 # Module-specific commands
 
 > Status: **partially implemented**. Strict manifest validation, deployment freezing, read-only
-> discovery, the shared execution service, strict ABI, locking, and `anas module commands|invoke`
-> are in place; M1A `anasd` exposes read-only list/detail only in full state over HTTPS with an owner session.
-> **Not yet delivered**: the `anasd` invoke and job endpoints, and the Forgejo and Incus commands.
+> discovery, the shared execution service, strict ABI, locking, `anas module commands|invoke`, and the
+> `anasd` list/detail and durable-job invoke routes are in place, all in full state over HTTPS with an
+> owner session. **Not yet delivered**: the Forgejo and Incus commands.
 > This page describes what is implemented; delivery order lives in the
 > [implementation plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/module-command-capability.md) under `dev-docs/`.
 
@@ -41,12 +41,19 @@ missing terminal output, and reflected Secret values fail closed. Raw stderr is 
 adapted to CLI stderr, leaving one final `anas.dev/cli/v1` envelope on JSON stdout. Timeout or cancellation terminates
 the executor process group.
 
-The M1A daemon remains read-only and exposes `GET /api/v1/workspaces/{ws}/modules/{module}/commands` and the corresponding
-`/{command}` detail route with independent `anas.dev/api/v1` DTOs. They contain no handler, executor, input key,
-injected value, or host path. Production starts in bootstrap; these discovery routes are available only in full state
-over HTTPS with an owner session, and there is no invoke route. A future POST must connect this same
-`application.ModuleCommandService` to authentication, roles, jobs, audit, digest/idempotency checks, and destructive
-reauthentication instead of launching the CLI.
+The daemon exposes `GET /api/v1/workspaces/{ws}/modules/{module}/commands`, the corresponding `/{command}` detail
+route, and `POST .../commands/{command}/actions/invoke`, with independent `anas.dev/api/v1` DTOs. They contain no
+handler, executor, input key, injected value, or host path. Production starts in bootstrap; all three routes are
+available only in full state over HTTPS with an owner session.
+
+An invocation must carry the `command_digest` the command endpoints returned. If the active deployment no longer
+freezes that descriptor the request fails with `412 module_command_changed`, so a redeploy or Module upgrade between
+reading and invoking cannot quietly run a different command. A descriptor declaring `risk: destructive` additionally
+requires a single-use `step_up_proof` bound to the action, workspace, `<module>.<command>` target, deployment, and
+digest; other commands reject a proof rather than consuming one they do not need. An `Idempotency-Key` is required, a
+retry returns the original job, and the route answers `202` with a job and `Location`. Resolution, parameter
+validation, locking, and the executor protocol all come from the same `application.ModuleCommandService` the CLI uses;
+the daemon never launches `anas module invoke --json`.
 
 Source Modules may use the same `go run ./command` development convention as hooks. Render and Registry packaging
 freeze a platform binary so deployed commands do not depend on a Go toolchain. A declaration grants no root, sudo,

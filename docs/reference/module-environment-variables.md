@@ -73,14 +73,20 @@ inner/cloud.nas.example.net/nextcloud,inner/auth.nas.example.net/authentik
 `SAMBA_DC_DC_DOMAIN`，不从 `BASE_DOMAIN` 派生。只改变应用域不得让 Samba FS leave/join；
 改变已 provision 的 AD 域则不支持原地完成，必须新建目录和重新加入成员。
 
-Compose 与容器内 resolver 都直接使用 `SAMBA_DC_DNS_SERVER` 和
-`SAMBA_DC_DNS_SEARCH`，不再产生或接受 Samba FS 自有 DNS alias，也不回退到 host/VLAN
-resolver。启动时 `net ads testjoin` 成功便复用现有 trust；只有 trust 无效才 join，且没有
+Samba FS Hook 从宿主侧 macvlan bridge 的 `VLAN_BRIDGE_IP` 派生私有的
+`SAMBA_FS_DC_TRANSPORT_IP`（无 bridge 值时兼容回退 `SAMBA_DC_DNS_SERVER`）。Compose 与
+容器内 resolver 仍使用 DC 原始监听地址 `SAMBA_DC_DNS_SERVER` 和
+`SAMBA_DC_DNS_SEARCH`，初始化脚本为该 DNS 地址安装经 transport IP 转发的 `/32` 路由；
+同时把 canonical `SAMBA_DC_DC_DOMAIN` 映射到 transport IP。Kerberos/AD 身份仍是
+canonical FQDN，不是 bridge IP。
+它不再产生或接受 Samba FS 自有 DNS alias，也不回退到普通 host/VLAN resolver。启动时
+`net ads testjoin` 成功便复用现有 trust；只有 trust 无效才 join，且没有
 自动 leave 路径。DC 暂时未 ready 时会等待并重新执行 `testjoin`，避免把连通性失败误判成
-需要 rejoin。`SAMBA_DC_DNS_SERVER` 是数值 DC 地址，安装 resolver 无需预先解析 DC 名称，
-不会形成启动依赖环。join 成功后必须再次通过 `net ads testjoin`，随后
-`net ads dns register -P` 必须成功，否则阻断启动；`wbinfo -t` readiness 检查同一份 AD
-成员机 trust。
+需要 rejoin。DNS server 与传输下一跳都是数值地址，安装 resolver 和路由无需预先解析 DC
+名称，不会形成启动依赖环。join 成功后必须再次通过 `net ads testjoin`；随后用短生命周期
+Kerberos cache 和 DC 管理员凭据幂等校正成员 A 记录，并通过 DC 原始 DNS 地址验证（流量
+经上述 `/32` 路由），失败即阻断启动。`wbinfo -t`
+readiness 检查同一份 AD 成员机 trust。
 
 文件共享参数 `SHARE_DIR_NAME`、`SHARE_ACCESS_MODE`、`SHARE_GUEST_READ_ONLY`、`USE_DEFAULT_DOMAIN` 归 samba_fs 所有，但以裸名声明：它们是用户在文件管理器里看到的东西，在配置的顶层 `env:` 块里设置。共享树固定挂在容器内的 `/userdata`：这个名字同时是 smb.conf 共享路径和 guest ACL 状态文件的前缀，不可配置。宿主路径 `SAMBA_FS_USERDATA_PATH` 由 `${USER_DATA_PATH}/samba_fs` 推导，**不是** `DATA_PATH`——用户文件属于 `<workspace>/userdata`，而 `<workspace>/data` 会被 restore 整体替换。要把这些文件放到别的盘，把那块盘挂到 `<workspace>/userdata`，一个挂载点解决全部 module 的用户内容；没有 per-module 的路径覆盖，因为那会让某个 module 的文件跑到快照和备份都不知道的地方，同时长得像个普通设置。
 

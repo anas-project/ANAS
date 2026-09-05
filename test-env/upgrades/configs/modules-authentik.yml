@@ -1,0 +1,18 @@
+modules:
+  traefik: {}
+  samba_dc: {}
+  postgres: {}
+  authentik: {}
+  eturnal: {}
+  netbird: {}
+identity:
+  iam:
+    provider: authentik
+global:
+  base_domain: nas.test
+  email: admin@nas.test
+  timezone: Asia/Shanghai
+  container_prefix: anas_upgrade_auth_
+  network_prefix: anas_upgrade_auth_
+  chinese_speedup: true
+  virtual_domain: true

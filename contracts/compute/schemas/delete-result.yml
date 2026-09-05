@@ -1,5 +1,0 @@
-type: object
-additional_properties: false
-required: [deleted]
-properties:
-  deleted: {type: boolean}

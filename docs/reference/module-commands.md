@@ -1,8 +1,9 @@
 # Module 专属命令
 
 > 状态：**部分实现**。已实现 manifest 校验、deployment 冻结、只读发现、共享执行服务、严格 ABI、
-> 锁和 `anas module commands|invoke`；M1A `anasd` 只在 full 状态经 HTTPS 和 owner 会话提供只读 list/detail。
-> **尚未交付**：`anasd` 的 invoke 与 job 端点、Forgejo 与 Incus 的具体命令。本页描述的都是已实现
+> 锁、`anas module commands|invoke`，以及 `anasd` 在 full 状态经 HTTPS 和 owner 会话提供的
+> list/detail 与持久 job 形式的 invoke。
+> **尚未交付**：Forgejo 与 Incus 的具体命令。本页描述的都是已实现
 > 的部分；施工顺序见仓库 `dev-docs/` 下的[实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/module-command-capability.md)。
 
 Module Command 允许少数 Module 发布自身特有的管理员操作，例如 Forgejo Runner project 诊断。
@@ -103,26 +104,37 @@ stdout 限制为 1 MiB 严格 JSON Lines：零到多个 `progress`/`warning` 后
 
 ## anasd
 
-当前 M1A `anasd` 仍只读，并可通过注册的 workspace ID 发现同一批活动命令：
+`anasd` 通过注册的 workspace ID 发现同一批活动命令，并以持久任务执行它们：
 
 ```text
-GET /api/v1/workspaces/{ws}/modules/{module}/commands
-GET /api/v1/workspaces/{ws}/modules/{module}/commands/{command}
+GET  /api/v1/workspaces/{ws}/modules/{module}/commands
+GET  /api/v1/workspaces/{ws}/modules/{module}/commands/{command}
+POST /api/v1/workspaces/{ws}/modules/{module}/commands/{command}/actions/invoke
 ```
 
 HTTP 使用独立的 `anas.dev/api/v1` DTO，而不是复用 CLI 信封；DTO 同样不含 handler、executor、输入键、
-注入值或宿主路径。生产入口默认从 bootstrap 状态启动；上述命令发现路由仅在 full 状态经 HTTPS 和
-owner 会话开放，并且没有 POST invoke。后续写入口必须把同一个
-`application.ModuleCommandService` 接到认证、角色、job、审计、digest/幂等键和 destructive 重认证，
-不能调用 `anas module invoke --json` 子进程。
+注入值或宿主路径。三条路由都只在 full 状态经 HTTPS 和 owner 会话开放。
+
+invoke 的约束：
+
+- 请求体必须携带命令端点返回的 `command_digest`。活动部署冻结的描述符若已不是那个 digest，返回
+  `412 module_command_changed`——重新部署或 Module 升级不会让一条旧请求悄悄执行另一个命令；
+- 描述符声明 `risk: destructive` 时必须携带一次性 `step_up_proof`，它绑定动作、workspace、
+  `<module>.<command>` 目标、部署 ID 与 digest；其余命令拒绝多余的 proof，不消耗它；
+- 必须携带 `Idempotency-Key`；重试返回原任务而不重复执行；
+- 返回 `202` 加 job 与 `Location`，执行、进度与结果都经任务 API 和 SSE 观察。
+
+解析、参数校验、锁与 executor 协议全部由 `application.ModuleCommandService` 承担，CLI 与 `anasd`
+调用的是同一实现，`anasd` 不执行 `anas module invoke --json` 子进程。
 
 ## 安全边界
 
 - command descriptor、executor 路径和摘要冻结进 `deployment.yml`，二进制进入 Module render digest；
 - 命令声明本身不授予 root、sudo、Linux capability、Docker socket 或 systemd 权限；
 - 本机高权限动作必须经固定目标/动词的 Core named helper；远程维护使用独立最小权限凭据；
-- `anasd` 当前 M1A 仍只读；list/detail 只在 full 状态经 HTTPS 和 owner 会话开放，不开放 invoke；后续 HTTP adapter 必须复用 application service、job、
-  认证、角色和审计，不能执行 `anas --json` 子进程。
+- `anasd` 的 list/detail/invoke 只在 full 状态经 HTTPS 和 owner 会话开放；invoke 复用同一 application
+  service、持久 job、认证、角色与审计，并额外要求 descriptor digest 绑定、幂等键和 destructive 重认证，
+  不执行 `anas --json` 子进程。
 
 完整规范来源是[Module 专属命令能力要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-command-capability.md)的需求矩阵
 （仓库 `dev-docs/`，不在本站发布）；本页与它冲突时以矩阵为准。

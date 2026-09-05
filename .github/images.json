@@ -39,7 +39,16 @@
     "image": "anas-forgejo-actions-controller",
     "context": "modules/forgejo/actions-controller",
     "dockerfile": "modules/forgejo/actions-controller/Dockerfile",
-    "platforms": "linux/amd64,linux/arm64"
+    "platforms": "linux/amd64,linux/arm64",
+    "shared_paths": ["go.mod", "go.sum", "internal/computeclient"]
+  },
+  {
+    "module": "incus",
+    "image": "anas-incus-provisioner",
+    "context": "modules/incus/provisioner",
+    "dockerfile": "modules/incus/provisioner/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64",
+    "shared_paths": ["go.mod", "go.sum", "internal/computeclient"]
   },
   {
     "module": "lam",

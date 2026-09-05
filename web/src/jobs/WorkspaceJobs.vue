@@ -1,11 +1,12 @@
 <script setup lang="ts">
-// REQUIREMENTS: CONSOLE-R-125 CONSOLE-R-126 CONSOLE-R-128
+// REQUIREMENTS: CONSOLE-R-125 CONSOLE-R-126 CONSOLE-R-128 CONSOLE-R-185
 import { onBeforeUnmount, onMounted, ref, watch } from "vue"
 
 import { getJob, listJobs } from "../api/deployment"
 import { openJobEventStream, type JobEvent } from "../api/job-events"
 import { APIProblemError, problemMessage } from "../api/problems"
 import type { components } from "../api/schema"
+import { reportSession } from "../api/session"
 import { terminalJobStatus } from "../deployment/model"
 import { messages, type Locale } from "../i18n/messages"
 import {
@@ -90,6 +91,10 @@ async function followJob(jobID: string, generation: number): Promise<void> {
       },
       onProblem(code: string) {
         if (generation !== followGeneration) return
+        // The event stream re-authorizes at every batch boundary but never
+        // goes through the fetch client, so a session that ends while a job is
+        // being followed is reported here instead.
+        if (code === "unauthenticated") reportSession({ kind: "unauthenticated" })
         errorCode.value = code
         followingJobID.value = null
         closeEventStream()

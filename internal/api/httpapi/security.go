@@ -67,6 +67,7 @@ const (
 	PermissionModuleCatalogRead   Permission = "module.catalog.read"
 	PermissionModuleUpdate        Permission = "module.update"
 	PermissionModuleConfig        Permission = "module.config"
+	PermissionModuleCommandInvoke Permission = "module_command.invoke"
 	PermissionSnapshotRead        Permission = "snapshot.read"
 	PermissionSnapshotChange      Permission = "snapshot.change"
 	PermissionBackupRead          Permission = "backup.read"

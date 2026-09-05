@@ -155,6 +155,13 @@ func changed(old, cur map[string]string) map[string]string {
 	return out
 }
 func calcSambaFS(e map[string]string, _ string, _ *secretStore) error {
+	// Samba FS is attached to a macvlan network. Linux deliberately prevents a
+	// macvlan child from reaching the parent interface's host address, which is
+	// where samba_dc normally publishes its DNS address. ANAS creates a host-side
+	// macvlan bridge specifically for this path, so use that address for transport
+	// while retaining SAMBA_DC_DC_DOMAIN as the Kerberos and AD server identity.
+	e["SAMBA_FS_DC_TRANSPORT_IP"] = defaultValue(e["VLAN_BRIDGE_IP"], e["SAMBA_DC_DNS_SERVER"])
+
 	// The share tree is user content, so it lives under USER_DATA_PATH rather
 	// than DATA_PATH. The distinction is not cosmetic: DATA_PATH is replaced
 	// wholesale by a deployment rollback, which would rewind every file anyone

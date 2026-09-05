@@ -209,12 +209,14 @@ type GetModuleCommandRequest struct {
 	Command string
 }
 
+// Tags are load-bearing: the daemon persists this request in the job store and
+// decodes it again in the executor with DisallowUnknownFields.
 type InvokeModuleCommandRequest struct {
-	Module        string
-	Command       string
-	Parameters    map[string]any
-	CommandDigest string
-	Confirmed     bool
+	Module        string         `json:"module"`
+	Command       string         `json:"command"`
+	Parameters    map[string]any `json:"parameters,omitempty"`
+	CommandDigest string         `json:"command_digest"`
+	Confirmed     bool           `json:"confirmed,omitempty"`
 }
 
 type PrepareModuleCommandRequest struct {

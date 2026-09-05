@@ -199,6 +199,21 @@ grep -Fq '/opt/anas/bin/wait-blueprints &' \
 grep -Fq 'instance.last_applied_hash == source_hash' \
   "$ROOT_DIR/modules/authentik/authentik/blueprints-ready.py" || exit 1
 
+# Deployment directories are root-only and the worker runs as UID 1000. The
+# root-only init service must copy only generated blueprint templates into the
+# private data tree and transfer ownership before server/worker startup; direct
+# bind mounts from the sealed deployment would be unreadable in the container.
+grep -Fq 'cp -a /rendered-blueprints/. /blueprints/anas/' \
+  "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
+grep -Fq 'chown -R 1000:1000 /data /blueprints/anas' \
+  "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
+[[ $(grep -Fc '${DATA_PATH}/authentik/blueprints:/blueprints/anas:ro' \
+  "$ROOT_DIR/modules/authentik/docker-compose.yml") -eq 2 ]] || exit 1
+if grep -Fq './blueprints:/blueprints/anas:ro' "$ROOT_DIR/modules/authentik/docker-compose.yml"; then
+  echo "Authentik runtime binds unreadable blueprints directly from the sealed deployment" >&2
+  exit 1
+fi
+
 # The initial migration set can exceed the old three-minute effective health
 # window on the supported 4-vCPU/3-GiB server baseline. Keep the server's cold
 # start grace period distinct from the worker's steady-state health policy.

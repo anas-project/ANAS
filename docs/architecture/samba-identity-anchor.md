@@ -18,38 +18,51 @@ uniqueness value safely.
 
 ## OID registry
 
-The schema OID root was generated once from UUID
-`43555bcd-c93f-4508-acbf-12be8d710729` with Microsoft's documented AD OID
-generator. It is globally unique and must never be regenerated.
+IANA assigned ANAS PEN `66678`. The project owns the enterprise root
+`1.3.6.1.4.1.66678` and administers its child OIDs in the repository. The
+directory-schema layout is:
 
 ```text
-ANAS AD schema root
-1.2.840.113556.1.8000.2554.17237.23501.51519.17672.44223.1228429.7407401
+ANAS enterprise root
+1.3.6.1.4.1.66678
 
 Reserved class arc
-<root>.1
+1.3.6.1.4.1.66678.1.1
 
 Reserved attribute arc
-<root>.2
+1.3.6.1.4.1.66678.1.2
 
 anasIdentityAnchor attributeID
-<root>.2.1
+1.3.6.1.4.1.66678.1.2.1
 
 anasIdentityAnchor schemaIDGUID
-7108c5a7-2290-45e0-9eba-eef087be58e3
+db3786ae-3261-4d44-a2a1-588bfe3e41c5
 ```
 
-The deployed attribute OID is therefore:
+The canonical registry is
+[ANAS OID registry](../governance/oid-registry.md). Allocate a concrete OID
+there before code uses it. Never change the meaning of an allocated OID or
+reuse a retired one.
+
+An early deployment used a root generated from UUID
+`43555bcd-c93f-4508-acbf-12be8d710729` with Microsoft's AD OID generator. Its
+`anasIdentityAnchor` schema object has `schemaIDGUID`
+`7108c5a7-2290-45e0-9eba-eef087be58e3` and this legacy `attributeID`:
 
 ```text
 1.2.840.113556.1.8000.2554.17237.23501.51519.17672.44223.1228429.7407401.2.1
 ```
 
-IANA does not let an applicant choose an unassigned Private Enterprise Number.
-It assigns the number after an application is confirmed. The application draft
-is in [iana-pen-application.md](../governance/iana-pen-application.md). A future PEN is useful
-for new protocol and schema allocations, but it must not be used to renumber an
-attribute already installed in a released AD forest.
+The GUID-derived root and all its descendants are retired; no new OID is ever
+allocated below it. The old attribute OID and GUID identify only the retained
+legacy schema object and must never be assigned to another object. The active
+replacement uses the PEN-based `attributeID` and distinct `schemaIDGUID`
+`db3786ae-3261-4d44-a2a1-588bfe3e41c5`; schema OIDs and schema GUIDs are
+independently unique identifiers.
+
+Internal child OIDs do not need another IANA registration. RFC 9371 recommends
+internal sub-assignment and says not to report those child allocations to IANA.
+See [IANA Private Enterprise Number and OID management](../governance/iana-pen-application.md).
 
 ## Schema installation
 
@@ -71,6 +84,97 @@ schema master, otherwise startup fails with an actionable error.
 Schema updates are permanent forest data. Before a production upgrade, restore
 a snapshot into a lab forest and run both the schema and anchor E2E tests. A
 normal deployment rollback cannot remove a replicated schema element.
+
+## Legacy OID migration
+
+Active Directory schema additions are permanent and an installed object's
+`attributeID` is not rewritten in place. An existing forest that contains the
+GUID-derived OID therefore uses a **defunct replacement**, not an LDIF
+modification of that identifier. The order is significant because an attribute
+cannot be made defunct while an active class still references it, and a change
+to `isDefunct` must be a separate LDAP Modify operation:
+
+1. confirm that the current `anasIdentityAnchor` has exactly the registered
+   legacy OID and schema GUID; abort on any unexpected schema state;
+2. stop the anchor writer and downstream directory synchronization, take a
+   restorable DC snapshot, and export every anchor-bearing object's value;
+3. while the legacy attribute is still active, delete its values from all
+   objects and verify that none remain;
+4. remove the legacy attribute from the `user` and `group` optional-attribute
+   sets, mark its schema object defunct in a dedicated modify, then rename both
+   its `lDAPDisplayName` and RDN to unambiguous legacy names in two further,
+   separate operations;
+5. create a new schema object named `anasIdentityAnchor` with
+   `1.3.6.1.4.1.66678.1.2.1`, schema GUID
+   `db3786ae-3261-4d44-a2a1-588bfe3e41c5`, and the same syntax, cardinality,
+   range, indexing, and class applicability;
+6. add the replacement to the `user` and `group` optional-attribute sets and
+   restore each exported value without transforming it;
+7. replace the old schema-GUID write ACE with the replacement GUID, then verify
+   counts, per-object equality, UUID syntax, uniqueness, and an actual
+   `svc_anchor` write;
+8. restart the writer and consumers only after the schema, values, and
+   least-privilege write path pass verification.
+
+The migration is allowed only for the explicitly detected legacy state. Its
+read-only completed-state check validates the final and retired legacy schema
+objects, both User and Group class links, and every textual anchor's uniqueness
+and equality to the UUID derived from `mS-DS-ConsistencyGuid`. ACLs and a real
+service-account write still require the post-start verification below. The
+migration never deletes the old schema object or its registry entry. A failure
+at an intermediate state leaves services stopped; restore the required
+pre-migration snapshot before retrying rather than trying to improvise a
+partial repair. Once the replacement is active, all new installations and
+runtime checks must reject the legacy OID for the live `anasIdentityAnchor`
+name.
+
+Microsoft's [guidance for disabling schema extensions](https://learn.microsoft.com/en-us/windows/win32/ad/disabling-existing-classes-and-attributes)
+documents the permanent-object and defunct-replacement model. The migration
+script additionally treats Samba-specific name/GUID ambiguity as fail-closed.
+
+### Migration command
+
+The repository command
+`modules/samba_dc/samba_dc/root/usr/local/bin/migrate-identity-anchor-oid.sh`
+is installed in the upgraded Samba DC image as
+`/usr/local/bin/migrate-identity-anchor-oid.sh`. It supports only a forest with
+exactly one DC. Run its read-only preflight first, as root in a maintenance
+container that mounts the DC's existing `/var/lib/samba` while Samba and every
+other writer of that volume are stopped:
+
+```sh
+/usr/local/bin/migrate-identity-anchor-oid.sh --check
+```
+
+After creating and verifying an ANAS snapshot, execute the migration with that
+snapshot's real identifier:
+
+```sh
+/usr/local/bin/migrate-identity-anchor-oid.sh \
+  --execute \
+  --snapshot-id <verified-snapshot-id> \
+  --backup-dir /mnt/anas-migration-evidence/<new-dir>
+```
+
+`--execute` refuses an absent or unsafe snapshot identifier; it does not create
+or validate the snapshot itself. `--backup-dir` is also mandatory and has no
+default. Mount protected persistent storage outside the Samba data volume at
+`/mnt/anas-migration-evidence`, then name a new absolute child directory there.
+The script rejects a path within `/var/lib/samba`, an existing path, a symlinked
+parent, or a missing parent. This separation keeps the evidence available if
+the Samba data-volume snapshot must be restored.
+
+Immediately after `--execute`, while the data volume is still offline, a second
+`--check` must verify the final and defunct legacy schema records, both class
+links, and every textual anchor's equality to `mS-DS-ConsistencyGuid` and
+uniqueness. Then start only the upgraded DC. Its normal structure reconciler
+replaces the attribute write ACE with the new schema GUID. Confirm a real
+least-privilege `svc_anchor` write before starting the anchor worker and other
+directory consumers.
+
+The end-to-end outage, snapshot, evidence, staged startup, Consumer validation,
+and full-volume recovery procedure is the
+[PEN 66678 identity-anchor migration runbook](../guide/migrate-identity-anchor-oid.md).
 
 ## Runtime reconciliation
 

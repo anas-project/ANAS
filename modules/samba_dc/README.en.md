@@ -8,7 +8,7 @@ Active Directory, LDAPS, Kerberos, and BIND9-DLZ DNS provider.
 | Item | Value |
 | --- | --- |
 | Module | `samba_dc` |
-| Version / revision | `4.23.6-r10` |
+| Version / revision | `4.23.6-r11` |
 | Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |
@@ -47,6 +47,16 @@ It is authoritative for people, groups, service identities, and identity anchors
 | Directory password writeback | authoritative directory; controlled by ACLs and password policy |
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
+
+## PEN 66678 identity-anchor migration
+
+r11 fixes the official `anasIdentityAnchor` OID at `1.3.6.1.4.1.66678.1.2.1`; fresh r11 installations use it directly. An existing pre-r11 workspace that still uses the legacy GUID-derived OID must not use an ordinary direct apply. Follow the [offline migration runbook](../../docs/en/guide/migrate-identity-anchor-oid.md):
+
+- pre-pull and render the exact `4.23.6-r11` candidate, stop the entire workspace, and verify on the host that the DC, worker, Consumers, scheduled jobs, and interactive LDAP/LDB sessions have all stopped writing;
+- create a real cold snapshot, record the snapshot ID returned by the tool, and require a successful `anas snapshot verify` before migration;
+- write migration evidence to protected persistent storage outside the Samba data volume, run read-only `--check`, and execute `--execute` exactly once;
+- after startup, validate the new-GUID ACL, a real `svc_anchor` write, anchor-worker health, and every Consumer's account mapping;
+- if anything fails after `--execute` begins, restore the entire Samba data-volume snapshot; never restore only `sam.ldb` or hand-edit the migration forward.
 
 ## Administrator login and IAM-outage recovery
 

@@ -2,15 +2,26 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"regexp"
-	"strings"
+	"time"
+
+	"github.com/anas-project/ANAS/internal/computeclient"
 )
 
-// ComputeProvider is the provider-neutral execution boundary used by the
-// Actions controller. It deliberately has no Incus devices, raw config, mount,
-// or socket fields for a caller to smuggle into a VM request.
+// guestEntrypoint is the only program this controller may start inside a
+// guest. It belongs here rather than in the shared client because it is
+// Forgejo's guest image that provides it; another consumer of the same lease
+// mechanism runs something else entirely.
+const guestEntrypoint = "/usr/local/libexec/anas-forgejo-runner-start"
+
+type (
+	InstanceSpec = computeclient.InstanceSpec
+	Instance     = computeclient.Instance
+)
+
+// ComputeProvider is the execution boundary used by the Actions controller. It
+// deliberately has no Incus devices, raw config, mount, or socket fields for a
+// caller to smuggle into an instance request; the lease owns all of those.
 type ComputeProvider interface {
 	Create(context.Context, InstanceSpec) error
 	Inspect(context.Context, string) (Instance, error)
@@ -21,58 +32,22 @@ type ComputeProvider interface {
 	ListManaged(context.Context) ([]Instance, error)
 }
 
-type InstanceSpec struct {
-	ID         string
-	Image      string
-	WorkloadID string
-	CPU        int
-	MemoryMiB  int
-	DiskGiB    int
+// leasedCompute adapts the shared compute client to this controller.
+//
+// The only behaviour it adds is that Start does not return until the guest can
+// accept the entrypoint: the very next thing the controller does is stream a
+// one-time registration token into it, and a token streamed into an instance
+// whose agent is not up yet is a token spent for nothing.
+type leasedCompute struct {
+	*computeclient.Client
+	guestPoll time.Duration
 }
 
-type Instance struct {
-	ID    string
-	State string
+func (l leasedCompute) Start(ctx context.Context, id string) error {
+	if err := l.Client.Start(ctx, id); err != nil {
+		return err
+	}
+	return l.Client.WaitForGuest(ctx, id, l.guestPoll)
 }
 
-var (
-	instanceIDPattern   = regexp.MustCompile(`^anas-fj-[a-f0-9]{20}$`)
-	imageFingerprintPat = regexp.MustCompile(`^[a-f0-9]{64}$`)
-)
-
-func (s InstanceSpec) Validate() error {
-	if !instanceIDPattern.MatchString(s.ID) {
-		return fmt.Errorf("compute instance identity is invalid")
-	}
-	if !imageFingerprintPat.MatchString(s.Image) {
-		return fmt.Errorf("compute image must be a pinned SHA-256 fingerprint")
-	}
-	if strings.TrimSpace(s.WorkloadID) == "" || len(s.WorkloadID) > 128 || hasControl(s.WorkloadID) {
-		return fmt.Errorf("compute workload identity is invalid")
-	}
-	if s.CPU < 1 || s.CPU > 64 || s.MemoryMiB < 512 || s.MemoryMiB > 262144 || s.DiskGiB < 4 || s.DiskGiB > 2048 {
-		return fmt.Errorf("compute resource limits are outside the supported range")
-	}
-	return nil
-}
-
-func validateGuestCommand(command []string) error {
-	if len(command) == 0 || len(command) > 32 || command[0] != "/usr/local/libexec/anas-forgejo-runner-start" {
-		return fmt.Errorf("compute exec command is not an approved guest entrypoint")
-	}
-	for _, value := range command {
-		if value == "" || len(value) > 1024 || hasControl(value) {
-			return fmt.Errorf("compute exec contains an invalid argument")
-		}
-	}
-	return nil
-}
-
-func hasControl(value string) bool {
-	for _, r := range value {
-		if r < 0x20 || r == 0x7f {
-			return true
-		}
-	}
-	return false
-}
+var _ ComputeProvider = leasedCompute{}

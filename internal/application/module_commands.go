@@ -18,6 +18,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ModuleCommandServiceFactory binds the shared module-command boundary to one
+// canonical workspace path. The daemon's HTTP adapter and job executor use it
+// so an invocation reaching the console runs the same resolution, validation,
+// locking, and executor path the CLI runs.
+type ModuleCommandServiceFactory func(workspacePath string, events EventSink) ModuleCommandService
+
+// NewModuleCommandServiceFactory is the daemon's binding. The command executor
+// already runs under the caller's context with a fully explicit, empty
+// environment, so no daemon-specific variant is needed here.
+func NewModuleCommandServiceFactory() ModuleCommandServiceFactory {
+	return func(workspacePath string, events EventSink) ModuleCommandService {
+		return NewService(workspacePath).WithEventSink(events)
+	}
+}
+
 var (
 	applicationModuleNamePattern        = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	applicationModuleCommandIDPattern   = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)

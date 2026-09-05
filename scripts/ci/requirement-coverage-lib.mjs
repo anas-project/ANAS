@@ -119,7 +119,7 @@ export function parseE2eRecords(markdown) {
     .map((match) => match[1])
 }
 
-export function checkRequirementCoverage({ matrix, assignments, e2eRecords }) {
+export function checkRequirementCoverage({ matrix, assignments, e2eRecords, coverageOnly = false }) {
   const errors = []
   const { prefixes, requirements } = matrix
 
@@ -165,6 +165,12 @@ export function checkRequirementCoverage({ matrix, assignments, e2eRecords }) {
     if ((assignedCount.get(requirement.number) ?? 0) > 0) {
       errors.push(`${requirement.id} 已废弃但仍归属于某个里程碑`)
     }
+  }
+
+  // An archived plan is checked for assignment coverage only: its e2e table is a
+  // historical execution record, not a schedule to keep in step with the matrix.
+  if (coverageOnly) {
+    return { errors, checked: active.length, retired: requirements.length - active.length }
   }
 
   const recorded = new Set(e2eRecords)

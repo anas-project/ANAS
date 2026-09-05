@@ -3,13 +3,16 @@ package runner
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
+	"github.com/anas-project/ANAS/internal/computeclient"
 	"gopkg.in/yaml.v3"
 )
 
@@ -175,7 +178,7 @@ func directoryDigest(root string) (string, error) {
 	return fmt.Sprintf("sha256:%x", h.Sum(nil)), nil
 }
 
-func normalizeContractDependencies(module string, in []manifestContractDependency) ([]ContractDependency, error) {
+func normalizeContractDependencies(module string, in []manifestContractDependency, types map[string]ParamType) ([]ContractDependency, error) {
 	out := make([]ContractDependency, 0, len(in))
 	seen := map[string]bool{}
 	for _, raw := range in {
@@ -202,9 +205,13 @@ func normalizeContractDependencies(module string, in []manifestContractDependenc
 		if fallback == "" || !contains(interfaces, fallback) {
 			return nil, fmt.Errorf("module %q contract %s default %q is not in interfaces", module, name, raw.Default)
 		}
+		enabledBy, err := normalizeEnabledBy(module, "contracts", name, raw.EnabledBy, types)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, ContractDependency{
 			Name: name, Version: raw.Version, SelectedBy: strings.TrimSpace(raw.SelectedBy),
-			Interfaces: interfaces, Default: fallback,
+			Interfaces: interfaces, Default: fallback, EnabledBy: enabledBy,
 		})
 	}
 	return out, nil
@@ -258,7 +265,7 @@ func loadContractProviders(moduleDir, module string, in []manifestContractProvid
 	return out, nil
 }
 
-func normalizeResourceRequirements(module string, in []manifestResourceRequirement, deps []ContractDependency) ([]ResourceRequirement, error) {
+func normalizeResourceRequirements(module string, in []manifestResourceRequirement, deps []ContractDependency, types map[string]ParamType) ([]ResourceRequirement, error) {
 	out := make([]ResourceRequirement, 0, len(in))
 	seen := map[string]bool{}
 	for _, raw := range in {
@@ -269,9 +276,10 @@ func normalizeResourceRequirements(module string, in []manifestResourceRequireme
 		}
 		seen[id] = true
 		matched := false
+		declaredEnabledBy := ""
 		for _, dep := range deps {
 			if dep.Name == contract {
-				matched = true
+				matched, declaredEnabledBy = true, dep.EnabledBy
 				break
 			}
 		}
@@ -291,9 +299,21 @@ func normalizeResourceRequirements(module string, in []manifestResourceRequireme
 				return nil, fmt.Errorf("module %q resource %s defines spec.%s and spec_from.%s", module, id, field, field)
 			}
 		}
+		enabledBy, err := normalizeEnabledBy(module, "resources", id, raw.EnabledBy, types)
+		if err != nil {
+			return nil, err
+		}
+		// A resource cannot outlive the contract dependency it rides on. If the
+		// contract is conditional the resource must carry the same condition,
+		// otherwise a switched-off contract would still drag in a provider the
+		// moment the resource asked for one.
+		if declaredEnabledBy != "" && enabledBy != declaredEnabledBy {
+			return nil, fmt.Errorf("module %q resource %s must declare enabled_by %q to match its contract dependency",
+				module, id, declaredEnabledBy)
+		}
 		out = append(out, ResourceRequirement{
 			ID: id, Contract: contract, Binding: strings.TrimSpace(raw.Binding),
-			Spec: raw.Spec, SpecFrom: raw.SpecFrom,
+			Spec: raw.Spec, SpecFrom: raw.SpecFrom, EnabledBy: enabledBy,
 		})
 	}
 	return out, nil
@@ -332,6 +352,23 @@ func (a *app) validateContractRegistry() error {
 		}
 	}
 	return nil
+}
+
+// contractRequired answers whether a conditional contract dependency exists in
+// this deployment. It reads the operator's value and falls back to the module's
+// declared default, for the same reason capabilityRequired does: at this point
+// a.env holds only what was written down, so an unset switch must be read from
+// the manifest rather than treated as empty.
+func (a *app) contractRequired(moduleName string, mod Module, enabledBy string) bool {
+	if enabledBy == "" {
+		return true
+	}
+	key := paramEnvKey(moduleName, mod.EnvPrefix, enabledBy)
+	value := strings.TrimSpace(a.env[key])
+	if value == "" {
+		value = strings.TrimSpace(mod.Defaults[key])
+	}
+	return strings.EqualFold(value, "true")
 }
 
 func (a *app) resolveContractDependency(consumer string, module Module, dep ContractDependency) (string, error) {
@@ -505,9 +542,17 @@ func (a *app) materializeResourceSecrets() error {
 	a.resourceRequests = nil
 	objectBuckets := map[string]string{}
 	objectAccessKeys := map[string]string{}
+	computeSandboxes := map[string]string{}
 	for _, consumer := range a.order {
 		module := a.reg[consumer]
 		for _, required := range module.Resources {
+			// A condition decides whether the resource exists, nothing else.
+			// Skipping the whole iteration is what makes that true: no secret is
+			// minted, no provider is called, and no lease is published for a
+			// subsystem this deployment has switched off.
+			if !a.contractRequired(consumer, module, required.EnabledBy) {
+				continue
+			}
 			spec := cloneAnyMap(required.Spec)
 			for field, parameter := range required.SpecFrom {
 				key := paramEnvKey(consumer, module.EnvPrefix, parameter)
@@ -538,12 +583,26 @@ func (a *app) materializeResourceSecrets() error {
 					return fmt.Errorf("resource %s.%s deletion_policy must be retain or delete", consumer, required.ID)
 				}
 			}
-			if required.Contract == "relational_database" || required.Contract == "object_storage" {
+			if required.Contract == "relational_database" || required.Contract == "object_storage" || required.Contract == "compute" {
 				credential, ok := spec["credential"].(map[string]any)
 				policy, _ := credential["policy"].(string)
 				if !ok || policy != "generated" {
 					return fmt.Errorf("resource %s.%s credential.policy must be generated", consumer, required.ID)
 				}
+			}
+			if required.Contract == "compute" {
+				if _, _, err := validateComputeSpec(consumer, required.ID, spec); err != nil {
+					return err
+				}
+				// One sandbox belongs to one consumer. Sharing a project would
+				// put two consumers behind the same fence, which is the exact
+				// isolation this contract exists to provide.
+				sandbox, _ := spec["sandbox"].(string)
+				identity := consumer + "." + required.ID
+				if previous := computeSandboxes[sandbox]; previous != "" {
+					return fmt.Errorf("compute resources %s and %s use the same sandbox %s", previous, identity, sandbox)
+				}
+				computeSandboxes[sandbox] = identity
 			}
 			if required.Contract == "object_storage" {
 				bucket, _ := spec["bucket"].(string)
@@ -576,7 +635,15 @@ func (a *app) materializeResourceSecrets() error {
 			if required.Contract == "object_storage" {
 				credentialLength = 40
 			}
-			credential, err := a.secrets.Ensure(secretKey, func() (string, error) { return randomPassword(credentialLength) })
+			// compute authenticates with a client certificate rather than a
+			// password, so its resource credential is a keypair bundle instead
+			// of a random string. Everything downstream still sees one stable
+			// secret per resource.
+			generate := func() (string, error) { return randomPassword(credentialLength) }
+			if required.Contract == "compute" {
+				generate = func() (string, error) { return generateComputeClientCredential(consumer, required.ID) }
+			}
+			credential, err := a.secrets.Ensure(secretKey, generate)
 			if err != nil {
 				return err
 			}
@@ -643,6 +710,46 @@ func (a *app) publishModuleResources(consumer string) error {
 				resourcePrefix + "PATH_STYLE":        pathStyle,
 			}
 			sensitive = resourcePrefix + "SECRET_ACCESS_KEY"
+		case "compute":
+			quota, allowlist, err := validateComputeSpec(consumer, request.ID, request.Spec)
+			if err != nil {
+				return err
+			}
+			certPEM, keyPEM, err := splitComputeCredential(request.Credential)
+			if err != nil {
+				return fmt.Errorf("resource %s.%s: %w", consumer, request.ID, err)
+			}
+			providerPrefix := defaultEnvPrefix(request.Provider)
+			fingerprint, err := computeServerFingerprint(a.env[providerPrefix+"_SERVER_CERT_B64"])
+			if err != nil {
+				return fmt.Errorf("resource %s.%s provider %s: %w", consumer, request.ID, request.Provider, err)
+			}
+			resourcePrefix := computeResourcePrefix(consumer, request.ID)
+			// The consumer receives the fence and the key to it, and drives
+			// instance lifecycle itself from here on. ANAS is not on that path.
+			values = map[string]string{
+				resourcePrefix + "INTERFACE":       request.Interface,
+				resourcePrefix + "ENDPOINT":        a.env[providerPrefix+"_ENDPOINT"],
+				resourcePrefix + "SANDBOX":         stringSpec(request.Spec, "sandbox"),
+				resourcePrefix + "INSTANCE_PREFIX": stringSpec(request.Spec, "instance_prefix"),
+				// Fixed by the contract, not chosen per deployment: the provider
+				// writes this profile and the consumer only names it.
+				resourcePrefix + "PROFILE": computeclient.ProfileName,
+				// Both halves of the pin: the certificate the consumer's client
+				// must match against, and its digest as an independent
+				// cross-check. Neither is secret -- a server certificate is
+				// public by construction.
+				resourcePrefix + "SERVER_CERT":             a.env[providerPrefix+"_SERVER_CERT_B64"],
+				resourcePrefix + "SERVER_CERT_FINGERPRINT": fingerprint,
+				resourcePrefix + "CLIENT_CERT":             base64.StdEncoding.EncodeToString([]byte(certPEM)),
+				resourcePrefix + "CLIENT_KEY":              base64.StdEncoding.EncodeToString([]byte(keyPEM)),
+				resourcePrefix + "IMAGE_ALLOWLIST":         strings.Join(allowlist, ","),
+				resourcePrefix + "MAX_INSTANCES":           strconv.Itoa(quota.MaxInstances),
+				resourcePrefix + "CPU":                     strconv.Itoa(quota.CPU),
+				resourcePrefix + "MEMORY_MIB":              strconv.Itoa(quota.MemoryMiB),
+				resourcePrefix + "DISK_GIB":                strconv.Itoa(quota.DiskGiB),
+			}
+			sensitive = resourcePrefix + "CLIENT_KEY"
 		default:
 			continue
 		}

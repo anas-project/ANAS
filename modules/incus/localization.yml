@@ -1,0 +1,21 @@
+api_version: anas.module-localization/v1
+module: incus
+module_version: 7.3.0
+module_revision: 1
+reviewed_at: 2026-08-30
+timezone:
+  status: not_applicable
+  mechanism: The provisioner is a one-shot process with no scheduling, retention or timestamp output; the remote Incus daemon keeps its own clock.
+language:
+  status: not_applicable
+  scope: no user interface; the provisioner emits machine-readable JSON only
+  selection: none
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: none
+  fallback: Diagnostics are English-only operator output on stderr.
+  supported: []
+  evidence:
+    - version: 7.3.0
+      url: https://github.com/lxc/incus/tree/v7.3.0
+      path: Incus REST API; this module ships no upstream user interface

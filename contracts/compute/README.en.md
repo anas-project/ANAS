@@ -1,6 +1,6 @@
 # compute Contract
 
-Provides provider-neutral VM lifecycle and stdin-only secret injection for isolated one-shot workloads.
+Provisions a fenced isolation sandbox lease at apply time (project, quota, image allowlist and a restricted client certificate); the consumer drives instance lifecycle itself within that fence.
 
 <!-- generated:contract-reference:start -->
 ## Generated contract reference
@@ -8,41 +8,37 @@ Provides provider-neutral VM lifecycle and stdin-only secret injection for isola
 > Generated from `contract.yml`, schemas, Module manifests, and `documentation.yml`; do not edit this block manually.
 
 - Version / 版本：`1.0.0`
-- Status / 状态：`proposal`（reviewed 2026-08-22）
-- Interfaces / 接口：`incus_vm`
-- Resource identity / 资源标识：`provider_project`, `instance_id`
-- Resource schema / 资源 Schema：`schemas/instance.yml`
+- Status / 状态：`proposal`（reviewed 2026-08-30）
+- Interfaces / 接口：`incus_vm`, `incus_container`
+- Resource identity / 资源标识：`consumer`, `resource_id`
+- Resource schema / 资源 Schema：`schemas/resource.yml`
 
 ### Operations
 
 | Operation | Required | Request schema | Result schema |
 | --- | --- | --- | --- |
-| `create` | `true` | `schemas/create-request.yml` | `schemas/instance-result.yml` |
-| `delete` | `true` | `schemas/instance-request.yml` | `schemas/delete-result.yml` |
-| `exec_stdin` | `true` | `schemas/exec-request.yml` | `schemas/exec-result.yml` |
-| `inspect` | `true` | `schemas/instance-request.yml` | `schemas/instance-result.yml` |
-| `list_managed` | `true` | `schemas/list-request.yml` | `schemas/list-result.yml` |
-| `start` | `true` | `schemas/instance-request.yml` | `schemas/instance-result.yml` |
-| `stop` | `true` | `schemas/instance-request.yml` | `schemas/instance-result.yml` |
+| `ensure` | `true` | `schemas/ensure-request.yml` | `schemas/sandbox-result.yml` |
+| `inspect` | `true` | `schemas/inspect-request.yml` | `schemas/inspect-result.yml` |
+| `revoke` | `false` | `schemas/revoke-request.yml` | `schemas/revoke-result.yml` |
 
 ### Schemas
 
 | Schema | Type | Required fields | All fields |
 | --- | --- | --- | --- |
-| `schemas/create-request.yml` | `object` | `provider`, `interface`, `spec` | `interface`, `provider`, `spec` |
-| `schemas/delete-result.yml` | `object` | `deleted` | `deleted` |
-| `schemas/exec-request.yml` | `object` | `provider`, `interface`, `provider_project`, `instance_id`, `command`, `stdin` | `command`, `instance_id`, `interface`, `provider`, `provider_project`, `stdin` |
-| `schemas/exec-result.yml` | `object` | `exit_code` | `exit_code` |
-| `schemas/instance-request.yml` | `object` | `provider`, `interface`, `provider_project`, `instance_id` | `instance_id`, `interface`, `provider`, `provider_project` |
-| `schemas/instance-result.yml` | `object` | `provider_project`, `instance_id`, `state` | `instance_id`, `provider_project`, `state` |
-| `schemas/instance.yml` | `object` | `provider_project`, `instance_id`, `image`, `cpu`, `memory_mib`, `disk_gib`, `lifecycle` | `cpu`, `disk_gib`, `image`, `instance_id`, `lifecycle`, `memory_mib`, `provider_project`, `workload_id` |
-| `schemas/list-request.yml` | `object` | `provider`, `interface`, `provider_project`, `managed_prefix` | `interface`, `managed_prefix`, `provider`, `provider_project` |
-| `schemas/list-result.yml` | `object` | `instances` | `instances` |
+| `schemas/ensure-request.yml` | `object` | `consumer`, `resource_id`, `provider`, `interface`, `spec` | `consumer`, `interface`, `provider`, `resource_id`, `spec` |
+| `schemas/inspect-request.yml` | `object` | `consumer`, `resource_id`, `provider`, `interface`, `spec` | `consumer`, `interface`, `provider`, `resource_id`, `spec` |
+| `schemas/inspect-result.yml` | `object` | `exists`, `ready`, `restricted`, `quota_enforced` | `exists`, `quota_enforced`, `ready`, `restricted` |
+| `schemas/resource.yml` | `object` | `sandbox`, `instance_prefix`, `quota`, `image_allowlist`, `credential`, `deletion_policy` | `credential`, `deletion_policy`, `image_allowlist`, `image_policy`, `instance_prefix`, `quota`, `sandbox` |
+| `schemas/revoke-request.yml` | `object` | `consumer`, `resource_id`, `provider`, `interface`, `spec` | `consumer`, `interface`, `provider`, `resource_id`, `spec` |
+| `schemas/revoke-result.yml` | `object` | `revoked` | `revoked` |
+| `schemas/sandbox-result.yml` | `object` | `endpoint`, `sandbox`, `instance_prefix`, `profile`, `server_certificate_fingerprint`, `client_certificate_secret`, `quota` | `client_certificate_secret`, `endpoint`, `instance_prefix`, `profile`, `quota`, `sandbox`, `server_certificate_fingerprint` |
 
 ### Current providers and consumers
 
 | Role | Module | Version constraint | Interface | Implementation |
 | --- | --- | --- | --- | --- |
-| - | - | - | - | - |
+| provider | `incus` | `1.0.0` | `incus_vm` | `providers/compute/incus_vm.yml` |
+| provider | `incus` | `1.0.0` | `incus_container` | `providers/compute/incus_container.yml` |
+| consumer | `forgejo` | `>=1.0.0 <2.0.0` | `incus_container`, `incus_vm` | - |
 <!-- generated:contract-reference:end -->
 See the [technical documentation](docs/technical.en.md) for lifecycle and security boundaries.

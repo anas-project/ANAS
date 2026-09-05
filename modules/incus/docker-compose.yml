@@ -1,0 +1,35 @@
+services:
+  # Run-only. This module has no long-running service, no published port and no
+  # Traefik label: it is a client control plane for a daemon that lives on a
+  # separate virtualization host, and nothing here should be reachable.
+  anas_incus_provision:
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r1
+    build:
+      context: ./provisioner
+      dockerfile: Dockerfile
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      INCUS_ENDPOINT: ${INCUS_ENDPOINT}
+      INCUS_SERVER_CERT_B64: ${INCUS_SERVER_CERT_B64}
+      INCUS_ADMIN_CERT_B64: ${INCUS_ADMIN_CERT_B64}
+      INCUS_ADMIN_KEY_B64: ${INCUS_ADMIN_KEY_B64}
+      INCUS_STORAGE_POOL: ${INCUS_STORAGE_POOL}
+      INCUS_NETWORK_IPV6: ${INCUS_NETWORK_IPV6}
+      ANAS_RESOURCE_CONSUMER: ${ANAS_RESOURCE_CONSUMER:-}
+      ANAS_RESOURCE_SANDBOX: ${ANAS_RESOURCE_SANDBOX:-}
+      ANAS_RESOURCE_INSTANCE_PREFIX: ${ANAS_RESOURCE_INSTANCE_PREFIX:-}
+      ANAS_RESOURCE_MAX_INSTANCES: ${ANAS_RESOURCE_MAX_INSTANCES:-}
+      ANAS_RESOURCE_CPU: ${ANAS_RESOURCE_CPU:-}
+      ANAS_RESOURCE_MEMORY_MIB: ${ANAS_RESOURCE_MEMORY_MIB:-}
+      ANAS_RESOURCE_DISK_GIB: ${ANAS_RESOURCE_DISK_GIB:-}
+      ANAS_RESOURCE_IMAGE_ALLOWLIST: ${ANAS_RESOURCE_IMAGE_ALLOWLIST:-}
+      ANAS_RESOURCE_CLIENT_CERT: ${ANAS_RESOURCE_CLIENT_CERT:-}
+    networks:
+      - incus
+
+networks:
+  incus:
+    driver: bridge
+    name: ${INCUS_NETWORK_NAME}

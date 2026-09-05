@@ -1,0 +1,10 @@
+type: object
+additional_properties: false
+required: [exists, ready, restricted, quota_enforced]
+properties:
+  exists: {type: boolean}
+  ready: {type: boolean}
+  # Both must be true before any lease is usable. A project that exists but is
+  # unrestricted or unquotaed is a fence with no fence in it.
+  restricted: {type: boolean}
+  quota_enforced: {type: boolean}

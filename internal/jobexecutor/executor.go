@@ -20,22 +20,23 @@ import (
 )
 
 const (
-	KindDeploymentApply    = "deployment.apply"
-	KindDeploymentStart    = "deployment.start"
-	KindDeploymentStop     = "deployment.stop"
-	KindDeploymentRestart  = "deployment.restart"
-	KindDeploymentRollback = "deployment.rollback"
-	KindModuleSync         = "module.sync"
-	KindModuleUpdate       = "module.update"
-	KindModuleEnable       = "module.enable"
-	KindModuleDisable      = "module.disable"
-	KindSnapshotCreate     = "snapshot.create"
-	KindSnapshotPin        = "snapshot.pin"
-	KindSnapshotUnpin      = "snapshot.unpin"
-	KindSnapshotVerify     = "snapshot.verify"
-	KindLocalAdminRotate   = "local_admin.rotate"
-	defaultPollInterval    = 250 * time.Millisecond
-	terminalWriteTimeout   = 10 * time.Second
+	KindDeploymentApply     = "deployment.apply"
+	KindDeploymentStart     = "deployment.start"
+	KindDeploymentStop      = "deployment.stop"
+	KindDeploymentRestart   = "deployment.restart"
+	KindDeploymentRollback  = "deployment.rollback"
+	KindModuleSync          = "module.sync"
+	KindModuleUpdate        = "module.update"
+	KindModuleEnable        = "module.enable"
+	KindModuleDisable       = "module.disable"
+	KindSnapshotCreate      = "snapshot.create"
+	KindSnapshotPin         = "snapshot.pin"
+	KindSnapshotUnpin       = "snapshot.unpin"
+	KindSnapshotVerify      = "snapshot.verify"
+	KindLocalAdminRotate    = "local_admin.rotate"
+	KindModuleCommandInvoke = "module_command.invoke"
+	defaultPollInterval     = 250 * time.Millisecond
+	terminalWriteTimeout    = 10 * time.Second
 )
 
 type Store interface {
@@ -58,29 +59,31 @@ type DeploymentFactory func(workspacePath string, events application.EventSink) 
 type ModuleFactory = application.ModuleManagementServiceFactory
 
 type Options struct {
-	Store              Store
-	Audit              deploymentaudit.Sink
-	Workspaces         []Workspace
-	DeploymentFactory  DeploymentFactory
-	ModuleFactory      ModuleFactory
-	MaintenanceFactory application.MaintenanceServiceFactory
-	PollInterval       time.Duration
-	OnError            func(error)
+	Store                Store
+	Audit                deploymentaudit.Sink
+	Workspaces           []Workspace
+	DeploymentFactory    DeploymentFactory
+	ModuleFactory        ModuleFactory
+	MaintenanceFactory   application.MaintenanceServiceFactory
+	ModuleCommandFactory application.ModuleCommandServiceFactory
+	PollInterval         time.Duration
+	OnError              func(error)
 }
 
 type Executor struct {
-	store              Store
-	audit              deploymentaudit.Sink
-	workspaces         map[string]string
-	deploymentFactory  DeploymentFactory
-	moduleFactory      ModuleFactory
-	maintenanceFactory application.MaintenanceServiceFactory
-	pollInterval       time.Duration
-	onError            func(error)
-	wakeMu             sync.Mutex
-	wake               map[string]chan struct{}
-	runningMu          sync.Mutex
-	running            map[string]context.CancelFunc
+	store                Store
+	audit                deploymentaudit.Sink
+	workspaces           map[string]string
+	deploymentFactory    DeploymentFactory
+	moduleFactory        ModuleFactory
+	maintenanceFactory   application.MaintenanceServiceFactory
+	moduleCommandFactory application.ModuleCommandServiceFactory
+	pollInterval         time.Duration
+	onError              func(error)
+	wakeMu               sync.Mutex
+	wake                 map[string]chan struct{}
+	runningMu            sync.Mutex
+	running              map[string]context.CancelFunc
 }
 
 func New(options Options) (*Executor, error) {
@@ -114,7 +117,8 @@ func New(options Options) (*Executor, error) {
 	return &Executor{
 		store: options.Store, audit: options.Audit, workspaces: workspaces, deploymentFactory: options.DeploymentFactory,
 		moduleFactory: options.ModuleFactory, maintenanceFactory: options.MaintenanceFactory,
-		pollInterval: options.PollInterval, onError: options.OnError, wake: wake,
+		moduleCommandFactory: options.ModuleCommandFactory,
+		pollInterval:         options.PollInterval, onError: options.OnError, wake: wake,
 		running: make(map[string]context.CancelFunc),
 	}, nil
 }
@@ -404,6 +408,28 @@ func (executor *Executor) execute(daemonContext context.Context, workspacePath s
 			break
 		}
 		result, operationErr = maintenanceJobResult(job.WorkspaceID, verified)
+	case KindModuleCommandInvoke:
+		request, err := decodeModuleCommandInvokeRequest(job.Request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		// The HTTP adapter authorized this invocation before the job existed,
+		// including the step-up a destructive command requires. Confirming here
+		// keeps the executor from re-asking a question the operator already
+		// answered, exactly as apply and the lifecycle kinds do.
+		request.Confirmed = true
+		service := executor.moduleCommandService(workspacePath, events)
+		if service == nil {
+			operationErr = errors.New("Module command service is unavailable")
+			break
+		}
+		invoked, err := service.InvokeModuleCommand(jobContext, request)
+		if err != nil {
+			operationErr = err
+			break
+		}
+		result, operationErr = jsonObject(invoked)
 	case KindLocalAdminRotate:
 		request, err := decodeLocalAdminTarget(job.Request)
 		if err != nil {
@@ -554,6 +580,13 @@ func (executor *Executor) moduleService(workspacePath string, events application
 	return executor.moduleFactory(workspacePath, events)
 }
 
+func (executor *Executor) moduleCommandService(workspacePath string, events application.EventSink) application.ModuleCommandService {
+	if executor == nil || executor.moduleCommandFactory == nil {
+		return nil
+	}
+	return executor.moduleCommandFactory(workspacePath, events)
+}
+
 func (executor *Executor) maintenanceService(workspacePath string, events application.EventSink) application.MaintenanceService {
 	if executor == nil || executor.maintenanceFactory == nil {
 		return nil
@@ -674,6 +707,20 @@ func decodeModuleEnabledRequest(value map[string]any, kind string) (application.
 	return request, nil
 }
 
+func decodeModuleCommandInvokeRequest(value map[string]any) (application.InvokeModuleCommandRequest, error) {
+	var request application.InvokeModuleCommandRequest
+	if err := decodeStoredRequest(value, &request); err != nil {
+		return application.InvokeModuleCommandRequest{}, err
+	}
+	if request.Module == "" || request.Command == "" {
+		return application.InvokeModuleCommandRequest{}, errors.New("stored Module command job is missing its module or command")
+	}
+	if request.CommandDigest == "" {
+		return application.InvokeModuleCommandRequest{}, errors.New("stored Module command job is missing its descriptor digest")
+	}
+	return request, nil
+}
+
 func decodeSnapshotCreateRequest(value map[string]any) (application.SnapshotCreateRequest, error) {
 	var request application.SnapshotCreateRequest
 	if err := decodeStoredRequest(value, &request); err != nil {
@@ -779,6 +826,8 @@ func publicJobError(err error, kind string) *consolejobs.JobError {
 		fallbackCode, message = "snapshot_verify_failed", "snapshot verification failed"
 	case KindLocalAdminRotate:
 		fallbackCode, message = "local_admin_rotate_failed", "local administrator rotation failed"
+	case KindModuleCommandInvoke:
+		fallbackCode, message = "module_command_failed", "Module command failed"
 	}
 	if applicationError, ok := application.ErrorOf(err); ok && applicationError.Code != "" {
 		jobError := &consolejobs.JobError{Code: applicationError.Code, Message: message}

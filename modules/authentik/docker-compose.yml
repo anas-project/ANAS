@@ -4,10 +4,15 @@ services:
     image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14
     user: root
     entrypoint: ["/bin/sh", "-c"]
-    command: ["mkdir -p /data && chown -R 1000:1000 /data"]
+    # Rendered deployments are root-only because neighboring files contain
+    # secrets. Stage only the non-secret blueprint templates into the
+    # Authentik data tree, then hand that private copy to the runtime UID.
+    command: ["mkdir -p /data /blueprints/anas && rm -rf /blueprints/anas/* && cp -a /rendered-blueprints/. /blueprints/anas/ && chown -R 1000:1000 /data /blueprints/anas"]
     restart: "no"
     volumes:
       - "${DATA_PATH}/authentik/data:/data"
+      - "./blueprints:/rendered-blueprints:ro"
+      - "${DATA_PATH}/authentik/blueprints:/blueprints/anas"
 
   anas_authentik:
     container_name: ${CONTAINER_PREFIX}authentik
@@ -32,7 +37,7 @@ services:
       - "${DATA_PATH}/authentik/data:/data"
       # Declarative Application and Provider definitions generated from the
       # generic client registration requests.
-      - "./blueprints:/blueprints/anas:ro"
+      - "${DATA_PATH}/authentik/blueprints:/blueprints/anas:ro"
       - "${AUTHENTIK_LOCAL_ADMIN__BREAK_GLASS_PASSWORD_FILE}:/run/secrets/authentik-break-glass-password:ro"
     env_file:
       - .env
@@ -82,7 +87,7 @@ services:
         condition: service_healthy
     volumes:
       - "${DATA_PATH}/authentik/data:/data"
-      - "./blueprints:/blueprints/anas:ro"
+      - "${DATA_PATH}/authentik/blueprints:/blueprints/anas:ro"
       - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
     env_file:
       - .env

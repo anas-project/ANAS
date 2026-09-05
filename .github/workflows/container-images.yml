@@ -10,12 +10,14 @@ on:
       - ".github/workflows/container-images.yml"
       - "cmd/package-module/**"
       - "cmd/gen-module-docs/**"
+      - "cmd/check-upgrade-tests/**"
       - "contracts/**"
       - "internal/config/config.go"
       - "internal/configschema/**"
       - "internal/localization/**"
       - "internal/moduledocs/**"
       - "internal/modulepackage/**"
+      - "internal/upgradetest/**"
       - "internal/runner/**"
       - "go.mod"
       - "go.sum"
@@ -24,6 +26,8 @@ on:
       - "scripts/ci/install-crane.sh"
       - "scripts/ci/module-revisions.sh"
       - "scripts/ci/module-revisions-test.sh"
+      - "scripts/ci/module-upgrade-fixture-compatibility.sh"
+      - "test-env/upgrades/**"
       - "modules/**"
   push:
     branches: [image-release]
@@ -34,12 +38,14 @@ on:
       - ".github/workflows/container-images.yml"
       - "cmd/package-module/**"
       - "cmd/gen-module-docs/**"
+      - "cmd/check-upgrade-tests/**"
       - "contracts/**"
       - "internal/config/config.go"
       - "internal/configschema/**"
       - "internal/localization/**"
       - "internal/moduledocs/**"
       - "internal/modulepackage/**"
+      - "internal/upgradetest/**"
       - "internal/runner/**"
       - "go.mod"
       - "go.sum"
@@ -48,6 +54,8 @@ on:
       - "scripts/ci/install-crane.sh"
       - "scripts/ci/module-revisions.sh"
       - "scripts/ci/module-revisions-test.sh"
+      - "scripts/ci/module-upgrade-fixture-compatibility.sh"
+      - "test-env/upgrades/**"
       - "modules/**"
   workflow_dispatch:
     inputs:
@@ -149,6 +157,8 @@ jobs:
           go run ./cmd/gen-module-docs
           bash scripts/ci/module-revisions.sh --base "$base_sha" --check
           go run ./cmd/gen-module-docs --check
+          go run ./cmd/check-upgrade-tests --base-ref "$base_sha" --scope modules
+          bash scripts/ci/module-upgrade-fixture-compatibility.sh "$base_sha"
 
           if [[ "$EVENT_NAME" != "pull_request" ]]; then
             while IFS= read -r module; do
@@ -320,10 +330,19 @@ jobs:
             build_required=false
             context="$(jq -r '.context' <<<"$item")"
             image="$(jq -r '.image' <<<"$item")"
+            # Paths outside the Docker context that the image still compiles
+            # in, reached through a named build context. Without them a change
+            # to a shared library would never rebuild the image embedding it.
+            mapfile -t shared_paths < <(jq -r '.shared_paths[]?' <<<"$item")
+            build_contexts=''
+            if [[ ${#shared_paths[@]} -gt 0 ]]; then
+              build_contexts='shared=.'
+            fi
             before_entry="$(git show "${BASE_SHA}:.github/images.json" 2>/dev/null | jq -cS --arg image "$image" '.[] | select(.image == $image)' 2>/dev/null || true)"
             after_entry="$(jq -cS --arg image "$image" '.[] | select(.image == $image)' .github/images.json)"
             if [[ "$FIRST_RELEASE" == "true" || -z "$previous_tag" || "$previous_version" != "$version" || "$before_entry" != "$after_entry" ]] ||
-               ! git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- "$context"; then
+               ! git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- "$context" ||
+               { [[ ${#shared_paths[@]} -gt 0 ]] && ! git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- "${shared_paths[@]}"; }; then
               build_required=true
             fi
 
@@ -332,8 +351,9 @@ jobs:
               --argjson revision "$revision" \
               --arg tag "${version}-r${revision}" \
               --arg previous_tag "$previous_tag" \
+              --arg build_contexts "$build_contexts" \
               --argjson build_required "$build_required" \
-              '. + {version: $version, revision: $revision, tag: $tag, previous_tag: $previous_tag, build_required: $build_required}' \
+              '. + {version: $version, revision: $revision, tag: $tag, previous_tag: $previous_tag, build_contexts: $build_contexts, build_required: $build_required}' \
               <<<"$item")"
             enriched="$(jq -c --argjson item "$item" '. + [$item]' <<<"$enriched")"
           done < <(jq -c '.[]' <<<"$selected")
@@ -514,6 +534,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          build-contexts: ${{ matrix.build_contexts }}
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platforms }}
           push: ${{ github.event_name != 'pull_request' }}

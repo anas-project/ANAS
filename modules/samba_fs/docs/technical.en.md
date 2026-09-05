@@ -59,29 +59,40 @@ delivered; do not bypass their guards to test this path. A provisioned
 `SAMBA_DC_DOMAIN` cannot be renamed in place. A new AD domain requires a new
 directory and a fresh Samba FS join.
 
-The runtime wiring enforces the same boundary. Both Compose's initial resolver
-and the container's `/etc/resolv.conf` use only `SAMBA_DC_DNS_SERVER` as their
-nameserver and `SAMBA_DC_DNS_SEARCH` as the search domain. They do not fall
-back to `LOCAL_DNS_SERVER`, a host resolver, or the VLAN gateway. `krb5.conf`
-gets its realm, canonical KDC FQDN, and domain mapping from
-`SAMBA_DC_REALM`, `SAMBA_DC_DC_DOMAIN`, and `SAMBA_DC_DOMAIN`; `smb.conf` gets
-its workgroup and realm from `SAMBA_DC_WORKGROUP` and `SAMBA_DC_REALM`.
+The runtime wiring preserves the same identity boundary while separating
+identity from transport. A Samba FS macvlan child cannot directly reach the
+host address on its parent interface, so the hook derives the private
+`SAMBA_FS_DC_TRANSPORT_IP` from the host-side macvlan bridge's
+`VLAN_BRIDGE_IP` (falling back to `SAMBA_DC_DNS_SERVER` when no bridge value is
+available). Compose's initial resolver and the container's `/etc/resolv.conf`
+continue to use the DC's original listener address, `SAMBA_DC_DNS_SERVER`,
+with `SAMBA_DC_DNS_SEARCH`. Initialization installs a `/32` route to that DNS
+address through the transport IP. Independently, `/etc/hosts` maps the
+canonical `SAMBA_DC_DC_DOMAIN` to the transport IP. Kerberos and AD still identify the DC
+only by its canonical FQDN: `krb5.conf` gets its realm, KDC FQDN, and domain
+mapping from `SAMBA_DC_REALM`, `SAMBA_DC_DC_DOMAIN`, and `SAMBA_DC_DOMAIN`,
+never treating the bridge IP as a Kerberos identity. `smb.conf` gets its
+workgroup and realm from `SAMBA_DC_WORKGROUP` and `SAMBA_DC_REALM`.
 
 Every start runs `net ads testjoin` first. A valid existing trust is reused
 without a join, and there is no automatic leave path. Only an invalid trust
 causes `net ads join` retries with Samba DC administrator credentials. A
 successful join must still pass a subsequent `net ads testjoin`; otherwise the
 helper retries instead of declaring an unverified machine account ready. It
-then registers the current member address with `net ads dns register -P` and
-blocks startup if registration fails, preventing the FS FQDN from retaining a
-stale address. The `wbinfo -t` health check verifies the same generated `smb.conf` and member
+then acquires a DC-administrator ticket in a short-lived Kerberos cache, uses
+`samba-tool dns` to remove stale A records and install the current member
+address idempotently, and verifies the result by querying
+`SAMBA_DC_DNS_SERVER`; that packet crosses the macvlan boundary through the
+explicit `/32` route.
+The password enters `kinit` only on standard input and never appears in process
+arguments or logs. Registration or verification failure blocks startup. The
+`wbinfo -t` health check verifies the same generated `smb.conf` and member
 trust without reading the application domain or TLS service alias. Even if an
 application-domain change recreates the container, the existing AD trust is
 therefore only checked and reused.
 
-`SAMBA_DC_DNS_SERVER` is a numeric address exported by the Samba DC hook from
-`SAMBA_DC_HOST_IP`, so Docker does not need to resolve the DC name before it
-can install the resolver. Samba DC is a one-way dependency of this module and
+Both the DNS server and transport next hop are numeric, so Docker does not need
+to resolve the DC name before installing the resolver and route. Samba DC is a one-way dependency and
 does not depend on Samba FS, so there is no DNS startup cycle. If the DC is not
 ready yet, the join helper waits and runs `testjoin` again. It returns as soon
 as the existing trust becomes reachable and joins only when the reachable
@@ -152,6 +163,7 @@ The dependency closure does not grant every environment value. Sensitive values 
 - [`main_test.go`](../hook/main_test.go)
 - [`domain_wiring_test.go`](../hook/domain_wiring_test.go)
 - [`join_ad.sh`](../samba_fs/root/usr/local/bin/join_ad.sh)
+- [`register_ad_dns.sh`](../samba_fs/root/usr/local/bin/register_ad_dns.sh)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 

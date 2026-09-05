@@ -20,6 +20,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '配置', link: '/guide/configuration' },
         { text: '服务生命周期', link: '/guide/service-lifecycle' },
         { text: '备份与恢复', link: '/guide/backup-and-restore' },
+        { text: '迁移 identity-anchor OID', link: '/guide/migrate-identity-anchor-oid' },
         { text: '完整任务指南', link: '/guide/usage' }
       ]
     }
@@ -105,11 +106,17 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Module 专属命令能力设计', link: '/architecture/module-command-capability-design' },
         { text: '管理员账号系统', link: '/architecture/admin-account-system' },
         { text: 'Samba AD 用户与组规范', link: '/architecture/samba-ad-user-planning' },
+        { text: 'Samba 身份锚点', link: '/architecture/samba-identity-anchor' },
         { text: 'IAM 能力', link: '/architecture/iam-capability-design' },
         { text: '应用目录', link: '/architecture/app-catalog-design' },
         { text: '动态 DNS', link: '/architecture/dynamic-dns-capability-design' },
         { text: 'Object Storage 能力', link: '/architecture/object-storage-capability-design' },
         { text: 'Forgejo Module', link: '/architecture/forgejo-module-design' },
+        { text: 'Incus 宿主供给与镜像烘焙', link: '/architecture/incus-host-provisioning' },
+        { text: '统一动作 ABI', link: '/architecture/action-abi' },
+        { text: '远端备份与异地容灾', link: '/architecture/remote-backup-and-dr' },
+        { text: '日志与可观测性', link: '/architecture/observability-and-logs' },
+        { text: '宿主特权动作通道', link: '/architecture/host-action-channel' },
         { text: 'AI Agent 编排', link: '/architecture/ai-agent-orchestration-design' },
         { text: '凭据轮换', link: '/architecture/credential-rotation' },
         { text: '运行时与发布状态', link: '/architecture/runtime-release-state-design' },
@@ -153,7 +160,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       text: '项目治理',
       items: [
         { text: '概览', link: '/governance/' },
-        { text: 'IANA PEN 申请', link: '/governance/iana-pen-application' }
+        { text: 'IANA PEN 与 OID 管理', link: '/governance/iana-pen-application' },
+        { text: 'OID 注册表', link: '/governance/oid-registry' }
       ]
     }
   ]
@@ -178,6 +186,7 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Configuration', link: '/en/guide/configuration' },
         { text: 'Service lifecycle', link: '/en/guide/service-lifecycle' },
         { text: 'Backup and restore', link: '/en/guide/backup-and-restore' },
+        { text: 'Migrate the identity-anchor OID', link: '/en/guide/migrate-identity-anchor-oid' },
         { text: 'Complete task guide', link: '/en/guide/usage' }
       ]
     }
@@ -266,7 +275,8 @@ export const enSidebar: DefaultTheme.Sidebar = {
       text: 'Project governance',
       items: [
         { text: 'Overview', link: '/en/governance/' },
-        { text: 'IANA PEN application', link: '/en/governance/iana-pen-application' }
+        { text: 'IANA PEN and OID management', link: '/en/governance/iana-pen-application' },
+        { text: 'OID registry', link: '/en/governance/oid-registry' }
       ]
     }
   ]

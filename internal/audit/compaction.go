@@ -54,43 +54,6 @@ func defaultAuditCompactionOperations() auditCompactionOperations {
 	}
 }
 
-func openExistingSecureNamedFile(path, name string) (*os.File, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, fmt.Errorf("inspect %s: %w", name, err)
-	}
-	if err := validateSecureFileInfo(info, name); err != nil {
-		return nil, err
-	}
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND, 0)
-	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", name, err)
-	}
-	if err := verifyOpenNamedFile(file, path, name); err != nil {
-		_ = file.Close()
-		return nil, err
-	}
-	return file, nil
-}
-
-func createExclusiveSecureNamedFile(path, name string) (*os.File, error) {
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("create %s: %w", name, err)
-	}
-	closeOnError := func(cause error) (*os.File, error) {
-		_ = file.Close()
-		return nil, cause
-	}
-	if err := file.Chmod(0o600); err != nil {
-		return closeOnError(fmt.Errorf("secure %s: %w", name, err))
-	}
-	if err := verifyOpenNamedFile(file, path, name); err != nil {
-		return closeOnError(err)
-	}
-	return file, nil
-}
-
 func cleanupStaleCompactionFile(directory *os.File, path string, operations auditCompactionOperations) error {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -496,19 +459,4 @@ func auditStatesSemanticallyEqual(source, checkpoint *auditState) bool {
 		}
 	}
 	return true
-}
-
-func openFileNamesPath(file logFile, path, name string) (bool, error) {
-	opened, err := file.Stat()
-	if err != nil {
-		return false, fmt.Errorf("inspect opened %s: %w", name, err)
-	}
-	current, err := os.Lstat(path)
-	if err != nil {
-		return false, fmt.Errorf("inspect canonical %s: %w", name, err)
-	}
-	if err := validateSecureFileInfo(current, name); err != nil {
-		return false, err
-	}
-	return os.SameFile(opened, current), nil
 }

@@ -22,7 +22,7 @@
 | --- | --- | --- | --- |
 | `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `traefik, authentik, db` | 3 |
 | `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 2 |
-| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `` | 1 |
+| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `` | 3 |
 | `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 3 |
 <!-- generated:compose-topology:end -->
 
@@ -33,6 +33,11 @@
 worker 健康检查还要求 `/blueprints/anas` 下的每个 blueprint 已存在对应实例、状态为
 `successful`，且 Authentik 记录的 `last_applied_hash` 与挂载文件 SHA-512 一致。依赖
 Authentik 的 Module 因而不会在 OIDC Provider 尚未可发现时启动。
+
+deployment 整体保持 root-only；`anas_authentik_init` 只把不含 Secret 值的生成 blueprint
+复制到 `${DATA_PATH}/authentik/blueprints`，将该私有副本交给 UID/GID 1000 后，server 与 worker
+再以只读方式挂载。这样无需放宽 deployment 中其他配置或 Secret 的权限，也不会让非 root worker
+因无法遍历 `0700` deployment 目录而永久停在启动状态。
 
 `after_start` Hook 最多等待 10 分钟读取同一 ready marker；Runner 只有在该屏障通过后才会
 启动下游 Module，因而 Compose 内健康状态与 Module 间依赖顺序使用同一权威判据。

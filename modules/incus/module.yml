@@ -1,0 +1,93 @@
+api_version: anas.module/v1
+kind: Module
+name: incus
+version: 7.3.0
+revision: 1
+app_version: 7.3.0
+abi:
+  supports:
+    - anas.module-hook/v1
+title: Incus compute provider
+description: Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract.
+category: compute
+# Every unit-level boundary here is covered, but no restricted project, quota or
+# certificate in this module has been exercised against a real Incus daemon on a
+# separate KVM host. Until that E2E exists the fence is asserted, not proven.
+status: developing
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+contracts:
+  provides:
+    # One implementation, two isolation tiers. The schemas and operation
+    # semantics are identical; the interface only records whether the fence
+    # produces virtual machines or unprivileged system containers, and the
+    # provider never silently downgrades one to the other.
+    - name: compute
+      version: 1.0.0
+      interface: incus_vm
+      implementation: providers/compute/incus_vm.yml
+    - name: compute
+      version: 1.0.0
+      interface: incus_container
+      implementation: providers/compute/incus_container.yml
+upgrade:
+  # Empty, not absent: this module keeps no on-disk state of its own. Every
+  # durable object it manages lives in the remote Incus daemon.
+  data_breaking: []
+config:
+  must_resolve:
+    - endpoint
+    - server_certificate_b64
+    - admin_certificate_b64
+    - admin_key_b64
+  defaults:
+    endpoint: ""
+    storage_pool: default
+    server_certificate_b64: ""
+    admin_certificate_b64: ""
+    admin_key_b64: ""
+  types:
+    storage_pool:
+      kind: string
+      constraints:
+        pattern: '^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$'
+    endpoint:
+      # Empty is allowed by the pattern only because the parameter ships with an
+      # empty default; the hook refuses to apply until it is actually set.
+      kind: string
+      constraints:
+        pattern: '^(?:https://[A-Za-z0-9.:_-]+)?$'
+    server_certificate_b64: string
+    admin_certificate_b64: string
+    admin_key_b64: string
+  changes:
+    endpoint:
+      effect: reconcile
+      apply: reconcile-incus-provider
+      description: Repoints the provider at a different Incus daemon; every lease must be re-ensured against it.
+    server_certificate_b64:
+      effect: reconcile
+      apply: reconcile-incus-provider
+      sensitive: true
+      description: Pinned Incus server certificate; a mismatch fails closed rather than falling back to unverified TLS.
+    admin_certificate_b64:
+      effect: credential_rotate
+      apply: rotate-incus-admin-credential
+      sensitive: true
+      description: Provisioning-only client certificate used to create projects and register consumer certificates.
+    admin_key_b64:
+      effect: credential_rotate
+      apply: rotate-incus-admin-credential
+      sensitive: true
+      description: Private key for the provisioning certificate; never handed to a consumer.
+    storage_pool:
+      effect: reconcile
+      apply: reconcile-incus-provider
+      description: Incus storage pool backing every lease root disk; changing it does not move existing instances.
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook

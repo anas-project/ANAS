@@ -14,6 +14,7 @@ func TestSambaFSRuntimeUsesOnlyADDomainInputs(t *testing.T) {
 		"init":     "../samba_fs/root/etc/cont-init.d/11-samba_fs.sh",
 		"join":     "../samba_fs/root/usr/local/bin/join_ad.sh",
 		"kerberos": "../samba_fs/root/etc/krb5.conf.envsubst",
+		"register": "../samba_fs/root/usr/local/bin/register_ad_dns.sh",
 		"samba":    "../samba_fs/root/etc/samba/smb.conf.envsubst",
 	}
 	contents := make(map[string]string, len(artifacts))
@@ -25,15 +26,16 @@ func TestSambaFSRuntimeUsesOnlyADDomainInputs(t *testing.T) {
 		contents[name] = string(b)
 	}
 
-	// These values belong to the application namespace or host networking.
-	// None is a valid source for AD realm discovery or member trust.
+	// These values belong to the application namespace or obsolete DNS aliases.
+	// None is a valid source for AD realm discovery or member trust. The one
+	// intentional host-network input is SAMBA_FS_DC_TRANSPORT_IP, derived from
+	// VLAN_BRIDGE_IP by the hook solely to cross the macvlan host boundary.
 	for _, forbidden := range []string{
 		"BASE_DOMAIN",
 		"SAMBA_DC_HOST",
 		"SAMBA_FS_DNS_SERVER",
 		"LOCAL_DNS_SERVER",
 		"HOST_DNS_SERVER",
-		"VLAN_BRIDGE_IP",
 		"net ads leave",
 	} {
 		for name, content := range contents {
@@ -57,8 +59,10 @@ func TestSambaFSRuntimeUsesOnlyADDomainInputs(t *testing.T) {
 		". /usr/local/bin/join_ad.sh",
 		"nameserver $SAMBA_DC_DNS_SERVER",
 		"search $SAMBA_DC_DNS_SEARCH",
+		"$SAMBA_FS_DC_TRANSPORT_IP  $SAMBA_DC_DC_DOMAIN",
+		`ip route replace "$SAMBA_DC_DNS_SERVER/32" via "$SAMBA_FS_DC_TRANSPORT_IP"`,
 		"$fs_hostname.$SAMBA_DC_DOMAIN",
-		"if ! net ads dns register -P; then",
+		`register_ad_dns.sh "$HOST_IP"`,
 		"refusing to start with an unverified member address",
 	)
 	requireFragments(t, "Compose", contents["compose"],
@@ -74,6 +78,83 @@ func TestSambaFSRuntimeUsesOnlyADDomainInputs(t *testing.T) {
 		"$SAMBA_DC_ADMIN_NAME",
 		"$SAMBA_DC_ADMIN_PASSWORD",
 	)
+	requireFragments(t, "DNS registration helper", contents["register"],
+		`KRB5CCNAME="FILE:$ccache_path"`,
+		`kinit "$SAMBA_DC_ADMIN_NAME"`,
+		`"$SAMBA_DC_DC_DOMAIN" "$SAMBA_DC_DOMAIN" "$record_name" A`,
+		"--use-kerberos=required",
+		`host "$fqdn" "$SAMBA_DC_DNS_SERVER"`,
+	)
+}
+
+func TestADRegistrationReconcilesAddressAndIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	tracePath := filepath.Join(dir, "trace")
+	statePath := filepath.Join(dir, "addresses")
+	if err := os.WriteFile(statePath, []byte("192.0.2.99\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	installFakeDNSCommands(t, dir)
+	scriptPath, err := filepath.Abs("../samba_fs/root/usr/local/bin/register_ad_dns.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := append(os.Environ(),
+		"PATH="+dir+":"+os.Getenv("PATH"),
+		"TRACE_FILE="+tracePath,
+		"DNS_STATE_FILE="+statePath,
+		"XDG_RUNTIME_DIR="+dir,
+		"SAMBA_DC_ADMIN_NAME=Administrator",
+		"SAMBA_DC_ADMIN_PASSWORD=test-password",
+		"SAMBA_DC_DC_DOMAIN=dc.ad.internal.example",
+		"SAMBA_DC_DNS_SERVER=192.0.2.10",
+		"SAMBA_DC_DOMAIN=ad.internal.example",
+		"SAMBA_FS_DC_TRANSPORT_IP=192.0.2.11",
+		"SAMBA_FS_HOSTNAME=SambaFS",
+	)
+	run := func() string {
+		t.Helper()
+		cmd := exec.Command("bash", scriptPath, "192.0.2.42")
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("DNS registration failed: %v\n%s", err, out)
+		}
+		if strings.Contains(string(out), "test-password") {
+			t.Fatal("domain administrator password was logged")
+		}
+		return string(out)
+	}
+
+	run()
+	state, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(state)); got != "192.0.2.42" {
+		t.Fatalf("registered addresses = %q, want only current member address", got)
+	}
+	firstTrace := readTestTrace(t, tracePath)
+	for _, fragment := range []string{
+		"kinit Administrator",
+		"query dc.ad.internal.example ad.internal.example sambafs",
+		"delete 192.0.2.99",
+		"add 192.0.2.42",
+		"host sambafs.ad.internal.example 192.0.2.10",
+	} {
+		if !strings.Contains(firstTrace, fragment) {
+			t.Errorf("registration trace is missing %q:\n%s", fragment, firstTrace)
+		}
+	}
+	if strings.Contains(firstTrace, "test-password") {
+		t.Fatal("domain administrator password reached the command trace")
+	}
+
+	run()
+	secondTrace := readTestTrace(t, tracePath)
+	if strings.Count(secondTrace, "add ") != 1 || strings.Count(secondTrace, "delete ") != 1 {
+		t.Fatalf("second registration was not idempotent:\n%s", secondTrace)
+	}
 }
 
 func TestSambaFSManifestClaimsADDomainInputs(t *testing.T) {
@@ -285,6 +366,48 @@ exit 0
 exit 0
 `)
 	return dir, tracePath
+}
+
+func installFakeDNSCommands(t *testing.T, dir string) {
+	t.Helper()
+	writeTestExecutable(t, filepath.Join(dir, "kinit"), `#!/usr/bin/env bash
+IFS= read -r password
+printf 'kinit %s\n' "$1" >> "$TRACE_FILE"
+[[ "$password" == "$SAMBA_DC_ADMIN_PASSWORD" ]]
+`)
+	writeTestExecutable(t, filepath.Join(dir, "kdestroy"), `#!/usr/bin/env bash
+exit 0
+`)
+	writeTestExecutable(t, filepath.Join(dir, "samba-tool"), `#!/usr/bin/env bash
+set -euo pipefail
+action=$2
+case "$action" in
+  query)
+    printf 'query %s %s %s\n' "$3" "$4" "$5" >> "$TRACE_FILE"
+    while IFS= read -r address; do
+      [[ -n "$address" ]] && printf '  A: %s (flags=600000f0, serial=1, ttl=900)\n' "$address"
+    done < "$DNS_STATE_FILE"
+    ;;
+  delete)
+    address=$7
+    printf 'delete %s\n' "$address" >> "$TRACE_FILE"
+    awk -v remove="$address" '$0 != remove' "$DNS_STATE_FILE" > "$DNS_STATE_FILE.tmp"
+    mv "$DNS_STATE_FILE.tmp" "$DNS_STATE_FILE"
+    ;;
+  add)
+    address=$7
+    printf 'add %s\n' "$address" >> "$TRACE_FILE"
+    printf '%s\n' "$address" >> "$DNS_STATE_FILE"
+    ;;
+  *) exit 2 ;;
+esac
+`)
+	writeTestExecutable(t, filepath.Join(dir, "host"), `#!/usr/bin/env bash
+printf 'host %s %s\n' "$1" "$2" >> "$TRACE_FILE"
+while IFS= read -r address; do
+  [[ -n "$address" ]] && printf '%s has address %s\n' "$1" "$address"
+done < "$DNS_STATE_FILE"
+`)
 }
 
 func writeTestExecutable(t *testing.T, path, content string) {

@@ -11,6 +11,11 @@ docker_cmd() {
   docker -H "unix://$socket" "$@"
 }
 
+fail() {
+  printf 'authentik upgrade probe failed: %s\n' "$1" >&2
+  exit 1
+}
+
 container() {
   printf '%s%s' "$prefix" "$1"
 }
@@ -18,14 +23,14 @@ container() {
 https_code() {
   local host=$1
   local path=${2:-/}
-  curl -skS --connect-timeout 10 --max-time 60 --output /dev/null --write-out '%{http_code}' \
+  curl -skS --noproxy '*' --connect-timeout 10 --max-time 60 --output /dev/null --write-out '%{http_code}' \
     --resolve "$host:$entry_port:$entry_ip" "https://$host:$entry_port$path"
 }
 
 https_get() {
   local host=$1
   local path=${2:-/}
-  curl -skS --connect-timeout 10 --max-time 60 \
+  curl -skS --noproxy '*' --connect-timeout 10 --max-time 60 \
     --resolve "$host:$entry_port:$entry_ip" "https://$host:$entry_port$path"
 }
 
@@ -79,22 +84,44 @@ docker_cmd inspect "$(container authentik_init)" --format '{{.State.Status}} {{.
 docker_cmd exec "$(container authentik)" ak healthcheck
 docker_cmd exec "$(container authentik_worker)" ak healthcheck
 docker_cmd exec "$(container authentik)" ak shell -c \
-  "from authentik.core.models import Application; assert Application.objects.filter(slug='netbird').exists(); print('authentik_netbird_application=ok')"
-docker_cmd exec "$(container authentik)" test -s /blueprints/anas/anas-clients.yaml
+  "from authentik.core.models import Application; from authentik.providers.oauth2.models import OAuth2Provider; app = Application.objects.get(slug='netbird'); assert OAuth2Provider.objects.filter(pk=app.provider_id).exists(); print('authentik_netbird_application=ok provider=oauth2')"
+docker_cmd exec "$(container authentik)" test -s /blueprints/anas/anas-clients.yaml ||
+  fail "server cannot read the staged anas-clients blueprint"
 
-case "$(https_code "auth.$domain" /)" in 200|302) ;; *) exit 1 ;; esac
-discovery=$(https_get "auth.$domain" /application/o/netbird/.well-known/openid-configuration)
+if ! auth_code=$(https_code "auth.$domain" /); then
+  fail "authentik HTTPS endpoint is unreachable"
+fi
+case "$auth_code" in
+  200|302) printf 'authentik_root_status=%s\n' "$auth_code" ;;
+  *) fail "authentik HTTPS endpoint returned status $auth_code" ;;
+esac
+discovery_path=/application/o/netbird/.well-known/openid-configuration
+if ! discovery_code=$(https_code "auth.$domain" "$discovery_path"); then
+  fail "NetBird OIDC discovery endpoint is unreachable"
+fi
+test "$discovery_code" = 200 ||
+  fail "NetBird OIDC discovery endpoint returned status $discovery_code"
+if ! discovery=$(https_get "auth.$domain" "$discovery_path"); then
+  fail "NetBird OIDC discovery document could not be read"
+fi
 printf '%s\n' "$discovery" | jq -e \
   --arg issuer "https://auth.$domain:$entry_port/application/o/netbird/" \
-  '.issuer == $issuer and .authorization_endpoint != "" and .token_endpoint != "" and .jwks_uri != ""' >/dev/null
+  '.issuer == $issuer and .authorization_endpoint != "" and .token_endpoint != "" and .jwks_uri != ""' >/dev/null ||
+  fail "NetBird OIDC discovery metadata is incomplete or has the wrong issuer"
 
-test "$(https_code "netbird.$domain" /)" = 200
-key_bytes=$(docker_cmd exec "$(container netbird_management)" sh -lc \
-  'jq -r .DataStoreEncryptionKey /etc/netbird/management.json | base64 -d | wc -c')
-test "$key_bytes" -eq 32
+if ! netbird_code=$(https_code "netbird.$domain" /); then
+  fail "NetBird HTTPS endpoint is unreachable"
+fi
+test "$netbird_code" = 200 || fail "NetBird HTTPS endpoint returned status $netbird_code"
+if ! key_bytes=$(docker_cmd exec "$(container netbird_management)" sh -lc \
+  'jq -r .DataStoreEncryptionKey /etc/netbird/management.json | base64 -d | wc -c'); then
+  fail "NetBird management data-store encryption key cannot be decoded"
+fi
+test "$key_bytes" -eq 32 || fail "NetBird management data-store encryption key is not 32 bytes"
 docker_cmd exec "$(container netbird_management)" jq -e \
   --arg discovery "https://auth.$domain:$entry_port/application/o/netbird/.well-known/openid-configuration" \
   '.StoreConfig.Engine == "sqlite" and .HttpConfig.OIDCConfigEndpoint == $discovery' \
-  /etc/netbird/management.json >/dev/null
+  /etc/netbird/management.json >/dev/null ||
+  fail "NetBird management config does not use sqlite and the expected OIDC discovery endpoint"
 
 printf '\nauthentik upgrade probes passed\n'

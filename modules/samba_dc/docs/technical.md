@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `samba_dc` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `4.23.6-r10` / `anas.module/v1`.
+> 状态：当前实现；对应 `4.23.6-r11` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -17,8 +17,8 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r10` | `` | 3 |
-| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r10` | `` | 3 |
+| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r11` | `` | 3 |
+| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r11` | `` | 3 |
 | `anas_samba_dc_events_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
@@ -146,6 +146,20 @@ workspace 所需的 `migrate-service-domain` 和 `migrate-application-dns-zone` 
 | 目录密码回写 | 目录事实来源；由 ACL 与密码策略控制 |
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
+
+## PEN 66678 schema 迁移契约
+
+r11 的当前 `anasIdentityAnchor` 使用 `attributeID=1.3.6.1.4.1.66678.1.2.1` 和 `schemaIDGUID=db3786ae-3261-4d44-a2a1-588bfe3e41c5`。旧 OID `1.2.840.113556.1.8000.2554.17237.23501.51519.17672.44223.1228429.7407401.2.1` 及其 GUID `7108c5a7-2290-45e0-9eba-eef087be58e3` 只保留在改名后的 defunct schema 对象中，永不复用。迁移器位于 [`migrate-identity-anchor-oid.sh`](../samba_dc/root/usr/local/bin/migrate-identity-anchor-oid.sh)，只支持一个可写且持有 Schema Master FSMO 的 DC。
+
+这是离线、整卷回滚的维护事务：
+
+1. 在升级前渲染精确的 `4.23.6-r11` 候选部署，但不启动；停止整个 workspace，并在宿主机排除 DC、worker、Consumer、备份、计划任务以及 LDAP/LDB 人工会话等所有 writer。容器内检查不能证明宿主已经静止。
+2. 停写后创建真实冷快照，保存工具实际返回的 snapshot ID，并要求 `anas snapshot verify` 成功。`--snapshot-id` 只写入审计证据，不会验证快照存在或可恢复。
+3. `--check` 只读确认精确旧状态后，`--execute` 才导出旧值、拆除 class link、独立设为 defunct、分别修改 `lDAPDisplayName` 与 RDN、创建新 schema 对象、恢复值并重建 class link。
+4. `--execute` 必须显式传入位于 Samba 数据卷之外的 `--backup-dir /mnt/anas-migration-evidence/<new-dir>`。目录必须是新建的执行子目录；其中包含 DN 和稳定标识符，应按敏感目录数据保护。
+5. 完成态 `--check` 验证 final/legacy schema、User/Group class link、文本 anchor 与 `mS-DS-ConsistencyGuid` 的 Windows `bytes_le` 一致性及全局唯一性。启动 r11 后还必须验证 OU ACL 已换成新 GUID、旧 GUID 已移除、`svc_anchor` 真实写入成功、worker 健康，并逐个检查 Consumer 未产生重复账户或授权偏移。
+
+任一步骤在 `--execute` 开始后失败，都停止重试并恢复已校验的**整个 Samba 数据卷快照**。禁止删除迁移标记、只恢复 `sam.ldb` 或按检查点手工续跑；外部证据不随数据卷回滚，应保留用于调查。完整命令和验收顺序见[迁移 Runbook](../../../docs/guide/migrate-identity-anchor-oid.md)。
 
 ## 管理面与 Secret 生命周期
 

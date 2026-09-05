@@ -44,6 +44,20 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Validate upgrade test catalog
+        run: go run ./cmd/check-upgrade-tests
+
+      - name: Test upgrade evidence writer
+        run: |
+          bash test-env/scripts/test-upgrade-report.sh
+          bash test-env/scripts/test-upgrade-runtime-export.sh
+          bash test-env/scripts/test-upgrade-service-readiness.sh
+          bash test-env/scripts/test-upgrade-workspace-cleanup.sh
+          bash test-env/scripts/test-upgrade-old-compat.sh
+          bash test-env/scripts/test-upgrade-suite-targets.sh
+          bash test-env/scripts/test-authentik-upgrade-probes.sh
+          bash test-env/scripts/test-upgrade-proxy-boundary.sh
+
   documentation-sources:
     name: Documentation sources
     runs-on: ubuntu-latest
@@ -87,9 +101,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      # Each script builds its own Git fixture under mktemp, so none of them
-      # reads this repository's history and a shallow checkout is enough.
+      - name: Test Core upgrades from supported releases
+        run: |
+          latest_tag="$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1)"
+          test -n "$latest_tag"
+          bash scripts/ci/core-upgrade-e2e.sh v0.1.0
+          if [[ "$latest_tag" != v0.1.0 ]]; then
+            bash scripts/ci/core-upgrade-e2e.sh "$latest_tag"
+          fi
+
+      # The remaining script tests build their own Git fixtures under mktemp.
       - name: Test release version calculator
         run: bash scripts/ci/anas-release-version-test.sh
 
