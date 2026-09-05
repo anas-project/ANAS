@@ -331,21 +331,6 @@ func removeCompactionFileIfSame(file journalFile, path string, operations journa
 	return nil
 }
 
-func openFileNamesPath(file journalFile, path, name string) (bool, error) {
-	opened, err := file.Stat()
-	if err != nil {
-		return false, fmt.Errorf("inspect opened %s: %w", name, err)
-	}
-	current, err := os.Lstat(path)
-	if err != nil {
-		return false, fmt.Errorf("inspect canonical %s: %w", name, err)
-	}
-	if err := validateSecureFileInfo(current, name); err != nil {
-		return false, err
-	}
-	return os.SameFile(opened, current), nil
-}
-
 func writeCompactedJournal(ctx context.Context, file journalFile, source *storeState, recordedAt time.Time) (*storeState, journalSnapshot, error) {
 	writer := bufio.NewWriterSize(file, 64<<10)
 	verification, boundary, _, err := streamCompactedRecords(ctx, writer, source, recordedAt)

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -41,16 +40,6 @@ type Event struct {
 	WorkspaceID string         `json:"workspace_id,omitempty"`
 	Outcome     string         `json:"outcome,omitempty"`
 	Details     map[string]any `json:"details,omitempty"`
-}
-
-type logFile interface {
-	io.Reader
-	io.Writer
-	io.Seeker
-	Stat() (os.FileInfo, error)
-	Sync() error
-	Truncate(int64) error
-	Close() error
 }
 
 // Writer serializes appends within one process and uses a separate file lock to
@@ -329,259 +318,16 @@ func OpenWithOptions(dir string, options Options) (*Writer, error) {
 	return writer, nil
 }
 
-func openSecureDirectory(dir string) (*os.File, []string, error) {
-	info, err := os.Lstat(dir)
-	created := false
-	var createdEntries []string
-	if errors.Is(err, os.ErrNotExist) {
-		parent := filepath.Dir(dir)
-		createdEntries, err = missingDirectoryEntries(parent)
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := os.MkdirAll(parent, 0o700); err != nil {
-			return nil, nil, fmt.Errorf("create directory parent: %w", err)
-		}
-		if err := os.Mkdir(dir, 0o700); err == nil {
-			created = true
-		} else if !errors.Is(err, os.ErrExist) {
-			return nil, nil, fmt.Errorf("create directory: %w", err)
-		}
-		// The final entry was absent when creation began. Sync it even when a
-		// concurrent secure opener won the Mkdir race.
-		createdEntries = append(createdEntries, dir)
-		info, err = os.Lstat(dir)
-	}
-	if err != nil {
-		return nil, nil, fmt.Errorf("inspect directory: %w", err)
-	}
-	if created {
-		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return nil, nil, errors.New("directory must be a non-symlink directory")
-		}
-		if err := validateCurrentOwner(info, "directory"); err != nil {
-			return nil, nil, err
-		}
-	} else if err := validateSecureDirectoryInfo(info); err != nil {
-		return nil, nil, err
-	}
-
-	directoryFile, err := os.Open(dir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("open directory: %w", err)
-	}
-	closeOnError := func(err error) (*os.File, []string, error) {
-		_ = directoryFile.Close()
-		return nil, nil, err
-	}
-	if created {
-		// Apply the exact mode through the descriptor we just created, never
-		// through a path that another process may have replaced.
-		if err := directoryFile.Chmod(0o700); err != nil {
-			return closeOnError(fmt.Errorf("secure directory: %w", err))
-		}
-	}
-	if err := verifyOpenDirectory(directoryFile, dir); err != nil {
-		return closeOnError(err)
-	}
-	return directoryFile, createdEntries, nil
-}
-
 // missingDirectoryEntries returns the currently absent path suffix in
 // root-to-leaf order. Every returned directory entry must later be synced in
 // its parent before an append can claim durable success.
-func missingDirectoryEntries(path string) ([]string, error) {
-	var leafToRoot []string
-	for {
-		_, err := os.Lstat(path)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("inspect directory parent: %w", err)
-		}
-		leafToRoot = append(leafToRoot, path)
-		parent := filepath.Dir(path)
-		if parent == path {
-			return nil, fmt.Errorf("no existing ancestor for directory %s", path)
-		}
-		path = parent
-	}
-	entries := make([]string, len(leafToRoot))
-	for index := range leafToRoot {
-		entries[len(leafToRoot)-1-index] = leafToRoot[index]
-	}
-	return entries, nil
-}
 
 func openSecureFile(path string) (*os.File, bool, error) {
 	return openSecureNamedFile(path, Filename)
 }
 
-func openSecureNamedFile(path, name string) (*os.File, bool, error) {
-	return openSecureNamedFileWithAppend(path, name, true)
-}
-
-func openSecureLockFile(path, name string) (*os.File, bool, error) {
-	return openSecureNamedFileWithAppend(path, name, false)
-}
-
-func openSecureNamedFileWithAppend(path, name string, appendWrites bool) (*os.File, bool, error) {
-	for {
-		info, err := os.Lstat(path)
-		created := false
-		switch {
-		case errors.Is(err, os.ErrNotExist):
-			created = true
-		case err != nil:
-			return nil, false, fmt.Errorf("inspect %s: %w", name, err)
-		default:
-			if err := validateSecureFileInfo(info, name); err != nil {
-				return nil, false, err
-			}
-		}
-
-		flags := os.O_RDWR
-		if appendWrites {
-			flags |= os.O_APPEND
-		}
-		if created {
-			flags |= os.O_CREATE | os.O_EXCL
-		}
-		file, err := os.OpenFile(path, flags, 0o600)
-		if created && errors.Is(err, os.ErrExist) {
-			// Another secure opener won the create race. Reinspect its result
-			// rather than weakening O_EXCL or trusting the raced path.
-			continue
-		}
-		if err != nil {
-			return nil, false, fmt.Errorf("open %s: %w", name, err)
-		}
-		closeOnError := func(err error) (*os.File, bool, error) {
-			_ = file.Close()
-			return nil, false, err
-		}
-		if created {
-			if err := file.Chmod(0o600); err != nil {
-				return closeOnError(fmt.Errorf("secure %s: %w", name, err))
-			}
-		}
-		if err := verifyOpenNamedFile(file, path, name); err != nil {
-			return closeOnError(err)
-		}
-		if created {
-			if err := file.Sync(); err != nil {
-				return closeOnError(fmt.Errorf("sync new %s: %w", name, err))
-			}
-		}
-		return file, created, nil
-	}
-}
-
 func validateLogFileInfo(info os.FileInfo) error {
 	return validateSecureFileInfo(info, Filename)
-}
-
-func validateSecureFileInfo(info os.FileInfo, name string) error {
-	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return fmt.Errorf("%s must be a non-symlink regular file", name)
-	}
-	if info.Mode().Perm() != 0o600 {
-		return fmt.Errorf("%s mode is %04o, want 0600", name, info.Mode().Perm())
-	}
-	if err := validateCurrentOwner(info, name); err != nil {
-		return err
-	}
-	if err := validateSingleLink(info, name); err != nil {
-		return err
-	}
-	return nil
-}
-
-func validateSecureDirectoryInfo(info os.FileInfo) error {
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return fmt.Errorf("directory must be a non-symlink directory")
-	}
-	if info.Mode().Perm() != 0o700 {
-		return fmt.Errorf("directory mode is %04o, want 0700", info.Mode().Perm())
-	}
-	return validateCurrentOwner(info, "directory")
-}
-
-func verifyOpenDirectory(directoryFile *os.File, path string) error {
-	if directoryFile == nil {
-		return errors.New("audit directory descriptor is unavailable")
-	}
-	openedInfo, err := directoryFile.Stat()
-	if err != nil {
-		return fmt.Errorf("inspect opened directory: %w", err)
-	}
-	if err := validateSecureDirectoryInfo(openedInfo); err != nil {
-		return err
-	}
-	pathInfo, err := os.Lstat(path)
-	if err != nil {
-		return fmt.Errorf("reinspect directory: %w", err)
-	}
-	if err := validateSecureDirectoryInfo(pathInfo); err != nil {
-		return err
-	}
-	if !os.SameFile(openedInfo, pathInfo) {
-		return errors.New("audit directory changed while it was open")
-	}
-	return nil
-}
-
-func verifyOpenNamedFile(file logFile, path, name string) error {
-	if file == nil {
-		return fmt.Errorf("%s descriptor is unavailable", name)
-	}
-	openedInfo, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("inspect opened %s: %w", name, err)
-	}
-	if err := validateSecureFileInfo(openedInfo, name); err != nil {
-		return err
-	}
-	pathInfo, err := os.Lstat(path)
-	if err != nil {
-		return fmt.Errorf("reinspect %s: %w", name, err)
-	}
-	if err := validateSecureFileInfo(pathInfo, name); err != nil {
-		return err
-	}
-	if !os.SameFile(openedInfo, pathInfo) {
-		return fmt.Errorf("%s path entry no longer names the opened file", name)
-	}
-	return nil
-}
-
-func syncCreatedDirectoryEntries(entries []string) error {
-	// Work leaf-to-root: sync each new entry in its containing directory,
-	// including every parent that MkdirAll had to create.
-	for index := len(entries) - 1; index >= 0; index-- {
-		if err := syncParentDirectory(entries[index]); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func syncParentDirectory(path string) error {
-	parentPath := filepath.Dir(path)
-	parent, err := os.Open(parentPath)
-	if err != nil {
-		return fmt.Errorf("open parent directory for sync: %w", err)
-	}
-	syncErr := parent.Sync()
-	closeErr := parent.Close()
-	if syncErr != nil {
-		return fmt.Errorf("sync parent directory: %w", syncErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close parent directory after sync: %w", closeErr)
-	}
-	return nil
 }
 
 // Append redacts and durably appends event. It uses an internal deadline so a
@@ -1065,20 +811,6 @@ func (w *Writer) verifyPathsForClose() error {
 		verifyErr = w.verifyPaths()
 	}
 	return errors.Join(verifyErr, unlockAuditFile(w.lockFile))
-}
-
-func writeAll(writer io.Writer, body []byte) error {
-	for len(body) > 0 {
-		written, err := writer.Write(body)
-		if err != nil {
-			return err
-		}
-		if written <= 0 || written > len(body) {
-			return io.ErrShortWrite
-		}
-		body = body[written:]
-	}
-	return nil
 }
 
 func (w *Writer) markUnavailable(err error) error {

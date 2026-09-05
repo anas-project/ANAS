@@ -28,12 +28,31 @@ for (const { requirementPath, planPath, archived } of documents) {
   if (matrix.requirements.length === 0) continue
 
   // An archived plan's assignment table is a record of what was delivered, not a
-  // schedule. Holding it to the consistency rules would force edits to a
-  // finished document every time the matrix gains a regression note. The topics
-  // are listed rather than dropped, because a silently unchecked document is how
-  // the drift this gate exists to catch gets in.
+  // schedule, so it is not held to the full consistency rules: a regression note
+  // added to a finished matrix should not force edits to the plan's e2e records.
+  //
+  // Assignment coverage is still checked. Skipping it entirely meant a
+  // requirement added to an archived matrix belonged to no milestone and nobody
+  // was told -- exactly the drift this gate exists to catch. `archivedOnly`
+  // keeps the coverage half and drops the e2e-record half.
   if (archived) {
-    archivedTopics.push(`${requirementPath} ↔ ${planPath}`)
+    if (!existsSync(planPath)) {
+      failures.push(`${requirementPath}: 有需求矩阵但缺少配套计划 ${planPath}`)
+      continue
+    }
+    const archivedPlan = readFileSync(planPath, 'utf8')
+    const archivedNumbers = new Set(matrix.requirements.map((requirement) => requirement.number))
+    const { errors, checked } = checkRequirementCoverage({
+      matrix,
+      assignments: parseMilestoneAssignments(archivedPlan, archivedNumbers),
+      e2eRecords: parseE2eRecords(archivedPlan),
+      coverageOnly: true
+    })
+    if (errors.length > 0) {
+      failures.push(`${requirementPath} ↔ ${planPath}（已归档）`, ...errors.map((error) => `  - ${error}`))
+      continue
+    }
+    archivedTopics.push(`${requirementPath} ↔ ${planPath}（${checked} 项已归属）`)
     continue
   }
 
@@ -73,7 +92,7 @@ if (failures.length > 0) {
 }
 
 if (archivedTopics.length > 0) {
-  console.log(`\n已归档主题（计划已完成，不参与一致性校验）：${archivedTopics.length} 份`)
+  console.log(`\n已归档主题（计划已完成，只校验归属，不校验 e2e 记录）：${archivedTopics.length} 份`)
   for (const line of archivedTopics) console.log(`  ${line}`)
 }
 

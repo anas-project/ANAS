@@ -22,7 +22,7 @@ This page records the current implementation, security boundaries, and verificat
 | --- | --- | --- | --- |
 | `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `traefik, authentik, db` | 3 |
 | `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 2 |
-| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `` | 1 |
+| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `` | 3 |
 | `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 3 |
 <!-- generated:compose-topology:end -->
 
@@ -33,6 +33,12 @@ supported 4-vCPU / 3-GiB baseline. The five normal health retries still apply af
 The worker health check also requires every blueprint under `/blueprints/anas` to have a matching
 `successful` instance whose recorded `last_applied_hash` matches the mounted file's SHA-512 digest.
 Modules that depend on Authentik therefore cannot start before their OIDC provider is discoverable.
+
+The deployment remains root-only. `anas_authentik_init` copies only the generated blueprint
+templates, which contain references rather than Secret values, into
+`${DATA_PATH}/authentik/blueprints`, transfers that private copy to UID/GID 1000, and the server and
+worker mount it read-only. This avoids widening permissions on neighboring configuration or Secrets
+while allowing the non-root worker to traverse the blueprint tree.
 
 The `after_start` hook waits up to ten minutes for the same marker. The runner starts downstream
 modules only after that barrier succeeds, so Compose health and cross-module ordering share one

@@ -1,0 +1,50 @@
+type: object
+additional_properties: false
+required: [sandbox, instance_prefix, quota, image_allowlist, credential, deletion_policy]
+properties:
+  # The restricted provider-side project that fences this consumer in. One
+  # lease owns exactly one project; two consumers never share one.
+  sandbox:
+    type: string
+    pattern: "^[a-z][a-z0-9-]{0,62}$"
+  # Every instance the consumer creates must carry this prefix. list and
+  # reclaim are filtered by it, so a lease can never enumerate or destroy
+  # another lease's instances even inside the same project.
+  instance_prefix:
+    type: string
+    pattern: "^anas-[a-z0-9-]{1,50}$"
+  # Enforced by the provider on the project itself, not by the consumer. A
+  # compromised consumer still cannot exceed these.
+  quota:
+    type: object
+    additional_properties: false
+    required: [max_instances, cpu, memory_mib, disk_gib]
+    properties:
+      max_instances: {type: integer, minimum: 1, maximum: 256}
+      cpu: {type: integer, minimum: 1, maximum: 64}
+      memory_mib: {type: integer, minimum: 512, maximum: 262144}
+      disk_gib: {type: integer, minimum: 4, maximum: 2048}
+  # Reserved opening, not yet implemented. "pinned" (the default) means the
+  # allowlist below is the complete set of images this lease may boot. "any"
+  # is refused today: it would empty the one constraint in this contract the
+  # daemon does not backstop, so it needs its own visible switch and its own
+  # acceptance before it can be honoured.
+  image_policy:
+    enum: [pinned, any]
+  # Pinned SHA-256 image fingerprints. Tags, aliases and remote URLs are not
+  # accepted: the set of things a lease can boot is fixed at apply time.
+  image_allowlist:
+    type: array
+    min_items: 1
+    items:
+      type: string
+      pattern: "^[a-f0-9]{64}$"
+  credential:
+    type: object
+    additional_properties: false
+    required: [policy]
+    properties:
+      policy:
+        enum: [generated]
+  deletion_policy:
+    enum: [retain, delete]

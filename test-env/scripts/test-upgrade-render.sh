@@ -13,9 +13,9 @@ for lock in "$TEST_ENV_DIR"/upgrades/supported/*.lock.yml; do
   cp "$lock" "$base/config.lock.yml"
 
   if {
-    echo "== upgrade plan: $name ==" &&
+    echo "== historical lock compatibility plan: $name ==" &&
     run_anas plan -w "$base" -c "$base/config.yml" &&
-    echo "== upgrade render: $name ==" &&
+    echo "== historical lock compatibility render: $name ==" &&
     run_anas render -w "$base" --update-lock
   } >"$log" 2>&1; then
     cat "$log"
@@ -40,7 +40,7 @@ for lock in "$TEST_ENV_DIR"/upgrades/rejected/*.lock.yml; do
 
   if run_anas render -w "$base" --update-lock >"$log" 2>&1; then
     cat "$log"
-    echo "upgrade fixture $name unexpectedly succeeded" >&2
+    echo "rejected lock fixture $name unexpectedly succeeded" >&2
     exit 1
   fi
   cat "$log"

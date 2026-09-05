@@ -4,37 +4,22 @@ name: compute
 version: 1.0.0
 interfaces:
   - incus_vm
+  - incus_container
 resource:
-  schema: schemas/instance.yml
+  schema: schemas/resource.yml
   identity:
-    - provider_project
-    - instance_id
+    - consumer
+    - resource_id
 operations:
-  create:
-    request_schema: schemas/create-request.yml
-    result_schema: schemas/instance-result.yml
+  ensure:
+    request_schema: schemas/ensure-request.yml
+    result_schema: schemas/sandbox-result.yml
     required: true
   inspect:
-    request_schema: schemas/instance-request.yml
-    result_schema: schemas/instance-result.yml
+    request_schema: schemas/inspect-request.yml
+    result_schema: schemas/inspect-result.yml
     required: true
-  start:
-    request_schema: schemas/instance-request.yml
-    result_schema: schemas/instance-result.yml
-    required: true
-  exec_stdin:
-    request_schema: schemas/exec-request.yml
-    result_schema: schemas/exec-result.yml
-    required: true
-  stop:
-    request_schema: schemas/instance-request.yml
-    result_schema: schemas/instance-result.yml
-    required: true
-  delete:
-    request_schema: schemas/instance-request.yml
-    result_schema: schemas/delete-result.yml
-    required: true
-  list_managed:
-    request_schema: schemas/list-request.yml
-    result_schema: schemas/list-result.yml
-    required: true
+  revoke:
+    request_schema: schemas/revoke-request.yml
+    result_schema: schemas/revoke-result.yml
+    required: false

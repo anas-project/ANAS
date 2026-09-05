@@ -1,5 +1,0 @@
-type: object
-additional_properties: false
-required: [exit_code]
-properties:
-  exit_code: {type: integer}

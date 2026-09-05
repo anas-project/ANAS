@@ -17,6 +17,11 @@
 | [动态 DNS 能力](dynamic-dns-capability-design.md) | 当前模型 | DDNS 实现选择、凭据和 Web 认证 |
 | [Object Storage 能力](object-storage-capability-design.md) | 已实施设计 | `object_storage/s3` 自动绑定、统一配置投影与 Secret 边界 |
 | [Forgejo Module](forgejo-module-design.md) | 当前设计决策与 Runner 提案 | OIDC-only 身份边界、Actions 授权、Incus 单作业 VM Runner 与安全开关 |
+| [Incus 宿主供给与镜像烘焙](incus-host-provisioning.md) | 设计，未实现 | 宿主 Incus 安装、发行版矩阵、Web 端不接触 root 密码、proxy device 入站与 distrobuilder 镜像烘焙 |
+| [远端备份、异地容灾与分布式部署](remote-backup-and-dr.md) | 研讨中 | 备份目的地远端化、拉模型与勒索抵抗、secrets 边界、容灾接管与分布式的范围划分 |
+| [日志与可观测性](observability-and-logs.md) | 研讨中 | 事件日志、审计日志、容器日志与 CLI 输出的关系、保留期、脱敏与关联标识 |
+| [统一动作 ABI](action-abi.md) | 设计，未实现 | job 模型、事件重放、断连不中止、取消语义与大块数据的处置；Module Command 与宿主特权动作共用 |
+| [宿主特权动作通道](host-action-channel.md) | 设计，未实现 | 安装期一次授权后 Web/CLI 共用的具名特权动作通道、socket 激活与审计 |
 | [AI Agent 编排](ai-agent-orchestration-design.md) | 提案 | Forgejo issue/label 事件接入、独立编排 Module、Agent 账号与受限 token、一次性实例执行面 |
 | [凭据轮换](credential-rotation.md) | 目标方案与实施基线 | deployment 驱动的凭据协调、轮换和回滚 |
 | [运行时与发布状态](runtime-release-state-design.md) | 已实施设计记录 | deployment 制品、锁和持久状态 |

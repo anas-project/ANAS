@@ -1,4 +1,7 @@
 #!/usr/bin/env sh
+# This is a lock/render compatibility smoke test. It starts the worktree both
+# before and after injecting an older lock; it does not execute old binaries or
+# old Module artifacts. Real release upgrades use server-module-upgrade-e2e.sh.
 set -eu
 
 . "$(dirname -- "$0")/common.sh"
@@ -27,7 +30,8 @@ data_dir="$base/data"
 set +e
 (
   set -e
-  echo "== baseline start: $fixture =="
+  echo "NOTE: lock compatibility only; no historical runtime is executed"
+  echo "== worktree baseline start: $fixture =="
   run_anas apply --build -w "$base" --update-lock
 
   echo "== seed migration probes: $fixture =="
@@ -45,10 +49,10 @@ set +e
   echo "== seed old module lock: $fixture =="
   cp "$lock" "$base/config.lock.yml"
 
-  echo "== upgrade start: $fixture =="
+  echo "== worktree apply with historical lock: $fixture =="
   run_anas apply --build -w "$base" --update-lock --allow-risky
 
-  echo "== upgrade probes: $fixture =="
+  echo "== lock compatibility probes: $fixture =="
   "$TEST_ENV_DIR/scripts/test-upgrade-probes.sh" "$base" "$data_dir"
 
   echo "== upgrade stop: $fixture =="

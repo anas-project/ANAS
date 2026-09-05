@@ -180,13 +180,23 @@ services:
 顶层 `networks` 块原样不动。真实的 `docker compose config` 已验证这个写法与
 `external: true` 的外部网络配合正常（`test-compose-config.sh`）。
 
-### 5.2 启动时无条件 `net ads dns register`
+### 5.2 DC 传输端点与启动时 A 记录校正
+
+macvlan 子接口不能直接访问父接口的宿主地址，所以 Samba FS 不能把
+`SAMBA_DC_DNS_SERVER`（宿主监听地址）直接当成链路下一跳。Hook 使用宿主侧 macvlan bridge
+的 `VLAN_BRIDGE_IP` 派生私有 `SAMBA_FS_DC_TRANSPORT_IP`。resolver 仍访问
+`SAMBA_DC_DNS_SERVER`，容器初始化时为该地址安装一条以 transport IP 为下一跳的 `/32`
+路由；`/etc/hosts` 则将 Kerberos canonical `SAMBA_DC_DC_DOMAIN` 映射到 transport IP。
+这样 DNS 仍命中 DC 的真实监听地址，网络经过 bridge，SPN 与 AD 身份仍走 canonical FQDN。
 
 `join_domain()` 只在 `net ads testjoin` 失败时才动作。地址变了加域**仍然有效**，
 所以这段不会执行，AD DNS 里的 A 记录就一直是旧地址。
 
-改法：加域流程之后无条件执行一次 `net ads dns register -P`（机器账号凭据，幂等）。注册
-失败必须阻断启动，不能让健康检查通过但 AD DNS 仍指向旧地址。
+改法：加域流程之后无条件用短生命周期 Kerberos cache 取得管理员票据，再用
+`samba-tool dns` 删除旧 A 记录、写入当前地址，并查询 `SAMBA_DC_DNS_SERVER` 验证；验证流量
+经上述 `/32` 路由跨过 macvlan 隔离。该操作幂等，
+密码只经 `kinit` 标准输入传入，不出现在进程参数或日志中。注册失败必须阻断启动，不能让
+健康检查通过但 AD DNS 仍指向旧地址。
 
 这修的是一个**既有隐患**，不是本方案引入的。
 

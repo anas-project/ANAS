@@ -5,11 +5,11 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 ## Summary
 
 <!-- generated:configuration-summary:start -->
-- Built-in Modules: `22`
-- Declared parameters: `173` total (`17` global and `156` Module-owned; `152` structured Module parameters and `4` bare `env.*` parameters)
-- Resolution phases: `input_required` `2`, `must_resolve` `26`, unknown types `0`
-- Type distribution: `bool` `25`, `enum` `22`, `int` `27`, `string` `99`
-- Default-source distribution: `generated` `10`, `host` `3`, `inherited` `7`, `none` `8`, `runtime` `4`, `static` `141`
+- Built-in Modules: `23`
+- Declared parameters: `174` total (`17` global and `157` Module-owned; `153` structured Module parameters and `4` bare `env.*` parameters)
+- Resolution phases: `input_required` `2`, `must_resolve` `30`, unknown types `0`
+- Type distribution: `bool` `25`, `enum` `23`, `int` `27`, `string` `99`
+- Default-source distribution: `generated` `10`, `host` `3`, `inherited` `7`, `none` `8`, `runtime` `4`, `static` `142`
 <!-- generated:configuration-summary:end -->
 - Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the parameter inventory.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
@@ -162,13 +162,12 @@ configuration API, and Web forms must consume the same application-layer schema.
 only when that resolver cannot supply the value.
 
 <!-- generated:configuration-constraints:start -->
-Current explicit portable constraints: `23`.
+Current explicit portable constraints: `24`.
 
 | Parameter path | Portable constraints |
 | --- | --- |
 | `casdoor.ldap_auto_sync_minutes` | <code>minimum=1</code> |
 | `eturnal.port` | <code>minimum=1; maximum=65535</code> |
-| `forgejo.actions_incus_profile` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
 | `forgejo.actions_runner_image` | <code>pattern=&#34;^(?:[0-9a-f]{64})?$&#34;</code> |
 | `forgejo.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
 | `forgejo.ssh_port` | <code>minimum=1; maximum=65535</code> |
@@ -179,6 +178,8 @@ Current explicit portable constraints: `23`.
 | `global.host_lan_bridge_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.host_lan_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.timezone` | <code>format=&#34;iana_timezone&#34;</code> |
+| `incus.endpoint` | <code>pattern=&#34;^(?:https://[A-Za-z0-9.:_-]+)?$&#34;</code> |
+| `incus.storage_pool` | <code>pattern=&#34;^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$&#34;</code> |
 | `meshcentral.mps_port` | <code>minimum=1; maximum=65535</code> |
 | `oauth2_proxy.console_proxy_port` | <code>minimum=1; maximum=65535</code> |
 | `samba_dc.domain` | <code>format=&#34;dns_name&#34;</code> |
@@ -201,7 +202,8 @@ Current explicit portable constraints: `23`.
 | `ddns_go` | 10 | `ddns_go.dns_provider`<br>`ddns_go.domain_prefix`<br>`ddns_go.interval`<br>`ddns_go.ipv4_gettype`<br>`ddns_go.ipv4_interface`<br>`ddns_go.ipv4_urls`<br>`ddns_go.ipv6_gettype`<br>`ddns_go.ipv6_interface`<br>`ddns_go.ipv6_urls`<br>`ddns_go.web_enabled` |
 | `ddns_updater` | 10 | `ddns_updater.dns_provider`<br>`ddns_updater.domain_prefix`<br>`ddns_updater.forward_auth_interface`<br>`ddns_updater.publicip_dns_providers`<br>`ddns_updater.publicip_fetchers`<br>`ddns_updater.publicip_ipv4_providers`<br>`ddns_updater.publicip_ipv6_providers`<br>`ddns_updater.publicip_providers`<br>`ddns_updater.ttl`<br>`ddns_updater.zone_identifier` |
 | `eturnal` | 2 | `eturnal.domain_prefix`<br>`eturnal.port` |
-| `forgejo` | 16 | `forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_incus_client_cert_b64`<br>`forgejo.actions_incus_client_key_b64`<br>`forgejo.actions_incus_endpoint`<br>`forgejo.actions_incus_profile`<br>`forgejo.actions_incus_server_cert_b64`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.ssh_port` |
+| `forgejo` | 12 | `forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_isolation`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.ssh_port` |
+| `incus` | 5 | `incus.admin_certificate_b64`<br>`incus.admin_key_b64`<br>`incus.endpoint`<br>`incus.server_certificate_b64`<br>`incus.storage_pool` |
 | `lam` | 3 | `lam.admin_password`<br>`lam.domain_prefix`<br>`lam.language` |
 | `lego` | 2 | `lego.dns_provider`<br>`lego.dns_server` |
 | `llng` | 7 | `llng.db_name`<br>`llng.db_type`<br>`llng.domain_prefix`<br>`llng.enable_test`<br>`llng.log_level`<br>`llng.manager_domain_prefix`<br>`llng.test_domain_prefix` |
@@ -249,12 +251,12 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 <!-- generated:configuration-effects:start -->
 | Module parameter effect | Parameters | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 103 | Re-render and recreate the affected container or Compose project |
-| `credential_rotate` | 7 | Use a credential-rotation transaction to update application state and the Secret Store together |
+| `container_recreate` | 99 | Re-render and recreate the affected container or Compose project |
+| `credential_rotate` | 9 | Use a credential-rotation transaction to update application state and the Secret Store together |
 | `data_migrate` | 15 | Migrate persistent data, a database, or membership before activation |
 | `hot_reload` | 16 | Apply through the declared management command; the current executor may conservatively recreate the container |
 | `immutable` | 3 | Use a replacement or dedicated migration workflow |
-| `reconcile` | 12 | Reconcile application, API, or file state through the Module lifecycle |
+| `reconcile` | 15 | Reconcile application, API, or file state through the Module lifecycle |
 <!-- generated:configuration-effects:end -->
 
 ### Actual execution boundary in this release

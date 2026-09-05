@@ -55,6 +55,81 @@ type handler struct {
 	routes         []routeSpec
 }
 
+// Options is the single description of a console handler. Each surface is
+// optional and independently validated, so a listener enables exactly the
+// routes whose dependencies it supplies and nothing else. It replaces a family
+// of positional constructors that had grown one parameter per milestone.
+type Options struct {
+	Registry *Registry
+	Factory  ServiceFactory
+	Security SecurityOptions
+
+	// Auth supplies session authentication. Enrollment requires the narrower
+	// DirectAuthenticator; passing a plain ConsoleAuthenticator alongside
+	// Enrollment is rejected rather than silently ignored.
+	Auth       ConsoleAuthenticator
+	Enrollment *EnrollmentOptions
+	Jobs       *JobQueryOptions
+	Config     *ConfigOptions
+	Deployment *DeploymentOptions
+	Audit      *AuditQueryOptions
+	System     *SystemOptions
+}
+
+// New builds a console handler from Options. Every other constructor in this
+// package is a thin wrapper over it, so a surface behaves identically however
+// it was composed.
+func New(options Options) (http.Handler, error) {
+	var (
+		jobState        *jobHTTPState
+		configState     *configHTTPState
+		deploymentState *deploymentHTTPState
+		auditState      *auditHTTPState
+		systemState     *systemHTTPState
+		err             error
+	)
+	if options.Enrollment != nil {
+		if options.Auth == nil {
+			return nil, errors.New("console authenticator is required")
+		}
+		if _, ok := options.Auth.(DirectAuthenticator); !ok {
+			return nil, errors.New("enrollment requires a direct console authenticator")
+		}
+		if err = options.Enrollment.validate(); err != nil {
+			return nil, err
+		}
+	}
+	if options.Jobs != nil {
+		if jobState, err = newJobHTTPState(*options.Jobs); err != nil {
+			return nil, err
+		}
+	}
+	if options.Config != nil {
+		if configState, err = newConfigHTTPState(*options.Config); err != nil {
+			return nil, err
+		}
+	}
+	if options.Deployment != nil {
+		if deploymentState, err = newDeploymentHTTPState(*options.Deployment); err != nil {
+			return nil, err
+		}
+	}
+	if options.Audit != nil {
+		if auditState, err = newAuditHTTPState(*options.Audit); err != nil {
+			return nil, err
+		}
+	}
+	if options.System != nil {
+		if systemState, err = newSystemHTTPState(*options.System); err != nil {
+			return nil, err
+		}
+	}
+	return newHandler(options.Registry, options.Factory, options.Security, options.Auth,
+		options.Enrollment, jobState, configState, deploymentState, auditState, systemState)
+}
+
+// NewHandler is the legacy no-authentication read-only surface used by tests
+// and the M0 listener.
 func NewHandler(registry *Registry, factory ServiceFactory) http.Handler {
 	handler, err := NewHandlerWithSecurity(registry, factory, legacySecurityOptions())
 	if err != nil {
@@ -64,45 +139,31 @@ func NewHandler(registry *Registry, factory ServiceFactory) http.Handler {
 }
 
 func NewHandlerWithSecurity(registry *Registry, factory ServiceFactory, security SecurityOptions) (http.Handler, error) {
-	return newHandler(registry, factory, security, nil, nil, nil, nil, nil, nil, nil)
+	return New(Options{Registry: registry, Factory: factory, Security: security})
 }
 
 func NewHandlerWithAuthentication(registry *Registry, factory ServiceFactory, security SecurityOptions, auth ConsoleAuthenticator) (http.Handler, error) {
 	if auth == nil {
 		return nil, errors.New("console authenticator is required")
 	}
-	return newHandler(registry, factory, security, auth, nil, nil, nil, nil, nil, nil)
+	return New(Options{Registry: registry, Factory: factory, Security: security, Auth: auth})
 }
 
 // NewHandlerWithConfig adds the synchronous desired-configuration surface to
 // a handler whose authentication policy is supplied by SecurityOptions.
 func NewHandlerWithConfig(registry *Registry, factory ServiceFactory, security SecurityOptions, config ConfigOptions) (http.Handler, error) {
-	configState, err := newConfigHTTPState(config)
-	if err != nil {
-		return nil, err
-	}
-	return newHandler(registry, factory, security, nil, nil, nil, configState, nil, nil, nil)
+	return New(Options{Registry: registry, Factory: factory, Security: security, Config: &config})
 }
 
 // NewHandlerWithDeployment exposes only the audited deployment routes in
 // addition to the base query surface. It is primarily useful to compose a
 // listener whose authentication is already supplied by SecurityOptions.
 func NewHandlerWithDeployment(registry *Registry, factory ServiceFactory, security SecurityOptions, deployment DeploymentOptions) (http.Handler, error) {
-	deploymentState, err := newDeploymentHTTPState(deployment)
-	if err != nil {
-		return nil, err
-	}
-	return newHandler(registry, factory, security, nil, nil, nil, nil, deploymentState, nil, nil)
+	return New(Options{Registry: registry, Factory: factory, Security: security, Deployment: &deployment})
 }
 
 func NewHandlerWithEnrollment(registry *Registry, factory ServiceFactory, security SecurityOptions, auth DirectAuthenticator, enrollment EnrollmentOptions) (http.Handler, error) {
-	if auth == nil {
-		return nil, errors.New("console authenticator is required")
-	}
-	if err := enrollment.validate(); err != nil {
-		return nil, err
-	}
-	return newHandler(registry, factory, security, auth, &enrollment, nil, nil, nil, nil, nil)
+	return New(Options{Registry: registry, Factory: factory, Security: security, Auth: auth, Enrollment: &enrollment})
 }
 
 // NewHandlerWithJobQueries adds the durable read-only job history and event
@@ -110,117 +171,14 @@ func NewHandlerWithEnrollment(registry *Registry, factory ServiceFactory, securi
 // authentication boundary, so this constructor can be used with bootstrap,
 // enrollment-recovery, or owner authentication.
 func NewHandlerWithJobQueries(registry *Registry, factory ServiceFactory, security SecurityOptions, auth ConsoleAuthenticator, jobs JobQueryOptions) (http.Handler, error) {
-	jobState, err := newJobHTTPState(jobs)
-	if err != nil {
-		return nil, err
-	}
-	return newHandler(registry, factory, security, auth, nil, jobState, nil, nil, nil, nil)
+	return New(Options{Registry: registry, Factory: factory, Security: security, Auth: auth, Jobs: &jobs})
 }
 
 // NewHandlerWithAuditQueries adds the durable full-state audit history surface.
 // Route policy and object filtering still enforce owner authentication and
 // registered-workspace visibility.
 func NewHandlerWithAuditQueries(registry *Registry, factory ServiceFactory, security SecurityOptions, auditQuery AuditQueryOptions) (http.Handler, error) {
-	auditState, err := newAuditHTTPState(auditQuery)
-	if err != nil {
-		return nil, err
-	}
-	return newHandler(registry, factory, security, nil, nil, nil, nil, nil, auditState, nil)
-}
-
-// NewHandlerWithEnrollmentAndJobQueries composes the enrollment workflow and
-// durable read-only job surface without weakening either dependency's startup
-// validation.
-func NewHandlerWithEnrollmentAndJobQueries(registry *Registry, factory ServiceFactory, security SecurityOptions, auth DirectAuthenticator, enrollment EnrollmentOptions, jobs JobQueryOptions) (http.Handler, error) {
-	if auth == nil {
-		return nil, errors.New("console authenticator is required")
-	}
-	if err := enrollment.validate(); err != nil {
-		return nil, err
-	}
-	jobState, err := newJobHTTPState(jobs)
-	if err != nil {
-		return nil, err
-	}
-	return newHandler(registry, factory, security, auth, &enrollment, jobState, nil, nil, nil, nil)
-}
-
-// NewHandlerWithEnrollmentJobQueriesAndConfig composes the complete direct
-// console surface used by anasd. Configuration validation and writes stay
-// synchronous, while ConfigOptions supplies the independent application and
-// durable-audit boundaries required before a write can be published.
-func NewHandlerWithEnrollmentJobQueriesAndConfig(
-	registry *Registry,
-	factory ServiceFactory,
-	security SecurityOptions,
-	auth DirectAuthenticator,
-	enrollment EnrollmentOptions,
-	jobs JobQueryOptions,
-	config ConfigOptions,
-	auditQuery AuditQueryOptions,
-) (http.Handler, error) {
-	if auth == nil {
-		return nil, errors.New("console authenticator is required")
-	}
-	if err := enrollment.validate(); err != nil {
-		return nil, err
-	}
-	jobState, err := newJobHTTPState(jobs)
-	if err != nil {
-		return nil, err
-	}
-	configState, err := newConfigHTTPState(config)
-	if err != nil {
-		return nil, err
-	}
-	auditState, err := newAuditHTTPState(auditQuery)
-	if err != nil {
-		return nil, err
-	}
-	return newHandler(registry, factory, security, auth, &enrollment, jobState, configState, nil, auditState, nil)
-}
-
-// NewHandlerWithEnrollmentJobsConfigAndDeployment composes the production
-// direct-console surface, including audited plan/first-apply routes.
-func NewHandlerWithEnrollmentJobsConfigAndDeployment(
-	registry *Registry,
-	factory ServiceFactory,
-	security SecurityOptions,
-	auth DirectAuthenticator,
-	enrollment EnrollmentOptions,
-	jobs JobQueryOptions,
-	config ConfigOptions,
-	deployment DeploymentOptions,
-	auditQuery AuditQueryOptions,
-	systemOptions SystemOptions,
-) (http.Handler, error) {
-	if auth == nil {
-		return nil, errors.New("console authenticator is required")
-	}
-	if err := enrollment.validate(); err != nil {
-		return nil, err
-	}
-	jobState, err := newJobHTTPState(jobs)
-	if err != nil {
-		return nil, err
-	}
-	configState, err := newConfigHTTPState(config)
-	if err != nil {
-		return nil, err
-	}
-	deploymentState, err := newDeploymentHTTPState(deployment)
-	if err != nil {
-		return nil, err
-	}
-	auditState, err := newAuditHTTPState(auditQuery)
-	if err != nil {
-		return nil, err
-	}
-	systemState, err := newSystemHTTPState(systemOptions)
-	if err != nil {
-		return nil, err
-	}
-	return newHandler(registry, factory, security, auth, &enrollment, jobState, configState, deploymentState, auditState, systemState)
+	return New(Options{Registry: registry, Factory: factory, Security: security, Audit: &auditQuery})
 }
 
 func newHandler(registry *Registry, factory ServiceFactory, security SecurityOptions, auth ConsoleAuthenticator, enrollment *EnrollmentOptions, jobs *jobHTTPState, config *configHTTPState, deployment *deploymentHTTPState, auditState *auditHTTPState, systemState *systemHTTPState) (http.Handler, error) {

@@ -62,30 +62,32 @@ func (routeInventoryStepUp) AuthenticateLocalStepUp(context.Context, consoleauth
 }
 
 type DeploymentOptions struct {
-	PlanFactory        application.DeploymentPlanServiceFactory
-	ServiceFactory     application.DeploymentServiceFactory
-	ModuleFactory      application.ModuleManagementServiceFactory
-	MaintenanceFactory application.MaintenanceServiceFactory
-	Store              DeploymentJobStore
-	Audit              deploymentaudit.Sink
-	StepUp             DeploymentStepUpAuthenticator
-	Notify             func(string)
-	ConfirmationTTL    time.Duration
-	MaxRequestBytes    int64
+	PlanFactory          application.DeploymentPlanServiceFactory
+	ServiceFactory       application.DeploymentServiceFactory
+	ModuleFactory        application.ModuleManagementServiceFactory
+	MaintenanceFactory   application.MaintenanceServiceFactory
+	ModuleCommandFactory application.ModuleCommandServiceFactory
+	Store                DeploymentJobStore
+	Audit                deploymentaudit.Sink
+	StepUp               DeploymentStepUpAuthenticator
+	Notify               func(string)
+	ConfirmationTTL      time.Duration
+	MaxRequestBytes      int64
 }
 
 type deploymentHTTPState struct {
-	planFactory        application.DeploymentPlanServiceFactory
-	serviceFactory     application.DeploymentServiceFactory
-	moduleFactory      application.ModuleManagementServiceFactory
-	maintenanceFactory application.MaintenanceServiceFactory
-	store              DeploymentJobStore
-	audit              deploymentaudit.Sink
-	stepUp             DeploymentStepUpAuthenticator
-	notify             func(string)
-	confirmationTTL    time.Duration
-	maxRequestBytes    int64
-	now                func() time.Time
+	planFactory          application.DeploymentPlanServiceFactory
+	serviceFactory       application.DeploymentServiceFactory
+	moduleFactory        application.ModuleManagementServiceFactory
+	maintenanceFactory   application.MaintenanceServiceFactory
+	moduleCommandFactory application.ModuleCommandServiceFactory
+	store                DeploymentJobStore
+	audit                deploymentaudit.Sink
+	stepUp               DeploymentStepUpAuthenticator
+	notify               func(string)
+	confirmationTTL      time.Duration
+	maxRequestBytes      int64
+	now                  func() time.Time
 }
 
 func newDeploymentHTTPState(options DeploymentOptions) (*deploymentHTTPState, error) {
@@ -115,11 +117,12 @@ func newDeploymentHTTPState(options DeploymentOptions) (*deploymentHTTPState, er
 	}
 	return &deploymentHTTPState{
 		planFactory: options.PlanFactory, store: options.Store, audit: options.Audit, notify: options.Notify,
-		serviceFactory:     options.ServiceFactory,
-		moduleFactory:      options.ModuleFactory,
-		maintenanceFactory: options.MaintenanceFactory,
-		stepUp:             options.StepUp,
-		confirmationTTL:    options.ConfirmationTTL, maxRequestBytes: options.MaxRequestBytes, now: time.Now,
+		serviceFactory:       options.ServiceFactory,
+		moduleFactory:        options.ModuleFactory,
+		maintenanceFactory:   options.MaintenanceFactory,
+		moduleCommandFactory: options.ModuleCommandFactory,
+		stepUp:               options.StepUp,
+		confirmationTTL:      options.ConfirmationTTL, maxRequestBytes: options.MaxRequestBytes, now: time.Now,
 	}, nil
 }
 

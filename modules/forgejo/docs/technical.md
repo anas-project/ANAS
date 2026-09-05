@@ -30,11 +30,7 @@ entrypoint。健康检查同样降权后请求 `/-/healthcheck`。
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `forgejo.actions_allowed_scopes` | string | — | `""` | `static` | `FORGEJO_ACTIONS_ALLOWED_SCOPES` | 否 | 否 | 否 | 是 | `container_recreate` | 可使用 ANAS Runner 的组织或仓库 scope，逗号分隔 |
 | `forgejo.actions_enabled` | bool | — | `false` | `static` | `FORGEJO_ACTIONS_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | Actions 服务端与 one-job Runner controller 的唯一共同开关 |
-| `forgejo.actions_incus_client_cert_b64` | string | — | `""` | `static` | `FORGEJO_ACTIONS_INCUS_CLIENT_CERT_B64` | 否 | 否 | 是 | 是 | `container_recreate` | restricted project Incus TLS client certificate 的 base64 值 |
-| `forgejo.actions_incus_client_key_b64` | string | — | `""` | `static` | `FORGEJO_ACTIONS_INCUS_CLIENT_KEY_B64` | 否 | 否 | 是 | 是 | `container_recreate` | restricted project Incus TLS client key 的 base64 值 |
-| `forgejo.actions_incus_endpoint` | string | — | `""` | `static` | `FORGEJO_ACTIONS_INCUS_ENDPOINT` | 否 | 否 | 否 | 是 | `container_recreate` | 独立 Incus/KVM 宿主的 HTTPS endpoint |
-| `forgejo.actions_incus_profile` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `anas-forgejo-runner` | `static` | `FORGEJO_ACTIONS_INCUS_PROFILE` | 否 | 否 | 否 | 是 | `container_recreate` | 受限 one-job Runner VM profile 名称 |
-| `forgejo.actions_incus_server_cert_b64` | string | — | `""` | `static` | `FORGEJO_ACTIONS_INCUS_SERVER_CERT_B64` | 否 | 否 | 是 | 是 | `container_recreate` | 固定 Incus server certificate 的 base64 值 |
+| `forgejo.actions_isolation` | enum (`auto`, `incus_vm`, `incus_container`) | — | `auto` | `static` | `FORGEJO_ACTIONS_ISOLATION` | 否 | 否 | 否 | 是 | `container_recreate` | 向 compute Provider 申请的隔离档 |
 | `forgejo.actions_runner_image` | string | `pattern: ^(?:[0-9a-f]{64})?$` | `""` | `static` | `FORGEJO_ACTIONS_RUNNER_IMAGE` | 否 | 否 | 否 | 是 | `container_recreate` | 已批准 Runner VM image 的固定 SHA-256 fingerprint |
 | `forgejo.custom_git_hooks_enabled` | bool | — | `false` | `static` | `FORGEJO_CUSTOM_GIT_HOOKS_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否允许仓库自定义 Git Hooks；Hook 会以 Forgejo 用户身份执行服务端代码 |
 | `forgejo.db_name` | string | — | `forgejo` | `static` | `FORGEJO_DB_NAME` | 否 | 否 | 否 | 否：`migrate-forgejo-database` | `data_migrate` | 应用数据库名 |

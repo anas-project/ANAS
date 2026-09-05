@@ -394,6 +394,19 @@ func (h *handler) workspaceMaintenanceService(w http.ResponseWriter, workspaceID
 }
 
 func (h *handler) consumeMaintenanceStepUp(w http.ResponseWriter, r *http.Request, service application.MaintenanceService, workspaceID, targetID, proof string) bool {
+	stateDigest, err := service.StepUpStateDigest(r.Context(), deploymentaudit.ActionLocalAdminReveal, targetID)
+	if err != nil {
+		writeApplicationError(w, err)
+		return false
+	}
+	return h.consumeActionStepUp(w, r, deploymentaudit.ActionLocalAdminReveal, workspaceID, targetID, stateDigest, proof)
+}
+
+// consumeActionStepUp is the one place a single-use, action-bound proof is
+// spent. Every high-risk route shares it so the source rules, the session
+// cookie selection, and the failure mapping cannot drift apart between the
+// operations they protect.
+func (h *handler) consumeActionStepUp(w http.ResponseWriter, r *http.Request, action, workspaceID, targetID, stateDigest, proof string) bool {
 	principal, ok := PrincipalFromContext(r.Context())
 	if !ok {
 		writeProblem(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
@@ -401,11 +414,6 @@ func (h *handler) consumeMaintenanceStepUp(w http.ResponseWriter, r *http.Reques
 	}
 	origin, ok := requireSameRequestOrigin(w, r)
 	if !ok {
-		return false
-	}
-	stateDigest, err := service.StepUpStateDigest(r.Context(), deploymentaudit.ActionLocalAdminReveal, targetID)
-	if err != nil {
-		writeApplicationError(w, err)
 		return false
 	}
 	cookieName := localSessionCookie
@@ -417,6 +425,7 @@ func (h *handler) consumeMaintenanceStepUp(w http.ResponseWriter, r *http.Reques
 		writeProblem(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
 		return false
 	}
+	var err error
 	switch principal.Source {
 	case "local":
 		consumer, ok := h.deploymentHTTP.stepUp.(localMaintenanceStepUpConsumer)
@@ -425,7 +434,7 @@ func (h *handler) consumeMaintenanceStepUp(w http.ResponseWriter, r *http.Reques
 			return false
 		}
 		_, err = consumer.ConsumeLocalStepUp(r.Context(), consoleauth.LocalStepUpAuthenticationRequest{
-			SessionToken: sessionToken, Origin: origin, Token: proof, Action: deploymentaudit.ActionLocalAdminReveal,
+			SessionToken: sessionToken, Origin: origin, Token: proof, Action: action,
 			WorkspaceID: workspaceID, TargetID: targetID, StateDigest: stateDigest,
 		})
 	case "oidc_proxy":
@@ -436,10 +445,10 @@ func (h *handler) consumeMaintenanceStepUp(w http.ResponseWriter, r *http.Reques
 		}
 		_, err = consumer.ConsumeProxyStepUp(r.Context(), consoleauth.ProxyStepUpAuthenticationRequest{
 			SessionToken: sessionToken, Origin: origin, Token: proof, Identity: proxyIdentityFromPrincipal(principal),
-			Action: deploymentaudit.ActionLocalAdminReveal, WorkspaceID: workspaceID, TargetID: targetID, StateDigest: stateDigest,
+			Action: action, WorkspaceID: workspaceID, TargetID: targetID, StateDigest: stateDigest,
 		})
 	default:
-		writeProblem(w, http.StatusForbidden, "step_up_source_invalid", "this authentication source cannot reveal credentials")
+		writeProblem(w, http.StatusForbidden, "step_up_source_invalid", "this authentication source cannot perform high-risk operations")
 		return false
 	}
 	if err == nil {

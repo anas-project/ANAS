@@ -179,10 +179,6 @@ func TestRenderEnvUsesOneActionsSwitchAndRequiresExecutionPlane(t *testing.T) {
 	}
 	env["FORGEJO_ACTIONS_ALLOWED_SCOPES"] = "trusted,team/repo"
 	env["FORGEJO_ACTIONS_CONTROLLER_PASSWORD"] = "controller-secret"
-	env["FORGEJO_ACTIONS_INCUS_ENDPOINT"] = "https://incus.example.test:8443"
-	env["FORGEJO_ACTIONS_INCUS_CLIENT_CERT_B64"] = "Y2VydA=="
-	env["FORGEJO_ACTIONS_INCUS_CLIENT_KEY_B64"] = "a2V5"
-	env["FORGEJO_ACTIONS_INCUS_SERVER_CERT_B64"] = "c2VydmVy"
 	env["FORGEJO_ACTIONS_RUNNER_IMAGE"] = strings.Repeat("a", 64)
 	if err := renderEnv(env); err != nil {
 		t.Fatal(err)
@@ -194,23 +190,18 @@ func TestRenderEnvUsesOneActionsSwitchAndRequiresExecutionPlane(t *testing.T) {
 	env["FORGEJO_ACTIONS_ENABLED"] = "true"
 	env["FORGEJO_ACTIONS_ALLOWED_SCOPES"] = "team/repo"
 	env["FORGEJO_ACTIONS_CONTROLLER_PASSWORD"] = "controller-secret"
-	env["FORGEJO_ACTIONS_INCUS_ENDPOINT"] = "http://incus.example.test:8443"
-	env["FORGEJO_ACTIONS_INCUS_CLIENT_CERT_B64"] = "Y2VydA=="
-	env["FORGEJO_ACTIONS_INCUS_CLIENT_KEY_B64"] = "a2V5"
-	env["FORGEJO_ACTIONS_INCUS_SERVER_CERT_B64"] = "c2VydmVy"
 	env["FORGEJO_ACTIONS_RUNNER_IMAGE"] = strings.Repeat("a", 64)
-	if err := renderEnv(env); err == nil || !strings.Contains(err.Error(), "HTTPS") {
-		t.Fatalf("insecure Incus endpoint error = %v", err)
+	// The endpoint and certificates moved to the incus provider, so what this
+	// hook still has to refuse is an unpinned runner image.
+	env["FORGEJO_ACTIONS_RUNNER_IMAGE"] = "images:debian/13"
+	if err := renderEnv(env); err == nil || !strings.Contains(err.Error(), "pinned SHA-256 fingerprint") {
+		t.Fatalf("unpinned runner image error = %v", err)
 	}
 
 	env = forgejoRenderEnv()
 	env["FORGEJO_ACTIONS_ENABLED"] = "true"
 	env["FORGEJO_ACTIONS_ALLOWED_SCOPES"] = "*"
 	env["FORGEJO_ACTIONS_CONTROLLER_PASSWORD"] = "controller-secret"
-	env["FORGEJO_ACTIONS_INCUS_ENDPOINT"] = "https://incus.example.test:8443"
-	env["FORGEJO_ACTIONS_INCUS_CLIENT_CERT_B64"] = "Y2VydA=="
-	env["FORGEJO_ACTIONS_INCUS_CLIENT_KEY_B64"] = "a2V5"
-	env["FORGEJO_ACTIONS_INCUS_SERVER_CERT_B64"] = "c2VydmVy"
 	env["FORGEJO_ACTIONS_RUNNER_IMAGE"] = strings.Repeat("a", 64)
 	if err := renderEnv(env); err == nil || !strings.Contains(err.Error(), "scope") {
 		t.Fatalf("global scope error = %v", err)
@@ -361,7 +352,7 @@ func TestActionsAccountPasswordPassesOnlyThroughStdin(t *testing.T) {
 	}
 }
 
-func TestComposeKeepsIncusCredentialsOutOfForgejo(t *testing.T) {
+func TestComposeKeepsTheComputeLeaseOutOfTheForgejoApp(t *testing.T) {
 	body, err := os.ReadFile("../docker-compose.yml")
 	if err != nil {
 		t.Fatal(err)
@@ -380,19 +371,27 @@ func TestComposeKeepsIncusCredentialsOutOfForgejo(t *testing.T) {
 		t.Fatal("Forgejo app must not consume the module-wide env file")
 	}
 	for key := range forgejo.Environment {
-		if strings.Contains(key, "INCUS") || key == "FORGEJO_ACTIONS_CONTROLLER_PASSWORD" {
+		if strings.Contains(key, "COMPUTE") || strings.Contains(key, "INCUS") ||
+			key == "FORGEJO_ACTIONS_CONTROLLER_PASSWORD" {
 			t.Fatalf("Forgejo app consumes controller credential %s", key)
 		}
 	}
 	controller := compose.Services["anas_forgejo_actions_controller"]
 	preflight := compose.Services["anas_forgejo_actions_preflight"]
+	// The lease reaches only the two services that drive instances. The private
+	// key is part of it, which is exactly why the app above must not see it.
+	const leasePrefix = "ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__"
 	for _, service := range []struct {
 		name string
 		env  map[string]string
 	}{{"controller", controller.Environment}, {"preflight", preflight.Environment}} {
-		for _, key := range []string{"INCUS_CLIENT_CERT_B64", "INCUS_CLIENT_KEY_B64", "INCUS_SERVER_CERT_B64"} {
-			if service.env[key] == "" {
-				t.Errorf("%s environment is missing %s", service.name, key)
+		for _, field := range []string{
+			"INTERFACE", "ENDPOINT", "SANDBOX", "INSTANCE_PREFIX", "PROFILE",
+			"SERVER_CERT", "SERVER_CERT_FINGERPRINT", "CLIENT_CERT", "CLIENT_KEY",
+			"IMAGE_ALLOWLIST", "MAX_INSTANCES", "CPU", "MEMORY_MIB", "DISK_GIB",
+		} {
+			if service.env[leasePrefix+field] == "" {
+				t.Errorf("%s environment is missing %s", service.name, leasePrefix+field)
 			}
 		}
 	}

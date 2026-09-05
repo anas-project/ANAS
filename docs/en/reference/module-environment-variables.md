@@ -151,17 +151,28 @@ only the application domain must not make Samba FS leave and rejoin; changing an
 already-provisioned AD domain cannot be done in place at all, and requires a new
 directory and rejoining the members.
 
-Both compose and the in-container resolver use `SAMBA_DC_DNS_SERVER` and
-`SAMBA_DC_DNS_SEARCH` directly. Samba FS no longer produces or accepts a DNS
-alias of its own, and does not fall back to the host/VLAN resolver. At startup, a
+The Samba FS hook derives private `SAMBA_FS_DC_TRANSPORT_IP` from the host-side
+macvlan bridge's `VLAN_BRIDGE_IP` (with a compatibility fallback to
+`SAMBA_DC_DNS_SERVER` when no bridge value exists). Compose and the
+in-container resolver continue to use the DC's original listener address,
+`SAMBA_DC_DNS_SERVER`, with `SAMBA_DC_DNS_SEARCH`. Initialization installs a
+`/32` route to that DNS address through the transport IP, while the canonical
+`SAMBA_DC_DC_DOMAIN` is mapped to the transport IP. The Kerberos/AD identity
+remains the canonical FQDN, never the bridge IP.
+Samba FS no longer produces or accepts a DNS alias of its own, and does not
+fall back to an ordinary host/VLAN resolver. At startup, a
 successful `net ads testjoin` reuses the existing trust; only an invalid trust
 triggers a join, and there is no automatic leave path. When the DC is not ready
 yet it waits and repeats `testjoin`, so a connectivity failure is not mistaken
-for needing a rejoin. `SAMBA_DC_DNS_SERVER` is a numeric DC address, so
-installing the resolver does not require resolving the DC name first and forms no
-startup dependency cycle. After a successful join, `net ads testjoin` must pass
-again and `net ads dns register -P` must succeed, or startup is blocked; the
-`wbinfo -t` readiness check covers the same AD member-machine trust.
+for needing a rejoin. Both the DNS server and transport next hop are numeric,
+so installing the resolver and route does not require resolving the DC name
+first and forms no startup dependency cycle. After a successful join,
+`net ads testjoin` must pass again.
+A short-lived Kerberos cache and DC-administrator credentials then reconcile
+the member A record idempotently and verify it through the DC's original DNS
+address, with traffic crossing the explicit `/32` route;
+failure blocks startup. The `wbinfo -t` readiness check covers the same AD
+member-machine trust.
 
 The file-sharing parameters `SHARE_DIR_NAME`, `SHARE_ACCESS_MODE`,
 `SHARE_GUEST_READ_ONLY`, and `USE_DEFAULT_DOMAIN` belong to samba_fs but are

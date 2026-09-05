@@ -7,6 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/anas-project/ANAS/internal/computeclient"
 )
 
 func main() {
@@ -32,8 +34,19 @@ func runPreflight() error {
 	if !cfg.Enabled {
 		return nil
 	}
-	_, err = NewIncusProvider(cfg.Incus)
+	_, err = newCompute(cfg)
 	return err
+}
+
+// newCompute builds this module's client for its compute lease. The guest
+// entrypoint allowlist is supplied here, not by the shared client: it is a
+// property of Forgejo's runner image.
+func newCompute(cfg Config) (ComputeProvider, error) {
+	client, err := computeclient.New(cfg.Lease, []string{guestEntrypoint}, cfg.ConfigDir)
+	if err != nil {
+		return nil, err
+	}
+	return leasedCompute{Client: client, guestPoll: 2 * time.Second}, nil
 }
 
 func run() error {
@@ -46,17 +59,17 @@ func run() error {
 	// clean. After an enabled deployment is switched off, the retained settings
 	// let this one-shot container remove its registrations and VMs before it
 	// exits. The managed service account is retained for a later re-enable.
-	if !cfg.Enabled && cfg.Incus.Endpoint == "" {
+	if !cfg.Enabled && cfg.LeaseError != nil {
 		state, loadErr := store.Load()
 		if loadErr != nil {
 			return loadErr
 		}
 		if len(state.Workloads) > 0 {
-			return fmt.Errorf("Actions is disabled but Incus settings are unavailable for cleanup")
+			return fmt.Errorf("Actions is disabled but the compute lease is unavailable for cleanup")
 		}
 		return nil
 	}
-	provider, err := NewIncusProvider(cfg.Incus)
+	provider, err := newCompute(cfg)
 	if err != nil {
 		return err
 	}

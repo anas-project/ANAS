@@ -14,6 +14,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [eturnal](#eturnal) | 1.12.2-r6 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [forgejo](#forgejo) | 15.0.7-r1 | configured | supported | application | fallback | not_consumed | 31 |
 | [freeradius](#freeradius) | 3.2.10-r4 | container | not_applicable | none | not_applicable | not_applicable | 0 |
+| [incus](#incus) | 7.3.0-r1 | not_applicable | not_applicable | none | not_consumed | not_consumed | 0 |
 | [lam](#lam) | 9.6.0-r8 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r5 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [llng](#llng) | 2.23.2-r11 | container | supported | browser | not_consumed | not_consumed | 17 |
@@ -113,6 +114,16 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 - **Fallback / 回退：** No user-facing language exists.
 - **Supported / 支持语言：** not applicable / 不适用
 - **Evidence / 证据：** [3.2.10 — protocol service without a localized UI](https://github.com/FreeRADIUS/freeradius-server/tree/release_3_2_10)
+
+## incus
+
+- **Version / 版本：** `7.3.0-r1`; reviewed 2026-08-30
+- **Timezone / 时区：** `not_applicable` — The provisioner is a one-shot process with no scheduling, retention or timestamp output; the remote Incus daemon keeps its own clock.
+- **Language / 语言：** `not_applicable`, `none` — no user interface; the provisioner emits machine-readable JSON only
+- **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
+- **Fallback / 回退：** Diagnostics are English-only operator output on stderr.
+- **Supported / 支持语言：** not applicable / 不适用
+- **Evidence / 证据：** [7.3.0 — Incus REST API; this module ships no upstream user interface](https://github.com/lxc/incus/tree/v7.3.0)
 
 ## lam
 

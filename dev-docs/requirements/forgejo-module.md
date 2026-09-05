@@ -70,6 +70,9 @@ Runner 包可以保留独立版本和安全边界，但不得提供 `runner.enab
 | `FORGEJO-R-051` | LLNG/Authentik 必须分别完成 OIDC 登录、Group 准入/拒绝、管理员映射、降权和 IAM-down 恢复验收 | e2e |
 | `FORGEJO-R-052` | Actions E2E 必须证明一个 `actions_enabled` 操作同时改变服务端和 Runner desired state，且系统不存在第二个用户可见 Runner 开关 | e2e |
 | `FORGEJO-R-053` | Actions E2E 必须证明获批 repo/org 能运行无 Secret 的容器构建，未获批仓库无 Runner，正常/失败/取消/controller crash 后不残留 VM、磁盘或 token | e2e |
+| `FORGEJO-R-060` | OIDC auth source 必须支持把 IAM group claim 声明式映射到 Forgejo 组织 team（含登录时的自动移除），映射内容由消费方提供；Forgejo Module 不得硬编码具体组名 | 单元 + e2e |
+| `FORGEJO-R-061` | Forgejo Module 的 reconcile 不得删除或改写由管理端 API 创建的自动化账号、token 与 SSH key；这些对象的生命周期归属其创建方 | 单元 + 审阅 |
+| `FORGEJO-R-062` | Forgejo Module 不注册业务用系统 webhook，也不得在 reconcile 中清理不属于自己的 hook；管理凭据的发放与审计边界必须在文档中说明 | 单元 + 审阅 |
 | `FORGEJO-R-054` | 纯代码托管 Module 可以先于 Runner 执行面达到 `release`，但在 `FORGEJO-R-052` 与 `FORGEJO-R-053` 完成前不得把 Actions 功能标为可用或 release | 审阅 |
 
 ## 4. 明确排除

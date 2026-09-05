@@ -14,15 +14,18 @@
 | [Samba 身份锚点 OID 与既有目录迁移要求](samba-identity-anchor.md) | PEN/OID 注册、正式 schema、新旧目录迁移、ACL、Consumer 连续性与恢复验收 | 12/12 已完成 |
 | [Casdoor IAM Provider 集成要求](casdoor-iam.md) | Casdoor Module、Samba 同步、OIDC/SAML、授权、会话和发布验收 | 40/40 已完成 |
 | [使用 OIDC/SAML 的 Module 双向登出要求](module-iam-bidirectional-logout.md) | RP/SP 发起登出、IAM 发起登出、通用注册、安全和真实会话 E2E | 20/42 已完成 |
-| [Web API 与管理前端要求](web-api-admin-console.md) | 管理控制台的范围、访问与证书、认证与角色、安全和验收 | 149/149 已完成 |
+| [Web API 与管理前端要求](web-api-admin-console.md) | 管理控制台的范围、访问与证书、认证与角色、安全和验收 | 155/155 已完成 |
+| [AI Agent 编排集成要求](ai-agent.md) | `ai_agent` Module、Forgejo 协作面、Incus 执行面、审批权限、排程与审计 | 0/64 已完成 |
 | [Module 专属命令能力要求](module-command-capability.md) | Module 命令声明、发现、类型化执行、CLI/anasd 共享服务与权限边界 | 23/34 已完成 |
-| [Forgejo Module 集成要求](forgejo-module.md) | 代码托管、OIDC、Actions 单开关、Incus one-job VM Runner 与安全验收 | 11/36 已完成 |
+| [Forgejo Module 集成要求](forgejo-module.md) | 代码托管、OIDC、Actions 单开关、Incus one-job VM Runner 与安全验收 | 11/39 已完成 |
 | [Vikunja Module 集成要求](vikunja-module.md) | 独立任务/看板服务、数据库、OIDC、持久化、登出和验收 | 28/28 已完成 |
 | [MeshCentral OIDC-only 验收要求](meshcentral-oidc-only.md) | 服务端密码拒绝、双 IAM OIDC、revision 与恢复账号边界 | 7/7 已完成 |
-| [Incus compute Provider Module 集成要求](incus-module.md) | `compute/incus_vm` Provider、多消费者隔离、Secret 注入边界与 Forgejo 迁移 | 0/28 已完成 |
+| [Incus compute Provider Module 集成要求](incus-module.md) | `compute/incus_vm` Provider、多消费者隔离、Secret 注入边界与 Forgejo 迁移 | 33/93 已完成 |
 | [VersityGW S3 兼容 Module 集成要求](versitygw-module.md) | `object_storage/s3` Capability、per-Resource bucket/凭据、POSIX backend、安全和验收 | 30/32 已完成 |
 | [需求 ID 矩阵采用范围与门禁要求](requirement-id-adoption.md) | 门禁可见性、豁免清单、双向登出矩阵范围与迁移后的扫描边界 | 8/14 已完成 |
 | [文档驱动测试生成与远程执行要求](document-driven-test-automation.md) | 需求到用例/完整测试代码、SSH 专用服务器执行、隔离与报告证据 | 14/32 已完成 |
+| [Samba 身份锚点 OID 与既有目录迁移要求](samba-identity-anchor.md) | IANA PEN、正式 OID、新目录安装、既有目录迁移与回退安全 | 12/12 已完成 |
+| [版本升级 E2E 测试要求](upgrade-testing.md) | Core、Web 与全部内置 Module 的真实旧版升级、数据往返和发布门禁 | 13/30 已完成 |
 
 > [!IMPORTANT]
 > **「状态」列是生成的，不要手改。** 它由需求矩阵与配套计划的里程碑状态算出：

@@ -1,8 +1,11 @@
 # 特权操作与 helper（草案）
 
 > **状态：§3–§4 的网络部分已实现**（`cmd/anas-helper`），sudoers 与生成脚本已删除。
-> §5 的流式 `btrfs send` 和 §4 里的 `subvolume delete` 仍是草案；§3 的按能力拆分二进制
-> 与 §3.2 的 btrfs 授权决策是后补的设计决定，尚未实现。
+> §5 的流式 `btrfs send` 和 §4 里的 `subvolume delete` 仍是草案。
+>
+> **§3 已按[宿主特权动作通道](host-action-channel.md)重新划分**：原先规划的
+> `anas-btrfs-helper` 已收回，btrfs 与备份的特权操作改归 `anas-hostd`。分界从「有几种
+> capability」改成「是不是日常热路径」，理由见 §3。
 >
 > 现状原本是一处隐式 `sudo`（macvlan 桥）加若干处显式的"权限不够就报错"。本文说明
 > 把前者收进一个受限 helper 的做法，以及为什么**不是**所有特权操作都该跟着进去。
@@ -47,9 +50,16 @@
 代码里已经预设了正确的授权机制：`detectSysAdmin` 特意读 `CapEff` 而不是只看 uid，
 注释点名 systemd 的 `AmbientCapabilities` 是"只授这一个特权给备份 timer"的方式。
 
-## 3. helper 的形态
+## 3. helper 的形态：两个入口
 
-**一个 capability 一个二进制**，每个只做几件具名的事，**不接受任意脚本或命令**。
+分界不是「有几种 capability」，而是**这条路径是不是日常热路径**：
+
+| 入口 | 权限 | 谁调用 | 频率 | 留特权产物 | 审计 |
+| --- | --- | --- | --- | --- | --- |
+| `anas-helper`（直接 exec） | `CAP_NET_ADMIN` | `anas apply` 自己 | 每次部署 | 否 | 无需 |
+| `anas-hostd`（socket 通道） | 完整 root | Web 控制台 / CLI | 罕见 | 是 | 每次 |
+
+两者都遵守同一条不变量：**只做几件具名的事，不接受任意脚本或命令。**
 
 已实现，`anas-helper`（`CAP_NET_ADMIN`）：
 
@@ -58,31 +68,30 @@ anas-helper bridge up   --parent <iface> --name <bridge> --address <cidr> [--rou
 anas-helper bridge down --name <bridge>
 ```
 
-计划中，**另一个二进制** `anas-btrfs-helper`（`CAP_SYS_ADMIN`，见 §4）：
+`anas-hostd` 的形态、协议、授权与审计见[宿主特权动作通道](host-action-channel.md)。归它的操作
+包括：btrfs `subvolume delete` 与 `send`、备份 rsync 以 root 恢复属主、宿主软件包安装与服务启用。
 
-```
-anas-btrfs-helper subvolume del --path <path>
-anas-btrfs-helper send          --subvolume <path> [--parent <path>]   # 输出到 stdout，见 §5
-```
+### 3.1 为什么 `anas-helper` 单独留着
 
-### 3.1 为什么不是同一个二进制
+授权的粒度就是二进制的粒度——装给谁、给哪个文件 setcap、哪个 unit 能 exec 它，说的都是文件。
+把别的操作并进 `anas-helper`，它就得持有超出 `CAP_NET_ADMIN` 的能力，而**最频繁的那条路径**
+（建桥：单一能力、无产物、幂等，每次 `apply` 都走）就被拉到和 root 同一档。
 
-授权的粒度就是二进制的粒度——装给谁、给哪个文件 setcap、哪个 unit 能 exec 它，说的
-都是文件。把 btrfs 那两条并进 `anas-helper`，它就得同时持 `CAP_NET_ADMIN` 和
-`CAP_SYS_ADMIN`，而后者能 mount、setns、加载 BPF，实践中等价于 root。结果是本来最
-安全的那条路径（建桥：单一能力、无产物、幂等）被拉到和 root 同一档，且每次 `anas
-apply` 都在走它。拆成两个文件，日常交互路径就永远只碰得到 `CAP_NET_ADMIN`。
+保持它独立唯一真正买到的，就是这一条：**日常热路径永远碰不到 root-capable 的文件。**
 
-**规则：新的特权操作若需要现有 helper 之外的能力，一律另开二进制，不往已有的里加。**
+### 3.1.1 为什么不再单开 `anas-btrfs-helper`
 
-`anas-helper` 保持现名而不改叫 `anas-net-helper`：它已发布、已被安装器和
-`findHostNetHelper` 的候选路径处理，改名的迁移成本换不来任何安全收益。
+本文早先规划过第三个二进制承担 btrfs 的两条操作。那条规划已收回。
 
-参数在各自的 helper 内部校验：接口名必须匹配 `^anas[a-z0-9_]*$`，路径必须落在工作区内，
-地址必须是带前缀长度的合法 IPv4 CIDR（`ip addr add 192.168.1.50 dev x` 是合法的且
-意为 `/32`，用在桥地址上会静默产生一个到不了容器的接口）。这是它和今天那个方案的**实质区别**——今天 sudoers 授权 root
-执行一个**位于用户可写目录、内容由 anas 自己生成**的脚本，[runbook](../operations/runbooks/privileged-helper.md)
-自己标注了这是弱点。对运行 anas 的用户来说，那已经约等于 root。
+`CAP_SYS_ADMIN` 能 mount、setns、加载 BPF，**实践中等价于 root**。为它单开一个文件，换来的
+「比 root 小」只是名义上的，代价却是实的：那条路径没有审计、没有二段确认、没有对称的撤销动作，
+而且多一个需要单独授权、单独升级、单独 setcap 的文件。
+
+btrfs 的操作与装包有同样的性质——罕见、留下用户事后要面对的产物、需要事后可查。把它们放进
+一条有审计的通道，比分给若干个各自 setcap 的文件更安全，活动部件也更少。
+
+`anas-helper` 因此**保持现名**：它不再是「网络那个 helper 之一」，而是「那个不需要 root 的
+helper」。名字宽泛，但不误导。
 
 ### 3.2 授权机制
 

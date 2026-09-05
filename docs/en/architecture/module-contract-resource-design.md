@@ -225,6 +225,7 @@ a placeholder contract that has not been migrated.
 | [`eturnal`](/en/reference/modules/eturnal/) | `communication` | `release` | TURN service used by realtime communication modules. |
 | [`forgejo`](/en/reference/modules/forgejo/) | `app` | `developing` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
 | [`freeradius`](/en/reference/modules/freeradius/) | `network` | `developing` | RADIUS server module scaffold. |
+| [`incus`](/en/reference/modules/incus/) | `compute` | `developing` | Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract. |
 | [`lam`](/en/reference/modules/lam/) | `identity` | `release` | Web UI for LDAP account administration. |
 | [`lego`](/en/reference/modules/lego/) | `certificate` | `release` | Issues and stores wildcard certificates used by Traefik and domain services. |
 | [`llng`](/en/reference/modules/llng/) | `identity` | `release` | SSO portal, SAML/OIDC identity provider, and app launcher. |

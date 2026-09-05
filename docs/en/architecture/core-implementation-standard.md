@@ -66,6 +66,40 @@ contract. Core may understand generic vocabulary such as `oidc` and `saml` and
 resolve Provider/Consumer compatibility. A Module's supported subset and legal
 parameter combinations still belong to its manifest and implementation.
 
+## Working by default, replaceable when advanced
+
+ANAS is a NAS service launcher, not an assembly kit for experts. **A user who wants a service should
+be able to install it without first understanding what it depends on, let alone preparing those
+dependencies by hand.** Keeping the implementation invisible to the user is a product requirement, not
+optional polish.
+
+Two rules follow, and they hold for every module and every contract:
+
+1. **The default path must work out of the box.** Whatever a module declares it needs -- a database,
+   object storage, an isolation sandbox, an image -- ANAS must be able to satisfy automatically.
+   "Prepare X elsewhere first, then paste its address and credentials into the configuration" is not
+   an acceptable default install path. Anything the user has to prepare by hand is a service that,
+   by default, does not install.
+2. **The advanced path must exist and be equivalent.** A user who already runs their own instance of
+   the same thing must be able to point the module at it through configuration and get the same
+   capability. Automating the default must not cost the ability to use one's own.
+
+The test for this section is a single question: **can a user who knows only which service they want,
+and nothing about what it depends on, install it and use it?** If not, what is missing is automation,
+not documentation.
+
+This does not conflict with the parameter ownership boundary above: satisfying a dependency
+automatically is Core scheduling a provider from what the manifest declares, not Core guessing a
+module's semantics. Nor does it waive security boundaries -- an automatically generated credential is
+still a credential, and an automatically installed component still needs an explicit privilege
+boundary and an uninstall path.
+
+A dependency that can only be satisfied automatically by elevating privilege is the real point of
+tension between this section and "anas never elevates its own privilege". Such a dependency must be
+recorded separately: where the elevation happens, what privileged artifact the user is left with
+afterwards, and what the degraded path is when privilege is unavailable. This section is never a
+licence to hide an implicit `sudo` inside a module hook.
+
 ## Samba domain-separation example
 
 Core may dispatch generic `validateModules`; it must not implement
@@ -92,6 +126,9 @@ Every Core change must answer:
   synthetic Module?
 - For a cross-Module concept, is there a neutral schema, capability, or
   contract rather than implicit product coupling?
+- Does the new dependency have an automatic default path? If it requires the
+  user to prepare an external service by hand, the feature does not install
+  under a default installation.
 
 Only Runner-owned global facts and genuinely generic cross-Module contracts
 belong in Core. Any exception requires a separate architecture decision and a

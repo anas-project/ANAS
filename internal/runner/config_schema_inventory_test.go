@@ -34,19 +34,22 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	minimumSecretLength := 16
 	maximumSecretLength := 128
 	wantConstraints := map[string]configschema.Constraints{
-		"casdoor.ldap_auto_sync_minutes":  {Minimum: &minimumOne},
-		"forgejo.actions_incus_profile":   {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
-		"forgejo.actions_runner_image":    {Pattern: `^(?:[0-9a-f]{64})?$`},
-		"forgejo.domain_prefix":           {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
-		"forgejo.ssh_port":                {Minimum: &minimumOne, Maximum: &maximumPort},
-		"global.base_domain":              {Format: configschema.FormatDNSName},
-		"global.timezone":                 {Format: configschema.FormatIANATimezone},
-		"global.default_language":         {Format: configschema.FormatLanguageTag},
-		"global.default_locale":           {Format: configschema.FormatLocale},
-		"global.host_ip":                  {Format: configschema.FormatIPv4},
-		"global.host_lan_ip":              {Format: configschema.FormatIPv4},
-		"global.host_lan_bridge_ip":       {Format: configschema.FormatIPv4},
-		"eturnal.port":                    {Minimum: &minimumOne, Maximum: &maximumPort},
+		"casdoor.ldap_auto_sync_minutes": {Minimum: &minimumOne},
+		"forgejo.actions_runner_image":   {Pattern: `^(?:[0-9a-f]{64})?$`},
+		"forgejo.domain_prefix":          {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"forgejo.ssh_port":               {Minimum: &minimumOne, Maximum: &maximumPort},
+		"global.base_domain":             {Format: configschema.FormatDNSName},
+		"global.timezone":                {Format: configschema.FormatIANATimezone},
+		"global.default_language":        {Format: configschema.FormatLanguageTag},
+		"global.default_locale":          {Format: configschema.FormatLocale},
+		"global.host_ip":                 {Format: configschema.FormatIPv4},
+		"global.host_lan_ip":             {Format: configschema.FormatIPv4},
+		"global.host_lan_bridge_ip":      {Format: configschema.FormatIPv4},
+		"eturnal.port":                   {Minimum: &minimumOne, Maximum: &maximumPort},
+		// Empty is inside the pattern because the parameter ships empty; the
+		// incus hook is what refuses to apply until it is actually set.
+		"incus.endpoint":                  {Pattern: `^(?:https://[A-Za-z0-9.:_-]+)?$`},
+		"incus.storage_pool":              {Pattern: `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`},
 		"meshcentral.mps_port":            {Minimum: &minimumOne, Maximum: &maximumPort},
 		"oauth2_proxy.console_proxy_port": {Minimum: &minimumOne, Maximum: &maximumPort},
 		"traefik.base_port":               {Minimum: &minimumOne, Maximum: &maximumPort},
@@ -156,12 +159,25 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"samba_dc.anchor_bind_password":   true,
 		"vikunja.language":                true,
 		"versitygw.root_secret_key":       true,
+		"incus.endpoint":                  true,
+		"incus.server_certificate_b64":    true,
+		"incus.admin_certificate_b64":     true,
+		"incus.admin_key_b64":             true,
 	}
 	gotInputRequired := map[string]bool{}
 	gotMustResolveOnly := map[string]bool{}
+	// must_resolve parameters that no ANAS code computes. The first two are
+	// demanded by their hook only when a provider is actually used; the incus
+	// credentials describe a daemon ANAS does not own, so there is nothing to
+	// generate or inherit them from and the incus hook refuses to apply until
+	// an operator supplies all four.
 	conditionalSources := map[string]bool{
-		"ddns_go.dns_provider":      true,
-		"ddns_updater.dns_provider": true,
+		"ddns_go.dns_provider":         true,
+		"ddns_updater.dns_provider":    true,
+		"incus.endpoint":               true,
+		"incus.server_certificate_b64": true,
+		"incus.admin_certificate_b64":  true,
+		"incus.admin_key_b64":          true,
 	}
 	for path, metadata := range inventory {
 		if metadata.inputRequired {

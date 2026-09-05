@@ -26,6 +26,7 @@ OIDC/SAML 双链路，因此它不进入待实现里程碑。
 | M3：Actions 单开关与 one-job VM 执行面 | R-030—R-039 | 实施中；Module/controller/guest 资产已接线，真实 one-job 与隔离 E2E 待验收 |
 | M4：预热、扩缩容、空闲资源与回收 | R-040—R-045 | 未开始 |
 | M5：真实发布验收 | R-050—R-054 | 未开始 |
+| M6：外部自动化消费者的边界（AI Agent 依赖） | R-060—R-062 | 未开始 |
 
 覆盖统计：36 项需求全部有且只有一个里程碑归属；M0/M1 的 11 项已完成，M2/M3 的 14 项处于实现与
 外部验收阶段。
@@ -136,6 +137,19 @@ E2E 前不把 Actions 标为 release 能力。
 全部通过后才评估 Forgejo 应用 Module 和独立 Runner Module 的 `release` 状态；二者分别发布，Runner
 未完成不阻塞纯代码托管 Module。
 
+## 7.1 M6：外部自动化消费者的边界
+
+由 [AI Agent 编排](ai-agent.md) 驱动的三项依赖，本 Module 只负责“不妨碍且可声明”，不实现 Agent 逻辑：
+
+- [ ] OIDC reconcile 增加声明式的 group→team 映射（`--group-team-map` 与登录时移除），映射内容来自
+      消费方配置，Module 不硬编码组名；
+- [ ] reconcile 明确不触碰由管理端 API 创建的自动化账号、token 与 SSH key，并补单元测试守住；
+- [ ] 文档写明系统 webhook 与管理凭据的归属：Forgejo Module 不注册业务 hook、不清理他人 hook，
+      管理凭据的持有方与审计要求由消费方 Module 声明；
+- [ ] 同步中英文 README 与技术文档。
+
+验收：要求文档 `FORGEJO-R-060`—`FORGEJO-R-062`。
+
 ## 8. e2e 执行记录
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
@@ -143,6 +157,7 @@ E2E 前不把 Actions 标为 release 能力。
 | R-043 | 待补 `server-forgejo-actions-idle-e2e.sh` | Incus + 空队列两个调和周期 | — | 待执行 |
 | R-044 | 待补 `server-forgejo-actions-idle-e2e.sh` | Incus + 30 分钟 Actions on/off 对照 | — | 待执行 |
 | R-045 | 待补 `server-forgejo-actions-waiting-ttl-e2e.sh` | Incus + concurrency group 阻塞 | — | 待执行 |
+| R-060 | 待补 `server-forgejo-group-team-map-e2e.sh` | LLNG/Authentik + 目录组变更 | — | 待执行 |
 | R-050 | 待补 `server-forgejo-app-e2e.sh` | PostgreSQL/MariaDB、amd64/arm64 | — | 待执行 |
 | R-051 | 待补 `server-forgejo-oidc-e2e.sh` | LLNG/Authentik 浏览器 | — | 待执行 |
 | R-052 | 待补 `server-forgejo-actions-state-e2e.sh` | Incus + Forgejo | — | 待执行 |

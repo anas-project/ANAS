@@ -7,8 +7,9 @@ updated: 2026-09-03
 
 # ANAS Web API 与管理前端实施计划
 
-> 状态：**已完成（149/149）**。M0—M5 全部落地，首版 Web API、嵌入式管理前端、安全入口、维护能力与发布安装链路均已闭环。
-> 日期：2026-08-16，更新：2026-09-03
+> 状态：**已完成（153/153）**。M0—M5 交付首版；M6 是首版完成后的一次完整审阅整改，修掉复核发现的
+> SSE 重复投递缺陷、R-053 的缺口路由、缺失的 R-021 inventory 门禁、双语与审计页缺口，并做了三项结构整理。
+> 日期：2026-08-16，更新：2026-09-05
 
 需求：[Web API 与管理前端要求](../../requirements/web-api-admin-console.md)。该特性不单独建架构文档，
 设计写在要求文档的 §3—§5 与 §9 决策记录里。
@@ -179,6 +180,50 @@ M1B 应用服务、HTTP/OpenAPI 契约、事务恢复与负向测试，不是 M0
 
 验收：直连主线与 M1.5 在此汇合；要求文档 §8 与 §10.9、全部 149 项有效需求归属、CI 门禁和 e2e 证据完整，才可把首版标为完成。
 
+### M6：审阅整改 — 已实施
+
+对首版实施的一次完整复核，修的是复核发现的缺口，不扩大范围：
+
+- **SSE 事件重复投递（缺陷）**：任务事件流的心跳分支回到循环顶部时没有刷新 `page`，已投递的一批事件在
+  每次心跳被重发。SPA 按 ID 去重所以未被浏览器 e2e 察觉，但违反 R-022 且影响任何其他 SSE 消费者。
+  已修复并补上带非空事件的心跳回归测试（无修复时失败，30 次投递 / 29 次心跳）。
+- **R-053 缺口**：§4.2 标为 `API` 的 Module Command invoke 从未注册。OpenAPI 双向覆盖测试比对的是
+  「OpenAPI ↔ 路由清单」而非「§4.2 ↔ 路由」，因此自洽但漏掉该行。已按 R-181 开放。
+- **R-021 门禁缺失**：要求的「CI inventory 门禁」此前不存在，子进程隔离仅靠 13 个文件、42 处
+  `restrictedProcessEnvironment` 分支的人工纪律。已实现 `cmd/anasd/subprocess_inventory_test.go`：
+  从 `cmd/anasd` 走导入图，对可达包内的 `exec.Command` 与 `os.Environ` 调用点比对声明式 inventory。
+- **双语覆盖缺口**：M2 生命周期/回滚新增的 9 个错误码没有 zh/en 文案，用户在 P0 确认流程里看到裸枚举。
+  已补齐，并按 R-183 加门禁，不再依赖 R-128 的回退。
+- **§6.1 缺页**：`GET /api/v1/audit-events` 后端完整但前端无消费者，「系统与审计」页不存在，且整个 SPA
+  没有分区导航。已按 R-182 补齐（哈希分区，避免为 history 路由新增服务端 catch-all）。
+- **归档主题脱离门禁**：`docs:check-requirements` 此前完全跳过已归档主题，新增需求可以无人归属地漂移。
+  已改为对归档主题仍校验归属、只放宽 e2e 记录一致性。
+
+同时做了三项不改变行为的结构整理：`httpapi` 的 11 个望远镜式构造函数收敛为 `New(Options)`（删掉 2 个
+完全无引用者、1 个 10 参数的生产构造函数）；`internal/audit` 与 `internal/consolejobs` 中约 750 行重复的
+crash-safety 文件系统与 flock 代码提取为 `internal/securefs`（其中 `removeCompactionFileIfSame` 的校验顺序
+两边已经开始漂移）；分层方向由 R-184 门禁锁定，§3.2 改写为描述真实布局并显式记录未完成的迁移债。
+
+验收：R-181—R-184，以及 R-021、R-022、R-053、R-128 的门禁补齐。
+
+### M7：会话到期处理 — 已实施
+
+会话 TTL（R-116）此前只存在于服务端：SPA 只在挂载时处理过一次 401，会话在使用中到期后页面仍停在已认证
+视图，操作逐个失败而不回到登录页；剩余时间也无从得知。
+
+- **统一的会话终止（R-185）**：`api/client.ts` 增加响应中间件，按 problem `code` 而非 401 状态区分「会话
+  失效」与「凭据被拒」——两者同为 401，只看状态会让每次密码打错都把操作者踢回入口页。任务事件流不经过
+  fetch 客户端，因此 `WorkspaceJobs` 的 `onProblem` 同样上报。`App.vue` 用一处 `endSession()` 收敛：清空
+  session CSRF 与密码/令牌输入，并按启动时读到的 `console_state`/listener 复用 `entryPhase()` 回到入口页。
+- **本地推算的倒计时（R-186）**：会话 token 是 SPA 读不到的 HttpOnly Cookie，因此剩余时间由登录/刷新
+  响应里的 `expires_at` 与 `idle_expires_at` 推算，并用响应 `Date` 头把服务端时刻换算到本地时钟，避免浏览器
+  时钟偏移让倒计时确信地报错数字。idle 窗口只在本地滑动：轮询 `GET /api/v1/auth/session` 本身就是一次已认证
+  请求，会不断续期 idle TTL，把 30 分钟空闲超时变成 12 小时绝对超时；同理公共路由（`/api/v1/system`、
+  `/healthz`、`/api/v1/auth/csrf`）的响应不计入活动。剩余不足 5 分钟才出现横幅、倒计时与显式「继续使用」
+  按钮，归零时本地按 R-185 结束会话，不必等下一次请求失败。
+
+验收：R-185、R-186（`web/src/api/session.test.ts`）。
+
 ## 4. 已完成与下一步
 
 本轮已完成：
@@ -238,8 +283,10 @@ M5 与首版均已完成；已接受的 LAN 明文风险不改变写入原子性
 | M3 | R-032 | 已完成 |
 | M4 | R-047、R-115—R-116、R-123、R-127、R-132、R-133、R-144、R-149、R-150、R-152、R-155 | 已完成 |
 | M5 | R-005、R-008、R-045、R-053、R-154、R-160—R-162 | 已完成 |
+| M6 审阅整改 | R-181—R-184 | 已完成 |
+| M7 会话到期处理 | R-185、R-186 | 已完成 |
 
-覆盖统计：149 项有效需求全部有归属且已完成；R-052、R-141、R-158、R-159 四项复合要求已废弃并由原子要求取代。**每个有效 ID 必须恰好归属一个里程碑**；新增或废弃需求时同步更新本表，否则门禁会拒绝。
+覆盖统计：155 项有效需求全部有归属且已完成；R-052、R-141、R-158、R-159 四项复合要求已废弃并由原子要求取代。**每个有效 ID 必须恰好归属一个里程碑**；新增或废弃需求时同步更新本表，否则门禁会拒绝。
 
 ### 5.2 CI 门禁
 
@@ -247,15 +294,15 @@ M5 与首版均已完成；已接受的 LAN 明文风险不改变写入原子性
 
 | 门禁 | 命令 | 最近验证基线 |
 | --- | --- | --- |
-| 单元测试 | `go test ./...` | M5 工作树（基于 HEAD `c1ba52a`，2026-09-03）全仓通过；Incus provisioner 的 loopback TLS 测试在沙箱外复核通过 |
-| 竞态 | `go test -race ./internal/application ./internal/api/httpapi ./internal/consoleauth ./internal/consolejobs ./internal/jobexecutor ./internal/processgroup ./internal/runner ./cmd/anasd` | M5 工作树（基于 HEAD `c1ba52a`，2026-09-03）通过 |
-| 静态检查 | `go vet ./...` | M5 工作树（基于 HEAD `c1ba52a`，2026-09-03）通过 |
+| 单元测试 | `go test ./...` | M6 工作树（基于 HEAD `455770b`，2026-09-05）全仓通过 |
+| 竞态 | `go test -race ./internal/application ./internal/api/httpapi ./internal/consoleauth ./internal/consolejobs ./internal/jobexecutor ./internal/processgroup ./internal/securefs ./internal/audit ./cmd/anasd` | M6 工作树（基于 HEAD `455770b`，2026-09-05）通过 |
+| 静态检查 | `go vet ./...` | M6 工作树（基于 HEAD `455770b`，2026-09-05）通过 |
 | 参数 inventory / effect | `go run ./cmd/gen-module-docs --check` | M5 工作树（基于 HEAD `c1ba52a`，2026-09-03）通过；`gen-contract-docs --check` 同时通过 |
-| 前端构建 | `npm --prefix web run build` | M5 工作树（基于 HEAD `c1ba52a`，2026-09-03）通过：OpenAPI 生成、类型检查、15 个测试文件 51 个用例、主 SPA 与独立应急包构建全部通过 |
-| 前端可复现性 | `bash scripts/ci/console-web-reproducibility-test.sh` | M5 工作树（基于 HEAD `c1ba52a`，2026-09-03）连续两次完整构建的规范归档字节一致，SHA-256 `7733dfaf3969ad013ba0d9bc42c92fd64e7e9ea55ff45e19f706ef599f06df11` |
+| 前端构建 | `npm --prefix web run build` | M7 工作树（基于 HEAD `455770b`，2026-09-05）通过：OpenAPI 生成、类型检查、18 个测试文件 72 个用例、主 SPA 与独立应急包构建全部通过 |
+| 前端可复现性 | `bash scripts/ci/console-web-reproducibility-test.sh` | M7 工作树（基于 HEAD `455770b`，2026-09-05）连续两次完整构建的规范归档字节一致，SHA-256 `0d32887c0785a05dddcb2c4c4ca51a533db241d89d3489f8178817bf90224c56`（M7 前端改动后重新测量） |
 | 前端生产依赖审计 | `cd web && npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org` | 工作树（HEAD `2c03c6d`，2026-09-01）通过：0 个已知漏洞；项目镜像不提供 npm audit API，因此审计显式使用官方 registry |
-| 需求/计划一致性 | `npm run docs:test-requirements && npm run docs:check-requirements && npm run docs:test-status && npm run docs:check-requirement-status && npm run docs:check-plan-status` | M5 工作树（基于 HEAD `c1ba52a`，2026-09-03）通过：149 项有效要求全部有归属且完成，计划已归档，另有 4 项已废弃 |
-| 文档构建 | `npm run docs:build` | M5 工作树（基于 HEAD `c1ba52a`，2026-09-03）通过 |
+| 需求/计划一致性 | `npm run docs:test-requirements && npm run docs:check-requirements && npm run docs:check-plan-status` | M7 工作树（基于 HEAD `455770b`，2026-09-05）通过：155 项有效要求全部有归属且完成，计划已归档但仍校验归属，另有 4 项已废弃 |
+| 文档构建 | `npm run docs:build` | M6 工作树（基于 HEAD `455770b`，2026-09-05）通过 |
 | 发布与安装脚本 | `bash scripts/ci/install-test.sh && bash scripts/ci/verify-anas-release-test.sh` | M5 工作树（基于 HEAD `c1ba52a`，2026-09-03）通过：当前/legacy archive、架构/版本拒绝、截断 inert、service archive 完整性、安装/升级/卸载/purge 与 manifest/binary metadata fixture 均通过 |
 | 静态 Release | `bash scripts/ci/build-anas-release.sh ... amd64 ...`；arm64 同命令 | M5 工作树（基于 HEAD `c1ba52a`，2026-09-03）两架构的 `anas`、`anasd`、`anas-helper` 均为静态 ELF；归档规范化重建一致，amd64 SHA-256 `f0469f38ed514db108fcbf47f3e3f653f8c71b77037a0ee1485530215f4f1fae`、arm64 `bf1ed627c2ab99cf58032a417859b28839fbf1150bc6f5dbc0c4aaac17d4a1f5` |
 

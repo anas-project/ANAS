@@ -495,6 +495,41 @@ func (h *handler) issueLocalStepUp(w http.ResponseWriter, r *http.Request, _ map
 			writeApplicationError(w, err)
 			return
 		}
+	case deploymentaudit.ActionModuleCommandInvoke:
+		// The target names the frozen descriptor as "<module>.<command>". The
+		// digest binds the proof to the deployment and descriptor that were live
+		// at issuance, so it stops matching after a redeploy or Module upgrade.
+		if body.DeploymentID != "" || body.TargetID == "" || len(body.TargetID) > 256 {
+			body.Password = ""
+			writeProblem(w, http.StatusBadRequest, "step_up_request_invalid", "Module command step-up target is invalid")
+			return
+		}
+		moduleName, commandID, found := strings.Cut(body.TargetID, ".")
+		if !found || moduleName == "" || commandID == "" {
+			body.Password = ""
+			writeProblem(w, http.StatusBadRequest, "step_up_request_invalid", "Module command step-up target must be \"module.command\"")
+			return
+		}
+		service := h.service(workspacePath)
+		if service == nil {
+			body.Password = ""
+			writeProblem(w, http.StatusServiceUnavailable, "module_commands_unavailable", "Module commands are unavailable")
+			return
+		}
+		effective, commandErr := service.GetModuleCommand(r.Context(), application.GetModuleCommandRequest{
+			Module: moduleName, Command: commandID,
+		})
+		if commandErr != nil {
+			body.Password = ""
+			writeApplicationError(w, commandErr)
+			return
+		}
+		if effective.Command.Risk != moduleCommandRiskDestructive {
+			body.Password = ""
+			writeProblem(w, http.StatusBadRequest, "step_up_request_invalid", "this Module command does not require a step-up proof")
+			return
+		}
+		stateDigest = moduleCommandStepUpStateDigest(body.WorkspaceID, body.TargetID, effective.DeploymentID, effective.Command.Digest)
 	default:
 		body.Password = ""
 		writeProblem(w, http.StatusBadRequest, "step_up_request_invalid", "step-up action is invalid")

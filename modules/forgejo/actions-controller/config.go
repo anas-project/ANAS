@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/anas-project/ANAS/internal/computeclient"
 )
 
 type Config struct {
@@ -27,7 +29,13 @@ type Config struct {
 	CPU           int
 	MemoryMiB     int
 	DiskGiB       int
-	Incus         IncusConfig
+
+	// Lease is the compute-contract sandbox the runner provisioned for this
+	// module. LeaseError records why it could not be read, which is not fatal
+	// while Actions is switched off.
+	Lease      computeclient.Lease
+	LeaseError error
+	ConfigDir  string
 }
 
 func LoadConfig() (Config, error) {
@@ -53,15 +61,9 @@ func LoadConfig() (Config, error) {
 		CPU:           2,
 		MemoryMiB:     4096,
 		DiskGiB:       20,
-		Incus: IncusConfig{
-			Endpoint:      os.Getenv("INCUS_ENDPOINT"),
-			ClientCertB64: os.Getenv("INCUS_CLIENT_CERT_B64"),
-			ClientKeyB64:  os.Getenv("INCUS_CLIENT_KEY_B64"),
-			ServerCertB64: os.Getenv("INCUS_SERVER_CERT_B64"),
-			Profile:       defaultString(os.Getenv("INCUS_RUNNER_PROFILE"), "anas-forgejo-runner"),
-			ConfigDir:     defaultString(os.Getenv("INCUS_CONF"), "/run/anas-incus"),
-		},
+		ConfigDir:     defaultString(os.Getenv("INCUS_CONF"), "/run/anas-compute"),
 	}
+	cfg.Lease, cfg.LeaseError = computeclient.LeaseFromEnv("forgejo", "runners")
 	if cfg.Scopes, err = ParseScopes(os.Getenv("FORGEJO_ALLOWED_SCOPES")); err != nil {
 		return Config{}, err
 	}
@@ -71,19 +73,23 @@ func LoadConfig() (Config, error) {
 	for key, value := range map[string]string{
 		"FORGEJO_URL": cfg.ForgejoURL, "FORGEJO_RUNNER_URL": cfg.RunnerURL,
 		"FORGEJO_USERNAME": cfg.Username, "FORGEJO_PASSWORD": cfg.Password,
-		"FORGEJO_RUNNER_IMAGE": cfg.RunnerImage, "INCUS_ENDPOINT": cfg.Incus.Endpoint,
-		"INCUS_CLIENT_CERT_B64": cfg.Incus.ClientCertB64, "INCUS_CLIENT_KEY_B64": cfg.Incus.ClientKeyB64,
-		"INCUS_SERVER_CERT_B64": cfg.Incus.ServerCertB64,
+		"FORGEJO_RUNNER_IMAGE": cfg.RunnerImage,
 	} {
 		if strings.TrimSpace(value) == "" {
 			return Config{}, fmt.Errorf("%s is required when Actions is enabled", key)
 		}
 	}
+	if cfg.LeaseError != nil {
+		return Config{}, fmt.Errorf("compute lease is required when Actions is enabled: %w", cfg.LeaseError)
+	}
 	if len(cfg.Scopes) == 0 {
 		return Config{}, fmt.Errorf("at least one repo/org scope is required when Actions is enabled")
 	}
-	if !imageFingerprintPat.MatchString(cfg.RunnerImage) {
-		return Config{}, fmt.Errorf("FORGEJO_RUNNER_IMAGE must be a pinned SHA-256 fingerprint")
+	// The lease's allowlist is the authority on what this module may boot. A
+	// runner image outside it would be refused by the client anyway; failing
+	// here says so while the operator can still act on it.
+	if !cfg.Lease.AllowsImage(cfg.RunnerImage) {
+		return Config{}, fmt.Errorf("FORGEJO_RUNNER_IMAGE is not in the compute lease image allowlist")
 	}
 	if !strings.HasPrefix(cfg.ForgejoURL, "http://") && !strings.HasPrefix(cfg.ForgejoURL, "https://") {
 		return Config{}, fmt.Errorf("FORGEJO_URL must be an HTTP(S) URL")

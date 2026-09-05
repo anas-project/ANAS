@@ -13,10 +13,9 @@ services:
     hostname: ${SAMBA_FS_HOSTNAME}
     cap_add:
       - CAP_NET_ADMIN
-    # This is the domain controller's numeric host address, so installing it as
-    # the resolver does not itself require DNS. The join helper waits and
-    # rechecks an existing trust while the DC is starting; the DC has no
-    # dependency on this member, so there is no startup cycle.
+    # Samba DNS listens on its original host address. Container initialization
+    # installs a host route to this address through ANAS' macvlan bridge before
+    # performing any DNS-dependent AD operation.
     dns:
       - ${SAMBA_DC_DNS_SERVER}
     dns_search:

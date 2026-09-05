@@ -1,0 +1,29 @@
+type: object
+additional_properties: false
+required: [endpoint, sandbox, instance_prefix, profile, server_certificate_fingerprint, client_certificate_secret, quota]
+properties:
+  # Everything a consumer needs to drive the sandbox itself at runtime. The
+  # contract hands over a fenced capability, not an instance: instance
+  # lifecycle is the consumer's, inside these bounds.
+  endpoint: {type: string}
+  sandbox: {type: string}
+  instance_prefix: {type: string}
+  # Provider-owned. It supplies the root disk and the single managed NIC, so a
+  # consumer names it but never writes it.
+  profile: {type: string}
+  # Pinned at apply time. A consumer that cannot match this fingerprint must
+  # fail closed rather than fall back to unverified TLS.
+  server_certificate_fingerprint:
+    type: string
+    pattern: "^[a-f0-9]{64}$"
+  # Secret key, never the key material itself.
+  client_certificate_secret: {type: string}
+  quota:
+    type: object
+    additional_properties: false
+    required: [max_instances, cpu, memory_mib, disk_gib]
+    properties:
+      max_instances: {type: integer}
+      cpu: {type: integer}
+      memory_mib: {type: integer}
+      disk_gib: {type: integer}

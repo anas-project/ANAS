@@ -2,9 +2,11 @@ package runner
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +28,16 @@ type resourceActual struct {
 	AccessKeyID           string `yaml:"access_key_id,omitempty"`
 	SecretAccessKeySecret string `yaml:"secret_access_key_secret,omitempty"`
 	PathStyle             bool   `yaml:"path_style,omitempty"`
+
+	// compute records the fence, never the key material inside it.
+	Sandbox                      string `yaml:"sandbox,omitempty"`
+	InstancePrefix               string `yaml:"instance_prefix,omitempty"`
+	ServerCertificateFingerprint string `yaml:"server_certificate_fingerprint,omitempty"`
+	ClientCertificateSecret      string `yaml:"client_certificate_secret,omitempty"`
+	MaxInstances                 int    `yaml:"max_instances,omitempty"`
+	CPU                          int    `yaml:"cpu,omitempty"`
+	MemoryMiB                    int    `yaml:"memory_mib,omitempty"`
+	DiskGiB                      int    `yaml:"disk_gib,omitempty"`
 }
 
 type resourceState struct {
@@ -75,6 +87,27 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 			env["ANAS_RESOURCE_BUCKET"], _ = request.Spec["bucket"].(string)
 			env["ANAS_RESOURCE_ACCESS_KEY_ID"], _ = request.Spec["access_key_id"].(string)
 			env["ANAS_RESOURCE_SECRET_ACCESS_KEY"] = request.Credential
+		case "compute":
+			quota, allowlist, err := validateComputeSpec(request.Consumer, request.ID, request.Spec)
+			if err != nil {
+				return err
+			}
+			// Only the certificate half crosses into the provider. The private
+			// key goes straight to the consumer and is never handed to the
+			// module that registers the trust entry.
+			certPEM, _, err := splitComputeCredential(request.Credential)
+			if err != nil {
+				return fmt.Errorf("resource %s.%s: %w", consumer, request.ID, err)
+			}
+			env["ANAS_RESOURCE_CONSUMER"] = request.Consumer
+			env["ANAS_RESOURCE_SANDBOX"], _ = request.Spec["sandbox"].(string)
+			env["ANAS_RESOURCE_INSTANCE_PREFIX"], _ = request.Spec["instance_prefix"].(string)
+			env["ANAS_RESOURCE_MAX_INSTANCES"] = strconv.Itoa(quota.MaxInstances)
+			env["ANAS_RESOURCE_CPU"] = strconv.Itoa(quota.CPU)
+			env["ANAS_RESOURCE_MEMORY_MIB"] = strconv.Itoa(quota.MemoryMiB)
+			env["ANAS_RESOURCE_DISK_GIB"] = strconv.Itoa(quota.DiskGiB)
+			env["ANAS_RESOURCE_IMAGE_ALLOWLIST"] = strings.Join(allowlist, ",")
+			env["ANAS_RESOURCE_CLIENT_CERT"] = base64.StdEncoding.EncodeToString([]byte(certPEM))
 		default:
 			return fmt.Errorf("resource %s.%s contract %s has no runtime projection", consumer, request.ID, request.Contract)
 		}
@@ -148,6 +181,25 @@ func (a *app) saveResourceReady(request ResourceRequest, providerEnv map[string]
 		}
 		if strings.TrimSpace(state.Actual.Endpoint) == "" || strings.TrimSpace(state.Actual.Region) == "" {
 			return fmt.Errorf("provider %s did not publish object storage endpoint for %s.%s", request.Provider, request.Consumer, request.ID)
+		}
+	case "compute":
+		prefix := defaultEnvPrefix(request.Provider)
+		quota, _, err := validateComputeSpec(request.Consumer, request.ID, request.Spec)
+		if err != nil {
+			return err
+		}
+		fingerprint, err := computeServerFingerprint(providerEnv[prefix+"_SERVER_CERT_B64"])
+		if err != nil {
+			return fmt.Errorf("provider %s for %s.%s: %w", request.Provider, request.Consumer, request.ID, err)
+		}
+		state.Actual = resourceActual{
+			Endpoint: providerEnv[prefix+"_ENDPOINT"],
+			Sandbox:  stringSpec(request.Spec, "sandbox"), InstancePrefix: stringSpec(request.Spec, "instance_prefix"),
+			ServerCertificateFingerprint: fingerprint, ClientCertificateSecret: request.SecretKey,
+			MaxInstances: quota.MaxInstances, CPU: quota.CPU, MemoryMiB: quota.MemoryMiB, DiskGiB: quota.DiskGiB,
+		}
+		if strings.TrimSpace(state.Actual.Endpoint) == "" {
+			return fmt.Errorf("provider %s did not publish compute endpoint for %s.%s", request.Provider, request.Consumer, request.ID)
 		}
 	default:
 		return fmt.Errorf("resource %s.%s contract %s has no state projection", request.Consumer, request.ID, request.Contract)

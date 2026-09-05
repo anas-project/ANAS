@@ -48,6 +48,12 @@
     "shared_contexts": ["contracts"]
   },
   {
+    "module": "incus",
+    "repository": "anas-module-incus",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+  },
+  {
     "module": "lam",
     "repository": "anas-module-lam",
     "platforms": ["linux/amd64", "linux/arm64"],

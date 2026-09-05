@@ -343,6 +343,15 @@ func (h *handler) routeSpecs() []routeSpec {
 				},
 			)
 		}
+		// Invocation is registered only when the executor can actually run the
+		// job. Accepting an invoke that nothing will ever execute would leave a
+		// queued job the operator cannot resolve.
+		if h.deploymentHTTP.moduleCommandFactory != nil {
+			routes = append(routes, routeSpec{
+				policy:  RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/modules/{module}/commands/{command}/actions/invoke", Permission: PermissionModuleCommandInvoke, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess},
+				handler: h.invokeModuleCommand,
+			})
+		}
 		if h.deploymentHTTP.maintenanceFactory != nil {
 			maintenanceAccess := map[ConsoleState]RouteAccess{
 				StateFull: {Authentication: AuthenticationOwner, Transports: []RequestTransport{TransportTLS}},
@@ -381,6 +390,20 @@ func validateRouteSpecs(routes []routeSpec) error {
 	return nil
 }
 
+// dispatch resolves a request against the route table.
+//
+// The requirement's default was net/http.ServeMux with method and path
+// patterns, and this deliberately does not use it. ServeMux answers "which
+// handler" in one step, but this console must answer three questions in a
+// fixed order before it can pick one: does any route match the path at all,
+// is that route reachable in the current console state, listener and
+// transport, and only then does the method match. Collapsing them loses the
+// distinction the security model depends on — a route the current state
+// forbids must return 404 and never 405, because a 405 would confirm the
+// endpoint exists (CONSOLE-R-081). ServeMux would also answer 405 from its own
+// table before any state gate ran. The table is small and scanned once per
+// request; correctness of the state gate is worth more here than the
+// dispatcher's asymptotics.
 func (h *handler) dispatch(w http.ResponseWriter, r *http.Request) {
 	type matchedRoute struct {
 		route  routeSpec
@@ -536,10 +559,11 @@ func RouteInventory(registry *Registry, factory ServiceFactory) ([]RoutePolicy, 
 	h := &handler{registry: registry, factory: factory, jobs: &jobHTTPState{
 		cancel: func(context.Context, string) (consolejobs.Job, error) { return consolejobs.Job{}, nil },
 	}, deploymentHTTP: &deploymentHTTPState{
-		stepUp:             routeInventoryStepUp{},
-		serviceFactory:     func(string) application.DeploymentService { return nil },
-		moduleFactory:      func(string, application.EventSink) application.ModuleManagementService { return nil },
-		maintenanceFactory: func(string, application.EventSink) application.MaintenanceService { return nil },
+		stepUp:               routeInventoryStepUp{},
+		serviceFactory:       func(string) application.DeploymentService { return nil },
+		moduleFactory:        func(string, application.EventSink) application.ModuleManagementService { return nil },
+		maintenanceFactory:   func(string, application.EventSink) application.MaintenanceService { return nil },
+		moduleCommandFactory: func(string, application.EventSink) application.ModuleCommandService { return nil },
 	}}
 	routes := h.routeSpecs()
 	if err := validateRouteSpecs(routes); err != nil {

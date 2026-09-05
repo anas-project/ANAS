@@ -7,9 +7,11 @@ on:
       - "cmd/anas/**"
       - "cmd/anas-helper/**"
       - "cmd/anasd/**"
+      - "cmd/check-upgrade-tests/**"
       - "cmd/gen-contract-docs/**"
       - "contracts/**"
       - "internal/**"
+      - "test-env/upgrades/catalog.yml"
       - "web/**"
       - "api/openapi.yaml"
       - "packaging/**"
@@ -18,6 +20,7 @@ on:
       - "go.sum"
       - "scripts/ci/build-anas-release.sh"
       - "scripts/ci/build-console-web.sh"
+      - "scripts/ci/core-upgrade-e2e.sh"
       - "scripts/ci/console-web-reproducibility-test.sh"
       - "scripts/ci/anas-release-version.sh"
       - "scripts/ci/anas-release-version-test.sh"
@@ -136,6 +139,10 @@ jobs:
       - name: Test release commit
         if: steps.release.outputs.publish == 'true'
         run: |
+          previous_tag="$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1)"
+          test -n "$previous_tag"
+          go run ./cmd/check-upgrade-tests --base-ref "$previous_tag" --scope core,web
+          bash scripts/ci/core-upgrade-e2e.sh "$previous_tag"
           go run ./cmd/gen-module-docs --check
           go run ./cmd/gen-contract-docs --check
           go test ./...

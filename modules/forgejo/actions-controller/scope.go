@@ -58,3 +58,15 @@ func (s Scope) runnersPath(suffix string) string {
 	}
 	return "/api/v1/repos/" + owner + "/" + url.PathEscape(s.Repo) + "/actions/runners" + suffix
 }
+
+// hasControl reports whether a value carries a control character. Handles,
+// labels and scope names all end up in argv or in a URL, where a control
+// character is either a truncation or an injection.
+func hasControl(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
+}

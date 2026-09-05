@@ -33,6 +33,20 @@ dependencies:
         - postgres
         - mariadb
       default: postgres
+    # Only while Actions is on. Without the condition every Forgejo deployment
+    # would need an Incus host, including the great majority that never run a
+    # single job.
+    - name: compute
+      version: ">=1.0.0 <2.0.0"
+      selected_by: actions_isolation
+      enabled_by: actions_enabled
+      interfaces:
+        - incus_container
+        - incus_vm
+      # Container first: a NAS host is not guaranteed to have KVM, and a
+      # default that needs it would make Actions uninstallable on the hardware
+      # this product targets. A VM is an explicit upgrade, never a silent one.
+      default: incus_container
 credentials:
   provides:
     # Forgejo's auth-source CLI cannot prove a transactional rollback. Keep the
@@ -57,6 +71,25 @@ resources:
         credential:
           policy: generated
         deletion_policy: retain
+    - id: runners
+      contract: compute
+      binding: actions_isolation
+      enabled_by: actions_enabled
+      spec_from:
+        # The one image this module may boot is an operator-visible setting, so
+        # the allowlist is wired from configuration rather than frozen here.
+        image_allowlist: actions_runner_image
+      spec:
+        sandbox: anas-forgejo-runners
+        instance_prefix: anas-fj-
+        quota:
+          max_instances: 8
+          cpu: 4
+          memory_mib: 8192
+          disk_gib: 40
+        credential:
+          policy: generated
+        deletion_policy: retain
 upgrade:
   # No pinned release through 15.0.7 declares an ANAS-owned on-disk break.
   # Restore and rollback E2E remains a release gate while this module develops.
@@ -67,11 +100,7 @@ config:
   defaults:
     actions_allowed_scopes: ""
     actions_enabled: false
-    actions_incus_client_cert_b64: ""
-    actions_incus_client_key_b64: ""
-    actions_incus_endpoint: ""
-    actions_incus_profile: anas-forgejo-runner
-    actions_incus_server_cert_b64: ""
+    actions_isolation: auto
     actions_runner_image: ""
     custom_git_hooks_enabled: false
     domain_prefix: git
@@ -83,16 +112,8 @@ config:
   types:
     actions_allowed_scopes: string
     actions_enabled: bool
-    actions_incus_client_cert_b64: string
-    actions_incus_client_key_b64: string
-    actions_incus_endpoint: string
-    actions_incus_profile:
-      kind: string
-      constraints:
-        min_length: 1
-        max_length: 63
-        pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
-    actions_incus_server_cert_b64: string
+    actions_isolation:
+      enum: [auto, incus_vm, incus_container]
     actions_runner_image:
       kind: string
       constraints:
@@ -137,29 +158,10 @@ config:
       effect: container_recreate
       apply: reconcile-forgejo-actions
       description: The only Actions feature switch; reconciles the Forgejo server and one-job Runner controller together.
-    actions_incus_client_cert_b64:
+    actions_isolation:
       effect: container_recreate
       apply: reconcile-forgejo-actions
-      sensitive: true
-      description: Project-scoped restricted Incus TLS client certificate used only by the Actions controller.
-    actions_incus_client_key_b64:
-      effect: container_recreate
-      apply: reconcile-forgejo-actions
-      sensitive: true
-      description: Project-scoped restricted Incus TLS client key used only by the Actions controller.
-    actions_incus_endpoint:
-      effect: container_recreate
-      apply: reconcile-forgejo-actions
-      description: HTTPS endpoint of the independent Incus VM host.
-    actions_incus_profile:
-      effect: container_recreate
-      apply: reconcile-forgejo-actions
-      description: Fixed restricted Incus profile used for one-job Runner VMs.
-    actions_incus_server_cert_b64:
-      effect: container_recreate
-      apply: reconcile-forgejo-actions
-      sensitive: true
-      description: Pinned Incus server certificate consumed only by the Actions controller.
+      description: Isolation tier requested from the compute provider; a VM has its own guest kernel, a system container shares the host's.
     actions_runner_image:
       effect: container_recreate
       apply: reconcile-forgejo-actions

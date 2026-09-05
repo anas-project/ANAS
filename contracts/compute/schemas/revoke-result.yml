@@ -1,0 +1,5 @@
+type: object
+additional_properties: false
+required: [revoked]
+properties:
+  revoked: {type: boolean}

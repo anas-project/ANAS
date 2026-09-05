@@ -958,6 +958,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{ws}/modules/{module}/commands/{command}/actions/invoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                /** @description Module name in the active deployment. */
+                module: components["parameters"]["ModuleName"];
+                /** @description Stable Module-local command ID. */
+                command: components["parameters"]["ModuleCommandID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue a durable job that runs one Module command
+         * @description The invocation is bound to `command_digest`, the digest the command
+         *     endpoints return for the descriptor frozen by the active deployment. A
+         *     digest that no longer matches returns `412`, so a redeploy or Module
+         *     upgrade between reading and invoking cannot silently run a different
+         *     command. Commands whose descriptor declares `risk: destructive` require
+         *     a single-use `step_up_proof` bound to this action, workspace, target,
+         *     deployment and digest; other commands reject a proof rather than
+         *     consuming one they do not need. Resolution, parameter validation, and
+         *     runtime locking happen in the shared application service, so the console
+         *     never gains a capability the CLI does not have.
+         */
+        post: operations["invokeModuleCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{ws}/backup-plans": {
         parameters: {
             query?: never;
@@ -2055,6 +2091,27 @@ export interface components {
             api_version: components["schemas"]["APIVersion"];
             workspace_id: string;
             command: components["schemas"]["ModuleCommand"];
+        };
+        ModuleCommandInvokeRequest: {
+            /**
+             * @description The `digest` of the descriptor read from the command endpoints. The
+             *     server refuses the invocation when the active deployment no longer
+             *     freezes that exact descriptor.
+             */
+            command_digest: string;
+            /**
+             * @description Typed parameter values normalized and validated against the frozen
+             *     descriptor. Keys not declared by the descriptor are rejected; the
+             *     server never accepts argv, a shell string, or an environment.
+             */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /**
+             * @description Required only for a descriptor declaring `risk: destructive`, and
+             *     rejected for any other command.
+             */
+            step_up_proof?: string;
         };
         ModuleCommand: {
             module: string;
@@ -3834,6 +3891,59 @@ export interface operations {
             408: components["responses"]["RequestCanceledProblem"];
             412: components["responses"]["PreconditionProblem"];
             500: components["responses"]["InternalProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    invokeModuleCommand: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                /** @description Module name in the active deployment. */
+                module: components["parameters"]["ModuleName"];
+                /** @description Stable Module-local command ID. */
+                command: components["parameters"]["ModuleCommandID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModuleCommandInvokeRequest"];
+            };
+        };
+        responses: {
+            /** @description The Module command job was durably queued, or an identical existing job was returned. */
+            202: {
+                headers: {
+                    /** @description Relative URL of the durable job resource. */
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentApplyResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            412: components["responses"]["PreconditionProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            428: components["responses"]["PreconditionRequiredProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
             504: components["responses"]["DeadlineProblem"];
         };
     };

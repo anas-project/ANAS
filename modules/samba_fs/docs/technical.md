@@ -51,24 +51,32 @@ Samba FS 不把该别名当作 Kerberos/成员机 canonical name。
 workspace 的服务域和应用 DNS zone 迁移器尚未交付；不要绕过门禁测试这一场景。已
 provision 的 `SAMBA_DC_DOMAIN` 不支持原地换域：新 AD 域要求新建目录并重新加入 Samba FS。
 
-运行时接线保持同一边界：Compose 的初始 resolver 与容器内 `/etc/resolv.conf` 都只把
-`SAMBA_DC_DNS_SERVER` 设为 nameserver，并用 `SAMBA_DC_DNS_SEARCH` 作为 search domain；
-不会回退到 `LOCAL_DNS_SERVER`、宿主 resolver 或 VLAN gateway。`krb5.conf` 的 Realm、KDC
-canonical FQDN 与 domain mapping 分别来自 `SAMBA_DC_REALM`、`SAMBA_DC_DC_DOMAIN` 和
-`SAMBA_DC_DOMAIN`；`smb.conf` 的 workgroup/realm 来自 `SAMBA_DC_WORKGROUP` 与
-`SAMBA_DC_REALM`。
+运行时接线保持同一身份边界，但把身份与传输分开。Samba FS 位于 macvlan 子接口，不能
+直接访问父接口上的宿主地址；Hook 因此从宿主侧 macvlan bridge 的 `VLAN_BRIDGE_IP` 派生
+私有的 `SAMBA_FS_DC_TRANSPORT_IP`（没有 bridge 值时兼容回退到
+`SAMBA_DC_DNS_SERVER`）。Compose 的初始 resolver 与容器内 `/etc/resolv.conf` 仍使用
+DC 原始监听地址 `SAMBA_DC_DNS_SERVER` 和 `SAMBA_DC_DNS_SEARCH`；初始化脚本为该 DNS
+地址安装一条以 transport IP 为下一跳的 `/32` 路由。同时，`/etc/hosts` 将 canonical
+`SAMBA_DC_DC_DOMAIN` 映射到 transport IP。Kerberos 和 AD 仍只以 canonical FQDN 标识 DC：
+`krb5.conf` 的 Realm、KDC FQDN 与 domain mapping 分别来自 `SAMBA_DC_REALM`、
+`SAMBA_DC_DC_DOMAIN` 和 `SAMBA_DC_DOMAIN`，不会把 bridge IP 当成 Kerberos 身份；
+`smb.conf` 的 workgroup/realm 来自 `SAMBA_DC_WORKGROUP` 与 `SAMBA_DC_REALM`。
 
 每次启动先执行 `net ads testjoin`。已有 trust 有效时立即复用，不执行 join，更不存在
 自动 leave 路径；只有 trust 无效时才用 Samba DC 管理员凭据重试 `net ads join`。join 返回
 成功后仍必须再次通过 `net ads testjoin`，否则继续重试，不能把未验证的机器账号当成 ready。
-随后以机器账号执行 `net ads dns register -P`；注册失败会阻断启动，避免 FS FQDN 指向旧
-地址。健康检查使用 `wbinfo -t` 验证同一份 `smb.conf` 与成员机 trust，不读取应用域或 TLS 服务别名。
+随后用短生命周期 Kerberos cache 取得 DC 管理员票据，以 `samba-tool dns` 幂等删除旧 A
+记录、写入当前成员地址，并直接查询 `SAMBA_DC_DNS_SERVER` 验证结果；该查询的数据包通过
+前述 `/32` 路由跨过 macvlan 隔离。密码只从标准输入进入
+`kinit`，不出现在进程参数或日志中。注册或验证失败会阻断启动，避免 FS FQDN 指向旧地址。
+健康检查使用 `wbinfo -t` 验证同一份 `smb.conf` 与成员机 trust，不读取应用域或 TLS 服务别名。
 因此即使应用域变化导致容器重建，已有 AD trust 仍只会被检查和复用。
 
-`SAMBA_DC_DNS_SERVER` 是 Samba DC Hook 从 `SAMBA_DC_HOST_IP` 导出的数值地址，Docker
-安装 resolver 时无需先解析 DC 名称，不形成 DNS 启动环。Samba DC 是本 Module 的单向
-依赖且不依赖 Samba FS；若 DC 尚未 ready，join helper 会等待并再次执行 `testjoin`。DC
-恢复后已有 trust 有效就直接返回，只有可达后 trust 仍无效才进入 join。
+DNS server 与传输下一跳都是数值地址，Docker 安装 resolver 和路由时无需先解析 DC 名称，
+不形成 DNS 启动环。
+Samba DC 是本 Module 的单向依赖且不依赖 Samba FS；若 DC 尚未 ready，join helper 会
+等待并再次执行 `testjoin`。DC 恢复后已有 trust 有效就直接返回，只有可达后 trust 仍无效
+才进入 join。
 
 ## 身份与授权数据流
 
@@ -135,6 +143,7 @@ SMB 客户端直接使用目录身份。`FS Share RW`/`FS Admins` 等 Group 控�
 - [`main_test.go`](../hook/main_test.go)
 - [`domain_wiring_test.go`](../hook/domain_wiring_test.go)
 - [`join_ad.sh`](../samba_fs/root/usr/local/bin/join_ad.sh)
+- [`register_ad_dns.sh`](../samba_fs/root/usr/local/bin/register_ad_dns.sh)
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 

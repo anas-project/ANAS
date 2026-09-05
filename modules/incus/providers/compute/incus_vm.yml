@@ -1,0 +1,18 @@
+api_version: anas.provider/v1
+kind: ContractProvider
+contract: compute
+contract_version: 1.0.0
+interface: incus_vm
+operations:
+  ensure:
+    runtime: compose_run
+    service: anas_incus_provision
+    command: [ensure, --isolation, vm]
+  inspect:
+    runtime: compose_run
+    service: anas_incus_provision
+    command: [inspect, --isolation, vm]
+  revoke:
+    runtime: compose_run
+    service: anas_incus_provision
+    command: [revoke, --isolation, vm]

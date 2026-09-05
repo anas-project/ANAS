@@ -344,6 +344,68 @@ func TestJobEventsHeartbeatAndGlobalConnectionLimit(t *testing.T) {
 	}
 }
 
+// A heartbeat returns to the top of the stream loop without replaying. The
+// loop must not treat the already-delivered page as pending work, or every
+// heartbeat re-sends the last batch for the lifetime of a running job.
+func TestJobEventsDeliversEachEventOnceAcrossHeartbeats(t *testing.T) {
+	registry, _ := testRegistry(t, "main")
+	principal := mustTransactionPrincipal(t, consolejobs.PrincipalBootstrap, "txn-heartbeat-once")
+	store := &fakeJobQueryStore{jobs: []consolejobs.Job{{
+		ID: "job-live", Kind: "apply", WorkspaceID: "main", CreatedBy: principal,
+		CreatedAt: time.Now().UTC(), Status: consolejobs.StatusRunning,
+	}}, events: map[string][]consolejobs.Event{
+		"job-live": {{ID: 1, JobID: "job-live", Kind: "progress", Timestamp: time.Now().UTC()}},
+	}}
+	// Heartbeats fire repeatedly while polling effectively never does, so any
+	// repeat delivery is attributable to the heartbeat branch alone.
+	handler := newJobTestHandler(t, registry, store, StateBootstrap, Principal{
+		ID: principal, Role: "bootstrap", Source: "bootstrap", TransactionID: "txn-heartbeat-once",
+	}, JobQueryOptions{
+		MaxSSEConnections: 1, SSEHeartbeat: 10 * time.Millisecond,
+		SSEPollInterval: time.Hour, SSEWriteTimeout: time.Second,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-live/events", nil).WithContext(ctx)
+	request.Host = "127.0.0.1"
+	request.Header.Set("Accept", "text/event-stream")
+	response := newStreamingResponseWriter()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(response, request)
+	}()
+
+	deliveries, heartbeats := 0, 0
+	deadline := time.After(300 * time.Millisecond)
+collect:
+	for {
+		select {
+		case chunk := <-response.chunks:
+			if strings.Contains(chunk, "id: 1\n") {
+				deliveries++
+			}
+			if strings.Contains(chunk, ": heartbeat") {
+				heartbeats++
+			}
+		case <-deadline:
+			break collect
+		}
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("event stream did not stop after request cancellation")
+	}
+	if heartbeats < 2 {
+		t.Fatalf("heartbeats = %d, want the heartbeat branch exercised repeatedly", heartbeats)
+	}
+	if deliveries != 1 {
+		t.Fatalf("event id=1 delivered %d times across %d heartbeats, want exactly 1", deliveries, heartbeats)
+	}
+}
+
 func TestJobEventsDrainsFinalEventBeforeClosingTerminalStream(t *testing.T) {
 	registry, _ := testRegistry(t, "main")
 	store := openHTTPJobStore(t, consolejobs.Options{EventCapacity: 10})

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// REQUIREMENTS: CONSOLE-R-070 CONSOLE-R-087 CONSOLE-R-088 CONSOLE-R-100 CONSOLE-R-101 CONSOLE-R-103 CONSOLE-R-104 CONSOLE-R-106 CONSOLE-R-114 CONSOLE-R-122 CONSOLE-R-123 CONSOLE-R-125 CONSOLE-R-126 CONSOLE-R-127 CONSOLE-R-129 CONSOLE-R-130 CONSOLE-R-131 CONSOLE-R-133 CONSOLE-R-150
-import { computed, onMounted, ref } from "vue"
+// REQUIREMENTS: CONSOLE-R-070 CONSOLE-R-087 CONSOLE-R-088 CONSOLE-R-100 CONSOLE-R-101 CONSOLE-R-103 CONSOLE-R-104 CONSOLE-R-106 CONSOLE-R-114 CONSOLE-R-122 CONSOLE-R-123 CONSOLE-R-125 CONSOLE-R-126 CONSOLE-R-127 CONSOLE-R-129 CONSOLE-R-130 CONSOLE-R-131 CONSOLE-R-133 CONSOLE-R-150 CONSOLE-R-185 CONSOLE-R-186
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 
 import {
   createInitialOwner,
@@ -16,6 +16,16 @@ import {
 import { api } from "./api/client"
 import { APIProblemError, problemMessage } from "./api/problems"
 import type { components } from "./api/schema"
+import {
+  clockSkewMs,
+  formatCountdown,
+  observeSession,
+  remainingMs,
+  sessionLifetime,
+  withActivity,
+  type SessionInstants,
+  type SessionLifetime,
+} from "./api/session"
 import { initialPhase, type EntryPhase } from "./auth/flow"
 import WorkspaceConfig from "./config/WorkspaceConfig.vue"
 import WorkspaceDeployment from "./deployment/WorkspaceDeployment.vue"
@@ -24,6 +34,8 @@ import WorkspaceJobs from "./jobs/WorkspaceJobs.vue"
 import WorkspaceLifecycle from "./lifecycle/WorkspaceLifecycle.vue"
 import WorkspaceMaintenance from "./maintenance/WorkspaceMaintenance.vue"
 import WorkspaceModules from "./modules/WorkspaceModules.vue"
+import WorkspaceAudit from "./audit/WorkspaceAudit.vue"
+import { sectionFromLocation, sectionHref, visibleSections, type ConsoleSection } from "./nav"
 
 type SystemResponse = components["schemas"]["SystemResponse"]
 type Phase = EntryPhase | "bootstrap-ready" | "authenticated" | "proxy-auth"
@@ -39,11 +51,23 @@ const password = ref("")
 const passwordConfirmation = ref("")
 const ownerCreated = ref(false)
 const sessionCSRF = ref("")
+const sessionExpiry = ref<SessionLifetime | null>(null)
+const clockTick = ref(Date.now())
 const configRevision = ref(0)
 const jobsRevision = ref(0)
 const insecureTransport = window.location.protocol !== "https:"
+// Warning window before the session ends. Long enough to finish a sentence in
+// a form, short enough that a banner is not permanently on screen.
+const sessionWarningMs = 5 * 60 * 1000
 const text = computed(() => messages[locale.value])
 const errorText = computed(() => (errorCode.value === null ? "" : problemMessage(locale.value, errorCode.value)))
+const sessionRemaining = computed(() =>
+  sessionExpiry.value === null ? null : remainingMs(sessionExpiry.value, clockTick.value),
+)
+const sessionExpiring = computed(
+  () => sessionRemaining.value !== null && sessionRemaining.value <= sessionWarningMs,
+)
+const sessionCountdown = computed(() => formatCountdown(sessionRemaining.value ?? 0))
 const canDownloadCA = computed(() => {
   const issuer = system.value?.certificate_issuer
   return (
@@ -68,6 +92,28 @@ const deploymentConsoleState = computed<"bootstrap" | "full">(() =>
   phase.value === "authenticated" ? "full" : "bootstrap",
 )
 
+const section = ref<ConsoleSection>(sectionFromLocation(window.location.hash))
+const sections = computed(() =>
+  visibleSections({
+    canConfigure: canConfigure.value,
+    authenticated: phase.value === "authenticated",
+    canRecoverJobs: canRecoverJobs.value,
+  }),
+)
+
+function syncSectionFromHash() {
+  section.value = sectionFromLocation(window.location.hash)
+}
+
+window.addEventListener("hashchange", syncSectionFromHash)
+onBeforeUnmount(() => window.removeEventListener("hashchange", syncSectionFromHash))
+
+// Signing out, or losing a session, must not strand the operator on a page
+// whose routes they can no longer reach.
+watch(sections, (available) => {
+  if (!available.includes(section.value)) section.value = "overview"
+})
+
 function toggleLocale() {
   locale.value = locale.value === "zh" ? "en" : "zh"
   document.documentElement.lang = locale.value === "zh" ? "zh-CN" : "en"
@@ -78,6 +124,89 @@ document.documentElement.lang = locale.value === "zh" ? "zh-CN" : "en"
 function showError(error: unknown) {
   errorCode.value = error instanceof APIProblemError ? error.code : "request_failed"
 }
+
+// The screen an unauthenticated visitor belongs on is decided by the state the
+// daemon reported at load, so entry after a load and re-entry after a session
+// ends resolve it the same way instead of drifting apart.
+function entryPhase(): Phase {
+  const data = system.value
+  if (data === null) return "m0"
+  return data.console_state === "full" && data.listener === "trusted_proxy"
+    ? "proxy-auth"
+    : initialPhase(data.console_state, readCookie(enrollmentCSRFCookieName) !== null)
+}
+
+function adoptSession(session: SessionInstants) {
+  clockTick.value = Date.now()
+  sessionExpiry.value = sessionLifetime(session, clockSkewMs(), clockTick.value)
+}
+
+// A session can end without any request failing — the idle window simply runs
+// out — and can be rejected mid-page by any route, so both paths land here and
+// leave the console in the state a fresh visitor would find.
+function endSession() {
+  if (sessionExpiry.value === null && sessionCSRF.value === "") return
+  sessionExpiry.value = null
+  sessionCSRF.value = ""
+  password.value = ""
+  passwordConfirmation.value = ""
+  bootstrapToken.value = ""
+  busy.value = false
+  errorCode.value = "unauthenticated"
+  phase.value = entryPhase()
+  jobsRevision.value += 1
+}
+
+// Extending is an explicit click rather than a poll: the session route is
+// itself an authenticated request, so refreshing the countdown on a timer
+// would keep sliding the idle window and the session would never time out.
+async function extendSession() {
+  if (busy.value) return
+  busy.value = true
+  errorCode.value = null
+  try {
+    const session = await refreshAuthSession()
+    sessionCSRF.value = session.csrf_token
+    adoptSession(session)
+  } catch (error) {
+    showError(error)
+  } finally {
+    busy.value = false
+  }
+}
+
+let sessionTicker: ReturnType<typeof setInterval> | null = null
+
+function stopSessionTicker() {
+  if (sessionTicker === null) return
+  clearInterval(sessionTicker)
+  sessionTicker = null
+}
+
+watch(sessionExpiry, (lifetime) => {
+  if (lifetime === null) {
+    stopSessionTicker()
+    return
+  }
+  if (sessionTicker !== null) return
+  sessionTicker = setInterval(() => {
+    clockTick.value = Date.now()
+    if (sessionExpiry.value !== null && remainingMs(sessionExpiry.value, clockTick.value) === 0) endSession()
+  }, 1000)
+})
+
+const stopObservingSession = observeSession((signal) => {
+  if (signal.kind === "activity") {
+    if (sessionExpiry.value !== null) sessionExpiry.value = withActivity(sessionExpiry.value, signal.at)
+    return
+  }
+  endSession()
+})
+
+onBeforeUnmount(() => {
+  stopObservingSession()
+  stopSessionTicker()
+})
 
 async function submitBootstrapToken() {
   if (busy.value || bootstrapToken.value === "") return
@@ -94,6 +223,7 @@ async function submitBootstrapToken() {
       return
     }
     sessionCSRF.value = session.csrf_token
+    adoptSession(session)
     phase.value = "bootstrap-ready"
     jobsRevision.value += 1
   } catch (error) {
@@ -144,6 +274,7 @@ async function submitLogin() {
     const csrf = await issuePreAuthCSRF()
     const session = await loginLocalOwner(localPassword, csrf)
     sessionCSRF.value = session.csrf_token
+    adoptSession(session)
     phase.value = "authenticated"
     jobsRevision.value += 1
   } catch (error) {
@@ -161,18 +292,18 @@ onMounted(async () => {
       return
     }
     system.value = data
-    phase.value = data.console_state === "full" && data.listener === "trusted_proxy"
-      ? "proxy-auth"
-      : initialPhase(data.console_state, readCookie(enrollmentCSRFCookieName) !== null)
+    phase.value = entryPhase()
     status.value = "ready"
     if (data.console_state === "bootstrap" || data.console_state === "full" || data.console_state === "enrollment") {
       try {
         const session = await refreshAuthSession()
         if (session.state === "bootstrap") {
           sessionCSRF.value = session.csrf_token
+          adoptSession(session)
           phase.value = "bootstrap-ready"
         } else if (session.state === "full") {
           sessionCSRF.value = session.csrf_token
+          adoptSession(session)
           phase.value = "authenticated"
         } else if (session.state === "enrollment") {
           const handoff = await issueEnrollmentHandoff(session.csrf_token)
@@ -198,6 +329,12 @@ onMounted(async () => {
       <span>{{ text.lanRisk }}</span>
     </aside>
 
+    <aside v-if="sessionExpiring" class="session-warning" role="alert" data-session-expiry-banner>
+      <strong>{{ text.sessionExpiringTitle }}</strong>
+      <span>{{ text.sessionExpiring }} <time data-session-countdown>{{ sessionCountdown }}</time></span>
+      <button type="button" :disabled="busy" @click="extendSession">{{ text.sessionExtend }}</button>
+    </aside>
+
     <header class="app-header">
       <div>
         <p class="eyebrow">ANAS</p>
@@ -206,8 +343,17 @@ onMounted(async () => {
       <button type="button" class="language-button" @click="toggleLocale">{{ text.language }}</button>
     </header>
 
+    <nav v-if="status === 'ready' && sections.length > 1" class="console-nav" :aria-label="text.navLabel">
+      <a
+        v-for="item in sections"
+        :key="item"
+        :href="sectionHref(item)"
+        :aria-current="section === item ? 'page' : undefined"
+      >{{ text[`nav${item.charAt(0).toUpperCase()}${item.slice(1)}` as keyof typeof text] }}</a>
+    </nav>
+
     <main>
-      <section class="status-card" aria-live="polite">
+      <section v-show="section === 'overview'" class="status-card" aria-live="polite">
         <h2>{{ text[status] }}</h2>
         <dl v-if="status === 'ready'">
           <div>
@@ -228,7 +374,7 @@ onMounted(async () => {
         </p>
       </section>
 
-      <section v-if="status === 'ready'" class="auth-card" aria-live="polite">
+      <section v-if="status === 'ready' && section === 'overview'" class="auth-card" aria-live="polite">
         <div v-if="phase === 'm0'">
           <h2>{{ text.m0Title }}</h2>
           <p>{{ text.m0Help }}</p>
@@ -328,7 +474,7 @@ onMounted(async () => {
       </section>
 
       <WorkspaceConfig
-        v-if="canConfigure && system"
+        v-if="canConfigure && system && section === 'config'"
         :workspace-ids="system.workspace_ids"
         :csrf="sessionCSRF"
         :locale="locale"
@@ -336,7 +482,7 @@ onMounted(async () => {
       />
 
       <WorkspaceDeployment
-        v-if="canConfigure && system"
+        v-if="canConfigure && system && section === 'deployment'"
         :workspace-ids="system.workspace_ids"
         :csrf="sessionCSRF"
         :locale="locale"
@@ -347,7 +493,7 @@ onMounted(async () => {
       />
 
       <WorkspaceLifecycle
-        v-if="phase === 'authenticated' && system"
+        v-if="phase === 'authenticated' && system && section === 'lifecycle'"
         :workspace-ids="system.workspace_ids"
         :csrf="sessionCSRF"
         :locale="locale"
@@ -355,7 +501,7 @@ onMounted(async () => {
       />
 
       <WorkspaceModules
-        v-if="phase === 'authenticated' && system"
+        v-if="phase === 'authenticated' && system && section === 'modules'"
         :workspace-ids="system.workspace_ids"
         :csrf="sessionCSRF"
         :locale="locale"
@@ -364,7 +510,7 @@ onMounted(async () => {
       />
 
       <WorkspaceMaintenance
-        v-if="phase === 'authenticated' && system"
+        v-if="phase === 'authenticated' && system && section === 'maintenance'"
         :workspace-ids="system.workspace_ids"
         :backup-target-ids="system.backup_target_ids"
         :csrf="sessionCSRF"
@@ -374,12 +520,19 @@ onMounted(async () => {
       />
 
       <WorkspaceJobs
-        v-if="canRecoverJobs"
+        v-if="canRecoverJobs && section === 'jobs'"
         :locale="locale"
         :refresh-revision="jobsRevision"
       />
 
-      <section class="config-card" aria-labelledby="certificate-access-title">
+      <WorkspaceAudit
+        v-if="phase === 'authenticated' && system && section === 'audit'"
+        :locale="locale"
+        :api-version="system.api_version"
+        :cli-version="system.build.version"
+      />
+
+      <section v-if="section === 'access'" class="config-card" aria-labelledby="certificate-access-title">
         <div class="config-heading">
           <div>
             <p class="eyebrow">M1C</p>

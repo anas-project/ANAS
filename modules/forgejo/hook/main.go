@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -307,10 +306,11 @@ func validateActionsConfig(e map[string]string) error {
 	if e["FORGEJO_ACTIONS_ENABLED"] != "true" {
 		return nil
 	}
+	// The Incus endpoint and certificates are no longer Forgejo settings: the
+	// compute contract provisions the sandbox and the runner projects the lease
+	// into the controller. What is left here is what Forgejo itself owns.
 	for _, key := range []string{
 		"FORGEJO_ACTIONS_ALLOWED_SCOPES", "FORGEJO_ACTIONS_CONTROLLER_PASSWORD",
-		"FORGEJO_ACTIONS_INCUS_ENDPOINT", "FORGEJO_ACTIONS_INCUS_CLIENT_CERT_B64",
-		"FORGEJO_ACTIONS_INCUS_CLIENT_KEY_B64", "FORGEJO_ACTIONS_INCUS_SERVER_CERT_B64",
 		"FORGEJO_ACTIONS_RUNNER_IMAGE",
 	} {
 		if strings.TrimSpace(e[key]) == "" {
@@ -319,21 +319,6 @@ func validateActionsConfig(e map[string]string) error {
 	}
 	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(e["FORGEJO_ACTIONS_RUNNER_IMAGE"]) {
 		return fmt.Errorf("FORGEJO_ACTIONS_RUNNER_IMAGE must be a pinned SHA-256 fingerprint")
-	}
-	if !strings.HasPrefix(e["FORGEJO_ACTIONS_INCUS_ENDPOINT"], "https://") {
-		return fmt.Errorf("FORGEJO_ACTIONS_INCUS_ENDPOINT must be an HTTPS URL")
-	}
-	for _, key := range []string{
-		"FORGEJO_ACTIONS_INCUS_CLIENT_CERT_B64", "FORGEJO_ACTIONS_INCUS_CLIENT_KEY_B64",
-		"FORGEJO_ACTIONS_INCUS_SERVER_CERT_B64",
-	} {
-		decoded, err := base64.StdEncoding.DecodeString(e[key])
-		if err != nil || len(decoded) == 0 {
-			return fmt.Errorf("%s must be non-empty base64", key)
-		}
-		for index := range decoded {
-			decoded[index] = 0
-		}
 	}
 	for _, scope := range splitCSV(e["FORGEJO_ACTIONS_ALLOWED_SCOPES"]) {
 		parts := strings.Split(scope, "/")

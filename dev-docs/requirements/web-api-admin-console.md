@@ -104,7 +104,9 @@ flowchart LR
 
 - `cmd/anasd` 作为 systemd 管理的**宿主机**服务运行，**不得**属于被 ANAS 管理的 Compose 部署——否则 `stop`、失败回滚或 Traefik 故障会把管理面一起带走。这条同时决定了 §5 的入口策略。
 - 前端使用 Vue 3 + TypeScript + Vite，生产构建产物由 `embed.FS` 嵌入 `anasd`；交付物是一个后端二进制加一个 systemd unit。
-- 后端使用 Go 标准库 `net/http`，Go 版本以仓库 `go.mod` 为准；直接使用带方法与路径参数的 `ServeMux`，首版不引入 Web 框架。
+- 后端使用 Go 标准库 `net/http`，Go 版本以仓库 `go.mod` 为准；首版不引入 Web 框架。原定直接使用带方法与
+  路径参数的 `ServeMux`；实现改为在同一包内自建极小的路径匹配与分发（`internal/api/httpapi/routes.go`），
+  理由见 §9 决策记录「路由分发不使用 `ServeMux`」。这是「应当」级默认的一次有正当理由的偏离，不引入外部依赖。
 - API 采用 OpenAPI 3.1 文档先行，前端类型从规范生成。CLI 的 `anas.dev/cli/v1` 与 HTTP 的 `anas.dev/api/v1` 分别版本化；**不得**把 CLI 信封原样作为 HTTP 响应。
 
 ### 3.2 代码边界
@@ -112,15 +114,26 @@ flowchart LR
 ```text
 cmd/anas/               现有 CLI 适配器
 cmd/anasd/              HTTP 服务入口
-internal/application/   用例：Plan、Apply、Restart、CreateSnapshot…
+internal/application/   共享用例的类型、端口与实现：Plan、Apply、Restart、Module Command…
 internal/api/httpapi/   路由、DTO、认证、错误映射、SSE
-internal/jobs/          队列、持久化、事件流、恢复
+internal/consolejobs/   队列、持久化、事件流、恢复
 internal/audit/         安全相关操作审计
-internal/platform/      compose/btrfs/命令执行，支持 context 与显式子进程环境
-internal/runner/        迁移期保留 CLI flag 与文本输出
-web/src/{api,i18n,pages,components,stores}/
+internal/securefs/      两个持久存储共用的 0600/0700、单链接、属主校验与 flock
+internal/compose/       compose 执行，支持 context 与显式子进程环境
+internal/runner/        CLI 适配器；仍承载部分共享服务实现（见下）
+web/src/{api,audit,config,deployment,jobs,lifecycle,maintenance,modules,i18n}/
 api/openapi.yaml
 ```
+
+**分层规则是依赖方向，不是目录。** 共享用例与其端口在 `internal/application`，适配器依赖它；
+`internal/application`、`internal/api/httpapi`、`internal/jobexecutor` **不得**反向导入 `internal/runner`，
+由 `internal/application/layering_test.go` 门禁（R-184）。
+
+**已记录的债：** `deployment_application.go`、`maintenance_application.go`、`module_management_application.go`
+三个共享服务实现目前物理上仍在 `internal/runner`（约 3.3 万行的 CLI 包）中，因而 `anasd` 链接整个 CLI 包，
+也因而这些路径要靠 `restrictedProcessEnvironment` 运行时开关区分 CLI 与守护进程行为（该开关由 R-021 的
+inventory 门禁约束）。方向正确、抽象成立，但迁移未完成。新增用例应按 `internal/application/module_command_*.go`
+的形态直接落在 `internal/application`，不要再加到 `internal/runner`。
 
 `web/` **必须**是独立 npm 工程，不得并入仓库根目录 VitePress 文档站的依赖树，否则 `npm run docs:build` 与前端构建互相牵制。
 
@@ -580,6 +593,7 @@ OIDC 会话必须提交由受信 forward-auth 路径产生、绑定同一稳定 
 | Web 能否创建 workspace | 不能。`anas init` 写宿主机路径而 API 不接受路径输入，保持为终端操作（§6.1） |
 | 配置元数据够不够驱动表单 | 够。参数 inventory 由 release gate 动态校验 `unknown=0`，数量与分布由统一 inventory 派生而不是稳定契约。schema 已分离输入必填、解析后必有、默认来源与单字段 constraints；配置 HTTP API 直接复用统一 schema，不按 Module 适配（§2.2） |
 | 配置与审计如何原子提交 | 不伪造跨 journal 原子性。单次 PUT 的唯一 operation ID 贯穿脱敏 attempt、锁内 authorized intent、配置 WAL 与补充 terminal；前两者是否决门，terminal 不能回滚已提交配置。只有 durable/存疑的 WAL publish 后才记 `indeterminate`并由下次持锁恢复；历史 outcome 不事后改写，查询不从 terminal 缺失猜测结果（§4.4、§7.5） |
+| 路由分发是否用 `ServeMux` | 不用。三个判断必须按序发生：路径是否匹配、该路由在当前 state/listener/transport 下是否可达、方法是否匹配。`ServeMux` 会在状态门禁之前用自己的表回答方法匹配并返回 `405`，而 `CONSOLE-R-081` 要求当前状态不允许的端点返回 `404`——`405` 会确认端点存在。故在 `internal/api/httpapi/routes.go` 自建极小分发；路由表很小、每请求扫一次，用可忽略的性能换状态门禁的正确性，仍只用标准库（§3.1） |
 
 ## 10. 需求矩阵（规范来源）
 
@@ -778,6 +792,12 @@ ID 一经分配即固定，章节重排、措辞修改都不改动它；废弃�
 | `CONSOLE-R-178` | 配置事务对 manifest、各 role 的 stage 与目标读取设置显式尺寸上限；新事务不得产生超限 image，恢复必须在读取 oversized/sparse image 前 fail closed、不得改写目标并保留 WAL 证据 | 单元 |
 | `CONSOLE-R-179` | 每个实际配置 generation（含 Secret Store-only 提交、CLI 写入和 snapshot/backup restore）轮换随机 validator，零变更 PUT 保持不变；validate 不生成候选 validator；缺少 validator 的旧 managed state 只可在 workspace 排他运行时锁内校验内部 digest 后原子迁移，迁移前不得把旧 digest 暴露给客户端 | 单元 |
 | `CONSOLE-R-180` | `GET /api/v1/audit-events` 只在 full+TLS 对带非空 identity source 的 owner 开放，经 `audit.Writer` 持锁刷新后的 verified state 查询；服务事件和已注册 workspace 事件在分页前做对象过滤，按 sequence 倒序支持 `limit`/opaque cursor，保留独立 attempt/authorized/terminal/indeterminate 且不从 terminal 缺失推断 outcome | 单元 |
+| `CONSOLE-R-181` | Module Command invoke 以类型化应用服务与持久 job 开放；请求必须携带命令端点返回的 `command_digest`，描述符漂移返回 `412`；`risk: destructive` 要求动作/工作区/目标/部署/digest 绑定的单次 step-up，其余命令拒绝多余 proof；执行器不可用时该路由不注册 | 契约 |
+| `CONSOLE-R-182` | 控制台提供分区导航与「系统与审计」页；审计页只读 `GET /api/v1/audit-events`，按序号倒序分页，记录只作为不可信文本渲染；当前会话不可达的分区不出现在导航中 | 单元 |
+| `CONSOLE-R-183` | `writeProblem` 可发出的每个错误码在前端 `problems.ts` 中都有 zh 与 en 文案；该覆盖由测试门禁，不依赖 R-128 的裸枚举回退 | 单元 |
+| `CONSOLE-R-184` | `internal/application`、`internal/api/httpapi`、`internal/jobexecutor` 及其余共享包不得导入 `internal/runner`；CLI 必须经 `internal/application` 消费共享服务 | 单元 |
+| `CONSOLE-R-185` | 前端在任意路由（含 SSE）收到 `unauthenticated` 时统一结束本地会话：清空 session CSRF 与密码/令牌输入，按当前 `console_state` 与 listener 回到对应入口页并提示重新登录；`invalid_credentials`、`invalid_bootstrap_token`、`enrollment_unauthorized` 等其他 401 不触发该处理 | 单元 |
+| `CONSOLE-R-186` | 前端以响应 `Date` 校正时钟后，按 `expires_at` 与 `idle_expires_at` 本地推算剩余时间并随已认证响应滑动 idle 估计；不得轮询认证路由刷新倒计时（轮询会续期 idle TTL），公共路由响应不计入活动；剩余低于阈值时展示倒计时与显式续期入口，归零时按 R-185 结束会话 | 单元 |
 
 ### 10.9 发布
 

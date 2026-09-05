@@ -12,8 +12,10 @@ func sambaFSTestEnv(mode string) map[string]string {
 		"SAMBA_DC_WORKGROUP":              "NAS",
 		"SAMBA_DC_FS_ADMIN_GROUP_NAME":    "FS Admins",
 		"SAMBA_DC_FS_SHARE_RW_GROUP_NAME": "FS Share RW",
+		"SAMBA_DC_DNS_SERVER":             "192.0.2.10",
 		"SAMBA_FS_HOSTNAME":               "SambaFS",
 		"USE_DEFAULT_DOMAIN":              "yes",
+		"VLAN_BRIDGE_IP":                  "192.0.2.11",
 	}
 }
 
@@ -122,6 +124,7 @@ func TestCalcSambaFSDoesNotDeriveFromApplicationDomain(t *testing.T) {
 	}
 	for _, key := range []string{
 		"SAMBA_FS_ADMIN_USERS",
+		"SAMBA_FS_DC_TRANSPORT_IP",
 		"SAMBA_FS_NETBIOS_NAME",
 		"SAMBA_FS_SHARE_DOMAIN_USERS_ACL",
 		"SAMBA_FS_SHARE_VALID_USERS",
@@ -134,6 +137,25 @@ func TestCalcSambaFSDoesNotDeriveFromApplicationDomain(t *testing.T) {
 	}
 	if _, ok := oldDomain["SAMBA_FS_DNS_SERVER"]; ok {
 		t.Fatal("calculate hook must not synthesize a Samba FS DNS alias")
+	}
+}
+
+func TestCalcSambaFSUsesMacvlanBridgeAsDCTransport(t *testing.T) {
+	env := sambaFSTestEnv("all_read_group_write")
+	if err := calcSambaFS(env, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := env["SAMBA_FS_DC_TRANSPORT_IP"]; got != "192.0.2.11" {
+		t.Fatalf("SAMBA_FS_DC_TRANSPORT_IP = %q, want host-side macvlan bridge", got)
+	}
+
+	delete(env, "VLAN_BRIDGE_IP")
+	delete(env, "SAMBA_FS_DC_TRANSPORT_IP")
+	if err := calcSambaFS(env, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := env["SAMBA_FS_DC_TRANSPORT_IP"]; got != "192.0.2.10" {
+		t.Fatalf("SAMBA_FS_DC_TRANSPORT_IP fallback = %q, want DC DNS address", got)
 	}
 }
 

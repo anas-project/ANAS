@@ -17,6 +17,7 @@ lastUpdated: false
 | [Eturnal TURN](/reference/modules/eturnal/) | `1.12.2-r6` | `release` | `communication` | TURN service used by realtime communication modules. |
 | [Forgejo](/reference/modules/forgejo/) | `15.0.7-r1` | `developing` | `app` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
 | [FreeRADIUS](/reference/modules/freeradius/) | `3.2.10-r4` | `developing` | `network` | RADIUS server module scaffold. |
+| [Incus compute provider](/reference/modules/incus/) | `7.3.0-r1` | `developing` | `compute` | Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract. |
 | [LDAP Account Manager](/reference/modules/lam/) | `9.6.0-r8` | `release` | `identity` | Web UI for LDAP account administration. |
 | [Lego ACME certificates](/reference/modules/lego/) | `5.3.1-r5` | `release` | `certificate` | Issues and stores wildcard certificates used by Traefik and domain services. |
 | [LemonLDAP::NG](/reference/modules/llng/) | `2.23.2-r11` | `release` | `identity` | SSO portal, SAML/OIDC identity provider, and app launcher. |
