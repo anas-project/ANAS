@@ -3,6 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
 	"testing"
 
 	"github.com/anas-project/ANAS/internal/audit"
@@ -81,4 +85,64 @@ func TestDeploymentAuditAcceptsLifecycleAndModuleCommitBindings(t *testing.T) {
 		appender.events[1].Details["candidate_config_validator"] != module.CandidateConfigValidator {
 		t.Fatalf("persisted Module audit = %#v", appender.events)
 	}
+}
+
+// The audit sink fails closed on an action it does not recognise, and job
+// creation treats a failed audit as a refusal. So an action a route can issue
+// but this allowlist omits makes that route return 503 in a real daemon while
+// every unit test that stubs the sink still passes -- which is how the M4
+// snapshot and local-admin actions and the Module command invoke action all
+// shipped unaccepted.
+//
+// Binding the allowlist to the declared action set removes the chance to add
+// one without the other.
+func TestAuditAllowlistAcceptsEveryDeclaredAction(t *testing.T) {
+	declared := []string{
+		deploymentaudit.ActionPlan,
+		deploymentaudit.ActionApply,
+		deploymentaudit.ActionStart,
+		deploymentaudit.ActionStop,
+		deploymentaudit.ActionRestart,
+		deploymentaudit.ActionRollback,
+		deploymentaudit.ActionModuleSync,
+		deploymentaudit.ActionModuleUpdate,
+		deploymentaudit.ActionModuleEnable,
+		deploymentaudit.ActionModuleDisable,
+		deploymentaudit.ActionSnapshotCreate,
+		deploymentaudit.ActionSnapshotPin,
+		deploymentaudit.ActionSnapshotUnpin,
+		deploymentaudit.ActionSnapshotVerify,
+		deploymentaudit.ActionLocalAdminRotate,
+		deploymentaudit.ActionLocalAdminReveal,
+		deploymentaudit.ActionModuleCommandInvoke,
+	}
+	for _, action := range declared {
+		if !validDeploymentAuditAction(action) {
+			t.Errorf("the audit sink rejects %q, so every route issuing it returns 503;\n"+
+				"add it to validDeploymentAuditAction", action)
+		}
+	}
+	if validDeploymentAuditAction("deployment.not-an-action") {
+		t.Error("the allowlist accepts an undeclared action")
+	}
+	// Every constant this package declares must appear above, so a new action
+	// cannot be added to deploymentaudit without being considered here.
+	if len(declared) != declaredDeploymentAuditActionCount(t) {
+		t.Fatalf("this test covers %d actions but internal/deploymentaudit declares %d; add the new one",
+			len(declared), declaredDeploymentAuditActionCount(t))
+	}
+}
+
+func declaredDeploymentAuditActionCount(t *testing.T) int {
+	t.Helper()
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate test source")
+	}
+	path := filepath.Clean(filepath.Join(filepath.Dir(source), "..", "..", "internal", "deploymentaudit", "audit.go"))
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(regexp.MustCompile(`(?m)^\s*Action[A-Za-z]+\s*=\s*"`).FindAllString(string(body), -1))
 }

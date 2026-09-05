@@ -792,7 +792,7 @@ ID 一经分配即固定，章节重排、措辞修改都不改动它；废弃�
 | `CONSOLE-R-178` | 配置事务对 manifest、各 role 的 stage 与目标读取设置显式尺寸上限；新事务不得产生超限 image，恢复必须在读取 oversized/sparse image 前 fail closed、不得改写目标并保留 WAL 证据 | 单元 |
 | `CONSOLE-R-179` | 每个实际配置 generation（含 Secret Store-only 提交、CLI 写入和 snapshot/backup restore）轮换随机 validator，零变更 PUT 保持不变；validate 不生成候选 validator；缺少 validator 的旧 managed state 只可在 workspace 排他运行时锁内校验内部 digest 后原子迁移，迁移前不得把旧 digest 暴露给客户端 | 单元 |
 | `CONSOLE-R-180` | `GET /api/v1/audit-events` 只在 full+TLS 对带非空 identity source 的 owner 开放，经 `audit.Writer` 持锁刷新后的 verified state 查询；服务事件和已注册 workspace 事件在分页前做对象过滤，按 sequence 倒序支持 `limit`/opaque cursor，保留独立 attempt/authorized/terminal/indeterminate 且不从 terminal 缺失推断 outcome | 单元 |
-| `CONSOLE-R-181` | Module Command invoke 以类型化应用服务与持久 job 开放；请求必须携带命令端点返回的 `command_digest`，描述符漂移返回 `412`；`risk: destructive` 要求动作/工作区/目标/部署/digest 绑定的单次 step-up，其余命令拒绝多余 proof；执行器不可用时该路由不注册 | 契约 |
+| `CONSOLE-R-181` | Module Command invoke 以类型化应用服务与持久 job 开放；请求必须携带命令端点返回的 `command_digest`，描述符漂移返回 `412`；`risk: destructive` 要求动作/工作区/目标/部署/digest 绑定的单次 step-up，其余命令拒绝多余 proof；执行器不可用时该路由不注册 | 契约 + e2e |
 | `CONSOLE-R-182` | 控制台提供分区导航与「系统与审计」页；审计页只读 `GET /api/v1/audit-events`，按序号倒序分页，记录只作为不可信文本渲染；当前会话不可达的分区不出现在导航中 | 单元 |
 | `CONSOLE-R-183` | `writeProblem` 可发出的每个错误码在前端 `problems.ts` 中都有 zh 与 en 文案；该覆盖由测试门禁，不依赖 R-128 的裸枚举回退 | 单元 |
 | `CONSOLE-R-184` | `internal/application`、`internal/api/httpapi`、`internal/jobexecutor` 及其余共享包不得导入 `internal/runner`；CLI 必须经 `internal/application` 消费共享服务 | 单元 |

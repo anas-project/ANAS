@@ -204,6 +204,14 @@ M1B 应用服务、HTTP/OpenAPI 契约、事务恢复与负向测试，不是 M0
 crash-safety 文件系统与 flock 代码提取为 `internal/securefs`（其中 `removeCompactionFileIfSame` 的校验顺序
 两边已经开始漂移）；分层方向由 R-184 门禁锁定，§3.2 改写为描述真实布局并显式记录未完成的迁移债。
 
+写 R-181 e2e 时发现的既有缺陷（已修）：`cmd/anasd` 的 `validDeploymentAuditAction` 允许列表只列到
+`module.disable`，**M4 的全部 snapshot 与 local-admin 动作从未被接受**。审计 sink 对未知动作 fail closed，
+而 job 创建把审计失败当作否决，因此 `POST /snapshots`、快照 pin/unpin/verify 和 local-admin rotate 在真实
+daemon 上一直返回 `503`；M4 的 e2e 只走了 CLI 与 terminal descriptor 路径，没有碰这些 HTTP 路由，所以没暴露。
+新增动作 `module_command.invoke` 同样落在这个缺口里。修复是把 8 个动作补进允许列表，并加
+`TestAuditAllowlistAcceptsEveryDeclaredAction` 把允许列表绑定到 `internal/deploymentaudit` 声明的动作集合，
+新增动作而不同步允许列表会直接失败。
+
 验收：R-181—R-184，以及 R-021、R-022、R-053、R-128 的门禁补齐。
 
 ### M7：会话到期处理 — 已实施
@@ -342,6 +350,7 @@ CI 查不了这些——它们需要真实 Docker、Btrfs、域名或主机。**
 | R-133 | `test-env/scripts/server-console-m4-maintenance-e2e.sh`；`internal/runner/maintenance_application_e2e_test.go` | `finance.hlong.wang`；Ubuntu 26.04、Linux 7.0.0-30-generic、x86_64；sudo；Docker 29.7.2、btrfs-progs 6.17.1；当前 M4 工作树 Linux/amd64 静态 `anas` 与 runner 测试二进制 | 2026-09-03 | 通过：五种服务端 terminal descriptor 均以结构化 argv 往返真实 CLI parser；snapshot restore/delete、backup restore 和 local-admin rotate 两种 descriptor 的 shell-safe 显示与 argv 保持一致；真实 snapshot/backup restore dry-run 及 confirmation/parser 夹具均未产生变更。`anas` SHA-256 `7788975818613e56b365189336bfa5a83c298fdc6f7439d0114543200338db99`，runner 测试二进制 SHA-256 `537f9b76cd1b5bec8f651260a6994eb8f1d259bd9a663ff63162c5a8750227aa`；远端一次性目录已清理 |
 | R-155 | `test-env/scripts/server-console-m4-maintenance-e2e.sh`；`internal/runner/maintenance_application_e2e_test.go` | 与 R-133 相同；512 MiB loop-backed Btrfs workspace 与真实 Docker 部署 | 2026-09-03 | 通过：创建包含 userdata 的真实 Btrfs 快照后修改 userdata，restore 将数据恢复到快照内容；restore 按既有契约停止部署，随后显式 `anas start` 成功重新启动 Docker deployment；测试脚本 SHA-256 `d813e99f4b906f125fe621c2bde5b0c94848a0ba7468e83425bd9a439abd8d8d`，测试后无残留 `anasm4_` 容器、挂载、loop 设备、工作目录或上传目录 |
 | R-162 | `test-env/scripts/server-console-m5-install-e2e.sh` | `finance.hlong.wang`；Ubuntu 26.04、Linux 7.0.0-30-generic、x86_64；sudo/root；systemd 259；当前 M5 工作树 Linux/amd64 静态 Release 归档；LAN wildcard 管理端口 7798 | 2026-09-03 | 通过（run22）：安装器创建 root:root `0600` 服务配置与 root:root `0644` unit，unit 明确 `User/Group=root`、`ProtectSystem=strict` 与精确 `ReadWritePaths`；真实 `anasd` 启动并由 `127.0.0.1:7798/healthz` 返回成功。以不同初始端口参数升级后配置 SHA-256 不变且服务继续使用 7798；卸载删除二进制/unit、保留配置与 console marker，purge 只删除配置仍保留 marker。归档 SHA-256 `f0469f38ed514db108fcbf47f3e3f653f8c71b77037a0ee1485530215f4f1fae`，安装器 `540c01b1676f3ef78221880eb3ba357a2354e895c6237b848e5bbe5621cee997`，脚本 `e1a7365005251a8d965ff2f0b850845c72adf80c9705510bb5900e42cf22d8f3`；服务、配置、状态、端口和上传目录均已清理 |
+| R-181 | `test-env/scripts/server-console-command-invoke-e2e.sh`；`test-env/helpers/console-command-fixture` | 待执行：需要 Linux root 与真实 `anasd`（脚本用 loopback TLS，不需要 Docker/Btrfs） | 未执行 | **未执行。** 脚本与夹具已就绪并由 `go test ./test-env/helpers/console-command-fixture` 证明夹具工作区能驱动真实 `ModuleCommandService`（含 digest 漂移拒绝与环境不继承）；HTTP 侧由 `internal/api/httpapi` 的 7 个 invoke/step-up 契约测试覆盖。仍需在 `finance.hlong.wang` 跑一次 setup/verify/cleanup 以取得真机证据，填写环境、日期与结果后本行才算完成 |
 
 脚本放在 `test-env/scripts/`，命名沿用既有的 `server-<主题>-e2e.sh`。
 

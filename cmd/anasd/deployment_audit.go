@@ -122,7 +122,14 @@ func validDeploymentAuditAction(action string) bool {
 		deploymentaudit.ActionModuleSync,
 		deploymentaudit.ActionModuleUpdate,
 		deploymentaudit.ActionModuleEnable,
-		deploymentaudit.ActionModuleDisable:
+		deploymentaudit.ActionModuleDisable,
+		deploymentaudit.ActionSnapshotCreate,
+		deploymentaudit.ActionSnapshotPin,
+		deploymentaudit.ActionSnapshotUnpin,
+		deploymentaudit.ActionSnapshotVerify,
+		deploymentaudit.ActionLocalAdminRotate,
+		deploymentaudit.ActionLocalAdminReveal,
+		deploymentaudit.ActionModuleCommandInvoke:
 		return true
 	default:
 		return false

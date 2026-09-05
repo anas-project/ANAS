@@ -224,3 +224,91 @@ func jobexecutorDecode(request map[string]any) (application.InvokeModuleCommandR
 	decoder.DisallowUnknownFields()
 	return decoded, decoder.Decode(&decoded)
 }
+
+// The step-up issued for a destructive command must bind the descriptor the
+// active deployment currently freezes. Without that binding a proof taken
+// before a redeploy would still authorize the command that replaced it.
+func TestModuleCommandStepUpBindsTheFrozenDescriptorAndIsConsumedOnce(t *testing.T) {
+	registry, _ := testRegistry(t, "main")
+	store := openHTTPJobStore(t, consolejobs.Options{})
+	digest := "sha256:" + strings.Repeat("a", 64)
+	command := safeModuleCommand(digest)
+	command.Command.Risk = "destructive"
+	query := &fakeQueryService{command: command}
+	stepUp := &fakeDeploymentStepUp{}
+	handler, err := NewHandlerWithDeployment(registry, func(string) QueryService { return query }, SecurityOptions{
+		InitialState: StateFull, HostAllowed: func(*http.Request) bool { return true }, Listener: ListenerDirect,
+		Authorize: func(*http.Request, AuthorizationRequest) (Principal, error) {
+			return Principal{ID: consolejobs.PrincipalLocalOwner, Role: "owner", Source: "local"}, nil
+		},
+	}, DeploymentOptions{
+		PlanFactory: func(string) application.DeploymentPlanService { return &fakeDeploymentPlanService{} },
+		ModuleCommandFactory: func(string, application.EventSink) application.ModuleCommandService {
+			return nil
+		},
+		Store: store, Audit: &recordingDeploymentAuditSink{}, StepUp: stepUp, Notify: func(string) {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issuedResponse := fullDeploymentRequest(handler, http.MethodPost, "/api/v1/auth/step-up",
+		`{"password":"owner-password","action":"module_command.invoke","workspace_id":"main","target_id":"demo.reindex"}`, "")
+	if issuedResponse.Code != http.StatusOK {
+		t.Fatalf("step-up = %d, %s", issuedResponse.Code, issuedResponse.Body.String())
+	}
+	var issued localStepUpResponse
+	decodeResponse(t, issuedResponse, &issued)
+	want := moduleCommandStepUpStateDigest("main", "demo.reindex", command.DeploymentID, digest)
+	if stepUp.credential.StateDigest != want {
+		t.Fatalf("issued state digest = %q, want the descriptor binding %q", stepUp.credential.StateDigest, want)
+	}
+
+	body := `{"command_digest":"` + digest + `","step_up_proof":"` + issued.Proof + `"}`
+	accepted := fullDeploymentRequest(handler, http.MethodPost, invokePath, body, "key-stepup-1")
+	if accepted.Code != http.StatusAccepted {
+		t.Fatalf("destructive invoke with a proof = %d, %s", accepted.Code, accepted.Body.String())
+	}
+	if stepUp.authenticateCalls != 1 {
+		t.Fatalf("step-up consumed %d times, want exactly 1", stepUp.authenticateCalls)
+	}
+}
+
+// A step-up may only be requested for a command that actually needs one.
+func TestModuleCommandStepUpRefusesANormalCommandAndAMalformedTarget(t *testing.T) {
+	registry, _ := testRegistry(t, "main")
+	store := openHTTPJobStore(t, consolejobs.Options{})
+	digest := "sha256:" + strings.Repeat("b", 64)
+	stepUp := &fakeDeploymentStepUp{}
+	handler, err := NewHandlerWithDeployment(registry, func(string) QueryService {
+		return &fakeQueryService{command: safeModuleCommand(digest)}
+	}, SecurityOptions{
+		InitialState: StateFull, HostAllowed: func(*http.Request) bool { return true }, Listener: ListenerDirect,
+		Authorize: func(*http.Request, AuthorizationRequest) (Principal, error) {
+			return Principal{ID: consolejobs.PrincipalLocalOwner, Role: "owner", Source: "local"}, nil
+		},
+	}, DeploymentOptions{
+		PlanFactory: func(string) application.DeploymentPlanService { return &fakeDeploymentPlanService{} },
+		ModuleCommandFactory: func(string, application.EventSink) application.ModuleCommandService {
+			return nil
+		},
+		Store: store, Audit: &recordingDeploymentAuditSink{}, StepUp: stepUp, Notify: func(string) {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, target := range map[string]string{
+		"normal command":  "demo.reindex",
+		"missing command": "demo",
+		"empty module":    ".reindex",
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := fullDeploymentRequest(handler, http.MethodPost, "/api/v1/auth/step-up",
+				`{"password":"owner-password","action":"module_command.invoke","workspace_id":"main","target_id":"`+target+`"}`, "")
+			assertProblem(t, response, http.StatusBadRequest, "step_up_request_invalid")
+		})
+	}
+	if stepUp.issueCalls != 0 {
+		t.Fatalf("a refused request still issued %d proofs", stepUp.issueCalls)
+	}
+}
