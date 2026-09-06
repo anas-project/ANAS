@@ -102,9 +102,16 @@ type forgejoClient struct {
 	baseURL  string
 	username string
 	password string
+	// token is the alternative credential. Exactly one of the pair and the
+	// token is set: the identity surface needs the administrator's password
+	// because token creation refuses token authentication, while the
+	// collaboration surface uses an agent's own scoped token.
+	token    string
 	redactor *Redactor
 	http     *http.Client
 }
+
+func defaultHTTPClient() *http.Client { return &http.Client{Timeout: 30 * time.Second} }
 
 // NewForgejoAdmin builds the administrative client. It talks to Forgejo over
 // the same published HTTPS URL a person would use, verified against the trust
@@ -113,7 +120,7 @@ type forgejoClient struct {
 func NewForgejoAdmin(baseURL, username, password string, redactor *Redactor) ForgejoAdmin {
 	return &forgejoClient{
 		baseURL: strings.TrimRight(baseURL, "/"), username: username, password: password,
-		redactor: redactor, http: &http.Client{Timeout: 30 * time.Second},
+		redactor: redactor, http: defaultHTTPClient(),
 	}
 }
 
@@ -353,7 +360,11 @@ func (c *forgejoClient) do(ctx context.Context, method, path string, body any, o
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(c.username, c.password)
+	if c.token != "" {
+		req.Header.Set("Authorization", "token "+c.token)
+	} else {
+		req.SetBasicAuth(c.username, c.password)
+	}
 	req.Header.Set("Accept", "application/json")
 	for key, values := range headers {
 		for _, value := range values {

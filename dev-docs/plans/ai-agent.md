@@ -33,7 +33,7 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
 | M1：Module 骨架、身份凭据与事件入站 | AGENT-R-001—R-014 | 已完成；单元、契约与真实依赖 e2e 均通过，容器级重启 e2e 待整套部署 |
-| M2：交互契约与产物入库 | AGENT-R-015—R-029 | 未开始 |
+| M2：交互契约与产物入库 | AGENT-R-015—R-029 | 已完成；单元、契约与真实 Forgejo e2e 均通过 |
 | M3：权限、目录组授权与审计 | AGENT-R-030—R-036 | 未开始 |
 | M4：执行面、分支策略与执行 issue | AGENT-R-037—R-044 | 未开始 |
 | M5：排程、执行时机与队列 | AGENT-R-045—R-051 | 未开始 |
@@ -64,12 +64,18 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 
 ## 3. M2 检查表
 
-- [ ] 由 Agent 注册表生成 issue 表单模板与 `config.yaml`，注册表变化触发重新生成并走 PR。
-- [ ] 实现表单答案解析与容错、越权选项降级说明、创建后指派。
-- [ ] 实现状态评论（唯一、原地更新）、对话评论、reaction 确认与回合串行队列。
-- [ ] 实现标签与命令的等价映射，运行参数不进标签。
-- [ ] 实现文档由控制面经 contents API 提交、路径白名单、commit 永久链接与执行依据冻结。
-- [ ] 实现引导 issue：探测既有约定、问卷、提交 `.anas-agent.yml` 并开 PR。
+- [x] 由 Agent 注册表生成 issue 表单模板与 `config.yaml`，注册表变化触发重新生成并走 PR。
+      五个模板在真实 `forgejo 15.0.7` 上被识别为 issue form（字段类型、id 与 front matter 标签均正确）。
+- [x] 实现表单答案解析与容错、越权选项降级说明、创建后指派。
+- [x] 实现状态评论（唯一、原地更新）、对话评论、reaction 确认与回合串行队列。
+- [x] 实现标签与命令的等价映射，运行参数不进标签。
+- [x] 实现文档由控制面经 contents API 提交、路径白名单、commit 永久链接与执行依据冻结。
+- [x] 实现引导 issue：探测既有约定、问卷、提交 `.anas-agent.yml` 并开 PR。
+- [x] **表单答案的渲染格式已实测**：渲染在服务端（`issue_template.RenderToMarkdown`），因此
+      `TestFormRenderingAgainstLiveForgejo` 用脚本化的表单提交跑通了真函数，无需人工。结论见
+      [要求文档 §15](../requirements/ai-agent.md)；顺带发现 front matter 的标签只是页面预勾选，
+      Agent issue 的识别因此改为读正文而不是读标签。R-015/R-016 的矩阵验证方式是「单元」，
+      因此这轮真实环境验证不进 §10 的 e2e 记录表。
 
 ## 4. M3 检查表
 
@@ -140,7 +146,7 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
 | R-005 | `TestM1AgainstLiveDependencies` | Forgejo 15.0.7 管理端引导 | 2026-09-06 | 通过 |
 | R-006 | `TestForgejoAdminAgainstLiveInstance` | token scope 与仓库限定（含越界读写） | 2026-09-06 | 通过 |
 | R-007 | `TestM1AgainstLiveDependencies` | token/SSH key 轮换，轮换后仅一份存活 | 2026-09-06 | 通过 |
-| R-027 | 待新增 `test-env/scripts/server-ai-agent-onboarding-e2e.sh` | 空仓库首次启用 | — | 待实现 |
+| R-027 | `TestM2AgainstLiveForgejo` | 空仓库首次启用：探测约定、开问卷、提交 `.anas-agent.yml` 并开 PR | 2026-09-06 | 通过 |
 | R-032 | 待新增 `test-env/scripts/server-ai-agent-grant-e2e.sh` | Samba 组 → IAM → team 投影 | — | 待实现 |
 | R-037 | 待新增 `test-env/scripts/server-ai-agent-isolation-e2e.sh` | 两个仓库并行作业 | — | 待实现 |
 | R-039 | `server-ai-agent-isolation-e2e.sh credentials` | 作业期凭据注入与吊销 | — | 待实现 |

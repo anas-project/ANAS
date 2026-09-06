@@ -265,5 +265,22 @@ ANAS 必须提供可独立部署的 `ai_agent` Module，使团队能在 Forgejo 
 | 服务端会**展开事件族**：请求 8 个事件、存下 17 个 | 不能用事件列表判断 hook 漂移；只比对 URL 与密钥指纹 |
 | `forgejo admin auth add-oauth` 具备 `--group-team-map` 与 `--group-team-map-removal` | 设计 §6.2 的目录组→team 投影链路成立 |
 
-仍未复核（需要接收端或 Web 表单，留待 M2）：webhook 投递语义（超时、重试、可否重投）、
-`issue_label` / `issue_assign` 的 payload 字段、表单答案在 issue 正文中的渲染格式。
+M2 落地时又实测确认：生成的五个 issue 表单模板被 `15.0.7` 识别为 issue form（字段类型、id 与
+front matter 的 `labels` 全部生效），`config.yaml` 的 `blank_issues_enabled` 生效，
+`GET .../issue_templates` 与 `issue_config/validate` 均可用；标签 CRUD、评论 `PATCH` 原地更新、
+reaction、contents API 提交与开 PR 均按设计工作。
+
+**表单答案的渲染格式已实测**（`TestFormRenderingAgainstLiveForgejo`）。渲染发生在**服务端**
+（issue 创建 handler 里的 `issue_template.RenderToMarkdown`），不在浏览器，所以脚本化提交表单就能
+跑到真函数，不需要人工。实测结论：
+
+| 结论 | 影响 |
+| --- | --- |
+| 正文格式确为 `### <字段 label>` + 空行 + 值，未填为 `_No response_`，checkboxes 为 `- [x] <label>`，dropdown 多选以 `, ` 连接 | 解析器的假设成立 |
+| `markdown` 块默认只进表单不进正文（上游的 "markdown exception"） | 模板顶部的说明段不会污染每个 issue 的正文 |
+| **front matter 的 `labels` 是新建页的预勾选，不是服务端在提交时应用的**：handler 只把它渲染成侧栏预选，再由浏览器作为 `label_ids` 回传 | 不能靠 `ai:auto` 判断"这是不是 Agent issue"——取消勾选或非浏览器提交都不会带标签。改为**从正文识别**（`LooksLikeAgentIssue`），标签由编排器自己补 |
+| dropdown 提交的是选项**下标**的逗号列表，checkboxes 是 `form-field-<id>-<下标>=on`；提交 label 文本会静默变成 `_No response_` | 只影响测试夹具；编排器只读正文，不提交表单 |
+| Forgejo 15 的表单**没有 `_csrf` 字段**，改用 SameSite cookie 加 Origin/Referer 校验 | 脚本化登录只需带 `Referer` |
+
+仍未复核：webhook 投递语义（超时、重试、可否重投）、`issue_label` / `issue_assign` 的 payload 字段。
+两者都需要一个真实接收端，留待后续里程碑。

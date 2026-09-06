@@ -14,7 +14,7 @@
 | [使用 OIDC/SAML 的 Module 双向登出要求](module-iam-bidirectional-logout.md) | RP/SP 发起登出、IAM 发起登出、通用注册、安全和真实会话 E2E | 20/42 已完成 |
 | [Web API 与管理前端要求](web-api-admin-console.md) | 管理控制台的范围、访问与证书、认证与角色、安全和验收 | 155/155 已完成 |
 | [共享应用层迁移要求](application-layer-migration.md) | 把三个共享服务实现迁出 CLI 包、按类型而非运行时开关表达子进程边界 | 0/10 已完成 |
-| [AI Agent 编排集成要求](ai-agent.md) | `ai_agent` Module、Forgejo 协作面、Incus 执行面、审批权限、排程与审计 | 14/64 已完成 |
+| [AI Agent 编排集成要求](ai-agent.md) | `ai_agent` Module、Forgejo 协作面、Incus 执行面、审批权限、排程与审计 | 29/64 已完成 |
 | [Module 专属命令能力要求](module-command-capability.md) | Module 命令声明、发现、类型化执行、CLI/anasd 共享服务与权限边界 | 23/34 已完成 |
 | [Incus compute Provider Module 集成要求](incus-module.md) | `compute/incus_vm` Provider、多消费者隔离、Secret 注入边界与 Forgejo 迁移 | 33/94 已完成 |
 | [VersityGW S3 兼容 Module 集成要求](versitygw-module.md) | `object_storage/s3` Capability、per-Resource bucket/凭据、POSIX backend、安全和验收 | 30/32 已完成 |
