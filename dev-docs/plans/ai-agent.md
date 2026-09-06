@@ -36,7 +36,7 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 | M2：交互契约与产物入库 | AGENT-R-015—R-029 | 已完成；单元、契约与真实 Forgejo e2e 均通过 |
 | M3：权限、目录组授权与审计 | AGENT-R-030—R-036 | 已完成；判定引擎、审计与目录侧 `OU=Cap` 均已落地，`--group-team-map` 投影待接 |
 | M4：执行面、分支策略与执行 issue | AGENT-R-037—R-044 | 未开始 |
-| M5：排程、执行时机与队列 | AGENT-R-045—R-051 | 未开始 |
+| M5：排程、执行时机与队列 | AGENT-R-045—R-051 | 已完成；排序、时机与队列面均已落地并对真实 Forgejo 验证 |
 | M6：记录、会话视图与可扩展性 | AGENT-R-052—R-061 | 未开始 |
 | M7：真实部署验收 | AGENT-R-062—R-064 | 未开始 |
 
@@ -106,11 +106,16 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 
 ## 6. M5 检查表
 
-- [ ] 实现执行前预估、`due_date` 校验与风险标记。
-- [ ] 实现队列排序（依赖 → 截止 → 优先级/入队时间）与串行/并行配置。
-- [ ] 实现 `now`/`at`/`on`/`hold` 四种时机与事件触发、等待超时回落。
-- [ ] 实现实际耗时写回 Forgejo 工时记录。
-- [ ] 实现置顶队列 issue 的维护与置顶不可用时的降级。
+- [x] 实现执行前预估、`due_date` 校验与风险标记。预估由 Agent 给出（`Estimate.Valid` 要求有产出者
+      和时长），没有预估即视为有风险而不是默认能赶上；墙钟上限取 `min(预估×2, 部署上限)`，预估抬不高
+      部署上限。
+- [x] 实现队列排序（依赖 → 截止 → 优先级/入队时间）与串行/并行配置。依赖是拓扑序，压过截止时间；
+      有依赖环时不丢作业，把环显出来。并发上限受主机门槛压制。
+- [x] 实现 `now`/`at`/`on`/`hold` 四种时机与事件触发、等待超时回落。可等待的事件集合是封闭的——
+      只包含控制面已订阅的 webhook，否则那是一个永远等不到的等待；每个等待都有超时。
+- [x] 实现实际耗时写回 Forgejo 原生工时记录，归属到执行的 Agent 账号。
+- [x] 实现置顶队列 issue 的维护与置顶不可用时的降级：置顶失败不是错误，队列照常维护，正文如实说明
+      没有置顶。
 
 ## 7. M6 检查表
 
@@ -165,8 +170,8 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
 | R-042 | `server-ai-agent-isolation-e2e.sh egress` | 出网 allowlist | — | 待实现 |
 | R-043 | 待新增 `test-env/scripts/server-ai-agent-cancel-e2e.sh` | 运行中作业取消 | — | 待实现 |
 | R-044 | `server-ai-agent-cancel-e2e.sh idempotency` | 重复触发与重试 | — | 待实现 |
-| R-048 | 待新增 `test-env/scripts/server-ai-agent-schedule-e2e.sh` | 立即/定时/事件触发 | — | 待实现 |
-| R-050 | `server-ai-agent-schedule-e2e.sh tracked-time` | 工时回写 | — | 待实现 |
+| R-048 | `TestTimingsParseAndWriteBackTheirLabel` 等单元用例 | 立即/定时/事件触发与等待超时 | 2026-09-06 | 通过（事件到达的真实投递待 M6 接收端） |
+| R-050 | `TestSchedulingAgainstLiveForgejo` | 真实 Forgejo 的工时回写 | 2026-09-06 | 通过 |
 | R-054 | 待新增 `test-env/scripts/server-ai-agent-session-e2e.sh` | 容器重建后续接与降级 | — | 待实现 |
 | R-057 | 待新增 `test-env/scripts/server-ai-agent-terminal-e2e.sh` | 管理员与非管理员附着 | — | 待实现 |
 | R-058 | `server-ai-agent-schedule-e2e.sh budget` | 预算与墙钟截断 | — | 待实现 |
@@ -176,6 +181,8 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
 
 ## 11. 当前阻塞
 
+- `AGENT-R-048` 的事件触发只验证了解析、匹配与超时三段；**"真实投递到达后作业入队"**这一段要等
+  接收端把 `pull_request` / `action_run_*` 分发到等待中的作业，属于 M6 的记录与分发面。
 - webhook 的**投递语义**（超时、重试、可否手动重投）仍未复核：需要一个真实的接收端，属于 M2。
   当前实现按“至多一次”设计，对账是补偿手段，这条不阻塞 M1。
 - 执行面依赖 [Incus compute Provider](incus-module.md) 的 M6（真实宿主验收），该里程碑本身

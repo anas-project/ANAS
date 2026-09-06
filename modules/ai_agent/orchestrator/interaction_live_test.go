@@ -319,3 +319,109 @@ func branchNames(ctx context.Context, t *testing.T, issues ForgejoIssues, repo R
 	}
 	return names
 }
+
+// TestSchedulingAgainstLiveForgejo checks the upstream surface the queue
+// depends on: deadlines, issue dependencies, tracked time and pinning, plus
+// what Forgejo does when the pins run out -- which is the degradation
+// AGENT-R-051 requires and cannot be observed from a stub.
+func TestSchedulingAgainstLiveForgejo(t *testing.T) {
+	baseURL := os.Getenv("AI_AGENT_TEST_FORGEJO_URL")
+	token := os.Getenv("AI_AGENT_TEST_FORGEJO_TOKEN")
+	org := os.Getenv("AI_AGENT_TEST_FORGEJO_ORG")
+	repoName := os.Getenv("AI_AGENT_TEST_FORGEJO_REPO_IN")
+	if baseURL == "" || token == "" || org == "" || repoName == "" {
+		t.Skip("set the AI_AGENT_TEST_FORGEJO_* variables to run the live scheduling tests")
+	}
+	ctx := context.Background()
+	repo, err := ParseRepo(org + "/" + repoName)
+	if err != nil {
+		t.Fatalf("repository: %v", err)
+	}
+	issues := NewForgejoIssues(baseURL, token, NewRedactor(token))
+	suffix := strconv.FormatInt(time.Now().Unix(), 10)
+
+	blocker, err := issues.CreateIssue(ctx, repo, "[agent] blocker "+suffix, "prerequisite", nil)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	dependent, err := issues.CreateIssue(ctx, repo, "[agent] dependent "+suffix, "waits", nil)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+
+	// A deadline is upstream's own field, so /due and a person editing it in the
+	// UI change the same thing.
+	deadline := time.Now().Add(48 * time.Hour)
+	if err := issues.SetDueDate(ctx, repo, dependent.Number, deadline); err != nil {
+		t.Fatalf("SetDueDate: %v", err)
+	}
+
+	// The hard order is written as an issue dependency, which is what makes
+	// "blocked by #n" visible on the issue rather than only in the queue.
+	if err := issues.AddDependency(ctx, repo, dependent.Number, repo, blocker.Number); err != nil {
+		t.Fatalf("AddDependency: %v", err)
+	}
+	// Adding it twice is the idempotent case a repeated sweep produces.
+	if err := issues.AddDependency(ctx, repo, dependent.Number, repo, blocker.Number); err != nil {
+		t.Fatalf("AddDependency twice: %v", err)
+	}
+
+	// AGENT-R-050.
+	if err := issues.TrackTime(ctx, repo, dependent.Number, 17*time.Minute, ""); err != nil {
+		t.Fatalf("TrackTime: %v", err)
+	}
+	if err := issues.TrackTime(ctx, repo, dependent.Number, 0, ""); err != nil {
+		t.Fatalf("TrackTime with no duration: %v", err)
+	}
+
+	// AGENT-R-051: the queue board, pinned when it can be.
+	board := &QueueBoard{Repo: repo, Issues: issues, Outbox: &Outbox{Store: NewMemoryStore()},
+		ForgejoURL: baseURL, Labels: LabelIndex{}}
+	entries := []QueueEntry{
+		{Repo: repo, Issue: dependent.Number, Agent: "codex", State: JobQueued,
+			DependsOn: []int{blocker.Number}, Due: deadline, EnqueuedAt: time.Now()},
+		{Repo: repo, Issue: blocker.Number, Agent: "codex", State: JobQueued, EnqueuedAt: time.Now()},
+	}
+	number, pinned, err := board.Sync(ctx, entries, Concurrency{Parallel: 1}, 0)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	t.Logf("queue issue #%d, pinned=%v", number, pinned)
+
+	// Whether or not the pin succeeded, the board says which of the two it is,
+	// and the order it shows is the computed one.
+	current, err := issues.Issue(ctx, repo, number)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if pinned == strings.Contains(current.Body, "could not be pinned") {
+		t.Fatalf("the body and the pin state disagree (pinned=%v)", pinned)
+	}
+	if strings.Index(current.Body, "#"+strconv.Itoa(blocker.Number)) >
+		strings.Index(current.Body, "#"+strconv.Itoa(dependent.Number)) {
+		t.Fatalf("the blocker is listed after the job it blocks:\n%s", current.Body)
+	}
+
+	// A second sync over an unchanged queue rewrites nothing.
+	if _, _, err := board.Sync(ctx, entries, Concurrency{Parallel: 1}, number); err != nil {
+		t.Fatalf("second Sync: %v", err)
+	}
+	again, err := issues.Issue(ctx, repo, number)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if again.Body != current.Body {
+		t.Fatal("an unchanged queue produced a different body")
+	}
+
+	// The board is found again by title after a restart.
+	if pinned {
+		found, err := FindQueueIssue(ctx, issues, repo)
+		if err != nil {
+			t.Fatalf("FindQueueIssue: %v", err)
+		}
+		if found != number {
+			t.Fatalf("FindQueueIssue = %d, want %d", found, number)
+		}
+	}
+}

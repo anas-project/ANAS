@@ -33,6 +33,15 @@ type ForgejoIssues interface {
 	CreateLabel(ctx context.Context, repo Repo, label Label) (RepoLabel, error)
 	UpdateLabel(ctx context.Context, repo Repo, id int64, label Label) (RepoLabel, error)
 
+	EditIssueBody(ctx context.Context, repo Repo, number int, body string) (Issue, error)
+	SetDueDate(ctx context.Context, repo Repo, number int, due time.Time) error
+	AddDependency(ctx context.Context, repo Repo, number int, blocker Repo, blockerNumber int) error
+	TrackTime(ctx context.Context, repo Repo, number int, spent time.Duration, user string) error
+	PinIssue(ctx context.Context, repo Repo, number int) error
+	PinnedIssues(ctx context.Context, repo Repo) ([]Issue, error)
+	IssuesByLabel(ctx context.Context, repo Repo, label string) ([]Issue, error)
+	NewPinAllowed(ctx context.Context, repo Repo) (bool, error)
+
 	Repository(ctx context.Context, repo Repo) (Repository, error)
 	FileContents(ctx context.Context, repo Repo, path, ref string) (FileContent, error)
 	PutFile(ctx context.Context, repo Repo, request FileWrite) (FileCommit, error)
@@ -186,6 +195,115 @@ func (c issuesClient) AssignIssue(ctx context.Context, repo Repo, number int, as
 	path := c.repoPath(repo, "/issues/"+strconv.Itoa(number))
 	body := map[string]any{"assignees": assignees}
 	return c.do(ctx, http.MethodPatch, path, body, nil, nil, http.StatusCreated, http.StatusOK)
+}
+
+func (c issuesClient) EditIssueBody(ctx context.Context, repo Repo, number int, body string) (Issue, error) {
+	var issue Issue
+	path := c.repoPath(repo, "/issues/"+strconv.Itoa(number))
+	if err := c.do(ctx, http.MethodPatch, path, map[string]any{"body": body}, &issue, nil,
+		http.StatusCreated, http.StatusOK); err != nil {
+		return Issue{}, fmt.Errorf("update the body of %s#%d: %w", repo, number, err)
+	}
+	return issue, nil
+}
+
+// SetDueDate writes the issue's own deadline. The deadline is upstream's field
+// rather than one of this module's: a person editing it in the UI and an agent
+// setting it with /due are changing the same thing.
+func (c issuesClient) SetDueDate(ctx context.Context, repo Repo, number int, due time.Time) error {
+	path := c.repoPath(repo, "/issues/"+strconv.Itoa(number)+"/deadline")
+	body := map[string]any{"due_date": due.UTC().Format(time.RFC3339)}
+	return c.do(ctx, http.MethodPost, path, body, nil, nil, http.StatusCreated, http.StatusOK)
+}
+
+// AddDependency records that an issue is blocked by another. The hard order in
+// the queue is written here as well as kept in the database, so "waiting for
+// #12" is visible on the issue itself and not only in the queue overview.
+//
+// The payload is an IssueMeta: sending only the index is answered with
+// "repository does not exist", which reads like a server fault and is not one.
+//
+// A dependency that is already recorded comes back as a 500 rather than a
+// conflict, and every reconciliation sweep re-asserts the same ordering -- so
+// that one case is treated as success. It is matched on the message and not on
+// the status, because a blanket "ignore 500" would swallow real faults.
+func (c issuesClient) AddDependency(ctx context.Context, repo Repo, number int, blocker Repo, blockerNumber int) error {
+	path := c.repoPath(repo, "/issues/"+strconv.Itoa(number)+"/dependencies")
+	body := map[string]any{"owner": blocker.Owner, "repo": blocker.Name, "index": blockerNumber}
+	err := c.do(ctx, http.MethodPost, path, body, nil, nil,
+		http.StatusCreated, http.StatusOK, http.StatusConflict)
+	if err != nil && isAlreadyDependent(err) {
+		return nil
+	}
+	return err
+}
+
+// isAlreadyDependent recognises the one upstream refusal that means the desired
+// state is already in place.
+func isAlreadyDependent(err error) bool {
+	var status *statusError
+	if !asStatusError(err, &status) {
+		return false
+	}
+	return strings.Contains(status.body, "dependency does already exist")
+}
+
+// TrackTime writes the actual duration into Forgejo's own time tracking, so the
+// effort an agent spent appears in the same reports as everyone else's rather
+// than only inside this module (AGENT-R-050).
+func (c issuesClient) TrackTime(ctx context.Context, repo Repo, number int, spent time.Duration, user string) error {
+	seconds := int64(spent.Round(time.Second) / time.Second)
+	if seconds <= 0 {
+		// Forgejo rejects a non-positive duration, and a job that took under a
+		// second is not worth a time entry anyway.
+		return nil
+	}
+	path := c.repoPath(repo, "/issues/"+strconv.Itoa(number)+"/times")
+	body := map[string]any{"time": seconds}
+	if user != "" {
+		body["user_name"] = user
+	}
+	return c.do(ctx, http.MethodPost, path, body, nil, nil, http.StatusOK, http.StatusCreated)
+}
+
+func (c issuesClient) PinIssue(ctx context.Context, repo Repo, number int) error {
+	path := c.repoPath(repo, "/issues/"+strconv.Itoa(number)+"/pin")
+	return c.do(ctx, http.MethodPost, path, nil, nil, nil,
+		http.StatusNoContent, http.StatusOK, http.StatusCreated)
+}
+
+func (c issuesClient) PinnedIssues(ctx context.Context, repo Repo) ([]Issue, error) {
+	var issues []Issue
+	if err := c.do(ctx, http.MethodGet, c.repoPath(repo, "/issues/pinned"), nil, &issues, nil,
+		http.StatusOK); err != nil {
+		return nil, fmt.Errorf("read the pinned issues of %s: %w", repo, err)
+	}
+	return issues, nil
+}
+
+// IssuesByLabel finds the issues carrying a label. It is how an issue this
+// module owns is recovered when its number is not held anywhere else and it is
+// not pinned -- which is precisely the degraded case, so recovery cannot depend
+// on the pin.
+func (c issuesClient) IssuesByLabel(ctx context.Context, repo Repo, label string) ([]Issue, error) {
+	query := url.Values{"labels": {label}, "state": {"all"}, "limit": {"50"}}
+	var issues []Issue
+	if err := c.do(ctx, http.MethodGet, c.repoPath(repo, "/issues?"+query.Encode()), nil, &issues, nil,
+		http.StatusOK); err != nil {
+		return nil, fmt.Errorf("find the issues of %s labelled %q: %w", repo, label, err)
+	}
+	return issues, nil
+}
+
+func (c issuesClient) NewPinAllowed(ctx context.Context, repo Repo) (bool, error) {
+	var answer struct {
+		Issues bool `json:"issues"`
+	}
+	if err := c.do(ctx, http.MethodGet, c.repoPath(repo, "/new_pin_allowed"), nil, &answer, nil,
+		http.StatusOK); err != nil {
+		return false, err
+	}
+	return answer.Issues, nil
 }
 
 func (c issuesClient) SetLabels(ctx context.Context, repo Repo, number int, labelIDs []int64) error {

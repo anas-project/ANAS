@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,13 @@ type fakeIssues struct {
 	repo      Repository
 	failOn    map[string]error
 	reactions map[int64][]string
+	// The scheduling surface: due dates, dependencies, tracked time and the
+	// pins, with a configurable pin limit so the degradation path is reachable.
+	dueDates     map[int]time.Time
+	dependencies map[int][]int
+	trackedTime  map[int]time.Duration
+	pinned       []int
+	pinLimit     int
 }
 
 func newFakeIssues() *fakeIssues {
@@ -35,7 +43,9 @@ func newFakeIssues() *fakeIssues {
 		issues: map[int]*Issue{}, comments: map[int64]*Comment{}, byIssue: map[int][]int64{},
 		labels: map[string]RepoLabel{}, files: map[string]string{}, branches: map[string]bool{"main": true},
 		failOn: map[string]error{}, reactions: map[int64][]string{},
-		repo: Repository{FullName: "anas-project/ANAS", DefaultBranch: "main"},
+		dueDates: map[int]time.Time{}, dependencies: map[int][]int{},
+		trackedTime: map[int]time.Duration{},
+		repo:        Repository{FullName: "anas-project/ANAS", DefaultBranch: "main"},
 	}
 }
 
@@ -68,12 +78,21 @@ func (f *fakeIssues) Issue(_ context.Context, _ Repo, number int) (Issue, error)
 	return *issue, nil
 }
 
-func (f *fakeIssues) CreateIssue(_ context.Context, _ Repo, title, body string, _ []int64) (Issue, error) {
+func (f *fakeIssues) CreateIssue(_ context.Context, _ Repo, title, body string, labels []int64) (Issue, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.record("CreateIssue")
 	number := len(f.issues) + 1
 	issue := &Issue{ID: f.id(), Number: number, Title: title, Body: body, State: "open"}
+	// The real endpoint applies the labels it is given at creation, and an
+	// issue this module later finds again by its label depends on that.
+	for _, id := range labels {
+		for _, label := range f.labels {
+			if label.ID == id {
+				issue.Labels = append(issue.Labels, label)
+			}
+		}
+	}
 	f.issues[number] = issue
 	return *issue, nil
 }
@@ -211,6 +230,100 @@ func (f *fakeIssues) UpdateLabel(_ context.Context, _ Repo, id int64, label Labe
 		Color: strings.TrimPrefix(label.Color, "#"), Description: label.Description}
 	f.labels[label.Name] = updated
 	return updated, nil
+}
+
+func (f *fakeIssues) EditIssueBody(_ context.Context, _ Repo, number int, body string) (Issue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("EditIssueBody")
+	issue, ok := f.issues[number]
+	if !ok {
+		return Issue{}, &statusError{status: http.StatusNotFound, body: "no such issue"}
+	}
+	issue.Body = body
+	return *issue, nil
+}
+
+func (f *fakeIssues) SetDueDate(_ context.Context, _ Repo, number int, due time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("SetDueDate")
+	f.dueDates[number] = due.UTC()
+	return nil
+}
+
+func (f *fakeIssues) AddDependency(_ context.Context, _ Repo, number int, _ Repo, blocker int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record(fmt.Sprintf("AddDependency:%d<-%d", number, blocker))
+	f.dependencies[number] = append(f.dependencies[number], blocker)
+	return nil
+}
+
+func (f *fakeIssues) TrackTime(_ context.Context, _ Repo, number int, spent time.Duration, user string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if spent <= 0 {
+		return nil
+	}
+	f.record("TrackTime:" + user)
+	f.trackedTime[number] += spent.Round(time.Second)
+	return nil
+}
+
+func (f *fakeIssues) PinIssue(_ context.Context, _ Repo, number int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("PinIssue")
+	if f.pinLimit > 0 && len(f.pinned) >= f.pinLimit && !containsInt(f.pinned, number) {
+		return &statusError{status: http.StatusBadRequest, body: "no pin left"}
+	}
+	if !containsInt(f.pinned, number) {
+		f.pinned = append(f.pinned, number)
+	}
+	return nil
+}
+
+func (f *fakeIssues) PinnedIssues(_ context.Context, _ Repo) ([]Issue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []Issue
+	for _, number := range f.pinned {
+		if issue, ok := f.issues[number]; ok {
+			out = append(out, *issue)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeIssues) IssuesByLabel(_ context.Context, _ Repo, label string) ([]Issue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []Issue
+	for _, issue := range f.issues {
+		for _, carried := range issue.Labels {
+			if carried.Name == label {
+				out = append(out, *issue)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
+	return out, nil
+}
+
+func (f *fakeIssues) NewPinAllowed(context.Context, Repo) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pinLimit == 0 || len(f.pinned) < f.pinLimit, nil
+}
+
+func containsInt(values []int, wanted int) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeIssues) Repository(context.Context, Repo) (Repository, error) {
