@@ -37,7 +37,8 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatalf("second Migrate: %v", err)
 	}
 	for _, table := range []string{"audit_record", "reconcile_cursor", "webhook_registration",
-		"agent_identity", "outbox_write", "inbox_event"} {
+		"agent_identity", "outbox_write", "inbox_event",
+		"agent_grant", "agent_grant_deny", "policy_override"} {
 		if _, err := store.pool.Exec(ctx, "DELETE FROM "+table); err != nil {
 			t.Fatalf("clear %s: %v", table, err)
 		}
@@ -141,5 +142,90 @@ func TestPostgresStore(t *testing.T) {
 	}
 	if records[0].Reason == "refused while holding "+dsn {
 		t.Fatal("the audit reason was stored with the credential still in it")
+	}
+}
+
+// The policy tables carry the same semantics the engine relies on: a grant is
+// one row per person, a veto is one row per (person, agent) however often it is
+// written, and a repository-wide override is visible from every repository.
+func TestPostgresPolicyTables(t *testing.T) {
+	dsn := os.Getenv("AI_AGENT_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set AI_AGENT_TEST_DSN to run the PostgreSQL store tests")
+	}
+	ctx := context.Background()
+	store, err := OpenPostgres(ctx, dsn, NewRedactor(dsn))
+	if err != nil {
+		t.Fatalf("OpenPostgres: %v", err)
+	}
+	t.Cleanup(store.Close)
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	for _, table := range []string{"agent_grant", "agent_grant_deny", "policy_override"} {
+		if _, err := store.pool.Exec(ctx, "DELETE FROM "+table); err != nil {
+			t.Fatalf("clear %s: %v", table, err)
+		}
+	}
+
+	grant := Grant{User: "alice", Runtimes: []string{"codex"}, MaxAction: ActionExecute,
+		Terminal: true, Source: "teams", TakenAt: time.Now().UTC()}
+	if err := store.SaveGrant(ctx, grant); err != nil {
+		t.Fatalf("SaveGrant: %v", err)
+	}
+	grant.Runtimes = []string{"codex", "claude_code"}
+	if err := store.SaveGrant(ctx, grant); err != nil {
+		t.Fatalf("SaveGrant upsert: %v", err)
+	}
+	grants, err := store.Grants(ctx)
+	if err != nil || len(grants) != 1 || len(grants[0].Runtimes) != 2 {
+		t.Fatalf("Grants = %+v, %v; want one upserted row", grants, err)
+	}
+	if !grants[0].Terminal || grants[0].MaxAction != ActionExecute {
+		t.Fatalf("grant = %+v", grants[0])
+	}
+	// A person in no group is a real answer and must survive the round trip.
+	if err := store.SaveGrant(ctx, Grant{User: "dave", TakenAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("SaveGrant with no runtimes: %v", err)
+	}
+
+	repo, err := ParseRepo("anas-project/ANAS")
+	if err != nil {
+		t.Fatalf("ParseRepo: %v", err)
+	}
+	if err := store.SaveOverride(ctx, Override{Repo: repo.String(), User: "alice",
+		Actions: []Action{ActionReply}, By: "admin"}); err != nil {
+		t.Fatalf("SaveOverride: %v", err)
+	}
+	if err := store.SaveOverride(ctx, Override{Actions: []Action{ActionReply}, By: "admin"}); err != nil {
+		t.Fatalf("SaveOverride (repository-wide): %v", err)
+	}
+	overrides, err := store.Overrides(ctx, repo)
+	if err != nil || len(overrides) != 2 {
+		t.Fatalf("Overrides = %+v, %v; a repository-wide entry must be visible here", overrides, err)
+	}
+	other, _ := ParseRepo("anas-project/other")
+	elsewhere, err := store.Overrides(ctx, other)
+	if err != nil || len(elsewhere) != 1 {
+		t.Fatalf("Overrides elsewhere = %+v, %v; only the repository-wide entry belongs", elsewhere, err)
+	}
+
+	deny := Deny{User: "alice", Agent: "codex", Reason: "offboarding", By: "admin"}
+	if err := store.SaveDeny(ctx, deny); err != nil {
+		t.Fatalf("SaveDeny: %v", err)
+	}
+	deny.Reason = "offboarding, confirmed"
+	if err := store.SaveDeny(ctx, deny); err != nil {
+		t.Fatalf("SaveDeny twice: %v", err)
+	}
+	denies, err := store.Denies(ctx)
+	if err != nil || len(denies) != 1 || denies[0].Reason != "offboarding, confirmed" {
+		t.Fatalf("Denies = %+v, %v; writing the same veto twice is one veto", denies, err)
+	}
+	if err := store.RemoveDeny(ctx, "alice", "codex"); err != nil {
+		t.Fatalf("RemoveDeny: %v", err)
+	}
+	if err := store.RemoveDeny(ctx, "alice", "codex"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("removing an absent veto = %v, want ErrNotFound", err)
 	}
 }

@@ -72,6 +72,36 @@ var schema = []string{
 		issue INTEGER NOT NULL DEFAULT 0
 	)`,
 	`CREATE INDEX IF NOT EXISTS audit_record_at ON audit_record (at DESC)`,
+	`CREATE TABLE IF NOT EXISTS agent_grant (
+		username TEXT PRIMARY KEY,
+		runtimes TEXT[] NOT NULL DEFAULT '{}',
+		max_action TEXT NOT NULL DEFAULT '',
+		terminal BOOLEAN NOT NULL DEFAULT FALSE,
+		source TEXT NOT NULL DEFAULT '',
+		taken_at TIMESTAMPTZ NOT NULL
+	)`,
+	`CREATE TABLE IF NOT EXISTS agent_grant_deny (
+		id BIGSERIAL PRIMARY KEY,
+		username TEXT NOT NULL DEFAULT '',
+		agent TEXT NOT NULL DEFAULT '',
+		reason TEXT NOT NULL DEFAULT '',
+		created_by TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMPTZ NOT NULL
+	)`,
+	// One veto per (person, agent) pair. Writing the same veto twice is a
+	// repeated instruction, not a second refusal.
+	`CREATE UNIQUE INDEX IF NOT EXISTS agent_grant_deny_subject ON agent_grant_deny (username, agent)`,
+	`CREATE TABLE IF NOT EXISTS policy_override (
+		id BIGSERIAL PRIMARY KEY,
+		repo TEXT NOT NULL DEFAULT '',
+		issue INTEGER NOT NULL DEFAULT 0,
+		agent TEXT NOT NULL DEFAULT '',
+		username TEXT NOT NULL DEFAULT '',
+		actions TEXT[] NOT NULL DEFAULT '{}',
+		created_by TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMPTZ NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS policy_override_repo ON policy_override (repo)`,
 }
 
 // PostgresStore is the authoritative orchestration state.
@@ -326,4 +356,136 @@ func (s *PostgresStore) Audit(ctx context.Context, limit int) ([]AuditRecord, er
 		records = append(records, record)
 	}
 	return records, rows.Err()
+}
+
+func (s *PostgresStore) Grants(ctx context.Context) ([]Grant, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT username, runtimes, max_action, terminal, source, taken_at FROM agent_grant ORDER BY username`)
+	if err != nil {
+		return nil, fmt.Errorf("read capability grants: %s", s.redactor.Error(err))
+	}
+	defer rows.Close()
+	var grants []Grant
+	for rows.Next() {
+		var grant Grant
+		var action string
+		if err := rows.Scan(&grant.User, &grant.Runtimes, &action, &grant.Terminal,
+			&grant.Source, &grant.TakenAt); err != nil {
+			return nil, fmt.Errorf("read capability grants: %s", s.redactor.Error(err))
+		}
+		grant.MaxAction = Action(action)
+		grants = append(grants, grant)
+	}
+	return grants, rows.Err()
+}
+
+func (s *PostgresStore) SaveGrant(ctx context.Context, grant Grant) error {
+	runtimes := grant.Runtimes
+	if runtimes == nil {
+		runtimes = []string{}
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO agent_grant (username, runtimes, max_action, terminal, source, taken_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (username) DO UPDATE SET
+			runtimes = EXCLUDED.runtimes, max_action = EXCLUDED.max_action,
+			terminal = EXCLUDED.terminal, source = EXCLUDED.source, taken_at = EXCLUDED.taken_at`,
+		grant.User, runtimes, string(grant.MaxAction), grant.Terminal, grant.Source, grant.TakenAt.UTC())
+	if err != nil {
+		return fmt.Errorf("save capability grant: %s", s.redactor.Error(err))
+	}
+	return nil
+}
+
+func (s *PostgresStore) Overrides(ctx context.Context, repo Repo) ([]Override, error) {
+	// A repository-wide entry has an empty repo, so both are read together and
+	// the matcher decides.
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, repo, issue, agent, username, actions, created_by, created_at
+		FROM policy_override WHERE repo = $1 OR repo = '' ORDER BY id`, repo.String())
+	if err != nil {
+		return nil, fmt.Errorf("read policy overrides: %s", s.redactor.Error(err))
+	}
+	defer rows.Close()
+	var overrides []Override
+	for rows.Next() {
+		var override Override
+		var actions []string
+		if err := rows.Scan(&override.ID, &override.Repo, &override.Issue, &override.Agent,
+			&override.User, &actions, &override.By, &override.At); err != nil {
+			return nil, fmt.Errorf("read policy overrides: %s", s.redactor.Error(err))
+		}
+		for _, action := range actions {
+			override.Actions = append(override.Actions, Action(action))
+		}
+		overrides = append(overrides, override)
+	}
+	return overrides, rows.Err()
+}
+
+func (s *PostgresStore) SaveOverride(ctx context.Context, override Override) error {
+	actions := make([]string, 0, len(override.Actions))
+	for _, action := range override.Actions {
+		actions = append(actions, string(action))
+	}
+	at := override.At
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO policy_override (repo, issue, agent, username, actions, created_by, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		override.Repo, override.Issue, override.Agent, override.User, actions, override.By, at.UTC())
+	if err != nil {
+		return fmt.Errorf("save policy override: %s", s.redactor.Error(err))
+	}
+	return nil
+}
+
+func (s *PostgresStore) Denies(ctx context.Context) ([]Deny, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT id, username, agent, reason, created_by, created_at FROM agent_grant_deny ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("read the veto list: %s", s.redactor.Error(err))
+	}
+	defer rows.Close()
+	var denies []Deny
+	for rows.Next() {
+		var deny Deny
+		if err := rows.Scan(&deny.ID, &deny.User, &deny.Agent, &deny.Reason,
+			&deny.By, &deny.At); err != nil {
+			return nil, fmt.Errorf("read the veto list: %s", s.redactor.Error(err))
+		}
+		denies = append(denies, deny)
+	}
+	return denies, rows.Err()
+}
+
+func (s *PostgresStore) SaveDeny(ctx context.Context, deny Deny) error {
+	at := deny.At
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO agent_grant_deny (username, agent, reason, created_by, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (username, agent) DO UPDATE SET
+			reason = EXCLUDED.reason, created_by = EXCLUDED.created_by, created_at = EXCLUDED.created_at`,
+		deny.User, deny.Agent, deny.Reason, deny.By, at.UTC())
+	if err != nil {
+		return fmt.Errorf("save veto: %s", s.redactor.Error(err))
+	}
+	return nil
+}
+
+func (s *PostgresStore) RemoveDeny(ctx context.Context, user, agent string) error {
+	tag, err := s.pool.Exec(ctx,
+		`DELETE FROM agent_grant_deny WHERE username = $1 AND agent = $2`, user, agent)
+	if err != nil {
+		return fmt.Errorf("lift veto: %s", s.redactor.Error(err))
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

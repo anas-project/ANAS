@@ -34,7 +34,7 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 | --- | --- | --- |
 | M1：Module 骨架、身份凭据与事件入站 | AGENT-R-001—R-014 | 已完成；单元、契约与真实依赖 e2e 均通过，容器级重启 e2e 待整套部署 |
 | M2：交互契约与产物入库 | AGENT-R-015—R-029 | 已完成；单元、契约与真实 Forgejo e2e 均通过 |
-| M3：权限、目录组授权与审计 | AGENT-R-030—R-036 | 未开始 |
+| M3：权限、目录组授权与审计 | AGENT-R-030—R-036 | 已完成；判定引擎与审计已落地并对真实 Forgejo 验证，目录侧 `OU=Cap` 登记仍待决策 |
 | M4：执行面、分支策略与执行 issue | AGENT-R-037—R-044 | 未开始 |
 | M5：排程、执行时机与队列 | AGENT-R-045—R-051 | 未开始 |
 | M6：记录、会话视图与可扩展性 | AGENT-R-052—R-061 | 未开始 |
@@ -79,11 +79,17 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 
 ## 4. M3 检查表
 
-- [ ] 实现仓库权限推导、逐条覆盖与整体关闭同步。
-- [ ] 实现 `CAP_ai_agent_*` 目录组经 IAM 与 Forgejo team 的投影与定期快照刷新。
-- [ ] 实现即时否决表与 `agent-grant deny` 命令。
-- [ ] 实现判定审计（含拒绝）与作业开始前的二次判定。
-- [ ] 验证 issue 正文、模板与评论中的配置只能收窄。
+- [x] 实现仓库权限推导（none/read/write/admin/owner → 动作集）、逐条覆盖与整体关闭同步。
+      五个权限档位与推导表在真实 `15.0.7` 上逐一验证过。
+- [x] 实现 `CAP_ai_agent_*` 目录组经 Forgejo team 的投影与定期快照刷新。读法是以该用户身份
+      `GET /user/teams`（`Sudo` 头）——一次调用拿到全部 team，而不是逐个 team 查成员。
+- [x] 实现即时否决表与 `Veto` / `LiftVeto`（`agent-grant deny` 的后端）。否决在每次判定时实时读取，
+      不走快照缓存，因此撤权下一次请求即生效。
+- [x] 实现判定审计（含拒绝）与作业开始前的二次判定（`Recheck` 主动丢弃快照）。
+      审计写入失败即判定失败：记不下来的批准和没发生过的批准无法区分。
+- [x] 验证 issue 正文、模板与评论中的配置只能收窄（覆盖条目取交集，不做并集）。
+- [ ] `agent-grant` 的 Module 命令外壳（把 `Veto`/`LiftVeto` 接到 `module-command` capability 上）
+      留到 M6 与其余命令一起做。
 
 ## 5. M4 检查表
 
@@ -147,7 +153,7 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
 | R-006 | `TestForgejoAdminAgainstLiveInstance` | token scope 与仓库限定（含越界读写） | 2026-09-06 | 通过 |
 | R-007 | `TestM1AgainstLiveDependencies` | token/SSH key 轮换，轮换后仅一份存活 | 2026-09-06 | 通过 |
 | R-027 | `TestM2AgainstLiveForgejo` | 空仓库首次启用：探测约定、开问卷、提交 `.anas-agent.yml` 并开 PR | 2026-09-06 | 通过 |
-| R-032 | 待新增 `test-env/scripts/server-ai-agent-grant-e2e.sh` | Samba 组 → IAM → team 投影 | — | 待实现 |
+| R-032 | `TestPolicyAgainstLiveForgejo` | Forgejo team → 能力上限投影（Samba → IAM 段待目录侧登记后补） | 2026-09-06 | 部分通过 |
 | R-037 | 待新增 `test-env/scripts/server-ai-agent-isolation-e2e.sh` | 两个仓库并行作业 | — | 待实现 |
 | R-039 | `server-ai-agent-isolation-e2e.sh credentials` | 作业期凭据注入与吊销 | — | 待实现 |
 | R-040 | 待新增 `test-env/scripts/server-ai-agent-branch-pr-e2e.sh` | 保护分支 + 直接提交策略 | — | 待实现 |
@@ -171,6 +177,7 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
 - 执行面依赖 [Incus compute Provider](incus-module.md) 的 M6（真实宿主验收），该里程碑本身
   阻塞于独立 KVM/Incus 宿主。M4 在此之前只能实现控制面侧逻辑。
 - `CAP_<module-id>_<capability>` 组类别与 `OU=Cap,OU=Groups` 尚未在
-  [Samba AD 用户与权限规划](../../docs/architecture/samba-ad-user-planning.md)登记，M3 依赖该决策。
-  注册表已按 `CAP_ai_agent_<id>` 生成组名，只等目录侧登记。
+  [Samba AD 用户与权限规划](../../docs/architecture/samba-ad-user-planning.md)登记。M3 的**消费侧已完成**
+  （从 Forgejo team 读出能力上限，组名由注册表生成），缺的是链路前半段：目录里建组、IAM 用
+  `--group-team-map` 投影成 team。`AGENT-R-032` 的 e2e 因此只覆盖了 team → 上限这一段。
 - `modules/ai_agent` 的镜像尚未推到 registry；`.github/images.json` 已登记构建条目。

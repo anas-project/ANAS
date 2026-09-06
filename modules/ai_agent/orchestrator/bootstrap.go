@@ -201,7 +201,17 @@ func (b *Bootstrapper) provision(ctx context.Context, desired AgentIdentity, rep
 	if err := b.grantAccess(ctx, desired.Account, repositories); err != nil {
 		return err
 	}
-	token, err := b.Admin.CreateToken(ctx, desired.Account, tokenNameFor(1), discussionScopes, repositories)
+	// An account can already hold tokens this module minted and no longer knows
+	// about -- the database was restored from a backup, or a previous
+	// provisioning was interrupted after minting. Nothing else will ever revoke
+	// them, so provisioning a fresh identity revokes them first: otherwise the
+	// "never two live credentials" guarantee holds only for as long as the
+	// database does.
+	generation, err := b.revokeOrphans(ctx, desired.Account)
+	if err != nil {
+		return err
+	}
+	token, err := b.Admin.CreateToken(ctx, desired.Account, tokenNameFor(generation), discussionScopes, repositories)
 	if err != nil {
 		return err
 	}
@@ -210,7 +220,7 @@ func (b *Bootstrapper) provision(ctx context.Context, desired AgentIdentity, rep
 		return err
 	}
 	b.Redactor.Add(privateKey)
-	key, err := b.Admin.AddKey(ctx, desired.Account, keyTitleFor(1), publicKey)
+	key, err := b.Admin.AddKey(ctx, desired.Account, keyTitleFor(generation), publicKey)
 	if err != nil {
 		// The token was already minted. Leaving it behind would mean a
 		// half-provisioned identity that no later pass recognises, so it is
@@ -224,7 +234,7 @@ func (b *Bootstrapper) provision(ctx context.Context, desired AgentIdentity, rep
 	identity := AgentIdentity{
 		Runtime: desired.Runtime, Scope: desired.Scope, Account: desired.Account,
 		ForgejoUserID: user.ID, TokenID: token.ID, TokenFingerprint: fingerprint(token.Token),
-		SSHKeyID: key.ID, Generation: 1, RotatedAt: b.now(),
+		SSHKeyID: key.ID, Generation: generation, RotatedAt: b.now(),
 	}
 	if err := b.Store.SaveIdentity(ctx, identity); err != nil {
 		return err
@@ -234,6 +244,49 @@ func (b *Bootstrapper) provision(ctx context.Context, desired AgentIdentity, rep
 	}
 	b.log("provisioned agent identity %s for runtime %s", desired.Account, desired.Runtime)
 	return nil
+}
+
+// revokeOrphans removes the managed tokens an account still holds that this
+// module has no record of, and returns the generation the next credential
+// should carry. Names are unique per user upstream, so the new generation has
+// to clear the highest one seen -- otherwise a restored database would mint
+// a name that already exists and fail.
+//
+// Only tokens this module named are touched. A token a person minted by hand
+// for the same account is none of its business.
+func (b *Bootstrapper) revokeOrphans(ctx context.Context, account string) (int, error) {
+	tokens, err := b.Admin.ListTokens(ctx, account)
+	if err != nil {
+		return 0, err
+	}
+	generation := 1
+	for _, token := range tokens {
+		if !ManagedToken(token.Name) {
+			continue
+		}
+		if seen := generationOf(token.Name); seen >= generation {
+			generation = seen + 1
+		}
+		if err := b.Admin.DeleteToken(ctx, account, token.ID); err != nil {
+			return 0, fmt.Errorf("revoke the orphaned token %q on %s: %w", token.Name, account, err)
+		}
+		b.log("revoked an orphaned managed token %q on %s", token.Name, account)
+	}
+	return generation, nil
+}
+
+// generationOf reads the generation out of a managed credential's name, or 0
+// when the name predates the convention.
+func generationOf(name string) int {
+	_, suffix, found := strings.Cut(name, tokenName+"-g")
+	if !found {
+		return 0
+	}
+	value, err := strconv.Atoi(suffix)
+	if err != nil {
+		return 0
+	}
+	return value
 }
 
 // grantAccess makes the agent a collaborator on every repository its token will

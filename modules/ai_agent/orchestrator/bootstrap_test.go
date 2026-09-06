@@ -414,3 +414,71 @@ func TestWebhookIsAdoptedFromTheListingWhenRecordIsLost(t *testing.T) {
 		t.Fatal("the adopted hook kept the older signing key")
 	}
 }
+
+// AGENT-R-007: the "never two live credentials" guarantee has to survive losing
+// the database. An account holding a managed token this module no longer knows
+// about is one nothing else will ever revoke, so provisioning revokes it first.
+func TestProvisioningRevokesOrphanedManagedCredentials(t *testing.T) {
+	bootstrapper, admin, store := testBootstrapper(t, ScopingRepositories)
+	ctx := context.Background()
+	if err := bootstrapper.Reconcile(ctx); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	identities, _ := store.Identities(ctx)
+	orphan := identities[0]
+
+	// Lose the record, as a restore from an older backup would.
+	forgotten := NewMemoryStore()
+	bootstrapper.Store = forgotten
+	if err := bootstrapper.Reconcile(ctx); err != nil {
+		t.Fatalf("Reconcile after losing the record: %v", err)
+	}
+	if admin.liveTokens("agent-codex") != 1 {
+		t.Fatalf("the account holds %d managed tokens; the orphan was left live",
+			admin.liveTokens("agent-codex"))
+	}
+	if _, stillThere := admin.tokens["agent-codex"][orphan.TokenID]; stillThere {
+		t.Fatal("the orphaned token was not the one revoked")
+	}
+	// The replacement carries a generation past the orphan's, because upstream
+	// requires the name to be unique.
+	rebuilt, _ := forgotten.Identities(ctx)
+	if rebuilt[0].Generation <= orphan.Generation {
+		t.Fatalf("generation went from %d to %d; the name would collide upstream",
+			orphan.Generation, rebuilt[0].Generation)
+	}
+}
+
+// A token a person minted by hand for the same account is not this module's to
+// revoke.
+func TestProvisioningLeavesUnmanagedTokensAlone(t *testing.T) {
+	bootstrapper, admin, _ := testBootstrapper(t, ScopingRepositories)
+	ctx := context.Background()
+	if _, err := admin.EnsureUser(ctx, "agent-codex", "agent-codex@localhost.invalid"); err != nil {
+		t.Fatalf("EnsureUser: %v", err)
+	}
+	if _, err := admin.CreateToken(ctx, "agent-codex", "someone-elses-token", nil, nil); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := bootstrapper.Reconcile(ctx); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	var found bool
+	for _, token := range admin.tokens["agent-codex"] {
+		if token.Name == "someone-elses-token" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("a token this module did not mint was revoked")
+	}
+}
+
+func TestGenerationOfReadsManagedNames(t *testing.T) {
+	if got := generationOf(tokenNameFor(7)); got != 7 {
+		t.Fatalf("generationOf = %d, want 7", got)
+	}
+	if got := generationOf("something-else"); got != 0 {
+		t.Fatalf("generationOf of an unmanaged name = %d, want 0", got)
+	}
+}

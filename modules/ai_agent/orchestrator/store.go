@@ -115,6 +115,11 @@ type Store interface {
 	AppendAudit(ctx context.Context, record AuditRecord) error
 	Audit(ctx context.Context, limit int) ([]AuditRecord, error)
 
+	// The policy surface. It is part of the same store because a decision and
+	// its audit record have to land together: an approval that was granted but
+	// not recorded is indistinguishable from one that never happened.
+	PolicyStore
+
 	Close()
 }
 
@@ -131,12 +136,17 @@ type MemoryStore struct {
 	hook       *WebhookRegistration
 	cursors    map[string]time.Time
 	audit      []AuditRecord
+	grants     map[string]Grant
+	overrides  []Override
+	denies     []Deny
+	nextID     int64
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		events: map[string]InboxEvent{}, writes: map[string]OutboxWrite{},
 		identities: map[string]AgentIdentity{}, cursors: map[string]time.Time{},
+		grants: map[string]Grant{},
 	}
 }
 
@@ -291,4 +301,85 @@ func (s *MemoryStore) Audit(_ context.Context, limit int) ([]AuditRecord, error)
 	out := make([]AuditRecord, limit)
 	copy(out, s.audit[len(s.audit)-limit:])
 	return out, nil
+}
+
+func (s *MemoryStore) Grants(context.Context) ([]Grant, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Grant, 0, len(s.grants))
+	for _, grant := range s.grants {
+		out = append(out, grant)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].User < out[j].User })
+	return out, nil
+}
+
+func (s *MemoryStore) SaveGrant(_ context.Context, grant Grant) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.grants[grant.User] = grant
+	return nil
+}
+
+func (s *MemoryStore) Overrides(_ context.Context, repo Repo) ([]Override, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Override
+	for _, override := range s.overrides {
+		if override.Repo == "" || override.Repo == repo.String() {
+			out = append(out, override)
+		}
+	}
+	return out, nil
+}
+
+func (s *MemoryStore) SaveOverride(_ context.Context, override Override) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextID++
+	override.ID = s.nextID
+	if override.At.IsZero() {
+		override.At = time.Now().UTC()
+	}
+	s.overrides = append(s.overrides, override)
+	return nil
+}
+
+func (s *MemoryStore) Denies(context.Context) ([]Deny, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Deny, len(s.denies))
+	copy(out, s.denies)
+	return out, nil
+}
+
+func (s *MemoryStore) SaveDeny(_ context.Context, deny Deny) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index, existing := range s.denies {
+		if existing.User == deny.User && existing.Agent == deny.Agent {
+			deny.ID = existing.ID
+			s.denies[index] = deny
+			return nil
+		}
+	}
+	s.nextID++
+	deny.ID = s.nextID
+	if deny.At.IsZero() {
+		deny.At = time.Now().UTC()
+	}
+	s.denies = append(s.denies, deny)
+	return nil
+}
+
+func (s *MemoryStore) RemoveDeny(_ context.Context, user, agent string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index, existing := range s.denies {
+		if existing.User == user && existing.Agent == agent {
+			s.denies = append(s.denies[:index], s.denies[index+1:]...)
+			return nil
+		}
+	}
+	return ErrNotFound
 }
