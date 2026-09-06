@@ -33,19 +33,39 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	maximumCredentialIDLength := 64
 	minimumSecretLength := 16
 	maximumSecretLength := 128
+	zero := 0
+	maximumBudgetUSD := 100000
+	maximumJobMinutes := 1440
+	minimumSweepSeconds := 30
+	maximumSweepSeconds := 86400
+	runtimeListPattern := `^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$`
+	runtimeImagePattern := `^(?:[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64}(?:,[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64})*)?$`
+	egressPattern := `^(?:[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?(?:,[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?)*)?$`
+	repositoryListPattern := `^(?:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100}(?:,[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100})*)?$`
 	wantConstraints := map[string]configschema.Constraints{
-		"casdoor.ldap_auto_sync_minutes": {Minimum: &minimumOne},
-		"forgejo.actions_runner_image":   {Pattern: `^(?:[0-9a-f]{64})?$`},
-		"forgejo.domain_prefix":          {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
-		"forgejo.ssh_port":               {Minimum: &minimumOne, Maximum: &maximumPort},
-		"global.base_domain":             {Format: configschema.FormatDNSName},
-		"global.timezone":                {Format: configschema.FormatIANATimezone},
-		"global.default_language":        {Format: configschema.FormatLanguageTag},
-		"global.default_locale":          {Format: configschema.FormatLocale},
-		"global.host_ip":                 {Format: configschema.FormatIPv4},
-		"global.host_lan_ip":             {Format: configschema.FormatIPv4},
-		"global.host_lan_bridge_ip":      {Format: configschema.FormatIPv4},
-		"eturnal.port":                   {Minimum: &minimumOne, Maximum: &maximumPort},
+		// Every one of these lists is empty by default and only has to be
+		// populated once ai_agent.enabled is on; the hook is what refuses to
+		// apply an enabled deployment with an empty list.
+		"ai_agent.agent_runtimes":             {Pattern: runtimeListPattern},
+		"ai_agent.agent_runtime_images":       {Pattern: runtimeImagePattern},
+		"ai_agent.daily_budget_usd":           {Minimum: &zero, Maximum: &maximumBudgetUSD},
+		"ai_agent.domain_prefix":              {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"ai_agent.egress_allowlist":           {Pattern: egressPattern},
+		"ai_agent.job_wallclock_minutes":      {Minimum: &minimumOne, Maximum: &maximumJobMinutes},
+		"ai_agent.reconcile_interval_seconds": {Minimum: &minimumSweepSeconds, Maximum: &maximumSweepSeconds},
+		"ai_agent.repository_allowlist":       {Pattern: repositoryListPattern},
+		"casdoor.ldap_auto_sync_minutes":      {Minimum: &minimumOne},
+		"forgejo.actions_runner_image":        {Pattern: `^(?:[0-9a-f]{64})?$`},
+		"forgejo.domain_prefix":               {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"forgejo.ssh_port":                    {Minimum: &minimumOne, Maximum: &maximumPort},
+		"global.base_domain":                  {Format: configschema.FormatDNSName},
+		"global.timezone":                     {Format: configschema.FormatIANATimezone},
+		"global.default_language":             {Format: configschema.FormatLanguageTag},
+		"global.default_locale":               {Format: configschema.FormatLocale},
+		"global.host_ip":                      {Format: configschema.FormatIPv4},
+		"global.host_lan_ip":                  {Format: configschema.FormatIPv4},
+		"global.host_lan_bridge_ip":           {Format: configschema.FormatIPv4},
+		"eturnal.port":                        {Minimum: &minimumOne, Maximum: &maximumPort},
 		// Empty is inside the pattern because the parameter ships empty; the
 		// incus hook is what refuses to apply until it is actually set.
 		"incus.endpoint":                  {Pattern: `^(?:https://[A-Za-z0-9.:_-]+)?$`},
@@ -81,6 +101,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"global.host_ip":                  {configschema.DefaultSourceRuntime, "app.applyHostNetwork"},
 		"global.host_lan_ip":              {configschema.DefaultSourceRuntime, "app.applyMacvlanPlan"},
 		"global.host_lan_bridge_ip":       {configschema.DefaultSourceRuntime, "app.applyMacvlanPlan"},
+		"ai_agent.language":               {configschema.DefaultSourceInherited, "ai_agent calculate"},
 		"collabora.admin_password":        {configschema.DefaultSourceGenerated, "ensureCollaboraPassword"},
 		"forgejo.language":                {configschema.DefaultSourceInherited, "forgejo calculate"},
 		"lam.admin_password":              {configschema.DefaultSourceGenerated, "ensureLAMPassword"},
@@ -135,6 +156,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"global.email":       true,
 	}
 	wantMustResolveOnly := map[string]bool{
+		"ai_agent.language":               true,
 		"global.timezone":                 true,
 		"global.default_language":         true,
 		"global.default_locale":           true,

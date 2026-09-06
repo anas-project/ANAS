@@ -6,6 +6,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 | Module | Version | Timezone | Language | Selection | Global language | Global locale | Count |
 | --- | --- | --- | --- | --- | --- | --- | ---: |
+| [ai_agent](#ai_agent) | 0.1.0-r1 | configured | supported | deployment_default | applied | not_consumed | 2 |
 | [authentik](#authentik) | 2026.5.6-r14 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [casdoor](#casdoor) | 3.143.0-r8 | container | supported | application | applied | not_consumed | 2 |
 | [collabora](#collabora) | 26.4.2-r5 | container | supported | integration | not_consumed | not_consumed | 43 |
@@ -29,6 +30,17 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [traefik](#traefik) | 3.7.10-r6 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [versitygw](#versitygw) | 1.7.0-r3 | container | not_applicable | none | not_consumed | not_consumed | 0 |
 | [vikunja](#vikunja) | 2.4.0-r4 | configured | supported | application | fallback | not_consumed | 32 |
+
+## ai_agent
+
+- **Version / 版本：** `0.1.0-r1`; reviewed 2026-09-05
+- **Timezone / 时区：** `configured` — The orchestrator inherits ANAS TZ and renders every timestamp it writes into a status comment, a schedule or an audit record in that zone; the database stores UTC.
+- **Language / 语言：** `supported`, `deployment_default` — the orchestrator's own writing -- status comments, refusal and downgrade explanations, and generated issue form templates
+- **ANAS globals / 全局默认：** `default_language=applied`; `default_locale=not_consumed`
+- **Fallback / 回退：** An unsupported value warns and falls back to English. This setting does not constrain the language a model replies in; that follows the issue's own conversation.
+- **Supported / 支持语言：** `en`, `zh-CN`
+- **Notes / 说明：** The two values are the languages the orchestrator's own strings exist in. Agent replies are model output and are not translated by this module.
+- **Evidence / 证据：** [0.1.0 — agentLanguages](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/hook/main.go)
 
 ## authentik
 

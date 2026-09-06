@@ -6,11 +6,11 @@
 ## 结论
 
 <!-- generated:configuration-summary:start -->
-- 内置 Module：`23`
-- 已声明参数：共 `174` 个（全局 `17` 个、Module 所有 `157` 个；结构化 Module 参数 `153` 个、裸 `env.*` 参数 `4` 个）
-- 解析阶段：`input_required` `2` 个、`must_resolve` `30` 个、未知类型 `0` 个
-- 类型分布：`bool` `25`、`enum` `23`、`int` `27`、`string` `99`
-- 默认值来源分布：`generated` `10`、`host` `3`、`inherited` `7`、`none` `8`、`runtime` `4`、`static` `142`
+- 内置 Module：`24`
+- 已声明参数：共 `188` 个（全局 `17` 个、Module 所有 `171` 个；结构化 Module 参数 `167` 个、裸 `env.*` 参数 `4` 个）
+- 解析阶段：`input_required` `2` 个、`must_resolve` `31` 个、未知类型 `0` 个
+- 类型分布：`bool` `26`、`enum` `26`、`int` `30`、`string` `106`
+- 默认值来源分布：`generated` `10`、`host` `3`、`inherited` `8`、`none` `8`、`runtime` `4`、`static` `155`
 <!-- generated:configuration-summary:end -->
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
@@ -145,10 +145,18 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 `must_resolve: true`、`default_source: none`；只有 resolver 未能注入时才需要 Module 侧输入。
 
 <!-- generated:configuration-constraints:start -->
-当前显式可移植约束：`24` 项。
+当前显式可移植约束：`32` 项。
 
 | 参数路径 | 可移植约束 |
 | --- | --- |
+| `ai_agent.agent_runtime_images` | <code>pattern=&#34;^(?:[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64}(?:,[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64})*)?$&#34;</code> |
+| `ai_agent.agent_runtimes` | <code>pattern=&#34;^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$&#34;</code> |
+| `ai_agent.daily_budget_usd` | <code>minimum=0; maximum=100000</code> |
+| `ai_agent.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+| `ai_agent.egress_allowlist` | <code>pattern=&#34;^(?:[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?(?:,[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?)*)?$&#34;</code> |
+| `ai_agent.job_wallclock_minutes` | <code>minimum=1; maximum=1440</code> |
+| `ai_agent.reconcile_interval_seconds` | <code>minimum=30; maximum=86400</code> |
+| `ai_agent.repository_allowlist` | <code>pattern=&#34;^(?:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100}(?:,[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100})*)?$&#34;</code> |
 | `casdoor.ldap_auto_sync_minutes` | <code>minimum=1</code> |
 | `eturnal.port` | <code>minimum=1; maximum=65535</code> |
 | `forgejo.actions_runner_image` | <code>pattern=&#34;^(?:[0-9a-f]{64})?$&#34;</code> |
@@ -179,6 +187,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | Owner | 参数数 | 参数路径 |
 | --- | ---: | --- |
 | `global` | 17 | `global.base_domain`<br>`global.chinese_build_speedup`<br>`global.chinese_speedup`<br>`global.container_prefix`<br>`global.default_language`<br>`global.default_locale`<br>`global.dns_server`<br>`global.email`<br>`global.host_ip`<br>`global.host_lan_arp_check`<br>`global.host_lan_bridge_ip`<br>`global.host_lan_ip`<br>`global.ipv4`<br>`global.ipv6`<br>`global.network_prefix`<br>`global.timezone`<br>`global.virtual_domain` |
+| `ai_agent` | 14 | `ai_agent.agent_runtime_images`<br>`ai_agent.agent_runtimes`<br>`ai_agent.daily_budget_usd`<br>`ai_agent.db_name`<br>`ai_agent.db_type`<br>`ai_agent.domain_prefix`<br>`ai_agent.egress_allowlist`<br>`ai_agent.enabled`<br>`ai_agent.execution_isolation`<br>`ai_agent.job_wallclock_minutes`<br>`ai_agent.language`<br>`ai_agent.reconcile_interval_seconds`<br>`ai_agent.repository_allowlist`<br>`ai_agent.workspace_scope` |
 | `authentik` | 6 | `authentik.db_name`<br>`authentik.db_type`<br>`authentik.domain_prefix`<br>`authentik.ldap_enabled`<br>`authentik.ldap_password_writeback`<br>`authentik.log_level` |
 | `casdoor` | 4 | `casdoor.db_name`<br>`casdoor.db_type`<br>`casdoor.domain_prefix`<br>`casdoor.ldap_auto_sync_minutes` |
 | `collabora` | 5 | `collabora.admin_password`<br>`collabora.admin_username`<br>`collabora.auto_save`<br>`collabora.domain_prefix`<br>`collabora.log_level` |
@@ -232,12 +241,12 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 <!-- generated:configuration-effects:start -->
 | Module 参数 effect | 参数数 | 修改结果 |
 | --- | ---: | --- |
-| `container_recreate` | 99 | 重新渲染，并重建受影响容器或 Compose project |
+| `container_recreate` | 106 | 重新渲染，并重建受影响容器或 Compose project |
 | `credential_rotate` | 9 | 通过凭据轮换事务同步应用状态与 Secret Store |
-| `data_migrate` | 15 | 激活前迁移持久数据、数据库或成员身份 |
+| `data_migrate` | 17 | 激活前迁移持久数据、数据库或成员身份 |
 | `hot_reload` | 16 | 通过声明的管理命令应用；当前执行器可能保守地重建容器 |
 | `immutable` | 3 | 使用替换或专用迁移流程 |
-| `reconcile` | 15 | 通过 Module 生命周期调和应用、API 或文件状态 |
+| `reconcile` | 20 | 通过 Module 生命周期调和应用、API 或文件状态 |
 <!-- generated:configuration-effects:end -->
 
 ### 当前版本的实际执行边界

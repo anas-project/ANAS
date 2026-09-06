@@ -1,0 +1,261 @@
+api_version: anas.module/v1
+kind: Module
+name: ai_agent
+version: 0.1.0
+revision: 1
+app_version: 0.1.0
+abi:
+  supports:
+    - anas.module-hook/v1
+title: AI Agent orchestration
+description: Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract.
+category: app
+# M1 lands the module skeleton, unattended identity bootstrap and webhook
+# ingress. The requirement matrix keeps this module at `developing` until the
+# real-deployment acceptance in AGENT-R-062..064 has reproducible evidence.
+status: developing
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  requires:
+    # The collaboration surface. Issues, labels, comments, repositories and the
+    # identities the agents act as all live in this one application, which is
+    # why the orchestrator needs no cross-application identity mapping.
+    - forgejo
+    - traefik
+  contracts:
+    - name: relational_database
+      version: ">=1.0.0 <2.0.0"
+      selected_by: db_type
+      # PostgreSQL only. The orchestration state uses array and JSONB columns
+      # and advisory locks for job leases; offering MariaDB would mean a second
+      # dialect for a control plane that has no MariaDB deployment to serve.
+      interfaces:
+        - postgres
+      default: postgres
+    # Only while the module is enabled. A deployment that has not turned the
+    # orchestrator on must not be forced to stand up an Incus host it will
+    # never call.
+    - name: compute
+      version: ">=1.0.0 <2.0.0"
+      selected_by: execution_isolation
+      enabled_by: enabled
+      interfaces:
+        - incus_container
+        - incus_vm
+      # A system container is the default execution tier: the trust boundary is
+      # the repository, and a shared kernel is adequate for code the repository's
+      # own writers could already run. A VM is an explicit upgrade.
+      default: incus_container
+credentials:
+  provides:
+    # The Forgejo administrator this module logs in as. It is the only
+    # credential allowed to create agent accounts, mint their tokens, register
+    # the system webhook and maintain labels and templates; it never reaches a
+    # work instance and is audited and rotated on its own.
+    - id: ai_agent.forgejo_admin_password
+      secret_key: AI_AGENT_FORGEJO_ADMIN_PASSWORD
+      type: password
+      rotation_mode: migrate
+    # The HMAC key Forgejo signs every delivery with. ANAS generates it, and
+    # rotating it re-registers the webhook in the same operation, so a rotation
+    # can never leave a hook signing with a key the ingress no longer accepts.
+    - id: ai_agent.webhook_secret
+      secret_key: AI_AGENT_WEBHOOK_SECRET
+      type: shared_secret
+      rotation_mode: reconcile
+      generation:
+        kind: hex
+        length: 32
+      lifecycle:
+        probe: probe-ai-agent-webhook-secret
+        reconcile: reconcile-ai-agent-webhook-secret
+        verify: verify-ai-agent-webhook-secret
+resources:
+  requires:
+    - id: primary_database
+      contract: relational_database
+      binding: db_type
+      spec_from:
+        name: db_name
+      spec:
+        principal: ai_agent
+        credential:
+          policy: generated
+        deletion_policy: retain
+    - id: work_instances
+      contract: compute
+      binding: execution_isolation
+      enabled_by: enabled
+      spec_from:
+        image_allowlist: agent_runtime_images
+      spec:
+        sandbox: anas-ai-agent
+        instance_prefix: anas-agent-
+        quota:
+          max_instances: 8
+          cpu: 4
+          memory_mib: 8192
+          disk_gib: 40
+        credential:
+          policy: generated
+        deletion_policy: retain
+upgrade:
+  # Empty, not absent: no release of this module has rewritten its on-disk
+  # format. The orchestration schema is owned by the database Resource and is
+  # migrated forward by the control plane itself.
+  data_breaking: []
+config:
+  must_resolve:
+    - language
+  defaults:
+    agent_runtimes: ""
+    agent_runtime_images: ""
+    daily_budget_usd: "20"
+    db_name: ai_agent
+    db_type: auto
+    domain_prefix: agent
+    egress_allowlist: ""
+    enabled: false
+    execution_isolation: auto
+    job_wallclock_minutes: "60"
+    reconcile_interval_seconds: "300"
+    repository_allowlist: ""
+    workspace_scope: repo
+  types:
+    agent_runtimes:
+      # Comma-separated registry ids. The control plane never branches on these
+      # names; they select entries in the runtime registry, nothing more.
+      kind: string
+      constraints:
+        pattern: '^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$'
+    agent_runtime_images:
+      # `<runtime id>=<sha256 fingerprint>` pairs. A tag would let the image
+      # under an approved runtime change without a configuration change, so
+      # only a pinned fingerprint is accepted.
+      kind: string
+      constraints:
+        pattern: '^(?:[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64}(?:,[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64})*)?$'
+    daily_budget_usd:
+      kind: int
+      constraints:
+        minimum: 0
+        maximum: 100000
+    db_name: string
+    db_type:
+      enum: [auto, postgres]
+    domain_prefix:
+      kind: string
+      constraints:
+        min_length: 1
+        max_length: 63
+        pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+    egress_allowlist:
+      kind: string
+      constraints:
+        pattern: '^(?:[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?(?:,[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?)*)?$'
+    enabled: bool
+    execution_isolation:
+      enum: [auto, incus_container, incus_vm]
+    job_wallclock_minutes:
+      kind: int
+      constraints:
+        minimum: 1
+        maximum: 1440
+    language:
+      kind: string
+      default_source: inherited
+    reconcile_interval_seconds:
+      kind: int
+      constraints:
+        minimum: 30
+        maximum: 86400
+    repository_allowlist:
+      # `owner/repo` entries. Ingress drops every delivery whose repository is
+      # not listed, before any handler runs.
+      kind: string
+      constraints:
+        pattern: '^(?:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100}(?:,[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100})*)?$'
+    workspace_scope:
+      enum: [repo, job]
+  consumes:
+    - ANAS_COMPUTE_RESOURCE__AI_AGENT__*
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_INTERNAL_CA_NAME
+    - FORGEJO_DOMAIN_FULL
+    - SAMBA_DC_ADMIN_GROUP_NAME
+    - TRAEFIK_BASE_PORT
+  changes:
+    agent_runtimes:
+      effect: container_recreate
+      apply: reconcile-ai-agent-runtimes
+      description: Selects which registry entries are enabled; labels, issue form templates and capability groups are regenerated from the result.
+    agent_runtime_images:
+      effect: container_recreate
+      apply: reconcile-ai-agent-runtimes
+      description: Pinned SHA-256 fingerprint per enabled runtime; a runtime without one cannot be enabled.
+    daily_budget_usd:
+      effect: reconcile
+      apply: reconcile-ai-agent-limits
+      description: Deployment-wide daily spend ceiling; a job that would exceed it is interrupted and the reason is written back.
+    db_name:
+      effect: data_migrate
+      apply: migrate-ai-agent-database
+      description: The database name is materialized when the database Resource is initialized.
+    db_type:
+      effect: data_migrate
+      apply: migrate-ai-agent-database
+      description: Changing the selected database does not migrate existing orchestration state.
+    domain_prefix:
+      effect: container_recreate
+      apply: recreate-ai-agent
+      description: Changes the ingress hostname, so the Forgejo webhook has to be re-registered at the new URL.
+    egress_allowlist:
+      effect: reconcile
+      apply: reconcile-ai-agent-limits
+      description: The only destinations a work instance may reach; everything else is denied.
+    enabled:
+      effect: container_recreate
+      apply: recreate-ai-agent
+      description: The single feature switch; turning it on requires the Forgejo administrator credential, a repository allowlist, a pinned image per enabled runtime and a compute binding.
+    execution_isolation:
+      effect: container_recreate
+      apply: recreate-ai-agent
+      description: Isolation tier requested from the compute provider; a VM has its own guest kernel, a system container shares the host's.
+    job_wallclock_minutes:
+      effect: reconcile
+      apply: reconcile-ai-agent-limits
+      description: Hard wall-clock ceiling for one job; exceeding it interrupts the agent and writes the reason back.
+    language:
+      effect: reconcile
+      apply: reconcile-ai-agent-localization
+      description: Language of the status comment and the orchestrator's own replies in Forgejo issues.
+    reconcile_interval_seconds:
+      effect: reconcile
+      apply: reconcile-ai-agent-limits
+      description: How often the reconciliation cursor sweeps Forgejo for deliveries the ingress never received.
+    repository_allowlist:
+      effect: container_recreate
+      apply: reconcile-ai-agent-runtimes
+      description: Repositories the orchestrator accepts events for; every other delivery is dropped at ingress.
+    workspace_scope:
+      effect: container_recreate
+      apply: recreate-ai-agent
+      description: One long-lived work instance per repository, or one disposable instance per job.
+features:
+  generated_secrets: true
+  domain: true
+logic:
+  hook:
+    command:
+      - go
+      - run
+      - ./hook
+    phases:
+      - calculate
+      - render_env
+      - after_start
+      - credential_probe
+      - credential_reconcile
+      - credential_verify

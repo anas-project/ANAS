@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: ai_agent
+module_version: 0.1.0
+module_revision: 1
+reviewed_at: 2026-09-05
+timezone:
+  status: configured
+  mechanism: The orchestrator inherits ANAS TZ and renders every timestamp it writes into a status comment, a schedule or an audit record in that zone; the database stores UTC.
+language:
+  status: supported
+  scope: the orchestrator's own writing -- status comments, refusal and downgrade explanations, and generated issue form templates
+  selection: deployment_default
+  global_default: applied
+  global_locale: not_consumed
+  upstream_format: ANAS canonical language tag
+  fallback: An unsupported value warns and falls back to English. This setting does not constrain the language a model replies in; that follows the issue's own conversation.
+  supported: [en, zh-CN]
+  evidence:
+    - version: 0.1.0
+      url: https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/hook/main.go
+      path: agentLanguages
+  notes: The two values are the languages the orchestrator's own strings exist in. Agent replies are model output and are not translated by this module.

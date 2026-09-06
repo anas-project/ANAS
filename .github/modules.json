@@ -1,5 +1,11 @@
 [
   {
+    "module": "ai_agent",
+    "repository": "anas-module-ai-agent",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "shared_contexts": ["go.mod", "go.sum", "internal/localization", "contracts"]
+  },
+  {
     "module": "authentik",
     "repository": "anas-module-authentik",
     "platforms": ["linux/amd64", "linux/arm64"],

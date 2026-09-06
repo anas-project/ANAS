@@ -217,6 +217,7 @@ a placeholder contract that has not been migrated.
 <!-- generated:builtin-module-inventory:start -->
 | Name | Category | Status | Description |
 | --- | --- | --- | --- |
+| [`ai_agent`](/en/reference/modules/ai_agent/) | `app` | `developing` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
 | [`authentik`](/en/reference/modules/authentik/) | `identity` | `developing` | Identity provider serving OIDC and SAML with per-application endpoints. |
 | [`casdoor`](/en/reference/modules/casdoor/) | `identity` | `release` | Release IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
 | [`collabora`](/en/reference/modules/collabora/) | `app` | `release` | Online document editing backend for Nextcloud. |

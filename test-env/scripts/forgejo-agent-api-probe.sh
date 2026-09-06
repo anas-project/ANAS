@@ -105,8 +105,39 @@ else
 fi
 
 # --- 2. token with scopes + repositories limiting ---------------------------
-tok_body="{\"name\":\"probe-$suffix\",\"scopes\":[\"read:issue\",\"write:issue\",\"read:repository\"],\"repositories\":[{\"owner\":\"$org\",\"name\":\"$repo\"}]}"
-r=$(req POST "$api/admin/users/$agent_user/tokens" "$tok_body")
+# There is no /admin/users/{u}/tokens on 15.0.7 (404). Tokens are minted at
+# /users/{u}/tokens, which refuses token authentication ("auth method not
+# allowed") and names the target account with the Sudo header. The agent must
+# already be a collaborator, because the repository list is resolved in its own
+# context.
+: "${FORGEJO_ADMIN_USER:=}" ; : "${FORGEJO_ADMIN_PASSWORD:=}"
+req_basic() { # req_basic <method> <url> <sudo> [body]
+  method=$1; url=$2; sudo_user=$3; body=${4:-}
+  if [ -n "$body" ]; then
+    curl -skS -X "$method" "$url" -u "$FORGEJO_ADMIN_USER:$FORGEJO_ADMIN_PASSWORD" \
+      -H "Sudo: $sudo_user" -H 'Content-Type: application/json' -d "$body" -w '\n%{http_code}'
+  else
+    curl -skS -X "$method" "$url" -u "$FORGEJO_ADMIN_USER:$FORGEJO_ADMIN_PASSWORD" \
+      -H "Sudo: $sudo_user" -w '\n%{http_code}'
+  fi
+}
+req PUT "$api/repos/$org/$repo/collaborators/$agent_user" '{"permission":"read"}' >/dev/null 2>&1 || true
+req PUT "$api/repos/$org/$repo2/collaborators/$agent_user" '{"permission":"read"}' >/dev/null 2>&1 || true
+r=$(req POST "$api/admin/users/$agent_user/tokens" '{"name":"legacy","scopes":["read:repository"]}')
+if [ "$(code_of "$r")" = "404" ]; then
+  record PASS admin-token-absent "/admin/users/{u}/tokens 不存在（HTTP 404）：必须用 /users/{u}/tokens + Sudo"
+else
+  record FAIL admin-token-absent "/admin/users/{u}/tokens 返回 HTTP $(code_of "$r")——与 15.0.7 的已知形态不符"
+fi
+if [ -z "$FORGEJO_ADMIN_USER" ] || [ -z "$FORGEJO_ADMIN_PASSWORD" ]; then
+  record SKIP token-repo-scope "设置 FORGEJO_ADMIN_USER/FORGEJO_ADMIN_PASSWORD 后复核（发 token 只接受 basic auth）"
+  r=$(printf '\n401')
+else
+  # Only the issue and repository scopes may be combined with a repository
+  # restriction; anything else is refused with a 400.
+  tok_body="{\"name\":\"probe-$suffix\",\"scopes\":[\"read:issue\",\"write:issue\",\"read:repository\"],\"repositories\":[{\"owner\":\"$org\",\"name\":\"$repo\"}]}"
+  r=$(req_basic POST "$api/users/$agent_user/tokens" "$agent_user" "$tok_body")
+fi
 agent_token=$(jget "$(body_of "$r")" "d.get('sha1','')")
 scoped_repos=$(jget "$(body_of "$r")" "len(d.get('repositories') or [])")
 if [ "$(code_of "$r")" = "201" ] && [ -n "$agent_token" ]; then
@@ -120,13 +151,22 @@ else
 fi
 
 if [ -n "${agent_token:-}" ]; then
-  allowed=$(curl -skS -o /dev/null -w '%{http_code}' -H "Authorization: token $agent_token" "$api/repos/$org/$repo")
-  denied=$(curl -skS -o /dev/null -w '%{http_code}' -H "Authorization: token $agent_token" "$api/repos/$org/$repo2")
-  if [ "$allowed" = "200" ] && [ "$denied" != "200" ]; then
-    record PASS token-repo-isolation "受限 token 可读目标仓库（$allowed），越界仓库被拒（$denied）"
+  # The restriction is enforced on everything inside the repository. Bare
+  # repository metadata still answers 200 for a repository the account can see,
+  # so the check is on a real read and a real write, not on the metadata.
+  allowed=$(curl -skS -o /dev/null -w '%{http_code}' -H "Authorization: token $agent_token" "$api/repos/$org/$repo/contents/README.md")
+  denied=$(curl -skS -o /dev/null -w '%{http_code}' -H "Authorization: token $agent_token" "$api/repos/$org/$repo2/contents/README.md")
+  wrote=$(curl -skS -o /dev/null -w '%{http_code}' -X POST -H "Authorization: token $agent_token" \
+    -H 'Content-Type: application/json' -d '{"title":"scope check"}' "$api/repos/$org/$repo/issues")
+  blocked=$(curl -skS -o /dev/null -w '%{http_code}' -X POST -H "Authorization: token $agent_token" \
+    -H 'Content-Type: application/json' -d '{"title":"scope check"}' "$api/repos/$org/$repo2/issues")
+  if [ "$allowed" = "200" ] && [ "$denied" != "200" ] && [ "$wrote" = "201" ] && [ "$blocked" != "201" ]; then
+    record PASS token-repo-isolation "受限 token：目标仓库读 $allowed 写 $wrote，越界仓库读 $denied 写 $blocked"
   else
-    record FAIL token-repo-isolation "目标仓库 $allowed，越界仓库 $denied（期望越界非 200）"
+    record FAIL token-repo-isolation "目标仓库读 $allowed 写 $wrote，越界仓库读 $denied 写 $blocked（期望越界被拒）"
   fi
+  meta=$(curl -skS -o /dev/null -w '%{http_code}' -H "Authorization: token $agent_token" "$api/repos/$org/$repo2")
+  record PASS token-metadata-leak "越界仓库的元数据仍可读（HTTP $meta）：限定作用于仓库内容与写操作，不隐藏仓库本身"
 fi
 
 r=$(req POST "$api/admin/users/$agent_user/keys" "{\"title\":\"probe\",\"key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIProbeKeyDoesNotAuthenticate0000000000000 probe@invalid\"}")
@@ -144,6 +184,23 @@ if [ -n "$hook_id" ]; then
   record PASS system-webhook "系统 webhook 可创建，接受 $accepted 个事件"
 else
   record FAIL system-webhook "HTTP $(code_of "$r"): $(body_of "$r" | head -c 200)"
+fi
+
+if [ -n "${hook_id:-}" ]; then
+  listed=$(jget "$(body_of "$(req GET "$api/admin/hooks")")" "len(d)")
+  byid=$(code_of "$(req GET "$api/admin/hooks/$hook_id")")
+  if [ "${listed:-0}" -eq 0 ] && [ "$byid" = "200" ]; then
+    record PASS hook-list-empty "GET /admin/hooks 返回空数组而按 id 取得到（HTTP $byid）：存在性判断必须走 id，不能走列表"
+  else
+    record PASS hook-list-empty "GET /admin/hooks 返回 $listed 条，按 id HTTP $byid"
+  fi
+  stored=$(jget "$(body_of "$(req GET "$api/admin/hooks/$hook_id")")" "len(d.get('events') or [])")
+  requested=$(printf '%s' "$events" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+  if [ "${stored:-0}" -ne "${requested:-0}" ]; then
+    record PASS hook-event-expansion "请求 $requested 个事件、存下 $stored 个：服务端会展开事件族，事件列表不能用来判断漂移"
+  else
+    record PASS hook-event-expansion "请求与存储的事件数一致（$stored）"
+  fi
 fi
 
 # --- 4. labels, issues, comments, reactions ---------------------------------
@@ -184,7 +241,9 @@ if [ -n "${issue:-}" ]; then
 
   r=$(req POST "$api/repos/$org/$repo/issues" '{"title":"probe child","body":"probe"}')
   child=$(jget "$(body_of "$r")" "d.get('number','')")
-  r=$(req POST "$api/repos/$org/$repo/issues/$issue/dependencies" "{\"index\":$child}")
+  # The dependency payload is an IssueMeta: {index} alone is answered with
+  # "repository does not exist [id: 0 ...]", which reads like a server fault.
+  r=$(req POST "$api/repos/$org/$repo/issues/$issue/dependencies" "{\"owner\":\"$org\",\"repo\":\"$repo\",\"index\":$child}")
   case "$(code_of "$r")" in
     200|201) record PASS issue-dependency "issue 依赖可用（/split 与顺序表达成立）" ;;
     *) record FAIL issue-dependency "HTTP $(code_of "$r"): $(body_of "$r" | head -c 160)" ;;

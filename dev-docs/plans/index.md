@@ -37,7 +37,7 @@
 | [Web API 与管理前端](archived/web-api-admin-console.md) | 管理面首版里程碑与验证记录；验收依据见[要求](../requirements/web-api-admin-console.md) | 已完成（已归档） |
 | [共享应用层迁移](application-layer-migration.md) | 依赖测绘、子进程边界注入化、三个服务实现迁移与断开 `anasd` 对 runner 的链接；验收依据见[要求](../requirements/application-layer-migration.md) | 提案 |
 | [Samba 身份锚点 OID 与既有目录迁移](archived/samba-identity-anchor.md) | [需求矩阵](../requirements/samba-identity-anchor.md)、[OID 注册表](../../docs/governance/oid-registry.md)、[迁移 Runbook](../../docs/guide/migrate-identity-anchor-oid.md) | 已完成（已归档） |
-| [AI Agent 编排](ai-agent.md) | `ai_agent` Module、Forgejo 协作面接入、权限与执行面、排程与记录；验收依据见[要求](../requirements/ai-agent.md) | 提案 |
+| [AI Agent 编排](ai-agent.md) | `ai_agent` Module、Forgejo 协作面接入、权限与执行面、排程与记录；验收依据见[要求](../requirements/ai-agent.md) | 实施中 |
 
 ## Module 私有计划
 

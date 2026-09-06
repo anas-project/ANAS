@@ -194,6 +194,7 @@ Contract 声明虚假兼容性。
 <!-- generated:builtin-module-inventory:start -->
 | Name | 类别 | 状态 | 描述 |
 | --- | --- | --- | --- |
+| [`ai_agent`](/reference/modules/ai_agent/) | `app` | `developing` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
 | [`authentik`](/reference/modules/authentik/) | `identity` | `developing` | Identity provider serving OIDC and SAML with per-application endpoints. |
 | [`casdoor`](/reference/modules/casdoor/) | `identity` | `release` | Release IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
 | [`collabora`](/reference/modules/collabora/) | `app` | `release` | Online document editing backend for Nextcloud. |

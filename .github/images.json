@@ -1,5 +1,13 @@
 [
   {
+    "module": "ai_agent",
+    "image": "anas-ai-agent",
+    "context": "modules/ai_agent/orchestrator",
+    "dockerfile": "modules/ai_agent/orchestrator/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64",
+    "shared_paths": ["go.mod", "go.sum", "internal/computeclient"]
+  },
+  {
     "module": "authentik",
     "image": "anas-authentik",
     "context": "modules/authentik/authentik",

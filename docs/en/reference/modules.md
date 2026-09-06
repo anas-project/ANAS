@@ -9,6 +9,7 @@ This page is generated from the current Module manifests. The checked-in page an
 
 | Module | Version | Status | Category | Description |
 | --- | --- | --- | --- | --- |
+| [AI Agent orchestration](/en/reference/modules/ai_agent/) | `0.1.0-r1` | `developing` | `app` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
 | [authentik](/en/reference/modules/authentik/) | `2026.5.6-r14` | `developing` | `identity` | Identity provider serving OIDC and SAML with per-application endpoints. |
 | [Casdoor](/en/reference/modules/casdoor/) | `3.143.0-r8` | `release` | `identity` | Release IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
 | [Collabora Online](/en/reference/modules/collabora/) | `26.4.2-r5` | `release` | `app` | Online document editing backend for Nextcloud. |

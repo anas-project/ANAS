@@ -79,6 +79,15 @@ func LeaseFromEnv(module, resourceID string) (Lease, error) {
 	return leaseFrom(os.Getenv, module, resourceID)
 }
 
+// LeaseFromLookup is LeaseFromEnv against a caller-supplied environment. A
+// consumer that validates its whole configuration from one injected lookup can
+// read its lease through the same source instead of reaching past it to the
+// process environment, which is the difference between a configuration loader
+// that can be tested and one that cannot.
+func LeaseFromLookup(lookup func(string) string, module, resourceID string) (Lease, error) {
+	return leaseFrom(lookup, module, resourceID)
+}
+
 func leaseFrom(lookup func(string) string, module, resourceID string) (Lease, error) {
 	prefix := EnvPrefix + envSegment(module) + "__" + envSegment(resourceID) + "__"
 	get := func(field string) string { return strings.TrimSpace(lookup(prefix + field)) }

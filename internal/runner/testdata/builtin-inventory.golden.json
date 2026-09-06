@@ -1,6 +1,7 @@
 {
   "api_version": "anas.builtin-inventory/v1",
   "modules": [
+    "ai_agent",
     "authentik",
     "casdoor",
     "collabora",
@@ -26,6 +27,20 @@
     "vikunja"
   ],
   "parameters": [
+    "ai_agent.agent_runtime_images",
+    "ai_agent.agent_runtimes",
+    "ai_agent.daily_budget_usd",
+    "ai_agent.db_name",
+    "ai_agent.db_type",
+    "ai_agent.domain_prefix",
+    "ai_agent.egress_allowlist",
+    "ai_agent.enabled",
+    "ai_agent.execution_isolation",
+    "ai_agent.job_wallclock_minutes",
+    "ai_agent.language",
+    "ai_agent.reconcile_interval_seconds",
+    "ai_agent.repository_allowlist",
+    "ai_agent.workspace_scope",
     "authentik.db_name",
     "authentik.db_type",
     "authentik.domain_prefix",

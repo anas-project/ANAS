@@ -1,0 +1,105 @@
+services:
+  anas_ai_agent:
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
+    build:
+      context: ./orchestrator
+      # The orchestrator compiles against the repository's shared compute
+      # client, which lives outside this image's own Docker context. `shared` is
+      # a named context pointing at the repository root; CI passes the same
+      # named context through buildx (see .github/images.json shared_paths).
+      additional_contexts:
+        shared: ${ANAS_SHARED_BUILD_CONTEXT:-../..}
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-docker.io}
+    # Pinned to the module revision. `latest` would let the orchestrator change
+    # under an unchanged deployment, which is exactly what AGENT-R-001 forbids.
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r1
+    restart: unless-stopped
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    # Not the module-wide env_file: the Forgejo administrator credential and
+    # the compute lease private key belong to this container alone, and an
+    # env_file would also hand it every unrelated deployment variable.
+    environment:
+      TZ: ${TZ}
+      AI_AGENT_ENABLED: ${AI_AGENT_ENABLED}
+      AI_AGENT_LISTEN: ":8130"
+      AI_AGENT_LANGUAGE: ${AI_AGENT_LANGUAGE}
+      # Forgejo is reached over its published HTTPS URL, verified against the
+      # mounted internal CA. There is no private network between the two
+      # containers, so no path that skips the proxy's own client-IP handling.
+      AI_AGENT_FORGEJO_URL: ${FORGEJO_DOMAIN_FULL}
+      AI_AGENT_FORGEJO_ADMIN_USERNAME: ${AI_AGENT_FORGEJO_ADMIN_USERNAME}
+      AI_AGENT_FORGEJO_ADMIN_PASSWORD: ${AI_AGENT_FORGEJO_ADMIN_PASSWORD}
+      AI_AGENT_WEBHOOK_SECRET: ${AI_AGENT_WEBHOOK_SECRET}
+      AI_AGENT_WEBHOOK_URL: ${AI_AGENT_WEBHOOK_URL}
+      AI_AGENT_REPOSITORY_ALLOWLIST: ${AI_AGENT_REPOSITORY_ALLOWLIST}
+      AI_AGENT_RUNTIMES: ${AI_AGENT_RUNTIMES}
+      AI_AGENT_RUNTIME_IMAGES: ${AI_AGENT_RUNTIME_IMAGES}
+      AI_AGENT_WORKSPACE_SCOPE: ${AI_AGENT_WORKSPACE_SCOPE}
+      AI_AGENT_EGRESS_ALLOWLIST: ${AI_AGENT_EGRESS_ALLOWLIST}
+      AI_AGENT_DAILY_BUDGET_USD: ${AI_AGENT_DAILY_BUDGET_USD}
+      AI_AGENT_JOB_WALLCLOCK_MINUTES: ${AI_AGENT_JOB_WALLCLOCK_MINUTES}
+      AI_AGENT_RECONCILE_INTERVAL_SECONDS: ${AI_AGENT_RECONCILE_INTERVAL_SECONDS}
+      AI_AGENT_SESSION_ROOT: /var/lib/anas-ai-agent/sessions
+      AI_AGENT_DB_HOST: ${AI_AGENT_DB_HOST}
+      AI_AGENT_DB_PORT: ${AI_AGENT_DB_PORT}
+      AI_AGENT_DB_NAME: ${AI_AGENT_DB_NAME}
+      AI_AGENT_DB_USERNAME: ${AI_AGENT_DB_USERNAME}
+      AI_AGENT_DB_PASSWORD: ${AI_AGENT_DB_PASSWORD}
+      # The compute lease. The private key is this consumer's alone and is
+      # never handed to a work instance or written to the image.
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__INTERFACE: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__INTERFACE:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__ENDPOINT: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__ENDPOINT:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__SANDBOX: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__SANDBOX:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__INSTANCE_PREFIX: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__INSTANCE_PREFIX:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__PROFILE: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__PROFILE:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__SERVER_CERT: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__SERVER_CERT:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__SERVER_CERT_FINGERPRINT: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__SERVER_CERT_FINGERPRINT:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__CLIENT_CERT: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__CLIENT_CERT:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__CLIENT_KEY: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__CLIENT_KEY:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__IMAGE_ALLOWLIST: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__IMAGE_ALLOWLIST:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__MAX_INSTANCES: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__MAX_INSTANCES:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__CPU: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__CPU:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__MEMORY_MIB: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__MEMORY_MIB:-}
+      ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__DISK_GIB: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__DISK_GIB:-}
+    user: 65532:65532
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /run:mode=0700,uid=65532,gid=65532,size=16m
+      - /tmp:mode=1777,size=64m
+    volumes:
+      - "${ANAS_TLS_CERTS_DIR}/${ANAS_TLS_INTERNAL_CA_NAME}:/etc/ssl/certs/anas-internal-ca.crt:ro"
+      # Session state only. No Docker socket, no host path outside the ANAS data
+      # tree, and nothing this container could execute.
+      - "${DATA_PATH}/ai_agent/sessions:/var/lib/anas-ai-agent/sessions"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/anas-ai-agent", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=application"
+      - "traefik.http.routers.ai_agent.entrypoints=https"
+      - "traefik.http.routers.ai_agent.rule=Host(`${AI_AGENT_DOMAIN}`)"
+      - "traefik.http.routers.ai_agent.tls=true"
+      - "traefik.http.services.ai_agent.loadbalancer.server.port=8130"
+    networks:
+      - db
+      - traefik
+
+networks:
+  db:
+    name: ${AI_AGENT_NETWORK_DB}
+    external: true
+  traefik:
+    name: ${NETWORK_PREFIX}traefik
+    external: true

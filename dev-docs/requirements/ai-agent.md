@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-27
-updated: 2026-08-27
+updated: 2026-09-06
 ---
 
 # AI Agent 编排集成要求
@@ -59,8 +59,10 @@ ANAS 必须提供可独立部署的 `ai_agent` Module，使团队能在 Forgejo 
 
 1. 每个 Agent 必须拥有独立 Forgejo 账号（`agent-<id>`），由管理端 API 无人值守创建，且不得用于
    交互登录。
-2. Agent token 必须同时限定 scope 与目标仓库，写权限只在执行阶段追加。固定版本不支持按仓库限定时，
-   必须退化为“每 Agent 每仓库独立账号”并在文档中记录该退化。
+2. Agent token 必须同时限定 scope 与目标仓库，写权限只在执行阶段追加。**固定 `forgejo 15.0.7` 已复核
+   支持按仓库限定（见 §15），因此退化路径不启用**；退化实现保留，仅在未来版本回退该能力时启用。
+   讨论期 scope 只能取 `read:repository`、`read:issue`、`write:issue`——上游只允许 issue 与
+   repository 两族 scope 与仓库限定并存，加入其他 scope 会使限定失效。
 3. token 与 SSH key 的轮换必须可无人工完成，失败时不得留下双活凭据。
 4. Forgejo 管理凭据只能用于建账号、发凭据、注册 webhook、维护标签与模板；不得进入工作实例，必须
    单独审计与轮换。
@@ -243,3 +245,25 @@ ANAS 必须提供可独立部署的 `ai_agent` Module，使团队能在 Forgejo 
 | `AGENT-R-062` | 真实部署必须完成一次讨论 → 文档入库 → 批准 → 执行 issue → 分支 → PR 的完整链路并可复现 | e2e |
 | `AGENT-R-063` | 真实部署必须验证多 Agent 圆桌在硬上限内收敛并产出文档 | e2e |
 | `AGENT-R-064` | 真实部署必须记录控制面常驻资源、单作业资源与典型作业的墙钟与花费 | e2e |
+
+## 15. 上游事实复核（`forgejo 15.0.7`）
+
+设计文档 §11 要求在固定版本上复核的事实，已用 `test-env/scripts/forgejo-agent-api-probe.sh` 对
+`codeberg.org/forgejo/forgejo:15.0.7-rootless`（`15.0.7+gitea-1.22.0`）实测，24 项通过、0 项失败。
+下表只记录**与设计假设不同**或**约束实现形态**的结论；其余（标签、评论 PATCH、reaction、due_date、
+工时、置顶、contents 提交与开 PR、issue 模板、Projects 仍无 API）与设计一致。
+
+| 结论 | 影响 |
+| --- | --- |
+| **`POST /admin/users/{u}/tokens` 不存在（404）**。发 token 的唯一端点是 `POST /users/{u}/tokens`，且**拒绝 token 认证**（`auth method not allowed`），必须用管理员 basic auth 加 `Sudo: <账号>` 头 | 控制面必须持有管理员**口令**而不仅是 token；`AGENT-R-008` 的管理凭据据此为 password 型 |
+| **token 的 `repositories` 生效**，形态是 `[{"owner":…,"name":…}]` 对象数组；`"owner/name"` 字符串被拒 | `AGENT-R-006` 走原设计，不启用退化 |
+| 带仓库限定的 token **只能携带** `read:issue`、`write:issue`、`read:repository`、`write:repository`，其余组合 400 | 讨论期 scope 集合被上游钉死，不能再加 `read:user` 之类 |
+| 仓库限定在**内容与写操作**上生效（越界仓库 contents 403、开 issue 404），但**仓库元数据仍可读**（`GET /repos/{o}/{r}` 200） | 限定是最小权限手段，不是仓库存在性的隐藏手段；文档需据实说明 |
+| 发 token 前 Agent **必须已是该仓库 collaborator**，否则报“repository does not exist” | 引导顺序固定为：建账号 → 授 collaborator → 发 token |
+| **access token 名称按用户唯一**，SSH key 标题同理 | 轮换必须用带代次的名称，否则“先发后吊销”在发新的那一步就 400 |
+| **`GET /admin/hooks` 返回空数组**，即使 hook 刚建好；`GET /admin/hooks/{id}` 正常返回 | webhook 存在性判断必须走 id，走列表会导致每轮对账都重复注册 |
+| 服务端会**展开事件族**：请求 8 个事件、存下 17 个 | 不能用事件列表判断 hook 漂移；只比对 URL 与密钥指纹 |
+| `forgejo admin auth add-oauth` 具备 `--group-team-map` 与 `--group-team-map-removal` | 设计 §6.2 的目录组→team 投影链路成立 |
+
+仍未复核（需要接收端或 Web 表单，留待 M2）：webhook 投递语义（超时、重试、可否重投）、
+`issue_label` / `issue_assign` 的 payload 字段、表单答案在 issue 正文中的渲染格式。

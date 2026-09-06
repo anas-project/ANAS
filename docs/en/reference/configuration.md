@@ -5,11 +5,11 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 ## Summary
 
 <!-- generated:configuration-summary:start -->
-- Built-in Modules: `23`
-- Declared parameters: `174` total (`17` global and `157` Module-owned; `153` structured Module parameters and `4` bare `env.*` parameters)
-- Resolution phases: `input_required` `2`, `must_resolve` `30`, unknown types `0`
-- Type distribution: `bool` `25`, `enum` `23`, `int` `27`, `string` `99`
-- Default-source distribution: `generated` `10`, `host` `3`, `inherited` `7`, `none` `8`, `runtime` `4`, `static` `142`
+- Built-in Modules: `24`
+- Declared parameters: `188` total (`17` global and `171` Module-owned; `167` structured Module parameters and `4` bare `env.*` parameters)
+- Resolution phases: `input_required` `2`, `must_resolve` `31`, unknown types `0`
+- Type distribution: `bool` `26`, `enum` `26`, `int` `30`, `string` `106`
+- Default-source distribution: `generated` `10`, `host` `3`, `inherited` `8`, `none` `8`, `runtime` `4`, `static` `155`
 <!-- generated:configuration-summary:end -->
 - Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the parameter inventory.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
@@ -162,10 +162,18 @@ configuration API, and Web forms must consume the same application-layer schema.
 only when that resolver cannot supply the value.
 
 <!-- generated:configuration-constraints:start -->
-Current explicit portable constraints: `24`.
+Current explicit portable constraints: `32`.
 
 | Parameter path | Portable constraints |
 | --- | --- |
+| `ai_agent.agent_runtime_images` | <code>pattern=&#34;^(?:[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64}(?:,[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64})*)?$&#34;</code> |
+| `ai_agent.agent_runtimes` | <code>pattern=&#34;^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$&#34;</code> |
+| `ai_agent.daily_budget_usd` | <code>minimum=0; maximum=100000</code> |
+| `ai_agent.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+| `ai_agent.egress_allowlist` | <code>pattern=&#34;^(?:[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?(?:,[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?)*)?$&#34;</code> |
+| `ai_agent.job_wallclock_minutes` | <code>minimum=1; maximum=1440</code> |
+| `ai_agent.reconcile_interval_seconds` | <code>minimum=30; maximum=86400</code> |
+| `ai_agent.repository_allowlist` | <code>pattern=&#34;^(?:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100}(?:,[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100})*)?$&#34;</code> |
 | `casdoor.ldap_auto_sync_minutes` | <code>minimum=1</code> |
 | `eturnal.port` | <code>minimum=1; maximum=65535</code> |
 | `forgejo.actions_runner_image` | <code>pattern=&#34;^(?:[0-9a-f]{64})?$&#34;</code> |
@@ -196,6 +204,7 @@ Current explicit portable constraints: `24`.
 | Owner | Parameters | Parameter paths |
 | --- | ---: | --- |
 | `global` | 17 | `global.base_domain`<br>`global.chinese_build_speedup`<br>`global.chinese_speedup`<br>`global.container_prefix`<br>`global.default_language`<br>`global.default_locale`<br>`global.dns_server`<br>`global.email`<br>`global.host_ip`<br>`global.host_lan_arp_check`<br>`global.host_lan_bridge_ip`<br>`global.host_lan_ip`<br>`global.ipv4`<br>`global.ipv6`<br>`global.network_prefix`<br>`global.timezone`<br>`global.virtual_domain` |
+| `ai_agent` | 14 | `ai_agent.agent_runtime_images`<br>`ai_agent.agent_runtimes`<br>`ai_agent.daily_budget_usd`<br>`ai_agent.db_name`<br>`ai_agent.db_type`<br>`ai_agent.domain_prefix`<br>`ai_agent.egress_allowlist`<br>`ai_agent.enabled`<br>`ai_agent.execution_isolation`<br>`ai_agent.job_wallclock_minutes`<br>`ai_agent.language`<br>`ai_agent.reconcile_interval_seconds`<br>`ai_agent.repository_allowlist`<br>`ai_agent.workspace_scope` |
 | `authentik` | 6 | `authentik.db_name`<br>`authentik.db_type`<br>`authentik.domain_prefix`<br>`authentik.ldap_enabled`<br>`authentik.ldap_password_writeback`<br>`authentik.log_level` |
 | `casdoor` | 4 | `casdoor.db_name`<br>`casdoor.db_type`<br>`casdoor.domain_prefix`<br>`casdoor.ldap_auto_sync_minutes` |
 | `collabora` | 5 | `collabora.admin_password`<br>`collabora.admin_username`<br>`collabora.auto_save`<br>`collabora.domain_prefix`<br>`collabora.log_level` |
@@ -251,12 +260,12 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 <!-- generated:configuration-effects:start -->
 | Module parameter effect | Parameters | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 99 | Re-render and recreate the affected container or Compose project |
+| `container_recreate` | 106 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 9 | Use a credential-rotation transaction to update application state and the Secret Store together |
-| `data_migrate` | 15 | Migrate persistent data, a database, or membership before activation |
+| `data_migrate` | 17 | Migrate persistent data, a database, or membership before activation |
 | `hot_reload` | 16 | Apply through the declared management command; the current executor may conservatively recreate the container |
 | `immutable` | 3 | Use a replacement or dedicated migration workflow |
-| `reconcile` | 15 | Reconcile application, API, or file state through the Module lifecycle |
+| `reconcile` | 20 | Reconcile application, API, or file state through the Module lifecycle |
 <!-- generated:configuration-effects:end -->
 
 ### Actual execution boundary in this release
