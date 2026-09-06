@@ -8,7 +8,7 @@ updated: 2026-08-22
 # Forgejo Module 集成要求
 
 本文规定 Forgejo 代码托管、OIDC 身份、高风险配置和 Actions 隔离执行面的交付边界。设计理由见
-[Forgejo Module 设计](../../docs/architecture/forgejo-module-design.md)，实施进度见
+[Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md)，实施进度见
 [Forgejo Module 实施计划](../plans/forgejo-module.md)。本文的需求矩阵是验收规范来源，不记录施工进度。
 
 ## 1. 当前应用边界

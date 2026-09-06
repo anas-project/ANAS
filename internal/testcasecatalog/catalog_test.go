@@ -412,3 +412,29 @@ cases:
 	write("test-env/cases/demo/cases.yml", catalog)
 	return root
 }
+
+// A Module-private topic keeps its requirement matrix and plan beside the Module
+// they constrain, so the catalog has to accept that scope as readily as the
+// repository-level one -- and still refuse a pairing that crosses scopes.
+func TestDocumentScopeAcceptsBothScopes(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		document string
+		topic    string
+		want     string
+		ok       bool
+	}{
+		{"repository", "dev-docs/requirements/demo.md", "demo", "dev-docs", true},
+		{"module", "modules/samba_dc/dev-docs/requirements/demo.md", "demo", "modules/samba_dc/dev-docs", true},
+		{"wrong topic", "dev-docs/requirements/other.md", "demo", "", false},
+		{"published docs", "docs/requirements/demo.md", "demo", "", false},
+		{"module without dev-docs", "modules/demo/requirements/demo.md", "demo", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := documentScope(tc.document, tc.topic)
+			if ok != tc.ok || got != tc.want {
+				t.Fatalf("documentScope(%q, %q) = %q, %t; want %q, %t", tc.document, tc.topic, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}

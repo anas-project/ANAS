@@ -11,7 +11,7 @@ updated: 2026-09-01
 设计依据是 [Forgejo Module 设计](../../docs/architecture/forgejo-module-design.md) §4 与
 [AI Agent 编排设计](../../docs/architecture/ai-agent-orchestration-design.md) §5.2。
 
-本计划把原属 [Forgejo Module 实施计划](forgejo-module.md) M2 的“Incus compute contract 与
+本计划把原属 [Forgejo Module 实施计划](../../modules/forgejo/dev-docs/plans/forgejo-module.md) M2 的“Incus compute contract 与
 Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者接入”的部分。
 
 **M0—M5 已完成：Contract 已按围栏语义改形，Provider Module、Core 支持、共享客户端库与 Forgejo
@@ -181,7 +181,7 @@ runtime 是 `compose_run`，只在 apply 时跑一次，且 ABI 只传 `ANAS_RES
 | `contracts/compute` README 与技术文档（中英文） | 改为租约语义，去掉单消费者假设 | 已完成 |
 | `modules/incus` README 与技术文档（中英文） | 新建 | 已完成 |
 | [Forgejo Module 设计](../../docs/architecture/forgejo-module-design.md) §4 | Incus 控制面归属改为 `incus` Module + 共享客户端 | 未开始 |
-| [Forgejo Module 实施计划](forgejo-module.md) M2 | 只保留“作为消费者接入”，Provider 工作引用本计划 | 未开始 |
+| [Forgejo Module 实施计划](../../modules/forgejo/dev-docs/plans/forgejo-module.md) M2 | 只保留“作为消费者接入”，Provider 工作引用本计划 | 未开始 |
 | [Module 专属命令能力](module-command-capability.md) M4 | `incus-doctor` / `incus-runner-reconcile` 的归属确认 | 未开始 |
 
 ## 12. 当前阻塞

@@ -8,7 +8,7 @@ updated: 2026-08-27
 # Casdoor IAM Provider 实施计划
 
 验收依据是[Casdoor IAM Provider 集成要求](../../requirements/casdoor-iam.md)的需求矩阵。通用架构依据为
-[IAM Capability 设计](../../../docs/architecture/iam-capability-design.md)；没有另建 Casdoor 专属架构文档。
+[IAM Capability 设计](../../../../../docs/architecture/iam-capability-design.md)；没有另建 Casdoor 专属架构文档。
 M1—M5 已完成；真实 Samba/Casdoor 目录收敛、OIDC/SAML 登录、OIDC 用户/管理员会话撤销、
 恢复管理员、空 workspace 备份恢复、多架构生命周期与受管凭据轮换均已通过隔离 E2E。固定版本
 SAML SLO 的不发布决策已有源码审计，Module 生命周期已提升为 `release`。

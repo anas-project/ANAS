@@ -41,6 +41,10 @@ Module 的才放仓库根 `dev-docs/`。判据是「这份文档描述的约束�
 VitePress 路径；反过来，`docs/` 里引用 `dev-docs/` 时用完整的仓库 URL
 （`https://github.com/anas-project/ANAS/blob/master/dev-docs/...`），相对路径会让站点构建报死链。
 
+Module 自己的 `README.md` 与 `docs/technical.md` 引用该 Module 私有的 dev-docs 时写相对路径
+（README 用 `dev-docs/<主题>.md`，技术文档用 `../dev-docs/<主题>.md`）：这两份文档会被镜像进站点，
+生成器把这类链接改写成仓库 URL，因此站内不会留下指向未发布目录的死链。
+
 ## 2. 中英文规则
 
 - 新增或修改面向用户的 `getting-started`、`guide`、`operations` 和核心 `reference` 页面时，必须同步维护 `/en/` 下的英文镜像。

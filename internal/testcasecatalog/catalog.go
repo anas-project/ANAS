@@ -25,14 +25,20 @@ import (
 const (
 	catalogAPI = "anas.test-cases/v2"
 	readmeName = "README.md"
+	// repositoryDocumentScope holds requirements and plans for ANAS itself and
+	// for topics spanning more than one Module.
+	repositoryDocumentScope = "dev-docs"
 )
 
 var (
-	topicPattern       = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
-	requirementPattern = regexp.MustCompile(`^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)-R-(\d{3})$`)
-	casePattern        = regexp.MustCompile(`^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)-T-(\d{3})$`)
-	markerPattern      = regexp.MustCompile(`^\s*(?://|#)\s*TEST_CASES:\s*(.*)$`)
-	markedCasePattern  = regexp.MustCompile(`[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-T-\d{3}`)
+	topicPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+	// Module-private development artefacts, the second scope the documentation
+	// gates scan: modules/<name>/dev-docs/ beside the Module they constrain.
+	modulePrivateScopePattern = regexp.MustCompile(`^modules/[a-z0-9]+(?:_[a-z0-9]+)*/dev-docs$`)
+	requirementPattern        = regexp.MustCompile(`^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)-R-(\d{3})$`)
+	casePattern               = regexp.MustCompile(`^([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)-T-(\d{3})$`)
+	markerPattern             = regexp.MustCompile(`^\s*(?://|#)\s*TEST_CASES:\s*(.*)$`)
+	markedCasePattern         = regexp.MustCompile(`[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-T-\d{3}`)
 )
 
 // Options controls catalog generation and validation.
@@ -257,6 +263,25 @@ func loadCatalogs(root string) ([]Catalog, error) {
 	return catalogs, nil
 }
 
+// documentScope reports which development-artefact scope a catalog's requirement
+// document belongs to. A topic lives in exactly one of them: dev-docs/ at the
+// repository root for ANAS itself and cross-Module work, or
+// modules/<name>/dev-docs/ for a topic that loses its meaning once that Module
+// is removed. The catalog follows the documents into the Module rather than
+// pinning them to the root, but the pairing inside a scope is still fixed, so
+// the plan is checked against the scope the requirement document named.
+func documentScope(requirementDocument, topic string) (string, bool) {
+	suffix := "/requirements/" + topic + ".md"
+	if !strings.HasSuffix(requirementDocument, suffix) {
+		return "", false
+	}
+	scope := strings.TrimSuffix(requirementDocument, suffix)
+	if scope == repositoryDocumentScope || modulePrivateScopePattern.MatchString(scope) {
+		return scope, true
+	}
+	return "", false
+}
+
 func validateCatalog(root string, catalog *Catalog, allCases map[string]*TestCase, caseCatalog map[string]*Catalog, skipDigests bool) []string {
 	var errs []string
 	path := relativePath(root, catalog.manifestPath)
@@ -276,14 +301,19 @@ func validateCatalog(root string, catalog *Catalog, allCases map[string]*TestCas
 	if strings.TrimSpace(catalog.Title) == "" {
 		add("title is required")
 	}
-	wantRequirement := filepath.ToSlash(filepath.Join("dev-docs", "requirements", catalog.Topic+".md"))
-	wantPlan := filepath.ToSlash(filepath.Join("dev-docs", "plans", catalog.Topic+".md"))
-	wantArchivedPlan := filepath.ToSlash(filepath.Join("dev-docs", "plans", "archived", catalog.Topic+".md"))
-	if catalog.RequirementDocument != wantRequirement {
-		add("requirement_document must be %q", wantRequirement)
-	}
-	if catalog.PlanDocument != wantPlan && catalog.PlanDocument != wantArchivedPlan {
-		add("plan_document must be %q or %q", wantPlan, wantArchivedPlan)
+	documentDir, scoped := documentScope(catalog.RequirementDocument, catalog.Topic)
+	if !scoped {
+		add(
+			"requirement_document must be %q or modules/<name>/dev-docs/requirements/%s.md",
+			filepath.ToSlash(filepath.Join(repositoryDocumentScope, "requirements", catalog.Topic+".md")),
+			catalog.Topic,
+		)
+	} else {
+		wantPlan := documentDir + "/plans/" + catalog.Topic + ".md"
+		wantArchivedPlan := documentDir + "/plans/archived/" + catalog.Topic + ".md"
+		if catalog.PlanDocument != wantPlan && catalog.PlanDocument != wantArchivedPlan {
+			add("plan_document must be %q or %q", wantPlan, wantArchivedPlan)
+		}
 	}
 	requirementPath, requirementErr := safeRepoPath(root, catalog.RequirementDocument)
 	if requirementErr != nil {

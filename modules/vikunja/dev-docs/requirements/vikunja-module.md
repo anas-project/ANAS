@@ -8,7 +8,7 @@ updated: 2026-08-23
 # Vikunja Module 集成要求
 
 本文规定 ANAS 集成 Vikunja 时必须交付的用户结果、边界、安全约束和验收标准。候选比较与
-选型证据见[自托管开源看板与项目管理方案调研](../../docs/research/self-hosted-open-source-kanban-research.md)；
+选型证据见[自托管开源看板与项目管理方案调研](../../../../docs/research/self-hosted-open-source-kanban-research.md)；
 实施顺序和执行证据见[Vikunja Module 实施计划](../plans/vikunja-module.md)。本文不重复调研结论，
 也不把实现进度当作需求。
 

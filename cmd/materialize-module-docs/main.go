@@ -566,6 +566,10 @@ func rewriteUserLinks(source, module, ref string) string {
 	source = strings.ReplaceAll(source, "](docs/technical.md)", "](./technical)")
 	source = strings.ReplaceAll(source, "](docs/technical.en.md)", "](./technical)")
 	source = rewriteRepositoryLinks(source, module, ref, "../../dev-docs/")
+	// A README also reaches the Module's own dev-docs/, which sits beside it and
+	// therefore carries no parent segments at all. It is repository-only for the
+	// same reason the shared directory is.
+	source = rewriteRepositoryLinks(source, module, ref, "dev-docs/")
 	return strings.ReplaceAll(source, "](../../docs/", "](/")
 }
 

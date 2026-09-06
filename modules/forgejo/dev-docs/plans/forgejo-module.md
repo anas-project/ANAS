@@ -8,7 +8,7 @@ updated: 2026-08-22
 # Forgejo Module 实施计划
 
 验收依据是[Forgejo Module 集成要求](../requirements/forgejo-module.md)的需求矩阵，设计依据是
-[Forgejo Module 设计](../../docs/architecture/forgejo-module-design.md)。Forgejo 应用 Module 与 M1 安全开关已
+[Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md)。Forgejo 应用 Module 与 M1 安全开关已
 落地；当前并行实施 M2 与 M3。Actions 默认关闭，只有执行面前置条件完整时才允许唯一开关同时
 改变服务端和 controller，始终不暴露 server-only 或 Runner 第二开关。
 
@@ -79,7 +79,7 @@ network/profile/storage；验证防火墙、DNS、最小 egress 和 crash 回收
 不能把 Go 适配器单测等同于通用 Contract 已发布。
 
 > **拆分说明。** 通用 Provider Module（`modules/incus`）、多消费者隔离和内嵌 Incus 客户端的迁移已
-> 独立跟踪，见[Incus compute Provider 实施计划](incus-module.md)与其[要求](../requirements/incus-module.md)。
+> 独立跟踪，见[Incus compute Provider 实施计划](../../../../dev-docs/plans/incus-module.md)与其[要求](../../../../dev-docs/requirements/incus-module.md)。
 > 本里程碑此后只负责 Forgejo **作为消费者**接入：controller 通过 Contract 调用、行为等价性和
 > Forgejo 侧的连通性验收；Provider 自身的实现、隔离与证书轮换不再在本文重复跟踪。
 
@@ -139,7 +139,7 @@ E2E 前不把 Actions 标为 release 能力。
 
 ## 7.1 M6：外部自动化消费者的边界
 
-由 [AI Agent 编排](ai-agent.md) 驱动的三项依赖，本 Module 只负责“不妨碍且可声明”，不实现 Agent 逻辑：
+由 [AI Agent 编排](../../../../dev-docs/plans/ai-agent.md) 驱动的三项依赖，本 Module 只负责“不妨碍且可声明”，不实现 Agent 逻辑：
 
 - [ ] OIDC reconcile 增加声明式的 group→team 映射（`--group-team-map` 与登录时移除），映射内容来自
       消费方配置，Module 不硬编码组名；

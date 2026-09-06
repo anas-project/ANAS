@@ -8,8 +8,8 @@ updated: 2026-08-27
 # Casdoor IAM Provider 集成要求
 
 本文规定 ANAS 集成 Casdoor 时必须满足的 Module、目录同步、OIDC/SAML、授权、会话、安全和
-发布验收边界。通用 Provider 约束见[新 IAM Provider 准入与实施要求](iam-provider.md)，应用侧
-登出契约见[使用 OIDC/SAML 的 Module 双向登出要求](module-iam-bidirectional-logout.md)，实施进度
+发布验收边界。通用 Provider 约束见[新 IAM Provider 准入与实施要求](../../../../dev-docs/requirements/iam-provider.md)，应用侧
+登出契约见[使用 OIDC/SAML 的 Module 双向登出要求](../../../../dev-docs/requirements/module-iam-bidirectional-logout.md)，实施进度
 和执行证据见[Casdoor IAM Provider 实施计划](../plans/archived/casdoor-iam.md)。
 
 本文只规定 Casdoor 的可判定结果，不重复实现进度。关键词“必须”“不得”具有规范性。

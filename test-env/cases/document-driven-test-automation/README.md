@@ -32,7 +32,7 @@
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-002`、`TESTAUTO-R-003`、`TESTAUTO-R-004`
 - 需求复核摘要：`sha256:cddf7bd5e986bd30b8cd12b0345a9539abadf5177a057bccacf032e10840ea0c`
-- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- 实现复核摘要：`sha256:f88274b41c508f7c4470a0f9f3ee27fa729f875dcac8b4ac95eb1bd6e8472ff1`
 - Fixture：临时仓库中的需求矩阵、计划和 cases.yml
 - 目标能力：`go`、`filesystem`
 - Oracle 来源：`error-contract`、`filesystem`
@@ -80,7 +80,7 @@ go test ./internal/testcasecatalog
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-005`、`TESTAUTO-R-006`
 - 需求复核摘要：`sha256:76f8dc8d79ef0f639a6e5c925c2ee276edc8024aa39d72dbae6eb5686b5b39d3`
-- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- 实现复核摘要：`sha256:f88274b41c508f7c4470a0f9f3ee27fa729f875dcac8b4ac95eb1bd6e8472ff1`
 - Fixture：带 TEST_CASES 标记和可发现命令的临时仓库
 - 目标能力：`go`、`filesystem`
 - Oracle 来源：`error-contract`、`filesystem`
@@ -128,7 +128,7 @@ go test ./internal/testcasecatalog
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-007`
 - 需求复核摘要：`sha256:cd6c1645cdf9ea27694d84edbb6c906a466bd3acc7adb963147a89f99f7da09f`
-- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- 实现复核摘要：`sha256:f88274b41c508f7c4470a0f9f3ee27fa729f875dcac8b4ac95eb1bd6e8472ff1`
 - Fixture：可生成 README 的临时用例 catalog
 - 目标能力：`go`、`filesystem`
 - Oracle 来源：`filesystem`、`error-contract`
@@ -175,7 +175,7 @@ go test ./internal/testcasecatalog
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-008`
 - 需求复核摘要：`sha256:5ac5cd27bd4e9a3828c722a52a56590588a2249ced5fb1164ed01496bf649d07`
-- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- 实现复核摘要：`sha256:f88274b41c508f7c4470a0f9f3ee27fa729f875dcac8b4ac95eb1bd6e8472ff1`
 - Fixture：已记录逐用例需求摘要的临时 catalog
 - 目标能力：`go`、`sha256`、`filesystem`
 - Oracle 来源：`return-value`、`error-contract`
@@ -222,7 +222,7 @@ go test ./internal/testcasecatalog
 - 级别：`ci`
 - 覆盖需求：`TESTAUTO-R-009`、`TESTAUTO-R-010`
 - 需求复核摘要：`sha256:9026ea47af3e93372dc297407d2bd96e86c807a87cd59d2ea005cf089011cb56`
-- 实现复核摘要：`sha256:c6b1fb391124e64346d898ac23f2c861250ef59ce7914fc810ad0315e7ab3165`
+- 实现复核摘要：`sha256:3e61534dee25205b44a1ce86338b0e46c3df93d3d3d1061e5ef0b32e20aa3a4b`
 - Fixture：Agent 提交的完整 Go、Shell、Python 或 Playwright 测试补丁
 - 目标能力：`go`、`git`、`ci`
 - Oracle 来源：`error-contract`、`report`
@@ -271,7 +271,7 @@ go test ./internal/testcasecatalog
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-011`
 - 需求复核摘要：`sha256:d8c3c1304989f5b959a601b87abf4d18a3f7674e5495efc71d099b2534f5def2`
-- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- 实现复核摘要：`sha256:f88274b41c508f7c4470a0f9f3ee27fa729f875dcac8b4ac95eb1bd6e8472ff1`
 - Fixture：已提交基线以及分别修改过的需求、cases.yml 和测试实现
 - 目标能力：`go`、`git`、`sha256`、`filesystem`
 - Oracle 来源：`filesystem`、`error-contract`、`report`
@@ -320,7 +320,7 @@ go test ./internal/testcasecatalog
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-012`
 - 需求复核摘要：`sha256:f0ea19e1a1c398a054387067f67e82288a86e52f9217fd94d17990026fb0e87f`
-- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- 实现复核摘要：`sha256:f88274b41c508f7c4470a0f9f3ee27fa729f875dcac8b4ac95eb1bd6e8472ff1`
 - Fixture：分别声明强 oracle 和仅退出码/日志 oracle 的临时 catalog
 - 目标能力：`go`
 - Oracle 来源：`error-contract`
@@ -367,7 +367,7 @@ go test ./internal/testcasecatalog
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-013`
 - 需求复核摘要：`sha256:bfbaf16ebef3200e3e60e5fce7b474ad9e8fdabdce30ad52e9d7548e252c02f2`
-- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- 实现复核摘要：`sha256:f88274b41c508f7c4470a0f9f3ee27fa729f875dcac8b4ac95eb1bd6e8472ff1`
 - Fixture：包含拒绝、安全、回滚、故障降级和恢复措辞的需求矩阵
 - 目标能力：`go`
 - Oracle 来源：`error-contract`
@@ -413,7 +413,7 @@ go test ./internal/testcasecatalog
 - 级别：`unit`
 - 覆盖需求：`TESTAUTO-R-014`
 - 需求复核摘要：`sha256:2a3feb7cf8e5e66226cf78b720309288cc005fcecba0cfbd3dda865a9889f7f0`
-- 实现复核摘要：`sha256:1e355d4f0164eec52b852bab1774c8bea539e6df74be9169fff5752189a89a3e`
+- 实现复核摘要：`sha256:f88274b41c508f7c4470a0f9f3ee27fa729f875dcac8b4ac95eb1bd6e8472ff1`
 - Fixture：使用四种 validity method 的临时 catalog
 - 目标能力：`go`
 - Oracle 来源：`error-contract`

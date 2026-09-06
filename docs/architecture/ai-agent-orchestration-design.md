@@ -848,6 +848,6 @@ issue 时，三档落在原 issue，节流阈值更保守（阶段变化才更�
 | 文档 | 变更 | 状态 |
 | --- | --- | --- |
 | [Samba AD 用户与权限规划](/architecture/samba-ad-user-planning) | 登记 `CAP_<module-id>_<capability>` 类别与 `OU=Cap,OU=Groups`；这是所有 Module 的通用规则，不只服务 AI | 待决策，未提交 |
-| [Forgejo Module 要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/forgejo-module.md) | Agent 账号与 token 的管理端引导、系统 webhook 归属、OIDC 增加 `--group-team-map` | 待登记 |
+| [Forgejo Module 要求](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/dev-docs/requirements/forgejo-module.md) | Agent 账号与 token 的管理端引导、系统 webhook 归属、OIDC 增加 `--group-team-map` | 待登记 |
 | [目录事件日志](/architecture/directory-event-journal) | 增加 Forgejo 订阅者，消除组变更的登录延迟（§6.2） | 待登记 |
 | `llm_gateway` 选型 | 统一模型 key、预算与审计的候选比较 | 未开始 |

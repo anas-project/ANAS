@@ -146,6 +146,29 @@ func TestRewriteUserLinksSendsDevDocsToRepository(t *testing.T) {
 	}
 }
 
+// A Module-private requirement or plan lives under modules/<name>/dev-docs/,
+// which a README addresses without any parent segment. That link is still
+// repository-only, so it must not survive into the published page as a relative
+// path the site cannot resolve.
+func TestRewriteUserLinksSendsModulePrivateDevDocsToRepository(t *testing.T) {
+	got := rewriteUserLinks("[plan](dev-docs/plans/demo.md)", "demo", "deadbeef")
+	want := "[plan](https://github.com/anas-project/ANAS/blob/deadbeef/modules/demo/dev-docs/plans/demo.md)"
+	if got != want {
+		t.Fatalf("rewritten link = %q, want %q", got, want)
+	}
+}
+
+// The technical page sits one level deeper, so the same document is one parent
+// segment away; the generic parent rule has to resolve it against the Module
+// directory rather than the repository root.
+func TestRewriteTechnicalLinksResolvesModulePrivateDevDocs(t *testing.T) {
+	got := rewriteTechnicalLinks("[plan](../dev-docs/plans/demo.md)", "demo", "deadbeef", false)
+	want := "[plan](https://github.com/anas-project/ANAS/blob/deadbeef/modules/demo/dev-docs/plans/demo.md)"
+	if got != want {
+		t.Fatalf("rewritten link = %q, want %q", got, want)
+	}
+}
+
 func TestRewriteTechnicalLinksNormalizesParentSegments(t *testing.T) {
 	got := rewriteTechnicalLinks("[plan](../../../dev-docs/plans/demo.md)", "demo", "deadbeef", false)
 	want := "[plan](https://github.com/anas-project/ANAS/blob/deadbeef/dev-docs/plans/demo.md)"

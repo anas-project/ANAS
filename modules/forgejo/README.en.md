@@ -101,4 +101,4 @@ transactional rotation contract.
 
 See the [technical documentation](docs/technical.en.md) for current implementation details. Design decisions and
 remaining work are tracked in the [Forgejo Module design](../../docs/architecture/forgejo-module-design.md) and
-[implementation plan](../../dev-docs/plans/forgejo-module.md).
+[implementation plan](dev-docs/plans/forgejo-module.md).
