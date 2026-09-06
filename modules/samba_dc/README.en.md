@@ -48,6 +48,28 @@ It is authoritative for people, groups, service identities, and identity anchors
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Groups ANAS creates
+
+With `create_structure` on, this module creates three kinds of ANAS-managed group, each answering a
+different question. **Membership is always the administrator's data**: this module only creates
+groups -- it never deletes one, and never adds or removes a member on an administrator's behalf.
+
+| OU | Prefix | Question it answers | Where it comes from |
+| --- | --- | --- | --- |
+| `OU=Role` / `OU=Access` | `Admins`, `Unix Admins`, `FS *` | What is this person's role, and which resources may they touch | Fixed by the product |
+| `OU=Apps` | `APP_<module-id>`, `APP_all` | May this person enter this application | The enabled LDAP applications (`app_filter`) |
+| `OU=Cap` | `CAP_<module-id>_<capability>` | Which feature inside it may they use | Declared by the enabled modules themselves |
+
+A capability group **grants no sign-in**: its members still need `APP_<module-id>`, `APP_all` or
+`Admins` to enter the application. There is deliberately no aggregate group like `APP_all` for
+capabilities -- one would also grant the capabilities of modules enabled later. The full rules and
+the three design decisions are in the
+[Samba AD user and permission plan](../../docs/architecture/samba-ad-user-planning.md) section 5.4.1.
+
+A module that is switched off stops declaring its capability groups, but the groups already created
+stay: deleting one would delete its membership with it, so re-enabling the module would silently
+produce an empty group, and "the permission is gone" only surfaces when someone cannot do their job.
+
 ## PEN 66678 identity-anchor migration
 
 r11 fixes the official `anasIdentityAnchor` OID at `1.3.6.1.4.1.66678.1.2.1`; fresh r11 installations use it directly. An existing pre-r11 workspace that still uses the legacy GUID-derived OID must not use an ordinary direct apply. Follow the [offline migration runbook](../../docs/en/guide/migrate-identity-anchor-oid.md):

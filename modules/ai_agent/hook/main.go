@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/localization"
@@ -206,6 +207,8 @@ func calculate(e map[string]string, secrets *secretStore) ([]string, error) {
 	}
 	e["AI_AGENT_WEBHOOK_SECRET"] = webhookSecret
 
+	publishCapabilityGroups(e)
+
 	if e["AI_AGENT_DB_TYPE"] != "" && e["AI_AGENT_DB_TYPE"] != "postgres" {
 		return nil, fmt.Errorf("AI_AGENT_DB_TYPE must resolve to postgres, got %q", e["AI_AGENT_DB_TYPE"])
 	}
@@ -213,6 +216,42 @@ func calculate(e map[string]string, secrets *secretStore) ([]string, error) {
 		return nil, err
 	}
 	return warnings, nil
+}
+
+// capabilityGroups are the directory groups that grant use of this module.
+// They are appended to the deployment-wide list the directory module reads, the
+// same way an application appends itself to APPS_LIST -- so enabling a runtime
+// creates its group and no group is written down twice.
+//
+// Two of them are properties of the module: `execute` gates approving an
+// execution, `terminal` lets a non-administrator attach to a running agent.
+// The rest are one per enabled runtime, taken from configuration rather than
+// from a list here, so this file names no runtime (AGENT-R-059, AGENT-R-060).
+func publishCapabilityGroups(e map[string]string) {
+	groups := splitCSV(e["ANAS_IDENTITY_CAPABILITY_GROUPS"])
+	add := func(capability string) {
+		name := "ai_agent_" + capability
+		for _, existing := range groups {
+			if existing == name {
+				return
+			}
+		}
+		groups = append(groups, name)
+	}
+	// A disabled deployment publishes nothing: a group nobody can use is a
+	// group an administrator has to wonder about.
+	if e["AI_AGENT_ENABLED"] != "true" {
+		return
+	}
+	add("execute")
+	add("terminal")
+	for _, runtime := range splitCSV(e["AI_AGENT_RUNTIMES"]) {
+		if runtimeIDPattern.MatchString(runtime) {
+			add(runtime)
+		}
+	}
+	sort.Strings(groups)
+	e["ANAS_IDENTITY_CAPABILITY_GROUPS"] = strings.Join(groups, ",")
 }
 
 // validateEnabled is AGENT-R-004 at apply time. `enabled` is the only feature

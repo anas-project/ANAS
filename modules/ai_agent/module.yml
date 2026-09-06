@@ -179,8 +179,15 @@ config:
         pattern: '^(?:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100}(?:,[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100})*)?$'
     workspace_scope:
       enum: [repo, job]
+  exports:
+    # The capability groups this module needs in the directory. The directory
+    # module creates them under OU=Cap; the identity provider projects them into
+    # the collaboration surface, where the orchestrator reads them back as the
+    # ceiling on what a person may ask an agent to do.
+    - ANAS_IDENTITY_CAPABILITY_GROUPS
   consumes:
     - ANAS_COMPUTE_RESOURCE__AI_AGENT__*
+    - ANAS_IDENTITY_CAPABILITY_GROUPS
     - ANAS_TLS_CERTS_DIR
     - ANAS_TLS_INTERNAL_CA_NAME
     - FORGEJO_DOMAIN_FULL

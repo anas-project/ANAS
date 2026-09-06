@@ -49,6 +49,7 @@ config:
     - LEGO_CERT_NAME
     - LEGO_KEY_NAME
     - ANAS_IDENTITY_APP_CLIENTS
+    - ANAS_IDENTITY_CAPABILITY_GROUPS
   defaults:
     application_dns_mode: auto
     app_filter: "true"

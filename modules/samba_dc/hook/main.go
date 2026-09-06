@@ -230,6 +230,12 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_BASE_ADMINS_DN"] = "OU=Admins," + baseDN
 	e["SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN"] = "OU=Service Accounts," + baseDN
 	e["SAMBA_DC_BASE_APP_DN"] = "OU=Apps," + e["SAMBA_DC_BASE_GROUPS_DN"]
+	// Capability groups sit in their own OU rather than beside the application
+	// groups. The two answer different questions -- APP_* is "may this person
+	// enter the application", CAP_* is "which feature inside it may they use" --
+	// and keeping them apart means everything under OU=Cap is ANAS-generated
+	// and can be audited, backed up or reclaimed as one set.
+	e["SAMBA_DC_BASE_CAP_DN"] = "OU=Cap," + e["SAMBA_DC_BASE_GROUPS_DN"]
 	e["SAMBA_DC_APP_ALL_NAME"] = "APP_all"
 	e["SAMBA_DC_APP_ALL_DN"] = "CN=" + e["SAMBA_DC_APP_ALL_NAME"] + "," + e["SAMBA_DC_BASE_APP_DN"]
 	e["SAMBA_DC_ADMINISTRATOR_DN"] = "CN=Administrator,CN=Users," + baseDN

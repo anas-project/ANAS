@@ -34,7 +34,7 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 | --- | --- | --- |
 | M1：Module 骨架、身份凭据与事件入站 | AGENT-R-001—R-014 | 已完成；单元、契约与真实依赖 e2e 均通过，容器级重启 e2e 待整套部署 |
 | M2：交互契约与产物入库 | AGENT-R-015—R-029 | 已完成；单元、契约与真实 Forgejo e2e 均通过 |
-| M3：权限、目录组授权与审计 | AGENT-R-030—R-036 | 已完成；判定引擎与审计已落地并对真实 Forgejo 验证，目录侧 `OU=Cap` 登记仍待决策 |
+| M3：权限、目录组授权与审计 | AGENT-R-030—R-036 | 已完成；判定引擎、审计与目录侧 `OU=Cap` 均已落地，`--group-team-map` 投影待接 |
 | M4：执行面、分支策略与执行 issue | AGENT-R-037—R-044 | 未开始 |
 | M5：排程、执行时机与队列 | AGENT-R-045—R-051 | 未开始 |
 | M6：记录、会话视图与可扩展性 | AGENT-R-052—R-061 | 未开始 |
@@ -83,6 +83,10 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
       五个权限档位与推导表在真实 `15.0.7` 上逐一验证过。
 - [x] 实现 `CAP_ai_agent_*` 目录组经 Forgejo team 的投影与定期快照刷新。读法是以该用户身份
       `GET /user/teams`（`Sudo` 头）——一次调用拿到全部 team，而不是逐个 team 查成员。
+- [x] 目录侧登记：`OU=Cap` 与 `CAP_<module-id>_<capability>` 已写进
+      [Samba AD 用户与权限规划](../../docs/architecture/samba-ad-user-planning.md) §5.4.1 并由 `samba_dc`
+      实现；Module 经 `ANAS_IDENTITY_CAPABILITY_GROUPS` 声明能力码，与应用追加 `APPS_LIST` 是同一模式。
+- [ ] 把 `--group-team-map` 接进 `forgejo` Module 的 OIDC 配置，补上"目录组 → Forgejo team"这一段。
 - [x] 实现即时否决表与 `Veto` / `LiftVeto`（`agent-grant deny` 的后端）。否决在每次判定时实时读取，
       不走快照缓存，因此撤权下一次请求即生效。
 - [x] 实现判定审计（含拒绝）与作业开始前的二次判定（`Recheck` 主动丢弃快照）。
@@ -176,8 +180,9 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
   当前实现按“至多一次”设计，对账是补偿手段，这条不阻塞 M1。
 - 执行面依赖 [Incus compute Provider](incus-module.md) 的 M6（真实宿主验收），该里程碑本身
   阻塞于独立 KVM/Incus 宿主。M4 在此之前只能实现控制面侧逻辑。
-- `CAP_<module-id>_<capability>` 组类别与 `OU=Cap,OU=Groups` 尚未在
-  [Samba AD 用户与权限规划](../../docs/architecture/samba-ad-user-planning.md)登记。M3 的**消费侧已完成**
-  （从 Forgejo team 读出能力上限，组名由注册表生成），缺的是链路前半段：目录里建组、IAM 用
-  `--group-team-map` 投影成 team。`AGENT-R-032` 的 e2e 因此只覆盖了 team → 上限这一段。
+- `AGENT-R-032` 的链路还差中间一段。目录侧已经通了：`CAP_<module-id>_<capability>` 已在
+  [Samba AD 用户与权限规划](../../docs/architecture/samba-ad-user-planning.md) §5.4.1 登记并由
+  `samba_dc` 实现，`ai_agent` 经 `ANAS_IDENTITY_CAPABILITY_GROUPS` 声明能力码；消费侧也已完成
+  （从 Forgejo team 读出能力上限）。缺的是 **IAM 用 `--group-team-map` 把组投影成 Forgejo team** ——
+  该 CLI 参数已在 `15.0.7` 上确认存在，但 `forgejo` Module 的 OIDC 配置还没有把它接上。
 - `modules/ai_agent` 的镜像尚未推到 registry；`.github/images.json` 已登记构建条目。

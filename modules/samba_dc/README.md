@@ -46,6 +46,24 @@ modules:
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### ANAS 自动创建的 Group
+
+`create_structure` 为 `true` 时，本 Module 创建三类由 ANAS 管理的 Group，各自回答一个不同的问题。
+**成员关系始终是管理员的数据**：这里只创建组，从不删除组，也从不代管理员增删成员。
+
+| OU | 前缀 | 回答的问题 | 来源 |
+| --- | --- | --- | --- |
+| `OU=Role` / `OU=Access` | `Admins`、`Unix Admins`、`FS *` | 这个人是什么职责、能碰哪些资源 | 产品固定 |
+| `OU=Apps` | `APP_<module-id>`、`APP_all` | 能不能进这个应用 | 启用的 LDAP 应用（`app_filter`） |
+| `OU=Cap` | `CAP_<module-id>_<capability>` | 进去之后能用哪个功能 | 启用的 Module 自己声明 |
+
+能力组**不授予登录权**：成员仍然需要 `APP_<module-id>`、`APP_all` 或 `Admins` 才能进入应用。它们
+故意没有 `APP_all` 那样的聚合组——那会把以后启用的 Module 的能力也一并授予。完整规则与三项设计
+决定见[Samba AD 用户与权限规划](../../docs/architecture/samba-ad-user-planning.md) §5.4.1。
+
+Module 停用后不再声明能力组，但已建的组保留：删掉组等于连成员一起删掉，重新启用时会静默变成一个
+空组，而"权限没了"只有在有人用不了的时候才会被发现。
+
 ## PEN 66678 identity-anchor 迁移
 
 r11 将 `anasIdentityAnchor` 的正式 OID 固定为 `1.3.6.1.4.1.66678.1.2.1`；全新 r11 安装会直接使用该 OID。已有 pre-r11 workspace 若仍采用旧 GUID 派生 OID，不能直接普通 apply，必须按[离线迁移 Runbook](../../docs/guide/migrate-identity-anchor-oid.md)执行：

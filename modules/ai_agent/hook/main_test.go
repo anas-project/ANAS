@@ -341,3 +341,76 @@ func TestOtherModulesAreIgnored(t *testing.T) {
 		t.Fatalf("the hook acted on another module's request: %+v", resp)
 	}
 }
+
+// The capability groups the directory has to create are published from the
+// enabled runtimes, not written down here, so enabling a runtime creates its
+// group and this file names none of them.
+func TestCapabilityGroupsFollowTheEnabledRuntimes(t *testing.T) {
+	env := baseEnv()
+	env["AI_AGENT_RUNTIMES"] = "codex,claude_code"
+	env["AI_AGENT_RUNTIME_IMAGES"] = "codex=" + strings.Repeat("a", 64) +
+		",claude_code=" + strings.Repeat("b", 64)
+	resp, err := runHook(t, "calculate", env, nil)
+	if err != nil {
+		t.Fatalf("calculate: %v", err)
+	}
+	groups := splitCSV(resp.Env["ANAS_IDENTITY_CAPABILITY_GROUPS"])
+	for _, want := range []string{
+		"ai_agent_execute", "ai_agent_terminal", "ai_agent_codex", "ai_agent_claude_code",
+	} {
+		if !containsString(groups, want) {
+			t.Errorf("groups = %v, missing %q", groups, want)
+		}
+	}
+	if containsString(groups, "ai_agent_pi") {
+		t.Fatalf("groups = %v; a runtime that is not enabled got a group", groups)
+	}
+}
+
+// The module appends to the deployment-wide list instead of replacing it, the
+// same way an application appends itself to APPS_LIST.
+func TestCapabilityGroupsAppendToWhatOtherModulesPublished(t *testing.T) {
+	env := baseEnv()
+	env["ANAS_IDENTITY_CAPABILITY_GROUPS"] = "nextcloud_admin,ai_agent_execute"
+	resp, err := runHook(t, "calculate", env, nil)
+	if err != nil {
+		t.Fatalf("calculate: %v", err)
+	}
+	groups := splitCSV(resp.Env["ANAS_IDENTITY_CAPABILITY_GROUPS"])
+	if !containsString(groups, "nextcloud_admin") {
+		t.Fatalf("groups = %v; another module's entry was dropped", groups)
+	}
+	// An entry already present is not repeated.
+	count := 0
+	for _, group := range groups {
+		if group == "ai_agent_execute" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("groups = %v; ai_agent_execute appears %d times", groups, count)
+	}
+}
+
+// A disabled deployment publishes no groups: a group nobody can use is one an
+// administrator has to wonder about.
+func TestDisabledDeploymentPublishesNoCapabilityGroups(t *testing.T) {
+	env := baseEnv()
+	env["AI_AGENT_ENABLED"] = "false"
+	resp, err := runHook(t, "calculate", env, nil)
+	if err != nil {
+		t.Fatalf("calculate: %v", err)
+	}
+	if value, present := resp.Env["ANAS_IDENTITY_CAPABILITY_GROUPS"]; present && value != "" {
+		t.Fatalf("a disabled deployment published %q", value)
+	}
+}
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
+}

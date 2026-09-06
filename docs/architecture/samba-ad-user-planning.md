@@ -46,11 +46,13 @@ DC=nas,DC=example,DC=com
     ├── OU=Apps                      # 应用登录范围
     │   ├── CN=APP_all
     │   └── CN=APP_<应用名>
-    └── OU=Cap                       # 提案，尚未实现：应用内能力授权（§5.4.1）
+    └── OU=Cap                       # 应用内能力授权（§5.4.1）
         └── CN=CAP_<module-id>_<capability>
 ```
 
-`OU=Groups`、`Role`、`Access` 等结构由 `samba_dc.create_structure` 控制；应用组由 `samba_dc.app_filter` 和实际启用的 LDAP 应用共同决定。两项当前默认均为 `true`。
+`OU=Groups`、`Role`、`Access`、`Cap` 等结构由 `samba_dc.create_structure` 控制；应用组由
+`samba_dc.app_filter` 和实际启用的 LDAP 应用共同决定；能力组由启用的 Module 声明。三项当前默认均为
+`true`／随 Module 启用。
 
 ## 4. 账号分类与当前状态
 
@@ -138,10 +140,11 @@ Nextcloud `admin` 权限，移组后也随 LDAP 组映射撤销。初始化脚�
 `ldapGroupRecursive`。这保证 IAM 放行后，应用侧目录开户也不会再次按直接成员拒绝。
 E2E 会创建临时 `ROLE_*` 嵌套组，同时验证两种 IAM 的结果。
 
-#### 5.4.1 Caps：应用能力组（提案）
+#### 5.4.1 Caps：应用能力组
 
-> 状态：**提案，当前未实现**。`OU=Cap` 与 `CAP_*` 组尚未由任何代码创建；本节记录待决策的通用规则，
-> 首个消费者是 [AI Agent 编排设计](ai-agent-orchestration-design.md)。
+> 状态：**已采纳并实现**。`samba_dc` 在 `create_structure` 为 `true` 且有 Module 声明能力组时创建
+> `OU=Cap` 与其中的 `CAP_*` 组。首个消费者是
+> [AI Agent 编排设计](ai-agent-orchestration-design.md)。
 
 `APP_<module-id>` 回答“能不能进这个应用”。有些 Module 还需要回答“进去之后能用哪个功能”——例如
 谁可以让 AI Agent 执行代码、谁可以附着运行中的终端。这类授权：
@@ -150,7 +153,7 @@ E2E 会创建临时 `ROLE_*` 嵌套组，同时验证两种 IAM 的结果。
 - 不是 `FS_*`：它不描述文件或存储资源；
 - 也不宜塞进 `APP_*`：那会让同一前缀既表示登录范围又表示应用内权限，违反“一个组只表达一种含义”。
 
-因此提案新增一类由 **ANAS 按启用的 Module 生成**的能力组：
+因此新增一类由 **ANAS 按启用的 Module 生成**的能力组：
 
 | 项 | 约定 |
 | --- | --- |
@@ -167,8 +170,35 @@ E2E 会创建临时 `ROLE_*` 嵌套组，同时验证两种 IAM 的结果。
 示例：`CAP_ai_agent_execute`（可批准 AI Agent 执行）、`CAP_ai_agent_terminal`（非管理员可附着 Agent
 终端）、`CAP_nextcloud_admin`（应用内管理员，若该 Module 选择用能力组表达）。
 
-采纳前的待决项：`samba_dc` 是否新增 `create_structure` 分支创建 `OU=Cap`；能力组是否也需要类似
-`APP_all` 的聚合组；Module 停用时是保留还是删除其能力组。
+#### 5.4.2 三项决定
+
+原提案留了三个待决项，落地时的决定与理由如下。
+
+**一、`OU=Cap` 跟 `create_structure` 走，不另设开关。** 它和 `OU=Role`、`OU=Access` 是同一类东西——
+由 ANAS 生成的目录结构。自己管理目录布局的部署把 `create_structure` 关掉后不该拿到任何 ANAS 生成的
+OU，再多一个开关只会让"关掉了结构却冒出一个 OU"成为可能。
+
+**二、不设 `APP_all` 那样的聚合组。** `APP_all` 存在是因为"让这个人进所有应用"是个真实且粗粒度的
+诉求；"把所有 Module 的所有功能都给这个人"不是——能力组本来就是模型里细粒度的那一半，而聚合组会
+把**以后**启用的 Module 的能力也一并授予，授权范围会随部署变化而扩大，且没人会注意到。需要广泛
+授权的场合用 `Admins`：各 Module 自行决定是否让它默认获得某项能力。
+
+**三、Module 停用时保留能力组，不删除。** 组里的成员是管理员维护的数据，不是 ANAS 的；删组等于
+连成员一起删掉，重新启用时会静默变成一个空组，而"权限没了"这件事只有在有人用不了的时候才会被发现。
+保留后由管理员按需清理，这也和 `APP_*` 的现有行为一致（结构脚本只创建、从不删除）。
+
+#### 5.4.3 组从哪里来
+
+Module 在自己的 Hook 里把需要的能力码追加到部署级列表 `ANAS_IDENTITY_CAPABILITY_GROUPS`（形如
+`<module-id>_<capability>`），`samba_dc` 消费该列表创建 `CAP_<module-id>_<capability>`。这与应用把
+自己追加进 `APPS_LIST` 是同一个模式，因此没有第二套机制。
+
+用 Hook 追加而不是在 manifest 里写死，是因为有些能力码来自**配置**而不是 Module 的固有属性：
+`ai_agent` 的 `CAP_ai_agent_execute` 与 `CAP_ai_agent_terminal` 是固有的，而每个 Agent 运行时一个的
+`CAP_ai_agent_<运行时>` 取决于该部署启用了哪些运行时。写进 manifest 就意味着把运行时名单抄第二遍，
+两份迟早会不一致。
+
+Module 停用后不再追加，已建的组按上面第三条保留。
 
 <span id="anas-group-naming"></span>
 
@@ -184,7 +214,7 @@ E2E 会创建临时 `ROLE_*` 嵌套组，同时验证两种 IAM 的结果。
 | 新增文件或资源权限 | 管理员创建 | `FS_<资源代码>_<RO\|RW\|ADMIN>` | `OU=Access,OU=Groups` | 单域资源通常用 `Domain` / `Security` | `FS_FINANCE_RW`、`FS_ARCHIVE_RO` |
 | 单应用登录 | ANAS 按启用的 LDAP Module 生成 | `APP_<module-id>` | `OU=Apps,OU=Groups` | 由 ANAS 管理 | `APP_nextcloud`、`APP_meshcentral` |
 | 全应用登录 | ANAS 固定创建 | `APP_all` | `OU=Apps,OU=Groups` | 由 ANAS 管理 | `APP_all` |
-| 应用内能力（**提案**，见 §5.4.1） | ANAS 按启用的 Module 生成 | `CAP_<module-id>_<capability>` | `OU=Cap,OU=Groups` | 由 ANAS 管理 | `CAP_ai_agent_execute` |
+| 应用内能力（见 §5.4.1） | ANAS 按启用的 Module 生成 | `CAP_<module-id>_<capability>` | `OU=Cap,OU=Groups` | 由 ANAS 管理 | `CAP_ai_agent_execute` |
 | ANAS 固定管理/资源组 | ANAS 固定创建 | 保留产品定义的准确名称 | `OU=Role` 或 `OU=Access` | 由 ANAS 管理 | `Admins`、`Unix Admins`、`FS Admins`、`FS Share RW` |
 | AD 内置组 | AD 建域时创建 | 保留 AD 的准确名称 | AD 内置容器 | 由 AD 管理 | `Domain Admins`、`Administrators`、`Domain Users` |
 
@@ -194,7 +224,7 @@ E2E 会创建临时 `ROLE_*` 嵌套组，同时验证两种 IAM 的结果。
 - `<公司代码>`、`<部门代码>`、`<职责代码>`、`<项目代码>` 和 `<资源代码>` 必须来自组织维护的代码表；重命名显示名称时尽量保持代码和组 `sAMAccountName` 不变。
 - `RO` 是 read-only，`RW` 是 read/write，`ADMIN` 是 resource administrator。`ADMIN` 只能用于边界清楚的资源管理组，不等同 `Domain Admins`。
 - `APP_<module-id>` 的 `<module-id>` 与 ANAS Module ID 保持一致，通常为小写。不要手工创建一个看似存在但对应 Module 未启用的 `APP_*` 组。
-- `CAP_<module-id>_<capability>`（提案）同样由 ANAS 生成，`<capability>` 使用小写下划线代码；它只表达应用内功能授权，不表达登录权，也不要手工创建。
+- `CAP_<module-id>_<capability>` 同样由 ANAS 生成，`<capability>` 使用小写下划线代码；它只表达应用内功能授权，不表达登录权，也不要手工创建。
 - `Admins` 与 AD 内置 `Administrators` 不是同一个组；`FS Admins`、`FS Share RW` 是现有产品契约。不要为了统一外观擅自改成下划线名称。
 - 每个自建组必须填写 `description`，至少记录中文名称、用途、负责人或审批方；临时组还要记录到期或复核条件。
 
@@ -423,6 +453,7 @@ samba-tool domain passwordsettings pso show pso_privileged
 - [ ] 确认普通用户、域管理员、文件管理员的账号命名规范。
 - [ ] 建立人员—普通账号—管理账号对应表。
 - [ ] 确定各应用的 `APP_*` 授权负责人。
+- [ ] 确定各 Module 的 `CAP_*` 能力组审批负责人；能力组只授功能，成员仍需另有登录权（§5.4.1）。
 - [ ] 确定 `FS Share RW` 和 `FS Admins` 的审批负责人。
 - [ ] 导出并复核全部高权限组成员。
 - [ ] 为共用 `admin` 制定实名管理账号替换计划。
