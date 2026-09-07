@@ -1,9 +1,10 @@
 ---
-doc_type: research
+doc_type: review
 status: current
 created: 2026-09-05
 updated: 2026-09-05
 evidence_as_of: 2026-09-05
+review_baseline: 2026-09-05
 ---
 
 # GPT‑6 / GPT‑5.6 混用配置与项目质量评估
@@ -12,7 +13,7 @@ evidence_as_of: 2026-09-05
 
 **保留并整理根目录 `AGENTS.md`，两代模型共用一份项目约束；先修执行边界和验证门禁，再逐步拆分 Runner。没有必要因升级 GPT‑6 删除项目规范，也没有必要重写现有架构。**
 
-本报告按本次用户请求，合并官方建议核实、项目配置审查和代码质量评估，交付在 `docs/research/`；它是修改建议，不是已批准的实施计划。后续实施仍由配套需求矩阵与计划驱动。
+本报告合并官方建议核实、项目配置审查和代码质量评估，属于绑定工作树基线的审查快照，归档在 `dev-docs/reviews/`，不进入公开文档站。它是修改建议，不是已批准的实施计划；后续实施仍由配套需求矩阵与计划驱动。
 
 审查基线为 2026-09-05 本地工作树，HEAD `455770b`（`feat(console): complete M5 release and pagination`）。审查时已有约 220 条 Git 状态记录，含修改、删除和未跟踪文件；结论覆盖这些工作树内容，不能等同于 master 或已发布版本。没有修改现有实现、Agent 配置或需求状态，也没有提交、合并或操作远端服务。
 
@@ -75,7 +76,8 @@ GPT‑5.6 同样建议减少重复指令、示例和工具说明，并用代表�
 ## Requirements and documentation
 
 - Deliver research reports under docs/research/ as Markdown unless another
-  format is explicitly requested.
+  format is explicitly requested. Put repository reviews and dated assessments
+  under dev-docs/reviews/ using YYYY-MM-DD-topic.md filenames.
 - Read dev-docs/requirements/index.md and dev-docs/plans/index.md before opening
   documents under them. Follow the relevant topic plan for implementation;
   acceptance criteria belong to the paired requirement matrix with stable IDs.
@@ -248,7 +250,7 @@ jobexecutor.finishCanceled
 | `npm run docs:check-plan-status` | 通过：22 份计划；但没有发现 AI 提案错放归档区的语义问题 |
 | `npm run docs:check-status` | 通过：69 份文档状态声明有效 |
 | Module/Contract 生成器 `--check` | 均通过 |
-| `npm run docs:build` | 通过，包含本报告与中英文索引；VitePress 有超过 500 kB 的 chunk 提示，非构建失败 |
+| `npm run docs:build` | 原审查时通过；当时报告仍在研究目录，后按文档分类移入 dev-docs/reviews/ 并移除中英文研究索引入口；VitePress 有超过 500 kB 的 chunk 提示，非构建失败 |
 | OpenAPI 临时生成结果与 `schema.d.ts` 比较 | 一致；没有重写真实生成文件 |
 | overlay 恢复失败探针 | 成功复现 C1 的错误成功返回值；仓库实现未改 |
 | Docker / Incus / 远端浏览器 / 漏洞扫描 | 本轮未执行；不引用旧报告的通过结论冒充当前结果 |

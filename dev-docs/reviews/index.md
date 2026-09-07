@@ -4,6 +4,9 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [凭据轮换机制审查：全面轮换与单独轮换](2026-09-04-credential-rotation-review.md) | 2026-09-04 工作树，HEAD `5306b63` | 轮换覆盖面、作用域语义与 resource 凭据空白 |
+| [GPT‑6 / GPT‑5.6 混用配置与项目质量评估](2026-09-05-agent-configuration-and-project-quality-review.md) | 2026-09-05 工作树，HEAD `455770b` | Agent 配置、文档、架构与代码质量审查 |
+| [AI Agent 编排设计审查](2026-09-05-ai-agent-orchestration-design-review.md) | 2026-09-05 工作树，HEAD `455770b` | 编排设计、凭据边界与事件状态审查 |
 | [ANAS 综合项目审计与整改状态（2026-09-03）](2026-09-03-comprehensive-project-audit.md) | 2026-09-03 工作树复核 | 综合审计、整改状态与未解决发现 |
 | [ANAS 综合项目审计与整改状态（2026-08-23）](2026-08-23-comprehensive-project-audit.md) | 2026-08-23 工作树复核 | 综合审计、整改状态与未解决发现 |
 | [Vikunja Module 设计规范符合性审查](2026-08-21-vikunja-module-design-compliance.md) | 2026-08-21 工作树，Vikunja `2.4.0-r1` | Module 规范与发布门禁审查 |
