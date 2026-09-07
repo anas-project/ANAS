@@ -18,6 +18,7 @@
 | [无序 Capability 依赖](weak-capability-dependency.md) | `ordering` 字段、calculate 环境隔离、解除 Adminer 成环阻塞；验收依据见[要求](../requirements/weak-capability-dependency.md) | 实施中 |
 | [Module 专属命令能力](module-command-capability.md) | manifest/deployment 冻结、共享执行服务、CLI/anasd 与 Forgejo/Incus 验收 | 实施中 |
 | [VersityGW S3 兼容 Module](versitygw-module.md) | S3 Module、Capability/Resource、独立 bucket/凭据、客户端与恢复验收 | 实施中 |
+| [凭据轮换覆盖面](credential-rotation.md) | 表述修正、资源凭据声明位与两侧契约、跨类清单、PostgreSQL 认证基线；验收依据见[要求](../requirements/credential-rotation.md) | 提案 |
 | [Incus compute Provider](incus-module.md) | Contract 改形、`incus` Provider Module、Core 支持、共享客户端与 Forgejo 迁移；验收依据见[要求](../requirements/incus-module.md) | 实施中 |
 | [Module IAM 双向登出](module-iam-bidirectional-logout.md) | 全部内置 IAM Consumer 的 Provider × 协议 × 登出方向能力与真实会话 E2E | 实施中 |
 | [需求 ID 矩阵采用](requirement-id-adoption.md) | 门禁豁免清单、双向登出矩阵与迁移后扫描边界；验收依据见[要求](../requirements/requirement-id-adoption.md) | 实施中 |

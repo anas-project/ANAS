@@ -118,10 +118,22 @@ deployment 合同。当前可实际轮换的首个 provider 是 `eturnal.secret`
 | 关系数据库资源账号 | `RESOURCE_<CONSUMER>_<RESOURCE_ID>_PASSWORD` | provider 级 probe/reconcile/verify；消费者重新激活 |
 | Module 私有管理员 | `COLLABORA_ADMIN_PASSWORD`、`LAM_ADMIN_PASSWORD` 等 | 显式逻辑凭据声明和本地验证 |
 | 内部 shared secret | Talk/Signaling/Imaginary/Relay 等 | `eturnal.secret` 已接入；其余仍需 owner/consumer 声明和启动时协调 |
+| compute 客户端证书 | `RESOURCE_<CONSUMER>_<RESOURCE_ID>_...` | `overlap` 语义：新旧证书同时受信再撤旧的，是轮换不杀掉运行中实例的唯一办法 |
+| compute `lease_secret` | 同上 | `migrate` 语义：轮换会改变**全部已发布的 URL**，必须有人知情，不能进例行批量 |
 
 PostgreSQL 与 MariaDB provider 的现有 `ensure` 已能创建或 `ALTER` 普通资源账号，但没有独立的
 候选认证、authority 检查和回滚合同；统一库存接入后必须把这些资源凭据报告为 unsupported，
 不能仅凭现有 `ensure` 宣称可轮换。
+
+换句话说，资源账号缺的**不是"把新口令推下去"这一半**——`provision.sh` 的 `ensure` 里那句
+`ALTER ROLE ... PASSWORD` 每次 apply 都无条件执行，推送早就是幂等的。缺的是另外两半：
+
+1. **没有任何东西会生成新值。** `secrets.Ensure` 见到已有值就原样返回，所以资源凭据的实际行为是
+   "铸一次，永不更换"；
+2. **`resources.requires[].spec.credential` 没有轮换声明位**，今天只有 `policy: generated`。
+
+第 2 条是关键，因为不同资源凭据的正确模式并不相同：上表里 compute 的两条凭据同属一个资源，却
+一条必须 `overlap`、一条必须 `migrate`。补齐时**不能对整类资源凭据一刀切**。
 
 四个本地管理员仍可通过兼容命令逐账号轮换，但它们尚未声明新的 probe/reconcile/verify 合同，
 也尚未进入 candidate deployment 事务。PostgreSQL 的旧版在线 credential Hook 未保留；其当前
