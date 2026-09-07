@@ -315,6 +315,9 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
 | `INCUS-R-090` | 确认 token 属于动作 ABI 而非 HTTP 层：CLI 与 Web 的 plan/apply 用同一机制，并留下同一对互相引用的 job 记录 | 契约 + 审阅 |
 | `INCUS-R-091` | token 过期后 `apply` 必须重新 plan 并重新展示摘要要求再次确认，不得沿用旧摘要执行；客户端应在用户停留过久时静默换新 token 而不是延长有效期 | 单元 + e2e |
 | `INCUS-R-092` | `lease_secret` 必须是独立的一条 Secret Store 条目（32 字节随机），不得并入客户端证书 bundle、也不得由部署级 secret 派生；随租约投影给消费者并标为敏感，resource state 只留引用 | 单元 |
-| `INCUS-R-095` | 经 ingress 发布的服务默认必须挂 ForwardAuth；发布无认证服务必须是租约里显式声明的选择。域名不可预测只是纵深防御，不得作为访问控制——SNI 明文、URL 会进 Referer 与日志 | 契约 + e2e |
+| `INCUS-R-095` | ingress 的认证方式必须是租约里 apply 时的声明（`auth` 取 `none` 或 `forward_auth`，默认 `none`），不得由运行时逐次发布选择——否则被攻陷的消费者可自行关闭认证 | 契约 + e2e |
+| `INCUS-R-096` | 文档必须在 `auth: none` 旁写明：域名不可预测不是访问控制（SNI 明文、URL 进 Referer 与日志），不得用它发布含敏感数据或带写入能力的服务 | 文档 + 审阅 |
 | `INCUS-R-093` | `idempotency_key` 在 job 到达终态后保留 1 小时，之后同一 key 视为新请求 | 单元 |
 | `INCUS-R-094` | 发行版自动安装首批只覆盖 Debian 13、Ubuntu 24.04 LTS、Ubuntu 26.04 LTS；其余标记待适配并作为后续计划，未适配时不自动安装且相关功能保持关闭 | 静态 + e2e |
+| `INCUS-R-097` | 资源凭据的 `rotation_mode` 声明位；由 `CRED-R-001`、`CRED-R-002` 取代——这是 Core 的凭据要求，不是 Incus 的（已废弃） | 契约 + 单元 |
+| `INCUS-R-098` | compute 两条凭据的轮换模式；由 `CRED-R-006`、`CRED-R-007` 取代（已废弃） | 契约 + e2e |

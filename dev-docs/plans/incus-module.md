@@ -36,10 +36,10 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M10bis：宿主特权动作通道 | R-058—R-061、R-068、R-069、R-073、R-074、R-089—R-091 | 未开始；设计已定 |
 | M10ter：统一动作 ABI（job、事件重放、取消、数据流） | R-075—R-082、R-093 | 未开始；设计已定 |
 | M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 未开始；下载端点为明确的不做，见[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
-| M11：入站与 Traefik 发布 | R-053、R-054、R-062—R-065、R-070、R-071、R-086—R-088、R-092、R-095 | 未开始 |
+| M11：入站与 Traefik 发布 | R-053、R-054、R-062—R-065、R-070、R-071、R-086—R-088、R-092、R-095、R-096 | 未开始 |
 | M12：`guest_image` 契约与 distrobuilder 烘焙 | R-055、R-066、R-067、R-072、R-085 | 未开始 |
 
-覆盖统计：94 项需求全部有且只有一个里程碑归属（R-056 已废弃：镜像改为命名引用，不再需要结果通道）。
+覆盖统计：95 项需求全部有且只有一个里程碑归属（R-056、R-097、R-098 已废弃：镜像改为命名引用；两条凭据要求迁往[凭据轮换](credential-rotation.md)）。
 
 M10—M12 来自「默认可用，高级可替换」这条产品原则（[Core 实现标准](../../docs/architecture/core-implementation-standard.md) §4）：
 现状要求运维先手工装好 Incus 并烘焙镜像，按该原则的判据这等于服务在默认情况下装不上。设计见
@@ -167,7 +167,7 @@ runtime 是 `compose_run`，只在 apply 时跑一次，且 ABI 只传 `ANAS_RES
 | R-063 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 实例启停与 Traefik 路由增删同步 | — | 待执行 |
 | R-087 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 消费者无法注册本租约命名空间之外的域名 | — | 待执行 |
 | R-088 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 绕过客户端库直写请求文件仍被拒绝 | — | 待执行 |
-| R-095 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 默认发布的服务未认证时不可访问 | — | 待执行 |
+| R-095 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 运行时无法覆盖租约声明的认证方式 | — | 待执行 |
 | R-091 | 待新增 `test-env/scripts/server-host-action-e2e.sh` | token 过期后重新展示而非沿用旧摘要 | — | 待执行 |
 | R-072 | 待新增 `test-env/scripts/server-incus-image-bake-e2e.sh` | prune 保留上一个 deployment 的镜像 | — | 待执行 |
 | R-075 | 待新增 `test-env/scripts/server-action-job-e2e.sh` | 断连后任务继续、重连可见 | — | 待执行 |

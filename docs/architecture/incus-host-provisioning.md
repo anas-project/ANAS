@@ -161,6 +161,9 @@ resources:
           # 允许发布的 guest 端口。固定在 apply 时，被攻陷的消费者无法把任意监听端口
           # 暴露出去。省略 ingress 段即完全不允许发布。
           allowed_ports: [7000]
+          # none：不加认证，域名不可预测是唯一屏障——它不是访问控制，见 §5.1.3.1
+          # forward_auth：挂 ForwardAuth 中间件，需要部署里有 forward_auth provider
+          auth: none
           domain:
             # fixed：<prefix>.<base_domain>——单实例、地址需要可预测
             # named：<prefix>-<label>.<base_domain>——实例集合固定且需要可读地址
@@ -244,16 +247,38 @@ err = client.UnpublishPort(ctx, instanceID, 7000)        // 删路由请求 + �
 那么泄漏它的代价到底是什么？准确地说只有一条：**攻击者可以在没见过域名的情况下算出域名。** 这
 只有在「服务本身没有认证、靠地址猜不到来挡人」时才构成风险。
 
-#### 因此更要紧的是：发布出去的服务不能靠域名难猜来保护
+#### 域名难猜不是访问控制，认证由消费者声明
 
 TLS 的 SNI 是明文，URL 会进 `Referer`、代理日志和浏览器历史。**任何在网络路径上的人、或者拿到
 过一次链接的人，都知道这个域名。** 所以不可预测只挡得住扫描与枚举，挡不住上述任何一种。
 
-结论是硬的：**经 §5.1 发布的服务默认必须挂 ForwardAuth**（仓库已有 `forward_auth` capability 与
-`ANAS_FORWARD_AUTH_MIDDLEWARE`，`adminer` 一类内部页面就是这么挡的）。要发布一个无认证的服务
-必须是显式的、写在租约里的选择，而不是默认行为。
+但**默认强制 ForwardAuth 是错的**，理由不在安全，在依赖：ForwardAuth 需要部署里存在
+`forward_auth` provider，也就是需要先装一个 IAM。把它设为默认，等于「预览一个 CI 作业的页面之前
+先装身份系统」——与 [Core 实现标准](core-implementation-standard.md) §4「默认可用」直接冲突。
 
-在这个前提下，`lease_secret` 的作用回到它应有的位置：**纵深防御的一层**，泄漏它不构成越权。
+所以认证是**租约里的一项声明，默认 `none`**：
+
+```yaml
+        ingress:
+          allowed_ports: [7000]
+          auth: none            # none | forward_auth，默认 none
+          domain:
+            mode: random
+            prefix: ci
+```
+
+它声明在 apply 时，不是运行时逐次发布时选择——否则被攻陷的消费者可以自己把认证关掉。一个 Module
+若确实既要发布带认证的管理页、又要发布公开预览页，应当持有**两份租约**，而不是让 `PublishPort`
+接受一个认证参数。
+
+`auth: none` 的含义必须写在它旁边，不能只写在别处：
+
+> **此时域名的不可预测性是唯一的屏障，而它不是访问控制。** 任何看到过这个 URL 的人、以及任何
+> 在网络路径上观察 SNI 的人，都能访问该服务。不要用 `auth: none` 发布任何包含敏感数据、或带有
+> 写入能力的服务。
+
+在这个前提下，`lease_secret` 的作用是清楚的：**它降低被扫描到的概率，不构成访问控制**。泄漏它
+不产生越权，只是让本来就不该公开的东西更容易被找到。
 
 #### 存哪里：和数据库密码同一条路
 
@@ -284,6 +309,42 @@ resource state 里只留 **Secret Store 的引用**，不留明文
 
 **也不能由部署级 secret 派生。** 消费者需要自己算域名（`workload_id` 是运行时才有的），密钥必须
 交到消费者手里；一个部署级密钥交给每个消费者，等于每个消费者都能预测别人的域名。
+
+### 5.1.3.2 凭据轮换：机制已有，但资源凭据还没接上
+
+仓库已经有一套凭据轮换声明，用在 `credentials.provides` 上（`internal/runner/manifest.go`）：
+
+| `rotation_mode` | 含义 |
+| --- | --- |
+| `reconcile` | 换掉并让活动系统跟着收敛（改数据库角色口令即属此类） |
+| `overlap` | 新旧同时有效一段时间，再撤旧的 |
+| `migrate` | 需要有人参与的迁移流程，不能就地换 |
+| `external` | ANAS 不拥有它，只消费 |
+
+配套还有 `type`（password / shared_secret / token / key / certificate）、`generation` 与
+`lifecycle`（probe / reconcile / verify）。
+
+**缺口是：`resources.requires` 生成的凭据完全没有这套声明。** 数据库口令、对象存储 secret key、
+compute 的客户端证书与 `lease_secret`，都是 Runner 用 `secrets.Ensure` 铸出来的，manifest 里没有
+任何地方说它们该怎么轮换。今天的行为等于「一律不轮换」，而这不是设计出来的，是漏掉的。
+
+补法是让 `spec.credential` 除 `policy` 之外也携带轮换声明：
+
+```yaml
+        credential:
+          policy: generated
+          rotation_mode: overlap        # 由 Module 声明，不是全局统一
+```
+
+对 compute 的两条凭据，正确的声明各不相同——这正是「必须逐条声明而不能一刀切」的例子：
+
+| 凭据 | 模式 | 为什么 |
+| --- | --- | --- |
+| 客户端证书 | `overlap` | 先登记新证书、两张同时受信、再撤旧的。**这是让证书轮换不杀掉运行中实例的唯一办法**（`INCUS-R-029`） |
+| `lease_secret` | `migrate` | 换掉它会让**所有已发布的 URL 集体改变**。这必须是一次有人知情的操作，不能作为例行轮换的一部分静默发生 |
+
+一刀切成任何一种都是错的：全给 `overlap`，`lease_secret` 会在某次例行轮换里悄悄换掉全部线上
+地址；全给 `migrate`，证书轮换就永远需要人工介入。
 
 ### 5.1.4 与 Incus API 的区别
 
