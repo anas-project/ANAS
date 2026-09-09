@@ -139,7 +139,7 @@ E2E 前不把 Actions 标为 release 能力。
 
 ## 7.1 M6：外部自动化消费者的边界
 
-由 [AI Agent 编排](../../../../dev-docs/plans/ai-agent.md) 驱动的三项依赖，本 Module 只负责“不妨碍且可声明”，不实现 Agent 逻辑：
+由 [AI Agent 编排](../../../ai_agent/dev-docs/plans/ai-agent.md) 驱动的三项依赖，本 Module 只负责“不妨碍且可声明”，不实现 Agent 逻辑：
 
 - [ ] OIDC reconcile 增加声明式的 group→team 映射（`--group-team-map` 与登录时移除），映射内容来自
       消费方配置，Module 不硬编码组名；

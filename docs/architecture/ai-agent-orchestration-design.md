@@ -1,7 +1,11 @@
 # AI Agent 编排设计（Forgejo 基线）
 
-> 状态：**提案**。本文描述的 Module、配置项、命令与表结构当前**均不可执行**。协作面用已集成
-> `forgejo` Module 的 issue、label 与 Projects 看板，代码面用同一实例的仓库。更新：2026-08-26。
+> 状态：**部分实施**。控制面（身份与凭据引导、事件入站、交互契约与产物入库、权限判定、排程与队列）
+> 已落地在 `modules/ai_agent` 并对固定 `forgejo 15.0.7` 验证；**执行面（§5.2—§5.6）与记录面（§8）
+> 仍是提案**，前者阻塞于 Incus Provider 的真实宿主验收。逐条状态以
+> [实施计划](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/dev-docs/plans/ai-agent.md)
+> 为准。协作面用已集成 `forgejo` Module 的 issue、label 与 Projects 看板，代码面用同一实例的仓库。
+> 更新：2026-09-08。
 
 执行面的 Provider 工作见 [Incus compute Provider 要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/incus-module.md)与[实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/incus-module.md)；
 Forgejo 侧的既有边界见 [Forgejo Module 设计](/architecture/forgejo-module-design)；候选运行时的原始
@@ -12,9 +16,15 @@ Forgejo 侧的既有边界见 [Forgejo Module 设计](/architecture/forgejo-modu
 协作对象（issue）、控制信号（label、指派、评论）、代码、分支、PR、CI 与身份**在同一个应用、同一套
 权限里**，因此编排器不需要跨应用身份映射、仓库绑定流程或第二套授权模型。
 
-形态：`ai_agent` Module（独立开源项目 `anas-agent` 打包）订阅 Forgejo 系统 webhook，以每个 Agent
+形态：`ai_agent` Module 订阅 Forgejo 系统 webhook，以每个 Agent
 一个 Forgejo **专用账号**的身份参与 issue 讨论；执行阶段在一次性隔离实例中改代码、跑测试、推
 `ai/*` 分支并开 PR。
+
+**编排器的代码归属**：现阶段放在本仓库 `modules/ai_agent/orchestrator/`——它编译依赖仓库内的
+`internal/computeclient`，与 `forgejo` 的 actions-controller 处境相同，按同一先例以 named build
+context 取共享代码。**后续独立为单独的 git 仓库**，届时 ANAS 只引用它发布的 docker image，Module
+侧只保留 manifest、Hook 与文档。因此从现在起就按"可搬走"约束写：编排器不得依赖 ANAS 的内部约定，
+只消费环境变量、配置文件与 Secret 文件。
 
 三条能力让这条路可行：
 
@@ -226,6 +236,7 @@ Agent 生成的需求文档、方案、代码、脚本**不留在评论里**，�
 | 测试命令、lint 命令、构建命令 | 探测 `Makefile`/`package.json`/`go.mod`/CI 配置 |
 | 禁止改动的路径 | 空 |
 | 默认讨论/执行 Agent 与预算档 | 部署默认 |
+| 是否允许 Agent 自主建 issue、每作业/每日配额（§3.5） | 部署默认（默认只开提议档） |
 
 人在 issue 里逐项确认或修改后，Agent 用 contents API 提交 `.anas-agent.yml` 并开 PR，合并后以文件
 为准；改约定就是改这个文件，走正常评审。整个流程只用 REST API，不需要克隆仓库。
@@ -261,6 +272,42 @@ Agent 生成的需求文档、方案、代码、脚本**不留在评论里**，�
 这个功能是必要的：讨论天然会长出子问题，没有拆分机制就只有两条坏路——要么在一个 issue 里堆到
 上下文爆掉，要么人肉复制粘贴、丢掉与文档和分支的关联。拆分后每个 issue 有独立会话、独立分支、
 独立预算，父 issue 的状态评论列出子 issue 与其状态。
+
+#### Agent 自主建 issue：三档授权
+
+> 状态：**提案**。需求条目 `AGENT-R-072`—`R-078`，里程碑 M9。
+
+`/split` 是**人触发**的：命令带 sender，§6 拿它去判定。Agent 在讨论里自己发现一个子问题时没有
+sender，因此不能沿用同一条路径。按"授权链是否清楚"分三档，默认是中间那档：
+
+| 档 | 谁在建 | 授权来源 | 例子 |
+| --- | --- | --- | --- |
+| **派生** | 控制面状态机 | 不需要额外授权——它是既有动作的产物，不是 Agent 的主张 | 执行 issue（§3.7）、队列 issue（§3.6）、引导 issue（§3.3） |
+| **提议**（默认） | Agent 提议，人确认后由控制面建 | 归属**点确认的那个人**，受其动作集约束 | 讨论中发现的 bug、应当拆出去的子任务 |
+| **自主** | Agent 直接建，控制面校验后落地 | 归属**发起本轮的那个人**，且仓库须显式开启 | "扫一遍 TODO 建 issue"这类人已明确下单的批量任务 |
+
+**提议档的形态**：Agent 不调用任何写接口，而是在本轮输出里给出结构化提议（与它产出文档同构，
+§3.3）。控制面把提议渲染成一条评论——标题、正文摘要、拟打标签、与父 issue 的依赖关系——人用
+👍 或 `/accept <n>` 确认即建，👎 或 `/reject <n>` 即作废，超时未处理自动过期。确认动作本身走 §6.3
+判定，因此"谁批准了这个 issue"在 `decision` 里有据可查。
+
+**自主档的护栏**（缺一不可，任一超限即降级回提议档并在状态评论说明）：
+
+| 护栏 | 规则 |
+| --- | --- |
+| 配额 | 每作业与每仓库每日两级上限，`repo_settings` 配置，默认作业 5 条、每日 20 条 |
+| 去重 | 建之前用规范化标题指纹比对该仓库**未关闭**的 issue，命中则改为在既有 issue 上追加一条评论 |
+| 溯源 | 必带 `ai:proposed` 标签、父 issue 交叉引用与创建它的 `job_id`；溯源块由控制面追加到正文尾部 |
+| 不自触发 | Agent 建的 issue **不带** `ai:auto`，要人指派或打标签才进入讨论 |
+| 跨仓库 | 一律不允许（见下） |
+
+「不自触发」这一条是**防自喂**。§7 已经过滤 `sender` 为 Agent 账号的事件，因此自触发目前天然不成立；这里把它
+写成显式约束，是为了避免以后放宽那条过滤时悄悄丢掉这个保证。一旦 Agent 建的 issue 能自动触发下
+一轮，就形成"自己写输入、自己读输入"的闭环，既烧预算，也会让模型把自己的猜测当成事实。同理，
+Agent 创建的 issue 正文在组装上下文时按 §8.1.0 的来源规则处理，不当作人类输入。
+
+**跨仓库建 issue 不在本节范围内**：§5.6 已经确定仓库就是信任边界，Agent 的 token 也按 §4 限定到
+已启用仓库。跨仓库写需要按"仓库对"显式授权，登记在 §14，首期不做。
 
 ### 3.6 执行时机：立即、定时与事件
 
@@ -365,11 +412,13 @@ Forgejo 没有可写的看板 API（§3.8），但有**可排序的置顶 issue*
 | `ai:exec-when/now`、`ai:exec-when/at=<时间>`、`ai:exec-when/on=<事件>` | 执行时机（§3.6） | execute 权限 |
 | `ai:at-risk` | 预估无法在截止前完成 | 仅 Agent |
 | `ai:running`、`ai:needs-review`、`ai:failed` | Agent 维护的状态标签 | 仅 Agent |
+| `ai:proposed` | 标记这是 Agent 提议或自主创建的 issue（§3.5） | 仅 Agent |
 | `ai:job` | 标记这是执行 issue（§3.7） | 仅 Agent |
 | `ai:queue` | 标记置顶的队列总览 issue（§3.6） | 仅 Agent |
 
 评论命令（`/plan`、`/approve`、`/stop`、`/chat`、`/exec`、`/model`、`/effort`、`/branch`、`/budget`、
-`/due`、`/execute now|at|on|hold`、`/summarize`、`/split`，含可配置的中文别名如 `/立即执行`）与标签
+`/due`、`/execute now|at|on|hold`、`/summarize`、`/split`、`/accept`、`/reject`，含可配置的中文别名如
+`/立即执行`）与标签
 等价；两者都过同一套授权判定，且命令执行后写回对应标签，使状态始终
 可见。
 
@@ -471,8 +520,30 @@ project 与证书。范围与验收见[要求](https://github.com/anas-project/A
 （`ai:effort/<agent>=<原生值>`）；只有"部署默认"这类需要跨 Agent 表达的地方才用可选的 `effort_tiers`
 抽象档，且展示与审计仍落回原生值。适配器负责校验取值合法，非法值拒绝并说明可选项。
 
-配套规则：preflight 失败保持 disabled 且不影响其他运行时；连续失败自动熔断；版本升级即配置变更
-（禁止运行时自动升级 CLI，保留 N-1 回滚）；凭据过期监控；订阅席位作为受限资源用信号量调度。
+配套规则：preflight 失败保持 disabled 且不影响其他运行时；版本升级即配置变更（禁止运行时自动升级
+CLI，保留 N-1 回滚）。
+
+#### 5.5.1 凭据形态与管理渠道
+
+各运行时的认证方式不统一，ANAS 侧收敛成一个导入面，不为每家做各自的登录 UI：
+
+| 形态 | 来源 | ANAS 侧做法 |
+| --- | --- | --- |
+| `api_key` | 厂商控制台 | `agent-credential set --agent <id>` 从 stdin 读入，不回显、不入日志、不入 issue |
+| `session_file` | 管理员在自己机器上用官方 CLI 登录后导出的凭据文件 | `agent-credential import --agent <id> --file -`，整文件存 Secret Store，作业时经 `exec_stdin` 注入 |
+| `oauth` | 需要浏览器交互的授权 | 交互在管理员机器上完成，ANAS 只接收结果凭据；**服务端不弹浏览器，也不代管账号口令** |
+
+配套命令：`agent-credential status`（只显示存在性、指纹与剩余有效期，**永不显示值**）、
+`agent-credential rotate`、`agent-preflight`、`agent-disable`。
+
+运行规则：
+
+- **过期监控**：记录到期时间，临近到期告警；到期或认证失败使该运行时进入 `circuit_open` 并在相关
+  issue 的状态评论里留一句说明，而不是静默重试；
+- **熔断隔离**：连续失败达阈值自动熔断，只影响该运行时，其他 Agent 照常工作；
+- **席位调度**：订阅型凭据往往有并发席位限制，按信号量调度，超出即排队而不是并发失败；
+- **多用户部署优先 `api_key`**：个人订阅的登录态属于该自然人，不应作为部署内其他用户的共享额度，
+  具体以各厂商服务条款为准。
 
 ### 5.6 工作实例与隔离
 
@@ -539,6 +610,39 @@ worktree + 不用每次冷启动"，又不让隔离失效。
   issue 时间线 + 状态评论**重建上下文——这三者才是持久事实，且人与 Agent 共享同一份；
 - 因此长会话按轮次或 token 阈值主动压缩：生成纪要、丢弃过程细节、重新锚定到冻结的方案文档。
 
+### 5.8 Agent 侧的写路径：控制面自有工具，不是仓库内 skill
+
+> 状态：**提案**。需求条目 `AGENT-R-077`，里程碑 M9。
+
+§3.5 说的是"能不能建"，这一节说"怎么建"。Agent 要发起任何 Forgejo 写操作，路径只有一条：
+**控制面拥有的工具面**——与 outbox 是同一套判定、幂等与记账，只是换了一张脸。两种形态按阶段推进：
+
+| 形态 | 做法 | 何时用 |
+| --- | --- | --- |
+| **结构化提议**（P1） | Agent 在本轮输出里给出提议，控制面在回合结束时统一裁决 | 提议档；实现最省，不必往工作实例开任何入口 |
+| **控制面 MCP**（P3） | `anas-agent-mcp` 跑在控制面，工作实例经作业期凭据走 loopback/unix socket 访问，只暴露白名单操作 | 自主档；工具在 Agent 循环内，建完能拿到 issue 号继续引用 |
+
+MCP server 暴露的操作就是白名单本身：`create_issue`、`comment`、`set_labels`、`link_issue`、
+`open_pr`。每个调用进 outbox，带 idempotency key，写 `decision` 与 `comment_provenance`，计入预算。
+它跑在控制面而不是沙箱里，因此 **Forgejo token 始终不进执行实例**（§5.1 的凭据边界不变）；工作
+实例拿到的只是一个作业期、限定到本 issue 的短时凭据，作业结束即吊销。选 MCP 而不是各家 CLI 各自
+的插件机制，是因为三家运行时都支持它，符合 §5.5"架构不为这三个特设"。
+
+**为什么不是"往每个仓库装一个控制 Forgejo 的 skill"**：
+
+| 反对 | 依据 |
+| --- | --- |
+| 仓库内文件谁有写权限谁就能改"Agent 能做什么" | §5.4 已用同一理由限制 `actions` 后端 |
+| skill 要能干活就得在沙箱里放可写 Forgejo 的凭据 | 破 §5.1 凭据边界与 §3.3"文档由控制面提交" |
+| 绕过判定：无 sender、无 `decision`、无幂等、无 provenance、不计预算 | §6.3、§6.5、§10 |
+| issue 与评论是不可信输入，直接写工具等于注入即可建 issue、改标签 | §10 |
+| skill 是某一家 CLI 的机制，其余运行时各有各的 | §5.5 |
+
+仓库内确实需要一份"这个仓库怎么干活"的说明，但那是 `.anas-agent.yml`（§3.3）已经承担的职责：
+它描述**约定**（文档目录、测试命令、禁改路径）与**开关**，不描述**权限**。两者不合并——一个走
+PR 评审即可改，另一个必须走 §6。运行时若支持 skill 或规则文件，由控制面在准备工作区时**从
+`.anas-agent.yml` 渲染生成**，不接受仓库里手写的同名文件覆盖工具面。
+
 ## 6. 权限模型
 
 Forgejo 的仓库权限就是访问权，策略层只回答"谁能让哪个 Agent 做哪一类动作、花多少钱"。
@@ -597,8 +701,20 @@ Samba AD 组（CAP_ai_agent_*）
 
 最终动作集 = **目录组上限** ∩ **仓库权限推导** ∩ **覆盖条目**；两边都不能单方面放大对方。
 
-**撤销延迟与实时同步**：组声明只在用户**登录时**随 claim 到达 Forgejo，`--group-team-map-removal`
-也在登录时才移除 team，因此目录里踢掉一个人可能到下次登录才生效。ANAS 已经有解决这类问题的机制：
+**撤销延迟与实时同步**：若只有 OIDC 一条链路，组声明只在用户**登录时**随 claim 到达 Forgejo，
+`--group-team-map-removal` 也在登录时才移除 team，因此目录里踢掉一个人可能到下次登录才生效。
+
+**2026-08-30 决定：Forgejo 改为 LDAP 同步 + OIDC 登录的双源形态**——用户与组数据由 LDAP 同步，
+登录由 OIDC 完成。这带来两个后果：
+
+1. Forgejo 自此**保存目录副本**，因此落入[目录事件订阅要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)
+   的适用范围（该文档 §1 覆盖“所有直接通过 LDAP/LDAPS 读取 Samba 用户、组、账号状态或目录属性的
+   Module”），必须订阅目录事件日志并在声明的最大传播时间内完成增量刷新；组变更不再等下次登录。
+2. 该决定与 [Forgejo Module 设计](/architecture/forgejo-module-design) §2.2「不实现双链路」及
+   `FORGEJO-R-006`（不得配置 LDAP source 与目录同步）冲突，**两处必须先修订**；修订的前置是回答
+   §2.2 提出的绑定问题：Forgejo 用 `ACCOUNT_LINKING` 决定 OIDC 登录如何绑到既有 LDAP 用户，取值为
+   `disabled`（报错）、`login`（要求用户登录既有账号完成一次性绑定）、`auto`（按用户名或邮箱自动
+   绑定，上游自己标注了风险）。在选定取值并修订 Forgejo 侧文档之前，本节的实时同步不能视为已可用。ANAS 已经有解决这类问题的机制：
 [目录事件日志](/architecture/directory-event-journal)（Samba dsdb 审计 → `events.jsonl` → 各订阅者
 带自己的游标，authentik 与 Casdoor 的 dirwatch 已实现）。方案是**给 Forgejo 增加同类订阅者**：
 监听 `OU=Cap` 与 `OU=Apps` 下相关组的 `member` 变更，立即调用 Forgejo API 增删对应 team 成员，把
@@ -623,6 +739,9 @@ webhook 事件
   → 建 job，判定依据写入 decision 表；作业开始前再判定一次
 ```
 
+Agent 自己发起的写操作（§3.5 的提议档与自主档）不是 webhook 事件，但走**同一条链**：sender 取本轮
+的发起人或点确认的人，请求动作取白名单里的具体操作，判定结果同样落 `decision`。细则见 §6.5。
+
 ### 6.4 执行权细则
 
 | 项 | 默认 | 可选 |
@@ -638,7 +757,29 @@ webhook 事件
 **不使用发起人的凭据代跑**：Forgejo 按凭据所有者归属推送与活动流，冒用会污染审计，且该凭据携带
 此人全部仓库权限；改 commit 身份只是展示层。Agent 一律用自己受限到该仓库的 token/SSH key。
 
-### 6.5 数据形态
+### 6.5 Agent 发起的写操作
+
+> 状态：**提案**。需求条目 `AGENT-R-072`—`R-075`、`R-077`，里程碑 M9。
+
+L1 触发权回答"谁能让 Agent 做什么"，这一节回答"Agent 自己提出来的动作算谁的"。原则一句话：
+**Agent 不是独立的权限主体，它的每个写操作都必须能归属到一个人**。
+
+| 档（§3.5） | 归属的人 | 判定时机 | 动作集上限 |
+| --- | --- | --- | --- |
+| 派生 | 触发上游动作的人（批准执行、打 `ai:plan` 等） | 上游动作判定时一并授出 | 不超过上游动作本身 |
+| 提议 | 点 👍 / `/accept` 的人 | 确认到达时判定 | 该人的动作集 |
+| 自主 | 发起本轮的人 | 入队前判定一次，落地前再判定一次 | 该人的动作集 ∩ 仓库 `agent_write_ops` |
+
+配套约束：
+
+- 自主档需要仓库显式开启（`repo_settings.agent_issue_tier = autonomous`），部署默认 `proposed`；
+  与 §6.3 一致，仓库侧只能收窄，不能放大目录组给出的上限；
+- 白名单 `agent_write_ops` 逐项开关（`create_issue`、`comment`、`set_labels`、`link_issue`、
+  `open_pr`），未列出的操作一律 deny；**新增操作默认关闭**，不随版本升级自动获得；
+- 归属的人被 `agent_grant_deny` 命中或动作集缩小时，**在途提议立即失效**，不按提出时的权限结算；
+- 每个落地的写操作在 `decision` 里记 `(tier, 归属人, 操作, 配额余量)`，拒绝同样记录。
+
+### 6.6 数据形态
 
 ```sql
 agent_grant(id, forgejo_user_id, username, agent NULL, max_action, source, granted_by, created_at)
@@ -647,6 +788,8 @@ agent_grant_deny(id, forgejo_user_id, agent NULL, reason, created_by, created_at
 repo_settings(repo_id PRIMARY KEY, enabled, sync_mode, trigger_mode,
               chat_agents TEXT[], host_agent, exec_agent, models JSONB, efforts JSONB,
               allow_direct_commit, branch_pattern, daily_budget_usd, max_concurrent,
+              agent_write_ops TEXT[], agent_issue_tier,
+              issue_quota_per_job, issue_quota_per_day,
               updated_by, updated_at)
 
 policy_override(id, repo_id, issue_number NULL, agent NULL, user_id NULL,
@@ -657,6 +800,15 @@ discussion(id, repo_id, issue_number, agent, session_id, runtime_version,
 
 comment_provenance(comment_id PRIMARY KEY, repo_id, issue_number, agent,
                    session_id, turn_id, kind, created_at)   -- kind: reply|status|minutes|milestone
+
+issue_provenance(repo_id, issue_number, agent, job_id, turn_id, tier,
+                 created_by_user_id, created_at, PRIMARY KEY (repo_id, issue_number))
+                 -- tier: derived|proposed|autonomous
+
+issue_proposal(id, repo_id, parent_issue_number, agent, job_id, turn_id,
+               title, body, labels TEXT[], dedup_fingerprint, tier,
+               state, decided_by, decided_at, created_issue_number, created_at)
+               -- state: pending|accepted|rejected|expired|deduped
 
 job(id, repo_id, issue_number, agent, action, plan_path, plan_commit_sha,
     branch, due_at, estimate_seconds, priority,
@@ -706,6 +858,7 @@ issue 评论、PR 与 Actions run 本身就是**人类可读的记录面**，因
 | 人类 | **带上**（增量部分） | 带上（全量） |
 | **该 Agent 自己** | **剔除**——它的会话里已经有了，重复喂等于花钱强化自己的观点，还会让模型误以为被追问 | 带上（全量），并标注是它此前的发言 |
 | 其他 Agent | **带上**，并标注发言身份（如 `[claude]:`） | 带上，同样标注身份 |
+| **Agent 建的 issue 正文与提议块**（§3.5） | 按 `issue_provenance` 归属的 Agent 套用上面两行：自己建的剔除，别的 Agent 建的带上并标注 | 同左 |
 | 状态评论、进度更新 | 剔除 | 剔除（它是渲染产物，不是事实） |
 
 这条规则在圆桌讨论里尤其重要：主持 Agent 需要看到别人的发言，但不需要回放自己的；反过来，重建
@@ -776,12 +929,20 @@ issue 时，三档落在原 issue，节流阈值更保守（阶段变化才更�
 | 重复执行 | inbox 去重 + job 租约 + outbox idempotency key + 计划绑定 commit SHA |
 | 事件丢失 | 快速落库 + 周期对账 |
 | 记录泄密 | 写入前脱敏、分层保留、导出需权限 |
+| Agent 刷 issue / 自喂闭环 | 三档授权（§3.5）默认需人确认；自主档有每作业与每日配额、标题指纹去重、`ai:proposed` 溯源；建出来的 issue 不带 `ai:auto`，不触发下一轮 |
+| 仓库内文件篡改 Agent 工具面 | 写路径只在控制面（§5.8）；`.anas-agent.yml` 只描述约定与开关，不描述权限；运行时规则文件由控制面渲染，不接受仓库内同名文件覆盖 |
+| Agent 跨仓库写 | token 按 scope + `repositories` 双重限定（§4）；跨仓库写需按"仓库对"显式授权，首期不开（§14） |
 | 任意出网 | 默认 deny + allowlist（模型 API、Forgejo、DNS/NTP、批准的依赖镜像源） |
 
 信任模型：单租户、成员可信，安全结构完整实现但 P1 不以对抗内部恶意用户为门槛；沙箱隔离不放宽，
 因为模型生成的代码与其依赖始终是不可信执行。
 
 ## 11. 落地前必须在 `forgejo 15.0.7` 上验证
+
+> **已复核（2026-09-06）**：下表 24 项在固定镜像上实测完成、0 项失败，结论与由此产生的实现约束记录在
+> [要求文档 §15](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/dev-docs/requirements/ai-agent.md)。
+> 仍未复核的只剩两项：webhook 的投递语义（超时、重试、可否重投）与 `issue_label` / `issue_assign`
+> 的 payload 字段，两者都需要一个真实接收端。下表保留为复核清单，不再是开工前提。
 
 | 待验证 | 影响 |
 | --- | --- |
@@ -801,6 +962,7 @@ issue 时，三档落在原 issue，节流阈值更保守（阶段变化才更�
 | Incus 系统容器的 `exec`+stdin、非特权配置与配额 | `lxc` 默认档 |
 | Projects API 后续 PR 的合并进度与端点形态 | `sync_board()` 何时可实现 |
 | 置顶 issue 的数量上限、排序语义与 `new_pin_allowed` 行为 | §3.6 队列展示是否可行 |
+| 建 issue API 能否在创建时一并打标签与建依赖，创建者归属与速率限制 | §3.5 提议档与自主档的落地形态 |
 | 依赖 API 在 issue 关闭/重开时的行为与事件 | `/execute after` 与执行 issue 解除阻塞 |
 | contents API 提交文档时的作者归属、并发冲突（SHA 不匹配）处理 | §3.3 文档由控制面提交的可靠性 |
 
@@ -809,9 +971,9 @@ issue 时，三档落在原 issue，节流阈值更保守（阶段变化才更�
 | 阶段 | 交付 | 退出判据 |
 | --- | --- | --- |
 | P0 事实验证 | §11 的验证脚本与结论 | 全部有结论，降级路径确定 |
-| P1 讨论闭环 | Module 与账号自动引导、系统 webhook + inbox + 对账、issue 模板生成与解析、单 Agent 讨论、状态评论与反应、产物进 Git、引导 issue、记录与用量 | 指派/@/标签/模板能触发；重复投递 10 次只产生一次评论；未授权 sender 被拒；重启后可恢复；每轮交互有用量记录 |
+| P1 讨论闭环 | Module 与账号自动引导、系统 webhook + inbox + 对账、issue 模板生成与解析、单 Agent 讨论、状态评论与反应、产物进 Git、引导 issue、Agent 提议建 issue（提议档）、记录与用量 | 指派/@/标签/模板能触发；重复投递 10 次只产生一次评论；未授权 sender 被拒；重启后可恢复；每轮交互有用量记录；未经人确认的提议不会创建 issue |
 | P2 执行面 | `incus` Provider 落地后接入一次性实例、分支与 PR 策略、预估与截止校验、预算与取消 | 一个真实 issue 从讨论到 PR 全链路可复现；取消能终止实例；保护分支不可直推 |
-| P3 组队与治理 | 多 Agent 讨论与主持、`/split` 与 `/summarize`、执行 issue 与队列总览、并行/顺行、夜间与空闲调度、目录事件订阅、终端附着、控制台视图 | 多 Agent 讨论能在硬上限内收敛并产出文档；队列顺序在置顶 issue 与依赖上一致可见；组变更秒级生效 |
+| P3 组队与治理 | 多 Agent 讨论与主持、`/split` 与 `/summarize`、执行 issue 与队列总览、并行/顺行、夜间与空闲调度、目录事件订阅、终端附着、控制台视图、`anas-agent-mcp` 写路径与自主档配额 | 多 Agent 讨论能在硬上限内收敛并产出文档；队列顺序在置顶 issue 与依赖上一致可见；组变更秒级生效；自主档超配额或命中去重时自动降级回提议档 |
 | P4 扩展 | 更多运行时接入、`llm_gateway` 与虚拟 key、`actions` 后端、外部仓库 | 新增运行时只改注册表与 adapter，不改状态机与表结构 |
 
 ## 13. 备选与否决
@@ -836,11 +998,20 @@ issue 时，三档落在原 issue，节流阈值更保守（阶段变化才更�
 - **借发起人凭据代跑、只改 commit 身份**：污染审计、泄露面过大。
 - **在 `forgejo` Module 内实现编排**：编排器要消费模型 API、compute 与预算治理，塞进应用 Module 会
   越权且与上游版本节奏绑死。
+- **在仓库里放一个"控制 Forgejo"的 skill 或工具定义，并把可写 token 发进沙箱**：仓库内文件谁有
+  写权限谁就能改，与 §5.4 限制 `actions` 后端是同一个敞口；这条路径还绕过 §6.3 判定、outbox 幂等
+  与预算记账，并把 issue 正文这类不可信输入直接接到写接口上。写路径留在控制面（§5.8）。
+- **给每个仓库统一"安装"一份 Agent 能力文件**：能力是部署级的，随注册表与 §6 变化；往每个仓库
+  复制一份只会漂移，且改它不需要经过 §6。仓库层只保留 `.anas-agent.yml` 里的约定与开关，且只能
+  收窄（§6.3）。
+- **让 Agent 自主建的 issue 自动触发下一轮 Agent**：自己写输入、自己读输入的闭环，烧预算且会把
+  模型的猜测固化成"事实"；建出来的 issue 不带 `ai:auto`，要人接手才进入讨论。
+- **让 Agent 成为独立的权限主体**：无法审计、无法撤销。每个写操作都归属到一个人（§6.5）。
 - **在 ANAS 核心宿主跑特权容器执行生成代码**：与 Forgejo 既有结论一致，否决。
 
 ## 14. 后续文档
 
-方案通过评审后产出 `dev-docs/requirements/ai-agent.md` 与 `dev-docs/plans/ai-agent.md`（需求矩阵、里程碑、
+方案通过评审后产出 `modules/ai_agent/dev-docs/requirements/ai-agent.md` 与 `modules/ai_agent/dev-docs/plans/ai-agent.md`（需求矩阵、里程碑、
 需求归属与 e2e 记录）。
 
 需要同步决策或修改的既有文档：
@@ -848,6 +1019,8 @@ issue 时，三档落在原 issue，节流阈值更保守（阶段变化才更�
 | 文档 | 变更 | 状态 |
 | --- | --- | --- |
 | [Samba AD 用户与权限规划](/architecture/samba-ad-user-planning) | 登记 `CAP_<module-id>_<capability>` 类别与 `OU=Cap,OU=Groups`；这是所有 Module 的通用规则，不只服务 AI | 已采纳并实现（§5.4.1）：`samba_dc` 按 `create_structure` 创建 `OU=Cap`，Module 经 `ANAS_IDENTITY_CAPABILITY_GROUPS` 声明能力码 |
-| [Forgejo Module 要求](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/dev-docs/requirements/forgejo-module.md) | Agent 账号与 token 的管理端引导、系统 webhook 归属、OIDC 增加 `--group-team-map` | 待登记 |
-| [目录事件日志](/architecture/directory-event-journal) | 增加 Forgejo 订阅者，消除组变更的登录延迟（§6.2） | 待登记 |
-| `llm_gateway` 选型 | 统一模型 key、预算与审计的候选比较 | 未开始 |
+| [Forgejo Module 要求](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/dev-docs/requirements/forgejo-module.md) | Agent 账号与 token 的管理端引导、系统 webhook 归属、OIDC 增加 `--group-team-map` | 已登记为 `FORGEJO-R-060`—`R-062`（M6）；`--group-team-map` 的实现待做 |
+| [目录事件日志](/architecture/directory-event-journal) | 增加 Forgejo 订阅者，消除组变更的登录延迟（§6.2） | **方向已定**（2026-08-30）：Forgejo 改为 LDAP 同步 + OIDC 登录，因此天然落入[目录事件订阅要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)范围。前置是修订 Forgejo 设计 §2.2 与 `FORGEJO-R-006`，并选定 `ACCOUNT_LINKING` 取值 |
+| [LLM Gateway 要求（待讨论）](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/llm-gateway.md) | 统一模型 key、虚拟 key、预算执行点、用量归因与审计 | 问题域已锁定，选型调研与需求矩阵待做 |
+| `anas-agent-mcp` 工具面契约 | §5.8 白名单操作的入参出参、幂等键、错误语义与版本策略，需独立一份接口文档 | 未开始 |
+| 跨仓库写授权（"仓库对"模型） | Agent 在 A 仓库的讨论里给 B 仓库建 issue 的授权形态；§5.6 的信任边界要求显式配对，不能靠放宽 token 顺手实现 | 未开始 |

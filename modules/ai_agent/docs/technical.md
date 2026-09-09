@@ -1,7 +1,7 @@
 # AI Agent 编排技术实现
 
 本文记录 `ai_agent` Module 的控制面结构与安全边界。配置与操作见[中文 README](../README.md)，
-验收依据见[需求矩阵](../../../dev-docs/requirements/ai-agent.md)。
+验收依据见[需求矩阵](../dev-docs/requirements/ai-agent.md)。
 
 <!-- generated:module-identity:start -->
 > 状态：当前实现；对应 `0.1.0-r1` / `anas.module/v1`.
@@ -70,7 +70,7 @@
 ## 从固定版本上学到的、写进代码的五条
 
 这些不是设计推导出来的，是对 `forgejo 15.0.7` 实测出来的（结论见
-[要求文档 §15](../../../dev-docs/requirements/ai-agent.md)）。每一条都推翻了实现里的一个假设：
+[要求文档 §15](../dev-docs/requirements/ai-agent.md)）。每一条都推翻了实现里的一个假设：
 
 | 上游事实 | 代码里的落点 |
 | --- | --- |

@@ -18,18 +18,25 @@ pull request from an isolated instance. Every step is authorized, audited, inter
 
 ## How far the implementation has got
 
-The module lands milestone by milestone against its [plan](../../dev-docs/plans/ai-agent.md).
-**M1 is complete**:
+The module lands milestone by milestone against its [plan](dev-docs/plans/ai-agent.md).
+**M1, M2, M3 and M5 are complete**:
 
-- the module skeleton, Compose topology, hook and configuration contract;
-- unattended issue and rotation of each agent's Forgejo account, token and SSH key;
-- system webhook registration, signature-checked ingress, an inbox, a fast `202`, periodic
-  reconciliation and self-trigger filtering.
+- M1: the module skeleton, Compose topology, hook and configuration contract; unattended issue and
+  rotation of each agent's Forgejo account, token and SSH key; system webhook registration,
+  signature-checked ingress, an inbox, a fast `202`, periodic reconciliation and self-trigger filtering;
+- M2: issue form template generation and answer parsing, status comments and commands, reaction
+  acknowledgements, serialized turns, documents committed through the contents API, frozen execution
+  inputs and the onboarding issue;
+- M3: repository-permission derivation, `CAP_ai_agent_*` directory-group projection, the immediate
+  veto table, decision auditing and the re-check before a job starts;
+- M5: pre-execution estimates and `due_date` checks, queue ordering, the `now`/`at`/`on`/`hold`
+  timings, tracked-time write-back and the pinned queue issue.
 
-**Not yet implemented**: issue form templates and answer parsing, status comments and commands,
-document commits, the three-layer permission decision, execution jobs, scheduling and queueing, usage
-accounting and the session view. Until those milestones land the module records events but never
-replies in an issue and never runs a job, which is why its status stays `developing`.
+**Not yet implemented**: M4 (execution instances, branches and pull requests, execution issues,
+cancellation and idempotency), M6 (records and session views), M7 (real deployment acceptance) and
+M8 (the added interaction and safety constraints). M4 is blocked on real-host acceptance of the
+`compute` provider, so today the module discusses, produces documents, decides permissions and
+queues work, but **never runs a code job**. Its status therefore stays `developing`.
 
 ## Boundaries
 

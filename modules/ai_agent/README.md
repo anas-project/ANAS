@@ -17,15 +17,18 @@
 
 ## 当前实现到哪一步
 
-本 Module 按[实施计划](../../dev-docs/plans/ai-agent.md)分里程碑落地，**当前完成 M1**：
+本 Module 按[实施计划](dev-docs/plans/ai-agent.md)分里程碑落地，**M1、M2、M3、M5 已完成**：
 
-- Module 骨架、Compose 拓扑、Hook 与配置契约；
-- Agent 的 Forgejo 账号、token 与 SSH key 的无人值守发放与轮换；
-- 系统 webhook 注册、入站验签、inbox 落库、202 快返、周期对账与自触发过滤。
+- M1 Module 骨架、Compose 拓扑、Hook 与配置契约；Agent 的 Forgejo 账号、token 与 SSH key 的无人值守
+  发放与轮换；系统 webhook 注册、入站验签、inbox 落库、202 快返、周期对账与自触发过滤；
+- M2 issue 表单模板的生成与解析、状态评论与命令、reaction 确认、回合串行、文档经 contents API 入库
+  与执行依据冻结、引导 issue；
+- M3 仓库权限推导、`CAP_ai_agent_*` 目录组投影、即时否决表、判定审计与作业前二次判定；
+- M5 执行前预估与 `due_date` 校验、队列排序、`now`/`at`/`on`/`hold` 四种时机、工时回写、置顶队列 issue。
 
-**尚未实现**：issue 表单模板与解析、状态评论与命令、文档入库、三层权限判定、执行面作业、排程与
-队列、用量记录与会话视图。在这些里程碑完成前，本 Module 会接收并记录事件，但不会在 issue 里回复，
-也不会执行任何作业。状态因此保持 `developing`。
+**尚未实现**：M4 执行面（工作实例、分支与 PR、执行 issue、取消与幂等）、M6 记录与会话视图、
+M7 真实部署验收、M8 补充的交互与安全约束。M4 阻塞于 `compute` Provider 的真实宿主验收，因此本
+Module 目前会讨论、出文档、判权限、排队，但**不会执行任何代码作业**。状态保持 `developing`。
 
 ## 边界
 

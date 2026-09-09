@@ -8,16 +8,19 @@ updated: 2026-09-06
 # AI Agent 编排实施计划
 
 验收依据是[AI Agent 编排集成要求](../requirements/ai-agent.md)的需求矩阵，设计依据是
-[AI Agent 编排设计](../../docs/architecture/ai-agent-orchestration-design.md)。协作面是已集成的
-`forgejo` Module，执行面依赖[Incus compute Provider 实施计划](incus-module.md)的 M0—M2。
+[AI Agent 编排设计](../../../../docs/architecture/ai-agent-orchestration-design.md)。协作面是已集成的
+`forgejo` Module，执行面依赖[Incus compute Provider 实施计划](../../../../dev-docs/plans/incus-module.md)的 M0—M2。
 
 **当前状态：M1 的控制面代码已落地，其真实部署验证未做。** `modules/ai_agent` 已存在：manifest、
 Compose、Hook、双语文档、编排器（身份引导与轮换、系统 webhook 登记、入站验签与 inbox、周期对账、
 outbox 幂等、脱敏）与单元测试全部就位，仓库全部 CI 门禁通过。
 
-编排器**没有**按原计划拆成独立上游项目 `anas-agent`：它编译依赖仓库内的 `internal/computeclient`，
-和 `forgejo` 的 actions-controller 处境相同，因此按同一个先例放在 `modules/ai_agent/orchestrator/`，
-以 named build context 取共享代码。等它需要独立发布节奏时再拆，届时只是搬目录加发布流程。
+编排器**当前放在本仓库** `modules/ai_agent/orchestrator/`：它编译依赖仓库内的 `internal/computeclient`，
+和 `forgejo` 的 actions-controller 处境相同，因此按同一个先例以 named build context 取共享代码。
+**已决定后续独立为单独的 git 仓库**，届时 ANAS 只引用它发布的 docker image，本 Module 只留 manifest、
+Hook 与文档。拆分时机未定（不阻塞任何里程碑），但从现在起按“可搬走”约束写：编排器不依赖 ANAS 内部
+约定，只消费环境变量、配置文件与 Secret 文件；`internal/computeclient` 这类共享代码在拆分时要么随之
+独立，要么改为按 Contract 调用。
 
 **上游事实已在 `finance.hlong.wang` 上对固定 `forgejo 15.0.7` 复核完毕**（24 项通过、0 项失败），
 结论回写在[要求文档 §15](../requirements/ai-agent.md)。复核推翻了实现里的五处假设，全部已修正并加了
@@ -35,12 +38,17 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 | M1：Module 骨架、身份凭据与事件入站 | AGENT-R-001—R-014 | 已完成；单元、契约与真实依赖 e2e 均通过，容器级重启 e2e 待整套部署 |
 | M2：交互契约与产物入库 | AGENT-R-015—R-029 | 已完成；单元、契约与真实 Forgejo e2e 均通过 |
 | M3：权限、目录组授权与审计 | AGENT-R-030—R-036 | 已完成；判定引擎、审计与目录侧 `OU=Cap` 均已落地，`--group-team-map` 投影待接 |
-| M4：执行面、分支策略与执行 issue | AGENT-R-037—R-044 | 未开始 |
+| M4：执行面、分支策略与执行 issue | AGENT-R-037—R-044、R-065、R-071 | 未开始；**阻塞于** [Incus compute Provider](../../../../dev-docs/plans/incus-module.md) 的真实宿主验收，按决定等它完成后再开工 |
 | M5：排程、执行时机与队列 | AGENT-R-045—R-051 | 已完成；排序、时机与队列面均已落地并对真实 Forgejo 验证 |
-| M6：记录、会话视图与可扩展性 | AGENT-R-052—R-061 | 未开始 |
+| M6：记录、会话视图与可扩展性 | AGENT-R-052—R-061、R-070 | 未开始 |
 | M7：真实部署验收 | AGENT-R-062—R-064 | 未开始 |
+| M8：补充的交互与安全约束 | AGENT-R-066—R-069 | 未开始；四条中若干可能已在 M2/M3 顺带实现，需逐条核对后再标完成 |
+| M9：Agent 发起的写操作与三档授权 | AGENT-R-072—R-078 | 未开始；提议档（`R-072`—`R-074`、`R-076`、`R-078`）不依赖执行面，可与 M6 并行；自主档与 MCP 写路径（`R-075`、`R-077`）排在 M6 之后 |
 
-覆盖统计：64 项需求全部有且只有一个里程碑归属。
+覆盖统计：78 项需求全部有且只有一个里程碑归属。2026-08-30 补入 `R-065`—`R-071`：它们在设计文档中
+一直存在，但此前没有进入矩阵，因此不会被任何阶段验收。2026-09-08 补入 `R-072`—`R-078`，对应设计
+文档新增的 §3.5「Agent 自主建 issue：三档授权」、§5.8「Agent 侧的写路径」与 §6.5「Agent 发起的
+写操作」。
 
 ## 2. M1 检查表
 
@@ -84,7 +92,7 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 - [x] 实现 `CAP_ai_agent_*` 目录组经 Forgejo team 的投影与定期快照刷新。读法是以该用户身份
       `GET /user/teams`（`Sudo` 头）——一次调用拿到全部 team，而不是逐个 team 查成员。
 - [x] 目录侧登记：`OU=Cap` 与 `CAP_<module-id>_<capability>` 已写进
-      [Samba AD 用户与权限规划](../../docs/architecture/samba-ad-user-planning.md) §5.4.1 并由 `samba_dc`
+      [Samba AD 用户与权限规划](../../../../docs/architecture/samba-ad-user-planning.md) §5.4.1 并由 `samba_dc`
       实现；Module 经 `ANAS_IDENTITY_CAPABILITY_GROUPS` 声明能力码，与应用追加 `APPS_LIST` 是同一模式。
 - [ ] 把 `--group-team-map` 接进 `forgejo` Module 的 OIDC 配置，补上"目录组 → Forgejo team"这一段。
 - [x] 实现即时否决表与 `Veto` / `LiftVeto`（`agent-grant deny` 的后端）。否决在每次判定时实时读取，
@@ -97,12 +105,18 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 
 ## 5. M4 检查表
 
+> **当前不开工**：本里程碑整体等 [Incus compute Provider](../../../../dev-docs/plans/incus-module.md)
+> 完成真实宿主验收。在那之前不提前实现控制面侧的半截执行逻辑，避免对着未验证的 Provider 行为写
+> 适配代码。
+
 - [ ] 实现按仓库切分的工作实例与每作业一次性实例两档，跨仓库不共用。
 - [ ] 实现每 issue 独立 worktree、会话目录与工作分支。
 - [ ] 实现作业期凭据注入与结束吊销、出网 allowlist。
 - [ ] 实现默认建分支开 PR、保护分支拒绝直推、直接提交的双条件校验。
 - [ ] 实现执行 issue 的创建、依赖与交叉引用、结束回写与关闭拆分开关。
 - [ ] 实现取消（中断 Agent + 销毁实例 + 状态收敛）与外部写操作幂等键。
+- [ ] 实现“涉及范围/禁改路径”的写入约束与被拒路径回写（`R-065`）。
+- [ ] 实现开 PR 前运行仓库声明的测试与 lint、结果写进 PR 与状态评论、未声明如实记录（`R-071`）。
 
 ## 6. M5 检查表
 
@@ -126,12 +140,35 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 - [ ] 实现终端附着的授权（管理员默认可用、非管理员需能力组）、只读默认与输入归属记录。
 - [ ] 实现预算与墙钟硬上限截断。
 - [ ] 验证注册表驱动：新增一个运行时不改控制面分支逻辑，思考强度使用原生取值。
+- [ ] 实现模型凭据的三形态、不回显导入、有效期查询与轮换、临近过期告警、认证失败熔断与席位调度
+      （`R-070`）。
 
 ## 8. M7 检查表
 
 - [ ] 在固定 `forgejo 15.0.7` 与真实 Incus 宿主完成端到端链路并记录证据。
 - [ ] 记录控制面常驻资源、单作业资源、典型作业墙钟与花费。
 - [ ] 同步 Module 双语文档、配置参考与 `dev-docs` 状态。
+
+## 8.1 M8 检查表
+
+这四条来自设计文档但此前漏进矩阵，先逐条核对现状再决定是补实现还是补测试：
+
+- [ ] 风险声明勾选强制人工批准且禁止直接提交（`R-066`）。
+- [ ] `/split` 继承配置、建依赖、双向交叉引用；`/summarize` 压缩入库（`R-067`）。
+- [ ] 非模板 issue 默认不触发，只有指派或 `@` 唤起（`R-068`）。
+- [ ] 工程化约定四级解析顺序与 `.anas-agent.yml` 的权威性（`R-069`）。
+
+## 8.2 M9 检查表
+
+提议档先做，它不需要往工作实例开任何入口；自主档与 MCP 写路径等执行面就位后再开工。
+
+- [ ] 建 issue 的三档模型与 `repo_settings.agent_issue_tier`、`agent_write_ops`、两级配额字段（`R-072`）。
+- [ ] 提议评论的渲染、`/accept` 与 `/reject`、reaction 确认、过期作废（`R-073`）。
+- [ ] `issue_proposal` 与 `issue_provenance` 两张表，以及归属人失效即作废在途提议（`R-074`）。
+- [ ] 自主档的每作业/每日配额与标题指纹去重，超限降级回提议档（`R-075`）。
+- [ ] `ai:proposed` 标签、交叉引用、`job_id` 溯源块，且不打 `ai:auto`（`R-076`）。
+- [ ] `anas-agent-mcp` 白名单写路径：幂等键、`decision` 记录、预算计入、拒绝未列出的操作（`R-077`）。
+- [ ] 上下文组装按 `issue_provenance` 过滤 Agent 自建 issue 的正文（`R-078`）。
 
 ## 9. CI 门禁
 
@@ -175,9 +212,13 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
 | R-054 | 待新增 `test-env/scripts/server-ai-agent-session-e2e.sh` | 容器重建后续接与降级 | — | 待实现 |
 | R-057 | 待新增 `test-env/scripts/server-ai-agent-terminal-e2e.sh` | 管理员与非管理员附着 | — | 待实现 |
 | R-058 | `server-ai-agent-schedule-e2e.sh budget` | 预算与墙钟截断 | — | 待实现 |
+| R-065 | `server-ai-agent-branch-pr-e2e.sh scope` | 越界路径与禁改路径写入被拒 | — | 待实现 |
+| R-071 | `server-ai-agent-branch-pr-e2e.sh tests` | 仓库声明的测试/lint 执行与结果回写 | — | 待实现 |
 | R-062 | 待新增 `test-env/scripts/server-ai-agent-full-e2e.sh` | 讨论 → 文档 → 批准 → 执行 issue → PR | — | 待实现 |
 | R-063 | `server-ai-agent-full-e2e.sh roundtable` | 多 Agent 圆桌收敛 | — | 待实现 |
 | R-064 | `server-ai-agent-full-e2e.sh baseline` | 资源与成本基线 | — | 待实现 |
+| R-073 | 待新增 `test-env/scripts/server-ai-agent-proposal-e2e.sh` | 提议渲染 → 人确认 → 建 issue；未确认不创建 | — | 待实现 |
+| R-075 | `server-ai-agent-proposal-e2e.sh quota` | 配额超限与标题指纹去重后降级回提议档 | — | 待实现 |
 
 ## 11. 当前阻塞
 
@@ -185,10 +226,10 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
   接收端把 `pull_request` / `action_run_*` 分发到等待中的作业，属于 M6 的记录与分发面。
 - webhook 的**投递语义**（超时、重试、可否手动重投）仍未复核：需要一个真实的接收端，属于 M2。
   当前实现按“至多一次”设计，对账是补偿手段，这条不阻塞 M1。
-- 执行面依赖 [Incus compute Provider](incus-module.md) 的 M6（真实宿主验收），该里程碑本身
+- 执行面依赖 [Incus compute Provider](../../../../dev-docs/plans/incus-module.md) 的 M6（真实宿主验收），该里程碑本身
   阻塞于独立 KVM/Incus 宿主。M4 在此之前只能实现控制面侧逻辑。
 - `AGENT-R-032` 的链路还差中间一段。目录侧已经通了：`CAP_<module-id>_<capability>` 已在
-  [Samba AD 用户与权限规划](../../docs/architecture/samba-ad-user-planning.md) §5.4.1 登记并由
+  [Samba AD 用户与权限规划](../../../../docs/architecture/samba-ad-user-planning.md) §5.4.1 登记并由
   `samba_dc` 实现，`ai_agent` 经 `ANAS_IDENTITY_CAPABILITY_GROUPS` 声明能力码；消费侧也已完成
   （从 Forgejo team 读出能力上限）。缺的是 **IAM 用 `--group-team-map` 把组投影成 Forgejo team** ——
   该 CLI 参数已在 `15.0.7` 上确认存在，但 `forgejo` Module 的 OIDC 配置还没有把它接上。

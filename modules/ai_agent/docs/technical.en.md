@@ -2,7 +2,7 @@
 
 How the `ai_agent` control plane is put together and where its boundaries are. Configuration and
 operation are in the [English README](../README.en.md); the acceptance criteria are the
-[requirement matrix](../../../dev-docs/requirements/ai-agent.md).
+[requirement matrix](../dev-docs/requirements/ai-agent.md).
 
 <!-- generated:module-identity:start -->
 > Status: current implementation; based on `0.1.0-r1` / `anas.module/v1`.
@@ -77,7 +77,7 @@ outside `registry.go` fails the test.
 ## Five things the pinned version taught this code
 
 None of these came from the design; they came from probing `forgejo 15.0.7`
-([requirement §15](../../../dev-docs/requirements/ai-agent.md)). Each one overturned an assumption
+([requirement §15](../dev-docs/requirements/ai-agent.md)). Each one overturned an assumption
 that was already written:
 
 | Upstream fact | Where it lands |
