@@ -802,3 +802,15 @@ anas help [--json]
 
 存在的理由只有一个：`anas help --json` 不能是 stdout 上唯一一处不是 JSON 文档的
 地方。
+
+## 部署失败诊断
+
+激活中的 `stop_failed`、`start_failed`、`resource_state_failed` 及有旧部署可恢复的 active 指针写入失败，
+在 `error.detail.primary` 保留触发失败，在 `error.detail.recovery` 分别记录候选停止和旧部署恢复的结果。
+顶层错误码仍代表首因；恢复失败不会替换它。部署状态先保存首因，再追加恢复结果。
+普通 Compose 错误附带阶段、project、退出码及最多 4096 字节的 stderr 尾部摘要；摘要去除终端控制符。
+quiet 凭据处理路径及 daemon 变更路径不保存子进程文本。机器可读 stdout 不混入 stderr 摘要。
+
+Compose 检测时保存进程的 Docker 选择环境；ownership 检查和 Compose 执行复用该选择，部署变量不能
+覆盖 `DOCKER_HOST`、`DOCKER_CONTEXT` 等控制端点变量。此机制保留默认 Docker context 语义；
+尚未实现 context 配置文件快照、统一所有辅助 Docker 查询或非 Unix socket mount 的前置错误。

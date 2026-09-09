@@ -1,8 +1,8 @@
 ---
 doc_type: plan
-status: proposed
+status: partial
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-09
 ---
 
 # Compose 执行边界实施计划
@@ -18,9 +18,9 @@ updated: 2026-08-28
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
 | M0：容器切换与 workspace owner 基线 | R-001—R-002 | 已完成；由现有 Runner 单元与事务测试覆盖 |
-| M1：统一 Docker endpoint context | R-003—R-009 | 未开始 |
-| M2：结构化 Compose 子进程错误 | R-010—R-011、R-016 | 未开始 |
-| M3：primary/recovery 分层与持久化 | R-012—R-015 | 未开始 |
+| M1：统一 Docker endpoint context | R-003—R-009 | 实施中；选择环境与 owner/Compose 一致性已覆盖 |
+| M2：结构化 Compose 子进程错误 | R-010—R-011、R-016 | 实施中；类型化有界摘要与 quiet 路径已实现 |
+| M3：primary/recovery 分层与持久化 | R-012—R-015 | 实施中；首因先持久化与恢复结果已分离 |
 | M4：契约、运维文档与完整验收 | R-017 | 未开始 |
 
 ## 2. M0 落地快照
@@ -108,3 +108,16 @@ updated: 2026-08-28
 | `/plans/compose-execution-boundary` | 提案 | 每个里程碑随实现逐 PR 更新 |
 | `/reference/contracts/commands` | 待 M4 | 稳定错误码和 JSON detail 落地后同步 |
 | 中英文运维与开发测试文档 | 待 M4 | endpoint 与故障归因可被管理员和贡献者查到 |
+
+## 11. 2026-09-09 审查整改进展
+
+本批实现 `internal/compose.Endpoint` 保存进程选择环境，拒绝部署变量覆盖控制端点，并复用于 owner guard；
+CLI/daemon fake Docker 测试验证探测、ownership 与变更使用相同选择。尚未完成顶层解析一次、context 配置文件
+冻结、全部辅助查询接入、端点公告和非 Unix socket mount 前置错误，因此 M1 不标完成。
+
+`CommandFailure` 保留 phase/project/exit code；普通 stderr 只保存有界 UTF-8 尾部，过滤 ANSI/OSC/CR；
+quiet 和 daemon 变更路径不捕获原始文本。激活失败先保存 primary，再执行恢复并追加 recovery；
+测试在恢复回调内读取状态，验证首因已持久化及双重恢复失败未覆盖首因。
+尚缺端到端多重失败脚本、真实进程中断注入、signal 专项验收和逐阶段 progress 事件，M2/M3 不标完成。
+
+本次契约、中英文排障和测试入口已同步实际子集。完整 M4 仍依赖 M1—M3。

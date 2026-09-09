@@ -41,6 +41,7 @@ var daemonReachableSubprocessInventory = map[string][]string{
 		"(CLI).outputFile exec.Command",
 		"(CLI).outputFile os.Environ",
 		"Detect exec.Command",
+		"Detect os.Environ",
 	},
 	// The compute client's CLI runner. Daemon callers go through the context
 	// runner with a constructed environment.

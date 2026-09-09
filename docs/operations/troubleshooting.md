@@ -30,3 +30,10 @@ docker ps --format 'table {{.Names}}\t{{.Status}}'
 - 数据库或用户数据已经发生错误迁移：使用 `anas snapshot restore`。
 
 恢复前先阅读[备份与恢复](/guide/backup-and-restore)，并显式指定 `-w`。
+
+## 取消任务后仍被补偿检查阻塞
+
+`compensation_checked` 事件的 `result=failed` 表示取消后的恢复未完成；任务虽然进入 canceled，
+`NeedsCompensationCheck` 仍保留并阻塞后续变更。事件不包含原始子进程错误。检查 daemon 日志和未完成事务，
+修复 Docker/文件访问问题后通过原有补偿恢复流程重试；不要仅删除标记来放行任务。
+部署激活失败时先看 `error.detail.primary`，再看 `recovery` 中各阶段结果，避免把恢复失败误当首因。

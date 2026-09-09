@@ -1150,21 +1150,18 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	if oldApp != nil && runtimeStatus != "stopped" {
 		stopSelection := changedOrRemovedModules(current, target)
 		if err := oldApp.stopModules(oldRoot, stopSelection, opts.json); err != nil {
-			restoreErr := startDeployment(oldApp, oldRoot, stopSelection, opts.json)
-			if restoreErr != nil {
-				return failuref("stop_failed", "%v; previous deployment restore failed: %v", err, restoreErr)
-			}
-			return failuref("stop_failed", "%v; previous deployment restored", err)
+			return recordActivationFailure(base, id, "stop_failed", err, func() []map[string]any {
+				return []map[string]any{recoveryResult("previous_restore", startDeployment(oldApp, oldRoot, stopSelection, opts.json))}
+			})
 		}
 	}
 	if len(selection) > 0 {
 		if err := startDeployment(newApp, newRoot, selection, opts.json); err != nil {
-			_ = saveDeploymentFailure(base, id, err)
-			return failuref("start_failed", "%s", restorePreviousAfterActivationFailure(newApp, newRoot, oldApp, oldRoot, err, opts.json))
+			return activationFailure(base, id, "start_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 		}
 	}
 	if err := retainRemovedResources(base, current, target); err != nil {
-		return failuref("resource_state_failed", "%s", restorePreviousAfterActivationFailure(newApp, newRoot, oldApp, oldRoot, err, opts.json))
+		return activationFailure(base, id, "resource_state_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -1183,12 +1180,14 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	}
 	if err := saveActiveState(base, active); err != nil {
 		if oldApp != nil {
-			return failuref("write_failed", "%s", restorePreviousAfterActivationFailure(newApp, newRoot, oldApp, oldRoot, err, opts.json))
+			return activationFailure(base, id, "write_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 		}
 		return failuref("write_failed", "%s", err.Error())
 	}
 	state, _ := loadDeploymentState(base, id)
 	state.Status = "active"
+	state.Failure = ""
+	state.FailureDetail = nil
 	state.ActivatedAt = now
 	state.VerifiedAt = now
 	if current != nil {
@@ -1202,27 +1201,6 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	// been the way back from it.
 	collectAutomaticSnapshots(workspaceOf(base), opts.events, opts.json, opts.ctx, opts.restrictedProcessEnvironment)
 	return nil
-}
-
-// restorePreviousAfterActivationFailure stops every candidate project before
-// reactivating the immutable previous deployment. Starting previous on top of
-// partially activated candidate containers leaves the real runtime ambiguous,
-// especially once credential reconciliation becomes part of the ready barrier.
-func restorePreviousAfterActivationFailure(candidate *app, candidateRoot string, previous *app, previousRoot string, cause error, jsonMode bool) error {
-	parts := []string{cause.Error()}
-	if candidate != nil {
-		if err := candidate.stopRelease(candidateRoot, jsonMode); err != nil {
-			parts = append(parts, "candidate stop failed: "+err.Error())
-		}
-	}
-	if previous != nil {
-		if err := startDeployment(previous, previousRoot, previous.order, jsonMode); err != nil {
-			parts = append(parts, "previous deployment restore failed: "+err.Error())
-		} else {
-			parts = append(parts, "previous deployment restored")
-		}
-	}
-	return fmt.Errorf("%s", strings.Join(parts, "; "))
 }
 
 // snapshotBeforeApply takes the automatic pre-apply snapshot, when the change
@@ -1868,7 +1846,13 @@ func acquireRuntimeLockWithRecovery(ctx context.Context, base string, recovery r
 		unlock()
 		return nil, err
 	}
-	compensateContainerTransactionsWithOptions(base, recovery)
+	if recoveryErr := compensateContainerTransactionsWithOptions(base, recovery); recoveryErr != nil {
+		if recovery.restrictedProcessEnvironment {
+			unlock()
+			return nil, recoveryErr
+		}
+		containerRecoveryWarning(recovery.events, "container_recovery_failed", "container recovery remains incomplete: %v", recoveryErr)
+	}
 	if err := ctx.Err(); err != nil {
 		unlock()
 		return nil, err
@@ -1977,13 +1961,6 @@ func saveDeploymentState(base string, state deploymentState) error {
 		return err
 	}
 	return rebuildDeploymentIndex(base)
-}
-
-func saveDeploymentFailure(base, id string, cause error) error {
-	state, _ := loadDeploymentState(base, id)
-	state.Status = "failed"
-	state.Failure = cause.Error()
-	return saveDeploymentState(base, state)
 }
 
 func listDeploymentStates(base string) ([]deploymentState, error) {

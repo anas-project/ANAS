@@ -20,6 +20,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -149,43 +150,51 @@ func startModules(a *app, modulesRoot string, modules []string) error {
 // safe: a backup holds that same lock for its whole duration, so a transaction
 // visible here can never belong to one still in progress.
 //
-// Failures are reported and swallowed. This runs at the start of unrelated
-// commands, and turning "your last backup crashed and Docker is also down" into
-// a failure of `anas apply` would replace one problem with two. The record is
-// left in place so the next command tries again.
+// CLI callers keep best-effort recovery, while daemon callers must propagate
+// failures so they cannot clear a durable compensation marker prematurely.
 func compensateContainerTransactions(base string) {
-	compensateContainerTransactionsWithOptions(base, runtimeRecoveryOptions{})
+	_ = compensateContainerTransactionsWithOptions(base, runtimeRecoveryOptions{})
 }
 
-func compensateContainerTransactionsWithOptions(base string, opts runtimeRecoveryOptions) {
+func compensateContainerTransactionsWithOptions(base string, opts runtimeRecoveryOptions) error {
 	entries, err := os.ReadDir(transactionsDir(base))
-	if err != nil {
-		return
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
 	}
+	if err != nil {
+		return fmt.Errorf("read container recovery transactions: %w", err)
+	}
+	var failures []error
 	for _, entry := range entries {
+		if opts.ctx != nil && opts.ctx.Err() != nil {
+			return errors.Join(append(failures, opts.ctx.Err())...)
+		}
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yml") {
 			continue
 		}
 		path := filepath.Join(transactionsDir(base), entry.Name())
 		var txn containerTransaction
 		if err := readYAML(path, &txn); err != nil {
+			failures = append(failures, fmt.Errorf("read recovery transaction: %w", err))
 			continue
 		}
 		if txn.Kind != containerTransactionKind || txn.State != containerTransactionStopped {
 			continue
 		}
-		if len(txn.Modules) == 0 {
-			_ = os.Remove(path)
-			continue
+		if len(txn.Modules) != 0 {
+			containerRecoveryWarning(opts.events, "container_recovery_started",
+				"a backup stopped %d module(s) and did not start them again; starting them now", len(txn.Modules))
+			if err := resumeStoppedModulesWithOptions(base, &txn, opts); err != nil {
+				failures = append(failures, err)
+				containerRecoveryWarning(opts.events, "container_recovery_failed", "could not restart interrupted modules")
+				continue
+			}
 		}
-		containerRecoveryWarning(opts.events, "container_recovery_started",
-			"a backup stopped %d module(s) and did not start them again; starting them now", len(txn.Modules))
-		if err := resumeStoppedModulesWithOptions(base, &txn, opts); err != nil {
-			containerRecoveryWarning(opts.events, "container_recovery_failed", "could not restart interrupted modules: %v", err)
-			continue
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			failures = append(failures, fmt.Errorf("complete recovery transaction: %w", err))
 		}
-		_ = os.Remove(path)
 	}
+	return errors.Join(failures...)
 }
 
 func resumeStoppedModules(base string, txn *containerTransaction) error {

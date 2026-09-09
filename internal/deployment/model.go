@@ -254,15 +254,16 @@ type ActiveState struct {
 }
 
 type State struct {
-	APIVersion    string `yaml:"api_version" json:"api_version"`
-	ID            string `yaml:"id" json:"id"`
-	Status        string `yaml:"status" json:"status"`
-	CreatedAt     string `yaml:"created_at" json:"created_at"`
-	ActivatedAt   string `yaml:"activated_at,omitempty" json:"activated_at,omitempty"`
-	DeactivatedAt string `yaml:"deactivated_at,omitempty" json:"deactivated_at,omitempty"`
-	VerifiedAt    string `yaml:"verified_at,omitempty" json:"verified_at,omitempty"`
-	Predecessor   string `yaml:"predecessor,omitempty" json:"predecessor,omitempty"`
-	Failure       string `yaml:"failure,omitempty" json:"failure,omitempty"`
+	APIVersion    string         `yaml:"api_version" json:"api_version"`
+	ID            string         `yaml:"id" json:"id"`
+	Status        string         `yaml:"status" json:"status"`
+	CreatedAt     string         `yaml:"created_at" json:"created_at"`
+	ActivatedAt   string         `yaml:"activated_at,omitempty" json:"activated_at,omitempty"`
+	DeactivatedAt string         `yaml:"deactivated_at,omitempty" json:"deactivated_at,omitempty"`
+	VerifiedAt    string         `yaml:"verified_at,omitempty" json:"verified_at,omitempty"`
+	Predecessor   string         `yaml:"predecessor,omitempty" json:"predecessor,omitempty"`
+	Failure       string         `yaml:"failure,omitempty" json:"failure,omitempty"`
+	FailureDetail map[string]any `yaml:"failure_detail,omitempty" json:"failure_detail,omitempty"`
 	// There is deliberately no snapshot ID here. A snapshot is a self-contained
 	// point in time, not one leg of a deployment transition; recording one ID in
 	// both places would only create a consistency window between the two writes.

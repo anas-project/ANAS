@@ -7,21 +7,22 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/anas-project/ANAS/internal/processgroup"
 )
 
 type CLI struct {
-	Bin []string
+	Bin      []string
+	endpoint *Endpoint
 }
 
 func Detect() (CLI, error) {
+	endpoint := freezeEndpoint(os.Environ())
 	if err := exec.Command("docker", "compose", "version").Run(); err == nil {
-		return CLI{Bin: []string{"docker", "compose"}}, nil
+		return CLI{Bin: []string{"docker", "compose"}, endpoint: endpoint}, nil
 	}
 	if err := exec.Command("docker-compose", "-v").Run(); err == nil {
-		return CLI{Bin: []string{"docker-compose"}}, nil
+		return CLI{Bin: []string{"docker-compose"}, endpoint: endpoint}, nil
 	}
 	return CLI{}, fmt.Errorf("docker compose is not installed")
 }
@@ -42,6 +43,7 @@ func DetectContext(ctx context.Context, environment []string) (CLI, error) {
 		processgroup.Configure(cmd)
 		cmd.Env = append([]string(nil), environment...)
 		if err := cmd.Run(); err == nil {
+			candidate.cli.endpoint = freezeEndpoint(environment)
 			return candidate.cli, nil
 		}
 		if err := ctx.Err(); err != nil {
@@ -64,7 +66,7 @@ func (c CLI) RunFile(dir, project, composeFile string, env map[string]string, ar
 	// stderr is where the contract already puts progress and logs.
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return runCommand(cmd, project, args, true)
 }
 
 // RunFileQuiet is used while candidate credential values exist in a Compose
@@ -74,14 +76,14 @@ func (c CLI) RunFileQuiet(dir, project, composeFile string, env map[string]strin
 	cmd := c.fileCommand(dir, project, composeFile, env, args...)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
-	return cmd.Run()
+	return runCommand(cmd, project, args, false)
 }
 
 func (c CLI) RunFileContext(ctx context.Context, dir, project, composeFile string, environment []string, stdout, stderr io.Writer, args ...string) error {
 	cmd := c.fileCommandContext(ctx, dir, project, composeFile, environment, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	return cmd.Run()
+	return runCommand(cmd, project, args, stderr != nil && stderr != io.Discard)
 }
 
 func (c CLI) fileCommand(dir, project, composeFile string, env map[string]string, args ...string) *exec.Cmd {
@@ -93,10 +95,7 @@ func (c CLI) fileCommand(dir, project, composeFile string, env map[string]string
 	full = append(full, args...)
 	cmd := exec.Command(full[0], full[1:]...)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
-	for k, v := range env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
+	cmd.Env = c.Environment(os.Environ(), env)
 	return cmd
 }
 
@@ -110,7 +109,7 @@ func (c CLI) fileCommandContext(ctx context.Context, dir, project, composeFile s
 	cmd := exec.CommandContext(ctx, full[0], full[1:]...)
 	processgroup.Configure(cmd)
 	cmd.Dir = dir
-	cmd.Env = append([]string(nil), environment...)
+	cmd.Env = c.Environment(environment, nil)
 	return cmd
 }
 
@@ -130,7 +129,8 @@ func (c CLI) OutputFileQuiet(dir, project, composeFile string, env map[string]st
 
 func (c CLI) OutputFileContext(ctx context.Context, dir, project, composeFile string, environment []string, quiet bool, args ...string) (string, error) {
 	cmd := c.fileCommandContext(ctx, dir, project, composeFile, environment, args...)
-	var out, errb bytes.Buffer
+	var out bytes.Buffer
+	var errb tailWriter
 	cmd.Stdout = &out
 	if quiet {
 		cmd.Stderr = io.Discard
@@ -143,9 +143,9 @@ func (c CLI) OutputFileContext(ctx context.Context, dir, project, composeFile st
 			return out.String(), contextErr
 		}
 		if quiet {
-			return out.String(), err
+			return out.String(), commandFailure(err, project, args, nil)
 		}
-		return out.String(), fmt.Errorf("%w: %s", err, strings.TrimSpace(errb.String()))
+		return out.String(), commandFailure(err, project, args, &errb)
 	}
 	return out.String(), nil
 }
@@ -159,11 +159,9 @@ func (c CLI) outputFile(dir, project, composeFile string, env map[string]string,
 	full = append(full, args...)
 	cmd := exec.Command(full[0], full[1:]...)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
-	for k, v := range env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
-	var out, errb bytes.Buffer
+	cmd.Env = c.Environment(os.Environ(), env)
+	var out bytes.Buffer
+	var errb tailWriter
 	cmd.Stdout = &out
 	if quiet {
 		cmd.Stderr = io.Discard
@@ -173,9 +171,9 @@ func (c CLI) outputFile(dir, project, composeFile string, env map[string]string,
 	err := cmd.Run()
 	if err != nil {
 		if quiet {
-			return out.String(), err
+			return out.String(), commandFailure(err, project, args, nil)
 		}
-		return out.String(), fmt.Errorf("%w: %s", err, strings.TrimSpace(errb.String()))
+		return out.String(), commandFailure(err, project, args, &errb)
 	}
 	return out.String(), nil
 }

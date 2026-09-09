@@ -36,7 +36,9 @@ func (a *app) commandEnvironment(deployment map[string]string) []string {
 		result := append([]string(nil), os.Environ()...)
 		keys := sortedEnvironmentKeys(deployment)
 		for _, key := range keys {
-			result = append(result, key+"="+deployment[key])
+			if !dockerSelectionVariable(key) {
+				result = append(result, key+"="+deployment[key])
+			}
 		}
 		return result
 	}
@@ -53,7 +55,7 @@ func (a *app) commandEnvironment(deployment map[string]string) []string {
 		// These variables select host executables or process-owned locations and
 		// locales. A rendered workspace value must not be able to redirect daemon
 		// subprocess lookup or host file discovery.
-		if key == "PATH" || key == "HOME" || key == "LANG" {
+		if key == "PATH" || key == "HOME" || key == "LANG" || dockerSelectionVariable(key) {
 			continue
 		}
 		values[key] = value
@@ -77,4 +79,13 @@ func sortedEnvironmentKeys(values map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// Deployment variables configure containers, not the Docker control endpoint.
+func dockerSelectionVariable(key string) bool {
+	switch key {
+	case "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH":
+		return true
+	}
+	return false
 }

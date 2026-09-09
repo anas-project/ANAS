@@ -87,8 +87,8 @@ func (a *app) outputCompose(dir, module, composeFile string, env map[string]stri
 func (a *app) ensureComposeProjectOwner(project string) error {
 	var owners []string
 	var err error
-	if a.restrictedProcessEnvironment {
-		owners, err = dockerComposeProjectOwnersContext(a.subprocessContext(), a.commandEnvironment(nil), project)
+	if a.restrictedProcessEnvironment || a.compose.HasEndpoint() {
+		owners, err = dockerComposeProjectOwnersContext(a.subprocessContext(), a.compose.Environment(a.commandEnvironment(nil), nil), project)
 	} else {
 		owners, err = inspectComposeProjectOwners(project)
 	}

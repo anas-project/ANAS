@@ -215,7 +215,7 @@ func TestExecutorCancelsRunningJobOnlyAtRegisteredStageAndChecksCompensation(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"started", "cancel_requested", "canceled"}
+	want := []string{"started", "cancel_requested", "compensation_checked", "canceled"}
 	if len(page.Events) != len(want) {
 		t.Fatalf("cancellation events = %#v", page.Events)
 	}
@@ -896,4 +896,43 @@ func waitForJobStatus(t *testing.T, store *consolejobs.Store, jobID string, stat
 	}
 	t.Fatalf("job = %#v, want status %s", job, status)
 	return consolejobs.Job{}
+}
+
+// QUALITY-R-003: recovery errors persist a safe event and keep the queue blocked.
+func TestFailedCompensationKeepsWorkspaceBlocked(t *testing.T) {
+	store := openExecutorStore(t)
+	job := createApplyJob(t, store, "main", "failed-recovery", application.ApplyRequest{})
+	executor, err := New(Options{Store: store, Audit: deploymentaudit.SinkFunc(func(context.Context, deploymentaudit.Event) error { return nil }),
+		Workspaces: []Workspace{{ID: "main", Path: "/main"}},
+		DeploymentFactory: func(string, application.EventSink) application.DeploymentService {
+			return &fakeDeploymentService{compensate: func(context.Context) error { return errors.New("PRIVATE-RECOVERY-TEXT") }}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, found, err := store.ClaimNextObserved(ctx, "main", executor.jobAuditObserver(deploymentaudit.StageJobStartAuthorized, "")); err != nil || !found {
+		t.Fatalf("claim: %v %v", found, err)
+	}
+	executor.finishCanceled(ctx, "/main", job, context.Canceled)
+	got, err := store.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != consolejobs.StatusCanceled || !got.NeedsCompensationCheck {
+		t.Fatalf("lost recovery marker: %+v", got)
+	}
+	page, err := store.Replay(ctx, job.ID, consolejobs.ReplayOptions{Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(page)
+	if strings.Contains(string(body), "PRIVATE-RECOVERY-TEXT") || !strings.Contains(string(body), "compensation_checked") || !strings.Contains(string(body), "failed") {
+		t.Fatalf("unsafe or missing recovery result: %s", body)
+	}
+	createApplyJob(t, store, "main", "after-failed-recovery", application.ApplyRequest{})
+	if _, _, err := store.ClaimNextObserved(ctx, "main", executor.jobAuditObserver(deploymentaudit.StageJobStartAuthorized, "")); !errors.Is(err, consolejobs.ErrCompensationRequired) {
+		t.Fatalf("queue not blocked: %v", err)
+	}
 }

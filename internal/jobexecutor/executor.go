@@ -507,30 +507,48 @@ func (executor *Executor) completeRunning(jobID string, ctx context.Context) err
 
 func (executor *Executor) finishCanceled(ctx context.Context, workspacePath string, job consolejobs.Job, cause error) {
 	jobError := &consolejobs.JobError{Code: "job_canceled", Message: "job execution was canceled"}
-	if _, err := executor.store.AppendEvent(ctx, job.ID, consolejobs.EventInput{
+
+	// Check while the job is still running: terminal jobs reject new events.
+	// A crash here is recovered as interrupted and therefore still blocks writes.
+	compensationContext, cancelCompensation := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteTimeout)
+	service := executor.deploymentFactory(workspacePath, application.NopEventSink{})
+	var recoveryErr error
+	if service == nil {
+		recoveryErr = errors.New("deployment compensation service is unavailable")
+	} else {
+		recoveryErr = service.CheckCompensation(compensationContext)
+	}
+	cancelCompensation()
+	// Recovery may consume its entire budget; terminal persistence gets its own.
+	finalContext, cancelFinal := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteTimeout)
+	defer cancelFinal()
+	outcome := "completed"
+	if recoveryErr != nil {
+		outcome = "failed"
+	}
+	if _, err := executor.store.AppendEvent(finalContext, job.ID, consolejobs.EventInput{
+		Kind: "compensation_checked", Data: map[string]any{"result": outcome},
+	}); err != nil {
+		executor.report(fmt.Errorf("persist job %s recovery result: %w", job.ID, err))
+		return
+	}
+	if _, err := executor.store.AppendEvent(finalContext, job.ID, consolejobs.EventInput{
 		Kind: "canceled", Data: map[string]any{"error": map[string]any{"code": jobError.Code, "message": jobError.Message}},
 	}); err != nil {
 		executor.report(fmt.Errorf("persist job %s cancellation event: %w", job.ID, err))
 		return
 	}
-	if _, err := executor.store.TransitionObserved(ctx, job.ID, consolejobs.StatusCanceled, consolejobs.TransitionInput{
+	if _, err := executor.store.TransitionObserved(finalContext, job.ID, consolejobs.StatusCanceled, consolejobs.TransitionInput{
 		Error: jobError, NeedsCompensationCheck: true,
 	}, executor.jobAuditObserver(deploymentaudit.StageJobCanceledAuthorized, jobError.Code)); err != nil {
 		executor.report(fmt.Errorf("persist job %s canceled state: %w", job.ID, err))
 		return
 	}
-	compensationContext, cancelCompensation := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteTimeout)
-	defer cancelCompensation()
-	service := executor.deploymentFactory(workspacePath, application.NopEventSink{})
-	if service == nil {
-		executor.report(fmt.Errorf("job %s compensation service is unavailable after %v", job.ID, cause))
+	if recoveryErr != nil {
+		executor.report(fmt.Errorf("job %s compensation check failed: %w", job.ID, recoveryErr))
 		return
 	}
-	if err := service.CheckCompensation(compensationContext); err != nil {
-		executor.report(fmt.Errorf("job %s compensation check failed after %v: %w", job.ID, cause, err))
-		return
-	}
-	if _, err := executor.store.AcknowledgeCompensation(compensationContext, job.ID, "workspace compensation check completed"); err != nil {
+	if _, err := executor.store.AcknowledgeCompensation(finalContext, job.ID, "workspace compensation check completed"); err != nil {
 		executor.report(fmt.Errorf("acknowledge job %s compensation check: %w", job.ID, err))
 	}
 }

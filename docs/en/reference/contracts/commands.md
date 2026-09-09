@@ -967,3 +967,18 @@ a list of invocable commands instead:
 
 It exists for exactly one reason: `anas help --json` must not be the one place on
 stdout that is not a JSON document.
+
+## Deployment failure diagnostics
+
+Activation `stop_failed`, `start_failed`, `resource_state_failed`, and active-pointer write failures with a
+previous deployment preserve the initiating failure in `error.detail.primary` and record candidate-stop
+and previous-restore outcomes separately in `error.detail.recovery`. The top-level code still identifies
+the primary failure. Deployment state persists that failure before recovery begins.
+Ordinary Compose errors include phase, project, exit code, and a terminal-control-free stderr tail bounded
+to 4096 bytes. Credential-sensitive quiet calls and daemon mutation calls retain no subprocess text.
+Machine-readable stdout remains separate from diagnostic stderr.
+
+Compose detection saves the process-owned Docker selection environment. Ownership checks and Compose
+reuse it; deployment values cannot override `DOCKER_HOST`, `DOCKER_CONTEXT`, or other endpoint selectors.
+Default Docker context semantics remain intact. Context-file snapshots, all auxiliary Docker queries,
+and non-Unix socket-mount precondition errors are not yet implemented.
