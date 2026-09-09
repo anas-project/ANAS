@@ -280,44 +280,46 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
 | `INCUS-R-055` | guest 镜像必须由 distrobuilder 配方产出，且语义为构建一次记录摘要；不得每次 apply 重新烘焙 | 契约 + e2e |
 | `INCUS-R-056` | `guest_image` 需要 Provider 把 fingerprint 交回 Runner；由 R-066、R-067 取代——镜像改为 `anas:`/`fingerprint:` 命名引用后，引用在 apply 时即确定，无需结果通道（已废弃） | 契约 + 审阅 |
 | `INCUS-R-057` | 一级发行版为 Debian 13、Ubuntu 24.04 LTS 与 Ubuntu 26.04 LTS，其中 26.04 是主要测试环境；其余标记待适配，未适配时相关功能保持关闭而不是失败 | 静态 + e2e |
-| `INCUS-R-058` | 特权通道只接受动作 id 与类型化参数，动作实现必须编译进 root 二进制；不得接受调用方提供的命令、argv、路径或脚本，也不得执行位于 anas 可写目录中的文件 | 审阅 + 安全测试 |
-| `INCUS-R-059` | 特权通道必须 socket 激活而非常驻 root 进程，校验对端 uid/gid，并逐次审计动作 id、规范化参数、调用方与结果；敏感参数不落日志 | 单元 + 安全测试 |
-| `INCUS-R-060` | 每个特权动作必须有对称的撤销动作；`incus.install` 之所以可接受正是因为 `incus.uninstall` 存在 | 审阅 + e2e |
-| `INCUS-R-061` | CLI 与 Web 必须共用同一条特权通道与同一份审计记录，能力差异不得来自入口 | 审阅 + e2e |
+| `INCUS-R-058` | 宿主特权动作通道要求；由 `HOSTACT-R-001` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 审阅 + 安全测试 |
+| `INCUS-R-059` | 宿主特权动作通道要求；由 `HOSTACT-R-002` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 单元 + 安全测试 |
+| `INCUS-R-060` | 宿主特权动作通道要求；由 `HOSTACT-R-003` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 审阅 + e2e |
+| `INCUS-R-061` | 宿主特权动作通道要求；由 `HOSTACT-R-004` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 审阅 + e2e |
 | `INCUS-R-062` | 必须预留 `network_mode: nat \| lan` 两种网络模式，默认 `nat`；LAN 模式暂不实施，文档须写明它同时移除两个协议族的围栏 | 文档 |
 | `INCUS-R-063` | Traefik 绑定必须跟随实例生命周期：启动即绑、停止或暂停即解绑，与实例是否长驻无关；运行时绑定经 Traefik 文件 provider 目录完成，Core 不在这条路径上 | 契约 + e2e |
 | `INCUS-R-064` | 可发布的 guest 端口必须在租约的 `ingress.allowed_ports` 中于 apply 时固定；省略 `ingress` 段即完全不允许发布 | 契约 + 单元 |
 | `INCUS-R-065` | 随机域名必须由 `workload_id` 与租约 secret 确定性派生，不得抽取随机数再存表：同一任务恒定、不同任务不重复、外部不可预测 | 单元 |
 | `INCUS-R-066` | `image_allowlist` 条目必须是 `fingerprint:<64hex>` 或 `anas:<name>@<revision>`；`anas:` 名字一旦发布不得指向不同内容，配方变更产出新 revision | 契约 + 审阅 |
 | `INCUS-R-067` | 不得为 `guest_image` 新增 Provider→Runner 结果通道：镜像引用在 apply 时即确定，Provider 只保证该引用对应的镜像存在 | 审阅 |
-| `INCUS-R-068` | 特权入口只有两个：`anas-helper`（`CAP_NET_ADMIN`，日常热路径，无产物）与 `anas-hostd`（完整 root，罕见、有产物、逐次审计）。不得为 `CAP_SYS_ADMIN` 单开第三个入口 | 审阅 |
-| `INCUS-R-069` | `anas-hostd` 必须与 `anas` 同版本发布并一起升级；不得存在可单独更新的动作目录或可写入的脚本目录 | 静态 + 审阅 |
+| `INCUS-R-068` | 宿主特权动作通道要求；由 `HOSTACT-R-005` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 审阅 |
+| `INCUS-R-069` | 宿主特权动作通道要求；由 `HOSTACT-R-006` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 静态 + 审阅 |
 | `INCUS-R-070` | 入站路径必须与网络模式解耦：LAN 模式若启用也走同一条 proxy device 路径，不得复用 macvlan shim 作为 Traefik 路由目标 | 契约 + 审阅 |
 | `INCUS-R-071` | 随机域名派生必须确定性、掺入租约 secret、碰撞时失败而不静默复用；`mode: fixed` 时不派生 | 单元 |
 | `INCUS-R-086` | 域名模式必须支持 `fixed` / `named` / `random` 三档；`named` 的 label 只允许 `[a-z0-9-]` 且最终域名必须落在该租约 prefix 的命名空间内 | 契约 + 单元 |
 | `INCUS-R-087` | 消费者不得直接写入 Traefik 动态配置目录：只能写受约束的请求文件，由中介校验域名落在本租约命名空间内后渲染；middleware 与 entrypoint 由渲染方决定，消费者无权指定 | 契约 + e2e |
 | `INCUS-R-088` | 域名校验必须在消费者进程之外完成——放在共享客户端库不足以约束被攻陷的消费者 | 审阅 + e2e |
 | `INCUS-R-072` | 旧 revision 镜像不得在 apply 时自动删除：当前与上一个 deployment 引用的镜像必须保留，清理只能经显式 `incus.image-prune` 动作并先 dry-run | 单元 + e2e |
-| `INCUS-R-073` | 特权通道的长时动作必须支持进度回显；调用方断连时的语义必须由与 Module Command 共用的 job 模型定义，不得让宿主通道另造一套 | 契约 + 审阅 |
-| `INCUS-R-074` | 非 systemd 发行版上常驻部分必须只做 accept，动作逻辑仍在每请求短命进程中执行；不得改用 setuid 二进制 | 审阅 |
-| `INCUS-R-075` | Web 端发起的任务必须留在服务端执行至结束：调用方断连不得中止执行，只有显式 `cancel` 才停止；重新打开控制台必须能看到进行中的 job 及其状态 | 契约 + e2e |
-| `INCUS-R-076` | 每次调用都必须创建 job 并写入带序号的追加事件日志，支持从任意位置重放；日志超限必须写入显式 `truncated` 事件而不是静默丢弃 | 单元 |
-| `INCUS-R-077` | 取消为协作式；杀进程组后 job 必须标记 `outcome: unknown` 而不是 `cancelled`——动作未确认收敛时不得把未知报成已取消 | 单元 |
-| `INCUS-R-078` | 大块数据不得复用 JSONL 控制流：目的地由动作自己校验并打开；需要经浏览器取回时走一次性 token 的独立下载端点，不得内联 base64 | 契约 + 审阅 |
-| `INCUS-R-079` | `btrfs send` 的已写字节必须精确；总量估算只在能廉价获得时进行（增量用 `find-new`、已开 quota 用 referenced），不得为估算阻塞传输；估算值放独立字段，实际超出时不得钳制 | 单元 |
-| `INCUS-R-080` | `btrfs send` 取消必须清理不完整目的文件，并在确认时明确告知不支持断点续传 | 单元 + e2e |
-| `INCUS-R-081` | 重复触发必须按「是否已有参数相同的同名动作在跑」判定，动作声明 `coalesce`/`reject`/`queue`；不得使用时间窗防抖 | 单元 |
-| `INCUS-R-082` | job 存储必须单一、不按入口分区：控制台能看到 CLI 发起的 job，反之亦然；`list` 只按查看者权限过滤，不按创建者过滤 | 契约 + e2e |
+| `INCUS-R-073` | 宿主特权动作通道要求；由 `HOSTACT-R-007` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 契约 + 审阅 |
+| `INCUS-R-074` | 宿主特权动作通道要求；由 `HOSTACT-R-008` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 审阅 |
+| `INCUS-R-075` | 统一动作 ABI 要求；由 `ACTABI-R-001` 取代——与 Incus 无关（已废弃） | 契约 + e2e |
+| `INCUS-R-076` | 统一动作 ABI 要求；由 `ACTABI-R-002` 取代——与 Incus 无关（已废弃） | 单元 |
+| `INCUS-R-077` | 统一动作 ABI 要求；由 `ACTABI-R-003` 取代——与 Incus 无关（已废弃） | 单元 |
+| `INCUS-R-078` | 统一动作 ABI 要求；由 `ACTABI-R-004` 取代——与 Incus 无关（已废弃） | 契约 + 审阅 |
+| `INCUS-R-079` | 统一动作 ABI 要求；由 `ACTABI-R-005` 取代——与 Incus 无关（已废弃） | 单元 |
+| `INCUS-R-080` | 统一动作 ABI 要求；由 `ACTABI-R-006` 取代——与 Incus 无关（已废弃） | 单元 + e2e |
+| `INCUS-R-081` | 统一动作 ABI 要求；由 `ACTABI-R-007` 取代——与 Incus 无关（已废弃） | 单元 |
+| `INCUS-R-082` | 统一动作 ABI 要求；由 `ACTABI-R-008` 取代——与 Incus 无关（已废弃） | 契约 + e2e |
 | `INCUS-R-083` | 批量数据只走「动作自己打开目的地」一条路径：不得提供经浏览器取回的制品下载端点，也不得在控制流内联 base64。将来开放下载端点前必须一并定案有效期、可否重复使用与是否允许非浏览器客户端，且不得使用 URL 内明文 token | 审阅 + 安全测试 |
 | `INCUS-R-084` | Compose 的 `additional_contexts` 默认值 `../..` 只在源码 checkout 下正确，从 staging 树构建时够不到仓库根；必须提供可用的覆盖路径并在文档中写明，或改由 Runner 发布源码根 | 静态 + 审阅 |
 | `INCUS-R-085` | 「Incus project 没有镜像 allowlist 原生开关」这一判断必须对照 Incus 上游 project 配置参考核实；若存在等价键，镜像约束必须下沉到 project 由 daemon 兜底 | 审阅 |
-| `INCUS-R-089` | 确认 token 有效期 5 分钟且一次性消费；`/run/anas/` 只存 token 摘要与被批准动作的摘要，不存 token 本身 | 单元 + 安全测试 |
-| `INCUS-R-090` | 确认 token 属于动作 ABI 而非 HTTP 层：CLI 与 Web 的 plan/apply 用同一机制，并留下同一对互相引用的 job 记录 | 契约 + 审阅 |
-| `INCUS-R-091` | token 过期后 `apply` 必须重新 plan 并重新展示摘要要求再次确认，不得沿用旧摘要执行；客户端应在用户停留过久时静默换新 token 而不是延长有效期 | 单元 + e2e |
+| `INCUS-R-089` | 宿主特权动作通道要求；由 `HOSTACT-R-009` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 单元 + 安全测试 |
+| `INCUS-R-090` | 宿主特权动作通道要求；由 `HOSTACT-R-010` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 契约 + 审阅 |
+| `INCUS-R-091` | 宿主特权动作通道要求；由 `HOSTACT-R-011` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 单元 + e2e |
 | `INCUS-R-092` | `lease_secret` 必须是独立的一条 Secret Store 条目（32 字节随机），不得并入客户端证书 bundle、也不得由部署级 secret 派生；随租约投影给消费者并标为敏感，resource state 只留引用 | 单元 |
 | `INCUS-R-095` | ingress 的认证方式必须是租约里 apply 时的声明（`auth` 取 `none` 或 `forward_auth`，默认 `none`），不得由运行时逐次发布选择——否则被攻陷的消费者可自行关闭认证 | 契约 + e2e |
 | `INCUS-R-096` | 文档必须在 `auth: none` 旁写明：域名不可预测不是访问控制（SNI 明文、URL 进 Referer 与日志），不得用它发布含敏感数据或带写入能力的服务 | 文档 + 审阅 |
-| `INCUS-R-093` | `idempotency_key` 在 job 到达终态后保留 1 小时，之后同一 key 视为新请求 | 单元 |
+| `INCUS-R-093` | 统一动作 ABI 要求；由 `ACTABI-R-009` 取代——与 Incus 无关（已废弃） | 单元 |
 | `INCUS-R-094` | 发行版自动安装首批只覆盖 Debian 13、Ubuntu 24.04 LTS、Ubuntu 26.04 LTS；其余标记待适配并作为后续计划，未适配时不自动安装且相关功能保持关闭 | 静态 + e2e |
 | `INCUS-R-097` | 资源凭据的 `rotation_mode` 声明位；由 `CRED-R-001`、`CRED-R-002` 取代——这是 Core 的凭据要求，不是 Incus 的（已废弃） | 契约 + 单元 |
 | `INCUS-R-098` | compute 两条凭据的轮换模式；由 `CRED-R-006`、`CRED-R-007` 取代（已废弃） | 契约 + e2e |
+| `INCUS-R-099` | 宿主特权动作通道要求；由 `HOSTACT-R-012` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 审阅 |
+| `INCUS-R-100` | 宿主特权动作通道要求；由 `HOSTACT-R-013` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 契约 + 审阅 |

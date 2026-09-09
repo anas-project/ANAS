@@ -7,6 +7,10 @@ updated: 2026-08-23
 
 # Module 专属命令能力实施计划
 
+> [!IMPORTANT]
+> M1/M2 已实现的 executor 协议与取消语义已被[统一动作 ABI](action-abi.md) 取代。已完成的状态
+> 描述的是旧协议下的实现，迁移工作由那份计划承载，不在本计划范围内。
+
 验收依据是[Module 专属命令能力要求](../requirements/module-command-capability.md)的需求矩阵，现状分析和
 架构决策见[Module 专属命令能力设计](../../docs/architecture/module-command-capability-design.md)。M1/M2 已完成；
 当前下一里程碑是 M3，但受 anasd 认证/job 基础设施约束，M4 受独立 Incus/KVM 宿主约束。

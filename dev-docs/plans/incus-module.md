@@ -14,8 +14,7 @@ updated: 2026-09-01
 本计划把原属 [Forgejo Module 实施计划](../../modules/forgejo/dev-docs/plans/forgejo-module.md) M2 的“Incus compute contract 与
 Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者接入”的部分。
 
-**M0—M5 已完成：Contract 已按围栏语义改形，Provider Module、Core 支持、共享客户端库与 Forgejo
-迁移均已落地。剩余工作是真实宿主验收（阻塞）与 M8 的构建校验、长驻档预留。**
+**已落地和剩余范围以 §1 里程碑表为准。真实宿主验收、共享构建校验以及宿主供给、动作通道、入站和镜像烘焙分别跟踪，不以单元层完成代替端到端验收。**
 
 ## 1. 需求归属与状态
 
@@ -29,25 +28,30 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M5：Forgejo 迁移为 Contract 消费者 | R-026—R-028 | 已完成 |
 | M6：真实 Incus 宿主验收 | R-007、R-008、R-029—R-034 | 阻塞；等待独立 KVM/Incus 宿主 |
 | M7：非特权系统容器 interface | R-035—R-036 | 已完成；单元层，e2e 归 M6 |
-| M8：共享构建校验与长驻实例档预留 | R-038—R-042、R-046、R-084 | 未开始 |
+| M8a：共享构建校验 | R-038 | 已完成；本地校验和缺失配置注入测试通过，CI 已接入 |
+| M8：长驻实例档预留 | R-039—R-042、R-046、R-084 | 未开始 |
 | M9：网络 IPv6 姿态与 image_policy 预留 | R-043—R-045、R-052 | 已完成 |
 | M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047—R-051、R-057、R-094 | 未开始；设计已定 |
 | M14：其余发行版适配 | — | 未开始；待适配清单见[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §2 |
-| M10bis：宿主特权动作通道 | R-058—R-061、R-068、R-069、R-073、R-074、R-089—R-091 | 未开始；设计已定 |
-| M10ter：统一动作 ABI（job、事件重放、取消、数据流） | R-075—R-082、R-093 | 未开始；设计已定 |
 | M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 未开始；下载端点为明确的不做，见[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
 | M11：入站与 Traefik 发布 | R-053、R-054、R-062—R-065、R-070、R-071、R-086—R-088、R-092、R-095、R-096 | 未开始 |
 | M12：`guest_image` 契约与 distrobuilder 烘焙 | R-055、R-066、R-067、R-072、R-085 | 未开始 |
 
-覆盖统计：95 项需求全部有且只有一个里程碑归属（R-056、R-097、R-098 已废弃：镜像改为命名引用；两条凭据要求迁往[凭据轮换](credential-rotation.md)）。
+覆盖统计：75 项需求全部有且只有一个里程碑归属（另有 24 项已废弃）。
+
+废弃分三批，都是**归属地修正**而非取消：R-056 因镜像改为命名引用而不再需要结果通道；
+R-097/R-098 迁往[凭据轮换](credential-rotation.md)；R-058 等 22 项迁往
+[宿主特权动作通道](host-action-channel.md)与[统一动作 ABI](action-abi.md)——它们都是被 Incus 撞
+出来的 Core 要求，没有一条是 Incus 自身的。。
 
 M10—M12 来自「默认可用，高级可替换」这条产品原则（[Core 实现标准](../../docs/architecture/core-implementation-standard.md) §4）：
 现状要求运维先手工装好 Incus 并烘焙镜像，按该原则的判据这等于服务在默认情况下装不上。设计见
 [Incus 宿主供给与镜像烘焙](../../docs/architecture/incus-host-provisioning.md)。
 
-M8 的两半互不相关，只是都属于「已登记但本轮不做」：R-038 是一条 CI 校验（`shared_paths` 的路径
-存在、且 Dockerfile 确实 COPY 了它们），R-039—R-042 是长驻实例档的预留边界，规定第三阶段不得
-靠放宽现有约束来实现。
+M8a 的共享构建门禁已由 `go run ./cmd/check-shared-build` 落地：校验路径存在、Dockerfile
+共享 COPY、Compose 命名上下文和 Module revision 触发路径。本次补齐 Incus 的 Compose
+`additional_contexts.shared`，以及三个消费者的 `internal/computeclient` revision 触发路径。
+M8 的长驻实例档仍未开始，与这条 CI 校验分别验收。
 
 ## 2. M0：Contract 改形（已完成）
 
@@ -95,7 +99,7 @@ runtime 是 `compose_run`，只在 apply 时跑一次，且 ABI 只传 `ANAS_RES
 - [x] `saveResourceReady` 记录租约事实，只存 Secret 引用；
 - [x] `internal/runner/compute_test.go` 覆盖凭据稳定性、消费者隔离、sandbox 冲突与租约校验。
 
-## 6. M4：共享 Incus 客户端库（未开始）
+## 6. M4：共享 Incus 客户端库
 
 实例生命周期的唯一实现，供 Forgejo Actions 与后续 `ai_agent` import。
 
@@ -112,7 +116,7 @@ runtime 是 `compose_run`，只在 apply 时跑一次，且 ABI 只传 `ANAS_RES
 
 验收：要求文档 §7 第 1—5 条。
 
-## 7. M5：Forgejo 迁移（未开始）
+## 7. M5：Forgejo 迁移
 
 - [ ] `actions-controller` 改为读取 `ANAS_COMPUTE_RESOURCE__FORGEJO__*`，删除自有 Incus 客户端；
 - [ ] Forgejo manifest 声明 `contracts.compute` 与 `resources.requires`，删除
@@ -162,17 +166,11 @@ runtime 是 `compose_run`，只在 apply 时跑一次，且 ABI 只传 `ANAS_RES
 | R-055 | 待新增 `test-env/scripts/server-incus-image-bake-e2e.sh` | 首次烘焙与二次 apply 不重建 | — | 待执行 |
 | R-057 | 待新增 `test-env/scripts/server-incus-host-setup-e2e.sh` | Debian 13 / Ubuntu 24.04 / 26.04 三档 | — | 待执行 |
 | R-094 | 待新增 `test-env/scripts/server-incus-host-setup-e2e.sh` | 未适配发行版上保持关闭而非失败 | — | 待执行 |
-| R-060 | 待新增 `test-env/scripts/server-host-action-e2e.sh` | 安装与卸载对称性 | — | 待执行 |
-| R-061 | 待新增 `test-env/scripts/server-host-action-e2e.sh` | CLI 与 Web 同一通道同一审计 | — | 待执行 |
 | R-063 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 实例启停与 Traefik 路由增删同步 | — | 待执行 |
 | R-087 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 消费者无法注册本租约命名空间之外的域名 | — | 待执行 |
 | R-088 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 绕过客户端库直写请求文件仍被拒绝 | — | 待执行 |
 | R-095 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 运行时无法覆盖租约声明的认证方式 | — | 待执行 |
-| R-091 | 待新增 `test-env/scripts/server-host-action-e2e.sh` | token 过期后重新展示而非沿用旧摘要 | — | 待执行 |
 | R-072 | 待新增 `test-env/scripts/server-incus-image-bake-e2e.sh` | prune 保留上一个 deployment 的镜像 | — | 待执行 |
-| R-075 | 待新增 `test-env/scripts/server-action-job-e2e.sh` | 断连后任务继续、重连可见 | — | 待执行 |
-| R-080 | 待新增 `test-env/scripts/server-backup-send-e2e.sh` | 取消后不完整目的文件被清理 | — | 待执行 |
-| R-082 | 待新增 `test-env/scripts/server-action-job-e2e.sh` | CLI 发起的 job 在控制台可见 | — | 待执行 |
 
 ## 11. 文档同步
 

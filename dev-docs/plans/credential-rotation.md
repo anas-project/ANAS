@@ -21,12 +21,12 @@ updated: 2026-09-04
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
 | M0：表述修正与差异记录 | R-008、R-009、R-013 | 未开始 |
-| M1：资源凭据声明位与两侧契约 | R-001—R-005 | 未开始 |
-| M2：compute 两条凭据按各自模式接入 | R-006、R-007 | 未开始 |
+| M1：资源凭据声明位与两侧契约 | R-001—R-005、R-016—R-018 | 未开始 |
+| M2：compute 客户端证书接入 + `lease_secret` 专属命令 | R-006、R-007、R-015 | 未开始 |
 | M3：跨类清单与轮换时效 | R-010、R-011 | 未开始 |
-| M4：PostgreSQL 认证基线处置 | R-012、R-014 | 未开始；需先定 (a)/(b) |
+| M4：PostgreSQL 认证基线修正 | R-012、R-014 | 未开始；已定走 (a) |
 
-覆盖统计：14 项需求全部有且只有一个里程碑归属。
+覆盖统计：18 项需求全部有且只有一个里程碑归属。
 
 ## 2. M0：表述修正（低风险，先做）
 
@@ -41,8 +41,9 @@ updated: 2026-09-04
 ## 3. M1：资源凭据的声明位与两侧契约
 
 - `spec.credential` 增加 `rotation_mode`，复用既有四档的校验；
-- 定义**两侧**生命周期：provider 侧 reconcile、consumer 侧 verify。这是与 `credentials.provides`
-  单侧 owner 契约的实质差别，不能复用；
+- 定义**两侧**生命周期。provider 侧 reconcile 之后必须用新凭据**实际登录一次**——`ALTER ROLE`
+  没报错只证明 SQL 执行了。consumer 侧默认取「以新投影重新激活后 healthcheck 通过」，不强制每个
+  消费者写 verify 处理器；重新激活在提交之前发生，证据来得及用；
 - 补齐“生成新值”的触发——今天 `secrets.Ensure` 见到已有值即返回；
 - 在两侧契约可用之前，库存继续把资源凭据报告为 `unsupported`。
 
@@ -53,7 +54,7 @@ updated: 2026-09-04
 | 凭据 | 模式 | 验收要点 |
 | --- | --- | --- |
 | 客户端证书 | `overlap` | 轮换期间运行中实例不被杀掉 |
-| `lease_secret` | `migrate` | 不进入 `--all` 批量；轮换需显式确认 |
+| `lease_secret` | **专属命令** | 它不是凭据——轮换改变的是已发布 URL 而非认证材料。不进凭据通道、不被 `--all` 选中 |
 
 ## 5. M3：跨类清单
 
@@ -62,7 +63,8 @@ updated: 2026-09-04
 
 ## 6. M4：PostgreSQL 认证基线
 
-先在 (a) 改口令认证基线 / (b) 标为 `unsupported` 之间定案并记录理由，再实施。选 (a) 时必须验证
+已定走 (a)：`postgres.password` 由 ANAS 生成而非用户指定，因此必须与其他生成凭据同标准——可单独
+轮换、也可随 `--all` 轮换。这使修正 `trust` 基线成为**前置条件**而不是备选项。必须验证改基线后
 既有部署仍能启动，且 provider 的资源账号创建路径不受影响。
 
 ## 7. CI 门禁
@@ -79,9 +81,10 @@ updated: 2026-09-04
 | R-006 | 待新增 `test-env/scripts/server-resource-credential-rotation-e2e.sh` | compute 租约 + 运行中实例 | — | 待执行 |
 | R-010 | 待新增 `test-env/scripts/server-credential-inventory-e2e.sh` | 五类凭据齐备的部署 | — | 待执行 |
 | R-012 | 待新增 `test-env/scripts/server-postgres-auth-baseline-e2e.sh` | 既有部署升级 | — | 待执行 |
+| R-016 | 待新增 `test-env/scripts/server-resource-credential-rotation-e2e.sh` | 登录测试挡住「ALTER 成功但连不上」 | — | 待执行 |
+| R-018 | 待新增 `test-env/scripts/server-resource-credential-rotation-e2e.sh` | 消费者未拿到新值时 healthcheck 失败并回滚 | — | 待执行 |
 | R-014 | 待新增 `test-env/scripts/server-postgres-auth-baseline-e2e.sh` | 改基线后的启动与资源账号创建 | — | 待执行 |
 
 ## 9. 待决
 
-- PostgreSQL 认证基线选 (a) 还是 (b)；
 - 两侧生命周期契约中 consumer 侧 verify 的调用时机（激活屏障之前还是之后）。

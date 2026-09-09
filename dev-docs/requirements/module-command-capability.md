@@ -7,6 +7,14 @@ updated: 2026-08-23
 
 # Module 专属命令能力要求
 
+> [!IMPORTANT]
+> **executor 协议与取消语义已被[统一动作 ABI 要求](action-abi.md)取代。** 本文的 manifest 声明
+> 模型、descriptor 冻结、锁冲突表与发现路径**仍然有效**；被取代的只是「一次调用 = 一次前台执行」
+> 那套线格式与取消语义——新模型下每次调用创建 job，执行不绑在连接上。
+>
+> M1/M2 已实现的代码按旧协议工作，迁移时需一并处理。在迁移完成前，本文相关条目描述的是**当前
+> 实现**，不是目标状态。
+
 本文规定 Module 发布管理员可调用命令时的声明、发现、执行、安全和适配器边界。现状分析与设计理由见
 [Module 专属命令能力设计](../../docs/architecture/module-command-capability-design.md)，实施顺序见
 [Module 专属命令能力实施计划](../plans/module-command-capability.md)。本文的需求矩阵是验收规范来源。

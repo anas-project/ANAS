@@ -518,7 +518,12 @@ Provider 在解析 `anas:` 名字后，仍然把它归一成真实 fingerprint �
 
 ## 7. 待决
 
-- 随机域名派生用的 `lease_secret` 的轮换入口（与客户端证书分开轮换意味着多一条轮换路径）。
+`lease_secret` 的轮换入口已定：**专属命令，不走凭据轮换通道**。理由是它不是凭据——轮换它改变的
+是已发布的域名，不是认证材料；把它和数据库口令放进同一个 `--all` 批量，是含义不同的东西被归成
+一类。要求见[凭据轮换要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/credential-rotation.md) `CRED-R-007`、
+`CRED-R-015`。
+
+本文暂无其他待决项。
 
 §2 标记为「待适配」的发行版**不是待决，是排期**：先把一级三个做完，其余作为后续计划，届时再
 对照上游打包逐条核实。未适配时的行为已经定了——不自动安装、报错给手工指引、依赖 `compute` 的

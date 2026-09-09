@@ -10,6 +10,17 @@ Module，都必须订阅 Samba 发布的持久目录事件，不能只等待定�
 传播时间内收敛；保存目录副本的消费者还必须保留周期 LDAP 全量同步兜底。完整可靠性、安全和 E2E
 要求见[Samba 目录事件订阅与实时同步要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)。
 
+收敛不止于“下一次登录会用新状态”。事件影响用户准入时——账号停用或删除、改名、身份锚点变化、
+直接或递归组变更导致不再满足 `ALLOW_GROUPS` 等登录条件——消费者必须在同一最大传播时间内使该
+用户**已经建立的应用会话**失效，不能等待会话 TTL 或下一次登录失败。IAM Provider 把这类事件转成
+对应 Consumer 的标准登出通知，自持会话的 LDAP Module 自行终止本地会话，撤销范围只限受影响用户。
+
+上游同时支持 LDAP 用户同步和 OIDC/SAML 登录的应用必须**双接入**：LDAP/LDAPS 负责目录 provision
+与属性，OIDC/SAML 负责登录与会话。两侧义务同时成立，“已接 OIDC”不免除事件订阅，“已接 LDAP”
+也不免除会话撤销。下表中 `nextcloud` 与 `meshcentral` 已是双接入；`forgejo`、`vikunja` 当前仅接 OIDC，
+上游 LDAP 支持情况待 M0 盘点确认。准入丧失撤销当前无消费者验收：`casdoor` 的 exact-`sid` E2E 由
+管理员显式删 session 触发，不是目录事件驱动。
+
 | Module | 是否可用 OIDC 登录 | 当前认证路径 | 结论 |
 | --- | --- | --- | --- |
 | `netbird` | 是 | 直接消费 IAM/OIDC | 已实现 |

@@ -86,6 +86,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Contract 文档规范', link: '/developer/contract-documentation' },
         { text: 'Module 升级 SOP', link: '/developer/module-upgrade-sop' },
         { text: 'Module 升级检查表', link: '/developer/module-upgrade-checklist' },
+        { text: '与 Forgejo 互操作的原则', link: '/developer/forgejo-interop' },
         { text: '测试', link: '/developer/testing' },
         { text: '镜像发布', link: '/developer/release' },
         { text: '中国大陆构建与发行', link: '/developer/china-mainland-build-and-distribution' },

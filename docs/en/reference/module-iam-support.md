@@ -2,6 +2,34 @@
 
 OIDC is the current ANAS default IAM integration protocol, but it applies only to modules that consume the `iam` capability and declare OIDC support. Modules without OIDC are never forced outside their manifests; they fall back to a supported protocol or retain their own authentication mechanism.
 
+## Samba directory event subscription
+
+Every IAM provider, and every module that reads Samba users, groups, account state, or directory
+attributes directly over LDAP/LDAPS, must subscribe to the persistent directory event journal Samba
+publishes; waiting for a periodic sync or for the next login is not sufficient. Each consumer filters
+`Add`, `Modify`, and `Delete` for the attributes it actually uses and converges within its declared
+maximum propagation time through incremental refresh, cache invalidation, or a controlled source
+sync. Consumers that keep a directory copy must also retain a periodic full LDAP sync as the
+consistency fallback. The full reliability, security, and E2E requirements live in
+[Samba directory event subscription and real-time synchronization requirements](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md).
+
+Convergence does not stop at "the next login will use the new state". When an event changes user
+admission — account disable or deletion, rename, identity-anchor change, or a direct or nested group
+change that drops the user out of `ALLOW_GROUPS` or an equivalent login condition — the consumer
+must also invalidate that user's **already established application session** within the same maximum
+propagation time, rather than waiting for the session TTL or for the next login to fail. IAM providers
+translate such events into the standard logout notification for the affected consumers; LDAP modules
+that own their session terminate it locally. Revocation is scoped to the affected user only.
+
+An application whose upstream supports both LDAP user synchronization and OIDC/SAML login must be
+attached through **both**: LDAP/LDAPS for directory provisioning and attributes, OIDC/SAML for login
+and session. Both sets of obligations apply at once — "already on OIDC" does not waive event
+subscription, and "already on LDAP" does not waive session revocation. In the table below `nextcloud`
+and `meshcentral` are already dual-attached; `forgejo` and `vikunja` currently use OIDC only, and their
+upstream LDAP support is pending the M0 inventory. Admission-loss revocation has no consumer
+acceptance yet: the `casdoor` exact-`sid` E2E is triggered by an administrator explicitly deleting a
+session, not by a directory event.
+
 | Module | OIDC login | Current authentication path | Status |
 | --- | --- | --- | --- |
 | `netbird` | Yes | Direct IAM/OIDC consumer | Implemented |

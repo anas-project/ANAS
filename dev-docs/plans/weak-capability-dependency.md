@@ -10,7 +10,7 @@ updated: 2026-08-28
 验收依据是[无序 Capability 依赖要求](../requirements/weak-capability-dependency.md)的需求矩阵。没有独立
 架构文档——它扩展的是既有 Capability 解析路径，不引入新的运行时边界。
 
-M0、M1、M2 全部完成，只剩 R-012 的 e2e 待在真实主机上执行。
+M0—M2 的代码与本地验证完成；M3 的 R-012 真实主机验收尚未执行。
 [条件 Capability 依赖](conditional-capability-dependency.md)的 M2 阻塞已解除。
 
 ## 1. 里程碑
@@ -19,7 +19,8 @@ M0、M1、M2 全部完成，只剩 R-012 的 e2e 待在真实主机上执行。
 | --- | --- | --- |
 | M0：Manifest 字段与解析器 | R-001—R-005、R-008—R-009 | 已完成 |
 | M1：calculate 环境隔离 | R-006—R-007、R-010、R-014—R-015 | 已完成 |
-| M2：解除 Adminer 阻塞 | R-011—R-013 | 已完成 |
+| M2：解除 Adminer 阻塞 | R-011、R-013 | 已完成 |
+| M3：真实主机访问隔离验收 | R-012 | 未开始 |
 
 ## 2. M0 检查表
 
@@ -81,7 +82,7 @@ M0、M1、M2 全部完成，只剩 R-012 的 e2e 待在真实主机上执行。
 - [x] `TestBundledAdminerResolvesOnASingleDatabase` 对真实 manifest 固定住回归：开时解析成功、
       `oauth2_proxy` 与 `llng` 都在 order 里、绑定记录完整、且 postgres 的 calculate 看不到网关的键；
       关时不引入 Provider（R-011、R-013）。
-- [x] 条件依赖计划的 M2 改为完成，R-018/R-019 的暂缓标记已去掉。
+- [x] 条件依赖的代码接线完成；R-018/R-019 的真实宿主验收仍在对应计划跟踪。
 - [x] **实际 render 产物验证通过**（不需要 Docker daemon，`docker compose config` 只做解析与插值）：
       在原先成环的拓扑（单 postgres + llng + `adminer_enabled=true`）上 `anas render` 成功，模块集合为
       `lego llng oauth2_proxy postgres samba_dc traefik`；`modules/postgres/.env` 里

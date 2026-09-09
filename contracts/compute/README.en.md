@@ -39,6 +39,7 @@ Provisions a fenced isolation sandbox lease at apply time (project, quota, image
 | --- | --- | --- | --- | --- |
 | provider | `incus` | `1.0.0` | `incus_vm` | `providers/compute/incus_vm.yml` |
 | provider | `incus` | `1.0.0` | `incus_container` | `providers/compute/incus_container.yml` |
+| consumer | `ai_agent` | `>=1.0.0 <2.0.0` | `incus_container`, `incus_vm` | - |
 | consumer | `forgejo` | `>=1.0.0 <2.0.0` | `incus_container`, `incus_vm` | - |
 <!-- generated:contract-reference:end -->
 See the [technical documentation](docs/technical.en.md) for lifecycle and security boundaries.

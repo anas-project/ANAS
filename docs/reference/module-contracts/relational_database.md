@@ -57,6 +57,7 @@ Provider operation、Secret 边界、Schema 展开和文档生成流程见[技�
 | --- | --- | --- | --- | --- |
 | provider | `mariadb` | `1.0.0` | `mariadb` | `providers/relational_database/provider.yml` |
 | provider | `postgres` | `1.0.0` | `postgres` | `providers/relational_database/provider.yml` |
+| consumer | `ai_agent` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `authentik` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `casdoor` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `forgejo` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |

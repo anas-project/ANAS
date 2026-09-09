@@ -11,7 +11,7 @@ updated: 2026-08-28
 本主题没有独立架构文档——它扩展的是既有 Capability 解析路径，不引入新的运行时边界；与应用目录角色
 模型的关系写在[应用目录设计](../../docs/architecture/app-catalog-design.md) §4.1。
 
-M0、M1、M2 全部完成。M2 曾被一个结构性依赖环阻塞（`oauth2_proxy` 需要 IAM，IAM 需要数据库，而那正是
+M0、M1 完成；M2 代码接线完成，真实 Docker/IAM 验收待执行。M2 曾被一个结构性依赖环阻塞（`oauth2_proxy` 需要 IAM，IAM 需要数据库，而那正是
 要守卫其 Adminer 的 Module），由[无序 Capability 依赖](weak-capability-dependency.md)解除。
 M1 的结论是 `adminer_enabled`
 **沿用现有的 `container_recreate`**，不新增 effect 取值——理由见要求文档 §6，R-013 与 R-014 已据此改写。
@@ -22,7 +22,7 @@ M1 的结论是 `adminer_enabled`
 | --- | --- | --- |
 | M0：Manifest 字段与解析器 | R-001—R-011、R-016—R-017 | 已完成 |
 | M1：输出、锁与变更分类 | R-012—R-015 | 已完成 |
-| M2：Adminer 成为第一个消费者 | R-018—R-019 | 已完成 |
+| M2：Adminer 成为第一个消费者 | R-018—R-019 | 实施中；真实宿主验收待执行 |
 
 ## 2. M0 检查表
 
@@ -108,9 +108,6 @@ R-018 的关键是**关**的那一组：必须确认 `adminer_enabled=false` 的
 
 ## 6. 当前阻塞
 
-- **M2 等一个设计决策**，三选一，均超出本特性范围（要求文档 §8 有完整分析）：A 去掉 Adminer 的公网
-  路由；B 给基础设施控制台用一道不依赖 IAM 的门；C 引入「存在性强制、不参与排序」的弱依赖。
-  C 最通用**也最便宜**：Runner 的 calculate 与 render 本来就是两趟，渲染读的是已填满的 `a.env`，
-  所以弱依赖只放弃 calculate 的先后，Adminer 的 Compose label 不受影响。
+- 设计阻塞已由无序依赖解除，当前没有待选设计决策。
 - e2e 需要可用的真实 Docker 主机与一套可登录的 IAM；本轮 Docker daemon 未运行，
   `docker compose config --quiet` 未执行。

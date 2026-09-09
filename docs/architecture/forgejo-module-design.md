@@ -56,6 +56,19 @@ API/CLI；当前固定版没有本 Module 可声明的 SAML source。
 未来升级只有在固定上游版本同时提供 LDAP immutable UUID 和受支持的 OIDC/SAML existing-user linking
 接口后，才重新发起设计评审。
 
+> **2026-08-30：该结论已被重新开启，尚未改写。** 决定改为 **LDAP 同步用户与组 + OIDC 负责登录**
+> 的双源形态，动机是让 Forgejo 保有目录副本从而落入[目录事件订阅要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)
+> 的范围，把组变更的生效时间从"下次登录"压到秒级——这是
+> [AI Agent 编排设计](ai-agent-orchestration-design.md) §6.2 依赖的能力。
+>
+> 本节与 `FORGEJO-R-006`（不得配置 LDAP source、目录用户/组同步与 LDAP/OIDC 自动账号合并）因此都
+> 需要修订，**但修订的前置是先回答本节原本提出的绑定问题**：Forgejo 通过
+> `[oauth2_client] ACCOUNT_LINKING` 决定 OIDC 登录如何绑到既有 LDAP 用户——`disabled` 报错、
+> `login` 要求用户登录既有账号完成一次性绑定、`auto` 按用户名或邮箱自动绑定（上游文档自己标注了
+> 风险）。原结论反对的正是 `auto` 这种非锚点绑定；`login` 是否满足 §2.1 的双链路门禁，需要单独判断
+> 并在真实 LLNG/Authentik 上验证改名、停用与冲突场景。**在做出选择并改写本节与 `FORGEJO-R-006`
+> 之前，Module 保持现状（OIDC-only、`ACCOUNT_LINKING=disabled`），不要按双源形态实现。**
+
 ## 3. Actions 授权模型
 
 Actions server 与 Runner 是同一个产品功能。管理员只应看到一个 ANAS 功能开关：
