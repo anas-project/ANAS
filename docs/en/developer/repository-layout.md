@@ -2,7 +2,7 @@
 
 ```text
 cmd/anas/             CLI entry point
-cmd/anasd/            Web API daemon entry point (M1A management channel and local-auth foundation)
+cmd/anasd/            Web API daemon entry point (authentication, durable jobs, configuration and deployment maintenance)
 internal/             internal Go implementation, platform adapters, and tests
 internal/application/ typed use cases shared by CLI and HTTP
 internal/deployment/  read-only deployment state model and store
@@ -32,3 +32,8 @@ removed. A topic must not exist in both locations. See the
 [documentation standard](/en/developer/documentation-standard) §1.
 
 A module normally owns `module.yml`, `docker-compose.yml`, an optional Go hook, build contexts, templates, and runtime assets. Cross-module semantics belong in contracts or resources rather than private file access. The CLI and HTTP adapters share application use cases while retaining separate `anas.dev/cli/v1` and `anas.dev/api/v1` external contracts.
+
+Shared image dependencies use a named `shared` build context. Keep image `shared_paths`,
+Dockerfile `COPY --from=shared`, Compose `additional_contexts.shared`, and Module revision
+`shared_contexts` in sync. CI runs `go run ./cmd/check-shared-build` to check all four,
+including path existence. The Compose context is `${ANAS_SHARED_BUILD_CONTEXT:-../..}`.

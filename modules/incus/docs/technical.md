@@ -167,3 +167,5 @@ Hook 只实现 `calculate`：派生 `INCUS_NETWORK_NAME`，并在四项凭据不
 > [!NOTE]
 > 「Incus project 没有镜像 allowlist 原生开关」这一判断尚未对照 Incus 7.3 的 project 配置参考核实。
 > 若上游存在等价键，应把这条约束下沉到 project，本表随之更新。
+
+共享构建使用 `additional_contexts.shared`，默认仓库根 `../..`，可通过 `ANAS_SHARED_BUILD_CONTEXT` 覆盖。CI 的 `check-shared-build` 校验 Dockerfile COPY、路径存在与 revision 触发配置。

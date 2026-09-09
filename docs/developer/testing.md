@@ -138,3 +138,13 @@ npm run docs:build
 ```
 
 生产构建会检查 Markdown 编译和站内链接。任何文档路径迁移都应在同一提交中修复链接。
+
+## 项目审查回归入口
+
+常规 PR/master CI 的 web job 执行 `npm ci`、`check:api`、`typecheck`、`test` 及主界面/应急界面构建。
+`check:api` 将 OpenAPI 类型生成到临时目录后比较，不重写已提交文件，也不依赖整个工作树干净。
+`go run ./cmd/check-shared-build` 校验共享镜像依赖的声明一致性。
+
+`go test ./internal/runner ./internal/jobexecutor ./internal/compose ./internal/deploymentaudit ./modules/lego/hook`
+覆盖恢复失败阻塞队列、ownership/Compose 端点一致性、首因持久化先于恢复、摘要/quiet 边界与审计拒绝。
+这些 fake 子进程及本地文件测试不能代替真实 Docker/Incus/IAM 宿主验收。

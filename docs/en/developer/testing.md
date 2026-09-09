@@ -78,3 +78,15 @@ npm run docs:build
 ```
 
 The production build validates Markdown compilation and internal links.
+
+## Project review regression checks
+
+The regular PR/master web CI job runs `npm ci`, `check:api`, `typecheck`, `test`, and builds both the main
+and emergency interfaces. `check:api` generates OpenAPI types into a temporary directory and compares
+only the target file; it neither rewrites tracked types nor requires a clean working tree.
+`go run ./cmd/check-shared-build` checks shared image dependency declarations.
+
+`go test ./internal/runner ./internal/jobexecutor ./internal/compose ./internal/deploymentaudit ./modules/lego/hook`
+covers recovery failures blocking the queue, ownership/Compose endpoint consistency, durable primary
+failures before recovery, diagnostic/quiet boundaries, and audit rejection. These fake-process and local
+filesystem checks do not replace acceptance on real Docker/Incus/IAM hosts.

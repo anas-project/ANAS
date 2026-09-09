@@ -6,6 +6,8 @@ services:
     image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r1
     build:
       context: ./provisioner
+      additional_contexts:
+        shared: ${ANAS_SHARED_BUILD_CONTEXT:-../..}
       dockerfile: Dockerfile
     restart: "no"
     env_file:

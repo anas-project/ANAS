@@ -3,7 +3,7 @@
     "module": "ai_agent",
     "repository": "anas-module-ai-agent",
     "platforms": ["linux/amd64", "linux/arm64"],
-    "shared_contexts": ["go.mod", "go.sum", "internal/localization", "contracts"]
+    "shared_contexts": ["go.mod", "go.sum", "internal/localization", "contracts", "internal/computeclient"]
   },
   {
     "module": "authentik",
@@ -45,7 +45,7 @@
     "module": "forgejo",
     "repository": "anas-module-forgejo",
     "platforms": ["linux/amd64", "linux/arm64"],
-    "shared_contexts": ["go.mod", "go.sum", "internal/localization", "contracts"]
+    "shared_contexts": ["go.mod", "go.sum", "internal/localization", "contracts", "internal/computeclient"]
   },
   {
     "module": "freeradius",
@@ -57,7 +57,7 @@
     "module": "incus",
     "repository": "anas-module-incus",
     "platforms": ["linux/amd64", "linux/arm64"],
-    "shared_contexts": ["go.mod", "go.sum", "contracts"]
+    "shared_contexts": ["go.mod", "go.sum", "contracts", "internal/computeclient"]
   },
   {
     "module": "lam",

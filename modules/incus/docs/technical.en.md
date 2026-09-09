@@ -189,3 +189,5 @@ quotaed, device-less** project, so every other constraint still bounds the blast
 > The claim that an Incus project has no native image-allowlist key has not been checked against the
 > Incus 7.3 project configuration reference. If an equivalent key exists upstream, this constraint
 > should move onto the project and this table should be updated.
+
+Shared builds use `additional_contexts.shared`, defaulting to the repository root `../..`, with an `ANAS_SHARED_BUILD_CONTEXT` override. The CI `check-shared-build` command checks Dockerfile COPY paths, path existence, and revision triggers.

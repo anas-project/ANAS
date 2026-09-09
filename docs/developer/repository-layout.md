@@ -2,7 +2,7 @@
 
 ```text
 cmd/anas/             CLI 入口
-cmd/anasd/            Web API 守护进程入口（M1A 管理通道与本地认证底座）
+cmd/anasd/            Web API 守护进程入口（认证、持久任务、配置与部署维护）
 internal/             Go 内部实现、平台适配与测试
 internal/application/ CLI 与 HTTP 共享的类型化用例
 internal/deployment/  只读部署状态模型与存储
@@ -89,9 +89,9 @@ Compose 的 `build:` 走另一条路径（本地 `apply --build`），用 `addit
         shared: ${ANAS_SHARED_BUILD_CONTEXT:-../..}
 ```
 
-三处仍需手工保持一致，加共享包时必须一起改：
+这些配置仍由人维护，加共享包时必须一起改：
 
 1. `shared_paths` 只影响 CI 的重建判断，**不会**自动生成 Dockerfile 的 COPY；
 2. Compose 里 `../..` 的默认值绑死了 `modules/<name>/` 这一层嵌套深度；
-3. 目前没有校验确认 `shared_paths` 的路径存在、且 Dockerfile 确实 COPY 了它们。写错一个路径的
-   后果是「改了共享库却不重建镜像」——一个安静的失败。补这条校验已登记为待开发项。
+3. `go run ./cmd/check-shared-build` 在 CI 校验路径存在、共享 COPY、Compose 命名上下文和
+   Module revision 触发路径；新增共享依赖须同步这四处配置。
