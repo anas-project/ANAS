@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { planStatus, planStates, renderIndex, missingRows, staleRows } from './plan-status-lib.mjs'
+import { planStatus, planStates, renderIndex, missingRows, staleRows, indexLocationErrors } from './plan-status-lib.mjs'
 
 const plan = (status) => `---\ndoc_type: plan\nstatus: ${status}\ncreated: 2026-08-16\nupdated: 2026-08-28\n---\n\n# Plan\n\n> 状态：给人读的细节写在这里。\n`
 
@@ -62,3 +62,9 @@ assert.deepEqual(staleRows(index, ['alpha.md', 'beta.md', 'gamma.md']), [])
 assert.deepEqual(staleRows(index, ['alpha.md', 'beta.md']), ['gamma.md'])
 
 console.log('plan status tests passed')
+
+const locations = new Map([['alpha.md','alpha.md'],['beta.md','beta.md'],['gamma.md','archived/gamma.md']])
+assert.deepEqual(indexLocationErrors(index,locations),[])
+assert.ok(indexLocationErrors(index.replace('archived/gamma.md','gamma.md'),locations).length)
+assert.ok(indexLocationErrors(index.replace('alpha.md','archived/alpha.md'),locations).length)
+assert.ok(indexLocationErrors(index+'\n| [Alpha](alpha.md) | a | 提案 |\n',locations).length)

@@ -1,39 +1,47 @@
 # Repository instructions
 
-- Create and deliver all research reports under `docs/research/` as Markdown (`.md`).
-- Do not create DOCX, PDF, or other report formats unless the user explicitly requests them.
+## Scope and execution
 
-## Workflow agreements
+- Execute clear implementation requests directly. Resolve routine, reversible
+  implementation details using repository conventions. Ask only when missing
+  information materially changes scope, product behavior, or external effects;
+  complete independent authorized work first.
+- For review or proposal requests, deliver findings and recommendations without
+  applying implementation changes unless requested.
+- Preserve unrelated working-tree changes. When the user explicitly requests
+  "git 提交", commit this task's changes and merge its working branch into master.
+  If the branch includes unrelated work, explain the scope conflict first.
+- Prefer existing repository abstractions. Explain any new dependency.
 
-- Execute clear, explicit implementation instructions directly without asking for confirmation. Present the proposed approach and obtain the user's confirmation only when the approach, requirements, or trade-offs are uncertain or require a material user decision; ask instead of making a material assumption.
-- When the user explicitly asks for a "git 提交", commit the requested changes and then merge the working branch into `master`. Before finishing, review the current conversation for discussed or agreed implementation items that remain incomplete, and clearly remind the user about them.
-- At the end of every response, include a concise "下一步" section that tells the user what to do next. If no user action is required, explicitly state that no further action is needed.
+## Requirements and documentation
 
-## Response style
+- Deliver research reports under docs/research/ as Markdown unless another
+  format is explicitly requested. Put repository reviews and dated assessments
+  under dev-docs/reviews/ using YYYY-MM-DD-topic.md filenames.
+- Read dev-docs/requirements/index.md and dev-docs/plans/index.md before opening
+  documents under them. Follow the relevant topic plan for implementation;
+  acceptance criteria belong to the paired requirement matrix with stable IDs.
+- Keep milestone checklists and blockers current. After changing requirements,
+  milestone status, or document membership, regenerate the affected indexes with
+  npm run docs:requirement-status and npm run docs:plan-status.
+  Validate with docs:check-requirements, docs:check-requirement-status,
+  and docs:check-plan-status as applicable.
+- Changes to modules/, cmd/, internal/, or web/ that affect behavior must update
+  the relevant documentation in the same change. Follow the documentation
+  standard for source generation and bilingual pages; edit generator inputs,
+  not generated mirrors.
 
-- Default to concise, direct responses. Lead with the outcome or answer.
-- For ordinary questions, use no more than 3–6 sentences or 5 bullets unless additional detail is necessary to complete the task safely and correctly.
-- Preserve required facts, decisions, material caveats, verification results, and next actions. Omit repeated context, generic reassurance, unnecessary introductions, and optional background first.
-- Use headings, tables, and long explanations only when they materially improve comprehension or the user requests them.
+## Verification and review
 
-- Implementation work is driven by `dev-docs/plans/<topic>.md`: it names the current milestone, the
-  verification commands, and what is blocked. Acceptance criteria are not in the plan — they live in
-  the paired `dev-docs/requirements/<topic>.md` requirement matrix and are addressed by stable IDs.
-  Keep the plan's checklist current as you work; `npm run docs:check-requirements` gates consistency.
-- Read `dev-docs/requirements/index.md` and `dev-docs/plans/index.md` before opening any document
-  under them. Both have a generated status column, so one screen tells you which documents are live
-  and which are finished; `dev-docs/plans/archived/` holds plans whose milestones are all done.
-- The status column of `dev-docs/requirements/index.md` is generated, not written: after changing a
-  requirement matrix, a milestone status, or the set of requirement/plan documents, run
-  `npm run docs:requirement-status`. `npm run docs:check-requirement-status` gates it in CI.
-  The plan index works the same way: `npm run docs:plan-status` regenerates it from each plan's
-  frontmatter `status` (`proposed` / `implementing` / `partial` / `done`), gated by
-  `npm run docs:check-plan-status`.
+- Run relevant tests and required repository gates. Once they pass, repeat or
+  broaden validation only when changes, failures, or unresolved risks justify it.
+- Verify old review findings against current call paths. Distinguish observed
+  defects, design debt, and unverified hypotheses. Report checks that failed or
+  were not run; do not infer real-host acceptance from unit tests.
+- Keep research and proposed architecture separate from implemented behavior.
 
-## Code reuse and dependencies
+## Responses
 
-- Prefer reusing existing code and abstractions in the repository. When no suitable implementation exists, prefer a mature, actively maintained library over a custom implementation; explain the choice when introducing a new dependency.
-
-## Documentation synchronization
-
-- When changing functionality in `module` or `anas`, update the corresponding documentation sections in the same change so that the documentation remains consistent with the implementation.
+- Default to concise Chinese answers, leading with the result. Include material
+  findings, verification limits, and outstanding agreed work.
+- End final responses with a concise "下一步"; if no action is needed, say so.

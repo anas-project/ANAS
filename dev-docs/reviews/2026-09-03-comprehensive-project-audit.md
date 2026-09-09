@@ -137,7 +137,7 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
 - **定位**：
   - `dev-docs/plans/index.md:41`
-  - `dev-docs/plans/ai-agent.md`
+  - `dev-docs/plans/ai-agent.md`（2026-08-30 已迁至 `modules/ai_agent/dev-docs/plans/ai-agent.md`；本快照保留当时路径）
 - **现状**：
   - `ai-agent.md` 是一个处于提案状态的活跃实施计划（frontmatter 为 `status: proposed`，配套需求矩阵 `dev-docs/requirements/ai-agent.md` 已在要求索引中正确列为活跃矩阵）。
   - 但在 `dev-docs/plans/index.md` 中，该计划被写在 `## 已归档` 小节下的表格中，且占用了「结论去向」列填写需求范围。
@@ -281,3 +281,11 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 与 2026-08-23 报告对比，本报告明确指出：
 - **`anasd` 角色发生本质变化**：从前期的“纯只读 HTTP API”正式演变为“具备持久写操作与任务调度的控制面守护进程”。因此，此前作为延后项处理的子进程 context 传播与取消控制，在本次审计中正式升级为必须整改的 P1 问题。
 - **模块数量**：由 22 个增至 23 个（新增 `incus` 作为 `compute` contract 的 provider）。
+
+## 2026-09-09 状态更新
+
+以下为后续复核与整改记录，不改写上述历史审查：当前 OpenAPI 类型一致；`CheckCompensation` 原本有恢复
+副作用，缺陷是恢复失败未返回，现已修复并验证失败保留任务阻塞标记。前端 PR/master CI、共享构建一致性
+门禁、lego 与 deploymentaudit 直接行为测试已补齐。Vikunja 按既有完整验收记录归档；条件/无序依赖仍缺
+真实宿主验收，已修正过度完成的里程碑。Compose 完整端点生命周期与应用层迁移仍由原计划跟踪。
+详见[本轮整改记录](2026-09-09-project-quality-hardening-implementation.md)。

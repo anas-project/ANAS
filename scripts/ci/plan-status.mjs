@@ -6,7 +6,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { planStatus, planStates, renderIndex, missingRows, staleRows } from './plan-status-lib.mjs'
+import { planStatus, planStates, renderIndex, missingRows, staleRows, indexLocationErrors } from './plan-status-lib.mjs'
 import { requirementScopes, repositoryScopeLabel, archivedPlansDirName } from './requirement-docs-lib.mjs'
 
 const scope = requirementScopes().find((candidate) => candidate.label === repositoryScopeLabel)
@@ -21,6 +21,7 @@ const rows = new Map()
 // whether the file is there; reporting a row as stale because its status was
 // rejected would bury the real error under a wrong one.
 const present = new Set()
+const locations = new Map()
 const errors = []
 
 // Archived plans keep their row in the index. Dropping them would answer "where
@@ -37,6 +38,7 @@ for (const { dir, archived } of sources) {
 
     const path = join(dir, name)
     present.add(name)
+    locations.set(name, archived ? `archived/${name}` : name)
     const status = planStatus(readFileSync(path, 'utf8'))
     if (status.kind === 'no-frontmatter' || status.kind === 'no-status') {
       errors.push(`${path}: 缺少 frontmatter 的 status 字段；取值为 ${planStates.join(' / ')} 之一`)
@@ -63,6 +65,7 @@ for (const { dir, archived } of sources) {
 }
 
 const current = readFileSync(indexPath, 'utf8')
+errors.push(...indexLocationErrors(current, locations))
 for (const name of missingRows(current, rows.keys())) {
   errors.push(`${indexPath}: 缺少 ${name} 的条目；生成器只填状态列，条目的标题和范围要人写`)
 }

@@ -1,13 +1,13 @@
 ---
 doc_type: plan
-status: implementing
+status: done
 created: 2026-08-23
-updated: 2026-08-25
+updated: 2026-09-09
 ---
 
 # Vikunja Module 实施计划
 
-验收依据是[Vikunja Module 集成要求](../requirements/vikunja-module.md)的需求矩阵。M1—M4 已完成。
+验收依据是[Vikunja Module 集成要求](../../requirements/vikunja-module.md)的需求矩阵。M1—M4 已完成。
 服务器地址与连接信息只登记在 Git 忽略的 `docs/private/test-servers.md`；测试使用
 独立 network namespace、containerd、Docker socket、data-root 和 workspace，不接触宿主现有容器。
 
@@ -95,7 +95,7 @@ npm run e2e:vikunja-load-browser
 服务器执行必须显式设置 `DOCKER_HOST=unix:///run/anas-vikunja-test-docker.sock`，且每个脚本先
 source `server-require-isolated-docker.sh`。原始报告写入 Git 忽略的 `test-env/reports/`。
 
-## 7. 当前阻塞
+## 7. 验收限制与历史问题
 
 - 当前服务器只能完成 arm64 交叉构建，不能提供 arm64 原生启动证据；R-017 规定的多架构构建和
   amd64 真实运行均已完成。
@@ -114,3 +114,5 @@ source `server-require-isolated-docker.sh`。原始报告写入 Git 忽略的 `t
 - MariaDB/LLNG 空库、重启、映射、LLNG 浏览器矩阵与真实 r4→r3→r4 固定版本往返均已有证据；
   回滚时运行的 r3 image ID 为 `sha256:67b754e9…`，返回 r4 为 `sha256:2f4b0991…`。
 - R-027 的 idle/1k/10k 资源、写入吞吐、API 延迟和真实 Chromium 首屏指标均已有可复现证据。
+
+2026-09-09 按已登记的 M1—M4 验收记录归档。此操作只整理计划状态，不新增真机验收结论，也不改变 Module 发布状态。

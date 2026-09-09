@@ -73,3 +73,23 @@ export function staleRows(markdown, names) {
   }
   return stale
 }
+
+// Validate the real target as well as its editorial section. Basenames alone
+// cannot distinguish a moved plan from a dead active/archived link.
+export function indexLocationErrors(markdown, locations) {
+  const errors = []
+  const seen = new Set()
+  let archivedSection = false
+  for (const line of markdown.split('\n')) {
+    if (/^## /.test(line)) archivedSection = /^## 已归档\s*$/.test(line)
+    const match = /^\|\s*\[[^\]]*\]\(((?:archived\/)?[A-Za-z0-9._-]+\.md)\)\s*\|/.exec(line)
+    if (!match) continue
+    const target = match[1]
+    const name = target.replace(/^archived\//, '')
+    if (seen.has(name)) errors.push(`${name}: 重复的计划条目`)
+    seen.add(name)
+    if (archivedSection !== target.startsWith('archived/')) errors.push(`${target}: 所在章节与归档路径不一致`)
+    if (locations.has(name) && locations.get(name) !== target) errors.push(`${target}: 实际计划位于 ${locations.get(name)}`)
+  }
+  return errors
+}
