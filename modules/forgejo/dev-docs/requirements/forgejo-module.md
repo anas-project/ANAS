@@ -40,7 +40,7 @@ Runner 包可以保留独立版本和安全边界，但不得提供 `runner.enab
 | `FORGEJO-R-003` | 数据目录、数据库 Resource、Secret Store 与部署元数据必须形成一致备份恢复点；修改数据库类型或名称不得宣称自动迁移 | 文档 |
 | `FORGEJO-R-004` | Forgejo 只通过通用 IAM OIDC binding 登录，首次登录 JIT 建号，不得按 LLNG、Authentik 或其他 Provider 名称分支 | 单元 |
 | `FORGEJO-R-005` | 应用过滤开启时只允许 `APP_forgejo`、`APP_all` 或管理员组进入；管理员组映射 site administrator | 单元 |
-| `FORGEJO-R-006` | 当前版本不得配置 LDAP/SAML source、目录用户/组同步、密码回写、`anasIdentityAnchor` reconciler 或 LDAP/OIDC 自动账号合并 | 静态 + 文档 |
+| `FORGEJO-R-006` | **已废弃**（2026-09-13，被 `FORGEJO-R-063`—`R-065` 取代）：原要求"当前版本不得配置 LDAP/SAML source、目录用户/组同步或 LDAP/OIDC 自动账号合并"。SAML source、密码回写与 anchor reconciler 的禁令移入 `FORGEJO-R-063` | —— |
 | `FORGEJO-R-007` | `break_glass` 本地账号密码由 Secret Store 管理，apply 不得把明文放入宿主 Docker argv；不能满足事务轮换时不得声明 rotate | 单元 |
 | `FORGEJO-R-008` | M3 接入前配置 inventory 不得暴露 `forgejo.actions_enabled`，Hook 必须固定输出 `false`；M3 接入时必须由 R-030—R-039 的完整单开关调和替代，不能只移除固定关闭 | 单元 |
 | `FORGEJO-R-010` | `custom_git_hooks_enabled` 是默认 `false` 的 bool，取反映射 `DISABLE_GIT_HOOKS`，变更触发 `container_recreate` | 单元 |
@@ -72,6 +72,9 @@ Runner 包可以保留独立版本和安全边界，但不得提供 `runner.enab
 | `FORGEJO-R-053` | Actions E2E 必须证明获批 repo/org 能运行无 Secret 的容器构建，未获批仓库无 Runner，正常/失败/取消/controller crash 后不残留 VM、磁盘或 token | e2e |
 | `FORGEJO-R-060` | OIDC auth source 必须支持把 IAM group claim 声明式映射到 Forgejo 组织 team（含登录时的自动移除），映射内容由消费方提供；Forgejo Module 不得硬编码具体组名 | 单元 + e2e |
 | `FORGEJO-R-061` | Forgejo Module 的 reconcile 不得删除或改写由管理端 API 创建的自动化账号、token 与 SSH key；这些对象的生命周期归属其创建方 | 单元 + 审阅 |
+| `FORGEJO-R-063` | 必须配置只读 LDAP source 同步用户与组，目录保持唯一事实来源；不得写回目录，也不得配置 SAML source、密码回写或 `anasIdentityAnchor` reconciler | 静态 + 单元 |
+| `FORGEJO-R-064` | OIDC 登录必须绑定到 LDAP 同步出的既有账号（`ACCOUNT_LINKING=auto`）；启用前提是 IAM 已禁止自助修改 `mail`/`sAMAccountName`（[IAM Provider 要求](../../../../dev-docs/requirements/iam-provider.md) §1.6）且部署只有一个 OIDC/OAuth source，任一不成立必须降级为 `login` | 单元 + e2e |
+| `FORGEJO-R-065` | 必须订阅 Samba 目录事件日志并在声明的最大传播时间内完成用户与组的增量刷新，组撤权不得等到用户下次登录 | 单元 + e2e |
 | `FORGEJO-R-062` | Forgejo Module 不注册业务用系统 webhook，也不得在 reconcile 中清理不属于自己的 hook；管理凭据的发放与审计边界必须在文档中说明 | 单元 + 审阅 |
 | `FORGEJO-R-054` | 纯代码托管 Module 可以先于 Runner 执行面达到 `release`，但在 `FORGEJO-R-052` 与 `FORGEJO-R-053` 完成前不得把 Actions 功能标为可用或 release | 审阅 |
 

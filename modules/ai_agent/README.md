@@ -15,6 +15,20 @@
 | 运行时 | `compose` |
 <!-- generated:module-facts:end -->
 
+## 组件文档
+
+这个组件将来要拆成独立项目 `anas-agent`，因此它的全部文档都放在本目录下，拆分时整体带走：
+
+| 文档 | 内容 |
+| --- | --- |
+| [编排设计](docs/architecture/orchestration-design.md) | 交互模型、身份与凭据、架构、权限、安全边界、演进路线 |
+| [技术实现](docs/technical.md) | 控制面结构与安全边界 |
+| [与 Forgejo 互操作的规则](docs/forgejo-interop.md) | 改 `orchestrator` 代码前要遵守的边界与约定 |
+| [要求](dev-docs/requirements/ai-agent.md) | 需求矩阵与固定 `forgejo 15.0.7` 的上游事实复核 |
+| [实施计划](dev-docs/plans/ai-agent.md) | 里程碑、检查表与 e2e 记录 |
+| [看板应用接入 AI Agent](docs/research/kanban-integration.md) | 候选运行时与看板集成的原始调研 |
+| [设计评审](dev-docs/reviews/2026-09-05-orchestration-design-review.md) | 2026-09-05 基线的评审快照 |
+
 ## 当前实现到哪一步
 
 本 Module 按[实施计划](dev-docs/plans/ai-agent.md)分里程碑落地，**M1、M2、M3、M5 已完成**：

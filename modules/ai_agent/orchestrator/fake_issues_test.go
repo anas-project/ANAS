@@ -256,6 +256,9 @@ func (f *fakeIssues) AddDependency(_ context.Context, _ Repo, number int, _ Repo
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.record(fmt.Sprintf("AddDependency:%d<-%d", number, blocker))
+	if err := f.failOn["AddDependency"]; err != nil {
+		return err
+	}
 	f.dependencies[number] = append(f.dependencies[number], blocker)
 	return nil
 }

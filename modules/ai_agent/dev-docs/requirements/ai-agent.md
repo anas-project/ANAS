@@ -8,7 +8,7 @@ updated: 2026-09-06
 # AI Agent 编排集成要求
 
 本文规定 ANAS 交付 `ai_agent` Module 时必须达到的用户结果、边界、安全约束与验收标准。设计方案见
-[AI Agent 编排设计](../../../../docs/architecture/ai-agent-orchestration-design.md)，施工顺序与进度见
+[AI Agent 编排设计](../../docs/architecture/orchestration-design.md)，施工顺序与进度见
 [AI Agent 编排实施计划](../plans/ai-agent.md)。协作面固定为已集成的 `forgejo` Module，执行面依赖
 [Incus compute Provider 要求](../../../../dev-docs/requirements/incus-module.md)。本文不重复设计推导，也不把实现进度当作需求。
 

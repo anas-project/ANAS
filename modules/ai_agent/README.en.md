@@ -16,6 +16,21 @@ pull request from an isolated instance. Every step is authorized, audited, inter
 | Runtime | `compose` |
 <!-- generated:module-facts:end -->
 
+## Component documentation
+
+This component is on its way to becoming a project of its own, `anas-agent`, so all of its
+documentation lives in this directory and moves with it when it is split out:
+
+| Document | Contents |
+| --- | --- |
+| [Orchestration design](docs/architecture/orchestration-design.md) | Interaction model, identity and credentials, architecture, permissions, security boundaries, roadmap |
+| [Technical implementation](docs/technical.md) | Control-plane structure and security boundaries |
+| [Forgejo interoperation rules](docs/forgejo-interop.md) | Boundaries and conventions to follow before changing `orchestrator` code |
+| [Requirements](dev-docs/requirements/ai-agent.md) | Requirement matrix and the upstream facts verified against the pinned `forgejo 15.0.7` |
+| [Implementation plan](dev-docs/plans/ai-agent.md) | Milestones, checklists and e2e records |
+| [Kanban integration research](docs/research/kanban-integration.md) | Original research on candidate runtimes and kanban integration |
+| [Design review](dev-docs/reviews/2026-09-05-orchestration-design-review.md) | Review snapshot of the 2026-09-05 baseline |
+
 ## How far the implementation has got
 
 The module lands milestone by milestone against its [plan](dev-docs/plans/ai-agent.md).

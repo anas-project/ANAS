@@ -20,13 +20,14 @@ OIDC/SAML 双链路，因此它不进入待实现里程碑。
 
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
-| M0：Forgejo 应用、数据库、OIDC 与恢复账号 | R-001—R-008 | 已完成 |
+| M0：Forgejo 应用、数据库、OIDC 与恢复账号 | R-001—R-005、R-007、R-008 | 已完成；`R-006` 于 2026-09-13 废弃，由 M7 取代 |
 | M1：Git Hooks/local-path import 安全开关 | R-010—R-012 | 已完成 |
 | M2：Incus compute contract 与 Provider | R-020—R-023 | 实施中；目录契约、Go 边界和 Incus 适配器已完成单元验证，真实宿主待验收 |
 | M3：Actions 单开关与 one-job VM 执行面 | R-030—R-039 | 实施中；Module/controller/guest 资产已接线，真实 one-job 与隔离 E2E 待验收 |
 | M4：预热、扩缩容、空闲资源与回收 | R-040—R-045 | 未开始 |
 | M5：真实发布验收 | R-050—R-054 | 未开始 |
 | M6：外部自动化消费者的边界（AI Agent 依赖） | R-060—R-062 | 未开始 |
+| M7：LDAP 同步 + OIDC 登录的双源身份 | R-063—R-065 | 未开始 |
 
 覆盖统计：36 项需求全部有且只有一个里程碑归属；M0/M1 的 11 项已完成，M2/M3 的 14 项处于实现与
 外部验收阶段。
@@ -150,6 +151,21 @@ E2E 前不把 Actions 标为 release 能力。
 
 验收：要求文档 `FORGEJO-R-060`—`FORGEJO-R-062`。
 
+## 7.2 M7：LDAP 同步 + OIDC 登录的双源身份
+
+依据[设计 §2.2](../../../../docs/architecture/forgejo-module-design.md)（2026-09-13 改写）。动机是让
+Forgejo 保有目录副本，从而能订阅目录事件、把组撤权的生效时间从"下次登录"压到秒级。
+
+- [ ] 配置只读 LDAP source 同步用户与组，确认不写回目录，且不引入 SAML source、密码回写或 anchor
+      reconciler（`R-063`）。
+- [ ] 把 `ACCOUNT_LINKING` 从 `disabled` 改为 `auto`，并在 Hook 里校验前提：IAM 已禁止自助改邮箱、
+      部署只有一个 OIDC/OAuth source；任一不成立时拒绝启用并提示降级为 `login`（`R-064`）。
+- [ ] 接入目录事件订阅，声明最大传播时间并验证组撤权的实际延迟（`R-065`）。
+- [ ] 在目录管理流程中写明邮箱别名与用户名不得回收再分配、改名走正式流程（运维约束，非配置）。
+- [ ] 同步中英文 README 与技术文档。
+
+验收：要求文档 `FORGEJO-R-063`—`FORGEJO-R-065`。
+
 ## 8. e2e 执行记录
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
@@ -158,6 +174,8 @@ E2E 前不把 Actions 标为 release 能力。
 | R-044 | 待补 `server-forgejo-actions-idle-e2e.sh` | Incus + 30 分钟 Actions on/off 对照 | — | 待执行 |
 | R-045 | 待补 `server-forgejo-actions-waiting-ttl-e2e.sh` | Incus + concurrency group 阻塞 | — | 待执行 |
 | R-060 | 待补 `server-forgejo-group-team-map-e2e.sh` | LLNG/Authentik + 目录组变更 | — | 待执行 |
+| R-064 | 待补 `server-forgejo-dual-source-e2e.sh` | LDAP 同步账号 + OIDC 首次登录绑定、改名与停用 | — | 待执行 |
+| R-065 | 待补 `server-forgejo-dirwatch-e2e.sh` | 目录组撤权到 Forgejo 生效的实测延迟 | — | 待执行 |
 | R-050 | 待补 `server-forgejo-app-e2e.sh` | PostgreSQL/MariaDB、amd64/arm64 | — | 待执行 |
 | R-051 | 待补 `server-forgejo-oidc-e2e.sh` | LLNG/Authentik 浏览器 | — | 待执行 |
 | R-052 | 待补 `server-forgejo-actions-state-e2e.sh` | Incus + Forgejo | — | 待执行 |

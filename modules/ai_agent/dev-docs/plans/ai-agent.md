@@ -8,7 +8,7 @@ updated: 2026-09-06
 # AI Agent 编排实施计划
 
 验收依据是[AI Agent 编排集成要求](../requirements/ai-agent.md)的需求矩阵，设计依据是
-[AI Agent 编排设计](../../../../docs/architecture/ai-agent-orchestration-design.md)。协作面是已集成的
+[AI Agent 编排设计](../../docs/architecture/orchestration-design.md)。协作面是已集成的
 `forgejo` Module，执行面依赖[Incus compute Provider 实施计划](../../../../dev-docs/plans/incus-module.md)的 M0—M2。
 
 **当前状态：M1 的控制面代码已落地，其真实部署验证未做。** `modules/ai_agent` 已存在：manifest、
@@ -42,7 +42,7 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 | M5：排程、执行时机与队列 | AGENT-R-045—R-051 | 已完成；排序、时机与队列面均已落地并对真实 Forgejo 验证 |
 | M6：记录、会话视图与可扩展性 | AGENT-R-052—R-061、R-070 | 未开始 |
 | M7：真实部署验收 | AGENT-R-062—R-064 | 未开始 |
-| M8：补充的交互与安全约束 | AGENT-R-066—R-069 | 未开始；四条中若干可能已在 M2/M3 顺带实现，需逐条核对后再标完成 |
+| M8：补充的交互与安全约束 | AGENT-R-066—R-069 | 已完成；四条均已实现并有单元用例 |
 | M9：Agent 发起的写操作与三档授权 | AGENT-R-072—R-078 | 未开始；提议档（`R-072`—`R-074`、`R-076`、`R-078`）不依赖执行面，可与 M6 并行；自主档与 MCP 写路径（`R-075`、`R-077`）排在 M6 之后 |
 
 覆盖统计：78 项需求全部有且只有一个里程碑归属。2026-08-30 补入 `R-065`—`R-071`：它们在设计文档中
@@ -151,12 +151,27 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 
 ## 8.1 M8 检查表
 
-这四条来自设计文档但此前漏进矩阵，先逐条核对现状再决定是补实现还是补测试：
+这四条来自设计文档但此前漏进矩阵。2026-09-10 对着 M2/M3 的实现逐条核对，结果如下：
 
-- [ ] 风险声明勾选强制人工批准且禁止直接提交（`R-066`）。
-- [ ] `/split` 继承配置、建依赖、双向交叉引用；`/summarize` 压缩入库（`R-067`）。
-- [ ] 非模板 issue 默认不触发，只有指派或 `@` 唤起（`R-068`）。
-- [ ] 工程化约定四级解析顺序与 `.anas-agent.yml` 的权威性（`R-069`）。
+- [x] **`R-066` 风险声明**：`resolveCompletion` 早已把声明了风险的 issue 从"直接提交"降级为 PR 并
+      写明理由；核对时发现缺的是另一半——"强制人工批准"没有守卫，因为现在还没有自动批准通道，
+      所以是"碰巧成立"。已补 `AutoApprovalAllowed`：声明风险即禁止任何策略性自动批准，
+      并带上原因。趁着没有自动批准路径先立闸，比等引入时再想起来便宜。
+- [x] **`R-067` `/split` 与 `/summarize`**：核对时只有命令壳——命令表、授权动作与
+      `ForgejoIssues.AddDependency` 都在，但非测试代码从未调用。已补 `split.go`：`Split` 建子 issue
+      （正文用 `RenderIssueForm` 写回表单形状，因此继承是字面的，由同一个解析器读，不产生第二份
+      配置表示）、把父 issue 标成被它阻塞、两侧各留一条交叉引用；`Summarize` 把讨论提交为文档并回
+      一条指向 commit 的评论。两者都走 outbox，重复命令不会开第二个 issue。依赖被实例拒绝时不吞掉
+      整次拆分——子 issue 与交叉引用仍然成立，只把失败写进结果。
+- [x] **`R-068` 非模板 issue 不触发**：`LooksLikeAgentIssue` 此前只被测试调用，没有接线。已补
+      `ShouldEngage`（`engagement.go`）：模板 issue 直接参与，普通 issue 只有指派 Agent 账号或
+      `@` 到账号才唤起，其余一律不介入且给出原因。识别读正文不读标签——front matter 的标签只是
+      新建页预勾选，取消勾选或走 API 提交都不会带上。近似匹配（prose 里提到运行时名、
+      `@account-staging`、邮箱里的 `@`）都不算召唤，有对应用例。
+- [x] **`R-069` 四级解析**：已实现。`ParseConventions` / `InferConventions` / `BuiltinConventions`
+      三个产出者由 `onboarding.go` 按 `.anas-agent.yml` → 引导 issue → 既有约定推断 → 内置预设的
+      顺序短路返回，`RepoConventions.Source` 记录命中层级；内置预设保守（仅文档目录、强制 PR、
+      禁止直接提交）。本轮只做核对，未改代码。
 
 ## 8.2 M9 检查表
 
@@ -228,7 +243,9 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
   当前实现按“至多一次”设计，对账是补偿手段，这条不阻塞 M1。
 - 执行面依赖 [Incus compute Provider](../../../../dev-docs/plans/incus-module.md) 的 M6（真实宿主验收），该里程碑本身
   阻塞于独立 KVM/Incus 宿主。M4 在此之前只能实现控制面侧逻辑。
-- `AGENT-R-032` 的链路还差中间一段。目录侧已经通了：`CAP_<module-id>_<capability>` 已在
+- `AGENT-R-032` 的链路还差中间一段（2026-09-13 更新：Forgejo 已决定改为 LDAP 同步 + OIDC 登录的
+  双源形态，落地后能力组可经 LDAP source 的组→team 映射到达 Forgejo，并随目录事件订阅秒级刷新；
+  `--group-team-map` 是双源落地前的过渡路径，见 `FORGEJO-R-063`—`R-065`）。目录侧已经通了：`CAP_<module-id>_<capability>` 已在
   [Samba AD 用户与权限规划](../../../../docs/architecture/samba-ad-user-planning.md) §5.4.1 登记并由
   `samba_dc` 实现，`ai_agent` 经 `ANAS_IDENTITY_CAPABILITY_GROUPS` 声明能力码；消费侧也已完成
   （从 Forgejo team 读出能力上限）。缺的是 **IAM 用 `--group-team-map` 把组投影成 Forgejo team** ——

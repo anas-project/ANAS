@@ -36,38 +36,49 @@ Group，登录协议负责交互认证，两条链路以不可变 `anasIdentityA
 
 这是一项能力门禁，不是要求所有应用都实现两条链路。
 
-### 2.2 Forgejo 结论：不实现双链路
+### 2.2 Forgejo 结论：LDAP 同步 + OIDC 登录的双源形态
 
-固定 Forgejo v15 能做 LDAP 用户同步、LDAP Group 成员校验和 OIDC 登录，但 LDAP source 没有可配置
-的不可变用户 UUID 字段，OIDC source 也没有按自定义 anchor claim 安全绑定既有 LDAP 用户的公开
-API/CLI；当前固定版没有本 Module 可声明的 SAML source。
+> 状态：**2026-09-13 决定，尚未实现。** 本节取代此前"不实现双链路"的结论；实现前 Module 保持
+> OIDC-only 的现状。验收条目见 `FORGEJO-R-063`—`FORGEJO-R-065`，原 `FORGEJO-R-006` 已废弃。
 
-因此 Forgejo Module 的确定设计是：
+固定 Forgejo v15 能做 LDAP 用户同步、LDAP Group 成员校验和 OIDC 登录。原结论拒绝同时使用两者，
+理由是 LDAP source 没有可配置的不可变用户 UUID 字段，OIDC source 也没有按 anchor claim 绑定既有
+LDAP 用户的接口——绑定只能落回用户名或邮箱。
 
-- 只消费 IAM/OIDC，不消费 directory/LDAPS Capability；
-- 使用 OIDC JIT 创建 Forgejo 用户；
-- 由 IAM 执行 `APP_forgejo`、`APP_all` 和管理员 Group 准入；
-- 管理员 Group 映射为 Forgejo site administrator；
-- Organization、Team 和仓库授权由 Forgejo 管理；
-- 保持 `ACCOUNT_LINKING=disabled`；
-- 不发布一个 Forgejo 不消费的 `anasIdentityAnchor` claim 来冒充双链路支持；
-- 不实现 LDAP auth source、LDAP 用户/Group 同步、SAML 或 anchor reconciler。
+改变结论的不是上游新增了 anchor 绑定，而是**需求变了**：[AI Agent 编排](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/docs/architecture/orchestration-design.md) §6.2
+需要组变更秒级生效。只有 OIDC 一条链路时，组声明随 claim 在**登录时**才到达 Forgejo，撤权要等
+用户下次登录。让 Forgejo 通过 LDAP 保有目录副本，它就落入[目录事件订阅要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)
+的范围，可以像 authentik 与 Casdoor 那样订阅目录事件日志并按游标增量刷新。
 
-未来升级只有在固定上游版本同时提供 LDAP immutable UUID 和受支持的 OIDC/SAML existing-user linking
-接口后，才重新发起设计评审。
+因此确定设计是：
 
-> **2026-08-30：该结论已被重新开启，尚未改写。** 决定改为 **LDAP 同步用户与组 + OIDC 负责登录**
-> 的双源形态，动机是让 Forgejo 保有目录副本从而落入[目录事件订阅要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)
-> 的范围，把组变更的生效时间从"下次登录"压到秒级——这是
-> [AI Agent 编排设计](ai-agent-orchestration-design.md) §6.2 依赖的能力。
->
-> 本节与 `FORGEJO-R-006`（不得配置 LDAP source、目录用户/组同步与 LDAP/OIDC 自动账号合并）因此都
-> 需要修订，**但修订的前置是先回答本节原本提出的绑定问题**：Forgejo 通过
-> `[oauth2_client] ACCOUNT_LINKING` 决定 OIDC 登录如何绑到既有 LDAP 用户——`disabled` 报错、
-> `login` 要求用户登录既有账号完成一次性绑定、`auto` 按用户名或邮箱自动绑定（上游文档自己标注了
-> 风险）。原结论反对的正是 `auto` 这种非锚点绑定；`login` 是否满足 §2.1 的双链路门禁，需要单独判断
-> 并在真实 LLNG/Authentik 上验证改名、停用与冲突场景。**在做出选择并改写本节与 `FORGEJO-R-006`
-> 之前，Module 保持现状（OIDC-only、`ACCOUNT_LINKING=disabled`），不要按双源形态实现。**
+- **LDAP source（只读）同步用户与组**，目录仍是唯一事实来源；Forgejo 侧不写回；
+- **OIDC source 负责交互登录**；
+- **`ACCOUNT_LINKING=auto`**：OIDC 登录按用户名或邮箱自动绑定到 LDAP 同步出的既有账号；
+- Forgejo 订阅目录事件日志，在声明的最大传播时间内完成增量刷新；
+- 管理员 Group 仍映射为 Forgejo site administrator，仓库与 Organization 授权仍由 Forgejo 管理。
+
+**`auto` 的风险与它成立的条件。** 上游对 `auto` 的警告是"同用户名或同邮箱就授予既有账号访问权"。
+在本部署里两条链路指向同一个 Samba AD，同一个人两边的 `sAMAccountName` 与 `mail` 本就一致，因此
+危险的不是两个人撞同一个标识符，而是**同一个标识符先后属于不同的人**。三条前提必须同时成立，
+`auto` 才是安全的：
+
+1. **IAM 不得允许用户自助修改 `mail` 与 `sAMAccountName`**。这是硬前提：两家 Provider 都保存目录
+   影子记录，写回 AD 的 `svc_ldap` 是只读，所以自助修改只落在 IAM 本地，却会直接进入 OIDC 的 email
+   claim，直到下一次全量同步覆盖为止——足够完成一次冒名绑定。该禁令已写进
+   [IAM Provider 要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/iam-provider.md) §1.6。
+2. **不得再启用第二个 OIDC/OAuth source**（例如给外部贡献者接 GitHub 登录）。一旦存在不受本部署
+   控制的身份源，`auto` 就变成"外部身份按邮箱认领内部账号"。需要外部协作时必须改用其他机制，
+   而不是加一个登录源。
+3. **邮箱别名与用户名不得回收再分配**，改名走正式流程。这条对 `auto` 与 `login` 一样成立：
+   Forgejo 的 LDAP source 没有不可变 UUID，回收的地址会让新人接上旧账号。
+
+前两条是配置约束，可以在验收里检查；第三条是运维约束，必须写进目录管理流程。任何一条不成立时，
+退回 `ACCOUNT_LINKING=login`（要求用户先登录既有账号自证所有权）是正确的降级，代价是每人一次
+交互。
+
+仍然不做的：SAML source、密码回写、`anasIdentityAnchor` 的自动 reconciler，以及发布一个 Forgejo
+不消费的 anchor claim。anchor 仍是目录侧的永久身份键，Forgejo 只是还消费不了它。
 
 ## 3. Actions 授权模型
 
