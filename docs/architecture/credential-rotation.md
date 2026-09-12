@@ -2,7 +2,7 @@
 doc_type: architecture
 status: proposed
 created: 2026-08-19
-updated: 2026-08-20
+updated: 2026-09-13
 ---
 
 # ANAS 凭据库存与 deployment 驱动轮换设计
@@ -119,7 +119,7 @@ deployment 合同。当前可实际轮换的首个 provider 是 `eturnal.secret`
 | Module 私有管理员 | `COLLABORA_ADMIN_PASSWORD`、`LAM_ADMIN_PASSWORD` 等 | 显式逻辑凭据声明和本地验证 |
 | 内部 shared secret | Talk/Signaling/Imaginary/Relay 等 | `eturnal.secret` 已接入；其余仍需 owner/consumer 声明和启动时协调 |
 | compute 客户端证书 | `RESOURCE_<CONSUMER>_<RESOURCE_ID>_...` | `overlap` 语义：新旧证书同时受信再撤旧的，是轮换不杀掉运行中实例的唯一办法 |
-| compute `lease_secret` | 同上 | `migrate` 语义：轮换会改变**全部已发布的 URL**，必须有人知情，不能进例行批量 |
+| compute `lease_secret` | 同上 | **不属于本机制**：它是域名派生密钥，不认证任何东西。走专属命令，不进凭据轮换通道，也不被 `--all` 选中（`CRED-R-007`） |
 
 PostgreSQL 与 MariaDB provider 的现有 `ensure` 已能创建或 `ALTER` 普通资源账号，但没有独立的
 候选认证、authority 检查和回滚合同；统一库存接入后必须把这些资源凭据报告为 unsupported，
@@ -132,8 +132,10 @@ PostgreSQL 与 MariaDB provider 的现有 `ensure` 已能创建或 `ALTER` 普�
    "铸一次，永不更换"；
 2. **`resources.requires[].spec.credential` 没有轮换声明位**，今天只有 `policy: generated`。
 
-第 2 条是关键，因为不同资源凭据的正确模式并不相同：上表里 compute 的两条凭据同属一个资源，却
-一条必须 `overlap`、一条必须 `migrate`。补齐时**不能对整类资源凭据一刀切**。
+第 2 条是关键，因为同一个资源里的"凭据"并不都是同一种东西：compute 的客户端证书必须以
+`overlap` 轮换，而 `lease_secret` 根本不进这条通道——它不认证任何东西，轮换它改变的是已发布的
+URL。补齐时**不能对整类资源凭据一刀切**，也不能把非凭据塞进凭据的批量操作里
+（`CRED-R-002`、`CRED-R-007`）。
 
 四个本地管理员仍可通过兼容命令逐账号轮换，但它们尚未声明新的 probe/reconcile/verify 合同，
 也尚未进入 candidate deployment 事务。PostgreSQL 的旧版在线 credential Hook 未保留；其当前

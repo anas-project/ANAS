@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-27
-updated: 2026-09-06
+updated: 2026-09-13
 ---
 
 # AI Agent 编排实施计划
@@ -251,3 +251,16 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
   （从 Forgejo team 读出能力上限）。缺的是 **IAM 用 `--group-team-map` 把组投影成 Forgejo team** ——
   该 CLI 参数已在 `15.0.7` 上确认存在，但 `forgejo` Module 的 OIDC 配置还没有把它接上。
 - `modules/ai_agent` 的镜像尚未推到 registry；`.github/images.json` 已登记构建条目。
+
+## 12. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [编排设计](../../docs/architecture/orchestration-design.md) | 从 `docs/architecture/` 迁入组件目录，站内留一页指针；§14 删除“评审后才产出需求与计划”的过期表述 | 已完成 |
+| [与 Forgejo 互操作的规则](../../docs/forgejo-interop.md) | 编排器侧规则迁入组件目录；上游固定版本事实留在 [`docs/developer/forgejo-interop.md`](../../../../docs/developer/forgejo-interop.md) 基线，两份不重复 | 已完成 |
+| [看板接入调研](../../docs/research/kanban-integration.md) | 调研正文迁入组件目录，站内研究索引留指针 | 已完成 |
+| [设计评审](../reviews/2026-09-05-orchestration-design-review.md) | 随组件迁入，`dev-docs/reviews/index.md` 改指向新位置 | 已完成 |
+| `modules/ai_agent/README.md`、`README.en.md` | 增加“组件文档一览”，指向本目录下全部文档 | 已完成 |
+| [Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md) §2.2 | 改写为 LDAP 同步 + OIDC 登录的双源形态，支撑 §6.2 的秒级撤权；验收见 `FORGEJO-R-063`—`R-065` | 已完成（实现未开始） |
+| [IAM Provider 要求](../../../../dev-docs/requirements/iam-provider.md) §1.6 | 登记“禁止自助修改 `mail`/`sAMAccountName`”，它是 `ACCOUNT_LINKING=auto` 的前提 | 已完成 |
+| `test-env/scripts/forgejo-agent-api-probe.sh` | 注释与报告中的设计文档路径改为组件目录 | 已完成 |

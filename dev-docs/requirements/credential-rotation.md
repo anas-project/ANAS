@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-09-04
-updated: 2026-09-04
+updated: 2026-09-13
 ---
 
 # 凭据轮换覆盖面与语义要求
@@ -115,7 +115,7 @@ probe/reconcile/verify 与原子 Store 提交都已经工作。本文只处理�
 | ID | 要求 | 验证方式 |
 | --- | --- | --- |
 | `CRED-R-001` | `resources.requires[].spec.credential` 必须支持 `rotation_mode` 声明，沿用 `reconcile`/`overlap`/`migrate`/`external` 四档 | 契约 + 单元 |
-| `CRED-R-002` | 不得对整类资源凭据一刀切：同一资源内不同凭据可以有不同模式（compute 客户端证书 `overlap`、`lease_secret` `migrate`） | 契约 + 单元 |
+| `CRED-R-002` | 不得对整类资源凭据一刀切：同一资源内不同凭据可以有不同模式（compute 客户端证书为 `overlap`），且同一资源里可能存在根本不属于本机制的值（`lease_secret`，见 `CRED-R-007`） | 契约 + 单元 |
 | `CRED-R-003` | 资源凭据必须建模为两侧生命周期：provider 侧 reconcile + verify、consumer 侧证据；不得复用单侧 owner 契约冒充 | 契约 + 审阅 |
 | `CRED-R-016` | provider 侧 `verify` 必须用新凭据**实际登录一次**，不得以 `ALTER ROLE` 未报错代替——后者只证明 SQL 执行了，不证明该角色能用该口令连上 | 单元 + e2e |
 | `CRED-R-017` | provider 的登录测试**不得**被当作 consumer 侧证据：它看不见「消费者手里还是旧值」，也看不见按客户端地址匹配的 `pg_hba` 差异 | 审阅 |

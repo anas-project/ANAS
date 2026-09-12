@@ -1,5 +1,5 @@
 ---
-title: LLNG Passkey/WebAuthn 与 Samba 共享边界
+doc_type: research
 created: 2026-08-21
 updated: 2026-08-21
 evidence_as_of: 2026-08-21

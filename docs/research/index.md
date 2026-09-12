@@ -31,7 +31,7 @@
 | [IAM 登出与应用会话同步](./iam-logout-application-session-sync.md) | OIDC/SAML 全局登出与应用会话撤销 | 2026-08-20 | 2026-08-20 |
 | [Super Productivity 与 Nextcloud 零配置同步](./super-productivity-nextcloud-sso-sync-research.md) | OIDC/SAML、Login Flow v2 与 BFF 方案 | 2026-08-20 | 2026-08-20 |
 | [Nextcloud 搜索方案](./nextcloud-search-solution-research.md) | 全文、SQL、语义搜索和 Elasticsearch 实施门槛 | 2026-08-20 | 2026-08-20 |
-| [看板应用接入 AI Agent](./kanban-ai-agent-integration-research.md) | 看板事件、编排服务与 Coding Agent 集成 | 2026-08-15 | 2026-08-15 |
+| [看板应用接入 AI Agent](./kanban-ai-agent-integration-research.md)（正文已迁至 `modules/ai_agent/`） | 看板事件、编排服务与 Coding Agent 集成 | 2026-08-15 | 2026-09-10 |
 
 ## 维护约定
 

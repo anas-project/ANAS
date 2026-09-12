@@ -236,7 +236,7 @@ launcher:
         second_factor: database
 ```
 
-#### Adminer 的两层认证边界
+### Adminer 的两层认证边界
 
 Adminer 只是数据库客户端登录界面，不提供可由 ANAS 同步的人员账号库
 （[Adminer 请求与登录流程](https://github.com/vrana/adminer/blob/main/docs/developing.md)）。

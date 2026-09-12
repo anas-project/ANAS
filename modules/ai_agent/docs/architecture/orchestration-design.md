@@ -5,9 +5,9 @@
 > 仍是提案**，前者阻塞于 Incus Provider 的真实宿主验收。逐条状态以
 > [实施计划](../../dev-docs/plans/ai-agent.md)
 > 为准。协作面用已集成 `forgejo` Module 的 issue、label 与 Projects 看板，代码面用同一实例的仓库。
-> 更新：2026-09-08。
+> 更新：2026-09-13。
 
-执行面的 Provider 工作见 [Incus compute Provider 要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/incus-module.md)与[实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/incus-module.md)；
+执行面的 Provider 工作见 [Incus compute Provider 要求](../../../../dev-docs/requirements/incus-module.md)与[实施计划](../../../../dev-docs/plans/incus-module.md)；
 Forgejo 侧的既有边界见 [Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md)；候选运行时的原始
 调研见[看板应用接入 AI Agent](../research/kanban-integration.md)。
 
@@ -469,7 +469,7 @@ Forgejo 没有可写的看板 API（§3.8），但有**可排序的置顶 issue*
 
 `compute` Contract 已定义一次性实例生命周期，把 Forgejo Actions controller 内嵌的 Incus 客户端提取
 为独立 `incus` Provider Module，Forgejo Actions 与 `ai_agent` 都作为消费者，各自绑定独立 restricted
-project 与证书。范围与验收见[要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/incus-module.md)与[计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/incus-module.md)。
+project 与证书。范围与验收见[要求](../../../../dev-docs/requirements/incus-module.md)与[计划](../../../../dev-docs/plans/incus-module.md)。
 
 ### 5.3 隔离档
 
@@ -480,7 +480,7 @@ project 与证书。范围与验收见[要求](https://github.com/anas-project/A
 | `vm` | 独立 guest kernel + 硬件虚拟化 | 需预留内存，数秒启动 | 需要硬边界：外部贡献者仓库、不受信依赖 |
 
 本质差别只有共享内核这一条；Incus 对二者使用同一套 project/quota/exec 接口。系统容器 interface 已
-登记为 [Incus 计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/incus-module.md) M5。
+登记为 [Incus 计划](../../../../dev-docs/plans/incus-module.md) M5。
 
 ### 5.4 执行后端：自建实例 vs Forgejo Actions
 
@@ -847,7 +847,7 @@ issue 评论、PR 与 Actions run 本身就是**人类可读的记录面**，因
 | 执行作业 | 一个独立运行（`job` + `run_event`） | 运行视图：工具调用、文件变更、测试输出、diff、耗时与花费，可实时跟随 |
 
 首期入口是 Module 命令（`agent job show --follow`、`agent session show`），
-[管理前端](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/archived/web-api-admin-console.md)已可用；状态评论里给出这两个视图的链接。
+[管理前端](../../../../dev-docs/plans/archived/web-api-admin-console.md)已可用；状态评论里给出这两个视图的链接。
 
 #### 8.1.0 上下文怎么拼：不要把 Agent 自己说过的话喂回去
 
@@ -910,7 +910,7 @@ issue 时，三档落在原 issue，节流阈值更保守（阶段变化才更�
 | Forgejo Actions + Runner | 可选执行后端（§5.4）；默认不使用，但与 `ai_agent` 共用 `incus` Provider |
 | `incus` Provider | 两个消费者（Actions Runner、`ai_agent`），各自独立 project 与证书 |
 | [目录事件日志](../../../../docs/architecture/directory-event-journal.md) | 新增 Forgejo 订阅者以消除组变更的登录延迟（§6.2） |
-| 控制台 | [Web API 与管理前端](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/archived/web-api-admin-console.md) 已实现；Agent 状态与配置仍可首期走 Module 命令 |
+| 控制台 | [Web API 与管理前端](../../../../dev-docs/plans/archived/web-api-admin-console.md) 已实现；Agent 状态与配置仍可首期走 Module 命令 |
 | `llm_gateway`（提案） | 统一模型 key、预算与审计；需要独立选型文档后再立项 |
 
 ## 10. 安全边界
@@ -1012,16 +1012,16 @@ issue 时，三档落在原 issue，节流阈值更保守（阶段变化才更�
 
 ## 14. 后续文档
 
-方案通过评审后产出 `modules/ai_agent/dev-docs/requirements/ai-agent.md` 与 `modules/ai_agent/dev-docs/plans/ai-agent.md`（需求矩阵、里程碑、
-需求归属与 e2e 记录）。
+配套的[要求](../../dev-docs/requirements/ai-agent.md)（需求矩阵）与[实施计划](../../dev-docs/plans/ai-agent.md)
+（里程碑、需求归属与 e2e 记录）已经存在，逐条状态以计划为准，本节不复述。
 
 需要同步决策或修改的既有文档：
 
 | 文档 | 变更 | 状态 |
 | --- | --- | --- |
 | [Samba AD 用户与权限规划](../../../../docs/architecture/samba-ad-user-planning.md) | 登记 `CAP_<module-id>_<capability>` 类别与 `OU=Cap,OU=Groups`；这是所有 Module 的通用规则，不只服务 AI | 已采纳并实现（§5.4.1）：`samba_dc` 按 `create_structure` 创建 `OU=Cap`，Module 经 `ANAS_IDENTITY_CAPABILITY_GROUPS` 声明能力码 |
-| [Forgejo Module 要求](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/dev-docs/requirements/forgejo-module.md) | Agent 账号与 token 的管理端引导、系统 webhook 归属、OIDC 增加 `--group-team-map` | 已登记为 `FORGEJO-R-060`—`R-062`（M6）；`--group-team-map` 的实现待做 |
+| [Forgejo Module 要求](../../../../modules/forgejo/dev-docs/requirements/forgejo-module.md) | Agent 账号与 token 的管理端引导、系统 webhook 归属、OIDC 增加 `--group-team-map` | 已登记为 `FORGEJO-R-060`—`R-062`（M6）；`--group-team-map` 的实现待做 |
 | [目录事件日志](../../../../docs/architecture/directory-event-journal.md) | 增加 Forgejo 订阅者，消除组变更的登录延迟（§6.2） | **已决定并登记**（2026-09-13）：Forgejo 设计 §2.2 已改写为双源形态，`FORGEJO-R-063`—`R-065` 与其计划 M7 已建立；实现未开始 |
-| [LLM Gateway 要求（待讨论）](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/llm-gateway.md) | 统一模型 key、虚拟 key、预算执行点、用量归因与审计 | 问题域已锁定，选型调研与需求矩阵待做 |
+| [LLM Gateway 要求（待讨论）](../../../../dev-docs/requirements/llm-gateway.md) | 统一模型 key、虚拟 key、预算执行点、用量归因与审计 | 问题域已锁定，选型调研与需求矩阵待做 |
 | `anas-agent-mcp` 工具面契约 | §5.8 白名单操作的入参出参、幂等键、错误语义与版本策略，需独立一份接口文档 | 未开始 |
 | 跨仓库写授权（"仓库对"模型） | Agent 在 A 仓库的讨论里给 B 仓库建 issue 的授权形态；§5.6 的信任边界要求显式配对，不能靠放宽 token 顺手实现 | 未开始 |
