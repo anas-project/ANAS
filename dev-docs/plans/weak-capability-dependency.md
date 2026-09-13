@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-13
 ---
 
 # 无序 Capability 依赖实施计划
@@ -91,7 +91,17 @@ M0—M2 的代码与本地验证完成；M3 的 R-012 真实主机验收尚未�
       `traefik.http.routers.adminer.middlewares: anas-forward-auth@docker`。
       `adminer_enabled=false` 时模块集合缩为 `lego postgres traefik`，没有 `oauth2_proxy`。
 
-## 5. e2e 执行记录
+## 5. CI 门禁
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `go test ./...`（有序/无序解析、calculate 环境隔离与真实 manifest 回归） | `25433bd`（GitHub CI，2026-08-29），已包含 `019fc65`、`d6acf32`。`5306b63` 上本计划用例所在的 `internal/runner` 包因无关用例 `TestMaintenanceBackupCreateDescriptorIsBoundToPublicPlan` 失败，那次运行不能证明它们通过；其后提交均未经 CI |
+| `go vet ./...` | `5306b63`（GitHub CI，2026-09-05） |
+| `go run ./cmd/gen-module-docs --check`（M2 的参数表） | `5306b63`（GitHub CI） |
+| `npm run docs:check-requirements`、`docs:check-requirement-status` | `5306b63`（GitHub CI），但校验的是 R-012 仍归 M2 的版本；`40a8b2e`（2026-09-09）拆出 M3 之后没有 CI 记录，本地 `6823232` 通过 |
+| 渲染产物 `docker compose config --quiet` | CI 没有这一步；本地记录见 §4 M2 检查表，随 `9a6f79e`（2026-08-28）入库，未注明基于哪个提交 |
+
+## 6. e2e 执行记录
 
 | 需求 ID | 脚本 | 环境 | 日期 | 结果 |
 | --- | --- | --- | --- | --- |
@@ -100,7 +110,15 @@ M0—M2 的代码与本地验证完成；M3 的 R-012 真实主机验收尚未�
 这条 e2e 要验的不是「中间件标签渲染出来了」——那是单元能判的。要验的是**未登录的请求确实被网关拦下**，
 以及**容器启动顺序颠倒时不会出现放行窗口**。
 
-## 6. 当前阻塞
+## 7. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [Capability 开发标准](../../docs/developer/capability-development.md) §6.2 | 三机制对照表、两条使用约束与两处拒绝（R-010） | 已完成（`9a6f79e`）；该标准只有中文，英文开发者索引已注明 |
+| `postgres`、`mariadb` 的 README 与技术文档（中英文） | M2 重做接线后的参数表行 | 已完成，与[条件 Capability 依赖](conditional-capability-dependency.md) §7 同一批 |
+| [条件 Capability 依赖](conditional-capability-dependency.md)计划 | M2 解除其阻塞后同步状态 | 已完成（`40a8b2e` 改为代码接线完成、真实宿主验收另行跟踪） |
+
+## 8. 当前阻塞
 
 - 只剩 R-012 的 e2e：需要真实 Docker 主机与一套可登录的 IAM，验证**未登录请求确实被网关拦下**以及
   **启动顺序颠倒时没有放行窗口**。渲染与插值这一半已在本机验证（见 M2 检查表），剩下的是运行期行为。
