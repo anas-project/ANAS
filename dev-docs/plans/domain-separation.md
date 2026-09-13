@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-19
-updated: 2026-08-19
+updated: 2026-09-13
 ---
 
 # `BASE_DOMAIN` 与 `SAMBA_DC_DOMAIN` 分离实施计划
@@ -1059,3 +1059,32 @@ WP1-WP4 完成后可以支持全新分离部署，包括父子域的 `ad_zone` �
 6. topology-aware lifecycle diff 是否首期支持“requested mode 变化但 resolved mode/zone 不变”的安全固化；若不支持，继续使用保守 `data_migrate` 门禁。
 
 这些工程选择必须在实现 PR/设计记录中明确，不能由某个 Hook、shell 脚本或隐式 fallback 自行决定。
+
+## 17. CI 门禁
+
+本计划没有配套的需求矩阵（`dev-docs/requirements/` 下没有同名要求文档），`docs:check-requirements`
+不校验它，因此检查表没有「需求归属与覆盖」与「e2e 执行记录」两节。真实服务器执行的唯一记录在 WP4
+（2026-08-28，LLNG fresh apply 未通过），它不是 CI 门禁。
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `go test ./...`（WP1—WP3 的 schema、`validate` 调度、Samba DNS 与消费者回归） | `25433bd`（GitHub CI，2026-08-29），已包含 `553f245`（WP1—WP3）与 `3724b20`（WP4 fixture 与隔离）。`5306b63` 上 `internal/config`、`internal/configschema`、`modules/samba_dc/hook`、`modules/samba_fs/hook` 通过，但 WP2 `validate` 调度测试所在的 `internal/runner` 包因无关用例失败；其后提交均未经 CI |
+| `go vet ./...` | `5306b63`（GitHub CI，2026-09-05） |
+| `go run ./cmd/gen-module-docs --check`（WP7 的生成文档） | `5306b63`（GitHub CI） |
+| `npm run docs:check-status`、`docs:check-plan-status` | `5306b63`（GitHub CI）；本地 `6823232` |
+| `test-env/scripts/test-static.sh`、`test-domain-separation-server-configs.sh` | 不在 CI 中；本计划没有记录执行它们的提交 |
+
+## 18. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [配置指南](../../docs/guide/configuration.md)与英文镜像 | 两个域的职责、DNS 模式选择、已 provision 的 AD 域不可原地修改、迁移器未交付的警告 | 已完成（`553f245`） |
+| [Samba 运维](../../docs/operations/samba.md) | 同一组规则的运维说明与迁移器未交付的警告 | 中文已完成（`553f245`）；该页从未有英文镜像（`docs/en/operations/` 下没有 Samba 页），§1.2 所说的中英文操作文档同步对它不成立 |
+| [配置参考](../../docs/reference/configuration.md)、[Module 环境变量参考](../../docs/reference/module-environment-variables.md)与英文镜像 | 新参数与派生值 | 已完成 |
+| `samba_dc` 的 README 与技术文档、`samba_fs` 的技术文档（中英文） | `domain`、`application_dns_mode` 与 DNS 模式说明 | 已完成 |
+| [Core 实现标准](../../docs/architecture/core-implementation-standard.md)、[Module 开发](../../docs/developer/module-development.md)、[Module 文档生成标准](../../docs/developer/module-documentation.md)与英文镜像 | 通用 `validate` phase，以及 Core 不写 Module 专用校验 | 已完成（`553f245`） |
+| `test-env/README.md` | WP4 的两套 fixture 与 LLNG/Authentik 隔离 runtime 配置 | 已完成 |
+| `config.example.yml`、`config.full.example.yml` | WP7 要求两份示例都更新 | 部分完成：`config.full.example.yml` 已含（`553f245`），`config.example.yml` 没有 `samba_dc.domain` 与 `application_dns_mode` |
+| [部署与配置命令 JSON 契约](../../docs/reference/contracts/commands.md)与英文镜像、上述运维文档 | WP5 的 `migrate-service-domain`、`migrate-application-dns-zone` 命令、错误码与迁移步骤 | 未开始 |
+| 升级说明与不支持拓扑（WP7） | 正式发布说明，等 WP4 真实运行与 WP5/WP6 范围决策后写 | 未开始 |
+| `samba_dc` 技术文档（中英文） | WP6 的 canonical DC 独立证书 | 未开始 |
