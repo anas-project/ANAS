@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-25
-updated: 2026-08-29
+updated: 2026-09-13
 ---
 
 # 文档驱动测试自动化实施计划
@@ -83,7 +83,19 @@ M0、M1 已完成，M2 的本地契约和只读预检已实现，正在等待明
 - [ ] CI 只从受控 Secret/SSH agent 获取认证，日志和 artifact 继续执行同一脱敏策略。
 - [ ] PR 默认不自动占用稀缺远程服务器；发布门禁和人工 dispatch 按风险选择 suite。
 
-## 7. e2e 执行记录
+## 7. CI 门禁
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `go test ./...`（`internal/testcasecatalog`、`internal/remotetest`） | `25433bd`（GitHub CI，2026-08-29），即 M2 本地契约的提交。`5306b63` 上两个包通过，整体因 `internal/runner` 的无关用例 `TestMaintenanceBackupCreateDescriptorIsBoundToPublicPlan` 失败，2026-09-13 基于 `5306b63` 的 dependabot PR 复现了同一失败；其后的 master 提交均未经 CI |
+| `go vet ./...` | `5306b63`（GitHub CI，2026-09-05） |
+| `npm run docs:check-requirements`（含 catalog `--check`，即 `test-cases:check`） | `5306b63`（GitHub CI）；最近本地记录 `6823232` |
+| `npm run docs:test-requirements`（含 `internal/testcasecatalog`、`cmd/gen-test-case-docs` 的测试） | `5306b63`（GitHub CI）；`d216d21`（2026-09-06）让 catalog 支持 Module 私有作用域后未经 CI，其提交说明记载本地通过 |
+| `npm run docs:build` | 不在 `ci.yml` 中，`docs.yml` 只在 PR 与发布时运行。包含 M1、M2 的唯一一次 CI 构建是 2026-09-13 基于 `5306b63` 的 dependabot PR，因 `docs/research/ai-agent-orchestration-design-review.md` 的两个死链失败（该页已由 `156048d` 移出 `docs/`，与本计划无关）；本地记录见 §10 与 `6823232` 的提交说明 |
+| `test-server-docker-isolation.sh`、`test-compose-project-isolation.sh` | 不在 CI 中；本地记录见 §10（M2，2026-08-29） |
+| M4 的手动触发 workflow | 尚不存在 |
+
+## 8. e2e 执行记录
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
 | --- | --- | --- | --- | --- |
@@ -97,7 +109,18 @@ M0、M1 已完成，M2 的本地契约和只读预检已实现，正在等待明
 | R-029 | 待新增远程 Secret 泄漏 E2E | Shell、Playwright、报告与源包扫描 | — | 待执行 |
 | R-030 | 待新增总状态 E2E | 用例失败、跳过、报告损坏、远端未知 | — | 待执行 |
 
-## 8. 验证命令
+## 9. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [测试](../../docs/developer/testing.md)与英文镜像 | 需求 → 用例 → 测试代码的双向溯源、catalog 生成与检查命令、Agent 生成测试的边界（M0、M1） | 已完成 |
+| 英文镜像 [Testing](../../docs/en/developer/testing.md) | 中文页已写 M2 的只读 `remote-test preflight`（授权与隔离校验、源包、不上传不部署），英文页只说 SSH 运行器尚未实现，没有提到已落地的预检 | 未开始 |
+| `test-env/cases/README.md` | catalog 格式与命令 | 已完成 |
+| `test-env/remote/README.md` | target profile、helper 安装与只读预检（M2） | 已完成（`25433bd`） |
+| [文档写作标准](../../docs/developer/documentation-standard.md) §4 | `requirement_scope`、用例 ID 与 `TEST_CASES:` 反向声明 | 已完成 |
+| 两份测试文档与 `test-env/remote/README.md` | M3 的 `remote-test run` 生命周期、恢复与报告；M4 的手动触发 workflow | 未开始 |
+
+## 10. 验证命令
 
 文档阶段使用：
 
@@ -140,7 +163,7 @@ M2 本地契约于 2026-08-29 通过：
 - source bundle 的 committed/worktree 发送端—接收端 round-trip、摘要、防篡改和 mode `0600` 验证；
 - 当前调用没有明确授权的 SSH alias，未连接、安装或修改任何真实服务器，因此 M2 仍为实施中。
 
-## 9. 当前阻塞
+## 11. 当前阻塞
 
 - 当前调用没有明确授权的 SSH alias；按 R-017，不能从旧记录或环境默认值推断目标，因此尚未安装
   helper 或执行真实 SSH preflight。
