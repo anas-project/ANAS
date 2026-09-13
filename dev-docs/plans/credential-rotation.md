@@ -2,7 +2,7 @@
 doc_type: plan
 status: proposed
 created: 2026-09-04
-updated: 2026-09-04
+updated: 2026-09-13
 ---
 
 # 凭据轮换覆盖面实施计划
@@ -69,10 +69,13 @@ updated: 2026-09-04
 
 ## 7. CI 门禁
 
-| 门禁 | 最近全绿提交 |
-| --- | --- |
-| `go test ./...` | 待记录 |
-| `npm run docs:check-requirements` | 待记录 |
+全部里程碑未开始，没有实施提交，`go test ./...` 等代码门禁无从记录。已实现的事务型轮换器不在本计划
+范围内，它的门禁记录也不算本计划的证据。
+
+文档门禁也**没有 CI 记录**：本计划与要求文档随 `a4c4d0c`（2026-09-07）加入，而 GitHub CI 在 master
+上最近一次运行是 `5306b63`（2026-09-05），其后的提交均未推送。只有本地记录：`6823232` 的提交说明记载
+`docs:check-requirements`、`docs:check-requirement-status`、`docs:check-plan-status` 与
+`docs:check-status` 通过，2026-09-13 在该提交上复核一致。
 
 ## 8. e2e 执行记录
 
@@ -85,6 +88,18 @@ updated: 2026-09-04
 | R-018 | 待新增 `test-env/scripts/server-resource-credential-rotation-e2e.sh` | 消费者未拿到新值时 healthcheck 失败并回滚 | — | 待执行 |
 | R-014 | 待新增 `test-env/scripts/server-postgres-auth-baseline-e2e.sh` | 改基线后的启动与资源账号创建 | — | 待执行 |
 
-## 9. 待决
+## 9. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [凭据轮换覆盖面与语义要求](../requirements/credential-rotation.md)、[凭据库存与 deployment 驱动轮换设计](../../docs/architecture/credential-rotation.md) | `lease_secret` 不走凭据轮换通道、改用专属命令（`CRED-R-007`、`CRED-R-015`），去掉旧的 `migrate` 答案 | 已完成（`6823232`） |
+| [Incus 宿主供给与镜像烘焙](../../docs/architecture/incus-host-provisioning.md) §5.1.3.2 | 表中 `lease_secret` 仍写 `migrate`，与 `CRED-R-007` 及同文后面「专属命令，不走凭据轮换通道」的结论矛盾 | 未开始 |
+| [部署与配置命令 JSON 契约](../../docs/reference/contracts/commands.md)与英文镜像的 `credential` 一节 | M0：改正「`--all` 只选 `reconcile` 目标」，写明 `--module` 与 `--all` 对 manual 目标的处置相反；M3：跨类清单落地后改写 `list` 的接入范围说明 | 未开始 |
+| `postgres` 的 README 与技术文档（中英文） | M0：写明其口令轮换当前不产生安全效果；M4 修正认证基线后改写 | 未开始 |
+| `docs/developer/module-development.md` 的 `resources.requires` 示例与 Contract 技术文档（`contracts/*/docs/technical*.md`） | M1：`spec.credential` 增加 `rotation_mode` 与两侧生命周期 | 未开始 |
+| `contracts/compute` 的 README 与技术文档（中英文） | M2：客户端证书 `overlap` 与 `lease_secret` 专属命令的轮换语义 | 未开始 |
+| [英文架构索引](../../docs/en/architecture/index.md) | 按文档标准 §2 至少补凭据轮换设计的英文摘要；目前没有条目 | 未开始 |
+
+## 10. 待决
 
 - 两侧生命周期契约中 consumer 侧 verify 的调用时机（激活屏障之前还是之后）。
