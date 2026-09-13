@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-21
-updated: 2026-08-22
+updated: 2026-09-13
 ---
 
 # Forgejo Module 实施计划
@@ -166,7 +166,17 @@ Forgejo 保有目录副本，从而能订阅目录事件、把组撤权的生效
 
 验收：要求文档 `FORGEJO-R-063`—`FORGEJO-R-065`。
 
-## 8. e2e 执行记录
+## 8. CI 门禁
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `go test ./...`（`modules/forgejo` 的 `hook`、`forgejo`、`actions-controller` 包） | `25433bd`（GitHub CI，2026-08-29），包含 `b38fd7c` 落地的 M0—M3 已实现部分，但不含 `2b44a2b`（2026-09-05）对 Hook、controller 与 manifest 的后续改动。`5306b63` 上三个包都通过，整体因 `internal/runner` 的无关用例失败；其后提交均未经 CI |
+| `go run ./cmd/gen-module-docs --check` | `5306b63`（GitHub CI，2026-09-05） |
+| `go run ./cmd/check-shared-build`（`actions-controller` 经命名上下文取 `internal/computeclient`） | 从未在 CI 中运行：该门禁由 `63083e9`（2026-09-09）加入，其后提交均未推送 |
+| `npm run docs:check-requirements`、`docs:check-requirement-status` | `5306b63`（GitHub CI），当时本计划仍在 `dev-docs/plans/`、还没有 M7；`9888ae1` 移入 Module 目录、`4317f7c`（2026-09-13）加入 M7 并废弃 `R-006` 之后没有 CI 记录，本地 `6823232` 通过 |
+| M1 验收提到的真实 Runner 渲染矩阵 | 不在 CI 中；§3 记为 2026-08-22 本地覆盖，未注明提交 |
+
+## 9. e2e 执行记录
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
 | --- | --- | --- | --- | --- |
@@ -181,7 +191,19 @@ Forgejo 保有目录副本，从而能订阅目录事件、把组撤权的生效
 | R-052 | 待补 `server-forgejo-actions-state-e2e.sh` | Incus + Forgejo | — | 待执行 |
 | R-053 | 待补 `server-forgejo-runner-isolation-e2e.sh` | Incus + repo/org scopes | — | 待执行 |
 
-## 9. 当前阻塞
+## 10. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| `forgejo` 的 README、技术文档与配置参考（中英文） | M1 的 Git Hooks 与 local-path import 开关 | 已完成（§3，2026-08-22） |
+| [Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md) §2.2、[IAM Provider 要求](../../../../dev-docs/requirements/iam-provider.md) §1.6 | M7 的双源决定，以及禁止自助修改 `mail`/`sAMAccountName` 这一前提 | 已完成（`4317f7c`）；实现未开始 |
+| 本计划开头、§2 落地快照与 §12 明确排除 | 仍写「已经排除 LDAP + OIDC/SAML 双链路」，并把「Forgejo LDAP 用户/Group 预配」「LDAP 预建用户与 OIDC 自动合并」列为排除项，与 M7 矛盾 | 未开始 |
+| `forgejo` 的技术文档（中英文） | 仍以「决定不实现 LDAP + OIDC/SAML 双链路」解释现状，需改为引用 M7 的决定 | 未开始 |
+| `forgejo` 的 README 与技术文档（中英文） | M6 的系统 webhook 与管理凭据归属、M7 的 LDAP source 与账号绑定落地时改写 | 未开始 |
+| [Module IAM / OIDC 支持清单](../../../../docs/reference/module-iam-support.md)与英文镜像 | `forgejo` 一行与双接入段落随 M7 更新 | 未开始 |
+| 本计划 §4（M2） | 已加与 [Incus compute Provider 实施计划](../../../../dev-docs/plans/incus-module.md) 的拆分说明，但要点列表与「当前完成/剩余」仍按 Provider 实现叙述 | 部分完成 |
+
+## 11. 当前阻塞
 
 - 当前没有可用的独立 Incus/KVM 宿主、restricted project 或测试 credential，M2/M3 无法完成真实验收；
 - compute Contract 尚未接入 Core 的通用 Provider 注册/选择路径；当前 controller 使用同形 Go 接口和
@@ -189,7 +211,7 @@ Forgejo 保有目录副本，从而能订阅目录事件、把组撤权的生效
 - Runner VM 镜像尚未在 amd64/arm64 实际构建并产出获批 fingerprint；
 - 真实 Docker daemon 未运行，Forgejo 应用镜像启动与浏览器 E2E 仍待执行。
 
-## 10. 明确排除
+## 12. 明确排除
 
 以下项目不属于剩余工作：
 
