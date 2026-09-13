@@ -2,7 +2,7 @@
 doc_type: plan
 status: proposed
 created: 2026-09-05
-updated: 2026-09-05
+updated: 2026-09-13
 ---
 
 # 共享应用层迁移实施计划
@@ -100,7 +100,29 @@ inventory 只剩真正 CLI 专属的调用点。
 **允许的部分完成状态：** M0—M2 完成、M3—M4 未完成是一个合理的停靠点，此时 `ALM-R-006`、`ALM-R-007`
 已达成而 `ALM-R-001`、`ALM-R-002` 未达成。计划状态相应记为 `partial`，不算失败。
 
-## 4. e2e 执行记录
+## 4. CI 门禁
+
+全部里程碑未开始，没有实施提交可记录。下表是 §1 每阶段必过的门禁在**开工前**的基线，M0 起逐阶段更新：
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `go vet ./...` | `5306b63`（GitHub CI，2026-09-05） |
+| `go test ./...` | `25433bd`（GitHub CI，2026-08-29），当时下一行的两个门禁测试尚未加入；`5306b63` 上因 `internal/runner` 的 `TestMaintenanceBackupCreateDescriptorIsBoundToPublicPlan` 失败，其后提交均未经 CI |
+| §1 第二组定向测试（`TestSharedLayer*`、`TestCLIAdapter*`、`TestDaemonReachableSubprocessInventory`） | 没有独立 CI 步骤；`internal/application` 与 `cmd/anasd` 两个包在 `5306b63` 的 `go test ./...` 中通过（该次整体失败） |
+| `go build ./...` | 从未单独记录：CI 没有这一步 |
+| `npm run docs:check-requirements`、`docs:check-plan-status` | CI 无记录：本计划随 `9888ae1`（2026-09-06）加入，未推送；本地 `6823232` 通过 |
+
+`ALM-R-009`（不新增 `go.mod` 直接依赖）的验证方式是 CI，但 `.github/workflows/ci.yml` 目前没有对应
+步骤——这是 M0 要补的门禁，不是已有记录。
+
+## 5. e2e 执行记录
 
 本计划无 `e2e` 验证方式的需求：迁移不改变外部行为，验收由 CLI contract、OpenAPI 覆盖与门禁测试承担。
 若 M3 期间发现行为差异，说明迁移出错，应回退而不是补 e2e。
+
+## 6. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [Web API 与管理前端要求](../requirements/web-api-admin-console.md) §3.2 | 删除「已记录的债」段落，目录说明里 `internal/application` 与 `internal/runner` 的分工改为与实际布局一致（`ALM-R-010`） | 未开始（M4） |
+| [仓库结构](../../docs/developer/repository-layout.md)与英文镜像 | `internal/runner/` 的「迁移期实现」随三个服务迁出后改写 | 未开始（M3—M4） |
