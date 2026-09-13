@@ -9,7 +9,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/localization"
@@ -128,6 +130,12 @@ func handle(req hookRequest) (hookResponse, error) {
 		if err := reconcileOIDC(env); err != nil {
 			return hookResponse{}, err
 		}
+		if err := reconcileLDAP(env); err != nil {
+			return hookResponse{}, err
+		}
+		if err := reconcileDirwatchAccount(env); err != nil {
+			return hookResponse{}, err
+		}
 		return hookResponse{}, reconcileActionsAccount(env)
 	case "local_account_apply":
 		return hookResponse{}, handleLocalAccount(req)
@@ -211,6 +219,109 @@ func calculate(e map[string]string, secrets *secretStore) ([]string, error) {
 	e["APPS_LIST__FORGEJO__DESC"] = defaultValue(e["APPS_LIST__FORGEJO__DESC"], "Git repositories, code review, packages, and collaboration")
 	e["APPS_LIST__FORGEJO__URI"] = e["FORGEJO_DOMAIN_FULL"] + "/user/oauth2/anas"
 	e["APPS_LIST__FORGEJO__ALLOW_GROUPS"] = allowGroups
+
+	directoryWarnings, err := calcDirectorySync(e, secrets)
+	if err != nil {
+		return nil, err
+	}
+	return append(warnings, directoryWarnings...), nil
+}
+
+const (
+	ldapSourceName   = "anas-ldap"
+	dirwatchUsername = "anas_dirwatch"
+)
+
+// calcDirectorySync derives the LDAP source and the directory watcher
+// (FORGEJO-R-063, FORGEJO-R-065). It is opt-in: turning it on changes how
+// accounts come into existence and how an OIDC login is bound to them, which is
+// not something an existing deployment should get silently on upgrade.
+func calcDirectorySync(e map[string]string, secrets *secretStore) ([]string, error) {
+	enabled := defaultValue(e["FORGEJO_DIRECTORY_SYNC_ENABLED"], "false")
+	if enabled != "true" && enabled != "false" {
+		return nil, fmt.Errorf("FORGEJO_DIRECTORY_SYNC_ENABLED must be true or false")
+	}
+	e["FORGEJO_DIRECTORY_SYNC_ENABLED"] = enabled
+	linking := defaultValue(e["FORGEJO_ACCOUNT_LINKING"], "login")
+	if linking != "login" && linking != "auto" {
+		return nil, fmt.Errorf("FORGEJO_ACCOUNT_LINKING must be login or auto")
+	}
+	e["FORGEJO_ACCOUNT_LINKING"] = linking
+
+	// The watcher's account is generated whether or not synchronisation is on,
+	// so switching it on later needs no secret migration.
+	password, err := secrets.Ensure("FORGEJO_DIRWATCH_PASSWORD", func() (string, error) { return randomHex(32) })
+	if err != nil {
+		return nil, err
+	}
+	e["FORGEJO_DIRWATCH_PASSWORD"] = password
+	e["FORGEJO_DIRWATCH_ENABLED"] = enabled
+	e["FORGEJO_DIRWATCH_USERNAME"] = dirwatchUsername
+	e["FORGEJO_DIRWATCH_ENDPOINT"] = "http://anas_forgejo:3000"
+	e["FORGEJO_DIRWATCH_EVENTS_DIR"] = defaultValue(e["ANAS_DIRECTORY_EVENTS_DIR"],
+		filepath.Join(e["DATA_PATH"], "forgejo", "directory-events"))
+	e["FORGEJO_DIRWATCH_EVENT_FILE"] = "/var/lib/anas-directory-events/" +
+		defaultValue(e["ANAS_DIRECTORY_EVENTS_FILE_NAME"], "events.jsonl")
+	e["FORGEJO_DIRWATCH_OPERATIONS"] = defaultValue(e["FORGEJO_DIRWATCH_OPERATIONS"], "Add,Modify,Delete")
+	// Everything that decides whether a person may use Forgejo, and what their
+	// account is called. displayName and mail are included because the LDAP
+	// source maps them onto the account, and a stale email is what an OIDC
+	// login is later matched against.
+	e["FORGEJO_DIRWATCH_ATTRIBUTES"] = defaultValue(e["FORGEJO_DIRWATCH_ATTRIBUTES"],
+		"member,memberOf,userAccountControl,sAMAccountName,mail,displayName,givenName,sn,"+
+			e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"])
+	e["FORGEJO_DIRWATCH_DEBOUNCE_SECONDS"] = defaultValue(e["FORGEJO_DIRWATCH_DEBOUNCE_SECONDS"], "5")
+	e["FORGEJO_DIRWATCH_MIN_INTERVAL_SECONDS"] = defaultValue(e["FORGEJO_DIRWATCH_MIN_INTERVAL_SECONDS"], "60")
+	e["FORGEJO_DIRWATCH_POLL_SECONDS"] = defaultValue(e["FORGEJO_DIRWATCH_POLL_SECONDS"], "1")
+
+	if enabled != "true" {
+		return nil, nil
+	}
+	for _, key := range []string{
+		"SAMBA_DC_LDAPS_SERVER_URL", "SAMBA_DC_LDAPS_PORT", "SAMBA_DC_LDAP_BIND_DN",
+		"SAMBA_DC_LDAP_BIND_PASSWORD", "SAMBA_DC_BASE_USERS_DN", "SAMBA_DC_USER_CLASS_FILTER",
+		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE", "SAMBA_DC_ADMIN_GROUP_DN",
+	} {
+		if e[key] == "" {
+			return nil, fmt.Errorf("directory synchronisation needs %s from the directory", key)
+		}
+	}
+	host := strings.TrimPrefix(strings.TrimPrefix(e["SAMBA_DC_LDAPS_SERVER_URL"], "ldaps://"), "ldap://")
+	if cut := strings.IndexAny(host, ":/"); cut >= 0 {
+		host = host[:cut]
+	}
+	e["FORGEJO_LDAP_HOST"] = host
+	e["FORGEJO_LDAP_PORT"] = e["SAMBA_DC_LDAPS_PORT"]
+	e["FORGEJO_LDAP_BIND_DN"] = e["SAMBA_DC_LDAP_BIND_DN"]
+	e["FORGEJO_LDAP_BIND_PASSWORD"] = e["SAMBA_DC_LDAP_BIND_PASSWORD"]
+	e["FORGEJO_LDAP_USER_BASE_DN"] = e["SAMBA_DC_BASE_USERS_DN"]
+
+	chain := "memberOf:1.2.840.113556.1.4.1941:="
+	// Forgejo substitutes the login name into %[1]s, and "*" when it synchronises.
+	filter := "(&" + e["SAMBA_DC_USER_CLASS_FILTER"] + "(sAMAccountName=%[1]s)(" +
+		e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + "=*)"
+	if e["SAMBA_DC_APP_FILTER"] == "true" {
+		for _, key := range []string{"SAMBA_DC_BASE_APP_DN", "SAMBA_DC_APP_ALL_DN"} {
+			if e[key] == "" {
+				return nil, fmt.Errorf("application filtering needs %s from the directory", key)
+			}
+		}
+		// The same admission as the IAM: APP_forgejo, APP_all or the administrator
+		// group, nested membership included. A user the IAM would refuse must not
+		// be synchronised into an account either.
+		filter += "(|(" + chain + "CN=APP_forgejo," + e["SAMBA_DC_BASE_APP_DN"] + ")(" +
+			chain + e["SAMBA_DC_APP_ALL_DN"] + ")(" + chain + e["SAMBA_DC_ADMIN_GROUP_DN"] + "))"
+	}
+	e["FORGEJO_LDAP_USER_FILTER"] = filter + ")"
+	e["FORGEJO_LDAP_ADMIN_FILTER"] = "(" + chain + e["SAMBA_DC_ADMIN_GROUP_DN"] + ")"
+
+	var warnings []string
+	if linking == "auto" {
+		warnings = append(warnings,
+			"account_linking=auto binds an OIDC login to an existing account by username or email; "+
+				"it is safe only while the IAM forbids self-service changes to mail and sAMAccountName, "+
+				"this deployment has a single OAuth2 source, and mail aliases are never reassigned")
+	}
 	return warnings, nil
 }
 
@@ -289,7 +400,9 @@ func renderEnv(e map[string]string) error {
 	e["FORGEJO__OAUTH2_CLIENT__REGISTER_EMAIL_CONFIRM"] = "false"
 	e["FORGEJO__OAUTH2_CLIENT__OPENID_CONNECT_SCOPES"] = "profile email groups"
 	e["FORGEJO__OAUTH2_CLIENT__USERNAME"] = "nickname"
-	e["FORGEJO__OAUTH2_CLIENT__ACCOUNT_LINKING"] = "disabled"
+	if err := renderAccountLinking(e); err != nil {
+		return err
+	}
 	e["FORGEJO__OAUTH2_CLIENT__UPDATE_AVATAR"] = "false"
 	e["FORGEJO__SESSION__PROVIDER"] = "db"
 	// Actions is one product feature: this same value is also passed to the
@@ -299,6 +412,37 @@ func renderEnv(e map[string]string) error {
 	e["FORGEJO__TIME__DEFAULT_UI_LOCATION"] = e["TZ"]
 	e["FORGEJO__LOG__MODE"] = "console"
 	e["FORGEJO__I18N__LANGS"], e["FORGEJO__I18N__NAMES"] = forgejoLocaleLists(e["FORGEJO_LANGUAGE"])
+	return nil
+}
+
+// renderAccountLinking decides how an OIDC login meets an account.
+//
+// Without directory synchronisation every account is created by the OIDC login
+// itself, so there is never an existing account to link to and linking stays
+// disabled. With it, accounts come from the LDAP source; an OIDC login must bind
+// to that account rather than create a second one, so automatic registration
+// is switched off and the configured linking mode applies.
+func renderAccountLinking(e map[string]string) error {
+	if e["FORGEJO_DIRECTORY_SYNC_ENABLED"] != "true" {
+		e["FORGEJO__OAUTH2_CLIENT__ACCOUNT_LINKING"] = "disabled"
+		e["FORGEJO__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION"] = "true"
+		return nil
+	}
+	switch e["FORGEJO_ACCOUNT_LINKING"] {
+	case "login", "auto":
+	default:
+		return fmt.Errorf("FORGEJO_ACCOUNT_LINKING must be login or auto")
+	}
+	for _, key := range []string{
+		"FORGEJO_LDAP_HOST", "FORGEJO_LDAP_PORT", "FORGEJO_LDAP_BIND_DN", "FORGEJO_LDAP_BIND_PASSWORD",
+		"FORGEJO_LDAP_USER_BASE_DN", "FORGEJO_LDAP_USER_FILTER", "FORGEJO_DIRWATCH_PASSWORD",
+	} {
+		if e[key] == "" {
+			return fmt.Errorf("%s is empty while directory synchronisation is enabled", key)
+		}
+	}
+	e["FORGEJO__OAUTH2_CLIENT__ACCOUNT_LINKING"] = e["FORGEJO_ACCOUNT_LINKING"]
+	e["FORGEJO__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION"] = "false"
 	return nil
 }
 
@@ -377,6 +521,75 @@ func reconcileOIDC(e map[string]string) error {
 	container := e["CONTAINER_PREFIX"] + "forgejo"
 	if _, err := runContainerHelper(payload, "docker", "exec", "-i", "--user", "1000:1000", container, "/usr/local/bin/anas-forgejo-entrypoint", "oidc"); err != nil {
 		return fmt.Errorf("forgejo OIDC reconciliation failed: %w", err)
+	}
+	return nil
+}
+
+type ldapInput struct {
+	Name           string `json:"name"`
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	BindDN         string `json:"bind_dn"`
+	BindPassword   string `json:"bind_password"`
+	UserSearchBase string `json:"user_search_base"`
+	UserFilter     string `json:"user_filter"`
+	AdminFilter    string `json:"admin_filter"`
+	AccountLinking string `json:"account_linking"`
+	OIDCSourceName string `json:"oidc_source_name"`
+}
+
+// reconcileLDAP hands the LDAP source to the in-container helper over stdin, so
+// the bind password never appears in a docker argv.
+func reconcileLDAP(e map[string]string) error {
+	if e["FORGEJO_DIRECTORY_SYNC_ENABLED"] != "true" {
+		return nil
+	}
+	port, err := strconv.Atoi(e["FORGEJO_LDAP_PORT"])
+	if err != nil || port <= 0 {
+		return fmt.Errorf("forgejo LDAP port %q is invalid", e["FORGEJO_LDAP_PORT"])
+	}
+	if e["CONTAINER_PREFIX"] == "" {
+		return fmt.Errorf("forgejo LDAP reconciliation is missing CONTAINER_PREFIX")
+	}
+	payload, err := json.Marshal(ldapInput{
+		Name: ldapSourceName, Host: e["FORGEJO_LDAP_HOST"], Port: port,
+		BindDN: e["FORGEJO_LDAP_BIND_DN"], BindPassword: e["FORGEJO_LDAP_BIND_PASSWORD"],
+		UserSearchBase: e["FORGEJO_LDAP_USER_BASE_DN"], UserFilter: e["FORGEJO_LDAP_USER_FILTER"],
+		AdminFilter: e["FORGEJO_LDAP_ADMIN_FILTER"], AccountLinking: e["FORGEJO_ACCOUNT_LINKING"],
+		OIDCSourceName: "anas",
+	})
+	if err != nil {
+		return err
+	}
+	container := e["CONTAINER_PREFIX"] + "forgejo"
+	if _, err := runContainerHelper(payload, "docker", "exec", "-i", "--user", "1000:1000", container, "/usr/local/bin/anas-forgejo-entrypoint", "ldap"); err != nil {
+		return fmt.Errorf("forgejo LDAP reconciliation failed: %w", err)
+	}
+	return nil
+}
+
+// reconcileDirwatchAccount maintains the account the directory watcher uses to
+// run the external-user sync. Running a cron task needs site administration,
+// so it is its own managed account rather than a borrowed recovery credential.
+func reconcileDirwatchAccount(e map[string]string) error {
+	if e["FORGEJO_DIRECTORY_SYNC_ENABLED"] != "true" {
+		return nil
+	}
+	for _, key := range []string{"CONTAINER_PREFIX", "FORGEJO_DIRWATCH_PASSWORD"} {
+		if e[key] == "" {
+			return fmt.Errorf("forgejo directory watcher account reconciliation is missing %s", key)
+		}
+	}
+	payload, err := json.Marshal(localAdminInput{
+		Username: dirwatchUsername, Email: dirwatchUsername + "@localhost.invalid",
+		Password: e["FORGEJO_DIRWATCH_PASSWORD"],
+	})
+	if err != nil {
+		return err
+	}
+	container := e["CONTAINER_PREFIX"] + "forgejo"
+	if _, err := runContainerHelper(payload, "docker", "exec", "-i", "--user", "1000:1000", container, "/usr/local/bin/anas-forgejo-entrypoint", "local-admin"); err != nil {
+		return fmt.Errorf("forgejo directory watcher account reconciliation failed: %w", err)
 	}
 	return nil
 }

@@ -37,8 +37,17 @@ The Module registers confidential OIDC client `forgejo` with callback
 `<FORGEJO_DOMAIN_FULL>/user/oauth2/anas/callback` and scopes `openid profile email groups`. Forgejo creates users
 just in time. With Samba application filtering enabled, IAM admits `APP_forgejo`, `APP_all`, and administrators;
 the administrator group claim grants Forgejo site administration. Organizations, teams, repository permissions,
-and deploy keys remain application-owned. The Module configures no LDAP or SAML source and performs no directory
-user/group synchronization or directory password write-back.
+and deploy keys remain application-owned. The Module never configures a SAML source or writes passwords back to
+the directory.
+
+**Directory synchronization (opt-in, `directory_sync_enabled`).** When enabled, a read-only LDAP source
+synchronizes users with the same admission as the IAM, OIDC logins bind to those accounts instead of registering
+new ones, and a watcher subscribes to the directory event journal so that an account removed from `APP_forgejo`
+or disabled loses access within seconds rather than at its next login. Groups still reach teams through the OIDC
+group claim: Forgejo 15's LDAP CLI has no group-synchronization options. `account_linking=login` (default) asks
+each person to sign in to their synchronized account once; `auto` binds by username or email and is safe only
+while the IAM forbids self-service changes to mail and `sAMAccountName` and the deployment has a single OAuth2
+source, which the Module enforces at apply.
 
 Forgejo `/user/logout` clears the application session only. The pinned version exposes neither a stable
 RP-Initiated Logout integration for this Module nor an IAM-initiated front/back-channel receiver.
@@ -57,6 +66,7 @@ apply only. Forgejo 15 cannot offer a verified transactional password change wit
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `forgejo.account_linking` | enum (`login`, `auto`) | — | `login` | `static` | `FORGEJO_ACCOUNT_LINKING` | no | no | no | yes | `container_recreate` | How an OIDC login binds to an account synchronized from the directory: `login` asks the person to sign in to it once; `auto` binds by username or email and is safe only while the IAM forbids self-service edits of mail and username and there is a single OAuth2 source |
 | `forgejo.actions_allowed_scopes` | string | — | `""` | `static` | `FORGEJO_ACTIONS_ALLOWED_SCOPES` | no | no | no | yes | `container_recreate` | Comma-separated organizations or repositories authorized to consume ANAS Runner compute |
 | `forgejo.actions_enabled` | bool | — | `false` | `static` | `FORGEJO_ACTIONS_ENABLED` | no | no | no | yes | `container_recreate` | The only shared switch for the Actions server and one-job Runner controller |
 | `forgejo.actions_isolation` | enum (`auto`, `incus_vm`, `incus_container`) | — | `auto` | `static` | `FORGEJO_ACTIONS_ISOLATION` | no | no | no | yes | `container_recreate` | Isolation tier requested from the compute provider: a VM has its own guest kernel, a system container shares the host's |
@@ -64,6 +74,7 @@ apply only. Forgejo 15 cannot offer a verified transactional password change wit
 | `forgejo.custom_git_hooks_enabled` | bool | — | `false` | `static` | `FORGEJO_CUSTOM_GIT_HOOKS_ENABLED` | no | no | no | yes | `container_recreate` | Allow repository custom Git hooks to execute server-side code as the Forgejo user |
 | `forgejo.db_name` | string | — | `forgejo` | `static` | `FORGEJO_DB_NAME` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Application database name |
 | `forgejo.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Relational database type or automatic selection |
+| `forgejo.directory_sync_enabled` | bool | — | `false` | `static` | `FORGEJO_DIRECTORY_SYNC_ENABLED` | no | no | no | yes | `container_recreate` | Synchronize users through a read-only LDAP source and subscribe to the directory event journal, so an account removed from `APP_forgejo` or disabled loses access within seconds; groups still reach teams through the OIDC claim |
 | `forgejo.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `git` | `static` | `FORGEJO_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | Service domain prefix |
 | `forgejo.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `FORGEJO_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | IAM login protocol; OIDC only |
 | `forgejo.language` | string | — | — | `inherited` | `FORGEJO_LANGUAGE` | no | yes | no | yes | `reconcile` | Default UI language; browser and saved preferences take precedence |

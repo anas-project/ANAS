@@ -59,6 +59,10 @@ credentials:
       secret_key: FORGEJO_ACTIONS_CONTROLLER_PASSWORD
       type: password
       rotation_mode: migrate
+    - id: forgejo.dirwatch_password
+      secret_key: FORGEJO_DIRWATCH_PASSWORD
+      type: password
+      rotation_mode: migrate
 resources:
   requires:
     - id: primary_database
@@ -98,11 +102,13 @@ config:
   must_resolve:
     - language
   defaults:
+    account_linking: login
     actions_allowed_scopes: ""
     actions_enabled: false
     actions_isolation: auto
     actions_runner_image: ""
     custom_git_hooks_enabled: false
+    directory_sync_enabled: false
     domain_prefix: git
     db_name: forgejo
     db_type: auto
@@ -110,6 +116,8 @@ config:
     local_path_import_enabled: false
     ssh_port: "2222"
   types:
+    account_linking:
+      enum: [login, auto]
     actions_allowed_scopes: string
     actions_enabled: bool
     actions_isolation:
@@ -119,6 +127,7 @@ config:
       constraints:
         pattern: '^(?:[0-9a-f]{64})?$'
     custom_git_hooks_enabled: bool
+    directory_sync_enabled: bool
     domain_prefix:
       kind: string
       constraints:
@@ -143,13 +152,29 @@ config:
     - ANAS_IAM_CLIENT__FORGEJO__*
     - APPS_LIST*
   consumes:
+    - ANAS_DIRECTORY_EVENTS_DIR
+    - ANAS_DIRECTORY_EVENTS_FILE_NAME
     - ANAS_IAM_BINDING__FORGEJO__*
     - ANAS_TLS_CERTS_DIR
     - ANAS_TLS_INTERNAL_CA_NAME
+    - SAMBA_DC_ADMIN_GROUP_DN
     - SAMBA_DC_ADMIN_GROUP_NAME
+    - SAMBA_DC_APP_ALL_DN
     - SAMBA_DC_APP_FILTER
+    - SAMBA_DC_BASE_APP_DN
+    - SAMBA_DC_BASE_USERS_DN
+    - SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE
+    - SAMBA_DC_LDAPS_PORT
+    - SAMBA_DC_LDAPS_SERVER_URL
+    - SAMBA_DC_LDAP_BIND_DN
+    - SAMBA_DC_LDAP_BIND_PASSWORD
+    - SAMBA_DC_USER_CLASS_FILTER
     - TRAEFIK_BASE_PORT
   changes:
+    account_linking:
+      effect: container_recreate
+      apply: recreate-forgejo
+      description: How an OIDC login binds to an account synchronised from the directory. login asks the person to sign in to that account once; auto binds by username or email and is safe only while the IAM forbids self-service changes to mail and sAMAccountName and the deployment has a single OAuth2 source. Ignored while directory_sync_enabled is false.
     actions_allowed_scopes:
       effect: container_recreate
       apply: reconcile-forgejo-actions
@@ -170,6 +195,10 @@ config:
       effect: container_recreate
       apply: recreate-forgejo
       description: Enables repository custom Git hooks; disabled by default because hooks execute server-side code as the Forgejo user.
+    directory_sync_enabled:
+      effect: container_recreate
+      apply: recreate-forgejo
+      description: Synchronises users from the directory through a read-only LDAP source and subscribes to the directory event journal, so an account removed from APP_forgejo or disabled loses access within seconds instead of at its next login. Groups still reach teams through the OIDC claim. Off by default because it changes how accounts are created and linked.
     db_type:
       effect: data_migrate
       apply: migrate-forgejo-database

@@ -7,10 +7,10 @@
 
 <!-- generated:configuration-summary:start -->
 - 内置 Module：`24`
-- 已声明参数：共 `188` 个（全局 `17` 个、Module 所有 `171` 个；结构化 Module 参数 `167` 个、裸 `env.*` 参数 `4` 个）
+- 已声明参数：共 `190` 个（全局 `17` 个、Module 所有 `173` 个；结构化 Module 参数 `169` 个、裸 `env.*` 参数 `4` 个）
 - 解析阶段：`input_required` `2` 个、`must_resolve` `31` 个、未知类型 `0` 个
-- 类型分布：`bool` `26`、`enum` `26`、`int` `30`、`string` `106`
-- 默认值来源分布：`generated` `10`、`host` `3`、`inherited` `8`、`none` `8`、`runtime` `4`、`static` `155`
+- 类型分布：`bool` `27`、`enum` `27`、`int` `30`、`string` `106`
+- 默认值来源分布：`generated` `10`、`host` `3`、`inherited` `8`、`none` `8`、`runtime` `4`、`static` `157`
 <!-- generated:configuration-summary:end -->
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
@@ -194,7 +194,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `ddns_go` | 10 | `ddns_go.dns_provider`<br>`ddns_go.domain_prefix`<br>`ddns_go.interval`<br>`ddns_go.ipv4_gettype`<br>`ddns_go.ipv4_interface`<br>`ddns_go.ipv4_urls`<br>`ddns_go.ipv6_gettype`<br>`ddns_go.ipv6_interface`<br>`ddns_go.ipv6_urls`<br>`ddns_go.web_enabled` |
 | `ddns_updater` | 10 | `ddns_updater.dns_provider`<br>`ddns_updater.domain_prefix`<br>`ddns_updater.forward_auth_interface`<br>`ddns_updater.publicip_dns_providers`<br>`ddns_updater.publicip_fetchers`<br>`ddns_updater.publicip_ipv4_providers`<br>`ddns_updater.publicip_ipv6_providers`<br>`ddns_updater.publicip_providers`<br>`ddns_updater.ttl`<br>`ddns_updater.zone_identifier` |
 | `eturnal` | 2 | `eturnal.domain_prefix`<br>`eturnal.port` |
-| `forgejo` | 12 | `forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_isolation`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.ssh_port` |
+| `forgejo` | 14 | `forgejo.account_linking`<br>`forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_isolation`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.directory_sync_enabled`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.ssh_port` |
 | `incus` | 5 | `incus.admin_certificate_b64`<br>`incus.admin_key_b64`<br>`incus.endpoint`<br>`incus.server_certificate_b64`<br>`incus.storage_pool` |
 | `lam` | 3 | `lam.admin_password`<br>`lam.domain_prefix`<br>`lam.language` |
 | `lego` | 2 | `lego.dns_provider`<br>`lego.dns_server` |
@@ -241,7 +241,7 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 <!-- generated:configuration-effects:start -->
 | Module 参数 effect | 参数数 | 修改结果 |
 | --- | ---: | --- |
-| `container_recreate` | 106 | 重新渲染，并重建受影响容器或 Compose project |
+| `container_recreate` | 108 | 重新渲染，并重建受影响容器或 Compose project |
 | `credential_rotate` | 9 | 通过凭据轮换事务同步应用状态与 Secret Store |
 | `data_migrate` | 17 | 激活前迁移持久数据、数据库或成员身份 |
 | `hot_reload` | 16 | 通过声明的管理命令应用；当前执行器可能保守地重建容器 |

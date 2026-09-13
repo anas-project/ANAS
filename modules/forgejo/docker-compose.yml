@@ -85,8 +85,51 @@ services:
         condition: service_completed_successfully
     networks:
       - actions-control
+      - directory-watch
       - db
       - traefik
+
+  # Tails Samba's durable directory-event journal and asks Forgejo to run its
+  # own "sync external users" task right after a relevant change, so a removal
+  # from APP_forgejo takes effect in seconds rather than at the next login. The
+  # periodic cron stays enabled as the fallback. With directory synchronisation
+  # off the process exits successfully at once, and on-failure keeps it down.
+  anas_forgejo_dirwatch:
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_dirwatch
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r1
+    restart: on-failure:5
+    user: "1000:1000"
+    entrypoint: ["/usr/local/bin/anas-forgejo-entrypoint", "directory-watch"]
+    depends_on:
+      anas_forgejo:
+        condition: service_healthy
+    environment:
+      FORGEJO_DIRWATCH_ENABLED: ${FORGEJO_DIRWATCH_ENABLED}
+      FORGEJO_DIRWATCH_EVENT_FILE: ${FORGEJO_DIRWATCH_EVENT_FILE}
+      FORGEJO_DIRWATCH_CURSOR_FILE: /data/anas-dirwatch/cursor.json
+      FORGEJO_DIRWATCH_HEALTH_FILE: /data/anas-dirwatch/health.json
+      FORGEJO_DIRWATCH_ENDPOINT: ${FORGEJO_DIRWATCH_ENDPOINT}
+      FORGEJO_DIRWATCH_USERNAME: ${FORGEJO_DIRWATCH_USERNAME}
+      FORGEJO_DIRWATCH_PASSWORD: ${FORGEJO_DIRWATCH_PASSWORD}
+      FORGEJO_DIRWATCH_OPERATIONS: ${FORGEJO_DIRWATCH_OPERATIONS}
+      FORGEJO_DIRWATCH_ATTRIBUTES: ${FORGEJO_DIRWATCH_ATTRIBUTES}
+      FORGEJO_DIRWATCH_DEBOUNCE_SECONDS: ${FORGEJO_DIRWATCH_DEBOUNCE_SECONDS}
+      FORGEJO_DIRWATCH_MIN_INTERVAL_SECONDS: ${FORGEJO_DIRWATCH_MIN_INTERVAL_SECONDS}
+      FORGEJO_DIRWATCH_POLL_SECONDS: ${FORGEJO_DIRWATCH_POLL_SECONDS}
+    read_only: true
+    volumes:
+      - "${FORGEJO_DIRWATCH_EVENTS_DIR}:/var/lib/anas-directory-events:ro"
+      - "${DATA_PATH}/forgejo/anas-dirwatch:/data/anas-dirwatch"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/anas-forgejo-entrypoint", "directory-watch", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - directory-watch
 
   anas_forgejo_actions_preflight:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_actions_preflight
@@ -209,6 +252,7 @@ services:
 
 networks:
   actions-control:
+  directory-watch:
   db:
     name: ${FORGEJO_NETWORK_DB}
     external: true

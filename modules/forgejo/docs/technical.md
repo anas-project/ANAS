@@ -11,9 +11,10 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r1` | `actions-control, db, traefik` | 2 |
+| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r1` | `actions-control, directory-watch, db, traefik` | 2 |
 | `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1` | `actions-control` | 1 |
 | `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1` | `actions-control` | 0 |
+| `anas_forgejo_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r1` | `directory-watch` | 2 |
 <!-- generated:compose-topology:end -->
 
 Web/API 仅在 Traefik network 暴露 `3000/tcp`；内置 SSH server 的容器端口 `2222/tcp` 直接发布为
@@ -28,6 +29,7 @@ entrypoint。健康检查同样降权后请求 `/-/healthcheck`。
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `forgejo.account_linking` | enum (`login`, `auto`) | — | `login` | `static` | `FORGEJO_ACCOUNT_LINKING` | 否 | 否 | 否 | 是 | `container_recreate` | 开启目录同步后 OIDC 登录绑定目录账号的方式；`auto` 时 helper 拒绝第二个 OAuth2 源 |
 | `forgejo.actions_allowed_scopes` | string | — | `""` | `static` | `FORGEJO_ACTIONS_ALLOWED_SCOPES` | 否 | 否 | 否 | 是 | `container_recreate` | 可使用 ANAS Runner 的组织或仓库 scope，逗号分隔 |
 | `forgejo.actions_enabled` | bool | — | `false` | `static` | `FORGEJO_ACTIONS_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | Actions 服务端与 one-job Runner controller 的唯一共同开关 |
 | `forgejo.actions_isolation` | enum (`auto`, `incus_vm`, `incus_container`) | — | `auto` | `static` | `FORGEJO_ACTIONS_ISOLATION` | 否 | 否 | 否 | 是 | `container_recreate` | 向 compute Provider 申请的隔离档 |
@@ -35,6 +37,7 @@ entrypoint。健康检查同样降权后请求 `/-/healthcheck`。
 | `forgejo.custom_git_hooks_enabled` | bool | — | `false` | `static` | `FORGEJO_CUSTOM_GIT_HOOKS_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否允许仓库自定义 Git Hooks；Hook 会以 Forgejo 用户身份执行服务端代码 |
 | `forgejo.db_name` | string | — | `forgejo` | `static` | `FORGEJO_DB_NAME` | 否 | 否 | 否 | 否：`migrate-forgejo-database` | `data_migrate` | 应用数据库名 |
 | `forgejo.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-forgejo-database` | `data_migrate` | 关系数据库类型或自动选择 |
+| `forgejo.directory_sync_enabled` | bool | — | `false` | `static` | `FORGEJO_DIRECTORY_SYNC_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 只读 LDAP 源同步用户、关闭自动注册并启动目录事件 watcher；不同步组 |
 | `forgejo.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `git` | `static` | `FORGEJO_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
 | `forgejo.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `FORGEJO_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议；仅支持 OIDC |
 | `forgejo.language` | string | — | — | `inherited` | `FORGEJO_LANGUAGE` | 否 | 是 | 否 | 是 | `reconcile` | 默认 UI 语言；浏览器和用户偏好优先 |
@@ -73,6 +76,27 @@ post-logout URI 或 IAM 主动 logout receiver。
 SAML。Forgejo v15 没有按不可变 LDAP UUID 将 OIDC 身份安全关联到预配用户的公开接口，因此设计已
 决定不实现 LDAP + OIDC/SAML 双链路；用户由 OIDC JIT 创建，Organization/Team 仍由 Forgejo 管理。
 决策依据见[Forgejo Module 设计](/architecture/forgejo-module-design)。
+
+## 目录同步（可选）
+
+`directory_sync_enabled=true` 时 Hook 额外做三件事，均为增量：
+
+1. **只读 LDAP 源**：`after_start` 经容器内 helper 以 stdin 传入输入，执行
+   `forgejo admin auth add-ldap/update-ldap`（名称 `anas-ldap`，LDAPS，`--synchronize-users`）。用户过滤器与
+   IAM 准入一致：用户类、存在 `anasIdentityAnchor`，开启应用过滤时要求递归属于 `APP_forgejo`、`APP_all`
+   或管理员组；管理员组经 `--admin-filter` 映射为站点管理员。**不配置组同步**——固定版本
+   `cmd/admin_auth_ldap.go` 没有任何组相关选项，产品也没有认证源的 REST API；组仍经 OIDC groups 声明
+   在登录时到达 team。
+2. **账号绑定**：`ENABLE_AUTO_REGISTRATION` 关闭（账号只来自目录），`ACCOUNT_LINKING` 取
+   `account_linking`。取 `auto` 时 helper 若发现受管 `anas` 之外的 OAuth2 源即拒绝 apply。
+3. **目录事件订阅**：`anas_forgejo_dirwatch` 复用应用镜像，以 uid 1000 运行 `directory-watch`，只读挂载
+   事件日志，按属性过滤、5 秒防抖、60 秒最小间隔后调用
+   `POST /api/v1/admin/cron/sync_external_users`，由 Forgejo 自己的同步路径刷新账号；周期 cron 保留为
+   权威兜底。触发使用专用托管站点管理员 `anas_dirwatch`（Secret `FORGEJO_DIRWATCH_PASSWORD`），不借用恢复
+   账号。关闭同步时该进程立即以 0 退出，`restart: on-failure` 使其保持停止。
+
+覆盖范围边界：它加速的是**账号的启停与属性**（能否登录），不覆盖 team 成员关系。需要组变更即时生效的
+消费者必须自行订阅目录事件日志。
 
 ## 本地恢复与 Secret 边界
 

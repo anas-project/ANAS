@@ -42,6 +42,24 @@ type oidcInput struct {
 	AdminGroup   string `json:"admin_group"`
 }
 
+// ldapInput is the LDAP source the hook asks for. It is read-only toward the
+// directory: Forgejo binds as the query service account and never writes back.
+type ldapInput struct {
+	Name           string `json:"name"`
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	BindDN         string `json:"bind_dn"`
+	BindPassword   string `json:"bind_password"`
+	UserSearchBase string `json:"user_search_base"`
+	UserFilter     string `json:"user_filter"`
+	AdminFilter    string `json:"admin_filter"`
+	// AccountLinking is the Forgejo ACCOUNT_LINKING value in force. With "auto"
+	// an OIDC login is bound to an existing account by username or email, which
+	// is only safe while this deployment has exactly one OAuth2 source.
+	AccountLinking string `json:"account_linking"`
+	OIDCSourceName string `json:"oidc_source_name"`
+}
+
 type apiUser struct {
 	Login   string `json:"login"`
 	IsAdmin bool   `json:"is_admin"`
@@ -81,6 +99,20 @@ func main() {
 				fatal(err)
 			}
 			if err := ensureOIDC(input); err != nil {
+				fatal(err)
+			}
+			return
+		case "ldap":
+			var input ldapInput
+			if err := decodeInput(&input); err != nil {
+				fatal(err)
+			}
+			if err := ensureLDAP(input); err != nil {
+				fatal(err)
+			}
+			return
+		case "directory-watch":
+			if err := runDirectoryWatch(os.Args[2:]); err != nil {
 				fatal(err)
 			}
 			return
@@ -336,6 +368,98 @@ func ensureOIDC(input oidcInput) error {
 		return errors.New("Forgejo OIDC source is missing, disabled, or has the wrong type after reconciliation")
 	}
 	return nil
+}
+
+// ensureLDAP reconciles the read-only LDAP source that synchronises users
+// (FORGEJO-R-063). Group synchronisation is deliberately absent: Forgejo 15's
+// add-ldap/update-ldap commands expose no group options, and the product has no
+// REST API for authentication sources, so groups keep reaching teams through
+// the OIDC group claim.
+func ensureLDAP(input ldapInput) error {
+	if input.Name == "" || input.Host == "" || input.Port <= 0 || input.BindDN == "" ||
+		input.BindPassword == "" || input.UserSearchBase == "" || input.UserFilter == "" {
+		return errors.New("LDAP reconciliation input is incomplete")
+	}
+	switch input.AccountLinking {
+	case "login", "auto":
+	default:
+		return fmt.Errorf("unsupported account linking %q", input.AccountLinking)
+	}
+	list, err := runForgejoCommand("admin", "auth", "list")
+	if err != nil {
+		return errors.New("list Forgejo authentication sources failed")
+	}
+	// auto binds an OIDC login to an existing account by username or email. A
+	// second OAuth2 source -- say, GitHub sign-in for outside contributors --
+	// would let an identity this deployment does not control claim an internal
+	// account by email. Refuse rather than warn (FORGEJO-R-064).
+	if input.AccountLinking == "auto" {
+		if others := otherOAuthSources(list, input.OIDCSourceName); len(others) > 0 {
+			return fmt.Errorf("ACCOUNT_LINKING=auto requires a single OAuth2 source, but %s also exist; use account_linking=login",
+				strings.Join(others, ", "))
+		}
+	}
+	id, found := authSourceID(list, input.Name)
+	command := "add-ldap"
+	args := []string{"admin", "auth"}
+	if found {
+		command = "update-ldap"
+	}
+	args = append(args, command)
+	if found {
+		args = append(args, "--id", strconv.Itoa(id))
+	}
+	args = append(args,
+		"--name", input.Name,
+		"--active",
+		"--security-protocol", "LDAPS",
+		"--host", input.Host,
+		"--port", strconv.Itoa(input.Port),
+		"--bind-dn", input.BindDN,
+		"--bind-password", input.BindPassword,
+		"--user-search-base", input.UserSearchBase,
+		"--user-filter", input.UserFilter,
+		"--username-attribute", "sAMAccountName",
+		"--firstname-attribute", "givenName",
+		"--surname-attribute", "sn",
+		"--email-attribute", "mail",
+		"--synchronize-users",
+		"--skip-local-2fa",
+	)
+	if input.AdminFilter != "" {
+		args = append(args, "--admin-filter", input.AdminFilter)
+	}
+	if _, err := runForgejoCommand(args...); err != nil {
+		return errors.New("reconcile Forgejo LDAP source failed")
+	}
+	verified, err := runForgejoCommand("admin", "auth", "list")
+	if err != nil {
+		return errors.New("verify Forgejo LDAP source failed")
+	}
+	_, sourceType, enabled, ok := authSource(verified, input.Name)
+	if !ok || !strings.Contains(strings.ToLower(sourceType), "ldap") || !enabled {
+		return errors.New("Forgejo LDAP source is missing, disabled, or has the wrong type after reconciliation")
+	}
+	return nil
+}
+
+// otherOAuthSources lists every OAuth2 source except the managed one.
+func otherOAuthSources(output []byte, managed string) []string {
+	var others []string
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(strings.ReplaceAll(line, "|", " "))
+		if len(fields) < 4 {
+			continue
+		}
+		if _, err := strconv.Atoi(fields[0]); err != nil {
+			continue
+		}
+		sourceType := strings.ToLower(strings.Join(fields[2:len(fields)-1], " "))
+		if strings.Contains(sourceType, "oauth") && fields[1] != managed {
+			others = append(others, fields[1])
+		}
+	}
+	return others
 }
 
 func authSourceID(output []byte, name string) (int, bool) {

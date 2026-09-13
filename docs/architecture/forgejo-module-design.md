@@ -52,10 +52,15 @@ LDAP 用户的接口——绑定只能落回用户名或邮箱。
 
 因此确定设计是：
 
-- **LDAP source（只读）同步用户与组**，目录仍是唯一事实来源；Forgejo 侧不写回；
+- **LDAP source（只读）同步用户**，目录仍是唯一事实来源；Forgejo 侧不写回。**组不经 LDAP 同步**：固定
+  版本 `cmd/admin_auth_ldap.go` 的 add-ldap/update-ldap 没有任何组选项，产品也没有认证源 REST API，
+  组同步只能在 Web UI 里配置，无法声明式调和；组仍经 OIDC groups 声明在登录时映射 team；
 - **OIDC source 负责交互登录**；
-- **`ACCOUNT_LINKING=auto`**：OIDC 登录按用户名或邮箱自动绑定到 LDAP 同步出的既有账号；
-- Forgejo 订阅目录事件日志，在声明的最大传播时间内完成增量刷新；
+- **`ACCOUNT_LINKING=auto` 为目标取值**：OIDC 登录按用户名或邮箱自动绑定到 LDAP 同步出的既有账号；
+- Forgejo 订阅目录事件日志，在声明的最大传播时间内触发自己的外部用户同步——它加速的是**账号启停与
+  属性**，不覆盖 team 成员关系；
+- 整个能力由 `directory_sync_enabled` 开启、默认关闭，`ACCOUNT_LINKING` 由 `account_linking` 选择
+  （默认 `login`）；
 - 管理员 Group 仍映射为 Forgejo site administrator，仓库与 Organization 授权仍由 Forgejo 管理。
 
 **`auto` 的风险与它成立的条件。** 上游对 `auto` 的警告是"同用户名或同邮箱就授予既有账号访问权"。

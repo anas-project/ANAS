@@ -455,11 +455,11 @@ Forgejo 没有可写的看板 API（§3.8），但有**可排序的置顶 issue*
 │      └── outbox    评论 / 状态评论 / 标签 / 反应 / 附件                    │
 │      ├── PostgreSQL（inbox/policy/plan/job/run_event/usage）               │
 │      ├── 持久卷 agent-sessions/<repo>/<issue>/<agent>/                     │
-│      └── compute Contract ──▶ incus Provider ──▶ Incus 宿主                │
+│      └── compute 租约（apply 时由 incus Provider 交付）──直连──▶ Incus 宿主  │
 └───────────────────────────────┬──────────────────────────────────────────┘
                                 ▼
         一次性执行实例（默认 LXC，可选 VM）：fresh clone + worktree + Agent CLI
-        exec_stdin 注入短时 token/SSH key → tmpfs，作业后销毁
+        消费者经租约凭据 exec + stdin 注入短时 token/SSH key → tmpfs，作业后销毁
 ```
 
 凭据边界：**协作凭据只在控制面，执行凭据只在执行面**。Agent 进程看不到管理凭据，也看不到其他
@@ -467,9 +467,16 @@ Forgejo 没有可写的看板 API（§3.8），但有**可排序的置顶 issue*
 
 ### 5.2 执行面 Provider
 
-`compute` Contract 已定义一次性实例生命周期，把 Forgejo Actions controller 内嵌的 Incus 客户端提取
-为独立 `incus` Provider Module，Forgejo Actions 与 `ai_agent` 都作为消费者，各自绑定独立 restricted
-project 与证书。范围与验收见[要求](../../../../dev-docs/requirements/incus-module.md)与[计划](../../../../dev-docs/plans/incus-module.md)。
+`compute` Contract **交付的是围栏，不是实例**：`anas apply` 时由 `incus` Provider 执行 `ensure`，交出
+一个受限 project、Provider 侧强制的配额、固定镜像 allowlist 与一张只绑定该 project 的受限客户端证书；
+Contract 只有 `ensure`、`inspect`、`revoke` 三个操作。实例的 `create`/`start`/`exec`/`delete` **不是**
+Contract operation，而是消费者在租约边界内经 `internal/computeclient` **直连** Incus daemon 驱动的
+运行时行为——Contract operation 只能在 apply 时以 `docker compose run --rm` 冷启动执行，既承载不了
+per-job 的热路径，也没有可用于注入 Secret 的 stdin 流。
+
+因此本方案的执行面分两层：apply 时由 Runner 为 `ai_agent` 供给一份 compute 租约（与 Forgejo Actions
+各自独立的 project 与证书）；作业时编排器用租约凭据创建实例、经 `exec` 的 stdin 注入短时凭据、结束
+即删除。范围与验收见[要求](../../../../dev-docs/requirements/incus-module.md)与[计划](../../../../dev-docs/plans/incus-module.md)。
 
 ### 5.3 隔离档
 
@@ -530,7 +537,7 @@ CLI，保留 N-1 回滚）。
 | 形态 | 来源 | ANAS 侧做法 |
 | --- | --- | --- |
 | `api_key` | 厂商控制台 | `agent-credential set --agent <id>` 从 stdin 读入，不回显、不入日志、不入 issue |
-| `session_file` | 管理员在自己机器上用官方 CLI 登录后导出的凭据文件 | `agent-credential import --agent <id> --file -`，整文件存 Secret Store，作业时经 `exec_stdin` 注入 |
+| `session_file` | 管理员在自己机器上用官方 CLI 登录后导出的凭据文件 | `agent-credential import --agent <id> --file -`，整文件存 Secret Store，作业时经租约客户端的 `exec` stdin 注入 |
 | `oauth` | 需要浏览器交互的授权 | 交互在管理员机器上完成，ANAS 只接收结果凭据；**服务端不弹浏览器，也不代管账号口令** |
 
 配套命令：`agent-credential status`（只显示存在性、指纹与剩余有效期，**永不显示值**）、
@@ -715,9 +722,12 @@ Samba AD 组（CAP_ai_agent_*）
    声明的最大传播时间内完成增量刷新——**组撤权不再等下次登录**，这正是本节需要的能力。机制已经
    存在（Samba dsdb 审计 → `events.jsonl` → 各订阅者带自己的游标，authentik 与 Casdoor 的 dirwatch
    已实现），Forgejo 只是再加一个同类订阅者，不需要新写一份机制文档。
-2. 能力组的投影路径随之变化：双源落地后 `CAP_ai_agent_*` 可以经 **LDAP source 的组→team 映射**
-   到达 Forgejo，随同步与事件刷新；OIDC 的 `--group-team-map`（`FORGEJO-R-060`）是双源落地前的过渡
-   路径。两条路径产出的都是 Forgejo team，本方案的读法（以用户身份 `GET /user/teams`）不变。
+2. **能力组的投影路径不变，而且撤权仍有延迟**——这是 2026-09-13 实现时核对固定版本源码得到的修正：
+   Forgejo `15.0.7` 的 LDAP CLI 没有任何组同步选项，也没有认证源 REST API，所以 `CAP_ai_agent_*` 不能经
+   LDAP 同步到 team，仍只能走 OIDC 的 `--group-team-map`（`FORGEJO-R-060`），在登录时生效。Forgejo 的
+   目录订阅加速的是**账号**的停用与移出准入组，不是 team 成员关系。因此能力撤权要做到即时，必须由
+   `ai_agent` **自己订阅目录事件日志**刷新 `agent_grant` 快照，并保留即时否决表兜底；读法（以用户身份
+   `GET /user/teams`）不变。
 3. `auto` 的安全性依赖三个前提：IAM 禁止自助修改 `mail`/`sAMAccountName`（已写进
    [IAM Provider 要求](../../../../dev-docs/requirements/iam-provider.md) §1.6）、部署只有一个
    OIDC/OAuth source、邮箱别名与用户名不回收再分配。任一不成立则降级为 `ACCOUNT_LINKING=login`。

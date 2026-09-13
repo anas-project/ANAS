@@ -4,11 +4,11 @@ ARG GO_BUILDER_REGISTRY=docker.io
 
 FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26-alpine AS helper
 WORKDIR /src
-COPY entrypoint.go ./
+COPY entrypoint.go directory_watch.go ./
 ARG TARGETOS
 ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w" -o /anas-forgejo-entrypoint ./entrypoint.go
+    go build -trimpath -ldflags="-s -w" -o /anas-forgejo-entrypoint ./entrypoint.go ./directory_watch.go
 
 FROM ${FORGEJO_REGISTRY}/forgejo/forgejo:${FORGEJO_VERSION}-rootless
 COPY --from=helper /anas-forgejo-entrypoint /usr/local/bin/anas-forgejo-entrypoint

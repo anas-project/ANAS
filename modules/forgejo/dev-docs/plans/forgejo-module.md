@@ -156,11 +156,15 @@ E2E 前不把 Actions 标为 release 能力。
 依据[设计 §2.2](../../../../docs/architecture/forgejo-module-design.md)（2026-09-13 改写）。动机是让
 Forgejo 保有目录副本，从而能订阅目录事件、把组撤权的生效时间从"下次登录"压到秒级。
 
-- [ ] 配置只读 LDAP source 同步用户与组，确认不写回目录，且不引入 SAML source、密码回写或 anchor
-      reconciler（`R-063`）。
-- [ ] 把 `ACCOUNT_LINKING` 从 `disabled` 改为 `auto`，并在 Hook 里校验前提：IAM 已禁止自助改邮箱、
-      部署只有一个 OIDC/OAuth source；任一不成立时拒绝启用并提示降级为 `login`（`R-064`）。
-- [ ] 接入目录事件订阅，声明最大传播时间并验证组撤权的实际延迟（`R-065`）。
+- [x] 只读 LDAP source 同步**用户**（`anas-ldap`，LDAPS，准入过滤与 IAM 一致），不写回目录、不引入
+      SAML/密码回写/anchor reconciler（`R-063`）。**组同步不做**：核对固定版本源码
+      `cmd/admin_auth_ldap.go` 后确认 LDAP CLI 没有任何组选项，也没有认证源 REST API，组仍经 OIDC 映射。
+      整个能力由 `directory_sync_enabled` 开启、默认关闭——它改变账号的产生与绑定方式，不应随升级静默生效。
+- [x] 开启同步时关闭自动注册，`ACCOUNT_LINKING` 取 `account_linking`（默认 `login`）；取 `auto` 时 helper
+      发现受管 `anas` 之外的 OAuth2 源即拒绝 apply，并在 calculate 输出前提告警（`R-064`）。"IAM 已禁止自助
+      改邮箱"无法由本 Module 验证（绑定属性由 Core 定义），因此由管理员选择 `auto` 即表示承担该前提。
+- [x] 目录事件订阅：`anas_forgejo_dirwatch` 按属性过滤、5 秒防抖、60 秒最小间隔触发
+      `sync_external_users`，失败不前移游标；专用托管管理员 `anas_dirwatch`（`R-065`）。实测传播时间待 e2e。
 - [ ] 在目录管理流程中写明邮箱别名与用户名不得回收再分配、改名走正式流程（运维约束，非配置）。
 - [ ] 同步中英文 README 与技术文档。
 

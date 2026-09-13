@@ -179,3 +179,78 @@ func TestEnsureOIDCRejectsDisabledSource(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestEnsureLDAPAddsReadOnlyUserSourceAndVerifies(t *testing.T) {
+	original := runForgejoCommand
+	defer func() { runForgejoCommand = original }()
+	calls := 0
+	runForgejoCommand = func(args ...string) ([]byte, error) {
+		calls++
+		joined := strings.Join(args, " ")
+		switch calls {
+		case 1:
+			return []byte("ID Name Type Enabled\n1 anas OAuth2 true\n"), nil
+		case 2:
+			for _, fragment := range []string{"add-ldap", "--security-protocol LDAPS", "--synchronize-users", "--email-attribute mail", "--username-attribute sAMAccountName"} {
+				if !strings.Contains(joined, fragment) {
+					t.Fatalf("LDAP command missing %q: %s", fragment, joined)
+				}
+			}
+			// Forgejo 15's CLI has no group options; asking for any would fail.
+			if strings.Contains(joined, "group") {
+				t.Fatalf("LDAP command asked for group synchronisation: %s", joined)
+			}
+			return nil, nil
+		default:
+			return []byte("ID Name Type Enabled\n1 anas OAuth2 true\n2 anas-ldap LDAP (via BindDN) true\n"), nil
+		}
+	}
+	err := ensureLDAP(ldapInput{Name: "anas-ldap", Host: "dc.example.test", Port: 636, BindDN: "CN=svc_ldap",
+		BindPassword: "secret", UserSearchBase: "OU=People", UserFilter: "(sAMAccountName=%[1]s)",
+		AccountLinking: "login", OIDCSourceName: "anas"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 {
+		t.Fatalf("calls = %d", calls)
+	}
+}
+
+// auto binds by username or email, so a second OAuth2 source would let an
+// outside identity claim an internal account. The helper refuses before it
+// touches the LDAP source.
+func TestEnsureLDAPWithAutoLinkingRefusesASecondOAuthSource(t *testing.T) {
+	original := runForgejoCommand
+	defer func() { runForgejoCommand = original }()
+	calls := 0
+	runForgejoCommand = func(args ...string) ([]byte, error) {
+		calls++
+		return []byte("ID Name Type Enabled\n1 anas OAuth2 true\n4 github OAuth2 true\n"), nil
+	}
+	err := ensureLDAP(ldapInput{Name: "anas-ldap", Host: "dc", Port: 636, BindDN: "CN=svc", BindPassword: "p",
+		UserSearchBase: "OU=People", UserFilter: "(sAMAccountName=%[1]s)", AccountLinking: "auto", OIDCSourceName: "anas"})
+	if err == nil || !strings.Contains(err.Error(), "github") {
+		t.Fatalf("error = %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("the LDAP source was touched despite the refusal: %d calls", calls)
+	}
+}
+
+func TestEnsureLDAPWithLoginLinkingToleratesOtherOAuthSources(t *testing.T) {
+	original := runForgejoCommand
+	defer func() { runForgejoCommand = original }()
+	calls := 0
+	runForgejoCommand = func(args ...string) ([]byte, error) {
+		calls++
+		if calls == 3 {
+			return []byte("1 anas OAuth2 true\n4 github OAuth2 true\n2 anas-ldap LDAP (via BindDN) true\n"), nil
+		}
+		return []byte("1 anas OAuth2 true\n4 github OAuth2 true\n"), nil
+	}
+	err := ensureLDAP(ldapInput{Name: "anas-ldap", Host: "dc", Port: 636, BindDN: "CN=svc", BindPassword: "p",
+		UserSearchBase: "OU=People", UserFilter: "(sAMAccountName=%[1]s)", AccountLinking: "login", OIDCSourceName: "anas"})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

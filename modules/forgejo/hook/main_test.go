@@ -437,3 +437,172 @@ func TestCalculateDoesNotPublishLocalAdminPlaintext(t *testing.T) {
 		}
 	}
 }
+
+func directoryEnv() map[string]string {
+	env := forgejoCalculateEnv()
+	for key, value := range map[string]string{
+		"FORGEJO_DIRECTORY_SYNC_ENABLED":     "true",
+		"FORGEJO_ACCOUNT_LINKING":            "login",
+		"DATA_PATH":                          "/srv/anas/data",
+		"SAMBA_DC_LDAPS_SERVER_URL":          "ldaps://example.test",
+		"SAMBA_DC_LDAPS_PORT":                "636",
+		"SAMBA_DC_LDAP_BIND_DN":              "CN=svc_ldap,OU=Service Accounts,DC=example,DC=test",
+		"SAMBA_DC_LDAP_BIND_PASSWORD":        "bind-secret",
+		"SAMBA_DC_BASE_USERS_DN":             "OU=People,DC=example,DC=test",
+		"SAMBA_DC_USER_CLASS_FILTER":         "(objectClass=user)",
+		"SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE": "anasIdentityAnchor",
+		"SAMBA_DC_ADMIN_GROUP_DN":            "CN=Admins,OU=Role,OU=Groups,DC=example,DC=test",
+		"SAMBA_DC_BASE_APP_DN":               "OU=Apps,OU=Groups,DC=example,DC=test",
+		"SAMBA_DC_APP_ALL_DN":                "CN=APP_all,OU=Apps,OU=Groups,DC=example,DC=test",
+	} {
+		env[key] = value
+	}
+	return env
+}
+
+// Off by default: an upgrade must not change how accounts are created.
+func TestDirectorySyncIsOffByDefaultAndLinkingStaysDisabled(t *testing.T) {
+	env := forgejoCalculateEnv()
+	if _, err := calculate(env, &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if env["FORGEJO_DIRECTORY_SYNC_ENABLED"] != "false" || env["FORGEJO_DIRWATCH_ENABLED"] != "false" {
+		t.Fatalf("directory sync defaulted on: %q", env["FORGEJO_DIRECTORY_SYNC_ENABLED"])
+	}
+	render := forgejoRenderEnv()
+	render["FORGEJO_DIRECTORY_SYNC_ENABLED"] = "false"
+	if err := renderEnv(render); err != nil {
+		t.Fatal(err)
+	}
+	if render["FORGEJO__OAUTH2_CLIENT__ACCOUNT_LINKING"] != "disabled" || render["FORGEJO__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION"] != "true" {
+		t.Fatalf("linking=%q autoreg=%q", render["FORGEJO__OAUTH2_CLIENT__ACCOUNT_LINKING"], render["FORGEJO__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION"])
+	}
+}
+
+func TestDirectorySyncDerivesAReadOnlyUserSourceWithIAMAdmission(t *testing.T) {
+	env := directoryEnv()
+	if _, err := calculate(env, &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if env["FORGEJO_LDAP_HOST"] != "example.test" || env["FORGEJO_LDAP_PORT"] != "636" {
+		t.Fatalf("host=%q port=%q", env["FORGEJO_LDAP_HOST"], env["FORGEJO_LDAP_PORT"])
+	}
+	filter := env["FORGEJO_LDAP_USER_FILTER"]
+	for _, fragment := range []string{"(sAMAccountName=%[1]s)", "(anasIdentityAnchor=*)", "CN=APP_forgejo,OU=Apps", "CN=APP_all,OU=Apps", "CN=Admins,OU=Role", "1.2.840.113556.1.4.1941"} {
+		if !strings.Contains(filter, fragment) {
+			t.Fatalf("user filter missing %q: %s", fragment, filter)
+		}
+	}
+	if env["FORGEJO_DIRWATCH_ENABLED"] != "true" || env["FORGEJO_DIRWATCH_PASSWORD"] == "" {
+		t.Fatal("the directory watcher was not armed")
+	}
+	if env["FORGEJO_DIRWATCH_EVENTS_DIR"] != "/srv/anas/data/forgejo/directory-events" {
+		t.Fatalf("events dir = %q", env["FORGEJO_DIRWATCH_EVENTS_DIR"])
+	}
+
+	render := forgejoRenderEnv()
+	for key, value := range env {
+		if strings.HasPrefix(key, "FORGEJO_LDAP_") || strings.HasPrefix(key, "FORGEJO_DIRWATCH_") ||
+			key == "FORGEJO_DIRECTORY_SYNC_ENABLED" || key == "FORGEJO_ACCOUNT_LINKING" {
+			render[key] = value
+		}
+	}
+	if err := renderEnv(render); err != nil {
+		t.Fatal(err)
+	}
+	// Accounts come from the directory now: an OIDC login binds to one rather
+	// than registering a second.
+	if render["FORGEJO__OAUTH2_CLIENT__ACCOUNT_LINKING"] != "login" || render["FORGEJO__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION"] != "false" {
+		t.Fatalf("linking=%q autoreg=%q", render["FORGEJO__OAUTH2_CLIENT__ACCOUNT_LINKING"], render["FORGEJO__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION"])
+	}
+}
+
+func TestAutoLinkingWarnsAboutItsPrerequisites(t *testing.T) {
+	env := directoryEnv()
+	env["FORGEJO_ACCOUNT_LINKING"] = "auto"
+	warnings, err := calculate(env, &secretStore{values: map[string]string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(warnings, "\n")
+	if !strings.Contains(joined, "self-service") || !strings.Contains(joined, "single OAuth2 source") {
+		t.Fatalf("auto linking was enabled without stating its prerequisites: %q", joined)
+	}
+}
+
+func TestInvalidAccountLinkingIsRejected(t *testing.T) {
+	env := directoryEnv()
+	env["FORGEJO_ACCOUNT_LINKING"] = "email"
+	if _, err := calculate(env, &secretStore{values: map[string]string{}}); err == nil {
+		t.Fatal("an unknown linking mode was accepted")
+	}
+}
+
+func TestDirectorySyncFailsClosedWithoutDirectoryInputs(t *testing.T) {
+	env := directoryEnv()
+	delete(env, "SAMBA_DC_LDAP_BIND_PASSWORD")
+	if _, err := calculate(env, &secretStore{values: map[string]string{}}); err == nil {
+		t.Fatal("directory synchronisation was enabled without a bind credential")
+	}
+}
+
+func TestLDAPBindPasswordPassesOnlyThroughStdin(t *testing.T) {
+	original := runContainerHelper
+	defer func() { runContainerHelper = original }()
+	calls := 0
+	runContainerHelper = func(payload []byte, name string, args ...string) ([]byte, error) {
+		calls++
+		joined := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(joined, "bind-secret") {
+			t.Fatal("LDAP bind password leaked into docker argv")
+		}
+		var input ldapInput
+		if err := json.Unmarshal(payload, &input); err != nil {
+			t.Fatal(err)
+		}
+		if input.BindPassword != "bind-secret" || input.Name != "anas-ldap" || !strings.Contains(joined, "anas-forgejo-entrypoint ldap") {
+			t.Fatalf("input = %+v command = %s", input, joined)
+		}
+		return nil, nil
+	}
+	env := map[string]string{
+		"CONTAINER_PREFIX": "anas_", "FORGEJO_DIRECTORY_SYNC_ENABLED": "true", "FORGEJO_ACCOUNT_LINKING": "login",
+		"FORGEJO_LDAP_HOST": "example.test", "FORGEJO_LDAP_PORT": "636", "FORGEJO_LDAP_BIND_DN": "CN=svc",
+		"FORGEJO_LDAP_BIND_PASSWORD": "bind-secret", "FORGEJO_LDAP_USER_BASE_DN": "OU=People",
+		"FORGEJO_LDAP_USER_FILTER": "(sAMAccountName=%[1]s)",
+	}
+	if err := reconcileLDAP(env); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d", calls)
+	}
+	env["FORGEJO_DIRECTORY_SYNC_ENABLED"] = "false"
+	if err := reconcileLDAP(env); err != nil || calls != 1 {
+		t.Fatalf("a disabled sync still reconciled the LDAP source: err=%v calls=%d", err, calls)
+	}
+}
+
+func TestDirwatchAccountPasswordPassesOnlyThroughStdin(t *testing.T) {
+	original := runContainerHelper
+	defer func() { runContainerHelper = original }()
+	runContainerHelper = func(payload []byte, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(append([]string{name}, args...), " ")
+		if strings.Contains(joined, "watch-secret") {
+			t.Fatal("directory watcher password leaked into docker argv")
+		}
+		var input localAdminInput
+		if err := json.Unmarshal(payload, &input); err != nil {
+			t.Fatal(err)
+		}
+		if input.Username != "anas_dirwatch" || input.Password != "watch-secret" {
+			t.Fatalf("input = %+v", input)
+		}
+		return nil, nil
+	}
+	if err := reconcileDirwatchAccount(map[string]string{
+		"CONTAINER_PREFIX": "anas_", "FORGEJO_DIRECTORY_SYNC_ENABLED": "true", "FORGEJO_DIRWATCH_PASSWORD": "watch-secret",
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
