@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-27
-updated: 2026-09-08
+updated: 2026-09-13
 ---
 
 # Samba 目录事件订阅与实时同步实施计划
@@ -59,7 +59,20 @@ updated: 2026-09-08
 
 没有外部阻塞。下一步先以 Manifest 和最终 render 环境建立完整消费者清单，再按清单补实现与 E2E。
 
-## 7. e2e 执行记录
+## 7. CI 门禁
+
+本计划还没有自己的实施提交：M0、M1 的「实施中」指的是早于本计划（`1d7bb42`，2026-08-27）的 Casdoor
+与 Authentik 既有实现，检查表各项均未勾选。下表记录这些既有实现与本计划文档所在门禁的实际状态：
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `go test ./...`（Samba 生产者与 Authentik、Casdoor 的 Hook） | `25433bd`（GitHub CI，2026-08-29）；`5306b63` 上三个 Hook 包通过，整体因 `internal/runner` 的无关用例失败；其后提交均未经 CI |
+| Casdoor helper 的 `directory_watch_test.go`（`modules/casdoor/casdoor/helper`，独立 `go.mod`） | 从未记录：`go test ./...` 不进入嵌套 module，`test-env/scripts/test-static.sh` 单独列出的嵌套 module 也不包括它 |
+| Authentik 的 `test_directory_watch.py` | 没有 CI 记录：CI 没有 Python 步骤，只有本地 `test-env/scripts/test-static.sh` 会运行它 |
+| `go run ./cmd/gen-module-docs --check` | `5306b63`（GitHub CI，2026-09-05） |
+| `npm run docs:check-requirements`、`docs:check-requirement-status` | `5306b63`（GitHub CI），校验的是补入 `R-013`、`R-014` 与 M3 之前的版本；`40a8b2e`（2026-09-09）之后没有 CI 记录，本地 `6823232` 通过 |
+
+## 8. e2e 执行记录
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
 | --- | --- | --- | --- | --- |
@@ -71,3 +84,12 @@ updated: 2026-09-08
 | R-012 | `server-directory-event-consumer-matrix-e2e.sh full` | 全部 IAM Provider 与直接 LDAP/LDAPS Module | — | 待实现 |
 | R-013 | `server-directory-event-consumer-matrix-e2e.sh admission-revoke` | Samba AD + 每个持会话消费者，真实浏览器 Cookie | — | 待实现 |
 | R-014 | `server-directory-event-consumer-matrix-e2e.sh dual-attach` | 双接入 Module（`nextcloud`、`meshcentral` 及盘点新增项） | — | 待实现 |
+
+## 9. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [Module IAM / OIDC 支持清单](../../docs/reference/module-iam-support.md)与英文镜像的「Samba 目录事件订阅规范」 | 订阅义务、准入丧失会话撤销（R-013）与双接入（R-014）的规范摘要 | 已完成（`40a8b2e` 补入 R-013、R-014 两段） |
+| 同上 | 仍写 `forgejo` 的上游 LDAP 支持「待 M0 盘点确认」；`4317f7c` 已决定 Forgejo 改为 LDAP 同步 + OIDC 登录双源（`FORGEJO-R-063`—`R-065`），该句应改为引用这个决定 | 未开始 |
+| 各 IAM Provider 与直接 LDAP/LDAPS Module 的 README 与技术文档（中英文） | M0：单支持的写明缺失方向与兜底路径（R-014）；M2：最大传播时间、全量兜底周期、测试入口与结果；M3：准入丧失的最大传播时间与撤销范围。目前只有 `casdoor` 的技术文档有目录事件一节，`authentik` 已消费事件但文档未提及 | 未开始 |
+| [英文架构索引](../../docs/en/architecture/index.md) | 按文档标准 §2 至少补 [Directory event journal](../../docs/architecture/directory-event-journal.md) 的英文摘要；目前没有条目 | 未开始 |
