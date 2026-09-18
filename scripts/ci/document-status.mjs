@@ -10,9 +10,22 @@ import { requirementScopes } from './requirement-docs-lib.mjs'
 // Archived plans are included: a finished plan still has to say so at the top,
 // and its directory is exactly where a reader is most likely to mistake a
 // historical baseline for current instructions.
-const directories = ['docs/architecture']
+const directories = ['docs/architecture', ...moduleArchitectureDirectories()]
 for (const { requirementsDir, plansDir, archivedPlansDir } of requirementScopes()) {
   directories.push(requirementsDir, plansDir, archivedPlansDir)
+}
+
+// A component destined to become its own project keeps its design beside its
+// code rather than in the published tree. The status rule follows it there:
+// `modules/<name>/docs/architecture` is the same kind of document as
+// `docs/architecture`, and a reader is no less likely to mistake a proposal for
+// current instructions because the file moved.
+function moduleArchitectureDirectories() {
+  if (!existsSync('modules')) return []
+  return readdirSync('modules')
+    .sort()
+    .map((name) => join('modules', name, 'docs', 'architecture'))
+    .filter((directory) => existsSync(directory))
 }
 
 const documents = []

@@ -158,6 +158,27 @@ func TestRewriteUserLinksSendsModulePrivateDevDocsToRepository(t *testing.T) {
 	}
 }
 
+// A Module whose design and research live beside its code -- the staging shape
+// for a component that will become its own project -- must link them the way it
+// links its dev-docs: relative in the source, repository URLs on the site.
+func TestRewriteUserLinksSendsModuleDesignToTheRepository(t *testing.T) {
+	for _, testCase := range []struct{ source, want string }{
+		{"[design](docs/architecture/orchestration-design.md)",
+			"[design](https://github.com/anas-project/ANAS/blob/deadbeef/modules/demo/docs/architecture/orchestration-design.md)"},
+		{"[research](docs/research/kanban-integration.md)",
+			"[research](https://github.com/anas-project/ANAS/blob/deadbeef/modules/demo/docs/research/kanban-integration.md)"},
+		{"[rules](docs/forgejo-interop.md)",
+			"[rules](https://github.com/anas-project/ANAS/blob/deadbeef/modules/demo/docs/forgejo-interop.md)"},
+		// The technical pages keep their site route: they are published, and the
+		// generic docs/ rewrite must not claim them.
+		{"[technical](docs/technical.md)", "[technical](./technical)"},
+	} {
+		if got := rewriteUserLinks(testCase.source, "demo", "deadbeef"); got != testCase.want {
+			t.Fatalf("rewriteUserLinks(%q) = %q, want %q", testCase.source, got, testCase.want)
+		}
+	}
+}
+
 // The technical page sits one level deeper, so the same document is one parent
 // segment away; the generic parent rule has to resolve it against the Module
 // directory rather than the repository root.

@@ -570,6 +570,13 @@ func rewriteUserLinks(source, module, ref string) string {
 	// therefore carries no parent segments at all. It is repository-only for the
 	// same reason the shared directory is.
 	source = rewriteRepositoryLinks(source, module, ref, "dev-docs/")
+	// A component that is on its way to becoming its own project keeps the rest
+	// of its documentation beside its code. Those pages are not part of this
+	// site, so a README link into them is repository-only for the same reason
+	// dev-docs/ is -- and staying relative in the source keeps the link correct
+	// once the component is split out. The two technical pages are already
+	// rewritten above, so what reaches here is everything else under docs/.
+	source = rewriteRepositoryLinks(source, module, ref, "docs/")
 	return strings.ReplaceAll(source, "](../../docs/", "](/")
 }
 
