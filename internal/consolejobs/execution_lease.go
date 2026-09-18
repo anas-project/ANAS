@@ -19,6 +19,7 @@ type ExecutionLease struct {
 	directoryFile *os.File
 	file          *os.File
 	closed        bool
+	retained      int
 }
 
 // AcquireExecutionLease obtains exclusive execution ownership for one console
@@ -104,7 +105,38 @@ func (lease *ExecutionLease) withOwnership(directory string, action func() error
 	return action()
 }
 
-// Close releases execution ownership. It is safe to call more than once.
+// Retain prevents Close from transferring execution ownership while a supervised
+// child may still be alive. Release only after process and I/O cleanup has been
+// confirmed. A containment failure deliberately retains this guard for the
+// remainder of the daemon lifetime; it must not be treated as a retry signal.
+func (lease *ExecutionLease) Retain() (func(), error) {
+	if lease == nil {
+		return nil, ErrUnavailable
+	}
+	lease.mu.Lock()
+	defer lease.mu.Unlock()
+	if lease.closed {
+		return nil, ErrUnavailable
+	}
+	if err := verifyOpenDirectory(lease.directoryFile, lease.directory); err != nil {
+		return nil, &PersistenceError{Operation: "retain job execution lease", Cause: err}
+	}
+	if err := verifyOpenNamedFile(lease.file, lease.path, ExecutionLeaseFilename); err != nil {
+		return nil, &PersistenceError{Operation: "retain job execution lease", Cause: err}
+	}
+	lease.retained++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			lease.mu.Lock()
+			defer lease.mu.Unlock()
+			lease.retained--
+		})
+	}, nil
+}
+
+// Close releases execution ownership. It is safe to call more than once, but
+// refuses to unlock while retained supervisors still own external processes.
 func (lease *ExecutionLease) Close() error {
 	if lease == nil {
 		return nil
@@ -113,6 +145,9 @@ func (lease *ExecutionLease) Close() error {
 	defer lease.mu.Unlock()
 	if lease.closed {
 		return nil
+	}
+	if lease.retained != 0 {
+		return ErrExecutionRetained
 	}
 	lease.closed = true
 	var integrityErr error

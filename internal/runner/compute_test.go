@@ -45,7 +45,7 @@ func validComputeSpec() map[string]any {
 		"quota": map[string]any{
 			"max_instances": 8, "cpu": 4, "memory_mib": 8192, "disk_gib": 40,
 		},
-		"image_allowlist": []any{strings.Repeat("a", 64)},
+		"image_allowlist": []any{map[string]any{"fingerprint": strings.Repeat("a", 64)}},
 		"credential":      map[string]any{"policy": "generated"},
 		"deletion_policy": "retain",
 	}
@@ -201,29 +201,12 @@ func TestImagePolicyAnyIsReservedNotHonoured(t *testing.T) {
 	}
 }
 
-func TestValidateComputeSpecAcceptsASpecFromAllowlistString(t *testing.T) {
-	// spec_from can only assign a string, so the comma-separated form is the
-	// only way a module can wire a configured image into its lease.
-	spec := validComputeSpec()
-	spec["image_allowlist"] = strings.Repeat("a", 64) + "," + strings.Repeat("b", 64)
-	_, allowlist, err := validateComputeSpec("forgejo", "runners", spec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(allowlist) != 2 {
-		t.Fatalf("allowlist = %v, want both fingerprints", allowlist)
-	}
-
-	for name, value := range map[string]string{
-		"alias in the string": "images:debian/13",
-		"one bad entry":       strings.Repeat("a", 64) + ",debian",
-		"only separators":     ",,",
-		"empty string":        "",
-	} {
+func TestValidateComputeSpecRejectsLegacyImageStrings(t *testing.T) {
+	for _, value := range []any{strings.Repeat("a", 64), []any{strings.Repeat("a", 64)}, "anas:runner@r1", "fingerprint:" + strings.Repeat("a", 64)} {
 		spec := validComputeSpec()
 		spec["image_allowlist"] = value
 		if _, _, err := validateComputeSpec("forgejo", "runners", spec); err == nil {
-			t.Errorf("%s should be rejected", name)
+			t.Fatal("accepted old string image syntax")
 		}
 	}
 }
@@ -252,8 +235,9 @@ func computeApp(t *testing.T, consumers map[string]string) *app {
 		contracts:        map[string]Contract{"compute": {Name: "compute", Version: "1.0.0", Interfaces: []string{"incus_vm", "incus_container"}}},
 		resolvedBindings: bindings,
 		env: map[string]string{
-			"INCUS_ENDPOINT":        "https://incus.example:8443",
-			"INCUS_SERVER_CERT_B64": serverCert,
+			"INCUS_IMAGE_ARCHITECTURE": "amd64",
+			"INCUS_ENDPOINT":           "https://incus.example:8443",
+			"INCUS_SERVER_CERT_B64":    serverCert,
 		},
 		envOwner: map[string]string{},
 		secrets:  &secretStore{values: map[string]string{}, metadata: map[string]secretMetadata{}},

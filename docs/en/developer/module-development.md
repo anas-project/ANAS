@@ -358,3 +358,13 @@ A later release may stop accepting sources from before the adaptation and remove
 Every module must maintain `README.md` and `localization.yml` matching the current `module.yml` version. Derive supported languages from pinned source, official documentation, or the exact image, record canonical BCP 47 values, and distinguish browser negotiation, deployment defaults, fixed language, and services without a UI.
 
 Follow the [module documentation standard](/en/developer/module-documentation) for fields, fallback policy, and generation, and run the [module upstream upgrade SOP](/en/developer/module-upgrade-sop) for every upstream version change.
+
+## Structured resource parameters
+
+`spec_from` scalar shorthand still projects a parameter as text. Use
+`{parameter: image, projection: singleton}` to turn a JSON object into a one-element array,
+`projection: values` for sorted map values (compute also preserves the key→fingerprint association),
+or `projection: value` to pass decoded JSON through. Structured settings declare a string with
+`constraints: {format: json_object}`. YAML objects under `modules.<module>.config.<parameter>` and
+JSON object strings normalize to the same environment value and remain one setting for change effects.
+Unknown projection names, malformed JSON and empty source values fail before resource provisioning.

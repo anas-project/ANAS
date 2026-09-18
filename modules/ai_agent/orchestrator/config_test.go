@@ -21,7 +21,7 @@ func envFor(overrides map[string]string) func(string) string {
 		"AI_AGENT_WEBHOOK_URL":            "https://agent.example:8443" + WebhookPath,
 		"AI_AGENT_REPOSITORY_ALLOWLIST":   "anas-project/ANAS",
 		"AI_AGENT_RUNTIMES":               "codex",
-		"AI_AGENT_RUNTIME_IMAGES":         "codex=" + strings.Repeat("a", 64),
+		"AI_AGENT_RUNTIME_IMAGES":         `{"codex":"` + strings.Repeat("a", 64) + `"}`,
 		"AI_AGENT_DB_HOST":                "postgres",
 		"AI_AGENT_DB_NAME":                "ai_agent",
 		"AI_AGENT_DB_USERNAME":            "ai_agent",
@@ -137,7 +137,7 @@ func TestRuntimeMustBePinnedToAFingerprint(t *testing.T) {
 func TestUnknownRuntimeIsRefusedWithTheKnownList(t *testing.T) {
 	_, err := loadConfig(envFor(map[string]string{
 		"AI_AGENT_RUNTIMES":       "not_a_runtime",
-		"AI_AGENT_RUNTIME_IMAGES": "not_a_runtime=" + strings.Repeat("a", 64),
+		"AI_AGENT_RUNTIME_IMAGES": `{"not_a_runtime":"` + strings.Repeat("a", 64) + `"}`,
 	}))
 	if err == nil {
 		t.Fatal("loadConfig accepted an unknown runtime")

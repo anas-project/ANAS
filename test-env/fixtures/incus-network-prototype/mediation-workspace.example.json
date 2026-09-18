@@ -1,0 +1,7 @@
+{
+  "workspace": "/var/tmp/anas-lab/workspace",
+  "request_registry": "/var/tmp/anas-lab/request-registry",
+  "consumer": "forgejo",
+  "resource": "runners",
+  "request_file": "http.json"
+}

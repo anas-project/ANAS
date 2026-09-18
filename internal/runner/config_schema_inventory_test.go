@@ -39,7 +39,6 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	minimumSweepSeconds := 30
 	maximumSweepSeconds := 86400
 	runtimeListPattern := `^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$`
-	runtimeImagePattern := `^(?:[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64}(?:,[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64})*)?$`
 	egressPattern := `^(?:[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?(?:,[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?)*)?$`
 	repositoryListPattern := `^(?:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100}(?:,[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100})*)?$`
 	wantConstraints := map[string]configschema.Constraints{
@@ -47,7 +46,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		// populated once ai_agent.enabled is on; the hook is what refuses to
 		// apply an enabled deployment with an empty list.
 		"ai_agent.agent_runtimes":             {Pattern: runtimeListPattern},
-		"ai_agent.agent_runtime_images":       {Pattern: runtimeImagePattern},
+		"ai_agent.agent_runtime_images":       {Format: configschema.FormatJSONObject},
 		"ai_agent.daily_budget_usd":           {Minimum: &zero, Maximum: &maximumBudgetUSD},
 		"ai_agent.domain_prefix":              {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
 		"ai_agent.egress_allowlist":           {Pattern: egressPattern},
@@ -55,7 +54,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"ai_agent.reconcile_interval_seconds": {Minimum: &minimumSweepSeconds, Maximum: &maximumSweepSeconds},
 		"ai_agent.repository_allowlist":       {Pattern: repositoryListPattern},
 		"casdoor.ldap_auto_sync_minutes":      {Minimum: &minimumOne},
-		"forgejo.actions_runner_image":        {Pattern: `^(?:[0-9a-f]{64})?$`},
+		"forgejo.actions_runner_image":        {Format: configschema.FormatJSONObject},
 		"forgejo.domain_prefix":               {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
 		"forgejo.ssh_port":                    {Minimum: &minimumOne, Maximum: &maximumPort},
 		"global.base_domain":                  {Format: configschema.FormatDNSName},
@@ -181,6 +180,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"samba_dc.anchor_bind_password":   true,
 		"vikunja.language":                true,
 		"versitygw.root_secret_key":       true,
+		"incus.image_architecture":        true,
 		"incus.endpoint":                  true,
 		"incus.server_certificate_b64":    true,
 		"incus.admin_certificate_b64":     true,
@@ -196,6 +196,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	conditionalSources := map[string]bool{
 		"ddns_go.dns_provider":         true,
 		"ddns_updater.dns_provider":    true,
+		"incus.image_architecture":     true,
 		"incus.endpoint":               true,
 		"incus.server_certificate_b64": true,
 		"incus.admin_certificate_b64":  true,

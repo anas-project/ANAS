@@ -58,17 +58,23 @@ Module 目前会讨论、出文档、判权限、排队，但**不会执行任�
 1. **Forgejo 管理凭据**——由 ANAS 生成并托管，Hook 在 `after_start` 通过 Forgejo 自己的托管账号入口
    创建 `anas_ai_agent` 管理员，无需人工；
 2. **仓库白名单**（`repository_allowlist`）——没在名单上的仓库，事件在入站处直接丢弃；
-3. **每个启用运行时的固定镜像指纹**（`agent_runtime_images`）——只接受 SHA-256，不接受 tag；
+3. **每个启用运行时的固定镜像指纹**（`agent_runtime_images`）——每个值必须是 fingerprint 对象或 catalog/name/revision 对象，不接受旧字符串或 tag；
 4. **`compute` 绑定**——批准后的作业得有地方跑。
 
 ```yaml
 modules:
+  incus:
+    config:
+      image_architecture: amd64
   ai_agent:
-    enabled: true
-    repository_allowlist: "anas-project/ANAS,anas-project/anas-agent"
-    agent_runtimes: "codex,claude_code"
-    agent_runtime_images: "codex=<64位指纹>,claude_code=<64位指纹>"
-    execution_isolation: incus_container
+    config:
+      enabled: true
+      repository_allowlist: "anas-project/ANAS,anas-project/anas-agent"
+      agent_runtimes: "codex,claude_code"
+      agent_runtime_images:
+        codex: {fingerprint: "<64hex>"}
+        claude_code: {fingerprint: "<64hex>"}
+      execution_isolation: incus_container
 ```
 
 ## 身份与凭据
@@ -124,7 +130,7 @@ Forgejo 的系统 webhook 一次注册覆盖全实例。入站按这个顺序处
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ai_agent.agent_runtime_images` | string | `pattern: ^(?:[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64}(?:,[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64})*)?$` | `""` | `static` | `AI_AGENT_AGENT_RUNTIME_IMAGES` | 否 | 否 | 否 | 是 | `container_recreate` | 每个启用运行时的固定 SHA-256 镜像指纹；不接受 tag |
+| `ai_agent.agent_runtime_images` | string | `format: json_object` | `""` | `static` | `AI_AGENT_AGENT_RUNTIME_IMAGES` | 否 | 否 | 否 | 是 | `container_recreate` | runtime id → 结构化镜像引用；Core 冻结映射 |
 | `ai_agent.agent_runtimes` | string | `pattern: ^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$` | `""` | `static` | `AI_AGENT_AGENT_RUNTIMES` | 否 | 否 | 否 | 是 | `container_recreate` | 启用哪些 Agent 运行时；标签、issue 模板与能力组都由注册表据此生成 |
 | `ai_agent.daily_budget_usd` | int | `0..100000` | `20` | `static` | `AI_AGENT_DAILY_BUDGET_USD` | 否 | 否 | 否 | 是 | `reconcile` | 部署级每日花费上限；超限中断作业并回写说明 |
 | `ai_agent.db_name` | string | — | `ai_agent` | `static` | `AI_AGENT_DB_NAME` | 否 | 否 | 否 | 否：`migrate-ai-agent-database` | `data_migrate` | 编排状态所在的数据库名 |

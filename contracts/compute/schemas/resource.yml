@@ -37,8 +37,26 @@ properties:
     type: array
     min_items: 1
     items:
-      type: string
-      pattern: "^[a-f0-9]{64}$"
+      one_of:
+        - type: object
+          additional_properties: false
+          required: [fingerprint]
+          properties:
+            fingerprint:
+              type: string
+              pattern: "^[a-f0-9]{64}$"
+        - type: object
+          additional_properties: false
+          required: [catalog, name, revision]
+          properties:
+            catalog:
+              enum: [anas]
+            name:
+              type: string
+              pattern: "^[a-z0-9][a-z0-9._-]{0,62}$"
+            revision:
+              type: string
+              pattern: "^[a-z0-9][a-z0-9._-]{0,62}$"
   credential:
     type: object
     additional_properties: false
@@ -48,3 +66,31 @@ properties:
         enum: [generated]
   deletion_policy:
     enum: [retain, delete]
+  # Declaration/freezing only until real-host acceptance. Runtime publishing
+  # stays disabled; omission grants no HTTP publication authority.
+  ingress:
+    type: object
+    additional_properties: false
+    required: [allowed_ports, domain]
+    properties:
+      allowed_ports:
+        type: array
+        min_items: 1
+        max_items: 64
+        unique_items: true
+        items: {type: integer, minimum: 1, maximum: 65535}
+      # Default none. Unpredictable URLs are not access control: SNI, Referer
+      # and logs can disclose them. Do not expose sensitive or writable services.
+      auth:
+        enum: [none, forward_auth]
+      domain:
+        type: object
+        additional_properties: false
+        required: [mode, prefix]
+        properties:
+          mode:
+            enum: [fixed, named, random]
+          # Core additionally limits named prefixes to 61 and random to 30.
+          prefix:
+            type: string
+            pattern: "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/config"
+	"github.com/anas-project/ANAS/internal/configschema"
 	"github.com/anas-project/ANAS/internal/modulesource"
 	"gopkg.in/yaml.v3"
 )
@@ -518,6 +519,18 @@ func normalizeImportedParameterNodes(root *yaml.Node, reg map[string]Module, pri
 				return "", fmt.Errorf("%s: %w", path, err)
 			}
 			return normalized, nil
+		}
+		if spec.Constraints.Format == configschema.FormatJSONObject && value.Kind != yaml.ScalarNode {
+			var raw any
+			if err := value.Decode(&raw); err != nil {
+				return fmt.Errorf("%s must be an object", path)
+			}
+			normalized, err := normalizeValue(config.Scalar(raw))
+			if err != nil {
+				return err
+			}
+			*value = yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: normalized}
+			return nil
 		}
 		if value.Kind == yaml.AliasNode {
 			// Do not mutate the shared anchor: it may also feed an unrelated setting.

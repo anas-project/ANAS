@@ -68,6 +68,18 @@ is_cert_path() {
   esac
 }
 
+render_only=${ANAS_TRAEFIK_RENDER_ONLY:-false}
+case "$render_only" in
+  true|false) ;;
+  *) echo "ANAS_TRAEFIK_RENDER_ONLY must be true or false" >&2; exit 1 ;;
+esac
+umask 077
+config_dir=${ANAS_CONFIG_DIR:-/run/anas}
+
+# Trusted callers can render route environment fields in an isolated staging
+# directory without writing certificate configuration or starting Traefik.
+# This uses the same validation and template as the normal entrypoint below.
+if [ "$render_only" = false ]; then
 required LEGO_CERT_NAME
 required LEGO_KEY_NAME
 
@@ -83,8 +95,6 @@ for value in "$LEGO_CERT_NAME" "$LEGO_KEY_NAME"; do
   esac
 done
 
-umask 077
-config_dir=${ANAS_CONFIG_DIR:-/run/anas}
 mkdir -p "$config_dir"
 cat > "$config_dir/cert.yml.tmp" <<EOF
 tls:
@@ -95,6 +105,8 @@ tls:
         - default
 EOF
 mv "$config_dir/cert.yml.tmp" "$config_dir/cert.yml"
+fi
+mkdir -p "$config_dir"
 
 # Declared routes. The Docker provider can only see containers that share
 # Traefik's network, which leaves out anything on host networking, anything
@@ -245,6 +257,10 @@ else
   # A stale file from a previous release would keep advertising a route the
   # deployment no longer declares.
   rm -f "$config_dir/routes.yml"
+fi
+
+if [ "$render_only" = true ]; then
+  exit 0
 fi
 
 # Traefik always derives forwarded headers for a direct client. Preserve an

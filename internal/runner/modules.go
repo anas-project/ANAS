@@ -119,7 +119,7 @@ type ResourceRequirement struct {
 	Contract  string
 	Binding   string
 	Spec      map[string]any
-	SpecFrom  map[string]string
+	SpecFrom  map[string]SpecSource
 	EnabledBy string
 }
 

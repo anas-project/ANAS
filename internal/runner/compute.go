@@ -15,12 +15,14 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/anas-project/ANAS/internal/computeimage"
+	"github.com/anas-project/ANAS/internal/computeingress"
 )
 
 var (
 	computeSandboxPattern        = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 	computeInstancePrefixPattern = regexp.MustCompile(`^anas-[a-z0-9-]{1,50}$`)
-	computeFingerprintPattern    = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
 
 // computeQuota mirrors the contract's per-instance limits. The provider is what
@@ -42,8 +44,9 @@ func computeResourcePrefix(consumer, id string) string {
 // Unlike a database password, this credential has two halves that must stay
 // together across applies: the provider registers the certificate in the Incus
 // trust store, and the consumer authenticates with the matching key. Storing
-// them as one base64 bundle keeps the existing one-secret-per-resource model
-// intact -- regenerating either half separately would silently invalidate a
+// them as one base64 bundle keeps the authentication pair together; the lease
+// naming key has its own independent entry. Regenerating either half separately
+// would silently invalidate a
 // trust entry that is already registered on the daemon.
 func generateComputeClientCredential(consumer, resourceID string) (string, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -127,6 +130,16 @@ func computeServerFingerprint(serverCertB64 string) (string, error) {
 // validateComputeSpec enforces the contract schema at the point where a bad
 // value can still be reported against the module that wrote it.
 func validateComputeSpec(consumer, id string, spec map[string]any) (computeQuota, []string, error) {
+	for field := range spec {
+		switch field {
+		case "sandbox", "instance_prefix", "quota", "image_allowlist", "image_policy", "credential", "deletion_policy", "ingress":
+		default:
+			return computeQuota{}, nil, fmt.Errorf("resource %s.%s contains an unsupported compute spec field", consumer, id)
+		}
+	}
+	if _, err := computeingress.ParseSpec(spec); err != nil {
+		return computeQuota{}, nil, fmt.Errorf("resource %s.%s: %w", consumer, id, err)
+	}
 	sandbox, _ := spec["sandbox"].(string)
 	if !computeSandboxPattern.MatchString(sandbox) {
 		return computeQuota{}, nil, fmt.Errorf("resource %s.%s compute sandbox %q is invalid", consumer, id, sandbox)
@@ -171,35 +184,13 @@ func validateComputeSpec(consumer, id string, spec map[string]any) (computeQuota
 	if imagePolicy != "pinned" {
 		return computeQuota{}, nil, fmt.Errorf("resource %s.%s compute image_policy must be pinned", consumer, id)
 	}
-	// The allowlist is a list in the schema, but spec_from can only assign a
-	// string. Accepting a comma-separated string as well is what lets a module
-	// wire its own configured image parameter into the lease instead of
-	// freezing the list into its manifest.
-	var entries []string
-	switch raw := spec["image_allowlist"].(type) {
-	case []any:
-		for _, entry := range raw {
-			value, _ := entry.(string)
-			entries = append(entries, value)
-		}
-	case string:
-		for _, value := range strings.Split(raw, ",") {
-			if trimmed := strings.TrimSpace(value); trimmed != "" {
-				entries = append(entries, trimmed)
-			}
-		}
+	refs, err := computeimage.Parse(spec["image_allowlist"])
+	if err != nil {
+		return computeQuota{}, nil, fmt.Errorf("resource %s.%s: %w", consumer, id, err)
 	}
-	if len(entries) == 0 {
-		return computeQuota{}, nil, fmt.Errorf("resource %s.%s compute image_allowlist must list at least one image fingerprint", consumer, id)
-	}
-	allowlist := make([]string, 0, len(entries))
-	for _, value := range entries {
-		// A tag or an alias would let whatever the remote publishes today
-		// become what this lease boots, so only pinned digests are accepted.
-		if !computeFingerprintPattern.MatchString(value) {
-			return computeQuota{}, nil, fmt.Errorf("resource %s.%s compute image_allowlist entries must be SHA-256 fingerprints", consumer, id)
-		}
-		allowlist = append(allowlist, value)
+	allowlist := make([]string, len(refs))
+	for i, ref := range refs {
+		allowlist[i] = ref.Fingerprint
 	}
 	policy, _ := spec["deletion_policy"].(string)
 	if policy != "retain" && policy != "delete" {

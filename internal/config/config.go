@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -590,6 +591,12 @@ func Scalar(v any) string {
 		return ""
 	case string:
 		return t
+	case map[string]any, []any:
+		body, err := json.Marshal(t)
+		if err != nil {
+			return "<invalid structured configuration>"
+		}
+		return string(body)
 	case bool:
 		if t {
 			return "true"

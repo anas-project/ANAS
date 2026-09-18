@@ -19,7 +19,7 @@
 | [Module 专属命令能力](module-command-capability.md) | manifest/deployment 冻结、共享执行服务、CLI/anasd 与 Forgejo/Incus 验收 | 实施中 |
 | [VersityGW S3 兼容 Module](versitygw-module.md) | S3 Module、Capability/Resource、独立 bucket/凭据、客户端与恢复验收 | 实施中 |
 | [凭据轮换覆盖面](credential-rotation.md) | 表述修正、资源凭据声明位与两侧契约、跨类清单、PostgreSQL 认证基线；验收依据见[要求](../requirements/credential-rotation.md) | 提案 |
-| [统一动作 ABI](action-abi.md) | job、事件重放、取消与大块数据边界；取代 Module Command 的 executor 协议 | 提案 |
+| [统一动作 ABI](action-abi.md) | job、事件重放、取消与大块数据边界；取代 Module Command 的 executor 协议 | 实施中 |
 | [宿主特权动作通道](host-action-channel.md) | 具名特权动作通道、授权审计与二段确认；依赖统一动作 ABI | 提案 |
 | [Incus compute Provider](incus-module.md) | Contract 改形、`incus` Provider Module、Core 支持、共享客户端与 Forgejo 迁移；验收依据见[要求](../requirements/incus-module.md) | 实施中 |
 | [Module IAM 双向登出](module-iam-bidirectional-logout.md) | 全部内置 IAM Consumer 的 Provider × 协议 × 登出方向能力与真实会话 E2E | 实施中 |

@@ -7,6 +7,7 @@ import (
 
 var (
 	ErrUnavailable          = errors.New("console job store unavailable")
+	ErrExecutionRetained    = errors.New("job execution lease is retained by an unconfirmed supervisor")
 	ErrInvalid              = errors.New("invalid console job input")
 	ErrNotFound             = errors.New("console job not found")
 	ErrConflict             = errors.New("console job conflict")

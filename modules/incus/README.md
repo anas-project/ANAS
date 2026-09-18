@@ -48,6 +48,8 @@ project 上、把消费者的客户端证书登记为只绑该 project 的受限
 > 在它落地之前，本节是唯一可用的路径，这也是本 Module 状态仍为 `developing` 的原因之一。
 
 自建宿主时这一步在 ANAS 之外完成，本 Module 只消费其结果。
+根磁盘存储池须为已创建的 `btrfs` 或 `zfs`；当前 Provider 拒绝 `dir` 和未准入的其他驱动，
+避免把已设置 `limits.disk` 误报为实际磁盘限额。不会自动转换池或迁移数据。
 
 ```bash
 incus config set core.https_address :8443
@@ -110,7 +112,7 @@ resources:
         sandbox: anas-forgejo-runners
         instance_prefix: anas-fj-
         quota: {max_instances: 8, cpu: 4, memory_mib: 8192, disk_gib: 40}
-        image_allowlist: ["<64 位 SHA-256 fingerprint>"]
+        image_allowlist: [{fingerprint: "<64hex>"}]
         credential: {policy: generated}
         deletion_policy: retain
 ```
@@ -163,6 +165,7 @@ incus config trust remove <fingerprint>
 | `incus.admin_certificate_b64` | string | — | `""` | `static` | `INCUS_ADMIN_CERTIFICATE_B64` | 否 | 是 | 是 | 否：`rotate-incus-admin-credential` | `credential_rotate` | 供给专用的管理客户端证书，不交给任何消费者 |
 | `incus.admin_key_b64` | string | — | `""` | `static` | `INCUS_ADMIN_KEY_B64` | 否 | 是 | 是 | 否：`rotate-incus-admin-credential` | `credential_rotate` | 管理证书的私钥 |
 | `incus.endpoint` | string | `pattern: ^(?:https://[A-Za-z0-9.:_-]+)?$` | `""` | `static` | `INCUS_ENDPOINT` | 否 | 是 | 否 | 是 | `reconcile` | 远端 Incus daemon 的 HTTPS 地址 |
+| `incus.image_architecture` | enum (`amd64`, `arm64`) | — | — | — | `INCUS_IMAGE_ARCHITECTURE` | 否 | 是 | 否 | 是 | `container_recreate` | 目标 daemon 的 guest 镜像架构；必须显式提供，不从 CLI 宿主推断 |
 | `incus.server_certificate_b64` | string | — | `""` | `static` | `INCUS_SERVER_CERTIFICATE_B64` | 否 | 是 | 是 | 是 | `reconcile` | 被固定的 daemon 服务端证书；失配时直接失败，不回退 |
 | `incus.storage_pool` | string | `pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$` | `default` | `static` | `INCUS_STORAGE_POOL` | 否 | 否 | 否 | 是 | `reconcile` | 每个租约根磁盘所在的 Incus 存储池；改它不会迁移已有实例 |
 
@@ -173,6 +176,7 @@ anas config list incus -w /srv/anas
 ```
 
 ```bash
+anas config set incus.image_architecture amd64 -w /srv/anas
 anas config set incus.endpoint https://incus.example:8443 -w /srv/anas
 ```
 
@@ -186,14 +190,15 @@ anas config set incus.endpoint https://incus.example:8443 -w /srv/anas
 | --- | --- |
 | `does not match the pinned certificate` | daemon 换过证书，或 endpoint 指向了别的主机。确认后更新 `server_certificate_b64`，不要绕过校验 |
 | `is not restricted after ensure` | daemon 接受了写入但没应用 `restricted`，供给已 fail closed，不会继续登记证书 |
+| `must be a Created btrfs or zfs pool` | 存储池不存在、未就绪或驱动未准入；先准备受支持的池，已有数据需单独规划迁移 |
 | `has no enforced quota after ensure` | project 存在但配额未生效，同样 fail closed |
 | `is already trusted without a project restriction` | 该证书此前被以全局权限加入过信任库；先移除旧条目再重新 apply |
 | `is scoped to ... not to ...` | 同一张证书已绑定别的 project，拒绝跨 project 复用 |
 
 ## 当前限制
 
-状态为 `developing`，原因是所有边界都只有单元级证据：真实 Incus/KVM 宿主上的 project、配额、
-证书与双消费者隔离尚未完成 E2E 验收。在那之前不要把它当作 `release` 能力使用。
+状态为 `developing`：独立 Incus 6.0.5 的供给探查发现了 dir 磁盘配额缺口，尚未通过 guest
+启动与完整配额、证书和双消费者 E2E。7.3.0/KVM 仍待单独验收。在那之前不要把它当作 `release` 能力使用。
 
 `revoke` 只撤销消费者证书，不删除 project——project 里的实例从来不属于本 Contract。
 

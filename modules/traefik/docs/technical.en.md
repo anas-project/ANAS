@@ -100,6 +100,23 @@ The dependency closure does not grant every environment value. Sensitive values 
 
 ## Tests and implementation locations
 
+The entrypoint adds an internal `ANAS_TRAEFIK_RENDER_ONLY=true` mode for the trusted HTTP executor to
+reuse `ANAS_TRAEFIK_ROUTE__*` validation and templates in private staging. It skips certificate setup and
+Traefik startup, exiting after route generation. The default `false` retains normal startup; other values
+are rejected. This is not a user setting or consumer publication API. The executor supplies only frozen
+Host/backend/HTTPS/TLS/middleware fields in a clean environment, without the live dynamic directory.
+Validation of this mode and regressions of normal startup remain deferred; Incus ingress is not enabled.
+
+The Incus prototype adds `internal/computeingressruntime.TraefikReader`, reading only version and complete
+rawdata from the existing protected API for inventory and publication/withdrawal confirmation. No API,
+listener or consumer credential projection is added. It pins the certificate and version 3.7.10 and requires
+two complete snapshots with a live API router/BasicAuth; missing data is not an empty inventory. Checks
+before and after publication bind the frozen Host, unique backend and a trusted direct-ForwardAuth
+configuration digest. Confirmation matches the owned file to loaded state; withdrawal must disappear
+from the API. Default UP status is not reachability evidence; independent probes and real E2E remain
+required. API credential/pin delivery and runtime assembly are pending, and the reader has not been run
+or tested. See the Incus technical documentation and prototype E2E plan.
+
 - [`local_admin_test.go`](../hook/local_admin_test.go)
 - [`main_test.go`](../hook/main_test.go)
 - [`module.yml`](../module.yml)

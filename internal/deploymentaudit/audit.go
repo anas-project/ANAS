@@ -13,6 +13,7 @@ type Stage string
 
 const (
 	StageJobCreateAuthorized                    Stage = "job_create_authorized"
+	StageJobJoinedAuthorized                    Stage = "job_joined_authorized"
 	StageJobStartAuthorized                     Stage = "job_start_authorized"
 	StageJobSucceededAuthorized                 Stage = "job_succeeded_authorized"
 	StageJobFailedAuthorized                    Stage = "job_failed_authorized"
@@ -91,9 +92,18 @@ func ObserveJobCommit(sink Sink, template Event) consolejobs.JobCommitObserver {
 		event := template
 		if event.Action == "" {
 			event.Action = job.Kind
+			if job.Action != nil {
+				event.Action = job.Action.Name
+			}
+		}
+		if intent.Operation == consolejobs.JobCommitActionJoin {
+			event.Stage = StageJobJoinedAuthorized
 		}
 		if event.Actor == "" {
-			event.Actor = job.CreatedBy
+			event.Actor = intent.Actor
+			if event.Actor == "" {
+				event.Actor = job.CreatedBy
+			}
 		}
 		if event.WorkspaceID == "" {
 			event.WorkspaceID = job.WorkspaceID

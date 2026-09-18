@@ -311,13 +311,13 @@ func validateActionsConfig(e map[string]string) error {
 	// into the controller. What is left here is what Forgejo itself owns.
 	for _, key := range []string{
 		"FORGEJO_ACTIONS_ALLOWED_SCOPES", "FORGEJO_ACTIONS_CONTROLLER_PASSWORD",
-		"FORGEJO_ACTIONS_RUNNER_IMAGE",
+		"ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__IMAGE_ALLOWLIST",
 	} {
 		if strings.TrimSpace(e[key]) == "" {
 			return fmt.Errorf("%s is required when Forgejo Actions is enabled", key)
 		}
 	}
-	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(e["FORGEJO_ACTIONS_RUNNER_IMAGE"]) {
+	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(e["ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__IMAGE_ALLOWLIST"]) {
 		return fmt.Errorf("FORGEJO_ACTIONS_RUNNER_IMAGE must be a pinned SHA-256 fingerprint")
 	}
 	for _, scope := range splitCSV(e["FORGEJO_ACTIONS_ALLOWED_SCOPES"]) {

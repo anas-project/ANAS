@@ -75,6 +75,10 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 
 incus config trust add-certificate admin.crt
 ```
 
+Root disks require a `Created` btrfs or zfs pool. This provider refuses dir and other drivers pending
+capability verification, so configured `limits.disk` alone is not reported as enforced disk capacity.
+It does not convert pools or migrate existing data.
+
 ## Minimal configuration
 
 All four are required. If any is missing the hook refuses during apply rather than failing halfway
@@ -116,7 +120,7 @@ resources:
         sandbox: anas-forgejo-runners
         instance_prefix: anas-fj-
         quota: {max_instances: 8, cpu: 4, memory_mib: 8192, disk_gib: 40}
-        image_allowlist: ["<64-character SHA-256 fingerprint>"]
+        image_allowlist: [{fingerprint: "<64hex>"}]
         credential: {policy: generated}
         deletion_policy: retain
 ```
@@ -176,6 +180,7 @@ the rendered module-private key; do not treat it as the preferred configuration 
 | `incus.admin_certificate_b64` | string | — | `""` | `static` | `INCUS_ADMIN_CERTIFICATE_B64` | no | yes | yes | no: `rotate-incus-admin-credential` | `credential_rotate` | Provisioning-only administrative client certificate, never handed to a consumer |
 | `incus.admin_key_b64` | string | — | `""` | `static` | `INCUS_ADMIN_KEY_B64` | no | yes | yes | no: `rotate-incus-admin-credential` | `credential_rotate` | Private key for the administrative certificate |
 | `incus.endpoint` | string | `pattern: ^(?:https://[A-Za-z0-9.:_-]+)?$` | `""` | `static` | `INCUS_ENDPOINT` | no | yes | no | yes | `reconcile` | HTTPS address of the remote Incus daemon |
+| `incus.image_architecture` | enum (`amd64`, `arm64`) | — | — | — | `INCUS_IMAGE_ARCHITECTURE` | no | yes | no | yes | `container_recreate` | Explicit guest image architecture on the target daemon; never inferred from the CLI host |
 | `incus.server_certificate_b64` | string | — | `""` | `static` | `INCUS_SERVER_CERTIFICATE_B64` | no | yes | yes | yes | `reconcile` | Pinned daemon server certificate; a mismatch fails outright with no fallback |
 | `incus.storage_pool` | string | `pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$` | `default` | `static` | `INCUS_STORAGE_POOL` | no | no | no | yes | `reconcile` | Incus storage pool backing every lease root disk; changing it does not move existing instances |
 
@@ -186,6 +191,7 @@ anas config list incus -w /srv/anas
 ```
 
 ```bash
+anas config set incus.image_architecture amd64 -w /srv/anas
 anas config set incus.endpoint https://incus.example:8443 -w /srv/anas
 ```
 
@@ -200,14 +206,16 @@ Provisioning failures surface in apply output. Common causes:
 | --- | --- |
 | `does not match the pinned certificate` | the daemon's certificate changed, or the endpoint points at a different host. Confirm, then update `server_certificate_b64`; do not bypass verification |
 | `is not restricted after ensure` | the daemon accepted the write but did not apply `restricted`. Provisioning failed closed and did not go on to register a certificate |
+| `must be a Created btrfs or zfs pool` | the pool is missing, unready or uses a driver not yet admitted; prepare a supported pool and plan existing-data migration separately |
 | `has no enforced quota after ensure` | the project exists but no quota took effect; also fails closed |
 | `is already trusted without a project restriction` | that certificate was previously added to the trust store with global rights. Remove the old entry, then apply again |
 | `is scoped to ... not to ...` | the same certificate is already bound to a different project; cross-project reuse is refused |
 
 ## Current limitations
 
-The status is `developing` because every boundary here has unit-level evidence only: projects, quotas,
-certificates and two-consumer isolation have not been accepted end to end on a real Incus/KVM host.
+The status is `developing`: an isolated Incus 6.0.5 provisioning probe exposed a dir disk-quota gap.
+Guest startup and full quota, certificate and two-consumer E2E have not passed; 7.3.0/KVM acceptance
+remains separate.
 Until then it is not a `release` capability.
 
 `revoke` withdraws the consumer certificate but does not delete the project — the instances inside it

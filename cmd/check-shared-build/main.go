@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"gopkg.in/yaml.v3"
 	"os"
@@ -20,11 +21,24 @@ type moduleEntry struct {
 }
 
 func main() {
-	if err := check("."); err != nil {
+	sourceRoot := flag.String("source-root", ".", "matching ANAS source checkout root")
+	stagingRoot := flag.String("staging-root", "", "optional rendered deployment root containing modules/")
+	flag.Parse()
+	if flag.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "unexpected positional arguments")
+		os.Exit(2)
+	}
+	if err := check(*sourceRoot); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Println("shared build contexts valid")
+	if *stagingRoot != "" {
+		if err := checkStagedBuildContexts(*sourceRoot, *stagingRoot, os.Getenv("ANAS_SHARED_BUILD_CONTEXT")); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+	fmt.Println("shared build contexts valid (static check; Docker build not executed)")
 }
 func check(root string) error {
 	var images []imageEntry

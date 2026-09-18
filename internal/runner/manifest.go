@@ -135,12 +135,12 @@ type manifestResources struct {
 }
 
 type manifestResourceRequirement struct {
-	ID        string            `yaml:"id"`
-	Contract  string            `yaml:"contract"`
-	Binding   string            `yaml:"binding"`
-	Spec      map[string]any    `yaml:"spec"`
-	SpecFrom  map[string]string `yaml:"spec_from"`
-	EnabledBy string            `yaml:"enabled_by"`
+	ID        string                `yaml:"id"`
+	Contract  string                `yaml:"contract"`
+	Binding   string                `yaml:"binding"`
+	Spec      map[string]any        `yaml:"spec"`
+	SpecFrom  map[string]SpecSource `yaml:"spec_from"`
+	EnabledBy string                `yaml:"enabled_by"`
 }
 
 type manifestCapabilities struct {

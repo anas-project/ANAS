@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/anas-project/ANAS/internal/actionabi"
 )
 
 const (
@@ -132,14 +134,16 @@ type Job struct {
 	Error                  *JobError      `json:"error,omitempty"`
 	NeedsCompensationCheck bool           `json:"needs_compensation_check"`
 	Revision               uint64         `json:"revision"`
+	Action                 *ActionState   `json:"action,omitempty"`
 }
 
 type Event struct {
-	ID        uint64         `json:"id"`
-	JobID     string         `json:"job_id"`
-	Timestamp time.Time      `json:"timestamp"`
-	Kind      string         `json:"kind"`
-	Data      map[string]any `json:"data,omitempty"`
+	ID        uint64           `json:"id"`
+	JobID     string           `json:"job_id"`
+	Timestamp time.Time        `json:"timestamp"`
+	Kind      string           `json:"kind"`
+	Data      map[string]any   `json:"data,omitempty"`
+	Action    *actionabi.Event `json:"action,omitempty"`
 }
 
 type IdempotencyInput struct {
@@ -156,6 +160,7 @@ type CreateSpec struct {
 	Mutating    bool
 	Request     map[string]any
 	Idempotency IdempotencyInput
+	action      *ActionState
 }
 
 type CreateResult struct {
@@ -170,15 +175,20 @@ type CreateResult struct {
 type JobCommitOperation string
 
 const (
-	JobCommitCreate     JobCommitOperation = "create"
-	JobCommitStart      JobCommitOperation = "start"
-	JobCommitTransition JobCommitOperation = "transition"
+	JobCommitCreate        JobCommitOperation = "create"
+	JobCommitStart         JobCommitOperation = "start"
+	JobCommitTransition    JobCommitOperation = "transition"
+	JobCommitActionJoin    JobCommitOperation = "action_join"
+	JobCommitCancelRequest JobCommitOperation = "cancel_request"
 )
 
 // JobCommitIntent is a defensive snapshot of the lifecycle change about to be
 // committed. Mutating either job does not alter the store's in-memory state.
 // ConfirmationDigest is the digest of the one-time proof, never the proof.
 type JobCommitIntent struct {
+	// Actor identifies an authorized caller joining an existing action job;
+	// it does not replace that job's immutable CreatedBy field.
+	Actor              string
 	Operation          JobCommitOperation
 	Previous           *Job
 	Next               Job
@@ -308,6 +318,7 @@ func DigestRequest(body []byte) string {
 
 func cloneJob(job Job) Job {
 	result := job
+	result.Action = cloneActionState(job.Action)
 	result.StartedAt = cloneTime(job.StartedAt)
 	result.FinishedAt = cloneTime(job.FinishedAt)
 	result.Request = cloneJSONMap(job.Request)
@@ -323,6 +334,9 @@ func cloneJob(job Job) Job {
 func cloneEvent(event Event) Event {
 	result := event
 	result.Data = cloneJSONMap(event.Data)
+	if event.Action != nil {
+		result.Action = cloneActionEvent(event.Action)
+	}
 	return result
 }
 

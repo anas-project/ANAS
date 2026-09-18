@@ -23,7 +23,7 @@
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ai_agent.agent_runtime_images` | string | `pattern: ^(?:[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64}(?:,[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64})*)?$` | `""` | `static` | `AI_AGENT_AGENT_RUNTIME_IMAGES` | 否 | 否 | 否 | 是 | `container_recreate` | 每个启用运行时的固定 SHA-256 镜像指纹；不接受 tag |
+| `ai_agent.agent_runtime_images` | string | `format: json_object` | `""` | `static` | `AI_AGENT_AGENT_RUNTIME_IMAGES` | 否 | 否 | 否 | 是 | `container_recreate` | runtime id → 结构化镜像引用；Core 冻结映射 |
 | `ai_agent.agent_runtimes` | string | `pattern: ^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$` | `""` | `static` | `AI_AGENT_AGENT_RUNTIMES` | 否 | 否 | 否 | 是 | `container_recreate` | 启用哪些 Agent 运行时；标签、issue 模板与能力组都由注册表据此生成 |
 | `ai_agent.daily_budget_usd` | int | `0..100000` | `20` | `static` | `AI_AGENT_DAILY_BUDGET_USD` | 否 | 否 | 否 | 是 | `reconcile` | 部署级每日花费上限；超限中断作业并回写说明 |
 | `ai_agent.db_name` | string | — | `ai_agent` | `static` | `AI_AGENT_DB_NAME` | 否 | 否 | 否 | 否：`migrate-ai-agent-database` | `data_migrate` | 编排状态所在的数据库名 |
@@ -135,3 +135,26 @@
 | `AGENT-R-012` | `inbox_event` 主键 + `RecordDelivery` |
 | `AGENT-R-013` | `reconcile.go` `Sweep` |
 | `AGENT-R-014` | `ByAccount` 过滤 + `RunIDFromPayload` 二次去重 |
+
+## compute 镜像配置冻结
+
+镜像配置改为结构化对象：Forgejo 为单对象，AI Agent 为 runtime→对象映射。Core 通过显式
+`spec_from` 投影，在 Hook calculate 前解析。运行时容器只接收冻结摘要：Forgejo 读取租约
+allowlist，AI Agent 读取 JSON 镜像绑定。Agent Hook 使用与 manifest 参数一致的
+`AI_AGENT_AGENT_RUNTIMES`，Compose 向 orchestrator 映射为 `AI_AGENT_RUNTIMES`。本轮未引入新依赖。
+
+Incus 的 `image_architecture` 必须显式描述目标 daemon。受信 bundle 目录当前为空；ensure 在
+登记信任前检查租约 project 中现有镜像的 fingerprint、架构与类型，缺失直接失败，不查询 alias
+或重建。自动导入/烘焙仍待实现。快照及回滚语义见 [compute 契约](../../../contracts/compute/docs/technical.md)。
+
+HTTP 网络原型 `cmd/incus-network-prototype` 只生成实验产物：指定源地址的 guest /32 路由、
+绑定 veth 的入站过滤、限时地址/端口集合，以及既有 Traefik 路由环境字段。它不安装规则，也不开启
+生产 ingress。Docker/Incus 规则顺序、来源冒用、IP 复用和长连接撤销仍需真实 Linux 证据；
+TCP/UDP 发布未实施。
+
+## 租约命名密钥生命周期
+
+Core 已接入独立的 32 字节 compute `LEASE_SECRET`，与客户端证书分开生成和复用。Deployment 与
+resource state 只保存引用；消费者接收敏感 base64 投影，备份恢复保留同一密钥，不参与凭据轮换。
+详见 [compute 生命周期契约](../../../contracts/compute/docs/technical.md#独立租约命名密钥)。
+专属轮换命令和生产 HTTP 发布仍待实现。

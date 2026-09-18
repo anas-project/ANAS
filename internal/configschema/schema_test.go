@@ -57,7 +57,7 @@ func TestNormalizeDefinitionCanonicalizesAndValidatesParameter(t *testing.T) {
 }
 
 func TestSupportedRegistriesAreClosedAndStable(t *testing.T) {
-	if got, want := SupportedFormats(), []string{"dns_name", "iana_timezone", "ipv4", "language_tag", "locale"}; !reflect.DeepEqual(got, want) {
+	if got, want := SupportedFormats(), []string{"dns_name", "iana_timezone", "ipv4", "json_object", "language_tag", "locale"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("formats = %v, want %v", got, want)
 	}
 	if got, want := SupportedDefaultSources(), []DefaultSource{"generated", "host", "inherited", "runtime"}; !reflect.DeepEqual(got, want) {

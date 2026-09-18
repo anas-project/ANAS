@@ -4,6 +4,10 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [Incus 固定控制转发接续核对](2026-09-18-incus-control-relay-implementation.md) | 2026-09-18，`f7642c5` 加并行修改的未提交工作树 | 非 root 控制转发、执行租约保护与未验收边界；不是评审批准 |
+| [Incus 发行版 daemon 供给探查](2026-09-11-incus-daemon-probe.md) | 2026-09-11 未提交工作树 / Incus 6.0.5 | 存储配额误报、修复边界与未通过项 |
+| [Incus HTTP namespace 实验](2026-09-11-incus-http-netns-validation.md) | 2026-09-11 未提交工作树 / Ubuntu 26.04 | 真实 nft/HTTP 数据面检查与 Incus 验收边界 |
+| [Incus 网络与 proxy 权限核验](2026-09-10-incus-network-proxy-validation.md) | 2026-09-10，ANAS `f7642c5` / Incus `v7.3.0` | 固定版本源码调用链、兼容性缺陷与实机验证边界 |
 | [凭据轮换机制审查：全面轮换与单独轮换](2026-09-04-credential-rotation-review.md) | 2026-09-04 工作树，HEAD `5306b63` | 轮换覆盖面、作用域语义与 resource 凭据空白 |
 | [GPT‑6 / GPT‑5.6 混用配置与项目质量评估](2026-09-05-agent-configuration-and-project-quality-review.md) | 2026-09-05 工作树，HEAD `455770b` | Agent 配置、文档、架构与代码质量审查 |
 | [AI Agent 编排设计审查](2026-09-05-ai-agent-orchestration-design-review.md) | 2026-09-05 工作树，HEAD `455770b` | 编排设计、凭据边界与事件状态审查 |

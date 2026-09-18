@@ -6,10 +6,10 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 
 <!-- generated:configuration-summary:start -->
 - Built-in Modules: `24`
-- Declared parameters: `188` total (`17` global and `171` Module-owned; `167` structured Module parameters and `4` bare `env.*` parameters)
-- Resolution phases: `input_required` `2`, `must_resolve` `31`, unknown types `0`
-- Type distribution: `bool` `26`, `enum` `26`, `int` `30`, `string` `106`
-- Default-source distribution: `generated` `10`, `host` `3`, `inherited` `8`, `none` `8`, `runtime` `4`, `static` `155`
+- Declared parameters: `189` total (`17` global and `172` Module-owned; `168` structured Module parameters and `4` bare `env.*` parameters)
+- Resolution phases: `input_required` `2`, `must_resolve` `32`, unknown types `0`
+- Type distribution: `bool` `26`, `enum` `27`, `int` `30`, `string` `106`
+- Default-source distribution: `generated` `10`, `host` `3`, `inherited` `8`, `none` `9`, `runtime` `4`, `static` `155`
 <!-- generated:configuration-summary:end -->
 - Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the parameter inventory.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
@@ -166,7 +166,7 @@ Current explicit portable constraints: `32`.
 
 | Parameter path | Portable constraints |
 | --- | --- |
-| `ai_agent.agent_runtime_images` | <code>pattern=&#34;^(?:[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64}(?:,[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64})*)?$&#34;</code> |
+| `ai_agent.agent_runtime_images` | <code>format=&#34;json_object&#34;</code> |
 | `ai_agent.agent_runtimes` | <code>pattern=&#34;^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$&#34;</code> |
 | `ai_agent.daily_budget_usd` | <code>minimum=0; maximum=100000</code> |
 | `ai_agent.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
@@ -176,7 +176,7 @@ Current explicit portable constraints: `32`.
 | `ai_agent.repository_allowlist` | <code>pattern=&#34;^(?:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100}(?:,[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100})*)?$&#34;</code> |
 | `casdoor.ldap_auto_sync_minutes` | <code>minimum=1</code> |
 | `eturnal.port` | <code>minimum=1; maximum=65535</code> |
-| `forgejo.actions_runner_image` | <code>pattern=&#34;^(?:[0-9a-f]{64})?$&#34;</code> |
+| `forgejo.actions_runner_image` | <code>format=&#34;json_object&#34;</code> |
 | `forgejo.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
 | `forgejo.ssh_port` | <code>minimum=1; maximum=65535</code> |
 | `global.base_domain` | <code>format=&#34;dns_name&#34;</code> |
@@ -212,7 +212,7 @@ Current explicit portable constraints: `32`.
 | `ddns_updater` | 10 | `ddns_updater.dns_provider`<br>`ddns_updater.domain_prefix`<br>`ddns_updater.forward_auth_interface`<br>`ddns_updater.publicip_dns_providers`<br>`ddns_updater.publicip_fetchers`<br>`ddns_updater.publicip_ipv4_providers`<br>`ddns_updater.publicip_ipv6_providers`<br>`ddns_updater.publicip_providers`<br>`ddns_updater.ttl`<br>`ddns_updater.zone_identifier` |
 | `eturnal` | 2 | `eturnal.domain_prefix`<br>`eturnal.port` |
 | `forgejo` | 12 | `forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_isolation`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.ssh_port` |
-| `incus` | 5 | `incus.admin_certificate_b64`<br>`incus.admin_key_b64`<br>`incus.endpoint`<br>`incus.server_certificate_b64`<br>`incus.storage_pool` |
+| `incus` | 6 | `incus.admin_certificate_b64`<br>`incus.admin_key_b64`<br>`incus.endpoint`<br>`incus.image_architecture`<br>`incus.server_certificate_b64`<br>`incus.storage_pool` |
 | `lam` | 3 | `lam.admin_password`<br>`lam.domain_prefix`<br>`lam.language` |
 | `lego` | 2 | `lego.dns_provider`<br>`lego.dns_server` |
 | `llng` | 7 | `llng.db_name`<br>`llng.db_type`<br>`llng.domain_prefix`<br>`llng.enable_test`<br>`llng.log_level`<br>`llng.manager_domain_prefix`<br>`llng.test_domain_prefix` |
@@ -260,7 +260,7 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 <!-- generated:configuration-effects:start -->
 | Module parameter effect | Parameters | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 106 | Re-render and recreate the affected container or Compose project |
+| `container_recreate` | 107 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 9 | Use a credential-rotation transaction to update application state and the Secret Store together |
 | `data_migrate` | 17 | Migrate persistent data, a database, or membership before activation |
 | `hot_reload` | 16 | Apply through the declared management command; the current executor may conservatively recreate the container |

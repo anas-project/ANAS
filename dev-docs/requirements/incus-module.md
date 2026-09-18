@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-23
-updated: 2026-09-01
+updated: 2026-09-11
 ---
 
 # Incus compute Provider Module 集成要求
@@ -14,7 +14,10 @@ updated: 2026-09-01
 [`contracts/compute/contract.yml`](https://github.com/anas-project/ANAS/blob/master/contracts/compute/contract.yml)
 为准，本文不复制其字段。
 
-关键词“必须”“不得”“应该”具有规范性。
+关键词“必须”“不得”“应该”具有规范性。本文包含目标要求，不能把矩阵存在视为功能已实现。
+当前声明使用结构化镜像对象，Core 在 deployment 准备阶段冻结解析结果，运行时仍传裸摘要。
+独立租约命名密钥已接入 Secret Store、敏感投影和部署引用，专属轮换与域名派生尚未交付。
+受信目录当前为空；宿主自动供给、生产入站、镜像分发与烘焙尚未交付，实施状态及真实验收证据以配套计划为准。
 
 ## 1. 目标
 
@@ -111,8 +114,10 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
 1. Core 必须为每个 `compute` Resource 生成稳定的客户端证书与私钥，并作为单条 Secret 保存；重复
    apply 不得重新签发，否则会作废 daemon 上已登记的 trust 条目。
 2. 只有证书半边可以进入 Provider；私钥必须直接投影给消费者，不得经过 Provider。
-3. Core 必须校验 `sandbox`、`instance_prefix`、`quota` 区间与 `image_allowlist`（仅接受 SHA-256
-   fingerprint，拒绝 tag、alias 与远程 URL）。
+3. Core 必须校验 `sandbox`、`instance_prefix`、`quota` 区间与镜像引用语法。声明层接受
+   互斥的 `{fingerprint: <64hex>}` 或 `{catalog: anas, name: <name>, revision: <revision>}`；运行时租约中的 allowlist 必须
+   归一为 SHA-256 fingerprint，拒绝未解析的名字、可变 tag、alias 与远程 URL。
+   不兼容字符串声明（包括裸摘要及 `anas:`/`fingerprint:` 前缀形式）；字段混用、缺失或未知字段必须拒绝。运行时解析结果仍为裸摘要。
 4. 就绪租约必须投影到消费者私有命名空间，私钥标为敏感；deployment manifest 与 resource state 只
    保存 Secret 引用，不保存明文。
 5. 管理证书轮换必须可在不销毁运行中实例的前提下完成。
@@ -164,8 +169,9 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
 1. `any` 必须是消费者 manifest 里显式写下的值，且出现在 `config list` 与审计中；不得由
    `image_allowlist` 里的通配符或空列表隐式打开。
 2. `any` 不得用于状态为 `release` 的 Module。
-3. 启用 `any` 之后，镜像约束在 Provider 侧完全消失——它是本 Contract 唯一不由 daemon 兜底的约束，
-   因此文档必须写明该租约的镜像来源等同于消费者代码的可信度。
+3. 启用 `any` 之后不再限定镜像摘要，因此文档必须写明该租约的镜像来源等同于消费者代码的
+   可信度。daemon 的镜像服务器限制与逐摘要 allowlist 不是同一能力，不能相互替代；上游核验
+   与适用版本见宿主供给设计及 R-085。
 4. `any` 不得连带放宽任何其他约束：project 隔离、配额、实例名前缀与非特权容器仍然成立。
 
 ## 7quinquies. 宿主供给、入站与镜像烘焙（第四阶段）
@@ -184,13 +190,16 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
    类型化参数，永不接受命令、argv、路径或脚本，动作实现编译进 root 二进制。通道实现之前，控制台
    显示待执行命令并轮询状态。
 5bis. CLI 与 Web 必须走同一条特权通道：能力差异只可能来自动作清单，不得来自入口。
-6. 实例不得依赖公网 IPv6 地址或上游 DHCPv6-PD。出站经受管 bridge NAT，入站统一经 Incus proxy
-   device，且必须同时支持 IPv4 与 IPv6 入站。
+6. 实例不得依赖公网 IPv6 地址或上游 DHCPv6-PD。出站经受管 bridge NAT；HTTP 入站由 Traefik 提供 IPv4/IPv6 入口，经受管路由与防火墙访问
+   guest 的内网地址和获批端口，不要求 proxy device 或 network forward。
 7. 实例内 HTTP 服务经 Traefik 发布必须复用既有的 `ANAS_TRAEFIK_ROUTE__*` 文件 provider 路由，
    不得为此在 Traefik 侧新增机制。
 8. guest 镜像配方必须使用 distrobuilder，不得自造 Dockerfile 方言。
 9. 镜像语义必须是**构建一次、记录摘要、之后不再重建**：apply 时摘要已存在即不动作；配方变更是
    显式版本变更，产出新摘要而不是就地覆盖。每次 apply 重新烘焙会让 fingerprint 钉死失去意义。
+
+首期入站仅交付 HTTP/HTTPS 服务发布。普通 TCP、TLS TCP 与 UDP 属于后续独立端口发布能力，
+不因 Traefik 支持这些协议而隐式启用；其声明、认证和监听端口生命周期需在实施前补充需求矩阵。
 
 ## 8. 验收标准
 
@@ -241,7 +250,7 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
 | `INCUS-R-016` | 操作错误必须可归因到具体参数，且不得回显证书、私钥或消费者 Secret | 单元 |
 | `INCUS-R-017` | Core 必须为每个 Resource 生成稳定客户端证书与私钥并存为单条 Secret；重复 apply 不得重新签发 | 单元 |
 | `INCUS-R-018` | 只有证书半边可进入 Provider；私钥必须直接投影给消费者，不经过 Provider | 单元 |
-| `INCUS-R-019` | Core 必须校验 sandbox、instance_prefix、quota 区间与 image_allowlist，只接受 SHA-256 fingerprint | 单元 |
+| `INCUS-R-019` | Core 必须校验 sandbox、instance_prefix、quota 区间及镜像引用；声明语法见 R-066，运行时 allowlist 只接受解析后的 SHA-256 fingerprint | 单元 |
 | `INCUS-R-020` | 就绪租约必须投影到消费者私有命名空间，私钥标为敏感；manifest 与 resource state 只存 Secret 引用 | 单元 |
 | `INCUS-R-021` | 实例生命周期必须由一个共享客户端库实现，仓库不得保留两套 Incus 适配代码 | 审阅 + 单元 |
 | `INCUS-R-022` | 共享库必须校验镜像 fingerprint 在 allowlist 内、实例名在本前缀内、资源上限在租约配额内，并拒绝 device/raw config/挂载/profile 覆盖 | 单元 |
@@ -275,7 +284,7 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
 | `INCUS-R-050` | daemon 默认只监听回环；对外暴露 Incus API 不得作为宿主供给的副产物发生 | 静态 + e2e |
 | `INCUS-R-051` | Web 管理端不得接受 root 或 sudo 密码；一键提权只能经安装期预置的受限特权单元触发，密码不得进入应用 | 审阅 + 安全测试 |
 | `INCUS-R-052` | 默认隔离档必须是 `incus_container`；不得因宿主缺少 KVM 而自动降级，也不得自动升级为 VM | 单元 + 契约 |
-| `INCUS-R-053` | 实例不得依赖公网 IPv6 或上游 DHCPv6-PD；入站必须经 proxy device 且同时支持 IPv4 与 IPv6 | 单元 + e2e |
+| `INCUS-R-053` | 实例不得依赖公网 IPv6 或上游 DHCPv6-PD；HTTP 入站必须经 Traefik 与受管路由/防火墙访问获批 guest 端口，公网入口同时支持 IPv4 与 IPv6，guest 不必双栈 | 单元 + e2e |
 | `INCUS-R-054` | 实例内 HTTP 服务经 Traefik 发布必须复用既有 `ANAS_TRAEFIK_ROUTE__*` 机制，不得在 Traefik 侧新增能力 | 契约 + e2e |
 | `INCUS-R-055` | guest 镜像必须由 distrobuilder 配方产出，且语义为构建一次记录摘要；不得每次 apply 重新烘焙 | 契约 + e2e |
 | `INCUS-R-056` | `guest_image` 需要 Provider 把 fingerprint 交回 Runner；由 R-066、R-067 取代——镜像改为 `anas:`/`fingerprint:` 命名引用后，引用在 apply 时即确定，无需结果通道（已废弃） | 契约 + 审阅 |
@@ -288,11 +297,11 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
 | `INCUS-R-063` | Traefik 绑定必须跟随实例生命周期：启动即绑、停止或暂停即解绑，与实例是否长驻无关；运行时绑定经 Traefik 文件 provider 目录完成，Core 不在这条路径上 | 契约 + e2e |
 | `INCUS-R-064` | 可发布的 guest 端口必须在租约的 `ingress.allowed_ports` 中于 apply 时固定；省略 `ingress` 段即完全不允许发布 | 契约 + 单元 |
 | `INCUS-R-065` | 随机域名必须由 `workload_id` 与租约 secret 确定性派生，不得抽取随机数再存表：同一任务恒定、不同任务不重复、外部不可预测 | 单元 |
-| `INCUS-R-066` | `image_allowlist` 条目必须是 `fingerprint:<64hex>` 或 `anas:<name>@<revision>`；`anas:` 名字一旦发布不得指向不同内容，配方变更产出新 revision | 契约 + 审阅 |
+| `INCUS-R-066` | `image_allowlist` 条目必须为互斥的 `{fingerprint: <64hex>}` 或 `{catalog: anas, name: <name>, revision: <revision>}` 对象，拒绝字段混用、未知字段和所有字符串旧格式；目录引用按架构与隔离档解析并冻结摘要，同一版本键不得改变内容 | 契约 + 审阅 |
 | `INCUS-R-067` | 不得为 `guest_image` 新增 Provider→Runner 结果通道：镜像引用在 apply 时即确定，Provider 只保证该引用对应的镜像存在 | 审阅 |
 | `INCUS-R-068` | 宿主特权动作通道要求；由 `HOSTACT-R-005` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 审阅 |
 | `INCUS-R-069` | 宿主特权动作通道要求；由 `HOSTACT-R-006` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 静态 + 审阅 |
-| `INCUS-R-070` | 入站路径必须与网络模式解耦：LAN 模式若启用也走同一条 proxy device 路径，不得复用 macvlan shim 作为 Traefik 路由目标 | 契约 + 审阅 |
+| `INCUS-R-070` | 入站路径必须与网络模式解耦：发布授权与 Traefik 路由不得绑定 NAT/LAN 的实现细节；LAN 暂不实现，启用前必须单独证明受管后端可达及访问控制，不得默认复用 macvlan shim 绕过入站授权 | 契约 + 审阅 |
 | `INCUS-R-071` | 随机域名派生必须确定性、掺入租约 secret、碰撞时失败而不静默复用；`mode: fixed` 时不派生 | 单元 |
 | `INCUS-R-086` | 域名模式必须支持 `fixed` / `named` / `random` 三档；`named` 的 label 只允许 `[a-z0-9-]` 且最终域名必须落在该租约 prefix 的命名空间内 | 契约 + 单元 |
 | `INCUS-R-087` | 消费者不得直接写入 Traefik 动态配置目录：只能写受约束的请求文件，由中介校验域名落在本租约命名空间内后渲染；middleware 与 entrypoint 由渲染方决定，消费者无权指定 | 契约 + e2e |

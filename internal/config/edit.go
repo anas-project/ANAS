@@ -46,6 +46,13 @@ func flattenNodeSeen(node *yaml.Node, path []string, out map[string]string, reso
 		delete(resolving, node)
 		return
 	}
+	if node.Kind == yaml.MappingNode && ((len(path) == 4 && path[0] == "modules" && path[2] == "config") || (len(path) == 2 && (path[0] == "env" || path[0] == "secrets"))) {
+		var value any
+		if err := node.Decode(&value); err == nil {
+			out[strings.Join(path, ".")] = Scalar(value)
+			return
+		}
+	}
 	switch node.Kind {
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {

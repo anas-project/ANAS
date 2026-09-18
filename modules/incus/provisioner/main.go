@@ -105,10 +105,14 @@ func leaseFromEnv(isolation string) (lease, error) {
 		Sandbox:  strings.TrimSpace(os.Getenv("ANAS_RESOURCE_SANDBOX")),
 		// The pool is a property of the daemon this module points at, not of
 		// any one lease, so it comes from the module's own configuration.
-		StoragePool:    strings.TrimSpace(os.Getenv("INCUS_STORAGE_POOL")),
-		NetworkIPv6:    strings.EqualFold(strings.TrimSpace(os.Getenv("INCUS_NETWORK_IPV6")), "true"),
-		InstancePrefix: strings.TrimSpace(os.Getenv("ANAS_RESOURCE_INSTANCE_PREFIX")),
-		Isolation:      isolation,
+		StoragePool:       strings.TrimSpace(os.Getenv("INCUS_STORAGE_POOL")),
+		NetworkIPv6:       strings.EqualFold(strings.TrimSpace(os.Getenv("INCUS_NETWORK_IPV6")), "true"),
+		InstancePrefix:    strings.TrimSpace(os.Getenv("ANAS_RESOURCE_INSTANCE_PREFIX")),
+		Isolation:         isolation,
+		ImageArchitecture: strings.TrimSpace(os.Getenv("ANAS_RESOURCE_IMAGE_ARCHITECTURE")),
+	}
+	if l.ImageArchitecture != "amd64" && l.ImageArchitecture != "arm64" {
+		return lease{}, fmt.Errorf("ANAS_RESOURCE_IMAGE_ARCHITECTURE must be amd64 or arm64")
 	}
 	if !consumerPattern.MatchString(l.Consumer) {
 		return lease{}, fmt.Errorf("ANAS_RESOURCE_CONSUMER is not a valid module name")

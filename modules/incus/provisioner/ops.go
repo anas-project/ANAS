@@ -10,18 +10,19 @@ import (
 )
 
 type lease struct {
-	Consumer       string
-	Sandbox        string
-	StoragePool    string
-	NetworkIPv6    bool
-	InstancePrefix string
-	MaxInstances   int
-	CPU            int
-	MemoryMiB      int
-	DiskGiB        int
-	ImageAllowlist []string
-	ClientCertPEM  []byte
-	Isolation      string
+	Consumer          string
+	Sandbox           string
+	StoragePool       string
+	NetworkIPv6       bool
+	InstancePrefix    string
+	MaxInstances      int
+	CPU               int
+	MemoryMiB         int
+	DiskGiB           int
+	ImageAllowlist    []string
+	ImageArchitecture string
+	ClientCertPEM     []byte
+	Isolation         string
 }
 
 type project struct {
@@ -73,10 +74,11 @@ func projectConfig(l lease) map[string]string {
 		"restricted":        "true",
 		"features.images":   "true",
 		"features.profiles": "true",
-		// The lease owns its own network, so egress from one consumer's
-		// instances cannot reach another's. Without this the project would
-		// borrow the default project's networks and that separation is gone.
-		"features.networks":                    "true",
+		// Bridge networks live in the default project (Incus 7.3 only
+		// supports OVN in network-isolated projects). Restrict access to
+		// exactly this lease's provider-owned bridge instead.
+		"features.networks":                    "false",
+		"restricted.networks.access":           computeclient.NetworkName(l.Sandbox),
 		"limits.instances":                     fmt.Sprint(l.MaxInstances),
 		"limits.cpu":                           fmt.Sprint(l.MaxInstances * l.CPU),
 		"limits.memory":                        fmt.Sprintf("%dMiB", l.MaxInstances*l.MemoryMiB),
@@ -103,8 +105,8 @@ func projectConfig(l lease) map[string]string {
 	return config
 }
 
-// quotaEnforced reports whether every limit this contract promises is actually
-// present on the project. A project that exists and is restricted but carries
+// quotaEnforced checks the project-limit portion of quota enforcement. Storage
+// admission is checked separately; these strings do not prove disk enforcement. A project that exists and is restricted but carries
 // no limits is a fence with no fence in it, so this is checked separately from
 // restricted rather than folded into it.
 func quotaEnforced(config map[string]string) bool {
@@ -126,19 +128,32 @@ func ensureNetwork(ctx context.Context, c *client, l lease) (string, error) {
 	// decides it is the host: a v6 network the host cannot route turns every
 	// outbound connection into a timeout before it falls back to v4.
 	desired := map[string]string{
-		"ipv4.address": "auto",
-		"ipv4.nat":     "true",
-		"ipv6.address": "none",
+		"user.anas.consumer": l.Consumer,
+		"user.anas.sandbox":  l.Sandbox,
+		"ipv4.address":       "auto",
+		"ipv4.nat":           "true",
+		"ipv6.address":       "none",
 	}
 	if l.NetworkIPv6 {
 		desired["ipv6.address"] = "auto"
 		desired["ipv6.nat"] = "true"
 	}
-	path := "/1.0/networks/" + name + "?project=" + l.Sandbox
+	path := "/1.0/networks/" + name + "?project=default"
 	var current network
 	err := c.do(ctx, "GET", path, nil, &current)
 	switch {
 	case err == nil:
+		if err := verifyNetworkOwner(current, l); err != nil {
+			return "", err
+		}
+		// Incus replaces auto with a concrete subnet. Preserve that subnet
+		// across applies instead of renumbering running instances.
+		for _, family := range []string{"ipv4", "ipv6"} {
+			key := family + ".address"
+			if desired[key] == "auto" && current.Config[key] != "" && current.Config[key] != "none" {
+				desired[key] = current.Config[key]
+			}
+		}
 		merged := map[string]string{}
 		for key, value := range current.Config {
 			merged[key] = value
@@ -146,11 +161,14 @@ func ensureNetwork(ctx context.Context, c *client, l lease) (string, error) {
 		for key, value := range desired {
 			merged[key] = value
 		}
+		if !l.NetworkIPv6 {
+			delete(merged, "ipv6.nat")
+		}
 		if err := c.do(ctx, "PUT", path, network{Config: merged}, nil); err != nil {
 			return "", err
 		}
 	case isNotFound(err):
-		if err := c.do(ctx, "POST", "/1.0/networks?project="+l.Sandbox, network{
+		if err := c.do(ctx, "POST", "/1.0/networks?project=default", network{
 			Name: name, Type: "bridge", Description: "ANAS compute lease network for " + l.Consumer, Config: desired,
 		}, nil); err != nil {
 			return "", err
@@ -158,7 +176,40 @@ func ensureNetwork(ctx context.Context, c *client, l lease) (string, error) {
 	default:
 		return "", err
 	}
+	var actual network
+	if err := c.do(ctx, "GET", path, nil, &actual); err != nil {
+		return "", fmt.Errorf("read back lease network: %w", err)
+	}
+	if err := verifyNetworkOwner(actual, l); err != nil {
+		return "", err
+	}
+	for key, expected := range desired {
+		value := actual.Config[key]
+		if expected == "auto" {
+			if value == "" || value == "none" {
+				return "", fmt.Errorf("lease network %s did not configure %s", name, key)
+			}
+		} else if value != expected {
+			return "", fmt.Errorf("lease network %s did not apply %s", name, key)
+		}
+	}
 	return name, nil
+}
+
+func verifyNetworkOwner(n network, l lease) error {
+	if n.Type != "bridge" || n.Config["user.anas.consumer"] != l.Consumer || n.Config["user.anas.sandbox"] != l.Sandbox {
+		return fmt.Errorf("lease network %s is not an owned bridge for %s; refusing to adopt or modify it", computeclient.NetworkName(l.Sandbox), l.Sandbox)
+	}
+	if n.Config["bridge.external_interfaces"] != "" {
+		return fmt.Errorf("lease network %s has unmanaged external interfaces", computeclient.NetworkName(l.Sandbox))
+	}
+	return nil
+}
+
+func networkScopeEnforced(config map[string]string, l lease) bool {
+	return config["features.networks"] == "false" &&
+		config["restricted.devices.nic"] == "managed" &&
+		config["restricted.networks.access"] == computeclient.NetworkName(l.Sandbox)
 }
 
 // ensureProfile owns everything about an instance that is not a numeric limit:
@@ -218,13 +269,27 @@ func verifyProfile(ctx context.Context, c *client, l lease, bridge string) error
 }
 
 func ensure(ctx context.Context, c *client, l lease) (inspectResult, error) {
+	// Refuse before changing projects, networks, profiles or certificate trust.
+	supported, err := readQuotaPool(ctx, c, l)
+	if err != nil {
+		return inspectResult{}, err
+	}
+	if !supported {
+		return inspectResult{}, fmt.Errorf("INCUS_STORAGE_POOL %s must be a Created btrfs or zfs pool for enforced disk quotas", l.StoragePool)
+	}
 	desired := projectConfig(l)
 	description := fmt.Sprintf("ANAS compute lease for %s (%s tier)", l.Consumer, l.Isolation)
 
 	var current project
-	err := c.do(ctx, "GET", "/1.0/projects/"+l.Sandbox, nil, &current)
+	err = c.do(ctx, "GET", "/1.0/projects/"+l.Sandbox, nil, &current)
 	switch {
 	case err == nil:
+		// Existing network-isolated projects may contain OVN networks or
+		// running instances. Changing their feature flag is a migration,
+		// never an incidental side effect of ensuring a bridge lease.
+		if strings.EqualFold(strings.TrimSpace(current.Config["features.networks"]), "true") {
+			return inspectResult{}, fmt.Errorf("incus project %s has features.networks enabled; explicit network migration is required", l.Sandbox)
+		}
 		// Converge rather than recreate: instances may be running in here.
 		merged := map[string]string{}
 		for key, value := range current.Config {
@@ -256,6 +321,9 @@ func ensure(ctx context.Context, c *client, l lease) (inspectResult, error) {
 	if !result.QuotaEnforced {
 		return result, fmt.Errorf("incus project %s has no enforced quota after ensure", l.Sandbox)
 	}
+	if !result.Ready {
+		return result, fmt.Errorf("incus project %s has no exclusive managed network scope after ensure", l.Sandbox)
+	}
 	// Only now that the fence is proven: give the lease its network and profile,
 	// then read the profile back. An instance created before this exists would
 	// come up with no root disk and no NIC.
@@ -267,6 +335,9 @@ func ensure(ctx context.Context, c *client, l lease) (inspectResult, error) {
 		return result, err
 	}
 	if err := verifyProfile(ctx, c, l, bridge); err != nil {
+		return result, err
+	}
+	if err := verifyImages(ctx, c, l); err != nil {
 		return result, err
 	}
 	if err := ensureCertificate(ctx, c, l); err != nil {
@@ -318,9 +389,16 @@ func inspect(ctx context.Context, c *client, l lease) (inspectResult, error) {
 	}
 	restricted := strings.EqualFold(strings.TrimSpace(current.Config["restricted"]), "true")
 	quota := quotaEnforced(current.Config)
+	if quota {
+		supported, err := readQuotaPool(ctx, c, l)
+		if err != nil {
+			return inspectResult{}, err
+		}
+		quota = supported
+	}
 	return inspectResult{
 		Exists:        true,
-		Ready:         restricted && quota,
+		Ready:         restricted && quota && networkScopeEnforced(current.Config, l),
 		Restricted:    restricted,
 		QuotaEnforced: quota,
 	}, nil

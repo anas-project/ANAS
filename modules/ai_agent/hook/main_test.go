@@ -8,21 +8,21 @@ import (
 
 func baseEnv() map[string]string {
 	return map[string]string{
-		"AI_AGENT_ENABLED":                 "true",
-		"AI_AGENT_DOMAIN_PREFIX":           "agent",
-		"AI_AGENT_REPOSITORY_ALLOWLIST":    "anas-project/ANAS",
-		"AI_AGENT_RUNTIMES":                "codex",
-		"AI_AGENT_RUNTIME_IMAGES":          "codex=" + strings.Repeat("a", 64),
-		"AI_AGENT_DB_TYPE":                 "postgres",
-		"BASE_DOMAIN":                      "example.test",
-		"CONTAINER_PREFIX":                 "anas_",
-		"DEFAULT_LANGUAGE":                 "zh-CN",
-		"TRAEFIK_BASE_PORT":                "8443",
-		computeLeasePrefix + "INTERFACE":   "incus_container",
-		computeLeasePrefix + "ENDPOINT":    "https://incus.example:8443",
-		computeLeasePrefix + "SANDBOX":     "anas-ai-agent",
-		computeLeasePrefix + "CLIENT_CERT": "Y2xpZW50",
-		computeLeasePrefix + "CLIENT_KEY":  "a2V5",
+		"AI_AGENT_ENABLED":                    "true",
+		"AI_AGENT_DOMAIN_PREFIX":              "agent",
+		"AI_AGENT_REPOSITORY_ALLOWLIST":       "anas-project/ANAS",
+		"AI_AGENT_AGENT_RUNTIMES":             "codex",
+		computeLeasePrefix + "IMAGE_BINDINGS": `{"codex":"` + strings.Repeat("a", 64) + `"}`,
+		"AI_AGENT_DB_TYPE":                    "postgres",
+		"BASE_DOMAIN":                         "example.test",
+		"CONTAINER_PREFIX":                    "anas_",
+		"DEFAULT_LANGUAGE":                    "zh-CN",
+		"TRAEFIK_BASE_PORT":                   "8443",
+		computeLeasePrefix + "INTERFACE":      "incus_container",
+		computeLeasePrefix + "ENDPOINT":       "https://incus.example:8443",
+		computeLeasePrefix + "SANDBOX":        "anas-ai-agent",
+		computeLeasePrefix + "CLIENT_CERT":    "Y2xpZW50",
+		computeLeasePrefix + "CLIENT_KEY":     "a2V5",
 	}
 }
 
@@ -84,11 +84,11 @@ func TestCalculateGeneratesAndKeepsSecrets(t *testing.T) {
 // AGENT-R-004: `enabled` may not be turned on without every precondition.
 func TestEnabledRefusesWithoutItsPreconditions(t *testing.T) {
 	for key, want := range map[string]string{
-		"AI_AGENT_REPOSITORY_ALLOWLIST":   "AI_AGENT_REPOSITORY_ALLOWLIST",
-		"AI_AGENT_RUNTIMES":               "AI_AGENT_RUNTIMES",
-		"AI_AGENT_RUNTIME_IMAGES":         "AI_AGENT_RUNTIME_IMAGES",
-		computeLeasePrefix + "ENDPOINT":   "compute binding",
-		computeLeasePrefix + "CLIENT_KEY": "compute binding",
+		"AI_AGENT_REPOSITORY_ALLOWLIST":       "AI_AGENT_REPOSITORY_ALLOWLIST",
+		"AI_AGENT_AGENT_RUNTIMES":             "AI_AGENT_AGENT_RUNTIMES",
+		computeLeasePrefix + "IMAGE_BINDINGS": computeLeasePrefix + "IMAGE_BINDINGS",
+		computeLeasePrefix + "ENDPOINT":       "compute binding",
+		computeLeasePrefix + "CLIENT_KEY":     "compute binding",
 	} {
 		t.Run(key, func(t *testing.T) {
 			env := baseEnv()
@@ -110,7 +110,7 @@ func TestDisabledDeploymentAppliesWithoutPreconditions(t *testing.T) {
 	env := baseEnv()
 	env["AI_AGENT_ENABLED"] = "false"
 	for _, key := range []string{
-		"AI_AGENT_REPOSITORY_ALLOWLIST", "AI_AGENT_RUNTIMES", "AI_AGENT_RUNTIME_IMAGES",
+		"AI_AGENT_REPOSITORY_ALLOWLIST", "AI_AGENT_AGENT_RUNTIMES", computeLeasePrefix + "IMAGE_BINDINGS",
 		computeLeasePrefix + "ENDPOINT",
 	} {
 		delete(env, key)
@@ -131,7 +131,7 @@ func TestRuntimeImagesMustBePinned(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			env := baseEnv()
-			env["AI_AGENT_RUNTIME_IMAGES"] = value
+			env[computeLeasePrefix+"IMAGE_BINDINGS"] = value
 			if _, err := runHook(t, "calculate", env, nil); err == nil {
 				t.Fatalf("calculate accepted image pins %q", value)
 			}
@@ -347,9 +347,8 @@ func TestOtherModulesAreIgnored(t *testing.T) {
 // group and this file names none of them.
 func TestCapabilityGroupsFollowTheEnabledRuntimes(t *testing.T) {
 	env := baseEnv()
-	env["AI_AGENT_RUNTIMES"] = "codex,claude_code"
-	env["AI_AGENT_RUNTIME_IMAGES"] = "codex=" + strings.Repeat("a", 64) +
-		",claude_code=" + strings.Repeat("b", 64)
+	env["AI_AGENT_AGENT_RUNTIMES"] = "codex,claude_code"
+	env[computeLeasePrefix+"IMAGE_BINDINGS"] = `{"codex":"` + strings.Repeat("a", 64) + `","claude_code":"` + strings.Repeat("b", 64) + `"}`
 	resp, err := runHook(t, "calculate", env, nil)
 	if err != nil {
 		t.Fatalf("calculate: %v", err)

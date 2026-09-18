@@ -2,7 +2,7 @@
 doc_type: plan
 status: proposed
 created: 2026-09-04
-updated: 2026-09-04
+updated: 2026-09-18
 ---
 
 # 宿主特权动作通道实施计划
@@ -10,8 +10,13 @@ updated: 2026-09-04
 验收依据是[宿主特权动作通道要求](../requirements/host-action-channel.md)；设计见
 [同名架构文档](../../docs/architecture/host-action-channel.md)。
 
-**当前状态：全部未开始，设计已定。** 它依赖[统一动作 ABI](action-abi.md) 先落地——通道复用那套
-线格式与 job 语义，不另起一套。
+**当前状态：通道与动作均未开始，设计已定。** 它依赖[统一动作 ABI](action-abi.md) 先落地——通道复用那套
+线格式与 job 语义，不另起一套。截至 2026-09-18，ABI 前置已有共用 journal、执行 recorder、
+非特权 Module 注册表/Linux 进程适配、ModuleActionWorker 及调用/查询/订阅服务的内部代码；
+动作级幂等、终态后 1 小时保留和 coalesce/reject/queue 已接入同一 journal，仍无 root 注册表。
+这些代码与回归源尚未编译/运行，主 daemon 与旧 CLI/HTTP 尚未迁移。Module worker 不领取宿主
+命名空间的动作，不能据此注册 Incus HTTP 宿主动作或宣称 root 通道完成。没有新增 root RPC、
+脚本入口或 CAP_SYS_ADMIN helper。
 
 ## 1. 需求归属与状态
 
