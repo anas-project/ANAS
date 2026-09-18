@@ -27,6 +27,24 @@
 Module 是远端 daemon 的客户端控制面，容器内不该有任何可被连上的东西。Runner 用
 `docker compose run --rm --no-deps --no-TTY` 一次性拉起它，进程退出即结束。
 
+## 固定控制转发组件（未安装、未验收）
+
+`modules/incus/control-relay` 是为宿主回环连接候选方案编写的 Linux 非 root 传输组件，
+**不是当前 Compose 服务，尚未打包、自动安装或启用**。它只把安装配置指定的控制 bridge
+IPv4/高位端口原样转发到编译期固定的 `127.0.0.1:8443`，不接受 upstream、HTTP CONNECT、
+SOCKS、TLS 密钥或调用方命令；Incus mTLS 与原服务端 pin 仍由原两端核验。
+
+组件要求 root 所有且不可被组/其他用户写入的配置及父目录、专用非 root UID/GID、无额外附加组
+和无 capabilities。配置绑定接口名称、index、网段与网关；接口漂移时停止服务，不改绑通配地址。
+连接数、拨号期限和双向空闲期限受限，保留半关闭，停止时关闭现存连接。配置字段属于未来的宿主
+安装流程，不是本节下面的 `incus.*` Module 参数，也不改变当前远端 daemon 的接入方式。
+
+宿主安装动作、官方二进制发布、服务单元、INPUT/FORWARD 入接口规则、接口重建协调、endpoint
+投影以及 mTLS/pin/project/跨网络与卸载实机验收仍未完成。源 CIDR 检查不能代替防火墙或认证。
+本地配置和传输测试源码已补但未运行。本次只将该独立组件和报告从 `5135/anas` 工作树迁入主目录，
+不代表其余动作 ABI、镜像和 ingress 代码已经合入，也未安装或启用任何服务。
+详细边界见[控制转发接续核对](../../../dev-docs/reviews/2026-09-18-incus-control-relay-implementation.md)。
+
 ## 配置契约
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |

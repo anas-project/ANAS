@@ -30,6 +30,29 @@ socket: this module is a client control plane for a remote daemon, and nothing i
 should be reachable. The Runner starts it once with `docker compose run --rm --no-deps --no-TTY`, and
 it ends when the process exits.
 
+## Fixed control relay component (not installed or accepted)
+
+`modules/incus/control-relay` is a Linux non-root transport component for the proposed host-loopback
+connection path. **It is not a current Compose service and has not been packaged, automatically
+installed or enabled.** It forwards bytes from the installation-bound control-bridge IPv4/high port
+only to the compiled-in `127.0.0.1:8443`. There is no upstream override, HTTP CONNECT, SOCKS, TLS key
+or caller-supplied command. The original endpoints retain Incus mTLS and server-certificate pinning.
+
+The component requires root-owned configuration and ancestors without group/other write access, a
+dedicated non-root UID/GID, no extra supplementary groups and no capabilities. Configuration binds
+interface name/index, subnet and gateway; interface drift stops the service rather than rebinding a
+wildcard. Connection count, dial time and shared bidirectional idle time are bounded. Half-closes are
+preserved, and shutdown closes existing connections. These are future host-installation fields, not
+the `incus.*` Module settings below; existing remote-daemon connections are unchanged.
+
+Host installation actions, trusted binary distribution, service units, INPUT/FORWARD ingress-interface
+rules, interface-recreation reconciliation, endpoint projection, and real mTLS/pin/project/cross-network
+and uninstall acceptance remain pending. A source-CIDR check is neither firewall authorization nor
+authentication. Local configuration/transport test sources were added but not run. This transfer only
+brings the standalone relay and reports from the `5135/anas` worktree into the main checkout; it does
+not merge the remaining action ABI, image or ingress implementation, or install or enable a service.
+See the [control-relay implementation review](../../../dev-docs/reviews/2026-09-18-incus-control-relay-implementation.md).
+
 ## Configuration contract
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |

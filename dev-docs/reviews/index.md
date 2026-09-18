@@ -4,6 +4,8 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [Incus 固定控制转发接续核对](2026-09-18-incus-control-relay-implementation.md) | 2026-09-18，`f7642c5` 加并行修改的未提交工作树 | 非 root 控制转发、执行租约保护与未验收边界；不是评审批准 |
+| [Incus 本地镜像归档接续核对](2026-09-18-incus-artifact-archive-implementation.md) | 2026-09-18，未提交工作树 | 本地镜像归档、不可变 revision、恢复边界与未验收项；不是发布批准 |
 | [Incus 网络与 proxy 权限核验](2026-09-10-incus-network-proxy-validation.md) | 2026-09-10，ANAS `f7642c5` / Incus `v7.3.0` | 固定版本源码调用链、兼容性缺陷与实机验证边界 |
 | [凭据轮换机制审查：全面轮换与单独轮换](2026-09-04-credential-rotation-review.md) | 2026-09-04 工作树，HEAD `5306b63` | 轮换覆盖面、作用域语义与 resource 凭据空白 |
 | [GPT‑6 / GPT‑5.6 混用配置与项目质量评估](2026-09-05-agent-configuration-and-project-quality-review.md) | 2026-09-05 工作树，HEAD `455770b` | Agent 配置、文档、架构与代码质量审查 |
