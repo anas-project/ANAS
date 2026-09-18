@@ -26,6 +26,23 @@ test-env/.remote-test/
 /anas-helper
 /actions-controller
 
+# Binaries `go build` leaves in a Go program's own directory under modules/. Go
+# names the output after the last element of the import path: the directory,
+# unless a nested go.mod declares another module path, as oauth2_proxy's does
+# with .../bootstrap. Git cannot match a file named after its parent, so each
+# program is listed and every module's hook/ shares one pattern; add a line
+# with each new program. Unignored, a local build also counts as a runtime
+# change, and so a revision bump, in scripts/ci/module-revisions.sh.
+/modules/*/hook/hook
+/modules/ai_agent/orchestrator/orchestrator
+/modules/casdoor/casdoor/helper/helper
+/modules/ddns_go/ddns-go/reconcile/reconcile
+/modules/forgejo/actions-controller/actions-controller
+/modules/forgejo/forgejo/forgejo
+/modules/incus/provisioner/provisioner
+/modules/oauth2_proxy/oauth2_proxy/bootstrap
+/modules/vikunja/vikunja/vikunja
+
 # macOS Finder metadata. Contributors without a global ignore would otherwise
 # commit one of these into every directory they open in Finder.
 .DS_Store

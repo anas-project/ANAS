@@ -2,7 +2,7 @@
 doc_type: plan
 status: proposed
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-13
 ---
 
 # Changelog 实施计划
@@ -36,7 +36,7 @@ updated: 2026-08-28
 - [ ] 实现覆盖检查脚本：对区间内每个 merge 提交，用 `git diff <first-parent>...<second-parent>` 取该分支引入的路径，判定是否需要条目。
 - [ ] 受影响集合直接取 `scripts/ci/module-revisions.sh --print` 的输出，不另写路径规则。
 - [ ] 实现三条豁免：只命中 `shared_contexts`/打包器/catalog 的分支归类为重新打包；只改测试、格式、CI、生成产物的分支沿用 `runtime_path()` 忽略规则；第二父已是 `master` 祖先的同步性 merge 跳过。
-- [ ] 把覆盖检查挂进 `docs.yml` 已有的 “Validate documentation sources” 步骤，不新建 workflow。
+- [ ] 把覆盖检查挂进 `ci.yml` `documentation-sources` 作业已有的 “Validate documentation sources” 步骤，不新建 workflow（该步骤已由 `756c9b6` 从 `docs.yml` 移到 `ci.yml`）。
 - [ ] 用一次真实 dependabot 分支验证：只改 `go.mod` 的合并不要求任何条目。
 - [ ] 把写入时机、落点与合并时的责任写入 `AGENTS.md`、`CONTRIBUTING.md` 与 `docs/developer/release.md`（中英文）。
 
@@ -63,7 +63,16 @@ updated: 2026-08-28
 
 没有外部阻塞。M0 的两处排除是其余全部工作的前提，先做这一项。
 
-## 7. e2e 执行记录
+## 7. CI 门禁
+
+全部里程碑未开始，没有实施提交可记录：M0 要补用例的 `scripts/ci/module-revisions-test.sh` 与
+`internal/modulepackage` 测试、M1 起新增的覆盖检查与发布改名 e2e，都还没有属于本计划的绿灯。
+
+文档门禁有 CI 记录：`docs:check-requirements`、`docs:check-requirement-status`、`docs:check-plan-status`
+与 `docs:check-status` 在 `5306b63`（GitHub CI，2026-09-05）上全绿。本计划与要求文档在那之后直到本次
+补写检查表都没有改动，因此那次运行校验的就是现行归属表与 e2e 记录；此后只有本地记录 `6823232`。
+
+## 8. e2e 执行记录
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
 | --- | --- | --- | --- | --- |
@@ -74,3 +83,13 @@ updated: 2026-08-28
 | R-020 | `changelog-release-rename-e2e.sh missing-entry` | 缺条目的组件必须中止发布 | — | 待实现 |
 | R-029 | `changelog-release-rename-e2e.sh github-notes` | GitHub Release 正文来自英文版本文件 | — | 待实现 |
 | R-030 | `changelog-release-rename-e2e.sh cnb-notes` | CNB Release 正文来自中文版本文件 | — | 待实现 |
+
+## 9. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [Changelog 规范](../../docs/developer/changelog-standard.md)与英文镜像 §3 | 固化分节顺序与条目写法（M0）。现有表格列出了分节和分节内的条目顺序，但没有规定分节之间的先后；示例把 `Fixed` 写在 `Changed` 之前，与列表顺序不一致 | 未开始 |
+| 同上 §8 | 仍写覆盖检查挂进 `docs.yml` 的 “Validate documentation sources” 步骤；该步骤已由 `756c9b6` 移入 `ci.yml` 的 `documentation-sources` 作业 | 未开始 |
+| [ANAS、Module 与容器发布](../../docs/developer/release.md)与英文镜像的「变更记录」一节 | 已写入落点与合并者责任（M1 的一部分），但用现行流程的口吻描述尚未实现的改名、回推与发布中止，没有标明当前不可执行 | 部分完成；缺状态说明 |
+| `AGENTS.md`、`CONTRIBUTING.md` | 写入时机、落点与合并时的责任（M1） | 未开始 |
+| 中英文侧边栏 | Core 变更记录入口（M3） | 未开始 |

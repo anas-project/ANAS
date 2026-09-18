@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-13
 ---
 
 # Module IAM 双向登出实施计划
@@ -34,7 +34,17 @@ updated: 2026-08-28
 - [ ] 在专用隔离 Docker fixture 重跑 Casdoor × OIDC 矩阵及 SAML no-SLO 本地降级并归档非空报告。
 - [ ] 对每个声称支持的组合核对原应用会话、IAM 中央会话、静默恢复、会话隔离和安全负例。
 
-## 3. e2e 执行记录
+## 3. CI 门禁
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `go test ./...`（Runner 字段校验与各 Provider/Consumer Hook 的登出契约） | `25433bd`（GitHub CI，2026-08-29），已包含实现 `836564c` 与证据加固 `918bae6`。`5306b63` 上全部 20 个 `modules/*/hook` 包通过，Runner 侧校验所在的 `internal/runner` 包因无关用例失败；其后提交均未经 CI |
+| `go run ./cmd/gen-module-docs --check` | `5306b63`（GitHub CI，2026-09-05） |
+| `npm run docs:check-requirements`、`docs:check-requirement-status` | `5306b63`（GitHub CI）；本计划与要求文档在那之后直到本次补写检查表都没有改动，该次运行校验的就是现行归属表与 e2e 记录；最近本地记录 `6823232` |
+| `npm run test:iam-logout-report` | 不在 CI 中；本地记录见 §6（2/2） |
+| `bash -n test-env/scripts/server-iam-logout-matrix-e2e.sh`、`npm run docs:build` | 不在 `ci.yml` 中，没有带提交号的记录 |
+
+## 4. e2e 执行记录
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
 | --- | --- | --- | --- | --- |
@@ -61,7 +71,15 @@ updated: 2026-08-28
 | R-039 | `server-iam-logout-matrix-e2e.sh` | Casdoor + NetBird Dashboard `2.90.9` | — | 待执行：通过前保持“上游支持、待接入” |
 | R-041 | `server-iam-logout-matrix-e2e.sh` | Casdoor + oauth2-proxy `7.15.3` | — | 待执行：暂停 IAM 后验证网关 Cookie 清理 |
 
-## 4. 本轮执行状态
+## 5. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [Module IAM / OIDC 支持清单](../../docs/reference/module-iam-support.md#固定版本登出矩阵)与英文镜像的「固定版本登出矩阵」 | 区分本地、应用发起、浏览器双向与后台双向登出，不支持方向逐格明示 | 已完成 |
+| `nextcloud`、`meshcentral`、`netbird`、`oauth2_proxy`、`vikunja`、`forgejo` 的技术文档（中英文） | 各自的登出能力与降级语义 | 已完成 |
+| 同上两处 | M1、M2 的统一矩阵重跑通过后，把「上游支持、待接入」等条目改为实测结论 | 未开始 |
+
+## 6. 本轮执行状态
 
 - 2026-08-28 本地 `go test ./...` 通过，覆盖 Runner 与各 Provider/Consumer Hook 的登出契约。
 - `test:iam-logout-report` 2/2 通过；Playwright `--list` 产生的零执行结果已由新报告门禁拒绝。
@@ -74,7 +92,7 @@ updated: 2026-08-28
 - `test-env/reports/iam-logout-playwright.json` 的 fixture 为 `unset` 且结果为空，继续视为无效证据；
   只有带固定 Provider/Consumer、非空结果和 `0600` 权限的报告才能更新上表状态。
 
-## 5. 验证命令
+## 7. 验证命令
 
 ```bash
 go test ./...

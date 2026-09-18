@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-13
 ---
 
 # 条件 Capability 依赖实施计划
@@ -96,7 +96,17 @@ M1 的结论是 `adminer_enabled`
 选择器给 postgres/mariadb 各加一个用户可见参数。这是共享 registry 的 ABI 改动，超出本特性范围，
 值得单独立项。
 
-## 5. e2e 执行记录
+## 5. CI 门禁
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `go test ./...` | `25433bd`（GitHub CI，2026-08-29），已包含 M0—M2 的实现 `019fc65`、`d6acf32`。`5306b63` 上 `internal/runner` 包失败（`TestMaintenanceBackupCreateDescriptorIsBoundToPublicPlan`）；本计划的用例也在该包，那次运行不能证明它们通过。其后提交均未经 CI |
+| `go vet ./...` | `5306b63`（GitHub CI，2026-09-05） |
+| `go run ./cmd/gen-module-docs --check` | `5306b63`（GitHub CI），含 M2 新增的参数行 |
+| `npm run docs:check-requirements`、`docs:check-requirement-status` | `5306b63`（GitHub CI），但校验的是 M2 仍标「已完成」的版本；`40a8b2e`（2026-09-09）把 M2 改为实施中之后没有 CI 记录，本地 `6823232` 通过 |
+| 渲染产物 `docker compose config --quiet` | CI 没有这一步。只有本地记录：[无序 Capability 依赖](weak-capability-dependency.md) M2 检查表写明在原先成环的拓扑上渲染并解析通过；该记录随 `9a6f79e`（2026-08-28）入库，未注明基于哪个提交 |
+
+## 6. e2e 执行记录
 
 | 需求 ID | 脚本 | 环境 | 日期 | 结果 |
 | --- | --- | --- | --- | --- |
@@ -106,8 +116,17 @@ M1 的结论是 `adminer_enabled`
 R-018 的关键是**关**的那一组：必须确认 `adminer_enabled=false` 的部署里没有 oauth2_proxy，而不是
 只验证开启时它在。只验证正向的用例发现不了「条件永远为真」这类实现错误。
 
-## 6. 当前阻塞
+## 7. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [条件 Capability 依赖要求](../requirements/conditional-capability-dependency.md) §6、`R-013`、`R-014` | 按 M1 结论写明不新增 effect 取值，锁的变化由失败信息与 `--update-lock` 承担 | 已完成（`9a6f79e`） |
+| [Capability 开发标准](../../docs/developer/capability-development.md) §6.1 | `enabled_by` 字段说明、三条限制的理由，以及与 `services.optional[].enabled_by`、`dependencies.requires[].optional`、launcher `enabled_if` 的对照 | 已完成（`9a6f79e`）；该标准只有中文，英文开发者索引已注明 |
+| `postgres`、`mariadb` 的 README 与技术文档（中英文八份） | 新增的 `forward_auth_interface` 参数行，由 `gen-module-docs` 生成 | 已完成（`d6acf32`、`9a6f79e`） |
+| 同上 | 写明 `adminer_enabled=true` 需要一个 `forward_auth` Provider、缺少 Provider 时解析失败（R-018）；八份文档目前只有参数表里的那一行 | 未开始 |
+
+## 8. 当前阻塞
 
 - 设计阻塞已由无序依赖解除，当前没有待选设计决策。
-- e2e 需要可用的真实 Docker 主机与一套可登录的 IAM；本轮 Docker daemon 未运行，
-  `docker compose config --quiet` 未执行。
+- e2e 需要可用的真实 Docker 主机与一套可登录的 IAM。渲染产物的 `docker compose config --quiet`
+  不依赖 Docker daemon，本地记录见 §5。

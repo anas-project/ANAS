@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-21
-updated: 2026-08-22
+updated: 2026-09-13
 ---
 
 # VersityGW S3 兼容 Module 实施计划
@@ -53,7 +53,16 @@ M1、M1.1 Capability 与 M1.2 Resource 扩展已完成；当前里程碑为 M2�
 - [x] 移除声明继续使用 retained 安全语义，不隐式执行破坏性 delete。
 - [x] 单元测试覆盖隔离、敏感性、状态引用、Provider operation 与 Compose 管理面边界。
 
-## 5. M2 真实验收记录
+## 5. CI 门禁
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `go test ./...`（Hook、`object_storage/s3` 解析与 Resource 泛化） | `25433bd`（GitHub CI，2026-08-29），已包含 `e9e15af`。`5306b63` 上 `modules/versitygw/hook` 通过，Capability 与 Resource 用例所在的 `internal/runner` 包因无关用例失败；其后提交均未经 CI |
+| `go run ./cmd/gen-module-docs --check`、`go run ./cmd/gen-contract-docs --check` | `5306b63`（GitHub CI，2026-09-05） |
+| `npm run docs:check-requirements` | `5306b63`（GitHub CI）；本计划与要求文档在那之后直到本次补写检查表都没有改动；最近本地记录 `6823232` |
+| 渲染产物 `docker compose config --quiet` | 不在 CI 中；M1 检查表记为通过，未注明日期与提交 |
+
+## 6. M2 真实验收记录
 
 | 需求 ID | 脚本 | 环境 | 日期 | 结果 |
 | --- | --- | --- | --- | --- |
@@ -64,7 +73,16 @@ M1、M1.1 Capability 与 M1.2 Resource 扩展已完成；当前里程碑为 M2�
 M2 必须记录固定镜像 digest、客户端版本、path-style 配置与对象样本摘要。只完成静态 Compose
 解析或未签名 health 请求不能替代 S3 协议与恢复验收。
 
-## 6. 当前阻塞
+## 7. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| `versitygw` 的 README、技术文档与 `localization.yml`（中英文），以及中英文 Module 文档索引 | M1 新建 | 已完成 |
+| [对象存储 Capability 设计](../../docs/architecture/object-storage-capability-design.md)与英文镜像、[Capability 开发标准](../../docs/developer/capability-development.md)、[Module、Contract 与 Resource 设计](../../docs/architecture/module-contract-resource-design.md) | M1.1 的 `object_storage/s3` 与统一输出，M1.2 的 per-Resource 模型 | 已完成（`e9e15af`） |
+| `contracts/object_storage` 的 README 与技术文档（中英文） | M1.2 新建 Contract | 已完成（`e9e15af`） |
+| `versitygw` 的 README、技术文档与 `module.yml` | M2 通过后按真实证据更新 `status: developing` 与文档中的成熟度说明 | 未开始 |
+
+## 8. 当前阻塞
 
 - 当前 Docker daemon 未运行，无法构建/启动派生镜像，也没有可复用的真实服务器执行记录；
   因此 Module 保持 `developing`。

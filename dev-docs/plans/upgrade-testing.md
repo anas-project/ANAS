@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-09-03
-updated: 2026-09-05
+updated: 2026-09-13
 ---
 
 # 版本升级 E2E 测试实施计划
@@ -125,7 +125,20 @@ workspace；Docker client 配置构建代理时，还会拒绝未用 `noProxy` �
 `10.0.0.0/8`、`172.16.0.0/12` 与 `192.168.0.0/16` 的环境。报告保留在
 `${workspace}.reports`。
 
-## 6. e2e 执行记录
+## 6. CI 门禁
+
+§2 最后一项所说的「普通 CI 运行 catalog 校验」在 `ci.yml` 里配置成立，但这一步从未真正执行过：
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `go run ./cmd/check-upgrade-tests`（`ci.yml` Go 作业） | 从未在 CI 中运行：它排在 `go test ./...` 之后，`5306b63` 与 2026-09-13 基于 `5306b63` 的 dependabot PR 都因 `go test` 失败而跳过此步 |
+| 升级证据写入器等 8 个 Shell 测试（`test-upgrade-report.sh` 等，同一作业） | 同上，从未在 CI 中运行 |
+| `go test ./...`（`internal/upgradetest`） | 从未全绿：本计划随 `2b44a2b` 落地，包含它的唯一一次 master CI 是 `5306b63`，整体因 `internal/runner` 的无关用例失败；`internal/upgradetest` 包本身通过 |
+| `scripts/ci/core-upgrade-e2e.sh`（`v0.1.0` 与最新 tag `v0.1.1`，`ci.yml` Shell 作业） | `5306b63`（GitHub CI，2026-09-05），首次运行即通过；2026-09-13 的 dependabot PR 上再次通过 |
+| 发布工作流里的基线校验（`anas-release.yml` 的 `--scope core,web`；`container-images.yml` 的 `--scope modules` 与 `module-upgrade-fixture-compatibility.sh`） | 从未运行：两条发布工作流最近一次运行在 2026-08-20，早于本计划 |
+| `npm run docs:check-requirements`、`docs:check-requirement-status`、`docs:check-plan-status` | `5306b63`（GitHub CI）；本计划与要求文档在那之后直到本次补写检查表都没有改动；最近本地记录 `6823232` |
+
+## 7. e2e 执行记录
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
 | --- | --- | --- | --- | --- |
@@ -147,7 +160,16 @@ workspace；Docker client 配置构建代理时，还会拒绝未用 `noProxy` �
 | R-029 | `server-module-upgrade-e2e.sh` + `test-upgrade-suite-targets.sh` | `modules-authentik19` 发现 GHCR blob CDN TLS 超时；当前目标构建可显式使用受限 registry host，旧端与 fixture 不变 | 2026-09-05 | 静态通过 / e2e 待执行 |
 | R-030 | proxy-boundary guard + Authentik probe | `modules-authentik23` 与 fresh run24 复现 Docker client 构建代理污染 Traefik backend；完整 RFC1918 `noProxy` 后 discovery `200`、issuer 精确且深度 probe 通过 | 2026-09-05 | 单元 + fresh e2e 通过 / 完整往返待执行 |
 
-## 7. 当前阻塞
+## 8. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| `test-env/README.md` | 升级 catalog、`check-upgrade-tests` 与服务器 runner 的用法；`test-upgrade.sh`/`test-upgrade-render.sh` 标为 lock/render compatibility | 已完成 |
+| [Module 上游升级 SOP](../../docs/developer/module-upgrade-sop.md)、[Module 升级检查表](../../docs/developer/module-upgrade-checklist.md)与英文镜像 | 既有 Module 相对基线发生变化时必须在 `test-env/upgrades/catalog.yml` 登记匹配的 transition，否则 CI 与发布前校验失败；目前这几页都没有提到升级 catalog | 未开始 |
+| [测试](../../docs/developer/testing.md)、[ANAS、Module 与容器发布](../../docs/developer/release.md)与英文镜像 | Core 升级 E2E 在 CI、Module 升级在隔离服务器执行、发布前基线校验，这三层的分工 | 未开始 |
+| 同上发布文档 | M2：Web 首次正式发布后删除首发豁免，补旧 Web → 当前 Web 的迁移说明 | 未开始 |
+
+## 9. 当前阻塞
 
 - 当前工作树同时包含尚未完成的 Incus/Forgejo 等改动；它们在最近成功镜像发布中不存在，因此本轮
   只建立首次发布边界，不把未执行的首次发布 smoke test 伪装成升级通过。

@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-23
-updated: 2026-08-23
+updated: 2026-09-13
 ---
 
 # Module 专属命令能力实施计划
@@ -63,14 +63,39 @@ updated: 2026-08-23
 - [ ] 同步 Forgejo requirements/plan、双语 Module 文档和配置/Secret inventory。
 - [ ] 在独立 KVM 宿主完成命令、权限隔离、中断恢复和日志泄漏 E2E。
 
-## 6. e2e 执行记录
+## 6. CI 门禁
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `go test ./...`（M1/M2 的 manifest、冻结、执行服务与 CLI，M3 的 list/detail） | `25433bd`（GitHub CI，2026-08-29），已包含 `eae51cd`。`5306b63` 上 `internal/application`、`internal/api/httpapi`、`cmd/anasd` 通过，本计划 CLI 侧用例所在的 `internal/runner` 包因无关用例失败；其后提交均未经 CI |
+| `go vet ./...` | `5306b63`（GitHub CI，2026-09-05） |
+| §9 的两组 `go test -race` | 不在 CI 中；本地记录 2026-08-23 |
+| `npm run docs:check-requirements` | `5306b63`（GitHub CI）；`40a8b2e`（2026-09-09）加入 ABI 取代说明后未经 CI，本地 `6823232` 通过 |
+| `npm run docs:build` | 不在 `ci.yml` 中；本地记录 2026-08-23（§9） |
+
+M3 的 HTTP invoke 实际已随 Web API 管理面的 `CONSOLE-R-181` 落地：路由由 `2b44a2b`（2026-09-05）加入，
+所在的 `internal/api/httpapi` 包在 `5306b63` 上通过；`test-env/scripts/server-console-command-invoke-e2e.sh`
+由 `9888ae1` 加入，尚未执行。§1 的 M3 状态、§4 检查表与 §10 阻塞仍写着 invoke 未开放，需要对照
+`MCMD-R-024`—`R-029` 复核后更新。
+
+## 7. e2e 执行记录
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
 | --- | --- | --- | --- | --- |
 | R-032 | 待新增 `test-env/scripts/server-forgejo-incus-command-e2e.sh` | Forgejo + 独立 Incus/KVM + active job | — | 待执行 |
 | R-033 | 待新增 `test-env/scripts/server-forgejo-incus-command-e2e.sh` | 独立 Incus/KVM + 分离维护凭据 | — | 待执行 |
 
-## 7. 验证记录
+## 8. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [Module 专属命令参考](../../docs/reference/module-commands.md)与英文镜像 | M1/M2 的声明、发现、CLI invoke 与错误枚举 | 已完成 |
+| 同上 | M3 的 HTTP list/detail 与持久 job 形式的 invoke（`command_digest`、`412 module_command_changed`） | 已完成：两份参考页已按 `CONSOLE-R-181` 的实现写入，领先于本计划的 M3 状态 |
+| [部署与配置命令 JSON 契约](../../docs/reference/contracts/commands.md)与英文镜像 | `module commands`、`module invoke` 的 JSON 信封与 `module_command_*` 错误码 | 已完成 |
+| [Module 专属命令能力设计](../../docs/architecture/module-command-capability-design.md) §7、§10 与[要求文档](../requirements/module-command-capability.md)开头 | 标注 executor 协议与取消语义被[统一动作 ABI](action-abi.md) 取代 | 已完成（要求文档开头由 `40a8b2e` 补入）；逐条 ID 的取代标注由统一动作 ABI 计划跟踪 |
+| Forgejo 要求与计划、`forgejo`/`incus` 双语 Module 文档、配置与 Secret inventory | M4 的 `incus-*` 命令与独立维护凭据 | 未开始 |
+
+## 9. 验证记录
 
 - `env GOCACHE=/private/tmp/anas-module-command-go-cache go test ./...`（2026-08-23，通过）
 - `env GOCACHE=/private/tmp/anas-module-command-go-cache go test -race ./internal/application ./internal/api/httpapi -run 'ModuleCommand|OpenAPI' -count=1`（2026-08-23，通过）
@@ -80,7 +105,7 @@ updated: 2026-08-23
 - `npm run docs:build`（2026-08-23，通过）
 - `git diff --check`（2026-08-23，通过）
 
-## 8. 当前阻塞
+## 10. 当前阻塞
 
 - anasd 当前已具备 M1A 认证边界与 M1B 持久任务/只读查询底座，但 job execution 与写操作审计尚未开放；M3 不能提前开放 POST invoke。
 - 当前没有可用的独立 Incus/KVM 宿主和 service-manager maintenance credential；M4 只能先做单元边界，

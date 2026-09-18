@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-22
-updated: 2026-08-28
+updated: 2026-09-13
 ---
 
 # 需求 ID 矩阵采用实施计划
@@ -80,11 +80,29 @@ M1（双向登出需求矩阵）、M2（迁移后的扫描边界）与 M3（索�
 M2 已把本生成器的 `requirementsDir` / `plansDir` 常量与门禁脚本一并切到 `dev-docs/`。索引只渲染
 仓库级作用域：Module 私有需求属于该 Module 自己的索引，但仍受覆盖门禁校验。
 
-## 6. e2e 执行记录
+## 6. CI 门禁
+
+M0 尚无实施提交。M1—M3 交付的门禁由 `ci.yml` 的 `documentation-sources` 作业运行——M3 检查表里挂进
+`docs.yml` 的那一步已由 `756c9b6` 移到这里，它在 PR 与 master 推送上都会运行。
+
+| 门禁 | 最近全绿提交 |
+| --- | --- |
+| `npm run docs:test-requirements`（覆盖、配对与状态生成器的 Node 测试） | `5306b63`（GitHub CI，2026-09-05）；`scripts/ci/requirement-*.mjs` 自 `2b44a2b` 起未再改动，该次运行覆盖的就是现行实现；最近本地记录见 `d216d21` 的提交说明 |
+| `npm run docs:check-requirements`、`docs:check-requirement-status`、`docs:check-plan-status` | `5306b63`（GitHub CI）；最近本地记录 `6823232` |
+
+## 7. e2e 执行记录
 
 本主题没有标注 `e2e` 的需求：门禁行为在 Node 单元测试内即可判定，无需真实 Docker 或域名。
 
-## 7. 当前阻塞
+## 8. 文档同步
+
+| 文档 | 需要的变更 | 状态 |
+| --- | --- | --- |
+| [文档写作标准](../../docs/developer/documentation-standard.md) §4 | 需求 ID 与归属表、e2e 记录的一致性门禁，索引状态列由生成器维护，Module 私有作用域的配对 | 已完成 |
+| [需求索引](../requirements/index.md)与[计划索引](index.md)的说明段 | 状态列由生成器算出，手改会被 CI 拦下 | 已完成 |
+| 文档写作标准 §4 与[需求编写规范](../../docs/developer/requirement-authoring.md) | M0：「尚未采用 ID 的需求文档会被跳过」改为豁免清单与「已豁免 N 份」输出，补前缀唯一性；R-014 落地后改写「标 `已废弃`」的退出写法 | 未开始 |
+
+## 9. 当前阻塞
 
 - M1 的组合空间需要先确认「已接入 Module」的准确清单。`de2e8ea` 落地了双向登出矩阵的实现，
   但实现覆盖范围与文档结论是否一致尚未逐格核对——这是 M1 第一步要做的事，不是可以跳过的前提。
