@@ -2,19 +2,21 @@
 doc_type: requirement
 status: current
 created: 2026-08-23
-updated: 2026-09-01
+updated: 2026-09-10
 ---
 
 # Incus compute Provider Module 集成要求
 
 本文规定 ANAS 把 Incus 适配能力落成 `compute` Contract Provider 时必须交付的结果、边界和验收
 标准。设计背景见 [Forgejo Module 设计](../../docs/architecture/forgejo-module-design.md) §4 与
-[AI Agent 编排设计](../../docs/architecture/ai-agent-orchestration-design.md) §5.2；施工顺序见
+[AI Agent 编排设计](../../modules/ai_agent/docs/architecture/orchestration-design.md) §5.2；施工顺序见
 [Incus compute Provider 实施计划](../plans/incus-module.md)。Contract 定义以
 [`contracts/compute/contract.yml`](https://github.com/anas-project/ANAS/blob/master/contracts/compute/contract.yml)
 为准，本文不复制其字段。
 
-关键词“必须”“不得”“应该”具有规范性。
+关键词“必须”“不得”“应该”具有规范性。本文包含目标要求，不能把矩阵存在视为功能已实现。
+当前代码的镜像 allowlist 仍使用裸 SHA-256 摘要；命名引用、宿主自动供给、入站与镜像烘焙
+尚未交付，实施状态及真实验收证据以配套计划为准。
 
 ## 1. 目标
 
@@ -111,8 +113,10 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
 1. Core 必须为每个 `compute` Resource 生成稳定的客户端证书与私钥，并作为单条 Secret 保存；重复
    apply 不得重新签发，否则会作废 daemon 上已登记的 trust 条目。
 2. 只有证书半边可以进入 Provider；私钥必须直接投影给消费者，不得经过 Provider。
-3. Core 必须校验 `sandbox`、`instance_prefix`、`quota` 区间与 `image_allowlist`（仅接受 SHA-256
-   fingerprint，拒绝 tag、alias 与远程 URL）。
+3. Core 必须校验 `sandbox`、`instance_prefix`、`quota` 区间与镜像引用语法。声明层接受
+   `fingerprint:<64hex>` 或不可变的 `anas:<name>@<revision>`；运行时租约中的 allowlist 必须
+   归一为 SHA-256 fingerprint，拒绝未解析的名字、可变 tag、alias 与远程 URL。
+   既有裸 64 位摘要的兼容读取与迁移见实施计划；不得因引入命名引用而放宽运行时摘要校验。
 4. 就绪租约必须投影到消费者私有命名空间，私钥标为敏感；deployment manifest 与 resource state 只
    保存 Secret 引用，不保存明文。
 5. 管理证书轮换必须可在不销毁运行中实例的前提下完成。
@@ -164,8 +168,9 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
 1. `any` 必须是消费者 manifest 里显式写下的值，且出现在 `config list` 与审计中；不得由
    `image_allowlist` 里的通配符或空列表隐式打开。
 2. `any` 不得用于状态为 `release` 的 Module。
-3. 启用 `any` 之后，镜像约束在 Provider 侧完全消失——它是本 Contract 唯一不由 daemon 兜底的约束，
-   因此文档必须写明该租约的镜像来源等同于消费者代码的可信度。
+3. 启用 `any` 之后不再限定镜像摘要，因此文档必须写明该租约的镜像来源等同于消费者代码的
+   可信度。daemon 的镜像服务器限制与逐摘要 allowlist 不是同一能力，不能相互替代；上游核验
+   与适用版本见宿主供给设计及 R-085。
 4. `any` 不得连带放宽任何其他约束：project 隔离、配额、实例名前缀与非特权容器仍然成立。
 
 ## 7quinquies. 宿主供给、入站与镜像烘焙（第四阶段）
@@ -241,7 +246,7 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
 | `INCUS-R-016` | 操作错误必须可归因到具体参数，且不得回显证书、私钥或消费者 Secret | 单元 |
 | `INCUS-R-017` | Core 必须为每个 Resource 生成稳定客户端证书与私钥并存为单条 Secret；重复 apply 不得重新签发 | 单元 |
 | `INCUS-R-018` | 只有证书半边可进入 Provider；私钥必须直接投影给消费者，不经过 Provider | 单元 |
-| `INCUS-R-019` | Core 必须校验 sandbox、instance_prefix、quota 区间与 image_allowlist，只接受 SHA-256 fingerprint | 单元 |
+| `INCUS-R-019` | Core 必须校验 sandbox、instance_prefix、quota 区间及镜像引用；声明语法见 R-066，运行时 allowlist 只接受解析后的 SHA-256 fingerprint | 单元 |
 | `INCUS-R-020` | 就绪租约必须投影到消费者私有命名空间，私钥标为敏感；manifest 与 resource state 只存 Secret 引用 | 单元 |
 | `INCUS-R-021` | 实例生命周期必须由一个共享客户端库实现，仓库不得保留两套 Incus 适配代码 | 审阅 + 单元 |
 | `INCUS-R-022` | 共享库必须校验镜像 fingerprint 在 allowlist 内、实例名在本前缀内、资源上限在租约配额内，并拒绝 device/raw config/挂载/profile 覆盖 | 单元 |

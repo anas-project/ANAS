@@ -20,7 +20,7 @@
 | [凭据轮换覆盖面与语义要求](credential-rotation.md) | 五类凭据的覆盖面、资源凭据两侧契约、跨类清单与 PostgreSQL 认证基线 | 0/18 已完成 |
 | [统一动作 ABI 要求](action-abi.md) | job 模型、事件重放、协作式取消、并发合流与大块数据边界 | 0/9 已完成 |
 | [宿主特权动作通道要求](host-action-channel.md) | 具名特权动作、socket 激活、二段确认与动作清单治理 | 0/13 已完成 |
-| [Incus compute Provider Module 集成要求](incus-module.md) | `compute/incus_vm` Provider、多消费者隔离、Secret 注入边界与 Forgejo 迁移 | 34/75 已完成 |
+| [Incus compute Provider Module 集成要求](incus-module.md) | `compute/incus_vm` Provider、多消费者隔离、Secret 注入边界与 Forgejo 迁移 | 29/75 已完成 |
 | [VersityGW S3 兼容 Module 集成要求](versitygw-module.md) | `object_storage/s3` Capability、per-Resource bucket/凭据、POSIX backend、安全和验收 | 30/32 已完成 |
 | [需求 ID 矩阵采用范围与门禁要求](requirement-id-adoption.md) | 门禁可见性、豁免清单、双向登出矩阵范围与迁移后的扫描边界 | 8/14 已完成 |
 | [文档驱动测试生成与远程执行要求](document-driven-test-automation.md) | 需求到用例/完整测试代码、SSH 专用服务器执行、隔离与报告证据 | 14/32 已完成 |

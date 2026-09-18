@@ -17,7 +17,7 @@
 | [动态 DNS 能力](dynamic-dns-capability-design.md) | 当前模型 | DDNS 实现选择、凭据和 Web 认证 |
 | [Object Storage 能力](object-storage-capability-design.md) | 已实施设计 | `object_storage/s3` 自动绑定、统一配置投影与 Secret 边界 |
 | [Forgejo Module](forgejo-module-design.md) | 当前设计决策与 Runner 提案 | OIDC-only 身份边界、Actions 授权、Incus 单作业 VM Runner 与安全开关 |
-| [Incus 宿主供给与镜像烘焙](incus-host-provisioning.md) | 设计，未实现 | 宿主 Incus 安装、发行版矩阵、Web 端不接触 root 密码、proxy device 入站与 distrobuilder 镜像烘焙 |
+| [Incus 宿主供给与镜像烘焙](incus-host-provisioning.md) | 提案，未实现 | 宿主供给、入站与镜像烘焙；回环连通、proxy 权限及镜像解析待定案 |
 | [远端备份、异地容灾与分布式部署](remote-backup-and-dr.md) | 研讨中 | 备份目的地远端化、拉模型与勒索抵抗、secrets 边界、容灾接管与分布式的范围划分 |
 | [日志与可观测性](observability-and-logs.md) | 研讨中 | 事件日志、审计日志、容器日志与 CLI 输出的关系、保留期、脱敏与关联标识 |
 | [统一动作 ABI](action-abi.md) | 设计，未实现 | job 模型、事件重放、断连不中止、取消语义与大块数据的处置；Module Command 与宿主特权动作共用 |
