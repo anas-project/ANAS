@@ -44,10 +44,12 @@ Module 是远端 daemon 的客户端控制面，容器内不该有任何可被�
 `ensure` 的顺序是刻意的：
 
 1. `GET /1.0/projects/{sandbox}`。存在则把期望配置合并进现有配置后 `PUT`，不存在则 `POST` 新建。
-   合并而不是覆盖，是因为 project 里可能有运行中的实例和运维手工加的 `user.*` 键；
-2. **读回**并断言 `restricted=true` 且四项 limits 都非空。任一不满足立刻返回错误，且**不继续**
+   合并而不是覆盖，是因为 project 里可能有运行中的实例和运维手工加的 `user.*` 键；已有
+   `features.networks=true` 的 project 直接拒绝，要求显式迁移，不自动切换网络归属；
+2. **读回**并断言 `restricted=true`、四项 limits 都非空，且 network feature 关闭、NIC 为 managed、
+   `restricted.networks.access` 恰好等于本租约 bridge。任一不满足立刻返回错误，且**不继续**
    登记证书——这一步是整个契约唯一的信任来源，写入成功不算数，daemon 自己的副本才算；
-3. 建立受管 network 与租约 profile，并把 profile 读回校验。这一步在证书之前：一个还没有根磁盘和
+3. 在 default project 建立受管 bridge 并读回校验，再在租约 project 建立 profile 并读回校验。这一步在证书之前：一个还没有根磁盘和
    网卡的租约，把证书发出去也没用；
 4. 登记消费者证书。若该 fingerprint 已在信任库中，校验它是 restricted 且 `projects` 恰好只有本
    sandbox；发现它无限制或绑着别的 project 就报错退出，不做任何修改。
@@ -56,7 +58,18 @@ Module 是远端 daemon 的客户端控制面，容器内不该有任何可被�
 
 network 名由 sandbox 名 SHA-256 前 10 位派生（`anas` + 10 位十六进制 = 14 字符）。不能直接用
 sandbox 名：Linux bridge 接口名上限 15 字符，而 `anas-forgejo-runners` 有 20。派生保证短、稳定、
-租约间不碰撞。
+发生截断碰撞时通过归属校验拒绝复用。
+
+bridge 的所有者是 Provider，API 请求显式使用 `project=default`；租约设置
+`features.networks=false`、`restricted.devices.nic=managed` 和精确的 `restricted.networks.access`。
+这避免 Incus 7.3 不支持非 default project 内 bridge 的问题，同时限制消费者可引用的网络。
+实例、profile、证书作用域和配额仍属于独立租约 project。
+
+网络记录 `user.anas.consumer` 与 `user.anas.sandbox`。已有同名网络若类型或归属不符、缺少归属
+标记或挂接外部接口，ensure 拒绝接管且不登记证书。不得仅凭派生名字推断所有权。
+重复 apply 保留 daemon 已分配的子网及无关配置；关闭 IPv6 时写 `none` 并移除旧 NAT 开关。
+网络创建/更新后读回类型、归属、地址及 NAT，再建立 profile。不同 bridge 本身不证明流量隔离，
+跨租约接网、网络写权限和真实出网仍须实机验收。
 
 profile 固定名为 `anas-lease`，只有两个设备：
 
@@ -79,6 +92,7 @@ guest 一个宿主路由不到的 v6 地址，表现是每次出网先等一次�
 第 3 步的两条拒绝是 Provider 侧的越权防线：一张已被以全局权限信任的证书，如果这里默默接受，
 消费者拿到的就是整台 daemon。
 
+`inspect` 的 `ready` 还要求上述精确网络作用域成立，仍分别保留 restricted 与 quota 标志。
 `inspect` 只读，分别报告 `exists`、`ready`、`restricted`、`quota_enforced`。project 不存在时返回
 零值而不是错误，因为「不存在」是一个正常的可观测状态。
 

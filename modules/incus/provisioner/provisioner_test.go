@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -51,13 +52,15 @@ func selfSigned(t *testing.T, cn string) (certPEM, keyPEM []byte) {
 // fakeDaemon serves just enough of the Incus REST surface to exercise the
 // provider, and records what it was asked to write.
 type fakeDaemon struct {
-	projects     map[string]map[string]string
-	certificates map[string]certificate
-	networks     map[string]network
-	profiles     map[string]profile
-	posted       []string
-	puts         []project
-	server       *httptest.Server
+	projects           map[string]map[string]string
+	certificates       map[string]certificate
+	networks           map[string]network
+	profiles           map[string]profile
+	posted             []string
+	puts               []project
+	server             *httptest.Server
+	projectWriteFilter func(map[string]string)
+	networkWriteFilter func(map[string]string)
 }
 
 func newFakeDaemon(t *testing.T) *fakeDaemon {
@@ -72,6 +75,9 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 	mux.HandleFunc("/1.0/projects", func(w http.ResponseWriter, r *http.Request) {
 		var body project
 		json.NewDecoder(r.Body).Decode(&body)
+		if d.projectWriteFilter != nil {
+			d.projectWriteFilter(body.Config)
+		}
 		d.projects[body.Name] = body.Config
 		d.posted = append(d.posted, "project:"+body.Name)
 		writeSync(w, nil)
@@ -89,19 +95,33 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 		case http.MethodPut:
 			var body project
 			json.NewDecoder(r.Body).Decode(&body)
+			if d.projectWriteFilter != nil {
+				d.projectWriteFilter(body.Config)
+			}
 			d.projects[name] = body.Config
 			d.puts = append(d.puts, body)
 			writeSync(w, nil)
 		}
 	})
 	mux.HandleFunc("/1.0/networks", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("project") != "default" {
+			writeError(w, 400, "Network type does not support non-default projects")
+			return
+		}
 		var body network
 		json.NewDecoder(r.Body).Decode(&body)
+		if d.networkWriteFilter != nil {
+			d.networkWriteFilter(body.Config)
+		}
 		d.networks[body.Name] = body
 		d.posted = append(d.posted, "network:"+body.Name)
 		writeSync(w, nil)
 	})
 	mux.HandleFunc("/1.0/networks/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("project") != "default" {
+			writeError(w, 400, "bridge requests must target default project")
+			return
+		}
 		name := strings.TrimPrefix(r.URL.Path, "/1.0/networks/")
 		switch r.Method {
 		case http.MethodGet:
@@ -115,6 +135,10 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 			var body network
 			json.NewDecoder(r.Body).Decode(&body)
 			body.Name = name
+			body.Type = d.networks[name].Type
+			if d.networkWriteFilter != nil {
+				d.networkWriteFilter(body.Config)
+			}
 			d.networks[name] = body
 			writeSync(w, nil)
 		}
@@ -122,12 +146,12 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 	mux.HandleFunc("/1.0/profiles", func(w http.ResponseWriter, r *http.Request) {
 		var body profile
 		json.NewDecoder(r.Body).Decode(&body)
-		d.profiles[body.Name] = body
+		d.profiles[r.URL.Query().Get("project")+"/"+body.Name] = body
 		d.posted = append(d.posted, "profile:"+body.Name)
 		writeSync(w, nil)
 	})
 	mux.HandleFunc("/1.0/profiles/", func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimPrefix(r.URL.Path, "/1.0/profiles/")
+		name := r.URL.Query().Get("project") + "/" + strings.TrimPrefix(r.URL.Path, "/1.0/profiles/")
 		switch r.Method {
 		case http.MethodGet:
 			existing, ok := d.profiles[name]
@@ -569,7 +593,7 @@ func TestEnsureGivesTheLeaseARootDiskAndOneManagedNIC(t *testing.T) {
 		t.Fatalf("network = %+v, want a NAT bridge with no IPv6", net)
 	}
 
-	prof, ok := d.profiles[computeclient.ProfileName]
+	prof, ok := d.profiles[l.Sandbox+"/"+computeclient.ProfileName]
 	if !ok {
 		t.Fatalf("no lease profile was created; have %v", d.profiles)
 	}
@@ -616,7 +640,7 @@ func TestEnsureReplacesDriftedProfileDevices(t *testing.T) {
 	l := testLease(t, "vm")
 	// Somebody attached a host path to the profile out of band. An ensure that
 	// merged instead of replacing would leave it in place.
-	d.profiles[computeclient.ProfileName] = profile{
+	d.profiles[l.Sandbox+"/"+computeclient.ProfileName] = profile{
 		Name: computeclient.ProfileName,
 		Devices: map[string]device{
 			"root":     {"type": "disk", "path": "/", "pool": "default"},
@@ -627,7 +651,7 @@ func TestEnsureReplacesDriftedProfileDevices(t *testing.T) {
 	if _, err := ensure(context.Background(), d.clientFor(t), l); err != nil {
 		t.Fatal(err)
 	}
-	if _, present := d.profiles[computeclient.ProfileName].Devices["hostpath"]; present {
+	if _, present := d.profiles[l.Sandbox+"/"+computeclient.ProfileName].Devices["hostpath"]; present {
 		t.Fatal("a drifted host mount survived ensure")
 	}
 }
@@ -663,13 +687,13 @@ func TestVerifyProfileRefusesAnythingBeyondTheTwoDevices(t *testing.T) {
 		"only a root disk": {"root": good["root"]},
 	} {
 		t.Run(name, func(t *testing.T) {
-			d.profiles[computeclient.ProfileName] = profile{Name: computeclient.ProfileName, Devices: devices}
+			d.profiles[l.Sandbox+"/"+computeclient.ProfileName] = profile{Name: computeclient.ProfileName, Devices: devices}
 			if err := verifyProfile(context.Background(), d.clientFor(t), l, bridge); err == nil {
 				t.Fatalf("%s should be refused", name)
 			}
 		})
 	}
-	d.profiles[computeclient.ProfileName] = profile{Name: computeclient.ProfileName, Devices: good}
+	d.profiles[l.Sandbox+"/"+computeclient.ProfileName] = profile{Name: computeclient.ProfileName, Devices: good}
 	if err := verifyProfile(context.Background(), d.clientFor(t), l, bridge); err != nil {
 		t.Fatalf("a correct profile must be accepted: %v", err)
 	}
@@ -714,5 +738,153 @@ func TestLeaseNetworkFollowsTheHostIPv6Posture(t *testing.T) {
 				t.Fatalf("network = %v, want NATed IPv4", net.Config)
 			}
 		})
+	}
+}
+
+func TestBridgeLeasesKeepDistinctNetworkScopesAndProfiles(t *testing.T) {
+	d := newFakeDaemon(t)
+	c := d.clientFor(t)
+	first, second := testLease(t, "vm"), testLease(t, "container")
+	second.Consumer, second.Sandbox = "ai_agent", "anas-agent-sandbox"
+	for _, l := range []lease{first, second, first, second} {
+		if _, err := ensure(context.Background(), c, l); err != nil {
+			t.Fatal(err)
+		}
+		config := d.projects[l.Sandbox]
+		if config["features.networks"] != "false" || config["restricted.devices.nic"] != "managed" ||
+			config["restricted.networks.access"] != computeclient.NetworkName(l.Sandbox) {
+			t.Fatal("lease must authorize exactly its own default-project bridge")
+		}
+		p := d.profiles[l.Sandbox+"/"+computeclient.ProfileName]
+		if p.Devices["eth0"]["network"] != computeclient.NetworkName(l.Sandbox) {
+			t.Fatal("profile crossed lease boundary")
+		}
+	}
+	if len(d.networks) != 2 || len(d.profiles) != 2 || len(d.certificates) != 2 {
+		t.Fatal("lease resources were shared or duplicated")
+	}
+}
+
+func TestEnsureRefusesImplicitNetworkProjectMigration(t *testing.T) {
+	d := newFakeDaemon(t)
+	l := testLease(t, "vm")
+	original := map[string]string{"features.networks": "true", "restricted": "true", "user.operator": "preserve"}
+	d.projects[l.Sandbox] = original
+	_, err := ensure(context.Background(), d.clientFor(t), l)
+	if err == nil || !strings.Contains(err.Error(), "explicit network migration") {
+		t.Fatalf("expected migration refusal, got %v", err)
+	}
+	if len(d.puts) != 0 || len(d.posted) != 0 || !reflect.DeepEqual(d.projects[l.Sandbox], original) {
+		t.Fatal("refused migration changed resources")
+	}
+}
+
+func TestEnsureDoesNotAdoptUnownedOrIncompatibleBridge(t *testing.T) {
+	for _, kind := range []string{"unowned", "another consumer", "another sandbox", "wrong type", "external interface"} {
+		t.Run(kind, func(t *testing.T) {
+			d := newFakeDaemon(t)
+			l := testLease(t, "vm")
+			name := computeclient.NetworkName(l.Sandbox)
+			n := network{Name: name, Type: "bridge", Config: map[string]string{"user.anas.consumer": l.Consumer, "user.anas.sandbox": l.Sandbox, "ipv4.address": "10.78.0.1/24"}}
+			switch kind {
+			case "unowned":
+				delete(n.Config, "user.anas.consumer")
+			case "another consumer":
+				n.Config["user.anas.consumer"] = "other"
+			case "another sandbox":
+				n.Config["user.anas.sandbox"] = "other"
+			case "wrong type":
+				n.Type = "ovn"
+			case "external interface":
+				n.Config["bridge.external_interfaces"] = "eth0"
+			}
+			before, _ := json.Marshal(n)
+			d.networks[name] = n
+			if _, err := ensure(context.Background(), d.clientFor(t), l); err == nil {
+				t.Fatal("expected network refusal")
+			}
+			after, _ := json.Marshal(d.networks[name])
+			if string(before) != string(after) || len(d.certificates) != 0 || len(d.profiles) != 0 {
+				t.Fatal("failed ownership check changed network or published lease")
+			}
+		})
+	}
+}
+
+func TestEnsureReadsBackExclusiveNetworkScopeBeforeTrust(t *testing.T) {
+	for _, key := range []string{"features.networks", "restricted.devices.nic", "restricted.networks.access"} {
+		t.Run(key, func(t *testing.T) {
+			d := newFakeDaemon(t)
+			l := testLease(t, "vm")
+			d.projectWriteFilter = func(config map[string]string) { config[key] = "" }
+			_, err := ensure(context.Background(), d.clientFor(t), l)
+			if err == nil || !strings.Contains(err.Error(), "exclusive managed network scope") {
+				t.Fatalf("expected scope refusal, got %v", err)
+			}
+			if len(d.certificates) != 0 || len(d.networks) != 0 {
+				t.Fatal("scope failure must precede network and trust changes")
+			}
+			result, err := inspect(context.Background(), d.clientFor(t), l)
+			if err != nil || result.Ready || !result.Restricted || !result.QuotaEnforced {
+				t.Fatalf("incorrect inspect result: %+v, %v", result, err)
+			}
+		})
+	}
+}
+
+func TestEnsureRejectsWidenedNetworkAllowlistOnReadback(t *testing.T) {
+	d := newFakeDaemon(t)
+	l := testLease(t, "vm")
+	d.projectWriteFilter = func(config map[string]string) { config["restricted.networks.access"] += ",other-bridge" }
+	if _, err := ensure(context.Background(), d.clientFor(t), l); err == nil {
+		t.Fatal("widened access was accepted")
+	}
+	if len(d.certificates) != 0 {
+		t.Fatal("trust registered despite widened network scope")
+	}
+}
+
+func TestEnsureReadsBackBridgeBeforeTrust(t *testing.T) {
+	for _, key := range []string{"user.anas.sandbox", "ipv4.nat", "ipv6.address"} {
+		t.Run(key, func(t *testing.T) {
+			d := newFakeDaemon(t)
+			l := testLease(t, "vm")
+			d.networkWriteFilter = func(config map[string]string) { config[key] = "" }
+			if _, err := ensure(context.Background(), d.clientFor(t), l); err == nil {
+				t.Fatal("corrupt bridge readback was accepted")
+			}
+			if len(d.certificates) != 0 || len(d.profiles) != 0 {
+				t.Fatal("trust/profile published despite bridge readback failure")
+			}
+		})
+	}
+}
+
+func TestEnsurePreservesAllocatedSubnetsAndDisablesOldIPv6NAT(t *testing.T) {
+	d := newFakeDaemon(t)
+	c := d.clientFor(t)
+	l := testLease(t, "vm")
+	l.NetworkIPv6 = true
+	if _, err := ensure(context.Background(), c, l); err != nil {
+		t.Fatal(err)
+	}
+	name := computeclient.NetworkName(l.Sandbox)
+	n := d.networks[name]
+	n.Config["ipv4.address"], n.Config["ipv6.address"] = "10.78.0.1/24", "fd42:78::1/64"
+	n.Config["user.operator"] = "preserve"
+	for i := 0; i < 2; i++ {
+		if _, err := ensure(context.Background(), c, l); err != nil {
+			t.Fatal(err)
+		}
+		if d.networks[name].Config["ipv4.address"] != "10.78.0.1/24" || d.networks[name].Config["ipv6.address"] != "fd42:78::1/64" {
+			t.Fatal("apply renumbered network")
+		}
+	}
+	l.NetworkIPv6 = false
+	if _, err := ensure(context.Background(), c, l); err != nil {
+		t.Fatal(err)
+	}
+	if d.networks[name].Config["ipv6.address"] != "none" || d.networks[name].Config["ipv6.nat"] != "" || d.networks[name].Config["user.operator"] != "preserve" {
+		t.Fatal("IPv6 shutdown or unrelated configuration preservation failed")
 	}
 }

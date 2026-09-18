@@ -68,7 +68,7 @@ secret, and calls the provider's idempotent `ensure` before the consumer starts.
    closed otherwise;
 2. ensure the project named by `sandbox` exists with `restricted=true`;
 3. write `quota` onto the project's own limits rather than trusting the caller to stay within them;
-4. create the managed network and the lease profile inside the project, then **read the profile back**
+4. create a dedicated bridge in the default project and a lease profile in the consumer project, then **read the profile back**
    and assert it carries exactly one root disk (on the managed pool, with no host source) and one NIC
    attached to that managed network;
 5. register the Runner's client certificate as a restricted certificate bound to that project only,
@@ -76,6 +76,12 @@ secret, and calls the provider's idempotent `ensure` before the consumer starts.
 6. converge on repeat invocation, producing no second project, network, or trust entry.
 
 ## The provider owns the profile and the network
+
+Incus bridges are Provider-owned resources in the default project. Consumer projects disable
+`features.networks` and set `restricted.networks.access` to exactly their bridge, with managed NICs.
+Instances, profiles, quotas and certificate scope remain in each consumer project. Different bridges
+alone do not establish packet-level isolation; real-host validation remains necessary.
+
 
 An instance's numeric limits come from the consumer; **everything else comes from the profile** --
 which storage pool its root disk lives on and what it is plugged into. The profile name is fixed by

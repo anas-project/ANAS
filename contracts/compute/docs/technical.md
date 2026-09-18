@@ -61,7 +61,7 @@ Runner 为每个 Resource 生成一对稳定的客户端证书与私钥，作为
 1. 校验 endpoint 可达，且 server certificate 与固定 fingerprint 一致，失败即 fail closed；
 2. 确保 `sandbox` 指定的 project 存在且 `restricted=true`；
 3. 把 `quota` 写到 project 自身的限制上，而不是依赖调用方自觉；
-4. 在 project 内建立受管 network 与租约 profile，并把 profile **读回**校验：它必须恰好只有一块
+4. 在 default project 建立每租约独立的受管 bridge，在消费者 project 建立租约 profile，并把 profile **读回**校验：它必须恰好只有一块
    根磁盘（在受管存储池上、无 host source）和一块接到该受管 network 的 NIC；
 5. 把 Runner 传入的客户端证书登记为**只绑该 project** 的受限证书，不使用全局管理凭据；
 6. 重复调用收敛到同一结果，不产生第二个 project、第二个 network 或第二条 trust 条目。
@@ -72,7 +72,9 @@ Runner 为每个 Resource 生成一对稳定的客户端证书与私钥，作为
 profile 名字由 Contract 固定为 `anas-lease`，消费者只能引用、不能编写——能命名一个 profile 的
 调用方，也就能指向别人写的 profile，而那正是「Provider 拥有它」要防的事。
 
-每份租约有自己的受管 bridge，因此一个消费者的实例出网路径与另一个消费者不共享。网络名不是
+每份租约有自己的受管 bridge，均由 Provider 在 default project 拥有。消费者 project 关闭
+`features.networks`，通过 `restricted.networks.access` 精确限制为该 bridge，并保持 managed NIC
+限制；实例、profile、配额和证书仍隔离于各自 project。不同 bridge 不等于实际流量自动隔离。网络名不是
 sandbox 名：Linux bridge 接口名上限 15 字符，而 `anas-forgejo-runners` 已经 20，所以它由 sandbox
 名哈希派生——短、跨 apply 稳定、租约之间不碰撞。
 

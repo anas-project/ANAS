@@ -48,11 +48,13 @@ The order inside `ensure` is deliberate:
 
 1. `GET /1.0/projects/{sandbox}`. If it exists, merge the desired configuration into the existing one
    and `PUT`; otherwise `POST` a new project. Merging rather than overwriting matters because the
-   project may hold running instances and operator-added `user.*` keys.
-2. **Read back** and assert `restricted=true` with all four limits non-empty. Any failure returns an
+   project may hold running instances and operator-added `user.*` keys. An existing project with
+   `features.networks=true` is refused: changing its network ownership requires explicit migration.
+2. **Read back** and assert `restricted=true`, all four limits non-empty, network features disabled,
+   managed NICs, and `restricted.networks.access` equal to exactly this lease's bridge. Any failure returns an
    error and does **not** go on to register the certificate. This step is the contract's only source of
    trust: a successful write does not count, only the daemon's own copy does.
-3. Create the managed network and the lease profile, then read the profile back and verify it. This
+3. Create and verify the bridge in the default project, then create and verify the profile in the lease project. This
    comes before the certificate: handing out a credential for a lease that has no root disk and no NIC
    yet would achieve nothing.
 4. Register the consumer certificate. If that fingerprint is already trusted, verify it is restricted
@@ -63,8 +65,20 @@ The order inside `ensure` is deliberate:
 
 The network name is derived from the first 10 hex characters of the sandbox name's SHA-256 (`anas` plus
 10 hex = 14 characters). The sandbox name cannot be used directly: a Linux bridge interface is capped
-at 15 characters and `anas-forgejo-runners` is 20. Deriving keeps it short, stable, and free of
-collisions between leases.
+at 15 characters and `anas-forgejo-runners` is 20. Deriving keeps it short and stable; ownership checks reject reuse if a truncated name collides.
+
+The Provider owns the bridge and explicitly uses `project=default` in network API requests. Each lease
+sets `features.networks=false`, `restricted.devices.nic=managed`, and an exact `restricted.networks.access`
+allowlist. Incus 7.3 does not support bridges in non-default projects. Instances, profiles, certificate
+scope, and quotas remain in the consumer's separate project.
+
+Networks carry `user.anas.consumer` and `user.anas.sandbox`. A same-name network with missing or conflicting
+ownership, an incompatible type, or external interfaces is refused without adoption or certificate
+registration. Names alone do not establish ownership. Repeated applies preserve allocated subnets and
+unrelated configuration; disabling IPv6 writes `none` and removes its old NAT setting. Network writes
+are read back for type, ownership, addressing and NAT before a profile is created. Separate bridges
+alone do not prove traffic isolation; cross-lease network attachment, write permissions, and actual
+egress still require real-host acceptance.
 
 The profile is fixed as `anas-lease` and carries exactly two devices:
 
@@ -89,7 +103,8 @@ only because this code checks.
 The two refusals in step 3 are the provider-side privilege-escalation defence: silently accepting a
 certificate that is already trusted with global rights would hand the consumer the whole daemon.
 
-`inspect` is read-only and reports `exists`, `ready`, `restricted` and `quota_enforced` separately. A
+`inspect` requires the exact network scope above for `ready`, while retaining independent restricted
+and quota flags. It is read-only and reports `exists`, `ready`, `restricted` and `quota_enforced` separately. A
 missing project returns zero values rather than an error, because "absent" is a normal observable
 state.
 
