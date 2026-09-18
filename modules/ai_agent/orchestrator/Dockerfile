@@ -9,6 +9,7 @@ WORKDIR /src
 # import resolves against the working tree rather than a published module.
 COPY --from=shared go.mod go.sum ./
 COPY --from=shared internal/computeclient ./internal/computeclient
+COPY --from=shared internal/computeingress ./internal/computeingress
 COPY *.go ./modules/ai_agent/orchestrator/
 ARG TARGETOS
 ARG TARGETARCH

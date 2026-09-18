@@ -329,3 +329,12 @@ config:
 每个 Module 必须维护 `README.md` 和与当前 `module.yml` 版本一致的 `localization.yml`。支持语言必须从当前固定版本的源码、官方文档或精确镜像中取证，并以规范 BCP 47 记录；浏览器协商、部署默认、固定语言和无 UI 必须明确区分。
 
 字段、fallback 策略和生成命令见 [Module 文档规范](/developer/module-documentation)。每次升级上游版本必须执行 [Module 上游升级 SOP](/developer/module-upgrade-sop)。
+
+## 结构化资源参数
+
+`spec_from` 的标量简写继续将参数作为文本传递。使用
+`{parameter: image, projection: singleton}` 把 JSON 对象转为单元素数组；`projection: values`
+按键排序后取映射值（compute 同时保留键→摘要关联）；`projection: value` 传递解码后的 JSON。
+结构化配置声明为 string 与 `constraints: {format: json_object}`；
+`modules.<module>.config.<parameter>` 下的 YAML 对象和 JSON 对象字符串归一成同一环境值，
+在变更影响分析中保持一个参数身份。未知投影、无效 JSON 和空来源值在资源供给前失败。

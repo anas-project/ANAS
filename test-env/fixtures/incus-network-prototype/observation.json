@@ -1,0 +1,11 @@
+{
+  "deployment": "lab-20260910", "consumer": "forgejo", "resource": "runners",
+  "project": "anas-lab", "instance": "anas-lab-http", "instance_uuid": "lab-instance-uuid",
+  "interface": "incus_container", "state": "Running", "network_owner": "forgejo",
+  "instance_project": "anas-lab", "instance_prefix": "anas-lab-",
+  "guest_bridge": "incuslab0", "guest_subnet": "10.231.1.0/24", "guest_ip": "10.231.1.2",
+  "allocation_ip": "10.231.1.2", "allocation_mac": "00:16:3e:01:02:03", "guest_mac": "00:16:3e:01:02:03",
+  "ingress_bridge": "br-lab", "traefik_veth": "vethlab", "ingress_subnet": "10.231.2.0/24",
+  "traefik_ip": "10.231.2.2", "ingress_gateway": "10.231.2.1", "traefik_interface": "eth1",
+  "allowed_ports": [7000], "guest_port": 7000, "host": "incus-lab.example.test"
+}

@@ -52,6 +52,11 @@ func selfSigned(t *testing.T, cn string) (certPEM, keyPEM []byte) {
 // fakeDaemon serves just enough of the Incus REST surface to exercise the
 // provider, and records what it was asked to write.
 type fakeDaemon struct {
+	storage            *storagePool
+	storageReads       int
+	storageError       int
+	storageReadFilter  func(*storagePool)
+	imageFilter        func(*imageRecord)
 	projects           map[string]map[string]string
 	certificates       map[string]certificate
 	networks           map[string]network
@@ -66,12 +71,49 @@ type fakeDaemon struct {
 func newFakeDaemon(t *testing.T) *fakeDaemon {
 	t.Helper()
 	d := &fakeDaemon{
+		storage:      &storagePool{Name: "default", Driver: "btrfs", Status: "Created"},
 		projects:     map[string]map[string]string{},
 		certificates: map[string]certificate{},
 		networks:     map[string]network{},
 		profiles:     map[string]profile{},
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/1.0/storage-pools/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Query().Get("project") != "default" {
+			writeError(w, 400, "bad storage read")
+			return
+		}
+		d.storageReads++
+		if d.storageError != 0 {
+			writeError(w, d.storageError, "storage read unavailable")
+			return
+		}
+		if d.storage == nil {
+			writeError(w, 404, "missing pool")
+			return
+		}
+		pool := *d.storage
+		if d.storageReadFilter != nil {
+			d.storageReadFilter(&pool)
+		}
+		writeSync(w, pool)
+	})
+	mux.HandleFunc("/1.0/images/", func(w http.ResponseWriter, r *http.Request) {
+		pin := strings.TrimPrefix(r.URL.Path, "/1.0/images/")
+		if r.Method != "GET" || r.URL.Query().Get("project") == "" {
+			http.Error(w, "bad image request", 400)
+			return
+		}
+		imageType := "virtual-machine"
+		if d.projects[r.URL.Query().Get("project")]["restricted.containers.privilege"] == "unprivileged" {
+			imageType = "container"
+		}
+		record := imageRecord{Fingerprint: pin, Architecture: "x86_64", Type: imageType}
+		if d.imageFilter != nil {
+			d.imageFilter(&record)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"type": "sync", "status_code": 200, "metadata": record})
+	})
 	mux.HandleFunc("/1.0/projects", func(w http.ResponseWriter, r *http.Request) {
 		var body project
 		json.NewDecoder(r.Body).Decode(&body)
@@ -228,17 +270,18 @@ func testLease(t *testing.T, isolation string) lease {
 	t.Helper()
 	certPEM, _ := selfSigned(t, "consumer")
 	return lease{
-		Consumer:       "forgejo",
-		Sandbox:        "anas-forgejo-runners",
-		StoragePool:    "default",
-		InstancePrefix: "anas-fj-",
-		MaxInstances:   8,
-		CPU:            4,
-		MemoryMiB:      8192,
-		DiskGiB:        40,
-		ImageAllowlist: []string{strings.Repeat("a", 64)},
-		ClientCertPEM:  certPEM,
-		Isolation:      isolation,
+		Consumer:          "forgejo",
+		Sandbox:           "anas-forgejo-runners",
+		StoragePool:       "default",
+		InstancePrefix:    "anas-fj-",
+		MaxInstances:      8,
+		CPU:               4,
+		MemoryMiB:         8192,
+		DiskGiB:           40,
+		ImageAllowlist:    []string{strings.Repeat("a", 64)},
+		ImageArchitecture: "amd64",
+		ClientCertPEM:     certPEM,
+		Isolation:         isolation,
 	}
 }
 
@@ -327,6 +370,10 @@ func TestEnsureFailsClosedWhenProjectReadsBackUnrestricted(t *testing.T) {
 	// A daemon that accepts the write but does not apply the flag.
 	d.projects[l.Sandbox] = map[string]string{}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/1.0/storage-pools/", func(w http.ResponseWriter, r *http.Request) {
+		writeSync(w, storagePool{Name: "default", Driver: "btrfs", Status: "Created"})
+	})
+
 	mux.HandleFunc("/1.0/projects/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			writeSync(w, nil)
@@ -345,14 +392,18 @@ func TestEnsureFailsClosedWhenProjectReadsBackUnrestricted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ensure(context.Background(), c, l); err == nil {
-		t.Fatal("ensure should fail closed when the project is not restricted")
+	if _, err := ensure(context.Background(), c, l); err == nil || !strings.Contains(err.Error(), "is not restricted after ensure") {
+		t.Fatalf("expected restricted readback refusal, got %v", err)
 	}
 }
 
 func TestEnsureFailsClosedWithoutQuota(t *testing.T) {
 	l := testLease(t, "vm")
 	mux := http.NewServeMux()
+	mux.HandleFunc("/1.0/storage-pools/", func(w http.ResponseWriter, r *http.Request) {
+		writeSync(w, storagePool{Name: "default", Driver: "btrfs", Status: "Created"})
+	})
+
 	mux.HandleFunc("/1.0/projects/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			writeSync(w, nil)
@@ -368,8 +419,8 @@ func TestEnsureFailsClosedWithoutQuota(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ensure(context.Background(), c, l); err == nil {
-		t.Fatal("ensure should fail closed when no quota is enforced")
+	if _, err := ensure(context.Background(), c, l); err == nil || !strings.Contains(err.Error(), "has no enforced quota after ensure") {
+		t.Fatalf("expected quota readback refusal, got %v", err)
 	}
 }
 
@@ -489,14 +540,15 @@ func TestPinnedCertificateMismatchIsRefused(t *testing.T) {
 
 func TestLeaseValidationRejectsUnsafeInput(t *testing.T) {
 	valid := map[string]string{
-		"ANAS_RESOURCE_CONSUMER":        "forgejo",
-		"ANAS_RESOURCE_SANDBOX":         "anas-forgejo-runners",
-		"ANAS_RESOURCE_INSTANCE_PREFIX": "anas-fj-",
-		"ANAS_RESOURCE_MAX_INSTANCES":   "8",
-		"ANAS_RESOURCE_CPU":             "4",
-		"ANAS_RESOURCE_MEMORY_MIB":      "8192",
-		"ANAS_RESOURCE_DISK_GIB":        "40",
-		"ANAS_RESOURCE_IMAGE_ALLOWLIST": strings.Repeat("a", 64),
+		"ANAS_RESOURCE_CONSUMER":           "forgejo",
+		"ANAS_RESOURCE_SANDBOX":            "anas-forgejo-runners",
+		"ANAS_RESOURCE_INSTANCE_PREFIX":    "anas-fj-",
+		"ANAS_RESOURCE_MAX_INSTANCES":      "8",
+		"ANAS_RESOURCE_CPU":                "4",
+		"ANAS_RESOURCE_MEMORY_MIB":         "8192",
+		"ANAS_RESOURCE_DISK_GIB":           "40",
+		"ANAS_RESOURCE_IMAGE_ALLOWLIST":    strings.Repeat("a", 64),
+		"ANAS_RESOURCE_IMAGE_ARCHITECTURE": "amd64",
 	}
 	certPEM, _ := selfSigned(t, "consumer")
 	valid["ANAS_RESOURCE_CLIENT_CERT"] = base64.StdEncoding.EncodeToString(certPEM)

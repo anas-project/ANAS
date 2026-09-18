@@ -34,6 +34,7 @@ const (
 	FormatLocale       = "locale"
 	FormatIPv4         = "ipv4"
 	FormatDNSName      = "dns_name"
+	FormatJSONObject   = "json_object"
 )
 
 var defaultSources = map[DefaultSource]struct{}{
@@ -54,6 +55,7 @@ var formats = map[string]formatNormalizer{
 	FormatLocale:       localization.NormalizeLocale,
 	FormatIPv4:         normalizeIPv4,
 	FormatDNSName:      normalizeDNSName,
+	FormatJSONObject:   normalizeJSONObject,
 }
 
 // Constraints contains the portable, single-parameter subset of the ANAS

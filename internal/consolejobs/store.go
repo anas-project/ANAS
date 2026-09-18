@@ -239,10 +239,16 @@ func (store *Store) RecoverInterruptedJobsObserved(ctx context.Context, lease *E
 	}
 	return lease.withOwnership(store.directory, func() error {
 		return store.withState(ctx, func() error {
-			records := store.interruptionRecords(store.now().UTC())
+			records, err := store.interruptionRecords(store.now().UTC())
+			if err != nil {
+				return err
+			}
 			for _, record := range records {
 				if record.Job == nil {
 					return store.markUnavailable(errors.New("interruption record has no job"))
+				}
+				if record.Job.Action != nil && observer == nil {
+					return ErrUnavailable
 				}
 				previousJob, exists := store.state.jobs[record.Job.ID]
 				if !exists {
@@ -391,6 +397,9 @@ func (store *Store) createOrGetPrepared(
 		if existing.RequestDigest != idempotency.RequestDigest {
 			return CreateResult{}, &IdempotencyConflictError{ExistingJobID: existing.JobID}
 		}
+		if !sameActionCreate(job, prepared) {
+			return CreateResult{}, &IdempotencyConflictError{ExistingJobID: existing.JobID}
+		}
 		return CreateResult{Job: cloneJob(job), Existing: true}, nil
 	}
 	if beforeCreate != nil {
@@ -412,10 +421,17 @@ func (store *Store) createOrGetPrepared(
 		return CreateResult{}, err
 	}
 	now := store.now().UTC()
+	action := cloneActionState(prepared.action)
+	if action != nil && action.Policy != nil {
+		for index := range action.Policy.RetryKeys {
+			action.Policy.RetryKeys[index].BoundAt = now
+		}
+	}
 	job := Job{
 		ID: jobID, Kind: prepared.Kind, WorkspaceID: prepared.WorkspaceID, Mutating: prepared.Mutating,
 		Status: StatusQueued, CreatedBy: prepared.Idempotency.Principal, CreatedAt: now,
 		Request: prepared.Request, Progress: 0, Revision: 1,
+		Action: action,
 	}
 	idempotency.JobID = jobID
 	intent := JobCommitIntent{Operation: JobCommitCreate, Next: cloneJob(job)}
@@ -601,6 +617,10 @@ func (store *Store) Start(ctx context.Context, jobID string) (Job, error) {
 }
 
 func (store *Store) StartObserved(ctx context.Context, jobID string, observer JobCommitObserver) (Job, error) {
+	return store.startObserved(ctx, jobID, observer, false)
+}
+
+func (store *Store) startObserved(ctx context.Context, jobID string, observer JobCommitObserver, action bool) (Job, error) {
 	if err := validateIdentifier("job ID", jobID, 256); err != nil {
 		return Job{}, err
 	}
@@ -609,6 +629,9 @@ func (store *Store) StartObserved(ctx context.Context, jobID string, observer Jo
 		job, exists := store.state.jobs[jobID]
 		if !exists {
 			return fmt.Errorf("%w: %s", ErrNotFound, jobID)
+		}
+		if (job.Action != nil) != action {
+			return ErrConflict
 		}
 		if job.Status != StatusQueued {
 			return fmt.Errorf("%w: job %s is %s, want queued", ErrConflict, job.ID, job.Status)
@@ -650,7 +673,7 @@ func (store *Store) ClaimNextObserved(ctx context.Context, workspaceID string, o
 	err := store.withState(ctx, func() error {
 		var candidate *Job
 		for _, job := range store.state.jobs {
-			if job.WorkspaceID != workspaceID || !job.Mutating || job.Status != StatusQueued {
+			if job.Action != nil || job.WorkspaceID != workspaceID || !job.Mutating || job.Status != StatusQueued {
 				continue
 			}
 			jobCopy := job
@@ -705,6 +728,9 @@ func (store *Store) UpdateRunning(ctx context.Context, jobID string, update Prog
 		job, exists := store.state.jobs[jobID]
 		if !exists {
 			return fmt.Errorf("%w: %s", ErrNotFound, jobID)
+		}
+		if job.Action != nil {
+			return ErrConflict
 		}
 		if job.Status != StatusRunning {
 			return fmt.Errorf("%w: job %s is not running", ErrConflict, jobID)
@@ -765,6 +791,9 @@ func (store *Store) TransitionObserved(ctx context.Context, jobID string, target
 		job, exists := store.state.jobs[jobID]
 		if !exists {
 			return fmt.Errorf("%w: %s", ErrNotFound, jobID)
+		}
+		if job.Action != nil {
+			return ErrConflict
 		}
 		if job.Status != StatusRunning {
 			return fmt.Errorf("%w: job %s is %s, want running", ErrConflict, jobID, job.Status)
@@ -831,6 +860,9 @@ func (store *Store) CancelQueuedObserved(ctx context.Context, jobID string, inpu
 		job, exists := store.state.jobs[jobID]
 		if !exists {
 			return fmt.Errorf("%w: %s", ErrNotFound, jobID)
+		}
+		if job.Action != nil {
+			return ErrConflict
 		}
 		if job.Status != StatusQueued {
 			return fmt.Errorf("%w: job %s is %s, want queued", ErrConflict, jobID, job.Status)
@@ -948,6 +980,9 @@ func (store *Store) AppendEvent(ctx context.Context, jobID string, input EventIn
 		if !exists {
 			return fmt.Errorf("%w: %s", ErrNotFound, jobID)
 		}
+		if job.Action != nil {
+			return ErrConflict
+		}
 		if job.Status.terminal() {
 			return fmt.Errorf("%w: job %s is terminal", ErrConflict, jobID)
 		}
@@ -1053,6 +1088,9 @@ func (store *Store) Close() error {
 }
 
 func prepareCreate(spec CreateSpec) (CreateSpec, persistedIdempotency, error) {
+	if (spec.Kind == ActionJobKind) != (spec.action != nil) {
+		return CreateSpec{}, persistedIdempotency{}, invalidError("action jobs require the action dispatcher")
+	}
 	if err := validateIdentifier("job kind", spec.Kind, 128); err != nil {
 		return CreateSpec{}, persistedIdempotency{}, err
 	}
@@ -1064,6 +1102,12 @@ func prepareCreate(spec CreateSpec) (CreateSpec, persistedIdempotency, error) {
 		return CreateSpec{}, persistedIdempotency{}, err
 	}
 	spec.Request = request
+	if spec.action != nil {
+		spec.action = cloneActionState(spec.action)
+		if err := validateActionCreate(spec); err != nil {
+			return CreateSpec{}, persistedIdempotency{}, err
+		}
+	}
 	keyDigest := DigestRequest([]byte(spec.Idempotency.Key))
 	idempotency := persistedIdempotency{
 		Principal: spec.Idempotency.Principal, Method: spec.Idempotency.Method,
@@ -1103,6 +1147,12 @@ func newStoreID() (string, error) {
 }
 
 func (store *Store) canStart(candidate Job) error {
+	if err := store.actionExecutionBarrier(); err != nil {
+		return err
+	}
+	if err := store.actionQueueBarrier(candidate); err != nil {
+		return err
+	}
 	running := 0
 	for _, job := range store.state.jobs {
 		if job.Status == StatusRunning {
@@ -1131,7 +1181,7 @@ func (store *Store) canStart(candidate Job) error {
 	return nil
 }
 
-func (store *Store) interruptionRecords(now time.Time) []journalRecord {
+func (store *Store) interruptionRecords(now time.Time) ([]journalRecord, error) {
 	ids := make([]string, 0)
 	for id, job := range store.state.jobs {
 		if job.Status == StatusRunning {
@@ -1140,8 +1190,20 @@ func (store *Store) interruptionRecords(now time.Time) []journalRecord {
 	}
 	sort.Strings(ids)
 	records := make([]journalRecord, 0, len(ids))
+	preview := store.state.clone()
 	for _, id := range ids {
 		updated := cloneJob(store.state.jobs[id])
+		if updated.Action != nil {
+			record, err := store.actionEventRecord(preview, updated, interruptedActionEvent(updated), now)
+			if err != nil {
+				return nil, err
+			}
+			if err := preview.applyActionEvent(record); err != nil {
+				return nil, err
+			}
+			records = append(records, record)
+			continue
+		}
 		updated.Status = StatusInterrupted
 		updated.FinishedAt = cloneTime(&now)
 		updated.Error = &JobError{Code: "daemon_restarted", Message: "job execution state was lost during daemon restart"}
@@ -1149,7 +1211,7 @@ func (store *Store) interruptionRecords(now time.Time) []journalRecord {
 		updated.Revision++
 		records = append(records, journalRecord{Kind: recordJobUpdated, RecordedAt: now, Job: &updated})
 	}
-	return records
+	return records, nil
 }
 
 func (store *Store) pruneRecords(state *storeState, now time.Time) []journalRecord {
@@ -1161,6 +1223,9 @@ func (store *Store) pruneRecords(state *storeState, now time.Time) []journalReco
 	cutoff := now.Add(-store.options.EventRetention)
 	var records []journalRecord
 	for _, jobID := range jobIDs {
+		if state.jobs[jobID].Action != nil {
+			continue // ABI history is pruned only by an atomic action record.
+		}
 		events := state.events[jobID]
 		retentionCount := 0
 		for retentionCount < len(events) && events[retentionCount].Timestamp.Before(cutoff) {
@@ -1195,7 +1260,10 @@ func (store *Store) pruneRecords(state *storeState, now time.Time) []journalReco
 
 func (store *Store) updateNextPruneAt() {
 	store.nextPruneAt = time.Time{}
-	for _, events := range store.state.events {
+	for jobID, events := range store.state.events {
+		if store.state.jobs[jobID].Action != nil {
+			continue
+		}
 		if len(events) == 0 {
 			continue
 		}

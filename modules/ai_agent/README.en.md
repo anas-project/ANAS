@@ -92,12 +92,18 @@ to apply if any of them is missing:
 
 ```yaml
 modules:
+  incus:
+    config:
+      image_architecture: amd64
   ai_agent:
-    enabled: true
-    repository_allowlist: "anas-project/ANAS,anas-project/anas-agent"
-    agent_runtimes: "codex,claude_code"
-    agent_runtime_images: "codex=<64-hex fingerprint>,claude_code=<64-hex fingerprint>"
-    execution_isolation: incus_container
+    config:
+      enabled: true
+      repository_allowlist: "anas-project/ANAS,anas-project/anas-agent"
+      agent_runtimes: "codex,claude_code"
+      agent_runtime_images:
+        codex: {fingerprint: "<64hex>"}
+        claude_code: {fingerprint: "<64hex>"}
+      execution_isolation: incus_container
 ```
 
 ## Identity and credentials
@@ -163,7 +169,7 @@ rendered module-private key; it is not the preferred configuration interface.
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ai_agent.agent_runtime_images` | string | `pattern: ^(?:[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64}(?:,[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64})*)?$` | `""` | `static` | `AI_AGENT_AGENT_RUNTIME_IMAGES` | no | no | no | yes | `container_recreate` | Pinned SHA-256 image fingerprint per enabled runtime; a tag is refused |
+| `ai_agent.agent_runtime_images` | string | `format: json_object` | `""` | `static` | `AI_AGENT_AGENT_RUNTIME_IMAGES` | no | no | no | yes | `container_recreate` | Runtime id → structured image reference; Core freezes the mapping |
 | `ai_agent.agent_runtimes` | string | `pattern: ^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$` | `""` | `static` | `AI_AGENT_AGENT_RUNTIMES` | no | no | no | yes | `container_recreate` | Which agent runtimes are enabled; labels, issue templates and capability groups are generated from the registry accordingly |
 | `ai_agent.daily_budget_usd` | int | `0..100000` | `20` | `static` | `AI_AGENT_DAILY_BUDGET_USD` | no | no | no | yes | `reconcile` | Deployment-wide daily spend ceiling; a job that would exceed it is interrupted and the reason written back |
 | `ai_agent.db_name` | string | — | `ai_agent` | `static` | `AI_AGENT_DB_NAME` | no | no | no | no: `migrate-ai-agent-database` | `data_migrate` | Name of the database holding the orchestration state |

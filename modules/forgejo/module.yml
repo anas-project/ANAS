@@ -82,7 +82,7 @@ resources:
       spec_from:
         # The one image this module may boot is an operator-visible setting, so
         # the allowlist is wired from configuration rather than frozen here.
-        image_allowlist: actions_runner_image
+        image_allowlist: {parameter: actions_runner_image, projection: singleton}
       spec:
         sandbox: anas-forgejo-runners
         instance_prefix: anas-fj-
@@ -125,7 +125,7 @@ config:
     actions_runner_image:
       kind: string
       constraints:
-        pattern: '^(?:[0-9a-f]{64})?$'
+        format: json_object
     custom_git_hooks_enabled: bool
     directory_sync_enabled: bool
     domain_prefix:

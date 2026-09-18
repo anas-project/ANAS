@@ -583,6 +583,12 @@ func stateAdvances(previous, next *storeState) error {
 // updates so a Store may adopt a generation containing several peer writes,
 // while rejecting lifecycle, timestamp, warning, and compensation rollback.
 func validPersistedJobAdvance(previous, next Job) bool {
+	if previous.Action != nil {
+		if next.Action == nil || next.Action.LastSeq < previous.Action.LastSeq ||
+			(previous.Status.terminal() && !reflect.DeepEqual(previous.Action, next.Action)) {
+			return false
+		}
+	}
 	if next.Revision <= previous.Revision || !warningsHavePrefix(previous.Warnings, next.Warnings) {
 		return false
 	}

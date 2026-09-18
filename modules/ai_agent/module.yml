@@ -89,7 +89,7 @@ resources:
       binding: execution_isolation
       enabled_by: enabled
       spec_from:
-        image_allowlist: agent_runtime_images
+        image_allowlist: {parameter: agent_runtime_images, projection: values}
       spec:
         sandbox: anas-ai-agent
         instance_prefix: anas-agent-
@@ -131,12 +131,10 @@ config:
       constraints:
         pattern: '^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$'
     agent_runtime_images:
-      # `<runtime id>=<sha256 fingerprint>` pairs. A tag would let the image
-      # under an approved runtime change without a configuration change, so
-      # only a pinned fingerprint is accepted.
+      # runtime id -> structured image reference. Core freezes the map values.
       kind: string
       constraints:
-        pattern: '^(?:[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64}(?:,[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64})*)?$'
+        format: json_object
     daily_budget_usd:
       kind: int
       constraints:

@@ -4,7 +4,11 @@
 // schema merely to inspect a deployment.
 package deployment
 
-import "github.com/anas-project/ANAS/internal/configschema"
+import (
+	"github.com/anas-project/ANAS/internal/computeimage"
+	"github.com/anas-project/ANAS/internal/computeingress"
+	"github.com/anas-project/ANAS/internal/configschema"
+)
 
 const (
 	ManifestAPIVersion = "anas.deployment/v1"
@@ -214,18 +218,22 @@ type LocalAccount struct {
 }
 
 type Resource struct {
-	Consumer        string         `yaml:"consumer" json:"consumer"`
-	ID              string         `yaml:"id" json:"id"`
-	Contract        string         `yaml:"contract" json:"contract"`
-	ContractVersion string         `yaml:"contract_version" json:"contract_version"`
-	Provider        string         `yaml:"provider" json:"provider"`
-	Interface       string         `yaml:"interface" json:"interface"`
-	Spec            map[string]any `yaml:"spec" json:"spec"`
+	Consumer        string                        `yaml:"consumer" json:"consumer"`
+	ID              string                        `yaml:"id" json:"id"`
+	Contract        string                        `yaml:"contract" json:"contract"`
+	ContractVersion string                        `yaml:"contract_version" json:"contract_version"`
+	Provider        string                        `yaml:"provider" json:"provider"`
+	Interface       string                        `yaml:"interface" json:"interface"`
+	Spec            map[string]any                `yaml:"spec" json:"spec"`
+	ComputeImages   *computeimage.Snapshot        `yaml:"compute_images,omitempty" json:"compute_images,omitempty"`
+	ComputeIngress  *computeingress.Authorization `yaml:"compute_ingress,omitempty" json:"compute_ingress,omitempty"`
 	// SecretKey is the relational_database v1 compatibility field. New
 	// Contracts use CredentialSecretKey so deployment artifacts do not describe
 	// every generated credential as a database password.
 	SecretKey           string `yaml:"password_secret,omitempty" json:"password_secret,omitempty"`
 	CredentialSecretKey string `yaml:"credential_secret,omitempty" json:"credential_secret,omitempty"`
+	// LeaseSecretKey references the independent compute naming key, not a credential.
+	LeaseSecretKey string `yaml:"lease_secret,omitempty" json:"lease_secret,omitempty"`
 }
 
 type Setting struct {

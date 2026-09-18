@@ -26,7 +26,7 @@ private side channel between the two containers.
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ai_agent.agent_runtime_images` | string | `pattern: ^(?:[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64}(?:,[a-z][a-z0-9_-]{0,31}=[0-9a-f]{64})*)?$` | `""` | `static` | `AI_AGENT_AGENT_RUNTIME_IMAGES` | no | no | no | yes | `container_recreate` | Pinned SHA-256 image fingerprint per enabled runtime; a tag is refused |
+| `ai_agent.agent_runtime_images` | string | `format: json_object` | `""` | `static` | `AI_AGENT_AGENT_RUNTIME_IMAGES` | no | no | no | yes | `container_recreate` | Runtime id → structured image reference; Core freezes the mapping |
 | `ai_agent.agent_runtimes` | string | `pattern: ^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$` | `""` | `static` | `AI_AGENT_AGENT_RUNTIMES` | no | no | no | yes | `container_recreate` | Which agent runtimes are enabled; labels, issue templates and capability groups are generated from the registry accordingly |
 | `ai_agent.daily_budget_usd` | int | `0..100000` | `20` | `static` | `AI_AGENT_DAILY_BUDGET_USD` | no | no | no | yes | `reconcile` | Deployment-wide daily spend ceiling; a job that would exceed it is interrupted and the reason written back |
 | `ai_agent.db_name` | string | — | `ai_agent` | `static` | `AI_AGENT_DB_NAME` | no | no | no | no: `migrate-ai-agent-database` | `data_migrate` | Name of the database holding the orchestration state |
@@ -151,3 +151,30 @@ registered: a secret that short is guessable anyway, and redacting it would blan
 | `AGENT-R-012` | The `inbox_event` primary key behind `RecordDelivery` |
 | `AGENT-R-013` | `reconcile.go` `Sweep` |
 | `AGENT-R-014` | The `ByAccount` filter plus `RunIDFromPayload` as the second dedupe |
+
+## Frozen compute image configuration
+
+Image settings now use structured objects (a single object for Forgejo, a runtime-keyed map for AI Agent).
+Core projects these through explicit `spec_from` modes and resolves them before Hook calculation. Runtime
+containers receive only frozen fingerprints: Forgejo reads the lease allowlist, AI Agent reads JSON image
+bindings. The Agent hook reads `AI_AGENT_AGENT_RUNTIMES`, matching the manifest parameter; Compose passes
+it to the orchestrator as `AI_AGENT_RUNTIMES`. No new dependency is introduced.
+
+Incus requires explicit `image_architecture` for the daemon target. Its trusted bundle catalog is currently
+empty. Ensure checks each existing image's fingerprint, architecture and type in the lease project before
+registering trust; missing images fail instead of resolving aliases or rebuilding. Import/baking remains
+pending. See the [compute contract](../../../contracts/compute/docs/technical.en.md) for snapshot and rollback semantics.
+
+The HTTP network prototype only generates lab artifacts (`cmd/incus-network-prototype`): a guest /32 route
+with explicit source, veth-bound ingress filtering, an expiring address/port set, and existing Traefik route
+environment fields. It does not install rules or enable production ingress. Docker/Incus rule ordering,
+source spoofing, address reuse and long-connection revocation still require real Linux evidence; TCP/UDP
+publishing is not implemented.
+
+## Lease naming key lifecycle
+
+Core now generates and reuses an independent 32-byte compute `LEASE_SECRET`, separate from the client
+certificate. Deployment/resource state store references; the consumer receives a sensitive base64 projection
+and backup restores the same key. It is excluded from credential rotation. See the
+[compute lifecycle contract](../../../contracts/compute/docs/technical.en.md#independent-lease-naming-key).
+The dedicated rotation command and production HTTP publishing remain pending.

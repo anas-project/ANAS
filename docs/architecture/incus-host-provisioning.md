@@ -1,13 +1,13 @@
 # Incus 宿主供给与镜像烘焙（设计）
 
-> 状态：**提案，未实现**。更新：2026-09-10。本文规定 ANAS 如何在自己所在的宿主上装好 Incus daemon、如何自动
+> 状态：**提案，部分基础已实现**。更新：2026-09-18。本文规定 ANAS 如何在自己所在的宿主上装好 Incus daemon、如何自动
 > 产出 guest 镜像，以及入站流量怎么走。已实现的部分是 `compute` Contract、`incus` Provider
 > Module 与共享客户端；它们当前仍要求运维手工准备 daemon 与镜像，本文正是要消除这一步。
 
 需求来源是 [Incus 要求矩阵](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/incus-module.md)
 R-047—R-055、R-057、R-062—R-067、R-070—R-072、R-083—R-088、R-092、R-094—R-096；
 轮换边界以凭据轮换要求 CRED-R-007/CRED-R-015 为准。下文命令、字段与 Go API 示例均为
-目标设计，**当前不可直接执行或用于现有 schema**；已实现部分以 compute Contract 源文件为准。
+目标设计，**除 §6.2 的镜像对象与冻结、§5.1.3.1 的独立命名密钥、§5.1.1 的 ingress 授权声明外，不可直接用于现有 schema**；已实现部分以 compute Contract 源文件为准。
 
 依据是 [Core 实现标准](core-implementation-standard.md) §4「默认可用，高级可替换」：一个只想开
 Actions 的用户，不该先去理解 Incus 是什么、更不该先手工装好它。
@@ -87,7 +87,8 @@ Ubuntu 22.04 LTS 不在支持范围内：它的官方源没有 incus，只能加
 1. 读 /etc/os-release，在 §2 的表里查到安装配方；表里没有 → 报错并给手工指引，退出码可区分
 2. 安装 incus 包（一级发行版不添加第三方源；待适配的发行版不自动安装，报错并给手工指引）
 3. 启用服务，设 core.https_address=127.0.0.1:8443（只监听回环）
-4. 初始化存储池（默认 dir 后端，btrfs 可用时优先 btrfs）
+4. 初始化符合当前配额准入的受管存储池（当前 Provider 只接受已创建的 btrfs/zfs，见 §7.4）；
+   无法确认能力时保持 compute 关闭，不以 dir 降级冒充配额可用，不自动格式化或接管已有设备
 5. 生成 ANAS 供给用管理证书，加入信任库
 6. 把 endpoint、pinned server 证书、管理证书与 key 写入 anas 能读到的位置
 7. 重新执行时校验 3–6 仍然成立，不成立就纠正
@@ -140,12 +141,79 @@ mTLS pin 保持有效，停止/卸载不留转发。远端自建 daemon 继续�
 单元、专用网络连接与监听；卸载撤销这些资源；部分失败不宣告 compute 可用，重试按资源所有权收敛。
 具体宿主动作的参数与清单变更需在宿主通道计划中另行登记，本文不假定当前已经存在可调用动作。
 
-数据连接与此控制连接分开：Traefik 后端不得复用一个能任意转发的通用端口。发布路径需在 proxy
-权限问题解决后，由受信组件生成有限的后端映射；不能把消费者传入的 IP/URL 作为转发目标。
+数据连接与此控制连接分开：Traefik 后端不得复用一个能任意转发的通用端口。发布路径按 §5.1.7 由受信组件核验 guest 地址并登记有限的网络许可；
+不能把消费者传入的 IP/URL 作为转发目标。
 
 验收应覆盖：合法证书成功、错误 pin 失败、跨 project 失败、非授权网络不可达、LAN 不可达、
 服务重启后的连接失败可归因、半配置失败可重试、卸载清除全部监听。任一项不满足，不通过把 daemon
 改绑公网或挂入 root Unix socket 来兜底。
+
+### 3.7 bridge 连接的实施方案
+
+推荐采用 §3.6 的固定目的地转发，按下面的网络分工实现原型；这是目标设计，真实 Linux 验收前不标为可用。
+
+| 网络 | 接入方 | 允许路径 |
+| --- | --- | --- |
+| Docker 控制 bridge | Provider run-only 服务、需要 compute 的消费者 | 访问该 bridge 宿主网关上的固定 Incus 转发端口 |
+| Incus 租约 bridge | 本租约的 VM/系统容器，Provider 在 default project 创建 | DHCP/DNS、按策略 NAT 出站；不允许访问控制入口或其他租约 |
+| Docker 入站 bridge | Traefik | 经宿主路由访问 §5.1.7 核验的 guest 地址和端口 |
+
+控制 bridge 作为部署级外部网络，由安装/配置动作创建并按所有权清理。IPAM 从已配置可用范围分配，
+检查与 Docker、Incus、LAN、VPN 及宿主路由冲突；不在文档硬编码一个所有宿主共用的网段。
+消费者保留原业务网络，控制 bridge 只增加控制连接，不改变默认出站路由。禁止 bridge 内容器互访，
+不把 guest 接入 Docker 控制 bridge；网络隔离由规则强制，不能仅凭网络名字推定成立。
+
+非 root 传输服务只绑定控制 bridge 的宿主网关地址和受管高位端口，固定连接宿主
+`127.0.0.1:8443`，不监听 `0.0.0.0`/`[::]`。Runner 向消费者投影该网关 endpoint 和原 daemon
+证书 pin；转发不终止 TLS，不使用自己的客户端证书。管理证书仍只给 Provider，消费者保持独立受限证书。
+此内部 mTLS 入口是新增可达面，必须单独核验，不能因为 daemon 仍监听回环就宣称没有暴露面。
+
+宿主规则分别覆盖 INPUT 与 FORWARD：仅控制 bridge 入接口可访问固定控制端口；LAN、其他 Docker
+网络及全部 guest bridge 拒绝。禁止租约之间转发；guest 出站仅开放既定目的范围，不能借 NAT
+绕回宿主控制面。IPv6 不启用时显式关闭对应路径，启用时应用相同的拒绝规则；保留必要的回包流量。
+规则通过宿主动作通道管理，不在消费者中授予 NET_ADMIN。与 Docker/Incus 自动防火墙规则的优先级、
+重启恢复以及地址变化必须实测，不能只测 TCP 正向连接。
+
+创建顺序：网络与拒绝规则 → 启动固定转发 → 检验 mTLS/pin/权限 → 发布 endpoint。失败不宣告
+compute 就绪。停止/卸载先停止新租约接入，再按运行实例策略排空，撤销 endpoint、转发服务、规则
+和本部署拥有的网络；不删除外部 daemon 或其他部署网络。
+
+### 3.8 固定控制转发的编码边界（2026-09-18，未运行）
+
+`modules/incus/control-relay` 已编码为独立的 Linux 非 root 传输组件，尚未编译、运行测试、打包安装或
+接入宿主动作。它不是 `anas-hostd`，不安装包、不创建网络或规则、不发布 endpoint，也不改变生产
+ingress 的关闭状态。其存在不能作为 §3.7 默认连接路径已经验收的证据。
+
+唯一上游在二进制中固定为 `127.0.0.1:8443`；没有 upstream 参数、DNS 解析、环境代理、CONNECT、
+SOCKS 或 TLS 终止。管理/消费者证书均不进入该进程。监听只允许受管接口上的单个私有 IPv4 和非特权
+端口，拒绝通配、回环、IPv6、网段地址与广播地址。IPv6 控制传输尚未实现，不能借此放宽宿主的 IPv6
+拒绝规则；数据面的双栈要求仍按 §3.7 独立验收。
+
+安装配置默认路径为 `/etc/anas/incus-control-relay.json`。配置及全部父目录必须 root 所有且不可被
+组/其他用户写入；逐级使用目录描述符和 NOFOLLOW 打开，最终文件必须为单链接普通文件，读前后
+元数据一致。配置限 8 KiB，拒绝重复/未知/大小写别名字段、null 和尾随 JSON；错误不回显配置内容。
+配置是宿主安装输入，不是消费者可写的 Module 参数，也不包含秘密。
+
+| 安装字段 | 当前校验与用途 |
+| --- | --- |
+| `schema_version` | 必须为 1 |
+| `listen_address`、`control_subnet` | 规范化 IPv4 地址/端口与掩码化私有网段，必须相互匹配 |
+| `interface_name`、`interface_index` | 冻结安装时的内核接口绑定；启动时及运行中约每秒检查地址、名称、index 和 up 状态 |
+| `run_uid`、`run_gid` | 必须匹配专用非 root 运行身份；拒绝 real/effective 身份不一致、额外附加组以及 effective/permitted/inheritable capabilities |
+| `max_connections` | 显式设置 1—256，超过容量立即关闭新连接 |
+| `idle_timeout_seconds` | 显式设置 10—3600 秒；任一方向的成功传输刷新共同空闲期限 |
+
+双向转发采用固定 32 KiB 缓冲，保留 TCP 半关闭；拨号最多 5 秒。停止时关闭全部连接并等待复制循环
+退出；接口漂移则关闭监听和现存连接，而不是切到通配地址。网卡 index 变化后不能沿用旧配置自动
+接管新接口：宿主安装/启动协调必须重新核对网络归属、生成配置，再启动服务，该协调尚未实现。
+
+源地址 CIDR 检查只收窄可达面，**不能证明流量来自控制 bridge，更不能代替认证**。上线仍要求宿主
+动作先落实 INPUT/FORWARD 的入接口限制及默认拒绝，再启动此服务，完成 mTLS、错误 pin、跨 project、
+LAN/其他 Docker 网络/guest 不可达的独立验证，最后才发布 endpoint。二进制与服务单元仍须由受信
+发布/安装流程管理，不能让 root 执行 Module 可写路径中的产物；停用/卸载必须撤销监听和所拥有资源。
+
+`config_test.go` 与 `relay_test.go` 已补严格配置、固定目的地、源网段边界、原始字节、半关闭、取消与
+空闲超时测试源码，均未执行。它们即使通过，也只是本地传输测试，不是宿主网络隔离或 Incus 实机验收。
 
 ## 4. Web 管理端与 root 密码
 
@@ -164,20 +232,11 @@ mTLS pin 保持有效，停止/卸载不留转发。远端自建 daemon 继续�
 本文 §3.3 的安装步骤就是该通道的首批动作（`incus.install` / `configure` / `enroll` / `status` /
 `uninstall`）。在通道实现之前，宿主供给只能由管理员在终端执行，控制台显示待执行命令并轮询状态。
 
-## 5. 入站流量：proxy device，不是公网 IPv6
+## 5. 入站流量：Traefik 与受管路由
 
-实例**不需要自己的公网 IPv6 地址**。出站走受管 bridge NAT；入站目标仍是 proxy device。
-但两档不能套用同一份设备配置：截至 2026-09-10，[Incus proxy 官方文档](https://linuxcontainers.org/incus/docs/main/reference/devices_proxy/)
-说明容器支持 NAT 与非 NAT，VM 仅支持 NAT。下面的跨协议族连接是容器非 NAT 路径的示意，不能
-作为 VM 验收依据，也不是直接占用公开 443 端口的部署配置：
-
-```text
-listen=tcp:[::]:443   connect=tcp:127.0.0.1:7000
-```
-
-对外双栈入口由 Traefik 承担；它到受管后端可以使用独立选定的协议族。VM 的 NAT proxy 目标
-应是受管 NIC 地址，不能照抄 guest 回环地址。具体监听地址、端口分配和后端可达路径仍须与 §3.5
-一起定案，并分别测试容器和 VM；不得依赖公网 guest IPv6 或上游 DHCPv6-PD。
+目标方案已经选定，尚未实现或通过真实宿主验收：公网 IPv4/IPv6 由 Traefik 终止，后端优先使用
+受管 guest IPv4 地址。宿主提供受限路由与防火墙，不增加 proxy device 或 network forward。
+实例无需公网 IPv6，也不依赖上游 DHCPv6-PD；控制连接仍走 §3.7 的固定目的地传输服务。
 
 ### 5.1 把实例内的 Web 服务经 Traefik 发布
 
@@ -186,8 +245,7 @@ listen=tcp:[::]:443   connect=tcp:127.0.0.1:7000
 ```text
 公网 https://<name>.<base_domain>
   → Traefik（终止 TLS，按 Host 路由）
-  → 受管后端连接路径（容器到宿主的连接方式待 §3.5 定案）
-  → Incus proxy device
+  → Docker 入站 bridge → 宿主受管路由/防火墙
   → 实例内 :7000 的 HTTP 服务
 ```
 
@@ -215,7 +273,8 @@ resources:
           # 允许发布的 guest 端口。固定在 apply 时，被攻陷的消费者无法把任意监听端口
           # 暴露出去。省略 ingress 段即完全不允许发布。
           allowed_ports: [7000]
-          # none：不加认证，域名不可预测是唯一屏障——它不是访问控制，见 §5.1.3.1
+          # none：不加认证；域名不可预测不是访问控制，SNI/Referer/日志可能泄露 URL；
+          # 不得用于敏感或可写服务，见 §5.1.3.1
           # forward_auth：挂 ForwardAuth 中间件，需要部署里有 forward_auth provider
           auth: none
           domain:
@@ -226,21 +285,48 @@ resources:
             prefix: ci
 ```
 
-**运行时**——消费者经共享客户端发布和撤销，与 start/stop 成对：
+**运行时**——消费者经共享客户端提交发布意图与撤销意图，与 start/stop 成对。
+2026-09-18 已写入 `Client.OpenHTTPPublisher`、`HTTPPublisher.PublishPort/UnpublishPort`；
+代码和新增用例未编译/执行，自动投影、挂载与生产服务尚未接线。以下是接口示意，不是生产启用步骤：
 
 ```go
-// mode: random 时不给 label，域名由 workload_id 派生（§5.1.3）
-addr, err := client.PublishPort(ctx, instanceID, 7000, computeclient.PublishOptions{})
+// httpConfig 是本租约的最小配置投影，不是完整冻结授权，也不含 Store 引用或 middleware。
+// 目录必须已经由安装方创建并私有挂载；此调用不会创建目录或启用 ingress。
+publisher, err := client.OpenHTTPPublisher(httpConfig)
+if err != nil {
+    return err
+}
+defer publisher.Close() // 只释放本地句柄，不隐式撤销持久请求。
 
-// mode: named 时给一个 label，域名是 <prefix>-<label>.<base_domain>
-addr, err := client.PublishPort(ctx, instanceID, 7000,
-    computeclient.PublishOptions{Label: "api"})
+options := computeclient.PublishOptions{}
+// 仅 mode: named 时设置 options.Label = "api"；fixed/random 不接受 label。
+publication, err := publisher.PublishPort(ctx, instanceID, 7000, options)
+if err != nil {
+    return err
+}
+// publication.RequestedURL() 只是预计 URL，不是后端可达、路由加载或认证生效的证明。
 
-err = client.UnpublishPort(ctx, instanceID, 7000)        // 提交撤销，由受信方删路由与 proxy
+// 工作负载结束时，用原回执撤销。成功仅表示请求已移除；受信中介另行收敛路由与宿主许可。
+if err := publisher.UnpublishPort(ctx, publication); err != nil {
+    return err
+}
 ```
 
-`PublishPort` 在动手前校验：端口在 `allowed_ports` 内、实例属于本租约、`label` 只含
-`[a-z0-9-]` 且与租约的 `mode` 一致（`random` 下给 label、`named` 下不给 label 都是错误）。
+`PublishPort` 校验本地租约范围、`allowed_ports`、精确匹配的受管 Running 实例及其
+`user.anas.workload`，不接受调用者另填 workload/IP/URL。`label` 必须是规范的小写 DNS label，
+并与 `mode` 一致；最终名称由共享 `Policy.Host` 推导。中介继续调用验证完整冻结授权的
+`Authorization.Host`，两者共用算法，但前者不提供授权。
+
+`HTTPPublicationConfig` 只包含 interface/project/实例前缀、公开策略、基础域名、租约私有目录，
+以及 random 模式独立交付的命名密钥；不向消费者交付完整授权、middleware、entrypoint 或全局
+Store 引用。密钥不进入请求文件，默认格式化和 JSON 序列化也不输出它。
+
+`computeingress.RequestWriter` 用 instance/port 的 SHA-256 槽位名和目录锁序列化合作写入，
+完整临时文件 fsync 后 rename，文件及目录同步成功才给回执；相同意图可重试，冲突不覆盖。
+回执持有文件描述符，撤销核对原 inode 与完整意图，旧回执不能撤销合作 writer 后建的新请求。
+仅接受已有、当前用户拥有的 0700 本地 Linux amd64/arm64 目录；限制 4 KiB 单链普通文件和
+256 项目录，拒绝符号链接、硬链接、FIFO、目录替换和未支持的平台/文件系统。
+关闭 writer 不删除请求；移除原文件仅是撤销意图，不能替代宿主权限、连接与地址保留的撤销确认。
 
 **这些校验是给正确的消费者用的，不是安全边界。** 被攻陷的消费者可以绕过库直接写请求文件，
 真正的强制点在租约之外的中介，见 §5.1.5。
@@ -268,11 +354,11 @@ err = client.UnpublishPort(ctx, instanceID, 7000)        // 提交撤销，由�
 正确做法是**从任务标识确定性派生**：
 
 ```text
-<prefix>-<hex(hmac(lease_secret, workload_id))[:10]>.<base_domain>
+<prefix>-<hex(HMAC-SHA256(lease_secret, workload_id))[:32]>.<base_domain>
 ```
 
 - 同一个 `workload_id` 永远得到同一个名字，无需存储；
-- 不同任务得到不同名字，碰撞概率由摘要长度决定；
+- 截取 128 位（32 个十六进制字符），使大批任务的碰撞概率足够低；仍须检测冲突并失败；
 - 因为掺了租约自己的 secret，外部无法从任务 id 预测出域名，也无法枚举。
 
 仍然把结果记进 resource state，但那是**为了可观测**，正确性不依赖这条记录。
@@ -367,7 +453,9 @@ resource state 里只留 **Secret Store 的引用**，不留明文
 升级旧部署时，只补建缺失的独立条目，不能重签已有客户端证书；已有值格式损坏应报错，不能静默
 重铸。新部署 manifest 和 resource state 保存引用，消费者收到 base64 编码的 32 字节随机值并
 标为敏感。旧冻结部署不因重放而生成新密钥，需通过新 apply 补齐。备份恢复需验证密钥与派生结果
-保持一致。以上均为待实现行为，不能仅凭 Secret Store 的通用能力判定验收完成。
+保持一致。以上生命周期已于 2026-09-11 接入 Core，并通过实际文件复制/备份恢复回归；
+损坏值、历史引用丢失、跨租约引用与凭据轮换冒用均拒绝。专属轮换命令与生产 HTTP 发布
+仍待实现；域名派生及授权实验代码见 §5.1.7，文件回归不代表实际宿主或已发布 URL 的验收。
 
 ### 5.1.3.2 凭据轮换与域名密钥轮换分别接入
 
@@ -434,15 +522,15 @@ mTLS 客户端证书认证，Traefik 终止 TLS 会打断它，且暴露它等�
 #### 形态：受约束的请求文件 + 校验后渲染
 
 ```text
-消费者写入：  <lease 专属目录>/<label>.yml      ANAS 自己的小 schema
-                 { host_label, target_port, instance_id }
+消费者写入：  <lease 专属目录>/<request>.json   ANAS 自己的小 schema
+                 { action, instance_id, workload_id, guest_port, label? }
                           │  校验
                           ▼
 渲染出：      /run/anas/<...>.yml               真正的 Traefik 动态配置
 ```
 
 中介从受信租约声明读取授权，不信任请求自报的 consumer、project、auth 或目标地址。除域名外，
-还要验证实例属于租约、guest 端口在 allowed_ports 内，以及目标是受管 proxy。租约身份由专属目录
+还要验证实例属于租约、guest 端口在 allowed_ports 内，以及目标是经 daemon 核验的受管 guest 地址与端口。租约身份由专属目录
 及其挂载权限绑定；密钥用于派生，不用于认证或证明归属。apply 时需拒绝重叠的域名命名空间，运行时
 碰撞失败，不能覆盖其他路由。middleware 与 entrypoint 由渲染方决定。
 
@@ -450,68 +538,380 @@ mTLS 客户端证书认证，Traefik 终止 TLS 会打断它，且暴露它等�
 大小和 schema，拒绝符号链接、路径穿越与任意目标 URL，原子渲染，并在重启时对账撤销过期请求。
 这些检查属于已有租约边界的实现细化，真实越权反例归 R-087/R-088 验收。
 
-**proxy 的执行权限尚未定案。** [Incus project 配置](https://linuxcontainers.org/incus/docs/main/reference/projects/)
-中的 `restricted.devices.proxy` 只有 allow/block，不能表达租约端口白名单。不能为了让客户端
-`PublishPort` 成功而直接开放任意 proxy。受信执行方须在消费者进程外，使用独立权限管理设备；
-共享客户端只提交发布意图。还需验证 project 禁令对受信执行方的实际行为，再确定可实现的授权路径。
-Traefik watcher 负责渲染不等于它应持有全局 Incus 管理证书；设备执行方的部署与最小权限仍待 §7 定案。
+#### proxy 方案的淘汰依据
 
-中介放在 **Traefik Module** 里最自然：它已经拥有那个目录，而且本来就是一个常驻服务，加一个小
-watcher 不引入新的活动部件。把校验放进共享客户端库是不够的——被攻陷的消费者可以绕过库直接写文件。
+固定 v7.3.0 的正常实例与 profile 更新仍执行 project 的 proxy 禁令，管理证书并不豁免。
+源码路径及核验边界见[核验记录](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-10-incus-network-proxy-validation.md)。
+本方案保持 proxy block，不添加实例设备，不需要放宽消费者权限。network forward 不再作为必需
+中间层；只有后续发现具体的映射需求并完成专项设计时才评估，不能自动回退到它。
 
-#### 固定版本源码核验与当前结论
+### 5.1.6 LAN 预留与网络边界
 
-2026-09-10 检查 [Incus v7.3.0 project 权限代码](https://github.com/lxc/incus/blob/v7.3.0/internal/server/project/permissions.go)：
-`checkRestrictions` 为实例和 profile 检查设备，proxy 默认 block；该校验函数不接收调用方
-证书身份。`AllowInstanceCreation` 也调用 project 限制检查。继续追踪了实例 PUT/PATCH 与 profile 更新：它们分别经 `AllowInstanceUpdate` / `AllowProfileUpdate`
-进入同一 project 内容校验。因此，在这些正常 API 路径上，换管理证书不会豁免 proxy 禁令。
-这是固定版本源码结论；实机结果仍待记录。
+发布请求、域名授权和 Traefik 路由与底层 NAT/LAN 分离。当前只实现受管 bridge NAT。
+LAN 未来启用前必须重新验证后端可达性、双协议族边界及宿主路由；不承诺复用当前链路即可支持，
+也不以 macvlan shim 作为绕开授权的捷径。
 
-当前不采用以下绕过：临时关闭 project 限制再恢复、给消费者所在 project 开放任意 proxy、
-把消费者生命周期全部改经 Core。前两者破坏围栏，后者改变既定运行时边界。
+### 5.1.7 选定方案：Traefik 直达受管 guest
 
-| 后续方向 | 与现有要求的关系 | 当前处理 |
+```text
+公网 IPv4/IPv6 HTTPS
+  → Traefik（TLS、Host、冻结的认证策略）
+  → 专用 Docker 入站 bridge
+  → 宿主路由与默认拒绝防火墙
+  → 本租约 Incus bridge → guest NIC IPv4:allowed_port
+```
+
+**网络与身份。** Docker 与各 Incus bridge 使用不重叠网段；Traefik 经专用入站 bridge 的网关
+访问 guest 网段，不加入 guest 网络。多网络 Traefik 必须配置明确的目的路由，不能依赖默认路由
+恰好选中入站 bridge；路由配置由受管启动/宿主动作负责，不向消费者授予 NET_ADMIN。
+防火墙只允许指定 Traefik 接入端、目标实例地址、TCP 端口的组合及其回包，拒绝其他容器、LAN、
+其他租约及 guest 反向发起访问。IPv6 后端暂不开放，公网 IPv6 在 Traefik 转为新的 IPv4 后端连接。
+服务必须监听 guest NIC 地址或通配 IPv4 地址，仅监听 guest 回环的服务不可发布。
+
+**权限分工。** 消费者只写本租约请求目录。独立受信发布中介读取冻结授权，通过受限只读身份
+查询 Incus 的 project、实例、受管 NIC、IP 分配和运行状态；不持有网络修改能力，不创建 forward。
+宿主规则执行端仅接受受信中介提交的类型化租约/实例/端口操作，并独立按受信租约映射校验；
+不接受消费者提供的 IP、命令或防火墙文本。它的动作与授权接入宿主通道计划，不能假定现有通道已支持。
+Traefik watcher 读取中介生成的受信描述，复用 `ANAS_TRAEFIK_ROUTE__*` 渲染逻辑，不持有 Incus 管理证书。
+Core 不参与每个 job 的发布路径。
+
+**请求校验。** 请求仅包含 instance_id、workload_id、guest_port、可选 label 与发布/撤销意图。
+租约身份来自专属挂载目录；中介校验实例身份、获批端口、命名空间、固定 auth 及当前受管 NIC 分配。
+不能仅凭“IP 在租约子网内”认定归属。请求不能指定 URL、目标 IP、宿主端口、middleware 或 entrypoint。
+拒绝符号链接、路径穿越、超大文件和未知字段；目录授权与请求版本绑定活动 deployment。
+
+**事务与回收。** 按租约/实例/端口串行化，先预占域名，再登记窄范围网络许可并验证后端，最后
+原子发布路由。失败撤销本次许可；撤销时先移除路由，再删除许可并终止既有后端连接，不能让
+ESTABLISHED 规则维持已撤销会话。重复请求幂等，冲突失败，禁止覆盖其他租约记录。
+停止、暂停、删除、租约撤销和 IP 变化触发撤销，周期对账补足事件丢失。IP 在许可清理前不可重新
+分配；需用受管分配保留或短期授权到期机制防止旧规则误指向新实例。中介重启后先对账再开放，
+只恢复授权、实际实例身份与活动部署的交集，旧磁盘请求不得自行恢复访问。
+
+验收覆盖真实 Linux Docker/Incus 路由与防火墙顺序、两档 guest、公网双栈、跨租约、源地址冒用、
+绕过 Traefik 直连后端、端口注入、auth 降级、IP 复用、长连接撤销、事件丢失和中介重启。
+目标路径通过前不开放 ingress；fake 单测不代表网络与权限验收。
+
+已新增 `cmd/incus-network-prototype`，仅从管理员采集的实验观测生成 guest /32 路由、
+bridge veth 来源限制、30 秒后端 tuple 许可、撤销/conntrack 操作及既有 Traefik 环境字段。
+它不执行宿主命令、不接受生产域名、不提供消费者发布接口；不是受信中介或宿主动作的替代。
+实验步骤与限制见仓库 `test-env/fixtures/incus-network-prototype/README.md`。
+2026-09-11 已在操作者指定的 Ubuntu 26.04 宿主通过独立 namespace 的真实 nft 加载、HTTP、
+来源隔离、IP/MAC 冒用拒绝、已有流撤销和 30 秒过期检查；脚本为
+`test-env/scripts/server-incus-http-netns.py`，未修改宿主规则。该实验以 HTTP 进程模拟两端，
+没有 Docker/Incus base chain 或真实 guest；尤其不能把 nft 早期 accept 视为能覆盖后续
+Docker/Incus drop。真实两档路由、IP 回收、conntrack 删除与完整长连接撤销仍是阻塞项。
+
+2026-09-12 原型补充 `--capture`：通过显式实验 Incus/Docker Unix socket 的 GET 与 host/Traefik
+namespace 内的只读 link 查询，交叉核对实例、NIC、MAC/IP 分配与 veth，比较两轮观测后输出。
+`--previous`/`--withdraw` 生成有序发布/撤销计划，旧身份撤销后保留拒绝表；同拓扑以单次 nft 事务
+替换，拓扑改变需结束旧实验。这些是实验工具代码，不是生产中介、地址预留、自动宿主动作或 watcher。
+拟发布记录不是已应用证明，计划条件仍由操作者核验。原型命令尚未编译或测试，不能把此前基础
+namespace 结果用于这些新路径；待测场景已记录到仓库的 E2E 清单。
+
+2026-09-12 继续接入 `compute_ingress`：Core 在 calculate 后冻结租约身份、端口、auth、域名与
+独立密钥引用，ForwardAuth 绑定与 middleware 必须来自声明的 Provider；准备期检查租约命名空间
+及已知服务域名。`internal/computeingress` 提供严格请求读取与带会话序号的内存预占，实验命令
+`--mediation` 已使用这些代码。random 派生固定为 HMAC-SHA256 前 128 位，prefix 最长 30 字符。
+
+这些是授权准备和单路由实验代码，尚未测试。生产启动仍主动拒绝带 ingress 的消费者；没有自动
+挂载或启用中介；活动授权读取和独立目录登记见下段，仍没有全局路由登记、受限只读观测身份、宿主动作、IP 保留、探测执行或
+事件/周期对账。实验里的活动 deployment 由管理员断言，旧计划不是活动授权或已执行证明。
+字段和精确限制以 [compute 技术说明](/reference/module-contracts/compute-technical) 为准。
+
+后续续作补充 Core 活动授权读取及 `internal/computeingressruntime` 请求目录登记：既有共享锁
+保护 active/state/manifest 的一致读取，代次绑定实际工作区、激活时间与清单摘要。实验工具可在
+新目录登记每租约请求目录，workspace 模式不接受手填授权或密钥来源，采集后再次检查 Core。
+注册文件不含密钥；random 命名经管理员进程内的 Core 适配器读取单条命名密钥，生产窄范围传递
+仍未定为可用。这些代码尚未测试，也未执行登记；生产启动拦截、真实受限身份、IP 保留、执行与
+事件/周期对账的阻塞不变。普通 active 部署不能据此启用生产 ingress，实验正例使用独立元数据夹具。
+
+同日新增 `internal/computeingressruntime.Executor` 作为执行顺序内核。它只接受 Planner 生成的
+publication 与 Core epoch，通过 `Observer`、类型化 `HostActions`、`BackendProbe` 和
+`RouteRenderer` 接口依次执行地址保留、guest `/32` 路由、HTTP tuple 许可、后端身份探测和路由发布；
+每个可见步骤之后写入原子持久化回执。撤销严格按路由、许可、存量连接、`/32`、地址释放的顺序，
+任一步失败都保留回执和地址占用。重启对账先撤销不在当前 epoch/目标交集内的记录，再开放新路由。
+文件 renderer 使用按 reservation 派生的独占文件名和 no-overwrite hard link 发布，只删除内容完全
+匹配的自有文件，消费者不能提供 URL、entrypoint 或动态 YAML。
+
+这仍不是生产执行服务：类型化宿主动作、只读 Incus observer、后端探测实现、
+事件来源与消费者目录挂载尚未接入。状态文件是清理回执，不是授权；没有活动 Core 快照和新鲜实例
+观测时不能据此恢复访问。生产启动拦截保持不变，本轮代码也尚未编译或测试。
+
+2026-09-13 增加持锁周期循环与工作区请求源。所有作用于同一 ingress 的执行者必须使用同一私有
+本地状态目录；完整会话持有非阻塞 flock，目录/锁 inode 或权限变化时拒绝继续外部动作。循环启动
+先清理旧目标再读取新请求；授权读取失败触发清理，取消时使用独立的有界清理上下文且保持锁。
+退役意图与已退役 reservation 持久化，旧 token 不因请求再次出现或下一轮轮询而自动复活；历史不按
+TTL 清除，4 MiB 上限保守拒绝新写入。状态丢失/损坏后的外部孤立工件盘点尚未实现，不能按空状态
+推断实际网络干净；部署服务接入前必须补齐。
+
+工作区请求源重新核对活动 Core epoch、登记目录、请求与冻结 auth/Host，实例 UUID/IP/MAC 由
+独立 FactReader 提供并在执行前再次校验。实际静态/外部路由库存是必需依赖，读取失败不能换成
+空列表。仍需交付真正受限的 Incus 查询身份、库存适配器、宿主动作与探测实现及窄范围密钥交付。
+每租约最多 256 个目录项，每轮最多 1024 个 JSON 请求；一个完整读取失败时本原型撤销全部记录，
+后续需验证其可用性代价。事件只负责唤醒，丢失事件由周期读取补足，实际事件源尚未接入。
+
+文件 renderer 已改为复用原 entrypoint 的 `ANAS_TRAEFIK_ROUTE__*` 模板，使用仅渲染模式在新建
+私有目录中生成候选文件；子进程不收到真实动态目录或环境中的 Secret。HTTPS/TLS 及 middleware
+来自受信描述，最终通过独占 hard link 发布。正常 entrypoint 默认路径不变；共享模板升级导致已有
+内容不同会拒绝覆盖/删除并保留待清理记录。文件操作成功仍不代表 Traefik 已消费或撤销路由，实际
+消费确认与完整宿主验收待实现。renderer 强制要求 `RouteConfirmation` 适配器，未提供即拒绝执行；
+确认失败留在清理阶段，不继续释放地址。本轮仅编码，以上新增路径均未执行。
+
+同日补充 `IncusFactReader` 的 HTTPS GET 实现，可注入 `WorkspaceSource.Facts`。管理员配置固定
+endpoint、服务端证书、专用客户端证书及已安装租约映射；请求文件不能指定这些值。连接最低 TLS 1.3，
+精确比较服务端证书并检查双方证书有效期（包括复用连接），拒绝重定向与环境代理。每次 GET 最多
+8 秒、响应最多 2 MiB，一次双采样最多 30 秒；只接受成功的 JSON 同步响应，拒绝重复字段、深层嵌套
+及不完整结果，不回显 endpoint、证书或原始响应。
+
+每轮读取服务器身份与明确版本、选定 project、default project 中的独立 bridge、选定实例/状态和
+该 bridge 的地址分配。核对 restricted 网络作用域、bridge 归属/NAT、唯一无 VLAN 的受管 NIC、
+运行时 MAC 与唯一私有 IPv4 分配；只匹配子网不足以通过。两次选定事实不一致则拒绝。实例 UUID、
+`volatile.uuid.generation` 与 `last_used_at` 生成 incarnation 摘要，加入执行目标及回执；每步再次
+核验，停止后快速重启且 UUID/IP/MAC 相同也使旧 token 失效。这不是地址保留或跨 API 原子快照；
+宿主动作仍须独立确认当前映射。缺少 generation/启动时间的 daemon 或尚未返回 NIC 状态的 guest
+直接拒绝，不能回退到管理 socket 或较弱身份。未发布的执行回执格式新增必需字段；不自动接受缺失
+incarnation 的旧实验回执，也不据此删除外部工件。
+
+服务端只读身份仍未供给，不能把客户端只调用 GET 视为权限收敛。依据
+[Incus v7.3.0 授权文档](https://github.com/lxc/incus/blob/v7.3.0/doc/authorization.md)，普通 restricted
+TLS 证书仍可写本项目；改用 scriptlet/OpenFGA 路由时还必须复现原项目隔离，不能直接改全局配置。
+API 字段依据该版本的 [实例状态定义](https://github.com/lxc/incus/blob/v7.3.0/shared/api/instance_state.go)
+和 [网络租约定义](https://github.com/lxc/incus/blob/v7.3.0/shared/api/network.go)。版本精确匹配只检测漂移，
+不代表兼容性已验收。当前未实例化读取器、未修改 daemon 授权，Traefik 库存/加载确认、宿主动作与
+完整 E2E 仍待交付，生产 ingress 保持拦截。
+
+随后补充 `TraefikReader` 的库存与消费确认代码。它读取既有 BasicAuth 保护的 `/api/version` 和
+`/api/rawdata`，固定 endpoint/证书及 Traefik 3.7.10；不添加监听端口或写入 API。每个 GET 最多 8 秒，
+rawdata 最多 4 MiB（HTTP router 4096、service/middleware 各 8192 条）；12 秒窗口内需要两次间隔
+250 ms 的完整匹配快照，版本接口的启动时间也必须一致。要求已有 HTTPS API router 与 `auth@file`
+加载正常，空对象不能当作空库存；响应、账号密码和 middleware 定义不写日志或磁盘。
+
+库存只处理 HTTPS entrypoint 的 HTTP Host 范围，其他明确 entrypoint 的路由不参与；warning/disabled
+仍占用其配置的 Host。支持 `Host`、`Path`、`PathPrefix`、括号、`&&` 与 `||`；最终须得到有限 Host
+集合，拒绝 HostRegexp、否定、无 Host 的 catch-all、其他未知 matcher 及多层 parentRefs。HTTPS
+entrypoint 存在 TCP router 时也拒绝 HTTP 发布，避免抢占；这不实现 TCP/UDP 发布能力。
+
+Controller 显式传入当前持锁 Journal，`WorkspaceSource.Inventory` 每次从有效回执读取候选归属，
+不重新获取 flock。`OwnsHTTP` 重新运行受信模板并比较完整文件和 owner 摘要，目录/文件须由 root 或
+当前执行用户拥有且无共享写权限。只有回执候选、完整文件、加载的 router/service 和冻结认证全部
+匹配才从库存排除。名字像 ANAS 或仅有 owner 注释均不足以排除；损坏/丢失回执的孤立工件不会
+自动获信任，恢复处理仍待实现。
+
+`ValidatePublication` 在任何动态文件可见前检查 Host、service 槽位与 ForwardAuth；
+`ConfirmPublished` 再检查唯一 HTTPS/TLS router、精确 guest IPv4:port、默认单后端 service、加载状态
+和 middleware，前后复核文件。仅支持直接 ForwardAuth，安装配置必须提供其完整动态定义的规范 JSON
+SHA-256（含固定版本的默认值，排除 status/error/usedBy）；`ForwardAuthDigest` 供可信安装输入计算。
+不得从运行 API 首次读到什么就信任什么，缺失/漂移/chain 均拒绝。`ConfirmWithdrawn` 要求文件消失，
+连续快照中对应 router/service 与直接 router 引用也消失；失败保留清理状态，不释放地址。
+
+API 语义依据 [3.7.10 运行配置端点](https://github.com/traefik/traefik/blob/v3.7.10/pkg/api/handler.go) 与
+[运行态类型](https://github.com/traefik/traefik/blob/v3.7.10/pkg/config/runtime/runtime_http.go)。
+[service 实现](https://github.com/traefik/traefik/blob/v3.7.10/pkg/server/service/service.go) 默认把已构建
+server 标为 UP，因此该确认只证明配置构建/加载状态，不能替代独立 BackendProbe、真实 HTTPS/auth
+与连接撤销 E2E。API 凭据、认证摘要的自动供给及运行服务安装尚未接入；全快照变化持续超过窗口
+会保守失败，需在后续验收评估可用性。新增代码未实例化、编译或测试，生产保护仍保留。
+
+#### 私有读取配置交付与独立 fixture 探测（2026-09-15，代码未验收）
+
+Core 侧 `DeliverComputeHTTPReaders` 已提供窄范围文件交付原语。它重用现有 Secret Store 解析及
+归属校验，只导出当前活动授权中 random 租约的命名密钥；fixed/named 不导出 key。受信安装方另行
+提供 Incus 专用观测身份、双方证书及版本，Traefik API 凭据/证书和已冻结 middleware 的精确摘要。
+多余或缺失的 key/pin 拒绝，不能从消费者请求或现场 API 建立可信配置。它不签发只读身份、不自动
+从 Dashboard 抓取密码，也不向中介开放任意 Secret 查询或完整 Store 挂载。
+
+交付文件限定规范 JSON、1 MiB，按完整 `HTTPAuthorizationSnapshot` 绑定 workspace、部署、激活
+与 manifest/epoch。已有私有父目录及文件须属于执行用户；文件 0400、单硬链接，拒绝符号链接、共享
+访问和非普通文件。通过私有临时文件同步后无覆盖发布，前后重查 Core 与命名密钥来源；失败只清理
+本次拥有的文件，清理失败明确留待恢复。旧目的文件不覆盖。`OpenWorkspaceReaders` 已连接事实读取、
+库存、命名密钥与 renderer 确认；所有命名模式每轮/每步都核对完整快照，每个 API GET 前后复核交付
+文件的目录/文件身份、权限和内容。新 epoch 需要新交付；旧配置在旧路由撤销前须保留有效，不能先
+删凭据再要求清理。损坏/替换配置会阻止确认并保留地址占用；它不是支持热轮换的服务安装流程。
+
+`FixtureHTTPProbe` 是首期实验用的独立 BackendProbe，只接受 `.example.test`。受信 fixture 生产方
+预登记完整 PublicationTarget（含 token/epoch/UUID/incarnation/MAC/IP/端口）、安全 GET 路径及每目标
+独有响应的长度与 SHA-256。上限 1024 个目标、路径 256 字节、响应 16 字节至 64 KiB；不从第一次
+响应学习摘要，不复用不同目标的摘要，不接受消费者提供的 URL、header 或认证参数。HTTP 200 或
+TCP 连通均不足以成功；前后还必须通过当前授权、请求和独立 Incus 实例事实核验。相同响应可被
+复制，所以它仍依赖宿主持续保留正确地址/映射，不是对恶意 guest 的密码学认证。
+
+探测进程须由可信启动方预先放入 Traefik netns，并提供可见 PID、启动 tick、boot ID、netns
+device/inode、从该已核验命名空间内 socket 取得的 cookie 及指定入站 IPv4。每次连接检查真实 procfs
+中的进程与 nsfs handle；实际 socket 经 `SO_NETNS_COOKIE` 比较，避免只检查 Go 当前线程就误认
+socket 所属命名空间。PID 复用、进程停止/重启、命名空间变化、cookie 不符或内核不支持均拒绝。
+相关语义依据 [proc stat](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html) 与
+[Linux socket 实现](https://github.com/torvalds/linux/blob/v6.12/net/core/sock.c)。代码复用已有
+`golang.org/x/sys v0.47.0` 的 getsockopt 包装，仅改为直接依赖，未新增版本或库。
+
+请求绑定入站源 IPv4，直连精确 guest IPv4:port，HTTP Host 来自冻结目标；禁用代理、重定向、cookie、
+压缩和连接复用，不发送命名密钥或认证信息。单次连接/响应头各限 3 秒，HTTP 交换 5 秒，包含前后
+验证的完整探测 25 秒；不延长宿主许可。代码不调用 setns、shell、Docker socket 或网络写 API。
+这只验证指定源路径上的 fixture，不证明 Traefik 自身的路由选源、公网 TLS/ForwardAuth、应用权限或
+长连接撤销。实验采集与响应登记见下段；生产启动身份供给、guest 内服务准备、服务安装与生产应用
+探测契约仍待接入。实际宿主动作/IP 保留及完整 E2E 也未交付，生产 ingress 继续阻止。
+
+#### 实验启动身份采集和 fixture 登记（同日续作，未运行）
+
+`CaptureTraefikProbeIdentity` 现在提供无提权采集原语：调用方先从受信安装映射取得 PID/源 IPv4，
+函数锁定当前 OS 线程，要求 self、thread-self 和目标进程的真实 netns handle 一致，在该线程创建
+未绑定、未连接、未监听的 socket 读取 cookie，前后复核启动身份与 namespace。函数不自行决定
+任意 PID 就是 Traefik，也不切换 namespace。现有实验命令新增 `--capture-probe`，只接受明确的
+完整 Docker 容器/网络 ID，通过两次选定容器及 bridge 分配读取包围内核采集，输出带时间和来源 ID
+的 `probe-identity.json`。沿用独立实验 socket 限制，默认系统 socket 拒绝；管理 socket 仅存在于
+管理员实验采集边界，生产中介仍不能持有。采集进程预置 netns、PID 可见性和生产安装身份映射仍由
+受信启动方负责，采集文件不等同于新的授权或可长期缓存的活性证明。
+
+fixture 准备在发布前进行。`PrepareFixtureResponse` 用 32 字节随机数和稳定目标摘要生成独有
+响应，并事先计算长度/SHA-256；不从 guest 获取期待值。`RegisterHTTPFixtures` 将与 Core 完整
+快照绑定的期待值写入新 0400、单硬链接、1 MiB 内的规范 JSON，复用凭据交付的私有文件原语。
+最多 1024 项；重复 Host、实例端口或响应摘要拒绝。登记前后重查原始完整目标的当前请求、授权和
+独立 Incus 事实，整个登记最多 30 秒。登记只描述实验响应，不保留地址或产生路由授权。
+
+静态 `NewFixtureHTTPProbe` 继续绑定完整 reservation，适合单会话；持久的
+`NewRegisteredFixtureHTTPProbe` 从登记中保存除 reservation 以外的全部目标字段，探测前后同时
+检查文件身份/内容和当前 Core。中介重启得到新 token 时，只有完整稳定身份及现时授权/观测都匹配
+才套用该期待值；执行器的退役 token 禁令没有放宽。更换 guest incarnation、epoch、MAC/IP、
+端口、workload/label、Host 或 auth 均需重新准备，不能用注册文件恢复过期网络许可。
+
+实验命令新增 `--prepare-fixtures`，只接受活动 example.test 授权，通过真实 WorkspaceReaders
+在同一 FileStateStore 锁下读取目标；有未撤销 publication 即拒绝。输出独有响应文件与
+`fixture-plan.json`，最后发布 `fixture-registry.json`，不调用 Probe、HostActions 或动态路由写入。
+登记失败时保留私有准备文件供检查，并明确报错；完整登记也只表示准备完成，还需管理员按计划将
+响应装入对应 guest 并提供精确路径的 HTTP 服务。完整命令限 90 秒，超时不输出网络就绪结论。
+命令示例、权限与待测项目位于仓库实验目录，当前命令和读取器均未运行。
+
+需要特权的启动/路由动作仍受[宿主动作通道设计](/architecture/host-action-channel)约束；统一动作
+ABI 和通道尚未实现，这些原语不构成第三个提权入口，也没有把实验只读采集升级为生产服务安装。
+
+#### 外部工件盘点与有回执恢复（2026-09-15 续作，未运行）
+
+执行器现在要求 renderer 和宿主动作都实现 `HTTPArtifactInventory`。候选只取同一持锁 Journal 的
+未完成 publication，不能从消费者请求、文件名、owner 注释或已退役 tombstone 重建归属。
+`Executor.Recover` 只撤销已登记目标，再确认完整外部作用域清空；Controller 启动、故障恢复及
+退出共用此路径，盘点失败不重置 Source 为可重新发布。对账在开通/续租前后检查外部工件。
+
+地址释放前也核对完整作用域。发现未知工件时仍可按原顺序关闭已知路由、许可、存量连接和 `/32`，
+但不释放地址、不删除 retiring 回执。盘点不要求当前 Core 授权或 guest Running，撤销仍以独立
+安装身份和旧回执为依据。已退役记录只防重放，不能再用来清理可能已分配给新实例的地址。
+
+文件盘点要求 renderer 使用专属受信目录，不与 `auth.yml` 等其他 provider 文件混放；安装方须保证
+Traefik 实际观察该目录。最多读取 4096 个目录项，包括隐藏文件和临时文件；一次检查最多 30 秒。
+每个可见文件必须与当前回执的完整模板输出一致。API 读取前后重读文件、项集、inode、权限和内容，
+目录替换、无法完整读取、未知项或临时文件都阻止开通。Linux/macOS 文件读取加 NOFOLLOW/NONBLOCK，
+拒绝符号链接与特殊文件，不因 FIFO 替换而阻塞。
+
+Traefik 盘点仍需两个一致的实际 API 快照。只有精确文件与完整 router/service/auth 都匹配的 HTTP
+对象可以排除；没有文件的已加载对象也算孤立工件。其他 provider、协议、动态 section 以及服务间
+引用均检查 `anas-compute-` 保留命名空间。已核验 ForwardAuth 的对应 `usedBy` 是唯一额外排除；
+其他 middleware 元数据不能自证归属。扫描键和字符串值时保守拒绝该前缀，即使它恰好出现在无关
+配置字符串中；报错不包含原始 API 配置或凭据。检查其他协议的残留不等于实现 TCP/UDP 发布。
+
+`RemoveHTTP` 还会清理规范的 `.anas-compute-<id>.yml.<24hex>.tmp`：须匹配当前未完成回执的完整
+渲染字节，并在删除前核对文件身份，删除后确认不再存在及同步目录。崩溃发生在 hard link 前后均
+可走该路径；部分写入、未知格式、不同内容或模板升级造成不匹配时保留，不按前缀批量删除。
+实际撤销确认同时检查服务间及其他动态 section 的旧 ID 引用，仍有引用就不能继续释放地址。
+
+宿主盘点目前只有强制接口契约，真实适配器仍依赖宿主通道。它必须从独立宿主回执和实时网络对象
+核验地址保留、guest `/32`、HTTP 许可、连接、namespace/接口身份及不可变拒绝基线；失败或未安装
+不能返回空列表。以上观测不是跨文件/API/内核的原子快照，仍依赖单写者、宿主动作独立校验和地址
+保留，真实竞态与超时边界待验收。
+
+缺失状态而留有工件、损坏状态或只有 tombstone 的残留均不自动恢复归属；需维护方结合独立备份、
+宿主回执、实际目标和对应版本 renderer 证据处理。不得先删除状态/锁、复制旧 token 或据 owner
+注释重建许可。受限管理员恢复动作尚未提供，本文不提供可执行清理命令。代码未编译或测试，真实
+宿主验收与生产入口拦截保持不变，待测项已加入实验目录清单。
+
+2026-09-16 开始补宿主动作所依赖的[统一动作 ABI 原语](/architecture/action-abi)（§15）：
+`internal/actionabi` 提供有界帧、调用身份、受信事件序列及进程结果校验。执行器不能自行指定日志
+seq 或截断，强杀和不完整输出只能得到 unknown。2026-09-17 又在既有 `consolejobs` 增加独立动作
+seq、原子事件/截断/终态、重放与重启 unknown 恢复；`jobexecutor.ActionRecorder` 强制公有投影，
+等待实际 EOF/进程退出证据后才提交终态。仍无 dispatcher、进程、Module Command/CLI/HTTP 或宿主
+入口接线；不能从存储适配推导宿主通道已经可用。新代码未编译/测试，实际盘点适配器仍待实现。
+
+#### 动作执行失联后的持久化拦截（2026-09-18，未运行）
+
+`consolejobs` 的启动检查已增加共享存储级拦截：动作终态为 unknown，且原因是执行器清理失联
+（`execution_containment_lost`）或守护进程重启（`daemon_restarted`）时，该存储中的新任务均不能
+开始，包括其他 workspace 的只读任务和旧执行入口。依据来自既有 journal 的终态回执，不增加
+第二份 job 存储。读取、重放及取消尚未启动的任务仍可进行。
+
+该拦截不会因 registry 重建、journal 压缩、store 重新打开或普通 compensation acknowledgement
+消失。它不证明旧进程已经停止，也不执行清理；宿主/执行服务接线仍必须持有执行租约并停止接纳
+任务，不能在旧 writer 尚未结束时释放所有权。独立核验残留进程、writer 和宿主工件后解除阻断的
+受限恢复动作仍待实现，不提供删日志或改状态文件的绕过流程。新回归代码未执行，M6/M11 与生产
+ingress 拦截不变。
+
+2026-09-18 的动作前置继续补齐预检拒绝与持久取消：从未启动的调用只以固定预检失败终态收尾，
+不占用业务补偿；一旦启动，不得借该入口抹去执行证据。取消操作者及时间保存于同一 job 的控制
+状态，先审计/提交再通知执行器，不从 warning 推断，日志截断与压缩不删除这份记录。
+这些接口服务于当前 Module 动作 worker；宿主特权动作仍须独立注册/授权，不把 Module
+可执行文件提升为 root。实现和未运行回归见[动作 ABI 设计](/architecture/action-abi)。
+它们尚不构成 Incus 宿主网络适配、生产中介安装或真实 guest 验收，生产 ingress 保护保持不变。
+
+同日共用 ABI 补齐 Module 注册表/dispatcher 的动作级幂等及 `coalesce/reject/queue` 接线。
+同一 store 以 `(action, key)` 识别重试，完整冻结请求或 workspace 改变则冲突；终态后保留
+1 小时，合流的新键、加入者审计和归属时间通过同一 journal 原子保存，快照恢复拒绝重叠归属。
+无键合流不产生随机别名，现有任务及冲突 ID 仍需当前读取权限。上述源码和回归用例未运行，
+不等于已具备宿主 root 动作、两段确认、网络盘点或生产入口；详情归统一动作 ABI 文档。
+
+#### 消费者请求文件与回执（2026-09-18，代码未验收）
+
+`computeingress.RequestWriter` 补齐消费者侧文件提交，但不改变上面的权限边界。构造时只打开
+安装提供的已有私有租约目录，不创建授权、注册表或挂载；仅接受当前 UID 拥有的 0700 目录，以及
+已列入实现的 Linux amd64/arm64 本地文件系统。其他平台和未核验文件系统拒绝写入。中介仍独立
+验证目录登记、活动部署、冻结策略、实例事实及网络工件；消费者本地检查不是安全边界。
+
+提交固定的小型 JSON 请求，以完整 SHA-256 的小写 base32 编码确定实例/端口槽位。协作写入者
+通过目录 flock 串行执行；私有临时文件完成写入及同步后再 rename，并同步目录。临时文件不以
+`.json` 结尾；连同忽略项在内最多 256 个目录项，本地保留回执也有 256 项上限。相同请求重试不
+重写文件，不同 workload/label 不覆盖已有槽位。只保留本次创建的临时文件清理权限；崩溃遗留或
+未知文件不按名称批量删除。锁只协调遵守约定的消费者，不为恶意写入者增加权限证明。
+
+文件回执持有已验证的 inode 描述符。撤回时同时核对文件身份和完整请求，旧回执不能删除复用
+同一文件名的新请求；撤回通过删除精确匹配的意图文件表达，不累计每个结束任务的 revoke 文件。
+`Resume` 只接管与调用方持久化预期匹配的已有请求，不重新创建缺失文件，可用于消费者重启后的
+意图清理。它不恢复中介/宿主回执，不推导网络工件归属；应用侧恢复接线仍待完成。`Close` 只释放
+本地句柄，不自动撤回。rename/unlink 后同步或身份核验失败返回结果不确定，不能据此宣告成功。
+
+共享客户端提供显式 `OpenHTTPPublisher`、`PublishPort`、`UnpublishPort`，复用同一策略、命名
+和请求读写实现。当前接线从受管运行实例读取 workload，不允许调用参数指定 IP、任意主机名、
+宿主端口或认证覆盖。`HTTPPublication.RequestedURL()` 只给出预测地址；文件提交/删除成功均
+不证明路由加载、TLS/认证生效、既有连接清理或地址释放。消费者生命周期、安装投影、UID/挂载、
+可信中介服务与宿主通道尚未装配，生产 ingress 继续关闭，不能把 API 示例当作已验收发布能力。
+
+`request_writer_integrity_test.go` 已补文件层幂等、恢复、旧回执、原位内容变更、符号链接/硬链接/
+FIFO、目录替换、容量、取消及并发回归源；测试没有执行。三处共享客户端镜像构建及 CI 目录已
+补 `internal/computeingress`，仍须验证源码 checkout 和 staging 的实际构建与真实宿主矩阵。
+
+### 5.1.8 后续 TCP/UDP 发布边界（不属于首期）
+
+Traefik 原生支持 [TCP router](https://doc.traefik.io/traefik/reference/routing-configuration/tcp/routing/router/)
+与 [UDP router](https://doc.traefik.io/traefik/reference/routing-configuration/udp/routing/router/)，因此暂不
+增加另一套通用转发服务。未来可共用受管后端路由，但授权与 HTTP 分开：
+
+| 类型 | 入口与认证 | 后续必须确定 |
 | --- | --- | --- |
-| 保留 proxy 要求并寻找 daemon 可强制的细粒度权限 | 满足目标，但 v7.3.0 的 project 开关不足以证明可行 | 保持入站关闭，先做反例验证 |
-| 使用受管网络转发等其他入站机制 | 可能保持消费者围栏，但改变 R-053/R-070 的指定机制 | 仅列候选，需先修订需求和验证，不自动替换 |
-| 在消费者外增加强制 API 代理 | 改变直连与权限模型，成为新的可信组件 | 超出本次文档整理，不作为默认方案 |
+| HTTP/HTTPS | 域名、HTTP auth；首期 | 现有 ingress 声明 |
+| TLS TCP | 支持 SNI 的协议可按域名分流；应用认证或明确 TLS 策略 | TLS 终止/透传、共享入口冲突 |
+| 普通 TCP | 通常独占监听端口；应用认证与来源限制 | 端口池、租约配额、冲突及回收 |
+| UDP | 独立 UDP 入口；应用认证与来源限制 | 端口池、超时及会话撤销 |
 
-最小验证矩阵：受限证书与管理证书分别创建/更新含 proxy 的实例和 profile；保持 block 时尝试
-启动、停止与修改；记录 daemon 固定版本、错误类型和最终 project 配置。失败后不放宽禁令。
-M11 的声明、密钥与路由请求格式可独立准备，完整发布功能须等待上述边界闭合。
+ForwardAuth 是 HTTP 策略，不得套用为 TCP/UDP 的认证保证。消费者不得使用 catch-all TCP 规则
+抢占现有 HTTPS 入口。TCP/UDP 默认关闭，后续声明应分别表达协议、guest 端口、外部入口和访问策略，
+不能扩展 HTTP allowed_ports 就隐式获得原始端口发布权。
 
-### 5.1.6 LAN 模式若将来启用：仍然走 proxy device
-
-macvlan 有一条对两档都成立的性质：**子接口与父接口不能互相通信**——宿主与挂在同一物理网卡上的
-macvlan 实例互相到不了。而 Traefik 跑在宿主上。于是 LAN 模式下有两条候选路径：
-
-| | 复用 macvlan shim | proxy device（选定） |
-| --- | --- | --- |
-| 机制 | 复用 `HOST_LAN_BRIDGE_IP` / `VLAN_BRIDGE_IP` 在宿主侧建的 macvlan shim，Traefik 经它访问实例的 LAN 地址 | 与 NAT 模式相同：实例端口经 proxy device 发布到宿主回环，Traefik 经 §3.5 的受管连接路径访问 |
-| 已有实现 | 有（anas-helper） | 有（Incus 原生） |
-| 路由目标 | 实例的 LAN 地址，**由路由器 DHCP 分配，会变** | 受管 proxy 后端（连接路径待定） |
-| 与网络模式的耦合 | 只在 LAN 模式可用，NAT 模式要另一条路径 | 两种模式完全一致 |
-| 协议范围 | 任意协议 | 只覆盖显式发布的端口 |
-| 额外一跳 | 无 | 有 |
-
-**选 proxy device。** 决定性的理由是最后两行之外的那一行：**入站路径与网络模式解耦**。
-`PublishPort` 只有一种实现、一处要测；把租约从 `nat` 切到 `lan` 不改变 Web 服务怎么发布。
-
-复用 shim 看似省事，但它把 Traefik 的路由目标绑在一个 DHCP 分配、随时可能变的地址上，需要额外的
-地址发现与重新绑定逻辑——而这套逻辑只在 LAN 模式下存在，是纯增量。
-
-macvlan shim 继续解决它本来解决的问题（宿主与 LAN 模式实例的一般可达性），只是不再承担 Traefik
-入站这一条。多出来的那一跳在回环上，代价可以忽略。
+[EntryPoints](https://doc.traefik.io/traefik/reference/install-configuration/entrypoints/) 属于安装配置；
+不能仅靠动态文件新增任意监听端口。后续选择有限预配置端口池，或明确通过部署变更调整入口，
+并同步 Docker 端口发布与宿主防火墙。该取舍以及需求 ID/测试需在实际实现 TCP/UDP 前补齐。
 
 ### 5.2 预留：接入 LAN（暂不考虑）
 
 > [!NOTE]
-> **本节暂不纳入实施范围。** NAT + proxy device 已经覆盖出站与入站两个方向，LAN 模式解决的是
+> **本节暂不纳入实施范围。** 当前选定的 NAT 出站与 Traefik 受管路由已覆盖目标出入站需求，LAN 模式解决的是
 > 「实例要在局域网里有自己的身份」这个另外的问题，当前没有需求推着它走。本节保留为设计备忘，
 > 不排期。
 
 
-除 NAT + proxy device 之外，预留第二种网络模式：**把实例直接接到宿主所在的 LAN**。此时地址由
+除受管 bridge NAT 之外，预留第二种网络模式：**把实例直接接到宿主所在的 LAN**。此时地址由
 LAN 里的路由器统一管理，IPv4 与 IPv6 都由它下发，ANAS 既不需要 DHCPv6-PD，也不需要自己做前缀
 规划。
 
@@ -530,7 +930,7 @@ ARP）。v6 需要 NDP，是新代码。
 ### 5.3 与租约边界的关系
 
 当前代码尚未提供入站能力；目标方案允许一次性与长驻实例按同一租约授权发布，符合 R-063。
-长驻档额外涉及持久卷和稳定地址，不是入站能力的前置条件。proxy 是实现手段，设备权限、端口分配
+长驻档额外涉及持久卷和稳定地址，不是入站能力的前置条件。受管路由与防火墙是后端路径，端口许可
 与发布授权由受信管理方控制，消费者不直接持有任意宿主端口。
 
 ## 6. 镜像烘焙：distrobuilder，构建一次记摘要
@@ -554,39 +954,32 @@ Incus 生态的原生工具，配方本身就是 YAML 的「装包 / 拷文件 /
 
 「每次 apply 都重新烘焙」是错的：它让钉死失去意义，也让每次部署时间不可预测。
 
-### 6.2 镜像引用语法：命名，而不是回传摘要
+### 6.2 镜像引用：结构化声明，摘要冻结
 
-早先的设想是 Provider 构建完把 fingerprint 交回 Runner，这需要一条现在不存在的通道
-（`ensureResourcesFor` 只记录 Runner 自己传进去的值，Provider 的输出除退出码外不被读取）。
-
-**更简单的做法是给镜像命名**，让引用本身就是标识：
+目标语法采用对象，不再使用前缀字符串：
 
 ```yaml
 image_allowlist:
-  - anas:ubuntu26.04-forgejo-runner@r3     # ANAS 发布的镜像，按名字引用
-  - fingerprint:a1b2c3...（64 位十六进制）  # 显式钉死某个摘要
+  - catalog: anas
+    name: forgejo-runner
+    revision: r3
+  - fingerprint: "<64位小写十六进制SHA-256>"
 ```
 
-两种前缀，语义不同但都不可变：
+每个条目必须严格匹配一种形状：`catalog/name/revision` 三字段全部存在，或只有 `fingerprint`。
+拒绝混用、缺失、空值、未知字段及字符串条目，不兼容裸摘要或旧 `anas:`/`fingerprint:` 字符串。
+首期 catalog 只接受 `anas`；name/revision 是受限标识符，不是路径、URL 或可变 alias。
+独立解析包 `internal/computeimage` 已将 name/revision 限为 1–63 个小写字母、数字、点、下划线或
+连字符，首字符为字母或数字；Core/schema 接入时使用相同约束，不从任意远程输入建立目录信任。
 
-| 前缀 | 含义 | 谁保证不可变 |
-| --- | --- | --- |
-| `anas:` | ANAS 自己发布的镜像，名字里带 revision | ANAS 的发布纪律 |
-| `fingerprint:` | 内容摘要 | 摘要本身 |
+Core 根据 `(catalog, name, revision, architecture, interface)` 精确查找受信目录，计划中展示
+引用与结果，deployment 冻结目录摘要及最终 fingerprint。未知条目、架构/档位缺失、重复映射、
+同一版本键内容变化或产物校验失败均拒绝。`fingerprint` 分支跳过名称查询，但仍验证目标镜像可用。
+共享客户端只接收解析后的摘要；回滚使用冻结结果，不重新查询最新目录。
 
-这样就**不需要 Provider→Runner 的结果通道**：名字在 apply 时就是确定的，Provider 只负责保证
-「这个名字对应的镜像存在」。
-
-代价是 `anas:` 名字的不可变性由纪律而不是密码学保证，因此规则必须是硬的：
-
-> **`anas:` 名字一旦发布就不得指向不同内容。配方变更产出新 revision（`@r4`），不覆盖旧名字。**
-
-这与仓库现有的容器镜像纪律是同一条——`anas-forgejo:15.0.7-r1` 也从不被重新指向别的构建。
-运行时仍需归一成真实 fingerprint。**命名并未自动解决摘要如何到达共享客户端的问题**：当前 Core
-和客户端只接受裸摘要，Provider ensure 没有结果通道。引用注册表由谁拥有、谁解析、解析结果在哪个
-deployment 冻结，以及消费者如何读取，均需在 §7 定案；不能偷偷解析可变 Incus alias 代替。
-兼容方案为读取旧裸 64 位摘要并归一为 `fingerprint:`，新声明采用上述语法。已有冻结部署继续使用
-其原始摘要，不因解析器升级而重新解析成不同镜像。
+命名不会凭空产生摘要，Provider ensure 仍无结果通道。因此镜像烘焙与目录进入部署输入的时机
+必须遵循 §6.2.1，不能运行时查询可变 Incus alias。结构化声明、Core apply 接入与 deployment 冻结已落地；受信目录当前为空，
+产物烘焙、导入与发布分发仍是后续目标。
 
 ### 6.2.1 推荐候选：在 apply 之前冻结镜像目录
 
@@ -600,18 +993,64 @@ deployment 冻结，以及消费者如何读取，均需在 §7 定案；不能�
 4. Provider ensure 只保证指定摘要已导入目标 project，并读回验证，不生成新的引用映射；
 5. 消费者只收到冻结后的摘要；回滚使用原 deployment 的映射，不查询最新目录。
 
-未知引用、缺少对应架构/档位、同一键重复映射或产物摘要不符都失败。`fingerprint:` 可绕过命名
+未知引用、缺少对应架构/档位、同一键重复映射或产物摘要不符都失败。`fingerprint` 对象可绕过命名
 解析，但不能绕过镜像存在性、租约 allowlist 或导入完整性检查。产物来源的认证与校验沿用发布
 信任边界；远程下载地址只是目录中指定的获取位置，不能成为消费者可传入的任意 URL。
 
 这一方案意味着默认部署**导入已经烘焙的产物，不在首次 apply 现场烘焙**。目前 §6.1 的首次
 构建表述仍允许现场烘焙，两者不能同时作为默认流程：采纳本候选前需同步 guest_image 契约与
 R-055 的解释及其测试阶段。自定义本地烘焙可作为 apply 之前的显式产物准备，但不能借本地目录
-暗中增加 Provider→Runner 结果通道，也不能覆盖已发布的 `anas:` 名字。
+暗中增加 Provider→Runner 结果通道，也不能覆盖已发布的目录版本键。
 
 验收用例分两组：发布端验证一次烘焙、revision 冲突与产物留存；部署端验证无构建导入、重复 apply、
 错误摘要拒绝、旧 deployment 回滚和原产物丢失时失败。尚未选定发布产物格式与分发位置之前，
 该候选不标记为完整实现设计。
+
+### 6.2.2 离线工件核验接线（2026-09-18，代码未运行）
+
+共享 `ArtifactRelease` 描述将目录 Entry 与实际镜像工件绑定。`release_verify.go` 补
+`DescribeArtifactRelease` 与 `VerifyArtifactRelease`：前者为已经烘焙的字节生成候选描述，已有
+fingerprint 不同即冲突；后者对照独立冻结的引用/目标/配方摘要、各片段长度和摘要及最终 fingerprint
+核验。调用方须提供可信冻结快照，工具本身不验证目录签名，也不能以描述中的 fingerprint 自证可信。
+
+总 fingerprint 按 [Incus 镜像格式](https://linuxcontainers.org/incus/docs/main/reference/image_format/)
+计算：split 是 metadata 文件字节后接 rootfs 文件字节，unified 是单文件字节。共享库支持两者，
+`cmd/compute-image-artifact` 当前只接收显式本地 split 文件。CLI 的 `--verify` 必须另给
+`--expected-fingerprint` 及目标架构/interface；它不运行 builder、导入、下载、发布或更新目录。
+使用示例见 [Incus 技术文档](https://github.com/anas-project/ANAS/blob/master/modules/incus/docs/technical.md)。
+
+规范记录最多 16 KiB、metadata 16 MiB、镜像片段 64 GiB；不接收 URL/alias/脚本/动态路径字段。
+哈希是有界分块流式操作，取消在读取间检查；任意自定义 Reader 的阻塞仍由调用方负责。
+连续无进展的 Reader 有显式失败边界，原始读取错误不输出。该 CLI 对普通文件在读前/读后核对身份、
+大小、模式与 mtime，拒绝末端符号链接/特殊文件，不能替代对敌对文件系统的强隔离。
+
+新增用例涵盖拼接顺序、片段损坏/尾随数据、目标/版本/配方漂移、规范记录拒绝、旧 fingerprint
+不可替换、取消/无进展 Reader 和 CLI 自证信任拒绝。用例均未运行。哈希一致不证明归档有效、VM
+可启动、目标 Incus 已导入或安全边界成立；M12/M13 和 §6.2.1 的部署供给退出条件仍未满足。
+
+### 6.2.3 本地产物归档与目录候选（2026-09-18，代码未运行）
+
+`ArtifactArchive` 在只读核验之外保存已构建的原始产物，`cmd/incus-image-artifacts` 提供
+`init`、`record`、`inspect`、`catalog` 四个显式入口。`record` 复用 `DescribeArtifactRelease`，
+先将流式测得的片段写入内容寻址对象，再无覆盖提交规范 revision 记录；不另定义镜像格式。
+首次记录绑定完整 catalog/name/revision/architecture/interface、配方文件摘要和工件摘要，
+重复记录相同内容不改变映射。现存 revision 的字节、格式或配方改变即冲突。
+
+归档目录必须私有、归当前执行用户所有，初始化只接受不存在的目录；正常打开不创建、接管或
+修复归档。会话持排他文件锁，检查根目录、子目录、锁与格式标记，拒绝末端符号链接及特殊文件。
+对象与元数据通过同步和无覆盖 hard-link 发布，元数据最后提交；崩溃可能留下完整孤立对象或
+临时文件，但没有有效 revision 的对象不自动进入候选目录，也不按名称前缀批量删除。
+
+`inspect` 对原始对象重新哈希；缺失对象可由相同原始产物补回，已经存在但损坏的对象不能被
+覆盖。`catalog` 重新核验全部对象，并以独立提供的上一份可信目录做 append-only 校验，拒绝旧
+版本键丢失或改变；明确的首次发布才允许无历史。归档本身不防御恶意管理员或整个历史丢失，
+可信目录与归档须独立备份，不能将重建空归档当作解除版本不可变约束。
+
+该工具只向本地 stdout 写 JSON 元数据，不提供制品下载端点、不内联 base64、不执行 builder，
+也不连接 Incus。配方摘要仅覆盖传入的自包含配方字节，外部输入须被配方固定；它不能证明真实
+构建 provenance，多文件配方还需统一输入清单。它不修改 bundle 的空目录、不替代发布签名与
+分发，也尚未接入 Provider 导入、回滚恢复或受限 prune；§6.2.1 的完整发布供给方案仍待交付。
+用法同步于 Module 双语技术文档；归档/CLI 回归源已编写但未编译、执行或作实机验收。
 
 ### 6.3 旧 revision 的清理：显式 prune，不自动删
 
@@ -642,8 +1081,8 @@ R-055 的解释及其测试阶段。自定义本地烘焙可作为 apply 之前�
 
 | 决策 | 所需产出 | 阻塞范围 |
 | --- | --- | --- |
-| 宿主回环与 bridge 容器连通 | §3.6 固定目的地非 root 传输候选；待真实网络验证与动作清单评审 | 宿主默认供给、入站 |
-| proxy 权限与 VM NAT 拓扑 | v7.3.0 源码不支持“管理证书自然绕过禁令”的假设；按 §5.1.5 先验证，机制仍未定 | 入站 |
+| 宿主回环与 bridge 容器连通 | §3.7 已补控制 bridge 与固定非 root 转发方案；待真实网络验证与动作清单评审 | 宿主默认供给、入站 |
+| 入站路由与规则实现 | §5.1.7 已选定 Traefik 直达 guest；待验证精确路由、规则执行接口、IP 复用与连接撤销 | 入站 |
 | 命名镜像解析 | §6.2.1 提供发布时烘焙、apply 前冻结目录的候选；需确定首次烘焙阶段与产物分发 | guest_image |
 | 安装发行版能力 | 官方包及版本、架构、服务单元与幂等行为的核验表 | 自动安装 |
 
@@ -683,3 +1122,18 @@ v7.3.0 不兼容。[networksPost](https://github.com/lxc/incus/blob/v7.3.0/cmd/i
 Provider 已增加归属、精确作用域和写后读回校验，测试 fake 也拒绝旧请求路径；已有 network feature
 开启的 project 不自动迁移。本轮环境无可用 Incus/Docker daemon，因此未执行实机用例；本地回归
 通过不代表网络写权限和真实流量隔离已验收。
+
+
+### 7.4 磁盘配额的存储前提
+
+Project 的 `limits.disk` 是声明总量上限，不能单凭该键存在断言 guest 根磁盘已经受限。
+2026-09-11 在隔离的发行版 Incus 6.0.5 daemon 上，dir 驱动因底层缺少 project quota 警告并跳过
+限额，旧 Provider 仍报告 quota_enforced=true。源码基线 v7.3.0 的 dir 路径也包含相同跳过行为。
+[上游 dir 文档](https://linuxcontainers.org/incus/docs/main/reference/storage_dir/#quotas)要求底层
+ext4/XFS 已开启 project quota；远程 pool 元数据本身不能证明该前提。
+
+当前 Provider 增加保守准入：租约写入前读取指定 pool，仅接受 `Created` 的 btrfs/zfs，写后再次
+复核；inspect 的 quota/ready 也包含该条件。不支持时失败，不转换存储池、不迁移旧实例或自动
+撤销既有证书。其他驱动未准入不表示上游不支持它们；后续需补充能力核验再扩展。
+这个检查不替代服务器上的实际写满、总量超配和管理员变更后的恢复验收，也不让 M6 提前完成。
+待测场景已列入仓库 `test-env/fixtures/incus-network-prototype/e2e-plan.md`，先完成代码再执行。

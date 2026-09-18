@@ -37,6 +37,7 @@ upgrade:
   data_breaking: []
 config:
   must_resolve:
+    - image_architecture
     - endpoint
     - server_certificate_b64
     - admin_certificate_b64
@@ -48,6 +49,8 @@ config:
     admin_certificate_b64: ""
     admin_key_b64: ""
   types:
+    image_architecture:
+      enum: [amd64, arm64]
     storage_pool:
       kind: string
       constraints:
@@ -62,6 +65,10 @@ config:
     admin_certificate_b64: string
     admin_key_b64: string
   changes:
+    image_architecture:
+      effect: container_recreate
+      apply: reconcile-incus-provider
+      description: Explicit guest image architecture on the target daemon; never inferred from the CLI host.
     endpoint:
       effect: reconcile
       apply: reconcile-incus-provider

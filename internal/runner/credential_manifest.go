@@ -68,6 +68,9 @@ func (a *app) prepareDeploymentCredentials() error {
 			if !ok || strings.TrimSpace(metadata.Owner) == "" || strings.TrimSpace(metadata.Kind) == "" || strings.TrimSpace(metadata.Provenance) == "" {
 				return fmt.Errorf("credential %s Secret Store metadata is incomplete", provider.ID)
 			}
+			if metadata.Kind == "compute_lease_secret" {
+				return fmt.Errorf("credential %s cannot claim a compute lease naming secret", provider.ID)
+			}
 			authority := "external"
 			if metadata.Owner == owner && metadata.Kind == "generated" && metadata.Provenance == "module-hook" {
 				authority = "anas"

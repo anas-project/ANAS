@@ -1,0 +1,18 @@
+# Experimental consumer request payload, not a Provider operation. The trusted
+# directory supplies lease/deployment identity. Maximum encoded file size: 4 KiB.
+type: object
+additional_properties: false
+required: [action, instance_id, workload_id, guest_port]
+properties:
+  action:
+    enum: [publish, revoke]
+  instance_id:
+    type: string
+    pattern: "^[a-z][a-z0-9-]{0,62}$"
+  workload_id:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+  guest_port: {type: integer, minimum: 1, maximum: 65535}
+  label:
+    type: string
+    pattern: "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?$"

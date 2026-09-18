@@ -245,7 +245,7 @@ func publishCapabilityGroups(e map[string]string) {
 	}
 	add("execute")
 	add("terminal")
-	for _, runtime := range splitCSV(e["AI_AGENT_RUNTIMES"]) {
+	for _, runtime := range splitCSV(e["AI_AGENT_AGENT_RUNTIMES"]) {
 		if runtimeIDPattern.MatchString(runtime) {
 			add(runtime)
 		}
@@ -265,7 +265,7 @@ func validateEnabled(e map[string]string) error {
 	}
 	for _, key := range []string{
 		"AI_AGENT_FORGEJO_ADMIN_PASSWORD", "AI_AGENT_WEBHOOK_SECRET",
-		"AI_AGENT_REPOSITORY_ALLOWLIST", "AI_AGENT_RUNTIMES", "AI_AGENT_RUNTIME_IMAGES",
+		"AI_AGENT_REPOSITORY_ALLOWLIST", "AI_AGENT_AGENT_RUNTIMES", computeLeasePrefix + "IMAGE_BINDINGS",
 	} {
 		if strings.TrimSpace(e[key]) == "" {
 			return fmt.Errorf("%s is required when ai_agent is enabled", key)
@@ -276,11 +276,11 @@ func validateEnabled(e map[string]string) error {
 			return fmt.Errorf("repository %q in AI_AGENT_REPOSITORY_ALLOWLIST is not owner/repo", repo)
 		}
 	}
-	pinned, err := runtimeImages(e["AI_AGENT_RUNTIME_IMAGES"])
+	pinned, err := runtimeImages(e[computeLeasePrefix+"IMAGE_BINDINGS"])
 	if err != nil {
 		return err
 	}
-	for _, runtime := range splitCSV(e["AI_AGENT_RUNTIMES"]) {
+	for _, runtime := range splitCSV(e["AI_AGENT_AGENT_RUNTIMES"]) {
 		if !runtimeIDPattern.MatchString(runtime) {
 			return fmt.Errorf("agent runtime %q is not a usable runtime id", runtime)
 		}
@@ -300,21 +300,13 @@ func validateEnabled(e map[string]string) error {
 
 func runtimeImages(value string) (map[string]string, error) {
 	pinned := map[string]string{}
-	for _, entry := range splitCSV(value) {
-		id, digest, found := strings.Cut(entry, "=")
-		id, digest = strings.TrimSpace(id), strings.TrimSpace(digest)
-		if !found || !runtimeIDPattern.MatchString(id) {
-			return nil, fmt.Errorf("AI_AGENT_RUNTIME_IMAGES entry %q is not runtime=fingerprint", entry)
+	if err := json.Unmarshal([]byte(value), &pinned); err != nil || len(pinned) == 0 {
+		return nil, fmt.Errorf("compute image bindings must be a non-empty JSON object")
+	}
+	for id, digest := range pinned {
+		if !runtimeIDPattern.MatchString(id) || !fingerprintPattern.MatchString(digest) {
+			return nil, fmt.Errorf("compute image binding must contain a runtime id and SHA-256 fingerprint")
 		}
-		// A tag would let the image behind an approved runtime change without a
-		// configuration change; only a pinned digest is accepted.
-		if !fingerprintPattern.MatchString(digest) {
-			return nil, fmt.Errorf("agent runtime %q must be pinned to a SHA-256 fingerprint", id)
-		}
-		if pinned[id] != "" {
-			return nil, fmt.Errorf("agent runtime %q is pinned more than once", id)
-		}
-		pinned[id] = digest
 	}
 	return pinned, nil
 }

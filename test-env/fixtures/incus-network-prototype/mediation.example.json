@@ -1,0 +1,27 @@
+{
+  "active_deployment": "lab-20260910",
+  "authorization": {
+    "schema": "anas.compute-http-authorization/v1",
+    "deployment": "lab-20260910",
+    "consumer": "forgejo",
+    "resource": "runners",
+    "provider": "incus",
+    "interface": "incus_container",
+    "project": "anas-lab",
+    "instance_prefix": "anas-lab-",
+    "lease_secret_ref": "ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__LEASE_SECRET",
+    "base_domain": "example.test",
+    "policy": {
+      "allowed_ports": [
+        7000
+      ],
+      "auth": "none",
+      "domain": {
+        "mode": "named",
+        "prefix": "incus"
+      }
+    }
+  },
+  "request_directory": "/var/tmp/anas-lab/requests/forgejo-runners",
+  "request_file": "http.json"
+}

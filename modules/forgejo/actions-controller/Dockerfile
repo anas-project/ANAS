@@ -11,6 +11,7 @@ WORKDIR /src
 # here instead of silently compiling someone else's copy of the code.
 COPY --from=shared go.mod go.sum ./
 COPY --from=shared internal/computeclient ./internal/computeclient
+COPY --from=shared internal/computeingress ./internal/computeingress
 COPY *.go ./modules/forgejo/actions-controller/
 ARG TARGETOS
 ARG TARGETARCH

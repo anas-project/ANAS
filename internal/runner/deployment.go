@@ -463,6 +463,9 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err := a.calculate(); err != nil {
 		return "", failuref("calculate_failed", "%s", err.Error())
 	}
+	if err := a.prepareComputeIngress(id); err != nil {
+		return "", preconditionErrorf("compute_ingress_invalid", "%s", err.Error())
+	}
 	if err := a.prepareDeploymentCredentials(); err != nil {
 		return "", preconditionErrorf("credential_inventory_invalid", "%s", err.Error())
 	}
@@ -506,6 +509,9 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	manifest, err := buildDeploymentManifest(a, id, opts.cfgPath, build)
 	if err != nil {
 		return "", failuref("manifest_failed", "%s", err.Error())
+	}
+	if err := a.recordComputeImageHistory(); err != nil {
+		return "", failuref("write_failed", "freeze compute image history: %s", err.Error())
 	}
 	if err := writeYAMLAtomic(filepath.Join(stagingRoot, "deployment.yml"), manifest, 0600); err != nil {
 		return "", failuref("write_failed", "%s", err.Error())
@@ -705,10 +711,15 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 		}
 	}
 	for _, request := range a.resourceRequests {
+		if err := validateFrozenComputeIngress(request, id); err != nil {
+			return nil, fmt.Errorf("resource %s.%s: %w", request.Consumer, request.ID, err)
+		}
 		resource := deploymentResource{
 			Consumer: request.Consumer, ID: request.ID, Contract: request.Contract, ContractVersion: request.ContractVersion,
 			Provider: request.Provider, Interface: request.Interface,
-			Spec: request.Spec,
+			Spec: cloneAnyMap(request.Spec), ComputeImages: request.ComputeImages.Clone(),
+			ComputeIngress: request.ComputeIngress.Clone(),
+			LeaseSecretKey: request.LeaseSecretKey,
 		}
 		if request.Contract == "relational_database" {
 			resource.SecretKey = request.SecretKey
@@ -986,6 +997,9 @@ func runActive(action string, args []string, jsonMode bool) error {
 }
 
 func startDeployment(a *app, modulesRoot string, selection []string, jsonMode bool) error {
+	if err := a.validateComputeImagesFor(selection); err != nil {
+		return err
+	}
 	for _, name := range selection {
 		dir := filepath.Join(modulesRoot, name)
 		if mod := a.reg[name]; a.useFrozenHooks && mod.SourceDir != "" {
@@ -1067,6 +1081,9 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	newApp, newRoot, target, err := loadDeploymentApp(base, id, cli)
 	if err != nil {
 		return preconditionErrorf("deployment_unreadable", "%s", err.Error())
+	}
+	if err := newApp.validateComputeImagesFor(newApp.order); err != nil {
+		return preconditionErrorf("resource_invalid", "%s", err.Error())
 	}
 	newApp.commandContext, newApp.events = opts.ctx, opts.events
 	newApp.restrictedProcessEnvironment = opts.restrictedProcessEnvironment
@@ -1743,11 +1760,40 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 		if credential == "" {
 			return nil, "", nil, fmt.Errorf("resource %s.%s secret %s is missing", resource.Consumer, resource.ID, secretKey)
 		}
-		a.resourceRequests = append(a.resourceRequests, ResourceRequest{
+		if resource.Contract == "compute" && resource.ComputeImages != nil {
+			if err := validateFrozenComputeImages(resource.Spec, resource.Interface, resource.ComputeImages); err != nil {
+				return nil, "", nil, fmt.Errorf("resource %s.%s: %w", resource.Consumer, resource.ID, err)
+			}
+		}
+		leaseSecret := ""
+		if resource.LeaseSecretKey != "" {
+			if resource.Contract != "compute" {
+				return nil, "", nil, fmt.Errorf("resource %s.%s has a lease secret outside compute", resource.Consumer, resource.ID)
+			}
+			leaseSecret, err = a.readComputeLeaseSecret(resource.Consumer, resource.ID, resource.LeaseSecretKey)
+			if err != nil {
+				return nil, "", nil, err
+			}
+			a.markSensitive(computeLeaseSecretKey(resource.Consumer, resource.ID))
+		}
+		request := ResourceRequest{
 			Consumer: resource.Consumer, ID: resource.ID, Contract: resource.Contract, ContractVersion: resource.ContractVersion,
 			Provider: resource.Provider, Interface: resource.Interface,
-			Spec: resource.Spec, SecretKey: secretKey, Credential: credential,
-		})
+			Spec: resource.Spec, SecretKey: secretKey, Credential: credential, ComputeImages: resource.ComputeImages.Clone(),
+			LeaseSecretKey: resource.LeaseSecretKey, LeaseSecret: leaseSecret,
+			ComputeIngress: resource.ComputeIngress.Clone(),
+		}
+		if err := validateFrozenComputeIngress(request, manifest.ID); err != nil {
+			return nil, "", nil, fmt.Errorf("resource %s.%s: %w", resource.Consumer, resource.ID, err)
+		}
+		if g := request.ComputeIngress; g != nil && g.ForwardAuth != nil {
+			binding := manifest.Bindings[request.Consumer]
+			_, present := manifest.Modules[g.ForwardAuth.Provider]
+			if !present || binding[capabilityForwardAuth] != g.ForwardAuth.Provider || binding[capabilityForwardAuth+".interface"] != interfaceHTTP {
+				return nil, "", nil, fmt.Errorf("resource %s.%s frozen HTTP authentication binding is invalid", resource.Consumer, resource.ID)
+			}
+		}
+		a.resourceRequests = append(a.resourceRequests, request)
 	}
 	if err := a.restoreLocalAdminPasswordFiles(); err != nil {
 		return nil, "", nil, err

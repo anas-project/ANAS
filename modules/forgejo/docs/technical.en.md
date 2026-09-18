@@ -30,7 +30,7 @@ root-owned mount without following symlinks, drops permanently to `1000:1000`, a
 | `forgejo.actions_allowed_scopes` | string | — | `""` | `static` | `FORGEJO_ACTIONS_ALLOWED_SCOPES` | no | no | no | yes | `container_recreate` | Comma-separated organizations or repositories authorized to consume ANAS Runner compute |
 | `forgejo.actions_enabled` | bool | — | `false` | `static` | `FORGEJO_ACTIONS_ENABLED` | no | no | no | yes | `container_recreate` | The only shared switch for the Actions server and one-job Runner controller |
 | `forgejo.actions_isolation` | enum (`auto`, `incus_vm`, `incus_container`) | — | `auto` | `static` | `FORGEJO_ACTIONS_ISOLATION` | no | no | no | yes | `container_recreate` | Isolation tier requested from the compute provider |
-| `forgejo.actions_runner_image` | string | `pattern: ^(?:[0-9a-f]{64})?$` | `""` | `static` | `FORGEJO_ACTIONS_RUNNER_IMAGE` | no | no | no | yes | `container_recreate` | Pinned SHA-256 fingerprint of the approved Runner VM image |
+| `forgejo.actions_runner_image` | string | `format: json_object` | `""` | `static` | `FORGEJO_ACTIONS_RUNNER_IMAGE` | no | no | no | yes | `container_recreate` | Structured image reference; Core freezes the fingerprint before rendering |
 | `forgejo.custom_git_hooks_enabled` | bool | — | `false` | `static` | `FORGEJO_CUSTOM_GIT_HOOKS_ENABLED` | no | no | no | yes | `container_recreate` | Allow repository custom Git hooks to execute server-side code as the Forgejo user |
 | `forgejo.db_name` | string | — | `forgejo` | `static` | `FORGEJO_DB_NAME` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Application database name |
 | `forgejo.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Relational database type or automatic selection |
@@ -133,3 +133,30 @@ and explicit exclusions are tracked in the [Forgejo Module implementation plan](
 Unit tests cover database mapping, locale fallback, OIDC metadata, secret stability, stdin boundaries, symlink-safe
 ownership, local-admin bootstrap, and auth-source reconciliation. Database/architecture matrices, browser OIDC,
 HTTP/SSH Git, LFS/package, restore, and LTS upgrade/rollback E2E remain release gates.
+
+## Frozen compute image configuration
+
+Image settings now use structured objects (a single object for Forgejo, a runtime-keyed map for AI Agent).
+Core projects these through explicit `spec_from` modes and resolves them before Hook calculation. Runtime
+containers receive only frozen fingerprints: Forgejo reads the lease allowlist, AI Agent reads JSON image
+bindings. The Agent hook reads `AI_AGENT_AGENT_RUNTIMES`, matching the manifest parameter; Compose passes
+it to the orchestrator as `AI_AGENT_RUNTIMES`. No new dependency is introduced.
+
+Incus requires explicit `image_architecture` for the daemon target. Its trusted bundle catalog is currently
+empty. Ensure checks each existing image's fingerprint, architecture and type in the lease project before
+registering trust; missing images fail instead of resolving aliases or rebuilding. Import/baking remains
+pending. See the [compute contract](../../../contracts/compute/docs/technical.en.md) for snapshot and rollback semantics.
+
+The HTTP network prototype only generates lab artifacts (`cmd/incus-network-prototype`): a guest /32 route
+with explicit source, veth-bound ingress filtering, an expiring address/port set, and existing Traefik route
+environment fields. It does not install rules or enable production ingress. Docker/Incus rule ordering,
+source spoofing, address reuse and long-connection revocation still require real Linux evidence; TCP/UDP
+publishing is not implemented.
+
+## Lease naming key lifecycle
+
+Core now generates and reuses an independent 32-byte compute `LEASE_SECRET`, separate from the client
+certificate. Deployment/resource state store references; the consumer receives a sensitive base64 projection
+and backup restores the same key. It is excluded from credential rotation. See the
+[compute lifecycle contract](../../../contracts/compute/docs/technical.en.md#independent-lease-naming-key).
+The dedicated rotation command and production HTTP publishing remain pending.

@@ -49,7 +49,7 @@ resources:
         sandbox: anas-forgejo-runners
         instance_prefix: anas-fj-
         quota: {max_instances: 8, cpu: 4, memory_mib: 8192, disk_gib: 40}
-        image_allowlist: ["<64-character SHA-256 fingerprint>"]
+        image_allowlist: [{fingerprint: "<64 lowercase SHA-256 hex characters>"}]
         credential: {policy: generated}
         deletion_policy: retain
 ```
@@ -110,6 +110,7 @@ ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__PROFILE
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__SERVER_CERT_FINGERPRINT
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__CLIENT_CERT
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__CLIENT_KEY
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__LEASE_SECRET
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__IMAGE_ALLOWLIST
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__MAX_INSTANCES
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__CPU
@@ -165,3 +166,184 @@ How a one-time secret (a runner token, for instance) reaches a guest is outside 
 happens after the lease is delivered, injected by the consumer through the provider's exec stdin
 channel, and the secret must not appear in argv, environment variables, cloud-init, images, persistent
 state, or logs.
+
+## Structured declarations and frozen deployment images
+
+Image declarations must be mutually exclusive `{fingerprint: <64hex>}` or
+`{catalog: anas, name: <name>, revision: <revision>}` objects. All old string spellings,
+mixed/unknown fields, aliases and URLs are refused. The runtime ABI still carries bare fingerprints.
+
+Core resolves images while preparing the deployment, before hooks render and before Provider ensure.
+The Provider's `image_architecture` parameter explicitly selects `amd64` or `arm64`; it never defaults
+to the CLI host architecture. Catalog data comes only from `images/catalog.json` in the already trusted
+Provider bundle, with exact architecture/interface lookup. The shipped catalog is empty: named references
+require a release with real catalog entries; no sample fingerprints are treated as usable images.
+
+`spec_from` keeps its string shorthand for scalar parameters. Structured sources declare
+`{parameter: actions_runner_image, projection: singleton}` for an object or
+`{parameter: agent_runtime_images, projection: values}` for a map. `values` sorts keys and preserves
+runtime→fingerprint bindings; `value` passes decoded JSON through. No Module-name branch is used.
+Configuration objects cross the existing string ABI as canonical JSON (`format: json_object`).
+
+`deployment.yml` resources freeze `compute_images`: the catalog, each reference, target, image fingerprint,
+catalog/recipe digests and optional bindings. Core state retains an append-only `compute-image-history.yml`
+so deployment retention cannot erase published version claims. A later apply refuses changed version keys.
+Rollback validates the frozen snapshot without reading a newer catalog. Legacy deployments without a
+snapshot fail before start/replay. Their metadata remains readable so a new structured apply can replace
+them; there is no string execution compatibility path.
+The resource state also records the snapshot and keeps credentials as Secret Store references only.
+
+Consumers receive `IMAGE_ALLOWLIST` (CSV digests) and, for a map, `IMAGE_BINDINGS` (JSON runtime→digest).
+Forgejo uses its single frozen allowlist entry; AI Agent receives frozen bindings. Provider ensure reads
+image metadata in the lease project and verifies exact fingerprint, architecture and image type before
+registering a new consumer certificate. Missing images fail; importing identical artifacts, distrobuilder
+baking, release distribution and pruning remain unimplemented. Existing consumer trust is not automatically
+revoked on a failed re-apply. Unit tests do not establish real daemon enforcement or host acceptance.
+
+## Independent lease naming key
+
+On a new apply, Core generates an independent 32-byte random `lease_secret` for each compute resource.
+It stores canonical base64 in a separate `.anas/secrets.yml` record named
+`ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__LEASE_SECRET`. The client certificate bundle stays
+separate: upgrading an older lease preserves its certificate, and repeated applies or certificate changes
+preserve the naming key. Existing empty, malformed or incorrectly owned records fail validation. If a
+historical deployment or resource state references a missing entry, apply fails and requires restoring
+the original entry rather than silently changing derived URLs.
+
+The matching runtime projection is sensitive and belongs only to its consumer. Forgejo controller/executor
+services and the AI Agent orchestrator receive it through Compose; Provider ensure and guests do not.
+`config list`, read-only validation Hooks and cross-consumer environment filtering use Secret Store
+confidentiality provenance. The `lease_secret` fields in deployment and resource state hold references
+only. Frozen deployments without a reference do not generate a key on load or replay; a new apply adds
+one. Legacy image strings remain rejected on startup. Backup restores the Store together with the
+deployment, preserving the key and HMAC-derived result.
+
+This is a naming key for domain derivation, not request authentication or publishing authority.
+It is excluded from credential rotation and `--all`; a module cannot declare it as a rotatable credential.
+The dedicated key rotation command and production publication remain unimplemented. Authorization freezing
+and experimental mediation are described below. File backup/restore regression tests are not real Incus or HTTP ingress
+acceptance.
+
+## Frozen HTTP authorization and lab mediation (runtime closed)
+
+Declaration parsing and deployment preparation were added on 2026-09-12; new-code tests are deferred.
+Omitting `spec.ingress` grants no publication authority. A declaration can produce a frozen deployment,
+but start/activation explicitly refuses the affected compute consumer. Built-in consumers do not yet
+have ingress settings or request-directory mounts. Schema acceptance is not production availability.
+
+```yaml
+# Inside compute spec; preparation only, startup remains blocked.
+ingress:
+  allowed_ports: [7000]
+  # Default none. Unpredictable URLs are not access control: SNI, Referer and logs
+  # can disclose URLs. Do not publish sensitive data or writable services this way.
+  auth: none
+  domain: {mode: random, prefix: ci}
+```
+
+Ports are distinct integers from 1 to 65535, at most 64, sorted when frozen. Unknown fields, null,
+string/duplicate ports and non-HTTP protocol declarations are refused. `fixed` uses
+`<prefix>.<base_domain>`; `named` uses `<prefix>-<label>.<base_domain>`; `random` computes
+HMAC-SHA256 over the exact `workload_id` using the independent lease key and keeps 32 hexadecimal
+characters (128 bits). Final labels are limited to 63 characters; prefix limits are 63/61/30 respectively.
+Named labels must be lowercase DNS labels; other modes reject labels. Workload IDs are at most 256 ASCII
+characters matching `[A-Za-z0-9][A-Za-z0-9._:-]*`, without case or whitespace normalization.
+
+After calculate and before render, Core freezes `compute_ingress`: deployment/lease identity,
+project/instance prefix, ports, auth, domain mode, `BASE_DOMAIN`, naming-key reference and, when needed,
+ForwardAuth provider/middleware. `forward_auth` requires a resolved consumer capability dependency on
+`forward_auth/http` and output owned by that bound provider. Requests cannot override auth. Loading a
+frozen deployment compares spec, identity, authentication binding and key reference rather than recomputing from current config.
+Resource state can retain the same authorization and key reference; the startup guard prevents creating
+an ingress-bearing ready state today.
+
+Preparation checks overlapping lease namespaces, declared Module domains and literal `Host(…)` routes
+in the deployment environment. Named/random modes conservatively reserve the entire `prefix-*` space.
+Opaque file-provider matchers block preparation. Production still needs actual route-owner inventory
+and durable reconciliation; the current checks do not provide those guarantees.
+
+`internal/computeingress` implements strict JSON requests, Linux amd64/arm64 directory-relative reads and in-process
+name reservations. `schemas/http-publication-request.yml` accepts only `action` (publish/revoke),
+`instance_id`, `workload_id`, `guest_port` and optional `label`; this adds no Provider operation.
+The trusted caller binds a directory to an active-deployment grant. Reads accept only flat JSON basenames,
+pin inodes using `openat(O_PATH|O_NOFOLLOW)`, reject symlinks, devices/FIFOs and hard links before
+opening for reads, then reopen regular files through trusted host `/proc/self/fd` with nonblocking flags. They cap files
+at 4 KiB. Duplicate keys, case aliases, null, unknown fields and trailing data fail. Changed inode/content
+metadata across a read also fails.
+
+Planning checks independently observed Running state, UUID, project, tier and IP/MAC allocation. Host
+collisions and relabelling an already reserved instance port fail; identical requests are idempotent.
+A session/sequence token prevents a stale cleanup callback from releasing a newer reservation. Withdrawal
+uses the recorded identity even for a stopped guest; reservations remain until cleanup is confirmed.
+
+The lab command connects these paths through `--mediation`, restricted to `.example.test` and one
+`INCUS_LAB` route. It generates plans and existing Traefik environment fields without running the renderer
+or changing networking. Offline activity/observation inputs are administrator assertions; workspace-backed
+Core reads are described below. Restricted read-only daemon identity, automatic mount/registration integration, global route ownership,
+host actions/IP holds, probe execution and event/periodic reconciliation still do not form a production
+execution path. TCP/UDP and LAN are out of scope.
+
+Consumer file-request APIs were added on 2026-09-18; the source and regression tests have not been
+compiled or executed. `Client.OpenHTTPPublisher(HTTPPublicationConfig)` explicitly opens this lease's
+already-installed private request directory. `HTTPPublisher.PublishPort` checks the exact Running
+managed instance and its `user.anas.workload`, port and label, then submits only the existing small
+request schema. Configuration is a minimal projection of lease scope, public policy and base domain,
+not a complete frozen authorization, middleware, entrypoint or global Store reference. Random-mode
+naming keys are delivered separately and do not enter requests or default JSON/formatted output.
+`Policy.Host` only predicts a name; the mediator's `Authorization.Host` still validates the full grant.
+
+The returned `HTTPPublication` acknowledges request submission only. `RequestedURL()` does not prove
+route loading, TLS, authentication or backend readiness. `UnpublishPort(ctx, publication)` retracts the
+original file receipt even after the instance stops or disappears; file removal does not prove network
+revocation. Closing the publisher releases local handles without deleting durable requests. The
+underlying `RequestWriter` uses a private directory, a cooperative lock, atomic rename and file/directory
+fsync. Retained inode handles prevent old receipts from removing a cooperating writer's replacement.
+Symlinks, hard links, FIFOs, directory substitution, conflicts and unsupported platforms fail closed.
+Automatic projection/mounting, application lifecycle/crash recovery, trusted mediator assembly and
+actual publication-state confirmation remain pending. These APIs do not remove the production startup guard.
+
+## Active authorization reads and request-directory registration (lab adapter)
+
+`deployment.Reader.HTTPAuthorizations` reads Core's existing `.anas/state/lock`, active/state records and
+deployment manifest under the shared runtime lock. It requires running/active state, matching activation
+time, resource identity, compute/ForwardAuth bindings and frozen images. It does not create workspaces,
+perform recovery, run Hooks or read the Secret Store. Inconsistent, inactive, stopped, missing or oversized
+metadata fails. The authorization epoch combines the resolved workspace-path digest, deployment ID,
+activation time and manifest-byte digest. Manifest changes, deployment switches or restoring elsewhere
+invalidate old directory registration; stable naming keys and URLs do not depend on this directory epoch.
+
+`internal/computeingressruntime` creates a fresh 0700 root, one 0700 request directory per lease and a
+0400 registry.json. Registration contains only epoch, manifest digest, lease, relative directory names and device/inode identities,
+never naming keys or consumer-owned authorization JSON. Directory names derive from epoch/lease hashes;
+consumers cannot supply paths. Existing destinations are refused. Failure cleanup removes only files and
+empty directories created by that attempt, without recursively deleting later content. Core state is
+checked again during registration.
+
+Opening a request directory compares canonical registration bytes with a fresh Core snapshot, rejecting
+stale, edited or mismatched records and changed directory device/inode identities before pinning the
+selected lease directory. Swapping or copying a same-named directory cannot inherit its binding. Workspace and registry
+root must remain outside consumer write access; only an individual lease directory may later be mounted.
+Even an identical registry copy must pass current Core validation. A registry is neither authority by
+itself nor a global publication lock.
+
+The mutually exclusive lab mode `--register-requests <workspace> --out <new-absolute-directory>` creates
+only this metadata and empty directories. Workspace-backed --mediation specifies workspace,
+request_registry, consumer, resource and request_file. It rejects manual authority, active-ID, directory
+and naming-key-file overrides. Random naming uses a Core-side adapter that reuses the Store parser and
+lease metadata checks, returns only that independent naming key and never remints a missing entry. The
+key stays out of registration/output. This is still an administrator lab process with workspace access;
+it does not mount the whole Store into consumers or a production mediator. Narrow production key delivery
+remains pending.
+
+Core state is rechecked after capture. A changed/unreadable authority fails without previous input, or
+produces only withdrawal for a same-lease previous record. Proposed records include authorization_epoch;
+it is not renewal or an applied receipt. The shared lock protects the metadata read, not future state:
+actual publication must revalidate again.
+
+Lab entrypoints still require example.test. Normal apply retains the ingress startup guard, so ordinary
+active deployments cannot produce production ingress registrations. Positive cases belong to separate
+metadata fixtures; do not edit real deployment state to bypass the guard. Global runtime_status does not
+prove every consumer container is running. Partial stops/crashes, missed events and mediator restarts
+still need live observation and reconciliation. Automatic mount/registration integration, restricted daemon
+observation, host actions, probe and renderer execution remain pending. Registration, tests and server
+operations were not run this turn.

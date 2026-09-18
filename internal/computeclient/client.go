@@ -23,11 +23,13 @@ import (
 // collides with anything an operator configured elsewhere.
 const remoteName = "anas-compute"
 
-// Instance is the only instance state this package exposes. Callers get an
-// identity and a lifecycle state, never the daemon's raw record.
+// Instance is the only instance state this package exposes. Callers get the
+// identity, lifecycle state and public workload identity, never the daemon's
+// raw record. These consumer-visible fields do not replace mediator checks.
 type Instance struct {
-	ID    string
-	State string
+	ID         string
+	State      string
+	WorkloadID string
 }
 
 // InstanceSpec is deliberately closed. There is no field for a device, a raw
@@ -218,11 +220,23 @@ func (c *Client) Inspect(ctx context.Context, id string) (Instance, error) {
 	if err != nil {
 		return Instance{}, err
 	}
-	if len(instances) == 0 {
+	// Incus list name filters may include other instances. Never return the
+	// first match as the requested identity, especially before publication.
+	var found *Instance
+	for i := range instances {
+		if instances[i].ID != id {
+			continue
+		}
+		if found != nil {
+			return Instance{}, fmt.Errorf("compute instance list contains an ambiguous identity")
+		}
+		found = &instances[i]
+	}
+	if found == nil {
 		// Absent is a normal observable state, not a failure.
 		return Instance{ID: id, State: "missing"}, nil
 	}
-	return instances[0], nil
+	return *found, nil
 }
 
 func (c *Client) Start(ctx context.Context, id string) error {
@@ -347,7 +361,9 @@ func (c *Client) decodeInstances(body []byte) ([]Instance, error) {
 		if item.Config["user.anas.managed"] != "true" || !c.lease.OwnsInstance(item.Name) {
 			continue
 		}
-		out = append(out, Instance{ID: item.Name, State: strings.ToLower(item.Status)})
+		out = append(out, Instance{
+			ID: item.Name, State: strings.ToLower(item.Status), WorkloadID: item.Config["user.anas.workload"],
+		})
 	}
 	return out, nil
 }

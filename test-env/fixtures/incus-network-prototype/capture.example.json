@@ -1,0 +1,20 @@
+{
+  "incus_socket": "/var/tmp/anas-incus-lab/state/unix.socket",
+  "docker_socket": "/var/tmp/anas-docker-lab/docker.sock",
+  "deployment": "lab-20260912",
+  "consumer": "forgejo",
+  "resource": "runners",
+  "project": "anas-lab",
+  "instance": "anas-lab-http",
+  "instance_prefix": "anas-lab-",
+  "interface": "incus_container",
+  "guest_device": "eth0",
+  "guest_interface": "eth0",
+  "docker_container": "1111111111111111111111111111111111111111111111111111111111111111",
+  "docker_network": "2222222222222222222222222222222222222222222222222222222222222222",
+  "allowed_ports": [
+    7000
+  ],
+  "guest_port": 7000,
+  "host": "incus-lab.example.test"
+}

@@ -116,6 +116,7 @@
     "incus.admin_certificate_b64",
     "incus.admin_key_b64",
     "incus.endpoint",
+    "incus.image_architecture",
     "incus.server_certificate_b64",
     "incus.storage_pool",
     "lam.admin_password",

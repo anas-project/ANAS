@@ -10,30 +10,35 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anas-project/ANAS/internal/computeimage"
+	"github.com/anas-project/ANAS/internal/computeingress"
 	"gopkg.in/yaml.v3"
 )
 
 const resourceStateAPIVersion = "anas.resource-state/v1"
 
 type resourceActual struct {
-	Host                  string `yaml:"host,omitempty"`
-	Port                  string `yaml:"port,omitempty"`
-	Database              string `yaml:"database,omitempty"`
-	Username              string `yaml:"username,omitempty"`
-	PasswordSecret        string `yaml:"password_secret,omitempty"`
-	Network               string `yaml:"network,omitempty"`
-	Endpoint              string `yaml:"endpoint,omitempty"`
-	Region                string `yaml:"region,omitempty"`
-	Bucket                string `yaml:"bucket,omitempty"`
-	AccessKeyID           string `yaml:"access_key_id,omitempty"`
-	SecretAccessKeySecret string `yaml:"secret_access_key_secret,omitempty"`
-	PathStyle             bool   `yaml:"path_style,omitempty"`
+	ComputeIngress        *computeingress.Authorization `yaml:"compute_ingress,omitempty"`
+	ComputeImages         *computeimage.Snapshot        `yaml:"compute_images,omitempty"`
+	Host                  string                        `yaml:"host,omitempty"`
+	Port                  string                        `yaml:"port,omitempty"`
+	Database              string                        `yaml:"database,omitempty"`
+	Username              string                        `yaml:"username,omitempty"`
+	PasswordSecret        string                        `yaml:"password_secret,omitempty"`
+	Network               string                        `yaml:"network,omitempty"`
+	Endpoint              string                        `yaml:"endpoint,omitempty"`
+	Region                string                        `yaml:"region,omitempty"`
+	Bucket                string                        `yaml:"bucket,omitempty"`
+	AccessKeyID           string                        `yaml:"access_key_id,omitempty"`
+	SecretAccessKeySecret string                        `yaml:"secret_access_key_secret,omitempty"`
+	PathStyle             bool                          `yaml:"path_style,omitempty"`
 
 	// compute records the fence, never the key material inside it.
 	Sandbox                      string `yaml:"sandbox,omitempty"`
 	InstancePrefix               string `yaml:"instance_prefix,omitempty"`
 	ServerCertificateFingerprint string `yaml:"server_certificate_fingerprint,omitempty"`
 	ClientCertificateSecret      string `yaml:"client_certificate_secret,omitempty"`
+	LeaseSecret                  string `yaml:"lease_secret,omitempty"`
 	MaxInstances                 int    `yaml:"max_instances,omitempty"`
 	CPU                          int    `yaml:"cpu,omitempty"`
 	MemoryMiB                    int    `yaml:"memory_mib,omitempty"`
@@ -88,7 +93,7 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 			env["ANAS_RESOURCE_ACCESS_KEY_ID"], _ = request.Spec["access_key_id"].(string)
 			env["ANAS_RESOURCE_SECRET_ACCESS_KEY"] = request.Credential
 		case "compute":
-			quota, allowlist, err := validateComputeSpec(request.Consumer, request.ID, request.Spec)
+			quota, allowlist, err := validateComputeRequest(request)
 			if err != nil {
 				return err
 			}
@@ -107,6 +112,7 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 			env["ANAS_RESOURCE_MEMORY_MIB"] = strconv.Itoa(quota.MemoryMiB)
 			env["ANAS_RESOURCE_DISK_GIB"] = strconv.Itoa(quota.DiskGiB)
 			env["ANAS_RESOURCE_IMAGE_ALLOWLIST"] = strings.Join(allowlist, ",")
+			env["ANAS_RESOURCE_IMAGE_ARCHITECTURE"] = request.ComputeImages.Images[0].Target.Architecture
 			env["ANAS_RESOURCE_CLIENT_CERT"] = base64.StdEncoding.EncodeToString([]byte(certPEM))
 		default:
 			return fmt.Errorf("resource %s.%s contract %s has no runtime projection", consumer, request.ID, request.Contract)
@@ -184,7 +190,7 @@ func (a *app) saveResourceReady(request ResourceRequest, providerEnv map[string]
 		}
 	case "compute":
 		prefix := defaultEnvPrefix(request.Provider)
-		quota, _, err := validateComputeSpec(request.Consumer, request.ID, request.Spec)
+		quota, _, err := validateComputeRequest(request)
 		if err != nil {
 			return err
 		}
@@ -193,9 +199,12 @@ func (a *app) saveResourceReady(request ResourceRequest, providerEnv map[string]
 			return fmt.Errorf("provider %s for %s.%s: %w", request.Provider, request.Consumer, request.ID, err)
 		}
 		state.Actual = resourceActual{
-			Endpoint: providerEnv[prefix+"_ENDPOINT"],
-			Sandbox:  stringSpec(request.Spec, "sandbox"), InstancePrefix: stringSpec(request.Spec, "instance_prefix"),
+			Endpoint:       providerEnv[prefix+"_ENDPOINT"],
+			ComputeImages:  request.ComputeImages.Clone(),
+			ComputeIngress: request.ComputeIngress.Clone(),
+			Sandbox:        stringSpec(request.Spec, "sandbox"), InstancePrefix: stringSpec(request.Spec, "instance_prefix"),
 			ServerCertificateFingerprint: fingerprint, ClientCertificateSecret: request.SecretKey,
+			LeaseSecret:  request.LeaseSecretKey,
 			MaxInstances: quota.MaxInstances, CPU: quota.CPU, MemoryMiB: quota.MemoryMiB, DiskGiB: quota.DiskGiB,
 		}
 		if strings.TrimSpace(state.Actual.Endpoint) == "" {

@@ -39,6 +39,8 @@ const (
 	recordJobCreated       recordKind = "job_created"
 	recordJobUpdated       recordKind = "job_updated"
 	recordEventAdded       recordKind = "event_added"
+	recordActionEvent      recordKind = "action_event"
+	recordActionKeyBound   recordKind = "action_key_bound"
 	recordEventsPruned     recordKind = "events_pruned"
 	recordSnapshotBegin    recordKind = "snapshot_begin"
 	recordJobSnapshot      recordKind = "job_state"
@@ -60,6 +62,7 @@ type journalRecord struct {
 	Prune         *eventPrune           `json:"prune,omitempty"`
 	Cursor        *eventCursor          `json:"cursor,omitempty"`
 	Snapshot      *snapshotBoundary     `json:"snapshot,omitempty"`
+	ActionEvents  []Event               `json:"action_events,omitempty"`
 }
 
 type persistedIdempotency struct {
@@ -256,7 +259,7 @@ func (state *storeState) validateRecovered() error {
 	if state.lastRecordSequence != 0 && !state.initialized {
 		return errors.New("journal is missing its initialization record")
 	}
-	return nil
+	return state.validateActionHistory()
 }
 
 func recoverJournalWithSnapshot(file journalFile) (*storeState, journalSnapshot, error) {
@@ -383,6 +386,9 @@ func decodeJournalRecord(line []byte) (journalRecord, error) {
 }
 
 func (state *storeState) apply(record journalRecord) error {
+	if record.Kind != recordActionEvent && record.ActionEvents != nil {
+		return errors.New("only action_event may contain action_events")
+	}
 	if record.SchemaVersion != JournalVersion {
 		return fmt.Errorf("schema version is %d, want %d", record.SchemaVersion, JournalVersion)
 	}
@@ -414,6 +420,10 @@ func (state *storeState) apply(record journalRecord) error {
 		err = state.applyJobUpdated(record)
 	case recordEventAdded:
 		err = state.applyEvent(record)
+	case recordActionEvent:
+		err = state.applyActionEvent(record)
+	case recordActionKeyBound:
+		err = state.applyActionKeyBound(record)
 	case recordEventsPruned:
 		err = state.applyPrune(record)
 	case recordSnapshotBegin:
@@ -474,6 +484,19 @@ func (state *storeState) applyJobCreated(record journalRecord) error {
 	if job.Status != StatusQueued || job.Revision != 1 {
 		return errors.New("new job must be queued at revision 1")
 	}
+	if job.Action != nil && job.Action.LastSeq != 0 {
+		return errors.New("new action job has event history")
+	}
+	if job.Action != nil && job.Action.Policy != nil {
+		if len(job.Action.Policy.RetryKeys) > 1 {
+			return errors.New("new action job has more than one invocation key")
+		}
+		for _, binding := range job.Action.Policy.RetryKeys {
+			if err := state.validateActionKeyAssignment(job.Action.Name, binding, record.RecordedAt); err != nil {
+				return err
+			}
+		}
+	}
 	if _, exists := state.jobs[job.ID]; exists {
 		return fmt.Errorf("job %s already exists", job.ID)
 	}
@@ -507,6 +530,9 @@ func (state *storeState) applyJobUpdated(record journalRecord) error {
 	if !sameImmutableJobFields(previous, next) {
 		return fmt.Errorf("job %s immutable fields changed", next.ID)
 	}
+	if previous.Action != nil && !validActionJobUpdate(previous, next) {
+		return errors.New("action lifecycle update requires an atomic action record")
+	}
 	if !validPersistedJobUpdate(previous, next) {
 		return fmt.Errorf("job %s has invalid status update %s -> %s", next.ID, previous.Status, next.Status)
 	}
@@ -526,6 +552,9 @@ func (state *storeState) applyEvent(record journalRecord) error {
 	job, exists := state.jobs[event.JobID]
 	if !exists {
 		return fmt.Errorf("event references missing job %s", event.JobID)
+	}
+	if job.Action != nil || event.Action != nil {
+		return errors.New("action event requires an atomic action record")
 	}
 	if job.Status.terminal() {
 		return fmt.Errorf("event references terminal job %s", event.JobID)
@@ -549,6 +578,9 @@ func (state *storeState) applyPrune(record journalRecord) error {
 	prune := *record.Prune
 	if _, exists := state.jobs[prune.JobID]; !exists {
 		return fmt.Errorf("prune references missing job %s", prune.JobID)
+	}
+	if state.jobs[prune.JobID].Action != nil {
+		return errors.New("action pruning requires a persisted marker")
 	}
 	if prune.Through <= state.prunedThrough[prune.JobID] || prune.Through > state.latestEventByJob[prune.JobID] {
 		return fmt.Errorf("invalid prune watermark %d for job %s", prune.Through, prune.JobID)
@@ -749,6 +781,9 @@ func (state *storeState) applySnapshotEnd(record journalRecord) error {
 	if latestGlobal != started.LastEventID {
 		return fmt.Errorf("snapshot global event watermark is %d, want %d", latestGlobal, started.LastEventID)
 	}
+	if err := state.validateActionHistory(); err != nil {
+		return err
+	}
 	state.lastEventID = started.LastEventID
 	state.generation = started.Generation
 	state.compacted = true
@@ -795,7 +830,7 @@ func validatePersistedEvent(event Event) error {
 	if !payloadIsSanitized(event.Data) {
 		return errors.New("event data is not sanitized")
 	}
-	return nil
+	return validateActionEvent(event)
 }
 
 func validatePersistedJob(job Job) error {
@@ -846,13 +881,13 @@ func validatePersistedJob(job Job) error {
 	if job.Error != nil && sanitizeText(job.Error.Message) != job.Error.Message {
 		return errors.New("job error is not sanitized")
 	}
-	return nil
+	return validateActionJob(job)
 }
 
 func sameImmutableJobFields(left, right Job) bool {
 	return left.ID == right.ID && left.Kind == right.Kind && left.WorkspaceID == right.WorkspaceID &&
 		left.Mutating == right.Mutating && left.CreatedBy == right.CreatedBy && left.CreatedAt.Equal(right.CreatedAt) &&
-		reflect.DeepEqual(left.Request, right.Request)
+		reflect.DeepEqual(left.Request, right.Request) && sameActionBinding(left.Action, right.Action)
 }
 
 func validPersistedJobUpdate(previous, next Job) bool {

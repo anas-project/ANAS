@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/computeclient"
+	"github.com/anas-project/ANAS/internal/computeimage"
+	"github.com/anas-project/ANAS/internal/computeingress"
 	"gopkg.in/yaml.v3"
 )
 
@@ -82,6 +85,10 @@ type ResourceRequest struct {
 	Spec            map[string]any
 	SecretKey       string
 	Credential      string
+	ComputeIngress  *computeingress.Authorization
+	ComputeImages   *computeimage.Snapshot
+	LeaseSecretKey  string
+	LeaseSecret     string
 }
 
 func loadContractRegistry(moduleRoot string) (map[string]Contract, error) {
@@ -291,8 +298,10 @@ func normalizeResourceRequirements(module string, in []manifestResourceRequireme
 		}
 		for field, parameter := range raw.SpecFrom {
 			field = strings.TrimSpace(field)
-			parameter = strings.TrimSpace(parameter)
-			if field == "" || parameter == "" {
+			if err := parameter.validate(); err != nil {
+				return nil, fmt.Errorf("module %q resource %s: %w", module, id, err)
+			}
+			if field == "" {
 				return nil, fmt.Errorf("module %q resource %s has an empty spec_from mapping", module, id)
 			}
 			if _, exists := raw.Spec[field]; exists {
@@ -554,14 +563,19 @@ func (a *app) materializeResourceSecrets() error {
 				continue
 			}
 			spec := cloneAnyMap(required.Spec)
-			for field, parameter := range required.SpecFrom {
-				key := paramEnvKey(consumer, module.EnvPrefix, parameter)
-				value := strings.TrimSpace(a.env[key])
-				if value == "" {
-					return fmt.Errorf("resource %s.%s spec.%s references empty parameter %s", consumer, required.ID, field, parameter)
+			var imageKeys []string
+			for field, source := range required.SpecFrom {
+				key := moduleParamEnvKey(consumer, module.EnvPrefix, module.Exports, source.Parameter)
+				value, keys, err := source.project(a.env[key])
+				if err != nil {
+					return fmt.Errorf("resource %s.%s spec.%s: %w", consumer, required.ID, field, err)
 				}
 				spec[field] = value
+				if required.Contract == "compute" && field == "image_allowlist" {
+					imageKeys = keys
+				}
 			}
+			var images *computeimage.Snapshot
 			bindings := a.resolvedBindings[consumer]
 			contract, ok := a.contracts[required.Contract]
 			if !ok && a.contracts != nil {
@@ -591,6 +605,11 @@ func (a *app) materializeResourceSecrets() error {
 				}
 			}
 			if required.Contract == "compute" {
+				var err error
+				images, err = a.resolveComputeImages(consumer, required.ID, provider, iface, spec, imageKeys)
+				if err != nil {
+					return err
+				}
 				if _, _, err := validateComputeSpec(consumer, required.ID, spec); err != nil {
 					return err
 				}
@@ -630,6 +649,14 @@ func (a *app) materializeResourceSecrets() error {
 				}
 				objectBuckets[bucket], objectAccessKeys[accessKey] = identity, identity
 			}
+			var leaseSecretKey, leaseSecret string
+			if required.Contract == "compute" {
+				var err error
+				leaseSecretKey, leaseSecret, err = a.ensureComputeLeaseSecret(consumer, required.ID)
+				if err != nil {
+					return err
+				}
+			}
 			secretKey := resourceSecretKey(consumer, required.ID, required.Contract)
 			credentialLength := 32
 			if required.Contract == "object_storage" {
@@ -637,8 +664,8 @@ func (a *app) materializeResourceSecrets() error {
 			}
 			// compute authenticates with a client certificate rather than a
 			// password, so its resource credential is a keypair bundle instead
-			// of a random string. Everything downstream still sees one stable
-			// secret per resource.
+			// of a random string. The authentication pair is one stable entry,
+			// separate from the lease naming key.
 			generate := func() (string, error) { return randomPassword(credentialLength) }
 			if required.Contract == "compute" {
 				generate = func() (string, error) { return generateComputeClientCredential(consumer, required.ID) }
@@ -652,8 +679,9 @@ func (a *app) materializeResourceSecrets() error {
 			})
 			a.resourceRequests = append(a.resourceRequests, ResourceRequest{
 				Consumer: consumer, ID: required.ID, Contract: required.Contract, ContractVersion: contract.Version,
-				Provider: provider, Interface: iface, Spec: spec,
+				Provider: provider, Interface: iface, Spec: spec, ComputeImages: images,
 				SecretKey: secretKey, Credential: credential,
+				LeaseSecretKey: leaseSecretKey, LeaseSecret: leaseSecret,
 			})
 		}
 	}
@@ -663,9 +691,24 @@ func (a *app) materializeResourceSecrets() error {
 func cloneAnyMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for key, value := range in {
-		out[key] = value
+		out[key] = cloneSpecValue(value)
 	}
 	return out
+}
+
+func cloneSpecValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		return cloneAnyMap(v)
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = cloneSpecValue(item)
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 func (a *app) publishModuleResources(consumer string) error {
@@ -711,7 +754,7 @@ func (a *app) publishModuleResources(consumer string) error {
 			}
 			sensitive = resourcePrefix + "SECRET_ACCESS_KEY"
 		case "compute":
-			quota, allowlist, err := validateComputeSpec(consumer, request.ID, request.Spec)
+			quota, allowlist, err := validateComputeRequest(request)
 			if err != nil {
 				return err
 			}
@@ -748,6 +791,24 @@ func (a *app) publishModuleResources(consumer string) error {
 				resourcePrefix + "CPU":                     strconv.Itoa(quota.CPU),
 				resourcePrefix + "MEMORY_MIB":              strconv.Itoa(quota.MemoryMiB),
 				resourcePrefix + "DISK_GIB":                strconv.Itoa(quota.DiskGiB),
+			}
+			if request.LeaseSecretKey != "" {
+				value, err := a.readComputeLeaseSecret(consumer, request.ID, request.LeaseSecretKey)
+				if err != nil {
+					return err
+				}
+				if value != request.LeaseSecret {
+					return fmt.Errorf("resource %s.%s compute lease secret differs from its Secret Store entry", consumer, request.ID)
+				}
+				values[resourcePrefix+"LEASE_SECRET"] = value
+				a.markSensitive(resourcePrefix + "LEASE_SECRET")
+			}
+			if len(request.ComputeImages.Bindings) > 0 {
+				bindings, err := json.Marshal(request.ComputeImages.Bindings)
+				if err != nil {
+					return err
+				}
+				values[resourcePrefix+"IMAGE_BINDINGS"] = string(bindings)
 			}
 			sensitive = resourcePrefix + "CLIENT_KEY"
 		default:

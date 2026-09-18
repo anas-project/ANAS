@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -228,21 +230,20 @@ func databaseURL(get func(string) string, raw func(string) string) (string, stri
 	return endpoint.String(), redacted.String(), nil
 }
 
+var imageRuntimeIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
+
 func parseImagePins(value string) (map[string]string, error) {
 	pins := map[string]string{}
-	for _, entry := range splitList(value) {
-		id, fingerprint, found := strings.Cut(entry, "=")
-		id, fingerprint = strings.TrimSpace(id), strings.TrimSpace(fingerprint)
-		if !found || id == "" || fingerprint == "" {
-			return nil, fmt.Errorf("%q is not runtime=fingerprint", entry)
+	if strings.TrimSpace(value) == "" {
+		return pins, nil
+	}
+	if err := json.Unmarshal([]byte(value), &pins); err != nil || pins == nil {
+		return nil, fmt.Errorf("must be a JSON map of runtime ids to frozen fingerprints")
+	}
+	for id, digest := range pins {
+		if !imageRuntimeIDPattern.MatchString(id) || len(digest) != 64 || strings.TrimLeft(digest, "0123456789abcdef") != "" {
+			return nil, fmt.Errorf("invalid runtime image binding")
 		}
-		if len(fingerprint) != 64 || strings.TrimLeft(fingerprint, "0123456789abcdef") != "" {
-			return nil, fmt.Errorf("runtime %q is not pinned to a SHA-256 fingerprint", id)
-		}
-		if _, duplicate := pins[id]; duplicate {
-			return nil, fmt.Errorf("runtime %q is pinned more than once", id)
-		}
-		pins[id] = fingerprint
 	}
 	return pins, nil
 }

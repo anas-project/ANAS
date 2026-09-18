@@ -10,18 +10,19 @@ import (
 )
 
 type lease struct {
-	Consumer       string
-	Sandbox        string
-	StoragePool    string
-	NetworkIPv6    bool
-	InstancePrefix string
-	MaxInstances   int
-	CPU            int
-	MemoryMiB      int
-	DiskGiB        int
-	ImageAllowlist []string
-	ClientCertPEM  []byte
-	Isolation      string
+	Consumer          string
+	Sandbox           string
+	StoragePool       string
+	NetworkIPv6       bool
+	InstancePrefix    string
+	MaxInstances      int
+	CPU               int
+	MemoryMiB         int
+	DiskGiB           int
+	ImageAllowlist    []string
+	ImageArchitecture string
+	ClientCertPEM     []byte
+	Isolation         string
 }
 
 type project struct {
@@ -104,8 +105,8 @@ func projectConfig(l lease) map[string]string {
 	return config
 }
 
-// quotaEnforced reports whether every limit this contract promises is actually
-// present on the project. A project that exists and is restricted but carries
+// quotaEnforced checks the project-limit portion of quota enforcement. Storage
+// admission is checked separately; these strings do not prove disk enforcement. A project that exists and is restricted but carries
 // no limits is a fence with no fence in it, so this is checked separately from
 // restricted rather than folded into it.
 func quotaEnforced(config map[string]string) bool {
@@ -268,11 +269,19 @@ func verifyProfile(ctx context.Context, c *client, l lease, bridge string) error
 }
 
 func ensure(ctx context.Context, c *client, l lease) (inspectResult, error) {
+	// Refuse before changing projects, networks, profiles or certificate trust.
+	supported, err := readQuotaPool(ctx, c, l)
+	if err != nil {
+		return inspectResult{}, err
+	}
+	if !supported {
+		return inspectResult{}, fmt.Errorf("INCUS_STORAGE_POOL %s must be a Created btrfs or zfs pool for enforced disk quotas", l.StoragePool)
+	}
 	desired := projectConfig(l)
 	description := fmt.Sprintf("ANAS compute lease for %s (%s tier)", l.Consumer, l.Isolation)
 
 	var current project
-	err := c.do(ctx, "GET", "/1.0/projects/"+l.Sandbox, nil, &current)
+	err = c.do(ctx, "GET", "/1.0/projects/"+l.Sandbox, nil, &current)
 	switch {
 	case err == nil:
 		// Existing network-isolated projects may contain OVN networks or
@@ -328,6 +337,9 @@ func ensure(ctx context.Context, c *client, l lease) (inspectResult, error) {
 	if err := verifyProfile(ctx, c, l, bridge); err != nil {
 		return result, err
 	}
+	if err := verifyImages(ctx, c, l); err != nil {
+		return result, err
+	}
 	if err := ensureCertificate(ctx, c, l); err != nil {
 		return result, err
 	}
@@ -377,6 +389,13 @@ func inspect(ctx context.Context, c *client, l lease) (inspectResult, error) {
 	}
 	restricted := strings.EqualFold(strings.TrimSpace(current.Config["restricted"]), "true")
 	quota := quotaEnforced(current.Config)
+	if quota {
+		supported, err := readQuotaPool(ctx, c, l)
+		if err != nil {
+			return inspectResult{}, err
+		}
+		quota = supported
+	}
 	return inspectResult{
 		Exists:        true,
 		Ready:         restricted && quota && networkScopeEnforced(current.Config, l),

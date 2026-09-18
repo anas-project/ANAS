@@ -374,6 +374,7 @@ func TestDeclaredParametersHaveRuntimeConsumers(t *testing.T) {
 	}
 
 	dynamic := map[string]string{
+		"incus.image_architecture":            "Core compute_images.go reads provider image_architecture through moduleParamEnvKey and freezes its target",
 		"collabora.domain_prefix":             "domainCalc assembles COLLABORA_DOMAIN_PREFIX",
 		"ddns_go.dns_provider":                "key() assembles the DDNS_GO namespace",
 		"ddns_go.domain_prefix":               "key() assembles the DDNS_GO namespace",

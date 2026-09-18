@@ -416,6 +416,13 @@ func (service *workspaceDeploymentPlanApplication) ExecuteLifecycle(ctx context.
 	}
 	a.commandContext, a.events = ctx, service.events
 	a.restrictedProcessEnvironment = service.daemon
+	// A refused HTTP prototype must not stop the current consumer as part of
+	// restart before discovering that it cannot be started again.
+	if request.Action != application.LifecycleStop {
+		if err := a.requireComputeIngressDisabled(preview.AffectedModules); err != nil {
+			return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("compute_ingress_unavailable", "%s", err.Error()))
+		}
+	}
 	partial := len(preview.RequestedModules) > 0
 	wholeDeployment := !partial || len(preview.AffectedModules) == len(a.order)
 	stop := func() error {

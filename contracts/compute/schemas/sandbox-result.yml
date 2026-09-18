@@ -1,6 +1,6 @@
 type: object
 additional_properties: false
-required: [endpoint, sandbox, instance_prefix, profile, server_certificate_fingerprint, client_certificate_secret, quota]
+required: [endpoint, sandbox, instance_prefix, profile, server_certificate_fingerprint, client_certificate_secret, lease_secret, quota]
 properties:
   # Everything a consumer needs to drive the sandbox itself at runtime. The
   # contract hands over a fenced capability, not an instance: instance
@@ -18,6 +18,8 @@ properties:
     pattern: "^[a-f0-9]{64}$"
   # Secret key, never the key material itself.
   client_certificate_secret: {type: string}
+  # Core-owned independent naming-key reference; not Provider output or an auth credential.
+  lease_secret: {type: string}
   quota:
     type: object
     additional_properties: false

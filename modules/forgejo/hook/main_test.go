@@ -179,7 +179,7 @@ func TestRenderEnvUsesOneActionsSwitchAndRequiresExecutionPlane(t *testing.T) {
 	}
 	env["FORGEJO_ACTIONS_ALLOWED_SCOPES"] = "trusted,team/repo"
 	env["FORGEJO_ACTIONS_CONTROLLER_PASSWORD"] = "controller-secret"
-	env["FORGEJO_ACTIONS_RUNNER_IMAGE"] = strings.Repeat("a", 64)
+	env["ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__IMAGE_ALLOWLIST"] = strings.Repeat("a", 64)
 	if err := renderEnv(env); err != nil {
 		t.Fatal(err)
 	}
@@ -190,10 +190,10 @@ func TestRenderEnvUsesOneActionsSwitchAndRequiresExecutionPlane(t *testing.T) {
 	env["FORGEJO_ACTIONS_ENABLED"] = "true"
 	env["FORGEJO_ACTIONS_ALLOWED_SCOPES"] = "team/repo"
 	env["FORGEJO_ACTIONS_CONTROLLER_PASSWORD"] = "controller-secret"
-	env["FORGEJO_ACTIONS_RUNNER_IMAGE"] = strings.Repeat("a", 64)
+	env["ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__IMAGE_ALLOWLIST"] = strings.Repeat("a", 64)
 	// The endpoint and certificates moved to the incus provider, so what this
 	// hook still has to refuse is an unpinned runner image.
-	env["FORGEJO_ACTIONS_RUNNER_IMAGE"] = "images:debian/13"
+	env["ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__IMAGE_ALLOWLIST"] = "images:debian/13"
 	if err := renderEnv(env); err == nil || !strings.Contains(err.Error(), "pinned SHA-256 fingerprint") {
 		t.Fatalf("unpinned runner image error = %v", err)
 	}
@@ -202,7 +202,7 @@ func TestRenderEnvUsesOneActionsSwitchAndRequiresExecutionPlane(t *testing.T) {
 	env["FORGEJO_ACTIONS_ENABLED"] = "true"
 	env["FORGEJO_ACTIONS_ALLOWED_SCOPES"] = "*"
 	env["FORGEJO_ACTIONS_CONTROLLER_PASSWORD"] = "controller-secret"
-	env["FORGEJO_ACTIONS_RUNNER_IMAGE"] = strings.Repeat("a", 64)
+	env["ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__IMAGE_ALLOWLIST"] = strings.Repeat("a", 64)
 	if err := renderEnv(env); err == nil || !strings.Contains(err.Error(), "scope") {
 		t.Fatalf("global scope error = %v", err)
 	}

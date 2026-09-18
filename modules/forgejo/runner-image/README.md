@@ -6,7 +6,7 @@ This directory is the reproducible guest-side input for the M3 Incus VM image. B
 sudo ./provision.sh ./forgejo-runner-linux-amd64 <published-sha256>
 ```
 
-Publish the resulting Incus image, record its 64-character fingerprint as `forgejo.actions_runner_image`, and never use an alias such as `latest`. Repeat the build per architecture.
+Publish the resulting Incus image, set `forgejo.actions_runner_image` to a `{fingerprint: "<64hex>"}` object, and never use an alias such as `latest`. Repeat the build per architecture.
 
 The image starts only a rootless Podman API. It does **not** start a persistent Forgejo Runner. For a waiting job, the controller creates an ephemeral registration and VM, then invokes `anas-forgejo-runner-start` through the Incus agent. The helper reads the 40-character token from stdin into guest tmpfs and executes:
 

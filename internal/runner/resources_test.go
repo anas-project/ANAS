@@ -152,7 +152,7 @@ func TestResourceSpecFromUsesResolvedModuleParameter(t *testing.T) {
 			Name: "nextcloud", EnvPrefix: "NEXTCLOUD",
 			Resources: []ResourceRequirement{{
 				ID: "primary_database", Contract: "relational_database", Binding: "db_type",
-				SpecFrom: map[string]string{"name": "db_name"},
+				SpecFrom: map[string]SpecSource{"name": {Parameter: "db_name"}},
 				Spec: map[string]any{
 					"principal": "nextcloud", "credential": map[string]any{"policy": "generated"},
 					"deletion_policy": "retain",
