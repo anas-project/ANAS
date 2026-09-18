@@ -13,7 +13,7 @@ Research pages use stable topic-based filenames. Their frontmatter records `crea
 - [BIND 9 web-management tools](/research/bind9-open-source-web-management-research)
 - [Self-hosted mail services](/research/self-hosted-open-source-mail-services-research)
 - [Self-hosted email forwarding](/research/self-hosted-open-source-email-forwarding-research)
-- [Kanban integration with coding agents](/research/kanban-ai-agent-integration-research)
+- [Kanban integration with coding agents](/research/kanban-ai-agent-integration-research) — full text now under `modules/ai_agent/`
 - [Self-hosted S3-compatible storage](/research/self-hosted-open-source-s3-compatible-storage-research)
 - [Self-hosted Git services](/research/self-hosted-open-source-git-services-research)
 - [Super Productivity alternatives](/research/super-productivity-alternatives-research)

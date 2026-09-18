@@ -1,16 +1,18 @@
-# 与 Forgejo 互操作的原则
+# 编排器与 Forgejo 互操作的规则
 
-> 状态：**当前模型**。本文归纳的规则来自已落地并对固定 `forgejo 15.0.7` 验证过的代码
-> （`modules/ai_agent/orchestrator`、`modules/forgejo`）；少数标注为**提案**的条目尚未实现，
-> 不能当作可执行说明。更新：2026-09-08。
+> 状态：**当前模型**。规则来自已落地并对固定 `forgejo 15.0.7` 验证过的
+> `modules/ai_agent/orchestrator`；少数标注为**提案**的条目尚未实现，不能当作可执行说明。
+> 更新：2026-09-10。
 
-写任何要跟 Forgejo 说话的代码之前先读这一页。它不解释设计动机——那些在
-[AI Agent 编排设计](/architecture/ai-agent-orchestration-design)与
-[Forgejo Module 设计](/architecture/forgejo-module-design)里——它只给出**必须遵守的规则**，
-以及**上游那些会安静地咬你一口的事实**。
+改 `orchestrator` 里任何跟 Forgejo 说话的代码之前先读这一页。它不解释设计动机——那些在
+[编排设计](architecture/orchestration-design.md)里——它只给出**必须遵守的规则**。
+
+上游本身的行为（哪个端点是 404、哪些 scope 合法、`GET /admin/hooks` 为什么返回空数组）不在这里，
+在 ANAS 侧的[Forgejo 互操作基线](../../../docs/developer/forgejo-interop.md)：那些事实由 `forgejo`
+Module 与本组件共用，本组件独立成项目后仍要跟着上游版本走，因此不复制到这里。
 
 规则分两类：**边界**（违反会造成越权、审计断链或重复副作用，不可协商）和**约定**
-（违反只是不一致，评审时会被要求改）。每条都注明依据；改规则先改依据文档，不要先改代码。
+（违反只是不一致，评审时会被要求改）。改规则先改依据文档，不要先改代码。
 
 ## 0. 速查
 
@@ -21,7 +23,7 @@
 | 提交文件、开 PR | §3.4 | 路径校验在控制面；讨论期工作区没有 git 写凭据 |
 | 接 webhook | §4 | 先验签再解析；任何非服务端故障都回 202 |
 | 判断"这个人能不能让 Agent 干这个" | §5 | 默认拒绝；三层取交集；只能收窄 |
-| 调一个还没用过的 Forgejo API | §6 + §8 | 先在固定镜像上实测，把结论写进事实表 |
+| 调一个还没用过的 Forgejo API | [互操作基线](../../../docs/developer/forgejo-interop.md) | 先在固定镜像上实测，把结论写进那边的事实表 |
 
 ## 1. 三条不可协商的边界
 
@@ -37,8 +39,8 @@
 一个，就是为了让"顺手拿错凭据"写不出来。新增方法时先问它属于哪一面，不要因为共用同一个 HTTP
 transport 就把它塞进就近的接口。
 
-管理面为什么必须是口令：固定版本上 `POST /admin/users/{u}/tokens` **不存在**，发 token 的唯一
-端点 `POST /users/{u}/tokens` **拒绝 token 认证**，只接受管理员 basic auth 加 `Sudo:` 头（§6）。
+管理面必须持有**口令**而不只是 token，是上游逼出来的：发 token 的端点拒绝 token 认证
+（[基线 §1](../../../docs/developer/forgejo-interop.md)）。
 
 ### 1.2 写操作只走 outbox
 
@@ -59,6 +61,9 @@ webhook 与对账扫描针对同一变化只产生一次写入的原因。
 
 ## 2. 凭据与身份（管理面）
 
+上游对端点、scope 集合与命名唯一性的约束见[基线 §1—§2](../../../docs/developer/forgejo-interop.md)；
+这一节只说编排器据此必须怎么做。
+
 ### 2.1 引导顺序是硬的
 
 ```text
@@ -67,33 +72,25 @@ webhook 与对账扫描针对同一变化只产生一次写入的原因。
   → 发 token（POST /users/{u}/tokens + Sudo 头）
 ```
 
-不能调换。Forgejo 在**发起账号自己的上下文里**解析 token 的 `repositories` 字段，因此一个该账号
-还看不见的仓库会被报成 `repository does not exist`——读起来像仓库不存在，其实是权限顺序错了。
+不能调换：Forgejo 在发起账号自己的上下文里解析 token 的 `repositories`，顺序错了会被报成
+`repository does not exist`，读起来像仓库不存在。
 
 Agent 账号建出来就是拿来持有凭据的，不用于交互登录：`must_change_password: false`、
 `restricted: false`、`visibility: limited`，不给管理员权限。
 
 ### 2.2 轮换：先发新的，再吊销旧的，名字必须带代次
 
-access token 名称**按用户唯一**，SSH key 标题同理。而轮换的保证恰恰是"新旧短暂并存"，所以复用
-同一个名字会在发新凭据那一步就 400。代次写进名字（`anas-agent-<n>`）不是美观问题，是可行性问题。
+轮换的保证是"新旧短暂并存"，而上游要求 token 名称与 SSH key 标题按用户唯一，所以代次写进名字
+（`anas-agent-<n>`）不是美观问题，是可行性问题。
 
 凭据按**年龄**轮换（当前 30 天），由 reconcile 驱动，不依赖任何人记得做。手工建的同名账号的
 token 不带模块前缀，因此不会被轮换逻辑碰到。
 
-### 2.3 scope 集合被上游钉死，不要随手加
+### 2.3 scope 只取够用的那几个
 
-带仓库限定的 token **只能**携带 `read:issue`、`write:issue`、`read:repository`、`write:repository`
-四个之一或组合，其他组合 400。讨论期实际用三个：`read:repository`、`read:issue`、`write:issue`；
-`write:repository` 只在执行作业期间追加。
-
-这条的陷阱在于失败方式：为了加一个 `read:user` 而放弃 `repositories` 限定，**代码照样能跑**，
-只是最小权限没了。所以允许集合在代码里是断言，不是注释。
-
-### 2.4 仓库限定不是隐藏手段
-
-限定在**内容与写操作**上生效（越界仓库的 contents 403、开 issue 404），但**仓库元数据仍可读**
-（`GET /repos/{o}/{r}` 200）。写文档时要照实说：它是最小权限手段，不是"看不见别的仓库"。
+讨论期用三个：`read:repository`、`read:issue`、`write:issue`；`write:repository` 只在执行作业
+期间追加。上游允许的集合在代码里是**断言**，不是注释——因为放弃 `repositories` 限定去换一个
+额外 scope，代码照样能跑，只是最小权限没了。
 
 ## 3. 写路径（协作面）
 
@@ -177,7 +174,7 @@ token 不带模块前缀，因此不会被轮换逻辑碰到。
 
 ## 5. 授权
 
-默认拒绝。判定链见[编排设计 §6.3](/architecture/ai-agent-orchestration-design)，写代码时记住三点：
+默认拒绝。判定链见[编排设计 §6.3](architecture/orchestration-design.md)，写代码时记住三点：
 
 1. **三层取交集**：目录组上限 ∩ 仓库权限推导 ∩ 覆盖条目。任何一边都不能单方面放大另一边；
 2. **issue 正文、模板答案、标签、命令只能收窄**，永远不能放宽；
@@ -187,30 +184,7 @@ token 不带模块前缀，因此不会被轮换逻辑碰到。
 
 Agent 不是独立的权限主体：它发起的每个写操作都要能归属到一个人（**提案**，见编排设计 §6.5）。
 
-## 6. 上游会咬人的事实（`forgejo 15.0.7` 实测）
-
-全部由 `test-env/scripts/forgejo-agent-api-probe.sh` 对固定镜像验证。**下表里每一条的共同特征是：
-按直觉写出来的代码能编译、能跑，然后在别的地方错。**
-
-| 事实 | 按直觉写会怎样 |
-| --- | --- |
-| `POST /admin/users/{u}/tokens` 返回 **404**；唯一端点是 `POST /users/{u}/tokens`，且拒绝 token 认证 | 控制面只持有 token，引导整条链走不通 |
-| `repositories` 是 `[{"owner":…,"name":…}]` **对象数组**，`"owner/name"` 字符串被拒 | 反序列化错误，且容易被"退化成不限定"绕过 |
-| 发 token 前账号**必须已是 collaborator** | 报 `repository does not exist`，看起来像仓库配错了 |
-| access token 名称、SSH key 标题**按用户唯一** | "先发后吊销"在发新的那一步 400，轮换保证反而没了 |
-| **`GET /admin/hooks` 恒返回空数组**，`GET /admin/hooks/{id}` 正常 | 每轮对账都以为 hook 不存在，重复注册 |
-| 服务端**展开事件族**：请求 8 个，存下 17 个 | 用事件列表比对会永远判定为漂移；只比对 URL 与密钥指纹 |
-| 带仓库限定的 token 只允许四个 scope，其余组合 400 | 加一个 scope 就静默换掉了仓库限定 |
-| 仓库限定不挡**元数据读取**（`GET /repos/{o}/{r}` 200） | 文档写成"看不见别的仓库"，与实际不符 |
-| issue 表单 front matter 的 `labels` 是**新建页的预勾选**，由浏览器回传 `label_ids`，不是服务端在提交时应用 | 靠 `ai:auto` 判断"是不是 Agent issue"，取消勾选或非浏览器提交就漏判——改为从正文识别，标签由编排器补 |
-| Forgejo 15 的表单**没有 `_csrf`**，改用 SameSite cookie 加 Origin/Referer 校验 | 脚本化登录去找 CSRF token，找不到 |
-
-尚未复核：webhook 投递语义、`issue_label` / `issue_assign` 的 payload 字段。两者都需要真实接收端。
-
-Projects 看板**仍然没有 API 也没有事件**。机器可读的状态一律落在 label、issue 开闭与指派上；
-不要设计任何依赖看板列的自动化。
-
-## 7. 反模式
+## 6. 反模式
 
 - ❌ 直接调 `ForgejoIssues` 的方法写 Forgejo——绕过 outbox（§1.2）；
 - ❌ 用管理凭据做协作面的活，或反过来（§1.1）；
@@ -220,30 +194,28 @@ Projects 看板**仍然没有 API 也没有事件**。机器可读的状态一�
 - ❌ 把模型、思考强度这类频繁变化的参数写进标签（§3.3）；
 - ❌ 读状态标签当作输入（§3.3）；
 - ❌ 评论里给分支链接而不是 commit 链接（§3.4）；
-- ❌ 用 `GET /admin/hooks` 判断 webhook 是否存在（§6）；
 - ❌ 笼统 `if status == 500 { ignore }`（§3.5）；
-- ❌ 因为"文档上说有"就调一个没在固定镜像上实测过的端点（§8）。
+- ❌ 因为"文档上说有"就调一个没在固定镜像上实测过的端点（见[基线](../../../docs/developer/forgejo-interop.md)）。
 
-## 8. 动手前的检查清单
+## 7. 动手前的检查清单
 
 - [ ] 这个调用属于管理面、协作面还是执行面？用对应的接口和凭据。
 - [ ] 它会在 Forgejo 里留下痕迹吗？包进 outbox，想清楚幂等键的 discriminator 是什么。
 - [ ] 这个端点在固定版本上实测过吗？没有就先跑一次探针，把结论补进
-      [ai_agent 需求 §15](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/dev-docs/requirements/ai-agent.md)
-      的事实表——**下一个人会依赖你的结论，不会重跑你的探针**。
-- [ ] 新增的行为需要一条需求 ID 吗？需求与计划的写法见[需求编写规范](requirement-authoring.md)。
+      [要求 §15](../dev-docs/requirements/ai-agent.md) 的事实表，并同步到
+      [基线](../../../docs/developer/forgejo-interop.md)——**下一个人会依赖你的结论，不会重跑你的探针**。
+- [ ] 新增的行为需要一条需求 ID 吗？写法见[需求编写规范](../../../docs/developer/requirement-authoring.md)。
 - [ ] 上游返回的成功状态码是什么？创建类接口 `201` 与 `200` 都要接受。
 - [ ] 失败路径：会不会把一个可恢复的冲突当成服务端故障，或者反过来？
 
-## 9. 这些规则从哪来
+## 8. 这些规则从哪来
 
 | 规则 | 依据 |
 | --- | --- |
-| 凭据三面、写路径、授权判定、标签词表、事件入站 | [AI Agent 编排设计](/architecture/ai-agent-orchestration-design) §3—§10 |
-| Actions 授权、Runner 隔离、高风险开关 | [Forgejo Module 设计](/architecture/forgejo-module-design) §3、§5 |
-| 需求 ID 与验收 | [ai_agent 要求](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/dev-docs/requirements/ai-agent.md)、[forgejo 要求](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/dev-docs/requirements/forgejo-module.md) |
-| 固定版本实测结论 | 同上要求文档 §15；探针 `test-env/scripts/forgejo-agent-api-probe.sh` |
-| 实现 | `modules/ai_agent/orchestrator/`（`forgejo.go` 管理面、`forgejo_issues.go` 协作面、`ingress.go` 入站、`reconcile.go` outbox 与对账） |
+| 凭据三面、写路径、授权判定、标签词表、事件入站 | [编排设计](architecture/orchestration-design.md) §3—§10 |
+| 需求 ID 与验收 | [要求](../dev-docs/requirements/ai-agent.md) |
+| 上游事实 | [Forgejo 互操作基线](../../../docs/developer/forgejo-interop.md)；探针 `test-env/scripts/forgejo-agent-api-probe.sh` |
+| 实现 | `orchestrator/`（`forgejo.go` 管理面、`forgejo_issues.go` 协作面、`ingress.go` 入站、`reconcile.go` outbox 与对账） |
 
 规则与代码不一致时**以代码和实测为准**，并把这一页改过来：这份文档的价值全在于"读了就不用再去
-翻三份设计文档和一遍源码"，一旦它开始说谎，就不如没有。
+翻设计文档和一遍源码"，一旦它开始说谎，就不如没有。

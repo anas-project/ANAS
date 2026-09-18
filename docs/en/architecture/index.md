@@ -11,7 +11,7 @@ Chinese is the source language for the detailed design set. The pages below link
 - [dynamic DNS capability selection](/architecture/dynamic-dns-capability-design);
 - [object-storage capability binding and normalized S3 outputs](/en/architecture/object-storage-capability-design);
 - [Forgejo Module identity, Actions authorization, and Incus VM runner design](/architecture/forgejo-module-design);
-- [AI agent orchestration (Forgejo baseline, proposal)](/architecture/ai-agent-orchestration-design) — agents as Forgejo accounts with repository-scoped tokens, issue/label/comment events as the control surface, a standalone orchestrator packaged as a module, and one-job isolated execution;
+- [AI agent orchestration (Forgejo baseline)](/architecture/ai-agent-orchestration-design) — agents as Forgejo accounts with repository-scoped tokens, issue/label/comment events as the control surface, a standalone orchestrator packaged as a module, and one-job isolated execution. The design itself now lives with the component under `modules/ai_agent/`, ready to be split into its own project;
 - [runtime artifacts, releases, and persistent state](/architecture/runtime-release-state-design);
 - [configuration and state lifecycle](/architecture/config-state-lifecycle).
 

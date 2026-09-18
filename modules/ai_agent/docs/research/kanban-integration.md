@@ -12,7 +12,7 @@ evidence_as_of: 2026-08-15
 *从“主题讨论”到“夜间 / 空闲时自动实现”的事件驱动架构、选型与落地路线*
 
 - **决策对象：** ANAS 历史 Kanban 候选及其 AI Agent 接入方式
-- **基线：** [自托管开源 Kanban 研究](self-hosted-open-source-kanban-research.md)（证据截至 2026-08-13）
+- **基线：** [自托管开源 Kanban 研究](../../../../docs/research/self-hosted-open-source-kanban-research.md)（证据截至 2026-08-13）
 - **事实截点：** 2026-08-15；上游动态能力在实施前仍需按锁定版本复核
 - **目标场景：** 新卡片发布主题 → AI 参与讨论 → 形成计划 → 人工或策略批准 → 夜间 / 空闲执行 → 结果回写
 
@@ -115,7 +115,7 @@ Pi 是极简 coding harness，当前上游/包名已迁移到 earendil-works/pi 
 
 ## 5. 推荐参考架构
 
-![看板与 AI Coding Agent 推荐参考架构](assets/kanban-ai-agent-reference-architecture-2026-08-15.png)
+![看板与 AI Coding Agent 推荐参考架构](assets/kanban-reference-architecture-2026-08-15.png)
 
 *图 1  推荐架构：看板是协作界面，编排服务是控制面，Agent 只是可替换执行器。*
 

@@ -6,7 +6,7 @@
 
 **有实质问题，建议修订后再作为实现依据。** Forgejo 作为协作面、文档按 commit 冻结、控制面与执行面分离的方向可以保留；凭据边界、实例生命周期、依赖完成条件和事件处理规则尚未形成一致契约。
 
-基线：2026-09-05 本地工作树，HEAD `455770b`。审查对象为 [AI Agent 编排设计](../../docs/architecture/ai-agent-orchestration-design.md)，全文 853 行；同时核对配套需求、计划及当前 compute 契约。工作树已有大量未提交修改，本报告反映工作树，不代表已发布版本。下文行号均指审查时版本。
+基线：2026-09-05 本地工作树，HEAD `455770b`。审查对象为 [AI Agent 编排设计](../../docs/architecture/orchestration-design.md)，全文 853 行；同时核对配套需求、计划及当前 compute 契约。工作树已有大量未提交修改，本报告反映工作树，不代表已发布版本。下文行号均指审查时版本。
 
 这是静态设计审查，结合 Forgejo v15 官方文档与 Codeberg 官方 SSH 说明核实相关事实；没有连接实际 Forgejo/Incus 实例，也没有运行会创建远端对象的 API probe。未验证的固定镜像行为不能视为已通过。本次只新增报告，不修改设计、需求或实施状态。
 
@@ -31,7 +31,7 @@
 ### F3 · P1：compute 接入描述仍依赖已删除的运行时接口
 
 - **位置：** §5.1，第 409–413 行；§5.2，第 421–423 行。
-- **问题与影响：** 设计称 compute Contract 定义实例生命周期，并在图中使用 `exec_stdin`。当前 [compute 契约](../../contracts/compute/README.md) 只有 `ensure`、`inspect`、`revoke`，负责在 apply 时交付 project、配额和受限证书；实例创建与执行由消费者驱动。[Incus 计划 M0](../plans/incus-module.md) 还明确解释：旧 Provider ABI 没有 stdin 流，已移除旧运行时操作。照本文实现将依赖不存在的接口。
+- **问题与影响：** 设计称 compute Contract 定义实例生命周期，并在图中使用 `exec_stdin`。当前 [compute 契约](../../../../contracts/compute/README.md) 只有 `ensure`、`inspect`、`revoke`，负责在 apply 时交付 project、配额和受限证书；实例创建与执行由消费者驱动。[Incus 计划 M0](../../../../dev-docs/plans/incus-module.md) 还明确解释：旧 Provider ABI 没有 stdin 流，已移除旧运行时操作。照本文实现将依赖不存在的接口。
 - **建议：** 图中分开“apply 时获取沙箱租约”与“运行时使用租约连接 Incus”，说明消费者客户端负责 create/exec/stop/delete、Secret stdin 通道与清理。同步更新依赖里程碑；当前系统容器对应 M7，本文第 434 行仍写 M5。
 - **验证场景：** 控制面重启后仅凭持久化租约和作业记录，可以重新连接已有实例、取消及回收，无需每个作业触发 Provider operation。
 

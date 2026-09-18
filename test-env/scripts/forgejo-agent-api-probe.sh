@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Probe a pinned Forgejo instance for the upstream facts the AI Agent design
-# depends on. See docs/architecture/ai-agent-orchestration-design.md §11 and
-# dev-docs/plans/ai-agent.md M1.
+# depends on. See modules/ai_agent/docs/architecture/orchestration-design.md §11 and
+# modules/ai_agent/dev-docs/plans/ai-agent.md M1.
 #
 # Read-mostly: everything it creates lives under a scratch org and is removed on
 # exit unless PROBE_KEEP=1. It never touches existing repositories.
@@ -345,7 +345,7 @@ record SKIP form-answer-render "表单答案在 issue 正文中的渲染格式�
   echo "- 实例：$FORGEJO_URL"
   echo "- 版本：$(jget "$version" "d['version']")"
   echo "- 时间：$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "- 依据：\`docs/architecture/ai-agent-orchestration-design.md\` §11"
+  echo "- 依据：\`modules/ai_agent/docs/architecture/orchestration-design.md\` §11"
   echo
   echo "| 检查项 | 结果 | 说明 |"
   echo "| --- | --- | --- |$results"

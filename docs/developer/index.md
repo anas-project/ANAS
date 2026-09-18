@@ -15,7 +15,7 @@
 4. [Module 设计与发布检查表](module-design-checklist.md)
 5. [Module 上游升级 SOP](module-upgrade-sop.md)
 6. [Module 升级检查表](module-upgrade-checklist.md)
-7. [与 Forgejo 互操作的原则](forgejo-interop.md)
+7. [与 Forgejo 互操作基线](forgejo-interop.md)
 8. [测试](testing.md)
 9. [容器镜像发布](release.md)
 10. [文档写作标准](documentation-standard.md)
