@@ -17,8 +17,10 @@ Module，都必须订阅 Samba 发布的持久目录事件，不能只等待定�
 
 上游同时支持 LDAP 用户同步和 OIDC/SAML 登录的应用必须**双接入**：LDAP/LDAPS 负责目录 provision
 与属性，OIDC/SAML 负责登录与会话。两侧义务同时成立，“已接 OIDC”不免除事件订阅，“已接 LDAP”
-也不免除会话撤销。下表中 `nextcloud` 与 `meshcentral` 已是双接入；`forgejo`、`vikunja` 当前仅接 OIDC，
-上游 LDAP 支持情况待 M0 盘点确认。准入丧失撤销当前无消费者验收：`casdoor` 的 exact-`sid` E2E 由
+也不免除会话撤销。下表中 `nextcloud` 与 `meshcentral` 已是双接入；`forgejo` 只接 OIDC——固定
+`15.0.7` 虽有 LDAP 用户同步，却没有按不可变 ID 把 OIDC 身份绑定到 LDAP 账号的接口，双接入无法
+安全成立，缺失方向与兜底见 [Forgejo Module 设计](/architecture/forgejo-module-design) §2.2，
+升级复核触发点见同文 §2.3；`vikunja` 当前仅接 OIDC，上游 LDAP 支持情况待 M0 盘点确认。准入丧失撤销当前无消费者验收：`casdoor` 的 exact-`sid` E2E 由
 管理员显式删 session 触发，不是目录事件驱动。
 
 | Module | 是否可用 OIDC 登录 | 当前认证路径 | 结论 |

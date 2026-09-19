@@ -8,13 +8,18 @@ This document records the `forgejo` container adapter, hook, security boundaries
 
 ## Compose topology
 
+The Actions preflight and controller join `compute-control` through their compute Resource projection.
+For local host provisioning it references the pre-created external control bridge; Compose does not
+own its creation or removal. The Forgejo Web service does not gain this host-network attachment.
+`actions-control` keeps the default business gateway with `gw_priority: 1` (Compose 2.33.1+).
+This topology declaration is not native mTLS, isolation or one-job acceptance evidence.
+
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r1` | `actions-control, directory-watch, db, traefik` | 2 |
-| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1` | `actions-control` | 1 |
-| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1` | `actions-control` | 0 |
-| `anas_forgejo_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r1` | `directory-watch` | 2 |
+| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r1` | `actions-control, db, traefik` | 2 |
+| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1` | `actions-control, compute-control` | 1 |
+| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1` | `actions-control, compute-control` | 0 |
 <!-- generated:compose-topology:end -->
 
 Web/API port 3000 is reachable only through Traefik. Built-in SSH container port 2222 is published directly as
@@ -26,7 +31,6 @@ root-owned mount without following symlinks, drops permanently to `1000:1000`, a
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `forgejo.account_linking` | enum (`login`, `auto`) | — | `login` | `static` | `FORGEJO_ACCOUNT_LINKING` | no | no | no | yes | `container_recreate` | How an OIDC login binds to a directory account once synchronization is on; with `auto` the helper refuses a second OAuth2 source |
 | `forgejo.actions_allowed_scopes` | string | — | `""` | `static` | `FORGEJO_ACTIONS_ALLOWED_SCOPES` | no | no | no | yes | `container_recreate` | Comma-separated organizations or repositories authorized to consume ANAS Runner compute |
 | `forgejo.actions_enabled` | bool | — | `false` | `static` | `FORGEJO_ACTIONS_ENABLED` | no | no | no | yes | `container_recreate` | The only shared switch for the Actions server and one-job Runner controller |
 | `forgejo.actions_isolation` | enum (`auto`, `incus_vm`, `incus_container`) | — | `auto` | `static` | `FORGEJO_ACTIONS_ISOLATION` | no | no | no | yes | `container_recreate` | Isolation tier requested from the compute provider |
@@ -34,7 +38,6 @@ root-owned mount without following symlinks, drops permanently to `1000:1000`, a
 | `forgejo.custom_git_hooks_enabled` | bool | — | `false` | `static` | `FORGEJO_CUSTOM_GIT_HOOKS_ENABLED` | no | no | no | yes | `container_recreate` | Allow repository custom Git hooks to execute server-side code as the Forgejo user |
 | `forgejo.db_name` | string | — | `forgejo` | `static` | `FORGEJO_DB_NAME` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Application database name |
 | `forgejo.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Relational database type or automatic selection |
-| `forgejo.directory_sync_enabled` | bool | — | `false` | `static` | `FORGEJO_DIRECTORY_SYNC_ENABLED` | no | no | no | yes | `container_recreate` | Read-only LDAP user sync, automatic registration off, and the directory event watcher; groups are not synchronized |
 | `forgejo.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `git` | `static` | `FORGEJO_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | Service domain prefix |
 | `forgejo.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `FORGEJO_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | IAM login protocol; OIDC only |
 | `forgejo.language` | string | — | — | `inherited` | `FORGEJO_LANGUAGE` | no | yes | no | yes | `reconcile` | Default UI language; browser and saved preferences take precedence |
@@ -70,34 +73,32 @@ use the database provider. The pinned version clears only its local session on `
 no RP-Initiated or IAM-initiated logout receiver.
 
 The current Module consumes no directory capability, configures no LDAP source, publishes or consumes no
-`anasIdentityAnchor`, and supports no SAML source. Forgejo v15 exposes no public interface that safely joins an OIDC
-identity to a pre-provisioned user by immutable LDAP UUID. The design therefore excludes LDAP plus OIDC/SAML dual
-provisioning: OIDC JIT creates users and Forgejo continues to own organizations and teams. See the
-[Forgejo Module design](/architecture/forgejo-module-design) for the decision record.
+`anasIdentityAnchor`, and supports no SAML source. The pinned version exposes no interface that joins an OIDC
+identity to a pre-provisioned LDAP user by an immutable id -- the OIDC source can only fall back to username or
+email -- so LDAP plus OIDC dual provisioning is not implemented: OIDC JIT creates users and Forgejo continues to
+own organizations and teams. The decision and the upgrade re-check trigger are in the
+[Forgejo Module design](/architecture/forgejo-module-design) §2.2.
 
-## Directory synchronization (optional)
+## Boundaries of a single identity path
 
-With `directory_sync_enabled=true` the hook adds three things:
+With OIDC as the only path the Module keeps no directory copy, so it falls outside the scope of the
+[directory event subscription requirement](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)
+and runs no watcher. On the OIDC side, `LOGOUT-R-007`/`R-008` record that the pinned version can neither end the
+IAM central session nor receive an IAM-initiated logout. Neither direction has an automatic path, so per
+`DIRSYNC-R-014` this is the missing side and its fallback:
 
-1. **A read-only LDAP source.** `after_start` passes the input to the in-container helper over stdin, which runs
-   `forgejo admin auth add-ldap/update-ldap` (name `anas-ldap`, LDAPS, `--synchronize-users`). The user filter
-   matches IAM admission: the user class, a present `anasIdentityAnchor`, and — with application filtering on —
-   recursive membership of `APP_forgejo`, `APP_all`, or the administrator group, which `--admin-filter` maps to
-   site administration. **No group synchronization is configured**: the pinned `cmd/admin_auth_ldap.go` exposes
-   no group options and the product has no REST API for authentication sources, so groups still reach teams
-   through the OIDC groups claim at login.
-2. **Account linking.** `ENABLE_AUTO_REGISTRATION` is turned off (accounts come only from the directory) and
-   `ACCOUNT_LINKING` takes `account_linking`. With `auto`, the helper refuses apply if any OAuth2 source other
-   than the managed `anas` exists.
-3. **Directory event subscription.** `anas_forgejo_dirwatch` reuses the application image, runs
-   `directory-watch` as uid 1000, mounts the journal read-only, filters by attribute, debounces for 5 s, spaces
-   refreshes by at least 60 s, and calls `POST /api/v1/admin/cron/sync_external_users` so Forgejo's own sync path
-   refreshes accounts; the periodic cron remains the authoritative fallback. The trigger uses a dedicated managed
-   site administrator `anas_dirwatch` (secret `FORGEJO_DIRWATCH_PASSWORD`) rather than the recovery account. With
-   synchronization off the process exits 0 immediately and `restart: on-failure` keeps it stopped.
+| Directory change | How Forgejo converges |
+| --- | --- |
+| Account disabled, deleted, or removed from `APP_forgejo` | **No automatic path**: an administrator must disable or delete the Forgejo account |
+| Group membership change | Reaches teams through the groups claim at that person's next OIDC login |
+| Rename or mail change | **The same account**: matched by `sub`; username and email are written only at creation, so the username stays frozen at the old value (`inferred`, probe pending) |
 
-Scope: it accelerates **account enablement and attributes** (whether a person can sign in), not team membership.
-A consumer that needs group changes to take effect immediately must read the journal itself.
+Access tokens and SSH keys never pass through a login, so "it converges at the next sign-in" does not hold for
+them. Revocation has to act on the account itself.
+
+**Not yet verified**: whether `prohibit_login` on the pinned version also closes access tokens and Git over SSH.
+Until a probe settles it, revocation means disabling the account *and* explicitly revoking its tokens and SSH
+keys. See [interoperability baseline](/developer/forgejo-interop) §4.
 
 ## Recovery and security boundaries
 

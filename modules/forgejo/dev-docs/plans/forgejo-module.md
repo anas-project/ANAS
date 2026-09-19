@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-21
-updated: 2026-09-13
+updated: 2026-09-20
 ---
 
 # Forgejo Module 实施计划
@@ -13,24 +13,27 @@ updated: 2026-09-13
 改变服务端和 controller，始终不暴露 server-only 或 Runner 第二开关。
 
 本计划只跟踪施工顺序、需求归属和剩余工作。当前实现事实见
-[`modules/forgejo/docs/technical.md`](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/docs/technical.md)。身份设计已经排除 LDAP +
-OIDC/SAML 双链路，因此它不进入待实现里程碑。
+[`modules/forgejo/docs/technical.md`](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/docs/technical.md)。身份只保留 OIDC
+一条链路，LDAP + OIDC/SAML 双链路不进入待实现里程碑；恢复它的唯一入口是 M8 的固定版本升级复核。
 
 ## 1. 需求归属与状态
 
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
-| M0：Forgejo 应用、数据库、OIDC 与恢复账号 | R-001—R-005、R-007、R-008 | 已完成；`R-006` 于 2026-09-13 废弃，由 M7 取代 |
+| M0：Forgejo 应用、数据库、OIDC 与恢复账号 | R-001—R-008 | 已完成；`R-006` 于 2026-09-20 恢复为规范来源（2026-09-13—09-20 期间曾废弃） |
 | M1：Git Hooks/local-path import 安全开关 | R-010—R-012 | 已完成 |
 | M2：Incus compute contract 与 Provider | R-020—R-023 | 实施中；目录契约、Go 边界和 Incus 适配器已完成单元验证，真实宿主待验收 |
 | M3：Actions 单开关与 one-job VM 执行面 | R-030—R-039 | 实施中；Module/controller/guest 资产已接线，真实 one-job 与隔离 E2E 待验收 |
 | M4：预热、扩缩容、空闲资源与回收 | R-040—R-045 | 未开始 |
 | M5：真实发布验收 | R-050—R-054 | 未开始 |
 | M6：外部自动化消费者的边界（AI Agent 依赖） | R-060—R-062 | 未开始 |
-| M7：LDAP 同步 + OIDC 登录的双源身份 | R-063—R-065 | 未开始 |
+| M8：固定版本升级的身份复核 | R-066 | 常设；每次变更 Forgejo 固定版本时执行 |
 
-覆盖统计：36 项需求全部有且只有一个里程碑归属；M0/M1 的 11 项已完成，M2/M3 的 14 项处于实现与
-外部验收阶段。
+> M7（LDAP 同步 + OIDC 登录的双源身份）已于 2026-09-20 整体撤回，`R-063`—`R-065` 废弃、实现已删除，
+> 因此不再占一个里程碑行。撤回理由与删除清单见 §7.2。
+
+覆盖统计：34 项在册需求全部有且只有一个里程碑归属（`R-063`—`R-065` 已废弃，不计入）；M0/M1 的
+12 项已完成，M2/M3 的 14 项处于实现与外部验收阶段。
 
 ## 2. 落地快照
 
@@ -151,24 +154,33 @@ E2E 前不把 Actions 标为 release 能力。
 
 验收：要求文档 `FORGEJO-R-060`—`FORGEJO-R-062`。
 
-## 7.2 M7：LDAP 同步 + OIDC 登录的双源身份
+## 7.2 M7：LDAP 同步 + OIDC 登录的双源身份（已撤回）
 
-依据[设计 §2.2](../../../../docs/architecture/forgejo-module-design.md)（2026-09-13 改写）。动机是让
-Forgejo 保有目录副本，从而能订阅目录事件、把组撤权的生效时间从"下次登录"压到秒级。
+2026-09-13 依据当时的[设计 §2.2](../../../../docs/architecture/forgejo-module-design.md) 引入，
+2026-09-20 连同实现一并撤回。撤回理由见改写后的设计 §2.2：核对固定版本 `cmd/admin_auth_ldap.go`
+后确认 LDAP CLI 没有组同步选项，双源形态换不到 `ai_agent` §6.2 要的 team 成员实时性，只换到"账号能否
+登录"的加速，却要付出目录副本、`ACCOUNT_LINKING=auto` 的三条前提（含"只能有一个 OAuth2 source"这条
+硬约束）和一个常驻 watcher 的代价。
 
-- [x] 只读 LDAP source 同步**用户**（`anas-ldap`，LDAPS，准入过滤与 IAM 一致），不写回目录、不引入
-      SAML/密码回写/anchor reconciler（`R-063`）。**组同步不做**：核对固定版本源码
-      `cmd/admin_auth_ldap.go` 后确认 LDAP CLI 没有任何组选项，也没有认证源 REST API，组仍经 OIDC 映射。
-      整个能力由 `directory_sync_enabled` 开启、默认关闭——它改变账号的产生与绑定方式，不应随升级静默生效。
-- [x] 开启同步时关闭自动注册，`ACCOUNT_LINKING` 取 `account_linking`（默认 `login`）；取 `auto` 时 helper
-      发现受管 `anas` 之外的 OAuth2 源即拒绝 apply，并在 calculate 输出前提告警（`R-064`）。"IAM 已禁止自助
-      改邮箱"无法由本 Module 验证（绑定属性由 Core 定义），因此由管理员选择 `auto` 即表示承担该前提。
-- [x] 目录事件订阅：`anas_forgejo_dirwatch` 按属性过滤、5 秒防抖、60 秒最小间隔触发
-      `sync_external_users`，失败不前移游标；专用托管管理员 `anas_dirwatch`（`R-065`）。实测传播时间待 e2e。
-- [ ] 在目录管理流程中写明邮箱别名与用户名不得回收再分配、改名走正式流程（运维约束，非配置）。
-- [ ] 同步中英文 README 与技术文档。
+已删除的实现：`directory_sync_enabled` 与 `account_linking` 配置、`forgejo.dirwatch_password`
+凭据、Hook 的 LDAP source 与 dirwatch 调和、容器 helper 的 `ldap`/`directory-watch` 子命令、
+`anas_forgejo_dirwatch` Compose 服务与 `directory-watch` 网络。代码保留在 Git 历史中，`R-066`
+复核推翻现结论时从那里取回，不要凭记忆重写。
 
-验收：要求文档 `FORGEJO-R-063`—`FORGEJO-R-065`。
+需求：`R-063`—`R-065` 已废弃；OIDC-only 的边界与禁令回到 `R-006`。
+
+## 7.3 M8：固定版本升级的身份复核（常设）
+
+每次变更 Forgejo 固定版本（含 patch）执行一次，验收 `R-066`：
+
+- [ ] 按[互操作基线](../../../../docs/developer/forgejo-interop.md) §4 跑探针，不凭 changelog 下结论；
+- [ ] 复核[设计 §2.3](../../../../docs/architecture/forgejo-module-design.md) 的四点：LDAP source 的不可变 ID
+      字段、OIDC source 按 claim 绑定既有账号、认证源 REST API 或 LDAP CLI 组同步选项、IAM 主动 logout
+      receiver 或按用户撤销会话/token 的管理端接口；
+- [ ] 顺带复核 `prohibit_login` 是否同时关闭 access token 与 Git over SSH（当前"尚未复核"，撤权流程
+      因此要求显式吊销 token 与 SSH key）；
+- [ ] 结论写回设计 §2.2/§2.3 与互操作基线 §1；第 1、2 点同时成立才评估恢复双链路，并重新走
+      `R-006` 的修订流程。
 
 ## 8. CI 门禁
 
@@ -188,8 +200,6 @@ Forgejo 保有目录副本，从而能订阅目录事件、把组撤权的生效
 | R-044 | 待补 `server-forgejo-actions-idle-e2e.sh` | Incus + 30 分钟 Actions on/off 对照 | — | 待执行 |
 | R-045 | 待补 `server-forgejo-actions-waiting-ttl-e2e.sh` | Incus + concurrency group 阻塞 | — | 待执行 |
 | R-060 | 待补 `server-forgejo-group-team-map-e2e.sh` | LLNG/Authentik + 目录组变更 | — | 待执行 |
-| R-064 | 待补 `server-forgejo-dual-source-e2e.sh` | LDAP 同步账号 + OIDC 首次登录绑定、改名与停用 | — | 待执行 |
-| R-065 | 待补 `server-forgejo-dirwatch-e2e.sh` | 目录组撤权到 Forgejo 生效的实测延迟 | — | 待执行 |
 | R-050 | 待补 `server-forgejo-app-e2e.sh` | PostgreSQL/MariaDB、amd64/arm64 | — | 待执行 |
 | R-051 | 待补 `server-forgejo-oidc-e2e.sh` | LLNG/Authentik 浏览器 | — | 待执行 |
 | R-052 | 待补 `server-forgejo-actions-state-e2e.sh` | Incus + Forgejo | — | 待执行 |
@@ -200,11 +210,10 @@ Forgejo 保有目录副本，从而能订阅目录事件、把组撤权的生效
 | 文档 | 需要的变更 | 状态 |
 | --- | --- | --- |
 | `forgejo` 的 README、技术文档与配置参考（中英文） | M1 的 Git Hooks 与 local-path import 开关 | 已完成（§3，2026-08-22） |
-| [Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md) §2.2、[IAM Provider 要求](../../../../dev-docs/requirements/iam-provider.md) §1.6 | M7 的双源决定，以及禁止自助修改 `mail`/`sAMAccountName` 这一前提 | 已完成（`4317f7c`）；实现未开始 |
-| 本计划开头、§2 落地快照与 §12 明确排除 | 仍写「已经排除 LDAP + OIDC/SAML 双链路」，并把「Forgejo LDAP 用户/Group 预配」「LDAP 预建用户与 OIDC 自动合并」列为排除项，与 M7 矛盾 | 未开始 |
-| `forgejo` 的技术文档（中英文） | 仍以「决定不实现 LDAP + OIDC/SAML 双链路」解释现状，需改为引用 M7 的决定 | 未开始 |
-| `forgejo` 的 README 与技术文档（中英文） | M6 的系统 webhook 与管理凭据归属、M7 的 LDAP source 与账号绑定落地时改写 | 未开始 |
-| [Module IAM / OIDC 支持清单](../../../../docs/reference/module-iam-support.md)与英文镜像 | `forgejo` 一行与双接入段落随 M7 更新 | 未开始 |
+| [Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md) §2.2、§2.3 | 身份收敛为 OIDC-only，写明撤回理由、运维必须承担的代价，以及 §2.3 的升级复核四点 | 已完成（2026-09-20） |
+| `forgejo` 的 README 与技术文档（中英文） | 删除目录同步段落与两个配置参数，改写为单链路身份的边界表与「尚未复核」项 | 已完成（2026-09-20） |
+| [Module IAM / OIDC 支持清单](../../../../docs/reference/module-iam-support.md)与英文镜像 | `forgejo` 一行与双接入段落回到 OIDC-only | 已完成（2026-09-20） |
+| `forgejo` 的 README 与技术文档（中英文） | M6 的系统 webhook 与管理凭据归属落地时改写 | 未开始 |
 | 本计划 §4（M2） | 已加与 [Incus compute Provider 实施计划](../../../../dev-docs/plans/incus-module.md) 的拆分说明，但要点列表与「当前完成/剩余」仍按 Provider 实现叙述 | 部分完成 |
 
 ## 11. 当前阻塞
@@ -219,7 +228,7 @@ Forgejo 保有目录副本，从而能订阅目录事件、把组撤权的生效
 
 以下项目不属于剩余工作：
 
-- Forgejo LDAP 用户/Group 预配；
+- Forgejo LDAP 用户/Group 预配（恢复的唯一入口是 §7.3 M8 的升级复核）；
 - Forgejo SAML；
 - `anasIdentityAnchor` claim/reconciler；
 - LDAP 预建用户与 OIDC 自动合并；

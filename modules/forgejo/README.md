@@ -40,12 +40,17 @@ Module 登记 confidential OIDC client `forgejo`，回调地址为
 `APP_all` 或管理员组成员进入；管理员组 claim 会映射为 Forgejo site administrator。
 组织、team、仓库权限及部署密钥仍由 Forgejo 管理；Module 不配置 SAML 源，也不向目录回写密码。
 
-**目录同步（可选，`directory_sync_enabled`）。** 开启后，只读 LDAP 源按与 IAM 相同的准入条件同步
-用户，OIDC 登录绑定到这些账号而不再另行注册，并由 watcher 订阅目录事件日志——被移出 `APP_forgejo`
-或停用的账号在数秒内失去访问，而不是等到下次登录。组仍经 OIDC 的 groups 声明到达 team：Forgejo 15
-的 LDAP 命令行没有组同步选项。`account_linking=login`（默认）要求每人先登录一次自己被同步出的账号；
-`auto` 按用户名或邮箱自动绑定，仅在 IAM 禁止自助修改邮箱与 `sAMAccountName`、且部署只有一个 OAuth2
-来源时安全，后者由 Module 在 apply 时强制校验。
+**只有 OIDC 一条登录链路。** Module 不配置 LDAP 源，不同步目录用户与组，也不发布或消费
+`anasIdentityAnchor`：固定版本没有"按不可变 ID 把 OIDC 身份绑定到预配 LDAP 账号"的接口，按用户名或
+邮箱回退绑定会让回收的标识符接上别人的旧账号。代价是**撤权不会自动到达 Forgejo**：目录里停用一个人
+之后，他的 Forgejo 账号、已建立的 session、access token 与 SSH key 仍然有效，而后两者根本不经过登录，
+不存在"下次登录时收敛"。离职与紧急撤权必须由管理员在 Forgejo 停用该账号，这一步不能省。
+
+**改名不会建出第二个账号。** Forgejo 按 OIDC `sub` 认人（`sub` 存进内部的 `login_name` 字段），用户名
+取 `preferred_username` 且只在建号时写一次，因此目录改名之后仍是同一个账号，只是 Forgejo 里的用户名
+冻结在旧值，仓库路径仍然是 `/old/...`；邮箱同样不刷新。邮箱别名与用户名仍然不得回收再分配——Forgejo
+的邮箱全局唯一，旧地址还挂在原账号上时，新人首次登录会因冲突建号失败。（以上按上游实现推断，尚未
+探针复核。）
 
 Forgejo `/user/logout` 只清除应用 session。固定版本没有可由本 Module 稳定登记的 RP-Initiated
 Logout 或 IAM 主动 front/back-channel receiver，因此不声明单点登出与后台会话撤销。
@@ -66,7 +71,6 @@ anas admin local credential forgejo break_glass -w /srv/anas
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `forgejo.account_linking` | enum (`login`, `auto`) | — | `login` | `static` | `FORGEJO_ACCOUNT_LINKING` | 否 | 否 | 否 | 是 | `container_recreate` | 开启目录同步后 OIDC 登录如何绑定到目录同步出的账号：`login` 要求本人先登录该账号一次；`auto` 按用户名或邮箱自动绑定，仅在 IAM 禁止自助修改邮箱与用户名且只有一个 OAuth2 来源时安全 |
 | `forgejo.actions_allowed_scopes` | string | — | `""` | `static` | `FORGEJO_ACTIONS_ALLOWED_SCOPES` | 否 | 否 | 否 | 是 | `container_recreate` | 可使用 ANAS Runner 的组织或仓库 scope，逗号分隔 |
 | `forgejo.actions_enabled` | bool | — | `false` | `static` | `FORGEJO_ACTIONS_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | Actions 服务端与 one-job Runner controller 的唯一共同开关 |
 | `forgejo.actions_isolation` | enum (`auto`, `incus_vm`, `incus_container`) | — | `auto` | `static` | `FORGEJO_ACTIONS_ISOLATION` | 否 | 否 | 否 | 是 | `container_recreate` | 向 compute Provider 申请的隔离档：VM 有独立 guest kernel，系统容器与宿主共享内核 |
@@ -74,7 +78,6 @@ anas admin local credential forgejo break_glass -w /srv/anas
 | `forgejo.custom_git_hooks_enabled` | bool | — | `false` | `static` | `FORGEJO_CUSTOM_GIT_HOOKS_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否允许仓库自定义 Git Hooks；Hook 会以 Forgejo 用户身份执行服务端代码 |
 | `forgejo.db_name` | string | — | `forgejo` | `static` | `FORGEJO_DB_NAME` | 否 | 否 | 否 | 否：`migrate-forgejo-database` | `data_migrate` | 应用数据库名 |
 | `forgejo.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-forgejo-database` | `data_migrate` | 关系数据库类型或自动选择 |
-| `forgejo.directory_sync_enabled` | bool | — | `false` | `static` | `FORGEJO_DIRECTORY_SYNC_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 通过只读 LDAP 源同步用户并订阅目录事件日志，移出 `APP_forgejo` 或停用的账号在数秒内失去访问；组仍经 OIDC 声明到达团队 |
 | `forgejo.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `git` | `static` | `FORGEJO_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
 | `forgejo.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `FORGEJO_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议；仅支持 OIDC |
 | `forgejo.language` | string | — | — | `inherited` | `FORGEJO_LANGUAGE` | 否 | 是 | 否 | 是 | `reconcile` | 默认 UI 语言；浏览器和用户偏好优先 |

@@ -12,6 +12,7 @@
 | --- | --- | --- |
 | [应用域与 Samba AD 域分离](domain-separation.md) | 参数契约、DNS 模式、迁移与验收 | 实施中 |
 | [Samba 目录事件订阅与实时同步](directory-event-subscription.md) | IAM Provider 与所有 LDAP/LDAPS Module 的订阅接入、可靠消费、全量兜底、准入丧失会话撤销、双接入和 E2E | 实施中 |
+| [目录身份键](directory-identity-key.md) | anchor 作为唯一持久身份键、主体标识符切换为 anchor、逐 Module 盘点匹配键与改名复用身份 E2E；验收依据见[要求](../requirements/directory-identity-key.md) | 实施中 |
 | [Changelog](changelog.md) | 变更记录文件布局、合并时写入、发布改名与 master 回推；验收依据见[要求](../requirements/changelog.md) | 提案 |
 | [Compose 执行边界](compose-execution-boundary.md) | Docker endpoint 绑定、Compose 首因错误保留与补偿结果分层 | 部分实施 |
 | [条件 Capability 依赖](conditional-capability-dependency.md) | Manifest 条件字段、解析器、锁与输出，Adminer 作为第一个消费者；验收依据见[要求](../requirements/conditional-capability-dependency.md) | 实施中 |

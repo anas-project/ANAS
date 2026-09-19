@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-22
-updated: 2026-08-22
+updated: 2026-09-20
 ---
 
 # Forgejo Module 集成要求
@@ -40,7 +40,7 @@ Runner 包可以保留独立版本和安全边界，但不得提供 `runner.enab
 | `FORGEJO-R-003` | 数据目录、数据库 Resource、Secret Store 与部署元数据必须形成一致备份恢复点；修改数据库类型或名称不得宣称自动迁移 | 文档 |
 | `FORGEJO-R-004` | Forgejo 只通过通用 IAM OIDC binding 登录，首次登录 JIT 建号，不得按 LLNG、Authentik 或其他 Provider 名称分支 | 单元 |
 | `FORGEJO-R-005` | 应用过滤开启时只允许 `APP_forgejo`、`APP_all` 或管理员组进入；管理员组映射 site administrator | 单元 |
-| `FORGEJO-R-006` | **已废弃**（2026-09-13，被 `FORGEJO-R-063`—`R-065` 取代）：原要求"当前版本不得配置 LDAP/SAML source、目录用户/组同步或 LDAP/OIDC 自动账号合并"。SAML source、密码回写与 anchor reconciler 的禁令移入 `FORGEJO-R-063` | —— |
+| `FORGEJO-R-006` | 当前固定版本不得配置 LDAP/SAML source、目录用户或组同步，也不得启用 LDAP/OIDC 自动账号合并（`ACCOUNT_LINKING` 固定 `disabled`）；不得写回密码，不得实现 `anasIdentityAnchor` reconciler，也不得发布 Forgejo 不消费的 anchor claim。账号只由 OIDC JIT 产生 | 静态 + 单元 |
 | `FORGEJO-R-007` | `break_glass` 本地账号密码由 Secret Store 管理，apply 不得把明文放入宿主 Docker argv；不能满足事务轮换时不得声明 rotate | 单元 |
 | `FORGEJO-R-008` | M3 接入前配置 inventory 不得暴露 `forgejo.actions_enabled`，Hook 必须固定输出 `false`；M3 接入时必须由 R-030—R-039 的完整单开关调和替代，不能只移除固定关闭 | 单元 |
 | `FORGEJO-R-010` | `custom_git_hooks_enabled` 是默认 `false` 的 bool，取反映射 `DISABLE_GIT_HOOKS`，变更触发 `container_recreate` | 单元 |
@@ -72,11 +72,12 @@ Runner 包可以保留独立版本和安全边界，但不得提供 `runner.enab
 | `FORGEJO-R-053` | Actions E2E 必须证明获批 repo/org 能运行无 Secret 的容器构建，未获批仓库无 Runner，正常/失败/取消/controller crash 后不残留 VM、磁盘或 token | e2e |
 | `FORGEJO-R-060` | OIDC auth source 必须支持把 IAM group claim 声明式映射到 Forgejo 组织 team（含登录时的自动移除），映射内容由消费方提供；Forgejo Module 不得硬编码具体组名 | 单元 + e2e |
 | `FORGEJO-R-061` | Forgejo Module 的 reconcile 不得删除或改写由管理端 API 创建的自动化账号、token 与 SSH key；这些对象的生命周期归属其创建方 | 单元 + 审阅 |
-| `FORGEJO-R-063` | 开启目录同步（`directory_sync_enabled`，默认关闭）时必须配置只读 LDAP source 同步**用户**，准入过滤与 IAM 一致；不得写回目录，也不得配置 SAML source、密码回写或 `anasIdentityAnchor` reconciler。组同步不在本条范围：固定 `15.0.7` 的 LDAP CLI 没有组选项且无认证源 REST API，组仍经 OIDC 声明映射 team | 静态 + 单元 |
-| `FORGEJO-R-064` | 开启目录同步时 OIDC 登录必须绑定到 LDAP 同步出的既有账号且不再自动注册；`account_linking` 默认 `login`，取 `auto` 的前提是 IAM 已禁止自助修改 `mail`/`sAMAccountName`（[IAM Provider 要求](../../../../dev-docs/requirements/iam-provider.md) §1.6）且部署只有一个 OAuth2 source——后者必须在 apply 时强制校验并拒绝 | 单元 + e2e |
-| `FORGEJO-R-065` | 开启目录同步时必须订阅 Samba 目录事件日志，在声明的最大传播时间（防抖 + 最小间隔）内触发 Forgejo 的外部用户同步，使账号停用或移出准入组不必等到下次登录；team 成员关系不在本条覆盖范围 | 单元 + e2e |
+| `FORGEJO-R-063` | **已废弃**（2026-09-20，双源形态撤回，身份收敛为 OIDC-only）：原要求"开启目录同步时必须配置只读 LDAP source 同步用户"。LDAP source 的禁令回归 `FORGEJO-R-006` | —— |
+| `FORGEJO-R-064` | **已废弃**（2026-09-20，双源形态撤回，身份收敛为 OIDC-only）：原要求"开启目录同步时 OIDC 登录必须绑定到 LDAP 同步出的既有账号"。`account_linking` 配置已移除，`ACCOUNT_LINKING` 固定 `disabled`，见 `FORGEJO-R-006` | —— |
+| `FORGEJO-R-065` | **已废弃**（2026-09-20，双源形态撤回，身份收敛为 OIDC-only）：原要求"开启目录同步时必须订阅 Samba 目录事件日志"。Module 不再持有目录副本，不在 `DIRSYNC-R-002` 适用范围；撤权兜底路径见 `FORGEJO-R-006` 与设计 §2.2 | —— |
 | `FORGEJO-R-062` | Forgejo Module 不注册业务用系统 webhook，也不得在 reconcile 中清理不属于自己的 hook；管理凭据的发放与审计边界必须在文档中说明 | 单元 + 审阅 |
 | `FORGEJO-R-054` | 纯代码托管 Module 可以先于 Runner 执行面达到 `release`，但在 `FORGEJO-R-052` 与 `FORGEJO-R-053` 完成前不得把 Actions 功能标为可用或 release | 审阅 |
+| `FORGEJO-R-066` | 每次变更 Forgejo 固定版本（含 patch）必须按[设计](../../../../docs/architecture/forgejo-module-design.md) §2.3 复核四点：LDAP source 是否有可配置的不可变 ID 字段、OIDC source 能否按 claim 绑定既有账号、是否出现认证源 REST API 或 LDAP CLI 组同步选项、是否出现 IAM 主动 logout receiver 或按用户撤销会话/token 的管理端接口。复核必须先跑互操作探针再改结论，结果写回设计 §2.2 与互操作基线；在复核结论推翻 `FORGEJO-R-006` 之前不得恢复双链路 | 审阅 |
 
 ## 4. 明确排除
 

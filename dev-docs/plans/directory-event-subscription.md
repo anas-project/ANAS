@@ -90,6 +90,6 @@ updated: 2026-09-13
 | 文档 | 需要的变更 | 状态 |
 | --- | --- | --- |
 | [Module IAM / OIDC 支持清单](../../docs/reference/module-iam-support.md)与英文镜像的「Samba 目录事件订阅规范」 | 订阅义务、准入丧失会话撤销（R-013）与双接入（R-014）的规范摘要 | 已完成（`40a8b2e` 补入 R-013、R-014 两段） |
-| 同上 | 仍写 `forgejo` 的上游 LDAP 支持「待 M0 盘点确认」；`4317f7c` 已决定 Forgejo 改为 LDAP 同步 + OIDC 登录双源（`FORGEJO-R-063`—`R-065`），该句应改为引用这个决定 | 未开始 |
+| 同上 | `forgejo` 的盘点已于 2026-09-20 完成：固定 `15.0.7` 没有按不可变 ID 绑定 OIDC 与 LDAP 账号的接口，双接入无法安全成立，因此保持 OIDC-only 并按 `R-014` 写明缺失方向与兜底（管理员在 Forgejo 停用账号）。`vikunja` 一句仍待盘点 | 已完成（`forgejo` 部分，2026-09-20） |
 | 各 IAM Provider 与直接 LDAP/LDAPS Module 的 README 与技术文档（中英文） | M0：单支持的写明缺失方向与兜底路径（R-014）；M2：最大传播时间、全量兜底周期、测试入口与结果；M3：准入丧失的最大传播时间与撤销范围。目前只有 `casdoor` 的技术文档有目录事件一节，`authentik` 已消费事件但文档未提及 | 未开始 |
 | [英文架构索引](../../docs/en/architecture/index.md) | 按文档标准 §2 至少补 [Directory event journal](../../docs/architecture/directory-event-journal.md) 的英文摘要；目前没有条目 | 未开始 |

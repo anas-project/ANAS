@@ -25,8 +25,12 @@ An application whose upstream supports both LDAP user synchronization and OIDC/S
 attached through **both**: LDAP/LDAPS for directory provisioning and attributes, OIDC/SAML for login
 and session. Both sets of obligations apply at once — "already on OIDC" does not waive event
 subscription, and "already on LDAP" does not waive session revocation. In the table below `nextcloud`
-and `meshcentral` are already dual-attached; `forgejo` and `vikunja` currently use OIDC only, and their
-upstream LDAP support is pending the M0 inventory. Admission-loss revocation has no consumer
+and `meshcentral` are already dual-attached; `forgejo` uses OIDC only: the pinned `15.0.7` does
+synchronize LDAP users but exposes no interface that binds an OIDC identity to an LDAP account by an
+immutable id, so dual attachment cannot be made safe. The missing side and its fallback are in the
+[Forgejo Module design](/architecture/forgejo-module-design) §2.2, and the upgrade re-check trigger in
+§2.3 of the same document. `vikunja` currently uses OIDC only, and its upstream LDAP support is pending
+the M0 inventory. Admission-loss revocation has no consumer
 acceptance yet: the `casdoor` exact-`sid` E2E is triggered by an administrator explicitly deleting a
 session, not by a directory event.
 

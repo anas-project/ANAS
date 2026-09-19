@@ -1,7 +1,7 @@
 # Forgejo Module 设计
 
 > 状态：**当前模型与明确标注的未实现部分**。Forgejo 应用、controller、Incus adapter 和 guest image
-> 资产已实现；独立 Incus/KVM 隔离与真实 one-job E2E 尚未完成，不能视为 release 能力。更新：2026-08-22。
+> 资产已实现；独立 Incus/KVM 隔离与真实 one-job E2E 尚未完成，不能视为 release 能力。更新：2026-09-20。
 
 本文记录 Forgejo Module 的身份、Actions 授权、Runner 隔离和高风险功能开关设计。当前实现事实以
 [`modules/forgejo/module.yml`](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/module.yml)和
@@ -36,54 +36,74 @@ Group，登录协议负责交互认证，两条链路以不可变 `anasIdentityA
 
 这是一项能力门禁，不是要求所有应用都实现两条链路。
 
-### 2.2 Forgejo 结论：LDAP 同步 + OIDC 登录的双源形态
+### 2.2 Forgejo 结论：只用 OIDC 登录
 
-> 状态：**2026-09-13 决定，尚未实现。** 本节取代此前"不实现双链路"的结论；实现前 Module 保持
-> OIDC-only 的现状。验收条目见 `FORGEJO-R-063`—`FORGEJO-R-065`，原 `FORGEJO-R-006` 已废弃。
+> 状态：**2026-09-20 决定并已实现**。此前 2026-09-13 的"LDAP 同步 + OIDC 登录双源形态"结论连同其
+> 实现一并撤回，`FORGEJO-R-063`—`R-065` 作废，`FORGEJO-R-006` 恢复为本节的规范来源，新增
+> `FORGEJO-R-066` 约束升级复核。
 
-固定 Forgejo v15 能做 LDAP 用户同步、LDAP Group 成员校验和 OIDC 登录。原结论拒绝同时使用两者，
-理由是 LDAP source 没有可配置的不可变用户 UUID 字段，OIDC source 也没有按 anchor claim 绑定既有
-LDAP 用户的接口——绑定只能落回用户名或邮箱。
+固定 Forgejo v15 分别会做 LDAP 用户同步、LDAP Group 成员校验和 OIDC 登录，但**不能把两条链路安全地
+接起来**：LDAP source 没有可配置的不可变用户 UUID 字段，OIDC source 也没有按 anchor claim 绑定既有
+LDAP 用户的接口——绑定只能落回用户名或邮箱。§2.1 的四条门禁里第 1、2、4 条都不成立，因此 Forgejo
+不进入双链路形态，只保留 OIDC 一条链路：用户由 OIDC JIT 创建，Organization/Team 仍由 Forgejo 管理。
 
-改变结论的不是上游新增了 anchor 绑定，而是**需求变了**：[AI Agent 编排](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/docs/architecture/orchestration-design.md) §6.2
-需要组变更秒级生效。只有 OIDC 一条链路时，组声明随 claim 在**登录时**才到达 Forgejo，撤权要等
-用户下次登录。让 Forgejo 通过 LDAP 保有目录副本，它就落入[目录事件订阅要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)
-的范围，可以像 authentik 与 Casdoor 那样订阅目录事件日志并按游标增量刷新。
+**为什么 2026-09-13 的双源结论被撤回。** 当时改变结论的不是上游新增了 anchor 绑定，而是
+[AI Agent 编排](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/docs/architecture/orchestration-design.md) §6.2
+需要组变更秒级生效：让 Forgejo 经 LDAP 保有目录副本，它就能订阅[目录事件日志](https://github.com/anas-project/ANAS/blob/master/docs/architecture/directory-event-journal.md)
+并按游标增量刷新。实现时核对固定版本源码 `cmd/admin_auth_ldap.go` 后确认，**LDAP CLI 没有任何组同步
+选项，产品也没有认证源 REST API**，组只能继续经 OIDC 声明在登录时映射 team。也就是说双源形态换不到
+§6.2 真正要的 team 成员实时性，只能换到"账号能否登录"的加速，而代价是：
 
-因此确定设计是：
+- 引入一份目录副本，从此落入[目录事件订阅要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)
+  的全部订阅、收敛与 E2E 义务；
+- `ACCOUNT_LINKING=auto` 的三条前提，其中"部署只能有一个 OAuth2 source"是一条会限制未来外部协作
+  （例如给外部贡献者接第三方登录）的硬约束；
+- 一个常驻 watcher 进程、一个专用站点管理员账号和它的 Secret。
 
-- **LDAP source（只读）同步用户**，目录仍是唯一事实来源；Forgejo 侧不写回。**组不经 LDAP 同步**：固定
-  版本 `cmd/admin_auth_ldap.go` 的 add-ldap/update-ldap 没有任何组选项，产品也没有认证源 REST API，
-  组同步只能在 Web UI 里配置，无法声明式调和；组仍经 OIDC groups 声明在登录时映射 team；
-- **OIDC source 负责交互登录**；
-- **`ACCOUNT_LINKING=auto` 为目标取值**：OIDC 登录按用户名或邮箱自动绑定到 LDAP 同步出的既有账号；
-- Forgejo 订阅目录事件日志，在声明的最大传播时间内触发自己的外部用户同步——它加速的是**账号启停与
-  属性**，不覆盖 team 成员关系；
-- 整个能力由 `directory_sync_enabled` 开启、默认关闭，`ACCOUNT_LINKING` 由 `account_linking` 选择
-  （默认 `login`）；
-- 管理员 Group 仍映射为 Forgejo site administrator，仓库与 Organization 授权仍由 Forgejo 管理。
+用一条硬约束加一份目录副本换半个收益，不成立。**安全边界没有变差**：撤权本来就不能只靠 LDAP 同步，
+因为 access token 与 SSH key 根本不经过登录。
 
-**`auto` 的风险与它成立的条件。** 上游对 `auto` 的警告是"同用户名或同邮箱就授予既有账号访问权"。
-在本部署里两条链路指向同一个 Samba AD，同一个人两边的 `sAMAccountName` 与 `mail` 本就一致，因此
-危险的不是两个人撞同一个标识符，而是**同一个标识符先后属于不同的人**。三条前提必须同时成立，
-`auto` 才是安全的：
+**OIDC-only 的代价必须写明，并由运维承担。** 按 `DIRSYNC-R-014`，这里声明缺失的是哪一侧、兜底是什么：
 
-1. **IAM 不得允许用户自助修改 `mail` 与 `sAMAccountName`**。这是硬前提：两家 Provider 都保存目录
-   影子记录，写回 AD 的 `svc_ldap` 是只读，所以自助修改只落在 IAM 本地，却会直接进入 OIDC 的 email
-   claim，直到下一次全量同步覆盖为止——足够完成一次冒名绑定。该禁令已写进
-   [IAM Provider 要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/iam-provider.md) §1.6。
-2. **不得再启用第二个 OIDC/OAuth source**（例如给外部贡献者接 GitHub 登录）。一旦存在不受本部署
-   控制的身份源，`auto` 就变成"外部身份按邮箱认领内部账号"。需要外部协作时必须改用其他机制，
-   而不是加一个登录源。
-3. **邮箱别名与用户名不得回收再分配**，改名走正式流程。这条对 `auto` 与 `login` 一样成立：
-   Forgejo 的 LDAP source 没有不可变 UUID，回收的地址会让新人接上旧账号。
+| 目录侧变更 | Forgejo 侧的收敛路径 |
+| --- | --- |
+| 账号停用、删除、移出 `APP_forgejo` | **无自动路径**：Module 不持有目录副本，固定版本也没有 IAM 主动 logout receiver（`LOGOUT-R-008`）。管理员必须在 Forgejo 停用或删除该账号 |
+| 组成员变更 | 该用户下次 OIDC 登录时随 groups 声明到达 team（`FORGEJO-R-060`） |
+| 改名、邮箱变更 | **同一个账号**：Forgejo 按 OIDC `sub` 认人（`sub` 存进 `login_name`），用户名取 `preferred_username` 且只在建号时写一次，因此改名后用户名冻结在旧值，仓库路径仍是 `/old/...`；邮箱同样不刷新。`sub` 若不稳定才会建出第二个账号 |
 
-前两条是配置约束，可以在验收里检查；第三条是运维约束，必须写进目录管理流程。任何一条不成立时，
-退回 `ACCOUNT_LINKING=login`（要求用户先登录既有账号自证所有权）是正确的降级，代价是每人一次
-交互。
+因此有两条约束必须写进目录管理流程，Module 无法代为强制：**用户名与邮箱别名不得回收再分配、改名走
+正式流程**；**离职与紧急撤权必须包含"在 Forgejo 停用账号并吊销其 token 与 SSH key"这一步**。需要组
+撤权即时生效的消费者（`ai_agent`）必须自己订阅目录事件日志并保留即时否决表，这一点在双源形态下同样
+成立，不因本次撤回而改变。
 
-仍然不做的：SAML source、密码回写、`anasIdentityAnchor` 的自动 reconciler，以及发布一个 Forgejo
-不消费的 anchor claim。anchor 仍是目录侧的永久身份键，Forgejo 只是还消费不了它。
+**上面的"无自动路径"是可以解开的，入口不在 Forgejo。** Forgejo 把 OIDC `sub` 原样存进 `login_name`，
+而管理端用户列表对管理员会返回 `login_name`。因此只要 IAM 把主体标识符本身取成 `anasIdentityAnchor`
+（[目录身份键要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-identity-key.md)
+`DIRKEY-R-008`），Forgejo 侧不需要任何新能力就持有了一个可以直接与目录对账的稳定键：列出 Forgejo 的
+外部账号、与目录准入集合取差、对差集撤权，匹配是精确的，不会误伤改过名的在职者。这条路不需要 LDAP
+source，也不改变账号的产生方式，因此与本节的 OIDC-only 结论并不冲突；它的落地由
+[目录身份键实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md)
+M2 跟踪，不在本 Module 的里程碑内。
+
+仍然不做的：LDAP source、SAML source、密码回写、`anasIdentityAnchor` 的自动 reconciler。发布一个
+Forgejo 不消费的 anchor claim 同样不做——上面那条路用的是 `sub` 本身，不是额外的 claim。
+
+### 2.3 升级复核：固定版本每次变更都要重新判定
+
+本节结论绑定在固定版本 `15.0.7` 的能力上，因此**每次变更 Forgejo 固定版本（含 patch）都必须复核以下
+四点**，任何一点成立就重新评估双链路（`FORGEJO-R-066`）：
+
+1. LDAP source 是否新增了可配置的不可变 ID 字段——例如把目录 UUID/anchor 作为外部 ID 持久化；
+2. OIDC/OAuth2 source 是否能按 claim（而不是用户名或邮箱）绑定到既有账号；
+3. 是否出现认证源的 REST API，或 LDAP CLI 的组同步选项——这决定 team 成员关系能否离开"登录时刻"；
+4. 是否出现 IAM 主动 logout receiver（front/back-channel），或能按用户撤销会话、token 与 SSH key 的
+   管理端接口。
+
+第 1、2 点同时成立才可能恢复双链路；第 3、4 点即使双链路仍不成立也有独立价值，它们直接决定撤权能否
+不依赖人工。四点都只问 **Forgejo 上游**；IAM 侧的主体标识符取 anchor 是另一条独立的路，由
+`DIRKEY-R-008` 规定，不随本节复核。复核必须按[互操作基线](https://github.com/anas-project/ANAS/blob/master/docs/developer/forgejo-interop.md) §4
+先跑探针再改文档——这一页里过半条目与上游文档描述不符，不能凭 changelog 下结论。结论写回本节、
+`FORGEJO-R-066` 的执行记录和互操作基线 §1。
 
 ## 3. Actions 授权模型
 
@@ -176,7 +196,7 @@ local-path import 只放开 Forgejo 功能开关，不自动增加宿主挂载�
 
 ## 6. 非目标
 
-- Forgejo LDAP/SAML 与 `anasIdentityAnchor` 自动关联；
+- Forgejo LDAP source、SAML source 与 `anasIdentityAnchor` 自动关联（§2.2、§2.3）；
 - global Runner 或共享 ANAS 宿主 Docker socket；
 - 在 Forgejo 容器内调用 Incus/libvirt/hypervisor API；
 - 在 ANAS 核心服务宿主运行 privileged DinD；

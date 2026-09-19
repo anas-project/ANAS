@@ -31,9 +31,9 @@ Provider 与 Module 两侧必须同时通过，组合能力才能标为双向登
    `sAMAccountName` 或基础域名臆造 email claim。
 6. **用户不得自助修改 `mail`、`sAMAccountName`、`displayName` 或 anchor。** 保存目录影子记录的
    Provider 必须关闭本地 profile 上这些字段的自助编辑（Casdoor 的账号项 modify 规则、authentik 的
-   user settings flow 同理），它们只能由目录同步产生。理由不是洁癖：`mail` 是下游应用的账号绑定
-   依据——Forgejo 的 `ACCOUNT_LINKING` 就按 email 匹配既有账号——本地可改的邮箱等于把"我是谁"
-   的决定权交给了用户自己，而且改动只落在 IAM 本地、不回写 AD（写回凭据 `svc_ldap` 是只读），
+   user settings flow 同理），它们只能由目录同步产生。理由不是洁癖：`mail` 与 `sAMAccountName` 是
+   下游应用认领既有账号的依据——任何按邮箱或用户名绑定的应用都算，Forgejo 的 `ACCOUNT_LINKING`
+   一旦不是 `disabled` 就是一例——本地可改的邮箱等于把"我是谁"的决定权交给了用户自己，而且改动只落在 IAM 本地、不回写 AD（写回凭据 `svc_ldap` 是只读），
    直到下一次全量同步覆盖前都会进入 claim。自助修改邮箱必须走邮件 Module 或管理流程改 AD。
 7. 停用、锁定或不满足目录认证条件的账号必须在授权策略之前被拒绝。
 8. 嵌套组属于正式契约。`用户 -> ROLE_x -> APP_y` 与直接加入 `APP_y` 等价；递归实现

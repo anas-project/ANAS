@@ -3,7 +3,9 @@
 > 状态：**当前模型**。事实由 `test-env/scripts/forgejo-agent-api-probe.sh` 对固定
 > `codeberg.org/forgejo/forgejo:15.0.7-rootless`（`15.0.7+gitea-1.22.0`）实测得出，逐条结论与通过
 > 数记录在 [`ai_agent` 要求 §15](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/dev-docs/requirements/ai-agent.md)。
-> 升级固定版本时必须重跑探针再改这一页。更新：2026-09-10。
+> 升级固定版本时必须重跑探针再改这一页，并同时执行
+> [Forgejo Module 设计](/architecture/forgejo-module-design) §2.3 的身份复核（`FORGEJO-R-066`）：LDAP 与
+> OIDC 能否按不可变 ID 同时接入，只能由探针回答，不能凭 changelog。更新：2026-09-20。
 
 ANAS 里有两块代码跟 Forgejo 说话：[`forgejo` Module](/architecture/forgejo-module-design) 自己，
 以及 `ai_agent` 的编排器。这一页是它们**共用的底座**——上游在固定版本上到底怎么表现，以及由此
@@ -32,8 +34,9 @@ ANAS 里有两块代码跟 Forgejo 说话：[`forgejo` Module](/architecture/for
 | **Projects 看板没有 API 也没有 webhook 事件**，是纯 UI 功能 | 设计出依赖看板列的自动化，做不出来 |
 
 尚未复核：webhook 投递语义（超时、重试、能否手动重投）、`issue_label` / `issue_assign` 的 payload
-字段。两者都需要一个真实接收端。**在有结论之前，按"至多一次"设计**：任何只有在保证重试的前提下
-才正确的逻辑都不能依赖。
+字段、以及 **`prohibit_login` 是否同时关闭 access token 与 Git over SSH**（撤权流程依赖这个答案，见
+[Forgejo Module 设计](/architecture/forgejo-module-design) §2.2）。前两者需要一个真实接收端，**在有结论
+之前按"至多一次"设计**：任何只有在保证重试的前提下才正确的逻辑都不能依赖。
 
 ## 2. 由事实直接推出的规则
 
