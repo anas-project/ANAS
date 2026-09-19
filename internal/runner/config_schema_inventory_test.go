@@ -67,7 +67,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"eturnal.port":                        {Minimum: &minimumOne, Maximum: &maximumPort},
 		// Empty is inside the pattern because the parameter ships empty; the
 		// incus hook is what refuses to apply until it is actually set.
-		"incus.endpoint":                  {Pattern: `^(?:https://[A-Za-z0-9.:_-]+)?$`},
+		"incus.endpoint":                  {Pattern: `^https://[A-Za-z0-9.:_-]+$`},
 		"incus.storage_pool":              {Pattern: `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`},
 		"meshcentral.mps_port":            {Minimum: &minimumOne, Maximum: &maximumPort},
 		"oauth2_proxy.console_proxy_port": {Minimum: &minimumOne, Maximum: &maximumPort},
@@ -94,6 +94,12 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	// exact map prevents a generic schema from drifting into unsupported claims
 	// merely because another parameter has a similar name.
 	wantSources := map[string]bundledSourceEvidence{
+		"incus.image_architecture":        {configschema.DefaultSourceHost, "incus fixed host bundle or explicit remote configuration"},
+		"incus.endpoint":                  {configschema.DefaultSourceHost, "incus fixed host bundle or explicit remote configuration"},
+		"incus.server_certificate_b64":    {configschema.DefaultSourceHost, "incus fixed host bundle or explicit remote configuration"},
+		"incus.admin_certificate_b64":     {configschema.DefaultSourceHost, "incus fixed host bundle or explicit remote configuration"},
+		"incus.admin_key_b64":             {configschema.DefaultSourceHost, "incus fixed host bundle or explicit remote configuration"},
+		"incus.storage_pool":              {configschema.DefaultSourceRuntime, "incus calculate"},
 		"global.timezone":                 {configschema.DefaultSourceHost, "globalSchema.defaultValues"},
 		"global.default_language":         {configschema.DefaultSourceHost, "globalSchema.defaultValues"},
 		"global.default_locale":           {configschema.DefaultSourceHost, "globalSchema.defaultValues"},
@@ -155,6 +161,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"global.email":       true,
 	}
 	wantMustResolveOnly := map[string]bool{
+		"incus.storage_pool":              true,
 		"ai_agent.language":               true,
 		"global.timezone":                 true,
 		"global.default_language":         true,

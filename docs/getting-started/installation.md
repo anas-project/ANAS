@@ -76,6 +76,18 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-pro
 追加 `--purge` 会删除 `/etc/anas/anasd.yml` 与当前用户的源偏好；即使 purge 也不会删除
 workspace 或 `/var/lib/anas` 中的控制面状态。
 
+## 宿主动作通道的开发状态
+
+当前开发源码的发行归档及安装器包含同版本的 `anas-hostd`、固定 socket/service、root-owned
+安装策略，以及独立非 root 控制转发程序和单元。`anasd` 保留 root/root 身份与原有 TLS、状态
+文件权限；不要求迁移属主或加入 Docker 组。`host_actions` 默认关闭，控制转发也不会由安装器
+自动启用。计划、确认与执行入口已编码，但真实 Linux/systemd/Incus 安装、升级与卸载尚未
+验收，不能把本节作为已验证的生产启用步骤。详见[宿主动作通道设计](/architecture/host-action-channel)。
+
+升级或卸载发现仍有宿主动作运行时会拒绝覆盖程序；不会为了升级强行中断正在执行的软件包操作。
+同一开机周期内的确认消费记录保留，工作区和控制面数据仍遵循原来的保留规则。新控制网络的
+Compose `gw_priority` 声明需要 Compose **2.33.1 或更新版本**；它保持消费者原业务网络为默认出口。
+
 ## 选择 Module 源
 
 顶层 `module_source` 选择 Module artifact 的首选 Registry：

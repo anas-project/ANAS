@@ -243,9 +243,9 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
   当前实现按“至多一次”设计，对账是补偿手段，这条不阻塞 M1。
 - 执行面依赖 [Incus compute Provider](../../../../dev-docs/plans/incus-module.md) 的 M6（真实宿主验收），该里程碑本身
   阻塞于独立 KVM/Incus 宿主。M4 在此之前只能实现控制面侧逻辑。
-- `AGENT-R-032` 的链路还差中间一段（2026-09-13 更新：Forgejo 已决定改为 LDAP 同步 + OIDC 登录的
-  双源形态，落地后能力组可经 LDAP source 的组→team 映射到达 Forgejo，并随目录事件订阅秒级刷新；
-  `--group-team-map` 是双源落地前的过渡路径，见 `FORGEJO-R-063`—`R-065`）。目录侧已经通了：`CAP_<module-id>_<capability>` 已在
+- `AGENT-R-032` 的链路还差中间一段（2026-09-20 更新：Forgejo 的双源形态已撤回，`FORGEJO-R-063`—`R-065`
+  废弃。固定 `15.0.7` 的 LDAP CLI 没有组选项，组→team 无论如何只能走 OIDC 的 `--group-team-map`，它是
+  长期路径而不是过渡路径；组撤权的实时性改由 `ai_agent` 自己订阅目录事件日志承担，见编排设计 §6.2）。目录侧已经通了：`CAP_<module-id>_<capability>` 已在
   [Samba AD 用户与权限规划](../../../../docs/architecture/samba-ad-user-planning.md) §5.4.1 登记并由
   `samba_dc` 实现，`ai_agent` 经 `ANAS_IDENTITY_CAPABILITY_GROUPS` 声明能力码；消费侧也已完成
   （从 Forgejo team 读出能力上限）。缺的是 **IAM 用 `--group-team-map` 把组投影成 Forgejo team** ——
@@ -261,6 +261,6 @@ AI_AGENT_TEST_FORGEJO_ORG=<组织> AI_AGENT_TEST_FORGEJO_REPO_IN=<仓库A> AI_AG
 | [看板接入调研](../../docs/research/kanban-integration.md) | 调研正文迁入组件目录，站内研究索引留指针 | 已完成 |
 | [设计评审](../reviews/2026-09-05-orchestration-design-review.md) | 随组件迁入，`dev-docs/reviews/index.md` 改指向新位置 | 已完成 |
 | `modules/ai_agent/README.md`、`README.en.md` | 增加“组件文档一览”，指向本目录下全部文档 | 已完成 |
-| [Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md) §2.2 | 改写为 LDAP 同步 + OIDC 登录的双源形态，支撑 §6.2 的秒级撤权；验收见 `FORGEJO-R-063`—`R-065` | 已完成（实现未开始） |
-| [IAM Provider 要求](../../../../dev-docs/requirements/iam-provider.md) §1.6 | 登记“禁止自助修改 `mail`/`sAMAccountName`”，它是 `ACCOUNT_LINKING=auto` 的前提 | 已完成 |
+| [Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md) §2.2 | 2026-09-13 曾改写为双源形态；2026-09-20 撤回并收敛为 OIDC-only（`FORGEJO-R-063`—`R-065` 废弃）。§6.2 的秒级撤权改由本 Module 自订阅目录事件承担 | 已完成 |
+| [IAM Provider 要求](../../../../dev-docs/requirements/iam-provider.md) §1.6 | 登记“禁止自助修改 `mail`/`sAMAccountName`”。原动机是 `ACCOUNT_LINKING=auto`，该形态已撤回；该条独立成立并保留——两家 Provider 都保存目录影子记录，自助改邮箱会直接进入 OIDC 的 email claim | 已完成 |
 | `test-env/scripts/forgejo-agent-api-probe.sh` | 注释与报告中的设计文档路径改为组件目录 | 已完成 |

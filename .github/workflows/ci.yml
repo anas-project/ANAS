@@ -60,6 +60,20 @@ jobs:
       - name: Test
         run: go test ./...
 
+      # Plain go test can report success when Linux capability tests skip.
+      # This gate requires the native socket/process and owner cases to run.
+      - name: Test native host job broker
+        run: bash test-env/scripts/test-host-job-broker-native.sh
+
+      # Compile without privilege; elevate only the isolated kernel namespace
+      # regressions on this disposable runner. A capability skip is a failure.
+      - name: Test native Incus ingress namespace boundary
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y nftables iproute2 conntrack
+          go test -c -o "$RUNNER_TEMP/anas-incus-ingress-native.test" ./internal/incusingresshost
+          sudo env "PATH=$PATH" bash test-env/scripts/test-incus-ingress-native.sh "$RUNNER_TEMP/anas-incus-ingress-native.test"
+
       - name: Validate shared build contexts
         run: go run ./cmd/check-shared-build
 

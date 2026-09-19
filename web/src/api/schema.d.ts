@@ -4,6 +4,145 @@
  */
 
 export interface paths {
+    "/api/v1/workspaces/{ws}/host/actions/incus.status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue the installed read-only Incus host preflight
+         * @description Optional surface, absent unless host_actions is explicitly enabled and
+         *     the non-root daemon's shared host execution service started. Accepts
+         *     only an empty JSON object (maximum 4096 bytes), never a command, path,
+         *     credential, peer identity or installation parameter. Owner TLS, the
+         *     normal session CSRF/Origin checks and a registered workspace are required
+         *     on both direct and trusted-proxy listeners. A 202 response is durable
+         *     queue admission, not successful execution or compute readiness.
+         *     Idempotency keys are scoped to incus.status, not actor or transport;
+         *     identical in-flight requests coalesce. Conflicting workspace or frozen
+         *     release bindings return 409 without disclosing another job identifier.
+         *     Execution outlives this HTTP request. Read completion at the existing
+         *     job endpoint. Only queued jobs may be explicitly cancelled; running
+         *     preflight has no cooperative cancellation and returns 409 to cancel.
+         *     No package installation, configuration, uninstallation or ingress action
+         *     is exposed by this route.
+         */
+        post: operations["invokeHostIncusPreflight"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/host/actions/incus/{phase}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                phase: "install" | "configure" | "enroll" | "uninstall";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue a typed Incus host provisioning plan */
+        post: operations["planIncusHostAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/host/actions/incus/image-prune/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue a typed Incus image prune dry-run */
+        post: operations["planIncusImagePrune"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/host/actions/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Issue a five-minute one-time host action confirmation */
+        post: operations["issueHostActionConfirmation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/host/actions/incus/{phase}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                phase: "install" | "configure" | "enroll" | "uninstall";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue a confirmed Incus host provisioning action */
+        post: operations["applyIncusHostAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{ws}/host/actions/incus/image-prune/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue a confirmed Incus image prune action */
+        post: operations["applyIncusImagePrune"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -1173,6 +1312,33 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        IncusHostRequest: {
+            /** @description Omission means false. Only accepted for the install plan/action; it never authorizes configure, enroll or uninstall effects. */
+            skip?: boolean;
+            /**
+             * @description Omission selects incus_container. VM selection is explicit and never silently downgraded.
+             * @enum {string}
+             */
+            interface?: "incus_container" | "incus_vm";
+            /** @description Omission selects 64 GiB. */
+            storage_size_gib?: number;
+            /** @description Omission means false; package removal must be explicitly selected for uninstall. */
+            remove_packages?: boolean;
+        };
+        IncusHostApplyParameters: {
+            /** @constant */
+            schema: "anas.host-action.incus/v1";
+            request: components["schemas"]["IncusHostRequest"];
+            binding: {
+                /** @constant */
+                schema: "anas.incus-host-provision/v1";
+                plan_digest: string;
+                /** @enum {string} */
+                phase: "install" | "configure" | "enroll" | "uninstall";
+                /** @constant */
+                destructive: true;
+            };
+        };
         /** @constant */
         APIVersion: "anas.dev/api/v1";
         NextCursor: string | null;
@@ -1692,6 +1858,14 @@ export interface components {
              */
             proxy_url: string | null;
         };
+        SystemHostActionCapabilities: {
+            /** @description True when the authenticated Incus read-only host preflight route is mounted on this listener. */
+            incus_status: boolean;
+            /** @description True only when plan, one-use confirmation and apply handlers are all mounted. This is entry availability, not compute readiness or native-host acceptance. */
+            incus_provision?: boolean;
+            /** @description True only when the explicit image prune dry-run and confirmed apply handlers are mounted. */
+            incus_image_prune?: boolean;
+        };
         BuildInfo: {
             version: string;
             commit: string;
@@ -1701,6 +1875,7 @@ export interface components {
         SystemCapabilities: {
             /** @description False when the configured service exposes a supported mutating application service such as managed configuration writes. */
             read_only: boolean;
+            host_actions?: components["schemas"]["SystemHostActionCapabilities"];
         };
         /** @description Opaque 256-bit random managed-config generation validator without ETag quoting. */
         ConfigValidator: string;
@@ -2169,6 +2344,18 @@ export interface components {
         };
     };
     responses: {
+        /** @description A durable host-action job was accepted. Admission is not completion; read the same job for its terminal outcome. */
+        AcceptedHostActionJob: {
+            headers: {
+                /** @description The public URL of the accepted job. */
+                Location?: string;
+                "Cache-Control": components["headers"]["CacheControlNoStore"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["JobDetailResponse"];
+            };
+        };
         /** @description The job was durably queued, or an identical existing job was returned. */
         AcceptedJob: {
             headers: {
@@ -2442,6 +2629,264 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    invokeHostIncusPreflight: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Durable new or reused job; this is not a completion receipt. */
+            202: {
+                headers: {
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDetailResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    planIncusHostAction: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                phase: "install" | "configure" | "enroll" | "uninstall";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    request: components["schemas"]["IncusHostRequest"];
+                };
+            };
+        };
+        responses: {
+            202: components["responses"]["AcceptedHostActionJob"];
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    planIncusImagePrune: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            202: components["responses"]["AcceptedHostActionJob"];
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    issueHostActionConfirmation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    plan_job_id: string;
+                    /** @enum {string} */
+                    action: "incus.install" | "incus.configure" | "incus.enroll" | "incus.uninstall" | "incus.image-prune";
+                };
+            };
+        };
+        responses: {
+            /** @description Confirmation token returned once; plaintext is not persisted. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        api_version: string;
+                        token: string;
+                        binding_digest: string;
+                        /** Format: date-time */
+                        expires_at: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    applyIncusHostAction: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                phase: "install" | "configure" | "enroll" | "uninstall";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    plan_job_id: string;
+                    confirmation_token: string;
+                    parameters: components["schemas"]["IncusHostApplyParameters"];
+                };
+            };
+        };
+        responses: {
+            202: components["responses"]["AcceptedHostActionJob"];
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    applyIncusImagePrune: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Exactly one canonical origin equal to the current request scheme and Host. */
+                Origin: components["parameters"]["Origin"];
+                /** @description Opaque caller-selected key scoped to principal, method, canonical path, and workspace. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    plan_job_id: string;
+                    confirmation_token: string;
+                };
+            };
+        };
+        responses: {
+            202: components["responses"]["AcceptedHostActionJob"];
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["TooManyRequestsProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
     getConsole: {
         parameters: {
             query?: never;

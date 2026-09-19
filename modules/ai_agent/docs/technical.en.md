@@ -10,10 +10,15 @@ operation are in the [English README](../README.en.md); the acceptance criteria 
 
 ## Compose topology
 
+The orchestrator joins the provisioned external control bridge through its `work_instances` Resource
+projection without gaining a Docker socket or host service authority. Database connectivity remains
+separate, and `traefik` keeps the business default gateway with `gw_priority: 1` (Compose 2.33.1+).
+Native control-bridge connectivity, certificate isolation and job lifecycle acceptance remain separate.
+
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r1` | `db, traefik` | 2 |
+| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r1` | `db, traefik, compute-control` | 2 |
 <!-- generated:compose-topology:end -->
 
 One long-lived service. It is `read_only`, `cap_drop: ALL`, `no-new-privileges`, runs as `65532`, and

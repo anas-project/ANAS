@@ -21,6 +21,7 @@ type lease struct {
 	DiskGiB           int
 	ImageAllowlist    []string
 	ImageArchitecture string
+	ImageSupplyFile   string
 	ClientCertPEM     []byte
 	Isolation         string
 }

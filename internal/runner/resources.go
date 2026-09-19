@@ -114,10 +114,29 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 			env["ANAS_RESOURCE_IMAGE_ALLOWLIST"] = strings.Join(allowlist, ",")
 			env["ANAS_RESOURCE_IMAGE_ARCHITECTURE"] = request.ComputeImages.Images[0].Target.Architecture
 			env["ANAS_RESOURCE_CLIENT_CERT"] = base64.StdEncoding.EncodeToString([]byte(certPEM))
+			env["ANAS_RESOURCE_IMAGE_SUPPLY_FILE"] = computeImageSupplyContainerDescriptor
 		default:
 			return fmt.Errorf("resource %s.%s contract %s has no runtime projection", consumer, request.ID, request.Contract)
 		}
-		args := resourceEnsureComposeArgs(operation.Service, operation.Command)
+		runOptions := []string{}
+		var cleanup func()
+		if request.Contract == "compute" {
+			mount, release, err := a.prepareComputeImageSupply(providerDir, request)
+			if err != nil {
+				return err
+			}
+			cleanup = release
+			if mount != nil {
+				runOptions = append(runOptions,
+					"--volume", mount.hostDescriptor+":"+computeImageSupplyContainerDescriptor+":ro",
+					"--volume", mount.hostRoot+":"+computeImageSupplyContainerRoot+":ro",
+				)
+			}
+		}
+		if cleanup != nil {
+			defer cleanup()
+		}
+		args := resourceEnsureComposeArgs(operation.Service, operation.Command, runOptions...)
 		if err := a.runCompose(providerDir, request.Provider, providerModule.ComposeFile, env, args...); err != nil {
 			return fmt.Errorf("ensure resource %s.%s through %s: %w", consumer, request.ID, request.Provider, err)
 		}
@@ -128,12 +147,14 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 	return nil
 }
 
-func resourceEnsureComposeArgs(service string, command []string) []string {
+func resourceEnsureComposeArgs(service string, command []string, runOptions ...string) []string {
 	// Resource providers are one-shot, non-interactive jobs. compose run tries
 	// to allocate a TTY by default, but RunFile intentionally does not attach
 	// stdin. Tell Compose that explicitly so apply also works from automation,
 	// redirected shells, and SSH sessions without a controlling terminal.
-	args := []string{"run", "--rm", "--no-deps", "--no-TTY", service}
+	args := []string{"run", "--rm", "--no-deps", "--no-TTY"}
+	args = append(args, runOptions...)
+	args = append(args, service)
 	return append(args, command...)
 }
 

@@ -21,6 +21,7 @@ import (
 )
 
 var (
+	computeControlNetworkName    = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$`)
 	computeSandboxPattern        = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 	computeInstancePrefixPattern = regexp.MustCompile(`^anas-[a-z0-9-]{1,50}$`)
 )

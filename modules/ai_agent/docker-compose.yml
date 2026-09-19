@@ -94,10 +94,15 @@ services:
       - "traefik.http.routers.ai_agent.tls=true"
       - "traefik.http.services.ai_agent.loadbalancer.server.port=8130"
     networks:
-      - db
-      - traefik
+      db: {}
+      traefik:
+        gw_priority: 1
+      compute-control: {}
 
 networks:
+  compute-control:
+    name: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__CONTROL_NETWORK_NAME:-${NETWORK_PREFIX}ai-agent-compute}
+    external: ${ANAS_COMPUTE_RESOURCE__AI_AGENT__WORK_INSTANCES__CONTROL_NETWORK_EXTERNAL:-false}
   db:
     name: ${AI_AGENT_NETWORK_DB}
     external: true

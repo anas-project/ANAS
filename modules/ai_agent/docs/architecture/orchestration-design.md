@@ -708,32 +708,25 @@ Samba AD 组（CAP_ai_agent_*）
 
 最终动作集 = **目录组上限** ∩ **仓库权限推导** ∩ **覆盖条目**；两边都不能单方面放大对方。
 
-**撤销延迟与实时同步**：若只有 OIDC 一条链路，组声明只在用户**登录时**随 claim 到达 Forgejo，
-`--group-team-map-removal` 也在登录时才移除 team，因此目录里踢掉一个人可能到下次登录才生效。
+**撤销延迟与实时同步**：Forgejo 只有 OIDC 一条登录链路，组声明只在用户**登录时**随 claim 到达，
+`--group-team-map-removal` 也在登录时才移除 team，因此目录里踢掉一个人要到他下次登录才在 Forgejo 生效。
 
-**2026-09-13 决定（Forgejo 侧文档已改写）：Forgejo 改为 LDAP 同步 + OIDC 登录的双源形态**——
-用户与组由只读 LDAP source 同步，登录由 OIDC 完成，`ACCOUNT_LINKING=auto` 把 OIDC 登录绑到既有
-账号。设计见 [Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md) §2.2，
-验收条目 `FORGEJO-R-063`—`R-065`（原 `FORGEJO-R-006` 已废弃），实现未开始。对本方案的影响：
+**2026-09-20 决定：这段延迟由 `ai_agent` 自己消除，不指望 Forgejo。** 2026-09-13 曾计划让 Forgejo 改成
+LDAP 同步 + OIDC 登录的双源形态以订阅目录事件；实现时核对固定版本源码发现 `cmd/admin_auth_ldap.go`
+的 LDAP CLI **没有任何组选项**，产品也没有认证源 REST API，组根本不能经 LDAP 同步到 team——双源形态
+换不到本节要的实时性，只换到"账号能否登录"的加速，因此已整体撤回（见
+[Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md) §2.2，`FORGEJO-R-063`—`R-065`
+已废弃）。对本方案的影响：
 
-1. Forgejo 自此**保存目录副本**，落入[目录事件订阅要求](../../../../dev-docs/requirements/directory-event-subscription.md)
-   的适用范围（该文档 §1 覆盖"所有直接通过 LDAP/LDAPS 读取 Samba 用户、组、账号状态或目录属性的
-   Module"），必须订阅[目录事件日志](../../../../docs/architecture/directory-event-journal.md)并在
-   声明的最大传播时间内完成增量刷新——**组撤权不再等下次登录**，这正是本节需要的能力。机制已经
-   存在（Samba dsdb 审计 → `events.jsonl` → 各订阅者带自己的游标，authentik 与 Casdoor 的 dirwatch
-   已实现），Forgejo 只是再加一个同类订阅者，不需要新写一份机制文档。
-2. **能力组的投影路径不变，而且撤权仍有延迟**——这是 2026-09-13 实现时核对固定版本源码得到的修正：
-   Forgejo `15.0.7` 的 LDAP CLI 没有任何组同步选项，也没有认证源 REST API，所以 `CAP_ai_agent_*` 不能经
-   LDAP 同步到 team，仍只能走 OIDC 的 `--group-team-map`（`FORGEJO-R-060`），在登录时生效。Forgejo 的
-   目录订阅加速的是**账号**的停用与移出准入组，不是 team 成员关系。因此能力撤权要做到即时，必须由
-   `ai_agent` **自己订阅目录事件日志**刷新 `agent_grant` 快照，并保留即时否决表兜底；读法（以用户身份
-   `GET /user/teams`）不变。
-3. `auto` 的安全性依赖三个前提：IAM 禁止自助修改 `mail`/`sAMAccountName`（已写进
-   [IAM Provider 要求](../../../../dev-docs/requirements/iam-provider.md) §1.6）、部署只有一个
-   OIDC/OAuth source、邮箱别名与用户名不回收再分配。任一不成立则降级为 `ACCOUNT_LINKING=login`。
-
-在该订阅落地前（以及作为兜底），控制面保留**即时否决表** `agent_grant_deny`：优先于一切推导，
-`agent-grant deny <user>` 立即生效，用于离职、误授权与紧急止血。
+1. **能力组的投影路径不变**：`CAP_ai_agent_*` 经 OIDC 的 `--group-team-map`（`FORGEJO-R-060`）在登录时
+   到达 team，读法（以用户身份 `GET /user/teams`）不变；
+2. **能力撤权的实时性由控制面自己承担**：`ai_agent` 订阅[目录事件日志](../../../../docs/architecture/directory-event-journal.md)
+   刷新 `agent_grant` 快照，不等 Forgejo 的 team 状态收敛。这一条在双源形态下本来也成立，撤回没有改变它；
+3. **即时否决表 `agent_grant_deny` 从兜底升为常设一环**：优先于一切推导，`agent-grant deny <user>`
+   立即生效，用于离职、误授权与紧急止血；
+4. 还有一条后果不在本节授权模型内但必须知道：目录里停用一个人**不会**停用他的 Forgejo 账号，其 access
+   token 与 SSH key 仍能写 `.forgejo/workflows` 并以 sender 身份触发 Agent。离职流程必须包含"在 Forgejo
+   停用账号并吊销 token 与 SSH key"，`agent_grant_deny` 只挡 Agent 这一侧。
 
 ### 6.3 判定顺序
 
@@ -1031,7 +1024,7 @@ issue 时，三档落在原 issue，节流阈值更保守（阶段变化才更�
 | --- | --- | --- |
 | [Samba AD 用户与权限规划](../../../../docs/architecture/samba-ad-user-planning.md) | 登记 `CAP_<module-id>_<capability>` 类别与 `OU=Cap,OU=Groups`；这是所有 Module 的通用规则，不只服务 AI | 已采纳并实现（§5.4.1）：`samba_dc` 按 `create_structure` 创建 `OU=Cap`，Module 经 `ANAS_IDENTITY_CAPABILITY_GROUPS` 声明能力码 |
 | [Forgejo Module 要求](../../../../modules/forgejo/dev-docs/requirements/forgejo-module.md) | Agent 账号与 token 的管理端引导、系统 webhook 归属、OIDC 增加 `--group-team-map` | 已登记为 `FORGEJO-R-060`—`R-062`（M6）；`--group-team-map` 的实现待做 |
-| [目录事件日志](../../../../docs/architecture/directory-event-journal.md) | 增加 Forgejo 订阅者，消除组变更的登录延迟（§6.2） | **已决定并登记**（2026-09-13）：Forgejo 设计 §2.2 已改写为双源形态，`FORGEJO-R-063`—`R-065` 与其计划 M7 已建立；实现未开始 |
+| [目录事件日志](../../../../docs/architecture/directory-event-journal.md) | `ai_agent` 自己成为订阅者，消除组变更的登录延迟（§6.2） | **改由本 Module 承担**（2026-09-20）：Forgejo 的双源形态已撤回（`FORGEJO-R-063`—`R-065` 废弃），固定版本的 LDAP CLI 无组选项，组撤权无论如何到不了 Forgejo；控制面订阅事件刷新 `agent_grant`，`agent_grant_deny` 为常设一环。实现未开始 |
 | [LLM Gateway 要求（待讨论）](../../../../dev-docs/requirements/llm-gateway.md) | 统一模型 key、虚拟 key、预算执行点、用量归因与审计 | 问题域已锁定，选型调研与需求矩阵待做 |
 | `anas-agent-mcp` 工具面契约 | §5.8 白名单操作的入参出参、幂等键、错误语义与版本策略，需独立一份接口文档 | 未开始 |
 | 跨仓库写授权（"仓库对"模型） | Agent 在 A 仓库的讨论里给 B 仓库建 issue 的授权形态；§5.6 的信任边界要求显式配对，不能靠放宽 token 顺手实现 | 未开始 |

@@ -92,6 +92,19 @@ func TestArtifactCLIRecordInspectAndCatalog(t *testing.T) {
 	if code := invoke(record...); code == 0 || output.Len() != 0 || strings.Contains(diagnostic.String(), base) {
 		t.Fatalf("conflict = %d: stdout=%s stderr=%s", code, output.String(), diagnostic.String())
 	}
+	exportDir := filepath.Join(base, "export")
+	if code := invoke(append([]string{"export"}, append(common, "--output-dir", exportDir)...)...); code != 0 {
+		t.Fatalf("export = %d: %s", code, diagnostic.String())
+	}
+	if _, err := os.Stat(filepath.Join(exportDir, "artifact.json")); err != nil {
+		t.Fatalf("export did not write descriptor: %v", err)
+	}
+	if code := invoke("recipe", "--image", "forgejo-runner", "--architecture", "amd64", "--interface", "incus_vm"); code != 0 {
+		t.Fatalf("recipe = %d: %s", code, diagnostic.String())
+	}
+	if strings.Contains(output.String(), "alias") || !strings.Contains(output.String(), "source:") {
+		t.Fatalf("unexpected recipe output: %s", output.String())
+	}
 }
 
 func TestArtifactCLIRejectsImplicitInitializationAndAmbiguousHistory(t *testing.T) {
@@ -118,5 +131,32 @@ func TestArtifactCLIRejectsImplicitInitializationAndAmbiguousHistory(t *testing.
 				t.Fatal("invalid-argument diagnostic exposed supplied values")
 			}
 		})
+	}
+}
+
+func TestArtifactCLIBuildPreflightDoesNotConsumeARevision(t *testing.T) {
+	requireArtifactArchivePlatform(t)
+	base := t.TempDir()
+	archive := filepath.Join(base, "archive")
+	recipe := filepath.Join(base, "recipe.yml")
+	if err := os.WriteFile(recipe, []byte("reviewed recipe"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var output, diagnostic bytes.Buffer
+	if code := run(context.Background(), []string{"init", "--archive", archive}, &output, &diagnostic); code != 0 {
+		t.Fatal(diagnostic.String())
+	}
+	output.Reset()
+	diagnostic.Reset()
+	args := []string{"build", "--archive", archive, "--name", "fixture", "--revision", "r1", "--architecture", runtime.GOARCH, "--interface", "incus_container", "--recipe", recipe, "--distrobuilder", filepath.Join(base, "missing-builder"), "--distrobuilder-sha256", strings.Repeat("a", 64)}
+	if code := run(context.Background(), args, &output, &diagnostic); code == 0 || output.Len() != 0 {
+		t.Fatal("unavailable native builder reported success")
+	}
+	files, err := filepath.Glob(filepath.Join(archive, "build-*"))
+	if err != nil || len(files) != 0 {
+		t.Fatalf("preflight failure consumed a revision: %v", files)
+	}
+	if strings.Contains(diagnostic.String(), base) {
+		t.Fatal("preflight leaked source paths")
 	}
 }

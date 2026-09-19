@@ -65,7 +65,7 @@ func TestProtocolBoundaryObjectLimitAndRedaction(t *testing.T) {
 	}
 }
 
-func regressionTerminal(outcome Outcome) Event {
+func boundaryRegressionTerminal(outcome Outcome) Event {
 	event := Event{ABI: Version, JobID: "job-1", InvocationID: "call-1", Type: "result"}
 	switch outcome {
 	case Succeeded:
@@ -101,7 +101,7 @@ func TestProtocolBoundaryActualExitEvidence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			wire, err := EncodeExecutorEvent(regressionTerminal(tc.terminal))
+			wire, err := EncodeExecutorEvent(boundaryRegressionTerminal(tc.terminal))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -124,7 +124,7 @@ func TestProtocolBoundaryActualExitEvidence(t *testing.T) {
 }
 
 func TestProtocolBoundarySuccessCannotHideTrailingData(t *testing.T) {
-	wire, err := EncodeExecutorEvent(regressionTerminal(Succeeded))
+	wire, err := EncodeExecutorEvent(boundaryRegressionTerminal(Succeeded))
 	if err != nil {
 		t.Fatal(err)
 	}

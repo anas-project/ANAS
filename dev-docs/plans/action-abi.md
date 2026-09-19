@@ -10,7 +10,7 @@ updated: 2026-09-18
 验收依据是[统一动作 ABI 要求](../requirements/action-abi.md)；设计见
 [同名架构文档](../../docs/architecture/action-abi.md)。
 
-**当前状态：协议、共用 journal 与 Module 执行原语正在实施，已补持久化失联阻断；未编译/测试，尚未接入生产执行入口。** 它是[宿主特权动作通道](host-action-channel.md)的前置——通道复用本 ABI
+**当前状态：协议、共用 journal 与 Module 执行原语正在实施，已补持久化失联阻断；本机可执行回归已通过，Linux 原生执行与生产入口迁移未验收。** 它是[宿主特权动作通道](host-action-channel.md)的前置——通道复用本 ABI
 的线格式与 job 语义。同时它取代 [Module 专属命令能力](module-command-capability.md)已实现的
 executor 协议与取消语义，因此落地时要一并处理那部分既有实现。
 
@@ -24,6 +24,14 @@ executor 协议与取消语义，因此落地时要一并处理那部分既有�
 | M3：job 可见性 | R-008 | 实施中；共用 dispatcher 与按当前权限读取/订阅的内部接口已编码，真实 CLI/HTTP 入口及 e2e 未完成 |
 
 覆盖统计：9 项需求全部有且只有一个里程碑归属。
+
+2026-09-18 Incus 接续中的实际测试修复了两份 ABI 回归的同名 helper，以及 dispatcher fixture
+目录未显式设为 0700 的问题。`module_action_process_linux.go` 以 daemon-owned 有界 context
+构造命令，使启动受取消/期限约束；`Cmd.Cancel=nil` 保留原 pidfd/进程组监督唯一的杀进程与
+收割路径，不引入第二条默认 leader-kill。进程清理失败仍归 unknown/containment，不降为 cancelled。
+`cmd/anasd` 的子进程清单门禁已通过，没有添加忽略项。相关 Linux 测试仅交叉编译，未宣称原生
+监督已验收。详见[本轮验证记录](../reviews/2026-09-18-incus-implementation-verification.md)；
+以下早期“未测试”记录保留其历史语境，不能替代本轮的具体执行范围。
 
 ## 2. 与既有实现的关系
 

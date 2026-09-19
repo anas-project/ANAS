@@ -7,9 +7,9 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 <!-- generated:configuration-summary:start -->
 - Built-in Modules: `24`
 - Declared parameters: `191` total (`17` global and `174` Module-owned; `170` structured Module parameters and `4` bare `env.*` parameters)
-- Resolution phases: `input_required` `2`, `must_resolve` `32`, unknown types `0`
+- Resolution phases: `input_required` `2`, `must_resolve` `33`, unknown types `0`
 - Type distribution: `bool` `27`, `enum` `28`, `int` `30`, `string` `106`
-- Default-source distribution: `generated` `10`, `host` `3`, `inherited` `8`, `none` `9`, `runtime` `4`, `static` `157`
+- Default-source distribution: `generated` `10`, `host` `8`, `inherited` `8`, `none` `8`, `runtime` `5`, `static` `152`
 <!-- generated:configuration-summary:end -->
 - Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the parameter inventory.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
@@ -186,7 +186,7 @@ Current explicit portable constraints: `32`.
 | `global.host_lan_bridge_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.host_lan_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.timezone` | <code>format=&#34;iana_timezone&#34;</code> |
-| `incus.endpoint` | <code>pattern=&#34;^(?:https://[A-Za-z0-9.:_-]+)?$&#34;</code> |
+| `incus.endpoint` | <code>pattern=&#34;^https://[A-Za-z0-9.:_-]+$&#34;</code> |
 | `incus.storage_pool` | <code>pattern=&#34;^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$&#34;</code> |
 | `meshcentral.mps_port` | <code>minimum=1; maximum=65535</code> |
 | `oauth2_proxy.console_proxy_port` | <code>minimum=1; maximum=65535</code> |

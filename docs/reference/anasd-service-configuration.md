@@ -3,7 +3,7 @@
 `anasd` 使用独立于 workspace `config.yml` 的宿主级配置。默认路径是
 `/etc/anas/anasd.yml`；启动时只可用 `--config` 选择另一个绝对路径，HTTP 请求和进程环境变量都不能覆盖其中的监听、workspace、存储或证书设置。
 
-配置文件必须由 `root` 拥有，权限不得宽于 `0600`，且必须是普通文件而非符号链接。格式是严格的单份 YAML 文档；未知字段、第二份 YAML 文档、读取期间被替换或修改以及超过 1 MiB 都会使服务拒绝启动。
+配置文件必须由 `root` 管理。现行 root 服务仍要求权限不得宽于 `0600`，且必须是普通文件而非符号链接。为显式准备的非 root Linux 服务增加了独立读取路径：文件必须恰为 `0640`、单硬链接、root 所有、属组等于进程的实际 primary GID；从 `/` 开始逐级拒绝链接和可共享写入的祖先，并在读取后复核身份。不会因此允许服务账号拥有或修改配置，也不会自动改权限。格式是严格的单份 YAML 文档；未知字段、第二份 YAML 文档、读取期间被替换或修改以及超过 1 MiB 都会使服务拒绝启动。
 
 ```yaml
 api_version: anas.console-config/v1
@@ -58,6 +58,7 @@ trusted_proxy:
 | `api_version` | 必须是 `anas.console-config/v1`。 |
 | `mode` | `lan`（默认）或 `loopback`。这是静态策略，不随管理员、证书、IAM、Traefik、网卡或 workspace 状态变化。 |
 | `port` | 固定管理端口，默认 `8080`，范围 `1..65535`；同一端口承载受状态限制的 HTTP 与 TLS。 |
+| `host_actions` | 默认 `false`。显式连接已安装的 root/root Linux anasd 服务、固定宿主 socket 和同版本动作注册表；要求至少一个 workspace、管理端口不低于 1024 和正式 version/commit 构建。不接受身份、socket 路径或处理器覆盖，也不代表 compute 已验收。 |
 | `allowed_dns_hosts` | 额外允许的精确 ASCII DNS Host；不接受 IP、端口或 wildcard。数值 Host 仍必须等于该连接实际命中的本机地址。 |
 | `console_store` | 审计、单向 capability state、认证与任务事件状态的绝对路径；目录为 `0700`、私有状态文件为 `0600`，且必须在所有注册 workspace 之外，避免 snapshot/backup/restore 覆盖控制面状态。 |
 | `workspaces` | 服务端注册的 `id -> absolute path`；客户端 API 只提交 ID。workspace 必须已存在并包含 `.anas/`。 |
@@ -84,11 +85,55 @@ last-known-good 只保存在当前 `anasd` 进程内；服务重启后仍必须�
 
 ## systemd 权限边界
 
+### 宿主动作队列（代码已接线，实机验收待完成）
+
+`host_actions: false` 时不创建私有 broker、不暴露宿主动作 HTTP 路由，现有 root 部署保持原行为。
+显式开启后，`anasd` 在 HTTP 监听前启动同进程的 `HostActionService`，复用原 `console_store`、
+执行租约、授权存储与审计；等待私有 listener 真实就绪后才装配接口。固定宿主 socket 缺失、
+非安装服务身份、非 Linux 或开发版本均不能开启这条路径。当前保留 root/root anasd；UID 0
+本身不足以通过准入，还必须匹配 PID 1 独立报告的固定服务单元和实际进程。配置开关不证明
+Incus 或 compute ready。
+
+新增接口为 `POST /api/v1/workspaces/{ws}/host/actions/incus.status`，只接受空 JSON 对象 `{}`
+（最多 4096 字节），不接受 query、路径、命令、密码、UID 或任意 parameters。它只在 `full`、
+TLS、已认证 owner 下可见，直连与受信代理使用同一队列；沿用各自的会话、Origin 和 CSRF 检查。
+`Idempotency-Key` 必填：相同请求重试返回原 job，等价的在途请求合流；与其他 workspace 或
+冻结版本冲突时返回不泄漏其他 job ID 的 `409`。`202` 和 `Location: /api/v1/jobs/{id}` 表示
+已经入队，不表示执行成功。结果通过既有 job 查询读取；执行不依赖请求或 SSE 连接存活。
+
+仅排队中的预检允许显式取消，运行中的预检取消返回 `409`，不编造 cancelled。入队、开始前和
+终态提交前重新核对持久化 actor；本地 owner 任务不因浏览器退出而撤销。代理任务只根据当前
+配置的 issuer/group 和仍有效的本地代理会话判断，不续期、不保存 Cookie，也不声称实时查询 IdP。
+旧 running 宿主 job 的启动恢复复用既有 `daemon_restarted` 持久阻断，关闭配置也不会抹掉阻断。
+
+安装、配置、登记和卸载分别通过 `POST /api/v1/workspaces/{ws}/host/actions/incus/{phase}/plan`
+与对应 `/apply` 入队；`POST .../host/actions/confirm` 从同一 actor/workspace 的已完成计划签发
+一次性确认。原始 token 不进入共享任务或审计；有效期从原计划起算五分钟，过期必须重新计划。
+执行前还会独立 Claim 并检查实际参数与当前宿主状态，不能把入队成功当成真实操作成功。
+
+`/api/v1/system` 分别公开 `host_actions.incus_status` 与 `incus_provision` 的入口能力。维护页面
+只在相应能力存在时显示操作，提供类型化选项和服务端计划，不要求粘贴 token 或参数 JSON；
+刷新过期计划后必须重新勾选确认。CLI 的预检/计划/确认/执行命令使用同一 HTTPS 服务和 job，
+会话及执行确认请求只从 stdin 输入；`anas host actions` 仍仅是本机编译清单。
+
+**不再要求迁移为非 root anasd，也不放宽 TLS 私钥的 root-only 策略。** 安装器已打包并安装
+同版本 hostd、固定 socket/service、连接策略及非 root 控制转发程序。转发服务由 configure
+显式准备后启动，安装器不默认启用。升级/卸载前检查活动宿主动作并停止准入；操作未排空或
+服务停止失败时，不覆盖可执行文件。真实 Linux/systemd/Incus 安装链尚未验收，不能仅以开关
+或本机测试通过将开发实现作为生产支持承诺。
+
+### 当前默认服务
+
 正式 Release 的 `anasd.service` 显式使用 `User=root`/`Group=root`，设置 `UMask=0077`、
 `NoNewPrivileges=true`、`ProtectSystem=strict`，并把默认可写范围限制为控制面状态、标准
 workspace 与备份根：`/var/lib/anas`、`/srv/anas`、`/srv/anas-backups`。如果服务配置使用
 其他 workspace、backup target 或 console store，管理员必须用 systemd drop-in 为精确目录
 扩展 `ReadWritePaths`；不能通过移除 `ProtectSystem` 把整台主机重新变为可写。
+
+共享 broker 与确认 ledger 由 `RuntimeDirectory` 在 `/run/anas-job-broker` 和
+`/run/anas/confirmations` 准备，权限 `0700`，同一次开机内重启保留确认消费记录。执行实际软件包
+和账户/网络动作的 `anas-hostd` 单元另有 `/etc`、`/usr`、`/var`、`/run` 与私有临时目录的写权限；
+它是经具名动作、确认、审计和资源归属约束的完整 root 执行器，不是 DAC-only 沙箱。
 
 root 身份不是低权限沙箱。`anasd` 需要读取 root-only TLS 私钥、修改 workspace 中的配置、
 deployment、快照与备份制品，并可连接 Docker socket。Docker socket 本身允许创建特权容器、

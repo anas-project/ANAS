@@ -768,20 +768,25 @@ func (a *app) publishModuleResources(consumer string) error {
 				return fmt.Errorf("resource %s.%s provider %s: %w", consumer, request.ID, request.Provider, err)
 			}
 			resourcePrefix := computeResourcePrefix(consumer, request.ID)
+			controlNetwork := a.env[providerPrefix+"_CONTROL_NETWORK_NAME"]
+			if controlNetwork != "" && !computeControlNetworkName.MatchString(controlNetwork) {
+				return fmt.Errorf("resource %s.%s provider published an invalid control network", consumer, request.ID)
+			}
 			// The consumer receives the fence and the key to it, and drives
 			// instance lifecycle itself from here on. ANAS is not on that path.
 			values = map[string]string{
-				resourcePrefix + "INTERFACE":       request.Interface,
-				resourcePrefix + "ENDPOINT":        a.env[providerPrefix+"_ENDPOINT"],
-				resourcePrefix + "SANDBOX":         stringSpec(request.Spec, "sandbox"),
-				resourcePrefix + "INSTANCE_PREFIX": stringSpec(request.Spec, "instance_prefix"),
+				resourcePrefix + "CONTROL_NETWORK_EXTERNAL": strconv.FormatBool(controlNetwork != ""),
+				resourcePrefix + "INTERFACE":                request.Interface,
+				resourcePrefix + "ENDPOINT":                 a.env[providerPrefix+"_ENDPOINT"],
+				resourcePrefix + "SANDBOX":                  stringSpec(request.Spec, "sandbox"),
+				resourcePrefix + "INSTANCE_PREFIX":          stringSpec(request.Spec, "instance_prefix"),
 				// Fixed by the contract, not chosen per deployment: the provider
 				// writes this profile and the consumer only names it.
 				resourcePrefix + "PROFILE": computeclient.ProfileName,
 				// Both halves of the pin: the certificate the consumer's client
 				// must match against, and its digest as an independent
-				// cross-check. Neither is secret -- a server certificate is
-				// public by construction.
+				// cross-check. Certificate material is classified as sensitive
+				// configuration even though the certificate is not a private key.
 				resourcePrefix + "SERVER_CERT":             a.env[providerPrefix+"_SERVER_CERT_B64"],
 				resourcePrefix + "SERVER_CERT_FINGERPRINT": fingerprint,
 				resourcePrefix + "CLIENT_CERT":             base64.StdEncoding.EncodeToString([]byte(certPEM)),
@@ -791,6 +796,14 @@ func (a *app) publishModuleResources(consumer string) error {
 				resourcePrefix + "CPU":                     strconv.Itoa(quota.CPU),
 				resourcePrefix + "MEMORY_MIB":              strconv.Itoa(quota.MemoryMiB),
 				resourcePrefix + "DISK_GIB":                strconv.Itoa(quota.DiskGiB),
+			}
+			if controlNetwork != "" {
+				values[resourcePrefix+"CONTROL_NETWORK_NAME"] = controlNetwork
+			}
+			// INCUS-R-004 also covers endpoint and certificate projections, not
+			// only the Module's canonical inputs or the consumer's private key.
+			for _, field := range []string{"ENDPOINT", "SERVER_CERT", "CLIENT_CERT"} {
+				a.markSensitive(resourcePrefix + field)
 			}
 			if request.LeaseSecretKey != "" {
 				value, err := a.readComputeLeaseSecret(consumer, request.ID, request.LeaseSecretKey)

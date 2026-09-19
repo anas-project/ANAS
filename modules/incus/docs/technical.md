@@ -2,6 +2,12 @@
 
 本文记录 `incus` Module 的 Provider 实现与安全边界。配置与操作见[中文 README](../README.md)。
 
+2026-09-18 复核：Provider、Hook、镜像归档/构建编排、HTTP 策略与执行事务的本机 Go 回归已通过。
+文中较早的“未运行”段落保留当时的实现记录，不代表新增了生产授权。当前测试宿主是 macOS arm64；
+Linux 专属身份校验、真实 distrobuilder 烘焙、Docker/Incus、配额与入站均未完成实机验收。
+Module 仍为 `developing`，生产 ingress 继续关闭。完整验证范围与剩余工作见
+[本轮核对记录](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-18-incus-implementation-verification.md)。
+
 <!-- generated:module-identity:start -->
 > 状态：当前实现；对应 `7.3.0-r1` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
@@ -53,34 +59,120 @@ Docker 构建离线，基础镜像与发行版包仍需已经可用或能从配�
 只有运行产物、没有对应源码时，不能靠修改路径完成本地构建，应使用匹配版本的预构建镜像，
 或先准备完整受信源码。源码 checkout 与 staging 两种实际构建仍需分别验收。
 
-## 固定控制转发组件（未安装、未验收）
+## 固定控制转发组件（已打包、实机待验收）
 
 `modules/incus/control-relay` 是为宿主回环连接候选方案编写的 Linux 非 root 传输组件，
-**不是当前 Compose 服务，尚未打包、自动安装或启用**。它只把安装配置指定的控制 bridge
+**不是 Compose 服务，已进入同版本发行归档和安装器，只有 configure 才启用**。它只把安装配置指定的控制 bridge
 IPv4/高位端口原样转发到编译期固定的 `127.0.0.1:8443`，不接受 upstream、HTTP CONNECT、
 SOCKS、TLS 密钥或调用方命令；Incus mTLS 与原服务端 pin 仍由原两端核验。
 
 组件要求 root 所有且不可被组/其他用户写入的配置及父目录、专用非 root UID/GID、无额外附加组
 和无 capabilities。配置绑定接口名称、index、网段与网关；接口漂移时停止服务，不改绑通配地址。
-连接数、拨号期限和双向空闲期限受限，保留半关闭，停止时关闭现存连接。配置字段属于未来的宿主
-安装流程，不是本节下面的 `incus.*` Module 参数，也不改变当前远端 daemon 的接入方式。
+连接数、拨号期限和双向空闲期限受限，保留半关闭，停止时关闭现存连接。配置字段属于宿主供给
+流程，不是本节下面的 `incus.*` Module 参数；完整显式远端配置仍走独立接入路径。
 
-宿主安装动作、官方二进制发布、服务单元、INPUT/FORWARD 入接口规则、接口重建协调、endpoint
-投影以及 mTLS/pin/project/跨网络与卸载实机验收仍未完成。源 CIDR 检查不能代替防火墙或认证。
-本地配置和传输测试源码已补但未运行，生产 ingress 保持关闭；详细边界见宿主供给架构 §3.8。
+宿主安装动作、单元、限定受管 bridge 的 INPUT/FORWARD 规则与 endpoint 私有投影已编码。
+官方发布、接口重建协调及 mTLS/pin/project/跨网络和卸载实机验收仍未完成。源 CIDR 检查不能代替防火墙或认证。
+本机可运行的配置和传输测试已通过；Linux 身份检查仅完成交叉编译，生产 ingress 保持关闭。
+详细边界见宿主供给架构 §3.8。
 
 ## 配置契约
 
+### 宿主供给预检（2026-09-19，独立诊断入口）
+
+在源码仓库运行 `go run ./cmd/incus-host-preflight` 可只读检查本机；`--recipes` 打印编译期
+发行版映射，`--skip` 不读取系统标识文件。默认 `incus_container`，显式 VM 使用
+`--interface incus_vm`。没有安装、脚本、任意路径、包来源或 endpoint 参数，也不会连接
+可能 socket 激活 daemon 的 Incus 接口；它不是正式 `anas host` 或 Web API。
+
+`internal/incushost` 精确匹配 Debian 13、Ubuntu 24.04/26.04 的 ID/VERSION_ID 与目标架构；
+`ID_LIKE` 不带来衍生发行版准入。Linux 固定文件读取检查 root 所有祖先、模式和读前后身份，
+只允许已知 os-release 回退/链接形式，不 source shell、不执行命令。一级表的包信息已查官方
+目录，但安装重试、包签名/来源、服务单元和运行兼容性尚未验收，不能直接作为安装步骤执行。
+
+预检始终明确返回 `compute_ready: false`、`runtime_verified: false`，区分未适配、跳过和
+未实现门禁；不会因缺 KVM 把 VM 自动变容器。低权限 `incus.status` 内部处理器复用这条只读
+路径，并要求动作输入和执行审计；完整 daemon 状态与真实宿主能力仍另行验收。root socket、
+共享 job/CLI/Web 和计划/确认/执行已接线，但不能以本机用例代替 Linux 原生身份或真实安装验收。
+设计与上游版本差异见 [宿主供给架构](../../../docs/architecture/incus-host-provisioning.md) §2.1。
+
+### 宿主 job 绑定（内部实现）
+
+以下 Module 配置不包含宿主 job broker 的私有参数。新增的 `Activation.ServeBrokered` 与
+`HostJobBinding.ServeBroker` 连接编译动作：固定私有 Unix endpoint、双向内核身份核对、
+冻结 job/release 及执行前后的权限复核。握手或 socket 关闭均不能释放仍有存活进程的执行租约。
+该传输不创建第二份 job 存储、不向 root 提供用户目录里的脚本或数据库，不从 manifest 注册宿主处理器。
+
+私有 listener 与 `HostJobBroker` 分派已编码：只在已安装的私有目录创建固定 socket，
+不接管旧节点；最多 32 个已运行任务绑定、8 条并发连接，输入不能自行注册 job。退休要求实际
+终态与远端清理，监听停机不解除任务的执行租约。最新接续增加了 systemd 独立退出观察和共享
+recorder 的终态接线：先固定真实单元/invocation，再核对退出码及空进程集，未确认则保留租约
+并写已有的持久阻断。`anas-hostd` 与候选单元已进入同版本打包。
+HTTP 入队、daemon 同进程队列、计划/一次性确认/执行、安装器和 CLI 已接线。现有 root/root
+anasd 与 TLS 权限不变；不再要求非 root 迁移。真实 systemd/退出状态验收未运行。
+服务配置 `host_actions` 默认关闭，不是 compute ready。
+Linux 原生测试入口为
+`bash test-env/scripts/test-host-job-broker-native.sh`，只运行隔离 socket/子进程 fixture；要求关键
+用例实际执行，不把缺内核能力或跳过当成验收。该脚本不覆盖新 D-Bus/systemd 原生链路，
+详细当前边界见[宿主通道架构](../../../docs/architecture/host-action-channel.md) §13。
+
+### 自动宿主连接与控制网桥
+
+四项敏感连接设置全缺省时，Hook 只读取固定 root-owned `0600` 文件
+`/var/lib/anas/incus-host/connection.json`，校验固定 schema、实际架构、受管池、网段/网关、证书
+与私钥匹配及管理证书摘要，然后写入既有 Secret Store。禁止路径覆盖、链接、重复 JSON、
+过宽权限和半套显式连接；完整显式远端配置不读取该文件。自动来源和绑定摘要随 Secret 保存，
+重复 apply 即使已经恢复四项 Env，也必须重新核对原文件；撤销或漂移不回退到历史凭据。
+
+自动目标的池为 `anas-btrfs`，架构来自宿主供给观察；远端架构仍由管理员明确提供，远端池
+缺省为 `default`。改变既有自动绑定需显式恢复/协调，不能通过普通 calculate 暗中轮换凭据。
+
+自动模式将 `INCUS_NETWORK_NAME` 设置为受管 `anas-incus-control`，并标记 external，Compose
+不会接管它的生命周期。Core 以每资源的 `CONTROL_NETWORK_NAME` / `CONTROL_NETWORK_EXTERNAL`
+投影给消费者。Forgejo 的两个 compute 服务及 AI Agent 编排服务才连接控制桥，业务网络以
+`gw_priority: 1` 保持默认出口，要求 Compose 2.33.1+。远端模式清除自动网络标记并保留原接入。
+该连接仍须通过真实容器来源、默认路由、mTLS、隔离与 IPv6 验收，不能把静态 Compose 解析当作连通证据。
+
+### Module 参数
+
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `incus.admin_certificate_b64` | string | — | `""` | `static` | `INCUS_ADMIN_CERTIFICATE_B64` | 否 | 是 | 是 | 否：`rotate-incus-admin-credential` | `credential_rotate` | 供给专用的管理客户端证书，不交给任何消费者 |
-| `incus.admin_key_b64` | string | — | `""` | `static` | `INCUS_ADMIN_KEY_B64` | 否 | 是 | 是 | 否：`rotate-incus-admin-credential` | `credential_rotate` | 管理证书的私钥 |
-| `incus.endpoint` | string | `pattern: ^(?:https://[A-Za-z0-9.:_-]+)?$` | `""` | `static` | `INCUS_ENDPOINT` | 否 | 是 | 否 | 是 | `reconcile` | 远端 Incus daemon 的 HTTPS 地址 |
-| `incus.image_architecture` | enum (`amd64`, `arm64`) | — | — | — | `INCUS_IMAGE_ARCHITECTURE` | 否 | 是 | 否 | 是 | `container_recreate` | 目标 daemon 的 guest 镜像架构；必须显式提供，不从 CLI 宿主推断 |
-| `incus.server_certificate_b64` | string | — | `""` | `static` | `INCUS_SERVER_CERTIFICATE_B64` | 否 | 是 | 是 | 是 | `reconcile` | 被固定的 daemon 服务端证书；失配时直接失败，不回退 |
-| `incus.storage_pool` | string | `pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$` | `default` | `static` | `INCUS_STORAGE_POOL` | 否 | 否 | 否 | 是 | `reconcile` | 每个租约根磁盘所在的存储池 |
+| `incus.admin_certificate_b64` | string | — | — | `host` | `INCUS_ADMIN_CERTIFICATE_B64` | 否 | 是 | 是 | 否：`rotate-incus-admin-credential` | `credential_rotate` | 供给专用的管理客户端证书，不交给任何消费者 |
+| `incus.admin_key_b64` | string | — | — | `host` | `INCUS_ADMIN_KEY_B64` | 否 | 是 | 是 | 否：`rotate-incus-admin-credential` | `credential_rotate` | 管理证书的私钥 |
+| `incus.endpoint` | string | `pattern: ^https://[A-Za-z0-9.:_-]+$` | — | `host` | `INCUS_ENDPOINT` | 否 | 是 | 是 | 是 | `reconcile` | 远端 Incus daemon 的 HTTPS 地址 |
+| `incus.image_architecture` | enum (`amd64`, `arm64`) | — | — | `host` | `INCUS_IMAGE_ARCHITECTURE` | 否 | 是 | 否 | 是 | `container_recreate` | 目标 daemon 的 guest 镜像架构；必须显式提供，不从 CLI 宿主推断 |
+| `incus.server_certificate_b64` | string | — | — | `host` | `INCUS_SERVER_CERTIFICATE_B64` | 否 | 是 | 是 | 是 | `reconcile` | 被固定的 daemon 服务端证书；失配时直接失败，不回退 |
+| `incus.storage_pool` | string | `pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$` | — | `runtime` | `INCUS_STORAGE_POOL` | 否 | 是 | 否 | 是 | `reconcile` | 每个租约根磁盘所在的存储池；显式远端未设置时 Hook 沿用 `default`，宿主自动 bundle 使用 `anas-btrfs` |
 
 四项全部经 `.env` 进入 run-only 容器，三项凭据以 base64 PEM 传递，Hook 在 apply 早期校验类型。
+
+四项连接配置均标为敏感。配置键 `server_certificate_b64`、`admin_certificate_b64` 先导出为
+`INCUS_SERVER_CERTIFICATE_B64`、`INCUS_ADMIN_CERTIFICATE_B64`；Hook 校验后才派生 Provider
+使用的 `INCUS_SERVER_CERT_B64`、`INCUS_ADMIN_CERT_B64`。缺少规范输入时不接受旧 raw-env 别名
+替代，敏感值传播同时覆盖派生别名。消费者的 `ENDPOINT`、`SERVER_CERT`、`CLIENT_CERT`、
+`CLIENT_KEY` 投影也均标为敏感，而不是仅保护私钥。
+
+当 `endpoint`、`server_certificate_b64`、`admin_certificate_b64`、`admin_key_b64` 四项全部显式
+提供时，Hook 走高级远端路径，不读取宿主文件；四项只提供一部分时 fail closed，不把显式值和自动值混用。
+显式远端仍要求 `image_architecture` 明确给出，`storage_pool` 为空时按既有语义使用 `default`。
+
+四项连接配置全部为空时，Hook 只在已安装 Linux 路径读取固定文件
+`/var/lib/anas/incus-host/connection.json`，不接受配置、环境变量或用户参数覆盖路径。该文件必须是
+安全祖先目录下 root 所有、`0600`、单硬链接的普通文件，读前读后身份一致；symlink、FIFO、可写祖先、
+超限、未知字段、重复 JSON 字段和旧 schema 均拒绝。bundle schema 仍为
+`anas.incus-connection-bundle/v1`，但自动接入要求新增 `architecture`（`amd64`/`arm64`）和
+`storage_pool`（`anas-btrfs`）字段；缺少这些字段的旧 bundle 不会被猜测补齐。
+
+自动 bundle 必须固定 `endpoint=https://<control_gateway>:18443`、`control_network=anas-incus-control`、
+`relay_service=anas-incus-control-relay.service`，并验证管理证书、私钥 pair 和
+`management_fingerprint`。bundle 值同时投影到 Hook Env 与 module Secret Store；Secret 中还保存
+模块私有来源与绑定摘要。已有自动绑定的重复 apply 会重新读取固定文件并要求摘要一致；bundle 被删除、
+替换或漂移时拒绝继续使用历史 Secret，也不会自动轮换到新 bundle。显式高级远端输入不会被自动值覆盖。
+
+Hook 与 Provider 都拒绝带用户信息、非根路径、查询或 fragment 的 endpoint。Provider 禁止跟随
+HTTP 重定向，限制响应为 4 MiB，并要求同步成功响应；异步确认不能被当成已完成的供给操作。
+错误仅输出受信操作/状态类别，不回显 endpoint、服务端错误原文或解析失败的元数据。
+X.509 解析错误也转为固定类别，避免非法 SAN URI 经标准库错误泄漏证书内容。
 
 ## Contract Resource 生命周期
 
@@ -192,8 +284,9 @@ project 的 `exists`/`restricted`。读取故障返回错误，不伪装成缺�
 
 ## Hook、变更与回滚
 
-Hook 只实现 `calculate`：派生 `INCUS_NETWORK_NAME`，并在四项凭据不完整时拒绝。拒绝发生在 apply
-早期，而不是供给中途——半配置的 Provider 比一个根本没启动的 Provider 更难排查。
+Hook 只实现 `calculate`：派生 `INCUS_NETWORK_NAME`，选择显式远端或固定宿主 bundle 连接路径，并在
+四项凭据不完整、自动 bundle 不安全或绑定漂移时拒绝。拒绝发生在 apply 早期，而不是供给中途——
+半配置的 Provider 比一个根本没启动的 Provider 更难排查。
 
 `endpoint` 与 `server_certificate_b64` 的变更是 `reconcile`；两项管理凭据是 `credential_rotate`，
 且轮换不影响运行中实例。
@@ -206,7 +299,7 @@ Hook 只实现 `calculate`：派生 `INCUS_NETWORK_NAME`，并在四项凭据不
 | `provisioner/ops.go` | `ensure`/`inspect`/`revoke` 与配额映射 |
 | `provisioner/main.go` | 参数与环境校验、隔离档分派 |
 | `provisioner/provisioner_test.go` | 假 daemon 覆盖幂等、fail-closed、越权证书拒绝、固定失配、输入校验与敏感值不回显 |
-| `hook/main_test.go` | 凭据完整性与不回显 |
+| `hook/main_test.go` | 凭据完整性、宿主 bundle 自动投影、绑定幂等、安全文件拒绝与不回显 |
 
 假 daemon 是 `httptest.NewTLSServer`，因此固定逻辑走的是真实 TLS 握手，不是打桩。
 
@@ -289,7 +382,7 @@ HTTP 网络原型 `cmd/incus-network-prototype` 只生成实验产物：指定�
 2026-09-11 通过；Docker/Incus 规则顺序、真实 guest、IP 复用及完整撤销仍待验收。
 TCP/UDP 发布未实施。
 
-## Split 镜像工件离线核验（代码未验收）
+## Split 镜像工件离线核验（本机回归通过，实机待验收）
 
 `internal/computeimage/artifact.go`、`release_verify.go` 与 `cmd/compute-image-artifact` 复用统一
 `ArtifactRelease` 描述，提供已完成烘焙产物的只读检查，
@@ -333,14 +426,14 @@ go run ./cmd/compute-image-artifact \
 CLI 支持 Linux/macOS 的普通本地文件，拒绝末端符号链接、特殊文件和读取期间可见的文件变化。
 描述文件最多 16 KiB，metadata 最多 16 MiB、rootfs 最多 64 GiB；128 KiB 分块读取并检查取消，
 不把大块数据或原始读取错误塞进输出。规范描述拒绝重复/未知字段、大小写别名、null、非规范编码
-及尾随数据。新增单元/命令用例尚未运行；该工具不构成 M12 或 M13 的实机验收。
+及尾随数据。单元/命令用例已在本机通过；该工具不构成 M12 或 M13 的实机验收。
 
-## 本地镜像产物归档（代码未验收）
+## 本地镜像产物归档（本机回归通过，实机待验收）
 
 `cmd/incus-image-artifacts` 在上述只读核验之外提供显式的本地归档写入，复用相同的
 `ArtifactRelease` 和 fingerprint 算法，没有第二套镜像协议。它面向发布准备工具，不是安装器、
 Provider 动作、浏览器接口或消费者 API；当前支持 Linux/macOS 上由当前执行用户独占的本地目录。
-源码与新增测试尚未编译或执行，以下命令只是待验证的用法示例。
+归档和 CLI 的本机回归已通过；以下文件路径是示例，不代表已发布或可启动的真实 guest 镜像。
 
 归档包含 0700 根目录和 `objects/`、`releases/` 子目录，0600 的 `.lock`，以及 0400 的
 `.format`、按 SHA-256 命名的对象和规范 revision 记录。会话持有排他文件锁；读写前后核对目录与
@@ -383,6 +476,52 @@ go run ./cmd/incus-image-artifacts catalog \
 包含 JSON 元数据，不返回镜像字节、源路径或配方正文，也不会自动改写 `modules/incus/images/catalog.json`。
 受信归档与历史目录需要独立备份；当前只冻结本地记录，尚未完成发布签名、产物分发、Provider 导入、
 真实镜像启动或保留当前/上一个 deployment 的 prune。生产目录仍为空，M12/M13 不据此验收。
+
+## 发布侧构建一次并归档（未执行真实烘焙）
+
+`cmd/incus-image-artifacts build` 接入 `ArtifactArchive.BuildOnce`，在部署准备之外显式运行
+distrobuilder。它不是 `anas apply`、Provider `ensure`、Module Command 或宿主动作，亦不注册
+浏览器端点。`record`、`inspect`、`catalog` 仍不启动 builder。
+
+只允许在**独立、可销毁的原生 Linux 发布构建机**上，以 root 执行经审阅的配方和独立核实摘要的
+distrobuilder ELF。目标架构必须与构建机一致；VM 构建所需的额外设备和软件须在该构建机准备。
+配方可执行 root 命令，因此本工具不是配方沙箱，不能在生产 NAS 上运行不可信配方。
+配方须自包含并固定全部外部输入；目前不会自动生成 Forgejo/AI Agent 配方或补齐其镜像目录。
+
+先在可信源码构建此发布工具，再在构建机上显式初始化新归档并执行下列命令（真实烘焙尚未验证）：
+
+```sh
+incus-image-artifacts init --archive "$ARCHIVE_DIR"
+incus-image-artifacts build \
+  --archive "$ARCHIVE_DIR" --name example-guest --revision r1 \
+  --architecture amd64 --interface incus_vm \
+  --recipe "$PINNED_RECIPE_FILE" \
+  --distrobuilder "$TRUSTED_DISTROBUILDER_BINARY" \
+  --distrobuilder-sha256 "$TRUSTED_DISTROBUILDER_SHA256" \
+  --timeout 2h
+```
+
+平台、权限和二进制预检先于 revision 预留。二进制必须是当前用户所有、单链接、不可被组/其他
+用户写入的普通原生 ELF；测量后复制到 sealed memfd，通过固定文件描述符执行，拒绝脚本和
+符号链接。执行环境显式构造，不继承调用者变量，也不把 builder 的 stdout/stderr 写入结果或日志。
+参数固定为 [distrobuilder 的 split 构建模式](https://linuxcontainers.org/distrobuilder/docs/latest/howto/build/)，
+容器读取 `incus.tar.xz` + `rootfs.squashfs`，VM 读取 `incus.tar.xz` + `disk.qcow2`。
+不启用 `--import-into-incus`，不接受自由附加参数、alias 或目标 daemon。
+
+会话锁覆盖预留、构建和提交。已有 revision 先重新验证原始对象及配方摘要，直接复用、不调用
+builder；缺失或损坏时失败，不重新烘焙同一 revision。CLI 的 `build` 仍先做构建机和程序预检，
+仅查看已有产物应使用跨平台的 `inspect`。首次构建前，将 0400 的冻结配方、recipe/builder
+摘要和版本键写入私有 `build-<版本键摘要>/` 尝试目录并同步；构建后复核配方，再复用归档的
+流式哈希及不可变提交。JSON stdout 只有元数据，不包含镜像字节。
+
+失败、中断或进程消失均保留尝试目录；重开归档后也拒绝静默重试该 revision。确认有完整、可信的
+原始输出时，可通过 `record` 显式恢复；无法确认时采用新 revision。归档与历史备份不可丢弃。
+取消会尝试终止构建进程组，但不证明挂载、子进程或外部资源已收敛；工具不递归删除构建目录。
+管理员须先核对并清理构建机残留，不能将失败称为已安全取消。
+
+回归覆盖构建一次、复用、配方冲突、丢失工件拒绝重建、跨会话中断保护、输出恢复、取消及私密错误
+脱敏。夹具使用不透明测试字节，只证明编排与字节身份；Linux sealed-ELF 测试、真实镜像格式、
+启动、安全围栏、签名/分发及 Provider 导入仍须分别验证。
 
 ## 租约命名密钥生命周期
 
@@ -620,3 +759,71 @@ Module 注册表和 Linux 受监督进程处于内部编码阶段，不能作为
 同一 store 中的其他 workspace 和只读任务。读取、重放和取消排队任务仍可进行。阻断依赖持久化
 回执，不因压缩、重开 store、重建 registry 或普通业务补偿确认消失；它不代替残留进程/writer
 清理证明，受限恢复与服务接线仍待实现。回归测试源已补，尚未运行。
+
+## 入站宿主内核身份与回执（2026-09-20）
+
+宿主后端已补完整 Target 与安装拓扑摘要、v2 回执、dirfd-relative 安全写入及可取消 guard。
+namespace 执行器独立核对 Docker ID/启动时间、PID/start tick/boot ID、nsfs device/inode 和 socket
+cookie；固定 ip 命令在打开的 namespace 内执行，不接收外部路径或命令。容器 source IP 与宿主
+bridge gateway 分开观察，夹具扩展 JSON 不作为生产 ip 输出。多端口只共享同一完整分配身份，
+旧 hold 未释放时拒绝重启或其他实例复用同一 IP。
+
+回执使用 `anas.incus-http-host-receipt/v2`，旧 v1 不静默迁移或清理。真实 allocator 生命周期、
+health 身份、生产装配和原生验收仍未完成，生产 ingress 保持关闭。前轮专项、全仓 Go 回归与 Linux
+双架构编译通过，不代表新增 native CI 门禁或实机运行通过。当前核对见
+[实现恢复记录](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-20-incus-ingress-recovery.md)。
+
+## 受管 nft 防火墙与安装归属（2026-09-20）
+
+入站后端只拒绝受管 bridge 路径，不安装全局 `policy drop`；许可先进入 regular `http_permits`
+链，未命中才拒绝。读回核对完整 ordered AST、表/链/handle、所有动态对象及 native JSON 中的
+顶层 comment、numeric timeout、concat 与 expiry，不凭名称过滤掉未知规则。空/过期集合能撤销，不能报 ready。
+
+独立 `.nft-baseline.json` 记录 installing/installed/removing/removed 和真实 table handles。
+安装前确认不存在，变更前保存意图，读回后才完成；卸载要求 publication、route、permit 和 connection
+均已清空。没有独立回执的既存表不接管，失败意图不自动重试。复用私有 dirfd 文件原语，无新增 Go 依赖。
+
+本机专项、全仓 Go 和竞态回归已通过；原生 namespace/nft CI 用例已编写且拒绝 skip，本轮未运行。
+该原生用例仅测试隔离 namespace 中的 nft 语法、JSON 和生命周期，IP/allocator/conntrack 使用夹具，
+不是实际 HTTP 流量、Docker/Incus 共存、双栈或地址复用验收。生产 ingress 仍关闭。
+
+界面只使用实际 public job DTO 的 `kind`、`mutating`、workspace/id 和 result，不依赖内部 `job.action`。
+显示的计划还需与批准 binding 的 schema、workspace、计划/状态摘要和待删集合一致。合法的空库存
+显示“无变更”且不能执行；输入变更、计划过期或组件卸载均不能沿用旧确认。确认 token 不进入公开状态，
+执行结果不确定时不自动重试。公开响应缺字段或绑定漂移会拒绝，不通过类型断言兜底。
+
+
+## 设备绑定的宿主地址路由（候选，生产关闭）
+
+`address_routing` 是 root 安装投影，不是消费者配置。独立 host routing table 与终止 unreachable
+rule 只处理指定 Traefik 源、guest 子网和 Docker 入接口。永久邻居与 `/32` 绑定已核验的 container
+host veth；设备删除后不重建旧 reservation 的路由，防止沿普通 bridge 路由把前向请求误送到复用地址。
+这不是 DHCP reservation，也没有修改 Incus pool 或 guest 设备。
+
+`.address-routing.json` 记录完整作用域、ifindex、分配意图、共享端口和退休 token；回执与内核读回
+共同决定就绪。`address_intent` 在外部效果前保存，正常及中途失败都经同一撤销路径。创建、续租、
+盘点与释放已接入 Backend；没有独立 kernel hold 的生产调用不能只凭 journal 报 ready。
+已有 table/priority/neighbor 不接管；未知更早 policy、本地目标、替换设备和未解释的工件均拒绝。
+
+上限为 32 分配、每分配 64 使用者、退休加活跃 token 共 256；准入预留清理容量，不在 apply 或重装时
+清空历史。准入以编码后的 60 KiB JSON 预算在 64 KiB 文件上限内预留清理空间。
+地址层本身仅提供 container veth 的前向候选；回复侧补强见下节。VM/TAP、完整旧 TCP 会话、
+真实 Incus 观察、health 和生产服务装配仍待完成。原生 FIB 测试已加入门禁但本轮未执行；生产 ingress 保持关闭。
+详见[地址路由核对](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-20-incus-address-routing.md)。
+
+
+## 回复来源与双向连接清理（候选，生产关闭）
+
+配置了 `address_routing` 时，bridge `http_reply_origins` 先核验原始数值 ifindex、veth 名、guest MAC
+与获批 IP/端口，再允许回复到 Traefik 后端源地址；未命中明确拒绝。原始 index 来自独立地址 hold，
+清理时不会学习同名替代设备身份。inet 请求/回复另限定 conntrack original/reply 方向。
+
+两族定时许可同事务创建、续租、撤销，两侧完整读回后才就绪。缺失、过期或外来对象不能报 ready。
+删除连接前必须确认两侧许可撤销，逐条绑定原/回复地址、端口和默认 zone，单次最多 256 条，之后读回
+无残留。翻译元组、非零 zone、offload 或异常库存阻断；目前只针对无后端 NAT 的直接 IPv4/TCP。
+旧策略摘要不兼容新 `bidirectional-origin-v1`，不静默迁移回执或接管遗留对象。
+
+原生包与 conntrack 测试源已进入门禁但本轮未运行；它们分别测试来源规则和内核记录，不等于完整
+TCP 会话、Incus guest 或 Docker 共存验收。ifindex 强制/回绕复用、接口仍存在的停止/暂停、VM/TAP、
+独立 Incus 身份供给、health 及生产装配仍待完成。生产 ingress 保持关闭。见
+[回复来源核对](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-20-incus-reply-origin.md)。

@@ -19,6 +19,12 @@ ProtectSystem=strict
 ReadWritePaths=-/var/lib/anas -/srv/anas -/srv/anas-backups
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 SystemCallArchitectures=native
+RuntimeDirectory=anas-job-broker anas/confirmations
+RuntimeDirectoryMode=0700
+# Confirmation consumption survives daemon restarts within the same boot.
+# A crash leaving an unconfirmed broker/job is recovered fail-closed, not by
+# deleting its approval ledger and permitting an implicit replay.
+RuntimeDirectoryPreserve=yes
 
 [Install]
 WantedBy=multi-user.target

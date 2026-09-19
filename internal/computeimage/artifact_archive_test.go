@@ -85,6 +85,40 @@ func TestArtifactArchiveRecordRestoresOnlyIdenticalBytes(t *testing.T) {
 	}
 }
 
+func TestArtifactArchiveExportRestoresRecordedBytes(t *testing.T) {
+	archive, ref, target, sources := newArtifactArchiveFixture(t)
+	release, _, err := archive.Record(context.Background(), ref, target, []byte("recipe"), ArtifactSplit, sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "export")
+	exported, err := archive.Export(context.Background(), ref, target, destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exported.Release.Entry != release.Entry || exported.MetadataPath != filepath.Join(destination, "incus.tar.xz") || exported.RootFSPath != filepath.Join(destination, "rootfs.squashfs") {
+		t.Fatalf("export metadata = %#v", exported)
+	}
+	for _, pair := range [][2]string{{sources[0], exported.MetadataPath}, {sources[1], exported.RootFSPath}} {
+		want, _ := os.ReadFile(pair[0])
+		got, err := os.ReadFile(pair[1])
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("exported bytes changed for %s", pair[1])
+		}
+	}
+	body, err := os.ReadFile(filepath.Join(destination, "artifact.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeArtifactRelease(body)
+	if err != nil || !reflect.DeepEqual(decoded, release) {
+		t.Fatalf("export descriptor changed: %#v %v", decoded, err)
+	}
+	if _, err := archive.Export(context.Background(), ref, target, destination); !errors.Is(err, ErrArtifactConflict) {
+		t.Fatalf("export adopted an existing directory: %v", err)
+	}
+}
+
 func TestArtifactArchiveDoesNotOverwriteCorruption(t *testing.T) {
 	archive, ref, target, sources := newArtifactArchiveFixture(t)
 	ctx := context.Background()

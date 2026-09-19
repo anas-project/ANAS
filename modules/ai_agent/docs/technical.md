@@ -9,10 +9,14 @@
 
 ## Compose 拓扑
 
+编排服务经 `work_instances` Resource 的控制网络投影连接宿主供给的 external bridge，不获取
+Docker socket 或宿主服务权限。数据库连接仍独立，`traefik` 网络以 `gw_priority: 1` 保持默认
+业务出口；要求 Compose 2.33.1+。控制桥连通、证书隔离与真实作业生命周期仍需实机验收。
+
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r1` | `db, traefik` | 2 |
+| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r1` | `db, traefik, compute-control` | 2 |
 <!-- generated:compose-topology:end -->
 
 只有一个常驻服务。它 `read_only`、`cap_drop: ALL`、`no-new-privileges`、以 `65532` 运行，

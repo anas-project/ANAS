@@ -51,6 +51,7 @@ type handler struct {
 	deploymentHTTP *deploymentHTTPState
 	audit          *auditHTTPState
 	systemHTTP     *systemHTTPState
+	hostActions    *HostActionOptions
 	authHTTP       authHTTPState
 	routes         []routeSpec
 }
@@ -67,13 +68,14 @@ type Options struct {
 	// Auth supplies session authentication. Enrollment requires the narrower
 	// DirectAuthenticator; passing a plain ConsoleAuthenticator alongside
 	// Enrollment is rejected rather than silently ignored.
-	Auth       ConsoleAuthenticator
-	Enrollment *EnrollmentOptions
-	Jobs       *JobQueryOptions
-	Config     *ConfigOptions
-	Deployment *DeploymentOptions
-	Audit      *AuditQueryOptions
-	System     *SystemOptions
+	Auth        ConsoleAuthenticator
+	Enrollment  *EnrollmentOptions
+	Jobs        *JobQueryOptions
+	Config      *ConfigOptions
+	Deployment  *DeploymentOptions
+	Audit       *AuditQueryOptions
+	System      *SystemOptions
+	HostActions *HostActionOptions
 }
 
 // New builds a console handler from Options. Every other constructor in this
@@ -124,8 +126,24 @@ func New(options Options) (http.Handler, error) {
 			return nil, err
 		}
 	}
-	return newHandler(options.Registry, options.Factory, options.Security, options.Auth,
+	if options.HostActions != nil && (options.HostActions.InvokePreflight == nil || options.HostActions.InvokePlan == nil ||
+		options.HostActions.IssueConfirmation == nil || options.HostActions.InvokeConfirmed == nil || options.Jobs == nil) {
+		return nil, errors.New("host actions require admission and shared job queries")
+	}
+	h, err := newHandler(options.Registry, options.Factory, options.Security, options.Auth,
 		options.Enrollment, jobState, configState, deploymentState, auditState, systemState)
+	if err != nil {
+		return nil, err
+	}
+	if options.HostActions != nil {
+		copy := *options.HostActions
+		h.hostActions = &copy
+		h.routes = h.routeSpecs()
+		if err := validateRouteSpecs(h.routes); err != nil {
+			return nil, err
+		}
+	}
+	return h, nil
 }
 
 // NewHandler is the legacy no-authentication read-only surface used by tests
@@ -181,7 +199,7 @@ func NewHandlerWithAuditQueries(registry *Registry, factory ServiceFactory, secu
 	return New(Options{Registry: registry, Factory: factory, Security: security, Audit: &auditQuery})
 }
 
-func newHandler(registry *Registry, factory ServiceFactory, security SecurityOptions, auth ConsoleAuthenticator, enrollment *EnrollmentOptions, jobs *jobHTTPState, config *configHTTPState, deployment *deploymentHTTPState, auditState *auditHTTPState, systemState *systemHTTPState) (http.Handler, error) {
+func newHandler(registry *Registry, factory ServiceFactory, security SecurityOptions, auth ConsoleAuthenticator, enrollment *EnrollmentOptions, jobs *jobHTTPState, config *configHTTPState, deployment *deploymentHTTPState, auditState *auditHTTPState, systemState *systemHTTPState) (*handler, error) {
 	if registry == nil {
 		registry = &Registry{paths: map[string]string{}, ids: []string{}}
 	}
@@ -363,10 +381,16 @@ func (h *handler) system(w http.ResponseWriter, r *http.Request) {
 		value := h.systemHTTP.proxyURL
 		proxyURL = &value
 	}
+	capabilities := systemCapabilities{ReadOnly: h.config == nil}
+	if h.hostActions != nil {
+		capabilities.HostActions = &systemHostActionCapabilities{IncusStatus: true,
+			IncusProvision:  h.hostActions.InvokePlan != nil && h.hostActions.IssueConfirmation != nil && h.hostActions.InvokeConfirmed != nil,
+			IncusImagePrune: h.hostActions.InvokeImagePrunePlan != nil && h.hostActions.IssueConfirmation != nil && h.hostActions.InvokeImagePruneConfirmed != nil}
+	}
 	writeJSON(w, http.StatusOK, systemResponse{
 		APIVersion:         APIVersion,
 		Build:              systemBuild{Version: result.Version, Commit: result.Commit, Date: result.Date},
-		Capabilities:       systemCapabilities{ReadOnly: h.config == nil},
+		Capabilities:       capabilities,
 		WorkspaceIDs:       h.registry.IDs(),
 		BackupTargetIDs:    backupTargetIDs,
 		CertificateIssuer:  material.Issuer,

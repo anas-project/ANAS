@@ -1,22 +1,46 @@
 # Incus 宿主供给与镜像烘焙（设计）
 
-> 状态：**提案，部分基础已实现**。更新：2026-09-18。本文规定 ANAS 如何在自己所在的宿主上装好 Incus daemon、如何自动
-> 产出 guest 镜像，以及入站流量怎么走。已实现的部分是 `compute` Contract、`incus` Provider
-> Module 与共享客户端；它们当前仍要求运维手工准备 daemon 与镜像，本文正是要消除这一步。
+> 状态：**当前实现与目标设计并存，宿主与镜像路径已部分接线，实机验收未完成**。更新：2026-09-20。本文规定 ANAS 如何在自己所在的宿主上装好 Incus daemon、如何自动
+> 产出 guest 镜像，以及入站流量怎么走。当前源码已连接 `compute`、宿主供给与镜像工件路径，
+> 但默认镜像发布、生产入站与完整宿主验收仍未完成；当前边界见 §1。
 
 需求来源是 [Incus 要求矩阵](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/incus-module.md)
 R-047—R-055、R-057、R-062—R-067、R-070—R-072、R-083—R-088、R-092、R-094—R-096；
 轮换边界以凭据轮换要求 CRED-R-007/CRED-R-015 为准。下文命令、字段与 Go API 示例均为
-目标设计，**除 §6.2 的镜像对象与冻结、§5.1.3.1 的独立命名密钥、§5.1.1 的 ingress 授权声明外，不可直接用于现有 schema**；已实现部分以 compute Contract 源文件为准。
+目标设计，**除 §6.2 的镜像对象/冻结与显式发布工具、§5.1.3.1 的独立命名密钥、§5.1.1 的 ingress 授权声明外，不可直接用于现有 schema**；已实现部分以 compute Contract 源文件为准。
 
 依据是 [Core 实现标准](core-implementation-standard.md) §4「默认可用，高级可替换」：一个只想开
 Actions 的用户，不该先去理解 Incus 是什么、更不该先手工装好它。
 
 ## 1. 现状与缺口
 
-`incus` Module 有四个 `must_resolve` 参数（endpoint、pinned server 证书、供给用管理证书与
-key），全部要运维在别处准备好再粘贴。镜像同理：`modules/forgejo/runner-image/README.md` 要求
-在宿主上手工构建并抄下 fingerprint。
+2026-09-19 接续已连接共享 job、独立 systemd 退出观察、同版本安装器、CLI/Web，以及 Incus
+install/configure/enroll/uninstall 各自的计划、五分钟一次性确认和执行路径。现有 root/root
+anasd 保持不变；早期“必须先迁移非 root TLS/状态”的判断已撤回。固定安装策略还要求实际
+进程由 PID 1 识别为配置单元，不能只凭 UID 0 执行动作。当前边界见[宿主通道架构](host-action-channel.md) §13。
+
+供给后端按声明表生成隔离的官方 APT 配置，安装前写入并逐字节校验；包依赖、Ubuntu arm64
+官方源及 Debian 安全源分开处理。每个变更沿用持久 intent/receipt 和读回；控制防火墙校验真实
+表达式、顺序、归属与表状态，不用注释证明权限，也不拦截无关宿主 IPv6 转发。
+
+登记生成的 root-only 连接 bundle 包含实际宿主架构与受管存储池。Incus Hook 在四项连接设置
+全缺省时自动读取，投影既有 Secret Store；完整显式远端配置不读取宿主 bundle，部分输入拒绝
+混用。历史自动值即使已恢复到 Env 也必须重新核对原 bundle，删除或变更不能回退到旧凭据。
+Provider 与消费者经 `ANAS_COMPUTE_RESOURCE__…__CONTROL_NETWORK_*` 投影连接同一受管控制桥，
+业务网络保持默认出口。该多网络声明需要 Docker Compose 2.33.1+。
+
+**代码接线不代表供给验收已完成。** 真实包安装/撤销、systemd 身份与退出、控制桥的容器来源
+连接、隔离配额、guest 启动/取消、双栈、KVM 和 one-job 矩阵尚未执行。生产 ingress 的实际地址
+生命周期、health 身份和服务装配仍有实现缺口。§7.5 与 §7.6 提供 container veth 地址路由、回复来源
+与双向连接清理候选，不代表 DHCP 保留、完整旧 TCP 会话、数值 ifindex 复用或 VM/TAP 已解决。打开的 netns FD 执行器、完整身份回执及原生门禁已编码，
+但只有本机回归和 Linux 双架构编译证据。镜像 prune 的确认删除已有代码，真实删除和正式签名产物发布
+仍未验收。保持 `developing` 与生产 ingress 关闭，不能用 fixture 宣称默认可用。
+
+`incus` Module 的四项敏感连接参数（endpoint、pinned server 证书、供给用管理证书与
+key）均为 `must_resolve`，另外还必须显式解析目标镜像架构，不能从 CLI 宿主猜测。
+集成前，这四项连接参数需要人工准备并粘贴；当前已有上述固定私有 bundle 自动接线。
+镜像已具备发布侧配方、冻结归档、导出与 Provider 导入代码，但尚无通过启动验收的正式签名
+命名镜像发布，因此首次默认使用仍不是已验收的“开箱可用”。
 
 按 §4 的判据——「一个只知道自己想要什么服务的用户能不能装上」——**答案是否**。缺的是自动化，
 不是文档。
@@ -26,11 +50,19 @@ key），全部要运维在别处准备好再粘贴。镜像同理：`modules/fo
 
 ## 2. 支持的发行版
 
-ANAS 目前**完全不做发行版探测**：`install.sh` 只校验 `uname -s = Linux` 与 amd64/arm64，Docker
-Engine 与 Compose v2 是用户自备的前置条件。装 Incus 会是 ANAS 第一件需要认识发行版的事。
+`install.sh` 安装同版本宿主动作通道，Incus 依赖安装由显式宿主动作完成，不能混为安装器已经
+执行了 Incus 实机供给。`incus-host-preflight` 和 `internal/incushost` 声明式表由这些动作复用；
+配方显式包括 `nftables`，不依赖可被 `--no-install-recommends` 排除的隐含依赖。
+Docker Engine 与支持新控制网络声明的 Compose 仍是用户自备前置条件。
 
-下表是脚本兼容性的基线。**上游打包情况会变，本表在实现前必须逐条复核**，尤其是「待适配」那几行
-——它们的来源是凭记忆写下的，没有对照上游打包核实过。
+本机登记探测连接的是宿主自己的控制桥地址，该流量在 Linux 本地回环交付。因此规则允许
+`lo` 上以受管网关为源和目的地的固定 `18443` 探测，客户端同时绑定这个本地源地址；LAN、guest
+或其他入接口没有此例外。源网段过滤和 mTLS/pin 不变，这个宿主探测不证明消费者容器可达性。
+
+下表是目标适配基线，不是实机支持清单。一级三行已于 2026-09-19 核对官方包目录和 amd64/arm64
+条目，记录于 `internal/incushost/recipes.json`；服务单元、安装重试、卸载和运行兼容性尚未验收。
+**上游打包情况会变，执行安装时仍须核验实际包来源与签名**；「待适配」行保留为未核验候选，
+不能拿 `ID_LIKE` 或第三方源来自动补齐。
 
 | 发行版 | 来源 | 分级 |
 | --- | --- | --- |
@@ -54,6 +86,43 @@ Ubuntu 22.04 LTS 不在支持范围内：它的官方源没有 incus，只能加
 
 发行版到安装步骤的映射必须是**声明式的表**，不是代码里的 `switch`。这与 Core 实现标准 §2
 「不得按产品名写业务分支」是同一条规则：新增一个发行版应当是加一行数据。
+
+### 2.1 已编码的只读供给预检
+
+只读预检现有可选的 HTTP 入队和 anasd 同进程共享队列接线，见[宿主通道 §12](host-action-channel.md)。
+开关默认关闭；非 root TLS/状态/权限迁移与安装器尚未完成。预检 job 成功不代表 daemon 已安装、
+compute ready 或入站已启用，也不替代下述独立诊断与实机验收。
+
+独立诊断命令 `go run ./cmd/incus-host-preflight` 只读取固定系统位置，返回 JSON；
+`--recipes` 只打印编译期表，`--skip` 不读取系统标识文件，直接返回 `skipped`。
+没有 `--root`、包管理器、脚本、任意路径或 endpoint 参数；它不是生产 `anas host` 入口。
+默认 interface 为 `incus_container`，VM 必须显式选 `--interface incus_vm`。
+缺少 KVM 时不会把 VM 降级，有 KVM 也不会把默认容器升级；设备存在仅是观察，不是 ioctl 验收。
+
+`ParseOSRelease` 按数据读取，不 source shell、不展开变量。只用精确 ID/VERSION_ID 匹配表，
+存在的 VERSION_CODENAME 必须一致，衍生发行版不得借 `ID_LIKE` 自动通过。
+重复键、拼接引号、命令替换、非法 UTF-8、超长字段或其他畸形内容使预检失败，不执行任何安装。
+Linux 读取按目录描述符检查 root 所有权、不可被组/其他用户写入、单链接普通文件与前后身份。
+优先 `/etc/os-release`，仅其不存在时使用 `/usr/lib/os-release`；允许前者指向后者的两种规范链接，
+不接受任意链接目的地、FIFO 或可写父目录。该实现比通用 os-release 读取器更保守；不支持的变体
+保持关闭，不通过 shell 或放宽文件边界兜底。
+
+当前包目录观测如下。它们是带日期的元数据，**不是硬编码 apt 安装版本，也不是运行准入**：
+
+| 目标 | 2026-09-19 观测版本 | 来源 |
+| --- | --- | --- |
+| Debian 13 | `6.0.4-2+deb13u10` | [官方包目录](https://packages.debian.org/trixie/incus) |
+| Ubuntu 24.04 | `6.0.0-1ubuntu0.3` | [官方 noble-updates/universe](https://packages.ubuntu.com/noble-updates/incus) |
+| Ubuntu 26.04 | `6.0.5-8` | [官方 resolute/universe](https://packages.ubuntu.com/resolute/incus) |
+
+这三者不能继承按 7.3.0 编写的入站 observer 兼容性结论。即使发行版匹配，结果仍明确返回
+`compute_ready: false`、`runtime_verified: false`，并区分宿主动作未安装、包来源未验证、
+daemon 兼容性未验证、存储/网络未验证等阻塞。未适配 OS/版本/架构/init 保持 disabled，
+输出固定手工指引而不是添加源或发起安装；该非失败退出语义仅属于诊断工具，尚未接入主部署降级。
+
+`internal/hostaction` 已复用此预检作为只读 `incus.status` 子集，宿主动作输入与审计边界见
+[宿主通道设计](host-action-channel.md) §7。安装、配置、卸载、受管资源归属和完整 daemon 状态
+仍未实现；不能从这份报告推断现有 daemon 属于 ANAS，或据此删除资源。
 
 ## 3. 安装机制：一次性、可跳过、留痕
 
@@ -216,6 +285,11 @@ LAN/其他 Docker 网络/guest 不可达的独立验证，最后才发布 endpoi
 空闲超时测试源码，均未执行。它们即使通过，也只是本地传输测试，不是宿主网络隔离或 Incus 实机验收。
 
 ## 4. Web 管理端与 root 密码
+
+宿主通道的固定安装策略、已接受 fd 验证、拒绝审计和共享 job 执行侧绑定已于 2026-09-19
+补入源码，详见[宿主动作设计](host-action-channel.md) §8。`anas host actions` 只显示本机
+编译清单，不连接 daemon，也不证明安装完成。跨进程 broker、实际退出监督与当前 root/root
+`anasd.service` 的非 root 身份迁移仍未完成；不会因此自动安装 Incus 或解除本章的密码禁令。
 
 **不得在 Web 管理端输入 root 或 sudo 密码。** 这不是可用性权衡，是安全边界：
 
@@ -882,6 +956,29 @@ ingress 拦截不变。
 FIFO、目录替换、容量、取消及并发回归源；测试没有执行。三处共享客户端镜像构建及 CI 目录已
 补 `internal/computeingress`，仍须验证源码 checkout 和 staging 的实际构建与真实宿主矩阵。
 
+#### 受管 nft 基线与独立归属（2026-09-20，原生验收待办）
+
+当前 `internal/incusingresshost` 不再安装全局 default-drop 链。inet forward 使用 `policy accept`，
+只对受管 ingress/guest bridge 路径执行精确拒绝；先跳入 `http_permits`，没有有效 IP/端口许可才拒绝。
+反向流量同样受许可约束，不能被宽泛 ESTABLISHED 例外保留；guest 主动 NAT 出站的 reply 单独处理。
+bridge prerouting 以 `ibrname`、接入 veth、源 MAC/IP 约束来源，并拒绝仅 IPv4 后端网络的 IPv6。
+这些 scope 内规则不能覆盖其他 base chain 的后续 drop；真实 Docker/Incus 共存仍需验收。
+
+读回按照 native nft JSON，校验表和链的身份、优先级、policy、完整有序 AST、顶层 comment、集合及
+剩余期限。所有动态对象必须匹配独立 publication intent/receipt，不按命名或注释过滤掉外来对象。
+空或过期集合可清理但不能报告 ready。允许的 CT state 表示归一只适用于互斥状态位，不推广到 TCP flags。
+规则语义以 [nft 官方手册](https://www.netfilter.org/projects/nftables/manpage.html) 与
+[JSON 手册](https://manpages.debian.org/testing/libnftables1/libnftables-json.5.en.html) 为依据；夹具不是内核证据。
+
+基线独立保存 `.nft-baseline.json`，绑定 scope digest 和 table handles。安装先完整盘点确认目标表不存在，
+持久化 intent，再检查/应用事务并读回；既存但无回执的表不接管。卸载先核对无 publication/route/permit/
+connection，保存 removing 意图，再删除并从完整库存确认缺失。缺失归属、表替换、未完结意图或盘点失败
+均保守拒绝；不能删除状态重试，也不能把 comment 当成所有权证明。
+
+新增的原生 CI 用例只在新建独立 netns 中验证真实 nft 语法和 JSON/生命周期，不连接 Docker/Incus。
+本轮本机 Go 回归与交叉编译通过，原生用例未执行。真实地址分配生命周期、应用健康身份和生产服务接线
+仍未交付，production ingress 继续关闭，不能由安装配置字符串或这些测试自动放开。
+
 ### 5.1.8 后续 TCP/UDP 发布边界（不属于首期）
 
 Traefik 原生支持 [TCP router](https://doc.traefik.io/traefik/reference/routing-configuration/tcp/routing/router/)
@@ -1006,7 +1103,7 @@ R-055 的解释及其测试阶段。自定义本地烘焙可作为 apply 之前�
 错误摘要拒绝、旧 deployment 回滚和原产物丢失时失败。尚未选定发布产物格式与分发位置之前，
 该候选不标记为完整实现设计。
 
-### 6.2.2 离线工件核验接线（2026-09-18，代码未运行）
+### 6.2.2 离线工件核验接线（2026-09-18，本机回归通过）
 
 共享 `ArtifactRelease` 描述将目录 Entry 与实际镜像工件绑定。`release_verify.go` 补
 `DescribeArtifactRelease` 与 `VerifyArtifactRelease`：前者为已经烘焙的字节生成候选描述，已有
@@ -1025,13 +1122,14 @@ fingerprint 不同即冲突；后者对照独立冻结的引用/目标/配方摘
 大小、模式与 mtime，拒绝末端符号链接/特殊文件，不能替代对敌对文件系统的强隔离。
 
 新增用例涵盖拼接顺序、片段损坏/尾随数据、目标/版本/配方漂移、规范记录拒绝、旧 fingerprint
-不可替换、取消/无进展 Reader 和 CLI 自证信任拒绝。用例均未运行。哈希一致不证明归档有效、VM
+不可替换、取消/无进展 Reader 和 CLI 自证信任拒绝。用例已在 macOS arm64 运行。哈希一致不证明归档有效、VM
 可启动、目标 Incus 已导入或安全边界成立；M12/M13 和 §6.2.1 的部署供给退出条件仍未满足。
 
-### 6.2.3 本地产物归档与目录候选（2026-09-18，代码未运行）
+### 6.2.3 本地产物归档与目录候选（2026-09-18，本机回归通过）
 
 `ArtifactArchive` 在只读核验之外保存已构建的原始产物，`cmd/incus-image-artifacts` 提供
-`init`、`record`、`inspect`、`catalog` 四个显式入口。`record` 复用 `DescribeArtifactRelease`，
+`init`、`record`、`inspect`、`catalog` 四个不运行 builder 的显式入口，另有 §6.2.4 的 `build`。
+`record` 复用 `DescribeArtifactRelease`，
 先将流式测得的片段写入内容寻址对象，再无覆盖提交规范 revision 记录；不另定义镜像格式。
 首次记录绑定完整 catalog/name/revision/architecture/interface、配方文件摘要和工件摘要，
 重复记录相同内容不改变映射。现存 revision 的字节、格式或配方改变即冲突。
@@ -1046,11 +1144,35 @@ fingerprint 不同即冲突；后者对照独立冻结的引用/目标/配方摘
 版本键丢失或改变；明确的首次发布才允许无历史。归档本身不防御恶意管理员或整个历史丢失，
 可信目录与归档须独立备份，不能将重建空归档当作解除版本不可变约束。
 
-该工具只向本地 stdout 写 JSON 元数据，不提供制品下载端点、不内联 base64、不执行 builder，
+上述四个归档命令只向本地 stdout 写 JSON 元数据，不提供制品下载端点、不内联 base64、不执行 builder，
 也不连接 Incus。配方摘要仅覆盖传入的自包含配方字节，外部输入须被配方固定；它不能证明真实
 构建 provenance，多文件配方还需统一输入清单。它不修改 bundle 的空目录、不替代发布签名与
 分发，也尚未接入 Provider 导入、回滚恢复或受限 prune；§6.2.1 的完整发布供给方案仍待交付。
-用法同步于 Module 双语技术文档；归档/CLI 回归源已编写但未编译、执行或作实机验收。
+用法同步于 Module 双语技术文档；归档/CLI 本机回归已通过，但没有作真实镜像或 Incus 宿主验收。
+
+### 6.2.4 显式发布构建入口（2026-09-18，编排回归通过，真实烘焙待验证）
+
+`ArtifactArchive.BuildOnce` 与 `incus-image-artifacts build` 将真实 distrobuilder 调用接到上述
+不可变归档，但只面向独立发布构建机，不被 `apply`、Provider `ensure`、控制台或宿主动作调用。
+这没有交付自动安装、默认 guest 配方、发布信任链或导入环节，不能据此移除 compute/ingress 门禁。
+
+入口先校验原生 Linux、root、目标架构和固定摘要的原生 ELF；将测得的程序封入 memfd，固定环境
+与命令参数，通过文件描述符运行。它不继承调用者环境、不允许额外 argv，也不输出 builder 原文。
+使用 distrobuilder 的 split 输出；实际 guest 产物及其工具链需要在可销毁的隔离构建机验证，
+因为经审阅的配方仍具有 root 执行能力，程序摘要校验不是沙箱或发布来源证明。
+
+归档锁跨越版本准入、构建与提交；首次启动 builder 前同步冻结配方、builder 摘要和版本键。
+同一 revision 已有完整工件时验证并复用；工件缺失、损坏或配方变化均失败，不按相同 revision
+重新烘焙。未完成的 `build-<版本键摘要>` 尝试目录在跨进程/重开归档后仍阻止静默重试。
+恢复只能显式 `record` 完整可信的原始输出，或在不能恢复时采用新 revision。
+
+构建后重新核验冻结配方，镜像经同一套流式哈希/归档提交，JSON 控制输出仅含元数据。
+取消尝试终止进程组，但不宣称挂载、子进程及外部状态已清理；尝试目录保留，不递归删除或隐式
+卸载未知资源。一次失败不会自动放开同版本重建。
+
+具体命令、前置条件与边界见 [Module 技术文档](https://github.com/anas-project/ANAS/blob/master/modules/incus/docs/technical.md)。
+回归夹具只提供不透明字节，证明顺序、恢复和身份核验，不证明真实镜像有效。发布签名、分发、
+可信目录填充、Provider 导入、默认配方与受限 prune 继续待实现。
 
 ### 6.3 旧 revision 的清理：显式 prune，不自动删
 
@@ -1137,3 +1259,65 @@ ext4/XFS 已开启 project quota；远程 pool 元数据本身不能证明该前
 撤销既有证书。其他驱动未准入不表示上游不支持它们；后续需补充能力核验再扩展。
 这个检查不替代服务器上的实际写满、总量超配和管理员变更后的恢复验收，也不让 M6 提前完成。
 待测场景已列入仓库 `test-env/fixtures/incus-network-prototype/e2e-plan.md`，先完成代码再执行。
+
+
+### 7.5 设备绑定的地址路由保护（候选实现，生产关闭）
+
+2026-09-20 新增 `internal/incusingresshost/address_*`。独立宿主路由表位于 host namespace，不能与
+Traefik namespace 中的 `/32` 表混用；安装配置只包含 table/priority，没有消费者提供的命令或地址。
+源 Traefik IPv4、目的 guest 子网和入接口同时匹配时才 lookup 该表。先安装后一优先级的终止
+unreachable policy，再安装表内 unreachable default，最后安装 lookup；禁止 throw/default-table
+回落，已有更早的未知 policy 或 host-local 目标会阻塞安装/准入，不静默接管。
+
+容器分配的永久邻居钉住 guest MAC，精确 `/32` 钉住经独立观察核验的 host veth 设备。
+设备注销导致旧路由消失时，新的同名设备不会通过旧 reservation 获得重建路由；请求仍被终止拒绝。
+此处利用设备路由生命周期防止前向误送，**不是阻止 Incus DHCP 重新分配 IP**。原生 FIB 用例与
+真实双向 HTTP 流量必须分别验证，不能把“读回设备名相同”当作设备连续存在的证明。
+
+`.address-routing.json` 记录完整安装摘要、原始 ifindex、holding/held/releasing 和 retired token。
+所有操作复用同一私有 guard；外部效果前持久意图，之后核对精确路由和永久邻居。多个端口仅共享
+同一完整实例分配，最后一个使用者退出后才能释放；失败只继续撤销，不重新授权。
+容量为 32 分配、每分配 64 使用者、退休加活跃 token 共 256；准入保留未来退休空间，达到历史上限
+拒绝新发布但不剥夺已准入项的清理能力。准入还限制完整编码文档为 60 KiB，给 64 KiB 文件边界内
+的清理状态变化预留空间；历史不因重装或 TTL 消失，维护工具仍待实现。
+
+发布回执增加 `address_intent`，正常与失败撤销都经既有 permit/connection/route/inventory/address
+顺序。没有实际创建的步骤须读回不存在；不能为了清理而把未执行步骤标为已完成。创建地址前确认
+nft 基线，具体许可出口绑定目标 veth；默认拒绝仍覆盖从入站 bridge 到整个受管 guest 子网的请求。
+移除地址基线必须先清空 publication，再撤 lookup/表内 fallback/末尾 deny；nft 基线最后撤销。
+
+**当前限制：** 只识别非特权容器的 veth，不支持 VM/TAP 或自动档位转换。更早 policy 的兼容性、
+反向包与 conntrack 的候选补强见 §7.6，完整生命周期、Incus 持续独立观测、生产 health identity、
+宿主动作/启动装配和真实 Docker/Incus 规则共存均未验收。生产构造器仍拒绝开启 publication；不能通过设置上述安装字段启用。
+原生用例已加入必跑门禁，缺能力/skip 不算通过；本机与交叉编译不是原生验证。
+
+语义参考为 [ip-rule](https://man7.org/linux/man-pages/man8/ip-rule.8.html)、
+[ip-route](https://man7.org/linux/man-pages/man8/ip-route.8.html) 和
+[ip-neighbour](https://man7.org/linux/man-pages/man8/ip-neighbour.8.html)。本轮证据与剩余边界见
+[接续核对](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-20-incus-address-routing.md)。
+
+
+### 7.6 回复物理来源与双向连接清理（候选实现，生产关闭）
+
+在 §7.5 安装投影存在时，guest bridge 发往 Traefik 后端 IPv4 的流量先经过 bridge regular chain
+`http_reply_origins`，不匹配就明确拒绝。每条许可绑定原始 host veth 数值 ifindex、名称、guest MAC、
+IP 与获批服务端口；ifindex 来自独立持久化 hold，不从当前同名设备重新获取。此门禁早于 inet 层的
+conntrack established 判定，后者还分别限定请求 original 与回复 reply 方向。
+
+前向 inet 集合与回复 bridge 集合在单条 nft 事务中创建、续租或撤销。两侧精确读回且集合未过期才报
+ready；失败保留 intent，不能把一侧成功投影成整体成功。全部动态对象都接受归属、范围、表达式和
+有效期核验。单端口撤销只删除本 reservation 的 handles/set，不 flush 其他端口或整个表。
+
+连接清理要求精确回执且两侧许可先读回缺失，随后逐条删除观测到的原/回复四元组并确认无残留。
+初期只接受无后端 NAT 的直接 IPv4/TCP、默认 zone 0；翻译回复、额外元组、非零 zone、offload、未知
+字段或失败库存均阻断。scope 查询限定 Traefik 源及 guest 子网，删除上限为一次 256 条。
+策略摘要增加 `bidirectional-origin-v1`，旧回执不静默升级为新策略授权，也不因此自动删除遗留工件。
+
+原生测试源分别覆盖独立 netns 中的真实包来源/同名设备替换/过期，以及真实 conntrack 记录精确清理。
+两条入口均已纳入拒绝 skip 的门禁，**本轮未运行**。包测试不是完整 TCP 会话；记录测试不是排队包或
+连接继续传输的证明。强制或回绕 ifindex 复用、停止/暂停且接口仍存活、VLAN/卸载/快速路径、真实
+Incus 身份供给、VM/TAP、health 和生产装配仍待完成。生产开启仍被构造器拒绝，不改变首期支持状态。
+
+接口依据为 [nft 手册](https://www.netfilter.org/projects/nftables/manpage.html) 与
+[conntrack 手册](https://manpages.debian.org/testing/conntrack/conntrack.8.en.html)；
+本轮代码及测试记录见[回复来源核对](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-20-incus-reply-origin.md)。

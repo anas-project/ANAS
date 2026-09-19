@@ -97,6 +97,11 @@ base contains it, any release identity change requires a transition. The Module
 artifact workflow checks this after revision calculation and before any image
 or package build.
 
+The `ai_agent 0.1.0-r1` entry is an initial-release baseline, not an upgrade
+test result. Its Module is absent from the documented `image-release/46-2`
+baseline. Registration closes catalog coverage only; real first-deployment
+acceptance and any later old-to-new transition remain independently required.
+
 The fixture compatibility command extracts and builds the exact historical
 CLI, then proves every catalogued Module config can initialize with both the
 historical and worktree Module roots. Catalog validation also requires every

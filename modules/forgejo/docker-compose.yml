@@ -185,7 +185,9 @@ services:
       - /run:mode=0700,uid=65532,gid=65532,size=16m
       - /tmp:mode=1777,size=32m
     networks:
-      - actions-control
+      actions-control:
+        gw_priority: 1
+      compute-control: {}
 
   anas_forgejo_actions_controller:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_actions_controller
@@ -250,9 +252,14 @@ services:
     volumes:
       - forgejo_actions_state:/var/lib/anas-actions
     networks:
-      - actions-control
+      actions-control:
+        gw_priority: 1
+      compute-control: {}
 
 networks:
+  compute-control:
+    name: ${ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__CONTROL_NETWORK_NAME:-${NETWORK_PREFIX}forgejo-compute}
+    external: ${ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__CONTROL_NETWORK_EXTERNAL:-false}
   actions-control:
   directory-watch:
   db:

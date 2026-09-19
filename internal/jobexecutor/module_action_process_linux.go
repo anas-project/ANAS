@@ -103,7 +103,13 @@ func runModuleActionProcess(daemonContext context.Context, definition ModuleActi
 	}
 
 	pidFD := -1
-	cmd := exec.Command("/proc/self/fd/3")
+	ctx, cancel := context.WithTimeout(daemonContext, definition.Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/proc/self/fd/3")
+	// CommandContext guards Start with the daemon-owned action deadline.
+	// The pidfd/group supervisor below owns cancellation and reaping; the
+	// default Cancel would kill only the leader and race that supervision.
+	cmd.Cancel = nil
 	cmd.Args = []string{"anas-module-action"}
 	// Go performs chdir BEFORE remapping ExtraFiles. At this point the child
 	// still has the parent's descriptor numbers; using child FD 4 here would
@@ -114,8 +120,6 @@ func runModuleActionProcess(daemonContext context.Context, definition ModuleActi
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = input, outputWriter, stderrWriter
 	cmd.ExtraFiles = []*os.File{program.image, cancellation}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL, PidFD: &pidFD}
-	ctx, cancel := context.WithTimeout(daemonContext, definition.Timeout)
-	defer cancel()
 	if ctx.Err() != nil {
 		return unknown(ErrModuleActionExecution)
 	}

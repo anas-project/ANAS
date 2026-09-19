@@ -184,6 +184,8 @@ func dispatch(command string, args []string, jsonMode bool) error {
 		return runCredential(args, jsonMode)
 	case "module":
 		return runModule(args, jsonMode)
+	case "host":
+		return runHost(args, jsonMode)
 	case "version":
 		return runVersion(args, jsonMode)
 	case "help", "-h", "--help":
@@ -201,7 +203,7 @@ func dispatch(command string, args []string, jsonMode bool) error {
 var commandNames = []string{
 	"init", "plan", "lock", "render", "build", "apply", "start", "restart",
 	"stop", "rollback", "status", "deployments", "snapshot", "backup", "config", "admin", "console", "module",
-	"credential", "version",
+	"credential", "host", "version",
 }
 
 func runVersion(args []string, jsonMode bool) error {
@@ -281,6 +283,8 @@ Usage:
   anas module update [MODULE...] [-w WORKSPACE]
   anas module commands [MODULE] [-w WORKSPACE]
   anas module invoke MODULE COMMAND [-w WORKSPACE] [--param NAME=VALUE]... [-y]
+  anas host actions [--json]                 # local compiled inventory; not installed readiness
+  anas host incus-prune-plan|incus-prune-apply ...
   anas version [--json]
 
 Workspace:

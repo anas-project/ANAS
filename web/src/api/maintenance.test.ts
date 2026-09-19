@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   createSnapshot,
+  invokeIncusHostPreflight,
   issueLocalAdminRevealStepUp,
   previewTerminalAction,
   rotateLocalAdmin,
@@ -30,6 +31,19 @@ describe("maintenance API", () => {
     vi.stubGlobal("fetch", fetch)
     await rotateLocalAdmin("main", { target_id: `lad_${"a".repeat(64)}`, module: "demo", account: "primary", purpose: "break_glass", username: "admin", url: "" }, "csrf", "rotate-1")
     const request = fetch.mock.calls[0]?.[0] as Request
+    expect(await request.clone().json()).toEqual({})
+  })
+
+  it("queues Incus host preflight through the authenticated empty route", async () => {
+    const fetch = vi.fn().mockResolvedValue(response({ api_version: "anas.dev/api/v1", job: { id: "job-host" } }, 202))
+    vi.stubGlobal("window", { location: { origin: "https://nas.example" } })
+    vi.stubGlobal("fetch", fetch)
+    await invokeIncusHostPreflight("main", "csrf", "host-1")
+    const request = fetch.mock.calls[0]?.[0] as Request
+    expect(request.url).toContain("/api/v1/workspaces/main/host/actions/incus.status")
+    expect(request.headers.get("Origin")).toBe("https://nas.example")
+    expect(request.headers.get("X-CSRF-Token")).toBe("csrf")
+    expect(request.headers.get("Idempotency-Key")).toBe("host-1")
     expect(await request.clone().json()).toEqual({})
   })
 

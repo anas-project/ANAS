@@ -55,7 +55,7 @@ The Chinese and English READMEs must have equivalent sections covering at least:
 1. Module name, version/revision, status, category, and runtime;
 2. Module, Capability, and Contract dependencies, interfaces, and version constraints;
 3. a minimal example valid under the current `config.yml` schema;
-4. LDAPS, OIDC, SAML, Kerberos, user/group source of truth, synchronization direction, filters, password writeback, and both Module-initiated and IAM-initiated logout capability;
+4. LDAPS, OIDC, SAML, Kerberos, user/group source of truth, synchronization direction, filters, password writeback, both Module-initiated and IAM-initiated logout capability, and what this Module does when a directory attribute changes (see *Directory attribute changes* below);
 5. routine admin login, direct access, private/local admins, and IAM-outage recovery; when an emergency account exists, its login address, actual username, and password-retrieval command;
 6. real commands for account inspection, credential retrieval, password rotation, configuration inspection, modification, and planning;
 7. database provider/consumer/none, interfaces, defaults, Resource, credential, and deletion policy;
@@ -92,6 +92,47 @@ never projects gateway logout onto the backend.
 
 The full criteria are §8 (acceptance matrix) and §9 (release gate) of the Chinese
 [bidirectional logout requirements](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md).
+
+### Directory attribute changes
+
+**Scope**: every Module whose users come from Samba AD — those reading LDAP/LDAPS directly and
+those attached through the IAM's OIDC/SAML carry the same obligation. A Module with local accounts
+only writes "not applicable" and says why.
+
+**"The IAM handles it" is not an answer.** The IAM's reach ends at the moment of login; the account
+the application created, its access tokens, its SSH keys, and the ownership of its assets are all
+outside that reach. Whether a person disabled in the directory can still push with a token is what
+this section has to answer, and the IAM cannot answer it.
+
+The README's identity section must answer every row below — no row may be dropped. Write "none"
+where there is no automatic path, and give the administrator's concrete action in the fallback item.
+
+| Directory change | What must be answered |
+| --- | --- |
+| `sAMAccountName` changes | Is the account reused, renamed, or created anew? Do the displayed username and the identifier in URLs follow? |
+| `mail` changes | Does the application refresh the field? Does it take part in account binding? Can a uniqueness constraint make the change, or a later sign-up, fail? |
+| `displayName` and other profile attributes | Whether and when they are refreshed: at login, at sync, or never |
+| Direct or recursive group membership changes | When authorization takes effect: at login, at sync, or immediately |
+| Account disabled | What happens to existing sessions, access tokens/API keys, and SSH/deploy keys? Is there an automatic path? |
+| Account deleted | The same, plus how in-application assets (repositories, files, tasks, calendars) are re-owned |
+| Identifier recycled and reassigned | Can a new person land on the old account? Does the failure fail closed or open? |
+
+Two further items must be stated on their own:
+
+1. **The matching key**: which identity key the application persists — the OIDC `sub`, an LDAP UUID,
+   the identity anchor, a username, or an email address — and whether it survives a directory rename.
+   It decides half the answers above, and it decides whether any reconciliation can identify people
+   correctly;
+2. **The fallback path**: for every row marked "no automatic path", what operations has to do,
+   written as an executable action ("disable the account in X and revoke its tokens and SSH keys"),
+   not as "administrators should be aware". This also satisfies `DIRSYNC-R-014` of the
+   [directory event subscription requirement](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md),
+   which obliges a single-sided Module to state the missing side and its fallback.
+
+**Every row carries an evidence level**: `verified` (a probe or E2E record, with its entry point) or
+`inferred` (from upstream code or documentation, not re-checked). Never present an inference as a
+fact — upstream diverging from its own documentation is the normal case here, and operations will
+treat each of these rows as the basis of a revocation procedure.
 
 ### Configuration inventory
 
@@ -201,7 +242,7 @@ Both `docs/technical*.md` files must cover at least:
 2. Module, Capability, and Contract dependencies;
 3. Compose service, image/build, network, and volume topology;
 4. the same complete configuration contract as the README;
-5. user, group, LDAPS, OIDC/SAML, identity-anchor, password-writeback, and both RP/SP-initiated and IAM-initiated logout session flows;
+5. user, group, LDAPS, OIDC/SAML, identity-anchor, password-writeback, both RP/SP-initiated and IAM-initiated logout session flows, and the implementation side of directory attribute changes;
 6. management entries, local admins, and IAM-outage implementation;
 7. Secret lifecycle, storage format, permissions, projection path, hash/plaintext boundary, and logging boundary;
 8. database Contract, Resource identity, provider/consumer, credentials, and deletion policy;
@@ -216,6 +257,14 @@ Logout Token signature and claim validation. SAML documentation explains
 LogoutRequest/LogoutResponse validation and binding limitations. A
 front-channel- or Redirect-only path explicitly depends on the browser and
 must not imply coverage of administrative back-office revocation.
+
+The technical document must also state how directory attribute changes land on the
+implementation side, row for row with the README's *Directory attribute changes*: where the
+application persists the identity, what the matching key is, which fields each login refreshes
+(and which it leaves alone), through which interface a revocation is executed, and whether any
+reconciliation or event subscription exists. Where there is no automatic path, say what technically
+blocks it -- a missing endpoint, a missing immutable id, a missing receiver -- rather than only
+"unsupported": the next person needs that to judge whether an upstream release unblocks it.
 
 `config.env_prefix`, `exports`, and `consumes` must use environment-safe
 upper-snake names. A pattern may contain one leading or trailing `*`, never a

@@ -36,7 +36,7 @@ if systemctl is-active --quiet "$unit"; then
 fi
 install -d -o runner-agent -g runner-agent -m 0700 "$token_dir"
 umask 077
-dd of="$token_file" bs=41 count=1 status=none
+dd of="$token_file" bs=40 count=1 iflag=fullblock status=none
 [ "$(wc -c < "$token_file")" -eq 40 ] || exit 65
 LC_ALL=C grep -Eq '^[0-9a-f]{40}$' "$token_file" || exit 65
 chown runner-agent:runner-agent "$token_file"

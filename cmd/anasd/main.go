@@ -45,7 +45,7 @@ func main() {
 	defer stop()
 	if err := run(ctx, os.Args[1:], logger); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintf(os.Stdout, "Usage: anasd [--config %s]\n\nThe service configuration must be an absolute root-owned file with mode 0600 or stricter.\n", defaultServiceConfigPath)
+			fmt.Fprintf(os.Stdout, "Usage: anasd [--config %s]\n\nThe service configuration must be root-owned: 0600 or stricter for root; on Linux a provisioned non-root service requires a single-link 0640 file for its primary group and trusted ancestors.\n", defaultServiceConfigPath)
 			return
 		}
 		logger.Printf("%v", err)
@@ -58,7 +58,7 @@ func run(ctx context.Context, args []string, logger *log.Logger) error {
 	if err != nil {
 		return err
 	}
-	config, err := consoleconfig.Load(opts.configPath, consoleconfig.RootOwnedFilePolicy())
+	config, err := consoleconfig.LoadService(opts.configPath)
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,10 @@ func runConfigured(ctx context.Context, config consoleconfig.Config, logger *log
 	return runConfiguredWithListener(ctx, config, logger, nil)
 }
 
-func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config, logger *log.Logger, listen consolelistener.ListenFunc) error {
+func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config, logger *log.Logger, listen consolelistener.ListenFunc) (result error) {
+	if err := validateHostActionDaemon(config); err != nil {
+		return err
+	}
 	workspaces := make([]httpapi.Workspace, len(config.Workspaces))
 	for index, workspace := range config.Workspaces {
 		workspaces[index] = httpapi.Workspace{ID: workspace.ID, Path: workspace.Path}
@@ -110,7 +113,11 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	if err != nil {
 		return fmt.Errorf("acquire console job execution lease: %w", err)
 	}
-	defer executionLease.Close()
+	defer func() {
+		if err := executionLease.Close(); err != nil {
+			result = errors.Join(result, err)
+		}
+	}()
 	stateStore, err := consolestate.Open(ctx, config.ConsoleStore, consoleaudit.StateSink{Writer: auditWriter})
 	if err != nil {
 		return fmt.Errorf("initialize console capability state: %w", err)
@@ -143,8 +150,15 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	defer jobStore.Close()
 	deploymentAudit := deploymentAuditSink{writer: auditWriter, logger: logger}
 	jobRecoveryContext, cancelJobRecovery := context.WithTimeout(ctx, consolejobs.DefaultLockTimeout)
-	err = jobStore.RecoverInterruptedJobsObserved(jobRecoveryContext, executionLease, deploymentaudit.ObserveJobCommit(deploymentAudit, deploymentaudit.Event{
+	legacyRecovery := deploymentaudit.ObserveJobCommit(deploymentAudit, deploymentaudit.Event{
 		Stage: deploymentaudit.StageJobInterruptedAuthorized, FailureCode: "daemon_restarted",
+	})
+	hostRecovery := jobexecutor.HostActionRecoveryObserver(auditWriter)
+	err = jobStore.RecoverInterruptedJobsObserved(jobRecoveryContext, executionLease, consolejobs.JobCommitObserverFunc(func(ctx context.Context, intent consolejobs.JobCommitIntent) error {
+		if intent.Next.Action != nil && intent.Next.Action.Name == "incus.status" {
+			return hostRecovery.BeforeJobCommit(ctx, intent)
+		}
+		return legacyRecovery.BeforeJobCommit(ctx, intent)
 	}))
 	cancelJobRecovery()
 	if err != nil {
@@ -186,6 +200,15 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		}
 	}()
 
+	hostService, stopHostService, err := configureHostActions(ctx, config, jobStore, executionLease, auditWriter, authStore)
+	if err != nil {
+		return fmt.Errorf("configure host action service: %w", err)
+	}
+	defer func() {
+		if err := stopHostService(); err != nil {
+			result = errors.Join(result, err)
+		}
+	}()
 	tlsManager, err := newTLSManager(config.TLS, logger)
 	if err != nil {
 		return fmt.Errorf("configure console TLS: %w", err)
@@ -236,7 +259,9 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 			return err
 		},
 	}
-	jobOptions := httpapi.JobQueryOptions{Store: jobStore, Cancel: executor.Cancel}
+	jobOptions := httpapi.JobQueryOptions{Store: jobStore, Cancel: func(ctx context.Context, id string) (consolejobs.Job, error) {
+		return cancelConsoleJob(ctx, id, jobStore, hostService, executor.Cancel)
+	}}
 	configOptions := httpapi.ConfigOptions{Factory: runner.NewWorkspaceConfigService, Audit: configAuditSink{writer: auditWriter, logger: logger}}
 	deploymentOptions := httpapi.DeploymentOptions{
 		PlanFactory: runner.NewWorkspaceDeploymentPlanService, ServiceFactory: runner.NewWorkspaceDeploymentService,
@@ -272,6 +297,16 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		Registry: registry, Factory: queryFactory, Auth: authStore,
 		Enrollment: &enrollmentOptions, Jobs: &jobOptions, Config: &configOptions,
 		Deployment: &deploymentOptions, Audit: &auditOptions, System: &systemOptions,
+	}
+	if hostService != nil {
+		consoleSurfaces.HostActions = &httpapi.HostActionOptions{
+			InvokePreflight:           hostService.InvokePreflight,
+			InvokePlan:                hostService.InvokePlan,
+			InvokeImagePrunePlan:      hostService.InvokeImagePrunePlan,
+			IssueConfirmation:         hostService.IssueConfirmation,
+			InvokeConfirmed:           hostService.InvokeConfirmed,
+			InvokeImagePruneConfirmed: hostService.InvokeImagePruneConfirmed,
+		}
 	}
 	directOptions := consoleSurfaces
 	directOptions.Security = httpapi.SecurityOptions{

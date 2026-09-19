@@ -25,6 +25,12 @@ apply 时把它建好并交出凭据，之后不再位于数据路径上。
 
 ## 声明模型
 
+本机宿主供给还会按消费者的私有 Resource 前缀投影 `CONTROL_NETWORK_NAME` 与
+`CONTROL_NETWORK_EXTERNAL`，让 Provider 与 compute 消费者连接同一个受管控制桥。网络名来自
+Provider 已验证的宿主连接，不由消费者选择；无本机控制桥时只投影 `false`，不制造空的必填
+网络名。该内部环境投影不改变 Contract 请求/结果 schema，也不把 daemon 管理私钥交给消费者。
+业务网络保留默认出口，external 网络的生命周期仍归宿主供给而非消费者 Compose。
+
 `compute` 1.x 提供 `incus_vm` 与 `incus_container` 两个 interface。二者的 schema 与操作语义完全
 一致，区别只有隔离强度：系统容器与宿主共享内核，VM 提供独立 guest kernel。选哪一档是部署
 决策，由消费者的 `binding` 参数选择，Provider 不自动降级。
@@ -92,6 +98,7 @@ ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__ENDPOINT
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__SANDBOX
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__INSTANCE_PREFIX
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__PROFILE
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__SERVER_CERT
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__SERVER_CERT_FINGERPRINT
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__CLIENT_CERT
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__CLIENT_KEY
@@ -103,8 +110,9 @@ ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__MEMORY_MIB
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__DISK_GIB
 ```
 
-`CLIENT_KEY` 标为敏感值，只属于目标 Consumer。部署清单与 Resource state 只保存 Secret Store
-引用，不保存明文。
+`ENDPOINT`、`SERVER_CERT`、`CLIENT_CERT` 和 `CLIENT_KEY` 均标为敏感值，只属于目标 Consumer。
+凭据在部署清单与 Resource state 中只保存 Secret Store 引用，不保存明文；证书可公开验证不代表
+可以将该部署的连接配置回显到日志或公开清单。
 
 ## 多消费者隔离
 

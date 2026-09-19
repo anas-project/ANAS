@@ -55,7 +55,7 @@ Module 目录是唯一事实来源。逐 Module VitePress 页面只存在于临�
 1. 快速信息：Module 名、版本/revision、状态、类别和运行时；
 2. 依赖：Module、Capability、Contract、接口和版本约束；
 3. 最简配置：符合当前 `config.yml` schema 的可复制示例；
-4. 身份与用户管理：支持的 LDAPS/OIDC/SAML/Kerberos 等协议，用户和 Group 的事实来源、同步方向、过滤规则、密码回写能力，以及应用发起/IAM 发起两个方向的登出能力；
+4. 身份与用户管理：支持的 LDAPS/OIDC/SAML/Kerberos 等协议，用户和 Group 的事实来源、同步方向、过滤规则、密码回写能力，应用发起/IAM 发起两个方向的登出能力，以及目录属性变更时本 Module 的行为（见下文《目录属性变更说明》）；
 5. 管理员登录与 IAM 故障恢复：日常登录、直接入口、私有/本地管理员、IAM 故障时的恢复路径；有应急账号时必须给出登录地址、实际用户名和密码获取命令；
 6. 管理命令：查询账号、获取凭据、轮换密码、查看配置、修改配置和计划变更的当前真实命令；
 7. 数据库支持：Provider/Consumer/无数据库、支持接口、默认接口、Resource、凭据和删除策略；
@@ -90,6 +90,42 @@ Module 目录是唯一事实来源。逐 Module VitePress 页面只存在于临�
 
 完整判定口径见[使用 OIDC/SAML 的 Module 双向登出要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md)
 §8（强制验收矩阵）与 §9（发布门禁）。
+
+### 目录属性变更说明
+
+**适用范围**：所有用户来自 Samba AD 的 Module——直接读 LDAP/LDAPS 的，以及经 IAM 的
+OIDC/SAML 接入的，义务相同。只有本地账号、用户不来自目录的 Module 写"不适用"并说明原因。
+
+**不得用"由 IAM 负责"打发。** IAM 只管到登录那一刻；应用自己建出来的账号、access token、
+SSH key 和资产归属都不在 IAM 的射程内。一个人在目录里被停用之后，应用里那份账号是不是还能
+用 token 推代码，是这一章要回答的问题，IAM 答不了。
+
+README 的"身份与用户管理"章节必须逐行回答下表，一行都不能省；没有自动路径的行写"无"，
+并在兜底一行给出管理员要执行的具体动作。
+
+| 目录侧变更 | 必须回答 |
+| --- | --- |
+| `sAMAccountName` 改变 | 账号是沿用、改名还是新建？应用内显示的用户名和 URL 里的标识符跟不跟着变？ |
+| `mail` 改变 | 应用是否刷新这个字段？它是否参与账号绑定？唯一性约束会不会让改动或后续建号失败？ |
+| `displayName` 与其他 profile 属性 | 是否刷新，以及在什么时刻刷新：登录时、同步时，还是从不 |
+| 直接或递归组成员变更 | 授权在什么时刻生效：登录时、同步时，还是实时 |
+| 账号停用 | 已有会话、access token/API key、SSH/部署密钥分别会怎样？有没有自动路径？ |
+| 账号删除 | 同上，另加应用内资产（仓库、文件、任务、日程）的归属如何处理 |
+| 标识符回收再分配 | 新人会不会接上旧账号？失败方向是 fail-closed 还是 fail-open |
+
+另外必须单独写明两件事：
+
+1. **匹配键**：应用持久化的身份键到底是什么（OIDC `sub`、LDAP UUID、身份锚点、用户名还是
+   邮箱），以及它在目录改名后是否稳定。这一条决定上表里一半的答案，也决定任何对账机制能不能
+   认对人；
+2. **兜底路径**：上表中写"无自动路径"的每一行，运维必须做什么。写成可执行动作（"在 X 停用
+   账号并吊销其 token 与 SSH key"），不写"管理员应注意"。这同时满足
+   [目录事件订阅要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)
+   `DIRSYNC-R-014` 对"缺失方向与兜底路径"的声明义务。
+
+**每一行都要标注证据等级**：`已验证`（有探针或 E2E 记录，给出入口）或 `推断`（按上游实现或
+文档推断，未复核）。不得把推断写成事实——上游在这些行为上与文档不符是常态，而这一章的每一条
+都会被运维当作撤权流程的依据。
 
 ### 配置参数表
 
@@ -176,7 +212,7 @@ Compose 和生成块中的 revision；不需要新镜像的测试不得修改。
 2. Module、Capability、Contract 依赖；
 3. Compose service、镜像/build、网络和 volume 拓扑；
 4. 与 README 一致的完整配置契约；
-5. 用户、Group、LDAPS、OIDC/SAML、身份锚点、密码回写，以及 RP/SP 发起和 IAM 发起登出的会话数据流；
+5. 用户、Group、LDAPS、OIDC/SAML、身份锚点、密码回写，RP/SP 发起和 IAM 发起登出的会话数据流，以及目录属性变更的实现侧行为；
 6. 管理入口、本地管理员和 IAM 故障恢复的实现；
 7. Secret 生命周期、存储格式、权限、投影路径、hash/明文边界和日志边界；
 8. 数据库 Contract、Resource identity、Provider/Consumer、凭据和删除策略；
@@ -188,6 +224,12 @@ Compose 和生成块中的 revision；不需要新镜像的测试不得修改。
 `NameID`/`SessionIndex`、通知 endpoint、签名信任、重放存储和失败降级边界。OIDC 必须说明
 Logout Token 的签名/claim 校验；SAML 必须说明 LogoutRequest/LogoutResponse 校验和 binding
 限制。只支持 front-channel/Redirect 时必须明确依赖浏览器，不得暗示管理员后台撤销已覆盖。
+
+技术文档还必须写清目录属性变更在实现侧怎么落地，与 README 的《目录属性变更说明》一一对应：
+应用把身份持久化在哪张表/哪个字段、匹配键是什么、每次登录会刷新哪些字段（以及哪些不刷新）、
+撤权动作经哪个接口执行、有没有对账或事件订阅路径。没有自动路径时写明技术上的阻碍是什么
+（缺接口、缺不可变 ID、缺 receiver），而不是只写"不支持"——下一个人要据此判断上游升级后
+能不能解开。
 
 `config.env_prefix`、`exports` 和 `consumes` 必须使用环境变量安全的 upper-snake 命名；通配
 只允许一个前置或末尾 `*`，且禁止裸 `*`。不同 Module 的默认/自定义 prefix 不得相等或

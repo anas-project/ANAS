@@ -17,12 +17,12 @@ ExecStartPre=/usr/bin/install -d -o runner-engine -g actions-engine -m 0700 /run
 ExecStart=/usr/bin/podman system service --time=0 unix:///run/anas-podman/podman.sock
 Restart=on-failure
 RestartSec=2s
-NoNewPrivileges=true
+NoNewPrivileges=false
 PrivateTmp=true
 ProtectHome=false
 ProtectSystem=strict
 ReadWritePaths=/home/runner-engine /run/anas-podman
-RestrictSUIDSGID=true
+RestrictSUIDSGID=false
 
 [Install]
 WantedBy=multi-user.target

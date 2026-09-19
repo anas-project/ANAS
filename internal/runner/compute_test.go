@@ -271,8 +271,10 @@ func TestComputeLeaseIsPublishedToItsConsumerAlone(t *testing.T) {
 	if len(wantFingerprint) != 64 {
 		t.Errorf("server fingerprint = %q, want a 64-character digest", wantFingerprint)
 	}
-	if !a.runnerSensitive[prefix+"CLIENT_KEY"] {
-		t.Error("client key is not marked sensitive")
+	for _, field := range []string{"ENDPOINT", "SERVER_CERT", "CLIENT_CERT", "CLIENT_KEY"} {
+		if !a.runnerSensitive[prefix+field] {
+			t.Errorf("compute %s projection is not marked sensitive", field)
+		}
 	}
 	if a.envOwner[prefix+"CLIENT_KEY"] != "forgejo" {
 		t.Error("client key is not scoped to its consumer")

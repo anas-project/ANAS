@@ -15,7 +15,7 @@
 | **容器日志** | Module 容器的 stdout/stderr | 管理员排障 | Docker 自己管，ANAS 不接管 |
 | **CLI 输出** | `anas apply` 等命令的人类输出与 `--json` 信封 | 执行命令的人 | 已实现，不持久化 |
 | **job 事件日志** | 一次动作调用的 progress / warning / result，带序号可重放 | 控制台与 CLI 实时订阅 + 事后回看 | [统一动作 ABI](action-abi.md) §5，未实现 |
-| **特权动作审计** | 谁在什么时候经 `anas-hostd` 执行了什么 | 事后追责 | [宿主特权动作通道](host-action-channel.md) §3.3 定为写 journal，未实现 |
+| **特权动作审计** | 谁在什么时候经 `anas-hostd` 执行了什么 | 事后追责 | [宿主特权动作通道](host-action-channel.md) §7—§8 已有内部执行/拒绝审计适配；root 服务与生产共享 job broker 未接入 |
 | **部署与配置历史** | deployment、lock、resource state 的演进 | 回滚与排查 | 已实现，落在 `.anas/` 下 |
 
 ## 2. 待研讨的问题

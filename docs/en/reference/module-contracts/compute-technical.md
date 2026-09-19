@@ -29,6 +29,14 @@ provider creates it at apply time, hands over the credential, and leaves the dat
 
 ## Declaration model
 
+Local host provisioning also projects `CONTROL_NETWORK_NAME` and `CONTROL_NETWORK_EXTERNAL` under
+each consumer's private Resource prefix so the Provider and compute clients join the same managed
+control bridge. The name comes from the Provider's validated host connection, not a consumer choice.
+Without a local control bridge only `false` is projected, never an empty required network name.
+This internal environment projection does not change the Contract request/result schema or expose
+the daemon management private key. The business network keeps its default gateway and host
+provisioning, not consumer Compose, owns the external network's lifecycle.
+
 `compute` 1.x offers the `incus_vm` and `incus_container` interfaces. Their schemas and operation
 semantics are identical; only isolation strength differs, as a system container shares the host kernel
 while a VM has its own guest kernel. Which tier applies is a deployment decision selected by the
@@ -109,6 +117,7 @@ ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__ENDPOINT
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__SANDBOX
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__INSTANCE_PREFIX
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__PROFILE
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__SERVER_CERT
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__SERVER_CERT_FINGERPRINT
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__CLIENT_CERT
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__CLIENT_KEY
@@ -120,8 +129,10 @@ ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__MEMORY_MIB
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__DISK_GIB
 ```
 
-`CLIENT_KEY` is marked sensitive and belongs to the target consumer alone. Deployment manifests and
-resource state keep only secret store references, never plaintext.
+`ENDPOINT`, `SERVER_CERT`, `CLIENT_CERT` and `CLIENT_KEY` are all sensitive and belong only to the
+target consumer. Deployment manifests and resource state keep credential references to the secret
+store, never plaintext credentials. Publicly verifiable certificates do not authorize exposing this
+deployment's connection configuration in logs or public manifests.
 
 ## Multi-consumer isolation
 

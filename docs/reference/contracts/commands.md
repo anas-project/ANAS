@@ -2,7 +2,8 @@
 
 > 状态：**已实现**（`init` / `plan` / `lock` / `render` / `build` / `apply` /
 > `start` / `restart` / `stop` / `rollback` / `status` / `deployments` /
-> `config` / `admin` / `credential` / `module`）。
+> `config` / `admin` / `credential` / `module` / `host actions` / `host incus-preflight` /
+> `host job`；`host actions` 仅本机编译清单）。
 > 通用约定（流分离、退出码、枚举、时间与大小、路径、版本、最小信封）见
 > [通用约定](index.md)，本文不再重复。
 > `snapshot` 见 [snapshot.md](snapshot.md)，`backup` 见 [backup.md](backup.md)。
@@ -24,6 +25,7 @@
 - [credential](#credential)
 - [admin local](#admin-local)
 - [module](#module)
+- [host actions](#host-actions)
 - [help](#help)
 
 ---
@@ -782,6 +784,82 @@ deployment/release 与规范化参数。原始 executor stdout/stderr 不透传�
 | `no_active_deployment` | 4 | invoke 时 workspace 没有活动 deployment；commands 发现仍成功返回空列表 |
 | `module_command_not_found` / `module_command_unavailable` / `module_command_changed` / `module_command_busy` | 4 | 命令不存在、前置检查失败、确认后 descriptor 已变化或锁等待被取消 |
 | `module_command_timeout` / `module_command_failed` / `module_command_protocol_error` | 1 | executor 超时、失败或违反有界 JSONL ABI |
+
+## host actions
+
+```sh
+anas host actions [--json]
+anas host incus-preflight -w WORKSPACE --session-json - [--idempotency-key KEY] [--json]
+anas host incus-plan -w WORKSPACE --phase PHASE --request-json JSON --session-json - [--idempotency-key KEY] [--json]
+anas host incus-confirm -w WORKSPACE --plan-job JOB --action ACTION --session-json - --json
+anas host incus-apply -w WORKSPACE --phase PHASE --request-json - [--idempotency-key KEY] [--json]
+anas host job JOB_ID --session-json - [--json]
+```
+
+只读列出**当前客户端二进制编译进来的**宿主动作描述，不要求 workspace，不连接或激活
+`hostd.sock`，不读安装配置，不执行动作。清单包括 `incus.status` 的安装预检子集和
+install/configure/enroll/uninstall 四阶段各自的 plan/执行动作；它不是完整 daemon 状态或实机验收证明。
+
+JSON 复用 `anas.dev/cli/v1` 信封，附加 `source: "compiled-client"`、当前二进制的
+`version`/`commit`、始终明确存在的 `installation_verified: false` 与 `actions` 数组。
+每项包含 `name`、`scope`、`read_only`、`requires_root`、`requires_confirmation`、`implementation` 和 `requirement_ids`。
+`installation_verified: false` 表示**没有检查安装**，不表示已证明未安装。
+
+不能用这份本机清单证明已安装 root 执行器的版本、权限或就绪；未来服务端清单必须单独核验。
+`host invoke/plan/apply/install` 尚不支持，`--socket`、`--config`、密码参数及额外位置参数一律
+作为用法错误返回退出码 2。该清单命令不提供临时 sudo、脚本或绕过共享 job 的执行路径。
+
+`host incus-preflight` 只向同一个已认证 HTTP 路由
+`POST /api/v1/workspaces/{ws}/host/actions/incus.status` 发送空 JSON 对象 `{}`，由服务端共享队列创建
+durable job；CLI 不打开 root socket、不读 job store、不启动独立执行器。成功只表示预检任务已入队
+或复用，不表示 Incus 已安装、daemon 可用或 compute ready。
+
+会话凭据只能从 stdin 的有界 JSON 信封读取，不能出现在 argv、环境变量、日志或新的持久化 auth
+store 中：
+
+```json
+{
+  "schema": "anas.console-session/v1",
+  "origin": "https://nas.example:8443",
+  "ca_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+  "session": {
+    "source": "local",
+    "session_token": "...",
+    "csrf_token": "..."
+  }
+}
+```
+
+`source` 为 `local` 或 `oidc_proxy`，分别使用现有本地 owner session cookie 或代理 session cookie；
+`origin` 必须是规范化 HTTPS origin，`ca_pem` 必须是用于校验该 origin 的 CA。客户端不提供
+insecure TLS 绕过，不读取代理环境，不跟随重定向，响应上限为 1 MiB。`--idempotency-key` 缺省时
+自动生成；如果请求结果未知，CLI 返回 `unknown_execution`，报告该 key，并且**不会自动重试**。
+用户应使用 `anas host job JOB_ID --session-json - --json` 查询已知 job，或在确认安全后用同一
+idempotency key 手动重发。
+
+`host job` 复用公开 `GET /api/v1/jobs/{id}` 查询 job 详情，仍走同一 HTTPS 会话信封。它只是查询，
+不取消或执行任务。
+
+`incus-plan` 的 `PHASE` 只接受 `install|configure|enroll|uninstall`。公开 request 只包含
+`skip`、`interface`、`storage_size_gib`、`remove_packages`，不接受命令、包名、路径或软件源。
+读取成功 plan job 中的服务端影响和 `parameters` 后，`incus-confirm --json` 返回一次性 token、
+绑定摘要和到期时间；有效期从原 plan 时间起算五分钟，不自动延长。
+
+`incus-apply` 使用**一个 stdin 信封**，结构为：
+
+```text
+{
+  "session": <上文完整 anas.console-session/v1 信封>,
+  "plan_job_id": <已确认的计划 ID>,
+  "confirmation_token": <一次性 token>,
+  "parameters": <该计划原样返回的 parameters 对象>
+}
+```
+
+拒绝把 token 放入 `--confirmation-token`、把凭据置于 argv/环境，或同时从 stdin 读取两个信封。
+会话和确认信封均拒绝未知字段、重复字段、大小写别名、尾随对象和超限输入。服务端从同一个
+已完成 plan 重建绑定，在执行端独立 Claim 并重算宿主影响；原始 token 不进入 job/审计。
+过期或漂移需要重新计划和展示，不自动 apply。CLI 不创建浏览器以外的 root 密码通道。
 
 ## help
 

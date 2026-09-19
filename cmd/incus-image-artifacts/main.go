@@ -1,5 +1,6 @@
-// incus-image-artifacts records already-built distrobuilder outputs for release
-// preparation. It never builds, downloads, imports, prunes, or talks to a daemon.
+// incus-image-artifacts prepares immutable release artifacts. Only the explicit
+// build command starts a pinned distrobuilder; it never imports, prunes, or
+// connects to the deployment daemon.
 package main
 
 import (
@@ -12,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/anas-project/ANAS/internal/computeimage"
@@ -19,19 +21,26 @@ import (
 
 const usage = `Usage:
   incus-image-artifacts init --archive ABSOLUTE_NEW_DIRECTORY
+  incus-image-artifacts recipe --image forgejo-runner --architecture amd64|arm64 --interface incus_container|incus_vm
+  incus-image-artifacts build --archive DIR --name NAME --revision REVISION --architecture amd64|arm64 --interface incus_container|incus_vm --recipe FILE --distrobuilder ABSOLUTE_BINARY --distrobuilder-sha256 SHA256 --forgejo-runner ABSOLUTE_BINARY --forgejo-runner-sha256 SHA256
   incus-image-artifacts record --archive DIR --name NAME --revision REVISION --architecture amd64|arm64 --interface incus_container|incus_vm --recipe FILE --format split --metadata FILE --rootfs FILE
   incus-image-artifacts record --archive DIR --name NAME --revision REVISION --architecture amd64|arm64 --interface incus_container|incus_vm --recipe FILE --format unified --image FILE
   incus-image-artifacts inspect --archive DIR --name NAME --revision REVISION --architecture amd64|arm64 --interface incus_container|incus_vm
+  incus-image-artifacts export --archive DIR --name NAME --revision REVISION --architecture amd64|arm64 --interface incus_container|incus_vm --output-dir ABSOLUTE_NEW_DIRECTORY
   incus-image-artifacts catalog --archive DIR --previous-catalog FILE
   incus-image-artifacts catalog --archive DIR --first-release
 
 All operations support --timeout (default 1h, maximum 24h).
 Only JSON metadata is printed. Image bytes remain in the private local archive.
 init never adopts an existing directory. record never invokes a builder or overwrites a revision.
+build is release preparation on an isolated native Linux builder, not an apply/host action.
+An existing revision is verified without rebuilding. Incomplete attempts require explicit recovery.
+recipe prints a reviewed distrobuilder YAML recipe; it does not build.
+export restores identical recorded bytes into a new private directory; it does not import.
 `
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)
@@ -63,23 +72,36 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 		return computeimage.ErrArtifactInvalid
 	}
 	command := args[0]
-	if command != "init" && command != "record" && command != "inspect" && command != "catalog" {
+	if command != "init" && command != "record" && command != "inspect" && command != "catalog" && command != "build" && command != "export" && command != "recipe" {
 		return computeimage.ErrArtifactInvalid
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	archivePath := flags.String("archive", "", "private local archive directory")
 	timeout := flags.Duration("timeout", time.Hour, "operation time budget")
-	var name, revision, architecture, iface, recipePath, format, metadata, rootfs, image, previousPath string
+	var name, revision, architecture, iface, recipePath, format, metadata, rootfs, image, previousPath, builderPath, builderDigest, runnerPath, runnerDigest, outputDir, recipeImage string
 	var firstRelease bool
-	if command == "record" || command == "inspect" {
+	if command == "record" || command == "inspect" || command == "build" || command == "export" {
 		flags.StringVar(&name, "name", "", "catalog name")
 		flags.StringVar(&revision, "revision", "", "immutable revision")
+	}
+	if command == "record" || command == "inspect" || command == "build" || command == "export" || command == "recipe" {
 		flags.StringVar(&architecture, "architecture", "", "amd64 or arm64")
 		flags.StringVar(&iface, "interface", "", "incus_container or incus_vm")
 	}
-	if command == "record" {
+	if command == "recipe" {
+		flags.StringVar(&recipeImage, "image", "", "reviewed default recipe name")
+	}
+	if command == "record" || command == "build" {
 		flags.StringVar(&recipePath, "recipe", "", "reviewed self-contained recipe")
+	}
+	if command == "build" {
+		flags.StringVar(&builderPath, "distrobuilder", "", "absolute trusted distrobuilder executable")
+		flags.StringVar(&builderDigest, "distrobuilder-sha256", "", "independently verified builder digest")
+		flags.StringVar(&runnerPath, "forgejo-runner", "", "absolute trusted forgejo-runner executable")
+		flags.StringVar(&runnerDigest, "forgejo-runner-sha256", "", "independently verified forgejo-runner digest")
+	}
+	if command == "record" {
 		flags.StringVar(&format, "format", computeimage.ArtifactSplit, "split or unified")
 		flags.StringVar(&metadata, "metadata", "", "split metadata file")
 		flags.StringVar(&rootfs, "rootfs", "", "split rootfs or qcow2 file")
@@ -89,24 +111,46 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 		flags.StringVar(&previousPath, "previous-catalog", "", "previous trusted catalog")
 		flags.BoolVar(&firstRelease, "first-release", false, "explicitly no prior published history")
 	}
+	if command == "export" {
+		flags.StringVar(&outputDir, "output-dir", "", "new private directory for restored artifact bytes")
+	}
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return flag.ErrHelp
 		}
 		return computeimage.ErrArtifactInvalid
 	}
-	if flags.NArg() != 0 || *archivePath == "" || *timeout < time.Second || *timeout > 24*time.Hour || parent == nil || output == nil {
+	if flags.NArg() != 0 || *timeout < time.Second || *timeout > 24*time.Hour || parent == nil || output == nil {
+		return computeimage.ErrArtifactInvalid
+	}
+	if command != "recipe" && *archivePath == "" {
+		return computeimage.ErrArtifactInvalid
+	}
+	if command == "recipe" && *archivePath != "" {
 		return computeimage.ErrArtifactInvalid
 	}
 	if command == "catalog" && ((previousPath != "") == firstRelease) {
 		return computeimage.ErrArtifactInvalid
 	}
+	ctx, cancel := context.WithTimeout(parent, *timeout)
+	defer cancel()
+	if command == "recipe" {
+		if recipeImage != "forgejo-runner" {
+			return computeimage.ErrArtifactInvalid
+		}
+		body, err := computeimage.ForgejoRunnerRecipe(computeimage.Target{Architecture: architecture, Interface: iface})
+		if err != nil {
+			return err
+		}
+		if n, err := output.Write(body); err != nil || n != len(body) {
+			return errors.New("recipe output failed")
+		}
+		return nil
+	}
 	directory, err := filepath.Abs(*archivePath)
 	if err != nil {
 		return computeimage.ErrArtifactInvalid
 	}
-	ctx, cancel := context.WithTimeout(parent, *timeout)
-	defer cancel()
 	archive, err := computeimage.OpenArtifactArchive(ctx, directory, command == "init")
 	if err != nil {
 		return err
@@ -120,6 +164,33 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 		result = struct {
 			Initialized bool `json:"initialized"`
 		}{true}
+	case "build":
+		if builderPath == "" || !filepath.IsAbs(builderPath) || filepath.Clean(builderPath) != builderPath {
+			return computeimage.ErrArtifactInvalid
+		}
+		recipe, err := computeimage.ReadArtifactRecipe(ctx, recipePath)
+		if err != nil {
+			return err
+		}
+		// Complete platform, privilege and executable preflight before reserving
+		// a revision. A missing tool must not consume a build attempt.
+		builder, err := prepareDistrobuilder(ctx, builderPath, builderDigest, target)
+		if err != nil {
+			return err
+		}
+		defer builder.Close()
+		input, err := prepareForgejoRunnerInput(ctx, runnerPath, runnerDigest, target)
+		if err != nil {
+			return err
+		}
+		release, existing, err := archive.BuildOnce(ctx, reference, target, recipe, builderDigest, []computeimage.ArtifactBuildInput{input}, builder.Build)
+		if err != nil {
+			return err
+		}
+		result = struct {
+			Existing bool                         `json:"existing"`
+			Release  computeimage.ArtifactRelease `json:"release"`
+		}{existing, release}
 	case "record":
 		var sources []string
 		switch format {
@@ -154,6 +225,19 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 			return err
 		}
 		result = release
+	case "export":
+		if outputDir == "" {
+			return computeimage.ErrArtifactInvalid
+		}
+		destination, err := filepath.Abs(outputDir)
+		if err != nil {
+			return computeimage.ErrArtifactInvalid
+		}
+		exported, err := archive.Export(ctx, reference, target, destination)
+		if err != nil {
+			return err
+		}
+		result = exported
 	case "catalog":
 		var previous []computeimage.Entry
 		if !firstRelease {

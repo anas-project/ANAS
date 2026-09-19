@@ -51,6 +51,9 @@ type Config struct {
 	BackupTargets   []BackupTarget      `yaml:"backup_targets,omitempty"`
 	TLS             TLSConfig           `yaml:"tls,omitempty"`
 	TrustedProxy    *TrustedProxyConfig `yaml:"trusted_proxy,omitempty"`
+	// HostActions explicitly opts into the installed non-root host preflight
+	// queue. It is not a privilege override or automatic host installation.
+	HostActions bool `yaml:"host_actions,omitempty"`
 }
 
 // Workspace registers a public ID to a server-selected host path. Filesystem
@@ -137,6 +140,9 @@ func Parse(source []byte) (Config, error) {
 }
 
 func (config *Config) validateAndNormalize() error {
+	if config.HostActions && (len(config.Workspaces) == 0 || config.Port < 1024) {
+		return errors.New("host_actions requires a registered workspace and an unprivileged management port")
+	}
 	if config.APIVersion != APIVersion {
 		return fmt.Errorf("api_version must be %q", APIVersion)
 	}

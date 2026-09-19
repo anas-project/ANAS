@@ -76,6 +76,7 @@ const (
 	PermissionLocalAdminRotate    Permission = "local_admin.rotate"
 	PermissionLocalAdminReveal    Permission = "local_admin.reveal"
 	PermissionTerminalPreview     Permission = "terminal_action.preview"
+	PermissionHostPreflight       Permission = "host.preflight"
 )
 
 type ObjectScope string

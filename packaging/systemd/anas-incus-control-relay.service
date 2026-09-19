@@ -1,0 +1,33 @@
+[Unit]
+Description=ANAS Incus fixed control relay
+Documentation=https://anas.dev/
+After=network-online.target incus.service docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=anas-incus-relay
+Group=anas-incus-relay
+ExecStart=/usr/local/lib/anas/anas-incus-control-relay --config /etc/anas/incus-control-relay.json
+Restart=on-failure
+RestartSec=2s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/anas/incus-control-relay.json
+RestrictAddressFamilies=AF_INET
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

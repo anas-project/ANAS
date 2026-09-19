@@ -3,6 +3,14 @@
 This document records the provider implementation and security boundary of the `incus` module.
 Configuration and operation are in the [English README](../README.en.md).
 
+2026-09-18 verification: local Go regressions pass for the Provider, Hook, artifact archive/build
+orchestration, HTTP policy and publication transactions. Earlier dated "unrun" notes describe their
+original snapshots, not new production authority. The test machine is macOS arm64: Linux-specific
+identity checks, real distrobuilder bakes, Docker/Incus, quotas and ingress still require native acceptance.
+The Module remains `developing` and production ingress remains disabled. See the
+[verification record](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-18-incus-implementation-verification.md)
+for the exact scope and outstanding work.
+
 <!-- generated:module-identity:start -->
 > Status: current implementation; based on `7.3.0-r1` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
@@ -80,21 +88,131 @@ the `incus.*` Module settings below; existing remote-daemon connections are unch
 Host installation actions, trusted binary distribution, service units, INPUT/FORWARD ingress-interface
 rules, interface-recreation reconciliation, endpoint projection, and real mTLS/pin/project/cross-network
 and uninstall acceptance remain pending. A source-CIDR check is neither firewall authorization nor
-authentication. Local configuration/transport test sources were added but not run. Production ingress
-remains blocked; the host-provisioning design, section 3.8, records the detailed boundary.
+authentication. Locally runnable configuration/transport tests pass; Linux identity checks have only
+been cross-compiled. Production ingress remains blocked; the host-provisioning design, section 3.8,
+records the detailed boundary.
 
 ## Configuration contract
 
+### Host preflight (2026-09-19, standalone diagnostic)
+
+Run `go run ./cmd/incus-host-preflight` from the source checkout for read-only local inspection.
+`--recipes` prints the compiled distribution table; `--skip` avoids OS-file inspection entirely.
+Container isolation is the default; choose VM explicitly with `--interface incus_vm`. There are no
+install, script, arbitrary-path, package-source or endpoint options. The tool does not contact an Incus
+socket that could activate a stopped daemon, and is not the production `anas host` or Web API.
+
+`internal/incushost` matches exact Debian 13 / Ubuntu 24.04 / Ubuntu 26.04 release IDs, versions and
+architectures. `ID_LIKE` does not authorize derivatives. The Linux reader verifies root-owned
+non-writable ancestors and file identity around bounded reads, accepting only the documented
+os-release fallback/link forms. It never sources shell. Official package metadata has been checked,
+but package signatures/origins, service units, retries, uninstall and runtime compatibility remain due.
+
+Every preflight keeps `compute_ready: false` and `runtime_verified: false`, distinguishing unsupported
+systems, explicit skips and unfinished gates. A missing KVM device never silently downgrades a VM.
+The internal read-only `incus.status` handler reuses this path with strict action input and execution
+audit; the root socket, full daemon status, shared job/CLI/Web wiring and installation/removal are not
+implemented. Pure-logic/audit tests passed on macOS; Linux peer/filesystem execution is separately
+tracked. See [the host provisioning design](../../../docs/architecture/incus-host-provisioning.md),
+section 2.1, for the official-package version difference and remaining acceptance limits.
+
+### Host job binding (internal implementation)
+
+The Module settings below do not expose private host-job broker inputs. `Activation.ServeBrokered`
+and `HostJobBinding.ServeBroker` connect the internal read-only preflight through a fixed private Unix
+endpoint, kernel-authenticated peers, frozen job/release data and permission checks before and after
+execution. A completed handshake or closed socket cannot release a live executor's retained lease.
+This transport adds no job store, root-readable user scripts/databases or installation/removal/ingress
+write actions.
+
+The private listener and `HostJobBroker` routing are implemented: only the fixed socket is created in
+an installed private directory, without adopting stale entries. At most 32 running-job bindings and 8
+connections are admitted; input cannot register jobs. Retirement needs terminal state and remote cleanup,
+and listener shutdown does not release a job's execution lease. The latest slice adds an independent
+systemd exit observer and shared-recorder finalization: pin the real unit/invocation before granting,
+then check exit status and an empty unit process inventory. Missing evidence retains the lease and
+the existing durable containment barrier. `anas-hostd` and candidate units are packaged with the same
+release identity. Optional read-only HTTP admission and the same-daemon queue are wired, but non-root
+TLS/state/permission migration, the installer and CLI invoke remain pending. The service option
+`host_actions` defaults to false and is not compute readiness.
+Actual systemd and exit-status acceptance has not run.
+`bash test-env/scripts/test-host-job-broker-native.sh` runs isolated Linux socket/child
+fixtures and requires key tests to execute rather than skip. It is not systemd, actual root-peer or
+Incus acceptance, and does not cover the new native D-Bus/systemd path. See
+[the host-channel design](../../../docs/architecture/host-action-channel.md), sections 11–12.
+
+### Automatic host connection and control network
+
+When all four sensitive connection settings are omitted, the Hook reads only the fixed root-owned
+mode-0600 `/var/lib/anas/incus-host/connection.json`. It validates the schema, observed target
+architecture, owned pool, subnet/gateway, certificate/key pair and management fingerprint before
+projecting values into the existing Secret Store. Partial explicit settings, path overrides, links,
+duplicate JSON and unsafe permissions are rejected. Complete explicit remote settings do not read
+the local file. Automatic provenance and a binding digest persist with the Secret; restoring all four
+environment values never bypasses revalidation, revocation or drift checks.
+
+Automatic connections use `anas-btrfs` and the host-observed architecture. Remote architecture remains
+explicit and a remote pool defaults to `default`. Ordinary calculate does not silently rotate an
+existing automatic binding; a changed binding requires explicit recovery/reconciliation.
+
+The Provider uses the externally owned `anas-incus-control` bridge. Per-resource
+`CONTROL_NETWORK_NAME` / `CONTROL_NETWORK_EXTERNAL` projections connect Forgejo's two compute services
+and the AI Agent orchestrator to the same bridge. Their business network keeps gateway priority 1;
+this requires Compose 2.33.1+. Remote mode clears automatic host-network markers. Static configuration
+validation does not replace container-origin reachability, default-route, mTLS, isolation or IPv6 tests.
+
+The current host channel retains root/root anasd and unchanged TLS permissions. Plan/one-use approval/
+apply, CLI/Web and the installer are wired in code; older non-root-migration and preflight-only notes
+above describe prior slices. Hostd and the non-root relay are packaged together, but installation does
+not enable the relay. Native systemd/Incus/KVM acceptance remains outstanding and production ingress
+is disabled. See the current boundary in [host-action architecture](../../../docs/architecture/host-action-channel.md), section 13.
+
+### Module parameters
+
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `incus.admin_certificate_b64` | string | — | `""` | `static` | `INCUS_ADMIN_CERTIFICATE_B64` | no | yes | yes | no: `rotate-incus-admin-credential` | `credential_rotate` | Provisioning-only administrative client certificate, never handed to a consumer |
-| `incus.admin_key_b64` | string | — | `""` | `static` | `INCUS_ADMIN_KEY_B64` | no | yes | yes | no: `rotate-incus-admin-credential` | `credential_rotate` | Private key for the administrative certificate |
-| `incus.endpoint` | string | `pattern: ^(?:https://[A-Za-z0-9.:_-]+)?$` | `""` | `static` | `INCUS_ENDPOINT` | no | yes | no | yes | `reconcile` | HTTPS address of the remote Incus daemon |
-| `incus.image_architecture` | enum (`amd64`, `arm64`) | — | — | — | `INCUS_IMAGE_ARCHITECTURE` | no | yes | no | yes | `container_recreate` | Explicit guest image architecture on the target daemon; never inferred from the CLI host |
-| `incus.server_certificate_b64` | string | — | `""` | `static` | `INCUS_SERVER_CERTIFICATE_B64` | no | yes | yes | yes | `reconcile` | Pinned daemon server certificate; a mismatch fails outright with no fallback |
-| `incus.storage_pool` | string | `pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$` | `default` | `static` | `INCUS_STORAGE_POOL` | no | no | no | yes | `reconcile` | Storage pool backing every lease root disk |
+| `incus.admin_certificate_b64` | string | — | — | `host` | `INCUS_ADMIN_CERTIFICATE_B64` | no | yes | yes | no: `rotate-incus-admin-credential` | `credential_rotate` | Provisioning-only administrative client certificate, never handed to a consumer |
+| `incus.admin_key_b64` | string | — | — | `host` | `INCUS_ADMIN_KEY_B64` | no | yes | yes | no: `rotate-incus-admin-credential` | `credential_rotate` | Private key for the administrative certificate |
+| `incus.endpoint` | string | `pattern: ^https://[A-Za-z0-9.:_-]+$` | — | `host` | `INCUS_ENDPOINT` | no | yes | yes | yes | `reconcile` | HTTPS address of the remote Incus daemon |
+| `incus.image_architecture` | enum (`amd64`, `arm64`) | — | — | `host` | `INCUS_IMAGE_ARCHITECTURE` | no | yes | no | yes | `container_recreate` | Explicit guest image architecture on the target daemon; never inferred from the CLI host |
+| `incus.server_certificate_b64` | string | — | — | `host` | `INCUS_SERVER_CERTIFICATE_B64` | no | yes | yes | yes | `reconcile` | Pinned daemon server certificate; a mismatch fails outright with no fallback |
+| `incus.storage_pool` | string | `pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$` | — | `runtime` | `INCUS_STORAGE_POOL` | no | yes | no | yes | `reconcile` | Storage pool backing every lease root disk; the hook keeps `default` for explicit remote daemons and uses `anas-btrfs` for the host bundle |
 
 All four reach the run-only container through `.env`; the three credentials travel as base64 PEM and the hook checks their type early in apply.
+
+All four connection settings are sensitive. Configuration parameters `server_certificate_b64` and
+`admin_certificate_b64` first produce `INCUS_SERVER_CERTIFICATE_B64` and
+`INCUS_ADMIN_CERTIFICATE_B64`. After validation, the Hook derives the Provider wire variables
+`INCUS_SERVER_CERT_B64` and `INCUS_ADMIN_CERT_B64`. A stale raw-environment alias cannot replace
+missing canonical input; sensitive-value propagation also covers the aliases. Consumer projections
+`ENDPOINT`, `SERVER_CERT`, `CLIENT_CERT` and `CLIENT_KEY` are all sensitive, not only the private key.
+
+When `endpoint`, `server_certificate_b64`, `admin_certificate_b64` and `admin_key_b64` are all explicit,
+the hook uses the advanced remote path and does not read the host file. A partial explicit set fails
+closed; explicit values are never mixed with automatic values. The explicit remote path still requires
+`image_architecture`, and an empty `storage_pool` keeps the previous `default` behavior.
+
+When all four connection settings are empty, the hook reads only the installed Linux fixed file
+`/var/lib/anas/incus-host/connection.json`; no module setting, environment variable or user argument can
+override that path. The file must be root-owned, `0600`, a single-link regular file under safe root-owned
+ancestors, with stable identity before and after the read. Symlinks, FIFOs, writable ancestors,
+oversized files, unknown fields, duplicate JSON fields and old schema payloads are rejected. The bundle
+schema remains `anas.incus-connection-bundle/v1`, but automatic wiring now requires `architecture`
+(`amd64`/`arm64`) and `storage_pool` (`anas-btrfs`); old bundles without those fields are not inferred.
+
+The automatic bundle must pin `endpoint=https://<control_gateway>:18443`,
+`control_network=anas-incus-control`, `relay_service=anas-incus-control-relay.service`, and the management
+certificate/private-key pair plus `management_fingerprint`. Bundle values are projected to both hook Env
+and the module Secret Store. The Secret Store also carries a module-private source marker and binding
+digest. Repeated apply for an automatic binding re-reads the fixed file and requires the same digest; a
+deleted, replaced or drifted bundle cannot silently fall back to historical secrets or rotate to new
+automatic values. Explicit remote inputs are not overwritten by automatic values.
+
+Both Hook and Provider reject endpoint user information, non-root paths, queries and fragments. The
+Provider never follows HTTP redirects, limits responses to 4 MiB and requires synchronous success:
+an asynchronous acknowledgment does not prove provisioning completed. Errors expose only trusted
+operation/status categories, not endpoints, daemon error text or invalid metadata values. X.509 parser
+errors are also replaced with a fixed category, preventing rejected SAN URIs from exposing certificate content.
 
 ## Contract resource lifecycle
 
@@ -223,8 +341,9 @@ certificate, for registration, and projects the key straight to the consumer.
 
 ## Hook, changes and rollback
 
-The hook implements `calculate` only: it derives `INCUS_NETWORK_NAME` and refuses when any of the four
-credentials is incomplete. The refusal happens early in apply rather than midway through provisioning,
+The hook implements `calculate` only: it derives `INCUS_NETWORK_NAME`, selects the explicit remote or
+fixed host-bundle connection path, and refuses incomplete credentials, unsafe automatic bundles and
+automatic-binding drift. The refusal happens early in apply rather than midway through provisioning,
 because a half-configured provider is harder to diagnose than one that never started.
 
 Changes to `endpoint` and `server_certificate_b64` are `reconcile`; the two administrative credentials
@@ -238,7 +357,7 @@ are `credential_rotate`, and rotating them does not affect running instances.
 | `provisioner/ops.go` | `ensure`/`inspect`/`revoke` and quota mapping |
 | `provisioner/main.go` | argument and environment validation, isolation tier dispatch |
 | `provisioner/provisioner_test.go` | fake daemon covering idempotence, fail-closed paths, over-scoped certificate refusal, pin mismatch, input validation and non-echo of sensitive values |
-| `hook/main_test.go` | credential completeness and non-echo |
+| `hook/main_test.go` | credential completeness, host-bundle projection, idempotent binding, unsafe-file rejection and non-echo |
 
 The fake daemon is an `httptest.NewTLSServer`, so the pinning logic runs through a real TLS handshake
 rather than a stub.
@@ -338,7 +457,7 @@ On 2026-09-11, real Linux namespace checks passed for HTTP transport, source IP/
 established-flow revocation and expiry. These use synthetic peers; Docker/Incus rule coexistence, real
 guests, managed IP reuse and full revocation remain unverified.
 
-## Offline split-image artifact verification (unverified code)
+## Offline split-image artifact verification (local tests pass; native acceptance pending)
 
 `internal/computeimage/artifact.go`, `release_verify.go` and `cmd/compute-image-artifact` reuse the
 single `ArtifactRelease` representation for read-only inspection of completed image bakes. They do not run distrobuilder, import into Incus, download, sign or publish a
@@ -389,16 +508,16 @@ The CLI supports regular local files on Linux/macOS, rejecting final-component s
 special files and observable changes during the read. Limits are 16 KiB for the descriptor, 16 MiB for
 metadata and 64 GiB for rootfs. Hashing uses 128 KiB chunks with cancellation checks; bulk bytes and
 raw read errors do not enter output. Canonical decoding rejects duplicate/unknown fields, case aliases,
-nulls, noncanonical encoding and trailing data. New unit/CLI tests have not been run; this tool does
+nulls, noncanonical encoding and trailing data. Local unit/CLI tests pass; this tool does
 not constitute real-host acceptance for M12 or M13.
 
-## Local image artifact archive (unverified code)
+## Local image artifact archive (local tests pass; native acceptance pending)
 
 `cmd/incus-image-artifacts` adds explicit local archive writes alongside the read-only verifier above.
 It reuses the same `ArtifactRelease` representation and fingerprint algorithm, not a second image
 protocol. It is a release-preparation tool, not an installer, Provider action, browser endpoint or
 consumer API. It currently targets private local directories owned by the executing user on Linux/macOS.
-The source and new tests have not been compiled or executed; the examples below remain unverified.
+Archive and CLI regressions pass locally; example paths do not identify published or bootable guest images.
 
 The archive has a 0700 root and `objects/` and `releases/` subdirectories, a 0600 `.lock`, and 0400
 `.format`, SHA-256-named objects and canonical revision records. A session holds an exclusive file
@@ -450,6 +569,63 @@ metadata only, never image bytes, source paths or recipe content, and does not u
 `modules/incus/images/catalog.json`. Back up the archive and trusted history independently. These local
 records do not complete release signing, artifact distribution, Provider import, guest startup or pruning
 that protects current/previous deployments. The shipped catalog remains empty; M12/M13 remain unaccepted.
+
+## Release-side build-once archive preparation (real bakes not executed)
+
+`cmd/incus-image-artifacts build` uses `ArtifactArchive.BuildOnce` to run distrobuilder explicitly,
+separately from deployment preparation. It is not `anas apply`, Provider `ensure`, a Module Command
+or a privileged host action, and registers no browser endpoint. `record`, `inspect` and `catalog`
+still never launch a builder.
+
+Use an **isolated, disposable native Linux release builder**, running as root with a reviewed recipe
+and an independently verified distrobuilder ELF digest. Target and builder architectures must match;
+additional software/devices needed for VM builds must be prepared there. Recipes can execute root
+commands: this tool is not a recipe sandbox and must not run untrusted recipes on a production NAS.
+Recipes must be self-contained and pin every external input. Forgejo/AI Agent recipes and published
+image catalogs are not generated automatically.
+
+Build this release tool from trusted source, then initialize a new archive explicitly on that builder
+and invoke the following command (a real bake has not been validated):
+
+```sh
+incus-image-artifacts init --archive "$ARCHIVE_DIR"
+incus-image-artifacts build \
+  --archive "$ARCHIVE_DIR" --name example-guest --revision r1 \
+  --architecture amd64 --interface incus_vm \
+  --recipe "$PINNED_RECIPE_FILE" \
+  --distrobuilder "$TRUSTED_DISTROBUILDER_BINARY" \
+  --distrobuilder-sha256 "$TRUSTED_DISTROBUILDER_SHA256" \
+  --timeout 2h
+```
+
+Platform, privilege and binary preflight precede revision reservation. The executable must be a regular,
+single-linked, native ELF owned by the executing user and not writable by group/others. It is measured,
+copied into a sealed memfd and executed through a fixed descriptor; scripts and symlinks are rejected.
+The environment is constructed explicitly, without caller-variable inheritance. Builder stdout/stderr
+do not enter the result or logs. Arguments select the fixed
+[distrobuilder split mode](https://linuxcontainers.org/distrobuilder/docs/latest/howto/build/): containers
+use `incus.tar.xz` + `rootfs.squashfs`, VMs use `incus.tar.xz` + `disk.qcow2`. No
+`--import-into-incus`, arbitrary extra flags, aliases or deployment daemon are accepted.
+
+The session lock covers admission, build and commit. A recorded revision is verified against its
+original objects and recipe digest and reused without a builder call; missing/corrupt objects fail
+instead of rebaking the revision. The CLI's `build` command still requires builder/program preflight;
+use cross-platform `inspect` for read-only access. Before the first build, the private
+`build-<version-key-digest>/` attempt directory durably records the 0400 frozen recipe, recipe/builder
+digests and version key. After building, the recipe is rechecked and the archive's streaming hashes
+and immutable commit are reused. JSON stdout contains metadata, never image bytes.
+
+Failures, cancellation and process loss retain the attempt directory, blocking silent retries even
+after reopening the archive. Complete, trusted original outputs may be recovered explicitly through
+`record`; otherwise use a new revision. Preserve the archive and independent history backup.
+Cancellation attempts to terminate the build process group but does not prove mounts, descendants or
+external resources have converged. The tool never recursively removes build directories. An operator
+must inspect and clean up builder remnants before reuse; a failed build is not confirmed cancellation.
+
+Regressions cover build-once reuse, recipe conflicts, missing-artifact rebuild refusal, interrupted
+attempts across sessions, original-output recovery, cancellation and error redaction. Fixtures are opaque
+test bytes and establish only orchestration and byte identity. Native Linux sealed-ELF tests, actual
+formats, guest boot, security boundaries, signing/distribution and Provider import need separate validation.
 
 ## Lease naming key lifecycle
 
@@ -766,3 +942,92 @@ queued cancellation remain available. The durable receipt survives compaction, r
 recreating a registry and ordinary business-compensation acknowledgement. It is not evidence that
 remaining processes or writers have stopped; restricted recovery and service wiring remain pending.
 Regression test source was added but has not been run.
+
+## Ingress host kernel identity and receipts (2026-09-20)
+
+The host backend binds the complete Target and installed topology in v2 receipts, uses directory-
+descriptor-relative persistence and supports cancellable guard acquisition. Namespace execution
+independently verifies Docker identity/start time, PID/start ticks/boot ID, nsfs device/inode and
+socket cookie. Fixed ip commands run in the opened namespace without externally supplied paths
+or commands. Container source IP and host bridge gateway are observed separately; fixture-only
+fields are not production ip output. Ports share only the same complete allocation; an unreleased
+old hold blocks a restarted or different instance from reusing that IP.
+
+Receipts use `anas.incus-http-host-receipt/v2`; v1 evidence is not silently migrated or removed.
+The actual allocator lifecycle, health identity, production wiring and native acceptance remain
+incomplete. Production ingress stays disabled. Prior scoped/full Go tests and Linux dual-architecture
+compilation passed, but do not establish native CI or real-host acceptance. See the
+[recovery review](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-20-incus-ingress-recovery.md).
+
+## Scoped nft firewall and installation ownership (2026-09-20)
+
+The ingress backend fences only managed bridge paths, without a global `policy drop`.
+A regular `http_permits` chain runs before the scoped deny rules. Readback checks complete
+ordered ASTs, table/chain/handle identity, every dynamic object and native JSON top-level
+comments, numeric timeouts, concatenations and expiry. Unknown rules cannot disappear through
+name filtering. Empty/expired sets may be revoked but cannot report readiness.
+
+An independent `.nft-baseline.json` records installing/installed/removing/removed states and
+actual table handles. Installation verifies absence, persists intent before effects and confirms
+readback before completion. Removal requires publications, routes, permits and connections to
+be cleared. Existing tables without independent receipts are not adopted; unresolved intents
+are not retried silently. Existing private dirfd primitives are reused, with no new Go dependency.
+
+Local scoped/full Go and race regressions passed. The native namespace/nft CI cases were written
+with skip rejection but were not run here. Their isolated-namespace nft syntax, JSON and lifecycle
+checks still use IP/allocator/conntrack fixtures, not actual HTTP traffic, Docker/Incus coexistence,
+dual-stack or address-reuse acceptance. Production ingress stays disabled.
+
+The interface consumes the actual public job DTO (`kind`, `mutating`, workspace/id and result),
+not internal `job.action`. The displayed plan must match its approval binding's schema,
+workspace, plan/state digests and deletion set. A valid empty inventory displays no changes and
+cannot execute. Changed input, plan expiry or disposal cannot reuse prior consent. Confirmation
+tokens are not exposed in public state, and uncertain apply results are never retried automatically.
+Missing public fields or inconsistent bindings fail closed rather than relying on type assertions.
+
+
+## Device-bound host address routing (candidate; production disabled)
+
+`address_routing` is a root-owned installation projection, not consumer configuration. A separate host
+routing table and terminal unreachable rule apply only to the selected Traefik source, guest subnet and
+Docker ingress interface. A permanent neighbor and `/32` bind the independently checked container host
+veth. An old reservation never recreates a route after device deletion or falls back to the ordinary bridge
+route. This is not a DHCP reservation and does not change Incus pools or guest devices.
+
+`.address-routing.json` records the complete scope, ifindex, allocation intent, shared ports and retired
+tokens. Readiness requires both durable evidence and kernel readback. `address_intent` is saved before
+external effects; normal and failed publications use the same withdrawal path. Hold, renewal, inventory and
+release are wired into the Backend; a production call cannot claim readiness from a journal-only hold.
+Existing tables, priorities and neighbors are not adopted. Unknown earlier policies, local destinations,
+replacement devices and unaccounted artifacts fail closed.
+
+Limits are 32 allocations, 64 users per allocation and 256 live plus retired tokens. Admission reserves
+future cleanup capacity, including a 60 KiB encoded-JSON admission budget below the 64 KiB file limit;
+apply and reinstall do not erase retirement history. The address layer itself remains a forward-path
+container-veth candidate; the reply-side addition is described below. VM/TAP, full stale TCP sessions,
+real Incus observation, health identity and production service wiring remain incomplete. The native FIB test is required by the gate but was not run
+in this work. Production ingress remains disabled. See the
+[address-routing review](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-20-incus-address-routing.md).
+
+
+## Reply origin and bidirectional connection cleanup (candidate; production disabled)
+
+With `address_routing`, bridge chain `http_reply_origins` checks the original numeric ifindex, veth name,
+guest MAC and approved IP/service port before admitting replies to the Traefik backend source address;
+unmatched traffic is explicitly denied. The index comes from the independent address hold. Cleanup never
+learns a replacement device's identity from a reused name. Inet requests/replies additionally require the
+original/reply conntrack direction respectively.
+
+The two expiring permission families are created, renewed and revoked in one nft transaction; both must
+be read back before readiness. Missing, expired or foreign objects cannot report ready. Connection deletion
+requires verified revocation on both sides, selects each observed original/reply address, port and default
+zone, and confirms absence afterward. A batch is limited to 256 entries. Translated tuples, nonzero zones,
+offload and malformed inventory block cleanup: the initial scope is directly routed IPv4/TCP without backend NAT.
+Old policy evidence is incompatible with `bidirectional-origin-v1`; receipts and orphaned objects are not
+silently migrated or adopted.
+
+Native packet and conntrack test sources are required by the gate but were not run here. They test source
+rules and kernel records separately, not full TCP sessions, Incus guests or Docker coexistence. Forced/wrapped
+ifindex reuse, stop/pause with a surviving interface, VM/TAP, independent Incus identity supply, health and
+production wiring remain outstanding. Production ingress remains disabled. See the
+[reply-origin review](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-20-incus-reply-origin.md).

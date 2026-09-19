@@ -5,12 +5,16 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"io"
 	"math/big"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -57,6 +61,12 @@ type fakeDaemon struct {
 	storageError       int
 	storageReadFilter  func(*storagePool)
 	imageFilter        func(*imageRecord)
+	missingImages      map[string]bool
+	importedImages     map[string]imageRecord
+	lastImportProject  string
+	lastImportFingerprint string
+	importFingerprintOverride string
+	asyncWaits         int
 	projects           map[string]map[string]string
 	certificates       map[string]certificate
 	networks           map[string]network
@@ -71,11 +81,13 @@ type fakeDaemon struct {
 func newFakeDaemon(t *testing.T) *fakeDaemon {
 	t.Helper()
 	d := &fakeDaemon{
-		storage:      &storagePool{Name: "default", Driver: "btrfs", Status: "Created"},
-		projects:     map[string]map[string]string{},
-		certificates: map[string]certificate{},
-		networks:     map[string]network{},
-		profiles:     map[string]profile{},
+		storage:        &storagePool{Name: "default", Driver: "btrfs", Status: "Created"},
+		missingImages:  map[string]bool{},
+		importedImages: map[string]imageRecord{},
+		projects:       map[string]map[string]string{},
+		certificates:   map[string]certificate{},
+		networks:       map[string]network{},
+		profiles:       map[string]profile{},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/1.0/storage-pools/", func(w http.ResponseWriter, r *http.Request) {
@@ -104,6 +116,14 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 			http.Error(w, "bad image request", 400)
 			return
 		}
+		if d.missingImages[pin] {
+			writeError(w, 404, "not found")
+			return
+		}
+		if image, ok := d.importedImages[pin]; ok {
+			writeSync(w, image)
+			return
+		}
 		imageType := "virtual-machine"
 		if d.projects[r.URL.Query().Get("project")]["restricted.containers.privilege"] == "unprivileged" {
 			imageType = "container"
@@ -113,6 +133,52 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 			d.imageFilter(&record)
 		}
 		json.NewEncoder(w).Encode(map[string]any{"type": "sync", "status_code": 200, "metadata": record})
+	})
+	mux.HandleFunc("/1.0/images", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Query().Get("project") == "" {
+			writeError(w, 400, "bad image import")
+			return
+		}
+		if err := r.ParseMultipartForm(64 << 20); err != nil {
+			writeError(w, 400, "bad image import")
+			return
+		}
+		metadata, err := multipartBytes(r.MultipartForm, "metadata")
+		if err != nil {
+			writeError(w, 400, "bad image metadata")
+			return
+		}
+		rootfsField := "rootfs"
+		imageType := "container"
+		if _, ok := r.MultipartForm.File["rootfs.img"]; ok {
+			rootfsField = "rootfs.img"
+			imageType = "virtual-machine"
+		}
+		rootfs, err := multipartBytes(r.MultipartForm, rootfsField)
+		if err != nil {
+			writeError(w, 400, "bad image rootfs")
+			return
+		}
+		sum := sha256.Sum256(append(metadata, rootfs...))
+		pin := hex.EncodeToString(sum[:])
+		d.importedImages[pin] = imageRecord{Fingerprint: pin, Architecture: "x86_64", Type: imageType}
+		delete(d.missingImages, pin)
+		d.lastImportProject = r.URL.Query().Get("project")
+		d.lastImportFingerprint = pin
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(incusResponse{Type: "async", Status: "Operation created", Operation: "/1.0/operations/11111111-1111-4111-8111-111111111111"})
+	})
+	mux.HandleFunc("/1.0/operations/11111111-1111-4111-8111-111111111111/wait", func(w http.ResponseWriter, r *http.Request) {
+		d.asyncWaits++
+		fingerprint := d.lastImportFingerprint
+		if d.importFingerprintOverride != "" {
+			fingerprint = d.importFingerprintOverride
+		}
+		writeSync(w, operationRecord{
+			ID: "11111111-1111-4111-8111-111111111111", StatusCode: 200,
+			Metadata: map[string]any{"fingerprint": fingerprint},
+			Resources: map[string][]string{"images": []string{"/1.0/images/" + fingerprint + "?project=" + d.lastImportProject}},
+		})
 	})
 	mux.HandleFunc("/1.0/projects", func(w http.ResponseWriter, r *http.Request) {
 		var body project
@@ -251,6 +317,19 @@ func writeSync(w http.ResponseWriter, metadata any) {
 func writeError(w http.ResponseWriter, code int, text string) {
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(incusResponse{Type: "error", ErrorText: text, ErrorCode: code})
+}
+
+func multipartBytes(form *multipart.Form, field string) ([]byte, error) {
+	files := form.File[field]
+	if len(files) != 1 {
+		return nil, http.ErrMissingFile
+	}
+	file, err := files[0].Open()
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return io.ReadAll(file)
 }
 
 // clientFor pins the fake daemon's own certificate, which is what a correctly
@@ -565,6 +644,7 @@ func TestLeaseValidationRejectsUnsafeInput(t *testing.T) {
 		"instances below range":            {"ANAS_RESOURCE_INSTANCE_PREFIX": "anas-fj-", "ANAS_RESOURCE_MAX_INSTANCES": "0"},
 		"non-numeric disk":                 {"ANAS_RESOURCE_DISK_GIB": "large"},
 		"client cert not base64":           {"ANAS_RESOURCE_CLIENT_CERT": "!!!!"},
+		"arbitrary image supply path":      {"ANAS_RESOURCE_IMAGE_SUPPLY_FILE": "/tmp/supply.json"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			for key, value := range valid {

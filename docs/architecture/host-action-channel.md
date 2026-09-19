@@ -1,12 +1,18 @@
 # 宿主特权动作通道（设计）
 
-> 状态：**设计，未实现**。本文规定安装期那一次 root 之后，Web 控制台与 CLI 如何执行需要特权的
+> 状态：**当前实现与待验收设计。固定 root 服务身份、共享 job、计划/确认/执行与安装器已编码；真实 Linux/systemd/Incus 验收未完成**。更新：2026-09-19。当前实现以 §13 为准，§7—§12 是历史切片。本文规定安装期那一次 root 之后，Web 控制台与 CLI 如何执行需要特权的
 > 宿主操作，而不再向用户索要第二次密码。
 >
 > 它不取代[特权操作与 helper](privilege-helper-draft.md)，而是沿用那份文档的规则并补上它没有
 >覆盖的一类：需要**完整 root**、且会留下持久特权产物的操作（安装软件包、启用系统服务）。
 
 ## 1. 为什么需要它
+
+**当前身份结论：不迁移 anasd 的非 root 身份。** 现有控制台需求明确需要读取 root-only TLS
+私钥和访问宿主工作区。当前实现保留 root/root，使用固定安装策略、内核 peer 身份及 PID 1
+独立报告的实际 `anasd.service` 进程进行准入；不是简单允许任意 UID 0。早期“非 root 迁移”判断
+不再适用，也不需要为接通通道而放宽 TLS 权限、加入 Docker 组或递归改属主。
+
 
 ANAS 是面向普通用户的 NAS 产品。按 [Core 实现标准](core-implementation-standard.md) §4，命令行
 安装完成之后，日常操作应当都在 Web 端完成。但有些操作需要 root——例如装 Incus daemon。
@@ -290,3 +296,322 @@ incus.uninstall    # 移除 ANAS 建立的信任条目与 project/network/profil
 ## 6. 待决
 
 - **事件日志的持久化与保留期**：见[统一动作 ABI](action-abi.md) §12；
+
+## 7. 当前编码边界（2026-09-19）
+
+`internal/hostaction` 与 Module 注册表分离。`cmd/anas-hostd` 和候选单元已编码并进入发布打包，
+但安装器和正式非 root 执行者仍未接入；下述较早切片的缺口以 §11 当前边界为准。
+目前唯一编译处理器是 `incus.status` 的 **installation-preflight 子集**，只读固定的系统标识，
+返回声明式发行版匹配、隔离档与未完成门禁。它不查询 daemon 的运行版本、监听、存储池、
+证书或资源归属，也不声明 compute ready。完整状态接口仍待后续供给。这个子集不需要 root，
+因此独立诊断工具无需提权，没有为它增加第三个特权入口。
+
+动作输入复用 `anas.action/v1` 严格帧。`Receive` 只接受已连接的 Unix stream socket，
+先从 `SO_PEERCRED` 取得 UID/GID/PID，再按受信安装策略决定是否读取请求；没有参数可填写身份。
+UID/GID 不能为 root/零值，只允许固定服务账号及其 primary GID，或指定组作为真实 primary GID。
+它不通过 NSS 或客户端组列表补充 supplementary group 资格。其他平台拒绝，读取有三秒上限。
+这一段只验证连接身份，不证明 socket 已由受信 systemd unit 建立，也不代替应用角色授权。
+
+编译清单只能查询，不能由 manifest、JSON 或插件添加处理器；计划中的 install/configure/enroll/
+uninstall/image-prune 全部拒绝。`incus.status` 参数暂只接受 `{}`，不接受命令、路径、URL 或认证覆盖。
+规范化调用与 peer 保存在不可由调用方构造字段的内部对象中；内存一次性使用保护不代替共享 job 的
+持久化幂等、并发与崩溃恢复。
+
+执行审计复用 `audit.Writer`：开始记录成功后才探测；结束记录成功后才返回成功候选帧。两条记录
+绑定同一 job/invocation 与内核 peer，不保存原始失败输入、探测错误或 endpoint。结束审计失败返回
+unknown。该候选终态没有自选 seq，仍须交给共用 recorder 核验真正的 EOF/进程退出，再写唯一 job store。
+没有让 root 进程直接打开用户可写的 workspace 日志或另建一份 job 存储。
+
+激活 fd/安装配置校验、被拒连接审计和共享 job 的执行侧绑定现已编码，边界见 §8。
+跨进程绑定传输已补入 §9；私有 listener 装配、生产退出状态监督及二段确认仍未交付，也没有安装 root 二进制、systemd/OpenRC 单元或
+CLI/Web 执行路由。`anas host actions` 只提供本机编译清单，本节不能作为启用命令。
+发行版预检细节见 [Incus 宿主供给设计](incus-host-provisioning.md) §2.1；验证和剩余事项由
+[宿主通道计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/host-action-channel.md)跟踪。
+
+## 8. 激活身份与共享 job 交接（2026-09-19，内部实现）
+
+### 8.1 固定安装身份与已接受连接
+
+`OpenSystemdActivation` 只处理一次 `Accept=yes` 激活：固定 fd 3，精确校验 `LISTEN_PID`、
+`LISTEN_FDS=1` 和 `LISTEN_FDNAMES=connection`，随后清除这些环境标记。名称及 fd 语义已对照
+[systemd v257 的 sd_listen_fds 文档](https://github.com/systemd/systemd/blob/v257/man/sd_listen_fds.xml)。
+标记不是认证：还须核对 AF_UNIX/SOCK_STREAM、已连接且非监听、固定本地 socket 名和内核 peer。
+匿名 socket、socketpair、其他地址、TCP、普通文件与多 fd 均拒绝。
+
+安装输入固定为 `/etc/anas/hostd.json`：`schema` 为 `anas.host-action-installation/v1`，
+字段只有 `release: {version, commit}`、非零 `service_uid/service_gid` 和显式 `group_gid`。
+`group_gid=0` 关闭额外组准入；socket 属组此时取 service_gid。规范 JSON 限 4 KiB，拒绝重复、
+未知、大小写别名、null、缺失字段及非规范拼写。version/commit 必须与执行二进制一致，开发构建
+不能开启激活路径。不存在命令、路径、可执行文件、插件目录、密码或 environment 字段。
+
+Linux 从 `/` 用持有的目录描述符逐级 NOFOLLOW 打开固定路径：祖先须 root 所有且无组/其他写权，
+策略为 0600 单链接普通文件；`/run/anas/hostd.sock` 为 root 所有、指定属组、0660 单链接 socket。
+前后复核目录链、策略字节/元数据和 socket 节点；内容、权限、链接或目录项替换都失败。消费的是
+启动器已接受的连接，不新建监听，不自动修权限，不读取 caller 指定路径，也不执行用户可写产物。
+路径检查不证明 systemd unit 的其余安全选项已安装；完整激活与升级仍须实机验证。
+
+### 8.2 job 执行者侧绑定
+
+`Activation.Serve` 强制注入 job 绑定与既有审计 writer，处理一条请求后关闭连接。
+底层只读执行函数现为私有，不能从公开执行入口绕过绑定。拒绝的 peer/输入只记录固定原因及
+实际内核身份，不把未解析的请求自报 action/job id 记为有效动作。拒绝审计失败同样拒绝执行。
+
+`jobexecutor.HostJobBinding` 位于**非 root job 所有者一侧**，复用同一个 `consolejobs.Store` 与
+`ExecutionLease`。它只接收已开始的 `incus.status` 只读 job，匹配实际 invocation、创建者、
+workspace、开始时间、冻结 version/commit 和空参数。排队、终态、已取消、已有执行事件、其他
+动作、变更型 job 或另一 store 的执行租约均拒绝。实际调用前重新授权已持久化 actor，并在授权
+回调后重读状态，防止等待期间取消或变更被忽略。对象只允许一次同步执行，不允许晚到回调执行。
+
+`RetainActionExecution` 确认 store 与 lease 属于同一目录，并为监督期保留原执行租约。绑定结束
+不自动释放所有权；只有监督者确认进程和 I/O 全部结束后才 `Close`。绑定不创建第二份 job，
+不写成功终态、不恢复失联执行，也不充当持久化幂等或跨进程授权凭据。
+
+root 执行端通过独立认证的 broker 使用这条绑定，不能直接以 root 打开用户可写 job 目录，
+也不能把传入的一份 JSON 当作实际 running job。§9 已补绑定传输和进程存活保护，生产装配及完整退出状态监督仍未实现。订阅断连
+不得成为执行取消；socket EOF 不等于 exit 0。只有共用 recorder 拿到独立实际退出证据后才允许
+提交最终 outcome。当前测试中的受控流/退出值不代表真实 systemd 子进程已验收。
+
+发送成功候选帧之后的描述符清理失败仍返回错误，不能让启动器因函数返回 nil 而报告正常退出。
+清理完成性继续由监督者负责，不能仅凭已写出的候选帧判断。
+
+### 8.3 公开清单与部署阻塞
+
+`anas host actions [--json]` 已接入 CLI；只打印当前客户端的编译清单和 version/commit，明确
+`source: compiled-client`、`installation_verified: false`。它不连接 socket，不证明服务端清单，
+也不开放 install/configure/enroll/uninstall/prune。具体输出见[命令契约](/reference/contracts/commands#host-actions)。
+
+复核发现现有 `packaging/systemd/anasd.service` 仍以 root/root 运行，与上述非 root peer 政策
+不兼容。不得为接通而静默允许 root/任意 UID；正式接入需单独确定非 root 执行所有者、目录归属、
+Docker 权限及迁移流程。本轮不改服务身份或文件属主，不安装新 root 服务。后续安装动作、对称
+卸载、二段确认、Linux 原生以及真实 Incus/KVM 验收继续阻塞。
+
+## 9. 跨进程 job 绑定传输（2026-09-19，内部接线）
+
+### 9.1 两端身份与固定连接
+
+`Activation.ServeBrokered` 接入原有激活验证及 `executeBound`，root 端只连接固定
+`/run/anas-job-broker/socket`。连接时以描述符检查 `/`、`/run` 的 root 归属与无共享写权限；
+`anas-job-broker` 是服务账号所有的 0700 目录，socket 为同一 UID/GID 所有的 0600 单链接节点。
+这个目录只作为非 root 所有者的通信端点，不向 root 提供可执行文件、脚本或 job 数据库。
+调用方不能提供地址、路径、命令或新的处理器。§10 已实现 listener 的创建和停机清理；
+私有目录的安装与实际非 root 服务装配仍未完成。
+
+root 端要求 broker 的内核 PID/UID/GID **与最初请求激活连接的进程完全相同**，并且是安装策略的
+service_uid/service_gid。仅组成员资格不能替代实际执行所有者；CLI/Web 的执行请求须由共同的
+非 root job 所有者发起，不能用直连 socket 的方式跳过 job。broker 重启后即使 UID/GID 相同，
+旧请求也不能转交新 PID。激活侧同时从**原请求 socket**取得并保留进程句柄，拨号前、运行
+回调前后及握手返回时检查原进程仍存活；只比较第二条连接的同名 PID 不足以抵抗原 PID 被复用。
+broker listener 必须由所有者进程自己创建，不能直接继承 PID 1 创建的
+监听 socket：[`SO_PEERCRED`](https://man7.org/linux/man-pages/man7/unix.7.html) 返回的是 connect/listen
+时的凭据，而不是事后接管 fd 的进程身份。
+
+所有者侧 `AcceptJobBrokerObserved` 在读取任何载荷前要求当前非 root 身份及对端 root UID/GID，
+并取得连接关联的 `SO_PEERPIDFD`。root 端也为 broker 保留同类句柄；不支持该选项或句柄检查失败
+直接拒绝，不回退成 `pidfd_open(传入的 PID)`。句柄必须带 CLOEXEC；接收不到可靠身份不能返回
+空的“已验证”对象。实际内核与权限支持仍须按发行版验收，常量能编译不等于平台可用。
+
+### 9.2 同一 job 的握手与复核
+
+`HostJobBinding.ServeBroker` 只服务已经创建并开始执行的同一份 job，沿用原 Store、lease、
+冻结 release、actor 和参数检查。私有握手顺序为 `claim → bound → finished → validated`，
+包含原 `anas.action/v1` 请求、release、原连接身份与 128 位随机会话 nonce。每帧最多 8 KiB，
+规范 JSON 加 LF，拒绝重复/未知字段、null、大小写别名、错误阶段、错 nonce、尾随帧和缺少最终 EOF。
+普通 I/O 截止为三秒，一轮绑定上下文最多十五秒；只适用于当前短时预检，不承诺长时安装动作。
+
+`bound` 只有在真实 running job、当前权限及冻结请求核验后才发出。发送前先记录该会话可能已
+授权，部分写入也按可能生效处理。`finished` 之后再次读取 job、复核权限，再重读控制状态，
+全部通过才回 `validated`。执行期间角色撤销、取消、版本变化或审计/存储失败不能得到成功确认。
+结束确认之前的断连和错误不触发自动重试；同一 binding 对象只允许一次执行。
+
+这不是另一套 job/事件日志，也不是破坏性操作的五分钟确认 token。nonce 只绑定当前连接的消息，
+不能用于重建 running job、恢复失联执行或代替共享 Store 的幂等策略。拒绝只审计固定原因及
+内核身份，不记录原始请求或把自报 job id 当成已授权身份。
+
+### 9.3 进程结束与业务完成分开
+
+`BrokerSession.Close` 在 grant 可能被观察到之后要求对应进程已结束；仅握手完成、EOF 或对端
+关闭 socket 不够。`HostJobBinding.Close` 传播这个阻断并保留原执行租约，不在失败后释放所有权。
+`WaitBrokerExecutor` 只轮询连接关联的进程句柄，不发送信号，不按数字 PID 找进程；等待结束也
+不意味着得到了退出码。`Close` 不持有 job 锁去等待 session 锁，避免与 session 回调取得 job 锁
+形成反向锁序。
+
+[`pidfd_open(2)`](https://man7.org/linux/man-pages/man2/pidfd_open.2.html) 区分了进程退出可读通知与
+子进程 wait：仅观察到退出，不能推导 exit 0。现有只读预检不创建子进程；未来安装器会创建包管理器
+等后代，必须另补 cgroup/监督者证明，不能复用本段当成完整进程树清理。job 的成功终态仍须由
+共用 recorder 根据实际输出 EOF、独立真实退出状态及审计提交；目前没有生产适配器提供这一整条证据。
+
+原生回归入口为 `bash test-env/scripts/test-host-job-broker-native.sh`。它只在非 root Linux 上
+运行隔离 socket/子进程 fixture，要求关键用例真实执行；内核不支持、用例跳过或缺失均不能通过。
+本机 macOS 的协议测试及双架构交叉编译与该原生门禁分开记录。这个脚本不安装服务、不执行 sudo、
+不修改宿主防火墙，也不代表 systemd、真实 root 对端或 Incus/KVM 验收。
+
+## 10. 所有者私有监听与任务分派（2026-09-19，内部实现）
+
+### 10.1 只创建自己的通信端点
+
+`OpenJobBrokerListener` 在非 root 执行所有者进程中创建固定 `/run/anas-job-broker/socket`。
+安装方须先提供服务 UID/GID 所有的 0700 目录；代码不创建、chown 或修复安装目录。
+沿用既有目录描述符校验，`/` 与 `/run` 要求 root 所有且不可共享写，私有目录加非阻塞排他
+flock，锁持有到该 listener 完全关闭。已有 socket、普通文件、符号链接或不安全目录均拒绝；
+即使取得了锁，也不把崩溃残留解释为可以删除或接管的对象。
+
+新 socket 在已校验私有目录中创建，再通过固定父目录的 NOFOLLOW 操作收紧到 0600；不改变 Go
+进程的全局 umask。Linux 的目录权限、socket 权限及连接身份是不同检查，依据见
+[unix(7)](https://man7.org/linux/man-pages/man7/unix.7.html)。socket 的初始权限收紧窗口由私有父目录
+隔离其他账号；这不是针对恶意 root 或同 UID 进程的沙箱。权限操作不受支持就失败，不降级为宽松模式。
+
+显式关闭 Go 的[自动 unlink](https://pkg.go.dev/net#UnixListener.SetUnlinkOnClose)，
+停机只在目录链和完整 socket 身份仍匹配时，以持有的父目录描述符删除自己的节点。不递归删除
+目录、不删除被替换或被移动的对象。启动中途失败可保留不确定节点供管理恢复；清理失败保持错误，
+再次 Close 不把它改成成功。Accept 空闲时也周期复核身份，并响应所有者取消。
+
+### 10.2 先由监督者注册，再由连接查找
+
+`jobexecutor.HostJobBroker` 复用同一个 Store、ExecutionLease、release 和当前权限检查。
+监督者通过 `Register` 绑定已经开始的只读预检 job，再发起宿主激活；socket 只查找匹配的
+job/invocation，不创建、启动、重建或注册 job。注册表只是当前监督对象的有界索引，不存第二份
+任务状态或幂等记录。每次调用仍由原 `HostJobBinding` 校验完整请求、当前角色和控制状态。
+
+单个 owner 最多保留 32 个绑定、同时处理 8 条连接；等待空位发生在 accept 之前，不无限启动
+goroutine。重复注册和并发抢占同一绑定失败，不能替换仍保留进程句柄的对象。`Ready` 只在实际
+listener 打开并验证后通知；启动失败不就绪，也不能在同一对象上隐式重启。Run 的 context 来自
+owner，不从 Register、浏览器或 CLI 请求继承；原请求返回或取消不停止已注册的执行。
+
+### 10.3 停机、退休与未确认执行
+
+停止时先关准入、取消 owner 的握手上下文，再等待所有连接处理结束，关闭 listener；Run 自身
+保留执行租约直至这些处理结束。每个 job 的保留是独立的：成功握手也不自动关闭进程句柄，仍由
+监督者 `WaitBrokerExecutor` 观察退出。授权可能生效后的握手失败或审计失败会停止进一步准入；
+`Close` 在远端未退出时仍拒绝交出该 job 的执行租约。
+
+`Retire` 必须同时看到共享 Store 中的实际终态和远端清理确认；只关闭连接、只关闭 binding 或
+只过了某个 TTL，均不能让 running job 被删除后重新绑定。服务层不分配事件序号、不制造退出码
+或成功终态、不按 socket EOF 推断执行成功。非 root 服务迁移、root 可执行程序、独立退出码与
+完整后代清理、公共执行入口及宿主写动作仍未交付，不能用本节内部 API 当成已启用产品功能。
+
+原生门禁已扩展到 listener 和共享 Store 分派用例，并接入 CI 的 Go job。门禁要求指定包和
+用例实际通过，skip、无匹配测试、错误平台或缺内核能力都不能算验收。工作流接线不等于本轮已
+运行 GitHub CI；实际执行范围记录在
+[本轮核对](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-19-host-job-broker-listener.md)。
+
+## 11. 独立退出状态、共享终态与可执行程序（2026-09-19，待实机验收）
+
+本节取代前面切片中“没有退出状态适配器/root 程序”的当前状态描述；前面所述非 root 服务迁移、
+安装器和公共执行入口的缺口仍然存在。代码不是已启用的宿主供给：只读预检仍是唯一动作。
+
+### 11.1 授权前绑定服务管理器证据
+
+生产 `BrokerSession` 在发出 `bound` 前，通过固定 `/run/dbus/system_bus_socket` 建立 D-Bus
+连接，不读取调用方地址或 `DBUS_*` 环境。当前适配器要求该 socket 的内核对端为 root，随后
+核验 `org.freedesktop.systemd1` 的唯一总线身份确由 UID 0、PID 1 持有，之后始终使用该唯一身份。
+不满足这个本地总线模型时拒绝，不能默默切换到会话总线或另一个管理器；发行版实测仍待完成。
+
+通过活着的原 socket pidfd 夹住 `GetUnitByPID` 查询，核对单元的 MainPID、ExecMainPID 和单调
+开始时间，固定 `InvocationID`，并在执行前持有 `Unit.Ref` 防止单元记录过早回收。只接受
+`anas-hostd@*.service`、固定模板路径、root/root、Type=exec、Restart=no、无重启、无 drop-in、
+无 transient/DynamicUser/Delegate 及 KillMode=control-group。单元名不能由请求提供。
+
+实际方法、属性和类型以 [systemd D-Bus 接口文档](https://man7.org/linux/man-pages/man5/org.freedesktop.systemd1.5.html)
+为依据。客户端使用 `github.com/godbus/dbus/v5 v5.2.2`，不另造 D-Bus 协议实现，不执行或解析
+`systemctl`，也不授予 StartUnit/SetProperties 等控制调用。只读取所需属性，不读取环境变量集合。
+
+### 11.2 进程退出、清理和业务终态分别确认
+
+进程 pidfd 结束之后，观察器继续等待**同一个 invocation**进入 inactive/dead 或 failed/failed，
+主进程和控制进程均为 0，并取得实际 `ExecMainCode/ExecMainStatus/Result` 与退出时间。
+再用 `GetUnitProcesses` 确认该单元没有残留进程，之后重读身份、时间和退出字段以拒绝重启漂移。
+查询失败不是空进程集；缺字段、零值、失去管理器身份或重新加载不能变成成功证据。
+
+正常退出 0 与 success 才能匹配成功帧；正常非零退出与 exit-code 才能匹配失败帧。信号、OOM、
+timeout/watchdog、流损坏、错误回执、关闭失败或取消均不能从候选成功帧推导成功。这是当前不派生
+子进程的预检通道；没有声称它能约束恶意 root 逃离 cgroup 或替代未来包管理器的完整恢复验收。
+
+`HostJobBroker.ExecutePreflight` 把已运行 job 的注册、固定激活请求、broker 握手、实际输出 EOF、
+独立退出观察、句柄关闭和共享 `ActionRecorder` 终态串起来。成功记录之前再检查当前角色与任务，
+Store 的 pre-commit 检查拒绝等待期间已持久化的取消。终态仍在唯一 job journal 中原子提交并重放，
+没有另建状态库。仅声明式 `incushost.Preflight` 可重新计算出的输出和固定错误文本可进入 recorder。
+
+退出或清理无法确认时保留 binding/lease，并以既有 `execution_containment_lost` 记录 unknown；
+该 Store 的后续准入和启动继续被阻断。不从 socket EOF 或一份自报 JSON 合成退出码，也不通过
+重新构造 broker 来清除阻断。执行者 context 和结果写入独立于 CLI/Web 订阅的连接寿命。
+
+### 11.3 root 程序和发布产物，不自动安装
+
+`cmd/anas-hostd` 新增 `--serve`、`--actions`、`--version`；后两者只报告当前二进制，明确
+`installation_verified: false`。服务模式复用固定激活校验和 broker；root 审计使用
+`/var/lib/anas-hostd/audit` 下的既有 `audit.Writer`，逐级核对 root 所有祖先，不读取用户 job 路径。
+已发出失败帧也必须返回非零进程退出；描述符或审计关闭失败覆盖成功返回。
+
+发布脚本用同一 version/commit/date 编译 `anas-hostd`，并打包候选 `anas-hostd.socket` 与
+`anas-hostd@.service`。模板限制 AF_UNIX、无自动重启、单次最长 30 秒、严格只读系统和私有临时目录。
+当前唯一保留的 capability 是 `CAP_DAC_OVERRIDE`，用于连接服务账号的 0700/0600 broker 端点；
+空 capability 集合会使 root 也无法通过该文件权限检查。它不是任意读写授权：固定路径与编译期
+动作限制仍执行，且不得借此增加命令/路径参数；不具备包安装、mount 或网络管理能力。
+能力含义见 [capabilities(7)](https://man7.org/linux/man-pages/man7/capabilities.7.html)。
+
+候选单元还需安装策略、`anas` 组、非 root owner 的目录和服务迁移；`install.sh` 当前不安装或
+启用它们。没有修改既有 anasd 身份和数据属主，也没有运行 systemd 或真实 root 执行链。
+测试、交叉编译和打包检查不代替这项验收，更不代表 Incus 安装、配置、卸载和生产 ingress 已完成。
+
+## 12. 共享队列与可选 HTTP 入队（2026-09-19，代码已接线）
+
+`HostActionService` 属于现有 anasd 的执行所有者，沿用同一个 `consolejobs.Store`、进程级
+`ExecutionLease`、`HostJobBroker` 和审计 writer。它不是新数据库或新特权进程。HTTP 适配器
+只把已认证 actor、注册 workspace 与幂等键交给 `InvokePreflight`；动作固定为 `incus.status`，
+参数固定为空。冻结 release 随原 job 保存，socket 原请求和 broker 继续使用现有 ABI。
+
+服务等私有 listener 就绪后才公开准入。共享 Store 完成 action 级 retry/coalesce；错误不披露
+其他 workspace 的冲突 job ID。worker 在领取前核对当前 actor 和冻结请求，失权/旧版本只终结
+未启动 job；一旦 Start 已提交则未知执行不能重新排队。成功终态仍由 §11 的 recorder 与退出
+证据决定。创建/合流/开始/终态使用 `host_job_transition` 审计，不记录原始参数或凭据。
+
+HTTP 生命周期只覆盖入队；请求或 SSE 断连不取消 owner。显式取消只允许 queued 状态，运行中的
+预检没有协作取消协议，不能误走旧 executor 的取消接口。worker 与 queued cancel 竞争时只接受
+Store 中同 invocation、从未开始的终态作为取消已胜出；并不重试任何不确定的 running job。
+正常停机可能同时收到 runtime 结束与 ctx 取消，只有异常结束才停止准入并报告失败。服务关闭
+等待 runtime 收尾，原租约关闭错误传播至 daemon 返回值。启动恢复对宿主 running job 复用
+现有 daemon_restarted 持久阻断，即使开关已关闭也不会漏记或自动清除。
+
+`consoleauth.CheckJobOwner` 只给已认证并持久化的任务重新验证 actor，不能用一个 actor 字符串
+登录 HTTP。当前 capability 必须 full；本地 owner 只要仍存在就不因浏览器退出/换密码撤销任务。
+代理只使用当前安装配置的 issuer/group 与尚未过期的本地代理身份记录，不延长 idle/绝对有效期，
+也不是对远端 IdP 的即时角色查询。实际调用和成功提交前均重读本地权限。回调可在 jobs.lock 内
+执行，不能反向进入 job Store。
+
+公开接口、默认关闭条件及响应见[服务配置参考](/reference/anasd-service-configuration)。只有显式
+准备的非 root Linux release daemon 能启动该队列；默认 root 服务不变，不隐式修改 uid/gid、
+目录属主或 Docker 组。`LoadService` 的 0640 配置支持只改变服务配置的安全读取，不扩展 TLS
+私钥权限。现有 TLS loader 的 root-owned 私钥政策、实时证书更新、状态所有权和宿主安装必须
+共同迁移；当前尚未提供这套可部署流程，不能称为生产已启用。CLI 专用 invoke 和 UI 按钮也未交付。
+
+## 13. 当前装配与验收边界（2026-09-19）
+
+安装策略为 root-owned `0600` 的 `/etc/anas/hostd.json`，使用未发布的 v2 schema，绑定
+version/commit、`systemd-root-service` 和固定服务单元。socket 为 root/root `0600`，每次连接
+激活一个 `anas-hostd`；执行者通过固定私有 broker 复核共享 job、持有原执行租约，并由 systemd
+独立退出状态和空进程集决定是否允许写入终态。普通 root 进程不能只凭自报 PID/单元名准入。
+
+编译动作包括 `incus.status`、install/configure/enroll/uninstall 各自的 plan 与执行动作。
+当前建立性动作也要求计划绑定和确认，比原设计“一段即可”的最低要求更保守。确认元数据位于
+root-only `/run/anas/confirmations`，原 token 不进入 job/审计，消费与执行 Claim 分开；
+五分钟有效期从原 plan 时间起算，同一个过期计划不能通过重新签发延长。成功终态仍需独立退出
+证据，连接关闭、进度事件或后端自报成功都不能替代它。
+
+CLI 使用受验证 HTTPS 控制台会话和同一队列，不自行持有第二份 job store 或直接打开 root socket。
+控制台通过公开能力区分预检与供给入口：只装配预检不得显示供给能力。页面显示服务端影响步骤，
+不要求用户填写参数摘要、计划 ID 或 token；过期后重新计划并重新确认，未知 apply 不自动重试。
+
+长动作预算来自编译期清单，未认证读入仍单独限时。公开进度只包含固定阶段名，不复制包管理器
+stdout/stderr。`anas-hostd` 必须有包管理、账户创建、网络配置所需的真实 root 权限；单元保留
+`NoNewPrivileges`、`ProtectSystem` 和 `ProtectHome`，显式开放 `/etc`、`/usr`、`/var`、`/run`
+及私有临时目录。这不是低权限沙箱；安全边界是不可由请求扩展的动作、类型参数、安装身份、
+一次性批准、审计、资源归属和退出监督，不能把写路径表宣传为抵抗恶意 root。
+
+发行归档同时包含 hostd、控制转发 binary 与固定单元。安装器不默认启动控制转发；configure
+准备身份和配置后才启动。升级/卸载在覆盖前检查活动动作、停止 socket 再复查；未排空时拒绝，
+不杀掉进行中的包安装来制造“完成”。确认目录在同一次开机内跨 daemon 重启保留；崩溃遗留
+的执行仍需恢复裁决，不因移除临时目录而获得重放权限。
+
+**这些源码和本机夹具不是发布批准。** 实际 systemd 私有 D-Bus、原生身份、发行版包安装、控制
+bridge、双栈与 guest 生命周期尚需真实宿主验证。非 systemd 启动、生产 HTTP ingress 的 namespace/
+地址生命周期证明和破坏性镜像 prune 仍存在实现或接线缺口，当前不开放这些路径。

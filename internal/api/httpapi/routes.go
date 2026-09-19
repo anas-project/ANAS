@@ -369,6 +369,16 @@ func (h *handler) routeSpecs() []routeSpec {
 			)
 		}
 	}
+	if h.hostActions != nil {
+		routes = append(routes,
+			routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: hostPreflightRoute, Permission: PermissionHostPreflight, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess}, handler: h.invokeHostPreflight},
+			routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/host/actions/incus/image-prune/plan", Permission: PermissionHostPreflight, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess}, handler: h.invokeHostImagePrunePlan},
+			routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/host/actions/incus/{phase}/plan", Permission: PermissionHostPreflight, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess}, handler: h.invokeHostActionPlan},
+			routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/host/actions/confirm", Permission: PermissionHostPreflight, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess}, handler: h.issueHostActionConfirmation},
+			routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/host/actions/incus/image-prune/apply", Permission: PermissionHostPreflight, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess}, handler: h.invokeHostImagePruneApply},
+			routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/host/actions/incus/{phase}/apply", Permission: PermissionHostPreflight, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess}, handler: h.invokeHostActionApply},
+		)
+	}
 	return routes
 }
 
@@ -556,7 +566,7 @@ func uniqueStrings(values []string) []string {
 func RouteInventory(registry *Registry, factory ServiceFactory) ([]RoutePolicy, error) {
 	// Inventory describes the complete production contract. Runtime handlers
 	// still omit deployment routes unless their audited dependencies validate.
-	h := &handler{registry: registry, factory: factory, jobs: &jobHTTPState{
+	h := &handler{registry: registry, factory: factory, hostActions: &HostActionOptions{}, jobs: &jobHTTPState{
 		cancel: func(context.Context, string) (consolejobs.Job, error) { return consolejobs.Job{}, nil },
 	}, deploymentHTTP: &deploymentHTTPState{
 		stepUp:               routeInventoryStepUp{},

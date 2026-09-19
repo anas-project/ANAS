@@ -82,6 +82,21 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-pro
 Add `--purge` to remove `/etc/anas/anasd.yml` and the current user's source preference. Even purge
 does not remove workspaces or control-plane state under `/var/lib/anas`.
 
+## Host-action channel development status
+
+The development release and installer include same-release `anas-hostd`, fixed socket/service units,
+root-owned installation policy, and a separate non-root control relay binary/unit. `anasd` remains
+root/root with its existing TLS and state-file permissions; no ownership migration or Docker-group
+membership is required. `host_actions` defaults to false, and the installer does not enable the relay.
+Plan/confirmation/execution entries are implemented, but real Linux/systemd/Incus installation, upgrade
+and removal have not passed native acceptance. This is not a production-enablement runbook. See the
+[host-action design](/architecture/host-action-channel).
+
+Upgrade or removal refuses to overwrite programs while a host action is active rather than interrupting
+a package operation. Approval consumption survives daemon restarts within the same boot; workspace and
+control-state retention are unchanged. The control-network `gw_priority` declaration requires Compose
+**2.33.1 or newer** and keeps the consumer's business network as its default gateway.
+
 ## Select a Module source
 
 ```yaml

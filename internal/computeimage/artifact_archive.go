@@ -23,7 +23,8 @@ const (
 
 // ArtifactArchive is an administrator/release-tool boundary on a private LOCAL
 // filesystem, never a consumer-facing upload or download endpoint. One session
-// holds an exclusive OS lock. It has no network, builder, shell, daemon, prune,
+// holds an exclusive OS lock. BuildOnce accepts a trusted release-side builder;
+// ordinary record/inspect/catalog never launch it. There is no daemon, prune,
 // or implicit initialize/repair fallback. Preserve this archive and the signed
 // release catalog independently; losing history is not permission to rebuild.
 type ArtifactArchive struct {
@@ -198,6 +199,12 @@ func (archive *ArtifactArchive) Record(ctx context.Context, reference Reference,
 		return release, false, err
 	}
 	defer unlock()
+	return archive.recordLocked(ctx, reference, target, recipe, format, sourcePaths)
+}
+
+// recordLocked is shared with BuildOnce so the archive's process lock and
+// in-process gate remain held throughout revision admission, build and commit.
+func (archive *ArtifactArchive) recordLocked(ctx context.Context, reference Reference, target Target, recipe []byte, format string, sourcePaths []string) (release ArtifactRelease, existing bool, returnErr error) {
 	name, err := artifactReleaseFilename(reference, target)
 	if err != nil || len(recipe) == 0 || len(recipe) > MaxRecipeBytes || len(sourcePaths) != len(artifactRoles(format)) || len(sourcePaths) == 0 {
 		return release, false, ErrArtifactInvalid

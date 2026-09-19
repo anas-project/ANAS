@@ -1,0 +1,11 @@
+Package: *
+Pin: origin "archive.ubuntu.com"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "security.ubuntu.com"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "ports.ubuntu.com"
+Pin-Priority: 990

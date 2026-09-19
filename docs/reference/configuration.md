@@ -8,9 +8,9 @@
 <!-- generated:configuration-summary:start -->
 - 内置 Module：`24`
 - 已声明参数：共 `191` 个（全局 `17` 个、Module 所有 `174` 个；结构化 Module 参数 `170` 个、裸 `env.*` 参数 `4` 个）
-- 解析阶段：`input_required` `2` 个、`must_resolve` `32` 个、未知类型 `0` 个
+- 解析阶段：`input_required` `2` 个、`must_resolve` `33` 个、未知类型 `0` 个
 - 类型分布：`bool` `27`、`enum` `28`、`int` `30`、`string` `106`
-- 默认值来源分布：`generated` `10`、`host` `3`、`inherited` `8`、`none` `9`、`runtime` `4`、`static` `157`
+- 默认值来源分布：`generated` `10`、`host` `8`、`inherited` `8`、`none` `8`、`runtime` `5`、`static` `152`
 <!-- generated:configuration-summary:end -->
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
@@ -169,7 +169,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `global.host_lan_bridge_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.host_lan_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.timezone` | <code>format=&#34;iana_timezone&#34;</code> |
-| `incus.endpoint` | <code>pattern=&#34;^(?:https://[A-Za-z0-9.:_-]+)?$&#34;</code> |
+| `incus.endpoint` | <code>pattern=&#34;^https://[A-Za-z0-9.:_-]+$&#34;</code> |
 | `incus.storage_pool` | <code>pattern=&#34;^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$&#34;</code> |
 | `meshcentral.mps_port` | <code>minimum=1; maximum=65535</code> |
 | `oauth2_proxy.console_proxy_port` | <code>minimum=1; maximum=65535</code> |

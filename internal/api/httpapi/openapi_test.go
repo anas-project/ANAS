@@ -54,6 +54,12 @@ func TestOpenAPITracksImplementedSurface(t *testing.T) {
 		t.Fatalf("OpenAPI routes = %v, handler routes = %v", gotRoutes, wantRoutes)
 	}
 	wantResponses := map[string][]string{
+		"POST /api/v1/workspaces/{ws}/host/actions/incus.status":            {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/host/actions/incus/{phase}/plan":      {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/host/actions/incus/image-prune/plan":  {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/host/actions/confirm":                 {"201", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/host/actions/incus/{phase}/apply":     {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/host/actions/incus/image-prune/apply": {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
 		"GET /":                                                           {"200", "308", "400", "404", "405", "500"},
 		"GET /assets/emergency.css":                                       {"200", "400", "404", "405", "500"},
 		"GET /assets/emergency.js":                                        {"200", "400", "404", "405", "500"},
@@ -392,6 +398,14 @@ func TestOpenAPISystemCertificateAccessContract(t *testing.T) {
 	if got := stringSliceAt(t, objectAt(t, schemas, "ConsoleRuntimeState"), "enum"); !reflect.DeepEqual(got, []string{"m0", "bootstrap", "enrollment", "full"}) {
 		t.Fatalf("console state enum = %v", got)
 	}
+	capabilities := objectAt(t, schemas, "SystemCapabilities")
+	assertRequiredNames(t, capabilities, "read_only")
+	hostActions := objectAt(t, objectAt(t, capabilities, "properties"), "host_actions")
+	if hostActions["$ref"] != "#/components/schemas/SystemHostActionCapabilities" {
+		t.Fatalf("system host action capabilities schema = %#v", hostActions)
+	}
+	hostActionCapabilities := objectAt(t, schemas, "SystemHostActionCapabilities")
+	assertRequiredNames(t, hostActionCapabilities, "incus_status")
 
 	ca := objectAt(t, objectAt(t, paths, "/api/v1/system/ca"), "get")
 	caResponse := objectAt(t, objectAt(t, ca, "responses"), "200")

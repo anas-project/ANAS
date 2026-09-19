@@ -55,6 +55,336 @@ tags:
   - name: Modules
   - name: Maintenance
 paths:
+  /api/v1/workspaces/{ws}/host/actions/incus.status:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    post:
+      operationId: invokeHostIncusPreflight
+      summary: Enqueue the installed read-only Incus host preflight
+      description: |
+        Optional surface, absent unless host_actions is explicitly enabled and
+        the non-root daemon's shared host execution service started. Accepts
+        only an empty JSON object (maximum 4096 bytes), never a command, path,
+        credential, peer identity or installation parameter. Owner TLS, the
+        normal session CSRF/Origin checks and a registered workspace are required
+        on both direct and trusted-proxy listeners. A 202 response is durable
+        queue admission, not successful execution or compute readiness.
+        Idempotency keys are scoped to incus.status, not actor or transport;
+        identical in-flight requests coalesce. Conflicting workspace or frozen
+        release bindings return 409 without disclosing another job identifier.
+        Execution outlives this HTTP request. Read completion at the existing
+        job endpoint. Only queued jobs may be explicitly cancelled; running
+        preflight has no cooperative cancellation and returns 409 to cancel.
+        No package installation, configuration, uninstallation or ingress action
+        is exposed by this route.
+      tags: [Jobs]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: host.preflight
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              maxProperties: 0
+      responses:
+        "202":
+          description: Durable new or reused job; this is not a completion receipt.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                pattern: '^/api/v1/jobs/[A-Za-z0-9._-]+$'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobDetailResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "409":
+          $ref: "#/components/responses/ConflictProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/host/actions/incus/{phase}/plan:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - name: phase
+        in: path
+        required: true
+        schema: {type: string, enum: [install, configure, enroll, uninstall]}
+    post:
+      operationId: planIncusHostAction
+      summary: Enqueue a typed Incus host provisioning plan
+      tags: [Jobs]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: host.preflight
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [request]
+              additionalProperties: false
+              properties:
+                request:
+                  $ref: "#/components/schemas/IncusHostRequest"
+      responses:
+        "202": {$ref: "#/components/responses/AcceptedHostActionJob"}
+        "400": {$ref: "#/components/responses/BadRequestProblem"}
+        "401": {$ref: "#/components/responses/UnauthorizedProblem"}
+        "403": {$ref: "#/components/responses/ForbiddenProblem"}
+        "404": {$ref: "#/components/responses/NotFoundProblem"}
+        "405": {$ref: "#/components/responses/PostMethodNotAllowedProblem"}
+        "408": {$ref: "#/components/responses/RequestCanceledProblem"}
+        "409": {$ref: "#/components/responses/ConflictProblem"}
+        "413": {$ref: "#/components/responses/PayloadTooLargeProblem"}
+        "415": {$ref: "#/components/responses/UnsupportedMediaTypeProblem"}
+        "429": {$ref: "#/components/responses/TooManyRequestsProblem"}
+        "500": {$ref: "#/components/responses/InternalProblem"}
+        "503": {$ref: "#/components/responses/ServiceUnavailableProblem"}
+        "504": {$ref: "#/components/responses/DeadlineProblem"}
+  /api/v1/workspaces/{ws}/host/actions/incus/image-prune/plan:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    post:
+      operationId: planIncusImagePrune
+      summary: Enqueue a typed Incus image prune dry-run
+      tags: [Jobs]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: host.preflight
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              maxProperties: 0
+      responses:
+        "202": {$ref: "#/components/responses/AcceptedHostActionJob"}
+        "400": {$ref: "#/components/responses/BadRequestProblem"}
+        "401": {$ref: "#/components/responses/UnauthorizedProblem"}
+        "403": {$ref: "#/components/responses/ForbiddenProblem"}
+        "404": {$ref: "#/components/responses/NotFoundProblem"}
+        "405": {$ref: "#/components/responses/PostMethodNotAllowedProblem"}
+        "408": {$ref: "#/components/responses/RequestCanceledProblem"}
+        "409": {$ref: "#/components/responses/ConflictProblem"}
+        "413": {$ref: "#/components/responses/PayloadTooLargeProblem"}
+        "415": {$ref: "#/components/responses/UnsupportedMediaTypeProblem"}
+        "429": {$ref: "#/components/responses/TooManyRequestsProblem"}
+        "500": {$ref: "#/components/responses/InternalProblem"}
+        "503": {$ref: "#/components/responses/ServiceUnavailableProblem"}
+        "504": {$ref: "#/components/responses/DeadlineProblem"}
+  /api/v1/workspaces/{ws}/host/actions/confirm:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    post:
+      operationId: issueHostActionConfirmation
+      summary: Issue a five-minute one-time host action confirmation
+      tags: [Jobs]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: host.preflight
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_job_id, action]
+              additionalProperties: false
+              properties:
+                plan_job_id: {type: string}
+                action: {type: string, enum: [incus.install, incus.configure, incus.enroll, incus.uninstall, incus.image-prune]}
+      responses:
+        "201":
+          description: Confirmation token returned once; plaintext is not persisted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [api_version, token, binding_digest, expires_at]
+                properties:
+                  api_version: {type: string}
+                  token: {type: string}
+                  binding_digest: {type: string, pattern: "^[0-9a-f]{64}$"}
+                  expires_at: {type: string, format: date-time}
+        "400": {$ref: "#/components/responses/BadRequestProblem"}
+        "401": {$ref: "#/components/responses/UnauthorizedProblem"}
+        "403": {$ref: "#/components/responses/ForbiddenProblem"}
+        "404": {$ref: "#/components/responses/NotFoundProblem"}
+        "405": {$ref: "#/components/responses/PostMethodNotAllowedProblem"}
+        "408": {$ref: "#/components/responses/RequestCanceledProblem"}
+        "409": {$ref: "#/components/responses/ConflictProblem"}
+        "413": {$ref: "#/components/responses/PayloadTooLargeProblem"}
+        "415": {$ref: "#/components/responses/UnsupportedMediaTypeProblem"}
+        "429": {$ref: "#/components/responses/TooManyRequestsProblem"}
+        "500": {$ref: "#/components/responses/InternalProblem"}
+        "503": {$ref: "#/components/responses/ServiceUnavailableProblem"}
+        "504": {$ref: "#/components/responses/DeadlineProblem"}
+  /api/v1/workspaces/{ws}/host/actions/incus/{phase}/apply:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - name: phase
+        in: path
+        required: true
+        schema: {type: string, enum: [install, configure, enroll, uninstall]}
+    post:
+      operationId: applyIncusHostAction
+      summary: Enqueue a confirmed Incus host provisioning action
+      tags: [Jobs]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: host.preflight
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_job_id, confirmation_token, parameters]
+              additionalProperties: false
+              properties:
+                plan_job_id: {type: string}
+                confirmation_token: {type: string}
+                parameters:
+                  $ref: "#/components/schemas/IncusHostApplyParameters"
+      responses:
+        "202": {$ref: "#/components/responses/AcceptedHostActionJob"}
+        "400": {$ref: "#/components/responses/BadRequestProblem"}
+        "401": {$ref: "#/components/responses/UnauthorizedProblem"}
+        "403": {$ref: "#/components/responses/ForbiddenProblem"}
+        "404": {$ref: "#/components/responses/NotFoundProblem"}
+        "405": {$ref: "#/components/responses/PostMethodNotAllowedProblem"}
+        "408": {$ref: "#/components/responses/RequestCanceledProblem"}
+        "409": {$ref: "#/components/responses/ConflictProblem"}
+        "413": {$ref: "#/components/responses/PayloadTooLargeProblem"}
+        "415": {$ref: "#/components/responses/UnsupportedMediaTypeProblem"}
+        "429": {$ref: "#/components/responses/TooManyRequestsProblem"}
+        "500": {$ref: "#/components/responses/InternalProblem"}
+        "503": {$ref: "#/components/responses/ServiceUnavailableProblem"}
+        "504": {$ref: "#/components/responses/DeadlineProblem"}
+  /api/v1/workspaces/{ws}/host/actions/incus/image-prune/apply:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    post:
+      operationId: applyIncusImagePrune
+      summary: Enqueue a confirmed Incus image prune action
+      tags: [Jobs]
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      security:
+        - localSessionCookie: []
+          csrfHeader: []
+        - proxySessionCookie: []
+          csrfHeader: []
+      x-anas-permission: host.preflight
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_job_id, confirmation_token]
+              additionalProperties: false
+              properties:
+                plan_job_id: {type: string}
+                confirmation_token: {type: string}
+      responses:
+        "202": {$ref: "#/components/responses/AcceptedHostActionJob"}
+        "400": {$ref: "#/components/responses/BadRequestProblem"}
+        "401": {$ref: "#/components/responses/UnauthorizedProblem"}
+        "403": {$ref: "#/components/responses/ForbiddenProblem"}
+        "404": {$ref: "#/components/responses/NotFoundProblem"}
+        "405": {$ref: "#/components/responses/PostMethodNotAllowedProblem"}
+        "408": {$ref: "#/components/responses/RequestCanceledProblem"}
+        "409": {$ref: "#/components/responses/ConflictProblem"}
+        "413": {$ref: "#/components/responses/PayloadTooLargeProblem"}
+        "415": {$ref: "#/components/responses/UnsupportedMediaTypeProblem"}
+        "429": {$ref: "#/components/responses/TooManyRequestsProblem"}
+        "500": {$ref: "#/components/responses/InternalProblem"}
+        "503": {$ref: "#/components/responses/ServiceUnavailableProblem"}
+        "504": {$ref: "#/components/responses/DeadlineProblem"}
   /:
     get:
       operationId: getConsole
@@ -2852,6 +3182,18 @@ components:
         type: string
         pattern: '^"cfgv-[0-9a-f]{64}"$'
   responses:
+    AcceptedHostActionJob:
+      description: A durable host-action job was accepted. Admission is not completion; read the same job for its terminal outcome.
+      headers:
+        Location:
+          description: The public URL of the accepted job.
+          schema: {type: string}
+        Cache-Control:
+          $ref: "#/components/headers/CacheControlNoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/JobDetailResponse"
     AcceptedJob:
       description: The job was durably queued, or an identical existing job was returned.
       headers:
@@ -3023,6 +3365,52 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    IncusHostRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        skip:
+          type: boolean
+          description: Omission means false. Only accepted for the install plan/action; it never authorizes configure, enroll or uninstall effects.
+        interface:
+          type: string
+          enum: [incus_container, incus_vm]
+          description: Omission selects incus_container. VM selection is explicit and never silently downgraded.
+        storage_size_gib:
+          type: integer
+          minimum: 16
+          maximum: 4096
+          description: Omission selects 64 GiB.
+        remove_packages:
+          type: boolean
+          description: Omission means false; package removal must be explicitly selected for uninstall.
+    IncusHostApplyParameters:
+      type: object
+      additionalProperties: false
+      required: [schema, request, binding]
+      properties:
+        schema:
+          type: string
+          const: anas.host-action.incus/v1
+        request:
+          $ref: "#/components/schemas/IncusHostRequest"
+        binding:
+          type: object
+          additionalProperties: false
+          required: [schema, plan_digest, phase, destructive]
+          properties:
+            schema:
+              type: string
+              const: anas.incus-host-provision/v1
+            plan_digest:
+              type: string
+              pattern: "^[0-9a-f]{64}$"
+            phase:
+              type: string
+              enum: [install, configure, enroll, uninstall]
+            destructive:
+              type: boolean
+              const: true
     APIVersion:
       type: string
       const: anas.dev/api/v1
@@ -4093,6 +4481,20 @@ components:
           format: uri
           pattern: "^https://"
           description: Configured Traefik/OIDC public origin, or null when the trusted-proxy listener is disabled.
+    SystemHostActionCapabilities:
+      type: object
+      additionalProperties: false
+      required: [incus_status]
+      properties:
+        incus_status:
+          type: boolean
+          description: True when the authenticated Incus read-only host preflight route is mounted on this listener.
+        incus_provision:
+          type: boolean
+          description: True only when plan, one-use confirmation and apply handlers are all mounted. This is entry availability, not compute readiness or native-host acceptance.
+        incus_image_prune:
+          type: boolean
+          description: True only when the explicit image prune dry-run and confirmed apply handlers are mounted.
     BuildInfo:
       type: object
       additionalProperties: false
@@ -4113,6 +4515,8 @@ components:
         read_only:
           type: boolean
           description: False when the configured service exposes a supported mutating application service such as managed configuration writes.
+        host_actions:
+          $ref: "#/components/schemas/SystemHostActionCapabilities"
     ConfigValidator:
       type: string
       description: Opaque 256-bit random managed-config generation validator without ETag quoting.

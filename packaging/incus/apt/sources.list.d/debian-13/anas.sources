@@ -1,0 +1,13 @@
+Types: deb
+URIs: https://deb.debian.org/debian
+Suites: trixie trixie-updates
+Components: main
+Architectures: amd64 arm64
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: https://deb.debian.org/debian-security
+Suites: trixie-security
+Components: main
+Architectures: amd64 arm64
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg

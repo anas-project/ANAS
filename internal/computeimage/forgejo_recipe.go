@@ -1,0 +1,238 @@
+package computeimage
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+)
+
+// ForgejoRunnerRecipe returns the reviewed default distrobuilder recipe for the
+// ephemeral one-job runner image. The release pipeline supplies a pinned
+// forgejo-runner binary as a release-owned input; consumers never pass scripts,
+// aliases, URLs or hooks into this recipe.
+func ForgejoRunnerRecipe(target Target) ([]byte, error) {
+	return ForgejoRunnerRecipeFromSource(target, "")
+}
+
+func ForgejoRunnerRecipeFromSource(target Target, sourceDir string) ([]byte, error) {
+	if err := target.validate(); err != nil {
+		return nil, ErrArtifactInvalid
+	}
+	sources, err := readForgejoRunnerImageSources(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+	arch := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[target.Architecture]
+	if arch == "" {
+		return nil, ErrArtifactInvalid
+	}
+	vmFiles := ""
+	vmPackages := ""
+	vmTarget := ""
+	if target.Interface == "incus_vm" {
+		vmFiles = `  - generator: fstab
+  - generator: incus-agent
+`
+		switch target.Architecture {
+		case "amd64":
+			vmPackages = `    - action: install
+      architectures:
+        - x86_64
+      packages:
+        - efibootmgr
+        - grub-efi-amd64
+        - grub2-common
+        - linux-image-amd64
+`
+		case "arm64":
+			vmPackages = `    - action: install
+      architectures:
+        - aarch64
+      packages:
+        - efibootmgr
+        - grub-efi-arm64
+        - grub2-common
+        - linux-image-arm64
+`
+		}
+		vmTarget = "targets:\n  incus:\n    vm:\n      size: 10737418240\n      filesystem: ext4\n"
+	}
+	body := fmt.Sprintf(`image:
+  description: ANAS Forgejo one-job runner
+  distribution: debian
+  release: trixie
+  architecture: %s
+  name: anas-forgejo-runner
+  serial: deterministic-release-input
+mappings:
+  architecture_map: debian
+source:
+  downloader: debootstrap
+  url: https://deb.debian.org/debian
+  suite: trixie
+  components:
+    - main
+packages:
+  manager: apt
+  update: true
+  cleanup: true
+  sets:
+    - action: install
+      packages:
+        - ca-certificates
+        - coreutils
+        - dbus
+        - fuse-overlayfs
+        - git
+        - iproute2
+        - podman
+        - slirp4netns
+        - systemd
+        - systemd-resolved
+        - uidmap
+        - util-linux
+%s
+files:
+  - generator: hostname
+    path: /etc/hostname
+  - generator: hosts
+    path: /etc/hosts
+%s  - generator: copy
+    source: forgejo-runner
+    path: /usr/local/bin/forgejo-runner
+    mode: "0755"
+    uid: "0"
+    gid: "0"
+  - generator: dump
+    path: /etc/systemd/network/80-anas-dhcp.network
+    mode: "0644"
+    uid: "0"
+    gid: "0"
+    content: |-
+      [Match]
+      Name=eth* en*
+
+      [Network]
+      DHCP=yes
+      IPv6AcceptRA=yes
+  - generator: dump
+    path: /usr/local/libexec/anas-forgejo-runner-start
+    mode: "0755"
+    uid: "0"
+    gid: "0"
+    content: |-
+%s
+  - generator: dump
+    path: /usr/local/libexec/anas-forgejo-one-job
+    mode: "0755"
+    uid: "0"
+    gid: "0"
+    content: |-
+%s
+  - generator: dump
+    path: /etc/systemd/system/anas-podman.service
+    mode: "0644"
+    uid: "0"
+    gid: "0"
+    content: |-
+%s
+  - generator: dump
+    path: /etc/forgejo-runner/config.yml
+    mode: "0644"
+    uid: "0"
+    gid: "0"
+    content: |-
+%s
+actions:
+  - trigger: post-files
+    action: |-
+      #!/bin/sh
+      set -eu
+      groupadd --gid 1003 actions-engine
+      useradd --uid 1001 --create-home --shell /usr/sbin/nologin runner-agent
+      useradd --uid 1002 --create-home --shell /usr/sbin/nologin --groups actions-engine runner-engine
+      usermod --append --groups actions-engine runner-agent
+      grep -q '^runner-engine:' /etc/subuid || usermod --add-subuids 100000-165535 runner-engine
+      grep -q '^runner-engine:' /etc/subgid || usermod --add-subgids 100000-165535 runner-engine
+      install -d -o runner-agent -g runner-agent -m 0700 /home/runner-agent/.cache/act
+      ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+      systemctl enable systemd-networkd.service
+      systemctl enable systemd-resolved.service
+      systemctl enable anas-podman.service
+%s`, arch, vmPackages, vmFiles, indentLiteral(sources.runnerStart), indentLiteral(sources.oneJob), indentLiteral(sources.podmanService), indentLiteral(sources.runnerConfig), vmTarget)
+	return []byte(body), nil
+}
+
+type forgejoRunnerImageSources struct {
+	runnerStart   string
+	oneJob        string
+	podmanService string
+	runnerConfig  string
+}
+
+func readForgejoRunnerImageSources(sourceDir string) (forgejoRunnerImageSources, error) {
+	if sourceDir == "" {
+		var candidates []string
+		if _, file, _, ok := runtime.Caller(0); ok {
+			candidates = append(candidates, filepath.Join(filepath.Dir(file), "..", "..", "modules", "forgejo", "runner-image"))
+		}
+		candidates = append(candidates, "modules/forgejo/runner-image", "../../modules/forgejo/runner-image")
+		for _, candidate := range candidates {
+			if info, err := os.Stat(filepath.Join(candidate, "anas-forgejo-runner-start")); err == nil && info.Mode().IsRegular() {
+				sourceDir = candidate
+				break
+			}
+		}
+	}
+	if sourceDir == "" || !filepath.IsAbs(sourceDir) && filepath.Clean(sourceDir) == "." {
+		return forgejoRunnerImageSources{}, ErrArtifactUnavailable
+	}
+	read := func(name string) (string, error) {
+		body, err := os.ReadFile(filepath.Join(sourceDir, name))
+		if err != nil || len(body) == 0 || len(body) > 64<<10 {
+			return "", ErrArtifactUnavailable
+		}
+		return string(body), nil
+	}
+	runnerStart, err := read("anas-forgejo-runner-start")
+	if err != nil {
+		return forgejoRunnerImageSources{}, err
+	}
+	oneJob, err := read("anas-forgejo-one-job")
+	if err != nil {
+		return forgejoRunnerImageSources{}, err
+	}
+	podmanService, err := read("anas-podman.service")
+	if err != nil {
+		return forgejoRunnerImageSources{}, err
+	}
+	runnerConfig, err := read("config.yml")
+	if err != nil {
+		return forgejoRunnerImageSources{}, err
+	}
+	return forgejoRunnerImageSources{runnerStart: runnerStart, oneJob: oneJob, podmanService: podmanService, runnerConfig: runnerConfig}, nil
+}
+
+func indentLiteral(s string) string {
+	out := ""
+	for _, line := range splitRecipeLines(s) {
+		out += "      " + line + "\n"
+	}
+	return out
+}
+
+func splitRecipeLines(s string) []string {
+	var lines []string
+	start := 0
+	for i := range s {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
+}

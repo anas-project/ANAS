@@ -31,7 +31,14 @@ type systemBuild struct {
 }
 
 type systemCapabilities struct {
-	ReadOnly bool `json:"read_only"`
+	ReadOnly    bool                          `json:"read_only"`
+	HostActions *systemHostActionCapabilities `json:"host_actions,omitempty"`
+}
+
+type systemHostActionCapabilities struct {
+	IncusStatus     bool `json:"incus_status"`
+	IncusProvision  bool `json:"incus_provision,omitempty"`
+	IncusImagePrune bool `json:"incus_image_prune,omitempty"`
 }
 
 type workspaceListItem struct {

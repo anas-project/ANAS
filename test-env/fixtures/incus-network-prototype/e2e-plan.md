@@ -538,3 +538,48 @@ go test -count=1 ./internal/jobexecutor -run 'Test(ActionRecorder|ModuleActionLi
 
 独立进程残留恢复、CLI/HTTP 断连重连、共享审计、特权通道及真实 guest/Traefik/网络效果仍需
 各自的验收证据；本节不增加需求完成数，也不解除生产 ingress 的阻断。
+
+## 2026-09-20：受管防火墙与归属原生门禁（待执行）
+
+`test-env/scripts/test-incus-ingress-native.sh` 在预编译二进制中要求 namespace/FD 与
+`TestNativeNFTScriptAndReadback` 全部实际执行并 pass，缺权限或缺 nft 不能用 skip 算通过。
+新 nft 用例仅作用于全新 netns，使用真实 nft 完成 install/repeat/permit/renew/revoke/remove；
+IP、allocator 和 conntrack 为夹具，不能替代下列实机用例。
+
+| 场景 | 必须另行取得的实际证据 | 状态 |
+| --- | --- | --- |
+| 无关宿主转发 | 新增/撤销本 scope 后其他 Docker bridge、IPv4/IPv6 与宿主规则保持原行为 | 待执行 |
+| 许可顺序与共存 | 真实 HTTP 命中 http_permits；无许可不能经过；后续 Docker/Incus base-chain drop 与优先级行为明确 | 待执行 |
+| 来源和回包 | 实际 veth/MAC/IP 冒用拒绝；反向发起拒绝；guest 自己的 NAT 出站回包仍正常 | 待执行 |
+| 许可期限与撤销 | expiry 到期不能保持 ready；撤销后的既有 TCP 连接被清理；快速 IP 复用不继承旧授权 | 待执行 |
+| 所有权与失败恢复 | 安装/卸载中断保留意图；未知表、额外规则、handle 替换、残留连接不可接管/删除；受限恢复裁决另行实现 | 待执行 |
+
+本机单元/竞态及双架构编译不改变这些状态；未开放生产 ingress。
+
+
+## 设备绑定地址路由（2026-09-20 接续，原生待执行）
+
+`test-incus-ingress-native.sh` 现在要求 `TestNativeAddressRoutingCannotFollowDeviceReuse` 实际 pass。
+用例在全新 netns 验证真实 FIB：原主表路由对照 → 未批准拒绝 → `/32` 选定 veth → 原设备删除 → 同名
+同 MAC 替代仍不能获得旧路由 → 清理保留拒绝 → 卸载恢复原路由。它不启动实际 guest，不替代以下验收：
+
+| 范围 | 验收要求 | 状态 |
+| --- | --- | --- |
+| 原生 FIB/邻居 | 明确 kernel/iproute2 版本；终止 policy 和 default 均生效，永久邻居读回，消失的设备路由不重建 | 已有 native 用例，未执行 |
+| 发布故障清理 | neighbor/route 添加失败、确认后崩溃、旧 hold 消失、清理失败，普通 executor 撤销所有阶段并保留独立证据 | 本机夹具通过，真实待执行 |
+| 双向连接身份 | 地址复用、guest 重启、MAC/ifindex/name 复用、反向已有 TCP 流均不能继承授权，不能只验证正向 lookup | 待实现完整保护并实测 |
+| 两档设备 | container veth 与 VM TAP 分列，TAP 不接受 veth 夹具作为通过，不自动降级 | veth 候选；TAP 未实现 |
+| 生产联合路径 | 固定 installed identity、实际 Incus/Docker/Traefik、nft 链顺序、health 和取消/重启对账 | 未完成 |
+
+
+## 回复物理来源与双向连接清理（2026-09-20 接续，原生待执行）
+
+| 入口/范围 | 验证内容 | 当前状态 |
+| --- | --- | --- |
+| `TestNativeReplyOriginRejectsSpoofAndDeviceReuse` | 全新 netns 中真实 veth/bridge/nft/原始 IPv4/TCP 帧；两条路径先过正例；批准、冒用入口/MAC/端口、撤销、仍有效旧许可下的同名新 ifindex、定时过期 | 已编写并编译，未执行；不是完整 TCP 会话 |
+| `TestNativeConntrackBidirectionalCleanup` | 独立 netns 两条真实 conntrack 记录；双向输出解析、目标精确删除、相邻端口保留、重复清理 | 已编写并编译，未执行；不是已有会话或排队包证明 |
+| 长连接联合验收 | 真正 TCP/HTTP 长连接、guest 暂停/恢复/重启、权限撤销、事件丢失、ifindex 强制/回绕复用、两个消费者 | 仍待完整实现并实测 |
+| 多网络与两档 | Docker/Incus base chains、zone/offload/NAT 边界、容器 veth 与 VM/TAP、VLAN/快速路径和双栈分别验证 | 仍待验收；当前不支持的布局应拒绝，不自动放宽 |
+
+上述两个 native 测试已加入同一脚本的必跑清单，缺依赖/权限、跳过、漏跑或失败均不是通过。
+本轮未在实际宿主运行 nft/ip/conntrack；本机测试和交叉编译不提升生产状态或需求完成数。

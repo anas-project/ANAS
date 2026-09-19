@@ -6,6 +6,7 @@ import { newIdempotencyKey } from "../api/deployment"
 import {
   changeSnapshot,
   createSnapshot,
+  invokeIncusHostPreflight,
   issueLocalAdminRevealStepUp,
   listBackups,
   listLocalAdmins,
@@ -26,6 +27,7 @@ import {
 import { APIProblemError, problemMessage } from "../api/problems"
 import { messages, type Locale } from "../i18n/messages"
 import { beginCredentialExposure } from "./model"
+import IncusHostActions from "./IncusHostActions.vue"
 
 type BackupMode = NonNullable<BackupPlanRequest["mode"]>
 
@@ -35,6 +37,9 @@ const props = defineProps<{
   csrf: string
   locale: Locale
   authenticationSource: "local" | "oidc_proxy"
+  hostActionsAvailable: boolean
+  hostProvisionAvailable: boolean
+  hostImagePruneAvailable: boolean
 }>()
 const emit = defineEmits<{ jobCreated: [jobID: string] }>()
 
@@ -135,6 +140,20 @@ async function queueSnapshotCreate(): Promise<void> {
     const response = await createSnapshot(selectedWorkspace.value, snapshotLabel.value, includeSnapshotUserData.value, props.csrf, newIdempotencyKey())
     snapshotLabel.value = ""
     includeSnapshotUserData.value = false
+    recordJob(response.job.id)
+  } catch (error) {
+    showError(error)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function queueIncusPreflight(): Promise<void> {
+  if (busy.value) return
+  busy.value = true
+  errorCode.value = null
+  try {
+    const response = await invokeIncusHostPreflight(selectedWorkspace.value, props.csrf, newIdempotencyKey())
     recordJob(response.job.id)
   } catch (error) {
     showError(error)
@@ -312,6 +331,17 @@ onBeforeUnmount(clearCredential)
     </div>
     <p v-if="errorCode" class="error-message" role="alert"><strong>{{ text.errorTitle }}</strong> {{ errorText }}</p>
     <p v-if="queuedJobID" role="status">{{ text.maintenanceJobQueued }} <code>{{ queuedJobID }}</code></p>
+
+    <section v-if="hostActionsAvailable" class="maintenance-section">
+      <h3>{{ text.incusPreflightTitle }}</h3>
+      <p class="muted">{{ text.incusPreflightHelp }}</p>
+      <div class="maintenance-form-row">
+        <button type="button" class="secondary-button" :disabled="busy || loading" @click="queueIncusPreflight">
+          {{ text.incusPreflightRun }}
+        </button>
+      </div>
+      <IncusHostActions v-if="hostProvisionAvailable || hostImagePruneAvailable" :workspace="selectedWorkspace" :csrf="csrf" :locale="locale" :disabled="busy || loading" :provision-available="hostProvisionAvailable" :image-prune-available="hostImagePruneAvailable" @job-created="recordJob" />
+    </section>
 
     <section class="maintenance-section">
       <h3>{{ text.snapshotTitle }}</h3>

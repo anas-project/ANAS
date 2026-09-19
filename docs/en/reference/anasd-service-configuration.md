@@ -2,7 +2,7 @@
 
 `anasd` uses host-level configuration separate from every workspace `config.yml`. The default path is `/etc/anas/anasd.yml`; startup accepts only `--config` to select another absolute path. HTTP requests and process environment variables cannot override listener, workspace, store, or certificate settings.
 
-The file must be owned by `root`, have permissions no wider than `0600`, and be a regular non-symlink file. Decoding is strict: unknown fields, a second YAML document, replacement or mutation while reading, and files larger than 1 MiB all make startup fail.
+The file is root-managed. The default root service still requires a regular non-symlink file with permissions no wider than `0600`. A separately provisioned non-root Linux service has a distinct reader: exactly `0640`, one hard link, root ownership and the process's actual primary GID. It pins ancestors from `/`, rejects symlinks and shared-writable directories, and rechecks file identity after reading. The service account cannot own or modify the configuration, and no permissions are repaired automatically. Decoding is strict: unknown fields, a second YAML document, replacement or mutation while reading, and files larger than 1 MiB all make startup fail.
 
 ```yaml
 api_version: anas.console-config/v1
@@ -57,6 +57,7 @@ The paths are illustrative; lego fields must point at the deployment's actual pu
 | `api_version` | Must be `anas.console-config/v1`. |
 | `mode` | `lan` (default) or `loopback`. This is static and never depends on administrators, certificates, IAM, Traefik, interfaces, or workspace state. |
 | `port` | Fixed management port, default `8080`, range `1..65535`; state-gated HTTP and TLS share it. |
+| `host_actions` | Defaults to `false`. Connects the installed root/root Linux anasd service, fixed host socket and same-release action registry. Requires a workspace, management port at least 1024 and release version/commit. It provides no identity, socket or handler override and is not compute acceptance. |
 | `allowed_dns_hosts` | Exact additional ASCII DNS Hosts; IPs, ports, and wildcards are rejected. A numeric Host must still equal the local address actually reached by that connection. |
 | `console_store` | Absolute audit, monotonic capability-state, authentication, and job-event state path. The directory is `0700`, private state files are `0600`, and it must be outside every workspace so snapshot/backup/restore cannot overwrite control-plane state. |
 | `workspaces` | Server-owned `id -> absolute path` registrations. API clients submit IDs only. Each workspace must exist and contain `.anas/`. |
@@ -83,12 +84,65 @@ Last-known-good state exists only in memory in the current `anasd` process. Afte
 
 ## systemd privilege boundary
 
+### Host action queue (wired in code; native acceptance pending)
+
+The new `host_actions` boolean defaults to `false`: no private broker or host-action HTTP route is
+opened, and existing root deployments keep their behavior. Explicit opt-in requires the installed root/root Linux
+daemon, a release version/commit, at least one registered workspace and a management port of 1024 or
+above. It provides no identity, socket-path or action-parameter override. Before HTTP listening,
+`anasd` starts `HostActionService` in the same process and shares the existing console store, execution
+lease, authorization and audit. Missing installed sockets, other platforms and development builds fail
+closed. UID 0 alone is insufficient: PID 1 must independently identify the actual process as the fixed
+installed service. The flag is not package installation or compute readiness.
+
+`POST /api/v1/workspaces/{ws}/host/actions/incus.status` accepts only an empty JSON object `{}`
+(4096 bytes maximum), with no query, paths, commands, passwords, UIDs or arbitrary parameters.
+It is visible only in full state over TLS to an authenticated owner. Direct and trusted-proxy listeners
+use the same queue and their normal session, Origin and CSRF checks. `Idempotency-Key` is required;
+matching retries return the original job and equivalent in-flight calls coalesce. Workspace/frozen-release
+conflicts return 409 without disclosing another job ID. A 202 with `Location: /api/v1/jobs/{id}` is queue
+admission, not successful execution. Read completion through existing job queries. HTTP/SSE disconnection
+does not own the execution lifetime.
+
+Only queued preflights can be explicitly cancelled; cancellation of running preflight returns 409.
+The persisted actor is checked at admission, before execution and before successful completion.
+Local-owner jobs survive browser logout. Proxy checks use the currently configured issuer/group and
+unexpired local proxy records; they do not renew credentials, persist cookies or query the IdP in real
+time. Restart recovery preserves the existing daemon-restarted barrier even when this option is disabled.
+
+Install, configure, enroll and uninstall use `POST /api/v1/workspaces/{ws}/host/actions/incus/{phase}/plan`
+and the corresponding `/apply` route. `POST .../host/actions/confirm` issues a one-use approval for a
+completed plan belonging to the same actor/workspace. Raw tokens never enter the job or audit journal.
+The five-minute validity starts at the original plan time, not at renewal. Execution independently
+claims the consumed approval and checks actual parameters and current host state before effects.
+
+`/api/v1/system` advertises `host_actions.incus_status` and `incus_provision` separately. The maintenance
+page uses typed options and server-produced impact steps; it never asks users to paste tokens or parameter
+JSON. Expired plans refresh and require renewed consent. CLI preflight/plan/confirm/apply use the same
+HTTPS job service; session and apply-confirmation input comes through stdin only. `anas host actions`
+continues to describe the local compiled inventory, not verified host readiness.
+
+**A non-root anasd migration is no longer required; root-only TLS key checks remain unchanged.** The
+installer packages and installs same-release hostd, fixed units/policy and the non-root control relay.
+Configure prepares and starts the relay; installation does not enable it by default. Upgrade/removal
+checks active host actions and closes admission before replacing executables. An active action or failed
+service stop blocks replacement. Real Linux/systemd/Incus installation acceptance is still outstanding;
+the flag and passing local tests do not establish production support.
+
+### Current default service
+
 The release `anasd.service` explicitly uses `User=root` and `Group=root`, sets `UMask=0077`,
 `NoNewPrivileges=true`, and `ProtectSystem=strict`, and limits its default writable paths to the
 control-plane state and standard workspace/backup roots: `/var/lib/anas`, `/srv/anas`, and
 `/srv/anas-backups`. If service configuration uses another workspace, backup target, or console
 store, add those exact directories to `ReadWritePaths` in a systemd drop-in. Do not remove
 `ProtectSystem` and make the whole host writable again.
+
+`RuntimeDirectory` prepares the shared broker and confirmation ledger at `/run/anas-job-broker` and
+`/run/anas/confirmations` with mode `0700`; approval consumption survives daemon restarts within the same
+boot. The separate `anas-hostd` package/account/network executor needs write access to `/etc`, `/usr`,
+`/var`, `/run` and private temporary storage. It is a full-root executor constrained by named actions,
+one-use approval, audit, ownership and supervision, not a DAC-only sandbox.
 
 Running as root is not a low-privilege sandbox. `anasd` reads root-only TLS private keys, modifies
 workspace configuration, deployments, snapshots, and backups, and may connect to the Docker socket.

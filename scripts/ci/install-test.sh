@@ -8,14 +8,23 @@ trap 'rm -rf "$fixture"' EXIT
 release_root="$fixture/releases"
 legacy_release_root="$fixture/releases-legacy"
 mkdir -p "$release_root" "$legacy_release_root" "$fixture/package/anas_linux_amd64" "$fixture/package/anas_linux_arm64" "$fixture/bin"
+release_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 for arch in amd64 arm64; do
   binary="$fixture/package/anas_linux_${arch}/anas"
   printf '#!/usr/bin/env sh\nprintf "anas 0.1.0 (commit fixture-%s, built fixture)\\n"\n' "$arch" >"$binary"
   chmod 0755 "$binary"
   printf '#!/usr/bin/env sh\nexit 0\n' >"$fixture/package/anas_linux_${arch}/anasd"
   chmod 0755 "$fixture/package/anas_linux_${arch}/anasd"
+  printf '#!/usr/bin/env sh\n[ "${1:-}" = --version ] && { printf '"'"'{"version":"0.1.0","commit":"%s"}\\n'"'"'; exit 0; }\nexit 0\n' "$release_commit" >"$fixture/package/anas_linux_${arch}/anas-hostd"
+  chmod 0755 "$fixture/package/anas_linux_${arch}/anas-hostd"
+  printf '#!/usr/bin/env sh\nexit 0\n' >"$fixture/package/anas_linux_${arch}/anas-incus-control-relay"
+  chmod 0755 "$fixture/package/anas_linux_${arch}/anas-incus-control-relay"
   cp "$repo_root/packaging/systemd/anasd.service" "$fixture/package/anas_linux_${arch}/anasd.service"
   cp "$repo_root/packaging/anasd/anasd.yml" "$fixture/package/anas_linux_${arch}/anasd.yml"
+  cp "$repo_root/packaging/systemd/anas-hostd.socket" "$fixture/package/anas_linux_${arch}/anas-hostd.socket"
+  cp "$repo_root/packaging/systemd/anas-hostd@.service" "$fixture/package/anas_linux_${arch}/anas-hostd@.service"
+  cp "$repo_root/packaging/systemd/anas-incus-control-relay.service" "$fixture/package/anas_linux_${arch}/anas-incus-control-relay.service"
+  printf '{\n  "api_version": "anas.release/v1",\n  "version": "0.1.0",\n  "commit": "%s",\n  "build_date": "2026-09-19T00:00:00Z",\n  "os": "linux",\n  "architecture": "%s"\n}\n' "$release_commit" "$arch" >"$fixture/package/anas_linux_${arch}/release.json"
   tar -C "$fixture/package" -czf "$release_root/anas_linux_${arch}.tar.gz" "anas_linux_${arch}"
 done
 (
@@ -148,6 +157,10 @@ EOF
 cat >"$fixture/bin/systemctl" <<'EOF'
 #!/usr/bin/env sh
 printf '%s\n' "$*" >>"$ANAS_INSTALL_SYSTEMCTL_LOG"
+if [ "$1" = list-units ] && [ -n "${ANAS_FIXTURE_ACTIVE_HOST_ACTION:-}" ]; then
+  printf '%s loaded active running fixture\n' "$ANAS_FIXTURE_ACTIVE_HOST_ACTION"
+fi
+if [ "$1" = stop ] && [ "${ANAS_FIXTURE_STOP_FAILURE:-}" = "$2" ]; then exit 2; fi
 EOF
 chmod 0755 "$fixture/bin/id" "$fixture/bin/chown" "$fixture/bin/systemctl"
 
@@ -176,6 +189,10 @@ grep -qx 'keep-existing' "$incomplete_target/anas"
 service_target="$fixture/service/bin"
 service_config="$fixture/service/etc/anasd.yml"
 service_unit="$fixture/service/systemd/anasd-fixture.service"
+hostd_config="$fixture/service/etc/hostd.json"
+hostd_socket_unit="$fixture/service/systemd/anas-hostd-fixture.socket"
+hostd_service_unit="$fixture/service/systemd/anas-hostd-fixture@.service"
+relay_service_unit="$fixture/service/systemd/anas-incus-control-relay-fixture.service"
 console_store="$fixture/service/state/console"
 service_preference="$fixture/service/source"
 systemctl_log="$fixture/service/systemctl.log"
@@ -189,6 +206,10 @@ service_install() {
     ANAS_INSTALL_SERVICE=1 \
     ANAS_SERVICE_CONFIG="$service_config" \
     ANAS_SYSTEMD_UNIT="$service_unit" \
+    ANAS_HOSTD_CONFIG="$hostd_config" \
+    ANAS_HOSTD_SOCKET_UNIT="$hostd_socket_unit" \
+    ANAS_HOSTD_SERVICE_UNIT="$hostd_service_unit" \
+    ANAS_RELAY_SERVICE_UNIT="$relay_service_unit" \
     ANAS_SYSTEMCTL=systemctl \
     ANAS_INSTALL_SYSTEMCTL_LOG="$systemctl_log" \
     ANAS_MANAGEMENT_PORT=7788 \
@@ -198,29 +219,60 @@ service_install() {
     sh "$repo_root/install.sh" "$@" >/dev/null
 }
 service_install
-[[ -x "$service_target/anas" && -x "$service_target/anasd" ]]
+[[ -x "$service_target/anas" && -x "$service_target/anasd" && -x "$fixture/service/helper/anas-hostd" && -x "$fixture/service/helper/anas-incus-control-relay" ]]
 [[ "$(stat -c '%a' "$service_config" 2>/dev/null || stat -f '%Lp' "$service_config")" == 600 ]]
+[[ "$(stat -c '%a' "$hostd_config" 2>/dev/null || stat -f '%Lp' "$hostd_config")" == 600 ]]
 grep -qx 'port: 7788' "$service_config"
 grep -Fqx "console_store: $console_store" "$service_config"
 grep -Fqx "ExecStart=$service_target/anasd --config $service_config" "$service_unit"
 grep -Fqx "ReadWritePaths=-$console_store -/srv/anas -/srv/anas-backups" "$service_unit"
 grep -qx 'User=root' "$service_unit"
 grep -qx 'ProtectSystem=strict' "$service_unit"
+grep -qx 'RuntimeDirectory=anas-job-broker anas/confirmations' "$service_unit"
+grep -qx 'RuntimeDirectoryPreserve=yes' "$service_unit"
+grep -qx 'ReadWritePaths=/etc /usr /var /run /tmp' "$hostd_service_unit"
+grep -qx 'NoNewPrivileges=true' "$hostd_service_unit"
+grep -Fqx "ExecStart=$fixture/service/helper/anas-hostd --serve" "$hostd_service_unit"
+grep -Fqx "ExecStart=$fixture/service/helper/anas-incus-control-relay --config /etc/anas/incus-control-relay.json" "$relay_service_unit"
+grep -qx 'SocketUser=root' "$hostd_socket_unit"
+grep -qx 'SocketGroup=root' "$hostd_socket_unit"
+grep -qx 'SocketMode=0600' "$hostd_socket_unit"
+grep -Fqx '{"schema":"anas.host-action-installation/v2","release":{"version":"0.1.0","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"service_mode":"systemd-root-service","service_unit":"anasd-fixture.service","socket_gid":0}' "$hostd_config"
 touch "$console_store/preserve-me"
 
 # Upgrade must replace binaries/unit but preserve the administrator's config.
+printf '# preserve-running-version\n' >>"$service_target/anas"
+export ANAS_FIXTURE_ACTIVE_HOST_ACTION=anas-hostd-fixture@1.service
+if service_install 2>/dev/null; then echo 'upgrade overwrote an active host invocation' >&2; exit 1; fi
+if service_install --uninstall 2>/dev/null; then echo 'uninstall stopped an active host invocation' >&2; exit 1; fi
+grep -qx '# preserve-running-version' "$service_target/anas"
+[[ -e "$service_unit" && -e "$hostd_service_unit" && -e "$hostd_config" ]]
+unset ANAS_FIXTURE_ACTIVE_HOST_ACTION
+export ANAS_FIXTURE_STOP_FAILURE=anas-hostd-fixture.socket
+if service_install 2>/dev/null; then echo 'upgrade ignored a failed socket stop' >&2; exit 1; fi
+grep -qx '# preserve-running-version' "$service_target/anas"
+unset ANAS_FIXTURE_STOP_FAILURE
 sed -i.bak 's/^port: 7788$/port: 7789/' "$service_config"
 rm -f "$service_config.bak"
 service_install
 grep -qx 'port: 7789' "$service_config"
 grep -qx 'daemon-reload' "$systemctl_log"
+grep -qx 'enable anas-hostd-fixture.socket' "$systemctl_log"
+grep -qx 'restart anas-hostd-fixture.socket' "$systemctl_log"
+if grep -qx 'enable anas-incus-control-relay-fixture.service' "$systemctl_log"; then
+  echo "relay service must not be enabled by default" >&2
+  exit 1
+fi
 grep -qx 'enable anasd-fixture.service' "$systemctl_log"
 grep -qx 'restart anasd-fixture.service' "$systemctl_log"
 
 service_install --uninstall
-[[ ! -e "$service_target/anas" && ! -e "$service_target/anasd" && ! -e "$service_unit" ]]
+[[ ! -e "$service_target/anas" && ! -e "$service_target/anasd" && ! -e "$service_unit" && ! -e "$hostd_socket_unit" && ! -e "$hostd_service_unit" && ! -e "$relay_service_unit" && ! -e "$hostd_config" && ! -e "$fixture/service/helper/anas-hostd" && ! -e "$fixture/service/helper/anas-incus-control-relay" ]]
 [[ -e "$service_config" && -e "$console_store/preserve-me" ]]
 grep -qx 'disable --now anasd-fixture.service' "$systemctl_log"
+grep -qx 'disable --now anas-hostd-fixture.socket' "$systemctl_log"
+grep -Fqx 'stop anas-hostd-fixture@*.service' "$systemctl_log"
+grep -qx 'stop anas-incus-control-relay-fixture.service' "$systemctl_log"
 service_install --uninstall --purge
 [[ ! -e "$service_config" && -e "$console_store/preserve-me" ]]
 grep -qx 'existing installation' "$bad_target/anas"

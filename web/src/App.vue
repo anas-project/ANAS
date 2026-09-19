@@ -516,6 +516,9 @@ onMounted(async () => {
         :csrf="sessionCSRF"
         :locale="locale"
         :authentication-source="system.listener === 'trusted_proxy' ? 'oidc_proxy' : 'local'"
+        :host-actions-available="system.capabilities.host_actions?.incus_status === true"
+        :host-provision-available="system.capabilities.host_actions?.incus_provision === true"
+        :host-image-prune-available="system.capabilities.host_actions?.incus_image_prune === true"
         @job-created="jobsRevision += 1"
       />
 

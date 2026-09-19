@@ -18,7 +18,129 @@ Chinese is the source language for the detailed design set. The pages below link
 
 The Chinese source documents remain normative while further English translations are prepared. Stable machine-facing behavior is separately defined by the [CLI contracts](/en/reference/contracts/).
 
-Incus image declarations now use structured objects and freeze targets, catalogs and fingerprints in deployments. The shipped catalog is empty; baking/import and production ingress remain pending. A lab-only HTTP network artifact generator exists. Its real Linux namespace HTTP checks passed on 2026-09-11, but actual Docker/Incus guest acceptance has not been recorded.
+The [host action channel design](/architecture/host-action-channel) now has internal read-only
+primitives (2026-09-19), not an installed root service. `internal/hostaction` recognizes only the
+installation-preflight subset of `incus.status`. An already accepted Linux Unix stream is checked
+using kernel peer credentials and a fixed installation UID/GID policy before strict action-ABI input
+is read. There is no caller-supplied command, path, identity, plugin registry or write-action handler.
+Only actual primary GID membership is currently recognized; supplementary-group admission still
+needs a reviewed integration. Execution reuses the existing audit writer, auditing before observation
+and before returning a provisional result; audit completion failure yields unknown. The shared job
+store/recorder must still own identity, sequencing, process completion and recovery. No listener,
+root binary, activation unit, production CLI/HTTP execution path or destructive confirmation was installed.
+
+The next 2026-09-19 slice adds fixed-path, root-owned installation policy and accepted-fd validation
+for per-connection systemd activation. Version/commit, exact fd markers, socket family/type/address,
+file ownership, modes, links and held directory identities are checked independently of request data.
+`Activation.Serve` requires a job binding and audits rejected peer/input without trusting payload ids.
+`jobexecutor.HostJobBinding` retains the existing store's execution lease, matches a running read-only
+job and frozen release, and reauthorizes its persisted actor before one synchronous invocation. It
+does not write completion or treat socket EOF as successful process exit. The root-side authenticated
+broker transport and private listener/routing are implemented as described below. The latest slice adds
+independent exit observation and recorder integration; production service migration and native acceptance
+are still missing. Root must not open user-writable job storage.
+Descriptor cleanup failures also return an error after any provisional frame; the launcher must not
+report a clean exit merely because a candidate result was written.
+
+`anas host actions [--json]` is now available as a **local compiled-client inventory**, explicitly
+reporting `installation_verified: false`. It does not connect to the socket or enable pending write
+actions. The existing `anasd.service` runs as root/root, incompatible with the non-root peer policy;
+the service account and permission migration remain an explicit deployment blocker, not a reason to
+weaken peer checks. See [the detailed source, section 8](/architecture/host-action-channel) and
+[the CLI contract](/en/reference/contracts/commands#host-actions).
+
+The broker slice connects `Activation.ServeBrokered` to `HostJobBinding.ServeBroker` through one fixed
+private Unix endpoint. The root executor checks the broker's exact PID/UID/GID against the original
+request peer; the non-root owner admits only a kernel-authenticated root peer. Socket-bound
+`SO_PEERPIDFD` handles pin both processes without a numeric-PID lookup fallback. Unsupported kernels
+fail closed. Root checks the private socket directory at connection time and never reads the owner's
+job files, scripts or executables.
+
+The activated executor also pins the original request socket's process through the complete exchange.
+It checks that handle before and after the callback; a recycled numeric PID on the broker connection
+cannot substitute for an original caller that has exited.
+
+The bounded canonical handshake carries the existing action request, frozen release, original peer
+and a per-session nonce. It neither creates a job store nor substitutes for destructive confirmation.
+The owner checks the running job and current actor rights before granting execution and again before
+validating completion. After any possible grant, `Close` retains the execution lease until the pinned
+executor process has terminated, even if the handshake succeeded or the connection disappeared.
+That observation provides no exit code, child-process-tree evidence or successful job outcome. Only
+the current childless, read-only preflight is supported; write actions remain unavailable.
+
+`test-host-job-broker-native.sh` provides a non-root Linux socket/subprocess regression gate that
+rejects missing or skipped key tests. Native execution, actual root peers, systemd activation, service
+identity migration, service assembly and independent exit-status integration remain separate release
+gates. See [the Chinese design, section 9](/architecture/host-action-channel).
+
+`OpenJobBrokerListener` now creates only the fixed socket in a preinstalled private directory, holding
+an exclusive directory lock and checking identity while idle and during cleanup. It neither takes over
+stale entries nor removes replacements. `HostJobBroker` routes to pre-registered running jobs in the
+same Store/ExecutionLease, with at most 32 bindings and 8 concurrent connections. Socket input cannot
+register a job; retiring one needs durable terminal state plus remote cleanup. Post-grant uncertainty
+stops admission without releasing the remote process pin. Owner shutdown waits for connection workers;
+request/subscription cancellation does not own this lifetime. The native regression script now checks
+listener and owner-routing cases and is wired into Go CI; this is not a recorded CI or native pass.
+The current installed-service and plan/approval/apply integration supersedes those earlier gaps.
+The existing root/root anasd identity is retained; no non-root service migration is required.
+See [section 13 of the Chinese design](/architecture/host-action-channel) for the current boundary.
+
+The latest slice pins PID 1's unique D-Bus identity, the exact host unit, its invocation and live process
+before any broker grant. A unit reference retains exit evidence through service completion. After the
+socket-bound process terminates, the observer requires a matching terminal unit, actual main-process exit
+status and an empty unit process inventory, then rechecks identity. Missing properties, manager loss,
+restart, signals or cleanup uncertainty cannot validate a successful executor frame. The fixed systemd private D-Bus
+transport uses `github.com/godbus/dbus/v5 v5.2.2`, not caller-supplied addresses or systemctl subprocesses.
+Its exact bus/permission model still requires native verification on each supported distribution.
+
+`HostJobBroker.ExecutePreflight` connects prior running-job registration, the fixed activation request,
+broker completion, real output EOF and independent exit evidence to the existing `ActionRecorder` and
+single job journal. Final role and control-state checks precede commit. Unconfirmed process cleanup
+persists the existing containment barrier and retains execution ownership; reopening a broker is not
+recovery. Only canonical, recomputable preflight data and fixed error messages may enter the recorder.
+
+`cmd/anas-hostd` now implements one-request activation, fixed root audit storage and compiled inventory.
+It, fixed socket/service units and the non-root control relay are built and installed with the same
+release identity. The registry now includes Incus plan/confirmation/apply operations. Package and account
+operations need full root and explicit system-tree writes; this is not a DAC-only sandbox. Fixed peer/
+unit identity, one-use approval, parameter validation, audit and independent exit supervision remain
+mandatory. The installer checks that host actions have drained before replacing binaries. Native
+systemd, actual-root and Incus acceptance is still outstanding.
+
+`HostActionService` now connects the existing broker to an optional daemon-owned queue and
+`POST /api/v1/workspaces/{ws}/host/actions/incus.status`. It shares the existing job store, execution
+lease, authentication and audit. The request accepts only `{}`, requires full/TLS/owner and normal
+session/Origin/CSRF checks, and returns queue admission rather than completion. In-flight requests
+coalesce; disconnect does not cancel execution; only queued preflights can be explicitly cancelled.
+Actor checks use current local owner/proxy state and never renew credentials or claim real-time IdP
+revocation. Recovery continues to record a daemon-restarted barrier even when the option is disabled.
+
+`host_actions` defaults to false. The installed caller remains root/root anasd and its existing
+root-only TLS and state policies are unchanged. CLI and Web use the same HTTPS job queue. The UI shows
+server-generated plans with typed inputs and explicit consent; expired plans refresh without applying
+and require renewed consent. No token/parameter-JSON paste controls or new root-password path are used.
+The five-minute approval ledger stores digests, survives daemon restarts within the same boot and is
+independently claimed at execution. Complete native installation/network acceptance remains pending.
+See [section 13](/architecture/host-action-channel) and
+[service configuration](/en/reference/anasd-service-configuration).
+
+`internal/incushost` and the unprivileged `cmd/incus-host-preflight` provide the corresponding
+compiled Debian 13 / Ubuntu 24.04 / Ubuntu 26.04 recipe table and fixed-path OS inspection. They do
+not source shell, invoke package managers or connect to a daemon that a socket could activate.
+Exact release matching does not use `ID_LIKE`; canonical os-release fallback/link handling is bounded
+and verifies root-owned non-writable ancestors. Default container isolation never changes implicitly;
+explicit VM selection is preserved when KVM is absent. `--skip` requires no OS-file observation.
+Recognized packages do not establish runtime compatibility: every report keeps `compute_ready` and
+`runtime_verified` false. Package-origin verification, daemon compatibility, installation/ownership,
+networking and real-host acceptance remain outstanding. Local unit/race tests passed, while Linux
+native peer/filesystem execution is tracked separately. See the [Chinese source, section 2.1](/architecture/incus-host-provisioning).
+
+Incus image declarations use structured objects and freeze targets, catalogs and fingerprints in deployments.
+The shipped catalog is empty. An explicit release-side bake command now exists, but real bakes, automatic
+signed release distribution and production ingress remain pending. Frozen local artifact supply and
+Provider multipart import are implemented but not validated against a real Incus guest. A lab-only HTTP network artifact generator
+exists. Its Linux namespace HTTP checks passed on 2026-09-11, but actual Docker/Incus guest acceptance has
+not been recorded.
 
 The 2026-09-18 staging preflight adds explicit matching-source checks without invoking Docker:
 `check-shared-build --source-root ... --staging-root ...` requires an absolute
@@ -28,8 +150,8 @@ Offline image inspection reuses the shared `ArtifactRelease` representation thro
 `DescribeArtifactRelease`/`VerifyArtifactRelease` and `cmd/compute-image-artifact` (split files only
 for the CLI). Verification requires an independently trusted fingerprint and target, rejects changed
 parts and version/recipe bindings, and never treats the descriptor as its own trust source. It does not
-bake, import, publish, validate catalog signatures or establish bootability. The new tests have not
-been executed; M8b/M12/M13 acceptance and production ingress remain pending. See the
+bake, import, publish, validate catalog signatures or establish bootability. Local macOS arm64 regressions
+now pass; M8b/M12/M13 native acceptance and production ingress remain pending. See the
 [Chinese design, section 6.2.2](/architecture/incus-host-provisioning).
 
 `ArtifactArchive` and `cmd/incus-image-artifacts` add explicit local init/record/inspect/catalog
@@ -38,8 +160,28 @@ before immutable revision metadata; identical original bytes can restore missing
 conflicts, corruption and unknown metadata are preserved and rejected. Candidate catalogs require
 explicit previous trusted history or an explicit first release. These commands emit metadata only and
 do not rewrite the shipped catalog, run a builder, sign/distribute images, import into Incus or prune.
-Recipe-file hashing alone does not prove build provenance. Archive/CLI regression sources are written
-but uncompiled and unexecuted; M12/M13 remain unaccepted. See section 6.2.3 of the same design.
+Recipe-file hashing alone does not prove build provenance. Archive/CLI regressions pass locally;
+M12/M13 remain unaccepted. See section 6.2.3 of the same design.
+
+The separate `incus-image-artifacts build` command now integrates `ArtifactArchive.BuildOnce` with a
+digest-pinned distrobuilder ELF on an isolated, disposable native Linux root builder. Preflight precedes
+revision reservation; execution uses a sealed memfd, explicit environment and fixed split-output flags.
+The archive lock covers admission, build and commit. A durable recipe/builder attempt blocks silent
+retry after interruption, while a committed revision is verified and reused without rebaking missing
+bytes. Recovery uses verified original outputs, not a changed same-name build. Recipes remain root-capable
+code; process-group cancellation does not prove mount/external-resource cleanup. The CLI emits metadata
+only and is not registered as an apply, Provider or host action. Portable orchestration tests pass, but
+default Forgejo runner recipes and Provider supply/import code are now present, while actual bakes,
+native sealed-ELF execution, signing/distribution, guest acceptance and destructive pruning remain pending.
+The automatic host bundle carries the observed target architecture and owned pool; per-resource control
+network projections connect the Provider and compute consumers without replacing their business gateway.
+See section 6.2.4 of the [Chinese design](/architecture/incus-host-provisioning).
+
+The same verification fixed canonical certificate configuration-to-wire projection, endpoint sensitivity,
+consumer connection-value redaction and administrative redirect/error handling. New HTTP policy/planner
+and executor tests cover frozen authentication, namespace conflicts, failed-step compensation, retained
+address holds, orphan inventory and stale reservation rejection. These are local unit/transaction tests,
+not native network acceptance; production ingress remains disabled.
 
 Core now also persists an independent 32-byte naming key per compute lease, projects it privately to the consumer,
 and preserves it across applies and file backup/restore. It is excluded from credential rotation. The dedicated naming-key rotation command and production HTTP ingress remain pending.
@@ -313,3 +455,22 @@ submission, stale-receipt replacement, cancellation and uncertain commits. These
 unrun. Application recovery wiring, service identities, UID/mounts and the privileged host path are
 still pending, with production ingress disabled. See the
 [Chinese host-provisioning design](/architecture/incus-host-provisioning) for the implementation limits.
+
+Incus host provisioning update (2026-09-20): confirmed image prune is wired in code;
+ingress has v2 ownership receipts and an opened-netns executor. Allocator/health identity,
+production wiring, signed images and real-host acceptance remain incomplete. See the
+[Chinese design](/architecture/incus-host-provisioning) and [image supply](/en/architecture/incus-image-supply).
+
+
+The 2026-09-20 device-bound address-routing candidate adds a host-only policy table, permanent neighbors,
+terminal denial, explicit allocation receipts and normal failure withdrawal. It is not DHCP reservation or
+VM/TAP support, and does not yet prove reverse-connection safety or real Docker/Incus packet flow. Native
+FIB tests are registered but not executed here; production ingress remains disabled. See
+[the Chinese design, section 7.5](/architecture/incus-host-provisioning#_7-5-设备绑定的地址路由保护-候选实现-生产关闭).
+
+
+The reply-side candidate now adds an original-ifindex/MAC/port bridge gate, atomic inet/bridge permission
+updates and exact bidirectional conntrack cleanup after verified revocation. Native packet and kernel-record
+tests are registered, not executed here. Full lifetime/ifindex-reuse guarantees, real Incus identity supply,
+VM/TAP, health, service wiring and production acceptance remain outstanding; publication stays disabled.
+See [the Chinese design, section 7.6](/architecture/incus-host-provisioning#_7-6-回复物理来源与双向连接清理-候选实现-生产关闭).

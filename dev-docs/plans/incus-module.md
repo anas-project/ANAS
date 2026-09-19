@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-23
-updated: 2026-09-18
+updated: 2026-09-20
 ---
 
 # Incus compute Provider 实施计划
@@ -15,6 +15,10 @@ updated: 2026-09-18
 Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者接入”的部分。
 
 **已落地和剩余范围以 §1 里程碑表为准。真实宿主验收、共享构建校验以及宿主供给、动作通道、入站和镜像烘焙分别跟踪，不以单元层完成代替端到端验收。**
+
+2026-09-18 本轮从干净 `master`（`49bbf45`）直接接续修改。此前多段“未编译/测试”属于当时
+快照；本轮实际验证与修复统一见 §1.1 和[核对记录](../reviews/2026-09-18-incus-implementation-verification.md)。
+没有将只通过本机回归或交叉编译的项目改为实机验收完成。
 
 ## 1. 需求归属与状态
 
@@ -36,14 +40,54 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M8：长驻实例档预留 | R-039—R-042、R-046 | 未开始 |
 | M9：网络 IPv6 姿态与 image_policy 预留 | R-043、R-045、R-052 | 已完成 |
 | M9a：双栈出网验收 | R-044 | 实施中；实现已落地，真实验收待执行 |
-| M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047—R-051、R-057、R-094 | 实施中；非 root 固定控制转发已编码，安装动作、拓扑发布与真实验收未完成 |
-| M11：入站与 Traefik 发布 | R-053、R-054、R-062—R-065、R-070、R-071、R-086—R-088、R-095、R-096 | 实施中；独立租约 secret 与网络实验产物生成器已落地，真实宿主验证及生产发布链路待办 |
+| M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047—R-051、R-057、R-094 | 实施中；安装/配置/登记/卸载、一次性确认、私有连接与控制网络投影已编码，真实发行版、服务与网络验收未完成 |
+| M11：入站与 Traefik 发布 | R-053、R-054、R-062—R-065、R-070、R-071、R-086—R-088、R-095、R-096 | 实施中；命名/授权、opened-netns、设备地址路由和回复来源候选已编码；双族原子许可、双向 conntrack 与失败撤销有回归；完整生命周期、VM/TAP、独立身份、health、生产装配及实机验收待办 |
 | M11a：独立租约命名密钥 | R-092 | 已完成；生成/复用、敏感投影、冻结引用与文件备份恢复回归通过 |
-| M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085 | 实施中；Core/消费者结构化接入与 deployment 冻结已落地，目录产物、导入与烘焙待补 |
+| M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085 | 实施中；默认配方、冻结归档、发布侧 build-once/export 与 Provider 逐摘要供给已编码；真实烘焙、签名发布、guest 启动、回滚及破坏性 prune 验收待补 |
 | M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 未开始；下载端点为明确的不做，见[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
 | M14：其余发行版适配 | — | 未开始；待适配清单见[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §2 |
 
 覆盖统计：75 项需求全部有且只有一个里程碑归属（另有 25 项已废弃）。
+
+### 当前接续状态（2026-09-20）
+
+本次接续在 bridge prerouting 增加原始 ifindex/MAC/获批端口绑定的回复入口，和 inet 许可同事务
+创建/续租/撤销；两侧均须读回。conntrack 改为完整双向元组与默认 zone 的精确清理，许可未撤销
+不得删连接。新增真实包与 conntrack 原生测试源，但本轮只编译，没有 native 通过证据。
+完整生命周期、独立 Incus 身份供给、VM/TAP、health 与生产装配仍待完成；见
+[回复来源接续核对](../reviews/2026-09-20-incus-reply-origin.md)。以下地址段落保留前一切片的范围。
+
+本次继续补 `.address-routing.json`、宿主独立 policy/table、设备绑定 `/32` 与永久邻居，接入
+hold/route/permit/inventory/release。通过终止 unreachable 防止旧设备路由消失后沿普通 bridge 路由
+跟随地址复用，不是 DHCP reservation。故障测试复现并修复地址创建失败缺少 publication 回执导致的
+普通撤销阻塞；新增原生 FIB 反例加入必跑清单，尚未原生执行。
+当前仅为 container veth 前向候选，不覆盖反向旧连接或 VM/TAP；真实身份、health 与服务装配仍未完成。
+精确变更与本轮验证见[地址路由接续核对](../reviews/2026-09-20-incus-address-routing.md)。
+
+前轮 MCP 中断后的文档已在本轮补写并读回；当前核对与本轮结果见
+[实现恢复记录](../reviews/2026-09-20-incus-ingress-recovery.md)。以下日期小节保留历史，不代表当前代码均未测试。
+
+当前 `anasd` 保留需求规定的 root/root 身份，通过固定安装策略和独立 systemd 进程身份准入，
+不再要求非 root TLS/状态迁移。历史切片中的该前置判断已撤回。安装器、CLI/Web 计划/确认/
+执行、共享 Store 与五分钟确认 ledger 已连接；参数从结构体进入 job map 后的规范化往返已补回归。
+
+宿主供给代码生成并验证专用官方 APT 配置，按实际资源读回后记录归属；控制防火墙只作用于受管
+bridge/endpoint，不影响无关宿主 IPv6 转发。私有 bundle 携带宿主观察架构和存储池，Incus Hook
+自动导入既有 Secret Store。完整显式远端配置仍独立处理；自动来源在恢复 Env 后也必须重新检查
+原 bundle，不能用旧凭据掩盖撤销或漂移。
+
+Provider 及 Forgejo/AI Agent 的 compute 服务现在经受管资源投影连接相同控制网桥，业务网络
+仍是默认出口；Compose 静态解析和真实网络可达性分别记录。镜像供给使用冻结 catalog 和原字节，
+没有生成虚假 fingerprint，也没有把镜像工件完整性当成 guest 启动成功。
+
+显式镜像 prune 的 plan/apply、一次性确认、锁定工作区视图、引用保护和删除读回已有代码，真实删除未验收。
+入站已编码完整身份回执、可取消锁、真实 Docker/procfs/nsfs 核验及 opened-netns 执行器。
+本轮补受管 nft 基线、先许可后拒绝、有界原生 JSON、精确 AST 与独立 installing/installed/removing/removed
+归属记录；专项及竞态回归通过，namespace/nft 原生门禁仍待执行。
+尚未完成的实现包含生产 ingress 的真实地址分配生命周期、health 身份与入口装配、正式签名镜像发布、
+部分失败 intent 的受限恢复及非 systemd 启动；另有真实 Linux/Incus/KVM/双栈/one-job 验收。状态保持
+`developing`，不得将这些代码接线作为整项需求完成。实际检查见
+[中断恢复与集成回归](../reviews/2026-09-19-incus-integration-recovery.md)。
 
 废弃分三批，都是**归属地修正**而非取消：R-056 因镜像改为命名引用而不再需要结果通道；
 R-097/R-098 迁往[凭据轮换](credential-rotation.md)；R-058 等 22 项迁往
@@ -58,6 +102,31 @@ M8a 的共享构建门禁已由 `go run ./cmd/check-shared-build` 落地：校�
 共享 COPY、Compose 命名上下文和 Module revision 触发路径。现有实现已配置 Incus 的 Compose
 `additional_contexts.shared`，以及共享库消费者的 `internal/computeclient` revision 触发路径。
 M8 的长驻实例档仍未开始，与这条 CI 校验分别验收。
+
+### 1.1 2026-09-18：直接工作树修复与实际验证
+
+- 已修复动作 ABI 两份测试的同名 helper 编译冲突，以及 dispatcher 测试目录未显式满足 0700
+  导致的失败；没有降低正式 Secret/Store 权限检查。Linux Module 执行改用 daemon-owned
+  `CommandContext` 守卫启动，保留现有 pidfd/进程组监督，未给子进程清单门禁加例外。
+- 已修复真实配置到 Hook 的证书变量断层：规范 `*_CERTIFICATE_B64` 校验后派生运行时
+  `*_CERT_B64`，不以原始环境别名替代缺失的规范输入。endpoint 与消费者连接/证书投影纳入
+  敏感配置；Provider 拒绝重定向、异步确认、超限响应和不安全 endpoint，错误不回显服务端原文。
+- 已增加 `ArtifactArchive.BuildOnce` 及显式 `incus-image-artifacts build`；原生 Linux root
+  发布构建机预检、sealed ELF、冻结配方、持久尝试、同 revision 复用与失败保留均已编码。
+  本机回归通过，但真实 distrobuilder 未执行，也未将构建入口加入 apply 或宿主动作。
+- 已补 HTTP 策略/Planner 与 executor 事务测试：固定认证、命名冲突、绕过客户端的恶意字段、
+  旧 reservation、每步发布/撤销故障、无回执副作用、未知外部工件及地址保留等本机回归通过。
+  这些测试使用内存适配器，不证明真实 nft/conntrack/Traefik 状态。
+
+实测环境为 macOS arm64、Go 1.26.6；Docker CLI 存在但 daemon 不可用，没有本机 Incus/KVM。
+相关 Linux 测试源码已对 amd64/arm64 交叉编译，但不能据此登记原生执行通过。
+`check-shared-build` 静态校验通过；全仓门禁中的 `check-upgrade-tests` 另发现已有 `ai_agent`
+缺少升级测试登记，该项不属于 Incus 实机证据，未通过删除 Module 或放宽门禁规避。
+全仓测试、竞态、文档与最后工作树核验结果统一记录于本轮 review。
+
+剩余实施顺序不变：统一动作 ABI 的产品入口迁移与宿主通道 → 安装/盘点/卸载及控制网络发布 →
+生产入站的受信观察、地址保留、防火墙和路由适配 → 默认 guest 配方、签名分发/导入/回滚恢复 →
+发行版及双 interface 实机矩阵。保留范围的长驻实例、TCP/UDP 和其他发行版不得借本轮提前启用。
 
 ## 2. M0：Contract 改形（已完成）
 
@@ -171,8 +240,46 @@ R-046 只在未来启用 `any` 时验收，不把它作为本轮阻塞。
 
 ### 8.5 M10：宿主供给
 
+同日接续补 `OpenSystemdActivation` 的固定安装策略/已接受 fd 校验、拒绝审计，及唯一 job
+store 的 `HostJobBinding`。CLI `anas host actions` 只显示本机编译清单，不开放宿主写动作。
+发现现有 `anasd.service` root 身份与非 root peer 准入冲突，保持显式阻塞，不放宽验证；跨进程
+broker、实际进程监督与服务账号迁移仍待交付。详见
+[本次接续记录](../reviews/2026-09-19-host-action-activation-job-binding.md)，不据此完成安装或实机验收。
+
+2026-09-19 新增 `internal/incushost`、`cmd/incus-host-preflight` 和宿主通道内部边界。
+一级三发行版按官方包目录核对并进入编译期 JSON 表；精确 ID/版本/架构匹配，不 source shell，
+不凭 ID_LIKE 接纳衍生发行版。默认容器、显式 VM、跳过和未适配关闭分开表达；包版本观察不代表
+daemon 运行兼容或安全准入，所有预检结果仍不启用 compute。
+
+新代码单元及 race 已通过；Linux 文件读取和 SO_PEERCRED 用例单独跟踪，不以 macOS 结果替代。
+`hostaction` 仅有只读预检处理器，复用 action ABI 和既有审计，不启动 root 服务、不登记写动作。
+细节及验证记录见[本轮核对](../reviews/2026-09-19-incus-host-preflight-implementation.md)；
+安装/配置/卸载、服务单元、包签名/来源、job 接线和实机验收仍未交付，M10 不标完成。
+
 前置设计见宿主供给架构 §3.5—§3.8、§7。安装与配置依赖宿主特权动作通道；其未落地前不自动
 安装或启动宿主服务，不增设收集 sudo 密码的入口。
+
+同日接续已将只读激活处理器与跨进程 job 绑定传输连接，加入双向内核身份检查、固定私有端点、
+执行后权限复核及进程尚未退出时的执行租约保留。尚无生产 listener、非 root 所有者迁移、
+实际退出码/完整进程树证据或写动作；本机协议测试不能替代这些实现及实机验收。新增原生
+socket/子进程门禁要求关键用例实际执行，记录见
+[跨进程 broker 核对](../reviews/2026-09-19-host-job-broker-implementation.md)。M10 与 30/75 统计不变。
+
+后续已补固定私有 listener、32 绑定/8 连接上限和共享 Store 分派；socket 不创建或重建任务。
+退休需终态与远端清理，授权后失败保持执行租约并停止准入；相关 native 脚本已接入 Go CI。
+见[监听与分派核对](../reviews/2026-09-19-host-job-broker-listener.md)。服务迁移/生产装配、
+真实退出状态监督、root 程序及宿主写动作仍未交付，不计作 M10 完成或真实宿主验收。
+
+同日最新接续已新增 systemd 独立退出观察和 `ExecutePreflight` 的共享 recorder 终态接线，
+`anas-hostd` 与候选 socket/service 单元进入同版本打包；缺证据时沿用持久 containment barrier。
+上一段的退出适配器和 root 程序缺口已编码，但非 root 服务迁移、安装器、公共入队入口、二段
+确认及 Incus 写动作仍未交付。实际验证见
+[退出与终态核对](../reviews/2026-09-19-host-action-exit-completion.md)，不据此改变 M10 或 30/75。
+
+后续已将只读 `incus.status` 接入可选 HTTP 入队及 anasd 同进程共享队列，复用原 Store/lease/
+授权/审计；配置默认关闭。root-owned 0640 的非 root 配置读取不改变 TLS 私钥的 root-only 政策。
+生产仍缺 TLS/状态/权限迁移、安装器、CLI invoke 和 Incus 写动作；详见
+[队列与 HTTP 接续核对](../reviews/2026-09-19-host-action-queue-http.md)。不把预检 job 成功解释为 compute ready。
 
 2026-09-18 已新增 `modules/incus/control-relay` 非 root 传输组件：固定连接 `127.0.0.1:8443`，
 只绑定安装配置指定的控制接口 IPv4/高位端口，不加载 TLS 私钥或任意 upstream。代码包含 root 所有的

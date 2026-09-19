@@ -389,6 +389,18 @@ func (store *Store) createOrGetPrepared(
 	observer JobCommitObserver,
 	decorateIntent func(*JobCommitIntent),
 ) (CreateResult, error) {
+	return store.createOrGetPreparedWithJobHook(ctx, prepared, idempotency, beforeCreate, nil, observer, decorateIntent)
+}
+
+func (store *Store) createOrGetPreparedWithJobHook(
+	ctx context.Context,
+	prepared CreateSpec,
+	idempotency persistedIdempotency,
+	beforeCreate func(*CreateSpec) error,
+	beforeCommit func(*Job) error,
+	observer JobCommitObserver,
+	decorateIntent func(*JobCommitIntent),
+) (CreateResult, error) {
 	if existing, found := store.state.idempotency[idempotency.Identity]; found {
 		job, exists := store.state.jobs[existing.JobID]
 		if !exists {
@@ -434,6 +446,11 @@ func (store *Store) createOrGetPrepared(
 		Action: action,
 	}
 	idempotency.JobID = jobID
+	if beforeCommit != nil {
+		if err := beforeCommit(&job); err != nil {
+			return CreateResult{}, err
+		}
+	}
 	intent := JobCommitIntent{Operation: JobCommitCreate, Next: cloneJob(job)}
 	if decorateIntent != nil {
 		decorateIntent(&intent)

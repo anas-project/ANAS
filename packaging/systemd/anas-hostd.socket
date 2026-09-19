@@ -1,0 +1,15 @@
+[Unit]
+Description=ANAS compiled host actions (installation required)
+
+[Socket]
+ListenStream=/run/anas/hostd.sock
+SocketUser=root
+SocketGroup=root
+SocketMode=0600
+DirectoryMode=0755
+Accept=yes
+MaxConnections=8
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

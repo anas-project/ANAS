@@ -28,11 +28,12 @@ services:
       ANAS_RESOURCE_DISK_GIB: ${ANAS_RESOURCE_DISK_GIB:-}
       ANAS_RESOURCE_IMAGE_ARCHITECTURE: ${ANAS_RESOURCE_IMAGE_ARCHITECTURE:-}
       ANAS_RESOURCE_IMAGE_ALLOWLIST: ${ANAS_RESOURCE_IMAGE_ALLOWLIST:-}
+      ANAS_RESOURCE_IMAGE_SUPPLY_FILE: /run/anas/compute-image-supply.json
       ANAS_RESOURCE_CLIENT_CERT: ${ANAS_RESOURCE_CLIENT_CERT:-}
     networks:
       - incus
 
 networks:
   incus:
-    driver: bridge
     name: ${INCUS_NETWORK_NAME}
+    external: ${INCUS_NETWORK_EXTERNAL:-false}

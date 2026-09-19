@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,6 +19,11 @@ import (
 func moduleDispatcherFixture(t *testing.T) (*ModuleActionDispatcher, *consolejobs.Store, *consolejobs.ExecutionLease) {
 	t.Helper()
 	directory := t.TempDir()
+	// Match the production store contract independently of Go's TempDir mode
+	// and the test runner's umask; do not relax the store's permission checks.
+	if err := os.Chmod(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
 	store, err := consolejobs.Open(directory, consolejobs.Options{EventCapacity: 4})
 	if err != nil {
 		t.Fatal(err)

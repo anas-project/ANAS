@@ -9,6 +9,17 @@ import (
 	"unicode/utf8"
 )
 
+// DecodeTypedObject shares the ABI's bounded exact-key decoder with adjacent
+// host-control envelopes. It validates data only; it cannot authorize an
+// action or register a handler. Unknown/duplicate keys and case aliases fail.
+func DecodeTypedObject(body []byte, out any) error {
+	v := reflect.ValueOf(out)
+	if !v.IsValid() || v.Kind() != reflect.Pointer || v.IsNil() {
+		return ErrProtocol
+	}
+	return strictObject(body, out)
+}
+
 // The protocol has a separate trust boundary from configuration import and
 // observer APIs. Walk before decoding: encoding/json otherwise accepts duplicate
 // keys and case-insensitive struct-field aliases. Never return raw decoder

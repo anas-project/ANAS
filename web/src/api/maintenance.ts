@@ -15,6 +15,9 @@ export type LocalAdminReveal = components["schemas"]["LocalAdminRevealResponse"]
 export type TerminalActionRequest = components["schemas"]["TerminalActionRequest"]
 export type TerminalActionDescriptor = components["schemas"]["TerminalActionPreviewResponse"]
 type Job = components["schemas"]["DeploymentApplyResponse"]
+export type HostActionJob = components["schemas"]["JobDetailResponse"]
+export type IncusHostRequest = components["schemas"]["IncusHostRequest"]
+export type IncusHostParameters = components["schemas"]["IncusHostApplyParameters"]
 type StepUp = components["schemas"]["LocalStepUpResponse"]
 
 function requestOrigin(): string {
@@ -154,6 +157,101 @@ export async function previewTerminalAction(
     params: { path: { ws: workspace }, header: { Origin: requestOrigin() } },
     headers: { "X-CSRF-Token": csrf },
     body: request,
+  })
+  return requireData(data, error)
+}
+
+export async function invokeIncusHostPreflight(
+  workspace: string,
+  csrf: string,
+  idempotencyKey: string,
+): Promise<HostActionJob> {
+  const { data, error } = await api.POST("/api/v1/workspaces/{ws}/host/actions/incus.status", {
+    params: { path: { ws: workspace }, header: { Origin: requestOrigin(), "Idempotency-Key": idempotencyKey } },
+    headers: { "X-CSRF-Token": csrf },
+    body: {},
+  })
+  return requireData(data, error)
+}
+
+export type IncusHostPhase = "install" | "configure" | "enroll" | "uninstall"
+export type IncusHostAction = `incus.${IncusHostPhase}` | "incus.image-prune"
+
+export async function getHostActionJob(id: string, signal: AbortSignal): Promise<HostActionJob> {
+  const { data, error } = await api.GET("/api/v1/jobs/{id}", { params: { path: { id } }, signal })
+  return requireData(data, error)
+}
+
+export async function invokeIncusHostPlan(
+  workspace: string,
+  phase: IncusHostPhase,
+  request: IncusHostRequest,
+  csrf: string,
+  idempotencyKey: string,
+): Promise<HostActionJob> {
+  const { data, error } = await api.POST("/api/v1/workspaces/{ws}/host/actions/incus/{phase}/plan", {
+    params: { path: { ws: workspace, phase }, header: { Origin: requestOrigin(), "Idempotency-Key": idempotencyKey } },
+    headers: { "X-CSRF-Token": csrf },
+    body: { request },
+  })
+  return requireData(data, error)
+}
+
+export async function invokeIncusImagePrunePlan(
+  workspace: string,
+  csrf: string,
+  idempotencyKey: string,
+): Promise<HostActionJob> {
+  const { data, error } = await api.POST("/api/v1/workspaces/{ws}/host/actions/incus/image-prune/plan", {
+    params: { path: { ws: workspace }, header: { Origin: requestOrigin(), "Idempotency-Key": idempotencyKey } },
+    headers: { "X-CSRF-Token": csrf },
+    body: {},
+  })
+  return requireData(data, error)
+}
+
+export async function issueHostActionConfirmation(
+  workspace: string,
+  planJobID: string,
+  action: IncusHostAction,
+  csrf: string,
+): Promise<{ token: string; binding_digest: string; expires_at: string }> {
+  const { data, error } = await api.POST("/api/v1/workspaces/{ws}/host/actions/confirm", {
+    params: { path: { ws: workspace }, header: { Origin: requestOrigin() } },
+    headers: { "X-CSRF-Token": csrf },
+    body: { plan_job_id: planJobID, action },
+  })
+  return requireData(data, error)
+}
+
+export async function invokeIncusHostApply(
+  workspace: string,
+  phase: IncusHostPhase,
+  planJobID: string,
+  confirmationToken: string,
+  parameters: IncusHostParameters,
+  csrf: string,
+  idempotencyKey: string,
+): Promise<HostActionJob> {
+  const { data, error } = await api.POST("/api/v1/workspaces/{ws}/host/actions/incus/{phase}/apply", {
+    params: { path: { ws: workspace, phase }, header: { Origin: requestOrigin(), "Idempotency-Key": idempotencyKey } },
+    headers: { "X-CSRF-Token": csrf },
+    body: { plan_job_id: planJobID, confirmation_token: confirmationToken, parameters },
+  })
+  return requireData(data, error)
+}
+
+export async function invokeIncusImagePruneApply(
+  workspace: string,
+  planJobID: string,
+  confirmationToken: string,
+  csrf: string,
+  idempotencyKey: string,
+): Promise<HostActionJob> {
+  const { data, error } = await api.POST("/api/v1/workspaces/{ws}/host/actions/incus/image-prune/apply", {
+    params: { path: { ws: workspace }, header: { Origin: requestOrigin(), "Idempotency-Key": idempotencyKey } },
+    headers: { "X-CSRF-Token": csrf },
+    body: { plan_job_id: planJobID, confirmation_token: confirmationToken },
   })
   return requireData(data, error)
 }

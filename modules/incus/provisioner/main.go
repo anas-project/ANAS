@@ -110,6 +110,10 @@ func leaseFromEnv(isolation string) (lease, error) {
 		InstancePrefix:    strings.TrimSpace(os.Getenv("ANAS_RESOURCE_INSTANCE_PREFIX")),
 		Isolation:         isolation,
 		ImageArchitecture: strings.TrimSpace(os.Getenv("ANAS_RESOURCE_IMAGE_ARCHITECTURE")),
+		ImageSupplyFile:   defaultImageSupplyFile,
+	}
+	if supply := strings.TrimSpace(os.Getenv("ANAS_RESOURCE_IMAGE_SUPPLY_FILE")); supply != "" && supply != defaultImageSupplyFile {
+		return lease{}, fmt.Errorf("ANAS_RESOURCE_IMAGE_SUPPLY_FILE is fixed by the provider runtime")
 	}
 	if l.ImageArchitecture != "amd64" && l.ImageArchitecture != "arm64" {
 		return lease{}, fmt.Errorf("ANAS_RESOURCE_IMAGE_ARCHITECTURE must be amd64 or arm64")

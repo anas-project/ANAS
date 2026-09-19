@@ -9,6 +9,23 @@ import (
 	"testing"
 )
 
+func TestHostActionsRequireExplicitOptInAndUsableWorkspace(t *testing.T) {
+	base := "api_version: anas.console-config/v1\nconsole_store: /var/lib/anas/console\n"
+	config, err := Parse([]byte(base))
+	if err != nil || config.HostActions {
+		t.Fatal("host actions enabled by default", err)
+	}
+	for _, tail := range []string{"host_actions: true\n", "host_actions: true\nport: 80\nworkspaces: [{id: main, path: /srv/anas}]\n", "host_actions: {command: id}\n"} {
+		if _, err := Parse([]byte(base + tail)); err == nil {
+			t.Fatal("invalid host opt-in accepted")
+		}
+	}
+	config, err = Parse([]byte(base + "host_actions: true\nworkspaces: [{id: main, path: /srv/anas}]\n"))
+	if err != nil || !config.HostActions {
+		t.Fatal("explicit opt-in rejected", err)
+	}
+}
+
 func TestParseDefaultsAndNormalizes(t *testing.T) {
 	config, err := Parse([]byte(`api_version: anas.console-config/v1
 console_store: /srv/anas/./.anas/console

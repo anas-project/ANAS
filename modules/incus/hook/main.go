@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -45,6 +46,10 @@ type dockerCopy struct {
 	Destination string `json:"destination"`
 }
 
+type secretStore struct {
+	values map[string]string
+}
+
 func main() {
 	b, err := io.ReadAll(os.Stdin)
 	if err != nil {
@@ -81,21 +86,26 @@ func fail(err error) {
 
 func handle(req hookRequest) (hookResponse, error) {
 	env := cloneMap(req.Env)
+	secrets := &secretStore{values: cloneMap(req.Secrets)}
 	switch req.Phase {
 	case "calculate":
-		if err := calculate(req.Module, env); err != nil {
+		if err := calculate(req.Module, env, secrets); err != nil {
 			return hookResponse{}, err
 		}
-		return hookResponse{Env: changed(req.Env, env)}, nil
+		return hookResponse{Env: changed(req.Env, env), Secrets: changed(req.Secrets, secrets.values)}, nil
 	default:
 		return hookResponse{}, nil
 	}
 }
 
-func calculate(module string, e map[string]string) error {
+func calculate(module string, e map[string]string, secrets *secretStore) error {
 	if module != "incus" {
 		return nil
 	}
+	// Derived from this calculation only; a stale raw environment value is not
+	// authority to join an administrator-owned host network.
+	e["INCUS_NETWORK_EXTERNAL"] = "false"
+	e["INCUS_CONTROL_NETWORK_NAME"] = ""
 	e["INCUS_NETWORK_NAME"] = defaultValue(e["INCUS_NETWORK_NAME"], e["NETWORK_PREFIX"]+"incus")
 
 	// A lease network gets IPv6 only when the operator wants it and the host
@@ -105,22 +115,92 @@ func calculate(module string, e map[string]string) error {
 	// misconfiguration.
 	e["INCUS_NETWORK_IPV6"] = boolValue(e["IPv6"] != "false" && e["HOST_HAS_IPV6"] == "true")
 
+	if err := resolveConnection(e, secrets); err != nil {
+		return err
+	}
+	if e["INCUS_STORAGE_POOL"] == "" {
+		e["INCUS_STORAGE_POOL"] = "default"
+	}
+	return nil
+}
+
+func resolveConnection(e map[string]string, secrets *secretStore) error {
+	connectionKeys := []string{
+		"INCUS_ENDPOINT",
+		"INCUS_SERVER_CERTIFICATE_B64",
+		"INCUS_ADMIN_CERTIFICATE_B64",
+		"INCUS_ADMIN_KEY_B64",
+	}
+	set := 0
+	for _, key := range connectionKeys {
+		if strings.TrimSpace(e[key]) != "" {
+			set++
+		}
+	}
+	if set > 0 && set != len(connectionKeys) {
+		return fmt.Errorf("incus connection settings must be either all explicit or all omitted for host auto-connection")
+	}
+	automatic := false
+	if secrets != nil {
+		source, binding := secrets.values[autoSourceSecretKey], secrets.values[autoBindingSecretKey]
+		if source != "" || binding != "" {
+			if source != autoSourceValue || !validAutoBindingDigest(binding) {
+				return fmt.Errorf("incus automatic connection binding is incomplete or invalid")
+			}
+			automatic = true
+			if set == len(connectionKeys) {
+				for _, key := range connectionKeys {
+					if secrets.values[key] == "" || secrets.values[key] != e[key] {
+						return fmt.Errorf("incus explicit values conflict with the existing automatic binding; reconcile the connection source before applying")
+					}
+				}
+			}
+		}
+	}
+	if set == 0 || automatic {
+		bundle, err := loadDefaultHostConnectionBundle()
+		if err != nil {
+			return err
+		}
+		if e["INCUS_IMAGE_ARCHITECTURE"] != "" && e["INCUS_IMAGE_ARCHITECTURE"] != bundle.Architecture {
+			return fmt.Errorf("incus image_architecture does not match the host connection bundle")
+		}
+		if e["INCUS_STORAGE_POOL"] != "" && e["INCUS_STORAGE_POOL"] != bundle.StoragePool {
+			return fmt.Errorf("incus storage_pool does not match the host connection bundle")
+		}
+		if err := applyHostConnectionBundle(e, secrets, bundle); err != nil {
+			return err
+		}
+		e["INCUS_NETWORK_NAME"] = bundle.ControlNetwork
+		e["INCUS_NETWORK_EXTERNAL"] = "true"
+		e["INCUS_CONTROL_NETWORK_NAME"] = bundle.ControlNetwork
+	} else if e["INCUS_IMAGE_ARCHITECTURE"] == "" {
+		return fmt.Errorf("incus image_architecture is required for an explicit remote daemon")
+	}
+
 	// Refuse at apply time rather than at provision time. Every one of these is
 	// required before a single lease can be ensured, and a half-configured
 	// provider that fails midway through apply is harder to reason about than
 	// one that never starts.
-	if !strings.HasPrefix(strings.TrimSpace(e["INCUS_ENDPOINT"]), "https://") {
-		return fmt.Errorf("incus endpoint must be configured as an HTTPS URL")
+	endpoint, err := url.Parse(e["INCUS_ENDPOINT"])
+	if err != nil || endpoint.Scheme != "https" || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.ForceQuery || endpoint.Fragment != "" || endpoint.Opaque != "" || (endpoint.Path != "" && endpoint.Path != "/") || endpoint.RawPath != "" {
+		return fmt.Errorf("incus endpoint must be an HTTPS origin without credentials, path, query or fragment")
 	}
 	for key, kind := range map[string]string{
-		"INCUS_SERVER_CERT_B64": "CERTIFICATE",
-		"INCUS_ADMIN_CERT_B64":  "CERTIFICATE",
-		"INCUS_ADMIN_KEY_B64":   "PRIVATE KEY",
+		"INCUS_SERVER_CERTIFICATE_B64": "CERTIFICATE",
+		"INCUS_ADMIN_CERTIFICATE_B64":  "CERTIFICATE",
+		"INCUS_ADMIN_KEY_B64":          "PRIVATE KEY",
 	} {
 		if err := validatePEM(key, e[key], kind); err != nil {
 			return err
 		}
 	}
+	// Config uses the manifest's canonical *_CERTIFICATE_B64 names. The
+	// compute provider wire projection uses *_CERT_B64. Derive it only from
+	// validated canonical input, never accept a stale raw-env alias instead.
+	// Core's sensitive-value propagation taints these equal-value aliases.
+	e["INCUS_SERVER_CERT_B64"] = e["INCUS_SERVER_CERTIFICATE_B64"]
+	e["INCUS_ADMIN_CERT_B64"] = e["INCUS_ADMIN_CERTIFICATE_B64"]
 	return nil
 }
 

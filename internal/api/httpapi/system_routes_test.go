@@ -8,6 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/anas-project/ANAS/internal/consolejobs"
+	"github.com/anas-project/ANAS/internal/hostconfirmation"
 )
 
 var testInternalCAPEM = []byte("-----BEGIN CERTIFICATE-----\nYW5hcy10ZXN0LWNh\n-----END CERTIFICATE-----\n")
@@ -37,6 +40,57 @@ func TestSystemReportsCurrentCertificateIssuer(t *testing.T) {
 	}
 	if len(body.DirectRecoveryURLs) != 1 || body.DirectRecoveryURLs[0] != "https://nas.example:8080" || body.ProxyURL == nil || *body.ProxyURL != "https://anas.example" {
 		t.Fatalf("system access origins = %#v, %#v", body.DirectRecoveryURLs, body.ProxyURL)
+	}
+}
+
+func TestSystemReportsHostActionCapabilitiesOnlyWhenRouteMounted(t *testing.T) {
+	for _, listener := range []ListenerIdentity{ListenerDirect, ListenerTrustedProxy} {
+		for _, enabled := range []bool{false, true} {
+			store := openHTTPJobStore(t, consolejobs.Options{})
+			options := Options{
+				Jobs:    &JobQueryOptions{Store: store},
+				System:  &SystemOptions{},
+				Factory: func(string) QueryService { return &fakeQueryService{} },
+				Security: SecurityOptions{
+					InitialState: StateFull, Listener: listener, HostAllowed: func(*http.Request) bool { return true },
+					Authorize: func(*http.Request, AuthorizationRequest) (Principal, error) {
+						return Principal{ID: "local-owner", Role: "owner", Source: "local"}, nil
+					},
+				},
+			}
+			if enabled {
+				options.HostActions = &HostActionOptions{InvokePreflight: func(context.Context, string, string, string) (consolejobs.CreateResult, error) {
+					return consolejobs.CreateResult{}, nil
+				}, InvokePlan: func(context.Context, string, string, string, json.RawMessage, string) (consolejobs.CreateResult, error) {
+					return consolejobs.CreateResult{}, nil
+				}, IssueConfirmation: func(context.Context, string, string, string, string) (hostconfirmation.IssueResult, error) {
+					return hostconfirmation.IssueResult{}, nil
+				}, InvokeConfirmed: func(context.Context, string, string, string, string, json.RawMessage, hostconfirmation.RawToken, string) (consolejobs.CreateResult, error) {
+					return consolejobs.CreateResult{}, nil
+				}}
+			}
+			handler, err := New(options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodGet, "https://nas.example/api/v1/system", nil)
+			request.TLS = &tls.ConnectionState{}
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("%s enabled=%t system = %d, %s", listener, enabled, response.Code, response.Body.String())
+			}
+			var body systemResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if enabled && (body.Capabilities.HostActions == nil || !body.Capabilities.HostActions.IncusStatus || !body.Capabilities.HostActions.IncusProvision) {
+				t.Fatalf("host action capability missing for %s: %#v", listener, body.Capabilities)
+			}
+			if !enabled && body.Capabilities.HostActions != nil {
+				t.Fatalf("host action capability exposed while disabled: %#v", body.Capabilities)
+			}
+		}
 	}
 }
 

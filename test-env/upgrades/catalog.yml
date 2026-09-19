@@ -25,6 +25,9 @@ products:
         suite: web-first-release-browser
 
 modules:
+  - name: ai_agent
+    current: 0.1.0-r1
+    baseline: {id: ai-agent-first-release-r1, version: 0.1.0-r1, reason: no_prior_release}
   - name: authentik
     current: 2026.5.6-r14
     transitions:

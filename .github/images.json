@@ -56,7 +56,7 @@
     "context": "modules/incus/provisioner",
     "dockerfile": "modules/incus/provisioner/Dockerfile",
     "platforms": "linux/amd64,linux/arm64",
-    "shared_paths": ["go.mod", "go.sum", "internal/computeclient", "internal/computeingress"]
+    "shared_paths": ["go.mod", "go.sum", "internal/computeclient", "internal/computeingress", "internal/computeimage"]
   },
   {
     "module": "lam",

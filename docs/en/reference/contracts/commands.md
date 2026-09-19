@@ -2,7 +2,8 @@
 
 > Status: **implemented** (`init` / `plan` / `lock` / `render` / `build` /
 > `apply` / `start` / `restart` / `stop` / `rollback` / `status` /
-> `deployments` / `config` / `admin` / `credential` / `module`).
+> `deployments` / `config` / `admin` / `credential` / `module` / `host actions` /
+> `host incus-preflight` / `host job`; `host actions` is a local compiled inventory only).
 > The common conventions (stream separation, exit codes, enumerations, time and
 > size, paths, versioning, the minimal envelope) are in the
 > [common conventions](index.md) and are not repeated here.
@@ -27,6 +28,7 @@ on a code exactly nothing.
 - [credential](#credential)
 - [admin local](#admin-local)
 - [module](#module)
+- [host actions](#host-actions)
 - [help](#help)
 
 ---
@@ -946,6 +948,82 @@ invoke endpoint.
 | `no_active_deployment` | 4 | The workspace has no active deployment during invoke; commands discovery still succeeds and returns an empty list |
 | `module_command_not_found` / `module_command_unavailable` / `module_command_changed` / `module_command_busy` | 4 | The command does not exist, a precondition check failed, the descriptor changed after confirmation, or a lock wait was cancelled |
 | `module_command_timeout` / `module_command_failed` / `module_command_protocol_error` | 1 | The executor timed out, failed, or violated the bounded JSONL ABI |
+
+## host actions
+
+```sh
+anas host actions [--json]
+anas host incus-preflight -w WORKSPACE --session-json - [--idempotency-key KEY] [--json]
+anas host incus-plan -w WORKSPACE --phase PHASE --request-json JSON --session-json - [--idempotency-key KEY] [--json]
+anas host incus-confirm -w WORKSPACE --plan-job JOB --action ACTION --session-json - --json
+anas host incus-apply -w WORKSPACE --phase PHASE --request-json - [--idempotency-key KEY] [--json]
+anas host job JOB_ID --session-json - [--json]
+```
+
+Lists host-action descriptions compiled into the **current client binary**. No workspace is needed;
+the command neither connects to/activates `hostd.sock`, reads installation policy nor executes an
+action. Inventory includes the `installation-preflight` subset of `incus.status` and plan/apply actions
+for install/configure/enroll/uninstall; it is not complete daemon status or native-host acceptance.
+
+JSON uses the existing `anas.dev/cli/v1` envelope, adding `source: "compiled-client"`, the binary's
+`version`/`commit`, an explicitly present `installation_verified: false`, and an `actions` array.
+Each description includes `name`, `scope`, `read_only`, `requires_root`, `requires_confirmation`, `implementation` and
+`requirement_ids`. False means **installation was not checked**, not that absence was established.
+
+The client inventory does not verify an installed root executor's version, permissions or readiness.
+A future server-side inventory must be verified independently. `host invoke/plan/apply/install`,
+socket/config overrides, password options and extra positional arguments are unsupported usage
+errors (exit 2). The inventory command has no temporary sudo, script or shared-job bypass path.
+
+`host incus-preflight` sends exactly the empty JSON
+object `{}` to the same authenticated HTTP route,
+`POST /api/v1/workspaces/{ws}/host/actions/incus.status`, and the daemon's shared queue creates
+the durable job. The CLI does not open the root socket, read the job store, or start an independent
+executor. Success means only that the preflight job was queued or reused; it does not mean Incus is
+installed, the daemon is usable, or compute is ready.
+
+Session credentials are read only from a bounded JSON envelope on stdin. They must not appear in
+argv, environment variables, logs, or a new persistent auth store:
+
+```json
+{
+  "schema": "anas.console-session/v1",
+  "origin": "https://nas.example:8443",
+  "ca_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+  "session": {
+    "source": "local",
+    "session_token": "...",
+    "csrf_token": "..."
+  }
+}
+```
+
+`source` is `local` or `oidc_proxy`, mapping to the existing local-owner or proxy session cookie.
+`origin` must be an exact normalized HTTPS origin, and `ca_pem` must validate that origin. The client
+has no insecure TLS bypass, ignores proxy environment variables, refuses redirects, and caps JSON
+responses at 1 MiB. If `--idempotency-key` is omitted the CLI generates one. When the outcome is
+unknown it returns `unknown_execution`, includes the key in the JSON error detail, and **does not
+retry automatically**. Query a known job with `anas host job JOB_ID --session-json - --json`, or
+manually repeat with the same idempotency key after deciding that is safe.
+
+`host job` reuses the public `GET /api/v1/jobs/{id}` endpoint through the same HTTPS session
+envelope. It only reads job details; it does not cancel or execute work.
+
+### Incus plan and confirmation
+
+The Incus plan/confirmation/apply commands share that authenticated HTTPS job service. `PHASE` is
+`install|configure|enroll|uninstall`; public request fields are `skip`, `interface`, `storage_size_gib`
+and `remove_packages`, never commands, packages, paths or repositories. Read the completed plan's
+server-produced impact and parameters before requesting a confirmation. The one-use token expires
+five minutes after the original plan timestamp, not five minutes after renewal.
+
+`incus-apply --request-json -` reads one stdin object containing `session` (the complete session envelope
+above), `plan_job_id`, `confirmation_token` and the plan's unchanged `parameters` object. The token is
+not an argv option: `--confirmation-token` is rejected. Session/apply envelopes reject unknown or
+duplicate fields, case aliases, trailing objects and oversized input. The server rebuilds approval from
+the completed plan; the executor independently claims it and reobserves host impact before effects.
+Expired or drifted plans must be displayed and approved again. No automatic apply/retry or root-password
+channel is introduced. Raw tokens never enter the job or audit journal.
 
 ## help
 
