@@ -48,8 +48,8 @@ M0/M1 的 10 项已完成，M2/M3 的 21 项处于实现与外部验收阶段。
 | Actions 单一功能开关 | 已接线、待 E2E | 默认关闭；`actions_enabled` 同时投影服务端/controller，无 Runner 第二开关 |
 | Git Hooks/local-path import 正向配置 | 已实现 | 默认关闭、独立启停，不增加宿主挂载 |
 | compute contract 消费（Incus 容器/VM 两档） | 实施中 | contract catalog、固定 restricted project/profile 验证和实例 CRUD 已有单测；独立宿主待验收 |
-| 隔离档选择 `actions_isolation` | 已接线、需求待补齐 | 默认 `auto` 解析为 `incus_container`（与宿主共享内核），`incus_vm` 需要宿主具备 KVM；`R-024`—`R-026` 的单测与文档披露待补 |
-| Actions 控制面账号 `anas_actions_controller` | 已实现、边界待收敛 | Actions 开启时建为站点管理员；权限收敛、关闭时失效与中英文档披露（`R-067`—`R-070`）待做 |
+| 隔离档选择 `actions_isolation` | 已接线 | 默认 `auto` 解析为 `incus_container`（与宿主共享内核），`incus_vm` 需要宿主具备 KVM；`R-024` 有单测、`R-025` 文档已披露，`R-026` 的镜像一致性校验待补 |
+| Actions 控制面账号 `anas_actions_controller` | 已实现、边界待收敛 | Actions 开启时建为站点管理员；`R-068` 的调用集合已有单测、`R-069` 文档已披露，权限收敛与关闭时失效（`R-067`、`R-070`）待做 |
 | Runner 执行组件 | 实施中 | queue controller、ephemeral registration、stdin token、one-job guest/rootless Podman 资产已实现 |
 
 ## 3. M1：高风险功能配置（已完成，2026-08-22）
@@ -90,8 +90,9 @@ network/profile/storage；验证防火墙、DNS、最小 egress 和 crash 回收
 
 两档隔离的剩余工作单列，它们现在一条都没有实现：
 
-- [ ] `R-024`：`auto → incus_container` 的解析与"不自动升降级"由单测钉住。当前 `module.yml` 的
-      `default: incus_container` 没有任何测试守护——`modules/forgejo` 下没有一处测试提到隔离档；
+- [x] `R-024`：`TestModuleIsolationTierDefaultsToTheContainerTier`（`hook`）钉住 compute contract 的
+      `default: incus_container`、`selected_by`/`enabled_by`、两档 interface 集合，以及
+      `actions_isolation` 的枚举与默认值。把 manifest 的默认翻成 `incus_vm` 会让它失败；
 - [ ] `R-025`：中英 README 与技术文档写明默认档与宿主共享内核、两档边界差异，以及跨信任域或执行
       不受信输入的 scope 必须选 `incus_vm`；
 - [ ] `R-026`：开启 Actions 时校验固定 image fingerprint 与所选档、目标架构一致。`runner-image/`
@@ -138,8 +139,9 @@ E2E 前不把 Actions 标为 release 能力。
 
 - [ ] `R-067`：该账号与 `break_glass` 分离、口令只来自 Secret Store、明文不进宿主 Docker argv
       （当前经 stdin 传入，需补单测钉住）；
-- [ ] `R-068`：单测断言 controller 的调用集合限定在获批 scope 的 `actions/runners`，不含
-      `/api/v1/admin/*`；
+- [x] `R-068`：`TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI`（`actions-controller`）对 org 与
+      repo 两种 scope 驱动三个方法，断言请求恰好三条、全部落在该 scope 的 `actions/runners` 子树内，
+      且不含 `/admin/`。把路径改成 `/api/v1/admin/...` 会让它失败；
 - [ ] `R-069`：中英 README 与技术文档写明该账号的用户名、创建时机、权限范围与撤销方式；
 - [ ] `R-070`：关闭 `actions_enabled` 后停用该账号或使其口令失效。当前 `reconcileActionsAccount`
       在关闭时直接返回，站点管理员账号和它在 Secret Store 里的有效口令都会留下。

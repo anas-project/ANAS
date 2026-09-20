@@ -133,10 +133,10 @@ single managed NIC, no host disk, physical NIC, or arbitrary device -- and the c
 `restricted.containers.privilege=unprivileged` enforced on the project. The only difference is the kernel boundary,
 so scopes that span trust domains or execute untrusted input should set `incus_vm` explicitly (`FORGEJO-R-025`).
 
-**Current gaps**: no test under `modules/forgejo` asserts the tier resolution or the absence of automatic
-up/downgrade (`R-024`), and nothing checks that the pinned fingerprint matches the selected tier and target
-architecture (`R-026`) -- `runner-image/` expects one image per amd64/arm64 and per container/VM tier, while
-`actions_runner_image` holds a single value validated only for hex shape.
+`TestModuleIsolationTierDefaultsToTheContainerTier` pins the manifest's two-tier set and its
+`default: incus_container` (`R-024`). **Current gap**: nothing checks that the pinned fingerprint matches the
+selected tier and target architecture (`R-026`) -- `runner-image/` expects one image per amd64/arm64 and per
+container/VM tier, while `actions_runner_image` holds a single value validated only for hex shape.
 
 ### The control-plane account
 
@@ -149,7 +149,9 @@ The controller's entire call set is three endpoints, all confined to approved sc
 .../actions/runners/jobs`, `POST .../actions/runners`, and `DELETE .../actions/runners/{id}` (under `orgs/{owner}`
 or `repos/{owner}/{repo}`), using basic auth. Those endpoints need organization-owner or repository-admin rights,
 not site-wide ones; site administrator is the consequence of having no per-scope granting path, and is a recorded
-deviation (`FORGEJO-R-068`, `R-069`).
+deviation (`FORGEJO-R-069`). The call set itself is pinned by
+`TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI`: three requests per scope, for both org and repo scopes,
+all inside that scope's `actions/runners` subtree and none touching `/admin/` (`FORGEJO-R-068`).
 
 `reconcileActionsAccount` returns immediately when Actions is off, so **turning the switch off does not revoke the
 account**: it and its valid Secret Store password both remain, and an administrator must remove them by hand.

@@ -129,9 +129,10 @@ QEMU/KVM，有独立 guest kernel 但要求宿主具备 KVM。默认取容器档
 disk/physical NIC/任意 device；容器档另由 project 强制 `restricted.containers.privilege=unprivileged`。
 差别只在内核边界，因此跨信任域或执行不受信输入的 scope 应显式选 `incus_vm`（`FORGEJO-R-025`）。
 
-**当前缺口**：`modules/forgejo` 下没有任何测试断言隔离档的解析与不自动升降级（`R-024`），也没有校验
-固定 fingerprint 与所选档、目标架构一致（`R-026`）——`runner-image/` 要求按 amd64/arm64 × 容器/VM 各出
-一份镜像，而 `actions_runner_image` 只有一个值且只校验 hex 形状。
+`TestModuleIsolationTierDefaultsToTheContainerTier` 钉住 manifest 的两档集合与
+`default: incus_container`（`R-024`）。**当前缺口**：没有校验固定 fingerprint 与所选档、目标架构一致
+（`R-026`）——`runner-image/` 要求按 amd64/arm64 × 容器/VM 各出一份镜像，而 `actions_runner_image`
+只有一个值且只校验 hex 形状。
 
 ### 控制面账号
 
@@ -142,7 +143,9 @@ disk/physical NIC/任意 device；容器档另由 project 强制 `restricted.con
 controller 的调用集合只有三个端点，全部限定在获批 scope：`GET .../actions/runners/jobs`、
 `POST .../actions/runners`、`DELETE .../actions/runners/{id}`（`orgs/{owner}` 或
 `repos/{owner}/{repo}`），使用 basic auth。这三个端点要的是组织 owner 或仓库 admin，不是全站权限；
-站点管理员是"没有按 scope 授权的调和路径"的后果，属于已登记偏差（`FORGEJO-R-068`、`R-069`）。
+站点管理员是"没有按 scope 授权的调和路径"的后果，属于已登记偏差（`FORGEJO-R-069`）。调用集合本身由
+`TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI` 钉住：org 与 repo 两种 scope 各三条请求，全部
+落在该 scope 的 `actions/runners` 子树内，不含 `/admin/`（`FORGEJO-R-068`）。
 
 `reconcileActionsAccount` 在 Actions 关闭时直接返回，因此**关闭开关不会撤销该账号**：账号与
 Secret Store 中的有效口令都会留下，需要管理员手工处理。收敛要求见 `FORGEJO-R-070`。

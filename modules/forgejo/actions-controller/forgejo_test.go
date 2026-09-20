@@ -76,3 +76,52 @@ func TestForgejoClientErrorNeverIncludesResponseCredential(t *testing.T) {
 		t.Fatalf("credential-bearing API error = %v", err)
 	}
 }
+
+// The controller account is a site administrator today (FORGEJO-R-069), so the
+// only thing standing between a compromised controller and the whole instance
+// is the call set itself. Pin it: every request has to land inside an approved
+// scope's actions/runners subtree, and none may reach an admin endpoint.
+func TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI(t *testing.T) {
+	for _, scope := range []Scope{{Owner: "team"}, {Owner: "team", Repo: "repo"}} {
+		var requested []string
+		transport := controllerRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+			requested = append(requested, request.URL.Path)
+			switch request.Method {
+			case http.MethodPost:
+				return controllerResponse(http.StatusCreated, `{"id":7,"uuid":"runner-uuid","token":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`), nil
+			case http.MethodDelete:
+				return controllerResponse(http.StatusNoContent, ""), nil
+			default:
+				return controllerResponse(http.StatusOK, `[]`), nil
+			}
+		})
+
+		client := NewForgejoClient("http://forgejo.test", "controller", "managed-password")
+		client.(*forgejoClient).client = &http.Client{Transport: transport}
+		if _, err := client.ListJobs(context.Background(), scope, "docker"); err != nil {
+			t.Fatalf("scope %s: %v", scope, err)
+		}
+		if _, err := client.CreateRunner(context.Background(), scope, "anas-fj-0123456789abcdef0123"); err != nil {
+			t.Fatalf("scope %s: %v", scope, err)
+		}
+		if err := client.DeleteRunner(context.Background(), scope, 7); err != nil {
+			t.Fatalf("scope %s: %v", scope, err)
+		}
+
+		prefix := "/api/v1/orgs/" + scope.Owner + "/actions/runners"
+		if scope.Repo != "" {
+			prefix = "/api/v1/repos/" + scope.Owner + "/" + scope.Repo + "/actions/runners"
+		}
+		if len(requested) != 3 {
+			t.Fatalf("scope %s made %d requests, want exactly the three runner calls: %v", scope, len(requested), requested)
+		}
+		for _, path := range requested {
+			if !strings.HasPrefix(path, prefix) {
+				t.Errorf("scope %s requested %q, which is outside %q", scope, path, prefix)
+			}
+			if strings.Contains(path, "/admin/") {
+				t.Errorf("scope %s reached an admin endpoint: %q", scope, path)
+			}
+		}
+	}
+}
