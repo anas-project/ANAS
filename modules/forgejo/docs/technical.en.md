@@ -108,20 +108,66 @@ neither CLI nor Docker argv. Forgejo stores local-account hashes with bcrypt, ma
 format. Existing-account drift fails closed. Rotation is not declared because Forgejo's CLI cannot satisfy verified
 rotate/rollback without placing the password in argv.
 
-Actions defaults off and `forgejo.actions_enabled` is the sole switch for the server and controller. The controller
-polls approved scopes and creates one ephemeral registration and Incus VM per waiting handle. The token travels
-only through Incus exec stdin to guest tmpfs, and cleanup covers completion, timeout, cancellation, shutdown, and
-persisted crash state. The provider-neutral compute boundary fixes the restricted Incus project/profile and rejects
-raw configuration, host disks, physical NICs, cloud-init secrets, and arbitrary devices. The guest uses separate
-Runner/engine users, rootless Podman, capacity one, no privileged mode, no valid volumes, and no `host` label.
+Actions defaults off and `forgejo.actions_enabled` is the sole switch for the server and controller. When it is on,
+`validateActionsConfig` checks the three inputs Forgejo itself owns -- the shape of `FORGEJO_ACTIONS_ALLOWED_SCOPES`
+(`{owner}` or `{owner}/{repo}` only), `FORGEJO_ACTIONS_CONTROLLER_PASSWORD`, and the 64-hex image fingerprint. The
+Incus endpoint and client certificate are **no longer Forgejo settings**: the compute contract supplies them and
+projects them into the controller, so the hook cannot validate them; the preflight below validates
+project/quota/profile at run time. The controller polls approved scopes and creates one ephemeral registration and
+one Incus instance per waiting handle. The token travels only through Incus exec stdin to guest tmpfs, and cleanup
+covers completion, timeout, cancellation, shutdown, and persisted crash state. The provider-neutral compute boundary
+fixes the restricted Incus project/profile and rejects raw configuration, host disks, physical NICs, cloud-init
+secrets, and arbitrary devices. The guest uses separate Runner/engine users, rootless Podman, capacity one, no
+privileged mode, no valid volumes, and no `host` label.
+
+### Isolation tiers
+
+`forgejo.actions_isolation` picks the compute contract interface, and the contract default in `module.yml` resolves
+`auto` to `incus_container`: an unprivileged Incus system container that **shares the host kernel**. `incus_vm` is a
+QEMU/KVM machine with its own guest kernel but requires a KVM-capable host. The container tier is the default
+because the target hardware does not reliably provide KVM (`INCUS-R-052`, `FORGEJO-R-024`); neither tier is selected
+automatically from host capability.
+
+Both tiers carry the same provider-side constraints -- restricted project, the four quotas, constrained egress, a
+single managed NIC, no host disk, physical NIC, or arbitrary device -- and the container tier additionally has
+`restricted.containers.privilege=unprivileged` enforced on the project. The only difference is the kernel boundary,
+so scopes that span trust domains or execute untrusted input should set `incus_vm` explicitly (`FORGEJO-R-025`).
+
+**Current gaps**: no test under `modules/forgejo` asserts the tier resolution or the absence of automatic
+up/downgrade (`R-024`), and nothing checks that the pinned fingerprint matches the selected tier and target
+architecture (`R-026`) -- `runner-image/` expects one image per amd64/arm64 and per container/VM tier, while
+`actions_runner_image` holds a single value validated only for hex shape.
+
+### The control-plane account
+
+`after_start` calls `reconcileActionsAccount` only while Actions is on, passing the fixed `anas_actions_controller`
+account to the container helper's `local-admin` subcommand over stdin. The password comes from the Secret Store and
+never reaches host `docker exec` argv. That subcommand always passes `--admin`, so the account is a **site
+administrator**.
+
+The controller's entire call set is three endpoints, all confined to approved scopes: `GET
+.../actions/runners/jobs`, `POST .../actions/runners`, and `DELETE .../actions/runners/{id}` (under `orgs/{owner}`
+or `repos/{owner}/{repo}`), using basic auth. Those endpoints need organization-owner or repository-admin rights,
+not site-wide ones; site administrator is the consequence of having no per-scope granting path, and is a recorded
+deviation (`FORGEJO-R-068`, `R-069`).
+
+`reconcileActionsAccount` returns immediately when Actions is off, so **turning the switch off does not revoke the
+account**: it and its valid Secret Store password both remain, and an administrator must remove them by hand.
+`FORGEJO-R-070` tracks the fix.
 
 Before Forgejo starts with Actions enabled, a one-shot process using the same controller image connects to Incus and
 validates the restricted project, quotas, and profile. Forgejo and the long-running controller depend on this
 preflight completing successfully. With Actions disabled the preflight performs no Incus access and exits; it has no
 separate feature state and is not a second Runner switch.
 
-Empty queues create no Runner or VM, and no ANAS host Docker socket is shared. Real independent Incus/KVM, egress
-firewall, image build, and one-job E2E remain release gates. Git hooks and local-path import are independently
+Empty queues create no Runner or instance, and no ANAS host Docker socket is shared. Controller state lives in the
+named volume `forgejo_actions_state`, outside the `R-003` backup consistency point -- but **it is not freely
+discardable**: `ListManaged` is called only from `CleanupAll` (switch-off), while the periodic `Reconcile` works
+purely from state, and an orphaned Forgejo runner registration has no fallback at all because deregistration needs
+the `RunnerID` held in state and `ForgejoAPI` has no method that lists runners. Losing state means orphaned
+instances wait until the next switch-off, and a registration created just before a crash stays forever.
+`FORGEJO-R-046` tracks the fix. A real independent Incus host, egress firewall, image build, and one-job E2E per tier
+remain release gates. Git hooks and local-path import are independently
 configurable and disabled by default. Hooks execute server-side code as the Forgejo user; local
 imports can read only paths already visible inside the container, and Compose adds no host mount for the feature.
 LFS and built-in SSH are enabled. The Web port is Compose-private and the v15 image wildcard

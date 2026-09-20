@@ -3,6 +3,8 @@
 > 状态：**当前模型**。事实由 `test-env/scripts/forgejo-agent-api-probe.sh` 对固定
 > `codeberg.org/forgejo/forgejo:15.0.7-rootless`（`15.0.7+gitea-1.22.0`）实测得出，逐条结论与通过
 > 数记录在 [`ai_agent` 要求 §15](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/dev-docs/requirements/ai-agent.md)。
+> 表单相关的几条来自 `TestFormRenderingAgainstLiveForgejo`（同一固定镜像）而不是探针脚本；两者都是
+> 实测，但要重跑的是不同的东西。**探针里被 SKIP 的用例不算事实**，它们列在 §1 末尾。
 > 升级固定版本时必须重跑探针再改这一页，并同时执行
 > [Forgejo Module 设计](/architecture/forgejo-module-design) §2.3 的身份复核（`FORGEJO-R-066`）：LDAP 与
 > OIDC 能否按不可变 ID 同时接入，只能由探针回答，不能凭 changelog。更新：2026-09-20。
@@ -18,25 +20,39 @@ ANAS 里有两块代码跟 Forgejo 说话：[`forgejo` Module](/architecture/for
 
 **下表里每一条的共同特征是：按直觉写出来的代码能编译、能跑，然后在别的地方错。**
 
-| 事实 | 按直觉写会怎样 |
-| --- | --- |
-| `POST /admin/users/{u}/tokens` 返回 **404**；唯一端点是 `POST /users/{u}/tokens`，且**拒绝 token 认证**，只接受管理员 basic auth 加 `Sudo:` 头 | 控制面只持有 token，引导整条链走不通——它必须持有管理员**口令** |
-| token 的 `repositories` 是 `[{"owner":…,"name":…}]` **对象数组**，`"owner/name"` 字符串被拒 | 反序列化错误，且容易被"退化成不限定"绕过 |
-| 发 token 前账号**必须已是该仓库 collaborator** | 报 `repository does not exist`，看起来像仓库配错了 |
-| 带仓库限定的 token **只能**携带 `read:issue`、`write:issue`、`read:repository`、`write:repository`，其余组合 400 | 为多加一个 scope 而放弃 `repositories` 限定，代码照跑，最小权限没了 |
-| 仓库限定作用于**内容与写操作**（越界仓库 contents 403、开 issue 404），但**元数据仍可读**（`GET /repos/{o}/{r}` 200） | 文档写成"看不见别的仓库"，与实际不符 |
-| access token 名称、SSH key 标题**按用户唯一** | "先发后吊销"在发新的那一步 400，轮换保证反而没了 |
-| **`GET /admin/hooks` 恒返回空数组**，`GET /admin/hooks/{id}` 正常 | 每轮对账都以为 hook 不存在，重复注册 |
-| 服务端**展开事件族**：请求 8 个事件，存下 17 个 | 用事件列表比对会永远判定为漂移 |
-| issue 表单 front matter 的 `labels` 是**新建页的预勾选**，由浏览器回传 `label_ids`，不是服务端在提交时应用 | 靠某个标签判断"这个 issue 是谁建的"，取消勾选或非浏览器提交就漏判 |
-| 表单正文渲染在**服务端**：`### <字段 label>` + 空行 + 值，未填为 `_No response_`，checkboxes 为 `- [x] <label>`，dropdown 多选以 `, ` 连接 | 以为要在浏览器里才能拿到渲染结果，于是去做 UI 自动化 |
-| Forgejo 15 的表单**没有 `_csrf`**，改用 SameSite cookie 加 Origin/Referer 校验 | 脚本化登录去找 CSRF token，找不到 |
-| **Projects 看板没有 API 也没有 webhook 事件**，是纯 UI 功能 | 设计出依赖看板列的自动化，做不出来 |
+「来源」列说这条结论是**怎么来的**，因为重跑它们要跑的是不同的东西：`探针` = 探针脚本的具名用例
+（括号里是用例名），`live` = `TestFormRenderingAgainstLiveForgejo`，`推断` = 还没有实测证据。
+**改任何一条之前先看这一列**；升级固定版本时，`探针` 与 `live` 两类都要重跑。
 
-尚未复核：webhook 投递语义（超时、重试、能否手动重投）、`issue_label` / `issue_assign` 的 payload
-字段、以及 **`prohibit_login` 是否同时关闭 access token 与 Git over SSH**（撤权流程依赖这个答案，见
-[Forgejo Module 设计](/architecture/forgejo-module-design) §2.2）。前两者需要一个真实接收端，**在有结论
-之前按"至多一次"设计**：任何只有在保证重试的前提下才正确的逻辑都不能依赖。
+| 事实 | 按直觉写会怎样 | 来源 |
+| --- | --- | --- |
+| `POST /admin/users/{u}/tokens` 返回 **404**；唯一端点是 `POST /users/{u}/tokens`，且**拒绝 token 认证**，只接受管理员 basic auth 加 `Sudo:` 头 | 控制面只持有 token，引导整条链走不通——它必须持有管理员**口令** | 探针（`admin-token-absent`） |
+| token 的 `repositories` 是 `[{"owner":…,"name":…}]` **对象数组**，`"owner/name"` 字符串被拒 | 反序列化错误，且容易被"退化成不限定"绕过 | 探针（`token-repo-scope`） |
+| 发 token 前账号**必须已是该仓库 collaborator** | 报 `repository does not exist`，看起来像仓库配错了 | 探针（`token-repo-scope` 的引导顺序） |
+| 带仓库限定的 token **只能**携带 `read:issue`、`write:issue`、`read:repository`、`write:repository`，其余组合 400 | 为多加一个 scope 而放弃 `repositories` 限定，代码照跑，最小权限没了 | 探针（`token-repo-scope`） |
+| 仓库限定作用于**内容与写操作**（越界仓库 contents 403、开 issue 404），但**元数据仍可读**（`GET /repos/{o}/{r}` 200） | 文档写成"看不见别的仓库"，与实际不符 | 探针（`token-repo-isolation`、`token-metadata-leak`） |
+| access token 名称、SSH key 标题**按用户唯一** | "先发后吊销"在发新的那一步 400，轮换保证反而没了 | 探针（`admin-ssh-key` 与轮换实测） |
+| **`GET /admin/hooks` 恒返回空数组**，`GET /admin/hooks/{id}` 正常 | 每轮对账都以为 hook 不存在，重复注册 | 探针（`hook-list-empty`） |
+| 服务端**展开事件族**：请求 8 个事件，存下 17 个 | 用事件列表比对会永远判定为漂移 | 探针（`hook-event-expansion`） |
+| issue 表单 front matter 的 `labels` 是**新建页的预勾选**，由浏览器回传 `label_ids`，不是服务端在提交时应用 | 靠某个标签判断"这个 issue 是谁建的"，取消勾选或非浏览器提交就漏判 | live |
+| 表单正文渲染在**服务端**：`### <字段 label>` + 空行 + 值，未填为 `_No response_`，checkboxes 为 `- [x] <label>`，dropdown 多选以 `, ` 连接 | 以为要在浏览器里才能拿到渲染结果，于是去做 UI 自动化 | live |
+| Forgejo 15 的表单**没有 `_csrf`**，改用 SameSite cookie 加 Origin/Referer 校验 | 脚本化登录去找 CSRF token，找不到 | live |
+| **Projects 看板没有 API**，是纯 UI 功能 | 设计出依赖看板列的自动化，做不出来 | 探针（`projects-absent`，v1/v2 均 404） |
+| Projects 看板**也没有 webhook 事件** | 同上，且以为能靠事件补上 | `推断`：探针只测了 API，没有接收端测事件 |
+
+尚未复核，按未知对待：
+
+- webhook 投递语义（超时、重试、能否手动重投）与 `issue_label` / `issue_assign` 的 payload 字段。
+  两者都需要一个真实接收端，**在有结论之前按"至多一次"设计**：任何只有在保证重试的前提下才正确的
+  逻辑都不能依赖；
+- **`prohibit_login` 是否同时关闭 access token 与 Git over SSH**。撤权流程直接依赖这个答案，见
+  [Forgejo Module 设计](/architecture/forgejo-module-design) §2.2 与计划的 `FJPROBE-T-001`；
+- **`forgejo admin auth add-oauth` 是否真的有 `--group-team-map` / `--group-team-map-removal`**。
+  探针脚本有这条用例，但它需要 `PROBE_FORGEJO_CONTAINER` 才会执行，最近一次记录是 **SKIP**——也就是
+  说这条**从未被证实过**。`FORGEJO-R-060`、`forgejo` M6 与 `ai_agent` 设计 §6.2 的"目录组 → team"
+  投影链路全都建立在它上面，写任何依赖它的代码之前先跑一次；
+- **OIDC `sub` 是否原样存进 `login_name`**、以及改名后的实际行为（计划的 `FJPROBE-T-003`/`T-004`）。
+  按 `sub` 与目录对账的撤权路径依赖第一条。
 
 ## 2. 由事实直接推出的规则
 
@@ -76,12 +92,17 @@ Projects 既无 API 也无事件。状态一律落在 label、issue 开闭与指
 这些是部署侧的约束，写代码时会撞上，完整设计见
 [Forgejo Module 设计](/architecture/forgejo-module-design) §3、§5：
 
-- **Actions 只有一个 ANAS 开关** `forgejo.actions_enabled`（默认 `false`）。Incus credential、scope、
-  profile 或固定 image fingerprint 缺失时 Hook 拒绝开启，不允许出现"只开了服务端"的半功能状态；
+- **Actions 只有一个 ANAS 开关** `forgejo.actions_enabled`（默认 `false`）。开启的前置校验分两处：
+  Hook 在渲染时校验获批 scope、控制面账号口令与固定 image fingerprint，一次性 preflight service 在
+  Forgejo 启动前连接 Incus 验证 project/quota/profile。Incus endpoint 与证书不是 Forgejo 的配置项，
+  由 compute contract 供给。任一处失败都不启动 Forgejo，因此不存在"只开了服务端"的半功能状态；
+- **执行实例有两档隔离**，`forgejo.actions_isolation` 选择，`auto` 解析为 `incus_container`：非特权
+  系统容器**与宿主共享内核**；`incus_vm` 是 QEMU/KVM，有独立 guest kernel 但要求宿主具备 KVM。
+  默认档是容器档，因为目标硬件不保证有 KVM。**跨信任域或执行不受信输入的 scope 必须选 `incus_vm`**；
 - 开关之外还有两层**授权**，它们不是开关：仓库 Units 里是否启用 Actions，以及 ANAS 实例管理员是否
   批准了该 `{owner}/{repo}` 或 `{owner}` 的 Runner scope。**不部署 global runner**；
 - **能改 `.forgejo/workflows` 的人等价于能在对应 Runner 上执行代码**，所以一个 scope 只能覆盖写入者
-  属于同一信任域的仓库，且每个 VM 只执行一个作业；
+  属于同一信任域的仓库，且每个执行实例只执行一个作业；容器档下这条是前提而不是建议；
 - 两个高风险开关默认关闭且变更触发 `container_recreate`：`forgejo.custom_git_hooks_enabled`
   （等于允许服务器端任意代码执行）、`forgejo.local_path_import_enabled`。
 
@@ -89,7 +110,8 @@ Projects 既无 API 也无事件。状态一律落在 label、issue 开闭与指
 
 1. 先跑 `test-env/scripts/forgejo-agent-api-probe.sh`，不要凭上游文档下结论——这一页里过半的条目都
    与文档描述不符；
-2. 把结论补进本页 §1，并同步到发起改动那一侧的要求文档（`ai_agent` 在
+2. 把结论补进本页 §1，**连同「来源」列**（哪个探针用例或哪个测试给出的结论；没有实测就写 `推断`），
+   并同步到发起改动那一侧的要求文档（`ai_agent` 在
    [要求 §15](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/dev-docs/requirements/ai-agent.md)，
    `forgejo` 在[它自己的要求](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/dev-docs/requirements/forgejo-module.md)）；
 3. 创建类接口 `201` 与 `200` 都要接受；

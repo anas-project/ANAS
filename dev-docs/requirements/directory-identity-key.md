@@ -66,7 +66,7 @@ Module 必须显式声明缺口、写明后果,并在每次固定版本升级时
 
 | ID | 要求 | 验证方式 |
 | --- | --- | --- |
-| `DIRKEY-R-001` | `anasIdentityAnchor` 是唯一的永久身份键;`sAMAccountName`、UPN、`mail`、`displayName` 与 DN 只用于登录、搜索和显示,不得作为任何持久身份键 | 审阅 |
+| `DIRKEY-R-001` | `anasIdentityAnchor` 是唯一的永久身份键;`sAMAccountName`、UPN、`mail`、`displayName` 与 DN 只用于登录、搜索和显示,不得作为任何持久身份键 | 审阅 + e2e |
 | `DIRKEY-R-002` | Module 持久化目录用户或组时,键必须是 anchor;判据是"目录改名后该键是否不变" | 静态 + 审阅 |
 | `DIRKEY-R-003` | 目录账号改名后 Module 必须复用原有应用身份,不得重复建号或产生孤儿账号 | e2e |
 | `DIRKEY-R-004` | 上游不提供可配置身份字段的 Module 不得以用户名/邮箱回退匹配冒充满足 `DIRKEY-R-002`,必须在 README 与技术文档声明缺口、技术阻碍与由此产生的改名、回收、撤权后果 | 审阅 |

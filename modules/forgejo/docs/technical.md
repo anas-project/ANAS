@@ -111,10 +111,41 @@ rotate/verify/rollback 合约的无泄漏原语。`FORGEJO_SECRET_KEY` 与 OIDC 
 ## Actions controller 与 compute 边界
 
 `forgejo.actions_enabled` 是唯一功能开关。Hook 把同一值写入 Forgejo `[actions].ENABLED` 和 controller
-环境；开启时会先验证 repo/org scope、Incus endpoint/TLS credential、profile 和 64 位 image
-fingerprint，缺失即失败。`after_start` 只在开启时以 stdin 调和固定的 controller 管理账号。Forgejo
-应用 service 改为显式环境白名单，不读取 module-wide `.env`，因此 Incus credential 与 controller
-密码不会进入应用容器。
+环境；开启时 `validateActionsConfig` 校验三项 Forgejo 自己拥有的输入：`FORGEJO_ACTIONS_ALLOWED_SCOPES`
+的形状（只接受 `{owner}` 或 `{owner}/{repo}`）、`FORGEJO_ACTIONS_CONTROLLER_PASSWORD`、以及 64 位
+image fingerprint，缺失即失败。**Incus endpoint 与客户端证书不再是 Forgejo 配置项**，它们由 compute
+contract 供给并投影到 controller，因此 Hook 阶段不可能校验它们；project/quota/profile 由下面的
+preflight 在运行时验证。Forgejo 应用 service 使用显式环境白名单，不读取 module-wide `.env`，因此
+Incus credential 与 controller 口令不会进入应用容器。
+
+### 隔离档
+
+`forgejo.actions_isolation` 选择 compute contract 的 interface，`module.yml` 的 contract 默认值把 `auto`
+解析为 `incus_container`。`incus_container` 是非特权 Incus 系统容器，与宿主共享内核；`incus_vm` 是
+QEMU/KVM，有独立 guest kernel 但要求宿主具备 KVM。默认取容器档的理由是目标硬件不保证提供 KVM
+（`INCUS-R-052`、`FORGEJO-R-024`）；不按宿主能力自动升降级。
+
+两档在 Provider 侧受同一组约束：restricted project、四类配额、受限 egress、唯一 managed NIC、无 host
+disk/physical NIC/任意 device；容器档另由 project 强制 `restricted.containers.privilege=unprivileged`。
+差别只在内核边界，因此跨信任域或执行不受信输入的 scope 应显式选 `incus_vm`（`FORGEJO-R-025`）。
+
+**当前缺口**：`modules/forgejo` 下没有任何测试断言隔离档的解析与不自动升降级（`R-024`），也没有校验
+固定 fingerprint 与所选档、目标架构一致（`R-026`）——`runner-image/` 要求按 amd64/arm64 × 容器/VM 各出
+一份镜像，而 `actions_runner_image` 只有一个值且只校验 hex 形状。
+
+### 控制面账号
+
+`after_start` 只在 Actions 开启时调用 `reconcileActionsAccount`，经 stdin 把固定账号
+`anas_actions_controller` 交给容器 helper 的 `local-admin` 子命令；口令来自 Secret Store，不进入宿主
+`docker exec` argv。该子命令固定带 `--admin`，因此这个账号是**站点管理员**。
+
+controller 的调用集合只有三个端点，全部限定在获批 scope：`GET .../actions/runners/jobs`、
+`POST .../actions/runners`、`DELETE .../actions/runners/{id}`（`orgs/{owner}` 或
+`repos/{owner}/{repo}`），使用 basic auth。这三个端点要的是组织 owner 或仓库 admin，不是全站权限；
+站点管理员是"没有按 scope 授权的调和路径"的后果，属于已登记偏差（`FORGEJO-R-068`、`R-069`）。
+
+`reconcileActionsAccount` 在 Actions 关闭时直接返回，因此**关闭开关不会撤销该账号**：账号与
+Secret Store 中的有效口令都会留下，需要管理员手工处理。收敛要求见 `FORGEJO-R-070`。
 
 Compose 先运行同一 controller image 的一次性 `preflight`。Actions 开启时，它实际连接 Incus 并验证
 project、quota 与 profile；只有成功退出后 Forgejo 和长驻 controller 才能启动。Actions 关闭时
@@ -126,25 +157,33 @@ exec-stdin/stop/delete/list-managed 生命周期。首个适配器用固定 remo
 NIC，以及不存在 cloud-init secret、host disk、physical NIC 或任意 device。调用方不能传 Incus raw
 config、device、mount 或 socket。
 
-每 15 秒按获批 scope 查询 waiting jobs，默认空队列为零 registration/VM。每个 job 创建 ephemeral
-registration 和固定指纹 VM，token 只通过 Incus exec stdin 进入 guest tmpfs，再以 `--handle`、`--wait`
-运行 `one-job`。全局并发上限 4、每 scope 上限 2、waiting TTL 10 分钟、job timeout 1 小时。state 只
-持久化 handle、scope、registration/VM identity 和时间，不含 token；正常结束、取消、超时、关闭和
-重启残留均走同一 cleanup/janitor。
+每 15 秒按获批 scope 查询 waiting jobs，默认空队列为零 registration/实例。每个 job 创建 ephemeral
+registration 和一个固定指纹实例，token 只通过 Incus exec stdin 进入 guest tmpfs，再以 `--handle`、
+`--wait` 运行 `one-job`。全局并发上限 4、每 scope 上限 2、waiting TTL 10 分钟、job timeout 1 小时。
+state 只持久化 handle、scope、registration/实例 identity 和时间，不含 token；正常结束、取消、超时、
+关闭和重启残留均走同一 cleanup/janitor。state 存在 named volume `forgejo_actions_state`，不在 `R-003` 的备份
+一致点内，但**也不能随手丢弃**：`ListManaged` 只在 `CleanupAll`（关闭开关）里调用，周期性
+`Reconcile` 完全依据 state；孤立的 Forgejo runner registration 更是没有兜底路径——注销依赖 state 里
+的 `RunnerID`，而 `ForgejoAPI` 没有列举 runner 的方法。丢失 state 的后果：Actions 仍开着时孤立实例
+要等到下次关闭才回收，崩在创建 registration 与作业开始之间的 registration 则永远留着。收敛要求见
+`FORGEJO-R-046`。
 
 guest image 资产位于 `runner-image/`：`runner-agent` 运行 Runner，`runner-engine` 运行 rootless Podman；
 capacity=1、`privileged=false`、`valid_volumes=[]`，并设置 CPU/memory/PID/no-new-privileges。镜像不启动
-daemon Runner，也不提供 `host` label。独立 Incus/KVM、真实防火墙/egress 和 one-job E2E 仍是发布门禁。
+daemon Runner，也不提供 `host` label。独立 Incus 宿主、真实防火墙/egress 和两档各一遍的 one-job E2E
+仍是发布门禁。
 
 ## 安全默认与运维边界
 
-- Actions 默认关闭且只有一个开关；controller 不共享 host Docker socket，空队列不创建 Runner/VM。
+- Actions 默认关闭且只有一个开关；controller 不共享 host Docker socket，空队列不创建 Runner/实例。
+- 默认隔离档 `incus_container` 与宿主共享内核；需要独立 guest kernel 的 scope 必须显式选 `incus_vm`。
+- Actions 开启会留下一个站点管理员账号 `anas_actions_controller`，关闭开关不会撤销它。
 - Git hooks 与 local-path import 默认关闭且可独立开启；Hook 将以 Forgejo 用户身份执行服务端代码，
   local import 只能读取容器内本来已可见的路径，Compose 不为它增加宿主挂载；LFS 与内置 SSH 开启。
 - Web port 只在 Compose network，且覆盖 v15 image 的 `REVERSE_PROXY_TRUSTED_PROXIES=*` 默认值，
   仅信任 loopback 与 RFC 1918 container source。
 - 本地恢复需要 internal sign-in 和 Basic API authentication；开放注册仍关闭。
-- SMTP、S3 与外部搜索不在当前自动配置范围；Actions 的真实 Incus/KVM E2E 尚未完成。
+- SMTP、S3 与外部搜索不在当前自动配置范围；Actions 的真实 Incus 宿主 E2E 尚未完成。
 - 备份必须一致覆盖数据目录、数据库、Secret Store 与部署元数据。
 
 ## Hook 与测试位置
