@@ -3,8 +3,10 @@
 > 状态：**当前模型**。事实由 `test-env/scripts/forgejo-agent-api-probe.sh` 对固定
 > `codeberg.org/forgejo/forgejo:15.0.7-rootless`（`15.0.7+gitea-1.22.0`）实测得出，逐条结论与通过
 > 数记录在 [`ai_agent` 要求 §15](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/dev-docs/requirements/ai-agent.md)。
-> 表单相关的几条来自 `TestFormRenderingAgainstLiveForgejo`（同一固定镜像）而不是探针脚本；两者都是
-> 实测，但要重跑的是不同的东西。**探针里被 SKIP 的用例不算事实**，它们列在 §1 末尾。
+> 表单相关的几条来自 `TestFormRenderingAgainstLiveForgejo`（同一固定镜像）而不是探针脚本；标 `CLI`
+> 的几条来自 2026-09-20 对同一镜像跑 `--help` 的实测，报告在
+> `test-env/reports/forgejo-cli-probe-20260920.md`（报告目录不入库）。三者都是实测，但要重跑的是不同
+> 的东西。**探针里被 SKIP 的用例不算事实**，仍未有结论的列在 §1 末尾。
 > 升级固定版本时必须重跑探针再改这一页，并同时执行
 > [Forgejo Module 设计](/architecture/forgejo-module-design) §2.3 的身份复核（`FORGEJO-R-066`）：LDAP 与
 > OIDC 能否按不可变 ID 同时接入，只能由探针回答，不能凭 changelog。更新：2026-09-20。
@@ -39,6 +41,9 @@ ANAS 里有两块代码跟 Forgejo 说话：[`forgejo` Module](/architecture/for
 | Forgejo 15 的表单**没有 `_csrf`**，改用 SameSite cookie 加 Origin/Referer 校验 | 脚本化登录去找 CSRF token，找不到 | live |
 | **Projects 看板没有 API**，是纯 UI 功能 | 设计出依赖看板列的自动化，做不出来 | 探针（`projects-absent`，v1/v2 均 404） |
 | Projects 看板**也没有 webhook 事件** | 同上，且以为能靠事件补上 | `推断`：探针只测了 API，没有接收端测事件 |
+| `admin auth add-oauth` **有** `--group-team-map` 与 `--group-team-map-removal`；组→team 的投影只发生在**登录时刻** | 以为目录里踢掉一个人就会到达 Forgejo，于是不做控制面侧的即时否决 | CLI（`forgejo-cli-probe-20260920`） |
+| `admin auth add-ldap` **没有任何组选项**（`--help` 里匹配 `group` 的行数为 0），也没有可配置的不可变 ID 字段 | 设计出"经 LDAP 把组同步进来"的方案，做不出来 | CLI（`forgejo-cli-probe-20260920`） |
+| `admin user` **没有 `prohibit_login` 子命令**；停用账号只能走管理端 API | 撤权流程写成一条 CLI 命令，落地时发现不存在 | CLI（`forgejo-cli-probe-20260920`） |
 
 尚未复核，按未知对待：
 
@@ -47,12 +52,11 @@ ANAS 里有两块代码跟 Forgejo 说话：[`forgejo` Module](/architecture/for
   逻辑都不能依赖；
 - **`prohibit_login` 是否同时关闭 access token 与 Git over SSH**。撤权流程直接依赖这个答案，见
   [Forgejo Module 设计](/architecture/forgejo-module-design) §2.2 与计划的 `FJPROBE-T-001`；
-- **`forgejo admin auth add-oauth` 是否真的有 `--group-team-map` / `--group-team-map-removal`**。
-  探针脚本有这条用例，但它需要 `PROBE_FORGEJO_CONTAINER` 才会执行，最近一次记录是 **SKIP**——也就是
-  说这条**从未被证实过**。`FORGEJO-R-060`、`forgejo` M6 与 `ai_agent` 设计 §6.2 的"目录组 → team"
-  投影链路全都建立在它上面，写任何依赖它的代码之前先跑一次；
 - **OIDC `sub` 是否原样存进 `login_name`**、以及改名后的实际行为（计划的 `FJPROBE-T-003`/`T-004`）。
-  按 `sub` 与目录对账的撤权路径依赖第一条。
+  按 `sub` 与目录对账的撤权路径依赖第一条；
+- 认证源是否有 REST API，以及是否存在 IAM 主动 logout receiver 或按用户撤销会话/token 的管理端接口
+  （[设计](/architecture/forgejo-module-design) §2.3 第 3、4 点）。两者都要管理员 token，
+  `forgejo-cli-probe-20260920` 只覆盖了 CLI 一侧。
 
 ## 2. 由事实直接推出的规则
 

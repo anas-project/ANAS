@@ -719,10 +719,9 @@ LDAP 同步 + OIDC 登录的双源形态以订阅目录事件；实现时核对�
 已废弃）。对本方案的影响：
 
 1. **能力组的投影路径不变**：`CAP_ai_agent_*` 经 OIDC 的 `--group-team-map`（`FORGEJO-R-060`）在登录时
-   到达 team，读法（以用户身份 `GET /user/teams`）不变。**但这条路径本身尚未被证实**：探针的
-   `group-team-map` 用例需要 `PROBE_FORGEJO_CONTAINER` 才执行，最近一次记录是 SKIP，所以"固定版本的
-   `add-oauth` 有这两个 flag"目前是推断。跑通它是 `forgejo` M6 的第一项；不成立则本条要改写，能力组
-   就只能全部走下面第 2 条的控制面路径；
+   到达 team，读法（以用户身份 `GET /user/teams`）不变。2026-09-20 已在固定镜像上用 CLI 实测确认
+   `--group-team-map` 与 `--group-team-map-removal` 两个 flag 都存在（同一次实测也确认 LDAP CLI 一个组
+   选项都没有，这正是上面撤回双源形态的理由）；
 2. **能力撤权的实时性由控制面自己承担**：`ai_agent` 订阅[目录事件日志](../../../../docs/architecture/directory-event-journal.md)
    刷新 `agent_grant` 快照，不等 Forgejo 的 team 状态收敛。这一条在双源形态下本来也成立，撤回没有改变它；
 3. **即时否决表 `agent_grant_deny` 从兜底升为常设一环**：优先于一切推导，`agent-grant deny <user>`
@@ -1026,7 +1025,7 @@ issue 时，三档落在原 issue，节流阈值更保守（阶段变化才更�
 | 文档 | 变更 | 状态 |
 | --- | --- | --- |
 | [Samba AD 用户与权限规划](../../../../docs/architecture/samba-ad-user-planning.md) | 登记 `CAP_<module-id>_<capability>` 类别与 `OU=Cap,OU=Groups`；这是所有 Module 的通用规则，不只服务 AI | 已采纳并实现（§5.4.1）：`samba_dc` 按 `create_structure` 创建 `OU=Cap`，Module 经 `ANAS_IDENTITY_CAPABILITY_GROUPS` 声明能力码 |
-| [Forgejo Module 要求](../../../../modules/forgejo/dev-docs/requirements/forgejo-module.md) | Agent 账号与 token 的管理端引导、系统 webhook 归属、OIDC 增加 `--group-team-map` | 已登记为 `FORGEJO-R-060`—`R-062`（M6，未开始）。两处风险：`--group-team-map` 这个 flag 在固定版本上**尚未被探针证实**；`R-061`（Forgejo reconcile 不得删改管理端 API 建的账号/token/SSH key）的守护测试还没写，而本 Module 已经在创建这些对象 |
+| [Forgejo Module 要求](../../../../modules/forgejo/dev-docs/requirements/forgejo-module.md) | Agent 账号与 token 的管理端引导、系统 webhook 归属、OIDC 增加 `--group-team-map` | 已登记为 `FORGEJO-R-060`—`R-062`（M6，未开始）。`--group-team-map` 的存在性已于 2026-09-20 实测确认，剩余风险是 `R-061`（Forgejo reconcile 不得删改管理端 API 建的账号/token/SSH key）的守护测试还没写，而本 Module 已经在创建这些对象 |
 | [目录事件日志](../../../../docs/architecture/directory-event-journal.md) | `ai_agent` 自己成为订阅者，消除组变更的登录延迟（§6.2） | **改由本 Module 承担**（2026-09-20）：Forgejo 的双源形态已撤回（`FORGEJO-R-063`—`R-065` 废弃），固定版本的 LDAP CLI 无组选项，组撤权无论如何到不了 Forgejo；控制面订阅事件刷新 `agent_grant`，`agent_grant_deny` 为常设一环。实现未开始 |
 | [LLM Gateway 要求（待讨论）](../../../../dev-docs/requirements/llm-gateway.md) | 统一模型 key、虚拟 key、预算执行点、用量归因与审计 | 问题域已锁定，选型调研与需求矩阵待做 |
 | `anas-agent-mcp` 工具面契约 | §5.8 白名单操作的入参出参、幂等键、错误语义与版本策略，需独立一份接口文档 | 未开始 |

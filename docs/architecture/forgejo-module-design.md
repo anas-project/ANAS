@@ -53,7 +53,9 @@ LDAP 用户的接口——绑定只能落回用户名或邮箱。§2.1 的四条
 [AI Agent 编排](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/docs/architecture/orchestration-design.md) §6.2
 需要组变更秒级生效：让 Forgejo 经 LDAP 保有目录副本，它就能订阅[目录事件日志](https://github.com/anas-project/ANAS/blob/master/docs/architecture/directory-event-journal.md)
 并按游标增量刷新。实现时核对固定版本源码 `cmd/admin_auth_ldap.go` 后确认，**LDAP CLI 没有任何组同步
-选项，产品也没有认证源 REST API**，组只能继续经 OIDC 声明在登录时映射 team。也就是说双源形态换不到
+选项，产品也没有认证源 REST API**（2026-09-20 在固定镜像上复跑 `admin auth add-ldap --help` 实测确认：
+匹配 `group` 的行数为 0，只有 `--synchronize-users`；报告在 `test-env/reports/forgejo-cli-probe-20260920.md`（报告目录不入库）），组只能继续经 OIDC 声明在登录时
+映射 team。也就是说双源形态换不到
 §6.2 真正要的 team 成员实时性，只能换到"账号能否登录"的加速，而代价是：
 
 - 引入一份目录副本，从此落入[目录事件订阅要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)
@@ -70,7 +72,7 @@ LDAP 用户的接口——绑定只能落回用户名或邮箱。§2.1 的四条
 | 目录侧变更 | Forgejo 侧的收敛路径 |
 | --- | --- |
 | 账号停用、删除、移出 `APP_forgejo` | **无自动路径**：Module 不持有目录副本，固定版本也没有 IAM 主动 logout receiver（`LOGOUT-R-008`）。管理员必须在 Forgejo 停用或删除该账号 |
-| 组成员变更 | 该用户下次 OIDC 登录时随 groups 声明到达 team（`FORGEJO-R-060`）。**`推断`**：这条路依赖 `forgejo admin auth add-oauth` 的 `--group-team-map`，而探针的 `group-team-map` 用例至今是 SKIP，从未真正执行；不成立则本行没有收敛路径 |
+| 组成员变更 | 该用户下次 OIDC 登录时随 groups 声明到达 team（`FORGEJO-R-060`）。依赖的 `--group-team-map` / `--group-team-map-removal` 已于 2026-09-20 在固定镜像上实测存在 |
 | 改名、邮箱变更 | **同一个账号**：Forgejo 按 OIDC `sub` 认人（`sub` 存进 `login_name`），用户名取 `preferred_username` 且只在建号时写一次，因此改名后用户名冻结在旧值，仓库路径仍是 `/old/...`；邮箱同样不刷新。`sub` 若不稳定才会建出第二个账号。**`推断`**，待 `FJPROBE-T-003`/`T-004` 复核 |
 
 因此有两条约束必须写进目录管理流程，Module 无法代为强制：**用户名与邮箱别名不得回收再分配、改名走
@@ -108,6 +110,18 @@ Forgejo 不消费的 anchor claim 同样不做——上面那条路用的是 `su
 `DIRKEY-R-008` 规定，不随本节复核。复核必须按[互操作基线](https://github.com/anas-project/ANAS/blob/master/docs/developer/forgejo-interop.md) §4
 先跑探针再改文档——这一页里过半条目与上游文档描述不符，不能凭 changelog 下结论。结论写回本节、
 `FORGEJO-R-066` 的执行记录和互操作基线 §1。
+
+**当前固定版本 `15.0.7+gitea-1.22.0` 的复核状态**（2026-09-20 CLI 实测，报告在 `test-env/reports/forgejo-cli-probe-20260920.md`（报告目录不入库））：
+
+| 点 | 结论 | 证据 |
+| --- | --- | --- |
+| 1. LDAP source 的不可变 ID 字段 | **不成立** | `add-ldap` 的 attribute 选项只有 username/firstname/surname/email/ssh-key/avatar |
+| 2. OIDC 按 claim 绑定既有账号 | **不成立** | `add-oauth` 无此入口；`--required-claim-*` 只是准入过滤 |
+| 3a. LDAP CLI 组同步选项 | **不成立** | `add-ldap --help` 里匹配 `group` 的行数为 0 |
+| 3b. 认证源 REST API | **未复核** | 需要管理员 token，本次只跑了 CLI |
+| 4. IAM logout receiver / 按用户撤销会话 token 的管理端接口 | **未复核** | 同上；已知 `admin user` 没有 `prohibit_login` 子命令 |
+
+第 1、2 点仍不成立，因此**不恢复双链路**。3b 与 4 是下一次复核要补的两项。
 
 ## 3. Actions 授权模型
 

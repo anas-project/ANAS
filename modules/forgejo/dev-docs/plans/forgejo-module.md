@@ -185,11 +185,9 @@ E2E 前不把 Actions 标为 release 能力。
 
 由 [AI Agent 编排](../../../ai_agent/dev-docs/plans/ai-agent.md) 驱动的三项依赖，本 Module 只负责“不妨碍且可声明”，不实现 Agent 逻辑：
 
-- [ ] **先跑探针确认 `forgejo admin auth add-oauth` 真的有 `--group-team-map` 与
-      `--group-team-map-removal`。** 探针的 `group-team-map` 用例在最近一次记录里是 **SKIP**（需要
-      设置 `PROBE_FORGEJO_CONTAINER`），从未真正执行过；`R-060`、本里程碑，以及设计 §2.2 里"组变更
-      在下次登录到达 team"这条收敛路径全部建立在它上面。不成立就要重写 `R-060` 与设计 §2.2，而不是
-      继续实现；
+- [x] 确认 `forgejo admin auth add-oauth` 有 `--group-team-map` 与 `--group-team-map-removal`
+      （2026-09-20，固定镜像 `15.0.7+gitea-1.22.0` CLI 实测，报告在 `test-env/reports/forgejo-cli-probe-20260920.md`（报告目录不入库））。`R-060`、本里程碑
+      与设计 §2.2 的"组变更在下次登录到达 team"都成立，可以继续实现；
 - [ ] OIDC reconcile 增加声明式的 group→team 映射（`--group-team-map` 与登录时移除），映射内容来自
       消费方配置，Module 不硬编码组名；
 - [ ] reconcile 明确不触碰由管理端 API 创建的自动化账号、token 与 SSH key，并补单元测试守住。
@@ -223,9 +221,11 @@ E2E 前不把 Actions 标为 release 能力。
 每次变更 Forgejo 固定版本（含 patch）执行一次，验收 `R-066`：
 
 - [ ] 按[互操作基线](../../../../docs/developer/forgejo-interop.md) §4 跑探针，不凭 changelog 下结论；
-- [ ] 复核[设计 §2.3](../../../../docs/architecture/forgejo-module-design.md) 的四点：LDAP source 的不可变 ID
+- [~] 复核[设计 §2.3](../../../../docs/architecture/forgejo-module-design.md) 的四点：LDAP source 的不可变 ID
       字段、OIDC source 按 claim 绑定既有账号、认证源 REST API 或 LDAP CLI 组同步选项、IAM 主动 logout
-      receiver 或按用户撤销会话/token 的管理端接口；
+      receiver 或按用户撤销会话/token 的管理端接口。**当前固定版本已复核一半**（2026-09-20 CLI 实测，
+      报告在 `test-env/reports/forgejo-cli-probe-20260920.md`，报告目录不入库）：第 1、2 点与
+      "LDAP CLI 组同步选项"均不成立；"认证源 REST API"与第 4 点需要管理员 token，未跑；
 - [ ] 顺带复核 `prohibit_login` 是否同时关闭 access token 与 Git over SSH（当前"尚未复核"，撤权流程
       因此要求显式吊销 token 与 SSH key）；
 - [ ] 结论写回设计 §2.2/§2.3 与互操作基线 §1；第 1、2 点同时成立才评估恢复双链路，并重新走
