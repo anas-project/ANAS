@@ -116,6 +116,56 @@ token 同时限定 scope 与目标仓库，讨论期只有 `read:repository`、`
 token 与 SSH key 就直接换掉。名称带代次（`anas-ai-agent-g<N>`）——上游要求 token 名与 key 标题按用户
 唯一，而"先发后吊销"必然让新旧短暂共存，复用名字会让轮换在第一步就失败。
 
+### 目录属性变更说明
+
+本 Module 的用户分两类，义务不同：
+
+- **Agent 账号**（`agent-<id>`）是机器账号，由编排器在 Forgejo 里无人值守创建，**不来自目录**，
+  本章对它们不适用；
+- **人**——提问题、下指令、附着终端的那些人——**来自目录**，经 Forgejo 的 OIDC 登录到达。本章
+  讲的是他们。
+
+**匹配键：Forgejo 用户名（`login`）。** 编排器不直接接目录，也不读 OIDC `sub`；它认识的人就是
+Forgejo webhook 里的 `sender.login`。授权状态全部以这个字符串为键：`agent_grant.username`
+（PRIMARY KEY）、`agent_grant_deny.username`、`policy_override.username`、`audit_record.subject`。
+
+**这是一个标签，不是永久身份键，按 `DIRKEY-R-004` 在此声明缺口。** 它今天之所以能用，是因为
+Forgejo 的用户名在建号时写一次、之后冻结（见 [`forgejo` README](/reference/modules/forgejo/) 的
+同名章节），所以目录改名不会改变它——**这是从上游实现继承来的性质，本 Module 无法保证，而且
+`forgejo` 那一条本身还是 `推断`。**
+
+缺口的两个真实后果：
+
+1. **Provider 的 `sub` 取自登录名时（`llng`），目录改名会在 Forgejo 里建出第二个账号，新账号的
+   用户名是新名**——于是针对旧名的 `agent_grant_deny` 否决条目**不再命中**。一个被否决的人只要
+   改个名就绕过了否决，这是 fail-open；
+2. 用户名回收再分配时，`agent_grant` 的快照在其 TTL 内仍可能把旧人的上限套给新人。
+
+| 目录侧变更 | 编排器的行为 | 证据 |
+| --- | --- | --- |
+| `sAMAccountName` 改变 | Forgejo 用户名冻结时（`authentik`/`casdoor`）无影响，所有授权状态继续命中。`llng` 部署下等同于换人：新账号没有旧的 grant 快照、**也没有旧的否决条目** | Forgejo 用户名冻结：`推断`（见 `forgejo` 的同名章节，未探针）；键就是用户名：`已验证`（`orchestrator/postgres.go` 的四张表 DDL） |
+| `mail` 改变 | 完全不参与；编排器不读邮箱 | `已验证`（四张表与 `ingress.go` 的 envelope 均无 email 字段） |
+| `displayName` 与其他 profile 属性 | 不参与，不保存 | `已验证`（同上） |
+| 直接或递归组成员变更 | **按 TTL 重新派生，不是实时**：`PolicyEngine.grant` 的快照过期后经 `UserTeams` 重读 Forgejo team 名，再由 `GrantFromTeams` 只识别 `CAP_ai_agent_*` 前缀的组。目录组 → Forgejo team 的投影本身发生在该用户**下次 OIDC 登录**时，因此完整链路的时延是"目录事件 → 下次登录 → 快照 TTL 过期" | 投影只认 `CAP_` 前缀且一路只减不增：`已验证`，入口 `modules/ai_agent/orchestrator/policy_test.go`；端到端时延：`推断` |
+| 账号停用 | 该用户无法再登录 Forgejo（由 `forgejo` 与 IAM 裁决），因此不能再发评论触发作业。**但 grant 快照在 TTL 内仍然存在**，且**已经排队或运行中的作业不会因此取消** | `推断` |
+| 账号删除 | 同上。编排器内没有该用户"拥有"的资产；`audit_record` 按设计保留其历史记录，这是审计要求，不是残留授权 | `推断` |
+| 标识符回收再分配 | 新人拿到回收的用户名后：`agent_grant` 快照在 TTL 内可能仍是旧人的上限（**fail-open 窗口**）；`agent_grant_deny` 的否决条目会**错误地落到新人头上**（fail-closed，吵闹但安全）。两者都在快照过期后由 `GrantFromTeams` 按新人的真实 team 纠正 | `推断` |
+
+**兜底路径**——上表每一行"无自动路径"对应的运维动作：
+
+1. 目录里停用或删除一个人时，除了 `forgejo` 的撤权动作外，还要**在编排器里对该用户名写一条
+   `agent-grant deny` 否决**，并确认其没有排队中或运行中的作业（必要时取消）；
+2. **改名必须人工搬迁授权状态**：改名前记录该用户在 `agent_grant_deny` 与 `policy_override` 里
+   的条目，改名后按新用户名重建。没有自动路径；
+3. **目录侧流程约束**：用户名不得回收再分配。在 `DIRKEY-R-008` 落地、编排器改用 anchor 作为
+   授权键之前，这是纪律而非技术保障。
+
+**`DIRKEY-R-006` 适用性**：`agent_grant_deny`（即时否决表）与 `policy_override`（只能收窄的
+覆盖表）都是**只减权、不授权**的机制，因此按 `DIRKEY-R-006` 允许在拿不到 anchor 时按标签匹配。
+误判的后果是误撤权——吵闹、可恢复。恢复走人工：管理员按新用户名重新写条目，**不存在自动恢复
+路径**。`agent_grant` 不适用该例外，它是授权方向；它靠"每次过期都从当前 team 重新派生"把风险
+压到一个 TTL 窗口，而不是靠标签本身可信。
+
 ## 事件入站
 
 Forgejo 的系统 webhook 一次注册覆盖全实例。入站按这个顺序处理，任何一步不过都不进业务逻辑：

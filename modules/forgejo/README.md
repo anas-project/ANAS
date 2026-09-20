@@ -55,6 +55,33 @@ Module 登记 confidential OIDC client `forgejo`，回调地址为
 Forgejo `/user/logout` 只清除应用 session。固定版本没有可由本 Module 稳定登记的 RP-Initiated
 Logout 或 IAM 主动 front/back-channel receiver，因此不声明单点登出与后台会话撤销。
 
+### 目录属性变更说明
+
+**匹配键**：OIDC `sub`，Forgejo 把它原样存进内部的 `login_name` 字段。用户名另取
+`preferred_username`，只在建号时写一次，不参与认人。**这个键在目录改名后是否稳定，取决于部署
+选了哪个 IAM Provider**——`authentik` 与 `casdoor` 发出的主体标识符都不是目录标签，改名后 `sub`
+不变；`llng` 的主体标识符默认取自登录名，改名后 `sub` 会变，Forgejo 会建出第二个账号、原有仓库
+留在旧账号下（见[Module IAM / OIDC 支持清单](/reference/module-iam-support)的匹配键列）。
+
+| 目录侧变更 | Forgejo 的行为 | 证据 |
+| --- | --- | --- |
+| `sAMAccountName` 改变 | 同一账号、不新建；Forgejo 里的用户名冻结在旧值，仓库路径仍是 `/old/...`，URL 标识符不跟着变。Provider 的 `sub` 取自登录名时（`llng`）此结论不成立，会建出第二个账号 | `推断` |
+| `mail` 改变 | 不刷新，账号里仍是建号时的旧地址；邮箱不参与账号绑定，但 Forgejo 的邮箱全局唯一，旧地址还挂在原账号上时，用同一地址的新账号会建号失败 | `推断` |
+| `displayName` 与其他 profile 属性 | 只在建号时写一次，之后从不刷新 | `推断` |
+| 直接或递归组成员变更 | 该用户**下次 OIDC 登录**时随 groups 声明到达 team 与站点管理员映射；不登录就不收敛，没有同步或实时路径 | `推断` |
+| 账号停用 | **无自动路径**。已有 Forgejo session、access token 与 SSH/部署密钥全部继续有效；后两者根本不经过登录，不存在"下次登录时收敛" | `推断` |
+| 账号删除 | 同上，且 Forgejo 账号与其仓库、issue、包全部原样保留；资产归属不会自动转移 | `推断` |
+| 标识符回收再分配 | 用户名回收：新人首次登录时 `preferred_username` 与原账号冲突，Forgejo 建号失败（fail-closed）。邮箱回收同样冲突失败。但若 Provider 的 `sub` 也取自被回收的标签（`llng`），新人会直接接上旧账号（**fail-open**） | `推断` |
+
+**兜底路径**——上表每一行"无自动路径"对应的运维动作：
+
+1. 目录里停用或删除一个人时，必须在 Forgejo 以站点管理员身份**停用该账号，并显式吊销它的全部
+   access token 与 SSH/部署密钥**。固定版本的 `prohibit_login` 是否同时关闭 token 与 Git over SSH
+   尚未复核，因此两步都要做，不能只停用账号；
+2. 删除目录账号前，先在 Forgejo 把该账号拥有的仓库转移给接手人或组织，再删除 Forgejo 账号；
+3. 组撤权要立即生效时，除上面第 1 步外还要结束该用户已有的 Forgejo session；等下次登录不够；
+4. **目录侧流程约束**：用户名与邮箱别名不得回收再分配，改名走正式流程。Module 无法强制这两条。
+
 ## 本地恢复管理员
 
 OIDC、目录或内部 CA 故障时，可从 ANAS Secret Store 取回专用 `break_glass` 账号：

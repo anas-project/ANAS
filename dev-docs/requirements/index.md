@@ -12,7 +12,7 @@
 | [条件 Capability 依赖要求](conditional-capability-dependency.md) | 可选服务的 Capability 依赖声明、求值时机、锁与 `plan` 输出边界 | 17/19 已完成 |
 | [无序 Capability 依赖要求](weak-capability-dependency.md) | 存在性强制但不参与排序的依赖、calculate 与渲染两阶段边界、守门人成环的解法 | 14/15 已完成 |
 | [Samba 目录事件订阅与实时同步要求](directory-event-subscription.md) | IAM Provider 与所有 LDAP/LDAPS Module 的事件订阅、可靠消费、全量兜底、准入丧失会话撤销与 LDAP+OIDC 双接入验收 | 0/14 已完成 |
-| [目录身份键要求](directory-identity-key.md) | anchor 是唯一持久身份键,标签只用于登录/搜索/显示;主体标识符取 anchor、Module 与 Provider 两侧义务与缺口声明 | 6/13 已完成 |
+| [目录身份键要求](directory-identity-key.md) | anchor 是唯一持久身份键,标签只用于登录/搜索/显示;主体标识符取 anchor、Module 与 Provider 两侧义务与缺口声明 | 7/13 已完成 |
 | [使用 OIDC/SAML 的 Module 双向登出要求](module-iam-bidirectional-logout.md) | RP/SP 发起登出、IAM 发起登出、通用注册、安全和真实会话 E2E | 20/42 已完成 |
 | [Web API 与管理前端要求](web-api-admin-console.md) | 管理控制台的范围、访问与证书、认证与角色、安全和验收 | 155/155 已完成 |
 | [共享应用层迁移要求](application-layer-migration.md) | 把三个共享服务实现迁出 CLI 包、按类型而非运行时开关表达子进程边界 | 0/10 已完成 |

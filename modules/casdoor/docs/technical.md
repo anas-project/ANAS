@@ -56,6 +56,53 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 - 授权：把每个 `ALLOW_GROUPS` 建成 `anas` 组织的同名 Group/Role，并为 Consumer 建立 Approved Application Permission；Casdoor 在登录签发前检查这些组。
 - 属性：OIDC 使用 `JWT-Custom`/RS256，注册的永久锚点 claim 取自 `ExternalId`，Group 由 Role 名称发出；不可变 Casdoor User ID 继续作为稳定 `sub`。SAML 的注册锚点映射到 `$user.externalId`、Group 映射到 `$user.roles`。未知 SAML 来源被省略；SAML NameID 仍是用户名，Consumer 的稳定关联必须使用显式锚点属性。
 
+### 目录属性变更的实现侧
+
+与 README 的《目录属性变更说明》一一对应。本 Module 既是 Consumer（对 Samba AD）也是 Provider
+（对各应用）。
+
+**Consumer 侧（Casdoor ← Samba AD）**
+
+- **身份存在哪张表/哪个字段**：Casdoor `user` 表。`externalId` 列保存 Samba 永久锚点（匹配键），
+  Casdoor 自己不可变的 `id` 列不被 dirwatch 修改；`name` 列是用户名，`displayName`/`email` 是标签，
+  其余目录属性合并进 `properties`。
+- **匹配键怎么配出来的**：`hook/main.go` 把 `CASDOOR_LDAP_FILTER` 构造成
+  `(&<user class><enabled>(anasIdentityAnchor=*))`，并渲染
+  `CASDOOR_DIRWATCH_IDENTITY_ANCHOR_ATTRIBUTE`；`hook/iam.go` 的 `ldapCustomAttributes` 把锚点属性
+  登记为 LDAP 自定义属性。`anas_casdoor_dirwatch` 每批先读目录与 Casdoor 影子用户、**以永久锚点
+  关联改名用户**，再执行上游 LDAP 导入，最后收敛
+  `externalId/name/ldap/properties/groups/isForbidden/isDeleted`。
+- **每批同步刷新什么**：只为本批事件涉及的用户刷新 `displayName` 与 `email`；`properties` 只合并
+  不删除人工属性；密码与人工权限不被覆盖。`externalId` 与 `id` 不刷新。
+- **撤权经哪个接口**：dirwatch 使用 Module 自己的受管 Application 凭据调用**本地 Casdoor API**，
+  置 `isForbidden`/`isDeleted` 并清空 Group。它以只读方式跟随 `ANAS_DIRECTORY_EVENTS_DIR`，
+  按独立游标恢复、过滤并防抖；默认每 5 分钟的周期 LDAP 全量同步是兜底。
+- **技术阻碍**：无。Consumer 侧满足 `DIRKEY-R-002` 与 `DIRKEY-R-007`。本实现不启用 Casdoor 的
+  LDAP/AD 密码写回，也不把 Casdoor 本地用户记录当作目录权威。
+
+**Provider 侧（Casdoor → 各应用）**
+
+- **OIDC**：`JWT-Custom`/RS256。注册的锚点 claim 取自 `ExistingField` `ExternalId`
+  （`hook/iam.go` 的 `oidcTokenAttributes`），Group 由 Role 名称发出；**`sub` 是 Casdoor 不可变
+  User ID**，跨改名稳定但不是 anchor。
+- **SAML**：锚点映射到 `$user.externalId`、Group 映射到 `$user.roles`
+  （`hook/iam.go` 的 `samlAttributes`）；未知来源被省略，不会冒充永久锚点。**NameID 仍是用户名**，
+  因此 Consumer 的稳定关联必须使用显式锚点属性。
+- **`DIRKEY-R-008` 缺口与技术阻碍**：主体标识符（OIDC `sub` 与 SAML `NameID`）是否可配置成
+  `ExternalId`，**必须在固定版本 `3.143.0` 上跑探针确认**，不能凭上游文档定稿。SAML 一侧尤其要
+  看清楚：现有的四个受控补丁里已经有一个扩展了 SAML `displayName/externalId` 模板，说明改 NameID
+  可能同样需要补丁而不是配置。这是
+  [目录身份键实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md)
+  M2 第一项阻塞的另一半。按 `DIRKEY-R-012`，在它解开之前本 Provider 声明：Consumer 拿到的 OIDC
+  主体标识符是稳定的内部 id，SAML 主体标识符是**不稳定的标签**。
+
+**`DIRKEY-R-013` 投影结论：不适用（Provider 不是 Consumer）。** 本 Module 不消费别人的主体标识符。
+它在 `R-013` 里的角色是被验证的那一侧。需要注意的是，把 SAML NameID 切成 anchor 会让 anchor 进入
+断言的 NameID 字段，按 NameID 建号的 SAML Consumer 会因此在应用内产生 UUID 形态的用户 id——当前
+唯一的 SAML Consumer 是 `nextcloud`，它的 `uid_mapping` 显式取锚点属性并经
+`user_id_ldap_mapping` 解析回 LDAP 账号，不读 NameID，因此不受影响（见该 Module 技术文档的
+同名小节）。
+
 ## 管理面与 Secret 生命周期
 
 `admin_casdoor` 由本地账号 inventory 按默认 `admin_{module}` 模板管理；Casdoor 不需要 `fixed_username`。Apply/rotate Handler 通过 stdin 把候选密码送入容器 Helper，直接更新 bcrypt 值并回读验证；密码不进入 argv。轮换失败时恢复旧密码。

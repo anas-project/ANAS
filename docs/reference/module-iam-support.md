@@ -20,28 +20,37 @@ Module，都必须订阅 Samba 发布的持久目录事件，不能只等待定�
 也不免除会话撤销。下表中 `nextcloud` 与 `meshcentral` 已是双接入；`forgejo` 只接 OIDC——固定
 `15.0.7` 虽有 LDAP 用户同步，却没有按不可变 ID 把 OIDC 身份绑定到 LDAP 账号的接口，双接入无法
 安全成立，缺失方向与兜底见 [Forgejo Module 设计](/architecture/forgejo-module-design) §2.2，
-升级复核触发点见同文 §2.3；`vikunja` 当前仅接 OIDC，上游 LDAP 支持情况待 M0 盘点确认。准入丧失撤销当前无消费者验收：`casdoor` 的 exact-`sid` E2E 由
+升级复核触发点见同文 §2.3；`vikunja` 只接 OIDC，M1 盘点确认固定 `2.4.0` 没有 LDAP 用户同步，
+也没有可配置的身份 claim。准入丧失撤销当前无消费者验收：`casdoor` 的 exact-`sid` E2E 由
 管理员显式删 session 触发，不是目录事件驱动。
 
-| Module | 是否可用 OIDC 登录 | 当前认证路径 | 结论 |
-| --- | --- | --- | --- |
-| `netbird` | 是 | 直接消费 IAM/OIDC | 已实现 |
-| `oauth2_proxy` | 是 | 直接消费 IAM/OIDC，并为 ForwardAuth consumer 提供门禁 | 已实现 |
-| `ddns_updater` | 间接 | 经 `oauth2_proxy` + Traefik ForwardAuth | 已实现 |
-| `nextcloud` | 是 | 默认使用官方 `user_oidc`；LDAPS provision 用户/组；`user_saml` 保留为显式 fallback | 已实现；具体登出能力按下方固定版本/Provider 矩阵判定 |
-| `meshcentral` | 是 | IAM/OIDC 认证；LDAPS 同步用户/组；OIDC group 映射应用访问和 site-admin | 已实现 |
-| `forgejo` | 是 | IAM/OIDC JIT 建号；`APP_forgejo`/`APP_all` 门禁；管理员组映射 site-admin；保留托管 break-glass | developing；Manifest、Provider 注册、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 |
-| `vikunja` | 是 | IAM/OIDC JIT 建号；`APP_vikunja`/`APP_all` 门禁；本地认证和注册关闭 | developing；Manifest、Provider 注册、Secret、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 |
-| `lam` | 否 | LDAPS 目录管理登录 | 不属于当前 IAM consumer |
-| `authentik` | 不适用 | IAM provider；另有固定 `akadmin` break-glass | 提供 OIDC/SAML，不把自身当普通 consumer |
-| `casdoor` | 不适用 | release IAM provider；使用默认模板 `admin_casdoor` break-glass | OIDC/SAML 登录、Samba 目录收敛、永久 anchor、`ALLOW_GROUPS` 门禁、OIDC exact-`sid` 会话撤销、空 workspace 恢复、多架构生命周期及受管凭据轮换已有真实 E2E；固定版本不发布 SAML SLO |
-| `llng` | 不适用 | IAM provider | 提供 OIDC/SAML，不把自身当普通 consumer |
-| `ddns_go` | 否 | ANAS 托管 local emergency account | 不支持 OIDC |
-| `traefik` | 否 | ANAS 托管本地 BasicAuth emergency account | 不支持 OIDC |
-| `collabora` | 间接 | 由 Nextcloud/WOPI 集成，不提供独立用户登录 | 跟随 Nextcloud 会话 |
-| `postgres`, `mariadb` | 否 | 数据库凭据/Adminer | 不是 IAM 登录 |
-| `samba_dc`, `samba_fs` | 否 | AD/LDAP/Kerberos/SMB | 不是 OIDC Web consumer |
-| `eturnal`, `freeradius`, `lego` | 否 | TURN/RADIUS/无交互 UI | 不适用 |
+**「匹配键」列**记录每个 Module 持久化目录用户时**实际使用的键**，由
+[目录身份键要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-identity-key.md)
+`DIRKEY-R-011` 要求。它是摘要，不是结论来源：逐行证据等级（`已验证` / `推断`）、改名与回收的
+后果，以及每条缺口的兜底动作，都写在各 Module README 的《目录属性变更说明》里。IAM Provider
+分「消费侧」（它自己怎么认目录里的人）与「签发侧」（它发给 Consumer 的主体标识符是什么）两项，
+因为两者当前并不一致——签发侧尚未满足 `DIRKEY-R-008`，整改归
+[目录身份键实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md) M2。
+
+| Module | 是否可用 OIDC 登录 | 当前认证路径 | 结论 | 匹配键 |
+| --- | --- | --- | --- | --- |
+| `netbird` | 是 | 直接消费 IAM/OIDC | 已实现 | OIDC `sub`（`AuthUserIDClaim` 可配置）；随 Provider 而稳定 |
+| `oauth2_proxy` | 是 | 直接消费 IAM/OIDC，并为 ForwardAuth consumer 提供门禁 | 已实现 | 无持久键；透传 `sub`，控制台取 `sha256(issuer‖sub)` |
+| `ddns_updater` | 间接 | 经 `oauth2_proxy` + Traefik ForwardAuth | 已实现 | 无持久键；跟随网关 |
+| `nextcloud` | 是 | 默认使用官方 `user_oidc`；LDAPS provision 用户/组；`user_saml` 保留为显式 fallback | 已实现；具体登出能力按下方固定版本/Provider 矩阵判定 | 身份锚点（LDAP UUID 属性）；应用内 `uid` 另取 `sAMAccountName` |
+| `meshcentral` | 是 | IAM/OIDC 认证；LDAPS 同步用户/组；OIDC group 映射应用访问和 site-admin | 已实现 | 身份锚点，**直接作为用户 id**（OIDC `uuid` claim / `ldapUserKey`） |
+| `forgejo` | 是 | IAM/OIDC JIT 建号；`APP_forgejo`/`APP_all` 门禁；管理员组映射 site-admin；保留托管 break-glass | developing；Manifest、Provider 注册、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 | OIDC `sub`（存入 `login_name`）；随 Provider 而稳定 |
+| `vikunja` | 是 | IAM/OIDC JIT 建号；`APP_vikunja`/`APP_all` 门禁；本地认证和注册关闭 | developing；Manifest、Provider 注册、Secret、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 | OIDC `(issuer, sub)`；不可配置，随 Provider 而稳定 |
+| `lam` | 否 | LDAPS 目录管理登录 | 不属于当前 IAM consumer | 无持久键；每次登录按 `sAMAccountName` 检索后 bind DN |
+| `authentik` | 不适用 | IAM provider；另有固定 `akadmin` break-glass | 提供 OIDC/SAML，不把自身当普通 consumer | 消费侧：身份锚点（`object_uniqueness_field`）。签发侧：内部用户 UUID，**非 anchor** |
+| `casdoor` | 不适用 | release IAM provider；使用默认模板 `admin_casdoor` break-glass | OIDC/SAML 登录、Samba 目录收敛、永久 anchor、`ALLOW_GROUPS` 门禁、OIDC exact-`sid` 会话撤销、空 workspace 恢复、多架构生命周期及受管凭据轮换已有真实 E2E；固定版本不发布 SAML SLO | 消费侧：身份锚点（`externalId`）。签发侧：OIDC `sub` 为不可变 User ID；**SAML `NameID` 是用户名，改名即变** |
+| `llng` | 不适用 | IAM provider | 提供 OIDC/SAML，不把自身当普通 consumer | 消费侧：无副本。签发侧：`whatToTrace` = 小写 `sAMAccountName`，**`sub` 与 `NameID` 都是标签** |
+| `ddns_go` | 否 | ANAS 托管 local emergency account | 不支持 OIDC | 不适用（本地账号） |
+| `traefik` | 否 | ANAS 托管本地 BasicAuth emergency account | 不支持 OIDC | 不适用（本地账号） |
+| `collabora` | 间接 | 由 Nextcloud/WOPI 集成，不提供独立用户登录 | 跟随 Nextcloud 会话 | 不适用（无独立用户） |
+| `postgres`, `mariadb` | 否 | 数据库凭据/Adminer | 不是 IAM 登录 | 不适用（非目录用户） |
+| `samba_dc`, `samba_fs` | 否 | AD/LDAP/Kerberos/SMB | 不是 OIDC Web consumer | `samba_dc` 是目录本身；`samba_fs` 用对象 SID（`idmap backend = rid`） |
+| `eturnal`, `freeradius`, `lego` | 否 | TURN/RADIUS/无交互 UI | 不适用 | 不适用（无目录用户） |
 
 ## 固定版本登出矩阵
 

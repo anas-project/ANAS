@@ -53,6 +53,40 @@ Pinned MeshCentral `1.2.4` contains the upstream RP-logout fix and ANAS register
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes
+
+**Matching key**: `anasIdentityAnchor` — and it is **the MeshCentral user id itself**. On the OIDC
+side `oidc.custom.claims.uuid` points explicitly at the anchor claim (**not at `sub`**), so the stored
+account id has the form `user//~oidc:<anchor>`; on the LDAPS side `ldapUserKey` takes the anchor too.
+This is the only Module in the deployment whose two paths both anchor directly on the permanent
+identity key, so a rename, a new mail address, or an OU move never makes it mistake one person for
+another.
+
+The price is that the anchor appears in MeshCentral's account id — visible in the administrator's user
+list and in device-group authorization entries (a management view, which `DIRKEY-R-010` permits), not
+in URL paths an ordinary user sees.
+
+| Directory change | What MeshCentral does | Evidence |
+| --- | --- | --- |
+| `sAMAccountName` changes | Same account: the id is built from the anchor and has nothing to do with the username, so nothing is created and the id does not change. The displayed name comes from the `name` claim (`displayName`) and refreshes at the next login | account id equal to `user//~oidc:<anchor>`: `verified`, entry `test-env/scripts/server-authentik-oidc-login-e2e.sh` and `server-llng-oidc-login-e2e.sh` (asserted once per Provider); still hitting the same id after a rename: `inferred` (neither E2E renames anyone) |
+| `mail` changes | Refreshed from the `email` claim at login; it takes no part in account binding and no uniqueness constraint can make account creation fail over it | `inferred` |
+| `displayName` and other profile attributes | Refreshed from the `name` claim at **every login** | display name matching the directory: `verified`, same entry (asserts the MeshCentral account's `name` equals the directory `displayName`); "refreshed at every login": `inferred` |
+| Direct or recursive group membership changes | Authorization takes effect **at login** through the `groups` claim; `oidc.groups.sync = true` with `revokeAdmin = true` withdraws site administration at the same moment. Without a login nothing converges | administrator group mapping and withdrawal: `verified`, same entry (asserted through `siteadmin == 4294967295`); moment of convergence for group changes: `inferred` |
+| Account disabled | The next login is refused by the IAM, which decides admission. **Existing MeshCentral sessions do not expire**: the pinned `1.2.4` has no standard front-/back-channel logout receiver. Device connections and agents are not user credentials and are unaffected | absence of an IAM→Module receiver: `verified` (pinned-version capability review, see the logout matrix in [Module IAM / OIDC support](/en/reference/module-iam-support)); how long existing sessions survive: `inferred` |
+| Account deleted | As above, and the MeshCentral account keeps its device-group memberships untouched; **ownership of devices and device groups is never transferred automatically**, and `orphanAgentUser` only handles ownerless agents, not authorizations held by a deleted user | `inferred` |
+| Identifier recycled and reassigned | The newcomer's anchor differs, so they get an entirely new account and **can never land on the old one** (fail-closed). That is exactly the payoff of using the anchor as the id | `inferred` (resting on the verified fact that the id is built from the anchor) |
+
+**Fallback path** — what operations must do for every "no automatic path" row above:
+
+1. When a person is disabled or deleted in the directory, a site administrator must **delete or
+   disable that account in MeshCentral** (its id is `user//~oidc:<that user's anchor>`, obtainable with
+   `samba-tool user show <user> --attributes=anasIdentityAnchor`); otherwise their existing browser
+   session keeps working until it expires;
+2. Before deleting the account, transfer the device-group authorizations it holds to a successor;
+   MeshCentral does not hand them over on its own;
+3. When group revocation has to take effect immediately, terminate the user's MeshCentral session
+   rather than waiting for their next login.
+
 ## Administrator login and IAM-outage recovery
 
 There is no separate native recovery administrator or `management.local_accounts`; restore IAM and the directory path after an outage.

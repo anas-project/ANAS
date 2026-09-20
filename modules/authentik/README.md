@@ -48,6 +48,45 @@ Samba AD 是人员与组的事实来源。LDAP Source 通过 LDAPS 同步用户�
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更说明
+
+**匹配键**：`anasIdentityAnchor`，作为 LDAP Source 的 `object_uniqueness_field`。Authentik 把命中的
+anchor 值规范化进 `UserSourceConnection.identifier` 与用户的 `attributes.ldap_uniq`，改名、移动 OU、
+改邮箱都不会让同步认错人。用户过滤器 `(anasIdentityAnchor=*)` 还保证没有 anchor 的对象根本不会
+被同步进来。
+
+**它发给 Consumer 的主体标识符还不是 anchor（当前缺口）。** OIDC Provider 固定
+`sub_mode: user_uuid`，`sub` 是 Authentik 自己的内部用户 UUID。这个值同样跨改名稳定——因为绑定到
+它的 LDAP source 按 anchor 匹配——但它**不是可以直接拿去和目录对账的值**，Consumer 拿到 `sub` 后
+仍需要一张映射表才能回到目录。这是 `DIRKEY-R-008` 尚未满足的部分，整改归
+[目录身份键实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md)
+M2；阻碍是 `sub_mode` 是固定枚举，而 anchor 落在 `attributes.ldap_uniq`，能否被取成 `sub` 必须在
+真实固定版本上跑探针确认，不能凭上游文档定稿。
+
+明确请求 anchor 的 Consumer 可以拿到它：claim/attribute 映射把请求的锚点属性翻译成
+`request.user.attributes.get("ldap_uniq")`，OIDC 与 SAML 两条路都支持。`nextcloud` 与
+`meshcentral` 就是这样用的。
+
+| 目录侧变更 | Authentik 的行为 | 证据 |
+| --- | --- | --- |
+| `sAMAccountName` 改变 | 同一个 Authentik 用户：同步按 anchor 命中，不新建。Authentik 的 `username` 字段会刷新为新的 `sAMAccountName`，但它只是登录名与显示用，不是身份——`sub` 不受影响 | anchor 作为唯一性字段生效：`已验证`，入口 `test-env/scripts/server-authentik-oidc-login-e2e.sh`（断言 `UserSourceConnection.identifier == anchor`）；改名后 `username` 刷新且 `sub` 不变：`推断` |
+| `mail` 改变 | 由 `authentik default LDAP Mapping: mail` 在同步时刷新；不参与身份匹配 | `推断` |
+| `displayName` 与其他 profile 属性 | 由 `samba-ad-user-display-name-mapping` 等属性映射在同步时刷新 | 显示名与目录一致：`已验证`，入口同上（断言 Authentik `User.name` 等于目录 `displayName`）；刷新时机：`推断` |
+| 直接或递归组成员变更 | `lookup_groups_from_user: true` + 目录事件订阅：`anas_authentik_dirwatch` 跟随持久事件日志并触发增量同步，收敛时间是事件传播时间而不是下一次登录；周期全量同步保留为兜底。`Admins` 映射为 superuser | 组同步与 superuser 映射：`已验证`，入口同上；事件驱动的收敛时延：`推断` |
+| 账号停用 | 用户掉出 `user_object_filter`/登录流程，无法再通过 Authentik 认证，因此拿不到新 token。**已签发的 access/refresh token 与各 Consumer 的应用会话不会因此立即失效**——撤销范围见各 Consumer 的登出矩阵 | `推断` |
+| 账号删除 | `delete_not_found_objects: true`：同步发现对象消失后删除对应 Authentik 用户，连同其 source connection。**Consumer 侧的应用账号与资产不受影响**，必须逐个 Consumer 处理 | 配置值：`已验证`（blueprint 声明，见技术文档）；删除的实际传播时刻：`推断` |
+| 标识符回收再分配 | 新人的 anchor 不同，同步建出一个新的 Authentik 用户，**绝不会接上旧用户**（fail-closed）。若旧用户尚未被删除且 `username` 相同，Authentik 的用户名唯一约束会让同步失败——同样是 fail-closed | `推断` |
+
+**兜底路径**——上表每一行"无自动路径"对应的运维动作：
+
+1. 停用或删除目录账号后，**不要以为 Consumer 侧已经跟着收敛**。必须按各 Consumer 自己的
+   《目录属性变更说明》执行撤权动作（Forgejo 停用账号并吊销 token/SSH key、NetBird 删除 peer、
+   Nextcloud 删除 App 密码等）；Authentik 只能保证"这个人拿不到新 token"；
+2. 需要立即结束某人的中央会话时，在 Authentik 管理界面删除其 session；对已声明 back-channel
+   receiver 的 Consumer（`nextcloud`）这会按 `sid` 传播，对其余 Consumer 不会；
+3. **目录侧流程约束**：`sAMAccountName` 不得回收再分配。anchor 保证同步不会认错人，但回收的
+   用户名会在 Authentik 的用户名唯一约束上失败，表现为同步报错而不是安全事故。
+
 ## 管理员登录与 IAM 故障恢复
 
 日常管理员通过目录身份登录。固定用户名 `akadmin` 是 `break_glass` 恢复账号；它使用独立生成密码，不复用 Samba 或数据库管理员凭据。

@@ -56,6 +56,39 @@ LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍
 
 Nextcloud 的账号密码策略不另建一套规则：界面预检的最小长度来自 `samba_dc.user_min_pass_length`，复杂度、历史、最短/最长有效期和锁定策略由 Samba AD 最终执行。Nextcloud 自带的常见密码、HIBP 和字符类别账号校验会关闭，避免拒绝 Samba 本可接受的密码。共享链接密码使用独立的 Nextcloud 策略，不随目录账号策略变化。
 
+### 目录属性变更说明
+
+**匹配键**：`anasIdentityAnchor`。LDAP 后端把它配置为 `ldapExpertUUIDUserAttr`/
+`ldapExpertUUIDGroupAttr`，账号映射表 `oc_ldap_user_mapping.directory_uuid` 里存的就是 anchor 值，
+改名后不变。**但应用内用户 id（`oc_users.uid`）是 `sAMAccountName`**，它由
+`ldapExpertUsernameAttr` 决定，只在首次映射时写一次，此后即使目录改名也不会重写——文件数据目录
+`data/<uid>/`、分享链接和 `/ocs/.../users/<uid>` 里出现的都是这个旧用户名。两者的分工是刻意的：
+认人用 anchor，显示与路径用用户名。
+
+OIDC 模式下 `user_oidc` 的 `--mapping-uid=preferred_username`（即 `sAMAccountName`）把登录汇合到同一个
+`uid`；SAML 模式下 `general-uid_mapping` 与 `user_id_ldap_mapping` 都取 anchor，由 anchor 找回既有 LDAP
+账号。两条链路最终都落在同一条 LDAP 映射记录上。
+
+| 目录侧变更 | Nextcloud 的行为 | 证据 |
+| --- | --- | --- |
+| `sAMAccountName` 改变 | 同一账号：映射按 anchor 命中，不新建。应用内用户 id 与数据目录 `data/<uid>/` 冻结在旧用户名，URL 标识符不跟着变。**OIDC 模式下登录汇合键是 `preferred_username`**，改名后它与冻结的 `uid` 不再相等，能否仍汇合到原账号未经复核 | anchor 为映射键：`已验证`，入口 `test-env/scripts/server-authentik-oidc-login-e2e.sh`（断言 `oc_ldap_user_mapping.directory_uuid == anchor`）与 `server-llng-oidc-login-e2e.sh`；改名后的汇合行为：`推断` |
+| `mail` 改变 | 下次同步或登录时从 `ldapEmailAttribute` 刷新。它不参与账号绑定；Nextcloud 的邮箱没有全局唯一约束，不会因此建号失败 | `推断` |
+| `displayName` 与其他 profile 属性 | 从 `ldapUserDisplayName` 刷新，时机是 LDAP 同步与登录；不是实时 | 显示名与目录一致：`已验证`，入口同上（断言 `user:info .display_name == 目录 displayName`）；刷新时机：`推断` |
+| 直接或递归组成员变更 | `ldapNestedGroups=1`，授权在 LDAP 同步与登录时生效；`Admins` 经 `ldap:promote-group` 动态映射为应用管理员。订阅目录事件后可缩短到事件传播时间，但不是实时 | 组映射与管理员映射：`已验证`，入口同上；收敛时刻：`推断` |
+| 账号停用 | 登录被拒：`NEXTCLOUD_USER_LOGIN_FILTER` 含 `(!(userAccountControl:...=2))`。但**用户过滤器不含该条件**，账号在 Nextcloud 里继续存在；**已有 session、App 密码与 WebDAV/CalDAV 客户端凭据不经过登录过滤器，是否随之失效未经复核** | 登录过滤器含停用条件：`已验证`（Hook 渲染，见技术文档）；App 密码与已有 session 的结果：`推断` |
+| 账号删除 | 用户掉出用户过滤器，Nextcloud 按 `user_ldap` 的删除检测把它标为已删除并保留映射记录；**文件不会自动转交**，必须由管理员显式转移 | `推断` |
+| 标识符回收再分配 | 新人拿到回收的 `sAMAccountName` 时 anchor 不同，映射不会命中旧记录；但新人的 `uid` 会与旧账号已占用的 `uid` 相同，映射建立失败或落到旧数据目录 —— 结果未经复核，按 fail-open 对待 | `推断` |
+
+**兜底路径**——上表每一行"无自动路径"对应的运维动作：
+
+1. 停用目录账号后，必须在 Nextcloud 执行 `occ user:disable <uid>`，并在"设置 → 安全"里**删除该
+   用户的全部 App 密码与设备 token**；只靠目录停用不足以断开已配对的桌面/移动客户端；
+2. 删除目录账号前，先用 `occ files:transfer-ownership <uid> <接手人>` 转移文件，再删除账号；
+3. 组撤权要立即生效时，除等待同步外还要结束该用户已有的 Nextcloud session（删除其 App 密码与
+   session token）；
+4. **目录侧流程约束**：`sAMAccountName` 不得回收再分配。anchor 能保证"改名还是同一个人"，但
+   保证不了"回收的用户名不会撞上冻结在旧值的 `uid`"。
+
 ## 管理员登录与 IAM 故障恢复
 
 日常管理员通过 IAM 登录。`break_glass` 本地恢复账号默认用户名为 `admin_nextcloud`，直接入口为 `/login?direct=1`，可由 ANAS 查询和事务轮换。

@@ -55,6 +55,41 @@ Hook 把它解析成目录里管理员组的真实名称（`SAMBA_DC_ADMIN_GROUP
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更的实现侧
+
+与 README 的《目录属性变更说明》一一对应。
+
+- **身份存在哪张表/哪个字段**：网关侧没有。bootstrap（`oauth2_proxy/main.go`）从 oauth2-proxy 返回
+  的 ID Token 解出 `iss`、`sub`、`auth_time`、`exp` 与 `groups`/`roles`，校验后写成固定的
+  `X-Anas-Identity-*` 响应头，**不落盘、不缓存、不建映射**。后端侧的持久化在
+  `internal/consoleauth`：proxy session 记录保存 `Issuer` 与 `Subject` 两列
+  （`internal/consoleauth/state.go`），审计事件保存 `IdentityIssuer`/`IdentitySubject`。
+- **匹配键**：`sha256(issuer ‖ "\0" ‖ subject)`，前缀 `oidc:`，见
+  `internal/api/httpapi/proxy_authorizer.go` 的 `proxyPrincipal` 与
+  `internal/consoleauth/job_owner.go`。取摘要而不是原值，是为了让 principal id 与作业归属键不
+  携带任何可识别的目录标签。
+- **每次请求重新判定什么**：`iss` 必须等于期望 issuer、`sub` 非空且不含分隔字符、语义角色必须是
+  `platform_admin`、目录组必须等于期望组、`exp` 必须晚于 `now` 与 `auth_time`。任一不满足即
+  `ErrUnauthenticated`。这不是"登录时判定一次"，而是每个 ForwardAuth 请求都判。
+- **撤权经哪个接口**：没有网关侧接口。撤权只能在 IAM 侧完成（结束会话、移出管理员组），生效时延
+  等于 ID Token 的剩余 TTL。`/oauth2/sign_out` 只清网关 Cookie，不结束 IAM 或后端 session。
+- **对账或事件订阅路径**：没有，也不需要——网关无状态，控制台的 proxy session 有独立过期。
+- **没有自动路径的地方，技术阻碍是什么**：**刻意不配 `backend-logout-url`**。固定 `7.15.3` 的该
+  选项会在清除本地 Cookie 之前向 IAM 发一个无超时请求，IAM 故障时本地登出会挂住；用"IAM 停止仍
+  能清 Cookie"换掉了"登出时顺带通知后端"。这是权衡，不是缺能力。
+
+**`DIRKEY-R-013` 投影结论：不受影响（`已验证`）。** 主体标识符在这条链路上只出现在两个地方：
+HTTP 响应头 `X-Anas-Identity-Subject`（进程间传递，不是用户可见的 URL），以及控制台的 proxy
+session 记录与审计事件（内部绑定字段与管理视图，`DIRKEY-R-010` 明确允许）。**principal id 与作业
+归属键取的是摘要，不是原值**，因此即使主体标识符变成 anchor，UUID 也不会出现在任何 id、用户名或
+URL 路径里。入口：`internal/consoleauth/job_owner_test.go` 的
+`TestJobOwnerProxyIsLocallyBoundAndNeverRenews` 直接按 `"oidc:" + hex(sha256(issuer ‖ subject))`
+构造期望 actor 并断言匹配；`modules/oauth2_proxy/oauth2_proxy/main_test.go` 断言伪造的
+`X-Anas-Identity-Subject` 请求头会被剥除、不可能冒充。
+
+本 Module 因此**不构成 M2 的阻塞项**：`DIRKEY-R-013` 要求逐个 Consumer 验证的投影，在这里已经由
+摘要设计排除。
+
 ## 管理面与 Secret 生命周期
 
 没有本地管理员或 IAM 故障绕过账号。故障时应恢复 IAM，而不是暴露受保护服务。

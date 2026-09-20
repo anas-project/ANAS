@@ -48,6 +48,52 @@ Pinned Authentik `2026.5.6` prefers OIDC back-channel logout for consumers that 
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes
+
+**Matching key**: `anasIdentityAnchor`, as the LDAP Source's `object_uniqueness_field`. Authentik
+normalizes the matched anchor value into `UserSourceConnection.identifier` and the user's
+`attributes.ldap_uniq`, so a rename, an OU move, or a new mail address never makes the sync mistake
+one person for another. The user filter `(anasIdentityAnchor=*)` further guarantees that objects
+without an anchor are never synchronized in at all.
+
+**The subject identifier it issues to Consumers is not yet the anchor (the current gap).** The OIDC
+Provider is pinned to `sub_mode: user_uuid`, so `sub` is Authentik's own internal user UUID. That
+value is equally stable across a rename — because the LDAP source it is bound to matches on the
+anchor — but it is **not a value that can be reconciled against the directory directly**: a Consumer
+holding `sub` still needs a mapping table to get back to the directory. This is the part of
+`DIRKEY-R-008` not yet satisfied, and remediation belongs to M2 of the
+[directory identity key plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md).
+The obstacle is that `sub_mode` is a fixed enumeration while the anchor lives in
+`attributes.ldap_uniq`; whether it can be made the `sub` must be settled by a probe against the real
+pinned version, not from upstream documentation.
+
+Consumers that request the anchor explicitly do receive it: the claim/attribute mapping translates the
+requested anchor attribute into `request.user.attributes.get("ldap_uniq")`, and both the OIDC and the
+SAML path support it. `nextcloud` and `meshcentral` use it exactly this way.
+
+| Directory change | What Authentik does | Evidence |
+| --- | --- | --- |
+| `sAMAccountName` changes | The same Authentik user: the sync matches on the anchor and creates nothing. Authentik's `username` field is refreshed to the new `sAMAccountName`, but that is a login name for display, not an identity — `sub` is unaffected | the anchor taking effect as the uniqueness field: `verified`, entry `test-env/scripts/server-authentik-oidc-login-e2e.sh` (asserts `UserSourceConnection.identifier == anchor`); `username` refreshing while `sub` stays put after a rename: `inferred` |
+| `mail` changes | Refreshed at sync by `authentik default LDAP Mapping: mail`; takes no part in identity matching | `inferred` |
+| `displayName` and other profile attributes | Refreshed at sync by `samba-ad-user-display-name-mapping` and the other property mappings | display name matching the directory: `verified`, same entry (asserts Authentik's `User.name` equals the directory `displayName`); refresh timing: `inferred` |
+| Direct or recursive group membership changes | `lookup_groups_from_user: true` plus directory event subscription: `anas_authentik_dirwatch` follows the persistent event journal and triggers an incremental sync, so convergence takes the event propagation time rather than waiting for the next login; the periodic full sync remains the fallback. `Admins` maps to superuser | group sync and superuser mapping: `verified`, same entry; event-driven convergence latency: `inferred` |
+| Account disabled | The user drops out of `user_object_filter` and the login flow, can no longer authenticate through Authentik, and therefore obtains no new tokens. **Already-issued access/refresh tokens and each Consumer's application session do not expire because of this** — for the revocation scope see each Consumer's logout matrix | `inferred` |
+| Account deleted | `delete_not_found_objects: true`: once the sync finds the object gone it deletes the corresponding Authentik user along with its source connection. **Application accounts and assets on the Consumer side are unaffected** and must be handled Consumer by Consumer | the configured value: `verified` (declared in the blueprint, see the technical document); when the deletion actually propagates: `inferred` |
+| Identifier recycled and reassigned | The newcomer's anchor differs, so the sync creates a new Authentik user and **can never land on the old one** (fail-closed). If the old user has not been deleted and carries the same `username`, Authentik's username uniqueness constraint makes the sync fail — also fail-closed | `inferred` |
+
+**Fallback path** — what operations must do for every "no automatic path" row above:
+
+1. After disabling or deleting a directory account, **do not assume the Consumers have converged with
+   it**. Carry out each Consumer's own *Directory attribute changes* revocation actions (disable the
+   Forgejo account and revoke its tokens and SSH keys, delete NetBird peers, delete Nextcloud app
+   passwords, and so on); all Authentik can guarantee is that the person obtains no new tokens;
+2. To end someone's central session immediately, delete their session in the Authentik management
+   interface; for Consumers that declare a back-channel receiver (`nextcloud`) this propagates by
+   `sid`, and for the others it does not;
+3. **Directory-side process constraint**: `sAMAccountName` must never be recycled. The anchor keeps
+   the sync from mistaking one person for another, but a recycled username collides with Authentik's
+   username uniqueness constraint and surfaces as a sync error rather than a security incident.
+
 ## Administrator login and IAM-outage recovery
 
 Routine administrators sign in with directory identities. Fixed user `akadmin` is the `break_glass` recovery account and has an independently generated password.

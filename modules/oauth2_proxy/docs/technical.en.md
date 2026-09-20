@@ -59,6 +59,51 @@ Pinned `7.15.3` limits `/oauth2/sign_out` to clearing the oauth2-proxy gateway c
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*.
+
+- **Which table and field persist identity**: none on the gateway side. The bootstrap
+  (`oauth2_proxy/main.go`) decodes `iss`, `sub`, `auth_time`, `exp`, and `groups`/`roles` from the ID
+  Token oauth2-proxy returns, verifies them, and writes the fixed `X-Anas-Identity-*` response
+  headers — **nothing is written to disk, cached, or mapped**. Persistence on the backend side lives
+  in `internal/consoleauth`: the proxy session record stores `Issuer` and `Subject`
+  (`internal/consoleauth/state.go`) and audit events store `IdentityIssuer`/`IdentitySubject`.
+- **Matching key**: `sha256(issuer ‖ "\0" ‖ subject)` prefixed with `oidc:`, in `proxyPrincipal`
+  (`internal/api/httpapi/proxy_authorizer.go`) and `internal/consoleauth/job_owner.go`. Taking a
+  digest rather than the raw value keeps the principal id and the job-ownership key free of any
+  recognizable directory label.
+- **Re-decided on every request**: `iss` must equal the expected issuer; `sub` must be non-empty and
+  free of separator characters; the semantic role must be `platform_admin`; the directory group must
+  equal the expected group; and `exp` must be later than both `now` and `auth_time`. Any failure
+  yields `ErrUnauthenticated`. This is not a decision taken once at login — every ForwardAuth request
+  is judged.
+- **Which interface performs revocation**: none on the gateway side. Revocation happens only on the
+  IAM (end the session, remove from the administrator group), and it takes effect after the ID
+  Token's remaining TTL. `/oauth2/sign_out` clears the gateway cookie only and ends neither the IAM
+  nor the backend session.
+- **Reconciliation or event-subscription path**: none, and none is needed — the gateway is stateless
+  and the console's proxy session has its own expiry.
+- **Where there is no automatic path, the technical obstacle**: `backend-logout-url` is **deliberately
+  left unconfigured**. In the pinned `7.15.3` that option sends an untimed request to the IAM before
+  clearing the local cookie, so local logout hangs when the IAM is down; "the cookie still clears when
+  the IAM is stopped" was traded for "logout also notifies the backend". That is a trade-off, not a
+  missing capability.
+
+**`DIRKEY-R-013` projection verdict: unaffected (`verified`).** The subject identifier appears in
+exactly two places along this path: the `X-Anas-Identity-Subject` HTTP response header (passed between
+processes, not a user-visible URL), and the console's proxy session record and audit events (an
+internal binding field and a management view, which `DIRKEY-R-010` explicitly permits). **The
+principal id and the job-ownership key take a digest rather than the raw value**, so even once the
+subject identifier becomes the anchor, no UUID appears in any id, username, or URL path. Entry points:
+`TestJobOwnerProxyIsLocallyBoundAndNeverRenews` in `internal/consoleauth/job_owner_test.go` builds the
+expected actor as `"oidc:" + hex(sha256(issuer ‖ subject))` and asserts the match;
+`modules/oauth2_proxy/oauth2_proxy/main_test.go` asserts that a forged `X-Anas-Identity-Subject`
+request header is stripped and cannot be spoofed.
+
+This Module is therefore **not a blocker for M2**: the projection `DIRKEY-R-013` asks each Consumer to
+verify is already excluded here by the digest design.
+
 ## Management surfaces and secret lifecycle
 
 There is no local administrator or IAM-outage bypass account. Restore IAM rather than exposing protected services.

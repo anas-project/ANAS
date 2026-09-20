@@ -96,6 +96,33 @@ access token 与 SSH key 不经过登录，所以"下次登录才收敛"对它�
 **尚未复核**：固定版本的 `prohibit_login` 是否同时关闭 access token 与 Git over SSH。在有探针结论之前，
 撤权流程按"停用账号并显式吊销其 token 与 SSH key"执行，见[互操作基线](/developer/forgejo-interop) §4。
 
+### 目录属性变更的实现侧
+
+与 README 的《目录属性变更说明》一一对应。
+
+- **身份存在哪里**：Forgejo 的 `user` 表。OIDC `sub` 落在 `login_name` 列，`name` 列是
+  `preferred_username`、`email` 列是 `mail`，两者都只在 JIT 建号时写入。另有
+  `external_login_user` 关联 OAuth2 source 与同一个 `sub`。Module 不持有任何目录副本。
+- **匹配键**：`login_name` 里的 `sub`。Module 自己不选择这个键，它由上游的 OAuth2 source 实现
+  固定；固定版本没有"按 anchor claim 绑定既有账号"的配置项，这就是 §2.2 里双链路不成立的原因。
+- **每次登录刷新什么**：groups 声明 → team 与站点管理员映射。**不刷新**用户名、邮箱和显示名。
+- **撤权经哪个接口**：没有。Module 不注册目录事件 watcher，固定版本也没有 IAM 主动 logout
+  receiver，因此没有任何自动撤权接口。撤权只能由管理员经 Forgejo 管理端或 CLI 执行。
+- **对账路径**：当前没有。可解开的入口见下一条。
+- **技术阻碍**：上游 OAuth2 source 不接受可配置的身份字段，`ACCOUNT_LINKING` 只能按用户名或
+  邮箱回退绑定。这是 `DIRKEY-R-004` 意义上的缺口，按 `DIRKEY-R-005` 在每次变更固定版本时复核
+  （复核触发点即 `FORGEJO-R-066`）。
+
+**`DIRKEY-R-013` 投影结论：不受影响（`推断`）。** Forgejo 把 `sub` 存进 `login_name`，这是一个
+只对站点管理员可见的内部字段；应用内用户名取 `preferred_username`，URL 与仓库路径用的是这个
+用户名，不是 `sub`。因此 M2 把主体标识符切成 anchor 之后，界面上不会出现 UUID，Forgejo 无需先
+改造。**尚未探针复核**：`login_name` 是否确实收 `sub` 原值、管理端用户列表是否回显它。复核入口
+应加进 `test-env/scripts/forgejo-agent-api-probe.sh`，在 M2 切换前执行。
+
+切换完成后这里会多出一条现在没有的能力：`login_name` 里的值将直接是 anchor，列出 Forgejo 的外部
+账号、与目录准入集合取差、对差集撤权即可精确对账，不会误伤改过名的在职者。这条路不需要 LDAP
+source，也不改变账号的产生方式。
+
 ## 本地恢复与 Secret 边界
 
 `break_glass` 使用 ANAS `generated_per_module` 密码，默认用户 `admin_forgejo`。`local_account_apply`

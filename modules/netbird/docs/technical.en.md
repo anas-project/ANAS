@@ -51,6 +51,51 @@ Pinned Dashboard `2.90.9` drives RP logout from the discovery endpoint. The unif
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*.
+
+- **Which table and field persist identity**: NetBird management's own data store, where the user id
+  is the ID Token's `sub`. The Module keeps no directory replica and no mapping table.
+- **How the matching key is configured**: `hook/main.go` renders
+  `NETBIRD_AUTH_USER_ID_CLAIM = "sub"` and `management.json.envsubst` substitutes it into
+  `AuthUserIDClaim`. **That field is configurable** — upstream accepts any claim name, which is the
+  key difference between NetBird and Forgejo or Vikunja: it has no "missing configurable identity
+  field" gap in the sense of `DIRKEY-R-004`.
+- **Refreshed at each login**: not re-checked. The Module registers the `name`, `cn`,
+  `sAMAccountName`, and `email` claims, but whether upstream overwrites an existing user row with them
+  has not been verified on the pinned version.
+- **Which interface performs revocation**: only the Provider's admission decision. The pinned
+  Dashboard `2.90.9` has no IAM→Module notification endpoint; peers and setup keys are managed by the
+  NetBird management API and can only be revoked explicitly through the management interface or that
+  API.
+- **Reconciliation or event-subscription path**: none. The Module keeps no directory replica and falls
+  outside the directory event subscription requirement.
+- **Where there is no automatic path, the technical obstacle**: a **missing receiver**, not a missing
+  immutable id. Upstream has no OIDC back-channel logout endpoint and no interface that disables peers
+  in bulk from directory state. Peer credentials are long-lived credentials NetBird issues itself and
+  by design never pass through an interactive login, so no "converges at the next sign-in" mechanism
+  applies to them.
+
+**`DIRKEY-R-013` projection verdict: a projection exists and must be re-checked before the M2 switch
+(`inferred`).** NetBird uses `sub` directly as the user id, the management API's user resources sit at
+paths of the form `/api/users/{userId}`, and the Dashboard's user-management view locates users by
+that same id. So once the subject identifier becomes the anchor, **UUIDs appear in management API URL
+paths and in administrator views**. Whether that counts as the "identifier in a URL" `DIRKEY-R-010`
+forbids depends on whether the path is a management view or an interface ordinary users see — a
+management view is permitted, a URL ordinary users see is not.
+
+This has not been re-checked and **must be verified before the M2 switch**. Both viable routes are
+already available:
+
+1. Keep `AuthUserIDClaim = "sub"` and verify that UUIDs appear only in the management API and
+   administrator views;
+2. Point `AuthUserIDClaim` at a stable claim unrelated to the anchor, letting the anchor arrive only
+   as an ordinary claim.
+
+Route 1 is preferred: it makes NetBird's user id a value that can be reconciled against the directory
+directly, which is exactly the effect `DIRKEY-R-008` is after.
+
 ## Management surfaces and secret lifecycle
 
 There is no supported private recovery administrator or documented IAM-bypass entry.

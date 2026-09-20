@@ -41,6 +41,35 @@ LAM 直接通过 LDAPS 工作。主登录页使用操作者自己的目录用户
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更说明
+
+**匹配键：没有——本 Module 不持久化任何目录用户。** LAM 是目录管理界面，不是有账号的应用：
+`loginMethod = search` 让它每次登录都用受限服务账号按
+`(&(objectCategory=person)(objectClass=user)(!(userAccountControl:...=2))(sAMAccountName=%USER%)(memberOf:1.2.840.113556.1.4.1941:=<Admins DN>))`
+在目录里查人，再以查到的 **DN** 用操作者自己的密码 bind。会话期内的身份就是那个 DN，会话结束即
+消失；没有用户表、没有映射表、没有影子账号。
+
+`sAMAccountName` 在这里是**登录名**——`DIRKEY-R-001` 允许标签用于登录和搜索，禁止的是把它当作
+持久身份键。本 Module 没有持久身份键，因此不存在改名认错人的问题。同理，实际的目录写权限由
+操作者自己的 AD ACL 裁决，LAM 不维护第二套权限记录。
+
+| 目录侧变更 | LAM 的行为 | 证据 |
+| --- | --- | --- |
+| `sAMAccountName` 改变 | 旧名立即无法登录，新名立即可以；没有任何要跟着改的应用内状态。界面里显示的用户列表直接来自目录，改名即刻可见 | `推断`（依据登录过滤器按 `sAMAccountName=%USER%` 实时检索；改名用例未在 E2E 中覆盖） |
+| `mail` 改变 | 不参与登录或授权；作为被管理的目录属性直接显示 | `已验证`（`configure.php` 的登录过滤器与 `attr_user` 列表中 `mail` 仅为展示列） |
+| `displayName` 与其他 profile 属性 | 同上，直接来自目录，不缓存 | `已验证`（同上） |
+| 直接或递归组成员变更 | **下次登录立即生效**：登录过滤器含 `memberOf:1.2.840.113556.1.4.1941:=<Admins DN>`，递归成员资格在每次登录时重新判定。移出 `Admins` 即无法登录 | `已验证`，入口 `test-env/scripts/server-lam-admins-e2e.sh`（"Admins membership enables login"、"removing Admins membership revokes login" 各一次） |
+| 账号停用 | 登录过滤器含 `(!(userAccountControl:...=2))`，停用后立即无法登录；重新启用后立即恢复 | `已验证`，入口同上（"disabled members stay rejected"） |
+| 账号删除 | 同上，且没有任何应用内资产需要转交 | `推断` |
+| 标识符回收再分配 | 新人拿到回收的 `sAMAccountName` 后，只要他也是 `Admins` 成员就能登录——**但他得到的是目录赋予他的权限，不是旧人的任何遗留状态**，因为 LAM 不保存状态。不构成身份混淆 | `推断` |
+
+**兜底路径**：上表**没有"无自动路径"的行**。撤权的唯一动作是在目录里停用账号或移出 `Admins`，
+下次登录即生效。需要立即结束已登录会话时，重启 `lam` 容器即可——会话只存在于 PHP 会话存储中，
+没有需要保留的应用状态。
+
+`admin_password` 保护的是 LAM 自身的 configuration/profile 编辑面，与目录身份无关；它不是任何
+目录用户的凭据，也不受本章任何一行影响。
+
 ## 管理员登录与 IAM 故障恢复
 
 `admin_password` 保护 LAM configuration/profile 编辑面，并不是普通目录管理员密码。该凭据尚未建模为 `management.local_accounts`。

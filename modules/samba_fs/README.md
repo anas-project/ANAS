@@ -40,6 +40,41 @@ SMB 客户端直接使用目录身份。`FS Share RW`/`FS Admins` 等 Group 控�
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更说明
+
+**匹配键：对象 SID（经 `idmap backend = rid` 投影成 POSIX UID/GID）。** 本 Module 以
+`security = ADS` / `server role = MEMBER SERVER` 加入域，不保存用户副本；文件的归属与 NT ACL 落在
+文件系统上，键是 SID：`idmap config <WORKGROUP> : backend = rid` 把 SID 的 RID 部分确定性地映射成
+UID/GID，`vfs objects = acl_xattr` 把 NT ACL 以 SID 形式写进 `security.NTACL` 扩展属性。
+
+SID 与 `anasIdentityAnchor` 都是不可变键，改名不改变它们，因此**文件归属与 ACL 跨改名稳定**，
+满足 `DIRKEY-R-002` 的判据。（两者的差别在 anchor 能跨森林重建存活而 SID 不能；这与本 Module
+无关，SMB 协议本来就只认 SID。）
+
+**但有一个标签被投影进了文件路径。** `[Home]` 共享的 `path = /userdata/Home/%U`，`%U` 是会话
+用户名（`sAMAccountName`）。这不是身份键——归属仍按 UID——但它决定**目录叫什么名字**，改名后
+会出现下表第一行的后果。
+
+| 目录侧变更 | samba_fs 的行为 | 证据 |
+| --- | --- | --- |
+| `sAMAccountName` 改变 | 文件归属与 ACL 不变（键是 SID/UID）。但 `[Home]` 的路径 `/userdata/Home/%U` 跟着新名走：**该用户再登录会拿到一个新建的空家目录**，旧目录留在 `/userdata/Home/<旧名>`，仍归他的 UID 所有但从共享里看不见。共享目录不受影响 | 路径按 `%U` 展开、登录时按需建目录：`已验证`（`smb.conf.envsubst` 的 `[Home]` 与 `samba_create_user_dir.sh`）；改名后的实际表现：`推断`（无改名 E2E） |
+| `mail` 改变 | 完全不参与；SMB 不使用邮箱 | `已验证`（`smb.conf.envsubst` 与 Hook 均不消费 `mail`） |
+| `displayName` 与其他 profile 属性 | 不参与，也不缓存 | `已验证`（同上） |
+| 直接或递归组成员变更 | 由 winbind 解析，`winbind expand groups = 2` 展开两层嵌套。`valid users`/`write list`/`admin users` 与 POSIX ACL 都按组名与组 GID 判定。收敛受 winbind 的缓存 TTL 与用户已有 SMB 会话影响，**不是实时** | 组驱动授权：`已验证`（`smb.conf.envsubst` 的 `valid users`/`write list` 与 `fix_perm.sh` 的 `setfacl`）；收敛时延：`推断` |
+| 账号停用 | 新的 SMB 认证失败（Kerberos/NTLM 由 DC 裁决）。**已建立的 SMB 会话不会被踢掉**，winbind 也不会主动断开；`winbind refresh tickets = Yes` 只在票据有效期内续期 | `推断` |
+| 账号删除 | 同上。**文件全部保留**，归属仍是那个已不存在的 UID，在 `ls -l` 里显示为裸数字；家目录与其在共享里留下的文件都不会自动转交 | `推断` |
+| 标识符回收再分配 | **fail-open 风险在这里是真实的**：新人拿到回收的 `sAMAccountName` 后，若 AD 也把同一个 RID 重新分配（AD 正常不回收 RID，但域重建或 SID 历史迁移会），新人的 UID 会与旧人相同，从而**继承旧人全部文件的所有权**。即使 RID 不同，新人登录也会拿到 `/userdata/Home/<回收的名字>` 这个路径——如果旧目录还在，他会看到一个不属于自己 UID 的目录（无权读，但存在） | `推断` |
+
+**兜底路径**——上表每一行"无自动路径"对应的运维动作：
+
+1. 停用或删除目录账号后，**必须主动断开其已建立的 SMB 会话**：在容器内执行
+   `smbcontrol smbd close-share <share>`，或重启 `samba_fs` 容器；仅在 AD 停用不会踢掉在线会话；
+2. 删除目录账号前，先把 `/userdata/Home/<用户名>` 与其在共享里的文件转交给接手人
+   （`chown -R` 到新属主），再删除账号；否则文件会挂在一个不再解析的 UID 上；
+3. **改名后要人工迁移家目录**：把 `/userdata/Home/<旧名>` 重命名为 `/userdata/Home/<新名>`，
+   否则用户会看到一个空的新家目录。这一步没有自动路径；
+4. **目录侧流程约束**：`sAMAccountName` 不得回收再分配，且不得在域重建后重用 RID。
+
 ## 管理员登录与 IAM 故障恢复
 
 没有 Web 管理员或本地恢复账号。目录或域加入故障时需恢复 Samba AD 链路。

@@ -75,6 +75,47 @@ Pinned `1.2.4` uses the upstream RP-logout implementation and the registered pos
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*.
+
+- **Which table and field persist identity**: documents with `type = "user"` in the MeshCentral
+  database's `main` table, whose primary key `id` has the form `user//~oidc:<anchor>`. There is no
+  second mapping table — **the id is the matching key**.
+- **How the matching key is configured**: `meshcentral/configure.js` sets
+  `oidc.custom.claims.uuid = SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE`, making upstream build the user id
+  from the anchor claim rather than from `sub`; the same file sets `domain.ldapUserKey` to the anchor
+  as well, and `config.base.json` carries the same default. The Module therefore requests the anchor
+  claim explicitly in `ANAS_IAM_CLIENT__MESHCENTRAL__ATTRIBUTES`, and a Provider that cannot supply it
+  must fail closed per `DIRKEY-R-009`.
+- **Refreshed at each login**: `name` (display name), `email`, and the site-administrator and access
+  authorizations driven by the `groups` claim (`oidc.groups.sync = true`, `revokeAdmin = true`). The
+  id is **not** refreshed — by definition it does not change.
+- **Which interface performs revocation**: only the Provider's admission decision
+  (`oidc.groups.required`). The pinned `1.2.4` has no front-/back-channel logout receiver, so no
+  interface acts on **existing sessions** at all.
+- **Reconciliation or event-subscription path**: the LDAPS configuration is still present
+  (`domain.auth = "ldap"`, `ldapSyncWithUserGroups`), but the OIDC-only patch closes the password login
+  form, so the LDAP login path is unreachable; what remains of it is directory users/groups
+  provisioning. **The id form of an account created through the LDAP side (presumably
+  `user//~ldap:<anchor>`) has not been re-checked**, and therefore neither has whether the two paths
+  land on the same id — the current E2E covers the OIDC side only.
+- **Where there is no automatic path, the technical obstacle**: a missing receiver. Upstream exposes
+  neither an OIDC back-channel logout endpoint nor an externally callable "end sessions by id" API, so
+  after disabling a person an administrator must delete or disable the account in the web management
+  interface. This is not a missing immutable id — there is one here — it is a missing revocation
+  interface.
+
+**`DIRKEY-R-013` projection verdict: unaffected, and already in M2's target shape (`verified`).**
+MeshCentral reads the explicit anchor claim and **never reads `sub`**, so switching the subject
+identifier to the anchor in M2 is a no-op for it. More usefully, it already runs the "anchor directly
+as the in-application user id" shape and is thus a working demonstration of `DIRKEY-R-010`: the anchor
+appears in the account id and in administrator views, and never in a login name, a display name, or a
+URL path an ordinary user sees. Entry point: both
+`test-env/scripts/server-authentik-oidc-login-e2e.sh` and `server-llng-oidc-login-e2e.sh` assert
+`mesh_user_id == "user//~oidc:$anchor"` directly, and the same assertion holds under two different
+Providers — which also proves the id does not vary with the Provider's `sub` format.
+
 ## Management surfaces and secret lifecycle
 
 There is no separate native recovery administrator or `management.local_accounts`; restore IAM and the directory path after an outage.

@@ -53,6 +53,34 @@ identity:
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更说明
+
+**匹配键**：`anasIdentityAnchor`，而且是**直接作为 MeshCentral 的用户 id**。OIDC 侧
+`oidc.custom.claims.uuid` 显式指向 anchor claim（**不是 `sub`**），落库的账号 id 形如
+`user//~oidc:<anchor>`；LDAPS 侧 `ldapUserKey` 同样取 anchor。这是本部署里唯一一个两条链路都直接
+锚定在永久身份键上的 Module，改名、换邮箱、移动 OU 都不会让它认错人。
+
+代价是 anchor 会出现在 MeshCentral 的账号 id 上——它出现在管理员的用户列表与设备组授权条目里
+（`DIRKEY-R-010` 允许的管理视图），不出现在普通用户可见的 URL 路径里。
+
+| 目录侧变更 | MeshCentral 的行为 | 证据 |
+| --- | --- | --- |
+| `sAMAccountName` 改变 | 同一账号：id 由 anchor 构成，与用户名无关，不新建也不改 id。界面显示名来自 `name` claim（`displayName`），下次登录刷新 | 账号 id 等于 `user//~oidc:<anchor>`：`已验证`，入口 `test-env/scripts/server-authentik-oidc-login-e2e.sh` 与 `server-llng-oidc-login-e2e.sh`（两个 Provider 各断言一次）；改名后仍命中同一 id：`推断`（两个 E2E 都未改名） |
+| `mail` 改变 | 从 `email` claim 刷新，时机是登录；它不参与账号绑定，没有唯一性约束会因此让建号失败 | `推断` |
+| `displayName` 与其他 profile 属性 | 从 `name` claim 在**每次登录**刷新 | 显示名与目录一致：`已验证`，入口同上（断言 MeshCentral 账号 `name` 等于目录 `displayName`）；"每次登录都刷新"：`推断` |
+| 直接或递归组成员变更 | 授权在**登录时**经 `groups` claim 生效；`oidc.groups.sync = true` 与 `revokeAdmin = true` 使站点管理员在同一时刻收回。不登录不收敛 | 管理员组映射与收回：`已验证`，入口同上（按 `siteadmin == 4294967295` 断言）；组变更的收敛时刻：`推断` |
+| 账号停用 | 下次登录被 IAM 拒绝（准入在 Provider 侧判定）。**已有 MeshCentral 会话不会失效**：固定 `1.2.4` 没有标准 front/back-channel logout receiver。设备连接与 agent 不属于用户凭据，不受影响 | 无 IAM→Module receiver：`已验证`（固定版本能力审查，见[Module IAM / OIDC 支持清单](/reference/module-iam-support)的登出矩阵）；已有会话的存活时长：`推断` |
+| 账号删除 | 同上，MeshCentral 账号连同其设备组成员资格原样保留；**设备与设备组的归属不会自动转移**，`orphanAgentUser` 只处理无主 agent，不处理已被删除用户名下的授权 | `推断` |
+| 标识符回收再分配 | 新人的 anchor 不同，得到一个全新账号，**绝不会接上旧账号**（fail-closed）。这正是 anchor 作为 id 的收益 | `推断`（依据 id 由 anchor 构成这一已验证事实） |
+
+**兜底路径**——上表每一行"无自动路径"对应的运维动作：
+
+1. 目录里停用或删除一个人时，必须在 MeshCentral 以 site administrator 身份**删除或禁用该账号**
+   （账号 id 就是 `user//~oidc:<该用户的 anchor>`，可用 `samba-tool user show <user>
+   --attributes=anasIdentityAnchor` 取到），否则其已有浏览器会话在会话过期前一直可用；
+2. 删除账号前，先把它拥有的设备组授权转移给接手人；MeshCentral 不会自动转交；
+3. 组撤权要立即生效时，除等待下次登录外还要在 MeshCentral 结束该用户的会话。
+
 ## 管理员登录与 IAM 故障恢复
 
 没有单独的原生恢复管理员，也没有 `management.local_accounts`。IAM 故障时需要恢复 IAM/目录链路。

@@ -100,6 +100,41 @@ them. Revocation has to act on the account itself.
 Until a probe settles it, revocation means disabling the account *and* explicitly revoking its tokens and SSH
 keys. See [interoperability baseline](/developer/forgejo-interop) §4.
 
+### Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*.
+
+- **Where identity is persisted**: Forgejo's `user` table. The OIDC `sub` lands in the `login_name`
+  column; `name` holds `preferred_username` and `email` holds `mail`, both written only when the
+  account is created just in time. `external_login_user` additionally links the OAuth2 source to the
+  same `sub`. The Module keeps no directory replica.
+- **Matching key**: the `sub` in `login_name`. The Module does not choose this key — upstream's
+  OAuth2 source fixes it, and the pinned version has no setting that binds an existing account by an
+  anchor claim. That is exactly why the dual path fails in §2.2.
+- **Refreshed at each login**: the groups claim, feeding team membership and the site-administrator
+  mapping. Username, email, and display name are **not** refreshed.
+- **Which interface performs revocation**: none. The Module registers no directory-event watcher and
+  the pinned version exposes no IAM-initiated logout receiver, so there is no automatic revocation
+  interface at all. Only an administrator, through Forgejo's admin UI or CLI, can revoke.
+- **Reconciliation path**: none today. The entry point that would unlock one is below.
+- **Technical obstacle**: upstream's OAuth2 source accepts no configurable identity field, and
+  `ACCOUNT_LINKING` can only fall back to username or email. This is a gap in the sense of
+  `DIRKEY-R-004`; per `DIRKEY-R-005` it is re-checked whenever the pinned version changes (the
+  re-check trigger is `FORGEJO-R-066`).
+
+**`DIRKEY-R-013` projection verdict: unaffected (`inferred`).** Forgejo stores `sub` in `login_name`,
+an internal field visible only to site administrators; the in-application username comes from
+`preferred_username`, and that username — not `sub` — is what URLs and repository paths use. So once
+M2 switches the subject identifier to the anchor, no UUID surfaces in the interface and Forgejo needs
+no prior change. **Not yet confirmed by a probe**: whether `login_name` really receives the verbatim
+`sub`, and whether the admin user list echoes it. The check belongs in
+`test-env/scripts/forgejo-agent-api-probe.sh` and must run before the M2 switch.
+
+After the switch this gains a capability it does not have today: the value in `login_name` will be
+the anchor itself, so listing Forgejo's external accounts, diffing them against the directory's
+admitted set, and revoking the difference reconciles exactly, without catching renamed employees. That
+path needs no LDAP source and does not change how accounts come into being.
+
 ## Recovery and security boundaries
 
 The `break_glass` account is generated per Module. On first apply, the helper asks the CLI for a random bootstrap

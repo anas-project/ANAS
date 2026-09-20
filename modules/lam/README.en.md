@@ -41,6 +41,41 @@ LAM works directly over LDAPS. Operators sign in with their own directory userna
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes
+
+**Matching key: none — this Module persists no directory user.** LAM is a directory management
+interface, not an application with accounts: `loginMethod = search` makes it look the person up in the
+directory on every login with a restricted service account, using
+`(&(objectCategory=person)(objectClass=user)(!(userAccountControl:...=2))(sAMAccountName=%USER%)(memberOf:1.2.840.113556.1.4.1941:=<Admins DN>))`,
+then bind as the **DN** it found with the operator's own password. The identity for the duration of
+that session is that DN, and it disappears when the session ends; there is no user table, no mapping
+table, and no shadow account.
+
+The `sAMAccountName` is a **login name** here — `DIRKEY-R-001` permits labels for login and search and
+forbids only using them as a persistent identity key. This Module has no persistent identity key, so
+there is no way for a rename to make it mistake one person for another. For the same reason, actual
+directory write permissions are decided by the operator's own AD ACLs and LAM maintains no second set
+of permission records.
+
+| Directory change | What LAM does | Evidence |
+| --- | --- | --- |
+| `sAMAccountName` changes | The old name immediately stops working and the new one immediately works; there is no in-application state to follow. The user list shown in the interface comes straight from the directory, so a rename is visible at once | `inferred` (from the login filter searching `sAMAccountName=%USER%` live; no rename case is covered by an E2E) |
+| `mail` changes | Takes no part in login or authorization; displayed directly as a managed directory attribute | `verified` (in `configure.php`, `mail` appears only as a display column in `attr_user` and never in the login filter) |
+| `displayName` and other profile attributes | As above — straight from the directory, never cached | `verified` (same) |
+| Direct or recursive group membership changes | **Take effect at the next login, immediately**: the login filter carries `memberOf:1.2.840.113556.1.4.1941:=<Admins DN>`, so recursive membership is re-decided at every login. Removal from `Admins` means no login | `verified`, entry `test-env/scripts/server-lam-admins-e2e.sh` ("Admins membership enables login" and "removing Admins membership revokes login", once each) |
+| Account disabled | The login filter carries `(!(userAccountControl:...=2))`, so a disabled person cannot log in from that moment, and re-enabling restores access immediately | `verified`, same entry ("disabled members stay rejected") |
+| Account deleted | As above, and there are no in-application assets to hand over | `inferred` |
+| Identifier recycled and reassigned | A newcomer given the recycled `sAMAccountName` can log in provided they are also an `Admins` member — **but what they get is the authority the directory grants them, not any residue of the previous holder**, because LAM stores nothing. No identity confusion arises | `inferred` |
+
+**Fallback path**: there are **no "no automatic path" rows** in the table above. The only revocation
+action is to disable the account or remove it from `Admins` in the directory, effective at the next
+login. To end an already-authenticated session immediately, restart the `lam` container — sessions
+live only in PHP session storage and there is no application state worth preserving.
+
+The `admin_password` protects LAM's own configuration/profile editing surface and has nothing to do
+with directory identity; it is not any directory user's credential and no row in this section affects
+it.
+
 ## Administrator login and IAM-outage recovery
 
 `admin_password` protects LAM configuration/profile editing; it is not a normal directory administrator password and is not yet modeled as `management.local_accounts`.

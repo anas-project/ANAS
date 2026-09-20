@@ -55,6 +55,44 @@ Pinned Dashboard `2.90.9` discovers the provider logout endpoint and initiates R
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes
+
+**Matching key**: the OIDC `sub`. The management configuration sets `AuthUserIDClaim` explicitly to
+`sub`, and NetBird uses it as its own user id. **Whether this key survives a directory rename depends
+on which IAM Provider the deployment selected** — `authentik` (an internal user UUID) and `casdoor`
+(an immutable User ID) keep `sub` unchanged across a rename; `llng` derives `sub` from the login name
+by default, so after a rename it changes, NetBird treats the same person as a new user, and their
+peers, setup keys, and access-policy memberships all stay behind on the old one.
+
+**This Module does not currently request the `anasIdentityAnchor` claim**: the claims it registers are
+`name:displayName`, `cn:cn`, `sAMAccountName:sAMAccountName`, and `email:email`. The `sAMAccountName`
+is used for display only and enters no persistent key; `sub` is the only persistent key.
+
+That `AuthUserIDClaim` is configurable is this Module's opportunity in M2: once the subject identifier
+becomes the anchor, the field can stay as it is (`sub` already *is* the anchor) or be pointed at the
+anchor claim instead. Neither path needs a new upstream capability.
+
+| Directory change | What NetBird does | Evidence |
+| --- | --- | --- |
+| `sAMAccountName` changes | The same user when the Provider's `sub` is stable, and NetBird creates nothing; the displayed name comes from the `name` claim. When the Provider's `sub` is the login name (`llng`), a second user appears | `inferred` (from the rendered `NETBIRD_AUTH_USER_ID_CLAIM = "sub"` and each Provider's subject-identifier shape; NetBird has no identity E2E) |
+| `mail` changes | Read from the `email` claim; the refresh timing has not been re-checked, and it takes no part in account binding | `inferred` |
+| `displayName` and other profile attributes | Read from the `name`/`cn` claims; the refresh timing has not been re-checked | `inferred` |
+| Direct or recursive group membership changes | **Affect only whether the person can log in**, decided on the IAM side against `APP_netbird`/`APP_all`/the administrator group and taking effect at the next login. **NetBird's groups, access policies, and administrator role are owned by NetBird's own database and directory groups are not projected into them**; the administrator role mapping itself remains a release blocker | directory groups not being projected: `verified` (no group→role mapping exists in the Hook or the management configuration); admission and moment of convergence: `inferred` |
+| Account disabled | The next login is refused by the IAM. **Existing Dashboard sessions do not expire** (the pinned Dashboard `2.90.9` has no IAM→Module receiver); more importantly, **registered peers and setup keys never pass through an interactive login at all**, so the VPN tunnels keep working | absence of a receiver: `verified` (see the logout matrix in [Module IAM / OIDC support](/en/reference/module-iam-support)); survival of peers and setup keys: `inferred` |
+| Account deleted | As above, and the NetBird user keeps its peers and setup keys untouched; **peer ownership is never transferred or deregistered automatically** | `inferred` |
+| Identifier recycled and reassigned | Depends on the Provider: where `sub` is an internal immutable id the newcomer gets a new user (fail-closed); where `sub` is the recycled login name (`llng`) the newcomer lands directly on the old user's peers and policy memberships (**fail-open** — which hands an already-established VPN access to a new person) | `inferred` |
+
+**Fallback path** — what operations must do for every "no automatic path" row above:
+
+1. When a person is disabled or deleted in the directory, **delete that user in the NetBird management
+   interface and revoke every peer and setup key they own, one by one**. Disabling the directory
+   account does not tear down an established tunnel — this is the highest revocation risk in this
+   Module;
+2. Before deleting the user, transfer any peers that must survive to a successor or re-own them under
+   a service account;
+3. When group revocation must take effect immediately, change NetBird's access policies separately;
+   a directory group change never propagates into a policy.
+
 ## Administrator login and IAM-outage recovery
 
 There is no supported private recovery administrator or documented IAM-bypass entry.

@@ -74,6 +74,63 @@ For pinned `2026.5.6`, the OIDC blueprint labels authorization and post-logout c
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*. This Module is both a Consumer (of Samba
+AD) and a Provider (to the applications), so the two sides are described separately.
+
+**Consumer side (Authentik ← Samba AD)**
+
+- **Which table and field persist identity**: `authentik_core.UserSourceConnection.identifier` holds
+  the anchor value and normalizes it into the user's `attributes.ldap_uniq`. `User.username` is the
+  `sAMAccountName` and `User.name` is the `displayName`; both are labels only.
+- **How the matching key is configured**: `hook/main.go` renders
+  `AUTHENTIK_LDAP_OBJECT_UNIQUENESS_FIELD = SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE` and the blueprint in
+  `hook/directory.go` substitutes it into the LDAP source's `object_uniqueness_field`; the same Hook
+  builds `AUTHENTIK_LDAP_USER_OBJECT_FILTER` as
+  `(&(objectClass=user)(!(objectClass=computer))(anasIdentityAnchor=*))`, so objects without an anchor
+  never enter.
+- **Refreshed at each sync**: the `givenName`, `sAMAccountName`, `sn`, `userPrincipalName`, and `mail`
+  mappings listed in `user_property_mappings` plus the display-name mapping;
+  `group_property_mappings` refreshes group names and `is_superuser`. `identifier` is by definition
+  not refreshed.
+- **Which interface performs revocation**: `delete_not_found_objects: true` makes the sync delete
+  objects that have disappeared; `anas_authentik_dirwatch` (`authentik/directory_watch.py`) follows
+  the persistent directory event journal on its own cursor and triggers an incremental sync, with the
+  periodic full sync as the fallback.
+- **Technical obstacle**: none. The Consumer side satisfies `DIRKEY-R-002` and `DIRKEY-R-007`.
+
+**Provider side (Authentik → the applications)**
+
+- **Subject identifier**: `hook/iam.go` hard-codes `sub_mode: user_uuid` for every OIDC Provider, and
+  the comment records why — the LDAP source matches on the printable anchor, so the Authentik user
+  UUID stays stable across a forest rebuild, while **usernames are login names and must never become
+  an OIDC subject**.
+- **The anchor as a claim**: `oidcClaimExpression` and `samlAttributeExpression` translate a source
+  equal to `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE` into `request.user.attributes.get("ldap_uniq")`, via a
+  scope mapping for OIDC and a property mapping for SAML.
+- **SAML NameID**: the blueprint **deliberately does not set** `name_id_mapping` — Authentik's field
+  of that name is a foreign key to a property mapping, not a NameID format URN, and there is no field
+  for the format itself; it honours the NameIDPolicy the SP sends in its AuthnRequest. What the NameID
+  actually resolves to is therefore decided by the SP and **has not been re-checked**.
+- **The `DIRKEY-R-008` gap and its technical obstacle**: `sub_mode` is a fixed enumeration
+  (`user_uuid` and others) while the anchor lives in the custom attribute `attributes.ldap_uniq`.
+  Whether any enumeration value can reach a custom attribute, or whether a scope mapping can override
+  `sub`, **can only be answered by a probe against the real pinned version and must not be settled
+  from upstream documentation**. This is the first blocking item of M2 in the
+  [directory identity key plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md).
+  Until it is resolved this Provider declares, per `DIRKEY-R-012`, that the subject identifier
+  Consumers receive in this deployment is a stable internal id and not the anchor.
+
+**`DIRKEY-R-013` projection verdict: not applicable (a Provider is not a Consumer).** This Module
+consumes nobody else's subject identifier, so there is no question of projecting a `sub` into a
+username, a URL, or a file path. Its role under `R-013` is to be **the side that is verified against**:
+after the M2 switch each Consumer asserts that it carries no such projection. Note that the switch
+changes the value of the `sub` Authentik issues, so Consumers that create accounts by `(issuer, sub)`
+(`vikunja`) and those that create them by `sub` (`forgejo`, `netbird`) will all treat existing users as
+newcomers — the product has not shipped and there are no historical accounts to stay compatible with,
+so the switch can be made directly.
+
 ## Management surfaces and secret lifecycle
 
 Routine administrators sign in with directory identities. Fixed user `akadmin` is the `break_glass` recovery account and has an independently generated password.

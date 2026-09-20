@@ -121,6 +121,46 @@ Docker socket 或宿主服务权限。数据库连接仍独立，`traefik` 网�
 打印连接串，两者都不在人会想到的调用点上。短于 8 字节的值不进脱敏表：那种长度的值本来就猜得出来，
 把它加进去只会把无关文本一起抹掉。
 
+## 目录属性变更的实现侧
+
+与 README 的《目录属性变更说明》一一对应。只讲**人**；Agent 机器账号不来自目录。
+
+- **身份存在哪张表/哪个字段**：`orchestrator/postgres.go` 的四处，键都是 Forgejo 用户名字符串：
+  `agent_grant.username`（PRIMARY KEY）、`agent_grant_deny.username`（与 `agent` 组成唯一索引
+  `agent_grant_deny_subject`）、`policy_override.username`、`audit_record.subject`。
+- **匹配键是怎么来的**：`orchestrator/ingress.go` 的 webhook envelope 只解出 `sender.login`。
+  编排器不解析 ID Token，也不接 IAM binding——它对人的全部认知经由 Forgejo 转手。
+- **什么时候重新派生**：`PolicyEngine.grant` 保存内存快照，超过 TTL 后调用
+  `Permissions.UserTeams(ctx, user)` 重读 Forgejo team 名，交给 `GrantFromTeams` 重新计算上限并
+  `SaveGrant` 回写。`agent_grant` 因此是**派生快照，不是事实来源**——`Grant.Source` 字面写着
+  `"directory groups projected into Forgejo teams"`。
+- **撤权经哪个接口**：`PolicyEngine.Veto` 写 `agent_grant_deny` 并丢弃与之矛盾的缓存上限，
+  对应 `agent-grant deny` 命令。没有任何目录侧接口能直接触发它。
+- **对账或事件订阅路径**：编排器**需要**目录事件即时性（组撤权秒级生效，见
+  `docs/architecture/orchestration-design.md` §6.2），但 `forgejo` 是 OIDC-only、不持有目录副本，
+  组只能在登录时经 claim 到达 team。即时否决表就是为填这个洞而存在的**人工快路径**。
+- **技术阻碍**：**缺一个能到达编排器的不可变人员标识符**。Forgejo 的 OAuth2 source 把 OIDC
+  `sub` 存进 `login_name`，但 webhook payload 里没有这个字段，管理端 API 才回显它；因此要让
+  编排器按 anchor 认人，需要在收到 webhook 后额外调一次管理端用户查询把 `login` 换成
+  `login_name`。这条路在 `DIRKEY-R-008` 落地后才有意义——在那之前 `login_name` 里装的是
+  Provider 内部 id，同样不能直接与目录对账。
+
+**`DIRKEY-R-002` 符合性：不符合，缺口已按 `DIRKEY-R-004` 声明。** 持久授权键是 Forgejo 用户名，
+一个目录标签。本 Module **没有**用"按用户名回退匹配"冒充满足要求，而是显式记录了后果与兜底
+（见 README）。整改归[目录身份键实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md)
+M2 之后：`sub` 变成 anchor、`login_name` 里装的就是 anchor 之后，编排器才可能把授权键换掉。
+按 `DIRKEY-R-005`，每次变更 `forgejo` 固定版本时复核 webhook 是否开始携带稳定标识符。
+
+**`DIRKEY-R-006` 例外的适用范围**：`agent_grant_deny` 与 `policy_override` 只走撤权方向
+（`Override` 的注释写明"final action set is an intersection"，`AGENT-R-031`/`R-036`），因此允许
+按标签匹配；误判后果是误撤权，恢复由管理员人工重建条目，**代码里没有自动恢复路径**。
+`agent_grant` 是授权方向，不适用该例外，它靠 TTL 过期后从当前 team 重新派生来限制暴露窗口。
+
+**`DIRKEY-R-013` 投影结论：不适用（本 Module 不是 OIDC/SAML Consumer）。** `module.yml` 不声明
+`iam`，编排器不消费任何主体标识符，M2 切换不会让 UUID 出现在它的任何界面或路径里。它受 M2 影响
+的方式是间接的：切换会改变 `forgejo` 的 `login_name` 内容，从而**打开**上面那条目前走不通的
+"按 anchor 认人"路径。
+
 ## 与需求矩阵的对应
 
 | 需求 | 落点 |

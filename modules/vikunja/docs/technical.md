@@ -91,6 +91,41 @@ bearer token 调用 `/api/v1/user/logout`，并将请求 timeout 限制为 5 秒
 Vikunja session。真实浏览器尚需验证 `state`、旧 Cookie、IAM Cookie 与重试边界，当前不声明
 双向登出。
 
+### 目录属性变更的实现侧
+
+与 README 的《目录属性变更说明》一一对应。
+
+- **身份存在哪张表/哪个字段**：Vikunja 的 `users` 表。上游按 `(issuer, subject)` 定位账号，
+  `username` 列存 `preferred_username`，`email`、`name` 列存对应 claim。Module 不持有目录副本，
+  也没有第二张映射表。
+- **匹配键**：`(issuer, subject)`。**Module 无法配置它**——上游的 OpenID provider 实现没有
+  "用哪个 claim 认人"的配置项，`sub` 是硬编码的。因此 Module 在
+  `ANAS_IAM_CLIENT__VIKUNJA__ATTRIBUTES` 里只请求 `name`、`preferred_username`、`email`，
+  **不请求 anchor claim**：请求了也没有地方能让上游用它认人。
+- **每次登录刷新什么**：未经复核。上游在 `getOrCreateUser` 里会读取 email/name/preferred_username，
+  但是否覆盖已有行尚未在固定版本上验证。
+- **撤权经哪个接口**：没有。固定 `2.4.0` 没有 OIDC Logout Token receiver，也没有 front-channel
+  iframe endpoint，因此 Hook 省略 `OIDC_LOGOUT_URI/METHODS/SESSION_REQUIRED`。用户自建的 API token
+  同样不经过登录，没有任何接口能按目录状态吊销它们。
+- **对账或事件订阅路径**：没有。Module 不保有目录副本，因此不落入目录事件订阅要求的范围，
+  也没有 watcher 进程。
+- **没有自动路径的地方，技术阻碍是什么**：**缺可配置的身份字段**（无法让上游改用 anchor 认人）
+  加**缺 receiver**（无法从 IAM 撤销已有会话）。这是 `DIRKEY-R-004` 意义上的缺口：Module
+  不得以"按用户名或邮箱回退匹配"冒充满足 `DIRKEY-R-002`，此处也确实没有这么做——它老实地依赖
+  Provider 的 `sub`，并把该 `sub` 是否稳定的责任显式交还给 Provider（见 `DIRKEY-R-012`）。
+  按 `DIRKEY-R-005`，每次变更固定版本时复核上游是否新增了可配置的身份 claim。
+
+**`DIRKEY-R-013` 投影结论：不受影响（`已验证`）。** 关键问题是"`sub` 有没有进入展示层"，答案是
+没有：Vikunja 的应用内用户名取自 `preferred_username`，`sub` 只落在内部的 `subject` 列。
+入口：`test-env/scripts/server-vikunja-oidc-e2e.sh` 直接查询数据库
+（`select username from users`，PostgreSQL 与 MariaDB 两条分支各一次）并断言其中出现的是**目录
+`sAMAccountName`**。若上游改用 `sub` 构造用户名，这条断言会失败。因此 M2 把主体标识符切成 anchor
+之后，Vikunja 界面与 `/api/v1/users/...` 路径里不会出现 UUID。
+
+**但切换会改变 `sub` 的值本身**，而 Vikunja 按 `(issuer, sub)` 认人：现有账号的 `subject` 列存的是
+旧主体标识符，切换后同一个人会被认成新人并 JIT 建出第二个账号。产品尚未上线、没有历史账号需要
+兼容，因此这不构成阻塞；一旦有真实数据，切换前必须先清空或迁移 `users.subject`。
+
 ## 管理面与 Secret 生命周期
 
 | 入口 ID | 地址来源 | 主要认证 |

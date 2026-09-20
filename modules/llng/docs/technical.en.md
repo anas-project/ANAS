@@ -55,6 +55,69 @@ For pinned `2.23.2`, `render_env` maps the generic OIDC logout contract to `oidc
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*. This Module is both a Consumer (of Samba
+AD) and a Provider (to the applications).
+
+**Consumer side (LLNG ← Samba AD)**
+
+- **Which table and field persist identity**: the `sessions`, `psessions`, `samlsessions`,
+  `oidcsessions`, and `cassessions` tables — **there is no user table**, because LLNG keeps no
+  directory replica. The session primary key is `_whatToTrace`, indexed in both `sessions` and
+  `psessions` (`i_s__whatToTrace` and `i_p__whatToTrace` in `postgre_init.sql` / `mysql_init.sql`).
+- **How the matching key is configured**: `macros._whatToTrace` in `lmConf.json` is defined as
+  `$_auth eq 'SAML' ? lc($_user.'@'.$_idpConfKey) : $_auth eq 'OpenIDConnect' ? lc($_user.'@'.$_oidc_OP) : lc($_user)`,
+  and the top-level `whatToTrace` points at it. The deployment pins
+  `authentication`/`userDB`/`passwordDB` to `AD`, so it evaluates to `lc($_user)`; the
+  `AuthLDAPFilter = (&<user class><enabled>(sAMAccountName=$user))` rendered by `hook/main.go` makes
+  `$_user` the `sAMAccountName`. **The matching key is therefore a directory label and does not
+  satisfy `DIRKEY-R-002`.**
+- **Refreshed at each login**: everything — the `mail`, `cn`, `sn`, `givenName`, `uid`,
+  `sAMAccountName`, `displayName`, `userPrincipalName`, `memberOf`, `name`, and `anasIdentityAnchor`
+  entries declared in `ldapExportedVars` are all re-read from the directory at every login, and
+  `ldapGroupRecursive: 1` re-expands recursive groups. Nothing is cached, so nothing goes stale.
+- **Which interface performs revocation**: the enabled condition in `AuthLDAPFilter` (a disabled
+  person cannot log in). **There is no directory-event watcher** — LLNG keeps no directory replica and
+  falls outside the directory event subscription requirement; the corollary is that an established
+  session can only be deleted by an administrator in the Manager.
+- **Technical obstacle**: `whatToTrace` is simultaneously the session primary key, the logging key,
+  and an indexed column in several tables, so changing it reaches the session store and the audit
+  path. This is not a missing interface but a large blast radius.
+
+**Provider side (LLNG → the applications)**
+
+- **OIDC subject identifier**: when `llng-config.sh` writes each RP's `oidcRPMetaDataOptions*` it
+  **does not set `oidcRPMetaDataOptionsUserIDAttr`**, and the pinned `2.23.2` falls back to
+  `whatToTrace` when that field is empty. `sub` therefore equals the lowercased `sAMAccountName`.
+  **No probe has been run.**
+- **SAML NameID**: all four `samlNameIDFormatMapEmail/X509/Kerberos/Windows` lines in
+  `llng-config.sh` are commented out, so LLNG's default mapping is not overridden; the format the SP
+  declares in `NAME_ID_FORMAT` (`nextcloud` declares `windows`) resolves through that default mapping
+  to `$uid`. **No probe has been run.**
+- **The anchor as a claim/attribute**: `ldapExportedVars` in `lmConf.json` ships
+  `anasIdentityAnchor: anasIdentityAnchor`; `applyClientAttributes` in `hook/iam.go` expands the
+  generic `ATTRIBUTES` into numbered `ATTRnn` variables, and `llng-config.sh` writes them into
+  `oidcRPMetaDataExportedVars`/`samlSPMetaDataExportedAttributes`, additionally registering any
+  non-`groups` source in `ldapExportedVars`. **This path is verified to work** (see the evidence
+  column in the README).
+- **`DIRKEY-R-004` / `R-008` gap declaration**: the subject identifier this Provider issues is a
+  directory label — neither the anchor nor "another equally stable value". This Module **does not pass
+  off "fall back to matching by username" as satisfying `DIRKEY-R-002`**; it declares the gap and its
+  consequences explicitly here and in the README's fallback path. M2 must answer two questions against
+  the pinned version: whether a per-RP `oidcRPMetaDataOptionsUserIDAttr` can reach an exported var,
+  and whether the SAML NameID source can be configured independently of `whatToTrace`. If either
+  answer is no, then per `DIRKEY-R-012` every Consumer in this deployment follows the `DIRKEY-R-004`
+  gap path.
+
+**`DIRKEY-R-013` projection verdict: not applicable (a Provider is not a Consumer).** This Module
+consumes nobody else's subject identifier. It does, however, have one **effect unique to it** under
+`R-013`: because `sub` currently *is* the username, any Consumer that projects `sub` into an
+in-application username "looks fine" on an LLNG deployment — the UUID problem is masked. M2's
+per-Consumer `R-013` verification therefore **must not be run on an LLNG deployment alone**; it has to
+cover at least one Provider that issues a non-label subject identifier (`authentik` or `casdoor`), or
+the projection will not surface.
+
 ## Management surfaces and secret lifecycle
 
 There is no independent local `break_glass` account. Manager and Portal share directory authentication; recover IAM or the directory from the host instead of relying on a nonexistent local password.

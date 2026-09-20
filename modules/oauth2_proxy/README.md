@@ -57,6 +57,33 @@ Hook 把它解析成目录里管理员组的真实名称（`SAMBA_DC_ADMIN_GROUP
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更说明
+
+**匹配键**：本 Module **自己不持有任何持久身份键**——它是无状态的认证网关，不保存人员用户，
+不建账号，也没有数据库。它把每次请求验证过的 ID Token `sub` 原样放进
+`X-Anas-Identity-Subject` 响应头，交给后端；是否、以及如何把这个值持久化，由后端决定。
+
+因此本章的每一行都要分三层回答（`DIRKEY-R-011` 不允许以"由 IAM 负责"打发，也不允许把网关能力
+投影为后端能力）：**IAM**（准入与会话）、**网关**（Cookie）、**后端**（应用自己的状态）。
+ANAS 控制台是当前唯一的后端，它的匹配键是 `sha256(issuer ‖ sub)`，只用作内部 principal id。
+
+| 目录侧变更 | 网关与后端的行为 | 证据 |
+| --- | --- | --- |
+| `sAMAccountName` 改变 | 网关无状态，不受影响。控制台的 principal id 由 `issuer` 与 `sub` 派生，Provider 的 `sub` 稳定时改名不产生新 principal；`llng` 的 `sub` 取自登录名，改名会让同一个人变成新 principal，其作业归属（job owner）随之失效 | principal id 的构成：`已验证`，入口 `internal/consoleauth/job_owner_test.go` 的 `TestJobOwnerProxyIsLocallyBoundAndNeverRenews`；各 Provider 的 `sub` 形态：`推断` |
+| `mail` 改变 | 不参与任何环节。网关设 `--email-domain=*` 不做域限制，控制台不读 email | `已验证`（Compose 参数与 `internal/api/httpapi/proxy_authorizer.go` 均不消费 email） |
+| `displayName` 与其他 profile 属性 | 不消费，不保存 | `已验证`（同上） |
+| 直接或递归组成员变更 | **每次 ForwardAuth 请求都重新判定**：网关校验 ID Token 里的 `groups`/`roles` 是否含已解析的管理员组，控制台再次校验 `X-Anas-Identity-Group` 等于期望值。但判定读的是**当前 ID Token**，其刷新周期由 IAM 的 token TTL 决定，不是目录事件实时 | 每请求校验组：`已验证`，入口 `modules/oauth2_proxy/oauth2_proxy/main_test.go` 与 `test-env/scripts/server-console-trusted-proxy-e2e.sh`；收敛时延取决于 token TTL：`推断` |
+| 账号停用 | ID Token 过期后无法再取得新的，访问被拒。**在 token TTL 内网关 Cookie 仍然有效**；控制台的 proxy session 另有自己的过期，两者都不会因目录停用而提前失效 | `推断` |
+| 账号删除 | 同上。网关与控制台都没有应用内资产——控制台的作业归属按 principal id 记录，原 principal 失效后这些作业只能由新的 owner 接管 | `推断` |
+| 标识符回收再分配 | 取决于 Provider：`sub` 是内部不可变 id 时新人得到新 principal（fail-closed）；`sub` 取自被回收的登录名时（`llng`）新人直接继承旧 principal 的作业归属（**fail-open**）。两种情况下新人都必须仍是管理员组成员才能通过这道门 | `推断` |
+
+**兜底路径**——上表每一行"无自动路径"对应的运维动作：
+
+1. 需要立即切断某位管理员时，**在 IAM 侧撤销其会话并把人移出管理员组**，然后确认其 token TTL
+   已过；只改目录不足以在 TTL 内生效；
+2. 撤权后检查 ANAS 控制台是否有归属于该 principal 的未完成作业，必要时改派；
+3. 本 Module 没有本地恢复账号，也不应为撤权而暴露受保护服务——故障时恢复 IAM。
+
 ## 管理员登录与 IAM 故障恢复
 
 没有本地管理员或 IAM 故障绕过账号。故障时应恢复 IAM，而不是暴露受保护服务。

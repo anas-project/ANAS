@@ -51,6 +51,38 @@
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更的实现侧
+
+与 README 的《目录属性变更说明》一一对应。
+
+- **身份存在哪张表/哪个字段**：NetBird management 自己的数据存储，用户 id 即 ID Token 的 `sub`。
+  Module 不持有目录副本，也没有映射表。
+- **匹配键怎么配出来的**：`hook/main.go` 渲染 `NETBIRD_AUTH_USER_ID_CLAIM = "sub"`，
+  `management.json.envsubst` 把它填进 `AuthUserIDClaim`。**这个字段是可配置的**——上游接受任意
+  claim 名，这是 NetBird 与 Forgejo、Vikunja 的关键差别：它没有 `DIRKEY-R-004` 意义上的
+  "缺可配置身份字段"缺口。
+- **每次登录刷新什么**：未经复核。Module 注册的 claim 是 `name`、`cn`、`sAMAccountName`、`email`，
+  上游是否用它们覆盖已有用户行尚未在固定版本上验证。
+- **撤权经哪个接口**：只有 Provider 侧的准入判定。固定 Dashboard `2.90.9` 没有 IAM→Module 通知
+  endpoint；peer 与 setup key 由 NetBird management API 管理，只能经管理界面或 API 显式撤销。
+- **对账或事件订阅路径**：没有。Module 不保有目录副本，不落入目录事件订阅要求的范围。
+- **没有自动路径的地方，技术阻碍是什么**：**缺 receiver**，不是缺不可变 ID。上游没有 OIDC
+  back-channel logout endpoint，也没有"按目录状态批量禁用 peer"的接口。peer 凭据是 NetBird 自己
+  签发的长期凭据，设计上就不经过交互登录，因此任何"下次登录时收敛"的机制对它们都不成立。
+
+**`DIRKEY-R-013` 投影结论：存在投影，需在 M2 切换前复核（`推断`）。** NetBird 把 `sub` 直接当作
+用户 id，而 management API 的用户资源路径形如 `/api/users/{userId}`，Dashboard 的用户管理视图也按
+这个 id 定位用户。因此主体标识符切成 anchor 之后，**UUID 会出现在管理 API 的 URL 路径与管理员
+视图里**。两者是否属于 `DIRKEY-R-010` 禁止的"URL 中的标识符"，取决于该路径是管理视图还是普通
+用户可见的界面——管理视图是允许的，普通用户可见的 URL 不是。
+
+这一点未经复核，**必须在 M2 切换前验证**，可行的两条出路都已具备条件：
+
+1. 维持 `AuthUserIDClaim = "sub"`，验证 UUID 只出现在管理 API 与管理员视图；
+2. 把 `AuthUserIDClaim` 指向一个与 anchor 无关的稳定 claim，让 anchor 只经普通 claim 到达。
+
+第 1 条是首选：它让 NetBird 的用户 id 直接成为可与目录对账的值，正是 `DIRKEY-R-008` 想要的效果。
+
 ## 管理面与 Secret 生命周期
 
 没有受支持的私有恢复管理员。IAM 故障时没有文档化的绕过入口。

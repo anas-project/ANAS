@@ -72,6 +72,48 @@ Web 与 cron 容器都会在 ANAS 内部 CA 存在时安装它。`user_ldap` 会
 
 `task.sh` 会把 Nextcloud 账号上下文的 `minLength` 同步为 `SAMBA_DC_USER_MIN_PASS_LENGTH`，并将 Nextcloud 独有的常见密码、HIBP、字符类别、历史、过期和登录失败锁定校验关闭。AD 的复杂度是“字符类别满足其一组组合”的目录规则，不能由 Nextcloud 的“逐项强制”开关等价表达，因此复杂度、历史、有效期和锁定始终只由 Samba 执行。首次迁移前会把原账号策略复制到 Nextcloud 34 的 `sharing` 上下文，使共享链接密码策略与目录账号策略解耦。
 
+### 目录属性变更的实现侧
+
+与 README 的《目录属性变更说明》一一对应。
+
+- **身份存在哪张表/哪个字段**：`oc_ldap_user_mapping`。`directory_uuid` 列保存 anchor（匹配键），
+  `owncloud_name` 列保存应用内 `uid`。`oc_users.uid` 与文件数据目录 `data/<uid>/` 用的都是
+  `owncloud_name`。`task.sh` 通过 `occ ldap:set-config` 写入：`ldapExpertUUIDUserAttr` 与
+  `ldapExpertUUIDGroupAttr` 取 `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE`，`ldapExpertUsernameAttr` 取
+  `SAMBA_DC_USER_NAME`（即 `sAMAccountName`）。
+- **匹配键**：anchor，两处配置都显式声明，不依赖上游默认。OIDC 模式下
+  `occ user_oidc:provider anas --unique-uid=0 --mapping-uid=preferred_username` 使登录按用户名汇合到
+  同一个 `uid`；SAML 模式下 `occ saml:config:set 1 --general-uid_mapping=<anchor>
+  --saml-attribute-mapping-user_id_ldap_mapping=<anchor>` 使断言按 anchor 找回 LDAP 账号。
+- **每次登录刷新什么**：`ldapUserDisplayName`（显示名）、`ldapEmailAttribute`（邮箱）与
+  `ldapNestedGroups` 展开后的组成员。**不刷新** `owncloud_name`——上游映射表建立后不重写这一列，
+  这正是改名后 `uid` 冻结在旧值的原因。
+- **撤权经哪个接口**：登录方向经 `ldapLoginFilter`（`NEXTCLOUD_USER_LOGIN_FILTER` 含
+  `(!(userAccountControl:1.2.840.113556.1.4.803:=2))`，停用账号无法登录）。**已有会话方向经
+  `user_oidc` 的 back-channel logout receiver**
+  `/index.php/apps/user_oidc/backchannel-logout/anas`，按 `sid` 撤销，只覆盖 OIDC 会话。
+- **对账或事件订阅路径**：Module 保有目录副本，落在目录事件订阅要求范围内；LDAP 周期同步是兜底。
+- **没有自动路径的地方，技术阻碍是什么**：App 密码与 WebDAV/CalDAV 设备 token 由 Nextcloud 自己
+  签发，**不经过 `ldapLoginFilter`，也不是 OIDC 会话，因此 back-channel logout 撤不到它们**。上游
+  没有"按 LDAP 状态批量吊销设备 token"的接口，只能经 `occ user:disable` 加逐个删除 App 密码。
+  用户过滤器 `NEXTCLOUD_USER_FILTER` 刻意不含停用条件——含了会让停用账号从 Nextcloud 消失，
+  文件归属随之丢失——代价就是停用不会自动传播到设备凭据。
+
+**`DIRKEY-R-013` 投影结论：不受影响（`已验证`）。** Nextcloud 的应用内 `uid` 来自
+`ldapExpertUsernameAttr`（`sAMAccountName`）和 OIDC 的 `preferred_username`，**两条路径都不读
+`sub`/`NameID`**：OIDC 的 `--mapping-uid` 显式指向 `preferred_username`，SAML 的 `uid_mapping` 显式
+指向 anchor 属性而不是 NameID。因此 M2 把主体标识符切成 anchor 之后，`uid`、数据目录路径和分享
+URL 都不会变成 UUID。入口：`test-env/scripts/server-authentik-oidc-login-e2e.sh` 断言
+`oc_ldap_user_mapping` 的 `owncloud_name` 等于目录用户名、`directory_uuid` 等于 anchor，
+`occ user:info` 的 `user_id` 等于目录用户名；`server-llng-oidc-login-e2e.sh` 对第二个 Provider 断言
+同一组事实。
+
+**但 SAML 模式另有一个 `DIRKEY-R-010` 观察点**：`general-uid_mapping` 取 anchor 表示断言里携带
+anchor 的那个属性被当作用户 id 候选。它随后经 `user_id_ldap_mapping` 解析回既有 LDAP 账号，因此
+落库的仍是 `sAMAccountName`；**但"没有匹配到 LDAP 账号时会不会直接用 anchor 建一个 SAML 后端账号"
+尚未复核**（`general-require_provisioned_account` 设为 `0`，即不要求预配账号）。M2 之前应在 SAML
+模式下跑一次"目录里没有对应 LDAP 账号的用户登录"用例，确认不会出现 `uid` 为 UUID 的账号。
+
 ## 管理面与 Secret 生命周期
 
 日常管理员通过 IAM 登录。`break_glass` 本地恢复账号默认用户名为 `admin_nextcloud`，直接入口为 `/login?direct=1`，可由 ANAS 查询和事务轮换。

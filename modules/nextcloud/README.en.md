@@ -56,6 +56,43 @@ There is currently no generic `anas user/group/password` command. Directory-back
 
 Nextcloud does not maintain a second account-password policy. Its minimum-length preflight comes from `samba_dc.user_min_pass_length`; Samba AD remains authoritative for complexity, history, minimum/maximum age, and lockout. Nextcloud-only common-password, HIBP, and character-class account checks are disabled so they cannot reject a password that Samba would accept. Share-link passwords use a separate Nextcloud policy and do not follow the directory-account policy.
 
+### Directory attribute changes
+
+**Matching key**: `anasIdentityAnchor`. The LDAP backend configures it as `ldapExpertUUIDUserAttr` /
+`ldapExpertUUIDGroupAttr`, and the account mapping table `oc_ldap_user_mapping.directory_uuid` holds
+the anchor value, unchanged by a rename. **The in-application user id (`oc_users.uid`) is, however,
+the `sAMAccountName`**: it comes from `ldapExpertUsernameAttr`, is written once when the mapping is
+first created, and is never rewritten afterwards — so the data directory `data/<uid>/`, share links,
+and `/ocs/.../users/<uid>` all carry that old username. The split is deliberate: the anchor
+identifies, the username displays and forms paths.
+
+In OIDC mode `user_oidc`'s `--mapping-uid=preferred_username` (the `sAMAccountName`) funnels the login
+onto that same `uid`; in SAML mode both `general-uid_mapping` and `user_id_ldap_mapping` take the
+anchor and use it to find the existing LDAP account. Both paths end on the same LDAP mapping row.
+
+| Directory change | What Nextcloud does | Evidence |
+| --- | --- | --- |
+| `sAMAccountName` changes | Same account: the mapping matches on the anchor and nothing is created. The in-application user id and the data directory `data/<uid>/` stay frozen at the old username, and the identifier in URLs does not follow. **In OIDC mode the login funnels on `preferred_username`**, which after a rename no longer equals the frozen `uid`; whether it still lands on the original account has not been re-checked | anchor as the mapping key: `verified`, entry `test-env/scripts/server-authentik-oidc-login-e2e.sh` (asserts `oc_ldap_user_mapping.directory_uuid == anchor`) and `server-llng-oidc-login-e2e.sh`; post-rename funnelling: `inferred` |
+| `mail` changes | Refreshed from `ldapEmailAttribute` at the next sync or login. It takes no part in account binding, and Nextcloud puts no global uniqueness constraint on email, so account creation never fails over it | `inferred` |
+| `displayName` and other profile attributes | Refreshed from `ldapUserDisplayName` at LDAP sync and at login; not in real time | display name matching the directory: `verified`, same entry (asserts `user:info .display_name` equals the directory `displayName`); refresh timing: `inferred` |
+| Direct or recursive group membership changes | `ldapNestedGroups=1`; authorization takes effect at LDAP sync and at login. `Admins` is mapped dynamically to application administration through `ldap:promote-group`. Directory-event subscription shortens this to the event propagation time but never makes it real-time | group and administrator mapping: `verified`, same entry; moment of convergence: `inferred` |
+| Account disabled | Login is refused: `NEXTCLOUD_USER_LOGIN_FILTER` carries `(!(userAccountControl:...=2))`. But **the user filter does not carry that condition**, so the account keeps existing in Nextcloud; **existing sessions, app passwords, and WebDAV/CalDAV client credentials do not pass through the login filter, and whether they stop working has not been re-checked** | login filter carrying the disabled condition: `verified` (Hook rendering, see the technical document); the outcome for app passwords and existing sessions: `inferred` |
+| Account deleted | The user drops out of the user filter and `user_ldap`'s deletion detection marks it deleted while keeping the mapping row; **files are never re-owned automatically** and an administrator has to transfer them explicitly | `inferred` |
+| Identifier recycled and reassigned | A newcomer given a recycled `sAMAccountName` carries a different anchor, so the mapping does not match the old row; but the newcomer's `uid` equals the one the old account already holds, so the mapping either fails to be created or lands on the old data directory — the outcome has not been re-checked and must be treated as fail-open | `inferred` |
+
+**Fallback path** — what operations must do for every "no automatic path" row above:
+
+1. After disabling a directory account, run `occ user:disable <uid>` in Nextcloud and **delete every
+   app password and device token that user holds** under Settings → Security; disabling in the
+   directory alone does not disconnect already-paired desktop and mobile clients;
+2. Before deleting a directory account, transfer the files with
+   `occ files:transfer-ownership <uid> <successor>`, then delete the account;
+3. When group revocation must take effect immediately, terminate the user's existing Nextcloud
+   sessions as well as waiting for the sync — delete their app passwords and session tokens;
+4. **Directory-side process constraint**: `sAMAccountName` must never be recycled. The anchor
+   guarantees that a rename is still the same person; it cannot guarantee that a recycled username
+   will not collide with a `uid` frozen at an old value.
+
 ## Administrator login and IAM-outage recovery
 
 Routine administrators use IAM. The `break_glass` local recovery account defaults to `admin_nextcloud`; `/login?direct=1` is its direct entry and ANAS can retrieve and transactionally rotate it.

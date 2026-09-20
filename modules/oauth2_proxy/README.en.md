@@ -61,6 +61,39 @@ Pinned `7.15.3` guarantees only that `/oauth2/sign_out` clears the gateway cooki
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes
+
+**Matching key**: this Module **holds no persistent identity key of its own** — it is a stateless
+authentication gateway with no human users, no accounts, and no database. It places the verified ID
+Token `sub` verbatim into the `X-Anas-Identity-Subject` response header for the backend on every
+request; whether and how that value is persisted is the backend's decision.
+
+Every row below therefore has to be answered at three layers (`DIRKEY-R-011` forbids shrugging it off
+as "the IAM handles it", and equally forbids projecting a gateway capability onto the backend): the
+**IAM** (admission and sessions), the **gateway** (its cookie), and the **backend** (the application's
+own state). The ANAS console is the only backend today, and its matching key is
+`sha256(issuer ‖ sub)`, used solely as an internal principal id.
+
+| Directory change | What the gateway and backend do | Evidence |
+| --- | --- | --- |
+| `sAMAccountName` changes | The gateway is stateless and unaffected. The console's principal id is derived from `issuer` and `sub`, so where the Provider's `sub` is stable a rename produces no new principal; with `llng`, whose `sub` is the login name, a rename turns the same person into a new principal and their job ownership lapses with it | how the principal id is composed: `verified`, entry `TestJobOwnerProxyIsLocallyBoundAndNeverRenews` in `internal/consoleauth/job_owner_test.go`; each Provider's `sub` shape: `inferred` |
+| `mail` changes | Takes part in nothing. The gateway sets `--email-domain=*` and applies no domain restriction, and the console never reads email | `verified` (neither the Compose flags nor `internal/api/httpapi/proxy_authorizer.go` consumes email) |
+| `displayName` and other profile attributes | Neither consumed nor stored | `verified` (same) |
+| Direct or recursive group membership changes | **Re-decided on every ForwardAuth request**: the gateway checks that the ID Token's `groups`/`roles` contain the resolved administrator group, and the console then checks that `X-Anas-Identity-Group` equals the expected value. But the decision reads the **current ID Token**, whose refresh interval is set by the IAM's token TTL, not by directory events in real time | per-request group checking: `verified`, entries `modules/oauth2_proxy/oauth2_proxy/main_test.go` and `test-env/scripts/server-console-trusted-proxy-e2e.sh`; convergence latency following the token TTL: `inferred` |
+| Account disabled | Once the ID Token expires no new one can be obtained and access is refused. **Within the token TTL the gateway cookie remains valid**; the console's proxy session has its own expiry, and neither is cut short by a directory disable | `inferred` |
+| Account deleted | As above. Neither the gateway nor the console holds in-application assets — the console records job ownership by principal id, and once the original principal lapses those jobs can only be taken over by a new owner | `inferred` |
+| Identifier recycled and reassigned | Depends on the Provider: where `sub` is an internal immutable id the newcomer gets a new principal (fail-closed); where `sub` is the recycled login name (`llng`) the newcomer inherits the old principal's job ownership (**fail-open**). In both cases the newcomer must still be a member of the administrator group to pass this gate | `inferred` |
+
+**Fallback path** — what operations must do for every "no automatic path" row above:
+
+1. To cut off an administrator immediately, **revoke their session on the IAM side and remove them
+   from the administrator group**, then confirm their token TTL has elapsed; changing the directory
+   alone does not take effect within the TTL;
+2. After revoking, check the ANAS console for unfinished jobs owned by that principal and reassign
+   them if needed;
+3. This Module has no local recovery account, and protected services must never be exposed in order to
+   revoke someone — restore the IAM instead.
+
 ## Administrator login and IAM-outage recovery
 
 There is no local administrator or IAM-outage bypass account. Restore IAM rather than exposing protected services.

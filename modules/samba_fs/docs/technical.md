@@ -91,6 +91,45 @@ SMB 客户端直接使用目录身份。`FS Share RW`/`FS Admins` 等 Group 控�
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更的实现侧
+
+与 README 的《目录属性变更说明》一一对应。
+
+- **身份存在哪张表/哪个字段**：没有数据库。持久身份落在**文件系统**上：inode 的 UID/GID，
+  以及 `security.NTACL` 扩展属性里的 NT ACL（由 `vfs objects = acl_xattr` 写入，
+  `map acl inherit = Yes` 继承）。另有 winbind 的 `idmap` tdb 缓存，但它是可重建的映射缓存，
+  不是事实来源。
+- **匹配键怎么配出来的**：`smb.conf.envsubst` 的
+  `idmap config ${SAMBA_DC_WORKGROUP} : backend = rid` / `range = 10000-999999`。rid backend 是
+  **确定性算法**：UID = range 起点 + SID 的 RID。因此同一个 SID 在任何时候、任何成员机上都映射到
+  同一个 UID，不需要持久映射表，也不会因改名漂移。默认域 `idmap config * : backend = tdb` /
+  `range = 3000-7999` 只服务本地与信任域回退。
+- **每次登录刷新什么**：没有可刷新的副本。用户与组由 winbind 经 `nsswitch.conf` 实时解析；
+  `winbind enum users/groups = No` 关闭枚举，`winbind expand groups = 2` 限定嵌套展开层数。
+- **撤权经哪个接口**：DC 的 Kerberos/NTLM 认证裁决（新会话）与 `valid users`/`write list`/
+  POSIX ACL（授权）。**没有作用于已建立 SMB 会话的接口**——`smbcontrol` 是运维手动动作，不是
+  自动路径。
+- **对账或事件订阅路径**：没有，也不需要保留目录副本，因此不落入
+  [目录事件订阅要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)
+  的适用范围。winbind 缓存的收敛时延由其自身 TTL 决定。
+- **没有自动路径的地方，技术阻碍是什么**：**SMB 协议层面没有"按目录事件断开会话"的原语**。
+  Samba 提供的是 `smbcontrol`，一个管理员命令，没有可供 ANAS 调用的事件接口。这不是缺不可变
+  ID（这里有 SID），是缺撤权接口。
+
+**`DIRKEY-R-002` 符合性**：符合。持久键是 SID/UID，目录改名不改变它，文件归属与 ACL 因此跨改名
+稳定。本 Module 不消费 `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE`，因为 SMB 与 POSIX 都只认 SID；
+用 anchor 反而要引入一层本不存在的映射表。
+
+**`DIRKEY-R-010` 观察点：`[Home]` 把用户名投影进了文件路径。** `path = /userdata/Home/%U` 与
+`root preexec = /usr/local/bin/samba_create_user_dir.sh /userdata/Home %U`。被投影的是
+`sAMAccountName` 这个**标签**，不是 anchor，因此不违反 `DIRKEY-R-010`（它禁止的是把 anchor 投影
+进路径）。但它确实让改名产生一个孤立目录，后果与兜底写在 README。**用 anchor 或 SID 命名家目录
+会让路径变成 UUID/S-1-5-… 形态**，那才是 `DIRKEY-R-010` 禁止的形态——因此这里维持用户名命名是
+正确选择，代价由第 3 条兜底动作承担。
+
+**`DIRKEY-R-013` 投影结论：不适用。** 本 Module 不是 OIDC/SAML Consumer（`module.yml` 不声明
+`iam`，也不消费任何 IAM binding），不消费主体标识符，M2 的切换对它没有任何影响。
+
 ## 管理面与 Secret 生命周期
 
 没有 Web 管理员或本地恢复账号。目录或域加入故障时需恢复 Samba AD 链路。

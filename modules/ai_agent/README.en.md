@@ -137,6 +137,65 @@ reconciliation replaces any token or SSH key older than 30 days. Names carry the
 (`anas-ai-agent-g<N>`): upstream requires a token name and a key title to be unique per user, and
 issuing before revoking necessarily makes the two coexist, so reusing the name fails at the first step.
 
+### Directory attribute changes
+
+This Module has two kinds of user, with different obligations:
+
+- **Agent accounts** (`agent-<id>`) are machine accounts the orchestrator creates unattended in
+  Forgejo. They **do not come from the directory** and this section does not apply to them;
+- **People** — those who raise issues, give instructions, and attach to terminals — **do come from the
+  directory**, arriving through Forgejo's OIDC login. This section is about them.
+
+**Matching key: the Forgejo username (`login`).** The orchestrator attaches to no directory and never
+reads the OIDC `sub`; the person it knows is the `sender.login` in a Forgejo webhook. Every piece of
+authorization state is keyed on that string: `agent_grant.username` (PRIMARY KEY),
+`agent_grant_deny.username`, `policy_override.username`, and `audit_record.subject`.
+
+**That is a label, not a permanent identity key, and the gap is declared here per `DIRKEY-R-004`.**
+It works today only because a Forgejo username is written once at account creation and frozen
+thereafter (see the section of the same name in the [`forgejo` README](/reference/modules/forgejo/)),
+so a directory rename does not change it — **a property inherited from an upstream implementation that
+this Module cannot guarantee, and one that is itself still `inferred` over in `forgejo`.**
+
+The gap has two real consequences:
+
+1. **Where the Provider's `sub` is the login name (`llng`), a directory rename creates a second
+   Forgejo account whose username is the new name** — and the `agent_grant_deny` veto entry aimed at
+   the old name **no longer matches**. A vetoed person escapes their veto simply by being renamed,
+   which is fail-open;
+2. When a username is recycled, the `agent_grant` snapshot may still apply the previous holder's
+   ceiling to the newcomer for the length of its TTL.
+
+| Directory change | What the orchestrator does | Evidence |
+| --- | --- | --- |
+| `sAMAccountName` changes | No effect where the Forgejo username is frozen (`authentik`/`casdoor`) and all authorization state keeps matching. On an `llng` deployment it is equivalent to replacing the person: the new account has no old grant snapshot **and no old veto entry** | the Forgejo username being frozen: `inferred` (see the section of the same name in `forgejo`; not probed); the key being the username: `verified` (the four table DDLs in `orchestrator/postgres.go`) |
+| `mail` changes | Takes no part whatsoever; the orchestrator never reads email | `verified` (neither the four tables nor the envelope in `ingress.go` carries an email field) |
+| `displayName` and other profile attributes | Take no part and are not stored | `verified` (same) |
+| Direct or recursive group membership changes | **Re-derived on a TTL, not in real time**: once `PolicyEngine.grant`'s snapshot expires it re-reads Forgejo team names through `UserTeams`, and `GrantFromTeams` recognizes only groups with the `CAP_ai_agent_*` prefix. The directory-group→Forgejo-team projection itself happens at that user's **next OIDC login**, so the full-chain latency is "directory event → next login → snapshot TTL expiry" | the projection recognizing only the `CAP_` prefix and only ever subtracting: `verified`, entry `modules/ai_agent/orchestrator/policy_test.go`; end-to-end latency: `inferred` |
+| Account disabled | The user can no longer sign in to Forgejo (adjudicated by `forgejo` and the IAM) and therefore cannot trigger jobs by commenting. **But the grant snapshot survives for its TTL**, and **jobs already queued or running are not cancelled** | `inferred` |
+| Account deleted | As above. The orchestrator holds no assets the user "owns"; `audit_record` retains their history by design, which is an audit requirement rather than residual authorization | `inferred` |
+| Identifier recycled and reassigned | Once a newcomer receives the recycled username: the `agent_grant` snapshot may still hold the previous holder's ceiling for its TTL (**a fail-open window**), while the `agent_grant_deny` veto entry **lands wrongly on the newcomer** (fail-closed — noisy but safe). Both are corrected by `GrantFromTeams` from the newcomer's real teams once the snapshot expires | `inferred` |
+
+**Fallback path** — what operations must do for every "no automatic path" row above:
+
+1. When a person is disabled or deleted in the directory, in addition to `forgejo`'s revocation
+   actions, **write an `agent-grant deny` veto against that username in the orchestrator** and confirm
+   they have no queued or running jobs (cancel them if they do);
+2. **A rename requires migrating authorization state by hand**: record that user's entries in
+   `agent_grant_deny` and `policy_override` before the rename and recreate them under the new username
+   afterwards. There is no automatic path;
+3. **Directory-side process constraint**: usernames must never be recycled. Until `DIRKEY-R-008` lands
+   and the orchestrator keys authorization on the anchor, this is discipline, not a technical
+   guarantee.
+
+**`DIRKEY-R-006` applicability**: `agent_grant_deny` (the immediate veto table) and `policy_override`
+(an overrides table that can only narrow) are both **revoke-only, never-grant** mechanisms, so
+`DIRKEY-R-006` permits them to match by label when no anchor is available. The cost of a misjudgment
+is an erroneous revocation — noisy and recoverable. Recovery is manual: an administrator rewrites the
+entry under the new username, and **there is no automatic restoration path**. `agent_grant` does not
+fall under that exception, because it is the granting direction; it keeps the risk to a single TTL
+window by re-deriving from the current teams on every expiry, not by trusting the label itself.
+
 ## Event ingress
 
 One Forgejo system webhook covers the whole instance. Ingress applies these in order, and no step

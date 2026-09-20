@@ -111,6 +111,53 @@ SMB clients authenticate with directory identities. Groups such as `FS Share RW`
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*.
+
+- **Which table and field persist identity**: there is no database. Persistent identity lives on the
+  **filesystem**: the inode's UID/GID, and the NT ACL in the `security.NTACL` extended attribute
+  (written by `vfs objects = acl_xattr`, inherited via `map acl inherit = Yes`). winbind's `idmap` tdb
+  cache also exists, but it is a rebuildable mapping cache, not a source of truth.
+- **How the matching key is configured**: `idmap config ${SAMBA_DC_WORKGROUP} : backend = rid` with
+  `range = 10000-999999` in `smb.conf.envsubst`. The rid backend is a **deterministic algorithm**:
+  UID = the range's base + the SID's RID. The same SID therefore maps to the same UID at any time and
+  on any member server, with no persistent mapping table and no drift on rename. The default-domain
+  `idmap config * : backend = tdb` with `range = 3000-7999` serves only local and trusted-domain
+  fallbacks.
+- **Refreshed at each login**: there is no replica to refresh. Users and groups are resolved live by
+  winbind through `nsswitch.conf`; `winbind enum users/groups = No` disables enumeration and
+  `winbind expand groups = 2` bounds nested expansion.
+- **Which interface performs revocation**: the DC's Kerberos/NTLM authentication decision (for new
+  sessions) and `valid users`/`write list`/the POSIX ACLs (for authorization). **No interface acts on
+  an established SMB session** — `smbcontrol` is a manual operator command, not an automatic path.
+- **Reconciliation or event-subscription path**: none, and no directory replica needs keeping, so this
+  Module falls outside the
+  [directory event subscription requirement](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md).
+  The convergence latency of winbind's cache is set by its own TTL.
+- **Where there is no automatic path, the technical obstacle**: **the SMB protocol has no primitive
+  for "disconnect sessions on a directory event"**. What Samba offers is `smbcontrol`, an
+  administrator command, with no event interface ANAS could call. This is not a missing immutable id —
+  the SID is right there — it is a missing revocation interface.
+
+**`DIRKEY-R-002` compliance**: compliant. The persistent key is the SID/UID, a directory rename does
+not change it, and file ownership and ACLs are therefore stable across a rename. This Module does not
+consume `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE`, because both SMB and POSIX only know SIDs; using the
+anchor would introduce a mapping layer that does not otherwise exist.
+
+**`DIRKEY-R-010` observation point: `[Home]` projects the username into a file path.**
+`path = /userdata/Home/%U` together with
+`root preexec = /usr/local/bin/samba_create_user_dir.sh /userdata/Home %U`. What is projected is the
+`sAMAccountName` **label**, not the anchor, so this does not breach `DIRKEY-R-010`, which forbids
+projecting the *anchor* into a path. It does leave an orphaned directory after a rename, and the
+consequence and fallback are recorded in the README. **Naming home directories by anchor or SID would
+turn the path into a UUID or `S-1-5-…` form**, which is precisely the shape `DIRKEY-R-010` forbids —
+so keeping the username here is the correct choice, with the cost carried by fallback action 3.
+
+**`DIRKEY-R-013` projection verdict: not applicable.** This Module is not an OIDC/SAML Consumer
+(`module.yml` declares no `iam` and consumes no IAM binding), consumes no subject identifier, and is
+entirely unaffected by the M2 switch.
+
 ## Management surfaces and secret lifecycle
 
 There is no Web administrator or local recovery account. Restore Samba AD/domain-join connectivity after an outage.

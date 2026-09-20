@@ -72,6 +72,53 @@ Samba AD 是人员与组的事实来源。LDAP Source 通过 LDAPS 同步用户�
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更的实现侧
+
+与 README 的《目录属性变更说明》一一对应。本 Module 既是 Consumer（对 Samba AD）也是 Provider
+（对各应用），两侧分别说明。
+
+**Consumer 侧（Authentik ← Samba AD）**
+
+- **身份存在哪张表/哪个字段**：`authentik_core.UserSourceConnection.identifier` 保存 anchor 值，
+  并规范化进用户的 `attributes.ldap_uniq`。`User.username` 是 `sAMAccountName`，`User.name` 是
+  `displayName`，两者都只是标签。
+- **匹配键怎么配出来的**：`hook/main.go` 渲染
+  `AUTHENTIK_LDAP_OBJECT_UNIQUENESS_FIELD = SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE`，
+  `hook/directory.go` 的 blueprint 把它填进 LDAP source 的 `object_uniqueness_field`；同一 Hook 把
+  `AUTHENTIK_LDAP_USER_OBJECT_FILTER` 构造成
+  `(&(objectClass=user)(!(objectClass=computer))(anasIdentityAnchor=*))`，缺 anchor 的对象不会进来。
+- **每次同步刷新什么**：`user_property_mappings` 列出的 `givenName`、`sAMAccountName`、`sn`、
+  `userPrincipalName`、`mail` 与显示名映射；`group_property_mappings` 刷新组名与
+  `is_superuser`。`identifier` 按定义不刷新。
+- **撤权经哪个接口**：`delete_not_found_objects: true` 让同步删除消失的对象；
+  `anas_authentik_dirwatch`（`authentik/directory_watch.py`）按独立游标跟随持久目录事件日志并触发
+  增量同步，周期全量同步兜底。
+- **技术阻碍**：无。Consumer 侧满足 `DIRKEY-R-002` 与 `DIRKEY-R-007`。
+
+**Provider 侧（Authentik → 各应用）**
+
+- **主体标识符**：`hook/iam.go` 对每个 OIDC Provider 写死 `sub_mode: user_uuid`，注释明确记录了
+  原因——LDAP source 按 printable anchor 匹配，因此 Authentik 用户 UUID 跨森林重建稳定，而
+  **用户名是登录名，绝不能成为 OIDC subject**。
+- **anchor 作为 claim**：`oidcClaimExpression`/`samlAttributeExpression` 把等于
+  `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE` 的来源翻译成 `request.user.attributes.get("ldap_uniq")`，
+  OIDC 走 scope mapping、SAML 走 property mapping。
+- **SAML NameID**：blueprint **刻意不设置** `name_id_mapping`——Authentik 的该字段是指向 property
+  mapping 的外键，不是 NameID format URN，也没有承载 format 本身的字段；它遵循 SP 在 AuthnRequest
+  里发来的 NameIDPolicy。因此 NameID 的实际取值由 SP 决定，**未经复核**。
+- **`DIRKEY-R-008` 缺口与技术阻碍**：`sub_mode` 是固定枚举（`user_uuid` 等），anchor 落在
+  `attributes.ldap_uniq` 这一自定义属性上。枚举里有没有一项能取到自定义属性、或能否用 scope
+  mapping 覆盖 `sub`，**只能由真实固定版本上的探针回答，不能凭上游文档定稿**。这是
+  [目录身份键实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md)
+  M2 第一项阻塞。在它解开之前，本 Provider 按 `DIRKEY-R-012` 声明：该部署下 Consumer 拿到的主体
+  标识符是稳定的内部 id，不是 anchor。
+
+**`DIRKEY-R-013` 投影结论：不适用（Provider 不是 Consumer）。** 本 Module 不消费别人的主体标识符，
+因此没有"把 `sub` 投影成用户名/URL/文件路径"的问题。它在 `R-013` 里的角色是**被验证的那一侧**：
+M2 切换后由各 Consumer 断言自己没有投影。需要注意的是，切换会改变 Authentik 发出的 `sub` 值，
+按 `(issuer, sub)` 建号的 Consumer（`vikunja`）与按 `sub` 建号的 Consumer（`forgejo`、`netbird`）
+都会把老用户认成新人——产品尚未上线、没有历史账号需要兼容，因此可以直接切。
+
 ## 管理面与 Secret 生命周期
 
 日常管理员通过目录身份登录。固定用户名 `akadmin` 是 `break_glass` 恢复账号；它使用独立生成密码，不复用 Samba 或数据库管理员凭据。

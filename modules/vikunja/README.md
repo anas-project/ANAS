@@ -69,6 +69,37 @@ token/provider，再立即删除浏览器 token、认证状态和本地缓存；
 当前没有通用的 `anas user/group/password` 子命令。Vikunja 用户、team 和 API token 应在应用内
 管理；目录账号和密码应在 Samba AD/LAM 或其他目录管理面操作。
 
+### 目录属性变更说明
+
+**匹配键**：OIDC `(issuer, sub)`。Vikunja 自己不接目录，它对"这是谁"的全部认知都来自 ID Token。
+**这个键在目录改名后是否稳定，完全取决于部署选了哪个 IAM Provider**——`authentik`（内部用户 UUID）
+与 `casdoor`（不可变 User ID）的 `sub` 改名后不变；`llng` 的 `sub` 默认取自登录名，改名后会变，
+Vikunja 会按新的 `(issuer, sub)` JIT 建出第二个账号，原有任务、清单与团队成员资格全部留在旧账号
+下，且**当前不自动合并**。切换 IAM Provider 也会改变 `issuer`，效果相同。
+
+应用内用户名是另一个值：Vikunja 从 `preferred_username`（即 `sAMAccountName`）取用户名，它出现在
+界面与 `/api/v1/users/...` 路径里，**不参与认人**。
+
+| 目录侧变更 | Vikunja 的行为 | 证据 |
+| --- | --- | --- |
+| `sAMAccountName` 改变 | Provider 的 `sub` 稳定时是同一账号；Vikunja 里的用户名是否跟着刷新未经复核。Provider 的 `sub` 取自登录名时（`llng`）会建出第二个账号 | 建号时用户名等于目录 `sAMAccountName`：`已验证`，入口 `test-env/scripts/server-vikunja-oidc-e2e.sh`（断言 `select username from users` 命中目录用户名）；改名后的刷新与命中行为：`推断` |
+| `mail` 改变 | 从 `email` claim 读取；是否在后续登录刷新未经复核。Vikunja 的邮箱有唯一性约束，旧地址仍挂在原账号上时，用同一地址的新账号会建号失败 | `推断` |
+| `displayName` 与其他 profile 属性 | 从 `name` claim 读取；刷新时机未经复核 | `推断` |
+| 直接或递归组成员变更 | **只影响能否登录**，在 IAM 侧按 `APP_vikunja`/`APP_all`/管理员组判定，该用户下次登录时生效。**应用内 team 与项目权限完全由 Vikunja 数据库拥有，目录组不投影到 team**，组变更对已授出的项目权限没有任何影响 | 准入门禁生效：`已验证`，入口同上（矩阵覆盖准入与拒绝用例）；team 不受目录组影响：`已验证`（Hook 与上游配置中不存在任何 group→team 映射） |
+| 账号停用 | 下次登录被 IAM 拒绝。**已有 Vikunja session 与用户自建的 API token 不会失效**：固定 `2.4.0` 没有标准 IAM→Vikunja front-/back-channel receiver，API token 也不经过登录 | 无 receiver：`已验证`（固定版本能力审查，见[Module IAM / OIDC 支持清单](/reference/module-iam-support)的登出矩阵）；API token 的存活：`推断` |
+| 账号删除 | 同上，Vikunja 账号连同其项目、任务、附件与 CalDAV 订阅原样保留；**资产不会自动转交** | `推断` |
+| 标识符回收再分配 | 取决于 Provider：`sub` 是内部不可变 id 时（`authentik`、`casdoor`）新人得到新账号（fail-closed）；`sub` 取自被回收的登录名时（`llng`）新人直接接上旧账号的全部项目（**fail-open**）。邮箱唯一性约束在前一种情况下会让建号失败 | `推断` |
+
+**兜底路径**——上表每一行"无自动路径"对应的运维动作：
+
+1. 目录里停用或删除一个人时，必须在 Vikunja 以管理员身份**删除该用户并撤销其 API token**；
+   只在目录里停用不会结束已有 session，也不会让 API token 失效；
+2. 删除账号前，先把该用户拥有的项目转让给接手人（Vikunja 的项目有明确 owner），再删除账号；
+3. **部署侧约束**：一旦选定 IAM Provider 就不要更换。更换会改变 `issuer`，所有人都会得到新账号，
+   而 Vikunja 没有合并入口；
+4. **目录侧流程约束**：使用 `llng` 作为 Provider 时，用户名改名等同于换人——在 `DIRKEY-R-008`
+   落地之前，这个组合下的改名必须走"先在 Vikunja 转移资产，再改名"的人工流程。
+
 ## 管理员登录与 IAM 故障恢复
 
 | 入口 ID | 地址来源 | 主要认证 |

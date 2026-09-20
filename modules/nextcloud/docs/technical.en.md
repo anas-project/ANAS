@@ -76,6 +76,59 @@ There is currently no generic `anas user/group/password` command. Directory-back
 
 `task.sh` copies `SAMBA_DC_USER_MIN_PASS_LENGTH` into the Nextcloud account context's `minLength` and disables Nextcloud-only common-password, HIBP, character-class, history, expiration, and failed-login lockout checks. AD complexity is a directory category-combination rule and cannot be represented exactly by Nextcloud's independently mandatory character switches, so Samba alone enforces complexity, history, age, and lockout. Before the first reconciliation, the previous account policy is copied to Nextcloud 34's `sharing` context so share-link policy remains independent of directory-account policy.
 
+### Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*.
+
+- **Which table and field persist identity**: `oc_ldap_user_mapping`. The `directory_uuid` column
+  holds the anchor (the matching key) and `owncloud_name` holds the in-application `uid`. Both
+  `oc_users.uid` and the data directory `data/<uid>/` use `owncloud_name`. `task.sh` writes the
+  configuration through `occ ldap:set-config`: `ldapExpertUUIDUserAttr` and `ldapExpertUUIDGroupAttr`
+  take `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE`, while `ldapExpertUsernameAttr` takes `SAMBA_DC_USER_NAME`
+  (the `sAMAccountName`).
+- **Matching key**: the anchor, declared explicitly in both settings rather than left to an upstream
+  default. In OIDC mode `occ user_oidc:provider anas --unique-uid=0 --mapping-uid=preferred_username`
+  funnels the login onto that same `uid` by username; in SAML mode
+  `occ saml:config:set 1 --general-uid_mapping=<anchor>
+  --saml-attribute-mapping-user_id_ldap_mapping=<anchor>` makes the assertion resolve back to the LDAP
+  account by anchor.
+- **Refreshed at each login**: `ldapUserDisplayName` (display name), `ldapEmailAttribute` (email), and
+  group membership after `ldapNestedGroups` expansion. `owncloud_name` is **not** refreshed — upstream
+  never rewrites that column once the mapping exists, which is exactly why the `uid` stays frozen at
+  the old value after a rename.
+- **Which interface performs revocation**: on the login side, `ldapLoginFilter`
+  (`NEXTCLOUD_USER_LOGIN_FILTER` carries `(!(userAccountControl:1.2.840.113556.1.4.803:=2))`, so a
+  disabled account cannot sign in). For existing sessions, `user_oidc`'s back-channel logout receiver
+  `/index.php/apps/user_oidc/backchannel-logout/anas` revokes by `sid`, covering OIDC sessions only.
+- **Reconciliation or event-subscription path**: the Module keeps a directory replica and therefore
+  falls inside the directory event subscription requirement; the periodic LDAP sync is the fallback.
+- **Where there is no automatic path, the technical obstacle**: app passwords and WebDAV/CalDAV device
+  tokens are minted by Nextcloud itself. They **do not pass through `ldapLoginFilter` and are not OIDC
+  sessions, so back-channel logout cannot reach them**. Upstream offers no interface that revokes
+  device tokens in bulk from LDAP state, leaving `occ user:disable` plus deleting each app password.
+  The user filter `NEXTCLOUD_USER_FILTER` deliberately omits the disabled condition — including it
+  would make disabled accounts vanish from Nextcloud and take file ownership with them — and the price
+  of that choice is that disabling does not propagate to device credentials on its own.
+
+**`DIRKEY-R-013` projection verdict: unaffected (`verified`).** Nextcloud's in-application `uid` comes
+from `ldapExpertUsernameAttr` (the `sAMAccountName`) and from OIDC's `preferred_username`; **neither
+path reads `sub` or `NameID`**: OIDC's `--mapping-uid` points explicitly at `preferred_username`, and
+SAML's `uid_mapping` points explicitly at the anchor attribute rather than the NameID. So once M2
+switches the subject identifier to the anchor, the `uid`, the data directory path, and share URLs do
+not turn into UUIDs. Entry point: `test-env/scripts/server-authentik-oidc-login-e2e.sh` asserts that
+`oc_ldap_user_mapping.owncloud_name` equals the directory username and `directory_uuid` equals the
+anchor, and that `occ user:info`'s `user_id` equals the directory username;
+`server-llng-oidc-login-e2e.sh` asserts the same facts against a second Provider.
+
+**SAML mode carries one further `DIRKEY-R-010` observation point**: taking the anchor for
+`general-uid_mapping` means the assertion attribute carrying the anchor is the user-id candidate. It
+is then resolved back to the existing LDAP account through `user_id_ldap_mapping`, so what lands in
+the database is still the `sAMAccountName`; **but whether a login with no matching LDAP account would
+instead create a SAML-backend account keyed by the anchor has not been re-checked**
+(`general-require_provisioned_account` is set to `0`, i.e. a pre-provisioned account is not required).
+Before M2, run a SAML-mode case for a user with no corresponding LDAP account and confirm that no
+account with a UUID `uid` appears.
+
 ## Management surfaces and secret lifecycle
 
 Routine administrators use IAM. The `break_glass` local recovery account defaults to `admin_nextcloud`; `/login?direct=1` is its direct entry and ANAS can retrieve and transactionally rotate it.

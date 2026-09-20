@@ -44,6 +44,32 @@ LAM 直接通过 LDAPS 工作。主登录页使用操作者自己的目录用户
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更的实现侧
+
+与 README 的《目录属性变更说明》一一对应。
+
+- **身份存在哪张表/哪个字段**：不存在。LAM 没有数据库，也不写用户记录；登录态只在 PHP 会话
+  存储里保存已 bind 的 DN，容器重启即全部失效。
+- **匹配键**：无持久匹配键。每次登录由 `lam/configure.php` 写出的 `loginMethod = 'search'` 驱动：
+  用 `loginSearchDN`/`loginSearchPassword`（受限服务账号）按 `loginSearchFilter` 检索，
+  过滤器是
+  `(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(sAMAccountName=%USER%)(memberOf:1.2.840.113556.1.4.1941:=<SAMBA_DC_ADMIN_GROUP_DN>))`，
+  命中后以该 DN 和操作者自己的密码重新 bind。
+- **每次登录刷新什么**：全部——没有缓存可刷新。被管理对象的属性在每次页面请求时从 LDAPS 读取。
+- **撤权经哪个接口**：登录过滤器本身，三条件缺一不可（账号启用、`sAMAccountName` 匹配、递归
+  `Admins` 成员）。目录写权限另由操作者自己的 AD ACL 在服务端裁决，LAM 不代为判权。
+- **对账或事件订阅路径**：不需要。LAM 不保有目录副本，因此不落入
+  [目录事件订阅要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md)
+  的适用范围。
+- **技术阻碍**：无。本 Module 不需要不可变身份键，因为它没有要绑定的持久状态。
+
+**`DIRKEY-R-002` 符合性**：符合（以"无持久身份键"的方式）。判据"目录里改个名，这个键变不变"
+在这里退化为"没有这个键"，因此不存在把标签当身份的风险。`sAMAccountName` 只出现在登录检索里，
+属于 `DIRKEY-R-001` 明确允许的"登录、搜索用途"。
+
+**`DIRKEY-R-013` 投影结论：不适用。** 本 Module 不是 OIDC/SAML Consumer（`module.yml` 不声明
+`iam`），不消费任何主体标识符，M2 的切换对它没有任何影响。
+
 ## 管理面与 Secret 生命周期
 
 `admin_password` 保护 LAM configuration/profile 编辑面，并不是普通目录管理员密码。该凭据尚未建模为 `management.local_accounts`。

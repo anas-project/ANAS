@@ -71,6 +71,44 @@ until the real-browser regression passes.
 There is no generic `anas user/group/password` command. Manage Vikunja users, teams, and API tokens in
 Vikunja; manage directory accounts and passwords in Samba AD/LAM or another directory administration surface.
 
+### Directory attribute changes
+
+**Matching key**: the OIDC `(issuer, sub)` pair. Vikunja attaches to no directory of its own;
+everything it knows about who someone is comes from the ID Token. **Whether this key survives a
+directory rename depends entirely on which IAM Provider the deployment selected** — `authentik` (an
+internal user UUID) and `casdoor` (an immutable User ID) both keep `sub` unchanged across a rename;
+`llng` derives `sub` from the login name by default, so after a rename it changes, Vikunja creates a
+second account just in time under the new `(issuer, sub)`, and the existing tasks, lists, and team
+memberships all stay behind on the old account — **with no automatic merge**. Switching IAM Provider
+changes `issuer` and has the same effect.
+
+The in-application username is a different value: Vikunja takes it from `preferred_username` (the
+`sAMAccountName`), it appears in the interface and in `/api/v1/users/...` paths, and it **takes no
+part in identifying anyone**.
+
+| Directory change | What Vikunja does | Evidence |
+| --- | --- | --- |
+| `sAMAccountName` changes | The same account when the Provider's `sub` is stable; whether the username inside Vikunja is refreshed has not been re-checked. When the Provider's `sub` is the login name (`llng`), a second account appears | the username at creation equalling the directory `sAMAccountName`: `verified`, entry `test-env/scripts/server-vikunja-oidc-e2e.sh` (asserts `select username from users` contains the directory username); refresh and matching behaviour after a rename: `inferred` |
+| `mail` changes | Read from the `email` claim; whether later logins refresh it has not been re-checked. Vikunja constrains emails to be unique, so while the old address still belongs to the old account a new account using it fails to be created | `inferred` |
+| `displayName` and other profile attributes | Read from the `name` claim; the refresh timing has not been re-checked | `inferred` |
+| Direct or recursive group membership changes | **Affect only whether the person can log in**, decided on the IAM side against `APP_vikunja`/`APP_all`/the administrator group and taking effect at the user's next login. **Teams and project permissions inside the application are owned entirely by the Vikunja database, and directory groups are not projected onto teams**, so a group change has no effect whatsoever on permissions already granted | admission gating taking effect: `verified`, same entry (the matrix covers both admitted and denied cases); teams being independent of directory groups: `verified` (neither the Hook nor the upstream configuration contains any group→team mapping) |
+| Account disabled | The next login is refused by the IAM. **Existing Vikunja sessions and user-created API tokens do not expire**: the pinned `2.4.0` has no standard IAM→Vikunja front-/back-channel receiver, and API tokens never pass through a login | absence of a receiver: `verified` (pinned-version capability review, see the logout matrix in [Module IAM / OIDC support](/en/reference/module-iam-support)); how long API tokens survive: `inferred` |
+| Account deleted | As above, and the Vikunja account keeps its projects, tasks, attachments, and CalDAV subscriptions untouched; **assets are never handed over automatically** | `inferred` |
+| Identifier recycled and reassigned | Depends on the Provider: where `sub` is an internal immutable id (`authentik`, `casdoor`) the newcomer gets a new account (fail-closed); where `sub` is the recycled login name (`llng`) the newcomer lands directly on the old account and all of its projects (**fail-open**). In the former case the email uniqueness constraint makes account creation fail | `inferred` |
+
+**Fallback path** — what operations must do for every "no automatic path" row above:
+
+1. When a person is disabled or deleted in the directory, an administrator must **delete that user in
+   Vikunja and revoke their API tokens**; disabling in the directory alone ends no session and
+   invalidates no API token;
+2. Before deleting the account, transfer the projects that user owns to a successor (Vikunja projects
+   have an explicit owner), then delete the account;
+3. **Deployment-side constraint**: once an IAM Provider is chosen, do not change it. A change alters
+   `issuer`, everyone receives a new account, and Vikunja offers no merge path;
+4. **Directory-side process constraint**: with `llng` as the Provider, renaming a username is
+   equivalent to replacing the person. Until `DIRKEY-R-008` lands, a rename in that combination must
+   follow a manual procedure: transfer the assets in Vikunja first, then rename.
+
 ## Administrator access and IAM recovery
 
 | Surface ID | URI source | Primary authentication |

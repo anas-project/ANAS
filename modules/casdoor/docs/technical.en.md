@@ -58,6 +58,62 @@ The integration imports users and verifies passwords remotely but does not enabl
 
 Pinned `3.143.0` publishes OIDC issuer/discovery and registers per-consumer clients with a one-hour access-token and 30-day refresh-token lifetime. ID and Logout Tokens share the exact session `sid`; the RS256 Logout Token carries `iss/aud/sub/iat/exp/jti/events`, and removing the declaration or switching to SAML clears the old back-channel URI. SAML publishes metadata, SSO, and the signing certificate without inventing SLO. Each `ALLOW_GROUPS` entry becomes a same-name Group/Role in the `anas` organization and an Approved Application Permission for the consumer, which Casdoor checks before issuing credentials. OIDC uses `JWT-Custom`/RS256: the registered permanent-anchor claim comes from `ExternalId`, group claims use Role names, and the immutable Casdoor User ID remains the stable `sub`. SAML maps the registered display name and anchor to `$user.displayName` and `$user.externalId`, and groups to `$user.roles`; unknown sources are omitted. SAML NameID remains the username, so consumers must use the explicit anchor attribute for stable linking.
 
+### Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*. This Module is both a Consumer (of Samba
+AD) and a Provider (to the applications).
+
+**Consumer side (Casdoor ← Samba AD)**
+
+- **Which table and field persist identity**: Casdoor's `user` table. The `externalId` column holds
+  the Samba permanent anchor (the matching key) and dirwatch never modifies Casdoor's own immutable
+  `id` column; `name` is the username, `displayName`/`email` are labels, and remaining directory
+  attributes are merged into `properties`.
+- **How the matching key is configured**: `hook/main.go` builds `CASDOOR_LDAP_FILTER` as
+  `(&<user class><enabled>(anasIdentityAnchor=*))` and renders
+  `CASDOOR_DIRWATCH_IDENTITY_ANCHOR_ATTRIBUTE`; `ldapCustomAttributes` in `hook/iam.go` registers the
+  anchor attribute as an LDAP custom attribute. Each `anas_casdoor_dirwatch` batch first reads the
+  directory and the Casdoor shadow users, **correlates renamed users by the permanent anchor**, then
+  runs the upstream LDAP import, and finally converges
+  `externalId/name/ldap/properties/groups/isForbidden/isDeleted`.
+- **Refreshed at each sync batch**: `displayName` and `email` only for the users involved in that
+  batch; `properties` is merged without deleting manually set attributes; passwords and manually
+  granted permissions are never overwritten. `externalId` and `id` are not refreshed.
+- **Which interface performs revocation**: dirwatch calls the **local Casdoor API** with the Module's
+  own managed Application credential to set `isForbidden`/`isDeleted` and clear groups. It follows
+  `ANAS_DIRECTORY_EVENTS_DIR` read-only, resuming, filtering, and debouncing on its own cursor; the
+  default 5-minute periodic full LDAP sync is the fallback.
+- **Technical obstacle**: none. The Consumer side satisfies `DIRKEY-R-002` and `DIRKEY-R-007`. This
+  implementation does not enable Casdoor's LDAP/AD password writeback and never treats Casdoor's local
+  user records as directory authority.
+
+**Provider side (Casdoor → the applications)**
+
+- **OIDC**: `JWT-Custom`/RS256. The registered anchor claim is sourced from the `ExistingField`
+  `ExternalId` (`oidcTokenAttributes` in `hook/iam.go`) and groups are emitted from Role names;
+  **`sub` is the immutable Casdoor User ID**, stable across a rename but not the anchor.
+- **SAML**: the anchor maps to `$user.externalId` and groups map to `$user.roles` (`samlAttributes` in
+  `hook/iam.go`); unknown sources are omitted rather than impersonating the permanent anchor. **The
+  NameID is still the username**, so a Consumer's stable correlation must use the explicit anchor
+  attribute.
+- **The `DIRKEY-R-008` gap and its technical obstacle**: whether the subject identifier (the OIDC
+  `sub` and the SAML `NameID`) can be configured to `ExternalId` **must be settled by a probe against
+  the pinned `3.143.0`**, not from upstream documentation. The SAML side deserves particular care: one
+  of the four controlled patches already extends the SAML `displayName/externalId` template, which
+  suggests changing the NameID may likewise need a patch rather than configuration. This is the other
+  half of the first blocking item of M2 in the
+  [directory identity key plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md).
+  Per `DIRKEY-R-012`, until it is resolved this Provider declares that Consumers receive a stable
+  internal id as the OIDC subject identifier and an **unstable label** as the SAML subject identifier.
+
+**`DIRKEY-R-013` projection verdict: not applicable (a Provider is not a Consumer).** This Module
+consumes nobody else's subject identifier; its role under `R-013` is to be the side that is verified
+against. Note that switching the SAML NameID to the anchor would put the anchor into the assertion's
+NameID field, so a SAML Consumer that creates accounts from the NameID would end up with UUID-shaped
+user ids. The only SAML Consumer today is `nextcloud`, whose `uid_mapping` takes the anchor attribute
+explicitly and resolves back to the LDAP account through `user_id_ldap_mapping` without reading the
+NameID, so it is unaffected (see the section of the same name in that Module's technical document).
+
 ## Local administrator lifecycle
 
 `admin_casdoor` is managed by the local-account inventory through the default `admin_{module}` template; Casdoor does not need `fixed_username`. Apply/rotate handlers stream the candidate through stdin, update bcrypt in PostgreSQL, verify the stored hash, and restore the old password if rotation fails.

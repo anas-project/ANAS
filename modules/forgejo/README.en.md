@@ -59,6 +59,40 @@ yet confirmed by a probe.)
 Forgejo `/user/logout` clears the application session only. The pinned version exposes neither a stable
 RP-Initiated Logout integration for this Module nor an IAM-initiated front/back-channel receiver.
 
+### Directory attribute changes
+
+**Matching key**: the OIDC `sub`, which Forgejo stores verbatim in its internal `login_name` field.
+The username comes separately from `preferred_username`, is written once at account creation, and
+takes no part in identifying anyone. **Whether this key survives a directory rename depends on which
+IAM Provider the deployment selected** — `authentik` and `casdoor` both mint a subject identifier
+that is not a directory label, so `sub` does not change on rename; `llng` derives its subject
+identifier from the login name by default, so after a rename `sub` changes, Forgejo creates a second
+account, and the existing repositories stay behind on the old one (see the matching-key column in
+[Module IAM / OIDC support](/en/reference/module-iam-support)).
+
+| Directory change | What Forgejo does | Evidence |
+| --- | --- | --- |
+| `sAMAccountName` changes | Same account, nothing created; the Forgejo username stays frozen at the old value, repository paths remain `/old/...`, and the identifier in URLs does not follow. This does not hold when the Provider's `sub` is the login name (`llng`), where a second account appears | `inferred` |
+| `mail` changes | Not refreshed; the account keeps the address captured at creation. Email takes no part in account binding, but Forgejo emails are globally unique, so while the old address still belongs to the old account a new account using it fails to be created | `inferred` |
+| `displayName` and other profile attributes | Written once at account creation and never refreshed afterwards | `inferred` |
+| Direct or recursive group membership changes | Reach teams and the site-administrator mapping through the groups claim at the user's **next OIDC login**; without a login nothing converges, and there is no sync or real-time path | `inferred` |
+| Account disabled | **No automatic path.** Existing Forgejo sessions, access tokens, and SSH/deploy keys all keep working; the last two never pass through a login, so "it converges at the next sign-in" does not apply to them | `inferred` |
+| Account deleted | As above, and the Forgejo account keeps its repositories, issues, and packages untouched; ownership of assets is never transferred automatically | `inferred` |
+| Identifier recycled and reassigned | Recycled username: the newcomer's first login collides with the old account's `preferred_username` and account creation fails (fail-closed). A recycled email collides the same way. But if the Provider's `sub` is itself the recycled label (`llng`), the newcomer lands directly on the old account (**fail-open**) | `inferred` |
+
+**Fallback path** — what operations must do for every "no automatic path" row above:
+
+1. When a person is disabled or deleted in the directory, a Forgejo site administrator must **disable
+   that account and explicitly revoke every access token and SSH/deploy key it owns**. Whether the
+   pinned version's `prohibit_login` also closes tokens and Git over SSH has not been re-checked, so
+   do both steps; disabling the account alone is not enough;
+2. Before deleting a directory account, transfer the repositories it owns to a successor or an
+   organization in Forgejo, then delete the Forgejo account;
+3. When group revocation has to take effect immediately, terminate the user's existing Forgejo
+   sessions in addition to step 1; waiting for the next login is not enough;
+4. **Directory-side process constraints**: usernames and mail aliases must never be recycled, and
+   renames must go through the formal process. The Module cannot enforce either.
+
 Retrieve the managed local recovery account when IAM is unavailable:
 
 ```bash

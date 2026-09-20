@@ -138,6 +138,60 @@ not an enforcement: an HTTP transport error echoes the request URL and a databas
 connection string, and neither is a call site anyone thinks of. Values shorter than 8 bytes are not
 registered: a secret that short is guessable anyway, and redacting it would blank out unrelated text.
 
+## Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*. This is about **people** only; Agent
+machine accounts do not come from the directory.
+
+- **Which table and field persist identity**: four places in `orchestrator/postgres.go`, all keyed by
+  the Forgejo username string: `agent_grant.username` (PRIMARY KEY), `agent_grant_deny.username`
+  (unique together with `agent` as `agent_grant_deny_subject`), `policy_override.username`, and
+  `audit_record.subject`.
+- **Where the matching key comes from**: the webhook envelope in `orchestrator/ingress.go` decodes
+  only `sender.login`. The orchestrator parses no ID Token and consumes no IAM binding — everything it
+  knows about a person passes through Forgejo.
+- **When it is re-derived**: `PolicyEngine.grant` keeps an in-memory snapshot and, once past its TTL,
+  calls `Permissions.UserTeams(ctx, user)` to re-read Forgejo team names, hands them to
+  `GrantFromTeams` to recompute the ceiling, and writes it back with `SaveGrant`. `agent_grant` is
+  therefore a **derived snapshot, not a source of truth** — `Grant.Source` literally reads
+  `"directory groups projected into Forgejo teams"`.
+- **Which interface performs revocation**: `PolicyEngine.Veto` writes `agent_grant_deny` and drops any
+  cached ceiling that would contradict it, backing the `agent-grant deny` command. No directory-side
+  interface can trigger it.
+- **Reconciliation or event-subscription path**: the orchestrator **needs** directory-event immediacy
+  (group revocation within seconds, see `docs/architecture/orchestration-design.md` §6.2), but
+  `forgejo` is OIDC-only and keeps no directory replica, so groups can only reach teams through a
+  claim at login. The immediate veto table exists as the **manual fast path** that fills that hole.
+- **Technical obstacle**: **no immutable person identifier reaches the orchestrator**. Forgejo's
+  OAuth2 source stores the OIDC `sub` in `login_name`, but the webhook payload does not carry that
+  field — only the admin API echoes it — so identifying people by anchor would need an extra admin
+  user lookup after each webhook to turn `login` into `login_name`. That route only becomes meaningful
+  once `DIRKEY-R-008` lands; before then `login_name` holds a Provider-internal id, which equally
+  cannot be reconciled against the directory.
+
+**`DIRKEY-R-002` compliance: not compliant; the gap is declared per `DIRKEY-R-004`.** The persistent
+authorization key is the Forgejo username, a directory label. This Module does **not** pass off
+"fall back to matching by username" as satisfying the requirement; it records the consequences and the
+fallback explicitly (see the README). Remediation follows M2 of the
+[directory identity key plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md):
+only once `sub` is the anchor, and `login_name` therefore holds the anchor, can the orchestrator
+change its authorization key. Per `DIRKEY-R-005`, re-check whether the webhook has begun carrying a
+stable identifier whenever `forgejo`'s pinned version changes.
+
+**Scope of the `DIRKEY-R-006` exception**: `agent_grant_deny` and `policy_override` only ever revoke
+(the `Override` comment states that the "final action set is an intersection",
+`AGENT-R-031`/`R-036`), so they are permitted to match by label; the cost of a misjudgment is an
+erroneous revocation, and recovery is an administrator recreating the entry by hand — **there is no
+automatic restoration path in the code**. `agent_grant` is the granting direction and does not fall
+under the exception; it bounds the exposure window by re-deriving from the current teams once the TTL
+expires.
+
+**`DIRKEY-R-013` projection verdict: not applicable (this Module is not an OIDC/SAML Consumer).**
+`module.yml` declares no `iam`, the orchestrator consumes no subject identifier, and the M2 switch
+puts no UUID into any of its interfaces or paths. M2 affects it only indirectly: the switch changes
+what `forgejo`'s `login_name` contains and thereby **opens** the "identify people by anchor" route
+that is currently closed.
+
 ## Where each requirement lands
 
 | Requirement | Implementation |

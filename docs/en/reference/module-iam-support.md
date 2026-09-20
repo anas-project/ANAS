@@ -29,30 +29,41 @@ and `meshcentral` are already dual-attached; `forgejo` uses OIDC only: the pinne
 synchronize LDAP users but exposes no interface that binds an OIDC identity to an LDAP account by an
 immutable id, so dual attachment cannot be made safe. The missing side and its fallback are in the
 [Forgejo Module design](/architecture/forgejo-module-design) §2.2, and the upgrade re-check trigger in
-§2.3 of the same document. `vikunja` currently uses OIDC only, and its upstream LDAP support is pending
-the M0 inventory. Admission-loss revocation has no consumer
-acceptance yet: the `casdoor` exact-`sid` E2E is triggered by an administrator explicitly deleting a
-session, not by a directory event.
+§2.3 of the same document. `vikunja` uses OIDC only; the M1 inventory confirmed that the pinned `2.4.0`
+has no LDAP user synchronization and no configurable identity claim. Admission-loss revocation has no
+consumer acceptance yet: the `casdoor` exact-`sid` E2E is triggered by an administrator explicitly
+deleting a session, not by a directory event.
 
-| Module | OIDC login | Current authentication path | Status |
-| --- | --- | --- | --- |
-| `netbird` | Yes | Direct IAM/OIDC consumer | Implemented |
-| `oauth2_proxy` | Yes | Direct IAM/OIDC consumer and ForwardAuth provider | Implemented |
-| `ddns_updater` | Indirect | `oauth2_proxy` through Traefik ForwardAuth | Implemented |
-| `nextcloud` | Yes | Official `user_oidc` by default; LDAPS provisions users/groups; `user_saml` remains an explicit fallback | Implemented; exact logout capability is decided by the pinned provider/version matrix below |
-| `meshcentral` | Yes | IAM/OIDC authentication, LDAPS user/group synchronization, and OIDC group-to-access/site-admin mapping | Implemented |
-| `forgejo` | Yes | IAM/OIDC JIT accounts; `APP_forgejo`/`APP_all` gate; administrator-group to site-admin mapping; managed break-glass retained | Developing: manifest, provider registration, hook, and application configuration are implemented; real browser/database E2E remains pending |
-| `vikunja` | Yes | IAM/OIDC JIT account creation; `APP_vikunja`/`APP_all` access gate; local authentication and registration disabled | Developing: manifest, provider registration, secrets, hook, and application configuration are implemented; real browser/database E2E remains pending |
-| `lam` | No | LDAPS directory-management login | Not an IAM consumer |
-| `authentik` | N/A | IAM provider with fixed `akadmin` break-glass account | Provides OIDC/SAML |
-| `casdoor` | N/A | Developing IAM provider with default-template `admin_casdoor` break-glass account | Real E2E covers OIDC/SAML login, Samba reconciliation, permanent anchors, `ALLOW_GROUPS`, and exact-`sid` OIDC revocation; the pinned version publishes no SAML SLO and M5 release acceptance remains incomplete |
-| `llng` | N/A | IAM provider | Provides OIDC/SAML |
-| `ddns_go` | No | ANAS-managed local emergency account | No OIDC |
-| `traefik` | No | ANAS-managed local BasicAuth emergency account | No OIDC |
-| `collabora` | Indirect | Integrated through Nextcloud/WOPI without a standalone user login | Follows the Nextcloud session |
-| `postgres`, `mariadb` | No | Database credentials/Adminer | Not an IAM login |
-| `samba_dc`, `samba_fs` | No | AD/LDAP/Kerberos/SMB | Not an OIDC web consumer |
-| `eturnal`, `freeradius`, `lego` | No | TURN/RADIUS/no interactive UI | Not applicable |
+**The “Matching key” column** records the key each Module **actually uses** when it persists a directory
+user, as required by `DIRKEY-R-011` of the
+[directory identity key requirement](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-identity-key.md).
+It is a summary, not the source of the conclusion: the per-row evidence level (`verified` / `inferred`),
+the consequences of a rename or a recycled identifier, and the fallback action for every gap are all in
+each Module README's *Directory attribute changes*. IAM Providers carry two entries — “consuming” (how it
+identifies people in the directory) and “issuing” (what subject identifier it hands Consumers) — because
+the two currently disagree: the issuing side does not yet satisfy `DIRKEY-R-008`, and remediation belongs
+to M2 of the
+[directory identity key plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md).
+
+| Module | OIDC login | Current authentication path | Status | Matching key |
+| --- | --- | --- | --- | --- |
+| `netbird` | Yes | Direct IAM/OIDC consumer | Implemented | OIDC `sub` (`AuthUserIDClaim` is configurable); stability follows the Provider |
+| `oauth2_proxy` | Yes | Direct IAM/OIDC consumer and ForwardAuth provider | Implemented | None; passes `sub` through, and the console takes `sha256(issuer‖sub)` |
+| `ddns_updater` | Indirect | `oauth2_proxy` through Traefik ForwardAuth | Implemented | None; follows the gateway |
+| `nextcloud` | Yes | Official `user_oidc` by default; LDAPS provisions users/groups; `user_saml` remains an explicit fallback | Implemented; exact logout capability is decided by the pinned provider/version matrix below | Identity anchor (the LDAP UUID attribute); the in-app `uid` is the `sAMAccountName` |
+| `meshcentral` | Yes | IAM/OIDC authentication, LDAPS user/group synchronization, and OIDC group-to-access/site-admin mapping | Implemented | Identity anchor, **used directly as the user id** (OIDC `uuid` claim / `ldapUserKey`) |
+| `forgejo` | Yes | IAM/OIDC JIT accounts; `APP_forgejo`/`APP_all` gate; administrator-group to site-admin mapping; managed break-glass retained | Developing: manifest, provider registration, hook, and application configuration are implemented; real browser/database E2E remains pending | OIDC `sub` (stored in `login_name`); stability follows the Provider |
+| `vikunja` | Yes | IAM/OIDC JIT account creation; `APP_vikunja`/`APP_all` access gate; local authentication and registration disabled | Developing: manifest, provider registration, secrets, hook, and application configuration are implemented; real browser/database E2E remains pending | OIDC `(issuer, sub)`; not configurable, stability follows the Provider |
+| `lam` | No | LDAPS directory-management login | Not an IAM consumer | None; searches by `sAMAccountName` and binds the DN on each login |
+| `authentik` | N/A | IAM provider with fixed `akadmin` break-glass account | Provides OIDC/SAML | Consuming: identity anchor (`object_uniqueness_field`). Issuing: internal user UUID, **not the anchor** |
+| `casdoor` | N/A | Developing IAM provider with default-template `admin_casdoor` break-glass account | Real E2E covers OIDC/SAML login, Samba reconciliation, permanent anchors, `ALLOW_GROUPS`, and exact-`sid` OIDC revocation; the pinned version publishes no SAML SLO and M5 release acceptance remains incomplete | Consuming: identity anchor (`externalId`). Issuing: OIDC `sub` is the immutable User ID; **the SAML `NameID` is the username and changes on rename** |
+| `llng` | N/A | IAM provider | Provides OIDC/SAML | Consuming: no replica. Issuing: `whatToTrace` = the lowercased `sAMAccountName`, so **both `sub` and `NameID` are labels** |
+| `ddns_go` | No | ANAS-managed local emergency account | No OIDC | N/A (local account) |
+| `traefik` | No | ANAS-managed local BasicAuth emergency account | No OIDC | N/A (local account) |
+| `collabora` | Indirect | Integrated through Nextcloud/WOPI without a standalone user login | Follows the Nextcloud session | N/A (no standalone user) |
+| `postgres`, `mariadb` | No | Database credentials/Adminer | Not an IAM login | N/A (users do not come from the directory) |
+| `samba_dc`, `samba_fs` | No | AD/LDAP/Kerberos/SMB | Not an OIDC web consumer | `samba_dc` is the directory itself; `samba_fs` uses the object SID (`idmap backend = rid`) |
+| `eturnal`, `freeradius`, `lego` | No | TURN/RADIUS/no interactive UI | Not applicable | N/A (no directory users) |
 
 ## Pinned-version logout matrix
 

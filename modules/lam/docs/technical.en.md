@@ -44,6 +44,40 @@ LAM works directly over LDAPS. Operators sign in with their own directory userna
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
 
+### Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*.
+
+- **Which table and field persist identity**: none. LAM has no database and writes no user records;
+  the logged-in state keeps only the bound DN in PHP session storage, and a container restart voids
+  all of it.
+- **Matching key**: there is no persistent matching key. Every login is driven by the
+  `loginMethod = 'search'` that `lam/configure.php` writes out: search with
+  `loginSearchDN`/`loginSearchPassword` (a restricted service account) using `loginSearchFilter`,
+  which is
+  `(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(sAMAccountName=%USER%)(memberOf:1.2.840.113556.1.4.1941:=<SAMBA_DC_ADMIN_GROUP_DN>))`,
+  then re-bind as the DN found, with the operator's own password.
+- **Refreshed at each login**: everything — there is no cache to refresh. Managed objects' attributes
+  are read from LDAPS on every page request.
+- **Which interface performs revocation**: the login filter itself, whose three conditions must all
+  hold (account enabled, `sAMAccountName` matches, recursive `Admins` member). Directory write
+  permissions are separately adjudicated server-side by the operator's own AD ACLs; LAM does not
+  decide them on their behalf.
+- **Reconciliation or event-subscription path**: not needed. LAM keeps no directory replica and falls
+  outside the
+  [directory event subscription requirement](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-event-subscription.md).
+- **Technical obstacle**: none. This Module needs no immutable identity key because it has no
+  persistent state to bind one to.
+
+**`DIRKEY-R-002` compliance**: compliant, by way of having no persistent identity key. The test
+"does this key change when the directory renames someone" degenerates here to "there is no such key",
+so no label can be mistaken for an identity. The `sAMAccountName` appears only in the login search,
+which is the "login and search" use `DIRKEY-R-001` explicitly permits.
+
+**`DIRKEY-R-013` projection verdict: not applicable.** This Module is not an OIDC/SAML Consumer
+(`module.yml` declares no `iam`), consumes no subject identifier, and is entirely unaffected by the M2
+switch.
+
 ## Management surfaces and secret lifecycle
 
 `admin_password` protects LAM configuration/profile editing; it is not a normal directory administrator password and is not yet modeled as `management.local_accounts`.

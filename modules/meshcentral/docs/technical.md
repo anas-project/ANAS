@@ -69,6 +69,37 @@ provisioning 使用，不构成浏览器登录或故障回退入口。
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更的实现侧
+
+与 README 的《目录属性变更说明》一一对应。
+
+- **身份存在哪张表/哪个字段**：MeshCentral 数据库 `main` 表中 `type = "user"` 的文档，主键 `id` 形如
+  `user//~oidc:<anchor>`。没有第二张映射表——**id 本身就是匹配键**。
+- **匹配键怎么配出来的**：`meshcentral/configure.js` 把
+  `oidc.custom.claims.uuid = SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE`，即让上游用 anchor claim 而不是
+  `sub` 构造用户 id；同一文件把 `domain.ldapUserKey` 也设成 anchor，`config.base.json` 里是同一个
+  默认值。Module 因此在 `ANAS_IAM_CLIENT__MESHCENTRAL__ATTRIBUTES` 里显式请求 anchor claim，Provider
+  无法提供时按 `DIRKEY-R-009` 应 fail closed。
+- **每次登录刷新什么**：`name`（显示名）、`email`，以及 `groups` claim 驱动的站点管理员与访问授权
+  （`oidc.groups.sync = true`、`revokeAdmin = true`）。**不刷新** id——它按定义不变。
+- **撤权经哪个接口**：只有 Provider 侧的准入判定（`oidc.groups.required`）。固定 `1.2.4` 没有
+  front-/back-channel logout receiver，因此没有任何能作用于**已有会话**的接口。
+- **对账或事件订阅路径**：LDAPS 配置仍在（`domain.auth = "ldap"`、`ldapSyncWithUserGroups`），但
+  OIDC-only 补丁关闭了密码登录表单，LDAP 登录路径不可达；它的剩余作用是目录 users/groups
+  provisioning。**LDAP 侧建出的账号 id 形式（推测为 `user//~ldap:<anchor>`）未经复核**，两条链路是否
+  会落在同一个 id 上因此也未经复核——当前 E2E 只覆盖 OIDC 侧。
+- **没有自动路径的地方，技术阻碍是什么**：缺 receiver。上游没有 OIDC back-channel logout endpoint，
+  也没有可供外部调用的"按 id 结束会话"API，因此停用一个人之后只能由管理员在 Web 管理界面删除或
+  禁用账号。这不是缺不可变 ID（这里恰恰有），是缺撤权接口。
+
+**`DIRKEY-R-013` 投影结论：不受影响，且已经是 M2 的目标形态（`已验证`）。** MeshCentral 读的是
+显式的 anchor claim，**根本不读 `sub`**，所以 M2 把主体标识符切成 anchor 对它是无操作。更重要的是，
+它已经在运行"anchor 直接作为应用内用户 id"这一形态，是 `DIRKEY-R-010` 的现成实证：anchor 出现在
+账号 id 与管理员视图里，不出现在登录名、显示名或普通用户可见的 URL 路径里。入口：
+`test-env/scripts/server-authentik-oidc-login-e2e.sh` 与 `server-llng-oidc-login-e2e.sh` 都直接断言
+`mesh_user_id == "user//~oidc:$anchor"`，且同一断言在两个不同 Provider 下都成立——这同时证明该 id
+不随 Provider 的 `sub` 形态变化。
+
 ## 管理面与 Secret 生命周期
 
 没有单独的原生恢复管理员，也没有 `management.local_accounts`。IAM 故障时需要恢复 IAM/目录链路。

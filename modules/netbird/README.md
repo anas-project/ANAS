@@ -55,6 +55,37 @@ identity:
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 目录属性变更说明
+
+**匹配键**：OIDC `sub`。management 配置里 `AuthUserIDClaim` 显式设为 `sub`，NetBird 用它作为自己的
+用户 id。**这个键在目录改名后是否稳定，取决于部署选了哪个 IAM Provider**——`authentik`（内部用户
+UUID）与 `casdoor`（不可变 User ID）的 `sub` 改名后不变；`llng` 的 `sub` 默认取自登录名，改名后会变，
+NetBird 会把同一个人当成新用户，其 peer、setup key 与访问策略成员资格全部留在旧用户下。
+
+**本 Module 当前不请求 `anasIdentityAnchor` claim**：注册的 claim 是
+`name:displayName`、`cn:cn`、`sAMAccountName:sAMAccountName`、`email:email`。`sAMAccountName` 只用于
+显示，不进入任何持久键；持久键只有 `sub` 一个。
+
+`AuthUserIDClaim` 可配置这一点是本 Module 在 M2 的机会：主体标识符切成 anchor 之后，这个字段可以
+不动（`sub` 本身就是 anchor），也可以改指向 anchor claim；两条路都不需要上游新增能力。
+
+| 目录侧变更 | NetBird 的行为 | 证据 |
+| --- | --- | --- |
+| `sAMAccountName` 改变 | Provider 的 `sub` 稳定时是同一用户，NetBird 侧不新建；界面显示名来自 `name` claim。Provider 的 `sub` 取自登录名时（`llng`）会产生第二个用户 | `推断`（依据 `NETBIRD_AUTH_USER_ID_CLAIM = "sub"` 的渲染值与各 Provider 的主体标识符形态；NetBird 没有身份类 E2E） |
+| `mail` 改变 | 从 `email` claim 读取，刷新时机未经复核；不参与账号绑定 | `推断` |
+| `displayName` 与其他 profile 属性 | 从 `name`/`cn` claim 读取，刷新时机未经复核 | `推断` |
+| 直接或递归组成员变更 | **只影响能否登录**，在 IAM 侧按 `APP_netbird`/`APP_all`/管理员组判定，下次登录生效。**NetBird 的 group、访问策略与管理员角色由 NetBird 自己的数据库拥有，目录组不投影进去**；管理员角色映射本身仍是发布阻塞项 | 目录组不投影：`已验证`（Hook 与 management 配置中不存在 group→role 映射）；准入与收敛时刻：`推断` |
+| 账号停用 | 下次登录被 IAM 拒绝。**已有 Dashboard 会话不失效**（固定 Dashboard `2.90.9` 没有 IAM→Module receiver）；更要紧的是**已注册 peer 与 setup key 根本不经过交互登录**，VPN 隧道会继续工作 | 无 receiver：`已验证`（见[Module IAM / OIDC 支持清单](/reference/module-iam-support)的登出矩阵）；peer/setup key 的存活：`推断` |
+| 账号删除 | 同上，NetBird 用户连同其 peer 与 setup key 原样保留；**peer 归属不会自动转移或注销** | `推断` |
+| 标识符回收再分配 | 取决于 Provider：`sub` 是内部不可变 id 时新人得到新用户（fail-closed）；`sub` 取自被回收的登录名时（`llng`）新人直接接上旧用户的全部 peer 与策略成员资格（**fail-open**，等于把一条已建立的 VPN 访问交给新人） | `推断` |
+
+**兜底路径**——上表每一行"无自动路径"对应的运维动作：
+
+1. 目录里停用或删除一个人时，必须在 NetBird 管理界面**删除该用户，并逐个撤销其名下的 peer 与
+   setup key**。只停用目录账号不会断开已建立的隧道——这是本 Module 撤权风险最高的一条；
+2. 删除用户前，先把仍需保留的 peer 转移给接手人或改为服务账号所有；
+3. 组撤权要立即生效时，NetBird 侧的访问策略必须另行修改；目录组变更不会传播到策略。
+
 ## 管理员登录与 IAM 故障恢复
 
 没有受支持的私有恢复管理员。IAM 故障时没有文档化的绕过入口。

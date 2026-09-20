@@ -92,6 +92,51 @@ This version has no standard endpoint for an OIDC Logout Token or front-channel 
 cannot clear an existing Vikunja session. A real-browser test must still verify `state`, the old cookie, IAM
 cookie, and retry boundary, so bidirectional logout is not claimed.
 
+### Directory attribute changes — implementation
+
+One-to-one with the README's *Directory attribute changes*.
+
+- **Which table and field persist identity**: Vikunja's `users` table. Upstream locates the account by
+  `(issuer, subject)`; the `username` column holds `preferred_username`, and `email` and `name` hold
+  the corresponding claims. The Module keeps no directory replica and there is no second mapping table.
+- **Matching key**: `(issuer, subject)`. **The Module cannot configure it** — upstream's OpenID
+  provider implementation offers no setting for which claim identifies a person, and `sub` is
+  hard-coded. The Module therefore requests only `name`, `preferred_username`, and `email` in
+  `ANAS_IAM_CLIENT__VIKUNJA__ATTRIBUTES` and **does not request the anchor claim**: requesting it
+  would give upstream nowhere to use it.
+- **Refreshed at each login**: not re-checked. Upstream reads email/name/preferred_username in
+  `getOrCreateUser`, but whether it overwrites an existing row has not been verified on the pinned
+  version.
+- **Which interface performs revocation**: none. The pinned `2.4.0` has neither an OIDC Logout Token
+  receiver nor a front-channel iframe endpoint, so the Hook omits
+  `OIDC_LOGOUT_URI/METHODS/SESSION_REQUIRED`. User-created API tokens likewise never pass through a
+  login, and no interface can revoke them from directory state.
+- **Reconciliation or event-subscription path**: none. The Module keeps no directory replica, so it
+  falls outside the directory event subscription requirement and runs no watcher process.
+- **Where there is no automatic path, the technical obstacle**: a **missing configurable identity
+  field** (upstream cannot be made to identify people by the anchor) plus a **missing receiver**
+  (existing sessions cannot be revoked from the IAM). This is a gap in the sense of `DIRKEY-R-004`:
+  a Module must not pass off "fall back to matching by username or email" as satisfying
+  `DIRKEY-R-002`, and this one does not — it depends honestly on the Provider's `sub` and hands the
+  responsibility for that `sub`'s stability back to the Provider (see `DIRKEY-R-012`). Per
+  `DIRKEY-R-005`, re-check whether upstream has added a configurable identity claim whenever the
+  pinned version changes.
+
+**`DIRKEY-R-013` projection verdict: unaffected (`verified`).** The question that matters is whether
+`sub` reaches the presentation layer, and it does not: Vikunja's in-application username comes from
+`preferred_username`, and `sub` lands only in the internal `subject` column. Entry point:
+`test-env/scripts/server-vikunja-oidc-e2e.sh` queries the database directly
+(`select username from users`, once each for the PostgreSQL and MariaDB branches) and asserts that
+what appears there is the **directory `sAMAccountName`**. Were upstream to build the username from
+`sub`, that assertion would fail. So once M2 switches the subject identifier to the anchor, no UUID
+appears in the Vikunja interface or in `/api/v1/users/...` paths.
+
+**The switch does, however, change the value of `sub` itself**, and Vikunja identifies people by
+`(issuer, sub)`: an existing account's `subject` column holds the old subject identifier, so after the
+switch the same person is treated as a newcomer and a second account is created just in time. The
+product has not shipped and there are no historical accounts to stay compatible with, so this is not
+blocking; once real data exists, `users.subject` must be cleared or migrated before the switch.
+
 ## Management surface and secret lifecycle
 
 | Surface ID | URI source | Primary authentication |
