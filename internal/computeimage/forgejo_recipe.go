@@ -83,12 +83,14 @@ packages:
         - ca-certificates
         - coreutils
         - dbus
+        - dbus-user-session
         - fuse-overlayfs
         - git
         - iproute2
         - podman
         - slirp4netns
         - systemd
+        - systemd-sysv
         - systemd-resolved
         - uidmap
         - util-linux
@@ -99,7 +101,7 @@ files:
   - generator: hosts
     path: /etc/hosts
 %s  - generator: copy
-    source: forgejo-runner
+    source: sources/forgejo-runner
     path: /usr/local/bin/forgejo-runner
     mode: "0755"
     uid: "0"
@@ -117,6 +119,13 @@ files:
       DHCP=yes
       IPv6AcceptRA=yes
   - generator: dump
+    path: /usr/lib/tmpfiles.d/anas-resolver.conf
+    mode: "0644"
+    uid: "0"
+    gid: "0"
+    content: |-
+      L+ /etc/resolv.conf - - - - /run/systemd/resolve/resolv.conf
+  - generator: dump
     path: /usr/local/libexec/anas-forgejo-runner-start
     mode: "0755"
     uid: "0"
@@ -131,7 +140,28 @@ files:
     content: |-
 %s
   - generator: dump
-    path: /etc/systemd/system/anas-podman.service
+    path: /usr/lib/systemd/user/anas-podman.service
+    mode: "0644"
+    uid: "0"
+    gid: "0"
+    content: |-
+%s
+  - generator: dump
+    path: /usr/lib/systemd/user/anas-podman.socket
+    mode: "0644"
+    uid: "0"
+    gid: "0"
+    content: |-
+%s
+  - generator: dump
+    path: /usr/lib/tmpfiles.d/anas-podman.conf
+    mode: "0644"
+    uid: "0"
+    gid: "0"
+    content: |-
+%s
+  - generator: dump
+    path: /etc/systemd/system/user@1002.service.d/anas-engine.conf
     mode: "0644"
     uid: "0"
     gid: "0"
@@ -149,26 +179,43 @@ actions:
     action: |-
       #!/bin/sh
       set -eu
+      # The archive is private, but the guest OS root must be traversable by
+      # systemd service users. A release operator's umask must not become the
+      # rootfs mode and prevent every non-root daemon from starting.
+      chmod 0755 /
+      # Dump generators create missing parents under the private build umask.
+      # These two directories contain only public configuration/executables.
+      install -d -o root -g root -m 0755 /etc/forgejo-runner /usr/local/libexec
+      install -d -o root -g root -m 0755 /usr/lib/systemd/user /etc/systemd/system/user@1002.service.d
       groupadd --gid 1003 actions-engine
       useradd --uid 1001 --create-home --shell /usr/sbin/nologin runner-agent
-      useradd --uid 1002 --create-home --shell /usr/sbin/nologin --groups actions-engine runner-engine
+      useradd --uid 1002 --gid actions-engine --no-user-group --create-home --shell /usr/sbin/nologin runner-engine
       usermod --append --groups actions-engine runner-agent
+      # Rootless DNS helpers and cgroup scopes use the engine user's bus.
+      # Enable this offline; a build chroot has no logind connection.
+      install -d -o root -g root -m 0755 /var/lib/systemd/linger
+      touch /var/lib/systemd/linger/runner-engine
+      chmod 0644 /var/lib/systemd/linger/runner-engine
       grep -q '^runner-engine:' /etc/subuid || usermod --add-subuids 100000-165535 runner-engine
       grep -q '^runner-engine:' /etc/subgid || usermod --add-subgids 100000-165535 runner-engine
       install -d -o runner-agent -g runner-agent -m 0700 /home/runner-agent/.cache/act
-      ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
       systemctl enable systemd-networkd.service
       systemctl enable systemd-resolved.service
-      systemctl enable anas-podman.service
-%s`, arch, vmPackages, vmFiles, indentLiteral(sources.runnerStart), indentLiteral(sources.oneJob), indentLiteral(sources.podmanService), indentLiteral(sources.runnerConfig), vmTarget)
+      install -d -o runner-engine -g actions-engine -m 0700 /home/runner-engine/.config /home/runner-engine/.config/systemd /home/runner-engine/.config/systemd/user /home/runner-engine/.config/systemd/user/sockets.target.wants
+      ln -s /usr/lib/systemd/user/anas-podman.socket /home/runner-engine/.config/systemd/user/sockets.target.wants/anas-podman.socket
+      chown -h runner-engine:actions-engine /home/runner-engine/.config/systemd/user/sockets.target.wants/anas-podman.socket
+%s`, arch, vmPackages, vmFiles, indentLiteral(sources.runnerStart), indentLiteral(sources.oneJob), indentLiteral(sources.podmanService), indentLiteral(sources.podmanSocket), indentLiteral(sources.podmanTmpfiles), indentLiteral(sources.engineUserManager), indentLiteral(sources.runnerConfig), vmTarget)
 	return []byte(body), nil
 }
 
 type forgejoRunnerImageSources struct {
-	runnerStart   string
-	oneJob        string
-	podmanService string
-	runnerConfig  string
+	runnerStart       string
+	oneJob            string
+	podmanService     string
+	podmanSocket      string
+	podmanTmpfiles    string
+	engineUserManager string
+	runnerConfig      string
 }
 
 func readForgejoRunnerImageSources(sourceDir string) (forgejoRunnerImageSources, error) {
@@ -207,11 +254,23 @@ func readForgejoRunnerImageSources(sourceDir string) (forgejoRunnerImageSources,
 	if err != nil {
 		return forgejoRunnerImageSources{}, err
 	}
+	podmanSocket, err := read("anas-podman.socket")
+	if err != nil {
+		return forgejoRunnerImageSources{}, err
+	}
+	podmanTmpfiles, err := read("anas-podman.conf")
+	if err != nil {
+		return forgejoRunnerImageSources{}, err
+	}
+	engineUserManager, err := read("anas-engine-user.conf")
+	if err != nil {
+		return forgejoRunnerImageSources{}, err
+	}
 	runnerConfig, err := read("config.yml")
 	if err != nil {
 		return forgejoRunnerImageSources{}, err
 	}
-	return forgejoRunnerImageSources{runnerStart: runnerStart, oneJob: oneJob, podmanService: podmanService, runnerConfig: runnerConfig}, nil
+	return forgejoRunnerImageSources{runnerStart: runnerStart, oneJob: oneJob, podmanService: podmanService, podmanSocket: podmanSocket, podmanTmpfiles: podmanTmpfiles, engineUserManager: engineUserManager, runnerConfig: runnerConfig}, nil
 }
 
 func indentLiteral(s string) string {

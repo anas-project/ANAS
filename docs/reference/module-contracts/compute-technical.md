@@ -154,8 +154,41 @@ Contract 不负责安装、配置或托管 Provider daemon 本身，也不要求
 破坏性 Resource delete 入口前仍按 retain 处理。
 
 一次性 Secret（例如 runner token）如何进入 guest 不属于本 Contract：那发生在租约交付之后，由
-消费者经 Provider 的 exec stdin 通道注入，Secret 不得出现在命令参数、环境变量、cloud-init、
+消费者经共享 `computeclient.ExecStdin` 直连 Incus 注入，不经过 Provider operation。Secret 不得出现在命令参数、环境变量、cloud-init、
 镜像、磁盘状态或日志中。
+
+### 共享客户端的凭据准备与子进程边界
+
+`New` 保持原有调用接口；`NewWithContext` 让凭据准备、文件锁等待和初始 CLI 连接共同受调用方
+取消信号与最多 30 秒初始化预算约束。初始化复制镜像 allowlist，调用方修改原切片不能改变已
+构造客户端的镜像许可。直接构造的租约与环境输入使用相同的 endpoint、project、profile、配额、
+隔离档及摘要校验；guest 入口必须是不重复的规范绝对路径，非法输入在文件写入前拒绝。
+此方法只准备连接，不启动或清理 guest。
+
+凭据准备先核验有界 base64、单份 X.509 证书、服务端证书摘要及匹配的客户端证书/私钥，全部
+通过后才创建目录。Linux/macOS 上，配置根和 `servercerts` 必须属于执行用户且为 0700；三个
+凭据文件、冻结的 `config.yml` 和初始化锁必须是同一用户的 0600、单硬链接普通文件。使用目录句柄、不跟随最终符号
+链接、独占创建、fsync 和读回；任一已有文件内容不同、权限不符、特殊文件或身份漂移均拒绝。
+没有匹配字节就不会截断或覆盖，也不会自动 chmod 既有文件。不同身份应交付不同的私有目录。
+初始化锁不删除，等待可取消；相同内容只读回而不重写，失败后的私有部分文件保留供显式处理，
+不在失败返回时删除其他进程可能使用的路径。其他平台没有不受保护的写入回退。
+
+`config.yml` 使用标准 JSON 编码表达 CLI 可读取的 YAML 配置，固定 `protocol: incus`、remote、endpoint、TLS 类型和
+project，并与证书一起校验、提交和读回。旧实验的 `protocol: lxd` 配置不被覆盖或静默迁移，
+需使用新私有配置目录。不再执行 `remote add`；重复初始化复用相同字节，
+然后只读列举受限 project 中的实例来检查连接。不同 project 或其他既有配置不能静默覆盖。
+初始化锁先独占创建，已存在时以不带创建标志的方式打开；后者消失时拒绝，不另建锁 inode。
+错误只附带固定阶段和系统错误类别，不回显路径或凭据。
+
+这只是初始化的序列化与文件保护，不是整个客户端运行期的凭据锁或轮换协调。只读列举成功
+不替代 Provider 的完整围栏/profile/配额就绪检查，也不证明 guest 生命周期通过验收。
+
+Incus 子进程只收到固定系统 PATH/locale、本租约的 HOME、INCUS_CONF 和 INCUS_PROJECT，不继承
+其他租约 Secret、默认 Incus socket、代理或动态加载器环境。程序仍从受信消费者自身 PATH 解析。
+stdout 上限为 4 MiB，stderr 为 64 KiB，超限主动取消子进程并返回固定错误，不返回部分输出；
+错误不回显 stderr/stdin。`WaitDelay` 限制退出后管道等待，保留调用方取消错误身份；未提供 stdin
+时关闭输入。这些限制不能代替对取消后真实 guest 的独立回收与生命周期验收。
+实例列表拒绝 `null` 和重复托管身份；托管过滤与创建使用相同的实例名规则。删除 CLI 成功后仍须重新读取并确认实例不存在。
 
 ## 结构化声明与 deployment 镜像冻结
 

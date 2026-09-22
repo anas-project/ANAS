@@ -48,7 +48,7 @@ export interface paths {
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
                 ws: components["parameters"]["WorkspaceID"];
-                phase: "install" | "configure" | "enroll" | "uninstall";
+                phase: "install" | "configure" | "enroll" | "uninstall" | "observer";
             };
             cookie?: never;
         };
@@ -109,7 +109,7 @@ export interface paths {
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
                 ws: components["parameters"]["WorkspaceID"];
-                phase: "install" | "configure" | "enroll" | "uninstall";
+                phase: "install" | "configure" | "enroll" | "uninstall" | "observer";
             };
             cookie?: never;
         };
@@ -1312,6 +1312,31 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        IncusObserverOperation: {
+            /**
+             * @description Derive observation scope from installed host and active workspace, or revoke the owned scope. Does not enable HTTP publication.
+             * @enum {string}
+             */
+            operation: "refresh" | "disable";
+        };
+        IncusObserverApplyParameters: {
+            /** @constant */
+            schema: "anas.host-action.incus/v1";
+            request: {
+                /** @constant */
+                schema: "anas.incus-observer-configuration/v1";
+                workspace_id: string;
+                /** @enum {string} */
+                operation: "refresh" | "disable";
+            };
+            binding: {
+                /** @constant */
+                schema: "anas.incus-observer-configuration/v1";
+                workspace_id: string;
+                plan_digest: string;
+                state_digest: string;
+            };
+        };
         IncusHostRequest: {
             /** @description Omission means false. Only accepted for the install plan/action; it never authorizes configure, enroll or uninstall effects. */
             skip?: boolean;
@@ -2687,14 +2712,15 @@ export interface operations {
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
                 ws: components["parameters"]["WorkspaceID"];
-                phase: "install" | "configure" | "enroll" | "uninstall";
+                phase: "install" | "configure" | "enroll" | "uninstall" | "observer";
             };
             cookie?: never;
         };
         requestBody: {
             content: {
                 "application/json": {
-                    request: components["schemas"]["IncusHostRequest"];
+                    /** @description Use IncusObserverOperation only for phase observer; other phases use IncusHostRequest. */
+                    request: components["schemas"]["IncusHostRequest"] | components["schemas"]["IncusObserverOperation"];
                 };
             };
         };
@@ -2770,7 +2796,7 @@ export interface operations {
                 "application/json": {
                     plan_job_id: string;
                     /** @enum {string} */
-                    action: "incus.install" | "incus.configure" | "incus.enroll" | "incus.uninstall" | "incus.image-prune";
+                    action: "incus.install" | "incus.configure" | "incus.enroll" | "incus.uninstall" | "incus.image-prune" | "incus.ingress.observer";
                 };
             };
         };
@@ -2817,7 +2843,7 @@ export interface operations {
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
                 ws: components["parameters"]["WorkspaceID"];
-                phase: "install" | "configure" | "enroll" | "uninstall";
+                phase: "install" | "configure" | "enroll" | "uninstall" | "observer";
             };
             cookie?: never;
         };
@@ -2826,7 +2852,8 @@ export interface operations {
                 "application/json": {
                     plan_job_id: string;
                     confirmation_token: string;
-                    parameters: components["schemas"]["IncusHostApplyParameters"];
+                    /** @description Must be copied from the corresponding completed plan; phase observer uses IncusObserverApplyParameters. */
+                    parameters: components["schemas"]["IncusHostApplyParameters"] | components["schemas"]["IncusObserverApplyParameters"];
                 };
             };
         };

@@ -129,15 +129,43 @@ anas config plan -w /srv/anas
 
 Actions 默认关闭，只提供 `forgejo.actions_enabled` 一个功能开关；同一值同时控制 Forgejo 服务端和
 one-job Runner controller，不存在 `runner.enabled`。`actions_allowed_scopes` 是逗号分隔的组织或
-`owner/repo` 授权集合，不是第二个开关，也不会注册 global Runner。开启前还必须配置独立 Incus/KVM
-宿主 endpoint、restricted project TLS credential、受限 profile 和固定 Runner image fingerprint；
-缺少任一前置条件时 Hook 会拒绝开启，不能只启动 Actions 服务端。
+`owner/repo` 授权集合，不是第二个开关，也不会注册 global Runner。开启还需要一台独立的 Incus 宿主
+（由 `incus` Module 经 compute contract 供给 endpoint、受限证书与 profile），以及一个固定的 Runner
+image fingerprint。前置校验分两处：Hook 在渲染时校验 scope、控制面账号口令与 fingerprint，一次性
+preflight 在 Forgejo 启动前连接 Incus 验证 project、配额与 profile。任一处失败 Forgejo 都不会启动，
+因此不存在"只开了服务端"的状态。
 
-controller 默认每 15 秒查询已批准 scope；空队列不注册 Runner、不创建 VM。每个 waiting job 对应
-一个 ephemeral registration 和一个 Incus VM，并用 job handle 启动 `forgejo-runner one-job`。token
-只经 Incus agent stdin 写入 guest tmpfs；VM 内使用独立 `runner-agent` 与 `runner-engine` 用户及
+### 执行实例的两档隔离
+
+`forgejo.actions_isolation` 决定作业跑在什么里面，默认 `auto`：
+
+| 档位 | 实例 | 内核 | 对宿主的要求 |
+| --- | --- | --- | --- |
+| `incus_container`（`auto` 解析到这一档） | 非特权 Incus 系统容器 | **与宿主共享内核** | 不需要 KVM |
+| `incus_vm` | QEMU/KVM 虚拟机 | 独立 guest kernel | 宿主必须具备 KVM |
+
+默认是容器档，因为 NAS 与小型主机不保证提供 KVM，把需要 KVM 的档位设成默认会让 Actions 在这类机器
+上装不上。两档的配额、一次性实例、无宿主挂载、无 socket、出站白名单完全相同，**差别只在内核边界**：
+容器档的隔离以宿主内核为前提，一个内核提权漏洞会打到宿主。因此**跨信任域的写入者、或会执行不受信
+输入的 scope（典型是接受外部 PR 的公开仓库）请显式设为 `incus_vm`**，并为它准备具备 KVM 的宿主。
+选档不会自动发生：宿主没有 KVM 时不会自动降级，有 KVM 时也不会自动升级。
+
+### controller 使用的 Forgejo 账号
+
+开启 Actions 会在 Forgejo 里调和一个固定账号 `anas_actions_controller`，口令由 ANAS Secret Store
+管理，供 controller 调用 Actions Runner API。它不是给人用的登录入口——人用的恢复入口是下文的
+`break_glass`。
+
+**当前该账号被建成站点管理员，这是一处已登记的权限偏差。** controller 实际只调用获批 scope 下的三个
+`actions/runners` 端点，站点管理员只是因为目前没有"按 scope 授予组织 owner / 仓库 admin"的调和路径。
+两条后果请知悉：controller 被攻陷等同于 Forgejo 全站管理员；**关闭 `actions_enabled` 不会撤销这个
+账号**，需要手工在 Forgejo 停用或删除它。收敛计划见实施计划的 M3。
+
+controller 默认每 15 秒查询已批准 scope；空队列不注册 Runner、不创建实例。每个 waiting job 对应
+一个 ephemeral registration 和一个 Incus 实例，并用 job handle 启动 `forgejo-runner one-job`。token
+只经 Incus agent stdin 写入 guest tmpfs；实例内使用独立 `runner-agent` 与 `runner-engine` 用户及
 rootless Podman。关闭唯一开关时 controller 进入清理模式后退出。Module 不会把 Docker/Podman socket
-挂入 Forgejo 容器，Runner VM 也不挂载 ANAS/Forgejo 数据。
+挂入 Forgejo 容器，Runner 实例也不挂载 ANAS/Forgejo 数据。
 
 自定义 Git Hooks 与 local-path import 默认关闭，必须分别显式开启。前者允许仓库 Hook 以 Forgejo
 用户身份执行服务端代码；后者只允许读取容器内本来已可见的路径，Module 不会因此挂载任意宿主目录。
@@ -148,12 +176,18 @@ SSH key/config 和应用配置；用户、权限、Issue 等关系状态位于�
 同一一致性点覆盖数据目录、数据库、`.anas/secrets.yml` 与部署元数据。恢复后至少验证 HTTP/SSH
 clone/push、LFS、Package、OIDC 登录和本地恢复登录。
 
+Actions controller 的状态在 Docker named volume `forgejo_actions_state` 里，不属于上面的一致点，但
+目前**也不能随手丢弃**：丢了它，Actions 还开着时孤立的 Runner 实例要等到关闭开关才回收，个别孤立
+的 Runner registration 则会永久留在 Forgejo 里。重建部署时请一并保留它。
+
 ## 当前限制
 
 - 状态为 `developing`；PostgreSQL/MariaDB、amd64/arm64、真实浏览器 OIDC、备份恢复和前一版本
   升级/回滚 E2E 尚是提升 `release` 的门槛。
 - SMTP、S3/object storage 和外部搜索尚未自动配置。Actions controller/Runner image 资产已接入，但
-  独立 Incus/KVM、网络 egress 和真实 one-job E2E 尚未完成，因此 Actions 仍是开发中能力。
+  独立 Incus 宿主、网络 egress 和真实 one-job E2E（两档各一遍）尚未完成，因此 Actions 仍是开发中
+  能力。Runner 镜像需要按 amd64/arm64 × 容器/VM 各签收一份 fingerprint，配置里只有一个值，填错
+  档位或架构要到创建实例失败时才会暴露。
 - `forgejo.oidc_client_secret` 使用 `migrate` 模式，不能参与统一 `credential rotate` 事务；变更需
   在维护窗口内同时更新 IAM client 与 Forgejo auth source 并验证登录。
 

@@ -591,7 +591,9 @@ version/commit、`systemd-root-service` 和固定服务单元。socket 为 root/
 激活一个 `anas-hostd`；执行者通过固定私有 broker 复核共享 job、持有原执行租约，并由 systemd
 独立退出状态和空进程集决定是否允许写入终态。普通 root 进程不能只凭自报 PID/单元名准入。
 
-编译动作包括 `incus.status`、install/configure/enroll/uninstall 各自的 plan 与执行动作。
+编译动作包括 `incus.status`、install/configure/enroll/uninstall 各自的 plan 与执行动作，
+以及 `incus.ingress.observer.plan` / `incus.ingress.observer` 的观察配置交付与撤销；后者同样要求
+一次性确认，作用域内容由宿主推导，不能由调用方提交。实现与状态机边界见 Incus 宿主供给 §7.9。
 当前建立性动作也要求计划绑定和确认，比原设计“一段即可”的最低要求更保守。确认元数据位于
 root-only `/run/anas/confirmations`，原 token 不进入 job/审计，消费与执行 Claim 分开；
 五分钟有效期从原 plan 时间起算，同一个过期计划不能通过重新签发延长。成功终态仍需独立退出
@@ -615,3 +617,30 @@ stdout/stderr。`anas-hostd` 必须有包管理、账户创建、网络配置所
 **这些源码和本机夹具不是发布批准。** 实际 systemd 私有 D-Bus、原生身份、发行版包安装、控制
 bridge、双栈与 guest 生命周期尚需真实宿主验证。非 systemd 启动、生产 HTTP ingress 的 namespace/
 地址生命周期证明和破坏性镜像 prune 仍存在实现或接线缺口，当前不开放这些路径。
+
+### 13.1 受限 HTTP 观察动作（2026-09-21）
+
+编译清单新增 `incus.ingress.observe_http`，只读、root 执行、不要求破坏性确认，30 秒预算，
+reject 并发。v3 参数只含逐次调用绑定与已登记 scope/租约/实例/workload/端口；没有自由命令或
+endpoint。实际实现由 `internal/incusprovision/ingress_observation*.go` 提供，不接受插件注册。
+
+新动作与供给动作共用审计、执行绑定和终态监督。公有结果投影再次限制为单租约身份，拒绝新增
+字段、旧 schema、未知错误原文和 provisional success。宿主审计记录规范参数摘要，不记录
+管理证书、私钥、完整 API 结果或工作区文件。`HostObservationInvoker` 共用原队列，每次新建 job，
+等待结束前仍检查权限、workspace、invocation 与观察 nonce；调用方不再等待不会取消已归属的执行。
+
+数据源授权来自固定 root scope 与当前已登记工作区，root 持有的管理凭据不交给中介。
+该替代路径不是一张新的 daemon 只读证书；scope 自动安装与服务启动尚未交付。
+HOSTACT-R-012 五问及验收边界见
+[宿主通道计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/host-action-channel.md)
+和 [Incus 设计 §7.8](incus-host-provisioning.md)。没有增加第三个特权入口或后台 root 观察服务。
+
+### 13.2 配置执行前排空与正常停机（2026-09-21）
+
+观察配置的确认交付见 [Incus 设计 §7.9](incus-host-provisioning.md)，共享执行器的排空屏障见
+该文 §7.11。配置任务在 queued 阶段等待旧中介，不占用 root 执行位置或阻塞清理依赖；真实
+broker 授权回调再次检查绑定的排空结果。原确认/审计/退出监督均保留，没有注册新 root 动作。
+
+正常服务取消先拒绝配置写入，保留只读队列、broker 与租约至中介排空。失败需可信所有者显式
+重试，不自动放开新启动或续期配置；生产 launcher 和异常跨进程恢复仍未验收。源码接线不代表
+现在已经启动了中介或开放 ingress。

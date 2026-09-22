@@ -1,5 +1,50 @@
 # Architecture
 
+The isolated Incus daemon continuation fixes a real synchronous-create response mismatch: POST may return
+HTTP 201 with a successful synchronous 200 envelope; reads and other methods do not inherit that allowance.
+Independent resource readback and ownership checks remain required. A new explicit lab harness runs the
+actual Unix client and Provider rejection/pinning checks with an extracted distribution daemon in private
+mount/network/PID namespaces and ephemeral state. It does not install host packages or launch guests, and
+does not prove supported-volume quotas, 7.3.0 compatibility or production deployment. See
+[the Chinese host design, section 7.16](/architecture/incus-host-provisioning).
+
+The 2026-09-21 native Incus readback repair uses symbolic nft protocol output and rejects ambiguous numeric
+EtherTypes. A read-only kernel GETRULE observation supplies the original interface index, bound to complete
+JSON by an unchanged GETGEN generation, table, chain and rule handle. Device names never supply replacement
+indices. Exact redundant protocol dependencies and split IPv4 policy prefixes are handled without widening
+the remaining ordered checks. Namespace fixtures restore their creator thread and model cross-namespace
+veth peers. Eight mandatory native cases, three shuffled repetitions and the host-network package passed on
+the designated Ubuntu host; these do not establish production guest/Traefik/Docker acceptance. Publication
+remains disabled. See [the Chinese design, section 7.15](/architecture/incus-host-provisioning).
+
+The 2026-09-21 workspace-launch continuation joins host-only readers, the existing coordinator and the
+cross-process workspace fence. The running host-action service supplies the owner context and observation
+invoker; a private delivery cannot select a different scope. Startup checks separate request, credential,
+journal and route directories, pin directory/file identities and the renderer bytes, and recheck them before
+writing a lifetime marker. Lost consumer inputs revoke publication without invalidating the independent
+retirement reader. Local tests include pinned HTTPS and an empty-request lifecycle, not real UID/mount,
+Incus or Traefik acceptance. Production installation and publication remain disabled. See
+[the Chinese host design, section 7.14](/architecture/incus-host-provisioning).
+
+The 2026-09-21 Incus mediator slice wires a credential-free host observer into
+private reader delivery and the existing WorkspaceSource/Traefik assembly. Host
+and direct Incus modes are exclusive and never fall back to each other. A managed
+ControllerService retains its exact journal/flock and old readers after failed
+drain; explicit retries only retire old targets. Readers close only after confirmed
+cleanup. This is an internal lifecycle owner, not an installed production daemon.
+Configuration-change coordination, host network actions, health, UID/mounts and
+real-host acceptance remain outstanding. See the normative
+[Chinese design, section 7.10](/architecture/incus-host-provisioning).
+
+The 2026-09-21 observer-configuration slice adds `incus.ingress.observer.plan` and
+`incus.ingress.observer` through the existing shared confirmation/job/audit path.
+The host derives a container-only scope from its enrolled connection and active workspace;
+callers select refresh or disable, not credentials, paths, versions or authorization snapshots.
+Pending/committed/disabled records live in the existing host state, with readback, bounded
+recovery and tombstones. CLI/HTTP use the observer phase. This does not start the production
+mediator, drain network rules or establish native acceptance. See the normative
+[Chinese host design, section 7.9](/architecture/incus-host-provisioning).
+
 Chinese is the source language for the detailed design set. The pages below linked under `/en/` have English versions; the rest link to the Chinese originals, which remain normative. It covers:
 
 - the normative [Core implementation standard](/en/architecture/core-implementation-standard);
@@ -12,7 +57,7 @@ Chinese is the source language for the detailed design set. The pages below link
 - [object-storage capability binding and normalized S3 outputs](/en/architecture/object-storage-capability-design);
 - [Forgejo Module identity, Actions authorization, and Incus VM runner design](/architecture/forgejo-module-design);
 - [AI agent orchestration (Forgejo baseline)](/architecture/ai-agent-orchestration-design) — agents as Forgejo accounts with repository-scoped tokens, issue/label/comment events as the control surface, a standalone orchestrator packaged as a module, and one-job isolated execution. The design itself now lives with the component under `modules/ai_agent/`, ready to be split into its own project;
-- [Incus host provisioning, ingress, and guest image baking (proposal)](/architecture/incus-host-provisioning) — selected design: dedicated control bridge with fixed-destination TLS pass-through; Traefik reaches managed guest addresses through restricted routing and firewall rules, without mandatory proxy devices or network forwards. HTTP is the first phase; TCP/UDP require separate authorization and listener planning. Image declarations use mutually exclusive catalog/name/revision or fingerprint objects, with no legacy string compatibility; deployment digests are frozen. Implementation and real-host verification remain pending. The Chinese source is normative;
+- [Incus host provisioning, ingress, and guest image baking](/architecture/incus-host-provisioning) — dedicated control bridge with fixed-destination TLS pass-through; candidate ingress uses restricted routing and firewall rules without mandatory proxy devices or network forwards. HTTP is the first phase; TCP/UDP remain separate work. Host actions and frozen image supply are wired in code, but complete production ingress and real-host acceptance remain pending. Image declarations use mutually exclusive catalog/name/revision or fingerprint objects; deployment digests are frozen. The Chinese source is normative;
 - [runtime artifacts, releases, and persistent state](/architecture/runtime-release-state-design);
 - [configuration and state lifecycle](/architecture/config-state-lifecycle).
 
@@ -474,3 +519,90 @@ updates and exact bidirectional conntrack cleanup after verified revocation. Nat
 tests are registered, not executed here. Full lifetime/ifindex-reuse guarantees, real Incus identity supply,
 VM/TAP, health, service wiring and production acceptance remain outstanding; publication stays disabled.
 See [the Chinese design, section 7.6](/architecture/incus-host-provisioning#_7-6-回复物理来源与双向连接清理-候选实现-生产关闭).
+
+The 2026-09-21 observation/lifecycle slice binds the entire installed grant and the instance's own
+managed/workload labels, rejects selected-field JSON case aliases, and revalidates identity after route
+consumption. The internal v2 host projection binds each call to a fresh observation ID and rejects stale
+responses and cancellation races. Local tests combine pinned mutual TLS, the actual controller and durable
+file journal with synthetic daemon data and explicit host/renderer/probe adapters. They verify retirement
+on pause/stop, fresh reservations on recovery, and retained cleanup ownership on failure. These are not
+server-enforced read-only identity provisioning, a registered root observation handler, native networking,
+VM/TAP or production service acceptance. No global authorization routing was changed and publication stays
+disabled. The [Chinese design, section 7.7](/architecture/incus-host-provisioning) is the normative account.
+
+The 2026-09-21 narrow-host-observation slice registers `incus.ingress.observe_http` in the existing
+compiled host-action channel. A protected installed scope, active Core snapshot, root-only bundle,
+loopback mTLS and native veth checks feed a selected v3 projection. The mediator receives no Incus
+credential. Shared-job admission/recovery/execution bind scope to the authorized workspace, and
+each observation uses a new job/nonce rather than cached results. Local boundary tests are not
+native acceptance. Automatic scope delivery/rotation, mediator installation, VM/TAP, health and
+continuous network-lifetime safeguards remain outstanding; production publication stays disabled.
+See [the Chinese design, section 7.8](/architecture/incus-host-provisioning).
+
+The 2026-09-21 image-supply update adds complete historical bundle export through pinned output
+directories, per-reference metadata validation before physical deduplication, and cancellation-aware
+staging. The release script uses the same bundle entrypoint and validates history before baking.
+Provider readiness now checks the complete managed project fence and live network/profile/certificate/image
+dependencies; revoked trust cannot remain ready. These local fixture checks do not establish actual
+guest boot, daemon enforcement, signed distribution or production ingress. See
+[image supply](/en/architecture/incus-image-supply) and the
+[Chinese host-provisioning design](/architecture/incus-host-provisioning).
+
+The 2026-09-21 configuration/drain continuation wires the shared host-action queue to a per-workspace
+ControllerCoordinator. Confirmed configuration jobs wait without occupying the root executor, keeping
+readonly cleanup dependencies runnable. Launches remain fenced through drain and confirmed job completion;
+failed drains retain their original owner and unknown execution does not release the fence. Normal service
+shutdown keeps the broker and execution lease alive until drain succeeds; retry is explicit and never
+reopens publishing. Local tests use the real controller, file journal, queue and confirmation ledger, but
+synthetic network/root adapters. This is not production launcher installation, cross-process crash recovery
+or native acceptance; publication remains disabled. See
+[the Chinese design, section 7.11](/architecture/incus-host-provisioning).
+
+The workspace-backed controller now uses the existing runtime lock for cross-process exclusion. A durable
+nonempty fence pins the original HTTP journal directory until confirmed drain; process death releasing flock
+does not authorize standalone credential rotation. Runner writers check the actual descriptor before recovery
+or credential effects; readonly observers remain available. Missing/corrupt journals and substituted directories
+cannot be treated as empty installations. This is a cooperating-writer protocol, not a new RPC or an automatic
+CLI drain request. Real subprocess tests exercise file locking and crash evidence with synthetic network
+adapters. Production launch, UID/mount setup, health, VM/TAP and native network acceptance remain outstanding.
+See [the Chinese design, section 7.13](/architecture/incus-host-provisioning).
+
+The workspace-mutation continuation shares one coordinator between anasd's legacy deployment/maintenance
+workers and the host-action queue. Mutation jobs remain queued while old controllers drain, leaving slots
+and workspace locks available to cleanup dependencies. Audit and durable actor/request bindings are checked
+before drain and execution. Unstarted failures commit an atomic rejection; missing terminal commits or pending
+compensation retain the fence. Bootstrap/enrollment jobs remain restricted to their original apply transaction.
+The new queued-to-failed journal transition can be rejected by older readers; unrestricted downgrade is not
+claimed. Standalone CLI credential rotation, other processes and production startup remain outside this
+integration. Publication stays disabled. See
+[the Chinese design, section 7.12](/architecture/incus-host-provisioning).
+
+The September 22 client continuation freezes private CLI configuration alongside TLS files and replaces
+repeated `remote add` calls with read-only project listings. The initialization lock separates exclusive
+creation from opening an existing entry; disappearance does not authorize lock recreation. Forgejo saves
+uncertain-create and retirement intent before effects and uses independent bounded cancellation cleanup.
+The three shared builds now include `securefs`, with transitive-import checks and reduced-input offline
+compilation. These checks do not establish guest lifecycle, one-job execution or Docker build acceptance.
+See [the Chinese design, section 7.17](/architecture/incus-host-provisioning).
+
+The lifecycle continuation explicitly adds `dnsmasq-base` to the host package recipes: the real
+Ubuntu 26.04 bridge creation failed when `--no-install-recommends` omitted this helper. A disposable
+QEMU lab now exercises the actual Provider, restricted two-lease container lifecycle, btrfs disk
+limits, stdin and independent cleanup after cancellation without using the physical host's Docker.
+The tiny measured fixture is not a released distrobuilder/Runner image. ZFS, product VM workloads,
+one-job execution and production ingress are not inferred from these results. See
+[the Chinese design, section 7.18](/architecture/incus-host-provisioning).
+
+The default Runner recipe now copies the frozen `sources/forgejo-runner` input. Actual distrobuilder 3.2
+reproduces the old-path failure and confirms the corrected packed bytes. Cancelling a real bake leaves its
+revision blocked against silent retry. The complete Debian/Podman bake and baked-image boot/engine gate
+have not passed; the native copy fixture and Runner CLI help are not a real one-job or signed release.
+See [the Chinese design, section 7.19](/architecture/incus-host-provisioning).
+
+Subsequent Runner work completed immutable container-image bakes and real engine/user-session admission.
+The container Provider now permits the inner namespaces required by OCI runtimes in its fixed profile,
+while preserving project-level unprivileged, raw-config, host-device and managed-network fences. This is
+distinct from nested virtualization and changes the permitted shared-kernel operation set; untrusted or
+cross-trust workloads still require explicit VMs. Native positive and rejection controls, actual workflow
+execution and recovery are separate acceptance stages. See [the Chinese Forgejo design](/architecture/forgejo-module-design),
+section 4.3, and the dated acceptance review for exact executed scope rather than the earlier build snapshots.

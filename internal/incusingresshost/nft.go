@@ -217,16 +217,90 @@ func (r nftRule) matches(s nftRuleSpec) bool {
 // Compare the complete ordered AST. Searching for expected fragments permits
 // earlier verdicts, extra side effects and contradictory constraints.
 func sameNFTExpressions(a, b []json.RawMessage) bool {
-	if len(a) != len(b) {
+	x, ok := normalizedNFTExpressions(a)
+	if !ok {
 		return false
 	}
-	for i := range a {
-		var x, y any
-		if decodeObservedJSON(a[i], &x) != nil || decodeObservedJSON(b[i], &y) != nil || !normalizeNFTExpression(x) || !normalizeNFTExpression(y) || !reflect.DeepEqual(x, y) {
-			return false
+	y, ok := normalizedNFTExpressions(b)
+	return ok && reflect.DeepEqual(x, y)
+}
+
+func normalizedNFTExpressions(raw []json.RawMessage) ([]any, bool) {
+	values := make([]any, len(raw))
+	for i := range raw {
+		if decodeObservedJSON(raw[i], &values[i]) != nil || !normalizeNFTExpression(values[i]) {
+			return nil, false
 		}
 	}
-	return true
+	// nft omits the EtherType dependency immediately before an IPv4 payload
+	// match (optionally preceded by meta l4proto). Normalize only this exact
+	// redundancy. Never cross counters, verdicts, unknown matches or a guard
+	// for a different protocol; the remaining AST stays complete and ordered.
+	out := make([]any, 0, len(values))
+	for i, value := range values {
+		if reflect.DeepEqual(value, nftPayloadMatch("ether", "type", "==", "ip")) {
+			next := i + 1
+			if next < len(values) && reflect.DeepEqual(values[next], nftMetaMatch("l4proto", "==", "tcp")) {
+				next++
+			}
+			if next < len(values) && isNFTIPv4AddressMatch(values[next]) {
+				continue
+			}
+		}
+		// An IPv4 address match followed immediately by the typed IPv4/TCP
+		// port-set lookup also entails TCP. nft removes that dependency from
+		// its JSON; it is not permission to skip arbitrary protocol predicates.
+		if reflect.DeepEqual(value, nftMetaMatch("l4proto", "==", "tcp")) && i+2 < len(values) &&
+			isNFTIPv4AddressMatch(values[i+1]) && isNFTIPv4TCPSetMatch(values[i+2]) {
+			continue
+		}
+		out = append(out, value)
+	}
+	return out, true
+}
+
+func isNFTIPv4TCPSetMatch(value any) bool {
+	object, ok := value.(map[string]any)
+	if !ok || len(object) != 1 {
+		return false
+	}
+	match, ok := object["match"].(map[string]any)
+	if !ok || len(match) != 3 || match["op"] != "==" {
+		return false
+	}
+	left, ok := match["left"].(map[string]any)
+	if !ok || len(left) != 1 {
+		return false
+	}
+	parts, ok := left["concat"].([]any)
+	if !ok || len(parts) != 2 || (!reflect.DeepEqual(parts[0], nftPayload("ip", "saddr")) && !reflect.DeepEqual(parts[0], nftPayload("ip", "daddr"))) ||
+		(!reflect.DeepEqual(parts[1], nftPayload("tcp", "sport")) && !reflect.DeepEqual(parts[1], nftPayload("tcp", "dport"))) {
+		return false
+	}
+	set, ok := match["right"].(string)
+	return ok && strings.HasPrefix(set, "@") && nftName.MatchString(strings.TrimPrefix(set, "@"))
+}
+
+func isNFTIPv4AddressMatch(value any) bool {
+	object, ok := value.(map[string]any)
+	if !ok || len(object) != 1 {
+		return false
+	}
+	match, ok := object["match"].(map[string]any)
+	if !ok || len(match) != 3 || (match["op"] != "==" && match["op"] != "!=") {
+		return false
+	}
+	left, ok := match["left"].(map[string]any)
+	if !ok || len(left) != 1 {
+		return false
+	}
+	payload, ok := left["payload"].(map[string]any)
+	if !ok || len(payload) != 2 || payload["protocol"] != "ip" || (payload["field"] != "saddr" && payload["field"] != "daddr") {
+		return false
+	}
+	address, ok := match["right"].(string)
+	ip, err := netip.ParseAddr(address)
+	return ok && err == nil && ip.Is4()
 }
 func normalizeNFTExpression(value any) bool {
 	object, ok := value.(map[string]any)
@@ -257,11 +331,11 @@ func normalizeNFTExpression(value any) bool {
 		match["right"] = "tcp"
 	}
 	if payload, ok := left["payload"].(map[string]any); ok && payload["protocol"] == "ether" && payload["field"] == "type" {
-		if match["right"] == json.Number("2048") {
-			match["right"] = "ip"
-		}
-		if match["right"] == json.Number("34525") {
-			match["right"] = "ip6"
+		// Numeric nft 1.1.6 output can collide for distinct EtherTypes.
+		// Inventory deliberately requests symbolic output; only the two
+		// explicit protocol names used by our policy are understood here.
+		if match["right"] != "ip" && match["right"] != "ip6" {
+			return false
 		}
 	}
 	if ct, ok := left["ct"].(map[string]any); ok && ct["key"] == "direction" && match["right"] == json.Number("1") {
@@ -281,6 +355,8 @@ func normalizeNFTExpression(value any) bool {
 		var values []any
 		switch right := match["right"].(type) {
 		case string:
+			values = []any{right}
+		case json.Number:
 			values = []any{right}
 		case map[string]any:
 			if len(right) != 1 {
@@ -304,7 +380,7 @@ func normalizeNFTExpression(value any) bool {
 		}
 		states := []string{}
 		for _, value := range values {
-			state, ok := value.(string)
+			state, ok := nftConntrackState(value)
 			if !ok || slices.Contains(states, state) {
 				return false
 			}
@@ -315,6 +391,29 @@ func normalizeNFTExpression(value any) bool {
 	}
 
 	return true
+}
+
+// Numeric listings expose the individual kernel ct-state bits. Do not treat
+// arbitrary bitmasks or stringified numbers as state names: doing so could
+// silently widen a permit or merge distinct predicates.
+func nftConntrackState(value any) (string, bool) {
+	if number, ok := value.(json.Number); ok {
+		switch number.String() {
+		case "1":
+			return "invalid", true
+		case "2":
+			return "established", true
+		case "4":
+			return "related", true
+		case "8":
+			return "new", true
+		case "64":
+			return "untracked", true
+		}
+		return "", false
+	}
+	state, ok := value.(string)
+	return state, ok && slices.Contains([]string{"invalid", "established", "related", "new", "untracked"}, state)
 }
 func (s nftSet) compatible(target Target) bool {
 	key := target.GuestIP + "." + strconv.FormatUint(uint64(target.GuestPort), 10)
@@ -374,12 +473,22 @@ func (b *Backend) nftFamilyInventory(ctx context.Context, family string) (nftInv
 	} else if family != "inet" {
 		return nftInventory{}, fmt.Errorf("unsupported nft permit family")
 	}
-	// Numeric interface indices must not be formatted as reusable device names.
-	body, err := b.runner.output(ctx, b.config.Binaries.NFT, []string{"-j", "-a", "-n", "list", "table", family, name})
-	if err != nil {
-		return nftInventory{}, fmt.Errorf("read owned nft permit table: %w", err)
+	// Keep protocol symbols: fully numeric output is ambiguous for some
+	// EtherTypes. Interface names must not substitute for numeric identity.
+	read := func() (nftTable, error) {
+		body, err := b.runner.output(ctx, b.config.Binaries.NFT, []string{"-j", "-a", "-y", "-T", "list", "table", family, name})
+		if err != nil {
+			return nftTable{}, fmt.Errorf("read owned nft permit table: %w", err)
+		}
+		return parseNFTTable(body)
 	}
-	table, err := parseNFTTable(body)
+	var table nftTable
+	var err error
+	if family == "bridge" && !b.config.fixture {
+		table, err = readNFTTableWithKernelIndices(ctx, name, read)
+	} else {
+		table, err = read()
+	}
 	if err != nil {
 		return nftInventory{}, err
 	}

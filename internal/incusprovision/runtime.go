@@ -1427,5 +1427,5 @@ func (c *pinnedHTTPSClient) do(ctx context.Context, method, path string, body an
 	if err != nil {
 		return ErrExternalEffects
 	}
-	return decodeIncusEnvelope(res.StatusCode, raw, out)
+	return decodeIncusMethodEnvelope(method, res.StatusCode, raw, out)
 }

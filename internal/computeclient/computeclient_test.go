@@ -2,11 +2,7 @@ package computeclient
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
-	"encoding/pem"
 	"io"
 	"os"
 	"path/filepath"
@@ -248,6 +244,19 @@ func TestCreateNeverCarriesDevicesOrRawConfig(t *testing.T) {
 	}
 }
 
+func TestContainerCreateDoesNotOverrideProviderNamespacePolicy(t *testing.T) {
+	l := testLease()
+	l.Interface = InterfaceContainer
+	c, run := testClient(t, l)
+	if err := c.Create(context.Background(), InstanceSpec{ID: "anas-fj-0123456789abcdef0123", Image: strings.Repeat("a", 64), WorkloadID: "job-1", CPU: 2, MemoryMiB: 4096, DiskGiB: 20}); err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(run.calls[0], " ")
+	if strings.Contains(args, "security.nesting=") || !strings.Contains(args, "security.privileged=false") || !strings.Contains(args, "--profile="+ProfileName) {
+		t.Fatal("consumer overrode provider namespace policy or lost its privilege fence")
+	}
+}
+
 func TestExecStdinCarriesTheSecretOnlyOnStdin(t *testing.T) {
 	c, run := testClient(t, testLease())
 	const secret = "one-time-runner-token"
@@ -317,17 +326,9 @@ func TestDeleteIsIdempotentWhenTheInstanceIsGone(t *testing.T) {
 }
 
 func TestWriteCredentialsRefusesAServerCertificateThatBreaksThePin(t *testing.T) {
-	realPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("real-der")})
-	sum := sha256.Sum256([]byte("real-der"))
-
-	l := testLease()
-	l.ServerCertB64 = base64.StdEncoding.EncodeToString(realPEM)
-	l.ClientCertB64 = base64.StdEncoding.EncodeToString([]byte("client"))
-	l.ClientKeyB64 = base64.StdEncoding.EncodeToString([]byte("key"))
-
-	l.ServerCertFingerprint = hex.EncodeToString(sum[:])
+	l := credentialBoundaryLease(t)
 	c, _ := testClient(t, l)
-	dir := t.TempDir()
+	dir := credentialDirectory(t)
 	if err := c.writeCredentials(dir); err != nil {
 		t.Fatalf("a matching pin must be accepted: %v", err)
 	}

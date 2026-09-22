@@ -11,8 +11,9 @@ import (
 )
 
 // DeliverComputeHTTPReaders runs only in a trusted Core/installer process. It
-// exports the active random naming keys and explicitly supplied reader-only
-// installation credentials to a new private artifact, without mounting the
+// exports active random naming keys and explicitly supplied reader-only
+// credentials (or public host-observer pins instead of Incus credentials) to a
+// new private artifact, without mounting the
 // Store or exposing a generic secret lookup API to the mediator. The caller
 // must prepare a private parent owned by the eventual runtime UID. No chown,
 // mount, credential issuance or production activation is performed here.

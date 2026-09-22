@@ -286,7 +286,10 @@ ANAS 必须提供可独立部署的 `ai_agent` Module，使团队能在 Forgejo 
 ## 15. 上游事实复核（`forgejo 15.0.7`）
 
 设计文档 §11 要求在固定版本上复核的事实，已用 `test-env/scripts/forgejo-agent-api-probe.sh` 对
-`codeberg.org/forgejo/forgejo:15.0.7-rootless`（`15.0.7+gitea-1.22.0`）实测，24 项通过、0 项失败。
+`codeberg.org/forgejo/forgejo:15.0.7-rootless`（`15.0.7+gitea-1.22.0`）实测，24 项通过、0 项失败、
+3 项 SKIP。SKIP 的用例不是结论：`webhook-delivery` 与 `form-answer-render` 已由后文的
+`TestFormRenderingAgainstLiveForgejo` 与"仍未复核"段分别交代；`group-team-map` 已于 2026-09-20 在同一固定镜像上
+用 CLI 单独补测，结论进了下表，报告在 `test-env/reports/forgejo-cli-probe-20260920.md`（报告目录不入库）。
 下表只记录**与设计假设不同**或**约束实现形态**的结论；其余（标签、评论 PATCH、reaction、due_date、
 工时、置顶、contents 提交与开 PR、issue 模板、Projects 仍无 API）与设计一致。
 
@@ -300,7 +303,8 @@ ANAS 必须提供可独立部署的 `ai_agent` Module，使团队能在 Forgejo 
 | **access token 名称按用户唯一**，SSH key 标题同理 | 轮换必须用带代次的名称，否则“先发后吊销”在发新的那一步就 400 |
 | **`GET /admin/hooks` 返回空数组**，即使 hook 刚建好；`GET /admin/hooks/{id}` 正常返回 | webhook 存在性判断必须走 id，走列表会导致每轮对账都重复注册 |
 | 服务端会**展开事件族**：请求 8 个事件、存下 17 个 | 不能用事件列表判断 hook 漂移；只比对 URL 与密钥指纹 |
-| `forgejo admin auth add-oauth` 具备 `--group-team-map` 与 `--group-team-map-removal` | 设计 §6.2 的目录组→team 投影链路成立 |
+| `forgejo admin auth add-oauth` 具备 `--group-team-map`（`JSON mapping between groups and org teams`）与 `--group-team-map-removal`（2026-09-20 CLI 实测） | 设计 §6.2 的目录组→team 投影链路成立，`FORGEJO-R-060` 可实现 |
+| 同一版本的 `admin auth add-ldap` **没有任何组选项**，`admin user` 也**没有 `prohibit_login` 子命令**（2026-09-20 CLI 实测） | 组只能经 OIDC 在登录时到达 team——这正是 §6.2 的撤销延迟由本 Module 自己消除的原因；停用账号必须走管理端 API，没有 CLI 捷径 |
 
 M2 落地时又实测确认：生成的五个 issue 表单模板被 `15.0.7` 识别为 issue form（字段类型、id 与
 front matter 的 `labels` 全部生效），`config.yaml` 的 `blank_issues_enabled` 生效，
@@ -319,5 +323,5 @@ reaction、contents API 提交与开 PR 均按设计工作。
 | dropdown 提交的是选项**下标**的逗号列表，checkboxes 是 `form-field-<id>-<下标>=on`；提交 label 文本会静默变成 `_No response_` | 只影响测试夹具；编排器只读正文，不提交表单 |
 | Forgejo 15 的表单**没有 `_csrf` 字段**，改用 SameSite cookie 加 Origin/Referer 校验 | 脚本化登录只需带 `Referer` |
 
-仍未复核：webhook 投递语义（超时、重试、可否重投）、`issue_label` / `issue_assign` 的 payload 字段。
-两者都需要一个真实接收端，留待后续里程碑。
+仍未复核：webhook 投递语义（超时、重试、可否重投）与 `issue_label` / `issue_assign` 的 payload
+字段。两者都需要一个真实接收端，留待后续里程碑。

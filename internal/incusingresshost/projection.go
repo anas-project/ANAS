@@ -2,13 +2,18 @@ package incusingresshost
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
+	"time"
+
+	"github.com/anas-project/ANAS/internal/computeingress"
 )
 
 const (
-	ProjectionSchema          = "anas.incus-http-host-projection/v1"
+	ProjectionSchema          = "anas.incus-http-host-projection/v3"
 	ProjectionActionID        = "incus.ingress.observe_http"
 	projectionRequestMaxBytes = 16 << 10
 )
@@ -18,29 +23,36 @@ const (
 // already frozen Core authorization tuple; it carries no IP authority, command,
 // path, nft text, Incus socket, certificate or consumer-chosen route data.
 type ProjectionRequest struct {
-	Schema     string `json:"schema"`
-	ScopeID    string `json:"scope_id"`
-	Epoch      string `json:"epoch"`
-	Deployment string `json:"deployment"`
-	Lease      Lease  `json:"lease"`
-	InstanceID string `json:"instance_id"`
-	GuestPort  uint16 `json:"guest_port"`
+	Schema string `json:"schema"`
+	// Generated per call by ProjectionClient, not an idempotency key. The
+	// root handler must observe after receiving this invocation and echo it;
+	// the response to an earlier job is never current observation evidence.
+	ObservationID string `json:"observation_id"`
+	ScopeID       string `json:"scope_id"`
+	Epoch         string `json:"epoch"`
+	Deployment    string `json:"deployment"`
+	Lease         Lease  `json:"lease"`
+	InstanceID    string `json:"instance_id"`
+	WorkloadID    string `json:"workload_id"`
+	GuestPort     uint16 `json:"guest_port"`
 }
 
 type ProjectionResponse struct {
-	Schema     string                 `json:"schema"`
-	ScopeID    string                 `json:"scope_id"`
-	Epoch      string                 `json:"epoch"`
-	Deployment string                 `json:"deployment"`
-	ServerUUID string                 `json:"server_uuid"`
-	Authorized []AuthorizedHTTPLease  `json:"authorized"`
-	Identity   ProjectionHTTPIdentity `json:"identity"`
+	Schema        string                 `json:"schema"`
+	ObservationID string                 `json:"observation_id"`
+	ScopeID       string                 `json:"scope_id"`
+	Epoch         string                 `json:"epoch"`
+	Deployment    string                 `json:"deployment"`
+	ServerUUID    string                 `json:"server_uuid"`
+	Authorized    []AuthorizedHTTPLease  `json:"authorized"`
+	Identity      ProjectionHTTPIdentity `json:"identity"`
 }
 
 type AuthorizedHTTPLease struct {
 	Lease          Lease    `json:"lease"`
 	ResourceID     string   `json:"resource_id"`
 	Project        string   `json:"project"`
+	Interface      string   `json:"interface"`
 	InstancePrefix string   `json:"instance_prefix"`
 	AllowedPorts   []uint16 `json:"allowed_ports"`
 	Auth           string   `json:"auth"`
@@ -49,6 +61,7 @@ type AuthorizedHTTPLease struct {
 type ProjectionHTTPIdentity struct {
 	Lease               Lease  `json:"lease"`
 	InstanceID          string `json:"instance_id"`
+	WorkloadID          string `json:"workload_id"`
 	InstanceUUID        string `json:"instance_uuid"`
 	Incarnation         string `json:"incarnation"`
 	State               string `json:"state"`
@@ -69,9 +82,20 @@ type ProjectionClient struct {
 }
 
 func (c ProjectionClient) ObserveHTTP(ctx context.Context, request ProjectionRequest) (ProjectionResponse, error) {
-	if c.Invoker == nil {
+	if c.Invoker == nil || ctx == nil {
 		return ProjectionResponse{}, fmt.Errorf("Incus HTTP projection action channel is unavailable")
 	}
+	if err := ctx.Err(); err != nil {
+		return ProjectionResponse{}, err
+	}
+	if request.ObservationID != "" {
+		return ProjectionResponse{}, fmt.Errorf("Incus HTTP observation identity must be generated per invocation")
+	}
+	var nonce [32]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return ProjectionResponse{}, fmt.Errorf("cannot create Incus HTTP observation identity")
+	}
+	request.ObservationID = hex.EncodeToString(nonce[:])
 	if err := request.Validate(); err != nil {
 		return ProjectionResponse{}, err
 	}
@@ -79,7 +103,12 @@ func (c ProjectionClient) ObserveHTTP(ctx context.Context, request ProjectionReq
 	if err != nil || len(body) > projectionRequestMaxBytes {
 		return ProjectionResponse{}, fmt.Errorf("Incus HTTP projection request exceeds bounded schema")
 	}
-	responseBody, err := c.Invoker.InvokeHostAction(ctx, ProjectionActionID, body)
+	observeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	responseBody, err := c.Invoker.InvokeHostAction(observeCtx, ProjectionActionID, body)
+	if observeCtx.Err() != nil {
+		return ProjectionResponse{}, observeCtx.Err()
+	}
 	if err != nil {
 		return ProjectionResponse{}, fmt.Errorf("Incus HTTP projection action failed")
 	}
@@ -93,18 +122,24 @@ func (c ProjectionClient) ObserveHTTP(ctx context.Context, request ProjectionReq
 	if err := response.ValidateFor(request); err != nil {
 		return ProjectionResponse{}, err
 	}
+	if err := observeCtx.Err(); err != nil {
+		return ProjectionResponse{}, err
+	}
 	return response, nil
 }
 
 func (r ProjectionRequest) Validate() error {
-	if r.Schema != ProjectionSchema || !scopeName.MatchString(r.ScopeID) || !hex64(r.Epoch) || r.Deployment == "" || len(r.Deployment) > 128 || !leaseID.MatchString(r.Lease.Consumer) || !leaseID.MatchString(r.Lease.Resource) || r.InstanceID == "" || len(r.InstanceID) > 128 || r.GuestPort == 0 {
+	if r.Schema != ProjectionSchema || !hex64(r.ObservationID) || !scopeName.MatchString(r.ScopeID) || !hex64(r.Epoch) || r.Deployment == "" || len(r.Deployment) > 128 || !leaseID.MatchString(r.Lease.Consumer) || !leaseID.MatchString(r.Lease.Resource) || r.InstanceID == "" || len(r.InstanceID) > 128 || r.GuestPort == 0 {
 		return fmt.Errorf("invalid Incus HTTP projection request")
+	}
+	if (computeingress.Request{Action: "publish", InstanceID: r.InstanceID, WorkloadID: r.WorkloadID, GuestPort: r.GuestPort}).Validate() != nil {
+		return fmt.Errorf("invalid Incus HTTP projection workload")
 	}
 	return nil
 }
 
 func (r ProjectionResponse) ValidateFor(request ProjectionRequest) error {
-	if r.Schema != ProjectionSchema || r.ScopeID != request.ScopeID || r.Epoch != request.Epoch || r.Deployment != request.Deployment || !uuidString.MatchString(r.ServerUUID) || len(r.Authorized) == 0 || len(r.Authorized) > 1024 {
+	if request.Validate() != nil || r.Schema != ProjectionSchema || r.ObservationID != request.ObservationID || r.ScopeID != request.ScopeID || r.Epoch != request.Epoch || r.Deployment != request.Deployment || !uuidString.MatchString(r.ServerUUID) || len(r.Authorized) == 0 || len(r.Authorized) > 1024 {
 		return fmt.Errorf("invalid Incus HTTP projection response")
 	}
 	seenLeases := map[Lease]bool{}
@@ -127,13 +162,16 @@ func (r ProjectionResponse) ValidateFor(request ProjectionRequest) error {
 	if err := r.Identity.ValidateFor(request); err != nil {
 		return err
 	}
-	if r.Identity.Lease != request.Lease || r.Identity.InstanceID != request.InstanceID || r.Identity.GuestPort != request.GuestPort {
+	if r.Identity.Lease != request.Lease || r.Identity.InstanceID != request.InstanceID || r.Identity.WorkloadID != request.WorkloadID || r.Identity.GuestPort != request.GuestPort {
 		return fmt.Errorf("Incus HTTP projection identity does not match request")
 	}
 	return nil
 }
 
 func (a AuthorizedHTTPLease) Validate() error {
+	if a.Interface != "incus_container" && a.Interface != "incus_vm" {
+		return fmt.Errorf("invalid Incus HTTP projection interface")
+	}
 	if !leaseID.MatchString(a.Lease.Consumer) || !leaseID.MatchString(a.Lease.Resource) || a.ResourceID == "" || len(a.ResourceID) > 128 || a.Project == "" || len(a.Project) > 128 || a.InstancePrefix == "" || len(a.InstancePrefix) > 64 || (a.Auth != "none" && a.Auth != "forward_auth") || len(a.AllowedPorts) == 0 || len(a.AllowedPorts) > 64 {
 		return fmt.Errorf("invalid Incus HTTP authorized lease projection")
 	}

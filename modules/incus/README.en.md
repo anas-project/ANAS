@@ -4,13 +4,20 @@ Turns a separate Incus host into a `compute` contract provider: at apply time it
 project, quotas and a dedicated certificate for each consumer, then stays out of instance creation and
 destruction entirely.
 
+The system-container tier permits inner OCI namespaces through its fixed provider-owned profile.
+The outer container remains unprivileged, and host devices, host-path mounts and raw configuration
+remain denied. This is distinct from nested virtual machines and does not itself prove the inner
+engine is rootless. Account for the shared-kernel attack surface; select the explicit VM tier for
+cross-trust or untrusted workloads. No consumer nesting switch or automatic rewrite/restart of old
+instances is introduced.
+
 ## Quick facts
 
 <!-- generated:module-facts:start -->
 | Item | Value |
 | --- | --- |
 | Module | `incus` |
-| Version / revision | `7.3.0-r1` |
+| Version / revision | `7.3.0-r2` |
 | Status | `developing` |
 | Category | `compute` |
 | Runtime | `compose` |

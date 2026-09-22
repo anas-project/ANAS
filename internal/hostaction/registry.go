@@ -13,6 +13,7 @@ import (
 
 	"github.com/anas-project/ANAS/internal/actionabi"
 	"github.com/anas-project/ANAS/internal/consolejobs"
+	"github.com/anas-project/ANAS/internal/incusingresshost"
 	"github.com/anas-project/ANAS/internal/incusprovision"
 )
 
@@ -39,6 +40,9 @@ type ActionKind string
 
 const (
 	ActionStatus         = "incus.status"
+	ActionObserveHTTP    = incusingresshost.ProjectionActionID
+	ActionObserverPlan   = "incus.ingress.observer.plan"
+	ActionObserverApply  = "incus.ingress.observer"
 	ActionInstallPlan    = "incus.install.plan"
 	ActionConfigurePlan  = "incus.configure.plan"
 	ActionEnrollPlan     = "incus.enroll.plan"
@@ -99,14 +103,18 @@ func PlanActionFor(apply string) (string, bool) {
 }
 
 func IsApplyAction(name string) bool {
-	return slices.Contains(ApplyActionNames(), name) || name == ActionImagePrune
+	return slices.Contains(ApplyActionNames(), name) || name == ActionImagePrune || name == ActionObserverApply
 }
 
 func actionSpecs() []ActionSpec {
+	observerReqs := []string{"INCUS-R-063", "INCUS-R-087", "INCUS-R-088", "HOSTACT-R-001", "HOSTACT-R-003", "HOSTACT-R-009", "HOSTACT-R-010", "HOSTACT-R-012", "HOSTACT-R-013"}
 	reqs := []string{"INCUS-R-047", "INCUS-R-048", "INCUS-R-049", "INCUS-R-050", "INCUS-R-051", "INCUS-R-057", "HOSTACT-R-001", "HOSTACT-R-003", "HOSTACT-R-004", "HOSTACT-R-007", "HOSTACT-R-009", "HOSTACT-R-010", "HOSTACT-R-013"}
 	pruneReqs := []string{"INCUS-R-072", "HOSTACT-R-001", "HOSTACT-R-003", "HOSTACT-R-004", "HOSTACT-R-007", "HOSTACT-R-009", "HOSTACT-R-010", "HOSTACT-R-013"}
 	return []ActionSpec{
 		{Descriptor: Descriptor{Name: ActionStatus, Scope: "installation-preflight", ReadOnly: true, RequiresRoot: false, RequiresConfirm: false, Implementation: "internal-only", RequirementIDs: []string{"INCUS-R-048", "INCUS-R-049", "HOSTACT-R-001", "HOSTACT-R-012", "HOSTACT-R-013"}}, Policy: consolejobs.ActionCoalesce, Timeout: 5},
+		{Descriptor: Descriptor{Name: ActionObserveHTTP, Scope: "incus-http-observation", ReadOnly: true, RequiresRoot: true, Implementation: "compiled-hostd", RequirementIDs: []string{"INCUS-R-063", "INCUS-R-087", "INCUS-R-088", "HOSTACT-R-001", "HOSTACT-R-002", "HOSTACT-R-005", "HOSTACT-R-012", "HOSTACT-R-013"}}, Policy: consolejobs.ActionReject, Timeout: 30},
+		{Descriptor: Descriptor{Name: ActionObserverPlan, Scope: "observer-configuration-plan", ReadOnly: true, RequiresRoot: true, Implementation: "compiled-hostd", RequirementIDs: observerReqs}, Policy: consolejobs.ActionReject, PlanFor: ActionObserverApply, Timeout: 60},
+		{Descriptor: Descriptor{Name: ActionObserverApply, Scope: "observer-configuration-apply", RequiresRoot: true, RequiresConfirm: true, Implementation: "compiled-hostd", RequirementIDs: observerReqs}, Mutating: true, Policy: consolejobs.ActionReject, Phase: incusprovision.Phase("observer-configuration"), Timeout: 60},
 		{Descriptor: Descriptor{Name: ActionInstallPlan, Scope: planScope, ReadOnly: true, RequiresRoot: true, RequiresConfirm: false, Implementation: "compiled-hostd", RequirementIDs: reqs}, Policy: consolejobs.ActionCoalesce, Phase: incusprovision.PhaseInstall, PlanFor: ActionInstall, Timeout: 30},
 		{Descriptor: Descriptor{Name: ActionConfigurePlan, Scope: planScope, ReadOnly: true, RequiresRoot: true, RequiresConfirm: false, Implementation: "compiled-hostd", RequirementIDs: reqs}, Policy: consolejobs.ActionCoalesce, Phase: incusprovision.PhaseConfigure, PlanFor: ActionConfigure, Timeout: 30},
 		{Descriptor: Descriptor{Name: ActionEnrollPlan, Scope: planScope, ReadOnly: true, RequiresRoot: true, RequiresConfirm: false, Implementation: "compiled-hostd", RequirementIDs: reqs}, Policy: consolejobs.ActionCoalesce, Phase: incusprovision.PhaseEnroll, PlanFor: ActionEnroll, Timeout: 30},

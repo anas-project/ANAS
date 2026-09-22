@@ -10,6 +10,7 @@ WORKDIR /src
 # published copy of the shared package.
 COPY --from=shared go.mod go.sum ./
 COPY --from=shared internal/computeclient ./internal/computeclient
+COPY --from=shared internal/securefs ./internal/securefs
 COPY --from=shared internal/computeimage ./internal/computeimage
 COPY --from=shared internal/computeingress ./internal/computeingress
 COPY *.go ./modules/incus/provisioner/

@@ -15,7 +15,7 @@
 | [eturnal](#eturnal) | 1.12.2-r6 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [forgejo](#forgejo) | 15.0.7-r1 | configured | supported | application | fallback | not_consumed | 31 |
 | [freeradius](#freeradius) | 3.2.10-r4 | container | not_applicable | none | not_applicable | not_applicable | 0 |
-| [incus](#incus) | 7.3.0-r1 | not_applicable | not_applicable | none | not_consumed | not_consumed | 0 |
+| [incus](#incus) | 7.3.0-r2 | not_applicable | not_applicable | none | not_consumed | not_consumed | 0 |
 | [lam](#lam) | 9.6.0-r8 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r5 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [llng](#llng) | 2.23.2-r11 | container | supported | browser | not_consumed | not_consumed | 17 |
@@ -129,7 +129,7 @@
 
 ## incus
 
-- **Version / 版本：** `7.3.0-r1`; reviewed 2026-08-30
+- **Version / 版本：** `7.3.0-r2`; reviewed 2026-09-21
 - **Timezone / 时区：** `not_applicable` — The provisioner is a one-shot process with no scheduling, retention or timestamp output; the remote Incus daemon keeps its own clock.
 - **Language / 语言：** `not_applicable`, `none` — no user interface; the provisioner emits machine-readable JSON only
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`

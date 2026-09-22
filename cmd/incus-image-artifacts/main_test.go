@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -99,11 +100,74 @@ func TestArtifactCLIRecordInspectAndCatalog(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(exportDir, "artifact.json")); err != nil {
 		t.Fatalf("export did not write descriptor: %v", err)
 	}
+	bundleDir := filepath.Join(base, "images")
+	if code := invoke("bundle", "--archive", archive, "--previous-catalog", previous, "--output-dir", bundleDir); code != 0 {
+		t.Fatalf("bundle = %d: %s", code, diagnostic.String())
+	}
+	var bundle computeimage.ArtifactBundle
+	if err := json.Unmarshal(output.Bytes(), &bundle); err != nil || bundle.ImageCount != 1 || len(bundle.CatalogDigest) != 64 {
+		t.Fatalf("bundle output: %s, %v", output.String(), err)
+	}
+	for _, forbidden := range []string{"private-payload", base, base64.StdEncoding.EncodeToString([]byte("rootfs-private-payload"))} {
+		if strings.Contains(output.String()+diagnostic.String(), forbidden) {
+			t.Fatal("bundle control output leaked an image payload or local path")
+		}
+	}
+	if _, err := os.Stat(filepath.Join(bundleDir, "artifacts", "anas", "fixture", "r1", "amd64", "incus_container", "rootfs.squashfs")); err != nil {
+		t.Fatalf("bundle did not write the Provider layout: %v", err)
+	}
+	if code := invoke("bundle", "--archive", archive, "--previous-catalog", previous, "--output-dir", bundleDir); code == 0 || output.Len() != 0 {
+		t.Fatal("bundle adopted an existing destination")
+	}
 	if code := invoke("recipe", "--image", "forgejo-runner", "--architecture", "amd64", "--interface", "incus_vm"); code != 0 {
 		t.Fatalf("recipe = %d: %s", code, diagnostic.String())
 	}
 	if strings.Contains(output.String(), "alias") || !strings.Contains(output.String(), "source:") {
 		t.Fatalf("unexpected recipe output: %s", output.String())
+	}
+}
+
+func TestArtifactCLIBundleRequiresExplicitLocalDestinationAndHistory(t *testing.T) {
+	requireArtifactArchivePlatform(t)
+	base := t.TempDir()
+	archivePath, destination := filepath.Join(base, "archive"), filepath.Join(base, "images")
+	archive, err := computeimage.OpenArtifactArchive(context.Background(), archivePath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	metadata, rootfs := filepath.Join(base, "metadata"), filepath.Join(base, "rootfs")
+	for _, path := range []string{metadata, rootfs} {
+		if err := os.WriteFile(path, []byte("fixture bytes"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := archive.Record(context.Background(), computeimage.Reference{Catalog: "anas", Name: "fixture", Revision: "r1"},
+		computeimage.Target{Architecture: "amd64", Interface: "incus_container"}, []byte("reviewed fixture recipe"),
+		computeimage.ArtifactSplit, []string{metadata, rootfs}); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, flags := range [][]string{
+		{"--output-dir", destination},
+		{"--first-release"},
+		{"--first-release", "--previous-catalog", "previous.json", "--output-dir", destination},
+		{"--first-release", "--output-dir", destination, "--download-url", "https://invalid.example/image"},
+		{"--first-release", "--output-dir", destination, "--image-base64", "cGF5bG9hZA=="},
+	} {
+		var output, diagnostic bytes.Buffer
+		args := append([]string{"bundle", "--archive", archivePath}, flags...)
+		if code := run(context.Background(), args, &output, &diagnostic); code == 0 || output.Len() != 0 {
+			t.Fatalf("accepted incomplete or external bulk-data input: %v", flags)
+		}
+		if strings.Contains(diagnostic.String(), "invalid.example") || strings.Contains(diagnostic.String(), "cGF5bG9hZA") {
+			t.Fatal("rejected bulk-data input was echoed into diagnostics")
+		}
+		if _, err := os.Lstat(destination); !os.IsNotExist(err) {
+			t.Fatal("invalid bundle arguments created output")
+		}
 	}
 }
 

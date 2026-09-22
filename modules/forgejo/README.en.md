@@ -126,14 +126,48 @@ Database name/type changes do not migrate data. Back up the database and persist
 
 Actions defaults off and exposes exactly one feature switch, `forgejo.actions_enabled`, for both the Forgejo server
 and the one-job Runner controller. There is no `runner.enabled`. Repository/organization scopes are authorization
-policy, not a second switch, and global Runners are rejected. Enabling requires an independent Incus/KVM endpoint,
-restricted-project TLS credential, constrained profile, and pinned Runner image fingerprint; otherwise rendering
-fails before a server-only state can be deployed.
+policy, not a second switch, and global Runners are rejected. Enabling also requires an independent Incus host --
+the `incus` Module supplies its endpoint, restricted certificate, and profile through the compute contract -- plus a
+pinned Runner image fingerprint. Two places check the prerequisites: the hook validates scopes, the control-plane
+account password, and the fingerprint at render time; a one-shot preflight connects to Incus and validates the
+project, quotas, and profile before Forgejo starts. Either failure stops Forgejo, so a server-only state cannot be
+deployed.
 
-The controller creates no registration or VM for an empty queue. Each approved waiting job gets one ephemeral
-registration and one VM, with `forgejo-runner one-job` selected by job handle. The token travels through Incus exec
-stdin to guest tmpfs. Separate `runner-agent` and `runner-engine` users use rootless Podman inside the disposable VM.
-Neither Forgejo nor the VM receives an ANAS host Docker socket or ANAS/Forgejo data mount.
+### The two isolation tiers
+
+`forgejo.actions_isolation` decides what a job runs inside. It defaults to `auto`:
+
+| Tier | Instance | Kernel | Host requirement |
+| --- | --- | --- | --- |
+| `incus_container` (what `auto` resolves to) | Unprivileged Incus system container | **Shares the host kernel** | No KVM needed |
+| `incus_vm` | QEMU/KVM virtual machine | Own guest kernel | Host must provide KVM |
+
+The container tier is the default because NAS boxes and small hosts do not reliably provide KVM, and a default that
+needs it would make Actions uninstallable on that hardware. Quotas, one-shot instances, absent host mounts and
+sockets, and the egress allowlist are identical in both tiers -- **the only difference is the kernel boundary**. The
+container tier's isolation rests on the host kernel, so a kernel privilege-escalation bug reaches the host. Set
+`incus_vm` explicitly, on a KVM-capable host, for **scopes whose writers span trust domains or that execute
+untrusted input** (typically a public repository taking outside pull requests). Tier selection never happens on its
+own: a host without KVM is not silently downgraded, and a host with KVM is not silently upgraded.
+
+### The Forgejo account the controller uses
+
+Enabling Actions reconciles a fixed account, `anas_actions_controller`, whose password is held in the ANAS Secret
+Store and which the controller uses to call the Actions Runner API. It is not a human sign-in path; the human
+recovery path is the `break_glass` account below.
+
+**That account is currently created as a site administrator, and this is a recorded privilege deviation.** The
+controller only calls three `actions/runners` endpoints inside approved scopes; site administrator is merely the
+consequence of there being no reconciliation path that grants organization-owner or repository-admin rights per
+scope. Two consequences to be aware of: compromising the controller is equivalent to compromising a Forgejo site
+administrator, and **turning `actions_enabled` off does not revoke this account** -- disable or delete it in Forgejo
+by hand. M3 of the implementation plan tracks the convergence.
+
+The controller creates no registration or instance for an empty queue. Each approved waiting job gets one ephemeral
+registration and one instance, with `forgejo-runner one-job` selected by job handle. The token travels through Incus
+exec stdin to guest tmpfs. Separate `runner-agent` and `runner-engine` users use rootless Podman inside the
+disposable instance. Neither Forgejo nor the instance receives an ANAS host Docker socket or ANAS/Forgejo data
+mount.
 
 Custom Git hooks and local-path imports are independently configurable and disabled by default. Hooks execute
 server-side code as the Forgejo user. Local imports are limited to paths already visible inside the container;
@@ -143,9 +177,16 @@ enabling the setting does not add an arbitrary host mount. Changing either setti
 attachments, SSH state, and application configuration. Consistent backup/restore must include this tree, the
 database Resource, `.anas/secrets.yml`, and deployment metadata.
 
+Actions controller state lives in the Docker named volume `forgejo_actions_state`. It is outside that consistency
+point but **is not freely discardable today**: losing it leaves orphaned Runner instances uncollected until the
+switch is turned off, and leaves the occasional orphaned Runner registration in Forgejo permanently. Keep the volume
+when rebuilding a deployment.
+
 The Module is `developing`. Database/architecture matrices, browser OIDC, restore, and upgrade/rollback E2E remain
 release gates. SMTP, object storage, and external search are not automatically configured. The Actions controller
-and Runner-image assets are wired, but independent Incus/KVM, egress, and real one-job E2E are still pending.
+and Runner-image assets are wired, but an independent Incus host, egress, and real one-job E2E (once per tier) are
+still pending. Runner images are signed off per amd64/arm64 and per container/VM tier, while the configuration holds
+a single fingerprint, so a wrong tier or architecture only surfaces when instance creation fails.
 `forgejo.oidc_client_secret` uses manual `migrate` rotation because Forgejo cannot participate in the unified
 transactional rotation contract.
 

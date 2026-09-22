@@ -32,7 +32,12 @@ type HTTPArtifactInventory interface {
 // journal, prunes tombstones or replaces a missing/corrupt state file. Unknown
 // artifacts require administrator reconciliation of independent evidence.
 func (e Executor) Recover(ctx context.Context) error {
-	return e.withSession(ctx, func(s execution) error { return s.recover(ctx) })
+	return e.withSession(ctx, func(s execution) error {
+		if err := s.recover(ctx); err != nil {
+			return err
+		}
+		return s.completeWorkspaceDrain(ctx)
+	})
 }
 
 func (e execution) recover(ctx context.Context) error {

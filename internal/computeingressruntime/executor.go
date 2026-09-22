@@ -278,6 +278,12 @@ func (e execution) publish(ctx context.Context, state *ExecutorState, index int)
 		cleanupErr := e.withdraw(ctx, state, index)
 		return errors.Join(fmt.Errorf("publish HTTP route: %w", err), cleanupErr)
 	}
+	// Route consumption can span multiple API snapshots. Recheck current
+	// authority and independent instance facts after it, before recording ready.
+	// A stopped/replaced guest must retire even when the renderer succeeded.
+	if err := e.validate(ctx, a.Target); err != nil {
+		return fail(fmt.Errorf("HTTP target changed during route publication: %w", err))
+	}
 	if !a.RoutePublished {
 		a.RoutePublished = true
 		return e.save(ctx, *state)

@@ -37,7 +37,7 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
 | --- | --- | --- |
 | M1：Module 骨架、身份凭据与事件入站 | AGENT-R-001—R-014 | 已完成；单元、契约与真实依赖 e2e 均通过，容器级重启 e2e 待整套部署 |
 | M2：交互契约与产物入库 | AGENT-R-015—R-029 | 已完成；单元、契约与真实 Forgejo e2e 均通过 |
-| M3：权限、目录组授权与审计 | AGENT-R-030—R-036 | 已完成；判定引擎、审计与目录侧 `OU=Cap` 均已落地，`--group-team-map` 投影待接 |
+| M3：权限、目录组授权与审计 | AGENT-R-030—R-036 | 已完成；判定引擎、审计与目录侧 `OU=Cap` 均已落地。`--group-team-map` 投影待接，落地属于 `forgejo` M6（未开始），不在本里程碑的验收范围内 |
 | M4：执行面、分支策略与执行 issue | AGENT-R-037—R-044、R-065、R-071 | 未开始；**阻塞于** [Incus compute Provider](../../../../dev-docs/plans/incus-module.md) 的真实宿主验收，按决定等它完成后再开工 |
 | M5：排程、执行时机与队列 | AGENT-R-045—R-051 | 已完成；排序、时机与队列面均已落地并对真实 Forgejo 验证 |
 | M6：记录、会话视图与可扩展性 | AGENT-R-052—R-061、R-070 | 未开始 |
@@ -95,6 +95,9 @@ token/SSH key 名称的唯一性，以及 webhook 存在性不能用列表判断
       [Samba AD 用户与权限规划](../../../../docs/architecture/samba-ad-user-planning.md) §5.4.1 并由 `samba_dc`
       实现；Module 经 `ANAS_IDENTITY_CAPABILITY_GROUPS` 声明能力码，与应用追加 `APPS_LIST` 是同一模式。
 - [ ] 把 `--group-team-map` 接进 `forgejo` Module 的 OIDC 配置，补上"目录组 → Forgejo team"这一段。
+      上游 flag 的存在性已于 2026-09-20 实测确认（`forgejo-cli-probe-20260920`），但**落地不在本
+      Module 手里**：它属于 [`forgejo` M6](../../../forgejo/dev-docs/plans/forgejo-module.md)，该里程碑
+      未开始。
 - [x] 实现即时否决表与 `Veto` / `LiftVeto`（`agent-grant deny` 的后端）。否决在每次判定时实时读取，
       不走快照缓存，因此撤权下一次请求即生效。
 - [x] 实现判定审计（含拒绝）与作业开始前的二次判定（`Recheck` 主动丢弃快照）。

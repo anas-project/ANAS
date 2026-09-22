@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -21,10 +22,11 @@ import (
 )
 
 // IncusObserverConfig is supplied by the trusted installer, never a request
-// directory. The dedicated certificate must have server-enforced read-only
-// rights for these projects and their exact default-project bridges. Issuing
-// that identity is still an installation dependency: ordinary project-restricted
-// TLS certificates also have write rights, regardless of this GET-only client.
+// directory. A reader running outside hostd needs a server-enforced read-only
+// identity. The compiled host observation action may reuse the root-only
+// management credential behind its narrow input/output boundary; it must never
+// deliver that credential to the mediator. GET-only code does not make an
+// ordinary project-restricted TLS certificate read-only on the daemon.
 type IncusObserverConfig struct {
 	Endpoint      string `json:"-"`
 	ServerCertPEM []byte `json:"-"`
@@ -50,6 +52,7 @@ type IncusFactReader struct {
 }
 
 var _ FactReader = (*IncusFactReader)(nil)
+var _ Observer = (*IncusFactReader)(nil)
 
 func NewIncusFactReader(config IncusObserverConfig) (*IncusFactReader, error) {
 	if len(config.ServerVersion) == 0 || len(config.ServerVersion) > 64 || strings.ContainsAny(config.ServerVersion, " \t\r\n\x00") || len(config.Authorizations) == 0 || len(config.Authorizations) > 1024 {
@@ -96,25 +99,77 @@ func (r *IncusFactReader) CloseIdleConnections() {
 	}
 }
 
+// ValidateTarget supplies the executor's independent instance check. The
+// authorization source remains a separate required dependency: an installed
+// reader neither proves that Core's epoch is active nor authorizes a hostname.
+// No cached successful observation can validate another lifecycle step.
+func (r *IncusFactReader) ValidateTarget(ctx context.Context, target PublicationTarget) error {
+	if r == nil || validateTarget(target.Epoch, target) != nil {
+		return fmt.Errorf("invalid Incus HTTP target")
+	}
+	p := target.Publication
+	grant := r.scopes[p.Lease]
+	if grant == nil || grant.Deployment != p.Deployment {
+		return fmt.Errorf("HTTP target has no installed Incus observation scope")
+	}
+	request := computeingress.Request{Action: "publish", InstanceID: p.InstanceID, WorkloadID: p.WorkloadID, GuestPort: p.GuestPort, Label: p.Label}
+	facts, err := r.ObserveHTTP(ctx, grant, request)
+	if err != nil {
+		return err
+	}
+	return validateTargetFacts(grant, target, facts)
+}
+
+// Both direct installed readers and WorkspaceSource use the same comparison.
+// Scope and workload ownership are checked by the fact reader, while current
+// Core/request/Host authorization is checked independently by the executor.
+func validateTargetFacts(grant *computeingress.Authorization, target PublicationTarget, facts computeingress.Facts) error {
+	p := target.Publication
+	if facts.Project != grant.Project || facts.Interface != grant.Interface || facts.InstanceID != p.InstanceID || facts.InstanceUUID != p.InstanceUUID || facts.Incarnation != target.Incarnation || facts.State != "Running" || facts.NetworkOwner != grant.Consumer || facts.GuestIP != p.GuestIP || facts.AllocationIP != p.GuestIP || facts.GuestMAC != target.NICMAC || facts.AllocationMAC != target.NICMAC {
+		return fmt.Errorf("HTTP instance or managed NIC allocation changed")
+	}
+	return nil
+}
+
 func (r *IncusFactReader) ObserveHTTP(ctx context.Context, grant *computeingress.Authorization, request computeingress.Request) (computeingress.Facts, error) {
-	empty := computeingress.Facts{}
-	if r == nil || r.client == nil || grant.Validate() != nil || request.Validate() != nil {
+	observed, err := r.ObserveHostHTTP(ctx, grant, request)
+	return observed.Facts, err
+}
+
+// ObserveHostHTTP exposes the same validated double sample to the compiled
+// host observer. The host must independently check the reported veth against
+// the local kernel; a daemon-reported name is not a physical identity proof.
+// Management credentials may be used only inside that root-side boundary,
+// never delivered to WorkspaceSource or a consumer.
+func (r *IncusFactReader) ObserveHostHTTP(ctx context.Context, grant *computeingress.Authorization, request computeingress.Request) (IncusHostObservation, error) {
+	empty := IncusHostObservation{}
+	if ctx == nil || r == nil || r.client == nil || grant.Validate() != nil || request.Validate() != nil {
 		return empty, fmt.Errorf("invalid Incus HTTP observation scope or request")
 	}
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
 	scope := r.scopes[computeingress.Lease{Consumer: grant.Consumer, Resource: grant.Resource}]
-	// The endpoint/identity binding cannot be widened by a new deployment.
-	// Changing one of these fields requires a newly installed reader mapping.
-	if scope == nil || scope.Provider != grant.Provider || scope.Project != grant.Project || scope.Interface != grant.Interface || scope.InstancePrefix != grant.InstancePrefix || request.Action != "publish" || !strings.HasPrefix(request.InstanceID, grant.InstancePrefix) || len(request.InstanceID) <= len(grant.InstancePrefix) || !slices.Contains(grant.Policy.AllowedPorts, request.GuestPort) {
+	// The complete installed grant is immutable, not just project and prefix.
+	// In particular, a caller cannot widen ports or replace deployment/auth/Host
+	// policy using the same transport credentials. A new epoch needs delivery.
+	if scope == nil || !reflect.DeepEqual(scope, grant) || request.Action != "publish" || !strings.HasPrefix(request.InstanceID, scope.InstancePrefix) || len(request.InstanceID) <= len(scope.InstancePrefix) || !slices.Contains(scope.Policy.AllowedPorts, request.GuestPort) {
 		return empty, fmt.Errorf("HTTP request is outside the installed Incus observer scope")
 	}
 	observeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	first, err := r.sample(observeCtx, grant, request)
+	first, err := r.sample(observeCtx, scope, request)
 	if err != nil {
+		if observeCtx.Err() != nil {
+			return empty, observeCtx.Err()
+		}
 		return empty, err
 	}
-	second, err := r.sample(observeCtx, grant, request)
+	second, err := r.sample(observeCtx, scope, request)
 	if err != nil {
+		if observeCtx.Err() != nil {
+			return empty, observeCtx.Err()
+		}
 		return empty, err
 	}
 	if first != second {
@@ -123,7 +178,7 @@ func (r *IncusFactReader) ObserveHTTP(ctx context.Context, grant *computeingress
 	if err := observeCtx.Err(); err != nil {
 		return empty, err
 	}
-	return second.Facts, nil
+	return second, nil
 }
 
 // Only stable identity fields enter the comparison. Traffic counters and other
@@ -137,6 +192,10 @@ type incusHTTPSample struct {
 	HostName   string
 	BridgeCIDR string
 }
+
+// IncusHostObservation contains selected non-secret observations only. It is
+// not a durable address reservation, network authorization or raw API result.
+type IncusHostObservation = incusHTTPSample
 
 type incusHTTPInstance struct {
 	Name            string                       `json:"name"`
@@ -236,6 +295,12 @@ func (r *IncusFactReader) sample(ctx context.Context, grant *computeingress.Auth
 	uuid, generation := instance.Config["volatile.uuid"], instance.Config["volatile.uuid.generation"]
 	if instance.Name != request.InstanceID || (instance.Project != "" && instance.Project != grant.Project) || instance.Type != wantType || instance.Status != "Running" || instance.StatusCode != 103 || !observedUUID.MatchString(uuid) || !observedUUID.MatchString(generation) || instance.LastUsedAt.IsZero() || instance.LastUsedAt.After(time.Now()) {
 		return fail("Incus instance identity, incarnation or running state is incomplete")
+	}
+	// A consumer may bypass computeclient and forge its request file. Resolve
+	// workload ownership from the selected daemon instance, never from the file
+	// or a profile-inherited label. These labels are not cross-project auth.
+	if instance.Config["user.anas.managed"] != "true" || instance.Config["user.anas.workload"] != request.WorkloadID {
+		return fail("Incus HTTP target is not the managed instance of the requested workload")
 	}
 	if grant.Interface == computeclient.InterfaceContainer && instance.ExpandedConfig["security.privileged"] != "" && instance.ExpandedConfig["security.privileged"] != "false" {
 		return fail("Incus HTTP observation refuses a privileged container")

@@ -22,10 +22,10 @@ func TestInstallTracksOnlyPackagesAbsentBeforeEffect(t *testing.T) {
 	if _, err := backend.Install(ctx, Request{}, bind(plan, PhaseInstall)); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(store.state.Ownership.ManagedPackages, []string{"incus", "incus-client"}) {
+	if !slices.Equal(store.state.Ownership.ManagedPackages, []string{"dnsmasq-base", "incus", "incus-client"}) {
 		t.Fatal("install did not preserve per-package pre-existing ownership")
 	}
-	if !slices.Equal(rt.installedByCall, []string{"incus", "incus-client"}) {
+	if !slices.Equal(rt.installedByCall, []string{"dnsmasq-base", "incus", "incus-client"}) {
 		t.Fatal("install unnecessarily requested pre-existing packages")
 	}
 	request := Request{RemovePackages: true}
@@ -36,8 +36,36 @@ func TestInstallTracksOnlyPackagesAbsentBeforeEffect(t *testing.T) {
 	if _, err = backend.Uninstall(ctx, request, bind(plan, PhaseUninstall)); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(rt.removedByCall, []string{"incus", "incus-client"}) || !slices.Equal(rt.obs.InstalledPackages, []string{"btrfs-progs", "nftables"}) {
+	if !slices.Equal(rt.removedByCall, []string{"dnsmasq-base", "incus", "incus-client"}) || !slices.Equal(rt.obs.InstalledPackages, []string{"btrfs-progs", "nftables"}) {
 		t.Fatal("uninstall removed unowned host packages")
+	}
+}
+
+func TestInstallAndUninstallPreservePreexistingBridgeHelper(t *testing.T) {
+	ctx := context.Background()
+	store, rt := &memoryStore{}, newFakeRuntime(t)
+	rt.obs.ExistingPackages, rt.obs.InstalledPackages = []string{"dnsmasq-base"}, []string{"dnsmasq-base"}
+	backend := newBackendForTest(store, rt)
+	plan, err := backend.Plan(ctx, Request{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Install(ctx, Request{}, bind(plan, PhaseInstall)); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(store.state.Ownership.ManagedPackages, "dnsmasq-base") || slices.Contains(rt.installedByCall, "dnsmasq-base") {
+		t.Fatal("existing bridge helper was adopted")
+	}
+	request := Request{RemovePackages: true}
+	plan, err = backend.Plan(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Uninstall(ctx, request, bind(plan, PhaseUninstall)); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(rt.removedByCall, "dnsmasq-base") || !slices.Contains(rt.obs.InstalledPackages, "dnsmasq-base") {
+		t.Fatal("preexisting bridge helper was removed")
 	}
 }
 

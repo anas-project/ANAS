@@ -81,6 +81,18 @@ func TestCompiledRecipesAreStrictAndDetached(t *testing.T) {
 	}
 }
 
+func TestRecipesIncludeManagedBridgeRuntimeDependency(t *testing.T) {
+	rows, err := Recipes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if !slices.Contains(row.Packages, "dnsmasq-base") {
+			t.Errorf("%s omits dnsmasq-base required by managed bridge NAT/DHCP; no-install-recommends cannot supply it", row.ID)
+		}
+	}
+}
+
 func TestPreflightDistinguishesPackagingFromRuntimeReadiness(t *testing.T) {
 	rows, err := Recipes()
 	if err != nil {

@@ -4,16 +4,13 @@ package incusingresshost
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"testing"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
 // This is a kernel FIB/neighbor lifecycle test in a newly created netns. It is
@@ -26,38 +23,7 @@ func TestNativeAddressRoutingCannotFollowDeviceReuse(t *testing.T) {
 		}
 		t.Skip("native iproute2 is required")
 	}
-	type created struct {
-		file   *os.File
-		cookie uint64
-		err    error
-	}
-	ready := make(chan created, 1)
-	go func() {
-		runtime.LockOSThread()
-		if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
-			runtime.UnlockOSThread()
-			ready <- created{err: err}
-			return
-		}
-		file, err := openKernelNetworkNamespace("thread-self")
-		if err != nil {
-			ready <- created{err: err}
-			return
-		}
-		cookie, err := networkNamespaceCookie()
-		ready <- created{file: file, cookie: cookie, err: err}
-		// Exit locked: the isolated thread is destroyed, not pooled.
-	}()
-	ns := <-ready
-	if ns.file != nil {
-		defer ns.file.Close()
-	}
-	if ns.err != nil {
-		if os.Getenv("ANAS_REQUIRE_INGRESS_NATIVE") == "1" || (!errors.Is(ns.err, unix.EPERM) && !errors.Is(ns.err, unix.EACCES)) {
-			t.Fatal(ns.err)
-		}
-		t.Skip("requires CAP_SYS_ADMIN in a disposable Linux namespace")
-	}
+	namespace, cookie := isolatedReplyTestNamespace(t)
 	b, target, _ := testBackend(t)
 	b.config.AddressRouting = &AddressRouting{Table: 31000, Priority: 10000}
 	b.config.Binaries.IP = ip
@@ -68,7 +34,27 @@ func TestNativeAddressRoutingCannotFollowDeviceReuse(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	err = inOpenedNetworkNamespace(ctx, ns.file, ns.cookie, func() error {
+	// A real container's peer lives in another netns. In the old one-netns
+	// fixture iproute2 resolves IFLA_LINK into a reusable "link" name instead
+	// of reporting link_index. Keep the production numeric identity check and
+	// model the actual boundary, rather than learning an index from that name.
+	guestNamespace, guestCookie := isolatedReplyTestNamespace(t)
+	var guest *exec.Cmd
+	if err := inOpenedNetworkNamespace(ctx, guestNamespace, guestCookie, func() error {
+		guest = exec.CommandContext(ctx, "/usr/bin/sleep", "90")
+		return guest.Start()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = guest.Process.Kill(); _ = guest.Wait() }()
+	err = inOpenedNetworkNamespace(ctx, namespace, cookie, func() (result error) {
+		defer func() {
+			if result != nil {
+				rules, ruleErr := g.json(ctx, "-j", "-N", "-4", "rule", "show")
+				routes, routeErr := g.table(ctx)
+				t.Logf("isolated routing policy: %+v (error %v); table: %+v (error %v)", rules, ruleErr, routes, routeErr)
+			}
+		}()
 		// ip route get with a foreign source and iif exercises the forwarding
 		// lookup. Enable it only inside this newly created, pinned namespace;
 		// otherwise a disabled-forwarding negative control can mask the fence.
@@ -95,13 +81,16 @@ func TestNativeAddressRoutingCannotFollowDeviceReuse(t *testing.T) {
 				{"link", "set", target.HostVethName, "address", target.HostVethMAC},
 				{"link", "set", "peer0", "address", target.NICMAC},
 				{"link", "set", target.HostVethName, "master", b.config.GuestBridge},
-				{"link", "set", target.HostVethName, "up"}, {"link", "set", "peer0", "up"},
+				{"link", "set", target.HostVethName, "up"},
+				{"link", "set", "peer0", "netns", strconv.Itoa(guest.Process.Pid)},
 			} {
 				if err := run(args...); err != nil {
 					return err
 				}
 			}
-			return nil
+			return inOpenedNetworkNamespace(ctx, guestNamespace, guestCookie, func() error {
+				return run("link", "set", "peer0", "up")
+			})
 		}
 		if err := createLink(); err != nil {
 			return err

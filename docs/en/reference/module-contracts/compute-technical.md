@@ -176,9 +176,50 @@ expresses explicit deletion intent only, and is still handled as retain until Co
 resource delete entry point.
 
 How a one-time secret (a runner token, for instance) reaches a guest is outside this contract. That
-happens after the lease is delivered, injected by the consumer through the provider's exec stdin
-channel, and the secret must not appear in argv, environment variables, cloud-init, images, persistent
+happens after the lease is delivered: the consumer uses the shared `computeclient.ExecStdin` directly
+against Incus, not a Provider operation. The secret must not appear in argv, environment variables, cloud-init, images, persistent
 state, or logs.
+
+### Shared-client credential preparation and subprocess boundary
+
+`New` keeps its existing signature. `NewWithContext` applies caller cancellation and a maximum 30-second
+initialization budget to credential preparation, lock waiting and initial CLI connection. Initialization
+copies the image allowlist; changing the caller's original slice cannot change the constructed client's
+image authority. Directly constructed leases and environment input share endpoint, project, profile,
+quota, isolation-tier and fingerprint validation. Guest entrypoints must be distinct canonical absolute
+paths; invalid inputs are rejected before file writes. Initialization neither starts nor cleans up guests.
+
+Bounded base64, single X.509 certificates, the server-certificate digest and the matching client keypair
+are validated before directories are created. On Linux/macOS, the configuration root and `servercerts`
+must be owned by the runtime user with mode 0700. The three credential files, frozen `config.yml` and initialization lock must
+be same-user, mode-0600, single-link regular files. Directory descriptors, no-follow opens, exclusive
+creation, fsync and readback protect publication. Conflicting contents, unsafe modes, special files and
+identity drift reject initialization without truncation, replacement or automatic chmod. A different
+identity requires a separate private directory. The lock is never deleted; waits are cancellable and
+identical files are read, not rewritten. Private partial files remain for explicit recovery rather than
+deleting paths another process may use. Other platforms have no unprotected write fallback.
+
+`config.yml` uses standard JSON encoding for YAML-compatible CLI configuration, fixing `protocol: incus`, the remote,
+endpoint, TLS authentication and project. It is checked, committed and read back alongside the credentials.
+Old experimental `protocol: lxd` configuration is not overwritten or silently migrated; use a new private
+configuration directory. Initialization no longer calls `remote add`: matching files are reused, followed by a read-only instance
+listing in the restricted project. Another project or pre-existing configuration is never overwritten.
+The initialization lock is created exclusively; an existing entry is opened without a creation flag.
+Disappearance therefore fails rather than creating another lock inode. Errors contain only fixed stage
+labels and system-error categories, not paths or credentials.
+
+This serializes initialization only; it is not a lifetime credential lock or rotation coordinator.
+A successful read-only listing does not replace the Provider's complete fence/profile/quota readiness
+checks or establish guest-lifecycle acceptance.
+
+The Incus child receives only a fixed system PATH/locale and this lease's HOME, INCUS_CONF and INCUS_PROJECT,
+not other lease secrets, default Incus sockets, proxies or loader overrides. The executable is still
+resolved from the trusted consumer's own PATH. stdout is capped at 4 MiB and stderr at 64 KiB; overflow
+cancels the child and returns a fixed error without partial output. Diagnostics do not echo stderr/stdin.
+`WaitDelay` bounds post-exit pipe waiting, caller cancellation retains its error identity and absent stdin
+is closed. These constraints do not establish real guest cleanup after cancellation. Instance inventories
+reject `null` and duplicate managed identities; managed filtering uses the same name rules as creation. A successful delete command must
+also be followed by a read confirming that the instance is absent.
 
 ## Structured declarations and frozen deployment images
 

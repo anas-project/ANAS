@@ -66,7 +66,9 @@ func (f *fakeCompute) Create(_ context.Context, spec InstanceSpec) error {
 	f.created = append(f.created, spec)
 	return nil
 }
-func (f *fakeCompute) Inspect(context.Context, string) (Instance, error) { return Instance{}, nil }
+func (f *fakeCompute) Inspect(_ context.Context, id string) (Instance, error) {
+	return Instance{ID: id, State: "missing"}, nil
+}
 func (f *fakeCompute) Start(_ context.Context, id string) error {
 	f.started = append(f.started, id)
 	return nil

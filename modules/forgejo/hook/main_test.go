@@ -275,6 +275,85 @@ func TestModuleHighRiskFeatureDefaultsAndEffects(t *testing.T) {
 	}
 }
 
+// The container tier is the default because the hardware this product targets
+// does not reliably provide KVM. That makes it the tier most deployments
+// actually run, so a silent flip -- in either direction -- has to fail here.
+func TestModuleIsolationTierDefaultsToTheContainerTier(t *testing.T) {
+	body, err := os.ReadFile("../module.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Dependencies struct {
+			Contracts []struct {
+				Name       string   `yaml:"name"`
+				SelectedBy string   `yaml:"selected_by"`
+				EnabledBy  string   `yaml:"enabled_by"`
+				Interfaces []string `yaml:"interfaces"`
+				Default    string   `yaml:"default"`
+			} `yaml:"contracts"`
+		} `yaml:"dependencies"`
+		Config struct {
+			Defaults map[string]any `yaml:"defaults"`
+			// Types is mixed: a plain scalar for simple kinds, a mapping for
+			// the ones that carry an enum or a format.
+			Types map[string]any `yaml:"types"`
+		} `yaml:"config"`
+	}
+	if err := yaml.Unmarshal(body, &manifest); err != nil {
+		t.Fatal(err)
+	}
+
+	var compute *struct {
+		Name       string   `yaml:"name"`
+		SelectedBy string   `yaml:"selected_by"`
+		EnabledBy  string   `yaml:"enabled_by"`
+		Interfaces []string `yaml:"interfaces"`
+		Default    string   `yaml:"default"`
+	}
+	for index, contract := range manifest.Dependencies.Contracts {
+		if contract.Name == "compute" {
+			compute = &manifest.Dependencies.Contracts[index]
+		}
+	}
+	if compute == nil {
+		t.Fatal("the compute contract dependency is missing")
+	}
+	if compute.Default != "incus_container" {
+		t.Errorf("compute default interface = %q, want incus_container", compute.Default)
+	}
+	if compute.SelectedBy != "actions_isolation" {
+		t.Errorf("compute selected_by = %q, want actions_isolation", compute.SelectedBy)
+	}
+	if compute.EnabledBy != "actions_enabled" {
+		t.Errorf("compute enabled_by = %q, want actions_enabled", compute.EnabledBy)
+	}
+	wantInterfaces := map[string]bool{"incus_container": true, "incus_vm": true}
+	for _, name := range compute.Interfaces {
+		if !wantInterfaces[name] {
+			t.Errorf("compute interface %q is not one of the two declared tiers", name)
+		}
+		delete(wantInterfaces, name)
+	}
+	for name := range wantInterfaces {
+		t.Errorf("compute interface %q is missing", name)
+	}
+
+	// auto is resolved by the contract default above, so the enum only has to
+	// offer it alongside the two tiers -- and nothing else.
+	wantEnum := []any{"auto", "incus_vm", "incus_container"}
+	isolation, ok := manifest.Config.Types["actions_isolation"].(map[string]any)
+	if !ok {
+		t.Fatalf("actions_isolation type = %#v, want a mapping carrying an enum", manifest.Config.Types["actions_isolation"])
+	}
+	if got := isolation["enum"]; !reflect.DeepEqual(got, wantEnum) {
+		t.Errorf("actions_isolation enum = %#v, want %#v", got, wantEnum)
+	}
+	if value, ok := manifest.Config.Defaults["actions_isolation"]; !ok || value != "auto" {
+		t.Errorf("actions_isolation default = %#v, want auto", value)
+	}
+}
+
 func forgejoRenderEnv() map[string]string {
 	return map[string]string{
 		iamBindingPrefix + "INTERFACE":          "oidc",

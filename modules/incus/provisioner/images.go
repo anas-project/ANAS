@@ -69,7 +69,7 @@ func verifyImage(ctx context.Context, c *client, project, pin, architecture, ima
 }
 
 const (
-	maxImageSupplyBytes = 1 << 20
+	maxImageSupplyBytes = computeimage.MaxImageSupplyBytes
 )
 
 var (

@@ -56,26 +56,26 @@ func selfSigned(t *testing.T, cn string) (certPEM, keyPEM []byte) {
 // fakeDaemon serves just enough of the Incus REST surface to exercise the
 // provider, and records what it was asked to write.
 type fakeDaemon struct {
-	storage            *storagePool
-	storageReads       int
-	storageError       int
-	storageReadFilter  func(*storagePool)
-	imageFilter        func(*imageRecord)
-	missingImages      map[string]bool
-	importedImages     map[string]imageRecord
-	lastImportProject  string
-	lastImportFingerprint string
+	storage                   *storagePool
+	storageReads              int
+	storageError              int
+	storageReadFilter         func(*storagePool)
+	imageFilter               func(*imageRecord)
+	missingImages             map[string]bool
+	importedImages            map[string]imageRecord
+	lastImportProject         string
+	lastImportFingerprint     string
 	importFingerprintOverride string
-	asyncWaits         int
-	projects           map[string]map[string]string
-	certificates       map[string]certificate
-	networks           map[string]network
-	profiles           map[string]profile
-	posted             []string
-	puts               []project
-	server             *httptest.Server
-	projectWriteFilter func(map[string]string)
-	networkWriteFilter func(map[string]string)
+	asyncWaits                int
+	projects                  map[string]map[string]string
+	certificates              map[string]certificate
+	networks                  map[string]network
+	profiles                  map[string]profile
+	posted                    []string
+	puts                      []project
+	server                    *httptest.Server
+	projectWriteFilter        func(map[string]string)
+	networkWriteFilter        func(map[string]string)
 }
 
 func newFakeDaemon(t *testing.T) *fakeDaemon {
@@ -176,7 +176,7 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 		}
 		writeSync(w, operationRecord{
 			ID: "11111111-1111-4111-8111-111111111111", StatusCode: 200,
-			Metadata: map[string]any{"fingerprint": fingerprint},
+			Metadata:  map[string]any{"fingerprint": fingerprint},
 			Resources: map[string][]string{"images": []string{"/1.0/images/" + fingerprint + "?project=" + d.lastImportProject}},
 		})
 	})
@@ -825,7 +825,7 @@ func TestVerifyProfileRefusesAnythingBeyondTheTwoDevices(t *testing.T) {
 			}
 		})
 	}
-	d.profiles[l.Sandbox+"/"+computeclient.ProfileName] = profile{Name: computeclient.ProfileName, Devices: good}
+	d.profiles[l.Sandbox+"/"+computeclient.ProfileName] = profile{Name: computeclient.ProfileName, Config: map[string]string{"user.anas.managed": "true"}, Devices: good}
 	if err := verifyProfile(context.Background(), d.clientFor(t), l, bridge); err != nil {
 		t.Fatalf("a correct profile must be accepted: %v", err)
 	}

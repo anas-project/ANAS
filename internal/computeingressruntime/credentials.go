@@ -10,22 +10,31 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/anas-project/ANAS/internal/computeingress"
 	"github.com/anas-project/ANAS/internal/deployment"
+	"github.com/anas-project/ANAS/internal/incusingresshost"
 )
 
 const credentialsSchema = "anas.compute-http-reader-credentials/v1"
+const hostCredentialsSchema = "anas.compute-http-host-reader-credentials/v1"
 const privateArtifactLimit = 1 << 20
 
-// ReaderInstallation is trusted Core/installer input. The observer identity
+// ReaderInstallation is trusted Core/installer input. A direct Incus identity
 // must already be read-only on the server; this delivery does not issue it.
+// Host mode carries public pins instead and keeps Incus credentials in hostd.
 // ForwardAuth pins must come from the installed provider definition, not a
 // consumer or a first observation of Traefik's API. Renderer paths are supplied
 // separately by the launcher, never taken from this credential artifact.
 type ReaderInstallation struct {
 	Incus   IncusObserverConfig `json:"-"`
 	Traefik TraefikReaderConfig `json:"-"`
+	// Host and Incus are mutually exclusive. Host mode delivers only public
+	// installation pins; management credentials never enter the artifact.
+	Host *HostReaderBinding `json:"-"`
 }
 
 func (ReaderInstallation) String() string     { return "[HTTP reader installation: redacted]" }
@@ -36,7 +45,8 @@ func (r ReaderInstallation) GoString() string { return r.String() }
 type readerCredentials struct {
 	Schema     string                                `json:"schema"`
 	Scope      *deployment.HTTPAuthorizationSnapshot `json:"scope"`
-	Incus      incusCredentials                      `json:"incus"`
+	Incus      *incusCredentials                     `json:"incus,omitempty"`
+	Host       *HostReaderBinding                    `json:"host_observer,omitempty"`
 	Traefik    traefikCredentials                    `json:"traefik"`
 	NamingKeys []leaseNamingKey                      `json:"naming_keys"`
 }
@@ -77,9 +87,15 @@ func WriteReaderCredentials(ctx context.Context, destination string, scope *depl
 		return fmt.Errorf("HTTP reader installation scope differs from Core authority")
 	}
 	wire := readerCredentials{Schema: credentialsSchema, Scope: scope,
-		Incus:      incusCredentials{i.Endpoint, string(i.ServerCertPEM), string(i.ClientCertPEM), string(i.ClientKeyPEM), i.ServerVersion},
+		Incus:      &incusCredentials{i.Endpoint, string(i.ServerCertPEM), string(i.ClientCertPEM), string(i.ClientKeyPEM), i.ServerVersion},
 		Traefik:    traefikCredentials{t.Endpoint, string(t.ServerCertPEM), t.Username, t.Password, t.APIRouter, t.ForwardAuthDigests},
 		NamingKeys: []leaseNamingKey{},
+	}
+	if installation.Host != nil {
+		if !reflect.DeepEqual(i, IncusObserverConfig{}) {
+			return fmt.Errorf("host projection delivery cannot carry Incus credentials or configuration")
+		}
+		wire.Schema, wire.Incus, wire.Host = hostCredentialsSchema, nil, installation.Host
 	}
 	for lease, value := range keys {
 		wire.NamingKeys = append(wire.NamingKeys, leaseNamingKey{lease, value})
@@ -115,7 +131,19 @@ func decodeReaderCredentials(body []byte, expected *deployment.HTTPAuthorization
 		return fail()
 	}
 	var wire readerCredentials
-	if decodeObservedJSON(body, &wire) != nil || wire.Schema != credentialsSchema || !reflect.DeepEqual(wire.Scope, expected) {
+	if decodeObservedJSON(body, &wire) != nil || !reflect.DeepEqual(wire.Scope, expected) {
+		return fail()
+	}
+	switch wire.Schema {
+	case credentialsSchema:
+		if wire.Incus == nil || wire.Host != nil {
+			return fail()
+		}
+	case hostCredentialsSchema:
+		if wire.Incus != nil || wire.Host == nil || wire.Host.validate(wire.Scope) != nil {
+			return fail()
+		}
+	default:
 		return fail()
 	}
 	canonical, err := json.Marshal(wire)
@@ -165,11 +193,15 @@ func (w readerCredentials) traefikConfig(renderer FileRouteRenderer) TraefikRead
 
 // Constructors validate pins/keypairs without making any network requests.
 func (w readerCredentials) validateReaders() error {
-	incus, err := NewIncusFactReader(w.incusConfig())
-	if err != nil {
-		return err
+	if w.Incus != nil {
+		incus, err := NewIncusFactReader(w.incusConfig())
+		if err != nil {
+			return err
+		}
+		defer incus.CloseIdleConnections()
+	} else if w.Host == nil || w.Host.validate(w.Scope) != nil {
+		return fmt.Errorf("HTTP reader has no valid observation binding")
 	}
-	defer incus.CloseIdleConnections()
 	// Validation needs syntactically valid paths only. No file is opened and
 	// these placeholders are never retained by an installed runtime reader.
 	traefik, err := NewTraefikReader(w.traefikConfig(FileRouteRenderer{Directory: "/unused", Entrypoint: "/unused/entrypoint"}))
@@ -237,13 +269,34 @@ func (c *installedCredentials) namingKey(ctx context.Context, scope *deployment.
 // naming-key delivery. It does not start a Controller or supply HostActions,
 // a probe, mounts, server authorization or any privileged launch operations.
 type WorkspaceReaders struct {
+	launchMu sync.Mutex
 	Source   *WorkspaceSource
 	Renderer FileRouteRenderer
-	incus    *IncusFactReader
-	traefik  *TraefikReader
+	// Original installation inputs; public view fields cannot retarget a launch.
+	workspace, registry string
+	delivery            *installedCredentials
+	source              *WorkspaceSource
+	layout              atomic.Pointer[workspaceLaunchLayout]
+	incus               *IncusFactReader
+	traefik             *TraefikReader
+	closed              atomic.Bool
+	claimed             atomic.Bool
 }
 
 func OpenWorkspaceReaders(ctx context.Context, workspace, registry, credentials string, renderer FileRouteRenderer) (*WorkspaceReaders, error) {
+	return openWorkspaceReaders(ctx, workspace, registry, credentials, renderer, nil)
+}
+
+// OpenHostWorkspaceReaders cannot fall back to direct Incus credentials. The
+// authenticated invoker is provided by the trusted owner, never by the file.
+func OpenHostWorkspaceReaders(ctx context.Context, workspace, registry, credentials string, renderer FileRouteRenderer, client incusingresshost.ProjectionClient) (*WorkspaceReaders, error) {
+	if client.Invoker == nil {
+		return nil, fmt.Errorf("host observation requires the installed action client")
+	}
+	return openWorkspaceReaders(ctx, workspace, registry, credentials, renderer, &client)
+}
+
+func openWorkspaceReaders(ctx context.Context, workspace, registry, credentials string, renderer FileRouteRenderer, hostClient *incusingresshost.ProjectionClient) (*WorkspaceReaders, error) {
 	scope, err := deployment.NewReader(workspace).HTTPAuthorizations(ctx)
 	if err != nil {
 		return nil, err
@@ -252,22 +305,10 @@ func OpenWorkspaceReaders(ctx context.Context, workspace, registry, credentials 
 	if err != nil {
 		return nil, err
 	}
-	incus, err := NewIncusFactReader(delivery.wire.incusConfig())
+	readers, err := assembleWorkspaceReaders(workspace, registry, delivery, renderer, hostClient)
 	if err != nil {
 		return nil, err
 	}
-	// Strip a caller's confirmation before giving the reader a renderer copy;
-	// the installed reader must be the only confirmation of this output.
-	renderer.Confirmation = nil
-	traefik, err := NewTraefikReader(delivery.wire.traefikConfig(renderer))
-	if err != nil {
-		incus.CloseIdleConnections()
-		return nil, err
-	}
-	incus.client.check = delivery.checkFile
-	traefik.client.check = delivery.checkFile
-	renderer.Confirmation = traefik
-	readers := &WorkspaceReaders{Source: &WorkspaceSource{Workspace: workspace, RequestRegistry: registry, Facts: incus, NamingKey: delivery.namingKey, Inventory: traefik, Configuration: delivery.checkScope}, Renderer: renderer, incus: incus, traefik: traefik}
 	if err := StillCurrent(ctx, workspace, scope); err != nil {
 		readers.Close()
 		return nil, err
@@ -279,9 +320,148 @@ func OpenWorkspaceReaders(ctx context.Context, workspace, registry, credentials 
 	return readers, nil
 }
 
-func (r *WorkspaceReaders) Close() {
-	if r != nil {
+func assembleWorkspaceReaders(workspace, registry string, delivery *installedCredentials, renderer FileRouteRenderer, hostClient *incusingresshost.ProjectionClient) (*WorkspaceReaders, error) {
+	if (delivery.wire.Host != nil) != (hostClient != nil) {
+		return nil, fmt.Errorf("HTTP observation transport does not match installed delivery")
+	}
+	readers := &WorkspaceReaders{workspace: workspace, registry: registry, delivery: delivery}
+	checkFile := func(ctx context.Context) error {
+		if readers.closed.Load() {
+			return fmt.Errorf("HTTP runtime readers are closed")
+		}
+		return delivery.checkFile(ctx)
+	}
+	var facts FactReader
+	if hostClient != nil {
+		binding := delivery.wire.Host
+		host, err := NewHostProjectionReader(binding.ScopeID, binding.ServerUUID, delivery.wire.Scope, *hostClient)
+		if err != nil {
+			return nil, err
+		}
+		host.check, facts = checkFile, host
+	} else {
+		incus, err := NewIncusFactReader(delivery.wire.incusConfig())
+		if err != nil {
+			return nil, err
+		}
+		incus.client.check = checkFile
+		readers.incus, facts = incus, incus
+	}
+	// Strip a caller's confirmation before giving the reader a renderer copy;
+	// the installed reader must be the only confirmation of this output.
+	renderer.Confirmation = nil
+	traefik, err := NewTraefikReader(delivery.wire.traefikConfig(renderer))
+	if err != nil {
+		readers.Close()
+		return nil, err
+	}
+	traefik.client.check = checkFile
+	renderer.Confirmation = traefik
+	readers.Renderer, readers.traefik = renderer, traefik
+	readers.Source = &WorkspaceSource{Workspace: workspace, RequestRegistry: registry, Facts: facts, Inventory: traefik,
+		NamingKey: func(ctx context.Context, scope *deployment.HTTPAuthorizationSnapshot, lease computeingress.Lease) (string, error) {
+			if err := checkFile(ctx); err != nil {
+				return "", err
+			}
+			return delivery.namingKey(ctx, scope, lease)
+		},
+		Configuration: func(ctx context.Context, scope *deployment.HTTPAuthorizationSnapshot) error {
+			if readers.closed.Load() {
+				return fmt.Errorf("HTTP runtime readers are closed")
+			}
+			// A changed request mount rejects new/renewed publication. This is
+			// deliberately NOT part of the old Traefik credential check: losing
+			// consumer inputs must not prevent independent withdrawal.
+			if layout := readers.layout.Load(); layout != nil {
+				if err := layout.check(ctx); err != nil {
+					return err
+				}
+			}
+			return delivery.checkScope(ctx, scope)
+		}}
+	readers.source = readers.Source
+	return readers, nil
+}
+
+func (r *WorkspaceReaders) Close() error {
+	if r != nil && r.closed.CompareAndSwap(false, true) {
 		r.incus.CloseIdleConnections()
 		r.traefik.CloseIdleConnections()
 	}
+	return nil
+}
+
+// WorkspaceControllerOptions supplies only already installed adapters. It does
+// not create a probe, network backend, UID, mount or default permission.
+type WorkspaceControllerOptions struct {
+	Host             HostActions
+	Probe            BackendProbe
+	Store            StateStore
+	Interval         time.Duration
+	OperationTimeout time.Duration
+	CleanupTimeout   time.Duration
+	Events           <-chan struct{}
+	Report           func(error)
+}
+
+// NewControllerService wires these exact readers into the managed lifecycle.
+// Transfer their lifetime to Run; do not separately defer Close. The owner must
+// keep its host-action service alive until Stop or RetryDrain confirms success.
+func (r *WorkspaceReaders) NewControllerService(o WorkspaceControllerOptions) (*ControllerService, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return r.newControllerService(ctx, o)
+}
+
+func (r *WorkspaceReaders) newControllerService(ctx context.Context, o WorkspaceControllerOptions) (*ControllerService, error) {
+	if r == nil || r.Source == nil || r.closed.Load() {
+		return nil, ErrControllerNotRunning
+	}
+	r.launchMu.Lock()
+	defer r.launchMu.Unlock()
+	if r.claimed.Load() || r.closed.Load() {
+		return nil, ErrControllerNotRunning
+	}
+	// A workspace-backed launcher cannot silently bypass cross-process
+	// exclusion by supplying a memory store or an unrelated workspace fence.
+	var store WorkspaceStateStore
+	switch installed := o.Store.(type) {
+	case FileStateStore:
+		store = WorkspaceStateStore{Workspace: r.Source.Workspace, Directory: installed.Directory}
+	case *FileStateStore:
+		if installed == nil {
+			return nil, ErrWorkspaceIngressState
+		}
+		store = WorkspaceStateStore{Workspace: r.Source.Workspace, Directory: installed.Directory}
+	case WorkspaceStateStore:
+		store = installed
+	default:
+		return nil, ErrWorkspaceIngressState
+	}
+	if store.Workspace != r.Source.Workspace {
+		return nil, ErrWorkspaceIngressState
+	}
+	layout, err := prepareWorkspaceLaunch(ctx, r, store)
+	if err != nil {
+		return nil, err
+	}
+	store.layout = layout
+	renderer := r.Renderer
+	renderer.installation = layout.renderer
+	owner, err := NewControllerService(Controller{Source: r.Source,
+		Executor: Executor{Observer: r.Source, Host: o.Host, Probe: o.Probe, Store: store, Renderer: renderer},
+		Interval: o.Interval, OperationTimeout: o.OperationTimeout, CleanupTimeout: o.CleanupTimeout, Events: o.Events, Report: o.Report}, r)
+	if err != nil {
+		return nil, err
+	}
+	if !r.claimed.CompareAndSwap(false, true) || r.closed.Load() {
+		return nil, ErrControllerNotRunning
+	}
+	r.Renderer = renderer
+	r.traefik.renderer.installation = layout.renderer
+	r.layout.Store(layout)
+	// Only these freshly opened readers are safe to close when no executor
+	// session was ever acquired. Generic controller resources may be shared.
+	owner.releaseUnstarted = r
+	return owner, nil
 }

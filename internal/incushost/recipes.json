@@ -14,7 +14,8 @@
       "incus",
       "incus-client",
       "btrfs-progs",
-      "nftables"
+      "nftables",
+      "dnsmasq-base"
     ],
     "evidence_date": "2026-09-19",
     "observed_package_version": "6.0.4-2+deb13u10",
@@ -35,7 +36,8 @@
       "incus",
       "incus-client",
       "btrfs-progs",
-      "nftables"
+      "nftables",
+      "dnsmasq-base"
     ],
     "evidence_date": "2026-09-19",
     "observed_package_version": "6.0.0-1ubuntu0.3",
@@ -56,7 +58,8 @@
       "incus",
       "incus-client",
       "btrfs-progs",
-      "nftables"
+      "nftables",
+      "dnsmasq-base"
     ],
     "evidence_date": "2026-09-19",
     "observed_package_version": "6.0.5-8",

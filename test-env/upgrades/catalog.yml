@@ -59,8 +59,10 @@ modules:
     transitions:
       - {id: freeradius-r3-r4, from: 3.2.10-r3, to: 3.2.10-r4, suite: modules-base}
   - name: incus
-    current: 7.3.0-r1
-    baseline: {id: incus-first-release-r1, version: 7.3.0-r1, reason: no_prior_release}
+    current: 7.3.0-r2
+    # Still developing: this records the next first-release baseline, not a
+    # successful native upgrade or permission to bypass Incus acceptance.
+    baseline: {id: incus-first-release-r2, version: 7.3.0-r2, reason: no_prior_release}
   - name: lam
     current: 9.6.0-r8
     transitions:

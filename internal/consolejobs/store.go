@@ -847,6 +847,22 @@ func (store *Store) TransitionObserved(ctx context.Context, jobID string, target
 // the status check and both records under jobs.lock prevents a worker claim
 // from racing a cancellation based on a stale queued read.
 func (store *Store) CancelQueuedObserved(ctx context.Context, jobID string, input TransitionInput, eventInput EventInput, observer JobCommitObserver) (Job, error) {
+	return store.finishQueuedObserved(ctx, jobID, StatusCanceled, input, eventInput, observer)
+}
+
+// RejectQueuedObserved records a failed pre-execution prerequisite without
+// claiming a running slot. The event and terminal state commit atomically,
+// under the same lock as ClaimNextObserved and cancellation. No action-ABI job
+// may use this legacy transition, and no compensation is needed for an
+// operation that never started. An observer may additionally bind exact input.
+func (store *Store) RejectQueuedObserved(ctx context.Context, jobID string, input TransitionInput, eventInput EventInput, observer JobCommitObserver) (Job, error) {
+	if observer == nil || input.Error == nil || input.NeedsCompensationCheck || input.Result != nil || input.Progress != nil {
+		return Job{}, invalidError("queued rejection requires an observed failure without execution results")
+	}
+	return store.finishQueuedObserved(ctx, jobID, StatusFailed, input, eventInput, observer)
+}
+
+func (store *Store) finishQueuedObserved(ctx context.Context, jobID string, status Status, input TransitionInput, eventInput EventInput, observer JobCommitObserver) (Job, error) {
 	if err := validateIdentifier("job ID", jobID, 256); err != nil {
 		return Job{}, err
 	}
@@ -889,7 +905,7 @@ func (store *Store) CancelQueuedObserved(ctx context.Context, jobID string, inpu
 		}
 		now := store.now().UTC()
 		updated := cloneJob(job)
-		updated.Status = StatusCanceled
+		updated.Status = status
 		if input.Progress != nil {
 			updated.Progress = *input.Progress
 		}

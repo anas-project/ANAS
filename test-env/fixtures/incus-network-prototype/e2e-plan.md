@@ -1,11 +1,77 @@
 # Incus 后续服务器 E2E 清单
 
-状态：待执行。先完成代码、双语文档和本地门禁，再按本清单在本轮指定宿主执行；本清单不代表
+## 2026-09-21 指定主机原生修复复测
+
+接续首次指定主机测试后，原 nft/FIB/namespace 失败已有代码修复。八项强制原生门禁、三轮
+乱序执行和 `incusingresshost` 包的完整 Linux 回归均已执行通过，具体次数、无跳过检查与
+宿主清理证据见[原生修复核对](../../../dev-docs/reviews/2026-09-21-incus-native-readback-fixes.md)。
+包含错误 EtherType 的真实规则反例、JSON/raw 读回间 generation 变化、旧 ifindex 与同名
+替代设备、实际回包冒用、FIB/邻居及 conntrack 清理。生产 gate 未开启；这不是以下真实
+guest/配额/Traefik/独立 UID/挂载/Docker 共存待办的完成记录。下文保留此前各阶段的历史清单。
+
+状态：部分执行，整体验收未通过。2026-09-21 指定 finance 主机的 Linux 回归、原生内核失败及
+20 项隔离 HTTP 正反探针结果见[本轮核对](../../../dev-docs/reviews/2026-09-21-incus-finance-linux-validation.md)。
+下文按日期保留原始待验清单；不能将一次原型通过批量改写为 guest/VM/生产中介已通过。
+先完成代码、双语文档和本地门禁，再按本清单在本轮指定宿主执行；本清单不代表
 用例已通过，也不新增或替代[需求矩阵](../../../dev-docs/requirements/incus-module.md)。
+
+## 2026-09-21 独立 daemon 存储 API 接续
+
+指定主机的独立 Incus 6.0.5 已实际完成同步创建/读回/删除；旧宿主客户端对 HTTP 201 的
+误判先复现再修复。Provider 的真实 dir/缺失池拒绝、错误 pin、只读 inspect 和无租约资源
+副作用通过。新增 `test-env/scripts/test-incus-daemon-native.sh` 接受明确的新报告目录、
+发行版解包树及三个预编译程序，固定独立 socket，使用私有 PID/net/mount namespace 和
+tmpfs 状态；不使用默认 daemon、不启动 guest、不格式化块设备。具体记录见
+[独立存储验证](../../../dev-docs/reviews/2026-09-21-incus-daemon-storage-validation.md)。
+
+该通过范围只是下表“存储池拒绝”的部分负例及宿主 API 协议，不覆盖既有 restricted project
+的所有 inspect 分支，也不覆盖 btrfs/zfs 正例、真实限额、guest 生命周期、one-job 或 VM。
+原 CLI 继承环境的超时不再当作 API 建池阻塞的证据；其完整根因与其余宿主条件仍单独跟踪。
+
+本机新增普通部署/维护任务的领取前排空回归：真实队列、确认账本、Controller 和文件锁，
+但应用/网络/root 动作为夹具。原生必须另外证明部署切换、真实本地管理员轮换、停机补偿在旧
+Traefik 凭据和挂载移除前完成排空，且同队列不会自等待；不得把该回归计作独立 CLI 或 Linux 验收。
 逐项保留 fixture/revision、操作、预期、实际、脱敏证据与清理结果。历史 namespace 实验与 daemon
 供给探查单独记录，不汇总成完整 E2E 通过。TCP/UDP 发布不在本轮范围。
 
+## 工作区跨进程围栏的补充验收（2026-09-21，实机待执行）
+
+本机 `workspace_fence_test.go` 已提供真实子进程/文件锁/日志故障源，网络与 guest 是夹具。
+在本轮明确指定的 Linux 宿主上，另验证真实 WorkspaceStateStore、原 Controller、Incus 与 Traefik：
+
+| 场景 | 必须保留的证据 |
+| --- | --- |
+| 独立 CLI 在中介运行中轮换（包括 `--force`） | 原锁 inode、非空标记、拒绝发生在 Hook/密码生成/业务恢复前，旧凭据和实际服务不变 |
+| 正常停止与清理失败 | 路由/许可/存量连接/guest 路由/地址的实际撤销；失败保留两个锁、标记和旧读取器，其他进程不得变更 |
+| 强杀中介后启动独立 writer | flock 释放但标记保留，writer 不得因 PID 不存在或空内存登记而执行；新恢复使用原目录与原日志 |
+| 日志丢失、损坏或同名目录替换 | 缺少原证据时拒绝，禁止创建空日志代替、自动切换目录或删除标记；原网络工件不得误认已清理 |
+| 显式恢复后重新变更 | 完整真实库存与持久退役记录通过后清除标记，同一锁 inode 保留，写入方随后才能获得授权 |
+
+以上不要求开放 production publication gate 来测试。不把 macOS 强杀测试或 Linux 交叉编译
+当作这些实机项目通过；不升级到忽略标记的旧二进制，不在生产主机测试破坏性目录替换。
+
+## 2026-09-21 中介所有者与 Host 配置接续
+
+本机新增 `controller_service_test.go` 与 `host_credentials_test.go`，覆盖真实文件锁/日志与活动
+Core 元数据、注册目录、私有配置交付。宿主动作、Traefik 和应用探测仍为明确测试适配器。
+失败停止保持同一锁和旧读取器，显式重试只排空；同内容配置替换、关闭后调用、混合凭据、
+直连回退和重复所有者均拒绝。该覆盖不证明实际 daemon 被安装或启动。
+
+实际宿主必须另外验证：停止与 observer refresh/disable 的协调；旧 Traefik/API 身份与挂载
+在清理期保留；宿主动作服务晚于中介退出；清理超时后无法启动第二个发布者；强杀进程后旧
+回执继续阻断错误恢复；真实连接、报文和权限最终撤销。缺 root 网络、health 或 UID/挂载
+适配器时不能用测试替身开启 production gate。
+
 ## 执行前置条件
+
+2026-09-21 的配置/排空协调已有本机回归，但以下仍须在真实宿主独立验收：配置任务保持 queued
+时，实际中介能够经同一受监督通道完成撤销；正常 SIGTERM 不提前关闭 broker、清理凭据或挂载；
+两个工作区中一个清理超时不阻止另一个退役；过期确认与清理期间权限撤销均不能执行配置；
+未知 root 退出和强杀后按持久证据恢复，不能凭空内存登记宣称已排空。
+
+本机测试入口为 `internal/computeingressruntime/controller_coordinator_test.go` 与
+`internal/jobexecutor/host_ingress_change_test.go`。它们使用真实日志、锁和共享队列，但 root、
+网络和 Traefik 是明确夹具。正常停机失败重试是可信所有者方法，不是已提供的运维 Web 按钮。
 
 - 明确本轮宿主、kernel/Incus/Docker/Traefik/nft/conntrack 版本及架构。发行版 Incus 6.0.5 与源码
   核验基线 7.3.0 分列；不能跨版本套用结论。缺少 `/dev/kvm` 时 VM 记为未执行，不自动改测容器。
@@ -583,3 +649,81 @@ IP、allocator 和 conntrack 为夹具，不能替代下列实机用例。
 
 上述两个 native 测试已加入同一脚本的必跑清单，缺依赖/权限、跳过、漏跑或失败均不是通过。
 本轮未在实际宿主运行 nft/ip/conntrack；本机测试和交叉编译不提升生产状态或需求完成数。
+
+## 观测身份与控制循环（2026-09-21 接续）
+
+本轮使用真实本机 HTTPS/mTLS 与持久 journal，但未连接实际 Incus、Docker 或 Traefik。
+请求源、daemon 数据、宿主动作、renderer/probe 是明确夹具；不代替原生验收。
+
+| 范围 | 本轮代码与断言 | 验收边界 |
+| --- | --- | --- |
+| 安装授权与实例归属 | `incus_reader_test.go`：完整 grant 不可扩大；实例自身 managed/workload 匹配；六类 GET 双采样；暂停/停止/重启/UUID/地址/分配变化拒绝 | 本机 mTLS 回归，不是服务端只读授权 |
+| JSON/有效期 | `https_reader_test.go`：选定字段大小写别名拒绝，未知 API 字段与大小写 map 名保持兼容；读完响应后取消/证书过期不能成功 | 解析器与传输回归，不是上游版本兼容矩阵 |
+| 完整控制循环 | `controller_lifecycle_test.go`：真实 Controller/Planner/flock/journal；暂停/停止完整退役，同一身份恢复换 token；清理失败保留地址/retiring，重开后继续撤销 | 合成后端；不覆盖实际 Core 目录注册、guest 或网络包 |
+| 逐次宿主观察 | `projection_freshness_test.go`：v2 随机 invocation 绑定，旧响应、调用方标识、缺失/大小写/旧版、取消反例 | 宿主通道适配器夹具，未注册实际 root 观测动作 |
+| 加载后身份漂移 | `TestExecutorRevalidatesAfterRouteConsumption`：renderer 返回时目标失效，必须按顺序撤销且不得报 ready | Renderer 为夹具，不证明消除路由短暂可见窗口 |
+
+本机入口：
+
+```bash
+go test -count=1 ./internal/computeingressruntime ./internal/incusingresshost
+go test -race -count=1 ./internal/computeingressruntime ./internal/incusingresshost
+```
+
+仍须执行的原生/产品用例：在固定 daemon 版本上供给真正只读且不削弱现有租约的身份；实际
+宿主投影必须收到本次调用后读取状态并保留认证/审计来源；暂停/恢复发生在两次采样之间的窗口；
+真实 Traefik 加载期间取消/重启、旧 TCP 会话和 IP/ifindex 复用；事件丢失后的周期撤销；实际
+Core 注册目录、进程崩溃后锁/回执恢复，以及 VM/TAP、ForwardAuth 和双栈分别验收。
+本机流程通过不把以上条目改为完成，生产 ingress 继续关闭。
+
+## 受限宿主观察接线（2026-09-21，本机回归与原生验收分开）
+
+编译动作 `incus.ingress.observe_http`、v3 投影、共享 job 适配器及无凭据中介读取器已有实现。
+以下本机测试连接真实共享队列/日志和协议校验，实际 root 安装文件、Incus 与内核调用使用明确的
+测试接缝；它们不能替代 Linux 联合链路。scope 的确认交付见下节，生产中介启动仍未实现。
+
+| 范围 | 本机入口 | 实机验收仍须证明 |
+| --- | --- | --- |
+| 精确安装授权与点时身份 | `internal/incusprovision/ingress_observation_test.go` | root 所有 scope/祖先/锁、当前 Core 快照、bundle/服务身份；变更任何一个均拒绝，缺文件不创建、不接管 |
+| 本机 veth 校验 | `internal/incusingresshost/guest_observation_test.go` | 固定可执行文件 FD、实际 bridge/veth/ifindex/peer/MAC；TAP 与未知布局拒绝，不声称持续分配保障 |
+| 审计和投影字段 | `internal/hostaction/observation_test.go` | 审计失败不返回身份，错误无私密原文；真实 socket/systemd 身份和 EOF/退出监督仍生效 |
+| 共享 job 与逐次请求 | `internal/jobexecutor/host_observation_invoker_test.go` | 跨工作区拒绝、旧结果重放拒绝、取消等待不改变执行归属；持续调用的队列/日志容量和超时行为 |
+| 无凭据中介 | `internal/computeingressruntime/host_projection_reader_test.go` | 中介实际 UID/挂载无法读取管理证书或 Incus socket；固定安装 ID/完整授权/每次 nonce 独立匹配 |
+
+本机统一入口：
+
+```bash
+go test -race -count=1 ./internal/incusprovision ./internal/incusingresshost ./internal/computeingressruntime ./internal/hostaction ./internal/jobexecutor
+```
+
+原生联合验收不得用改变 daemon 全局授权、将管理证书交给中介或解除 production gate 的方法兜底。
+实际 package/systemd/Incus/Docker/KVM/Traefik、双栈与旧 TCP 会话仍分别记录；交叉编译不是运行证据。
+
+## 观察配置计划、交付和撤销（2026-09-21）
+
+`incus.ingress.observer.plan` / `incus.ingress.observer` 已连接 CLI/HTTP 与原共享确认链路。
+本机测试使用真实目录描述符和文件替换、mTLS、共享 Store/确认账本；root 安装状态和 daemon
+元数据仍是夹具，不能把它们合并宣传为完整实机流程。
+
+| 范围 | 本机回归入口 | 原生/产品验收要求 |
+| --- | --- | --- |
+| 配置与持久归属 | `observer_configuration_test.go` | root 目录/共享锁、pending→文件读回→enabled；真实断电、磁盘满、最终确认丢失后重新计划，不把错误当作无副作用 |
+| 失效与撤销 | 同上 | 修改活动 epoch、bundle、版本或文件必须废弃旧批准；offline disable、disabled 后回放、未知文件不接管；卸载前撤销 |
+| 固定 mTLS 版本 | `incus_version_test.go` | 原证书 pin、客户端身份与版本双读；不能因观察学习新证书或激活停止的 daemon |
+| 共享确认和作用域 | hostaction/jobexecutor 的 `observer_configuration_test.go` | 五分钟一次性批准、跨工作区及重启恢复检查、真实 hostd 退出/审计链路 |
+| CLI/HTTP 协议 | `host_observer_cli_test.go`、HTTP `observer_configuration_test.go` | 正式客户端 session/CSRF/权限与同一队列，apply 参数取原计划；OpenAPI 与实现一致 |
+
+完整中介服务启动、旧路由/许可/连接排空、目录 UID/挂载、健康身份和实际网络包仍未完成。
+配置 disable 不代表这些网络工件已撤销；不得因此开放生产 publication gate。
+
+## 启动目录与进程装配的后续验收（2026-09-21）
+
+本机已覆盖不同目录角色重叠、别名、私有文件硬链接、renderer 原地变化/同内容换 inode、
+准入后目录替换，以及固定证书 HTTPS 的空请求启动/停止。它们不是以下原生场景的通过记录：
+
+- 在独立宿主验证不同 UID、实际 bind mount 的读写/执行标志与能力集合；目录所有者检查不能
+  替代这些隔离证明。消费者只能写自己的租约目录，不得读凭据或写 renderer/路由/日志。
+- 实际挂载同一目录的别名及其子路径，检查角色冲突被拒绝；卸载/重挂替代源后不得认作原目录。
+- 真实活动发布时丢失请求根，验证原 Traefik/许可/连接按顺序撤销；脚本或输出根身份改变时必须
+  保留恢复证据，不自动读取替代内容。空请求本机用例不能作为活动连接清理证据。
+- 启动准入之后、首次对账之前取消/强杀，分别记录 Ready、Done、持久围栏、旧资源及完整恢复。

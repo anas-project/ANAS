@@ -37,18 +37,18 @@ func (s *fileJournal) Load(ctx context.Context) (ExecutorState, error) {
 	if os.IsNotExist(err) {
 		return ExecutorState{Schema: executorStateSchema}, nil
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > 4<<20 {
+	if err != nil || !privateOwned(info, false) || info.Size() > 4<<20 {
 		return ExecutorState{}, fmt.Errorf("HTTP executor state must be a private bounded regular file")
 	}
-	file, err := root.Open(executorStateFile)
+	file, err := openRouteArtifact(root, executorStateFile)
 	if err != nil {
 		return ExecutorState{}, err
 	}
 	body, readErr := io.ReadAll(io.LimitReader(file, (4<<20)+1))
 	after, statErr := file.Stat()
 	linked, linkErr := root.Lstat(executorStateFile)
-	_ = file.Close()
-	if readErr != nil || statErr != nil || linkErr != nil || !linked.Mode().IsRegular() || !os.SameFile(after, linked) || !os.SameFile(info, after) || after.Size() != info.Size() || len(body) > 4<<20 || int64(len(body)) != info.Size() || !info.ModTime().Equal(after.ModTime()) {
+	closeErr := file.Close()
+	if readErr != nil || statErr != nil || linkErr != nil || closeErr != nil || !privateOwned(linked, false) || !privateOwned(after, false) || !os.SameFile(after, linked) || !os.SameFile(info, after) || after.Size() != info.Size() || len(body) > 4<<20 || int64(len(body)) != info.Size() || !info.ModTime().Equal(after.ModTime()) {
 		return ExecutorState{}, fmt.Errorf("HTTP executor state changed while reading")
 	}
 	var state ExecutorState
@@ -83,7 +83,7 @@ func (s *fileJournal) Save(ctx context.Context, state ExecutorState) error {
 	}
 	root := s.root
 	if info, err := root.Lstat(executorStateFile); err == nil {
-		if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+		if !privateOwned(info, false) {
 			return fmt.Errorf("refuse to replace invalid HTTP executor state file")
 		}
 	} else if !os.IsNotExist(err) {

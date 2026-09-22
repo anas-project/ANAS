@@ -13,10 +13,11 @@ import (
 	"github.com/anas-project/ANAS/internal/deployment"
 )
 
-// FactReader must use a server-restricted read-only identity. IncusFactReader
-// supplies the scoped GET implementation; provisioning its read-only identity
-// remains an installation dependency. Facts include a fresh managed allocation
-// and instance incarnation; an administrator Unix capture is not that identity.
+// FactReader must use a server-restricted read-only identity or the compiled,
+// authenticated host observation action. The latter gives the mediator only a
+// bounded projection, never the host's credential. IncusFactReader implements
+// direct GETs; HostProjectionReader implements the narrow action alternative.
+// Neither a prior administrator capture nor a job's old result is fresh evidence.
 type FactReader interface {
 	ObserveHTTP(context.Context, *computeingress.Authorization, computeingress.Request) (computeingress.Facts, error)
 }
@@ -324,9 +325,8 @@ func (s *WorkspaceSource) ValidateTarget(ctx context.Context, target Publication
 		if err != nil {
 			return err
 		}
-		p := target.Publication
-		if facts.Project != grant.Project || facts.Interface != grant.Interface || facts.InstanceID != p.InstanceID || facts.InstanceUUID != p.InstanceUUID || facts.Incarnation != target.Incarnation || facts.State != "Running" || facts.NetworkOwner != grant.Consumer || facts.GuestIP != p.GuestIP || facts.AllocationIP != p.GuestIP || facts.GuestMAC != target.NICMAC || facts.AllocationMAC != target.NICMAC {
-			return fmt.Errorf("HTTP instance or managed NIC allocation changed")
+		if err := validateTargetFacts(grant, target, facts); err != nil {
+			return err
 		}
 		if err := StillCurrent(ctx, s.Workspace, snapshot); err != nil {
 			return err

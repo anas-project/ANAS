@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"slices"
 	"strconv"
+	"strings"
 )
 
 func (g *addressRouter) json(ctx context.Context, args ...string) ([]map[string]any, error) {
@@ -54,6 +55,45 @@ func addressTable(value map[string]any) string {
 	return numberField(value, "table")
 }
 
+// iproute2 can emit CIDR text or an address plus src/dstlen. Both must
+// describe the exact canonical IPv4 prefix. Never ignore a separate length,
+// accept two conflicting spellings, or silently mask a noncanonical address.
+func addressRulePrefix(rule map[string]any, field string) (netip.Prefix, error) {
+	invalid := func() (netip.Prefix, error) { return netip.Prefix{}, fmt.Errorf("invalid address routing prefix") }
+	text, ok := rule[field].(string)
+	if !ok || (field != "src" && field != "dst") {
+		return invalid()
+	}
+	length, separate := rule[field+"len"]
+	if strings.Contains(text, "/") {
+		prefix, err := netip.ParsePrefix(text)
+		if separate || err != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() {
+			return invalid()
+		}
+		return prefix, nil
+	}
+	address, err := netip.ParseAddr(text)
+	if err != nil || !address.Is4() {
+		return invalid()
+	}
+	bits := 32
+	if separate {
+		number, ok := length.(json.Number)
+		if !ok {
+			return invalid()
+		}
+		bits, err = strconv.Atoi(number.String())
+		if err != nil || bits < 0 || bits > 32 || strconv.Itoa(bits) != number.String() {
+			return invalid()
+		}
+	}
+	prefix := netip.PrefixFrom(address, bits)
+	if prefix != prefix.Masked() {
+		return invalid()
+	}
+	return prefix, nil
+}
+
 func (g *addressRouter) rules(ctx context.Context, expect bool) error {
 	rules, err := g.json(ctx, "-j", "-N", "-4", "rule", "show")
 	if err != nil {
@@ -86,9 +126,10 @@ func (g *addressRouter) rules(ctx context.Context, expect bool) error {
 		if !expect {
 			return fmt.Errorf("address routing priority is already in use")
 		}
-		src := stringField(rule, "src")
-		if !allowedAddressKeys(rule, "priority", "src", "dst", "iif", "table", "action", "protocol") ||
-			(src != c.TraefikSourceIP && src != c.TraefikSourceIP+"/32") || stringField(rule, "dst") != c.GuestSubnet ||
+		src, sourceErr := addressRulePrefix(rule, "src")
+		dst, destinationErr := addressRulePrefix(rule, "dst")
+		if !allowedAddressKeys(rule, "priority", "src", "srclen", "dst", "dstlen", "iif", "table", "action", "protocol") ||
+			sourceErr != nil || destinationErr != nil || src.String() != c.TraefikSourceIP+"/32" || dst.String() != c.GuestSubnet ||
 			stringField(rule, "iif") != c.IngressBridge || numberField(rule, "protocol") != strconv.Itoa(int(c.RouteProtocol)) {
 			return fmt.Errorf("address routing selector or ownership changed")
 		}

@@ -3,13 +3,18 @@
 把一台独立的 Incus 宿主变成 `compute` Contract 的 Provider：在 apply 时为每个消费者建好受限
 project、配额与专属证书，之后不再参与实例的创建与销毁。
 
+系统容器档为运行内层 OCI workload，在 Provider 固定 profile 中允许 namespace nesting；
+外层仍强制非特权，宿主设备、宿主路径挂载和 raw 配置仍拒绝。它与嵌套虚拟机不同，也不
+等同于验证内层引擎 rootless。共享内核的攻击面需纳入评估；跨信任域或不可信任务选择显式
+VM 档。没有新增调用方 nesting 开关，也不会自动改写或重启旧实例。
+
 ## 快速信息
 
 <!-- generated:module-facts:start -->
 | 项目 | 值 |
 | --- | --- |
 | Module | `incus` |
-| 版本 / revision | `7.3.0-r1` |
+| 版本 / revision | `7.3.0-r2` |
 | 状态 | `developing` |
 | 类别 | `compute` |
 | 运行时 | `compose` |
@@ -211,7 +216,7 @@ REST 边界、证书固定、幂等与测试见[技术文档](docs/technical.md)
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`7.3.0-r1`（reviewed 2026-08-30）
+- Module version / 版本：`7.3.0-r2`（reviewed 2026-09-21）
 - Timezone / 时区：`not_applicable` — The provisioner is a one-shot process with no scheduling, retention or timestamp output; the remote Incus daemon keeps its own clock.
 - Language scope / 语言范围：no user interface; the provisioner emits machine-readable JSON only
 - Selection / 选择方式：`none`

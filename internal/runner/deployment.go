@@ -20,8 +20,10 @@ import (
 
 	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/compose"
+	"github.com/anas-project/ANAS/internal/computeingressruntime"
 	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/deployment"
+	"github.com/anas-project/ANAS/internal/securefs"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1933,8 +1935,13 @@ func acquireRuntimeLockModeContext(ctx context.Context, base string, mode int) (
 	if err := ensureRuntimeLayout(base); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(filepath.Join(base, "state", "lock"), os.O_CREATE|os.O_RDWR, 0600)
+	path := filepath.Join(base, "state", "lock")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
 	if err != nil {
+		return nil, err
+	}
+	if err := securefs.VerifyOpenNamedFile(file, path, "workspace runtime lock"); err != nil {
+		_ = file.Close()
 		return nil, err
 	}
 	for {
@@ -1949,6 +1956,12 @@ func acquireRuntimeLockModeContext(ctx context.Context, base string, mode int) (
 			_ = file.Close()
 			return nil, fmt.Errorf("lock runtime state: %w", err)
 		}
+		if mode == syscall.LOCK_EX {
+			if fenceErr := computeingressruntime.CheckWorkspaceMutationLock(ctx, file, path); fenceErr != nil {
+				_ = file.Close()
+				return nil, fenceErr
+			}
+		}
 		timer := time.NewTimer(runtimeLockRetryDelay)
 		select {
 		case <-ctx.Done():
@@ -1959,6 +1972,18 @@ func acquireRuntimeLockModeContext(ctx context.Context, base string, mode int) (
 			return nil, fmt.Errorf("lock runtime state: %w", ctx.Err())
 		case <-timer.C:
 		}
+	}
+	checkErr := securefs.VerifyOpenNamedFile(file, path, "workspace runtime lock")
+	if checkErr == nil && mode == syscall.LOCK_EX {
+		checkErr = computeingressruntime.CheckWorkspaceMutationLock(ctx, file, path)
+	}
+	if checkErr == nil {
+		checkErr = ctx.Err()
+	}
+	if checkErr != nil {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		_ = file.Close()
+		return nil, checkErr
 	}
 	return func() {
 		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)

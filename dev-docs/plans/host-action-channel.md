@@ -2,10 +2,15 @@
 doc_type: plan
 status: implementing
 created: 2026-09-04
-updated: 2026-09-19
+updated: 2026-09-21
 ---
 
 # 宿主特权动作通道实施计划
+
+2026-09-21 接续新增观察范围配置的具名 plan/执行动作，操作限定 refresh/disable，沿用共享
+确认与审计，不增加 socket 或特权入口；客户端不能提交 scope 内容。中断后的 pending 状态
+阻止继续观察，明确撤销保留墓碑。CLI/HTTP 同步接线，真实 root/systemd 验收仍待执行。
+实现与五问审阅见[观察配置交付核对](../reviews/2026-09-21-incus-observer-configuration.md)。
 
 验收依据是[宿主特权动作通道要求](../requirements/host-action-channel.md)；设计见
 [同名架构文档](../../docs/architecture/host-action-channel.md)。
@@ -20,6 +25,32 @@ updated: 2026-09-19
 脚本入口或 CAP_SYS_ADMIN helper。
 
 ## 1. 需求归属与状态
+
+普通部署/维护 worker 的后续接续已共享同一个协调器，防止它在宿主队列之外更换旧中介依赖。
+普通写任务在领取前非阻塞等待，旧清理仍可进入宿主队列；本轮不新增 root 动作或批准方式。
+独立 CLI、生产启动器与跨进程持久恢复仍待接入，见
+[工作区任务核对](../reviews/2026-09-21-incus-workspace-mutation-gates.md)。
+
+2026-09-21 接续将已确认配置任务与中介排空屏障连接到共享队列及实际 broker 授权回调。
+等待清理不占用 root 执行位置；正常停机保留只读队列/租约至清理完成，失败须可信所有者显式
+重试，不增加 root 动作或 HTTP 接口。生产 launcher、异常跨进程恢复和实机证明仍缺，不能提升
+需求完成状态。实施与验证见[配置排空协调记录](../reviews/2026-09-21-incus-ingress-coordination.md)。
+
+2026-09-21 增加编译只读动作 `incus.ingress.observe_http`，对应 INCUS-R-063/R-087/R-088 和
+HOSTACT-R-001/R-002/R-005/R-012/R-013。它复用本通道而非另起 root 服务；未自动安装 observer
+scope，也未开启 ingress。以下五问是本次需求级动作评审，不代表真实宿主验收：
+
+| 问题 | 本动作的约束 |
+| --- | --- |
+| 能否不用 root | 远端路径可采用服务端真正只读身份，但现有本机 TLS 管理凭据不能交给中介；本候选由既有 hostd 持有并只返回选定事实，不改变 daemon 全局授权 |
+| 是否最小权限 | 请求只含固定 schema、逐次 observation ID、scope/epoch/deployment、租约、实例、workload 与端口；没有路径、endpoint、证书、设备名或 argv。scope 必须等于获授权 job 的工作区 ID |
+| 留下什么特权产物 | 观察不创建 scope、锁、服务、证书、网络、规则或镜像；只产生既有 job 与审计记录。安装 scope 是独立受保护输入，不由观察请求创建 |
+| 如何撤销 | 停止/切换活动部署、删除 scope、撤销或改变连接 bundle 都使后续观察失败；观察没有网络变更需要反向执行。已有路由仍须走原独立撤销链 |
+| 半途失败与重跑 | 任一读、复核、关闭或审计失败不返回可用身份；新观察使用新 job/nonce，不 coalesce、不读历史结果。等待方取消不伪装为宿主任务取消，执行监督沿用原通道 |
+
+代码与本机回归见[受限宿主观察接线](../reviews/2026-09-21-incus-host-observation-wiring.md)。只读动作
+最长 30 秒；周期性 root 观察的开销、队列争用与日志容量必须实测后才可默认启用，不能把安装动作的
+罕见调用预算直接当作运行时控制循环的吞吐保证。M0/M1/M2 状态及真实宿主退出条件不因此提前完成。
 
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |

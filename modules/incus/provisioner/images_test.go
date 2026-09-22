@@ -111,7 +111,11 @@ func TestLoadImageSupplyRejectsHostileJSON(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			l := testLease(t, "container")
+			l.ImageAllowlist = []string{sha256String([]byte("metadatarootfs"))}
 			path := writeSupplyFixture(t, l, []byte("metadata"), []byte("rootfs"), strings.Repeat("c", 64))
+			if _, err := loadImageSupply(path); err != nil {
+				t.Fatalf("positive supply control: %v", err)
+			}
 			valid, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
@@ -136,6 +140,7 @@ func TestOpenSuppliedReadersRejectsUnsafeFiles(t *testing.T) {
 	for _, scenario := range []string{"symlink", "fifo", "short"} {
 		t.Run(scenario, func(t *testing.T) {
 			l := testLease(t, "container")
+			l.ImageAllowlist = []string{sha256String([]byte("metadatarootfs"))}
 			path := writeSupplyFixture(t, l, []byte("metadata"), []byte("rootfs"), strings.Repeat("c", 64))
 			supply, err := loadImageSupply(path)
 			if err != nil {
@@ -170,6 +175,7 @@ func TestOpenSuppliedReadersRejectsUnsafeSupplyDirectories(t *testing.T) {
 	for _, scenario := range []string{"writable root", "symlink ancestor"} {
 		t.Run(scenario, func(t *testing.T) {
 			l := testLease(t, "container")
+			l.ImageAllowlist = []string{sha256String([]byte("metadatarootfs"))}
 			path := writeSupplyFixture(t, l, []byte("metadata"), []byte("rootfs"), strings.Repeat("c", 64))
 			supply, err := loadImageSupply(path)
 			if err != nil {
@@ -198,6 +204,7 @@ func TestOpenSuppliedReadersRejectsUnsafeSupplyDirectories(t *testing.T) {
 
 func TestCopyImagePartDetectsPathReplacementAfterOpen(t *testing.T) {
 	l := testLease(t, "container")
+	l.ImageAllowlist = []string{sha256String([]byte("metadatarootfs"))}
 	path := writeSupplyFixture(t, l, []byte("metadata"), []byte("rootfs"), strings.Repeat("c", 64))
 	supply, err := loadImageSupply(path)
 	if err != nil {

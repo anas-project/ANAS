@@ -47,7 +47,11 @@ type forgejoClient struct {
 func NewForgejoClient(baseURL, username, password string) ForgejoAPI {
 	return &forgejoClient{
 		baseURL: baseURL, username: username, password: password,
-		client: &http.Client{Timeout: 15 * time.Second},
+		client: &http.Client{Timeout: 15 * time.Second,
+			// Scope authorization applies to the request destination too. A
+			// redirect must not move Basic auth or a mutation to another API.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 	}
 }
 
@@ -58,6 +62,12 @@ func (c *forgejoClient) ListJobs(ctx context.Context, scope Scope, label string)
 	var jobs []ActionJob
 	if err := c.do(ctx, http.MethodGet, path, nil, &jobs, http.StatusOK); err != nil {
 		return nil, fmt.Errorf("list waiting jobs for scope %s: %w", scope, err)
+	}
+	if jobs == nil {
+		// Forgejo 15.0.7 encodes an empty queue as null. The complete bounded
+		// JSON and HTTP status were already checked; normalize its nullable
+		// array instead of turning a legitimate empty queue into an outage.
+		jobs = []ActionJob{}
 	}
 	return jobs, nil
 }
@@ -86,7 +96,7 @@ func (c *forgejoClient) DeleteRunner(ctx context.Context, scope Scope, id int64)
 func (c *forgejoClient) do(ctx context.Context, method, path string, body io.Reader, output any, accepted ...int) error {
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
-		return err
+		return fmt.Errorf("Forgejo API request is invalid")
 	}
 	req.SetBasicAuth(c.username, c.password)
 	req.Header.Set("Accept", "application/json")
@@ -95,7 +105,10 @@ func (c *forgejoClient) do(ctx context.Context, method, path string, body io.Rea
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return err
+		if ctx.Err() != nil {
+			return fmt.Errorf("Forgejo API request canceled: %w", ctx.Err())
+		}
+		return fmt.Errorf("Forgejo API transport failed")
 	}
 	defer resp.Body.Close()
 	for _, status := range accepted {
@@ -104,7 +117,19 @@ func (c *forgejoClient) do(ctx context.Context, method, path string, body io.Rea
 				_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 				return nil
 			}
-			return json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(output)
+			raw, err := io.ReadAll(io.LimitReader(resp.Body, (4<<20)+1))
+			defer clear(raw)
+			if err != nil || len(raw) > 4<<20 {
+				if ctx.Err() != nil {
+					return fmt.Errorf("Forgejo API response canceled: %w", ctx.Err())
+				}
+				return fmt.Errorf("Forgejo API response is unavailable or exceeds its limit")
+			}
+			decoder := json.NewDecoder(bytes.NewReader(raw))
+			if decoder.Decode(output) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+				return fmt.Errorf("Forgejo API response must contain exactly one JSON value")
+			}
+			return nil
 		}
 	}
 	// Never copy the response body into an error: runner-creation responses

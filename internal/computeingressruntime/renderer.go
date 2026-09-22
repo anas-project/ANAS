@@ -26,6 +26,7 @@ type FileRouteRenderer struct {
 	// anas-entrypoint.sh. No shell program or arguments come from requests.
 	Entrypoint   string
 	Confirmation RouteConfirmation
+	installation *workspaceRendererInstallation
 }
 
 // RouteConfirmation must observe Traefik's actual loaded route and middleware
@@ -161,6 +162,9 @@ func (r FileRouteRenderer) confirm(ctx context.Context, root *os.Root, target Pu
 }
 
 func (r FileRouteRenderer) open() (*os.Root, func(), error) {
+	if r.installation != nil && r.installation.directory.check(context.Background()) != nil {
+		return nil, nil, ErrWorkspaceLaunch
+	}
 	if !filepath.IsAbs(r.Directory) || filepath.Clean(r.Directory) != r.Directory {
 		return nil, nil, fmt.Errorf("Traefik route directory must be an absolute clean path")
 	}
@@ -173,7 +177,7 @@ func (r FileRouteRenderer) open() (*os.Root, func(), error) {
 		return nil, nil, fmt.Errorf("open Traefik route directory: %w", err)
 	}
 	opened, err := root.Stat(".")
-	if err != nil || !os.SameFile(before, opened) {
+	if err != nil || !os.SameFile(before, opened) || r.installation != nil && !os.SameFile(r.installation.directory.info, opened) {
 		_ = root.Close()
 		return nil, nil, fmt.Errorf("Traefik route directory changed while opening")
 	}
@@ -262,6 +266,9 @@ func (r FileRouteRenderer) compile(ctx context.Context, env []string) ([]byte, e
 	parent.Close()
 	if err != nil {
 		return nil, fmt.Errorf("cannot read trusted Traefik renderer: %w", err)
+	}
+	if r.installation != nil && r.installation.script.matches(ctx, script) != nil {
+		return nil, ErrWorkspaceLaunch
 	}
 	dir, err := os.MkdirTemp("", "anas-http-render-")
 	if err != nil {

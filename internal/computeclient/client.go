@@ -1,18 +1,12 @@
 package computeclient
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -54,21 +48,6 @@ type execRunner struct {
 	project   string
 }
 
-func (r execRunner) Run(ctx context.Context, stdin io.Reader, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "incus", args...)
-	cmd.Env = append(os.Environ(), "INCUS_CONF="+r.configDir, "INCUS_PROJECT="+r.project)
-	cmd.Stdin = stdin
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		// Incus stderr carries operational detail and, if a future client
-		// regression ever echoed it, could carry stdin. Neither belongs in a
-		// caller's error path.
-		return nil, fmt.Errorf("incus %s failed: %w", firstArg(args), err)
-	}
-	return stdout.Bytes(), nil
-}
-
 // Client drives instances inside one lease.
 type Client struct {
 	lease       Lease
@@ -84,74 +63,52 @@ type Client struct {
 // program in its guests; it is required rather than optional because an empty
 // allowlist would make ExecStdin accept anything.
 func New(l Lease, entrypoints []string, configDir string) (*Client, error) {
+	return NewWithContext(context.Background(), l, entrypoints, configDir)
+}
+
+// NewWithContext includes credential preparation and initial CLI connection
+// in the caller's cancellation budget. It does not start an instance.
+func NewWithContext(ctx context.Context, l Lease, entrypoints []string, configDir string) (*Client, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("compute client initialization requires a context")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(entrypoints) == 0 {
 		return nil, fmt.Errorf("compute client requires a guest entrypoint allowlist")
+	}
+	if err := l.Validate(); err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(entrypoints))
+	for _, entry := range entrypoints {
+		if !path.IsAbs(entry) || path.Clean(entry) != entry || entry == "/" || len(entry) > 1024 || hasControl(entry) || seen[entry] {
+			return nil, fmt.Errorf("compute client requires distinct canonical absolute guest entrypoints")
+		}
+		seen[entry] = true
 	}
 	if configDir == "" {
 		configDir = "/run/anas-compute"
 	}
+	l.ImageAllowlist = append([]string(nil), l.ImageAllowlist...)
 	c := &Client{
 		lease:       l,
 		entrypoints: append([]string{}, entrypoints...),
 		instanceID:  regexp.MustCompile(`^` + regexp.QuoteMeta(l.InstancePrefix) + `[a-z0-9-]{1,32}$`),
 		run:         execRunner{configDir: configDir, project: l.Sandbox},
 	}
-	if err := c.writeCredentials(configDir); err != nil {
+	if err := c.writeCredentialsContext(ctx, configDir); err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if _, err := c.run.Run(ctx, nil,
-		"remote", "add", remoteName, l.Endpoint, "--protocol=lxd", "--project="+l.Sandbox,
-	); err != nil {
-		return nil, fmt.Errorf("prepare project-scoped compute remote: %w", err)
+	// Configuration is already complete and immutable. Never ask the CLI to
+	// mutate it, prompt for trust, or add an existing remote on restart.
+	if _, err := c.ListManaged(ctx); err != nil {
+		return nil, fmt.Errorf("verify project-scoped compute connection: %w", err)
 	}
 	return c, nil
-}
-
-// writeCredentials materializes the lease's TLS material into a private config
-// directory. The server certificate goes into servercerts/, which is what makes
-// the client refuse a daemon that is not the one pinned at apply time.
-func (c *Client) writeCredentials(configDir string) error {
-	if err := os.MkdirAll(filepath.Join(configDir, "servercerts"), 0o700); err != nil {
-		return fmt.Errorf("prepare compute client state: %w", err)
-	}
-	serverCert, err := decodeB64(c.lease.ServerCertB64)
-	if err != nil {
-		return err
-	}
-	// Cross-check the certificate against the digest the runner published. They
-	// travel in separate variables, so a mismatch means one of them was
-	// tampered with in transit through the environment.
-	if got, err := certFingerprint(serverCert); err != nil {
-		return err
-	} else if got != c.lease.ServerCertFingerprint {
-		return fmt.Errorf("compute lease server certificate does not match its published fingerprint")
-	}
-	clientCert, err := decodeB64(c.lease.ClientCertB64)
-	if err != nil {
-		return err
-	}
-	clientKey, err := decodeB64(c.lease.ClientKeyB64)
-	if err != nil {
-		return err
-	}
-	for _, item := range []struct {
-		name string
-		body []byte
-	}{
-		{"client.crt", clientCert},
-		{"client.key", clientKey},
-		{filepath.Join("servercerts", remoteName+".crt"), serverCert},
-	} {
-		if err := os.WriteFile(filepath.Join(configDir, item.name), item.body, 0o600); err != nil {
-			return fmt.Errorf("write compute client credential: %w", err)
-		}
-		for i := range item.body {
-			item.body[i] = 0
-		}
-	}
-	return nil
 }
 
 // Validate checks a spec against the lease before anything reaches the daemon.
@@ -200,7 +157,9 @@ func (c *Client) Create(ctx context.Context, spec InstanceSpec) error {
 		// The container tier is a weaker isolation boundary than a VM, never a
 		// weaker privilege boundary. The project also forbids privileged
 		// containers; this is the matching request-side statement.
-		args = append(args, "--config=security.privileged=false", "--config=security.nesting=false")
+		// Namespace nesting belongs to the fixed provider-owned profile, not
+		// a per-job option. Do not override it with an unrelated client policy.
+		args = append(args, "--config=security.privileged=false")
 	}
 	if _, err := c.run.Run(ctx, nil, args...); err != nil {
 		return fmt.Errorf("create managed instance: %w", err)
@@ -257,7 +216,17 @@ func (c *Client) Delete(ctx context.Context, id string) error {
 	if instance.State == "missing" {
 		return nil
 	}
-	return c.instanceCommand(ctx, "delete", id, "--force")
+	if err := c.instanceCommand(ctx, "delete", id, "--force"); err != nil {
+		return err
+	}
+	instance, err = c.Inspect(ctx, id)
+	if err != nil {
+		return fmt.Errorf("confirm managed instance deletion: %w", err)
+	}
+	if instance.State != "missing" {
+		return fmt.Errorf("managed instance deletion is not confirmed")
+	}
+	return nil
 }
 
 // WaitForGuest blocks until one of the allowed entrypoints is executable in the
@@ -354,13 +323,21 @@ func (c *Client) decodeInstances(body []byte) ([]Instance, error) {
 		Config map[string]string `json:"config"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("decode compute instance list: %w", err)
+		return nil, fmt.Errorf("decode compute instance list: invalid JSON array")
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("decode compute instance list: missing JSON array")
 	}
 	out := make([]Instance, 0, len(raw))
+	seen := make(map[string]bool, len(raw))
 	for _, item := range raw {
 		if item.Config["user.anas.managed"] != "true" || !c.lease.OwnsInstance(item.Name) {
 			continue
 		}
+		if seen[item.Name] {
+			return nil, fmt.Errorf("compute instance list contains an ambiguous identity")
+		}
+		seen[item.Name] = true
 		out = append(out, Instance{
 			ID: item.Name, State: strings.ToLower(item.Status), WorkloadID: item.Config["user.anas.workload"],
 		})
@@ -369,21 +346,15 @@ func (c *Client) decodeInstances(body []byte) ([]Instance, error) {
 }
 
 func decodeB64(value string) ([]byte, error) {
+	if len(value) > 128<<10 {
+		return nil, fmt.Errorf("compute TLS credential exceeds its size limit")
+	}
 	body, err := base64.StdEncoding.DecodeString(strings.TrimSpace(value))
 	if err != nil || len(body) == 0 {
 		// Deliberately does not echo the value.
 		return nil, fmt.Errorf("compute TLS credential is missing or not valid base64")
 	}
 	return body, nil
-}
-
-func certFingerprint(pemBytes []byte) (string, error) {
-	block, _ := pem.Decode(pemBytes)
-	if block == nil || block.Type != "CERTIFICATE" {
-		return "", fmt.Errorf("compute lease server certificate is not PEM")
-	}
-	sum := sha256.Sum256(block.Bytes)
-	return hex.EncodeToString(sum[:]), nil
 }
 
 func hasControl(value string) bool {

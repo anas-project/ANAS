@@ -7,7 +7,10 @@ import (
 	"io"
 )
 
-const ImageSupplyVersion = "anas.compute-image-supply/v1"
+const (
+	ImageSupplyVersion  = "anas.compute-image-supply/v1"
+	MaxImageSupplyBytes = 1 << 20
+)
 
 // SuppliedImage binds a frozen deployment resolution to one immutable release
 // artifact and the local byte streams that carry it. Paths, URLs and aliases
@@ -30,7 +33,7 @@ func (doc ImageSupplyDocument) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, image := range doc.Images {
-		if image.Release.Validate() != nil || image.Resolution.Target.validate() != nil || !fingerprintPattern.MatchString(image.Resolution.Fingerprint) {
+		if ValidateArtifactResolution(image.Release, image.Resolution) != nil {
 			return ErrArtifactInvalid
 		}
 		key := image.Resolution.Fingerprint + "\x00" + image.Resolution.Target.Architecture + "\x00" + image.Resolution.Target.Interface
@@ -47,14 +50,14 @@ func EncodeImageSupplyDocument(doc ImageSupplyDocument) ([]byte, error) {
 		return nil, ErrArtifactInvalid
 	}
 	body, err := json.Marshal(doc)
-	if err != nil || len(body)+1 > MaxArtifactRecordBytes*256 {
+	if err != nil || len(body)+1 > MaxImageSupplyBytes {
 		return nil, ErrArtifactInvalid
 	}
 	return append(body, '\n'), nil
 }
 
 func DecodeImageSupplyDocument(body []byte) (ImageSupplyDocument, error) {
-	if len(body) == 0 || len(body) > MaxArtifactRecordBytes*256 {
+	if len(body) == 0 || len(body) > MaxImageSupplyBytes {
 		return ImageSupplyDocument{}, ErrArtifactInvalid
 	}
 	var doc ImageSupplyDocument

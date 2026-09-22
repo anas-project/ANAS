@@ -34,6 +34,34 @@ unit=anas-forgejo-one-job.service
 if systemctl is-active --quiet "$unit"; then
     exit 0
 fi
+# An executable guest entrypoint proves only that Incus exec is available. Do
+# not consume the one-time input or create its tmpfs directory until the actual
+# engine can be used by the Runner account and confirms rootless operation.
+# Eight bounded probes and seven sleeps give at most 31 seconds of waiting
+# (2 seconds plus 1 second termination grace per probe). No service is restarted.
+engine_ready=false
+attempt=0
+# Adjacent shell literals keep the Go template out of distrobuilder's template
+# syntax while querying Host.Security.Rootless with Podman's Go template.
+rootless_format='{''{.Host.Security.Rootless}''}'
+while [ "$attempt" -lt 8 ]; do
+    if rootless=$(timeout --signal=TERM --kill-after=1s 2s \
+        runuser -u runner-agent -- /usr/bin/env -i \
+        PATH=/usr/bin:/bin HOME=/home/runner-agent \
+        /usr/bin/podman --remote --url=unix:///run/anas-podman/podman.sock \
+        info --format="$rootless_format" </dev/null 2>/dev/null); then
+        if [ "$rootless" = true ]; then
+            engine_ready=true
+            break
+        fi
+    fi
+    attempt=$((attempt + 1))
+    if [ "$attempt" -lt 8 ]; then sleep 1; fi
+done
+if [ "$engine_ready" != true ]; then
+    printf '%s\n' 'Runner engine is unavailable; token input was not consumed.' >&2
+    exit 69
+fi
 install -d -o runner-agent -g runner-agent -m 0700 "$token_dir"
 umask 077
 dd of="$token_file" bs=40 count=1 iflag=fullblock status=none

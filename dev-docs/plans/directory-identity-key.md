@@ -126,17 +126,98 @@ Provider 各自的适配器,用更多零件换同一个结果;只有在 M2 第�
 M3 只验收一件事——**目录里改个名,应用里还是同一个人**,覆盖至少一个 OIDC Consumer 与一个
 LDAP Consumer。
 
-## 6. E2E 执行记录
+## 6. E2E 验收用例
 
-| 需求 ID | 脚本 | 环境 | 日期 | 结果 |
+本节是待实现用例的规范来源。脚本写出来之后,每条搬进
+`test-env/cases/directory-identity-key/cases.yml` 并登记 `requirement_scope`——正式用例目录不接受
+"待实现"状态(`status` 只有 `active`/`retired`,且 active 用例的实现文件必须已存在),所以在那之前
+用例留在这里。
+
+每条用例的断言都必须落在**最终结果**上:同一个应用账号 id、资产归属未变、请求被拒。只断言
+"同步 API 已调用"、"claim 里有 anchor"或 HTTP 302 都不算。
+
+### DIRKEY-T-001 改名后复用身份(`R-003`)
+
+| 项 | 内容 |
+| --- | --- |
+| 级别 | e2e |
+| 脚本 | 待新增 `test-env/scripts/server-directory-rename-identity-e2e.sh` |
+| 环境 | Samba AD + 一个 IAM Provider + 一个 OIDC Consumer 与一个 LDAP Consumer |
+| 前置 | 目标用户已在两个 Consumer 中各登录一次并留下可识别资产(仓库/任务/文件) |
+| 步骤 | 记录两侧的应用账号 id 与资产归属 → 在 AD 改 `sAMAccountName` → 等待或触发同步 → 再次登录两侧 |
+| 断言 | 两侧的应用账号 id **不变**;资产仍属于该账号;没有新建第二个账号;应用内用户名的变化(跟随/冻结)与该 Module 文档《目录属性变更说明》里写的一致 |
+| 反例 | 改名后若出现第二个账号,或原账号资产变为孤儿,必须失败 |
+| 清理 | 改回原 `sAMAccountName`,删除测试用户与资产 |
+
+**"与文档一致"是这条用例的重点**:用户名是跟着改还是冻结,两种都可能合规,但文档写的那个必须是
+真的。这条同时验收 `DIRKEY-R-011` 的证据等级从 `推断` 升为 `已验证`。
+
+### DIRKEY-T-002 LDAP source 的唯一性字段是 anchor(`R-007`)
+
+| 项 | 内容 |
+| --- | --- |
+| 级别 | e2e |
+| 脚本 | 待新增 `test-env/scripts/server-directory-identity-key-e2e.sh` |
+| 环境 | Samba AD + authentik、Samba AD + Casdoor 各一轮 |
+| 步骤 | 读取 Provider 侧实际生效的 LDAP source 配置 → 比对 `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE` |
+| 断言 | 唯一性字段等于 anchor 属性名;**不是** `sAMAccountName`、DN 或 `mail` |
+| 反例 | 把唯一性字段改成 `sAMAccountName` 后重新调和,断言调和拒绝或告警,不得静默接受 |
+
+### DIRKEY-T-003 主体标识符的值就是 anchor(`R-008`)
+
+| 项 | 内容 |
+| --- | --- |
+| 级别 | e2e |
+| 脚本 | 同 `DIRKEY-T-002` |
+| 步骤 | 完成一次真实 OIDC 登录,取出 ID Token 的 `sub`(SAML 取 `NameID`)→ 从目录读同一对象的 `anasIdentityAnchor` |
+| 断言 | 两个值**逐字节相等**;不是 Provider 内部 id、用户名或邮箱;改名后再取一次仍相等 |
+| 反例 | Provider 配置为内部 id 时断言失败——这条用例存在的意义就是挡住"看起来也很稳定"的替代实现 |
+
+这条用例是 M2 的验收核心。它无法在 Provider 侧能力核实(§4 第一项)完成前通过。
+
+### DIRKEY-T-004 主体标识符不进入展示层(`R-013`)
+
+| 项 | 内容 |
+| --- | --- |
+| 级别 | e2e |
+| 脚本 | 同 `DIRKEY-T-002`,逐 Consumer 循环 |
+| 步骤 | 每个 OIDC/SAML Consumer 各登录一次 → 抓取应用内用户名、个人主页 URL、API 路径、以及该应用为用户创建的文件/目录路径 |
+| 断言 | anchor 值**不出现**在上述任何位置 |
+| 反例 | 已知高风险形态:把主体标识符直接当成应用内用户 id 的应用。命中任何一个,该 Consumer 必须先整改,不得以"多数 Consumer 没问题"放行 |
+
+### DIRKEY-T-005 标识符回收再分配必须 fail closed(`R-001`,同时覆盖 `R-002`)
+
+| 项 | 内容 |
+| --- | --- |
+| 级别 | e2e |
+| 脚本 | 待新增 `test-env/scripts/server-directory-identifier-reuse-e2e.sh` |
+| 环境 | 同 `DIRKEY-T-001` |
+| 前置 | 用户 A 已在各 Consumer 建号并留下资产 |
+| 步骤 | 删除 A(或停用并移出准入组)→ 新建用户 B,把 A 原来的 `sAMAccountName` 与 `mail` 赋给 B(anchor 必然不同)→ B 登录每个 Consumer |
+| 断言 | B **不得**进入 A 的应用账号,不得看到 A 的任何资产;要么建出全新账号,要么因唯一性冲突拒绝建号 |
+| 反例 | 这条用例本身就是故障注入:任何一个 Consumer 让 B 接管 A 的账号即为严重失败 |
+| 清理 | 删除 B 与两侧账号、资产 |
+
+这是整份要求里唯一会造成**权限被他人继承**的失败模式,因此必须独立成例,不能并进 `DIRKEY-T-001`。
+
+### DIRKEY-T-006 anchor 不可得时 fail closed(`R-009`,单元级)
+
+| 项 | 内容 |
+| --- | --- |
+| 级别 | 单元 |
+| 入口 | 待新增,与 Provider 的 Hook 单元测试共用 fixture |
+| 步骤 | 构造一个明确请求 anchor claim 的 Consumer,让 Provider 侧取不到 anchor(目录对象缺该属性) |
+| 断言 | 调和或登录**拒绝**,并给出可诊断错误;不得静默降级成 `sAMAccountName` 或邮箱 |
+
+### 执行记录
+
+| 需求 ID | 脚本 | 用例 | 日期 | 结果 |
 | --- | --- | --- | --- | --- |
-| R-003 | 待新增 `test-env/scripts/server-directory-rename-identity-e2e.sh` | 改名前后各登录一次,断言同一应用账号、资产未孤立 | — | 待执行 |
-| R-007 | 待新增 `test-env/scripts/server-directory-identity-key-e2e.sh` | authentik/Casdoor 的 LDAP source 唯一性字段 | — | 待执行 |
-| R-008 | 同上 | `sub`/`NameID` 的值等于目录 anchor | — | 待执行 |
-| R-013 | 同上 | 逐 Consumer 断言主体标识符未出现在用户名、URL 或文件路径 | — | 待执行 |
-
-断言必须落在最终结果上:同一应用账号 id、资产归属未变。只断言"同步 API 已调用"或"claim 里有
-anchor"不算。
+| R-003 | 待新增 `test-env/scripts/server-directory-rename-identity-e2e.sh` | DIRKEY-T-001 | — | 待执行 |
+| R-007 | 待新增 `test-env/scripts/server-directory-identity-key-e2e.sh` | DIRKEY-T-002 | — | 待执行 |
+| R-008 | 同上 | DIRKEY-T-003 | — | 待执行 |
+| R-013 | 同上 | DIRKEY-T-004 | — | 待执行 |
+| R-001 | 待新增 `test-env/scripts/server-directory-identifier-reuse-e2e.sh` | DIRKEY-T-005；同时覆盖 R-002 | — | 待执行 |
 
 ## 7. 文档同步
 

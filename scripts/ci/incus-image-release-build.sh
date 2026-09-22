@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 require_env() {
   local name=$1
@@ -23,6 +24,33 @@ esac
 [ "${#ANAS_DISTROBUILDER_SHA256}" -eq 64 ] || { echo "bad distrobuilder digest length" >&2; exit 64; }
 [ "${#ANAS_FORGEJO_RUNNER_SHA256}" -eq 64 ] || { echo "bad forgejo-runner digest length" >&2; exit 64; }
 
+# History and the fresh output destination are explicit admission conditions,
+# not errors discovered after a privileged bake or a truncated catalog write.
+case "${ANAS_INCUS_IMAGE_FIRST_RELEASE:-}" in
+  ""|0|1) ;;
+  *) echo "ANAS_INCUS_IMAGE_FIRST_RELEASE must be 0 or 1" >&2; exit 64 ;;
+esac
+case "${ANAS_INCUS_IMAGE_INIT_ARCHIVE:-}" in
+  ""|0|1) ;;
+  *) echo "ANAS_INCUS_IMAGE_INIT_ARCHIVE must be 0 or 1" >&2; exit 64 ;;
+esac
+history_args=()
+if [ -n "${ANAS_INCUS_IMAGE_PREVIOUS_CATALOG:-}" ]; then
+  [ "${ANAS_INCUS_IMAGE_FIRST_RELEASE:-}" != 1 ] || {
+    echo "previous catalog and first release are mutually exclusive" >&2; exit 64;
+  }
+  history_args=(--previous-catalog "${ANAS_INCUS_IMAGE_PREVIOUS_CATALOG}")
+elif [ "${ANAS_INCUS_IMAGE_FIRST_RELEASE:-}" = 1 ]; then
+  history_args=(--first-release)
+else
+  echo "set ANAS_INCUS_IMAGE_PREVIOUS_CATALOG or ANAS_INCUS_IMAGE_FIRST_RELEASE=1" >&2
+  exit 64
+fi
+if [ -e "${ANAS_INCUS_IMAGE_OUTPUT}" ] || [ -L "${ANAS_INCUS_IMAGE_OUTPUT}" ]; then
+  echo "image release output must be a new private directory" >&2
+  exit 64
+fi
+
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "${repo_root}"
 
@@ -36,11 +64,16 @@ if [ "${ANAS_INCUS_IMAGE_INIT_ARCHIVE:-}" = "1" ]; then
   go run ./cmd/incus-image-artifacts init --archive "${ANAS_INCUS_IMAGE_ARCHIVE}" >/dev/null
 fi
 
-mkdir -p "${ANAS_INCUS_IMAGE_OUTPUT}/recipes" "${ANAS_INCUS_IMAGE_OUTPUT}/images/artifacts"
+# Validate existing history before invoking any builder. The final bundle
+# repeats this check under the same archive gate used for exporting its bytes.
+go run ./cmd/incus-image-artifacts catalog \
+  --archive "${ANAS_INCUS_IMAGE_ARCHIVE}" "${history_args[@]}" >/dev/null
+
+mkdir "${ANAS_INCUS_IMAGE_OUTPUT}"
+mkdir "${ANAS_INCUS_IMAGE_OUTPUT}/recipes"
 
 for iface in incus_container incus_vm; do
   recipe="${ANAS_INCUS_IMAGE_OUTPUT}/recipes/forgejo-runner-${arch}-${iface}.yml"
-  export_dir="${ANAS_INCUS_IMAGE_OUTPUT}/images/artifacts/anas/forgejo-runner/${ANAS_INCUS_IMAGE_REVISION}/${arch}/${iface}"
 
   go run ./cmd/incus-image-artifacts recipe \
     --image forgejo-runner \
@@ -58,29 +91,14 @@ for iface in incus_container incus_vm; do
     --distrobuilder-sha256 "${ANAS_DISTROBUILDER_SHA256}" \
     --forgejo-runner "${ANAS_FORGEJO_RUNNER}" \
     --forgejo-runner-sha256 "${ANAS_FORGEJO_RUNNER_SHA256}" >/dev/null
-
-  if [ ! -e "${export_dir}" ]; then
-    go run ./cmd/incus-image-artifacts export \
-      --archive "${ANAS_INCUS_IMAGE_ARCHIVE}" \
-      --name forgejo-runner \
-      --revision "${ANAS_INCUS_IMAGE_REVISION}" \
-      --architecture "${arch}" \
-      --interface "${iface}" \
-      --output-dir "${export_dir}" >/dev/null
-  fi
 done
 
-if [ -n "${ANAS_INCUS_IMAGE_PREVIOUS_CATALOG:-}" ]; then
-  go run ./cmd/incus-image-artifacts catalog \
-    --archive "${ANAS_INCUS_IMAGE_ARCHIVE}" \
-    --previous-catalog "${ANAS_INCUS_IMAGE_PREVIOUS_CATALOG}" >"${ANAS_INCUS_IMAGE_OUTPUT}/images/catalog.json"
-elif [ "${ANAS_INCUS_IMAGE_FIRST_RELEASE:-}" = "1" ]; then
-  go run ./cmd/incus-image-artifacts catalog \
-    --archive "${ANAS_INCUS_IMAGE_ARCHIVE}" \
-    --first-release >"${ANAS_INCUS_IMAGE_OUTPUT}/images/catalog.json"
-else
-  echo "set ANAS_INCUS_IMAGE_PREVIOUS_CATALOG or ANAS_INCUS_IMAGE_FIRST_RELEASE=1" >&2
-  exit 64
-fi
+# Restore every committed target/revision, not just this build's two targets.
+# The tool itself writes catalog.json last; shell redirection cannot truncate
+# an existing catalog or publish one without the matching historical bytes.
+go run ./cmd/incus-image-artifacts bundle \
+  --archive "${ANAS_INCUS_IMAGE_ARCHIVE}" \
+  "${history_args[@]}" \
+  --output-dir "${ANAS_INCUS_IMAGE_OUTPUT}/images" >/dev/null
 
 echo "wrote ${ANAS_INCUS_IMAGE_OUTPUT}/images/catalog.json and ${ANAS_INCUS_IMAGE_OUTPUT}/images/artifacts"

@@ -15,15 +15,16 @@ import (
 // These are interface-level transaction tests. They do not install host rules,
 // prove Traefik consumption or replace the real Docker/Incus acceptance matrix.
 type executorFixture struct {
-	mu                sync.Mutex
-	state             ExecutorState
-	steps             []string
-	failStep          string
-	saves             int
-	failSave          int
-	orphan            bool
-	invalid           bool
-	invalidateOnProbe bool
+	mu                  sync.Mutex
+	state               ExecutorState
+	steps               []string
+	failStep            string
+	saves               int
+	failSave            int
+	orphan              bool
+	invalid             bool
+	invalidateOnProbe   bool
+	invalidateOnPublish bool
 }
 
 func newExecutorFixture() (*executorFixture, Executor, PublicationTarget) {
@@ -107,7 +108,22 @@ func (f *executorFixture) ReleaseAddress(ctx context.Context, _ PublicationTarge
 	return f.step(ctx, "release")
 }
 func (f *executorFixture) PublishHTTP(ctx context.Context, _ PublicationTarget) error {
+	if f.invalidateOnPublish {
+		f.invalid = true
+	}
 	return f.step(ctx, "publish")
+}
+
+func TestExecutorRevalidatesAfterRouteConsumption(t *testing.T) {
+	f, e, target := newExecutorFixture()
+	f.invalidateOnPublish = true
+	if err := e.Reconcile(context.Background(), target.Epoch, []PublicationTarget{target}); err == nil {
+		t.Fatal("target changed while Traefik was consuming the route, but publication succeeded")
+	}
+	want := append(slices.Clone(openingSteps), closingSteps...)
+	if !reflect.DeepEqual(f.steps, want) || len(f.state.Publications) != 0 || len(f.state.Retired) != 1 {
+		t.Fatalf("route-consumption race did not retire in order: %v", f.steps)
+	}
 }
 func (f *executorFixture) RemoveHTTP(ctx context.Context, _ PublicationTarget) error {
 	return f.step(ctx, "unpublish")

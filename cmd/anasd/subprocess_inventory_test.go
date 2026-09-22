@@ -43,9 +43,9 @@ var daemonReachableSubprocessInventory = map[string][]string{
 		"Detect exec.Command",
 		"Detect os.Environ",
 	},
-	// The compute client's CLI runner. Daemon callers go through the context
-	// runner with a constructed environment.
-	"internal/computeclient/client.go": {"(execRunner).Run os.Environ"},
+	// The shared compute client now uses CommandContext and an explicit
+	// environment in exec.go. It needs no ambient-environment exemption;
+	// the same import-graph scan rejects any future unguarded reintroduction.
 	// Reads the operator's macOS locale for CLI text. Never reached by a
 	// request: the daemon resolves locale from its own service configuration.
 	"internal/localization/localization.go": {"appleLocale exec.Command"},

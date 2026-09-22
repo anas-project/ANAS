@@ -355,11 +355,30 @@ func (archive *ArtifactArchive) Catalog(ctx context.Context, previous []Entry) (
 		return nil, err
 	}
 	defer unlock()
+	return archive.catalog(ctx, previous)
+}
+
+// catalog requires the archive gate, allowing bundle export to retain one
+// frozen catalog and the same archive identity through the whole operation.
+func (archive *ArtifactArchive) catalog(ctx context.Context, previous []Entry) ([]Entry, error) {
+	releases, err := archive.catalogReleases(ctx, previous)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]Entry, 0, len(releases))
+	for _, release := range releases {
+		entries = append(entries, release.Entry)
+	}
+	return entries, nil
+}
+
+func (archive *ArtifactArchive) catalogReleases(ctx context.Context, previous []Entry) ([]ArtifactRelease, error) {
 	names, err := archive.releaseNames()
 	if err != nil {
 		return nil, err
 	}
 	entries := make([]Entry, 0, len(names))
+	releases := make([]ArtifactRelease, 0, len(names))
 	for _, name := range names {
 		release, err := archive.readRelease(name)
 		if err != nil {
@@ -369,6 +388,7 @@ func (archive *ArtifactArchive) Catalog(ctx context.Context, previous []Entry) (
 			return nil, err
 		}
 		entries = append(entries, release.Entry)
+		releases = append(releases, release)
 	}
 	old, err := NewCatalog(previous, nil)
 	if err != nil {
@@ -377,14 +397,14 @@ func (archive *ArtifactArchive) Catalog(ctx context.Context, previous []Entry) (
 	if _, err := NewCatalog(entries, old); err != nil {
 		return nil, ErrArtifactConflict
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		a, b := entries[i].key(), entries[j].key()
+	sort.Slice(releases, func(i, j int) bool {
+		a, b := releases[i].Entry.key(), releases[j].Entry.key()
 		return strings.Join([]string{a.Catalog, a.Name, a.Revision, a.Architecture, a.Interface}, "\x00") < strings.Join([]string{b.Catalog, b.Name, b.Revision, b.Architecture, b.Interface}, "\x00")
 	})
 	if archive.check() != nil {
 		return nil, ErrArtifactUnavailable
 	}
-	return entries, nil
+	return releases, nil
 }
 
 func (archive *ArtifactArchive) verifyRelease(ctx context.Context, release ArtifactRelease) error {
@@ -404,6 +424,9 @@ func (archive *ArtifactArchive) verifyRelease(ctx context.Context, release Artif
 		files, before, readers = append(files, file), append(before, info), append(readers, file)
 	}
 	actual, err := DescribeArtifact(ctx, release.Artifact.Target, release.Artifact.Format, readers)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if err != nil || !reflect.DeepEqual(actual, release.Artifact) {
 		return ErrArtifactUnavailable
 	}
@@ -425,6 +448,9 @@ func (archive *ArtifactArchive) verifyPart(ctx context.Context, part ArtifactPar
 	defer file.Close()
 	digest := sha256.New()
 	n, err := io.Copy(digest, io.LimitReader(&artifactContextReader{ctx: ctx, reader: file}, part.Size+1))
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	after, statErr := file.Stat()
 	current, pathErr := archive.root.Lstat(artifactObjectFilename(part.SHA256))
 	if err != nil || statErr != nil || pathErr != nil || n != part.Size || hex.EncodeToString(digest.Sum(nil)) != part.SHA256 || !sameArtifactFile(before, after) || !sameArtifactFile(before, current) {
