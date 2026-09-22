@@ -2,6 +2,25 @@
 
 状态：实验观测采集与计划生成器，完整 Incus 宿主验收未完成；不接入生产 ingress。
 
+另有独立 daemon 存储负例入口 `test-env/scripts/test-incus-daemon-native.sh`，与本页报文
+原型不同。只在明确授权的 Linux 主机执行，参数依次是**不存在的新报告目录、已解包依赖根、
+宿主测试二进制、Provider 二进制、test2json**，均须为绝对路径。脚本由 sudo 运行，同行的
+`incus-provider-native.py` 必须一并复制；程序须按目标架构预编译。它不下载/安装软件包，
+不接管系统 socket，实验状态和密钥随私有 tmpfs/namespace 退出消失，私有报告保留。该入口
+不是生产安装器，也不验证受支持配额池或 guest。范围和结果见
+[存储验证记录](../../../dev-docs/reviews/2026-09-21-incus-daemon-storage-validation.md)。
+
+## 预编译内核门禁
+
+`test-env/scripts/test-incus-ingress-native.sh /绝对路径/预编译.test [/绝对路径/test2json]`
+在已授权的 Linux 实验环境执行八项必需原生用例，任意跳过或缺少通过记录都会失败。
+第二个参数可由构建机提供，远端不必安装 Go；省略时使用已有 `go tool test2json`。
+所有网络修改均在测试新建的隔离 namespace 内。仍需按服务器清单准备独立环境、固定二进制
+和 nft/ip/conntrack 依赖，并核对执行前后宿主基线；不操作业务 Docker/Incus daemon。
+
+2026-09-21 指定 Ubuntu 主机通过修复后的门禁与乱序复测，包括歧义协议反例和内核接口索引
+取证。原生通过不表示完整生产发布可用，详见[核对记录](../../../dev-docs/reviews/2026-09-21-incus-native-readback-fixes.md)。
+
 `cmd/incus-network-prototype` 从**管理员采集**的 Docker/Incus 观测生成以下基础文件，不执行宿主修改命令：
 
 - `firewall.nft`：专用 bridge 的 Traefik veth 来源限制、guest IPv4/TCP 端口 tuple、30 秒有效期。回包也必须命中有效 tuple，撤销后不会被该表中的 ESTABLISHED 放行。

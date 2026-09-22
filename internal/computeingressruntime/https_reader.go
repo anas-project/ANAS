@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -110,6 +111,9 @@ func singleCertificate(body []byte) (*x509.Certificate, error) {
 }
 
 func (c *pinnedGETClient) get(ctx context.Context, path string, limit int64) ([]byte, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("observer request requires a context")
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -148,8 +152,14 @@ func (c *pinnedGETClient) get(ctx context.Context, path string, limit int64) ([]
 		return nil, fmt.Errorf("observer GET did not return a bounded JSON success response")
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if err != nil || int64(len(body)) > limit || !utf8.Valid(body) {
 		return nil, fmt.Errorf("observer response is incomplete, oversized or invalid UTF-8")
+	}
+	if now := time.Now(); now.Before(c.validFrom) || !now.Before(c.validUntil) {
+		return nil, fmt.Errorf("observer certificate expired during the response")
 	}
 	if c.check != nil {
 		if err := c.check(ctx); err != nil {
@@ -163,9 +173,13 @@ func (c *pinnedGETClient) get(ctx context.Context, path string, limit int64) ([]
 // duplicate members and excessive depth before decoding the selected fields.
 // Neither parsing errors nor response bodies are returned to callers.
 func decodeObservedJSON(body []byte, out any) error {
+	typ := reflect.TypeOf(out)
+	if !utf8.Valid(body) || typ == nil || typ.Kind() != reflect.Pointer || reflect.ValueOf(out).IsNil() {
+		return fmt.Errorf("invalid observer JSON destination or encoding")
+	}
 	d := json.NewDecoder(bytes.NewReader(body))
 	d.UseNumber()
-	if err := observedJSONValue(d, 0); err != nil {
+	if err := observedJSONValue(d, typ.Elem(), 0); err != nil {
 		return err
 	}
 	if _, err := d.Token(); err != io.EOF {
@@ -177,9 +191,12 @@ func decodeObservedJSON(body []byte, out any) error {
 	return nil
 }
 
-func observedJSONValue(d *json.Decoder, depth int) error {
+func observedJSONValue(d *json.Decoder, typ reflect.Type, depth int) error {
 	if depth > 32 {
 		return fmt.Errorf("observer JSON exceeds the nesting limit")
+	}
+	for typ != nil && typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
 	}
 	t, err := d.Token()
 	if err != nil {
@@ -187,6 +204,28 @@ func observedJSONValue(d *json.Decoder, depth int) error {
 	}
 	switch t {
 	case json.Delim('{'):
+		// Incus/Traefik API records are extensible, so unknown fields remain
+		// accepted. A spelling that aliases a selected Go struct field does not:
+		// encoding/json would otherwise overwrite its exact-key value. Maps
+		// retain case-sensitive application names and configuration keys.
+		var fields map[string]reflect.Type
+		if typ != nil && typ.Kind() == reflect.Struct {
+			fields = make(map[string]reflect.Type)
+			for i := 0; i < typ.NumField(); i++ {
+				field := typ.Field(i)
+				if !field.IsExported() {
+					continue
+				}
+				name := strings.Split(field.Tag.Get("json"), ",")[0]
+				if name == "-" {
+					continue
+				}
+				if name == "" {
+					name = field.Name
+				}
+				fields[name] = field.Type
+			}
+		}
 		seen := map[string]bool{}
 		for d.More() {
 			key, err := d.Token()
@@ -195,7 +234,20 @@ func observedJSONValue(d *json.Decoder, depth int) error {
 				return fmt.Errorf("observer JSON contains invalid or duplicate members")
 			}
 			seen[name] = true
-			if err := observedJSONValue(d, depth+1); err != nil {
+			var child reflect.Type
+			if fields != nil {
+				child = fields[name]
+				if child == nil {
+					for exact := range fields {
+						if strings.EqualFold(exact, name) {
+							return fmt.Errorf("observer JSON contains a noncanonical field alias")
+						}
+					}
+				}
+			} else if typ != nil && typ.Kind() == reflect.Map {
+				child = typ.Elem()
+			}
+			if err := observedJSONValue(d, child, depth+1); err != nil {
 				return err
 			}
 		}
@@ -203,8 +255,12 @@ func observedJSONValue(d *json.Decoder, depth int) error {
 			return fmt.Errorf("invalid observer JSON object")
 		}
 	case json.Delim('['):
+		var element reflect.Type
+		if typ != nil && (typ.Kind() == reflect.Array || typ.Kind() == reflect.Slice) {
+			element = typ.Elem()
+		}
 		for d.More() {
-			if err := observedJSONValue(d, depth+1); err != nil {
+			if err := observedJSONValue(d, element, depth+1); err != nil {
 				return err
 			}
 		}

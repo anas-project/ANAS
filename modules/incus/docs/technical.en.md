@@ -1,7 +1,23 @@
 # Incus compute provider technical notes
 
+The fixed container lease profile permits inner OCI namespace nesting (`security.nesting=true`), with
+the corresponding project nesting key set to allow. The project still forces unprivileged containers;
+low-level configuration, host-path disks, PCI/USB/character-device access and managed-NIC fences stay
+restricted. The VM tier is unchanged. Consumers cannot supply a nesting toggle, and the shared client
+no longer overrides the provider profile with false. This changes the permitted guest operation set
+to support actual OCI execution; it does not disable AppArmor or grant host privilege. Native admission
+must validate real workload execution together with privileged/raw/host-device rejection controls.
+
 This document records the provider implementation and security boundary of the `incus` module.
 Configuration and operation are in the [English README](../README.en.md).
+
+The 2026-09-22 shared-consumer-client continuation verifies the complete TLS tuple before private,
+locked, no-follow credential preparation. Existing files are never overwritten: only matching bytes
+are reused and another identity requires a separate delivery directory. CLI children do not inherit
+other lease secrets, default connections or proxies; output is bounded and cancellation remains
+attributable. Provider APIs, profiles, quotas and the publication gate are unchanged. These changes
+do not establish real btrfs/guest acceptance; see the
+[compute technical notes](../../../contracts/compute/docs/technical.en.md#shared-client-credential-preparation-and-subprocess-boundary).
 
 2026-09-18 verification: local Go regressions pass for the Provider, Hook, artifact archive/build
 orchestration, HTTP policy and publication transactions. Earlier dated "unrun" notes describe their
@@ -12,7 +28,7 @@ The Module remains `developing` and production ingress remains disabled. See the
 for the exact scope and outstanding work.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `7.3.0-r1` / `anas.module/v1`.
+> Status: current implementation; based on `7.3.0-r2` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Module, capability and contract dependencies
@@ -30,7 +46,7 @@ privilege restriction on the project configuration.
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_incus_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r1` | `incus` | 0 |
+| `anas_incus_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r2` | `incus` | 0 |
 <!-- generated:compose-topology:end -->
 
 There is a single run-only service. It has no `ports`, no Traefik label, no volumes, and mounts no host
@@ -224,7 +240,7 @@ The order inside `ensure` is deliberate:
    and `PUT`; otherwise `POST` a new project. Merging rather than overwriting matters because the
    project may hold running instances and operator-added `user.*` keys. An existing project with
    `features.networks=true` is refused: changing its network ownership requires explicit migration.
-2. **Read back** and assert `restricted=true`, all four limits non-empty, storage admission read back again, network features disabled,
+2. **Read back** and assert every managed project setting matches its requested value, including `restricted=true`, the exact four quota totals, storage admission read back again, network features disabled,
    managed NICs, and `restricted.networks.access` equal to exactly this lease's bridge. Any failure returns an
    error and does **not** go on to register the certificate. This step is the contract's only source of
    trust: a successful write does not count, only the daemon's own copy does.
@@ -232,10 +248,10 @@ The order inside `ensure` is deliberate:
    comes before the certificate: handing out a credential for a lease that has no root disk and no NIC
    yet would achieve nothing.
 4. Read each frozen image in the target project and verify fingerprint, architecture and type.
-   Missing or mismatched metadata fails; no alias lookup is used.
+   An absent image may only be imported from a matching frozen supply and read back; missing supply or mismatched metadata fails. No alias lookup is used.
 5. Register the consumer certificate. If that fingerprint is already trusted, verify it is restricted
    and that `projects` contains exactly this sandbox; if it is unrestricted or bound elsewhere, exit
-   with an error and change nothing.
+   with an error and change nothing. Finally recheck the complete live dependency chain read-only before returning ready.
 
 ## Network and profile
 
@@ -272,15 +288,19 @@ which reads as a hung job rather than a misconfiguration. Both families are NATe
 managed bridge, so enabling v6 widens what a guest can reach without changing how it gets out.
 
 `ensureProfile` does a whole-object PUT rather than a merge, and `verifyProfile` then reads it back and
-requires exactly two devices. Together they are the only enforcement point for this constraint: the
+requires exactly two devices, the sole managed configuration `user.anas.managed=true`, and the exact
+device property maps. Additional raw configuration or device properties are refused.
+Together they are the only enforcement point for this constraint: the
 daemon does not stop anyone attaching devices to a profile, so "no extra devices on the profile" holds
 only because this code checks.
 
 The two refusals in step 5 are the provider-side privilege-escalation defence: silently accepting a
 certificate that is already trusted with global rights would hand the consumer the whole daemon.
 
-`inspect` requires the exact network scope above for `ready`, while retaining independent restricted
-and quota flags. It is read-only and reports `exists`, `ready`, `restricted` and `quota_enforced` separately. A
+`inspect.ready` requires the complete project fence, admitted pool, network ownership/NAT, profile,
+restricted certificate and frozen images to remain valid. Project existence or network scope alone
+is insufficient; revocation preserves the project but clears readiness. Inspection never reads supply
+files, imports images, repairs configuration or grants trust. It reports `exists`, `ready`, `restricted` and `quota_enforced` separately. A
 missing project returns zero values rather than an error, because "absent" is a normal observable
 state.
 
@@ -566,9 +586,43 @@ Use `--first-release` only when there truly is no published history; it is mutua
 `--previous-catalog`. Catalog generation rechecks every artifact and rejects missing or changed prior
 version keys. A missing or corrupt previous catalog is not empty history. Standard output contains JSON
 metadata only, never image bytes, source paths or recipe content, and does not update
-`modules/incus/images/catalog.json`. Back up the archive and trusted history independently. These local
-records do not complete release signing, artifact distribution, Provider import, guest startup or pruning
-that protects current/previous deployments. The shipped catalog remains empty; M12/M13 remain unaccepted.
+`modules/incus/images/catalog.json`. Back up the archive and trusted history independently. Local supply,
+Provider import and guarded prune have code implementations; signed distribution, real guest startup and
+destructive prune acceptance remain incomplete. The shipped catalog stays empty; M12/M13 remain unaccepted.
+
+## Complete release bundles and cancellable supply (2026-09-21)
+
+Export a verified archive into the Provider's `images/` layout with explicit history and a **new** destination:
+
+```sh
+go run ./cmd/incus-image-artifacts bundle \
+  --archive "$ARCHIVE_DIR" \
+  --previous-catalog "$TRUSTED_PREVIOUS_CATALOG" \
+  --output-dir "$NEW_RELEASE_DIR/images"
+```
+
+The parent `NEW_RELEASE_DIR` must already exist. Only an actual first release may replace the history
+argument with `--first-release`; both cannot be supplied. One archive lock covers history verification
+and export of every committed revision/architecture/interface. Bytes go under
+`artifacts/<catalog>/<name>/<revision>/<architecture>/<interface>/`, and `catalog.json` is written last.
+Empty archives, missing history, corrupt objects and unified artifacts are refused before output.
+Split files retain their original bytes and are never rebuilt. Writes use pinned directory handles,
+rechecking copied size and SHA-256; a replaced destination cannot be reported as successful.
+Failure can leave a private candidate directory for explicit inspection. Retrying must use a new
+destination rather than adopting an existing candidate.
+
+`scripts/ci/incus-image-release-build.sh` checks explicit history and a fresh output directory before
+building, then calls the same bundle entrypoint. It no longer exports only the current two targets
+while omitting historical artifacts. The tool returns only count and catalog digest on stdout. It
+does not sign, connect to Incus, offer a download URL or inline base64; release trust remains the
+responsibility of the publication process.
+
+Core validates each frozen reference/target/fingerprint/recipe before deduplicating identical physical
+bytes shared by runtime names or named revisions. Deployment bindings do not change. The split-only
+path rejects unified descriptors and applies a shared 1 MiB supply-JSON limit. Hashing and copying use
+the apply cancellation context; cancellation cleans partial copies and temporary staging. Synthetic-byte
+regressions cover archive-to-staging integration, history, aliases, directory replacement and mid-copy
+cancellation, not actual guest boot.
 
 ## Release-side build-once archive preparation (real bakes not executed)
 
@@ -734,7 +788,99 @@ observations before probing enter the same cleanup path. State validates its sch
 64-character lowercase hexadecimal epoch. Persistence failure still requires recovery and does not
 prove that networking has been closed.
 
-## HTTP periodic reconciliation and rendering integration (unverified code)
+## Narrow host observation (2026-09-21; wired, not automatically installed)
+
+`incus.ingress.observe_http` is now a compiled `anas-hostd` action: read-only, a 30-second budget,
+reject concurrency, and no caller-selected endpoint, path or command. It reuses the existing shared
+job, installed peer identity, audit and exit supervision; no new service or privileged entrypoint is
+created. `HostObservationInvoker` starts a new job per observation. Abandoning the wait does not cancel
+supervisor-owned execution, and an earlier job result is not fresh observation evidence.
+
+The Linux root backend loads only `/etc/anas/incus-ingress/observers/<workspace-id>.json`, resolves
+the workspace from protected service configuration, and matches the current Core snapshot and owned
+connection bundle. Scope and authorized job workspace must agree. Ancestors, file identities, existing
+shared locks and captured bytes are rechecked around observations. Incus must already be running.
+The management credential stays inside root and is used only over pinned mTLS to `127.0.0.1:8443`;
+it is neither delivered to the mediator nor represented as a daemon-enforced read-only certificate.
+
+The backend reuses the Incus double sampler and independently checks the actual bridge-owned veth,
+numeric ifindex, peer index and MAC. Two complete API/kernel samples must match before a selected
+lease projection is returned. Only containers are admitted; VM/TAP is explicitly rejected.
+Projection v3 adds workload/interface binding and rejects v1/v2. The legacy field name `server_uuid`
+means the UUID-shaped representation of ANAS's existing random installation ID, also bound to the
+bundle digest; it is not a field provided by the Incus API.
+
+`HostProjectionReader` implements `FactReader` and `Observer` without Incus credentials or a socket.
+It checks the pinned installation ID, Core epoch, complete lease policy and per-call observation ID.
+Confirmed scope generation, refresh and revocation are described in the next section; production mediator startup remains unimplemented. Real root,
+VM, health, continuous IP/ifindex lifetime and existing TCP-session acceptance remain due, and
+publication stays disabled. See the [Chinese host-provisioning design](../../../docs/architecture/incus-host-provisioning.md), section 7.8.
+
+## Mediator lifetime and host-reader assembly (2026-09-21, internal API)
+
+`ReaderInstallation.Host` selects the separate
+`anas.compute-http-host-reader-credentials/v1` private delivery format. It retains the active snapshot,
+lease naming keys and Traefik reader configuration, adding only host scope/installation UUID pins rather
+than Incus credentials. Host and direct modes are exclusive and never fall back to each other.
+`OpenHostWorkspaceReaders` takes an authenticated shared host-action client from its trusted launcher;
+the file cannot select an invoker. The existing direct-reader v1 format remains unchanged. Both modes
+check delivery identity and reject further calls after the readers close.
+
+`WorkspaceReaders.NewControllerService` binds the same Source, Observer, renderer and reader lifetime.
+Host actions, probe and StateStore are mandatory explicit inputs. Construction does not start a service;
+the trusted owner calls Run. Ready follows recovery and the first complete reconciliation, not permanent
+health. Stop drains using an independent timeout; host services, old Traefik credentials and required
+mounts must remain available until it finishes.
+
+Failed drain returns `ErrControllerDrain` and retains the exact journal/flock and old readers. Run waits
+for explicit RetryDrain, which only retires original targets without reading desired work or publishing.
+Canceling a wait does not cancel cleanup; concurrent retries join one attempt. Readers close only after
+cleanup and inventory confirmation. Actual daemon launch, UID/mounts and observer-configuration change
+coordination remain unconnected; production ingress stays disabled. See the
+[host-provisioning design](../../../docs/architecture/incus-host-provisioning.md), section 7.10.
+
+## Generated observer configuration and confirmed delivery (2026-09-21)
+
+Observer scopes no longer need handwritten JSON. An installed host with `host_actions` enabled accepts
+a plan through the existing console session. The workspace must be registered; refresh additionally
+requires an active running deployment, the enrolled local Incus daemon, and container ingress grants.
+These entrypoints are wired in code but have not passed real-host acceptance and do not start ingress:
+
+```sh
+anas host incus-plan -w main --phase observer \
+  --request-json '{"operation":"refresh"}' --session-json - --json < "$SESSION_FILE"
+```
+
+After the shared job succeeds, review its version, deployment, epoch, old/new digests, lease count and
+recovery flag. Obtain one-time consent for that completed plan using the existing private session file:
+
+```sh
+anas host incus-confirm -w main --plan-job "$PLAN_JOB" \
+  --action incus.ingress.observer --session-json - --json < "$SESSION_FILE"
+anas host incus-apply -w main --phase observer \
+  --request-json - --json < "$APPLY_ENVELOPE_FILE"
+```
+
+The existing apply envelope contains `session`, `plan_job_id`, `confirmation_token`, and the unchanged
+`parameters` from the plan result. Keep these files private; never put tokens in argv or logs. Expiry or
+state drift requires a new plan and consent. HTTP uses the existing workspace-scoped
+`/api/v1/workspaces/{ws}/host/actions/incus/observer/plan` and `/apply` routes. The plan request only
+selects operation; the authorized URL supplies workspace identity, not another ID in the body.
+
+Root derives the mode-0600 scope from installed state and the active deployment without copying credentials.
+The existing host state's `observer_scopes` record first becomes pending. Directory-descriptor publication
+and readback precede enabled status. An identical committed refresh does not rewrite files. Interrupted
+work needs a fresh plan and can only reconcile the recorded old/intended bytes; unknown files and legacy
+handwritten scopes without receipts are never adopted. Older binaries may reject the additional state
+field; stripping ownership records is not a supported downgrade.
+
+Revocation uses the same flow with `{"operation":"disable"}`. It works without a live daemon or readable
+old deployment, retains a disabled tombstone, and prevents restored old files from reviving authority.
+Disable scopes before uninstalling Incus. Revoking configuration is not proof that network permissions
+have drained. Mediator startup, old-route cleanup, UID/mounts, health, VM/TAP and native lifecycle acceptance
+remain outstanding. The production publication gate stays closed.
+
+## HTTP periodic reconciliation and rendering integration (local flow tests; production unaccepted)
 
 `Controller.Run` holds the `FileStateStore` exclusive flock through startup retirement, periodic work and
 shutdown cleanup. Every executor for an ingress must share one private local state root; separate roots
@@ -759,11 +905,20 @@ does not match an existing file causes a conflict instead of replacement/deletio
 do not prove Traefik consumed or withdrew configuration. A runtime `RouteConfirmation` adapter is mandatory;
 the renderer refuses execution without it, and failed confirmation blocks subsequent address release.
 
-Server-enforced read-only identity, actual external route inventory, host actions/IP holds, probing, orphan recovery
-and narrow naming-key delivery are still required adapters. No daemon was started or production ingress
-enabled. No Go dependency was added; these paths have not been compiled or tested.
+The 2026-09-21 slice rechecks independent instance facts and authorization after route consumption.
+Failure retires the publication in the existing order rather than recording readiness. Local integration
+tests use the actual Controller, Planner, pinned mutual TLS and file journal to exercise pause/stop,
+fresh reservations after recovery with unchanged guest identity, independent cancellation cleanup,
+and retained address/retiring receipts when cleanup fails, followed by recovery from a reopened journal.
+The request source, daemon metadata, HostActions, renderer and probe are explicit adapters: these tests
+do not execute actual Core request-directory delivery, Traefik consumption or kernel traffic, and the
+post-consumption check does not eliminate every interval during which a route may be visible.
 
-## HTTP instance fact reader (unverified code)
+Server-enforced read-only identity, complete host/probe adapters, orphan recovery and service installation
+remain prerequisites. No production daemon was started, global authorization policy changed, ingress
+enabled or Go dependency added.
+
+## HTTP instance fact reader (local mTLS tests; daemon acceptance pending)
 
 `IncusFactReader` now supplies a GET implementation for `WorkspaceSource.Facts`. The trusted installation
 configuration binds an HTTPS origin, certificates and lease scopes; consumer requests cannot choose them.
@@ -771,6 +926,15 @@ Connections require TLS 1.3, an exact server certificate pin and valid server/cl
 Redirects, environment proxies and unsuccessful/non-JSON responses are rejected. Each GET is limited to
 8 seconds and 2 MiB; two complete samples have a 30-second deadline. Errors omit endpoints, private keys
 and response bodies, and connection failure never falls back to a Unix socket.
+
+The complete installed authorization must match: keeping the same project/prefix cannot authorize wider
+ports or another deployment, auth policy or domain policy. The instance's own config must contain
+`user.anas.managed=true` and a `user.anas.workload` equal to the request; profile inheritance and request
+claims cannot supply that observation. These labels are not cross-project security boundaries. JSON
+allows upstream extensions and case-sensitive map names but rejects aliases of selected struct fields.
+Cancellation and certificate validity are checked again after reading the response.
+`IncusFactReader.ValidateTarget` implements the executor Observer with fresh reads, not cached success;
+the independent authorization source still verifies the active Core epoch and auth/Host policy.
 
 Reads cover server identity, the selected project, its default-project bridge, one instance/state and that
 bridge's allocations. They check the version, restricted fence, bridge ownership/NAT, a unique managed
@@ -783,8 +947,20 @@ Old experimental receipts lacking incarnation are rejected without automatic ext
 Ordinary restricted Incus TLS certificates retain project write access. A GET-only client is not a
 server-enforced read-only identity; provisioning that authorization remains pending. No global daemon
 policy was changed or mediator enabled. Fields follow the Incus v7.3.0 API; an exact version pin is not
-compatibility acceptance. The reader has not been instantiated, compiled or tested. Pending cases are in
-`test-env/fixtures/incus-network-prototype/e2e-plan.md`.
+compatibility acceptance. Local real mTLS tests use synthetic daemon responses for two samples of six
+scoped GETs, wrong identities/grants, pause/restart/address drift, transport/JSON counterexamples and error
+redaction. They do not prove actual Incus compatibility or read-only authorization. Local and native
+acceptance scopes are separated in `test-env/fixtures/incus-network-prototype/e2e-plan.md`.
+
+### Per-invocation binding for internal host observation
+
+The not-yet-wired production `ProjectionClient` uses `anas.incus-http-host-projection/v2`. Each call
+generates its own 32-byte random `observation_id`, requires the exact echo and uses a 30-second context.
+Caller-selected IDs, old/missing binding schemas, previous responses and success after cancellation are
+rejected. The ID is neither a persistent credential nor an idempotency key. The actual host handler must
+independently authorize and read real state after this invocation; assigning a fresh ID to cached facts
+is not fresh observation. No root action was registered, no journal/host receipt format changed and no
+privileged entrypoint added in this slice; full assembly remains pending.
 
 ## Traefik inventory and consumption confirmation (unverified code)
 
@@ -1031,3 +1207,142 @@ rules and kernel records separately, not full TCP sessions, Incus guests or Dock
 ifindex reuse, stop/pause with a surviving interface, VM/TAP, independent Incus identity supply, health and
 production wiring remain outstanding. Production ingress remains disabled. See the
 [reply-origin review](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-20-incus-reply-origin.md).
+
+## Configuration fences and shared-service shutdown (2026-09-21; production disabled)
+
+The shared host queue now uses ControllerCoordinator. Observer configuration jobs fence replacement
+launches in the selected workspace and drain its old controller. Host provisioning, uninstall and image
+prune affect the shared daemon and drain all registered workspaces. Configuration jobs remain queued
+while waiting; they do not occupy the root executor or prevent readonly cleanup dependencies from running.
+
+Permission is checked again after drain, and the broker verifies the fence's job/invocation/request binding.
+Existing plans, one-time confirmations and exit supervision remain unchanged. Failed drain rejects the
+configuration effect while retaining the original lock/readers; unknown execution does not release the fence.
+Replacement controllers are never started automatically. Normal service cancellation rejects new configuration
+work but keeps the queue and execution lease alive until drain completes. Failure requires the trusted owner's
+explicit RetryIngressShutdown, not a new Web API. Canceling a wait does not cancel an ongoing drain.
+
+Local tests exercise the real controller, file journal, locks, confirmation ledger and shared queue with
+synthetic network/root adapters. The launcher must share the same coordinator; an empty in-memory registry
+does not prove external artifacts absent. Production launch, UID/mount setup, root network actions, health,
+VM/TAP and abnormal cross-process recovery remain outstanding. See the
+[Chinese host-provisioning design](../../../docs/architecture/incus-host-provisioning.md), section 7.11.
+
+## Deployment and maintenance drain interlock (2026-09-21)
+
+Anasd's legacy deployment/maintenance worker shares its coordinator with host actions. Deployment
+apply/start/stop/restart/rollback, local-admin rotation, Module changes and snapshot work drain the workspace
+before claiming a running slot or taking its write lock. Failed drain records `ingress_drain_failed` without
+started_at; revoked authority records `job_authorization_revoked`. Canceling the queued job does not cancel
+the drain or let its successor steal the old fence.
+
+Application return or a success event cannot replace a committed terminal. Fences remain until matching
+terminal state and required compensation are confirmed. Bootstrap/enrollment identity retains only its original
+apply transaction. Standalone `anas credential rotate` and other processes are not covered, and production
+ingress remains disabled. Older binaries may reject the new unstarted-failure journal transition; deleting
+queue evidence is not a downgrade strategy. See the
+[host design, section 7.12](../../../docs/architecture/incus-host-provisioning.md).
+
+## Cross-process workspace mutation fence (2026-09-21; production disabled)
+
+Workspace controller assembly reuses `.anas/state/lock` and the original HTTP journal. A durable outstanding
+marker precedes runtime effects; a shared lock remains held until full drain and original reader cleanup.
+Standalone credential/local-admin rotation and other Runner writers check the actual lock descriptor.
+Process exit or `--force` cannot bypass retained recovery evidence. Pure shared reads remain available;
+reads requiring migration or recovery writes are still subject to the writer fence.
+
+The marker pins the original journal directory's path digest and device/inode. Missing/corrupt journals or a
+recreated directory at the same path do not become an empty installation. Subprocess-kill tests establish
+real file-lock and persistent-record behavior with synthetic network adapters, not native networking.
+No automatic CLI drain RPC, service startup or ingress enablement is added. A trusted owner must stop or
+recover the original controller; deleting markers, replacing locks or using an older unaware writer is not
+recovery. Existing `runtime_lock_failed` / `runtime_lock_unavailable` errors retain a message explaining that
+HTTP ingress is active or requires recovery.
+
+This is not final unprivileged UID/mount provisioning and does not constrain programs or trusted administrators
+that ignore the lock protocol. Bare FileStateStore remains a laboratory primitive; workspace reader assembly
+cannot select a memory journal to bypass the fence. See the
+[host design, section 7.13](../../../docs/architecture/incus-host-provisioning.md).
+
+## Workspace mediator launch admission (2026-09-21; production disabled)
+
+The internal StartHostWorkspace entrypoint assembles host-only readers, the existing coordinator and the
+cross-process workspace fence. StartIngressWorkspace on the host service binds its owner context, an
+authorized actor and that same queue's observation invoker. This is not a new CLI/Web command or an
+interface for supplying another invoker.
+
+Request roots, credential parents, HTTP journals and Traefik output must be separate installed directories.
+Overlapping trees, aliases, exposing the whole workspace/Core state, shared write access and private-file
+hard links reject startup. Assembly pins renderer bytes, file identity and the output directory; these are
+rechecked before entering the lifetime fence and are never silently replaced. Start means admission only;
+Ready reports the first complete reconciliation. Shutdown still requires retirement and inventory checks.
+
+This supplies directory/lifecycle constraints, not UID or mount provisioning. Lost consumer inputs revoke
+publication without disabling independent withdrawal through the original Traefik credentials. Losing those
+credentials or the output identity retains recovery evidence instead. The complete local launch test uses
+empty requests and synthetic API/network/probe data. Production configuration, isolated runtime identity,
+mounts, health, VM/TAP and native networking acceptance remain outstanding. See the
+[Chinese host design](../../../docs/architecture/incus-host-provisioning.md), section 7.14.
+
+## Native readback repair (2026-09-21; production disabled)
+
+nft inventory now requests symbolic protocols and rejects numeric EtherTypes that may conflate distinct
+protocols. The host's internal read-only GETRULE path obtains the original interface index, bound to complete
+JSON, table/chain/handle and an unchanged GETGEN generation. It never learns an index from a reusable name.
+Only adjacent equivalent protocol dependencies are normalized; all remaining ordered predicates, counters,
+verdicts and ownership checks remain. Split IPv4 policy-address/prefix fields must express the exact scope.
+
+Eight mandatory native cases and shuffled repetitions passed on the designated Ubuntu host, including wrong
+EtherType, changing ruleset generation, device deletion/reuse and real reply-origin negative controls.
+Namespace fixtures restore their creator thread and use independent guest peers. These tests neither install
+services nor establish actual guest/Traefik/Docker coexistence. Publication remains disabled. See the
+[Chinese host design](../../../docs/architecture/incus-host-provisioning.md), section 7.15.
+
+## Isolated daemon storage validation (2026-09-21; production disabled)
+
+The host provisioning client no longer misclassifies synchronous HTTP 201 creation as failure. Only POST
+with a complete successful synchronous envelope receives this allowance; reads, async waits and independent
+resource readback remain strict. Actual isolated Incus 6.0.5 testing reproduces the old client's failure and
+passes create/read/delete with the fix. The Provider repeatedly rejects dir/missing pools, reads a missing
+project without mutation, rejects a wrong server pin and preserves project/network/profile/trust inventory.
+
+The native entry point uses distribution binaries in private namespaces with tmpfs state. It installs no
+default service, does not admit dir as a quota backend, creates no guest and does not use existing Docker.
+Actual btrfs/zfs limits, container/VM/one-job lifecycles, 7.3.0 and automatic installation remain unverified.
+See the [Chinese host design](../../../docs/architecture/incus-host-provisioning.md), section 7.16.
+
+## Bridge dependency and real container lifecycle (2026-09-22)
+
+The declarative host recipes explicitly include `dnsmasq-base`, so `--no-install-recommends` cannot
+omit the Incus bridge runtime dependency. The first Ubuntu 26.04 / Incus 6.0.5 run could not create
+its bridge; supplying that dependency allowed the real Provider's repeated two-lease ensure/inspect
+and the shared client's container lifecycle to pass. Preinstalled helpers are not adopted or removed.
+
+`test-env/scripts/server-incus-lifecycle-e2e.py` accepts only a disposable QEMU VM with an exact
+cloud-init identity, no Docker and initially empty Incus inventory. Real btrfs volumes, restricted
+certificates and identically named instances in two leases exercise stdin, disk exhaustion, independent
+deletion after cancellation and idempotent cleanup. The measured minimal native fixture is not a
+released Runner image or a production catalog entry. Distrobuilder, ZFS, VM-tier workloads, one-job
+execution and production ingress remain separate acceptance gates. See the
+[Chinese host design](../../../docs/architecture/incus-host-provisioning.md), section 7.18.
+
+## Native default Runner copy validation (2026-09-22)
+
+The frozen Runner executable is at `sources/forgejo-runner` relative to the recipe directory. The default
+copy generator now names that path. Actual distrobuilder 3.2 rejected the old bare name; the corrected
+squashfs contains the exact input bytes. Recipe bytes changed, so existing revisions must not be replaced.
+An actual cancelled build also refused a same-revision retry without changing its attempt record.
+
+The complete Debian/Podman bake did not finish. The small native pack control is a synthetic rootfs, not
+a released Runner image. The new baked-image gate requires real Provider import, complete lease readback,
+shared-client guest startup, one-job options and access by runner-agent to a rootless Podman API. That
+complete gate was not executed on a finished image; one-job and signed publication remain outstanding.
+See the [Chinese host design](../../../docs/architecture/incus-host-provisioning.md), section 7.19.
+
+## Runner build recovery and diagnostics (2026-09-22)
+
+Release-side diagnostics retain bounded, fixed stage labels rather than raw distrobuilder output;
+incomplete revisions remain protected against implicit rebuilding. The default Runner configures its
+resolver symlink through a guest-boot tmpfiles rule, not a build-chroot replacement, and declares the
+systemd init package explicitly. See the
+[image supply design](../../../docs/architecture/incus-image-supply.md).

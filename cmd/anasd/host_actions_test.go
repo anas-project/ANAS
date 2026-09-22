@@ -71,7 +71,7 @@ func TestHostDaemonFailedStartupAndDefaultOff(t *testing.T) {
 	if stop, err := startHostActionOwner(context.Background(), s); err == nil || stop != nil || !s.shutdown.Load() {
 		t.Fatal("failed startup published owner")
 	}
-	service, stop, err := configureHostActions(context.Background(), consoleconfig.Config{}, nil, nil, nil, nil)
+	service, stop, err := configureHostActions(context.Background(), consoleconfig.Config{}, nil, nil, nil, nil, nil)
 	if service != nil || err != nil || stop == nil || stop() != nil {
 		t.Fatal("default configuration touched host resources", err)
 	}

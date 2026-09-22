@@ -2,6 +2,28 @@
 
 Status: lab artifact generator; full Incus host acceptance is incomplete and no production ingress integration.
 
+A separate `test-env/scripts/test-incus-daemon-native.sh` entry point checks an isolated daemon's storage
+API and Provider rejection behavior, not this packet prototype. On an explicitly authorized Linux host,
+run it through sudo with five absolute paths: a **new, nonexistent report directory, extracted dependency
+root, host test binary, Provider binary and test2json**. Copy its sibling `incus-provider-native.py` too and
+precompile programs for the target architecture. It downloads/installs no packages and adopts no system
+socket. State and keys disappear with the private tmpfs/namespaces; private reports remain. This is neither
+a production installer nor quota-pool/guest acceptance. See the
+[storage validation record](../../../dev-docs/reviews/2026-09-21-incus-daemon-storage-validation.md).
+
+## Precompiled kernel gate
+
+`test-env/scripts/test-incus-ingress-native.sh /absolute/precompiled.test [/absolute/test2json]`
+requires eight native cases in an authorized Linux lab; any skipped or missing case fails the gate.
+The optional second executable can come from the build host, so the target does not need Go installed.
+Without it, the script uses `go tool test2json`. Network changes remain inside newly isolated test namespaces.
+Prepare the dedicated environment, pinned binaries and nft/ip/conntrack dependencies, and compare host state
+before and after execution. Do not operate business Docker/Incus daemons.
+
+The designated Ubuntu host passed the repaired gate and shuffled repetitions on 2026-09-21, including
+ambiguous-protocol negative controls and kernel interface-index evidence. This is not complete production
+publication acceptance. See the [review](../../../dev-docs/reviews/2026-09-21-incus-native-readback-fixes.md).
+
 Run `go run ./cmd/incus-network-prototype --input test-env/fixtures/incus-network-prototype/observation.json --out /tmp/anas-incus-http-lab` with a new output directory. This writes `firewall.nft`, existing `ANAS_TRAEFIK_ROUTE__*` fields in `traefik.env`, and typed route/revocation/conntrack arguments in `operations.json`. It executes no host commands. The fixture is synthetic and must never be treated as a live allocation.
 
 Use only a disposable Linux Docker/Incus host. Record daemon/kernel/Docker/nft versions, the exact image fingerprint, architecture, tier and code revision. Save existing firewall and route state, and ensure the two `anas_incus_lab*` tables do not already exist. Prepare a running guest with HTTP on its NIC and reserve its address for the entire permit lifetime. Capture project ownership, instance UUID/state, NIC/MAC/allocation, Docker bridge and Traefik host veth from trusted host tools. Check all subnet conflicts, including LAN and VPN. The generator checks consistency of observations, not their authenticity.

@@ -350,6 +350,12 @@ type pruneWorkspaceLock struct {
 }
 
 func openPruneWorkspaceLock(ctx context.Context, path string) (*pruneWorkspaceLock, error) {
+	return openExistingObservationLock(ctx, path, false)
+}
+
+// Both callers use already-created trusted locks. Observer configuration uses
+// the existing host lock exclusively, never a separate coordination inode.
+func openExistingObservationLock(ctx context.Context, path string, exclusive bool) (*pruneWorkspaceLock, error) {
 	if ctx == nil || trustedAncestors(path) != nil {
 		return nil, ErrBlocked
 	}
@@ -357,7 +363,7 @@ func openPruneWorkspaceLock(ctx context.Context, path string) (*pruneWorkspaceLo
 	if err != nil || !rootOwnedPrivateFile(info, 0600) {
 		return nil, ErrBlocked
 	}
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, ErrBlocked
 	}
@@ -367,7 +373,11 @@ func openPruneWorkspaceLock(ctx context.Context, path string) (*pruneWorkspaceLo
 			_ = file.Close()
 			return nil, err
 		}
-		err = syscall.Flock(int(file.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+		mode := syscall.LOCK_SH
+		if exclusive {
+			mode = syscall.LOCK_EX
+		}
+		err = syscall.Flock(int(file.Fd()), mode|syscall.LOCK_NB)
 		if err == nil {
 			if lock.check() != nil {
 				_ = lock.close()

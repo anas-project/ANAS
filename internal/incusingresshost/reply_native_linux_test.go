@@ -29,20 +29,8 @@ func isolatedReplyTestNamespace(t *testing.T) (*os.File, uint64) {
 	}
 	ready := make(chan result, 1)
 	go func() {
-		runtime.LockOSThread()
-		if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
-			runtime.UnlockOSThread()
-			ready <- result{err: err}
-			return
-		}
-		file, err := openKernelNetworkNamespace("thread-self")
-		if err != nil {
-			ready <- result{err: err}
-			return
-		}
-		cookie, err := networkNamespaceCookie()
+		file, cookie, err := captureIsolatedTestNamespace()
 		ready <- result{file: file, cookie: cookie, err: err}
-		// Exit locked: this isolated thread must not enter the Go thread pool.
 	}()
 	r := <-ready
 	if r.file != nil {
@@ -55,6 +43,61 @@ func isolatedReplyTestNamespace(t *testing.T) (*os.File, uint64) {
 		t.Skip("requires an isolated Linux namespace; native gate forbids skip")
 	}
 	return r.file, r.cookie
+}
+
+// Restore before reporting the fixture ready. Exiting a locked goroutine is
+// insufficient when it used the process leader: /proc/PID/ns/net can retain
+// that leader's changed namespace while other runtime threads remain outside.
+// On an unverified restore this goroutine stays locked and the test fails.
+func captureIsolatedTestNamespace() (file *os.File, cookie uint64, result error) {
+	runtime.LockOSThread()
+	mayUnlock := true
+	defer func() {
+		if result != nil && file != nil {
+			result = errors.Join(result, file.Close())
+			file = nil
+		}
+		if mayUnlock {
+			runtime.UnlockOSThread()
+		}
+	}()
+	original, err := openKernelNetworkNamespace("thread-self")
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { result = errors.Join(result, original.Close()) }()
+	before, err := original.Stat()
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
+		return nil, 0, err
+	}
+	mayUnlock = false
+	defer func() {
+		if err := unix.Setns(int(original.Fd()), unix.CLONE_NEWNET); err != nil {
+			result = errors.Join(result, fmt.Errorf("restore test creator namespace: %w", err))
+			return
+		}
+		current, err := openKernelNetworkNamespace("thread-self")
+		if err != nil {
+			result = errors.Join(result, err)
+			return
+		}
+		after, statErr := current.Stat()
+		closeErr := current.Close()
+		mayUnlock = statErr == nil && os.SameFile(before, after)
+		result = errors.Join(result, statErr, closeErr)
+		if !mayUnlock {
+			result = errors.Join(result, errors.New("test creator namespace restore was not verified"))
+		}
+	}()
+	file, err = openKernelNetworkNamespace("thread-self")
+	if err != nil {
+		return nil, 0, err
+	}
+	cookie, err = networkNamespaceCookie()
+	return file, cookie, err
 }
 
 func replyTestBinary(t *testing.T, path string) string {
@@ -204,11 +247,13 @@ func TestNativeReplyOriginRejectsSpoofAndDeviceReuse(t *testing.T) {
 		}
 		spec := b.replyOriginSpecAtIndex(target, uint32(physical))
 		inventory := func() (nftInventory, error) {
-			body, err := b.runner.output(ctx, nft, []string{"-j", "-a", "-n", "list", "table", "bridge", b.config.OriginTable})
-			if err != nil {
-				return nftInventory{}, err
-			}
-			table, err := parseNFTTable(body)
+			table, err := readNFTTableWithKernelIndices(ctx, b.config.OriginTable, func() (nftTable, error) {
+				body, err := b.runner.output(ctx, nft, []string{"-j", "-a", "-y", "-T", "list", "table", "bridge", b.config.OriginTable})
+				if err != nil {
+					return nftTable{}, err
+				}
+				return parseNFTTable(body)
+			})
 			if err != nil {
 				return nftInventory{}, err
 			}
@@ -218,6 +263,15 @@ func TestNativeReplyOriginRejectsSpoofAndDeviceReuse(t *testing.T) {
 			inv := nftInventory{Sets: table.Sets}
 			for _, r := range table.Rules {
 				if r.Chain == replyChain {
+					if !r.matches(spec) {
+						t.Logf("isolated reply rule: %s; expected: %s", r.Expr, spec.expressions())
+						text, textErr := b.runner.output(ctx, nft, []string{"-a", "-n", "list", "chain", "bridge", b.config.OriginTable, replyChain})
+						t.Logf("isolated numeric reply chain: %s (error %v)", text, textErr)
+						text, textErr = b.runner.output(ctx, nft, []string{"-a", "-nnn", "list", "chain", "bridge", b.config.OriginTable, replyChain})
+						t.Logf("isolated triple numeric reply chain: %s (error %v)", text, textErr)
+						text, textErr = b.runner.output(ctx, nft, []string{"-a", "-n", "--debug=netlink", "list", "chain", "bridge", b.config.OriginTable, replyChain})
+						t.Logf("isolated netlink reply chain: %s (error %v)", text, textErr)
+					}
 					inv.Rules = append(inv.Rules, r)
 				}
 			}
@@ -235,6 +289,31 @@ func TestNativeReplyOriginRejectsSpoofAndDeviceReuse(t *testing.T) {
 			return b.applyNFTScript(ctx, script)
 		}
 		if err := apply(false); err != nil {
+			return err
+		}
+		// A successful JSON read cannot be combined with raw rule evidence
+		// from an earlier generation. Change only this disposable table after
+		// reading JSON and require the joint observation to fail closed.
+		changedDuringRead := false
+		_, changedErr := readNFTTableWithKernelIndices(ctx, b.config.OriginTable, func() (nftTable, error) {
+			body, err := b.runner.output(ctx, nft, []string{"-j", "-a", "-y", "-T", "list", "table", "bridge", b.config.OriginTable})
+			if err != nil {
+				return nftTable{}, err
+			}
+			snapshot, err := parseNFTTable(body)
+			if err != nil {
+				return nftTable{}, err
+			}
+			if err := b.applyNFTScript(ctx, "add chain bridge "+b.config.OriginTable+" generation_probe\n"); err != nil {
+				return nftTable{}, err
+			}
+			changedDuringRead = true
+			return snapshot, nil
+		})
+		if !changedDuringRead || !errors.Is(changedErr, errNFTIndexEvidence) {
+			return fmt.Errorf("changed kernel ruleset generation did not invalidate joint evidence")
+		}
+		if err := b.applyNFTScript(ctx, "delete chain bridge "+b.config.OriginTable+" generation_probe\n"); err != nil {
 			return err
 		}
 		if err := probe("approved", good, target.NICMAC, target.GuestPort, true); err != nil {

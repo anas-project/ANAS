@@ -1,6 +1,65 @@
 # Forgejo 技术实现
 
+## OCI create/exec 的 cgroup 一致性
+
+`anas-podman.service` 与 socket 属于 engine 的 systemd **用户管理器**，只为该账号离线
+启用 socket；不再把“system service 配上相同 UID”当作同一个 cgroup 授权范围。Podman
+使用 `--cgroup-manager=systemd`，OCI create、exec 与作业限额均由同一用户管理器维护。
+固定 `user@1002.service` drop-in 在系统管理器侧建立 PrivateTmp/ProtectSystem=strict，
+只开放 engine home、共享 socket 父目录及 engine 私有 runtime 写入，然后由用户单元继承。
+`Delegate=true`、CPU/内存/PID 限制、no-new-privileges、非特权身份及 socket 0660 均保留。
+不会为全部用户启用引擎，也不会给 agent 开放 engine 私有 bus 或 runtime。
+
+`.config`、其 systemd/user 子目录及 sockets.target.wants 全部显式归 engine:actions-engine、
+模式 0700。只对最深层运行 install -d 会留下 root 所有的中间目录，阻断引擎首次配置写入；
+已经运行过的旧 guest 可能掩盖这个问题，因此不可变镜像还要求冷启动的目录所有权检查。
+
+被保留的 `lab-r9` cgroupfs 候选证明了 create/exec 可以成功而实际限额未落地：inspect
+声称 128 MiB/32 PID，实际任务仍在服务 cgroup，读回 memory.max=max。该候选被拒绝，
+不能以 Podman 配置字段或 exec 成功代替限额执行，更不能通过关闭 cgroups 换取通过。
+
+不可变镜像门禁新增 `rootless-oci-exec-limits`：以 agent 身份通过固定 socket，使用固定摘要
+OCI 输入执行 create 与 exec，并按任务 cgroup 及其可见祖先计算 cpu.max、memory.max、
+pids.max 的有效上限，同时读取 NoNewPrivs。要求 0.5 CPU、128 MiB、32 PID 与 NNP=1；
+它们低于外层配额，不能仅靠读到外层限制通过。podman info 或手工修改 guest 的诊断对照
+均不能通过此不可变镜像门禁。
+真实工作流另验证正常、显式失败、controller SIGTERM 清理及 SIGKILL 后保留 state 的恢复；
+它不代替 Forgejo 网页取消、state volume 丢失恢复、VM/ARM64 或生产发布验收。
+
+## Runner 启动权限修复（2026-09-22）
+
+真实镜像复测确认私有构建 umask 曾把 guest `/` 生成为 0700，非 root systemd 服务因此
+发生 200/CHDIR；配方显式设置 guest 根目录 0755，归档与私有用户 home 的权限不变。
+`runner-engine` 的 passwd 主组必须与 service `Group=actions-engine` 一致，否则 newuidmap
+拒绝它的进程身份。两个执行账号的 UID、私有 home 与 token 所有权保持分离。
+
+引擎 API 改由 `anas-podman.socket` 创建固定路径，权限 0660、所有者 runner-engine、组
+actions-engine；Podman 继承 systemd 的监听 FD，不再自行创建 0600 socket。tmpfiles 只创建
+固定的共享父目录 0770 与 engine 私有运行目录 0700。service 请求 cgroup 委派，不等于允许
+privileged job 或任意 volume。后续为实际 OCI 执行调整的 Provider namespace 策略见下文。
+
+这些是源码修复，候选镜像与真实 one-job 的实际通过范围见
+[本轮验证记录](../../../dev-docs/reviews/2026-09-22-incus-onejob-runtime-completion.md)。
+
 本文记录 `forgejo` 的容器适配、Hook、安全边界与验证入口。用户操作见[中文 README](../README.md)。
+
+默认 Runner 配方显式将 `/etc/forgejo-runner` 与 `/usr/local/libexec` 设置为 root:root、0755，
+它们只容纳公开配置和可执行程序。构建侧的私有 umask 不能让父目录变成 0700，从而使
+`runner-agent` 无法读取 0644 的配置文件。该设置不递归修改 home、token 或镜像归档权限；
+配方变化需要新的不可变 revision。原生镜像门禁还以实际 Runner 账号检查配置可读性，
+不能只凭 root 身份的 `--version` 或 engine API 成功放行。
+
+Rootless engine 还依赖 guest 内 UID 1002 的真实 systemd 用户会话：配方显式安装
+`dbus-user-session`，离线启用 `runner-engine` lingering，服务依赖 `user@1002.service`，
+并使用 `/run/user/1002` 的私有 runtime 与 bus。共享 API socket 仍是 actions-engine 组的
+0660 独立路径，agent 不获得 engine 的私有 runtime。实际容器启动曾因 aardvark-dns 无法
+连接 user scope bus 而失败，不能靠只读 `podman info` 排除此问题。没有为 runner-agent
+启用常驻 Runner；用户会话配置本身不改变 Incus 策略或业务宿主的 systemd 服务。
+
+容器档现由 Provider 固定允许内层 OCI namespace，客户端不覆盖或接受调用方 nesting 值。
+这与嵌套虚拟机不同，但确实扩展了 guest 可使用的内核操作范围；宿主设备/raw/privileged
+禁令仍由 project 执行。跨信任域继续使用 VM。解释及回归边界见
+[Forgejo 设计](/architecture/forgejo-module-design#_4-3-单作业执行实例)。
 
 <!-- generated:module-identity:start -->
 > 状态：当前实现；对应 `15.0.7-r1` / `anas.module/v1`.
@@ -150,8 +209,9 @@ controller 的调用集合只有三个端点，全部限定在获批 scope：`GE
 `reconcileActionsAccount` 在 Actions 关闭时直接返回，因此**关闭开关不会撤销该账号**：账号与
 Secret Store 中的有效口令都会留下，需要管理员手工处理。收敛要求见 `FORGEJO-R-070`。
 
-Compose 先运行同一 controller image 的一次性 `preflight`。Actions 开启时，它实际连接 Incus 并验证
-project、quota 与 profile；只有成功退出后 Forgejo 和长驻 controller 才能启动。Actions 关闭时
+Compose 先运行同一 controller image 的一次性 `preflight`。Actions 开启时，它通过共享客户端验证
+租约输入、固定证书连接与受限 project 的实例列表读取；完整 project、quota 与 profile 就绪检查
+属于 Provider 的 ensure/inspect，不能由这次只读连接成功推导。只有成功退出后 Forgejo 和长驻 controller 才能启动。Actions 关闭时
 preflight 不访问 Incus 并直接成功。该 service 没有独立开关或状态，不构成第二个 Runner 功能。
 
 controller 通过 provider-neutral `ComputeProvider` 和 `compute` Contract 目录表达 create/inspect/start/
@@ -175,6 +235,22 @@ guest image 资产位于 `runner-image/`：`runner-agent` 运行 Runner，`runne
 capacity=1、`privileged=false`、`valid_volumes=[]`，并设置 CPU/memory/PID/no-new-privileges。镜像不启动
 daemon Runner，也不提供 `host` label。独立 Incus 宿主、真实防火墙/egress 和两档各一遍的 one-job E2E
 仍是发布门禁。
+
+## Actions 取消、未确认创建与持久退役
+
+控制器在初始化 compute 连接前接入退出信号。创建实例之前先持久化确定的实例名、workload
+与 `create_pending`；CLI 超时或取消不能被解释为 daemon 没有副作用。暂时查不到未确认创建
+的实例时保留记录，后续观察到匹配 workload 的实例后才继续删除，不能复用同名任务绕过它。
+
+供给失败的补偿使用不继承原取消状态、最多两分钟的 context，并保留原错误身份。退役意图
+先保存再清理；周期调和先处理未完成或超时任务，再查询 Forgejo 队列，避免队列故障饿死清理。
+删除前核对持久实例身份与 workload；不匹配的实例也不能被随后孤立实例扫描绕过检查删除。
+终态保存失败时保留内存中的退役记录，其他成功保存不能悄悄遗忘它。注册已发生但首次保存
+失败时，仍按本次 registration 回执尝试补偿，不要求另一轮写盘成功后才注销。
+
+状态写入使用独有临时文件并同步文件及目录，不覆盖之前的固定 `.tmp` 文件。状态仍不保存
+token；新可选字段不构成旧二进制安全降级承诺。状态彻底丢失后的孤立 registration、真实
+daemon 取消/迟到创建及 one-job 仍需独立验收，不由本机适配器回归冒充完成。
 
 ## 安全默认与运维边界
 
@@ -212,9 +288,11 @@ HTTP/SSH clone/push、LFS、Package、备份恢复和前一 LTS patch/minor 升�
 allowlist，AI Agent 读取 JSON 镜像绑定。Agent Hook 使用与 manifest 参数一致的
 `AI_AGENT_AGENT_RUNTIMES`，Compose 向 orchestrator 映射为 `AI_AGENT_RUNTIMES`。本轮未引入新依赖。
 
-Incus 的 `image_architecture` 必须显式描述目标 daemon。受信 bundle 目录当前为空；ensure 在
-登记信任前检查租约 project 中现有镜像的 fingerprint、架构与类型，缺失直接失败，不查询 alias
-或重建。自动导入/烘焙仍待实现。快照及回滚语义见 [compute 契约](../../../contracts/compute/docs/technical.md)。
+Incus 的 `image_architecture` 必须显式描述目标 daemon。ensure 在登记信任前检查租约 project
+中镜像的 fingerprint、架构与类型；缺失时只从匹配冻结引用的本地供给导入并重新读回，没有
+相同字节则失败，不查询 alias 或在 apply 中重建。发布侧烘焙和导入已有实验候选验证，但
+正式签名发布及完整 Runner engine/one-job 仍未验收。快照及回滚语义见
+[compute 契约](../../../contracts/compute/docs/technical.md)。
 
 HTTP 网络原型 `cmd/incus-network-prototype` 只生成实验产物：指定源地址的 guest /32 路由、
 绑定 veth 的入站过滤、限时地址/端口集合，以及既有 Traefik 路由环境字段。它不安装规则，也不开启
@@ -227,3 +305,43 @@ Core 已接入独立的 32 字节 compute `LEASE_SECRET`，与客户端证书分
 resource state 只保存引用；消费者接收敏感 base64 投影，备份恢复保留同一密钥，不参与凭据轮换。
 详见 [compute 生命周期契约](../../../contracts/compute/docs/technical.md#独立租约命名密钥)。
 专属轮换命令和生产 HTTP 发布仍待实现。
+
+## 失败补偿仍计入 scope 配额（2026-09-22）
+
+controller 在同一轮调和中，根据 provisioning 后实际保留的工作记录更新 scope 名额。
+引擎准入失败、创建结果未确认或退役尚未完成，都不能仅因为调用返回错误而释放名额；
+确认补偿并移除记录后才释放。这与下一轮从持久状态重建配额的口径一致，避免每 scope
+限额为 1 时，一轮内因连续清理失败而创建两个实例。全局并发、实例所有权和重试退避不变。
+回归同时覆盖失败占位、下一轮释放及补偿成功不产生虚假占位；接口替身不等于真实 one-job 验收。
+
+## Runner API 的传输与真实兼容性门禁（2026-09-22）
+
+controller HTTP 客户端拒绝所有重定向，避免 Basic auth、注册或删除请求离开已获批 scope 的
+`actions/runners` 路径。成功的队列响应必须是一个完整、最多 4 MiB 的 JSON 可空数组；实际
+Forgejo 15.0.7 的空队列 `null` 被归一为空数组，但截断、第二个 JSON 值与超限响应不能当作
+空队列触发清理。传输与解析错误使用固定消息，保留调用方
+取消身份，但不回显 endpoint、工具响应或私密错误文本。未知 JSON 字段仍允许，以兼容 API 扩展。
+
+`test-env/scripts/server-forgejo-runner-api-e2e.py` 在指定的可销毁 QEMU VM 中，以普通用户
+启动独立、仅监听回环地址的 Forgejo 15.0.7 / SQLite。共享生产客户端实际访问 repo/org 两种
+scope 的 jobs/create/delete，脚本独立读回 registration 已清空。一次性账号密码不放入命令参数，
+测试配置为私有文件；这不是站点管理员权限收敛、生产数据库矩阵或真实 one-job 验收。
+
+## Runner token 读取前的引擎准入（2026-09-22）
+
+共享客户端的 `WaitForGuest` 仅证明 guest 入口可执行，不证明 Podman 服务已就绪。新版本
+`anas-forgejo-runner-start` 在创建 token 目录或读取 stdin 前，以 `runner-agent` 身份、清空的
+环境和固定 guest socket 调用 Podman 的只读 info。只有命令成功且明确返回 rootless=true
+才能继续；非 rootless、输出不符、超时或错误不能凭服务 active 状态代替。每次探测限制
+2 秒并给予 1 秒终止宽限，最多八次、间隔七次一秒；名义等待上限 31 秒，调度开销另计。
+失败返回固定错误和退出码 69，不消费 token，不启动 one-job，也不重启或放宽 engine。
+已有 active one-job 的重复调用沿用原行为，不读取第二份 token。
+
+测试执行原始 shell 文件，使用仅测试 PATH 命令在首次文件操作处截停；真实 coreutils timeout
+验证挂起探测不会凭提前输出的 true 获得准入。controller 回归另外证明准入失败后的实例与
+registration 补偿，以及删除失败时在队列故障之前重试持久退役。它们不是实际 Podman 或
+Forgejo 工作流测试。镜像原生门禁新增 35 秒独立就绪观察和固定枚举/数字诊断；原始 journal
+不进入报告，诊断不能把失败改成通过。
+
+该变更进入新配方后须使用新 revision 构建；已归档的 `lab-r4` 字节保持不变。本轮指定主机
+SSH 未能完成握手，尚未执行增强后的原生门禁，也没有把旧 engine 退出 125 的问题标为修复。

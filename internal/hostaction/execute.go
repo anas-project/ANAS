@@ -12,6 +12,7 @@ import (
 	"github.com/anas-project/ANAS/internal/consolejobs"
 	"github.com/anas-project/ANAS/internal/hostconfirmation"
 	"github.com/anas-project/ANAS/internal/incushost"
+	"github.com/anas-project/ANAS/internal/incusingresshost"
 	"github.com/anas-project/ANAS/internal/incusprovision"
 )
 
@@ -111,6 +112,14 @@ var newImagePruneBackend = func() imagePruneBackend {
 	return incusprovision.NewImagePruneBackend()
 }
 
+type ingressObservationBackend interface {
+	Observe(context.Context, incusingresshost.ProjectionRequest) (incusingresshost.ProjectionResponse, error)
+}
+
+var newIngressObservationBackend = func() ingressObservationBackend {
+	return incusprovision.NewIngressObservationBackend()
+}
+
 type incusBackend interface {
 	Inspect(context.Context, incusprovision.Request) (incusprovision.InspectResult, error)
 	Install(context.Context, incusprovision.Request, incusprovision.Binding) (incusprovision.ApplyResult, error)
@@ -145,7 +154,8 @@ func executeIncusProvision(ctx context.Context, call *Invocation, journal AuditJ
 	baseAudit := func(kind, outcome string) audit.Event {
 		return audit.Event{
 			Type: kind, Actor: fmt.Sprintf("uid:%d", call.peer.uid), Outcome: outcome,
-			Details: map[string]any{"action": call.request.Action, "job_id": call.request.JobID, "invocation_id": call.request.InvocationID, "peer_uid": call.peer.uid, "peer_gid": call.peer.gid, "peer_pid": call.peer.pid},
+			Details: map[string]any{"action": call.request.Action, "job_id": call.request.JobID, "invocation_id": call.request.InvocationID, "peer_uid": call.peer.uid, "peer_gid": call.peer.gid, "peer_pid": call.peer.pid,
+				"parameters_digest": consolejobs.DigestRequest(call.request.Parameters)},
 		}
 	}
 	if _, err := journal.AppendContext(ctx, baseAudit("host_action_started", "")); err != nil {
@@ -155,7 +165,21 @@ func executeIncusProvision(ctx context.Context, call *Invocation, journal AuditJ
 	var value any
 	changed := spec.Mutating
 	var runErr error
-	if spec.PlanFor != "" {
+	if call.request.Action == ActionObserveHTTP {
+		var req incusingresshost.ProjectionRequest
+		if strictDecode(call.request.Parameters, &req) != nil || req.Validate() != nil {
+			runErr = ErrRequest
+		} else {
+			var response incusingresshost.ProjectionResponse
+			response, runErr = newIngressObservationBackend().Observe(ctx, req)
+			if runErr == nil {
+				runErr = response.ValidateFor(req)
+			}
+			value, changed = response, false
+		}
+	} else if call.request.Action == ActionObserverPlan || call.request.Action == ActionObserverApply {
+		value, runErr = executeObserverConfiguration(ctx, call, journal, release)
+	} else if spec.PlanFor != "" {
 		if call.request.Action == ActionImagePrunePlan {
 			params, err := DecodeImagePrunePlanParameters(call.request.Action, call.request.Parameters)
 			if err != nil {

@@ -19,6 +19,7 @@ import (
 	"github.com/anas-project/ANAS/internal/api/httpapi"
 	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/audit"
+	"github.com/anas-project/ANAS/internal/computeingressruntime"
 	"github.com/anas-project/ANAS/internal/consoleaudit"
 	"github.com/anas-project/ANAS/internal/consoleauth"
 	"github.com/anas-project/ANAS/internal/consoleconfig"
@@ -165,8 +166,20 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		return fmt.Errorf("recover interrupted console jobs: %w", err)
 	}
 	executorWorkspaces := make([]jobexecutor.Workspace, len(config.Workspaces))
+	ingressIDs := make([]string, len(config.Workspaces))
 	for index, workspace := range config.Workspaces {
 		executorWorkspaces[index] = jobexecutor.Workspace{ID: workspace.ID, Path: workspace.Path}
+		ingressIDs[index] = workspace.ID
+	}
+	// One coordinator for deployment/maintenance jobs and host configuration.
+	// An empty owner map is not a disk/network recovery certificate; production
+	// ingress remains gated until a launcher registers verified controllers.
+	var ingressCoordinator *computeingressruntime.ControllerCoordinator
+	if len(ingressIDs) != 0 {
+		ingressCoordinator, err = computeingressruntime.NewControllerCoordinator(ingressIDs)
+		if err != nil {
+			return fmt.Errorf("configure ingress coordination: %w", err)
+		}
 	}
 	backupTargets := make([]application.BackupTarget, len(config.BackupTargets))
 	backupTargetIDs := make([]string, len(config.BackupTargets))
@@ -175,12 +188,18 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		backupTargetIDs[index] = target.ID
 	}
 	maintenanceFactory := runner.NewWorkspaceMaintenanceServiceFactory(backupTargets)
+	jobIssuer, jobGroup := "", ""
+	if config.TrustedProxy != nil {
+		jobIssuer, jobGroup = config.TrustedProxy.OIDCIssuer, config.TrustedProxy.PlatformAdminGroup
+	}
 	executor, err := jobexecutor.New(jobexecutor.Options{
 		Store: jobStore, Audit: deploymentAudit, Workspaces: executorWorkspaces,
 		DeploymentFactory:    runner.NewWorkspaceDeploymentServiceWithEvents,
 		ModuleFactory:        runner.NewWorkspaceModuleManagementService,
 		MaintenanceFactory:   maintenanceFactory,
 		ModuleCommandFactory: application.NewModuleCommandServiceFactory(),
+		IngressCoordinator:   ingressCoordinator,
+		Authorize:            workspaceJobAuthorizer(authStore, currentAuthState, jobIssuer, jobGroup),
 		OnError: func(err error) {
 			if logger != nil {
 				logger.Printf("console job executor: %v", err)
@@ -200,7 +219,7 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		}
 	}()
 
-	hostService, stopHostService, err := configureHostActions(ctx, config, jobStore, executionLease, auditWriter, authStore)
+	hostService, stopHostService, err := configureHostActions(ctx, config, jobStore, executionLease, auditWriter, authStore, ingressCoordinator)
 	if err != nil {
 		return fmt.Errorf("configure host action service: %w", err)
 	}

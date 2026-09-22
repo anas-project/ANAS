@@ -906,7 +906,9 @@ func validPersistedJobUpdate(previous, next Job) bool {
 		return false
 	}
 	if previous.Status == StatusQueued {
-		return next.Status == StatusRunning || next.Status == StatusCanceled
+		return next.Status == StatusRunning || next.Status == StatusCanceled ||
+			(next.Status == StatusFailed && next.StartedAt == nil && next.Error != nil &&
+				!next.NeedsCompensationCheck && next.Result == nil && next.Progress == previous.Progress)
 	}
 	return previous.Status == StatusRunning && next.Status.terminal()
 }

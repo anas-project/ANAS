@@ -3,20 +3,27 @@
 # Docker/Incus sockets. A fresh temporary kernel netns is required, not skipped.
 set -euo pipefail
 
-if [[ "$(uname -s)" != Linux ]] || [[ "$#" != 1 ]] || [[ ! -x "$1" ]]; then
-  printf '%s\n' 'Usage: test-incus-ingress-native.sh /absolute/precompiled.test (Linux with CAP_SYS_ADMIN required)' >&2
+if [[ "$(uname -s)" != Linux ]] || [[ "$#" -lt 1 || "$#" -gt 2 ]] || [[ ! -x "$1" ]]; then
+  printf '%s\n' 'Usage: test-incus-ingress-native.sh /absolute/precompiled.test [/absolute/test2json] (Linux with CAP_SYS_ADMIN required)' >&2
   exit 2
 fi
 case "$1" in /*) ;; *) printf '%s\n' 'The test binary path must be absolute.' >&2; exit 2 ;; esac
-command -v go >/dev/null
+converter=(go tool test2json)
+if [[ "$#" == 2 ]]; then
+  case "$2" in /*) ;; *) printf '%s\n' 'The test2json path must be absolute.' >&2; exit 2 ;; esac
+  [[ -f "$2" && -x "$2" ]] || { printf '%s\n' 'The test2json executable is unavailable.' >&2; exit 2; }
+  converter=("$2")
+else
+  command -v go >/dev/null
+fi
 command -v python3 >/dev/null
 report="$(mktemp)"
 trap 'rm -f "$report"' EXIT
 package='github.com/anas-project/ANAS/internal/incusingresshost'
 
 if ! ANAS_REQUIRE_INGRESS_NATIVE=1 "$1" -test.v=test2json -test.count=1 -test.timeout=90s \
-  -test.run='^(TestNativeNamespaceKernelIdentityAndCookie|TestNativeCommandPinsExecutableDescriptor|TestNativeNamespaceSwitchRestoresOriginal|TestNativeNFTScriptAndReadback|TestNativeAddressRoutingCannotFollowDeviceReuse|TestNativeReplyOriginRejectsSpoofAndDeviceReuse|TestNativeConntrackBidirectionalCleanup)$' \
-  | go tool test2json -t -p "$package" >"$report"; then
+  -test.run='^(TestNativeNamespaceKernelIdentityAndCookie|TestNativeNamespaceFixtureRestoresProcessAndThread|TestNativeCommandPinsExecutableDescriptor|TestNativeNamespaceSwitchRestoresOriginal|TestNativeNFTScriptAndReadback|TestNativeAddressRoutingCannotFollowDeviceReuse|TestNativeReplyOriginRejectsSpoofAndDeviceReuse|TestNativeConntrackBidirectionalCleanup)$' \
+  | "${converter[@]}" -t -p "$package" >"$report"; then
   cat "$report" >&2
   exit 1
 fi
@@ -27,6 +34,7 @@ import sys
 
 required = {
     'TestNativeNamespaceKernelIdentityAndCookie',
+    'TestNativeNamespaceFixtureRestoresProcessAndThread',
     'TestNativeCommandPinsExecutableDescriptor',
     'TestNativeNamespaceSwitchRestoresOriginal',
     'TestNativeNFTScriptAndReadback',

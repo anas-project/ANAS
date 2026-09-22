@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"syscall"
@@ -19,6 +21,16 @@ type computeImageSupplyArtifact struct {
 	Release      computeimage.ArtifactRelease
 	MetadataPath string
 	RootFSPath   string
+}
+
+type computeImageSupplyKey struct {
+	Fingerprint string
+	Target      computeimage.Target
+}
+
+type computeImageSupplyReference struct {
+	Reference computeimage.Reference
+	Target    computeimage.Target
 }
 
 type computeImageSupplyMount struct {
@@ -51,7 +63,8 @@ func computeImageSupplyJSON(snapshot *computeimage.Snapshot, artifacts []compute
 	if snapshot == nil || len(snapshot.Images) == 0 {
 		return nil, fmt.Errorf("compute image supply requires frozen images")
 	}
-	byFingerprint := map[string]computeImageSupplyArtifact{}
+	byReference := map[computeImageSupplyReference]computeImageSupplyArtifact{}
+	byFingerprint := map[computeImageSupplyKey]computeImageSupplyArtifact{}
 	for _, artifact := range artifacts {
 		if artifact.Release.Validate() != nil || artifact.Release.Artifact.Format != computeimage.ArtifactSplit {
 			return nil, fmt.Errorf("compute image supply artifact is invalid")
@@ -61,24 +74,41 @@ func computeImageSupplyJSON(snapshot *computeimage.Snapshot, artifacts []compute
 			filepath.Clean(artifact.MetadataPath) != artifact.MetadataPath || filepath.Clean(artifact.RootFSPath) != artifact.RootFSPath {
 			return nil, fmt.Errorf("compute image supply artifact paths must be absolute")
 		}
-		key := artifact.Release.Entry.Fingerprint + "\x00" + artifact.Release.Entry.Architecture + "\x00" + artifact.Release.Entry.Interface
-		if _, exists := byFingerprint[key]; exists {
-			return nil, fmt.Errorf("compute image supply artifact duplicates a frozen target")
+		entry := artifact.Release.Entry
+		ref := computeImageSupplyReference{Reference: computeimage.Reference{Catalog: entry.Catalog, Name: entry.Name, Revision: entry.Revision}, Target: entry.Target}
+		if _, exists := byReference[ref]; exists {
+			return nil, fmt.Errorf("compute image supply artifact duplicates a catalog reference")
 		}
-		byFingerprint[key] = artifact
+		byReference[ref] = artifact
+		key := computeImageSupplyKey{Fingerprint: entry.Fingerprint, Target: entry.Target}
+		if previous, exists := byFingerprint[key]; exists {
+			if !reflect.DeepEqual(previous.Release.Artifact, artifact.Release.Artifact) {
+				return nil, fmt.Errorf("compute image supply artifacts disagree about identical image bytes")
+			}
+		} else {
+			byFingerprint[key] = artifact
+		}
 	}
 	doc := computeImageSupplyFile{Version: computeimage.ImageSupplyVersion}
+	seen := map[computeImageSupplyKey]bool{}
 	for _, image := range snapshot.Images {
-		key := image.Fingerprint + "\x00" + image.Target.Architecture + "\x00" + image.Target.Interface
+		key := computeImageSupplyKey{Fingerprint: image.Fingerprint, Target: image.Target}
 		artifact, ok := byFingerprint[key]
+		if image.Reference.Fingerprint == "" {
+			artifact, ok = byReference[computeImageSupplyReference{Reference: image.Reference, Target: image.Target}]
+		}
 		if !ok {
 			continue
 		}
-		if image.Reference.Fingerprint == "" &&
-			(image.Reference.Catalog != artifact.Release.Entry.Catalog || image.Reference.Name != artifact.Release.Entry.Name ||
-				image.Reference.Revision != artifact.Release.Entry.Revision || image.RecipeDigest != artifact.Release.Entry.RecipeDigest) {
+		if computeimage.ValidateArtifactResolution(artifact.Release, image) != nil {
 			return nil, fmt.Errorf("compute image supply artifact does not match the frozen catalog reference")
 		}
+		// Validate every reference before deduplicating physical bytes. Multiple
+		// runtimes or named revisions may legitimately resolve to one image.
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		doc.Images = append(doc.Images, computeImageSupplyEntry{
 			SuppliedImage: computeimage.SuppliedImage{Resolution: image, Release: artifact.Release},
 			MetadataPath:  artifact.MetadataPath, RootFSPath: artifact.RootFSPath,
@@ -87,18 +117,29 @@ func computeImageSupplyJSON(snapshot *computeimage.Snapshot, artifacts []compute
 	if len(doc.Images) == 0 {
 		return nil, nil
 	}
+	shared := computeimage.ImageSupplyDocument{Version: doc.Version}
+	for _, image := range doc.Images {
+		shared.Images = append(shared.Images, image.SuppliedImage)
+	}
+	if shared.Validate() != nil {
+		return nil, fmt.Errorf("compute image supply metadata is invalid")
+	}
 	body, err := json.Marshal(doc)
-	if err != nil {
-		return nil, err
+	if err != nil || len(body)+1 > computeimage.MaxImageSupplyBytes {
+		return nil, fmt.Errorf("compute image supply metadata exceeds its bounded descriptor")
 	}
 	return append(body, '\n'), nil
 }
 
 func (a *app) prepareComputeImageSupply(providerDir string, request ResourceRequest) (*computeImageSupplyMount, func(), error) {
+	ctx := a.subprocessContext()
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	if request.Contract != "compute" || request.ComputeImages == nil || len(request.ComputeImages.Images) == 0 {
 		return nil, func() {}, nil
 	}
-	artifacts, err := collectComputeImageSupplyArtifacts(providerDir, request.ComputeImages)
+	artifacts, err := collectComputeImageSupplyArtifacts(ctx, providerDir, request.ComputeImages)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -133,25 +174,36 @@ func (a *app) prepareComputeImageSupply(providerDir string, request ResourceRequ
 		return nil, nil, err
 	}
 	staged := make([]computeImageSupplyArtifact, 0, len(artifacts))
+	copied := map[string]computeimage.Artifact{}
 	for _, artifact := range artifacts {
-		dir := filepath.Join(hostRoot, artifact.Release.Entry.Fingerprint)
-		if err := os.Mkdir(dir, 0700); err != nil {
+		if err := ctx.Err(); err != nil {
 			return nil, nil, err
 		}
+		dir := filepath.Join(hostRoot, artifact.Release.Entry.Fingerprint)
 		metadata := filepath.Join(dir, "incus.tar.xz")
 		rootfsName := "rootfs.squashfs"
 		if artifact.Release.Entry.Interface == "incus_vm" {
 			rootfsName = "disk.qcow2"
 		}
 		rootfs := filepath.Join(dir, rootfsName)
-		if err := copySupplyFileVerified(artifact.MetadataPath, metadata, artifact.Release.Artifact.Parts[0]); err != nil {
-			return nil, nil, err
-		}
-		if err := copySupplyFileVerified(artifact.RootFSPath, rootfs, artifact.Release.Artifact.Parts[1]); err != nil {
-			return nil, nil, err
-		}
-		if err := os.Chmod(dir, 0500); err != nil {
-			return nil, nil, err
+		if previous, exists := copied[artifact.Release.Entry.Fingerprint]; exists {
+			if !reflect.DeepEqual(previous, artifact.Release.Artifact) {
+				return nil, nil, fmt.Errorf("compute image supply artifacts disagree about identical image bytes")
+			}
+		} else {
+			if err := os.Mkdir(dir, 0700); err != nil {
+				return nil, nil, err
+			}
+			if err := copySupplyFileVerified(ctx, artifact.MetadataPath, metadata, artifact.Release.Artifact.Parts[0]); err != nil {
+				return nil, nil, err
+			}
+			if err := copySupplyFileVerified(ctx, artifact.RootFSPath, rootfs, artifact.Release.Artifact.Parts[1]); err != nil {
+				return nil, nil, err
+			}
+			if err := os.Chmod(dir, 0500); err != nil {
+				return nil, nil, err
+			}
+			copied[artifact.Release.Entry.Fingerprint] = artifact.Release.Artifact
 		}
 		staged = append(staged, computeImageSupplyArtifact{
 			Release:      artifact.Release,
@@ -173,16 +225,37 @@ func (a *app) prepareComputeImageSupply(providerDir string, request ResourceRequ
 	if err := os.Chmod(hostRoot, 0500); err != nil {
 		return nil, nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	keep = true
 	return &computeImageSupplyMount{hostDescriptor: descriptor, hostRoot: hostRoot}, cleanup, nil
 }
 
-func collectComputeImageSupplyArtifacts(providerDir string, snapshot *computeimage.Snapshot) ([]computeImageSupplyArtifact, error) {
+func collectComputeImageSupplyArtifacts(ctx context.Context, providerDir string, snapshot *computeimage.Snapshot) ([]computeImageSupplyArtifact, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if snapshot == nil || len(snapshot.Images) == 0 {
+		return nil, fmt.Errorf("compute image supply requires frozen images")
+	}
+	refs := make([]computeimage.Reference, len(snapshot.Images))
+	for i, image := range snapshot.Images {
+		refs[i] = image.Reference
+	}
+	if err := snapshot.Validate(refs, snapshot.Images[0].Target.Interface); err != nil {
+		return nil, fmt.Errorf("compute image supply requires a valid frozen snapshot")
+	}
 	var artifacts []computeImageSupplyArtifact
+	seen := map[computeimage.Resolution]bool{}
 	for _, image := range snapshot.Images {
-		if image.Reference.Fingerprint != "" {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if image.Reference.Fingerprint != "" || seen[image] {
 			continue
 		}
+		seen[image] = true
 		dir := filepath.Join(providerDir, "images", "artifacts", image.Reference.Catalog, image.Reference.Name, image.Reference.Revision, image.Target.Architecture, image.Target.Interface)
 		info, err := os.Lstat(dir)
 		if os.IsNotExist(err) {
@@ -194,13 +267,11 @@ func collectComputeImageSupplyArtifacts(providerDir string, snapshot *computeima
 		if err := validateNoSymlinkAncestors(providerDir, dir); err != nil {
 			return nil, err
 		}
-		release, err := readSupplyRelease(filepath.Join(dir, "artifact.json"))
+		release, err := readSupplyRelease(ctx, filepath.Join(dir, "artifact.json"))
 		if err != nil {
 			return nil, err
 		}
-		if release.Entry.Catalog != image.Reference.Catalog || release.Entry.Name != image.Reference.Name ||
-			release.Entry.Revision != image.Reference.Revision || release.Entry.Target != image.Target ||
-			release.Entry.Fingerprint != image.Fingerprint || release.Entry.RecipeDigest != image.RecipeDigest {
+		if release.Artifact.Format != computeimage.ArtifactSplit || computeimage.ValidateArtifactResolution(release, image) != nil {
 			return nil, fmt.Errorf("compute image artifact does not match frozen resolution")
 		}
 		metadata := filepath.Join(dir, "incus.tar.xz")
@@ -209,10 +280,10 @@ func collectComputeImageSupplyArtifacts(providerDir string, snapshot *computeima
 			rootfsName = "disk.qcow2"
 		}
 		rootfs := filepath.Join(dir, rootfsName)
-		if err := validateSupplySource(metadata, release.Artifact.Parts[0]); err != nil {
+		if err := validateSupplySource(ctx, metadata, release.Artifact.Parts[0]); err != nil {
 			return nil, err
 		}
-		if err := validateSupplySource(rootfs, release.Artifact.Parts[1]); err != nil {
+		if err := validateSupplySource(ctx, rootfs, release.Artifact.Parts[1]); err != nil {
 			return nil, err
 		}
 		artifacts = append(artifacts, computeImageSupplyArtifact{Release: release, MetadataPath: metadata, RootFSPath: rootfs})
@@ -220,12 +291,15 @@ func collectComputeImageSupplyArtifacts(providerDir string, snapshot *computeima
 	return artifacts, nil
 }
 
-func readSupplyRelease(path string) (computeimage.ArtifactRelease, error) {
+func readSupplyRelease(ctx context.Context, path string) (computeimage.ArtifactRelease, error) {
+	if err := ctx.Err(); err != nil {
+		return computeimage.ArtifactRelease{}, err
+	}
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > computeimage.MaxArtifactRecordBytes {
 		return computeimage.ArtifactRelease{}, fmt.Errorf("compute image artifact descriptor is invalid")
 	}
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return computeimage.ArtifactRelease{}, fmt.Errorf("compute image artifact descriptor is unavailable")
 	}
@@ -234,7 +308,10 @@ func readSupplyRelease(path string) (computeimage.ArtifactRelease, error) {
 	if err != nil || !sameLocalFile(info, opened) {
 		return computeimage.ArtifactRelease{}, fmt.Errorf("compute image artifact descriptor is unavailable")
 	}
-	body, err := io.ReadAll(io.LimitReader(file, computeimage.MaxArtifactRecordBytes+1))
+	body, err := io.ReadAll(io.LimitReader(computeSupplyReader{ctx: ctx, reader: file}, computeimage.MaxArtifactRecordBytes+1))
+	if ctx.Err() != nil {
+		return computeimage.ArtifactRelease{}, ctx.Err()
+	}
 	current, pathErr := os.Lstat(path)
 	if err != nil || pathErr != nil || len(body) > computeimage.MaxArtifactRecordBytes || int64(len(body)) != info.Size() || !sameLocalFile(info, current) {
 		return computeimage.ArtifactRelease{}, fmt.Errorf("compute image artifact descriptor is unavailable")
@@ -242,12 +319,15 @@ func readSupplyRelease(path string) (computeimage.ArtifactRelease, error) {
 	return computeimage.DecodeArtifactRelease(body)
 }
 
-func validateSupplySource(path string, part computeimage.ArtifactPart) error {
+func validateSupplySource(ctx context.Context, path string, part computeimage.ArtifactPart) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() != part.Size || info.Mode().Perm()&0222 != 0 {
 		return fmt.Errorf("compute image artifact bytes are invalid")
 	}
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return fmt.Errorf("compute image artifact bytes are unavailable")
 	}
@@ -256,7 +336,10 @@ func validateSupplySource(path string, part computeimage.ArtifactPart) error {
 	if err != nil || !sameLocalFile(info, opened) {
 		return fmt.Errorf("compute image artifact bytes are invalid")
 	}
-	digest, err := digestBoundedFile(file, part.Size)
+	digest, err := digestBoundedFile(ctx, file, part.Size)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	current, pathErr := os.Lstat(path)
 	if err != nil || pathErr != nil || digest != part.SHA256 || !sameLocalFile(info, current) {
 		return fmt.Errorf("compute image artifact bytes are invalid")
@@ -264,8 +347,11 @@ func validateSupplySource(path string, part computeimage.ArtifactPart) error {
 	return nil
 }
 
-func copySupplyFile(source, destination string, size int64) error {
-	in, err := os.OpenFile(source, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+func copySupplyFile(ctx context.Context, source, destination string, size int64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	in, err := os.OpenFile(source, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return fmt.Errorf("compute image artifact bytes are unavailable")
 	}
@@ -285,43 +371,78 @@ func copySupplyFile(source, destination string, size int64) error {
 			_ = os.Remove(destination)
 		}
 	}()
-	n, err := io.CopyBuffer(out, io.LimitReader(in, size+1), make([]byte, 128<<10))
+	n, err := io.CopyBuffer(out, io.LimitReader(computeSupplyReader{ctx: ctx, reader: in}, size+1), make([]byte, 128<<10))
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	after, statErr := in.Stat()
 	current, pathErr := os.Lstat(source)
 	if err != nil || statErr != nil || pathErr != nil || n != size || !sameLocalFile(before, after) || !sameLocalFile(before, current) || out.Sync() != nil {
+		return fmt.Errorf("compute image artifact staging failed")
+	}
+	if err := out.Close(); err != nil {
 		return fmt.Errorf("compute image artifact staging failed")
 	}
 	keep = true
 	return nil
 }
 
-func copySupplyFileVerified(source, destination string, part computeimage.ArtifactPart) error {
-	if err := copySupplyFile(source, destination, part.Size); err != nil {
+func copySupplyFileVerified(ctx context.Context, source, destination string, part computeimage.ArtifactPart) error {
+	if err := copySupplyFile(ctx, source, destination, part.Size); err != nil {
 		return err
 	}
-	file, err := os.OpenFile(destination, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	keep := false
+	defer func() {
+		if !keep {
+			_ = os.Remove(destination)
+		}
+	}()
+	file, err := os.OpenFile(destination, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return fmt.Errorf("compute image artifact staging failed")
 	}
 	defer file.Close()
-	digest, err := digestBoundedFile(file, part.Size)
+	digest, err := digestBoundedFile(ctx, file, part.Size)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if err != nil || digest != part.SHA256 {
-		_ = os.Remove(destination)
 		return fmt.Errorf("compute image artifact staging failed")
 	}
+	keep = true
 	return nil
 }
 
-func digestBoundedFile(file *os.File, size int64) (string, error) {
+func digestBoundedFile(ctx context.Context, file *os.File, size int64) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return "", err
 	}
 	hash := sha256.New()
-	n, err := io.CopyBuffer(hash, io.LimitReader(file, size+1), make([]byte, 128<<10))
+	n, err := io.CopyBuffer(hash, io.LimitReader(computeSupplyReader{ctx: ctx, reader: file}, size+1), make([]byte, 128<<10))
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 	if err != nil || n != size {
 		return "", fmt.Errorf("compute image artifact bytes are invalid")
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// All sources are nonblocking-opened regular local files. The wrapper also
+// prevents io.Copy from bypassing cancellation through an os.File fast path.
+type computeSupplyReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r computeSupplyReader) Read(body []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(body)
 }
 
 func sameLocalFile(a, b os.FileInfo) bool {

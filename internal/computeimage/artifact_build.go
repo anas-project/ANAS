@@ -147,11 +147,12 @@ func (archive *ArtifactArchive) BuildOnce(ctx context.Context, reference Referen
 		SourcesDirectory: filepath.Join(base, "sources"),
 	}
 	if err := build(ctx, request); err != nil {
+		failure := sanitizeBuildFailure(err)
 		if ctx.Err() != nil {
-			return ArtifactRelease{}, false, errors.Join(ErrArtifactBuildIncomplete, ctx.Err())
+			return ArtifactRelease{}, false, errors.Join(failure, ctx.Err())
 		}
 		// Builder errors can include recipe content, commands and credentials.
-		return ArtifactRelease{}, false, ErrArtifactBuildIncomplete
+		return ArtifactRelease{}, false, failure
 	}
 	if ctx.Err() != nil {
 		return ArtifactRelease{}, false, errors.Join(ErrArtifactBuildIncomplete, ctx.Err())

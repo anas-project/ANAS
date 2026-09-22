@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -47,9 +48,10 @@ func NetworkName(sandbox string) string {
 }
 
 var (
-	sandboxPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
-	prefixPattern      = regexp.MustCompile(`^anas-[a-z0-9-]{1,50}$`)
-	fingerprintPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	sandboxPattern        = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+	prefixPattern         = regexp.MustCompile(`^anas-[a-z0-9-]{1,50}$`)
+	fingerprintPattern    = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	instanceSuffixPattern = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
 )
 
 // Lease is the fence a consumer received from the compute contract. Its fields
@@ -103,49 +105,12 @@ func leaseFrom(lookup func(string) string, module, resourceID string) (Lease, er
 		ClientKeyB64:          get("CLIENT_KEY"),
 		ServerCertB64:         get("SERVER_CERT"),
 	}
-	if l.Interface != InterfaceVM && l.Interface != InterfaceContainer {
-		return Lease{}, fmt.Errorf("compute lease interface %q is not a supported isolation tier", l.Interface)
-	}
-	if !strings.HasPrefix(l.Endpoint, "https://") {
-		return Lease{}, fmt.Errorf("compute lease endpoint must be an HTTPS URL")
-	}
-	if !sandboxPattern.MatchString(l.Sandbox) {
-		return Lease{}, fmt.Errorf("compute lease sandbox is invalid")
-	}
-	if !prefixPattern.MatchString(l.InstancePrefix) {
-		return Lease{}, fmt.Errorf("compute lease instance prefix is invalid")
-	}
-	if !fingerprintPattern.MatchString(l.ServerCertFingerprint) {
-		return Lease{}, fmt.Errorf("compute lease server certificate fingerprint is invalid")
-	}
-	// Refuse a lease that names some other profile: the whole point of the
-	// provider owning it is that the consumer cannot choose a different one.
-	if l.Profile != ProfileName {
-		return Lease{}, fmt.Errorf("compute lease profile must be %s", ProfileName)
-	}
-	for field, value := range map[string]string{
-		"client certificate": l.ClientCertB64,
-		"client key":         l.ClientKeyB64,
-		"server certificate": l.ServerCertB64,
-	} {
-		if value == "" {
-			return Lease{}, fmt.Errorf("compute lease %s is missing", field)
-		}
-	}
 	for _, raw := range strings.Split(get("IMAGE_ALLOWLIST"), ",") {
 		value := strings.TrimSpace(raw)
 		if value == "" {
 			continue
 		}
-		// An alias or tag is a pointer the remote may repoint tomorrow; only a
-		// content digest keeps a reviewed lease from drifting.
-		if !fingerprintPattern.MatchString(value) {
-			return Lease{}, fmt.Errorf("compute lease image allowlist must contain only image fingerprints")
-		}
 		l.ImageAllowlist = append(l.ImageAllowlist, value)
-	}
-	if len(l.ImageAllowlist) == 0 {
-		return Lease{}, fmt.Errorf("compute lease image allowlist is empty")
 	}
 	var err error
 	for _, field := range []struct {
@@ -160,6 +125,9 @@ func leaseFrom(lookup func(string) string, module, resourceID string) (Lease, er
 		if *field.target, err = strconv.Atoi(get(field.name)); err != nil || *field.target < 1 {
 			return Lease{}, fmt.Errorf("compute lease %s is not a positive integer", strings.ToLower(field.name))
 		}
+	}
+	if err := l.Validate(); err != nil {
+		return Lease{}, err
 	}
 	return l, nil
 }
@@ -181,7 +149,45 @@ func (l Lease) AllowsImage(fingerprint string) bool {
 // ANAS-managed instances from anything an operator created by hand in the same
 // project, so the janitor never reclaims something that is not its to reclaim.
 func (l Lease) OwnsInstance(id string) bool {
-	return strings.HasPrefix(id, l.InstancePrefix) && len(id) > len(l.InstancePrefix)
+	return prefixPattern.MatchString(l.InstancePrefix) && strings.HasPrefix(id, l.InstancePrefix) && instanceSuffixPattern.MatchString(strings.TrimPrefix(id, l.InstancePrefix))
+}
+
+// Validate applies the same contract limits to direct callers and environment
+// projections. Cryptographic material is verified before filesystem creation.
+func (l Lease) Validate() error {
+	if l.Interface != InterfaceVM && l.Interface != InterfaceContainer {
+		return fmt.Errorf("compute lease interface is not a supported isolation tier")
+	}
+	u, err := url.Parse(l.Endpoint)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Opaque != "" ||
+		(u.Path != "" && u.Path != "/") || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
+		strings.TrimSpace(l.Endpoint) != l.Endpoint || hasControl(l.Endpoint) {
+		return fmt.Errorf("compute lease endpoint must be a plain HTTPS origin without credentials")
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("compute lease endpoint port is invalid")
+		}
+	}
+	if !sandboxPattern.MatchString(l.Sandbox) || !prefixPattern.MatchString(l.InstancePrefix) || l.Profile != ProfileName {
+		return fmt.Errorf("compute lease project, instance prefix or managed profile is invalid")
+	}
+	if !fingerprintPattern.MatchString(l.ServerCertFingerprint) || l.ClientCertB64 == "" || l.ClientKeyB64 == "" || l.ServerCertB64 == "" {
+		return fmt.Errorf("compute lease TLS identity or server fingerprint is missing or invalid")
+	}
+	if len(l.ImageAllowlist) == 0 {
+		return fmt.Errorf("compute lease image allowlist is empty")
+	}
+	for _, image := range l.ImageAllowlist {
+		if !fingerprintPattern.MatchString(image) {
+			return fmt.Errorf("compute lease image allowlist must contain only image fingerprints")
+		}
+	}
+	if l.MaxInstances < 1 || l.MaxInstances > 256 || l.CPU < 1 || l.CPU > 64 || l.MemoryMiB < 512 || l.MemoryMiB > 262144 || l.DiskGiB < 4 || l.DiskGiB > 2048 {
+		return fmt.Errorf("compute lease quota is outside the contract limits")
+	}
+	return nil
 }
 
 func envSegment(value string) string {

@@ -1,6 +1,71 @@
 # Forgejo technical implementation
 
+## Consistent cgroup ownership for OCI create and exec
+
+`anas-podman.service` and its socket belong to the engine's systemd **user manager**; the socket is
+enabled only for that account. A system service with the same UID is not the same cgroup authority.
+Podman uses `--cgroup-manager=systemd` so create, exec and resource limits share one owning manager.
+A fixed `user@1002.service` drop-in establishes PrivateTmp/ProtectSystem=strict in the system manager,
+allowing writes only to the engine home, shared socket parent and private runtime, then passes that
+mount isolation to the user units. Delegation, CPU/memory/PID limits, no-new-privileges, separate UIDs
+and socket mode 0660 remain. Neither the engine nor its private bus is enabled for the agent.
+
+The complete `.config/systemd/user/sockets.target.wants` directory chain is explicitly engine-owned,
+group actions-engine, mode 0700. Assigning only the deepest directory can leave root-owned parents
+that prevent first-time engine configuration. A previously initialized guest can hide this defect;
+immutable admission therefore also checks private configuration ownership on cold boot.
+
+The retained cgroupfs candidate `lab-r9` demonstrated why successful exec is insufficient: inspect
+declared 128 MiB/32 PID, but actual tasks remained in the service cgroup with memory.max=max. That
+candidate is rejected. Configuration values are not enforcement evidence, and cgroups are not disabled.
+
+Immutable-image admission now requires `rootless-oci-exec-limits`: the actual agent drives create and
+exec through the fixed socket using a digest-pinned OCI input, then computes effective cpu.max,
+memory.max and pids.max across the task's visible cgroup ancestry and checks NoNewPrivs. It requires
+0.5 CPU, 128 MiB, 32 PID and NNP=1, below the outer lease so the outer limits alone cannot pass.
+A working info API or a disposable guest with a manually patched service cannot satisfy this gate.
+The separate workflow matrix covers normal and
+deliberate failure, controller SIGTERM cleanup and SIGKILL recovery with retained state, not Forgejo
+web cancellation, state-volume loss, VM/ARM64 or production release acceptance.
+
+## Runner startup permission corrections (2026-09-22)
+
+Actual image testing found that the private build umask had left guest `/` at 0700, causing non-root
+systemd services to fail at CHDIR. The recipe explicitly sets the guest root to 0755 while retaining
+private archive and user-home modes. The engine account's passwd primary group must match the
+service's actions-engine group; otherwise newuidmap rejects the process identity. The two UIDs,
+private homes and token ownership remain separate.
+
+`anas-podman.socket` creates the fixed API path with mode 0660, owned by runner-engine and the
+actions-engine group. Podman inherits the systemd listening descriptor instead of creating a 0600
+socket itself. Tmpfiles creates only the fixed shared 0770 parent and private 0700 engine runtime
+directory. The service requests cgroup delegation; this does not enable privileged jobs, arbitrary
+volumes. The later Provider namespace-policy adjustment needed for actual OCI execution is described below.
+
+These are source corrections; actual candidate-image and one-job acceptance is recorded in
+[the runtime review](../../../dev-docs/reviews/2026-09-22-incus-onejob-runtime-completion.md).
+
 This document records the `forgejo` container adapter, hook, security boundaries, and validation entry points.
+
+The default Runner recipe explicitly sets `/etc/forgejo-runner` and `/usr/local/libexec` to root:root,
+mode 0755. These directories contain only public configuration and executables. The private builder
+umask must not make their parent traversal root-only and prevent `runner-agent` from reading a 0644
+configuration file. Home, token and archive permissions are not changed recursively. Recipe changes
+require a new immutable revision. Native image admission now checks configuration readability as the
+actual Runner account; a root-owned `--version` probe or working engine API is not sufficient.
+
+The rootless engine also needs a real guest systemd user session for UID 1002. The recipe explicitly
+installs `dbus-user-session`, enables engine-only lingering offline, and makes the engine service depend
+on `user@1002.service`, using its private `/run/user/1002` runtime and bus. The shared API remains an
+independent 0660 actions-engine group socket; the agent does not gain access to the private runtime.
+An actual container start failed when aardvark-dns could not reach the user scope bus, which `podman
+info` alone did not detect. No persistent Runner is enabled; user-session setup itself does not change
+Incus policy or business-host systemd settings.
+
+The Provider now fixes inner OCI namespace permission for the container tier; the client neither overrides
+it nor accepts a caller nesting option. This is not nested virtualization, but it does expand the permitted
+guest kernel-operation set. Project-level host-device/raw/privileged restrictions remain. Cross-trust
+workloads still use VMs. See the [Chinese design](/architecture/forgejo-module-design), section 4.3.
 
 <!-- generated:module-identity:start -->
 > Status: current implementation; based on `15.0.7-r1` / `anas.module/v1`.
@@ -157,8 +222,10 @@ all inside that scope's `actions/runners` subtree and none touching `/admin/` (`
 account**: it and its valid Secret Store password both remain, and an administrator must remove them by hand.
 `FORGEJO-R-070` tracks the fix.
 
-Before Forgejo starts with Actions enabled, a one-shot process using the same controller image connects to Incus and
-validates the restricted project, quotas, and profile. Forgejo and the long-running controller depend on this
+Before Forgejo starts with Actions enabled, a one-shot process using the same controller image uses the shared
+client to validate lease inputs, the pinned connection and read access to the restricted project's instance list.
+Complete project, quota and profile readiness belongs to Provider ensure/inspect and cannot be inferred from
+this read-only connection. Forgejo and the long-running controller depend on this
 preflight completing successfully. With Actions disabled the preflight performs no Incus access and exits; it has no
 separate feature state and is not a second Runner switch.
 
@@ -183,6 +250,25 @@ Unit tests cover database mapping, locale fallback, OIDC metadata, secret stabil
 ownership, local-admin bootstrap, and auth-source reconciliation. Database/architecture matrices, browser OIDC,
 HTTP/SSH Git, LFS/package, restore, and LTS upgrade/rollback E2E remain release gates.
 
+## Actions cancellation, uncertain creation and durable retirement
+
+The controller installs its shutdown signal context before initializing compute. It persists the instance
+name, workload and `create_pending` before Create; CLI timeout or cancellation does not establish absence
+of daemon side effects. Temporary absence retains the pending record until the matching late instance can
+be observed and deleted, preventing immediate reuse of the workload identity.
+
+Provisioning compensation uses an independent context capped at two minutes while preserving the original
+error identity. Retirement is persisted before cleanup; periodic reconciliation processes interrupted and
+expired work before queue requests can exhaust the budget. Instance/workload mismatches also protect that
+instance from the later orphan sweep. Failed terminal persistence restores the in-memory retirement record
+so another successful save cannot forget it. A registration receipt still permits compensation after the
+first state save fails, without requiring another successful write before deregistration.
+
+State uses unique temporary files and file/directory synchronization rather than reusing an old `.tmp`.
+Tokens remain absent from state. The optional new field does not establish safe downgrade to old binaries.
+Lost-state orphan registrations, real daemon cancellation/late creation and one-job execution still require
+separate acceptance; local adapter regressions do not establish those results.
+
 ## Frozen compute image configuration
 
 Image settings now use structured objects (a single object for Forgejo, a runtime-keyed map for AI Agent).
@@ -191,10 +277,12 @@ containers receive only frozen fingerprints: Forgejo reads the lease allowlist, 
 bindings. The Agent hook reads `AI_AGENT_AGENT_RUNTIMES`, matching the manifest parameter; Compose passes
 it to the orchestrator as `AI_AGENT_RUNTIMES`. No new dependency is introduced.
 
-Incus requires explicit `image_architecture` for the daemon target. Its trusted bundle catalog is currently
-empty. Ensure checks each existing image's fingerprint, architecture and type in the lease project before
-registering trust; missing images fail instead of resolving aliases or rebuilding. Import/baking remains
-pending. See the [compute contract](../../../contracts/compute/docs/technical.en.md) for snapshot and rollback semantics.
+Incus requires explicit `image_architecture` for the daemon target. Ensure checks the fingerprint,
+architecture and type in the lease project before registering trust. Missing images are imported only
+from local supply matching the frozen reference, then read back; unavailable identical bytes fail instead
+of resolving aliases or rebuilding during apply. Release-side baking and import have experimental
+candidate evidence, but signed distribution and complete Runner engine/one-job acceptance remain pending.
+See the [compute contract](../../../contracts/compute/docs/technical.en.md) for snapshot and rollback semantics.
 
 The HTTP network prototype only generates lab artifacts (`cmd/incus-network-prototype`): a guest /32 route
 with explicit source, veth-bound ingress filtering, an expiring address/port set, and existing Traefik route
@@ -209,3 +297,49 @@ certificate. Deployment/resource state store references; the consumer receives a
 and backup restores the same key. It is excluded from credential rotation. See the
 [compute lifecycle contract](../../../contracts/compute/docs/technical.en.md#independent-lease-naming-key).
 The dedicated rotation command and production HTTP publishing remain pending.
+
+## Failed compensation still consumes scope capacity (2026-09-22)
+
+Within a reconcile pass, the controller counts the actual workload record retained after provisioning,
+not just successful returns. Rejected engine admission, uncertain creation and incomplete retirement retain
+their scope slot until compensation is confirmed and the record is removed. This matches the next pass's
+state-based accounting and prevents two retained instances when the per-scope limit is one. Global limits,
+ownership checks and retry backoff are unchanged. Regressions cover retained failure, later release and
+successful compensation without a phantom slot; interface fixtures are not real one-job acceptance.
+
+## Runner API transport and native compatibility gate (2026-09-22)
+
+The controller rejects every HTTP redirect so Basic auth and registration/deletion requests cannot
+leave the approved scope's `actions/runners` call set. Successful queue reads require exactly one nullable
+JSON array within 4 MiB. Forgejo 15.0.7's actual empty-queue null is normalized to an empty array, but
+truncated, trailing and oversized responses cannot trigger empty-queue cleanup. Transport/decoding
+errors use fixed messages, preserve caller cancellation, and do
+not echo endpoints or private diagnostics. Unknown JSON fields remain allowed for API compatibility.
+
+`test-env/scripts/server-forgejo-runner-api-e2e.py` runs an independent, loopback-only Forgejo 15.0.7 /
+SQLite as an ordinary user inside an explicitly identified disposable QEMU VM. The actual production
+client exercises jobs/create/delete for repository and organization scopes, followed by independent
+registration-empty readback. Random account passwords stay out of argv and test inputs are private.
+This does not establish account-privilege convergence, the database matrix or real one-job execution.
+
+## Engine admission before Runner token input (2026-09-22)
+
+`WaitForGuest` proves only that the guest entrypoint is executable. The new starter checks the actual
+fixed guest Podman API as `runner-agent`, with a clean environment, before creating the token directory
+or reading stdin. The command must succeed and explicitly report rootless=true. A service active state,
+rootful result, malformed output, timeout or error cannot substitute for that check. Each probe has a
+two-second deadline and one-second termination grace, with at most eight probes and seven one-second
+pauses: a nominal 31-second wait, excluding scheduling overhead. Failure exits 69 with a fixed message,
+without consuming the token, starting one-job, restarting the engine or relaxing its restrictions.
+An already-active one-job retains the existing no-second-token behavior.
+
+Behavior tests execute the unchanged shell with test-only PATH commands that stop before the first file
+effect. Real coreutils timeout rejects a hung probe even after it prints true. Separate controller tests
+cover instance/registration compensation and durable retirement retry ahead of an unavailable queue.
+These are not real Podman or Forgejo workflow tests. The native image gate now allows a bounded
+35-second readiness observation and emits only enumerated/numeric service diagnostics, never raw
+journal text. Observations cannot turn a failed gate into a pass.
+
+New recipe bytes require a new revision; archived `lab-r4` is unchanged. SSH to the selected host did
+not complete its handshake in this continuation. The enhanced native gate has not run, and the original
+engine exit 125 remains unresolved rather than being declared fixed by these local tests.

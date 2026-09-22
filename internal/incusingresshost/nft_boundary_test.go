@@ -133,3 +133,28 @@ func TestNFTNumberNormalizationKeepsProtocolConstraints(t *testing.T) {
 		}
 	}
 }
+
+// nft 1.1.6 on the designated Ubuntu host emits state bits in numeric
+// listings. Only individual known ct-state values have a symbolic equivalent;
+// compound masks, decimal/exponent aliases and unknown values stay rejected.
+func TestNFTNumericStateReadbackIsExact(t *testing.T) {
+	want := rawNFTExpressions(nftStates([]string{"established", "related"}))
+	for _, rhs := range []string{`{"set":[2,4]}`, `{"set":[4,2]}`, `{"set":[2,"related"]}`} {
+		got := []json.RawMessage{json.RawMessage(`{"match":{"left":{"ct":{"key":"state"}},"op":"==","right":` + rhs + `}}`)}
+		if !sameNFTExpressions(got, want) {
+			t.Errorf("observed exact numeric states rejected: %s", rhs)
+		}
+	}
+	for _, rhs := range []string{`{"set":[2,8]}`, `{"set":[2,4,8]}`, `{"set":[2,2,4]}`, `{"set":[2,"established",4]}`, `{"set":[6]}`, `{"set":[2,4.0]}`, `{"set":[2,4e0]}`, `{"set":[2,"4"]}`, `{"set":[2,0]}`, `{"set":[2,-4]}`, `{"set":[2,128]}`} {
+		got := []json.RawMessage{json.RawMessage(`{"match":{"left":{"ct":{"key":"state"}},"op":"==","right":` + rhs + `}}`)}
+		if sameNFTExpressions(got, want) {
+			t.Errorf("changed or ambiguous numeric state accepted: %s", rhs)
+		}
+	}
+	for _, item := range []struct{ number, state string }{{"1", "invalid"}, {"2", "established"}, {"4", "related"}, {"8", "new"}, {"64", "untracked"}} {
+		got := []json.RawMessage{json.RawMessage(`{"match":{"left":{"ct":{"key":"state"}},"op":"==","right":` + item.number + `}}`)}
+		if !sameNFTExpressions(got, rawNFTExpressions(nftStates([]string{item.state}))) {
+			t.Errorf("single ct state %s rejected", item.state)
+		}
+	}
+}

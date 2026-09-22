@@ -92,6 +92,9 @@ func check(root string) error {
 				return fmt.Errorf("%s: COPY source %s missing from shared_paths", image.Module, path)
 			}
 		}
+		if err := checkSharedGoImports(root, image, copied); err != nil {
+			return err
+		}
 		composePath := filepath.Join("modules", image.Module, "docker-compose.yml")
 		body, err = os.ReadFile(filepath.Join(root, composePath))
 		if err != nil {

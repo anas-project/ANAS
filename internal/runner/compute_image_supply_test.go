@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -189,7 +190,7 @@ func TestCollectComputeSupplyUsesFrozenHistoricalResolution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	artifacts, err := collectComputeImageSupplyArtifacts(providerDir, snapshot)
+	artifacts, err := collectComputeImageSupplyArtifacts(context.Background(), providerDir, snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +215,7 @@ func TestCollectComputeSupplyRejectsChangedArtifactBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := collectComputeImageSupplyArtifacts(providerDir, snapshot); err == nil {
+	if _, err := collectComputeImageSupplyArtifacts(context.Background(), providerDir, snapshot); err == nil {
 		t.Fatal("accepted artifact bytes that no longer match the release descriptor")
 	}
 }
@@ -233,7 +234,7 @@ func TestCollectComputeSupplyRejectsSymlinkAncestor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := collectComputeImageSupplyArtifacts(linkProvider, snapshot); err == nil {
+	if _, err := collectComputeImageSupplyArtifacts(context.Background(), linkProvider, snapshot); err == nil {
 		t.Fatal("accepted artifact path through a symlinked provider directory")
 	}
 }

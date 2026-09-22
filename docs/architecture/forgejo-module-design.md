@@ -230,6 +230,18 @@ amd64/arm64 × `incus_container`/`incus_vm` 各出一份，因此所选档位、
 
 ### 4.3 单作业执行实例
 
+系统容器中的 OCI runtime 必须能建立自己的 proc/user/mount namespaces。这与前节禁止
+的嵌套虚拟机不同。Incus Provider 在 container 档固定允许该 namespace nesting，并在
+自有 profile 中设置 `security.nesting=true`、`security.privileged=false`；共享客户端不
+接受或覆盖 nesting 参数。project 继续强制 unprivileged，lowlevel、宿主 disk/PCI/字符
+设备等仍为 block，NIC 仍只允许本租约的受管网络。VM 档不随之改变。
+
+这是对先前一律 block nesting 的执行策略修正，不应被描述为安全策略完全未变：允许的
+guest 内核操作范围扩大了，但不提供宿主 root、设备或任意 raw 配置。此开关也不验证
+rootless 身份；engine 用户隔离和原生 OCI 执行须分别验收。跨信任域与不可信任务仍应
+使用显式 VM 档。旧实例中显式写入的 nesting=false 不会被自动删除、重启或升级，按既有
+一次性生命周期退役后由新客户端使用固定 profile。
+
 执行实例从第一版起就是单作业的，不交付跨作业复用的持久 Runner：
 
 1. Controller 为批准的 repo/org scope 创建 Forgejo ephemeral runner；

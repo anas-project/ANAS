@@ -130,7 +130,7 @@ func runHostIncusPlan(args []string, jsonMode bool) error {
 	registerJSONFlag(fs)
 	workspace := fs.String("w", "", "workspace id")
 	fs.StringVar(workspace, "workspace", "", "workspace id")
-	phase := fs.String("phase", "", "install|configure|enroll|uninstall")
+	phase := fs.String("phase", "", "install|configure|enroll|uninstall|observer")
 	request := fs.String("request-json", "{}", "typed Incus provisioning request JSON")
 	sessionJSON := fs.String("session-json", "", "read console session envelope from stdin with '-'")
 	idempotencyKey := fs.String("idempotency-key", "", "opaque idempotency key")
@@ -149,7 +149,11 @@ func runHostIncusPlan(args []string, jsonMode bool) error {
 	if err != nil {
 		return hostConsoleError(err, true, key)
 	}
-	return printHostJobQueued(jsonMode, "incus."+*phase+".plan", *workspace, key, location, response)
+	action := "incus." + *phase + ".plan"
+	if *phase == "observer" {
+		action = hostaction.ActionObserverPlan
+	}
+	return printHostJobQueued(jsonMode, action, *workspace, key, location, response)
 }
 
 func runHostIncusConfirm(args []string, jsonMode bool) error {
@@ -186,7 +190,7 @@ func runHostIncusApply(args []string, jsonMode bool) error {
 	registerJSONFlag(fs)
 	workspace := fs.String("w", "", "workspace id")
 	fs.StringVar(workspace, "workspace", "", "workspace id")
-	phase := fs.String("phase", "", "install|configure|enroll|uninstall")
+	phase := fs.String("phase", "", "install|configure|enroll|uninstall|observer")
 	planJob := fs.String("plan-job", "", "completed plan job id")
 	token := fs.String("confirmation-token", "", "unsupported; pass token through --request-json -")
 	parameters := fs.String("parameters-json", "", "parameters from plan result")
@@ -218,7 +222,11 @@ func runHostIncusApply(args []string, jsonMode bool) error {
 	if err != nil {
 		return hostConsoleError(err, true, key)
 	}
-	return printHostJobQueued(jsonMode, "incus."+*phase, *workspace, key, location, response)
+	action := "incus." + *phase
+	if *phase == "observer" {
+		action = hostaction.ActionObserverApply
+	}
+	return printHostJobQueued(jsonMode, action, *workspace, key, location, response)
 }
 
 type hostApplyRequestEnvelope struct {
@@ -401,11 +409,11 @@ func printHostJobQueued(jsonMode bool, action, workspace, key, location string, 
 }
 
 func validCLIIncusPhase(value string) bool {
-	return value == "install" || value == "configure" || value == "enroll" || value == "uninstall"
+	return value == "install" || value == "configure" || value == "enroll" || value == "uninstall" || value == "observer"
 }
 
 func validCLIIncusAction(value string) bool {
-	return value == "incus.install" || value == "incus.configure" || value == "incus.enroll" || value == "incus.uninstall" || value == hostaction.ActionImagePrune
+	return value == "incus.install" || value == "incus.configure" || value == "incus.enroll" || value == "incus.uninstall" || value == hostaction.ActionImagePrune || value == hostaction.ActionObserverApply
 }
 
 func responseJobID(response map[string]any) string {

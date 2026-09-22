@@ -581,6 +581,11 @@ func (b *Backend) applyEnroll(ctx context.Context, request Request, plan Plan, o
 }
 
 func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan, obs Observation, state *State) (ApplyResult, error) {
+	for _, scope := range state.ObserverScopes {
+		if validateObserverRecord(scope) != nil || scope.Status != "disabled" {
+			return ApplyResult{Disposition: "blocked", Blockers: []string{"disable_observer_scopes_before_uninstall"}}, ErrBlocked
+		}
+	}
 	if request.RemovePackages && state.Ownership.PackagesInstalledByANAS && !state.Ownership.ExternalDaemonPreserved &&
 		(plan.Preflight.Recipe == nil || !validPackageSubset(*plan.Preflight.Recipe, state.Ownership.ManagedPackages) || !packageInventoryValid(obs)) {
 		return ApplyResult{Disposition: "blocked", Blockers: []string{"package_ownership_unverified"}}, ErrBlocked

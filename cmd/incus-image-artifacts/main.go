@@ -29,6 +29,8 @@ const usage = `Usage:
   incus-image-artifacts export --archive DIR --name NAME --revision REVISION --architecture amd64|arm64 --interface incus_container|incus_vm --output-dir ABSOLUTE_NEW_DIRECTORY
   incus-image-artifacts catalog --archive DIR --previous-catalog FILE
   incus-image-artifacts catalog --archive DIR --first-release
+  incus-image-artifacts bundle --archive DIR --previous-catalog FILE --output-dir ABSOLUTE_NEW_DIRECTORY
+  incus-image-artifacts bundle --archive DIR --first-release --output-dir ABSOLUTE_NEW_DIRECTORY
 
 All operations support --timeout (default 1h, maximum 24h).
 Only JSON metadata is printed. Image bytes remain in the private local archive.
@@ -37,6 +39,8 @@ build is release preparation on an isolated native Linux builder, not an apply/h
 An existing revision is verified without rebuilding. Incomplete attempts require explicit recovery.
 recipe prints a reviewed distrobuilder YAML recipe; it does not build.
 export restores identical recorded bytes into a new private directory; it does not import.
+bundle restores all split revisions in the Provider's images/ layout, writing catalog.json last.
+bundle requires explicit history, never overwrites a destination, and does not sign or publish.
 `
 
 func main() {
@@ -72,7 +76,7 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 		return computeimage.ErrArtifactInvalid
 	}
 	command := args[0]
-	if command != "init" && command != "record" && command != "inspect" && command != "catalog" && command != "build" && command != "export" && command != "recipe" {
+	if command != "init" && command != "record" && command != "inspect" && command != "catalog" && command != "build" && command != "export" && command != "recipe" && command != "bundle" {
 		return computeimage.ErrArtifactInvalid
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -107,11 +111,11 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 		flags.StringVar(&rootfs, "rootfs", "", "split rootfs or qcow2 file")
 		flags.StringVar(&image, "image", "", "unified tarball")
 	}
-	if command == "catalog" {
+	if command == "catalog" || command == "bundle" {
 		flags.StringVar(&previousPath, "previous-catalog", "", "previous trusted catalog")
 		flags.BoolVar(&firstRelease, "first-release", false, "explicitly no prior published history")
 	}
-	if command == "export" {
+	if command == "export" || command == "bundle" {
 		flags.StringVar(&outputDir, "output-dir", "", "new private directory for restored artifact bytes")
 	}
 	if err := flags.Parse(args[1:]); err != nil {
@@ -129,7 +133,10 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 	if command == "recipe" && *archivePath != "" {
 		return computeimage.ErrArtifactInvalid
 	}
-	if command == "catalog" && ((previousPath != "") == firstRelease) {
+	if (command == "catalog" || command == "bundle") && ((previousPath != "") == firstRelease) {
+		return computeimage.ErrArtifactInvalid
+	}
+	if command == "bundle" && outputDir == "" {
 		return computeimage.ErrArtifactInvalid
 	}
 	ctx, cancel := context.WithTimeout(parent, *timeout)
@@ -238,7 +245,7 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 			return err
 		}
 		result = exported
-	case "catalog":
+	case "catalog", "bundle":
 		var previous []computeimage.Entry
 		if !firstRelease {
 			previous, err = computeimage.ReadArtifactCatalog(ctx, previousPath)
@@ -246,11 +253,23 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 				return err
 			}
 		}
-		entries, err := archive.Catalog(ctx, previous)
-		if err != nil {
-			return err
+		if command == "bundle" {
+			destination, err := filepath.Abs(outputDir)
+			if err != nil {
+				return computeimage.ErrArtifactInvalid
+			}
+			bundle, err := archive.ExportBundle(ctx, previous, destination)
+			if err != nil {
+				return err
+			}
+			result = bundle
+		} else {
+			entries, err := archive.Catalog(ctx, previous)
+			if err != nil {
+				return err
+			}
+			result = entries
 		}
-		result = entries
 	}
 	if err := archive.Close(); err != nil {
 		return err

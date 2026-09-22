@@ -4,6 +4,15 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [系统容器 Runner cgroup 与作业闭环](2026-09-22-incus-onejob-closeout.md) | 2026-09-22，`3f5242e` 加累积工作树 | 不可变镜像 OCI exec/资源限制、真实作业中断矩阵与物理 Docker 后置基线；终态见正文 |
+| [lab-r6 镜像准入与真实工作流接续](2026-09-22-incus-onejob-acceptance.md) | 2026-09-22，`3f5242e` 加累积工作树 | 不可变新镜像 rootless API 已通过；真实工作流、夹具修复及本轮收尾以正文实际终态为准 |
+| [Runner 根目录、主组与真实 one-job 接续](2026-09-22-incus-onejob-runtime-completion.md) | 2026-09-22，`3f5242e` 加累积工作树 | 原样候选双平台复测、rootfs 0700 与 newuidmap 主组不一致的实证修复；实际终态见正文 |
+| [原样 Runner 引擎复测与失败补偿配额](2026-09-22-incus-engine-recheck-scope-capacity.md) | 2026-09-22，`3f5242e` 加累积工作树 | 原样 lab-r4 实机复测仍失败、空间预检与 boot 诊断；修复失败补偿遗漏 scope 占位，非 one-job 验收 |
+| [Runner 引擎准入与 token 输入顺序](2026-09-22-incus-runner-engine-admission.md) | 2026-09-22，`3f5242e` 加累积工作树 | token 前有界 rootless 检查、controller 补偿与原生诊断；本轮 SSH 握手失败，非原 engine 故障已修复或 one-job 验收 |
+| [Runner 构建恢复、resolver 与真实 Forgejo API](2026-09-22-incus-runner-build-recovery.md) | 2026-09-22，`3f5242e` 加累积工作树 | 中断构建取证、封闭阶段诊断、原生 resolver 正反控制及实际 scope API；各项终态见正文 |
+| [Runner 真实构建尝试与 copy 路径修复](2026-09-22-incus-runner-bake-validation.md) | 2026-09-22，`3f5242e` 加累积工作树 | distrobuilder 原生 copy 反例/正例、真实取消后 revision 保护；完整镜像与 one-job 尚未验收 |
+| [真实 btrfs 容器生命周期与取消回收](2026-09-22-incus-container-lifecycle.md) | 2026-09-22，`3f5242e` 加累积工作树 | 独立 QEMU 中真实 Provider/双租约/btrfs 写满/越权拒绝/取消回收；最小安装缺 dnsmasq 修复，非正式镜像与生产 ingress 验收 |
+| [ln 主机隔离 Linux、KVM 与真实 Incus 客户端验证](2026-09-22-incus-ln-linux-validation.md) | 2026-09-22，`3f5242e` 加累积工作树 | 既有 Docker 只读基线；物理 namespace 原生测试、独立 KVM 实验机、真实 CLI 协议修复与取消回归；非完整产品 guest 验收 |
 | [Incus 回复来源与双向连接清理接续核对](2026-09-20-incus-reply-origin.md) | 2026-09-20，`49bbf45` 加累积工作树 | 原始设备入口、双族原子许可、双向 conntrack 精确清理与原生测试源；生产与 native 验收未完成 |
 | [Incus 设备绑定地址路由接续核对](2026-09-20-incus-address-routing.md) | 2026-09-20，`49bbf45` 加累积工作树 | 宿主独立路由表、永久邻居、分配回执、正常与失败撤销；前向候选，未运行原生或生产验收 |
 | [Incus 入站实现恢复与继续核对](2026-09-20-incus-ingress-recovery.md) | 2026-09-20，`49bbf45` 加累积工作树 | 恢复未落盘文档、入站持久化与内核身份、后续实现和实际验证边界 |

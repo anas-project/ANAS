@@ -7,6 +7,7 @@ import (
 
 	"github.com/anas-project/ANAS/internal/actionabi"
 	"github.com/anas-project/ANAS/internal/consolejobs"
+	"github.com/anas-project/ANAS/internal/incusingresshost"
 	"github.com/anas-project/ANAS/internal/incusprovision"
 )
 
@@ -59,6 +60,16 @@ func CanonicalParameters(action string, body []byte) (json.RawMessage, error) {
 			return nil, ErrRequest
 		}
 		return json.RawMessage(`{}`), nil
+	}
+	if action == ActionObserverPlan || action == ActionObserverApply {
+		return canonicalObserverParameters(action, body)
+	}
+	if action == ActionObserveHTTP {
+		var p incusingresshost.ProjectionRequest
+		if strictDecode(body, &p) != nil || p.Validate() != nil {
+			return nil, ErrRequest
+		}
+		return marshalCanonical(p)
 	}
 	if spec.PlanFor != "" {
 		if action == ActionImagePrunePlan {
@@ -290,6 +301,13 @@ func encodePublicParameterObject(action string, fields map[string]json.RawMessag
 	spec, ok := LookupAction(action)
 	if !ok {
 		return nil, ErrRequest
+	}
+	if action == ActionObserverPlan || action == ActionObserverApply {
+		body, err := json.Marshal(fields)
+		if err != nil {
+			return nil, ErrRequest
+		}
+		return canonicalObserverParameters(action, body)
 	}
 	switch {
 	case action == ActionStatus:

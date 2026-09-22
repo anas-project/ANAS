@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"fmt"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -128,6 +128,22 @@ func TestArtifactBuildFailureSurvivesArchiveReopenWithoutRetry(t *testing.T) {
 	}
 	if _, err := reopened.Inspect(context.Background(), ref, target); !errors.Is(err, ErrArtifactNotFound) {
 		t.Fatalf("failed build published a revision: %v", err)
+	}
+}
+
+func TestArtifactBuildPreservesOnlyClosedDiagnosticStages(t *testing.T) {
+	for _, stage := range []BuildStage{BuildStagePackages, BuildStage(255)} {
+		archive, ref, target, _ := newArtifactArchiveFixture(t)
+		_, _, err := archive.BuildOnce(context.Background(), ref, target, []byte("recipe"), strings.Repeat("a", 64), []ArtifactBuildInput{fixtureRunnerInput(t)}, func(context.Context, ArtifactBuildRequest) error {
+			return fmt.Errorf("private-builder-url-and-token: %w", BuildFailureAt(stage))
+		})
+		want := "packages"
+		if stage == 255 {
+			want = "unknown"
+		}
+		if !errors.Is(err, ErrArtifactBuildIncomplete) || !strings.HasSuffix(err.Error(), "stage: "+want) || strings.Contains(err.Error(), "private") {
+			t.Fatal(err)
+		}
 	}
 }
 

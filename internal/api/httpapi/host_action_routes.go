@@ -130,6 +130,9 @@ func (h *handler) invokeHostActionPlan(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 	action := "incus." + params["phase"] + ".plan"
+	if params["phase"] == "observer" {
+		action = hostaction.ActionObserverPlan
+	}
 	if spec, exists := hostaction.LookupAction(action); !exists || spec.PlanFor == "" {
 		writeProblem(w, http.StatusNotFound, "not_found", "host action was not found")
 		return
@@ -138,12 +141,7 @@ func (h *handler) invokeHostActionPlan(w http.ResponseWriter, r *http.Request, p
 	if !decodeStrictHostActionJSON(w, r, &body) {
 		return
 	}
-	request, err := decodeIncusProvisionRequest(body.Request)
-	if err != nil {
-		writeProblem(w, http.StatusBadRequest, "invalid_json", "request is invalid")
-		return
-	}
-	parameters, err := json.Marshal(hostaction.IncusPlanParameters{Schema: "anas.host-action.incus/v1", Request: request})
+	parameters, err := hostPlanParameters(action, workspace, body.Request)
 	if err != nil {
 		writeProblem(w, http.StatusBadRequest, "invalid_json", "request is invalid")
 		return
@@ -229,6 +227,9 @@ func (h *handler) invokeHostActionApply(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	action := "incus." + params["phase"]
+	if params["phase"] == "observer" {
+		action = hostaction.ActionObserverApply
+	}
 	if !hostaction.IsApplyAction(action) {
 		writeProblem(w, http.StatusNotFound, "not_found", "host action was not found")
 		return
@@ -244,6 +245,10 @@ func (h *handler) invokeHostActionApply(w http.ResponseWriter, r *http.Request, 
 	canonical, err := hostaction.CanonicalParameters(action, body.Parameters)
 	if err != nil {
 		writeProblem(w, http.StatusBadRequest, "invalid_json", "host action request is invalid")
+		return
+	}
+	if !hostaction.ObservationScopeMatchesWorkspace(action, canonical, workspace) {
+		writeProblem(w, http.StatusForbidden, "forbidden", "request is not permitted")
 		return
 	}
 	key, ok := deploymentIdempotencyKey(w, r)
@@ -329,6 +334,23 @@ func decodeIncusProvisionRequest(body json.RawMessage) (incusprovision.Request, 
 		return incusprovision.Request{}, hostaction.ErrRequest
 	}
 	return request, nil
+}
+
+func hostPlanParameters(action, workspace string, body json.RawMessage) (json.RawMessage, error) {
+	if action == hostaction.ActionObserverPlan {
+		var input struct {
+			Operation string `json:"operation"`
+		}
+		if actionabi.DecodeTypedObject(body, &input) != nil {
+			return nil, hostaction.ErrRequest
+		}
+		return json.Marshal(incusprovision.ObserverConfigurationRequest{Schema: incusprovision.ObserverConfigurationSchema, WorkspaceID: workspace, Operation: input.Operation})
+	}
+	request, err := decodeIncusProvisionRequest(body)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(hostaction.IncusPlanParameters{Schema: "anas.host-action.incus/v1", Request: request})
 }
 
 func (h *handler) writeHostActionCreate(w http.ResponseWriter, r *http.Request, created consolejobs.CreateResult, err error) {

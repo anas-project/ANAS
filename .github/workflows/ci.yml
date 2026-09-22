@@ -60,6 +60,17 @@ jobs:
       - name: Test
         run: go test ./...
 
+      # Runs the actual guest shell with test-only commands and a real timeout.
+      # No daemon, root access, /run writes, or network is needed.
+      - name: Test Runner engine admission before token input
+        timeout-minutes: 2
+        run: |
+          sh -n modules/forgejo/runner-image/anas-forgejo-runner-start
+          python3 -m unittest discover -s test-env/scripts -p 'test_forgejo_runner_start.py'
+
+      - name: Test baked image harness admission
+        run: python3 -m unittest discover -s test-env/scripts -p 'test_incus_runner_image_e2e.py'
+
       # Plain go test can report success when Linux capability tests skip.
       # This gate requires the native socket/process and owner cases to run.
       - name: Test native host job broker

@@ -2,6 +2,8 @@ package computeimage
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
@@ -38,15 +40,16 @@ func (archive *ArtifactArchive) Export(ctx context.Context, reference Reference,
 	if err := archive.verifyRelease(ctx, release); err != nil {
 		return ArtifactExport{}, err
 	}
-	if err := os.Mkdir(destination, 0700); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return ArtifactExport{}, ErrArtifactConflict
-		}
-		return ArtifactExport{}, ErrArtifactUnavailable
+	output, err := newArtifactExportRoot(destination)
+	if err != nil {
+		return ArtifactExport{}, err
 	}
-	info, err := os.Lstat(destination)
-	if err != nil || !artifactPrivateDirectory(info) {
-		return ArtifactExport{}, ErrArtifactUnavailable
+	defer output.root.Close()
+	if err := archive.exportRelease(ctx, release, output.root); err != nil {
+		return ArtifactExport{}, err
+	}
+	if err := output.check(); err != nil {
+		return ArtifactExport{}, err
 	}
 	out := ArtifactExport{Release: release}
 	for i, part := range release.Artifact.Parts {
@@ -55,9 +58,6 @@ func (archive *ArtifactArchive) Export(ctx context.Context, reference Reference,
 			return ArtifactExport{}, ErrArtifactInvalid
 		}
 		path := filepath.Join(destination, name)
-		if err := archive.exportPart(ctx, part, path); err != nil {
-			return ArtifactExport{}, err
-		}
 		switch i {
 		case 0:
 			if release.Artifact.Format == ArtifactUnified {
@@ -69,26 +69,42 @@ func (archive *ArtifactArchive) Export(ctx context.Context, reference Reference,
 			out.RootFSPath = path
 		}
 	}
-	body, err := EncodeArtifactRelease(release)
-	if err != nil {
-		return ArtifactExport{}, err
-	}
-	if err := writeExportFile(filepath.Join(destination, "artifact.json"), body); err != nil {
-		return ArtifactExport{}, err
-	}
-	if err := syncExportDirectory(destination); err != nil {
-		return ArtifactExport{}, err
-	}
 	return out, archive.check()
 }
 
-func (archive *ArtifactArchive) exportPart(ctx context.Context, part ArtifactPart, destination string) error {
+func (archive *ArtifactArchive) exportRelease(ctx context.Context, release ArtifactRelease, output *os.Root) error {
+	for _, part := range release.Artifact.Parts {
+		name := exportPartName(release.Artifact, part.Role)
+		if name == "" {
+			return ErrArtifactInvalid
+		}
+		if err := archive.exportPart(ctx, part, output, name); err != nil {
+			return err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	body, err := EncodeArtifactRelease(release)
+	if err != nil {
+		return err
+	}
+	if err := writeExportFile(output, "artifact.json", body); err != nil {
+		return err
+	}
+	return syncExportDirectory(output, ".")
+}
+
+func (archive *ArtifactArchive) exportPart(ctx context.Context, part ArtifactPart, output *os.Root, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	source, before, err := archive.openObject(part)
 	if err != nil {
 		return err
 	}
 	defer source.Close()
-	target, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0400)
+	target, err := output.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0400)
 	if err != nil {
 		return ErrArtifactUnavailable
 	}
@@ -96,16 +112,19 @@ func (archive *ArtifactArchive) exportPart(ctx context.Context, part ArtifactPar
 	defer func() {
 		_ = target.Close()
 		if !keep {
-			_ = os.Remove(destination)
+			_ = output.Remove(name)
 		}
 	}()
-	if _, err := io.CopyBuffer(target, &artifactContextReader{ctx: ctx, reader: source}, make([]byte, 128<<10)); err != nil {
+	digest := sha256.New()
+	n, err := io.CopyBuffer(io.MultiWriter(target, digest),
+		io.LimitReader(&artifactContextReader{ctx: ctx, reader: source}, part.Size+1), make([]byte, 128<<10))
+	if err != nil || ctx.Err() != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		return ErrArtifactUnavailable
 	}
-	if target.Chmod(0400) != nil || target.Sync() != nil {
+	if n != part.Size || hex.EncodeToString(digest.Sum(nil)) != part.SHA256 || target.Chmod(0400) != nil || target.Sync() != nil {
 		return ErrArtifactUnavailable
 	}
 	after, err := source.Stat()
@@ -113,12 +132,15 @@ func (archive *ArtifactArchive) exportPart(ctx context.Context, part ArtifactPar
 	if err != nil || pathErr != nil || !sameArtifactFile(before, after) || !sameArtifactFile(before, current) {
 		return ErrArtifactUnavailable
 	}
+	if err := target.Close(); err != nil {
+		return ErrArtifactUnavailable
+	}
 	keep = true
 	return nil
 }
 
-func writeExportFile(path string, body []byte) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0400)
+func writeExportFile(output *os.Root, name string, body []byte) error {
+	file, err := output.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0400)
 	if err != nil {
 		return ErrArtifactUnavailable
 	}
@@ -126,23 +148,70 @@ func writeExportFile(path string, body []byte) error {
 	defer func() {
 		_ = file.Close()
 		if !keep {
-			_ = os.Remove(path)
+			_ = output.Remove(name)
 		}
 	}()
 	if n, err := file.Write(body); err != nil || n != len(body) || file.Sync() != nil {
+		return ErrArtifactUnavailable
+	}
+	if file.Close() != nil {
 		return ErrArtifactUnavailable
 	}
 	keep = true
 	return nil
 }
 
-func syncExportDirectory(path string) error {
-	directory, err := os.Open(path)
+func syncExportDirectory(output *os.Root, name string) error {
+	directory, err := output.Open(name)
 	if err != nil {
 		return ErrArtifactUnavailable
 	}
 	defer directory.Close()
 	if info, err := directory.Stat(); err != nil || !artifactPrivateDirectory(info) || directory.Sync() != nil {
+		return ErrArtifactUnavailable
+	}
+	return nil
+}
+
+type artifactExportRoot struct {
+	root     *os.Root
+	path     string
+	identity os.FileInfo
+}
+
+// All output writes use the opened directory, never a re-resolved absolute
+// destination. A replaced path is rejected instead of redirecting later parts.
+func newArtifactExportRoot(destination string) (*artifactExportRoot, error) {
+	if destination == "" || !filepath.IsAbs(destination) || filepath.Clean(destination) != destination {
+		return nil, ErrArtifactInvalid
+	}
+	if err := os.Mkdir(destination, 0700); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil, ErrArtifactConflict
+		}
+		return nil, ErrArtifactUnavailable
+	}
+	identity, err := os.Lstat(destination)
+	if err != nil || !artifactPrivateDirectory(identity) {
+		return nil, ErrArtifactUnavailable
+	}
+	root, err := os.OpenRoot(destination)
+	if err != nil {
+		return nil, ErrArtifactUnavailable
+	}
+	output := &artifactExportRoot{root: root, path: destination, identity: identity}
+	if err := output.check(); err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	return output, nil
+}
+
+func (output *artifactExportRoot) check() error {
+	current, err := os.Lstat(output.path)
+	pinned, pinErr := output.root.Stat(".")
+	if err != nil || pinErr != nil || !artifactPrivateDirectory(current) || !artifactPrivateDirectory(pinned) ||
+		!os.SameFile(output.identity, current) || !os.SameFile(output.identity, pinned) {
 		return ErrArtifactUnavailable
 	}
 	return nil

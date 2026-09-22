@@ -1,28 +1,30 @@
 [Unit]
 Description=ANAS one-job rootless Podman API
-After=network-online.target
-Wants=network-online.target
+# The local Unix API must be available before the job is admitted. Actual
+# registry/Forgejo connectivity is checked by the workload, not by making this
+# socket wait for DHCP/IPv6 or an otherwise unused network-online target.
+Requires=anas-podman.socket
+After=anas-podman.socket
 
 [Service]
-Type=simple
-User=runner-engine
-Group=actions-engine
-SupplementaryGroups=runner-engine
-RuntimeDirectory=anas-podman
-RuntimeDirectoryMode=0770
+Type=exec
 UMask=0007
 Environment=HOME=/home/runner-engine
-Environment=XDG_RUNTIME_DIR=/run/anas-podman/xdg
-ExecStartPre=/usr/bin/install -d -o runner-engine -g actions-engine -m 0700 /run/anas-podman/xdg
-ExecStart=/usr/bin/podman system service --time=0 unix:///run/anas-podman/podman.sock
+Environment=XDG_RUNTIME_DIR=/run/user/1002
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1002/bus
+# Inherit the group-restricted descriptor from the socket unit. Letting Podman
+# bind the path itself creates mode 0600, regardless of the service's umask.
+# Run inside the engine user manager, not as a system service merely carrying
+# its UID. OCI scopes and exec processes then share an owned delegation.
+ExecStart=/usr/bin/podman --cgroup-manager=systemd system service --time=0
+Delegate=true
+KillMode=process
 Restart=on-failure
 RestartSec=2s
 NoNewPrivileges=false
-PrivateTmp=true
-ProtectHome=false
-ProtectSystem=strict
-ReadWritePaths=/home/runner-engine /run/anas-podman
+# Filesystem isolation is inherited from the fixed user@1002.service drop-in.
+# A non-root user unit cannot safely recreate the system manager's mount setup.
 RestrictSUIDSGID=false
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

@@ -2,10 +2,17 @@
 doc_type: plan
 status: implementing
 created: 2026-08-21
-updated: 2026-09-20
+updated: 2026-09-22
 ---
 
 # Forgejo Module 实施计划
+
+2026-09-22 默认系统容器 one-job 运行闭环已验收：使用不可变 `lab-r11` 与真实 Forgejo
+15.0.7，正常、显式失败、controller SIGTERM 取消、SIGKILL 后保留状态的恢复均完成
+实例/根盘/注册回收，未授权仓库未获得执行资源。内层 OCI exec 实际限额门禁同时通过。
+见[闭环记录](../../../../dev-docs/reviews/2026-09-22-incus-onejob-closeout.md)。
+这不将 M2/M3/M4/M5 整体改为完成：VM/ARM64、state volume 丢失、网页取消、真实容器
+镜像构建、Actions 开关与账号撤销、数据库/IAM/升级及正式发布矩阵仍按原需求跟踪。
 
 验收依据是[Forgejo Module 集成要求](../requirements/forgejo-module.md)的需求矩阵，设计依据是
 [Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md)。Forgejo 应用 Module 与 M1 安全开关已
@@ -24,7 +31,7 @@ updated: 2026-09-20
 | M1：Git Hooks/local-path import 安全开关 | R-010—R-012 | 已完成 |
 | M2：compute contract 消费与两档隔离选择 | R-020—R-026 | 实施中；目录契约、Go 边界和 Incus 适配器已完成单元验证，两档隔离的参数语义与镜像一致性校验待补，真实宿主待验收 |
 | M3：Actions 单开关、控制面账号与 one-job 执行面 | R-030—R-039、R-067—R-070 | 实施中；Module/controller/guest 资产已接线，控制面账号的权限收敛与关闭时失效待实现，真实 one-job 与隔离 E2E 待验收 |
-| M4：预热、扩缩容、空闲资源与回收 | R-040—R-046 | 未开始 |
+| M4：预热、扩缩容、空闲资源与回收 | R-040—R-046 | 实施中；失败补偿的 scope 配额占位已修复并补回归，预热、state 丢失回收与长时基准仍未完成 |
 | M5：真实发布验收 | R-050—R-054 | 未开始 |
 | M6：外部自动化消费者的边界（AI Agent 依赖） | R-060—R-062 | 未开始 |
 | M8：固定版本升级的身份复核 | R-066 | 常设；每次变更 Forgejo 固定版本时执行 |
@@ -38,6 +45,13 @@ M0/M1 的 10 项已完成，M2/M3 的 21 项处于实现与外部验收阶段。
 `npm run docs:check-requirements` 的输出核对，不要凭记忆改。
 
 ## 2. 落地快照
+
+2026-09-22 引擎准入接续：新 starter 在读取 token 前确认固定 Podman API 可由 Runner 用户
+调用并报告 rootless，失败有界退出，原有 controller 补偿通过专项回归；实际 shell 行为
+测试已加入 CI。增强后的镜像原生门禁提供就绪等待与固定类别诊断，但本轮指定主机 SSH
+握手失败，未运行新实机测试。旧 `lab-r4` 的 exit 125 保留为未解决问题，不因本轮本机
+测试而标记 M3/M5 完成；构建/实机分层状态见
+[本轮核对](../../../../dev-docs/reviews/2026-09-22-incus-runner-engine-admission.md)。
 
 | 范围 | 状态 | 当前边界 |
 | --- | --- | --- |

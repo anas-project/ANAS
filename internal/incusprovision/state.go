@@ -19,14 +19,15 @@ import (
 )
 
 type State struct {
-	Schema     string            `json:"schema"`
-	UpdatedAt  time.Time         `json:"updated_at"`
-	Ownership  Ownership         `json:"ownership"`
-	Credential *Credential       `json:"credential,omitempty"`
-	Bundle     *ConnectionBundle `json:"bundle,omitempty"`
-	Receipts   []Receipt         `json:"receipts,omitempty"`
-	Intents    []EffectIntent    `json:"intents,omitempty"`
-	Disabled   bool              `json:"disabled,omitempty"`
+	Schema         string                         `json:"schema"`
+	ObserverScopes map[string]ObserverScopeRecord `json:"observer_scopes,omitempty"`
+	UpdatedAt      time.Time                      `json:"updated_at"`
+	Ownership      Ownership                      `json:"ownership"`
+	Credential     *Credential                    `json:"credential,omitempty"`
+	Bundle         *ConnectionBundle              `json:"bundle,omitempty"`
+	Receipts       []Receipt                      `json:"receipts,omitempty"`
+	Intents        []EffectIntent                 `json:"intents,omitempty"`
+	Disabled       bool                           `json:"disabled,omitempty"`
 }
 
 type Ownership struct {

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -63,6 +62,41 @@ func TestNativeNamespaceKernelIdentityAndCookie(t *testing.T) {
 	}
 }
 
+func TestNativeNamespaceFixtureRestoresProcessAndThread(t *testing.T) {
+	process, err := openKernelNetworkNamespace(strconv.Itoa(os.Getpid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer process.Close()
+	before, err := process.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialCookie, err := networkNamespaceCookie()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 16; i++ {
+		namespace, cookie := isolatedReplyTestNamespace(t)
+		if cookie == initialCookie {
+			t.Fatal("fixture was not isolated")
+		}
+		current, err := openKernelNetworkNamespace(strconv.Itoa(os.Getpid()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		after, statErr := current.Stat()
+		closeErr := current.Close()
+		observedCookie, cookieErr := networkNamespaceCookie()
+		if statErr != nil || closeErr != nil || cookieErr != nil || !os.SameFile(before, after) || observedCookie != initialCookie {
+			t.Fatal("fixture creation changed process or caller namespace")
+		}
+		if err := inOpenedNetworkNamespace(context.Background(), namespace, cookie, func() error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestNativeCommandPinsExecutableDescriptor(t *testing.T) {
 	path, err := filepath.EvalSymlinks("/usr/bin/true")
 	if err != nil {
@@ -83,40 +117,9 @@ func TestNativeCommandPinsExecutableDescriptor(t *testing.T) {
 }
 
 func TestNativeNamespaceSwitchRestoresOriginal(t *testing.T) {
-	type created struct {
-		file   *os.File
-		cookie uint64
-		err    error
-	}
-	done := make(chan created, 1)
-	go func() {
-		runtime.LockOSThread()
-		if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
-			runtime.UnlockOSThread()
-			done <- created{err: err}
-			return
-		}
-		file, err := openKernelNetworkNamespace("thread-self")
-		if err != nil {
-			done <- created{err: err}
-			return
-		}
-		cookie, err := networkNamespaceCookie()
-		done <- created{file: file, cookie: cookie, err: err}
-		// The isolated thread exits locked. Do not contaminate the scheduler.
-	}()
-	namespace := <-done
-	if namespace.file != nil {
-		defer namespace.file.Close()
-	}
-	if namespace.err != nil {
-		if os.Getenv("ANAS_REQUIRE_INGRESS_NATIVE") == "1" || (!errors.Is(namespace.err, unix.EPERM) && !errors.Is(namespace.err, unix.EACCES)) {
-			t.Fatal(namespace.err)
-		}
-		t.Skip("requires isolated Linux CAP_SYS_ADMIN; native ingress gate makes this a failure")
-	}
+	namespace, cookie := isolatedReplyTestNamespace(t)
 	before, err := networkNamespaceCookie()
-	if err != nil || before == namespace.cookie {
+	if err != nil || before == cookie {
 		t.Fatalf("namespace was not isolated: %v", err)
 	}
 	for _, mode := range []string{"success", "error", "panic", "cancel"} {
@@ -124,9 +127,9 @@ func TestNativeNamespaceSwitchRestoresOriginal(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			called := false
-			err := inOpenedNetworkNamespace(ctx, namespace.file, namespace.cookie, func() error {
+			err := inOpenedNetworkNamespace(ctx, namespace, cookie, func() error {
 				observed, err := networkNamespaceCookie()
-				if err != nil || observed != namespace.cookie {
+				if err != nil || observed != cookie {
 					return errors.New("effect ran outside the opened namespace")
 				}
 				called = true

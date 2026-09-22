@@ -1,6 +1,6 @@
 # Incus Image Supply
 
-> Status: **Artifact supply is wired in code; real bakes, signed release distribution, guest boot and destructive prune remain unaccepted or incomplete.** Updated: 2026-09-19.
+> Status: **Archive, complete bundle export and artifact supply are wired in code. A laboratory candidate completed a real bake, import and container boot, but its rootless engine gate failed. Signed releases, one-job execution, other architectures/tiers and destructive prune remain unaccepted.** Updated: 2026-09-22.
 
 This document records the current ANAS Incus guest image supply boundary. The
 deployment consumes fingerprints already frozen in `image_allowlist`; the
@@ -25,9 +25,22 @@ bytes for one revision into a new private directory with `artifact.json`.
 None of these commands connects to the target Incus daemon, serves downloads, or
 inlines image bytes in JSON.
 
-`scripts/ci/incus-image-release-build.sh` writes the release output in the
+`incus-image-artifacts bundle --archive DIR --previous-catalog FILE --output-dir NEW_DIRECTORY`
+verifies history and exports every committed split revision, architecture and isolation target under
+one archive lock, writing `catalog.json` last. An actual first release must explicitly use
+`--first-release` instead; the history options are mutually exclusive. The destination must not exist
+and its parent must already be prepared. Empty archives, unified artifacts, missing history and corrupt
+objects fail without implicit repair or rebuilding. Writes use opened directory handles and recheck the
+size and SHA-256 of the bytes actually copied; a replaced destination cannot redirect later writes or
+be reported as successful. Failed private candidates need explicit inspection and cannot be adopted on retry.
+
+`scripts/ci/incus-image-release-build.sh` now uses this entrypoint to produce the
 layout the Incus Provider bundle consumes directly: `images/catalog.json` plus
-`images/artifacts/anas/forgejo-runner/<revision>/<architecture>/<interface>/...`.
+`images/artifacts/<catalog>/<name>/<revision>/<architecture>/<interface>/...`.
+The script checks explicit history, a fresh output directory and existing archive history before
+building, then exports every committed record. It no longer omits historical bytes by exporting only
+the current two targets, or truncates a catalog through shell redirection. CLI stdout contains only
+the image count and catalog digest, not image payloads.
 That directory is release input. Deployments must still receive it through an
 explicitly installed release artifact or equivalent trusted release medium; the
 Provider must not generate it during apply, and an artifact descriptor's
@@ -48,7 +61,14 @@ ANAS_RESOURCE_IMAGE_SUPPLY_FILE=/run/anas/compute-image-supply.json
 
 Copying is not a trust source: while opening descriptors and artifact bytes, the
 Runner rejects symlinks, special files, writable files, replacement, size drift,
-and digest mismatches against the release record. If no local artifact exists,
+and digest mismatches against the release record. Metadata must match the complete frozen
+reference, target, fingerprint and recipe before files are read. The split-only supply path rejects
+unified records instead of indexing a nonexistent part. Multiple runtimes or named revisions may
+share the same bytes: every reference is validated before physical copies are deduplicated, without
+changing deployment images or bindings. The supply descriptor has a shared 1 MiB limit. Hashing and
+copying use the apply cancellation context: pre-canceled operations do not create staging, and
+in-progress cancellation removes the partial copy and releases its temporary supply directory.
+If no local artifact exists,
 no supply mount is added; the Provider still fails closed when the target daemon
 lacks the frozen fingerprint.
 
@@ -75,6 +95,15 @@ The Provider reads supply descriptors and file parts from fixed roots, rejecting
 writable directories, symlinked ancestor directories, special files,
 replacement, oversized content, and byte changes during import. Errors do not
 include supply file content, certificates, private keys, or runner tokens.
+
+Before granting certificate trust, `ensure` reads back every managed project setting and the exact
+four requested quota values, not just nonempty strings. Profile configuration and device properties
+must exactly match the managed template. A final read-only check covers the complete lease.
+`inspect.ready` requires the current project fence, admitted pool, network ownership/NAT, profile,
+independent restricted certificate and every frozen image. Missing dependencies or revoked trust
+cannot remain ready; `exists`, `restricted` and `quota_enforced` remain separate observations.
+Inspection does not import images, read supply files, repair configuration or grant trust. These
+metadata checks do not constitute live daemon isolation or quota-enforcement acceptance.
 
 ## Prune
 
@@ -105,3 +134,22 @@ read-only mount wiring, Provider control flow, and dry-run planning. They do
 not prove real distrobuilder bootability, Forgejo runner guest equivalence,
 actual Incus multipart import, VM/KVM or system-container isolation, or
 destructive prune safety.
+
+## September 22 build-diagnostic and resolver continuation
+
+The release tool retains only fixed last-observed stage labels from complete output lines bounded to
+4 KiB. Raw lines, paths, URLs and commands are never returned or persisted; overlong and partial records
+are discarded. The archive preserves only the closed diagnostic type, not arbitrary wrapped errors.
+These labels are observations, not proof of completion or authority to retry an incomplete revision.
+
+The default Runner recipe now installs `systemd-sysv` explicitly and writes a guest tmpfiles rule for
+`/etc/resolv.conf`, instead of replacing that path inside distrobuilder's `post-files` chroot. The native
+synthetic-rootfs test verifies the old hook failure, actual packed rule and link creation by tmpfiles.
+It is not a full Runner image, guest DNS or one-job acceptance test. See the
+[Chinese design](/architecture/incus-image-supply).
+
+The `lab-r4 / amd64 / incus_container` candidate completed a real distrobuilder bake, immutable archive,
+repeat-build reuse, actual Provider multipart import and restricted-container boot. Runner 13.2.0 and
+its one-job CLI checks passed, but the rootless Podman API subtest exited 125, failing the overall image
+gate. No real workflow, signed production release or other architecture/tier acceptance is claimed.
+See the [recovery record](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-22-incus-runner-build-recovery.md).

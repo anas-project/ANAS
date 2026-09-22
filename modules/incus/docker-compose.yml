@@ -3,7 +3,7 @@ services:
   # Traefik label: it is a client control plane for a daemon that lives on a
   # separate virtualization host, and nothing here should be reachable.
   anas_incus_provision:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r2
     build:
       context: ./provisioner
       additional_contexts:

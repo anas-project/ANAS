@@ -89,6 +89,9 @@ func (b *HostJobBinding) matches(job consolejobs.Job) bool {
 	if err != nil {
 		return false
 	}
+	if !hostaction.ObservationScopeMatchesWorkspace(job.Action.Name, parameters, job.WorkspaceID) {
+		return false
+	}
 	want, err := HostActionRequest(job.Action.Name, b.release, parameters)
 	if err != nil {
 		return false

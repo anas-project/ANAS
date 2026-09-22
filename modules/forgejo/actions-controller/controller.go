@@ -22,14 +22,35 @@ func NewController(cfg Config, forgejo ForgejoAPI, provider ComputeProvider, sto
 }
 
 func (c *Controller) Reconcile(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	state, err := c.store.Load()
 	if err != nil {
 		return err
 	}
+	// Retire interrupted/expired work before queue requests can spend the
+	// operation budget. A down Forgejo queue must not starve compute cleanup.
+	var errs []error
+	retired := map[string]bool{}
+	for handle, workload := range state.Workloads {
+		interrupted := workload.Phase == "retiring" || workload.Phase == "registered" || workload.Phase == "creating" || workload.Phase == "created"
+		if !interrupted && c.now().Sub(workload.CreatedAt) <= c.cfg.JobTimeout {
+			continue
+		}
+		retired[handle] = true
+		if err := c.cleanup(ctx, &state, workload); err != nil {
+			errs = append(errs, fmt.Errorf("retire incomplete or expired job: %w", err))
+		} else {
+			state.RetryAfter[handle] = c.now().UTC().Add(time.Minute)
+			if err := c.store.Save(state); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
 	jobs := map[string]scopedJob{}
 	ambiguousHandles := map[string]bool{}
 	listedScopes := map[string]bool{}
-	var errs []error
 	for _, scope := range c.cfg.Scopes {
 		listed, listErr := c.forgejo.ListJobs(ctx, scope, c.cfg.RunnerLabel)
 		if listErr != nil {
@@ -55,6 +76,9 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	}
 
 	for handle, workload := range state.Workloads {
+		if retired[handle] {
+			continue
+		}
 		job, active := jobs[handle]
 		reason := ""
 		switch {
@@ -62,8 +86,6 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 			continue
 		case !active:
 			reason = "job left the active queue"
-		case c.now().Sub(workload.CreatedAt) > c.cfg.JobTimeout:
-			reason = "job timeout"
 		case job.Job.TaskID == 0 && c.now().Sub(workload.CreatedAt) > c.cfg.WaitingTTL:
 			reason = "waiting TTL"
 		}
@@ -72,15 +94,15 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		}
 		if cleanupErr := c.cleanup(ctx, &state, workload); cleanupErr != nil {
 			errs = append(errs, fmt.Errorf("cleanup %s after %s: %w", handle, reason, cleanupErr))
-		} else if reason == "waiting TTL" {
+		} else if active {
 			state.RetryAfter[handle] = c.now().UTC().Add(time.Minute)
 			if saveErr := c.store.Save(state); saveErr != nil {
 				errs = append(errs, saveErr)
 			}
 		}
 	}
-	for handle := range state.RetryAfter {
-		if _, active := jobs[handle]; !active {
+	for handle, retryAt := range state.RetryAfter {
+		if !retryAt.After(c.now()) {
 			delete(state.RetryAfter, handle)
 		}
 	}
@@ -90,6 +112,9 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	}
 
 	for handle, candidate := range jobs {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(append(errs, err)...)
+		}
 		if len(state.Workloads) >= c.cfg.MaxConcurrent {
 			break
 		}
@@ -108,15 +133,31 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		}
 		if provisionErr := c.provision(ctx, &state, candidate); provisionErr != nil {
 			errs = append(errs, provisionErr)
-		} else {
+		}
+		// An error is not proof that provisioning had no effects. Uncertain
+		// creation or failed retirement still occupies this scope immediately,
+		// just as it will when the next reconcile rebuilds counts from state.
+		// Confirmed compensation removes the record and releases the slot.
+		if retained, exists := state.Workloads[handle]; exists && retained.Scope == candidate.Scope.String() {
 			scopeCounts[candidate.Scope.String()]++
 		}
 	}
-	return errors.Join(errs...)
+	return errors.Join(append(errs, ctx.Err())...)
 }
 
 func (c *Controller) provision(ctx context.Context, state *ControllerState, candidate scopedJob) error {
 	instanceID := instanceIDFor(candidate.Job.Handle)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Never turn a name collision into a claim over an existing instance.
+	existing, err := c.compute.Inspect(ctx, instanceID)
+	if err != nil {
+		return fmt.Errorf("inspect before provisioning: %w", err)
+	}
+	if existing.ID != instanceID || existing.State != "missing" {
+		return fmt.Errorf("provisioning instance identity is already occupied or unconfirmed")
+	}
 	registration, err := c.forgejo.CreateRunner(ctx, candidate.Scope, instanceID)
 	if err != nil {
 		return err
@@ -130,16 +171,37 @@ func (c *Controller) provision(ctx context.Context, state *ControllerState, cand
 	state.Workloads[workload.Handle] = workload
 	delete(state.RetryAfter, workload.Handle)
 	if err := c.store.Save(*state); err != nil {
-		_ = c.forgejo.DeleteRunner(ctx, candidate.Scope, registration.ID)
-		return fmt.Errorf("persist Runner registration state: %w", err)
+		clean, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		defer cancel()
+		// Registration already happened, while no Create was attempted. Its
+		// exact receipt permits compensation even when the state disk fails;
+		// requiring another successful Save first would strand the runner.
+		cleanupErr := c.forgejo.DeleteRunner(clean, candidate.Scope, registration.ID)
+		if cleanupErr == nil {
+			delete(state.Workloads, workload.Handle)
+		} else {
+			workload.Phase = "retiring"
+			state.Workloads[workload.Handle] = workload
+		}
+		persistErr := c.store.Save(*state)
+		return fmt.Errorf("persist Runner registration %d for scope %s: %w", registration.ID, candidate.Scope, errors.Join(err, cleanupErr, persistErr))
 	}
 
 	fail := func(cause error) error {
-		cleanupErr := c.cleanup(ctx, state, state.Workloads[workload.Handle])
-		if cleanupErr != nil {
-			return fmt.Errorf("provision job %s: %v; cleanup: %w", workload.Handle, cause, cleanupErr)
-		}
-		return fmt.Errorf("provision job %s: %w", workload.Handle, cause)
+		clean, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		defer cancel()
+		cleanupErr := c.cleanup(clean, state, state.Workloads[workload.Handle])
+		return fmt.Errorf("provision job %s: %w", workload.Handle, errors.Join(cause, cleanupErr))
+	}
+	// Save the identity before the request, not just after a successful CLI
+	// return. A timeout is an uncertain create, not proof of no side effects.
+	workload.InstanceID, workload.Phase, workload.CreatePending = instanceID, "creating", true
+	state.Workloads[workload.Handle] = workload
+	if err := c.store.Save(*state); err != nil {
+		// Create was not called. Only the registration needs retirement.
+		workload.InstanceID, workload.CreatePending = "", false
+		state.Workloads[workload.Handle] = workload
+		return fail(err)
 	}
 	if err := c.compute.Create(ctx, InstanceSpec{
 		ID: instanceID, Image: c.cfg.RunnerImage, WorkloadID: candidate.Job.Handle,
@@ -147,7 +209,7 @@ func (c *Controller) provision(ctx context.Context, state *ControllerState, cand
 	}); err != nil {
 		return fail(err)
 	}
-	workload.InstanceID, workload.Phase, workload.UpdatedAt = instanceID, "created", c.now().UTC()
+	workload.CreatePending, workload.Phase, workload.UpdatedAt = false, "created", c.now().UTC()
 	state.Workloads[workload.Handle] = workload
 	if err := c.store.Save(*state); err != nil {
 		return fail(err)
@@ -194,7 +256,16 @@ func (c *Controller) CleanupAll(ctx context.Context) error {
 	if listErr != nil {
 		errs = append(errs, listErr)
 	} else {
+		protected := map[string]bool{}
+		for _, workload := range state.Workloads {
+			protected[workload.InstanceID] = true
+		}
 		for _, instance := range instances {
+			// A failed ownership/retirement check must not be bypassed by the
+			// catch-all orphan sweep immediately below it.
+			if protected[instance.ID] {
+				continue
+			}
 			if deleteErr := c.compute.Delete(ctx, instance.ID); deleteErr != nil {
 				errs = append(errs, deleteErr)
 			}
@@ -204,10 +275,33 @@ func (c *Controller) CleanupAll(ctx context.Context) error {
 }
 
 func (c *Controller) cleanup(ctx context.Context, state *ControllerState, workload Workload) error {
+	workload.Phase, workload.UpdatedAt = "retiring", c.now().UTC()
+	state.Workloads[workload.Handle] = workload
+	if err := c.store.Save(*state); err != nil {
+		return fmt.Errorf("persist retirement before cleanup: %w", err)
+	}
 	var errs []error
 	if workload.InstanceID != "" {
-		if err := c.compute.Delete(ctx, workload.InstanceID); err != nil {
+		instance, err := c.compute.Inspect(ctx, workload.InstanceID)
+		if err != nil {
 			errs = append(errs, err)
+		} else if instance.ID != workload.InstanceID || (instance.State != "missing" && instance.WorkloadID != workload.Handle) {
+			errs = append(errs, fmt.Errorf("cleanup instance ownership is unconfirmed"))
+		} else if instance.State == "missing" && workload.CreatePending {
+			// Keep the durable intent: an asynchronous create may finish later.
+			errs = append(errs, fmt.Errorf("uncertain instance creation remains pending; absence is not completion"))
+		} else {
+			if workload.CreatePending {
+				workload.CreatePending = false
+				state.Workloads[workload.Handle] = workload
+				err = c.store.Save(*state)
+			}
+			if err == nil {
+				err = c.compute.Delete(ctx, workload.InstanceID)
+			}
+			if err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 	if workload.RunnerID > 0 {
@@ -221,6 +315,9 @@ func (c *Controller) cleanup(ctx context.Context, state *ControllerState, worklo
 	if len(errs) == 0 {
 		delete(state.Workloads, workload.Handle)
 		if err := c.store.Save(*state); err != nil {
+			// Other successful saves in this cycle must not forget a failed
+			// terminal commit or allow the same handle to be provisioned again.
+			state.Workloads[workload.Handle] = workload
 			return err
 		}
 	}

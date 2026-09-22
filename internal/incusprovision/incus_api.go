@@ -111,7 +111,7 @@ func (c *incusUnixClient) do(ctx context.Context, method, path string, body any,
 		}
 		return c.waitOperation(ctx, env.Operation)
 	}
-	return decodeIncusEnvelope(status, raw, out)
+	return decodeIncusMethodEnvelope(method, status, raw, out)
 }
 
 func parseIncusEnvelope(raw []byte) (incusEnvelope, error) {
@@ -138,6 +138,13 @@ func parseIncusEnvelope(raw []byte) (incusEnvelope, error) {
 }
 
 func decodeIncusEnvelope(status int, raw []byte, out any) error {
+	return decodeIncusMethodEnvelope(http.MethodGet, status, raw, out)
+}
+
+// Incus returns HTTP 201 for synchronous POST creation (including pools and
+// certificates), while its envelope status remains 200. Do not retry a write
+// that has already completed, or relax reads/async operations to arbitrary 2xx.
+func decodeIncusMethodEnvelope(method string, status int, raw []byte, out any) error {
 	env, err := parseIncusEnvelope(raw)
 	if err != nil {
 		return err
@@ -145,7 +152,8 @@ func decodeIncusEnvelope(status int, raw []byte, out any) error {
 	if status == http.StatusNotFound && env.Type == "error" && env.ErrorCode == http.StatusNotFound {
 		return errIncusNotFound
 	}
-	if status != http.StatusOK || env.Type != "sync" || env.StatusCode != 200 || env.ErrorCode != 0 || env.ErrorText != "" || env.Operation != "" {
+	completed := status == http.StatusOK || (method == http.MethodPost && status == http.StatusCreated)
+	if !completed || env.Type != "sync" || env.StatusCode != 200 || env.ErrorCode != 0 || env.ErrorText != "" || env.Operation != "" {
 		return ErrExternalEffects
 	}
 	if out != nil {

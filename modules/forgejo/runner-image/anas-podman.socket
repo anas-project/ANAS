@@ -1,0 +1,13 @@
+[Unit]
+Description=ANAS one-job group-restricted Podman API socket
+# The fixed engine user manager starts after the system tmpfiles setup.
+
+[Socket]
+ListenStream=/run/anas-podman/podman.sock
+# This user unit inherits runner-engine's UID and actions-engine primary GID.
+SocketMode=0660
+DirectoryMode=0770
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target

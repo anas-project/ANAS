@@ -73,6 +73,12 @@ Secret 通道」在 provider ABI 上无法实现——该 ABI 只传 `ANAS_RESOU
 - 预热池、自动扩缩容和跨作业复用实例；
 - 让 ANAS Core 参与单个实例的创建、执行或销毁。
 
+此处「嵌套虚拟化」指 guest 内再次运行虚拟机／hypervisor，不是非特权系统容器中 OCI
+runtime 使用的用户、挂载和进程 namespace。后者属于既定 one-job 容器执行范围。其能力由
+Provider 的固定 profile 决定，不成为消费者可传入的低层配置；R-011 对宿主设备、宿主路径
+挂载和 raw 配置的禁令，以及 R-035 的外层非特权约束仍然适用。namespace 嵌套本身不证明
+内层引擎为 rootless，必须另验实际服务身份与运行行为。
+
 ## 3. Module 与部署边界
 
 1. Module 名必须为 `incus`，类别为 `compute`；真实 Incus 宿主验收完成前状态必须为 `developing`。

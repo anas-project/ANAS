@@ -5,7 +5,7 @@
     "context": "modules/ai_agent/orchestrator",
     "dockerfile": "modules/ai_agent/orchestrator/Dockerfile",
     "platforms": "linux/amd64,linux/arm64",
-    "shared_paths": ["go.mod", "go.sum", "internal/computeclient", "internal/computeingress"]
+    "shared_paths": ["go.mod", "go.sum", "internal/computeclient", "internal/computeingress", "internal/securefs"]
   },
   {
     "module": "authentik",
@@ -48,7 +48,7 @@
     "context": "modules/forgejo/actions-controller",
     "dockerfile": "modules/forgejo/actions-controller/Dockerfile",
     "platforms": "linux/amd64,linux/arm64",
-    "shared_paths": ["go.mod", "go.sum", "internal/computeclient", "internal/computeingress"]
+    "shared_paths": ["go.mod", "go.sum", "internal/computeclient", "internal/computeingress", "internal/securefs"]
   },
   {
     "module": "incus",
@@ -56,7 +56,7 @@
     "context": "modules/incus/provisioner",
     "dockerfile": "modules/incus/provisioner/Dockerfile",
     "platforms": "linux/amd64,linux/arm64",
-    "shared_paths": ["go.mod", "go.sum", "internal/computeclient", "internal/computeingress", "internal/computeimage"]
+    "shared_paths": ["go.mod", "go.sum", "internal/computeclient", "internal/computeingress", "internal/computeimage", "internal/securefs"]
   },
   {
     "module": "lam",

@@ -17,6 +17,8 @@ func (s FileStateStore) WithExclusive(context.Context, func(Journal) error) erro
 
 func trustedRouteOwner(os.FileInfo) bool { return false }
 
+func privateOwned(os.FileInfo, bool) bool { return false }
+
 func openRouteArtifact(*os.Root, string) (*os.File, error) {
 	return nil, fmt.Errorf("HTTP route artifact reading requires Linux or macOS")
 }

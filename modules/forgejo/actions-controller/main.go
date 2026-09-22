@@ -27,6 +27,8 @@ func main() {
 }
 
 func runPreflight() error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	cfg, err := LoadConfig()
 	if err != nil {
 		return err
@@ -34,15 +36,15 @@ func runPreflight() error {
 	if !cfg.Enabled {
 		return nil
 	}
-	_, err = newCompute(cfg)
+	_, err = newCompute(ctx, cfg)
 	return err
 }
 
 // newCompute builds this module's client for its compute lease. The guest
 // entrypoint allowlist is supplied here, not by the shared client: it is a
 // property of Forgejo's runner image.
-func newCompute(cfg Config) (ComputeProvider, error) {
-	client, err := computeclient.New(cfg.Lease, []string{guestEntrypoint}, cfg.ConfigDir)
+func newCompute(ctx context.Context, cfg Config) (ComputeProvider, error) {
+	client, err := computeclient.NewWithContext(ctx, cfg.Lease, []string{guestEntrypoint}, cfg.ConfigDir)
 	if err != nil {
 		return nil, err
 	}
@@ -50,6 +52,8 @@ func newCompute(cfg Config) (ComputeProvider, error) {
 }
 
 func run() error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	cfg, err := LoadConfig()
 	if err != nil {
 		return err
@@ -69,7 +73,7 @@ func run() error {
 		}
 		return nil
 	}
-	provider, err := newCompute(cfg)
+	provider, err := newCompute(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -81,9 +85,12 @@ func run() error {
 		defer cancel()
 		return controller.CleanupAll(ctx)
 	}
+	return runControllerLoop(ctx, cfg, controller)
+}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+// Keep the process lifecycle in one place, including signal-triggered cleanup.
+// Native integration tests use this loop with isolated real service fixtures.
+func runControllerLoop(ctx context.Context, cfg Config, controller *Controller) error {
 	ticker := time.NewTicker(cfg.PollInterval)
 	defer ticker.Stop()
 	for {
