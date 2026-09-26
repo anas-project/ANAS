@@ -25,7 +25,7 @@ func TestDockerClientRejectsUnconfirmedResponsesAndRedirects(t *testing.T) {
 			return incusTestResponse(tc.status, tc.body), nil
 		})}
 		var network dockerNetwork
-		err := client.do(context.Background(), http.MethodGet, "/v1.44/networks/managed", nil, &network)
+		err := client.do(context.Background(), http.MethodGet, "/v1.44/networks/"+ControlNetworkName, nil, &network)
 		if err == nil || errors.Is(err, errIncusNotFound) || strings.Contains(err.Error(), "private-marker") || calls != 1 {
 			t.Fatalf("unconfirmed Docker observation accepted: %v", err)
 		}
@@ -92,7 +92,7 @@ func TestOwnedResourceDeletionRejectsReplacementAndChecksFinalState(t *testing.T
 			if reads > 1 && !present {
 				return incusTestResponse(404, `{"type":"error","error_code":404}`), nil
 			}
-			return incusTestResponse(200, `{"type":"sync","status_code":200,"metadata":{"name":"anas-btrfs","driver":"btrfs","config":{"user.anas.owner":"incus-host-provision","user.anas.owner_id":"owner"}}}`), nil
+			return incusTestResponse(200, `{"type":"sync","status_code":200,"metadata":{"name":"anas-btrfs","driver":"btrfs","config":{"user.anas.owner":"incus-host-provision","user.anas.owner_id":"owner"},"used_by":[]}}`), nil
 		})}
 		runtime := &localRuntime{incus: client}
 		err := runtime.RemoveStoragePool(ctx, StoragePoolName, "owner")

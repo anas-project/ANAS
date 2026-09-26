@@ -303,15 +303,30 @@ logic:
 ```
 
 `logic.hook.phases` 的非空列表是精确 allowlist；可用值为 `validate`、`calculate`、
-`render_env`、`runtime_restore`、`services`、`after_start`、`local_account_apply`、
+`render_env`、`runtime_restore`、`services`、`after_start`、`before_stop`、`local_account_apply`、
 `local_account_rotate`、`local_account_rollback`、`credential_probe`、`credential_reconcile` 和
-`credential_verify`。省略该字段只保留旧 Hook 的非 `validate`、非 credential
+`credential_verify`。省略该字段只保留旧 Hook 的非 `validate`、非 `before_stop`、非 credential
 兼容生命周期，绝不会推断旧 Hook 已实现配置校验或凭据协调；显式空列表因语义含混而被 manifest
 admission 拒绝。要接收 `validate` 请求，Module 必须在非空列表中显式声明它。
 
 部署激活按依赖顺序逐个 Module 执行；某个 Module 的容器启动、owned credential
 probe/reconcile/verify、`after_start` 和本地管理员协调全部成功后，Runner 才会启动下游 Module。
 技术文档不得把 `after_start` 描述成“全部容器启动后异步执行”的通知。
+
+`before_stop` 是必须显式声明的停止前清理阶段。Core 使用被停止 deployment 的冻结
+Hook 和原 `.env`，先验证 Compose 项目属于当前 workspace，再调用 Hook；缺少原投影
+不会回退使用新配置。该阶段的 `secrets` 映射固定为空，不读取或附带当前 Secret Store，
+防止向旧 Hook 交付候选部署的新凭据；所需旧凭据只能来自原私有 `.env`。
+Hook 成功须退出 0 并返回唯一的空 JSON 对象 `{}`，不得返回配置、
+秘密、文件、警告或运行时投影；响应限 64 KiB，内容与 stderr 不回显。清理后才允许
+Compose 停止/拆除及按逆依赖顺序继续停止其他模块；150 秒总期限可被更短父上下文取消。
+失败时不得通过 apply 的自动恢复重启该清理进程。备份在 Hook 前持久化 cleanup_pending，
+事务自身也采用独立 `cleanup_pending` 状态，避免忽略新增字段的旧读取器把它作为普通
+`stopped` 事务自动启动。
+清理未确认或进程中断时保留记录并阻止自动启动，不将其当成普通备份失败的重启事务。
+备份事务使用独立随机临时文件，核验私有目录和现有单链接文件身份，先同步数据，再重命名
+并同步目录及新建父目录项；任一步失败都不调用清理 Hook。历史固定 `.tmp` 文件不被复用。
+旧的已冻结 Hook 不会因 Core 升级而被视为实现了此阶段；新能力必须随实际 Module 制品交付。
 
 `validate` 在有效拓扑的依赖顺序中运行，只检查期望状态。请求的 `phase` 为 `validate`，
 `env` 是 Module scoped 视图且已删除敏感键及其已知等值 alias，`secrets` 永远是空对象，

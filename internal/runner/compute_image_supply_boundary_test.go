@@ -33,6 +33,57 @@ func supplyBoundaryFixture(t *testing.T, copies int) (*app, string, ResourceRequ
 	return &app{base: t.TempDir()}, providerDir, ResourceRequest{Contract: "compute", ComputeImages: snapshot}
 }
 
+func TestComputeSupplyExposesOnlyVerifiedPublicFilesToUnprivilegedProvider(t *testing.T) {
+	a, provider, request := supplyBoundaryFixture(t, 1)
+	if err := os.Chmod(provider, 0700); err != nil {
+		t.Fatal(err)
+	}
+	mount, cleanup, err := a.prepareComputeImageSupply(provider, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if mount == nil {
+		t.Fatal("missing supply")
+	}
+	// The real Provider runs as UID/GID 65532, unlike Core. A root-owned
+	// 0400 file or 0500 directory is unreadable through its read-only mount.
+	// These two mounts contain only verified, non-secret image artifacts.
+	for _, path := range []string{mount.hostDescriptor, mount.hostRoot} {
+		err := filepath.WalkDir(path, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			want := os.FileMode(0444)
+			if info.IsDir() {
+				want = 0555
+			}
+			if info.Mode().Perm() != want {
+				t.Errorf("public mount %s has permissions %04o, need %04o for non-root Provider", filepath.Base(path), info.Mode().Perm(), want)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{filepath.Dir(mount.hostRoot), provider} {
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != 0700 {
+			t.Fatal("public artifact projection relaxed its private staging/source parent", err)
+		}
+	}
+	original := providerArtifactPath(provider, request.ComputeImages.Catalog[0], "rootfs.squashfs")
+	info, err := os.Stat(original)
+	if err != nil || info.Mode().Perm() != 0400 {
+		t.Fatal("projection changed original artifact permissions", err)
+	}
+}
+
 func TestComputeSupplyRepeatedFrozenImageStagesOnce(t *testing.T) {
 	a, providerDir, request := supplyBoundaryFixture(t, 2)
 	request.ComputeImages.Bindings = map[string]string{

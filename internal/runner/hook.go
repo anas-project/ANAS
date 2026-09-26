@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/anas-project/ANAS/internal/deployment"
 )
@@ -33,7 +34,7 @@ func hookSupportsPhase(hook HookConfig, phase string) bool {
 		// Legacy v1 Hooks keep the lifecycle they were published with. validate
 		// and credential lifecycle phases are opt-in because an old default/no-op
 		// branch is not proof that validation or a credential transition ran.
-		return phase != "validate" && !strings.HasPrefix(phase, "credential_")
+		return phase != "validate" && phase != "before_stop" && !strings.HasPrefix(phase, "credential_")
 	}
 	return contains(hook.Phases, phase)
 }
@@ -171,10 +172,95 @@ func (a *app) runLocalAccountHook(mod Module, phase, workdir string, env map[str
 		return hookResponse{}, nil
 	}
 	var resp hookResponse
-	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
+	if err := decoder.Decode(&resp); err != nil {
 		return hookResponse{}, fmt.Errorf("%s hook %s returned invalid JSON: %w", mod.Name, phase, err)
 	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return hookResponse{}, fmt.Errorf("%s hook %s returned trailing JSON", mod.Name, phase)
+	}
 	return resp, nil
+}
+
+// Stop barriers run from the active/frozen module, with its own old private
+// projection, before Compose can remove the process, network or dependencies
+// still needed for cleanup. Failure leaves that boundary in place. This is an
+// explicit optional v1 phase; legacy Hooks do not acquire it implicitly.
+type stopBarrierFailure struct {
+	Module string
+	Cause  error
+}
+
+func (failure *stopBarrierFailure) Error() string {
+	return "module " + failure.Module + " cleanup remains unconfirmed: " + failure.Cause.Error()
+}
+func (failure *stopBarrierFailure) Unwrap() error { return failure.Cause }
+
+func (a *app) beforeStopModule(release, name string) (result error) {
+	defer func() {
+		if result != nil {
+			result = &stopBarrierFailure{Module: name, Cause: result}
+		}
+	}()
+	if err := a.subprocessContext().Err(); err != nil {
+		return err
+	}
+	mod, ok := a.reg[name]
+	if !ok || !hookSupportsPhase(mod.Hook, "before_stop") {
+		return nil
+	}
+	dir := filepath.Join(release, name)
+	if a.useFrozenHooks && mod.SourceDir != "" {
+		dir = mod.SourceDir
+	}
+	// A missing/unreadable old projection is not permission to use the new
+	// deployment's environment. Check workspace ownership BEFORE invoking a
+	// Hook which may stop a process, not just before the subsequent Compose down.
+	env, err := parseEnvFile(filepath.Join(dir, ".env"))
+	if err != nil {
+		return fmt.Errorf("%s before_stop requires its frozen environment", name)
+	}
+	env = a.relocateDeploymentEnv(env)
+	project, err := composeProjectName(name, env)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(a.subprocessContext(), 150*time.Second)
+	defer cancel()
+	bounded := *a
+	bounded.commandContext = ctx
+	if err := bounded.ensureComposeProjectOwnerBounded(ctx, project); err != nil {
+		return err
+	}
+	if _, err := bounded.runHook(mod, "before_stop", dir, env); err != nil {
+		return err
+	}
+	return ctx.Err()
+}
+
+type stopHookOutput struct{ bytes.Buffer }
+
+func (out *stopHookOutput) Write(body []byte) (int, error) {
+	if len(body) > (64<<10)-out.Len() {
+		return 0, fmt.Errorf("before_stop response exceeds its limit")
+	}
+	return out.Buffer.Write(body)
+}
+
+// This new opt-in phase has no projection payload. In particular an old
+// no-op/empty output, null, duplicate fields or warnings cannot be accepted as
+// an acknowledgment. No response or stderr content is reflected in errors.
+func validateStopHookResponse(body []byte) error {
+	d := json.NewDecoder(bytes.NewReader(body))
+	first, err := d.Token()
+	if err != nil || first != json.Delim('{') || d.More() {
+		return fmt.Errorf("before_stop requires an empty JSON object acknowledgment")
+	}
+	last, err := d.Token()
+	if err != nil || last != json.Delim('}') || d.Decode(&struct{}{}) != io.EOF {
+		return fmt.Errorf("before_stop requires one empty JSON object acknowledgment")
+	}
+	return nil
 }
 
 type hookResponse struct {
@@ -227,8 +313,17 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	if !hookSupportsPhase(mod.Hook, phase) {
 		return hookResponse{}, nil
 	}
-	secrets := a.secrets.clone()
-	if phase != "calculate" {
+	var secrets map[string]string
+	switch phase {
+	case "before_stop":
+		// The current Secret Store may already belong to the candidate
+		// deployment. An older frozen Hook must not acquire newer credentials
+		// while retiring its own runtime. Its original private .env is the
+		// sole credential projection for this explicit cleanup phase.
+		secrets = map[string]string{}
+	case "calculate":
+		secrets = a.secrets.clone()
+	default:
 		// Only the calculate phase is a privileged derivation stage; the other
 		// phases receive the module-scoped view.
 		secrets = a.scopedSecrets(mod.Name)
@@ -259,16 +354,29 @@ func (a *app) runHook(mod Module, phase, workdir string, env map[string]string) 
 	cmd.Stdin = bytes.NewReader(in)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	if a.suppressSensitiveOutput {
+	var stopOutput stopHookOutput
+	if phase == "before_stop" {
+		cmd.Stdout = &stopOutput
+		cmd.Stderr = io.Discard
+	} else if a.suppressSensitiveOutput {
 		cmd.Stderr = io.Discard
 	} else {
 		cmd.Stderr = &stderr
 	}
 	if err := cmd.Run(); err != nil {
+		if phase == "before_stop" {
+			return hookResponse{}, fmt.Errorf("%s before_stop did not confirm cleanup", mod.Name)
+		}
 		if !a.suppressSensitiveOutput && stderr.Len() > 0 {
 			return hookResponse{}, fmt.Errorf("%s hook %s: %w: %s", mod.Name, phase, err, stderr.String())
 		}
 		return hookResponse{}, fmt.Errorf("%s hook %s: %w", mod.Name, phase, err)
+	}
+	if phase == "before_stop" {
+		if err := a.subprocessContext().Err(); err != nil {
+			return hookResponse{}, err
+		}
+		return hookResponse{}, validateStopHookResponse(stopOutput.Bytes())
 	}
 	if stdout.Len() == 0 {
 		return hookResponse{}, nil

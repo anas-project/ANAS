@@ -117,6 +117,9 @@ func lastIPv4(prefix netip.Prefix) netip.Addr {
 // not prove the ingress interface. Host INPUT rules and the daemon's mTLS and
 // project authorization remain mandatory. TLS bytes are never inspected here.
 func (settings relaySettings) acceptsSource(address netip.Addr) bool {
+	// Include the exact gateway as a unicast source: the host's pinned mTLS
+	// verifier binds to it. Its loopback delivery is authorized separately by
+	// the fixed host INPUT rule, never inferred from this address check.
 	return address.Is4() && settings.subnet.Contains(address) &&
-		address != settings.listen.Addr() && address != settings.subnet.Addr() && address != lastIPv4(settings.subnet)
+		address != settings.subnet.Addr() && address != lastIPv4(settings.subnet)
 }

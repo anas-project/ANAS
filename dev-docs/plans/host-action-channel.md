@@ -2,10 +2,18 @@
 doc_type: plan
 status: implementing
 created: 2026-09-04
-updated: 2026-09-21
+updated: 2026-09-23
 ---
 
 # 宿主特权动作通道实施计划
+
+2026-09-23 最新：Ubuntu 26.04 amd64 的实际已安装 CLI/HTTPS→共享 job→systemd hostd
+已通过完整 23 项门禁，含真实确认后安装/配置/登记/卸载、跨工作区拒绝、重放拒绝、真实
+五分钟过期及新计划执行，并有 Docker 控制桥传输与拒绝验证。最新 VM 正常关机，独立
+宿主对照一致，见[完整接续记录](../reviews/2026-09-23-incus-consumer-control-bridge.md)。
+此前第十一轮 17 项通过与 VM 看门狗退出/只读证据恢复分别见
+[已安装审批记录](../reviews/2026-09-23-incus-installed-approval.md)。这是主要发行版的通道
+验收，不是正式发行安装器的完整升级矩阵、非 systemd 支持或全部动作/浏览器交互验收。
 
 2026-09-21 接续新增观察范围配置的具名 plan/执行动作，操作限定 refresh/disable，沿用共享
 确认与审计，不增加 socket 或特权入口；客户端不能提交 scope 内容。中断后的 pending 状态
@@ -15,7 +23,7 @@ updated: 2026-09-21
 验收依据是[宿主特权动作通道要求](../requirements/host-action-channel.md)；设计见
 [同名架构文档](../../docs/architecture/host-action-channel.md)。
 
-**当前状态：保留现有 root/root anasd，按固定 systemd 服务身份准入；共享队列、独立退出观察、Incus 计划/确认/执行、CLI/Web 和安装器已编码。真实 Linux/systemd/Incus 验收、非 systemd 支持及生产 ingress 仍未完成。** 下文按日期保留历史切片；其中“必须迁移非 root anasd”的前置判断已撤回，不再是当前实施方向。它依赖[统一动作 ABI](action-abi.md)——通道复用那套
+**当前状态：保留现有 root/root anasd，按固定 systemd 服务身份准入；共享队列、独立退出观察、Incus 计划/确认/执行、CLI/Web 和安装器已编码。主要发行版已通过真实 Linux/systemd/Incus 审批链路；完整发行版/升级/浏览器交互矩阵、非 systemd 支持及生产 ingress 仍未完成。** 下文按日期保留历史切片；其中“必须迁移非 root anasd”的前置判断已撤回，不再是当前实施方向。它依赖[统一动作 ABI](action-abi.md)——通道复用那套
 线格式与 job 语义，不另起一套。截至 2026-09-18，ABI 前置已有共用 journal、执行 recorder、
 非特权 Module 注册表/Linux 进程适配、ModuleActionWorker 及调用/查询/订阅服务的内部代码；
 动作级幂等、终态后 1 小时保留和 coalesce/reject/queue 已接入同一 journal，仍无 root 注册表。
@@ -54,10 +62,10 @@ scope，也未开启 ingress。以下五问是本次需求级动作评审，不�
 
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
-| M0：通道形态、授权与审计 | R-001—R-004 | 实施中；固定 root 服务身份、私有 broker、共享授权/审计/退出证据已接线，实机验收未完成 |
+| M0：通道形态、授权与审计 | R-001—R-004 | 实施中；主要发行版的实际 CLI/HTTPS、共享队列、root 身份/退出及供给闭环已通过 23 项原生门禁；完整矩阵与其他动作独立验收 |
 | M1：入口划分与升级绑定 | R-005、R-006 | 实施中；同版本打包、CLI/HTTP 与安装器已接线，升级拒绝覆盖活动宿主动作；真实安装/升级/卸载未验收 |
 | M2：长时动作与非 systemd 可移植性 | R-007、R-008 | 实施中；按编译动作预算超时并投影固定阶段事件，非 systemd 启动和实机长时动作待办 |
-| M3：二段确认 | R-009—R-011 | 实施中；固定 ledger、五分钟 TTL、共享 Store、执行前 Claim 和页面重新展示已编码，真实 root 执行验收待办 |
+| M3：二段确认 | R-009—R-011 | 实施中；真实 root 执行、跨工作区及重启后重放拒绝、五分钟自然过期拒绝旧计划并要求新计划均通过；浏览器页面重新展示与确认组合仍待验收 |
 | M4：动作清单治理 | R-012、R-013 | 实施中；anas host actions 已提供本机编译清单；服务端清单、定期复审与特权写动作评审仍待办 |
 
 覆盖统计：13 项需求全部有且只有一个里程碑归属。
@@ -99,9 +107,9 @@ Linux 专属 peer/文件系统测试须分开记录，交叉编译不等于原�
 
 | 需求 ID | 脚本 | 环境 | 日期 | 结果 |
 | --- | --- | --- | --- | --- |
-| R-003 | 待新增 `test-env/scripts/server-host-action-e2e.sh` | 安装与卸载对称性 | — | 待执行 |
-| R-004 | 待新增 `test-env/scripts/server-host-action-e2e.sh` | CLI 与 Web 同一通道同一审计 | — | 待执行 |
-| R-011 | 待新增 `test-env/scripts/server-host-action-e2e.sh` | token 过期后重新展示而非沿用旧摘要 | — | 待执行 |
+| R-003 | `test-env/scripts/server-incus-host-action-e2e.py` | 独立 Ubuntu 26.04 amd64 / 已安装 root systemd 服务 | 2026-09-23 | 第十一轮 17 项通过，真实确认安装/配置/登记/卸载与退出；新扩展门禁另记 |
+| R-004 | `test-env/scripts/server-incus-host-action-e2e.py` | CLI stdin 会话及真实 HTTPS API，共享 job/确认/执行 | 2026-09-23 | 实际链路通过；不声称已操作浏览器 UI 或已验全部动作 |
+| R-011 | `test-env/scripts/server-incus-host-action-e2e.py` | 真实五分钟到期，不改时钟/ledger，旧计划不续签，新计划可执行 | 2026-09-23 | API/CLI 原生通过；浏览器重新展示和勾选的视觉交互仍待验收 |
 
 ## 5. 文档同步
 

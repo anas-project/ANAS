@@ -131,10 +131,12 @@ func TestOpenAPIHostActionRequestsAndResponsesMatchTypedHandlers(t *testing.T) {
 		if phase == "apply" {
 			observer = "IncusObserverApplyParameters"
 		}
-		if !ok || len(variants) != 2 {
+		if !ok || len(variants) != 3 {
 			t.Fatal("host API is missing its distinct observer schema")
 		}
-		for i, name := range []string{want, observer} {
+		forwarding := "IncusForwardingOperation"
+		if phase == "apply" { forwarding = "IncusForwardingApplyParameters" }
+		for i, name := range []string{want, observer, forwarding} {
 			v, ok := variants[i].(map[string]any)
 			if !ok || v["$ref"] != "#/components/schemas/"+name {
 				t.Fatal("host API data schema drifted")

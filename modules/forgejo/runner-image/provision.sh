@@ -10,7 +10,7 @@ printf '%s  %s\n' "$runner_sha256" "$runner_binary" | sha256sum -c -
 
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates git podman slirp4netns uidmap fuse-overlayfs util-linux coreutils dbus-user-session
+    apparmor ca-certificates git podman slirp4netns uidmap fuse-overlayfs util-linux coreutils dbus-user-session
 rm -rf /var/lib/apt/lists/*
 
 groupadd --gid 1003 actions-engine
@@ -25,11 +25,17 @@ install -d -o root -g root -m 0755 /etc/forgejo-runner /usr/local/libexec
 install -d -o root -g root -m 0755 /usr/lib/systemd/user /etc/systemd/system/user@1002.service.d
 install -o root -g root -m 0755 "$runner_binary" /usr/local/bin/forgejo-runner
 install -o root -g root -m 0755 anas-forgejo-runner-start /usr/local/libexec/anas-forgejo-runner-start
+install -o root -g root -m 0755 anas-forgejo-runner-input /usr/local/libexec/anas-forgejo-runner-input
 install -o root -g root -m 0755 anas-forgejo-one-job /usr/local/libexec/anas-forgejo-one-job
 install -o root -g root -m 0644 config.yml /etc/forgejo-runner/config.yml
 install -o root -g root -m 0644 anas-podman.service /usr/lib/systemd/user/anas-podman.service
 install -o root -g root -m 0644 anas-podman.socket /usr/lib/systemd/user/anas-podman.socket
 install -o root -g root -m 0644 anas-engine-user.conf /etc/systemd/system/user@1002.service.d/anas-engine.conf
+install -d -o root -g root -m 0755 /usr/share/anas /usr/share/anas/forgejo-runner
+install -o root -g root -m 0644 anas-forgejo-podman.apparmor /usr/share/anas/forgejo-runner/podman.apparmor
+install -o root -g root -m 0644 anas-forgejo-podman-policy.service /etc/systemd/system/anas-forgejo-podman-policy.service
+install -d -o root -g root -m 0755 /etc/systemd/system/apparmor.service.d
+install -o root -g root -m 0644 anas-apparmor-loader.conf /etc/systemd/system/apparmor.service.d/anas-runner.conf
 install -o root -g root -m 0644 anas-podman.conf /usr/lib/tmpfiles.d/anas-podman.conf
 install -d -o runner-agent -g runner-agent -m 0700 /home/runner-agent/.cache/act
 install -d -o runner-engine -g actions-engine -m 0700 /home/runner-engine/.config /home/runner-engine/.config/systemd /home/runner-engine/.config/systemd/user /home/runner-engine/.config/systemd/user/sockets.target.wants

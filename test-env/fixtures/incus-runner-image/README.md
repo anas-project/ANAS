@@ -24,9 +24,11 @@ and has no run/jobs/steps endpoint; payload progress is observed through read-on
 of this fixture's SQLite database. No task status is written by the harness. The job image is a
 verified amd64 BusyBox manifest pinned by digest at the reachable ECR public registry, not a mutable
 Docker Hub tag. External registry reachability is separate from Incus isolation and image acceptance.
-The fixture installs a public test CA only after guest start, with a readable public copy, and uses
-guest `/run` for the CA tool's temporary files to avoid boot-time `/tmp` cleanup. TLS verification is
-not disabled; the private source credential paths and Incus fences are not changed.
+The current fixture uses the production controller's bounded stdin trust projection. It does not
+push a certificate into the guest or run update-ca-certificates there. Only the one-job process receives
+a temporary CA bundle; guest system roots and the engine/workflow trust are unchanged. TLS validation
+and Incus fences remain mandatory. This requires a newly baked recipe containing the fixed input helper;
+older image/fixture results do not establish the new public-trust path.
 
 These are explicit administrator tests inside a **disposable QEMU VM** whose
 cloud-init instance ID matches `anas-runner-bake-<six lowercase letters/digits>`.
@@ -72,6 +74,31 @@ complete Runner image.
 
 ## Actual baked-image smoke
 
+### Debian bootstrap trust on the build VM
+
+The Debian debootstrap recipe needs the build distribution's official
+`debian-archive-keyring` package **before** invoking `incus-image-artifacts build`.
+Installing Ubuntu's own keyring, enabling HTTPS, or comparing hashes from the
+same download is not a substitute. This applies to Ubuntu release builders too;
+the default recipe still bootstraps Debian. Install the prerequisite only inside
+the explicitly identified disposable build VM, not on the physical Docker host.
+
+The release CLI checks the fixed root-owned, non-writable, single-link keyring
+and rejects verification-skipping or ambiguous Debian source declarations before
+reserving a build revision. The actual bootstrap signature verification must
+still succeed: a file-presence check or a zero builder exit is not that evidence.
+A regular `.gpg` file and the official package's exact relative
+`.gpg -> debian-archive-keyring.pgp` sibling alias are supported. The latter is
+opened through the verified directory descriptor, with no-follow checks on the
+regular target and identity rechecks on the alias. Absolute, parent-directory,
+different-name or chained links, writable targets and additional hardlinks are
+not accepted. Do not manually replace package files to bypass the preflight.
+A reported skipped-signature warning cannot become a successful release merely
+because later hooks or image packing complete. Failed output and an empty export
+stream are not candidates for the image or one-job gates.
+
+### Runtime staging and execution
+
 Before creating runtime directories or changing the daemon, the harness checks that `/run` has space for
 both measured image parts plus 16 MiB of headroom. Retaining previous runtime copies can otherwise exhaust
 the VM's tmpfs even when its disk has ample free space. This check does not reserve capacity against other
@@ -106,8 +133,12 @@ It checks real split-file hashes, supplies them at the Provider's fixed private
 runtime paths, and requires actual import, repeated ensure and inspect. The
 product shared client then creates and starts the baked image under a restricted
 container lease. The real Runner binary, one-job flags and access by
-`runner-agent` to a rootless Podman API must all work. A parent/subtest skip,
-missing pass event or failed package is not acceptance. Test code does not override the Provider's
+`runner-agent` to a rootless Podman API must all work. `runner_events_passed` requires one run and one
+pass for every fixed parent/subtest in the expected package, followed by one package terminal pass.
+It rejects missing runs, duplicate passes, another package, out-of-order completion, malformed events,
+any skip/failure and a nonzero process exit. An older set-of-pass-labels check is not equivalent; the
+pure validator may also be applied to original archived JSONL without changing that evidence.
+Test code does not override the Provider's
 declared profile or grant devices. The current container profile explicitly permits inner OCI namespaces;
 the native `provider-namespace-fence` subtest requires that policy and also rejects privileged/raw/host
 disk/character-device requests through the restricted client. This is a declared capability change, not

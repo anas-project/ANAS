@@ -46,7 +46,7 @@ func TestRunnerImageUsesOneJobRootlessPodmanDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(start)
-	for _, required := range []string{"one-job", "--handle", "--wait", "--token-url", "dd of=\"$token_file\"", "systemd-run", "--no-block"} {
+	for _, required := range []string{"one-job", "--handle", "--wait", "--token-url", "anas-forgejo-runner-input", "systemd-run", "--no-block"} {
 		if !strings.Contains(text, required) {
 			t.Errorf("Runner starter is missing %q", required)
 		}

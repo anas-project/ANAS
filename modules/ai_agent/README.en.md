@@ -10,7 +10,7 @@ pull request from an isolated instance. Every step is authorized, audited, inter
 | Item | Value |
 | --- | --- |
 | Module | `ai_agent` |
-| Version / revision | `0.1.0-r1` |
+| Version / revision | `0.1.0-r2` |
 | Status | `developing` |
 | Category | `app` |
 | Runtime | `compose` |

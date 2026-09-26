@@ -1,4 +1,5 @@
-ARG GO_BUILDER_REGISTRY=docker.io
+ARG DOCKER_HUB_REGISTRY=docker.io
+ARG GO_BUILDER_REGISTRY=${DOCKER_HUB_REGISTRY}
 
 FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26-alpine AS build
 WORKDIR /src
@@ -20,7 +21,7 @@ ENV GOFLAGS=-mod=mod GOPROXY=off
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" -o /out/anas-incus-provisioner ./modules/incus/provisioner
 
-FROM alpine:3.22.1
+FROM ${DOCKER_HUB_REGISTRY}/library/alpine:3.22.1
 RUN apk add --no-cache ca-certificates \
     && addgroup -g 65532 -S provisioner \
     && adduser -u 65532 -S -D -H -G provisioner provisioner

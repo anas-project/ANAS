@@ -133,6 +133,7 @@ func TestNativeIncusContainerLeaseLifecycle(t *testing.T) {
 			"disk":                  {"config", "device", "set", remoteName + ":" + id, "root", "size=5GiB"},
 			"host-disk":             {"config", "device", "add", remoteName + ":" + id, "escape", "disk", "source=/", "path=/escape"},
 			"other-project-network": {"config", "device", "add", remoteName + ":" + id, "escape", "nic", "network=" + NetworkName(leases[1].Sandbox)},
+			"proxy":                 {"config", "device", "add", remoteName + ":" + id, "escape", "proxy", "listen=tcp:127.0.0.1:18081", "connect=tcp:127.0.0.1:80"},
 		}
 		for name, args := range cases {
 			t.Run(name, func(t *testing.T) {
@@ -160,6 +161,11 @@ func TestNativeIncusContainerLeaseLifecycle(t *testing.T) {
 			}
 		}
 	})
+	if !t.Run("management-certificate-rotation", func(t *testing.T) {
+		verifyNativeManagementRotation(t, ctx, clients, leases, id)
+	}) {
+		t.FailNow()
+	}
 	t.Run("btrfs-root-disk-quota", func(t *testing.T) {
 		body, err := clients[0].run.Run(ctx, nil, "exec", remoteName+":"+id, "--", lifecycleEntrypoint, "quota")
 		if err != nil {

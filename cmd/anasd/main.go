@@ -192,6 +192,15 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	if config.TrustedProxy != nil {
 		jobIssuer, jobGroup = config.TrustedProxy.OIDCIssuer, config.TrustedProxy.PlatformAdminGroup
 	}
+	hostService, stopHostService, err := configureHostActions(ctx, config, jobStore, executionLease, auditWriter, authStore, ingressCoordinator)
+	if err != nil {
+		return fmt.Errorf("configure host action service: %w", err)
+	}
+	defer func() {
+		if err := stopHostService(); err != nil {
+			result = errors.Join(result, err)
+		}
+	}()
 	executor, err := jobexecutor.New(jobexecutor.Options{
 		Store: jobStore, Audit: deploymentAudit, Workspaces: executorWorkspaces,
 		DeploymentFactory:    runner.NewWorkspaceDeploymentServiceWithEvents,
@@ -199,6 +208,7 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		MaintenanceFactory:   maintenanceFactory,
 		ModuleCommandFactory: application.NewModuleCommandServiceFactory(),
 		IngressCoordinator:   ingressCoordinator,
+		ForwardingDrainer:    hostService,
 		Authorize:            workspaceJobAuthorizer(authStore, currentAuthState, jobIssuer, jobGroup),
 		OnError: func(err error) {
 			if logger != nil {
@@ -219,15 +229,6 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		}
 	}()
 
-	hostService, stopHostService, err := configureHostActions(ctx, config, jobStore, executionLease, auditWriter, authStore, ingressCoordinator)
-	if err != nil {
-		return fmt.Errorf("configure host action service: %w", err)
-	}
-	defer func() {
-		if err := stopHostService(); err != nil {
-			result = errors.Join(result, err)
-		}
-	}()
 	tlsManager, err := newTLSManager(config.TLS, logger)
 	if err != nil {
 		return fmt.Errorf("configure console TLS: %w", err)

@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: ai_agent
 version: 0.1.0
-revision: 1
+revision: 2
 app_version: 0.1.0
 abi:
   supports:

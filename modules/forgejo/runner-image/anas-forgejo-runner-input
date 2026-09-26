@@ -1,0 +1,50 @@
+#!/bin/sh
+# Invoked as runner-agent by the fixed starter, never as root. The first 40
+# bytes remain the registration token; optional public CA bytes have a bounded
+# size and digest supplied by the trusted controller. No payload enters argv.
+set -eu
+[ "$#" -eq 2 ] || exit 64
+trust_size=$1
+trust_sha256=$2
+case "$trust_size" in
+    0) [ -z "$trust_sha256" ] || exit 64 ;;
+    [1-9]*)
+        case "$trust_size" in *[!0-9]*) exit 64 ;; esac
+        [ "${#trust_size}" -le 5 ] && [ "$trust_size" -le 32768 ] || exit 64
+        [ "${#trust_sha256}" -eq 64 ] || exit 64
+        case "$trust_sha256" in *[!0-9a-f]*) exit 64 ;; esac
+        ;;
+    *) exit 64 ;;
+esac
+token_dir=/run/anas-actions-token
+system_roots=/etc/ssl/certs/ca-certificates.crt
+token_file=$token_dir/runner-token
+trust_file=$token_dir/server-ca.pem
+bundle_file=$token_dir/runner-ca-bundle.pem
+trailing_file=$token_dir/trailing-input
+[ -d "$token_dir" ] && [ ! -L "$token_dir" ] || exit 65
+for file in "$token_file" "$trust_file" "$bundle_file" "$trailing_file"; do
+    [ ! -e "$file" ] && [ ! -L "$file" ] || exit 65
+done
+umask 077
+set -C
+cleanup() { rm -f "$token_file" "$trust_file" "$bundle_file" "$trailing_file"; }
+trap cleanup EXIT
+trap 'exit 65' HUP INT TERM
+dd of="$token_file" bs=40 count=1 iflag=fullblock conv=excl oflag=nofollow status=none
+[ "$(wc -c < "$token_file")" -eq 40 ] || exit 65
+LC_ALL=C grep -Eq '^[0-9a-f]{40}$' "$token_file" || exit 65
+if [ "$trust_size" -ne 0 ]; then
+    dd of="$trust_file" bs="$trust_size" count=1 iflag=fullblock conv=excl oflag=nofollow status=none
+    [ "$(wc -c < "$trust_file")" -eq "$trust_size" ] || exit 65
+    actual_sha256=$(sha256sum "$trust_file")
+    [ "${actual_sha256%% *}" = "$trust_sha256" ] || exit 65
+    # Add deployment trust only to this one-job process. Never change the
+    # guest's system CA database or the separate Podman engine's trust.
+    [ -f "$system_roots" ] && [ -r "$system_roots" ] || exit 65
+    cat "$system_roots" "$trust_file" > "$bundle_file"
+fi
+dd of="$trailing_file" bs=1 count=1 conv=excl oflag=nofollow status=none
+[ "$(wc -c < "$trailing_file")" -eq 0 ] || exit 65
+rm -f "$trust_file" "$trailing_file"
+trap - EXIT HUP INT TERM

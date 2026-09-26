@@ -369,7 +369,7 @@ main() {
     ' "$packaged_hostd_service" >"$rendered_hostd_service"
     rendered_relay_service="$work_dir/anas-incus-control-relay.service"
     awk -v binary="$relay_target" '
-      /^ExecStart=/ { print "ExecStart=" binary " --config /etc/anas/incus-control-relay.json"; next }
+      /^ExecStart=/ { print "ExecStart=" binary " --config /run/anas-incus-control-relay.json"; next }
       { print }
     ' "$packaged_relay_service" >"$rendered_relay_service"
     rendered_hostd_config="$work_dir/hostd.json"

@@ -24,7 +24,44 @@ type workspaceIngressChange struct {
 	id, kind, workspace, actor, requestDigest string
 	created                                   time.Time
 	gate                                      *computeingressruntime.ControllerChange
+	withdrawalDone                            chan struct{}
+	withdrawalError                           error // Published by closing withdrawalDone.
 }
+
+// poll combines the original HTTP drain and a close-only host job. The latter
+// runs outside jobs.lock while the same scope stays fenced against launches.
+func (g *workspaceIngressChange) poll() (bool, error) {
+	if g.withdrawalDone == nil {
+		return g.gate.Poll()
+	}
+	select {
+	case <-g.withdrawalDone:
+		return true, g.withdrawalError
+	default:
+		return false, nil
+	}
+}
+
+func (e *Executor) startForwardingDrain(ctx context.Context, g *workspaceIngressChange) {
+	if e.forwardingDrainer == nil {
+		return
+	}
+	g.withdrawalDone = make(chan struct{})
+	go func() {
+		clean, cancel := context.WithTimeout(context.WithoutCancel(ctx), 120*time.Second)
+		defer cancel()
+		defer close(g.withdrawalDone)
+		if err := g.gate.Wait(clean); err != nil {
+			g.withdrawalError = err
+			return
+		}
+		if err := e.forwardingDrainer.WithdrawForwarding(clean, g.actor, g.workspace); err != nil {
+			g.withdrawalError = errForwardingDrain
+		}
+	}()
+}
+
+var errForwardingDrain = errors.New("workspace forwarding withdrawal is unconfirmed")
 
 func workspaceJobDigest(job consolejobs.Job) (string, error) {
 	body, err := json.Marshal(job.Request)
@@ -66,7 +103,10 @@ func (e *Executor) retireWorkspaceChange(ctx context.Context, workspace string) 
 	if job.NeedsCompensationCheck {
 		return consolejobs.ErrCompensationRequired
 	}
-	ready, _ := g.gate.Poll()
+	ready, drainErr := g.poll()
+	if errors.Is(drainErr, errForwardingDrain) {
+		return drainErr
+	}
 	if !ready {
 		return errWorkspaceIngressPending
 	}
@@ -127,6 +167,7 @@ func (e *Executor) claimWorkspaceJob(ctx context.Context, workspace string) (con
 			}
 			g = &workspaceIngressChange{id: job.ID, kind: job.Kind, workspace: workspace, actor: job.CreatedBy,
 				created: job.CreatedAt, requestDigest: digest, gate: gate}
+			e.startForwardingDrain(ctx, g)
 			e.ingressMu.Lock()
 			e.ingressChanges[workspace] = g
 			e.ingressMu.Unlock()
@@ -134,12 +175,15 @@ func (e *Executor) claimWorkspaceJob(ctx context.Context, workspace string) (con
 		if !g.matches(job) {
 			return errWorkspaceIngressIdentity
 		}
-		ready, err := g.gate.Poll()
+		ready, err := g.poll()
 		if !ready {
 			return errWorkspaceIngressPending
 		}
 		if err != nil {
 			rejection = "ingress_drain_failed"
+			if errors.Is(err, errForwardingDrain) {
+				rejection = "forwarding_drain_failed"
+			}
 			return computeingressruntime.ErrControllerDrain
 		}
 		if err := ctx.Err(); err != nil {
@@ -148,6 +192,13 @@ func (e *Executor) claimWorkspaceJob(ctx context.Context, workspace string) (con
 		return audit.BeforeJobCommit(ctx, intent)
 	})
 	job, found, err := e.store.ClaimNextObserved(ctx, workspace, observer)
+	if errors.Is(err, consolejobs.ErrWorkspaceBusy) {
+		if g := e.workspaceChange(workspace); g != nil {
+			if ready, _ := g.poll(); !ready {
+				return consolejobs.Job{}, false, errWorkspaceIngressPending
+			}
+		}
+	}
 	if err == nil || candidate == nil || rejection == "" {
 		return job, found, err
 	}
@@ -201,7 +252,7 @@ func (e *Executor) checkWorkspaceExecution(ctx context.Context, expected console
 		if !g.matches(current) {
 			return errWorkspaceIngressIdentity
 		}
-		if ready, err := g.gate.Poll(); !ready || err != nil {
+		if ready, err := g.poll(); !ready || err != nil {
 			return errWorkspaceIngressIdentity
 		}
 	}

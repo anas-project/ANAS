@@ -200,7 +200,15 @@ func (a *app) prepareComputeImageSupply(providerDir string, request ResourceRequ
 			if err := copySupplyFileVerified(ctx, artifact.RootFSPath, rootfs, artifact.Release.Artifact.Parts[1]); err != nil {
 				return nil, nil, err
 			}
-			if err := os.Chmod(dir, 0500); err != nil {
+			// Core's private archive and the staging parent remain private.
+			// Only these verified, non-secret copies are projected read-only
+			// into the non-root Provider; root-only bits make that mount unusable.
+			for _, path := range []string{metadata, rootfs} {
+				if err := os.Chmod(path, 0444); err != nil {
+					return nil, nil, err
+				}
+			}
+			if err := os.Chmod(dir, 0555); err != nil {
 				return nil, nil, err
 			}
 			copied[artifact.Release.Entry.Fingerprint] = artifact.Release.Artifact
@@ -222,7 +230,10 @@ func (a *app) prepareComputeImageSupply(providerDir string, request ResourceRequ
 	if err := os.WriteFile(descriptor, body, 0400); err != nil {
 		return nil, nil, err
 	}
-	if err := os.Chmod(hostRoot, 0500); err != nil {
+	if err := os.Chmod(descriptor, 0444); err != nil {
+		return nil, nil, err
+	}
+	if err := os.Chmod(hostRoot, 0555); err != nil {
 		return nil, nil, err
 	}
 	if err := ctx.Err(); err != nil {

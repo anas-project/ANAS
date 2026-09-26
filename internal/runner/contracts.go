@@ -544,146 +544,168 @@ func cloneContractProviders(in []ContractProvider) []ContractProvider {
 	return out
 }
 
-// materializeResourceSecrets gives every resource a stable credential before
-// hooks render consumer configuration.  Connection endpoints are published
-// later, after the provider's calculate hook has derived its host and network.
-func (a *app) materializeResourceSecrets() error {
+// A calculation materializes each consumer's resources after its providers
+// have calculated their targets, but before the consumer Hook reads its lease.
+// Keep conflict tracking across that entire dependency-ordered calculation.
+type resourceMaterializer struct {
+	app              *app
+	objectBuckets    map[string]string
+	objectAccessKeys map[string]string
+	computeSandboxes map[string]string
+}
+
+func (a *app) newResourceMaterializer() *resourceMaterializer {
 	a.resourceRequests = nil
-	objectBuckets := map[string]string{}
-	objectAccessKeys := map[string]string{}
-	computeSandboxes := map[string]string{}
+	return &resourceMaterializer{app: a, objectBuckets: map[string]string{},
+		objectAccessKeys: map[string]string{}, computeSandboxes: map[string]string{}}
+}
+
+// materializeResourceSecrets also supports already-resolved inputs. Production
+// calculation uses the same materializer incrementally, not an early all-module
+// pass that would freeze an image target before its Provider can derive it.
+func (a *app) materializeResourceSecrets() error {
+	resources := a.newResourceMaterializer()
 	for _, consumer := range a.order {
-		module := a.reg[consumer]
-		for _, required := range module.Resources {
-			// A condition decides whether the resource exists, nothing else.
-			// Skipping the whole iteration is what makes that true: no secret is
-			// minted, no provider is called, and no lease is published for a
-			// subsystem this deployment has switched off.
-			if !a.contractRequired(consumer, module, required.EnabledBy) {
-				continue
+		if err := resources.materialize(consumer); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *resourceMaterializer) materialize(consumer string) error {
+	a := m.app
+	objectBuckets, objectAccessKeys, computeSandboxes := m.objectBuckets, m.objectAccessKeys, m.computeSandboxes
+	module := a.reg[consumer]
+	for _, required := range module.Resources {
+		// A condition decides whether the resource exists, nothing else.
+		// Skipping the whole iteration is what makes that true: no secret is
+		// minted, no provider is called, and no lease is published for a
+		// subsystem this deployment has switched off.
+		if !a.contractRequired(consumer, module, required.EnabledBy) {
+			continue
+		}
+		spec := cloneAnyMap(required.Spec)
+		var imageKeys []string
+		for field, source := range required.SpecFrom {
+			key := moduleParamEnvKey(consumer, module.EnvPrefix, module.Exports, source.Parameter)
+			value, keys, err := source.project(a.env[key])
+			if err != nil {
+				return fmt.Errorf("resource %s.%s spec.%s: %w", consumer, required.ID, field, err)
 			}
-			spec := cloneAnyMap(required.Spec)
-			var imageKeys []string
-			for field, source := range required.SpecFrom {
-				key := moduleParamEnvKey(consumer, module.EnvPrefix, module.Exports, source.Parameter)
-				value, keys, err := source.project(a.env[key])
-				if err != nil {
-					return fmt.Errorf("resource %s.%s spec.%s: %w", consumer, required.ID, field, err)
-				}
-				spec[field] = value
-				if required.Contract == "compute" && field == "image_allowlist" {
-					imageKeys = keys
-				}
+			spec[field] = value
+			if required.Contract == "compute" && field == "image_allowlist" {
+				imageKeys = keys
 			}
-			var images *computeimage.Snapshot
-			bindings := a.resolvedBindings[consumer]
-			contract, ok := a.contracts[required.Contract]
-			if !ok && a.contracts != nil {
-				return fmt.Errorf("resource %s.%s contract %s is unavailable", consumer, required.ID, required.Contract)
+		}
+		var images *computeimage.Snapshot
+		bindings := a.resolvedBindings[consumer]
+		contract, ok := a.contracts[required.Contract]
+		if !ok && a.contracts != nil {
+			return fmt.Errorf("resource %s.%s contract %s is unavailable", consumer, required.ID, required.Contract)
+		}
+		provider := bindings[required.Contract]
+		iface := bindings[required.Contract+".interface"]
+		if provider == "" || iface == "" {
+			return fmt.Errorf("resource %s.%s has no resolved %s provider", consumer, required.ID, required.Contract)
+		}
+		if required.Contract == "relational_database" {
+			name, _ := spec["name"].(string)
+			principal, _ := spec["principal"].(string)
+			if !resourceIdentifierPattern.MatchString(name) || !resourceIdentifierPattern.MatchString(principal) {
+				return fmt.Errorf("resource %s.%s database name or principal is invalid", consumer, required.ID)
 			}
-			provider := bindings[required.Contract]
-			iface := bindings[required.Contract+".interface"]
-			if provider == "" || iface == "" {
-				return fmt.Errorf("resource %s.%s has no resolved %s provider", consumer, required.ID, required.Contract)
+			policy, _ := spec["deletion_policy"].(string)
+			if policy != "retain" && policy != "delete" {
+				return fmt.Errorf("resource %s.%s deletion_policy must be retain or delete", consumer, required.ID)
 			}
-			if required.Contract == "relational_database" {
-				name, _ := spec["name"].(string)
-				principal, _ := spec["principal"].(string)
-				if !resourceIdentifierPattern.MatchString(name) || !resourceIdentifierPattern.MatchString(principal) {
-					return fmt.Errorf("resource %s.%s database name or principal is invalid", consumer, required.ID)
-				}
-				policy, _ := spec["deletion_policy"].(string)
-				if policy != "retain" && policy != "delete" {
-					return fmt.Errorf("resource %s.%s deletion_policy must be retain or delete", consumer, required.ID)
-				}
+		}
+		if required.Contract == "relational_database" || required.Contract == "object_storage" || required.Contract == "compute" {
+			credential, ok := spec["credential"].(map[string]any)
+			policy, _ := credential["policy"].(string)
+			if !ok || policy != "generated" {
+				return fmt.Errorf("resource %s.%s credential.policy must be generated", consumer, required.ID)
 			}
-			if required.Contract == "relational_database" || required.Contract == "object_storage" || required.Contract == "compute" {
-				credential, ok := spec["credential"].(map[string]any)
-				policy, _ := credential["policy"].(string)
-				if !ok || policy != "generated" {
-					return fmt.Errorf("resource %s.%s credential.policy must be generated", consumer, required.ID)
-				}
-			}
-			if required.Contract == "compute" {
-				var err error
-				images, err = a.resolveComputeImages(consumer, required.ID, provider, iface, spec, imageKeys)
-				if err != nil {
-					return err
-				}
-				if _, _, err := validateComputeSpec(consumer, required.ID, spec); err != nil {
-					return err
-				}
-				// One sandbox belongs to one consumer. Sharing a project would
-				// put two consumers behind the same fence, which is the exact
-				// isolation this contract exists to provide.
-				sandbox, _ := spec["sandbox"].(string)
-				identity := consumer + "." + required.ID
-				if previous := computeSandboxes[sandbox]; previous != "" {
-					return fmt.Errorf("compute resources %s and %s use the same sandbox %s", previous, identity, sandbox)
-				}
-				computeSandboxes[sandbox] = identity
-			}
-			if required.Contract == "object_storage" {
-				bucket, _ := spec["bucket"].(string)
-				if !validObjectStorageBucket(bucket) {
-					return fmt.Errorf("resource %s.%s object storage bucket %q is invalid", consumer, required.ID, bucket)
-				}
-				accessKey, _ := spec["access_key_id"].(string)
-				if accessKey == "" {
-					accessKey = objectStorageAccessKeyID(consumer, required.ID)
-					spec["access_key_id"] = accessKey
-				}
-				if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$`).MatchString(accessKey) {
-					return fmt.Errorf("resource %s.%s object storage access_key_id is invalid", consumer, required.ID)
-				}
-				policy, _ := spec["deletion_policy"].(string)
-				if policy != "retain" && policy != "delete" {
-					return fmt.Errorf("resource %s.%s deletion_policy must be retain or delete", consumer, required.ID)
-				}
-				identity := consumer + "." + required.ID
-				if previous := objectBuckets[bucket]; previous != "" {
-					return fmt.Errorf("object storage resources %s and %s use the same bucket %s", previous, identity, bucket)
-				}
-				if previous := objectAccessKeys[accessKey]; previous != "" {
-					return fmt.Errorf("object storage resources %s and %s use the same access_key_id %s", previous, identity, accessKey)
-				}
-				objectBuckets[bucket], objectAccessKeys[accessKey] = identity, identity
-			}
-			var leaseSecretKey, leaseSecret string
-			if required.Contract == "compute" {
-				var err error
-				leaseSecretKey, leaseSecret, err = a.ensureComputeLeaseSecret(consumer, required.ID)
-				if err != nil {
-					return err
-				}
-			}
-			secretKey := resourceSecretKey(consumer, required.ID, required.Contract)
-			credentialLength := 32
-			if required.Contract == "object_storage" {
-				credentialLength = 40
-			}
-			// compute authenticates with a client certificate rather than a
-			// password, so its resource credential is a keypair bundle instead
-			// of a random string. The authentication pair is one stable entry,
-			// separate from the lease naming key.
-			generate := func() (string, error) { return randomPassword(credentialLength) }
-			if required.Contract == "compute" {
-				generate = func() (string, error) { return generateComputeClientCredential(consumer, required.ID) }
-			}
-			credential, err := a.secrets.Ensure(secretKey, generate)
+		}
+		if required.Contract == "compute" {
+			var err error
+			images, err = a.resolveComputeImages(consumer, required.ID, provider, iface, spec, imageKeys)
 			if err != nil {
 				return err
 			}
-			a.secrets.SetWithMetadata(secretKey, credential, secretMetadata{
-				Owner: consumer, Kind: required.Contract + "_resource", Provenance: "generated-resource",
-			})
-			a.resourceRequests = append(a.resourceRequests, ResourceRequest{
-				Consumer: consumer, ID: required.ID, Contract: required.Contract, ContractVersion: contract.Version,
-				Provider: provider, Interface: iface, Spec: spec, ComputeImages: images,
-				SecretKey: secretKey, Credential: credential,
-				LeaseSecretKey: leaseSecretKey, LeaseSecret: leaseSecret,
-			})
+			if _, _, err := validateComputeSpec(consumer, required.ID, spec); err != nil {
+				return err
+			}
+			// One sandbox belongs to one consumer. Sharing a project would
+			// put two consumers behind the same fence, which is the exact
+			// isolation this contract exists to provide.
+			sandbox, _ := spec["sandbox"].(string)
+			identity := consumer + "." + required.ID
+			if previous := computeSandboxes[sandbox]; previous != "" {
+				return fmt.Errorf("compute resources %s and %s use the same sandbox %s", previous, identity, sandbox)
+			}
+			computeSandboxes[sandbox] = identity
 		}
+		if required.Contract == "object_storage" {
+			bucket, _ := spec["bucket"].(string)
+			if !validObjectStorageBucket(bucket) {
+				return fmt.Errorf("resource %s.%s object storage bucket %q is invalid", consumer, required.ID, bucket)
+			}
+			accessKey, _ := spec["access_key_id"].(string)
+			if accessKey == "" {
+				accessKey = objectStorageAccessKeyID(consumer, required.ID)
+				spec["access_key_id"] = accessKey
+			}
+			if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$`).MatchString(accessKey) {
+				return fmt.Errorf("resource %s.%s object storage access_key_id is invalid", consumer, required.ID)
+			}
+			policy, _ := spec["deletion_policy"].(string)
+			if policy != "retain" && policy != "delete" {
+				return fmt.Errorf("resource %s.%s deletion_policy must be retain or delete", consumer, required.ID)
+			}
+			identity := consumer + "." + required.ID
+			if previous := objectBuckets[bucket]; previous != "" {
+				return fmt.Errorf("object storage resources %s and %s use the same bucket %s", previous, identity, bucket)
+			}
+			if previous := objectAccessKeys[accessKey]; previous != "" {
+				return fmt.Errorf("object storage resources %s and %s use the same access_key_id %s", previous, identity, accessKey)
+			}
+			objectBuckets[bucket], objectAccessKeys[accessKey] = identity, identity
+		}
+		var leaseSecretKey, leaseSecret string
+		if required.Contract == "compute" {
+			var err error
+			leaseSecretKey, leaseSecret, err = a.ensureComputeLeaseSecret(consumer, required.ID)
+			if err != nil {
+				return err
+			}
+		}
+		secretKey := resourceSecretKey(consumer, required.ID, required.Contract)
+		credentialLength := 32
+		if required.Contract == "object_storage" {
+			credentialLength = 40
+		}
+		// compute authenticates with a client certificate rather than a
+		// password, so its resource credential is a keypair bundle instead
+		// of a random string. The authentication pair is one stable entry,
+		// separate from the lease naming key.
+		generate := func() (string, error) { return randomPassword(credentialLength) }
+		if required.Contract == "compute" {
+			generate = func() (string, error) { return generateComputeClientCredential(consumer, required.ID) }
+		}
+		credential, err := a.secrets.Ensure(secretKey, generate)
+		if err != nil {
+			return err
+		}
+		a.secrets.SetWithMetadata(secretKey, credential, secretMetadata{
+			Owner: consumer, Kind: required.Contract + "_resource", Provenance: "generated-resource",
+		})
+		a.resourceRequests = append(a.resourceRequests, ResourceRequest{
+			Consumer: consumer, ID: required.ID, Contract: required.Contract, ContractVersion: contract.Version,
+			Provider: provider, Interface: iface, Spec: spec, ComputeImages: images,
+			SecretKey: secretKey, Credential: credential,
+			LeaseSecretKey: leaseSecretKey, LeaseSecret: leaseSecret,
+		})
 	}
 	return nil
 }

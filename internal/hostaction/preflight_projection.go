@@ -61,6 +61,17 @@ func ProjectActionEvent(action string, e actionabi.Event) (actionabi.Event, erro
 	if action == ActionObserverPlan || action == ActionObserverApply {
 		return projectObserverConfiguration(action, e)
 	}
+	if action == ActionForwardingWithdraw {
+		var v incusprovision.ForwardingWithdrawalResult
+		if decodePublicActionValue(e.Result.Value, &v) != nil || v.Validate() != nil {
+			return actionabi.Event{}, ErrRequest
+		}
+		e.Result.Value, _ = json.Marshal(v)
+		return e, nil
+	}
+	if action == ActionForwardingPlan || action == ActionForwardingApply {
+		return projectForwardingPermission(action, e)
+	}
 	if spec.PlanFor != "" {
 		if action == ActionImagePrunePlan {
 			var value struct {

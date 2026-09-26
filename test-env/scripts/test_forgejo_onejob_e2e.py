@@ -13,6 +13,17 @@ spec.loader.exec_module(lab)
 
 
 class OneJobFixtureSafety(unittest.TestCase):
+    def test_guest_trust_must_use_the_product_stdin_path(self):
+        source = path.read_text()
+        controller = (path.parents[2] / 'modules/forgejo/actions-controller/onejob_native_linux_test.go').read_text()
+        self.assertIn('cfg.RunnerTrustPEM, err = normalizeRunnerTrust(publicCA, time.Now())', controller)
+        self.assertNotIn('nativePublicTrustCompute', controller)
+        self.assertNotIn('"file", "push"', controller)
+        self.assertNotIn('"/usr/sbin/update-ca-certificates"', controller)
+        self.assertIn("'public_trust_via_controller_stdin': True", source)
+        self.assertIn("'guest_system_trust_modified': False", source)
+        self.assertNotIn("'public_fixture_ca_installed': True", source)
+
     def test_pinned_forgejo_observation_uses_real_fields_and_readonly_steps(self):
         source = path.read_text()
         self.assertIn("row.get('commit_sha') == commit", source)

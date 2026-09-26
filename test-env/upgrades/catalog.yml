@@ -26,8 +26,10 @@ products:
 
 modules:
   - name: ai_agent
-    current: 0.1.0-r1
-    baseline: {id: ai-agent-first-release-r1, version: 0.1.0-r1, reason: no_prior_release}
+    current: 0.1.0-r2
+    # Still developing: this records the next first-release baseline, not a
+    # successful native upgrade.
+    baseline: {id: ai-agent-first-release-r2, version: 0.1.0-r2, reason: no_prior_release}
   - name: authentik
     current: 2026.5.6-r14
     transitions:
@@ -52,8 +54,10 @@ modules:
     transitions:
       - {id: eturnal-r5-r6, from: 1.12.2-r5, to: 1.12.2-r6, suite: modules-authentik}
   - name: forgejo
-    current: 15.0.7-r1
-    baseline: {id: forgejo-first-release-r1, version: 15.0.7-r1, reason: no_prior_release}
+    current: 15.0.7-r2
+    # Still developing: this records the next first-release baseline, not a
+    # successful native upgrade.
+    baseline: {id: forgejo-first-release-r2, version: 15.0.7-r2, reason: no_prior_release}
   - name: freeradius
     current: 3.2.10-r4
     transitions:

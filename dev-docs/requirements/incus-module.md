@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-23
-updated: 2026-09-20
+updated: 2026-09-26
 ---
 
 # Incus compute Provider Module 集成要求
@@ -105,6 +105,9 @@ Provider 的固定 profile 决定，不成为消费者可传入的低层配置�
 5. Provider 必须拒绝复用已被以全局权限信任的证书，也必须拒绝已绑定其他 project 的证书。
 6. profile、network 与 storage pool 归 Provider 所有；project 必须封禁 device、raw config、挂载与
    低层配置。
+7. sandbox 名写在消费者 manifest 里，在每个工作区都相同，不能证明归属。多个 ANAS 工作区可以
+   连到同一 daemon，因此 Core 的单部署内 sandbox 查重不够：Provider 必须用写在 project 与 bridge
+   上的租约归属标记，以及 daemon 信任库中的受限证书，拒绝接管其他租约的 project。
 
 ## 5. Contract operation 语义
 
@@ -339,3 +342,9 @@ Provider 的固定 profile 决定，不成为消费者可传入的低层配置�
 | `INCUS-R-098` | compute 两条凭据的轮换模式；由 `CRED-R-006`、`CRED-R-007` 取代（已废弃） | 契约 + e2e |
 | `INCUS-R-099` | 宿主特权动作通道要求；由 `HOSTACT-R-012` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 审阅 |
 | `INCUS-R-100` | 宿主特权动作通道要求；由 `HOSTACT-R-013` 取代——通道服务于任何需要特权宿主操作的功能，不是 Incus 的要求（已废弃） | 契约 + 审阅 |
+| `INCUS-R-101` | guest 转发许可必须经既有宿主确认通道绑定当前 Core compute 租约、实际投递凭据及明确目的地址/端口；不得仅凭实例名称前缀或子网成员关系授权 | 单元 + e2e |
+| `INCUS-R-102` | 每次新增或续期许可必须核验实际实例 UUID、运行代际、分配地址、MAC、物理接口及目的路由，并拒绝跨租约来源冒用与身份替换 | 单元 + e2e |
+| `INCUS-R-103` | 停止、取消、失败或租约撤销必须阻止新连接并验证既有连接撤销；两种结果不得互相替代，未确认撤销时不得报告清理完成 | 单元 + e2e |
+| `INCUS-R-104` | 许可期限、旧接口/地址、重启及未完成外部效果必须保留可归属记录；不得删除失败 intent/receipt 或自动认领同名对象，残留许可应阻止依赖拆除；显式退役须核验部署停止、租约撤权、完整实例/操作与物理端口为空，并在所有原归属内核对象清除后保留墓碑，失败不得解除阻止 | 单元 + e2e |
+| `INCUS-R-105` | 最小转发适配必须保留更早的管理员显式拒绝和 Docker 默认策略；不得改成全局 FORWARD ACCEPT、关闭安全约束或给消费者增加宿主网络特权 | 单元 + e2e |
+| `INCUS-R-106` | project 与受管 bridge 必须带可核验的租约归属标记；Provider 必须在写入前拒绝属于其他租约（含证书已撤销者）或能被其他受限客户端证书操作的 project，未标记 project 仅在无其他受限证书时采纳；`inspect` 以相同条件判定 ready，`default` project 不得作为 sandbox | 单元 + e2e |

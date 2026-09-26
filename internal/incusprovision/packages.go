@@ -8,6 +8,33 @@ import (
 	"github.com/anas-project/ANAS/internal/incushost"
 )
 
+// Split distribution packaging puts the daemon in incus-base rather than in
+// the incus meta-package. Both installation and preservation decisions must
+// use the compiled recipe's daemon package, not the meta-package's presence.
+func daemonPackage(recipe incushost.Recipe) string {
+	if slices.Contains(recipe.Packages, "incus-base") {
+		return "incus-base"
+	}
+	return "incus"
+}
+
+func unownedDaemonPackage(obs Observation, ownership Ownership, recipe incushost.Recipe) bool {
+	name := daemonPackage(recipe)
+	return slices.Contains(obs.ExistingPackages, name) &&
+		(!ownership.PackagesInstalledByANAS || !slices.Contains(ownership.ManagedPackages, name))
+}
+
+func externalDaemonObserved(obs Observation, ownership Ownership, recipe incushost.Recipe) bool {
+	return ownership.ExternalDaemonPreserved || unownedDaemonPackage(obs, ownership, recipe) ||
+		(obs.IncusDaemonActive && !ownership.IncusServiceByANAS)
+}
+
+// dpkg-query interprets these escapes itself. A literal newline in argv is
+// rejected by the fixed-command boundary, so keep the format as a raw string
+// rather than weakening that boundary for package inspection.
+const packageObservationFormat = `-f=${binary:Package}\t${db:Status-Status}\t${db:Status-Eflag}\n`
+const packageRemovalFormat = `-f=${binary:Package}\t${db:Status-Abbrev}\n`
+
 // Names come from the compiled recipe or a verified ownership record, never
 // from an HTTP request, an environment variable or action parameters.
 func validPackageSubset(recipe incushost.Recipe, packages []string) bool {
@@ -62,7 +89,7 @@ func missingPackages(all, present []string) []string {
 func (r *localRuntime) observePackages(ctx context.Context, recipe incushost.Recipe, architecture string) (existing, installed []string, err error) {
 	existing, installed = []string{}, []string{}
 	for _, name := range recipe.Packages {
-		body, code, e := r.commands.output(ctx, fixedDPKGQuery, []string{"-W", "-f=${binary:Package}\t${db:Status-Status}\t${db:Status-Eflag}\n", "--", name}, nil)
+		body, code, e := r.commands.output(ctx, fixedDPKGQuery, []string{"-W", packageObservationFormat, "--", name}, nil)
 		if e != nil {
 			return nil, nil, e
 		}

@@ -58,6 +58,18 @@ var (
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "actions-account":
+			if len(os.Args) != 2 {
+				fatal(errActionsAccount)
+			}
+			input, err := decodeActionsAccountInput(os.Stdin)
+			if err != nil {
+				fatal(err)
+			}
+			if err := reconcileManagedActionsAccount(input, forgejoAPI, actionsAccountStore{root: actionsAccountRoot, uid: forgejoUID}); err != nil {
+				fatal(err)
+			}
+			return
 		case "healthcheck":
 			if err := dropPrivileges(forgejoUID, forgejoGID); err != nil {
 				fatal(err)

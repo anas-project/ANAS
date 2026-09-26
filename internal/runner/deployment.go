@@ -449,9 +449,6 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	}
 	a.secrets = secrets
 	a.sensitiveKeys = nil
-	if err := a.materializeResourceSecrets(); err != nil {
-		return "", preconditionErrorf("resource_invalid", "%s", err.Error())
-	}
 	if err := a.materializeLocalAccounts(); err != nil {
 		return "", preconditionErrorf("local_admin_invalid", "%s", err.Error())
 	}
@@ -463,6 +460,10 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 		return "", failuref("calculate_failed", "%s", err.Error())
 	}
 	if err := a.calculate(); err != nil {
+		var resourceError *CLIError
+		if errors.As(err, &resourceError) && resourceError.Code == "resource_invalid" {
+			return "", resourceError
+		}
 		return "", failuref("calculate_failed", "%s", err.Error())
 	}
 	if err := a.prepareComputeIngress(id); err != nil {
@@ -1031,11 +1032,8 @@ func startDeployment(a *app, modulesRoot string, selection []string, jsonMode bo
 		if err := a.ensureResourcesFor(run.mod.Name, modulesRoot); err != nil {
 			return err
 		}
-		if run.mod.RuntimeType == "compose" {
-			args := append([]string{"up", "-d", "--remove-orphans"}, run.services...)
-			if err := a.runCompose(run.dir, run.mod.Name, run.mod.ComposeFile, run.env, args...); err != nil {
-				return err
-			}
+		if err := a.startModuleContainers(run); err != nil {
+			return err
 		}
 		if err := a.coordinateModuleCredentials(run.mod, run.dir, run.env); err != nil {
 			return fmt.Errorf("deployment module %s credential barrier: %w", run.mod.Name, err)
@@ -1169,8 +1167,8 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	if oldApp != nil && runtimeStatus != "stopped" {
 		stopSelection := changedOrRemovedModules(current, target)
 		if err := oldApp.stopModules(oldRoot, stopSelection, opts.json); err != nil {
-			return recordActivationFailure(base, id, "stop_failed", err, func() []map[string]any {
-				return []map[string]any{recoveryResult("previous_restore", startDeployment(oldApp, oldRoot, stopSelection, opts.json))}
+			return recordStopFailure(base, id, err, func() error {
+				return startDeployment(oldApp, oldRoot, stopSelection, opts.json)
 			})
 		}
 	}
@@ -1220,6 +1218,22 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	// been the way back from it.
 	collectAutomaticSnapshots(workspaceOf(base), opts.events, opts.json, opts.ctx, opts.restrictedProcessEnvironment)
 	return nil
+}
+
+func recordStopFailure(base, id string, cause error, restore func() error) error {
+	return recordActivationFailure(base, id, "stop_failed", cause, func() []map[string]any {
+		return []map[string]any{recoveryResult("previous_restore", restoreAfterConfirmedCleanup(cause, restore))}
+	})
+}
+
+func restoreAfterConfirmedCleanup(cause error, restore func() error) error {
+	var blocked *stopBarrierFailure
+	if errors.As(cause, &blocked) {
+		// A replacement process can erase failed exit evidence and resume
+		// admission while the preceding cleanup operation remains uncertain.
+		return errors.New("not attempted: module cleanup remains unconfirmed")
+	}
+	return restore()
 }
 
 // snapshotBeforeApply takes the automatic pre-apply snapshot, when the change

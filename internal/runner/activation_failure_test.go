@@ -26,3 +26,16 @@ func TestActivationFailurePersistsPrimaryBeforeRecoveryAndKeepsAllOutcomes(t *te
 		t.Fatalf("lost recovery: %#v", state.FailureDetail)
 	}
 }
+
+func TestFailedCandidateCleanupCannotActivatePreviousDeployment(t *testing.T) {
+	candidate, candidateRoot, _ := stopBarrierFixture(t, true)
+	previous, previousRoot, _ := stopBarrierFixture(t, false)
+	err := activationFailure(t.TempDir(), "candidate", "start_failed", errors.New("primary failure"),
+		candidate, candidateRoot, previous, previousRoot, false)
+	results, ok := err.Detail["recovery"].([]map[string]any)
+	if !ok || len(results) != 2 || results[0]["phase"] != "candidate_stop" || results[0]["status"] != "failed" ||
+		results[1]["phase"] != "previous_restore" || results[1]["status"] != "failed" ||
+		results[1]["message"] != "not attempted: module cleanup remains unconfirmed" {
+		t.Fatal("an unconfirmed candidate was replaced by an automatic recovery activation", err.Detail)
+	}
+}

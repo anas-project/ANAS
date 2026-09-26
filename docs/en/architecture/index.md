@@ -1,5 +1,204 @@
 # Architecture
 
+Lease-forwarding confirmation is now wired through the existing host action catalog, job/approval
+boundary and host `state.json` receipts. The production enable operation remains blocked by
+`forwarding_lifecycle_integration_unavailable`; this is not a released automatic Docker fix. Candidate
+30-second permissions bind actual leases, instance incarnations, physical interfaces and explicit
+IPv4/TCP destinations. Disable retains deny rules and distinguishes packet closure from verified NAT
+connection cleanup. Unretired records block host dependency changes. Automatic renewal, full lifecycle
+ownership, restart recovery and real guest/Forgejo acceptance under Docker's default DROP remain open.
+See the Chinese [host provisioning design](../../architecture/incus-host-provisioning.md) and
+`dev-docs/reviews/2026-09-25-incus-forwarding-permission-continuation.md` for scoped evidence.
+
+The enable failure path now attempts one independently bounded withdrawal under the original host-state
+lock, including errors after an accepted refresh, final persistence and session closure. It does not retry
+installation or renewal, erase failed intent, or turn successful compensation into a successful enable.
+Explicit `retire` uses the same confirmed action and requires a stopped deployment, revoked authority,
+empty whole-project instance/operation inventories and an empty original bridge before removing its
+receipt-owned kernel objects. Retained successful Incus operations are not treated as absent: the fixture
+waits for natural expiry before an independent positive control. Production enable and full lifecycle
+acceptance remain gated; see the [Chinese design](../../architecture/incus-host-provisioning.md).
+
+Host provisioning plans now include read-only IPv4 forwarding observations: the fixed routing switch,
+DROP policies in relevant nft filter base chains, and the presence of Docker's user chain. Packet counters
+and raw rules are not projected or included in approval digests. An early ACCEPT, absence of a detected DROP,
+or successful control-plane mTLS does not establish guest egress. Failed reads remain unverified warnings,
+with no automatic Docker policy changes. A separate fresh-VM experiment uses real Docker/Incus bridges and
+fixed local namespace endpoints to isolate forwarding behavior from registry, DNS and guest-image failures;
+its staged native results and production-adapter limitations are recorded in
+`dev-docs/reviews/2026-09-25-incus-forwarding-observation.md`.
+
+That controlled Ubuntu 26.04 amd64 / Docker 29.1.3 run subsequently passed all nine required stages.
+Packets on an actual Incus bridge hit the earlier nft ACCEPT but still incremented Docker's later default
+DROP counter. Exact temporary permissions admitted only the chosen source/endpoint/port; other traffic and
+an earlier explicit rejection remained denied, and withdrawing the permissions restored denial. The real
+read-only observer, public archive, unchanged source inputs, normal VM exit and unchanged physical-host
+baseline were independently checked. These are namespace endpoints, not booted guest workloads. No
+production DOCKER-USER writer, automatic lease grant or source-spoofing/lifecycle guarantee is implied.
+
+A fresh, explicitly routable Ubuntu 26.04 amd64 fixture passed all ten combined Forgejo stop stages and
+five actual Core cases on 2026-09-25. A running workload was reclaimed before Compose removal; disabling
+invalidated the managed password, reenabling preserved account identity and ran a new workflow, and an
+uncertain cleanup preserved its containers, state and credential. The public archive, normal VM exit and
+unchanged physical-host Docker/network baselines were independently checked. This SQLite/prepared-workspace
+fixture does not establish default-DROP Docker coexistence, full CLI business deployment or production
+ingress. Earlier network-timeout and inventory-check failures remain separate records in
+`dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md`.
+
+The new immutable `policy-loader-r1` passed a fresh Ubuntu 26.04 amd64 build/export/reuse, ten native
+image and rootless-OCI gates, and five real Forgejo workflow scenarios. Its guest loader admits only
+the fixed Podman policy rather than distribution-wide userns fallback profiles. Ordinary userns
+creation remained denied, and host restrictions and outer Incus confinement stayed in place.
+Original events, source-bound artifacts, split-image digests, normal shutdown and the physical-host
+baseline were independently verified. This is experimental-image admission, not signed publication,
+full business deployment, other-platform acceptance or the separate Core stop-lifecycle result.
+
+The default Debian/debootstrap guest-image build requires the build distribution's official Debian
+archive keyring before reserving a revision. HTTPS and downloaded package hashes do not substitute
+for Release-signature verification. The fixed regular keyring or the official package's exact
+same-directory `.gpg` to `debian-archive-keyring.pgp` alias is accepted after filesystem identity checks;
+arbitrary links are not. An observed skipped-verification warning remains a failure even if packing
+later exits successfully. These release-build prerequisites do not establish native image acceptance.
+
+The subsequent Forgejo continuation closes a previously fixture-only internal-CA path. The controller
+now validates a fixed public read-only CA input and appends it to the existing stdin token using bounded
+length/digest framing; only a temporary one-job `SSL_CERT_FILE` changes. A new immutable `trust-r2` bake,
+repeat reuse, nine image/engine gates and five real workflow scenarios passed on Debian 13 amd64 without
+manual guest trust installation. Normal VM exit and unchanged physical-host Docker/network evidence were
+independently rechecked. Full business Compose, trust inside arbitrary workflow OCI images, other platforms
+and signed publication remain separate. See the
+[Chinese host/image architecture](/architecture/incus-host-provisioning) and the source review
+`dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md`.
+
+On 2026-09-24, a fresh Ubuntu 26.04 amd64 VM completed the real Core/Compose automatic projection cycle:
+installed host approval, CLI init/import/render/apply, the production Hook/Provider, two non-root synthetic
+consumers, existing-project isolation, activation of a second frozen deployment with stable credentials,
+cleanup and rejection after host-connection revocation. Five outer stages, nine main native events and one
+revocation test passed, as did eight host jobs. Normal shutdown and the physical host's unchanged original
+Docker/network state were independently verified. This does not establish real Forgejo/AI Agent deployments,
+bootable or signed guest images, ARM64/VM, full failure recovery or production ingress.
+
+The compiled host recipe table is distinct from native acceptance. The three primary amd64 distributions
+have independent 25-gate installed-service results, but those do not establish ARM64, complete failure
+recovery or full Core business deployment. Current preflight uses the installed root/root anasd and
+independently verified hostd through the shared CLI/HTTP job path; migrating TLS/state to a non-root daemon
+is not a prerequisite. The `host_actions` switch remains off by default, and a preflight result alone cannot
+enable compute or ingress. Older implementation snapshots below should not override these current boundaries.
+
+Core now prepares each consumer's resources after its dependency-ordered Provider calculation and before
+the consumer Hook. The target architecture from an approved host bundle therefore exists before image
+resolution is frozen; a shared per-calculation conflict table and validation-before-secret generation are
+preserved. Core does not gain an Incus-specific connection-file reader. The two fixed read-only image mounts
+contain only verified non-secret copies with readable files/directories for the non-root Provider. Private
+staging parents, original archives and secret permissions remain unchanged. Actual CLI/Compose acceptance is
+tracked separately from local regressions and does not imply full business-flow or signed-image acceptance.
+
+An empty runtime-service selection remains empty after Contract operation services and disabled services
+are filtered out. Startup never passes that empty selection to Compose as an implicit “all services”.
+One-shot Provider operations retain their existing `compose_run` path, and module resource/credential/ready
+barriers still run. This startup rule does not change image-building selection.
+
+The current same-artifact amd64 matrix passed on all three primary distributions: Debian 13, Ubuntu 26.04
+and Ubuntu 24.04 each completed **25 installed-service gates and 18 jobs with independently observed exits**.
+The tests include actual CLI/HTTPS approval, control-bridge authentication and source restrictions, natural
+five-minute confirmation expiry, exact owned-package removal and repeated uninstall. The respective runs
+removed 6/4/3 owned packages while preserving 327/682/667 original packages and unowned dependencies.
+All archives, artifact identities, normal VM shutdowns and physical-host baselines were independently checked;
+no test QEMU processes or experiment listeners remain. This does not close full business Core/Compose
+deployment, unsupported-system degradation, ARM64/VM native, failure recovery, production ingress or formal
+signed-image publication. The earlier 23-gate and Debian failure records below remain historical evidence.
+
+The latest Debian 13 amd64 continuation passed all **25 installed-service gates**, including exact owned
+package removal and repeated uninstall, with 18 successful jobs and independently observed systemd exits.
+Both legacy null storage-pool inventories must agree and the named managed pool must be absent before
+removal is authorized. The owned daemon is explicitly stopped and read back before deleting its packages;
+the Debian maintainer script is not treated as service-exit evidence. Six owned packages were removed while
+327 original packages and unowned dependencies were preserved. Normal VM shutdown and the physical-host
+baseline passed. Other architectures, complete business Compose deployment, failure recovery and production
+ingress or signed-image publication remain separate; earlier Debian preparation failures below are historical.
+
+The Ubuntu 24.04 amd64 continuation independently passed the same complete 23 installed-service gates
+and 14 successful jobs after the management-certificate POST was aligned with the base64-DER API form.
+The archive, normal VM shutdown and unchanged physical-host baseline were rechecked. Debian's earlier
+attempts stopped while preparing the experimental Docker package indexes, before product approval ran;
+they are not evidence of either successful Debian acceptance or another Incus enrollment failure.
+
+Initial browser session recovery now preserves a maintenance deep link while the actual HttpOnly owner
+session is being restored. A system response revealing workspaces is no longer treated as final anonymous
+access denial. Once recovery settles, inaccessible sections still redirect to the overview, including on
+authentication failure or later access loss. Component/API authorization is unchanged. Reactive navigation
+regressions and the full frontend build pass. The real embedded UI then passed eight browser gates twice:
+after more than 302 seconds a new plan replaced the expired one without inheriting its checked consent,
+and only a fresh explicit selection caused one confirmation and one successful apply. The second run also
+passed actual QEMU reaping, normal shutdown, listener release and the unchanged physical-host baseline.
+Tunnel/port-check failures can no longer bypass VM cleanup; unknown or forced exit remains a failed gate.
+
+Latest 2026-09-23 Incus acceptance: a fresh Ubuntu 26.04 amd64 VM passed all **23 installed-service
+gates**, covering real CLI/HTTPS owner, shared jobs, systemd hostd identity/exit, confirmed provisioning
+and teardown, workspace/replay rejection, real five-minute expiry and execution after a fresh plan.
+Non-root Docker test containers additionally verified control-bridge pinned mTLS, wrong-pin and anonymous
+restrictions, and rejection from another bridge. All 14 jobs matched observed activations; experiment
+resources returned to baseline and the VM shut down normally with the physical host's original Docker,
+firewall and routes unchanged. This does not establish complete Core/Compose projection, browser
+re-confirmation, other distributions, ARM64/VM, IPv6 or signed production publication. The module remains
+developing and production ingress stays gated. Earlier passages below retain their original narrower scope.
+
+The 2026-09-23 Incus continuation makes `restricted.devices.proxy=block` explicit for both isolation
+tiers, preventing a previous `allow` from surviving project merges. Ensure tightens and reads it back;
+read-only inspect rejects drift without deleting instances or repairing configuration. Local and designated
+Linux Provider regressions passed. The disposable-VM lifecycle gate now also requires a direct proxy
+rejection and overlapping/revoked management credentials with unchanged running guest lifetimes; these
+new native cases passed in the earlier 2026-09-23 isolated Ubuntu 26.04 amd64 / Incus 6.0.5 run.
+The 2026-09-22 default-container/btrfs/real one-job evidence remains valid
+only for its recorded scope, not VM/ARM64, signed releases or production ingress. See
+[the current Chinese host design](/architecture/incus-host-provisioning).
+
+The next host-uninstall slice adds bounded read-only dependency checks before connection revocation:
+stopped/frozen guests, pool references and volumes, attached Docker endpoints and later external daemon
+objects can all block teardown. Incomplete evidence and cancellation create no effect intent. Individual
+deletions still recheck ownership and absence; this is not an atomic reservation across APIs. The root
+Docker client now rejects connect/disconnect/prune and all container operations. A new mandatory native
+case retains a custom volume and verifies that refused uninstall preserves the working management
+connection. This fixture does not establish the full distribution matrix or production approval channel.
+See [section 3.4 of the Chinese host design](/architecture/incus-host-provisioning#_3-4-卸载).
+
+The first native host-install run exposed a test-supervisor defect: an inherited 32 MiB `RLIMIT_FSIZE`
+also truncated APT indexes, not just logs. The supervisor now bounds stdout/stderr through separate
+pipes while retaining process deadlines and group cleanup. Large data files, log overflow and early
+stream closure passed regression tests on macOS and the isolated Linux VM. The failed installation
+state is retained; a clean VM must rerun the full 11-event gate. Separately, all 16 non-root broker
+socket/pidfd and job-owner cases passed on the VM's 7.0 kernel; the physical 5.15 kernel correctly failed
+the required `SO_PEERPIDFD` gate. Neither result is installed root/systemd approval-channel acceptance.
+
+The subsequent host run finished package installation but hit the 30-second `systemctl` command limit;
+the daemon became active later, and the failed effect was correctly retained. Service queries now keep
+their 30-second budget while the fixed Incus start allows 11 minutes and relay transitions allow two.
+The confirmed install action has a compiled 45-minute total budget, with matching broker waiting and a
+2730-second packaged outer watchdog. Shorter caller cancellation, other action budgets and the five-minute
+one-use approval are unchanged. Regression coverage includes late activation after a serialized-state
+reopen: it cannot clear the failure, claim service ownership or continue configuration/enrollment.
+This timeout repair does not itself establish the full native lifecycle or distribution matrix.
+
+A later fresh Ubuntu 26.04 amd64 VM passed the complete 11-gate native backend lifecycle, including actual
+package installation, configuration, pinned mTLS enrollment, idempotence, retained-volume protection and
+both uninstall modes. The experiment restored its Docker baseline and the physical host's independent
+container/network/service/configuration/firewall/route comparison was unchanged. The installed CLI/HTTPS
+shared-job approval channel, other distributions and consumer connectivity remain separate acceptance gates.
+
+The installed approval path now separates direct PID1 identity/exit reads from auxiliary unit-object
+retention. Actual UNIX send-queue drain bounds the transition from text authentication to binary requests;
+it is cancellable and does not retry methods. The auxiliary system-bus connection only holds a unit reference,
+never authority or exit facts. Native socket regressions and an installed hostd preflight passed; full
+CLI/HTTPS approval is checked separately with exact cross-workspace and consumed-token rejection codes.
+
+The next isolated native run passed official package installation, then failed relay readback. The source
+configuration was below root-private `/etc/anas`, inaccessible to the non-root service. Packaging now projects
+only that public file read-only into the service mount namespace, preserving the private directory and empty
+capability set. Route-netlink is allowed solely for interface readback; the exact gateway source supports the
+separately firewalled, pinned mTLS host probe. The Ubuntu 26.04 recipe also records the split `incus-base`
+daemon package explicitly, and helper installation cannot adopt an external daemon. These repairs need a
+fresh full native run; neither the retained failed state nor production publication gates are cleared.
+
 The isolated Incus daemon continuation fixes a real synchronous-create response mismatch: POST may return
 HTTP 201 with a successful synchronous 200 envelope; reads and other methods do not inherit that allowance.
 Independent resource readback and ownership checks remain required. A new explicit lab harness runs the

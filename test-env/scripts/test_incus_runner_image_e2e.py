@@ -14,6 +14,55 @@ spec.loader.exec_module(lab)
 
 
 class RunnerImageSafety(unittest.TestCase):
+    def runner_events(self):
+        children = sorted(lab.REQUIRED_RUNNER_TESTS - {lab.RUNNER_TEST})
+        pairs = [('start', None), ('run', lab.RUNNER_TEST)]
+        pairs.extend((action, name) for name in children for action in ('run', 'pass'))
+        pairs.extend([('pass', lab.RUNNER_TEST), ('pass', None)])
+        return [dict({'Action': action, 'Package': lab.RUNNER_PACKAGE},
+                     **({'Test': name} if name else {})) for action, name in pairs]
+
+    def test_native_image_gate_requires_one_actual_run_and_pass_per_test(self):
+        events = self.runner_events()
+        self.assertTrue(lab.runner_events_passed(events, 0))
+        for changed in (
+            [event for event in events if event['Action'] != 'run'],
+            [*events, events[-2]],  # Duplicate parent pass.
+            [*events, events[3]],  # Duplicate subtest pass.
+            [*events, events[-1]],  # Duplicate package terminal event.
+            [*events, {'Action': 'pass', 'Package': lab.RUNNER_PACKAGE, 'Test': 'mock-image'}],
+            [{**event, 'Package': 'unrelated/package'} for event in events],
+        ):
+            with self.subTest(changed=changed[-1]):
+                self.assertFalse(lab.runner_events_passed(changed, 0))
+
+    def test_native_image_gate_never_substitutes_partial_or_failed_execution(self):
+        events = self.runner_events()
+        for code in (1, -9, '0', False, None):
+            with self.subTest(code=code):
+                self.assertFalse(lab.runner_events_passed(events, code))
+        for changed in (events[:-1], events[:-2], [],
+                        events+[{'Action': 'skip', 'Package': lab.RUNNER_PACKAGE}],
+                        events+[{'Action': 'fail', 'Package': lab.RUNNER_PACKAGE}]):
+            self.assertFalse(lab.runner_events_passed(changed, 0))
+
+    def test_native_image_gate_rejects_malformed_and_impossible_event_order(self):
+        events = self.runner_events()
+        swapped = list(events)
+        swapped[2], swapped[3] = swapped[3], swapped[2]
+        for changed in (None, 'not-events', events+[None], events+[[]], events+[{}],
+                        events+[{'Action': 'pass', 'Package': lab.RUNNER_PACKAGE, 'Test': []}],
+                        events+[{'Action': 'unexpected', 'Package': lab.RUNNER_PACKAGE}],
+                        [events[-1], *events[:-1]], swapped,
+                        [events[0], events[-2], *events[1:-2], events[-1]]):
+            with self.subTest(changed=type(changed).__name__):
+                self.assertFalse(lab.runner_events_passed(changed, 0))
+        for invalid in (None, [], {},
+                        {'Action': 'pass', 'Package': lab.RUNNER_PACKAGE, 'Test': []},
+                        {'Action': 'output', 'Package': lab.RUNNER_PACKAGE, 'Test': None},
+                        {'Action': 'unexpected', 'Package': lab.RUNNER_PACKAGE}):
+            self.assertFalse(lab.runner_events_passed([*events[:2], invalid, *events[2:]], 0))
+
     def test_staging_capacity_requires_all_parts_and_headroom(self):
         release = {'artifact': {'parts': [{'size': 712}, {'size': 244748288}]}}
         required = 712 + 244748288 + lab.STAGING_HEADROOM

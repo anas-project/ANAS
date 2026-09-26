@@ -24,6 +24,25 @@ PROJECTS = ('anas-lifecycle-a', 'anas-lifecycle-b')
 POOL = 'anas-lifecycle-btrfs'
 
 
+def required_lifecycle_tests():
+    parent = 'TestNativeIncusContainerLeaseLifecycle'
+    return {parent, *(parent+'/'+name for name in (
+        'same-name-project-isolation', 'daemon-instance-quota',
+        'daemon-rejects-direct-quota-and-device-overrides', 'stdin-secret',
+        'management-certificate-rotation', 'btrfs-root-disk-quota',
+        'exec-cancel-and-independent-reclaim', 'stop-delete-idempotent')),
+        *(parent+'/daemon-rejects-direct-quota-and-device-overrides/'+name
+          for name in ('cpu', 'memory', 'disk', 'host-disk', 'other-project-network', 'proxy'))}
+
+
+def lifecycle_results_passed(events, returncode):
+    passed = {event.get('Test') for event in events if event.get('Action') == 'pass'}
+    return (returncode == 0
+            and not any(event.get('Action') in ('fail', 'skip') for event in events)
+            and required_lifecycle_tests().issubset(passed)
+            and any(event.get('Action') == 'pass' and not event.get('Test') for event in events))
+
+
 def require_vm(identity):
     if (os.geteuid() != 0 or not re.fullmatch(r'anas-incus-lifecycle-[a-z0-9]{6}', identity)
             or Path('/var/lib/cloud/data/instance-id').read_text().strip() != identity
@@ -60,6 +79,40 @@ def create_fixture_image(binary, target):
         body = b'architecture: x86_64\ncreation_date: 1789948800\nproperties:\n  description: ANAS isolated lifecycle fixture, not a product image\n  os: ANAS-test\n'
         item = tarfile.TarInfo('metadata.yaml'); item.mode = 0o644; item.size = len(body); archive.addfile(item, io.BytesIO(body))
     return hashlib.sha256(target.read_bytes()).hexdigest()
+
+
+def prepare_rotation_fixture(provider, environments):
+    """Pin the actual Provider used during the running-guest rotation check.
+
+    This remains private VM-only test input, never a consumer mount or portable
+    report: the environment includes the old management credential.
+    """
+    if len(environments) != 2 or any(
+            item.get('INCUS_ENDPOINT') != 'https://127.0.0.1:8443'
+            or item.get('ANAS_RESOURCE_SANDBOX') != project
+            for item, project in zip(environments, PROJECTS)):
+        raise RuntimeError('rotation fixture must use the two local lab leases')
+    source = Path(provider)
+    before = source.lstat()
+    if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= 64 << 20:
+        raise RuntimeError('bounded precompiled Provider fixture required')
+    with source.open('rb') as stream:
+        body = stream.read((64 << 20) + 1)
+        after = os.fstat(stream.fileno())
+    identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+    if len(body) != before.st_size or identity(before) != identity(after) or identity(before) != identity(source.lstat()):
+        raise RuntimeError('Provider input changed during rotation fixture preparation')
+    record = json.dumps({'schema': 'anas.incus-native-management-rotation/v1',
+                         'provider_sha256': hashlib.sha256(body).hexdigest(),
+                         'environments': environments}, sort_keys=True).encode() + b'\n'
+    if len(record) > 128 << 10:
+        raise RuntimeError('rotation fixture exceeds its size limit')
+    with (ROOT/'provider').open('xb') as output:
+        output.write(body)
+    os.chmod(ROOT/'provider', 0o700)
+    descriptor = os.open(ROOT/'rotation.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, 'wb') as output:
+        output.write(record)
 
 
 def main(args):
@@ -101,7 +154,7 @@ def main(args):
         if fs.f_bavail*fs.f_frsize < 8<<30:
             raise RuntimeError('quota positive control requires eight GiB free in the test pool')
         emit('real_btrfs_pool_created')
-        for name in ('manager','consumer-a','consumer-b'):
+        for name in ('manager','manager-next','consumer-a','consumer-b'):
             call(['/usr/bin/openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(ROOT/(name+'.key')),
                   '-out',str(ROOT/(name+'.crt')),'-days','1','-subj','/CN=anas-lifecycle-'+name],timeout=20)
         cli('config','trust','add-certificate',str(ROOT/'manager.crt'),'--name=anas-lifecycle-manager')
@@ -110,6 +163,7 @@ def main(args):
         server_der=base64.b64decode(b''.join(x for x in server.splitlines() if not x.startswith(b'-----')))
         encode=lambda p:base64.b64encode(p.read_bytes()).decode()
         leases=[]
+        provider_environments=[]
         for project,name in zip(PROJECTS,('consumer-a','consumer-b')):
             # Preload real measured image bytes before ensure, without using a
             # fake allowlist or inventing a Provider result/supply protocol.
@@ -122,6 +176,7 @@ def main(args):
                           'ANAS_RESOURCE_SANDBOX':project,'ANAS_RESOURCE_INSTANCE_PREFIX':'anas-native-',
                           'ANAS_RESOURCE_IMAGE_ARCHITECTURE':'amd64','ANAS_RESOURCE_MAX_INSTANCES':'1',
                           'ANAS_RESOURCE_CPU':'1','ANAS_RESOURCE_MEMORY_MIB':'512','ANAS_RESOURCE_DISK_GIB':'4','ANAS_RESOURCE_IMAGE_ALLOWLIST':pin}
+            provider_environments.append(provider_env.copy())
             for operation in ('ensure','ensure','inspect'):
                 result=call([args.provider,operation,'--isolation','container'],provider_env,check=False)
                 if result.returncode:
@@ -135,6 +190,7 @@ def main(args):
                            'ServerCertB64':base64.b64encode(server).decode(),'ClientCertB64':encode(ROOT/(name+'.crt')),
                            'ClientKeyB64':encode(ROOT/(name+'.key')),'ImageAllowlist':[pin],'MaxInstances':1,'CPU':1,'MemoryMiB':512,'DiskGiB':4})
         (ROOT/'leases.json').write_text(json.dumps(leases))
+        prepare_rotation_fixture(args.provider, provider_environments)
         package='github.com/anas-project/ANAS/internal/computeclient'
         with (report/'lifecycle.jsonl').open('x') as output:
             result=subprocess.run([args.test2json,'-t','-p',package,args.tests,'-test.v=test2json','-test.count=1',
@@ -142,11 +198,8 @@ def main(args):
                                   env={'PATH':env['PATH'],'GOMAXPROCS':'1','ANAS_REQUIRE_INCUS_LIFECYCLE_NATIVE':'1'},
                                   stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.STDOUT,timeout=570)
         events=[json.loads(line) for line in (report/'lifecycle.jsonl').read_text().splitlines()]
-        required={'TestNativeIncusContainerLeaseLifecycle',*('TestNativeIncusContainerLeaseLifecycle/'+x for x in
-                   ('same-name-project-isolation','daemon-instance-quota','daemon-rejects-direct-quota-and-device-overrides','stdin-secret','btrfs-root-disk-quota','exec-cancel-and-independent-reclaim','stop-delete-idempotent')),
-                  *('TestNativeIncusContainerLeaseLifecycle/daemon-rejects-direct-quota-and-device-overrides/'+x for x in ('cpu','memory','disk','host-disk','other-project-network'))}
-        passed={e.get('Test') for e in events if e.get('Action')=='pass'}
-        if result.returncode or any(e.get('Action') in ('fail','skip') for e in events) or not required.issubset(passed) or not any(e.get('Action')=='pass' and not e.get('Test') for e in events):
+        required=required_lifecycle_tests()
+        if not lifecycle_results_passed(events, result.returncode):
             print(json.dumps({'failed_tests':[e.get('Test') for e in events if e.get('Action')=='fail' and e.get('Test')]}),flush=True)
             raise RuntimeError('native lifecycle failed, skipped or missing required checks')
         for project in PROJECTS:
@@ -186,7 +239,14 @@ def main(args):
             if cli('network','show',bridge,check=False).returncode==0: cli('network','delete',bridge)
         if cli('storage','show',POOL,check=False).returncode==0: cli('storage','delete',POOL)
         for certificate in json.loads(cli('config','trust','list','--format=json').stdout):
-            if certificate.get('name')=='anas-lifecycle-manager': cli('config','trust','remove',certificate['fingerprint'])
+            if certificate.get('name') in ('anas-lifecycle-manager','anas-lifecycle-manager-next'):
+                source = ROOT/('manager-next.crt' if certificate['name'].endswith('-next') else 'manager.crt')
+                der = base64.b64decode(b''.join(line for line in source.read_bytes().splitlines() if not line.startswith(b'-----')), validate=True)
+                if certificate['fingerprint'] != hashlib.sha256(der).hexdigest():
+                    raise RuntimeError('management certificate ownership changed; refusing cleanup')
+                cli('config','trust','remove',certificate['fingerprint'])
+        if json.loads(cli('config','trust','list','--format=json').stdout):
+            raise RuntimeError('lab certificate cleanup is incomplete')
         cli('config','unset','core.https_address')
         emit('owned_lab_resources_removed')
 

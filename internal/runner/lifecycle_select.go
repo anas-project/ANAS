@@ -151,6 +151,9 @@ func (a *app) stopModules(release string, names []string, jsonMode bool) error {
 	for i := len(ordered) - 1; i >= 0; i-- {
 		name := ordered[i]
 		emitProgress(jsonMode, "stop-containers", int64(len(ordered)-i), total, "modules")
+		if err := a.beforeStopModule(release, name); err != nil {
+			return errors.Join(append(stopErrors, fmt.Errorf("before stopping %s: %w", name, err))...)
+		}
 		dir := filepath.Join(release, name)
 		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("stop %s: %w", name, err))

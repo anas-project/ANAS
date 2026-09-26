@@ -9,14 +9,14 @@ lastUpdated: false
 
 | Module | Version | Status | Category | Description |
 | --- | --- | --- | --- | --- |
-| [AI Agent orchestration](/reference/modules/ai_agent/) | `0.1.0-r1` | `developing` | `app` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
+| [AI Agent orchestration](/reference/modules/ai_agent/) | `0.1.0-r2` | `developing` | `app` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
 | [authentik](/reference/modules/authentik/) | `2026.5.6-r14` | `developing` | `identity` | Identity provider serving OIDC and SAML with per-application endpoints. |
 | [Casdoor](/reference/modules/casdoor/) | `3.143.0-r8` | `release` | `identity` | Release IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
 | [Collabora Online](/reference/modules/collabora/) | `26.4.2-r5` | `release` | `app` | Online document editing backend for Nextcloud. |
 | [DDNS-GO](/reference/modules/ddns_go/) | `6.17.4-r6` | `release` | `network` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
 | [DDNS Updater](/reference/modules/ddns_updater/) | `2.10.0-r4` | `release` | `network` | Dynamic DNS updater for the base domain and wildcard host. |
 | [Eturnal TURN](/reference/modules/eturnal/) | `1.12.2-r6` | `release` | `communication` | TURN service used by realtime communication modules. |
-| [Forgejo](/reference/modules/forgejo/) | `15.0.7-r1` | `developing` | `app` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
+| [Forgejo](/reference/modules/forgejo/) | `15.0.7-r2` | `developing` | `app` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
 | [FreeRADIUS](/reference/modules/freeradius/) | `3.2.10-r4` | `developing` | `network` | RADIUS server module scaffold. |
 | [Incus compute provider](/reference/modules/incus/) | `7.3.0-r2` | `developing` | `compute` | Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract. |
 | [LDAP Account Manager](/reference/modules/lam/) | `9.6.0-r8` | `release` | `identity` | Web UI for LDAP account administration. |

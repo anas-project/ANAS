@@ -1,0 +1,12 @@
+[Unit]
+Description=Load the fixed guest Podman namespace policy
+ConditionSecurity=apparmor
+ConditionPathExists=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+After=apparmor.service
+Before=user@1002.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=15s
+ExecStart=/usr/sbin/apparmor_parser --replace --skip-cache /usr/share/anas/forgejo-runner/podman.apparmor

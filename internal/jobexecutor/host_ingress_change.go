@@ -88,7 +88,7 @@ func (s *HostActionService) prepareIngressChange(ctx context.Context, job consol
 		return existing.gate.Poll()
 	}
 	ids := []string{job.WorkspaceID}
-	if job.Action.Name != hostaction.ActionObserverApply {
+	if job.Action.Name != hostaction.ActionObserverApply && job.Action.Name != hostaction.ActionForwardingApply {
 		// Host install/configure/enroll/uninstall and prune affect one shared
 		// daemon, not just the workspace in which their job was authorized.
 		ids = make([]string, 0, len(s.workspaces))

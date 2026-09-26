@@ -11,6 +11,13 @@ const sourceModules = import.meta.glob(["./**/*.ts", "./**/*.vue", "../emergency
 }) as Record<string, string>
 
 describe("browser security and recovery boundaries", () => {
+  it("resolves deep-link access only after initial session recovery settles", () => {
+    expect(appSource).toContain("const recoveringSession = ref(true)")
+    expect(appSource).toContain("guardSectionAccess(section, sections, recoveringSession)")
+    expect(appSource).toMatch(/finally\s*\{[^}]*recoveringSession\.value = false/s)
+    expect(appSource).toContain("phase === 'authenticated' && system && section === 'maintenance'")
+  })
+
   it("has no persistent secret storage, telemetry sink, or raw HTML rendering", () => {
     const body = Object.entries(sourceModules)
       .filter(([path]) => !path.endsWith(".test.ts"))

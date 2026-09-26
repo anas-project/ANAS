@@ -6,14 +6,14 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 | Module | Version | Timezone | Language | Selection | Global language | Global locale | Count |
 | --- | --- | --- | --- | --- | --- | --- | ---: |
-| [ai_agent](#ai_agent) | 0.1.0-r1 | configured | supported | deployment_default | applied | not_consumed | 2 |
+| [ai_agent](#ai_agent) | 0.1.0-r2 | configured | supported | deployment_default | applied | not_consumed | 2 |
 | [authentik](#authentik) | 2026.5.6-r14 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [casdoor](#casdoor) | 3.143.0-r8 | container | supported | application | applied | not_consumed | 2 |
 | [collabora](#collabora) | 26.4.2-r5 | container | supported | integration | not_consumed | not_consumed | 43 |
 | [ddns_go](#ddns_go) | 6.17.4-r6 | container | supported | application | not_consumed | not_consumed | 2 |
 | [ddns_updater](#ddns_updater) | 2.10.0-r4 | application | fixed | fixed | not_consumed | not_consumed | 1 |
 | [eturnal](#eturnal) | 1.12.2-r6 | container | not_applicable | none | not_applicable | not_applicable | 0 |
-| [forgejo](#forgejo) | 15.0.7-r1 | configured | supported | application | fallback | not_consumed | 31 |
+| [forgejo](#forgejo) | 15.0.7-r2 | configured | supported | application | fallback | not_consumed | 31 |
 | [freeradius](#freeradius) | 3.2.10-r4 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [incus](#incus) | 7.3.0-r2 | not_applicable | not_applicable | none | not_consumed | not_consumed | 0 |
 | [lam](#lam) | 9.6.0-r8 | application | supported | deployment_default | applied | not_consumed | 15 |
@@ -33,7 +33,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## ai_agent
 
-- **Version / 版本：** `0.1.0-r1`; reviewed 2026-09-05
+- **Version / 版本：** `0.1.0-r2`; reviewed 2026-09-05
 - **Timezone / 时区：** `configured` — The orchestrator inherits ANAS TZ and renders every timestamp it writes into a status comment, a schedule or an audit record in that zone; the database stores UTC.
 - **Language / 语言：** `supported`, `deployment_default` — the orchestrator's own writing -- status comments, refusal and downgrade explanations, and generated issue form templates
 - **ANAS globals / 全局默认：** `default_language=applied`; `default_locale=not_consumed`
@@ -108,7 +108,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## forgejo
 
-- **Version / 版本：** `15.0.7-r1`; reviewed 2026-08-22
+- **Version / 版本：** `15.0.7-r2`; reviewed 2026-08-22
 - **Timezone / 时区：** `configured` — Forgejo time.DEFAULT_UI_LOCATION inherits ANAS TZ; signed-in users may retain their own UI preference.
 - **Language / 语言：** `supported`, `application` — Forgejo Web UI
 - **ANAS globals / 全局默认：** `default_language=fallback`; `default_locale=not_consumed`

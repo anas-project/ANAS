@@ -21,6 +21,12 @@ func ObservePinnedIncusVersion(ctx context.Context, config IncusObserverConfig) 
 		return "", err
 	}
 	defer r.CloseIdleConnections()
+	project := ""
+	if len(config.Authorizations) != 0 {
+		project = config.Authorizations[0].Project
+	} else {
+		project = config.LeaseScopes[0].Project
+	}
 	var selected string
 	for range 2 {
 		var server struct {
@@ -35,7 +41,7 @@ func ObservePinnedIncusVersion(ctx context.Context, config IncusObserverConfig) 
 				Fingerprint string `json:"certificate_fingerprint"`
 			} `json:"environment"`
 		}
-		if err := r.get(ctx, "/1.0?project="+url.QueryEscape(config.Authorizations[0].Project), &server); err != nil {
+		if err := r.get(ctx, "/1.0?project="+url.QueryEscape(project), &server); err != nil {
 			return "", err
 		}
 		e := server.Environment

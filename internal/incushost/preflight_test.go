@@ -93,6 +93,28 @@ func TestRecipesIncludeManagedBridgeRuntimeDependency(t *testing.T) {
 	}
 }
 
+func TestSplitRecipesTrackTheDaemonPackage(t *testing.T) {
+	rows, err := Recipes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, row := range rows {
+		if row.ID == "ubuntu-26.04" || row.ID == "debian-13" {
+			seen++
+			// Both independently observed official packages are meta-packages. Their
+			// incus-base dependency owns the daemon and depends on incus-client.
+			// Removing only the meta-package/client cannot remove that daemon.
+			if !slices.Contains(row.Packages, "incus-base") {
+				t.Errorf("%s actual daemon package has no explicit installation/ownership record", row.ID)
+			}
+		}
+	}
+	if seen != 2 {
+		t.Fatal("an independently verified split daemon recipe is missing")
+	}
+}
+
 func TestPreflightDistinguishesPackagingFromRuntimeReadiness(t *testing.T) {
 	rows, err := Recipes()
 	if err != nil {

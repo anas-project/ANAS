@@ -35,6 +35,7 @@ type IncusObserverConfig struct {
 	// ServerVersion pins the exact reported version, not a compatibility claim.
 	ServerVersion  string
 	Authorizations []*computeingress.Authorization
+	LeaseScopes    []IncusLeaseObservationScope
 }
 
 func (IncusObserverConfig) String() string     { return "[Incus observer configuration: redacted]" }
@@ -46,6 +47,7 @@ func (c IncusObserverConfig) GoString() string { return c.String() }
 type IncusFactReader struct {
 	client            *pinnedGETClient
 	scopes            map[computeingress.Lease]*computeingress.Authorization
+	leaseScopes       map[computeingress.Lease]IncusLeaseObservationScope
 	serverVersion     string
 	serverFingerprint string
 	clientFingerprint string
@@ -55,7 +57,7 @@ var _ FactReader = (*IncusFactReader)(nil)
 var _ Observer = (*IncusFactReader)(nil)
 
 func NewIncusFactReader(config IncusObserverConfig) (*IncusFactReader, error) {
-	if len(config.ServerVersion) == 0 || len(config.ServerVersion) > 64 || strings.ContainsAny(config.ServerVersion, " \t\r\n\x00") || len(config.Authorizations) == 0 || len(config.Authorizations) > 1024 {
+	if len(config.ServerVersion) == 0 || len(config.ServerVersion) > 64 || strings.ContainsAny(config.ServerVersion, " \t\r\n\x00") || len(config.Authorizations)+len(config.LeaseScopes) == 0 || len(config.Authorizations)+len(config.LeaseScopes) > 1024 {
 		return nil, fmt.Errorf("Incus observer requires an explicit version and bounded lease scope")
 	}
 	scopes := make(map[computeingress.Lease]*computeingress.Authorization)
@@ -70,6 +72,18 @@ func NewIncusFactReader(config IncusObserverConfig) (*IncusFactReader, error) {
 		}
 		scopes[lease] = grant.Clone()
 		projects[grant.Project] = true
+	}
+	leaseScopes := make(map[computeingress.Lease]IncusLeaseObservationScope)
+	for _, scope := range config.LeaseScopes {
+		lease := computeingress.Lease{Consumer: scope.Consumer, Resource: scope.Resource}
+		if scope.Validate() != nil || projects[scope.Project] || scopes[lease] != nil {
+			return nil, fmt.Errorf("Incus observer has an invalid or overlapping lease scope")
+		}
+		if _, exists := leaseScopes[lease]; exists {
+			return nil, fmt.Errorf("Incus observer has a duplicate lease scope")
+		}
+		projects[scope.Project] = true
+		leaseScopes[lease] = scope
 	}
 	clientCert, err := singleCertificate(config.ClientCertPEM)
 	if err != nil || len(config.ClientKeyPEM) == 0 || len(config.ClientKeyPEM) > 64<<10 {
@@ -89,7 +103,7 @@ func NewIncusFactReader(config IncusObserverConfig) (*IncusFactReader, error) {
 	}
 	serverDigest := sha256.Sum256(serverCert.Raw)
 	clientDigest := sha256.Sum256(clientCert.Raw)
-	return &IncusFactReader{client: client, scopes: scopes, serverVersion: config.ServerVersion,
+	return &IncusFactReader{client: client, scopes: scopes, leaseScopes: leaseScopes, serverVersion: config.ServerVersion,
 		serverFingerprint: hex.EncodeToString(serverDigest[:]), clientFingerprint: hex.EncodeToString(clientDigest[:])}, nil
 }
 
@@ -158,14 +172,16 @@ func (r *IncusFactReader) ObserveHostHTTP(ctx context.Context, grant *computeing
 	}
 	observeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	first, err := r.sample(observeCtx, scope, request)
+	selection := incusInstanceSelection{Project: scope.Project, Consumer: scope.Consumer, Interface: scope.Interface}
+	instanceRequest := IncusInstanceObservationRequest{InstanceID: request.InstanceID, WorkloadID: request.WorkloadID}
+	first, err := r.sample(observeCtx, selection, instanceRequest)
 	if err != nil {
 		if observeCtx.Err() != nil {
 			return empty, observeCtx.Err()
 		}
 		return empty, err
 	}
-	second, err := r.sample(observeCtx, scope, request)
+	second, err := r.sample(observeCtx, selection, instanceRequest)
 	if err != nil {
 		if observeCtx.Err() != nil {
 			return empty, observeCtx.Err()
@@ -226,8 +242,10 @@ var observedUUID = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f
 var observedInterface = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,14}$`)
 var observedDevice = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
-func (r *IncusFactReader) sample(ctx context.Context, grant *computeingress.Authorization, request computeingress.Request) (incusHTTPSample, error) {
-	fail := func(message string) (incusHTTPSample, error) { return incusHTTPSample{}, fmt.Errorf("%s", message) }
+func (r *IncusFactReader) sampleLeaseNetwork(ctx context.Context, grant incusInstanceSelection) (IncusLeaseNetworkObservation, error) {
+	fail := func(message string) (IncusLeaseNetworkObservation, error) {
+		return IncusLeaseNetworkObservation{}, fmt.Errorf("%s", message)
+	}
 	var server struct {
 		Auth           string `json:"auth"`
 		APIVersion     string `json:"api_version"`
@@ -282,6 +300,21 @@ func (r *IncusFactReader) sample(ctx context.Context, grant *computeingress.Auth
 	if err != nil || !privateHTTPSubnet(subnet) || subnet.String() != network.Config["ipv4.address"] {
 		return fail("Incus bridge requires an explicit private IPv4 subnet")
 	}
+	return IncusLeaseNetworkObservation{BridgeName: bridge, BridgeCIDR: subnet.String(), ServerName: env.ServerName, ServerPID: env.ServerPID}, nil
+}
+
+func (r *IncusFactReader) sample(ctx context.Context, grant incusInstanceSelection, request IncusInstanceObservationRequest) (incusHTTPSample, error) {
+	fail := func(message string) (incusHTTPSample, error) { return incusHTTPSample{}, fmt.Errorf("%s", message) }
+	observedNetwork, err := r.sampleLeaseNetwork(ctx, grant)
+	if err != nil {
+		return incusHTTPSample{}, err
+	}
+	bridge := observedNetwork.BridgeName
+	bridgePath := "/1.0/networks/" + url.PathEscape(bridge)
+	subnet, err := netip.ParsePrefix(observedNetwork.BridgeCIDR)
+	if err != nil {
+		return fail("Incus managed bridge observation is invalid")
+	}
 	instancePath := "/1.0/instances/" + url.PathEscape(request.InstanceID)
 	projectQuery := "?project=" + url.QueryEscape(grant.Project)
 	var instance incusHTTPInstance
@@ -321,6 +354,14 @@ func (r *IncusFactReader) sample(ctx context.Context, grant *computeingress.Auth
 	}
 	if device == nil {
 		return fail("Incus target has no managed NIC")
+	}
+	// A provider-owned profile is not proof about the expanded instance:
+	// restricted project clients may still submit device overrides. Inspect
+	// the effective NIC on every sample, including renewed observations.
+	for _, key := range []string{"security.mac_filtering", "security.ipv4_filtering", "security.ipv6_filtering"} {
+		if device[key] != "true" {
+			return fail("Incus managed NIC source filtering is absent or overridden")
+		}
 	}
 	expectedMAC := device["hwaddr"]
 	if expectedMAC == "" {
@@ -401,7 +442,7 @@ func (r *IncusFactReader) sample(ctx context.Context, grant *computeingress.Auth
 		Facts: computeingress.Facts{Project: grant.Project, Interface: grant.Interface, InstanceID: request.InstanceID,
 			InstanceUUID: uuid, Incarnation: hex.EncodeToString(digest[:]), State: "Running", NetworkOwner: grant.Consumer,
 			GuestIP: guestIP, AllocationIP: guestIP, GuestMAC: mac, AllocationMAC: mac},
-		ServerName: env.ServerName, ServerPID: env.ServerPID, Device: deviceName, Interface: interfaceName,
+		ServerName: observedNetwork.ServerName, ServerPID: observedNetwork.ServerPID, Device: deviceName, Interface: interfaceName,
 		HostName: nic.HostName, BridgeCIDR: subnet.String(),
 	}, nil
 }

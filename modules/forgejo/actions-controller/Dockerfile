@@ -1,4 +1,5 @@
-ARG GO_BUILDER_REGISTRY=docker.io
+ARG DOCKER_HUB_REGISTRY=docker.io
+ARG GO_BUILDER_REGISTRY=${DOCKER_HUB_REGISTRY}
 
 FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26-alpine AS controller-build
 WORKDIR /src
@@ -23,10 +24,14 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26-alpine AS incus-build
 ARG TARGETOS
 ARG TARGETARCH
-RUN GOBIN=/out CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+# Only the separately pinned upstream CLI may use this operator-selected
+# module proxy. The controller's shared repository code stays GOPROXY=off.
+# Keep Go's default checksum verification; never pass credentials here.
+ARG GO_MODULE_PROXY=https://proxy.golang.org,direct
+RUN GOBIN=/out CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOPROXY="$GO_MODULE_PROXY" \
     go install github.com/lxc/incus/v7/cmd/incus@v7.3.0
 
-FROM alpine:3.22.1
+FROM ${DOCKER_HUB_REGISTRY}/library/alpine:3.22.1
 RUN apk add --no-cache ca-certificates \
     && addgroup -g 65532 -S controller \
     && adduser -u 65532 -S -D -H -G controller controller \

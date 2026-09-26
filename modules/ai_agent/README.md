@@ -9,7 +9,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `ai_agent` |
-| 版本 / revision | `0.1.0-r1` |
+| 版本 / revision | `0.1.0-r2` |
 | 状态 | `developing` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -226,7 +226,7 @@ anas config set ai_agent.repository_allowlist "anas-project/ANAS" -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`0.1.0-r1`（reviewed 2026-09-05）
+- Module version / 版本：`0.1.0-r2`（reviewed 2026-09-05）
 - Timezone / 时区：`configured` — The orchestrator inherits ANAS TZ and renders every timestamp it writes into a status comment, a schedule or an audit record in that zone; the database stores UTC.
 - Language scope / 语言范围：the orchestrator's own writing -- status comments, refusal and downgrade explanations, and generated issue form templates
 - Selection / 选择方式：`deployment_default`

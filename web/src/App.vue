@@ -35,7 +35,7 @@ import WorkspaceLifecycle from "./lifecycle/WorkspaceLifecycle.vue"
 import WorkspaceMaintenance from "./maintenance/WorkspaceMaintenance.vue"
 import WorkspaceModules from "./modules/WorkspaceModules.vue"
 import WorkspaceAudit from "./audit/WorkspaceAudit.vue"
-import { sectionFromLocation, sectionHref, visibleSections, type ConsoleSection } from "./nav"
+import { guardSectionAccess, sectionFromLocation, sectionHref, visibleSections, type ConsoleSection } from "./nav"
 
 type SystemResponse = components["schemas"]["SystemResponse"]
 type Phase = EntryPhase | "bootstrap-ready" | "authenticated" | "proxy-auth"
@@ -52,6 +52,7 @@ const passwordConfirmation = ref("")
 const ownerCreated = ref(false)
 const sessionCSRF = ref("")
 const sessionExpiry = ref<SessionLifetime | null>(null)
+const recoveringSession = ref(true)
 const clockTick = ref(Date.now())
 const configRevision = ref(0)
 const jobsRevision = ref(0)
@@ -110,9 +111,7 @@ onBeforeUnmount(() => window.removeEventListener("hashchange", syncSectionFromHa
 
 // Signing out, or losing a session, must not strand the operator on a page
 // whose routes they can no longer reach.
-watch(sections, (available) => {
-  if (!available.includes(section.value)) section.value = "overview"
-})
+guardSectionAccess(section, sections, recoveringSession)
 
 function toggleLocale() {
   locale.value = locale.value === "zh" ? "en" : "zh"
@@ -318,6 +317,10 @@ onMounted(async () => {
     }
   } catch {
     status.value = "unavailable"
+  } finally {
+    // All resolved failures must also close the temporary recovery window.
+    // A private deep link is retained only when the real session allows it.
+    recoveringSession.value = false
   }
 })
 </script>

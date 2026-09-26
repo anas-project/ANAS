@@ -73,6 +73,7 @@ type Options struct {
 	// Installed daemon queues and launcher share one coordinator. This is
 	// trusted wiring, not an HTTP option or evidence of clean external state.
 	IngressCoordinator *computeingressruntime.ControllerCoordinator
+	ForwardingDrainer  ForwardingDrainer
 	// Optional revalidation of the persisted actor. Called under jobs.lock;
 	// it must not reenter Store or invoke an application/host operation.
 	Authorize func(context.Context, consolejobs.Job) error
@@ -93,6 +94,7 @@ type Executor struct {
 	runningMu            sync.Mutex
 	running              map[string]context.CancelFunc
 	ingressCoordinator   *computeingressruntime.ControllerCoordinator
+	forwardingDrainer    ForwardingDrainer
 	authorize            func(context.Context, consolejobs.Job) error
 	ingressMu            sync.Mutex
 	ingressChanges       map[string]*workspaceIngressChange
@@ -126,6 +128,9 @@ func New(options Options) (*Executor, error) {
 		workspaces[workspace.ID] = workspace.Path
 		wake[workspace.ID] = make(chan struct{}, 1)
 	}
+	if options.ForwardingDrainer != nil && options.IngressCoordinator == nil {
+		return nil, errors.New("forwarding drain requires the shared workspace coordinator")
+	}
 	if options.IngressCoordinator != nil {
 		ids := make([]string, 0, len(workspaces))
 		for id := range workspaces {
@@ -141,7 +146,7 @@ func New(options Options) (*Executor, error) {
 		moduleCommandFactory: options.ModuleCommandFactory,
 		pollInterval:         options.PollInterval, onError: options.OnError, wake: wake,
 		running:            make(map[string]context.CancelFunc),
-		ingressCoordinator: options.IngressCoordinator, authorize: options.Authorize,
+		ingressCoordinator: options.IngressCoordinator, authorize: options.Authorize, forwardingDrainer: options.ForwardingDrainer,
 		ingressChanges: make(map[string]*workspaceIngressChange),
 	}, nil
 }

@@ -92,13 +92,31 @@ func TestRelaySourceScopeAndDestination(t *testing.T) {
 	if !settings.acceptsSource(netip.MustParseAddr("10.77.0.2")) {
 		t.Fatal("control subnet source rejected")
 	}
-	for _, source := range []string{"10.77.0.0", "10.77.0.1", "10.77.0.255", "10.78.0.2", "127.0.0.1", "fd00::2", "::ffff:10.77.0.2"} {
+	for _, source := range []string{"10.77.0.0", "10.77.0.255", "10.78.0.2", "127.0.0.1", "fd00::2", "::ffff:10.77.0.2"} {
 		if settings.acceptsSource(netip.MustParseAddr(source)) {
 			t.Fatal("out-of-scope or reserved source accepted")
 		}
 	}
 	if incusLoopbackDestination != "127.0.0.1:8443" {
 		t.Fatal("fixed daemon destination changed")
+	}
+}
+
+func TestRelayAllowsTheFixedHostGatewayProbe(t *testing.T) {
+	settings, err := validateRelayConfiguration(validRelayConfiguration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The host verifier binds its source to this exact installed gateway.
+	// Host INPUT rules separately constrain its loopback delivery; this
+	// transport filter cannot replace those rules or the daemon's mTLS.
+	if !settings.acceptsSource(settings.listen.Addr()) {
+		t.Fatal("the actual host-bound management verification can never reach the daemon")
+	}
+	for _, source := range []string{"127.0.0.1", "::ffff:10.77.0.1", "10.78.0.1", "10.77.0.0", "10.77.0.255"} {
+		if settings.acceptsSource(netip.MustParseAddr(source)) {
+			t.Fatalf("host verification admitted a different or reserved source %s", source)
+		}
 	}
 }
 

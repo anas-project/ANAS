@@ -21,6 +21,7 @@ import (
 )
 
 type daemonHostActions interface {
+	WithdrawForwarding(context.Context, string, string) error
 	Run(context.Context) error
 	Ready() <-chan struct{}
 	InvokePreflight(context.Context, string, string, string) (consolejobs.CreateResult, error)

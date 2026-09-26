@@ -4,6 +4,8 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [Incus 租约围栏、归属与 7.x 限制键实机核验](2026-09-26-incus-fence-native-validation.md) | 2026-09-26，`0b61448` 加累积工作树 | 6.0.5 / 7.0.1 / 7.5.1 三档一次性 VM 16/18/19 项全部通过；物理网卡定时断链与 Debian IPv4 下载慢的处理；VM 启动、ZFS 与多工作区部署未覆盖 |
+| [compute Contract 与 Incus 实现审查](2026-09-25-compute-contract-incus-review.md) | 2026-09-25，`0b61448` 加累积工作树 | project 围栏不完整、档位未由 daemon 强制、跨工作区共用 project、租约无撤销路径与 Contract 声明失真；未改实现 |
 | [系统容器 Runner cgroup 与作业闭环](2026-09-22-incus-onejob-closeout.md) | 2026-09-22，`3f5242e` 加累积工作树 | 不可变镜像 OCI exec/资源限制、真实作业中断矩阵与物理 Docker 后置基线；终态见正文 |
 | [lab-r6 镜像准入与真实工作流接续](2026-09-22-incus-onejob-acceptance.md) | 2026-09-22，`3f5242e` 加累积工作树 | 不可变新镜像 rootless API 已通过；真实工作流、夹具修复及本轮收尾以正文实际终态为准 |
 | [Runner 根目录、主组与真实 one-job 接续](2026-09-22-incus-onejob-runtime-completion.md) | 2026-09-22，`3f5242e` 加累积工作树 | 原样候选双平台复测、rootfs 0700 与 newuidmap 主组不一致的实证修复；实际终态见正文 |

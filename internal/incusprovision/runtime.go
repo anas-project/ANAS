@@ -177,6 +177,10 @@ func (r *localRuntime) Observe(ctx context.Context, request Request, state State
 	if err != nil {
 		return Observation{}, err
 	}
+	obs.Forwarding, err = r.observeForwarding(ctx)
+	if err != nil {
+		return Observation{}, err
+	}
 	return obs, nil
 }
 
@@ -206,6 +210,17 @@ func (r *localRuntime) InstallPackages(ctx context.Context, recipe incushost.Rec
 
 func (r *localRuntime) EnableIncus(ctx context.Context) error {
 	return r.commands.run(ctx, fixedSystemctl, []string{"enable", "--now", "incus.service"}, nil)
+}
+
+func (r *localRuntime) StopIncus(ctx context.Context) error {
+	active, err := r.commands.systemctlIsActive(ctx, "incus.service")
+	if err != nil && !errors.Is(err, errCommandInactive) {
+		return err
+	}
+	if !active {
+		return ctx.Err()
+	}
+	return r.commands.run(ctx, fixedSystemctl, []string{"stop", "incus.service"}, nil)
 }
 
 func (r *localRuntime) ConfigureIncusHTTPS(ctx context.Context) error {
@@ -439,8 +454,8 @@ func (r *localRuntime) RemoveDockerControlNetwork(ctx context.Context, name, own
 	if err != nil {
 		return err
 	}
-	if !network.ownedBy(ownerID) || network.ID != expectedID {
-		return ErrBlocked
+	if err := unusedControlNetwork(network, ownerID, expectedID); err != nil {
+		return err
 	}
 	return r.docker.deleteNetwork(ctx, network.ID)
 }
@@ -449,27 +464,13 @@ func (r *localRuntime) RemoveStoragePool(ctx context.Context, name, ownerID stri
 	if name != StoragePoolName || ownerID == "" {
 		return ErrInvalid
 	}
-	pool, err := r.incus.getStoragePool(ctx, name)
-	if errors.Is(err, errIncusNotFound) {
-		return nil
-	}
-	if err != nil {
+	if exists, err := r.checkStoragePoolUnused(ctx, Ownership{ID: ownerID, StoragePool: name}); err != nil || !exists {
 		return err
-	}
-	if !storagePoolOwned(pool, Ownership{ID: ownerID}) {
-		return ErrBlocked
-	}
-	volumes, err := r.incus.listStoragePoolVolumes(ctx, name)
-	if err != nil {
-		return err
-	}
-	if len(volumes) != 0 {
-		return ErrBlocked
 	}
 	if err := r.incus.deleteStoragePool(ctx, name); err != nil {
 		return err
 	}
-	_, err = r.incus.getStoragePool(ctx, name)
+	_, err := r.incus.getStoragePool(ctx, name)
 	if errors.Is(err, errIncusNotFound) {
 		return nil
 	}
@@ -537,11 +538,17 @@ func (fixedCommands) run(ctx context.Context, operation fixedOperation, args []s
 }
 
 func (fixedCommands) runWithInput(ctx context.Context, operation fixedOperation, args []string, env []string, input []byte) error {
-	executable, timeout, err := fixedOperationSpec(operation)
+	executable, timeout, err := fixedCommandSpec(operation, args)
 	if err != nil {
 		return err
 	}
-	if ctx == nil || !fixedExecutable(executable) || executableUsable(executable) != nil {
+	if ctx == nil {
+		return ErrInvalid
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !fixedExecutable(executable) || executableUsable(executable) != nil {
 		return ErrInvalid
 	}
 	for _, arg := range args {
@@ -565,15 +572,21 @@ func (fixedCommands) runWithInput(ctx context.Context, operation fixedOperation,
 		}
 		return ErrExternalEffects
 	}
-	return nil
+	return runCtx.Err()
 }
 
 func (c fixedCommands) output(ctx context.Context, operation fixedOperation, args []string, env []string) ([]byte, int, error) {
-	executable, timeout, err := fixedOperationSpec(operation)
+	executable, timeout, err := fixedCommandSpec(operation, args)
 	if err != nil {
 		return nil, -1, err
 	}
-	if ctx == nil || !fixedExecutable(executable) || executableUsable(executable) != nil {
+	if ctx == nil {
+		return nil, -1, ErrInvalid
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, -1, err
+	}
+	if !fixedExecutable(executable) || executableUsable(executable) != nil {
 		return nil, -1, ErrInvalid
 	}
 	for _, arg := range args {
@@ -623,6 +636,39 @@ func (c fixedCommands) systemctlIsActive(ctx context.Context, unit string) (bool
 		return false, errCommandInactive
 	}
 	return false, ErrExternalEffects
+}
+
+func fixedCommandSpec(operation fixedOperation, args []string) (string, time.Duration, error) {
+	if operation == fixedSystemctl {
+		if len(args) == 2 && args[0] == "stop" && args[1] == "incus.service" {
+			return systemctlPath, 2 * time.Minute, nil
+		}
+		// Queries retain their short budget. Incus' packaged service permits
+		// a ten-minute startup; a thirty-second CLI timeout can otherwise
+		// abandon an accepted systemd job that subsequently starts the daemon.
+		// Do not use --no-block or infer success from a timeout. The caller's
+		// shorter deadline/cancellation and the subsequent readback still apply.
+		if len(args) != 3 {
+			return "", 0, ErrInvalid
+		}
+		unit := args[2]
+		if unit != "incus.service" && unit != RelayServiceName {
+			return "", 0, ErrInvalid
+		}
+		if args[0] == "is-active" && args[1] == "--quiet" {
+			return systemctlPath, 30 * time.Second, nil
+		}
+		if args[1] == "--now" {
+			if args[0] == "enable" && unit == "incus.service" {
+				return systemctlPath, 11 * time.Minute, nil
+			}
+			if unit == RelayServiceName && (args[0] == "enable" || args[0] == "disable") {
+				return systemctlPath, 2 * time.Minute, nil
+			}
+		}
+		return "", 0, ErrInvalid
+	}
+	return fixedOperationSpec(operation)
 }
 
 func fixedOperationSpec(operation fixedOperation) (string, time.Duration, error) {
@@ -752,7 +798,7 @@ func (r *localRuntime) packagesInstalled(ctx context.Context, packages []string)
 	if len(packages) == 0 {
 		return false, ErrInvalid
 	}
-	args := append([]string{"-W", "-f=${binary:Package}\t${db:Status-Abbrev}\n", "--"}, packages...)
+	args := append([]string{"-W", packageRemovalFormat, "--"}, packages...)
 	out, code, err := r.commands.output(ctx, fixedDPKGQuery, args, nil)
 	if err != nil {
 		return false, err
@@ -791,7 +837,7 @@ func instanceUsesOwnedResource(inst incusInstance, ownership Ownership) bool {
 			if ownership.StoragePool != "" && device["pool"] == ownership.StoragePool {
 				return true
 			}
-			if ownership.DockerNetwork != "" && (device["network"] == ownership.DockerNetwork || device["parent"] == ownership.DockerNetwork || device["parent"] == ownership.ControlBridge) {
+			if ownership.DockerNetwork != "" && (device["network"] == ownership.DockerNetwork || device["parent"] == ownership.DockerNetwork || (ownership.ControlBridge != "" && device["parent"] == ownership.ControlBridge)) {
 				return true
 			}
 		}

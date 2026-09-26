@@ -1,11 +1,28 @@
 # AI Agent orchestration technical notes
 
+## Shared source and build transport settings
+
+The orchestrator compiles the current repository's compute types and validation through the named
+`shared` context; it must not silently fetch another ANAS implementation. A staging build requires
+`ANAS_SHARED_BUILD_CONTEXT` to identify matching absolute source. `check-shared-build --json`
+verifies input bytes/modes and declarations only, without runtime credentials or Docker execution.
+
+Both Go and Alpine runtime bases honor `DOCKER_HUB_REGISTRY`; an explicit `GO_BUILDER_REGISTRY`
+overrides only Go. Declared third-party modules such as pgx use `GO_MODULE_PROXY`, falling back to
+`GOPROXY_URL` and the official source while retaining `go.sum` and checksum-database verification.
+These are build-only selectors, not runtime environment, proxy-credential or lease/guest permissions.
+
+The isolated VM gate in `test-env/fixtures/incus-shared-build/README.md` builds source and build-only
+staging layouts separately and compares final binaries. Compiling an image does not establish agent
+runtime, external model calls, compute jobs or complete Core `build/apply` acceptance, and does not
+enable unfinished runtime paths.
+
 How the `ai_agent` control plane is put together and where its boundaries are. Configuration and
 operation are in the [English README](../README.en.md); the acceptance criteria are the
 [requirement matrix](../dev-docs/requirements/ai-agent.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `0.1.0-r1` / `anas.module/v1`.
+> Status: current implementation; based on `0.1.0-r2` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose topology
@@ -18,7 +35,7 @@ Native control-bridge connectivity, certificate isolation and job lifecycle acce
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r1` | `db, traefik, compute-control` | 2 |
+| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r2` | `db, traefik, compute-control` | 2 |
 <!-- generated:compose-topology:end -->
 
 One long-lived service. It is `read_only`, `cap_drop: ALL`, `no-new-privileges`, runs as `65532`, and

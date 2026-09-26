@@ -5,8 +5,25 @@ url=
 uuid=
 handle=
 label=
+trust_size=0
+trust_sha256=
+trust_size_seen=false
+trust_sha_seen=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --trust-size|--trust-sha256)
+            option=$1
+            [ "$#" -ge 2 ] || exit 64
+            case "$option" in
+                --trust-size)
+                    [ "$trust_size_seen" = false ] || exit 64
+                    trust_size=$2; trust_size_seen=true ;;
+                --trust-sha256)
+                    [ "$trust_sha_seen" = false ] || exit 64
+                    trust_sha256=$2; trust_sha_seen=true ;;
+            esac
+            shift 2
+            ;;
         --url|--uuid|--handle|--label)
             option=$1
             [ "$#" -ge 2 ] || exit 64
@@ -25,6 +42,13 @@ while [ "$#" -gt 0 ]; do
         *) exit 64 ;;
     esac
 done
+[ "$trust_size_seen" = "$trust_sha_seen" ] || exit 64
+if [ "$trust_size_seen" = true ]; then
+    case "$trust_size" in ''|0*|*[!0-9]*) exit 64 ;; esac
+    [ "${#trust_size}" -le 5 ] && [ "$trust_size" -le 32768 ] || exit 64
+    [ "${#trust_sha256}" -eq 64 ] || exit 64
+    case "$trust_sha256" in *[!0-9a-f]*) exit 64 ;; esac
+fi
 [ -n "$url" ] && [ -n "$uuid" ] && [ -n "$handle" ] && [ -n "$label" ] || exit 64
 case "$url" in https://*|http://*) ;; *) exit 64 ;; esac
 
@@ -62,21 +86,29 @@ if [ "$engine_ready" != true ]; then
     printf '%s\n' 'Runner engine is unavailable; token input was not consumed.' >&2
     exit 69
 fi
+[ ! -e "$token_dir" ] && [ ! -L "$token_dir" ] || exit 65
 install -d -o runner-agent -g runner-agent -m 0700 "$token_dir"
-umask 077
-dd of="$token_file" bs=40 count=1 iflag=fullblock status=none
-[ "$(wc -c < "$token_file")" -eq 40 ] || exit 65
-LC_ALL=C grep -Eq '^[0-9a-f]{40}$' "$token_file" || exit 65
-chown runner-agent:runner-agent "$token_file"
-chmod 0600 "$token_file"
+# All payload file opens happen without privilege and with exclusive creation;
+# a guest-controlled symlink must never turn token handling into a root write.
+runuser -u runner-agent -- /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+    /usr/local/libexec/anas-forgejo-runner-input "$trust_size" "$trust_sha256"
+
+set --
+if [ "$trust_size" -ne 0 ]; then
+    set -- --setenv=SSL_CERT_FILE=/run/anas-actions-token/runner-ca-bundle.pem
+fi
 
 systemctl reset-failed "$unit" 2>/dev/null || true
-systemd-run --unit="$unit" --collect --no-block \
+if ! systemd-run --unit="$unit" --collect --no-block \
     --uid=runner-agent --gid=runner-agent \
     --property=RuntimeMaxSec=1h --property=TimeoutStopSec=30s \
     --setenv=HOME=/home/runner-agent \
     --setenv=DOCKER_HOST=unix:///run/anas-podman/podman.sock \
+    "$@" \
     /usr/local/libexec/anas-forgejo-one-job \
     /usr/local/bin/forgejo-runner -c /etc/forgejo-runner/config.yml one-job \
     --url "$url" --uuid "$uuid" --token-url "file://$token_file" \
-    --label "$label" --handle "$handle" --wait
+    --label "$label" --handle "$handle" --wait; then
+    runuser -u runner-agent -- rm -f "$token_file" "$token_dir/runner-ca-bundle.pem"
+    exit 70
+fi

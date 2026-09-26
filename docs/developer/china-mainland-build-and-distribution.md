@@ -30,11 +30,17 @@ CNB 不从源码重复构建镜像。
 | `APT_MIRROR_URL` | `https://mirrors.aliyun.com` | Debian、Ubuntu 构建依赖 |
 | `APK_MIRROR_URL` | `https://mirrors.aliyun.com` | Alpine 构建依赖 |
 | `NPM_REGISTRY_URL` | `https://registry.npmmirror.com` | MeshCentral npm 依赖 |
-| `GOPROXY_URL` | `https://goproxy.cn,direct` | module hook 与 ddns-go Go modules |
+| `GOPROXY_URL` | `https://goproxy.cn,direct` | module hook、ddns-go、AI Agent 第三方模块与独立固定的 Incus CLI |
 | `BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX` | `https://files.m.daocloud.io/` | LAM 构建下载 |
 | `DOCKER_HUB_REGISTRY` | `m.daocloud.io/docker.io` | Dockerfile 基础镜像 |
 | `LLNG_DOCKER_HUB_REGISTRY` | `docker.1ms.run` | LemonLDAP::NG 基础镜像；该镜像不在 DaoCloud 白名单中 |
 | `GHCR_REGISTRY` | `ghcr.nju.edu.cn` | 第三方 GHCR 基础镜像 |
+
+Incus Provider、Forgejo Actions controller 和 AI Agent 的 Go 构建层与 Alpine 运行层都使用
+`DOCKER_HUB_REGISTRY`，不能只代理 builder 而让 runtime 层继续直连 Docker Hub。
+计算镜像中显式 `GO_BUILDER_REGISTRY` 优先于该默认值；外部模块的 `GO_MODULE_PROXY`
+优先于 `GOPROXY_URL`。Provider/controller 的仓库共享代码保持 `GOPROXY=off`，校验数据库
+不关闭，镜像源选择不改变依赖版本或给业务容器增加代理/凭据环境。
 
 例如只替换企业内部 GHCR 镜像库，而保留其他中国默认值：
 

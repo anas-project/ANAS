@@ -32,6 +32,7 @@ var knownModuleHookPhases = map[string]bool{
 	"runtime_restore":        true,
 	"services":               true,
 	"after_start":            true,
+	"before_stop":            true,
 	"local_account_apply":    true,
 	"local_account_rotate":   true,
 	"local_account_rollback": true,

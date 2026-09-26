@@ -8,6 +8,20 @@ import (
 	"testing"
 )
 
+func TestPackageQueryFormatsRespectFixedCommandArgumentBoundary(t *testing.T) {
+	for _, item := range []struct {
+		format string
+		tabs   int
+	}{
+		{packageObservationFormat, 2},
+		{packageRemovalFormat, 1},
+	} {
+		if strings.ContainsAny(item.format, "\x00\r\n\t") || !strings.HasPrefix(item.format, "-f=${binary:Package}") || !strings.HasSuffix(item.format, `\n`) || strings.Count(item.format, `\t`) != item.tabs {
+			t.Fatal("fixed package-query argv must use dpkg format escapes, not control bytes")
+		}
+	}
+}
+
 func TestInstallTracksOnlyPackagesAbsentBeforeEffect(t *testing.T) {
 	ctx := context.Background()
 	store := &memoryStore{}
@@ -22,10 +36,10 @@ func TestInstallTracksOnlyPackagesAbsentBeforeEffect(t *testing.T) {
 	if _, err := backend.Install(ctx, Request{}, bind(plan, PhaseInstall)); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(store.state.Ownership.ManagedPackages, []string{"dnsmasq-base", "incus", "incus-client"}) {
+	if !slices.Equal(store.state.Ownership.ManagedPackages, []string{"dnsmasq-base", "incus", "incus-base", "incus-client"}) {
 		t.Fatal("install did not preserve per-package pre-existing ownership")
 	}
-	if !slices.Equal(rt.installedByCall, []string{"dnsmasq-base", "incus", "incus-client"}) {
+	if !slices.Equal(rt.installedByCall, []string{"dnsmasq-base", "incus", "incus-base", "incus-client"}) {
 		t.Fatal("install unnecessarily requested pre-existing packages")
 	}
 	request := Request{RemovePackages: true}
@@ -36,7 +50,7 @@ func TestInstallTracksOnlyPackagesAbsentBeforeEffect(t *testing.T) {
 	if _, err = backend.Uninstall(ctx, request, bind(plan, PhaseUninstall)); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(rt.removedByCall, []string{"dnsmasq-base", "incus", "incus-client"}) || !slices.Equal(rt.obs.InstalledPackages, []string{"btrfs-progs", "nftables"}) {
+	if !slices.Equal(rt.removedByCall, []string{"dnsmasq-base", "incus", "incus-base", "incus-client"}) || !slices.Equal(rt.obs.InstalledPackages, []string{"btrfs-progs", "nftables"}) {
 		t.Fatal("uninstall removed unowned host packages")
 	}
 }

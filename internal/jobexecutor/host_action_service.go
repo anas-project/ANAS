@@ -204,7 +204,7 @@ func (s *HostActionService) InvokeConfirmed(ctx context.Context, actor, workspac
 		return consolejobs.CreateResult{}, hostaction.ErrUnavailable
 	}
 	spec, ok := hostaction.LookupAction(action)
-	if !ok || !spec.Mutating || s.options.Confirmations == nil {
+	if !ok || !spec.RequiresConfirm || s.options.Confirmations == nil {
 		return consolejobs.CreateResult{}, hostaction.ErrRequest
 	}
 	if err := s.authorize(ctx, actor, workspace); err != nil {
@@ -322,11 +322,15 @@ func (s *HostActionService) confirmationBinding(ctx context.Context, actor, work
 }
 
 func (s *HostActionService) Invoke(ctx context.Context, actor, workspace, action string, parameters json.RawMessage, key string) (consolejobs.CreateResult, error) {
+	return s.invoke(ctx, actor, workspace, action, parameters, key, false)
+}
+
+func (s *HostActionService) invoke(ctx context.Context, actor, workspace, action string, parameters json.RawMessage, key string, withdrawal bool) (consolejobs.CreateResult, error) {
 	if s == nil || !s.actionAdmission(action) {
 		return consolejobs.CreateResult{}, hostaction.ErrUnavailable
 	}
 	spec, ok := hostaction.LookupAction(action)
-	if !ok || spec.Mutating {
+	if !ok || spec.Mutating && (!withdrawal || action != hostaction.ActionForwardingWithdraw) {
 		return consolejobs.CreateResult{}, hostaction.ErrRequest
 	}
 	if err := s.authorize(ctx, actor, workspace); err != nil {
@@ -417,7 +421,7 @@ func (s *HostActionService) requestMatches(job consolejobs.Job) bool {
 	want, _ := HostActionRequest(job.Action.Name, s.options.Release, parameters)
 	a, e := json.Marshal(want)
 	request := job.Request
-	if spec.Mutating {
+	if spec.RequiresConfirm {
 		request = publicStoredRequest(job.Request)
 	}
 	b, f := json.Marshal(request)

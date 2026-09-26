@@ -179,6 +179,9 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 		if err != nil {
 			return err
 		}
+		if err := validateRecipeBuildTrust(ctx, recipe, checkInstalledDebianBootstrapKeyring); err != nil {
+			return err
+		}
 		// Complete platform, privilege and executable preflight before reserving
 		// a revision. A missing tool must not consume a build attempt.
 		builder, err := prepareDistrobuilder(ctx, builderPath, builderDigest, target)

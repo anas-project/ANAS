@@ -33,6 +33,12 @@ type HTTPAuthorizationSnapshot struct {
 // performs recovery, runs Hooks or reads the Secret Store. The workspace and all
 // metadata parents must be outside consumer write access.
 func (r *Reader) HTTPAuthorizations(ctx context.Context) (*HTTPAuthorizationSnapshot, error) {
+	return r.readActiveAuthorizations(ctx, selectHTTPAuthorizations)
+}
+
+// The shared reader owns the existing lock and immutable active metadata.
+// Selectors grant only their own contract-specific authority.
+func (r *Reader) readActiveAuthorizations(ctx context.Context, selectResources func(*HTTPAuthorizationSnapshot, Manifest) error) (*HTTPAuthorizationSnapshot, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
@@ -102,49 +108,7 @@ func (r *Reader) HTTPAuthorizations(ctx context.Context) (*HTTPAuthorizationSnap
 	}
 	snapshot := &HTTPAuthorizationSnapshot{WorkspaceDigest: fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(workspace))), Deployment: manifest.ID, ActivatedAt: active.ActivatedAt, ManifestDigest: fmt.Sprintf("sha256:%x", sha256.Sum256(body))}
 	snapshot.Epoch = fmt.Sprintf("%x", sha256.Sum256([]byte(snapshot.WorkspaceDigest+"\x00"+snapshot.Deployment+"\x00"+snapshot.ActivatedAt+"\x00"+snapshot.ManifestDigest)))
-	for _, resource := range manifest.Resources {
-		grant := resource.ComputeIngress
-		if resource.Contract != "compute" {
-			if grant != nil {
-				return nil, fmt.Errorf("HTTP authorization exists on a non-compute resource")
-			}
-			continue
-		}
-		if err := grant.ValidateSpec(resource.Spec); err != nil {
-			return nil, err
-		}
-		if grant == nil {
-			continue
-		}
-		if grant.Deployment != manifest.ID || grant.Consumer != resource.Consumer || grant.Resource != resource.ID || grant.Provider != resource.Provider || grant.Interface != resource.Interface || grant.LeaseSecretRef != resource.LeaseSecretKey {
-			return nil, fmt.Errorf("HTTP authorization does not match its frozen resource")
-		}
-		if _, present := manifest.Modules[resource.Consumer]; !present || !slices.Contains(manifest.ModuleOrder, resource.Consumer) {
-			return nil, fmt.Errorf("HTTP consumer is not in the active deployment")
-		}
-		if _, present := manifest.Modules[resource.Provider]; !present || !slices.Contains(manifest.ModuleOrder, resource.Provider) {
-			return nil, fmt.Errorf("HTTP compute provider is not in the active deployment")
-		}
-		binding := manifest.Bindings[resource.Consumer]
-		if binding["compute"] != resource.Provider || binding["compute.interface"] != resource.Interface {
-			return nil, fmt.Errorf("HTTP compute binding differs from the active resource")
-		}
-		if grant.ForwardAuth != nil {
-			provider := grant.ForwardAuth.Provider
-			if _, present := manifest.Modules[provider]; !present || !slices.Contains(manifest.ModuleOrder, provider) || binding["forward_auth"] != provider || binding["forward_auth.interface"] != "http" {
-				return nil, fmt.Errorf("HTTP authentication binding is not active")
-			}
-		}
-		refs, err := computeimage.Parse(resource.Spec["image_allowlist"])
-		if err != nil {
-			return nil, err
-		}
-		if err := resource.ComputeImages.Validate(refs, resource.Interface); err != nil {
-			return nil, err
-		}
-		snapshot.Authorizations = append(snapshot.Authorizations, grant.Clone())
-	}
-	if err := computeingress.ValidateNamespaces(snapshot.Authorizations, nil); err != nil {
+	if err := selectResources(snapshot, manifest); err != nil {
 		return nil, err
 	}
 	if err := contextErr(ctx); err != nil {
@@ -155,6 +119,55 @@ func (r *Reader) HTTPAuthorizations(ctx context.Context) (*HTTPAuthorizationSnap
 		return nil, fmt.Errorf("Core HTTP authorization lock changed during read")
 	}
 	return snapshot, nil
+}
+
+func selectHTTPAuthorizations(snapshot *HTTPAuthorizationSnapshot, manifest Manifest) error {
+	for _, resource := range manifest.Resources {
+		grant := resource.ComputeIngress
+		if resource.Contract != "compute" {
+			if grant != nil {
+				return fmt.Errorf("HTTP authorization exists on a non-compute resource")
+			}
+			continue
+		}
+		if err := grant.ValidateSpec(resource.Spec); err != nil {
+			return err
+		}
+		if grant == nil {
+			continue
+		}
+		if grant.Deployment != manifest.ID || grant.Consumer != resource.Consumer || grant.Resource != resource.ID || grant.Provider != resource.Provider || grant.Interface != resource.Interface || grant.LeaseSecretRef != resource.LeaseSecretKey {
+			return fmt.Errorf("HTTP authorization does not match its frozen resource")
+		}
+		if _, present := manifest.Modules[resource.Consumer]; !present || !slices.Contains(manifest.ModuleOrder, resource.Consumer) {
+			return fmt.Errorf("HTTP consumer is not in the active deployment")
+		}
+		if _, present := manifest.Modules[resource.Provider]; !present || !slices.Contains(manifest.ModuleOrder, resource.Provider) {
+			return fmt.Errorf("HTTP compute provider is not in the active deployment")
+		}
+		binding := manifest.Bindings[resource.Consumer]
+		if binding["compute"] != resource.Provider || binding["compute.interface"] != resource.Interface {
+			return fmt.Errorf("HTTP compute binding differs from the active resource")
+		}
+		if grant.ForwardAuth != nil {
+			provider := grant.ForwardAuth.Provider
+			if _, present := manifest.Modules[provider]; !present || !slices.Contains(manifest.ModuleOrder, provider) || binding["forward_auth"] != provider || binding["forward_auth.interface"] != "http" {
+				return fmt.Errorf("HTTP authentication binding is not active")
+			}
+		}
+		refs, err := computeimage.Parse(resource.Spec["image_allowlist"])
+		if err != nil {
+			return err
+		}
+		if err := resource.ComputeImages.Validate(refs, resource.Interface); err != nil {
+			return err
+		}
+		snapshot.Authorizations = append(snapshot.Authorizations, grant.Clone())
+	}
+	if err := computeingress.ValidateNamespaces(snapshot.Authorizations, nil); err != nil {
+		return err
+	}
+	return nil
 }
 
 // These are trusted Core files, not consumer requests. Bound and pin ordinary

@@ -127,6 +127,19 @@ class RunnerAdmission(unittest.TestCase):
         self.assertEqual(result.returncode, 64)
         self.assertEqual(trace, [])
 
+    def test_invalid_trust_frame_rejects_before_engine_or_token(self):
+        required = ['--url', 'https://forgejo.test', '--uuid', 'runner-id',
+                    '--handle', 'job-id', '--label', 'docker:docker://node:24']
+        for extra in (['--trust-size', '1'], ['--trust-sha256', 'a'*64],
+                      ['--trust-size', '32769', '--trust-sha256', 'a'*64],
+                      ['--trust-size', '01', '--trust-sha256', 'a'*64],
+                      ['--trust-size', '1', '--trust-sha256', 'A'*64],
+                      ['--trust-size', '1', '--trust-sha256', 'a'*64, '--trust-size', '2']):
+            with self.subTest(extra=extra):
+                result, trace = self.invoke([{'exit': 0}], arguments=required+extra)
+                self.assertEqual(result.returncode, 64)
+                self.assertEqual(trace, [])
+
 
 if __name__ == '__main__':
     unittest.main()

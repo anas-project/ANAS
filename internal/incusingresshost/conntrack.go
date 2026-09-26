@@ -139,6 +139,16 @@ func parseConntrackExtended(body []byte) ([]conntrackEntry, error) {
 }
 
 func parseConntrackLine(line string) (conntrackEntry, error) {
+	entry, err := parseConntrackTupleLine(line)
+	// HTTP ingress is routed, not NATed. Sharing the syntax parser with the
+	// forwarding backend must not widen this original ownership boundary.
+	if err != nil || entry.Src != entry.ReplyDst || entry.Dst != entry.ReplySrc || entry.SrcPort != entry.ReplyDstPort || entry.DstPort != entry.ReplySrcPort {
+		return conntrackEntry{}, fmt.Errorf("conntrack inventory has a translated or ambiguous HTTP tuple")
+	}
+	return entry, nil
+}
+
+func parseConntrackTupleLine(line string) (conntrackEntry, error) {
 	bad := func() (conntrackEntry, error) {
 		return conntrackEntry{}, fmt.Errorf("conntrack inventory has an unsupported or ambiguous bidirectional entry")
 	}
@@ -201,15 +211,12 @@ func parseConntrackLine(line string) (conntrackEntry, error) {
 	if group != 1 || !completeConntrackTuple(tuples[0]) || !completeConntrackTuple(tuples[1]) {
 		return bad()
 	}
-	// The backend is explicitly routed, not NATed. A matching original tuple
-	// must not hide a translated/foreign reply or justify deleting it.
 	a, r := tuples[0], tuples[1]
-	if a["src"] != r["dst"] || a["dst"] != r["src"] || a["sport"] != r["dport"] || a["dport"] != r["sport"] {
-		return bad()
-	}
 	sp, _ := strconv.ParseUint(a["sport"], 10, 16)
 	dp, _ := strconv.ParseUint(a["dport"], 10, 16)
-	return conntrackEntry{Family: "ipv4", Proto: "tcp", Src: a["src"], Dst: a["dst"], SrcPort: uint16(sp), DstPort: uint16(dp), ReplySrc: r["src"], ReplyDst: r["dst"], ReplySrcPort: uint16(dp), ReplyDstPort: uint16(sp)}, nil
+	rsp, _ := strconv.ParseUint(r["sport"], 10, 16)
+	rdp, _ := strconv.ParseUint(r["dport"], 10, 16)
+	return conntrackEntry{Family: "ipv4", Proto: "tcp", Src: a["src"], Dst: a["dst"], SrcPort: uint16(sp), DstPort: uint16(dp), ReplySrc: r["src"], ReplyDst: r["dst"], ReplySrcPort: uint16(rsp), ReplyDstPort: uint16(rdp)}, nil
 }
 
 func completeConntrackTuple(tuple map[string]string) bool {

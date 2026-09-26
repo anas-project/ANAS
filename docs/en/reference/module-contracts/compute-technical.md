@@ -74,7 +74,9 @@ secret, and calls the provider's idempotent `ensure` before the consumer starts.
 
 1. verify the endpoint is reachable and its server certificate matches the pinned fingerprint, failing
    closed otherwise;
-2. ensure the project named by `sandbox` exists with `restricted=true`;
+2. ensure the project named by `sandbox` exists with `restricted=true` and belongs to this lease alone:
+   a project that belongs to another lease, or that another restricted credential can drive, must be
+   refused rather than taken over (the sandbox name repeats in every workspace and proves nothing);
 3. write `quota` onto the project's own limits rather than trusting the caller to stay within them;
 4. create a dedicated bridge in the default project and a lease profile in the consumer project, then **read the profile back**
    and assert it carries exactly one root disk (on the managed pool, with no host source) and one NIC

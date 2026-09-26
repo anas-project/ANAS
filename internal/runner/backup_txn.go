@@ -2,7 +2,7 @@ package runner
 
 // Stopping services for a backup, and the guarantee that they come back.
 //
-// A backup that fails must never leave the services down. It is the one failure
+// An ordinary backup failure restores the services it stopped. It is the one failure
 // mode this feature is not allowed to have: everything else a failed backup can
 // do is recoverable by running it again, whereas a workspace left stopped is an
 // outage that lasts until a human notices.
@@ -17,6 +17,9 @@ package runner
 // Only what was running comes back. Starting everything would be a plausible
 // approximation and a wrong one: an operator who had deliberately stopped one
 // module would find a backup had started it for them.
+// A declared stop Hook is different: an unconfirmed cleanup cannot authorize
+// restarting the cleaner. Its write-ahead marker blocks automatic recovery and
+// preserves evidence rather than falsely applying the ordinary restart rule.
 
 import (
 	"context"
@@ -32,8 +35,9 @@ import (
 const containerTransactionKind = "backup_containers"
 
 const (
-	containerTransactionStopped  = "stopped"
-	containerTransactionRestored = "restored"
+	containerTransactionStopped        = "stopped"
+	containerTransactionRestored       = "restored"
+	containerTransactionCleanupPending = "cleanup_pending"
 )
 
 // containerTransaction is the record that outlives the process.
@@ -47,6 +51,22 @@ type containerTransaction struct {
 	// Modules is what was running when the transaction opened, in start order.
 	Modules []string `yaml:"modules"`
 	State   string   `yaml:"state"`
+	// Written BEFORE a declared stop Hook runs. A crash or uncertain cleanup
+	// must not authorize automatic start, even when the old process exited.
+	CleanupPending string `yaml:"cleanup_pending,omitempty"`
+}
+
+func (txn *containerTransaction) setCleanupPending(base, module string) error {
+	previous, previousState := txn.CleanupPending, txn.State
+	txn.CleanupPending, txn.State = module, containerTransactionCleanupPending
+	if module == "" {
+		txn.State = containerTransactionStopped
+	}
+	if err := writeContainerTransaction(base, txn); err != nil {
+		txn.CleanupPending, txn.State = previous, previousState
+		return err
+	}
+	return nil
 }
 
 func transactionsDir(base string) string { return filepath.Join(base, "state", "transactions") }
@@ -88,10 +108,13 @@ func beginContainerTransaction(base string, a *app, modulesRoot, deploymentID st
 		StartedAt: nowUTC(), Workspace: workspaceOf(base), DeploymentID: deploymentID,
 		Modules: modules, State: containerTransactionStopped,
 	}
-	if err := writeYAMLAtomic(transactionPath(base, id), txn, 0600); err != nil {
+	if err := writeContainerTransaction(base, txn); err != nil {
 		return nil, err
 	}
-	if err := stopModules(a, modulesRoot, modules); err != nil {
+	markCleanup := func(name string) error {
+		return txn.setCleanupPending(base, name)
+	}
+	if err := stopModulesWithCleanupMarker(a, modulesRoot, modules, markCleanup); err != nil {
 		// The transaction stays on disk. Some modules may already be down, and
 		// the compensating start is what puts them back.
 		return txn, err
@@ -105,6 +128,9 @@ func finishContainerTransaction(base string, a *app, modulesRoot string, txn *co
 	if txn == nil {
 		return nil
 	}
+	if txn.CleanupPending != "" || txn.State == containerTransactionCleanupPending {
+		return fmt.Errorf("backup cleanup for module %s remains unconfirmed; automatic restart is blocked", txn.CleanupPending)
+	}
 	if err := startModules(a, modulesRoot, txn.Modules); err != nil {
 		return err
 	}
@@ -112,13 +138,32 @@ func finishContainerTransaction(base string, a *app, modulesRoot string, txn *co
 }
 
 func stopModules(a *app, modulesRoot string, modules []string) error {
+	return stopModulesWithCleanupMarker(a, modulesRoot, modules, nil)
+}
+
+func stopModulesWithCleanupMarker(a *app, modulesRoot string, modules []string, mark func(string) error) error {
 	var failures []string
 	// Reverse order: a module's dependencies outlive it.
 	for i := len(modules) - 1; i >= 0; i-- {
 		name := modules[i]
+		guarded := hookSupportsPhase(a.reg[name].Hook, "before_stop")
+		if guarded && mark != nil {
+			if err := mark(name); err != nil {
+				return err
+			}
+		}
+		if err := a.beforeStopModule(modulesRoot, name); err != nil {
+			failures = append(failures, fmt.Sprintf("before stopping %s: %v", name, err))
+			return fmt.Errorf("stop containers: %s", strings.Join(failures, "; "))
+		}
 		dir := filepath.Join(modulesRoot, name)
 		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "stop"); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
+		}
+		if guarded && mark != nil {
+			if err := mark(""); err != nil {
+				return err
+			}
 		}
 	}
 	if len(failures) > 0 {
@@ -178,7 +223,13 @@ func compensateContainerTransactionsWithOptions(base string, opts runtimeRecover
 			failures = append(failures, fmt.Errorf("read recovery transaction: %w", err))
 			continue
 		}
-		if txn.Kind != containerTransactionKind || txn.State != containerTransactionStopped {
+		if txn.Kind != containerTransactionKind || (txn.State != containerTransactionStopped && txn.State != containerTransactionCleanupPending) {
+			continue
+		}
+		if txn.CleanupPending != "" || txn.State == containerTransactionCleanupPending {
+			failures = append(failures, fmt.Errorf("backup cleanup for module %s remains unconfirmed; transaction retained", txn.CleanupPending))
+			containerRecoveryWarning(opts.events, "container_cleanup_unconfirmed",
+				"backup cleanup remains unconfirmed; automatic restart was not attempted and its transaction was retained")
 			continue
 		}
 		if len(txn.Modules) != 0 {

@@ -11,24 +11,25 @@ import (
 )
 
 type Config struct {
-	Enabled       bool
-	ForgejoURL    string
-	RunnerURL     string
-	Username      string
-	Password      string
-	Scopes        []Scope
-	RunnerImage   string
-	RunnerLabel   string
-	StatePath     string
-	PollInterval  time.Duration
-	OperationTTL  time.Duration
-	WaitingTTL    time.Duration
-	JobTimeout    time.Duration
-	MaxConcurrent int
-	MaxPerScope   int
-	CPU           int
-	MemoryMiB     int
-	DiskGiB       int
+	Enabled        bool
+	ForgejoURL     string
+	RunnerURL      string
+	Username       string
+	Password       string
+	Scopes         []Scope
+	RunnerImage    string
+	RunnerLabel    string
+	RunnerTrustPEM []byte
+	StatePath      string
+	PollInterval   time.Duration
+	OperationTTL   time.Duration
+	WaitingTTL     time.Duration
+	JobTimeout     time.Duration
+	MaxConcurrent  int
+	MaxPerScope    int
+	CPU            int
+	MemoryMiB      int
+	DiskGiB        int
 
 	// Lease is the compute-contract sandbox the runner provisioned for this
 	// module. LeaseError records why it could not be read, which is not fatal
@@ -96,6 +97,9 @@ func LoadConfig() (Config, error) {
 	}
 	if !strings.HasPrefix(cfg.RunnerURL, "https://") {
 		return Config{}, fmt.Errorf("FORGEJO_RUNNER_URL must be an HTTPS URL")
+	}
+	if cfg.RunnerTrustPEM, err = loadRunnerTrust(); err != nil {
+		return Config{}, err
 	}
 	return cfg, nil
 }

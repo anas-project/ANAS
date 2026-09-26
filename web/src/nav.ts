@@ -4,6 +4,8 @@
 // on refresh. Hash sections give each page its own URL, working back/forward
 // and a refresh-safe address without adding a route to the server or a router
 // dependency to the bundle.
+import { watch, type Ref } from "vue"
+
 export const consoleSections = [
   "overview",
   "config",
@@ -46,4 +48,19 @@ export function visibleSections(options: {
   if (options.authenticated) visible.push("audit")
   visible.push("access")
   return visible
+}
+
+// The caller owns session recovery and provides the resolved access surface.
+// This watcher is scoped to the component's existing Vue effect scope.
+export function guardSectionAccess(
+  section: Ref<ConsoleSection>,
+  available: Readonly<Ref<readonly ConsoleSection[]>>,
+  recoveringSession: Readonly<Ref<boolean>>,
+) {
+  return watch([section, available, recoveringSession], ([selected, choices, pending]) => {
+    // Discovery can reveal workspaces before the HttpOnly session has been
+    // restored. That intermediate anonymous surface is not a resolved denial.
+    // Rendering and requests retain their own authenticated access guards.
+    if (!pending && !choices.includes(selected)) section.value = "overview"
+  }, { immediate: true })
 }

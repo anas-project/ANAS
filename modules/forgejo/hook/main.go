@@ -1,14 +1,13 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 
@@ -125,10 +124,11 @@ func handle(req hookRequest) (hookResponse, error) {
 		}
 		return hookResponse{Env: changed(req.Env, env)}, nil
 	case "after_start":
-		if err := reconcileOIDC(env); err != nil {
-			return hookResponse{}, err
-		}
-		return hookResponse{}, reconcileActionsAccount(env)
+		// The Core's following local_account_apply establishes/verifies the
+		// separate recovery owner before it reconciles the program account.
+		return hookResponse{}, reconcileOIDC(env)
+	case "before_stop":
+		return hookResponse{}, drainActionsController(context.Background(), env)
 	case "local_account_apply":
 		return hookResponse{}, handleLocalAccount(req)
 	default:
@@ -358,11 +358,7 @@ type localAdminInput struct {
 	Password string `json:"password"`
 }
 
-var runContainerHelper = func(payload []byte, name string, args ...string) ([]byte, error) {
-	cmd := exec.Command(name, args...)
-	cmd.Stdin = bytes.NewReader(payload)
-	return cmd.CombinedOutput()
-}
+var runContainerHelper = boundedContainerHelper
 
 func reconcileOIDC(e map[string]string) error {
 	for _, key := range []string{"CONTAINER_PREFIX", "FORGEJO_OIDC_CLIENT_ID", "FORGEJO_OIDC_CLIENT_SECRET", iamBindingPrefix + "OIDC_DISCOVERY_URL"} {
@@ -378,31 +374,8 @@ func reconcileOIDC(e map[string]string) error {
 		return err
 	}
 	container := e["CONTAINER_PREFIX"] + "forgejo"
-	if _, err := runContainerHelper(payload, "docker", "exec", "-i", "--user", "1000:1000", container, "/usr/local/bin/anas-forgejo-entrypoint", "oidc"); err != nil {
+	if _, err := runContainerHelper(context.Background(), payload, "docker", "exec", "-i", "--user", "1000:1000", container, "/usr/local/bin/anas-forgejo-entrypoint", "oidc"); err != nil {
 		return fmt.Errorf("forgejo OIDC reconciliation failed: %w", err)
-	}
-	return nil
-}
-
-func reconcileActionsAccount(e map[string]string) error {
-	if e["FORGEJO_ACTIONS_ENABLED"] != "true" {
-		return nil
-	}
-	for _, key := range []string{"CONTAINER_PREFIX", "FORGEJO_ACTIONS_CONTROLLER_PASSWORD"} {
-		if e[key] == "" {
-			return fmt.Errorf("forgejo Actions account reconciliation is missing %s", key)
-		}
-	}
-	payload, err := json.Marshal(localAdminInput{
-		Username: "anas_actions_controller", Email: "anas_actions_controller@localhost.invalid",
-		Password: e["FORGEJO_ACTIONS_CONTROLLER_PASSWORD"],
-	})
-	if err != nil {
-		return err
-	}
-	container := e["CONTAINER_PREFIX"] + "forgejo"
-	if _, err := runContainerHelper(payload, "docker", "exec", "-i", "--user", "1000:1000", container, "/usr/local/bin/anas-forgejo-entrypoint", "local-admin"); err != nil {
-		return fmt.Errorf("forgejo Actions controller account reconciliation failed: %w", err)
 	}
 	return nil
 }
@@ -426,10 +399,10 @@ func handleLocalAccount(req hookRequest) error {
 		return err
 	}
 	container := req.Env["CONTAINER_PREFIX"] + "forgejo"
-	if _, err := runContainerHelper(payload, "docker", "exec", "-i", "--user", "1000:1000", container, "/usr/local/bin/anas-forgejo-entrypoint", "local-admin"); err != nil {
+	if _, err := runContainerHelper(context.Background(), payload, "docker", "exec", "-i", "--user", "1000:1000", container, "/usr/local/bin/anas-forgejo-entrypoint", "local-admin"); err != nil {
 		return fmt.Errorf("forgejo local recovery reconciliation failed: %w", err)
 	}
-	return nil
+	return reconcileActionsAccount(req.Env, localAdminInput{Username: op.Username, Password: password})
 }
 
 type forgejoLocale struct {

@@ -1,5 +1,110 @@
 # Incus compute provider technical notes
 
+## Current lease-forwarding boundary
+
+The compiled host catalog includes `incus.forwarding.permission.plan` and
+`incus.forwarding.permission`. Their only inputs are the workspace, compute resource, enable/disable/retire
+operation, and explicit IPv4/TCP destination addresses and ports. Active Core metadata, delivered
+credentials, Incus allocation and kernel interface identity determine the source. Callers cannot supply
+source IPs, interfaces, rules, commands or paths. Records and failures remain in the existing host
+`state.json` under `forwarding_scopes`, using the same confirmation, job and audit mechanisms.
+
+**Production enable is blocked by `forwarding_lifecycle_integration_unavailable`; confirmation cannot
+override it.** Candidate permissions last only 30 seconds, with no automatic renewal. Real guest/Forgejo
+acceptance under default Docker, stop/restart coordination and reverse-isolation checks are unfinished.
+Disable uses the original ownership receipt and distinguishes closing new connections from verified
+bidirectional NAT connection cleanup. It retains deny rules and failure history, rather than claiming
+full uninstallation. Unretired forwarding objects block host dependency removal; deleting their records
+is not a supported way to unblock it.
+
+If an enable transaction fails after a permission may have taken effect, including readback, final save,
+cancellation or session-close failures, it attempts one bounded withdrawal while retaining the original
+host-state lock. An independent 30-second context persists intent before closing permissions and verifying
+connection cleanup; it never retries installation or renewal. Successful withdrawal still preserves the
+original enable failure and dependency barrier. Failed withdrawal retains receipts, instance identities
+and pending steps; neither an old closed result nor permission expiry proves this withdrawal completed.
+
+`retire` is an explicit operation of that same confirmed action and requires an empty destination list.
+It does not implicitly disable live authority, stop modules, revoke certificates or delete instances.
+After verified disable, it requires the original registered deployment to be stopped, no retained runtime
+lock marker, the original credential revoked with no replacement authorization, an empty whole-project
+instance/operation inventory and no ports on the original physical bridge. Only then can it remove the
+receipt-owned compatibility chain, set and deny tables. Host and workspace locks remain held through
+the final checks. Missing rules, identity drift, unresolved effects or failed session cleanup cannot be
+reported as successful retirement. The original grant, failure history and `released` receipt remain;
+that phase requires absent table handles, set and compatibility entry, plus verified closure of both
+new and existing connections. This does not recover old-kernel state after reboot or revive retired grants.
+
+Incus may briefly retain successful operation records after asynchronous deletion completes. A nonempty
+`success` inventory also blocks retirement: wait for natural expiry and create a fresh plan rather than
+deleting records or equating success with absence. The native fixture first verifies a plan after those
+records disappear, then tests the independent physical-port rejection, preventing false-positive negatives.
+
+Provider profiles require MAC, IPv4 and IPv6 source filtering; the instance observer independently checks
+expanded NIC properties and refuses missing/overridden filters. nft interface names are not numeric
+identity evidence: the compiled reader uses read-only netlink to recover actual rule literals and set
+member indices without adopting a replacement interface with the same name. The independent sixth
+native run on 2026-09-25 verified exact kernel permissions, source-spoof rejection, earlier administrator
+denials and withdrawal of the same preexisting connection. Its endpoints were still namespace processes.
+Retirement-backend, booted-guest and complete Forgejo acceptance remain separate gates.
+
+Host plans also expose read-only IPv4 forwarding diagnostics: the fixed sysctl value, DROP policies in
+nft filter base chains, and the presence of Docker's user chain. An early ACCEPT does not override a
+later DROP; observing no DROP is not evidence of connectivity. Failed reads remain unverified, with no
+raw rules, addresses or packet counters projected. No Docker policy or chain is changed. Plans retain
+`guest_egress_unverified` and `compute_ready=false`; controlled native packet experiments and production
+adaptation are separate gates, and host mTLS control-plane access is not guest data-plane egress.
+
+The observer and controlled packet path passed nine native gates in an isolated Ubuntu 26.04 amd64 /
+Docker 29.1.3 VM: an earlier nft ACCEPT did not override a later DROP, exact temporary permissions worked,
+other flows stayed denied, and withdrawal restored denial. Endpoints were explicitly test namespace
+processes. Production automatic rule authorization, spoofing protection, restart reconciliation and expiry
+revocation are not implemented by this experiment; its DOCKER-USER rules are not a general production fix.
+
+The separate image build tool supplies fixed `HOME=/root`, `TMPDIR=/tmp` and a minimal PATH/locale
+environment. Host-private cache paths must not become TMPDIR inside the guest chroot, where package
+maintainer scripts cannot find them. Explicit fixed arguments still select private cache, sources and
+output directories. This does not relax permissions, mount host directories into guests, alter package
+scripts or bypass signatures/security policy. The fix and new-image native acceptance are tracked separately.
+
+The default Debian guest build checks the builder's fixed distribution keyring before reserving a
+revision and rejects recipes that disable signature verification. An explicit debootstrap unverified-
+source warning cannot be overwritten by later packing or exit 0: the output is not recorded and the
+failed attempt is not reused. This lives in the release artifact tool; Provider ensure does not install
+software or rebuild images, and digest-bound import/deployment boundaries are unchanged.
+
+The new `trust-r2` image passed actual bake/reuse, nine boot/engine gates, and real Forgejo normal,
+failure, cancellation, crash recovery and unapproved-repository controls on 2026-09-24. Public CA trust
+used the production stdin path, not manual installation in an old image. This does not replace full
+business Core/Compose, arbitrary OCI checkout trust, other architectures or signed publication. See the
+[Runner trust record](../../../dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md).
+
+The default Forgejo image recipe freezes its starter, bounded stdin-input helper and one-job cleanup
+entry together. Public deployment CA bytes can accompany the existing stdin token into a temporary
+Runner-process trust bundle. No shared-client file upload, arbitrary command or host mount is added,
+and project fences are unchanged. This requires a new recipe digest and immutable revision, not an
+automatic update to an old image; new bake/boot evidence and complete business deployment remain separate.
+
+The independent Ubuntu 26.04 amd64 run on 2026-09-24 completed actual Core CLI initialization, import,
+render, apply and stop through the production Hook/Provider. It automatically consumed the private host
+bundle, froze the observed architecture and imported image bytes. Two non-root synthetic consumers passed
+independent-credential, existing-project isolation, business-gateway priority, newly rendered deployment,
+credential stability, cleanup and post-revocation rejection checks. All five outer stages, nine main native
+test events plus one revocation test, and eight host jobs passed, with normal VM exit and an unchanged
+physical-host baseline. Real Forgejo/AI Agent deployment, bootable/signed guest images, ARM64/VM, failure
+degradation/recovery and production ingress still require separate acceptance.
+
+Core freezes a consumer's image target and prepares its stable credentials after the dependency-ordered
+Provider calculation, then projects the resource to the consumer Hook. The host bundle supplies its actual
+architecture without an earlier manual value. Cross-consumer conflict checks remain shared, and invalid
+targets are rejected before secret generation. Fixed read-only image mounts contain only verified non-secret
+copies (0444 files, 0555 directories), readable by the non-root Provider. Private staging parents, original
+archives and Secret Store permissions are unchanged. Local and native Core/Compose acceptance are separate.
+
+Incus has only one-shot Provider operations, leaving no normal runtime-service selection. Core does not
+translate that empty selection into an unqualified `compose up` that starts a persistent Provider container.
+Operations still use `compose_run`, and resource preparation and module readiness barriers remain in place.
+
 The fixed container lease profile permits inner OCI namespace nesting (`security.nesting=true`), with
 the corresponding project nesting key set to allow. The project still forces unprivileged containers;
 low-level configuration, host-path disks, PCI/USB/character-device access and managed-NIC fences stay
@@ -10,6 +115,107 @@ must validate real workload execution together with privileged/raw/host-device r
 
 This document records the provider implementation and security boundary of the `incus` module.
 Configuration and operation are in the [English README](../README.en.md).
+
+A historical skip/uninstall disabled state is cleared only after newly confirmed enrollment has
+read back trust, verified the private endpoint and persisted the bundle. Installation, configuration
+or failed enrollment cannot clear it, and successful enrollment never bypasses the independent
+`compute_ready` gate. The native host entry point is described in
+`test-env/fixtures/incus-host-provision/README.md`; actual results are recorded per distribution.
+
+On 2026-09-23, a fresh Ubuntu 26.04 amd64 VM passed all 11 native backend gates, including actual package
+installation, systemd/relay/nft configuration, pinned mTLS enrollment, repeated execution, retained-volume
+uninstall rejection and both uninstall modes. A subsequent independent installed-service run passed all
+**23 gates**: real CLI/HTTPS owner, shared jobs and systemd execution, confirmed install/configure/enroll/
+uninstall, workspace/replay rejection, actual five-minute expiration and execution after a new plan.
+Non-root Docker test containers verified pinned mTLS over the control bridge and correct restrictions
+for a wrong pin, anonymous authentication and a different bridge. Test container/image/network inventory
+was restored, the VM shut down normally, and the physical host's original Docker/network comparison was
+unchanged. These transport tests do not replace restricted-project/quota checks, complete Core/Compose
+projection, browser interaction, other distributions, ARM64/VM, IPv6 or signed publication. M10 remains open.
+
+Installed host actions read identity and exit facts through the kernel-authenticated PID1 connection.
+Binary requests follow bounded, cancellable draining of the text-authentication send queue. An auxiliary
+message-bus reference only prevents collection of the executor unit; it cannot supply authorization or
+success evidence. The same invocation's actual exit and empty process set remain mandatory. Installed
+CLI/HTTPS approval has a separate `server-incus-host-action-e2e.py` gate, including exact public error codes
+for cross-workspace requests and consumed-token replay.
+
+The fixed root hostd unit explicitly retains `CAP_SETUID` so package management can perform required
+UID transitions while keeping the other service restrictions and `NoNewPrivileges`. Neither the console
+nor the relay receives this capability. Private APT cache permissions may trigger root-download fallback;
+successful installation is not evidence that the `_apt` download sandbox has been independently verified.
+
+The confirmed host installation has a fixed 45-minute total budget: each APT step is bounded to
+15 minutes, Incus startup to 11 minutes, relay transitions to two minutes, and read-only service queries
+remain bounded to 30 seconds. The shared broker and packaged outer watchdog (2730 seconds) are checked
+against this compiled policy. Other action budgets, the five-minute one-use confirmation and shorter
+caller deadlines are unchanged. Neither `--no-block` nor a daemon becoming active after a timeout is
+completion/readback evidence. Late activation preserves the failed intent and receipts and blocks
+configuration, enrollment or uninstall until recovery is established.
+
+The relay's non-secret configuration stays in root-private `/etc/anas`. Its fixed systemd unit projects
+only that file read-only into its own mount namespace at `/run/anas-incus-control-relay.json`; the installer
+preserves this ExecStart without changing source-directory permissions. `AF_NETLINK` permits interface
+identity reads by the non-root, capability-free process, not network changes. The exact gateway source is
+accepted for the host's pinned mTLS probe, still constrained by INPUT rules and daemon authentication;
+this does not prove consumer-bridge reachability. Ubuntu 26.04 and Debian 13 explicitly record the actual daemon package
+`incus-base`. Missing per-package ownership or a preexisting daemon cannot be converted into ownership by
+installing helpers, and explicit package removal must also confirm that the owned daemon has stopped.
+
+Debian's null encoding for an empty storage-pool collection is handled only at the two fixed collection
+endpoints. Both inventories must agree they are empty, and a separate lookup must confirm the managed pool
+is absent. Null in other collections, missing fields, failed responses and conflicting evidence still block
+removal. The generic client is unchanged; no forced package deletion or automatic failed-action retry is added.
+
+Explicit package removal completes resource inventory, then stops and independently reads back only the
+ANAS-owned `incus.service`; package maintainer scripts are not assumed to stop it. Failure, cancellation or
+an active daemon prevents package deletion and preserves the failed intent and ownership. Default package
+preservation never stops the daemon, and an active service without ANAS ownership cannot be adopted or removed.
+
+Debian's official dependencies can trigger initramfs updates. The fixed root hostd unit adds the optional
+`-/boot` writable tree while preserving its other filesystem restrictions; neither the console nor relay
+receives this exception. Package triggers are not skipped to manufacture a successful installation. The
+installed approval runner now requires 25 gates, adding explicit per-package removal and repeat uninstall.
+The complete dpkg inventory must be healthy and preserve original packages and unowned dependencies;
+an earlier 23-gate report does not cover these new removal checks.
+
+The current same-artifact matrix passed all **25 gates** on Debian 13, Ubuntu 26.04 and Ubuntu 24.04 amd64,
+with 18 real jobs and independently observed exits in each run. Respectively, 6/4/3 newly owned packages
+were removed while 327/682/667 original packages and unowned dependencies were preserved. The Ubuntu 26.04
+control also preinstalled nftables/conntrack and confirmed they were not removed. Normal shutdown and the
+physical-host before/after checks passed. The earlier 23-gate results are historical; full business
+Core/Compose deployment, ARM64/VM native, unsupported-system degradation, failure recovery, production
+ingress and formal image publication are not established by this matrix.
+
+Management certificate POST uses the same base64 DER encoding as the Provider for older official daemons.
+Before sending, the fixed management name and the actual DER fingerprint must match; only the public
+certificate enters the request. Durable credentials, private bundles and GET readback remain PEM. This
+does not relax certificate authority, response validation or add retries. The original Ubuntu 24.04
+enrollment failure retains its failed intent. Revised artifacts passed all 23 approval/consumer-transport/
+actual-expiry gates in another fresh Ubuntu 24.04 amd64 VM, with 14 successful jobs, normal shutdown and
+an independently unchanged physical-host baseline.
+
+The actual embedded frontend separately passed eight browser expiry/re-confirmation gates: initial
+session recovery preserves the maintenance deep link, and a new plan after five real minutes inherits
+neither the checked consent nor an automatic confirmation/apply. Only renewed explicit consent executes.
+Browser success and outer VM supervision are checked independently; a successful job cannot substitute
+for graceful shutdown, actual process wait status and the host-resource comparison.
+
+Host uninstall first inventories stopped/frozen instances, pool references and volumes, and attached
+Docker control-network endpoints before revoking the management connection. Missing or incomplete
+inventories are not empty inventories. Refusal/cancellation creates no effect intent; each deletion
+still rechecks ownership and use. Explicit removal of owned packages also requires that no later
+external objects remain in the shared daemon; packages are retained by default. The root Docker
+client cannot connect/disconnect containers or prune networks. See the normative
+[host design, section 3.4](../../../docs/architecture/incus-host-provisioning.md#_3-4-卸载).
+
+Current acceptance boundary (2026-09-23): the updated isolated Ubuntu 26.04 amd64 / Incus 6.0.5
+container entry point passed all 15 required native events, including two leases, actual btrfs root-disk
+limits, direct proxy-device rejection and management-certificate overlap/revocation while guests run.
+Readback confirmed that the old credential fails, the new credential manages the leases, and original
+consumer/guest identities remain unchanged. This does not establish Core rotation transactions,
+VM/ARM64, ZFS, dual-stack or production ingress. Earlier dated "unrun" notes describe historical
+snapshots; complete host provisioning and signed image publication remain outstanding.
 
 The 2026-09-22 shared-consumer-client continuation verifies the complete TLS tuple before private,
 locked, no-follow credential preparation. Existing files are never overwritten: only matching bytes
@@ -38,8 +244,8 @@ for the exact scope and outstanding work.
 | `compute` | Provided contract | `1.0.0` / `incus_vm` |
 | `compute` | Provided contract | `1.0.0` / `incus_container` |
 
-Both interfaces share one executor and one validation path, diverging only in a single container
-privilege restriction on the project configuration.
+Both interfaces share the executor and validation path, selecting project/profile fences for the
+requested isolation tier without exposing low-level devices or privilege settings to callers.
 
 ## Compose topology
 
@@ -64,7 +270,8 @@ still identifies ANAS source.
 
 For a local staging build, explicitly set `ANAS_SHARED_BUILD_CONTEXT` to the absolute
 path of a trusted ANAS source checkout matching the module's build-input version.
-It must contain at least `go.mod`, `go.sum`, and `internal/computeclient`, not just
+It must contain `go.mod`, `go.sum`, `internal/computeclient`, `internal/computeimage`,
+`internal/computeingress` and `internal/securefs`, not just
 `modules/incus`, its `provisioner` directory, or a workspace containing runtime data.
 Do not mix a frozen module's source with a shared package from another version.
 
@@ -84,13 +291,35 @@ not make the entire Docker build offline: base images and distribution packages 
 still be available locally or obtainable from their configured sources.
 Runtime artifacts without the corresponding source are insufficient for a local build.
 Use the matching prebuilt image or prepare complete trusted source first. Actual builds
-from both a source checkout and deployment staging still require separate acceptance.
+from source and staging were separately accepted on 2026-09-23 in an isolated Ubuntu 26.04 / Docker
+29.1.3 / Compose 2.40.3 VM. All six no-cache builds passed with matching input and business binary
+digests, identical pinned Incus CLI binaries and `7.3` output, the missing-override negative control,
+and removal of all test containers/images. This verifies build-only staging, not a complete Core
+deployment or actual consumer jobs.
 
-## Fixed control relay component (not installed or accepted)
+Both builder and runtime bases of the three compute images honor the repository's existing
+`DOCKER_HUB_REGISTRY` setting, including a registry repository prefix. An explicit
+`GO_BUILDER_REGISTRY` overrides only the Go builder. The separately pinned upstream Incus CLI and
+AI Agent's third-party modules use `GO_MODULE_PROXY`, falling back to `GOPROXY_URL` and then the
+official source. These build settings are not projected into the service runtime environment. They
+do not disable Go's checksum database or network-resolve the Provider/controller's shared code.
+
+`go run ./cmd/check-shared-build --json` emits verified static input metadata and explicitly states
+`docker_executed: false`. For staging, also provide `--staging-root`, `--source-root` and the absolute
+shared override described above. The report binds file bytes, executable modes and build declarations,
+rejecting mixed revisions, unknown build fields and credential inputs without reading runtime `.env`.
+It is not proof that a Docker build succeeded.
+
+The repository's `test-env/fixtures/incus-shared-build/README.md` defines six native builds in an
+isolated QEMU VM, checking actual Compose resolution, the missing-override negative control and
+non-root image binaries. Its staging fixture preserves real build inputs but is not a complete Core
+deployment; it does not establish `anas build/apply`, Provider/guest lifecycle or signed publication.
+
+## Fixed control relay component (packaged; native acceptance pending)
 
 `modules/incus/control-relay` is a Linux non-root transport component for the proposed host-loopback
-connection path. **It is not a current Compose service and has not been packaged, automatically
-installed or enabled.** It forwards bytes from the installation-bound control-bridge IPv4/high port
+connection path. **It is not a Compose service. It is included in the matching release archive and
+installer, and only the configure phase enables it.** It forwards bytes from the installation-bound control-bridge IPv4/high port
 only to the compiled-in `127.0.0.1:8443`. There is no upstream override, HTTP CONNECT, SOCKS, TLS key
 or caller-supplied command. The original endpoints retain Incus mTLS and server-certificate pinning.
 
@@ -101,9 +330,9 @@ wildcard. Connection count, dial time and shared bidirectional idle time are bou
 preserved, and shutdown closes existing connections. These are future host-installation fields, not
 the `incus.*` Module settings below; existing remote-daemon connections are unchanged.
 
-Host installation actions, trusted binary distribution, service units, INPUT/FORWARD ingress-interface
-rules, interface-recreation reconciliation, endpoint projection, and real mTLS/pin/project/cross-network
-and uninstall acceptance remain pending. A source-CIDR check is neither firewall authorization nor
+Host installation actions, service units, managed-bridge INPUT/FORWARD rules and private endpoint
+projection are implemented. Signed distribution, interface-recreation reconciliation and real
+mTLS/pin/project/cross-network and uninstall acceptance remain pending. A source-CIDR check is neither firewall authorization nor
 authentication. Locally runnable configuration/transport tests pass; Linux identity checks have only
 been cross-compiled. Production ingress remains blocked; the host-provisioning design, section 3.8,
 records the detailed boundary.
@@ -127,8 +356,9 @@ but package signatures/origins, service units, retries, uninstall and runtime co
 Every preflight keeps `compute_ready: false` and `runtime_verified: false`, distinguishing unsupported
 systems, explicit skips and unfinished gates. A missing KVM device never silently downgrades a VM.
 The internal read-only `incus.status` handler reuses this path with strict action input and execution
-audit; the root socket, full daemon status, shared job/CLI/Web wiring and installation/removal are not
-implemented. Pure-logic/audit tests passed on macOS; Linux peer/filesystem execution is separately
+audit; full daemon state and actual host capabilities have separate acceptance gates. The root socket,
+shared job/CLI/Web and plan/one-time-confirmation/execution paths are wired. Local tests do not replace
+native Linux identity or actual installation acceptance. Linux peer/filesystem execution is separately
 tracked. See [the host provisioning design](../../../docs/architecture/incus-host-provisioning.md),
 section 2.1, for the official-package version difference and remaining acceptance limits.
 
@@ -238,9 +468,10 @@ The order inside `ensure` is deliberate:
    status `Created`, and a `btrfs` or `zfs` driver admitted by this version; refuse before any lease
    mutation otherwise. Then `GET /1.0/projects/{sandbox}`. If it exists, merge the desired configuration into the existing one
    and `PUT`; otherwise `POST` a new project. Merging rather than overwriting matters because the
-   project may hold running instances and operator-added `user.*` keys. An existing project with
+   project may hold running instances and operator-added `user.*` keys. Ownership is verified before
+   the merge (see "Lease ownership" below). An existing project with
    `features.networks=true` is refused: changing its network ownership requires explicit migration.
-2. **Read back** and assert every managed project setting matches its requested value, including `restricted=true`, the exact four quota totals, storage admission read back again, network features disabled,
+2. **Read back** and assert every managed project setting matches its requested value, including `restricted=true`, the exact four quota totals, the tier's instance-type limits, the complete `restricted.*` set (see below), storage admission read back again, network features disabled,
    managed NICs, and `restricted.networks.access` equal to exactly this lease's bridge. Any failure returns an
    error and does **not** go on to register the certificate. This step is the contract's only source of
    trust: a successful write does not count, only the daemon's own copy does.
@@ -252,6 +483,29 @@ The order inside `ensure` is deliberate:
 5. Register the consumer certificate. If that fingerprint is already trusted, verify it is restricted
    and that `projects` contains exactly this sandbox; if it is unrestricted or bound elsewhere, exit
    with an error and change nothing. Finally recheck the complete live dependency chain read-only before returning ready.
+
+## Lease ownership
+
+The sandbox name is written in the consumer's manifest, so every workspace that installs the same
+consumer uses the same name, and the name alone cannot prove ownership. The Provider writes ownership
+markers on the project and on the managed bridge: `user.anas.consumer`, `user.anas.sandbox` and
+`user.anas.lease_credential` (the SHA-256 fingerprint of this lease's restricted client certificate).
+Core generates one certificate per workspace, consumer and resource, so a second workspace declaring
+the same sandbox on the same daemon has a different fingerprint.
+
+Before writing, `ensure` refuses a project in two cases: its markers belong to another lease (even when
+that lease's certificate has been revoked, since `revoke` keeps the project), or a restricted `client`
+certificate other than this lease's can drive it. An unmarked project (created by the Provider before
+these markers existed, by an older controller, or by hand) is adopted and marked only when the second
+condition does not hold. Unrestricted certificates belong to the daemon administrator and metrics
+certificates cannot write, so neither counts. `inspect` also requires both project and bridge to carry
+this lease's markers and no other restricted certificate before reporting `ready`; it stays read-only
+and repairs nothing. The `default` project can never be a sandbox; Core and the Provider both refuse it.
+
+The fingerprint changes with the certificate: a future overlapping certificate rotation (CRED-R-006)
+must rewrite the markers in the same transaction. When a workspace is copied wholesale together with
+its Secret Store, both copies hold the same certificate; that is duplicated identity, which this
+mechanism does not distinguish.
 
 ## Network and profile
 
@@ -332,10 +586,63 @@ check does not replace a guest disk-fill test or monitor later administrator cha
 does not automatically revoke existing certificates. See the [Incus dir quota prerequisites](https://linuxcontainers.org/incus/docs/main/reference/storage_dir/#quotas)
 and the pending test inventory at `test-env/fixtures/incus-network-prototype/e2e-plan.md` in the repository.
 
-Fixed restrictions are written alongside: `restricted.devices.disk|gpu|pci|usb|unix-block|unix-char=block`,
-`restricted.containers.nesting=block`, and `restricted.{containers,virtual-machines}.lowlevel=block`.
-`incus_container` additionally writes `restricted.containers.privilege=unprivileged` — the system
+The Provider owns every `restricted.*` key the target daemon knows: the full Incus 6.0 LTS set
+(6.0.0 through 6.0.5 in the first-tier distributions' official repositories) plus the 7.x keys the
+daemon advertises through API extensions. Each key is either written with a strict value or required
+to be absent:
+
+| Handling | Keys |
+| --- | --- |
+| written as `block` | `restricted.backups`, `restricted.snapshots`, `restricted.cluster.target`, `restricted.containers.interception`, `restricted.{containers,virtual-machines}.lowlevel`, `restricted.devices.disk\|gpu\|infiniband\|pci\|proxy\|usb\|unix-block\|unix-char\|unix-hotplug` |
+| written with another fixed value | `restricted=true`, `restricted.containers.privilege=unprivileged` (both tiers), `restricted.devices.nic=managed`, `restricted.networks.access=<this lease's bridge>`, `restricted.containers.nesting` (`block` for VM, `allow` for container) |
+| must be absent | `restricted.idmap.uid\|gid`, `restricted.networks.integrations\|subnets\|uplinks\|zones`, `restricted.devices.disk.paths` (only effective with disk=allow), `restricted.cluster.groups` (only effective when a cluster target may be chosen), `restricted.images.servers` (7.0+, see below) |
+| written when the daemon supports it | `restricted.storage-pools.access=<storage_pool>` (`projects_restricted_storage_pool_access`, 7.0+) and `restricted.virtual-machines.nesting=block` (`projects_restricted_virtual_machines_nesting`, 7.x, present in 7.5.1), for both tiers |
+
+`ensure` and `inspect` first read `api_extensions` from `GET /1.0` instead of inferring from a version
+number. The daemon rejects unknown project keys, so 7.x keys are written only when the daemon
+advertises them; where the daemon supports them and they are left unset, the defaults are permissive
+(`restricted.virtual-machines.nesting` defaults to `allow`, `restricted.storage-pools.access` to every
+pool). A daemon that does not report its extensions fails closed rather than being treated as 6.0.
+
+A daemon that supports the VM nesting restriction enables nested virtualization on VMs by default and,
+once the restriction is `block`, refuses any VM that does not set `security.nesting=false` explicitly
+(`checkRestrictions` in 7.5.1). On such a daemon the VM-tier profile therefore also writes
+`security.nesting=false`; on earlier releases the key is container-only and a VM rejects it, so it is not
+written. After upgrading to such a daemon, VMs created in a VM-tier project before the profile update
+conflict with the tightened restriction and `ensure` fails; it converges once those one-job instances
+are reclaimed.
+After the pool is narrowed, the daemon refuses the update if existing instances still use another pool
+(for example after changing the `storage_pool` setting), and `ensure` fails instead of moving them.
+
+`restricted.images.servers` cannot serve as "no remote images". According to the Incus 7.0.1 and 7.5.1
+source (`internal/server/project/permissions.go`), when it is non-empty, a request to create an instance
+from an image already in the project names no image server, so its empty host is rejected as well; and
+it only gates URL downloads, not simplestreams copies. Setting it would stop a lease from booting its own
+images without stopping image imports, so the Provider removes it and the per-fingerprint allowlist stays
+consumer-side (R-085). On 2026-09-26 this was reproduced on real Incus 7.0.1 and 7.5.1 daemons: with the key set,
+creating an instance from a local project image is refused (`Image server "" isn't allowed in this project`). That
+simplestreams copies are not gated still rests on reading the source.
+
+`restricted.devices.disk=block` still permits the root disk and forbids attaching any other disk. For
+its fixed inner OCI namespaces, `incus_container` writes `restricted.containers.nesting=allow` with
+`security.nesting=true` in the managed profile. Consumers cannot change these per job — the system
 container tier is a weaker **isolation** boundary than a VM, never a weaker **privilege** boundary.
+
+The isolation tier also lives on the project rather than only in the shared client's `--vm` flag: the
+VM tier writes `limits.containers=0` and `limits.virtual-machines=<max_instances>`, the container tier
+the reverse. The daemon therefore refuses a system container, which shares the host kernel, inside a VM
+lease. The permitted type is written explicitly so a stale `0` from a previous tier cannot survive the merge.
+
+These keys are explicit rather than left to the defaults implied by `restricted=true`: ensure merges
+existing project settings, so an unmanaged key would preserve a previous `allow` or range. Ensure
+tightens the written keys, removes the must-be-absent keys and reads the result back; read-only inspect
+rejects missing, relaxed or extra keys without repairing them. When an existing project carries a
+`restricted.*` key this version does not manage (one added by an Incus release newer than this
+Provider, or a 7.x key the daemon does not advertise), its semantics are unknown: ensure refuses before
+writing and names only the keys, so an operator must remove them or migrate the project explicitly. Unrelated settings such as `user.*` are still preserved.
+The change does not delete existing instances or devices to force convergence: when existing instances
+violate a tightened limit (for example, containers already in a VM-tier project), the daemon refuses
+the update and the Provider fails closed.
 
 ## Certificate pinning
 
@@ -367,7 +674,10 @@ automatic-binding drift. The refusal happens early in apply rather than midway t
 because a half-configured provider is harder to diagnose than one that never started.
 
 Changes to `endpoint` and `server_certificate_b64` are `reconcile`; the two administrative credentials
-are `credential_rotate`, and rotating them does not affect running instances.
+are `credential_rotate`. Rotation must not recreate running instances or replace consumer certificates.
+The disposable-VM lifecycle fixture now requires overlapping old/new management access, old-certificate
+revocation and unchanged guest lifetimes. The new case has no complete native result as of 2026-09-23;
+helper unit tests and cross-compilation are not acceptance of that requirement.
 
 ## Tests and implementation locations
 
@@ -384,10 +694,14 @@ rather than a stub.
 
 ## Current limitations
 
-An isolated distribution Incus 6.0.5 daemon was used to probe project, bridge, profile, image metadata
-and certificate provisioning, and exposed skipped dir disk quotas. This is not full 7.3.0 acceptance.
-Guest startup has not passed; actual quotas, restricted-certificate isolation, concurrent consumers and
-janitor recovery still require E2E. The status remains `developing`.
+The 2026-09-22 isolated tests passed the default container tier's two-lease lifecycle, actual btrfs
+root-disk exhaustion and selected direct forbidden mutations. The real distrobuilder `lab-r11` image
+and Forgejo success, failure, controller SIGTERM, and SIGKILL recovery with retained state also passed,
+including reclamation. These results do not cover VM, ARM64, ZFS, the complete device/dual-stack matrix,
+lost state volumes, signed publication or production ingress. The 2026-09-23 explicit proxy-fence fix
+passed local and designated Linux-host Provider regressions; its new proxy/management-rotation native
+cases remain unexecuted. Distribution-daemon evidence is not full 7.3.0 platform acceptance.
+The status remains `developing`.
 
 `ANAS_RESOURCE_IMAGE_ALLOWLIST` is checked against image metadata in the lease project before being handed to the
 consumer, so image pinning is ultimately enforced in the consumer's shared client rather than by the
@@ -403,6 +717,7 @@ by the daemon, and survives consumer code failing completely. This module's scor
 | quota | daemon (project limits) | yes |
 | no devices / mounts / raw config / lowlevel | daemon (`restricted.*`) | yes |
 | unprivileged containers | daemon (`restricted.containers.privilege`) | yes |
+| isolation tier (a VM lease cannot create containers, and vice versa) | daemon (`limits.containers` / `limits.virtual-machines`) | yes |
 | image fingerprint allowlist | consumer's shared client | **no** |
 
 Even then, a compromised consumer can only boot an unplanned image inside **its own restricted,
@@ -410,7 +725,10 @@ quotaed, device-less** project, so every other constraint still bounds the blast
 
 > [!NOTE]
 > The upstream main configuration reference was reviewed on 2026-09-10: image-server domain restrictions
-> and project image isolation are not per-fingerprint allowlists. Real import/start enforcement on the
+> and project image isolation are not per-fingerprint allowlists. Reading the 7.0.1 and 7.5.1 source on
+> 2026-09-26 showed that a non-empty `restricted.images.servers` also rejects creating instances from local
+> project images and does not gate simplestreams copies, so it cannot carry this constraint; the Provider
+> removes it (see "Network and profile" above). Real import/start enforcement on the
 > pinned daemon version remains unverified; see the host-provisioning architecture for the evidence boundary.
 
 ### Source-checkout and staging build contexts
