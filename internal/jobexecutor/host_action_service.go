@@ -33,6 +33,9 @@ type HostActionServiceOptions struct {
 	// Re-resolve the persisted actor, not a remembered HTTP request or cookie.
 	// Called under jobs.lock as well; must not reenter Store.
 	Authorize func(context.Context, string, string) error
+	// Resolve the workspace policy before freezing an install plan. Confirmed
+	// execution reuses that choice, never the executor's process environment.
+	ChineseSpeedup func(context.Context, string) (bool, error)
 }
 
 type hostActionRuntime interface {
@@ -339,6 +342,22 @@ func (s *HostActionService) invoke(ctx context.Context, actor, workspace, action
 	canonical, err := hostaction.CanonicalParameters(action, parameters)
 	if err != nil {
 		return consolejobs.CreateResult{}, err
+	}
+	if action == hostaction.ActionInstallPlan && s.options.ChineseSpeedup != nil {
+		plan, err := hostaction.DecodePlanParameters(action, canonical)
+		if err != nil {
+			return consolejobs.CreateResult{}, err
+		}
+		if !plan.Request.Skip {
+			plan.Request.ChineseSpeedup, err = s.options.ChineseSpeedup(ctx, workspace)
+			if err != nil {
+				return consolejobs.CreateResult{}, hostaction.ErrUnavailable
+			}
+		}
+		canonical, err = json.Marshal(plan)
+		if err != nil {
+			return consolejobs.CreateResult{}, hostaction.ErrRequest
+		}
 	}
 	if !hostaction.ObservationScopeMatchesWorkspace(action, canonical, workspace) {
 		return consolejobs.CreateResult{}, hostaction.ErrDenied

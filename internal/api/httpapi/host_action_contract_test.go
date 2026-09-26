@@ -80,7 +80,7 @@ func TestHostTypedRoutesRejectAmbiguousJSONBeforeAdmission(t *testing.T) {
 			t.Fatal("handler wrote more than one problem document")
 		}
 	}
-	w := hostRouteRequest(h, http.MethodPost, base+"incus/install/plan", `{"request":{"interface":"incus_container","remove_packages":false}}`, "key", true)
+	w := hostRouteRequest(h, http.MethodPost, base+"incus/install/plan", `{"request":{"interface":"incus_container"}}`, "key", true)
 	if w.Code != 503 || called != 1 {
 		t.Fatalf("valid typed request not admitted: %d %s", w.Code, w.Body.String())
 	}

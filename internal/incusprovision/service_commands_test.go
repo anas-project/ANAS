@@ -3,6 +3,8 @@ package incusprovision
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -86,10 +88,51 @@ func TestFixedServiceCommandRejectsOtherOperations(t *testing.T) {
 
 func TestServiceBudgetsDoNotChangeOtherCommandBounds(t *testing.T) {
 	for _, operation := range []fixedOperation{fixedAPT, fixedNFT, fixedUseradd, fixedDPKGQuery, fixedDPKGRemove} {
+		var args []string
+		if operation == fixedDPKGRemove {
+			args = append(slices.Clone(dpkgRemoveUnitArgs), "incus")
+		}
 		wantPath, wantTimeout, wantErr := fixedOperationSpec(operation)
-		path, timeout, err := fixedCommandSpec(operation, nil)
+		path, timeout, err := fixedCommandSpec(operation, args)
 		if wantErr != nil || err != nil || path != wantPath || timeout != wantTimeout {
 			t.Fatalf("unrelated command budget changed: %s", operation)
+		}
+	}
+}
+
+func TestPackageRemovalRunsOnlyCompiledTransientDPKG(t *testing.T) {
+	// hostd's ProtectSystem=strict makes / read only, and dpkg treats the
+	// EROFS from rmdir /opt as fatal once the last Zabbly package is gone.
+	unit := strings.Join(dpkgRemoveUnitArgs, " ")
+	for _, want := range []string{"--wait", "--pipe", "--collect", "--property=ProtectHome=yes", "--property=PrivateTmp=yes", "--property=NoNewPrivileges=yes", "--property=RuntimeMaxSec=600", "-- /usr/bin/dpkg --remove --"} {
+		if !strings.Contains(unit, want) {
+			t.Fatalf("transient dpkg removal lost %q: %s", want, unit)
+		}
+	}
+	for _, forbidden := range []string{"ProtectSystem", "--purge", "--force", "--scope", "--user", "--unit"} {
+		if strings.Contains(unit, forbidden) {
+			t.Fatalf("transient dpkg removal gained %q: %s", forbidden, unit)
+		}
+	}
+	path, timeout, err := fixedCommandSpec(fixedDPKGRemove, append(slices.Clone(dpkgRemoveUnitArgs), "incus", "incus-base", "incus-client", "dnsmasq-base"))
+	if err != nil || path != systemdRunPath || timeout <= 10*time.Minute {
+		t.Fatalf("compiled removal rejected or budget below RuntimeMaxSec: path=%q timeout=%s err=%v", path, timeout, err)
+	}
+	withPrefix := func(tail ...string) []string { return append(slices.Clone(dpkgRemoveUnitArgs), tail...) }
+	swapped := slices.Clone(dpkgRemoveUnitArgs)
+	swapped[len(swapped)-3] = "/bin/sh"
+	for name, args := range map[string][]string{
+		"no packages":      withPrefix(),
+		"duplicate":        withPrefix("incus", "incus"),
+		"option injection": withPrefix("--purge"),
+		"path":             withPrefix("../incus"),
+		"uppercase":        withPrefix("Incus"),
+		"other executable": append(swapped, "incus"),
+		"missing prefix":   {"--wait", "--", "/usr/bin/dpkg", "--remove", "--", "incus"},
+		"nil":              nil,
+	} {
+		if path, timeout, err := fixedCommandSpec(fixedDPKGRemove, args); !errors.Is(err, ErrInvalid) || path != "" || timeout != 0 {
+			t.Errorf("%s: transient unit argv accepted: %#v", name, args)
 		}
 	}
 }

@@ -51,7 +51,7 @@ class HostProvisionNativeSafety(unittest.TestCase):
 
     def test_all_required_events_and_zero_exit_are_mandatory(self):
         events = self.valid_events()
-        self.assertEqual(len(lab.REQUIRED), 11)
+        self.assertEqual(len(lab.REQUIRED), 10)
         self.assertIn(lab.PARENT+'/uninstall_preflight_preserves_retained_storage', lab.REQUIRED)
         self.assertTrue(lab.native_events_passed(events, 0))
         self.assertFalse(lab.native_events_passed(events, 1))

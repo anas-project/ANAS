@@ -21,7 +21,7 @@ import (
 
 const usage = `Usage:
   incus-image-artifacts init --archive ABSOLUTE_NEW_DIRECTORY
-  incus-image-artifacts recipe --image forgejo-runner --architecture amd64|arm64 --interface incus_container|incus_vm
+  incus-image-artifacts recipe --image forgejo-runner --architecture amd64|arm64 --interface incus_container|incus_vm [--chinese-build-speedup]
   incus-image-artifacts build --archive DIR --name NAME --revision REVISION --architecture amd64|arm64 --interface incus_container|incus_vm --recipe FILE --distrobuilder ABSOLUTE_BINARY --distrobuilder-sha256 SHA256 --forgejo-runner ABSOLUTE_BINARY --forgejo-runner-sha256 SHA256
   incus-image-artifacts record --archive DIR --name NAME --revision REVISION --architecture amd64|arm64 --interface incus_container|incus_vm --recipe FILE --format split --metadata FILE --rootfs FILE
   incus-image-artifacts record --archive DIR --name NAME --revision REVISION --architecture amd64|arm64 --interface incus_container|incus_vm --recipe FILE --format unified --image FILE
@@ -38,6 +38,7 @@ init never adopts an existing directory. record never invokes a builder or overw
 build is release preparation on an isolated native Linux builder, not an apply/host action.
 An existing revision is verified without rebuilding. Incomplete attempts require explicit recovery.
 recipe prints a reviewed distrobuilder YAML recipe; it does not build.
+recipe --chinese-build-speedup freezes the reviewed mainland Debian package mirror into the recipe.
 export restores identical recorded bytes into a new private directory; it does not import.
 bundle restores all split revisions in the Provider's images/ layout, writing catalog.json last.
 bundle requires explicit history, never overwrites a destination, and does not sign or publish.
@@ -84,7 +85,7 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 	archivePath := flags.String("archive", "", "private local archive directory")
 	timeout := flags.Duration("timeout", time.Hour, "operation time budget")
 	var name, revision, architecture, iface, recipePath, format, metadata, rootfs, image, previousPath, builderPath, builderDigest, runnerPath, runnerDigest, outputDir, recipeImage string
-	var firstRelease bool
+	var firstRelease, chineseBuildSpeedup bool
 	if command == "record" || command == "inspect" || command == "build" || command == "export" {
 		flags.StringVar(&name, "name", "", "catalog name")
 		flags.StringVar(&revision, "revision", "", "immutable revision")
@@ -95,6 +96,7 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 	}
 	if command == "recipe" {
 		flags.StringVar(&recipeImage, "image", "", "reviewed default recipe name")
+		flags.BoolVar(&chineseBuildSpeedup, "chinese-build-speedup", false, "freeze the reviewed mainland Debian build mirror")
 	}
 	if command == "record" || command == "build" {
 		flags.StringVar(&recipePath, "recipe", "", "reviewed self-contained recipe")
@@ -145,7 +147,7 @@ func execute(parent context.Context, args []string, output io.Writer) error {
 		if recipeImage != "forgejo-runner" {
 			return computeimage.ErrArtifactInvalid
 		}
-		body, err := computeimage.ForgejoRunnerRecipe(computeimage.Target{Architecture: architecture, Interface: iface})
+		body, err := computeimage.ForgejoRunnerRecipeWithOptions(computeimage.Target{Architecture: architecture, Interface: iface}, computeimage.ForgejoRunnerRecipeOptions{ChineseBuildSpeedup: chineseBuildSpeedup})
 		if err != nil {
 			return err
 		}

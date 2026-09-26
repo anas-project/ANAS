@@ -229,7 +229,7 @@ func TestNativeHostProvisionLifecycle(t *testing.T) {
 		if err != nil || !got.Observation.PackageInstalled || !got.Observation.IncusDaemonActive || !got.State.Ownership.PackagesInstalledByANAS || !got.State.Ownership.IncusServiceByANAS || got.State.Ownership.ExternalDaemonPreserved || !got.State.Disabled {
 			t.Fatal("native installation readback or ownership is incomplete", err)
 		}
-		if err := verifyAPTPolicyFiles(*got.Plan.Preflight.Recipe); err != nil {
+		if err := verifyAPTPolicyFiles(*got.Plan.Preflight.Recipe, request.ChineseSpeedup); err != nil {
 			t.Fatal("native install did not preserve the compiled repository policy", err)
 		}
 	}) {
@@ -345,30 +345,28 @@ func TestNativeHostProvisionLifecycle(t *testing.T) {
 	}) {
 		return
 	}
-	if !t.Run("uninstall_preserves_original_packages", func(t *testing.T) {
+	if !t.Run("uninstall_removes_owned_packages", func(t *testing.T) {
+		before, err := backend.store.Load(ctx)
+		if err != nil || !before.Ownership.PackagesInstalledByANAS || len(before.Ownership.ManagedPackages) == 0 {
+			t.Fatal("native fixture has no recorded ANAS-owned packages to remove", err)
+		}
 		apply(t, PhaseUninstall, request, "uninstalled")
 		got, err := backend.Inspect(ctx, request)
-		if err != nil || !got.State.Disabled || got.State.BundlePersisted || got.Observation.ManagementTrusted || got.Observation.StoragePoolExists || got.Observation.DockerNetworkExists || got.Observation.FirewallInstalled || got.Observation.RelayInstalled || !got.Observation.PackageInstalled || !got.Observation.IncusDaemonActive || !slices.Equal(baselineNetworks, checkDocker(t)) {
-			t.Fatal("native owned-artifact removal or default package preservation is incomplete", err)
+		if err != nil || !got.State.Disabled || got.State.BundlePersisted || got.Observation.ManagementTrusted || got.Observation.StoragePoolExists || got.Observation.DockerNetworkExists || got.Observation.FirewallInstalled || got.Observation.RelayInstalled || got.State.Ownership.PackagesInstalledByANAS || len(got.State.Ownership.ManagedPackages) != 0 || got.Observation.IncusDaemonActive || !slices.Equal(baselineNetworks, checkDocker(t)) {
+			t.Fatal("native owned-artifact or owned-package removal is incomplete", err)
 		}
-		if _, err := os.Lstat(DefaultBundlePath); !errors.Is(err, os.ErrNotExist) {
-			t.Fatal("native connection bundle remains after uninstall")
-		}
-	}) {
-		return
-	}
-	if !t.Run("optional_package_removal_preserves_preexisting", func(t *testing.T) {
-		remove := request
-		remove.RemovePackages = true
-		apply(t, PhaseUninstall, remove, "uninstalled")
-		got, err := backend.Inspect(ctx, request)
-		if err != nil || !got.State.Disabled || got.State.Ownership.PackagesInstalledByANAS || len(got.State.Ownership.ManagedPackages) != 0 || got.Observation.IncusDaemonActive {
-			t.Fatal("native explicit package removal did not finish", err)
+		for _, owned := range before.Ownership.ManagedPackages {
+			if slices.Contains(got.Observation.InstalledPackages, owned) {
+				t.Fatal("native uninstall kept an ANAS-owned package", owned)
+			}
 		}
 		for _, original := range originalPackages {
 			if !slices.Contains(got.Observation.InstalledPackages, original) {
 				t.Fatal("native removal touched a preexisting package", original)
 			}
+		}
+		if _, err := os.Lstat(DefaultBundlePath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("native connection bundle remains after uninstall")
 		}
 	}) {
 		return

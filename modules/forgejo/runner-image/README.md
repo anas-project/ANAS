@@ -1,5 +1,13 @@
 # Forgejo one-job Runner guest image
 
+For mainland package downloads, set `CHINESE_BUILD_SPEEDUP=true` when running the Incus image
+release build script, or pass `--chinese-build-speedup` to `incus-image-artifacts recipe`.
+This freezes the fixed Aliyun Debian bootstrap URL and the pre-package APT mirror transform in the
+recipe. Manual `provision.sh` uses the same `configure-build-mirrors` script when the build switch is
+`true`. Existing suites, components and signing keys are preserved. Arbitrary `APT_MIRROR_URL` is not
+accepted by these guest build paths. Changing the mirror requires a new revision; runtime
+`CHINESE_SPEEDUP` does not rebake a published image. Native mirror downloads/baking remain unverified.
+
 The image now carries an executable-scoped guest AppArmor policy for `/usr/bin/podman`.
 Ubuntu's unprivileged-userns mediation can reject an unprofiled process inside the guest's
 AppArmor namespace even though the outer Incus nesting policy permits user namespaces.

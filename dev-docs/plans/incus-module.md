@@ -40,23 +40,41 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M8：长驻实例档预留 | R-039—R-042、R-046 | 未开始 |
 | M9：网络 IPv6 姿态与 image_policy 预留 | R-043、R-045、R-052 | 已完成 |
 | M9a：双栈出网验收 | R-044 | 实施中；实现已落地，真实验收待执行 |
-| M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047、R-048、R-050、R-051、R-057、R-094、R-107、R-108 | 实施中；三个一级发行版 amd64 各通过 25 项审批/卸载，26.04 另有后端 11 项、浏览器 8 项；真实 Core/Compose 自动投影、双合成消费者、新部署凭据保持和撤销后拒绝闭环已通过；实际 Forgejo/AI Agent 部署、ARM64/VM、未适配系统降级与失败恢复另验 |
+| M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047、R-048、R-050、R-051、R-057、R-094、R-107、R-108、R-109 | 实施中；三个一级发行版 amd64 以 Incus 7.0.1 各通过 23 项审批/卸载（2026-09-26），26.04 另有旧流程后端 11 项、浏览器 8 项；真实 Core/Compose 自动投影、双合成消费者、新部署凭据保持和撤销后拒绝闭环已通过；实际 Forgejo/AI Agent 部署、ARM64/VM、未适配系统降级与失败恢复另验 |
 | M10a：默认 Docker 的租约转发授权与撤销 | R-101—R-105 | 实施中；确认、来源及原状态回执已连接，失败启用统一有界撤回；独立内核精确许可/源冒用拒绝/既有连接撤销及安装后端显式退役、重复/证据保留通过；生产启用、自动续期/停止/重启协调、真实 guest/Forgejo 与完整反向隔离未关闭 |
 | M11：入站与 Traefik 发布 | R-053、R-054、R-062—R-065、R-070、R-071、R-086—R-088、R-095、R-096 | 实施中；观察、配置、任务排空和跨进程围栏已连接；新增同队列 owner 的统一启动入口、目录隔离准入及固定 renderer 身份；自动 CLI 排空、完整内核生命周期、VM/TAP、health、生产 UID/挂载安装及实机验收待办 |
 | M11a：独立租约命名密钥 | R-092 | 已完成；生成/复用、敏感投影、冻结引用与文件备份恢复回归通过 |
-| M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085 | 实施中；默认配方、冻结归档、历史 bundle、发布脚本与逐摘要供给已接通，lab-r11 默认容器真实烘焙/启动/one-job 通过；VM/ARM64、正式签名分发、回滚及破坏性 prune 待验收 |
+| M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085、R-110 | 实施中；默认配方、冻结归档、历史 bundle、发布脚本与逐摘要供给已接通，lab-r11 默认容器真实烘焙/启动/one-job 通过；VM/ARM64、正式签名分发、回滚及破坏性 prune 待验收 |
 | M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 实施中；本地 bundle 动作自行写入目的地、元数据控制输出及 URL/base64 拒绝回归已落地；不提供浏览器下载端点，统一动作整体安全审阅仍待完成，见[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
 | M14：其余发行版适配 | — | 未开始；待适配清单见[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §2 |
 
-覆盖统计：82 项需求全部有且只有一个里程碑归属（另有 26 项已废弃）。
+覆盖统计：84 项需求全部有且只有一个里程碑归属（另有 26 项已废弃）。
 
 ### 当前接续状态（2026-09-26）
 
+安装国内源（R-109/R-110）：宿主 `install.plan` 从受管工作区读取 `CHINESE_SPEEDUP`，
+冻结后贯穿队列、确认、浏览器与 APT 执行；固定国内源与 upstream 可反切，Incus 的 Zabbly
+钉包及签名保持。guest recipe CLI、发布脚本与手工 provision 接入 `CHINESE_BUILD_SPEEDUP`，
+bootstrap 与包安装前的换源进入配方摘要。相关九个 Go 包完整测试与 `go vet`、Web 类型/API 校验与审批流程 10 项测试、Module 文档生成检查、
+需求/计划/状态门禁通过。首次受沙箱 Unix socket 监听限制的测试已解除限制重跑通过；发布脚本
+空数组的 Bash 兼容问题由回归发现并修复。Linux/amd64 原生测试文件交叉编译通过（未执行）；
+双语文档构建修复两处既有 dev-docs 站内死链后通过，保留非阻断 chunk 大小警告。
+没有执行真实 Linux 下载、安装或 guest 烘焙，不关闭 M10/M12 的实机剩余项。
+
 默认 Incus 7.0 LTS（`INCUS-R-049` 废弃，由 `INCUS-R-107`、`INCUS-R-108` 取代）：三份一级发行版配方
-改为从 Zabbly `lts-7.0` 安装 `incus`/`incus-base`/`incus-client`，其余依赖仍取官方源。密钥编译进二进制、
+改为从 Zabbly `lts-7.0` 安装 `incus`/`incus-base`/`incus-client`，其余依赖取发行版官方仓库（启用国内加速时使用保留发行版签名的固定镜像）。密钥编译进二进制、
 内嵌于 deb822 `Signed-By`（`_apt` 读不到 root 私有配置目录），指纹由测试钉住；Incus 包钉到 Zabbly、
-禁止回落发行版 6.0。编译配置、夹具与单元回归通过；宿主供给在三个发行版上的实机验收（原 25 项门禁）
-需以 7.0.1 重跑，旧 6.0 配方宿主无迁移动作，Zabbly 源不进入宿主日常 `apt upgrade`，见宿主供给设计 §2.2。
+禁止回落发行版 6.0。编译配置、夹具与单元回归通过；宿主供给已以 7.0.1 在三个发行版上重跑通过
+（见下段），旧 6.0 配方宿主无迁移动作，Zabbly 源不进入宿主日常 `apt upgrade`，见宿主供给设计 §2.2。
+
+卸载总是删除受管包（2026-09-26）：去掉 `remove_packages` 请求字段和控制台勾选框，卸载精确删除
+ANAS 记录为自己安装的包，原有包、未托管依赖和外部 daemon 包不动。hostd 以 `-/opt` 写入 Zabbly
+`/opt/incus`；删除最后一个包时 `dpkg` 要 `rmdir /opt`，在 `ProtectSystem=strict` 下是 EROFS，
+Ubuntu 26.04/24.04 的 7.0.1 审批验收因此只在删包门禁失败。固定 `dpkg --remove` 改经 `systemd-run`
+临时单元执行，执行器只接受该编译 argv。审批门禁由 25 项合并为 23 项（`confirmed_uninstall` 校验
+精确删包，过期后新计划即重复卸载），原生后端门禁由 11 项合并为 10 项。Debian 13、Ubuntu 26.04、
+24.04 amd64 以同一快照工件各通过 23/23 项、14 个作业/退出，安装 Incus 7.0.1，分别删除 6/4/4 个受管包；
+见[验收记录](../reviews/2026-09-26-incus-host-action-7.0.1-acceptance.md)。原生后端 10 项入口未在本轮重跑。
 
 围栏完整性修复（[审查](../reviews/2026-09-25-compute-contract-incus-review.md) §1.1、§1.2）：Provider
 现在拥有 Incus 6.0.0—6.0.5 全部 `restricted.*` 键，要么显式写入严格值、要么要求不存在；VM 档也写
@@ -1060,13 +1078,13 @@ catalog，复用 `DescribeArtifactRelease` 和规范描述。私有本地归档�
 | R-041 | 待新增 `test-env/scripts/server-incus-longlived-e2e.sh` | 长驻档持久卷与入站（第三阶段） | — | 待执行 |
 | R-042 | 待新增 `test-env/scripts/server-incus-longlived-e2e.sh` | 长驻档下既有边界不被削弱 | — | 待执行 |
 | R-044 | 待新增 `test-env/scripts/server-incus-network-e2e.sh` | 双栈宿主上的租约网络出网 | — | 待执行 |
-| R-047 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 三个一级发行版 amd64 宿主审批；26.04 真实 Core CLI/Hook/Provider/Compose 双合成消费者 | 2026-09-24 | 三档宿主各 25 项通过；Core 五阶段、主流程九项与撤销一项通过，无需手填连接/架构；正式安装器及实际业务部署另验 |
+| R-047 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 三个一级发行版 amd64 宿主审批；26.04 真实 Core CLI/Hook/Provider/Compose 双合成消费者 | 2026-09-24 | 三档宿主以 Incus 7.0.1 各 23 项通过（2026-09-26）；Core 五阶段、主流程九项与撤销一项通过，无需手填连接/架构；正式安装器及实际业务部署另验 |
 | R-048 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 跳过、重复执行、保留卷拒绝、两种卸载及 Core 新冻结部署/撤销 | 2026-09-24 | 三档精确删包/保留原包/重复卸载通过；Core 新版本实际激活保持凭据、撤销后拒绝旧凭据且私有 Store 不变；完整降级/失败恢复仍未完成 |
 | R-050 | `test-env/scripts/server-incus-host-action-e2e.py` 与 `server-incus-core-projection-e2e.py` | 回环 daemon、实际控制桥及 Core 自动投影的两个非 root 消费者 | 2026-09-24 | 宿主传输正反例与 Core 自身租约/既存项目隔离通过，业务网关优先级不变；完整 LAN/双栈及实际 Forgejo/AI Agent 部署另验 |
 | R-053 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | Traefik 公网双栈、受管 guest IPv4 后端 | — | 待执行 |
 | R-054 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | Traefik 发布实例内 HTTP 服务 | — | 待执行 |
 | R-055 | 待新增 `test-env/scripts/server-incus-image-bake-e2e.sh` | 首次烘焙与二次 apply 不重建 | — | 待执行 |
-| R-057 | `test-env/scripts/server-incus-host-action-e2e.py` | Debian 13 / Ubuntu 24.04 / 26.04 三档 amd64 | 2026-09-23 | 三档同工件各 25 项审批/正常供给卸载通过；其他架构、故障恢复与正式默认部署不由此推导 |
+| R-057 | `test-env/scripts/server-incus-host-action-e2e.py` | Debian 13 / Ubuntu 24.04 / 26.04 三档 amd64 | 2026-09-26 | 三档同工件以 Incus 7.0.1 各 23 项审批/正常供给卸载通过；其他架构、故障恢复与正式默认部署不由此推导 |
 | R-094 | 待新增 `test-env/scripts/server-incus-host-setup-e2e.sh` | 未适配发行版上保持关闭而非失败 | — | 待执行 |
 | R-063 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 实例启停与 Traefik 路由增删同步 | — | 待执行 |
 | R-087 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 消费者无法注册本租约命名空间之外的域名 | — | 待执行 |

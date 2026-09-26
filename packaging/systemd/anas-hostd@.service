@@ -34,6 +34,8 @@ ProtectSystem=strict
 # that package trigger writes initrd backups and replacements below /boot.
 # Keep the path optional for hosts without it; never skip package triggers or
 # make the whole filesystem writable. No boot path comes from the request.
-ReadWritePaths=/etc /usr /var /run /tmp -/boot
+# The pinned Incus 7.0 LTS packages (Zabbly lts-7.0) install below /opt/incus;
+# dpkg must create and later remove that tree, so /opt itself is writable.
+ReadWritePaths=/etc /usr /var /run /tmp -/boot -/opt
 RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
 SystemCallArchitectures=native

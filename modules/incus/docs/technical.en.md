@@ -1,5 +1,25 @@
 # Incus compute provider technical notes
 
+## Mainland package mirrors
+
+Host install plans resolve effective `CHINESE_SPEEDUP` from managed workspace configuration,
+including top-level `env:` overrides, and freeze it as `request.chinese_speedup` before confirmation.
+Enabled plans use the fixed `https://mirrors.aliyun.com/debian`, `debian-security`, `ubuntu`, or
+`ubuntu-ports` mirror for distribution dependencies. Incus packages still come exclusively from pinned
+Zabbly `lts-7.0`. Distribution signing keys, suites and architectures remain unchanged; APT origin pins
+follow the mirror. Installation accepts only the two compiled variants of the same recipe, allowing a
+new install plan to switch back while rejecting unrecognized drift. Uninstall accepts either complete
+policy without downloading or switching sources. Fully installed packages are not reinstalled merely
+to change mirrors. Existing confirmations retain their frozen choice; new plans use new configuration.
+
+Guest baking uses separate `CHINESE_BUILD_SPEEDUP`. The release script passes the recipe CLI's
+`--chinese-build-speedup` option, freezing the Debian bootstrap URL and a `post-unpack` hook that
+rewrites Debian main/security URLs in `.list` and `.sources` files before APT installation. Suites,
+components and signature configuration remain intact. Manual `runner-image/provision.sh` uses the
+same script. The choice enters recipe bytes and the digest; a changed source cannot rebuild the same
+revision, and runtime `CHINESE_SPEEDUP` does not rebake published guests. Neither path accepts arbitrary
+`APT_MIRROR_URL` values. Real Linux downloads, installation and guest baking were not run for this change.
+
 ## Current lease-forwarding boundary
 
 The compiled host catalog includes `incus.forwarding.permission.plan` and
@@ -160,30 +180,40 @@ identity reads by the non-root, capability-free process, not network changes. Th
 accepted for the host's pinned mTLS probe, still constrained by INPUT rules and daemon authentication;
 this does not prove consumer-bridge reachability. Ubuntu 26.04 and Debian 13 explicitly record the actual daemon package
 `incus-base`. Missing per-package ownership or a preexisting daemon cannot be converted into ownership by
-installing helpers, and explicit package removal must also confirm that the owned daemon has stopped.
+installing helpers, and package removal must also confirm that the owned daemon has stopped.
 
 Debian's null encoding for an empty storage-pool collection is handled only at the two fixed collection
 endpoints. Both inventories must agree they are empty, and a separate lookup must confirm the managed pool
 is absent. Null in other collections, missing fields, failed responses and conflicting evidence still block
 removal. The generic client is unchanged; no forced package deletion or automatic failed-action retry is added.
 
-Explicit package removal completes resource inventory, then stops and independently reads back only the
-ANAS-owned `incus.service`; package maintainer scripts are not assumed to stop it. Failure, cancellation or
-an active daemon prevents package deletion and preserves the failed intent and ownership. Default package
-preservation never stops the daemon, and an active service without ANAS ownership cannot be adopted or removed.
+Uninstall always removes the packages ANAS recorded as its own; there is no option to keep them. Packages
+present before installation, unowned dependencies and a preserved external daemon's packages stay. Removal
+completes resource inventory, then stops and independently reads back only the ANAS-owned `incus.service`;
+package maintainer scripts are not assumed to stop it. Failure, cancellation or an active daemon prevents
+package deletion and preserves the failed intent and ownership. Uninstall that preserves an external daemon
+never stops it, and an active service without ANAS ownership cannot be adopted or removed. The Zabbly
+packages own `/opt`, so removing the last one makes `dpkg` rmdir `/opt`, which is EROFS under hostd's
+`ProtectSystem=strict`. The fixed `dpkg --remove` therefore runs through `systemd-run` in a transient unit
+without `ProtectSystem`; the executor accepts only that compiled argv plus owned package names.
 
 Debian's official dependencies can trigger initramfs updates. The fixed root hostd unit adds the optional
 `-/boot` writable tree while preserving its other filesystem restrictions; neither the console nor relay
 receives this exception. Package triggers are not skipped to manufacture a successful installation. The
-installed approval runner now requires 25 gates, adding explicit per-package removal and repeat uninstall.
-The complete dpkg inventory must be healthy and preserve original packages and unowned dependencies;
-an earlier 23-gate report does not cover these new removal checks.
+installed approval runner requires 23 gates since 2026-09-26: `confirmed_uninstall` itself checks exact
+package removal and the fresh post-expiry plan is the repeat uninstall. The complete dpkg inventory must be
+healthy and preserve original packages and unowned dependencies.
 
-The current same-artifact matrix passed all **25 gates** on Debian 13, Ubuntu 26.04 and Ubuntu 24.04 amd64,
+The 2026-09-26 rerun with Zabbly Incus 7.0.1 passed all **23 gates** with 14 jobs and observed exits on
+Debian 13, Ubuntu 26.04 and Ubuntu 24.04 amd64, removing 6/4/4 owned packages and keeping 327/681/667
+original packages.
+
+The 2026-09-23 same-artifact matrix (the earlier 25-gate flow: default-retaining uninstall, then explicit
+removal) passed all **25 gates** on Debian 13, Ubuntu 26.04 and Ubuntu 24.04 amd64,
 with 18 real jobs and independently observed exits in each run. Respectively, 6/4/3 newly owned packages
 were removed while 327/682/667 original packages and unowned dependencies were preserved. The Ubuntu 26.04
 control also preinstalled nftables/conntrack and confirmed they were not removed. Normal shutdown and the
-physical-host before/after checks passed. The earlier 23-gate results are historical; full business
+physical-host before/after checks passed. Those results are historical; full business
 Core/Compose deployment, ARM64/VM native, unsupported-system degradation, failure recovery, production
 ingress and formal image publication are not established by this matrix.
 
@@ -205,7 +235,7 @@ Host uninstall first inventories stopped/frozen instances, pool references and v
 Docker control-network endpoints before revoking the management connection. Missing or incomplete
 inventories are not empty inventories. Refusal/cancellation creates no effect intent; each deletion
 still rechecks ownership and use. Explicit removal of owned packages also requires that no later
-external objects remain in the shared daemon; packages are retained by default. The root Docker
+external objects remain in the shared daemon; otherwise the whole uninstall is blocked. The root Docker
 client cannot connect/disconnect containers or prune networks. See the normative
 [host design, section 3.4](../../../docs/architecture/incus-host-provisioning.md#_3-4-卸载).
 

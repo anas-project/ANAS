@@ -46,7 +46,6 @@ REQUIRED = (
     'consumer_without_certificate_untrusted', 'consumer_other_network_blocked',
     'service_restart_persists_consumption', 'shared_jobs_and_exit_evidence',
     'real_expiry_rejects_old_confirmation', 'fresh_plan_after_expiry',
-    'confirmed_owned_package_removal', 'repeat_package_uninstall',
     'docker_baseline_restored',
 )
 ARTIFACTS = {
@@ -322,6 +321,10 @@ def write_new(path, body, mode=0o600):
     if isinstance(body, str):
         body = body.encode()
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    # The runner's 077 umask would otherwise strip the requested bits: a 0700
+    # relay binary cannot be executed by its non-root service (203/EXEC).
+    # Set the exact mode, as install.sh's `install -m` does.
+    os.fchmod(descriptor, mode)
     with os.fdopen(descriptor, 'wb') as output:
         output.write(body)
         output.flush()
@@ -350,7 +353,12 @@ def install_fixture(manifest):
                                'anas-hostd': '/usr/local/lib/anas/anas-hostd',
                                'anas-incus-control-relay': '/usr/local/lib/anas/anas-incus-control-relay'}.items():
         path = Path(destination)
-        path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+        if not path.parent.exists():
+            # Match install.sh (`install -d -m 0755`): this runner's umask is
+            # 077, and a private helper directory would stop the non-root
+            # relay from executing its binary (systemd status 203/EXEC).
+            path.parent.mkdir(parents=True)
+            os.chmod(path.parent, 0o755)
         if path.exists():
             require(digest_input(path, True) == manifest['artifacts'][name], 'existing_binary_not_identical')
         else:
@@ -811,7 +819,7 @@ def run(identity):
         remaining = expiry_wall - time.time()
         require(0 < remaining <= 300, 'confirmation_expiry_contract')
         expiry_monotonic = time.monotonic() + remaining + 1
-        for phase in ('install', 'configure', 'enroll', 'uninstall'):
+        for phase in ('install', 'configure', 'enroll'):
             stage = 'confirmed_' + phase
             confirmed(phase, request, stage)
             if phase == 'enroll':
@@ -846,6 +854,20 @@ def run(identity):
                 finally:
                     probe.close()
                     bundle.clear()
+        # Uninstall always removes exactly the packages ANAS recorded as its
+        # own. Check the intended deletion set against the actual original
+        # inventory before confirming the destructive action.
+        stage = 'confirmed_uninstall'
+        managed = recorded_package_ownership()
+        installed = installed_packages()
+        validate_removed_packages(original_packages, installed, installed - set(managed), managed)
+        _, removed = confirmed('uninstall', request, None)
+        after_removal = installed_packages()
+        validate_removed_packages(original_packages, installed, after_removal, managed)
+        daemon = capture(['systemctl', 'show', 'incus.service', '--property=ActiveState', '--value']).strip()
+        require(daemon == b'inactive', 'owned_daemon_still_active')
+        complete(stage, job_id=removed['id'], disposition=removed['result']['value'].get('disposition'),
+                 removed_package_count=len(managed), original_package_count=len(original_packages))
         stage = 'real_expiry_rejects_old_confirmation'
         print(json.dumps({'stage': stage, 'status': 'waiting_for_actual_expiry'}), flush=True)
         while True:
@@ -865,24 +887,12 @@ def run(identity):
         require_expired_rejection(status, response)
         check_public_response(response, client.credentials)
         complete(stage, plan_ttl_seconds=300)
+        # The fresh approval is also the repeat uninstall: nothing is left to
+        # remove, so the package inventory must stay exactly as readback left it.
         stage = 'fresh_plan_after_expiry'
-        confirmed('uninstall', request, stage)
-        stage = 'confirmed_owned_package_removal'
-        managed = recorded_package_ownership()
-        installed = installed_packages()
-        # Check the intended deletion set against actual original inventory
-        # before asking the product to confirm any destructive package action.
-        validate_removed_packages(original_packages, installed, installed - set(managed), managed)
-        _, removed = confirmed('uninstall', {**request, 'remove_packages': True}, None)
-        remaining = installed_packages()
-        validate_removed_packages(original_packages, installed, remaining, managed)
-        daemon = capture(['systemctl', 'show', 'incus.service', '--property=ActiveState', '--value']).strip()
-        require(daemon == b'inactive', 'owned_daemon_still_active')
-        complete(stage, job_id=removed['id'], removed_package_count=len(managed), original_package_count=len(original_packages))
-        stage = 'repeat_package_uninstall'
-        _, repeated = confirmed('uninstall', {**request, 'remove_packages': True}, None)
-        require(installed_packages() == remaining, 'repeat_uninstall_changed_inventory')
-        complete(stage, job_id=repeated['id'])
+        _, repeated = confirmed('uninstall', request, None)
+        require(installed_packages() == after_removal, 'repeat_uninstall_changed_inventory')
+        complete(stage, job_id=repeated['id'], disposition=repeated['result']['value'].get('disposition'))
         stage = 'shared_jobs_and_exit_evidence'
         # A committed successful host job has already passed its pinned PID1
         # exit observation in HostJobBroker. Independently retain the actual

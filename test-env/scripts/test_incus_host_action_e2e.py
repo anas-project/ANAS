@@ -277,6 +277,25 @@ class HostActionNativeContract(unittest.TestCase):
                         source.index("expiry_plan = plan('uninstall', request)"))
         self.assertEqual(source.count('require_live_confirmation_plan('), 2)
 
+    def test_package_inventory_snapshots_are_never_rebound(self):
+        # The expiry wait once reused an inventory snapshot's name for seconds
+        # left, so the repeat-uninstall comparison saw a float, not a set.
+        import ast
+        tree = ast.parse(Path(NATIVE.__file__).read_text())
+        run = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == 'run')
+        bindings = {}
+        for node in ast.walk(run):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.For)) else []
+            for target in targets:
+                for name in ast.walk(target):
+                    if isinstance(name, ast.Name):
+                        bindings.setdefault(name.id, []).append(node)
+        snapshots = {target.id for node in ast.walk(run) if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
+                     and getattr(node.value.func, 'id', '') == 'installed_packages' for target in node.targets if isinstance(target, ast.Name)}
+        self.assertTrue({'original_packages', 'installed', 'after_removal'} <= snapshots, snapshots)
+        for name in snapshots:
+            self.assertEqual(len(bindings[name]), 1, name)
+
 
 if __name__ == '__main__':
     unittest.main()

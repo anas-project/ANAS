@@ -3472,9 +3472,9 @@ components:
           minimum: 16
           maximum: 4096
           description: Omission selects 64 GiB.
-        remove_packages:
+        chinese_speedup:
           type: boolean
-          description: Omission means false; package removal must be explicitly selected for uninstall.
+          description: Frozen mainland distribution-package mirror choice. Install plans resolve it from the managed workspace CHINESE_SPEEDUP setting; apply must preserve the returned value. Incus packages retain the fixed Zabbly source.
     IncusHostApplyParameters:
       type: object
       additionalProperties: false

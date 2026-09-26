@@ -35,6 +35,12 @@ case "${ANAS_INCUS_IMAGE_INIT_ARCHIVE:-}" in
   *) echo "ANAS_INCUS_IMAGE_INIT_ARCHIVE must be 0 or 1" >&2; exit 64 ;;
 esac
 history_args=()
+recipe_args=(--chinese-build-speedup=false)
+case "${CHINESE_BUILD_SPEEDUP:-false}" in
+  true) recipe_args=(--chinese-build-speedup) ;;
+  false|"") ;;
+  *) echo "CHINESE_BUILD_SPEEDUP must be true or false" >&2; exit 64 ;;
+esac
 if [ -n "${ANAS_INCUS_IMAGE_PREVIOUS_CATALOG:-}" ]; then
   [ "${ANAS_INCUS_IMAGE_FIRST_RELEASE:-}" != 1 ] || {
     echo "previous catalog and first release are mutually exclusive" >&2; exit 64;
@@ -78,7 +84,7 @@ for iface in incus_container incus_vm; do
   go run ./cmd/incus-image-artifacts recipe \
     --image forgejo-runner \
     --architecture "${arch}" \
-    --interface "${iface}" >"${recipe}"
+    --interface "${iface}" "${recipe_args[@]}" >"${recipe}"
 
   go run ./cmd/incus-image-artifacts build \
     --archive "${ANAS_INCUS_IMAGE_ARCHIVE}" \

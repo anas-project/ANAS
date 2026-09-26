@@ -386,6 +386,20 @@ These repository-consumed keys have no global field or module-manifest parameter
 
 `global.chinese_speedup: true` supplies runtime defaults for `ANAS_IMAGE_REGISTRY`, `NEXTCLOUD_APPSTORE_URL`, and `GITHUB_DOWNLOAD_PROXY_PREFIX`. `global.chinese_build_speedup: true` supplies APT, APK, npm, Go, Docker Hub, GHCR, LLNG, and build-time GitHub defaults; changing it or another build input requires `anas apply --build`. Explicit top-level `env:` values win.
 
+Incus host `install.plan` also resolves effective `CHINESE_SPEEDUP` from the managed workspace
+configuration. When enabled, distribution dependencies use the fixed Aliyun Debian (including security),
+Ubuntu, or Ubuntu Ports mirror. Incus retains the pinned Zabbly `lts-7.0` source and signature checks.
+The returned `chinese_speedup` parameter and confirmation digest freeze this selection. A configuration
+change requires a new plan; execution does not reread the environment. Explicit skip, configure, enroll,
+and uninstall do not depend on this configuration read. Host APT policy does not accept arbitrary
+`APT_MIRROR_URL` values.
+
+Incus guest images are separate release artifacts. The release build script reads
+`CHINESE_BUILD_SPEEDUP=true` and passes `--chinese-build-speedup` to `incus-image-artifacts recipe`,
+freezing bootstrap and APT mirror selection into the recipe. Changing sources cannot rebuild the same
+revision. This fixed mirror does not read `APT_MIRROR_URL`; workspace `CHINESE_SPEEDUP` and
+`anas apply --build` do not rebuild published guest images.
+
 ### Host build and Compose integration
 
 | Key | Purpose |

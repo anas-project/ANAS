@@ -73,7 +73,7 @@ func TestSplitDaemonInstallRecordsBaseOwnershipIndividually(t *testing.T) {
 			if !slices.Equal(store.state.Ownership.ManagedPackages, want) || !slices.Equal(rt.installedByCall, want) || store.state.Ownership.ExternalDaemonPreserved {
 				t.Fatal("fresh daemon dependency was not individually recorded as owned")
 			}
-			request := Request{RemovePackages: true}
+			request := Request{}
 			plan, err = backend.Plan(ctx, request)
 			if err != nil {
 				t.Fatal(err)
@@ -112,7 +112,7 @@ func TestPackageRemovalCannotForgetAnActiveOwnedDaemon(t *testing.T) {
 	if _, err := backend.Install(ctx, Request{}, bind(plan, PhaseInstall)); err != nil {
 		t.Fatal(err)
 	}
-	request := Request{RemovePackages: true}
+	request := Request{}
 	plan, err = backend.Plan(ctx, request)
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestAggregatePackageOwnershipCannotAuthorizeDaemonAdoption(t *testing.T) {
 			rt.obs.PackageInstalled = true
 			rt.obs.IncusDaemonActive = true
 			backend := newBackendForTest(store, rt)
-			request := Request{RemovePackages: phase == PhaseUninstall}
+			request := Request{}
 			plan, err := backend.Plan(ctx, request)
 			if err != nil {
 				t.Fatal(err)

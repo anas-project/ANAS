@@ -80,6 +80,7 @@ type fakeRuntime struct {
 	trustHook       func(Credential) error
 	observeHook     func(*Observation)
 	installedByCall []string
+	speedupByCall   []bool
 	removedByCall   []string
 }
 
@@ -125,11 +126,12 @@ func (f *fakeRuntime) Observe(context.Context, Request, State) (Observation, err
 	slices.Sort(obs.InstalledPackages)
 	return obs, nil
 }
-func (f *fakeRuntime) InstallPackages(_ context.Context, recipe incushost.Recipe, packages []string) error {
+func (f *fakeRuntime) InstallPackages(_ context.Context, recipe incushost.Recipe, packages []string, chineseSpeedup bool) error {
 	if err := f.record("install-packages"); err != nil {
 		return err
 	}
 	f.installedByCall = append(f.installedByCall, packages...)
+	f.speedupByCall = append(f.speedupByCall, chineseSpeedup)
 	f.obs.ExistingPackages = append(f.obs.ExistingPackages, packages...)
 	f.obs.InstalledPackages = append(f.obs.InstalledPackages, packages...)
 	slices.Sort(f.obs.ExistingPackages)
@@ -569,7 +571,7 @@ func TestControlPlansReusePersistedOwnedSubnet(t *testing.T) {
 	}
 }
 
-func TestUninstallRemovesOnlyOwnedArtifactsAndRetainsPackagesByDefault(t *testing.T) {
+func TestUninstallRemovesOwnedArtifactsAndPreservesExternalDaemonPackages(t *testing.T) {
 	ctx := context.Background()
 	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{
 		PackagesInstalledByANAS: true, ExternalDaemonPreserved: true, StoragePool: StoragePoolName, DockerNetwork: ControlNetworkName,
@@ -586,7 +588,7 @@ func TestUninstallRemovesOnlyOwnedArtifactsAndRetainsPackagesByDefault(t *testin
 	}
 	for _, forbidden := range []string{"remove-packages"} {
 		if slices.Contains(rt.calls, forbidden) {
-			t.Fatalf("default uninstall performed forbidden effect %s: %v", forbidden, rt.calls)
+			t.Fatalf("uninstall touched a preserved external daemon's packages via %s: %v", forbidden, rt.calls)
 		}
 	}
 	for _, required := range []string{"remove-trust", "remove-relay", "remove-firewall", "remove-network", "remove-storage"} {

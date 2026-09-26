@@ -53,13 +53,14 @@ var (
 )
 
 // Request is intentionally small and typed. It chooses a supported isolation
-// tier and explicit destructive package-removal policy; it does not name paths,
-// commands, subnets, firewall rules, package names or daemon endpoints.
+// tier and a compiled package mirror preference; it does not name paths,
+// commands, subnets, firewall rules, package names, repositories or daemon
+// endpoints. Uninstall always removes the packages ANAS recorded as its own.
 type Request struct {
 	Skip           bool   `json:"skip,omitempty"`
 	Interface      string `json:"interface,omitempty"`
 	StorageSizeGiB int    `json:"storage_size_gib,omitempty"`
-	RemovePackages bool   `json:"remove_packages,omitempty"`
+	ChineseSpeedup bool   `json:"chinese_speedup,omitempty"`
 }
 
 func (r Request) normalized() (Request, error) {

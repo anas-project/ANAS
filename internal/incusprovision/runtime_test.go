@@ -115,7 +115,7 @@ func TestCompiledAPTConfigFilesMatchPackagedFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, recipe := range recipes {
-		files, err := CompiledAPTConfigFiles(recipe)
+		files, err := CompiledAPTConfigFiles(recipe, false)
 		if err != nil {
 			t.Fatalf("%s: %v", recipe.ID, err)
 		}
@@ -153,8 +153,10 @@ func TestOfficialAPTConfigRejectsUnregisteredPolicyInputs(t *testing.T) {
 		case "repository":
 			r.Repository = "third-party"
 		}
-		if _, err := CompiledAPTConfigFiles(r); err == nil {
-			t.Fatalf("accepted noncompiled %s policy", mode)
+		for _, speedup := range []bool{false, true} {
+			if _, err := CompiledAPTConfigFiles(r, speedup); err == nil {
+				t.Fatalf("accepted noncompiled %s policy (speedup=%v)", mode, speedup)
+			}
 		}
 	}
 }
@@ -172,7 +174,7 @@ func TestWriteAPTConfigFilesWritesUnderProvidedRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
-	written, err := WriteAPTConfigFiles(root, recipes[0])
+	written, err := WriteAPTConfigFiles(root, recipes[0], false)
 	if err != nil {
 		t.Fatal(err)
 	}

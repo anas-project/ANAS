@@ -353,7 +353,13 @@ func Load(path string) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
+	return Parse(b)
+}
+
+// Parse applies the same configuration rules to an already validated snapshot.
+func Parse(b []byte) (*File, error) {
 	var cfg File
+	var err error
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
@@ -453,8 +459,8 @@ var chineseSpeedupDefaults = map[string]string{
 
 // chineseBuildSpeedupDefaults are consumed while materialising hooks or
 // executing Dockerfiles. They deliberately live behind a separate switch:
-// changing them requires rebuilding images, whereas CHINESE_SPEEDUP only
-// selects published runtime artifacts and runtime download mirrors.
+// changing them requires rebuilding images, whereas CHINESE_SPEEDUP selects
+// published runtime artifacts, runtime downloads and planned host package mirrors.
 var chineseBuildSpeedupDefaults = map[string]string{
 	"APT_MIRROR_URL":                     "https://mirrors.aliyun.com",
 	"APK_MIRROR_URL":                     "https://mirrors.aliyun.com",

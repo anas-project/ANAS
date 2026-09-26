@@ -841,7 +841,8 @@ idempotency key 手动重发。
 不取消或执行任务。
 
 `incus-plan` 的 `PHASE` 只接受 `install|configure|enroll|uninstall`。公开 request 只包含
-`skip`、`interface`、`storage_size_gib`、`remove_packages`，不接受命令、包名、路径或软件源。
+`skip`、`interface`、`storage_size_gib`、`chinese_speedup`，不接受命令、包名、路径或软件源。
+`uninstall` 总是删除 ANAS 记录为自己安装的软件包，没有保留选项。
 读取成功 plan job 中的服务端影响和 `parameters` 后，`incus-confirm --json` 返回一次性 token、
 绑定摘要和到期时间；有效期从原 plan 时间起算五分钟，不自动延长。
 

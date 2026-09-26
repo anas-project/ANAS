@@ -32,7 +32,7 @@ func TestExplicitPackageRemovalStopsOwnedDaemonAfterInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt.calls = nil
-	request := Request{RemovePackages: true}
+	request := Request{}
 	plan, err = backend.Plan(ctx, request)
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestOwnedDaemonStopFailureDoesNotDeletePackagesOrClearOwnership(t *testing.
 			case "still active":
 				rt.observeHook = func(obs *Observation) { obs.IncusDaemonActive = true }
 			}
-			request := Request{RemovePackages: true}
+			request := Request{}
 			plan, err = backend.Plan(ctx, request)
 			if err != nil {
 				t.Fatal(err)
@@ -84,8 +84,8 @@ func TestOwnedDaemonStopFailureDoesNotDeletePackagesOrClearOwnership(t *testing.
 	}
 }
 
-func TestPackagePreservationAndForeignServicesNeverStopDaemon(t *testing.T) {
-	for _, mode := range []string{"default preservation", "externally started", "retained resource"} {
+func TestForeignServicesAndRetainedResourcesNeverStopDaemon(t *testing.T) {
+	for _, mode := range []string{"externally started", "retained resource"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			store, rt := &memoryStore{}, newFakeRuntime(t)
@@ -97,7 +97,7 @@ func TestPackagePreservationAndForeignServicesNeverStopDaemon(t *testing.T) {
 			if _, err := backend.Install(ctx, Request{}, bind(plan, PhaseInstall)); err != nil {
 				t.Fatal(err)
 			}
-			request := Request{RemovePackages: mode != "default preservation"}
+			request := Request{}
 			if mode == "externally started" {
 				store.state.Ownership.IncusServiceByANAS = false
 			}
@@ -109,9 +109,9 @@ func TestPackagePreservationAndForeignServicesNeverStopDaemon(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, err = backend.Uninstall(ctx, request, bind(plan, PhaseUninstall))
-			if (mode == "default preservation" && err != nil) || (mode != "default preservation" && !errors.Is(err, ErrBlocked)) ||
+			if !errors.Is(err, ErrBlocked) ||
 				countCalls(rt.calls, "stop-incus") != 0 || len(rt.removedByCall) != 0 || !rt.obs.IncusDaemonActive || len(store.state.Intents) != 2 {
-				t.Fatal("default preservation, foreign daemon or retained data acquired stop/removal permission", err)
+				t.Fatal("foreign daemon or retained data acquired stop/removal permission", err)
 			}
 		})
 	}
@@ -142,7 +142,7 @@ func TestCancellationAfterDaemonStopCannotBeginPackageDeletion(t *testing.T) {
 	if _, err := backend.Install(ctx, Request{}, bind(plan, PhaseInstall)); err != nil {
 		t.Fatal(err)
 	}
-	request := Request{RemovePackages: true}
+	request := Request{}
 	plan, err = backend.Plan(ctx, request)
 	if err != nil {
 		t.Fatal(err)

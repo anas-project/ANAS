@@ -1,5 +1,13 @@
 # Architecture
 
+Incus host install plans now freeze the managed workspace's effective `CHINESE_SPEEDUP` in their
+confirmation parameters. Enabled plans use fixed Aliyun distribution mirrors while preserving archive
+signatures and the pinned Zabbly `lts-7.0` Incus source. Guest release baking separately accepts
+`CHINESE_BUILD_SPEEDUP`, freezing bootstrap and pre-package APT mirror selection into the recipe.
+Neither setting rebakes an existing revision; native mirror installation/baking remains unverified.
+See the [Chinese host design](/architecture/incus-host-provisioning) and
+[image supply](/en/architecture/incus-image-supply).
+
 Lease-forwarding confirmation is now wired through the existing host action catalog, job/approval
 boundary and host `state.json` receipts. The production enable operation remains blocked by
 `forwarding_lifecycle_integration_unavailable`; this is not a released automatic Docker fix. Candidate

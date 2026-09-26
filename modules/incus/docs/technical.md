@@ -1,5 +1,22 @@
 # Incus compute provider 技术实现
 
+## 安装软件时的国内源
+
+宿主安装计划读取工作区受管配置的有效 `CHINESE_SPEEDUP`（包括顶层 `env:` 的覆盖），
+并在确认前冻结为 `request.chinese_speedup`。开启时，发行版依赖使用
+`https://mirrors.aliyun.com/debian`、`debian-security`、`ubuntu` 或 `ubuntu-ports`；
+Incus 包仍只取固定的 Zabbly `lts-7.0`。发行版签名密钥、套件与架构不变，APT origin pin
+同步换源。实际安装仅接受同一配方的两套编译配置，可在新安装计划中反切；未知配置漂移
+仍拒绝覆盖。卸载接受任一完整编译策略，不因当前开关改变而重新下载或换源。已经安装齐全
+时不为了换源重装软件。工作区配置改变后，既有确认继续使用原计划，新的计划采用新值。
+
+guest 烘焙使用独立的 `CHINESE_BUILD_SPEEDUP`：发布脚本经 recipe CLI 的
+`--chinese-build-speedup` 固定 Debian bootstrap URL，并在 `post-unpack`、APT 安装前
+转换 `.list`/`.sources` 中的 Debian 主源和安全源，保留 suites、components 与签名配置。
+手工 `runner-image/provision.sh` 使用同一脚本。开关进入配方字节及摘要；同 revision
+修改源会被拒绝，运行期 `CHINESE_SPEEDUP` 不重烘焙已发布 guest。上述两条路径均不接受
+任意 `APT_MIRROR_URL`。本轮未执行真实 Linux 下载、安装或 guest 烘焙验收。
+
 ## 租约转发的当前边界
 
 宿主动作清单新增 `incus.forwarding.permission.plan` 与
@@ -135,16 +152,24 @@ Debian 空存储池清单的 null 编码仅在两个固定清单端点作局部�
 且受管池单独查询确认不存在。其他集合的 null、缺字段、错误响应和矛盾盘点仍阻止删除；
 不放宽统一客户端，也不增加强制删包或失败动作自动重试。
 
-显式删包先完成资源盘点，再停止并读回 ANAS 自有的 `incus.service`，不假定包维护脚本
-一定停服。失败、取消或仍活动时不继续删包，保留失败 intent 和服务/包归属。默认保留包
-的卸载不停止 daemon，没有服务归属的活动 daemon 也不被接管或删除。
+卸载总是删除 ANAS 记录为自己安装的软件包，没有保留选项；安装前已存在的包、未托管依赖
+和保留下来的外部 daemon 包不删除。删包先完成资源盘点，再停止并读回 ANAS 自有的
+`incus.service`，不假定包维护脚本一定停服。失败、取消或仍活动时不继续删包，保留失败
+intent 和服务/包归属。保留外部 daemon 的卸载不停止 daemon，没有服务归属的活动 daemon
+也不被接管或删除。Zabbly 包拥有 `/opt`，删除最后一个包时 `dpkg` 要 `rmdir /opt`，这在
+hostd 的 `ProtectSystem=strict` 下是 EROFS；固定 `dpkg --remove` 因此经 `systemd-run`
+在不带 `ProtectSystem` 的临时单元里执行，执行器只接受该编译 argv 加受管包名。
 
 Debian 官方依赖可触发 initramfs 更新，固定 root hostd 单元以 `-/boot` 开放该系统树的
 可选写路径，同时保留其他文件系统保护；控制台/relay 不获该例外，不通过跳过触发器令
-安装假成功。真实审批入口增加显式逐包删除及重复卸载，总门禁为 25 项；完整 dpkg 库存
-须健康，原有包和未托管依赖均保留，旧 23 项报告不替代新增删包验收。
+安装假成功。2026-09-26 起真实审批入口的 `confirmed_uninstall` 直接校验精确删包，过期后的
+新计划即重复卸载，总门禁为 23 项；完整 dpkg 库存须健康，原有包和未托管依赖均保留。
 
-当前新版同工件验收已在 Debian 13、Ubuntu 26.04 与 24.04 amd64 各通过全部 **25 项**，
+2026-09-26 以 Zabbly Incus 7.0.1 重跑：Debian 13、Ubuntu 26.04 与 24.04 amd64 各通过 **23 项**、
+14 个作业/退出，分别删除 6/4/4 个受管包，327/681/667 个原有包保留。
+
+2026-09-23 的同工件验收（旧 25 项流程：先默认保留包卸载，再显式删包）已在 Debian 13、
+Ubuntu 26.04 与 24.04 amd64 各通过全部 **25 项**，
 每轮 18 个真实 job/退出。三轮分别移除 6/4/3 个新归属包，327/682/667 个原有包与
 未托管依赖保留；26.04 另以预装 nftables/conntrack 验证不被删除。正常关机与物理宿主
 前后对照均通过。前述 23 项为更早结果，完整业务 Core/Compose、ARM64/VM、未适配系统
@@ -162,8 +187,8 @@ GET 读回仍为 PEM。没有为兼容性放宽证书信任、HTTP 结果或加�
 
 宿主卸载在撤销连接之前先只读盘点停止/冻结实例、池引用与卷、控制网络 Docker 端点；
 缺失或不完整的清单不能当作空清单。拒绝/取消不产生变更 intent，也不撤掉管理连接；
-各项删除仍再次核对归属和占用。显式删除所拥有的软件包还要求共享 daemon 没有后来新增
-的外部对象，默认保留包。Docker root 客户端的允许列表不包含 connect/disconnect/prune
+各项删除仍再次核对归属和占用。删除所拥有的软件包还要求共享 daemon 没有后来新增
+的外部对象，否则整个卸载被阻止。Docker root 客户端的允许列表不包含 connect/disconnect/prune
 或容器操作。完整边界见[宿主供给架构 §3.4](../../../docs/architecture/incus-host-provisioning.md#_3-4-卸载)。
 
 当前验收边界（2026-09-23）：独立 Ubuntu 26.04 amd64 / Incus 6.0.5 的新版容器入口已通过

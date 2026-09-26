@@ -3,7 +3,7 @@ import type { HostActionJob } from "../api/maintenance"
 import { IncusApprovalFlow, readIncusPlan, type IncusFlowAPI, type IncusInput } from "./incus-flow"
 
 const input: IncusInput = { workspace: "main", phase: "install", csrf: "fixture-csrf",
-  request: { interface: "incus_container", storage_size_gib: 64, remove_packages: false } }
+  request: { interface: "incus_container", storage_size_gib: 64 } }
 const digest = "a".repeat(64)
 function plan(id = "plan-1", status: HostActionJob["job"]["status"] = "succeeded"): HostActionJob {
   return { api_version: "anas.dev/api/v1", job: { id, kind: "action", workspace_id: "main", mutating: false,
@@ -34,6 +34,23 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-19T12:
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
 
 describe("Incus approval workflow", () => {
+  it("preserves the server's frozen mirror selection through approval", async () => {
+    for (const speedup of [true, false]) {
+      const { flow, api } = fixture()
+      const response = plan()
+      const value = response.job.result?.value as { parameters: { request: Record<string, unknown> } }
+      value.parameters.request.chinese_speedup = speedup
+      vi.mocked(api.plan).mockResolvedValueOnce(response)
+      await flow.prepare(input)
+      expect(flow.state.plan?.parameters.request.chinese_speedup).toBe(speedup)
+      await flow.execute(input, true)
+      expect(vi.mocked(api.apply).mock.calls[0]?.[3].request.chinese_speedup).toBe(speedup)
+      flow.dispose()
+      value.parameters.request.chinese_speedup = "true"
+      expect(() => readIncusPlan(response, input, "plan-1")).toThrow()
+    }
+  })
+
   it("shows the server plan and applies only after explicit approval without exposing the token", async () => {
     const { flow, api, changed } = fixture()
     await flow.prepare(input)
