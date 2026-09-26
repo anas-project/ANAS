@@ -12,7 +12,7 @@ import (
 // This is an orchestration fixture, not a real distrobuilder or guest test.
 // The Go CLI and archive byte semantics are tested separately using real files.
 func TestReleaseScriptUsesCompleteBundleAndValidatesBeforeBuild(t *testing.T) {
-	for _, scenario := range []string{"first", "previous", "no-history", "ambiguous-history", "existing-output", "symlink-output", "invalid-history", "invalid-switch", "build-failure"} {
+	for _, scenario := range []string{"first", "previous", "speedup", "invalid-speedup", "no-history", "ambiguous-history", "existing-output", "symlink-output", "invalid-history", "invalid-switch", "build-failure"} {
 		t.Run(scenario, func(t *testing.T) {
 			base := t.TempDir()
 			bin, output, log := filepath.Join(base, "bin"), filepath.Join(base, "release"), filepath.Join(base, "calls")
@@ -30,7 +30,14 @@ case "$command" in
   catalog)
     [ "$FIXTURE_CASE" != invalid-history ] || exit 94
     ;;
-  recipe) printf 'reviewed fixture recipe\n' ;;
+  recipe)
+    case "$FIXTURE_CASE:$*" in
+      speedup:*--chinese-build-speedup) ;;
+      speedup:*) exit 88 ;;
+      *--chinese-build-speedup=false) ;;
+      *) exit 87 ;;
+    esac
+    printf 'reviewed fixture recipe\n' ;;
   build) [ "$FIXTURE_CASE" != build-failure ] || exit 93 ;;
   bundle)
     destination=
@@ -66,6 +73,10 @@ esac
 				"FIXTURE_CASE":                   scenario,
 			}
 			switch scenario {
+			case "speedup":
+				values["CHINESE_BUILD_SPEEDUP"] = "true"
+			case "invalid-speedup":
+				values["CHINESE_BUILD_SPEEDUP"] = "yes"
 			case "previous":
 				values["ANAS_INCUS_IMAGE_FIRST_RELEASE"] = "0"
 				values["ANAS_INCUS_IMAGE_PREVIOUS_CATALOG"] = filepath.Join(base, "trusted previous catalog.json")
@@ -96,7 +107,7 @@ esac
 				t.Fatal(readErr)
 			}
 			got := strings.Fields(string(calls))
-			success := scenario == "first" || scenario == "previous"
+			success := scenario == "first" || scenario == "previous" || scenario == "speedup"
 			if success {
 				want := []string{"catalog", "recipe", "build", "recipe", "build", "bundle"}
 				if err != nil || !reflect.DeepEqual(got, want) {

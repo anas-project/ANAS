@@ -17,6 +17,16 @@ systemd unit, and runner config are embedded in the recipe; the release pipeline
 supplies only an independently pinned `forgejo-runner` binary. Consumers cannot
 provide script paths, URLs, aliases, or root hooks.
 
+The recipe command accepts `--chinese-build-speedup` to freeze the Aliyun Debian bootstrap URL and
+rewrite Debian main/security URLs in `.list`/`.sources` files during `post-unpack`, before package
+installation, preserving signature configuration, suites and components. This ordering follows
+[distrobuilder's package workflow](https://github.com/lxc/distrobuilder/blob/main/distrobuilder/main_incus.go).
+The release script passes this option when `CHINESE_BUILD_SPEEDUP=true`; manual guest `provision.sh`
+uses the same mirror script. The default remains off. Arbitrary `APT_MIRROR_URL` values and runtime
+`CHINESE_SPEEDUP` do not select this build policy. Mirror selection enters recipe bytes and the digest,
+so changing it requires a new revision and never causes rebaking during apply. Native mirror downloads
+and guest baking were not validated for this change.
+
 `incus-image-artifacts build` still runs distrobuilder only on an independent
 release builder. Existing revisions are verified and reused; missing/corrupt
 objects or recipe changes fail instead of rebuilding the same revision.

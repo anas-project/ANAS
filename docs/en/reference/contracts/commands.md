@@ -1013,7 +1013,8 @@ envelope. It only reads job details; it does not cancel or execute work.
 
 The Incus plan/confirmation/apply commands share that authenticated HTTPS job service. `PHASE` is
 `install|configure|enroll|uninstall`; public request fields are `skip`, `interface`, `storage_size_gib`
-and `remove_packages`, never commands, packages, paths or repositories. Read the completed plan's
+and `chinese_speedup`, never commands, packages, paths or repositories. `uninstall` always removes the
+packages ANAS recorded as its own; there is no option to keep them. Read the completed plan's
 server-produced impact and parameters before requesting a confirmation. The one-use token expires
 five minutes after the original plan timestamp, not five minutes after renewal.
 

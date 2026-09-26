@@ -14,6 +14,14 @@
 拥有的 guest helper、systemd unit 和 runner 配置；发布流水线只需提供已单独固定摘要的
 `forgejo-runner` 二进制文件。消费者不能传入脚本路径、URL、alias 或 root hook。
 
+recipe 可加 `--chinese-build-speedup`，将 Debian bootstrap URL 固定为阿里云镜像，并在
+`post-unpack`、软件包安装之前转换 Debian `.list`/`.sources` 主源与安全源，保留签名配置、
+suites 和 components。该执行顺序对应 [distrobuilder 的包管理流程](https://github.com/lxc/distrobuilder/blob/main/distrobuilder/main_incus.go)。
+发布脚本读取 `CHINESE_BUILD_SPEEDUP=true` 后传递此参数，手工 guest `provision.sh` 使用同一
+换源脚本。默认不开启；不接受任意 `APT_MIRROR_URL`，也不把 `CHINESE_SPEEDUP` 隐式转换成
+构建期开关。源选择进入 recipe 字节及摘要，切换必须使用新 revision，不能在 apply 时重烘焙。
+本轮未执行国内源真实下载或 guest 构建验收。
+
 `incus-image-artifacts build` 仍只在独立发布构建机运行 distrobuilder。已有 revision 会被重新校验并
 复用；对象缺失、损坏或 recipe 变化时失败，不按同 revision 重建。`record` 接受已经完成的 split
 产物，`export` 把归档中同一 revision 的原始 bytes 恢复到新的私有目录，并写出 `artifact.json`。

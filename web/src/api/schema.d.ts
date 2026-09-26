@@ -1384,8 +1384,8 @@ export interface components {
             interface?: "incus_container" | "incus_vm";
             /** @description Omission selects 64 GiB. */
             storage_size_gib?: number;
-            /** @description Omission means false; package removal must be explicitly selected for uninstall. */
-            remove_packages?: boolean;
+            /** @description Frozen mainland distribution-package mirror choice. Install plans resolve it from the managed workspace CHINESE_SPEEDUP setting; apply must preserve the returned value. Incus packages retain the fixed Zabbly source. */
+            chinese_speedup?: boolean;
         };
         IncusHostApplyParameters: {
             /** @constant */

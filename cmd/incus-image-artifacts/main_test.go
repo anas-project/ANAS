@@ -127,6 +127,24 @@ func TestArtifactCLIRecordInspectAndCatalog(t *testing.T) {
 	}
 }
 
+func TestRecipeCLIFreezesExplicitChineseBuildSpeedup(t *testing.T) {
+	t.Setenv("CHINESE_BUILD_SPEEDUP", "true")
+	for _, option := range []string{"", "--chinese-build-speedup", "--chinese-build-speedup=false"} {
+		args := []string{"recipe", "--image", "forgejo-runner", "--architecture", "amd64", "--interface", "incus_container"}
+		if option != "" {
+			args = append(args, option)
+		}
+		var output, diagnostic bytes.Buffer
+		if code := run(context.Background(), args, &output, &diagnostic); code != 0 {
+			t.Fatalf("recipe: %s", diagnostic.String())
+		}
+		wantMirror := option == "--chinese-build-speedup"
+		if strings.Contains(output.String(), "url: https://mirrors.aliyun.com/debian") != wantMirror {
+			t.Fatal("recipe ignored explicit source choice or inherited process environment")
+		}
+	}
+}
+
 func TestArtifactCLIBundleRequiresExplicitLocalDestinationAndHistory(t *testing.T) {
 	requireArtifactArchivePlatform(t)
 	base := t.TempDir()

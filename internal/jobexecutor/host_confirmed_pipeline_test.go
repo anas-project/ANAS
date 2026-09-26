@@ -32,6 +32,7 @@ func TestConfirmedIncusPlanSurvivesQueuePersistenceAndExecutorHandoff(t *testing
 	})
 	s.options.Confirmations = ledger
 	s.available = true // Exercise admission without installing the native listener.
+	s.options.ChineseSpeedup = func(context.Context, string) (bool, error) { return true, nil }
 	plan, err := s.InvokePlan(ctx, "alice", "main", hostaction.ActionInstallPlan, json.RawMessage(`{"schema":"anas.host-action.incus/v1","request":{}}`), "plan-key")
 	if err != nil {
 		t.Fatal("plan admission", err)
@@ -40,7 +41,11 @@ func TestConfirmedIncusPlanSurvivesQueuePersistenceAndExecutorHandoff(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := incusprovision.Request{Interface: "incus_container", StorageSizeGiB: 64}
+	s.options.ChineseSpeedup = func(context.Context, string) (bool, error) {
+		t.Fatal("confirmed action re-read workspace policy instead of the frozen plan")
+		return false, nil
+	}
+	request := incusprovision.Request{Interface: "incus_container", StorageSizeGiB: 64, ChineseSpeedup: true}
 	params := hostaction.IncusApplyParameters{Schema: "anas.host-action.incus/v1", Request: request,
 		Binding: incusprovision.Binding{Schema: incusprovision.Schema, Phase: incusprovision.PhaseInstall, PlanDigest: strings.Repeat("b", 64), Destructive: true}}
 	body, err := json.Marshal(params)

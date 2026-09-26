@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+# This release-owned input is also embedded into the accelerated distrobuilder
+# recipe's post-unpack action, before package refresh and installation. Keep
+# suites, components and Debian archive signature verification unchanged.
+for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+    [ -f "$source" ] || continue
+    sed -i \
+        -e 's|http://deb\.debian\.org/|https://mirrors.aliyun.com/|g' \
+        -e 's|https://deb\.debian\.org/|https://mirrors.aliyun.com/|g' \
+        -e 's|http://security\.debian\.org/|https://mirrors.aliyun.com/|g' \
+        -e 's|https://security\.debian\.org/|https://mirrors.aliyun.com/|g' \
+        "$source"
+done

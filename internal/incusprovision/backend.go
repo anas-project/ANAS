@@ -23,7 +23,7 @@ import (
 
 type runtimeOps interface {
 	Observe(context.Context, Request, State) (Observation, error)
-	InstallPackages(context.Context, incushost.Recipe, []string) error
+	InstallPackages(context.Context, incushost.Recipe, []string, bool) error
 	EnableIncus(context.Context) error
 	StopIncus(context.Context) error
 	ConfigureIncusHTTPS(context.Context) error
@@ -216,7 +216,11 @@ func buildPlan(request Request, obs Observation, state State) (Plan, error) {
 	}
 	plan.Warnings = append(plan.Warnings, forwardingWarnings(obs.Forwarding)...)
 	if !obs.PackageInstalled {
-		plan.Steps = append(plan.Steps, Step{Phase: PhaseInstall, ID: "packages", Effect: "install official Incus packages from compiled recipe", Owned: true, Destructive: true})
+		dependencies := "distribution archives"
+		if request.ChineseSpeedup {
+			dependencies = "mirrors.aliyun.com"
+		}
+		plan.Steps = append(plan.Steps, Step{Phase: PhaseInstall, ID: "packages", Effect: "install Incus from Zabbly lts-7.0 and dependencies from " + dependencies, Owned: true, Destructive: true})
 	}
 	if !obs.IncusDaemonActive {
 		plan.Steps = append(plan.Steps, Step{Phase: PhaseInstall, ID: "incus-service", Effect: "enable and start fixed Incus service", Owned: !obs.IncusDaemonActive, Destructive: true})
@@ -251,7 +255,7 @@ func buildPlan(request Request, obs Observation, state State) (Plan, error) {
 	if state.Ownership.ExternalDaemonPreserved {
 		plan.Warnings = append(plan.Warnings, "preexisting Incus daemon is classified external and will be preserved on uninstall")
 	}
-	plan.Steps = append(plan.Steps, Step{Phase: PhaseUninstall, ID: "owned-artifacts-only", Effect: "remove only ANAS-owned trust, relay, firewall, network, pool and optional packages after guest preflight", Destructive: true})
+	plan.Steps = append(plan.Steps, Step{Phase: PhaseUninstall, ID: "owned-artifacts-only", Effect: "remove only ANAS-owned trust, relay, firewall, network, pool and ANAS-installed packages after guest preflight", Destructive: true})
 	return finalizePlan(plan), nil
 }
 
@@ -329,7 +333,7 @@ func (b *Backend) applyInstall(ctx context.Context, request Request, plan Plan, 
 		if err != nil {
 			return ApplyResult{Disposition: "partial"}, err
 		}
-		if err := b.rt.InstallPackages(ctx, *plan.Preflight.Recipe, requested); err != nil {
+		if err := b.rt.InstallPackages(ctx, *plan.Preflight.Recipe, requested, request.ChineseSpeedup); err != nil {
 			saveErr := b.finishEffect(state, intent, "failed", "package installation failed")
 			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
 		}
@@ -612,7 +616,10 @@ func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan
 			return ApplyResult{Disposition: "blocked", Blockers: []string{"disable_observer_scopes_before_uninstall"}}, ErrBlocked
 		}
 	}
-	if request.RemovePackages && state.Ownership.PackagesInstalledByANAS && !state.Ownership.ExternalDaemonPreserved &&
+	// Uninstall removes exactly the packages ANAS recorded as its own; a
+	// preserved external daemon or pre-existing package is never touched.
+	removePackages := state.Ownership.PackagesInstalledByANAS && !state.Ownership.ExternalDaemonPreserved
+	if removePackages &&
 		(plan.Preflight.Recipe == nil || !validPackageSubset(*plan.Preflight.Recipe, state.Ownership.ManagedPackages) || !packageInventoryValid(obs) ||
 			unownedDaemonPackage(obs, state.Ownership, *plan.Preflight.Recipe) ||
 			(obs.IncusDaemonActive && !state.Ownership.IncusServiceByANAS)) {
@@ -628,8 +635,7 @@ func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan
 	// Check stopped/frozen instances, retained storage references and attached
 	// control-network endpoints before revoking any working connection. The
 	// individual delete operations still recheck ownership and absence later.
-	removeShared := request.RemovePackages && state.Ownership.PackagesInstalledByANAS && !state.Ownership.ExternalDaemonPreserved
-	if err := b.rt.CheckUninstallResources(ctx, state.Ownership, removeShared); err != nil {
+	if err := b.rt.CheckUninstallResources(ctx, state.Ownership, removePackages); err != nil {
 		return ApplyResult{Disposition: "blocked", Blockers: []string{"uninstall_resources_in_use_or_unverified"}}, errors.Join(ErrBlocked, err)
 	}
 	if err := ctx.Err(); err != nil {
@@ -726,7 +732,7 @@ func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan
 			return ApplyResult{Disposition: "partial"}, err
 		}
 	}
-	if request.RemovePackages && state.Ownership.PackagesInstalledByANAS && !state.Ownership.ExternalDaemonPreserved && plan.Preflight.Recipe != nil {
+	if removePackages && plan.Preflight.Recipe != nil {
 		intent, err := b.beginEffect(ctx, state, PhaseUninstall, plan.Digest, "uninstall.packages")
 		if err != nil {
 			return ApplyResult{Disposition: "partial"}, err
@@ -768,8 +774,8 @@ func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan
 		if err := b.finishEffect(state, intent, "ok", "packages removed"); err != nil {
 			return ApplyResult{Disposition: "partial"}, err
 		}
-	} else if !request.RemovePackages {
-		state.addReceipt("uninstall.packages", plan.Digest, "ok", "packages retained by default")
+	} else if !removePackages {
+		state.addReceipt("uninstall.packages", plan.Digest, "ok", "no ANAS-owned packages to remove")
 	}
 	state.Disabled = true
 	return ApplyResult{Disposition: "uninstalled", ComputeReady: false}, nil

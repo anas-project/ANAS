@@ -18,6 +18,7 @@ import (
 	"github.com/anas-project/ANAS/internal/hostaction"
 	"github.com/anas-project/ANAS/internal/hostconfirmation"
 	"github.com/anas-project/ANAS/internal/jobexecutor"
+	"github.com/anas-project/ANAS/internal/runner"
 )
 
 type daemonHostActions interface {
@@ -55,8 +56,14 @@ func configureHostActions(ctx context.Context, config consoleconfig.Config, stor
 		return nil, nil, hostaction.ErrUnavailable
 	}
 	ids := make([]string, len(config.Workspaces))
+	workspaces := make([]httpapi.Workspace, len(config.Workspaces))
 	for i, workspace := range config.Workspaces {
 		ids[i] = workspace.ID
+		workspaces[i] = httpapi.Workspace{ID: workspace.ID, Path: workspace.Path}
+	}
+	registry, err := httpapi.NewRegistry(workspaces)
+	if err != nil {
+		return nil, nil, err
 	}
 	issuer, group := "", ""
 	if config.TrustedProxy != nil {
@@ -77,6 +84,13 @@ func configureHostActions(ctx context.Context, config consoleconfig.Config, stor
 		IngressCoordinator: ingress,
 		Release:            hostaction.ReleaseIdentity{Version: buildinfo.Version, Commit: buildinfo.Commit},
 		Authorize:          func(ctx context.Context, actor, _ string) error { return auth.CheckJobOwner(ctx, actor, issuer, group) },
+		ChineseSpeedup: func(ctx context.Context, id string) (bool, error) {
+			path, ok := registry.Resolve(id)
+			if !ok {
+				return false, hostaction.ErrDenied
+			}
+			return runner.WorkspaceChineseSpeedup(ctx, path)
+		},
 	})
 	if err != nil {
 		return nil, nil, err

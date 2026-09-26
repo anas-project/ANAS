@@ -8,6 +8,9 @@ case "$runner_sha256" in *[!0-9a-f]*|'') exit 64 ;; esac
 [ "${#runner_sha256}" -eq 64 ] || exit 64
 printf '%s  %s\n' "$runner_sha256" "$runner_binary" | sha256sum -c -
 
+if [ "${CHINESE_BUILD_SPEEDUP:-false}" = "true" ]; then
+    sh "$(dirname "$0")/configure-build-mirrors"
+fi
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     apparmor ca-certificates git podman slirp4netns uidmap fuse-overlayfs util-linux coreutils dbus-user-session

@@ -18,6 +18,8 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -185,17 +187,17 @@ func (r *localRuntime) Observe(ctx context.Context, request Request, state State
 	return obs, nil
 }
 
-func (r *localRuntime) InstallPackages(ctx context.Context, recipe incushost.Recipe, packages []string) error {
+func (r *localRuntime) InstallPackages(ctx context.Context, recipe incushost.Recipe, packages []string, chineseSpeedup bool) error {
 	if recipe.PackageManager != "apt" || recipe.Repository != incushost.IncusRepository || !validPackageSubset(recipe, packages) {
 		return ErrInvalid
 	}
 	// This runs inside the already-audited install.packages effect, after the
 	// host executor has claimed its approval. A fresh installation must not
 	// depend on the operator manually copying the private APT configuration.
-	if _, err := WriteAPTConfigFiles("/", recipe); err != nil {
+	if _, err := WriteAPTConfigFiles("/", recipe, chineseSpeedup); err != nil {
 		return err
 	}
-	if err := verifyAPTPolicyFiles(recipe); err != nil {
+	if err := verifyAPTPolicyFiles(recipe, chineseSpeedup); err != nil {
 		return err
 	}
 	configPath := aptConfigPathForRecipe(recipe)
@@ -506,14 +508,53 @@ func (r *localRuntime) RemovePackages(ctx context.Context, recipe incushost.Reci
 	if !validPackageSubset(recipe, packages) {
 		return ErrInvalid
 	}
-	if err := verifyAPTPolicyFiles(recipe); err != nil {
-		return err
+	// Removal uses dpkg and does not select a download source. Accept either
+	// complete compiled policy, regardless of the current speedup preference.
+	if err := verifyAPTPolicyFiles(recipe, false); err != nil {
+		if speedupErr := verifyAPTPolicyFiles(recipe, true); speedupErr != nil {
+			return errors.Join(err, speedupErr)
+		}
 	}
 	// Do not let an apt dependency solution remove additional unapproved
 	// host packages. dpkg refuses dependency breakage; no force or purge.
-	args := append([]string{"--remove", "--"}, packages...)
-	return r.commands.run(ctx, fixedDPKGRemove, args, []string{"DEBIAN_FRONTEND=noninteractive"})
+	//
+	// The pinned Incus packages own /opt, so removing the last of them makes
+	// dpkg rmdir /opt. Under this unit's ProtectSystem=strict the root is read
+	// only and that rmdir fails with EROFS, which dpkg treats as fatal. Only
+	// this fixed removal therefore runs as a transient unit without
+	// ProtectSystem; argv is compiled apart from the recipe's owned package
+	// names, and home, /tmp and privilege escalation stay restricted.
+	args := append(slices.Clone(dpkgRemoveUnitArgs), packages...)
+	return r.commands.run(ctx, fixedDPKGRemove, args, nil)
 }
+
+const systemdRunPath = "/usr/bin/systemd-run"
+
+var dpkgRemoveUnitArgs = []string{
+	"--quiet", "--wait", "--pipe", "--collect", "--service-type=exec",
+	"--property=ProtectHome=yes", "--property=PrivateTmp=yes", "--property=NoNewPrivileges=yes",
+	"--property=RuntimeMaxSec=600", "--setenv=DEBIAN_FRONTEND=noninteractive",
+	"--", "/usr/bin/dpkg", "--remove", "--",
+}
+
+// compiledDPKGRemoveArgs admits only the fixed transient dpkg removal followed
+// by distinct Debian package names. systemd-run can start any unit, so no other
+// argv may reach it.
+func compiledDPKGRemoveArgs(args []string) bool {
+	prefix := len(dpkgRemoveUnitArgs)
+	if len(args) <= prefix || !slices.Equal(args[:prefix], dpkgRemoveUnitArgs) {
+		return false
+	}
+	packages := args[prefix:]
+	for i, name := range packages {
+		if !debianPackageName.MatchString(name) || slices.Contains(packages[:i], name) {
+			return false
+		}
+	}
+	return true
+}
+
+var debianPackageName = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]{0,62}$`)
 
 func isolatedAPTEnv(configPath string) []string {
 	return []string{"DEBIAN_FRONTEND=noninteractive", "APT_LISTCHANGES_FRONTEND=none", "APT_CONFIG=" + configPath}
@@ -669,6 +710,9 @@ func fixedCommandSpec(operation fixedOperation, args []string) (string, time.Dur
 		}
 		return "", 0, ErrInvalid
 	}
+	if operation == fixedDPKGRemove && !compiledDPKGRemoveArgs(args) {
+		return "", 0, ErrInvalid
+	}
 	return fixedOperationSpec(operation)
 }
 
@@ -685,7 +729,7 @@ func fixedOperationSpec(operation fixedOperation) (string, time.Duration, error)
 	case fixedDPKGQuery:
 		return dpkgQueryPath, 30 * time.Second, nil
 	case fixedDPKGRemove:
-		return "/usr/bin/dpkg", 10 * time.Minute, nil
+		return systemdRunPath, 11 * time.Minute, nil
 	default:
 		return "", 0, ErrInvalid
 	}
@@ -693,7 +737,7 @@ func fixedOperationSpec(operation fixedOperation) (string, time.Duration, error)
 
 func fixedExecutable(path string) bool {
 	switch path {
-	case aptGetPath, systemctlPath, useraddPath, nftPath, dpkgQueryPath, "/usr/bin/dpkg":
+	case aptGetPath, systemctlPath, useraddPath, nftPath, dpkgQueryPath, systemdRunPath:
 		return true
 	case RelayBinaryPath:
 		return true
@@ -906,8 +950,8 @@ func verifyRootOwnedUnixSocket(path string) error {
 	return nil
 }
 
-func verifyAPTPolicyFiles(recipe incushost.Recipe) error {
-	files, err := CompiledAPTConfigFiles(recipe)
+func verifyAPTPolicyFiles(recipe incushost.Recipe, chineseSpeedup bool) error {
+	files, err := CompiledAPTConfigFiles(recipe, chineseSpeedup)
 	if err != nil {
 		return err
 	}
@@ -964,6 +1008,7 @@ const (
 	zabblyKeyFingerprint = "4EFC590696CB15B87C73A3AD82CC8797C838DCFD"
 	zabblyOrigin         = "pkgs.zabbly.com"
 	zabblyLTS70URI       = "https://" + zabblyOrigin + "/incus/lts-7.0"
+	chineseAPTOrigin     = "mirrors.aliyun.com"
 )
 
 // incusPackages come only from the pinned Incus source; the distribution's
@@ -992,7 +1037,9 @@ func zabblySource(codename string) []byte {
 // installation. The backend verifies these files byte-for-byte and never trusts
 // arbitrary existing apt sources. The distribution's archive supplies every
 // dependency; the pinned Incus 7.0 LTS source supplies only the Incus packages.
-func CompiledAPTConfigFiles(recipe incushost.Recipe) ([]APTConfigFile, error) {
+// chineseSpeedup switches only the distribution archive to the fixed Aliyun
+// mirror. The caller must supply this preference from its confirmed request.
+func CompiledAPTConfigFiles(recipe incushost.Recipe, chineseSpeedup bool) ([]APTConfigFile, error) {
 	// Recipe identity is compiled installation policy, never a caller-selected
 	// source path, package name, suite or repository override.
 	rows, err := incushost.Recipes()
@@ -1057,6 +1104,19 @@ func CompiledAPTConfigFiles(recipe incushost.Recipe) ([]APTConfigFile, error) {
 		source = []byte(fmt.Sprintf("Types: deb\nURIs: https://archive.ubuntu.com/ubuntu\nSuites: %s %s-updates %s-backports\nComponents: main restricted universe multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: https://security.ubuntu.com/ubuntu\nSuites: %s-security\nComponents: main restricted universe multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: https://ports.ubuntu.com/ubuntu-ports\nSuites: %s %s-updates %s-backports %s-security\nComponents: main restricted universe multiverse\nArchitectures: arm64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n", recipe.Codename, recipe.Codename, recipe.Codename, recipe.Codename, recipe.Codename, recipe.Codename, recipe.Codename, recipe.Codename))
 		origins = []string{"archive.ubuntu.com", "security.ubuntu.com", "ports.ubuntu.com"}
 	}
+	if chineseSpeedup {
+		// All replacements are compiled HTTPS endpoints. Keep suites,
+		// architectures and distribution signing keys identical to upstream.
+		replacer := strings.NewReplacer(
+			"https://deb.debian.org/debian-security", "https://"+chineseAPTOrigin+"/debian-security",
+			"https://deb.debian.org/debian", "https://"+chineseAPTOrigin+"/debian",
+			"https://archive.ubuntu.com/ubuntu", "https://"+chineseAPTOrigin+"/ubuntu",
+			"https://security.ubuntu.com/ubuntu", "https://"+chineseAPTOrigin+"/ubuntu",
+			"https://ports.ubuntu.com/ubuntu-ports", "https://"+chineseAPTOrigin+"/ubuntu-ports",
+		)
+		source = []byte(replacer.Replace(string(source)))
+		origins = []string{chineseAPTOrigin}
+	}
 	source = append(append(source, '\n'), zabblySource(recipe.Codename)...)
 	// Package-specific records take precedence over the general ones below.
 	var pin bytes.Buffer
@@ -1084,11 +1144,15 @@ func aptConfigPathForRecipe(recipe incushost.Recipe) string {
 
 // WriteAPTConfigFiles writes the deterministic apt files under root. Pass "/"
 // only from privileged host-action code; tests should pass a temporary root.
-func WriteAPTConfigFiles(root string, recipe incushost.Recipe) ([]APTConfigFile, error) {
+func WriteAPTConfigFiles(root string, recipe incushost.Recipe, chineseSpeedup bool) ([]APTConfigFile, error) {
 	if root == "" || !filepath.IsAbs(root) || filepath.Clean(root) != root {
 		return nil, ErrInvalid
 	}
-	files, err := CompiledAPTConfigFiles(recipe)
+	files, err := CompiledAPTConfigFiles(recipe, chineseSpeedup)
+	if err != nil {
+		return nil, err
+	}
+	alternateFiles, err := CompiledAPTConfigFiles(recipe, !chineseSpeedup)
 	if err != nil {
 		return nil, err
 	}
@@ -1096,19 +1160,29 @@ func WriteAPTConfigFiles(root string, recipe incushost.Recipe) ([]APTConfigFile,
 		if os.Getuid() != 0 || os.Geteuid() != 0 {
 			return nil, ErrUnsafeState
 		}
-		for _, file := range files {
-			// A drifted existing file is not ours to overwrite, even at a
-			// fixed path. Missing files can be completed from the same recipe.
-			if _, err := os.Lstat(file.Path); errors.Is(err, os.ErrNotExist) {
-				continue
-			} else if err != nil {
-				return nil, ErrUnsafeState
-			}
-			body, err := readRootOwnedPublicFile(file.Path, 64<<10)
-			if err != nil || !bytes.Equal(body, file.Body) {
-				return nil, ErrUnsafeState
-			}
+	}
+	for i, file := range files {
+		target := filepath.Join(root, strings.TrimPrefix(file.Path, "/"))
+		// Only the two compiled variants of this recipe are ours to replace.
+		// This permits toggling speedup and resuming interrupted switches;
+		// arbitrary drift still blocks every write before any file changes.
+		info, err := os.Lstat(target)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil || !info.Mode().IsRegular() {
+			return nil, ErrUnsafeState
 		}
+		var body []byte
+		if root == "/" {
+			body, err = readRootOwnedPublicFile(target, 64<<10)
+		} else {
+			body, err = os.ReadFile(target)
+		}
+		if err != nil || (!bytes.Equal(body, file.Body) && !bytes.Equal(body, alternateFiles[i].Body)) {
+			return nil, ErrUnsafeState
+		}
+	}
+	if root == "/" {
 		if err := ensureTrustedRootDirectory(aptDir+"/apt.conf.d", 0755); err != nil {
 			return nil, ErrUnsafeState
 		}

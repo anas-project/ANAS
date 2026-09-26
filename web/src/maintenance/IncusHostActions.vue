@@ -13,7 +13,6 @@ const emit = defineEmits<{ jobCreated: [id: string] }>()
 const phase = ref<IncusHostPhase>("install")
 const isolation = ref<"incus_container" | "incus_vm">("incus_container")
 const storageGiB = ref(64)
-const removePackages = ref(false)
 const approved = ref(false)
 const state = shallowRef<IncusFlowState>({ status: "idle", plan: null, jobID: "", errorCode: null })
 const pruneApproved = ref(false)
@@ -25,7 +24,7 @@ const pruneError = computed(() => pruneState.value.errorCode)
 const text = computed(() => messages[props.locale])
 const busy = computed(() => state.value.status === "planning" || state.value.status === "applying")
 const input = (): IncusInput => ({ workspace: props.workspace, csrf: props.csrf, phase: phase.value,
-  request: { interface: isolation.value, storage_size_gib: storageGiB.value, remove_packages: phase.value === "uninstall" && removePackages.value } })
+  request: { interface: isolation.value, storage_size_gib: storageGiB.value } })
 const flow = new IncusApprovalFlow({
   plan: (value) => invokeIncusHostPlan(value.workspace, value.phase, value.request, value.csrf, newIdempotencyKey()),
   get: getHostActionJob,
@@ -51,7 +50,7 @@ async function applyPrune(): Promise<void> {
   const id = await pruneFlow.execute(pruneInput(), pruneApproved.value)
   if (id !== null) emit("jobCreated", id)
 }
-watch([() => props.workspace, () => props.csrf, phase, isolation, storageGiB, removePackages], () => { flow.reset(); pruneFlow.reset(); pruneApproved.value = false })
+watch([() => props.workspace, () => props.csrf, phase, isolation, storageGiB], () => { flow.reset(); pruneFlow.reset(); pruneApproved.value = false })
 onBeforeUnmount(() => { flow.dispose(); pruneFlow.dispose() })
 </script>
 
@@ -67,9 +66,9 @@ onBeforeUnmount(() => { flow.dispose(); pruneFlow.dispose() })
         <option value="incus_container">{{ text.incusContainer }}</option><option value="incus_vm">{{ text.incusVM }}</option>
       </select></label>
       <label>{{ text.incusStorageGiB }}<input v-model.number="storageGiB" type="number" min="16" max="4096" step="1" :disabled="disabled || busy" /></label>
-      <label v-if="phase === 'uninstall'" class="checkbox-line"><input v-model="removePackages" type="checkbox" :disabled="disabled || busy" />{{ text.incusRemovePackages }}</label>
       <button type="button" class="secondary-button" :disabled="disabled || busy || !workspace || !Number.isInteger(storageGiB) || storageGiB < 16 || storageGiB > 4096" @click="flow.prepare(input())">{{ text.incusPlanRun }}</button>
     </div>
+    <p v-if="phase === 'uninstall'" class="muted">{{ text.incusUninstallRemovesPackages }}</p>
     <p v-if="state.status === 'planning'" role="status">{{ text.incusPlanning }}</p>
     <p v-if="state.errorCode" class="error-message" role="alert">{{ problemMessage(locale, state.errorCode) }}</p>
     <div v-if="state.plan" class="plan-preview">

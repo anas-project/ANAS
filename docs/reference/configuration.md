@@ -379,11 +379,22 @@ Collabora、Nextcloud 和数据库镜像的保留设置都在 Hook、容器脚�
 | `LAM_APT_MIRROR_URL` | 只覆盖 LAM 构建的 APT 镜像 |
 | `LAM_DOWNLOAD_URL` | 直接覆盖 LAM 安装包下载地址 |
 
-`global.chinese_speedup: true` 只生成 `ANAS_IMAGE_REGISTRY`、`NEXTCLOUD_APPSTORE_URL`
+`global.chinese_speedup: true` 生成 `ANAS_IMAGE_REGISTRY`、`NEXTCLOUD_APPSTORE_URL`
 和 `GITHUB_DOWNLOAD_PROXY_PREFIX`，供正式发布镜像及 Nextcloud 运行时下载使用。
 `global.chinese_build_speedup: true` 生成 APT、APK、npm、Go、Docker Hub、GHCR、LLNG
 和构建期 GitHub 下载默认值；修改它或上表中的构建变量后必须执行 `anas apply --build`。
 顶层 `env:` 中的显式值始终优先。
+
+Incus 宿主的 `install.plan` 还会从工作区受管配置读取有效的 `CHINESE_SPEEDUP`：开启时，
+发行版依赖包改用阿里云的 Debian（含安全更新）、Ubuntu 或 Ubuntu Ports 镜像；Incus 本身
+仍来自固定的 Zabbly `lts-7.0`，签名校验和钉包不变。源选择冻结在返回的 `chinese_speedup`
+参数与确认摘要中；修改配置后要生成新计划，执行既有计划不会重新读取环境。明确跳过安装、
+配置、登记和卸载不依赖这次配置读取。宿主私有 APT 策略不接受任意 `APT_MIRROR_URL`。
+
+Incus guest 镜像是独立发布工件。发布构建脚本读取 `CHINESE_BUILD_SPEEDUP=true`，并将
+`--chinese-build-speedup` 传给 `incus-image-artifacts recipe`，把 bootstrap 与 APT 换源写入
+配方；同一 revision 不能改源后重烘焙。该固定源选择不读取 `APT_MIRROR_URL`，也不因工作区
+的 `CHINESE_SPEEDUP` 或 `anas apply --build` 而重建已发布 guest 镜像。
 
 ### 宿主构建与 Compose 集成
 

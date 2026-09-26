@@ -31,12 +31,13 @@ func TestHostReleaseAndUnitMatchObserverAssumptions(t *testing.T) {
 			writable = append(writable, strings.Fields(value)...)
 		}
 	}
-	for _, path := range []string{"/etc/anas", "/etc/passwd", "/var/lib/anas", "/var/lib/dpkg", "/var/lib/apt", "/var/cache/apt", "/var/cache/anas", "/run/anas/confirmations", "/usr"} {
+	for _, path := range []string{"/etc/anas", "/etc/passwd", "/var/lib/anas", "/var/lib/dpkg", "/var/lib/apt", "/var/cache/apt", "/var/cache/anas", "/run/anas/confirmations", "/usr", "/opt/incus"} {
 		covered := false
 		for _, root := range writable {
 			if root == "/" {
 				t.Fatal("host service must not grant a blanket writable root filesystem")
 			}
+			root = strings.TrimPrefix(root, "-")
 			if path == root || strings.HasPrefix(path, root+"/") {
 				covered = true
 			}
@@ -102,7 +103,7 @@ func TestHostPackageTriggersCanWriteBootWithoutBlanketMountAccess(t *testing.T) 
 		t.Fatal("official package initramfs trigger cannot complete; missing optional /boot write path")
 	}
 	slices.Sort(paths)
-	want := []string{"-/boot", "/etc", "/run", "/tmp", "/usr", "/var"}
+	want := []string{"-/boot", "-/opt", "/etc", "/run", "/tmp", "/usr", "/var"}
 	if !slices.Equal(paths, want) {
 		t.Fatal("package-trigger repair broadened unrelated writable trees or reset path restrictions")
 	}

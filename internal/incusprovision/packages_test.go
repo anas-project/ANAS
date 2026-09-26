@@ -42,7 +42,7 @@ func TestInstallTracksOnlyPackagesAbsentBeforeEffect(t *testing.T) {
 	if !slices.Equal(rt.installedByCall, []string{"dnsmasq-base", "incus", "incus-base", "incus-client"}) {
 		t.Fatal("install unnecessarily requested pre-existing packages")
 	}
-	request := Request{RemovePackages: true}
+	request := Request{}
 	plan, err = backend.Plan(ctx, request)
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +70,7 @@ func TestInstallAndUninstallPreservePreexistingBridgeHelper(t *testing.T) {
 	if slices.Contains(store.state.Ownership.ManagedPackages, "dnsmasq-base") || slices.Contains(rt.installedByCall, "dnsmasq-base") {
 		t.Fatal("existing bridge helper was adopted")
 	}
-	request := Request{RemovePackages: true}
+	request := Request{}
 	plan, err = backend.Plan(ctx, request)
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestUninstallLegacyPackageOwnershipFailsBeforeAnyEffect(t *testing.T) {
 	rt.obs.ExistingPackages = slices.Clone(rt.obs.Preflight.Recipe.Packages)
 	rt.obs.InstalledPackages = slices.Clone(rt.obs.ExistingPackages)
 	backend := newBackendForTest(store, rt)
-	request := Request{RemovePackages: true}
+	request := Request{}
 	plan, err := backend.Plan(ctx, request)
 	if err != nil {
 		t.Fatal(err)

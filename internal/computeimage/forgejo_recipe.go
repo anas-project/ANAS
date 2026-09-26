@@ -16,16 +16,38 @@ func ForgejoRunnerRecipe(target Target) ([]byte, error) {
 }
 
 func ForgejoRunnerRecipeFromSource(target Target, sourceDir string) ([]byte, error) {
+	return ForgejoRunnerRecipeWithOptions(target, ForgejoRunnerRecipeOptions{SourceDir: sourceDir})
+}
+
+// ForgejoRunnerRecipeOptions selects release-owned build inputs. The source
+// selection is frozen into the recipe, never inherited by BuildOnce from the
+// builder's environment after the immutable revision has been reserved.
+type ForgejoRunnerRecipeOptions struct {
+	SourceDir           string
+	ChineseBuildSpeedup bool
+}
+
+func ForgejoRunnerRecipeWithOptions(target Target, options ForgejoRunnerRecipeOptions) ([]byte, error) {
 	if err := target.validate(); err != nil {
 		return nil, ErrArtifactInvalid
 	}
-	sources, err := readForgejoRunnerImageSources(sourceDir)
+	sources, err := readForgejoRunnerImageSources(options.SourceDir)
 	if err != nil {
 		return nil, err
 	}
 	arch := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[target.Architecture]
 	if arch == "" {
 		return nil, ErrArtifactInvalid
+	}
+	bootstrapURL := "https://deb.debian.org/debian"
+	buildMirrorAction := ""
+	if options.ChineseBuildSpeedup {
+		bootstrapURL = "https://mirrors.aliyun.com/debian"
+		body, err := os.ReadFile(filepath.Join(sources.sourceDir, "configure-build-mirrors"))
+		if err != nil || len(body) == 0 || len(body) > 64<<10 {
+			return nil, ErrArtifactUnavailable
+		}
+		buildMirrorAction = "  - trigger: post-unpack\n    action: |-\n" + indentLiteral(string(body))
 	}
 	vmFiles := ""
 	vmPackages := ""
@@ -69,7 +91,7 @@ mappings:
   architecture_map: debian
 source:
   downloader: debootstrap
-  url: https://deb.debian.org/debian
+  url: %s
   suite: trixie
   components:
     - main
@@ -204,7 +226,7 @@ files:
     content: |-
 %s
 actions:
-  - trigger: post-files
+%s  - trigger: post-files
     action: |-
       #!/bin/sh
       set -eu
@@ -235,11 +257,12 @@ actions:
       install -d -o runner-engine -g actions-engine -m 0700 /home/runner-engine/.config /home/runner-engine/.config/systemd /home/runner-engine/.config/systemd/user /home/runner-engine/.config/systemd/user/sockets.target.wants
       ln -s /usr/lib/systemd/user/anas-podman.socket /home/runner-engine/.config/systemd/user/sockets.target.wants/anas-podman.socket
       chown -h runner-engine:actions-engine /home/runner-engine/.config/systemd/user/sockets.target.wants/anas-podman.socket
-%s`, arch, vmPackages, vmFiles, indentLiteral(sources.runnerStart), indentLiteral(sources.runnerInput), indentLiteral(sources.oneJob), indentLiteral(sources.podmanService), indentLiteral(sources.podmanSocket), indentLiteral(sources.podmanTmpfiles), indentLiteral(sources.podmanAppArmor), indentLiteral(sources.podmanPolicyService), indentLiteral(sources.apparmorLoader), indentLiteral(sources.engineUserManager), indentLiteral(sources.runnerConfig), vmTarget)
+%s`, arch, bootstrapURL, vmPackages, vmFiles, indentLiteral(sources.runnerStart), indentLiteral(sources.runnerInput), indentLiteral(sources.oneJob), indentLiteral(sources.podmanService), indentLiteral(sources.podmanSocket), indentLiteral(sources.podmanTmpfiles), indentLiteral(sources.podmanAppArmor), indentLiteral(sources.podmanPolicyService), indentLiteral(sources.apparmorLoader), indentLiteral(sources.engineUserManager), indentLiteral(sources.runnerConfig), buildMirrorAction, vmTarget)
 	return []byte(body), nil
 }
 
 type forgejoRunnerImageSources struct {
+	sourceDir           string
 	runnerStart         string
 	runnerInput         string
 	oneJob              string
@@ -321,7 +344,7 @@ func readForgejoRunnerImageSources(sourceDir string) (forgejoRunnerImageSources,
 	if err != nil {
 		return forgejoRunnerImageSources{}, err
 	}
-	return forgejoRunnerImageSources{runnerStart: runnerStart, runnerInput: runnerInput, oneJob: oneJob, podmanService: podmanService, podmanSocket: podmanSocket, podmanTmpfiles: podmanTmpfiles, podmanAppArmor: podmanAppArmor, podmanPolicyService: podmanPolicyService, apparmorLoader: apparmorLoader, engineUserManager: engineUserManager, runnerConfig: runnerConfig}, nil
+	return forgejoRunnerImageSources{sourceDir: sourceDir, runnerStart: runnerStart, runnerInput: runnerInput, oneJob: oneJob, podmanService: podmanService, podmanSocket: podmanSocket, podmanTmpfiles: podmanTmpfiles, podmanAppArmor: podmanAppArmor, podmanPolicyService: podmanPolicyService, apparmorLoader: apparmorLoader, engineUserManager: engineUserManager, runnerConfig: runnerConfig}, nil
 }
 
 func indentLiteral(s string) string {

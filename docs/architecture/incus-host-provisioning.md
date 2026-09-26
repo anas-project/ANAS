@@ -54,7 +54,7 @@ bridge、本地namespace端点、早期ACCEPT计数、后续默认DROP计数及�
 该夹具在首次启动Docker前显式具备IPv4转发，使用SQLite和准备的生命周期workspace；
 不能据此关闭默认Docker DROP共存、完整公开CLI业务部署或生产入站。第八轮保留的
 真实拉取超时与第九轮旧计数失败不被后续通过覆盖，见
-[联合验收记录](../../dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md)。
+[联合验收记录](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md)。
 
 2026-09-25 的 `policy-loader-r1` 已完成全新 Ubuntu 26.04 amd64 上的实际烘焙、导出、
 重复复用，十项镜像/自动策略/rootless OCI门禁与五种真实Forgejo工作流全部通过。
@@ -111,7 +111,13 @@ Provider 提权或共享 Secret Store 来绕过这个边界。完整 CLI/Compose
 把集合重新扩展为所有服务。Contract 的一次性操作仍经原 `compose_run` 路径执行，
 模块资源、凭据和 ready barrier 不因此跳过；构建流程不受这条启动约束影响。
 
-当前三个一级发行版的 amd64 同工件矩阵已通过：Debian 13、Ubuntu 26.04 和 24.04
+2026-09-26 默认改用 Zabbly `lts-7.0` 后，三个一级发行版 amd64 以同一快照工件重新通过：
+Debian 13、Ubuntu 26.04 和 24.04 各完成真实审批链路的 **23 项门禁与 14 个作业/退出**
+（卸载本身精确删包，过期后的新计划即重复卸载），安装的都是 Incus 7.0.1；分别删除 6/4/4 个受管包，
+327/681/667 个原有包保留，正常关机与物理宿主前后对照一致。见
+[验收记录](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-26-incus-host-action-7.0.1-acceptance.md)。
+
+此前 2026-09-23 的 6.0 配方同工件矩阵：Debian 13、Ubuntu 26.04 和 24.04
 各自完成真实 CLI/HTTPS→共享 job→systemd 供给审批的 **25 项门禁与 18 个作业/退出**，
 包括控制桥身份与来源限制、自然五分钟过期、精确删包和重复卸载。分别删除 6/4/3 个
 新归属包，327/682/667 个原有包及未托管依赖保留。三轮公开证据、正常关机及物理
@@ -135,7 +141,8 @@ IPv6 或生产 ingress 的替代；`developing` 与未验收功能关闭状态�
 
 2026-09-23 供给闭环接续：全新 Ubuntu 26.04 amd64 VM 已通过完整 **11 项**原生后端门禁，
 包括官方包安装、实际 systemd/relay/nft/控制桥配置、pinned mTLS 登记、重复执行、保留卷
-拒绝卸载、默认保留包卸载与显式逐包删除。测试使用生产后端，不清除失败状态、不降低门禁；
+拒绝卸载、默认保留包卸载与显式逐包删除（2026-09-26 起卸载总是删除受管包，该门禁合并为
+`uninstall_removes_owned_packages`）。测试使用生产后端，不清除失败状态、不降低门禁；
 旧失败环境和新成功环境的证据分开保留。独立物理宿主的既有 Docker 与网络前后对照相同。
 此直接后端结果本身不等于审批链路或消费者 bridge 验收；后两者的后续独立结果见上段。
 其他发行版与正式发布仍分别验收，M10 与完整默认可用状态不提前关闭。
@@ -182,7 +189,16 @@ Debian 13 的真实安装进一步验证了两项发行版约束：它与 Ubuntu
 daemon 包 `incus-base`，声明表须显式记录逐包归属；官方依赖会触发 initramfs 更新，固定
 hostd 单元须为 `/boot` 提供写入例外。当前以 `ReadWritePaths` 的 `-/boot` 实现，保留
 `ProtectSystem=strict`、`ProtectHome` 和确认/审计；不禁用触发器、不替换旧失败回执。
-新增的实际审批门禁要求显式删包与重复卸载，完整 dpkg 库存还须确认原有包及未托管依赖
+改用 Zabbly `lts-7.0` 后，`incus`、`incus-base`、`incus-client` 把主体装在 `/opt/incus`（2026-09-26
+实测 `incus-base` 有 2043 个文件在该目录）；`dpkg` 需要创建和删除该树，所以单元另加 `-/opt`。
+2026-09-26 Ubuntu 26.04 的实际审批安装在缺少该例外时以 `install.packages` 失败。
+删除最后一个 Zabbly 包时 `dpkg` 还要 `rmdir /opt`；`/` 的直接子目录在 `ProtectSystem=strict`
+下无法删除（EROFS），`dpkg` 把它当作致命错误，同日 Ubuntu 26.04/24.04 的删包门禁因此失败。
+固定删包因此经 `systemd-run --wait --pipe --collect` 在不带 `ProtectSystem` 的临时单元里执行
+`/usr/bin/dpkg --remove -- <受管包>`，保留 `ProtectHome`、`PrivateTmp`、`NoNewPrivileges` 与
+600 秒运行上限；执行器只接受这一条编译 argv 加去重的 Debian 包名，其他 `systemd-run`
+调用一律拒绝。
+实际审批门禁要求卸载精确删除受管包并重复卸载，完整 dpkg 库存还须确认原有包及未托管依赖
 均被保留；缺失实际 daemon 包、未完成触发器或不完整库存不能作为清理通过。
 
 Debian 的空池清单兼容性仅限两个固定 storage-pools 端点：递归清单明确返回 null 时，
@@ -190,11 +206,12 @@ Debian 的空池清单兼容性仅限两个固定 storage-pools 端点：递归�
 编码空集合，但 null 单独不授予删除权限；非空/矛盾清单、失败响应、缺字段或仍存在的池
 都拒绝。其他 API 和统一客户端的 null 判据不变，不据此恢复 failed intent 或跳过归属。
 
-显式删除包不能依赖发行版维护脚本停止服务。Debian 的 incus-base prerm 跳过原生
+卸载总是删除 ANAS 记录为自己安装的软件包，不提供保留选项；安装前已存在的包、未托管的
+依赖以及保留下来的外部 daemon 包不删除。删除包不能依赖发行版维护脚本停止服务。Debian 的 incus-base prerm 跳过原生
 systemd 停服，可能删掉程序后仍留下活动进程。因此在完整盘点后、删除包的持久 intent
 内，先仅停止有 ANAS 服务归属的固定 `incus.service` 并读回 inactive，再删除精确受管包。
 停止失败、取消或读回仍 active 时不继续删包；归属只有在最终包/daemon 读回成功后才清除。
-没有服务归属的活动 daemon 拒绝删除，默认保留包的卸载也不调用此停服操作。
+没有服务归属的活动 daemon 拒绝删除；保留外部 daemon 的卸载不调用此停服操作。
 
 宿主安装动作的总执行预算固定为 45 分钟：两个 APT 步骤各有 15 分钟上限，Incus
 `enable --now` 为 11 分钟，并留出读回与持久化预算。只读 `systemctl is-active --quiet`
@@ -271,13 +288,20 @@ Ubuntu 22.04 LTS 不在支持范围内：它的官方源没有 incus，只能加
 分级的含义：
 
 - **一级**：`anas` 自动安装 Incus 7.0 LTS。Incus 包只取自上游维护者的 Zabbly `lts-7.0` 仓库，
-  其余依赖只取自发行版官方仓库，不添加其他第三方源（`INCUS-R-108`）。CI 与发布验收在这三个上跑，
+  其余依赖只取自发行版官方仓库或保留发行版签名校验的固定国内镜像，不添加其他第三方软件仓库（`INCUS-R-108`）。CI 与发布验收在这三个上跑，
   Ubuntu 26.04 LTS 是主要测试环境；
 - **待适配**：尚未实现自动安装。报明确错误、给手工步骤，并让依赖 `compute` 的功能保持关闭——
   不是失败，是保持关闭。适配一个发行版的工作量应当是往映射表里加一行。
 
 发行版到安装步骤的映射必须是**声明式的表**，不是代码里的 `switch`。这与 Core 实现标准 §2
 「不得按产品名写业务分支」是同一条规则：新增一个发行版应当是加一行数据。
+
+`install.plan` 读取受管工作区有效 `CHINESE_SPEEDUP`，将固定源选择冻结到
+`request.chinese_speedup` 与确认摘要。开启时，发行版依赖源使用阿里云的 `debian`、
+`debian-security`、`ubuntu` 或 `ubuntu-ports`，APT origin pin 同步替换；Zabbly `lts-7.0`
+及嵌入密钥、发行版 keyring 均保持。只在实际需安装包时写专用 APT 配置，可替换同一配方的
+另一个编译版本，未知字节漂移仍失败。卸载接受任一完整编译版本，不依赖当前工作区开关。
+确认后执行不重新读取配置或进程环境，新的计划才采用新的配置值。未在本轮执行国内源实机安装。
 
 ### 2.1 已编码的只读供给预检
 
@@ -395,9 +419,9 @@ daemon 兼容性未验证、存储/网络未验证等阻塞。未适配 OS/版�
 同名网络换了不可变 ID，以及池读回成功后的 volumes 404 均不能当作“资源为空”。
 预检拒绝或取消不创建变更 intent，也不撤销仍可工作的连接；排空后须重新取得并确认计划。
 
-显式请求删除本次安装的软件包时，还盘点共享 daemon 上的实例、project、池、托管网络、
+删除本次安装的软件包前，还盘点共享 daemon 上的实例、project、池、托管网络、
 profile、镜像和信任。安装时的包归属不等于后来新增对象的归属；非默认 project、非空默认
-profile、外部池/网络/证书和保留镜像均先阻止删除包。默认保留包及外部 daemon 的策略不变。
+profile、外部池/网络/证书和保留镜像均先阻止整个卸载，须排空后重新计划。外部 daemon 的策略不变。
 这不是自动删除外部数据或按名称前缀接管对象的入口。消费者租约及其 project/profile 仍须
 沿原资源生命周期撤销，不以宿主卸载代替它们的归属确认。
 
@@ -1506,7 +1530,7 @@ project 镜像集合隔离。该参考未列出逐 fingerprint allowlist 开关�
 这项检查。结论：它不是可下沉的镜像约束，Provider 在支持它的 daemon 上确保它不存在，逐摘要校验
 仍在消费者侧。2026-09-26 在 Debian trixie-backports 7.0.1 与 Zabbly 7.5.1 的一次性 VM 上实机复现了
 本地镜像创建被拒（`Image server "" isn't allowed in this project`），见
-[fence 实机核验](../../dev-docs/reviews/2026-09-26-incus-fence-native-validation.md)；simplestreams 复制是否受检仍只来自
+[fence 实机核验](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-26-incus-fence-native-validation.md)；simplestreams 复制是否受检仍只来自
 源码阅读，R-085 的远程拉取与导入实测项不变。
 
 §2 标记为「待适配」的发行版**不是待决，是排期**：先把一级三个做完，其余作为后续计划，届时再

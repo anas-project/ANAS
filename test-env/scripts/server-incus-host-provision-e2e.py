@@ -25,8 +25,7 @@ REQUIRED = {PARENT} | {PARENT+'/'+name for name in (
     'confirmation_is_required', 'skip_without_host_effects', 'install_pinned_packages',
     'configure_owned_host_resources', 'enroll_private_management_connection',
     'idempotent_reenrollment', 'uninstall_preflight_preserves_retained_storage',
-    'uninstall_preserves_original_packages',
-    'optional_package_removal_preserves_preexisting', 'repeat_uninstall_is_idempotent')}
+    'uninstall_removes_owned_packages', 'repeat_uninstall_is_idempotent')}
 MARKER = Path('/run/anas-incus-host-lifecycle/identity.json')
 RELAY = Path('/usr/local/lib/anas/anas-incus-control-relay')
 DOCKER_ROOT = '/var/lib/anas-host-provision-test'
