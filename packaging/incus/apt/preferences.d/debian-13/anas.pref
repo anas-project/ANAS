@@ -1,3 +1,11 @@
+Package: incus incus-base incus-client
+Pin: origin "pkgs.zabbly.com"
+Pin-Priority: 995
+
+Package: incus incus-base incus-client
+Pin: origin "deb.debian.org"
+Pin-Priority: -1
+
 Package: *
 Pin: origin "deb.debian.org"
 Pin-Priority: 990

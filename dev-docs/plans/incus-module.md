@@ -40,7 +40,7 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M8：长驻实例档预留 | R-039—R-042、R-046 | 未开始 |
 | M9：网络 IPv6 姿态与 image_policy 预留 | R-043、R-045、R-052 | 已完成 |
 | M9a：双栈出网验收 | R-044 | 实施中；实现已落地，真实验收待执行 |
-| M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047—R-051、R-057、R-094 | 实施中；三个一级发行版 amd64 各通过 25 项审批/卸载，26.04 另有后端 11 项、浏览器 8 项；真实 Core/Compose 自动投影、双合成消费者、新部署凭据保持和撤销后拒绝闭环已通过；实际 Forgejo/AI Agent 部署、ARM64/VM、未适配系统降级与失败恢复另验 |
+| M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047、R-048、R-050、R-051、R-057、R-094、R-107、R-108 | 实施中；三个一级发行版 amd64 各通过 25 项审批/卸载，26.04 另有后端 11 项、浏览器 8 项；真实 Core/Compose 自动投影、双合成消费者、新部署凭据保持和撤销后拒绝闭环已通过；实际 Forgejo/AI Agent 部署、ARM64/VM、未适配系统降级与失败恢复另验 |
 | M10a：默认 Docker 的租约转发授权与撤销 | R-101—R-105 | 实施中；确认、来源及原状态回执已连接，失败启用统一有界撤回；独立内核精确许可/源冒用拒绝/既有连接撤销及安装后端显式退役、重复/证据保留通过；生产启用、自动续期/停止/重启协调、真实 guest/Forgejo 与完整反向隔离未关闭 |
 | M11：入站与 Traefik 发布 | R-053、R-054、R-062—R-065、R-070、R-071、R-086—R-088、R-095、R-096 | 实施中；观察、配置、任务排空和跨进程围栏已连接；新增同队列 owner 的统一启动入口、目录隔离准入及固定 renderer 身份；自动 CLI 排空、完整内核生命周期、VM/TAP、health、生产 UID/挂载安装及实机验收待办 |
 | M11a：独立租约命名密钥 | R-092 | 已完成；生成/复用、敏感投影、冻结引用与文件备份恢复回归通过 |
@@ -48,9 +48,15 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 实施中；本地 bundle 动作自行写入目的地、元数据控制输出及 URL/base64 拒绝回归已落地；不提供浏览器下载端点，统一动作整体安全审阅仍待完成，见[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
 | M14：其余发行版适配 | — | 未开始；待适配清单见[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §2 |
 
-覆盖统计：81 项需求全部有且只有一个里程碑归属（另有 25 项已废弃）。
+覆盖统计：82 项需求全部有且只有一个里程碑归属（另有 26 项已废弃）。
 
 ### 当前接续状态（2026-09-26）
+
+默认 Incus 7.0 LTS（`INCUS-R-049` 废弃，由 `INCUS-R-107`、`INCUS-R-108` 取代）：三份一级发行版配方
+改为从 Zabbly `lts-7.0` 安装 `incus`/`incus-base`/`incus-client`，其余依赖仍取官方源。密钥编译进二进制、
+内嵌于 deb822 `Signed-By`（`_apt` 读不到 root 私有配置目录），指纹由测试钉住；Incus 包钉到 Zabbly、
+禁止回落发行版 6.0。编译配置、夹具与单元回归通过；宿主供给在三个发行版上的实机验收（原 25 项门禁）
+需以 7.0.1 重跑，旧 6.0 配方宿主无迁移动作，Zabbly 源不进入宿主日常 `apt upgrade`，见宿主供给设计 §2.2。
 
 围栏完整性修复（[审查](../reviews/2026-09-25-compute-contract-incus-review.md) §1.1、§1.2）：Provider
 现在拥有 Incus 6.0.0—6.0.5 全部 `restricted.*` 键，要么显式写入严格值、要么要求不存在；VM 档也写
@@ -1073,6 +1079,7 @@ catalog，复用 `DescribeArtifactRelease` 和规范描述。私有本地归档�
 | R-104 | `internal/incusprovision/forwarding_retirement_native_linux_test.go`；业务入口待接续 | 实际安装后端、Incus trust/空实例/网桥，Core stopped 和旧 grant 为夹具 | 2026-09-26 | 原始拒绝、自然空清单、显式/重复退役及墓碑/依赖解除通过；地址/接口变化、崩溃/重启和完整宿主卸载仍待验收 |
 | R-105 | `test-env/scripts/server-incus-forwarding-e2e.py` 与 `internal/incusingresshost/forwarding_native_linux_test.go` | 独立默认 Docker、既有管理员拒绝和原始策略保留 | 2026-09-25 | 原9项临时许可因果实验通过；候选生产执行器完整正反向验收仍待完成 |
 | R-106 | `test-env/scripts/server-incus-fence-e2e.py` | 一次性 VM：Ubuntu 26.04 官方 6.0.5、Debian 13 trixie-backports 7.0.1、Ubuntu 26.04 Zabbly 7.5.1 | 2026-09-26 | 三档 16/18/19 项必需检查全部通过：第二工作区与所有者撤销后均拒绝、未标记共享 project 拒绝、额外受限证书使 inspect 未就绪、`default` 拒绝；真实 Core 多工作区部署未验收，见[实机核验](../reviews/2026-09-26-incus-fence-native-validation.md) |
+| R-108 | 待扩展 `test-env/scripts/server-incus-host-provision-e2e.py` | 三个一级发行版 amd64，Zabbly `lts-7.0` 固定来源与钉包 | — | 待执行；编译配置、密钥指纹与钉包单元回归通过（2026-09-26）；本日 7.0.1 实机仅为 fence 围栏验证，非宿主供给验收 |
 
 ## 11. 文档同步
 

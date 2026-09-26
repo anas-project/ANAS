@@ -255,11 +255,11 @@ Docker Engine 与支持新控制网络声明的 Compose 仍是用户自备前置
 **上游打包情况会变，执行安装时仍须核验实际包来源与签名**；「待适配」行保留为未核验候选，
 不能拿 `ID_LIKE` 或第三方源来自动补齐。
 
-| 发行版 | 来源 | 分级 |
+| 发行版 | Incus 来源（依赖来源） | 分级 |
 | --- | --- | --- |
-| Debian 13 (trixie) | 官方仓库 | 一级 |
-| Ubuntu 24.04 LTS | 官方 `universe` | 一级 |
-| Ubuntu 26.04 LTS | 官方 `universe` | 一级，**主要测试环境** |
+| Debian 13 (trixie) | Zabbly `lts-7.0`（Debian 官方仓库） | 一级 |
+| Ubuntu 24.04 LTS | Zabbly `lts-7.0`（Ubuntu 官方 `universe`） | 一级 |
+| Ubuntu 26.04 LTS | Zabbly `lts-7.0`（Ubuntu 官方 `universe`） | 一级，**主要测试环境** |
 | Debian 12 (bookworm) | `bookworm-backports` | 待适配 |
 | Alpine | `community` | 待适配 |
 | Fedora / RHEL 系 | COPR | 待适配 |
@@ -270,7 +270,8 @@ Ubuntu 22.04 LTS 不在支持范围内：它的官方源没有 incus，只能加
 
 分级的含义：
 
-- **一级**：`anas` 自动安装，不添加任何第三方软件源。CI 与发布验收在这三个上跑，
+- **一级**：`anas` 自动安装 Incus 7.0 LTS。Incus 包只取自上游维护者的 Zabbly `lts-7.0` 仓库，
+  其余依赖只取自发行版官方仓库，不添加其他第三方源（`INCUS-R-108`）。CI 与发布验收在这三个上跑，
   Ubuntu 26.04 LTS 是主要测试环境；
 - **待适配**：尚未实现自动安装。报明确错误、给手工步骤，并让依赖 `compute` 的功能保持关闭——
   不是失败，是保持关闭。适配一个发行版的工作量应当是往映射表里加一行。
@@ -301,11 +302,34 @@ Linux 读取按目录描述符检查 root 所有权、不可被组/其他用户�
 
 当前包目录观测如下。它们是带日期的元数据，**不是硬编码 apt 安装版本，也不是运行准入**：
 
-| 目标 | 2026-09-19 观测版本 | 来源 |
+| 目标 | 2026-09-26 观测版本（`incus-base`） | 来源 |
 | --- | --- | --- |
-| Debian 13 | `6.0.4-2+deb13u10` | [官方包目录](https://packages.debian.org/trixie/incus) |
-| Ubuntu 24.04 | `6.0.0-1ubuntu0.3` | [官方 noble-updates/universe](https://packages.ubuntu.com/noble-updates/incus) |
-| Ubuntu 26.04 | `6.0.5-8` | [官方 resolute/universe](https://packages.ubuntu.com/resolute/incus) |
+| Debian 13 | `1:7.0.1-debian13-202609250206` | [Zabbly lts-7.0 trixie](https://pkgs.zabbly.com/incus/lts-7.0/dists/trixie/main/binary-amd64/Packages) |
+| Ubuntu 24.04 | `1:7.0.1-ubuntu24.04-202609250206` | [Zabbly lts-7.0 noble](https://pkgs.zabbly.com/incus/lts-7.0/dists/noble/main/binary-amd64/Packages) |
+| Ubuntu 26.04 | `1:7.0.1-ubuntu26.04-202609250211` | [Zabbly lts-7.0 resolute](https://pkgs.zabbly.com/incus/lts-7.0/dists/resolute/main/binary-amd64/Packages) |
+
+同一 LTS 仓库保留多个 7.0.x 构建，apt 取最高版本；表中只是观测。发行版官方仓库最多只有 6.0
+（Debian 13 为 6.0.4、Ubuntu 24.04 为 6.0.0、26.04 为 6.0.5），缺少 7.0 的
+`restricted.storage-pools.access` 等项目限制，这是改用 7.0 LTS 的原因。
+
+### 2.2 Incus 7.0 LTS 的包来源（`INCUS-R-108`）
+
+私有 APT 配置在发行版官方源之外只加一个 deb822 源 `https://pkgs.zabbly.com/incus/lts-7.0`。
+签名密钥编译进二进制，以多行 `Signed-By` 内嵌在该源文件里：APT 以非特权 `_apt` 用户校验签名，
+读不到 root 私有的 `/etc/anas/incus-apt`，内嵌后也和源文件一起逐字节核验。主密钥指纹
+`4EFC 5906 96CB 15B8 7C73 A3AD 82CC 8797 C838 DCFD` 由测试钉住，更换密钥是一次信任变更。
+`incus`、`incus-base`、`incus-client` 对 Zabbly 源优先级 995，对发行版源 -1：Zabbly 索引缺失或过期
+时安装失败，不会静默装回发行版 6.0。其他包只从发行版官方源取（990），Zabbly 源上的其余包保持默认
+优先级，且安装命令只列配方中的包。
+
+已知限制：
+
+- 该源只存在于 ANAS 私有 APT 配置里，宿主日常 `apt upgrade` 看不到它，Incus 7.0.x 的补丁更新
+  需要后续的显式更新动作；发行版依赖不受影响。
+- 按旧 6.0 配方供给过的宿主，其私有 APT 文件与新编译配置不一致，重装、卸载会被逐字节核验拒绝；
+  当前没有迁移动作，模块处于 developing，尚无生产安装。
+- 宿主若只能经 IPv4 访问 `deb.debian.org` 且很慢（2026-09-26 实验宿主约 9 KB/s），Debian 依赖下载
+  同样受影响；APT 镜像选择尚未进入宿主供给配置。
 
 这三者不能继承按 7.3.0 编写的入站 observer 兼容性结论。即使发行版匹配，结果仍明确返回
 `compute_ready: false`、`runtime_verified: false`，并区分宿主动作未安装、包来源未验证、
@@ -346,7 +370,8 @@ daemon 兼容性未验证、存储/网络未验证等阻塞。未适配 OS/版�
 
 ```text
 1. 读 /etc/os-release，在 §2 的表里查到安装配方；表里没有 → 报错并给手工指引，退出码可区分
-2. 安装 incus 包（一级发行版不添加第三方源；待适配的发行版不自动安装，报错并给手工指引）
+2. 安装 incus 包（一级发行版从固定的 Zabbly `lts-7.0` 取 Incus，其余依赖取官方源，见 §2.2；
+   待适配的发行版不自动安装，报错并给手工指引）
 3. 启用服务，设 core.https_address=127.0.0.1:8443（只监听回环）
 4. 初始化符合当前配额准入的受管存储池（当前 Provider 只接受已创建的 btrfs/zfs，见 §7.4）；
    无法确认能力时保持 compute 关闭，不以 dir 降级冒充配额可用，不自动格式化或接管已有设备
@@ -376,8 +401,8 @@ profile、外部池/网络/证书和保留镜像均先阻止删除包。默认�
 这不是自动删除外部数据或按名称前缀接管对象的入口。消费者租约及其 project/profile 仍须
 沿原资源生命周期撤销，不以宿主卸载代替它们的归属确认。
 
-发行版拆包也必须计入逐包归属：Ubuntu 26.04 的已观测官方 `incus` 是元包，实际 daemon
-位于 `incus-base`，因此该配方显式请求和记录后者，不能只删元包就清除 daemon 的归属。
+拆包也必须计入逐包归属：Zabbly `lts-7.0` 的 `incus` 是 VM 支持元包，实际 daemon 位于
+`incus-base`，因此三份配方都显式请求和记录后者，不能只删元包就清除 daemon 的归属。
 已有 daemon 包或其保留配置不能因补装缺失的辅助包而被接管；缺少逐包证据的历史聚合布尔值
 也不够。配置、登记及显式包删除沿用此判据，删除读回还要求所拥有的 daemon 已停止。
 未列入并确认归属的依赖不以 `autoremove` 或强制删除处理。

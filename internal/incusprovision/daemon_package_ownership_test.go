@@ -24,10 +24,7 @@ func TestMissingHelpersCannotAdoptPreexistingDaemon(t *testing.T) {
 				ctx := context.Background()
 				store, rt := &memoryStore{}, newFakeRuntime(t)
 				rt.obs.Preflight.Recipe = &row
-				daemon := "incus"
-				if row.ID == "ubuntu-26.04" || row.ID == "debian-13" {
-					daemon = "incus-base"
-				}
+				daemon := daemonPackage(row)
 				rt.obs.ExistingPackages = []string{daemon}
 				rt.obs.InstalledPackages = []string{daemon}
 				rt.obs.IncusDaemonActive = active
@@ -54,7 +51,7 @@ func TestSplitDaemonInstallRecordsBaseOwnershipIndividually(t *testing.T) {
 	}
 	seen := 0
 	for _, row := range rows {
-		if row.ID != "ubuntu-26.04" && row.ID != "debian-13" {
+		if daemonPackage(row) != "incus-base" {
 			continue
 		}
 		seen++
@@ -89,7 +86,7 @@ func TestSplitDaemonInstallRecordsBaseOwnershipIndividually(t *testing.T) {
 			}
 		})
 	}
-	if seen != 2 {
+	if seen != len(rows) {
 		t.Fatal("an independently verified split daemon recipe is missing")
 	}
 }

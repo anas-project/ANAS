@@ -72,8 +72,12 @@ func TestCompiledRecipesAreStrictAndDetached(t *testing.T) {
 		func(b []byte) []byte {
 			return bytes.ReplaceAll(b, []byte(`"incus-client"`), []byte(`"--allow-unauthenticated"`))
 		},
-		func(b []byte) []byte { return bytes.ReplaceAll(b, []byte(`"official"`), []byte(`"ppa"`)) },
-		func(b []byte) []byte { return bytes.ReplaceAll(b, []byte(`"2026-09-19"`), []byte(`"unknown"`)) },
+		func(b []byte) []byte { return bytes.ReplaceAll(b, []byte(`"zabbly-lts-7.0"`), []byte(`"ppa"`)) },
+		func(b []byte) []byte { return bytes.ReplaceAll(b, []byte(`"zabbly-lts-7.0"`), []byte(`"official"`)) },
+		func(b []byte) []byte {
+			return bytes.ReplaceAll(b, []byte(`https://pkgs.zabbly.com/`), []byte(`https://example.invalid/`))
+		},
+		func(b []byte) []byte { return bytes.ReplaceAll(b, []byte(`"2026-09-26"`), []byte(`"unknown"`)) },
 	} {
 		if _, err := parseRecipes(edit(bytes.Clone(recipeData))); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("bad compiled recipe accepted: %v", err)
@@ -98,20 +102,16 @@ func TestSplitRecipesTrackTheDaemonPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := 0
 	for _, row := range rows {
-		if row.ID == "ubuntu-26.04" || row.ID == "debian-13" {
-			seen++
-			// Both independently observed official packages are meta-packages. Their
-			// incus-base dependency owns the daemon and depends on incus-client.
-			// Removing only the meta-package/client cannot remove that daemon.
-			if !slices.Contains(row.Packages, "incus-base") {
-				t.Errorf("%s actual daemon package has no explicit installation/ownership record", row.ID)
-			}
+		// Zabbly's lts-7.0 incus is a meta-package for VM support. Its
+		// incus-base dependency owns the daemon and depends on incus-client.
+		// Removing only the meta-package/client cannot remove that daemon.
+		if !slices.Contains(row.Packages, "incus-base") || !slices.Contains(row.Packages, "incus-client") {
+			t.Errorf("%s actual daemon package has no explicit installation/ownership record", row.ID)
 		}
-	}
-	if seen != 2 {
-		t.Fatal("an independently verified split daemon recipe is missing")
+		if row.Repository != IncusRepository {
+			t.Errorf("%s installs Incus from %q, not the pinned 7.0 LTS source", row.ID, row.Repository)
+		}
 	}
 }
 

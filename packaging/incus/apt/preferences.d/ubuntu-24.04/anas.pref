@@ -1,3 +1,19 @@
+Package: incus incus-base incus-client
+Pin: origin "pkgs.zabbly.com"
+Pin-Priority: 995
+
+Package: incus incus-base incus-client
+Pin: origin "archive.ubuntu.com"
+Pin-Priority: -1
+
+Package: incus incus-base incus-client
+Pin: origin "security.ubuntu.com"
+Pin-Priority: -1
+
+Package: incus incus-base incus-client
+Pin: origin "ports.ubuntu.com"
+Pin-Priority: -1
+
 Package: *
 Pin: origin "archive.ubuntu.com"
 Pin-Priority: 990

@@ -109,13 +109,13 @@ func TestValidateNFTControlRulesJSONRequiresExpressions(t *testing.T) {
 	}
 }
 
-func TestOfficialAPTConfigFilesMatchPackagedFixtures(t *testing.T) {
+func TestCompiledAPTConfigFilesMatchPackagedFixtures(t *testing.T) {
 	recipes, err := incushost.Recipes()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, recipe := range recipes {
-		files, err := OfficialAPTConfigFiles(recipe)
+		files, err := CompiledAPTConfigFiles(recipe)
 		if err != nil {
 			t.Fatalf("%s: %v", recipe.ID, err)
 		}
@@ -153,7 +153,7 @@ func TestOfficialAPTConfigRejectsUnregisteredPolicyInputs(t *testing.T) {
 		case "repository":
 			r.Repository = "third-party"
 		}
-		if _, err := OfficialAPTConfigFiles(r); err == nil {
+		if _, err := CompiledAPTConfigFiles(r); err == nil {
 			t.Fatalf("accepted noncompiled %s policy", mode)
 		}
 	}

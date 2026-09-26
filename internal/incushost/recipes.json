@@ -9,7 +9,7 @@
       "arm64"
     ],
     "package_manager": "apt",
-    "repository": "official",
+    "repository": "zabbly-lts-7.0",
     "packages": [
       "incus",
       "incus-base",
@@ -18,9 +18,9 @@
       "nftables",
       "dnsmasq-base"
     ],
-    "evidence_date": "2026-09-19",
-    "observed_package_version": "6.0.4-2+deb13u10",
-    "evidence_url": "https://packages.debian.org/trixie/incus"
+    "evidence_date": "2026-09-26",
+    "observed_package_version": "1:7.0.1-debian13-202609250206",
+    "evidence_url": "https://pkgs.zabbly.com/incus/lts-7.0/dists/trixie/main/binary-amd64/Packages"
   },
   {
     "id": "ubuntu-24.04",
@@ -32,17 +32,18 @@
       "arm64"
     ],
     "package_manager": "apt",
-    "repository": "universe",
+    "repository": "zabbly-lts-7.0",
     "packages": [
       "incus",
+      "incus-base",
       "incus-client",
       "btrfs-progs",
       "nftables",
       "dnsmasq-base"
     ],
-    "evidence_date": "2026-09-19",
-    "observed_package_version": "6.0.0-1ubuntu0.3",
-    "evidence_url": "https://packages.ubuntu.com/noble-updates/incus"
+    "evidence_date": "2026-09-26",
+    "observed_package_version": "1:7.0.1-ubuntu24.04-202609250206",
+    "evidence_url": "https://pkgs.zabbly.com/incus/lts-7.0/dists/noble/main/binary-amd64/Packages"
   },
   {
     "id": "ubuntu-26.04",
@@ -54,7 +55,7 @@
       "arm64"
     ],
     "package_manager": "apt",
-    "repository": "universe",
+    "repository": "zabbly-lts-7.0",
     "packages": [
       "incus",
       "incus-base",
@@ -63,8 +64,8 @@
       "nftables",
       "dnsmasq-base"
     ],
-    "evidence_date": "2026-09-19",
-    "observed_package_version": "6.0.5-8",
-    "evidence_url": "https://packages.ubuntu.com/resolute/incus"
+    "evidence_date": "2026-09-26",
+    "observed_package_version": "1:7.0.1-ubuntu26.04-202609250211",
+    "evidence_url": "https://pkgs.zabbly.com/incus/lts-7.0/dists/resolute/main/binary-amd64/Packages"
   }
 ]

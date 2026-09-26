@@ -360,7 +360,7 @@ audit; full daemon state and actual host capabilities have separate acceptance g
 shared job/CLI/Web and plan/one-time-confirmation/execution paths are wired. Local tests do not replace
 native Linux identity or actual installation acceptance. Linux peer/filesystem execution is separately
 tracked. See [the host provisioning design](../../../docs/architecture/incus-host-provisioning.md),
-section 2.1, for the official-package version difference and remaining acceptance limits.
+sections 2.1 and 2.2, for the package source, upstream version differences and remaining acceptance limits.
 
 ### Host job binding (internal implementation)
 
@@ -587,8 +587,10 @@ does not automatically revoke existing certificates. See the [Incus dir quota pr
 and the pending test inventory at `test-env/fixtures/incus-network-prototype/e2e-plan.md` in the repository.
 
 The Provider owns every `restricted.*` key the target daemon knows: the full Incus 6.0 LTS set
-(6.0.0 through 6.0.5 in the first-tier distributions' official repositories) plus the 7.x keys the
-daemon advertises through API extensions. Each key is either written with a strict value or required
+(6.0.0 through 6.0.5, the versions in the distributions' official repositories) plus the 7.x keys the
+daemon advertises through API extensions. Host provisioning installs Zabbly `lts-7.0` by default (see
+[the host provisioning design](../../../docs/architecture/incus-host-provisioning.md) section 2.2); the
+Provider still supports existing 6.0 daemons. Each key is either written with a strict value or required
 to be absent:
 
 | Handling | Keys |

@@ -223,14 +223,14 @@ func TestNativeHostProvisionLifecycle(t *testing.T) {
 	// On failure, preserve the protected state/receipts for diagnosis. This VM
 	// is disposable; never weaken pending-intent guards or run broad cleanup to
 	// turn an uncertain phase into a successful acceptance record.
-	if !t.Run("install_official_packages", func(t *testing.T) {
+	if !t.Run("install_pinned_packages", func(t *testing.T) {
 		apply(t, PhaseInstall, request, "installed")
 		got, err := backend.Inspect(ctx, request)
 		if err != nil || !got.Observation.PackageInstalled || !got.Observation.IncusDaemonActive || !got.State.Ownership.PackagesInstalledByANAS || !got.State.Ownership.IncusServiceByANAS || got.State.Ownership.ExternalDaemonPreserved || !got.State.Disabled {
 			t.Fatal("native installation readback or ownership is incomplete", err)
 		}
 		if err := verifyAPTPolicyFiles(*got.Plan.Preflight.Recipe); err != nil {
-			t.Fatal("native install did not preserve the compiled official repository policy", err)
+			t.Fatal("native install did not preserve the compiled repository policy", err)
 		}
 	}) {
 		return

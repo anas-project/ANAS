@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	_ "embed"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -185,7 +186,7 @@ func (r *localRuntime) Observe(ctx context.Context, request Request, state State
 }
 
 func (r *localRuntime) InstallPackages(ctx context.Context, recipe incushost.Recipe, packages []string) error {
-	if recipe.PackageManager != "apt" || (recipe.Repository != "official" && recipe.Repository != "universe") || !validPackageSubset(recipe, packages) {
+	if recipe.PackageManager != "apt" || recipe.Repository != incushost.IncusRepository || !validPackageSubset(recipe, packages) {
 		return ErrInvalid
 	}
 	// This runs inside the already-audited install.packages effect, after the
@@ -906,7 +907,7 @@ func verifyRootOwnedUnixSocket(path string) error {
 }
 
 func verifyAPTPolicyFiles(recipe incushost.Recipe) error {
-	files, err := OfficialAPTConfigFiles(recipe)
+	files, err := CompiledAPTConfigFiles(recipe)
 	if err != nil {
 		return err
 	}
@@ -951,11 +952,47 @@ func ensureAPTWorkDirs() error {
 	return nil
 }
 
-// OfficialAPTConfigFiles returns the exact root-owned apt configuration files
+// zabblyArchiveKey is the signing key of Zabbly's Incus repository, compiled
+// in rather than fetched: the key that authenticates the Incus packages must
+// not come over the same channel as the packages. Its primary fingerprint is
+// zabblyKeyFingerprint (checked by test against the published value).
+//
+//go:embed zabbly-incus-archive-key.asc
+var zabblyArchiveKey []byte
+
+const (
+	zabblyKeyFingerprint = "4EFC590696CB15B87C73A3AD82CC8797C838DCFD"
+	zabblyOrigin         = "pkgs.zabbly.com"
+	zabblyLTS70URI       = "https://" + zabblyOrigin + "/incus/lts-7.0"
+)
+
+// incusPackages come only from the pinned Incus source; the distribution's
+// own, older incus packages are pinned away so a missing or stale Zabbly
+// index cannot quietly fall back to Incus 6.0.
+var incusPackages = []string{"incus", "incus-base", "incus-client"}
+
+// zabblySource embeds the key in the deb822 Signed-By field. APT verifies
+// signatures as its unprivileged _apt user, which cannot read the root-only
+// /etc/anas/incus-apt tree; an inline key needs no separate readable file and
+// is covered by the same byte-for-byte check as the source itself.
+func zabblySource(codename string) []byte {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "Types: deb\nURIs: %s\nSuites: %s\nComponents: main\nArchitectures: amd64 arm64\nSigned-By:\n", zabblyLTS70URI, codename)
+	for _, line := range strings.Split(strings.TrimRight(string(zabblyArchiveKey), "\n"), "\n") {
+		if line == "" {
+			line = "."
+		}
+		b.WriteString(" " + line + "\n")
+	}
+	return b.Bytes()
+}
+
+// CompiledAPTConfigFiles returns the exact root-owned apt configuration files
 // the host installer must place under /etc/anas/incus-apt before package
 // installation. The backend verifies these files byte-for-byte and never trusts
-// arbitrary existing apt sources.
-func OfficialAPTConfigFiles(recipe incushost.Recipe) ([]APTConfigFile, error) {
+// arbitrary existing apt sources. The distribution's archive supplies every
+// dependency; the pinned Incus 7.0 LTS source supplies only the Incus packages.
+func CompiledAPTConfigFiles(recipe incushost.Recipe) ([]APTConfigFile, error) {
 	// Recipe identity is compiled installation policy, never a caller-selected
 	// source path, package name, suite or repository override.
 	rows, err := incushost.Recipes()
@@ -980,7 +1017,7 @@ func OfficialAPTConfigFiles(recipe incushost.Recipe) ([]APTConfigFile, error) {
 	if recipe.Distribution != "debian" && recipe.Distribution != "ubuntu" {
 		return nil, ErrInvalid
 	}
-	if recipe.Repository != "official" && recipe.Repository != "universe" {
+	if recipe.Repository != incushost.IncusRepository {
 		return nil, ErrInvalid
 	}
 	for _, pkg := range recipe.Packages {
@@ -1014,26 +1051,22 @@ func OfficialAPTConfigFiles(recipe incushost.Recipe) ([]APTConfigFile, error) {
 	var origins []string
 	switch recipe.Distribution {
 	case "debian":
-		if recipe.Repository != "official" {
-			return nil, ErrInvalid
-		}
 		source = []byte(fmt.Sprintf("Types: deb\nURIs: https://deb.debian.org/debian\nSuites: %s %s-updates\nComponents: main\nArchitectures: amd64 arm64\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\nTypes: deb\nURIs: https://deb.debian.org/debian-security\nSuites: %s-security\nComponents: main\nArchitectures: amd64 arm64\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n", recipe.Codename, recipe.Codename, recipe.Codename))
 		origins = []string{"deb.debian.org"}
 	case "ubuntu":
-		if recipe.Repository != "universe" {
-			return nil, ErrInvalid
-		}
 		source = []byte(fmt.Sprintf("Types: deb\nURIs: https://archive.ubuntu.com/ubuntu\nSuites: %s %s-updates %s-backports\nComponents: main restricted universe multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: https://security.ubuntu.com/ubuntu\nSuites: %s-security\nComponents: main restricted universe multiverse\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: https://ports.ubuntu.com/ubuntu-ports\nSuites: %s %s-updates %s-backports %s-security\nComponents: main restricted universe multiverse\nArchitectures: arm64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n", recipe.Codename, recipe.Codename, recipe.Codename, recipe.Codename, recipe.Codename, recipe.Codename, recipe.Codename, recipe.Codename))
 		origins = []string{"archive.ubuntu.com", "security.ubuntu.com", "ports.ubuntu.com"}
 	}
+	source = append(append(source, '\n'), zabblySource(recipe.Codename)...)
+	// Package-specific records take precedence over the general ones below.
 	var pin bytes.Buffer
+	incus := strings.Join(incusPackages, " ")
+	fmt.Fprintf(&pin, "Package: %s\nPin: origin \"%s\"\nPin-Priority: 995\n", incus, zabblyOrigin)
 	for _, origin := range origins {
-		if pin.Len() > 0 {
-			pin.WriteByte('\n')
-		}
-		pin.WriteString("Package: *\nPin: origin \"")
-		pin.WriteString(origin)
-		pin.WriteString("\"\nPin-Priority: 990\n")
+		fmt.Fprintf(&pin, "\nPackage: %s\nPin: origin \"%s\"\nPin-Priority: -1\n", incus, origin)
+	}
+	for _, origin := range origins {
+		fmt.Fprintf(&pin, "\nPackage: *\nPin: origin \"%s\"\nPin-Priority: 990\n", origin)
 	}
 	return []APTConfigFile{
 		{Path: configPath, Body: conf, Mode: 0644},
@@ -1055,7 +1088,7 @@ func WriteAPTConfigFiles(root string, recipe incushost.Recipe) ([]APTConfigFile,
 	if root == "" || !filepath.IsAbs(root) || filepath.Clean(root) != root {
 		return nil, ErrInvalid
 	}
-	files, err := OfficialAPTConfigFiles(recipe)
+	files, err := CompiledAPTConfigFiles(recipe)
 	if err != nil {
 		return nil, err
 	}
