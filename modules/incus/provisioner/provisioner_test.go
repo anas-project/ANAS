@@ -68,6 +68,7 @@ type fakeDaemon struct {
 	importFingerprintOverride string
 	asyncWaits                int
 	projects                  map[string]map[string]string
+	apiExtensions             []string
 	certificates              map[string]certificate
 	networks                  map[string]network
 	profiles                  map[string]profile
@@ -88,8 +89,17 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 		certificates:   map[string]certificate{},
 		networks:       map[string]network{},
 		profiles:       map[string]profile{},
+		// An Incus 6.0 LTS daemon: none of the 7.x restriction extensions.
+		apiExtensions: []string{"projects", "projects_restrictions", "projects_limits_disk"},
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/1.0", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeError(w, 400, "bad server request")
+			return
+		}
+		writeSync(w, map[string]any{"api_extensions": d.apiExtensions})
+	})
 	mux.HandleFunc("/1.0/storage-pools/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" || r.URL.Query().Get("project") != "default" {
 			writeError(w, 400, "bad storage read")
@@ -125,7 +135,7 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 			return
 		}
 		imageType := "virtual-machine"
-		if d.projects[r.URL.Query().Get("project")]["restricted.containers.privilege"] == "unprivileged" {
+		if d.projects[r.URL.Query().Get("project")]["limits.virtual-machines"] == "0" {
 			imageType = "container"
 		}
 		record := imageRecord{Fingerprint: pin, Architecture: "x86_64", Type: imageType}
@@ -277,6 +287,18 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 		}
 	})
 	mux.HandleFunc("/1.0/certificates", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			if r.URL.Query().Get("recursion") != "1" {
+				writeError(w, 400, "bad certificate list")
+				return
+			}
+			list := []certificate{}
+			for _, cert := range d.certificates {
+				list = append(list, cert)
+			}
+			writeSync(w, list)
+			return
+		}
 		var body certificate
 		json.NewDecoder(r.Body).Decode(&body)
 		raw, _ := base64.StdEncoding.DecodeString(body.Certificate)
@@ -348,7 +370,12 @@ func (d *fakeDaemon) clientFor(t *testing.T) *client {
 func testLease(t *testing.T, isolation string) lease {
 	t.Helper()
 	certPEM, _ := selfSigned(t, "consumer")
+	parsed, err := decodeCertificate(certPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return lease{
+		Credential:        certificateFingerprint(parsed),
 		Consumer:          "forgejo",
 		Sandbox:           "anas-forgejo-runners",
 		StoragePool:       "default",
@@ -389,8 +416,16 @@ func TestEnsureCreatesRestrictedQuotaedProject(t *testing.T) {
 			t.Errorf("%s = %q, want %q", key, config[key], want)
 		}
 	}
-	if config["restricted.containers.privilege"] != "" {
-		t.Errorf("vm tier should not set a container privilege restriction")
+	// The VM tier refuses containers outright and still never accepts a
+	// privileged one.
+	for key, want := range map[string]string{
+		"limits.containers":               "0",
+		"limits.virtual-machines":         "8",
+		"restricted.containers.privilege": "unprivileged",
+	} {
+		if config[key] != want {
+			t.Errorf("%s = %q, want %q", key, config[key], want)
+		}
 	}
 }
 
@@ -452,7 +487,12 @@ func TestEnsureFailsClosedWhenProjectReadsBackUnrestricted(t *testing.T) {
 	mux.HandleFunc("/1.0/storage-pools/", func(w http.ResponseWriter, r *http.Request) {
 		writeSync(w, storagePool{Name: "default", Driver: "btrfs", Status: "Created"})
 	})
-
+	mux.HandleFunc("/1.0/certificates", func(w http.ResponseWriter, r *http.Request) {
+		writeSync(w, []certificate{})
+	})
+	mux.HandleFunc("/1.0", func(w http.ResponseWriter, r *http.Request) {
+		writeSync(w, map[string]any{"api_extensions": []string{}})
+	})
 	mux.HandleFunc("/1.0/projects/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			writeSync(w, nil)
@@ -482,7 +522,12 @@ func TestEnsureFailsClosedWithoutQuota(t *testing.T) {
 	mux.HandleFunc("/1.0/storage-pools/", func(w http.ResponseWriter, r *http.Request) {
 		writeSync(w, storagePool{Name: "default", Driver: "btrfs", Status: "Created"})
 	})
-
+	mux.HandleFunc("/1.0/certificates", func(w http.ResponseWriter, r *http.Request) {
+		writeSync(w, []certificate{})
+	})
+	mux.HandleFunc("/1.0", func(w http.ResponseWriter, r *http.Request) {
+		writeSync(w, map[string]any{"api_extensions": []string{}})
+	})
 	mux.HandleFunc("/1.0/projects/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			writeSync(w, nil)
@@ -794,7 +839,8 @@ func TestVerifyProfileRefusesAnythingBeyondTheTwoDevices(t *testing.T) {
 	bridge := computeclient.NetworkName(l.Sandbox)
 	good := map[string]device{
 		"root": {"type": "disk", "path": "/", "pool": l.StoragePool},
-		"eth0": {"type": "nic", "network": bridge},
+		"eth0": {"type": "nic", "network": bridge,
+			"security.mac_filtering": "true", "security.ipv4_filtering": "true", "security.ipv6_filtering": "true"},
 	}
 	for name, devices := range map[string]map[string]device{
 		"an extra device": {

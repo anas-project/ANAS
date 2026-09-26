@@ -19,14 +19,15 @@ type dockerClient struct {
 }
 
 type dockerNetwork struct {
-	ID         string            `json:"Id"`
-	Name       string            `json:"Name"`
-	Driver     string            `json:"Driver"`
-	Internal   bool              `json:"Internal"`
-	EnableIPv6 bool              `json:"EnableIPv6"`
-	ConfigOnly bool              `json:"ConfigOnly"`
-	Labels     map[string]string `json:"Labels"`
-	Options    map[string]string `json:"Options"`
+	ID         string                     `json:"Id"`
+	Name       string                     `json:"Name"`
+	Driver     string                     `json:"Driver"`
+	Internal   bool                       `json:"Internal"`
+	EnableIPv6 bool                       `json:"EnableIPv6"`
+	ConfigOnly bool                       `json:"ConfigOnly"`
+	Labels     map[string]string          `json:"Labels"`
+	Options    map[string]string          `json:"Options"`
+	Containers map[string]json.RawMessage `json:"Containers"`
 	IPAM       struct {
 		Config []struct {
 			Subnet  string `json:"Subnet"`
@@ -60,8 +61,11 @@ func (c *dockerClient) httpClient() *http.Client {
 }
 
 func (c *dockerClient) do(ctx context.Context, method, path string, body any, out any) (result error) {
-	if c == nil || ctx == nil || !strings.HasPrefix(path, "/v1.44/networks") || strings.ContainsAny(path, "\x00\r\n#") {
+	if c == nil || ctx == nil || !allowedDockerNetworkRequest(method, path) {
 		return ErrInvalid
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	var reader io.Reader
 	if body != nil {
@@ -99,6 +103,9 @@ func (c *dockerClient) do(ctx context.Context, method, path string, body any, ou
 	if err != nil || len(raw) > maxIncusResponseBytes {
 		return ErrExternalEffects
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if res.StatusCode == http.StatusNotFound {
 		var failure struct {
 			Message string `json:"message"`
@@ -133,8 +140,33 @@ func (c *dockerClient) do(ctx context.Context, method, path string, body any, ou
 
 func (c *dockerClient) inspectNetwork(ctx context.Context, name string) (dockerNetwork, error) {
 	var out dockerNetwork
-	err := c.do(ctx, "GET", "/v1.44/networks/"+url.PathEscape(name), nil, &out)
+	var raw json.RawMessage
+	if err := c.do(ctx, "GET", "/v1.44/networks/"+url.PathEscape(name), nil, &raw); err != nil {
+		return out, err
+	}
+	err := decodeInventoryObject(raw, &out, "Id", "Name", "Driver", "Internal", "EnableIPv6", "ConfigOnly", "Labels", "Options", "IPAM", "Containers")
 	return out, err
+}
+
+// This root client can inspect/create/delete its one managed network. A
+// prefix check would also admit connect, disconnect and prune. Those actions
+// must never be reachable from host provisioning, even during cleanup.
+func allowedDockerNetworkRequest(method, path string) bool {
+	switch method {
+	case http.MethodGet:
+		if path == "/v1.44/networks" || path == "/v1.44/networks/"+ControlNetworkName {
+			return true
+		}
+		id, ok := strings.CutPrefix(path, "/v1.44/networks/")
+		return ok && digestPattern.MatchString(id)
+	case http.MethodPost:
+		return path == "/v1.44/networks/create"
+	case http.MethodDelete:
+		id, ok := strings.CutPrefix(path, "/v1.44/networks/")
+		return ok && digestPattern.MatchString(id)
+	default:
+		return false
+	}
 }
 
 func (c *dockerClient) createControlNetwork(ctx context.Context, plan ControlNetworkPlan) error {

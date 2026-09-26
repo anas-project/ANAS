@@ -80,6 +80,7 @@ packages:
   sets:
     - action: install
       packages:
+        - apparmor
         - ca-certificates
         - coreutils
         - dbus
@@ -133,6 +134,13 @@ files:
     content: |-
 %s
   - generator: dump
+    path: /usr/local/libexec/anas-forgejo-runner-input
+    mode: "0755"
+    uid: "0"
+    gid: "0"
+    content: |-
+%s
+  - generator: dump
     path: /usr/local/libexec/anas-forgejo-one-job
     mode: "0755"
     uid: "0"
@@ -155,6 +163,27 @@ files:
 %s
   - generator: dump
     path: /usr/lib/tmpfiles.d/anas-podman.conf
+    mode: "0644"
+    uid: "0"
+    gid: "0"
+    content: |-
+%s
+  - generator: dump
+    path: /usr/share/anas/forgejo-runner/podman.apparmor
+    mode: "0644"
+    uid: "0"
+    gid: "0"
+    content: |-
+%s
+  - generator: dump
+    path: /etc/systemd/system/anas-forgejo-podman-policy.service
+    mode: "0644"
+    uid: "0"
+    gid: "0"
+    content: |-
+%s
+  - generator: dump
+    path: /etc/systemd/system/apparmor.service.d/anas-runner.conf
     mode: "0644"
     uid: "0"
     gid: "0"
@@ -187,6 +216,8 @@ actions:
       # These two directories contain only public configuration/executables.
       install -d -o root -g root -m 0755 /etc/forgejo-runner /usr/local/libexec
       install -d -o root -g root -m 0755 /usr/lib/systemd/user /etc/systemd/system/user@1002.service.d
+      install -d -o root -g root -m 0755 /etc/systemd/system/apparmor.service.d
+      install -d -o root -g root -m 0755 /usr/share/anas /usr/share/anas/forgejo-runner
       groupadd --gid 1003 actions-engine
       useradd --uid 1001 --create-home --shell /usr/sbin/nologin runner-agent
       useradd --uid 1002 --gid actions-engine --no-user-group --create-home --shell /usr/sbin/nologin runner-engine
@@ -204,18 +235,22 @@ actions:
       install -d -o runner-engine -g actions-engine -m 0700 /home/runner-engine/.config /home/runner-engine/.config/systemd /home/runner-engine/.config/systemd/user /home/runner-engine/.config/systemd/user/sockets.target.wants
       ln -s /usr/lib/systemd/user/anas-podman.socket /home/runner-engine/.config/systemd/user/sockets.target.wants/anas-podman.socket
       chown -h runner-engine:actions-engine /home/runner-engine/.config/systemd/user/sockets.target.wants/anas-podman.socket
-%s`, arch, vmPackages, vmFiles, indentLiteral(sources.runnerStart), indentLiteral(sources.oneJob), indentLiteral(sources.podmanService), indentLiteral(sources.podmanSocket), indentLiteral(sources.podmanTmpfiles), indentLiteral(sources.engineUserManager), indentLiteral(sources.runnerConfig), vmTarget)
+%s`, arch, vmPackages, vmFiles, indentLiteral(sources.runnerStart), indentLiteral(sources.runnerInput), indentLiteral(sources.oneJob), indentLiteral(sources.podmanService), indentLiteral(sources.podmanSocket), indentLiteral(sources.podmanTmpfiles), indentLiteral(sources.podmanAppArmor), indentLiteral(sources.podmanPolicyService), indentLiteral(sources.apparmorLoader), indentLiteral(sources.engineUserManager), indentLiteral(sources.runnerConfig), vmTarget)
 	return []byte(body), nil
 }
 
 type forgejoRunnerImageSources struct {
-	runnerStart       string
-	oneJob            string
-	podmanService     string
-	podmanSocket      string
-	podmanTmpfiles    string
-	engineUserManager string
-	runnerConfig      string
+	runnerStart         string
+	runnerInput         string
+	oneJob              string
+	podmanService       string
+	podmanSocket        string
+	podmanTmpfiles      string
+	podmanAppArmor      string
+	podmanPolicyService string
+	apparmorLoader      string
+	engineUserManager   string
+	runnerConfig        string
 }
 
 func readForgejoRunnerImageSources(sourceDir string) (forgejoRunnerImageSources, error) {
@@ -246,6 +281,10 @@ func readForgejoRunnerImageSources(sourceDir string) (forgejoRunnerImageSources,
 	if err != nil {
 		return forgejoRunnerImageSources{}, err
 	}
+	runnerInput, err := read("anas-forgejo-runner-input")
+	if err != nil {
+		return forgejoRunnerImageSources{}, err
+	}
 	oneJob, err := read("anas-forgejo-one-job")
 	if err != nil {
 		return forgejoRunnerImageSources{}, err
@@ -262,6 +301,18 @@ func readForgejoRunnerImageSources(sourceDir string) (forgejoRunnerImageSources,
 	if err != nil {
 		return forgejoRunnerImageSources{}, err
 	}
+	podmanAppArmor, err := read("anas-forgejo-podman.apparmor")
+	if err != nil {
+		return forgejoRunnerImageSources{}, err
+	}
+	podmanPolicyService, err := read("anas-forgejo-podman-policy.service")
+	if err != nil {
+		return forgejoRunnerImageSources{}, err
+	}
+	apparmorLoader, err := read("anas-apparmor-loader.conf")
+	if err != nil {
+		return forgejoRunnerImageSources{}, err
+	}
 	engineUserManager, err := read("anas-engine-user.conf")
 	if err != nil {
 		return forgejoRunnerImageSources{}, err
@@ -270,7 +321,7 @@ func readForgejoRunnerImageSources(sourceDir string) (forgejoRunnerImageSources,
 	if err != nil {
 		return forgejoRunnerImageSources{}, err
 	}
-	return forgejoRunnerImageSources{runnerStart: runnerStart, oneJob: oneJob, podmanService: podmanService, podmanSocket: podmanSocket, podmanTmpfiles: podmanTmpfiles, engineUserManager: engineUserManager, runnerConfig: runnerConfig}, nil
+	return forgejoRunnerImageSources{runnerStart: runnerStart, runnerInput: runnerInput, oneJob: oneJob, podmanService: podmanService, podmanSocket: podmanSocket, podmanTmpfiles: podmanTmpfiles, podmanAppArmor: podmanAppArmor, podmanPolicyService: podmanPolicyService, apparmorLoader: apparmorLoader, engineUserManager: engineUserManager, runnerConfig: runnerConfig}, nil
 }
 
 func indentLiteral(s string) string {

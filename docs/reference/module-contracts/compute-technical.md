@@ -67,7 +67,8 @@ Runner 为每个 Resource 生成一对稳定的客户端证书与私钥，作为
 启动前调用 Provider 的幂等 `ensure`。Provider 必须：
 
 1. 校验 endpoint 可达，且 server certificate 与固定 fingerprint 一致，失败即 fail closed；
-2. 确保 `sandbox` 指定的 project 存在且 `restricted=true`；
+2. 确保 `sandbox` 指定的 project 存在且 `restricted=true`，并且只属于本租约：属于其他租约、或能被
+   其他受限凭据操作的 project 必须拒绝，不得接管（sandbox 名在每个工作区都相同，不能证明归属）；
 3. 把 `quota` 写到 project 自身的限制上，而不是依赖调用方自觉；
 4. 在 default project 建立每租约独立的受管 bridge，在消费者 project 建立租约 profile，并把 profile **读回**校验：它必须恰好只有一块
    根磁盘（在受管存储池上、无 host source）和一块接到该受管 network 的 NIC；

@@ -1,0 +1,8 @@
+# Executable-scoped namespace permission for the one-job engine.
+# The guest ordinarily has no inner MAC confinement. flags=(unconfined)
+# preserves that inner baseline; the host's stacked Incus policy stays enforced.
+# It neither removes that outer policy nor changes a host kernel setting.
+abi <abi/4.0>,
+profile anas-forgejo-podman /usr/bin/podman flags=(unconfined) {
+  userns,
+}

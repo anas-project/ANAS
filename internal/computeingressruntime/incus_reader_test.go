@@ -109,6 +109,10 @@ func newIncusReaderFixture(t *testing.T, iface string) *incusReaderFixture {
 		kind = "virtual-machine"
 	}
 	f.values["/1.0/instances/anas-fj-job1?project=anas-runners"] = map[string]any{"name": f.request.InstanceID, "project": f.grant.Project, "type": kind, "status": "Running", "status_code": 103, "last_used_at": time.Now().Add(-time.Minute).UTC(), "config": map[string]string{"volatile.uuid": "11111111-1111-4111-8111-111111111111", "volatile.uuid.generation": "22222222-2222-4222-8222-222222222222", "volatile.eth0.hwaddr": "00:16:3e:01:02:03", "user.anas.managed": "true", "user.anas.workload": f.request.WorkloadID}, "expanded_config": map[string]string{"security.privileged": "false"}, "expanded_devices": map[string]map[string]string{"root": {"type": "disk", "path": "/", "pool": "default"}, "eth0": {"type": "nic", "network": bridge}}}
+	instance := f.values["/1.0/instances/anas-fj-job1?project=anas-runners"].(map[string]any)
+	for _, key := range []string{"security.mac_filtering", "security.ipv4_filtering", "security.ipv6_filtering"} {
+		instance["expanded_devices"].(map[string]map[string]string)["eth0"][key] = "true"
+	}
 	f.values["/1.0/instances/anas-fj-job1/state?project=anas-runners"] = map[string]any{"status": "Running", "status_code": 103, "network": map[string]any{"eth0": map[string]any{"state": "up", "type": "broadcast", "hwaddr": "00:16:3e:01:02:03", "host_name": "vethguest0", "addresses": []map[string]string{{"family": "inet", "scope": "global", "address": "10.42.0.2", "netmask": "24"}}}}}
 	f.values["/1.0/networks/"+bridge+"/leases?project=default"] = []map[string]string{{"address": "10.42.0.2", "hwaddr": "00:16:3e:01:02:03", "type": "dynamic"}}
 	f.config = IncusObserverConfig{Endpoint: f.server.URL, ServerCertPEM: serverPEM, ClientCertPEM: clientPEM, ClientKeyPEM: keyPEM, ServerVersion: "7.3.0", Authorizations: []*computeingress.Authorization{f.grant}}

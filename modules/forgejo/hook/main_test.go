@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -383,7 +384,7 @@ func forgejoRenderEnv() map[string]string {
 func TestAfterStartPassesOIDCSecretOnlyThroughStdin(t *testing.T) {
 	original := runContainerHelper
 	defer func() { runContainerHelper = original }()
-	runContainerHelper = func(payload []byte, name string, args ...string) ([]byte, error) {
+	runContainerHelper = func(_ context.Context, payload []byte, name string, args ...string) ([]byte, error) {
 		joined := strings.Join(append([]string{name}, args...), " ")
 		if strings.Contains(joined, "do-not-leak") {
 			t.Fatal("OIDC secret leaked into docker argv")
@@ -409,24 +410,29 @@ func TestAfterStartPassesOIDCSecretOnlyThroughStdin(t *testing.T) {
 func TestActionsAccountPasswordPassesOnlyThroughStdin(t *testing.T) {
 	original := runContainerHelper
 	defer func() { runContainerHelper = original }()
-	runContainerHelper = func(payload []byte, name string, args ...string) ([]byte, error) {
+	runContainerHelper = func(_ context.Context, payload []byte, name string, args ...string) ([]byte, error) {
 		joined := strings.Join(append([]string{name}, args...), " ")
-		if strings.Contains(joined, "actions-secret") {
+		if strings.Contains(joined, "actions-secret") || strings.Contains(joined, "owner-secret") {
 			t.Fatal("Actions controller password leaked into docker argv")
 		}
-		var input localAdminInput
+		var input struct {
+			ControllerPassword string `json:"controller_password"`
+			ManagerUsername    string `json:"manager_username"`
+			ManagerPassword    string `json:"manager_password"`
+			Enabled            bool   `json:"enabled"`
+		}
 		if err := json.Unmarshal(payload, &input); err != nil {
 			t.Fatal(err)
 		}
-		if input.Username != "anas_actions_controller" || input.Password != "actions-secret" {
-			t.Fatalf("input = %+v", input)
+		if input.ManagerUsername != "admin_forgejo" || input.ControllerPassword != "actions-secret" || input.ManagerPassword != "owner-secret" || !input.Enabled {
+			t.Fatal("typed account input is not bound to the distinct managed owner")
 		}
 		return nil, nil
 	}
 	if err := reconcileActionsAccount(map[string]string{
 		"CONTAINER_PREFIX": "anas_", "FORGEJO_ACTIONS_ENABLED": "true",
 		"FORGEJO_ACTIONS_CONTROLLER_PASSWORD": "actions-secret",
-	}); err != nil {
+	}, localAdminInput{Username: "admin_forgejo", Password: "owner-secret"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -479,10 +485,20 @@ func TestComposeKeepsTheComputeLeaseOutOfTheForgejoApp(t *testing.T) {
 func TestLocalAccountApplyPassesPasswordOnlyThroughStdin(t *testing.T) {
 	original := runContainerHelper
 	defer func() { runContainerHelper = original }()
-	runContainerHelper = func(payload []byte, name string, args ...string) ([]byte, error) {
+	runContainerHelper = func(_ context.Context, payload []byte, name string, args ...string) ([]byte, error) {
 		joined := strings.Join(append([]string{name}, args...), " ")
 		if strings.Contains(joined, "recovery-secret") {
 			t.Fatal("local recovery password leaked into docker argv")
+		}
+		if args[len(args)-1] == "actions-account" {
+			var input struct {
+				ManagerUsername string `json:"manager_username"`
+				ManagerPassword string `json:"manager_password"`
+			}
+			if json.Unmarshal(payload, &input) != nil || input.ManagerUsername != "admin_forgejo" || input.ManagerPassword != "recovery-secret" {
+				t.Fatal("separate owner credentials not delivered privately")
+			}
+			return nil, nil
 		}
 		var input localAdminInput
 		if err := json.Unmarshal(payload, &input); err != nil {
@@ -494,7 +510,7 @@ func TestLocalAccountApplyPassesPasswordOnlyThroughStdin(t *testing.T) {
 		return nil, nil
 	}
 	req := hookRequest{
-		Module: "forgejo", Phase: "local_account_apply", Env: map[string]string{"CONTAINER_PREFIX": "anas_"},
+		Module: "forgejo", Phase: "local_account_apply", Env: map[string]string{"CONTAINER_PREFIX": "anas_", "FORGEJO_ACTIONS_ENABLED": "true", "FORGEJO_ACTIONS_CONTROLLER_PASSWORD": "controller-secret"},
 		Secrets:      map[string]string{"candidate": "recovery-secret"},
 		LocalAccount: &localAccountOperation{Handler: "apply-forgejo-break-glass", AccountID: "break_glass", Username: "admin_forgejo", CandidateSecretKey: "candidate"},
 	}

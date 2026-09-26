@@ -177,6 +177,10 @@ func executeIncusProvision(ctx context.Context, call *Invocation, journal AuditJ
 			}
 			value, changed = response, false
 		}
+	} else if call.request.Action == ActionForwardingWithdraw {
+		value, runErr = executeForwardingWithdrawal(ctx, call.request.Parameters)
+	} else if call.request.Action == ActionForwardingPlan || call.request.Action == ActionForwardingApply {
+		value, runErr = executeForwardingPermission(ctx, call, journal, release)
 	} else if call.request.Action == ActionObserverPlan || call.request.Action == ActionObserverApply {
 		value, runErr = executeObserverConfiguration(ctx, call, journal, release)
 	} else if spec.PlanFor != "" {

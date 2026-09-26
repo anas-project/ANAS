@@ -488,11 +488,7 @@ func (a *app) execute(actions []string) error {
 			return err
 		}
 		if err := a.each(work, func(run moduleRun) error {
-			if run.mod.RuntimeType != "compose" {
-				return nil
-			}
-			args := append([]string{"up", "-d", "--remove-orphans"}, run.services...)
-			return a.runCompose(run.dir, run.mod.Name, run.mod.ComposeFile, run.env, args...)
+			return a.startModuleContainers(run)
 		}); err != nil {
 			return err
 		}
@@ -602,6 +598,11 @@ func (a *app) stopRelease(release string, jsonMode bool) error {
 	for i := len(modules) - 1; i >= 0; i-- {
 		name := modules[i]
 		emitProgress(jsonMode, "stop-containers", int64(len(modules)-i), total, "modules")
+		if err := a.beforeStopModule(release, name); err != nil {
+			// Do not tear down dependencies or the host LAN after unconfirmed
+			// consumer cleanup, including snapshot/whole-release operations.
+			return errors.Join(append(stopErrors, fmt.Errorf("before stopping %s: %w", name, err))...)
+		}
 		dir := filepath.Join(release, name)
 		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("stop %s: %w", name, err))
@@ -667,6 +668,9 @@ func (a *app) stopRemoved(release string) error {
 	for _, name := range a.releaseModules(release) {
 		if contains(a.order, name) {
 			continue
+		}
+		if err := a.beforeStopModule(release, name); err != nil {
+			return errors.Join(append(stopErrors, fmt.Errorf("before stopping removed module %s: %w", name, err))...)
 		}
 		dir := filepath.Join(release, name)
 		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
@@ -1059,8 +1063,15 @@ func (a *app) calculate() error {
 	if err := a.validateModules(); err != nil {
 		return err
 	}
+	resources := a.newResourceMaterializer()
 	for _, name := range a.order {
 		mod := a.reg[name]
+		// Dependency resolution has placed the Provider before this consumer.
+		// Its calculate output (for example the actual target architecture from
+		// an installed host bundle) must exist before freezing resource images.
+		if err := resources.materialize(name); err != nil {
+			return preconditionErrorf("resource_invalid", "%s", err.Error())
+		}
 		if err := a.publishModuleResources(name); err != nil {
 			return err
 		}
@@ -1252,6 +1263,18 @@ type moduleRun struct {
 	dir      string
 	env      map[string]string
 	services []string
+}
+
+func (a *app) startModuleContainers(run moduleRun) error {
+	// services() excludes Contract operation containers and disabled runtime
+	// services. An empty selection means NONE, not Compose's default ALL.
+	// Keep the module's resource/credential/ready barriers in the caller;
+	// only the unintended container startup is suppressed here.
+	if run.mod.RuntimeType != "compose" || len(run.services) == 0 {
+		return nil
+	}
+	args := append([]string{"up", "-d", "--remove-orphans"}, run.services...)
+	return a.runCompose(run.dir, run.mod.Name, run.mod.ComposeFile, run.env, args...)
 }
 
 func (a *app) each(work string, fn func(moduleRun) error) error {

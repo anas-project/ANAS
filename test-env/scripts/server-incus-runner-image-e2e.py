@@ -23,6 +23,57 @@ SUPPLY = Path('/run/anas/compute-image-supply')
 PROJECT = 'anas-runner-image'
 POOL = 'anas-runner-image-btrfs'
 STAGING_HEADROOM = 16 << 20
+RUNNER_PACKAGE = 'github.com/anas-project/ANAS/internal/computeclient'
+RUNNER_TEST = 'TestNativeBakedForgejoRunnerImage'
+REQUIRED_RUNNER_TESTS = frozenset({RUNNER_TEST, *(RUNNER_TEST+'/'+name for name in (
+    'provider-namespace-fence', 'real-runner-binary', 'one-job-interface',
+    'runner-config-readable', 'engine-config-owned', 'guest-podman-namespace-policy',
+    'rootless-engine-api', 'rootless-user-session', 'rootless-oci-exec-limits',
+))})
+
+
+def runner_events_passed(events, return_code):
+    """Accept one complete execution, not a set of success-looking labels.
+
+    This pure check is also usable for independent archived-evidence review.
+    It does not execute anything, change a report or return arbitrary test text.
+    """
+    if type(return_code) is not int or return_code != 0 or not isinstance(events, list):
+        return False
+    runs, passes = set(), set()
+    starts, terminal = 0, False
+    for event in events:
+        if not isinstance(event, dict) or event.get('Package') != RUNNER_PACKAGE or terminal:
+            return False
+        action, name = event.get('Action'), event.get('Test')
+        if action not in ('start', 'run', 'pause', 'cont', 'output', 'pass'):
+            return False  # Includes fail, skip and malformed/unknown events.
+        if 'Test' in event and (not isinstance(name, str) or name not in REQUIRED_RUNNER_TESTS):
+            return False
+        if action == 'start':
+            if name is not None or starts or runs:
+                return False
+            starts += 1
+        elif action == 'run':
+            if name is None or name in runs or RUNNER_TEST in passes:
+                return False
+            if name != RUNNER_TEST and RUNNER_TEST not in runs:
+                return False
+            runs.add(name)
+        elif action == 'pass':
+            if name is None:
+                if passes != REQUIRED_RUNNER_TESTS:
+                    return False
+                terminal = True
+            else:
+                if name not in runs or name in passes:
+                    return False
+                if name == RUNNER_TEST and passes != REQUIRED_RUNNER_TESTS - {RUNNER_TEST}:
+                    return False
+                passes.add(name)
+        elif action in ('pause', 'cont') and (name not in runs or name in passes):
+            return False
+    return terminal and runs == passes == REQUIRED_RUNNER_TESTS
 
 
 def require_vm(identity):
@@ -170,18 +221,14 @@ def main(args):
                  'ServerCertB64': encode(server), 'ClientCertB64': encode(ROOT/'consumer.crt'), 'ClientKeyB64': encode(ROOT/'consumer.key'),
                  'ImageAllowlist': [pin], 'MaxInstances': 1, 'CPU': 1, 'MemoryMiB': 768, 'DiskGiB': 8}
         (ROOT/'lease.json').write_text(json.dumps(lease))
-        package = 'github.com/anas-project/ANAS/internal/computeclient'
+        package = RUNNER_PACKAGE
         with (report/'runner-image.jsonl').open('x') as output:
             result = subprocess.run([args.test2json, '-t', '-p', package, args.tests, '-test.v=test2json', '-test.count=1',
                                      '-test.timeout=6m', '-test.run=^TestNativeBakedForgejoRunnerImage$'],
                                     env={'PATH': env['PATH'], 'GOMAXPROCS': '1', 'ANAS_REQUIRE_INCUS_RUNNER_IMAGE_NATIVE': '1'},
                                     stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, timeout=380)
         events = [json.loads(line) for line in (report/'runner-image.jsonl').read_text().splitlines()]
-        required = {'TestNativeBakedForgejoRunnerImage', *('TestNativeBakedForgejoRunnerImage/'+x for x in
-                    ('provider-namespace-fence', 'real-runner-binary', 'one-job-interface', 'runner-config-readable', 'engine-config-owned', 'rootless-engine-api', 'rootless-user-session', 'rootless-oci-exec-limits'))}
-        passed = {e.get('Test') for e in events if e.get('Action') == 'pass'}
-        if (result.returncode or any(e.get('Action') in ('fail', 'skip') for e in events) or not required.issubset(passed)
-                or not any(e.get('Action') == 'pass' and not e.get('Test') for e in events)):
+        if not runner_events_passed(events, result.returncode):
             raise RuntimeError('baked Runner smoke failed, skipped or omitted a required check')
         emit('baked_runner_boot_and_engine_smoke', real_forgejo_job=False)
     finally:

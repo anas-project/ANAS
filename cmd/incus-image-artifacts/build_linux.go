@@ -68,7 +68,7 @@ func (p *distroProgram) Build(ctx context.Context, request computeimage.Artifact
 	command.Args[0] = "distrobuilder"
 	command.ExtraFiles = []*os.File{p.file}
 	command.Dir = filepath.Dir(request.RecipeFile)
-	command.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LANG=C.UTF-8", "LC_ALL=C.UTF-8", "HOME=" + command.Dir, "TMPDIR=" + request.CacheDirectory}
+	command.Env = distrobuilderEnvironment()
 	// Keep only closed diagnostic stage labels. Raw builder records never enter
 	// the metadata protocol, files, error strings or deployment logs.
 	observation := &buildObservation{}
@@ -82,6 +82,9 @@ func (p *distroProgram) Build(ctx context.Context, request computeimage.Artifact
 	}
 	command.WaitDelay = 5 * time.Second
 	if err := command.Run(); err != nil {
+		return observation.failure()
+	}
+	if observation.sourceWasUnverified() {
 		return observation.failure()
 	}
 	_ = observation.failure() // Erase any unterminated output after success too.

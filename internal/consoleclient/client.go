@@ -303,9 +303,9 @@ func safeToken(value string) bool {
 }
 
 func validIncusPhase(value string) bool {
-	return value == "install" || value == "configure" || value == "enroll" || value == "uninstall" || value == "observer"
+	return value == "install" || value == "configure" || value == "enroll" || value == "uninstall" || value == "observer" || value == "forwarding-permission"
 }
 
 func validIncusApplyAction(value string) bool {
-	return value == "incus.install" || value == "incus.configure" || value == "incus.enroll" || value == "incus.uninstall" || value == "incus.image-prune" || value == "incus.ingress.observer"
+	return value == "incus.install" || value == "incus.configure" || value == "incus.enroll" || value == "incus.uninstall" || value == "incus.image-prune" || value == "incus.ingress.observer" || value == "incus.forwarding.permission"
 }

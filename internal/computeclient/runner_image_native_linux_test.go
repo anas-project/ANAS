@@ -140,6 +140,59 @@ func TestNativeBakedForgejoRunnerImage(t *testing.T) {
 	}) {
 		return
 	}
+	if !t.Run("guest-podman-namespace-policy", func(t *testing.T) {
+		const path = "/usr/share/anas/forgejo-runner/podman.apparmor"
+		body, err := guest("/usr/bin/stat", "-c", "%u:%g:%a:%h", path)
+		if err != nil || strings.TrimSpace(string(body)) != "0:0:644:1" {
+			t.Fatal("guest namespace permission is not a fixed root-owned public asset", err)
+		}
+		body, err = guest("/usr/bin/cat", path)
+		if err != nil || !strings.Contains(string(body), "profile anas-forgejo-podman /usr/bin/podman flags=(unconfined) {") ||
+			!strings.Contains(string(body), "\n  userns,\n") {
+			t.Fatal("expected executable-scoped guest namespace policy is missing", err)
+		}
+		// Older kernels without this mediation retain their existing behavior;
+		// the policy is not installed through the global AppArmor autoloader.
+		// On a mediating host, the actual boot loader must already have run
+		// before the engine user manager. The test does not load it itself.
+		mediation, readErr := os.ReadFile("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
+		if readErr != nil && !os.IsNotExist(readErr) {
+			t.Fatal("host namespace mediation is unknown", readErr)
+		}
+		if readErr == nil && strings.TrimSpace(string(mediation)) == "1" {
+			for _, unit := range []string{"apparmor.service", "anas-forgejo-podman-policy.service"} {
+				body, err = guest("/usr/bin/systemctl", "show", unit,
+					"--property=ActiveState,SubState,Result,ExecMainStatus,ConditionResult")
+				if err != nil {
+					t.Fatal("read actual guest policy loader result", unit, err)
+				}
+				for _, line := range []string{"ActiveState=active", "SubState=exited", "Result=success", "ExecMainStatus=0", "ConditionResult=yes"} {
+					if !strings.Contains("\n"+string(body), "\n"+line+"\n") {
+						t.Fatal("guest policy loader did not complete before engine admission", unit, line)
+					}
+				}
+			}
+			body, err = guest("/usr/bin/systemctl", "show", "apparmor.service", "--property=ExecStart,ExecReload")
+			if err != nil || strings.Contains(string(body), "apparmor.systemd") ||
+				strings.Count(string(body), "argv[]=/usr/sbin/apparmor_parser --replace --skip-cache "+path) != 2 {
+				t.Fatal("package boot/reload loader may introduce unrelated namespace grants", err)
+			}
+			// Preserve the product executor's rule that failing guest output is
+			// never returned. A fixed native-only probe validates the exact errno
+			// diagnostic inside the guest and emits one closed success marker.
+			const denyProbe = `result=$(/usr/bin/unshare --user --map-root-user /usr/bin/true 2>&1); code=$?; [ "$code" -eq 1 ] && [ "$result" = 'unshare: unshare failed: Permission denied' ] && printf 'userns-denied\n'`
+			body, err = guest("/usr/sbin/runuser", "-u", "runner-agent", "--", "/usr/bin/env", "-i", "PATH=/usr/bin:/bin", "LC_ALL=C", "/bin/sh", "-c", denyProbe)
+			if err != nil || string(body) != "userns-denied\n" {
+				t.Fatal("generic guest namespace refusal was not confirmed")
+			}
+			after, err := os.ReadFile("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
+			if err != nil || string(after) != string(mediation) {
+				t.Fatal("guest setup changed the outer host restriction")
+			}
+		}
+	}) {
+		return
+	}
 	engineReady := t.Run("rootless-engine-api", func(t *testing.T) {
 		ready, done := context.WithTimeout(ctx, 35*time.Second)
 		defer done()

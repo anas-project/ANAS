@@ -62,7 +62,8 @@ func run() error {
 	// A fresh disabled deployment has no compute credential and nothing to
 	// clean. After an enabled deployment is switched off, the retained settings
 	// let this one-shot container remove its registrations and VMs before it
-	// exits. The managed service account is retained for a later re-enable.
+	// exits. The Module may invalidate the managed account password only after
+	// it independently observes this disabled cleanup process exit successfully.
 	if !cfg.Enabled && cfg.LeaseError != nil {
 		state, loadErr := store.Load()
 		if loadErr != nil {

@@ -44,6 +44,8 @@ func (*daemonHostFixture) IssueConfirmation(context.Context, string, string, str
 func (*daemonHostFixture) InvokeConfirmed(context.Context, string, string, string, string, json.RawMessage, hostconfirmation.RawToken, string) (consolejobs.CreateResult, error) {
 	return consolejobs.CreateResult{}, nil
 }
+func (*daemonHostFixture) WithdrawForwarding(context.Context, string, string) error { return nil }
+
 func (*daemonHostFixture) InvokeImagePruneConfirmed(context.Context, string, string, string, hostconfirmation.RawToken, string) (consolejobs.CreateResult, error) {
 	return consolejobs.CreateResult{}, nil
 }

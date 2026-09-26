@@ -20,9 +20,10 @@ const systemdUnitInterface = systemdName + ".Unit"
 const systemdServiceInterface = systemdName + ".Service"
 
 type systemdBusSource struct {
-	conn  *dbus.Conn
-	unit  dbus.BusObject
-	owner string // Destination on the kernel-authenticated, direct PID 1 connection.
+	conn      *dbus.Conn
+	unit      dbus.BusObject
+	owner     string                // Destination on the kernel-authenticated, direct PID 1 connection.
+	reference *systemdUnitReference // Object lifetime only, never identity/exit evidence.
 }
 
 func verifySystemdPeerUnit(ctx context.Context, peer Peer, unit string) (result error) {
@@ -62,6 +63,13 @@ func captureSystemdExit(ctx context.Context, peer Peer, process brokerProcess) (
 	if err != nil {
 		return nil, err
 	}
+	source.reference, err = retainSystemdUnit(ctx, source.unit.Path())
+	if err != nil {
+		_ = source.close()
+		return nil, err
+	}
+	// Reobserve the exact live PID/invocation after acquiring the auxiliary
+	// lifetime reference. The reference result cannot establish those facts.
 	watch, err := bindSystemdExit(ctx, peer, process, source)
 	if err != nil {
 		_ = source.close()
@@ -114,7 +122,8 @@ func openSystemdUnitByPID(ctx context.Context, targetPID uint32) (*systemdBusSou
 			_ = conn.Close()
 		}
 	}()
-	if conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Geteuid()))}) != nil || stream.SetDeadline(time.Time{}) != nil || ctx.Err() != nil {
+	if conn.Auth([]dbus.Auth{dbus.AuthExternal(strconv.Itoa(os.Geteuid()))}) != nil ||
+		waitSystemdAuthenticationDrain(ctx, stream) != nil || stream.SetDeadline(time.Time{}) != nil || ctx.Err() != nil {
 		return nil, ErrUnavailable
 	}
 	owner := systemdName
@@ -125,9 +134,6 @@ func openSystemdUnitByPID(ctx context.Context, targetPID uint32) (*systemdBusSou
 		return nil, ErrUnavailable
 	}
 	source := &systemdBusSource{conn: conn, unit: conn.Object(owner, path), owner: owner}
-	if source.unit.CallWithContext(ctx, systemdUnitInterface+".Ref", dbus.FlagNoAutoStart).Err != nil {
-		return nil, ErrUnavailable
-	}
 	keep = true
 	return source, nil
 }
@@ -217,9 +223,7 @@ func (b *systemdBusSource) empty(ctx context.Context, name string) (bool, error)
 }
 
 func (b *systemdBusSource) close() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	err := b.unit.CallWithContext(ctx, systemdUnitInterface+".Unref", dbus.FlagNoAutoStart).Err
+	err := b.reference.close()
 	closed := b.conn.Close()
 	if err != nil || closed != nil {
 		return ErrUnavailable

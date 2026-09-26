@@ -130,8 +130,8 @@ Runner 会为该消费者生成证书、调用本 Module 的 `ensure`，并向�
 
 | Interface | 实例形态 | 边界 |
 | --- | --- | --- |
-| `incus_vm` | QEMU/KVM 虚拟机 | 独立 guest kernel |
-| `incus_container` | 非特权系统容器（LXC） | 与宿主共享内核，project 强制 `unprivileged` |
+| `incus_vm` | QEMU/KVM 虚拟机 | 独立 guest kernel；project 以 `limits.containers=0` 拒绝创建容器 |
+| `incus_container` | 非特权系统容器（LXC） | 与宿主共享内核，project 强制 `unprivileged` 并以 `limits.virtual-machines=0` 拒绝创建 VM |
 
 schema 与操作语义完全一致，选哪一档是部署决策。**默认是 `incus_container`**——NAS 宿主不保证
 有 KVM，把需要 KVM 的档位设为默认会让服务在目标硬件上根本装不上。VM 是显式升级，不是静默降级：
@@ -199,6 +199,10 @@ anas config set incus.endpoint https://incus.example:8443 -w /srv/anas
 | `has no enforced quota after ensure` | project 存在但配额未生效，同样 fail closed |
 | `is already trusted without a project restriction` | 该证书此前被以全局权限加入过信任库；先移除旧条目再重新 apply |
 | `is scoped to ... not to ...` | 同一张证书已绑定别的 project，拒绝跨 project 复用 |
+| `belongs to another lease` | 同名 project 已属于另一份租约（常见于第二个工作区连到同一 daemon 且声明了相同 sandbox）；Provider 不接管，也不因原租约证书已撤销而放行。确认后删除该 project 或改用其他 daemon |
+| `is also trusted by other restricted certificates` | 除本租约外还有其他受限证书能操作该 project（错误只列指纹前缀）；确认它们已不再使用后从信任库移除，再重新 apply |
+| `carries restriction keys this provider does not manage` | 既有 project 带有本版不管理的 `restricted.*` 键（错误只列键名，常见于比本版 Provider 更新的 Incus 新增的键）；确认后手工删除这些键或显式迁移 project，再重新 apply |
+| `is too low: there currently are ... instances of type ...` | 隔离档与 project 里已有实例类型冲突（例如 VM 档 project 里已有容器），daemon 拒绝收紧；先处理这些实例，Provider 不会替你删除 |
 
 ## 当前限制
 

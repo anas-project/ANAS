@@ -66,10 +66,16 @@ jobs:
         timeout-minutes: 2
         run: |
           sh -n modules/forgejo/runner-image/anas-forgejo-runner-start
+          sh -n modules/forgejo/runner-image/anas-forgejo-runner-input
+          sh -n modules/forgejo/runner-image/anas-forgejo-one-job
           python3 -m unittest discover -s test-env/scripts -p 'test_forgejo_runner_start.py'
+          python3 -m unittest discover -s test-env/scripts -p 'test_forgejo_runner_input.py'
 
       - name: Test baked image harness admission
         run: python3 -m unittest discover -s test-env/scripts -p 'test_incus_runner_image_e2e.py'
+
+      - name: Test Incus fence harness gates
+        run: python3 -m unittest discover -s test-env/scripts -p 'test_incus_fence_e2e.py'
 
       # Plain go test can report success when Linux capability tests skip.
       # This gate requires the native socket/process and owner cases to run.
@@ -123,6 +129,16 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate native Incus browser guards (no browser or VM)
+        run: |
+          npm run test:incus-browser-guards
+          python3 -m unittest discover -s test-env/scripts -p 'test_incus_host_browser_e2e.py'
+          python3 -m unittest discover -s test-env/scripts -p 'test_incus_vm_cleanup.py'
+          python3 -m unittest discover -s test-env/scripts -p 'test_incus_core_projection_e2e.py'
+          python3 -m unittest discover -s test-env/scripts -p 'test_incus_forwarding_e2e.py'
+          python3 -m unittest discover -s test-env/scripts -p 'test_forgejo_account_e2e.py'
+          python3 -m unittest discover -s test-env/scripts -p 'test_forgejo_stop_e2e.py'
 
       # These are the checks that need no site build. docs.yml owns the build
       # itself, and it only runs on pull requests and the deploy trigger, so

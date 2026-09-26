@@ -133,6 +133,9 @@ func (h *handler) invokeHostActionPlan(w http.ResponseWriter, r *http.Request, p
 	if params["phase"] == "observer" {
 		action = hostaction.ActionObserverPlan
 	}
+	if params["phase"] == "forwarding-permission" {
+		action = hostaction.ActionForwardingPlan
+	}
 	if spec, exists := hostaction.LookupAction(action); !exists || spec.PlanFor == "" {
 		writeProblem(w, http.StatusNotFound, "not_found", "host action was not found")
 		return
@@ -229,6 +232,9 @@ func (h *handler) invokeHostActionApply(w http.ResponseWriter, r *http.Request, 
 	action := "incus." + params["phase"]
 	if params["phase"] == "observer" {
 		action = hostaction.ActionObserverApply
+	}
+	if params["phase"] == "forwarding-permission" {
+		action = hostaction.ActionForwardingApply
 	}
 	if !hostaction.IsApplyAction(action) {
 		writeProblem(w, http.StatusNotFound, "not_found", "host action was not found")
@@ -337,6 +343,17 @@ func decodeIncusProvisionRequest(body json.RawMessage) (incusprovision.Request, 
 }
 
 func hostPlanParameters(action, workspace string, body json.RawMessage) (json.RawMessage, error) {
+	if action == hostaction.ActionForwardingPlan {
+		var input struct {
+			Consumer string `json:"consumer"`
+			Resource string `json:"resource"`
+			Operation string `json:"operation"`
+			Destinations []incusprovision.ForwardingDestination `json:"destinations"`
+		}
+		if actionabi.DecodeTypedObject(body,&input)!=nil || input.Destinations==nil { return nil,hostaction.ErrRequest }
+		r:=incusprovision.ForwardingPermissionRequest{Schema:incusprovision.ForwardingPermissionSchema,WorkspaceID:workspace,Consumer:input.Consumer,Resource:input.Resource,Operation:input.Operation,Destinations:input.Destinations}
+		r,err:=r.Canonical();if err!=nil { return nil,hostaction.ErrRequest };return json.Marshal(r)
+	}
 	if action == hostaction.ActionObserverPlan {
 		var input struct {
 			Operation string `json:"operation"`

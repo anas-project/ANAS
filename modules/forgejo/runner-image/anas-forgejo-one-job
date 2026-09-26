@@ -2,7 +2,11 @@
 set -u
 
 token_file=/run/anas-actions-token/runner-token
+cleanup() { rm -f "$token_file" /run/anas-actions-token/runner-ca-bundle.pem; }
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 "$@"
 status=$?
-rm -f "$token_file"
 exit "$status"

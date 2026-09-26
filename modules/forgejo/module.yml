@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: forgejo
 version: 15.0.7
-revision: 1
+revision: 2
 app_version: 15.0.7
 abi:
   supports:
@@ -239,4 +239,5 @@ logic:
       - calculate
       - render_env
       - after_start
+      - before_stop
       - local_account_apply

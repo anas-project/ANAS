@@ -100,7 +100,7 @@ func (b *HostJobBinding) matches(job consolejobs.Job) bool {
 	if err != nil {
 		return false
 	}
-	if spec.Mutating {
+	if spec.RequiresConfirm {
 		body, err = json.Marshal(publicStoredRequest(job.Request))
 		if err != nil {
 			return false

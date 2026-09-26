@@ -8,7 +8,7 @@ Self-hosted Git collaboration with HTTP/SSH Git, code review, issues, wiki, Git 
 | Item | Value |
 | --- | --- |
 | Module | `forgejo` |
-| Version / revision | `15.0.7-r1` |
+| Version / revision | `15.0.7-r2` |
 | Status | `developing` |
 | Category | `app` |
 | Runtime | `compose` |
@@ -159,9 +159,15 @@ recovery path is the `break_glass` account below.
 **That account is currently created as a site administrator, and this is a recorded privilege deviation.** The
 controller only calls three `actions/runners` endpoints inside approved scopes; site administrator is merely the
 consequence of there being no reconciliation path that grants organization-owner or repository-admin rights per
-scope. Two consequences to be aware of: compromising the controller is equivalent to compromising a Forgejo site
-administrator, and **turning `actions_enabled` off does not revoke this account** -- disable or delete it in Forgejo
-by hand. M3 of the implementation plan tracks the convergence.
+scope. Compromising the controller is still equivalent to compromising a Forgejo site administrator;
+per-scope privilege convergence remains outstanding. Disabling `actions_enabled` now waits for the same disabled
+controller to finish cleanup and exit successfully before the separate `break_glass` administrator invalidates
+the **ANAS-managed controller password**. Failed cleanup, changed identity or mismatched credentials block this
+transition rather than claim success. Re-enabling restores only the same account with verified ownership;
+unknown same-name accounts are not reset. The user, its site-administrator role, and separately created tokens
+or SSH keys are not deleted. After compromise or failed reconciliation, an administrator must still disable
+the account and revoke its other credentials in Forgejo. Account-API acceptance and the complete Core/Compose
+feature-switch path are tracked separately in M3.
 
 The controller creates no registration or instance for an empty queue. Each approved waiting job gets one ephemeral
 registration and one instance, with `forgejo-runner one-job` selected by job handle. The token travels through Incus

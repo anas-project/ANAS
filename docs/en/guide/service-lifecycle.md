@@ -26,6 +26,16 @@ anas deployments inspect <id> -w /srv/anas
 
 For named modules, the runner expands prerequisites or dependants and processes the complete chain in dependency-safe order.
 
+A Module declaring `before_stop` runs its original deployment's cleanup Hook before containers or networks
+are removed. Forgejo uses it to stop the original Actions controller and wait for workload and registration
+cleanup while the API and compute connection remain available. The cleanup Hook receives only the old private
+deployment projection, not the candidate deployment's newer Secret Store credentials. Unconfirmed cleanup blocks dependency removal
+and cannot be bypassed by an automatic apply-recovery restart. Backups retain a pending-cleanup transaction
+and suspend automatic recovery in this case; inspect the failed module and residual resources rather than
+deleting the marker or rewriting state to turn a failed operation into a successful one.
+Backup cleanup begins only after both the journal data and its published directory entry have been synced.
+A storage sync failure blocks further execution rather than treating an undurable record as recovery authority.
+
 The full administration console can also run `start`, `stop`, and `restart`. After a named Module is selected,
 the browser requests a server preview and displays the complete ordered chain expanded by the Runner from the
 active deployment. A durable job is created only after that exact chain is confirmed. An empty selection means

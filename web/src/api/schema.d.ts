@@ -48,7 +48,7 @@ export interface paths {
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
                 ws: components["parameters"]["WorkspaceID"];
-                phase: "install" | "configure" | "enroll" | "uninstall" | "observer";
+                phase: "install" | "configure" | "enroll" | "uninstall" | "observer" | "forwarding-permission";
             };
             cookie?: never;
         };
@@ -109,7 +109,7 @@ export interface paths {
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
                 ws: components["parameters"]["WorkspaceID"];
-                phase: "install" | "configure" | "enroll" | "uninstall" | "observer";
+                phase: "install" | "configure" | "enroll" | "uninstall" | "observer" | "forwarding-permission";
             };
             cookie?: never;
         };
@@ -1312,6 +1312,43 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        IncusForwardingDestination: {
+            /**
+             * Format: ipv4
+             * @description Canonical single unicast IPv4 address. No CIDRs, hostnames, loopback or link-local addresses.
+             */
+            ipv4: string;
+            port: number;
+        };
+        /** @description Workspace identity is taken from the authorized route. Enable needs at least one destination; disable and retire require an empty list. Retire additionally requires prior verified withdrawal, a stopped deployment, revoked lease credentials and empty instance, operation and physical bridge inventories. Production enable remains blocked until lifecycle integration is accepted. */
+        IncusForwardingOperation: {
+            consumer: string;
+            resource: string;
+            /** @enum {string} */
+            operation: "enable" | "disable" | "retire";
+            destinations: components["schemas"]["IncusForwardingDestination"][];
+        };
+        IncusForwardingApplyParameters: {
+            /** @constant */
+            schema: "anas.host-action.incus/v1";
+            request: {
+                /** @constant */
+                schema: "anas.incus-forwarding-permission/v1";
+                workspace_id: string;
+                consumer: string;
+                resource: string;
+                /** @enum {string} */
+                operation: "enable" | "disable" | "retire";
+                destinations: components["schemas"]["IncusForwardingDestination"][];
+            };
+            binding: {
+                /** @constant */
+                schema: "anas.incus-forwarding-permission/v1";
+                workspace_id: string;
+                plan_digest: string;
+                state_digest: string;
+            };
+        };
         IncusObserverOperation: {
             /**
              * @description Derive observation scope from installed host and active workspace, or revoke the owned scope. Does not enable HTTP publication.
@@ -2712,15 +2749,15 @@ export interface operations {
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
                 ws: components["parameters"]["WorkspaceID"];
-                phase: "install" | "configure" | "enroll" | "uninstall" | "observer";
+                phase: "install" | "configure" | "enroll" | "uninstall" | "observer" | "forwarding-permission";
             };
             cookie?: never;
         };
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Use IncusObserverOperation only for phase observer; other phases use IncusHostRequest. */
-                    request: components["schemas"]["IncusHostRequest"] | components["schemas"]["IncusObserverOperation"];
+                    /** @description Phase observer uses IncusObserverOperation; forwarding-permission uses IncusForwardingOperation and retains a production lifecycle blocker; other phases use IncusHostRequest. */
+                    request: components["schemas"]["IncusHostRequest"] | components["schemas"]["IncusObserverOperation"] | components["schemas"]["IncusForwardingOperation"];
                 };
             };
         };
@@ -2796,7 +2833,7 @@ export interface operations {
                 "application/json": {
                     plan_job_id: string;
                     /** @enum {string} */
-                    action: "incus.install" | "incus.configure" | "incus.enroll" | "incus.uninstall" | "incus.image-prune" | "incus.ingress.observer";
+                    action: "incus.install" | "incus.configure" | "incus.enroll" | "incus.uninstall" | "incus.image-prune" | "incus.ingress.observer" | "incus.forwarding.permission";
                 };
             };
         };
@@ -2843,7 +2880,7 @@ export interface operations {
             path: {
                 /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
                 ws: components["parameters"]["WorkspaceID"];
-                phase: "install" | "configure" | "enroll" | "uninstall" | "observer";
+                phase: "install" | "configure" | "enroll" | "uninstall" | "observer" | "forwarding-permission";
             };
             cookie?: never;
         };
@@ -2852,8 +2889,8 @@ export interface operations {
                 "application/json": {
                     plan_job_id: string;
                     confirmation_token: string;
-                    /** @description Must be copied from the corresponding completed plan; phase observer uses IncusObserverApplyParameters. */
-                    parameters: components["schemas"]["IncusHostApplyParameters"] | components["schemas"]["IncusObserverApplyParameters"];
+                    /** @description Copy from the completed plan; observer uses IncusObserverApplyParameters and forwarding-permission uses IncusForwardingApplyParameters. A token does not override plan blockers. */
+                    parameters: components["schemas"]["IncusHostApplyParameters"] | components["schemas"]["IncusObserverApplyParameters"] | components["schemas"]["IncusForwardingApplyParameters"];
                 };
             };
         };

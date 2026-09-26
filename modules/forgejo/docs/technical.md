@@ -1,5 +1,100 @@
 # Forgejo 技术实现
 
+Debian guest 的 release builder 必须有发行版提供的 Debian archive keyring。实际 Ubuntu
+构建已观察到 debootstrap 缺少该文件时警告后继续、不检查 Release 签名；HTTPS 和同源
+包摘要不替代认证。镜像工件 CLI 现于占用 revision 前检查固定 root-owned keyring、禁止
+关闭验签及歧义字段；运行日志若仍报告未验签，即使子进程最终退出0也不记录镜像。此检查
+不安装宿主软件、不接收调用方 keyring 路径，错误只保留固定原因，不公开原始构建日志。
+
+## Runner 的用户命名空间策略
+
+Ubuntu的非特权userns调节会作用到Incus子AppArmor namespace；外层nesting策略允许
+userns，并不保证未加载内层策略的Debian guest程序可创建它。固定镜像新增仅匹配
+`/usr/bin/podman`、允许`userns`的公开策略。其`flags=(unconfined)`保留guest原有的内层
+基线，不移除宿主叠加策略，也不修改全局sysctl、privileged或raw配置。
+
+官方parser包与固定条件oneshot在该内核机制存在时加载策略，engine user manager明确
+依赖它完成；失败不能忽略。策略不放入通用自动加载目录，普通guest程序不因此获得许可。
+新配方必须产出新不可变revision，原生门禁核对自动加载、普通userns拒绝及实际OCI执行。
+原因、独立策略对照与新镜像验收分别记录于
+[`2026-09-24-forgejo-runner-userns-policy.md`](../../../dev-docs/reviews/2026-09-24-forgejo-runner-userns-policy.md)。
+
+首次新策略镜像虽已构建、导出并重复复用，但普通userns拒绝门禁失败，不能交付为运行
+就绪。官方parser包同时启用了发行版完整profile加载器，带入允许userns的fallback。
+现在用固定drop-in把guest `apparmor.service` 的启动及reload都限定到同一Podman策略；
+服务保持启用、真正执行parser，原no-unload停止语义不变。发行版profile文件仍保留，
+但不作为额外权限来源自动加载；不关闭AppArmor内核机制、不卸载宿主叠加策略或改写
+旧镜像。诊断写层对照与新不可变镜像的完整原生验收分别记录，不由单元通过推导。
+
+2026-09-25 的新 `policy-loader-r1` 已在全新 Ubuntu 26.04 amd64 上实际完成烘焙、
+导出和重复复用，十项镜像/策略/rootless OCI 门禁与五种真实工作流全部通过。原始事件
+另经唯一run/pass及包终态核验；普通userns仍拒绝、宿主限制保持、没有手工加载guest
+策略或CA。正常关机及物理宿主Docker/网络对照一致。此结果不等于正式签名发布、
+完整业务栈或其他平台验收，证据见
+[固定策略加载器](../../../dev-docs/reviews/2026-09-25-forgejo-fixed-policy-loader.md)。
+
+## 停止前清理
+
+停止前清理显式接入 `before_stop`。Core 从原 deployment 的冻结 Hook 与私有环境执行，
+先验证 workspace 对 Compose 项目的归属。该阶段的 secrets 映射为空，不把当前 Secret
+Store 中的新代凭据追加给旧 Hook；清理只使用原私有投影。Hook 只向精确观测的旧 controller 容器 ID
+发送有界 SIGTERM 停止，API 与控制网桥保持到清理结束，随后两次读取固定入口、运行
+模式与 exit 0；未知、替换、异常退出或未完成清理均阻止后续拆除。此阶段不修改账号。
+新禁用部署中的 `local_account_apply` 再按既有归属规则使管理口令失效；重启/重新启用
+不由任意退出状态或同名容器授权。真实联合验收与完整业务栈验收分别记录。
+
+2026-09-25 在显式可路由的Ubuntu26.04 amd64夹具中，完整十阶段与五个Core停止用例
+通过：实际运行作业、实例/根盘/有效注册回收、关闭后的口令拒绝、同账号重新启用并
+执行新工作流，以及清理失败时保留容器/状态/口令。Forgejo软删除registration历史行
+不当作有效注册；只读数据库事实与在线scope API分别核验，不删除历史来制造空库存。
+正常关机与物理宿主Docker/网络对照相同。该结果不是默认Docker DROP兼容或完整
+IAM/PostgreSQL业务栈验收，详见
+[停止联合验收](../../../dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md)。
+
+## Runner 的内部 CA 投影
+
+2026-09-24：新不可变 `trust-r2` 已在独立 Debian 13 amd64 VM 实际完成 build/export，
+第二次 build 复用原摘要；9 项镜像启动/引擎门禁及正常、失败、取消、崩溃恢复、未授权
+仓库五种工作流场景均通过。生产 stdin CA 路径没有手工 guest 信任安装替身；一份独立
+运行中观察还确认系统根与镜像相同、临时 bundle 恰好加入本次公开 CA。最终资源回收、
+正常 VM 退出和物理宿主 Docker/网络对照通过。详见
+[验收记录](../../../dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md)。
+
+Actions controller 与 preflight 只读挂载固定的公开 `anas-internal-ca.crt`，不挂载 CA 私钥
+或整个证书目录。启用 Actions 时校验打开的单链接文件、root 所有权、不可写权限和有界
+读回；内容只接受当前有效、可签名的 CA 证书，拒绝叶证书、私钥、重复、未知或畸形 PEM。
+没有 Module 挂载的独立 controller 可继续使用 guest 公共系统根；已存在但无效的文件
+不能以回退掩盖。部署 CA 的更新随 controller 重新创建生效，不静默接纳工作负载提供的 CA。
+
+注册 token 仍只经 stdin 的前 40 字节进入 guest；可选公开 CA 紧随其后，argv 仅带最多
+32 KiB 的长度和 SHA-256 承诺，不带证书或 token。引擎 rootless 准入先完成，随后固定
+`anas-forgejo-runner-input` 以 runner-agent 而非 root 创建排他、无符号链接的 0600 文件，
+拒绝截断、尾随输入和摘要不符。它把公开系统根与部署 CA 合成 `/run` 下的临时文件，
+仅通过固定 `SSL_CERT_FILE` 交给这次 one-job；不修改 guest 系统 CA、Podman trust、
+工作流 OCI 镜像或 Incus 管理信任。one-job 结束/信号及启动失败均清理 token 和该文件。
+
+这是 controller→Runner 服务连接的信任交付，不等于给任意工作流镜像安装内部 CA，也
+不声明 job 内 git checkout/私有 registry 的 CA 已解决。旧镜像会在读 token 前拒绝新参数，
+必须生成新不可变 recipe/revision；不能原地改写旧镜像或在 apply 自动重烘焙。原生 one-job
+入口已经去除手工 `file push`/`update-ca-certificates` 的测试替身，真实结果按新工件另记。
+
+## 计算控制器镜像的共享构建输入
+
+Actions controller 与一次性 compute 初始化服务共用同一 Dockerfile。源码 checkout 的
+`shared` 上下文默认指向 `../..`；构建已复制到 staging 的 Module 时，必须通过
+`ANAS_SHARED_BUILD_CONTEXT` 指向版本匹配的绝对 ANAS 源码根，不把运行数据目录当源码。
+
+Go 构建层和 Alpine 运行层均使用 `DOCKER_HUB_REGISTRY`，显式 `GO_BUILDER_REGISTRY`
+只覆盖 Go 层。控制器的共享仓库代码保持 `GOPROXY=off`；独立固定的上游 Incus CLI
+`v7.3.0` 使用 `GO_MODULE_PROXY`，依次回退到 `GOPROXY_URL` 与官方源。CLI 自报版本为
+`7.3`，不能把这个展示值与 Go 模块 tag 的末尾 `.0` 混淆。传输设置不进入业务环境，不关闭
+Go checksum database，也不传入代理凭据。
+
+`check-shared-build --json` 只校验和描述构建输入，不执行 Docker，不读取运行时 `.env`。
+独立 VM 的六次源码/staging 构建门禁见仓库 `test-env/fixtures/incus-shared-build/README.md`；
+它核对控制器与 CLI 的实际二进制、非 root 身份和两种路径的输入摘要，但不替代真正的
+Forgejo one-job、guest 启停、正式镜像分发或完整 Core 部署验收。
+
 ## OCI create/exec 的 cgroup 一致性
 
 `anas-podman.service` 与 socket 属于 engine 的 systemd **用户管理器**，只为该账号离线
@@ -62,7 +157,7 @@ Rootless engine 还依赖 guest 内 UID 1002 的真实 systemd 用户会话：�
 [Forgejo 设计](/architecture/forgejo-module-design#_4-3-单作业执行实例)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `15.0.7-r1` / `anas.module/v1`.
+> 状态：当前实现；对应 `15.0.7-r2` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -75,9 +170,9 @@ Compose 2.33.1+。这是连接配置，不是 mTLS、隔离或 one-job 实机验
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r1` | `actions-control, db, traefik` | 2 |
-| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1` | `actions-control, compute-control` | 1 |
-| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1` | `actions-control, compute-control` | 0 |
+| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r2` | `actions-control, db, traefik` | 2 |
+| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r2` | `actions-control, compute-control` | 2 |
+| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r2` | `actions-control, compute-control` | 1 |
 <!-- generated:compose-topology:end -->
 
 Web/API 仅在 Traefik network 暴露 `3000/tcp`；内置 SSH server 的容器端口 `2222/tcp` 直接发布为
@@ -222,9 +317,10 @@ disk/physical NIC/任意 device；容器档另由 project 强制 `restricted.con
 
 ### 控制面账号
 
-`after_start` 只在 Actions 开启时调用 `reconcileActionsAccount`，经 stdin 把固定账号
-`anas_actions_controller` 交给容器 helper 的 `local-admin` 子命令；口令来自 Secret Store，不进入宿主
-`docker exec` argv。该子命令固定带 `--admin`，因此这个账号是**站点管理员**。
+`local_account_apply` 先通过已有 helper 核验独立的 `break_glass` 恢复管理员，再调用
+`reconcileActionsAccount`。固定 `actions-account` 子命令从 stdin 接收类型化输入，管理的
+controller 口令与恢复管理员口令不进入宿主 argv、容器环境或公开输出。创建的固定账号
+`anas_actions_controller` 仍是**站点管理员**；该既有权限偏差没有借停用流程被隐藏。
 
 controller 的调用集合只有三个端点，全部限定在获批 scope：`GET .../actions/runners/jobs`、
 `POST .../actions/runners`、`DELETE .../actions/runners/{id}`（`orgs/{owner}` 或
@@ -233,8 +329,21 @@ controller 的调用集合只有三个端点，全部限定在获批 scope：`GE
 `TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI` 钉住：org 与 repo 两种 scope 各三条请求，全部
 落在该 scope 的 `actions/runners` 子树内，不含 `/admin/`（`FORGEJO-R-068`）。
 
-`reconcileActionsAccount` 在 Actions 关闭时直接返回，因此**关闭开关不会撤销该账号**：账号与
-Secret Store 中的有效口令都会留下，需要管理员手工处理。收敛要求见 `FORGEJO-R-070`。
+关闭 Actions 时，先限时等待同一不可变 Docker 容器 ID 的禁用 controller 退出，连续两次
+读取都必须是正确 UID/GID、固定入口、无参数、exit 0、未重启。等待期限传到实际 inspect
+子进程；不完整/重复/大小写别名字段、替换容器、取消和异常退出均不授予口令修改权限。
+controller 没有租约却仍有未完成 workload 时失败并保留状态，不以缺少连接代替清理。
+状态读取必须是私有目录内当前用户所有的单链接 0600 普通文件，4 MiB 有界、前后身份不变；
+不跟随链接，拒绝缺少 workload 清单、重复 JSON 字段和不支持的状态。真正缺失的全新状态
+不产生写操作；这不解决整个状态卷丢失后的孤儿重建问题。
+
+账号 helper 仅连接固定回环 API，并验证独立恢复管理员及目标账号的数值 ID。私有回执
+以管理口令的 HMAC 绑定 ID、固定用户名/邮箱与 pending/final 状态；历史账号首次纳管还须
+证明现存管理口令确实可登录该账号。禁用在持久化意图后把密码改为不保存的随机值，再验证
+旧密码得到 401/403；重复禁用不再改密码。重新启用只恢复同一已记录账号的管理密码。
+它不删除用户、不收窄原站点权限、不撤销另建 token/SSH key。账号 API 的独立实机入口为
+`test-env/scripts/server-forgejo-account-e2e.py`，完整 Core/Compose 开关与运行作业排空另验；
+不能用仅账号成功推导整条停用路径已完成（`FORGEJO-R-070`）。
 
 Compose 先运行同一 controller image 的一次性 `preflight`。Actions 开启时，它通过共享客户端验证
 租约输入、固定证书连接与受限 project 的实例列表读取；完整 project、quota 与 profile 就绪检查
@@ -283,7 +392,8 @@ daemon 取消/迟到创建及 one-job 仍需独立验收，不由本机适配器
 
 - Actions 默认关闭且只有一个开关；controller 不共享 host Docker socket，空队列不创建 Runner/实例。
 - 默认隔离档 `incus_container` 与宿主共享内核；需要独立 guest kernel 的 scope 必须显式选 `incus_vm`。
-- Actions 开启会留下一个站点管理员账号 `anas_actions_controller`，关闭开关不会撤销它。
+- Actions 的 `anas_actions_controller` 仍为站点管理员；停用调和只使已管理的口令失效，
+  不替代泄露后的账号停用及其他 token/SSH key 撤销，完整开关排空仍须实机验证。
 - Git hooks 与 local-path import 默认关闭且可独立开启；Hook 将以 Forgejo 用户身份执行服务端代码，
   local import 只能读取容器内本来已可见的路径，Compose 不为它增加宿主挂载；LFS 与内置 SSH 开启。
 - Web port 只在 Compose network，且覆盖 v15 image 的 `REVERSE_PROXY_TRUSTED_PROXIES=*` 默认值，

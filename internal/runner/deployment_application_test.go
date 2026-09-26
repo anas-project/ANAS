@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,35 @@ import (
 	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/modulestore"
 )
+
+func TestCLIApplyCannotReplayActiveFrozenDeployment(t *testing.T) {
+	workspace := newWorkspace(t)
+	base, id := stateDir(workspace), "dep-active"
+	writeLifecycleDeploymentFixture(t, workspace, id)
+	if err := saveDeploymentState(base, deploymentState{ID: id, Status: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveActiveState(base, &activeDeploymentState{ActiveDeployment: id, RuntimeStatus: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := loadActiveState(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := newCLIDeploymentPlanService(workspace, workspaceConfigPath(workspace), "", nil)
+	_, err = service.Apply(context.Background(), application.ApplyRequest{DeploymentID: id, Confirmed: true, NoSnapshot: true})
+	assertDeploymentApplicationCode(t, err, application.ErrorKindFailedPrecondition, "deployment_not_ready")
+	after, err := loadActiveState(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeJSON, _ := json.Marshal(before)
+	afterJSON, _ := json.Marshal(after)
+	state, err := loadDeploymentState(base, id)
+	if err != nil || state.Status != "active" || !bytes.Equal(beforeJSON, afterJSON) {
+		t.Fatal("rejected active deployment replay changed its lifecycle state", err)
+	}
+}
 
 func TestWorkspaceLifecyclePreviewExpandsFrozenDependenciesAndRejectsDrift(t *testing.T) {
 	workspace := newWorkspace(t)

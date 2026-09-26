@@ -16,7 +16,9 @@ import (
 
 const (
 	installedScopeRoot = "/etc/anas/incus-ingress/scopes"
-	trustedIPBinary    = "/usr/sbin/ip"
+	// Execute the packaged regular ELF, not usr-merge's compatibility symlink.
+	// This is still a compiled fixed path; no caller-selected PATH is searched.
+	trustedIPBinary    = "/usr/bin/ip"
 	trustedNFTBinary   = "/usr/sbin/nft"
 	trustedConntrack   = "/usr/sbin/conntrack"
 )

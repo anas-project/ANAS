@@ -141,8 +141,8 @@ container. The field list is in the
 
 | Interface | Instance form | Boundary |
 | --- | --- | --- |
-| `incus_vm` | QEMU/KVM virtual machine | separate guest kernel |
-| `incus_container` | unprivileged system container (LXC) | shares the host kernel; the project forces `unprivileged` |
+| `incus_vm` | QEMU/KVM virtual machine | separate guest kernel; the project refuses containers with `limits.containers=0` |
+| `incus_container` | unprivileged system container (LXC) | shares the host kernel; the project forces `unprivileged` and refuses VMs with `limits.virtual-machines=0` |
 
 Schemas and operation semantics are identical, so choosing a tier is a deployment decision.
 **`incus_container` is the default**: a NAS host is not guaranteed to have KVM, and a default that
@@ -217,6 +217,10 @@ Provisioning failures surface in apply output. Common causes:
 | `has no enforced quota after ensure` | the project exists but no quota took effect; also fails closed |
 | `is already trusted without a project restriction` | that certificate was previously added to the trust store with global rights. Remove the old entry, then apply again |
 | `is scoped to ... not to ...` | the same certificate is already bound to a different project; cross-project reuse is refused |
+| `belongs to another lease` | a project with this name already belongs to another lease (typically a second workspace on the same daemon declaring the same sandbox). The provider will not take it over, even after the original lease's certificate is revoked. After review, delete that project or use a different daemon |
+| `is also trusted by other restricted certificates` | a restricted certificate other than this lease's can drive the project (only fingerprint prefixes are shown). Once you confirm they are unused, remove them from the trust store and apply again |
+| `carries restriction keys this provider does not manage` | an existing project holds `restricted.*` keys this version does not manage (only the key names are shown; typically keys added by an Incus release newer than this provider). After review, remove them by hand or migrate the project explicitly, then apply again |
+| `is too low: there currently are ... instances of type ...` | the isolation tier conflicts with instances already in the project (for example, containers in a VM-tier project) and the daemon refuses to tighten it. Deal with those instances first; the provider will not delete them for you |
 
 ## Current limitations
 

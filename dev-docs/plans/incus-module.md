@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-23
-updated: 2026-09-22
+updated: 2026-09-26
 ---
 
 # Incus compute Provider 实施计划
@@ -27,29 +27,242 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M0：Contract 改形为租约语义 | R-010 | 已完成 |
 | M1：Provider Module 骨架、凭据与部署边界 | R-001—R-005 | 已完成 |
 | M2：Provider operation、隔离与可观测性 | R-006、R-009、R-012—R-016 | 已完成 |
-| M2a：围栏真实验收 | R-011 | 实施中；实现已落地，bridge/project 修复与回归已落地，真实围栏验收待执行 |
+| M2a：围栏真实验收 | R-011、R-106 | 实施中；租约归属标记与受限证书独占已接入（单元层，2026-09-26）；容器 host disk/跨租约网络/直接 proxy 反例已实测，显式 proxy 禁令修复及两档回归通过；完整 6.0 `restricted.*` 键集与隔离档实例类型上限已收紧（单元层，2026-09-26）；完整设备/VM 矩阵及 daemon 实际拒绝待验收 |
 | M3：Core 的 compute Resource 凭据与投影 | R-017、R-018、R-020 | 已完成 |
 | M4：共享 Incus 客户端库 | R-021—R-024、R-037 | 已完成 |
 | M4a：取消后清理验收 | R-025 | 已完成；超时/取消补偿回归和真实运行中容器 SIGTERM 回收通过；独立 VM 运行矩阵仍归 M6 |
 | M5：Forgejo 迁移为 Contract 消费者 | R-026、R-028 | 已完成 |
 | M5a：one-job 行为等价验收 | R-027 | 已完成；默认系统容器档真实正常/失败/SIGTERM/SIGKILL 保留状态恢复及注册/根盘回收通过；VM/ARM64 和正式镜像发布仍归 M6/M12 |
-| M6：真实 Incus 宿主验收 | R-007、R-008、R-029—R-034 | 实施中；finance 的独立存储验证通过但无 KVM；新增 ln 主机 KVM 实际启动实验 Ubuntu 26.04，内部真实 Incus 6.0.5 客户端重启/并发/证书跨项目与撤证检查通过；产品 guest/配额/one-job 与两档生命周期仍未完成 |
+| M6：真实 Incus 宿主验收 | R-007、R-008、R-029—R-034 | 实施中；指定独立实验环境已通过默认容器双租约、btrfs 实际配额、客户端身份、管理证书重叠/撤销及 lab-r11 one-job；VM/ARM64、ZFS、双栈及完整矩阵待验收 |
 | M7：非特权系统容器 interface | R-035—R-036 | 已完成；单元层，e2e 归 M6 |
 | M8a：共享构建校验 | R-038 | 已完成；校验与 CI 已接入 |
-| M8b：staging 共享构建路径 | R-084 | 实施中；覆盖变量与双语路径示例已具备，源码/staging 实际构建待验收 |
+| M8b：staging 共享构建路径 | R-084 | 已完成；三个镜像的源码/staging 六次无缓存实际构建、缺少覆盖路径反例、输入/业务二进制及固定 CLI 摘要比对通过；不代表完整 Core 部署验收 |
 | M8：长驻实例档预留 | R-039—R-042、R-046 | 未开始 |
 | M9：网络 IPv6 姿态与 image_policy 预留 | R-043、R-045、R-052 | 已完成 |
 | M9a：双栈出网验收 | R-044 | 实施中；实现已落地，真实验收待执行 |
-| M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047—R-051、R-057、R-094 | 实施中；安装/配置/登记/卸载、一次性确认、私有连接与控制网络投影已编码，真实发行版、服务与网络验收未完成 |
+| M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047—R-051、R-057、R-094 | 实施中；三个一级发行版 amd64 各通过 25 项审批/卸载，26.04 另有后端 11 项、浏览器 8 项；真实 Core/Compose 自动投影、双合成消费者、新部署凭据保持和撤销后拒绝闭环已通过；实际 Forgejo/AI Agent 部署、ARM64/VM、未适配系统降级与失败恢复另验 |
+| M10a：默认 Docker 的租约转发授权与撤销 | R-101—R-105 | 实施中；确认、来源及原状态回执已连接，失败启用统一有界撤回；独立内核精确许可/源冒用拒绝/既有连接撤销及安装后端显式退役、重复/证据保留通过；生产启用、自动续期/停止/重启协调、真实 guest/Forgejo 与完整反向隔离未关闭 |
 | M11：入站与 Traefik 发布 | R-053、R-054、R-062—R-065、R-070、R-071、R-086—R-088、R-095、R-096 | 实施中；观察、配置、任务排空和跨进程围栏已连接；新增同队列 owner 的统一启动入口、目录隔离准入及固定 renderer 身份；自动 CLI 排空、完整内核生命周期、VM/TAP、health、生产 UID/挂载安装及实机验收待办 |
 | M11a：独立租约命名密钥 | R-092 | 已完成；生成/复用、敏感投影、冻结引用与文件备份恢复回归通过 |
-| M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085 | 实施中；默认配方、冻结归档、完整历史 bundle、发布脚本与 Provider 逐摘要供给已接通；重复引用/取消/元数据漂移回归已补，真实烘焙、签名发布、guest 启动、回滚及破坏性 prune 验收待补 |
+| M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085 | 实施中；默认配方、冻结归档、历史 bundle、发布脚本与逐摘要供给已接通，lab-r11 默认容器真实烘焙/启动/one-job 通过；VM/ARM64、正式签名分发、回滚及破坏性 prune 待验收 |
 | M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 实施中；本地 bundle 动作自行写入目的地、元数据控制输出及 URL/base64 拒绝回归已落地；不提供浏览器下载端点，统一动作整体安全审阅仍待完成，见[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
 | M14：其余发行版适配 | — | 未开始；待适配清单见[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §2 |
 
-覆盖统计：75 项需求全部有且只有一个里程碑归属（另有 25 项已废弃）。
+覆盖统计：81 项需求全部有且只有一个里程碑归属（另有 25 项已废弃）。
 
-### 当前接续状态（2026-09-22）
+### 当前接续状态（2026-09-26）
+
+围栏完整性修复（[审查](../reviews/2026-09-25-compute-contract-incus-review.md) §1.1、§1.2）：Provider
+现在拥有 Incus 6.0.0—6.0.5 全部 `restricted.*` 键，要么显式写入严格值、要么要求不存在；VM 档也写
+`restricted.containers.privilege=unprivileged`；隔离档由 `limits.containers` / `limits.virtual-machines`
+写在 project 上；既有 project 带未受管的 `restricted.*` 键时写入前拒绝。新回归先在旧实现上失败再通过，
+仅为单元层（fake daemon）；daemon 对跨档创建和已有实例冲突的实际拒绝、旧 `anas-forgejo-runners`
+的升级收敛仍须在 M6/M2a 实机验收，不据此关闭 M2a。
+
+租约归属（审查 §1.3，新增 R-106）：project 与 bridge 写入 `user.anas.consumer`、`user.anas.sandbox`
+与 `user.anas.lease_credential`（租约证书指纹）；属于其他租约或被其他受限证书共享的 project 在写入前
+拒绝，未标记 project 仅在无其他受限证书时采纳，`inspect` 同条件判定；Core 与 Provider 拒绝
+`default` sandbox。宿主侧 image prune 与转发退役原已要求 project 带 consumer/sandbox 标记，而 Provider
+此前从未写入，真实 project 上两者都会被阻止，本次一并补齐（仍待实机验证）。旧 controller 遗留的受限
+证书若仍信任该 project，升级需运维先移除。仅单元层，多工作区同 daemon 的实机验收见 §10。
+
+按 daemon 能力处理 7.x 限制键：`ensure`/`inspect` 读 `GET /1.0` 的 `api_extensions`，daemon 支持时写
+`restricted.storage-pools.access=<storage_pool>`（7.0+）与 `restricted.virtual-machines.nesting=block`
+（7.x，默认 `allow`）；`restricted.images.servers` 按 7.0.1/7.5.1 源码会连本地镜像的实例创建一起拒绝，
+不能作镜像约束下沉，改为必须不存在（R-085 证据见宿主供给设计 §7.2，仍待实机）。一级发行版官方仓库
+当前仍是 6.0.x，7.x 路径只有 fake daemon 单元证据；需在 7.0.1 LTS（Debian trixie-backports）与 7.5 daemon
+上实机验证写入、默认值与存储池改配置时的拒绝。
+
+2026-09-26 实机核验（接上段）：源码阅读先发现 7.5 默认给 VM 开嵌套虚拟化、限制为 `block` 时拒绝未显式
+关闭的 VM，已改为在支持该限制的 daemon 上给 VM 档 profile 写 `security.nesting=false`。随后三台一次性 VM
+分别跑 Ubuntu 26.04 官方 6.0.5、Debian 13 trixie-backports 7.0.1（经阿里云镜像）与 Ubuntu 26.04 Zabbly
+7.5.1，`server-incus-fence-e2e.py` 的 16/18/19 项必需检查全部通过，覆盖第 1–3 条修复与 7.x 键；7.5.1 上
+租约 VM 请求实际创建成功，显式开启 nesting 的请求被拒。第一轮宿主基线因物理网卡 03:00 定时断链 22 秒而
+判定失败，已单独核实与 VM 无关。存储池改配置时的拒绝、VM 启动、ZFS、ARM64 与真实 Core 多工作区部署仍
+未验收，M2a/M6 不据此关闭。详见[实机核验](../reviews/2026-09-26-incus-fence-native-validation.md)。
+
+最新原生退役第三轮已完整通过：独立默认 Docker DROP 环境中，真实内核事务与实际
+installed 退役后端分别验收。第一/二轮失败保留，第二轮诊断确认 Incus 暂留已完成操作
+阻止退役，现由夹具等待自然消失并建立正例，不放宽产品清单判据。许可刷新后的读回、
+最终保存或会话关闭失败已先以红灯复现，再统一接入一次有界撤回；失败与依赖阻止仍
+保留。253个新工件源码输入、原始事件、退出及正常关机/宿主十项对照均独立核验，详见
+[失败撤回与退役终态](../reviews/2026-09-26-incus-forwarding-failure-withdrawal.md)。
+Core stopped 元数据/历史 grant 是显式夹具，额外故障注入仍是单元测试，真实
+guest/Forgejo、自动运行 owner 和跨重启闭环没有因此完成。
+
+重新核对保留目录后确认第六轮已通过，78 个当轮输入与本次开工前源码相同，17 项
+唯一 run/pass 与 package 终态、正常关机及宿主十项对照均重新验证。随后新增显式
+`retire`，复用现有确认动作和状态事务，在已停止/撤权/完全空闲后退役原内核对象，
+保留墓碑与失败历史；同时修复 released 状态掩盖残留及最终会话失败丢失阻止状态。
+本次新代码必须用新冻结工件验收，不把第六轮结果归因于这些后续修复。详见
+[转发退役接续](../reviews/2026-09-26-incus-forwarding-retirement.md)。M10a/M10/M11/M12
+保持未完成，真实 guest/Forgejo 的默认 Docker 路径没有因此被验收。
+
+租约转发已从孤立执行器接入编译动作清单、共享确认与宿主状态事务。实际启用仍被
+`forwarding_lifecycle_integration_unavailable` 阻止；确认不能绕过该门禁，也没有自动
+续期。停用使用原回执，不要求已撤销的租约再次授权，保留拒绝规则和失败历史；残留
+对象阻止宿主依赖拆除。新的内核轮次与真实 guest/Forgejo 验收严格区分，最新实际终态见
+[转发许可接续](../reviews/2026-09-25-incus-forwarding-permission-continuation.md)。
+
+默认Docker转发兼容性接续：增加宿主只读路由/filter policy诊断和固定warning，不把
+早期nft ACCEPT视为最终放行，计数器不污染确认摘要。新受控报文入口使用真实Docker/
+Incus bridge和本地namespace端点，区分原始DROP、精确临时许可、其他流拒绝及撤回。
+产品尚未新增自动转发授权写入，M10/M11不由诊断关闭。实际终态见
+[转发观察与受控实验](../reviews/2026-09-25-incus-forwarding-observation.md)。
+
+该受控实验第四轮已在全新Ubuntu26.04 amd64通过9项：真实Incus bridge上的报文先
+命中早期nft ACCEPT，仍被后续Docker默认DROP拒绝；精确临时许可后成功，其他源/端口
+及更早显式拒绝仍受限，撤回后再次拒绝。生产观察器实际读回3条相关base chain并保留
+未验证警告；归档、源码身份、正常关机与宿主原Docker/网络对照均独立通过。它关闭
+因果定位与只读诊断，不代表自动租约转发授权、源防伪或默认完整产品部署已完成。
+
+随后补齐元信息别名/重复和未知地址族的诊断拒绝边界，并重新编译执行第五轮；相同9项
+在最终代码上再次全部通过。最终归档、220个输入、实际读取结果、正常关机与原宿主
+完整对照已独立核验；第四轮记录保持原样，不把旧工件结果归因于新增代码。
+
+联合停止链路继续分层核验：第八轮实际日志经有界Zstandard解压后，确认Runner已领取
+任务，但固定工作流镜像拉取超时。第九轮使用明确可路由的全新隔离环境，已实际进入
+payload并完成Core停止子测试；完整父入口仍因软删除registration计数检查而失败。
+新增严格Core事件判定与只读软删除计数、在线scope API复核后，第十轮完整十阶段、
+五个Core用例及六个宿主job记录通过，包括运行作业清理、口令停用、同账号重启执行
+与失败清理保留证据。独立归档、正常关机和物理宿主对照相同；完整终态见
+[停止与出站前置条件接续](../reviews/2026-09-25-forgejo-stop-forwarding-continuation.md)。
+显式可路由夹具不能替代默认Docker DROP共存、完整业务部署或生产入站验收，不据此
+提前关闭M10/M11，也不重写旧失败结果。
+
+新的 `policy-loader-r1` 已在 Ubuntu 26.04 amd64 完成真实 build/export/repeat、十项
+镜像门禁及五种Forgejo工作流。固定guest AppArmor加载器不再带入发行版通用userns
+许可；普通程序仍拒绝、rootless OCI限额通过。原始事件、工件与导出摘要、正常关机和
+物理宿主基线均独立复核。记录见[固定策略加载器](../reviews/2026-09-25-forgejo-fixed-policy-loader.md)。
+随后以新工件和该已验收镜像接续 `forgejo-stop-r8` 的联合停止/停用/重新启用，结果单独
+记录；M10/M12仍保留完整业务、VM/ARM64、正式发布及回滚等未完成范围。
+
+2026-09-25 已定位后续镜像失败：不是guest策略拒绝或post-files失败，而是AppArmor包
+维护脚本继承宿主TMPDIR，在chroot内调用mktemp时目录不存在。构建环境已固定为
+chroot也可用的HOME/TMPDIR，私有cache/sources/output仍走原显式参数；先复现再修复，
+不修改包脚本、额外挂载宿主目录或关闭安全策略。新镜像与真实停止链路另验，记录见
+[构建chroot环境](../reviews/2026-09-25-incus-build-chroot-environment.md)。
+
+2026-09-25 工具恢复后的构建接续：实际诊断确认Ubuntu构建Debian guest时缺少官方
+keyring会让debootstrap警告后继续，现补齐构建前置验签条件及零退出不得掩盖警告的
+拒绝路径。Ubuntu官方包的固定 `.gpg -> .pgp` 相对别名已由实机核实并增加精确兼容，
+任意链接仍拒绝。缺keyring的真实CLI拒绝、未占用revision和进程回归已取得证据；新
+镜像、自动guest策略及停止链路结果单独记录，M12不据此提前关闭。详见
+[引导验签接续](../reviews/2026-09-25-incus-bootstrap-signature-validation.md)。
+
+消费者侧继续补齐 Forgejo 管理账号生命周期：真实 Forgejo 15.0.7 与产品 helper/controller
+在独立 Debian 13 amd64 VM 通过17项口令停用、同账号重新启用、重启、未知/替换账号拒绝
+及不确定 controller 状态反例。Hook 的同一容器清理等待、期限下传和状态证明也已补回归。
+这是 Forgejo M3 的账号子链路，不代表整个 Core/Compose 开关、真实在运行 guest 排空或
+全部业务栈已完成，不改变 Incus M10/M11/M12 的整体状态。证据见
+[账号生命周期接续](../reviews/2026-09-24-forgejo-actions-account-lifecycle.md)。
+
+真实 Forgejo 接续另外发现并修复 Runner 的内部 CA 交付缺口：旧 one-job 夹具的手工
+信任安装不在生产路径中。现通过同一 stdin token 通道追加校验过的有界公开 CA，仅供
+单次 Runner 的 SSL_CERT_FILE 使用，不更改 guest 系统根或任意工作流镜像。默认配方
+冻结新增 helper，须新不可变 revision 的独立 bake/boot/one-job 证据；详细状态见
+[Runner 信任投影](../reviews/2026-09-24-forgejo-runner-trust-projection.md)，不自动关闭 M12。
+
+该接续的实际终态已取得：新 `trust-r2` 完成真实烘焙与重复复用、9 项镜像/引擎门禁及
+真实 Forgejo 五场景。没有手工 guest CA 安装，TLS 校验、隔离、资源回收和宿主最终对照
+均通过。它关闭 Runner 进程的部署 CA 交付缺口，仍不是完整业务 Compose、工作流 OCI
+checkout trust、正式签名发布或其他平台矩阵的替代。
+
+第三十七轮全新 Ubuntu 26.04 amd64 已通过完整 Core 自动投影入口：五个外层阶段、主
+测试与八个子项共九个 pass、撤销后拒绝的一个 pass，以及八个真实宿主作业。实际 CLI
+初始化/导入/render/apply 使用生产 Hook/Provider，两个非 root 合成消费者获得独立
+受限租约与控制网桥，业务网关保持。两个项目存在后的双向权限、第二份冻结部署激活后
+私钥保持、清理和宿主撤销后不回退旧凭据均通过；VM 正常退出及宿主原 Docker 对照一致。
+完整证据与失败链见[Core 投影接续核对](../reviews/2026-09-24-incus-core-projection-continuation.md)。
+这不替代真实 Forgejo/AI Agent 部署、可启动或签名 guest 镜像、全部降级/故障恢复与
+ARM64/VM 矩阵。下方按日期保留较早阶段，不把它们当作当前尚未接线的结论。
+
+最新同工件矩阵已完成：第三十轮 Debian 13、第二十九轮 Ubuntu 26.04、第三十一轮
+Ubuntu 24.04 的 amd64 环境各通过 **25 / 25 门禁、18 个作业及退出观察**。使用同一
+`.8` 实验版本和经核对的源/工件摘要，三轮分别删除 6/4/3 个受管包，327/682/667 个
+原有包及未托管依赖保留；26.04 对照特别预装 nftables/conntrack，实际未被移除。
+三份归档、正常关机、物理宿主对照和无遗留进程/监听均已复核；这不是全部 75 项需求完成。
+详细结果见[空池盘点与显式卸载接续](../reviews/2026-09-23-incus-storage-inventory-compatibility.md)。
+
+第三十轮全新 Debian 13 amd64 的实际 CLI/HTTPS→共享 job→systemd 审批闭环已通过完整
+**25 项门禁、18 个作业及退出证据**，包括真实控制桥认证/拒绝、五分钟自然过期、精确
+删除六个受管包和重复卸载；327 个原有包及其他未托管依赖保留。修复了 Debian 空池清单
+null 编码的只读兼容性，以及其维护脚本不停止 systemd daemon 导致删除后读回失败的问题。
+没有清除失败 intent 或放宽外部服务归属；归档、正常关机与物理宿主对照均通过。
+详见[空池盘点与显式卸载接续](../reviews/2026-09-23-incus-storage-inventory-compatibility.md)。
+下文较早的 Debian 准备失败与第二十六轮状态是历史记录，不替代本轮真实终态。
+
+后续已独立复核 Ubuntu 24.04 第十五轮的完整 23 项通过、14 个成功作业、公开归档摘要和
+正常关机/宿主对照，证书 POST 的 base64 DER 修复有该发行版真实证明。Debian 第十六、
+十七轮停在实验 Docker 环境的官方索引下载阶段，尚未运行产品审批，不冒充产品通过或
+Incus 登记失败。当前证据见
+[一级发行版核对](../reviews/2026-09-23-incus-distribution-matrix.md)。
+
+浏览器第十九轮已核对真实证书，但发现维护页深链接在首次恢复 owner 会话前被临时匿名
+能力列表重置。本轮补齐 Vue 响应式回归并修复实际 App 接线，前端构建与 96 项测试通过；
+重新构建嵌入资源后，真实浏览器 8 项通过；旧外层收尾脚本的端口检查中断问题也已修复。
+第二十二轮再次完整通过浏览器门禁、正常关机、实际 QEMU 退出 0 和物理宿主对照，终态见
+[浏览器会话恢复接续](../reviews/2026-09-23-incus-browser-session-recovery.md)。
+
+同日更早的完整结果：已安装审批入口 **23 项全部通过**，14 个共享 job 与 14 个真实 hostd 激活
+相互对应。除安装/配置/登记/卸载、跨工作区和重放拒绝外，新增非 root Docker 容器的
+控制桥 mTLS、错误 pin、无证书以及其他 bridge 拒绝；真实五分钟过期后的执行和旧计划
+续签拒绝、新计划确认后可执行也已通过。本轮自动归档并正常关机，物理宿主全部对照相同。
+源码/工件、失败与终态见
+[消费者控制桥与确认过期记录](../reviews/2026-09-23-incus-consumer-control-bridge.md)。
+该结果不替代受限消费者 project/配额测试、完整自动投影、浏览器重新确认交互、其余
+发行版或正式签名发布；Module 仍保持 developing，M10 不整体提前关闭。
+
+本轮继续修复原生测试实际暴露的服务期限、非 root relay 配置可读性、Ubuntu 26.04 daemon
+拆包归属和网络枚举顺序误报计划漂移；对应回归先复现再修复，未清除旧 failed intent 或放宽
+审批、归属、mTLS 和真实拓扑漂移校验。第五轮全新 Ubuntu 26.04 amd64 VM 的完整 **11 项**
+原生后端门禁通过，实验 Docker 恢复其基线；该 VM 正常退出后，物理宿主 24 个已有容器、
+17 个网络、卷、服务身份、配置、nft 和双栈路由均与本轮开始相同。
+详细失败链、源码/工件摘要及终态见
+[服务期限与原生供给接续](../reviews/2026-09-23-incus-service-execution-budgets.md)。
+
+以下是主要发行版直接后端先前阶段的记录，不是完整 M10：另增
+[`server-incus-host-action-e2e.py`](../../test-env/scripts/server-incus-host-action-e2e.py)
+验证实际安装的 CLI/HTTPS owner、共享 job、一次性确认及 socket 激活的 systemd hostd。
+独立入口使用明确的 native 实验版本与源码摘要，不冒充正式签名发行版；其审批和消费者
+控制桥结果见上方最新记录，其他发行版、ARM64 和完整失败恢复仍须分别有真实证据。
+
+本次沿用已有未提交改动，补齐宿主卸载的提前只读盘点：停止/冻结实例、池引用/卷、控制
+网络端点和删除包时的共享 daemon 外部对象都须先排空。不完整清单不能当作空清单，
+拒绝与取消不先撤销管理连接，也不留下不确定的变更 intent；删除阶段仍再次读回。
+同时修复空网桥字段误匹配无关实例，并把 root Docker 客户端收紧到固定网络生命周期，
+排除 connect/disconnect/prune 和容器操作。原生宿主门禁现有 11 项必需事件，新增保留卷
+反例；不得用旧的 10 项结果替代新增验收。当前验证见
+[宿主卸载接续核对](../reviews/2026-09-23-incus-host-uninstall-preflight.md)。
+
+以下为本轮早期故障记录。真实宿主夹具首轮已通过确认拒绝与显式跳过，但安装因监督器继承的 32 MiB 文件大小限制
+截断 APT 索引而失败。现已改为只限制日志管道，macOS/Linux 监督器回归通过，失败状态
+与原 VM 磁盘保留，全新 VM 的完整 11 项重跑单独记录。不以删掉 failed intent 或降低
+日志完整性门禁制造成功。非 root broker 的 16 项必需原生用例在内核 7.0 的隔离 VM
+通过；物理宿主内核 5.15 缺少所需 `SO_PEERPIDFD`，该侧失败保留，不冒充 root/systemd
+安装审批链路验收。
+
+以下记录同日更早的原生与构建接续，不能当作本次新增用例的执行记录。
+
+从干净 `master` / `0b6144887d6c1ecc89847be6d2773f139e8b7f23` 继续核对。新增回归先复现
+Provider 合并旧 project 时保留 `restricted.devices.proxy=allow`，且 inspect 误报 ready。
+实现改为两档都显式写入 `block`，ensure 收紧并读回，inspect 对缺失/漂移只读拒绝。
+本机和指定 ln Linux 主机的完整 Provider 回归通过；Linux 首次执行还发现测试供给父目录
+权限依赖 umask，现将夹具显式设为 0700，不放宽生产文件检查，保留原失败日志。
+
+原可销毁 VM 生命周期入口扩展为 15 项必需通过事件，增加直接 proxy 反例和管理证书
+重叠/撤销后的运行实例身份检查。本次在已有未提交改动上接续，已用指定 SSH 服务器中的
+全新 Ubuntu 26.04 amd64 / Incus 6.0.5 VM 执行完整入口，15 项全部通过。旧管理证书撤销后
+inspect 失败，新证书仍可 ensure/inspect，原消费者与运行实例身份不变；直接 proxy 设备
+请求被 daemon 拒绝。清理回读、报告归档与 VM 正常退出已确认，不以该结果关闭整个 M6
+或开放生产 ingress。详见[本轮验收记录](../reviews/2026-09-23-incus-native-and-shared-build.md)。
+
+共享构建新发现并修复运行层绕过仓库镜像源策略的问题。三份 Dockerfile 的构建/运行基础
+镜像均接入 `DOCKER_HUB_REGISTRY`，既有 builder 覆盖值优先，外部模块代理回退到
+`GOPROXY_URL`；仓库共享代码离线和 Go checksum 边界不变。新增只读 `--json` 构建输入报告
+及独立 VM 六次源码/staging 构建门禁，明确区分 build-only staging 与完整 Core 部署。
+
+### 默认容器已验收范围（2026-09-22）
 
 默认系统容器 Runner 的当前运行闭环已完成。`lab-r9` 的 cgroupfs 方案被实际限额门禁
 拒绝；最终改为 engine 用户管理器内运行 Podman，保留系统侧只读文件系统与私有临时目录
@@ -389,11 +602,12 @@ runtime 是 `compose_run`，只在 apply 时跑一次，且 ABI 只传 `ANAS_RES
 ## 4. M2/M2a：Provider operation 与隔离（实现已落地，围栏真实验收待办）
 
 - [x] `ensure` 幂等：project 存在则合并配置后 `PUT`，不存在则 `POST`；不覆盖无关的 `user.*` 键；
-- [x] 写入后读回并断言 `restricted=true` 与四项 limits 非空，不满足即 fail closed 且不登记证书；
+- [x] 写入后读回全部受管 project 围栏与四项 limits 的精确总量，不满足即 fail closed 且不登记证书；
 - [x] 证书登记拒绝两类越权：已被无限制信任的证书、已绑定其他 project 的证书；
 - [x] 配额映射：Contract 的每实例上限乘以 `max_instances` 写成 project 总量；
 - [x] project 封禁 device/raw config/挂载/低层配置；`incus_container` 额外写入
       `restricted.containers.privilege=unprivileged`；
+- [x] 显式收紧并读回 `restricted.devices.proxy=block`，避免合并时保留历史 `allow`；两档回归及默认容器直接 daemon 反例通过，完整 VM 设备矩阵仍待验收；
 - [x] 证书固定用精确 DER 比对，失配无继续分支；
 - [x] `inspect` 只读且分开报告四个标志；`revoke` 撤销证书、保留 project、幂等；
 - [x] 错误可归因到具体参数且不回显凭据，配套回显测试。
@@ -408,28 +622,30 @@ runtime 是 `compose_run`，只在 apply 时跑一次，且 ABI 只传 `ANAS_RES
 - [x] `saveResourceReady` 记录租约事实，只存 Secret 引用；
 - [x] `internal/runner/compute_test.go` 覆盖凭据稳定性、消费者隔离、sandbox 冲突与租约校验。
 
-## 6. M4：共享 Incus 客户端库（实现已落地，真实验收待办）
+## 6. M4/M4a：共享 Incus 客户端库（默认容器验收已完成）
 
 - [x] 共享包位于 `internal/computeclient`，消费者 Dockerfile 从命名 `shared` context 复制源码，
       用 Go module 模式与 `GOPROXY=off` 编译，不从网络拉取共享包；
 - [x] create/start/exec/stop/delete/list/janitor 由共享库实现；Forgejo 保留业务适配层；
 - [x] 读取消费者租约，校验镜像摘要、实例前缀、配额和 guest 入口 allowlist；
 - [x] 实例请求不开放 device、raw config、挂载或 profile 覆盖；Secret 经 stdin；
-- [ ] 在真实宿主验证取消、超时与清理失败场景，证据登记到 §10。
+- [x] 默认容器档真实 exec 取消和运行中 controller SIGTERM 的独立清理已验收，证据登记到 §10；超时/失败补偿已有回归。
+- [ ] 独立 VM 及完整平台/故障运行矩阵仍归 M6，不能由默认容器结果替代。
 
-验收：要求文档 §7 第 1—5 条。已有单元测试不等于真实宿主取消验收。
+验收：要求文档 §7 第 1—5 条。取消的原生证据与补偿单测分别登记，不混为同一矩阵。
 
-## 7. M5：Forgejo 迁移（实现已落地，真实验收待办）
+## 7. M5/M5a：Forgejo 迁移（默认容器 one-job 已验收）
 
 - [x] controller 使用 `internal/computeclient` 并读取消费者私有租约环境变量；
 - [x] manifest 通过 `dependencies.contracts` 与 `resources.requires` 接入 compute，默认
       `incus_container`，VM 由消费者显式选择；
 - [x] 保留既有 sandbox 名 `anas-forgejo-runners`，不要求迁移数据或重建 project；
-- [ ] 真实 one-job 验证 ephemeral 注册、stdin token、作业后销毁及 crash 后 janitor 回收。
+- [x] 默认容器真实 one-job 验证 ephemeral 注册、stdin token、正常/失败后的销毁、SIGTERM 取消及 SIGKILL 后保留 state 的恢复回收。
+- [ ] VM/ARM64、state volume 丢失、网页取消和容器镜像构建工作流仍须分别验收。
 
 验收：要求文档 §7 第 6—7 条。Forgejo 自身的应用与身份验收仍归其私有计划。
 
-## 8. M6：真实宿主验收（阻塞）
+## 8. M6：真实宿主验收（默认容器部分完成，完整矩阵待验收）
 
 需要独立 Incus 宿主；容器档可先在无 KVM 的 Linux 宿主验证，VM 档另需 KVM。没有 KVM 不应
 阻止容器档用例编写与执行，但不能以容器结果替代 VM 结果。
@@ -450,7 +666,7 @@ runtime 是 `compose_run`，只在 apply 时跑一次，且 ABI 只传 `ANAS_RES
 
 - [x] `cmd/check-shared-build` 校验共享源码、Dockerfile COPY 与 revision 触发路径；
 - [x] Compose 提供 `ANAS_SHARED_BUILD_CONTEXT` 覆盖入口；
-- [ ] 从源码 checkout 和部署 staging 树分别验证构建上下文解析及实际构建；
+- [x] 从源码 checkout 和 staging 布局分别验证实际 Compose 解析及构建（2026-09-23，三镜像六次无缓存构建）；保留真实 build 输入，不冒充完整 Core 渲染部署；
 - [x] 在 Module 双语技术文档中给出覆盖值应指向匹配版本的完整仓库源码根的绝对路径示例，注明源码不存在时不能本地构建（2026-09-18）；命令模板未作为实构验收运行。
 
 R-084 从 M8 移到此处；退出条件是覆盖路径可用且文档同步，不能只凭变量存在判定完成。
@@ -459,7 +675,14 @@ R-084 从 M8 移到此处；退出条件是覆盖路径可用且文档同步，�
 `staging_test.go`：强制显式绝对 shared context，对实际存在的共享构建 Module 核对 Compose、
 Dockerfile、构建目录及 shared_paths 的文件集合、字节和执行位；没有匹配模块、源码漂移、特殊文件
 和被枚举到的符号链接都拒绝。它不验证完整 deployment manifest、不加载部署环境，也不调用 Docker。
-测试源码已编写但未运行；静态预检不代替源码/staging 两条路径的实际构建，M8b 不改为已完成。
+当日测试源码已编写但未运行，静态预检没有代替两条路径的实际构建。
+
+2026-09-23 在独立 Ubuntu 26.04 / Docker 29.1.3 / Compose 2.40.3 VM 中完成三镜像的
+source/staging 六次 `--no-cache` 构建。实际 Compose 解析、缺少 shared override 的静态与
+真实构建反例、非 root 镜像探针、输入复核、业务二进制及固定 Incus CLI 摘要一致性均通过。
+测试镜像与容器清理、测试 daemon 停止和报告归档已确认，M8b/R-084 可关闭。
+该门禁使用 build-only staging，不覆盖完整 `anas build/apply`、Hook、Provider/guest 或
+正式镜像发布，详见[验收记录](../reviews/2026-09-23-incus-native-and-shared-build.md)。
 
 ### 8.3 M8：长驻实例与 image_policy 扩展预留
 
@@ -526,9 +749,10 @@ socket/子进程门禁要求关键用例实际执行，记录见
 
 - [ ] 核验首批三个发行版的官方包、服务单元、版本与架构，形成声明式安装表；
 - [ ] 按架构 §3.7 细化的独立控制 bridge、固定目的地非 root 转发和双栈防火墙实现原型，完成真实连通验证与宿主动作清单；
-- [ ] 实现探测、安装、配置、登记、读回验证和状态记录，区分已存在的外部 daemon 与 ANAS 所有资源；
+- [x] 实现探测、安装、配置、登记、读回验证和状态记录，区分已存在的外部 daemon 与 ANAS 所有资源；主要发行版直接后端与已安装审批闭环均通过，其他发行版单独验收；
 - [ ] 定义跳过、部分失败、重试和卸载的状态迁移，保证可选消费者关闭而主部署可继续；
-- [ ] 卸载先清点受管资源与运行实例，不删除非 ANAS 资源；破坏性动作遵循宿主通道要求；
+- [x] 卸载先清点受管资源与运行实例，不删除非 ANAS 资源；真实保留卷拒绝、原包保留/逐包归属、确认后卸载与重复卸载通过，不代表完整故障恢复矩阵；
+- [x] 三个一级发行版 amd64 使用同批产品工件，分别完成新版 25 项实际审批、控制桥、精确包删除/原包保留与重复卸载；各 18 个共享 job 和独立退出、正常 VM 收尾及宿主对照通过；
 - [ ] 在三个干净发行版及未适配发行版执行安装、重复执行、失败恢复和卸载验收。
 
 退出条件：默认路径无需用户手工准备 daemon/证书，回环限制与失败降级均有真实证据。
@@ -816,10 +1040,12 @@ catalog，复用 `DescribeArtifactRelease` 和规范描述。私有本地归档�
 | --- | --- | --- | --- | --- |
 | R-007 | `test-env/scripts/server-incus-lifecycle-e2e.py` | Ubuntu 26.04 / Incus 6.0.5 / amd64 / btrfs 容器夹具 | 2026-09-22 | 同名双租约实际并行运行及独立清理通过；产品/VM 矩阵待验收 |
 | R-011 | `test-env/scripts/server-incus-lifecycle-e2e.py` | 同上，受限证书直接变更请求 | 2026-09-22 | host disk 与其他租约网络拒绝、原配置不变；完整设备/VM 矩阵待验收 |
+| R-011 | `test-env/scripts/server-incus-fence-e2e.py` | 6.0.5 / 7.0.1 / 7.5.1 一次性 VM，放宽的旧 project | 2026-09-26 | 完整 restricted 键收紧、清除键删除、inspect 只读拒绝；daemon 以实例冲突拒绝收紧（特权容器、换档）；7.x 存储池越界与 7.5 VM nesting 被拒，见[实机核验](../reviews/2026-09-26-incus-fence-native-validation.md) |
 | R-025 | `test-env/scripts/server-incus-lifecycle-e2e.py` | 同上，真实运行 exec 取消 | 2026-09-22 | 取消错误、独立删除及另一租约保持运行通过；controller 迟到创建/crash 待验收 |
 | R-031 | `test-env/scripts/server-incus-lifecycle-e2e.py` | 同上，两份独立证书与相同实例名 | 2026-09-22 | 各自只读回自己的 workload；全平台/产品镜像矩阵待验收 |
 | R-008 | `test-env/scripts/server-incus-lifecycle-e2e.py` | 同上，绕过共享库参数校验 | 2026-09-22 | 直接 CPU/内存/磁盘超配及跨租约 NIC 请求被拒绝；完整围栏矩阵待验收 |
-| R-029 | 待新增 `test-env/scripts/server-incus-cert-rotation-e2e.sh` | 运行中实例 + 证书轮换 | — | 待执行 |
+| R-008 | `test-env/scripts/server-incus-fence-e2e.py` | 同上三档，受限证书直接请求 | 2026-09-26 | 容器档拒绝 VM、VM 档拒绝容器（`Reached maximum number of instances of type`），同档请求通过项目准入；VM 实际启动未验收，见[实机核验](../reviews/2026-09-26-incus-fence-native-validation.md) |
+| R-029 | `test-env/scripts/server-incus-lifecycle-e2e.py` 的 `management-certificate-rotation` 子项 | 独立 Ubuntu 26.04 amd64 / Incus 6.0.5 / 运行中双租约 | 2026-09-23 | 前轮 15 项原生门禁通过，旧证书拒绝、新证书可管理且 guest 身份不变；不代表 Core 自动轮换事务或 VM/ARM64 |
 | R-030 | `test-env/scripts/server-incus-lifecycle-e2e.py` | 同上，实际 Provider 与共享客户端 | 2026-09-22 | ensure/重复/inspect → 容器 create/start/exec/stop/delete 通过；正式镜像与 VM 档待验收 |
 | R-032 | `test-env/scripts/server-incus-lifecycle-e2e.py` | 同上，实例数限制及 btrfs 4 GiB 根盘 | 2026-09-22 | 实例数与直接超配拒绝、实际写满通过；ZFS/VM/正式镜像待验收 |
 | R-033 | 待新增 `test-env/scripts/server-incus-janitor-e2e.sh` | 强制中断消费者 | — | 待执行 |
@@ -828,19 +1054,25 @@ catalog，复用 `DescribeArtifactRelease` 和规范描述。私有本地归档�
 | R-041 | 待新增 `test-env/scripts/server-incus-longlived-e2e.sh` | 长驻档持久卷与入站（第三阶段） | — | 待执行 |
 | R-042 | 待新增 `test-env/scripts/server-incus-longlived-e2e.sh` | 长驻档下既有边界不被削弱 | — | 待执行 |
 | R-044 | 待新增 `test-env/scripts/server-incus-network-e2e.sh` | 双栈宿主上的租约网络出网 | — | 待执行 |
-| R-047 | 待新增 `test-env/scripts/server-incus-host-setup-e2e.sh` | 干净宿主上的一次性安装 | — | 待执行 |
-| R-048 | 待新增 `test-env/scripts/server-incus-host-setup-e2e.sh` | 重复执行与卸载、装不上时的降级 | — | 待执行 |
-| R-050 | 待新增 `test-env/scripts/server-incus-host-setup-e2e.sh` | 校验 daemon 只监听回环 | — | 待执行 |
+| R-047 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 三个一级发行版 amd64 宿主审批；26.04 真实 Core CLI/Hook/Provider/Compose 双合成消费者 | 2026-09-24 | 三档宿主各 25 项通过；Core 五阶段、主流程九项与撤销一项通过，无需手填连接/架构；正式安装器及实际业务部署另验 |
+| R-048 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 跳过、重复执行、保留卷拒绝、两种卸载及 Core 新冻结部署/撤销 | 2026-09-24 | 三档精确删包/保留原包/重复卸载通过；Core 新版本实际激活保持凭据、撤销后拒绝旧凭据且私有 Store 不变；完整降级/失败恢复仍未完成 |
+| R-050 | `test-env/scripts/server-incus-host-action-e2e.py` 与 `server-incus-core-projection-e2e.py` | 回环 daemon、实际控制桥及 Core 自动投影的两个非 root 消费者 | 2026-09-24 | 宿主传输正反例与 Core 自身租约/既存项目隔离通过，业务网关优先级不变；完整 LAN/双栈及实际 Forgejo/AI Agent 部署另验 |
 | R-053 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | Traefik 公网双栈、受管 guest IPv4 后端 | — | 待执行 |
 | R-054 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | Traefik 发布实例内 HTTP 服务 | — | 待执行 |
 | R-055 | 待新增 `test-env/scripts/server-incus-image-bake-e2e.sh` | 首次烘焙与二次 apply 不重建 | — | 待执行 |
-| R-057 | 待新增 `test-env/scripts/server-incus-host-setup-e2e.sh` | Debian 13 / Ubuntu 24.04 / 26.04 三档 | — | 待执行 |
+| R-057 | `test-env/scripts/server-incus-host-action-e2e.py` | Debian 13 / Ubuntu 24.04 / 26.04 三档 amd64 | 2026-09-23 | 三档同工件各 25 项审批/正常供给卸载通过；其他架构、故障恢复与正式默认部署不由此推导 |
 | R-094 | 待新增 `test-env/scripts/server-incus-host-setup-e2e.sh` | 未适配发行版上保持关闭而非失败 | — | 待执行 |
 | R-063 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 实例启停与 Traefik 路由增删同步 | — | 待执行 |
 | R-087 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 消费者无法注册本租约命名空间之外的域名 | — | 待执行 |
 | R-088 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 绕过客户端库直写请求文件仍被拒绝 | — | 待执行 |
 | R-095 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 运行时无法覆盖租约声明的认证方式 | — | 待执行 |
 | R-072 | 待新增 `test-env/scripts/server-incus-image-bake-e2e.sh` | prune 保留上一个 deployment 的镜像 | — | 待执行 |
+| R-101 | 待接续 `test-env/scripts/server-forgejo-stop-e2e.py` | 真实宿主审批、Core 租约与默认 Docker 下的 guest/Forgejo | — | 待执行；确认事务单元通过不替代产品联合验收 |
+| R-102 | `internal/incusingresshost/forwarding_native_linux_test.go`；真实 guest 场景待接续 | 全新 Ubuntu 26.04 amd64 / 默认 Docker DROP | 2026-09-26 | 内核精确许可、物理 veth 源冒用拒绝再次通过；端点是 namespace，真实租约/跨租约替换待验收 |
+| R-103 | `internal/incusingresshost/forwarding_native_linux_test.go`、失败撤回回归；真实 stop/revoke 待接续 | 新连接拒绝、原已建立 socket 及精确 conntrack 分开核验 | 2026-09-26 | 内核新连接/原连接撤销通过，启用后失败统一补偿回归通过；完整业务停止与租约撤销未关闭 |
+| R-104 | `internal/incusprovision/forwarding_retirement_native_linux_test.go`；业务入口待接续 | 实际安装后端、Incus trust/空实例/网桥，Core stopped 和旧 grant 为夹具 | 2026-09-26 | 原始拒绝、自然空清单、显式/重复退役及墓碑/依赖解除通过；地址/接口变化、崩溃/重启和完整宿主卸载仍待验收 |
+| R-105 | `test-env/scripts/server-incus-forwarding-e2e.py` 与 `internal/incusingresshost/forwarding_native_linux_test.go` | 独立默认 Docker、既有管理员拒绝和原始策略保留 | 2026-09-25 | 原9项临时许可因果实验通过；候选生产执行器完整正反向验收仍待完成 |
+| R-106 | `test-env/scripts/server-incus-fence-e2e.py` | 一次性 VM：Ubuntu 26.04 官方 6.0.5、Debian 13 trixie-backports 7.0.1、Ubuntu 26.04 Zabbly 7.5.1 | 2026-09-26 | 三档 16/18/19 项必需检查全部通过：第二工作区与所有者撤销后均拒绝、未标记共享 project 拒绝、额外受限证书使 inspect 未就绪、`default` 拒绝；真实 Core 多工作区部署未验收，见[实机核验](../reviews/2026-09-26-incus-fence-native-validation.md) |
 
 ## 11. 文档同步
 
@@ -855,7 +1087,7 @@ catalog，复用 `DescribeArtifactRelease` 和规范描述。私有本地归档�
 ## 12. 当前阻塞与执行顺序
 
 1. 网络控制连接按架构 §3.7 推进验证；入站按 §5.1.7 验证 Traefik 直达 guest 的受限路由与授权回收；命名镜像解析仍需明确产物目录与烘焙阶段。
-2. 可独立推进 M8b staging 验证、M11 ingress 声明校验、M6 测试脚本；不得因此宣称完整入站可用。
+2. M8b staging 构建验证已完成；继续 M10 宿主原生生命周期与 M11/M6 剩余矩阵，不得因此宣称完整入站可用。
 3. 宿主动作通道与统一动作 ABI 的实现仍分别归各自计划，Incus 只接入，不在本计划重复分配其需求。
 4. v7.3.0 bridge/project 兼容性缺陷已修复为 default project 独立 bridge 与精确网络授权，历史证据与反例见[核验记录](../reviews/2026-09-10-incus-network-proxy-validation.md)。独立宿主尚无可用验收证据；容器与 VM 分别跟踪，M2/M4/M5/M9 的真实验收均登记到 §10。
 5. M8 长驻档和 M14 后续发行版保持预留。完成文档整理不表示这些阶段已实施。

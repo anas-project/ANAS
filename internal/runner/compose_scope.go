@@ -18,6 +18,7 @@ var composeProjectPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 // the working directory into every managed container, which gives the runner a
 // daemon-observed ownership boundary instead of trusting a project name alone.
 var inspectComposeProjectOwners = dockerComposeProjectOwners
+var inspectComposeProjectOwnersBounded = dockerComposeProjectOwnersContext
 
 func composeProjectName(module string, env map[string]string) (string, error) {
 	prefix := strings.TrimSpace(env["CONTAINER_PREFIX"])
@@ -92,6 +93,21 @@ func (a *app) ensureComposeProjectOwner(project string) error {
 	} else {
 		owners, err = inspectComposeProjectOwners(project)
 	}
+	return a.validateComposeProjectOwners(project, owners, err)
+}
+
+func (a *app) ensureComposeProjectOwnerBounded(ctx context.Context, project string) error {
+	if ctx == nil || ctx.Err() != nil {
+		return fmt.Errorf("Compose ownership observation canceled")
+	}
+	owners, err := inspectComposeProjectOwnersBounded(ctx, a.compose.Environment(a.commandEnvironment(nil), nil), project)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return a.validateComposeProjectOwners(project, owners, err)
+}
+
+func (a *app) validateComposeProjectOwners(project string, owners []string, err error) error {
 	if err != nil {
 		return fmt.Errorf("inspect Compose project %q ownership: %w", project, err)
 	}
@@ -143,14 +159,19 @@ func dockerComposeProjectOwners(project string) ([]string, error) {
 }
 
 func parseComposeProjectOwners(out []byte) []string {
+	if len(out) == 0 {
+		return nil
+	}
 	seen := map[string]bool{}
-	for _, line := range strings.Split(string(out), "\n") {
+	// Docker emits one line per container. An empty *row* is a present
+	// container with no ownership label, not an empty project. Remove only
+	// the final record delimiter, never the evidence of an unlabelled owner.
+	for _, line := range strings.Split(strings.TrimSuffix(string(out), "\n"), "\n") {
 		line = strings.TrimSpace(line)
 		if !seen[line] {
 			seen[line] = true
 		}
 	}
-	delete(seen, "")
 	owners := make([]string, 0, len(seen))
 	for owner := range seen {
 		owners = append(owners, owner)

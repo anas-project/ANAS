@@ -113,6 +113,40 @@ func TestForgejoRunnerRecipeUsesActualOneJobEntrypoint(t *testing.T) {
 	}
 }
 
+func TestAllRunnerRecipesFreezePublicTrustInputCode(t *testing.T) {
+	source := filepath.Join("..", "..", "modules", "forgejo", "runner-image")
+	input, err := os.ReadFile(filepath.Join(source, "anas-forgejo-runner-input"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, arch := range []string{"amd64", "arm64"} {
+		for _, iface := range []string{"incus_container", "incus_vm"} {
+			body, err := ForgejoRunnerRecipeFromSource(Target{Architecture: arch, Interface: iface}, source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var recipe struct {
+				Files []struct{ Path, Mode, UID, GID, Content string } `yaml:"files"`
+			}
+			if err := yaml.Unmarshal(body, &recipe); err != nil {
+				t.Fatal(err)
+			}
+			seen := 0
+			for _, f := range recipe.Files {
+				if f.Path == "/usr/local/libexec/anas-forgejo-runner-input" {
+					seen++
+					if f.Mode != "0755" || f.UID != "0" || f.GID != "0" || strings.TrimSpace(f.Content) != strings.TrimSpace(string(input)) {
+						t.Fatal("immutable recipe diverged from the reviewed fixed input helper")
+					}
+				}
+			}
+			if seen != 1 {
+				t.Fatal("each target needs exactly one frozen trust-input helper")
+			}
+		}
+	}
+}
+
 func TestForgejoRunnerCopyUsesTheFrozenBuildInputDirectory(t *testing.T) {
 	for _, iface := range []string{"incus_container", "incus_vm"} {
 		body, err := ForgejoRunnerRecipe(Target{Architecture: "amd64", Interface: iface})

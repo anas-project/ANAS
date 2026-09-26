@@ -1,5 +1,91 @@
 # Incus compute provider 技术实现
 
+## 租约转发的当前边界
+
+宿主动作清单新增 `incus.forwarding.permission.plan` 与
+`incus.forwarding.permission`，只接受工作区、compute 资源、enable/disable/retire 与明确的
+IPv4/TCP 目的地址端口。实际来源由 Core 活动部署、投递证书、Incus 分配与内核接口
+共同核验，调用方不能传入来源 IP、接口、规则、命令或路径。状态和失败回执保存在
+原宿主 `state.json` 的 `forwarding_scopes`；共享审批、job 与审计机制不变。
+
+**生产 enable 当前被 `forwarding_lifecycle_integration_unavailable` 阻止，确认不能
+解除此门禁。** 候选执行器的许可仅有30秒，不提供自动续期；默认 Docker 下完整 guest /
+Forgejo、停止/重启协调及反向隔离尚未完成，不得据此开启生产功能。disable 使用原
+归属回执，区分新连接关闭与双向 NAT 连接实际清理；保留拒绝规则及失败历史，不是完整
+卸载。未退役的转发对象阻止宿主依赖拆除，不能删除记录来解除阻止。
+
+启用事务在许可可能生效后遇到读回失败、最终保存失败、取消或会话关闭失败，会在原宿主
+状态锁仍持有时执行一次有界撤回。撤回使用独立的30秒上下文，先持久化意图，再关闭许可
+和核验连接清理；不会重试安装或续期。撤回成功也保留原启用失败及依赖阻止，失败时保留
+原回执、实例身份与待完成步骤，不能把旧的“已关闭”结果或许可到期当作本次撤销证明。
+
+`retire` 是同一确认动作的显式退役操作，目的地清单必须为空。它不隐式停用活动许可，
+也不代为停止模块、撤销证书或删除实例。必须先完成 disable，再核验原注册部署已停止、
+运行锁无待清理标记、原租约证书已撤销且无替代授权、整个项目无实例/操作、原物理网桥
+无任何端口，才移除回执所属的兼容链、集合和拒绝表。宿主及工作区锁保持到最后核验；
+规则缺失、身份变化、未完成效果或收尾失败均不能报告退役成功。成功保留原授权、失败
+历史及 `released` 回执；该状态必须同时证明规则句柄、集合、兼容入口均已清除，且两类
+连接撤销均已确认。它不实现重启后的旧内核恢复，也不自动复活已退役许可。
+
+Incus 在异步删除完成后可能暂留成功操作记录。非空 `success` 清单同样阻止退役，必须
+等原清单自然变空后重新计划；不能删除记录或把“操作成功”解释为“无操作”。原生夹具
+在操作记录自然消失后先验证可计划，再执行独立的物理端口反例，避免前置故障造成假通过。
+
+Provider profile 要求 MAC、IPv4、IPv6 来源过滤，实例观察器再次检查 expanded NIC，
+缺失或被覆盖时拒绝。nft 中接口名称不是编号证明；编译读取器以只读 netlink 获取
+规则及集合成员中的实际编号，不根据当前同名设备认领旧许可。2026-09-25 的独立第六轮
+已验证实际内核精确许可、来源冒用拒绝、管理员早期拒绝及同一既有连接撤销；端点仍是
+namespace 进程。退役后端、真实 guest 和完整 Forgejo 分别验收，不能互相替代。
+
+宿主计划另外公开只读IPv4转发诊断：固定sysctl值、nft filter base chain中的DROP及
+Docker用户链存在。早期ACCEPT不能据此覆盖后续DROP；没有观察到DROP也不是连接成功。
+读取失败只产生未验证警告，原始规则/地址/计数器不对外投影；不改Docker策略或链。
+计划明确保留`guest_egress_unverified`与`compute_ready=false`，原生受控报文实验和
+生产自动适配分别验收，不以宿主mTLS控制连接替代guest数据面出站。
+
+该诊断和受控报文路径已在独立Ubuntu26.04 amd64 / Docker29.1.3通过9项原生门禁：
+早期nft ACCEPT不覆盖后续DROP，精确临时许可/其他流拒绝/撤回均有实际报文证据。
+端点是明确的namespace测试进程；生产自动规则授权、源防伪、重启和过期撤回仍未由此
+实现，不能把实验DOCKER-USER规则直接作为通用修复。
+
+独立镜像构建工具只传入固定的 `HOME=/root`、`TMPDIR=/tmp` 和最小PATH/语言环境。
+宿主私有cache路径不能作为TMPDIR进入guest chroot，否则包维护脚本的mktemp会失败；
+cache/sources/output仍由原固定参数约束，不放宽目录权限、不挂载宿主目录到guest、不
+修改包脚本或跳过签名/安全策略。该构建修复与新镜像原生验收分别记录。
+
+默认 Debian guest 的镜像构建在占用 revision 之前验证 builder 的固定发行版 keyring，
+并拒绝关闭验签的配方。debootstrap 的明确未验签警告是不可被后续 packing/退出0覆盖的
+失败，不记录输出、不复用失败尝试。此约束位于 release 工件工具，不在 Provider ensure
+中安装软件或再次烘焙，不改变原有按摘要导入与部署边界。
+
+2026-09-24 的 `trust-r2` 新镜像已通过原生烘焙/重复复用、9 项启动/引擎门禁，以及真实
+Forgejo 正常、失败、取消、崩溃恢复和未授权仓库反例。公开 CA 通过生产 stdin 路径交付，
+不是对旧镜像手工安装信任。这不替代完整业务 Core/Compose、任意 OCI checkout trust、
+其他架构或正式签名发布；完整证据见
+[Runner 信任接续](../../../dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md)。
+
+Forgejo 默认镜像配方同时冻结 starter、受限 stdin 输入 helper 与 one-job 清理入口。
+公开部署 CA 可随原 stdin token 交付给单次 Runner 的临时 CA bundle；不新增共享客户端
+文件上传、任意命令或宿主挂载能力，不改变 project 围栏。此修改必须产生新 recipe 摘要
+及不可变 revision，旧镜像不自动更新；实际新镜像烘焙/启动与业务部署结果分别验收。
+
+2026-09-24 的独立 Ubuntu 26.04 amd64 验收已完整执行 Core CLI 的初始化、导入、render、
+apply 和 stop，并使用生产 Hook/Provider 自动接入宿主私有 bundle、冻结实际架构和导入
+镜像。两个非 root 合成消费者的独立凭据、既存项目隔离、业务优先网关、新冻结部署激活
+后的凭据保持、清理及宿主撤销后拒绝旧凭据回退均通过。外层五阶段、原生九加一项和八个
+宿主作业均成功，VM 正常退出且物理宿主对照一致。实际 Forgejo/AI Agent 产品部署、
+可启动/签名 guest、ARM64/VM、失败降级/恢复和生产 ingress 仍须单独验收。
+
+Core 按依赖顺序完成 Provider calculate 后，才冻结消费者镜像目标并准备稳定凭据，随后
+向消费者 Hook 投影资源；默认宿主 bundle 的实际架构无需提前手填。跨消费者资源冲突
+检查仍共享，错误目标先于秘密生成拒绝。镜像供给的固定只读挂载只包含已核验的非秘密
+文件副本（0444）和目录（0555），使非 root Provider 可读；私有 staging 父目录、原始
+归档与 Secret Store 的权限不变。单元回归和真实 Core/Compose 验收分别记录。
+
+Incus 只有一次性 Provider 操作，正常模块启动的服务集合为空。Core 不会把这个空集合
+作为无参数 `compose up` 而启动 Provider 常驻容器；操作仍通过 `compose_run` 执行，
+资源供给和模块 ready barrier 继续保留。
+
 container 租约的固定 profile 允许内部 OCI namespace 嵌套（`security.nesting=true`），
 project 的相应 nesting 键为 allow，但 privileged 仍由 project 强制 unprivileged。
 lowlevel、宿主路径 disk、PCI/USB/字符设备等禁令及受管 NIC 围栏不变；VM 档仍禁止该
@@ -8,6 +94,83 @@ lowlevel、宿主路径 disk、PCI/USB/字符设备等禁令及受管 NIC 围栏
 原生门禁必须同时通过实际工作负载与 privileged/raw/host-device 越权拒绝控制。
 
 本文记录 `incus` Module 的 Provider 实现与安全边界。配置与操作见[中文 README](../README.md)。
+
+历史 skip/uninstall 产生的禁用状态只在新一轮登记完成信任回读、私有 endpoint 验证及
+bundle 持久化之后解除。安装、配置或登记失败不会解除禁用；登记成功也不绕过独立的
+`compute_ready` 门禁。宿主原生入口见仓库 `test-env/fixtures/incus-host-provision/README.md`，
+实际执行结果按发行版分别记录。
+
+2026-09-23 的全新 Ubuntu 26.04 amd64 VM 已通过完整 11 项原生后端门禁，含真实包安装、
+systemd/relay/nft 配置、pinned mTLS 登记、重复执行、保留卷拒绝卸载及两种卸载。
+其后的独立已安装服务入口又通过完整 **23 项**：真实 CLI/HTTPS owner、共享 job 与 systemd
+执行、确认后安装/配置/登记/卸载、跨工作区和重放拒绝、五分钟自然过期与新计划执行。
+非 root Docker 测试容器在控制桥可进行 pinned mTLS，错误 pin、无证书授权和另一 bridge
+访问分别被正确限制。原生运行结束后，测试容器/镜像/网络库存恢复，VM 正常关机，物理宿主
+既有 Docker/网络对照不变。该传输测试不替代受限 project/配额、完整 Core/Compose 自动
+投影、浏览器交互、其他发行版、ARM64/VM、IPv6 或正式签名发布；完整 M10 仍未关闭。
+
+已安装宿主动作通过 PID 1 的内核核验连接读取身份与退出事实；文本认证排空后才发送
+二进制请求，等待有界且可取消。executor 的辅助消息总线引用只防止 unit 被回收，不作为
+权限或成功证据；仍需同一 invocation 的实际退出和空进程集。真实 CLI/HTTPS 审批使用
+独立 `server-incus-host-action-e2e.py`，包含严格错误码的跨工作区和 token 重放负例。
+
+root hostd 的固定服务单元显式保留 `CAP_SETUID`，使包管理器可执行必要的用户切换；
+其余服务保护和 `NoNewPrivileges` 保持，控制台与 relay 不获得该能力。私有 APT 缓存
+可能触发 root 下载回退，不能把安装成功等同于 `_apt` 下载沙箱已验收。
+
+宿主安装动作的固定总预算为 45 分钟；APT 每步 15 分钟，Incus 启动 11 分钟，relay
+启停 2 分钟，只读服务查询仍为 30 秒。共享 broker 与发行包外层 watchdog（2730 秒）
+按这份编译策略配套校验；其他动作预算、五分钟一次性确认和较短的调用方期限不变。
+不能用 `--no-block` 或超时后的 active 状态代替动作完成与独立读回；迟到启动仍保留
+失败 intent 和回执，阻止未恢复状态继续配置、登记或卸载。
+
+relay 的非秘密配置仍写入 root 私有 `/etc/anas`，固定 systemd 单元仅只读投影该文件到
+自身 mount namespace 的 `/run/anas-incus-control-relay.json`；安装器保留该 ExecStart，
+不更改源目录权限。`AF_NETLINK` 仅供空 capability、非 root 进程读取接口身份，不授予
+网络修改能力。精确网关来源用于宿主 pinned mTLS 探测，仍由 INPUT 规则与 daemon 认证限制；
+不能据此认定消费者 bridge 已可达。Ubuntu 26.04 与 Debian 13 配方显式记录实际 daemon 包 `incus-base`，
+缺少逐包归属或已有 daemon 时不因补装辅助包而接管，显式删除后还必须确认 daemon 停止。
+
+Debian 空存储池清单的 null 编码仅在两个固定清单端点作局部兼容：两种盘点必须一致为空，
+且受管池单独查询确认不存在。其他集合的 null、缺字段、错误响应和矛盾盘点仍阻止删除；
+不放宽统一客户端，也不增加强制删包或失败动作自动重试。
+
+显式删包先完成资源盘点，再停止并读回 ANAS 自有的 `incus.service`，不假定包维护脚本
+一定停服。失败、取消或仍活动时不继续删包，保留失败 intent 和服务/包归属。默认保留包
+的卸载不停止 daemon，没有服务归属的活动 daemon 也不被接管或删除。
+
+Debian 官方依赖可触发 initramfs 更新，固定 root hostd 单元以 `-/boot` 开放该系统树的
+可选写路径，同时保留其他文件系统保护；控制台/relay 不获该例外，不通过跳过触发器令
+安装假成功。真实审批入口增加显式逐包删除及重复卸载，总门禁为 25 项；完整 dpkg 库存
+须健康，原有包和未托管依赖均保留，旧 23 项报告不替代新增删包验收。
+
+当前新版同工件验收已在 Debian 13、Ubuntu 26.04 与 24.04 amd64 各通过全部 **25 项**，
+每轮 18 个真实 job/退出。三轮分别移除 6/4/3 个新归属包，327/682/667 个原有包与
+未托管依赖保留；26.04 另以预装 nftables/conntrack 验证不被删除。正常关机与物理宿主
+前后对照均通过。前述 23 项为更早结果，完整业务 Core/Compose、ARM64/VM、未适配系统
+降级、失败恢复及生产入站/正式镜像仍不由这个矩阵推导完成。
+
+管理证书 POST 采用与 Provider 相同的 base64 DER 编码，兼容较早的官方 daemon；发送前
+校验固定管理名称及实际 DER 的 fingerprint，只发送公钥证书。持久凭据、私有 bundle 与
+GET 读回仍为 PEM。没有为兼容性放宽证书信任、HTTP 结果或加入自动重试；Ubuntu 24.04
+首次实机登记失败的旧 intent 保留；新工件已在另一干净 Ubuntu 24.04 amd64 VM 中通过完整
+23 项审批/消费者传输/真实过期门禁，14 个成功作业及正常关机、宿主对照有独立证据。
+
+真实嵌入前端另通过 8 项浏览器过期/重新确认门禁：首次会话恢复不再丢失维护页深链接，
+实际五分钟后新计划不继承旧勾选、不自动确认或 apply；重新勾选才执行。浏览器与外层 VM
+监督分别验收，不能以成功作业代替正常关机、实际退出码和宿主资源对照。
+
+宿主卸载在撤销连接之前先只读盘点停止/冻结实例、池引用与卷、控制网络 Docker 端点；
+缺失或不完整的清单不能当作空清单。拒绝/取消不产生变更 intent，也不撤掉管理连接；
+各项删除仍再次核对归属和占用。显式删除所拥有的软件包还要求共享 daemon 没有后来新增
+的外部对象，默认保留包。Docker root 客户端的允许列表不包含 connect/disconnect/prune
+或容器操作。完整边界见[宿主供给架构 §3.4](../../../docs/architecture/incus-host-provisioning.md#_3-4-卸载)。
+
+当前验收边界（2026-09-23）：独立 Ubuntu 26.04 amd64 / Incus 6.0.5 的新版容器入口已通过
+全部 15 项原生门禁，包括双租约、btrfs 实际根盘配额、直接 proxy 反例和运行中的管理证书
+重叠/撤销。旧证书拒绝、新证书可管理以及原消费者/guest 身份不变均有实际读回。该结果不
+代替 Core 自动轮换事务、VM/ARM64、ZFS、双栈或生产 ingress；较早日期的“未运行”保留为
+历史记录，不覆盖这份当前边界。完整宿主供给与正式镜像发布仍未完成。
 
 2026-09-22 共享消费者客户端接续：凭据初始化先完整校验证书/私钥和服务端 pin，再对私有目录
 持锁、不跟随链接且不覆盖已有文件；只复用匹配字节，身份变更需要独立交付目录。CLI 子进程不
@@ -32,7 +195,7 @@ Module 仍为 `developing`，生产 ingress 继续关闭。完整验证范围与
 | `compute` | 提供的 Contract | `1.0.0` / `incus_vm` |
 | `compute` | 提供的 Contract | `1.0.0` / `incus_container` |
 
-两个 interface 共用同一个 executor 与同一条校验路径，只在 project 配置上分叉一项容器特权限制。
+两个 interface 共用 executor 与校验路径，按隔离档选择相应 project/profile 围栏，不允许调用方修改低层设备或特权设置。
 
 ## Compose 拓扑
 
@@ -55,7 +218,8 @@ Compose 的 `build.additional_contexts.shared` 使用
 
 从 staging 本地构建时，应把 `ANAS_SHARED_BUILD_CONTEXT` 显式设为与该 Module
 构建输入版本一致的、受信 ANAS 源码根的绝对路径。此目录至少须包含 `go.mod`、
-`go.sum` 与 `internal/computeclient`；不能指向 `modules/incus`、`provisioner`
+`go.sum`、`internal/computeclient`、`internal/computeimage`、`internal/computeingress` 与
+`internal/securefs`；不能指向 `modules/incus`、`provisioner`
 子目录或只含运行数据的工作区。不要用另一版本的共享库与已冻结的 Module 源码混建。
 
 以下为路径示例，须先进入所选 Module 的 Compose 文件所在目录，确保 `provisioner/`
@@ -70,7 +234,26 @@ ANAS_SHARED_BUILD_CONTEXT=/srv/src/ANAS \
 通过命名 `shared` context 复制共享包，Go 构建仍保留 `GOPROXY=off`；这不等于整个
 Docker 构建离线，基础镜像与发行版包仍需已经可用或能从配置来源取得。
 只有运行产物、没有对应源码时，不能靠修改路径完成本地构建，应使用匹配版本的预构建镜像，
-或先准备完整受信源码。源码 checkout 与 staging 两种实际构建仍需分别验收。
+或先准备完整受信源码。2026-09-23 已在独立 Ubuntu 26.04 / Docker 29.1.3 / Compose 2.40.3
+VM 中完成三个计算镜像的六次 source/staging 无缓存实际构建。输入与业务二进制摘要一致，
+固定 Incus CLI 的二进制和 `7.3` 版本输出一致；缺失覆盖路径反例及所有测试容器/镜像清理
+均通过。该结果验证 build-only staging 路径，不代表完整 Core 部署或消费者实际作业。
+
+三个计算镜像的构建层和运行层均使用仓库既有 `DOCKER_HUB_REGISTRY` 策略，允许带仓库
+前缀的镜像源；显式 `GO_BUILDER_REGISTRY` 只覆盖 Go 构建层。Forgejo 的固定上游 Incus CLI
+和 AI Agent 第三方模块使用 `GO_MODULE_PROXY`，缺省回退到 `GOPROXY_URL`，再回退官方源。
+这些都是构建设置，不进入服务 runtime environment，不关闭 Go checksum database，
+也不把 Provider/controller 的共享仓库代码变为网络解析。
+
+`go run ./cmd/check-shared-build --json` 输出经过核对的静态输入报告，明确包含
+`docker_executed: false`。对实际 staging 另传 `--staging-root`、`--source-root` 及上述
+绝对 shared override；报告绑定文件字节、执行位和 build 声明，拒绝混版、未知 build 字段
+和凭据输入，不读取运行时 `.env`。它不能代替真正构建。
+
+仓库 `test-env/fixtures/incus-shared-build/README.md` 定义独立 QEMU VM 的六次真实构建
+门禁，检查源码/staging 的实际 Compose 解析、缺失 override 反例及最终非 root 二进制。
+其中 staging 是保留真实构建输入的布局夹具，不是 Core 完整部署，不证明 `anas build/apply`、
+Provider/guest 生命周期或正式发布成功。
 
 ## 固定控制转发组件（已打包、实机待验收）
 
@@ -194,9 +377,9 @@ X.509 解析错误也转为固定类别，避免非法 SAN URI 经标准库错�
 1. 先读取 default project 的 `GET /1.0/storage-pools/{pool}`，要求名称匹配、状态为 `Created`，
    且驱动为本版准入的 `btrfs` 或 `zfs`；不支持时在任何租约写入前失败。随后
    `GET /1.0/projects/{sandbox}`。存在则把期望配置合并进现有配置后 `PUT`，不存在则 `POST` 新建。
-   合并而不是覆盖，是因为 project 里可能有运行中的实例和运维手工加的 `user.*` 键；已有
-   `features.networks=true` 的 project 直接拒绝，要求显式迁移，不自动切换网络归属；
-2. **读回**并断言全部受管 project 配置与申请值一致，包括 `restricted=true`、四项 limits 的精确总量、再次读取存储池准入条件，且 network feature 关闭、NIC 为 managed、
+   合并而不是覆盖，是因为 project 里可能有运行中的实例和运维手工加的 `user.*` 键；合并前先
+   校验归属（见下文「租约归属」），已有 `features.networks=true` 的 project 直接拒绝，要求显式迁移，不自动切换网络归属；
+2. **读回**并断言全部受管 project 配置与申请值一致，包括 `restricted=true`、四项 limits 的精确总量、隔离档实例类型上限、完整 `restricted.*` 集合（见下文）、再次读取存储池准入条件，且 network feature 关闭、NIC 为 managed、
    `restricted.networks.access` 恰好等于本租约 bridge。任一不满足立刻返回错误，且**不继续**
    登记证书——这一步是整个契约唯一的信任来源，写入成功不算数，daemon 自己的副本才算；
 3. 在 default project 建立受管 bridge 并读回校验，再在租约 project 建立 profile 并读回校验。这一步在证书之前：一个还没有根磁盘和
@@ -204,6 +387,23 @@ X.509 解析错误也转为固定类别，避免非法 SAN URI 经标准库错�
 4. 读取目标 project 的每个冻结镜像，校验 fingerprint、架构与类型；缺失时只允许从匹配的冻结 supply 导入原始字节并读回，无法供给或失配即失败，不查询 alias；
 5. 登记消费者证书。若该 fingerprint 已在信任库中，校验它是 restricted 且 `projects` 恰好只有本
    sandbox；发现它无限制或绑着别的 project 就报错退出，不做任何修改。最后只读核对完整依赖链，通过后才返回 ready。
+
+## 租约归属
+
+sandbox 名写在消费者 manifest 里，同一消费者在每个工作区都用同一个名字，因此名字本身不能证明
+归属。Provider 在 project 与受管 bridge 上写入归属标记：`user.anas.consumer`、`user.anas.sandbox`
+和 `user.anas.lease_credential`（本租约受限客户端证书的 SHA-256 指纹）。Core 按工作区、消费者、
+Resource 各生成一张证书，所以同一 daemon 上第二个工作区声明相同 sandbox 时指纹不同。
+
+`ensure` 在写入前拒绝两种 project：标记属于别的租约（即使那份租约的证书已被 `revoke`，project
+仍属于它），或者除本租约外还有其他受限 `client` 证书可以操作它。没有标记的 project（标记出现
+之前由 Provider 建立、由旧 controller 建立或手工建立）只在第二个条件不成立时被采纳并写入标记。
+无限制证书属于 daemon 管理员，metrics 证书不能写入，二者不计入。`inspect` 的 `ready` 同样要求
+project 与 bridge 标记为本租约、且没有其他受限证书；它只读，不修复。`default` project 永远不能
+作为 sandbox，Core 与 Provider 都拒绝。
+
+指纹随证书变化：将来的证书重叠轮换（CRED-R-006）必须在同一事务里改写标记。工作区连同 Secret
+Store 被整份复制时两份副本持有同一证书，这属于身份复制，本机制不区分。
 
 ## network 与 profile
 
@@ -275,10 +475,50 @@ project 的 `exists`/`restricted`。读取故障返回错误，不伪装成缺�
 [Incus dir 配额前提](https://linuxcontainers.org/incus/docs/main/reference/storage_dir/#quotas)说明底层条件；
 完整待测清单在仓库 `test-env/fixtures/incus-network-prototype/e2e-plan.md`。
 
-同时写入的固定限制：`restricted.devices.disk|gpu|pci|usb|unix-block|unix-char=block`、
-`restricted.containers.nesting=block`、`restricted.{containers,virtual-machines}.lowlevel=block`。
-`incus_container` 额外写入 `restricted.containers.privilege=unprivileged`——系统容器档只是比 VM
-更弱的**隔离**边界，绝不是更弱的**特权**边界。
+Provider 拥有目标 daemon 认识的全部 `restricted.*` 键：Incus 6.0 LTS（一级发行版官方仓库的
+6.0.0—6.0.5）的完整集合，加上 daemon 通过 API extension 声明支持的 7.x 新键。每个键要么显式写入
+严格值，要么必须不存在：
+
+| 处理 | 键 |
+| --- | --- |
+| 写入 `block` | `restricted.backups`、`restricted.snapshots`、`restricted.cluster.target`、`restricted.containers.interception`、`restricted.{containers,virtual-machines}.lowlevel`、`restricted.devices.disk\|gpu\|infiniband\|pci\|proxy\|usb\|unix-block\|unix-char\|unix-hotplug` |
+| 写入其他固定值 | `restricted=true`、`restricted.containers.privilege=unprivileged`（两档都写）、`restricted.devices.nic=managed`、`restricted.networks.access=<本租约 bridge>`、`restricted.containers.nesting`（VM 档 `block`，容器档 `allow`） |
+| 必须不存在 | `restricted.idmap.uid\|gid`、`restricted.networks.integrations\|subnets\|uplinks\|zones`、`restricted.devices.disk.paths`（仅在 disk=allow 时生效）、`restricted.cluster.groups`（仅在允许选择集群目标时生效）、`restricted.images.servers`（7.0+，原因见下） |
+| daemon 支持时写入 | `restricted.storage-pools.access=<storage_pool>`（`projects_restricted_storage_pool_access`，7.0+）、`restricted.virtual-machines.nesting=block`（`projects_restricted_virtual_machines_nesting`，7.x，已见于 7.5.1），两档都写 |
+
+`ensure` 与 `inspect` 先读 `GET /1.0` 的 `api_extensions`，不按版本号推断：daemon 拒绝不认识的
+project 键，所以 7.x 键只在 daemon 声明支持时写入；而 daemon 支持却不写时，
+`restricted.virtual-machines.nesting` 默认 `allow`、`restricted.storage-pools.access` 默认允许所有池，
+都是宽松值。daemon 不返回 extension 列表时失败关闭，不当作 6.0 处理。
+
+支持 VM nesting 限制的 daemon 默认给 VM 打开嵌套虚拟化，限制设为 `block` 后会拒绝任何没有显式写
+`security.nesting=false` 的 VM（7.5.1 `checkRestrictions`）。因此这类 daemon 上 VM 档 profile 同时写入
+`security.nesting=false`；更早的版本里该键只对容器有效，VM 会拒绝它，所以不写。升级到这类 daemon 时，
+若 VM 档 project 里已有在 profile 更新前创建的 VM，收紧项目限制会与它们冲突而使 `ensure` 失败；
+一次性实例回收后即可收敛。收紧存储池后，若已有实例
+仍在其他池上（例如改了 `storage_pool` 配置），daemon 拒绝更新，`ensure` 失败，不自动迁移实例。
+
+`restricted.images.servers` 不能用作「禁止远端镜像」：按 Incus 7.0.1 与 7.5.1 源码
+（`internal/server/project/permissions.go`），它非空时，从 project 内已有镜像创建实例的请求不带
+镜像服务器、主机名为空，同样被拒；它只检查 URL 方式的下载，不检查 simplestreams 复制。设置它会让
+租约无法启动自己的镜像，却挡不住镜像导入，所以 Provider 删除它，逐 fingerprint allowlist 仍在消费者
+侧执行（R-085）。2026-09-26 已在 Incus 7.0.1 与 7.5.1 实机复现：该键非空时，从 project 内本地镜像创建实例被拒
+（`Image server "" isn't allowed in this project`）；simplestreams 复制不受约束仍只来自源码阅读。
+
+`restricted.devices.disk=block` 仍允许根盘，只禁止附加其他磁盘。`incus_container` 为固定的 guest 内
+OCI namespace 需求写入 `restricted.containers.nesting=allow`，profile 固定 `security.nesting=true`。
+消费者不能逐任务改变这些选项；系统容器档只是比 VM 更弱的**隔离**边界，绝不是更弱的**特权**边界。
+
+隔离档同样写在 project 上，而不只靠共享客户端的 `--vm` 参数：VM 档写 `limits.containers=0`、
+`limits.virtual-machines=<max_instances>`，容器档相反。daemon 因此拒绝在 VM 租约里创建与宿主共享
+内核的系统容器；允许的那一类也显式写入，避免换档后旧的 `0` 在合并中残留。
+
+这些键必须显式处理，不能只依赖 `restricted=true` 的默认值：`ensure` 合并既有 project 配置，
+未受管的键会保留历史 `allow` 或范围。`ensure` 收紧写入键、删除必须不存在的键并读回；`inspect` 对
+缺失、放宽或多余的键返回未就绪且不修复。既有 project 带有本版不管理的 `restricted.*` 键（比本版
+Provider 更新的 Incus 新增的键，或 daemon 未声明支持的 7.x 键）时，语义未知，`ensure` 在写入前拒绝
+并只列出键名，需运维删除或显式迁移。`user.*` 等无关设置仍然保留。该变更不主动删除已有实例或设备；已有实例违反收紧后的限制
+（例如 VM 档 project 里已有容器）时 daemon 拒绝更新，Provider 失败关闭，不以清理业务实例强行通过。
 
 ## 证书固定
 
@@ -304,8 +544,10 @@ Hook 只实现 `calculate`：派生 `INCUS_NETWORK_NAME`，选择显式远端或
 四项凭据不完整、自动 bundle 不安全或绑定漂移时拒绝。拒绝发生在 apply 早期，而不是供给中途——
 半配置的 Provider 比一个根本没启动的 Provider 更难排查。
 
-`endpoint` 与 `server_certificate_b64` 的变更是 `reconcile`；两项管理凭据是 `credential_rotate`，
-且轮换不影响运行中实例。
+`endpoint` 与 `server_certificate_b64` 的变更是 `reconcile`；两项管理凭据是 `credential_rotate`。
+管理凭据轮换不得重建运行中实例或更换消费者证书。可销毁 VM 生命周期夹具已加入旧/新管理
+证书重叠、撤销旧证书及实例身份不变的必需检查；2026-09-23 的新增用例尚无完整原生执行结果，
+不能将 helper 单测或交叉编译记作该要求已经验收。
 
 ## 测试与实现位置
 
@@ -321,9 +563,12 @@ Hook 只实现 `calculate`：派生 `INCUS_NETWORK_NAME`，选择显式远端或
 
 ## 当前限制
 
-已在隔离的发行版 Incus 6.0.5 daemon 探查项目、bridge、profile、镜像 metadata 与证书供给，
-并观察到 dir 磁盘配额可能被跳过；这不等于 7.3.0 完整验收。guest 启动探查尚未通过，实际配额、
-受限证书越权、双消费者及 janitor 仍待 E2E。状态保持 `developing`。
+2026-09-22 已在独立实验环境验证默认容器档的双租约生命周期、btrfs 根盘实际写满及部分
+直接越权拒绝；真实 distrobuilder `lab-r11` 与 Forgejo 正常、失败、controller SIGTERM、
+SIGKILL 后保留 state 的恢复/回收也已通过。这些结果不覆盖 VM、ARM64、ZFS、完整设备与
+双栈矩阵、state volume 丢失、正式签名发布或生产 ingress。2026-09-23 的显式 proxy 围栏修复
+通过本机及指定 Linux 主机 Provider 回归，新版 proxy/管理证书轮换原生用例仍待执行。
+发行版 daemon 的结果不等于 7.3.0 全平台验收，状态保持 `developing`。
 
 `ANAS_RESOURCE_IMAGE_ALLOWLIST` 由 Provider 核对本 project 镜像 metadata 后交给消费者，镜像固定的最终执行
 点在消费者的共享客户端，而不在 daemon。**这是本设计中唯一一条不由 daemon 兜底的约束**——即消费者
@@ -338,6 +583,7 @@ Hook 只实现 `calculate`：派生 `INCUS_NETWORK_NAME`，选择显式远端或
 | 配额 | daemon（project limits） | 成立 |
 | 禁 device / 挂载 / raw config / 低层配置 | daemon（`restricted.*`） | 成立 |
 | 容器非特权 | daemon（`restricted.containers.privilege`） | 成立 |
+| 隔离档（VM 租约不能创建容器，反之亦然） | daemon（`limits.containers` / `limits.virtual-machines`） | 成立 |
 | 镜像 fingerprint allowlist | 消费者共享库 | **不成立** |
 
 即便如此，被攻破的消费者也只能在**自己那个受限、有配额、无设备、无挂载**的 project 里启动计划外
@@ -345,6 +591,8 @@ Hook 只实现 `calculate`：派生 `INCUS_NETWORK_NAME`，选择显式远端或
 
 > [!NOTE]
 > 2026-09-10 已核查上游 main 配置参考：镜像服务器域名限制与 project 镜像隔离不等于逐 fingerprint allowlist。
+> 2026-09-26 阅读 7.0.1、7.5.1 源码：`restricted.images.servers` 非空时连 project 内本地镜像的实例创建也被拒，
+> 且不检查 simplestreams 复制，不能作为镜像约束下沉，Provider 删除该键（见上文「network 与 profile」）。
 > 固定 daemon 版本的导入/启动强制效果仍待实测，证据边界见宿主供给架构。
 > 若上游存在等价键，应把这条约束下沉到 project，本表随之更新。
 

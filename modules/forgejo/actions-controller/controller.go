@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -18,6 +20,7 @@ type Controller struct {
 }
 
 func NewController(cfg Config, forgejo ForgejoAPI, provider ComputeProvider, store StateStore) *Controller {
+	cfg.RunnerTrustPEM = bytes.Clone(cfg.RunnerTrustPEM)
 	return &Controller{cfg: cfg, forgejo: forgejo, compute: provider, store: store, now: time.Now}
 }
 
@@ -146,6 +149,14 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 }
 
 func (c *Controller) provision(ctx context.Context, state *ControllerState, candidate scopedJob) error {
+	var publicTrust []byte
+	if len(c.cfg.RunnerTrustPEM) != 0 {
+		var err error
+		publicTrust, err = normalizeRunnerTrust(c.cfg.RunnerTrustPEM, time.Now())
+		if err != nil {
+			return err
+		}
+	}
 	instanceID := instanceIDFor(candidate.Job.Handle)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -225,6 +236,15 @@ func (c *Controller) provision(ctx context.Context, state *ControllerState, cand
 		"--uuid", workload.RunnerUUID,
 		"--handle", workload.Handle,
 		"--label", c.cfg.RunnerLabel,
+	}
+	// Keep the 40-byte registration token exclusively in stdin. Additional
+	// public trust follows it with an explicit length and digest in argv. Old
+	// baked starters reject these unknown flags before reading a token instead
+	// of silently running without required deployment trust.
+	if len(publicTrust) != 0 {
+		sum := sha256.Sum256(publicTrust)
+		command = append(command, "--trust-size", strconv.Itoa(len(publicTrust)), "--trust-sha256", hex.EncodeToString(sum[:]))
+		token = append(token, publicTrust...)
 	}
 	err = c.compute.ExecStdin(ctx, instanceID, command, bytes.NewReader(token))
 	for index := range token {

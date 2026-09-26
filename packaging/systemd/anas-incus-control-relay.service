@@ -8,7 +8,10 @@ Wants=network-online.target
 Type=simple
 User=anas-incus-relay
 Group=anas-incus-relay
-ExecStart=/usr/local/lib/anas/anas-incus-control-relay --config /etc/anas/incus-control-relay.json
+# Keep the stored source below the host executor's root-private directory.
+# Only this public configuration file enters the service's mount namespace.
+BindReadOnlyPaths=/etc/anas/incus-control-relay.json:/run/anas-incus-control-relay.json
+ExecStart=/usr/local/lib/anas/anas-incus-control-relay --config /run/anas-incus-control-relay.json
 Restart=on-failure
 RestartSec=2s
 UMask=0077
@@ -18,7 +21,9 @@ PrivateDevices=true
 ProtectHome=true
 ProtectSystem=strict
 ReadOnlyPaths=/etc/anas/incus-control-relay.json
-RestrictAddressFamilies=AF_INET
+# Interface/index/address readback uses route netlink. No network capability
+# is granted: the relay still cannot configure an interface or firewall.
+RestrictAddressFamilies=AF_INET AF_NETLINK
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictSUIDSGID=true

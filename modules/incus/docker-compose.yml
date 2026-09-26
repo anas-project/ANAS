@@ -9,6 +9,10 @@ services:
       additional_contexts:
         shared: ${ANAS_SHARED_BUILD_CONTEXT:-../..}
       dockerfile: Dockerfile
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
+        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
     restart: "no"
     env_file:
       - .env

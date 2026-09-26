@@ -12,11 +12,15 @@ import (
 func activationFailure(base, id, code string, cause error, candidate *app, candidateRoot string, previous *app, previousRoot string, jsonMode bool) *CLIError {
 	return recordActivationFailure(base, id, code, cause, func() []map[string]any {
 		outcomes := []map[string]any{}
+		var cleanupError error
 		if candidate != nil {
-			outcomes = append(outcomes, recoveryResult("candidate_stop", candidate.stopRelease(candidateRoot, jsonMode)))
+			cleanupError = candidate.stopRelease(candidateRoot, jsonMode)
+			outcomes = append(outcomes, recoveryResult("candidate_stop", cleanupError))
 		}
 		if previous != nil {
-			outcomes = append(outcomes, recoveryResult("previous_restore", startDeployment(previous, previousRoot, previous.order, jsonMode)))
+			outcomes = append(outcomes, recoveryResult("previous_restore", restoreAfterConfirmedCleanup(cleanupError, func() error {
+				return startDeployment(previous, previousRoot, previous.order, jsonMode)
+			})))
 		}
 		return outcomes
 	})

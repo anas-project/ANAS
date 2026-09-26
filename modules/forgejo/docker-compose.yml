@@ -8,7 +8,7 @@ services:
         FORGEJO_REGISTRY: ${FORGEJO_REGISTRY:-codeberg.org}
         GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-docker.io}
         FORGEJO_VERSION: 15.0.7
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r2
     restart: unless-stopped
     dns:
       - ${LOCAL_DNS_SERVER}
@@ -102,8 +102,10 @@ services:
         shared: ${ANAS_SHARED_BUILD_CONTEXT:-../..}
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
-        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-docker.io}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
+        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
+        GO_MODULE_PROXY: ${GO_MODULE_PROXY:-${GOPROXY_URL:-https://proxy.golang.org,direct}}
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r2
     command: ["preflight"]
     restart: "no"
     environment:
@@ -141,6 +143,8 @@ services:
     tmpfs:
       - /run:mode=0700,uid=65532,gid=65532,size=16m
       - /tmp:mode=1777,size=32m
+    volumes:
+      - "${ANAS_TLS_CERTS_DIR}/${ANAS_TLS_INTERNAL_CA_NAME}:/etc/ssl/certs/anas-internal-ca.crt:ro"
     networks:
       actions-control:
         gw_priority: 1
@@ -160,9 +164,14 @@ services:
         shared: ${ANAS_SHARED_BUILD_CONTEXT:-../..}
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
-        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-docker.io}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r1
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
+        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
+        GO_MODULE_PROXY: ${GO_MODULE_PROXY:-${GOPROXY_URL:-https://proxy.golang.org,direct}}
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r2
     restart: on-failure:5
+    # The process gives its pending guest/registration cleanup two minutes
+    # on SIGTERM; Docker's ten-second default would kill that compensation.
+    stop_grace_period: 150s
     depends_on:
       anas_forgejo:
         condition: service_healthy
@@ -208,6 +217,7 @@ services:
       - /tmp:mode=1777,size=32m
     volumes:
       - forgejo_actions_state:/var/lib/anas-actions
+      - "${ANAS_TLS_CERTS_DIR}/${ANAS_TLS_INTERNAL_CA_NAME}:/etc/ssl/certs/anas-internal-ca.crt:ro"
     networks:
       actions-control:
         gw_priority: 1

@@ -2,10 +2,38 @@
 doc_type: plan
 status: implementing
 created: 2026-08-21
-updated: 2026-09-22
+updated: 2026-09-25
 ---
 
 # Forgejo Module 实施计划
+
+2026-09-25 联合停止夹具通过完整十阶段、五个Core停止用例：真实工作流运行时由旧
+冻结Hook排空controller，确认实例/根盘/有效registration清空后才移除Compose；
+关闭时口令失效，重新启用保留账号ID且第二个真实workflow成功。异常controller状态
+仍阻止停止和撤权，失败状态与原口令保留。公开归档、正常关机及物理宿主对照已独立
+验证。此处采用显式可路由Docker、SQLite和准备的生命周期workspace，不是完整公开
+CLI业务部署或默认DROP网络兼容验收；参见
+[本轮记录](../../../../dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md)。
+
+2026-09-24 账号生命周期接续：固定 Forgejo 15.0.7、真实入口 helper 和 controller 在全新
+Debian 13 amd64 VM 通过完整 **17 项**账号/状态门禁：管理口令关闭后失效、重复不旋转、
+重新启用与重启保留数值 ID、未知同名/替换账号拒绝，缺少租约的未完成状态和链接状态
+不会被当作清理完成。Hook 增加同容器清理等待、上下文下传与严格状态观察。本机回归与
+账号 API 原生验收不代替完整 Core/Compose 开关和真实 guest 排空；站点管理员权限偏差
+及 state volume 丢失仍未解决。证据见
+[账号停用接续](../../../../dev-docs/reviews/2026-09-24-forgejo-actions-account-lifecycle.md)。
+
+2026-09-24 继续真实消费者接入：发现早期 one-job 夹具以管理权限向 guest 手工安装公开
+CA，而生产 controller 只交付 token。现已把公开部署 CA 接到两个固定只读挂载，并经
+原 stdin 通道按长度/摘要投影到单次 Runner 的临时 trust bundle；guest 系统根、engine
+和工作流镜像不被修改，token 仍不进入 argv/env/state。已删除原生入口的手工信任替身，
+新 recipe/不可变 revision 必须独立通过烘焙与 TLS 工作流，不能继承 lab-r11 的通过状态。
+本轮结果及范围见[Runner 信任接续](../../../../dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md)。
+
+该新修订 `trust-r2` 随后完成真实 bake/export/重复复用、9 项镜像门禁及五种工作流场景；
+四种执行场景均清空实例/根盘/注册/state，未授权仓库保持等待。原生入口没有手工 CA
+安装；独立归档、正常关机与物理宿主基线复核均通过。这个范围已闭环，完整业务 Compose、
+工作流内部 checkout trust、VM/ARM64 与正式发布不由此提前完成。
 
 2026-09-22 默认系统容器 one-job 运行闭环已验收：使用不可变 `lab-r11` 与真实 Forgejo
 15.0.7，正常、显式失败、controller SIGTERM 取消、SIGKILL 后保留状态的恢复均完成
@@ -30,7 +58,7 @@ updated: 2026-09-22
 | M0：Forgejo 应用、数据库、OIDC 与恢复账号 | R-001—R-007 | 已完成；`R-006` 于 2026-09-20 恢复为规范来源（2026-09-13—09-20 期间曾废弃） |
 | M1：Git Hooks/local-path import 安全开关 | R-010—R-012 | 已完成 |
 | M2：compute contract 消费与两档隔离选择 | R-020—R-026 | 实施中；目录契约、Go 边界和 Incus 适配器已完成单元验证，两档隔离的参数语义与镜像一致性校验待补，真实宿主待验收 |
-| M3：Actions 单开关、控制面账号与 one-job 执行面 | R-030—R-039、R-067—R-070 | 实施中；Module/controller/guest 资产已接线，控制面账号的权限收敛与关闭时失效待实现，真实 one-job 与隔离 E2E 待验收 |
+| M3：Actions 单开关、控制面账号与 one-job 执行面 | R-030—R-039、R-067—R-070 | 实施中；one-job/信任、账号API及可路由生命周期夹具的运行作业排空、停用/再启用与失败保留均原生通过；完整公开CLI业务开关、默认Docker转发、权限收敛、VM/ARM64和完整隔离矩阵另验 |
 | M4：预热、扩缩容、空闲资源与回收 | R-040—R-046 | 实施中；失败补偿的 scope 配额占位已修复并补回归，预热、state 丢失回收与长时基准仍未完成 |
 | M5：真实发布验收 | R-050—R-054 | 未开始 |
 | M6：外部自动化消费者的边界（AI Agent 依赖） | R-060—R-062 | 未开始 |
@@ -63,7 +91,7 @@ M0/M1 的 10 项已完成，M2/M3 的 21 项处于实现与外部验收阶段。
 | Git Hooks/local-path import 正向配置 | 已实现 | 默认关闭、独立启停，不增加宿主挂载 |
 | compute contract 消费（Incus 容器/VM 两档） | 实施中 | contract catalog、固定 restricted project/profile 验证和实例 CRUD 已有单测；独立宿主待验收 |
 | 隔离档选择 `actions_isolation` | 已接线 | 默认 `auto` 解析为 `incus_container`（与宿主共享内核），`incus_vm` 需要宿主具备 KVM；`R-024` 有单测、`R-025` 文档已披露，`R-026` 的镜像一致性校验待补 |
-| Actions 控制面账号 `anas_actions_controller` | 已实现、边界待收敛 | Actions 开启时建为站点管理员；`R-068` 的调用集合已有单测、`R-069` 文档已披露，权限收敛与关闭时失效（`R-067`、`R-070`）待做 |
+| Actions 控制面账号 `anas_actions_controller` | 管理密码生命周期已实现并独立验收 | 独立恢复 owner、stdin、ID/HMAC 归属、关闭口令失效/重新启用及重复执行通过；站点管理员角色与其他 token/SSH key 不由此撤销，完整开关路径另验 |
 | Runner 执行组件 | 实施中 | queue controller、ephemeral registration、stdin token、one-job guest/rootless Podman 资产已实现 |
 
 ## 3. M1：高风险功能配置（已完成，2026-08-22）
@@ -146,19 +174,22 @@ controller 每 15 秒轮询 repo/org jobs API，按 handle 创建 ephemeral regi
 环境验证批准/未批准仓库、容器构建、失败/取消/重启、网络隔离、磁盘与 registration 清理。完成这些
 E2E 前不把 Actions 标为 release 能力。
 
-控制面账号（`R-067`—`R-070`）单列。Actions 开启时 `after_start` 把 `anas_actions_controller` 建成
+控制面账号（`R-067`—`R-070`）单列。当前 `local_account_apply` 验证独立恢复管理员后调和
+`anas_actions_controller`，Actions 开启且账号确实不存在时建成
 **站点管理员**，而 controller 实际只调用获批 scope 下的三个 `actions/runners` 端点（列表、创建、
 删除）。站点管理员不是这个调用集合的要求，而是"没有按 scope 授予组织 owner / 仓库 admin 的调和
 路径"的后果：
 
-- [ ] `R-067`：该账号与 `break_glass` 分离、口令只来自 Secret Store、明文不进宿主 Docker argv
-      （当前经 stdin 传入，需补单测钉住）；
+- [x] `R-067`：账号与 `break_glass` 分离、口令来自 Secret Store，类型化 stdin 和 owner-first
+      顺序已有回归；真实 helper 验证独立 owner，未把明文放入宿主 argv；
 - [x] `R-068`：`TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI`（`actions-controller`）对 org 与
       repo 两种 scope 驱动三个方法，断言请求恰好三条、全部落在该 scope 的 `actions/runners` 子树内，
       且不含 `/admin/`。把路径改成 `/api/v1/admin/...` 会让它失败；
-- [ ] `R-069`：中英 README 与技术文档写明该账号的用户名、创建时机、权限范围与撤销方式；
-- [ ] `R-070`：关闭 `actions_enabled` 后停用该账号或使其口令失效。当前 `reconcileActionsAccount`
-      在关闭时直接返回，站点管理员账号和它在 Secret Store 里的有效口令都会留下。
+- [x] `R-069`：中英 README 与技术文档写明用户名、创建时机、站点管理员偏差，以及管理口令
+      失效与其他 token/SSH key 撤销的区别；不宣称已完成按 scope 的权限收敛；
+- [x] `R-070`：停用 helper 使原管理口令失效并读回 401/403，重复禁用不旋转；同数值 ID 的
+      重新启用、重启与替换账号拒绝通过真实 API 验收。Hook 先验证同一 controller 完成清理，
+      缺少租约且状态未完/链接/含糊时不能撤密码；完整 Core/Compose 开关及运行作业排空另验。
 
 ## 6. M4：预热、扩缩容与回收
 

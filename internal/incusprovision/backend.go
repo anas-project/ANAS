@@ -25,6 +25,7 @@ type runtimeOps interface {
 	Observe(context.Context, Request, State) (Observation, error)
 	InstallPackages(context.Context, incushost.Recipe, []string) error
 	EnableIncus(context.Context) error
+	StopIncus(context.Context) error
 	ConfigureIncusHTTPS(context.Context) error
 	EnsureStoragePool(context.Context, int, string) error
 	EnsureRelayIdentity(context.Context) (uint32, uint32, error)
@@ -37,6 +38,7 @@ type runtimeOps interface {
 	ReadServerCertificatePEM(context.Context) (string, error)
 	VerifyManagementEndpoint(context.Context, ConnectionBundle) error
 	ListRunningManagedGuests(context.Context, Ownership) (int, error)
+	CheckUninstallResources(context.Context, Ownership, bool) error
 	RemoveRelay(context.Context) error
 	RemoveControlFirewall(context.Context) error
 	RemoveDockerControlNetwork(context.Context, string, string, string) error
@@ -183,7 +185,7 @@ func buildPlan(request Request, obs Observation, state State) (Plan, error) {
 	if obs.Preflight.Schema == "" {
 		return Plan{}, ErrInvalid
 	}
-	obsDigest := stableDigest(obs)
+	obsDigest := observationDigest(obs)
 	stateDigest := state.digest()
 	plan := Plan{
 		Schema: Schema, Request: request, ObservationDigest: obsDigest, StateDigest: stateDigest,
@@ -212,6 +214,7 @@ func buildPlan(request Request, obs Observation, state State) (Plan, error) {
 			plan.Warnings = append(plan.Warnings, "will_verify_"+blocker)
 		}
 	}
+	plan.Warnings = append(plan.Warnings, forwardingWarnings(obs.Forwarding)...)
 	if !obs.PackageInstalled {
 		plan.Steps = append(plan.Steps, Step{Phase: PhaseInstall, ID: "packages", Effect: "install official Incus packages from compiled recipe", Owned: true, Destructive: true})
 	}
@@ -283,6 +286,21 @@ func stableDigest(v any) string {
 	return digestBytes(body)
 }
 
+func observationDigest(obs Observation) string {
+	// API/network enumeration order is not topology. Docker can return the
+	// same network IDs/CIDRs in a different order between plan and apply.
+	// Sort copies only: preserve duplicate counts, every CIDR, immutable
+	// network ID, gateway, interface binding and all other observed facts.
+	// A real change still invalidates approval; this is not a drift retry.
+	obs.ExternalCIDRs = slices.Clone(obs.ExternalCIDRs)
+	obs.DockerCIDRs = slices.Clone(obs.DockerCIDRs)
+	obs.IncusCIDRs = slices.Clone(obs.IncusCIDRs)
+	slices.Sort(obs.ExternalCIDRs)
+	slices.Sort(obs.DockerCIDRs)
+	slices.Sort(obs.IncusCIDRs)
+	return stableDigest(obs)
+}
+
 func (b *Backend) applyInstall(ctx context.Context, request Request, plan Plan, obs Observation, state *State) (ApplyResult, error) {
 	if request.Skip || plan.Preflight.Recipe == nil {
 		state.Disabled = true
@@ -297,8 +315,12 @@ func (b *Backend) applyInstall(ctx context.Context, request Request, plan Plan, 
 	if !packageInventoryValid(obs) {
 		return ApplyResult{Disposition: "blocked", Blockers: []string{"package_inventory_unverified"}}, ErrBlocked
 	}
-	if (slices.Contains(obs.ExistingPackages, "incus") && !state.Ownership.PackagesInstalledByANAS) || (obs.IncusDaemonActive && !state.Ownership.IncusServiceByANAS) {
+	if externalDaemonObserved(obs, state.Ownership, *plan.Preflight.Recipe) {
 		state.Ownership.ExternalDaemonPreserved = true
+		// Installing a missing helper must not turn preexisting daemon code or
+		// retained configuration into a newly owned service. The explicit
+		// remote/administrator-managed connection path remains separate.
+		return ApplyResult{Disposition: "blocked", Blockers: []string{"external_daemon_service_not_modified"}}, ErrBlocked
 	}
 	if !obs.PackageInstalled {
 		requested := missingPackages(plan.Preflight.Recipe.Packages, obs.InstalledPackages)
@@ -355,10 +377,10 @@ func (b *Backend) applyConfigure(ctx context.Context, request Request, plan Plan
 	if plan.Preflight.Recipe == nil || len(provisioningHardBlockers(plan.Preflight.Blockers)) > 0 {
 		return ApplyResult{Disposition: "disabled", Blockers: append([]string{}, provisioningHardBlockers(plan.Preflight.Blockers)...)}, ErrUnsupported
 	}
-	if (obs.PackageInstalled && !state.Ownership.PackagesInstalledByANAS) || (obs.IncusDaemonActive && !state.Ownership.IncusServiceByANAS) {
+	if externalDaemonObserved(obs, state.Ownership, *plan.Preflight.Recipe) {
 		state.Ownership.ExternalDaemonPreserved = true
 	}
-	if state.Ownership.ExternalDaemonPreserved && !state.Ownership.IncusServiceByANAS {
+	if state.Ownership.ExternalDaemonPreserved {
 		return ApplyResult{Disposition: "blocked", Blockers: []string{"external_daemon_not_modified"}}, ErrBlocked
 	}
 	if !obs.IncusHTTPSLoopback {
@@ -495,10 +517,10 @@ func (b *Backend) applyEnroll(ctx context.Context, request Request, plan Plan, o
 	if plan.Preflight.Recipe == nil || len(provisioningHardBlockers(plan.Preflight.Blockers)) > 0 {
 		return ApplyResult{Disposition: "disabled", Blockers: append([]string{}, provisioningHardBlockers(plan.Preflight.Blockers)...)}, ErrUnsupported
 	}
-	if (obs.PackageInstalled && !state.Ownership.PackagesInstalledByANAS) || (obs.IncusDaemonActive && !state.Ownership.IncusServiceByANAS) {
+	if externalDaemonObserved(obs, state.Ownership, *plan.Preflight.Recipe) {
 		state.Ownership.ExternalDaemonPreserved = true
 	}
-	if state.Ownership.ExternalDaemonPreserved && !state.Ownership.IncusServiceByANAS {
+	if state.Ownership.ExternalDaemonPreserved {
 		return ApplyResult{Disposition: "blocked", Blockers: []string{"external_daemon_not_modified"}}, ErrBlocked
 	}
 	if !obs.IncusDaemonActive || !obs.IncusHTTPSLoopback || !obs.StoragePoolExists || !obs.DockerNetworkExists || !obs.FirewallInstalled || !obs.RelayInstalled || !obs.RelayBinaryInstalled {
@@ -574,6 +596,10 @@ func (b *Backend) applyEnroll(ctx context.Context, request Request, plan Plan, o
 			return ApplyResult{Disposition: "partial"}, err
 		}
 	}
+	// A previous explicit skip or uninstall is reversible only after a newly
+	// confirmed enrollment has verified and persisted its management bundle.
+	// This clears a historical status, not the independent compute-ready gates.
+	state.Disabled = false
 	return ApplyResult{Disposition: "connection_ready", ComputeReady: false, ConnectionReady: true, Unsupported: []UnsupportedOutput{
 		{Feature: "consumer_bridge_reachability", Reason: "bridge-origin reachability has not been verified by this backend"},
 		{Feature: "image_import", Reason: "image import is not implemented by this backend; image readiness remains unsupported"},
@@ -587,7 +613,9 @@ func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan
 		}
 	}
 	if request.RemovePackages && state.Ownership.PackagesInstalledByANAS && !state.Ownership.ExternalDaemonPreserved &&
-		(plan.Preflight.Recipe == nil || !validPackageSubset(*plan.Preflight.Recipe, state.Ownership.ManagedPackages) || !packageInventoryValid(obs)) {
+		(plan.Preflight.Recipe == nil || !validPackageSubset(*plan.Preflight.Recipe, state.Ownership.ManagedPackages) || !packageInventoryValid(obs) ||
+			unownedDaemonPackage(obs, state.Ownership, *plan.Preflight.Recipe) ||
+			(obs.IncusDaemonActive && !state.Ownership.IncusServiceByANAS)) {
 		return ApplyResult{Disposition: "blocked", Blockers: []string{"package_ownership_unverified"}}, ErrBlocked
 	}
 	running, err := b.rt.ListRunningManagedGuests(ctx, state.Ownership)
@@ -596,6 +624,16 @@ func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan
 	}
 	if running > 0 {
 		return ApplyResult{Disposition: "blocked", Blockers: []string{"running_managed_guests"}}, ErrBlocked
+	}
+	// Check stopped/frozen instances, retained storage references and attached
+	// control-network endpoints before revoking any working connection. The
+	// individual delete operations still recheck ownership and absence later.
+	removeShared := request.RemovePackages && state.Ownership.PackagesInstalledByANAS && !state.Ownership.ExternalDaemonPreserved
+	if err := b.rt.CheckUninstallResources(ctx, state.Ownership, removeShared); err != nil {
+		return ApplyResult{Disposition: "blocked", Blockers: []string{"uninstall_resources_in_use_or_unverified"}}, errors.Join(ErrBlocked, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return ApplyResult{Disposition: "blocked"}, err
 	}
 	if state.Ownership.ConnectionBundle || state.Bundle != nil {
 		intent, err := b.beginEffect(ctx, state, PhaseUninstall, plan.Digest, "uninstall.bundle")
@@ -693,12 +731,34 @@ func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan
 		if err != nil {
 			return ApplyResult{Disposition: "partial"}, err
 		}
+		// Package maintainer scripts are not service-exit evidence. Debian's
+		// incus-base skips systemd-native stopping during removal. Stop only
+		// our explicitly owned daemon, after all shared-resource preflights,
+		// while its executable/unit still exist. Keep ownership until every
+		// package and daemon readback below succeeds; do not retry failed effects.
+		if state.Ownership.IncusServiceByANAS {
+			if err := b.rt.StopIncus(ctx); err != nil {
+				saveErr := b.finishEffect(state, intent, "failed", "owned daemon stop failed")
+				return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
+			}
+			stopped, err := b.rt.Observe(ctx, request, *state)
+			if err != nil || stopped.IncusDaemonActive {
+				saveErr := b.finishEffect(state, intent, "failed", "owned daemon stop readback failed")
+				return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
+			}
+			if err := ctx.Err(); err != nil {
+				saveErr := b.finishEffect(state, intent, "failed", "package removal canceled after daemon stop")
+				return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
+			}
+		}
 		if err := b.rt.RemovePackages(ctx, *plan.Preflight.Recipe, slices.Clone(state.Ownership.ManagedPackages)); err != nil {
 			saveErr := b.finishEffect(state, intent, "failed", "package removal failed")
 			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
 		}
 		refreshed, readErr := b.rt.Observe(ctx, request, *state)
-		if readErr != nil || !packageInventoryValid(refreshed) || slices.ContainsFunc(state.Ownership.ManagedPackages, func(name string) bool { return slices.Contains(refreshed.InstalledPackages, name) }) {
+		if readErr != nil || !packageInventoryValid(refreshed) ||
+			(state.Ownership.IncusServiceByANAS && refreshed.IncusDaemonActive) ||
+			slices.ContainsFunc(state.Ownership.ManagedPackages, func(name string) bool { return slices.Contains(refreshed.InstalledPackages, name) }) {
 			saveErr := b.finishEffect(state, intent, "failed", "package removal readback failed")
 			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, readErr, saveErr)
 		}
@@ -857,6 +917,21 @@ func (b *Backend) finishEffect(state *State, intent EffectIntent, status, detail
 }
 
 func unrecoveredPendingIntent(state State) string {
+	if pending := unrecoveredProvisionIntent(state); pending != "" {
+		return pending
+	}
+	if validateForwardingRecords(state) != nil {
+		return "forwarding.invalid_ownership"
+	}
+	for _, record := range state.ForwardingScopes {
+		if record.Status != "disabled" || record.Kernel.Phase != "released" || record.Kernel.PendingStep != "" {
+			return "forwarding.permission_retirement"
+		}
+	}
+	return ""
+}
+
+func unrecoveredProvisionIntent(state State) string {
 	for _, intent := range state.Intents {
 		// An error return is not proof of no effect: a package operation can
 		// partially complete and an Incus operation can outlive this process.

@@ -23,6 +23,7 @@ type moduleEntry struct {
 func main() {
 	sourceRoot := flag.String("source-root", ".", "matching ANAS source checkout root")
 	stagingRoot := flag.String("staging-root", "", "optional rendered deployment root containing modules/")
+	jsonOutput := flag.Bool("json", false, "emit verified build-only context metadata; does not execute Docker")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, "unexpected positional arguments")
@@ -37,6 +38,20 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	}
+	if *jsonOutput {
+		report, err := makeBuildReport(*sourceRoot, *stagingRoot, os.Getenv("ANAS_SHARED_BUILD_CONTEXT"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(report); err != nil {
+			fmt.Fprintln(os.Stderr, "cannot write build context report")
+			os.Exit(1)
+		}
+		return
 	}
 	fmt.Println("shared build contexts valid (static check; Docker build not executed)")
 }

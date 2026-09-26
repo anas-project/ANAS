@@ -16,9 +16,15 @@ const (
 	BuildStagePacking
 )
 
-type buildFailure struct{ stage BuildStage }
+type buildFailure struct {
+	stage            BuildStage
+	unverifiedSource bool
+}
 
 func (e *buildFailure) Error() string {
+	if e.unverifiedSource {
+		return ErrArtifactBuildIncomplete.Error() + "; bootstrap Release signatures were not verified"
+	}
 	names := [...]string{"unknown", "download", "repositories", "packages", "files", "hooks", "packing"}
 	stage := e.stage
 	if int(stage) >= len(names) {
@@ -37,9 +43,19 @@ func BuildFailureAt(stage BuildStage) error {
 	return &buildFailure{stage: stage}
 }
 
+// A successful builder process cannot authorize publication when its trusted
+// bootstrapper reported that it skipped Release signature verification.
+// This carries only a closed reason, never the keyring path or raw tool output.
+func BuildUnverifiedSourceFailure() error {
+	return &buildFailure{stage: BuildStageDownload, unverifiedSource: true}
+}
+
 func sanitizeBuildFailure(err error) error {
 	var observed *buildFailure
 	if errors.As(err, &observed) && observed != nil {
+		if observed.unverifiedSource {
+			return BuildUnverifiedSourceFailure()
+		}
 		return BuildFailureAt(observed.stage)
 	}
 	return ErrArtifactBuildIncomplete

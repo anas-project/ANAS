@@ -8,12 +8,21 @@ Group=root
 ExecStart=/usr/local/lib/anas/anas-hostd --serve
 Restart=no
 KillMode=control-group
-RuntimeMaxSec=615s
+# Longest compiled action (Incus installation, 2700s) plus a bounded 30s
+# activation/transport, final-audit and exit allowance. Short actions retain
+# their own smaller handler/broker deadlines; this is only the outer watchdog.
+RuntimeMaxSec=2730s
 TimeoutStopSec=5s
 UMask=0077
 StateDirectory=anas-hostd
 StateDirectoryMode=0700
 NoNewPrivileges=true
+# Retain this existing root capability across sandbox setup/exec so APT can
+# lower its acquisition workers to _apt. Some systemd sandbox combinations
+# otherwise clear CAP_SETUID before the NoNewPrivileges exec transition.
+# This fixed root executor already installs system packages/accounts; do not
+# disable APT's sandbox, NoNewPrivileges or the non-root relay's empty caps.
+AmbientCapabilities=CAP_SETUID
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
@@ -21,7 +30,10 @@ ProtectSystem=strict
 # the root-only confirmation claim and Incus state need these system trees.
 # This is an audited full-root action service, NOT a DAC-only sandbox. Request
 # data can never select an executable, package, path or script. Home and other
-# trees remain protected; no optional architecture-specific path is required.
-ReadWritePaths=/etc /usr /var /run /tmp
+# trees remain protected. Debian's official dependencies run initramfs-tools;
+# that package trigger writes initrd backups and replacements below /boot.
+# Keep the path optional for hosts without it; never skip package triggers or
+# make the whole filesystem writable. No boot path comes from the request.
+ReadWritePaths=/etc /usr /var /run /tmp -/boot
 RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
 SystemCallArchitectures=native

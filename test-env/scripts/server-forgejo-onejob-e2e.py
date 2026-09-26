@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Real one-job controller, TLS Forgejo and Incus in a disposable QEMU VM.
 
-No business Docker is used. The only guest fixture customization is installation
-of a public test TLS anchor; image, engine and Incus isolation remain unchanged.
+No business Docker is used. Public test trust uses the production controller's
+bounded stdin projection; the harness does not change the guest CA database.
+Image, engine and Incus isolation remain unchanged.
 """
 import argparse
 import base64
@@ -175,6 +176,7 @@ def run(args):
     try:
         call(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=ANAS-onejob-test',
               '-addext', 'subjectAltName=IP:10.0.2.15', '-addext', 'basicConstraints=critical,CA:TRUE',
+              '-addext', 'keyUsage=critical,digitalSignature,keyCertSign,cRLSign',
               '-keyout', str(report/'tls.key'), '-out', str(report/'tls.crt')])
         for name in ('tls.key', 'tls.crt'):
             os.chown(report/name, account.pw_uid, account.pw_gid)
@@ -453,7 +455,7 @@ LEVEL = Error
         if controller.returncode != 0:
             raise RuntimeError('controller final graceful cleanup did not succeed')
         controller = None
-        summary = {'passed': True, 'checks': completed, 'forgejo': '15.0.7', 'fingerprint': pin, 'tls_verified': True, 'public_fixture_ca_installed': True,
+        summary = {'passed': True, 'checks': completed, 'forgejo': '15.0.7', 'fingerprint': pin, 'tls_verified': True, 'public_trust_via_controller_stdin': True, 'guest_system_trust_modified': False,
                    'real_job_executed': True, 'crash_matrix_executed': True, 'state_loss_executed': False,
                    'cancellation_mode': 'controller-context-SIGTERM', 'forgejo_web_cancel_executed': False,
                    'step_observation': 'fixture-SQLite-read-only'}

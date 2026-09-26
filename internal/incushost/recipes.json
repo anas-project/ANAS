@@ -12,6 +12,7 @@
     "repository": "official",
     "packages": [
       "incus",
+      "incus-base",
       "incus-client",
       "btrfs-progs",
       "nftables",
@@ -56,6 +57,7 @@
     "repository": "universe",
     "packages": [
       "incus",
+      "incus-base",
       "incus-client",
       "btrfs-progs",
       "nftables",

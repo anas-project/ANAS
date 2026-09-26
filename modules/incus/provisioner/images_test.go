@@ -96,6 +96,8 @@ func TestEnsureRejectsImportOperationFingerprintMismatchBeforeTrust(t *testing.T
 
 func TestLoadImageSupplyRejectsHostileJSON(t *testing.T) {
 	for name, mutate := range map[string]func(string) []byte{
+		"missing canonical newline": func(valid string) []byte { return []byte(strings.TrimSuffix(valid, "\n")) },
+		"noncanonical spaces":       func(valid string) []byte { return []byte(strings.ReplaceAll(valid, `":`, `": `)) },
 		"duplicate": func(valid string) []byte {
 			return []byte(strings.Replace(valid, `"version":`, `"version":"`+computeimage.ImageSupplyVersion+`","version":`, 1))
 		},
@@ -214,7 +216,9 @@ func TestCopyImagePartDetectsPathReplacementAfterOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer parts[0].file.Close()
+	for _, part := range parts {
+		defer part.file.Close()
+	}
 	if err := os.Remove(parts[0].path); err != nil {
 		t.Fatal(err)
 	}
@@ -250,6 +254,12 @@ func TestImagePrunePlanKeepsCurrentPreviousAndRunning(t *testing.T) {
 func writeSupplyFixture(t *testing.T, l lease, metadata, rootfs []byte, recipeDigest string) string {
 	t.Helper()
 	root := t.TempDir()
+	// testing.TempDir's per-test subdirectory can inherit a group-writable
+	// mode under the host's umask. Model the protected production parent
+	// explicitly rather than weakening validateSupplyParent for the fixture.
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
 	oldFile, oldRoot := defaultImageSupplyFile, imageSupplyRoot
 	defaultImageSupplyFile = filepath.Join(root, "compute-image-supply.json")
 	imageSupplyRoot = filepath.Join(root, "artifacts")

@@ -141,8 +141,10 @@ func validateComputeSpec(consumer, id string, spec map[string]any) (computeQuota
 	if _, err := computeingress.ParseSpec(spec); err != nil {
 		return computeQuota{}, nil, fmt.Errorf("resource %s.%s: %w", consumer, id, err)
 	}
+	// The daemon's default project holds the provider's bridges and cannot
+	// be restricted to one lease; the Provider and host readers refuse it too.
 	sandbox, _ := spec["sandbox"].(string)
-	if !computeSandboxPattern.MatchString(sandbox) {
+	if !computeSandboxPattern.MatchString(sandbox) || sandbox == "default" {
 		return computeQuota{}, nil, fmt.Errorf("resource %s.%s compute sandbox %q is invalid", consumer, id, sandbox)
 	}
 	prefix, _ := spec["instance_prefix"].(string)

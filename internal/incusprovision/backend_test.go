@@ -146,6 +146,13 @@ func (f *fakeRuntime) EnableIncus(context.Context) error {
 	f.obs.IncusDaemonActive = true
 	return nil
 }
+func (f *fakeRuntime) StopIncus(context.Context) error {
+	if err := f.record("stop-incus"); err != nil {
+		return err
+	}
+	f.obs.IncusDaemonActive = false
+	return nil
+}
 func (f *fakeRuntime) ConfigureIncusHTTPS(context.Context) error {
 	if err := f.record("https"); err != nil {
 		return err
@@ -221,6 +228,9 @@ func (f *fakeRuntime) VerifyManagementEndpoint(context.Context, ConnectionBundle
 func (f *fakeRuntime) ListRunningManagedGuests(context.Context, Ownership) (int, error) {
 	return f.guests, f.record("list-guests")
 }
+func (f *fakeRuntime) CheckUninstallResources(context.Context, Ownership, bool) error {
+	return f.record("check-uninstall-resources")
+}
 func (f *fakeRuntime) RemoveRelay(context.Context) error { return f.record("remove-relay") }
 func (f *fakeRuntime) RemoveControlFirewall(context.Context) error {
 	return f.record("remove-firewall")
@@ -241,7 +251,7 @@ func (f *fakeRuntime) RemovePackages(_ context.Context, recipe incushost.Recipe,
 	f.removedByCall = append(f.removedByCall, packages...)
 	f.obs.InstalledPackages = slices.DeleteFunc(f.obs.InstalledPackages, func(name string) bool { return slices.Contains(packages, name) })
 	f.obs.PackageInstalled = len(f.obs.InstalledPackages) == len(recipe.Packages)
-	if slices.Contains(packages, "incus") {
+	if slices.Contains(packages, daemonPackage(recipe)) {
 		f.obs.IncusDaemonActive = false
 	}
 	return nil
@@ -338,7 +348,7 @@ func TestUnsupportedDistributionDisablesWithoutEffects(t *testing.T) {
 
 func TestConfigureCreatesOwnedBoundedArtifactsAndStopsAfterFault(t *testing.T) {
 	ctx := context.Background()
-	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{PackagesInstalledByANAS: true, IncusServiceByANAS: true}}}
+	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{PackagesInstalledByANAS: true, ManagedPackages: []string{"incus", "incus-base"}, IncusServiceByANAS: true}}}
 	rt := newFakeRuntime(t)
 	rt.obs.PackageInstalled = true
 	rt.obs.IncusDaemonActive = true
@@ -361,7 +371,7 @@ func TestConfigureCreatesOwnedBoundedArtifactsAndStopsAfterFault(t *testing.T) {
 
 func TestEnrollPersistsBundleOnlyAfterTrustReadbackAndEndpointVerify(t *testing.T) {
 	ctx := context.Background()
-	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{PackagesInstalledByANAS: true, IncusServiceByANAS: true, StoragePool: StoragePoolName}}}
+	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{PackagesInstalledByANAS: true, ManagedPackages: []string{"incus", "incus-base"}, IncusServiceByANAS: true, StoragePool: StoragePoolName}}}
 	rt := newFakeRuntime(t)
 	rt.obs.PackageInstalled, rt.obs.IncusDaemonActive, rt.obs.IncusHTTPSLoopback = true, true, true
 	rt.obs.StoragePoolExists, rt.obs.DockerNetworkExists, rt.obs.FirewallInstalled, rt.obs.RelayInstalled = true, true, true, true
@@ -459,7 +469,7 @@ func TestPublicJSONRedactsCredentialBundleAndEndpoint(t *testing.T) {
 
 func TestCredentialDurableBeforeTrustRegistration(t *testing.T) {
 	ctx := context.Background()
-	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{PackagesInstalledByANAS: true, IncusServiceByANAS: true, StoragePool: StoragePoolName}}}
+	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{PackagesInstalledByANAS: true, ManagedPackages: []string{"incus", "incus-base"}, IncusServiceByANAS: true, StoragePool: StoragePoolName}}}
 	rt := newFakeRuntime(t)
 	rt.obs.PackageInstalled, rt.obs.IncusDaemonActive, rt.obs.IncusHTTPSLoopback = true, true, true
 	rt.obs.StoragePoolExists, rt.obs.DockerNetworkExists, rt.obs.FirewallInstalled, rt.obs.RelayInstalled = true, true, true, true

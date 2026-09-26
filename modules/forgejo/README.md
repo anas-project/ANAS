@@ -9,7 +9,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `forgejo` |
-| 版本 / revision | `15.0.7-r1` |
+| 版本 / revision | `15.0.7-r2` |
 | 状态 | `developing` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -158,8 +158,13 @@ preflight 在 Forgejo 启动前连接 Incus 验证 project、配额与 profile�
 
 **当前该账号被建成站点管理员，这是一处已登记的权限偏差。** controller 实际只调用获批 scope 下的三个
 `actions/runners` 端点，站点管理员只是因为目前没有"按 scope 授予组织 owner / 仓库 admin"的调和路径。
-两条后果请知悉：controller 被攻陷等同于 Forgejo 全站管理员；**关闭 `actions_enabled` 不会撤销这个
-账号**，需要手工在 Forgejo 停用或删除它。收敛计划见实施计划的 M3。
+controller 被攻陷仍等同于 Forgejo 全站管理员，按 scope 收敛权限仍待完成。
+关闭 `actions_enabled` 的调和现在先等待同一个禁用 controller 完成清理并成功退出，再由
+独立 `break_glass` 管理员使 **ANAS 管理的 controller 口令失效**。清理失败、账号身份变化或
+凭据不匹配时拒绝继续，不冒充撤销成功。重新启用只恢复具有已验证归属记录的同一账号；
+不会重置未知的同名账号。账号本身、站点管理员角色及人工另建的 token/SSH key 不因此删除。
+发生泄露或调和失败时，管理员仍须在 Forgejo 停用账号并撤销其全部其他凭据。实际账号 API
+与完整 Core/Compose 开关链路的验收分开记录，见实施计划 M3。
 
 controller 默认每 15 秒查询已批准 scope；空队列不注册 Runner、不创建实例。每个 waiting job 对应
 一个 ephemeral registration 和一个 Incus 实例，并用 job handle 启动 `forgejo-runner one-job`。token
@@ -201,7 +206,7 @@ Actions controller 的状态在 Docker named volume `forgejo_actions_state` 里�
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`15.0.7-r1`（reviewed 2026-08-22）
+- Module version / 版本：`15.0.7-r2`（reviewed 2026-08-22）
 - Timezone / 时区：`configured` — Forgejo time.DEFAULT_UI_LOCATION inherits ANAS TZ; signed-in users may retain their own UI preference.
 - Language scope / 语言范围：Forgejo Web UI
 - Selection / 选择方式：`application`

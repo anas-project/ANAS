@@ -64,6 +64,16 @@ func CanonicalParameters(action string, body []byte) (json.RawMessage, error) {
 	if action == ActionObserverPlan || action == ActionObserverApply {
 		return canonicalObserverParameters(action, body)
 	}
+	if action == ActionForwardingPlan || action == ActionForwardingApply {
+		return canonicalForwardingParameters(action, body)
+	}
+	if action == ActionForwardingWithdraw {
+		var p incusprovision.ForwardingWithdrawalRequest
+		if strictDecode(body, &p) != nil || p.Validate() != nil {
+			return nil, ErrRequest
+		}
+		return marshalCanonical(p)
+	}
 	if action == ActionObserveHTTP {
 		var p incusingresshost.ProjectionRequest
 		if strictDecode(body, &p) != nil || p.Validate() != nil {
@@ -231,6 +241,9 @@ func DecodeImagePruneApplyParameters(action string, body json.RawMessage) (Incus
 }
 
 func CanonicalWireParameters(action string, body []byte) (json.RawMessage, error) {
+	if action == ActionForwardingWithdraw {
+		return CanonicalParameters(action, body)
+	}
 	spec, ok := LookupAction(action)
 	if !ok || !spec.Mutating {
 		return CanonicalParameters(action, body)
@@ -298,9 +311,23 @@ func CanonicalWireParameters(action string, body []byte) (json.RawMessage, error
 }
 
 func encodePublicParameterObject(action string, fields map[string]json.RawMessage) ([]byte, error) {
+	if action == ActionForwardingWithdraw {
+		body, err := json.Marshal(fields)
+		if err != nil {
+			return nil, ErrRequest
+		}
+		return CanonicalParameters(action, body)
+	}
 	spec, ok := LookupAction(action)
 	if !ok {
 		return nil, ErrRequest
+	}
+	if action == ActionForwardingPlan || action == ActionForwardingApply {
+		body, err := json.Marshal(fields)
+		if err != nil {
+			return nil, ErrRequest
+		}
+		return canonicalForwardingParameters(action, body)
 	}
 	if action == ActionObserverPlan || action == ActionObserverApply {
 		body, err := json.Marshal(fields)

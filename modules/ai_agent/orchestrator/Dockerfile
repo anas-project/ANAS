@@ -1,4 +1,5 @@
-ARG GO_BUILDER_REGISTRY=docker.io
+ARG DOCKER_HUB_REGISTRY=docker.io
+ARG GO_BUILDER_REGISTRY=${DOCKER_HUB_REGISTRY}
 
 FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26-alpine AS build
 WORKDIR /src
@@ -18,11 +19,14 @@ ARG TARGETARCH
 # orchestrator speaks PostgreSQL, and pgx is a real dependency rather than
 # something to reimplement. The versions are the ones go.sum pins, so the
 # network supplies bytes, not choices.
+ARG GO_MODULE_PROXY=https://proxy.golang.org,direct
 ENV GOFLAGS=-mod=mod
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+# The override selects transport only; retain the default checksum verifier.
+# Build arguments are not a channel for proxy credentials.
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOPROXY="$GO_MODULE_PROXY" \
     go build -trimpath -ldflags="-s -w" -o /out/anas-ai-agent ./modules/ai_agent/orchestrator
 
-FROM alpine:3.22.1
+FROM ${DOCKER_HUB_REGISTRY}/library/alpine:3.22.1
 RUN apk add --no-cache ca-certificates \
     && addgroup -g 65532 -S orchestrator \
     && adduser -u 65532 -S -D -H -G orchestrator orchestrator \

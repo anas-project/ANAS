@@ -11,10 +11,12 @@ services:
         shared: ${ANAS_SHARED_BUILD_CONTEXT:-../..}
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
-        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-docker.io}
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
+        GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
+        GO_MODULE_PROXY: ${GO_MODULE_PROXY:-${GOPROXY_URL:-https://proxy.golang.org,direct}}
     # Pinned to the module revision. `latest` would let the orchestrator change
     # under an unchanged deployment, which is exactly what AGENT-R-001 forbids.
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r2
     restart: unless-stopped
     dns:
       - ${LOCAL_DNS_SERVER}

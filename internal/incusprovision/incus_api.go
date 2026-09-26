@@ -3,7 +3,10 @@ package incusprovision
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"net"
@@ -48,6 +51,7 @@ type incusStoragePool struct {
 	Driver string            `json:"driver"`
 	Config map[string]string `json:"config"`
 	Status string            `json:"status"`
+	UsedBy []string          `json:"used_by"`
 }
 
 type incusCertificate struct {
@@ -282,7 +286,22 @@ func (c *incusUnixClient) deleteStoragePool(ctx context.Context, name string) er
 }
 
 func (c *incusUnixClient) addCertificate(ctx context.Context, credential Credential) error {
-	body := map[string]any{"name": credential.Name, "type": "client", "certificate": credential.Certificate, "restricted": false}
+	if credential.Name != ManagementCertName || !digestPattern.MatchString(credential.Fingerprint) || len(credential.Certificate) > 64<<10 {
+		return ErrInvalid
+	}
+	block, rest := pem.Decode([]byte(credential.Certificate))
+	if block == nil || block.Type != "CERTIFICATE" || len(bytes.TrimSpace(rest)) != 0 || len(block.Headers) != 0 {
+		return ErrInvalid
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil || digestBytes(certificate.Raw) != credential.Fingerprint {
+		return ErrInvalid
+	}
+	// Use the same canonical creation format as the Provider. Incus 6.0.0
+	// does not accept the PEM form accepted by later packaged daemons. This
+	// converts only POST transport; durable credentials, GET readback and
+	// TLS bundles remain PEM, and no private key enters this request.
+	body := map[string]any{"name": credential.Name, "type": "client", "certificate": base64.StdEncoding.EncodeToString(certificate.Raw), "restricted": false}
 	return c.do(ctx, "POST", "/1.0/certificates", body, nil)
 }
 
@@ -334,8 +353,5 @@ func (c *incusUnixClient) listNetworkCIDRs(ctx context.Context) ([]string, error
 func (c *incusUnixClient) listStoragePoolVolumes(ctx context.Context, name string) ([]incusStorageVolume, error) {
 	var out []incusStorageVolume
 	err := c.do(ctx, "GET", "/1.0/storage-pools/"+url.PathEscape(name)+"/volumes?recursion=1", nil, &out)
-	if errors.Is(err, errIncusNotFound) {
-		return nil, nil
-	}
 	return out, err
 }

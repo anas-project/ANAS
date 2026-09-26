@@ -31,6 +31,12 @@ const (
 	RelayBinaryPath    = "/usr/local/lib/anas/anas-incus-control-relay"
 	RelayUserName      = "anas-incus-relay"
 	RelayGroupName     = "anas-incus-relay"
+
+	// InstallTimeout bounds the complete confirmed install action, not an
+	// individual query. It accommodates the two bounded APT calls (15m each),
+	// the packaged Incus startup (11m including systemctl), and 4m of readback
+	// and persistence allowance. Caller cancellation can always shorten it.
+	InstallTimeout = 45 * time.Minute
 )
 
 var (
@@ -154,30 +160,31 @@ type UnsupportedOutput struct {
 }
 
 type Observation struct {
-	Preflight             incushost.Report `json:"preflight"`
-	PackageInstalled      bool             `json:"package_installed"`
-	ExistingPackages      []string         `json:"existing_packages"`
-	InstalledPackages     []string         `json:"installed_packages"`
-	IncusDaemonActive     bool             `json:"incus_daemon_active"`
-	IncusHTTPSLoopback    bool             `json:"incus_https_loopback"`
-	StoragePoolExists     bool             `json:"storage_pool_exists"`
-	DockerNetworkExists   bool             `json:"docker_network_exists"`
-	FirewallInstalled     bool             `json:"firewall_installed"`
-	RelayInstalled        bool             `json:"relay_installed"`
-	RelayBinaryInstalled  bool             `json:"relay_binary_installed"`
-	ManagementTrusted     bool             `json:"management_trusted"`
-	EndpointVerified      bool             `json:"connection_verified"`
-	RunningManagedGuests  int              `json:"running_managed_guests"`
-	ExternalCIDRs         []string         `json:"external_cidrs,omitempty"`
-	DockerCIDRs           []string         `json:"docker_cidrs,omitempty"`
-	IncusCIDRs            []string         `json:"incus_cidrs,omitempty"`
-	ControlSubnet         string           `json:"control_subnet,omitempty"`
-	ControlGateway        string           `json:"control_gateway,omitempty"`
-	ControlInterfaceName  string           `json:"control_interface_name,omitempty"`
-	ControlInterfaceIndex int              `json:"control_interface_index,omitempty"`
-	ControlNetworkID      string           `json:"control_network_id,omitempty"`
-	RelayUID              uint32           `json:"relay_uid,omitempty"`
-	RelayGID              uint32           `json:"relay_gid,omitempty"`
+	Preflight             incushost.Report      `json:"preflight"`
+	Forwarding            ForwardingObservation `json:"forwarding"`
+	PackageInstalled      bool                  `json:"package_installed"`
+	ExistingPackages      []string              `json:"existing_packages"`
+	InstalledPackages     []string              `json:"installed_packages"`
+	IncusDaemonActive     bool                  `json:"incus_daemon_active"`
+	IncusHTTPSLoopback    bool                  `json:"incus_https_loopback"`
+	StoragePoolExists     bool                  `json:"storage_pool_exists"`
+	DockerNetworkExists   bool                  `json:"docker_network_exists"`
+	FirewallInstalled     bool                  `json:"firewall_installed"`
+	RelayInstalled        bool                  `json:"relay_installed"`
+	RelayBinaryInstalled  bool                  `json:"relay_binary_installed"`
+	ManagementTrusted     bool                  `json:"management_trusted"`
+	EndpointVerified      bool                  `json:"connection_verified"`
+	RunningManagedGuests  int                   `json:"running_managed_guests"`
+	ExternalCIDRs         []string              `json:"external_cidrs,omitempty"`
+	DockerCIDRs           []string              `json:"docker_cidrs,omitempty"`
+	IncusCIDRs            []string              `json:"incus_cidrs,omitempty"`
+	ControlSubnet         string                `json:"control_subnet,omitempty"`
+	ControlGateway        string                `json:"control_gateway,omitempty"`
+	ControlInterfaceName  string                `json:"control_interface_name,omitempty"`
+	ControlInterfaceIndex int                   `json:"control_interface_index,omitempty"`
+	ControlNetworkID      string                `json:"control_network_id,omitempty"`
+	RelayUID              uint32                `json:"relay_uid,omitempty"`
+	RelayGID              uint32                `json:"relay_gid,omitempty"`
 }
 
 func digestBytes(body []byte) string {

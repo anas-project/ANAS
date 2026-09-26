@@ -149,6 +149,7 @@ func TestValidateComputeSpecRejectsUnsafeLeases(t *testing.T) {
 		"prefix without anas":         func(s map[string]any) { s["instance_prefix"] = "runner-" },
 		"uppercase sandbox":           func(s map[string]any) { s["sandbox"] = "Anas-Runners" },
 		"sandbox with slash":          func(s map[string]any) { s["sandbox"] = "anas/runners" },
+		"default project sandbox":     func(s map[string]any) { s["sandbox"] = "default" },
 		"missing quota":               func(s map[string]any) { delete(s, "quota") },
 		"cpu above range": func(s map[string]any) {
 			s["quota"].(map[string]any)["cpu"] = 65

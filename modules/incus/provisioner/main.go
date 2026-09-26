@@ -121,8 +121,8 @@ func leaseFromEnv(isolation string) (lease, error) {
 	if !consumerPattern.MatchString(l.Consumer) {
 		return lease{}, fmt.Errorf("ANAS_RESOURCE_CONSUMER is not a valid module name")
 	}
-	if !sandboxPattern.MatchString(l.Sandbox) {
-		return lease{}, fmt.Errorf("ANAS_RESOURCE_SANDBOX is not a valid project name")
+	if !sandboxPattern.MatchString(l.Sandbox) || l.Sandbox == "default" {
+		return lease{}, fmt.Errorf("ANAS_RESOURCE_SANDBOX is not a valid lease project name")
 	}
 	if !storagePoolPattern.MatchString(l.StoragePool) {
 		return lease{}, fmt.Errorf("INCUS_STORAGE_POOL is not a valid storage pool name")
@@ -161,6 +161,11 @@ func leaseFromEnv(isolation string) (lease, error) {
 	if l.ClientCertPEM, err = decodeBase64Env("ANAS_RESOURCE_CLIENT_CERT"); err != nil {
 		return lease{}, err
 	}
+	parsed, err := decodeCertificate(l.ClientCertPEM)
+	if err != nil {
+		return lease{}, fmt.Errorf("ANAS_RESOURCE_CLIENT_CERT: %w", err)
+	}
+	l.Credential = certificateFingerprint(parsed)
 	return l, nil
 }
 

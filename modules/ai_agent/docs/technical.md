@@ -1,10 +1,25 @@
 # AI Agent 编排技术实现
 
+## 共享源码与构建传输设置
+
+orchestrator 通过命名 `shared` 上下文编译当前仓库的 compute 类型与校验，不能静默从网络
+取另一份 ANAS 共享实现。staging 必须用 `ANAS_SHARED_BUILD_CONTEXT` 指向匹配版本的绝对
+源码根；`check-shared-build --json` 只核对输入字节/权限与声明，不读运行凭据、不执行 Docker。
+
+Go 与 Alpine 运行层均接入既有 `DOCKER_HUB_REGISTRY`，显式 `GO_BUILDER_REGISTRY` 只覆盖
+Go 层。pgx 等已声明第三方模块通过 `GO_MODULE_PROXY` 获取，缺省回退到 `GOPROXY_URL` 与
+官方源，保留 `go.sum` 和 checksum database。代理与镜像源都是构建设置，不进入服务的
+runtime environment，不携带代理凭据，也不改变租约和 guest 的权限。
+
+独立 VM 构建门禁的范围见仓库 `test-env/fixtures/incus-shared-build/README.md`：源码和
+build-only staging 分别实构并比较最终二进制。镜像可编译不代表 agent runtime、外部模型
+调用、compute 作业或完整 Core `build/apply` 已验收，不据此开放尚未完成的运行路径。
+
 本文记录 `ai_agent` Module 的控制面结构与安全边界。配置与操作见[中文 README](../README.md)，
 验收依据见[需求矩阵](../dev-docs/requirements/ai-agent.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `0.1.0-r1` / `anas.module/v1`.
+> 状态：当前实现；对应 `0.1.0-r2` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -16,7 +31,7 @@ Docker socket 或宿主服务权限。数据库连接仍独立，`traefik` 网�
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r1` | `db, traefik, compute-control` | 2 |
+| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r2` | `db, traefik, compute-control` | 2 |
 <!-- generated:compose-topology:end -->
 
 只有一个常驻服务。它 `read_only`、`cap_drop: ALL`、`no-new-privileges`、以 `65532` 运行，
