@@ -22,7 +22,7 @@ import time
 
 PARENT = 'TestNativeHostProvisionLifecycle'
 REQUIRED = {PARENT} | {PARENT+'/'+name for name in (
-    'confirmation_is_required', 'skip_without_host_effects', 'install_official_packages',
+    'confirmation_is_required', 'skip_without_host_effects', 'install_pinned_packages',
     'configure_owned_host_resources', 'enroll_private_management_connection',
     'idempotent_reenrollment', 'uninstall_preflight_preserves_retained_storage',
     'uninstall_preserves_original_packages',

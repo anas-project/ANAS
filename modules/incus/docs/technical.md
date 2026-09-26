@@ -290,7 +290,7 @@ SOCKS、TLS 密钥或调用方命令；Incus mTLS 与原服务端 pin 仍由原�
 未实现门禁；不会因缺 KVM 把 VM 自动变容器。低权限 `incus.status` 内部处理器复用这条只读
 路径，并要求动作输入和执行审计；完整 daemon 状态与真实宿主能力仍另行验收。root socket、
 共享 job/CLI/Web 和计划/确认/执行已接线，但不能以本机用例代替 Linux 原生身份或真实安装验收。
-设计与上游版本差异见 [宿主供给架构](../../../docs/architecture/incus-host-provisioning.md) §2.1。
+设计、包来源与上游版本差异见 [宿主供给架构](../../../docs/architecture/incus-host-provisioning.md) §2.1、§2.2。
 
 ### 宿主 job 绑定（内部实现）
 
@@ -475,9 +475,10 @@ project 的 `exists`/`restricted`。读取故障返回错误，不伪装成缺�
 [Incus dir 配额前提](https://linuxcontainers.org/incus/docs/main/reference/storage_dir/#quotas)说明底层条件；
 完整待测清单在仓库 `test-env/fixtures/incus-network-prototype/e2e-plan.md`。
 
-Provider 拥有目标 daemon 认识的全部 `restricted.*` 键：Incus 6.0 LTS（一级发行版官方仓库的
-6.0.0—6.0.5）的完整集合，加上 daemon 通过 API extension 声明支持的 7.x 新键。每个键要么显式写入
-严格值，要么必须不存在：
+Provider 拥有目标 daemon 认识的全部 `restricted.*` 键：Incus 6.0 LTS（6.0.0—6.0.5，发行版官方
+仓库的版本）的完整集合，加上 daemon 通过 API extension 声明支持的 7.x 新键。宿主供给默认安装
+Zabbly `lts-7.0`（见[宿主供给设计](../../../docs/architecture/incus-host-provisioning.md) §2.2），
+Provider 仍兼容已有的 6.0 daemon。每个键要么显式写入严格值，要么必须不存在：
 
 | 处理 | 键 |
 | --- | --- |

@@ -22,8 +22,10 @@ var ErrObservation = errors.New("Incus host facts could not be safely observed")
 
 // Recipe is compiled installation data, not an executable script. The package
 // version is a dated packaging observation, never an apt pin or runtime
-// compatibility assertion. APT origin/signature checks still belong to the
-// future installer; a source label here does not authenticate an installed pkg.
+// compatibility assertion. Repository names the source of the Incus packages
+// themselves; every other package still comes from the distribution's own
+// archive. The installer compiles the matching signed sources and pins, so a
+// label here does not authenticate an installed package on its own.
 type Recipe struct {
 	ID                     string   `json:"id"`
 	Distribution           string   `json:"distribution"`
@@ -37,6 +39,12 @@ type Recipe struct {
 	ObservedPackageVersion string   `json:"observed_package_version"`
 	EvidenceURL            string   `json:"evidence_url"`
 }
+
+// IncusRepository is the only Incus package source the first-tier recipes
+// use: Zabbly's Incus 7.0 LTS builds, from the upstream maintainer. The
+// distributions' own archives ship Incus 6.0 at most, which lacks the 7.0
+// project restrictions the compute fence relies on.
+const IncusRepository = "zabbly-lts-7.0"
 
 var distroID = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 var versionID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+~^-]{0,62}$`)
@@ -65,7 +73,7 @@ func parseRecipes(body []byte) ([]Recipe, error) {
 	for _, r := range rows {
 		key := r.Distribution + ":" + r.Version
 		u, err := url.Parse(r.EvidenceURL)
-		if !distroID.MatchString(r.ID) || !distroID.MatchString(r.Distribution) || !versionID.MatchString(r.Version) || !distroID.MatchString(r.Codename) || seen[key] || r.PackageManager != "apt" || (r.Repository != "official" && r.Repository != "universe") || err != nil || u.Scheme != "https" || u.User != nil || (u.Host != "packages.debian.org" && u.Host != "packages.ubuntu.com") || u.RawQuery != "" || u.Fragment != "" || len(r.ObservedPackageVersion) > 128 || r.ObservedPackageVersion == "" {
+		if !distroID.MatchString(r.ID) || !distroID.MatchString(r.Distribution) || !versionID.MatchString(r.Version) || !distroID.MatchString(r.Codename) || seen[key] || r.PackageManager != "apt" || r.Repository != IncusRepository || err != nil || u.Scheme != "https" || u.User != nil || u.Host != "pkgs.zabbly.com" || u.RawQuery != "" || u.Fragment != "" || len(r.ObservedPackageVersion) > 128 || r.ObservedPackageVersion == "" {
 			return nil, ErrInvalid
 		}
 		if _, err := time.Parse("2006-01-02", r.EvidenceDate); err != nil {
