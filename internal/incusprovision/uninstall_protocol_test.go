@@ -36,6 +36,7 @@ func newUninstallProtocolFixture(t *testing.T) *uninstallProtocolFixture {
 		"/1.0/profiles?recursion=1":      `[{"name":"default","config":{},"devices":{}}]`,
 		"/1.0/images?recursion=1":        `[]`,
 		"/1.0/certificates?recursion=1":  `[]`,
+		"/1.0/network-acls?recursion=1":  `[]`,
 	}}
 	f.network = `{"Id":"` + f.owner.DockerNetworkID + `","Name":"anas-incus-control","Driver":"bridge","Internal":true,"EnableIPv6":false,"ConfigOnly":false,"Labels":{"dev.anas.owner":"incus-host-provision","dev.anas.owner_id":"owner"},"Options":{"com.docker.network.bridge.enable_icc":"false","com.docker.network.bridge.enable_ip_masquerade":"false","com.docker.network.bridge.name":"br-anas-ctrl"},"IPAM":{"Config":[{"Subnet":"10.77.0.0/24","Gateway":"10.77.0.1"}]},"Containers":{}}`
 	f.runtime = &localRuntime{
@@ -160,6 +161,7 @@ func TestUninstallSharedPackagesPreservesObjectsAddedAfterInstallation(t *testin
 		"null profile":    {"/1.0/profiles?recursion=1", `[{"name":"default","config":{},"devices":null}]`},
 		"retained image":  {"/1.0/images?recursion=1", `[{"fingerprint":"keep"}]`},
 		"foreign trust":   {"/1.0/certificates?recursion=1", `[{"name":"operator"}]`},
+		"network ACL":     {"/1.0/network-acls?recursion=1", `[{"name":"anas-lease-acl"}]`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newUninstallProtocolFixture(t)

@@ -122,6 +122,10 @@ Provider 的固定 profile 决定，不成为消费者可传入的低层配置�
 3. `revoke` 必须撤销消费者证书并保留 project；对不存在的证书必须幂等成功。
 4. Provider 必须固定（pin）Incus server certificate，不得在 TLS 校验失败时回退到不校验。
 5. 每次操作的错误必须可归因到具体参数，且不得回显证书、私钥或消费者 Secret。
+6. 目标部署不再声明某份租约（消费者被移除，或申请它的能力被关闭）时，Core 必须经上一个部署冻结的
+   Provider 执行 `revoke`，撤销证书并保留 project 与实例。保留数据库保留的是数据，保留租约若不撤销，
+   保留的是访问授权。撤销未确认时不得记为完成：默认中止激活，只有显式风险确认才可记录为未确认。
+   `deletion_policy` 只接受 `retain`，因为没有 Provider 实现删除租约 project。
 
 ## 6. Core 与凭据
 
@@ -359,3 +363,4 @@ Provider 的固定 profile 决定，不成为消费者可传入的低层配置�
 | `INCUS-R-108` | 一级发行版必须从 Zabbly `lts-7.0` 安装 Incus 7.0 LTS：密钥编译进二进制并固定指纹，`incus`/`incus-base`/`incus-client` 钉死到该来源且禁止回落到发行版版本，其余依赖只取自发行版官方仓库或保留发行版签名校验的固定国内镜像，不得添加其他第三方软件仓库；来源不可用时失败并给出手工指引 | 静态 + 单元 + e2e |
 | `INCUS-R-109` | 宿主安装计划必须在确认前冻结工作区有效 `CHINESE_SPEEDUP` 对应的编译源选择；执行使用冻结值，开关不得改变发行版签名校验或 Incus 来源钉包 | 单元 |
 | `INCUS-R-110` | guest 发布构建的 `CHINESE_BUILD_SPEEDUP` 必须同时覆盖 bootstrap 与 APT 软件源，并将选择冻结进配方摘要；运行期开关不得重烘焙既有 revision | 单元 + CI |
+| `INCUS-R-111` | 目标部署不再声明 compute 租约时，Core 必须经上一部署冻结的 Provider 执行 `revoke`，撤销证书并保留 project 与实例；撤销未确认时默认中止激活，只有显式风险确认才可记录为未确认；`deletion_policy` 只接受 `retain` | 单元 + e2e |

@@ -458,6 +458,9 @@ def main(args):
             bridge = 'anas' + hashlib.sha256(project.encode()).hexdigest()[:10]
             if cli('network', 'show', bridge, check=False).returncode == 0:
                 cli('network', 'delete', bridge)
+            # The lease source fence ACL shares the bridge name; free it after the bridge.
+            if cli('network', 'acl', 'show', bridge, check=False).returncode == 0:
+                cli('network', 'acl', 'delete', bridge)
         own = {fingerprint(name) for name in CERTIFICATES if (ROOT/(name+'.crt')).exists()}
         for certificate in trusted():
             if certificate['fingerprint'] not in own:

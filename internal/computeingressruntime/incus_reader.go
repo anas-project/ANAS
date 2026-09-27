@@ -358,7 +358,9 @@ func (r *IncusFactReader) sample(ctx context.Context, grant incusInstanceSelecti
 	// A provider-owned profile is not proof about the expanded instance:
 	// restricted project clients may still submit device overrides. Inspect
 	// the effective NIC on every sample, including renewed observations.
-	for _, key := range []string{"security.mac_filtering", "security.ipv4_filtering", "security.ipv6_filtering"} {
+	// IPv6 filtering is not required: Incus only starts it with host
+	// br_netfilter, and HTTP publication targets the guest's IPv4 address.
+	for _, key := range []string{"security.mac_filtering", "security.ipv4_filtering"} {
 		if device[key] != "true" {
 			return fail("Incus managed NIC source filtering is absent or overridden")
 		}

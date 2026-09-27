@@ -195,9 +195,13 @@ func validateComputeSpec(consumer, id string, spec map[string]any) (computeQuota
 	for i, ref := range refs {
 		allowlist[i] = ref.Fingerprint
 	}
+	// A removed lease loses its certificate, never its project: deleting the
+	// project would destroy instances and volumes the contract never claimed
+	// to own. "delete" has no Provider implementation, so it is refused
+	// rather than accepted and silently ignored.
 	policy, _ := spec["deletion_policy"].(string)
-	if policy != "retain" && policy != "delete" {
-		return computeQuota{}, nil, fmt.Errorf("resource %s.%s deletion_policy must be retain or delete", consumer, id)
+	if policy != "retain" {
+		return computeQuota{}, nil, fmt.Errorf("resource %s.%s compute deletion_policy must be retain", consumer, id)
 	}
 	return quota, allowlist, nil
 }

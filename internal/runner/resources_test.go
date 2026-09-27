@@ -190,7 +190,7 @@ func TestRemovedResourceIsRetainedWithoutProviderDeletion(t *testing.T) {
 	current := &deploymentManifest{Resources: []deploymentResource{{
 		Consumer: "nextcloud", ID: "primary_database", Contract: "relational_database", Provider: "postgres",
 	}}}
-	if err := retainRemovedResources(base, current, &deploymentManifest{}); err != nil {
+	if err := retainRemovedResources(base, current, &deploymentManifest{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	body, err := os.ReadFile(statePath)

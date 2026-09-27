@@ -15,7 +15,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -24,7 +26,7 @@ import (
 // created two running guests. It is not a new runtime administration channel.
 // INCUS-R-029 concerns the Provider's management certificate, not the separate
 // project-restricted consumer certificates or the lease naming secret.
-func verifyNativeManagementRotation(t *testing.T, ctx context.Context, clients []*Client, leases []Lease, id string) {
+func verifyNativeManagementRotation(t *testing.T, ctx context.Context, clients []*Client, leases []Lease, id, isolation string) {
 	t.Helper()
 	if os.Geteuid() != 0 || os.Getenv("ANAS_REQUIRE_INCUS_LIFECYCLE_NATIVE") != "1" {
 		t.Fatal("management rotation requires the explicit disposable root fixture")
@@ -52,7 +54,8 @@ func verifyNativeManagementRotation(t *testing.T, ctx context.Context, clients [
 	if decoder.Decode(&fixture) != nil || decoder.Decode(&struct{}{}) != io.EOF || fixture.Schema != "anas.incus-native-management-rotation/v1" || len(fixture.Environments) != len(leases) {
 		t.Fatal("invalid management rotation fixture")
 	}
-	provider := lifecycleFixtureRoot + "/provider"
+	// /run is noexec on Debian 13; the harness pins the Provider copy here.
+	provider := lifecycleProviderPath
 	info, err := os.Lstat(provider)
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0700 || info.Size() > 64<<20 {
 		t.Fatal("private precompiled Provider fixture required")
@@ -93,10 +96,27 @@ func verifyNativeManagementRotation(t *testing.T, ctx context.Context, clients [
 	}
 	snapshot := func(c *Client) lifetime {
 		t.Helper()
-		body, err := c.run.Run(ctx, nil, "list", remoteName+":"+id, "--format=json")
+		body, err := c.run.Run(ctx, nil, "list", remoteName+":", "--format=json")
+		if err != nil {
+			t.Fatal("running guest identity unavailable during management rotation: list failed")
+		}
+		var listed []identity
+		if decodeErr := json.Unmarshal(body, &listed); decodeErr != nil {
+			t.Fatalf("running guest identity unavailable during management rotation: list JSON did not decode (%T)", decodeErr)
+		}
 		var instances []identity
-		if err != nil || json.Unmarshal(body, &instances) != nil || len(instances) != 1 || instances[0].Name != id || instances[0].Status != "Running" {
-			t.Fatal("running guest identity unavailable during management rotation")
+		for _, item := range listed {
+			if item.Name == id {
+				instances = append(instances, item)
+			}
+		}
+		// Only non-secret facts: how many rows matched and their lifecycle state.
+		if len(instances) != 1 || instances[0].Name != id || instances[0].Status != "Running" {
+			states := make([]string, 0, len(instances))
+			for _, item := range instances {
+				states = append(states, item.Status)
+			}
+			t.Fatalf("running guest identity unavailable during management rotation: %d rows, states %v", len(instances), states)
 		}
 		item := instances[0]
 		result := lifetime{item.Config["volatile.uuid"], item.Config["volatile.uuid.generation"], item.CreatedAt, item.LastUsedAt}
@@ -121,7 +141,7 @@ func verifyNativeManagementRotation(t *testing.T, ctx context.Context, clients [
 			environment["INCUS_ADMIN_CERT_B64"] = base64.StdEncoding.EncodeToString(newCertificate)
 			environment["INCUS_ADMIN_KEY_B64"] = base64.StdEncoding.EncodeToString(newKey)
 		}
-		body, err := runLifecycleAdminCommand(ctx, environment, provider, operation, "--isolation", "container")
+		body, err := runLifecycleAdminCommand(ctx, environment, provider, operation, "--isolation", isolation)
 		if err != nil {
 			return err
 		}
@@ -191,6 +211,15 @@ func runLifecycleAdminCommand(ctx context.Context, environment map[string]string
 	if err := command.Run(); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+		// Keep the private reason for the disposable lab report only; the
+		// error text and test output stay free of it.
+		if os.Getenv("ANAS_REQUIRE_INCUS_LIFECYCLE_NATIVE") == "1" && os.Geteuid() == 0 {
+			record := append([]byte(filepath.Base(executable)+" "+strings.Join(args, " ")+": "+err.Error()+"\n"), stderr.buffer.Bytes()...)
+			if file, openErr := os.OpenFile(lifecycleFixtureRoot+"/diagnostics-admin.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600); openErr == nil {
+				_, _ = file.Write(append(record, '\n'))
+				_ = file.Close()
+			}
 		}
 		return nil, errors.New("native administrator operation failed")
 	}

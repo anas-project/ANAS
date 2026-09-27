@@ -167,6 +167,9 @@ func TestValidateComputeSpecRejectsUnsafeLeases(t *testing.T) {
 			s["quota"].(map[string]any)["disk_gib"] = "40"
 		},
 		"unknown deletion policy": func(s map[string]any) { s["deletion_policy"] = "purge" },
+		// No Provider implements deleting a lease project; accepting the value
+		// would promise a cleanup that never happens.
+		"delete deletion policy": func(s map[string]any) { s["deletion_policy"] = "delete" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			spec := validComputeSpec()

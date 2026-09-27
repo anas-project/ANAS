@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/anas-project/ANAS/internal/computeingress"
 )
 
 // remoteName is local to this client's private config directory, so it never
@@ -121,7 +123,7 @@ func (c *Client) Validate(spec InstanceSpec) error {
 	if !c.lease.AllowsImage(spec.Image) {
 		return fmt.Errorf("compute image fingerprint is not in this lease's allowlist")
 	}
-	if strings.TrimSpace(spec.WorkloadID) == "" || len(spec.WorkloadID) > 128 || hasControl(spec.WorkloadID) {
+	if !computeingress.ValidWorkloadID(spec.WorkloadID) {
 		return fmt.Errorf("compute workload identity is invalid")
 	}
 	if spec.CPU < 1 || spec.CPU > c.lease.CPU {
@@ -171,7 +173,11 @@ func (c *Client) Inspect(ctx context.Context, id string) (Instance, error) {
 	if !c.instanceID.MatchString(id) {
 		return Instance{}, fmt.Errorf("compute instance identity is outside this lease's instance prefix")
 	}
-	body, err := c.run.Run(ctx, nil, "list", remoteName+":"+id, "--format=json")
+	// List the whole lease project and match the exact name here. Incus 7.x
+	// reads "<remote>:<name>" as a remote plus nothing to filter and answers
+	// with an empty list, which would read as "missing" and falsely confirm a
+	// delete; before 7.0 it was a name-prefix filter. Neither is an identity.
+	body, err := c.run.Run(ctx, nil, "list", remoteName+":", "--format=json")
 	if err != nil {
 		return Instance{}, err
 	}

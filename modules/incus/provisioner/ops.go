@@ -161,7 +161,7 @@ func projectConfig(l lease) map[string]string {
 		"limits.instances":                     fmt.Sprint(l.MaxInstances),
 		"limits.cpu":                           fmt.Sprint(l.MaxInstances * l.CPU),
 		"limits.memory":                        fmt.Sprintf("%dMiB", l.MaxInstances*l.MemoryMiB),
-		"limits.disk":                          fmt.Sprintf("%dGiB", l.MaxInstances*l.DiskGiB),
+		"limits.disk":                          projectDiskLimit(l),
 		"restricted.backups":                   "block",
 		"restricted.cluster.target":            "block",
 		"restricted.containers.interception":   "block",
@@ -359,7 +359,45 @@ func ensureNetwork(ctx context.Context, c *client, l lease) (string, error) {
 	if err := verifyNetworkConfig(actual, l, desired); err != nil {
 		return "", err
 	}
+	// The source fence needs the concrete subnets the daemon just assigned,
+	// and must exist before the bridge can name it.
+	actual.Name = name
+	acl, err := ensureNetworkACL(ctx, c, l, actual)
+	if err != nil {
+		return "", err
+	}
+	attach := bridgeACLConfig(acl)
+	if !bridgeACLAttached(actual, attach) {
+		merged := map[string]string{}
+		for key, value := range actual.Config {
+			merged[key] = value
+		}
+		for key, value := range attach {
+			merged[key] = value
+		}
+		if err := c.do(ctx, "PUT", path, network{Config: merged}, nil); err != nil {
+			return "", err
+		}
+		if err := c.do(ctx, "GET", path, nil, &actual); err != nil {
+			return "", fmt.Errorf("read back lease network: %w", err)
+		}
+	}
+	if err := verifyNetworkConfig(actual, l, desired); err != nil {
+		return "", err
+	}
+	if !bridgeACLAttached(actual, attach) {
+		return "", fmt.Errorf("lease network %s did not attach its source fence ACL", name)
+	}
 	return name, nil
+}
+
+func bridgeACLAttached(n network, attach map[string]string) bool {
+	for key, value := range attach {
+		if n.Config[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func desiredNetworkConfig(l lease) map[string]string {
@@ -435,6 +473,21 @@ func ensureProfile(ctx context.Context, c *client, l lease, bridge string) error
 	}
 }
 
+// vmStateVolumeSize is the filesystem volume Incus attaches to every VM root
+// block volume. Project limits.disk counts it on top of the root size
+// (size.state, default 500MiB), so a VM lease must budget it or a VM using the
+// whole per-instance disk quota can never be created. The profile pins it so
+// the accounting cannot drift with a daemon default.
+const vmStateVolumeSize = "500MiB"
+
+// projectDiskLimit is max_instances times what one instance may occupy.
+func projectDiskLimit(l lease) string {
+	if l.Isolation == "vm" {
+		return fmt.Sprintf("%dMiB", l.MaxInstances*(l.DiskGiB*1024+500))
+	}
+	return fmt.Sprintf("%dGiB", l.MaxInstances*l.DiskGiB)
+}
+
 func desiredLeaseProfile(l lease, bridge string) profile {
 	config := map[string]string{"user.anas.managed": "true"}
 	if l.Isolation == "container" {
@@ -447,17 +500,25 @@ func desiredLeaseProfile(l lease, bridge string) profile {
 		// that extension the key is container-only and a VM rejects it.
 		config["security.nesting"] = "false"
 	}
+	root := device{"type": "disk", "path": "/", "pool": l.StoragePool}
+	if l.Isolation == "vm" {
+		root["size.state"] = vmStateVolumeSize
+	}
 	return profile{
 		Description: "ANAS compute lease profile for " + l.Consumer,
 		Config:      config,
 		Devices: map[string]device{
-			"root": {"type": "disk", "path": "/", "pool": l.StoragePool},
+			"root": root,
 			// Require the daemon's managed-NIC source filters in both tiers.
 			// These defaults are not a forwarding grant: an independent host
 			// authorizer must still reject live per-instance overrides and pin
 			// the actual allocation and kernel interface before any permit.
+			// security.ipv6_filtering is deliberately absent: Incus refuses to
+			// start any instance using it unless the host has br_netfilter with
+			// bridge-nf-call-ip6tables=1, which Docker 28+ no longer loads by
+			// default. IPv6 source filtering stays an open gap, not a silent one.
 			"eth0": {"type": "nic", "network": bridge,
-				"security.mac_filtering": "true", "security.ipv4_filtering": "true", "security.ipv6_filtering": "true"},
+				"security.mac_filtering": "true", "security.ipv4_filtering": "true"},
 		},
 	}
 }
@@ -688,7 +749,22 @@ func inspect(ctx context.Context, c *client, l lease) (inspectResult, error) {
 		}
 		return result, err
 	}
-	if verifyNetworkConfig(n, l, desiredNetworkConfig(l)) != nil {
+	if verifyNetworkConfig(n, l, desiredNetworkConfig(l)) != nil || !bridgeACLAttached(n, bridgeACLConfig(bridge)) {
+		return result, nil
+	}
+	n.Name = bridge
+	subnets, err := leaseSubnets(n, l)
+	if err != nil {
+		return result, nil
+	}
+	var acl networkACL
+	if err := c.do(ctx, "GET", "/1.0/network-acls/"+bridge+"?project=default", nil, &acl); err != nil {
+		if isNotFound(err) {
+			return result, nil
+		}
+		return result, err
+	}
+	if verifyACL(acl, l, subnets) != nil {
 		return result, nil
 	}
 	var p profile

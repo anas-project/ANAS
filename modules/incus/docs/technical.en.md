@@ -60,8 +60,15 @@ Incus may briefly retain successful operation records after asynchronous deletio
 deleting records or equating success with absence. The native fixture first verifies a plan after those
 records disappear, then tests the independent physical-port rejection, preventing false-positive negatives.
 
-Provider profiles require MAC, IPv4 and IPv6 source filtering; the instance observer independently checks
-expanded NIC properties and refuses missing/overridden filters. nft interface names are not numeric
+Provider profiles require MAC and IPv4 source filtering; the instance observer independently checks
+expanded NIC properties and refuses missing/overridden filters. IPv6 source filtering
+(`security.ipv6_filtering`) is not in the profile: Incus starts an instance using it only when the host has
+`br_netfilter` loaded with `bridge-nf-call-ip6tables=1`, and Docker 28+ no longer loads that module by
+default. The 2026-09-26 Debian 13 / Incus 7.0.1 native lifecycle could not start any lease instance while
+the profile required it. Forged IPv6 sources are instead dropped by the source fence ACL described
+below, at the host's forward/input hooks. It constrains the subnet a packet leaves the bridge with, not
+which guest inside one lease subnet sent it; IPv6 impersonation between guests of the same lease remains
+unconstrained. nft interface names are not numeric
 identity evidence: the compiled reader uses read-only netlink to recover actual rule literals and set
 member indices without adopting a replacement interface with the same name. The independent sixth
 native run on 2026-09-25 verified exact kernel permissions, source-spoof rejection, earlier administrator
@@ -556,6 +563,22 @@ are read back for type, ownership, addressing and NAT before a profile is create
 alone do not prove traffic isolation; cross-lease network attachment, write permissions, and actual
 egress still require real-host acceptance.
 
+Every lease bridge also carries a Provider-owned source fence network ACL (default project, named like
+the bridge, with the same consumer/sandbox marks plus the lease certificate digest). It holds exactly one
+enabled egress rule: `allow` with `source` equal to the bridge's actually assigned IPv4 subnet (and IPv6
+subnet when enabled). The bridge sets `security.acls=<ACL>`, `security.acls.default.egress.action=drop`
+and `security.acls.default.ingress.action=allow`. Incus enforces it on the bridge's input/forward hooks;
+its built-in rules admit DNS, DHCP and core ICMPv6 (RS/NS/NA/MLD) first, and conntrack admits replies. A
+guest packet with a forged off-subnet source is therefore dropped when the host would forward or accept
+it, so it never leaves unmasqueraded. An IPv6-disabled lease admits only its IPv4 subnet, which also
+blocks any IPv6 forwarding. The ACL is written only after the bridge has concrete subnets (the daemon
+refuses a reference to a missing ACL) and is read back. A same-name ACL whose marks differ, including an
+unmarked one, is refused without rewrite or certificate registration: ACLs are a new object with no
+unmarked history to adopt. `inspect.ready` also requires the attachment keys, exactly one rule, and a
+source set equal to the current subnets; any extra rule, ingress rule, disabled or widened rule is drift
+that `ensure` repairs with a whole-object PUT. Host package uninstall inventory treats any network ACL as
+the daemon still being in use.
+
 The profile is fixed as `anas-lease` and carries exactly two devices:
 
 | Device | Contents |
@@ -581,7 +604,7 @@ only because this code checks.
 The two refusals in step 5 are the provider-side privilege-escalation defence: silently accepting a
 certificate that is already trusted with global rights would hand the consumer the whole daemon.
 
-`inspect.ready` requires the complete project fence, admitted pool, network ownership/NAT, profile,
+`inspect.ready` requires the complete project fence, admitted pool, network ownership/NAT, source fence ACL, profile,
 restricted certificate and frozen images to remain valid. Project existence or network scope alone
 is insufficient; revocation preserves the project but clears readiness. Inspection never reads supply
 files, imports images, repairs configuration or grants trust. It reports `exists`, `ready`, `restricted` and `quota_enforced` separately. A
@@ -591,6 +614,11 @@ state.
 `revoke` deletes the consumer certificate and keeps the project. Deleting the project would destroy the
 instances inside it, and those instances were never owned by this contract. Deleting a fingerprint that
 does not exist succeeds idempotently.
+
+When a consumer is removed or its capability is switched off and the target deployment no longer declares
+the lease, Core calls `revoke` through this Module's artifact frozen in the previous deployment. A failure
+aborts the activation by default; only `--allow-risky` records an unconfirmed revocation. The resource
+state stays `retained` and records `revocation`; see "Ending a lease" in the compute Contract technical notes.
 
 ## Quota mapping
 
@@ -602,7 +630,13 @@ The contract states per-instance limits while an Incus project states project-wi
 | `quota.max_instances` | `limits.instances` | as given |
 | `quota.cpu` | `limits.cpu` | `max_instances × cpu` |
 | `quota.memory_mib` | `limits.memory` | `max_instances × memory_mib` MiB |
-| `quota.disk_gib` | `limits.disk` | `max_instances × disk_gib` GiB |
+| `quota.disk_gib` | `limits.disk` | containers `max_instances × disk_gib` GiB; VMs `max_instances × (disk_gib GiB + 500 MiB)` |
+
+The extra 500 MiB on the VM tier is the state filesystem volume Incus attaches to every VM root block volume
+(`size.state`): the daemon adds it to the root size when it totals `limits.disk`. Budgeting only the root made a
+VM using its full per-instance disk quota impossible to create (Incus 7.0.1 measured `Reached maximum aggregate
+value` on 2026-09-26; the 6.0.5 source counts it too). The VM-tier profile therefore pins `size.state=500MiB` on
+its root device so the budget cannot drift with a daemon default.
 
 Project `limits.disk` bounds declared allocation; it does not prove a root disk has a working quota.
 A real daemon probe found that `dir` can warn and continue when filesystem project quotas are absent.
@@ -635,6 +669,12 @@ number. The daemon rejects unknown project keys, so 7.x keys are written only wh
 advertises them; where the daemon supports them and they are left unset, the defaults are permissive
 (`restricted.virtual-machines.nesting` defaults to `allow`, `restricted.storage-pools.access` to every
 pool). A daemon that does not report its extensions fails closed rather than being treated as 6.0.
+
+A daemon without that extension -- including the default Incus 7.0 LTS -- cannot block nested virtualization
+for VMs at the project level: there `security.nesting` is a container key that a VM accepts without effect,
+and on a nested-KVM host a VM lease guest was measured to see `vmx` on 2026-09-26. This is a version limit,
+not configuration the Provider can add; deployments that need the guarantee should use a daemon advertising
+`projects_restricted_virtual_machines_nesting` or disable nested KVM on the host.
 
 A daemon that supports the VM nesting restriction enables nested virtualization on VMs by default and,
 once the restriction is `block`, refuses any VM that does not set `security.nesting=false` explicitly
@@ -1675,6 +1715,22 @@ deletion after cancellation and idempotent cleanup. The measured minimal native 
 released Runner image or a production catalog entry. Distrobuilder, ZFS, VM-tier workloads, one-job
 execution and production ingress remain separate acceptance gates. See the
 [Chinese host design](../../../docs/architecture/incus-host-provisioning.md), section 7.18.
+
+Since 2026-09-26 the same script takes `--interface container|vm`. The VM tier needs nested KVM inside the lab
+VM; its fixture starts from an upstream Debian VM image, receives the same fixture program through the agent,
+and is published and exported as a measured VM fixture with a 4 GiB root (still not a product image). Both
+tiers share one matrix plus device and low-level refusals (containers: unix-char, unix-block, privileged,
+`raw.lxc`; VMs: pci, `raw.qemu`), `typical-job-wall-time` timings and a version-aware VM nesting check.
+`server-incus-network-e2e.py` uses a separate network namespace as upstream and verifies that leases with
+IPv6 enabled and disabled both leave masqueraded. Each guest then forges off-subnet sources on both
+families, handed straight to the bridge by static neighbour entries; upstream nft counters must stay at
+zero. The IPv6 lease must also show the forged IPv6 packet reaching the lab VM's routing stack (so the
+fence is what stopped it), and one deliberate drift (an extra allow-all rule) must leak visibly, make the
+Provider's `inspect` report not ready, and stop leaking after `ensure`. The host-side owner script `server-incus-lifecycle-lab.py`
+runs all three in one disposable VM; a `hold-*` generation keeps the VM for diagnosis but never counts as
+acceptance. Results and the defects found are in the
+[two-tier lifecycle review](../../../dev-docs/reviews/2026-09-26-incus-vm-tier-lifecycle.md) and the
+[source fence review](../../../dev-docs/reviews/2026-09-27-incus-source-fence-acl.md).
 
 ## Native default Runner copy validation (2026-09-22)
 

@@ -10,9 +10,11 @@ abi:
 title: Incus compute provider
 description: Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract.
 category: compute
-# Every unit-level boundary here is covered, but no restricted project, quota or
-# certificate in this module has been exercised against a real Incus daemon on a
-# separate KVM host. Until that E2E exists the fence is asserted, not proven.
+# The default container tier has real-daemon evidence (dual leases, quota,
+# certificate scope, management-certificate overlap, one-job runs); the VM
+# tier, ARM64, ZFS, dual-stack egress and production ingress do not. Until the
+# full real-host matrix in the requirement's section 8.2 has evidence this stays
+# developing (INCUS-R-001).
 status: developing
 runtime:
   type: compose

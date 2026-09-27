@@ -56,9 +56,12 @@ type resourceState struct {
 	SpecFingerprint string         `yaml:"spec_fingerprint"`
 	Actual          resourceActual `yaml:"actual"`
 	Status          string         `yaml:"status"`
-	DeletionPolicy  string         `yaml:"deletion_policy"`
-	ProvisionedAt   string         `yaml:"provisioned_at"`
-	ReconciledAt    string         `yaml:"last_reconciled_at"`
+	// Revocation records whether a removed compute lease's access grant was
+	// withdrawn. Empty for every other resource and for leases still declared.
+	Revocation     string `yaml:"revocation,omitempty"`
+	DeletionPolicy string `yaml:"deletion_policy"`
+	ProvisionedAt  string `yaml:"provisioned_at"`
+	ReconciledAt   string `yaml:"last_reconciled_at"`
 }
 
 func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
@@ -93,28 +96,9 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 			env["ANAS_RESOURCE_ACCESS_KEY_ID"], _ = request.Spec["access_key_id"].(string)
 			env["ANAS_RESOURCE_SECRET_ACCESS_KEY"] = request.Credential
 		case "compute":
-			quota, allowlist, err := validateComputeRequest(request)
-			if err != nil {
+			if err := projectComputeProviderEnv(env, request); err != nil {
 				return err
 			}
-			// Only the certificate half crosses into the provider. The private
-			// key goes straight to the consumer and is never handed to the
-			// module that registers the trust entry.
-			certPEM, _, err := splitComputeCredential(request.Credential)
-			if err != nil {
-				return fmt.Errorf("resource %s.%s: %w", consumer, request.ID, err)
-			}
-			env["ANAS_RESOURCE_CONSUMER"] = request.Consumer
-			env["ANAS_RESOURCE_SANDBOX"], _ = request.Spec["sandbox"].(string)
-			env["ANAS_RESOURCE_INSTANCE_PREFIX"], _ = request.Spec["instance_prefix"].(string)
-			env["ANAS_RESOURCE_MAX_INSTANCES"] = strconv.Itoa(quota.MaxInstances)
-			env["ANAS_RESOURCE_CPU"] = strconv.Itoa(quota.CPU)
-			env["ANAS_RESOURCE_MEMORY_MIB"] = strconv.Itoa(quota.MemoryMiB)
-			env["ANAS_RESOURCE_DISK_GIB"] = strconv.Itoa(quota.DiskGiB)
-			env["ANAS_RESOURCE_IMAGE_ALLOWLIST"] = strings.Join(allowlist, ",")
-			env["ANAS_RESOURCE_IMAGE_ARCHITECTURE"] = request.ComputeImages.Images[0].Target.Architecture
-			env["ANAS_RESOURCE_CLIENT_CERT"] = base64.StdEncoding.EncodeToString([]byte(certPEM))
-			env["ANAS_RESOURCE_IMAGE_SUPPLY_FILE"] = computeImageSupplyContainerDescriptor
 		default:
 			return fmt.Errorf("resource %s.%s contract %s has no runtime projection", consumer, request.ID, request.Contract)
 		}
@@ -156,6 +140,38 @@ func resourceEnsureComposeArgs(service string, command []string, runOptions ...s
 	args = append(args, runOptions...)
 	args = append(args, service)
 	return append(args, command...)
+}
+
+// projectComputeProviderEnv is the lease projection every compute Provider
+// operation receives. ensure and revoke read the same fields, so a revocation
+// names exactly the certificate and project the ensure registered.
+func projectComputeProviderEnv(env map[string]string, request ResourceRequest) error {
+	quota, allowlist, err := validateComputeRequest(request)
+	if err != nil {
+		return err
+	}
+	if request.ComputeImages == nil || len(request.ComputeImages.Images) == 0 {
+		return fmt.Errorf("resource %s.%s has no frozen compute image target", request.Consumer, request.ID)
+	}
+	// Only the certificate half crosses into the provider. The private key
+	// goes straight to the consumer and is never handed to the module that
+	// registers the trust entry.
+	certPEM, _, err := splitComputeCredential(request.Credential)
+	if err != nil {
+		return fmt.Errorf("resource %s.%s: %w", request.Consumer, request.ID, err)
+	}
+	env["ANAS_RESOURCE_CONSUMER"] = request.Consumer
+	env["ANAS_RESOURCE_SANDBOX"], _ = request.Spec["sandbox"].(string)
+	env["ANAS_RESOURCE_INSTANCE_PREFIX"], _ = request.Spec["instance_prefix"].(string)
+	env["ANAS_RESOURCE_MAX_INSTANCES"] = strconv.Itoa(quota.MaxInstances)
+	env["ANAS_RESOURCE_CPU"] = strconv.Itoa(quota.CPU)
+	env["ANAS_RESOURCE_MEMORY_MIB"] = strconv.Itoa(quota.MemoryMiB)
+	env["ANAS_RESOURCE_DISK_GIB"] = strconv.Itoa(quota.DiskGiB)
+	env["ANAS_RESOURCE_IMAGE_ALLOWLIST"] = strings.Join(allowlist, ",")
+	env["ANAS_RESOURCE_IMAGE_ARCHITECTURE"] = request.ComputeImages.Images[0].Target.Architecture
+	env["ANAS_RESOURCE_CLIENT_CERT"] = base64.StdEncoding.EncodeToString([]byte(certPEM))
+	env["ANAS_RESOURCE_IMAGE_SUPPLY_FILE"] = computeImageSupplyContainerDescriptor
+	return nil
 }
 
 func (a *app) saveResourceReady(request ResourceRequest, providerEnv map[string]string) error {
@@ -242,11 +258,12 @@ func stringSpec(spec map[string]any, key string) string {
 	return value
 }
 
-// retainRemovedResources records the lifecycle transition without touching the
-// provider. Removing a consumer must never implicitly delete its persistent
-// database, bucket, or objects; a future explicit resource-delete command owns
-// that destructive operation.
-func retainRemovedResources(base string, current, target *deploymentManifest) error {
+// retainRemovedResources records the lifecycle transition without deleting
+// anything at the provider. Removing a consumer must never implicitly delete
+// its persistent database, bucket, objects or lease project; a future explicit
+// resource-delete command owns that destructive operation. revocations carries
+// the access-grant outcome revokeRemovedComputeLeases already produced.
+func retainRemovedResources(base string, current, target *deploymentManifest, revocations map[string]string) error {
 	if current == nil {
 		return nil
 	}
@@ -274,6 +291,7 @@ func retainRemovedResources(base string, current, target *deploymentManifest) er
 			return fmt.Errorf("decode removed resource %s: %w", identity, err)
 		}
 		state.Status = "retained"
+		state.Revocation = revocations[identity]
 		state.ReconciledAt = time.Now().UTC().Format(time.RFC3339)
 		if err := writeYAMLAtomic(path, state, 0600); err != nil {
 			return fmt.Errorf("retain removed resource %s: %w", identity, err)

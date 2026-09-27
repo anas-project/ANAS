@@ -178,6 +178,13 @@ func TestValidateHoldsTheLeaseBoundaries(t *testing.T) {
 		"disk above quota":   func(s *InstanceSpec) { s.DiskGiB = 41 },
 		"empty workload":     func(s *InstanceSpec) { s.WorkloadID = "" },
 		"control character":  func(s *InstanceSpec) { s.WorkloadID = "job\x00" },
+		// Create and HTTP publication share one identity rule: an instance
+		// whose workload cannot be named in a publication request is refused
+		// at creation rather than discovered later.
+		"space in workload":        func(s *InstanceSpec) { s.WorkloadID = "job 1" },
+		"leading separator":        func(s *InstanceSpec) { s.WorkloadID = ".job" },
+		"non-ascii workload":       func(s *InstanceSpec) { s.WorkloadID = "jöb" },
+		"workload above 256 bytes": func(s *InstanceSpec) { s.WorkloadID = strings.Repeat("a", 257) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			spec := good
@@ -309,6 +316,27 @@ func TestListManagedFiltersByOwnershipAndPrefix(t *testing.T) {
 	}
 	if instances[0].State != "running" {
 		t.Errorf("state = %q, want lowercase", instances[0].State)
+	}
+}
+
+// Incus 7.x parses "<remote>:<name>" in list as a remote with no filter and
+// returns nothing; earlier releases treated it as a prefix filter. Inspect must
+// list the project and pick the exact name, never trust the CLI filter.
+func TestInspectListsTheProjectAndMatchesTheExactName(t *testing.T) {
+	c, run := testClient(t, testLease())
+	body, _ := json.Marshal([]map[string]any{
+		{"name": "anas-fj-0123456789abcdef0123x", "status": "Stopped", "config": map[string]string{"user.anas.managed": "true"}},
+		{"name": "anas-fj-0123456789abcdef0123", "status": "Running", "config": map[string]string{"user.anas.managed": "true", "user.anas.workload": "job-1"}},
+	})
+	run.reply["list"] = body
+	view, err := c.Inspect(context.Background(), "anas-fj-0123456789abcdef0123")
+	if err != nil || view.State != "running" || view.WorkloadID != "job-1" {
+		t.Fatalf("inspect = %+v, %v; want the exact running instance", view, err)
+	}
+	for _, call := range run.calls {
+		if call[0] == "list" && (len(call) != 3 || call[1] != remoteName+":" || call[2] != "--format=json") {
+			t.Fatalf("inspect listed %q; want the whole lease project", call)
+		}
 	}
 }
 

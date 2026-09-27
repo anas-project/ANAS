@@ -213,13 +213,21 @@ KVM 的档位设成默认，等于让 Actions 在目标硬件的相当一部分�
 
 ### 4.2 Incus 控制面
 
-- Incus daemon 安装在独立宿主，不运行在 Forgejo 容器中；选 `incus_vm` 时该宿主必须具备 KVM；
-- 创建 restricted project `anas-forgejo-runners`，隔离 image、profile、network 和 storage volume；
-- 设置实例数量、CPU、memory 和 disk 总上限；VM 档禁止 low-level QEMU options、设备直通和嵌套
-  虚拟化，容器档由 project 强制非特权，两档都不接受调用方传入的 raw config、device 或 mount；
-- Runner controller 使用只绑定该 project 的 restricted TLS certificate，不获得 Incus 全局管理权限；
-- cloud-init 只创建用户、安装固定包和写入非敏感配置；Forgejo runner token 不进入 image 或
-  cloud-init metadata，而是在实例启动后经 Incus agent/stdin 写入 tmpfs。
+控制面分三处归属，Forgejo 只拥有其中消费者那一段：
+
+- **daemon**：由[宿主供给](incus-host-provisioning.md)的显式宿主动作在 ANAS 宿主上安装（默认只监听
+  回环），也可以指向管理员自建的远端 daemon；不运行在 Forgejo 容器中。选 `incus_vm` 时该宿主必须具备 KVM。
+- **围栏**：由 `incus` Module 作为 `compute` Contract Provider 在 apply 时建立——restricted project
+  `anas-forgejo-runners`、租约 profile 与受管 bridge、实例数量与 CPU/memory/disk 总上限，并把
+  Core 生成的受限 TLS 证书登记为只绑定该 project。VM 档禁止 low-level QEMU options、设备直通和
+  嵌套虚拟化，容器档由 project 强制非特权，两档都不接受调用方传入的 raw config、device 或 mount。
+  Forgejo 移除或关闭 Actions 时，Core 经 Provider 撤销该证书、保留 project（`INCUS-R-111`）。
+- **实例生命周期**：Runner controller 读取 Core 投影的私有租约，经共享 `internal/computeclient`
+  在围栏内 create/start/exec/delete，不获得 Incus 全局管理权限，也不保留自有 Incus 客户端或
+  endpoint/证书配置项（`INCUS-R-021`、`INCUS-R-026`）。
+
+cloud-init 只创建用户、安装固定包和写入非敏感配置；Forgejo runner token 不进入 image 或
+cloud-init metadata，而是在实例启动后经 Incus agent/stdin 写入 tmpfs。
 
 Forgejo 应用容器只提供 Actions API，不持有 Incus endpoint、client certificate 或实例创建权限。
 

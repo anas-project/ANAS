@@ -14,17 +14,24 @@ func TestLeaseProfileRequiresSourceFiltering(t *testing.T) {
 		t.Run(isolation, func(t *testing.T) {
 			l := testLease(t, isolation)
 			p := desiredLeaseProfile(l, computeclient.NetworkName(l.Sandbox))
-			for _, key := range []string{"security.mac_filtering", "security.ipv4_filtering", "security.ipv6_filtering"} {
+			for _, key := range []string{"security.mac_filtering", "security.ipv4_filtering"} {
 				if p.Devices["eth0"][key] != "true" {
 					t.Errorf("lease NIC does not require %s", key)
 				}
+			}
+			// Incus refuses to start an instance with IPv6 filtering unless the
+			// host runs br_netfilter with bridge-nf-call-ip6tables=1, which a
+			// default Docker 28+ host does not load. Requiring it made every
+			// lease guest unstartable there (2026-09-26 native lifecycle).
+			if _, present := p.Devices["eth0"]["security.ipv6_filtering"]; present {
+				t.Error("lease NIC requires IPv6 filtering, which needs host br_netfilter")
 			}
 		})
 	}
 }
 
 func TestSourceFilterDriftBlocksInspectAndEnsureRepairsOwnedProfile(t *testing.T) {
-	for _, key := range []string{"security.mac_filtering", "security.ipv4_filtering", "security.ipv6_filtering"} {
+	for _, key := range []string{"security.mac_filtering", "security.ipv4_filtering"} {
 		for _, value := range []string{"", "false"} {
 			t.Run(key+"/"+value, func(t *testing.T) {
 				d := newFakeDaemon(t)
