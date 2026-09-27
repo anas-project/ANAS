@@ -28,6 +28,13 @@ var projectName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 var instancePrefix = regexp.MustCompile(`^anas-[a-z0-9-]{1,50}$`)
 var instanceName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 var workloadName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$`)
+
+// ValidWorkloadID is the one workload identity rule. The shared client applies
+// it when an instance is created, so every instance it creates can also be
+// named in a publication request.
+func ValidWorkloadID(workload string) bool {
+	return workloadName.MatchString(workload)
+}
 var middlewareName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}@(docker|file)$`)
 
 type Domain struct {

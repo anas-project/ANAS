@@ -87,11 +87,42 @@ profile 名字由 Contract 固定为 `anas-lease`，消费者只能引用、不�
 sandbox 名：Linux bridge 接口名上限 15 字符，而 `anas-forgejo-runners` 已经 20，所以它由 sandbox
 名哈希派生——短、跨 apply 稳定、租约之间不碰撞。
 
+guest 只能以租约网络自己的地址出网。出口 NAT 只改写租约子网内的源地址，guest 伪造子网外源地址
+的报文不会被改写，若被转发就以伪造身份到达外部。Provider 因此必须让这类报文在宿主上被丢弃，
+并在 `ready` 中检查该约束仍然成立；Incus Provider 用自有的网桥 network ACL 实现（见 Incus Module
+技术文档）。
+
 `ensure` 每次都**整体替换** profile 的设备而不是合并。一块被人手工挂上去的 host 路径，正是
 最不该在一次 ensure 之后还留在那里的东西。
 
 `inspect` 是只读的，必须能分别报告 `exists`、`ready`、`restricted` 与 `quota_enforced`——一个存在
 但未受限或未设配额的 project 是没有围栏的围栏，必须能被单独看见。`revoke` 是 1.x 可选 operation。
+
+### 租约的结束
+
+消费者被移除、或申请租约的能力被关闭（例如 `enabled_by` 的开关关掉）时，目标部署不再声明该
+Resource。数据库或桶的「保留」保留的是数据；compute 租约若同样只改状态，保留下来的是一条仍受信的
+访问授权。因此 Core 在新部署启动后，用**上一个部署冻结的 Provider 产物**执行 `revoke`：撤销该租约
+的受限证书，project、实例与网络原样保留（`INCUS-R-014`）。同一次 apply 连 Provider 一起移除时，
+旧产物仍可执行这次撤销。Provider 没有声明 `revoke` 时记录 `unsupported` 并告警，证书保持受信。
+
+撤销失败不会被记作完成：默认中止本次激活并恢复上一个部署；只有显式 `--allow-risky` 才接受
+未确认的撤销（例如 daemon 已永久不存在），此时 resource state 记 `revocation: unconfirmed` 并告警。
+Resource state 的 `status` 仍为 `retained`，`revocation` 取 `confirmed`、`unconfirmed` 或
+`unsupported`。重新声明同一 Resource 时，稳定证书由 `ensure` 重新登记，归属标记证明它仍是同一份租约。
+
+`deletion_policy` 只接受 `retain`：没有 Provider 实现删除租约 project，接受 `delete` 等于承诺一次
+不会发生的清理。
+
+### 结果 schema 描述的是 Core 记录的租约
+
+与其他资源 Contract 相同，operation 的 `result_schema` 描述 Core 在操作成功后记录并投影的结果，
+不是 Provider stdout 的格式：Runner 只以退出码判断 Provider operation 成功与否。`ensure` 的
+`sandbox-result.yml` 对应 resource state 的租约事实与上文的私有投影；`endpoint` 与 pinned server
+证书来自 Provider Module 自身配置导出的 `<PROVIDER>_ENDPOINT`、`<PROVIDER>_SERVER_CERT_B64`，
+可选的 `<PROVIDER>_CONTROL_NETWORK_NAME` 决定消费者连接的控制桥（`<PROVIDER>` 是 Provider Module 名
+的大写形式）。Provider 缺少其中必需的键时，Core 拒绝发布租约。Provider 自行输出到 stdout 的
+`inspect`/`revoke` 结果只供人工诊断，不进入 Core 状态。
 
 就绪租约通过 Consumer 私有命名空间发布：
 
@@ -151,8 +182,8 @@ Incus 把「SHA-256 十六进制摘要」统称 fingerprint，本 Contract 里�
 挂载或宿主 socket。
 
 Contract 不负责安装、配置或托管 Provider daemon 本身，也不要求 ANAS 宿主具备虚拟化能力——它
-只是这台 daemon 的客户端控制面。`deletion_policy: delete` 仅表达显式删除意图；在 Core 提供
-破坏性 Resource delete 入口前仍按 retain 处理。
+只是这台 daemon 的客户端控制面。`deletion_policy` 只接受 `retain`，移除声明撤销证书、不删除 project，
+见「租约的结束」。
 
 一次性 Secret（例如 runner token）如何进入 guest 不属于本 Contract：那发生在租约交付之后，由
 消费者经共享 `computeclient.ExecStdin` 直连 Incus 注入，不经过 Provider operation。Secret 不得出现在命令参数、环境变量、cloud-init、
@@ -190,6 +221,9 @@ stdout 上限为 4 MiB，stderr 为 64 KiB，超限主动取消子进程并返�
 错误不回显 stderr/stdin。`WaitDelay` 限制退出后管道等待，保留调用方取消错误身份；未提供 stdin
 时关闭输入。这些限制不能代替对取消后真实 guest 的独立回收与生命周期验收。
 实例列表拒绝 `null` 和重复托管身份；托管过滤与创建使用相同的实例名规则。删除 CLI 成功后仍须重新读取并确认实例不存在。
+单个实例的读取列出整个租约 project，再在客户端精确匹配名称：Incus 7.x 的 CLI 把 `<remote>:<name>` 解析为
+只有 remote、没有过滤条件，返回空列表（6.0 则是名称前缀过滤）。旧实现因此在 7.x 上把任何实例读成
+“不存在”，删除确认会被误判为成功；2026-09-26 的 Incus 7.0.1 原生生命周期发现并修复。
 
 ## 结构化声明与 deployment 镜像冻结
 

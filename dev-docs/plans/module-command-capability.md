@@ -56,6 +56,13 @@ updated: 2026-09-13
 
 ## 5. M4 检查表
 
+> 归属确认（2026-09-26，Incus 计划 §11）：Incus 改为 `compute` Contract 后，`incus-doctor` 与
+> `incus-runner-reconcile` 仍是 **Forgejo 消费者**命令，只经 Core 投影的租约与共享 `internal/computeclient`
+> 诊断和对账自己的 project，不属于 `incus` Provider Module，也不使用供给用管理证书。
+> daemon 的 status/start/stop 触及宿主服务，按 `INCUS-R-051` 只能经[宿主特权动作通道](host-action-channel.md)
+> （只读 `incus.status` 已接入）提供；下方 `incus-daemon-*` 与独立维护凭据两项在实施前须按该通道重新定义，
+> 不得作为持有凭据的 Module Command 落地。
+
 - [ ] Forgejo command executor 实现 `incus-doctor` 与 `incus-runner-reconcile`。
 - [ ] 为远程 daemon maintenance 定义独立凭据及创建、轮换、撤销和恢复流程。
 - [ ] 实现 `incus-daemon-status|start|stop`，不复用 restricted project credential。

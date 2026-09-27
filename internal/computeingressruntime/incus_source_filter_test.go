@@ -9,7 +9,7 @@ import (
 )
 
 func TestIncusReaderRejectsLiveSourceFilterOverrides(t *testing.T) {
-	for _, key := range []string{"security.mac_filtering", "security.ipv4_filtering", "security.ipv6_filtering"} {
+	for _, key := range []string{"security.mac_filtering", "security.ipv4_filtering"} {
 		for _, value := range []string{"", "false", "TRUE"} {
 			t.Run(key+"/"+value, func(t *testing.T) {
 				f := newIncusReaderFixture(t, computeclient.InterfaceContainer)

@@ -110,41 +110,36 @@ Actions 单开关收敛同时完成：移除尚未具备执行面的 `forgejo.ac
 
 ## 4. M2：compute contract 消费与两档隔离选择
 
-- 定义中立 compute contract，不在 Core 中按 Forgejo 或 Incus 名称特判；
+本里程碑只负责 Forgejo **作为 `compute` 消费者**接入。围栏（restricted project、profile、受管 bridge、
+配额与受限证书登记）由 `incus` Provider Module 在 apply 时建立，实例生命周期由共享
+`internal/computeclient` 实现，二者的实现、隔离与证书轮换归
+[Incus compute Provider 实施计划](../../../../dev-docs/plans/incus-module.md)，本文不重复跟踪。
+
+- manifest 经 `dependencies.contracts` 与 `resources.requires` 声明 compute 租约，沿用 sandbox
+  `anas-forgejo-runners`，不要求迁移数据或重建 project；
 - 消费 `incus_container` 与 `incus_vm` 两档接口；`actions_isolation` 的 `auto` 解析为
   `incus_container`，宿主缺少 KVM 不得自动降级，也不得自动升级（`R-024`）；
-- 实现 Incus provider：restricted project、restricted TLS client、模板、profile、network 和 quota；
-- Secret Store 管理 Incus client credential，Forgejo 应用容器不得消费；
-- 提供 create、inspect、stop、delete 和 reconcile/janitor 所需的稳定 instance identity；
-- 验证独立 Incus 宿主的防火墙、managed network、DNS 和到 Forgejo HTTPS 的最小连通性。
+- controller 只读取 Core 投影的私有租约，Forgejo 应用容器不持有 endpoint、证书或私钥；
+- 为 create、inspect、stop、delete 和 reconcile/janitor 使用共享客户端的稳定 instance identity；
+- 验证真实宿主上 managed network、DNS 和到 Forgejo HTTPS 的最小连通性。
 
-Provider 只能操作 `anas-forgejo-runners` project，不能修改 Incus 全局配置或其他 project。
+当前完成：controller 已改为 `internal/computeclient` 的消费者，删除自有 Incus 适配代码与 endpoint/
+证书配置项；默认容器档的真实 one-job（正常、失败、SIGTERM 取消、SIGKILL 后保留 state 恢复）已在
+独立宿主验收，证据见 Incus 计划 M5a。Forgejo 移除或关闭 Actions 时租约证书由 Core 撤销（`INCUS-R-111`）。
 
-当前完成：`contracts/compute` 已定义 provider-neutral schema；controller 只通过 `ComputeProvider` 接口
-传 instance identity、固定 image fingerprint 与数值配额；Incus 适配器固定 remote/project/profile，
-验证 restricted project、四类 project quota、受限 egress 标记、managed NIC，并拒绝 host disk、
-physical NIC、cloud-init secret 与任意 device。Incus credential 只投影到 controller，Forgejo service
-不再读取 module-wide `.env`。
+剩余：VM/ARM64 档、state volume 丢失、网页取消与容器镜像构建工作流的真实验收；以及下列两档
+隔离的消费者侧条目。
 
-剩余：把 compute catalog 接入通用 Provider 注册/选择路径；在独立宿主创建受限证书、project、
-network/profile/storage；验证防火墙、DNS、最小 egress 和 crash 回收。当前 Contract 状态保持 `proposal`，
-不能把 Go 适配器单测等同于通用 Contract 已发布。
-
-两档隔离的剩余工作单列，它们现在一条都没有实现：
+两档隔离的消费者侧条目：
 
 - [x] `R-024`：`TestModuleIsolationTierDefaultsToTheContainerTier`（`hook`）钉住 compute contract 的
       `default: incus_container`、`selected_by`/`enabled_by`、两档 interface 集合，以及
       `actions_isolation` 的枚举与默认值。把 manifest 的默认翻成 `incus_vm` 会让它失败；
-- [ ] `R-025`：中英 README 与技术文档写明默认档与宿主共享内核、两档边界差异，以及跨信任域或执行
-      不受信输入的 scope 必须选 `incus_vm`；
+- [x] `R-025`：中英 README 与技术文档写明默认档与宿主共享内核、两档边界差异，以及跨信任域或执行
+      不受信输入的 scope 必须选 `incus_vm`（§10 文档同步，2026-09-20）；
 - [ ] `R-026`：开启 Actions 时校验固定 image fingerprint 与所选档、目标架构一致。`runner-image/`
       要求按 amd64/arm64 × container/vm 出四份镜像，而 `actions_runner_image` 是单值且只校验 64 位
       hex，配错只能等实例创建失败才暴露。
-
-> **拆分说明。** 通用 Provider Module（`modules/incus`）、多消费者隔离和内嵌 Incus 客户端的迁移已
-> 独立跟踪，见[Incus compute Provider 实施计划](../../../../dev-docs/plans/incus-module.md)与其[要求](../../../../dev-docs/requirements/incus-module.md)。
-> 本里程碑此后只负责 Forgejo **作为消费者**接入：controller 通过 Contract 调用、行为等价性和
-> Forgejo 侧的连通性验收；Provider 自身的实现、隔离与证书轮换不再在本文重复跟踪。
 
 ## 5. M3：Actions 单开关、控制面账号与 one-job 执行面
 
@@ -366,7 +361,7 @@ session，文档必须明说这一点，而不是让运维以为停用就够了�
 | `forgejo` 的 README 与技术文档（中英文） | 删除目录同步段落与两个配置参数，改写为单链路身份的边界表与「尚未复核」项 | 已完成（2026-09-20） |
 | [Module IAM / OIDC 支持清单](../../../../docs/reference/module-iam-support.md)与英文镜像 | `forgejo` 一行与双接入段落回到 OIDC-only | 已完成（2026-09-20） |
 | `forgejo` 的 README 与技术文档（中英文） | M6 的系统 webhook 与管理凭据归属落地时改写 | 未开始 |
-| 本计划 §4（M2） | 已加与 [Incus compute Provider 实施计划](../../../../dev-docs/plans/incus-module.md) 的拆分说明，但要点列表与「当前完成/剩余」仍按 Provider 实现叙述 | 部分完成 |
+| 本计划 §4（M2） | 要点列表与「当前完成/剩余」改为只叙述消费者接入，Provider 工作引用 [Incus compute Provider 实施计划](../../../../dev-docs/plans/incus-module.md) | 已完成（2026-09-26） |
 | [Forgejo Module 设计](../../../../docs/architecture/forgejo-module-design.md) §1、§3、§4、§6 | 承认 `incus_container`/`incus_vm` 两档，默认档为系统容器，并写明两档的威胁模型差异 | 已完成（2026-09-20） |
 | `forgejo` 的 README 与技术文档（中英文） | 隔离档披露（`R-025`）与控制面账号披露（`R-069`） | 已完成（2026-09-20） |
 | [Forgejo 互操作基线](../../../../docs/developer/forgejo-interop.md) §1、§3 | 开启 Actions 的实际前置校验项，以及 `--group-team-map` 等未经探针证实条目的标注 | 已完成（2026-09-20） |

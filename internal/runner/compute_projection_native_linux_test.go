@@ -28,11 +28,31 @@ import (
 	"github.com/anas-project/ANAS/internal/computeclient"
 	"github.com/anas-project/ANAS/internal/computeimage"
 	"github.com/anas-project/ANAS/internal/incusprovision"
+	"gopkg.in/yaml.v3"
 )
 
 const coreNativeInputs = "/opt/anas-core-inputs"
 const coreNativeRoot = "/srv/anas/native-core-projection"
 const coreNativeReports = "/opt/anas-core-projection"
+
+// coreNativeWorkspace is the workspace the installed anasd registers as
+// "native", so workspace-wide host actions such as image prune read exactly
+// the deployments this test creates.
+const coreNativeWorkspace = "/srv/anas/host-action-native"
+
+// coreNativeStateFile hands the cleanup test what the projection test left
+// running. It holds identities and paths only, never key material.
+const coreNativeStateFile = coreNativeReports + "/private/core-state.json"
+
+type coreNativeState struct {
+	ID              string            `json:"id"`
+	DockerID        string            `json:"docker_id"`
+	PinR1           string            `json:"pin_r1"`
+	PinR2           string            `json:"pin_r2"`
+	ModuleRoots     map[string]string `json:"module_roots"`
+	ComposeProjects map[string]string `json:"compose_projects"`
+	Images          []string          `json:"images"`
+}
 
 type coreNativeManifest struct {
 	Schema string            `json:"schema"`
@@ -202,6 +222,10 @@ func coreNativeImage(t *testing.T, id, source, executable, tag string) string {
 }
 
 func coreNativeConsumerManifest(name string) string {
+	return coreNativeConsumerManifestRevision(name, "lab-r1")
+}
+
+func coreNativeConsumerManifestRevision(name, revision string) string {
 	return `api_version: anas.module/v1
 kind: Module
 name: ` + name + `
@@ -230,14 +254,26 @@ resources:
         sandbox: anas-` + strings.ReplaceAll(name, "_", "-") + `
         instance_prefix: anas-native-
         quota: {max_instances: 1, cpu: 1, memory_mib: 512, disk_gib: 4}
-        image_allowlist: [{catalog: anas, name: native-core, revision: lab-r1}]
+        image_allowlist: [{catalog: anas, name: native-core, revision: ` + revision + `}]
         credential: {policy: generated}
         deletion_policy: retain
 `
 }
 
 func coreNativeCompose(name, id string) string {
+	return coreNativeComposeWithExtraNetwork(name, id, "")
+}
+
+// coreNativeComposeWithExtraNetwork optionally attaches a named external
+// network. A network that does not exist makes Compose refuse to start the
+// service locally and deterministically, after Core has ensured resources.
+func coreNativeComposeWithExtraNetwork(name, id, missing string) string {
 	prefix := computeResourcePrefix(name, "workers")
+	extraService, extraNetwork := "", ""
+	if missing != "" {
+		extraService = "\n      missing: {}"
+		extraNetwork = "\n  missing:\n    external: true\n    name: " + missing
+	}
 	return `services:
   consumer:
     image: ${ANAS_IMAGE_REGISTRY}/anas-native-core-consumer:r1
@@ -251,21 +287,47 @@ func coreNativeCompose(name, id string) string {
     labels: {dev.anas.native-core: '` + id + `'}
     networks:
       business: {gw_priority: 100}
-      control: {gw_priority: 0}
+      control: {gw_priority: 0}` + extraService + `
 networks:
   business:
     name: ${NETWORK_PREFIX}` + name + `
     labels: {dev.anas.native-core: '` + id + `'}
   control:
     external: ${` + prefix + `CONTROL_NETWORK_EXTERNAL:-false}
-    name: ${` + prefix + `CONTROL_NETWORK_NAME:-unresolved-control}
+    name: ${` + prefix + `CONTROL_NETWORK_NAME:-unresolved-control}` + extraNetwork + `
 `
 }
 
 func TestNativeCoreComputeProjection(t *testing.T) {
 	id, _ := coreNativeGuard(t)
 	if _, err := os.Lstat(coreNativeRoot); !os.IsNotExist(err) {
-		t.Fatal("fresh Core workspace required")
+		t.Fatal("fresh Core experiment root required")
+	}
+	// The orchestrator created the registered workspace with the installed
+	// `anas init` before anasd started. Its config must still be the skeleton
+	// init wrote: the managed state names init and matches the current bytes.
+	if info, err := os.Stat(filepath.Join(stateDir(coreNativeWorkspace), "state", "deployments")); err != nil || !info.IsDir() {
+		t.Fatal("registered workspace must be a freshly initialized workspace")
+	}
+	current, err := os.ReadFile(workspaceConfigPath(coreNativeWorkspace))
+	if err != nil {
+		t.Fatal("registered workspace has no init config skeleton")
+	}
+	stored, err := os.ReadFile(managedConfigStatePath(stateDir(coreNativeWorkspace)))
+	if err != nil {
+		t.Fatal("registered workspace has no managed config state")
+	}
+	wantBytes, err := managedConfigStateBytes(current, "init")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got, want managedConfigState
+	if yaml.Unmarshal(stored, &got) != nil || yaml.Unmarshal(wantBytes, &want) != nil ||
+		got.UpdatedBy != "init" || got.ContentDigest != want.ContentDigest {
+		t.Fatal("registered workspace config was changed after anas init")
+	}
+	if entries, err := os.ReadDir(filepath.Join(stateDir(coreNativeWorkspace), "state", "deployments")); err != nil || len(entries) != 0 {
+		t.Fatal("registered workspace already holds deployments")
 	}
 	for _, dir := range []string{coreNativeRoot, coreNativeReports + "/private", coreNativeReports + "/reports"} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
@@ -305,11 +367,12 @@ func TestNativeCoreComputeProjection(t *testing.T) {
 	})
 	moduleRoot := filepath.Join(coreNativeRoot, "source", "modules")
 	provider := filepath.Join(moduleRoot, "incus")
-	workspace := filepath.Join(coreNativeRoot, "workspace")
+	workspace := coreNativeWorkspace
 	registry := "anas-native-core-" + strings.TrimPrefix(id, "anas-incus-host-")
 	containerPrefix, networkPrefix := "anascore"+strings.TrimPrefix(id, "anas-incus-host-")+"_", "anascore"+strings.TrimPrefix(id, "anas-incus-host-")+"_"
 	var images []string
 	var pin string
+	var entry computeimage.Entry
 	step("trusted_fixture_and_actual_provider_compose", func(t *testing.T) {
 		if err := copyDir(coreNativeInputs+"/bundle", filepath.Join(coreNativeRoot, "source")); err != nil {
 			t.Fatal(err)
@@ -318,25 +381,8 @@ func TestNativeCoreComputeProjection(t *testing.T) {
 		// publishing release Dockerfiles. The Provider Compose/Hook are unchanged.
 		images = append(images, coreNativeImage(t, id, "provisioner", "/usr/local/bin/anas-incus-provisioner", registry+"/anas-incus-provisioner:7.3.0-r2"))
 		images = append(images, coreNativeImage(t, id, "consumer", "/usr/local/bin/consumer", registry+"/anas-native-core-consumer:r1"))
-		artifactDir := filepath.Join(coreNativeRoot, "image-fixture")
-		write(filepath.Join(artifactDir, "rootfs", "fixture.txt"), []byte("native Core image import fixture; not a bootable production image\n"), 0444)
-		write(filepath.Join(artifactDir, "metadata.yaml"), []byte("architecture: x86_64\ncreation_date: 1780000000\nproperties:\n  description: ANAS native Core projection fixture\n  os: fixture\n  release: lab-r1\n"), 0444)
-		meta, rootfs := filepath.Join(artifactDir, "incus.tar.xz"), filepath.Join(artifactDir, "rootfs.squashfs")
-		coreNativeCommand(t, "metadata-archive", nil, "/usr/bin/tar", "-C", artifactDir, "-cJf", meta, "metadata.yaml")
-		coreNativeCommand(t, "rootfs-archive", nil, "/usr/bin/mksquashfs", filepath.Join(artifactDir, "rootfs"), rootfs, "-noappend", "-processors", "1", "-no-progress", "-all-root")
-		metadata, err := os.ReadFile(meta)
-		if err != nil {
-			t.Fatal(err)
-		}
-		rootBytes, err := os.ReadFile(rootfs)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pin = sha256Hex(append(append([]byte{}, metadata...), rootBytes...))
-		entry := computeimage.Entry{Catalog: "anas", Name: "native-core", Revision: "lab-r1",
-			Target: computeimage.Target{Architecture: "amd64", Interface: "incus_container"}, Fingerprint: pin,
-			RecipeDigest: sha256Hex([]byte("explicit native import fixture, not distrobuilder or signed release"))}
-		writeProviderArtifactFixture(t, provider, entry, metadata, rootBytes)
+		entry = coreNativeFixtureImage(t, provider, "lab-r1")
+		pin = entry.Fingerprint
 		catalog, _ := json.Marshal([]computeimage.Entry{entry})
 		write(filepath.Join(provider, "images", "catalog.json"), catalog, 0600)
 		for _, name := range []string{"core_one", "core_two"} {
@@ -347,9 +393,6 @@ func TestNativeCoreComputeProjection(t *testing.T) {
 		// bridge input is supplied by this config or driver.
 		config := "modules:\n  core_one: {}\n  core_two: {}\nglobal:\n  base_domain: core.native.test\n  email: admin@core.native.test\n  virtual_domain: true\nrollback:\n  snapshot: {backend: none}\nenv:\n  IPv6: 'false'\n  ANAS_IMAGE_REGISTRY: " + registry + "\n  CONTAINER_PREFIX: " + containerPrefix + "\n  NETWORK_PREFIX: " + networkPrefix + "\n"
 		write(filepath.Join(coreNativeRoot, "source-config.yml"), []byte(config), 0600)
-		if err := os.MkdirAll(workspace, 0700); err != nil {
-			t.Fatal(err)
-		}
 	})
 	var deploymentID, deploymentRoot string
 	var originalKeys = map[string]string{}
@@ -358,7 +401,6 @@ func TestNativeCoreComputeProjection(t *testing.T) {
 		// Use the public import operation to establish the managed workspace
 		// configuration. Raw config-file writes must remain rejected by render;
 		// never manufacture config-managed.yml or disable its digest check.
-		coreNativeCLI(t, "workspace-init", "init", workspace, "--yes")
 		imported := coreNativeCLI(t, "config-import", "config", "import", filepath.Join(coreNativeRoot, "source-config.yml"),
 			"-w", workspace, "--root", moduleRoot)
 		if !bytes.Equal(imported["secrets_imported"], []byte("0")) {
@@ -547,21 +589,215 @@ func TestNativeCoreComputeProjection(t *testing.T) {
 		}
 		deploymentID, deploymentRoot = next, filepath.Join(stateDir(workspace), "deployments", next)
 	})
-	step("owned_test_resources_cleaned_and_daemon_identity_preserved", func(t *testing.T) {
-		coreNativeCLI(t, "stop", "stop", "-w", workspace)
-		for _, name := range []string{"core_one", "core_two"} {
-			dir := filepath.Join(deploymentRoot, "modules", name)
-			coreNativeCommand(t, "down-"+name, nil, "/usr/bin/docker", "compose", "--project-name", composeProjects[name], "--project-directory", dir, "-f", filepath.Join(dir, "docker-compose.yml"), "down")
-			coreNativeCleanupLease(t, name, pin, filepath.Join(dir, ".env"))
+	// INCUS-R-111: removing a consumer through the public config and apply path
+	// must withdraw its restricted certificate while the project stays.
+	moduleRoots := map[string]string{"core_one": "", "core_two": ""}
+	step("removed_consumer_lease_is_revoked", func(t *testing.T) {
+		moduleRoots["core_two"] = filepath.Join(deploymentRoot, "modules", "core_two")
+		certificate := coreNativeLeaseFingerprint(t, "core_two", filepath.Join(moduleRoots["core_two"], ".env"))
+		if coreNativeQuery(t, http.MethodGet, "/1.0/certificates/"+certificate, nil) != 200 {
+			t.Fatal("removal control needs the consumer certificate to be trusted first")
 		}
-		for _, image := range images {
-			coreNativeCommand(t, "remove-fixture-image", nil, "/usr/bin/docker", "image", "rm", image)
+		config := "modules:\n  core_one: {}\nglobal:\n  base_domain: core.native.test\n  email: admin@core.native.test\n  virtual_domain: true\nrollback:\n  snapshot: {backend: none}\nenv:\n  IPv6: 'false'\n  ANAS_IMAGE_REGISTRY: " + registry + "\n  CONTAINER_PREFIX: " + containerPrefix + "\n  NETWORK_PREFIX: " + networkPrefix + "\n"
+		write(filepath.Join(coreNativeRoot, "source-config-removal.yml"), []byte(config), 0600)
+		imported := coreNativeCLI(t, "config-import-removal", "config", "import", filepath.Join(coreNativeRoot, "source-config-removal.yml"),
+			"-w", workspace, "--root", moduleRoot)
+		if !bytes.Equal(imported["secrets_imported"], []byte("0")) {
+			t.Fatal("removal import supplied credentials")
 		}
-		if len(bytes.TrimSpace(coreNativeCommand(t, "containers-empty", nil, "/usr/bin/docker", "ps", "-aq"))) != 0 || strings.TrimSpace(string(coreNativeCommand(t, "same-daemon", nil, "/usr/bin/docker", "info", "--format", "{{.ID}}"))) != dockerID {
-			t.Fatal("test cleanup did not restore empty container inventory and daemon identity")
+		result := coreNativeCLI(t, "removal-render", "render", "-w", workspace, "--root", moduleRoot, "--update-lock")
+		var next string
+		if json.Unmarshal(result["deployment_id"], &next) != nil || next == deploymentID {
+			t.Fatal("removal did not render a new deployment")
 		}
-		write(coreNativeReports+"/reports/core-stage.json", []byte(`{"core_cli_compose_passed":true,"synthetic_consumers":2,"production_hook_and_provider":true,"bootable_guest_or_signed_release":false}`), 0600)
+		nextRoot := filepath.Join(stateDir(workspace), "deployments", next)
+		manifest, err := loadDeploymentManifest(nextRoot)
+		if err != nil || len(manifest.Resources) != 1 || manifest.Resources[0].Consumer != "core_one" {
+			t.Fatal("removed consumer's lease is still declared", err)
+		}
+		coreNativeCLI(t, "apply-removal", "apply", "-w", workspace, "--deployment", next, "--yes", "--no-snapshot")
+		if coreNativeQuery(t, http.MethodGet, "/1.0/certificates/"+certificate, nil) != 404 {
+			t.Fatal("removed consumer's restricted certificate is still trusted")
+		}
+		var project struct {
+			Config map[string]string `json:"config"`
+		}
+		if coreNativeQuery(t, http.MethodGet, "/1.0/projects/anas-core-two", &project) != 200 || project.Config["restricted"] != "true" {
+			t.Fatal("revocation removed or unfenced the retained lease project")
+		}
+		var state resourceState
+		if readYAML(filepath.Join(stateDir(workspace), "state", "resources", "core_two.workers.yml"), &state) != nil ||
+			state.Status != "retained" || state.Revocation != resourceRevocationConfirmed {
+			t.Fatal("Core did not record the confirmed revocation of the retained lease")
+		}
+		body := coreNativeCommand(t, "survivor-probe", nil, "/usr/bin/docker", "exec", containerPrefix+"core_one",
+			"/usr/local/bin/consumer", "core_one", "--once")
+		var survivor struct {
+			Schema, Consumer string
+			Passed           bool
+			ProbeScope       string `json:"probe_scope"`
+		}
+		if json.Unmarshal(body, &survivor) != nil || survivor.Consumer != "core_one" || !survivor.Passed || survivor.ProbeScope != "existing_project_isolation" {
+			t.Fatal("revoking the removed lease disturbed the remaining consumer")
+		}
+		deploymentID, deploymentRoot = next, nextRoot
 	})
+	// INCUS-R-072: a new revision imported by an apply that then fails to
+	// activate is referenced by no rollback target. Apply itself deletes
+	// nothing; only the explicit, confirmed host prune may remove it.
+	var pinR2 string
+	step("failed_activation_leaves_new_revision_outside_rollback", func(t *testing.T) {
+		second := coreNativeFixtureImage(t, provider, "lab-r2")
+		pinR2 = second.Fingerprint
+		catalog, _ := json.Marshal([]computeimage.Entry{entry, second})
+		write(filepath.Join(provider, "images", "catalog.json"), catalog, 0600)
+		manifestPath := filepath.Join(moduleRoot, "core_one", "module.yml")
+		composePath := filepath.Join(moduleRoot, "core_one", "docker-compose.yml")
+		write(manifestPath, []byte(coreNativeConsumerManifestRevision("core_one", "lab-r2")), 0600)
+		write(composePath, []byte(coreNativeComposeWithExtraNetwork("core_one", id, "anas-native-core-missing-network")), 0600)
+		result := coreNativeCLI(t, "failing-render", "render", "-w", workspace, "--root", moduleRoot, "--update-lock")
+		var failing string
+		if json.Unmarshal(result["deployment_id"], &failing) != nil || failing == deploymentID {
+			t.Fatal("revision change did not render a new deployment")
+		}
+		manifest, err := loadDeploymentManifest(filepath.Join(stateDir(workspace), "deployments", failing))
+		if err != nil || len(manifest.Resources) != 1 || manifest.Resources[0].ComputeImages == nil || manifest.Resources[0].ComputeImages.Images[0].Fingerprint != pinR2 {
+			t.Fatal("new revision was not frozen into the failing deployment", err)
+		}
+		if code := coreNativeCLIFailure(t, "failing-apply", "apply", "-w", workspace, "--deployment", failing, "--yes", "--no-snapshot"); code != "start_failed" {
+			t.Fatalf("activation failed with %q, want a start failure after resources were ensured", code)
+		}
+		active, err := loadActiveState(stateDir(workspace))
+		if err != nil || active.ActiveDeployment != deploymentID || slices.Contains(active.PreviousDeployments, failing) {
+			t.Fatal("failed activation changed the active deployment or rollback history", err)
+		}
+		var imported []struct {
+			Fingerprint string `json:"fingerprint"`
+		}
+		coreNativeQuery(t, http.MethodGet, "/1.0/images?recursion=1&project=anas-core-one", &imported)
+		seen := map[string]bool{}
+		for _, image := range imported {
+			seen[image.Fingerprint] = true
+		}
+		if len(imported) != 2 || !seen[pin] || !seen[pinR2] {
+			t.Fatal("apply deleted an older revision or never imported the new one")
+		}
+		// Revert the consumer as an operator would: restore its sources and
+		// relock with a render that is never applied. The failed deployment
+		// stays as recorded; the catalog keeps lab-r2, so the lock must follow.
+		write(manifestPath, []byte(coreNativeConsumerManifest("core_one")), 0600)
+		write(composePath, []byte(coreNativeCompose("core_one", id)), 0600)
+		reverted := coreNativeCLI(t, "revert-render", "render", "-w", workspace, "--root", moduleRoot, "--update-lock")
+		var revertedID string
+		if json.Unmarshal(reverted["deployment_id"], &revertedID) != nil {
+			t.Fatal("revert render returned no deployment")
+		}
+		revertedManifest, err := loadDeploymentManifest(filepath.Join(stateDir(workspace), "deployments", revertedID))
+		if err != nil || len(revertedManifest.Resources) != 1 || revertedManifest.Resources[0].ComputeImages == nil ||
+			revertedManifest.Resources[0].ComputeImages.Images[0].Fingerprint != pin {
+			t.Fatal("revert render did not freeze the active revision again", err)
+		}
+	})
+	step("stopped_for_explicit_prune", func(t *testing.T) {
+		coreNativeCLI(t, "stop", "stop", "-w", workspace)
+		active, err := loadActiveState(stateDir(workspace))
+		if err != nil || active.RuntimeStatus != "stopped" {
+			t.Fatal("workspace did not record a stopped runtime", err)
+		}
+		moduleRoots["core_one"] = filepath.Join(deploymentRoot, "modules", "core_one")
+		body, err := json.Marshal(coreNativeState{ID: id, DockerID: dockerID, PinR1: pin, PinR2: pinR2,
+			ModuleRoots: moduleRoots, ComposeProjects: composeProjects, Images: images})
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(coreNativeStateFile, body, 0600)
+	})
+}
+
+// TestNativeCoreComputeCleanup runs after the orchestrator's confirmed image
+// prune. Each lease must hold exactly the lab-r1 image again, which is the
+// independent proof that prune removed only the failed deployment's revision.
+func TestNativeCoreComputeCleanup(t *testing.T) {
+	id, _ := coreNativeGuard(t)
+	body, err := os.ReadFile(coreNativeStateFile)
+	var state coreNativeState
+	if err != nil || json.Unmarshal(body, &state) != nil || state.ID != id || state.PinR1 == "" {
+		t.Fatal("completed Core projection state required first")
+	}
+	for _, name := range []string{"core_one", "core_two"} {
+		dir := state.ModuleRoots[name]
+		coreNativeCommand(t, "down-"+name, nil, "/usr/bin/docker", "compose", "--project-name", state.ComposeProjects[name], "--project-directory", dir, "-f", filepath.Join(dir, "docker-compose.yml"), "down")
+		coreNativeCleanupLease(t, name, state.PinR1, filepath.Join(dir, ".env"), name == "core_two")
+	}
+	for _, image := range state.Images {
+		coreNativeCommand(t, "remove-fixture-image", nil, "/usr/bin/docker", "image", "rm", image)
+	}
+	if len(bytes.TrimSpace(coreNativeCommand(t, "containers-empty", nil, "/usr/bin/docker", "ps", "-aq"))) != 0 || strings.TrimSpace(string(coreNativeCommand(t, "same-daemon", nil, "/usr/bin/docker", "info", "--format", "{{.ID}}"))) != state.DockerID {
+		t.Fatal("test cleanup did not restore empty container inventory and daemon identity")
+	}
+	if err := os.MkdirAll(coreNativeReports+"/reports", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(coreNativeReports+"/reports/core-stage.json", []byte(`{"core_cli_compose_passed":true,"synthetic_consumers":2,"production_hook_and_provider":true,"bootable_guest_or_signed_release":false}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// coreNativeFixtureImage builds one measured split fixture and places it in the
+// Provider's trusted artifact tree. Different releases have different bytes.
+func coreNativeFixtureImage(t *testing.T, provider, revision string) computeimage.Entry {
+	t.Helper()
+	artifactDir := filepath.Join(coreNativeRoot, "image-fixture-"+revision)
+	for path, body := range map[string]string{
+		filepath.Join(artifactDir, "rootfs", "fixture.txt"): "native Core image import fixture " + revision + "; not a bootable production image\n",
+		filepath.Join(artifactDir, "metadata.yaml"):         "architecture: x86_64\ncreation_date: 1780000000\nproperties:\n  description: ANAS native Core projection fixture\n  os: fixture\n  release: " + revision + "\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0444); err != nil {
+			t.Fatal(err)
+		}
+	}
+	meta, rootfs := filepath.Join(artifactDir, "incus.tar.xz"), filepath.Join(artifactDir, "rootfs.squashfs")
+	coreNativeCommand(t, "metadata-archive-"+revision, nil, "/usr/bin/tar", "-C", artifactDir, "-cJf", meta, "metadata.yaml")
+	coreNativeCommand(t, "rootfs-archive-"+revision, nil, "/usr/bin/mksquashfs", filepath.Join(artifactDir, "rootfs"), rootfs, "-noappend", "-processors", "1", "-no-progress", "-all-root")
+	metadata, err := os.ReadFile(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootBytes, err := os.ReadFile(rootfs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := computeimage.Entry{Catalog: "anas", Name: "native-core", Revision: revision,
+		Target: computeimage.Target{Architecture: "amd64", Interface: "incus_container"}, Fingerprint: sha256Hex(append(append([]byte{}, metadata...), rootBytes...)),
+		RecipeDigest: sha256Hex([]byte("explicit native import fixture, not distrobuilder or signed release"))}
+	writeProviderArtifactFixture(t, provider, entry, metadata, rootBytes)
+	return entry
+}
+
+// coreNativeCLIFailure runs a command that must fail and returns its stable
+// CLI error code; output stays in the private diagnostics directory.
+func coreNativeCLIFailure(t *testing.T, name string, args ...string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/usr/local/bin/anas", append(args, "--json")...)
+	cmd.Env = []string{"PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME=/root", "LC_ALL=C", "LANG=C", "GOPROXY=off"}
+	var stdout, stderr coreNativeBuffer
+	cmd.Stdout, cmd.Stderr, cmd.WaitDelay = &stdout, &stderr, 3*time.Second
+	err := cmd.Run()
+	_ = os.MkdirAll(coreNativeReports+"/private", 0700)
+	_ = os.WriteFile(filepath.Join(coreNativeReports, "private", name+".log"), append(append([]byte{}, stdout.Bytes()...), stderr.Bytes()...), 0600)
+	var failure struct {
+		OK    bool                  `json:"ok"`
+		Error struct{ Code string } `json:"error"`
+	}
+	if err == nil || ctx.Err() != nil || stdout.truncated || json.Unmarshal(stdout.Bytes(), &failure) != nil || failure.OK {
+		t.Fatalf("command %s did not fail with a CLI error envelope", name)
+	}
+	return failure.Error.Code
 }
 
 // Only GET/DELETE of independently verified objects in the two fresh test
@@ -614,7 +850,28 @@ func coreNativeQuery(t *testing.T, method, path string, out any) int {
 	return 200
 }
 
-func coreNativeCleanupLease(t *testing.T, name, pin, envPath string) {
+func coreNativeLeaseFingerprint(t *testing.T, name, envPath string) string {
+	t.Helper()
+	env, err := parseEnvFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certBytes, err := base64.StdEncoding.DecodeString(env[computeResourcePrefix(name, "workers")+"CLIENT_CERT"])
+	block, _ := pem.Decode(certBytes)
+	if err != nil || block == nil {
+		t.Fatal("test client public identity missing")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(cert.Raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// revoked marks a lease whose certificate Core already withdrew; its absence
+// is asserted rather than deleted.
+func coreNativeCleanupLease(t *testing.T, name, pin, envPath string, revoked bool) {
 	t.Helper()
 	project := "anas-" + strings.ReplaceAll(name, "_", "-")
 	var got struct {
@@ -630,31 +887,21 @@ func coreNativeCleanupLease(t *testing.T, name, pin, envPath string) {
 	if instances == nil || len(instances) != 0 {
 		t.Fatal("test cleanup will not delete guest data")
 	}
-	env, err := parseEnvFile(envPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	certBytes, err := base64.StdEncoding.DecodeString(env[computeResourcePrefix(name, "workers")+"CLIENT_CERT"])
-	block, _ := pem.Decode(certBytes)
-	if err != nil || block == nil {
-		t.Fatal("test client public identity missing")
-	}
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256(cert.Raw)
-	fingerprint := hex.EncodeToString(sum[:])
+	fingerprint := coreNativeLeaseFingerprint(t, name, envPath)
 	var trust struct {
 		Name       string   `json:"name"`
 		Restricted bool     `json:"restricted"`
 		Projects   []string `json:"projects"`
 	}
-	coreNativeQuery(t, http.MethodGet, "/1.0/certificates/"+fingerprint, &trust)
-	if trust.Name != "anas-"+name || !trust.Restricted || !slices.Equal(trust.Projects, []string{project}) {
+	status := coreNativeQuery(t, http.MethodGet, "/1.0/certificates/"+fingerprint, &trust)
+	switch {
+	case revoked && status != 404:
+		t.Fatal("revoked test certificate reappeared")
+	case !revoked && (status != 200 || trust.Name != "anas-"+name || !trust.Restricted || !slices.Equal(trust.Projects, []string{project})):
 		t.Fatal("test trust identity changed")
+	case !revoked:
+		coreNativeQuery(t, http.MethodDelete, "/1.0/certificates/"+fingerprint, nil)
 	}
-	coreNativeQuery(t, http.MethodDelete, "/1.0/certificates/"+fingerprint, nil)
 	var imported []struct {
 		Fingerprint string `json:"fingerprint"`
 	}
@@ -675,6 +922,16 @@ func coreNativeCleanupLease(t *testing.T, name, pin, envPath string) {
 		t.Fatal("test bridge is not exclusively owned and unused")
 	}
 	coreNativeQuery(t, http.MethodDelete, "/1.0/networks/"+bridge, nil)
+	// The source fence ACL shares the bridge name and is freed after it.
+	var acl struct {
+		Config map[string]string `json:"config"`
+		UsedBy []string          `json:"used_by"`
+	}
+	coreNativeQuery(t, http.MethodGet, "/1.0/network-acls/"+bridge, &acl)
+	if acl.Config["user.anas.consumer"] != name || acl.Config["user.anas.sandbox"] != project || len(acl.UsedBy) != 0 {
+		t.Fatal("test source fence ACL is not exclusively owned and unused")
+	}
+	coreNativeQuery(t, http.MethodDelete, "/1.0/network-acls/"+bridge, nil)
 }
 
 func TestNativeCoreRejectsRevokedAutomaticConnection(t *testing.T) {
@@ -685,7 +942,7 @@ func TestNativeCoreRejectsRevokedAutomaticConnection(t *testing.T) {
 	if _, err := os.Stat(incusprovision.DefaultBundlePath); !os.IsNotExist(err) {
 		t.Fatal("host connection must first be revoked by the approved host action")
 	}
-	workspace := filepath.Join(coreNativeRoot, "workspace")
+	workspace := coreNativeWorkspace
 	before, err := os.ReadFile(filepath.Join(stateDir(workspace), "secrets.yml"))
 	if err != nil {
 		t.Fatal(err)
@@ -707,7 +964,8 @@ func TestNativeCoreRejectsRevokedAutomaticConnection(t *testing.T) {
 	}
 	if json.Unmarshal(stdout.Bytes(), &failure) != nil || failure.OK || failure.Error.Code != "calculate_failed" ||
 		!strings.Contains(failure.Error.Message, "incus") || cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != exitFailure {
-		t.Fatal("unrelated CLI failure cannot prove revoked automatic credentials were rejected")
+		// The code is a fixed identifier and safe for the private report.
+		t.Fatalf("unrelated CLI failure (code %q) cannot prove revoked automatic credentials were rejected", failure.Error.Code)
 	}
 	after, readErr := os.ReadFile(filepath.Join(stateDir(workspace), "secrets.yml"))
 	if readErr != nil || !bytes.Equal(before, after) {

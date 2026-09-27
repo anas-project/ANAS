@@ -27,30 +27,72 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M0：Contract 改形为租约语义 | R-010 | 已完成 |
 | M1：Provider Module 骨架、凭据与部署边界 | R-001—R-005 | 已完成 |
 | M2：Provider operation、隔离与可观测性 | R-006、R-009、R-012—R-016 | 已完成 |
-| M2a：围栏真实验收 | R-011、R-106 | 实施中；租约归属标记与受限证书独占已接入（单元层，2026-09-26）；容器 host disk/跨租约网络/直接 proxy 反例已实测，显式 proxy 禁令修复及两档回归通过；完整 6.0 `restricted.*` 键集与隔离档实例类型上限已收紧（单元层，2026-09-26）；完整设备/VM 矩阵及 daemon 实际拒绝待验收 |
+| M2a：围栏真实验收 | R-011、R-106 | 已完成；租约归属标记与受限证书独占在 6.0.5/7.0.1/7.5.1 实机拒绝他人 project；Incus 7.0.1 两档真实实例的设备/低层配置/超配矩阵全部被 daemon 拒绝（2026-09-26，[两档生命周期](../reviews/2026-09-26-incus-vm-tier-lifecycle.md)）；7.0 LTS 无法从项目层阻止 VM 嵌套虚拟化是版本限制；真实 Core 多工作区部署未单独执行 |
+| M2b：租约结束路径 | R-111 | 已完成；移除/关闭时经上一部署 Provider 撤销、失败中止或显式风险确认记未确认、`deletion_policy` 只收 `retain`；真实 Core 移除消费者后证书 404、project 保留且记 `revocation: confirmed`（2026-09-26，[验收记录](../reviews/2026-09-26-incus-lease-revocation-core.md)） |
 | M3：Core 的 compute Resource 凭据与投影 | R-017、R-018、R-020 | 已完成 |
 | M4：共享 Incus 客户端库 | R-021—R-024、R-037 | 已完成 |
 | M4a：取消后清理验收 | R-025 | 已完成；超时/取消补偿回归和真实运行中容器 SIGTERM 回收通过；独立 VM 运行矩阵仍归 M6 |
 | M5：Forgejo 迁移为 Contract 消费者 | R-026、R-028 | 已完成 |
 | M5a：one-job 行为等价验收 | R-027 | 已完成；默认系统容器档真实正常/失败/SIGTERM/SIGKILL 保留状态恢复及注册/根盘回收通过；VM/ARM64 和正式镜像发布仍归 M6/M12 |
-| M6：真实 Incus 宿主验收 | R-007、R-008、R-029—R-034 | 实施中；指定独立实验环境已通过默认容器双租约、btrfs 实际配额、客户端身份、管理证书重叠/撤销及 lab-r11 one-job；VM/ARM64、ZFS、双栈及完整矩阵待验收 |
+| M6：真实 Incus 宿主验收 | R-007、R-008、R-029—R-034 | 已完成；Debian 13 / Incus 7.0.1 同一环境两档实例全流程、同名双租约隔离、daemon 配额、管理证书重叠/撤销、exec 取消回收与两档时延基线通过（2026-09-26，嵌套 KVM，[两档生命周期](../reviews/2026-09-26-incus-vm-tier-lifecycle.md)）；容器档 controller crash 回收见 M5a；ARM64、ZFS 与目标 NAS 裸机时延未覆盖 |
 | M7：非特权系统容器 interface | R-035—R-036 | 已完成；单元层，e2e 归 M6 |
 | M8a：共享构建校验 | R-038 | 已完成；校验与 CI 已接入 |
 | M8b：staging 共享构建路径 | R-084 | 已完成；三个镜像的源码/staging 六次无缓存实际构建、缺少覆盖路径反例、输入/业务二进制及固定 CLI 摘要比对通过；不代表完整 Core 部署验收 |
 | M8：长驻实例档预留 | R-039—R-042、R-046 | 未开始 |
 | M9：网络 IPv6 姿态与 image_policy 预留 | R-043、R-045、R-052 | 已完成 |
-| M9a：双栈出网验收 | R-044 | 实施中；实现已落地，真实验收待执行 |
-| M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047、R-048、R-050、R-051、R-057、R-094、R-107、R-108、R-109 | 实施中；三个一级发行版 amd64 以 Incus 7.0.1 各通过 23 项审批/卸载（2026-09-26），26.04 另有旧流程后端 11 项、浏览器 8 项；真实 Core/Compose 自动投影、双合成消费者、新部署凭据保持和撤销后拒绝闭环已通过；实际 Forgejo/AI Agent 部署、ARM64/VM、未适配系统降级与失败恢复另验 |
+| M9a：双栈出网验收 | R-044 | 已完成；IPv6 启用/关闭两种租约的真实出网均经各自网桥 masquerade（2026-09-26，[两档生命周期](../reviews/2026-09-26-incus-vm-tier-lifecycle.md)）；伪造子网外源地址由 Provider 自有网桥 ACL 丢弃，实机上游计数为 0 且漂移可检出、可修复（2026-09-27，[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)）；同租约 guest 间 IPv6 冒用不在该围栏范围内 |
+| M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047、R-048、R-050、R-051、R-057、R-094、R-107、R-108、R-109 | 已完成；三个一级发行版以 Zabbly 7.0.1 各通过 23 项审批/卸载（2026-09-26），未适配的 Debian 14 在同一审批链路保持关闭且不改宿主（2026-09-27），真实 Core 自动投影、撤销后拒绝与移除消费者撤销（2026-09-26）通过；ARM64、真实 Forgejo/AI Agent 业务部署与失败 intent 的运维恢复未作验收 |
 | M10a：默认 Docker 的租约转发授权与撤销 | R-101—R-105 | 实施中；确认、来源及原状态回执已连接，失败启用统一有界撤回；独立内核精确许可/源冒用拒绝/既有连接撤销及安装后端显式退役、重复/证据保留通过；生产启用、自动续期/停止/重启协调、真实 guest/Forgejo 与完整反向隔离未关闭 |
 | M11：入站与 Traefik 发布 | R-053、R-054、R-062—R-065、R-070、R-071、R-086—R-088、R-095、R-096 | 实施中；观察、配置、任务排空和跨进程围栏已连接；新增同队列 owner 的统一启动入口、目录隔离准入及固定 renderer 身份；自动 CLI 排空、完整内核生命周期、VM/TAP、health、生产 UID/挂载安装及实机验收待办 |
 | M11a：独立租约命名密钥 | R-092 | 已完成；生成/复用、敏感投影、冻结引用与文件备份恢复回归通过 |
-| M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085、R-110 | 实施中；默认配方、冻结归档、历史 bundle、发布脚本与逐摘要供给已接通，lab-r11 默认容器真实烘焙/启动/one-job 通过；VM/ARM64、正式签名分发、回滚及破坏性 prune 待验收 |
-| M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 实施中；本地 bundle 动作自行写入目的地、元数据控制输出及 URL/base64 拒绝回归已落地；不提供浏览器下载端点，统一动作整体安全审阅仍待完成，见[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
+| M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085、R-110 | 实施中；默认配方、冻结归档、历史 bundle、发布脚本与逐摘要供给已接通，lab-r11 默认容器真实烘焙/启动/one-job 通过；显式 prune 实机通过（2026-09-27，只删失败部署的新 revision，当前/上一部署镜像保留，[prune 验收](../reviews/2026-09-27-incus-image-prune.md)）；VM/ARM64、正式签名分发与回滚待验收 |
+| M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 已完成；整体审阅未发现制品下载端点或控制流内联，新增 OpenAPI 媒体类型门禁，见[审阅记录](../reviews/2026-09-26-incus-bulk-data-path-review.md)与[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
 | M14：其余发行版适配 | — | 未开始；待适配清单见[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §2 |
 
-覆盖统计：84 项需求全部有且只有一个里程碑归属（另有 26 项已废弃）。
+覆盖统计：85 项需求全部有且只有一个里程碑归属（另有 26 项已废弃）。
 
-### 当前接续状态（2026-09-26）
+### 当前接续状态（2026-09-27）
+
+2026-09-27：IPv6 伪造源缺口按操作者定案由 Provider 自有网桥 network ACL 关闭（只放行网桥自身子网、默认
+egress drop；`inspect` 核验、`ensure` 修复；宿主卸载盘点把任何 ACL 视为在用），实机 r10 两档生命周期与
+伪造源/漂移反例通过，M9a 关闭（[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)）。R-072 显式 prune
+在真实 Core 链路上通过（host-v43：失败部署的 `lab-r2` 被计划并删除，当前/上一部署的 `lab-r1` 保留），同轮
+复验 R-111 与带 ACL 的卸载盘点（[prune 验收](../reviews/2026-09-27-incus-image-prune.md)）；途中三次失败均为
+实验前置条件问题（登记工作区预建 `.anas`、新鲜性检查不认 init 骨架、失败激活后未重新加锁），已在测试侧
+修正。M12 仍缺 VM/ARM64 镜像、正式签名分发与回滚；M10a、M11 本轮未开始，M8 属第三阶段预留。
+
+租约结束路径（[审查](../reviews/2026-09-25-compute-contract-incus-review.md) §1.4，新增 R-111）：目标部署不再声明某份
+compute 租约时，Core 在新部署启动后经上一部署冻结的 Provider 执行 `revoke`，撤销证书、保留 project；
+失败默认中止激活并恢复上一个部署，只有 `--allow-risky` 才把撤销记为 `unconfirmed`。resource state 仍为
+`retained` 并新增 `revocation` 字段；compute 的 `deletion_policy` 只收 `retain`。同轮以文档与回归处理审查
+§2.1（`result_schema` 描述 Core 记录的租约，新增必需字段投影测试）和 §3.3（`Create` 与发布请求共用
+`computeingress.ValidWorkloadID`）。单元层与全仓 `go vet`/`go test` 通过；真实 Core 移除消费者的原生
+用例已加入 `server-incus-core-projection-e2e.py`，执行结果见 §10。
+
+回归缺陷（2026-09-26 原生生命周期发现）：上一轮合入的 lease profile 要求 `security.ipv6_filtering`，
+而 Incus 只在宿主加载 `br_netfilter` 且 `bridge-nf-call-ip6tables=1` 时才启动带该项的实例；Docker 28 起
+默认不加载该模块。Debian 13 / Incus 7.0.1 的真实租约容器因此全部启动失败（守护进程报错
+`security.ipv6_filtering requires bridge netfilter`）。已从 profile 与 HTTP 观察器要求中移除该项，保留 MAC
+与 IPv4 过滤；IPv6 启用租约中伪造子网外源地址的报文不会被 masquerade。2026-09-27 按操作者定案改由
+Provider 自有的网桥 network ACL 关闭（只放行网桥自身子网、默认 egress drop，`inspect` 核验、`ensure`
+修复），不启用宿主 `br_netfilter`，见[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)。
+
+回归缺陷二（同一原生生命周期发现）：共享客户端 `Inspect` 以 `incus list <remote>:<name>` 读取单个实例，
+而 Incus 7.x CLI（7.0.1 实测，7.3.0 源码相同）把它解析为只有 remote、过滤条件落空，返回空列表。结果在任何
+7.x 客户端上 `Inspect` 恒为 missing，`Delete` 先读后删因此直接返回、从不删除，删除确认也会误判成功；
+Forgejo controller 镜像内置的正是 7.3.0 CLI。此前的 one-job 通过应使用了宿主 6.0.5 CLI，不能证明镜像
+路径。现改为列出整个租约 project 后客户端精确匹配名称，并补单元回归；6.0 与 7.x 的 CLI 语义都成立。
+
+缺陷三（VM 档首次真实创建）：Incus 统计 project `limits.disk` 时给 VM 根盘加上状态卷 `size.state`
+（默认 500 MiB，6.0.5 与 7.0.1 源码一致），Provider 只按 `max_instances × disk_gib` 预算，用满单实例
+磁盘配额的 VM 因此总被拒（`Reached maximum aggregate value "4GiB"`）。VM 档改为每实例预算
+`disk_gib GiB + 500 MiB`，并在 profile 根设备显式写 `size.state=500MiB`；此前 VM 档从未在真实
+daemon 上创建过实例。
+
+已知限制（同一实机）：Incus 7.0 LTS 没有 `restricted.virtual-machines.nesting`，`security.nesting` 在该版本
+是容器专用键、VM 接受但不生效；嵌套 KVM 宿主上 VM 租约 guest 实测可见 `vmx`，即 7.0 LTS 无法从项目层
+阻止 VM 档嵌套虚拟化。7.x 后续版本由 Provider 写 `restricted.virtual-machines.nesting=block`（7.5.1 已实测
+拒绝）。原生生命周期把它记为版本相关的显式检查与指标，不再当作 daemon 拒绝计入设备矩阵。
 
 安装国内源（R-109/R-110）：宿主 `install.plan` 从受管工作区读取 `CHINESE_SPEEDUP`，
 冻结后贯穿队列、确认、浏览器与 APT 执行；固定国内源与 upstream 可反切，Incus 的 Zabbly
@@ -654,7 +696,7 @@ runtime 是 `compose_run`，只在 apply 时跑一次，且 ABI 只传 `ANAS_RES
 - [x] 读取消费者租约，校验镜像摘要、实例前缀、配额和 guest 入口 allowlist；
 - [x] 实例请求不开放 device、raw config、挂载或 profile 覆盖；Secret 经 stdin；
 - [x] 默认容器档真实 exec 取消和运行中 controller SIGTERM 的独立清理已验收，证据登记到 §10；超时/失败补偿已有回归。
-- [ ] 独立 VM 及完整平台/故障运行矩阵仍归 M6，不能由默认容器结果替代。
+- [x] 独立 VM 档的 exec 取消与独立回收于 2026-09-26 在 Incus 7.0.1 嵌套 KVM 上通过（M6）；ARM64 仍未覆盖。
 
 验收：要求文档 §7 第 1—5 条。取消的原生证据与补偿单测分别登记，不混为同一矩阵。
 
@@ -674,10 +716,13 @@ runtime 是 `compose_run`，只在 apply 时跑一次，且 ABI 只传 `ANAS_RES
 需要独立 Incus 宿主；容器档可先在无 KVM 的 Linux 宿主验证，VM 档另需 KVM。没有 KVM 不应
 阻止容器档用例编写与执行，但不能以容器结果替代 VM 结果。
 
-- [ ] 固定 daemon 版本、架构、镜像 fingerprint 与 project/profile/network 配置；
-- [ ] 编写 §10 中待新增脚本，记录前置条件、反例、退出码和失败清理；
-- [ ] 先修复并验证 managed bridge/project 的兼容性（架构 §7.3），再跑单租约生命周期、同前缀双租约隔离、配额、证书轮换、取消与 crash 回收；
-- [ ] 记录两档启动与典型作业耗时；每份证据关联测试提交、环境和日期。
+- [x] 固定 daemon 版本、架构、镜像 fingerprint 与 project/profile/network 配置（Incus 7.0.1 / amd64 / btrfs，夹具摘要记录在轮次 manifest）；
+- [x] 生命周期脚本支持两档，并新增宿主所有者脚本与双栈出网脚本，记录前置条件、反例、退出码和失败清理；
+- [x] managed bridge/project 兼容性后跑单租约生命周期、同前缀双租约隔离、配额、证书轮换、取消回收（两档，2026-09-26）；容器档 crash 回收见 M5a；
+- [x] 记录两档启动与典型作业耗时，证据关联输入摘要、环境与日期，见 [两档生命周期](../reviews/2026-09-26-incus-vm-tier-lifecycle.md)。
+
+2026-09-26 的真实两档运行同时暴露并修复了三处回归（IPv6 过滤要求 `br_netfilter`、`Inspect` 在 7.x CLI
+上恒为 missing、VM 磁盘预算漏算 `size.state`），详见上方当前接续状态与审阅记录。ARM64 与 ZFS 仍未验收。
 
 退出条件：§10 对应真实宿主用例全部有可复现证据，再评估 Module 的 release 准入。
 
@@ -717,7 +762,13 @@ R-046 只在未来启用 `any` 时验收，不把它作为本轮阻塞。
 ### 8.4 M9：IPv6 与默认隔离档
 
 现有实现已提供 IPv6 姿态、bridge NAT、默认容器档及拒绝 `any` 的行为。
-剩余为双栈宿主实际出网验证：IPv6 开关关闭、无全局地址、有全局地址三种情况；结果归 §10。
+2026-09-26 在真实 daemon 上验证了 IPv6 启用与关闭两种租约的出网（`server-incus-network-e2e.py`）：两族合法流量
+都经各自网桥 masquerade，关闭时网桥 `ipv6.address=none`。“无全局地址”由 Hook 的 `HOST_HAS_IPV6` 判定，
+归单元层（R-043）。IPv6 来源过滤要求宿主 `br_netfilter`，已从 profile 移除；2026-09-27 改由 Provider 自有的
+网桥 network ACL 只放行网桥自身子网（默认 egress drop），`inspect` 核验、`ensure` 修复，宿主卸载盘点把任何
+ACL 视为在用。实机 r10 中两种租约伪造两族源地址到达上游均为 0，IPv6 租约的伪造报文确实到达实验 VM 路由层，
+故意加 allow-all 规则后泄漏可见、`inspect` 未就绪、`ensure` 修复（[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)）。
+M9a 关闭。
 
 ### 8.5 M10：宿主供给
 
@@ -771,13 +822,13 @@ socket/子进程门禁要求关键用例实际执行，记录见
 
 - [ ] 运行固定控制转发的配置/传输/身份测试，以及独立 Linux 宿主的 mTLS/pin/project、来源网络隔离、重启与卸载验收；
 
-- [ ] 核验首批三个发行版的官方包、服务单元、版本与架构，形成声明式安装表；
+- [x] 核验首批三个发行版的包来源、服务单元、版本与架构，形成声明式安装表（`internal/incushost/recipes.json`，Zabbly `lts-7.0`）；
 - [ ] 按架构 §3.7 细化的独立控制 bridge、固定目的地非 root 转发和双栈防火墙实现原型，完成真实连通验证与宿主动作清单；
 - [x] 实现探测、安装、配置、登记、读回验证和状态记录，区分已存在的外部 daemon 与 ANAS 所有资源；主要发行版直接后端与已安装审批闭环均通过，其他发行版单独验收；
-- [ ] 定义跳过、部分失败、重试和卸载的状态迁移，保证可选消费者关闭而主部署可继续；
+- [x] 跳过、部分失败、重试和卸载的状态迁移：持久 intent/receipt，未恢复的 intent 阻止后续变更并要求运维恢复（宿主供给设计 §3—§4）；可选消费者关闭而主部署继续由撤销后拒绝与未适配轮实测；
 - [x] 卸载先清点受管资源与运行实例，不删除非 ANAS 资源；真实保留卷拒绝、原包保留/逐包归属、确认后卸载与重复卸载通过，不代表完整故障恢复矩阵；
 - [x] 三个一级发行版 amd64 使用同批产品工件，分别完成新版 25 项实际审批、控制桥、精确包删除/原包保留与重复卸载；各 18 个共享 job 和独立退出、正常 VM 收尾及宿主对照通过；
-- [ ] 在三个干净发行版及未适配发行版执行安装、重复执行、失败恢复和卸载验收。
+- [x] 三个干净发行版的安装、重复执行与卸载（2026-09-26），以及未适配发行版保持关闭（2026-09-27）已验收；失败 intent 的运维恢复路径未单独实测。
 
 退出条件：默认路径无需用户手工准备 daemon/证书，回环限制与失败降级均有真实证据。
 
@@ -1027,10 +1078,15 @@ catalog，复用 `DescribeArtifactRelease` 和规范描述。私有本地归档�
 
 退出条件：首次构建、重复 apply、缺失恢复、revision 冲突与回滚/prune 均有证据。
 
-### 8.8 M13：批量数据路径
+### 8.8 M13：批量数据路径（已完成）
 
 依赖统一动作 ABI 的控制流边界。镜像导入导出由动作打开受支持目的地；审查不得增加浏览器制品
-下载端点或内联 base64 数据。补充大块数据、取消、失败清理与错误脱敏测试后验收。
+下载端点或内联 base64 数据。
+
+2026-09-26 整体审阅 HTTP 路由与 OpenAPI 响应类型、动作帧与载荷上限、镜像 export/bundle、Provider
+导入与宿主 prune：唯一附件是公开内部 CA 证书，没有制品下载或内联路径。新增
+`TestNoArtifactDownloadResponseMediaTypes` 把响应媒体类型钉住，新增下载端点前须先按 ABI §13 一并定案。
+记录见[审阅](../reviews/2026-09-26-incus-bulk-data-path-review.md)；它不代表统一动作 ABI 其余部分已验收。
 
 ### 8.9 M14：后续发行版
 
@@ -1063,6 +1119,10 @@ catalog，复用 `DescribeArtifactRelease` 和规范描述。私有本地归档�
 | 需求 ID | 脚本 | 环境 | 日期 | 结果 |
 | --- | --- | --- | --- | --- |
 | R-007 | `test-env/scripts/server-incus-lifecycle-e2e.py` | Ubuntu 26.04 / Incus 6.0.5 / amd64 / btrfs 容器夹具 | 2026-09-22 | 同名双租约实际并行运行及独立清理通过；产品/VM 矩阵待验收 |
+| R-007、R-031 | `test-env/scripts/server-incus-lifecycle-e2e.py`（`--interface container`/`vm`） | Debian 13 / Incus 7.0.1 / amd64 / btrfs，嵌套 KVM | 2026-09-26 | 两档同名双租约各自只见自己的实例（[两档生命周期](../reviews/2026-09-26-incus-vm-tier-lifecycle.md)） |
+| R-008、R-011 | 同上，受限证书绕过共享库直接请求 | 同上 | 2026-09-26 | 两档 CPU/内存/磁盘超配与 host disk、跨租约网络、proxy、gpu、usb 被拒；容器档 unix-char/unix-block/privileged/`raw.lxc`、VM 档 pci/`raw.qemu` 被拒且声明配置不变；7.0 LTS VM 嵌套虚拟化可见为版本限制 |
+| R-025、R-033 | 同上，`exec-cancel-and-independent-reclaim` | 同上，两档 | 2026-09-26 | 取消保持取消身份、独立回收，另一租约仍运行 |
+| R-029、R-030、R-032 | 同上 | 同上，两档 | 2026-09-26 | ensure→create→start→exec→stop→delete 两档通过；管理证书重叠/撤销后 guest 身份不变；实例数与根盘实写上限（容器 4.29 GB、VM 3.21 GB，均 ≤4 GiB）；归档 `9b99c5c9…79ae` |
 | R-011 | `test-env/scripts/server-incus-lifecycle-e2e.py` | 同上，受限证书直接变更请求 | 2026-09-22 | host disk 与其他租约网络拒绝、原配置不变；完整设备/VM 矩阵待验收 |
 | R-011 | `test-env/scripts/server-incus-fence-e2e.py` | 6.0.5 / 7.0.1 / 7.5.1 一次性 VM，放宽的旧 project | 2026-09-26 | 完整 restricted 键收紧、清除键删除、inspect 只读拒绝；daemon 以实例冲突拒绝收紧（特权容器、换档）；7.x 存储池越界与 7.5 VM nesting 被拒，见[实机核验](../reviews/2026-09-26-incus-fence-native-validation.md) |
 | R-025 | `test-env/scripts/server-incus-lifecycle-e2e.py` | 同上，真实运行 exec 取消 | 2026-09-22 | 取消错误、独立删除及另一租约保持运行通过；controller 迟到创建/crash 待验收 |
@@ -1072,32 +1132,34 @@ catalog，复用 `DescribeArtifactRelease` 和规范描述。私有本地归档�
 | R-029 | `test-env/scripts/server-incus-lifecycle-e2e.py` 的 `management-certificate-rotation` 子项 | 独立 Ubuntu 26.04 amd64 / Incus 6.0.5 / 运行中双租约 | 2026-09-23 | 前轮 15 项原生门禁通过，旧证书拒绝、新证书可管理且 guest 身份不变；不代表 Core 自动轮换事务或 VM/ARM64 |
 | R-030 | `test-env/scripts/server-incus-lifecycle-e2e.py` | 同上，实际 Provider 与共享客户端 | 2026-09-22 | ensure/重复/inspect → 容器 create/start/exec/stop/delete 通过；正式镜像与 VM 档待验收 |
 | R-032 | `test-env/scripts/server-incus-lifecycle-e2e.py` | 同上，实例数限制及 btrfs 4 GiB 根盘 | 2026-09-22 | 实例数与直接超配拒绝、实际写满通过；ZFS/VM/正式镜像待验收 |
-| R-033 | 待新增 `test-env/scripts/server-incus-janitor-e2e.sh` | 强制中断消费者 | — | 待执行 |
-| R-034 | 待新增 `test-env/scripts/server-incus-baseline.sh` | 目标 NAS 规格、两档 | — | 待执行 |
-| R-027 | 待新增 `test-env/scripts/server-forgejo-one-job-e2e.sh` | Forgejo + Incus 宿主 | — | 待执行 |
+| R-033 | `test-env/scripts/server-forgejo-onejob-e2e.py` | 默认容器档真实 Forgejo 15.0.7 + 生产 controller，SIGTERM 取消与 SIGKILL 后保留 state 重启 | 2026-09-22 | 两场景均回收实例、根盘与 registration，见[闭环记录](../reviews/2026-09-22-incus-onejob-closeout.md)；state volume 丢失与 VM 档的 controller crash 未覆盖 |
+| R-034 | `test-env/scripts/server-incus-lifecycle-e2e.py`（`typical-job-wall-time`）与 `server-incus-lifecycle-lab.py` | Debian 13 / Incus 7.0.1 / amd64 / btrfs，嵌套 KVM，同一实验 VM 内两档 | 2026-09-26 | 创建到就绪：容器 5.0/4.4 s，VM 57.0/56.4 s；典型作业墙钟：容器 8.0 s，VM 47.2 s（[两档生命周期](../reviews/2026-09-26-incus-vm-tier-lifecycle.md)）；嵌套虚拟化与 HDD 宿主下的相对基线，非目标 NAS 裸机值 |
+| R-027 | `test-env/scripts/server-forgejo-onejob-e2e.py` | 默认容器档真实 Forgejo 15.0.7 + `lab-r11` 不可变镜像 | 2026-09-22 | 正常、显式失败、SIGTERM、SIGKILL 恢复与未授权仓库五场景通过（M5a），见[闭环记录](../reviews/2026-09-22-incus-onejob-closeout.md)；VM/ARM64 未覆盖 |
 | R-041 | 待新增 `test-env/scripts/server-incus-longlived-e2e.sh` | 长驻档持久卷与入站（第三阶段） | — | 待执行 |
 | R-042 | 待新增 `test-env/scripts/server-incus-longlived-e2e.sh` | 长驻档下既有边界不被削弱 | — | 待执行 |
-| R-044 | 待新增 `test-env/scripts/server-incus-network-e2e.sh` | 双栈宿主上的租约网络出网 | — | 待执行 |
-| R-047 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 三个一级发行版 amd64 宿主审批；26.04 真实 Core CLI/Hook/Provider/Compose 双合成消费者 | 2026-09-24 | 三档宿主以 Incus 7.0.1 各 23 项通过（2026-09-26）；Core 五阶段、主流程九项与撤销一项通过，无需手填连接/架构；正式安装器及实际业务部署另验 |
-| R-048 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 跳过、重复执行、保留卷拒绝、两种卸载及 Core 新冻结部署/撤销 | 2026-09-24 | 三档精确删包/保留原包/重复卸载通过；Core 新版本实际激活保持凭据、撤销后拒绝旧凭据且私有 Store 不变；完整降级/失败恢复仍未完成 |
+| R-044 | `test-env/scripts/server-incus-network-e2e.py` | 同一 Debian 13 / Incus 7.0.1 实验 VM，上游为独立 netns 与文档地址段 | 2026-09-26 | IPv6 启用租约两族流量都 masquerade 为实验 VM 上游地址，IPv6 关闭租约无全局 IPv6 且 IPv4 masquerade |
+| R-044 | 同上，伪造源与故意漂移反例 | 同上，Provider 自有网桥 ACL（r10） | 2026-09-27 | 两租约伪造两族源地址上游计数 0，IPv6 租约伪造 IPv6 到达实验 VM 4 个报文；allow-all 漂移泄漏 4 个、`inspect` 未就绪、`ensure` 修复后增量 0；归档 `c45232f8…f305`（[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)） |
+| R-047 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 三个一级发行版 amd64 宿主审批；26.04 真实 Core CLI/Hook/Provider/Compose 双合成消费者 | 2026-09-24 | 三档宿主以 Incus 7.0.1 各 23 项通过（2026-09-26），加入 ACL 盘点后 Ubuntu 26.04 复验 23/23（2026-09-27）；Core 七阶段（含 prune、清理与撤销）于 host-v43 通过，无需手填连接/架构；正式安装器及实际业务部署另验 |
+| R-048 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 跳过、重复执行、保留卷拒绝、两种卸载及 Core 新冻结部署/撤销 | 2026-09-24 | 三档精确删包/保留原包/重复卸载通过；Core 新版本实际激活保持凭据、撤销后拒绝旧凭据且私有 Store 不变；2026-09-27 删包前盘点加入 `network-acls`，Core 清理 ACL 后审批卸载通过；完整降级/失败恢复仍未完成 |
 | R-050 | `test-env/scripts/server-incus-host-action-e2e.py` 与 `server-incus-core-projection-e2e.py` | 回环 daemon、实际控制桥及 Core 自动投影的两个非 root 消费者 | 2026-09-24 | 宿主传输正反例与 Core 自身租约/既存项目隔离通过，业务网关优先级不变；完整 LAN/双栈及实际 Forgejo/AI Agent 部署另验 |
 | R-053 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | Traefik 公网双栈、受管 guest IPv4 后端 | — | 待执行 |
 | R-054 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | Traefik 发布实例内 HTTP 服务 | — | 待执行 |
-| R-055 | 待新增 `test-env/scripts/server-incus-image-bake-e2e.sh` | 首次烘焙与二次 apply 不重建 | — | 待执行 |
+| R-055 | `test-env/scripts/server-incus-runner-image-e2e.py`、`incus-image-artifacts build`；`server-incus-core-projection-e2e.py` | 独立构建 VM 上真实 distrobuilder 烘焙 `policy-loader-r1`（Ubuntu 26.04）与 `trust-r2`（Debian 13）；Core apply 从冻结目录导入 | 2026-09-25 | build/export/重复构建返回 `existing=true` 且 release 不变（[固定策略加载器](../reviews/2026-09-25-forgejo-fixed-policy-loader.md)）；apply 只导入冻结摘要、从不烘焙（2026-09-26 Core 轮）；VM 档产品镜像未烘焙 |
 | R-057 | `test-env/scripts/server-incus-host-action-e2e.py` | Debian 13 / Ubuntu 24.04 / 26.04 三档 amd64 | 2026-09-26 | 三档同工件以 Incus 7.0.1 各 23 项审批/正常供给卸载通过；其他架构、故障恢复与正式默认部署不由此推导 |
-| R-094 | 待新增 `test-env/scripts/server-incus-host-setup-e2e.sh` | 未适配发行版上保持关闭而非失败 | — | 待执行 |
+| R-094 | `test-env/scripts/server-incus-unadapted-e2e.py` | Debian 14 testing（forky）amd64，已安装审批链路 | 2026-09-27 | 预检与安装计划 `disabled`/`distribution_not_adapted`，确认执行只记禁用回执，dpkg/APT/Incus 均未改变（[验收记录](../reviews/2026-09-27-incus-unadapted-distribution.md)） |
 | R-063 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 实例启停与 Traefik 路由增删同步 | — | 待执行 |
 | R-087 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 消费者无法注册本租约命名空间之外的域名 | — | 待执行 |
 | R-088 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 绕过客户端库直写请求文件仍被拒绝 | — | 待执行 |
 | R-095 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 运行时无法覆盖租约声明的认证方式 | — | 待执行 |
-| R-072 | 待新增 `test-env/scripts/server-incus-image-bake-e2e.sh` | prune 保留上一个 deployment 的镜像 | — | 待执行 |
+| R-072 | `test-env/scripts/server-incus-core-projection-e2e.py`（`image_prune_confirmed_delete`） | 全新 Ubuntu 26.04 amd64、审批安装的 Incus 7.0.1、真实 Core CLI；`lab-r2` 部署激活失败后 stop | 2026-09-27 | 计划只删 `anas-core-one` 的 `lab-r2`，`lab-r1` 以 current/previous 部署保留；确认后删除并逐项核验、读回两 project 只剩 `lab-r1`；归档 `1af11534…b56b`（[prune 验收](../reviews/2026-09-27-incus-image-prune.md)）；多工作区与 VM 档镜像仅单元覆盖 |
 | R-101 | 待接续 `test-env/scripts/server-forgejo-stop-e2e.py` | 真实宿主审批、Core 租约与默认 Docker 下的 guest/Forgejo | — | 待执行；确认事务单元通过不替代产品联合验收 |
 | R-102 | `internal/incusingresshost/forwarding_native_linux_test.go`；真实 guest 场景待接续 | 全新 Ubuntu 26.04 amd64 / 默认 Docker DROP | 2026-09-26 | 内核精确许可、物理 veth 源冒用拒绝再次通过；端点是 namespace，真实租约/跨租约替换待验收 |
 | R-103 | `internal/incusingresshost/forwarding_native_linux_test.go`、失败撤回回归；真实 stop/revoke 待接续 | 新连接拒绝、原已建立 socket 及精确 conntrack 分开核验 | 2026-09-26 | 内核新连接/原连接撤销通过，启用后失败统一补偿回归通过；完整业务停止与租约撤销未关闭 |
 | R-104 | `internal/incusprovision/forwarding_retirement_native_linux_test.go`；业务入口待接续 | 实际安装后端、Incus trust/空实例/网桥，Core stopped 和旧 grant 为夹具 | 2026-09-26 | 原始拒绝、自然空清单、显式/重复退役及墓碑/依赖解除通过；地址/接口变化、崩溃/重启和完整宿主卸载仍待验收 |
 | R-105 | `test-env/scripts/server-incus-forwarding-e2e.py` 与 `internal/incusingresshost/forwarding_native_linux_test.go` | 独立默认 Docker、既有管理员拒绝和原始策略保留 | 2026-09-25 | 原9项临时许可因果实验通过；候选生产执行器完整正反向验收仍待完成 |
 | R-106 | `test-env/scripts/server-incus-fence-e2e.py` | 一次性 VM：Ubuntu 26.04 官方 6.0.5、Debian 13 trixie-backports 7.0.1、Ubuntu 26.04 Zabbly 7.5.1 | 2026-09-26 | 三档 16/18/19 项必需检查全部通过：第二工作区与所有者撤销后均拒绝、未标记共享 project 拒绝、额外受限证书使 inspect 未就绪、`default` 拒绝；真实 Core 多工作区部署未验收，见[实机核验](../reviews/2026-09-26-incus-fence-native-validation.md) |
-| R-108 | 待扩展 `test-env/scripts/server-incus-host-provision-e2e.py` | 三个一级发行版 amd64，Zabbly `lts-7.0` 固定来源与钉包 | — | 待执行；编译配置、密钥指纹与钉包单元回归通过（2026-09-26）；本日 7.0.1 实机仅为 fence 围栏验证，非宿主供给验收 |
+| R-111 | `test-env/scripts/server-incus-core-projection-e2e.py`（`removed_consumer_lease_is_revoked`） | 全新 Ubuntu 26.04 amd64、审批安装的 Incus 7.0.1、真实 Core CLI apply 移除一个合成消费者 | 2026-09-26 | 证书从信任库消失、project 保留、state 记 confirmed、另一消费者不受影响；归档 `def8edce…e19e`；撤销失败路径为单元层；2026-09-27 host-v43 带来源围栏 ACL 的 Provider 复验通过 |
+| R-108 | `test-env/scripts/server-incus-host-action-e2e.py` | 三个一级发行版 amd64，Zabbly `lts-7.0` 固定来源与钉包 | 2026-09-26 | Debian 13、Ubuntu 26.04、24.04 各 23 项审批/供给/卸载通过，实际安装 Incus 7.0.1 且精确删除受管包，见[验收记录](../reviews/2026-09-26-incus-host-action-7.0.1-acceptance.md)；来源不可用时的失败指引与 ARM64 未实测 |
 
 ## 11. 文档同步
 
@@ -1105,9 +1167,10 @@ catalog，复用 `DescribeArtifactRelease` 和规范描述。私有本地归档�
 | --- | --- | --- |
 | `contracts/compute` README 与技术文档（中英文） | 改为租约语义，去掉单消费者假设 | 已完成 |
 | `modules/incus` README 与技术文档（中英文） | 新建 | 已完成 |
-| [Forgejo Module 设计](../../docs/architecture/forgejo-module-design.md) §4 | Incus 控制面归属改为 `incus` Module + 共享客户端 | 未开始 |
-| [Forgejo Module 实施计划](../../modules/forgejo/dev-docs/plans/forgejo-module.md) M2 | 只保留“作为消费者接入”，Provider 工作引用本计划 | 未开始 |
-| [Module 专属命令能力](module-command-capability.md) M4 | `incus-doctor` / `incus-runner-reconcile` 的归属确认 | 未开始 |
+| [Forgejo Module 设计](../../docs/architecture/forgejo-module-design.md) §4 | Incus 控制面归属改为 `incus` Module + 共享客户端 | 已完成（2026-09-26，§4.2 分 daemon/围栏/实例生命周期三处归属） |
+| [Forgejo Module 实施计划](../../modules/forgejo/dev-docs/plans/forgejo-module.md) M2 | 只保留“作为消费者接入”，Provider 工作引用本计划 | 已完成（2026-09-26） |
+| [Module 专属命令能力](module-command-capability.md) M4 | `incus-doctor` / `incus-runner-reconcile` 的归属确认 | 已完成（2026-09-26）：二者为 Forgejo 消费者命令、只用租约；daemon 启停归宿主特权动作通道 |
+| compute Contract 与 `incus` Module 技术文档（中英文）、使用指南 | 租约结束路径（`INCUS-R-111`）、`deletion_policy` 只收 `retain`、结果 schema 描述 Core 记录的租约 | 已完成（2026-09-26） |
 
 ## 12. 当前阻塞与执行顺序
 

@@ -102,12 +102,50 @@ another's. The network name is not the sandbox name: a Linux bridge interface is
 characters while `anas-forgejo-runners` is already 20, so it is derived by hashing the sandbox name --
 short, stable across applies, and distinct between leases.
 
+A guest may leave only with its lease network's own addresses. Egress NAT rewrites sources inside the
+lease subnets only; a forged off-subnet source is not rewritten and, if forwarded, reaches the outside
+under that forged identity. The Provider must therefore have the host drop such packets and include
+that constraint in `ready`; the Incus Provider does so with a Provider-owned bridge network ACL (see the
+Incus Module technical documentation).
+
 Every `ensure` **replaces** the profile's devices rather than merging them. A host path attached out of
 band is precisely what must not survive an ensure.
 
 `inspect` is read-only and must report `exists`, `ready`, `restricted`, and `quota_enforced`
 separately: a project that exists but is unrestricted or unquotaed is a fence with no fence in it, and
 that state has to be visible on its own.  `revoke` is an optional 1.x operation.
+
+### Ending a lease
+
+When a consumer is removed, or the capability that requested the lease is switched off (an
+`enabled_by` toggle, for example), the target deployment no longer declares the resource. Retaining a
+database or bucket retains data; retaining a compute lease the same way would retain a still-trusted
+access grant. After the new deployment starts, Core therefore runs `revoke` through the **previous
+deployment's frozen Provider artifact**: the lease's restricted certificate is withdrawn while the
+project, its instances and its network stay in place (`INCUS-R-014`). An apply that removes the Provider
+in the same step can still revoke through the old artifact. A Provider that declares no `revoke` is
+recorded as `unsupported` with a warning, and its certificate stays trusted.
+
+A failed revocation is never recorded as done. By default it aborts the activation and restores the
+previous deployment; only an explicit `--allow-risky` accepts an unconfirmed revocation (a daemon that
+is gone for good, say), recording `revocation: unconfirmed` on the resource state with a warning. The
+state's `status` stays `retained`; `revocation` is one of `confirmed`, `unconfirmed` or `unsupported`.
+Declaring the same resource again lets `ensure` re-register the stable certificate, and the ownership
+markers show it is still the same lease.
+
+`deletion_policy` accepts only `retain`: no Provider deletes a lease project, and accepting `delete`
+would promise a cleanup that never happens.
+
+### The result schema describes the lease Core records
+
+As with the other resource contracts, an operation's `result_schema` describes what Core records and
+projects once the operation succeeds, not the Provider's stdout: the Runner judges a Provider operation by
+its exit status alone. `ensure`'s `sandbox-result.yml` matches the lease facts in resource state and the
+private projection above. The endpoint and pinned server certificate come from the Provider Module's own
+exported configuration, `<PROVIDER>_ENDPOINT` and `<PROVIDER>_SERVER_CERT_B64`, and the optional
+`<PROVIDER>_CONTROL_NETWORK_NAME` names the control bridge consumers attach to (`<PROVIDER>` is the
+upper-cased Provider Module name). Core refuses to publish a lease when a required key is missing. Whatever
+a Provider prints for `inspect` or `revoke` is for human diagnosis and never enters Core state.
 
 The ready lease is published into the consumer's private namespace:
 
@@ -171,9 +209,8 @@ refused, because otherwise a reviewed lease would drift as the remote publishes 
 caller-supplied devices, raw configuration, mounts, or host sockets.
 
 The contract does not install, configure, or host the provider daemon, and does not require the ANAS
-host to support virtualization: it is a client control plane for that daemon. `deletion_policy: delete`
-expresses explicit deletion intent only, and is still handled as retain until Core offers a destructive
-resource delete entry point.
+host to support virtualization: it is a client control plane for that daemon. `deletion_policy` accepts
+only `retain`; removing the declaration revokes the certificate and keeps the project, see "Ending a lease".
 
 How a one-time secret (a runner token, for instance) reaches a guest is outside this contract. That
 happens after the lease is delivered: the consumer uses the shared `computeclient.ExecStdin` directly
@@ -219,7 +256,10 @@ cancels the child and returns a fixed error without partial output. Diagnostics 
 `WaitDelay` bounds post-exit pipe waiting, caller cancellation retains its error identity and absent stdin
 is closed. These constraints do not establish real guest cleanup after cancellation. Instance inventories
 reject `null` and duplicate managed identities; managed filtering uses the same name rules as creation. A successful delete command must
-also be followed by a read confirming that the instance is absent.
+also be followed by a read confirming that the instance is absent. Reading one instance lists the whole lease
+project and matches the exact name client-side: the Incus 7.x CLI parses `<remote>:<name>` as a remote with no
+filter and returns an empty list (6.0 treated it as a name-prefix filter). The previous form read every instance as
+absent on 7.x, so a delete confirmation could pass falsely; the 2026-09-26 Incus 7.0.1 native lifecycle found it.
 
 ## Structured declarations and frozen deployment images
 

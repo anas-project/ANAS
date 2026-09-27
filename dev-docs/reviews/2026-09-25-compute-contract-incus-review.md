@@ -16,6 +16,13 @@
 > 并在 7.x daemon 上按 API extension 写入 `restricted.storage-pools.access` 与 `restricted.virtual-machines.nesting`。
 > 实机（2026-09-26）：1.1—1.3 与 7.x 键在 Incus 6.0.5、7.0.1、7.5.1 一次性 VM 上通过，见
 > [实机核验](2026-09-26-incus-fence-native-validation.md)。
+> 续（2026-09-26）：1.4 以 `INCUS-R-111` 修复——目标部署不再声明租约时，Core 经上一部署冻结的 Provider
+> 执行 `revoke`，失败默认中止激活，`--allow-risky` 才记为未确认；compute 的 `deletion_policy` 只收 `retain`。
+> `inspect` 的管理员入口按 Module Command 计划 M4 的归属确认留给消费者命令，未新增。2.1 以文档与回归
+> 处理：`result_schema` 与其他资源 Contract 一样描述 Core 记录并投影的结果而非 Provider stdout，
+> Contract 技术文档写明 Provider 须导出的配置键，新增测试保证 `sandbox-result.yml` 的必需字段都投影给
+> 消费者。3.3 已统一为 `computeingress.ValidWorkloadID`，`Create` 与发布请求同一规则。第 5 节
+> `module.yml` 的过时注释已改写。2.2、2.3、3.2 与第 4 节仍未处理。
 
 下文区分三类：**已观察缺陷**（调用链已核对，部分有探针复现）、**设计债**（行为与需求/命名/契约不一致，但不是
 立即可利用的错误）、**未验证假设**（需要实机核对）。

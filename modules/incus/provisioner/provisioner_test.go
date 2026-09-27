@@ -12,9 +12,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"math/big"
 	"mime/multipart"
+	stdnet "net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -71,12 +73,40 @@ type fakeDaemon struct {
 	apiExtensions             []string
 	certificates              map[string]certificate
 	networks                  map[string]network
+	acls                      map[string]networkACL
+	aclWriteFilter            func(*networkACL)
+	subnetSeq                 int
 	profiles                  map[string]profile
 	posted                    []string
 	puts                      []project
 	server                    *httptest.Server
 	projectWriteFilter        func(map[string]string)
 	networkWriteFilter        func(map[string]string)
+}
+
+// assignSubnets mirrors the daemon replacing "auto" with a concrete subnet.
+func (d *fakeDaemon) assignSubnets(config map[string]string) {
+	if config["ipv4.address"] == "auto" {
+		d.subnetSeq++
+		config["ipv4.address"] = fmt.Sprintf("10.%d.0.1/24", 100+d.subnetSeq)
+	}
+	if config["ipv6.address"] == "auto" {
+		d.subnetSeq++
+		config["ipv6.address"] = fmt.Sprintf("fd42:%x::1/64", 0x100+d.subnetSeq)
+	}
+}
+
+// networkACLsKnown mirrors the daemon refusing a bridge that names an ACL it
+// does not have.
+func (d *fakeDaemon) networkACLsKnown(config map[string]string) bool {
+	for _, name := range strings.Split(config["security.acls"], ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			if _, ok := d.acls[name]; !ok {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func newFakeDaemon(t *testing.T) *fakeDaemon {
@@ -88,6 +118,7 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 		projects:       map[string]map[string]string{},
 		certificates:   map[string]certificate{},
 		networks:       map[string]network{},
+		acls:           map[string]networkACL{},
 		profiles:       map[string]profile{},
 		// An Incus 6.0 LTS daemon: none of the 7.x restriction extensions.
 		apiExtensions: []string{"projects", "projects_restrictions", "projects_limits_disk"},
@@ -231,9 +262,53 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 		if d.networkWriteFilter != nil {
 			d.networkWriteFilter(body.Config)
 		}
+		if !d.networkACLsKnown(body.Config) {
+			writeError(w, 400, "unknown network ACL")
+			return
+		}
+		d.assignSubnets(body.Config)
 		d.networks[body.Name] = body
 		d.posted = append(d.posted, "network:"+body.Name)
 		writeSync(w, nil)
+	})
+	mux.HandleFunc("/1.0/network-acls", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("project") != "default" {
+			writeError(w, 400, "network ACLs of lease bridges live in the default project")
+			return
+		}
+		var body networkACL
+		json.NewDecoder(r.Body).Decode(&body)
+		if d.aclWriteFilter != nil {
+			d.aclWriteFilter(&body)
+		}
+		d.acls[body.Name] = body
+		d.posted = append(d.posted, "acl:"+body.Name)
+		writeSync(w, nil)
+	})
+	mux.HandleFunc("/1.0/network-acls/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("project") != "default" {
+			writeError(w, 400, "network ACLs of lease bridges live in the default project")
+			return
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/1.0/network-acls/")
+		switch r.Method {
+		case http.MethodGet:
+			existing, ok := d.acls[name]
+			if !ok {
+				writeError(w, 404, "not found")
+				return
+			}
+			writeSync(w, existing)
+		case http.MethodPut:
+			var body networkACL
+			json.NewDecoder(r.Body).Decode(&body)
+			body.Name = name
+			if d.aclWriteFilter != nil {
+				d.aclWriteFilter(&body)
+			}
+			d.acls[name] = body
+			writeSync(w, nil)
+		}
 	})
 	mux.HandleFunc("/1.0/networks/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("project") != "default" {
@@ -257,6 +332,11 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 			if d.networkWriteFilter != nil {
 				d.networkWriteFilter(body.Config)
 			}
+			if !d.networkACLsKnown(body.Config) {
+				writeError(w, 400, "unknown network ACL")
+				return
+			}
+			d.assignSubnets(body.Config)
 			d.networks[name] = body
 			writeSync(w, nil)
 		}
@@ -406,11 +486,12 @@ func TestEnsureCreatesRestrictedQuotaedProject(t *testing.T) {
 		t.Errorf("restricted = %q, want true", config["restricted"])
 	}
 	// Project-wide totals, not the per-instance numbers the contract states.
+	// A VM root disk is accounted with its 500MiB state volume on top.
 	for key, want := range map[string]string{
 		"limits.instances": "8",
 		"limits.cpu":       "32",
 		"limits.memory":    "65536MiB",
-		"limits.disk":      "320GiB",
+		"limits.disk":      "331680MiB",
 	} {
 		if config[key] != want {
 			t.Errorf("%s = %q, want %q", key, config[key], want)
@@ -838,9 +919,9 @@ func TestVerifyProfileRefusesAnythingBeyondTheTwoDevices(t *testing.T) {
 	l := testLease(t, "vm")
 	bridge := computeclient.NetworkName(l.Sandbox)
 	good := map[string]device{
-		"root": {"type": "disk", "path": "/", "pool": l.StoragePool},
+		"root": {"type": "disk", "path": "/", "pool": l.StoragePool, "size.state": "500MiB"},
 		"eth0": {"type": "nic", "network": bridge,
-			"security.mac_filtering": "true", "security.ipv4_filtering": "true", "security.ipv6_filtering": "true"},
+			"security.mac_filtering": "true", "security.ipv4_filtering": "true"},
 	}
 	for name, devices := range map[string]map[string]device{
 		"an extra device": {
@@ -897,8 +978,9 @@ func TestLeaseNetworkFollowsTheHostIPv6Posture(t *testing.T) {
 				t.Fatal(err)
 			}
 			net := d.networks[computeclient.NetworkName(l.Sandbox)]
+			isSubnet := func(value string) bool { _, _, err := stdnet.ParseCIDR(value); return err == nil }
 			if want {
-				if net.Config["ipv6.address"] != "auto" || net.Config["ipv6.nat"] != "true" {
+				if !isSubnet(net.Config["ipv6.address"]) || net.Config["ipv6.nat"] != "true" {
 					t.Fatalf("network = %v, want NATed IPv6", net.Config)
 				}
 			} else {
@@ -912,7 +994,7 @@ func TestLeaseNetworkFollowsTheHostIPv6Posture(t *testing.T) {
 				}
 			}
 			// IPv4 is unconditional either way.
-			if net.Config["ipv4.address"] != "auto" || net.Config["ipv4.nat"] != "true" {
+			if !isSubnet(net.Config["ipv4.address"]) || net.Config["ipv4.nat"] != "true" {
 				t.Fatalf("network = %v, want NATed IPv4", net.Config)
 			}
 		})
@@ -1064,5 +1146,24 @@ func TestEnsurePreservesAllocatedSubnetsAndDisablesOldIPv6NAT(t *testing.T) {
 	}
 	if d.networks[name].Config["ipv6.address"] != "none" || d.networks[name].Config["ipv6.nat"] != "" || d.networks[name].Config["user.operator"] != "preserve" {
 		t.Fatal("IPv6 shutdown or unrelated configuration preservation failed")
+	}
+}
+
+// Incus adds a VM's size.state (500MiB by default) to the root size when it
+// totals limits.disk. Budgeting only the root made a VM using its full
+// per-instance disk impossible to create (2026-09-26 native lifecycle).
+func TestVMLeaseBudgetsTheStateVolume(t *testing.T) {
+	vm, container := testLease(t, "vm"), testLease(t, "container")
+	if got := projectConfig(vm)["limits.disk"]; got != "331680MiB" {
+		t.Fatalf("VM limits.disk = %q, want 8 x (40GiB + 500MiB)", got)
+	}
+	if got := projectConfig(container)["limits.disk"]; got != "320GiB" {
+		t.Fatalf("container limits.disk = %q, want 8 x 40GiB", got)
+	}
+	if got := desiredLeaseProfile(vm, "bridge").Devices["root"]["size.state"]; got != vmStateVolumeSize {
+		t.Fatalf("VM root size.state = %q, want it pinned so the accounting cannot drift", got)
+	}
+	if _, present := desiredLeaseProfile(container, "bridge").Devices["root"]["size.state"]; present {
+		t.Fatal("containers have no state volume to budget")
 	}
 }

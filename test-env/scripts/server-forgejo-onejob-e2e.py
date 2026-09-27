@@ -487,6 +487,9 @@ LEVEL = Error
         bridge = 'anas'+hashlib.sha256(PROJECT.encode()).hexdigest()[:10]
         if cli('network', 'show', bridge, check=False).returncode == 0:
             cli('network', 'delete', bridge)
+        # The lease source fence ACL shares the bridge name; free it after the bridge.
+        if cli('network', 'acl', 'show', bridge, check=False).returncode == 0:
+            cli('network', 'acl', 'delete', bridge)
         if cli('storage', 'show', POOL, check=False).returncode == 0:
             cli('storage', 'delete', POOL)
         for cert in json.loads(cli('config', 'trust', 'list', '--format=json').stdout):

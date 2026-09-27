@@ -331,7 +331,19 @@ def write_new(path, body, mode=0o600):
         os.fsync(output.fileno())
 
 
-def install_fixture(manifest):
+DEFAULT_WORKSPACES = (('native', '/srv/anas/host-action-native'), ('other', '/srv/anas/host-action-other'))
+
+
+def install_fixture(manifest, workspaces=DEFAULT_WORKSPACES, prepare_workspace=None):
+    """Install the release fixture. Callers that exercise workspace-wide host
+    actions (image prune reads every registered workspace) may register only
+    the workspaces they actually create. anasd refuses to register a path
+    without `.anas`, so each one is prepared before the service starts: a bare
+    marker by default, or a real workspace through `prepare_workspace(path)`
+    (for example the installed `anas init`)."""
+    require(bool(workspaces) and all(re.fullmatch(r'[a-z][a-z0-9-]{0,31}', ident) and
+                                     re.fullmatch(r'/srv/anas/[a-z0-9-]{1,64}', path) for ident, path in workspaces),
+            'workspace_registration')
     validate_lab_release(manifest['release'])
     require(set(manifest['artifacts']) == ARTIFACTS, 'artifact_set')
     for name, digest in manifest['artifacts'].items():
@@ -377,9 +389,13 @@ def install_fixture(manifest):
             'binary_release_mismatch')
     cli_release = json.loads(capture(['/usr/local/bin/anas', 'version', '--json']))
     require(all(cli_release.get(key) == value for key, value in manifest['release'].items()), 'cli_release_mismatch')
-    for workspace in ('native', 'other'):
-        directory = Path('/srv/anas') / ('host-action-' + workspace)
-        (directory / '.anas').mkdir(mode=0o700, parents=True)
+    for _, path in workspaces:
+        directory = Path(path)
+        if prepare_workspace is None:
+            (directory / '.anas').mkdir(mode=0o700, parents=True)
+        else:
+            prepare_workspace(directory)
+        require((directory / '.anas').is_dir() and not (directory / '.anas').is_symlink(), 'workspace_marker')
     hosts = Path('/etc/hosts').read_text()
     require('anas.native.test' not in hosts, 'fixture_hostname_preexists')
     with Path('/etc/hosts').open('a') as output:
@@ -397,6 +413,7 @@ def install_fixture(manifest):
     write_new(TLS/'issuer-marker', 'internal\n', 0o644)
     os.chmod(TLS/'server.key', 0o600)
     os.chmod(TLS/'ca.key', 0o600)
+    registered = '\n'.join(f'  - id: {ident}\n    path: {path}' for ident, path in workspaces)
     write_new(CONFIG, f'''api_version: anas.console-config/v1
 mode: loopback
 port: 18445
@@ -404,10 +421,7 @@ allowed_dns_hosts: [anas.native.test]
 console_store: /var/lib/anas/console
 host_actions: true
 workspaces:
-  - id: native
-    path: /srv/anas/host-action-native
-  - id: other
-    path: /srv/anas/host-action-other
+{registered}
 tls:
   lego:
     base_domain: native.test

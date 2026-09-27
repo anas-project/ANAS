@@ -118,7 +118,7 @@ func unusedControlNetwork(network dockerNetwork, ownerID, expectedID string) err
 // Package ownership at installation time does not confer ownership of objects
 // subsequently created by another administrator in the same daemon.
 func (r *localRuntime) checkSharedDaemonUnused(ctx context.Context, ownership Ownership) error {
-	for _, collection := range []string{"projects", "storage-pools", "networks", "profiles", "images", "certificates"} {
+	for _, collection := range []string{"projects", "storage-pools", "networks", "network-acls", "profiles", "images", "certificates"} {
 		var objects []json.RawMessage
 		var err error
 		if collection == "storage-pools" {
@@ -162,7 +162,9 @@ func (r *localRuntime) checkSharedDaemonUnused(ctx context.Context, ownership Ow
 				if decodeInventoryObject(raw, &profile, "name", "config", "devices") != nil || profile.Name != "default" || len(profile.Config) != 0 || len(profile.Devices) != 0 {
 					return ErrBlocked
 				}
-			case "images":
+			case "images", "network-acls":
+				// Lease source-fence ACLs are left by a Consumer that has not
+				// been revoked; any ACL means the daemon is still in use.
 				return ErrBlocked
 			case "certificates":
 				var cert incusCertificate

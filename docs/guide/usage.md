@@ -206,6 +206,10 @@ anas apply -w /srv/anas
 的口令、需要迁移的数据库。`apply` 会以退出码 4 拒绝并指名是哪一项。安排好迁移之后
 用 `--allow-risky` 继续。
 
+移除一个 compute 消费者（或关闭它的 Actions 之类能力）时，`apply` 会撤销该租约在 Incus 上的
+受限证书，project 与实例保留。daemon 不可达导致撤销失败时，本次 apply 失败并恢复上一个部署；
+确认 daemon 已永久不存在时才用 `--allow-risky` 继续，此时撤销记为未确认。
+
 ---
 
 ## 五、出问题的时候

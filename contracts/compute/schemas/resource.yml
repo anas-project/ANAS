@@ -64,8 +64,11 @@ properties:
     properties:
       policy:
         enum: [generated]
+  # Removing the declaration revokes the lease certificate and keeps the
+  # project and its instances. No Provider deletes a lease project, so
+  # "delete" is not offered.
   deletion_policy:
-    enum: [retain, delete]
+    enum: [retain]
   # Declaration/freezing only until real-host acceptance. Runtime publishing
   # stays disabled; omission grants no HTTP publication authority.
   ingress:

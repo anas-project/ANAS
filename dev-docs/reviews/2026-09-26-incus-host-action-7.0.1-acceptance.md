@@ -77,6 +77,14 @@ GOPROXY=off -trimpath` 加发布 ldflags 构建；与 native.11 相比二进制�
 dpkg 库存完全相同。正常关机、QEMU 退出码 0、清理通过，物理宿主 10 项基线前后一致，通过轮已删除 VM 文件。
 包版本取自同源同日 native.11 轮的失败诊断（native.12 证据不记录包版本），两次运行间隔约一小时。
 
+## 2026-09-27 复验（`0.0.0-native.20`）
+
+删包前的共享 daemon 盘点新增 `network-acls` 集合（来源围栏 ACL，见
+[来源围栏](2026-09-27-incus-source-fence-acl.md)），并调整了 `install_fixture` 的登记工作区参数（默认行为
+不变）。以快照提交 `37b3cc38`（树 `9738a9e8`）在全新 Ubuntu 26.04 上重跑 r7-n20：23/23 通过，删 4 个受管包、
+681 个原有包保留，14 个成功 job，物理宿主十项对照相同，VM 文件已删除；归档
+`89ebb89e2c37d11625b7bdaea395bc09f195937555cb4e0bb097e423d53f675a`。Ubuntu 24.04 与 Debian 13 未重跑。
+
 ## 结论
 
 - Incus 7.0.1 LTS（Zabbly `lts-7.0`）在三个一级发行版 amd64 上通过实际审批链路的完整宿主供给与卸载，

@@ -48,8 +48,12 @@ Incus 在异步删除完成后可能暂留成功操作记录。非空 `success` 
 等原清单自然变空后重新计划；不能删除记录或把“操作成功”解释为“无操作”。原生夹具
 在操作记录自然消失后先验证可计划，再执行独立的物理端口反例，避免前置故障造成假通过。
 
-Provider profile 要求 MAC、IPv4、IPv6 来源过滤，实例观察器再次检查 expanded NIC，
-缺失或被覆盖时拒绝。nft 中接口名称不是编号证明；编译读取器以只读 netlink 获取
+Provider profile 要求 MAC 与 IPv4 来源过滤，实例观察器再次检查 expanded NIC，
+缺失或被覆盖时拒绝。IPv6 来源过滤（`security.ipv6_filtering`）不在 profile 中：Incus 只在宿主加载
+`br_netfilter` 且 `bridge-nf-call-ip6tables=1` 时才启动带该项的实例，而 Docker 28 起默认不再加载
+该模块；2026-09-26 的 Debian 13 / Incus 7.0.1 原生生命周期因此实测无法启动任何租约实例。
+IPv6 伪造源改由上文的来源围栏 ACL 在宿主 forward/input 钩子丢弃；它约束的是离开网桥的源子网，不区分同一租约
+子网内的不同 guest，同租约 guest 间的 IPv6 冒用仍不受约束。nft 中接口名称不是编号证明；编译读取器以只读 netlink 获取
 规则及集合成员中的实际编号，不根据当前同名设备认领旧许可。2026-09-25 的独立第六轮
 已验证实际内核精确许可、来源冒用拒绝、管理员早期拒绝及同一既有连接撤销；端点仍是
 namespace 进程。退役后端、真实 guest 和完整 Forgejo 分别验收，不能互相替代。
@@ -447,6 +451,19 @@ bridge 的所有者是 Provider，API 请求显式使用 `project=default`；租
 网络创建/更新后读回类型、归属、地址及 NAT，再建立 profile。不同 bridge 本身不证明流量隔离，
 跨租约接网、网络写权限和真实出网仍须实机验收。
 
+每张租约 bridge 另挂一份 Provider 自有的来源围栏 network ACL（default project，与 bridge 同名，
+带同样的 consumer/sandbox 标记及租约证书摘要）。它只有一条启用的 egress 规则：`allow`，
+`source` 恰为 bridge 实际分配的 IPv4（及 IPv6 启用时的 IPv6）子网；bridge 设
+`security.acls=<ACL>`、`security.acls.default.egress.action=drop`、
+`security.acls.default.ingress.action=allow`。Incus 在网桥的 input/forward 钩子上执行它，DNS、DHCP
+与核心 ICMPv6（RS/NS/NA/MLD）由 Incus 内建规则先放行，回包由 conntrack 放行。于是 guest 伪造子网外
+源地址的报文在宿主转发或本机接收时被丢弃，不会未经 masquerade 出网；IPv6 关闭的租约只放行 IPv4 子网，
+任何 IPv6 转发一并被挡。ACL 在 bridge 分配出具体子网后才写（引用不存在的 ACL 会被 daemon
+拒绝），写后读回；同名 ACL 若归属标记不符（包括无标记）即拒绝接管、不改写、不登记证书——ACL 是新对象，
+没有需要兼容的无标记历史。`inspect.ready` 同样要求挂接键、规则恰为一条且来源集合等于当前子网；
+任何多余规则、入向规则、禁用或放宽都算漂移，`ensure` 以整体 PUT 修复。宿主包卸载盘点把任何
+network ACL 视为 daemon 仍在使用。
+
 profile 固定名为 `anas-lease`，只有两个设备：
 
 | 设备 | 内容 |
@@ -469,7 +486,7 @@ guest 一个宿主路由不到的 v6 地址，表现是每次出网先等一次�
 第 5 步的两条拒绝是 Provider 侧的越权防线：一张已被以全局权限信任的证书，如果这里默默接受，
 消费者拿到的就是整台 daemon。
 
-`inspect` 的 `ready` 要求全部 project 围栏、存储池准入、网络归属/NAT、profile、受限证书和冻结镜像
+`inspect` 的 `ready` 要求全部 project 围栏、存储池准入、网络归属/NAT、来源围栏 ACL、profile、受限证书和冻结镜像
 当前仍然有效；不是只看 project 存在或网络作用域。撤销证书后 project 保留，但不再 ready。
 检查不读取供给文件、不导入镜像、不修复配置或重新授权，仍分别保留 restricted 与 quota 标志。
 `inspect` 只读，分别报告 `exists`、`ready`、`restricted`、`quota_enforced`。project 不存在时返回
@@ -477,6 +494,10 @@ guest 一个宿主路由不到的 v6 地址，表现是每次出网先等一次�
 
 `revoke` 删除消费者证书，保留 project。删 project 会连带销毁里面的实例，而那些实例从来不属于
 本 Contract。对不存在的 fingerprint 删除是幂等成功。
+
+消费者被移除或其能力被关闭、目标部署不再声明租约时，Core 用上一个部署冻结的本 Module 产物调用
+`revoke`；失败默认中止激活，只有 `--allow-risky` 才记录未确认的撤销。resource state 保持
+`retained` 并记录 `revocation`，细节见 compute Contract 技术文档「租约的结束」。
 
 ## 配额映射
 
@@ -488,7 +509,12 @@ Contract 说的是每实例上限，Incus project 说的是项目总量，`proje
 | `quota.max_instances` | `limits.instances` | 原值 |
 | `quota.cpu` | `limits.cpu` | `max_instances × cpu` |
 | `quota.memory_mib` | `limits.memory` | `max_instances × memory_mib` MiB |
-| `quota.disk_gib` | `limits.disk` | `max_instances × disk_gib` GiB |
+| `quota.disk_gib` | `limits.disk` | 容器档 `max_instances × disk_gib` GiB；VM 档 `max_instances × (disk_gib GiB + 500 MiB)` |
+
+VM 档多出的 500 MiB 是 Incus 给每个 VM 根块卷附带的状态文件系统卷（`size.state`）：daemon 统计
+`limits.disk` 时把它加在根盘大小上。只按根盘预算时，用满单实例磁盘配额的 VM 永远建不出来
+（2026-09-26 Incus 7.0.1 实测 `Reached maximum aggregate value`，6.0.5 源码同样计入）。VM 档 profile
+的根设备因此显式写 `size.state=500MiB`，让预算不随 daemon 默认值漂移。
 
 项目 `limits.disk` 限制的是声明总量，不能证明根磁盘真的限额。实机探查发现 `dir` 在底层未启用
 project quota 时可仅警告并继续创建卷，因此本版仅准入状态 `Created` 的 `btrfs`/`zfs` 池；
@@ -516,6 +542,11 @@ Provider 仍兼容已有的 6.0 daemon。每个键要么显式写入严格值，
 project 键，所以 7.x 键只在 daemon 声明支持时写入；而 daemon 支持却不写时，
 `restricted.virtual-machines.nesting` 默认 `allow`、`restricted.storage-pools.access` 默认允许所有池，
 都是宽松值。daemon 不返回 extension 列表时失败关闭，不当作 6.0 处理。
+
+没有该扩展的 daemon（包括默认安装的 Incus 7.0 LTS）无法从项目层阻止 VM 嵌套虚拟化：`security.nesting`
+在那里是容器专用键，VM 接受但不生效，2026-09-26 在嵌套 KVM 宿主上实测 VM 租约 guest 可见 `vmx`。
+这是版本限制，不是 Provider 可以补上的配置；需要该保证的部署应使用带 `projects_restricted_virtual_machines_nesting`
+的 daemon，或在宿主层关闭嵌套 KVM。
 
 支持 VM nesting 限制的 daemon 默认给 VM 打开嵌套虚拟化，限制设为 `block` 后会拒绝任何没有显式写
 `security.nesting=false` 的 VM（7.5.1 `checkRestrictions`）。因此这类 daemon 上 VM 档 profile 同时写入
@@ -1340,6 +1371,18 @@ QEMU VM，要求无 Docker、初始 Incus 库存为空。使用真实 btrfs、�
 租约，覆盖实际 stdin、写满、取消后的独立删除和幂等回收。测试镜像是有真实摘要的最小
 原生夹具，不是正式 Runner 或发布目录条目，不证明 distrobuilder、ZFS、VM 档、one-job
 或生产 ingress 已验收。流程及边界见[宿主供给设计](../../../docs/architecture/incus-host-provisioning.md) §7.18。
+
+2026-09-26 起同一脚本接受 `--interface container|vm`：VM 档要求实验 VM 内有嵌套 KVM，并以上游
+Debian VM 镜像为底、经 agent 推入同一夹具程序后发布、导出成有摘要的 VM 夹具（4 GiB 根盘，
+仍不是产品镜像）。两档共用同一测试矩阵，另加设备/低层配置拒绝（容器 unix-char/unix-block/
+privileged/`raw.lxc`，VM pci/`raw.qemu`）、`typical-job-wall-time` 时延与 VM 嵌套虚拟化的版本相关检查。
+`server-incus-network-e2e.py` 以独立 netns 作上游，验证 IPv6 启用/关闭两种租约的出网均被
+masquerade；随后 guest 以静态邻居直送网桥、伪造子网外两族源地址，上游 nft 计数必须为 0，IPv6 租约
+还要求伪造 IPv6 报文确实到达实验 VM 的路由层（证明是围栏挡下），并做一次故意漂移（加 allow-all
+规则）：泄漏可被计数看见、Provider `inspect` 报未就绪、`ensure` 修复后不再泄漏。宿主侧所有者脚本 `server-incus-lifecycle-lab.py` 在一台一次性 VM 里依次运行三者，
+`hold-*` 代号可保留 VM 供诊断，但不计为验收。结果与发现的缺陷见
+[两档生命周期](../../../dev-docs/reviews/2026-09-26-incus-vm-tier-lifecycle.md)与
+[来源围栏](../../../dev-docs/reviews/2026-09-27-incus-source-fence-acl.md)。
 
 ## 默认 Runner 配方的真实 copy 验证（2026-09-22）
 

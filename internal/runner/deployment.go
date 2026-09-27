@@ -1177,7 +1177,11 @@ func activateDeployment(base, id string, opts activateOptions) error {
 			return activationFailure(base, id, "start_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 		}
 	}
-	if err := retainRemovedResources(base, current, target); err != nil {
+	revocations, err := revokeRemovedComputeLeases(oldApp, current, target, opts.allowRisky)
+	if err != nil {
+		return activationFailure(base, id, "resource_revoke_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
+	}
+	if err := retainRemovedResources(base, current, target, revocations); err != nil {
 		return activationFailure(base, id, "resource_state_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 	}
 

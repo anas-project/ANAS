@@ -7,12 +7,14 @@ host Docker socket. The fixture image is explicitly not a signed/bootable guest.
 """
 import argparse
 from collections import Counter
+import http.client
 import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import sys
 
 INPUTS = Path('/opt/anas-core-inputs')
@@ -22,9 +24,39 @@ CORE_TESTS = (CORE_PARENT, *(CORE_PARENT + '/' + name for name in (
     'approved_host_and_empty_experiment', 'trusted_fixture_and_actual_provider_compose',
     'cli_render_without_manual_host_connection', 'frozen_target_and_private_resource_projections',
     'real_compose_apply_and_nonroot_image_import', 'two_existing_projects_are_mutually_restricted',
-    'repeat_cli_render_and_apply_preserves_credentials',
-    'owned_test_resources_cleaned_and_daemon_identity_preserved')))
+    'repeat_cli_render_and_apply_preserves_credentials', 'removed_consumer_lease_is_revoked',
+    'failed_activation_leaves_new_revision_outside_rollback', 'stopped_for_explicit_prune')))
+CLEANUP_TESTS = ('TestNativeCoreComputeCleanup',)
 REVOKED_TESTS = ('TestNativeCoreRejectsRevokedAutomaticConnection',)
+# Image prune reads every registered workspace, so register only the one the
+# Core test creates.
+CORE_WORKSPACES = (('native', '/srv/anas/host-action-native'),)
+STATE = Path('/opt/anas-core-projection/private/core-state.json')
+
+
+def incus_images(project):
+    """Read one project's image fingerprints straight from the local daemon."""
+    connection = http.client.HTTPConnection('localhost', timeout=30)
+    connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    connection.sock.settimeout(30)
+    connection.sock.connect('/var/lib/incus/unix.socket')
+    connection.request('GET', '/1.0/images?recursion=1&project=' + project)
+    response = connection.getresponse()
+    body = json.loads(response.read(4 << 20))
+    connection.close()
+    if response.status != 200 or body.get('type') != 'sync':
+        raise RuntimeError('image inventory unavailable')
+    return sorted(item['fingerprint'] for item in body['metadata'])
+
+
+def prune_verdicts(state, planned, applied):
+    """Exactly the failed deployment's revision is deleted; rollback targets stay."""
+    retained = {(item['project'], item['fingerprint']): item['reasons'] for item in planned.get('retained') or []}
+    target = {'project': 'anas-core-one', 'fingerprint': state['pin_r2']}
+    return (planned.get('delete') == [target]
+            and 'current_deployment' in retained.get(('anas-core-one', state['pin_r1']), [])
+            and 'previous_deployment' in retained.get(('anas-core-two', state['pin_r1']), [])
+            and applied.get('deleted') == [{**target, 'verified': True}] and applied.get('partial') is False)
 
 
 def events_passed(events, expected, code):
@@ -78,7 +110,15 @@ def run(identity):
                    manifest['files']['anas'] == source['artifacts']['anas'], 'core_product_identity')
     supervisor = load_module('core_native_process', INPUTS/'server-incus-host-provision-e2e.py')
     baseline = native.guarded_vm(identity)
-    token = native.install_fixture(source)
+    def init_workspace(path):
+        # The installed product CLI creates the one workspace this test uses;
+        # the fixture never manufactures its state.
+        require_fresh = not path.exists()
+        native.require(require_fresh, 'core_workspace_preexists')
+        path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+        native.capture(['/usr/local/bin/anas', 'init', str(path), '--yes', '--json'])
+
+    token = native.install_fixture(source, CORE_WORKSPACES, init_workspace)
     events = []
     stage = 'approved_host_install_configure_enroll'
 
@@ -127,6 +167,22 @@ def run(identity):
         passed(stage, job_ids=setup)
         stage = 'core_cli_compose_projection'
         native_test(stage, CORE_TESTS)
+        stage = 'image_prune_confirmed_delete'
+        state = json.loads(STATE.read_text())
+        native.require(incus_images('anas-core-one') == sorted([state['pin_r1'], state['pin_r2']]), 'prune_precondition')
+        plan = client.wait_job(client.cli('incus-prune-plan', '-w', 'native', '--session-json', '-'))
+        planned = plan['result']['value']['plan']
+        proof = client.cli('incus-confirm', '-w', 'native', '--plan-job', plan['id'],
+                           '--action', 'incus.image-prune', '--session-json', '-')
+        client.credentials.append(proof['token'])
+        envelope = {'session': client.envelope(), 'plan_job_id': plan['id'], 'confirmation_token': proof['token']}
+        applied = client.wait_job(client.cli('incus-prune-apply', '-w', 'native', '--request-json', '-', request=envelope))
+        native.require(prune_verdicts(state, planned, applied['result']['value']), 'prune_result')
+        native.require(incus_images('anas-core-one') == [state['pin_r1']] and
+                       incus_images('anas-core-two') == [state['pin_r1']], 'prune_readback')
+        passed(stage, plan_job=plan['id'], apply_job=applied['id'], deleted=1)
+        stage = 'core_owned_resources_cleaned'
+        native_test(stage, CLEANUP_TESTS)
         stage = 'approved_host_connection_revocation'
         removed = confirmed('uninstall')
         passed(stage, job_id=removed)
@@ -139,7 +195,7 @@ def run(identity):
     except Exception as error:
         events.append({'stage': stage, 'status': 'failed', **native.public_failure(error)})
     unchanged = native.docker_identity() == baseline
-    complete = len(events) == 5 and all(event['status'] == 'passed' for event in events) and unchanged
+    complete = len(events) == 7 and all(event['status'] == 'passed' for event in events) and unchanged
     result = {'schema': 'anas.native-core-projection/v1', 'vm_id': identity, 'passed': complete,
               'events': events, 'docker_baseline_unchanged': unchanged,
               'scope': 'actual CLI render/apply, production Hook/Provider and two synthetic Compose consumers; not full Forgejo/AI Agent or bootable/signed guest release'}

@@ -1,6 +1,6 @@
 # Incus 宿主供给与镜像烘焙（设计）
 
-> 状态：**当前实现与目标设计并存，宿主及 Core 投影已有部分实机证据，完整验收未完成**。更新：2026-09-25。本文规定 ANAS 如何在自己所在的宿主上装好 Incus daemon、如何自动
+> 状态：**当前实现与目标设计并存，宿主及 Core 投影已有部分实机证据，完整验收未完成**。更新：2026-09-26。本文规定 ANAS 如何在自己所在的宿主上装好 Incus daemon、如何自动
 > 产出 guest 镜像，以及入站流量怎么走。当前源码已连接 `compute`、宿主供给与镜像工件路径，
 > 但默认镜像发布、生产入站与完整宿主验收仍未完成；当前边界见 §1。
 
@@ -14,13 +14,25 @@ Actions 的用户，不该先去理解 Incus 是什么、更不该先手工装�
 
 ## 1. 现状与缺口
 
+2026-09-26 在 Debian 13 / Zabbly Incus 7.0.1（产品默认来源）上首次跑通两档真实生命周期：容器档与嵌套 KVM
+上的 VM 档都完成创建、stdin exec、配额与设备拒绝、管理证书轮换、取消回收和两档时延基线，双栈阶段
+验证 IPv6 启用/关闭租约的出网都经各自网桥 masquerade。过程中修复三处此前单元层看不出的回归：lease
+profile 要求的 `security.ipv6_filtering` 依赖宿主 `br_netfilter`（Docker 28 起默认不加载）导致实例无法启动，
+已移除；共享客户端 `Inspect` 在 7.x CLI 上恒为 missing，`Delete` 因此从不删除；VM 档磁盘预算漏算 Incus
+计入 `limits.disk` 的状态卷 `size.state`。IPv6 伪造源随后（2026-09-27）由 Provider 自有网桥 network ACL 丢弃，
+实机伪造源到达上游为 0（[来源围栏](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-27-incus-source-fence-acl.md)）。
+未关闭的边界：7.0 LTS 无法从项目层阻止 VM 嵌套虚拟化。记录见
+[两档生命周期](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-26-incus-vm-tier-lifecycle.md)。
+
 租约转发新增共享宿主确认动作与原 `state.json` 回执事务，需求为 INCUS-R-101—R-105。
 当前生产 enable 保留编译侧 `forwarding_lifecycle_integration_unavailable` 门禁；这不是
 已发布的 Docker 自动修复。候选权限精确到实际租约/实例/物理接口和目的 IPv4/TCP，
 30秒后不再允许匹配，尚无自动续期或完整生命周期 owner。disable 使用原回执撤销，
 区分新连接拒绝和既有连接精确清理；拒绝表保留，未完成退役会阻止宿主依赖变更。
-Provider 的 MAC/IPv4/IPv6 来源过滤与真实 expanded NIC 检查已连接，仍不能代替独立
-物理来源验证。默认 Docker 下真实 guest/Forgejo 验收及重启恢复未关闭。
+Provider 的 MAC/IPv4 来源过滤与真实 expanded NIC 检查已连接，仍不能代替独立
+物理来源验证。IPv6 来源过滤依赖宿主 `br_netfilter`（Docker 28 起默认不加载），要求它会让租约实例
+无法启动，已从 profile 移除；宿主供给不启用该模块，伪造源改由 Provider 自有网桥 ACL 在转发/接收时丢弃，
+宿主卸载盘点存在任何 network ACL 即阻止删包。默认 Docker 下真实 guest/Forgejo 验收及重启恢复未关闭。
 
 启用事务的失败出口统一执行一次有界撤回：包括许可刷新后读回、最终持久化、调用方取消
 及会话关闭失败。撤回在原宿主状态锁下使用独立30秒上下文，每步仍须先持久化意图；不
