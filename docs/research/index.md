@@ -10,6 +10,7 @@
 
 | 文档 | 范围 | 创建 | 证据截至 |
 | --- | --- | --- | --- |
+| [Incus 网络可视化开源项目](./incus-network-visualization-research.md) | 类 AWS VPC 控制台的 Incus 网络可视化候选、概念对应与控制台视图建议 | 2026-09-28 | 2026-09-28 |
 | [Mastodon 相关开源自部署服务](./mastodon-related-self-hosted-services-research.md) | Mastodon、兼容联邦微博与相邻 ActivityPub 服务选型 | 2026-08-21 | 2026-08-21 |
 | [开源自部署 IAM 与 ANAS 适配](./self-hosted-open-source-iam-research.md) | 第三方身份、Passkey、密码写回、应用门户和 Provider 选型 | 2026-08-20 | 2026-08-20 |
 | [BIND 9 开源 Web 管理工具](./bind9-open-source-web-management-research.md) | 标准 BIND、BIND9-DLZ 与管理/监控选型 | 2026-08-19 | 2026-08-19 |
