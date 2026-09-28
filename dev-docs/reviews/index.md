@@ -4,6 +4,10 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [Incus 设计简化评审](2026-09-28-incus-design-simplification-review.md) | 2026-09-28，`dddae0c2` 加累积工作树 | 出站逐实例许可、无消费者的入站、部署热路径协调、hostd 身份链与控制转发的简化路径；未改实现 |
+| [compute 租约出站分级草案](2026-09-28-compute-egress-tiers-draft.md) | 2026-09-28，`dddae0c2` 加累积工作树 | 四档出站与 Module 访问开关、Forgejo 官方建议映射、Incus ACL 执行与撤销；草案，未进矩阵 |
+| [Incus 转发许可：重新授权与增量续期需求草案](2026-09-28-incus-forwarding-regrant-renewal-draft.md) | 2026-09-28，`dddae0c2` 加累积工作树 | 授权要素与绑定事实分离、部署/重启后自动重新打开的条件、逐实例增量续期；草案，未进矩阵 |
+| [Incus 转发续期与入站中介的运行 owner 候选对比](2026-09-27-incus-runtime-owner-candidates.md) | 2026-09-27，`dddae0c2` 加累积工作树 | 独立服务、anasd（调度/进程内两种）与租约绑定许可的利弊，对照既有守护进程结论与 HOSTACT 约束；决策输入，未定案 |
 | [Incus 租约围栏、归属与 7.x 限制键实机核验](2026-09-26-incus-fence-native-validation.md) | 2026-09-26，`0b61448` 加累积工作树 | 6.0.5 / 7.0.1 / 7.5.1 三档一次性 VM 16/18/19 项全部通过；物理网卡定时断链与 Debian IPv4 下载慢的处理；VM 启动、ZFS 与多工作区部署未覆盖 |
 | [compute Contract 与 Incus 实现审查](2026-09-25-compute-contract-incus-review.md) | 2026-09-25，`0b61448` 加累积工作树 | project 围栏不完整、档位未由 daemon 强制、跨工作区共用 project、租约无撤销路径与 Contract 声明失真；未改实现 |
 | [系统容器 Runner cgroup 与作业闭环](2026-09-22-incus-onejob-closeout.md) | 2026-09-22，`3f5242e` 加累积工作树 | 不可变镜像 OCI exec/资源限制、真实作业中断矩阵与物理 Docker 后置基线；终态见正文 |

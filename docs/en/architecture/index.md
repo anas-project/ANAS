@@ -1,5 +1,15 @@
 # Architecture
 
+Lease egress is being redesigned as a static per-lease policy (decided 2026-09-28, not yet implemented). A
+consumer Module declares one of four tiers for its compute lease: `internet` (the default), `internet_lan`,
+`internet_lan_host`, or `modules_only`. It can also enable two switches, `module_access` and `intra_lease`,
+both off by default. The Incus Provider enforces the tier through the lease bridge's network ACL and address
+sets. On the host there is a single static forwarding rule. The LAN is defined positively as the default-route
+interface's connected subnets plus configured extras. Traefik's current address is refreshed from Docker, because
+the ACL sees post-DNAT destinations. This replaces the per-instance 30-second forwarding permits described below;
+no renewal or runtime owner is needed for egress. See
+[section 5.4 of the Chinese host design](/architecture/incus-host-provisioning).
+
 Incus host install plans now freeze the managed workspace's effective `CHINESE_SPEEDUP` in their
 confirmation parameters. Enabled plans use fixed Aliyun distribution mirrors while preserving archive
 signatures and the pinned Zabbly `lts-7.0` Incus source. Guest release baking separately accepts

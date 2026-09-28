@@ -4,6 +4,7 @@ This section contains external investigation, candidate comparison, and technica
 
 Research pages use stable topic-based filenames. Their frontmatter records `created`, `updated`, and, when external facts are volatile, `evidence_as_of`; updating a report does not rename it.
 
+- [Incus network visualization](/research/incus-network-visualization-research) — Chinese original. No existing open-source project gives Incus an AWS VPC-style topology view (the Incus UI and LXConsole are form-based, Skydive is unmaintained, Horizon is tied to Neutron); the recommendation is a read-only per-lease network view in the ANAS console.
 - [Mastodon and ActivityPub self-hosted services](/research/mastodon-related-self-hosted-services-research)
 - [LLNG Passkey/WebAuthn and Samba sharing boundary](/research/llng-passkey-webauthn-samba-sharing)
 - [IAM logout and application-session synchronization](/research/iam-logout-application-session-sync)

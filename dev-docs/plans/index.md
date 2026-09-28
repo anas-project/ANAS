@@ -27,6 +27,7 @@
 | [需求 ID 矩阵采用](requirement-id-adoption.md) | 门禁豁免清单、双向登出矩阵与迁移后扫描边界；验收依据见[要求](../requirements/requirement-id-adoption.md) | 实施中 |
 | [文档驱动测试自动化](document-driven-test-automation.md) | Agent 生成完整测试、需求/用例/代码溯源、SSH 一键服务器执行与报告 | 实施中 |
 | [版本升级 E2E 测试](upgrade-testing.md) | Core、Web 与全部内置 Module 的真实旧版升级、数据往返和发布门禁；验收依据见[要求](../requirements/upgrade-testing.md) | 实施中 |
+| [备份与恢复统一执行](backup-execution.md) | 目的地并发安全、统一目的地登记、job 记录与合流、CLI 在线/离线执行、hostd 执行与恢复确认、宿主串行；验收依据见[要求](../requirements/backup-execution.md) | 提案 |
 | [共享应用层迁移](application-layer-migration.md) | 依赖测绘、子进程边界注入化、三个服务实现迁移与断开 `anasd` 对 runner 的链接；验收依据见[要求](../requirements/application-layer-migration.md) | 提案 |
 
 ## 已归档

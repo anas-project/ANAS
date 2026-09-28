@@ -33,6 +33,7 @@ Provider 的 MAC/IPv4 来源过滤与真实 expanded NIC 检查已连接，仍�
 物理来源验证。IPv6 来源过滤依赖宿主 `br_netfilter`（Docker 28 起默认不加载），要求它会让租约实例
 无法启动，已从 profile 移除；宿主供给不启用该模块，伪造源改由 Provider 自有网桥 ACL 在转发/接收时丢弃，
 宿主卸载盘点存在任何 network ACL 即阻止删包。默认 Docker 下真实 guest/Forgejo 验收及重启恢复未关闭。
+2026-09-28 起，出站改为租约级静态分级（§5.4）；上面这套逐实例许可将停用并删除。
 
 启用事务的失败出口统一执行一次有界撤回：包括许可刷新后读回、最终持久化、调用方取消
 及会话关闭失败。撤回在原宿主状态锁下使用独立30秒上下文，每步仍须先持久化意图；不
@@ -1324,6 +1325,25 @@ ARP）。v6 需要 NDP，是新代码。
 长驻档额外涉及持久卷和稳定地址，不是入站能力的前置条件。受管路由与防火墙是后端路径，端口许可
 与发布授权由受信管理方控制，消费者不直接持有任意宿主端口。
 
+### 5.4 出站：租约级分级（2026-09-28 定案，未实现）
+
+默认 Docker 把 FORWARD 默认策略设为 DROP，租约实例出不了网桥。出站改为按租约的静态策略，取代 §1 描述的
+逐实例 30 秒许可。需求见
+[Incus 要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/incus-module.md) §7sexies 与
+`INCUS-R-112`—`R-129`。
+
+- **档位**：`internet`（默认）、`internet_lan`、`internet_lan_host`、`modules_only`，由申请实例的 Module 在租约
+  声明中选择，随部署冻结。开关 `module_access` 与 `intra_lease` 默认都关闭。
+- **执行**：Provider 把档位写进租约网桥的 Incus network ACL，与来源围栏共用同一份 ACL；局域网与 Traefik 地址
+  放在 address set 里。宿主侧只有一条随 `incus.configure` 安装的静态规则，把租约网桥的转发交给 ACL 决定，
+  排在管理员规则和 Docker 规则之后。
+- **DNAT**：Incus ACL 在转发阶段看到的是 DNAT 之后的地址，所以「经 Traefik 访问 Module」按 Traefik 容器的当前
+  地址放行。这份地址由 Core 在 apply 中更新；Traefik 容器自行重启、宿主重启和 anasd 启动时，由 anasd 从 Docker
+  读取后纠正。
+- **局域网**：宿主默认路由所在网卡的直连网段，加上操作者配置的附加网段，每次 apply 时重新计算。
+- **撤销**：Provider 在 `INCUS-R-111` 的路径中关闭该租约的出站，并结束已建立的连接。
+- **待实机验证**：Docker 对直连未发布容器端口的处理、7.0 LTS 的 address set、`security.port_isolation`。
+
 ## 6. 镜像烘焙：distrobuilder，构建一次记摘要
 
 guest 镜像不能要求用户手工构建。通用形态与 `compute` 同构：一个 Contract 的 Provider 在 apply
@@ -1521,6 +1541,7 @@ Core 供给先验证完整 frozen snapshot，再匹配 release 元数据；多�
 | 宿主回环与 bridge 容器连通 | §3.7 已补控制 bridge 与固定非 root 转发方案；待真实网络验证与动作清单评审 | 宿主默认供给、入站 |
 | 入站路由与规则实现 | §5.1.7 已选定 Traefik 直达 guest；待验证精确路由、规则执行接口、IP 复用与连接撤销 | 入站 |
 | 命名镜像解析 | §6.2.1 提供发布时烘焙、apply 前冻结目录的候选；需确定首次烘焙阶段与产物分发 | guest_image |
+| 转发续期与入站中介的运行 owner | 出站已定案（2026-09-28）：改为租约级静态分级（§5.4），不需要续期或运行 owner；入站仍待定案，另行讨论 | 入站（M11） |
 | 安装发行版能力 | 官方包及版本、架构、服务单元与幂等行为的核验表 | 自动安装 |
 
 以上定案前不开放相应能力；不阻塞独立租约密钥、声明校验或测试脚本准备。
