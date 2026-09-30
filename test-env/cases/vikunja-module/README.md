@@ -29,7 +29,7 @@
 - 级别：`unit`
 - 覆盖需求：`VIK-R-001`、`VIK-R-002`、`VIK-R-003`、`VIK-R-004`、`VIK-R-005`、`VIK-R-006`、`VIK-R-007`、`VIK-R-008`、`VIK-R-009`、`VIK-R-010`、`VIK-R-011`、`VIK-R-012`、`VIK-R-013`、`VIK-R-014`、`VIK-R-015`、`VIK-R-016`、`VIK-R-028`
 - 需求复核摘要：`sha256:4e6ab7db4302d264c32e0ecc479254154a12cc6e58c306a9bb5a9ea8af71a809`
-- 实现复核摘要：`sha256:ab566e8458f72ac3c203300c599dbec13fc99b16aa50728f03cecae6e253e43e`
+- 实现复核摘要：`sha256:bf278c2fc7265dc0a77fe83e5621a7b57b324092e79675b1a8402bb6776aaeb8`
 - Fixture：Vikunja Module manifest、Hook 输入和入口临时目录
 - 目标能力：`go`、`shell`、`module-manifest`
 - Oracle 来源：`return-value`、`filesystem`、`error-contract`

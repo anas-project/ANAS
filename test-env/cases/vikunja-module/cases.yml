@@ -56,7 +56,7 @@ cases:
       - VIK-R-016
       - VIK-R-028
     requirement_digest: sha256:4e6ab7db4302d264c32e0ecc479254154a12cc6e58c306a9bb5a9ea8af71a809
-    implementation_digest: sha256:ab566e8458f72ac3c203300c599dbec13fc99b16aa50728f03cecae6e253e43e
+    implementation_digest: sha256:bf278c2fc7265dc0a77fe83e5621a7b57b324092e79675b1a8402bb6776aaeb8
     fixture: Vikunja Module manifest、Hook 输入和入口临时目录
     capabilities: [go, shell, module-manifest]
     preconditions: []
