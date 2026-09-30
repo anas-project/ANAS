@@ -72,6 +72,8 @@ config:
     upload_max_size: 16G
     talk_enabled: "true"
     memories_enabled: "true"
+    files_trash_delete: "false"
+    trashbin_retention_obligation: "60,365"
     db_type: auto
     iam_protocol: auto
   types:
@@ -86,6 +88,8 @@ config:
     upload_max_size: string
     talk_enabled: bool
     memories_enabled: bool
+    files_trash_delete: bool
+    trashbin_retention_obligation: string
     db_type:
       enum: [auto, postgres, mariadb]
     iam_protocol:
@@ -190,6 +194,14 @@ config:
       effect: reconcile
       apply: reconcile-nextcloud-apps
       description: The app can be enabled or disabled through occ without restarting the container.
+    trashbin_retention_obligation:
+      effect: container_recreate
+      apply: recreate-nextcloud
+      description: Sets the automatic trash-bin cleanup window through occ on container startup.
+    files_trash_delete:
+      effect: container_recreate
+      apply: recreate-nextcloud
+      description: Sets the official files.trash.delete boolean through occ on container startup.
 identity:
   provisioning:
     capability: directory

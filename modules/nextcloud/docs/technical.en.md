@@ -1,5 +1,7 @@
 # Nextcloud technical implementation
 
+The startup task writes two official Nextcloud system settings through `occ config:system:set`: `files_trash_delete` maps to `files.trash.delete` with `--type=boolean` (default `false`); `trashbin_retention_obligation` uses `--type=string` (default `60,365`, or `disabled`). The hook validates both values. Any failed occ write stops the startup task before it marks the service ready. The manual deletion setting does not affect automatic cleanup.
+
 This page records the current implementation, security boundaries, and verification entry points for `nextcloud`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
@@ -36,6 +38,7 @@ This page records the current implementation, security boundaries, and verificat
 | `nextcloud.db_name` | string | — | `nextcloud` | `static` | `NEXTCLOUD_DB_NAME` | no | no | no | no: `migrate-nextcloud-database` | `data_migrate` | The database name is materialized during installation. |
 | `nextcloud.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `NEXTCLOUD_DB_TYPE` | no | no | no | no: `migrate-nextcloud-database` | `data_migrate` | Changing the environment does not migrate an installed Nextcloud database. |
 | `nextcloud.domain_prefix` | string | — | `nc` | `static` | `NEXTCLOUD_DOMAIN_PREFIX` | no | no | no | yes | `reconcile` | Trusted domains, SSO metadata, and proxy routes must be updated together. |
+| `nextcloud.files_trash_delete` | bool | — | `false` | `static` | `NEXTCLOUD_FILES_TRASH_DELETE` | no | no | no | yes | `container_recreate` | Allow manual permanent deletion and emptying the trash bin via the official files.trash.delete setting. |
 | `nextcloud.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `NEXTCLOUD_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | Switching OIDC and SAML changes both the IAM registration and the enabled Nextcloud authentication app. |
 | `nextcloud.language` | string | — | — | `inherited` | `NEXTCLOUD_LANGUAGE` | no | yes | no | yes | `reconcile` | Sets the fallback UI language without overriding browser or per-user preferences. |
 | `nextcloud.locale` | string | — | — | `inherited` | `NEXTCLOUD_LOCALE` | no | yes | no | yes | `reconcile` | Sets the fallback regional formatting locale separately from the UI language. |
@@ -45,6 +48,7 @@ This page records the current implementation, security boundaries, and verificat
 | `nextcloud.phone_region` | string | — | `CN` | `static` | `NEXTCLOUD_PHONE_REGION` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `nextcloud.rm_skeleton_files` | bool | — | `false` | `static` | `NEXTCLOUD_RM_SKELETON_FILES` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `nextcloud.talk_enabled` | bool | — | `true` | `static` | `NEXTCLOUD_TALK_ENABLED` | no | no | no | yes | `container_recreate` | The optional Compose service set changes. |
+| `nextcloud.trashbin_retention_obligation` | string | — | `60,365` | `static` | `NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION` | no | no | no | yes | `container_recreate` | Automatic cleanup: retain at least 60 days and expire at 365 days; `disabled` stops automatic cleanup. |
 | `nextcloud.upload_max_size` | string | — | `16G` | `static` | `NEXTCLOUD_UPLOAD_MAX_SIZE` | no | no | no | yes | `container_recreate` | The limit is injected into the container environment. |
 
 `module.yml` is authoritative for the parameter inventory. The CLI combines defaults, types, required flags, environment mapping, sensitivity, and change executors. Technical docs must not invent additional settable parameters.
@@ -262,3 +266,9 @@ Initialization clears stale `trusted_proxies`, then writes the exact resolved Tr
 ## Current limitations
 
 Switching OIDC/SAML recreates and reconciles the IAM registration; switching databases never migrates existing data.
+
+## Trash-bin test coverage
+
+Hook tests cover defaults, overrides, typed occ arguments, and write failures. The E2E entry is `test-env/scripts/server-nextcloud-trashbin-e2e.sh`, also included in the domain-separation `full` suite. It verifies live settings before changing them, uses a unique temporary local user to exercise WebDAV deletion and restoration, then tests enabled deletion and disabled retention. Cleanup restores both settings and deletes the user; reports are saved with mode 0600.
+
+Expiration boundaries use synthetic ages evaluated by the real in-container service, not a long-running cron test. The script requires an explicit isolated Docker socket, workspace, prefix, and entry IP. Real-host execution is pending; see the [test plan](../dev-docs/plans/nextcloud-trashbin.md) and [requirements](../dev-docs/requirements/nextcloud-trashbin.md).

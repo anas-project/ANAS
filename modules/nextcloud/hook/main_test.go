@@ -1,7 +1,10 @@
 package main
 
+// TEST_CASES: NCT-T-001
+
 import (
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -21,6 +24,91 @@ func TestCalcNextcloudUsesServiceContainerNames(t *testing.T) {
 	}
 	if got := env["NEXTCLOUD_PUSH_HOSTNAME"]; got != "anas_test_nextcloud_push" {
 		t.Fatalf("push hostname = %q", got)
+	}
+}
+
+func TestTrashbinPolicyDefaultsAndRejectsUnsupportedValues(t *testing.T) {
+	env := map[string]string{"NEXTCLOUD_DB_TYPE": "postgres"}
+	if _, err := calcNextcloud(env, "", &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if env["NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION"] != "60,365" {
+		t.Fatalf("trashbin retention default = %q", env["NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION"])
+	}
+	if env["NEXTCLOUD_FILES_TRASH_DELETE"] != "false" {
+		t.Fatalf("manual trash deletion default = %q", env["NEXTCLOUD_FILES_TRASH_DELETE"])
+	}
+	for _, value := range []string{"auto", "0,0", "60,366", "60,365\""} {
+		_, err := calcNextcloud(map[string]string{"NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION": value}, "", &secretStore{values: map[string]string{}})
+		if err == nil {
+			t.Fatalf("retention %q accepted", value)
+		}
+	}
+}
+
+func TestTrashbinPolicyAcceptsOverridesAndRejectsInvalidBoolean(t *testing.T) {
+	env := map[string]string{
+		"NEXTCLOUD_DB_TYPE":                       "postgres",
+		"NEXTCLOUD_FILES_TRASH_DELETE":            "true",
+		"NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION": "disabled",
+	}
+	if _, err := calcNextcloud(env, "", &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if env["NEXTCLOUD_FILES_TRASH_DELETE"] != "true" || env["NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION"] != "disabled" {
+		t.Fatal("explicit trash-bin settings were overwritten")
+	}
+	env["NEXTCLOUD_FILES_TRASH_DELETE"] = "no"
+	if _, err := calcNextcloud(env, "", &secretStore{values: map[string]string{}}); err == nil {
+		t.Fatal("invalid manual deletion boolean accepted")
+	}
+}
+
+func TestTrashbinStartupWritesTypedOCCSettingsAndStopsOnFailure(t *testing.T) {
+	task, err := os.ReadFile("../nextcloud/root/usr/local/bin/task.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(task), "# Apply the official trash-bin settings")
+	if start < 0 {
+		t.Fatal("trash-bin configuration block missing")
+	}
+	block := string(task)[start:]
+	end := strings.Index(block, "\n# cron")
+	if end < 0 {
+		t.Fatal("trash-bin configuration block has no end")
+	}
+	block = block[:end]
+	for _, tc := range []struct {
+		deletion, retention, failKey string
+	}{
+		{"false", "60,365", ""},
+		{"true", "disabled", ""},
+		{"false", "60,365", "files.trash.delete"},
+		{"false", "60,365", "trashbin_retention_obligation"},
+	} {
+		t.Run(tc.deletion+"/"+tc.retention+"/"+tc.failKey, func(t *testing.T) {
+			command := `NEXTCLOUD_FILES_TRASH_DELETE="$1"
+NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION="$2"
+fail_key="$3"
+occ() {
+  printf '%s\n' "$*"
+  [ "$2" != "$fail_key" ]
+}
+` + block + "\nprintf 'ready\\n'\n"
+			output, err := exec.Command("bash", "-c", command, "trashbin-test", tc.deletion, tc.retention, tc.failKey).CombinedOutput()
+			if tc.failKey != "" {
+				if err == nil || strings.Contains(string(output), "ready") {
+					t.Fatalf("failed occ write did not stop startup: %v\n%s", err, output)
+				}
+				return
+			}
+			want := "config:system:set files.trash.delete --type=boolean --value=" + tc.deletion + "\n" +
+				"config:system:set trashbin_retention_obligation --type=string --value=" + tc.retention + "\nready\n"
+			if err != nil || string(output) != want {
+				t.Fatalf("typed occ writes: %v\n got: %s\nwant: %s", err, output, want)
+			}
+		})
 	}
 }
 

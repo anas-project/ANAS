@@ -1,5 +1,7 @@
 # Nextcloud
 
+Manual permanent deletion and emptying the trash bin are disabled by default: the module setting `files_trash_delete: false` maps to Nextcloud’s official `files.trash.delete=false`. Automatic cleanup is enabled with `trashbin_retention_obligation: "60,365"` (at least 60 days, expiration at 365 days); use `disabled` to turn it off. The startup task applies both settings through `occ config:system:set`; configuration changes recreate the container.
+
 File sync, sharing, online office, Memories, and Talk platform.
 
 ## Quick facts
@@ -37,6 +39,25 @@ This module also requires a deployment-level IAM provider, for example:
 identity:
   iam:
     provider: llng
+```
+
+## Trash bin configuration
+
+The defaults below enable automatic cleanup. Use `disabled` for the retention setting to turn automatic cleanup off:
+
+```yaml
+modules:
+  nextcloud:
+    config:
+      files_trash_delete: false
+      trashbin_retention_obligation: "60,365"
+```
+
+The startup task runs these commands inside the container as `www-data`:
+
+```bash
+php /var/www/html/occ config:system:set files.trash.delete --type=boolean --value=false
+php /var/www/html/occ config:system:set trashbin_retention_obligation --type=string --value="60,365"
 ```
 
 ## Identity, users, and groups
@@ -137,6 +158,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | `nextcloud.db_name` | string | — | `nextcloud` | `static` | `NEXTCLOUD_DB_NAME` | no | no | no | no: `migrate-nextcloud-database` | `data_migrate` | The database name is materialized during installation. |
 | `nextcloud.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `NEXTCLOUD_DB_TYPE` | no | no | no | no: `migrate-nextcloud-database` | `data_migrate` | Changing the environment does not migrate an installed Nextcloud database. |
 | `nextcloud.domain_prefix` | string | — | `nc` | `static` | `NEXTCLOUD_DOMAIN_PREFIX` | no | no | no | yes | `reconcile` | Trusted domains, SSO metadata, and proxy routes must be updated together. |
+| `nextcloud.files_trash_delete` | bool | — | `false` | `static` | `NEXTCLOUD_FILES_TRASH_DELETE` | no | no | no | yes | `container_recreate` | Allow manual permanent deletion and emptying the trash bin via the official files.trash.delete setting. |
 | `nextcloud.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `NEXTCLOUD_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | Switching OIDC and SAML changes both the IAM registration and the enabled Nextcloud authentication app. |
 | `nextcloud.language` | string | — | — | `inherited` | `NEXTCLOUD_LANGUAGE` | no | yes | no | yes | `reconcile` | Sets the fallback UI language without overriding browser or per-user preferences. |
 | `nextcloud.locale` | string | — | — | `inherited` | `NEXTCLOUD_LOCALE` | no | yes | no | yes | `reconcile` | Sets the fallback regional formatting locale separately from the UI language. |
@@ -146,6 +168,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | `nextcloud.phone_region` | string | — | `CN` | `static` | `NEXTCLOUD_PHONE_REGION` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `nextcloud.rm_skeleton_files` | bool | — | `false` | `static` | `NEXTCLOUD_RM_SKELETON_FILES` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `nextcloud.talk_enabled` | bool | — | `true` | `static` | `NEXTCLOUD_TALK_ENABLED` | no | no | no | yes | `container_recreate` | The optional Compose service set changes. |
+| `nextcloud.trashbin_retention_obligation` | string | — | `60,365` | `static` | `NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION` | no | no | no | yes | `container_recreate` | Automatic cleanup: retain at least 60 days and expire at 365 days; `disabled` stops automatic cleanup. |
 | `nextcloud.upload_max_size` | string | — | `16G` | `static` | `NEXTCLOUD_UPLOAD_MAX_SIZE` | no | no | no | yes | `container_recreate` | The limit is injected into the container environment. |
 
 ### Query and modify

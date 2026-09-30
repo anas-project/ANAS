@@ -1,5 +1,7 @@
 # Nextcloud
 
+回收站默认禁止用户手动永久删除和清空：模块配置 `files_trash_delete: false` 对应 Nextcloud 官方 `files.trash.delete=false`。自动清理默认开启，`trashbin_retention_obligation: "60,365"` 表示至少保留 60 天、365 天到期；设为 `disabled` 可关闭自动清理。两项均由启动任务通过 `occ config:system:set` 写入，修改后重建容器应用。
+
 文件同步、分享、在线文档、Memories 和 Talk 平台。
 
 ## 快速信息
@@ -37,6 +39,25 @@ modules:
 identity:
   iam:
     provider: llng
+```
+
+## 回收站配置
+
+默认配置如下，保留期可设为 `disabled` 关闭自动清理：
+
+```yaml
+modules:
+  nextcloud:
+    config:
+      files_trash_delete: false
+      trashbin_retention_obligation: "60,365"
+```
+
+启动任务在容器内以 `www-data` 身份执行：
+
+```bash
+php /var/www/html/occ config:system:set files.trash.delete --type=boolean --value=false
+php /var/www/html/occ config:system:set trashbin_retention_obligation --type=string --value="60,365"
 ```
 
 ## 身份、用户与 Group
@@ -133,6 +154,7 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 | `nextcloud.db_name` | string | — | `nextcloud` | `static` | `NEXTCLOUD_DB_NAME` | 否 | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 应用数据库名 |
 | `nextcloud.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `NEXTCLOUD_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 关系数据库类型或自动选择 |
 | `nextcloud.domain_prefix` | string | — | `nc` | `static` | `NEXTCLOUD_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
+| `nextcloud.files_trash_delete` | bool | — | `false` | `static` | `NEXTCLOUD_FILES_TRASH_DELETE` | 否 | 否 | 否 | 是 | `container_recreate` | 是否允许手动永久删除和清空回收站，对应官方 files.trash.delete |
 | `nextcloud.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `NEXTCLOUD_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
 | `nextcloud.language` | string | — | — | `inherited` | `NEXTCLOUD_LANGUAGE` | 否 | 是 | 否 | 是 | `reconcile` | 界面回退语言 |
 | `nextcloud.locale` | string | — | — | `inherited` | `NEXTCLOUD_LOCALE` | 否 | 是 | 否 | 是 | `reconcile` | 区域格式回退值 |
@@ -142,6 +164,7 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 | `nextcloud.phone_region` | string | — | `CN` | `static` | `NEXTCLOUD_PHONE_REGION` | 否 | 否 | 否 | 是 | `container_recreate` | 默认电话区域 |
 | `nextcloud.rm_skeleton_files` | bool | — | `false` | `static` | `NEXTCLOUD_RM_SKELETON_FILES` | 否 | 否 | 否 | 是 | `container_recreate` | 是否删除默认骨架文件 |
 | `nextcloud.talk_enabled` | bool | — | `true` | `static` | `NEXTCLOUD_TALK_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Talk |
+| `nextcloud.trashbin_retention_obligation` | string | — | `60,365` | `static` | `NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION` | 否 | 否 | 否 | 是 | `container_recreate` | 自动清理至少保留 60 天、365 天到期；`disabled` 关闭自动清理 |
 | `nextcloud.upload_max_size` | string | — | `16G` | `static` | `NEXTCLOUD_UPLOAD_MAX_SIZE` | 否 | 否 | 否 | 是 | `container_recreate` | 上传大小上限 |
 
 ### 查询和修改

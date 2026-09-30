@@ -351,6 +351,11 @@ occ log:manage --level $NEXTCLOUD_LOG_LEVEL
 
 import_occ "$config_system"
 
+# Apply the official trash-bin settings with their native Nextcloud types.
+# A failed write must prevent startup from being marked ready.
+occ config:system:set files.trash.delete --type=boolean --value="$NEXTCLOUD_FILES_TRASH_DELETE" || exit 1
+occ config:system:set trashbin_retention_obligation --type=string --value="$NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION" || exit 1
+
 # cron
 echo "Set occ background:cron"
 occ background:cron

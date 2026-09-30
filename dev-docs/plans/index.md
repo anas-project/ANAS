@@ -56,5 +56,6 @@
 - [Vikunja Module](../../modules/vikunja/dev-docs/plans/archived/vikunja-module.md)（已归档）
 - [Casdoor IAM Provider](../../modules/casdoor/dev-docs/plans/archived/casdoor-iam.md)（已归档）
 - [MeshCentral OIDC-only](../../modules/meshcentral/dev-docs/plans/archived/meshcentral-oidc-only.md)（已归档）
+- [Nextcloud 回收站配置测试](../../modules/nextcloud/dev-docs/plans/nextcloud-trashbin.md)（部分实施；真实 E2E 待执行）
 
 计划使用稳定主题文件名。创建日期、更新时间、状态和目标里程碑写在文档内，不因日常更新重命名。

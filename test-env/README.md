@@ -64,6 +64,47 @@ test-env/
   reports/    Generated logs and command output.
 ```
 
+### Nextcloud trash-bin configuration
+
+The domain-separation `full` suite includes `server-nextcloud-trashbin-e2e.sh`.
+It can also run against an already-applied fixture using the default
+`files_trash_delete: false` and `trashbin_retention_obligation: "60,365"`:
+
+```sh
+ANAS_TEST_WORKSPACE=/srv/anas-nextcloud-e2e \
+ANAS_TEST_CONTAINER_PREFIX=anas_nextcloud_e2e_ \
+ANAS_TEST_DOCKER_SOCKET=/run/anas-nextcloud-e2e-docker.sock \
+ANAS_TEST_ENTRY_IP=10.252.11.2 \
+bash test-env/scripts/server-nextcloud-trashbin-e2e.sh
+```
+
+Use the actual workspace, prefix, dedicated socket and entry IP of the applied
+fixture. The script obtains the Nextcloud URL from that container's environment
+and refuses containers outside the selected workspace deployment. It requires
+Python 3.9+, curl and Docker CLI. Build the test image with the current startup
+task before applying; the published image may not yet contain this change.
+
+The probe checks live types and defaults before any configuration write, creates
+a temporary local user, and checks authenticated WebDAV single-item deletion and
+empty-trash rejection, successful restoration with unchanged content, and the
+enabled-deletion override. It evaluates synthetic age boundaries using the real
+in-container expiration service, then switches retention to `disabled` and checks
+the same ages are no longer expired. This is not a long-running cron test.
+
+Both original settings are restored and the temporary user is deleted on success
+or assertion failure. A failed cleanup fails the suite. Credentials travel on
+stdin and are excluded from reports, which are written with mode `0600` under
+`test-env/reports/nextcloud-trashbin-*.json`. Real-host acceptance is pending; see
+the [requirements](../modules/nextcloud/dev-docs/requirements/nextcloud-trashbin.md),
+[plan](../modules/nextcloud/dev-docs/plans/nextcloud-trashbin.md) and generated
+[test cases](cases/nextcloud-trashbin/README.md).
+
+Run the local E2E oracle and cleanup counterexamples without Docker:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 test-env/scripts/test_nextcloud_trashbin_e2e.py
+```
+
 ### IAM logout browser matrix
 
 The logout matrix pins `@playwright/test` to `1.62.1` and disables screenshots,

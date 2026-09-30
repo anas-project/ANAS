@@ -61,6 +61,8 @@ fi
 
 bash ./scripts/ci/cnb-container-images.sh validate
 sh ./test-env/scripts/test-nextcloud-download-proxy.sh
+bash -n ./test-env/scripts/server-nextcloud-trashbin-e2e.sh
+PYTHONDONTWRITEBYTECODE=1 python3 ./test-env/scripts/test_nextcloud_trashbin_e2e.py
 go run ./cmd/gen-module-docs --check
 go run ./cmd/gen-contract-docs --check
 

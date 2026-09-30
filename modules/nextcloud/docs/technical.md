@@ -1,5 +1,7 @@
 # Nextcloud 技术实现
 
+启动任务通过 `occ config:system:set` 写入两项 Nextcloud 官方系统配置：`files_trash_delete` 映射为 `files.trash.delete`，以 `--type=boolean` 写入，默认 `false`；`trashbin_retention_obligation` 以 `--type=string` 写入，默认 `60,365`，可设为 `disabled`。Hook 校验布尔值及保留期取值；任一 occ 写入失败即退出启动任务，不标记就绪。手动删除开关不影响自动清理。
+
 本文面向 Module 维护者，记录 `nextcloud` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
@@ -36,6 +38,7 @@
 | `nextcloud.db_name` | string | — | `nextcloud` | `static` | `NEXTCLOUD_DB_NAME` | 否 | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 应用数据库名 |
 | `nextcloud.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `NEXTCLOUD_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 关系数据库类型或自动选择 |
 | `nextcloud.domain_prefix` | string | — | `nc` | `static` | `NEXTCLOUD_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
+| `nextcloud.files_trash_delete` | bool | — | `false` | `static` | `NEXTCLOUD_FILES_TRASH_DELETE` | 否 | 否 | 否 | 是 | `container_recreate` | 是否允许手动永久删除和清空回收站，对应官方 files.trash.delete |
 | `nextcloud.iam_protocol` | enum (`auto`, `oidc`, `saml`) | — | `auto` | `static` | `NEXTCLOUD_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议 |
 | `nextcloud.language` | string | — | — | `inherited` | `NEXTCLOUD_LANGUAGE` | 否 | 是 | 否 | 是 | `reconcile` | 界面回退语言 |
 | `nextcloud.locale` | string | — | — | `inherited` | `NEXTCLOUD_LOCALE` | 否 | 是 | 否 | 是 | `reconcile` | 区域格式回退值 |
@@ -45,6 +48,7 @@
 | `nextcloud.phone_region` | string | — | `CN` | `static` | `NEXTCLOUD_PHONE_REGION` | 否 | 否 | 否 | 是 | `container_recreate` | 默认电话区域 |
 | `nextcloud.rm_skeleton_files` | bool | — | `false` | `static` | `NEXTCLOUD_RM_SKELETON_FILES` | 否 | 否 | 否 | 是 | `container_recreate` | 是否删除默认骨架文件 |
 | `nextcloud.talk_enabled` | bool | — | `true` | `static` | `NEXTCLOUD_TALK_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否启用 Talk |
+| `nextcloud.trashbin_retention_obligation` | string | — | `60,365` | `static` | `NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION` | 否 | 否 | 否 | 是 | `container_recreate` | 自动清理至少保留 60 天、365 天到期；`disabled` 关闭自动清理 |
 | `nextcloud.upload_max_size` | string | — | `16G` | `static` | `NEXTCLOUD_UPLOAD_MAX_SIZE` | 否 | 否 | 否 | 是 | `container_recreate` | 上传大小上限 |
 
 参数库存的权威来源是 `module.yml`；CLI 负责合并默认值、类型、required、环境变量映射、敏感性和变更执行器。技术文档不得另造可设置参数。
@@ -244,3 +248,9 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 ## 当前限制
 
 切换 OIDC/SAML 需要重建并协调 IAM 注册；切换数据库不会迁移现有数据。
+
+## 回收站测试覆盖
+
+Hook 测试覆盖默认值、显式覆盖、occ 参数类型和写入失败。真实 E2E 入口为 `test-env/scripts/server-nextcloud-trashbin-e2e.sh`，已加入 domain-separation 的 `full` 测试级别。脚本先核对真实生效配置，再用唯一临时本地用户验证 WebDAV 单项删除、清空与还原，随后验证启用手动删除及关闭自动清理。结束或断言失败时恢复两项原配置、删除用户，报告权限为 0600。
+
+保留期边界使用容器真实服务计算合成时间戳，不代表 cron 长期运行验收。执行必须显式指定专用隔离 Docker socket、workspace、前缀和入口 IP。真实环境尚未执行，状态见[测试计划](../dev-docs/plans/nextcloud-trashbin.md)及[验收要求](../dev-docs/requirements/nextcloud-trashbin.md)。

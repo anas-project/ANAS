@@ -177,6 +177,16 @@ func changed(old, cur map[string]string) map[string]string {
 	return out
 }
 func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) ([]string, error) {
+	trashDelete := defaultValue(e["NEXTCLOUD_FILES_TRASH_DELETE"], "false")
+	if trashDelete != "true" && trashDelete != "false" {
+		return nil, fmt.Errorf("NEXTCLOUD_FILES_TRASH_DELETE must be true or false")
+	}
+	e["NEXTCLOUD_FILES_TRASH_DELETE"] = trashDelete
+	retention := defaultValue(e["NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION"], "60,365")
+	if retention != "60,365" && retention != "disabled" {
+		return nil, fmt.Errorf("NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION must be 60,365 or disabled")
+	}
+	e["NEXTCLOUD_TRASHBIN_RETENTION_OBLIGATION"] = retention
 	explicitLanguage := e["NEXTCLOUD_LANGUAGE"]
 	languageValue, confidence, err := localization.Match(defaultValue(explicitLanguage, e["DEFAULT_LANGUAGE"]), nextcloudLanguages, "en")
 	if err != nil {

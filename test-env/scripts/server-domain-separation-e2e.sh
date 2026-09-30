@@ -8,7 +8,7 @@ usage: server-domain-separation-e2e.sh <authentik-ad-zone|llng-separate-zone> [c
   core       Read-only domain, DNS, Kerberos, LDAPS, LAM, IAM, and Nextcloud checks.
   contracts  Run core plus the existing IAM runtime-contract probe (default).
   full       Run core plus the existing IAM login matrix, LAM Admins login, and
-             Nextcloud managed-local-admin probes. ANAS_TEST_WORKSPACE is required.
+             Nextcloud managed-local-admin and trash-bin probes. ANAS_TEST_WORKSPACE is required.
 
 The deployment must already be running on its dedicated isolated Docker daemon.
 This script never starts or removes containers.
@@ -467,6 +467,13 @@ case "$probe_level" in
     ANAS_TEST_CONTAINER_PREFIX=$prefix \
     ANAS_TEST_DOCKER_SOCKET=$docker_socket \
       "$script_dir/server-nextcloud-local-admin-e2e.sh"
+
+    section "Nextcloud official trash-bin configuration and WebDAV probe"
+    ANAS_TEST_WORKSPACE=$ANAS_TEST_WORKSPACE \
+    ANAS_TEST_CONTAINER_PREFIX=$prefix \
+    ANAS_TEST_DOCKER_SOCKET=$docker_socket \
+    ANAS_TEST_ENTRY_IP=$entry_ip \
+      bash "$script_dir/server-nextcloud-trashbin-e2e.sh"
     ;;
 esac
 

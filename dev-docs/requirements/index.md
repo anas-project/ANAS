@@ -50,5 +50,6 @@
 - [Vikunja Module 集成要求](../../modules/vikunja/dev-docs/requirements/vikunja-module.md)
 - [Casdoor IAM Provider 集成要求](../../modules/casdoor/dev-docs/requirements/casdoor-iam.md)
 - [MeshCentral OIDC-only 验收要求](../../modules/meshcentral/dev-docs/requirements/meshcentral-oidc-only.md)
+- [Nextcloud 回收站配置验收要求](../../modules/nextcloud/dev-docs/requirements/nextcloud-trashbin.md)
 
 需求发生变化时原地更新稳定文件名，并同步 `updated`；实现方案进入 `docs/architecture/`，落地顺序进入 `dev-docs/plans/`。
