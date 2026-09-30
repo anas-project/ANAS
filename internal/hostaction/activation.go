@@ -17,9 +17,7 @@ type activationGuard interface {
 
 // Activation owns one already-accepted stream. It never binds/listens, reads
 // an arbitrary configuration path, creates a job journal, or installs a unit.
-// The launcher supplies the fixed audit writer and an authenticated job broker.
-// Broker transport exists; without listener/service assembly and an actual
-// exit-status supervisor this is NOT a serving daemon.
+// The launcher supplies the fixed audit writer and hostd's invocation ledger.
 type Activation struct {
 	mu           sync.Mutex
 	connection   *net.UnixConn
@@ -57,11 +55,10 @@ func (a *Activation) closeLocked() error {
 
 // Serve handles exactly one request then closes its descriptors. The owner
 // context is NOT derived from a browser/CLI subscription. Client EOF terminates
-// input only; client disconnect does not interrupt execution or final audit.
-// The emitted terminal is provisional until the shared supervisor has actual
-// exit evidence. Socket EOF by itself must never be turned into exit code zero.
-func (a *Activation) Serve(owner context.Context, journal AuditJournal, binding JobBinding) (returnErr error) {
-	if a == nil || owner == nil || journal == nil || binding == nil {
+// input only; client disconnect does not interrupt execution or final audit:
+// the ledger keeps the terminal for a later ActionInvocationStatus query.
+func (a *Activation) Serve(owner context.Context, journal AuditJournal, ledger InvocationLedger) (returnErr error) {
+	if a == nil || owner == nil || journal == nil || ledger == nil {
 		return ErrUnavailable
 	}
 	a.mu.Lock()
@@ -88,13 +85,18 @@ func (a *Activation) Serve(owner context.Context, journal AuditJournal, binding 
 	if err != nil {
 		return err
 	}
-	event, err := executeBound(owner, call, journal, binding, a.policy.Release, a.guard.check, func(progress actionabi.Event) error {
-		frame, err := actionabi.EncodeExecutorEvent(progress)
-		if err != nil || a.guard.check() != nil || a.connection.SetWriteDeadline(time.Now().Add(3*time.Second)) != nil {
-			return ErrUnavailable
-		}
-		return securefs.WriteAll(a.connection, frame)
-	})
+	var event actionabi.Event
+	if call.request.Action == ActionInvocationStatus {
+		event, err = queryInvocation(owner, call, journal, ledger, a.guard.check)
+	} else {
+		event, err = executeRecorded(owner, call, journal, ledger, a.policy.Release, a.guard.check, func(progress actionabi.Event) error {
+			frame, err := actionabi.EncodeExecutorEvent(progress)
+			if err != nil || a.guard.check() != nil || a.connection.SetWriteDeadline(time.Now().Add(ioTimeout)) != nil {
+				return ErrUnavailable
+			}
+			return securefs.WriteAll(a.connection, frame)
+		})
+	}
 	if err != nil {
 		return err
 	}
@@ -103,7 +105,7 @@ func (a *Activation) Serve(owner context.Context, journal AuditJournal, binding 
 		return ErrUnavailable
 	}
 	// Do not let an abandoned reader hold a socket-activated process alive.
-	if a.connection.SetWriteDeadline(time.Now().Add(3*time.Second)) != nil {
+	if a.connection.SetWriteDeadline(time.Now().Add(ioTimeout)) != nil {
 		return ErrUnavailable
 	}
 	if securefs.WriteAll(a.connection, frame) != nil {
@@ -118,4 +120,16 @@ func (a *Activation) Serve(owner context.Context, journal AuditJournal, binding 
 		return ErrActionFailed
 	}
 	return nil
+}
+
+// ioTimeout bounds each socket read or write; ExecutionTimeout is the compiled
+// handler budget plus its bounded final audit and the terminal exchange.
+const ioTimeout = 3 * time.Second
+
+func ExecutionTimeout(action string) time.Duration {
+	spec, ok := LookupAction(action)
+	if !ok || spec.Timeout <= 0 {
+		return ioTimeout
+	}
+	return time.Duration(spec.Timeout)*time.Second + 5*time.Second + 2*ioTimeout
 }

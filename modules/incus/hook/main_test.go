@@ -219,7 +219,7 @@ func TestCalculateAutoRejectsBundleDriftAndMissingBundle(t *testing.T) {
 	if err := calculateForTest("incus", env, secrets); err != nil {
 		t.Fatal(err)
 	}
-	bundle.Endpoint = "https://10.77.0.2:18443"
+	bundle.Endpoint = "https://10.77.0.2:8443"
 	bundle.ControlGateway = "10.77.0.2"
 	writeHostBundleFixtureAt(t, path, bundle, 0600)
 	if err := calculateForTest("incus", map[string]string{"NETWORK_PREFIX": "anas_"}, secrets); err == nil {
@@ -263,7 +263,7 @@ func TestCalculateAutoRejectsInvalidBundleContent(t *testing.T) {
 	for name, mutate := range map[string]func(*hostConnectionBundle){
 		"wrong key pair":    func(b *hostConnectionBundle) { _, key := materials(t); b.AdminPrivateKeyPEM = mustDecodeB64(t, key) },
 		"wrong fingerprint": func(b *hostConnectionBundle) { b.ManagementFingerprint = strings.Repeat("a", 64) },
-		"wrong endpoint":    func(b *hostConnectionBundle) { b.Endpoint = "https://10.77.0.2:18443" },
+		"wrong endpoint":    func(b *hostConnectionBundle) { b.Endpoint = "https://10.77.0.2:8443" },
 		"missing arch":      func(b *hostConnectionBundle) { b.Architecture = "" },
 		"wrong storage":     func(b *hostConnectionBundle) { b.StoragePool = "default" },
 	} {
@@ -308,7 +308,7 @@ func TestCalculateAutoRejectsUnsafeBundleFile(t *testing.T) {
 	})
 	t.Run("duplicate JSON", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "connection.json")
-		if err := os.WriteFile(path, []byte(`{"schema":"anas.incus-connection-bundle/v1","schema":"anas.incus-connection-bundle/v1"}`), 0600); err != nil {
+		if err := os.WriteFile(path, []byte(`{"schema":"anas.incus-connection-bundle/v2","schema":"anas.incus-connection-bundle/v2"}`), 0600); err != nil {
 			t.Fatal(err)
 		}
 		resetHostBundleTestSeam(t, path)
@@ -325,7 +325,7 @@ func TestCalculateAutoDoesNotLeakPrivateMaterial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw = []byte(strings.Replace(string(raw), "anas.incus-connection-bundle/v1", "wrong", 1))
+	raw = []byte(strings.Replace(string(raw), "anas.incus-connection-bundle/v2", "wrong", 1))
 	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -352,9 +352,9 @@ func hostConnectionBundleFixture(t *testing.T) hostConnectionBundle {
 	}
 	sum := sha256.Sum256(cert.Raw)
 	return hostConnectionBundle{
-		Schema: hostBundleSchema, Endpoint: "https://10.77.0.1:18443", ServerCertificatePEM: certPEM, AdminCertificatePEM: certPEM,
+		Schema: hostBundleSchema, Endpoint: "https://10.77.0.1:8443", ServerCertificatePEM: certPEM, AdminCertificatePEM: certPEM,
 		AdminPrivateKeyPEM: keyPEM, ControlNetwork: "anas-incus-control", ControlSubnet: "10.77.0.0/24", ControlGateway: "10.77.0.1",
-		RelayService: "anas-incus-control-relay.service", ManagementFingerprint: hex.EncodeToString(sum[:]), Architecture: "amd64", StoragePool: "anas-btrfs",
+		ManagementFingerprint: hex.EncodeToString(sum[:]), Architecture: "amd64", StoragePool: "anas-btrfs",
 	}
 }
 

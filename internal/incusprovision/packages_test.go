@@ -85,7 +85,7 @@ func TestInstallAndUninstallPreservePreexistingBridgeHelper(t *testing.T) {
 
 func TestUninstallLegacyPackageOwnershipFailsBeforeAnyEffect(t *testing.T) {
 	ctx := context.Background()
-	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{ID: "owned", PackagesInstalledByANAS: true, IncusServiceByANAS: true, RelayService: true}}}
+	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{ID: "owned", PackagesInstalledByANAS: true, IncusServiceByANAS: true, ControlListener: true}}}
 	rt := newFakeRuntime(t)
 	rt.obs.PackageInstalled = true
 	rt.obs.ExistingPackages = slices.Clone(rt.obs.Preflight.Recipe.Packages)

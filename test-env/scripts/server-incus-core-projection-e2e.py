@@ -25,7 +25,8 @@ CORE_TESTS = (CORE_PARENT, *(CORE_PARENT + '/' + name for name in (
     'cli_render_without_manual_host_connection', 'frozen_target_and_private_resource_projections',
     'real_compose_apply_and_nonroot_image_import', 'two_existing_projects_are_mutually_restricted',
     'repeat_cli_render_and_apply_preserves_credentials', 'removed_consumer_lease_is_revoked',
-    'failed_activation_leaves_new_revision_outside_rollback', 'stopped_for_explicit_prune')))
+    'failed_activation_leaves_new_revision_outside_rollback', 'rollback_restores_lost_image_from_frozen_artifact',
+    'lost_frozen_artifact_fails_without_rebuild', 'stopped_for_explicit_prune')))
 CLEANUP_TESTS = ('TestNativeCoreComputeCleanup',)
 REVOKED_TESTS = ('TestNativeCoreRejectsRevokedAutomaticConnection',)
 # Image prune reads every registered workspace, so register only the one the
@@ -50,12 +51,15 @@ def incus_images(project):
 
 
 def prune_verdicts(state, planned, applied):
-    """Exactly the failed deployment's revision is deleted; rollback targets stay."""
+    """Exactly the failed deployment's revision is deleted; rollback targets stay,
+    including one whose image the daemon has lost."""
     retained = {(item['project'], item['fingerprint']): item['reasons'] for item in planned.get('retained') or []}
     target = {'project': 'anas-core-one', 'fingerprint': state['pin_r2']}
+    lost = retained.get(('anas-core-one', state['pin_r3']), [])
     return (planned.get('delete') == [target]
             and 'current_deployment' in retained.get(('anas-core-one', state['pin_r1']), [])
             and 'previous_deployment' in retained.get(('anas-core-two', state['pin_r1']), [])
+            and 'previous_deployment' in lost and 'not_present' in lost
             and applied.get('deleted') == [{**target, 'verified': True}] and applied.get('partial') is False)
 
 

@@ -86,14 +86,15 @@ Last-known-good state exists only in memory in the current `anasd` process. Afte
 
 ### Host action queue (wired in code; native acceptance pending)
 
-The new `host_actions` boolean defaults to `false`: no private broker or host-action HTTP route is
+The new `host_actions` boolean defaults to `false`: no host action queue or host-action HTTP route is
 opened, and existing root deployments keep their behavior. Explicit opt-in requires the installed root/root Linux
 daemon, a release version/commit, at least one registered workspace and a management port of 1024 or
 above. It provides no identity, socket-path or action-parameter override. Before HTTP listening,
 `anasd` starts `HostActionService` in the same process and shares the existing console store, execution
 lease, authorization and audit. Missing installed sockets, other platforms and development builds fail
-closed. UID 0 alone is insufficient: PID 1 must independently identify the actual process as the fixed
-installed service. The flag is not package installation or compute readiness.
+closed. The hostd socket is root:root 0600 and admits only a root/root peer; since the 2026-09-30
+simplification it no longer checks which systemd unit the caller belongs to. The flag is not package
+installation or compute readiness.
 
 `POST /api/v1/workspaces/{ws}/host/actions/incus.status` accepts only an empty JSON object `{}`
 (4096 bytes maximum), with no query, paths, commands, passwords, UIDs or arbitrary parameters.
@@ -123,8 +124,8 @@ HTTPS job service; session and apply-confirmation input comes through stdin only
 continues to describe the local compiled inventory, not verified host readiness.
 
 **A non-root anasd migration is no longer required; root-only TLS key checks remain unchanged.** The
-installer packages and installs same-release hostd, fixed units/policy and the non-root control relay.
-Configure prepares and starts the relay; installation does not enable it by default. Upgrade/removal
+installer packages and installs same-release hostd and fixed units/policy. Since 2026-09-30 configure
+makes Incus listen on the control bridge gateway itself, so no control relay is installed. Upgrade/removal
 checks active host actions and closes admission before replacing executables. An active action or failed
 service stop blocks replacement. Real Linux/systemd/Incus installation acceptance is still outstanding;
 the flag and passing local tests do not establish production support.
@@ -138,9 +139,9 @@ control-plane state and standard workspace/backup roots: `/var/lib/anas`, `/srv/
 store, add those exact directories to `ReadWritePaths` in a systemd drop-in. Do not remove
 `ProtectSystem` and make the whole host writable again.
 
-`RuntimeDirectory` prepares the shared broker and confirmation ledger at `/run/anas-job-broker` and
-`/run/anas/confirmations` with mode `0700`; approval consumption survives daemon restarts within the same
-boot. The separate `anas-hostd` package/account/network executor needs write access to `/etc`, `/usr`,
+`RuntimeDirectory` prepares the confirmation ledger at `/run/anas/confirmations` with mode `0700`;
+approval consumption survives daemon restarts within the same boot. hostd keeps its invocation records in
+its own `/var/lib/anas-hostd/invocations` for 30 days. The separate `anas-hostd` package/account/network executor needs write access to `/etc`, `/usr`,
 `/var`, `/run` and private temporary storage. It is a full-root executor constrained by named actions,
 one-use approval, audit, ownership and supervision, not a DAC-only sandbox.
 

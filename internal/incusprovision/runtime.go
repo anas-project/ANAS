@@ -16,7 +16,6 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -29,7 +28,6 @@ import (
 const (
 	aptGetPath      = "/usr/bin/apt-get"
 	systemctlPath   = "/usr/bin/systemctl"
-	useraddPath     = "/usr/sbin/useradd"
 	nftPath         = "/usr/sbin/nft"
 	dpkgQueryPath   = "/usr/bin/dpkg-query"
 	aptDir          = "/etc/anas/incus-apt"
@@ -80,12 +78,13 @@ func (r *localRuntime) Observe(ctx context.Context, request Request, state State
 		return Observation{}, err
 	}
 	obs.IncusDaemonActive = active
+	httpsAddress := ""
 	if obs.IncusDaemonActive {
 		server, err := r.incus.getServer(ctx)
 		if err != nil {
 			return Observation{}, err
 		}
-		obs.IncusHTTPSLoopback = server.Config["core.https_address"] == IncusHTTPSAddress
+		httpsAddress = server.Config["core.https_address"]
 		pool, err := r.incus.getStoragePool(ctx, StoragePoolName)
 		if errors.Is(err, errIncusNotFound) {
 			obs.StoragePoolExists = false
@@ -139,17 +138,12 @@ func (r *localRuntime) Observe(ctx context.Context, request Request, state State
 	obs.ExternalCIDRs = append(obs.ExternalCIDRs, hostCIDRs...)
 	obs.ExternalCIDRs = append(obs.ExternalCIDRs, obs.DockerCIDRs...)
 	obs.ExternalCIDRs = append(obs.ExternalCIDRs, obs.IncusCIDRs...)
-	relayActive, relayErr := r.commands.systemctlIsActive(ctx, RelayServiceName)
-	if _, err := os.Stat(DefaultRelayConfigPath); err == nil && relayActive {
-		obs.RelayInstalled = true
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+	obs.IncusHTTPSControl = obs.DockerNetworkExists && obs.ControlGateway != "" && httpsAddress == controlListenAddress(obs.ControlGateway)
+	if obs.IncusAfterDocker, err = incusOrderedAfterDocker(); err != nil {
 		return Observation{}, err
-	} else if relayErr != nil && !errors.Is(relayErr, errCommandInactive) {
-		return Observation{}, relayErr
 	}
-	obs.RelayBinaryInstalled = executableUsable(RelayBinaryPath) == nil
 	if state.Ownership.FirewallRules {
-		networkPlan, _, err := controlPlans(request, obs, state)
+		networkPlan, err := controlPlans(request, obs, state)
 		if err != nil {
 			return Observation{}, err
 		}
@@ -159,16 +153,6 @@ func (r *localRuntime) Observe(ctx context.Context, request Request, state State
 		}
 		obs.FirewallInstalled = installed
 	}
-	if u, err := user.Lookup(RelayUserName); err == nil {
-		if id, parseErr := parseUint32(u.Uid); parseErr == nil {
-			obs.RelayUID = id
-		}
-	}
-	if g, err := user.LookupGroup(RelayGroupName); err == nil {
-		if id, parseErr := parseUint32(g.Gid); parseErr == nil {
-			obs.RelayGID = id
-		}
-	}
 	if state.Bundle != nil && state.Credential != nil {
 		if err := r.VerifyManagementEndpoint(ctx, *state.Bundle); err == nil {
 			obs.EndpointVerified = true
@@ -177,10 +161,6 @@ func (r *localRuntime) Observe(ctx context.Context, request Request, state State
 		}
 	}
 	obs.RunningManagedGuests, err = r.ListRunningManagedGuests(ctx, state.Ownership)
-	if err != nil {
-		return Observation{}, err
-	}
-	obs.Forwarding, err = r.observeForwarding(ctx)
 	if err != nil {
 		return Observation{}, err
 	}
@@ -226,8 +206,47 @@ func (r *localRuntime) StopIncus(ctx context.Context) error {
 	return r.commands.run(ctx, fixedSystemctl, []string{"stop", "incus.service"}, nil)
 }
 
-func (r *localRuntime) ConfigureIncusHTTPS(ctx context.Context) error {
-	return r.incus.patchServer(ctx, map[string]string{"core.https_address": IncusHTTPSAddress})
+// incusOrderedAfterDocker reports whether the ANAS drop-in with exactly the
+// expected content orders incus.service after docker.service.
+func incusOrderedAfterDocker() (bool, error) {
+	return orderedAfterDockerAt(IncusOrderDropIn)
+}
+
+func orderedAfterDockerAt(path string) (bool, error) {
+	// Before Incus is configured neither the drop-in nor its directory
+	// exists; the ancestor check below would report that as unsafe.
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	body, err := readRootOwnedPublicFile(path, 4096)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return string(body) == incusOrderDropInBody, nil
+}
+
+// ConfigureControlListener orders incus.service after docker.service, then
+// moves the Incus HTTPS listener to the control bridge gateway, the only
+// address it serves on. The firewall installed before this confines that
+// address to the control bridge.
+func (r *localRuntime) ConfigureControlListener(ctx context.Context, plan ControlNetworkPlan) error {
+	gateway, err := netip.ParseAddr(plan.Gateway)
+	if err != nil || !gateway.Is4() || !gateway.IsPrivate() {
+		return ErrInvalid
+	}
+	if err := ensureTrustedRootDirectory(filepath.Dir(IncusOrderDropIn), 0755); err != nil {
+		return err
+	}
+	if err := writeRootOnlyFile(IncusOrderDropIn, []byte(incusOrderDropInBody), 0644); err != nil {
+		return err
+	}
+	if err := r.commands.run(ctx, fixedSystemctl, []string{"daemon-reload"}, nil); err != nil {
+		return err
+	}
+	return r.incus.patchServer(ctx, map[string]string{"core.https_address": controlListenAddress(gateway.String())})
 }
 
 func (r *localRuntime) EnsureStoragePool(ctx context.Context, sizeGiB int, ownershipID string) error {
@@ -256,21 +275,6 @@ func (r *localRuntime) EnsureStoragePool(ctx context.Context, sizeGiB int, owner
 		return ErrExternalEffects
 	}
 	return nil
-}
-
-func (r *localRuntime) EnsureRelayIdentity(ctx context.Context) (uint32, uint32, error) {
-	uid, gid, ok := lookupUserGroupIDs(RelayUserName, RelayGroupName)
-	if ok {
-		return uid, gid, nil
-	}
-	if err := r.commands.run(ctx, fixedUseradd, []string{"--system", "--user-group", "--no-create-home", "--shell", "/usr/sbin/nologin", RelayUserName}, nil); err != nil {
-		return 0, 0, err
-	}
-	uid, gid, ok = lookupUserGroupIDs(RelayUserName, RelayGroupName)
-	if !ok || uid == 0 || gid == 0 {
-		return 0, 0, ErrExternalEffects
-	}
-	return uid, gid, nil
 }
 
 func (r *localRuntime) EnsureDockerControlNetwork(ctx context.Context, plan ControlNetworkPlan) error {
@@ -304,33 +308,6 @@ func (r *localRuntime) ApplyControlFirewall(ctx context.Context, plan ControlNet
 		return ErrExternalEffects
 	}
 	return nil
-}
-
-func (r *localRuntime) InstallRelayConfig(ctx context.Context, plan RelayInstallPlan) error {
-	if plan.RunUID == 0 || plan.RunGID == 0 || plan.InterfaceName == "" || plan.InterfaceIndex <= 0 {
-		return ErrInvalid
-	}
-	if executableUsable(RelayBinaryPath) != nil {
-		return ErrBlocked
-	}
-	config := map[string]any{
-		"schema_version": 1, "listen_address": plan.ListenAddress, "control_subnet": plan.ControlSubnet,
-		"interface_name": plan.InterfaceName, "interface_index": plan.InterfaceIndex,
-		"run_uid": plan.RunUID, "run_gid": plan.RunGID, "max_connections": plan.MaxConnections,
-		"idle_timeout_seconds": plan.IdleTimeoutSecs,
-	}
-	body, err := json.Marshal(config)
-	if err != nil {
-		return ErrInvalid
-	}
-	if err := writeRootOnlyFile(DefaultRelayConfigPath, append(body, '\n'), 0644); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (r *localRuntime) EnableRelay(ctx context.Context) error {
-	return r.commands.run(ctx, fixedSystemctl, []string{"enable", "--now", RelayServiceName}, nil)
 }
 
 func (r *localRuntime) TrustManagementCertificate(ctx context.Context, credential Credential) error {
@@ -390,7 +367,7 @@ func (r *localRuntime) ReadServerCertificatePEM(ctx context.Context) (string, er
 
 func (r *localRuntime) VerifyManagementEndpoint(ctx context.Context, bundle ConnectionBundle) error {
 	gateway, gatewayErr := netip.ParseAddr(bundle.ControlGateway)
-	if gatewayErr != nil || !gateway.Is4() || !gateway.IsPrivate() || bundle.Endpoint != "https://"+gateway.String()+":18443" {
+	if gatewayErr != nil || !gateway.Is4() || !gateway.IsPrivate() || bundle.Endpoint != "https://"+controlListenAddress(gateway.String()) {
 		return ErrBlocked
 	}
 	client, err := newPinnedHTTPSClient(bundle.Endpoint, bundle.ServerCertificatePEM, bundle.AdminCertificatePEM, bundle.AdminPrivateKeyPEM)
@@ -410,7 +387,7 @@ func (r *localRuntime) VerifyManagementEndpoint(ctx context.Context, bundle Conn
 	if err := client.do(ctx, "GET", "/1.0", nil, &out); err != nil {
 		return err
 	}
-	if out.Config["core.https_address"] != IncusHTTPSAddress {
+	if out.Config["core.https_address"] != controlListenAddress(gateway.String()) {
 		return ErrBlocked
 	}
 	return nil
@@ -433,13 +410,17 @@ func (r *localRuntime) ListRunningManagedGuests(ctx context.Context, ownership O
 	return count, nil
 }
 
-func (r *localRuntime) RemoveRelay(ctx context.Context) error {
-	err := r.commands.run(ctx, fixedSystemctl, []string{"disable", "--now", RelayServiceName}, nil)
-	removeErr := os.Remove(DefaultRelayConfigPath)
-	if errors.Is(removeErr, os.ErrNotExist) {
-		removeErr = nil
+// RemoveControlListener leaves Incus without an HTTPS listener, as installed,
+// and drops the unit ordering. An empty drop-in directory is removed too.
+func (r *localRuntime) RemoveControlListener(ctx context.Context) error {
+	if err := r.incus.patchServer(ctx, map[string]string{"core.https_address": ""}); err != nil {
+		return err
 	}
-	return errors.Join(err, removeErr)
+	if err := os.Remove(IncusOrderDropIn); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return ErrExternalEffects
+	}
+	_ = os.Remove(filepath.Dir(IncusOrderDropIn))
+	return r.commands.run(ctx, fixedSystemctl, []string{"daemon-reload"}, nil)
 }
 
 func (r *localRuntime) RemoveControlFirewall(ctx context.Context) error {
@@ -567,7 +548,6 @@ type fixedOperation string
 const (
 	fixedAPT        fixedOperation = "apt"
 	fixedSystemctl  fixedOperation = "systemctl"
-	fixedUseradd    fixedOperation = "useradd"
 	fixedNFT        fixedOperation = "nft"
 	fixedDPKGQuery  fixedOperation = "dpkg-query"
 	fixedDPKGRemove fixedOperation = "dpkg-remove"
@@ -664,7 +644,7 @@ func (c fixedCommands) output(ctx context.Context, operation fixedOperation, arg
 }
 
 func (c fixedCommands) systemctlIsActive(ctx context.Context, unit string) (bool, error) {
-	if unit != "incus.service" && unit != RelayServiceName {
+	if unit != "incus.service" {
 		return false, ErrInvalid
 	}
 	_, code, err := c.output(ctx, fixedSystemctl, []string{"is-active", "--quiet", unit}, nil)
@@ -685,6 +665,9 @@ func fixedCommandSpec(operation fixedOperation, args []string) (string, time.Dur
 		if len(args) == 2 && args[0] == "stop" && args[1] == "incus.service" {
 			return systemctlPath, 2 * time.Minute, nil
 		}
+		if len(args) == 1 && args[0] == "daemon-reload" {
+			return systemctlPath, 30 * time.Second, nil
+		}
 		// Queries retain their short budget. Incus' packaged service permits
 		// a ten-minute startup; a thirty-second CLI timeout can otherwise
 		// abandon an accepted systemd job that subsequently starts the daemon.
@@ -693,20 +676,14 @@ func fixedCommandSpec(operation fixedOperation, args []string) (string, time.Dur
 		if len(args) != 3 {
 			return "", 0, ErrInvalid
 		}
-		unit := args[2]
-		if unit != "incus.service" && unit != RelayServiceName {
+		if args[2] != "incus.service" {
 			return "", 0, ErrInvalid
 		}
 		if args[0] == "is-active" && args[1] == "--quiet" {
 			return systemctlPath, 30 * time.Second, nil
 		}
-		if args[1] == "--now" {
-			if args[0] == "enable" && unit == "incus.service" {
-				return systemctlPath, 11 * time.Minute, nil
-			}
-			if unit == RelayServiceName && (args[0] == "enable" || args[0] == "disable") {
-				return systemctlPath, 2 * time.Minute, nil
-			}
+		if args[0] == "enable" && args[1] == "--now" {
+			return systemctlPath, 11 * time.Minute, nil
 		}
 		return "", 0, ErrInvalid
 	}
@@ -722,8 +699,6 @@ func fixedOperationSpec(operation fixedOperation) (string, time.Duration, error)
 		return aptGetPath, 15 * time.Minute, nil
 	case fixedSystemctl:
 		return systemctlPath, 30 * time.Second, nil
-	case fixedUseradd:
-		return useraddPath, time.Minute, nil
 	case fixedNFT:
 		return nftPath, 30 * time.Second, nil
 	case fixedDPKGQuery:
@@ -737,9 +712,7 @@ func fixedOperationSpec(operation fixedOperation) (string, time.Duration, error)
 
 func fixedExecutable(path string) bool {
 	switch path {
-	case aptGetPath, systemctlPath, useraddPath, nftPath, dpkgQueryPath, systemdRunPath:
-		return true
-	case RelayBinaryPath:
+	case aptGetPath, systemctlPath, nftPath, dpkgQueryPath, systemdRunPath:
 		return true
 	default:
 		return false
@@ -803,10 +776,9 @@ func nftControlRules(plan ControlNetworkPlan) string {
  comment "anas-owner=%s"
  chain input {
   type filter hook input priority -5; policy accept;
-  iifname "lo" ip daddr 127.0.0.1 tcp dport 8443 accept comment "anas-loopback-probe"
-  iifname "lo" ip saddr %s ip daddr %s tcp dport 18443 accept comment "anas-local-relay-probe"
-  iifname "%s" ip saddr %s ip daddr %s tcp dport 18443 accept comment "anas-control-relay"
-  ip daddr %s tcp dport 18443 drop comment "anas-control-relay-default-deny"
+  iifname "lo" ip saddr %s ip daddr %s tcp dport 8443 accept comment "anas-local-control-probe"
+  iifname "%s" ip saddr %s ip daddr %s tcp dport 8443 accept comment "anas-control-incus"
+  ip daddr %s tcp dport 8443 drop comment "anas-control-incus-default-deny"
   iifname "%s" drop comment "anas-control-host-default-deny"
  }
  chain forward {
@@ -1235,7 +1207,7 @@ func validateNFTControlRulesJSON(body []byte, plan ControlNetworkPlan) (bool, er
 	}
 	expected := expectedNFTRules(plan)
 	order := map[string][]string{
-		"input":   {"anas-loopback-probe", "anas-local-relay-probe", "anas-control-relay", "anas-control-relay-default-deny", "anas-control-host-default-deny"},
+		"input":   {"anas-local-control-probe", "anas-control-incus", "anas-control-incus-default-deny", "anas-control-host-default-deny"},
 		"forward": {"anas-control-forward-iif-deny", "anas-control-forward-oif-deny"},
 	}
 	counts := map[string]int{}
@@ -1357,29 +1329,23 @@ type nftExpectedExpr struct {
 
 func expectedNFTRules(plan ControlNetworkPlan) map[string][]nftExpectedExpr {
 	return map[string][]nftExpectedExpr{
-		"input|anas-local-relay-probe": {
+		"input|anas-local-control-probe": {
 			{Kind: "match", MetaKey: "iifname", Right: "lo"},
 			{Kind: "match", Protocol: "ip", Field: "saddr", Right: plan.Gateway},
 			{Kind: "match", Protocol: "ip", Field: "daddr", Right: plan.Gateway},
-			{Kind: "match", Protocol: "tcp", Field: "dport", Right: float64(18443)},
+			{Kind: "match", Protocol: "tcp", Field: "dport", Right: float64(IncusHTTPSPort)},
 			{Kind: "accept"},
 		},
-		"input|anas-loopback-probe": {
-			{Kind: "match", MetaKey: "iifname", Right: "lo"},
-			{Kind: "match", Protocol: "ip", Field: "daddr", Right: "127.0.0.1"},
-			{Kind: "match", Protocol: "tcp", Field: "dport", Right: float64(8443)},
-			{Kind: "accept"},
-		},
-		"input|anas-control-relay": {
+		"input|anas-control-incus": {
 			{Kind: "match", MetaKey: "iifname", Right: plan.Bridge},
 			{Kind: "match", Protocol: "ip", Field: "saddr", Right: nftPrefixRight(plan.Subnet)},
 			{Kind: "match", Protocol: "ip", Field: "daddr", Right: plan.Gateway},
-			{Kind: "match", Protocol: "tcp", Field: "dport", Right: float64(18443)},
+			{Kind: "match", Protocol: "tcp", Field: "dport", Right: float64(IncusHTTPSPort)},
 			{Kind: "accept"},
 		},
-		"input|anas-control-relay-default-deny": {
+		"input|anas-control-incus-default-deny": {
 			{Kind: "match", Protocol: "ip", Field: "daddr", Right: plan.Gateway},
-			{Kind: "match", Protocol: "tcp", Field: "dport", Right: float64(18443)},
+			{Kind: "match", Protocol: "tcp", Field: "dport", Right: float64(IncusHTTPSPort)},
 			{Kind: "drop"},
 		},
 		"input|anas-control-host-default-deny": {
@@ -1489,37 +1455,6 @@ func interfaceIndex(name string) int {
 		return 0
 	}
 	return iface.Index
-}
-
-func lookupUserGroupIDs(userName, groupName string) (uint32, uint32, bool) {
-	u, err := user.Lookup(userName)
-	if err != nil {
-		return 0, 0, false
-	}
-	g, err := user.LookupGroup(groupName)
-	if err != nil {
-		return 0, 0, false
-	}
-	uid, err1 := parseUint32(u.Uid)
-	gid, err2 := parseUint32(g.Gid)
-	return uid, gid, err1 == nil && err2 == nil && uid != 0 && gid != 0
-}
-
-func parseUint32(text string) (uint32, error) {
-	var n uint64
-	if text == "" || len(text) > 10 {
-		return 0, ErrInvalid
-	}
-	for _, c := range text {
-		if c < '0' || c > '9' {
-			return 0, ErrInvalid
-		}
-		n = n*10 + uint64(c-'0')
-		if n > 1<<32-1 {
-			return 0, ErrInvalid
-		}
-	}
-	return uint32(n), nil
 }
 
 type pinnedHTTPSClient struct {

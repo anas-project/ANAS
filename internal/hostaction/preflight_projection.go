@@ -8,7 +8,6 @@ import (
 
 	"github.com/anas-project/ANAS/internal/actionabi"
 	"github.com/anas-project/ANAS/internal/incushost"
-	"github.com/anas-project/ANAS/internal/incusingresshost"
 	"github.com/anas-project/ANAS/internal/incusprovision"
 )
 
@@ -39,38 +38,6 @@ func ProjectActionEvent(action string, e actionabi.Event) (actionabi.Event, erro
 	}
 	if e.Type != "result" || e.Result == nil || e.Result.Outcome != actionabi.Succeeded || e.Result.Changed == nil || *e.Result.Changed != spec.Mutating {
 		return actionabi.Event{}, ErrRequest
-	}
-	if action == ActionObserveHTTP {
-		var result incusingresshost.ProjectionResponse
-		if decodePublicActionValue(e.Result.Value, &result) != nil || len(result.Authorized) != 1 {
-			return actionabi.Event{}, ErrRequest
-		}
-		req := incusingresshost.ProjectionRequest{Schema: result.Schema, ObservationID: result.ObservationID,
-			ScopeID: result.ScopeID, Epoch: result.Epoch, Deployment: result.Deployment, Lease: result.Identity.Lease,
-			InstanceID: result.Identity.InstanceID, WorkloadID: result.Identity.WorkloadID, GuestPort: result.Identity.GuestPort}
-		if result.ValidateFor(req) != nil {
-			return actionabi.Event{}, ErrRequest
-		}
-		body, err := json.Marshal(result)
-		if err != nil || len(body) > 32<<10 {
-			return actionabi.Event{}, ErrRequest
-		}
-		e.Result.Value = body
-		return e, nil
-	}
-	if action == ActionObserverPlan || action == ActionObserverApply {
-		return projectObserverConfiguration(action, e)
-	}
-	if action == ActionForwardingWithdraw {
-		var v incusprovision.ForwardingWithdrawalResult
-		if decodePublicActionValue(e.Result.Value, &v) != nil || v.Validate() != nil {
-			return actionabi.Event{}, ErrRequest
-		}
-		e.Result.Value, _ = json.Marshal(v)
-		return e, nil
-	}
-	if action == ActionForwardingPlan || action == ActionForwardingApply {
-		return projectForwardingPermission(action, e)
 	}
 	if spec.PlanFor != "" {
 		if action == ActionImagePrunePlan {

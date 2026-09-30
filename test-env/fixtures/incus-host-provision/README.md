@@ -1,7 +1,7 @@
 # Incus 宿主供给原生生命周期验收
 
 此入口在全新、明确指定的 QEMU VM 中运行生产 `incusprovision.NewLocalBackend`，实际安装
-官方 Incus 包、配置回环 daemon、btrfs 池、Docker 控制桥、防火墙和非 root relay，随后登记
+官方 Incus 包、btrfs 池、Docker 控制桥、防火墙，并让 daemon 只监听控制桥网关，随后登记
 管理连接并卸载本次所有的资源。不是 mock、仅 API 协议测试、手工预先初始化 daemon 后的
 验收，也不是物理宿主上的安装脚本。
 
@@ -28,23 +28,20 @@ LTS。记录实际内核、架构与软件包版本；一台机器通过不能�
 
 ## 构建、交付与运行
 
-在匹配的源码 checkout 中构建 Linux 验收程序、真实 relay 和 JSON 测试转换器。以下为 amd64
-示例；换架构时三个二进制必须同时匹配，不能静默降级：
+在匹配的源码 checkout 中构建 Linux 验收程序和 JSON 测试转换器。以下为 amd64 示例；换架构时
+两个二进制必须同时匹配，不能静默降级：
 
 ```sh
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOPROXY=off \
   go test -c -o /tmp/incusprovision-native.test ./internal/incusprovision
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOPROXY=off \
-  go build -o /tmp/anas-incus-control-relay ./modules/incus/control-relay
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOPROXY=off \
   go build -o /tmp/test2json cmd/test2json
 ```
 
-把二进制与 `packaging/systemd/anas-incus-control-relay.service` 交付到 VM。测试程序和转换器
-安装到 root 私有 `/opt/anas-host-native/bin`；真实 relay 和固定 unit 放到它们的生产路径
-`/usr/local/lib/anas/anas-incus-control-relay`、`/etc/systemd/system/anas-incus-control-relay.service`。
-只执行 `daemon-reload`，不预先创建 relay 用户、配置或启用 relay；这些效果由生产后端执行。
-这一步是显式受信的实验交付，不证明正式 release 签名、安装器或宿主审批通道已验收。
+把测试程序和转换器安装到 root 私有 `/opt/anas-host-native/bin`。2026-09-30 起没有转发服务：
+生产后端自己把 Incus 的 HTTPS 监听移到控制桥网关，并写入 `incus.service` 排在 `docker.service`
+之后的 drop-in，入口要求这个 drop-in 事先不存在。这一步是显式受信的实验交付，不证明正式
+release 签名、安装器或宿主审批通道已验收。
 
 建立 root-only 报告父目录 `/opt/anas-host-native/reports`。不要把某些发行版上允许日志组写入
 的 `/var/log` 用作此 root 操作的证据祖先目录，也不要改变系统日志目录权限。交付入口后执行：
@@ -58,21 +55,35 @@ sudo python3 /opt/anas-host-native/src/server-incus-host-provision-e2e.py \
 ```
 
 报告目录及 `/run/anas-incus-host-lifecycle` 必须不存在。所有输入均要求 canonical 路径、
-root-owned 只读祖先、普通单链接文件、执行权限和有界大小；测试程序再次比对自身及 relay
-摘要。入口生成 root-only 身份标记，不读取生产 Docker 登录配置、root 密码或任意代理。
+root-owned 只读祖先、普通单链接文件、执行权限和有界大小；测试程序再次比对自身摘要。入口生成 root-only 身份标记，不读取生产 Docker 登录配置、root 密码或任意代理。
+
+默认验收上游发行版源。验收国内加速时，在另一台全新实验 VM 上追加 `--chinese-speedup`；
+入口不继承物理宿主或调用进程的 `CHINESE_SPEEDUP`。该布尔值固定在 root-only 身份标记、
+`environment.json` 和 `summary.json` 中，并传入实际后端的确认请求。安装门禁独立读回
+`/etc/anas/incus-apt`：发行版依赖须来自 `mirrors.aliyun.com`，Incus 仍固定 Zabbly 源与
+995 优先级，且国内源中的 Incus 包优先级为 -1；原有逐字节源与签名策略校验仍执行。
+安装子项另用固定的 `dpkg-query` 和私有 `APT_CONFIG` 下的 `apt-cache policy` 独立核对
+`incus`、`incus-base`、`incus-client`：包状态须健康，实际安装版本属于 7.0 系列，且与
+APT 的 Installed/Candidate 一致；候选版本来自 Zabbly，版本优先级为 995。若发行版源
+提供该包，其版本优先级必须为 -1；不假定每个发行版都有这三个包。APT 的 Packages
+索引行可能显示通用源优先级（例如 990），因此按版本标题行校验包专属 pin。报告只记
+经过校验的包名、版本、源索引计数和布尔结果。查询使用固定 PATH/locale，每项最多
+20 秒，stdout/stderr 分别限制为 64/16 KiB，不输出原始命令日志。
+此入口验证后端真实包安装，不代替受管工作区配置经宿主动作审批传递的端到端验收。
 
 ## 必需证据与失败处理
 
-门禁要求一个父测试与十个子项共 **11 项**均出现 run/pass，非零退出、缺项、重复、其他测试、
+门禁要求一个父测试与九个子项共 **10 项**均出现 run/pass，非零退出、缺项、重复、其他测试、
 skip 或 fail 均不通过。子项覆盖未确认/过期计划拒绝、无宿主效果的 skip、官方包安装、实际
-配置、私有管理连接、重复安装/配置/登记、默认保留包的卸载、显式只移除本次新增包，以及
+配置、私有管理连接、重复安装/配置/登记、只移除本次受管新增包的卸载，以及
 重复卸载。原 Docker 网络 ID 和空容器库存须保持，daemon ID 全程固定。
 
 新增的 `uninstall_preflight_preserves_retained_storage` 只在已核实身份的实验 VM 内创建
-一个有精确测试所有权标记的 custom volume。卸载必须在删除 bundle、信任、relay、规则或
+一个有精确测试所有权标记的 custom volume。卸载必须在删除 bundle、信任、网关监听、规则或
 网络之前拒绝，管理连接仍可通过真实 endpoint 使用，所有权、intent 和 receipt 均保持。
 该卷再次读回所有权后才按精确名称删除，并确认缺席；失败则保留证据，不清空整池或删除
-其他对象。旧的 10 项报告不满足此门禁。
+其他对象。缺少该子项的历史报告不满足此门禁；当前包卸载合并后的 10 项以入口的 `REQUIRED`
+集合为准。
 
 监督器通过管道分别限制 stdout/stderr 日志，每份最多 32 MiB；超限、超时、日志不完整
 或缺少必需事件一律失败。不得通过对子进程设置 `RLIMIT_FSIZE` 来限制日志，因为该上限

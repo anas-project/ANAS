@@ -27,7 +27,6 @@ REQUIRED = {PARENT} | {PARENT+'/'+name for name in (
     'idempotent_reenrollment', 'uninstall_preflight_preserves_retained_storage',
     'uninstall_removes_owned_packages', 'repeat_uninstall_is_idempotent')}
 MARKER = Path('/run/anas-incus-host-lifecycle/identity.json')
-RELAY = Path('/usr/local/lib/anas/anas-incus-control-relay')
 DOCKER_ROOT = '/var/lib/anas-host-provision-test'
 
 
@@ -164,9 +163,10 @@ def run_native_process(command, env, output_path, error_path, timeout, max_log_b
 
 def main(args):
     require_vm(args.vm_id)
+    if type(args.chinese_speedup) is not bool:
+        raise RuntimeError('native mirror selection must be an explicit boolean')
     tests, converter, report = Path(args.tests), Path(args.test2json), Path(args.report_root)
-    identities = {'tests_sha256': protected_input(tests), 'relay_sha256': protected_input(RELAY),
-                  'test2json_sha256': protected_input(converter)}
+    identities = {'tests_sha256': protected_input(tests), 'test2json_sha256': protected_input(converter)}
     if (not report.is_absolute() or report.exists() or report.parent.resolve() != report.parent
             or MARKER.parent.exists()):
         raise RuntimeError('fresh separate native report and marker roots are required')
@@ -175,7 +175,7 @@ def main(args):
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) & 0o022:
             raise RuntimeError('native reports require protected root-owned ancestors')
     for path in ('/var/lib/anas/incus-host/state.json', '/var/lib/anas/incus-host/connection.json',
-                 '/etc/anas/incus-control-relay.json', '/var/lib/incus/unix.socket'):
+                 '/etc/systemd/system/incus.service.d/anas-after-docker.conf', '/var/lib/incus/unix.socket'):
         if os.path.lexists(path):
             raise RuntimeError('native host provisioning fixture is not fresh')
     socket_info = Path('/run/docker.sock').lstat()
@@ -204,7 +204,7 @@ def main(args):
         raise RuntimeError('a dedicated test Docker data root with no existing containers is required')
     before_networks = sorted(read_docker(['network', 'ls', '--no-trunc', '--format', '{{.ID}}']).decode().split())
     marker = {'schema': 'anas.incus-host-native/v1', 'vm_id': args.vm_id, 'docker_id': daemon['ID'],
-              'docker_root': DOCKER_ROOT, **identities}
+              'docker_root': DOCKER_ROOT, 'chinese_speedup': args.chinese_speedup, **identities}
     MARKER.parent.mkdir(mode=0o700)
     with MARKER.open('x') as stream:
         json.dump(marker, stream, sort_keys=True)
@@ -229,6 +229,7 @@ def main(args):
                  and not read_docker(['ps', '-aq']).strip() and after_networks == before_networks)
     passed = not timed_out and not log_limit_exceeded and parse_complete and native_events_passed(events, code) and unchanged
     summary = {'schema': marker['schema'], 'vm_id': args.vm_id, 'passed': passed, 'exit_code': code,
+               'chinese_speedup': marker['chinese_speedup'],
                'required_events': len(REQUIRED), 'timed_out': timed_out, 'json_complete': parse_complete,
                'log_limit_exceeded': log_limit_exceeded,
                'docker_identity_and_baseline_unchanged': unchanged,
@@ -245,12 +246,18 @@ def main(args):
         raise RuntimeError('native host provisioning gate failed; private evidence retained')
 
 
-if __name__ == '__main__':
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for option in ('vm-id', 'tests', 'test2json', 'report-root'):
         parser.add_argument('--'+option, required=True)
+    parser.add_argument('--chinese-speedup', action='store_true',
+                        help='use the confirmed compiled mainland APT mirror policy (default: upstream)')
+    return parser.parse_args(argv)
+
+
+if __name__ == '__main__':
     try:
-        main(parser.parse_args())
+        main(parse_args())
     except Exception as error:
         print(json.dumps({'passed': False, 'error_type': type(error).__name__,
                           'message': str(error) if type(error) is RuntimeError else 'private native operation failed'}), file=sys.stderr)

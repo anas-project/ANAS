@@ -28,11 +28,12 @@ class CoreProjectionEvidence(unittest.TestCase):
 
 
 class PruneVerdict(unittest.TestCase):
-    STATE = {'pin_r1': 'a' * 64, 'pin_r2': 'b' * 64}
+    STATE = {'pin_r1': 'a' * 64, 'pin_r2': 'b' * 64, 'pin_r3': 'c' * 64}
 
     def planned(self, delete=None):
         return {'delete': delete if delete is not None else [{'project': 'anas-core-one', 'fingerprint': 'b' * 64}],
                 'retained': [{'project': 'anas-core-one', 'fingerprint': 'a' * 64, 'reasons': ['current_deployment', 'previous_deployment']},
+                             {'project': 'anas-core-one', 'fingerprint': 'c' * 64, 'reasons': ['not_present', 'previous_deployment']},
                              {'project': 'anas-core-two', 'fingerprint': 'a' * 64, 'reasons': ['previous_deployment']}]}
 
     def applied(self, **change):
@@ -51,6 +52,12 @@ class PruneVerdict(unittest.TestCase):
         planned = self.planned()
         planned['retained'] = planned['retained'][:1]
         self.assertFalse(NATIVE.prune_verdicts(self.STATE, planned, self.applied()))
+
+    def test_a_lost_rollback_image_must_be_reported_not_dropped(self):
+        for reasons in (['previous_deployment'], ['not_present'], []):
+            planned = self.planned()
+            planned['retained'][1]['reasons'] = reasons
+            self.assertFalse(NATIVE.prune_verdicts(self.STATE, planned, self.applied()))
 
     def test_only_the_core_workspace_is_registered(self):
         self.assertEqual(NATIVE.CORE_WORKSPACES, (('native', '/srv/anas/host-action-native'),))

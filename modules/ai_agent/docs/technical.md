@@ -206,11 +206,6 @@ Incus 的 `image_architecture` 必须显式描述目标 daemon。受信 bundle �
 登记信任前检查租约 project 中现有镜像的 fingerprint、架构与类型，缺失直接失败，不查询 alias
 或重建。自动导入/烘焙仍待实现。快照及回滚语义见 [compute 契约](../../../contracts/compute/docs/technical.md)。
 
-HTTP 网络原型 `cmd/incus-network-prototype` 只生成实验产物：指定源地址的 guest /32 路由、
-绑定 veth 的入站过滤、限时地址/端口集合，以及既有 Traefik 路由环境字段。它不安装规则，也不开启
-生产 ingress。Docker/Incus 规则顺序、来源冒用、IP 复用和长连接撤销仍需真实 Linux 证据；
-TCP/UDP 发布未实施。
-
 ## 租约命名密钥生命周期
 
 Core 已接入独立的 32 字节 compute `LEASE_SECRET`，与客户端证书分开生成和复用。Deployment 与

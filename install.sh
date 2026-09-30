@@ -24,6 +24,7 @@ Environment:
   ANAS_HOSTD_SOCKET_UNIT    host action socket unit (default: /etc/systemd/system/anas-hostd.socket)
   ANAS_HOSTD_SERVICE_UNIT   host action service template (default: /etc/systemd/system/anas-hostd@.service)
   ANAS_SYSTEMCTL            systemctl executable (default: systemctl)
+  ANAS_SETCAP               setcap executable (default: setcap)
   ANAS_MANAGEMENT_PORT      initial management port (default: 8080)
   ANAS_CONSOLE_STORE        initial console state directory (default: /var/lib/anas/console)
 EOF
@@ -32,6 +33,18 @@ EOF
 fail() {
   printf 'anas installer: %s\n' "$*" >&2
   exit 1
+}
+
+# Releases before 2026-09-30 shipped a non-root control relay; Incus now
+# listens on the control bridge gateway itself. Upgrades and uninstalls remove
+# the relay unit and binary those releases left behind.
+remove_legacy_relay() {
+  if [ -e "$relay_service_unit" ]; then
+    command -v "$systemctl_command" >/dev/null 2>&1 || fail "$systemctl_command is required to remove the retired control relay"
+    run_as_root "$systemctl_command" disable --now "$relay_service_name" >/dev/null
+    run_as_root rm -f "$relay_service_unit"
+  fi
+  if [ -e "$relay_target" ]; then run_as_root rm -f "$relay_target"; fi
 }
 
 run_as_root() {
@@ -141,6 +154,7 @@ main() {
   hostd_service_unit="${ANAS_HOSTD_SERVICE_UNIT:-/etc/systemd/system/anas-hostd@.service}"
   relay_service_unit="${ANAS_RELAY_SERVICE_UNIT:-/etc/systemd/system/anas-incus-control-relay.service}"
   systemctl_command="${ANAS_SYSTEMCTL:-systemctl}"
+  setcap_command="${ANAS_SETCAP:-setcap}"
   management_port="${ANAS_MANAGEMENT_PORT:-8080}"
   console_store="${ANAS_CONSOLE_STORE:-/var/lib/anas/console}"
   helper_dir="${ANAS_HELPER_DIR:-/usr/local/lib/anas}"
@@ -180,15 +194,12 @@ main() {
         run_as_root "$systemctl_command" disable --now "$hostd_socket_name" >/dev/null
         run_as_root "$systemctl_command" stop "$hostd_instance_pattern" >/dev/null
         run_as_root rm -f "$hostd_socket_unit" "$hostd_service_unit"
-        if [ -e "$relay_service_unit" ]; then
-          run_as_root "$systemctl_command" stop "$relay_service_name" >/dev/null
-          run_as_root rm -f "$relay_service_unit"
-        fi
         run_as_root "$systemctl_command" daemon-reload
       fi
+      remove_legacy_relay
       if [ -e "$hostd_config" ]; then run_as_root rm -f "$hostd_config"; fi
       if [ -e "$hostd_target" ]; then run_as_root rm -f "$hostd_target"; fi
-      if [ -e "$relay_target" ]; then run_as_root rm -f "$relay_target"; fi
+      # Releases before 2026-09-30 created this job broker directory.
       if [ -d /run/anas-job-broker ]; then run_as_root rmdir /run/anas-job-broker 2>/dev/null || true; fi
     fi
     if [ -e "$helper_target" ]; then
@@ -264,7 +275,7 @@ main() {
   mkdir -p "$work_dir/extract"
   archive_dir="${asset%.tar.gz}"
   tar -xzf "$archive" -C "$work_dir/extract" "$archive_dir/anas"
-  for optional in anasd anas-helper anasd.service anasd.yml anas-hostd anas-hostd.socket anas-hostd@.service anas-incus-control-relay anas-incus-control-relay.service release.json; do
+  for optional in anasd anas-helper anasd.service anasd.yml anas-hostd anas-hostd.socket anas-hostd@.service release.json; do
     tar -xzf "$archive" -C "$work_dir/extract" "$archive_dir/$optional" 2>/dev/null || true
   done
   binary="$work_dir/extract/$archive_dir/anas"
@@ -273,10 +284,8 @@ main() {
   packaged_unit="$work_dir/extract/$archive_dir/anasd.service"
   packaged_config="$work_dir/extract/$archive_dir/anasd.yml"
   hostd="$work_dir/extract/$archive_dir/anas-hostd"
-  relay="$work_dir/extract/$archive_dir/anas-incus-control-relay"
   packaged_hostd_socket="$work_dir/extract/$archive_dir/anas-hostd.socket"
   packaged_hostd_service="$work_dir/extract/$archive_dir/anas-hostd@.service"
-  packaged_relay_service="$work_dir/extract/$archive_dir/anas-incus-control-relay.service"
   release_json="$work_dir/extract/$archive_dir/release.json"
   [ -f "$binary" ] || fail "release archive does not contain anas"
   reported_version_output="$("$binary" version)" || fail "downloaded anas binary could not report its version"
@@ -292,16 +301,17 @@ main() {
 
   # Validate every service input before replacing any installed file. Legacy
   # CLI-only archives remain usable with --no-service, while a service install
-  # cannot fail halfway through because one packaged member was absent.
+  # cannot fail halfway through because one packaged member was absent. A
+  # service install always brings both privileged parts: without anas-helper or
+  # anas-hostd some features cannot work (HOSTACT-R-017).
   if [ "$install_service" -eq 1 ]; then
     [ -f "$daemon" ] || fail "release archive does not contain anasd"
+    [ -f "$helper" ] || fail "release archive does not contain anas-helper"
     [ -f "$hostd" ] || fail "release archive does not contain anas-hostd"
-    [ -f "$relay" ] || fail "release archive does not contain anas-incus-control-relay"
     [ -f "$packaged_unit" ] || fail "release archive does not contain anasd.service"
     [ -f "$packaged_config" ] || fail "release archive does not contain anasd.yml"
     [ -f "$packaged_hostd_socket" ] || fail "release archive does not contain anas-hostd.socket"
     [ -f "$packaged_hostd_service" ] || fail "release archive does not contain anas-hostd@.service"
-    [ -f "$packaged_relay_service" ] || fail "release archive does not contain anas-incus-control-relay.service"
     [ -f "$release_json" ] || fail "release archive does not contain release.json"
     validate_service_path "ANAS_INSTALL_DIR" "$install_dir"
     validate_service_path "ANAS_SERVICE_CONFIG" "$service_config"
@@ -314,6 +324,7 @@ main() {
     case "$management_port" in ''|*[!0-9]*) fail "ANAS_MANAGEMENT_PORT must be an integer between 1 and 65535" ;; esac
     [ "$management_port" -ge 1 ] && [ "$management_port" -le 65535 ] || fail "ANAS_MANAGEMENT_PORT must be between 1 and 65535"
     command -v "$systemctl_command" >/dev/null 2>&1 || fail "$systemctl_command is required unless --no-service is used"
+    command -v "$setcap_command" >/dev/null 2>&1 || fail "$setcap_command is required to grant anas-helper CAP_NET_ADMIN (Debian/Ubuntu package libcap2-bin)"
     hostd_version_output="$("$hostd" --version)" || fail "downloaded anas-hostd could not report its version"
     hostd_version="$(printf '%s\n' "$hostd_version_output" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
     hostd_commit="$(printf '%s\n' "$hostd_version_output" | sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p')"
@@ -336,8 +347,8 @@ main() {
     if [ "$(id -u)" -eq 0 ] || command -v sudo >/dev/null 2>&1; then
       run_as_root install -d -m 0755 "$helper_dir"
       run_as_root install -m 0755 "$helper" "$helper_target"
-      if command -v setcap >/dev/null 2>&1; then
-        run_as_root setcap cap_net_admin+ep "$helper_target"
+      if command -v "$setcap_command" >/dev/null 2>&1; then
+        run_as_root "$setcap_command" cap_net_admin+ep "$helper_target"
         printf 'Installed %s with CAP_NET_ADMIN\n' "$helper_target"
       else
         printf 'Installed %s, but setcap is unavailable; host-LAN Modules need cap_net_admin+ep.\n' "$helper_target" >&2
@@ -367,28 +378,18 @@ main() {
       /^ExecStart=/ { print "ExecStart=" binary " --serve"; next }
       { print }
     ' "$packaged_hostd_service" >"$rendered_hostd_service"
-    rendered_relay_service="$work_dir/anas-incus-control-relay.service"
-    awk -v binary="$relay_target" '
-      /^ExecStart=/ { print "ExecStart=" binary " --config /run/anas-incus-control-relay.json"; next }
-      { print }
-    ' "$packaged_relay_service" >"$rendered_relay_service"
     rendered_hostd_config="$work_dir/hostd.json"
-    printf '{"schema":"anas.host-action-installation/v2","release":{"version":"%s","commit":"%s"},"service_mode":"systemd-root-service","service_unit":"%s","socket_gid":0}' \
-      "$version" "$release_commit" "$service_name" >"$rendered_hostd_config"
+    printf '{"schema":"anas.host-action-installation/v3","release":{"version":"%s","commit":"%s"}}' \
+      "$version" "$release_commit" >"$rendered_hostd_config"
 
     run_as_root install -d -m 0755 "$(dirname "$service_config")"
     run_as_root install -d -m 0755 "$(dirname "$systemd_unit")"
     run_as_root install -d -m 0755 "$(dirname "$hostd_config")"
     run_as_root install -d -m 0755 "$(dirname "$hostd_socket_unit")"
     run_as_root install -d -m 0755 "$(dirname "$hostd_service_unit")"
-    run_as_root install -d -m 0755 "$(dirname "$relay_service_unit")"
     run_as_root install -d -m 0755 "$helper_dir"
     run_as_root install -d -m 0700 "$console_store"
-    if [ -w /run ]; then
-      run_as_root install -d -m 0700 /run/anas-job-broker
-    fi
     run_as_root install -m 0755 "$hostd" "$hostd_target"
-    run_as_root install -m 0755 "$relay" "$relay_target"
     if [ ! -e "$service_config" ]; then
       run_as_root install -m 0600 "$rendered_config" "$service_config"
     else
@@ -399,7 +400,7 @@ main() {
     run_as_root install -m 0644 "$rendered_unit" "$systemd_unit"
     run_as_root install -m 0644 "$rendered_hostd_socket" "$hostd_socket_unit"
     run_as_root install -m 0644 "$rendered_hostd_service" "$hostd_service_unit"
-    run_as_root install -m 0644 "$rendered_relay_service" "$relay_service_unit"
+    remove_legacy_relay
     run_as_root "$systemctl_command" daemon-reload
     run_as_root "$systemctl_command" enable "$hostd_socket_name" >/dev/null
     run_as_root "$systemctl_command" restart "$hostd_socket_name"

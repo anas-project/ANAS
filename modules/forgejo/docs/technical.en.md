@@ -443,12 +443,6 @@ of resolving aliases or rebuilding during apply. Release-side baking and import 
 candidate evidence, but signed distribution and complete Runner engine/one-job acceptance remain pending.
 See the [compute contract](../../../contracts/compute/docs/technical.en.md) for snapshot and rollback semantics.
 
-The HTTP network prototype only generates lab artifacts (`cmd/incus-network-prototype`): a guest /32 route
-with explicit source, veth-bound ingress filtering, an expiring address/port set, and existing Traefik route
-environment fields. It does not install rules or enable production ingress. Docker/Incus rule ordering,
-source spoofing, address reuse and long-connection revocation still require real Linux evidence; TCP/UDP
-publishing is not implemented.
-
 ## Lease naming key lifecycle
 
 Core now generates and reuses an independent 32-byte compute `LEASE_SECRET`, separate from the client

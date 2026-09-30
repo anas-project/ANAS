@@ -57,10 +57,8 @@ class HostActionNativeContract(unittest.TestCase):
         # which the actual compiled installation decoder correctly rejects.
         release = json.loads(json.dumps({'version': '0.0.0-native.1', 'commit': 'a' * 40}, sort_keys=True))
         actual = NATIVE.installation_policy_bytes(release)
-        expected = ('{"schema":"anas.host-action-installation/v2",'
-                    '"release":{"version":"0.0.0-native.1","commit":"' + 'a' * 40 + '"},'
-                    '"service_mode":"systemd-root-service","service_unit":"anasd.service",'
-                    '"socket_gid":0}\n').encode()
+        expected = ('{"schema":"anas.host-action-installation/v3",'
+                    '"release":{"version":"0.0.0-native.1","commit":"' + 'a' * 40 + '"}}\n').encode()
         self.assertEqual(actual, expected)
         self.assertEqual(list(release), ['commit', 'version'])
 

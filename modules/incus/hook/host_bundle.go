@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	hostBundleSchema      = "anas.incus-connection-bundle/v1"
+	hostBundleSchema      = "anas.incus-connection-bundle/v2"
 	defaultHostBundlePath = "/var/lib/anas/incus-host/connection.json"
 	autoSourceSecretKey   = "INCUS_HOST_CONNECTION_SOURCE"
 	autoBindingSecretKey  = "INCUS_HOST_CONNECTION_BINDING"
@@ -46,7 +46,6 @@ type hostConnectionBundle struct {
 	ControlNetwork        string `json:"control_network"`
 	ControlSubnet         string `json:"control_subnet"`
 	ControlGateway        string `json:"control_gateway"`
-	RelayService          string `json:"relay_service"`
 	ManagementFingerprint string `json:"management_fingerprint"`
 	Architecture          string `json:"architecture"`
 	StoragePool           string `json:"storage_pool"`
@@ -120,11 +119,12 @@ func validateHostConnectionBundle(bundle hostConnectionBundle) error {
 	if bundle.StoragePool != "anas-btrfs" {
 		return fmt.Errorf("incus host connection bundle does not declare the managed storage pool")
 	}
-	if bundle.ControlNetwork != "anas-incus-control" || bundle.RelayService != "anas-incus-control-relay.service" {
+	if bundle.ControlNetwork != "anas-incus-control" {
 		return fmt.Errorf("incus host connection bundle does not match the managed control channel")
 	}
+	// Incus itself listens on the control bridge gateway (no relay since 2026-09-30).
 	gateway := net.ParseIP(bundle.ControlGateway)
-	if gateway == nil || gateway.To4() == nil || bundle.Endpoint != "https://"+gateway.String()+":18443" {
+	if gateway == nil || gateway.To4() == nil || bundle.Endpoint != "https://"+gateway.String()+":8443" {
 		return fmt.Errorf("incus host connection bundle endpoint does not match the control gateway")
 	}
 	prefix, prefixErr := netip.ParsePrefix(bundle.ControlSubnet)
@@ -165,7 +165,6 @@ func bundleBinding(bundle hostConnectionBundle) (string, error) {
 		ControlNetwork        string `json:"control_network"`
 		ControlSubnet         string `json:"control_subnet"`
 		ControlGateway        string `json:"control_gateway"`
-		RelayService          string `json:"relay_service"`
 		ManagementFingerprint string `json:"management_fingerprint"`
 		Architecture          string `json:"architecture"`
 		StoragePool           string `json:"storage_pool"`
@@ -173,8 +172,8 @@ func bundleBinding(bundle hostConnectionBundle) (string, error) {
 		Schema: bundle.Schema, Endpoint: bundle.Endpoint, ServerCertificatePEM: bundle.ServerCertificatePEM,
 		AdminCertificatePEM: bundle.AdminCertificatePEM, AdminPrivateKeyPEM: bundle.AdminPrivateKeyPEM,
 		ControlNetwork: bundle.ControlNetwork, ControlSubnet: bundle.ControlSubnet, ControlGateway: bundle.ControlGateway,
-		RelayService: bundle.RelayService, ManagementFingerprint: bundle.ManagementFingerprint,
-		Architecture: bundle.Architecture, StoragePool: bundle.StoragePool,
+		ManagementFingerprint: bundle.ManagementFingerprint,
+		Architecture:          bundle.Architecture, StoragePool: bundle.StoragePool,
 	})
 	if err != nil {
 		return "", fmt.Errorf("incus host connection bundle is unavailable or unsafe")

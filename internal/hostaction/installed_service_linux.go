@@ -12,8 +12,8 @@ import (
 
 // ServeInstalledActivation is the root executable's only serving entry. It
 // accepts no paths or handlers. The service manager must already have installed
-// its policy, activation socket and private StateDirectory. No account, package,
-// listener or service configuration is created here.
+// its policy, activation socket and private StateDirectory; only the ledger
+// directory below that StateDirectory is created here.
 func ServeInstalledActivation(ctx context.Context) (result error) {
 	a, err := OpenSystemdActivation(ctx)
 	if err != nil {
@@ -33,7 +33,16 @@ func ServeInstalledActivation(ctx context.Context) (result error) {
 			result = ErrAudit
 		}
 	}()
-	return a.ServeBrokered(ctx, j)
+	ledger, err := openInstalledLedger()
+	if err != nil {
+		return rejectAdmission(ctx, j, Peer{}, "invocation_ledger_unavailable", err)
+	}
+	defer func() {
+		if ledger.close() != nil {
+			result = ErrUnavailable
+		}
+	}()
+	return a.Serve(ctx, j, ledger)
 }
 
 type installedAudit struct {

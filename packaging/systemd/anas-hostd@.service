@@ -21,7 +21,7 @@ NoNewPrivileges=true
 # lower its acquisition workers to _apt. Some systemd sandbox combinations
 # otherwise clear CAP_SETUID before the NoNewPrivileges exec transition.
 # This fixed root executor already installs system packages/accounts; do not
-# disable APT's sandbox, NoNewPrivileges or the non-root relay's empty caps.
+# disable APT's sandbox or NoNewPrivileges.
 AmbientCapabilities=CAP_SETUID
 PrivateTmp=true
 ProtectHome=true

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 from pathlib import Path
 import sys
@@ -37,7 +38,8 @@ class HostProvisionNativeSafety(unittest.TestCase):
 
     def test_writable_report_ancestor_rejected_before_marker_or_docker(self):
         args = SimpleNamespace(vm_id='anas-incus-host-abc123', tests='/opt/fixture/tests',
-                               test2json='/opt/fixture/test2json', report_root='/var/log/fixture/run')
+                               test2json='/opt/fixture/test2json', report_root='/var/log/fixture/run',
+                               chinese_speedup=False)
         info = SimpleNamespace(st_mode=lab.stat.S_IFDIR | 0o775, st_uid=0)
         with patch.object(lab, 'require_vm'), patch.object(lab, 'protected_input', return_value='a'*64), \
                 patch.object(lab.Path, 'resolve', autospec=True, side_effect=lambda path: path), \
@@ -48,6 +50,72 @@ class HostProvisionNativeSafety(unittest.TestCase):
                 lab.main(args)
             mkdir.assert_not_called()
             run.assert_not_called()
+
+    def test_cli_mirror_selection_is_explicit_and_defaults_to_upstream(self):
+        argv = ['--vm-id', 'anas-incus-host-abc123', '--tests', '/opt/fixture/tests',
+                '--test2json', '/opt/fixture/test2json', '--report-root', '/opt/reports/run']
+        with patch.dict(os.environ, {'CHINESE_SPEEDUP': 'true'}):
+            self.assertIs(lab.parse_args(argv).chinese_speedup, False)
+            self.assertIs(lab.parse_args(argv+['--chinese-speedup']).chinese_speedup, True)
+
+    def test_mirror_choice_is_bound_in_marker_and_both_reports(self):
+        for selected in (False, True):
+            with self.subTest(chinese_speedup=selected), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                report = root/'report'
+                marker = root/'marker/identity.json'
+                args = SimpleNamespace(vm_id='anas-incus-host-abc123', tests='/opt/fixture/tests',
+                                       test2json='/opt/fixture/test2json', report_root=str(report),
+                                       chinese_speedup=selected)
+                original_lstat = Path.lstat
+
+                def controlled_lstat(path, *args, **kwargs):
+                    if path == Path('/run/docker.sock'):
+                        return SimpleNamespace(st_mode=lab.stat.S_IFSOCK | 0o600, st_uid=0)
+                    if path in report.parents:
+                        return SimpleNamespace(st_mode=lab.stat.S_IFDIR | 0o700, st_uid=0)
+                    return original_lstat(path, *args, **kwargs)
+
+                def docker_read(command, **kwargs):
+                    self.assertEqual(command[:3], ['/usr/bin/docker', '--host', 'unix:///run/docker.sock'])
+                    operation = command[3:]
+                    if operation == ['info', '--format', '{{json .}}']:
+                        body = json.dumps({'ID': 'isolated-test-daemon', 'DockerRootDir': lab.DOCKER_ROOT,
+                                           'ServerVersion': 'test'}).encode()
+                    elif operation == ['ps', '-aq']:
+                        body = b''
+                    elif operation == ['network', 'ls', '--no-trunc', '--format', '{{.ID}}']:
+                        body = b'isolated-network\n'
+                    else:
+                        self.fail('unexpected Docker operation')
+                    return SimpleNamespace(returncode=0, stdout=body, stderr=b'')
+
+                def native_run(command, env, output, errors, timeout):
+                    self.assertIs(json.loads(marker.read_text())['chinese_speedup'], selected)
+                    self.assertNotIn('CHINESE_SPEEDUP', env)
+                    output.write_text(''.join(json.dumps(event)+'\n' for event in self.valid_events()))
+                    errors.write_text('')
+                    return 0, False, False
+
+                with patch.object(lab, 'require_vm'), patch.object(lab, 'protected_input', return_value='a'*64), \
+                        patch.object(lab, 'MARKER', marker), \
+                        patch.object(lab, 'DOCKER_ROOT', str(root/'docker-data')), patch.object(lab.os, 'umask'), \
+                        patch.object(lab.os.path, 'lexists', return_value=False), \
+                        patch.object(lab.Path, 'lstat', controlled_lstat), \
+                        patch.object(lab.subprocess, 'run', side_effect=docker_read), \
+                        patch.object(lab, 'run_native_process', side_effect=native_run), patch('builtins.print'):
+                    lab.main(args)
+                for path in (marker, report/'environment.json', report/'summary.json'):
+                    self.assertIs(json.loads(path.read_text())['chinese_speedup'], selected)
+                summary = json.loads((report/'summary.json').read_text())
+                self.assertTrue(summary['passed'])
+                self.assertEqual(summary['required_events'], 10)
+
+    def test_non_boolean_mirror_choice_is_rejected_before_inputs(self):
+        with patch.object(lab, 'require_vm'), patch.object(lab, 'protected_input') as read:
+            with self.assertRaisesRegex(RuntimeError, 'explicit boolean'):
+                lab.main(SimpleNamespace(vm_id='anas-incus-host-abc123', chinese_speedup='true'))
+            read.assert_not_called()
 
     def test_all_required_events_and_zero_exit_are_mandatory(self):
         events = self.valid_events()

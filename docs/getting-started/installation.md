@@ -62,8 +62,14 @@ CLI、daemon 和 unit，但不会覆盖已有服务配置。
 curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-project/ANAS/master/install.sh | sh -s -- --install-dir "$HOME/.local/bin"
 ```
 
+默认的服务安装同时装上两个特权组件：只持有 `CAP_NET_ADMIN`、负责宿主局域网桥的 `anas-helper`，以及宿主
+动作通道 `anas-hostd`。缺少任何一个，依赖它的功能就无法使用，所以发行归档缺少其中之一或宿主没有 `setcap`
+时，服务安装在改动任何文件之前就退出，已装的旧版本保持原样（校验通过的正常升级仍会替换二进制与单元，
+只保留服务配置）。自定义安装目录或 `--no-service` 不安装 `anas-hostd`，用到它的功能会在使用时报错并指出
+缺少哪一个。
+
 安装脚本依赖 `curl`、`tar`、`install`，以及 `sha256sum` 或 `shasum`；默认服务安装还需要
-`systemctl`。可用 `ANAS_INSTALL_SOURCE=github|cn`、`ANAS_INSTALL_DIR`、
+`systemctl` 与 `setcap`（Debian/Ubuntu 的 `libcap2-bin`）。可用 `ANAS_INSTALL_SOURCE=github|cn`、`ANAS_INSTALL_DIR`、
 `ANAS_MANAGEMENT_PORT` 做非交互覆盖；程序侧可用
 `ANAS_DEFAULT_SOURCE=official|official-cn` 临时覆盖安装器默认值。
 
@@ -78,10 +84,10 @@ workspace 或 `/var/lib/anas` 中的控制面状态。
 
 ## 宿主动作通道的开发状态
 
-当前开发源码的发行归档及安装器包含同版本的 `anas-hostd`、固定 socket/service、root-owned
-安装策略，以及独立非 root 控制转发程序和单元。`anasd` 保留 root/root 身份与原有 TLS、状态
-文件权限；不要求迁移属主或加入 Docker 组。`host_actions` 默认关闭，控制转发也不会由安装器
-自动启用。计划、确认与执行入口已编码，但真实 Linux/systemd/Incus 安装、升级与卸载尚未
+当前开发源码的发行归档及安装器包含同版本的 `anas-hostd`、固定 socket/service 与 root-owned
+安装策略。Incus 控制连接由 Incus 直接监听控制网桥网关，不再有单独的转发程序；升级时安装器会删除
+旧版留下的转发单元与程序。`anasd` 保留 root/root 身份与原有 TLS、状态文件权限；不要求迁移属主或
+加入 Docker 组。`host_actions` 默认关闭。计划、确认与执行入口已编码，但真实 Linux/systemd/Incus 安装、升级与卸载尚未
 验收，不能把本节作为已验证的生产启用步骤。详见[宿主动作通道设计](/architecture/host-action-channel)。
 
 升级或卸载发现仍有宿主动作运行时会拒绝覆盖程序；不会为了升级强行中断正在执行的软件包操作。

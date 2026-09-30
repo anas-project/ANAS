@@ -58,12 +58,6 @@ func TestHostTypedRoutesRejectAmbiguousJSONBeforeAdmission(t *testing.T) {
 		{"incus/uninstall/plan", `{"request":{"skip":true}}`, 400},
 		{"incus/arbitrary/plan", `{"request":{}}`, 404},
 		{"incus/arbitrary/apply", `{}`, 404},
-		{"incus/observer/plan", `{"request":{"Operation":"refresh"}}`, 400},
-		{"incus/observer/plan", `{"request":{"operation":null}}`, 400},
-		{"incus/observer/plan", `{"request":{"operation":"refresh","operation":"disable"}}`, 400},
-		{"incus/observer/plan", `{"request":{"operation":"refresh","workspace_id":"other"}}`, 400},
-		{"incus/observer/plan", `{"request":{"operation":"refresh","snapshot":{}}}`, 400},
-		{"incus/observer/plan", `{"request":{"operation":"install"}}`, 400},
 		{"confirm", `{"plan_job_id":"a","plan_job_id":"b","action":"incus.install"}`, 400},
 		{"confirm", `{"plan_job_id":"a","Action":"incus.install"}`, 400},
 		{"confirm", `{"plan_job_id":"a","action":null}`, 400},
@@ -84,10 +78,10 @@ func TestHostTypedRoutesRejectAmbiguousJSONBeforeAdmission(t *testing.T) {
 	if w.Code != 503 || called != 1 {
 		t.Fatalf("valid typed request not admitted: %d %s", w.Code, w.Body.String())
 	}
-	for i, operation := range []string{"refresh", "disable"} {
-		w := hostRouteRequest(h, http.MethodPost, base+"incus/observer/plan", `{"request":{"operation":"`+operation+`"}}`, "key", true)
-		if w.Code != 503 || called != i+2 {
-			t.Fatalf("observer plan not admitted: %d %s", w.Code, w.Body.String())
+	for _, phase := range []string{"observer", "forwarding-permission"} {
+		w := hostRouteRequest(h, http.MethodPost, base+"incus/"+phase+"/plan", `{"request":{"operation":"refresh"}}`, "key", true)
+		if w.Code != 404 || called != 1 {
+			t.Fatalf("removed host phase %s is still routed: %d %s", phase, w.Code, w.Body.String())
 		}
 	}
 }
@@ -126,21 +120,13 @@ func TestOpenAPIHostActionRequestsAndResponsesMatchTypedHandlers(t *testing.T) {
 		if phase == "apply" {
 			key, want = "parameters", "IncusHostApplyParameters"
 		}
-		variants, ok := objectAt(t, properties, key)["oneOf"].([]any)
-		observer := "IncusObserverOperation"
-		if phase == "apply" {
-			observer = "IncusObserverApplyParameters"
+		if objectAt(t, properties, key)["$ref"] != "#/components/schemas/"+want {
+			t.Fatal("host API data schema drifted")
 		}
-		if !ok || len(variants) != 3 {
-			t.Fatal("host API is missing its distinct observer schema")
-		}
-		forwarding := "IncusForwardingOperation"
-		if phase == "apply" { forwarding = "IncusForwardingApplyParameters" }
-		for i, name := range []string{want, observer, forwarding} {
-			v, ok := variants[i].(map[string]any)
-			if !ok || v["$ref"] != "#/components/schemas/"+name {
-				t.Fatal("host API data schema drifted")
-			}
+	}
+	for _, removed := range []string{"IncusObserverOperation", "IncusObserverApplyParameters", "IncusForwardingOperation", "IncusForwardingApplyParameters"} {
+		if _, ok := schemas[removed]; ok {
+			t.Fatal("host API still documents a removed phase", removed)
 		}
 	}
 }

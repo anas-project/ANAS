@@ -91,7 +91,7 @@ func newFakeRuntime(t *testing.T) *fakeRuntime {
 		t.Fatal(err)
 	}
 	report := incushost.Report{Schema: incushost.PreflightSchema, Facts: incushost.Facts{OS: "linux", Architecture: "amd64"}, Interface: "incus_container", DistributionMatched: true, Recipe: &rows[0], Disposition: "disabled", ManualGuide: "fixture"}
-	return &fakeRuntime{obs: Observation{Preflight: report, RelayBinaryInstalled: true, ExternalCIDRs: []string{"192.168.1.0/24"}, ControlInterfaceName: "br-anas-ctrl", ControlInterfaceIndex: 7, RelayUID: 991, RelayGID: 991}, fail: map[string]error{}, serverPEM: fixtureCertPEM}
+	return &fakeRuntime{obs: Observation{Preflight: report, ExternalCIDRs: []string{"192.168.1.0/24"}, ControlInterfaceName: "br-anas-ctrl", ControlInterfaceIndex: 7}, fail: map[string]error{}, serverPEM: fixtureCertPEM}
 }
 
 func (f *fakeRuntime) record(step string) error {
@@ -155,25 +155,12 @@ func (f *fakeRuntime) StopIncus(context.Context) error {
 	f.obs.IncusDaemonActive = false
 	return nil
 }
-func (f *fakeRuntime) ConfigureIncusHTTPS(context.Context) error {
-	if err := f.record("https"); err != nil {
-		return err
-	}
-	f.obs.IncusHTTPSLoopback = true
-	return nil
-}
 func (f *fakeRuntime) EnsureStoragePool(context.Context, int, string) error {
 	if err := f.record("storage"); err != nil {
 		return err
 	}
 	f.obs.StoragePoolExists = true
 	return nil
-}
-func (f *fakeRuntime) EnsureRelayIdentity(context.Context) (uint32, uint32, error) {
-	if err := f.record("relay-identity"); err != nil {
-		return 0, 0, err
-	}
-	return 991, 991, nil
 }
 func (f *fakeRuntime) EnsureDockerControlNetwork(context.Context, ControlNetworkPlan) error {
 	if err := f.record("docker-network"); err != nil {
@@ -194,14 +181,12 @@ func (f *fakeRuntime) ApplyControlFirewall(context.Context, ControlNetworkPlan) 
 	f.obs.FirewallInstalled = true
 	return nil
 }
-func (f *fakeRuntime) InstallRelayConfig(context.Context, RelayInstallPlan) error {
-	return f.record("relay-config")
-}
-func (f *fakeRuntime) EnableRelay(context.Context) error {
-	if err := f.record("relay-enable"); err != nil {
+func (f *fakeRuntime) ConfigureControlListener(_ context.Context, plan ControlNetworkPlan) error {
+	if err := f.record("control-listener"); err != nil {
 		return err
 	}
-	f.obs.RelayInstalled = true
+	f.obs.IncusHTTPSControl = plan.Gateway == f.obs.ControlGateway
+	f.obs.IncusAfterDocker = true
 	return nil
 }
 func (f *fakeRuntime) TrustManagementCertificate(_ context.Context, credential Credential) error {
@@ -233,7 +218,9 @@ func (f *fakeRuntime) ListRunningManagedGuests(context.Context, Ownership) (int,
 func (f *fakeRuntime) CheckUninstallResources(context.Context, Ownership, bool) error {
 	return f.record("check-uninstall-resources")
 }
-func (f *fakeRuntime) RemoveRelay(context.Context) error { return f.record("remove-relay") }
+func (f *fakeRuntime) RemoveControlListener(context.Context) error {
+	return f.record("remove-control-listener")
+}
 func (f *fakeRuntime) RemoveControlFirewall(context.Context) error {
 	return f.record("remove-firewall")
 }
@@ -315,8 +302,8 @@ func TestEnrollBlocksExternalDaemonBeforeTrustSideEffect(t *testing.T) {
 	ctx := context.Background()
 	store := &memoryStore{}
 	rt := newFakeRuntime(t)
-	rt.obs.PackageInstalled, rt.obs.IncusDaemonActive, rt.obs.IncusHTTPSLoopback = true, true, true
-	rt.obs.StoragePoolExists, rt.obs.DockerNetworkExists, rt.obs.FirewallInstalled, rt.obs.RelayInstalled = true, true, true, true
+	rt.obs.PackageInstalled, rt.obs.IncusDaemonActive, rt.obs.IncusHTTPSControl, rt.obs.IncusAfterDocker = true, true, true, true
+	rt.obs.StoragePoolExists, rt.obs.DockerNetworkExists, rt.obs.FirewallInstalled = true, true, true
 	backend := newBackendForTest(store, rt)
 	plan, err := backend.Plan(ctx, Request{})
 	if err != nil {
@@ -366,8 +353,48 @@ func TestConfigureCreatesOwnedBoundedArtifactsAndStopsAfterFault(t *testing.T) {
 	if store.state.Ownership.StoragePool != StoragePoolName || store.state.Ownership.DockerNetwork != ControlNetworkName || store.state.Ownership.FirewallRules {
 		t.Fatalf("ownership boundary wrong after partial configure: %#v", store.state.Ownership)
 	}
-	if slices.Contains(rt.calls, "relay-config") {
-		t.Fatal("relay installed after firewall failure")
+	if slices.Contains(rt.calls, "control-listener") || store.state.Ownership.ControlListener {
+		t.Fatal("Incus moved to the gateway after the firewall failed")
+	}
+}
+
+func TestConfigureMovesListenerToGatewayOnlyAfterFirewall(t *testing.T) {
+	ctx := context.Background()
+	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{PackagesInstalledByANAS: true, ManagedPackages: []string{"incus", "incus-base"}, IncusServiceByANAS: true}}}
+	rt := newFakeRuntime(t)
+	rt.obs.PackageInstalled, rt.obs.IncusDaemonActive = true, true
+	backend := newBackendForTest(store, rt)
+	plan, err := backend.Plan(ctx, Request{})
+	if err != nil || !containsStep(plan.Steps, PhaseConfigure, "control-listener") {
+		t.Fatalf("plan omits the control listener: %#v %v", plan.Steps, err)
+	}
+	result, err := backend.Configure(ctx, Request{}, bind(plan, PhaseConfigure))
+	if err != nil || result.Disposition != "configured" || !store.state.Ownership.ControlListener {
+		t.Fatalf("configure did not own the control listener: %#v %#v %v", result, store.state.Ownership, err)
+	}
+	firewall, listener := slices.Index(rt.calls, "firewall"), slices.Index(rt.calls, "control-listener")
+	if firewall < 0 || listener < firewall || !hasReceipt(store.state, "configure.listener", "ok") {
+		t.Fatalf("listener did not follow the firewall: %v", rt.calls)
+	}
+}
+
+func TestConfigureKeepsListenerOwnershipWhenReadbackFails(t *testing.T) {
+	ctx := context.Background()
+	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{PackagesInstalledByANAS: true, ManagedPackages: []string{"incus", "incus-base"}, IncusServiceByANAS: true}}}
+	rt := newFakeRuntime(t)
+	rt.obs.PackageInstalled, rt.obs.IncusDaemonActive = true, true
+	rt.observeHook = func(obs *Observation) { obs.IncusAfterDocker = false }
+	backend := newBackendForTest(store, rt)
+	plan, err := backend.Plan(ctx, Request{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := backend.Configure(ctx, Request{}, bind(plan, PhaseConfigure))
+	if !errors.Is(err, ErrExternalEffects) || !slices.Contains(result.Blockers, "control_listener_readback_failed") {
+		t.Fatalf("missing unit ordering was accepted: %#v %v", result, err)
+	}
+	if !store.state.Ownership.ControlListener {
+		t.Fatal("a partial listener effect is not left for uninstall to undo")
 	}
 }
 
@@ -375,8 +402,8 @@ func TestEnrollPersistsBundleOnlyAfterTrustReadbackAndEndpointVerify(t *testing.
 	ctx := context.Background()
 	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{PackagesInstalledByANAS: true, ManagedPackages: []string{"incus", "incus-base"}, IncusServiceByANAS: true, StoragePool: StoragePoolName}}}
 	rt := newFakeRuntime(t)
-	rt.obs.PackageInstalled, rt.obs.IncusDaemonActive, rt.obs.IncusHTTPSLoopback = true, true, true
-	rt.obs.StoragePoolExists, rt.obs.DockerNetworkExists, rt.obs.FirewallInstalled, rt.obs.RelayInstalled = true, true, true, true
+	rt.obs.PackageInstalled, rt.obs.IncusDaemonActive, rt.obs.IncusHTTPSControl, rt.obs.IncusAfterDocker = true, true, true, true
+	rt.obs.StoragePoolExists, rt.obs.DockerNetworkExists, rt.obs.FirewallInstalled = true, true, true
 	backend := newBackendForTest(store, rt)
 	plan, err := backend.Plan(ctx, Request{})
 	if err != nil {
@@ -386,8 +413,8 @@ func TestEnrollPersistsBundleOnlyAfterTrustReadbackAndEndpointVerify(t *testing.
 	if err != nil || !result.ConnectionReady || result.ComputeReady || store.bundle == nil || store.state.Credential == nil {
 		t.Fatalf("enroll failed: result=%#v state=%#v err=%v", result, store.state, err)
 	}
-	if store.bundle.Endpoint != "https://10.77.0.1:18443" || store.bundle.AdminPrivateKeyPEM == "" {
-		t.Fatal("connection bundle not derived from managed relay and credential")
+	if store.bundle.Endpoint != "https://10.77.0.1:8443" || store.bundle.AdminPrivateKeyPEM == "" {
+		t.Fatal("connection bundle not derived from the control listener and credential")
 	}
 	if store.bundle.Architecture != "amd64" || store.bundle.StoragePool != StoragePoolName {
 		t.Fatal("bundle omitted its observed target architecture or owned storage pool")
@@ -439,7 +466,7 @@ func TestInstallDoesNotRecordOwnershipBeforePackageReadback(t *testing.T) {
 func TestPublicJSONRedactsCredentialBundleAndEndpoint(t *testing.T) {
 	ctx := context.Background()
 	bundle := &ConnectionBundle{
-		Schema: BundleSchema, Endpoint: "https://10.77.0.1:18443", ServerCertificatePEM: fixtureCertPEM, AdminCertificatePEM: fixtureCertPEM,
+		Schema: BundleSchema, Endpoint: "https://10.77.0.1:8443", ServerCertificatePEM: fixtureCertPEM, AdminCertificatePEM: fixtureCertPEM,
 		AdminPrivateKeyPEM: "-----BEGIN EC PRIVATE KEY-----\nprivate\n-----END EC PRIVATE KEY-----\n", ControlNetwork: ControlNetworkName,
 	}
 	store := &memoryStore{bundle: bundle, state: State{Schema: StateSchema, Ownership: Ownership{ID: "anas-incus-owned", ConnectionBundle: true, ManagementTrust: strings.Repeat("a", 64)}, Credential: &Credential{
@@ -473,8 +500,8 @@ func TestCredentialDurableBeforeTrustRegistration(t *testing.T) {
 	ctx := context.Background()
 	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{PackagesInstalledByANAS: true, ManagedPackages: []string{"incus", "incus-base"}, IncusServiceByANAS: true, StoragePool: StoragePoolName}}}
 	rt := newFakeRuntime(t)
-	rt.obs.PackageInstalled, rt.obs.IncusDaemonActive, rt.obs.IncusHTTPSLoopback = true, true, true
-	rt.obs.StoragePoolExists, rt.obs.DockerNetworkExists, rt.obs.FirewallInstalled, rt.obs.RelayInstalled = true, true, true, true
+	rt.obs.PackageInstalled, rt.obs.IncusDaemonActive, rt.obs.IncusHTTPSControl, rt.obs.IncusAfterDocker = true, true, true, true
+	rt.obs.StoragePoolExists, rt.obs.DockerNetworkExists, rt.obs.FirewallInstalled = true, true, true
 	rt.trustHook = func(credential Credential) error {
 		if store.state.Credential == nil || store.state.Credential.Fingerprint != credential.Fingerprint || store.state.Credential.PrivateKey == "" {
 			return errors.New("credential not persisted before trust")
@@ -561,13 +588,13 @@ func TestPendingIntentWithoutReceiptFailsClosedWithRecoveryBlocker(t *testing.T)
 
 func TestControlPlansReusePersistedOwnedSubnet(t *testing.T) {
 	state := State{Ownership: Ownership{ID: "anas-incus-owned", ControlSubnet: "10.77.0.0/24", ControlGateway: "10.77.0.1", ControlBridge: "br-anas-ctrl", ControlInterfaceName: "br-anas-ctrl", ControlInterfaceIndex: 9}}
-	obs := Observation{ExternalCIDRs: []string{"10.77.0.0/24", "10.78.0.0/24"}, RelayUID: 991, RelayGID: 991}
-	network, relay, err := controlPlans(Request{}, obs, state)
+	obs := Observation{ExternalCIDRs: []string{"10.77.0.0/24", "10.78.0.0/24"}}
+	network, err := controlPlans(Request{}, obs, state)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if network.Subnet != "10.77.0.0/24" || network.Gateway != "10.77.0.1" || relay.InterfaceIndex != 9 {
-		t.Fatalf("persisted network identity was not reused: network=%#v relay=%#v", network, relay)
+	if network.Subnet != "10.77.0.0/24" || network.Gateway != "10.77.0.1" || network.Bridge != "br-anas-ctrl" {
+		t.Fatalf("persisted network identity was not reused: network=%#v", network)
 	}
 }
 
@@ -575,7 +602,7 @@ func TestUninstallRemovesOwnedArtifactsAndPreservesExternalDaemonPackages(t *tes
 	ctx := context.Background()
 	store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{
 		PackagesInstalledByANAS: true, ExternalDaemonPreserved: true, StoragePool: StoragePoolName, DockerNetwork: ControlNetworkName,
-		FirewallRules: true, RelayService: true, ManagementTrust: "abcd", ConnectionBundle: true,
+		FirewallRules: true, ControlListener: true, ManagementTrust: "abcd", ConnectionBundle: true,
 	}, Bundle: &ConnectionBundle{Schema: BundleSchema}}}
 	rt := newFakeRuntime(t)
 	backend := newBackendForTest(store, rt)
@@ -591,10 +618,13 @@ func TestUninstallRemovesOwnedArtifactsAndPreservesExternalDaemonPackages(t *tes
 			t.Fatalf("uninstall touched a preserved external daemon's packages via %s: %v", forbidden, rt.calls)
 		}
 	}
-	for _, required := range []string{"remove-trust", "remove-relay", "remove-firewall", "remove-network", "remove-storage"} {
+	for _, required := range []string{"remove-trust", "remove-control-listener", "remove-firewall", "remove-network", "remove-storage"} {
 		if !slices.Contains(rt.calls, required) {
 			t.Fatalf("missing owned cleanup %s: %v", required, rt.calls)
 		}
+	}
+	if slices.Index(rt.calls, "remove-control-listener") > slices.Index(rt.calls, "remove-firewall") {
+		t.Fatalf("the gateway listener outlived the firewall confining it: %v", rt.calls)
 	}
 }
 

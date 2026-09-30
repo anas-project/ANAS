@@ -336,6 +336,47 @@ func runNativeLeaseLifecycle(t *testing.T, tier string, budget time.Duration) {
 		t.Logf("typical_job tier=%s ready_ms=%d exec_ms=%d reclaim_ms=%d wall_ms=%d", tier,
 			ready.Sub(start).Milliseconds(), executed.Sub(ready).Milliseconds(), time.Since(executed).Milliseconds(), time.Since(start).Milliseconds())
 	})
+	if tier == InterfaceContainer {
+		// INCUS-R-085: the daemon has no per-fingerprint image restriction, so
+		// the shared client is the only allowlist gate. Require that gate, and
+		// record what the lease certificate itself may do with an image outside
+		// the allowlist. The permission check is project-wide, so one tier
+		// answers it; the lease has a free instance slot again at this point.
+		t.Run("image-allowlist-boundary", func(t *testing.T) {
+			const unlistedID = "anas-native-unlisted"
+			body, err := os.ReadFile(lifecycleFixtureRoot + "/unlisted.fingerprint")
+			unlisted := strings.TrimSpace(string(body))
+			if err != nil || len(unlisted) != 64 || strings.Trim(unlisted, "0123456789abcdef") != "" || leases[1].AllowsImage(unlisted) {
+				t.Fatal("a distinct unlisted fixture image is required")
+			}
+			spec := InstanceSpec{ID: unlistedID, Image: unlisted, WorkloadID: "unlisted", CPU: 1, MemoryMiB: 512, DiskGiB: 4}
+			if err := clients[1].Create(ctx, spec); err == nil {
+				t.Fatal("shared client accepted an image outside the lease allowlist")
+			}
+			if view, err := clients[1].Inspect(ctx, unlistedID); err != nil || view.State != "missing" {
+				t.Fatal("refused create left an instance behind", err)
+			}
+			_, importErr := clients[1].run.Run(ctx, nil, "image", "import", lifecycleFixtureRoot+"/unlisted.tar.xz", remoteName+":")
+			imported, launched := "refused", "not_attempted"
+			if importErr == nil {
+				imported, launched = "allowed", "refused"
+				// The same request Create would send, minus the allowlist check.
+				if _, err := clients[1].run.Run(ctx, nil, "init", remoteName+":"+unlisted, remoteName+":"+unlistedID,
+					"--profile="+leases[1].Profile, "--config=limits.cpu=1", "--config=limits.memory=512MiB",
+					"--config=security.privileged=false", "--device=root,size=4GiB"); err == nil {
+					launched = "allowed"
+					// Not client-managed, so remove it with the lease certificate directly.
+					if _, err := clients[1].run.Run(ctx, nil, "delete", remoteName+":"+unlistedID, "--force"); err != nil {
+						t.Fatal("unlisted instance cleanup failed", err)
+					}
+				}
+				if _, err := clients[1].run.Run(ctx, nil, "image", "delete", remoteName+":"+unlisted); err != nil {
+					t.Fatal("unlisted image cleanup failed", err)
+				}
+			}
+			t.Logf("image_allowlist_boundary client_refused=true lease_cert_import=%s lease_cert_create=%s", imported, launched)
+		})
+	}
 }
 
 // retainGuestDiagnostics keeps why a real start failed before cleanup deletes

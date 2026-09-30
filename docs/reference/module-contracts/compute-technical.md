@@ -273,11 +273,15 @@ Core 在新 apply 为每个 compute Resource 生成独立的 32 字节随机 `le
 把它声明成可轮换凭据。专属密钥轮换命令与生产发布尚未实现；授权冻结及实验中介见下节。
 文件备份恢复回归通过不代表真实 Incus 宿主或 HTTP 入站验收通过。
 
-## HTTP 授权冻结与实验中介（尚未开放运行时）
+## HTTP 授权冻结（运行时未开放）
 
 2026-09-12 已接入声明解析和 deployment 准备流程，尚未运行新代码的测试。省略 `spec.ingress`
 即无发布授权；声明存在时可准备冻结产物，但启动/激活会明确拒绝该 compute 消费者。内置消费者
 暂未新增 ingress 配置或请求目录挂载。不得把接受 schema 当成可用的生产发布功能。
+
+2026-09-30：旧的逐发布许可运行时、请求目录登记适配器、中介规划器与实验命令已删除。新设计中请求改为
+`{instance, address, port, label?}`，由 anasd 内的发布中介校验后写 Traefik 路由文件（`INCUS-R-141`—`R-149`），
+见 Incus 要求 §7septies；下文的解析与冻结规则在 M11 实施时迁到 `publish.http`。
 
 ```yaml
 # 加在 compute 的 spec 内；当前仅支持准备授权，不能启动带此声明的消费者。
@@ -315,15 +319,6 @@ apply 检查租约间重叠命名空间、Module 声明域名及现有环境中�
 再从受信宿主 `/proc/self/fd` 以非阻塞只读模式打开同一普通文件，限 4 KiB；拒绝重复键、
 大小写字段别名、null、未知字段和尾随内容。读取前后的 inode/内容元数据变化会拒绝该请求。
 
-中介规划核对独立观测的 Running 实例、UUID、project、隔离档和 IP/MAC 分配。名称碰撞及同一
-实例端口改名失败；完全相同的请求幂等。每次预占带会话/序号，旧清理回调不能释放新预占。停止
-实例的撤销依赖已记录身份，不要求 guest 再次 Running；清理确认前保留预占。
-
-实验命令已接入 `--mediation`，仅针对 `.example.test`、单条 `INCUS_LAB` 路由生成计划及既有
-Traefik 环境字段，不执行 renderer 或网络变更。离线实验输入的活动部署与观测由管理员断言；workspace 模式的 Core 状态读取见下节。
-只读受限 daemon 身份、自动挂载/登记接入、全局路由所有权、宿主动作/IP 保留、
-探测执行和事件/周期对账仍未形成生产闭环；TCP/UDP 与 LAN 不实施。
-
 2026-09-18 已新增消费者文件请求 API（源码及回归用例未编译/执行）：
 `Client.OpenHTTPPublisher(HTTPPublicationConfig)` 显式打开本租约已安装的私有请求目录；
 `HTTPPublisher.PublishPort` 校验精确 Running 实例和 `user.anas.workload`、端口及 label，
@@ -339,7 +334,7 @@ JSON/格式化输出。公开策略的 `Policy.Host` 只预测名称；中介的
 自动配置投影与挂载、应用生命周期/崩溃恢复、受信中介装配和真实发布状态确认仍待接入；
 上述 API 不移除生产 ingress 启动拦截。
 
-## 活动授权读取与请求目录登记（实验适配器）
+## 活动授权读取
 
 `deployment.Reader.HTTPAuthorizations` 只读 Core 的 `.anas/state/lock`、active/state/deployment
 清单，在既有共享运行锁下核对 `runtime_status: running`、active 状态、激活时间、资源身份、
@@ -348,28 +343,3 @@ compute/ForwardAuth 绑定和镜像冻结。它不创建工作区、不执行恢
 deployment ID、激活时间和清单字节摘要组成；清单改变、切换部署或恢复到不同路径使旧登记失效。
 密钥和派生 URL 的备份稳定性不依赖这个目录代次。
 
-`internal/computeingressruntime` 为当前授权创建新 0700 根目录、每租约独立 0700 请求目录和
-0400 `registry.json`。登记只含代次、清单摘要、租约、相对目录名及设备/inode 身份，不含密钥，也不把授权 JSON
-交给消费者。目录名由代次/租约摘要派生，不接受消费者给出的路径。旧目标目录不覆盖；失败时只
-尝试移除本次创建的文件和空目录，不递归删除后续写入。登记前后会重新核对活动状态。
-
-读取请求时将登记的规范字节与当前 Core 授权重新计算结果比较，拒绝过期、篡改或不匹配的登记，
-核对创建时的设备/inode，拒绝同名替换或目录换位，再固定该租约目录句柄。workspace 与登记根必须在消费者写权限之外，后续仅挂载单租约请求目录。
-同一活动授权的登记副本仍必须通过 Core 核对；登记文件本身不授予权限，不提供全局发布锁。
-
-实验命令新增互斥的 `--register-requests <workspace> --out <新绝对路径>`，只创建上述登记与
-空目录。workspace 版 `--mediation` 只给 workspace、request_registry、consumer、resource 和
-request_file，不接受手填授权、活动 ID、目录或密钥文件覆盖。random 命名调用 Core 侧读取适配器，
-复用现有 Secret Store 解析和租约 metadata 检查，仅返回这一租约的独立命名密钥；缺失不重铸，
-密钥不进入登记或输出。该调用仍在具有工作区读取权限的管理员实验进程内，不给消费者或生产
-中介挂载整个 Store；生产窄范围密钥传递接口仍待实现。
-
-采集结束再读取 Core 状态：授权变化或不可读时，无 previous 则失败，有同租约 previous 则只
-生成撤销计划。拟发布记录保存 `authorization_epoch` 便于核对；它不是授权续期或已执行回执。
-共享锁保护本次元数据读取，释放锁后的状态仍可能改变；真实执行前必须再次校验。
-
-这些入口仍只支持 `.example.test` 实验授权。正常 apply 的 ingress 启动拦截保留，所以不能用
-普通 active 部署产生生产 ingress 登记；新分支的正例留给独立元数据夹具，不修改实际部署状态
-绕过拦截。全局 runtime_status 也不证明每个消费者容器仍运行，部分停止/crash、事件丢失和中介
-重启仍需后续实时观测与对账。目录/挂载自动化、受限 daemon 观测、宿主动作、探测和 renderer
-执行尚未接入；本轮没有执行登记命令、测试或服务器操作。

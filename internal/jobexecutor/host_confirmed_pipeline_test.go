@@ -88,42 +88,45 @@ func TestConfirmedIncusPlanSurvivesQueuePersistenceAndExecutorHandoff(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	binding, err := NewHostJobBinding(ctx, store, lease, running.ID, s.options.Release, func(context.Context, consolejobs.Job, hostaction.PeerIdentity) error { return nil })
+	runner, err := newHostActionRunner(store, lease, s.options.Release, func(context.Context, consolejobs.Job) error { return nil })
 	if err != nil {
-		t.Fatal("persisted confirmed binding", err)
-	}
-	defer func() {
-		if err := binding.Close(); err != nil {
-			t.Error(err)
-		}
-	}()
-	wire, err := parametersForExecution(running)
-	if err != nil {
-		t.Fatal("wire parameters", err)
-	}
-	wire, err = hostaction.CanonicalWireParameters(hostaction.ActionInstall, wire)
-	if err != nil {
-		t.Fatal("privileged input boundary", err)
-	}
-	decoded, bindingDigest, err := hostaction.DecodeApplyParameters(hostaction.ActionInstall, wire)
-	if err != nil || decoded != params {
-		t.Fatal("decoded confirmed input drifted", err)
+		t.Fatal(err)
 	}
 	invocations := 0
-	err = binding.WithHostInvocation(ctx, actionabi.Request{ABI: actionabi.Version, JobID: running.ID, InvocationID: running.Action.InvocationID, Action: hostaction.ActionInstall, Parameters: wire},
-		s.options.Release, hostPeer(), func(ctx context.Context) error {
-			receipt, err := ledger.Claim(ctx, hostconfirmation.ClaimRequest{BindingDigest: bindingDigest, ApplyJobID: running.ID, InvocationID: running.Action.InvocationID})
-			if err != nil {
-				return err
-			}
-			if receipt.Action != hostaction.ActionInstall || receipt.ParametersDigest != consolejobs.DigestRequest(frozen) {
-				t.Fatal("root claim changed approved action or bytes")
-			}
-			invocations++
-			return nil
-		})
-	if err != nil || invocations != 1 {
-		t.Fatal("executor handoff", err)
+	var bindingDigest string
+	runner.dial = func(ctx context.Context, request actionabi.Request) (hostStream, error) {
+		if request.JobID != running.ID || request.InvocationID != running.Action.InvocationID || request.Action != hostaction.ActionInstall {
+			t.Fatal("hostd received another invocation")
+		}
+		wire, err := hostaction.CanonicalWireParameters(hostaction.ActionInstall, request.Parameters)
+		if err != nil {
+			t.Fatal("privileged input boundary", err)
+		}
+		var decoded hostaction.IncusApplyParameters
+		decoded, bindingDigest, err = hostaction.DecodeApplyParameters(hostaction.ActionInstall, wire)
+		if err != nil || decoded != params {
+			t.Fatal("decoded confirmed input drifted", err)
+		}
+		receipt, err := ledger.Claim(ctx, hostconfirmation.ClaimRequest{BindingDigest: bindingDigest, ApplyJobID: running.ID, InvocationID: running.Action.InvocationID})
+		if err != nil {
+			return nil, err
+		}
+		if receipt.Action != hostaction.ActionInstall || receipt.ParametersDigest != consolejobs.DigestRequest(frozen) {
+			t.Fatal("root claim changed approved action or bytes")
+		}
+		invocations++
+		changed := true
+		value, _ := json.Marshal(incusprovision.ApplyResult{Schema: incusprovision.Schema, Phase: incusprovision.PhaseInstall,
+			PlanDigest: params.Binding.PlanDigest, Disposition: "installed", Receipts: []incusprovision.Receipt{}})
+		return frames(t,
+			actionabi.Event{ABI: actionabi.Version, JobID: running.ID, InvocationID: running.Action.InvocationID, Type: "progress",
+				Progress: &actionabi.Progress{Phase: string(incusprovision.PhaseInstall)}},
+			actionabi.Event{ABI: actionabi.Version, JobID: running.ID, InvocationID: running.Action.InvocationID, Type: "result",
+				Result: &actionabi.Result{Outcome: actionabi.Succeeded, Changed: &changed, Value: value}}), nil
+	}
+	finished, err := runner.ExecutePreflight(ctx, running.ID, s.observer())
+	if err != nil || invocations != 1 || finished.Status != consolejobs.StatusSucceeded {
+		t.Fatal("executor handoff", finished.Status, err)
 	}
 	if _, err := ledger.Claim(ctx, hostconfirmation.ClaimRequest{BindingDigest: bindingDigest, ApplyJobID: running.ID, InvocationID: running.Action.InvocationID}); !errors.Is(err, hostconfirmation.ErrConsumed) {
 		t.Fatal("consumed approval allowed a second execution")

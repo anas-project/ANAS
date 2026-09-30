@@ -12,7 +12,6 @@ import (
 	"github.com/anas-project/ANAS/internal/consolejobs"
 	"github.com/anas-project/ANAS/internal/hostconfirmation"
 	"github.com/anas-project/ANAS/internal/incushost"
-	"github.com/anas-project/ANAS/internal/incusingresshost"
 	"github.com/anas-project/ANAS/internal/incusprovision"
 )
 
@@ -112,14 +111,6 @@ var newImagePruneBackend = func() imagePruneBackend {
 	return incusprovision.NewImagePruneBackend()
 }
 
-type ingressObservationBackend interface {
-	Observe(context.Context, incusingresshost.ProjectionRequest) (incusingresshost.ProjectionResponse, error)
-}
-
-var newIngressObservationBackend = func() ingressObservationBackend {
-	return incusprovision.NewIngressObservationBackend()
-}
-
 type incusBackend interface {
 	Inspect(context.Context, incusprovision.Request) (incusprovision.InspectResult, error)
 	Install(context.Context, incusprovision.Request, incusprovision.Binding) (incusprovision.ApplyResult, error)
@@ -165,25 +156,7 @@ func executeIncusProvision(ctx context.Context, call *Invocation, journal AuditJ
 	var value any
 	changed := spec.Mutating
 	var runErr error
-	if call.request.Action == ActionObserveHTTP {
-		var req incusingresshost.ProjectionRequest
-		if strictDecode(call.request.Parameters, &req) != nil || req.Validate() != nil {
-			runErr = ErrRequest
-		} else {
-			var response incusingresshost.ProjectionResponse
-			response, runErr = newIngressObservationBackend().Observe(ctx, req)
-			if runErr == nil {
-				runErr = response.ValidateFor(req)
-			}
-			value, changed = response, false
-		}
-	} else if call.request.Action == ActionForwardingWithdraw {
-		value, runErr = executeForwardingWithdrawal(ctx, call.request.Parameters)
-	} else if call.request.Action == ActionForwardingPlan || call.request.Action == ActionForwardingApply {
-		value, runErr = executeForwardingPermission(ctx, call, journal, release)
-	} else if call.request.Action == ActionObserverPlan || call.request.Action == ActionObserverApply {
-		value, runErr = executeObserverConfiguration(ctx, call, journal, release)
-	} else if spec.PlanFor != "" {
+	if spec.PlanFor != "" {
 		if call.request.Action == ActionImagePrunePlan {
 			params, err := DecodeImagePrunePlanParameters(call.request.Action, call.request.Parameters)
 			if err != nil {

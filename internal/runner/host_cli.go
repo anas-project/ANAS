@@ -130,7 +130,7 @@ func runHostIncusPlan(args []string, jsonMode bool) error {
 	registerJSONFlag(fs)
 	workspace := fs.String("w", "", "workspace id")
 	fs.StringVar(workspace, "workspace", "", "workspace id")
-	phase := fs.String("phase", "", "install|configure|enroll|uninstall|observer|forwarding-permission")
+	phase := fs.String("phase", "", "install|configure|enroll|uninstall")
 	request := fs.String("request-json", "{}", "typed Incus provisioning request JSON")
 	sessionJSON := fs.String("session-json", "", "read console session envelope from stdin with '-'")
 	idempotencyKey := fs.String("idempotency-key", "", "opaque idempotency key")
@@ -150,12 +150,6 @@ func runHostIncusPlan(args []string, jsonMode bool) error {
 		return hostConsoleError(err, true, key)
 	}
 	action := "incus." + *phase + ".plan"
-	if *phase == "observer" {
-		action = hostaction.ActionObserverPlan
-	}
-	if *phase == "forwarding-permission" {
-		action = hostaction.ActionForwardingPlan
-	}
 	return printHostJobQueued(jsonMode, action, *workspace, key, location, response)
 }
 
@@ -193,7 +187,7 @@ func runHostIncusApply(args []string, jsonMode bool) error {
 	registerJSONFlag(fs)
 	workspace := fs.String("w", "", "workspace id")
 	fs.StringVar(workspace, "workspace", "", "workspace id")
-	phase := fs.String("phase", "", "install|configure|enroll|uninstall|observer|forwarding-permission")
+	phase := fs.String("phase", "", "install|configure|enroll|uninstall")
 	planJob := fs.String("plan-job", "", "completed plan job id")
 	token := fs.String("confirmation-token", "", "unsupported; pass token through --request-json -")
 	parameters := fs.String("parameters-json", "", "parameters from plan result")
@@ -226,12 +220,6 @@ func runHostIncusApply(args []string, jsonMode bool) error {
 		return hostConsoleError(err, true, key)
 	}
 	action := "incus." + *phase
-	if *phase == "observer" {
-		action = hostaction.ActionObserverApply
-	}
-	if *phase == "forwarding-permission" {
-		action = hostaction.ActionForwardingApply
-	}
 	return printHostJobQueued(jsonMode, action, *workspace, key, location, response)
 }
 
@@ -415,11 +403,11 @@ func printHostJobQueued(jsonMode bool, action, workspace, key, location string, 
 }
 
 func validCLIIncusPhase(value string) bool {
-	return value == "install" || value == "configure" || value == "enroll" || value == "uninstall" || value == "observer" || value == "forwarding-permission"
+	return value == "install" || value == "configure" || value == "enroll" || value == "uninstall"
 }
 
 func validCLIIncusAction(value string) bool {
-	return value == "incus.install" || value == "incus.configure" || value == "incus.enroll" || value == "incus.uninstall" || value == hostaction.ActionImagePrune || value == hostaction.ActionObserverApply || value == hostaction.ActionForwardingApply
+	return value == "incus.install" || value == "incus.configure" || value == "incus.enroll" || value == "incus.uninstall" || value == hostaction.ActionImagePrune
 }
 
 func responseJobID(response map[string]any) string {

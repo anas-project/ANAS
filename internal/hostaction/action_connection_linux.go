@@ -48,9 +48,10 @@ func CheckHostActionClient() (result error) {
 	return nil
 }
 
-// DialHostAction is the execution owner's fixed activation client. A trusted
-// supervisor must register the running job with its broker BEFORE calling it.
-// This is not an invoke API; destinations and write actions are not parameters.
+// DialHostAction is the execution owner's fixed activation client for a job
+// that is already running in the shared store. The request is written and its
+// write half closed; the caller reads the event stream. This is not an invoke
+// API; destinations and write actions are not parameters.
 func DialHostAction(ctx context.Context, request actionabi.Request) (*net.UnixConn, error) {
 	if ctx == nil || ctx.Err() != nil || os.Getuid() != 0 || os.Getgid() != 0 || os.Getuid() != os.Geteuid() || os.Getgid() != os.Getegid() {
 		return nil, ErrDenied
@@ -95,13 +96,13 @@ func DialHostAction(ctx context.Context, request actionabi.Request) (*net.UnixCo
 			_ = stream.Close()
 		}
 	}()
-	// SO_PEERCRED here identifies the listener's creator, PID 1, not the
-	// worker. The broker callback separately authenticates the actual worker.
+	// SO_PEERCRED here identifies the listener's creator, PID 1: the socket
+	// really is the service manager's root-owned activation socket.
 	peer, _ := authenticatePeer(ctx, stream, PeerPolicy{})
 	if peer.pid != 1 || peer.uid != 0 || peer.gid != 0 || guard.check() != nil {
 		return nil, ErrNoExecution
 	}
-	deadline := time.Now().Add(brokerIOTimeout)
+	deadline := time.Now().Add(ioTimeout)
 	if bound, ok := ctx.Deadline(); ok && bound.Before(deadline) {
 		deadline = bound
 	}
@@ -111,10 +112,10 @@ func DialHostAction(ctx context.Context, request actionabi.Request) (*net.UnixCo
 	if securefs.WriteAll(stream, body) != nil || stream.CloseWrite() != nil || guard.check() != nil || ctx.Err() != nil {
 		return nil, ErrUnavailable
 	}
-	// The full compiled action budget plus final handshake/EOF, not the
-	// obsolete preflight-only 20 seconds. Sending the request has happened:
-	// any failure from here is uncertain execution, never "not submitted".
-	readDeadline := time.Now().Add(brokerExecutionTimeout(request.Action) + brokerIOTimeout)
+	// The full compiled action budget plus the final exchange. Sending the
+	// request has happened: any failure from here is uncertain execution,
+	// never "not submitted"; the caller settles it with QueryHostInvocation.
+	readDeadline := time.Now().Add(ExecutionTimeout(request.Action) + ioTimeout)
 	if bound, ok := ctx.Deadline(); ok && bound.Before(readDeadline) {
 		readDeadline = bound
 	}
@@ -123,6 +124,19 @@ func DialHostAction(ctx context.Context, request actionabi.Request) (*net.UnixCo
 	}
 	keep = true
 	return stream, nil
+}
+
+// QueryHostInvocation asks a fresh hostd activation what its ledger recorded
+// for the job's invocation. It never starts or retries the action.
+func QueryHostInvocation(ctx context.Context, jobID, invocationID string) (InvocationStatus, error) {
+	request := actionabi.Request{ABI: actionabi.Version, JobID: jobID, InvocationID: invocationID, Action: ActionInvocationStatus,
+		Parameters: []byte("{}")}
+	stream, err := DialHostAction(ctx, request)
+	if err != nil {
+		return InvocationStatus{}, err
+	}
+	defer stream.Close()
+	return readInvocationStatus(stream, jobID, invocationID)
 }
 
 func readInstalledPolicyAt(root int) (installationPolicy, error) {

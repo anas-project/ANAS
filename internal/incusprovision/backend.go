@@ -26,20 +26,17 @@ type runtimeOps interface {
 	InstallPackages(context.Context, incushost.Recipe, []string, bool) error
 	EnableIncus(context.Context) error
 	StopIncus(context.Context) error
-	ConfigureIncusHTTPS(context.Context) error
 	EnsureStoragePool(context.Context, int, string) error
-	EnsureRelayIdentity(context.Context) (uint32, uint32, error)
 	EnsureDockerControlNetwork(context.Context, ControlNetworkPlan) error
 	ApplyControlFirewall(context.Context, ControlNetworkPlan) error
-	InstallRelayConfig(context.Context, RelayInstallPlan) error
-	EnableRelay(context.Context) error
+	ConfigureControlListener(context.Context, ControlNetworkPlan) error
 	TrustManagementCertificate(context.Context, Credential) error
 	ReadBackManagementCertificate(context.Context, string) (bool, error)
 	ReadServerCertificatePEM(context.Context) (string, error)
 	VerifyManagementEndpoint(context.Context, ConnectionBundle) error
 	ListRunningManagedGuests(context.Context, Ownership) (int, error)
 	CheckUninstallResources(context.Context, Ownership, bool) error
-	RemoveRelay(context.Context) error
+	RemoveControlListener(context.Context) error
 	RemoveControlFirewall(context.Context) error
 	RemoveDockerControlNetwork(context.Context, string, string, string) error
 	RemoveStoragePool(context.Context, string, string) error
@@ -214,7 +211,6 @@ func buildPlan(request Request, obs Observation, state State) (Plan, error) {
 			plan.Warnings = append(plan.Warnings, "will_verify_"+blocker)
 		}
 	}
-	plan.Warnings = append(plan.Warnings, forwardingWarnings(obs.Forwarding)...)
 	if !obs.PackageInstalled {
 		dependencies := "distribution archives"
 		if request.ChineseSpeedup {
@@ -225,9 +221,6 @@ func buildPlan(request Request, obs Observation, state State) (Plan, error) {
 	if !obs.IncusDaemonActive {
 		plan.Steps = append(plan.Steps, Step{Phase: PhaseInstall, ID: "incus-service", Effect: "enable and start fixed Incus service", Owned: !obs.IncusDaemonActive, Destructive: true})
 	}
-	if !obs.IncusHTTPSLoopback {
-		plan.Steps = append(plan.Steps, Step{Phase: PhaseConfigure, ID: "https-loopback", Effect: "set Incus HTTPS listener to 127.0.0.1:8443", Destructive: true})
-	}
 	if !obs.StoragePoolExists {
 		plan.Steps = append(plan.Steps, Step{Phase: PhaseConfigure, ID: "storage-pool", Effect: "create managed btrfs loop-backed storage pool", Owned: true, Destructive: true})
 	}
@@ -237,14 +230,14 @@ func buildPlan(request Request, obs Observation, state State) (Plan, error) {
 	if !obs.FirewallInstalled {
 		plan.Steps = append(plan.Steps, Step{Phase: PhaseConfigure, ID: "control-firewall", Effect: "install scoped default-deny INPUT/FORWARD rules for control bridge", Owned: true, Destructive: true})
 	}
-	if !obs.RelayInstalled || !obs.RelayBinaryInstalled {
-		plan.Steps = append(plan.Steps, Step{Phase: PhaseConfigure, ID: "control-relay", Effect: "install root-owned relay config and enable fixed non-root relay service", Owned: true, Destructive: true})
+	if !obs.IncusHTTPSControl || !obs.IncusAfterDocker {
+		plan.Steps = append(plan.Steps, Step{Phase: PhaseConfigure, ID: "control-listener", Effect: "order Incus after Docker and serve its HTTPS API only on the control bridge gateway", Owned: true, Destructive: true})
 	}
 	if !obs.ManagementTrusted {
 		plan.Steps = append(plan.Steps, Step{Phase: PhaseEnroll, ID: "management-credential", Effect: "generate stable management client credential and trust it in Incus", Owned: true, Destructive: true})
 	}
 	if !obs.EndpointVerified {
-		plan.Steps = append(plan.Steps, Step{Phase: PhaseEnroll, ID: "connection-bundle", Effect: "verify narrow relay connection and persist root-only connection bundle", Owned: true, Destructive: true})
+		plan.Steps = append(plan.Steps, Step{Phase: PhaseEnroll, ID: "connection-bundle", Effect: "verify the control bridge connection and persist root-only connection bundle", Owned: true, Destructive: true})
 	}
 	if state.Bundle != nil && obs.EndpointVerified {
 		plan.Disposition, plan.ComputeReady = "connection_ready", false
@@ -255,7 +248,7 @@ func buildPlan(request Request, obs Observation, state State) (Plan, error) {
 	if state.Ownership.ExternalDaemonPreserved {
 		plan.Warnings = append(plan.Warnings, "preexisting Incus daemon is classified external and will be preserved on uninstall")
 	}
-	plan.Steps = append(plan.Steps, Step{Phase: PhaseUninstall, ID: "owned-artifacts-only", Effect: "remove only ANAS-owned trust, relay, firewall, network, pool and ANAS-installed packages after guest preflight", Destructive: true})
+	plan.Steps = append(plan.Steps, Step{Phase: PhaseUninstall, ID: "owned-artifacts-only", Effect: "remove only ANAS-owned trust, control listener, firewall, network, pool and ANAS-installed packages after guest preflight", Destructive: true})
 	return finalizePlan(plan), nil
 }
 
@@ -387,25 +380,6 @@ func (b *Backend) applyConfigure(ctx context.Context, request Request, plan Plan
 	if state.Ownership.ExternalDaemonPreserved {
 		return ApplyResult{Disposition: "blocked", Blockers: []string{"external_daemon_not_modified"}}, ErrBlocked
 	}
-	if !obs.IncusHTTPSLoopback {
-		intent, err := b.beginEffect(ctx, state, PhaseConfigure, plan.Digest, "configure.https")
-		if err != nil {
-			return ApplyResult{Disposition: "partial"}, err
-		}
-		if err := b.rt.ConfigureIncusHTTPS(ctx); err != nil {
-			saveErr := b.finishEffect(state, intent, "failed", "https loopback configuration failed")
-			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
-		}
-		refreshed, err := b.rt.Observe(ctx, request, *state)
-		if err != nil || !refreshed.IncusHTTPSLoopback {
-			saveErr := b.finishEffect(state, intent, "failed", "https loopback readback failed")
-			return ApplyResult{Disposition: "partial", Blockers: []string{"https_loopback_readback_failed"}}, errors.Join(ErrExternalEffects, err, saveErr)
-		}
-		obs = refreshed
-		if err := b.finishEffect(state, intent, "ok", "https loopback configured"); err != nil {
-			return ApplyResult{Disposition: "partial"}, err
-		}
-	}
 	if !obs.StoragePoolExists {
 		intent, err := b.beginEffect(ctx, state, PhaseConfigure, plan.Digest, "configure.storage")
 		if err != nil {
@@ -427,7 +401,7 @@ func (b *Backend) applyConfigure(ctx context.Context, request Request, plan Plan
 			return ApplyResult{Disposition: "partial"}, err
 		}
 	}
-	network, relay, err := controlPlans(request, obs, *state)
+	network, err := controlPlans(request, obs, *state)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -448,7 +422,7 @@ func (b *Backend) applyConfigure(ctx context.Context, request Request, plan Plan
 			return ApplyResult{Disposition: "partial", Blockers: []string{"control_network_readback_failed"}}, ErrExternalEffects
 		}
 		obs = refreshed
-		network, relay, err = controlPlans(request, obs, *state)
+		network, err = controlPlans(request, obs, *state)
 		if err != nil {
 			return ApplyResult{}, err
 		}
@@ -484,33 +458,26 @@ func (b *Backend) applyConfigure(ctx context.Context, request Request, plan Plan
 			return ApplyResult{Disposition: "partial"}, err
 		}
 	}
-	if !obs.RelayInstalled {
-		intent, err := b.beginEffect(ctx, state, PhaseConfigure, plan.Digest, "configure.relay")
+	// The listener moves to the gateway only after the firewall that limits
+	// it to the control bridge is in place.
+	if !obs.IncusHTTPSControl || !obs.IncusAfterDocker {
+		intent, err := b.beginEffect(ctx, state, PhaseConfigure, plan.Digest, "configure.listener")
 		if err != nil {
 			return ApplyResult{Disposition: "partial"}, err
 		}
-		uid, gid, err := b.rt.EnsureRelayIdentity(ctx)
-		if err != nil {
-			saveErr := b.finishEffect(state, intent, "failed", "relay identity unavailable")
-			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
-		}
-		relay.RunUID, relay.RunGID = uid, gid
-		if err := b.rt.InstallRelayConfig(ctx, relay); err != nil {
-			saveErr := b.finishEffect(state, intent, "failed", "relay configuration failed")
-			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
-		}
-		if err := b.rt.EnableRelay(ctx); err != nil {
-			saveErr := b.finishEffect(state, intent, "failed", "relay activation failed")
+		// Recorded before the effect: uninstall must undo a partial one.
+		state.Ownership.ControlListener = true
+		if err := b.rt.ConfigureControlListener(ctx, network); err != nil {
+			saveErr := b.finishEffect(state, intent, "failed", "control listener configuration failed")
 			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
 		}
 		refreshed, err := b.rt.Observe(ctx, request, *state)
-		if err != nil || !refreshed.RelayInstalled || !refreshed.RelayBinaryInstalled {
-			saveErr := b.finishEffect(state, intent, "failed", "relay readback failed")
-			return ApplyResult{Disposition: "partial", Blockers: []string{"relay_readback_failed"}}, errors.Join(ErrExternalEffects, err, saveErr)
+		if err != nil || !refreshed.IncusHTTPSControl || !refreshed.IncusAfterDocker {
+			saveErr := b.finishEffect(state, intent, "failed", "control listener readback failed")
+			return ApplyResult{Disposition: "partial", Blockers: []string{"control_listener_readback_failed"}}, errors.Join(ErrExternalEffects, err, saveErr)
 		}
 		obs = refreshed
-		state.Ownership.RelayService = true
-		if err := b.finishEffect(state, intent, "ok", "relay active"); err != nil {
+		if err := b.finishEffect(state, intent, "ok", "incus listens on the control gateway"); err != nil {
 			return ApplyResult{Disposition: "partial"}, err
 		}
 	}
@@ -527,7 +494,7 @@ func (b *Backend) applyEnroll(ctx context.Context, request Request, plan Plan, o
 	if state.Ownership.ExternalDaemonPreserved {
 		return ApplyResult{Disposition: "blocked", Blockers: []string{"external_daemon_not_modified"}}, ErrBlocked
 	}
-	if !obs.IncusDaemonActive || !obs.IncusHTTPSLoopback || !obs.StoragePoolExists || !obs.DockerNetworkExists || !obs.FirewallInstalled || !obs.RelayInstalled || !obs.RelayBinaryInstalled {
+	if !obs.IncusDaemonActive || !obs.IncusHTTPSControl || !obs.IncusAfterDocker || !obs.StoragePoolExists || !obs.DockerNetworkExists || !obs.FirewallInstalled {
 		return ApplyResult{Disposition: "blocked", Blockers: []string{"required_network_daemon_storage_identity_checks_unverified"}}, ErrBlocked
 	}
 	// This is the local, observed daemon host, not the CLI client's machine.
@@ -570,16 +537,15 @@ func (b *Backend) applyEnroll(ctx context.Context, request Request, plan Plan, o
 	if err != nil {
 		return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err)
 	}
-	network, _, err := controlPlans(request, obs, *state)
+	network, err := controlPlans(request, obs, *state)
 	if err != nil {
 		return ApplyResult{}, err
 	}
 	bundle := ConnectionBundle{
-		Schema: BundleSchema, Endpoint: "https://" + network.Gateway + ":18443",
+		Schema: BundleSchema, Endpoint: "https://" + controlListenAddress(network.Gateway),
 		ServerCertificatePEM: serverCert, AdminCertificatePEM: credential.Certificate, AdminPrivateKeyPEM: credential.PrivateKey,
 		ControlNetwork: ControlNetworkName, ControlSubnet: network.Subnet, ControlGateway: network.Gateway,
-		RelayService: RelayServiceName, ManagementFingerprint: credential.Fingerprint,
-		Architecture: obs.Preflight.Facts.Architecture, StoragePool: state.Ownership.StoragePool,
+		ManagementFingerprint: credential.Fingerprint, Architecture: obs.Preflight.Facts.Architecture, StoragePool: state.Ownership.StoragePool,
 	}
 	if !sameConnectionBundle(state.Bundle, &bundle) || !obs.EndpointVerified {
 		intent, err := b.beginEffect(ctx, state, PhaseEnroll, plan.Digest, "enroll.bundle")
@@ -587,7 +553,7 @@ func (b *Backend) applyEnroll(ctx context.Context, request Request, plan Plan, o
 			return ApplyResult{Disposition: "partial"}, err
 		}
 		if err := b.rt.VerifyManagementEndpoint(ctx, bundle); err != nil {
-			saveErr := b.finishEffect(state, intent, "failed", "relay connection verification failed")
+			saveErr := b.finishEffect(state, intent, "failed", "control connection verification failed")
 			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
 		}
 		if err := persistWithCleanupContext(func(cleanup context.Context) error { return b.store.WriteBundle(cleanup, bundle) }); err != nil {
@@ -611,11 +577,6 @@ func (b *Backend) applyEnroll(ctx context.Context, request Request, plan Plan, o
 }
 
 func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan, obs Observation, state *State) (ApplyResult, error) {
-	for _, scope := range state.ObserverScopes {
-		if validateObserverRecord(scope) != nil || scope.Status != "disabled" {
-			return ApplyResult{Disposition: "blocked", Blockers: []string{"disable_observer_scopes_before_uninstall"}}, ErrBlocked
-		}
-	}
 	// Uninstall removes exactly the packages ANAS recorded as its own; a
 	// preserved external daemon or pre-existing package is never touched.
 	removePackages := state.Ownership.PackagesInstalledByANAS && !state.Ownership.ExternalDaemonPreserved
@@ -670,17 +631,18 @@ func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan
 			return ApplyResult{Disposition: "partial"}, err
 		}
 	}
-	if state.Ownership.RelayService {
-		intent, err := b.beginEffect(ctx, state, PhaseUninstall, plan.Digest, "uninstall.relay")
+	// The gateway listener goes before the firewall that confines it.
+	if state.Ownership.ControlListener {
+		intent, err := b.beginEffect(ctx, state, PhaseUninstall, plan.Digest, "uninstall.listener")
 		if err != nil {
 			return ApplyResult{Disposition: "partial"}, err
 		}
-		if err := b.rt.RemoveRelay(ctx); err != nil {
-			saveErr := b.finishEffect(state, intent, "failed", "relay removal failed")
+		if err := b.rt.RemoveControlListener(ctx); err != nil {
+			saveErr := b.finishEffect(state, intent, "failed", "control listener removal failed")
 			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
 		}
-		state.Ownership.RelayService = false
-		if err := b.finishEffect(state, intent, "ok", "relay removed"); err != nil {
+		state.Ownership.ControlListener = false
+		if err := b.finishEffect(state, intent, "ok", "control listener removed"); err != nil {
 			return ApplyResult{Disposition: "partial"}, err
 		}
 	}
@@ -820,56 +782,26 @@ type ControlNetworkPlan struct {
 	OwnershipID string `json:"ownership_id"`
 }
 
-type RelayInstallPlan struct {
-	ConfigPath      string `json:"config_path"`
-	ListenAddress   string `json:"listen_address"`
-	ControlSubnet   string `json:"control_subnet"`
-	InterfaceName   string `json:"interface_name"`
-	InterfaceIndex  int    `json:"interface_index"`
-	RunUID          uint32 `json:"run_uid"`
-	RunGID          uint32 `json:"run_gid"`
-	MaxConnections  int    `json:"max_connections"`
-	IdleTimeoutSecs int    `json:"idle_timeout_seconds"`
-}
-
-func controlPlans(_ Request, obs Observation, state State) (ControlNetworkPlan, RelayInstallPlan, error) {
+func controlPlans(_ Request, obs Observation, state State) (ControlNetworkPlan, error) {
 	if obs.DockerNetworkExists && obs.ControlSubnet != "" && obs.ControlGateway != "" {
 		subnet, err := netip.ParsePrefix(obs.ControlSubnet)
 		gateway, gatewayErr := netip.ParseAddr(obs.ControlGateway)
 		if err != nil || gatewayErr != nil || !subnet.Contains(gateway) {
-			return ControlNetworkPlan{}, RelayInstallPlan{}, ErrBlocked
+			return ControlNetworkPlan{}, ErrBlocked
 		}
-		network := ControlNetworkPlan{Name: ControlNetworkName, Subnet: subnet.Masked().String(), Gateway: gateway.String(), Bridge: "br-anas-ctrl", OwnershipID: state.Ownership.ID}
-		relay := RelayInstallPlan{
-			ConfigPath: DefaultRelayConfigPath, ListenAddress: gateway.String() + ":18443", ControlSubnet: network.Subnet,
-			InterfaceName: obs.ControlInterfaceName, InterfaceIndex: obs.ControlInterfaceIndex,
-			RunUID: obs.RelayUID, RunGID: obs.RelayGID, MaxConnections: 64, IdleTimeoutSecs: 300,
-		}
-		if relay.InterfaceName == "" {
-			relay.InterfaceName = network.Bridge
-		}
-		return network, relay, nil
+		return ControlNetworkPlan{Name: ControlNetworkName, Subnet: subnet.Masked().String(), Gateway: gateway.String(), Bridge: "br-anas-ctrl", OwnershipID: state.Ownership.ID}, nil
 	}
 	if state.Ownership.ControlSubnet != "" || state.Ownership.ControlGateway != "" {
 		subnet, err := netip.ParsePrefix(state.Ownership.ControlSubnet)
 		gateway, gatewayErr := netip.ParseAddr(state.Ownership.ControlGateway)
 		if err != nil || gatewayErr != nil || !subnet.Contains(gateway) {
-			return ControlNetworkPlan{}, RelayInstallPlan{}, ErrBlocked
+			return ControlNetworkPlan{}, ErrBlocked
 		}
 		bridge := state.Ownership.ControlBridge
 		if bridge == "" {
 			bridge = "br-anas-ctrl"
 		}
-		network := ControlNetworkPlan{Name: ControlNetworkName, Subnet: subnet.Masked().String(), Gateway: gateway.String(), Bridge: bridge, OwnershipID: state.Ownership.ID}
-		relay := RelayInstallPlan{
-			ConfigPath: DefaultRelayConfigPath, ListenAddress: gateway.String() + ":18443", ControlSubnet: network.Subnet,
-			InterfaceName: state.Ownership.ControlInterfaceName, InterfaceIndex: state.Ownership.ControlInterfaceIndex,
-			RunUID: obs.RelayUID, RunGID: obs.RelayGID, MaxConnections: 64, IdleTimeoutSecs: 300,
-		}
-		if relay.InterfaceName == "" {
-			relay.InterfaceName = network.Bridge
-		}
-		return network, relay, nil
+		return ControlNetworkPlan{Name: ControlNetworkName, Subnet: subnet.Masked().String(), Gateway: gateway.String(), Bridge: bridge, OwnershipID: state.Ownership.ID}, nil
 	}
 	candidates := []netip.Prefix{
 		netip.MustParsePrefix("10.77.0.0/24"),
@@ -879,19 +811,10 @@ func controlPlans(_ Request, obs Observation, state State) (ControlNetworkPlan, 
 	for _, candidate := range candidates {
 		if cidrAvailable(candidate, obs.ExternalCIDRs) {
 			gateway := nthIPv4(candidate, 1)
-			network := ControlNetworkPlan{Name: ControlNetworkName, Subnet: candidate.String(), Gateway: gateway.String(), Bridge: "br-anas-ctrl", OwnershipID: state.Ownership.ID}
-			relay := RelayInstallPlan{
-				ConfigPath: DefaultRelayConfigPath, ListenAddress: gateway.String() + ":18443", ControlSubnet: candidate.String(),
-				InterfaceName: obs.ControlInterfaceName, InterfaceIndex: obs.ControlInterfaceIndex,
-				RunUID: obs.RelayUID, RunGID: obs.RelayGID, MaxConnections: 64, IdleTimeoutSecs: 300,
-			}
-			if relay.InterfaceName == "" {
-				relay.InterfaceName = network.Bridge
-			}
-			return network, relay, nil
+			return ControlNetworkPlan{Name: ControlNetworkName, Subnet: candidate.String(), Gateway: gateway.String(), Bridge: "br-anas-ctrl", OwnershipID: state.Ownership.ID}, nil
 		}
 	}
-	return ControlNetworkPlan{}, RelayInstallPlan{}, ErrBlocked
+	return ControlNetworkPlan{}, ErrBlocked
 }
 
 func (b *Backend) beginEffect(ctx context.Context, state *State, phase Phase, digest, step string) (EffectIntent, error) {
@@ -925,14 +848,6 @@ func (b *Backend) finishEffect(state *State, intent EffectIntent, status, detail
 func unrecoveredPendingIntent(state State) string {
 	if pending := unrecoveredProvisionIntent(state); pending != "" {
 		return pending
-	}
-	if validateForwardingRecords(state) != nil {
-		return "forwarding.invalid_ownership"
-	}
-	for _, record := range state.ForwardingScopes {
-		if record.Status != "disabled" || record.Kernel.Phase != "released" || record.Kernel.PendingStep != "" {
-			return "forwarding.permission_retirement"
-		}
 	}
 	return ""
 }

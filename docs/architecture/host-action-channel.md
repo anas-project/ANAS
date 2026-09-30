@@ -1,6 +1,6 @@
 # 宿主特权动作通道（设计）
 
-> 状态：**当前实现与待验收设计。主要发行版已通过真实 CLI/HTTPS、共享 job、systemd 确认执行及五分钟自然过期门禁；完整发行版/升级/交互和非 systemd 验收未完成**。更新：2026-09-23。当前实现以 §13 为准，§7—§12 是历史切片。本文规定安装期那一次 root 之后，Web 控制台与 CLI 如何执行需要特权的
+> 状态：**当前实现与待验收设计。主要发行版已通过真实 CLI/HTTPS、共享 job、systemd 确认执行及五分钟自然过期门禁（2026-09-23，身份链简化之前的实现）；完整发行版/升级/交互和非 systemd 验收未完成**。更新：2026-09-30。当前实现以 §14（身份链简化）为准，§13 中未被 §14 取代的部分仍有效，§7—§12 是历史切片。本文规定安装期那一次 root 之后，Web 控制台与 CLI 如何执行需要特权的
 > 宿主操作，而不再向用户索要第二次密码。
 >
 > 它不取代[特权操作与 helper](privilege-helper-draft.md)，而是沿用那份文档的规则并补上它没有
@@ -139,8 +139,8 @@ helper」，名字宽泛并不误导。
 
 ### 3.3 授权与审计
 
-- **调用方身份**：`SO_PEERCRED` 读取对端 uid/gid，必须是 anas 服务账号或 `anas` 组。socket 权限
-  是第一道门，peer 校验是第二道，不依赖任何一道单独成立。
+- **调用方身份**：`SO_PEERCRED` 读取对端 uid/gid，必须是 root/root：anasd 以 root 运行，socket 为 root:root
+  0600，peer 校验与文件权限等价。不再证明是哪一个 root 进程（§14）。
 - **参数校验在动作内部**，与 `anas-helper` 的 `parseBridge` 同样的做法：枚举、模式、范围，拒绝
   一切不认识的字段。
 - **每次调用都进 journal**：动作 id、规范化后的参数、调用方 uid、结果。参数中被标注为敏感的字段
@@ -468,7 +468,8 @@ broker listener 必须由所有者进程自己创建，不能直接继承 PID 1 
 等后代，必须另补 cgroup/监督者证明，不能复用本段当成完整进程树清理。job 的成功终态仍须由
 共用 recorder 根据实际输出 EOF、独立真实退出状态及审计提交；目前没有生产适配器提供这一整条证据。
 
-原生回归入口为 `bash test-env/scripts/test-host-job-broker-native.sh`。它只在非 root Linux 上
+原生回归入口曾为 `bash test-env/scripts/test-host-job-broker-native.sh`（2026-09-30 随 broker 删除，改为 §14 的
+`test-host-action-native.sh`）。它只在非 root Linux 上
 运行隔离 socket/子进程 fixture，要求关键用例真实执行；内核不支持、用例跳过或缺失均不能通过。
 本机 macOS 的协议测试及双架构交叉编译与该原生门禁分开记录。这个脚本不安装服务、不执行 sudo、
 不修改宿主防火墙，也不代表 systemd、真实 root 对端或 Incus/KVM 验收。
@@ -650,14 +651,14 @@ stdout/stderr。`anas-hostd` 必须有包管理、账户创建、网络配置所
 `NoNewPrivileges`、`ProtectSystem` 和 `ProtectHome`，显式开放 `/etc`、`/usr`、`/var`、`/run`
 及私有临时目录。Debian 官方依赖的 initramfs 触发器还需更新 `/boot` 的 initrd，
 所以同版本固定单元以 `-/boot` 提供可选路径例外；不存在时不因此令单元失效，存在时只允许
-这个固定系统树，不开放整个根目录，也不跳过包触发器。控制台与 relay 没有该写路径。
+这个固定系统树，不开放整个根目录，也不跳过包触发器。控制台没有该写路径。
 这不是低权限沙箱；安全边界是不可由请求扩展的动作、类型参数、安装身份、
 一次性批准、审计、资源归属和退出监督，不能把写路径表宣传为抵抗恶意 root。
 
 固定 root executor 显式保留 `AmbientCapabilities=CAP_SETUID`：主要测试环境中完整服务
 保护组合会在 exec 前丢失该 root 能力，导致 APT 的 `seteuid/setresuid` 失败，连官方索引
 更新也无法完成。仅补齐这个已授权 root 安装动作需要的能力，保留 `NoNewPrivileges`、
-文件系统保护与 socket family 限制，不把能力增加到 anasd 或非 root relay，也不配置关闭
+文件系统保护与 socket family 限制，不把能力增加到 anasd，也不配置关闭
 APT 自身的沙箱。私有缓存权限可能使 APT 自行回退为 root 下载；安装成功不能据此声称
 所有下载都由 `_apt` 执行，独立沙箱下载证明仍须核验实际用户及目录权限。
 
@@ -668,8 +669,9 @@ APT 自身的沙箱。私有缓存权限可能使 APT 自行回退为 root 下�
 不取消调用方更短的 deadline，也不保证系统管理器接受的作业会随 CLI 取消。超时后仍需保留
 不确定副作用的 intent/receipt 和独立退出监督；服务后来 active 不能充作原操作已确认成功。
 
-发行归档同时包含 hostd、控制转发 binary 与固定单元。安装器不默认启动控制转发；configure
-准备身份和配置后才启动。升级/卸载在覆盖前检查活动动作、停止 socket 再复查；未排空时拒绝，
+发行归档包含 hostd 与固定单元；2026-09-30 起不再有控制转发程序，Incus 由 configure 改为直接监听
+控制网桥网关（宿主供给设计 §3.9），升级时安装器删除旧版留下的转发单元与程序。升级/卸载在覆盖前
+检查活动动作、停止 socket 再复查；未排空时拒绝，
 不杀掉进行中的包安装来制造“完成”。确认目录在同一次开机内跨 daemon 重启保留；崩溃遗留
 的执行仍需恢复裁决，不因移除临时目录而获得重放权限。
 
@@ -703,3 +705,56 @@ broker 授权回调再次检查绑定的排空结果。原确认/审计/退出�
 正常服务取消先拒绝配置写入，保留只读队列、broker 与租约至中介排空。失败需可信所有者显式
 重试，不自动放开新启动或续期配置；生产 launcher 和异常跨进程恢复仍未验收。源码接线不代表
 现在已经启动了中介或开放 ingress。
+
+## 14. 身份链简化（2026-09-30，当前实现）
+
+依据[设计简化评审](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-28-incus-design-simplification-review.md)
+第 4 项：anasd 以 root/root 运行，本身已等价于 root，对一个 root 调用方做进程身份证明不构成安全边界。本节取代
+§8.1 的服务身份字段、§9—§11 的回连 broker 与 systemd 退出观察，以及 §13 中私有总线、broker 与单元引用的段落。
+动作清单、类型化参数、二段确认、审计以及系统写路径与 anasd 沙箱的分离都不变。
+
+```text
+anasd（root，任务已在共享 job store 中开始）
+   │ 连接 /run/anas/hostd.sock（root:root 0600），写一条 anas.action/v1 请求并关闭写端
+   ▼
+systemd Accept=yes → anas-hostd@N.service（root）
+   │ 校验激活 fd、安装策略与 socket 节点；SO_PEERCRED 必须是 root/root
+   │ 在 /var/lib/anas-hostd/invocations 建立本次调用的记录（同一调用 id 只能开始一次）
+   │ 审计、领取确认、执行编译动作
+   │ 先把终态写进调用记录，再发出终态帧，退出码与终态一致
+   ▼
+anasd 用共享 recorder 记录事件流；流在终态前中断时，查询只读动作 host.invocation.status
+```
+
+**安装策略 v3。** `/etc/anas/hostd.json` 只剩 `schema` 与 `release`（版本与提交），不再写服务模式、单元名或 socket
+属组。socket 由单元固定为 root:root 0600，对端只接受 root/root，不再经 PID 1 私有总线核对调用方属于哪个单元。
+
+**调用记录取代退出证据。** 每次调用在 hostd 自己的 root-only 目录里留下两个文件：
+
+- `<invocation>.lock`：独占创建，同一调用 id 重放会被拒绝；执行期间持有 flock，hostd 被杀时由内核释放；
+- `<invocation>.json`：原子替换，先记开始，再记终态。
+
+终态先落盘、后发帧，所以 anasd 收到的终态帧就是这份记录。`host.invocation.status` 是编译进清单的只读动作，参数恒为
+`{}`，查询对象就是请求自身的 job 与调用 id：
+
+| 状态 | 含义 | anasd 的处理 |
+| --- | --- | --- |
+| `absent` | 从未开始 | hostd 读取请求的时限过后仍不存在，任务记为失败（`host_action_not_started`），没有执行 |
+| `running` | 锁仍被持有 | 继续轮询，最长到该动作的编译预算 |
+| `finished` | 已记录终态 | 以记录的终态结束任务 |
+| `lost` | 已开始、没有终态、锁已释放 | 记为未知并保留执行阻断，与原先相同 |
+
+记录保留 30 天；锁未被持有的过期记录在下一次调用开始时清理，每次最多 64 条。
+
+**删除的机制。** 固定私有 broker `/run/anas-job-broker` 与其握手协议、原请求进程的 pidfd 夹持、PID 1 私有总线上的
+调用方单元核验、`Unit.Ref` 引用、`GetUnitProcesses` 空进程集与退出码观察，以及 `github.com/godbus/dbus/v5` 依赖。
+`anasd.service` 的 `RuntimeDirectory` 只保留 `anas/confirmations`；安装器不再创建 broker 目录，卸载时仍移除早期版本
+留下的空目录。同日删除了转发许可（`incus.forwarding.*`）、观察配置与 HTTP 观察（`incus.ingress.observer*`、
+`incus.ingress.observe_http`）三组动作：§1 的转发许可评审与 §13.1、§13.2 只作历史记录。
+
+**不变的部分。** 动作 id 与类型化参数、编译清单与 `anas host actions`、二段确认与五分钟 token、确认只由 hostd 领取、
+审计、单元的 `RuntimeMaxSec` 与 `KillMode=control-group`，以及非 systemd 的待决事项。
+
+**限制。** anasd 重启时正在运行的宿主任务仍按原规则记为 `daemon_restarted` 并阻断宿主队列，还没有在启动时用调用
+记录自动结清。原生门禁改为 `test-env/scripts/test-host-action-native.sh`：调用记录、激活与对端核验的 Linux 用例必须
+实际运行。新实现还没有在 Linux/systemd 实机上重跑完整审批门禁。

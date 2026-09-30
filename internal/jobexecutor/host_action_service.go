@@ -14,7 +14,6 @@ import (
 
 	"github.com/anas-project/ANAS/internal/actionabi"
 	"github.com/anas-project/ANAS/internal/audit"
-	"github.com/anas-project/ANAS/internal/computeingressruntime"
 	"github.com/anas-project/ANAS/internal/consolejobs"
 	"github.com/anas-project/ANAS/internal/hostaction"
 	"github.com/anas-project/ANAS/internal/hostconfirmation"
@@ -27,9 +26,6 @@ type HostActionServiceOptions struct {
 	Release       hostaction.ReleaseIdentity
 	Journal       hostaction.AuditJournal
 	Workspaces    []string
-	// Trusted launcher and this queue must share the same coordinator. Nil
-	// creates an empty in-process owner set; it is not disk recovery evidence.
-	IngressCoordinator *computeingressruntime.ControllerCoordinator
 	// Re-resolve the persisted actor, not a remembered HTTP request or cookie.
 	// Called under jobs.lock as well; must not reenter Store.
 	Authorize func(context.Context, string, string) error
@@ -47,7 +43,7 @@ type hostActionRuntime interface {
 }
 
 // HostActionService is the daemon-owned queue consumer and admission facade.
-// It uses the existing journal, lease and broker for compiled host actions.
+// It uses the existing journal and lease; hostActionRunner talks to hostd.
 // HTTP/CLI Invoke only enqueues. No callbacks,
 // executables or privileged parameters can be registered through this API.
 type HostActionService struct {
@@ -60,42 +56,26 @@ type HostActionService struct {
 	started, stopped, available bool
 	closing                     bool
 	owner                       context.Context
-	ingressChanges              map[string]*hostIngressChange
 }
 
 func NewHostActionService(o HostActionServiceOptions) (*HostActionService, error) {
 	if o.Store == nil || o.Lease == nil || o.Journal == nil || o.Authorize == nil || o.Release.Validate() != nil || len(o.Workspaces) == 0 || len(o.Workspaces) > 1024 {
 		return nil, hostaction.ErrUnavailable
 	}
-	if o.IngressCoordinator == nil {
-		var err error
-		o.IngressCoordinator, err = computeingressruntime.NewControllerCoordinator(o.Workspaces)
-		if err != nil {
-			return nil, hostaction.ErrUnavailable
-		}
-	}
-	if !o.IngressCoordinator.MatchesScopes(o.Workspaces) {
-		return nil, hostaction.ErrUnavailable
-	}
-	s := &HostActionService{options: o, workspaces: map[string]bool{}, ready: make(chan struct{}), wake: make(chan struct{}, 1), ingressChanges: map[string]*hostIngressChange{}}
+	s := &HostActionService{options: o, workspaces: map[string]bool{}, ready: make(chan struct{}), wake: make(chan struct{}, 1)}
 	for _, id := range o.Workspaces {
 		if id == "" || len(id) > 64 || strings.TrimSpace(id) != id || s.workspaces[id] {
 			return nil, hostaction.ErrUnavailable
 		}
 		s.workspaces[id] = true
 	}
-	b, err := NewHostJobBroker(HostJobBrokerOptions{Store: o.Store, Lease: o.Lease, Release: o.Release, Journal: o.Journal,
-		Authorize: func(ctx context.Context, job consolejobs.Job, _ hostaction.PeerIdentity) error {
-			if err := s.checkIngressChange(job); err != nil {
-				return err
-			}
-			return s.authorize(ctx, job.CreatedBy, job.WorkspaceID)
-		},
+	runner, err := newHostActionRunner(o.Store, o.Lease, o.Release, func(ctx context.Context, job consolejobs.Job) error {
+		return s.authorize(ctx, job.CreatedBy, job.WorkspaceID)
 	})
 	if err != nil {
 		return nil, err
 	}
-	s.runtime = b
+	s.runtime = runner
 	return s, nil
 }
 
@@ -167,6 +147,24 @@ func (s *HostActionService) admission() bool {
 	return s.available && !s.stopped
 }
 
+// Shutdown keeps only the read-only preflight admitted; queued changes stay
+// queued and unstarted for the next daemon.
+func (s *HostActionService) actionAdmission(action string) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	closing := s.closing || s.owner != nil && s.owner.Err() != nil
+	return s.available && !s.stopped && (!closing || action == hostaction.ActionStatus)
+}
+
+func (s *HostActionService) shutdownRequested() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closing || s.owner != nil && s.owner.Err() != nil
+}
+
 // InvokePreflight uses action-scoped retry keys and the Store's full frozen
 // request comparison. Actor/transport do not partition keys. Admission and
 // retries are authorized again immediately before durable create/join.
@@ -216,9 +214,6 @@ func (s *HostActionService) InvokeConfirmed(ctx context.Context, actor, workspac
 	canonical, err := hostaction.CanonicalParameters(action, parameters)
 	if err != nil {
 		return consolejobs.CreateResult{}, err
-	}
-	if !hostaction.ObservationScopeMatchesWorkspace(action, canonical, workspace) {
-		return consolejobs.CreateResult{}, hostaction.ErrDenied
 	}
 	var id [16]byte
 	if _, err = rand.Read(id[:]); err != nil {
@@ -325,15 +320,11 @@ func (s *HostActionService) confirmationBinding(ctx context.Context, actor, work
 }
 
 func (s *HostActionService) Invoke(ctx context.Context, actor, workspace, action string, parameters json.RawMessage, key string) (consolejobs.CreateResult, error) {
-	return s.invoke(ctx, actor, workspace, action, parameters, key, false)
-}
-
-func (s *HostActionService) invoke(ctx context.Context, actor, workspace, action string, parameters json.RawMessage, key string, withdrawal bool) (consolejobs.CreateResult, error) {
 	if s == nil || !s.actionAdmission(action) {
 		return consolejobs.CreateResult{}, hostaction.ErrUnavailable
 	}
 	spec, ok := hostaction.LookupAction(action)
-	if !ok || spec.Mutating && (!withdrawal || action != hostaction.ActionForwardingWithdraw) {
+	if !ok || spec.Mutating {
 		return consolejobs.CreateResult{}, hostaction.ErrRequest
 	}
 	if err := s.authorize(ctx, actor, workspace); err != nil {
@@ -358,9 +349,6 @@ func (s *HostActionService) invoke(ctx context.Context, actor, workspace, action
 		if err != nil {
 			return consolejobs.CreateResult{}, hostaction.ErrRequest
 		}
-	}
-	if !hostaction.ObservationScopeMatchesWorkspace(action, canonical, workspace) {
-		return consolejobs.CreateResult{}, hostaction.ErrDenied
 	}
 	request, err := HostActionRequest(action, s.options.Release, canonical)
 	if err != nil {
@@ -434,9 +422,6 @@ func (s *HostActionService) requestMatches(job consolejobs.Job) bool {
 	if err != nil {
 		return false
 	}
-	if !hostaction.ObservationScopeMatchesWorkspace(job.Action.Name, parameters, job.WorkspaceID) {
-		return false
-	}
 	want, _ := HostActionRequest(job.Action.Name, s.options.Release, parameters)
 	a, e := json.Marshal(want)
 	request := job.Request
@@ -464,8 +449,7 @@ func (s *HostActionService) Run(owner context.Context) (result error) {
 		return hostaction.ErrUnavailable
 	}
 	defer unretain()
-	// SIGTERM closes mutation admission first; old controllers still need the
-	// broker/queue/lease for drain. Cancel the runtime only after they stop.
+	// SIGTERM closes mutation admission first; queued changes stay unstarted.
 	ctx, cancel := context.WithCancel(context.WithoutCancel(owner))
 	defer cancel()
 	done := make(chan error, 1)
@@ -512,16 +496,7 @@ func (s *HostActionService) Run(owner context.Context) (result error) {
 			s.mu.Lock()
 			s.closing = true
 			s.mu.Unlock()
-			ownerDone = nil // Do not busy-spin on a closed cancellation channel.
-			shutdown, err := s.options.IngressCoordinator.BeginShutdown(ctx)
-			if err != nil {
-				return hostaction.ErrUnavailable
-			}
-			if ready, err := shutdown.Poll(); ready && err == nil {
-				return nil
-			}
-			// Failure is retained, not silently retried. The trusted owner may
-			// call RetryIngressShutdown; readonly cleanup dependencies still run.
+			return nil
 		}
 		advanced, err := s.advance(ctx)
 		if err != nil {
@@ -559,9 +534,6 @@ func (s *HostActionService) advance(ctx context.Context) (bool, error) {
 			return false, consolejobs.ErrActionContainment
 		}
 	}
-	if err := s.retireIngressChanges(jobs); err != nil {
-		return false, err
-	}
 	sort.Slice(jobs, func(i, j int) bool {
 		if jobs[i].CreatedAt.Equal(jobs[j].CreatedAt) {
 			return jobs[i].ID < jobs[j].ID
@@ -591,16 +563,6 @@ func (s *HostActionService) advance(ctx context.Context) (bool, error) {
 			}
 			return err == nil, err
 		}
-		ready, drainErr := s.prepareIngressChange(ctx, job)
-		if !ready {
-			// Do not occupy the shared executor or block the queue while old
-			// controllers may need it to finish their independent cleanup.
-			continue
-		}
-		if drainErr != nil {
-			_, err = s.options.Store.RejectQueuedActionObserved(ctx, job.ID, job.Action.InvocationID, s.observer())
-			return err == nil, err
-		}
 		_, err = s.options.Store.StartActionObserved(ctx, job.ID, s.options.Lease, s.observer())
 		if errors.Is(err, consolejobs.ErrWorkspaceBusy) || errors.Is(err, consolejobs.ErrCompensationRequired) || errors.Is(err, consolejobs.ErrCapacity) {
 			continue
@@ -628,9 +590,6 @@ func (s *HostActionService) advance(ctx context.Context) (bool, error) {
 		}
 		if runErr != nil {
 			return false, runErr
-		}
-		if err := s.retireIngressChanges([]consolejobs.Job{finished}); err != nil {
-			return false, err
 		}
 		return true, nil
 	}

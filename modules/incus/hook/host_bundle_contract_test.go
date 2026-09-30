@@ -19,7 +19,7 @@ func TestHostBundleProducerAndCalculateConsumerShareOneWireShape(t *testing.T) {
 		AdminCertificatePEM:  fixture.AdminCertificatePEM,
 		AdminPrivateKeyPEM:   fixture.AdminPrivateKeyPEM,
 		ControlNetwork:       fixture.ControlNetwork, ControlSubnet: fixture.ControlSubnet,
-		ControlGateway: fixture.ControlGateway, RelayService: fixture.RelayService,
+		ControlGateway:        fixture.ControlGateway,
 		ManagementFingerprint: fixture.ManagementFingerprint,
 		Architecture:          fixture.Architecture, StoragePool: fixture.StoragePool,
 	}

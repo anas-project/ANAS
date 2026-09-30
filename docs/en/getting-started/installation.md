@@ -67,8 +67,16 @@ directory installs the binaries without creating a systemd service by default:
 curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/anas-project/ANAS/master/install.sh | sh -s -- --install-dir "$HOME/.local/bin"
 ```
 
+The default service installation always installs both privileged parts: `anas-helper`, which holds
+only `CAP_NET_ADMIN` and sets up the host LAN bridge, and the host-action service `anas-hostd`.
+Features that depend on either one cannot work without it, so when the release archive lacks either
+binary or the host has no `setcap`, a service installation stops before changing any file and the
+installed version stays as it was. A normal upgrade that passes these checks still replaces binaries
+and units and keeps only the service configuration. A custom install directory or `--no-service` does not install `anas-hostd`; features that
+need it report which part is missing when they are used.
+
 The script requires `curl`, `tar`, `install`, and either `sha256sum` or `shasum`; default service
-installation also requires `systemctl`. Automation can set `ANAS_INSTALL_SOURCE=github|cn`,
+installation also requires `systemctl` and `setcap` (`libcap2-bin` on Debian/Ubuntu). Automation can set `ANAS_INSTALL_SOURCE=github|cn`,
 `ANAS_INSTALL_DIR`, and `ANAS_MANAGEMENT_PORT`; the CLI also accepts a temporary
 `ANAS_DEFAULT_SOURCE=official|official-cn` override.
 
@@ -85,9 +93,10 @@ does not remove workspaces or control-plane state under `/var/lib/anas`.
 ## Host-action channel development status
 
 The development release and installer include same-release `anas-hostd`, fixed socket/service units,
-root-owned installation policy, and a separate non-root control relay binary/unit. `anasd` remains
-root/root with its existing TLS and state-file permissions; no ownership migration or Docker-group
-membership is required. `host_actions` defaults to false, and the installer does not enable the relay.
+and root-owned installation policy. Incus serves the control connection directly on the control bridge
+gateway, so there is no separate relay; upgrades remove the relay unit and binary older releases left.
+`anasd` remains root/root with its existing TLS and state-file permissions; no ownership migration or
+Docker-group membership is required. `host_actions` defaults to false.
 Plan/confirmation/execution entries are implemented, but real Linux/systemd/Incus installation, upgrade
 and removal have not passed native acceptance. This is not a production-enablement runbook. See the
 [host-action design](/architecture/host-action-channel).

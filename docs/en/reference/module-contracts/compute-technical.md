@@ -320,12 +320,18 @@ The dedicated key rotation command and production publication remain unimplement
 and experimental mediation are described below. File backup/restore regression tests are not real Incus or HTTP ingress
 acceptance.
 
-## Frozen HTTP authorization and lab mediation (runtime closed)
+## Frozen HTTP authorization (runtime closed)
 
 Declaration parsing and deployment preparation were added on 2026-09-12; new-code tests are deferred.
 Omitting `spec.ingress` grants no publication authority. A declaration can produce a frozen deployment,
 but start/activation explicitly refuses the affected compute consumer. Built-in consumers do not yet
 have ingress settings or request-directory mounts. Schema acceptance is not production availability.
+
+On 2026-09-30 the old per-publication permit runtime, the request-directory registration adapter, the mediation
+planner and the lab command were deleted. In the new design a request carries `{instance, address, port, label?}`
+and the publication mediator inside anasd validates it before writing Traefik route files (`INCUS-R-141`–`R-149`);
+see the Incus requirements, section 7septies. The parsing and freezing rules below move to `publish.http` when M11
+is implemented.
 
 ```yaml
 # Inside compute spec; preparation only, startup remains blocked.
@@ -367,18 +373,6 @@ opening for reads, then reopen regular files through trusted host `/proc/self/fd
 at 4 KiB. Duplicate keys, case aliases, null, unknown fields and trailing data fail. Changed inode/content
 metadata across a read also fails.
 
-Planning checks independently observed Running state, UUID, project, tier and IP/MAC allocation. Host
-collisions and relabelling an already reserved instance port fail; identical requests are idempotent.
-A session/sequence token prevents a stale cleanup callback from releasing a newer reservation. Withdrawal
-uses the recorded identity even for a stopped guest; reservations remain until cleanup is confirmed.
-
-The lab command connects these paths through `--mediation`, restricted to `.example.test` and one
-`INCUS_LAB` route. It generates plans and existing Traefik environment fields without running the renderer
-or changing networking. Offline activity/observation inputs are administrator assertions; workspace-backed
-Core reads are described below. Restricted read-only daemon identity, automatic mount/registration integration, global route ownership,
-host actions/IP holds, probe execution and event/periodic reconciliation still do not form a production
-execution path. TCP/UDP and LAN are out of scope.
-
 Consumer file-request APIs were added on 2026-09-18; the source and regression tests have not been
 compiled or executed. `Client.OpenHTTPPublisher(HTTPPublicationConfig)` explicitly opens this lease's
 already-installed private request directory. `HTTPPublisher.PublishPort` checks the exact Running
@@ -398,7 +392,7 @@ Symlinks, hard links, FIFOs, directory substitution, conflicts and unsupported p
 Automatic projection/mounting, application lifecycle/crash recovery, trusted mediator assembly and
 actual publication-state confirmation remain pending. These APIs do not remove the production startup guard.
 
-## Active authorization reads and request-directory registration (lab adapter)
+## Active authorization reads
 
 `deployment.Reader.HTTPAuthorizations` reads Core's existing `.anas/state/lock`, active/state records and
 deployment manifest under the shared runtime lock. It requires running/active state, matching activation
@@ -408,38 +402,3 @@ metadata fails. The authorization epoch combines the resolved workspace-path dig
 activation time and manifest-byte digest. Manifest changes, deployment switches or restoring elsewhere
 invalidate old directory registration; stable naming keys and URLs do not depend on this directory epoch.
 
-`internal/computeingressruntime` creates a fresh 0700 root, one 0700 request directory per lease and a
-0400 registry.json. Registration contains only epoch, manifest digest, lease, relative directory names and device/inode identities,
-never naming keys or consumer-owned authorization JSON. Directory names derive from epoch/lease hashes;
-consumers cannot supply paths. Existing destinations are refused. Failure cleanup removes only files and
-empty directories created by that attempt, without recursively deleting later content. Core state is
-checked again during registration.
-
-Opening a request directory compares canonical registration bytes with a fresh Core snapshot, rejecting
-stale, edited or mismatched records and changed directory device/inode identities before pinning the
-selected lease directory. Swapping or copying a same-named directory cannot inherit its binding. Workspace and registry
-root must remain outside consumer write access; only an individual lease directory may later be mounted.
-Even an identical registry copy must pass current Core validation. A registry is neither authority by
-itself nor a global publication lock.
-
-The mutually exclusive lab mode `--register-requests <workspace> --out <new-absolute-directory>` creates
-only this metadata and empty directories. Workspace-backed --mediation specifies workspace,
-request_registry, consumer, resource and request_file. It rejects manual authority, active-ID, directory
-and naming-key-file overrides. Random naming uses a Core-side adapter that reuses the Store parser and
-lease metadata checks, returns only that independent naming key and never remints a missing entry. The
-key stays out of registration/output. This is still an administrator lab process with workspace access;
-it does not mount the whole Store into consumers or a production mediator. Narrow production key delivery
-remains pending.
-
-Core state is rechecked after capture. A changed/unreadable authority fails without previous input, or
-produces only withdrawal for a same-lease previous record. Proposed records include authorization_epoch;
-it is not renewal or an applied receipt. The shared lock protects the metadata read, not future state:
-actual publication must revalidate again.
-
-Lab entrypoints still require example.test. Normal apply retains the ingress startup guard, so ordinary
-active deployments cannot produce production ingress registrations. Positive cases belong to separate
-metadata fixtures; do not edit real deployment state to bypass the guard. Global runtime_status does not
-prove every consumer container is running. Partial stops/crashes, missed events and mediator restarts
-still need live observation and reconciliation. Automatic mount/registration integration, restricted daemon
-observation, host actions, probe and renderer execution remain pending. Registration, tests and server
-operations were not run this turn.
