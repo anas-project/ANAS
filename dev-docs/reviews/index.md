@@ -4,7 +4,12 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [租约网络实机探测](2026-09-30-incus-lease-network-probe.md) | 2026-09-30，`7ad1876a` 加累积工作树；一次性 Debian 13 VM、Incus 7.0.1、docker.io 26 与 Docker CE 29 | M10a/M11b/M11c 待验证项与控制连接启动顺序：ACL 与 address set、默认拒绝入站、端口隔离、槽位固定地址、Docker 式端口表与占位；静态规则改窄规则、UDP 占位改常驻持有；据此 Incus 改为直接监听控制网关 |
+| [入站旧实现删除与宿主通道身份链简化](2026-09-30-incus-old-code-removal-and-hostd-simplification.md) | 2026-09-30，`7ad1876a` 加累积工作树 | 删除逐实例转发许可与逐发布 HTTP 入站运行时（225 个文件）；hostd 对端只认 root，调用记录取代回连 broker 与 systemd 退出观察（`HOSTACT-R-016`）；删除控制转发服务；服务安装必须带 `anas-helper`；宿主审批门禁实机结果见 §5 |
+| [Incus 国内软件源实机核验](2026-09-27-incus-chinese-speedup-native.md) | 2026-09-26—28，逐轮冻结工作树与二进制摘要 | 三档宿主国内源后端、guest 烘焙与不可变配方检查、脚本断言修正及物理 Docker 基线；逐轮终态与边界见正文 |
 | [Incus 设计简化评审](2026-09-28-incus-design-simplification-review.md) | 2026-09-28，`dddae0c2` 加累积工作树 | 出站逐实例许可、无消费者的入站、部署热路径协调、hostd 身份链与控制转发的简化路径；未改实现 |
+| [Incus proxy NAT 通配监听实机探测](2026-09-29-incus-proxy-nat-wildcard-probe.md) | 2026-09-29，`7ad1876a` 加累积工作树；一次性 Debian 13 VM、Incus 7.0.1 | 通配监听的 DNAT 不匹配目的地址，宿主外连与转发流量同端口被劫持；具体地址与 Docker 式 `fib daddr type local` 对照；诊断轮，未改实现 |
+| [compute 租约入站简化草案](2026-09-28-compute-ingress-simplification-draft.md) | 2026-09-28，`7ad1876a` 加累积工作树 | 30 秒逐发布许可的由来、租约 ACL 入站规则与默认拒绝、无特权中介、删除范围；已采纳，2026-09-29 定稿：`none`/`published` 两档、HTTP 发布与 Docker 式端口绑定分开、多租约规则，写入 `INCUS-R-130`—`R-164`、`HOSTACT-R-014`/`R-015` 与运行问题记录要求 |
 | [compute 租约出站分级草案](2026-09-28-compute-egress-tiers-draft.md) | 2026-09-28，`dddae0c2` 加累积工作树 | 四档出站与 Module 访问开关、Forgejo 官方建议映射、Incus ACL 执行与撤销；草案，未进矩阵 |
 | [Incus 转发许可：重新授权与增量续期需求草案](2026-09-28-incus-forwarding-regrant-renewal-draft.md) | 2026-09-28，`dddae0c2` 加累积工作树 | 授权要素与绑定事实分离、部署/重启后自动重新打开的条件、逐实例增量续期；草案，未进矩阵 |
 | [Incus 转发续期与入站中介的运行 owner 候选对比](2026-09-27-incus-runtime-owner-candidates.md) | 2026-09-27，`dddae0c2` 加累积工作树 | 独立服务、anasd（调度/进程内两种）与租约绑定许可的利弊，对照既有守护进程结论与 HOSTACT 约束；决策输入，未定案 |

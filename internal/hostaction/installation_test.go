@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/anas-project/ANAS/internal/actionabi"
@@ -15,7 +16,7 @@ func installedRelease() ReleaseIdentity {
 	return ReleaseIdentity{Version: "0.1.1", Commit: strings.Repeat("a", 40)}
 }
 func installedPolicy() installationPolicy {
-	return installationPolicy{Schema: installationSchema, Release: installedRelease(), ServiceMode: serviceModeSystemdRoot, ServiceUnit: "anasd.service", SocketGID: 0}
+	return installationPolicy{Schema: installationSchema, Release: installedRelease()}
 }
 
 func TestInstallationPolicyRejectsAmbiguityAndVersionDrift(t *testing.T) {
@@ -27,18 +28,16 @@ func TestInstallationPolicyRejectsAmbiguityAndVersionDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, raw := range map[string]string{
-		"duplicate":               strings.Replace(string(body), `"service_mode":"systemd-root-service"`, `"service_mode":"systemd-root-service","service_mode":"systemd-root-service"`, 1),
-		"escaped duplicate":       strings.Replace(string(body), `"service_unit":"anasd.service"`, `"service_unit":"anasd.service","service_\u0075nit":"anasd.service"`, 1),
-		"unknown path":            strings.Replace(string(body), `"schema":`, `"path":"private-marker","schema":`, 1),
-		"case alias":              strings.Replace(string(body), `"service_mode"`, `"Service_Mode"`, 1),
-		"null":                    strings.Replace(string(body), `"socket_gid":0`, `"socket_gid":null`, 1),
-		"implicit old root uid":   strings.Replace(string(body), `"service_mode":"systemd-root-service"`, `"service_uid":0`, 1),
-		"invalid socket sentinel": strings.Replace(string(body), `"socket_gid":0`, `"socket_gid":4294967295`, 1),
-		"wrong mode":              strings.Replace(string(body), `"systemd-root-service"`, `"root"`, 1),
-		"invalid unit":            strings.Replace(string(body), `"anasd.service"`, `"../anasd.service"`, 1),
-		"trailing":                string(body) + `{}`,
-		"oversize":                string(body) + strings.Repeat(" ", maxInstallationBytes),
-		"missing field":           strings.Replace(string(body), `,"socket_gid":0`, ``, 1),
+		"duplicate":              strings.Replace(string(body), `"schema":`, `"schema":"anas.host-action-installation/v3","schema":`, 1),
+		"escaped duplicate":      strings.Replace(string(body), `"schema":`, `"sch\u0065ma":"anas.host-action-installation/v3","schema":`, 1),
+		"unknown path":           strings.Replace(string(body), `"schema":`, `"path":"private-marker","schema":`, 1),
+		"case alias":             strings.Replace(string(body), `"release"`, `"Release"`, 1),
+		"null":                   strings.Replace(string(body), `"schema":"anas.host-action-installation/v3"`, `"schema":null`, 1),
+		"old service identity":   strings.Replace(string(body), `"schema":`, `"service_unit":"anasd.service","schema":`, 1),
+		"old schema":             strings.Replace(string(body), `installation/v3`, `installation/v2`, 1),
+		"trailing":               string(body) + `{}`,
+		"oversize":               string(body) + strings.Repeat(" ", maxInstallationBytes),
+		"missing release commit": strings.Replace(string(body), `,"commit":"`+strings.Repeat("a", 40)+`"`, ``, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := decodeInstallation([]byte(raw), installedRelease()); err == nil || strings.Contains(err.Error(), "private-marker") {
@@ -72,45 +71,122 @@ func TestActivationEnvironmentIsExactAndNotAuthorization(t *testing.T) {
 	}
 }
 
-type bindingFixture func(context.Context, actionabi.Request, ReleaseIdentity, PeerIdentity, func(context.Context) error) error
-
-func (f bindingFixture) WithHostInvocation(ctx context.Context, r actionabi.Request, release ReleaseIdentity, peer PeerIdentity, run func(context.Context) error) error {
-	return f(ctx, r, release, peer, run)
+// memoryLedger is an in-memory InvocationLedger for admission tests.
+type memoryLedger struct {
+	mu       sync.Mutex
+	begun    map[string]bool
+	finished map[string]actionabi.Event
+	beginErr error
+	onBegin  func()
 }
 
-func TestBoundExecutionRejectsUnregisteredJobsAndGuardChanges(t *testing.T) {
-	for _, test := range []string{"missing binding", "denied", "not invoked", "changed before callback"} {
+func newMemoryLedger() *memoryLedger {
+	return &memoryLedger{begun: map[string]bool{}, finished: map[string]actionabi.Event{}}
+}
+
+type memoryEntry struct {
+	ledger *memoryLedger
+	id     string
+}
+
+func (l *memoryLedger) Begin(_ context.Context, r actionabi.Request, _ ReleaseIdentity, _ PeerIdentity) (InvocationEntry, error) {
+	if l.onBegin != nil {
+		l.onBegin()
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.beginErr != nil {
+		return nil, l.beginErr
+	}
+	if l.begun[r.InvocationID] {
+		return nil, ErrDenied
+	}
+	l.begun[r.InvocationID] = true
+	return memoryEntry{l, r.InvocationID}, nil
+}
+
+func (e memoryEntry) Finish(terminal actionabi.Event) error {
+	e.ledger.mu.Lock()
+	defer e.ledger.mu.Unlock()
+	if _, done := e.ledger.finished[e.id]; done {
+		return ErrUnavailable
+	}
+	e.ledger.finished[e.id] = terminal
+	return nil
+}
+
+func (l *memoryLedger) Status(_ context.Context, jobID, invocationID string) (InvocationStatus, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	status := InvocationStatus{Schema: InvocationStatusSchema, State: InvocationAbsent}
+	if terminal, ok := l.finished[invocationID]; ok {
+		status.State, status.Terminal = InvocationFinished, &terminal
+	} else if l.begun[invocationID] {
+		status.State = InvocationRunning
+	}
+	return status, nil
+}
+
+func TestRecordedExecutionRefusesReplayAndGuardChanges(t *testing.T) {
+	for _, test := range []string{"missing ledger", "replayed", "ledger unavailable", "changed after begin"} {
 		t.Run(test, func(t *testing.T) {
 			journal := &memoryAudit{}
+			ledger := newMemoryLedger()
+			var target InvocationLedger = ledger
 			changed := false
-			var binding JobBinding = bindingFixture(func(ctx context.Context, _ actionabi.Request, _ ReleaseIdentity, _ PeerIdentity, run func(context.Context) error) error {
-				if test == "denied" {
-					return errors.New("private-marker")
-				}
-				if test == "not invoked" {
-					return nil
-				}
-				changed = true
-				return run(ctx)
-			})
-			if test == "missing binding" {
-				binding = nil
+			switch test {
+			case "missing ledger":
+				target = nil
+			case "replayed":
+				ledger.begun[testRequest().InvocationID] = true
+			case "ledger unavailable":
+				ledger.beginErr = errors.New("private-marker")
+			case "changed after begin":
+				ledger.onBegin = func() { changed = true }
 			}
-			event, err := executeBound(context.Background(), testCall(t), journal, binding, installedRelease(), func() error {
+			event, err := executeRecorded(context.Background(), testCall(t), journal, target, installedRelease(), func() error {
 				if changed {
 					return ErrUnavailable
 				}
 				return nil
-			})
+			}, func(actionabi.Event) error { return nil })
 			if err == nil || event.Type != "" || strings.Contains(err.Error(), "private-marker") {
 				t.Fatal(event, err)
 			}
 			for _, e := range journal.events {
 				if e.Type == "host_action_started" {
-					t.Fatal("executed without job binding")
+					t.Fatal("executed without an invocation record")
+				}
+			}
+			if test == "changed after begin" {
+				terminal, ok := ledger.finished[testRequest().InvocationID]
+				if !ok || terminal.Error == nil || terminal.Error.Code != "host_action_not_started" || terminal.Error.Outcome != actionabi.Failed {
+					t.Fatal("aborted invocation left no not-started record", terminal)
 				}
 			}
 		})
+	}
+}
+
+func TestRecordedExecutionRecordsTheReturnedTerminal(t *testing.T) {
+	journal := &memoryAudit{}
+	ledger := newMemoryLedger()
+	event, err := executeRecorded(context.Background(), testCall(t), journal, ledger, installedRelease(), func() error { return nil },
+		func(actionabi.Event) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded, ok := ledger.finished[testRequest().InvocationID]
+	if !ok || recorded.Type != event.Type || recorded.JobID != event.JobID || recorded.InvocationID != event.InvocationID {
+		t.Fatal("ledger terminal differs from the sent terminal", recorded, event)
+	}
+	status, err := ledger.Status(context.Background(), event.JobID, event.InvocationID)
+	if err != nil || status.State != InvocationFinished {
+		t.Fatal(status, err)
+	}
+	if _, err := executeRecorded(context.Background(), testCall(t), &memoryAudit{}, ledger, installedRelease(), func() error { return nil },
+		func(actionabi.Event) error { return nil }); err == nil {
+		t.Fatal("replayed invocation ran twice")
 	}
 }
 
@@ -131,28 +207,6 @@ func TestAdmissionAuditNeverClaimsUnparsedIdentifiers(t *testing.T) {
 	}
 }
 
-func TestJobBindingCannotExecuteAfterReturning(t *testing.T) {
-	var delayed func(context.Context) error
-	journal := &memoryAudit{}
-	call := testCall(t)
-	binding := bindingFixture(func(_ context.Context, _ actionabi.Request, _ ReleaseIdentity, _ PeerIdentity, run func(context.Context) error) error {
-		delayed = run
-		return nil
-	})
-	if _, err := executeBound(context.Background(), call, journal, binding, installedRelease(), func() error { return nil }); err == nil {
-		t.Fatal("absent synchronous authorization accepted")
-	}
-	if delayed == nil {
-		t.Fatal("missing delayed fixture")
-	}
-	if err := delayed(context.Background()); !errors.Is(err, ErrDenied) {
-		t.Fatal("late callback executed", err)
-	}
-	if call.used.Load() || len(journal.events) != 1 || journal.events[0].Type != "host_action_rejected" {
-		t.Fatal("handler outlived authorization")
-	}
-}
-
 type cleanupFailureGuard struct{ closed bool }
 
 func (*cleanupFailureGuard) check() error   { return nil }
@@ -165,11 +219,9 @@ func TestActivationReturnsDescriptorCleanupFailure(t *testing.T) {
 	// No socket is opened: the cancelled owner must short-circuit before
 	// credential reads. A zero UnixConn safely returns an error from Close.
 	a := &Activation{connection: &net.UnixConn{}, guard: guard}
-	binding := bindingFixture(func(context.Context, actionabi.Request, ReleaseIdentity, PeerIdentity, func(context.Context) error) error {
-		t.Fatal("cancelled activation reached its job binding")
-		return nil
-	})
-	if err := a.Serve(ctx, &memoryAudit{}, binding); !errors.Is(err, ErrUnavailable) {
+	ledger := newMemoryLedger()
+	ledger.onBegin = func() { t.Fatal("cancelled activation reached its invocation ledger") }
+	if err := a.Serve(ctx, &memoryAudit{}, ledger); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("resource cleanup failure was lost behind the early return", err)
 	}
 	if !guard.closed || !a.closed {

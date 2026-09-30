@@ -8,7 +8,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/anas-project/ANAS/internal/incushost"
@@ -17,20 +19,20 @@ import (
 const (
 	Schema       = "anas.incus-host-provision/v1"
 	StateSchema  = "anas.incus-host-state/v1"
-	BundleSchema = "anas.incus-connection-bundle/v1"
+	BundleSchema = "anas.incus-connection-bundle/v2"
 
-	DefaultStatePath       = "/var/lib/anas/incus-host/state.json"
-	DefaultBundlePath      = "/var/lib/anas/incus-host/connection.json"
-	DefaultRelayConfigPath = "/etc/anas/incus-control-relay.json"
+	DefaultStatePath  = "/var/lib/anas/incus-host/state.json"
+	DefaultBundlePath = "/var/lib/anas/incus-host/connection.json"
 
-	IncusHTTPSAddress  = "127.0.0.1:8443"
+	// Incus listens only on the control bridge gateway, at this port. The
+	// bridge exists once Docker has started, and Incus 7.0 retries a failed
+	// listener bind only once, after 30 seconds, so the drop-in orders
+	// incus.service after docker.service (2026-09-30 lab probe).
+	IncusHTTPSPort     = 8443
+	IncusOrderDropIn   = "/etc/systemd/system/incus.service.d/anas-after-docker.conf"
 	ControlNetworkName = "anas-incus-control"
 	StoragePoolName    = "anas-btrfs"
 	ManagementCertName = "anas-host-provisioning"
-	RelayServiceName   = "anas-incus-control-relay.service"
-	RelayBinaryPath    = "/usr/local/lib/anas/anas-incus-control-relay"
-	RelayUserName      = "anas-incus-relay"
-	RelayGroupName     = "anas-incus-relay"
 
 	// InstallTimeout bounds the complete confirmed install action, not an
 	// individual query. It accommodates the two bounded APT calls (15m each),
@@ -161,32 +163,40 @@ type UnsupportedOutput struct {
 }
 
 type Observation struct {
-	Preflight             incushost.Report      `json:"preflight"`
-	Forwarding            ForwardingObservation `json:"forwarding"`
-	PackageInstalled      bool                  `json:"package_installed"`
-	ExistingPackages      []string              `json:"existing_packages"`
-	InstalledPackages     []string              `json:"installed_packages"`
-	IncusDaemonActive     bool                  `json:"incus_daemon_active"`
-	IncusHTTPSLoopback    bool                  `json:"incus_https_loopback"`
-	StoragePoolExists     bool                  `json:"storage_pool_exists"`
-	DockerNetworkExists   bool                  `json:"docker_network_exists"`
-	FirewallInstalled     bool                  `json:"firewall_installed"`
-	RelayInstalled        bool                  `json:"relay_installed"`
-	RelayBinaryInstalled  bool                  `json:"relay_binary_installed"`
-	ManagementTrusted     bool                  `json:"management_trusted"`
-	EndpointVerified      bool                  `json:"connection_verified"`
-	RunningManagedGuests  int                   `json:"running_managed_guests"`
-	ExternalCIDRs         []string              `json:"external_cidrs,omitempty"`
-	DockerCIDRs           []string              `json:"docker_cidrs,omitempty"`
-	IncusCIDRs            []string              `json:"incus_cidrs,omitempty"`
-	ControlSubnet         string                `json:"control_subnet,omitempty"`
-	ControlGateway        string                `json:"control_gateway,omitempty"`
-	ControlInterfaceName  string                `json:"control_interface_name,omitempty"`
-	ControlInterfaceIndex int                   `json:"control_interface_index,omitempty"`
-	ControlNetworkID      string                `json:"control_network_id,omitempty"`
-	RelayUID              uint32                `json:"relay_uid,omitempty"`
-	RelayGID              uint32                `json:"relay_gid,omitempty"`
+	Preflight             incushost.Report `json:"preflight"`
+	PackageInstalled      bool             `json:"package_installed"`
+	ExistingPackages      []string         `json:"existing_packages"`
+	InstalledPackages     []string         `json:"installed_packages"`
+	IncusDaemonActive     bool             `json:"incus_daemon_active"`
+	IncusHTTPSControl     bool             `json:"incus_https_control"`
+	IncusAfterDocker      bool             `json:"incus_after_docker"`
+	StoragePoolExists     bool             `json:"storage_pool_exists"`
+	DockerNetworkExists   bool             `json:"docker_network_exists"`
+	FirewallInstalled     bool             `json:"firewall_installed"`
+	ManagementTrusted     bool             `json:"management_trusted"`
+	EndpointVerified      bool             `json:"connection_verified"`
+	RunningManagedGuests  int              `json:"running_managed_guests"`
+	ExternalCIDRs         []string         `json:"external_cidrs,omitempty"`
+	DockerCIDRs           []string         `json:"docker_cidrs,omitempty"`
+	IncusCIDRs            []string         `json:"incus_cidrs,omitempty"`
+	ControlSubnet         string           `json:"control_subnet,omitempty"`
+	ControlGateway        string           `json:"control_gateway,omitempty"`
+	ControlInterfaceName  string           `json:"control_interface_name,omitempty"`
+	ControlInterfaceIndex int              `json:"control_interface_index,omitempty"`
+	ControlNetworkID      string           `json:"control_network_id,omitempty"`
 }
+
+// controlListenAddress is the only address Incus serves HTTPS on.
+func controlListenAddress(gateway string) string {
+	return net.JoinHostPort(gateway, strconv.Itoa(IncusHTTPSPort))
+}
+
+// incusOrderDropInBody is the exact drop-in content; readback compares it.
+const incusOrderDropInBody = `# Managed by ANAS (incus.configure). Incus listens on the Docker control
+# bridge gateway, which exists only once Docker has started.
+[Unit]
+After=docker.service
+`
 
 func digestBytes(body []byte) string {
 	sum := sha256.Sum256(body)

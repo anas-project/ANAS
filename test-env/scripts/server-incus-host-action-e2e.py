@@ -44,14 +44,13 @@ REQUIRED = (
     'confirmed_install', 'confirmed_configure', 'confirmed_enroll', 'confirmed_uninstall',
     'consumer_control_bridge_mtls', 'consumer_wrong_pin_denied',
     'consumer_without_certificate_untrusted', 'consumer_other_network_blocked',
-    'service_restart_persists_consumption', 'shared_jobs_and_exit_evidence',
+    'service_restart_persists_consumption', 'shared_jobs_and_invocation_records',
     'real_expiry_rejects_old_confirmation', 'fresh_plan_after_expiry',
     'docker_baseline_restored',
 )
 ARTIFACTS = {
-    'anas', 'anasd', 'anas-hostd', 'anas-incus-control-relay',
+    'anas', 'anasd', 'anas-hostd',
     'anasd.service', 'anas-hostd.socket', 'anas-hostd@.service',
-    'anas-incus-control-relay.service',
 }
 
 
@@ -72,9 +71,9 @@ def public_failure(error):
 
 def public_effect_summary(state):
     steps = {'install': {'packages', 'service'},
-             'configure': {'https', 'storage', 'docker-network', 'firewall', 'relay'},
+             'configure': {'storage', 'docker-network', 'firewall', 'listener'},
              'enroll': {'trust', 'bundle'},
-             'uninstall': {'bundle', 'trust', 'relay', 'firewall', 'docker-network', 'storage', 'packages'}}
+             'uninstall': {'bundle', 'trust', 'listener', 'firewall', 'docker-network', 'storage', 'packages'}}
     require(isinstance(state, dict) and state.get('schema') == 'anas.incus-host-state/v1' and
             isinstance(state.get('disabled', False), bool), 'effect_summary_schema')
     intents = state.get('intents') or []
@@ -124,9 +123,8 @@ def installation_policy_bytes(release):
     validate_lab_release(release)
     # Match the compiled struct and install.sh, including the nested release
     # order. A sorted source manifest is not the installation wire format.
-    policy = {'schema': 'anas.host-action-installation/v2',
-              'release': {'version': release['version'], 'commit': release['commit']},
-              'service_mode': 'systemd-root-service', 'service_unit': 'anasd.service', 'socket_gid': 0}
+    policy = {'schema': 'anas.host-action-installation/v3',
+              'release': {'version': release['version'], 'commit': release['commit']}}
     return (json.dumps(policy, separators=(',', ':')) + '\n').encode()
 
 
@@ -321,9 +319,8 @@ def write_new(path, body, mode=0o600):
     if isinstance(body, str):
         body = body.encode()
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
-    # The runner's 077 umask would otherwise strip the requested bits: a 0700
-    # relay binary cannot be executed by its non-root service (203/EXEC).
-    # Set the exact mode, as install.sh's `install -m` does.
+    # The runner's 077 umask would otherwise strip the requested bits. Set the
+    # exact mode, as install.sh's `install -m` does.
     os.fchmod(descriptor, mode)
     with os.fdopen(descriptor, 'wb') as output:
         output.write(body)
@@ -362,13 +359,10 @@ def install_fixture(manifest, workspaces=DEFAULT_WORKSPACES, prepare_workspace=N
     Path('/etc/anas').mkdir(mode=0o755, exist_ok=True)
     TLS.mkdir(mode=0o700)
     for name, destination in {'anas': '/usr/local/bin/anas', 'anasd': '/usr/local/bin/anasd',
-                               'anas-hostd': '/usr/local/lib/anas/anas-hostd',
-                               'anas-incus-control-relay': '/usr/local/lib/anas/anas-incus-control-relay'}.items():
+                               'anas-hostd': '/usr/local/lib/anas/anas-hostd'}.items():
         path = Path(destination)
         if not path.parent.exists():
-            # Match install.sh (`install -d -m 0755`): this runner's umask is
-            # 077, and a private helper directory would stop the non-root
-            # relay from executing its binary (systemd status 203/EXEC).
+            # Match install.sh (`install -d -m 0755`); this runner's umask is 077.
             path.parent.mkdir(parents=True)
             os.chmod(path.parent, 0o755)
         if path.exists():
@@ -714,6 +708,25 @@ def systemd_identity(manifest):
     return {'pid': pid, 'invocation_id': values['InvocationID']}
 
 
+def invocation_records():
+    """Read hostd's root-private invocation records without following links."""
+    directory = Path('/var/lib/anas-hostd/invocations')
+    info = directory.lstat()
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o700,
+            'invocation_ledger_permissions')
+    records = []
+    for path in sorted(directory.iterdir()):
+        entry = path.lstat()
+        require(stat.S_ISREG(entry.st_mode) and entry.st_uid == 0 and stat.S_IMODE(entry.st_mode) == 0o600,
+                'invocation_record_permissions')
+        if path.suffix == '.json':
+            record = json.loads(path.read_bytes())
+            require(record.get('schema') == 'anas.hostd-invocation/v1' and
+                    record.get('invocation_id') == path.stem, 'invocation_record_identity')
+            records.append(record)
+    return records
+
+
 def run(identity):
     baseline = guarded_vm(identity)
     original_packages = installed_packages()
@@ -860,7 +873,7 @@ def run(identity):
                         stage = label
                         probe.execute(mode, network, bundle)
                         if mode != 'trusted':
-                            # A dead daemon/relay is not network/auth denial
+                            # A dead daemon is not network/auth denial
                             # evidence. The same trusted source must remain
                             # usable immediately after each negative probe.
                             probe.execute('trusted', control['Id'], bundle)
@@ -907,10 +920,19 @@ def run(identity):
         _, repeated = confirmed('uninstall', request, None)
         require(installed_packages() == after_removal, 'repeat_uninstall_changed_inventory')
         complete(stage, job_id=repeated['id'], disposition=repeated['result']['value'].get('disposition'))
-        stage = 'shared_jobs_and_exit_evidence'
-        # A committed successful host job has already passed its pinned PID1
-        # exit observation in HostJobBroker. Independently retain the actual
-        # activation identities from the system journal as native evidence.
+        stage = 'shared_jobs_and_invocation_records'
+        # hostd's own invocation record decides a host job's terminal
+        # (HOSTACT-R-016): every succeeded job must have exactly one finished
+        # record carrying the same outcome. The activation identities from the
+        # system journal are retained as independent native evidence.
+        records = invocation_records()
+        for job in jobs:
+            found = [record for record in records if record.get('job_id') == job['id']]
+            require(len(found) == 1, 'invocation_record_missing')
+            terminal = found[0].get('terminal') or {}
+            require(found[0].get('finished_at') and terminal.get('type') == 'result' and
+                    (terminal.get('result') or {}).get('outcome') == job['status'] == 'succeeded',
+                    'invocation_record_disagrees')
         raw = capture(['journalctl', '--no-pager', '-o', 'json', '-u', 'anas-hostd@*'], timeout=15)
         activations = set()
         for line in raw.splitlines():
@@ -922,7 +944,8 @@ def run(identity):
         active = capture(['systemctl', 'list-units', '--state=active,activating,deactivating',
                           '--no-legend', '--plain', 'anas-hostd@*.service'])
         require(not active.strip(), 'host_executor_outlived_jobs')
-        complete(stage, succeeded_jobs=len(jobs), observed_activations=len(activations))
+        complete(stage, succeeded_jobs=len(jobs), invocation_records=len(records),
+                 observed_activations=len(activations))
         stage = 'docker_baseline_restored'
         unchanged = docker_identity() == baseline
         require(unchanged, 'docker_baseline_changed')

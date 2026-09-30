@@ -79,17 +79,8 @@ jobs:
 
       # Plain go test can report success when Linux capability tests skip.
       # This gate requires the native socket/process and owner cases to run.
-      - name: Test native host job broker
-        run: bash test-env/scripts/test-host-job-broker-native.sh
-
-      # Compile without privilege; elevate only the isolated kernel namespace
-      # regressions on this disposable runner. A capability skip is a failure.
-      - name: Test native Incus ingress namespace boundary
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y nftables iproute2 conntrack
-          go test -c -o "$RUNNER_TEMP/anas-incus-ingress-native.test" ./internal/incusingresshost
-          sudo env "PATH=$PATH" bash test-env/scripts/test-incus-ingress-native.sh "$RUNNER_TEMP/anas-incus-ingress-native.test"
+      - name: Test native host action channel
+        run: bash test-env/scripts/test-host-action-native.sh
 
       - name: Validate shared build contexts
         run: go run ./cmd/check-shared-build
@@ -140,7 +131,6 @@ jobs:
           python3 -m unittest discover -s test-env/scripts -p 'test_incus_lifecycle_lab.py'
           python3 -m unittest discover -s test-env/scripts -p 'test_incus_network_e2e.py'
           python3 -m unittest discover -s test-env/scripts -p 'test_incus_unadapted_e2e.py'
-          python3 -m unittest discover -s test-env/scripts -p 'test_incus_forwarding_e2e.py'
           python3 -m unittest discover -s test-env/scripts -p 'test_forgejo_account_e2e.py'
           python3 -m unittest discover -s test-env/scripts -p 'test_forgejo_stop_e2e.py'
 

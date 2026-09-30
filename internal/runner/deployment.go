@@ -20,7 +20,6 @@ import (
 
 	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/compose"
-	"github.com/anas-project/ANAS/internal/computeingressruntime"
 	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/deployment"
 	"github.com/anas-project/ANAS/internal/securefs"
@@ -1974,12 +1973,6 @@ func acquireRuntimeLockModeContext(ctx context.Context, base string, mode int) (
 			_ = file.Close()
 			return nil, fmt.Errorf("lock runtime state: %w", err)
 		}
-		if mode == syscall.LOCK_EX {
-			if fenceErr := computeingressruntime.CheckWorkspaceMutationLock(ctx, file, path); fenceErr != nil {
-				_ = file.Close()
-				return nil, fenceErr
-			}
-		}
 		timer := time.NewTimer(runtimeLockRetryDelay)
 		select {
 		case <-ctx.Done():
@@ -1992,9 +1985,6 @@ func acquireRuntimeLockModeContext(ctx context.Context, base string, mode int) (
 		}
 	}
 	checkErr := securefs.VerifyOpenNamedFile(file, path, "workspace runtime lock")
-	if checkErr == nil && mode == syscall.LOCK_EX {
-		checkErr = computeingressruntime.CheckWorkspaceMutationLock(ctx, file, path)
-	}
 	if checkErr == nil {
 		checkErr = ctx.Err()
 	}

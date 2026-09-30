@@ -49,6 +49,7 @@ type coreNativeState struct {
 	DockerID        string            `json:"docker_id"`
 	PinR1           string            `json:"pin_r1"`
 	PinR2           string            `json:"pin_r2"`
+	PinR3           string            `json:"pin_r3"`
 	ModuleRoots     map[string]string `json:"module_roots"`
 	ComposeProjects map[string]string `json:"compose_projects"`
 	Images          []string          `json:"images"`
@@ -671,15 +672,7 @@ func TestNativeCoreComputeProjection(t *testing.T) {
 		if err != nil || active.ActiveDeployment != deploymentID || slices.Contains(active.PreviousDeployments, failing) {
 			t.Fatal("failed activation changed the active deployment or rollback history", err)
 		}
-		var imported []struct {
-			Fingerprint string `json:"fingerprint"`
-		}
-		coreNativeQuery(t, http.MethodGet, "/1.0/images?recursion=1&project=anas-core-one", &imported)
-		seen := map[string]bool{}
-		for _, image := range imported {
-			seen[image.Fingerprint] = true
-		}
-		if len(imported) != 2 || !seen[pin] || !seen[pinR2] {
+		if seen := coreNativeProjectImages(t, "anas-core-one"); len(seen) != 2 || !seen[pin] || !seen[pinR2] {
 			t.Fatal("apply deleted an older revision or never imported the new one")
 		}
 		// Revert the consumer as an operator would: restore its sources and
@@ -698,6 +691,83 @@ func TestNativeCoreComputeProjection(t *testing.T) {
 			t.Fatal("revert render did not freeze the active revision again", err)
 		}
 	})
+	var pinR3, forwardID string
+	step("rollback_restores_lost_image_from_frozen_artifact", func(t *testing.T) {
+		// Roll forward to lab-r3, lose the rollback target's image in the
+		// daemon, then roll back: the previous deployment's own frozen
+		// artifact must bring back the identical fingerprint, with no build.
+		third := coreNativeFixtureImage(t, provider, "lab-r3")
+		pinR3 = third.Fingerprint
+		var entries []computeimage.Entry
+		body, err := os.ReadFile(filepath.Join(provider, "images", "catalog.json"))
+		if err != nil || json.Unmarshal(body, &entries) != nil || len(entries) != 2 {
+			t.Fatal("catalog history before lab-r3 is not the two earlier revisions", err)
+		}
+		catalog, _ := json.Marshal(append(entries, third))
+		write(filepath.Join(provider, "images", "catalog.json"), catalog, 0600)
+		write(filepath.Join(moduleRoot, "core_one", "module.yml"), []byte(coreNativeConsumerManifestRevision("core_one", "lab-r3")), 0600)
+		result := coreNativeCLI(t, "forward-render", "render", "-w", workspace, "--root", moduleRoot, "--update-lock")
+		if json.Unmarshal(result["deployment_id"], &forwardID) != nil || forwardID == deploymentID {
+			t.Fatal("lab-r3 did not render a new deployment")
+		}
+		coreNativeCLI(t, "forward-apply", "apply", "-w", workspace, "--deployment", forwardID, "--yes", "--no-snapshot")
+		active, err := loadActiveState(stateDir(workspace))
+		if err != nil || active.ActiveDeployment != forwardID || len(active.PreviousDeployments) == 0 || active.PreviousDeployments[0] != deploymentID {
+			t.Fatal("lab-r3 did not become active with the earlier deployment as its rollback target", err)
+		}
+		if seen := coreNativeProjectImages(t, "anas-core-one"); len(seen) != 3 || !seen[pin] || !seen[pinR2] || !seen[pinR3] {
+			t.Fatal("roll forward deleted an older revision or never imported lab-r3")
+		}
+		coreNativeQuery(t, http.MethodDelete, "/1.0/images/"+pin+"?project=anas-core-one", nil)
+		if coreNativeProjectImages(t, "anas-core-one")[pin] {
+			t.Fatal("the rollback target's image was not removed from the daemon")
+		}
+		rolled := coreNativeCLI(t, "rollback", "rollback", "-w", workspace)
+		var target string
+		if json.Unmarshal(rolled["deployment_id"], &target) != nil || target != deploymentID {
+			t.Fatal("rollback did not return to the previous deployment")
+		}
+		active, err = loadActiveState(stateDir(workspace))
+		if err != nil || active.ActiveDeployment != deploymentID || len(active.PreviousDeployments) == 0 || active.PreviousDeployments[0] != forwardID {
+			t.Fatal("rollback did not keep lab-r3 as the next rollback target", err)
+		}
+		if seen := coreNativeProjectImages(t, "anas-core-one"); len(seen) != 3 || !seen[pin] || !seen[pinR3] {
+			t.Fatal("rollback did not restore the identical lab-r1 image from its frozen artifact")
+		}
+	})
+	step("lost_frozen_artifact_fails_without_rebuild", func(t *testing.T) {
+		// Sources and lock still describe lab-r3. Render it again, then lose
+		// both the daemon's image and this deployment's frozen copy.
+		result := coreNativeCLI(t, "lost-artifact-render", "render", "-w", workspace, "--root", moduleRoot)
+		var lost string
+		if json.Unmarshal(result["deployment_id"], &lost) != nil || lost == forwardID {
+			t.Fatal("lab-r3 did not render a separate deployment")
+		}
+		lostRoot := filepath.Join(stateDir(workspace), "deployments", lost)
+		manifest, err := loadDeploymentManifest(lostRoot)
+		if err != nil || len(manifest.Resources) != 1 || manifest.Resources[0].ComputeImages == nil || manifest.Resources[0].ComputeImages.Images[0].Fingerprint != pinR3 {
+			t.Fatal("lab-r3 was not frozen into the separate deployment", err)
+		}
+		artifact := filepath.Join(lostRoot, "modules", "incus", "images", "artifacts", "anas", "native-core", "lab-r3", "amd64", "incus_container")
+		if info, err := os.Stat(artifact); err != nil || !info.IsDir() {
+			t.Fatal("frozen lab-r3 artifact missing before the negative control", err)
+		}
+		coreNativeQuery(t, http.MethodDelete, "/1.0/images/"+pinR3+"?project=anas-core-one", nil)
+		if err := os.RemoveAll(artifact); err != nil {
+			t.Fatal(err)
+		}
+		if code := coreNativeCLIFailure(t, "lost-artifact-apply", "apply", "-w", workspace, "--deployment", lost, "--yes", "--no-snapshot"); code != "start_failed" {
+			t.Fatalf("lost artifact failed with %q, want a start failure while ensuring the lease", code)
+		}
+		active, err := loadActiveState(stateDir(workspace))
+		if err != nil || active.ActiveDeployment != deploymentID || len(active.PreviousDeployments) == 0 ||
+			active.PreviousDeployments[0] != forwardID || slices.Contains(active.PreviousDeployments, lost) {
+			t.Fatal("failed activation changed the active deployment or rollback history", err)
+		}
+		if seen := coreNativeProjectImages(t, "anas-core-one"); len(seen) != 2 || !seen[pin] || !seen[pinR2] || seen[pinR3] {
+			t.Fatal("a lost artifact was rebuilt or replaced by other bytes")
+		}
+	})
 	step("stopped_for_explicit_prune", func(t *testing.T) {
 		coreNativeCLI(t, "stop", "stop", "-w", workspace)
 		active, err := loadActiveState(stateDir(workspace))
@@ -705,7 +775,7 @@ func TestNativeCoreComputeProjection(t *testing.T) {
 			t.Fatal("workspace did not record a stopped runtime", err)
 		}
 		moduleRoots["core_one"] = filepath.Join(deploymentRoot, "modules", "core_one")
-		body, err := json.Marshal(coreNativeState{ID: id, DockerID: dockerID, PinR1: pin, PinR2: pinR2,
+		body, err := json.Marshal(coreNativeState{ID: id, DockerID: dockerID, PinR1: pin, PinR2: pinR2, PinR3: pinR3,
 			ModuleRoots: moduleRoots, ComposeProjects: composeProjects, Images: images})
 		if err != nil {
 			t.Fatal(err)
@@ -775,6 +845,20 @@ func coreNativeFixtureImage(t *testing.T, provider, revision string) computeimag
 		RecipeDigest: sha256Hex([]byte("explicit native import fixture, not distrobuilder or signed release"))}
 	writeProviderArtifactFixture(t, provider, entry, metadata, rootBytes)
 	return entry
+}
+
+// coreNativeProjectImages reads one lease project's image fingerprints.
+func coreNativeProjectImages(t *testing.T, project string) map[string]bool {
+	t.Helper()
+	var imported []struct {
+		Fingerprint string `json:"fingerprint"`
+	}
+	coreNativeQuery(t, http.MethodGet, "/1.0/images?recursion=1&project="+project, &imported)
+	seen := map[string]bool{}
+	for _, image := range imported {
+		seen[image.Fingerprint] = true
+	}
+	return seen
 }
 
 // coreNativeCLIFailure runs a command that must fail and returns its stable

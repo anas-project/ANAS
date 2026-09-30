@@ -100,18 +100,11 @@ anas admin local rotate traefik primary --prompt -w /srv/anas
 
 ## 测试与实现位置
 
-entrypoint 新增内部 `ANAS_TRAEFIK_RENDER_ONLY=true` 模式，供受信 HTTP 执行器在私有 staging
+entrypoint 新增内部 `ANAS_TRAEFIK_RENDER_ONLY=true` 模式，供受信的 HTTP 发布中介（Incus M11）在私有 staging
 目录复用 `ANAS_TRAEFIK_ROUTE__*` 的校验与模板；它跳过证书配置和 Traefik 启动，仅生成路由后退出。
-默认 `false` 保留正常启动流程，其他值拒绝。该变量不是用户配置参数或消费者发布接口；执行器只把
+默认 `false` 保留正常启动流程，其他值拒绝。该变量不是用户配置参数或消费者发布接口；调用方只把
 冻结 Host、后端地址、HTTPS/TLS 与 middleware 投入干净环境，并不向子进程传真实动态目录。
 这条新增路径及默认路径的回归均按要求暂缓测试，不能据此认定 Incus ingress 已开放。
-
-Incus 原型新增 `internal/computeingressruntime.TraefikReader`，只读取现有受保护 API 的 version 与
-完整 rawdata，作为路由库存及发布/撤销确认；未新增 API、监听端口或消费者凭据投影。代码固定证书与
-3.7.10 版本，要求完整双快照和当前 API router/BasicAuth 正常；缺失数据不会变成空库存。发布前后核对
-冻结 Host、唯一后端及直接 ForwardAuth 的可信配置摘要，文件与实际加载状态一致才确认；撤销须从
-API 消失，不能只看磁盘删除。API 的 UP 默认状态不证明后端可达，独立 probe 与真实 E2E 仍待执行。
-API 凭据/摘要供给及服务装配尚未完成，reader 未实例化或测试；范围与待测项见 Incus 技术文档及原型 E2E 清单。
 
 - [`local_admin_test.go`](../hook/local_admin_test.go)
 - [`main_test.go`](../hook/main_test.go)

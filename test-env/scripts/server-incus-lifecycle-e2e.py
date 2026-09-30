@@ -32,14 +32,16 @@ POOL = 'anas-lifecycle-btrfs'
 TIERS = {
     'container': {'interface': 'incus_container', 'test': 'TestNativeIncusContainerLeaseLifecycle',
                   'pool_gib': 12, 'go_timeout': '9m', 'timeout': 570,
-                  'overrides': ('unix-char', 'unix-block', 'privileged', 'raw-lxc')},
+                  'overrides': ('unix-char', 'unix-block', 'privileged', 'raw-lxc'),
+                  'extra': ('image-allowlist-boundary',)},
     'vm': {'interface': 'incus_vm', 'test': 'TestNativeIncusVMLeaseLifecycle',
            'pool_gib': 22, 'go_timeout': '17m', 'timeout': 1080,
            'overrides': ('pci', 'raw-qemu'), 'extra': ('nested-virtualization-fence',)},
 }
 VM_BUILD = 'anas-vmfixture-build'
 VM_BASE_ALIAS = 'anas-vmfixture-base'
-LAB_INSTANCES = ('anas-native-job', 'anas-native-overquota', 'anas-native-timed')
+LAB_INSTANCES = ('anas-native-job', 'anas-native-overquota', 'anas-native-timed', 'anas-native-unlisted')
+UNLISTED_DESCRIPTION = 'ANAS lifecycle fixture outside the lease allowlist, not a product image'
 
 
 def required_lifecycle_tests(tier='container'):
@@ -66,7 +68,9 @@ def lifecycle_metrics(events):
     for event in events:
         match = re.search(r'(lease_[01]_create_start_ready_ms=\d+|actual_guest_write_bytes=\d+ limit_bytes=\d+'
                           r'|typical_job tier=incus_[a-z]+ ready_ms=\d+ exec_ms=\d+ reclaim_ms=\d+ wall_ms=\d+'
-                          r'|nested_virtualization daemon_restriction=(?:true|false) guest_virtualization_flags=\d+)', event.get('Output', ''))
+                          r'|nested_virtualization daemon_restriction=(?:true|false) guest_virtualization_flags=\d+'
+                          r'|image_allowlist_boundary client_refused=true lease_cert_import=(?:allowed|refused)'
+                          r' lease_cert_create=(?:allowed|refused|not_attempted))', event.get('Output', ''))
         if match:
             metrics.append(match.group(1))
     return metrics
@@ -95,7 +99,13 @@ def emit(name, **fields):
     print(json.dumps({'check': name, 'passed': True, **fields}), flush=True)
 
 
-def create_fixture_image(binary, target):
+def unlisted_image(item):
+    """Only the boundary check's own fixture may be left behind by a failed run."""
+    path = ROOT/'unlisted.fingerprint'
+    return path.is_file() and item.get('fingerprint') == path.read_text().strip()
+
+
+def create_fixture_image(binary, target, description='ANAS isolated lifecycle fixture, not a product image'):
     with tarfile.open(target, 'w:xz') as archive:
         for name in ('dev', 'proc', 'sys', 'run', 'etc', 'sbin', 'usr', 'usr/bin', 'usr/local', 'usr/local/bin'):
             item = tarfile.TarInfo('rootfs/' + name); item.type = tarfile.DIRTYPE; item.mode = 0o755; archive.addfile(item)
@@ -105,7 +115,7 @@ def create_fixture_image(binary, target):
         for name in ('sbin/init', 'usr/bin/test'):
             item = tarfile.TarInfo('rootfs/' + name); item.type = tarfile.SYMTYPE
             item.linkname = '/usr/local/bin/anas-fixture'; item.mode = 0o777; archive.addfile(item)
-        body = b'architecture: x86_64\ncreation_date: 1789948800\nproperties:\n  description: ANAS isolated lifecycle fixture, not a product image\n  os: ANAS-test\n'
+        body = ('architecture: x86_64\ncreation_date: 1789948800\nproperties:\n  description: %s\n  os: ANAS-test\n' % description).encode()
         item = tarfile.TarInfo('metadata.yaml'); item.mode = 0o644; item.size = len(body); archive.addfile(item, io.BytesIO(body))
     return hashlib.sha256(target.read_bytes()).hexdigest()
 
@@ -239,6 +249,11 @@ def main(args):
         else:
             image=report/'fixture.tar.xz'
             pin=create_fixture_image(Path(args.guest_binary),image)
+            # Same program, different metadata: a distinct fingerprint that no
+            # lease allows, for the image allowlist boundary check.
+            unlisted=create_fixture_image(Path(args.guest_binary),ROOT/'unlisted.tar.xz',UNLISTED_DESCRIPTION)
+            if unlisted==pin: raise RuntimeError('unlisted fixture must have its own fingerprint')
+            (ROOT/'unlisted.fingerprint').write_text(unlisted+'\n')
         emit('measured_fixture_image',fingerprint=pin,product_image=False,interface=tier['interface'])
         pool_path=Path('/var/lib/incus/storage-pools')/POOL
         fs=os.statvfs(pool_path)
@@ -334,8 +349,8 @@ def main(args):
             for certificate in json.loads(cli('config','trust','list','--format=json').stdout):
                 if certificate.get('projects')==[project]: cli('config','trust','remove',certificate['fingerprint'])
             for item in json.loads(cli('image','list','--project',project,'--format=json').stdout):
-                if item['fingerprint']!=pin: raise RuntimeError('unexpected image; refusing cleanup')
-                cli('image','delete',pin,'--project',project)
+                if item['fingerprint']!=pin and not unlisted_image(item): raise RuntimeError('unexpected image; refusing cleanup')
+                cli('image','delete',item['fingerprint'],'--project',project)
             for item in json.loads(cli('profile','list','--project',project,'--format=json').stdout):
                 if item['name']!='default':
                     if item['name']!='anas-lease': raise RuntimeError('unexpected profile; refusing cleanup')

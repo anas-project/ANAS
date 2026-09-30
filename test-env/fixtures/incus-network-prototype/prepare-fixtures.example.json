@@ -1,8 +1,0 @@
-{
-  "workspace": "/var/tmp/anas-lab/workspace",
-  "request_registry": "/var/tmp/anas-lab/request-registry",
-  "reader_credentials": "/var/tmp/anas-lab/reader-config/readers.json",
-  "state_directory": "/var/tmp/anas-lab/http-state",
-  "route_directory": "/var/tmp/anas-lab/traefik-dynamic",
-  "renderer_entrypoint": "/var/tmp/anas-lab/traefik/anas-entrypoint.sh"
-}

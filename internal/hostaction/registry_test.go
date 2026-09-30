@@ -31,37 +31,26 @@ func testCall(t *testing.T) *Invocation {
 	return call
 }
 
-func TestPeerPolicyFailsClosed(t *testing.T) {
-	calls := 0
-	old := verifyPeerSystemdUnit
-	verifyPeerSystemdUnit = func(ctx context.Context, peer Peer, unit string) error {
-		calls++
-		if ctx == nil || ctx.Err() != nil || peer.pid != 123 || unit != "anasd.service" {
-			return ErrUnavailable
-		}
-		return nil
-	}
-	defer func() { verifyPeerSystemdUnit = old }()
-	policy := PeerPolicy{ServiceMode: serviceModeSystemdRoot, ServiceUnit: "anasd.service"}
+func TestPeerPolicyAdmitsOnlyRoot(t *testing.T) {
+	policy := PeerPolicy{}
 	for _, tc := range []struct {
 		peer Peer
 		want bool
 	}{
 		{Peer{pid: 123, uid: 0, gid: 0}, true},
-		{Peer{pid: 123, uid: 1001, gid: 1002}, true},
-		{Peer{pid: 124, uid: 0, gid: 0}, false},
-		{Peer{uid: 1001, gid: 1002}, false},
+		{Peer{pid: 123, uid: 1001, gid: 1002}, false},
+		{Peer{pid: 123, uid: 0, gid: 1002}, false},
+		{Peer{pid: 1, uid: 0, gid: 0}, false},
+		{Peer{uid: 0, gid: 0}, false},
 	} {
 		if got := policy.authorizes(context.Background(), tc.peer); got != tc.want {
 			t.Fatalf("peer %+v authorized=%v", tc.peer, got)
 		}
 	}
-	if calls == 0 {
-		t.Fatal("systemd verifier was not part of authorization")
-	}
-	if (PeerPolicy{}).authorizes(context.Background(), testPeer()) ||
-		(PeerPolicy{ServiceMode: serviceModeSystemdRoot, ServiceUnit: "../anasd.service"}).authorizes(context.Background(), testPeer()) {
-		t.Fatal("empty installation policy permitted")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if policy.authorizes(ctx, Peer{pid: 123}) {
+		t.Fatal("cancelled admission authorized a peer")
 	}
 }
 

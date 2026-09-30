@@ -18,6 +18,10 @@
 | **特权动作审计** | 谁在什么时候经 `anas-hostd` 执行了什么 | 事后追责 | [宿主特权动作通道](host-action-channel.md) §7—§8 已有内部执行/拒绝审计适配；root 服务与生产共享 job broker 未接入 |
 | **部署与配置历史** | deployment、lock、resource state 的演进 | 回滚与排查 | 已实现，落在 `.anas/` 下 |
 
+另有一类不是日志：**运行问题**记录「现在哪里不对」（冲突、失效、恢复失败），同一个问题只记一条，条件恢复后标记为
+已解决，每次新增或解决时另写一条日志。需求已定，尚未实现，见
+[运行问题记录要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/runtime-issues.md)。
+
 ## 2. 待研讨的问题
 
 ### 2.1 事件日志与审计日志是同一份吗

@@ -305,3 +305,9 @@ func ValidateNamespaces(grants []*Authorization, reservedHosts []string) error {
 	}
 	return nil
 }
+
+// Lease names one consumer's compute resource.
+type Lease struct {
+	Consumer string `json:"consumer"`
+	Resource string `json:"resource"`
+}

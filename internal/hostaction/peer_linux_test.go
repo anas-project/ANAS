@@ -89,7 +89,7 @@ func TestReceiveDeniesUnauthorizedPeerWithoutReadingPayload(t *testing.T) {
 	_, server := testUnixPair(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err := Receive(ctx, server, PeerPolicy{ServiceMode: serviceModeSystemdRoot, ServiceUnit: "other.service"})
+	_, err := Receive(ctx, server, PeerPolicy{})
 	if !errors.Is(err, ErrDenied) {
 		t.Fatal("peer was not rejected before request read", err)
 	}

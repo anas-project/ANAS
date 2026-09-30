@@ -20,10 +20,8 @@ func TestFixedServiceCommandBudgets(t *testing.T) {
 	}{
 		{"incus-start", []string{"enable", "--now", "incus.service"}, 11 * time.Minute},
 		{"owned-incus-stop", []string{"stop", "incus.service"}, 2 * time.Minute},
-		{"relay-start", []string{"enable", "--now", RelayServiceName}, 2 * time.Minute},
-		{"relay-stop", []string{"disable", "--now", RelayServiceName}, 2 * time.Minute},
 		{"incus-read", []string{"is-active", "--quiet", "incus.service"}, 30 * time.Second},
-		{"relay-read", []string{"is-active", "--quiet", RelayServiceName}, 30 * time.Second},
+		{"unit-ordering-reload", []string{"daemon-reload"}, 30 * time.Second},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path, timeout, err := fixedCommandSpec(fixedSystemctl, test.args)
@@ -87,7 +85,7 @@ func TestFixedServiceCommandRejectsOtherOperations(t *testing.T) {
 }
 
 func TestServiceBudgetsDoNotChangeOtherCommandBounds(t *testing.T) {
-	for _, operation := range []fixedOperation{fixedAPT, fixedNFT, fixedUseradd, fixedDPKGQuery, fixedDPKGRemove} {
+	for _, operation := range []fixedOperation{fixedAPT, fixedNFT, fixedDPKGQuery, fixedDPKGRemove} {
 		var args []string
 		if operation == fixedDPKGRemove {
 			args = append(slices.Clone(dpkgRemoveUnitArgs), "incus")

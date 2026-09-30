@@ -40,7 +40,7 @@ func TestUninstallInventoryRefusalPreservesConnectionAndAllOwnership(t *testing.
 			store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{
 				ID: "owner", StoragePool: StoragePoolName, StoragePoolDriver: "btrfs",
 				DockerNetwork: ControlNetworkName, DockerNetworkID: strings.Repeat("a", 64),
-				ControlBridge: "br-anas-ctrl", FirewallRules: true, RelayService: true,
+				ControlBridge: "br-anas-ctrl", FirewallRules: true, ControlListener: true,
 				ManagementTrust: strings.Repeat("b", 64), ConnectionBundle: true,
 			}, Bundle: &bundle}, bundle: &bundle}
 			original := store.state

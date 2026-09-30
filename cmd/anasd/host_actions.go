@@ -11,7 +11,6 @@ import (
 
 	"github.com/anas-project/ANAS/internal/api/httpapi"
 	"github.com/anas-project/ANAS/internal/buildinfo"
-	"github.com/anas-project/ANAS/internal/computeingressruntime"
 	"github.com/anas-project/ANAS/internal/consoleauth"
 	"github.com/anas-project/ANAS/internal/consoleconfig"
 	"github.com/anas-project/ANAS/internal/consolejobs"
@@ -22,7 +21,6 @@ import (
 )
 
 type daemonHostActions interface {
-	WithdrawForwarding(context.Context, string, string) error
 	Run(context.Context) error
 	Ready() <-chan struct{}
 	InvokePreflight(context.Context, string, string, string) (consolejobs.CreateResult, error)
@@ -45,7 +43,7 @@ func validateHostActionDaemon(config consoleconfig.Config) error {
 	return nil
 }
 
-func configureHostActions(ctx context.Context, config consoleconfig.Config, store *consolejobs.Store, lease *consolejobs.ExecutionLease, journal hostaction.AuditJournal, auth *consoleauth.Store, ingress *computeingressruntime.ControllerCoordinator) (daemonHostActions, func() error, error) {
+func configureHostActions(ctx context.Context, config consoleconfig.Config, store *consolejobs.Store, lease *consolejobs.ExecutionLease, journal hostaction.AuditJournal, auth *consoleauth.Store) (daemonHostActions, func() error, error) {
 	if !config.HostActions {
 		return nil, func() error { return nil }, nil
 	}
@@ -81,9 +79,8 @@ func configureHostActions(ctx context.Context, config consoleconfig.Config, stor
 	}()
 	s, err := jobexecutor.NewHostActionService(jobexecutor.HostActionServiceOptions{
 		Store: store, Lease: lease, Confirmations: confirmations, Journal: journal, Workspaces: ids,
-		IngressCoordinator: ingress,
-		Release:            hostaction.ReleaseIdentity{Version: buildinfo.Version, Commit: buildinfo.Commit},
-		Authorize:          func(ctx context.Context, actor, _ string) error { return auth.CheckJobOwner(ctx, actor, issuer, group) },
+		Release:   hostaction.ReleaseIdentity{Version: buildinfo.Version, Commit: buildinfo.Commit},
+		Authorize: func(ctx context.Context, actor, _ string) error { return auth.CheckJobOwner(ctx, actor, issuer, group) },
 		ChineseSpeedup: func(ctx context.Context, id string) (bool, error) {
 			path, ok := registry.Resolve(id)
 			if !ok {

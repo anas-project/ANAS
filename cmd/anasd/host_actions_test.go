@@ -44,8 +44,6 @@ func (*daemonHostFixture) IssueConfirmation(context.Context, string, string, str
 func (*daemonHostFixture) InvokeConfirmed(context.Context, string, string, string, string, json.RawMessage, hostconfirmation.RawToken, string) (consolejobs.CreateResult, error) {
 	return consolejobs.CreateResult{}, nil
 }
-func (*daemonHostFixture) WithdrawForwarding(context.Context, string, string) error { return nil }
-
 func (*daemonHostFixture) InvokeImagePruneConfirmed(context.Context, string, string, string, hostconfirmation.RawToken, string) (consolejobs.CreateResult, error) {
 	return consolejobs.CreateResult{}, nil
 }
@@ -73,7 +71,7 @@ func TestHostDaemonFailedStartupAndDefaultOff(t *testing.T) {
 	if stop, err := startHostActionOwner(context.Background(), s); err == nil || stop != nil || !s.shutdown.Load() {
 		t.Fatal("failed startup published owner")
 	}
-	service, stop, err := configureHostActions(context.Background(), consoleconfig.Config{}, nil, nil, nil, nil, nil)
+	service, stop, err := configureHostActions(context.Background(), consoleconfig.Config{}, nil, nil, nil, nil)
 	if service != nil || err != nil || stop == nil || stop() != nil {
 		t.Fatal("default configuration touched host resources", err)
 	}

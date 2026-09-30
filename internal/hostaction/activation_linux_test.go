@@ -31,9 +31,7 @@ func activationFixture(t *testing.T) (*Activation, *net.UnixConn, string) {
 			t.Fatal(err)
 		}
 	}
-	p := installedPolicy()
-	p.SocketGID = uint32(os.Getegid())
-	body, _ := json.Marshal(p)
+	body, _ := json.Marshal(installedPolicy())
 	if err := os.WriteFile(filepath.Join(root, "etc/anas/hostd.json"), body, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -74,23 +72,15 @@ func activationFixture(t *testing.T) (*Activation, *net.UnixConn, string) {
 	return a, client, root
 }
 
+// withTestPeerVerifier admits the unprivileged test process as the peer.
 func withTestPeerVerifier(t *testing.T) {
 	t.Helper()
-	old := verifyPeerSystemdUnit
-	verifyPeerSystemdUnit = func(ctx context.Context, peer Peer, unit string) error {
-		if ctx == nil || ctx.Err() != nil || peer.pid <= 1 || unit != "anasd.service" {
-			return ErrUnavailable
-		}
-		return nil
-	}
-	t.Cleanup(func() { verifyPeerSystemdUnit = old })
+	old := admittedPeer
+	admittedPeer.uid, admittedPeer.gid = uint32(os.Geteuid()), uint32(os.Getegid())
+	t.Cleanup(func() { admittedPeer = old })
 }
 
-func passBinding() JobBinding {
-	return bindingFixture(func(ctx context.Context, _ actionabi.Request, _ ReleaseIdentity, _ PeerIdentity, run func(context.Context) error) error {
-		return run(ctx)
-	})
-}
+func passBinding() InvocationLedger { return newMemoryLedger() }
 
 func writeActivationRequest(t *testing.T, client *net.UnixConn) {
 	t.Helper()
@@ -139,19 +129,19 @@ func TestActivationDisconnectDoesNotCancelExecutionAudit(t *testing.T) {
 	writeActivationRequest(t, client)
 	journal := &memoryAudit{}
 	bound := false
-	binding := bindingFixture(func(ctx context.Context, _ actionabi.Request, _ ReleaseIdentity, _ PeerIdentity, run func(context.Context) error) error {
+	ledger := newMemoryLedger()
+	ledger.onBegin = func() {
 		bound = true
 		client.Close() // Subscriber disappears AFTER complete request admission.
-		if ctx.Err() != nil {
-			t.Fatal("transport disconnect cancelled owner")
-		}
-		return run(ctx)
-	})
-	if err := a.Serve(context.Background(), journal, binding); err == nil {
+	}
+	if err := a.Serve(context.Background(), journal, ledger); err == nil {
 		t.Fatal("closed subscriber unexpectedly received response")
 	}
 	if !bound || len(journal.events) != 2 || journal.events[1].Type != "host_action_completed" {
 		t.Fatal("disconnect suppressed completion audit")
+	}
+	if _, ok := ledger.finished[testRequest().InvocationID]; !ok {
+		t.Fatal("disconnect lost the ledger terminal")
 	}
 }
 
@@ -290,9 +280,12 @@ func TestRejectedActivationInputIsAuditedWithoutPayload(t *testing.T) {
 			t.Fatal("unsafe or missing rejection audit")
 		}
 	}
+	// Production admits only root/root: restore that seam so this non-root
+	// peer is denied before any payload is read.
+	admittedPeer.uid, admittedPeer.gid = 0, 0
 	_, server := testUnixPair(t)
 	journal := &memoryAudit{}
-	_, err := ReceiveObserved(context.Background(), server, PeerPolicy{ServiceMode: serviceModeSystemdRoot, ServiceUnit: "other.service"}, journal)
+	_, err := ReceiveObserved(context.Background(), server, PeerPolicy{}, journal)
 	if !errors.Is(err, ErrDenied) || len(journal.events) != 1 || journal.events[0].Details["peer_uid"] != uint32(os.Geteuid()) {
 		t.Fatal("denial lacked kernel attribution", err)
 	}

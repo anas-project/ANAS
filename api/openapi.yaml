@@ -144,7 +144,7 @@ paths:
       - name: phase
         in: path
         required: true
-        schema: {type: string, enum: [install, configure, enroll, uninstall, observer, forwarding-permission]}
+        schema: {type: string, enum: [install, configure, enroll, uninstall]}
     post:
       operationId: planIncusHostAction
       summary: Enqueue a typed Incus host provisioning plan
@@ -172,11 +172,7 @@ paths:
               additionalProperties: false
               properties:
                 request:
-                  description: Phase observer uses IncusObserverOperation; forwarding-permission uses IncusForwardingOperation and retains a production lifecycle blocker; other phases use IncusHostRequest.
-                  oneOf:
-                    - $ref: "#/components/schemas/IncusHostRequest"
-                    - $ref: "#/components/schemas/IncusObserverOperation"
-                    - $ref: "#/components/schemas/IncusForwardingOperation"
+                  $ref: "#/components/schemas/IncusHostRequest"
       responses:
         "202": {$ref: "#/components/responses/AcceptedHostActionJob"}
         "400": {$ref: "#/components/responses/BadRequestProblem"}
@@ -264,7 +260,7 @@ paths:
               additionalProperties: false
               properties:
                 plan_job_id: {type: string}
-                action: {type: string, enum: [incus.install, incus.configure, incus.enroll, incus.uninstall, incus.image-prune, incus.ingress.observer, incus.forwarding.permission]}
+                action: {type: string, enum: [incus.install, incus.configure, incus.enroll, incus.uninstall, incus.image-prune]}
       responses:
         "201":
           description: Confirmation token returned once; plaintext is not persisted.
@@ -297,7 +293,7 @@ paths:
       - name: phase
         in: path
         required: true
-        schema: {type: string, enum: [install, configure, enroll, uninstall, observer, forwarding-permission]}
+        schema: {type: string, enum: [install, configure, enroll, uninstall]}
     post:
       operationId: applyIncusHostAction
       summary: Enqueue a confirmed Incus host provisioning action
@@ -327,11 +323,8 @@ paths:
                 plan_job_id: {type: string}
                 confirmation_token: {type: string}
                 parameters:
-                  description: Copy from the completed plan; observer uses IncusObserverApplyParameters and forwarding-permission uses IncusForwardingApplyParameters. A token does not override plan blockers.
-                  oneOf:
-                    - $ref: "#/components/schemas/IncusHostApplyParameters"
-                    - $ref: "#/components/schemas/IncusObserverApplyParameters"
-                    - $ref: "#/components/schemas/IncusForwardingApplyParameters"
+                  description: Copy from the completed plan. A token does not override plan blockers.
+                  $ref: "#/components/schemas/IncusHostApplyParameters"
       responses:
         "202": {$ref: "#/components/responses/AcceptedHostActionJob"}
         "400": {$ref: "#/components/responses/BadRequestProblem"}
@@ -3373,89 +3366,6 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
-    IncusForwardingDestination:
-      type: object
-      additionalProperties: false
-      required: [ipv4, port]
-      properties:
-        ipv4: {type: string, format: ipv4, description: "Canonical single unicast IPv4 address. No CIDRs, hostnames, loopback or link-local addresses."}
-        port: {type: integer, minimum: 1, maximum: 65535}
-    IncusForwardingOperation:
-      type: object
-      additionalProperties: false
-      required: [consumer, resource, operation, destinations]
-      description: Workspace identity is taken from the authorized route. Enable needs at least one destination; disable and retire require an empty list. Retire additionally requires prior verified withdrawal, a stopped deployment, revoked lease credentials and empty instance, operation and physical bridge inventories. Production enable remains blocked until lifecycle integration is accepted.
-      properties:
-        consumer: {type: string, pattern: "^[a-z][a-z0-9_-]{0,62}$"}
-        resource: {type: string, pattern: "^[a-z][a-z0-9_-]{0,62}$"}
-        operation: {type: string, enum: [enable, disable, retire]}
-        destinations:
-          type: array
-          maxItems: 32
-          uniqueItems: true
-          items: {$ref: "#/components/schemas/IncusForwardingDestination"}
-    IncusForwardingApplyParameters:
-      type: object
-      additionalProperties: false
-      required: [schema, request, binding]
-      properties:
-        schema: {type: string, const: anas.host-action.incus/v1}
-        request:
-          type: object
-          additionalProperties: false
-          required: [schema, workspace_id, consumer, resource, operation, destinations]
-          properties:
-            schema: {type: string, const: anas.incus-forwarding-permission/v1}
-            workspace_id: {type: string, pattern: "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$"}
-            consumer: {type: string, pattern: "^[a-z][a-z0-9_-]{0,62}$"}
-            resource: {type: string, pattern: "^[a-z][a-z0-9_-]{0,62}$"}
-            operation: {type: string, enum: [enable, disable, retire]}
-            destinations:
-              type: array
-              maxItems: 32
-              uniqueItems: true
-              items: {$ref: "#/components/schemas/IncusForwardingDestination"}
-        binding:
-          type: object
-          additionalProperties: false
-          required: [schema, workspace_id, plan_digest, state_digest]
-          properties:
-            schema: {type: string, const: anas.incus-forwarding-permission/v1}
-            workspace_id: {type: string, pattern: "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$"}
-            plan_digest: {type: string, pattern: "^[0-9a-f]{64}$"}
-            state_digest: {type: string, pattern: "^[0-9a-f]{64}$"}
-    IncusObserverOperation:
-      type: object
-      additionalProperties: false
-      required: [operation]
-      properties:
-        operation:
-          type: string
-          enum: [refresh, disable]
-          description: Derive observation scope from installed host and active workspace, or revoke the owned scope. Does not enable HTTP publication.
-    IncusObserverApplyParameters:
-      type: object
-      additionalProperties: false
-      required: [schema, request, binding]
-      properties:
-        schema: {type: string, const: anas.host-action.incus/v1}
-        request:
-          type: object
-          additionalProperties: false
-          required: [schema, workspace_id, operation]
-          properties:
-            schema: {type: string, const: anas.incus-observer-configuration/v1}
-            workspace_id: {type: string, pattern: "^[a-z][a-z0-9_-]{0,62}$"}
-            operation: {type: string, enum: [refresh, disable]}
-        binding:
-          type: object
-          additionalProperties: false
-          required: [schema, workspace_id, plan_digest, state_digest]
-          properties:
-            schema: {type: string, const: anas.incus-observer-configuration/v1}
-            workspace_id: {type: string, pattern: "^[a-z][a-z0-9_-]{0,62}$"}
-            plan_digest: {type: string, pattern: "^[0-9a-f]{64}$"}
-            state_digest: {type: string, pattern: "^[0-9a-f]{64}$"}
     IncusHostRequest:
       type: object
       additionalProperties: false

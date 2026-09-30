@@ -7,7 +7,6 @@ import (
 
 	"github.com/anas-project/ANAS/internal/actionabi"
 	"github.com/anas-project/ANAS/internal/consolejobs"
-	"github.com/anas-project/ANAS/internal/incusingresshost"
 	"github.com/anas-project/ANAS/internal/incusprovision"
 )
 
@@ -55,31 +54,11 @@ func CanonicalParameters(action string, body []byte) (json.RawMessage, error) {
 	if !ok || len(body) == 0 || len(body) > 32<<10 {
 		return nil, ErrRequest
 	}
-	if action == ActionStatus {
+	if action == ActionStatus || action == ActionInvocationStatus {
 		if !bytes.Equal(bytes.TrimSpace(body), []byte("{}")) {
 			return nil, ErrRequest
 		}
 		return json.RawMessage(`{}`), nil
-	}
-	if action == ActionObserverPlan || action == ActionObserverApply {
-		return canonicalObserverParameters(action, body)
-	}
-	if action == ActionForwardingPlan || action == ActionForwardingApply {
-		return canonicalForwardingParameters(action, body)
-	}
-	if action == ActionForwardingWithdraw {
-		var p incusprovision.ForwardingWithdrawalRequest
-		if strictDecode(body, &p) != nil || p.Validate() != nil {
-			return nil, ErrRequest
-		}
-		return marshalCanonical(p)
-	}
-	if action == ActionObserveHTTP {
-		var p incusingresshost.ProjectionRequest
-		if strictDecode(body, &p) != nil || p.Validate() != nil {
-			return nil, ErrRequest
-		}
-		return marshalCanonical(p)
 	}
 	if spec.PlanFor != "" {
 		if action == ActionImagePrunePlan {
@@ -241,9 +220,6 @@ func DecodeImagePruneApplyParameters(action string, body json.RawMessage) (Incus
 }
 
 func CanonicalWireParameters(action string, body []byte) (json.RawMessage, error) {
-	if action == ActionForwardingWithdraw {
-		return CanonicalParameters(action, body)
-	}
 	spec, ok := LookupAction(action)
 	if !ok || !spec.Mutating {
 		return CanonicalParameters(action, body)
@@ -311,33 +287,12 @@ func CanonicalWireParameters(action string, body []byte) (json.RawMessage, error
 }
 
 func encodePublicParameterObject(action string, fields map[string]json.RawMessage) ([]byte, error) {
-	if action == ActionForwardingWithdraw {
-		body, err := json.Marshal(fields)
-		if err != nil {
-			return nil, ErrRequest
-		}
-		return CanonicalParameters(action, body)
-	}
 	spec, ok := LookupAction(action)
 	if !ok {
 		return nil, ErrRequest
 	}
-	if action == ActionForwardingPlan || action == ActionForwardingApply {
-		body, err := json.Marshal(fields)
-		if err != nil {
-			return nil, ErrRequest
-		}
-		return canonicalForwardingParameters(action, body)
-	}
-	if action == ActionObserverPlan || action == ActionObserverApply {
-		body, err := json.Marshal(fields)
-		if err != nil {
-			return nil, ErrRequest
-		}
-		return canonicalObserverParameters(action, body)
-	}
 	switch {
-	case action == ActionStatus:
+	case action == ActionStatus || action == ActionInvocationStatus:
 		if len(fields) != 0 {
 			return nil, ErrRequest
 		}

@@ -129,7 +129,7 @@ func run(ctx context.Context, input io.Reader, output io.Writer) error {
 			return errProbe
 		}
 		body, err := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
-		if err != nil || len(body) > 1<<20 || verifyResponse(body, request.Mode) != nil {
+		if err != nil || len(body) > 1<<20 || verifyResponse(body, request.Mode, strings.TrimPrefix(request.Endpoint, "https://")) != nil {
 			return errProbe
 		}
 	}
@@ -141,7 +141,7 @@ func validRequest(request probeRequest) bool {
 		return false
 	}
 	address, err := netip.ParseAddrPort(strings.TrimPrefix(request.Endpoint, "https://"))
-	if err != nil || !address.Addr().Is4() || !address.Addr().IsPrivate() || address.Port() != 18443 ||
+	if err != nil || !address.Addr().Is4() || !address.Addr().IsPrivate() || address.Port() != 8443 ||
 		request.Endpoint != "https://"+address.String() {
 		return false
 	}
@@ -185,7 +185,9 @@ func probeTLS(request probeRequest) (*tls.Config, error) {
 	return config, nil
 }
 
-func verifyResponse(body []byte, mode string) error {
+// verifyResponse also proves that the trusted daemon itself serves the
+// probed gateway address: Incus listens there directly, with no relay.
+func verifyResponse(body []byte, mode, listen string) error {
 	var response struct {
 		Type       string `json:"type"`
 		StatusCode int    `json:"status_code"`
@@ -197,7 +199,7 @@ func verifyResponse(body []byte, mode string) error {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	if decoder.Decode(&response) != nil || decoder.Decode(&struct{}{}) != io.EOF ||
 		response.Type != "sync" || response.StatusCode != http.StatusOK || response.Metadata.Auth != mode ||
-		(mode == "trusted" && response.Metadata.Config["core.https_address"] != "127.0.0.1:8443") {
+		(mode == "trusted" && response.Metadata.Config["core.https_address"] != listen) {
 		return errProbe
 	}
 	return nil

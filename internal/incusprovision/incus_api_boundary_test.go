@@ -225,7 +225,7 @@ func TestSkipCannotApproveAHiddenConfigureEnrollOrUninstallEffect(t *testing.T) 
 	for _, phase := range []Phase{PhaseConfigure, PhaseEnroll, PhaseUninstall} {
 		t.Run(string(phase), func(t *testing.T) {
 			ctx := context.Background()
-			store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{ID: "owned", PackagesInstalledByANAS: true, IncusServiceByANAS: true, ManagementTrust: strings.Repeat("a", 64), RelayService: true}}}
+			store := &memoryStore{state: State{Schema: StateSchema, Ownership: Ownership{ID: "owned", PackagesInstalledByANAS: true, IncusServiceByANAS: true, ManagementTrust: strings.Repeat("a", 64), ControlListener: true}}}
 			rt := newFakeRuntime(t)
 			backend := newBackendForTest(store, rt)
 			plan, err := backend.Plan(ctx, Request{Skip: true})

@@ -4,7 +4,7 @@
 path, separately from the direct-backend host provisioning runner. It uses real
 `anas`/`anasd`/`anas-hostd` binaries, packaged systemd units, actual HTTPS owner
 enrollment, local-owner session envelopes on CLI stdin, shared durable jobs,
-one-use confirmations and independently supervised executor exit. It is not a
+one-use confirmations and hostd's own invocation records. It is not a
 production installer, mocked service, release signing operation or browser-UI test.
 
 ## Isolation and prerequisites
@@ -25,9 +25,9 @@ private leaf files stay 0600 and TLS secrets remain below a root-private directo
 Do not relax filesystem checks or erase a failed operation to make the test pass.
 
 Copy trusted inputs to root-owned `/opt/anas-host-action-inputs` with no writable
-ancestors, symlinks or hardlinks. The source manifest must have the exact eight
-artifacts `anas`, `anasd`, `anas-hostd`, `anas-incus-control-relay`, `anasd.service`,
-`anas-hostd.socket`, `anas-hostd@.service`, `anas-incus-control-relay.service`, plus
+ancestors, symlinks or hardlinks. The source manifest must have the exact six
+artifacts `anas`, `anasd`, `anas-hostd`, `anasd.service`, `anas-hostd.socket` and
+`anas-hostd@.service` (the control relay was removed on 2026-09-30), plus
 `runner_sha256` binding the runner itself. Each artifact has a SHA-256 value.
 The current network-extended entry also requires the separate `test_helpers`
 map with exactly `incus-control-probe` and its SHA-256. Build this static test-only
@@ -47,8 +47,8 @@ explicit `0.0.0-native.<numeric-components>` experiment version is accepted here
 with a 40-lowercase-hex source commit and a separate dirty-source manifest where
 applicable. This must not be described as a signed or published production release.
 
-The relay and its unit may already be present from fixture preparation **only if
-their actual bytes match**. Other existing product installations are rejected.
+Existing product binaries or units may already be present from fixture preparation
+**only if their actual bytes match**. Other existing product installations are rejected.
 The runner creates a private short-lived internal CA, two empty test workspaces,
 a root-managed service config, and the fixed installation policy. Only this VM's
 test hostnames are added to its `/etc/hosts`. The packaged service units are not
@@ -115,7 +115,8 @@ not proof of consumption persistence. The separate unused-token expiry gates sta
 independent and keep their exact error-code assertions. No clock, TTL or ledger
 is changed to make these tests complete sooner.
 
-The current complete runner requires **25** distinct passed stages. Following
+Since 2026-09-26 the runner requires **23** distinct passed stages; the paragraph
+below describes the earlier 25-stage entry that was merged into it. Following
 the new plan after expiry, it explicitly confirms removal of individually owned
 packages and repeats that uninstall. Independent complete dpkg inventories must
 be healthy: unfinished configuration/triggers, reinstreq, ambiguous names and
@@ -126,11 +127,14 @@ Historical 23-stage reports are valid for their original scope, not these added
 package-removal gates. Debian 13 and Ubuntu 26.04 both explicitly track the actual
 `incus-base` daemon; a missing meta-package alone cannot prove daemon removal.
 
-PID1 identity and exit queries use the independently kernel-authenticated private
-connection. The fixed system-bus connection supplies only `Unit.Ref/Unref` retention,
-because those operations require a bus-client identity; no authorization or exit
-facts are accepted from it. Authentication-queue sequencing and missing-manager
-negative tests do not replace this installed-service acceptance gate.
+Since 2026-09-30 hostd admits only a root/root peer and keeps its own invocation
+record for every call under `/var/lib/anas-hostd/invocations`; the job executor
+settles an interrupted stream from that record. The stage
+`shared_jobs_and_invocation_records` requires exactly one finished, root-private record
+per succeeded job with the same outcome, and keeps the journal's activation identities
+as independent evidence. The former PID 1 identity/exit observation is removed. The
+four `consumer_*` stages connect straight to Incus on the control bridge gateway (port
+8443) and require the daemon to report that address as its HTTPS listener.
 
 Public results are under `/opt/anas-host-action-e2e/reports`; private enrollment
 material and failure diagnostics remain under the separate `private` directory.

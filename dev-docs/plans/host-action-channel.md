@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-09-04
-updated: 2026-09-23
+updated: 2026-09-30
 ---
 
 # 宿主特权动作通道实施计划
@@ -22,6 +22,8 @@ updated: 2026-09-23
 
 验收依据是[宿主特权动作通道要求](../requirements/host-action-channel.md)；设计见
 [同名架构文档](../../docs/architecture/host-action-channel.md)。
+
+**2026-09-30：身份链已简化（§14）——对端只认 root/root，调用记录取代回连 broker 与 systemd 退出观察；下一行是简化前的状态。**
 
 **当前状态：保留现有 root/root anasd，按固定 systemd 服务身份准入；共享队列、独立退出观察、Incus 计划/确认/执行、CLI/Web 和安装器已编码。主要发行版已通过真实 Linux/systemd/Incus 审批链路；完整发行版/升级/浏览器交互矩阵、非 systemd 支持及生产 ingress 仍未完成。** 下文按日期保留历史切片；其中“必须迁移非 root anasd”的前置判断已撤回，不再是当前实施方向。它依赖[统一动作 ABI](action-abi.md)——通道复用那套
 线格式与 job 语义，不另起一套。截至 2026-09-18，ABI 前置已有共用 journal、执行 recorder、
@@ -63,12 +65,14 @@ scope，也未开启 ingress。以下五问是本次需求级动作评审，不�
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
 | M0：通道形态、授权与审计 | R-001—R-004 | 实施中；主要发行版的实际 CLI/HTTPS、共享队列、root 身份/退出及供给闭环已通过 23 项原生门禁；完整矩阵与其他动作独立验收 |
-| M1：入口划分与升级绑定 | R-005、R-006 | 实施中；同版本打包、CLI/HTTP 与安装器已接线，升级拒绝覆盖活动宿主动作；真实安装/升级/卸载未验收 |
+| M1：入口划分与升级绑定 | R-005、R-006、R-017 | 实施中；同版本打包、CLI/HTTP 与安装器已接线，升级拒绝覆盖活动宿主动作；真实安装/升级/卸载未验收 |
 | M2：长时动作与非 systemd 可移植性 | R-007、R-008 | 实施中；按编译动作预算超时并投影固定阶段事件，非 systemd 启动和实机长时动作待办 |
 | M3：二段确认 | R-009—R-011 | 实施中；真实 root 执行、跨工作区及重启后重放拒绝、五分钟自然过期拒绝旧计划并要求新计划均通过；浏览器页面重新展示与确认组合仍待验收 |
 | M4：动作清单治理 | R-012、R-013 | 实施中；anas host actions 已提供本机编译清单；服务端清单、定期复审与特权写动作评审仍待办 |
+| M5：边界内同步动作 | R-014、R-015 | 未开始；使用者是 Incus 端口绑定的端口表同步（INCUS-R-152、R-158）与 Traefik 地址清单同步（INCUS-R-118），需求级评审见 §13 |
+| M6：身份链简化与调用记录 | R-016 | 实施中；2026-09-30 实现完成：对端只认 root/root，调用记录与 `host.invocation.status` 取代回连 broker 和 systemd 退出观察，见 §14；Linux 原生门禁通过，实机审批门禁在 Ubuntu 26.04 与 Debian 13 上各 23/23 通过；anasd 重启时的结清尚未实现 |
 
-覆盖统计：13 项需求全部有且只有一个里程碑归属。
+覆盖统计：17 项需求全部有且只有一个里程碑归属。
 
 ### 1.1 当前集成核对（2026-09-19）
 
@@ -110,6 +114,7 @@ Linux 专属 peer/文件系统测试须分开记录，交叉编译不等于原�
 | R-003 | `test-env/scripts/server-incus-host-action-e2e.py` | 独立 Ubuntu 26.04 amd64 / 已安装 root systemd 服务 | 2026-09-23 | 第十一轮 17 项通过，真实确认安装/配置/登记/卸载与退出；新扩展门禁另记 |
 | R-004 | `test-env/scripts/server-incus-host-action-e2e.py` | CLI stdin 会话及真实 HTTPS API，共享 job/确认/执行 | 2026-09-23 | 实际链路通过；不声称已操作浏览器 UI 或已验全部动作 |
 | R-011 | `test-env/scripts/server-incus-host-action-e2e.py` | 真实五分钟到期，不改时钟/ledger，旧计划不续签，新计划可执行 | 2026-09-23 | API/CLI 原生通过；浏览器重新展示和勾选的视觉交互仍待验收 |
+| R-016 | `test-env/scripts/server-incus-host-action-e2e.py`（`shared_jobs_and_invocation_records`）与 `test-env/scripts/test-host-action-native.sh` | 全新 Ubuntu 26.04 与 Debian 13 amd64 VM，已安装 root systemd 服务，`0.0.0-native.31`；一次性 Debian 13 VM 里的非 root Linux 原生用例 | 2026-09-30 | 审批门禁 23/23 通过：14 个共享 job 各有一份带终态的 hostd 调用记录且结果一致，另有 14 次激活；控制桥四项直接连 Incus 网关；Debian 13 重试同样 23/23，见 [本轮记录](../reviews/2026-09-30-incus-old-code-removal-and-hostd-simplification.md) §5 |
 
 ## 5. 文档同步
 
@@ -231,3 +236,49 @@ HTTP 只允许 full/TLS/owner 的空参数预检，具体契约见服务配置�
 TLS 安全供给/热更新、原 Store/workspace 属主与 Docker 权限，以及安装器和升级/卸载必须成套
 迁移。仅改 User/Group 或设置开关不能作为生产启用步骤，不放宽 TLS、不改默认 unit、不批量 chown。
 M0/M1 和 Incus M10 保持实施中；单元通过不登记 Linux/systemd/Incus/KVM 验收完成。
+
+## 13. 2026-09-29：端口表同步动作（需求级评审）
+
+对应 `HOSTACT-R-012`、`R-014`、`R-015` 与 `INCUS-R-152`、`R-158`、`R-160`、`R-161`；设计见
+[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §5.1.8。操作者在 `incus.configure` 的二段确认里
+批准可用端口范围，并安装固定的 Docker 式规则链；之后每次 apply 由 hostd 按冻结部署同步端口表，范围内不再逐次确认。
+
+| 问题 | 本动作的约束 |
+| --- | --- |
+| 能否不用 root | 不能。写 nftables、安装 systemd 套接字单元都需要 root；`anas-helper` 只有 `CAP_NET_ADMIN`、不留产物，而端口表与端口占位是留存的特权产物 |
+| 是否最小权限 | 只改 ANAS 自有 nft 表里的端口表，以及 ANAS 命名的端口占位单元；条目只有协议、宿主端口、槽位地址与 guest 端口，不接受命令、规则文本或路径；超出批准范围的条目拒绝 |
+| 留下什么特权产物 | 固定规则链（随 `incus.configure` 安装）、端口表条目、每个绑定一个端口占位单元，以及宿主状态里的同步回执 |
+| 如何撤销 | 部署不再声明的绑定在下一次同步时移除；`incus.uninstall` 删除规则链与全部占位单元 |
+| 半途失败与重跑 | 端口表以单个 nft 事务替换，失败时保持上一次生效的状态；占位单元先建后删，重跑按冻结部署收敛；开机时先恢复占位、后恢复转发，被其他进程占住的端口不生效并记录运行问题 |
+
+### 13.1 2026-09-30：Traefik 地址清单同步
+
+对应 `INCUS-R-118`、`R-119`。操作者在 `incus.configure` 的二段确认里批准一次；之后 apply 启动 Traefik 后、Traefik
+容器重启后与 anasd 启动时，由 anasd 触发同步。放弃由 anasd 调 Provider 更新的理由见 Incus 需求 §7sexies 第 4 条。
+
+| 问题 | 本动作的约束 |
+| --- | --- |
+| 能否不用 root | 不能。经本机 Incus 套接字写 address set 需要 root 或 `incus-admin`；改用 Incus 管理证书，又回到 anasd 在无人操作时使用管理凭据 |
+| 是否最小权限 | 只替换 ANAS 命名的那一份 address set；请求不带任何地址，hostd 自己从 Docker 读取 ANAS 的 Traefik 容器当前的地址 |
+| 留下什么特权产物 | 一份全局 address set，以及宿主状态里的同步回执 |
+| 如何撤销 | `incus.uninstall` 删除这份 address set；Traefik 不存在时同步为空清单 |
+| 半途失败与重跑 | 以单次 Incus API 替换写入，失败时保持上一次的内容；重跑按 Docker 当前状态收敛 |
+
+## 14. 2026-09-30：身份链简化（M6）
+
+依据[设计简化评审](../reviews/2026-09-28-incus-design-simplification-review.md)第 4 项与 `HOSTACT-R-016`。设计见
+[宿主通道架构](../../docs/architecture/host-action-channel.md) §14；删除清单与验证见
+[本轮记录](../reviews/2026-09-30-incus-old-code-removal-and-hostd-simplification.md)。
+
+- [x] 安装策略 v3 只绑定 release；对端只认 root/root；删除 `service_mode`、`service_unit`、`socket_gid`
+- [x] 删除回连 broker（`/run/anas-job-broker`、握手协议、pidfd 夹持）、PID 1 私有总线核验、`Unit.Ref` 与 systemd 退出观察，
+      以及 `github.com/godbus/dbus/v5`
+- [x] hostd 调用记录：`/var/lib/anas-hostd/invocations` 下的 `.lock` 与 `.json`，重放拒绝，终态先落盘后发帧，保留 30 天
+- [x] 只读动作 `host.invocation.status`；anasd 的执行器在事件流中断时按记录结束任务
+- [x] 安装器、`anasd.service`、发行包与安装测试同步；原生门禁改为 `test-env/scripts/test-host-action-native.sh`
+- [x] Linux 原生门禁实际运行：2026-09-30 在一次性 Debian 13 VM 里以非 root 用户通过 11 个必需用例；首次运行暴露并修复了一个未随简化更新的测试（[本轮记录](../reviews/2026-09-30-incus-old-code-removal-and-hostd-simplification.md) §5）
+- [x] 真实 Linux/systemd 审批链路（`server-incus-host-action-e2e.py`）在新实现上重跑：Ubuntu 26.04 与 Debian 13 各 23/23 通过（2026-09-30，[本轮记录](../reviews/2026-09-30-incus-old-code-removal-and-hostd-simplification.md) §5）
+- [ ] anasd 重启时用调用记录结清运行中的宿主任务（现仍记 `daemon_restarted` 并阻断宿主队列）
+
+同日删除转发许可与观察配置/HTTP 观察三组宿主动作（`incus.forwarding.*`、`incus.ingress.observer*`、
+`incus.ingress.observe_http`）；上文 §1 与 2026-09-21 各节里关于它们的五问评审只作历史记录。

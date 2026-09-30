@@ -80,6 +80,16 @@ class LifecycleHarnessSafety(unittest.TestCase):
             'typical_job tier=incus_vm ready_ms=31000 exec_ms=420 reclaim_ms=3000 wall_ms=34420',
             'lease_0_create_start_ready_ms=5123'])
 
+    def test_container_tier_records_the_image_allowlist_boundary(self):
+        container, vm = lab.required_lifecycle_tests('container'), lab.required_lifecycle_tests('vm')
+        self.assertIn('TestNativeIncusContainerLeaseLifecycle/image-allowlist-boundary', container)
+        self.assertFalse(any(name.endswith('/image-allowlist-boundary') for name in vm))
+        line = 'image_allowlist_boundary client_refused=true lease_cert_import=allowed lease_cert_create=allowed'
+        self.assertEqual(lab.lifecycle_metrics([{'Output': '    x.go:1: ' + line + '\n'}]), [line])
+        # A client that accepted the image is a failure, never a metric.
+        self.assertEqual(lab.lifecycle_metrics([{'Output': line.replace('true', 'false')}]), [])
+        self.assertIn('anas-native-unlisted', lab.LAB_INSTANCES)
+
     def test_unprivileged_owner_rejected_before_read_or_exec(self):
         with patch.object(lab.os,'geteuid',return_value=1000),patch.object(lab.Path,'read_text') as read,patch.object(lab.subprocess,'run') as run:
             with self.assertRaises(RuntimeError):lab.require_vm('anas-incus-lifecycle-abc123')

@@ -1,7 +1,0 @@
-{
-  "action": "publish",
-  "instance_id": "anas-lab-http",
-  "workload_id": "job-42",
-  "guest_port": 7000,
-  "label": "http"
-}

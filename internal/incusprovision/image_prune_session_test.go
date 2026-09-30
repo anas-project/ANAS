@@ -205,8 +205,8 @@ func TestImagePruneRechecksReferencesAndRejectsActiveConsumers(t *testing.T) {
 }
 
 func TestPruneProviderProofRequiresLocalPinnedBundle(t *testing.T) {
-	bundle := ConnectionBundle{Endpoint: "https://10.77.0.1:18443", ServerCertificatePEM: "fixture-cert", StoragePool: StoragePoolName, Architecture: "arm64"}
-	valid := "INCUS_ENDPOINT=https://10.77.0.1:18443\nINCUS_SERVER_CERT_B64=Zml4dHVyZS1jZXJ0\nINCUS_STORAGE_POOL=anas-btrfs\nINCUS_IMAGE_ARCHITECTURE=arm64\n"
+	bundle := ConnectionBundle{Endpoint: "https://10.77.0.1:8443", ServerCertificatePEM: "fixture-cert", StoragePool: StoragePoolName, Architecture: "arm64"}
+	valid := "INCUS_ENDPOINT=https://10.77.0.1:8443\nINCUS_SERVER_CERT_B64=Zml4dHVyZS1jZXJ0\nINCUS_STORAGE_POOL=anas-btrfs\nINCUS_IMAGE_ARCHITECTURE=arm64\n"
 	if local, err := pruneProviderMatchesBundle([]byte(valid), bundle); err != nil || !local {
 		t.Fatal("valid fixed local binding rejected")
 	}

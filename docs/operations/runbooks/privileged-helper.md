@@ -17,8 +17,9 @@ sudo install -m 0755 anas-helper /usr/local/lib/anas/anas-helper
 sudo setcap cap_net_admin+ep /usr/local/lib/anas/anas-helper
 ```
 
-`setcap` 来自 `libcap2-bin`（Debian/Ubuntu）或 `libcap`（RHEL 系）。缺少它时安装器
-会装好二进制并提示手工执行那一行。
+`setcap` 来自 `libcap2-bin`（Debian/Ubuntu）或 `libcap`（RHEL 系）。默认的服务安装缺少它时
+在改动任何文件之前就退出，已装的旧版本保持原样；只有自定义安装目录或 `--no-service` 时，安装器才
+装好二进制并提示手工执行那一行。
 
 **每次升级都要重新 setcap。** 替换文件会连同 xattr 一起丢掉能力，而随之而来的报错
 （`needs CAP_NET_ADMIN`）离原因很远。安装器负责这件事；手工替换二进制的话要自己记得。

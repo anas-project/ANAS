@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	installationSchema   = "anas.host-action-installation/v2"
+	installationSchema   = "anas.host-action-installation/v3"
 	installationPath     = "/etc/anas/hostd.json"
 	activationSocketPath = "/run/anas/hostd.sock"
 	maxInstallationBytes = 4096
@@ -23,7 +23,6 @@ type ReleaseIdentity struct {
 
 var releaseVersion = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
 var releaseCommit = regexp.MustCompile(`^[0-9a-f]{40}$`)
-var installedServiceUnit = regexp.MustCompile(`^[A-Za-z0-9_.:@-]{1,180}\.service$`)
 
 func (r ReleaseIdentity) Validate() error {
 	if len(r.Version) > 128 || !releaseVersion.MatchString(r.Version) || !releaseCommit.MatchString(r.Commit) {
@@ -33,16 +32,13 @@ func (r ReleaseIdentity) Validate() error {
 }
 
 // This is root installation data, not a public/Module configuration schema.
-// It contains no paths, executables, handlers, secrets or environment overrides.
+// It binds the socket to one release and contains no paths, executables,
+// handlers, secrets, peer identities or environment overrides: the socket is
+// root:root 0600 and only a root peer is admitted (PeerPolicy).
 type installationPolicy struct {
-	Schema      string          `json:"schema"`
-	Release     ReleaseIdentity `json:"release"`
-	ServiceMode string          `json:"service_mode"`
-	ServiceUnit string          `json:"service_unit"`
-	SocketGID   uint32          `json:"socket_gid"`
+	Schema  string          `json:"schema"`
+	Release ReleaseIdentity `json:"release"`
 }
-
-const serviceModeSystemdRoot = "systemd-root-service"
 
 func decodeInstallation(body []byte, expected ReleaseIdentity) (installationPolicy, error) {
 	var p installationPolicy
@@ -54,20 +50,15 @@ func decodeInstallation(body []byte, expected ReleaseIdentity) (installationPoli
 	canonical, err := json.Marshal(p)
 	var compact bytes.Buffer
 	if err != nil || json.Compact(&compact, body) != nil || !bytes.Equal(canonical, compact.Bytes()) ||
-		p.Schema != installationSchema || p.Release != expected || p.ServiceMode != serviceModeSystemdRoot ||
-		!installedServiceUnit.MatchString(p.ServiceUnit) || p.SocketGID == ^uint32(0) {
+		p.Schema != installationSchema || p.Release != expected {
 		return installationPolicy{}, ErrUnavailable
 	}
 	return p, nil
 }
 
-func (p installationPolicy) peers() PeerPolicy {
-	return PeerPolicy{ServiceMode: p.ServiceMode, ServiceUnit: p.ServiceUnit}
-}
+func (installationPolicy) peers() PeerPolicy { return PeerPolicy{} }
 
-func (p installationPolicy) socketGroup() uint32 {
-	return p.SocketGID
-}
+func (installationPolicy) socketGroup() uint32 { return admittedPeer.gid }
 
 // Accept=yes hands over one connected fd, rather than a listening socket.
 // Environment markers describe that handoff; they are NOT peer authentication.

@@ -20,13 +20,14 @@
 | [Module 专属命令能力要求](module-command-capability.md) | Module 命令声明、发现、类型化执行、CLI/anasd 共享服务与权限边界 | 23/34 已完成 |
 | [凭据轮换覆盖面与语义要求](credential-rotation.md) | 五类凭据的覆盖面、资源凭据两侧契约、跨类清单与 PostgreSQL 认证基线 | 0/18 已完成 |
 | [统一动作 ABI 要求](action-abi.md) | job 模型、事件重放、协作式取消、并发合流与大块数据边界 | 0/9 已完成 |
-| [宿主特权动作通道要求](host-action-channel.md) | 具名特权动作、socket 激活、二段确认与动作清单治理 | 0/13 已完成 |
-| [Incus compute Provider Module 集成要求](incus-module.md) | `compute` Provider（`incus_container`/`incus_vm` 两档）、多消费者隔离、Secret 注入边界与 Forgejo 迁移 | 55/99 已完成 |
+| [宿主特权动作通道要求](host-action-channel.md) | 具名特权动作、socket 激活、二段确认与动作清单治理 | 0/17 已完成 |
+| [Incus compute Provider Module 集成要求](incus-module.md) | `compute` Provider（`incus_container`/`incus_vm` 两档）、多消费者隔离、Secret 注入边界与 Forgejo 迁移 | 62/133 已完成 |
 | [VersityGW S3 兼容 Module 集成要求](versitygw-module.md) | `object_storage/s3` Capability、per-Resource bucket/凭据、POSIX backend、安全和验收 | 30/32 已完成 |
 | [需求 ID 矩阵采用范围与门禁要求](requirement-id-adoption.md) | 门禁可见性、豁免清单、双向登出矩阵范围与迁移后的扫描边界 | 8/14 已完成 |
 | [文档驱动测试生成与远程执行要求](document-driven-test-automation.md) | 需求到用例/完整测试代码、SSH 专用服务器执行、隔离与报告证据 | 14/32 已完成 |
 | [Samba 身份锚点 OID 与既有目录迁移要求](samba-identity-anchor.md) | IANA PEN、正式 OID、新目录安装、既有目录迁移与回退安全 | 12/12 已完成 |
 | [备份与恢复统一执行要求](backup-execution.md) | CLI 与控制台共用的执行入口、job 记录与目的地登记，工作区/目的地/宿主三层排他与离线恢复路径 | 0/16 已完成 |
+| [运行问题记录要求](runtime-issues.md) | 运行中出现的错误的记录格式、去重与解决、写入方，以及 CLI 与控制台查看 | 0/9 已完成 |
 | [版本升级 E2E 测试要求](upgrade-testing.md) | Core、Web 与全部内置 Module 的真实旧版升级、数据往返和发布门禁 | 13/30 已完成 |
 
 > [!IMPORTANT]

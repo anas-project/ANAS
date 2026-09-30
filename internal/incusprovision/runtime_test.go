@@ -82,7 +82,7 @@ func TestNFTControlRulesScopeManagedListener(t *testing.T) {
 			t.Fatalf("overbroad nft rule fragment present: %s\n%s", forbidden, rules)
 		}
 	}
-	for _, required := range []string{`comment "anas-owner=owner-1"`, `ip daddr 10.77.0.1 tcp dport 18443 accept`, `ip daddr 10.77.0.1 tcp dport 18443 drop`, `iifname "br-anas-ctrl" drop comment "anas-control-host-default-deny"`, `anas-control-forward-iif-deny`, `anas-control-forward-oif-deny`} {
+	for _, required := range []string{`comment "anas-owner=owner-1"`, `ip daddr 10.77.0.1 tcp dport 8443 accept`, `ip daddr 10.77.0.1 tcp dport 8443 drop`, `iifname "br-anas-ctrl" drop comment "anas-control-host-default-deny"`, `anas-control-forward-iif-deny`, `anas-control-forward-oif-deny`} {
 		if !strings.Contains(rules, required) {
 			t.Fatalf("required nft rule fragment missing: %s\n%s", required, rules)
 		}
@@ -98,10 +98,10 @@ func TestValidateNFTControlRulesJSONRequiresExpressions(t *testing.T) {
 	}
 	for name, mutated := range map[string]string{
 		"not-equal":    strings.Replace(valid, `"op":"=="`, `"op":"!="`, 1),
-		"wrong-port":   strings.Replace(valid, `"right":18443`, `"right":18444`, 1),
+		"wrong-port":   strings.Replace(valid, `"right":8443`, `"right":18443`, 1),
 		"extra-accept": strings.Replace(valid, `{"drop":null}`, `{"drop":null},{"accept":null}`, 1),
 		"missing-prio": strings.Replace(valid, `"prio":-5,`, "", 1),
-		"duplicate":    strings.Replace(valid, `]}`, `,{"rule":{"family":"inet","table":"anas_incus_control","chain":"input","comment":"anas-loopback-probe","expr":[{"accept":null}]}}]}`, 1),
+		"duplicate":    strings.Replace(valid, `]}`, `,{"rule":{"family":"inet","table":"anas_incus_control","chain":"input","comment":"anas-local-control-probe","expr":[{"accept":null}]}}]}`, 1),
 	} {
 		if ok, err := validateNFTControlRulesJSON([]byte(mutated), plan); err == nil || ok {
 			t.Fatalf("%s nft mutation accepted: ok=%v err=%v", name, ok, err)
@@ -197,7 +197,7 @@ func TestWriteAPTConfigFilesWritesUnderProvidedRoot(t *testing.T) {
 
 func TestSensitiveTypesFormatRedacted(t *testing.T) {
 	credential := Credential{Fingerprint: strings.Repeat("a", 64), PrivateKey: "PRIVATE KEY"}
-	bundle := ConnectionBundle{ControlNetwork: ControlNetworkName, Endpoint: "https://10.77.0.1:18443", AdminPrivateKeyPEM: "PRIVATE KEY", ServerCertificatePEM: "BEGIN CERTIFICATE"}
+	bundle := ConnectionBundle{ControlNetwork: ControlNetworkName, Endpoint: "https://10.77.0.1:8443", AdminPrivateKeyPEM: "PRIVATE KEY", ServerCertificatePEM: "BEGIN CERTIFICATE"}
 	for _, text := range []string{credential.String(), credential.GoString(), bundle.String(), bundle.GoString()} {
 		if strings.Contains(text, "PRIVATE KEY") || strings.Contains(text, "BEGIN CERTIFICATE") || strings.Contains(text, "https://") {
 			t.Fatalf("sensitive formatter leaked material: %s", text)
@@ -207,7 +207,7 @@ func TestSensitiveTypesFormatRedacted(t *testing.T) {
 
 // Protocol-shape fixture: metainfo, handles and interleaved chain/rules.
 // It is not represented as a native firewall execution record.
-const controlRulesJSONFixture = `{"nftables":[{"metainfo":{"version":"1.1.3","release_name":"fixture","json_schema_version":1}},{"table":{"family":"inet","name":"anas_incus_control","comment":"anas-owner=owner-1","handle":1}},{"chain":{"family":"inet","table":"anas_incus_control","name":"input","type":"filter","hook":"input","prio":-5,"policy":"accept"}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"input","comment":"anas-loopback-probe","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"lo"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":"127.0.0.1"}},{"match":{"op":"==","left":{"payload":{"protocol":"tcp","field":"dport"}},"right":8443}},{"accept":null}],"handle":4}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"input","comment":"anas-local-relay-probe","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"lo"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"saddr"}},"right":"10.77.0.1"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":"10.77.0.1"}},{"match":{"op":"==","left":{"payload":{"protocol":"tcp","field":"dport"}},"right":18443}},{"accept":null}],"handle":100}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"input","comment":"anas-control-relay","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"br-anas-ctrl"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"saddr"}},"right":{"prefix":{"addr":"10.77.0.0","len":24}}}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":"10.77.0.1"}},{"match":{"op":"==","left":{"payload":{"protocol":"tcp","field":"dport"}},"right":18443}},{"accept":null}],"handle":5}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"input","comment":"anas-control-relay-default-deny","expr":[{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":"10.77.0.1"}},{"match":{"op":"==","left":{"payload":{"protocol":"tcp","field":"dport"}},"right":18443}},{"drop":null}],"handle":6}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"input","comment":"anas-control-host-default-deny","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"br-anas-ctrl"}},{"drop":null}],"handle":7}},{"chain":{"family":"inet","table":"anas_incus_control","name":"forward","type":"filter","hook":"forward","prio":-5,"policy":"accept"}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"forward","comment":"anas-control-forward-iif-deny","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"br-anas-ctrl"}},{"drop":null}],"handle":8}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"forward","comment":"anas-control-forward-oif-deny","expr":[{"match":{"op":"==","left":{"meta":{"key":"oifname"}},"right":"br-anas-ctrl"}},{"drop":null}],"handle":9}}]}`
+const controlRulesJSONFixture = `{"nftables":[{"metainfo":{"version":"1.1.3","release_name":"fixture","json_schema_version":1}},{"table":{"family":"inet","name":"anas_incus_control","comment":"anas-owner=owner-1","handle":1}},{"chain":{"family":"inet","table":"anas_incus_control","name":"input","type":"filter","hook":"input","prio":-5,"policy":"accept"}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"input","comment":"anas-local-control-probe","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"lo"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"saddr"}},"right":"10.77.0.1"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":"10.77.0.1"}},{"match":{"op":"==","left":{"payload":{"protocol":"tcp","field":"dport"}},"right":8443}},{"accept":null}],"handle":100}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"input","comment":"anas-control-incus","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"br-anas-ctrl"}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"saddr"}},"right":{"prefix":{"addr":"10.77.0.0","len":24}}}},{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":"10.77.0.1"}},{"match":{"op":"==","left":{"payload":{"protocol":"tcp","field":"dport"}},"right":8443}},{"accept":null}],"handle":5}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"input","comment":"anas-control-incus-default-deny","expr":[{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":"10.77.0.1"}},{"match":{"op":"==","left":{"payload":{"protocol":"tcp","field":"dport"}},"right":8443}},{"drop":null}],"handle":6}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"input","comment":"anas-control-host-default-deny","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"br-anas-ctrl"}},{"drop":null}],"handle":7}},{"chain":{"family":"inet","table":"anas_incus_control","name":"forward","type":"filter","hook":"forward","prio":-5,"policy":"accept"}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"forward","comment":"anas-control-forward-iif-deny","expr":[{"match":{"op":"==","left":{"meta":{"key":"iifname"}},"right":"br-anas-ctrl"}},{"drop":null}],"handle":8}},{"rule":{"family":"inet","table":"anas_incus_control","chain":"forward","comment":"anas-control-forward-oif-deny","expr":[{"match":{"op":"==","left":{"meta":{"key":"oifname"}},"right":"br-anas-ctrl"}},{"drop":null}],"handle":9}}]}`
 
 func TestControlFirewallDropsAreConfinedToManagedBridgeAndEndpoint(t *testing.T) {
 	plan := ControlNetworkPlan{OwnershipID: "owner-1", Bridge: "br-anas-ctrl", Subnet: "10.77.0.0/24", Gateway: "10.77.0.1"}
@@ -216,7 +216,7 @@ func TestControlFirewallDropsAreConfinedToManagedBridgeAndEndpoint(t *testing.T)
 			continue
 		}
 		if !strings.Contains(line, `iifname "br-anas-ctrl"`) && !strings.Contains(line, `oifname "br-anas-ctrl"`) &&
-			!strings.Contains(line, "ip daddr 10.77.0.1 tcp dport 18443") {
+			!strings.Contains(line, "ip daddr 10.77.0.1 tcp dport 8443") {
 			t.Fatalf("drop affects unrelated host traffic: %s", line)
 		}
 	}

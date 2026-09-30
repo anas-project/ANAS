@@ -87,11 +87,6 @@ CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
   ./cmd/anas-hostd
 install -m 0644 packaging/systemd/anas-hostd.socket "${stage_dir}/anas-hostd.socket"
 install -m 0644 packaging/systemd/anas-hostd@.service "${stage_dir}/anas-hostd@.service"
-CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
-  -trimpath \
-  -o "${stage_dir}/anas-incus-control-relay" \
-  ./modules/incus/control-relay
-install -m 0644 packaging/systemd/anas-incus-control-relay.service "${stage_dir}/anas-incus-control-relay.service"
 
 printf '{\n  "api_version": "anas.release/v1",\n  "version": "%s",\n  "commit": "%s",\n  "build_date": "%s",\n  "os": "linux",\n  "architecture": "%s"\n}\n' \
   "$version" "$commit" "$build_date" "$arch" >"${stage_dir}/release.json"

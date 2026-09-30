@@ -51,12 +51,6 @@ func TestHostReleaseAndUnitMatchObserverAssumptions(t *testing.T) {
 			t.Errorf("unreviewed subprocess/environment in unit: %s", forbidden)
 		}
 	}
-	relay := read("packaging/systemd/anas-incus-control-relay.service")
-	if !strings.Contains(relay, "ExecStart=/usr/local/lib/anas/anas-incus-control-relay --config /run/anas-incus-control-relay.json") ||
-		!strings.Contains(relay, "BindReadOnlyPaths=/etc/anas/incus-control-relay.json:/run/anas-incus-control-relay.json") ||
-		!strings.Contains("\n"+relay, "\nRestrictAddressFamilies=AF_INET AF_NETLINK\n") {
-		t.Fatal("relay service no longer uses fixed binary/config/network family")
-	}
 	socket := read("packaging/systemd/anas-hostd.socket")
 	for _, line := range []string{"ListenStream=/run/anas/hostd.sock", "Accept=yes", "SocketUser=root", "SocketGroup=root", "SocketMode=0600"} {
 		if !strings.Contains("\n"+socket, "\n"+line+"\n") {
@@ -78,10 +72,9 @@ func TestHostReleaseAndUnitMatchObserverAssumptions(t *testing.T) {
 			t.Errorf("host build identity missing %s", pin)
 		}
 	}
-	if !strings.Contains(build, `-o "${stage_dir}/anas-incus-control-relay"`) ||
-		!strings.Contains(build, "./modules/incus/control-relay") ||
-		!strings.Contains(build, "anas-incus-control-relay.service") {
-		t.Fatal("relay binary/service not packaged with release")
+	// Incus listens on the control bridge gateway itself since 2026-09-30.
+	if strings.Contains(build, "control-relay") {
+		t.Fatal("the retired control relay is still packaged with the release")
 	}
 }
 
@@ -112,14 +105,12 @@ func TestHostPackageTriggersCanWriteBootWithoutBlanketMountAccess(t *testing.T) 
 			t.Errorf("package-trigger repair lost %s", line)
 		}
 	}
-	for _, unit := range []string{"anasd.service", "anas-incus-control-relay.service"} {
-		other, err := os.ReadFile("../../packaging/systemd/" + unit)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(other), "/boot") {
-			t.Fatal("boot artifacts belong only to confirmed package actions, not console or relay")
-		}
+	other, err := os.ReadFile("../../packaging/systemd/anasd.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(other), "/boot") {
+		t.Fatal("boot artifacts belong only to confirmed package actions, not the console")
 	}
 }
 
@@ -170,13 +161,11 @@ func TestHostPackageSandboxCanDropUIDWithoutDisablingHardening(t *testing.T) {
 			t.Errorf("fixed root executor lost package sandbox prerequisite %q", required)
 		}
 	}
-	for _, path := range []string{"../../packaging/systemd/anasd.service", "../../packaging/systemd/anas-incus-control-relay.service"} {
-		other, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(other), "AmbientCapabilities=CAP_SETUID") {
-			t.Fatal("package-installation capability must not be added to the console or unprivileged relay")
-		}
+	other, err := os.ReadFile("../../packaging/systemd/anasd.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(other), "AmbientCapabilities=CAP_SETUID") {
+		t.Fatal("package-installation capability must not be added to the console")
 	}
 }

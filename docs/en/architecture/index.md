@@ -10,6 +10,32 @@ the ACL sees post-DNAT destinations. This replaces the per-instance 30-second fo
 no renewal or runtime owner is needed for egress. See
 [section 5.4 of the Chinese host design](/architecture/incus-host-provisioning).
 
+Lease ingress was redesigned on 2026-09-28 and finalized on 2026-09-29 (not yet implemented). A lease declares one
+of two ingress tiers: `none` (the default) or `published`. Lease bridges deny inbound traffic by default. There are
+two kinds of publication, declared separately. HTTP publication goes through Traefik, which terminates HTTPS and
+forwards HTTP to the guest; an unprivileged mediator inside anasd writes the route files. Port bindings forward raw
+TCP or UDP the way Docker publishes ports: an ANAS-owned rule chain matches only traffic addressed to the host itself
+(`fib daddr type local`) and rewrites it to a slot, a fixed address the Provider reserves for a named instance. hostd
+synchronizes the port table at apply time within a port range the operator approved once, and a systemd socket holds
+each bound port. Incus network forwards and proxy devices are not used. Instances with random names (one-off
+instances) take no slot and use HTTP publication when they need ingress. See
+[section 5.1.8 of the Chinese host design](/architecture/incus-host-provisioning).
+
+Decided on 2026-09-30 (not yet implemented): the Traefik address list that lease ACLs refer to by name is a
+host-wide address set written only by a hostd bounded synchronization action. The operator approves it once in
+`incus.configure`; afterwards anasd triggers it after apply starts Traefik, after the Traefik container restarts and
+when anasd starts, and hostd reads the address from Docker itself. anasd never runs the Provider for this, so the Incus
+administrator certificate stays out of unattended runtime paths. A service installation must install both
+`anas-helper` and `anas-hostd` and fails without either one.
+
+Implemented on 2026-09-30: Incus serves its HTTPS API directly on the control bridge gateway (port 8443),
+and a drop-in orders `incus.service` after `docker.service`, because Incus 7.0.1 retries a failed listener
+bind only once, after 30 seconds. The non-root control relay, its unit, account and configuration are
+removed, and the connection bundle is now `anas.incus-connection-bundle/v2`. Paragraphs below that describe
+the relay are history. A lab probe on the same day also verified the lease ACL, address set, default-deny
+ingress, port isolation, slot addresses and the Docker-style port table; see section 3.9 of the Chinese host
+design and the [lease network probe](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-30-incus-lease-network-probe.md).
+
 Incus host install plans now freeze the managed workspace's effective `CHINESE_SPEEDUP` in their
 confirmation parameters. Enabled plans use fixed Aliyun distribution mirrors while preserving archive
 signatures and the pinned Zabbly `lts-7.0` Incus source. Guest release baking separately accepts
@@ -274,11 +300,21 @@ Chinese is the source language for the detailed design set. The pages below link
 - [object-storage capability binding and normalized S3 outputs](/en/architecture/object-storage-capability-design);
 - [Forgejo Module identity, Actions authorization, and Incus VM runner design](/architecture/forgejo-module-design);
 - [AI agent orchestration (Forgejo baseline)](/architecture/ai-agent-orchestration-design) — agents as Forgejo accounts with repository-scoped tokens, issue/label/comment events as the control surface, a standalone orchestrator packaged as a module, and one-job isolated execution. The design itself now lives with the component under `modules/ai_agent/`, ready to be split into its own project;
-- [Incus host provisioning, ingress, and guest image baking](/architecture/incus-host-provisioning) — dedicated control bridge with fixed-destination TLS pass-through; candidate ingress uses restricted routing and firewall rules without mandatory proxy devices or network forwards. HTTP is the first phase; TCP/UDP remain separate work. Host actions and frozen image supply are wired in code, but complete production ingress and real-host acceptance remain pending. Image declarations use mutually exclusive catalog/name/revision or fingerprint objects; deployment digests are frozen. The Chinese source is normative;
+- [Incus host provisioning, ingress, and guest image baking](/architecture/incus-host-provisioning) — dedicated control bridge with fixed-destination TLS pass-through; ingress uses the lease bridge ACL with two tiers, HTTP publication through Traefik, and Docker-style port bindings; no proxy devices or network forwards. Host actions and frozen image supply are wired in code, but complete production ingress and real-host acceptance remain pending. Image declarations use mutually exclusive catalog/name/revision or fingerprint objects; deployment digests are frozen. The Chinese source is normative;
 - [runtime artifacts, releases, and persistent state](/architecture/runtime-release-state-design);
 - [configuration and state lifecycle](/architecture/config-state-lifecycle).
 
 The Chinese source documents remain normative while further English translations are prepared. Stable machine-facing behavior is separately defined by the [CLI contracts](/en/reference/contracts/).
+
+**Update 2026-09-30.** The host action channel no longer proves which root process is at the other end
+of its root-only socket: anasd runs as root, so that proof was not a boundary. The fixed private broker,
+the PID 1 private-bus unit checks and the systemd exit observation are removed, together with the
+`godbus` dependency. hostd now admits only a root/root peer, binds its installation policy (v3) to the
+release alone, and keeps its own invocation record: an invocation id can begin only once, and the
+terminal is written before the terminal frame is sent. When a stream ends early, anasd reads that record
+through the read-only `host.invocation.status` action. The Incus forwarding-permission and ingress
+observer actions were deleted on the same day. Linux/systemd acceptance has not been rerun on the new
+implementation. The rest of this section is the historical record.
 
 The [host action channel design](/architecture/host-action-channel) now has internal read-only
 primitives (2026-09-19), not an installed root service. `internal/hostaction` recognizes only the

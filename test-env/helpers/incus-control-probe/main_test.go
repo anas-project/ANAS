@@ -16,10 +16,10 @@ import (
 func TestProbeRejectsUnboundedOrNonFixedRequests(t *testing.T) {
 	for _, body := range []string{
 		`null`, `{}`, `{"schema":"wrong"}`, strings.Repeat(" ", maximumInput+1),
-		`{"schema":"anas.control-probe/v1","mode":"trusted","endpoint":"https://example.com:18443"}`,
-		`{"schema":"anas.control-probe/v1","mode":"trusted","endpoint":"https://10.1.0.1:8443"}`,
-		`{"schema":"anas.control-probe/v1","mode":"trusted","endpoint":"https://10.1.0.1:18443","endpoint":"https://10.2.0.1:18443"}`,
-		`{"schema":"anas.control-probe/v1","mode":"trusted","endpoint":"https://10.1.0.1:18443","command":"private-data"}`,
+		`{"schema":"anas.control-probe/v1","mode":"trusted","endpoint":"https://example.com:8443"}`,
+		`{"schema":"anas.control-probe/v1","mode":"trusted","endpoint":"https://10.1.0.1:18443"}`,
+		`{"schema":"anas.control-probe/v1","mode":"trusted","endpoint":"https://10.1.0.1:8443","endpoint":"https://10.2.0.1:8443"}`,
+		`{"schema":"anas.control-probe/v1","mode":"trusted","endpoint":"https://10.1.0.1:8443","command":"private-data"}`,
 	} {
 		var output bytes.Buffer
 		if err := run(context.Background(), strings.NewReader(body), &output); err == nil || output.Len() != 0 || strings.Contains(err.Error(), "private-data") {
@@ -32,7 +32,7 @@ func TestProbePinRequiresTheExactServerCertificate(t *testing.T) {
 	server := httptest.NewTLSServer(nil)
 	defer server.Close()
 	certificate := server.Certificate()
-	request := probeRequest{Schema: schema, Mode: "untrusted", Endpoint: "https://10.1.0.1:18443",
+	request := probeRequest{Schema: schema, Mode: "untrusted", Endpoint: "https://10.1.0.1:8443",
 		ServerCertificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Raw}))}
 	config, err := probeTLS(request)
 	if err != nil || config.VerifyConnection == nil || !config.InsecureSkipVerify {
@@ -53,24 +53,25 @@ func TestProbePinRequiresTheExactServerCertificate(t *testing.T) {
 }
 
 func TestProbeResponseMustProveAuthenticatedDaemon(t *testing.T) {
-	good := []byte(`{"type":"sync","status_code":200,"metadata":{"auth":"trusted","config":{"core.https_address":"127.0.0.1:8443"}}}`)
-	if err := verifyResponse(good, "trusted"); err != nil {
+	good := []byte(`{"type":"sync","status_code":200,"metadata":{"auth":"trusted","config":{"core.https_address":"10.1.0.1:8443"}}}`)
+	if err := verifyResponse(good, "trusted", "10.1.0.1:8443"); err != nil {
 		t.Fatal(err)
 	}
 	for _, body := range [][]byte{
 		[]byte(`{}`), []byte(`{"type":"error","status_code":200}`),
 		bytes.Replace(good, []byte(`"trusted"`), []byte(`"untrusted"`), 1),
-		bytes.Replace(good, []byte(`127.0.0.1:8443`), []byte(`0.0.0.0:8443`), 1),
+		bytes.Replace(good, []byte(`10.1.0.1:8443`), []byte(`0.0.0.0:8443`), 1),
+		bytes.Replace(good, []byte(`10.1.0.1:8443`), []byte(`127.0.0.1:8443`), 1),
 		append(bytes.Clone(good), []byte(`{}`)...),
 	} {
-		if verifyResponse(body, "trusted") == nil {
+		if verifyResponse(body, "trusted", "10.1.0.1:8443") == nil {
 			t.Fatal("missing/rejected/wrong daemon response counted as reachability")
 		}
 	}
-	if err := verifyResponse([]byte(`{"type":"sync","status_code":200,"metadata":{"auth":"untrusted"}}`), "untrusted"); err != nil {
+	if err := verifyResponse([]byte(`{"type":"sync","status_code":200,"metadata":{"auth":"untrusted"}}`), "untrusted", "10.1.0.1:8443"); err != nil {
 		t.Fatal(err)
 	}
-	if verifyResponse(good, "untrusted") == nil {
+	if verifyResponse(good, "untrusted", "10.1.0.1:8443") == nil {
 		t.Fatal("anonymous probe unexpectedly authorized")
 	}
 }

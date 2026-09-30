@@ -19,16 +19,14 @@ import (
 )
 
 type State struct {
-	Schema           string                                `json:"schema"`
-	ObserverScopes   map[string]ObserverScopeRecord        `json:"observer_scopes,omitempty"`
-	ForwardingScopes map[string]ForwardingPermissionRecord `json:"forwarding_scopes,omitempty"`
-	UpdatedAt        time.Time                             `json:"updated_at"`
-	Ownership        Ownership                             `json:"ownership"`
-	Credential       *Credential                           `json:"credential,omitempty"`
-	Bundle           *ConnectionBundle                     `json:"bundle,omitempty"`
-	Receipts         []Receipt                             `json:"receipts,omitempty"`
-	Intents          []EffectIntent                        `json:"intents,omitempty"`
-	Disabled         bool                                  `json:"disabled,omitempty"`
+	Schema     string            `json:"schema"`
+	UpdatedAt  time.Time         `json:"updated_at"`
+	Ownership  Ownership         `json:"ownership"`
+	Credential *Credential       `json:"credential,omitempty"`
+	Bundle     *ConnectionBundle `json:"bundle,omitempty"`
+	Receipts   []Receipt         `json:"receipts,omitempty"`
+	Intents    []EffectIntent    `json:"intents,omitempty"`
+	Disabled   bool              `json:"disabled,omitempty"`
 }
 
 type Ownership struct {
@@ -47,7 +45,7 @@ type Ownership struct {
 	ControlInterfaceName    string   `json:"control_interface_name,omitempty"`
 	ControlInterfaceIndex   int      `json:"control_interface_index,omitempty"`
 	FirewallRules           bool     `json:"firewall_rules,omitempty"`
-	RelayService            bool     `json:"relay_service,omitempty"`
+	ControlListener         bool     `json:"control_listener,omitempty"`
 	ManagementTrust         string   `json:"management_trust,omitempty"`
 	ConnectionBundle        bool     `json:"connection_bundle,omitempty"`
 }
@@ -68,7 +66,6 @@ type ConnectionBundle struct {
 	ControlNetwork        string `json:"control_network"`
 	ControlSubnet         string `json:"control_subnet"`
 	ControlGateway        string `json:"control_gateway"`
-	RelayService          string `json:"relay_service"`
 	ManagementFingerprint string `json:"management_fingerprint"`
 	Architecture          string `json:"architecture"`
 	StoragePool           string `json:"storage_pool"`
@@ -139,7 +136,7 @@ type PublicOwnership struct {
 	ControlInterfaceName    string   `json:"control_interface_name,omitempty"`
 	ControlInterfaceIndex   int      `json:"control_interface_index,omitempty"`
 	FirewallRules           bool     `json:"firewall_rules,omitempty"`
-	RelayService            bool     `json:"relay_service,omitempty"`
+	ControlListener         bool     `json:"control_listener,omitempty"`
 	ManagementTrust         string   `json:"management_trust,omitempty"`
 	ConnectionBundle        bool     `json:"connection_bundle,omitempty"`
 }
@@ -287,7 +284,7 @@ func (s State) Public() PublicState {
 			ControlInterfaceName:    s.Ownership.ControlInterfaceName,
 			ControlInterfaceIndex:   s.Ownership.ControlInterfaceIndex,
 			FirewallRules:           s.Ownership.FirewallRules,
-			RelayService:            s.Ownership.RelayService,
+			ControlListener:         s.Ownership.ControlListener,
 			ManagementTrust:         s.Ownership.ManagementTrust,
 			ConnectionBundle:        s.Ownership.ConnectionBundle,
 		},

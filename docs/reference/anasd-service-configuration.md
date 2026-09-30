@@ -87,11 +87,11 @@ last-known-good 只保存在当前 `anasd` 进程内；服务重启后仍必须�
 
 ### 宿主动作队列（代码已接线，实机验收待完成）
 
-`host_actions: false` 时不创建私有 broker、不暴露宿主动作 HTTP 路由，现有 root 部署保持原行为。
+`host_actions: false` 时不启动宿主动作队列、不暴露宿主动作 HTTP 路由，现有 root 部署保持原行为。
 显式开启后，`anasd` 在 HTTP 监听前启动同进程的 `HostActionService`，复用原 `console_store`、
-执行租约、授权存储与审计；等待私有 listener 真实就绪后才装配接口。固定宿主 socket 缺失、
-非安装服务身份、非 Linux 或开发版本均不能开启这条路径。当前保留 root/root anasd；UID 0
-本身不足以通过准入，还必须匹配 PID 1 独立报告的固定服务单元和实际进程。配置开关不证明
+执行租约、授权存储与审计；队列就绪后才装配接口。固定宿主 socket 缺失、
+非 root/root 进程、非 Linux 或开发版本均不能开启这条路径。hostd 的 socket 为 root:root 0600，
+只接受 root/root 对端，不再核验调用方属于哪个 systemd 单元（2026-09-30 身份链简化）。配置开关不证明
 Incus 或 compute ready。
 
 新增接口为 `POST /api/v1/workspaces/{ws}/host/actions/incus.status`，只接受空 JSON 对象 `{}`
@@ -117,8 +117,8 @@ TLS、已认证 owner 下可见，直连与受信代理使用同一队列；沿�
 会话及执行确认请求只从 stdin 输入；`anas host actions` 仍仅是本机编译清单。
 
 **不再要求迁移为非 root anasd，也不放宽 TLS 私钥的 root-only 策略。** 安装器已打包并安装
-同版本 hostd、固定 socket/service、连接策略及非 root 控制转发程序。转发服务由 configure
-显式准备后启动，安装器不默认启用。升级/卸载前检查活动宿主动作并停止准入；操作未排空或
+同版本 hostd、固定 socket/service 与连接策略；Incus 控制连接由 configure 改为直接监听控制网桥网关，
+不再有转发程序（2026-09-30）。升级/卸载前检查活动宿主动作并停止准入；操作未排空或
 服务停止失败时，不覆盖可执行文件。真实 Linux/systemd/Incus 安装链尚未验收，不能仅以开关
 或本机测试通过将开发实现作为生产支持承诺。
 
@@ -130,8 +130,8 @@ workspace 与备份根：`/var/lib/anas`、`/srv/anas`、`/srv/anas-backups`。�
 其他 workspace、backup target 或 console store，管理员必须用 systemd drop-in 为精确目录
 扩展 `ReadWritePaths`；不能通过移除 `ProtectSystem` 把整台主机重新变为可写。
 
-共享 broker 与确认 ledger 由 `RuntimeDirectory` 在 `/run/anas-job-broker` 和
-`/run/anas/confirmations` 准备，权限 `0700`，同一次开机内重启保留确认消费记录。执行实际软件包
+确认 ledger 由 `RuntimeDirectory` 在 `/run/anas/confirmations` 准备，权限 `0700`，同一次开机内重启
+保留确认消费记录。hostd 的调用记录在它自己的 `/var/lib/anas-hostd/invocations`，保留 30 天。执行实际软件包
 和账户/网络动作的 `anas-hostd` 单元另有 `/etc`、`/usr`、`/var`、`/run` 与私有临时目录的写权限；
 它是经具名动作、确认、审计和资源归属约束的完整 root 执行器，不是 DAC-only 沙箱。
 

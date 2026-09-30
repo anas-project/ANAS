@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/anas-project/ANAS/internal/application"
-	"github.com/anas-project/ANAS/internal/computeingressruntime"
 	"github.com/anas-project/ANAS/internal/consolejobs"
 	"github.com/anas-project/ANAS/internal/deploymentaudit"
 )
@@ -70,10 +69,6 @@ type Options struct {
 	ModuleCommandFactory application.ModuleCommandServiceFactory
 	PollInterval         time.Duration
 	OnError              func(error)
-	// Installed daemon queues and launcher share one coordinator. This is
-	// trusted wiring, not an HTTP option or evidence of clean external state.
-	IngressCoordinator *computeingressruntime.ControllerCoordinator
-	ForwardingDrainer  ForwardingDrainer
 	// Optional revalidation of the persisted actor. Called under jobs.lock;
 	// it must not reenter Store or invoke an application/host operation.
 	Authorize func(context.Context, consolejobs.Job) error
@@ -93,11 +88,7 @@ type Executor struct {
 	wake                 map[string]chan struct{}
 	runningMu            sync.Mutex
 	running              map[string]context.CancelFunc
-	ingressCoordinator   *computeingressruntime.ControllerCoordinator
-	forwardingDrainer    ForwardingDrainer
 	authorize            func(context.Context, consolejobs.Job) error
-	ingressMu            sync.Mutex
-	ingressChanges       map[string]*workspaceIngressChange
 }
 
 func New(options Options) (*Executor, error) {
@@ -128,26 +119,13 @@ func New(options Options) (*Executor, error) {
 		workspaces[workspace.ID] = workspace.Path
 		wake[workspace.ID] = make(chan struct{}, 1)
 	}
-	if options.ForwardingDrainer != nil && options.IngressCoordinator == nil {
-		return nil, errors.New("forwarding drain requires the shared workspace coordinator")
-	}
-	if options.IngressCoordinator != nil {
-		ids := make([]string, 0, len(workspaces))
-		for id := range workspaces {
-			ids = append(ids, id)
-		}
-		if !options.IngressCoordinator.MatchesScopes(ids) {
-			return nil, errors.New("job executor and ingress coordinator workspace sets differ")
-		}
-	}
 	return &Executor{
 		store: options.Store, audit: options.Audit, workspaces: workspaces, deploymentFactory: options.DeploymentFactory,
 		moduleFactory: options.ModuleFactory, maintenanceFactory: options.MaintenanceFactory,
 		moduleCommandFactory: options.ModuleCommandFactory,
 		pollInterval:         options.PollInterval, onError: options.OnError, wake: wake,
-		running:            make(map[string]context.CancelFunc),
-		ingressCoordinator: options.IngressCoordinator, authorize: options.Authorize, forwardingDrainer: options.ForwardingDrainer,
-		ingressChanges: make(map[string]*workspaceIngressChange),
+		running:   make(map[string]context.CancelFunc),
+		authorize: options.Authorize,
 	}, nil
 }
 
@@ -242,7 +220,7 @@ func (executor *Executor) runWorkspace(ctx context.Context, workspaceID, workspa
 			if ctx.Err() != nil {
 				return
 			}
-			if !errors.Is(err, consolejobs.ErrCapacity) && !errors.Is(err, consolejobs.ErrWorkspaceBusy) && !errors.Is(err, consolejobs.ErrCompensationRequired) && !errors.Is(err, errWorkspaceIngressPending) {
+			if !errors.Is(err, consolejobs.ErrCapacity) && !errors.Is(err, consolejobs.ErrWorkspaceBusy) && !errors.Is(err, consolejobs.ErrCompensationRequired) {
 				executor.report(fmt.Errorf("claim workspace %s job: %w", workspaceID, err))
 			}
 		} else if found {
@@ -262,14 +240,14 @@ func (executor *Executor) execute(daemonContext context.Context, workspacePath s
 	// Re-read the durable claim immediately before invoking any factory. A
 	// successful queue precondition cannot authorize a substituted request.
 	if err := executor.checkWorkspaceExecution(daemonContext, job); err != nil {
-		if errors.Is(err, errWorkspaceIngressDenied) {
+		if errors.Is(err, errWorkspaceJobDenied) {
 			terminal, cancel := context.WithTimeout(context.WithoutCancel(daemonContext), terminalWriteTimeout)
 			defer cancel()
 			executor.finishFailed(terminal, job, err)
 			return
 		}
 		executor.report(err)
-		return // Retain the fence and running job for explicit recovery.
+		return // Retain the running job for explicit recovery.
 	}
 	jobContext, cancelJob := context.WithCancel(daemonContext)
 	defer cancelJob()
@@ -862,7 +840,7 @@ func maintenanceJobResult(workspaceID string, value any) (map[string]any, error)
 }
 
 func publicJobError(err error, kind string) *consolejobs.JobError {
-	if errors.Is(err, errWorkspaceIngressDenied) {
+	if errors.Is(err, errWorkspaceJobDenied) {
 		return &consolejobs.JobError{Code: "job_authorization_revoked", Message: "workspace operation was not started"}
 	}
 	fallbackCode, message := "deployment_failed", "deployment operation failed"
