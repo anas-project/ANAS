@@ -4,6 +4,7 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [Workspace 临时存储设计评审](2026-09-30-workspace-temp-storage-design-review.md) | 2026-09-30，`9a6921a1` 加当前未提交工作树 | 同日讨论后收窄为 Module 声明的临时目录；保存归应用负责，应用全面就绪不作为新增切换门槛，回滚复用配置切换；Docker 程序与连接固定方案待定，未改实现 |
 | [租约网络实机探测](2026-09-30-incus-lease-network-probe.md) | 2026-09-30，`7ad1876a` 加累积工作树；一次性 Debian 13 VM、Incus 7.0.1、docker.io 26 与 Docker CE 29 | M10a/M11b/M11c 待验证项与控制连接启动顺序：ACL 与 address set、默认拒绝入站、端口隔离、槽位固定地址、Docker 式端口表与占位；静态规则改窄规则、UDP 占位改常驻持有；据此 Incus 改为直接监听控制网关 |
 | [入站旧实现删除与宿主通道身份链简化](2026-09-30-incus-old-code-removal-and-hostd-simplification.md) | 2026-09-30，`7ad1876a` 加累积工作树 | 删除逐实例转发许可与逐发布 HTTP 入站运行时（225 个文件）；hostd 对端只认 root，调用记录取代回连 broker 与 systemd 退出观察（`HOSTACT-R-016`）；删除控制转发服务；服务安装必须带 `anas-helper`；宿主审批门禁实机结果见 §5 |
 | [Incus 国内软件源实机核验](2026-09-27-incus-chinese-speedup-native.md) | 2026-09-26—28，逐轮冻结工作树与二进制摘要 | 三档宿主国内源后端、guest 烘焙与不可变配方检查、脚本断言修正及物理 Docker 基线；逐轮终态与边界见正文 |
