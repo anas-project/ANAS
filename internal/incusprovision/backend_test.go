@@ -82,6 +82,7 @@ type fakeRuntime struct {
 	installedByCall []string
 	speedupByCall   []bool
 	removedByCall   []string
+	portRejections  []PortRejection
 }
 
 func newFakeRuntime(t *testing.T) *fakeRuntime {
@@ -244,6 +245,80 @@ func (f *fakeRuntime) RemovePackages(_ context.Context, recipe incushost.Recipe,
 		f.obs.IncusDaemonActive = false
 	}
 	return nil
+}
+
+func (f *fakeRuntime) ApplyLeaseForwarding(context.Context) error {
+	if err := f.record("lease-forwarding"); err != nil {
+		return err
+	}
+	f.obs.LeaseForwardingInstalled = true
+	return nil
+}
+func (f *fakeRuntime) RestoreControlFirewall(context.Context, ControlNetworkPlan) error {
+	return f.record("restore-firewall")
+}
+func (f *fakeRuntime) RemoveLeaseForwarding(context.Context) error {
+	f.obs.LeaseForwardingInstalled = false
+	return f.record("remove-lease-forwarding")
+}
+func (f *fakeRuntime) InstallNetworkUnit(context.Context) error {
+	if err := f.record("network-unit"); err != nil {
+		return err
+	}
+	f.obs.NetworkUnitInstalled = true
+	return nil
+}
+func (f *fakeRuntime) RemoveNetworkUnit(context.Context) error {
+	f.obs.NetworkUnitInstalled = false
+	return f.record("remove-network-unit")
+}
+func (f *fakeRuntime) EnsureTraefikAddressSet(context.Context) error {
+	if err := f.record("traefik-set"); err != nil {
+		return err
+	}
+	f.obs.TraefikAddressSetExists = true
+	return nil
+}
+func (f *fakeRuntime) SyncTraefikAddressSet(context.Context) ([]string, error) {
+	if err := f.record("traefik-sync"); err != nil {
+		return nil, err
+	}
+	return []string{"172.30.0.2/32"}, nil
+}
+func (f *fakeRuntime) RemoveTraefikAddressSet(context.Context) error {
+	f.obs.TraefikAddressSetExists = false
+	return f.record("remove-traefik-set")
+}
+func (f *fakeRuntime) WriteNetworkPolicy(_ context.Context, first, last int) error {
+	if err := f.record("network-policy"); err != nil {
+		return err
+	}
+	f.obs.NetworkPolicyCurrent = first == DefaultPortRangeFirst && last == DefaultPortRangeLast || f.obs.NetworkPolicyCurrent
+	return nil
+}
+func (f *fakeRuntime) RemoveNetworkPolicy(context.Context) error {
+	f.obs.NetworkPolicyCurrent = false
+	return f.record("remove-network-policy")
+}
+func (f *fakeRuntime) InstallPortBindings(context.Context) error {
+	if err := f.record("port-bindings"); err != nil {
+		return err
+	}
+	f.obs.PortBindingsInstalled = true
+	return nil
+}
+func (f *fakeRuntime) RemovePortBindings(context.Context) error {
+	f.obs.PortBindingsInstalled = false
+	return f.record("remove-port-bindings")
+}
+func (f *fakeRuntime) SyncPortBindings(_ context.Context, first, last int) (PortSyncResult, error) {
+	if err := f.record(fmt.Sprintf("ports-sync %d-%d", first, last)); err != nil {
+		return PortSyncResult{}, err
+	}
+	return PortSyncResult{Schema: PortSyncSchema, Approved: true, Bindings: []PortBinding{}, Rejected: f.portRejections}, nil
+}
+func (f *fakeRuntime) RestorePortBindings(context.Context) ([]PortRejection, error) {
+	return f.portRejections, f.record("restore-port-bindings")
 }
 
 func bind(plan Plan, phase Phase) Binding {

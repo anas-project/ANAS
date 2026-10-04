@@ -34,10 +34,10 @@ type incusResponse struct {
 }
 
 type operationRecord struct {
-	ID         string `json:"id"`
-	StatusCode int    `json:"status_code"`
-	Err        string `json:"err"`
-	Metadata   map[string]any `json:"metadata"`
+	ID         string              `json:"id"`
+	StatusCode int                 `json:"status_code"`
+	Err        string              `json:"err"`
+	Metadata   map[string]any      `json:"metadata"`
 	Resources  map[string][]string `json:"resources"`
 }
 
@@ -165,6 +165,69 @@ func (c *client) do(ctx context.Context, method, path string, body any, out any)
 		}
 	}
 	return nil
+}
+
+// doOperation sends a request the daemon may answer asynchronously, such as
+// an instance state change, and waits for the operation to succeed.
+func (c *client) doOperation(ctx context.Context, method, path string, body any) error {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("incus %s: invalid request body", method)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.endpoint+path, bytes.NewReader(encoded))
+	if err != nil {
+		return fmt.Errorf("incus %s: invalid request", method)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := c.http.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("incus %s: %w", method+" "+path, ctx.Err())
+		}
+		if errors.Is(err, errPinnedCertificate) {
+			return errPinnedCertificate
+		}
+		return fmt.Errorf("incus %s: transport failed", method+" "+path)
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes+1))
+	if err != nil || len(raw) > maxResponseBytes {
+		return fmt.Errorf("incus %s: response unavailable or exceeds limit", method+" "+path)
+	}
+	var envelope incusResponse
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return fmt.Errorf("incus response to %s is not JSON", method+" "+path)
+	}
+	if envelope.Type == "error" || res.StatusCode >= 400 {
+		if envelope.ErrorCode == http.StatusNotFound || res.StatusCode == http.StatusNotFound {
+			return notFoundError{path: path}
+		}
+		return fmt.Errorf("incus %s: operation rejected (HTTP %d, code %d)", method+" "+path, res.StatusCode, envelope.ErrorCode)
+	}
+	if envelope.Type == "sync" {
+		return nil
+	}
+	if envelope.Type != "async" || !operationPathPattern.MatchString(envelope.Operation) {
+		return fmt.Errorf("incus %s: expected an operation", method+" "+path)
+	}
+	deadline, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	for attempt := 0; attempt < 30; attempt++ {
+		var record operationRecord
+		if err := c.do(deadline, http.MethodGet, envelope.Operation+"/wait?timeout=5", nil, &record); err != nil {
+			return err
+		}
+		switch record.StatusCode {
+		case 200:
+			return nil
+		case 400, 401, 403, 404, 500:
+			return fmt.Errorf("incus %s: operation failed", method+" "+path)
+		}
+		if err := deadline.Err(); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("incus %s: operation wait exceeded retry bound", method+" "+path)
 }
 
 func (c *client) doMultipartOperation(ctx context.Context, path, project string, write func(*multipart.Writer) error) (string, error) {

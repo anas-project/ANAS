@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -152,6 +153,30 @@ func (r *localRuntime) Observe(ctx context.Context, request Request, state State
 			return Observation{}, err
 		}
 		obs.FirewallInstalled = installed
+	}
+	if obs.LeaseForwardingInstalled, err = r.leaseForwardingInstalled(ctx); errors.Is(err, ErrUnsupported) {
+		obs.LeaseForwardingInstalled = false
+	} else if err != nil {
+		return Observation{}, err
+	}
+	if obs.NetworkUnitInstalled, err = networkUnitInstalledAt(NetworkUnitPath); err != nil {
+		return Observation{}, err
+	}
+	if obs.IncusDaemonActive {
+		if obs.TraefikAddressSetExists, err = r.traefikAddressSetExists(ctx); err != nil {
+			return Observation{}, err
+		}
+	}
+	if request.PortRangeFirst != 0 {
+		if obs.NetworkPolicyCurrent, err = networkPolicyCurrentAt(NetworkPolicyPath, request.PortRangeFirst, request.PortRangeLast); err != nil {
+			return Observation{}, err
+		}
+	}
+	if obs.PortBindingsInstalled, err = r.portChainInstalled(ctx); errors.Is(err, ErrInvalid) {
+		// No nft on this host: the step is planned and its effect will fail.
+		obs.PortBindingsInstalled = false
+	} else if err != nil {
+		return Observation{}, err
 	}
 	if state.Bundle != nil && state.Credential != nil {
 		if err := r.VerifyManagementEndpoint(ctx, *state.Bundle); err == nil {
@@ -308,6 +333,24 @@ func (r *localRuntime) ApplyControlFirewall(ctx context.Context, plan ControlNet
 		return ErrExternalEffects
 	}
 	return nil
+}
+
+// RestoreControlFirewall leaves an intact table alone and replaces a missing
+// or altered one, so a repeated restore never stacks duplicate rules.
+func (r *localRuntime) RestoreControlFirewall(ctx context.Context, plan ControlNetworkPlan) error {
+	installed, err := r.controlFirewallInstalled(ctx, plan)
+	if err != nil {
+		return err
+	}
+	if installed {
+		return nil
+	}
+	// "table" first makes the delete a no-op when the table is absent.
+	reset := "table inet anas_incus_control\ndelete table inet anas_incus_control\n"
+	if err := r.commands.runWithInput(ctx, fixedNFT, []string{"-f", "-"}, nil, []byte(reset)); err != nil {
+		return err
+	}
+	return r.ApplyControlFirewall(ctx, plan)
 }
 
 func (r *localRuntime) TrustManagementCertificate(ctx context.Context, credential Credential) error {
@@ -667,6 +710,21 @@ func fixedCommandSpec(operation fixedOperation, args []string) (string, time.Dur
 		}
 		if len(args) == 1 && args[0] == "daemon-reload" {
 			return systemctlPath, 30 * time.Second, nil
+		}
+		if len(args) == 2 && (args[0] == "enable" || args[0] == "disable") && args[1] == NetworkUnitName {
+			return systemctlPath, 30 * time.Second, nil
+		}
+		// A port binding's hold pair: socket then service, same port.
+		if len(args) == 4 && (args[0] == "enable" || args[0] == "disable" || args[0] == "is-active") &&
+			(args[1] == "--now" || (args[0] == "is-active" && args[1] == "--quiet")) && (args[0] == "is-active") == (args[1] == "--quiet") {
+			socket := holdUnitPattern.FindStringSubmatch(args[2])
+			service := holdUnitPattern.FindStringSubmatch(args[3])
+			if socket != nil && service != nil && socket[3] == "socket" && service[3] == "service" && socket[1] == service[1] && socket[2] == service[2] {
+				if port, err := strconv.Atoi(socket[2]); err == nil && port >= 1 && port <= 65535 {
+					return systemctlPath, time.Minute, nil
+				}
+			}
+			return "", 0, ErrInvalid
 		}
 		// Queries retain their short budget. Incus' packaged service permits
 		// a ten-minute startup; a thirty-second CLI timeout can otherwise

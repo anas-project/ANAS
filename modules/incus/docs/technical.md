@@ -30,8 +30,9 @@ guest 烘焙使用独立的 `CHINESE_BUILD_SPEEDUP`：发布脚本经 recipe CLI
   `incus.ingress.observe_http` 与 `incus.ingress.observer(.plan)`、控制台与 CLI 的 `observer` 阶段、job 执行器的
   入站排空与工作区围栏、`cmd/incus-network-prototype`，以及宿主 `state.json` 的 `observer_scopes`。入站改为租约
   ACL、anasd 内的 HTTP 发布中介与端口绑定（`INCUS-R-130`—`R-164`，M11/M11b/M11c）。
-- 保留的部分：Core 对 `spec.ingress` 的解析与冻结、`internal/computeingress` 的请求文件与授权类型、租约命名密钥，
-  以及启动时对带 ingress 消费者的拦截；它们在 M11 实施时改为 `publish.http`。
+- 保留的部分：Core 对 HTTP 授权的解析与冻结、`internal/computeingress` 的请求文件与授权类型、租约命名密钥。
+  2026-10-03 起声明改为 `publish.http`，启动时对带 HTTP 发布消费者的拦截已删除，请求改为
+  `{instance, address, port, label?}`，见下文「HTTP 发布与端口绑定的宿主侧」。
 
 <!-- generated:module-identity:start -->
 > 状态：当前实现；对应 `7.3.0-r2` / `anas.module/v1`.
@@ -168,6 +169,7 @@ Incus 验收。当前边界见[宿主通道架构](../../../docs/architecture/ho
 | `incus.admin_key_b64` | string | — | — | `host` | `INCUS_ADMIN_KEY_B64` | 否 | 是 | 是 | 否：`rotate-incus-admin-credential` | `credential_rotate` | 管理证书的私钥 |
 | `incus.endpoint` | string | `pattern: ^https://[A-Za-z0-9.:_-]+$` | — | `host` | `INCUS_ENDPOINT` | 否 | 是 | 是 | 是 | `reconcile` | 远端 Incus daemon 的 HTTPS 地址 |
 | `incus.image_architecture` | enum (`amd64`, `arm64`) | — | — | `host` | `INCUS_IMAGE_ARCHITECTURE` | 否 | 是 | 否 | 是 | `container_recreate` | 目标 daemon 的 guest 镜像架构；必须显式提供，不从 CLI 宿主推断 |
+| `incus.lan_extra_subnets` | string | `pattern: ^[0-9A-Fa-f:./, ]*$` | `""` | `static` | `INCUS_LAN_EXTRA_SUBNETS` | 否 | 否 | 否 | 是 | `reconcile` | 附加局域网网段，逗号分隔的 CIDR；与 Core 在 apply 时算出的默认路由网卡直连网段合并，供 `internet_lan`、`internet_lan_host` 两档放行；Hook 拒绝默认路由、回环、链路本地与组播网段 |
 | `incus.server_certificate_b64` | string | — | — | `host` | `INCUS_SERVER_CERTIFICATE_B64` | 否 | 是 | 是 | 是 | `reconcile` | 被固定的 daemon 服务端证书；失配时直接失败，不回退 |
 | `incus.storage_pool` | string | `pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$` | — | `runtime` | `INCUS_STORAGE_POOL` | 否 | 是 | 否 | 是 | `reconcile` | 每个租约根磁盘所在的存储池；显式远端未设置时 Hook 沿用 `default`，宿主自动 bundle 使用 `anas-btrfs` |
 
@@ -238,9 +240,10 @@ Store 被整份复制时两份副本持有同一证书，这属于身份复制�
 
 ## network 与 profile
 
-network 名由 sandbox 名 SHA-256 前 10 位派生（`anas` + 10 位十六进制 = 14 字符）。不能直接用
-sandbox 名：Linux bridge 接口名上限 15 字符，而 `anas-forgejo-runners` 有 20。派生保证短、稳定、
-发生截断碰撞时通过归属校验拒绝复用。
+network 名是 `lease` 加 sandbox 名 SHA-256 的前 10 位十六进制（共 15 字符）。不能直接用 sandbox 名：Linux bridge
+接口名上限 15 字符，而 `anas-forgejo-runners` 有 20。前缀 `lease` 让宿主的静态转发规则能精确匹配全部租约网桥，
+又不落进 `anas-helper` 可以操作的 `anas*` 接口（`INCUS-R-127`）。2026-10 之前的租约用 `anas` 加同一摘要；
+`ensure` 建好新网桥并把 profile 指过去后，删除不再被任何实例使用的旧网桥及其 ACL，仍被使用时保留并报告。
 
 bridge 的所有者是 Provider，API 请求显式使用 `project=default`；租约设置
 `features.networks=false`、`restricted.devices.nic=managed` 和精确的 `restricted.networks.access`。
@@ -250,38 +253,57 @@ bridge 的所有者是 Provider，API 请求显式使用 `project=default`；租
 网络记录 `user.anas.consumer` 与 `user.anas.sandbox`。已有同名网络若类型或归属不符、缺少归属
 标记或挂接外部接口，ensure 拒绝接管且不登记证书。不得仅凭派生名字推断所有权。
 重复 apply 保留 daemon 已分配的子网及无关配置；关闭 IPv6 时写 `none` 并移除旧 NAT 开关。
-网络创建/更新后读回类型、归属、地址及 NAT，再建立 profile。不同 bridge 本身不证明流量隔离，
-跨租约接网、网络写权限和真实出网仍须实机验收。
+网络创建/更新后读回类型、归属、地址及 NAT，再建立 profile。
 
-每张租约 bridge 另挂一份 Provider 自有的来源围栏 network ACL（default project，与 bridge 同名，
-带同样的 consumer/sandbox 标记及租约证书摘要）。它只有一条启用的 egress 规则：`allow`，
-`source` 恰为 bridge 实际分配的 IPv4（及 IPv6 启用时的 IPv6）子网；bridge 设
-`security.acls=<ACL>`、`security.acls.default.egress.action=drop`、
-`security.acls.default.ingress.action=allow`。Incus 在网桥的 input/forward 钩子上执行它，DNS、DHCP
-与核心 ICMPv6（RS/NS/NA/MLD）由 Incus 内建规则先放行，回包由 conntrack 放行。于是 guest 伪造子网外
-源地址的报文在宿主转发或本机接收时被丢弃，不会未经 masquerade 出网；IPv6 关闭的租约只放行 IPv4 子网，
-任何 IPv6 转发一并被挡。ACL 在 bridge 分配出具体子网后才写（引用不存在的 ACL 会被 daemon
-拒绝），写后读回；同名 ACL 若归属标记不符（包括无标记）即拒绝接管、不改写、不登记证书——ACL 是新对象，
-没有需要兼容的无标记历史。`inspect.ready` 同样要求挂接键、规则恰为一条且来源集合等于当前子网；
-任何多余规则、入向规则、禁用或放宽都算漂移，`ensure` 以整体 PUT 修复。宿主包卸载盘点把任何
-network ACL 视为 daemon 仍在使用。
+**地址规划。** IPv4 的 DHCP 动态范围是 `.2` 到广播地址前第 33 个地址，网段顶部 32 个地址留给槽位，按槽位名
+排序分配并跨 apply 保持不变；槽位不再声明时释放。租约启用 IPv6 且声明了槽位时，网桥开启有状态 DHCPv6，动态
+范围是 `<前缀>::1:0`—`<前缀>::1:ffff`，槽位地址从 `<前缀>::ff00` 起。槽位分配写在网桥的
+`user.anas.slot.<名>.{instance,ipv4,ipv6}` 键上，profile 带同样的副本供共享客户端读取。`ensure` 的最后一行 JSON
+交回网桥名、IPv4/IPv6 网段与网关和各槽位地址，Core 记入 resource state（`INCUS-R-159`）。
+
+**ACL。** 每张租约网桥挂一份与网桥同名的 Provider 自有 network ACL（default project，带 consumer/sandbox 标记
+及租约证书摘要），网桥设 `security.acls=<ACL>` 且两个方向的默认动作都是 `drop`（`INCUS-R-130`）。Incus 先放行
+DNS、DHCP 与核心 ICMPv6，回包由 conntrack 放行。规则由冻结的档位生成：
+
+| 档位 | 出站规则（来源都限定为租约自己的网段，伪造的子网外来源因此被丢弃） |
+| --- | --- |
+| `internet` | 放行公网地址；丢弃局域网、宿主地址与 `$anas-leases` |
+| `internet_lan` | 放行公网地址与局域网；丢弃宿主地址与 `$anas-leases` |
+| `internet_lan_host` | 放行公网地址、局域网、宿主地址与私有地址段（Docker 已发布端口在 DNAT 后落在这里）；丢弃 `$anas-leases` |
+| `modules_only` | 只放行到 `$anas-traefik` 的 Traefik 入口端口 |
+
+`module_access` 给 `internet`、`internet_lan` 加一条到 `$anas-traefik` 入口端口的放行。入站只有 `published` 档有
+规则：先丢弃来自 `$anas-leases` 的连接，再放行 `$anas-traefik` 到 HTTP 发布端口、任意来源到各槽位已绑定的
+guest 端口。Incus 的 drop 先于 allow，所以同租约实例经宿主端口访问自己的槽位也会被挡住；租约内直连由
+`intra_lease` 决定——关闭时 profile 的网卡设 `security.port_isolation=true`，同一网桥的实例之间二层不通
+（`INCUS-R-123`）。局域网是 apply 时 Core 算出的宿主默认路由网卡直连网段加 `lan_extra_subnets`，宿主地址是宿主
+各接口地址，二者经 `ANAS_RESOURCE_NETWORK`、`ANAS_RESOURCE_LAN_SUBNETS`、`ANAS_RESOURCE_HOST_ADDRESSES` 交给
+Provider。
+
+`$anas-leases` 是全局 address set，由每次 `ensure` 改写为全部租约网桥的网段之并；`$anas-traefik` 只由 hostd 的
+同步动作写入，Provider 只按名字引用，不存在时 `ensure` 失败并提示先运行 `incus.configure`。两者都需要 daemon
+提供 `network_address_set` API 扩展（Incus 7.0 起），缺少时 `ensure` 在写入前失败。`inspect.ready` 要求 ACL 规则
+与当前档位、网段、槽位完全一致，`$anas-leases` 覆盖本租约网段；多余规则、禁用或放宽都算漂移，`ensure` 以整体
+PUT 修复。宿主包卸载盘点把任何 network ACL 与 address set 视为 daemon 仍在使用。
 
 profile 固定名为 `anas-lease`，只有两个设备：
 
 | 设备 | 内容 |
 | --- | --- |
 | `root` | `type=disk`、`path=/`、`pool=<storage_pool>`，无 `source` |
-| `eth0` | `type=nic`、`network=<派生 bridge 名>`，无 `parent`/`nictype` |
+| `eth0` | `type=nic`、`network=<租约 bridge>`、`security.mac_filtering=true`、`security.ipv4_filtering=true`，`intra_lease` 关闭时加 `security.port_isolation=true`；无 `parent`/`nictype` |
+
+profile 的配置是 `user.anas.managed=true`、隔离档的 nesting/privileged 键与槽位副本。共享客户端创建槽位实例时用
+`--device=eth0,ipv4.address=…`（及 `ipv6.address`）在实例上覆盖这两个键，其余网卡设置沿用 profile。
 
 network 的 IPv6 跟随宿主：Hook 只在 IPv6 开关未关闭**且** `HOST_HAS_IPV6=true` 时置
 `INCUS_NETWORK_IPV6=true`，此时 bridge 得到 `ipv6.address=auto` + `ipv6.nat=true`；否则显式写
 `ipv6.address=none`。写 `none` 而不是留空是有意的——留空会让 daemon 按自己的默认发地址，而给
 guest 一个宿主路由不到的 v6 地址，表现是每次出网先等一次超时再回落 v4，看起来像作业卡住而不像
-配置错误。两个协议族都经同一张受管 bridge 做 NAT，开启 v6 只扩大 guest 能到达的范围，不改变它
-如何出去。
+配置错误。
 
 `ensureProfile` 走的是 **PUT 整体替换**而不是合并，`verifyProfile` 随后读回并要求设备数恰好为 2，
-配置只有 `user.anas.managed=true`，每个设备的完整属性也必须与受管模板一致。附加 raw config 或设备属性均拒绝。
+配置恰好是受管模板的键，每个设备的完整属性也必须与受管模板一致。附加 raw config 或设备属性均拒绝。
 两者合起来是这条约束的唯一执行点——daemon 不会阻止别人往 profile 上挂东西，所以「profile 上没有
 多余设备」只能由这里保证。
 
@@ -294,8 +316,10 @@ guest 一个宿主路由不到的 v6 地址，表现是每次出网先等一次�
 `inspect` 只读，分别报告 `exists`、`ready`、`restricted`、`quota_enforced`。project 不存在时返回
 零值而不是错误，因为「不存在」是一个正常的可观测状态。
 
-`revoke` 删除消费者证书，保留 project。删 project 会连带销毁里面的实例，而那些实例从来不属于
-本 Contract。对不存在的 fingerprint 删除是幂等成功。
+`revoke` 删除消费者证书，清空租约 ACL 的规则（默认动作仍是丢弃，从此进出都不通），并停止 project 内运行的
+实例：ACL 放行已建立连接的回包，只有停止实例才能结束这些连接（`INCUS-R-124`）。project、实例磁盘与网桥保留；
+删 project 会连带销毁里面的实例，而那些实例从来不属于本 Contract。对不存在的 fingerprint 删除是幂等成功，
+不属于本租约的 ACL 与 project 不动。
 
 消费者被移除或其能力被关闭、目标部署不再声明租约时，Core 用上一个部署冻结的本 Module 产物调用
 `revoke`；失败默认中止激活，只有 `--allow-risky` 才记录未确认的撤销。resource state 保持
@@ -672,42 +696,37 @@ builder；缺失或损坏时失败，不重新烘焙同一 revision。CLI 的 `b
 Core 已接入独立的 32 字节 compute `LEASE_SECRET`，与客户端证书分开生成和复用。Deployment 与
 resource state 只保存引用；消费者接收敏感 base64 投影，备份恢复保留同一密钥，不参与凭据轮换。
 详见 [compute 生命周期契约](../../../contracts/compute/docs/technical.md#独立租约命名密钥)。
-专属轮换命令和生产 HTTP 发布仍待实现。
+专属轮换命令仍待实现。
 
 
-## HTTP 请求文件提交与恢复（代码未验收）
+## HTTP 发布与端口绑定的宿主侧
 
-`internal/computeingress.RequestWriter` 为消费者提供原子请求提交与精确撤回。它只打开安装已提供
-的私有 0700 租约目录，不创建授权、注册表或挂载。Linux amd64/arm64 以目录锁协调写入，复用
-中介的有界严格读取器；完整请求经私有临时文件、同步和 rename 发布。目录最多 256 项（包括
-忽略的临时文件），本地保留回执也最多 256 项；未知文件不批量删除。
+HTTP 发布不经过本 Module 的 Provider operation：Provider 只按冻结的发布端口写 ACL 入站规则。消费者把请求文件写进
+`HTTP_REQUEST_DIR`，anasd 内的中介校验后写 Traefik 动态目录的 `compute-http/` 子目录，完整语义见
+[compute Contract 技术文档](../../../contracts/compute/docs/technical.md#http-发布)。
 
-相同请求重试复用文件，不同任务不能覆盖同一实例端口。回执保留 inode 描述符，撤回时同时匹配
-身份与内容，不误删复用同名槽位的新请求。`Resume` 只接管与持久化预期相符的已有请求，缺失时
-不重新发布。`Withdraw` 删除意图文件，`Close` 仅释放本地句柄；二者均不证明路由、许可、连接或
-地址保留已清理。同步/核验失败按结果不确定返回，不能把文件回执当作发布成功。
+宿主侧由 hostd 承担，全部随 `incus.configure` 的二段确认安装、随 `incus.uninstall` 删除：
 
-共享客户端通过 `Client.OpenHTTPPublisher` 显式配置 `HTTPPublisher.PublishPort/UnpublishPort`。
-配置只投影租约范围、公开策略、基础域名、私有请求目录及 random 模式独立命名密钥；不交付完整
-冻结授权、middleware、entrypoint 或全局 Store 引用，命名密钥也不进入默认格式化/JSON 输出。
-`Policy.Host` 和中介的 `Authorization.Host` 共用域名算法，只有后者核验完整冻结授权。
-发布前精确匹配受管 Running 实例和 `user.anas.workload`；`Inspect` 不再取 Incus 名称过滤结果的
-第一项，并拒绝重复的精确身份。收到的文件回执及 `RequestedURL()` 不代表网络 ready。
-撤销必须使用原 `HTTPPublication` 回执，停止/删除后的实例不必重新启动；旧回执不撤销新请求。
+| 产物 | 内容 | 谁改写 |
+| --- | --- | --- |
+| FORWARD 静态规则（`anas-lease-forward-1`—`6`） | 追加在 Docker 规则之后：租约网桥的转发交给 ACL；从租约网桥到 Docker 网桥只放行 Docker 已 DNAT 的连接（`INCUS-R-126`） | 只在 configure 与开机恢复时 |
+| address set `anas-traefik` | Traefik 容器的当前地址，hostd 自己从 Docker 读取 | 同步动作 `incus.traefik.sync`：anasd 在启动时与 Traefik 容器启动时触发（`INCUS-R-118`） |
+| `/var/lib/anas/incus-host/network.json` | 操作者批准的端口绑定范围；incus Hook 读取后交给 Core（`INCUS_PORT_BINDING_RANGE`） | 只在 configure |
+| nft 表 `inet anas_incus_ports` | Docker 式规则链：目的地址是本机（`fib daddr type local`，回环除外）时按四张端口表做 DNAT | 链随 configure；端口表只由同步动作 `incus.ports.sync` 替换 |
+| systemd 单元 `anas-port-{tcp,udp}@<端口>.{socket,service}` | 每个生效的绑定一对：`Accept=no` 的套接字占住端口，常驻的 `sleep infinity`（`DynamicUser=yes`）持有它 | 同步动作先建后删 |
+| `anas-incus-network.service` | 开机在 Docker 之后、Incus 之前运行 `anas-hostd --restore-network` | 只在 configure |
 
-这些客户端检查不是授权边界。生产装配、最小配置投影的自动交付、应用侧恢复、UID/挂载、
-只读观测身份和宿主动作仍待交付；自动 ingress 保持关闭。三处共享客户端镜像及 CI 目录已纳入
-`internal/computeingress` 构建依赖。除 `request_writer_integrity_test.go` 外，新增
-`http_publication_contract_test.go`、`http_publication_projection_test.go` 与
-`request_writer_receipt_regression_linux_test.go`，覆盖命名投影/完整授权区分、精确实例、名称冲突、
-旧回执、取消、跨 writer 替换与文件边界；均未运行，也未执行运行时构建、镜像构建或宿主验收。
+`incus.ports.sync` 不带参数：hostd 读取 `/etc/anas/anasd.yml` 登记的各工作区的活动部署、冻结的
+`compute_network` 与 resource state 记录的槽位地址，逐条校验协议与端口、批准范围、目标在 `lease*` 网桥自己的
+网段内且不是网段/网关/广播地址、端口没有被其他绑定、宿主进程或 Docker 发布占用（`INCUS-R-158`），先为新绑定
+启用占位单元，再以单个 nft 事务替换四张端口表并读回，最后停用不再需要的占位。不合格的条目不生效，记成宿主的
+运行问题（`/var/lib/anas-hostd/runtime-issues.json`）。生效的条目写入 `/var/lib/anas/incus-host/ports.json`，开机时
+占位单元随 `sockets.target` 先于 Docker 启动，`--restore-network` 再按它恢复端口表，占位没能起来的绑定不生效并
+记录运行问题（`INCUS-R-161`）。anasd 在启动时与每次部署激活后触发同步；它另外每分钟及在容器启动时只读检查
+已生效的绑定，发现占位丢失、Docker 发布冲突或端口表漂移时写进对应工作区的运行问题，不做修复（`INCUS-R-162`）。
 
-## HTTP 授权冻结
-
-Core 现已解析可选 `spec.ingress`，在 deployment 的 `compute_ingress` 冻结端口、认证、域名、
-租约身份与密钥引用；启动/激活仍拦截带 ingress 的消费者（M11 实施前的现状，届时改为 `publish.http`）。域名支持 fixed/named/random，random
-取 HMAC-SHA256 的前 128 位；跨租约及已知服务域名冲突在准备期拒绝。`auth: none`（默认）
-不提供访问控制；SNI、Referer 与日志可能泄露 URL，不得发布敏感或可写服务。
+没有 hostd 的宿主上，incus Hook 发布 `INCUS_PORT_BINDING_BLOCKER`（`hostd_missing`、`host_not_configured` 或
+`remote_daemon`），声明端口绑定的 apply 在 Core 准备阶段失败并说明原因（`INCUS-R-164`）。
 
 ## 共用动作调用服务（代码未验收）
 

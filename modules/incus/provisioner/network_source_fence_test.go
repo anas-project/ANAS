@@ -13,7 +13,7 @@ func TestLeaseProfileRequiresSourceFiltering(t *testing.T) {
 	for _, isolation := range []string{"container", "vm"} {
 		t.Run(isolation, func(t *testing.T) {
 			l := testLease(t, isolation)
-			p := desiredLeaseProfile(l, computeclient.NetworkName(l.Sandbox))
+			p := desiredLeaseProfile(l, computeclient.NetworkName(l.Sandbox), nil)
 			for _, key := range []string{"security.mac_filtering", "security.ipv4_filtering"} {
 				if p.Devices["eth0"][key] != "true" {
 					t.Errorf("lease NIC does not require %s", key)

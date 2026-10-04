@@ -144,7 +144,7 @@ deployed.
 
 The container tier is the default because NAS boxes and small hosts do not reliably provide KVM, and a default that
 needs it would make Actions uninstallable on that hardware. Quotas, one-shot instances, absent host mounts and
-sockets, and the egress allowlist are identical in both tiers -- **the only difference is the kernel boundary**. The
+sockets, and the lease network (public internet and Forgejo through Traefik; never the LAN, the host, other leases or other jobs; no incoming connections) are identical in both tiers -- **the only difference is the kernel boundary**. The
 container tier's isolation rests on the host kernel, so a kernel privilege-escalation bug reaches the host. Set
 `incus_vm` explicitly, on a KVM-capable host, for **scopes whose writers span trust domains or that execute
 untrusted input** (typically a public repository taking outside pull requests). Tier selection never happens on its

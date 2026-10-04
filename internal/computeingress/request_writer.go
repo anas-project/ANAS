@@ -48,6 +48,7 @@ type RequestWriter struct {
 }
 
 type requestDirectory interface {
+	list() ([]string, error)
 	lock(context.Context) (func() error, error)
 	read(string) (*os.File, Request, error)
 	publish(context.Context, string, Request) (*os.File, error)
@@ -67,7 +68,7 @@ func OpenRequestWriter(path string) (*RequestWriter, error) {
 }
 
 // Submit atomically publishes one complete, bounded publish request. Retries of
-// the same request are idempotent. A different workload/label cannot overwrite
+// the same request are idempotent. A different address/label cannot overwrite
 // a live slot: withdraw the old receipt first. No consumer-supplied filename,
 // URL, auth, host port, middleware or entrypoint is accepted.
 func (w *RequestWriter) Submit(ctx context.Context, request Request) (*RequestReceipt, error) {
@@ -86,9 +87,6 @@ func (w *RequestWriter) Resume(ctx context.Context, expected Request) (*RequestR
 func (w *RequestWriter) receipt(ctx context.Context, request Request, create bool) (*RequestReceipt, error) {
 	if w == nil || ctx == nil {
 		return nil, ErrRequestWriterUnavailable
-	}
-	if request.Action != "publish" {
-		return nil, ErrRequestConflict
 	}
 	if err := request.Validate(); err != nil {
 		return nil, err
@@ -177,6 +175,55 @@ func (w *RequestWriter) Withdraw(ctx context.Context, receipt *RequestReceipt) e
 	return nil
 }
 
+// Sweep removes every request file for which keep reports false, including
+// files another writer or an earlier process left. Each removal checks the
+// file it read is still the one in place.
+func (w *RequestWriter) Sweep(ctx context.Context, keep func(Request) bool) (int, error) {
+	if w == nil || ctx == nil || keep == nil {
+		return 0, ErrRequestWriterUnavailable
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed || w.directory == nil {
+		return 0, ErrRequestWriterUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, requestWriteTimeout)
+	defer cancel()
+	unlock, err := w.directory.lock(ctx)
+	if err != nil {
+		return 0, err
+	}
+	names, err := w.directory.list()
+	removed := 0
+	for _, name := range names {
+		if err != nil {
+			break
+		}
+		file, request, readErr := w.directory.read(name)
+		if readErr != nil {
+			continue
+		}
+		if keep(request) {
+			_ = file.Close()
+			continue
+		}
+		err = w.directory.remove(ctx, name, file, request)
+		_ = file.Close()
+		if err == nil {
+			removed++
+			if receipt := w.active[name]; receipt != nil {
+				receipt.retired = true
+				if receipt.file != nil {
+					_ = receipt.file.Close()
+					receipt.file = nil
+				}
+				delete(w.active, name)
+			}
+		}
+	}
+	return removed, errors.Join(err, unlock())
+}
+
 func (w *RequestWriter) Close() error {
 	if w == nil {
 		return nil
@@ -204,7 +251,7 @@ func requestSlotName(request Request) string {
 	body, _ := json.Marshal(struct {
 		Instance string `json:"instance"`
 		Port     uint16 `json:"port"`
-	}{request.InstanceID, request.GuestPort})
+	}{request.Instance, request.Port})
 	digest := sha256.Sum256(body)
 	// Full 256-bit digest, 57-character basename: within ReadRequest's limit.
 	return "http-" + strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(digest[:])) + ".json"

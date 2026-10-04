@@ -343,6 +343,12 @@ func (h *handler) routeSpecs() []routeSpec {
 				},
 			)
 		}
+		if h.deploymentHTTP.computeNetworkFactory != nil {
+			routes = append(routes, routeSpec{
+				policy:  RoutePolicy{Method: http.MethodGet, Pattern: "/api/v1/workspaces/{ws}/compute/leases", Permission: PermissionModuleRead, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess},
+				handler: h.listComputeLeaseNetworks,
+			})
+		}
 		// Invocation is registered only when the executor can actually run the
 		// job. Accepting an invoke that nothing will ever execute would leave a
 		// queued job the operator cannot resolve.
@@ -569,11 +575,12 @@ func RouteInventory(registry *Registry, factory ServiceFactory) ([]RoutePolicy, 
 	h := &handler{registry: registry, factory: factory, hostActions: &HostActionOptions{}, jobs: &jobHTTPState{
 		cancel: func(context.Context, string) (consolejobs.Job, error) { return consolejobs.Job{}, nil },
 	}, deploymentHTTP: &deploymentHTTPState{
-		stepUp:               routeInventoryStepUp{},
-		serviceFactory:       func(string) application.DeploymentService { return nil },
-		moduleFactory:        func(string, application.EventSink) application.ModuleManagementService { return nil },
-		maintenanceFactory:   func(string, application.EventSink) application.MaintenanceService { return nil },
-		moduleCommandFactory: func(string, application.EventSink) application.ModuleCommandService { return nil },
+		stepUp:                routeInventoryStepUp{},
+		serviceFactory:        func(string) application.DeploymentService { return nil },
+		moduleFactory:         func(string, application.EventSink) application.ModuleManagementService { return nil },
+		maintenanceFactory:    func(string, application.EventSink) application.MaintenanceService { return nil },
+		moduleCommandFactory:  func(string, application.EventSink) application.ModuleCommandService { return nil },
+		computeNetworkFactory: func(string) application.ComputeNetworkService { return nil },
 	}}
 	routes := h.routeSpecs()
 	if err := validateRouteSpecs(routes); err != nil {

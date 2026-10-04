@@ -115,16 +115,21 @@ func calculate(module string, e map[string]string, secrets *secretStore) error {
 	// misconfiguration.
 	e["INCUS_NETWORK_IPV6"] = boolValue(e["IPv6"] != "false" && e["HOST_HAS_IPV6"] == "true")
 
-	if err := resolveConnection(e, secrets); err != nil {
+	automatic, err := resolveConnection(e, secrets)
+	if err != nil {
 		return err
 	}
 	if e["INCUS_STORAGE_POOL"] == "" {
 		e["INCUS_STORAGE_POOL"] = "default"
 	}
+	if err := validateLANExtraSubnets(e["INCUS_LAN_EXTRA_SUBNETS"]); err != nil {
+		return err
+	}
+	publishPortBindingRange(e, automatic)
 	return nil
 }
 
-func resolveConnection(e map[string]string, secrets *secretStore) error {
+func resolveConnection(e map[string]string, secrets *secretStore) (bool, error) {
 	connectionKeys := []string{
 		"INCUS_ENDPOINT",
 		"INCUS_SERVER_CERTIFICATE_B64",
@@ -138,20 +143,20 @@ func resolveConnection(e map[string]string, secrets *secretStore) error {
 		}
 	}
 	if set > 0 && set != len(connectionKeys) {
-		return fmt.Errorf("incus connection settings must be either all explicit or all omitted for host auto-connection")
+		return false, fmt.Errorf("incus connection settings must be either all explicit or all omitted for host auto-connection")
 	}
 	automatic := false
 	if secrets != nil {
 		source, binding := secrets.values[autoSourceSecretKey], secrets.values[autoBindingSecretKey]
 		if source != "" || binding != "" {
 			if source != autoSourceValue || !validAutoBindingDigest(binding) {
-				return fmt.Errorf("incus automatic connection binding is incomplete or invalid")
+				return false, fmt.Errorf("incus automatic connection binding is incomplete or invalid")
 			}
 			automatic = true
 			if set == len(connectionKeys) {
 				for _, key := range connectionKeys {
 					if secrets.values[key] == "" || secrets.values[key] != e[key] {
-						return fmt.Errorf("incus explicit values conflict with the existing automatic binding; reconcile the connection source before applying")
+						return false, fmt.Errorf("incus explicit values conflict with the existing automatic binding; reconcile the connection source before applying")
 					}
 				}
 			}
@@ -160,22 +165,23 @@ func resolveConnection(e map[string]string, secrets *secretStore) error {
 	if set == 0 || automatic {
 		bundle, err := loadDefaultHostConnectionBundle()
 		if err != nil {
-			return err
+			return false, err
 		}
 		if e["INCUS_IMAGE_ARCHITECTURE"] != "" && e["INCUS_IMAGE_ARCHITECTURE"] != bundle.Architecture {
-			return fmt.Errorf("incus image_architecture does not match the host connection bundle")
+			return false, fmt.Errorf("incus image_architecture does not match the host connection bundle")
 		}
 		if e["INCUS_STORAGE_POOL"] != "" && e["INCUS_STORAGE_POOL"] != bundle.StoragePool {
-			return fmt.Errorf("incus storage_pool does not match the host connection bundle")
+			return false, fmt.Errorf("incus storage_pool does not match the host connection bundle")
 		}
 		if err := applyHostConnectionBundle(e, secrets, bundle); err != nil {
-			return err
+			return false, err
 		}
 		e["INCUS_NETWORK_NAME"] = bundle.ControlNetwork
 		e["INCUS_NETWORK_EXTERNAL"] = "true"
 		e["INCUS_CONTROL_NETWORK_NAME"] = bundle.ControlNetwork
+		automatic = true
 	} else if e["INCUS_IMAGE_ARCHITECTURE"] == "" {
-		return fmt.Errorf("incus image_architecture is required for an explicit remote daemon")
+		return false, fmt.Errorf("incus image_architecture is required for an explicit remote daemon")
 	}
 
 	// Refuse at apply time rather than at provision time. Every one of these is
@@ -184,7 +190,7 @@ func resolveConnection(e map[string]string, secrets *secretStore) error {
 	// one that never starts.
 	endpoint, err := url.Parse(e["INCUS_ENDPOINT"])
 	if err != nil || endpoint.Scheme != "https" || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.ForceQuery || endpoint.Fragment != "" || endpoint.Opaque != "" || (endpoint.Path != "" && endpoint.Path != "/") || endpoint.RawPath != "" {
-		return fmt.Errorf("incus endpoint must be an HTTPS origin without credentials, path, query or fragment")
+		return false, fmt.Errorf("incus endpoint must be an HTTPS origin without credentials, path, query or fragment")
 	}
 	for key, kind := range map[string]string{
 		"INCUS_SERVER_CERTIFICATE_B64": "CERTIFICATE",
@@ -192,7 +198,7 @@ func resolveConnection(e map[string]string, secrets *secretStore) error {
 		"INCUS_ADMIN_KEY_B64":          "PRIVATE KEY",
 	} {
 		if err := validatePEM(key, e[key], kind); err != nil {
-			return err
+			return false, err
 		}
 	}
 	// Config uses the manifest's canonical *_CERTIFICATE_B64 names. The
@@ -201,7 +207,7 @@ func resolveConnection(e map[string]string, secrets *secretStore) error {
 	// Core's sensitive-value propagation taints these equal-value aliases.
 	e["INCUS_SERVER_CERT_B64"] = e["INCUS_SERVER_CERTIFICATE_B64"]
 	e["INCUS_ADMIN_CERT_B64"] = e["INCUS_ADMIN_CERTIFICATE_B64"]
-	return nil
+	return automatic, nil
 }
 
 // validatePEM checks shape only. It never returns the value, and never says

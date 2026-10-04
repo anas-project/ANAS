@@ -35,7 +35,8 @@ Provider 的 MAC/IPv4 来源过滤与真实 expanded NIC 检查已连接，仍�
 物理来源验证。IPv6 来源过滤依赖宿主 `br_netfilter`（Docker 28 起默认不加载），要求它会让租约实例
 无法启动，已从 profile 移除；宿主供给不启用该模块，伪造源改由 Provider 自有网桥 ACL 在转发/接收时丢弃，
 宿主卸载盘点存在任何 network ACL 即阻止删包。默认 Docker 下真实 guest/Forgejo 验收及重启恢复未关闭。
-2026-09-28 起，出站改为租约级静态分级（§5.4）；上面这套逐实例许可将停用并删除。
+2026-09-28 起，出站改为租约级静态分级（§5.4）；上面这套逐实例许可已于 2026-09-30 删除，分级出站、入站档位、
+HTTP 发布中介与端口绑定于 2026-10-03 实现（§5.1.7、§5.1.8、§5.4、§5.5），实机验收待办。
 
 启用事务的失败出口统一执行一次有界撤回：包括许可刷新后读回、最终持久化、调用方取消
 及会话关闭失败。撤回在原宿主状态锁下使用独立30秒上下文，每步仍须先持久化意图；不
@@ -971,7 +972,7 @@ mTLS 客户端证书认证，Traefik 终止 TLS 会打断它，且暴露它等�
 LAN 未来启用前必须重新验证后端可达性、双协议族边界及宿主路由；不承诺复用当前链路即可支持，
 也不以 macvlan shim 作为绕开授权的捷径。
 
-### 5.1.7 选定方案：HTTP 发布经租约 ACL 与 anasd 内的中介（2026-09-28 定案，未实现）
+### 5.1.7 选定方案：HTTP 发布经租约 ACL 与 anasd 内的中介（2026-09-28 定案，2026-10-03 实现，实机待验收）
 
 ```text
 公网 IPv4/IPv6 HTTPS
@@ -1003,6 +1004,14 @@ Traefik 地址；ACL 链首条 `ct state established,related accept` 让实例�
 **生命周期。** 共享客户端停止或删除实例时撤销它的发布，janitor 清理实例已不存在的请求。部署改变或撤销授权时，
 Core 在 apply 中删除受影响租约的路由文件，Provider 同步 ACL，CLI 与控制台部署都覆盖。撤销单个发布只让新请求
 失败；经 Traefik 已建立的长连接（例如 WebSocket）持续到任一方关闭或实例停止。
+
+**实现（2026-10-03）。** 请求目录在 `.anas/runtime-state/compute-http/<消费者>.<资源>/`，由 Core 按消费者 manifest
+的 `http_request_owner` 建为 0700，路径经 `HTTP_REQUEST_DIR` 投影给消费者挂载。中介（`cmd/anasd/compute_http.go`
+调用 `runner.ReconcileComputeHTTP`）每 3 秒对每个登记工作区做一次全量重算，以短周期轮询代替文件事件：一次重算
+只读几个小文件，省去 inotify 的平台代码。路由写在活动部署的 Traefik 运行时目录 `dynamic/compute-http/`，
+文件名带租约、授权摘要与域名摘要；Traefik 的文件 provider 只监视顶层目录，所以每次变更后改写顶层的
+`compute-http.reload`。激活时 Core 按授权摘要（不含部署 ID）删除授权被移除或改变的租约的路由。代码与单元测试
+见 `internal/runner/compute_http.go`、`internal/computeingress/route.go`；真实 Traefik、guest 与两档的端到端尚未运行。
 
 **取代的旧方案。** 旧方案把每次发布当成对某个实例某一次运行的授权：宿主逐次发布加 30 秒期限的 nft 许可，另有
 `/32` 设备路由、永久邻居、回复来源绑定与 conntrack 清理，中介经 hostd 观察实例身份后续期。期限防的是中介失联时
@@ -1323,7 +1332,7 @@ connection，保存 removing 意图，再删除并从完整库存确认缺失。
 本轮本机 Go 回归与交叉编译通过，原生用例未执行。真实地址分配生命周期、应用健康身份和生产服务接线
 仍未交付，production ingress 继续关闭，不能由安装配置字符串或这些测试自动放开。
 
-### 5.1.8 端口绑定：Docker 式四层转发（2026-09-29 定稿，未实现）
+### 5.1.8 端口绑定：Docker 式四层转发（2026-09-29 定稿，2026-10-03 实现，实机待验收）
 
 HTTP 发布是七层反向代理：Traefik 终止 HTTPS，按域名分流，以 HTTP 转给 guest，可以挂认证中间件。TCP、UDP 服务
 （SSH、数据库、游戏服务器等）需要的是另一件事：把宿主上的一个端口原样转到实例，报文不改、客户端地址保留。两者
@@ -1372,6 +1381,10 @@ HTTP 发布是七层反向代理：Traefik 终止 HTTPS，按域名分流，以 
 - **运行时检查**：anasd 定期并在 Docker 事件时检查已生效的绑定，发现冲突、占位丢失或规则漂移时记录运行问题，见
   [运行问题记录要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/runtime-issues.md)。
 - **不提供认证**：ANAS 不为端口绑定提供认证，guest 服务必须自行认证。实例未运行时，连接会超时。
+- **实现（2026-10-03）**：nft 表 `inet anas_incus_ports` 与占位模板 `anas-port-{tcp,udp}@.{socket,service}` 随
+  `incus.configure` 安装；同步动作 `incus.ports.sync` 与开机恢复见 `internal/incusprovision/port_bindings.go`，
+  anasd 的触发与检查见 `cmd/anasd/port_bindings.go`，运行问题记录见 `internal/runtimeissues`。规则链沿用
+  2026-09-30 探测验证过的写法；产品实现在真实宿主上的端到端（含开机顺序与 IPv6）尚未运行。
 - **不采用的机制**：
   - **Incus network forward**：只能监听具体地址，宿主新增地址要重新 apply；监听地址按网络占用，多个租约不能共用
     宿主地址。这是有意的设计，维护者在论坛说明不同网络可能用相同网段，所以转发必须绑定到网络
@@ -1416,7 +1429,7 @@ ARP）。v6 需要 NDP，是新代码。
 长驻档额外涉及持久卷和稳定地址，不是入站能力的前置条件。租约网桥 ACL 是后端路径上的唯一放行点，发布端口
 与宿主端口在 apply 时冻结，消费者不直接持有任意宿主端口。
 
-### 5.4 出站：租约级分级（2026-09-28 定案，未实现）
+### 5.4 出站：租约级分级（2026-09-28 定案，2026-10-03 实现，实机待验收）
 
 默认 Docker 把 FORWARD 默认策略设为 DROP，租约实例出不了网桥。出站改为按租约的静态策略，取代 §1 描述的
 逐实例 30 秒许可。需求见
@@ -1441,7 +1454,7 @@ ARP）。v6 需要 NDP，是新代码。
   来源时匹配 masquerade 之前的 Traefik 地址；默认拒绝入站不影响回包、DHCP 与 DNS；`security.port_isolation`
   即时生效；Docker 停启后 Traefik 地址确实会变。
 
-### 5.5 入站档位与多租约规则（2026-09-28 定案，2026-09-29 定稿，未实现）
+### 5.5 入站档位与多租约规则（2026-09-28 定案，2026-09-29 定稿，2026-10-03 实现，实机待验收）
 
 需求见 [Incus 要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/incus-module.md) §7septies 与
 `INCUS-R-130`—`R-164`。
@@ -1489,7 +1502,7 @@ VM 的用户专属租约里，由 ANAS 代用户持有证书：持久磁盘、�
 | 槽位 `network.slots` | Module，租约声明：槽位名 → 实例名 | 无 | apply 冻结；地址由 Provider 分配 |
 | HTTP 发布 `publish.http` | Module，租约声明：guest 端口、认证（`none`/`forward_auth`）、域名模式与前缀 | 不发布；认证 `none` | apply 冻结 |
 | 端口绑定 `publish.ports` | Module，租约声明：协议、宿主端口或 `auto`、槽位、guest 端口 | 无 | apply 冻结，hostd 同步 |
-| HTTP 发布请求 | 消费者运行时：承接实例、它的地址、guest 端口、named 模式的 label | — | 中介校验后写路由文件 |
+| HTTP 发布请求 | 消费者运行时：承接实例、它的地址、guest 端口、named 模式的 label（random 模式是共享客户端派生的标签） | — | 中介校验后写路由文件 |
 
 不可配置、由 ANAS 决定的：租约网段与网关、槽位的固定地址、各租约网桥的默认拒绝入站、宿主上那条静态转发规则与
 Docker 式规则链、Traefik 地址清单的内容、端口占位单元，以及 hostd 调用记录的保留期（30 天）。

@@ -9,8 +9,8 @@ import (
 )
 
 // Freeze after calculate, when the capability's provider-owned middleware is
-// available, but before rendering/sealing. No route or consumer request mount
-// is produced here. Ingress-bearing deployments remain blocked from activation.
+// available, but before rendering/sealing. The frozen grant is what the
+// mediator in anasd publishes against; no route is produced here.
 func (a *app) prepareComputeIngress(deploymentID string) error {
 	var grants []*computeingress.Authorization
 	for i := range a.resourceRequests {
@@ -104,18 +104,6 @@ func validateFrozenComputeIngress(r ResourceRequest, deploymentID string) error 
 	if g := r.ComputeIngress; g != nil {
 		if g.Deployment != deploymentID || g.Consumer != r.Consumer || g.Resource != r.ID || g.Provider != r.Provider || g.Interface != r.Interface || g.LeaseSecretRef != r.LeaseSecretKey {
 			return fmt.Errorf("frozen HTTP authorization does not match the deployment lease")
-		}
-	}
-	return nil
-}
-
-func (a *app) requireComputeIngressDisabled(selection []string) error {
-	for _, r := range a.resourceRequests {
-		if r.Contract != "compute" || !contains(selection, r.Consumer) {
-			continue
-		}
-		if _, declared := r.Spec["ingress"]; declared || r.ComputeIngress != nil {
-			return fmt.Errorf("resource %s.%s HTTP ingress is not enabled: trusted runtime mediation and real-host acceptance are still pending", r.Consumer, r.ID)
 		}
 	}
 	return nil

@@ -7,6 +7,7 @@ package deployment
 import (
 	"github.com/anas-project/ANAS/internal/computeimage"
 	"github.com/anas-project/ANAS/internal/computeingress"
+	"github.com/anas-project/ANAS/internal/computenet"
 	"github.com/anas-project/ANAS/internal/configschema"
 )
 
@@ -227,6 +228,9 @@ type Resource struct {
 	Spec            map[string]any                `yaml:"spec" json:"spec"`
 	ComputeImages   *computeimage.Snapshot        `yaml:"compute_images,omitempty" json:"compute_images,omitempty"`
 	ComputeIngress  *computeingress.Authorization `yaml:"compute_ingress,omitempty" json:"compute_ingress,omitempty"`
+	// ComputeNetwork is the frozen lease network: tiers, slots and port
+	// bindings with the host ports Core resolved. hostd reads it back.
+	ComputeNetwork *computenet.Network `yaml:"compute_network,omitempty" json:"compute_network,omitempty"`
 	// SecretKey is the relational_database v1 compatibility field. New
 	// Contracts use CredentialSecretKey so deployment artifacts do not describe
 	// every generated credential as a database password.

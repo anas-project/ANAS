@@ -15,10 +15,13 @@ import (
 	"fmt"
 	"math/big"
 	"net/netip"
+	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/anas-project/ANAS/internal/incushost"
+	"github.com/anas-project/ANAS/internal/runtimeissues"
 )
 
 type runtimeOps interface {
@@ -42,6 +45,20 @@ type runtimeOps interface {
 	RemoveStoragePool(context.Context, string, string) error
 	RemoveManagementCertificate(context.Context, string) error
 	RemovePackages(context.Context, incushost.Recipe, []string) error
+	ApplyLeaseForwarding(context.Context) error
+	RemoveLeaseForwarding(context.Context) error
+	RestoreControlFirewall(context.Context, ControlNetworkPlan) error
+	InstallNetworkUnit(context.Context) error
+	RemoveNetworkUnit(context.Context) error
+	EnsureTraefikAddressSet(context.Context) error
+	SyncTraefikAddressSet(context.Context) ([]string, error)
+	RemoveTraefikAddressSet(context.Context) error
+	WriteNetworkPolicy(context.Context, int, int) error
+	RemoveNetworkPolicy(context.Context) error
+	InstallPortBindings(context.Context) error
+	RemovePortBindings(context.Context) error
+	SyncPortBindings(context.Context, int, int) (PortSyncResult, error)
+	RestorePortBindings(context.Context) ([]PortRejection, error)
 }
 
 type Backend struct {
@@ -233,6 +250,21 @@ func buildPlan(request Request, obs Observation, state State) (Plan, error) {
 	if !obs.IncusHTTPSControl || !obs.IncusAfterDocker {
 		plan.Steps = append(plan.Steps, Step{Phase: PhaseConfigure, ID: "control-listener", Effect: "order Incus after Docker and serve its HTTPS API only on the control bridge gateway", Owned: true, Destructive: true})
 	}
+	if !obs.LeaseForwardingInstalled {
+		plan.Steps = append(plan.Steps, Step{Phase: PhaseConfigure, ID: "lease-forwarding", Effect: "append fixed FORWARD rules after Docker's: lease bridges forward under their Incus ACL and reach Docker bridges only on published ports", Owned: true, Destructive: true})
+	}
+	if !obs.TraefikAddressSetExists {
+		plan.Steps = append(plan.Steps, Step{Phase: PhaseConfigure, ID: "traefik-address-set", Effect: "create the anas-traefik address set and keep it synchronized from the Traefik containers hostd reads from Docker", Owned: true, Destructive: true})
+	}
+	if !obs.NetworkPolicyCurrent {
+		plan.Steps = append(plan.Steps, Step{Phase: PhaseConfigure, ID: "port-binding-range", Effect: fmt.Sprintf("approve host ports %d-%d for compute port bindings", request.PortRangeFirst, request.PortRangeLast), Owned: true, Destructive: true})
+	}
+	if !obs.PortBindingsInstalled {
+		plan.Steps = append(plan.Steps, Step{Phase: PhaseConfigure, ID: "port-bindings", Effect: "install the Docker-style port binding chain (empty until a deployment declares bindings) and the systemd units that hold bound host ports", Owned: true, Destructive: true})
+	}
+	if !obs.NetworkUnitInstalled {
+		plan.Steps = append(plan.Steps, Step{Phase: PhaseConfigure, ID: "network-restore-unit", Effect: "enable a boot unit that restores the ANAS host network rules after Docker starts", Owned: true, Destructive: true})
+	}
 	if !obs.ManagementTrusted {
 		plan.Steps = append(plan.Steps, Step{Phase: PhaseEnroll, ID: "management-credential", Effect: "generate stable management client credential and trust it in Incus", Owned: true, Destructive: true})
 	}
@@ -248,7 +280,7 @@ func buildPlan(request Request, obs Observation, state State) (Plan, error) {
 	if state.Ownership.ExternalDaemonPreserved {
 		plan.Warnings = append(plan.Warnings, "preexisting Incus daemon is classified external and will be preserved on uninstall")
 	}
-	plan.Steps = append(plan.Steps, Step{Phase: PhaseUninstall, ID: "owned-artifacts-only", Effect: "remove only ANAS-owned trust, control listener, firewall, network, pool and ANAS-installed packages after guest preflight", Destructive: true})
+	plan.Steps = append(plan.Steps, Step{Phase: PhaseUninstall, ID: "owned-artifacts-only", Effect: "remove only ANAS-owned trust, network rules and boot unit, Traefik address set, control listener, firewall, network, pool and ANAS-installed packages after guest preflight", Destructive: true})
 	return finalizePlan(plan), nil
 }
 
@@ -481,7 +513,185 @@ func (b *Backend) applyConfigure(ctx context.Context, request Request, plan Plan
 			return ApplyResult{Disposition: "partial"}, err
 		}
 	}
+	return b.applyLeaseNetworkPolicy(ctx, request, plan, obs, state)
+}
+
+// applyLeaseNetworkPolicy installs the host side of the lease network policy:
+// the FORWARD rules, the Traefik address set, the approved port range and the
+// boot unit that restores them. Each is recorded as owned before its effect,
+// so an interrupted configure is still undone by uninstall.
+func (b *Backend) applyLeaseNetworkPolicy(ctx context.Context, request Request, plan Plan, obs Observation, state *State) (ApplyResult, error) {
+	steps := []struct {
+		done   bool
+		id     string
+		own    func()
+		effect func() error
+		check  func(Observation) bool
+		detail string
+	}{
+		{obs.LeaseForwardingInstalled, "configure.lease-forwarding", func() { state.Ownership.LeaseForwarding = true },
+			func() error { return b.rt.ApplyLeaseForwarding(ctx) }, func(o Observation) bool { return o.LeaseForwardingInstalled }, "lease forwarding rules installed"},
+		{obs.TraefikAddressSetExists, "configure.traefik-address-set", func() { state.Ownership.TraefikAddressSet = true },
+			func() error { return b.rt.EnsureTraefikAddressSet(ctx) }, func(o Observation) bool { return o.TraefikAddressSetExists }, "Traefik address set owned"},
+		{obs.NetworkPolicyCurrent, "configure.port-binding-range", func() {
+			state.Ownership.NetworkPolicy = true
+			state.Ownership.PortRangeFirst, state.Ownership.PortRangeLast = request.PortRangeFirst, request.PortRangeLast
+		}, func() error { return b.rt.WriteNetworkPolicy(ctx, request.PortRangeFirst, request.PortRangeLast) },
+			func(o Observation) bool { return o.NetworkPolicyCurrent }, "port binding range approved"},
+		{obs.PortBindingsInstalled, "configure.port-bindings", func() { state.Ownership.PortBindings = true },
+			func() error { return b.rt.InstallPortBindings(ctx) }, func(o Observation) bool { return o.PortBindingsInstalled }, "port binding chain installed"},
+		{obs.NetworkUnitInstalled, "configure.network-restore-unit", func() { state.Ownership.NetworkUnit = true },
+			func() error { return b.rt.InstallNetworkUnit(ctx) }, func(o Observation) bool { return o.NetworkUnitInstalled }, "network restore unit enabled"},
+	}
+	for _, step := range steps {
+		if step.done {
+			continue
+		}
+		intent, err := b.beginEffect(ctx, state, PhaseConfigure, plan.Digest, step.id)
+		if err != nil {
+			return ApplyResult{Disposition: "partial"}, err
+		}
+		step.own()
+		if err := step.effect(); err != nil {
+			saveErr := b.finishEffect(state, intent, "failed", step.id+" failed")
+			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
+		}
+		refreshed, err := b.rt.Observe(ctx, request, *state)
+		if err != nil || !step.check(refreshed) {
+			saveErr := b.finishEffect(state, intent, "failed", step.id+" readback failed")
+			return ApplyResult{Disposition: "partial", Blockers: []string{strings.TrimPrefix(step.id, "configure.") + "_readback_failed"}}, errors.Join(ErrExternalEffects, err, saveErr)
+		}
+		if err := b.finishEffect(state, intent, "ok", step.detail); err != nil {
+			return ApplyResult{Disposition: "partial"}, err
+		}
+	}
 	return ApplyResult{Disposition: "configured"}, nil
+}
+
+// SyncTraefik refreshes the Traefik address set from Docker. It is the
+// bounded sync action incus.configure approved once (HOSTACT-R-014): it
+// requires that approval, takes no input and writes nothing else.
+func (b *Backend) SyncTraefik(ctx context.Context) (TraefikSyncResult, error) {
+	if b == nil || b.store == nil || b.rt == nil || ctx == nil {
+		return TraefikSyncResult{}, ErrInvalid
+	}
+	lock, err := b.store.Lock(ctx)
+	if err != nil {
+		return TraefikSyncResult{}, err
+	}
+	defer lock.Unlock()
+	state, err := b.store.Load(ctx)
+	if err != nil {
+		return TraefikSyncResult{}, err
+	}
+	if !state.Ownership.TraefikAddressSet || state.Disabled {
+		return TraefikSyncResult{Schema: TraefikSyncSchema, Approved: false}, ErrUnconfirmed
+	}
+	addresses, err := b.rt.SyncTraefikAddressSet(ctx)
+	if err != nil {
+		return TraefikSyncResult{}, errors.Join(ErrExternalEffects, err)
+	}
+	return TraefikSyncResult{Schema: TraefikSyncSchema, Approved: true, AddressSet: TraefikAddressSet, Addresses: addresses}, nil
+}
+
+// RestoreHostNetwork re-applies the host network rules incus.configure
+// installed: the control-bridge firewall and the lease forwarding rules. A
+// restart drops both; anas-incus-network.service runs this after Docker has
+// rebuilt its own chains and before Incus starts. It adds nothing the state
+// does not record as owned and takes no input.
+func (b *Backend) RestoreHostNetwork(ctx context.Context) error {
+	if b == nil || b.store == nil || b.rt == nil || ctx == nil {
+		return ErrInvalid
+	}
+	lock, err := b.store.Lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer lock.Unlock()
+	state, err := b.store.Load(ctx)
+	if err != nil {
+		return err
+	}
+	if state.Disabled {
+		return nil
+	}
+	var failures []error
+	if state.Ownership.FirewallRules {
+		plan, err := controlPlans(Request{}, Observation{}, state)
+		if err == nil {
+			err = b.rt.RestoreControlFirewall(ctx, plan)
+		}
+		failures = append(failures, err)
+	}
+	if state.Ownership.LeaseForwarding {
+		failures = append(failures, b.rt.ApplyLeaseForwarding(ctx))
+	}
+	if state.Ownership.PortBindings {
+		rejected, err := b.rt.RestorePortBindings(ctx)
+		failures = append(failures, err, reportPortRejections(runtimeissues.SourceBoot, rejected))
+	}
+	return errors.Join(failures...)
+}
+
+// SyncPorts is the bounded sync action incus.ports.sync (HOSTACT-R-014,
+// INCUS-R-152, R-158): with the chain incus.configure installed and the range
+// it approved, hostd replaces the port maps from the frozen deployments it
+// reads itself. The request carries nothing. Bindings that fail a check do
+// not take effect and are recorded as host runtime issues.
+func (b *Backend) SyncPorts(ctx context.Context) (PortSyncResult, error) {
+	if b == nil || b.store == nil || b.rt == nil || ctx == nil {
+		return PortSyncResult{}, ErrInvalid
+	}
+	lock, err := b.store.Lock(ctx)
+	if err != nil {
+		return PortSyncResult{}, err
+	}
+	defer lock.Unlock()
+	state, err := b.store.Load(ctx)
+	if err != nil {
+		return PortSyncResult{}, err
+	}
+	if !state.Ownership.PortBindings || !state.Ownership.NetworkPolicy || state.Disabled || state.Ownership.PortRangeFirst == 0 {
+		return PortSyncResult{Schema: PortSyncSchema, Approved: false, Bindings: []PortBinding{}, Rejected: []PortRejection{}}, ErrUnconfirmed
+	}
+	result, err := b.rt.SyncPortBindings(ctx, state.Ownership.PortRangeFirst, state.Ownership.PortRangeLast)
+	if err != nil {
+		return result, errors.Join(ErrExternalEffects, err)
+	}
+	return result, reportPortRejections(runtimeissues.SourceHostd, result.Rejected)
+}
+
+// hostIssues is the host runtime issue store; tests replace it.
+var hostIssues = func() *runtimeissues.Store {
+	return runtimeissues.Open(runtimeissues.HostPath, func(format string, args ...any) {
+		fmt.Fprintf(os.Stderr, format+"\n", args...)
+	})
+}
+
+// reportPortRejections records this source's current rejections and
+// resolves the ones it no longer sees (ISSUE-R-002, R-004).
+func reportPortRejections(source string, rejected []PortRejection) error {
+	findings := []runtimeissues.Finding{}
+	for _, r := range rejected {
+		key := PortBindingIssuePrefix + r.Workspace + "/"
+		if r.Lease == "" {
+			key += "state"
+		} else {
+			key += r.Lease + "/" + r.key()
+		}
+		findings = append(findings, runtimeissues.Finding{Key: key, Level: runtimeissues.LevelError,
+			Message: fmt.Sprintf("port binding %s of %s in workspace %s did not take effect: %s", r.key(), r.Lease, r.Workspace, r.Reason)})
+	}
+	return hostIssues().Reconcile(source, PortBindingIssuePrefix, findings)
+}
+
+const TraefikSyncSchema = "anas.incus-traefik-sync/v1"
+
+type TraefikSyncResult struct {
+	Schema     string   `json:"schema"`
+	Approved   bool     `json:"approved"`
+	AddressSet string   `json:"address_set,omitempty"`
+	Addresses  []string `json:"addresses"`
 }
 
 func (b *Backend) applyEnroll(ctx context.Context, request Request, plan Plan, obs Observation, state *State) (ApplyResult, error) {
@@ -628,6 +838,39 @@ func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan
 		}
 		state.Ownership.ManagementTrust = ""
 		if err := b.finishEffect(state, intent, "ok", "trust removed"); err != nil {
+			return ApplyResult{Disposition: "partial"}, err
+		}
+	}
+	// The boot unit goes first so a restart in the middle cannot restore
+	// what the following steps remove.
+	for _, step := range []struct {
+		owned  *bool
+		id     string
+		effect func() error
+		detail string
+	}{
+		{&state.Ownership.NetworkUnit, "uninstall.network-restore-unit", func() error { return b.rt.RemoveNetworkUnit(ctx) }, "network restore unit removed"},
+		{&state.Ownership.PortBindings, "uninstall.port-bindings", func() error { return b.rt.RemovePortBindings(ctx) }, "port bindings, holds and chain removed"},
+		{&state.Ownership.LeaseForwarding, "uninstall.lease-forwarding", func() error { return b.rt.RemoveLeaseForwarding(ctx) }, "lease forwarding rules removed"},
+		{&state.Ownership.TraefikAddressSet, "uninstall.traefik-address-set", func() error { return b.rt.RemoveTraefikAddressSet(ctx) }, "Traefik address set removed"},
+		{&state.Ownership.NetworkPolicy, "uninstall.port-binding-range", func() error { return b.rt.RemoveNetworkPolicy(ctx) }, "port binding range withdrawn"},
+	} {
+		if !*step.owned {
+			continue
+		}
+		intent, err := b.beginEffect(ctx, state, PhaseUninstall, plan.Digest, step.id)
+		if err != nil {
+			return ApplyResult{Disposition: "partial"}, err
+		}
+		if err := step.effect(); err != nil {
+			saveErr := b.finishEffect(state, intent, "failed", step.id+" failed")
+			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, err, saveErr)
+		}
+		*step.owned = false
+		if step.id == "uninstall.port-binding-range" {
+			state.Ownership.PortRangeFirst, state.Ownership.PortRangeLast = 0, 0
+		}
+		if err := b.finishEffect(state, intent, "ok", step.detail); err != nil {
 			return ApplyResult{Disposition: "partial"}, err
 		}
 	}

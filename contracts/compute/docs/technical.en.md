@@ -60,6 +60,9 @@ resources:
         image_allowlist: [{fingerprint: "<64 lowercase SHA-256 hex characters>"}]
         credential: {policy: generated}
         deletion_policy: retain
+        # Optional; by default instances reach public addresses only and accept no
+        # incoming connection. See "Lease network" below.
+        network: {egress: internet, module_access: true}
 ```
 
 A module that drops these two declarations takes no part in resource resolution and receives no
@@ -76,9 +79,12 @@ secret, and calls the provider's idempotent `ensure` before the consumer starts.
    a project that belongs to another lease, or that another restricted credential can drive, must be
    refused rather than taken over (the sandbox name repeats in every workspace and proves nothing);
 3. write `quota` onto the project's own limits rather than trusting the caller to stay within them;
-4. create a dedicated bridge in the default project and a lease profile in the consumer project, then **read the profile back**
-   and assert it carries exactly one root disk (on the managed pool, with no host source) and one NIC
-   attached to that managed network;
+4. create a dedicated bridge in the default project with its network ACL (rules from the frozen egress and ingress
+   tiers and publications) and a lease profile in the consumer project, then **read the profile back** and assert it
+   carries exactly one root disk (on the managed pool, with no host source) and one NIC attached to that managed
+   network. The `ensure` result reports the bridge name, its IPv4 subnet and gateway, the IPv6 subnet and gateway
+   when enabled, and every slot's fixed addresses; Core records them as `lease_network` in resource state
+   (`INCUS-R-159`);
 5. register the Runner's client certificate as a restricted certificate bound to that project only,
    never using a global administrative credential;
 6. converge on repeat invocation, producing no second project, network, or trust entry.
@@ -88,7 +94,7 @@ secret, and calls the provider's idempotent `ensure` before the consumer starts.
 Incus bridges are Provider-owned resources in the default project. Consumer projects disable
 `features.networks` and set `restricted.networks.access` to exactly their bridge, with managed NICs.
 Instances, profiles, quotas and certificate scope remain in each consumer project. Different bridges
-alone do not establish packet-level isolation; real-host validation remains necessary.
+alone do not establish packet-level isolation; the ACL described under "Lease network" does.
 
 
 An instance's numeric limits come from the consumer; **everything else comes from the profile** --
@@ -99,8 +105,11 @@ ownership prevents.
 
 Each lease gets its own managed bridge, so one consumer's instances do not share an egress path with
 another's. The network name is not the sandbox name: a Linux bridge interface is capped at 15
-characters while `anas-forgejo-runners` is already 20, so it is derived by hashing the sandbox name --
-short, stable across applies, and distinct between leases.
+characters while `anas-forgejo-runners` is already 20, so it is `lease` followed by the first 10 hex
+digits of the sandbox name's SHA-256 -- short, stable across applies, and distinct between leases. The
+prefix is `lease`, not `anas`: the host's static forwarding rules match exactly this prefix, while
+`anas-helper` may operate on every `anas*` interface (`INCUS-R-127`). Leases before 2026-10 used `anas`
+with the same digest; the Provider removes the unused old bridge once a lease has moved.
 
 A guest may leave only with its lease network's own addresses. Egress NAT rewrites sources inside the
 lease subnets only; a forged off-subnet source is not rewritten and, if forwarded, reaches the outside
@@ -121,8 +130,10 @@ When a consumer is removed, or the capability that requested the lease is switch
 `enabled_by` toggle, for example), the target deployment no longer declares the resource. Retaining a
 database or bucket retains data; retaining a compute lease the same way would retain a still-trusted
 access grant. After the new deployment starts, Core therefore runs `revoke` through the **previous
-deployment's frozen Provider artifact**: the lease's restricted certificate is withdrawn while the
-project, its instances and its network stay in place (`INCUS-R-014`). An apply that removes the Provider
+deployment's frozen Provider artifact**: the lease's restricted certificate is withdrawn, the lease ACL is
+emptied (both default actions drop, so nothing enters or leaves any more), and the lease's running instances
+are stopped -- the ACL admits replies on established connections, and only stopping the instances ends those
+connections (`INCUS-R-124`). The project, instance disks and network stay in place (`INCUS-R-014`). An apply that removes the Provider
 in the same step can still revoke through the old artifact. A Provider that declares no `revoke` is
 recorded as `unsupported` with a warning, and its certificate stays trusted.
 
@@ -165,6 +176,10 @@ ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__MAX_INSTANCES
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__CPU
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__MEMORY_MIB
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__DISK_GIB
+# Only when publish.http is declared:
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__HTTP_REQUEST_DIR
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__HTTP_POLICY
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__HTTP_BASE_DOMAIN
 ```
 
 `ENDPOINT`, `SERVER_CERT`, `CLIENT_CERT` and `CLIENT_KEY` are all sensitive and belong only to the
@@ -314,31 +329,47 @@ deployment, preserving the key and HMAC-derived result.
 
 This is a naming key for domain derivation, not request authentication or publishing authority.
 It is excluded from credential rotation and `--all`; a module cannot declare it as a rotatable credential.
-The dedicated key rotation command and production publication remain unimplemented. Authorization freezing
-and experimental mediation are described below. File backup/restore regression tests are not real Incus or HTTP ingress
+The dedicated key rotation command remains unimplemented; HTTP publication is described below. File backup/restore regression tests are not real Incus or HTTP ingress
 acceptance.
 
-## Frozen HTTP authorization (runtime closed)
+## Lease network
 
-Declaration parsing and deployment preparation were added on 2026-09-12; new-code tests are deferred.
-Omitting `spec.ingress` grants no publication authority. A declaration can produce a frozen deployment,
-but start/activation explicitly refuses the affected compute consumer. Built-in consumers do not yet
-have ingress settings or request-directory mounts. Schema acceptance is not production availability.
+The lease declaration's `network` decides where instances may connect and who may connect to them. It is
+frozen into `deployment.yml` as `compute_network`, and the consumer cannot change it at runtime (Incus
+requirements, sections 7sexies and 7septies).
 
-On 2026-09-30 the old per-publication permit runtime, the request-directory registration adapter, the mediation
-planner and the lab command were deleted. In the new design a request carries `{instance, address, port, label?}`
-and the publication mediator inside anasd validates it before writing Traefik route files (`INCUS-R-141`–`R-149`);
-see the Incus requirements, section 7septies. The parsing and freezing rules below move to `publish.http` when M11
-is implemented.
+| Field | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `egress` | `internet`, `internet_lan`, `internet_lan_host`, `modules_only` | `internet` | Where instances may open connections; no tier reaches another lease |
+| `module_access` | boolean | `false` | Lets `internet` and `internet_lan` also reach ANAS Modules through Traefik |
+| `intra_lease` | boolean | `false` | Whether instances of one lease may reach each other |
+| `ingress` | `none`, `published` | `none` | Who may open connections to instances; only `published` may declare publications |
+| `slots` | slot name -> `{instance}` | none | Each slot pins one instance name; the Provider reserves fixed addresses for it |
+
+The egress tiers: `internet` reaches public addresses only; `internet_lan` adds the LAN (the directly connected
+subnets of the host's default-route interface plus operator-configured extra subnets, recomputed on every apply);
+`internet_lan_host` adds the host's own addresses and ports Docker publishes; `modules_only` reaches only ANAS
+Modules through Traefik. The Provider writes the tiers, switches and publications into the lease bridge's network
+ACL, whose default action is drop in both directions. "Every lease subnet" is the global address set `anas-leases`
+the Provider maintains, used in both directions to exclude other leases; the Traefik containers' current addresses
+are in the global address set `anas-traefik`, which only hostd writes. Both need Incus 7.0 or later (the
+`network_address_set` API extension).
+
+## HTTP publication
+
+`publish.http` has Traefik terminate HTTPS and forward HTTP to a port of a lease instance. It requires
+`network.ingress: published`, and the consumer's manifest must set `http_request_owner: "<uid>:<gid>"` under
+`resources.requires`: the identity of the process that writes request files, which Core gives the request
+directory.
 
 ```yaml
-# Inside compute spec; preparation only, startup remains blocked.
-ingress:
-  allowed_ports: [7000]
-  # Default none. Unpredictable URLs are not access control: SNI, Referer and logs
-  # can disclose URLs. Do not publish sensitive data or writable services this way.
-  auth: none
-  domain: {mode: random, prefix: ci}
+publish:
+  http:
+    allowed_ports: [7000]
+    # Default none. Unpredictable URLs are not access control: SNI, Referer and logs
+    # can disclose URLs. Do not publish sensitive data or writable services this way.
+    auth: none
+    domain: {mode: random, prefix: ci}
 ```
 
 Ports are distinct integers from 1 to 65535, at most 64, sorted when frozen. Unknown fields, null,
@@ -353,42 +384,82 @@ After calculate and before render, Core freezes `compute_ingress`: deployment/le
 project/instance prefix, ports, auth, domain mode, `BASE_DOMAIN`, naming-key reference and, when needed,
 ForwardAuth provider/middleware. `forward_auth` requires a resolved consumer capability dependency on
 `forward_auth/http` and output owned by that bound provider. Requests cannot override auth. Loading a
-frozen deployment compares spec, identity, authentication binding and key reference rather than recomputing from current config.
-Resource state can retain the same authorization and key reference; the startup guard prevents creating
-an ingress-bearing ready state today.
+frozen deployment compares spec, identity, authentication binding and key reference rather than
+recomputing from current config. Preparation checks overlapping lease namespaces, declared Module domains
+and literal `Host(…)` routes; named/random modes conservatively reserve the entire `prefix-*` space.
 
-Preparation checks overlapping lease namespaces, declared Module domains and literal `Host(…)` routes
-in the deployment environment. Named/random modes conservatively reserve the entire `prefix-*` space.
-Opaque file-provider matchers block preparation. Production still needs actual route-owner inventory
-and durable reconciliation; the current checks do not provide those guarantees.
+**Requests.** The consumer mounts the host directory `HTTP_REQUEST_DIR` into its container and writes one
+request file per instance port to publish (`schemas/http-publication-request.yml`):
 
-`internal/computeingress` implements strict JSON requests, Linux amd64/arm64 directory-relative reads and in-process
-name reservations. `schemas/http-publication-request.yml` accepts only `action` (publish/revoke),
-`instance_id`, `workload_id`, `guest_port` and optional `label`; this adds no Provider operation.
-The trusted caller binds a directory to an active-deployment grant. Reads accept only flat JSON basenames,
-pin inodes using `openat(O_PATH|O_NOFOLLOW)`, reject symlinks, devices/FIFOs and hard links before
-opening for reads, then reopen regular files through trusted host `/proc/self/fd` with nonblocking flags. They cap files
-at 4 KiB. Duplicate keys, case aliases, null, unknown fields and trailing data fail. Changed inode/content
-metadata across a read also fails.
+```json
+{"instance": "anas-fj-job1", "address": "10.101.0.17", "port": 7000, "label": "…"}
+```
 
-Consumer file-request APIs were added on 2026-09-18; the source and regression tests have not been
-compiled or executed. `Client.OpenHTTPPublisher(HTTPPublicationConfig)` explicitly opens this lease's
-already-installed private request directory. `HTTPPublisher.PublishPort` checks the exact Running
-managed instance and its `user.anas.workload`, port and label, then submits only the existing small
-request schema. Configuration is a minimal projection of lease scope, public policy and base domain,
-not a complete frozen authorization, middleware, entrypoint or global Store reference. Random-mode
-naming keys are delivered separately and do not enter requests or default JSON/formatted output.
-`Policy.Host` only predicts a name; the mediator's `Authorization.Host` still validates the full grant.
+`address` is the instance's IPv4 on the lease bridge. `label` is the consumer's chosen name in named mode, the
+32-hex label the shared client derives from the naming key in random mode, and absent in fixed mode. A file's
+presence is the request and its removal the withdrawal. The directory belongs to `http_request_owner` with mode
+0700 and survives applies.
 
-The returned `HTTPPublication` acknowledges request submission only. `RequestedURL()` does not prove
-route loading, TLS, authentication or backend readiness. `UnpublishPort(ctx, publication)` retracts the
-original file receipt even after the instance stops or disappears; file removal does not prove network
-revocation. Closing the publisher releases local handles without deleting durable requests. The
-underlying `RequestWriter` uses a private directory, a cooperative lock, atomic rename and file/directory
-fsync. Retained inode handles prevent old receipts from removing a cooperating writer's replacement.
-Symlinks, hard links, FIFOs, directory substitution, conflicts and unsupported platforms fail closed.
-Automatic projection/mounting, application lifecycle/crash recovery, trusted mediator assembly and
-actual publication-state confirmation remain pending. These APIs do not remove the production startup guard.
+**Mediator.** The HTTP publication mediator inside anasd recomputes every registered workspace every 3 seconds:
+it reads the active deployment's frozen authorizations, each lease's recorded subnet and the request files, checks
+every request -- instance inside the lease prefix, port in `allowed_ports`, address inside the lease subnet and not
+its network, gateway or broadcast address, host inside the lease namespace -- then rewrites the dedicated
+subdirectory `compute-http/` of the Traefik dynamic directory to exactly those routes, and rewrites the top-level
+`compute-http.reload` so Traefik rereads them (Traefik watches only the top directory). An invalid request is
+skipped and logged without affecting others; a later request cannot take over a host that already has a route
+(`INCUS-R-149`). The mediator holds no credential, calls no host action and does not go through Core per job;
+routes stay up while it is down, and its first pass after a restart removes routes without a valid request and
+adds missing ones (`INCUS-R-145`). At activation Core removes the route files of every lease whose authorization was
+removed or changed; authorizations are compared by a content digest that excludes the deployment ID, so an
+unchanged authorization keeps its routes (`INCUS-R-147`).
+
+Request reads accept only flat JSON basenames, pin inodes using `openat(O_PATH|O_NOFOLLOW)`, reject symlinks,
+devices/FIFOs and hard links, then reopen regular files through trusted host `/proc/self/fd` with nonblocking
+flags, capped at 4 KiB. Duplicate keys, case aliases, null, unknown fields and trailing data fail. A directory
+holds at most 256 entries.
+
+**Shared client.** `computeclient.HTTPPublicationFromLookup` builds the configuration from the projected
+`HTTP_POLICY`, `HTTP_BASE_DOMAIN` and (in random mode) `LEASE_SECRET`, with the request directory's mount path inside
+the consumer's container; `Client.OpenHTTPPublisher` opens it, and `HTTPPublisher.PublishPort` checks the instance
+is running and the port declared, then submits a request carrying the instance's address. The returned
+`RequestedURL()` is only the predicted name, not proof that a route is live. `Client.Stop` and `Client.Delete`
+withdraw all of the instance's requests, and `HTTPPublisher.PruneOrphans` removes requests whose instance no longer
+exists (`INCUS-R-146`). These client checks are not an authorization boundary; the mediator checks every request on
+its own.
+
+## Port bindings
+
+`publish.ports` forwards one host port unchanged to a slot instance (TCP or UDP, packets untouched, the guest sees
+the real client address).
+
+```yaml
+network:
+  ingress: published
+  slots: {dev: {instance: anas-fj-dev}}
+publish:
+  ports:
+    - {protocol: tcp, host_port: auto, slot: dev, guest_port: 22}
+```
+
+- **Host port**: an explicit port, or `auto` -- Core picks a random free port from the range the operator approved
+  in `incus.configure` (default 30000-32767), records it in the deployment, and keeps it across applies until the
+  binding is removed. An explicit port that clashes with the Traefik entrypoint, another lease's binding, a host
+  process or a Docker publication fails the apply and records a runtime issue (visible with `anas issues`); `auto`
+  skips taken ports.
+- **Slots**: the Provider reserves a fixed IPv4 outside the DHCP range for every slot, plus a fixed IPv6 when the
+  lease has IPv6, and reports them from `ensure`; the shared client adds them to the profile's NIC when it creates
+  the instance of that name, leaving every other NIC setting alone. Randomly named one-shot instances take no slot.
+- **Taking effect**: hostd's bounded sync action `incus.ports.sync` rereads every workspace's frozen deployment
+  itself, checks each entry and replaces the port maps in one nft transaction; every binding in effect holds its
+  host port with a systemd socket unit, so a host process or Docker publication on the same port then fails. anasd
+  triggers the sync when it starts and after every deployment activation, and checks the bindings in effect
+  periodically and on container starts. On a host without hostd (`--no-service` installs, non-systemd hosts,
+  development builds) an apply that declares port bindings fails with the reason (`INCUS-R-164`).
+
+**How the two publications differ (`INCUS-R-163`)**: with HTTP publication the guest sees the lease bridge gateway
+as the source, and the real client is in `X-Forwarded-For`; `forward_auth` can add authentication. Port bindings
+have no ANAS-level authentication, so the guest service must authenticate; connections time out while the instance
+is not running; and ANAS cannot see a guest-internal port that is already taken.
 
 ## Active authorization reads
 

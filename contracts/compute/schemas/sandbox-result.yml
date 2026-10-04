@@ -29,3 +29,26 @@ properties:
       cpu: {type: integer}
       memory_mib: {type: integer}
       disk_gib: {type: integer}
+  # The lease bridge the Provider reported from ensure (INCUS-R-159): what the
+  # console's network view shows and hostd's port table targets.
+  network:
+    type: object
+    additional_properties: false
+    required: [bridge, ipv4_subnet, ipv4_gateway]
+    properties:
+      bridge: {type: string}
+      ipv4_subnet: {type: string}
+      ipv4_gateway: {type: string}
+      ipv6_subnet: {type: string}
+      ipv6_gateway: {type: string}
+      slots:
+        type: array
+        items:
+          type: object
+          additional_properties: false
+          required: [name, instance, ipv4]
+          properties:
+            name: {type: string}
+            instance: {type: string}
+            ipv4: {type: string}
+            ipv6: {type: string}

@@ -1,18 +1,19 @@
-# Experimental consumer request payload, not a Provider operation. The trusted
-# directory supplies lease/deployment identity. Maximum encoded file size: 4 KiB.
+# Consumer request file, not a Provider operation. The shared client writes one
+# file per published instance port into the lease's request directory; the
+# file's presence is the request and its removal the withdrawal. The directory
+# itself names the lease. Maximum encoded file size: 4 KiB.
 type: object
 additional_properties: false
-required: [action, instance_id, workload_id, guest_port]
+required: [instance, address, port]
 properties:
-  action:
-    enum: [publish, revoke]
-  instance_id:
+  instance:
     type: string
     pattern: "^[a-z][a-z0-9-]{0,62}$"
-  workload_id:
+  address:
+    description: The instance's IPv4 address in the lease subnet.
     type: string
-    pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
-  guest_port: {type: integer, minimum: 1, maximum: 65535}
+  port: {type: integer, minimum: 1, maximum: 65535}
   label:
+    description: Named domains take the consumer's label; random domains take the 32-hex label the shared client derives from the naming key.
     type: string
     pattern: "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?$"

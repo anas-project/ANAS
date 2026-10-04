@@ -1,7 +1,7 @@
 # 部署与配置命令 JSON 契约
 
 > 状态：**已实现**（`init` / `plan` / `lock` / `render` / `build` / `apply` /
-> `start` / `restart` / `stop` / `rollback` / `status` / `deployments` /
+> `start` / `restart` / `stop` / `rollback` / `status` / `deployments` / `issues` /
 > `config` / `admin` / `credential` / `module` / `host actions` / `host incus-preflight` /
 > `host job`；`host actions` 仅本机编译清单）。
 > 通用约定（流分离、退出码、枚举、时间与大小、路径、版本、最小信封）见
@@ -21,6 +21,7 @@
 - [rollback](#rollback)
 - [status](#status)
 - [deployments](#deployments)
+- [issues](#issues)
 - [config](#config)
 - [credential](#credential)
 - [admin local](#admin-local)
@@ -384,6 +385,42 @@ anas deployments inspect ID [-w WORKSPACE] [--json]
 | --- | --- | --- |
 | `deployment_missing` | 4 | 没有这个 id |
 | `state_unreadable` | 4 | 状态目录读不出来 |
+
+## issues
+
+```
+anas issues [-w WORKSPACE] [--json]
+```
+
+列出运行问题：运行中发现的「现在哪里不对」，例如端口绑定冲突或占位丢失（`ISSUE-R-006`）。直接读取工作区记录
+`.anas/state/runtime-issues.json` 与宿主记录 `/var/lib/anas-hostd/runtime-issues.json`，anasd 不在也能用。
+
+```json
+{
+  "api_version": "anas.dev/cli/v1", "ok": false,
+  "workspace": "/data/ws",
+  "open_errors": 1,
+  "sources": [
+    {"scope": "workspace", "path": "/data/ws/.anas/state/runtime-issues.json", "issues": [{
+      "key": "incus.port-binding/forgejo.runners/tcp/30022", "source": "anasd", "level": "error",
+      "message": "applied port binding forgejo.runners/tcp/30022: hold_lost",
+      "first_seen": "2026-10-03T08:00:00Z", "last_seen": "2026-10-03T09:12:00Z", "count": 73
+    }]},
+    {"scope": "host", "path": "/var/lib/anas-hostd/runtime-issues.json", "issues": []}
+  ]
+}
+```
+
+同一个键只有一条记录，再次发现只更新 `last_seen` 与 `count`；条件恢复后带 `resolved_at`，保留 30 天（暂定，与
+日志保留期一起定）。`source` 取 `apply` / `anasd` / `hostd` / `boot`，`level` 取 `error` / `warning`。记录读不出来
+时该来源带 `error` 字段、`issues` 为空，绝不当作没有问题（`ISSUE-R-008`）；宿主记录只有 root 能读。
+
+与 `backup verify` 一样是给脚本和 cron 用的：存在未解决的错误级问题或任一记录读不出来时 `ok: false`、退出码 1。
+
+| code | 退出码 | 何时 |
+| --- | --- | --- |
+| `issues_open` | 1 | 存在未解决的错误级问题 |
+| `issues_unreadable` | 1 | 任一记录读不出来 |
 
 ## config
 

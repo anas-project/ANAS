@@ -118,13 +118,17 @@ func unusedControlNetwork(network dockerNetwork, ownerID, expectedID string) err
 // Package ownership at installation time does not confer ownership of objects
 // subsequently created by another administrator in the same daemon.
 func (r *localRuntime) checkSharedDaemonUnused(ctx context.Context, ownership Ownership) error {
-	for _, collection := range []string{"projects", "storage-pools", "networks", "network-acls", "profiles", "images", "certificates"} {
+	for _, collection := range []string{"projects", "storage-pools", "networks", "network-acls", "network-address-sets", "profiles", "images", "certificates"} {
 		var objects []json.RawMessage
 		var err error
 		if collection == "storage-pools" {
 			objects, err = r.storagePoolsForPackageRemoval(ctx)
 		} else {
 			err = r.incus.do(ctx, http.MethodGet, "/1.0/"+collection+"?recursion=1", nil, &objects)
+		}
+		if collection == "network-address-sets" && errors.Is(err, errIncusNotFound) {
+			// A daemon without address sets has none to leave behind.
+			continue
 		}
 		if err != nil {
 			return err
@@ -160,6 +164,14 @@ func (r *localRuntime) checkSharedDaemonUnused(ctx context.Context, ownership Ow
 					Devices map[string]map[string]string `json:"devices"`
 				}
 				if decodeInventoryObject(raw, &profile, "name", "config", "devices") != nil || profile.Name != "default" || len(profile.Config) != 0 || len(profile.Devices) != 0 {
+					return ErrBlocked
+				}
+			case "network-address-sets":
+				// Only the Traefik set this uninstall removes is expected; the
+				// lease subnet set and any other set belong to someone else.
+				var set incusAddressSet
+				if decodeInventoryObject(raw, &set, "name", "config") != nil || set.Name != TraefikAddressSet ||
+					set.Config["user.anas.managed"] != traefikSetMarker || !ownership.TraefikAddressSet {
 					return ErrBlocked
 				}
 			case "images", "network-acls":

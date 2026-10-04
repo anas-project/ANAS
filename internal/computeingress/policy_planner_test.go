@@ -9,7 +9,7 @@ import (
 
 func policyFixture() (*Authorization, Request) {
 	a := &Authorization{Schema: Schema, Deployment: "deployment-one", Consumer: "forgejo", Resource: "runners", Provider: "incus", Interface: "incus_vm", Project: "anas-forgejo-runners", InstancePrefix: "anas-fj-", LeaseSecretRef: "ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__LEASE_SECRET", BaseDomain: "example.test", Policy: Policy{AllowedPorts: []uint16{7000}, Auth: "none", Domain: Domain{Mode: "random", Prefix: "ci"}}}
-	r := Request{Action: "publish", InstanceID: "anas-fj-job1", WorkloadID: "job:123", GuestPort: 7000}
+	r := Request{Instance: "anas-fj-job1", Address: "10.101.0.17", Port: 7000}
 	return a, r
 }
 
@@ -55,17 +55,20 @@ func TestPolicyNameDerivationAndLabelBoundaries(t *testing.T) {
 // INCUS-R-086/R-088/R-095: bypassing the consumer library does not add any
 // target IP, origin, auth, middleware or lease identity to the request schema.
 func TestHTTPRequestsRejectPrivilegeAndParserAmbiguity(t *testing.T) {
-	const valid = `{"action":"publish","instance_id":"anas-fj-job1","workload_id":"job:123","guest_port":7000}`
+	const valid = `{"instance":"anas-fj-job1","address":"10.101.0.17","port":7000}`
 	if _, err := ParseRequest([]byte(valid)); err != nil {
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
-		"auth downgrade":    strings.Replace(valid, `"action":`, `"auth":"none","action":`, 1),
-		"target URL":        strings.Replace(valid, `"action":`, `"url":"http://127.0.0.1/","action":`, 1),
-		"lease claim":       strings.Replace(valid, `"action":`, `"project":"default","action":`, 1),
-		"duplicate":         strings.Replace(valid, `"guest_port":7000`, `"guest_port":7000,"guest_port":22`, 1),
-		"escaped duplicate": strings.Replace(valid, `"guest_port":7000`, `"guest_port":7000,"guest\u005fport":22`, 1),
-		"case alias":        strings.Replace(valid, `"guest_port"`, `"Guest_Port"`, 1),
+		"auth downgrade":    strings.Replace(valid, `"instance":`, `"auth":"none","instance":`, 1),
+		"target URL":        strings.Replace(valid, `"instance":`, `"url":"http://127.0.0.1/","instance":`, 1),
+		"lease claim":       strings.Replace(valid, `"instance":`, `"project":"default","instance":`, 1),
+		"duplicate":         strings.Replace(valid, `"port":7000`, `"port":7000,"port":22`, 1),
+		"escaped duplicate": strings.Replace(valid, `"port":7000`, `"port":7000,"p\u006frt":22`, 1),
+		"case alias":        strings.Replace(valid, `"port"`, `"Port"`, 1),
+		"IPv6 target":       strings.Replace(valid, `10.101.0.17`, `fd42::17`, 1),
+		"host name target":  strings.Replace(valid, `10.101.0.17`, `example.test`, 1),
+		"padded address":    strings.Replace(valid, `10.101.0.17`, `010.101.0.17`, 1),
 		"null":              strings.Replace(valid, "7000", "null", 1),
 		"zero":              strings.Replace(valid, "7000", "0", 1),
 		"fraction":          strings.Replace(valid, "7000", "7.5", 1),
@@ -79,12 +82,18 @@ func TestHTTPRequestsRejectPrivilegeAndParserAmbiguity(t *testing.T) {
 		})
 	}
 	if policy, err := ParseSpec(map[string]any{}); err != nil || policy != nil {
-		t.Fatalf("omitted ingress: %v", err)
+		t.Fatalf("omitted publish: %v", err)
+	}
+	if policy, err := ParseSpec(map[string]any{"publish": map[string]any{"ports": []any{}}}); err != nil || policy != nil {
+		t.Fatalf("publish without http: %v", err)
 	}
 	for _, raw := range []any{nil, map[string]any{}, "", []any{}} {
-		if _, err := ParseSpec(map[string]any{"ingress": raw}); err == nil {
-			t.Fatal("empty or null ingress accepted")
+		if _, err := ParseSpec(map[string]any{"publish": map[string]any{"http": raw}}); err == nil {
+			t.Fatal("empty or null publish.http accepted")
 		}
+	}
+	if _, err := ParseSpec(map[string]any{"publish": "http"}); err == nil {
+		t.Fatal("non-object publish accepted")
 	}
 }
 
@@ -102,5 +111,42 @@ func TestHTTPNamespacesCannotOverlapLeasesOrExistingServices(t *testing.T) {
 	b.Policy.Domain.Prefix = "agent"
 	if err := ValidateNamespaces([]*Authorization{a, b}, []string{"nextcloud.example.test"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// INCUS-R-065, R-086, R-087: the consumer's derived label names exactly the
+// host it predicted, and the mediator, which holds no key, only ever returns
+// hosts inside the lease namespace.
+func TestMediatorNamingMatchesConsumerPrediction(t *testing.T) {
+	a, _ := policyFixture()
+	label, err := a.Policy.RandomLabel("job:123", policyFixtureSecret())
+	if err != nil {
+		t.Fatal(err)
+	}
+	predicted, _ := a.Host("job:123", "", policyFixtureSecret())
+	if host, err := a.HostForLabel(label); err != nil || host != predicted {
+		t.Fatalf("mediator host %q, consumer predicted %q: %v", host, predicted, err)
+	}
+	for _, bad := range []string{"", "api", strings.ToUpper(label), label + "0", "x." + label} {
+		if _, err := a.HostForLabel(bad); err == nil {
+			t.Fatalf("random mode accepted label %q", bad)
+		}
+	}
+	a.Policy.Domain.Mode = "named"
+	if host, err := a.HostForLabel("api"); err != nil || host != "ci-api.example.test" {
+		t.Fatalf("named host = %q, %v", host, err)
+	}
+	if _, err := a.HostForLabel("API.evil"); err == nil {
+		t.Fatal("named mode accepted a label that leaves the namespace")
+	}
+	a.Policy.Domain.Mode = "fixed"
+	if host, err := a.HostForLabel(""); err != nil || host != "ci.example.test" {
+		t.Fatalf("fixed host = %q, %v", host, err)
+	}
+	if _, err := a.HostForLabel("api"); err == nil {
+		t.Fatal("fixed mode accepted a label")
+	}
+	if _, err := a.Policy.RandomLabel("job:123", policyFixtureSecret()); err == nil {
+		t.Fatal("a fixed policy derived a random label")
 	}
 }

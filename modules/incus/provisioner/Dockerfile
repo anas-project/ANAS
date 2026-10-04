@@ -14,6 +14,7 @@ COPY --from=shared internal/computeclient ./internal/computeclient
 COPY --from=shared internal/securefs ./internal/securefs
 COPY --from=shared internal/computeimage ./internal/computeimage
 COPY --from=shared internal/computeingress ./internal/computeingress
+COPY --from=shared internal/computenet ./internal/computenet
 COPY *.go ./modules/incus/provisioner/
 ARG TARGETOS
 ARG TARGETARCH

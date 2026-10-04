@@ -188,6 +188,53 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 			result = errors.Join(result, err)
 		}
 	}()
+	if hostService != nil && len(config.Workspaces) > 0 {
+		// The Traefik address set is host-wide; one registered workspace
+		// scopes the daemon-owned sync job.
+		syncContext, cancelSync := context.WithCancel(ctx)
+		syncDone := make(chan struct{})
+		go func() {
+			defer close(syncDone)
+			newTraefikSyncTrigger(hostService, config.Workspaces[0].ID, func(format string, args ...any) {
+				if logger != nil {
+					logger.Printf(format, args...)
+				}
+			}).Run(syncContext)
+		}()
+		defer func() { cancelSync(); <-syncDone }()
+		portWorkspaces := make([]portWorkspace, len(config.Workspaces))
+		for index, workspace := range config.Workspaces {
+			portWorkspaces[index] = portWorkspace{ID: workspace.ID, Path: workspace.Path}
+		}
+		portContext, cancelPorts := context.WithCancel(ctx)
+		portDone := make(chan struct{})
+		go func() {
+			defer close(portDone)
+			newPortBindingWatch(hostService, portWorkspaces, func(format string, args ...any) {
+				if logger != nil {
+					logger.Printf(format, args...)
+				}
+			}).Run(portContext)
+		}()
+		defer func() { cancelPorts(); <-portDone }()
+	}
+	if len(config.Workspaces) > 0 {
+		paths := make([]string, len(config.Workspaces))
+		for index, workspace := range config.Workspaces {
+			paths[index] = workspace.Path
+		}
+		mediatorContext, cancelMediator := context.WithCancel(ctx)
+		mediatorDone := make(chan struct{})
+		go func() {
+			defer close(mediatorDone)
+			newComputeHTTPMediator(paths, func(format string, args ...any) {
+				if logger != nil {
+					logger.Printf(format, args...)
+				}
+			}).Run(mediatorContext)
+		}()
+		defer func() { cancelMediator(); <-mediatorDone }()
+	}
 	executor, err := jobexecutor.New(jobexecutor.Options{
 		Store: jobStore, Audit: deploymentAudit, Workspaces: executorWorkspaces,
 		DeploymentFactory:    runner.NewWorkspaceDeploymentServiceWithEvents,
@@ -270,10 +317,11 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 	configOptions := httpapi.ConfigOptions{Factory: runner.NewWorkspaceConfigService, Audit: configAuditSink{writer: auditWriter, logger: logger}}
 	deploymentOptions := httpapi.DeploymentOptions{
 		PlanFactory: runner.NewWorkspaceDeploymentPlanService, ServiceFactory: runner.NewWorkspaceDeploymentService,
-		ModuleFactory:        runner.NewWorkspaceModuleManagementService,
-		MaintenanceFactory:   maintenanceFactory,
-		ModuleCommandFactory: application.NewModuleCommandServiceFactory(),
-		Store:                jobStore, Audit: deploymentAudit,
+		ModuleFactory:         runner.NewWorkspaceModuleManagementService,
+		MaintenanceFactory:    maintenanceFactory,
+		ModuleCommandFactory:  application.NewModuleCommandServiceFactory(),
+		ComputeNetworkFactory: runner.NewWorkspaceComputeNetworkService,
+		Store:                 jobStore, Audit: deploymentAudit,
 		StepUp: authStore, Notify: executor.Notify,
 	}
 	auditOptions := httpapi.AuditQueryOptions{Store: auditWriter}

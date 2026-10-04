@@ -35,6 +35,7 @@ import WorkspaceLifecycle from "./lifecycle/WorkspaceLifecycle.vue"
 import WorkspaceMaintenance from "./maintenance/WorkspaceMaintenance.vue"
 import WorkspaceModules from "./modules/WorkspaceModules.vue"
 import WorkspaceAudit from "./audit/WorkspaceAudit.vue"
+import WorkspaceNetwork from "./network/WorkspaceNetwork.vue"
 import { guardSectionAccess, sectionFromLocation, sectionHref, visibleSections, type ConsoleSection } from "./nav"
 
 type SystemResponse = components["schemas"]["SystemResponse"]
@@ -510,6 +511,12 @@ onMounted(async () => {
         :locale="locale"
         :refresh-revision="configRevision"
         @job-created="jobsRevision += 1"
+      />
+
+      <WorkspaceNetwork
+        v-if="phase === 'authenticated' && system && section === 'network'"
+        :workspace-ids="system.workspace_ids"
+        :locale="locale"
       />
 
       <WorkspaceMaintenance

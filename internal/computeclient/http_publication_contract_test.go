@@ -38,7 +38,7 @@ func (w *httpTestWriter) Submit(ctx context.Context, request computeingress.Requ
 	if w.submitError != nil || w.nilReceipt {
 		return nil, w.submitError
 	}
-	key := request.InstanceID + ":" + strconv.Itoa(int(request.GuestPort))
+	key := request.Instance + ":" + strconv.Itoa(int(request.Port))
 	if previous, found := w.records[key]; found {
 		if previous.request != request {
 			return nil, computeingress.ErrRequestConflict
@@ -70,6 +70,20 @@ func (w *httpTestWriter) Withdraw(ctx context.Context, receipt *computeingress.R
 	return computeingress.ErrRequestReceiptStale
 }
 
+func (w *httpTestWriter) Sweep(ctx context.Context, keep func(computeingress.Request) bool) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	removed := 0
+	for key, record := range w.records {
+		if !keep(record.request) {
+			delete(w.records, key)
+			removed++
+		}
+	}
+	return removed, nil
+}
+
 func (w *httpTestWriter) Close() error {
 	w.closed = true
 	return nil
@@ -93,6 +107,10 @@ func httpTestInstance(id, workload, state string) map[string]any {
 	return map[string]any{
 		"name": id, "status": state,
 		"config": map[string]string{"user.anas.managed": "true", "user.anas.workload": workload},
+		"state": map[string]any{"network": map[string]any{"eth0": map[string]any{"addresses": []map[string]string{
+			{"family": "inet6", "address": "fe80::1", "scope": "link"},
+			{"family": "inet", "address": "10.101.0.17", "scope": "global"},
+		}}}},
 	}
 }
 
@@ -214,12 +232,13 @@ func TestHTTPPublicationSubmitsSmallRequestAndReusesReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	request, err := computeingress.ParseRequest(body)
-	if err != nil || request.InstanceID != "anas-fj-job1" || request.WorkloadID != "job:1" || request.GuestPort != 7000 || request.Action != "publish" {
-		t.Fatalf("request does not match the mediator schema: %v", err)
+	label, _ := publisher.policy.RandomLabel("job:1", publisher.key)
+	if err != nil || request.Instance != "anas-fj-job1" || request.Address != "10.101.0.17" || request.Port != 7000 || request.Label != label {
+		t.Fatalf("request does not match the mediator schema: %+v %v", request, err)
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(body, &fields); err != nil || len(fields) != 4 {
-		t.Fatal("request contains fields outside the no-label schema")
+		t.Fatal("request contains fields outside the schema")
 	}
 	for _, name := range []string{"host", "url", "auth", "lease_secret", "project", "target_ip", "entrypoint"} {
 		if _, found := fields[name]; found {
@@ -371,5 +390,42 @@ func TestHTTPPublicationAdmissionHonorsCancellation(t *testing.T) {
 	<-publisher.gate
 	if !errors.Is(err, context.DeadlineExceeded) || len(run.calls) != 0 || len(writer.submitted) != 0 {
 		t.Fatalf("blocked admission ignored context or performed I/O: %v", err)
+	}
+}
+
+// The projection Core publishes is enough to open a publisher; the naming key
+// is taken only for random domains.
+func TestHTTPPublicationFromLookupReadsCoreProjection(t *testing.T) {
+	lease := testLease()
+	prefix := EnvPrefix + "FORGEJO__RUNNERS__"
+	env := map[string]string{
+		prefix + "HTTP_POLICY":      `{"allowed_ports":[7000,7001],"auth":"none","domain":{"mode":"named","prefix":"ci"}}`,
+		prefix + "HTTP_BASE_DOMAIN": "example.test",
+		prefix + "HTTP_REQUEST_DIR": "/srv/anas/.anas/runtime-state/compute-http/forgejo.runners",
+		prefix + "LEASE_SECRET":     base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))),
+	}
+	lookup := func(key string) string { return env[key] }
+	config, ok, err := HTTPPublicationFromLookup(lookup, lease, "forgejo", "runners", "/run/anas-http")
+	if err != nil || !ok || config.LeaseSecret != "" || config.RequestDirectory != "/run/anas-http" || config.BaseDomain != "example.test" {
+		t.Fatalf("named = %+v, %v, %v", config, ok, err)
+	}
+	client, _ := testClient(t, lease)
+	if _, err := validateHTTPPublicationConfig(client, config); err != nil {
+		t.Fatal(err)
+	}
+	env[prefix+"HTTP_POLICY"] = `{"allowed_ports":[7000],"auth":"none","domain":{"mode":"random","prefix":"ci"}}`
+	if config, _, err = HTTPPublicationFromLookup(lookup, lease, "forgejo", "runners", "/run/anas-http"); err != nil || config.LeaseSecret == "" {
+		t.Fatalf("random = %v", err)
+	}
+	if _, err := validateHTTPPublicationConfig(client, config); err != nil {
+		t.Fatal(err)
+	}
+	env[prefix+"HTTP_POLICY"] = `{"allowed_ports":[],"auth":"none","domain":{"mode":"random","prefix":"ci"}}`
+	if _, ok, err := HTTPPublicationFromLookup(lookup, lease, "forgejo", "runners", "/run/anas-http"); !ok || !errors.Is(err, ErrHTTPPublicationPolicy) {
+		t.Fatalf("invalid policy = %v, %v", ok, err)
+	}
+	delete(env, prefix+"HTTP_POLICY")
+	if _, ok, err := HTTPPublicationFromLookup(lookup, lease, "forgejo", "runners", "/run/anas-http"); ok || err != nil {
+		t.Fatalf("no publication = %v, %v", ok, err)
 	}
 }

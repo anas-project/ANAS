@@ -29,7 +29,7 @@
 | [版本升级 E2E 测试](upgrade-testing.md) | Core、Web 与全部内置 Module 的真实旧版升级、数据往返和发布门禁；验收依据见[要求](../requirements/upgrade-testing.md) | 实施中 |
 | [备份与恢复统一执行](backup-execution.md) | 目的地并发安全、统一目的地登记、job 记录与合流、CLI 在线/离线执行、hostd 执行与恢复确认、宿主串行；验收依据见[要求](../requirements/backup-execution.md) | 提案 |
 | [共享应用层迁移](application-layer-migration.md) | 依赖测绘、子进程边界注入化、三个服务实现迁移与断开 `anasd` 对 runner 的链接；验收依据见[要求](../requirements/application-layer-migration.md) | 提案 |
-| [运行问题记录](runtime-issues.md) | 记录格式与去重、写入方、CLI 与控制台查看；验收依据见[要求](../requirements/runtime-issues.md) | 提案 |
+| [运行问题记录](runtime-issues.md) | 记录格式与去重、写入方、CLI 与控制台查看；验收依据见[要求](../requirements/runtime-issues.md) | 实施中 |
 | [Workspace 临时存储](workspace-temp-storage.md) | Module 声明与隔离、复用停启和锁、路径切换与回滚、安全 GC、恢复及 Collabora 接入 | 提案 |
 
 ## 已归档

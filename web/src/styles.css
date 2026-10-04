@@ -984,3 +984,94 @@ dd {
   white-space: normal;
   word-break: break-word;
 }
+
+/* Lease network view (INCUS-R-129). The diagram scrolls inside its own box
+   so the page never scrolls sideways on a narrow screen. */
+.network-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.network-lease {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #cad7d0;
+}
+
+.network-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.4rem 1rem;
+}
+
+.network-diagram-scroll {
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.network-diagram {
+  display: block;
+  font-size: 12px;
+}
+
+.network-column-title {
+  fill: #5e7169;
+  font-weight: 600;
+}
+
+.network-lease-box {
+  fill: #f7faf8;
+  stroke: #3d6b58;
+  stroke-width: 1.5;
+}
+
+.network-lease-title {
+  fill: #15221d;
+  font-weight: 600;
+}
+
+.network-lease-detail,
+.network-lease-instance {
+  fill: #3d4f47;
+}
+
+.network-peer {
+  stroke-width: 1;
+}
+
+.network-peer.allowed {
+  fill: #e3f3e8;
+  stroke: #2f8a4c;
+}
+
+.network-peer.denied {
+  fill: #fbeceb;
+  stroke: #b2433b;
+}
+
+.network-peer-label {
+  fill: #15221d;
+}
+
+.network-edge {
+  stroke-width: 1.6;
+}
+
+.network-edge.allowed {
+  stroke: #2f8a4c;
+}
+
+.network-edge.denied {
+  stroke: #b2433b;
+  stroke-dasharray: 5 4;
+}
+
+.network-arrow.allowed {
+  fill: #2f8a4c;
+}
+
+.network-arrow.denied {
+  fill: #b2433b;
+}

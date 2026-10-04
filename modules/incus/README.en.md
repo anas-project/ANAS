@@ -34,7 +34,9 @@ It therefore does **not**:
 
 - install, configure, or host the Incus daemon; the daemon runs on a separate KVM-capable host;
 - require the ANAS host to support virtualization, or mount host virtualization devices or a Docker socket;
-- expose an HTTP service, a Traefik route, or a host port;
+- expose an HTTP service, a Traefik route, or a host port itself; HTTP publication of lease instances is
+  written as Traefik routes by the mediator inside anasd and port bindings take effect through hostd, see
+  "Lease network and publication" below;
 - proxy instance `create`/`start`/`exec`/`delete`, or hold a consumer's one-time secrets.
 
 ## Module, capability and contract dependencies
@@ -137,6 +139,21 @@ endpoint, project, instance prefix, image allowlist, quota and certificate into 
 container. The field list is in the
 [compute contract technical documentation](/en/reference/module-contracts/compute-technical).
 
+## Lease network and publication
+
+Every lease has its own bridge (`lease` plus 10 hex digits) and a network ACL whose default is drop in both
+directions. The consumer's lease declaration picks the egress tier (`internet` by default, `internet_lan`,
+`internet_lan_host`, `modules_only`), whether to reach ANAS Modules through Traefik (`module_access`), whether
+instances of the lease may reach each other (`intra_lease`), and the ingress tier (`none` by default,
+`published`). A `published` lease may declare HTTP publication (Traefik terminates HTTPS and forwards to an
+instance) and port bindings (a host port forwarded unchanged to a slot instance). Fields and semantics are in
+the [compute Contract technical notes](/en/reference/module-contracts/compute-technical).
+
+This Module needs Incus 7.0 or later: the ACL names global address sets (the `network_address_set` API
+extension) to exclude other leases and admit Traefik. The operator configures only two values:
+`lan_extra_subnets` (extra LAN subnets, see the parameter table) and the port binding range approved in the
+`incus.configure` two-step confirmation (default 30000-32767).
+
 ## Two isolation tiers
 
 | Interface | Instance form | Boundary |
@@ -188,6 +205,7 @@ the rendered module-private key; do not treat it as the preferred configuration 
 | `incus.admin_key_b64` | string | — | — | `host` | `INCUS_ADMIN_KEY_B64` | no | yes | yes | no: `rotate-incus-admin-credential` | `credential_rotate` | Private key for the administrative certificate |
 | `incus.endpoint` | string | `pattern: ^https://[A-Za-z0-9.:_-]+$` | — | `host` | `INCUS_ENDPOINT` | no | yes | yes | yes | `reconcile` | HTTPS address of the remote Incus daemon |
 | `incus.image_architecture` | enum (`amd64`, `arm64`) | — | — | `host` | `INCUS_IMAGE_ARCHITECTURE` | no | yes | no | yes | `container_recreate` | Explicit guest image architecture on the target daemon; never inferred from the CLI host |
+| `incus.lan_extra_subnets` | string | `pattern: ^[0-9A-Fa-f:./, ]*$` | `""` | `static` | `INCUS_LAN_EXTRA_SUBNETS` | no | no | no | yes | `reconcile` | LAN subnets, besides those directly on the host's default-route interface, that the `internet_lan` tiers may also reach; comma-separated CIDRs |
 | `incus.server_certificate_b64` | string | — | — | `host` | `INCUS_SERVER_CERTIFICATE_B64` | no | yes | yes | yes | `reconcile` | Pinned daemon server certificate; a mismatch fails outright with no fallback |
 | `incus.storage_pool` | string | `pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$` | — | `runtime` | `INCUS_STORAGE_POOL` | no | yes | no | yes | `reconcile` | Incus storage pool backing every lease root disk; changing it does not move existing instances |
 
@@ -229,8 +247,9 @@ Guest startup and full quota, certificate and two-consumer E2E have not passed; 
 remains separate.
 Until then it is not a `release` capability.
 
-`revoke` withdraws the consumer certificate but does not delete the project — the instances inside it
-were never owned by this contract.
+`revoke` withdraws the consumer certificate, empties the lease ACL and stops the lease's running instances
+(ending established connections); it does not delete the project or instance disks -- the instances inside it
+never belonged to this Contract.
 
 ## Technical documentation
 

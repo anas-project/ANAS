@@ -12,6 +12,7 @@ export const consoleSections = [
   "deployment",
   "lifecycle",
   "modules",
+  "network",
   "maintenance",
   "jobs",
   "audit",
@@ -43,7 +44,7 @@ export function visibleSections(options: {
 }): ConsoleSection[] {
   const visible: ConsoleSection[] = ["overview"]
   if (options.canConfigure) visible.push("config", "deployment")
-  if (options.authenticated) visible.push("lifecycle", "modules", "maintenance")
+  if (options.authenticated) visible.push("lifecycle", "modules", "network", "maintenance")
   if (options.canRecoverJobs) visible.push("jobs")
   if (options.authenticated) visible.push("audit")
   visible.push("access")

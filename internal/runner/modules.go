@@ -115,12 +115,13 @@ type ContractProvider = deployment.ContractProvider
 type ProviderOperation = deployment.ProviderOperation
 
 type ResourceRequirement struct {
-	ID        string
-	Contract  string
-	Binding   string
-	Spec      map[string]any
-	SpecFrom  map[string]SpecSource
-	EnabledBy string
+	ID               string
+	Contract         string
+	Binding          string
+	Spec             map[string]any
+	SpecFrom         map[string]SpecSource
+	EnabledBy        string
+	HTTPRequestOwner string
 }
 
 func (m Module) providedContract(name, iface string) (ContractProvider, bool) {

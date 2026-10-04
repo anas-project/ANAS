@@ -54,7 +54,9 @@ func CanonicalParameters(action string, body []byte) (json.RawMessage, error) {
 	if !ok || len(body) == 0 || len(body) > 32<<10 {
 		return nil, ErrRequest
 	}
-	if action == ActionStatus || action == ActionInvocationStatus {
+	if action == ActionStatus || action == ActionInvocationStatus || spec.Sync {
+		// A sync action takes no input: hostd reads what it writes from the
+		// host itself (INCUS-R-119, HOSTACT-R-015).
 		if !bytes.Equal(bytes.TrimSpace(body), []byte("{}")) {
 			return nil, ErrRequest
 		}
@@ -221,7 +223,7 @@ func DecodeImagePruneApplyParameters(action string, body json.RawMessage) (Incus
 
 func CanonicalWireParameters(action string, body []byte) (json.RawMessage, error) {
 	spec, ok := LookupAction(action)
-	if !ok || !spec.Mutating {
+	if !ok || !spec.Mutating || spec.Sync {
 		return CanonicalParameters(action, body)
 	}
 	var raw map[string]json.RawMessage
@@ -292,7 +294,7 @@ func encodePublicParameterObject(action string, fields map[string]json.RawMessag
 		return nil, ErrRequest
 	}
 	switch {
-	case action == ActionStatus || action == ActionInvocationStatus:
+	case action == ActionStatus || action == ActionInvocationStatus || spec.Sync:
 		if len(fields) != 0 {
 			return nil, ErrRequest
 		}

@@ -68,6 +68,29 @@ func (a *app) runCompose(dir, module, composeFile string, env map[string]string,
 	return a.compose.RunFile(dir, project, composeFile, env, args...)
 }
 
+// runComposeOutput is runCompose for a mutating one-shot whose stdout is a
+// result, such as a resource Provider operation: the same ownership check,
+// with stdout captured instead of forwarded.
+func (a *app) runComposeOutput(dir, module, composeFile string, env map[string]string, args ...string) (string, error) {
+	project, err := composeProjectName(module, env)
+	if err != nil {
+		return "", err
+	}
+	if composeCommandMutates(args) {
+		if err := a.ensureComposeProjectOwner(project); err != nil {
+			return "", err
+		}
+	}
+	quiet := a.suppressSensitiveOutput || a.restrictedProcessEnvironment
+	if a.restrictedProcessEnvironment {
+		return a.compose.OutputFileContext(a.subprocessContext(), dir, project, composeFile, a.commandEnvironment(env), quiet, args...)
+	}
+	if quiet {
+		return a.compose.OutputFileQuiet(dir, project, composeFile, env, args...)
+	}
+	return a.compose.OutputFile(dir, project, composeFile, env, args...)
+}
+
 func (a *app) outputCompose(dir, module, composeFile string, env map[string]string, args ...string) (string, error) {
 	project, err := composeProjectName(module, env)
 	if err != nil {

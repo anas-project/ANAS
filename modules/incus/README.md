@@ -30,7 +30,8 @@ project 上、把消费者的客户端证书登记为只绑该 project 的受限
 
 - 不安装、不配置、不托管 Incus daemon 本身；daemon 运行在另一台具备 KVM 的宿主上；
 - 不要求 ANAS 宿主具备虚拟化能力，不挂载宿主虚拟化设备或 Docker socket；
-- 不暴露 HTTP 服务、Traefik 路由或宿主端口；
+- 自身不暴露 HTTP 服务、Traefik 路由或宿主端口；租约实例的 HTTP 发布由 anasd 内的中介写 Traefik 路由，端口绑定由
+  hostd 生效，见下文「租约网络与发布」；
 - 不代理实例的 `create`/`start`/`exec`/`delete`，也不保管消费者的一次性 Secret。
 
 ## 依赖的 Module、Capability 与 Contract
@@ -126,6 +127,18 @@ Runner 会为该消费者生成证书、调用本 Module 的 `ensure`，并向�
 实例前缀、镜像 allowlist、配额与证书。字段清单见
 [compute Contract 技术文档](/reference/module-contracts/compute-technical)。
 
+## 租约网络与发布
+
+每份租约有自己的网桥（`lease` 加 10 位十六进制）和一份 network ACL，两个方向默认丢弃。消费者在租约声明里选
+出站档位（`internet` 默认、`internet_lan`、`internet_lan_host`、`modules_only`）、是否经 Traefik 访问 ANAS Module
+（`module_access`）、同租约实例能否互访（`intra_lease`），以及入站档位（`none` 默认、`published`）。`published`
+档可以声明 HTTP 发布（Traefik 终止 HTTPS 转给实例）和端口绑定（宿主端口原样转到槽位实例）。字段与语义见
+[compute Contract 技术文档](/reference/module-contracts/compute-technical)。
+
+本 Module 需要 Incus 7.0 或以上：ACL 引用全局 address set（`network_address_set` API 扩展）来排除其他租约、
+放行 Traefik。操作者能配置的只有两项：`lan_extra_subnets`（局域网附加网段，见参数表）和 `incus.configure` 二段
+确认里的端口绑定可用范围（默认 30000–32767）。
+
 ## 两个隔离档
 
 | Interface | 实例形态 | 边界 |
@@ -171,6 +184,7 @@ incus config trust remove <fingerprint>
 | `incus.admin_key_b64` | string | — | — | `host` | `INCUS_ADMIN_KEY_B64` | 否 | 是 | 是 | 否：`rotate-incus-admin-credential` | `credential_rotate` | 管理证书的私钥 |
 | `incus.endpoint` | string | `pattern: ^https://[A-Za-z0-9.:_-]+$` | — | `host` | `INCUS_ENDPOINT` | 否 | 是 | 是 | 是 | `reconcile` | 远端 Incus daemon 的 HTTPS 地址 |
 | `incus.image_architecture` | enum (`amd64`, `arm64`) | — | — | `host` | `INCUS_IMAGE_ARCHITECTURE` | 否 | 是 | 否 | 是 | `container_recreate` | 目标 daemon 的 guest 镜像架构；必须显式提供，不从 CLI 宿主推断 |
+| `incus.lan_extra_subnets` | string | `pattern: ^[0-9A-Fa-f:./, ]*$` | `""` | `static` | `INCUS_LAN_EXTRA_SUBNETS` | 否 | 否 | 否 | 是 | `reconcile` | 宿主默认路由网卡直连网段之外，`internet_lan` 两档还能访问的局域网网段，逗号分隔的 CIDR |
 | `incus.server_certificate_b64` | string | — | — | `host` | `INCUS_SERVER_CERTIFICATE_B64` | 否 | 是 | 是 | 是 | `reconcile` | 被固定的 daemon 服务端证书；失配时直接失败，不回退 |
 | `incus.storage_pool` | string | `pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$` | — | `runtime` | `INCUS_STORAGE_POOL` | 否 | 是 | 否 | 是 | `reconcile` | 每个租约根磁盘所在的 Incus 存储池；改它不会迁移已有实例 |
 
@@ -209,7 +223,8 @@ anas config set incus.endpoint https://incus.example:8443 -w /srv/anas
 状态为 `developing`：独立 Incus 6.0.5 的供给探查发现了 dir 磁盘配额缺口，尚未通过 guest
 启动与完整配额、证书和双消费者 E2E。7.3.0/KVM 仍待单独验收。在那之前不要把它当作 `release` 能力使用。
 
-`revoke` 只撤销消费者证书，不删除 project——project 里的实例从来不属于本 Contract。
+`revoke` 撤销消费者证书、清空租约 ACL 并停止租约内运行的实例（结束已建立的连接），不删除 project 与实例磁盘——
+project 里的实例从来不属于本 Contract。
 
 ## 技术文档
 

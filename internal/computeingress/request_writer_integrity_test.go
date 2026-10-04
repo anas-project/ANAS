@@ -22,6 +22,9 @@ import (
 // credentials or server access. Authoring them does not constitute execution.
 func integrityWriter(t *testing.T, directory string) *computeingress.RequestWriter {
 	t.Helper()
+	if err := os.Chmod(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
 	writer, err := computeingress.OpenRequestWriter(directory)
 	if err != nil {
 		t.Fatalf("open private local request directory: %v", err)
@@ -31,7 +34,7 @@ func integrityWriter(t *testing.T, directory string) *computeingress.RequestWrit
 }
 
 func integrityRequest() computeingress.Request {
-	return computeingress.Request{Action: "publish", InstanceID: "anas-tests-one", WorkloadID: "job-one", GuestPort: 8080}
+	return computeingress.Request{Instance: "anas-tests-one", Address: "10.101.0.17", Port: 8080}
 }
 
 func integrityRequestFile(t *testing.T, directory string) string {
@@ -88,7 +91,7 @@ func TestRequestWriterIntegritySubmitRetryAndWithdraw(t *testing.T) {
 		t.Fatalf("request file mode or size is invalid: %v", err)
 	}
 	other := request
-	other.WorkloadID = "different-job"
+	other.Address = "10.101.0.18"
 	if _, err := writer.Submit(context.Background(), other); !errors.Is(err, computeingress.ErrRequestConflict) {
 		t.Fatalf("different workload must not overwrite a slot: %v", err)
 	}
@@ -165,7 +168,7 @@ func TestRequestWriterIntegrityResumeDoesNotRepublish(t *testing.T) {
 	}
 	second := integrityWriter(t, directory)
 	wrong := request
-	wrong.WorkloadID = "wrong-recovery-workload"
+	wrong.Address = "10.101.0.19"
 	if _, err := second.Resume(context.Background(), wrong); !errors.Is(err, computeingress.ErrRequestConflict) {
 		t.Fatalf("resume adopted a different workload: %v", err)
 	}
@@ -247,7 +250,7 @@ func TestRequestWriterIntegrityChangedFileIsNotWithdrawn(t *testing.T) {
 		t.Fatal(err)
 	}
 	changed := request
-	changed.WorkloadID = "replacement"
+	changed.Address = "10.101.0.20"
 	body, err := json.Marshal(changed)
 	if err != nil {
 		t.Fatal(err)
@@ -345,7 +348,7 @@ func TestRequestWriterIntegrityAdmissionIsBounded(t *testing.T) {
 		t.Fatalf("256th entry should fit, including temporary publication: %v", err)
 	}
 	second := first
-	second.InstanceID = "anas-tests-two"
+	second.Instance = "anas-tests-two"
 	if _, err := writer.Submit(context.Background(), second); err == nil {
 		t.Fatal("request directory exceeded the mediator's 256-entry bound")
 	}

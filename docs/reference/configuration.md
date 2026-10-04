@@ -7,10 +7,10 @@
 
 <!-- generated:configuration-summary:start -->
 - 内置 Module：`24`
-- 已声明参数：共 `191` 个（全局 `17` 个、Module 所有 `174` 个；结构化 Module 参数 `170` 个、裸 `env.*` 参数 `4` 个）
+- 已声明参数：共 `192` 个（全局 `17` 个、Module 所有 `175` 个；结构化 Module 参数 `171` 个、裸 `env.*` 参数 `4` 个）
 - 解析阶段：`input_required` `2` 个、`must_resolve` `33` 个、未知类型 `0` 个
-- 类型分布：`bool` `27`、`enum` `27`、`int` `30`、`string` `107`
-- 默认值来源分布：`generated` `10`、`host` `8`、`inherited` `8`、`none` `8`、`runtime` `5`、`static` `152`
+- 类型分布：`bool` `27`、`enum` `27`、`int` `30`、`string` `108`
+- 默认值来源分布：`generated` `10`、`host` `8`、`inherited` `8`、`none` `8`、`runtime` `5`、`static` `153`
 <!-- generated:configuration-summary:end -->
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
@@ -145,7 +145,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 `must_resolve: true`、`default_source: none`；只有 resolver 未能注入时才需要 Module 侧输入。
 
 <!-- generated:configuration-constraints:start -->
-当前显式可移植约束：`32` 项。
+当前显式可移植约束：`33` 项。
 
 | 参数路径 | 可移植约束 |
 | --- | --- |
@@ -170,6 +170,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `global.host_lan_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.timezone` | <code>format=&#34;iana_timezone&#34;</code> |
 | `incus.endpoint` | <code>pattern=&#34;^https://[A-Za-z0-9.:_-]+$&#34;</code> |
+| `incus.lan_extra_subnets` | <code>pattern=&#34;^[0-9A-Fa-f:./, ]*$&#34;</code> |
 | `incus.storage_pool` | <code>pattern=&#34;^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$&#34;</code> |
 | `meshcentral.mps_port` | <code>minimum=1; maximum=65535</code> |
 | `oauth2_proxy.console_proxy_port` | <code>minimum=1; maximum=65535</code> |
@@ -195,7 +196,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `ddns_updater` | 10 | `ddns_updater.dns_provider`<br>`ddns_updater.domain_prefix`<br>`ddns_updater.forward_auth_interface`<br>`ddns_updater.publicip_dns_providers`<br>`ddns_updater.publicip_fetchers`<br>`ddns_updater.publicip_ipv4_providers`<br>`ddns_updater.publicip_ipv6_providers`<br>`ddns_updater.publicip_providers`<br>`ddns_updater.ttl`<br>`ddns_updater.zone_identifier` |
 | `eturnal` | 2 | `eturnal.domain_prefix`<br>`eturnal.port` |
 | `forgejo` | 12 | `forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_isolation`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.ssh_port` |
-| `incus` | 6 | `incus.admin_certificate_b64`<br>`incus.admin_key_b64`<br>`incus.endpoint`<br>`incus.image_architecture`<br>`incus.server_certificate_b64`<br>`incus.storage_pool` |
+| `incus` | 7 | `incus.admin_certificate_b64`<br>`incus.admin_key_b64`<br>`incus.endpoint`<br>`incus.image_architecture`<br>`incus.lan_extra_subnets`<br>`incus.server_certificate_b64`<br>`incus.storage_pool` |
 | `lam` | 3 | `lam.admin_password`<br>`lam.domain_prefix`<br>`lam.language` |
 | `lego` | 2 | `lego.dns_provider`<br>`lego.dns_server` |
 | `llng` | 7 | `llng.db_name`<br>`llng.db_type`<br>`llng.domain_prefix`<br>`llng.enable_test`<br>`llng.log_level`<br>`llng.manager_domain_prefix`<br>`llng.test_domain_prefix` |
@@ -246,7 +247,7 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 | `data_migrate` | 17 | 激活前迁移持久数据、数据库或成员身份 |
 | `hot_reload` | 16 | 通过声明的管理命令应用；当前执行器可能保守地重建容器 |
 | `immutable` | 3 | 使用替换或专用迁移流程 |
-| `reconcile` | 20 | 通过 Module 生命周期调和应用、API 或文件状态 |
+| `reconcile` | 21 | 通过 Module 生命周期调和应用、API 或文件状态 |
 <!-- generated:configuration-effects:end -->
 
 ### 当前版本的实际执行边界

@@ -163,9 +163,6 @@ func (a *app) recordComputeImageHistory() error {
 // Loading old artifact metadata remains possible for status, stop and replacing
 // a deployment. Only an executable target must satisfy the new image contract.
 func (a *app) validateComputeImagesFor(selection []string) error {
-	if err := a.requireComputeIngressDisabled(selection); err != nil {
-		return err
-	}
 	for _, request := range a.resourceRequests {
 		if request.Contract != "compute" || !contains(selection, request.Consumer) {
 			continue

@@ -132,7 +132,7 @@ func TestObjectStorageResourceStateStoresSecretReferenceOnly(t *testing.T) {
 		"ANAS_OBJECT_STORAGE_S3_ENDPOINT":   "https://s3.example.test",
 		"ANAS_OBJECT_STORAGE_S3_REGION":     "us-east-1",
 		"ANAS_OBJECT_STORAGE_S3_PATH_STYLE": "true",
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	body, err := os.ReadFile(filepath.Join(base, "state", "resources", "photos.objects.yml"))

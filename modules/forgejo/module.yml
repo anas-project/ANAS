@@ -82,6 +82,12 @@ resources:
       spec:
         sandbox: anas-forgejo-runners
         instance_prefix: anas-fj-
+        # Jobs reach the public internet and, through Traefik, this
+        # deployment's Modules -- the forge they clone from. Never the LAN, the
+        # host, other leases or each other (INCUS-R-112, R-117, R-123).
+        network:
+          egress: internet
+          module_access: true
         quota:
           max_instances: 8
           cpu: 4

@@ -50,20 +50,32 @@ const (
 	ActionEnroll         = "incus.enroll"
 	ActionUninstall      = "incus.uninstall"
 	ActionImagePrune     = "incus.image-prune"
+	// ActionTraefikSync refreshes the anas-traefik address set from Docker.
+	// incus.configure approves it once; each run needs no confirmation.
+	ActionTraefikSync = "incus.traefik.sync"
+	// ActionPortsSync replaces the port binding maps from the frozen
+	// deployments hostd reads itself, inside the range incus.configure
+	// approved (INCUS-R-152, R-158).
+	ActionPortsSync = "incus.ports.sync"
 
 	planScope       = "installation-plan"
 	applyScope      = "installation-apply"
 	prunePlanScope  = "image-prune-plan"
 	pruneApplyScope = "image-prune-apply"
+	syncScope       = "approved-sync"
 )
 
 type ActionSpec struct {
 	Descriptor
 	Mutating bool
-	Policy   consolejobs.ActionConcurrency
-	Phase    incusprovision.Phase
-	PlanFor  string
-	Timeout  int
+	// Sync marks a bounded sync action (HOSTACT-R-014, R-015): it changes the
+	// host inside a boundary incus.configure approved, takes no parameters,
+	// and hostd derives everything it writes from the host itself.
+	Sync    bool
+	Policy  consolejobs.ActionConcurrency
+	Phase   incusprovision.Phase
+	PlanFor string
+	Timeout int
 }
 
 // Catalog lists ONLY compiled handlers. These copies cannot register or change
@@ -99,6 +111,12 @@ func PlanActionFor(apply string) (string, bool) {
 	return "", false
 }
 
+// IsSyncAction reports a bounded sync action: mutating, never confirmed.
+func IsSyncAction(name string) bool {
+	spec, ok := LookupAction(name)
+	return ok && spec.Sync
+}
+
 func IsApplyAction(name string) bool {
 	return slices.Contains(ApplyActionNames(), name) || name == ActionImagePrune
 }
@@ -118,6 +136,8 @@ func actionSpecs() []ActionSpec {
 		{Descriptor: Descriptor{Name: ActionConfigure, Scope: applyScope, ReadOnly: false, RequiresRoot: true, RequiresConfirm: true, Implementation: "compiled-hostd", RequirementIDs: reqs}, Mutating: true, Policy: consolejobs.ActionReject, Phase: incusprovision.PhaseConfigure, Timeout: 600},
 		{Descriptor: Descriptor{Name: ActionEnroll, Scope: applyScope, ReadOnly: false, RequiresRoot: true, RequiresConfirm: true, Implementation: "compiled-hostd", RequirementIDs: reqs}, Mutating: true, Policy: consolejobs.ActionReject, Phase: incusprovision.PhaseEnroll, Timeout: 300},
 		{Descriptor: Descriptor{Name: ActionUninstall, Scope: applyScope, ReadOnly: false, RequiresRoot: true, RequiresConfirm: true, Implementation: "compiled-hostd", RequirementIDs: reqs}, Mutating: true, Policy: consolejobs.ActionReject, Phase: incusprovision.PhaseUninstall, Timeout: 600},
+		{Descriptor: Descriptor{Name: ActionTraefikSync, Scope: syncScope, ReadOnly: false, RequiresRoot: true, RequiresConfirm: false, Implementation: "compiled-hostd", RequirementIDs: []string{"INCUS-R-118", "INCUS-R-119", "HOSTACT-R-001", "HOSTACT-R-013", "HOSTACT-R-014", "HOSTACT-R-015"}}, Mutating: true, Sync: true, Policy: consolejobs.ActionCoalesce, Timeout: 60},
+		{Descriptor: Descriptor{Name: ActionPortsSync, Scope: syncScope, ReadOnly: false, RequiresRoot: true, RequiresConfirm: false, Implementation: "compiled-hostd", RequirementIDs: []string{"INCUS-R-152", "INCUS-R-158", "INCUS-R-160", "INCUS-R-161", "HOSTACT-R-001", "HOSTACT-R-013", "HOSTACT-R-014", "HOSTACT-R-015"}}, Mutating: true, Sync: true, Policy: consolejobs.ActionCoalesce, Timeout: 120},
 		{Descriptor: Descriptor{Name: ActionImagePrune, Scope: pruneApplyScope, ReadOnly: false, RequiresRoot: true, RequiresConfirm: true, Implementation: "compiled-hostd", RequirementIDs: pruneReqs}, Mutating: true, Phase: incusprovision.Phase("image-prune"), Policy: consolejobs.ActionReject, Timeout: 600},
 	}
 }

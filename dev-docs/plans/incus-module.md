@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-23
-updated: 2026-09-30
+updated: 2026-10-03
 ---
 
 # Incus compute Provider 实施计划
@@ -42,11 +42,11 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M9：网络 IPv6 姿态与 image_policy 预留 | R-043、R-045、R-052 | 已完成 |
 | M9a：双栈出网验收 | R-044 | 已完成；IPv6 启用/关闭两种租约的真实出网均经各自网桥 masquerade（2026-09-26，[两档生命周期](../reviews/2026-09-26-incus-vm-tier-lifecycle.md)）；伪造子网外源地址由 Provider 自有网桥 ACL 丢弃，实机上游计数为 0 且漂移可检出、可修复（2026-09-27，[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)）；同租约 guest 间 IPv6 冒用不在该围栏范围内 |
 | M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047、R-048、R-050、R-051、R-057、R-094、R-107、R-108、R-109 | 已完成；三个一级发行版以 Zabbly 7.0.1 各通过 23 项审批/卸载（2026-09-26），未适配的 Debian 14 在同一审批链路保持关闭且不改宿主（2026-09-27），真实 Core 自动投影、撤销后拒绝与移除消费者撤销（2026-09-26）通过；ARM64、真实 Forgejo/AI Agent 业务部署与失败 intent 的运维恢复未作验收 |
-| M10a：租约出站分级与入站默认拒绝 | R-105、R-112—R-127、R-130 | 实施中；2026-09-30 完成实机验证（[租约网络探测](../reviews/2026-09-30-incus-lease-network-probe.md)），并据此把控制连接改为 Incus 直接监听控制网关、删除转发服务；出站分级、窄静态规则与默认拒绝入站待实现。2026-09-28 由逐实例转发许可改为租约级静态分级（[出站分级草案](../reviews/2026-09-28-compute-egress-tiers-draft.md)），原 R-101—R-104 废弃，原实现已于 2026-09-30 删除；同批把租约网桥默认入站改为拒绝，见 §14 |
-| M10b：租约网络视图 | R-128—R-129、R-159 | 未开始；控制台只读图形视图，含入站档位与发布，见 §14 |
-| M11：HTTP 发布与中介 | R-053、R-054、R-062、R-064、R-065、R-070、R-071、R-086—R-088、R-095、R-096、R-137、R-139—R-149 | 阻塞；等第一个声明 HTTP 发布的消费者再实施。2026-09-28 定案：anasd 内的无特权中介写 Traefik 路由文件，取代逐发布 30 秒许可（[入站简化草案](../reviews/2026-09-28-compute-ingress-simplification-draft.md)）；R-063 废弃，见 §15 |
-| M11b：入站档位与租约间隔离 | R-131—R-136 | 未开始；实机验证已于 2026-09-30 完成；随 M10a 实施：`none`、`published` 两档，发布的 ACL 放行与租约间不直连；逐发布许可的旧实现已于 2026-09-30 删除，见 §15 |
-| M11c：端口绑定 | R-138、R-150—R-158、R-160—R-164 | 未开始；实机验证已于 2026-09-30 完成（端口占位改为常驻持有）；Docker 式四层转发、槽位固定地址、hostd 在 apply 时同步端口表；等第一个声明端口绑定的 Module 或用户主机实例时实施，前置 HOSTACT-R-014/R-015 与运行问题记录，见 §15 |
+| M10a：租约出站分级与入站默认拒绝 | R-105、R-112—R-127、R-130 | 实施中；2026-10-03 实现完成并有单元测试：出站四档与两个开关写进租约 ACL，`anas-leases` 与 `anas-traefik` 两份 address set，窄静态 FORWARD 规则与开机恢复单元，专用网桥前缀 `lease` 与旧网桥迁移，撤销关闭 ACL 并停止实例，默认拒绝入站（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；实机 e2e 未运行。2026-09-30 的实机验证见[租约网络探测](../reviews/2026-09-30-incus-lease-network-probe.md)，原 R-101—R-104 废弃、旧实现已删除 |
+| M10b：租约网络视图 | R-128—R-129、R-159 | 实施中；2026-10-03 API `GET /api/v1/workspaces/{ws}/compute/leases` 与只读图形页面已实现，`ensure` 结果交回网桥网段与网关并记入 resource state（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；R-129 的 e2e 未运行 |
+| M11：HTTP 发布与中介 | R-053、R-054、R-062、R-064、R-065、R-070、R-071、R-086—R-088、R-095、R-096、R-137、R-139—R-149 | 实施中；2026-10-03 实现完成并有单元测试：anasd 内的中介每 3 秒全量重算、写 Traefik 动态目录的 `compute-http/` 子目录，请求改为 `{instance, address, port, label?}`，激活时按授权摘要清理路由，去掉启动拦截，共享客户端带实例地址、停止/删除时撤销、janitor 清理（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；尚无内置消费者声明 HTTP 发布，真实 Traefik/guest 的 e2e 未运行；R-063 废弃，见 §15 |
+| M11b：入站档位与租约间隔离 | R-131—R-136 | 实施中；2026-10-03 `network.ingress` 与 `publish.http` 随部署冻结、`none` 拒绝发布声明，Provider 按档位写入站规则并用 `anas-leases` 排除其他租约（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；实机 e2e 未运行 |
+| M11c：端口绑定 | R-138、R-150—R-158、R-160—R-164 | 实施中；2026-10-03 实现完成并有单元测试：`network.slots`/`publish.ports`、槽位固定地址、`auto` 分配与冲突检查、hostd 同步动作 `incus.ports.sync`（nft 端口表与 systemd 端口占位）、开机先占位后恢复、anasd 触发与定期检查、运行问题记录、共享客户端写槽位地址（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；尚无 Module 声明端口绑定，实机 e2e 未运行 |
 | M11a：独立租约命名密钥 | R-092 | 已完成；生成/复用、敏感投影、冻结引用与文件备份恢复回归通过 |
 | M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085、R-110 | 已完成；默认配方、冻结归档、历史 bundle、发布脚本与逐摘要供给已接通，容器档真实烘焙/启动/one-job 通过；Core 链路上重复 apply 不重建、显式 prune 只删失败部署的新 revision、回滚从冻结产物恢复丢失镜像、产物丢失时失败且不重建，租约证书可自行导入白名单外镜像（摘要约束只在共享客户端）均有实机证据（2026-09-27，[prune 与镜像验收](../reviews/2026-09-27-incus-image-prune.md)）；VM 档产品镜像烘焙、ARM64 与正式签名分发未覆盖 |
 | M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 已完成；整体审阅未发现制品下载端点或控制流内联，新增 OpenAPI 媒体类型门禁，见[审阅记录](../reviews/2026-09-26-incus-bulk-data-path-review.md)与[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
@@ -1224,10 +1224,11 @@ VM 档产品镜像的真实烘焙、ARM64 与正式签名分发不在退出条�
 | compute Contract 与 `incus` Module 技术文档（中英文）、使用指南 | 租约结束路径（`INCUS-R-111`）、`deletion_policy` 只收 `retain`、结果 schema 描述 Core 记录的租约 | 已完成（2026-09-26） |
 | [宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §5、§7 | 入站改为 `none`、`published` 两档，经 Traefik 的 HTTP 发布（anasd 内的中介）与 Docker 式端口绑定（hostd 同步端口表）分开；§7.5—§7.14 标为已取代；中英文架构索引同步 | 已完成（2026-09-29，设计）；compute Contract、`incus` 与 Traefik Module 文档待实现时同步 |
 | compute Contract 与 `incus`、`ai_agent`、`forgejo`、`traefik` 技术文档（中英文）；宿主供给设计 §5.1.8、§5.6、§7.5 | 删除旧转发许可与逐发布入站实现的描述，改为删除清单；端口范围默认值、无 hostd 时拒绝与可配置项一览 | 已完成（2026-09-30） |
+| compute Contract 与 `incus` 技术文档、README（中英文）；使用指南；Forgejo 设计 §4.3；宿主供给设计 §1、§5；宿主通道设计 §15；命令 JSON 契约 `issues` | 租约网络、HTTP 发布、端口绑定的实现说明；撤销停止实例；两种发布的差异（`INCUS-R-163`）；同步动作 | 已完成（2026-10-03） |
 
 ## 12. 当前阻塞与执行顺序
 
-1. M10a 按租约级出站分级重排（§14），不再依赖运行 owner。入站已定案（§15）：M11b（入站档位、ACL 与删除旧实现）随 M10a 实施，M11（HTTP 发布与中介）等第一个声明 HTTP 发布的消费者，M11c（端口绑定）等第一个声明端口绑定的 Module 或用户主机实例，前置宿主通道的边界内同步动作（HOSTACT-R-014、R-015）与[运行问题记录](../requirements/runtime-issues.md)。命名镜像解析已定案并随 M12 关闭。
+1. M10a、M10b、M11、M11b、M11c 的代码与单元测试于 2026-10-03 完成（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)），剩余是实机 e2e：在一次性宿主上跑出站四档、默认拒绝入站、撤销、HTTP 发布（需要一个声明 `publish.http` 的消费者或实验 Module）、端口绑定（含开机顺序与 IPv6）和租约网络视图，结果登记到 §10。前置的宿主通道同步动作（HOSTACT-R-014、R-015）与[运行问题记录](../requirements/runtime-issues.md)的 CLI 部分已随之实现。命名镜像解析已定案并随 M12 关闭。
 2. M8b staging 构建验证已完成；继续 M10 宿主原生生命周期与 M11/M6 剩余矩阵，不得因此宣称完整入站可用。
 3. 宿主动作通道与统一动作 ABI 的实现仍分别归各自计划，Incus 只接入，不在本计划重复分配其需求。
 4. v7.3.0 bridge/project 兼容性缺陷已修复为 default project 独立 bridge 与精确网络授权，历史证据与反例见[核验记录](../reviews/2026-09-10-incus-network-proxy-validation.md)。独立宿主尚无可用验收证据；容器与 VM 分别跟踪，M2/M4/M5/M9 的真实验收均登记到 §10。
@@ -1329,19 +1330,19 @@ e2e 记录中的相应行保留为历史。
 
 实现：
 
-- [ ] compute Contract 新增 `network.egress`、`network.module_access`、`network.intra_lease`，并随部署冻结
-- [ ] Provider 把档位、开关与局域网清单写进租约网桥的 ACL 和 address set，Traefik 地址清单只按名字引用；`inspect`、`ensure` 覆盖漂移
-- [ ] Core 在 apply 时计算局域网清单（默认路由所在网卡的直连网段加配置的附加网段）
-- [ ] Traefik 地址清单由 hostd 的边界内同步动作写入（`INCUS-R-118`、`HOSTACT-R-014`/`R-015`）：`incus.configure` 批准一次；apply 启动 Traefik 后、Traefik 容器重启后与 anasd 启动时由 anasd 触发，hostd 自己从 Docker 读取地址
-- [ ] `incus.configure` 安装、`incus.uninstall` 删除宿主侧那组固定静态转发规则（窄规则，`INCUS-R-126`）
+- [x] compute Contract 新增 `network.egress`、`network.module_access`、`network.intra_lease`，并随部署冻结（2026-10-03）
+- [x] Provider 把档位、开关与局域网清单写进租约网桥的 ACL 和 address set，Traefik 地址清单只按名字引用；`inspect`、`ensure` 覆盖漂移（2026-10-03）
+- [x] Core 在 apply 时计算局域网清单（默认路由所在网卡的直连网段加配置的附加网段）（2026-10-03）
+- [x] Traefik 地址清单由 hostd 的边界内同步动作写入（2026-10-03，`incus.traefik.sync`）（`INCUS-R-118`、`HOSTACT-R-014`/`R-015`）：`incus.configure` 批准一次；apply 启动 Traefik 后、Traefik 容器重启后与 anasd 启动时由 anasd 触发，hostd 自己从 Docker 读取地址
+- [x] `incus.configure` 安装、`incus.uninstall` 删除宿主侧那组固定静态转发规则（窄规则，`INCUS-R-126`；2026-10-03，含开机恢复单元）
 - [x] 控制连接简化（简化评审第 5 项）：Incus 直接监听控制网桥网关的 `8443`，`incus.service` 排在 `docker.service` 之后；删除 `modules/incus/control-relay`、它的单元、账号与配置；连接包升为 v2（2026-09-30，[租约网络探测](../reviews/2026-09-30-incus-lease-network-probe.md) §4）
-- [ ] 租约网桥改用专用前缀；现有测试租约重建
-- [ ] 租约撤销路径关闭出站并结束已建立的连接
+- [x] 租约网桥改用专用前缀（2026-10-03，`ensure` 迁移并删除未使用的旧网桥）；实机上现有测试租约的重建随 e2e
+- [x] 租约撤销路径关闭出站并结束已建立的连接（2026-10-03：清空 ACL 并停止运行中的实例）
 - [x] 删除逐实例许可实现：`internal/incusingresshost/forwarding_*`、`internal/incusprovision/forwarding_*`、转发宿主动作、部署前的转发撤回（2026-09-30，[删除记录](../reviews/2026-09-30-incus-old-code-removal-and-hostd-simplification.md)）
-- [ ] 租约网桥默认入站改为拒绝（`INCUS-R-130`），与 `INCUS-R-122` 一起核验 DHCP、DNS 与出站回包
-- [ ] Provider 的 `ensure` 结果交回租约网桥的网段与网关，Core 记入 resource state（`INCUS-R-159`）
-- [ ] 控制台租约网络视图：API（`INCUS-R-128`，含入站档位与发布）与只读图形页面（`INCUS-R-129`）
-- [ ] 同步 compute Contract、`incus` Module 技术文档（中英文）与 Forgejo 设计 §4.3 的出站描述
+- [x] 租约网桥默认入站改为拒绝（`INCUS-R-130`，2026-10-03）；产品实现上与 `INCUS-R-122` 一起核验 DHCP、DNS 与出站回包随 e2e
+- [x] Provider 的 `ensure` 结果交回租约网桥的网段与网关，Core 记入 resource state（`INCUS-R-159`，2026-10-03）
+- [x] 控制台租约网络视图：API（`INCUS-R-128`，含入站档位与发布）与只读图形页面（`INCUS-R-129`）（2026-10-03；页面 e2e 未运行）
+- [x] 同步 compute Contract、`incus` Module 技术文档（中英文）与 Forgejo 设计 §4.3 的出站描述（2026-10-03）
 
 ## 15. M11/M11b/M11c：租约入站（2026-09-28 重排，2026-09-29 定稿）
 
@@ -1360,17 +1361,17 @@ M11b 随 M10a 实施，先做实机验证，再写实现：
 
 M11b 实现：
 
-- [ ] compute Contract 新增 `network.ingress`（`none`、`published`）与 `publish.http`（原 `ingress` 段），随部署冻结；`none` 档拒绝发布声明
-- [ ] Provider 按档位与发布写 ACL 入站规则；用全部租约网段的地址清单排除其他租约；`inspect`、`ensure` 覆盖漂移
+- [x] compute Contract 新增 `network.ingress`（`none`、`published`）与 `publish.http`（原 `ingress` 段），随部署冻结；`none` 档拒绝发布声明（2026-10-03）
+- [x] Provider 按档位与发布写 ACL 入站规则；用全部租约网段的地址清单排除其他租约；`inspect`、`ensure` 覆盖漂移（2026-10-03）
 - [x] 删除逐发布许可实现：`internal/computeingressruntime`、`internal/incusingresshost`、`internal/incusprovision` 的 `ingress_observation*` 与 `observer_configuration*`、`internal/computeingress` 的规划器、宿主动作 `incus.ingress.observe_http` 与 `incus.ingress.observer(.plan)`、OpenAPI 与 Web 的 `observer` 阶段、`internal/jobexecutor` 的入站排空与工作区围栏（保留领取前的授权复核）、`cmd/anasd` 的相应装配、`cmd/incus-network-prototype` 及其测试脚本与夹具（2026-09-30，同上记录）
 
 M11 实现（等第一个声明 HTTP 发布的消费者）：
 
-- [ ] anasd 内的 HTTP 发布中介：请求目录的文件事件与部署激活触发重算，另有低频全量重算；只写 Traefik 动态目录下的专属子目录
-- [ ] 请求改为 `{instance, address, port, label?}`，中介按 §7septies 校验
-- [ ] Core：部署激活时删除受影响租约的路由文件；去掉 `requireComputeIngressDisabled` 激活拦截
-- [ ] 共享客户端：请求带上承接实例的地址；停止、删除实例时撤销发布；janitor 清理孤立请求
-- [ ] 同步 compute Contract 与 `incus` Module 技术文档（中英文）
+- [x] anasd 内的 HTTP 发布中介：只写 Traefik 动态目录下的专属子目录（2026-10-03）；以每 3 秒一次的全量重算代替文件事件与低频重算，激活后的下一次重算即生效
+- [x] 请求改为 `{instance, address, port, label?}`，中介按 §7septies 校验（2026-10-03）
+- [x] Core：部署激活时删除受影响租约的路由文件；去掉 `requireComputeIngressDisabled` 激活拦截（2026-10-03）
+- [x] 共享客户端：请求带上承接实例的地址；停止、删除实例时撤销发布；janitor 清理孤立请求（2026-10-03）
+- [x] 同步 compute Contract 与 `incus` Module 技术文档（中英文）（2026-10-03）
 
 M11c 等第一个声明端口绑定的 Module 或用户主机实例时实施，先做实机验证：
 
@@ -1388,10 +1389,10 @@ M11c 等第一个声明端口绑定的 Module 或用户主机实例时实施，�
 
 M11c 实现：
 
-- [ ] compute Contract 新增 `network.slots`（槽位 → 实例名）与 `publish.ports`（协议、宿主端口或 `auto`、槽位、guest 端口）
-- [ ] Provider：为槽位预留 DHCP 动态范围外的固定 IPv4，租约启用 IPv6 时另预留固定 IPv6，在 `ensure` 结果交回；ACL 放行到槽位的端口绑定
-- [ ] Core：`auto` 从操作者确认的范围分配并记入部署状态；与 Traefik、Module、其他租约、宿主监听和 Docker 发布端口的冲突检查；显式端口冲突时 apply 失败并记录运行问题
-- [ ] hostd：新增端口表同步动作（五问见[宿主通道计划](host-action-channel.md) §13）；`incus.configure` 确认可用端口范围并安装固定规则链；systemd 端口占位（`Accept=no` 加常驻持有服务）；开机先占位、后恢复
-- [ ] anasd：定期与 Docker 事件触发的绑定检查，写入运行问题
-- [ ] 共享客户端：创建槽位对应名称的实例时写入槽位地址，其余网卡设置与 profile 一致
-- [ ] 同步 compute Contract、`incus` Module 技术文档与使用指南（中英文）
+- [x] compute Contract 新增 `network.slots`（槽位 → 实例名）与 `publish.ports`（协议、宿主端口或 `auto`、槽位、guest 端口）（2026-10-03）
+- [x] Provider：为槽位预留 DHCP 动态范围外的固定 IPv4，租约启用 IPv6 时另预留固定 IPv6，在 `ensure` 结果交回；ACL 放行到槽位的端口绑定（2026-10-03）
+- [x] Core：`auto` 从操作者确认的范围分配并记入部署状态；与 Traefik、Module、其他租约、宿主监听和 Docker 发布端口的冲突检查；显式端口冲突时 apply 失败并记录运行问题（2026-10-03）
+- [x] hostd：新增端口表同步动作 `incus.ports.sync`（五问见[宿主通道计划](host-action-channel.md) §13）；`incus.configure` 确认可用端口范围并安装固定规则链；systemd 端口占位（`Accept=no` 加常驻持有服务）；开机先占位、后恢复（2026-10-03）
+- [x] anasd：定期与 Docker 事件触发的绑定检查，写入运行问题（2026-10-03）
+- [x] 共享客户端：创建槽位对应名称的实例时写入槽位地址，其余网卡设置与 profile 一致（2026-10-03）
+- [x] 同步 compute Contract、`incus` Module 技术文档与使用指南（中英文）（2026-10-03）

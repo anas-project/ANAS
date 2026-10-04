@@ -48,6 +48,13 @@ type Ownership struct {
 	ControlListener         bool     `json:"control_listener,omitempty"`
 	ManagementTrust         string   `json:"management_trust,omitempty"`
 	ConnectionBundle        bool     `json:"connection_bundle,omitempty"`
+	LeaseForwarding         bool     `json:"lease_forwarding,omitempty"`
+	NetworkUnit             bool     `json:"network_unit,omitempty"`
+	TraefikAddressSet       bool     `json:"traefik_address_set,omitempty"`
+	NetworkPolicy           bool     `json:"network_policy,omitempty"`
+	PortRangeFirst          int      `json:"port_range_first,omitempty"`
+	PortRangeLast           int      `json:"port_range_last,omitempty"`
+	PortBindings            bool     `json:"port_bindings,omitempty"`
 }
 
 type Credential struct {
@@ -139,6 +146,13 @@ type PublicOwnership struct {
 	ControlListener         bool     `json:"control_listener,omitempty"`
 	ManagementTrust         string   `json:"management_trust,omitempty"`
 	ConnectionBundle        bool     `json:"connection_bundle,omitempty"`
+	LeaseForwarding         bool     `json:"lease_forwarding,omitempty"`
+	NetworkUnit             bool     `json:"network_unit,omitempty"`
+	TraefikAddressSet       bool     `json:"traefik_address_set,omitempty"`
+	NetworkPolicy           bool     `json:"network_policy,omitempty"`
+	PortRangeFirst          int      `json:"port_range_first,omitempty"`
+	PortRangeLast           int      `json:"port_range_last,omitempty"`
+	PortBindings            bool     `json:"port_bindings,omitempty"`
 }
 
 type stateStore interface {
@@ -287,6 +301,13 @@ func (s State) Public() PublicState {
 			ControlListener:         s.Ownership.ControlListener,
 			ManagementTrust:         s.Ownership.ManagementTrust,
 			ConnectionBundle:        s.Ownership.ConnectionBundle,
+			LeaseForwarding:         s.Ownership.LeaseForwarding,
+			NetworkUnit:             s.Ownership.NetworkUnit,
+			TraefikAddressSet:       s.Ownership.TraefikAddressSet,
+			NetworkPolicy:           s.Ownership.NetworkPolicy,
+			PortRangeFirst:          s.Ownership.PortRangeFirst,
+			PortRangeLast:           s.Ownership.PortRangeLast,
+			PortBindings:            s.Ownership.PortBindings,
 		},
 		BundlePersisted: s.Bundle != nil || s.Ownership.ConnectionBundle,
 		ReceiptCount:    len(s.Receipts),

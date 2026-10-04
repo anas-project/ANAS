@@ -758,3 +758,27 @@ anasd 用共享 recorder 记录事件流；流在终态前中断时，查询只�
 **限制。** anasd 重启时正在运行的宿主任务仍按原规则记为 `daemon_restarted` 并阻断宿主队列，还没有在启动时用调用
 记录自动结清。原生门禁改为 `test-env/scripts/test-host-action-native.sh`：调用记录、激活与对端核验的 Linux 用例必须
 实际运行。新实现还没有在 Linux/systemd 实机上重跑完整审批门禁。
+
+## 15. 边界内同步动作（2026-10-03，当前实现）
+
+`HOSTACT-R-014`、`R-015` 允许一类不逐次确认的写动作：操作者先在 `incus.configure` 的二段确认里批准它的边界，之后
+边界内的同步由 hostd 自己执行。目前有两个：
+
+| 动作 | 改写什么 | 谁触发 | hostd 自己读什么 |
+| --- | --- | --- | --- |
+| `incus.traefik.sync` | 全局 address set `anas-traefik` | anasd 启动时、带 `anas.traefik.instance` 标签的容器启动时 | Docker 里带该标签的运行中容器的地址 |
+| `incus.ports.sync` | nft 表 `anas_incus_ports` 的四张端口表与端口占位单元 | anasd 启动时、任一登记工作区激活部署后 | `/etc/anas/anasd.yml` 登记的各工作区的活动部署与 resource state |
+
+共同规则：
+
+- **参数恒为 `{}`。** 请求里没有地址、端口或条目；`CanonicalParameters` 拒绝任何非空参数。hostd 从宿主当前状态与
+  冻结部署推导要写的内容，所以调用方即使被攻破，也只能让 hostd 收敛到冻结部署本来就批准的状态。
+- **先有批准。** 宿主状态 `state.json` 没有记下 configure 安装的产物（`traefik_address_set`，或 `port_bindings` 加
+  批准的端口范围）时，动作以 `unconfirmed` 失败，不做任何写入。超出批准范围的端口条目被拒绝并记成宿主运行问题，
+  不降级为自动批准。
+- **原子与回读。** address set 以单次 Incus API 替换并读回；端口表以单个 nft 事务替换并读回，新绑定的占位先于
+  端口表启用、旧占位在端口表替换之后才停用。任一步失败都保留上一次生效的内容。
+- **审计与队列。** 与其他动作一样经共享队列、调用记录与审计；策略是 `coalesce`，排队期间重复触发合并为一次。
+  任务以 anasd 系统身份（`SystemSyncActor`）发起，挂在第一个登记工作区下，因为两份产物都是宿主级的。
+- **撤销。** `incus.uninstall` 删除 address set、端口表、全部占位单元与模板；部署不再声明的绑定在下一次同步时
+  移除。

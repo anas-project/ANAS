@@ -160,7 +160,7 @@ func TestComputeLeaseSecretFrozenReferenceAndLegacyUpgrade(t *testing.T) {
 	if strings.Contains(string(body), req.LeaseSecret) || !strings.Contains(string(body), "lease_secret: "+req.LeaseSecretKey) {
 		t.Fatal("deployment did not persist a reference only")
 	}
-	if err := a.saveResourceReady(req, a.env); err != nil {
+	if err := a.saveResourceReady(req, a.env, nil); err != nil {
 		t.Fatal(err)
 	}
 	statePath := filepath.Join(a.base, "state", "resources", "forgejo.runners.yml")

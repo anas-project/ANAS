@@ -45,6 +45,8 @@ config:
     - server_certificate_b64
     - admin_certificate_b64
     - admin_key_b64
+  defaults:
+    lan_extra_subnets: ""
   types:
     image_architecture:
       enum: [amd64, arm64]
@@ -68,6 +70,10 @@ config:
     admin_key_b64:
       kind: string
       default_source: host
+    lan_extra_subnets:
+      kind: string
+      constraints:
+        pattern: '^[0-9A-Fa-f:./, ]*$'
   changes:
     image_architecture:
       effect: container_recreate
@@ -97,6 +103,10 @@ config:
       effect: reconcile
       apply: reconcile-incus-provider
       description: Incus storage pool backing every lease root disk; changing it does not move existing instances.
+    lan_extra_subnets:
+      effect: reconcile
+      apply: reconcile-incus-provider
+      description: Extra LAN subnets, besides those on the host's default-route interface, that the internet_lan tiers may reach.
 logic:
   hook:
     command:

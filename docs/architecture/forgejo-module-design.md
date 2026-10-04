@@ -274,8 +274,12 @@ Forgejo Runner 本身没有等待超时，不能依赖它自行退出。
 `prewarm=0`。预热实例收到具体 job handle 后才创建 registration、注入 token 并启动 Runner，执行
 一次后销毁。扩容只能增加独立 one-job 实例数量，不能提高同一 Runner 的 capacity。
 
-执行实例不挂载 NAS、ANAS workspace、Forgejo data、宿主 Docker/Podman socket 或 Secret Store；默认
-无入站端口，出站只允许 Forgejo HTTPS、DNS/NTP 和明确批准的 registry/package mirror。需要严格
+执行实例不挂载 NAS、ANAS workspace、Forgejo data、宿主 Docker/Podman socket 或 Secret Store。网络按
+compute 租约的档位执行（[Incus 宿主供给设计](incus-host-provisioning.md) §5.4、§5.5）：Forgejo 的租约声明
+`network: {egress: internet, module_access: true}`——实例可以出公网（拉取依赖与镜像）、经 Traefik 访问 Forgejo 等
+ANAS Module，到不了局域网、宿主本机、Docker 网络与其他租约；入站档位是默认的 `none`，没有任何主动连入；
+`intra_lease` 关闭，同一租约的作业实例之间也不通。出站不再按目的地逐条批准：「只允许 Forgejo 与批准的镜像源」
+需要 L7 代理，不在当前范围内。需要严格
 Docker Engine 兼容时，可以在同一实例边界内把 rootless Podman 换成 rootless Docker。privileged DinD
 两档都不接受，也不得运行在 ANAS 核心服务宿主。
 

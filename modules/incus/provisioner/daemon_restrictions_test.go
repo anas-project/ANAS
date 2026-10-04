@@ -10,7 +10,7 @@ import (
 var (
 	// Restriction extensions advertised by Incus 7.0.1 LTS and 7.5.1
 	// (internal/version/api.go at those tags).
-	incus70Extensions = []string{"projects", "projects_restricted_image_servers", "projects_restricted_storage_pool_access"}
+	incus70Extensions = []string{"projects", "network_address_set", "projects_restricted_image_servers", "projects_restricted_storage_pool_access"}
 	incus75Extensions = append(slices.Clone(incus70Extensions), "projects_restricted_virtual_machines_nesting")
 
 	// Restriction keys accepted by Incus 7.5.1 (projectConfigKeys).
@@ -25,8 +25,8 @@ func TestReadDaemonRestrictionsFromAPIExtensions(t *testing.T) {
 		fails      bool
 	}{
 		"incus 6.0 LTS":       {extensions: []string{"projects"}},
-		"incus 7.0 LTS":       {extensions: incus70Extensions, want: daemonRestrictions{StoragePoolAccess: true}},
-		"incus 7.5":           {extensions: incus75Extensions, want: daemonRestrictions{StoragePoolAccess: true, VMNesting: true}},
+		"incus 7.0 LTS":       {extensions: incus70Extensions, want: daemonRestrictions{StoragePoolAccess: true, AddressSets: true}},
+		"incus 7.5":           {extensions: incus75Extensions, want: daemonRestrictions{StoragePoolAccess: true, VMNesting: true, AddressSets: true}},
 		"no extension report": {extensions: nil, fails: true},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -75,9 +75,11 @@ func TestEnsureWritesNewerRestrictionsOnlyWhereTheDaemonAdvertisesThem(t *testin
 		extensions []string
 		want       map[string]string
 	}{
-		"incus 6.0 LTS": {extensions: []string{"projects"}, want: map[string]string{}},
-		"incus 7.0 LTS": {extensions: incus70Extensions, want: map[string]string{"restricted.storage-pools.access": "default"}},
-		"incus 7.5":     {extensions: incus75Extensions, want: map[string]string{"restricted.storage-pools.access": "default", "restricted.virtual-machines.nesting": "block"}},
+		// Address sets are required for any lease; this row isolates the
+		// restriction keys a daemon without the 7.x extensions must not get.
+		"no 7.x restrictions": {extensions: []string{"projects", "network_address_set"}, want: map[string]string{}},
+		"incus 7.0 LTS":       {extensions: incus70Extensions, want: map[string]string{"restricted.storage-pools.access": "default"}},
+		"incus 7.5":           {extensions: incus75Extensions, want: map[string]string{"restricted.storage-pools.access": "default", "restricted.virtual-machines.nesting": "block"}},
 	} {
 		for _, isolation := range []string{"container", "vm"} {
 			t.Run(name+"/"+isolation, func(t *testing.T) {
@@ -159,9 +161,9 @@ func TestVMTierProfileDisablesNestingOnlyWhereTheDaemonSupportsIt(t *testing.T) 
 		extensions []string
 		want       string
 	}{
-		"incus 6.0 LTS": {extensions: []string{"projects"}},
-		"incus 7.0 LTS": {extensions: incus70Extensions},
-		"incus 7.5":     {extensions: incus75Extensions, want: "false"},
+		"no 7.x restrictions": {extensions: []string{"projects", "network_address_set"}},
+		"incus 7.0 LTS":       {extensions: incus70Extensions},
+		"incus 7.5":           {extensions: incus75Extensions, want: "false"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d := newFakeDaemon(t)

@@ -50,6 +50,9 @@ func (*daemonHostFixture) InvokeImagePruneConfirmed(context.Context, string, str
 func (*daemonHostFixture) CancelQueuedPreflight(context.Context, string, string) (consolejobs.Job, error) {
 	return consolejobs.Job{}, nil
 }
+func (*daemonHostFixture) InvokeSync(context.Context, string, string) (consolejobs.CreateResult, error) {
+	return consolejobs.CreateResult{}, nil
+}
 
 func TestHostDaemonLifecycleWaitsForShutdown(t *testing.T) {
 	s := &daemonHostFixture{ready: make(chan struct{})}

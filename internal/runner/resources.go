@@ -43,6 +43,8 @@ type resourceActual struct {
 	CPU                          int    `yaml:"cpu,omitempty"`
 	MemoryMiB                    int    `yaml:"memory_mib,omitempty"`
 	DiskGiB                      int    `yaml:"disk_gib,omitempty"`
+	// ComputeNetwork is the lease bridge the Provider reported from ensure.
+	ComputeNetwork *computeNetworkState `yaml:"lease_network,omitempty"`
 }
 
 type resourceState struct {
@@ -99,6 +101,17 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 			if err := projectComputeProviderEnv(env, request); err != nil {
 				return err
 			}
+			lan, addresses, err := a.hostLANAndAddresses()
+			if err != nil {
+				return fmt.Errorf("resource %s.%s: %w", consumer, request.ID, err)
+			}
+			env["ANAS_RESOURCE_LAN_SUBNETS"] = strings.Join(lan, ",")
+			env["ANAS_RESOURCE_HOST_ADDRESSES"] = strings.Join(addresses, ",")
+			if request.ComputeIngress != nil {
+				if err := a.prepareComputeHTTPRequestDir(request); err != nil {
+					return err
+				}
+			}
 		default:
 			return fmt.Errorf("resource %s.%s contract %s has no runtime projection", consumer, request.ID, request.Contract)
 		}
@@ -121,10 +134,21 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 			defer cleanup()
 		}
 		args := resourceEnsureComposeArgs(operation.Service, operation.Command, runOptions...)
-		if err := a.runCompose(providerDir, request.Provider, providerModule.ComposeFile, env, args...); err != nil {
+		var network *computeNetworkState
+		if request.Contract == "compute" {
+			// The compute Provider reports the lease bridge back on stdout;
+			// Core records it in the resource state (INCUS-R-159).
+			out, err := a.runComposeOutput(providerDir, request.Provider, providerModule.ComposeFile, env, args...)
+			if err != nil {
+				return fmt.Errorf("ensure resource %s.%s through %s: %w", consumer, request.ID, request.Provider, err)
+			}
+			if network, err = parseComputeEnsureResult(out); err != nil {
+				return fmt.Errorf("ensure resource %s.%s through %s: %w", consumer, request.ID, request.Provider, err)
+			}
+		} else if err := a.runCompose(providerDir, request.Provider, providerModule.ComposeFile, env, args...); err != nil {
 			return fmt.Errorf("ensure resource %s.%s through %s: %w", consumer, request.ID, request.Provider, err)
 		}
-		if err := a.saveResourceReady(request, env); err != nil {
+		if err := a.saveResourceReady(request, env, network); err != nil {
 			return err
 		}
 	}
@@ -171,10 +195,15 @@ func projectComputeProviderEnv(env map[string]string, request ResourceRequest) e
 	env["ANAS_RESOURCE_IMAGE_ARCHITECTURE"] = request.ComputeImages.Images[0].Target.Architecture
 	env["ANAS_RESOURCE_CLIENT_CERT"] = base64.StdEncoding.EncodeToString([]byte(certPEM))
 	env["ANAS_RESOURCE_IMAGE_SUPPLY_FILE"] = computeImageSupplyContainerDescriptor
+	network, err := frozenComputeNetwork(request).Encode()
+	if err != nil {
+		return err
+	}
+	env["ANAS_RESOURCE_NETWORK"] = network
 	return nil
 }
 
-func (a *app) saveResourceReady(request ResourceRequest, providerEnv map[string]string) error {
+func (a *app) saveResourceReady(request ResourceRequest, providerEnv map[string]string, network *computeNetworkState) error {
 	deletionPolicy, _ := request.Spec["deletion_policy"].(string)
 	spec, err := yaml.Marshal(request.Spec)
 	if err != nil {
@@ -243,6 +272,7 @@ func (a *app) saveResourceReady(request ResourceRequest, providerEnv map[string]
 			ServerCertificateFingerprint: fingerprint, ClientCertificateSecret: request.SecretKey,
 			LeaseSecret:  request.LeaseSecretKey,
 			MaxInstances: quota.MaxInstances, CPU: quota.CPU, MemoryMiB: quota.MemoryMiB, DiskGiB: quota.DiskGiB,
+			ComputeNetwork: network,
 		}
 		if strings.TrimSpace(state.Actual.Endpoint) == "" {
 			return fmt.Errorf("provider %s did not publish compute endpoint for %s.%s", request.Provider, request.Consumer, request.ID)

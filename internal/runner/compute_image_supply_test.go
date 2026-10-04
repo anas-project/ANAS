@@ -125,7 +125,7 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 [ "$volumes" -eq 2 ]
-`
+` + fakeComputeEnsureEcho
 	if err := os.WriteFile(script, []byte(body), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ set -eu
 for arg in "$@"; do
     [ "$arg" != "--volume" ] || exit 73
 done
-`
+` + fakeComputeEnsureEcho
 	if err := os.WriteFile(script, []byte(body), 0700); err != nil {
 		t.Fatal(err)
 	}

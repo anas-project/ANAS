@@ -40,3 +40,29 @@ func TestHostExecutableExitCodeIsIndependentOfPayload(t *testing.T) {
 		}
 	}
 }
+
+// The boot unit's option runs the fixed restore and nothing else; a failure
+// is reported without its detail.
+func TestRestoreNetworkOptionRunsOnlyTheFixedRestore(t *testing.T) {
+	previous := restoreNetwork
+	t.Cleanup(func() { restoreNetwork = previous })
+	for _, fail := range []bool{false, true} {
+		calls := 0
+		restoreNetwork = func(context.Context) error {
+			calls++
+			if fail {
+				return errors.New("private-marker")
+			}
+			return nil
+		}
+		var out, diag bytes.Buffer
+		code := run(context.Background(), []string{"--restore-network"}, &out, &diag, func(context.Context) error { t.Fatal("restore served an action"); return nil })
+		if calls != 1 || (code == 0) == fail || out.Len() != 0 || strings.Contains(diag.String(), "private-marker") {
+			t.Fatal(code, calls, diag.String())
+		}
+	}
+	var out, diag bytes.Buffer
+	if code := run(context.Background(), []string{"--restore-network", "extra"}, &out, &diag, nil); code != 2 {
+		t.Fatal("the restore option accepted an argument")
+	}
+}

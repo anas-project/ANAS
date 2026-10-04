@@ -67,8 +67,11 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"eturnal.port":                        {Minimum: &minimumOne, Maximum: &maximumPort},
 		// Empty is inside the pattern because the parameter ships empty; the
 		// incus hook is what refuses to apply until it is actually set.
-		"incus.endpoint":                  {Pattern: `^https://[A-Za-z0-9.:_-]+$`},
-		"incus.storage_pool":              {Pattern: `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`},
+		"incus.endpoint":     {Pattern: `^https://[A-Za-z0-9.:_-]+$`},
+		"incus.storage_pool": {Pattern: `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`},
+		// Character set only; the incus hook parses each CIDR and refuses
+		// default, loopback, link-local and multicast ranges.
+		"incus.lan_extra_subnets":         {Pattern: `^[0-9A-Fa-f:./, ]*$`},
 		"meshcentral.mps_port":            {Minimum: &minimumOne, Maximum: &maximumPort},
 		"oauth2_proxy.console_proxy_port": {Minimum: &minimumOne, Maximum: &maximumPort},
 		"traefik.base_port":               {Minimum: &minimumOne, Maximum: &maximumPort},

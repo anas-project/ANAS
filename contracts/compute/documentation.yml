@@ -1,7 +1,7 @@
 api_version: anas.contract-documentation/v1
 contract: compute
 status: proposal
-reviewed_at: 2026-08-30
+reviewed_at: 2026-10-03
 summary:
   zh: 在 apply 时交付受限的隔离沙箱租约（project、配额、镜像 allowlist 与受限客户端证书），实例生命周期由消费者在租约边界内自行驱动。
   en: Provisions a fenced isolation sandbox lease at apply time (project, quota, image allowlist and a restricted client certificate); the consumer drives instance lifecycle itself within that fence.

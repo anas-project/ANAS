@@ -18,6 +18,7 @@ import (
 
 	"github.com/anas-project/ANAS/internal/computeimage"
 	"github.com/anas-project/ANAS/internal/computeingress"
+	"github.com/anas-project/ANAS/internal/computenet"
 )
 
 var (
@@ -133,12 +134,15 @@ func computeServerFingerprint(serverCertB64 string) (string, error) {
 func validateComputeSpec(consumer, id string, spec map[string]any) (computeQuota, []string, error) {
 	for field := range spec {
 		switch field {
-		case "sandbox", "instance_prefix", "quota", "image_allowlist", "image_policy", "credential", "deletion_policy", "ingress":
+		case "sandbox", "instance_prefix", "quota", "image_allowlist", "image_policy", "credential", "deletion_policy", "network", "publish":
 		default:
 			return computeQuota{}, nil, fmt.Errorf("resource %s.%s contains an unsupported compute spec field", consumer, id)
 		}
 	}
 	if _, err := computeingress.ParseSpec(spec); err != nil {
+		return computeQuota{}, nil, fmt.Errorf("resource %s.%s: %w", consumer, id, err)
+	}
+	if _, err := computenet.ParseSpec(spec); err != nil {
 		return computeQuota{}, nil, fmt.Errorf("resource %s.%s: %w", consumer, id, err)
 	}
 	// The daemon's default project holds the provider's bridges and cannot

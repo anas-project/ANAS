@@ -70,7 +70,7 @@ func NewHostActionService(o HostActionServiceOptions) (*HostActionService, error
 		s.workspaces[id] = true
 	}
 	runner, err := newHostActionRunner(o.Store, o.Lease, o.Release, func(ctx context.Context, job consolejobs.Job) error {
-		return s.authorize(ctx, job.CreatedBy, job.WorkspaceID)
+		return s.authorizeAction(ctx, job.CreatedBy, job.WorkspaceID, actionName(job))
 	})
 	if err != nil {
 		return nil, err
@@ -136,10 +136,73 @@ func HostActionRecoveryObserver(journal hostaction.AuditJournal) consolejobs.Job
 	})
 }
 func (s *HostActionService) authorize(ctx context.Context, actor, workspace string) error {
-	if ctx == nil || ctx.Err() != nil || actor == "" || len(actor) > 256 || !s.workspaces[workspace] || s.options.Authorize(ctx, actor, workspace) != nil {
+	if ctx == nil || ctx.Err() != nil || actor == "" || len(actor) > 256 || actor == SystemSyncActor || !s.workspaces[workspace] || s.options.Authorize(ctx, actor, workspace) != nil {
 		return hostaction.ErrDenied
 	}
 	return nil
+}
+
+// SystemSyncActor owns the sync jobs anasd starts on its own (after Traefik
+// starts, on daemon start). No console principal can carry this id, and it
+// authorizes nothing but a bounded sync action (HOSTACT-R-014).
+const SystemSyncActor = "system:anasd"
+
+// authorizeAction is authorize for a known action: the system actor may own a
+// sync action and nothing else; every other actor goes through authorize.
+func (s *HostActionService) authorizeAction(ctx context.Context, actor, workspace, action string) error {
+	if actor == SystemSyncActor {
+		if ctx == nil || ctx.Err() != nil || !s.workspaces[workspace] || !hostaction.IsSyncAction(action) {
+			return hostaction.ErrDenied
+		}
+		return nil
+	}
+	return s.authorize(ctx, actor, workspace)
+}
+
+func actionName(job consolejobs.Job) string {
+	if job.Action == nil {
+		return ""
+	}
+	return job.Action.Name
+}
+
+// InvokeSync queues a bounded sync action owned by the daemon itself. The
+// action coalesces, so a burst of triggers runs it once.
+func (s *HostActionService) InvokeSync(ctx context.Context, workspace, action string) (consolejobs.CreateResult, error) {
+	if s == nil || !s.actionAdmission(action) {
+		return consolejobs.CreateResult{}, hostaction.ErrUnavailable
+	}
+	spec, ok := hostaction.LookupAction(action)
+	if !ok || !spec.Sync {
+		return consolejobs.CreateResult{}, hostaction.ErrRequest
+	}
+	if err := s.authorizeAction(ctx, SystemSyncActor, workspace, action); err != nil {
+		return consolejobs.CreateResult{}, err
+	}
+	request, err := HostActionRequest(action, s.options.Release, json.RawMessage(`{}`))
+	if err != nil {
+		return consolejobs.CreateResult{}, err
+	}
+	var id [16]byte
+	if _, err = rand.Read(id[:]); err != nil {
+		return consolejobs.CreateResult{}, hostaction.ErrUnavailable
+	}
+	result, err := s.options.Store.CreateActionWithPolicyObserved(ctx, consolejobs.CreateSpec{WorkspaceID: workspace, Request: request, Mutating: true,
+		Idempotency: consolejobs.IdempotencyInput{Principal: SystemSyncActor, Method: "POST", CanonicalPath: "/host/" + action}},
+		action, hex.EncodeToString(id[:]), spec.Policy, s.observer())
+	if err != nil {
+		var retry *consolejobs.IdempotencyConflictError
+		var inflight *consolejobs.ActionInFlightError
+		if errors.As(err, &retry) || errors.As(err, &inflight) {
+			return consolejobs.CreateResult{}, consolejobs.ErrConflict
+		}
+		return consolejobs.CreateResult{}, err
+	}
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+	return result, nil
 }
 func (s *HostActionService) admission() bool {
 	s.mu.Lock()
@@ -394,11 +457,11 @@ func (s *HostActionService) observer() consolejobs.JobCommitObserver {
 			actor = i.Actor
 		}
 		if i.Operation == consolejobs.JobCommitCreate || i.Operation == consolejobs.JobCommitActionJoin || i.Operation == consolejobs.JobCommitStart {
-			if !s.actionAdmission(i.Next.Action.Name) || s.authorize(ctx, actor, i.Next.WorkspaceID) != nil {
+			if !s.actionAdmission(i.Next.Action.Name) || s.authorizeAction(ctx, actor, i.Next.WorkspaceID, i.Next.Action.Name) != nil {
 				return hostaction.ErrDenied
 			}
 		}
-		if i.Next.Action.Outcome == actionabi.Succeeded && s.authorize(ctx, actor, i.Next.WorkspaceID) != nil {
+		if i.Next.Action.Outcome == actionabi.Succeeded && s.authorizeAction(ctx, actor, i.Next.WorkspaceID, i.Next.Action.Name) != nil {
 			return hostaction.ErrDenied
 		}
 		_, err := s.options.Journal.AppendContext(ctx, audit.Event{Type: "host_job_transition", Actor: actor, WorkspaceID: i.Next.WorkspaceID, Outcome: string(i.Next.Status),
@@ -553,7 +616,7 @@ func (s *HostActionService) advance(ctx context.Context) (bool, error) {
 		if !s.workspaces[job.WorkspaceID] {
 			return false, hostaction.ErrDenied
 		}
-		if !s.requestMatches(job) || s.authorize(ctx, job.CreatedBy, job.WorkspaceID) != nil {
+		if !s.requestMatches(job) || s.authorizeAction(ctx, job.CreatedBy, job.WorkspaceID, job.Action.Name) != nil {
 			if ctx.Err() != nil {
 				return false, nil
 			}

@@ -37,9 +37,10 @@ provisioning design; the deletion list is in the
   the console and CLI `observer` phase, the job executor's ingress drain and workspace fence,
   `cmd/incus-network-prototype`, and `observer_scopes` in the host `state.json`. Ingress is now the lease ACL,
   an HTTP publication mediator inside anasd and port bindings (`INCUS-R-130`–`R-164`, M11/M11b/M11c).
-- Kept: Core's parsing and freezing of `spec.ingress`, the request files and authorization types in
-  `internal/computeingress`, the lease naming key, and the start-time block on consumers that declare ingress.
-  They become `publish.http` when M11 is implemented.
+- Kept: Core's parsing and freezing of HTTP authorizations, the request files and authorization types in
+  `internal/computeingress`, and the lease naming key. Since 2026-10-03 the declaration is `publish.http`, the
+  start-time block on consumers that publish HTTP is gone, and requests carry `{instance, address, port, label?}`;
+  see "Host side of HTTP publication and port bindings" below.
 
 <!-- generated:module-identity:start -->
 > Status: current implementation; based on `7.3.0-r2` / `anas.module/v1`.
@@ -205,6 +206,7 @@ is disabled. See the current boundary in [host-action architecture](../../../doc
 | `incus.admin_key_b64` | string | — | — | `host` | `INCUS_ADMIN_KEY_B64` | no | yes | yes | no: `rotate-incus-admin-credential` | `credential_rotate` | Private key for the administrative certificate |
 | `incus.endpoint` | string | `pattern: ^https://[A-Za-z0-9.:_-]+$` | — | `host` | `INCUS_ENDPOINT` | no | yes | yes | yes | `reconcile` | HTTPS address of the remote Incus daemon |
 | `incus.image_architecture` | enum (`amd64`, `arm64`) | — | — | `host` | `INCUS_IMAGE_ARCHITECTURE` | no | yes | no | yes | `container_recreate` | Explicit guest image architecture on the target daemon; never inferred from the CLI host |
+| `incus.lan_extra_subnets` | string | `pattern: ^[0-9A-Fa-f:./, ]*$` | `""` | `static` | `INCUS_LAN_EXTRA_SUBNETS` | no | no | no | yes | `reconcile` | Extra LAN subnets as comma-separated CIDRs, merged with the default-route interface subnets Core computes at apply; the `internet_lan` and `internet_lan_host` tiers allow them. The Hook refuses default, loopback, link-local and multicast ranges |
 | `incus.server_certificate_b64` | string | — | — | `host` | `INCUS_SERVER_CERTIFICATE_B64` | no | yes | yes | yes | `reconcile` | Pinned daemon server certificate; a mismatch fails outright with no fallback |
 | `incus.storage_pool` | string | `pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$` | — | `runtime` | `INCUS_STORAGE_POOL` | no | yes | no | yes | `reconcile` | Storage pool backing every lease root disk; the hook keeps `default` for explicit remote daemons and uses `anas-btrfs` for the host bundle |
 
@@ -293,9 +295,13 @@ mechanism does not distinguish.
 
 ## Network and profile
 
-The network name is derived from the first 10 hex characters of the sandbox name's SHA-256 (`anas` plus
-10 hex = 14 characters). The sandbox name cannot be used directly: a Linux bridge interface is capped
-at 15 characters and `anas-forgejo-runners` is 20. Deriving keeps it short and stable; ownership checks reject reuse if a truncated name collides.
+The network name is `lease` followed by the first 10 hex characters of the sandbox name's SHA-256
+(15 characters). The sandbox name cannot be used directly: a Linux bridge interface is capped at 15
+characters and `anas-forgejo-runners` is 20. The `lease` prefix lets the host's static forwarding rules match
+every lease bridge exactly while staying outside the `anas*` interfaces `anas-helper` may operate on
+(`INCUS-R-127`). Leases before 2026-10 used `anas` with the same digest; once `ensure` has created the new bridge
+and pointed the profile at it, it deletes the old bridge and its ACL when no instance uses them any more, and
+keeps and reports them otherwise.
 
 The Provider owns the bridge and explicitly uses `project=default` in network API requests. Each lease
 sets `features.networks=false`, `restricted.devices.nic=managed`, and an exact `restricted.networks.access`
@@ -306,43 +312,66 @@ Networks carry `user.anas.consumer` and `user.anas.sandbox`. A same-name network
 ownership, an incompatible type, or external interfaces is refused without adoption or certificate
 registration. Names alone do not establish ownership. Repeated applies preserve allocated subnets and
 unrelated configuration; disabling IPv6 writes `none` and removes its old NAT setting. Network writes
-are read back for type, ownership, addressing and NAT before a profile is created. Separate bridges
-alone do not prove traffic isolation; cross-lease network attachment, write permissions, and actual
-egress still require real-host acceptance.
+are read back for type, ownership, addressing and NAT before a profile is created.
 
-Every lease bridge also carries a Provider-owned source fence network ACL (default project, named like
-the bridge, with the same consumer/sandbox marks plus the lease certificate digest). It holds exactly one
-enabled egress rule: `allow` with `source` equal to the bridge's actually assigned IPv4 subnet (and IPv6
-subnet when enabled). The bridge sets `security.acls=<ACL>`, `security.acls.default.egress.action=drop`
-and `security.acls.default.ingress.action=allow`. Incus enforces it on the bridge's input/forward hooks;
-its built-in rules admit DNS, DHCP and core ICMPv6 (RS/NS/NA/MLD) first, and conntrack admits replies. A
-guest packet with a forged off-subnet source is therefore dropped when the host would forward or accept
-it, so it never leaves unmasqueraded. An IPv6-disabled lease admits only its IPv4 subnet, which also
-blocks any IPv6 forwarding. The ACL is written only after the bridge has concrete subnets (the daemon
-refuses a reference to a missing ACL) and is read back. A same-name ACL whose marks differ, including an
-unmarked one, is refused without rewrite or certificate registration: ACLs are a new object with no
-unmarked history to adopt. `inspect.ready` also requires the attachment keys, exactly one rule, and a
-source set equal to the current subnets; any extra rule, ingress rule, disabled or widened rule is drift
-that `ensure` repairs with a whole-object PUT. Host package uninstall inventory treats any network ACL as
-the daemon still being in use.
+**Addressing.** The IPv4 DHCP range runs from `.2` to the 33rd address below broadcast; the top 32 addresses of
+the subnet are for slots, assigned in slot-name order and kept across applies, and released when a slot is no
+longer declared. When the lease has IPv6 and declares slots, the bridge runs stateful DHCPv6 with the range
+`<prefix>::1:0`-`<prefix>::1:ffff`, and slot addresses start at `<prefix>::ff00`. The slot assignment lives in the
+bridge's `user.anas.slot.<name>.{instance,ipv4,ipv6}` keys, and the profile carries a copy for the shared client.
+The last JSON line of `ensure` reports the bridge name, IPv4/IPv6 subnets and gateways and every slot's addresses,
+which Core records in resource state (`INCUS-R-159`).
+
+**ACL.** Every lease bridge carries a Provider-owned network ACL named like the bridge (default project, with the
+consumer/sandbox marks and the lease certificate digest). The bridge sets `security.acls=<ACL>` with default action
+`drop` in both directions (`INCUS-R-130`). Incus admits DNS, DHCP and core ICMPv6 first, and conntrack admits
+replies. The rules come from the frozen tiers:
+
+| Tier | Egress rules (every source is limited to the lease's own subnets, so forged off-subnet sources are dropped) |
+| --- | --- |
+| `internet` | allow public addresses; drop the LAN, host addresses and `$anas-leases` |
+| `internet_lan` | allow public addresses and the LAN; drop host addresses and `$anas-leases` |
+| `internet_lan_host` | allow public addresses, the LAN, host addresses and the private ranges (where Docker's published ports land after DNAT); drop `$anas-leases` |
+| `modules_only` | allow only the Traefik entrypoint port on `$anas-traefik` |
+
+`module_access` adds an allow to the `$anas-traefik` entrypoint port for `internet` and `internet_lan`. Only the
+`published` ingress tier has ingress rules: first drop connections from `$anas-leases`, then allow `$anas-traefik`
+to the HTTP publication ports and any source to each slot's bound guest ports. Incus applies drop before allow, so
+an instance reaching its own lease's slot through a host port is blocked too; direct traffic inside a lease is
+`intra_lease`'s decision -- when it is off the profile NIC sets `security.port_isolation=true`, and instances on one
+bridge cannot reach each other at layer 2 (`INCUS-R-123`). The LAN is computed by Core at apply from the host's
+default-route interface subnets plus `lan_extra_subnets`, and host addresses are the host's interface addresses;
+both reach the Provider through `ANAS_RESOURCE_NETWORK`, `ANAS_RESOURCE_LAN_SUBNETS` and
+`ANAS_RESOURCE_HOST_ADDRESSES`.
+
+`$anas-leases` is a global address set every `ensure` rewrites to the union of all lease bridge subnets;
+`$anas-traefik` is written only by hostd's sync action, and the Provider only names it -- when it is missing,
+`ensure` fails and points at `incus.configure`. Both need the daemon's `network_address_set` API extension (Incus
+7.0 and later); without it `ensure` fails before writing. `inspect.ready` requires the ACL rules to match the current
+tiers, subnets and slots exactly and `$anas-leases` to cover this lease's subnets; extra, disabled or widened rules
+are drift that `ensure` repairs with a whole-object PUT. Host package uninstall inventory treats any network ACL or
+address set as the daemon still being in use.
 
 The profile is fixed as `anas-lease` and carries exactly two devices:
 
 | Device | Contents |
 | --- | --- |
 | `root` | `type=disk`, `path=/`, `pool=<storage_pool>`, no `source` |
-| `eth0` | `type=nic`, `network=<derived bridge name>`, no `parent`/`nictype` |
+| `eth0` | `type=nic`, `network=<lease bridge>`, `security.mac_filtering=true`, `security.ipv4_filtering=true`, plus `security.port_isolation=true` when `intra_lease` is off; no `parent`/`nictype` |
+
+The profile configuration is `user.anas.managed=true`, the tier's nesting/privileged keys and the slot copy. When
+the shared client creates a slot instance it overrides two keys on the instance with
+`--device=eth0,ipv4.address=…` (and `ipv6.address`); every other NIC setting stays the profile's.
 
 The network's IPv6 follows the host. The hook sets `INCUS_NETWORK_IPV6=true` only when the IPv6 switch
 is not off **and** `HOST_HAS_IPV6=true`; the bridge then gets `ipv6.address=auto` with `ipv6.nat=true`.
 Otherwise it is written explicitly as `ipv6.address=none`. Writing `none` rather than leaving it unset
 is deliberate: an unset value lets the daemon apply its own default, and handing a guest a v6 address
 the host cannot route makes every outbound connection wait for a timeout before falling back to v4,
-which reads as a hung job rather than a misconfiguration. Both families are NATed through the same
-managed bridge, so enabling v6 widens what a guest can reach without changing how it gets out.
+which reads as a hung job rather than a misconfiguration.
 
 `ensureProfile` does a whole-object PUT rather than a merge, and `verifyProfile` then reads it back and
-requires exactly two devices, the sole managed configuration `user.anas.managed=true`, and the exact
+requires exactly two devices, exactly the managed template's configuration keys, and the exact
 device property maps. Additional raw configuration or device properties are refused.
 Together they are the only enforcement point for this constraint: the
 daemon does not stop anyone attaching devices to a profile, so "no extra devices on the profile" holds
@@ -358,9 +387,12 @@ files, imports images, repairs configuration or grants trust. It reports `exists
 missing project returns zero values rather than an error, because "absent" is a normal observable
 state.
 
-`revoke` deletes the consumer certificate and keeps the project. Deleting the project would destroy the
-instances inside it, and those instances were never owned by this contract. Deleting a fingerprint that
-does not exist succeeds idempotently.
+`revoke` deletes the consumer certificate, empties the lease ACL's rules (the default actions still drop, so
+nothing enters or leaves any more) and stops the project's running instances: the ACL admits replies on
+established connections, and only stopping the instances ends them (`INCUS-R-124`). The project, instance disks
+and bridge stay; deleting the project would destroy the instances inside it, and those instances were never owned
+by this contract. Deleting a fingerprint that does not exist succeeds idempotently, and an ACL or project that
+belongs to another lease is left alone.
 
 When a consumer is removed or its capability is switched off and the target deployment no longer declares
 the lease, Core calls `revoke` through this Module's artifact frozen in the previous deployment. A failure
@@ -816,54 +848,44 @@ Core now generates and reuses an independent 32-byte compute `LEASE_SECRET`, sep
 certificate. Deployment/resource state store references; the consumer receives a sensitive base64 projection
 and backup restores the same key. It is excluded from credential rotation. See the
 [compute lifecycle contract](../../../contracts/compute/docs/technical.en.md#independent-lease-naming-key).
-The dedicated rotation command and production HTTP publishing remain pending.
+The dedicated rotation command remains pending.
 
 
-## HTTP request submission and recovery (unverified code)
+## Host side of HTTP publication and port bindings
 
-`internal/computeingress.RequestWriter` provides atomic consumer request submission and exact
-withdrawal. It only opens an installation-provided private 0700 lease directory; it creates no
-authorization, registry or mount. On Linux amd64/arm64, directory locks coordinate writers and the
-mediator's bounded strict reader is reused. Complete requests are published through private temporary
-files, synchronization and rename. Directories are bounded to 256 entries including ignored temporary
-files, and a writer retains at most 256 receipts. Unknown files are not deleted in bulk.
+HTTP publication does not go through this Module's Provider operations: the Provider only writes the ACL ingress
+rule for the frozen publication ports. The consumer writes request files into `HTTP_REQUEST_DIR`, and the mediator
+inside anasd checks them and writes the `compute-http/` subdirectory of Traefik's dynamic directory; the full
+semantics are in the [compute Contract technical notes](../../../contracts/compute/docs/technical.en.md#http-publication).
 
-Identical requests reuse their files; a different workload cannot overwrite an occupied instance/port
-slot. Receipts retain inode descriptors and withdrawal checks both identity and content, protecting a
-replacement request using the same filename. `Resume` adopts only an existing request matching the
-caller's persisted expectation and never republishes a missing request. `Withdraw` removes intent;
-`Close` only releases local handles. Neither proves that routes, permissions, connections or address
-reservations have been cleaned up. Failed synchronization or verification reports an uncertain result,
-not successful publication.
+hostd carries the host side. Everything is installed through the `incus.configure` two-step confirmation and
+removed by `incus.uninstall`:
 
-`Client.OpenHTTPPublisher` explicitly configures `HTTPPublisher.PublishPort/UnpublishPort`. The
-configuration contains only lease scope, public policy, base domain, private request directory and a
-separately delivered naming key for random mode. It contains no complete frozen authorization,
-middleware, entrypoint or global Store reference; default formatting and JSON serialization omit the
-key. `Policy.Host` and the mediator's `Authorization.Host` share the naming algorithm, but only the
-latter validates complete frozen authority. Submission checks the exact Running managed instance and
-its `user.anas.workload`. `Inspect` no longer selects the first result of Incus's name filter and rejects
-duplicate exact identities. A file receipt and `RequestedURL()` do not prove network readiness.
-Withdrawal requires the original `HTTPPublication` receipt and works after the instance stops or is
-deleted. Old receipts cannot withdraw newer requests.
+| Artifact | Contents | Rewritten by |
+| --- | --- | --- |
+| FORWARD static rules (`anas-lease-forward-1`-`6`) | Appended after Docker's rules: lease bridge forwarding is left to the ACL; from a lease bridge to a Docker bridge only connections Docker translated are admitted (`INCUS-R-126`) | configure and boot restore only |
+| address set `anas-traefik` | The Traefik containers' current addresses, which hostd reads from Docker itself | sync action `incus.traefik.sync`, triggered by anasd at start and on Traefik container starts (`INCUS-R-118`) |
+| `/var/lib/anas/incus-host/network.json` | The port binding range the operator approved; the incus Hook reads it for Core (`INCUS_PORT_BINDING_RANGE`) | configure only |
+| nft table `inet anas_incus_ports` | The Docker-style chain: traffic addressed to the host itself (`fib daddr type local`, loopback excepted) is DNATed through four port maps | the chain by configure; the maps only by the sync action `incus.ports.sync` |
+| systemd units `anas-port-{tcp,udp}@<port>.{socket,service}` | One pair per binding in effect: an `Accept=no` socket holds the port and a resident `sleep infinity` (`DynamicUser=yes`) keeps it | the sync action, taking new holds before releasing old ones |
+| `anas-incus-network.service` | Runs `anas-hostd --restore-network` at boot, after Docker and before Incus | configure only |
 
-These client checks are not an authorization boundary. Production assembly, automatic delivery of the
-minimal configuration projection, application recovery, UID/mount setup, read-only observation
-identities and host actions remain pending; automatic ingress stays disabled. The three shared-client
-image builds and CI catalogs include `internal/computeingress`. In addition to
-`request_writer_integrity_test.go`, new sources in `http_publication_contract_test.go`,
-`http_publication_projection_test.go` and `request_writer_receipt_regression_linux_test.go` cover the
-separation of name prediction from full authority, exact instance identity, name collisions, stale
-receipts, cancellation, cross-writer replacement and filesystem boundaries. None has been run, and no
-runtime build, image build or host acceptance was performed for this addition.
+`incus.ports.sync` takes no parameters: hostd reads the active deployment of every workspace registered in
+`/etc/anas/anasd.yml`, the frozen `compute_network` and the slot addresses resource state records, and checks every
+entry -- protocol and ports, the approved range, a target inside the subnet of its own `lease*` bridge that is not
+the network, gateway or broadcast address, and a port no other binding, host process or Docker publication holds
+(`INCUS-R-158`). It enables holds for new bindings first, replaces the four port maps in one nft transaction and
+reads them back, and only then disables holds no binding needs. An entry that fails a check does not take effect and
+becomes a host runtime issue (`/var/lib/anas-hostd/runtime-issues.json`). The entries in effect are written to
+`/var/lib/anas/incus-host/ports.json`; at boot the hold units start with `sockets.target`, before Docker, and
+`--restore-network` then restores the maps from that file, leaving out and recording any binding whose hold did not
+come up (`INCUS-R-161`). anasd triggers the sync at start and after every deployment activation; it also checks the
+bindings in effect read-only every minute and on container starts, and records a lost hold, a Docker publication
+conflict or drifted maps in the workspace's runtime issues without repairing anything (`INCUS-R-162`).
 
-## Frozen HTTP authorization
-
-Core now parses optional `spec.ingress` and freezes ports, auth, domain, lease identity and naming-key
-reference in deployment `compute_ingress`. Start/activation still blocks consumers with ingress (the state before M11, which renames it to `publish.http`).
-Fixed/named/random naming is implemented; random uses 128 bits of HMAC-SHA256. Preparation rejects
-cross-lease namespace and known service-domain conflicts. Default `auth: none` provides no access control:
-SNI, Referer and logs can disclose URLs; do not publish sensitive or writable services without authentication.
+On a host without hostd the incus Hook publishes `INCUS_PORT_BINDING_BLOCKER` (`hostd_missing`,
+`host_not_configured` or `remote_daemon`), and an apply that declares port bindings fails during Core preparation
+with the reason (`INCUS-R-164`).
 
 ## Shared action invocation service (unverified code)
 

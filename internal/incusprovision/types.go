@@ -63,6 +63,11 @@ type Request struct {
 	Interface      string `json:"interface,omitempty"`
 	StorageSizeGiB int    `json:"storage_size_gib,omitempty"`
 	ChineseSpeedup bool   `json:"chinese_speedup,omitempty"`
+	// PortRangeFirst..PortRangeLast is the host port range the operator
+	// approves for compute port bindings (INCUS-R-153, HOSTACT-R-014). It
+	// defaults to 30000-32767, below Linux's ephemeral range.
+	PortRangeFirst int `json:"port_range_first,omitempty"`
+	PortRangeLast  int `json:"port_range_last,omitempty"`
 }
 
 func (r Request) normalized() (Request, error) {
@@ -76,6 +81,12 @@ func (r Request) normalized() (Request, error) {
 		r.StorageSizeGiB = 64
 	}
 	if r.StorageSizeGiB < 16 || r.StorageSizeGiB > 4096 {
+		return Request{}, ErrInvalid
+	}
+	if r.PortRangeFirst == 0 && r.PortRangeLast == 0 {
+		r.PortRangeFirst, r.PortRangeLast = DefaultPortRangeFirst, DefaultPortRangeLast
+	}
+	if r.PortRangeFirst < 1024 || r.PortRangeLast > 65535 || r.PortRangeFirst > r.PortRangeLast {
 		return Request{}, ErrInvalid
 	}
 	return r, nil
@@ -163,27 +174,34 @@ type UnsupportedOutput struct {
 }
 
 type Observation struct {
-	Preflight             incushost.Report `json:"preflight"`
-	PackageInstalled      bool             `json:"package_installed"`
-	ExistingPackages      []string         `json:"existing_packages"`
-	InstalledPackages     []string         `json:"installed_packages"`
-	IncusDaemonActive     bool             `json:"incus_daemon_active"`
-	IncusHTTPSControl     bool             `json:"incus_https_control"`
-	IncusAfterDocker      bool             `json:"incus_after_docker"`
-	StoragePoolExists     bool             `json:"storage_pool_exists"`
-	DockerNetworkExists   bool             `json:"docker_network_exists"`
-	FirewallInstalled     bool             `json:"firewall_installed"`
-	ManagementTrusted     bool             `json:"management_trusted"`
-	EndpointVerified      bool             `json:"connection_verified"`
-	RunningManagedGuests  int              `json:"running_managed_guests"`
-	ExternalCIDRs         []string         `json:"external_cidrs,omitempty"`
-	DockerCIDRs           []string         `json:"docker_cidrs,omitempty"`
-	IncusCIDRs            []string         `json:"incus_cidrs,omitempty"`
-	ControlSubnet         string           `json:"control_subnet,omitempty"`
-	ControlGateway        string           `json:"control_gateway,omitempty"`
-	ControlInterfaceName  string           `json:"control_interface_name,omitempty"`
-	ControlInterfaceIndex int              `json:"control_interface_index,omitempty"`
-	ControlNetworkID      string           `json:"control_network_id,omitempty"`
+	Preflight           incushost.Report `json:"preflight"`
+	PackageInstalled    bool             `json:"package_installed"`
+	ExistingPackages    []string         `json:"existing_packages"`
+	InstalledPackages   []string         `json:"installed_packages"`
+	IncusDaemonActive   bool             `json:"incus_daemon_active"`
+	IncusHTTPSControl   bool             `json:"incus_https_control"`
+	IncusAfterDocker    bool             `json:"incus_after_docker"`
+	StoragePoolExists   bool             `json:"storage_pool_exists"`
+	DockerNetworkExists bool             `json:"docker_network_exists"`
+	FirewallInstalled   bool             `json:"firewall_installed"`
+	// The lease network policy's host side (INCUS-R-118, R-126).
+	LeaseForwardingInstalled bool `json:"lease_forwarding_installed"`
+	NetworkUnitInstalled     bool `json:"network_unit_installed"`
+	TraefikAddressSetExists  bool `json:"traefik_address_set_exists"`
+	NetworkPolicyCurrent     bool `json:"network_policy_current"`
+	// The port binding chain and hold unit templates (INCUS-R-152, R-160).
+	PortBindingsInstalled bool     `json:"port_bindings_installed"`
+	ManagementTrusted     bool     `json:"management_trusted"`
+	EndpointVerified      bool     `json:"connection_verified"`
+	RunningManagedGuests  int      `json:"running_managed_guests"`
+	ExternalCIDRs         []string `json:"external_cidrs,omitempty"`
+	DockerCIDRs           []string `json:"docker_cidrs,omitempty"`
+	IncusCIDRs            []string `json:"incus_cidrs,omitempty"`
+	ControlSubnet         string   `json:"control_subnet,omitempty"`
+	ControlGateway        string   `json:"control_gateway,omitempty"`
+	ControlInterfaceName  string   `json:"control_interface_name,omitempty"`
+	ControlInterfaceIndex int      `json:"control_interface_index,omitempty"`
+	ControlNetworkID      string   `json:"control_network_id,omitempty"`
 }
 
 // controlListenAddress is the only address Incus serves HTTPS on.

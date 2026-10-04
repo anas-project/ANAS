@@ -57,7 +57,7 @@
     "module": "incus",
     "repository": "anas-module-incus",
     "platforms": ["linux/amd64", "linux/arm64"],
-    "shared_contexts": ["go.mod", "go.sum", "contracts", "internal/computeclient", "internal/computeingress", "internal/computeimage", "internal/securefs"]
+    "shared_contexts": ["go.mod", "go.sum", "contracts", "internal/computeclient", "internal/computeingress", "internal/computeimage", "internal/computenet", "internal/securefs"]
   },
   {
     "module": "lam",

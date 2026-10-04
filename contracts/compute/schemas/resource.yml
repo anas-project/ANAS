@@ -69,31 +69,92 @@ properties:
   # "delete" is not offered.
   deletion_policy:
     enum: [retain]
-  # Declaration/freezing only until real-host acceptance. Runtime publishing
-  # stays disabled; omission grants no HTTP publication authority.
-  ingress:
+  # The lease network (INCUS-R-112--R-127, R-131--R-164). Frozen at apply;
+  # the consumer cannot change it at runtime.
+  network:
     type: object
     additional_properties: false
-    required: [allowed_ports, domain]
     properties:
-      allowed_ports:
-        type: array
-        min_items: 1
-        max_items: 64
-        unique_items: true
-        items: {type: integer, minimum: 1, maximum: 65535}
-      # Default none. Unpredictable URLs are not access control: SNI, Referer
-      # and logs can disclose them. Do not expose sensitive or writable services.
-      auth:
-        enum: [none, forward_auth]
-      domain:
+      # What instances may open connections to. Default internet: public
+      # addresses only, never the LAN, the host, other leases, Docker networks
+      # or link-local addresses.
+      egress:
+        enum: [internet, internet_lan, internet_lan_host, modules_only]
+      # Lets internet and internet_lan also reach ANAS Modules through Traefik.
+      module_access: {type: boolean}
+      # Lets instances of this lease reach each other. Default false.
+      intra_lease: {type: boolean}
+      # What may open connections to instances. Default none; only published
+      # may declare a publication.
+      ingress:
+        enum: [none, published]
+      # Slot name -> the one instance name it pins. The Provider reserves a
+      # fixed address for it outside the DHCP range.
+      slots:
+        type: object
+        max_properties: 32
+        property_names:
+          pattern: "^[a-z][a-z0-9-]{0,30}$"
+        additional_properties:
+          type: object
+          additional_properties: false
+          required: [instance]
+          properties:
+            instance:
+              type: string
+              pattern: "^anas-[a-z0-9-]{1,83}$"
+  # What a published lease exposes. Omission grants nothing.
+  publish:
+    type: object
+    additional_properties: false
+    properties:
+      # HTTP publication: Traefik terminates HTTPS and forwards HTTP to a guest.
+      http:
         type: object
         additional_properties: false
-        required: [mode, prefix]
+        required: [allowed_ports, domain]
         properties:
-          mode:
-            enum: [fixed, named, random]
-          # Core additionally limits named prefixes to 61 and random to 30.
-          prefix:
-            type: string
-            pattern: "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+          allowed_ports:
+            type: array
+            min_items: 1
+            max_items: 64
+            unique_items: true
+            items: {type: integer, minimum: 1, maximum: 65535}
+          # Default none. Unpredictable URLs are not access control: SNI,
+          # Referer and logs can disclose them. Do not expose sensitive or
+          # writable services.
+          auth:
+            enum: [none, forward_auth]
+          domain:
+            type: object
+            additional_properties: false
+            required: [mode, prefix]
+            properties:
+              mode:
+                enum: [fixed, named, random]
+              # Core additionally limits named prefixes to 61 and random to 30.
+              prefix:
+                type: string
+                pattern: "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+      # Port bindings: one host port forwarded unchanged (TCP or UDP) to a slot.
+      # ANAS adds no authentication; the guest service must authenticate.
+      ports:
+        type: array
+        max_items: 64
+        items:
+          type: object
+          additional_properties: false
+          required: [protocol, host_port, slot, guest_port]
+          properties:
+            protocol:
+              enum: [tcp, udp]
+            # A port inside the range the operator approved in incus.configure,
+            # or auto: Core picks a free one and keeps it.
+            host_port:
+              one_of:
+                - {type: integer, minimum: 1, maximum: 65535}
+                - {enum: [auto]}
+            slot:
+              type: string
+              pattern: "^[a-z][a-z0-9-]{0,30}$"
+            guest_port: {type: integer, minimum: 1, maximum: 65535}

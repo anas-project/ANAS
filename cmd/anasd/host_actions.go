@@ -30,6 +30,7 @@ type daemonHostActions interface {
 	InvokeConfirmed(context.Context, string, string, string, string, json.RawMessage, hostconfirmation.RawToken, string) (consolejobs.CreateResult, error)
 	InvokeImagePruneConfirmed(context.Context, string, string, string, hostconfirmation.RawToken, string) (consolejobs.CreateResult, error)
 	CancelQueuedPreflight(context.Context, string, string) (consolejobs.Job, error)
+	InvokeSync(context.Context, string, string) (consolejobs.CreateResult, error)
 }
 
 func validateHostActionDaemon(config consoleconfig.Config) error {

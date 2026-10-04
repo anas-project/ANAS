@@ -41,10 +41,25 @@ const (
 // It is derived rather than taken from the sandbox name because a Linux bridge
 // interface is capped at 15 characters while a sandbox such as
 // "anas-forgejo-runners" is already 20. Hashing keeps it short, stable across
-// applies, and distinct between leases.
+// applies, and distinct between leases. The "lease" prefix is deliberately not
+// "anas": anas-helper may operate on every anas* interface, and the host's
+// static forwarding rules match exactly this prefix (INCUS-R-127).
 func NetworkName(sandbox string) string {
+	return LeaseBridgePrefix + sandboxDigest(sandbox)
+}
+
+// LeaseBridgePrefix is the interface prefix every lease bridge carries.
+const LeaseBridgePrefix = "lease"
+
+// LegacyNetworkName is the bridge name leases used before 2026-10: the
+// Provider removes an unused one once the lease has moved to NetworkName.
+func LegacyNetworkName(sandbox string) string {
+	return "anas" + sandboxDigest(sandbox)
+}
+
+func sandboxDigest(sandbox string) string {
 	sum := sha256.Sum256([]byte(sandbox))
-	return "anas" + hex.EncodeToString(sum[:])[:10]
+	return hex.EncodeToString(sum[:])[:10]
 }
 
 var (

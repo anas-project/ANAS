@@ -115,6 +115,33 @@ func (d *linuxRequestDirectory) lock(ctx context.Context) (func() error, error) 
 	}
 }
 
+// list returns the request file names currently in the directory, bounded
+// like the directory itself.
+func (d *linuxRequestDirectory) list() ([]string, error) {
+	if err := d.check(); err != nil {
+		return nil, err
+	}
+	entries, err := d.root.Open(".")
+	if err != nil {
+		return nil, ErrRequestWriterUnavailable
+	}
+	defer entries.Close()
+	names, err := entries.Readdirnames(maxRequestWriterReceipts + 1)
+	if err != nil && len(names) == 0 && !errors.Is(err, io.EOF) {
+		return nil, ErrRequestWriterUnavailable
+	}
+	if len(names) > maxRequestWriterReceipts {
+		return nil, ErrRequestWriterUnavailable
+	}
+	out := names[:0]
+	for _, name := range names {
+		if requestFileName.MatchString(name) {
+			out = append(out, name)
+		}
+	}
+	return out, nil
+}
+
 func (d *linuxRequestDirectory) read(name string) (*os.File, Request, error) {
 	if err := d.check(); err != nil {
 		return nil, Request{}, err

@@ -2,8 +2,10 @@ package computeclient
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/anas-project/ANAS/internal/computeingress"
@@ -22,16 +24,14 @@ const (
 	maxHTTPPublications    = 256
 )
 
-// HTTPPublicationConfig is an explicit consumer-side projection supplied by
-// installation, never fetched from request files or inferred from environment.
-// It is NOT authority: the mediator independently checks its registered lease
-// directory, active deployment, frozen policy and fresh instance facts.
+// HTTPPublicationConfig is the consumer-side naming projection Core publishes
+// beside a lease that declares publish.http (HTTPPublicationFromLookup reads
+// it). It is NOT authority: the mediator checks every request against the
+// frozen authorization and the lease's recorded subnet on its own.
 //
 // LeaseSecret is the canonical base64 naming key for random domains ONLY. It
 // is neither a credential nor access control. With Auth=none, anyone who learns
 // the URL can access the service; do not publish sensitive or writable services.
-// Automatic projection/mounting and production ingress remain disabled until
-// the host path and its acceptance matrix are implemented and verified.
 type HTTPPublicationConfig struct {
 	Interface        string
 	Project          string
@@ -42,12 +42,40 @@ type HTTPPublicationConfig struct {
 	LeaseSecret      string `json:"-" yaml:"-"`
 }
 
+// HTTPPublicationFromLookup reads the projection Core publishes beside a lease
+// that declares publish.http: the frozen naming policy, the base domain and,
+// for random domains, the naming key. requestDirectory is where the consumer
+// mounted the host directory HTTP_REQUEST_DIR names; Core creates it owned by
+// the consumer's declared http_request_owner. ok is false for a lease that
+// publishes nothing.
+func HTTPPublicationFromLookup(lookup func(string) string, lease Lease, module, resourceID, requestDirectory string) (config HTTPPublicationConfig, ok bool, err error) {
+	prefix := EnvPrefix + envSegment(module) + "__" + envSegment(resourceID) + "__"
+	get := func(field string) string { return strings.TrimSpace(lookup(prefix + field)) }
+	raw := get("HTTP_POLICY")
+	if raw == "" {
+		return HTTPPublicationConfig{}, false, nil
+	}
+	var policy computeingress.Policy
+	if err := json.Unmarshal([]byte(raw), &policy); err != nil || policy.Validate() != nil {
+		return HTTPPublicationConfig{}, true, ErrHTTPPublicationPolicy
+	}
+	config = HTTPPublicationConfig{
+		Interface: lease.Interface, Project: lease.Sandbox, InstancePrefix: lease.InstancePrefix,
+		Policy: policy, BaseDomain: get("HTTP_BASE_DOMAIN"), RequestDirectory: requestDirectory,
+	}
+	if policy.Domain.Mode == "random" {
+		config.LeaseSecret = get("LEASE_SECRET")
+	}
+	return config, true, nil
+}
+
 func (HTTPPublicationConfig) String() string   { return "[compute HTTP publication configuration]" }
 func (HTTPPublicationConfig) GoString() string { return "[compute HTTP publication configuration]" }
 
 type httpRequestWriter interface {
 	Submit(context.Context, computeingress.Request) (*computeingress.RequestReceipt, error)
 	Withdraw(context.Context, *computeingress.RequestReceipt) error
+	Sweep(context.Context, func(computeingress.Request) bool) (int, error)
 	Close() error
 }
 
@@ -116,7 +144,9 @@ func (c *Client) OpenHTTPPublisher(config HTTPPublicationConfig) (*HTTPPublisher
 	if err != nil {
 		return nil, err
 	}
-	return newHTTPPublisher(c, projection, writer), nil
+	publisher := newHTTPPublisher(c, projection, writer)
+	c.publisher = publisher
+	return publisher, nil
 }
 
 func validateHTTPPublicationConfig(c *Client, config HTTPPublicationConfig) (HTTPPublicationConfig, error) {
@@ -176,17 +206,22 @@ func (p *HTTPPublisher) PublishPort(ctx context.Context, instanceID string, gues
 	if err != nil {
 		return nil, errors.Join(ErrHTTPPublicationInstance, ctx.Err())
 	}
-	if instance.ID != instanceID || instance.State != "running" || instance.WorkloadID == "" {
+	if instance.ID != instanceID || instance.State != "running" || instance.WorkloadID == "" || instance.IPv4 == "" {
 		return nil, ErrHTTPPublicationInstance
 	}
 	host, err := p.policy.Host(p.baseDomain, instance.WorkloadID, options.Label, p.key)
 	if err != nil {
 		return nil, ErrHTTPPublicationPolicy
 	}
-	request := computeingress.Request{
-		Action: "publish", InstanceID: instanceID, WorkloadID: instance.WorkloadID,
-		GuestPort: guestPort, Label: options.Label,
+	// The mediator holds no naming key: a random-mode request carries the
+	// label this side derived, which names exactly the predicted host.
+	label := options.Label
+	if p.policy.Domain.Mode == "random" {
+		if label, err = p.policy.RandomLabel(instance.WorkloadID, p.key); err != nil {
+			return nil, ErrHTTPPublicationPolicy
+		}
 	}
+	request := computeingress.Request{Instance: instanceID, Address: instance.IPv4, Port: guestPort, Label: label}
 	if err := request.Validate(); err != nil {
 		return nil, ErrHTTPPublicationPolicy
 	}
@@ -241,6 +276,73 @@ func (p *HTTPPublisher) UnpublishPort(ctx context.Context, publication *HTTPPubl
 	publication.withdrawn = true
 	delete(p.active, publication.host)
 	return nil
+}
+
+// UnpublishInstance withdraws every request this publisher made for one
+// instance; Stop and Delete call it before the instance goes away.
+func (p *HTTPPublisher) UnpublishInstance(ctx context.Context, instanceID string) error {
+	if ctx == nil {
+		return ErrHTTPPublicationUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, httpPublicationTimeout)
+	defer cancel()
+	if err := p.acquire(ctx); err != nil {
+		return err
+	}
+	defer p.release()
+	if p.closed || p.writer == nil {
+		return nil
+	}
+	for host, publication := range p.active {
+		if publication.request.Instance != instanceID {
+			continue
+		}
+		if err := p.writer.Withdraw(ctx, publication.receipt); err != nil {
+			return err
+		}
+		publication.withdrawn = true
+		delete(p.active, host)
+	}
+	return nil
+}
+
+// PruneOrphans is the janitor's part (INCUS-R-146): it removes request files,
+// including ones a previous process left, whose instance no longer exists,
+// no longer runs or no longer holds the requested address.
+func (p *HTTPPublisher) PruneOrphans(ctx context.Context) (int, error) {
+	if ctx == nil {
+		return 0, ErrHTTPPublicationUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, httpPublicationTimeout)
+	defer cancel()
+	instances, err := p.client.ListManaged(ctx)
+	if err != nil {
+		return 0, err
+	}
+	live := map[string]string{}
+	for _, instance := range instances {
+		if instance.State == "running" {
+			live[instance.ID] = instance.IPv4
+		}
+	}
+	if err := p.acquire(ctx); err != nil {
+		return 0, err
+	}
+	defer p.release()
+	if p.closed || p.writer == nil {
+		return 0, ErrHTTPPublicationUnavailable
+	}
+	removed, err := p.writer.Sweep(ctx, func(request computeingress.Request) bool {
+		address, running := live[request.Instance]
+		return running && address == request.Address
+	})
+	for host, publication := range p.active {
+		if address, running := live[publication.request.Instance]; !running || address != publication.request.Address {
+			publication.withdrawn = true
+			delete(p.active, host)
+		}
+	}
+	return removed, err
 }
 
 // Close releases local descriptors and references only. Durable requests are

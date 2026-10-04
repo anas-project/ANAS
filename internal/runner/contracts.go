@@ -16,6 +16,7 @@ import (
 	"github.com/anas-project/ANAS/internal/computeclient"
 	"github.com/anas-project/ANAS/internal/computeimage"
 	"github.com/anas-project/ANAS/internal/computeingress"
+	"github.com/anas-project/ANAS/internal/computenet"
 	"gopkg.in/yaml.v3"
 )
 
@@ -86,6 +87,7 @@ type ResourceRequest struct {
 	SecretKey       string
 	Credential      string
 	ComputeIngress  *computeingress.Authorization
+	ComputeNetwork  *computenet.Network
 	ComputeImages   *computeimage.Snapshot
 	LeaseSecretKey  string
 	LeaseSecret     string
@@ -320,9 +322,13 @@ func normalizeResourceRequirements(module string, in []manifestResourceRequireme
 			return nil, fmt.Errorf("module %q resource %s must declare enabled_by %q to match its contract dependency",
 				module, id, declaredEnabledBy)
 		}
+		owner := strings.TrimSpace(raw.HTTPRequestOwner)
+		if owner != "" && (contract != "compute" || !httpRequestOwnerPattern.MatchString(owner)) {
+			return nil, fmt.Errorf("module %q resource %s http_request_owner must be uid:gid on a compute resource", module, id)
+		}
 		out = append(out, ResourceRequirement{
 			ID: id, Contract: contract, Binding: strings.TrimSpace(raw.Binding),
-			Spec: raw.Spec, SpecFrom: raw.SpecFrom, EnabledBy: enabledBy,
+			Spec: raw.Spec, SpecFrom: raw.SpecFrom, EnabledBy: enabledBy, HTTPRequestOwner: owner,
 		})
 	}
 	return out, nil
@@ -636,6 +642,9 @@ func (m *resourceMaterializer) materialize(consumer string) error {
 			if _, _, err := validateComputeSpec(consumer, required.ID, spec); err != nil {
 				return err
 			}
+			if policy, _ := computeingress.ParseSpec(spec); policy != nil && required.HTTPRequestOwner == "" {
+				return fmt.Errorf("resource %s.%s declares publish.http but no http_request_owner for its request directory", consumer, required.ID)
+			}
 			// One sandbox belongs to one consumer. Sharing a project would
 			// put two consumers behind the same fence, which is the exact
 			// isolation this contract exists to provide.
@@ -837,6 +846,22 @@ func (a *app) publishModuleResources(consumer string) error {
 				}
 				values[resourcePrefix+"LEASE_SECRET"] = value
 				a.markSensitive(resourcePrefix + "LEASE_SECRET")
+			}
+			if policy, _ := computeingress.ParseSpec(request.Spec); policy != nil {
+				// What the consumer's shared client needs to request HTTP
+				// publications: its request directory (the host path to mount),
+				// the frozen naming policy and the base domain.
+				base, err := filepath.Abs(a.base)
+				if err != nil {
+					return err
+				}
+				encoded, err := json.Marshal(policy)
+				if err != nil {
+					return err
+				}
+				values[resourcePrefix+"HTTP_REQUEST_DIR"] = computeHTTPRequestDir(base, consumer, request.ID)
+				values[resourcePrefix+"HTTP_POLICY"] = string(encoded)
+				values[resourcePrefix+"HTTP_BASE_DOMAIN"] = a.env["BASE_DOMAIN"]
 			}
 			if len(request.ComputeImages.Bindings) > 0 {
 				bindings, err := json.Marshal(request.ComputeImages.Bindings)

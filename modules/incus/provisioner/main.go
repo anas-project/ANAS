@@ -5,11 +5,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/anas-project/ANAS/internal/computenet"
 )
 
 var (
@@ -166,7 +170,77 @@ func leaseFromEnv(isolation string) (lease, error) {
 		return lease{}, fmt.Errorf("ANAS_RESOURCE_CLIENT_CERT: %w", err)
 	}
 	l.Credential = certificateFingerprint(parsed)
+	if l.Network, err = networkFromEnv(l); err != nil {
+		return lease{}, err
+	}
+	if l.LAN, err = prefixesEnv("ANAS_RESOURCE_LAN_SUBNETS", true); err != nil {
+		return lease{}, err
+	}
+	extra, err := prefixesEnv("INCUS_LAN_EXTRA_SUBNETS", true)
+	if err != nil {
+		return lease{}, err
+	}
+	l.LAN = mergePrefixes(l.LAN, extra)
+	if l.HostAddresses, err = prefixesEnv("ANAS_RESOURCE_HOST_ADDRESSES", false); err != nil {
+		return lease{}, err
+	}
 	return l, nil
+}
+
+// networkFromEnv reads the frozen network declaration. An empty value is a
+// lease from before network declarations existed: the default policy.
+func networkFromEnv(l lease) (computenet.Network, error) {
+	raw := strings.TrimSpace(os.Getenv("ANAS_RESOURCE_NETWORK"))
+	if raw == "" {
+		return computenet.Default(), nil
+	}
+	n, err := computenet.Decode(raw)
+	if err != nil {
+		return computenet.Network{}, fmt.Errorf("ANAS_RESOURCE_NETWORK: %w", err)
+	}
+	if err := n.Validate(l.InstancePrefix, l.MaxInstances); err != nil {
+		return computenet.Network{}, fmt.Errorf("ANAS_RESOURCE_NETWORK: %w", err)
+	}
+	return n, nil
+}
+
+// prefixesEnv parses a comma-separated CIDR list. Subnets are masked; host
+// addresses must be single addresses (/32 or /128). Link-local and loopback
+// ranges are never a LAN or a host address a lease could address.
+func prefixesEnv(key string, subnet bool) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, raw := range strings.Split(os.Getenv(key), ",") {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			return nil, fmt.Errorf("%s must list CIDR prefixes", key)
+		}
+		if !subnet && prefix.Bits() != prefix.Addr().BitLen() {
+			return nil, fmt.Errorf("%s must list single addresses", key)
+		}
+		if prefix.Addr().IsLoopback() || prefix.Addr().IsLinkLocalUnicast() || prefix.Addr().IsUnspecified() || prefix.Addr().IsMulticast() || prefix.Bits() == 0 {
+			return nil, fmt.Errorf("%s must not contain loopback, link-local, multicast or default routes", key)
+		}
+		out = append(out, prefix.Masked())
+	}
+	if len(out) > 256 {
+		return nil, fmt.Errorf("%s lists more than 256 prefixes", key)
+	}
+	return mergePrefixes(nil, out), nil
+}
+
+func mergePrefixes(a, b []netip.Prefix) []netip.Prefix {
+	out := append(slices.Clone(a), b...)
+	slices.SortFunc(out, func(x, y netip.Prefix) int {
+		if c := x.Addr().Compare(y.Addr()); c != 0 {
+			return c
+		}
+		return x.Bits() - y.Bits()
+	})
+	return slices.Compact(out)
 }
 
 func intEnv(key string, min, max int) (int, error) {

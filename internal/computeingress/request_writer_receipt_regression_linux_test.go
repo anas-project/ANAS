@@ -15,7 +15,7 @@ import (
 )
 
 func receiptRegressionRequest() Request {
-	return Request{Action: "publish", InstanceID: "anas-test-job1", WorkloadID: "job:1", GuestPort: 7000}
+	return Request{Instance: "anas-test-job1", Address: "10.101.0.17", Port: 7000}
 }
 
 func receiptRegressionWriter(t *testing.T, directory string) *RequestWriter {
@@ -102,7 +102,7 @@ func TestRequestReceiptCannotRemoveAnotherWritersReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	newRequest := oldRequest
-	newRequest.WorkloadID = "job:2"
+	newRequest.Address = "10.101.0.18"
 	if requestSlotName(newRequest) != requestSlotName(oldRequest) {
 		t.Fatal("slot identity unexpectedly includes the workload")
 	}

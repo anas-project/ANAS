@@ -4,12 +4,18 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"maps"
+	"net/netip"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/computeclient"
+	"github.com/anas-project/ANAS/internal/computenet"
 )
+
+var instanceNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
 type lease struct {
 	Consumer          string
@@ -30,6 +36,14 @@ type lease struct {
 	// identity that owns the lease's project and bridge.
 	Credential string
 	Isolation  string
+	// Network is the frozen declaration Core projected for this lease. LAN and
+	// HostAddresses are what Core found on the host for this apply, plus the
+	// operator's extra LAN subnets; the egress tiers are written against them.
+	Network       computenet.Network
+	LAN           []netip.Prefix
+	HostAddresses []netip.Prefix
+	// LegacyBridge is read from the daemon, never from the environment.
+	LegacyBridge string
 	// Daemon is read from the target daemon by ensure and inspect, never
 	// taken from the environment: it decides which restriction keys exist.
 	Daemon daemonRestrictions
@@ -44,6 +58,7 @@ type lease struct {
 type daemonRestrictions struct {
 	StoragePoolAccess bool // projects_restricted_storage_pool_access, Incus 7.0
 	VMNesting         bool // projects_restricted_virtual_machines_nesting, Incus 7.x
+	AddressSets       bool // network_address_set; the lease network policy needs it
 }
 
 // readDaemonRestrictions asks the daemon itself. A version string would have
@@ -62,6 +77,7 @@ func readDaemonRestrictions(ctx context.Context, c *client) (daemonRestrictions,
 	return daemonRestrictions{
 		StoragePoolAccess: slices.Contains(server.APIExtensions, "projects_restricted_storage_pool_access"),
 		VMNesting:         slices.Contains(server.APIExtensions, "projects_restricted_virtual_machines_nesting"),
+		AddressSets:       slices.Contains(server.APIExtensions, "network_address_set"),
 	}, nil
 }
 
@@ -76,6 +92,7 @@ type network struct {
 	Description string            `json:"description,omitempty"`
 	Type        string            `json:"type,omitempty"`
 	Config      map[string]string `json:"config"`
+	UsedBy      []string          `json:"used_by,omitempty"`
 }
 
 type device map[string]string
@@ -101,6 +118,13 @@ type inspectResult struct {
 	Ready         bool `json:"ready"`
 	Restricted    bool `json:"restricted"`
 	QuotaEnforced bool `json:"quota_enforced"`
+}
+
+// ensureResult adds what Core records in the resource state: the lease
+// bridge's subnets, gateways and slot addresses (INCUS-R-159).
+type ensureResult struct {
+	inspectResult
+	Network *networkReport `json:"network,omitempty"`
 }
 
 // clearedRestrictions are restriction keys whose absence is either the
@@ -157,7 +181,7 @@ func projectConfig(l lease) map[string]string {
 		// supports OVN in network-isolated projects). Restrict access to
 		// exactly this lease's provider-owned bridge instead.
 		"features.networks":                    "false",
-		"restricted.networks.access":           computeclient.NetworkName(l.Sandbox),
+		"restricted.networks.access":           projectNetworkAccess(l),
 		"limits.instances":                     fmt.Sprint(l.MaxInstances),
 		"limits.cpu":                           fmt.Sprint(l.MaxInstances * l.CPU),
 		"limits.memory":                        fmt.Sprintf("%dMiB", l.MaxInstances*l.MemoryMiB),
@@ -217,6 +241,15 @@ func projectConfig(l lease) map[string]string {
 		config["limits.containers"], config["limits.virtual-machines"] = "0", count
 	}
 	return config
+}
+
+// projectNetworkAccess is the lease bridge, plus the legacy anas* bridge while
+// a pre-2026-10 lease still has one.
+func projectNetworkAccess(l lease) string {
+	if l.LegacyBridge != "" {
+		return leaseNetworkName(l.Sandbox) + "," + l.LegacyBridge
+	}
+	return leaseNetworkName(l.Sandbox)
 }
 
 // unmanagedRestrictions names restriction keys that projectConfig neither
@@ -308,11 +341,12 @@ func projectFenceEnforced(config map[string]string, l lease) bool {
 	return len(unmanagedRestrictions(config, l)) == 0
 }
 
-// ensureNetwork gives the lease its own managed bridge with outbound NAT and no
-// inbound path. Egress policy belongs to the provider: an instance that could
-// pick its own network could pick one that reaches another lease.
-func ensureNetwork(ctx context.Context, c *client, l lease) (string, error) {
-	name := computeclient.NetworkName(l.Sandbox)
+// ensureNetwork gives the lease its own managed bridge with outbound NAT, the
+// network policy its declaration asks for and nothing more. Egress policy
+// belongs to the provider: an instance that could pick its own network could
+// pick one that reaches another lease.
+func ensureNetwork(ctx context.Context, c *client, l lease) (network, leaseAddressing, error) {
+	name := leaseNetworkName(l.Sandbox)
 	desired := desiredNetworkConfig(l)
 	path := "/1.0/networks/" + name + "?project=default"
 	var current network
@@ -320,7 +354,7 @@ func ensureNetwork(ctx context.Context, c *client, l lease) (string, error) {
 	switch {
 	case err == nil:
 		if err := verifyNetworkOwner(current, l); err != nil {
-			return "", err
+			return network{}, leaseAddressing{}, err
 		}
 		// Incus replaces auto with a concrete subnet. Preserve that subnet
 		// across applies instead of renumbering running instances.
@@ -330,65 +364,98 @@ func ensureNetwork(ctx context.Context, c *client, l lease) (string, error) {
 				desired[key] = current.Config[key]
 			}
 		}
-		merged := map[string]string{}
-		for key, value := range current.Config {
-			merged[key] = value
-		}
-		for key, value := range desired {
-			merged[key] = value
-		}
+		merged := maps.Clone(current.Config)
+		maps.Copy(merged, desired)
 		if !l.NetworkIPv6 {
 			delete(merged, "ipv6.nat")
 		}
 		if err := c.do(ctx, "PUT", path, network{Config: merged}, nil); err != nil {
-			return "", err
+			return network{}, leaseAddressing{}, err
 		}
 	case isNotFound(err):
 		if err := c.do(ctx, "POST", "/1.0/networks?project=default", network{
 			Name: name, Type: "bridge", Description: "ANAS compute lease network for " + l.Consumer, Config: desired,
 		}, nil); err != nil {
-			return "", err
+			return network{}, leaseAddressing{}, err
 		}
 	default:
-		return "", err
+		return network{}, leaseAddressing{}, err
 	}
 	var actual network
 	if err := c.do(ctx, "GET", path, nil, &actual); err != nil {
-		return "", fmt.Errorf("read back lease network: %w", err)
+		return network{}, leaseAddressing{}, fmt.Errorf("read back lease network: %w", err)
 	}
-	if err := verifyNetworkConfig(actual, l, desired); err != nil {
-		return "", err
-	}
-	// The source fence needs the concrete subnets the daemon just assigned,
-	// and must exist before the bridge can name it.
 	actual.Name = name
-	acl, err := ensureNetworkACL(ctx, c, l, actual)
+	if err := verifyNetworkConfig(actual, l, desired); err != nil {
+		return network{}, leaseAddressing{}, err
+	}
+	// The DHCP range and the slot addresses depend on the subnet the daemon
+	// just assigned, so they are a second write.
+	config, remove, addressing, err := addressingConfig(actual, l)
 	if err != nil {
-		return "", err
+		return network{}, leaseAddressing{}, err
+	}
+	if _, settled, _ := readAddressing(actual, l); !settled {
+		merged := maps.Clone(actual.Config)
+		maps.Copy(merged, config)
+		for _, key := range remove {
+			delete(merged, key)
+		}
+		if err := c.do(ctx, "PUT", path, network{Config: merged}, nil); err != nil {
+			return network{}, leaseAddressing{}, err
+		}
+		// Decode into a fresh value: unmarshalling into the old map would
+		// merge, and a key the write removed would appear to survive.
+		actual = network{}
+		if err := c.do(ctx, "GET", path, nil, &actual); err != nil {
+			return network{}, leaseAddressing{}, fmt.Errorf("read back lease network: %w", err)
+		}
+		actual.Name = name
+		if _, settled, err := readAddressing(actual, l); err != nil || !settled {
+			return network{}, leaseAddressing{}, fmt.Errorf("lease network %s did not apply its DHCP range and slot addresses", name)
+		}
+	}
+	if !l.Daemon.AddressSets {
+		return network{}, leaseAddressing{}, fmt.Errorf("incus daemon does not support network address sets (network_address_set); compute leases need Incus 7.0 LTS or newer")
+	}
+	// The set must cover this bridge before an ACL names it, so a lease
+	// never runs a moment without excluding the others.
+	if err := ensureLeasesAddressSet(ctx, c); err != nil {
+		return network{}, leaseAddressing{}, err
+	}
+	if l.Network.NeedsTraefik() {
+		present, err := traefikAddressSetPresent(ctx, c)
+		if err != nil {
+			return network{}, leaseAddressing{}, err
+		}
+		if !present {
+			return network{}, leaseAddressing{}, fmt.Errorf("network address set %s is missing: reaching ANAS Modules or publishing HTTP needs a host configured by incus.configure", traefikAddressSet)
+		}
+	}
+	acl, err := ensureNetworkACL(ctx, c, l, addressing)
+	if err != nil {
+		return network{}, leaseAddressing{}, err
 	}
 	attach := bridgeACLConfig(acl)
 	if !bridgeACLAttached(actual, attach) {
-		merged := map[string]string{}
-		for key, value := range actual.Config {
-			merged[key] = value
-		}
-		for key, value := range attach {
-			merged[key] = value
-		}
+		merged := maps.Clone(actual.Config)
+		maps.Copy(merged, attach)
 		if err := c.do(ctx, "PUT", path, network{Config: merged}, nil); err != nil {
-			return "", err
+			return network{}, leaseAddressing{}, err
 		}
+		actual = network{}
 		if err := c.do(ctx, "GET", path, nil, &actual); err != nil {
-			return "", fmt.Errorf("read back lease network: %w", err)
+			return network{}, leaseAddressing{}, fmt.Errorf("read back lease network: %w", err)
 		}
+		actual.Name = name
 	}
 	if err := verifyNetworkConfig(actual, l, desired); err != nil {
-		return "", err
+		return network{}, leaseAddressing{}, err
 	}
 	if !bridgeACLAttached(actual, attach) {
-		return "", fmt.Errorf("lease network %s did not attach its source fence ACL", name)
+		return network{}, leaseAddressing{}, fmt.Errorf("lease network %s did not attach its network policy ACL", name)
 	}
-	return name, nil
+	return actual, addressing, nil
 }
 
 func bridgeACLAttached(n network, attach map[string]string) bool {
@@ -424,7 +491,7 @@ func verifyNetworkConfig(actual network, l lease, desired map[string]string) err
 	if err := verifyNetworkOwner(actual, l); err != nil {
 		return err
 	}
-	name := computeclient.NetworkName(l.Sandbox)
+	name := leaseNetworkName(l.Sandbox)
 	for key, expected := range desired {
 		value := actual.Config[key]
 		if expected == "auto" {
@@ -443,10 +510,10 @@ func verifyNetworkOwner(n network, l lease) error {
 	// the network only after proving the project is this lease's alone.
 	if n.Type != "bridge" || n.Config["user.anas.consumer"] != l.Consumer || n.Config["user.anas.sandbox"] != l.Sandbox ||
 		(n.Config[leaseCredentialKey] != "" && n.Config[leaseCredentialKey] != l.Credential) {
-		return fmt.Errorf("lease network %s is not an owned bridge for %s; refusing to adopt or modify it", computeclient.NetworkName(l.Sandbox), l.Sandbox)
+		return fmt.Errorf("lease network %s is not an owned bridge for %s; refusing to adopt or modify it", leaseNetworkName(l.Sandbox), l.Sandbox)
 	}
 	if n.Config["bridge.external_interfaces"] != "" {
-		return fmt.Errorf("lease network %s has unmanaged external interfaces", computeclient.NetworkName(l.Sandbox))
+		return fmt.Errorf("lease network %s has unmanaged external interfaces", leaseNetworkName(l.Sandbox))
 	}
 	return nil
 }
@@ -455,8 +522,8 @@ func verifyNetworkOwner(n network, l lease) error {
 // where its root disk lives and what it is plugged into. The consumer names
 // this profile but never writes it, which is what stops a caller attaching a
 // host path or a second NIC.
-func ensureProfile(ctx context.Context, c *client, l lease, bridge string) error {
-	desired := desiredLeaseProfile(l, bridge)
+func ensureProfile(ctx context.Context, c *client, l lease, bridge string, slots []slotAddress) error {
+	desired := desiredLeaseProfile(l, bridge, slots)
 	path := "/1.0/profiles/" + computeclient.ProfileName + "?project=" + l.Sandbox
 	var current profile
 	err := c.do(ctx, "GET", path, nil, &current)
@@ -488,8 +555,11 @@ func projectDiskLimit(l lease) string {
 	return fmt.Sprintf("%dGiB", l.MaxInstances*l.DiskGiB)
 }
 
-func desiredLeaseProfile(l lease, bridge string) profile {
+func desiredLeaseProfile(l lease, bridge string, slots []slotAddress) profile {
 	config := map[string]string{"user.anas.managed": "true"}
+	// The shared client reads the slot addresses here when it creates a
+	// pinned instance; the bridge keeps the authoritative copy.
+	maps.Copy(config, slotProfileConfig(slots))
 	if l.Isolation == "container" {
 		config["security.nesting"] = "true"
 		config["security.privileged"] = "false"
@@ -504,6 +574,13 @@ func desiredLeaseProfile(l lease, bridge string) profile {
 	if l.Isolation == "vm" {
 		root["size.state"] = vmStateVolumeSize
 	}
+	nic := device{"type": "nic", "network": bridge, "security.mac_filtering": "true", "security.ipv4_filtering": "true"}
+	if !l.Network.IntraLease {
+		// Instances on one bridge talk at layer 2, which the ACL never sees.
+		// Port isolation is what keeps one job from reaching another
+		// (INCUS-R-123); intra_lease turns it off.
+		nic["security.port_isolation"] = "true"
+	}
 	return profile{
 		Description: "ANAS compute lease profile for " + l.Consumer,
 		Config:      config,
@@ -517,8 +594,7 @@ func desiredLeaseProfile(l lease, bridge string) profile {
 			// start any instance using it unless the host has br_netfilter with
 			// bridge-nf-call-ip6tables=1, which Docker 28+ no longer loads by
 			// default. IPv6 source filtering stays an open gap, not a silent one.
-			"eth0": {"type": "nic", "network": bridge,
-				"security.mac_filtering": "true", "security.ipv4_filtering": "true"},
+			"eth0": nic,
 		},
 	}
 }
@@ -526,15 +602,15 @@ func desiredLeaseProfile(l lease, bridge string) profile {
 // verifyProfile reads the profile back and refuses anything beyond the two
 // devices this contract describes. The daemon does not enforce "no extra
 // devices" on a profile, so this assertion is the only thing that does.
-func verifyProfile(ctx context.Context, c *client, l lease, bridge string) error {
+func verifyProfile(ctx context.Context, c *client, l lease, bridge string, slots []slotAddress) error {
 	var current profile
 	if err := c.do(ctx, "GET", "/1.0/profiles/"+computeclient.ProfileName+"?project="+l.Sandbox, nil, &current); err != nil {
 		return fmt.Errorf("read back lease profile: %w", err)
 	}
-	return verifyProfileConfig(current, l, bridge)
+	return verifyProfileConfig(current, l, bridge, slots)
 }
 
-func verifyProfileConfig(current profile, l lease, bridge string) error {
+func verifyProfileConfig(current profile, l lease, bridge string, slots []slotAddress) error {
 	if len(current.Devices) != 2 {
 		return fmt.Errorf("lease profile %s carries %d devices, want exactly root and eth0", computeclient.ProfileName, len(current.Devices))
 	}
@@ -551,25 +627,36 @@ func verifyProfileConfig(current profile, l lease, bridge string) error {
 	if nic["parent"] != "" || nic["nictype"] != "" {
 		return fmt.Errorf("lease profile NIC bypasses the managed network")
 	}
-	desired := desiredLeaseProfile(l, bridge)
+	desired := desiredLeaseProfile(l, bridge, slots)
 	if !reflect.DeepEqual(current.Config, desired.Config) || !reflect.DeepEqual(current.Devices, desired.Devices) {
 		return fmt.Errorf("lease profile contains unapproved configuration or device properties")
 	}
 	return nil
 }
 
-func ensure(ctx context.Context, c *client, l lease) (inspectResult, error) {
+func ensure(ctx context.Context, c *client, l lease) (ensureResult, error) {
+	result, err := ensureLease(ctx, c, l)
+	return result, err
+}
+
+func ensureLease(ctx context.Context, c *client, l lease) (ensureResult, error) {
 	var err error
 	if l.Daemon, err = readDaemonRestrictions(ctx, c); err != nil {
-		return inspectResult{}, err
+		return ensureResult{}, err
+	}
+	// A lease created before the lease* bridge prefix still names its anas*
+	// bridge; the project keeps allowing both until the old one is unused
+	// (INCUS-R-028: an existing project keeps working without a rebuild).
+	if l.LegacyBridge, err = ownedLegacyBridge(ctx, c, l); err != nil {
+		return ensureResult{}, err
 	}
 	// Refuse before changing projects, networks, profiles or certificate trust.
 	supported, err := readQuotaPool(ctx, c, l)
 	if err != nil {
-		return inspectResult{}, err
+		return ensureResult{}, err
 	}
 	if !supported {
-		return inspectResult{}, fmt.Errorf("INCUS_STORAGE_POOL %s must be a Created btrfs or zfs pool for enforced disk quotas", l.StoragePool)
+		return ensureResult{}, fmt.Errorf("INCUS_STORAGE_POOL %s must be a Created btrfs or zfs pool for enforced disk quotas", l.StoragePool)
 	}
 	desired := projectConfig(l)
 	description := fmt.Sprintf("ANAS compute lease for %s (%s tier)", l.Consumer, l.Isolation)
@@ -582,24 +669,24 @@ func ensure(ctx context.Context, c *client, l lease) (inspectResult, error) {
 		// that another restricted certificate can drive, is not this lease's
 		// to converge. Both refusals happen before any write.
 		if err := verifyProjectOwner(current.Config, l); err != nil {
-			return inspectResult{}, err
+			return ensureResult{}, err
 		}
 		foreign, err := foreignProjectCertificates(ctx, c, l)
 		if err != nil {
-			return inspectResult{}, err
+			return ensureResult{}, err
 		}
 		if len(foreign) > 0 {
-			return inspectResult{}, fmt.Errorf("incus project %s is also trusted by other restricted certificates (%s); confirm they are unused and remove them, or migrate the project explicitly",
+			return ensureResult{}, fmt.Errorf("incus project %s is also trusted by other restricted certificates (%s); confirm they are unused and remove them, or migrate the project explicitly",
 				l.Sandbox, strings.Join(foreign, ", "))
 		}
 		// Existing network-isolated projects may contain OVN networks or
 		// running instances. Changing their feature flag is a migration,
 		// never an incidental side effect of ensuring a bridge lease.
 		if strings.EqualFold(strings.TrimSpace(current.Config["features.networks"]), "true") {
-			return inspectResult{}, fmt.Errorf("incus project %s has features.networks enabled; explicit network migration is required", l.Sandbox)
+			return ensureResult{}, fmt.Errorf("incus project %s has features.networks enabled; explicit network migration is required", l.Sandbox)
 		}
 		if unmanaged := unmanagedRestrictions(current.Config, l); len(unmanaged) > 0 {
-			return inspectResult{}, fmt.Errorf("incus project %s carries restriction keys this provider does not manage (%s); remove them or migrate the project explicitly",
+			return ensureResult{}, fmt.Errorf("incus project %s carries restriction keys this provider does not manage (%s); remove them or migrate the project explicitly",
 				l.Sandbox, strings.Join(unmanaged, ", "))
 		}
 		// Converge rather than recreate: instances may be running in here.
@@ -616,21 +703,22 @@ func ensure(ctx context.Context, c *client, l lease) (inspectResult, error) {
 			delete(merged, key)
 		}
 		if err := c.do(ctx, "PUT", "/1.0/projects/"+l.Sandbox, project{Description: description, Config: merged}, nil); err != nil {
-			return inspectResult{}, err
+			return ensureResult{}, err
 		}
 	case isNotFound(err):
 		if err := c.do(ctx, "POST", "/1.0/projects", project{Name: l.Sandbox, Description: description, Config: desired}, nil); err != nil {
-			return inspectResult{}, err
+			return ensureResult{}, err
 		}
 	default:
-		return inspectResult{}, err
+		return ensureResult{}, err
 	}
 
 	// Read back rather than trusting the write. Every later guarantee in this
 	// contract rests on these two flags being true on the daemon's own copy.
-	result, err := inspectProject(ctx, c, l)
+	projectResult, err := inspectProject(ctx, c, l)
+	result := ensureResult{inspectResult: projectResult}
 	if err != nil {
-		return inspectResult{}, err
+		return ensureResult{}, err
 	}
 	if !result.Restricted {
 		return result, fmt.Errorf("incus project %s is not restricted after ensure", l.Sandbox)
@@ -645,15 +733,30 @@ func ensure(ctx context.Context, c *client, l lease) (inspectResult, error) {
 	// Only now that the fence is proven: give the lease its network and profile,
 	// then read the profile back. An instance created before this exists would
 	// come up with no root disk and no NIC.
-	bridge, err := ensureNetwork(ctx, c, l)
+	bridge, addressing, err := ensureNetwork(ctx, c, l)
 	if err != nil {
 		return result, err
 	}
-	if err := ensureProfile(ctx, c, l, bridge); err != nil {
+	if err := ensureProfile(ctx, c, l, bridge.Name, addressing.Slots); err != nil {
 		return result, err
 	}
-	if err := verifyProfile(ctx, c, l, bridge); err != nil {
+	if err := verifyProfile(ctx, c, l, bridge.Name, addressing.Slots); err != nil {
 		return result, err
+	}
+	if l.LegacyBridge != "" {
+		// The profile has moved to the new bridge; drop the old one once
+		// nothing uses it, then narrow the project to the new bridge alone.
+		if err := removeLegacyBridge(ctx, c, l); err != nil {
+			return result, err
+		}
+		if l.LegacyBridge, err = ownedLegacyBridge(ctx, c, l); err != nil {
+			return result, err
+		}
+		if l.LegacyBridge == "" {
+			if err := narrowProjectNetworks(ctx, c, l); err != nil {
+				return result, err
+			}
+		}
 	}
 	if err := verifyImages(ctx, c, l); err != nil {
 		return result, err
@@ -661,14 +764,49 @@ func ensure(ctx context.Context, c *client, l lease) (inspectResult, error) {
 	if err := ensureCertificate(ctx, c, l); err != nil {
 		return result, err
 	}
-	result, err = inspect(ctx, c, l)
+	inspected, err := inspect(ctx, c, l)
+	result.inspectResult = inspected
 	if err != nil {
 		return result, err
 	}
 	if !result.Ready {
 		return result, fmt.Errorf("incus lease dependencies changed during ensure")
 	}
+	report := reportFor(bridge.Name, bridge, addressing, l)
+	report.Slots = sortedSlots(report.Slots)
+	result.Network = &report
 	return result, nil
+}
+
+// ownedLegacyBridge returns the old anas* bridge name when this lease still
+// owns one, so the project keeps allowing it until it is gone.
+func ownedLegacyBridge(ctx context.Context, c *client, l lease) (string, error) {
+	legacy := computeclient.LegacyNetworkName(l.Sandbox)
+	var old network
+	err := c.do(ctx, "GET", "/1.0/networks/"+legacy+"?project=default", nil, &old)
+	if isNotFound(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if old.Type == "bridge" && old.Config["user.anas.consumer"] == l.Consumer && old.Config["user.anas.sandbox"] == l.Sandbox &&
+		(old.Config[leaseCredentialKey] == "" || old.Config[leaseCredentialKey] == l.Credential) {
+		return legacy, nil
+	}
+	return "", nil
+}
+
+// narrowProjectNetworks rewrites only the network access key once the legacy
+// bridge is gone; every other project key was converged earlier in ensure.
+func narrowProjectNetworks(ctx context.Context, c *client, l lease) error {
+	var current project
+	if err := c.do(ctx, "GET", "/1.0/projects/"+l.Sandbox, nil, &current); err != nil {
+		return err
+	}
+	config := maps.Clone(current.Config)
+	config["restricted.networks.access"] = projectConfig(l)["restricted.networks.access"]
+	return c.do(ctx, "PUT", "/1.0/projects/"+l.Sandbox, project{Description: current.Description, Config: config}, nil)
 }
 
 func ensureCertificate(ctx context.Context, c *client, l lease) error {
@@ -736,12 +874,18 @@ func inspect(ctx context.Context, c *client, l lease) (inspectResult, error) {
 	if l.Daemon, err = readDaemonRestrictions(ctx, c); err != nil {
 		return inspectResult{}, err
 	}
+	if l.LegacyBridge, err = ownedLegacyBridge(ctx, c, l); err != nil {
+		return inspectResult{}, err
+	}
 	result, err := inspectProject(ctx, c, l)
 	if err != nil || !result.Ready {
 		return result, err
 	}
 	result.Ready = false
-	bridge := computeclient.NetworkName(l.Sandbox)
+	if !l.Daemon.AddressSets {
+		return result, nil
+	}
+	bridge := leaseNetworkName(l.Sandbox)
 	var n network
 	if err := c.do(ctx, "GET", "/1.0/networks/"+bridge+"?project=default", nil, &n); err != nil {
 		if isNotFound(err) {
@@ -749,12 +893,15 @@ func inspect(ctx context.Context, c *client, l lease) (inspectResult, error) {
 		}
 		return result, err
 	}
+	n.Name = bridge
 	if verifyNetworkConfig(n, l, desiredNetworkConfig(l)) != nil || !bridgeACLAttached(n, bridgeACLConfig(bridge)) {
 		return result, nil
 	}
-	n.Name = bridge
-	subnets, err := leaseSubnets(n, l)
-	if err != nil {
+	if _, err := leaseSubnets(n, l); err != nil {
+		return result, nil
+	}
+	addressing, settled, err := readAddressing(n, l)
+	if err != nil || !settled {
 		return result, nil
 	}
 	var acl networkACL
@@ -764,8 +911,16 @@ func inspect(ctx context.Context, c *client, l lease) (inspectResult, error) {
 		}
 		return result, err
 	}
-	if verifyACL(acl, l, subnets) != nil {
+	if verifyACL(acl, l, addressing) != nil {
 		return result, nil
+	}
+	if covers, err := leasesAddressSetCovers(ctx, c); err != nil || !covers {
+		return result, err
+	}
+	if l.Network.NeedsTraefik() {
+		if present, err := traefikAddressSetPresent(ctx, c); err != nil || !present {
+			return result, err
+		}
 	}
 	var p profile
 	if err := c.do(ctx, "GET", "/1.0/profiles/"+computeclient.ProfileName+"?project="+l.Sandbox, nil, &p); err != nil {
@@ -774,7 +929,7 @@ func inspect(ctx context.Context, c *client, l lease) (inspectResult, error) {
 		}
 		return result, err
 	}
-	if verifyProfileConfig(p, l, bridge) != nil {
+	if verifyProfileConfig(p, l, bridge, addressing.Slots) != nil {
 		return result, nil
 	}
 	parsed, err := decodeCertificate(l.ClientCertPEM)
@@ -812,19 +967,102 @@ func inspect(ctx context.Context, c *client, l lease) (inspectResult, error) {
 	return result, nil
 }
 
-// revoke withdraws the consumer's certificate but leaves the project standing.
-// Removing the project would destroy instances the contract never claimed to
-// own; withdrawing trust is the part that actually ends the lease.
+// revoke withdraws the consumer's certificate but leaves the project and its
+// instances standing. Removing the project would destroy instances the
+// contract never claimed to own; withdrawing trust is the part that actually
+// ends the lease. A revoked lease also loses its network (INCUS-R-124): the ACL
+// drops every new connection in either direction, and its running instances
+// are stopped, which ends the connections they already had -- no rule can,
+// because the bridge admits established flows ahead of the ACL.
 func revoke(ctx context.Context, c *client, l lease) error {
 	parsed, err := decodeCertificate(l.ClientCertPEM)
 	if err != nil {
 		return fmt.Errorf("consumer client certificate: %w", err)
 	}
-	err = c.do(ctx, "DELETE", "/1.0/certificates/"+certificateFingerprint(parsed), nil, nil)
+	if err := c.do(ctx, "DELETE", "/1.0/certificates/"+certificateFingerprint(parsed), nil, nil); err != nil && !isNotFound(err) {
+		return err
+	}
+	for _, bridge := range []string{leaseNetworkName(l.Sandbox), computeclient.LegacyNetworkName(l.Sandbox)} {
+		if err := closeLeaseACL(ctx, c, l, bridge); err != nil {
+			return err
+		}
+	}
+	return stopLeaseInstances(ctx, c, l)
+}
+
+// closeLeaseACL empties an owned lease ACL. With both default actions drop,
+// nothing new enters or leaves the bridge.
+func closeLeaseACL(ctx context.Context, c *client, l lease, name string) error {
+	path := "/1.0/network-acls/" + name + "?project=default"
+	var current networkACL
+	err := c.do(ctx, "GET", path, nil, &current)
 	if isNotFound(err) {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if verifyACLOwner(current, l) != nil {
+		return nil
+	}
+	closed := networkACL{Description: "ANAS compute lease revoked for " + l.Consumer, Egress: []aclRule{}, Ingress: []aclRule{}, Config: current.Config}
+	if err := c.do(ctx, "PUT", path, closed, nil); err != nil {
+		return err
+	}
+	var actual networkACL
+	if err := c.do(ctx, "GET", path, nil, &actual); err != nil {
+		return fmt.Errorf("read back revoked lease ACL: %w", err)
+	}
+	if len(actual.Egress) != 0 || len(actual.Ingress) != 0 {
+		return fmt.Errorf("network ACL %s still carries rules after revoke", name)
+	}
+	var n network
+	if err := c.do(ctx, "GET", "/1.0/networks/"+name+"?project=default", nil, &n); err == nil && !bridgeACLAttached(n, bridgeACLConfig(name)) {
+		return fmt.Errorf("lease network %s does not deny by default after revoke", name)
+	}
+	return nil
+}
+
+type instanceRecord struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+// stopLeaseInstances stops every running instance in the lease project and
+// confirms it. Stopped instances keep their disks.
+func stopLeaseInstances(ctx context.Context, c *client, l lease) error {
+	var current project
+	if err := c.do(ctx, "GET", "/1.0/projects/"+l.Sandbox, nil, &current); err != nil {
+		if isNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if verifyProjectOwner(current.Config, l) != nil {
+		return nil
+	}
+	var instances []instanceRecord
+	if err := c.do(ctx, "GET", "/1.0/instances?project="+l.Sandbox+"&recursion=1", nil, &instances); err != nil {
+		return fmt.Errorf("list lease instances: %w", err)
+	}
+	for _, instance := range instances {
+		if !instanceNamePattern.MatchString(instance.Name) || strings.EqualFold(instance.Status, "Stopped") {
+			continue
+		}
+		path := "/1.0/instances/" + instance.Name + "/state?project=" + l.Sandbox
+		if err := c.doOperation(ctx, "PUT", path, map[string]any{"action": "stop", "force": true, "timeout": 30}); err != nil {
+			return fmt.Errorf("stop lease instance %s: %w", instance.Name, err)
+		}
+	}
+	if err := c.do(ctx, "GET", "/1.0/instances?project="+l.Sandbox+"&recursion=1", nil, &instances); err != nil {
+		return fmt.Errorf("list lease instances: %w", err)
+	}
+	for _, instance := range instances {
+		if !strings.EqualFold(instance.Status, "Stopped") {
+			return fmt.Errorf("lease instance %s is still %s after revoke", instance.Name, instance.Status)
+		}
+	}
+	return nil
 }
 
 func isNotFound(err error) bool {

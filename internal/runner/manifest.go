@@ -142,6 +142,9 @@ type manifestResourceRequirement struct {
 	Spec      map[string]any        `yaml:"spec"`
 	SpecFrom  map[string]SpecSource `yaml:"spec_from"`
 	EnabledBy string                `yaml:"enabled_by"`
+	// HTTPRequestOwner is "uid:gid" of the consumer process that writes HTTP
+	// publication requests; Core gives it the lease's request directory.
+	HTTPRequestOwner string `yaml:"http_request_owner"`
 }
 
 type manifestCapabilities struct {

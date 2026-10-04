@@ -221,11 +221,24 @@ database that has to be migrated. `apply` refuses those with exit 4 and names
 the setting. `--allow-risky` proceeds once you have arranged the migration.
 
 Removing a compute consumer (or switching off a capability such as its Actions)
-makes `apply` revoke that lease's restricted certificate on Incus; the project
-and its instances stay. If the daemon is unreachable and revocation fails, the
-apply fails and the previous deployment is restored. Use `--allow-risky` only
-once you know the daemon is gone for good; the revocation is then recorded as
-unconfirmed.
+makes `apply` revoke that lease's restricted certificate on Incus, close the
+lease network and stop its running instances; the project and instance disks
+stay. If the daemon is unreachable and revocation fails, the apply fails and the
+previous deployment is restored. Use `--allow-risky` only once you know the
+daemon is gone for good; the revocation is then recorded as unconfirmed.
+
+A Module that declares port bindings (a host port forwarded unchanged to an Incus
+instance) needs the host to have run `incus.configure`, whose two-step
+confirmation approves the usable port range (default 30000-32767). An explicit
+host port held by a host process or Docker fails the apply; conflicts, lost port
+holds or altered rules that appear while running are recorded as runtime issues:
+
+```bash
+anas issues -w /srv/anas        # exits 1 while an error is open, suitable for cron
+```
+
+Port bindings carry no ANAS authentication, so the service inside the instance
+must authenticate; HTTP publication goes through Traefik and can use ForwardAuth.
 
 ---
 

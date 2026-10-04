@@ -207,8 +207,18 @@ anas apply -w /srv/anas
 用 `--allow-risky` 继续。
 
 移除一个 compute 消费者（或关闭它的 Actions 之类能力）时，`apply` 会撤销该租约在 Incus 上的
-受限证书，project 与实例保留。daemon 不可达导致撤销失败时，本次 apply 失败并恢复上一个部署；
-确认 daemon 已永久不存在时才用 `--allow-risky` 继续，此时撤销记为未确认。
+受限证书、关闭租约网络并停止其中运行的实例，project 与实例磁盘保留。daemon 不可达导致撤销失败时，
+本次 apply 失败并恢复上一个部署；确认 daemon 已永久不存在时才用 `--allow-risky` 继续，此时撤销记为未确认。
+
+声明了端口绑定的 Module（把宿主端口原样转到 Incus 实例）要求宿主先运行过 `incus.configure`，它在二段确认里
+批准可用端口范围（默认 30000–32767）。显式写的宿主端口被宿主进程或 Docker 占用时 apply 失败；运行中出现的
+冲突、端口占位丢失或规则被改动，记在运行问题里：
+
+```bash
+anas issues -w /srv/anas        # 存在未解决的错误时退出码为 1，适合放进 cron
+```
+
+端口绑定不带 ANAS 的认证，实例里的服务必须自己认证；HTTP 发布经 Traefik，可以挂 ForwardAuth。
 
 ---
 

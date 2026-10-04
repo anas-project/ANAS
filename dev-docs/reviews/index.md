@@ -4,6 +4,7 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [Incus 租约网络、HTTP 发布与端口绑定实施记录](2026-10-03-incus-lease-network-implementation.md) | 2026-10-03，`c7891162` 加当前未提交工作树 | M10a/M10b/M11/M11b/M11c、HOSTACT M5 与运行问题记录 CLI 的实现与本机门禁；撤销停止实例等五项自行决定；实机 e2e 全部未运行 |
 | [Workspace 临时存储设计评审](2026-09-30-workspace-temp-storage-design-review.md) | 2026-09-30，`9a6921a1` 加当前未提交工作树 | 同日讨论后收窄为 Module 声明的临时目录；保存归应用负责，应用全面就绪不作为新增切换门槛，回滚复用配置切换；Docker 程序与连接固定方案待定，未改实现 |
 | [租约网络实机探测](2026-09-30-incus-lease-network-probe.md) | 2026-09-30，`7ad1876a` 加累积工作树；一次性 Debian 13 VM、Incus 7.0.1、docker.io 26 与 Docker CE 29 | M10a/M11b/M11c 待验证项与控制连接启动顺序：ACL 与 address set、默认拒绝入站、端口隔离、槽位固定地址、Docker 式端口表与占位；静态规则改窄规则、UDP 占位改常驻持有；据此 Incus 改为直接监听控制网关 |
 | [入站旧实现删除与宿主通道身份链简化](2026-09-30-incus-old-code-removal-and-hostd-simplification.md) | 2026-09-30，`7ad1876a` 加累积工作树 | 删除逐实例转发许可与逐发布 HTTP 入站运行时（225 个文件）；hostd 对端只认 root，调用记录取代回连 broker 与 systemd 退出观察（`HOSTACT-R-016`）；删除控制转发服务；服务安装必须带 `anas-helper`；宿主审批门禁实机结果见 §5 |

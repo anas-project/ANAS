@@ -32,6 +32,9 @@ func (f *fakeRunner) Run(_ context.Context, stdin io.Reader, args ...string) ([]
 	if reply, ok := f.reply[args[0]]; ok {
 		return reply, nil
 	}
+	if args[0] == "query" {
+		return []byte(`{"config":{}}`), nil
+	}
 	return []byte("[]"), nil
 }
 
@@ -206,7 +209,7 @@ func TestCreateRequestsTheLeasedIsolationTier(t *testing.T) {
 	if err := vm.Create(context.Background(), spec); err != nil {
 		t.Fatal(err)
 	}
-	vmArgs := strings.Join(vmRun.calls[0], " ")
+	vmArgs := strings.Join(vmRun.calls[1], " ")
 	if !strings.Contains(vmArgs, "--vm") || !strings.Contains(vmArgs, "security.secureboot=true") {
 		t.Errorf("vm tier args = %q", vmArgs)
 	}
@@ -217,7 +220,7 @@ func TestCreateRequestsTheLeasedIsolationTier(t *testing.T) {
 	if err := ct.Create(context.Background(), spec); err != nil {
 		t.Fatal(err)
 	}
-	ctArgs := strings.Join(ctRun.calls[0], " ")
+	ctArgs := strings.Join(ctRun.calls[1], " ")
 	if strings.Contains(ctArgs, "--vm") {
 		t.Errorf("container tier must not request a VM: %q", ctArgs)
 	}
@@ -234,7 +237,7 @@ func TestCreateNeverCarriesDevicesOrRawConfig(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	args := strings.Join(run.calls[0], " ")
+	args := strings.Join(run.calls[1], " ")
 	for _, forbidden := range []string{"raw.", "cloud-init.", "/dev/", "source="} {
 		if strings.Contains(args, forbidden) {
 			t.Errorf("create args leaked %q: %s", forbidden, args)
@@ -251,6 +254,49 @@ func TestCreateNeverCarriesDevicesOrRawConfig(t *testing.T) {
 	}
 }
 
+// INCUS-R-156: the instance a slot names gets the slot's addresses on the
+// profile's NIC, one key per --device, and nothing else changes; an
+// instance no slot names keeps DHCP.
+func TestCreateGivesASlotInstanceItsAddresses(t *testing.T) {
+	spec := InstanceSpec{ID: "anas-fj-dev", Image: strings.Repeat("a", 64), WorkloadID: "dev", CPU: 2, MemoryMiB: 4096, DiskGiB: 20}
+	profile := `{"name":"anas-lease","config":{"user.anas.managed":"true",
+	  "user.anas.slot.dev.instance":"anas-fj-dev","user.anas.slot.dev.ipv4":"10.101.0.254","user.anas.slot.dev.ipv6":"fd42:1::ff00",
+	  "user.anas.slot.db.instance":"anas-fj-db","user.anas.slot.db.ipv4":"10.101.0.253"}}`
+	c, run := testClient(t, testLease())
+	run.reply["query"] = []byte(profile)
+	if err := c.Create(context.Background(), spec); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(run.calls[0], " "); got != "query anas-compute:/1.0/profiles/anas-lease?project=anas-forgejo-runners" {
+		t.Fatalf("profile read = %s", got)
+	}
+	args := strings.Join(run.calls[1], " ")
+	if !strings.Contains(args, "--device=eth0,ipv4.address=10.101.0.254") || !strings.Contains(args, "--device=eth0,ipv6.address=fd42:1::ff00") ||
+		strings.Contains(args, "filtering") || strings.Count(args, "--device=") != 3 {
+		t.Fatalf("slot create args = %s", args)
+	}
+	spec.ID = "anas-fj-job1"
+	run.calls = nil
+	if err := c.Create(context.Background(), spec); err != nil {
+		t.Fatal(err)
+	}
+	if args := strings.Join(run.calls[1], " "); strings.Contains(args, "eth0") {
+		t.Fatalf("an instance without a slot got a fixed address: %s", args)
+	}
+	for name, bad := range map[string]string{
+		"bad ipv4":   `{"config":{"user.anas.slot.dev.instance":"anas-fj-dev","user.anas.slot.dev.ipv4":"fd42::1"}}`,
+		"bad ipv6":   `{"config":{"user.anas.slot.dev.instance":"anas-fj-dev","user.anas.slot.dev.ipv4":"10.101.0.254","user.anas.slot.dev.ipv6":"10.0.0.1"}}`,
+		"two slots":  `{"config":{"user.anas.slot.a.instance":"anas-fj-dev","user.anas.slot.a.ipv4":"10.101.0.254","user.anas.slot.b.instance":"anas-fj-dev","user.anas.slot.b.ipv4":"10.101.0.253"}}`,
+		"unreadable": `[]`,
+	} {
+		run.reply["query"] = []byte(bad)
+		spec.ID = "anas-fj-dev"
+		if err := c.Create(context.Background(), spec); err == nil {
+			t.Fatalf("%s: created", name)
+		}
+	}
+}
+
 func TestContainerCreateDoesNotOverrideProviderNamespacePolicy(t *testing.T) {
 	l := testLease()
 	l.Interface = InterfaceContainer
@@ -258,7 +304,7 @@ func TestContainerCreateDoesNotOverrideProviderNamespacePolicy(t *testing.T) {
 	if err := c.Create(context.Background(), InstanceSpec{ID: "anas-fj-0123456789abcdef0123", Image: strings.Repeat("a", 64), WorkloadID: "job-1", CPU: 2, MemoryMiB: 4096, DiskGiB: 20}); err != nil {
 		t.Fatal(err)
 	}
-	args := strings.Join(run.calls[0], " ")
+	args := strings.Join(run.calls[1], " ")
 	if strings.Contains(args, "security.nesting=") || !strings.Contains(args, "security.privileged=false") || !strings.Contains(args, "--profile="+ProfileName) {
 		t.Fatal("consumer overrode provider namespace policy or lost its privilege fence")
 	}

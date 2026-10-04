@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/anas-project/ANAS/internal/computeclient"
+	"github.com/anas-project/ANAS/internal/computenet"
 )
 
 func selfSigned(t *testing.T, cn string) (certPEM, keyPEM []byte) {
@@ -75,6 +76,9 @@ type fakeDaemon struct {
 	networks                  map[string]network
 	acls                      map[string]networkACL
 	aclWriteFilter            func(*networkACL)
+	addressSets               map[string]addressSet
+	instances                 map[string][]instanceRecord
+	stopped                   []string
 	subnetSeq                 int
 	profiles                  map[string]profile
 	posted                    []string
@@ -119,9 +123,12 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 		certificates:   map[string]certificate{},
 		networks:       map[string]network{},
 		acls:           map[string]networkACL{},
+		addressSets:    map[string]addressSet{},
+		instances:      map[string][]instanceRecord{},
 		profiles:       map[string]profile{},
-		// An Incus 6.0 LTS daemon: none of the 7.x restriction extensions.
-		apiExtensions: []string{"projects", "projects_restrictions", "projects_limits_disk"},
+		// An Incus 7.0 LTS daemon without the two 7.x restriction extensions
+		// those tests switch on explicitly. network_address_set predates 7.0.
+		apiExtensions: []string{"projects", "projects_restrictions", "projects_limits_disk", "network_address_set"},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/1.0", func(w http.ResponseWriter, r *http.Request) {
@@ -252,9 +259,79 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 			writeSync(w, nil)
 		}
 	})
+	mux.HandleFunc("/1.0/network-address-sets", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Query().Get("project") != "default" {
+			writeError(w, 400, "bad address set request")
+			return
+		}
+		var body addressSet
+		json.NewDecoder(r.Body).Decode(&body)
+		d.addressSets[body.Name] = body
+		d.posted = append(d.posted, "address-set:"+body.Name)
+		writeSync(w, nil)
+	})
+	mux.HandleFunc("/1.0/network-address-sets/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("project") != "default" {
+			writeError(w, 400, "bad address set request")
+			return
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/1.0/network-address-sets/")
+		switch r.Method {
+		case http.MethodGet:
+			existing, ok := d.addressSets[name]
+			if !ok {
+				writeError(w, 404, "not found")
+				return
+			}
+			writeSync(w, existing)
+		case http.MethodPut:
+			var body addressSet
+			json.NewDecoder(r.Body).Decode(&body)
+			body.Name = name
+			d.addressSets[name] = body
+			writeSync(w, nil)
+		}
+	})
+	mux.HandleFunc("/1.0/instances", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Query().Get("recursion") != "1" {
+			writeError(w, 400, "bad instance list")
+			return
+		}
+		list := d.instances[r.URL.Query().Get("project")]
+		if list == nil {
+			list = []instanceRecord{}
+		}
+		writeSync(w, list)
+	})
+	mux.HandleFunc("/1.0/instances/", func(w http.ResponseWriter, r *http.Request) {
+		project := r.URL.Query().Get("project")
+		name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/1.0/instances/"), "/state")
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if r.Method != http.MethodPut || body["action"] != "stop" || body["force"] != true {
+			writeError(w, 400, "bad state change")
+			return
+		}
+		for i := range d.instances[project] {
+			if d.instances[project][i].Name == name {
+				d.instances[project][i].Status = "Stopped"
+			}
+		}
+		d.stopped = append(d.stopped, project+"/"+name)
+		writeSync(w, nil)
+	})
 	mux.HandleFunc("/1.0/networks", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("project") != "default" {
 			writeError(w, 400, "Network type does not support non-default projects")
+			return
+		}
+		if r.Method == http.MethodGet {
+			list := []network{}
+			for name, n := range d.networks {
+				n.Name = name
+				list = append(list, n)
+			}
+			writeSync(w, list)
 			return
 		}
 		var body network
@@ -308,6 +385,9 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 			}
 			d.acls[name] = body
 			writeSync(w, nil)
+		case http.MethodDelete:
+			delete(d.acls, name)
+			writeSync(w, nil)
 		}
 	})
 	mux.HandleFunc("/1.0/networks/", func(w http.ResponseWriter, r *http.Request) {
@@ -337,7 +417,15 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 				return
 			}
 			d.assignSubnets(body.Config)
+			body.UsedBy = d.networks[name].UsedBy
 			d.networks[name] = body
+			writeSync(w, nil)
+		case http.MethodDelete:
+			if len(d.networks[name].UsedBy) > 0 {
+				writeError(w, 400, "network is in use")
+				return
+			}
+			delete(d.networks, name)
 			writeSync(w, nil)
 		}
 	})
@@ -468,6 +556,7 @@ func testLease(t *testing.T, isolation string) lease {
 		ImageArchitecture: "amd64",
 		ClientCertPEM:     certPEM,
 		Isolation:         isolation,
+		Network:           computenet.Default(),
 	}
 }
 
@@ -574,6 +663,9 @@ func TestEnsureFailsClosedWhenProjectReadsBackUnrestricted(t *testing.T) {
 	mux.HandleFunc("/1.0", func(w http.ResponseWriter, r *http.Request) {
 		writeSync(w, map[string]any{"api_extensions": []string{}})
 	})
+	mux.HandleFunc("/1.0/networks/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, 404, "not found")
+	})
 	mux.HandleFunc("/1.0/projects/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			writeSync(w, nil)
@@ -608,6 +700,9 @@ func TestEnsureFailsClosedWithoutQuota(t *testing.T) {
 	})
 	mux.HandleFunc("/1.0", func(w http.ResponseWriter, r *http.Request) {
 		writeSync(w, map[string]any{"api_extensions": []string{}})
+	})
+	mux.HandleFunc("/1.0/networks/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, 404, "not found")
 	})
 	mux.HandleFunc("/1.0/projects/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
@@ -921,7 +1016,7 @@ func TestVerifyProfileRefusesAnythingBeyondTheTwoDevices(t *testing.T) {
 	good := map[string]device{
 		"root": {"type": "disk", "path": "/", "pool": l.StoragePool, "size.state": "500MiB"},
 		"eth0": {"type": "nic", "network": bridge,
-			"security.mac_filtering": "true", "security.ipv4_filtering": "true"},
+			"security.mac_filtering": "true", "security.ipv4_filtering": "true", "security.port_isolation": "true"},
 	}
 	for name, devices := range map[string]map[string]device{
 		"an extra device": {
@@ -947,13 +1042,13 @@ func TestVerifyProfileRefusesAnythingBeyondTheTwoDevices(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			d.profiles[l.Sandbox+"/"+computeclient.ProfileName] = profile{Name: computeclient.ProfileName, Devices: devices}
-			if err := verifyProfile(context.Background(), d.clientFor(t), l, bridge); err == nil {
+			if err := verifyProfile(context.Background(), d.clientFor(t), l, bridge, nil); err == nil {
 				t.Fatalf("%s should be refused", name)
 			}
 		})
 	}
 	d.profiles[l.Sandbox+"/"+computeclient.ProfileName] = profile{Name: computeclient.ProfileName, Config: map[string]string{"user.anas.managed": "true"}, Devices: good}
-	if err := verifyProfile(context.Background(), d.clientFor(t), l, bridge); err != nil {
+	if err := verifyProfile(context.Background(), d.clientFor(t), l, bridge, nil); err != nil {
 		t.Fatalf("a correct profile must be accepted: %v", err)
 	}
 }
@@ -1160,10 +1255,10 @@ func TestVMLeaseBudgetsTheStateVolume(t *testing.T) {
 	if got := projectConfig(container)["limits.disk"]; got != "320GiB" {
 		t.Fatalf("container limits.disk = %q, want 8 x 40GiB", got)
 	}
-	if got := desiredLeaseProfile(vm, "bridge").Devices["root"]["size.state"]; got != vmStateVolumeSize {
+	if got := desiredLeaseProfile(vm, "bridge", nil).Devices["root"]["size.state"]; got != vmStateVolumeSize {
 		t.Fatalf("VM root size.state = %q, want it pinned so the accounting cannot drift", got)
 	}
-	if _, present := desiredLeaseProfile(container, "bridge").Devices["root"]["size.state"]; present {
+	if _, present := desiredLeaseProfile(container, "bridge", nil).Devices["root"]["size.state"]; present {
 		t.Fatal("containers have no state volume to budget")
 	}
 }

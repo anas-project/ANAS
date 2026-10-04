@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/netip"
+	"net/url"
 	"path"
 	"regexp"
 	"strconv"
@@ -26,6 +28,9 @@ type Instance struct {
 	ID         string
 	State      string
 	WorkloadID string
+	// IPv4 is the instance's global IPv4 address on its lease NIC while it
+	// runs; HTTP publication requests name it as the backend.
+	IPv4 string
 }
 
 // InstanceSpec is deliberately closed. There is no field for a device, a raw
@@ -56,6 +61,9 @@ type Client struct {
 	entrypoints []string
 	instanceID  *regexp.Regexp
 	run         runner
+	// publisher is set by OpenHTTPPublisher; Stop and Delete withdraw the
+	// instance's HTTP publications through it (INCUS-R-146).
+	publisher *HTTPPublisher
 }
 
 // New prepares a client for one lease.
@@ -153,6 +161,19 @@ func (c *Client) Create(ctx context.Context, spec InstanceSpec) error {
 		"--config=user.anas.workload=" + spec.WorkloadID,
 		"--device=root,size=" + strconv.Itoa(spec.DiskGiB) + "GiB",
 	}
+	// A slot's instance gets the slot's fixed addresses on the profile's NIC;
+	// every other NIC setting, the anti-spoofing filters included, stays the
+	// profile's (INCUS-R-156).
+	ipv4, ipv6, err := c.slotAddress(ctx, spec.ID)
+	if err != nil {
+		return fmt.Errorf("read the lease's slot addresses: %w", err)
+	}
+	if ipv4 != "" {
+		args = append(args, "--device="+slotNIC+",ipv4.address="+ipv4)
+	}
+	if ipv6 != "" {
+		args = append(args, "--device="+slotNIC+",ipv6.address="+ipv6)
+	}
 	if c.lease.Interface == InterfaceVM {
 		args = append(args, "--vm", "--config=security.secureboot=true")
 	} else {
@@ -167,6 +188,52 @@ func (c *Client) Create(ctx context.Context, spec InstanceSpec) error {
 		return fmt.Errorf("create managed instance: %w", err)
 	}
 	return nil
+}
+
+// slotNIC is the lease profile's one managed NIC.
+const slotNIC = "eth0"
+
+const slotKeyPrefix = "user.anas.slot."
+
+// slotAddress returns the fixed addresses the Provider reserved for the slot
+// whose instance name is id, from the lease profile's user.anas.slot.<name>.*
+// keys. An instance no slot names has none, and gets its address by DHCP.
+func (c *Client) slotAddress(ctx context.Context, id string) (string, string, error) {
+	body, err := c.run.Run(ctx, nil, "query", remoteName+":/1.0/profiles/"+url.PathEscape(c.lease.Profile)+"?project="+url.QueryEscape(c.lease.Sandbox))
+	if err != nil {
+		return "", "", err
+	}
+	var profile struct {
+		Config map[string]string `json:"config"`
+	}
+	if err := json.Unmarshal(body, &profile); err != nil {
+		return "", "", fmt.Errorf("lease profile is not readable")
+	}
+	slot := ""
+	for key, value := range profile.Config {
+		name, ok := strings.CutPrefix(key, slotKeyPrefix)
+		if !ok {
+			continue
+		}
+		if name, ok = strings.CutSuffix(name, ".instance"); !ok || value != id {
+			continue
+		}
+		if slot != "" {
+			return "", "", fmt.Errorf("two slots name the same instance")
+		}
+		slot = name
+	}
+	if slot == "" {
+		return "", "", nil
+	}
+	ipv4, ipv6 := profile.Config[slotKeyPrefix+slot+".ipv4"], profile.Config[slotKeyPrefix+slot+".ipv6"]
+	if addr, err := netip.ParseAddr(ipv4); err != nil || !addr.Is4() {
+		return "", "", fmt.Errorf("slot %s has no valid IPv4 address", slot)
+	}
+	if addr, err := netip.ParseAddr(ipv6); ipv6 != "" && (err != nil || !addr.Is6() || addr.Is4In6() || addr.Zone() != "") {
+		return "", "", fmt.Errorf("slot %s has an invalid IPv6 address", slot)
+	}
+	return ipv4, ipv6, nil
 }
 
 func (c *Client) Inspect(ctx context.Context, id string) (Instance, error) {
@@ -209,7 +276,19 @@ func (c *Client) Start(ctx context.Context, id string) error {
 }
 
 func (c *Client) Stop(ctx context.Context, id string) error {
+	if err := c.withdrawPublications(ctx, id); err != nil {
+		return err
+	}
 	return c.instanceCommand(ctx, "stop", id, "--force")
+}
+
+// withdrawPublications removes every HTTP publication request this client
+// made for an instance before it stops or goes away (INCUS-R-146).
+func (c *Client) withdrawPublications(ctx context.Context, id string) error {
+	if c.publisher == nil {
+		return nil
+	}
+	return c.publisher.UnpublishInstance(ctx, id)
 }
 
 // Delete is idempotent: an instance that is already gone is the desired state,
@@ -218,6 +297,9 @@ func (c *Client) Delete(ctx context.Context, id string) error {
 	instance, err := c.Inspect(ctx, id)
 	if err != nil {
 		return fmt.Errorf("inspect managed instance before delete: %w", err)
+	}
+	if err := c.withdrawPublications(ctx, id); err != nil {
+		return err
 	}
 	if instance.State == "missing" {
 		return nil
@@ -327,6 +409,15 @@ func (c *Client) decodeInstances(body []byte) ([]Instance, error) {
 		Name   string            `json:"name"`
 		Status string            `json:"status"`
 		Config map[string]string `json:"config"`
+		State  *struct {
+			Network map[string]struct {
+				Addresses []struct {
+					Family  string `json:"family"`
+					Address string `json:"address"`
+					Scope   string `json:"scope"`
+				} `json:"addresses"`
+			} `json:"network"`
+		} `json:"state"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("decode compute instance list: invalid JSON array")
@@ -344,9 +435,15 @@ func (c *Client) decodeInstances(body []byte) ([]Instance, error) {
 			return nil, fmt.Errorf("compute instance list contains an ambiguous identity")
 		}
 		seen[item.Name] = true
-		out = append(out, Instance{
-			ID: item.Name, State: strings.ToLower(item.Status), WorkloadID: item.Config["user.anas.workload"],
-		})
+		instance := Instance{ID: item.Name, State: strings.ToLower(item.Status), WorkloadID: item.Config["user.anas.workload"]}
+		if item.State != nil {
+			for _, address := range item.State.Network["eth0"].Addresses {
+				if address.Family == "inet" && address.Scope == "global" && instance.IPv4 == "" {
+					instance.IPv4 = address.Address
+				}
+			}
+		}
+		out = append(out, instance)
 	}
 	return out, nil
 }

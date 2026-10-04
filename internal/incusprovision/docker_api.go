@@ -148,13 +148,14 @@ func (c *dockerClient) inspectNetwork(ctx context.Context, name string) (dockerN
 	return out, err
 }
 
-// This root client can inspect/create/delete its one managed network. A
-// prefix check would also admit connect, disconnect and prune. Those actions
-// must never be reachable from host provisioning, even during cleanup.
+// This root client can inspect/create/delete its one managed network and list
+// the running Traefik containers. A prefix check would also admit connect,
+// disconnect and prune. Those actions must never be reachable from host
+// provisioning, even during cleanup.
 func allowedDockerNetworkRequest(method, path string) bool {
 	switch method {
 	case http.MethodGet:
-		if path == "/v1.44/networks" || path == "/v1.44/networks/"+ControlNetworkName {
+		if path == "/v1.44/networks" || path == "/v1.44/networks/"+ControlNetworkName || path == traefikContainersPath || path == dockerContainersPath {
 			return true
 		}
 		id, ok := strings.CutPrefix(path, "/v1.44/networks/")

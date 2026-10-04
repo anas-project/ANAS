@@ -57,6 +57,8 @@ resources:
         image_allowlist: [{fingerprint: "<64位小写SHA-256>"}]
         credential: {policy: generated}
         deletion_policy: retain
+        # 可省略；默认只能出公网、不接受主动连入。见下文「租约网络」。
+        network: {egress: internet, module_access: true}
 ```
 
 删除这两段声明的 Module 不参与 Resource 解析，也不会收到任何沙箱凭据。
@@ -70,8 +72,10 @@ Runner 为每个 Resource 生成一对稳定的客户端证书与私钥，作为
 2. 确保 `sandbox` 指定的 project 存在且 `restricted=true`，并且只属于本租约：属于其他租约、或能被
    其他受限凭据操作的 project 必须拒绝，不得接管（sandbox 名在每个工作区都相同，不能证明归属）；
 3. 把 `quota` 写到 project 自身的限制上，而不是依赖调用方自觉；
-4. 在 default project 建立每租约独立的受管 bridge，在消费者 project 建立租约 profile，并把 profile **读回**校验：它必须恰好只有一块
-   根磁盘（在受管存储池上、无 host source）和一块接到该受管 network 的 NIC；
+4. 在 default project 建立每租约独立的受管 bridge 和它的 network ACL（按冻结的出入站档位与发布写规则），在消费者
+   project 建立租约 profile，并把 profile **读回**校验：它必须恰好只有一块根磁盘（在受管存储池上、无 host source）和
+   一块接到该受管 network 的 NIC。`ensure` 的结果交回 bridge 名、IPv4 网段与网关、启用时的 IPv6 网段与网关，以及
+   各槽位的固定地址，Core 记入 resource state 的 `lease_network`（`INCUS-R-159`）；
 5. 把 Runner 传入的客户端证书登记为**只绑该 project** 的受限证书，不使用全局管理凭据；
 6. 重复调用收敛到同一结果，不产生第二个 project、第二个 network 或第二条 trust 条目。
 
@@ -83,9 +87,11 @@ profile 名字由 Contract 固定为 `anas-lease`，消费者只能引用、不�
 
 每份租约有自己的受管 bridge，均由 Provider 在 default project 拥有。消费者 project 关闭
 `features.networks`，通过 `restricted.networks.access` 精确限制为该 bridge，并保持 managed NIC
-限制；实例、profile、配额和证书仍隔离于各自 project。不同 bridge 不等于实际流量自动隔离。网络名不是
-sandbox 名：Linux bridge 接口名上限 15 字符，而 `anas-forgejo-runners` 已经 20，所以它由 sandbox
-名哈希派生——短、跨 apply 稳定、租约之间不碰撞。
+限制；实例、profile、配额和证书仍隔离于各自 project。不同 bridge 不等于实际流量自动隔离，隔离由下文
+「租约网络」的 ACL 承担。网络名不是 sandbox 名：Linux bridge 接口名上限 15 字符，而 `anas-forgejo-runners`
+已经 20，所以它是 `lease` 加 sandbox 名 SHA-256 的前 10 位十六进制——短、跨 apply 稳定、租约之间不碰撞。
+前缀 `lease` 不是 `anas`：宿主的静态转发规则只匹配这个前缀，而 `anas-helper` 可以操作所有 `anas*` 接口
+（`INCUS-R-127`）。2026-10 之前的租约用 `anas` 加同一摘要；Provider 在租约迁到新网桥后删除不再使用的旧网桥。
 
 guest 只能以租约网络自己的地址出网。出口 NAT 只改写租约子网内的源地址，guest 伪造子网外源地址
 的报文不会被改写，若被转发就以伪造身份到达外部。Provider 因此必须让这类报文在宿主上被丢弃，
@@ -103,7 +109,8 @@ guest 只能以租约网络自己的地址出网。出口 NAT 只改写租约子
 消费者被移除、或申请租约的能力被关闭（例如 `enabled_by` 的开关关掉）时，目标部署不再声明该
 Resource。数据库或桶的「保留」保留的是数据；compute 租约若同样只改状态，保留下来的是一条仍受信的
 访问授权。因此 Core 在新部署启动后，用**上一个部署冻结的 Provider 产物**执行 `revoke`：撤销该租约
-的受限证书，project、实例与网络原样保留（`INCUS-R-014`）。同一次 apply 连 Provider 一起移除时，
+的受限证书，清空租约 ACL 的规则（两个方向的默认动作都是丢弃，从此进出都不通），并停止租约内运行的实例——ACL
+放行已建立连接的回包，只有停止实例才能结束这些连接（`INCUS-R-124`）。project、实例磁盘与网络保留（`INCUS-R-014`）。同一次 apply 连 Provider 一起移除时，
 旧产物仍可执行这次撤销。Provider 没有声明 `revoke` 时记录 `unsupported` 并告警，证书保持受信。
 
 撤销失败不会被记作完成：默认中止本次激活并恢复上一个部署；只有显式 `--allow-risky` 才接受
@@ -142,6 +149,10 @@ ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__MAX_INSTANCES
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__CPU
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__MEMORY_MIB
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__DISK_GIB
+# 只在声明了 publish.http 时：
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__HTTP_REQUEST_DIR
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__HTTP_POLICY
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__HTTP_BASE_DOMAIN
 ```
 
 `ENDPOINT`、`SERVER_CERT`、`CLIENT_CERT` 和 `CLIENT_KEY` 均标为敏感值，只属于目标 Consumer。
@@ -270,27 +281,42 @@ Core 在新 apply 为每个 compute Resource 生成独立的 32 字节随机 `le
 启动拒绝规则保持不变。备份的 Secret Store 与 deployment 一起恢复，密钥及 HMAC 派生结果保持一致。
 
 它是域名派生的命名密钥，不认证请求、不授予发布权限；不进入凭据轮换或 `--all`，模块也不能
-把它声明成可轮换凭据。专属密钥轮换命令与生产发布尚未实现；授权冻结及实验中介见下节。
+把它声明成可轮换凭据。专属密钥轮换命令尚未实现；HTTP 发布见下文。
 文件备份恢复回归通过不代表真实 Incus 宿主或 HTTP 入站验收通过。
 
-## HTTP 授权冻结（运行时未开放）
+## 租约网络
 
-2026-09-12 已接入声明解析和 deployment 准备流程，尚未运行新代码的测试。省略 `spec.ingress`
-即无发布授权；声明存在时可准备冻结产物，但启动/激活会明确拒绝该 compute 消费者。内置消费者
-暂未新增 ingress 配置或请求目录挂载。不得把接受 schema 当成可用的生产发布功能。
+租约声明里的 `network` 决定实例能连到哪里、谁能连进来，随部署冻结进 `deployment.yml` 的
+`compute_network`，运行时消费者改不了（需求见 Incus 要求 §7sexies、§7septies）。
 
-2026-09-30：旧的逐发布许可运行时、请求目录登记适配器、中介规划器与实验命令已删除。新设计中请求改为
-`{instance, address, port, label?}`，由 anasd 内的发布中介校验后写 Traefik 路由文件（`INCUS-R-141`—`R-149`），
-见 Incus 要求 §7septies；下文的解析与冻结规则在 M11 实施时迁到 `publish.http`。
+| 字段 | 取值 | 默认 | 含义 |
+| --- | --- | --- | --- |
+| `egress` | `internet`、`internet_lan`、`internet_lan_host`、`modules_only` | `internet` | 实例主动连出的范围；任何一档都到不了其他租约 |
+| `module_access` | 布尔 | `false` | 让 `internet`、`internet_lan` 也能经 Traefik 访问 ANAS Module |
+| `intra_lease` | 布尔 | `false` | 同一租约的实例之间能否互访 |
+| `ingress` | `none`、`published` | `none` | 谁能主动连入；只有 `published` 能声明发布 |
+| `slots` | 槽位名 → `{instance}` | 无 | 每个槽位写死一个实例名，Provider 为它保留固定地址 |
+
+各出站档位：`internet` 只到公网地址；`internet_lan` 加上局域网（宿主默认路由所在网卡的直连网段加操作者配置的
+附加网段，每次 apply 重新计算）；`internet_lan_host` 再加上宿主本机地址和 Docker 已发布的端口；`modules_only` 只能
+经 Traefik 访问 ANAS Module。Provider 把档位、开关与发布写进租约网桥的 network ACL，两个方向的默认动作都是丢弃。
+「全部租约网段」是 Provider 维护的全局 address set `anas-leases`，出入站都用它排除其他租约；Traefik 容器的当前地址
+在全局 address set `anas-traefik` 里，只由 hostd 写入。两者都要求 Incus 7.0 以上（`network_address_set` API 扩展）。
+
+## HTTP 发布
+
+`publish.http` 让 Traefik 终止 HTTPS，以 HTTP 转给租约实例的端口。它要求 `network.ingress: published`，
+并要求消费者在 manifest 的 `resources.requires` 里写 `http_request_owner: "<uid>:<gid>"`：写请求文件的那个
+进程的身份，Core 用它创建请求目录。
 
 ```yaml
-# 加在 compute 的 spec 内；当前仅支持准备授权，不能启动带此声明的消费者。
-ingress:
-  allowed_ports: [7000]
-  # 默认 none。域名不可预测不是访问控制：SNI、Referer 与日志可泄露 URL；
-  # 不得用于发布敏感数据或带写入能力的服务。
-  auth: none
-  domain: {mode: random, prefix: ci}
+publish:
+  http:
+    allowed_ports: [7000]
+    # 默认 none。域名不可预测不是访问控制：SNI、Referer 与日志可泄露 URL；
+    # 不得用于发布敏感数据或带写入能力的服务。
+    auth: none
+    domain: {mode: random, prefix: ci}
 ```
 
 端口为 1–65535 的去重整数，最多 64 个，冻结时排序。未知字段、null、字符串端口、重复端口及
@@ -304,35 +330,65 @@ Core 在 calculate 后、render 前冻结 `compute_ingress`：部署与租约身
 端口、认证、域名模式和 `BASE_DOMAIN`、命名密钥引用，以及需要时的 ForwardAuth provider/middleware。
 `forward_auth` 要求消费者声明并解析到 `forward_auth/http` capability，且 middleware 与 provider
 输出属于该绑定的 Provider；运行时请求不能覆盖认证。加载冻结部署核对 spec、身份、认证绑定和密钥引用，
-不从当前配置重算。Resource state 的模型同样只保存授权与密钥引用；未通过启动拦截就不会产生
-带 ingress 的 ready state。
+不从当前配置重算。apply 检查租约间重叠命名空间、Module 声明域名及现有环境中的字面 `Host(…)` 路由；
+named/random 保守预留整个 `prefix-*` 空间。
 
-apply 检查租约间重叠命名空间、Module 声明域名及现有环境中的字面 `Host(…)` 路由；named/random
-保守预留整个 `prefix-*` 空间。尚不能解释的 file-provider 匹配规则会阻止准备，而不是忽略。
-生产运行时还需枚举实际路由所有者并持久对账；目前没有这项保证。
+**请求。** 消费者把宿主目录 `HTTP_REQUEST_DIR` 挂进自己的容器，每个要发布的实例端口写一个请求文件
+（`schemas/http-publication-request.yml`）：
 
-`internal/computeingress` 提供严格 JSON 请求解析、Linux amd64/arm64 目录句柄相对读取和进程内域名预占。
-请求 schema 见 `schemas/http-publication-request.yml`，只接受 `action`（publish/revoke）、
-`instance_id`、`workload_id`、`guest_port` 与可选 `label`；不新增 Provider operation。
-目录由受信调用方绑定到活动 deployment 的授权。读取仅接受单层 JSON 文件名，以
-`openat(O_PATH|O_NOFOLLOW)` 固定 inode 并拒绝符号链接、设备/FIFO及硬链接，
-再从受信宿主 `/proc/self/fd` 以非阻塞只读模式打开同一普通文件，限 4 KiB；拒绝重复键、
-大小写字段别名、null、未知字段和尾随内容。读取前后的 inode/内容元数据变化会拒绝该请求。
+```json
+{"instance": "anas-fj-job1", "address": "10.101.0.17", "port": 7000, "label": "…"}
+```
 
-2026-09-18 已新增消费者文件请求 API（源码及回归用例未编译/执行）：
-`Client.OpenHTTPPublisher(HTTPPublicationConfig)` 显式打开本租约已安装的私有请求目录；
-`HTTPPublisher.PublishPort` 校验精确 Running 实例和 `user.anas.workload`、端口及 label，
-只提交既有小型请求 schema。配置是租约范围、公开策略与基础域名的最小投影，不含完整冻结授权、
-middleware、entrypoint 或全局 Store 引用；random 模式命名密钥独立交付，不进入请求或默认
-JSON/格式化输出。公开策略的 `Policy.Host` 只预测名称；中介的 `Authorization.Host` 仍验证完整授权。
+`address` 是实例在租约网桥上的 IPv4；`label` 在 named 模式是消费者选的名字，在 random 模式是共享客户端用命名
+密钥算出的 32 位十六进制标签，fixed 模式省略。文件存在即请求，删除即撤销。目录归 `http_request_owner`、
+权限 0700，跨 apply 不变。
 
-返回的 `HTTPPublication` 仅代表请求已提交；`RequestedURL()` 不代表路由、TLS、认证或后端已就绪。
-`UnpublishPort(ctx, publication)` 使用原文件回执，实例停止或删除后仍可撤销意图；不把文件移除当作
-网络撤销完成。关闭 publisher 仅释放本地句柄，不自动删除持久请求。底层 `RequestWriter` 使用
-私有目录、协作锁、原子 rename 和文件/目录 fsync；持有 inode 的旧回执不能撤销合作 writer
-后建的文件。符号链接、硬链接、FIFO、目录换位、冲突和未支持平台均拒绝。
-自动配置投影与挂载、应用生命周期/崩溃恢复、受信中介装配和真实发布状态确认仍待接入；
-上述 API 不移除生产 ingress 启动拦截。
+**中介。** anasd 内的 HTTP 发布中介每 3 秒对每个登记工作区做一次全量重算：读取活动部署的冻结授权、各租约
+记录的网段与请求文件，逐条校验——实例名在租约前缀内、端口在 `allowed_ports` 内、地址在租约网段内且不是网段
+地址、网关或广播地址、域名在租约命名空间内——然后把 Traefik 动态目录下专属子目录 `compute-http/` 改写成恰好
+这些路由，再改写顶层的 `compute-http.reload` 让 Traefik 重读（Traefik 只监视顶层目录）。不合格的请求跳过并
+记日志，不影响其他请求；同一域名已有路由时，后来的请求不能接管它（`INCUS-R-149`）。中介不持有凭据、不调用宿主
+动作，也不经过 Core 的单个作业；中介停机期间已发布的路由保持可用，重启后的第一次重算删掉没有有效请求的路由、
+补齐缺失的（`INCUS-R-145`）。部署激活时，Core 删除授权被移除或改变的租约的路由文件；授权按内容摘要比较，
+不含部署 ID，未变的授权保留路由（`INCUS-R-147`）。
+
+请求文件的读取仅接受单层 JSON 文件名，以 `openat(O_PATH|O_NOFOLLOW)` 固定 inode 并拒绝符号链接、设备/FIFO 及
+硬链接，再从受信宿主 `/proc/self/fd` 以非阻塞只读模式打开同一普通文件，限 4 KiB；拒绝重复键、大小写字段别名、
+null、未知字段和尾随内容。每个目录最多 256 项。
+
+**共享客户端。** `computeclient.HTTPPublicationFromLookup` 从投影的 `HTTP_POLICY`、`HTTP_BASE_DOMAIN` 与（random
+模式的）`LEASE_SECRET` 构造配置，消费者传入请求目录在自己容器里的挂载路径；`Client.OpenHTTPPublisher` 打开它，
+`HTTPPublisher.PublishPort` 校验实例正在运行、端口已声明，再提交带实例地址的请求。返回的 `RequestedURL()` 只是
+预测的名字，不代表路由已生效。`Client.Stop` 与 `Client.Delete` 撤销该实例的全部请求，`HTTPPublisher.PruneOrphans`
+删除实例已不存在的请求（`INCUS-R-146`）。这些客户端检查不是授权边界，中介独立校验每条请求。
+
+## 端口绑定
+
+`publish.ports` 把宿主上的一个端口原样转到槽位实例（TCP 或 UDP，报文不改，guest 看到真实客户端地址）。
+
+```yaml
+network:
+  ingress: published
+  slots: {dev: {instance: anas-fj-dev}}
+publish:
+  ports:
+    - {protocol: tcp, host_port: auto, slot: dev, guest_port: 22}
+```
+
+- **宿主端口**：显式端口，或 `auto`——Core 从操作者在 `incus.configure` 时批准的范围（默认 30000–32767）里随机选
+  一个空闲端口，记入部署，此后的 apply 保持不变，直到这条绑定被删除。显式端口与 Traefik 入口、其他租约的绑定、
+  宿主进程或 Docker 发布的端口冲突时 apply 失败，并记录运行问题（`anas issues` 可见）；`auto` 跳过被占用的端口。
+- **槽位**：Provider 在 DHCP 动态范围外为每个槽位保留固定 IPv4，租约启用 IPv6 时另保留固定 IPv6，经 `ensure`
+  交回；共享客户端创建该名称的实例时把地址加到 profile 的网卡上，其余网卡设置不变。名称随机的一次性实例不占槽位。
+- **生效**：hostd 的边界内同步动作 `incus.ports.sync` 自己重读各工作区的冻结部署，逐条校验后以单个 nft 事务替换
+  端口表；每个生效的绑定由一个 systemd 套接字单元占住宿主端口，之后在同一端口绑定的宿主进程或 Docker 发布直接失败。
+  anasd 在启动时和每次部署激活后触发同步，并定期及在容器启动时检查已生效的绑定。没有 hostd 的宿主（`--no-service`
+  安装、非 systemd、开发构建）上，声明了端口绑定的 apply 失败并说明原因（`INCUS-R-164`）。
+
+**两种发布的差异（`INCUS-R-163`）**：HTTP 发布下 guest 看到的来源是租约网桥网关，真实客户端在 `X-Forwarded-For`；
+认证可由 `forward_auth` 提供。端口绑定没有 ANAS 层的认证，guest 服务必须自己认证；实例未运行时连接会超时；guest
+内部的端口被占用时 ANAS 看不到。
 
 ## 活动授权读取
 

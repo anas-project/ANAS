@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-09-04
-updated: 2026-09-30
+updated: 2026-10-03
 ---
 
 # 宿主特权动作通道实施计划
@@ -69,7 +69,7 @@ scope，也未开启 ingress。以下五问是本次需求级动作评审，不�
 | M2：长时动作与非 systemd 可移植性 | R-007、R-008 | 实施中；按编译动作预算超时并投影固定阶段事件，非 systemd 启动和实机长时动作待办 |
 | M3：二段确认 | R-009—R-011 | 实施中；真实 root 执行、跨工作区及重启后重放拒绝、五分钟自然过期拒绝旧计划并要求新计划均通过；浏览器页面重新展示与确认组合仍待验收 |
 | M4：动作清单治理 | R-012、R-013 | 实施中；anas host actions 已提供本机编译清单；服务端清单、定期复审与特权写动作评审仍待办 |
-| M5：边界内同步动作 | R-014、R-015 | 未开始；使用者是 Incus 端口绑定的端口表同步（INCUS-R-152、R-158）与 Traefik 地址清单同步（INCUS-R-118），需求级评审见 §13 |
+| M5：边界内同步动作 | R-014、R-015 | 实施中；2026-10-03 实现 `incus.traefik.sync` 与 `incus.ports.sync`：参数恒为 `{}`，需 `incus.configure` 的批准，hostd 自己读取 Docker 与冻结部署，原子替换并读回，经共享队列与审计，由 anasd 以系统身份触发；单元与拒绝调用方条目的测试通过，实机运行随 Incus M10a/M11c 的 e2e（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)），设计见[宿主通道架构](../../docs/architecture/host-action-channel.md) §15 |
 | M6：身份链简化与调用记录 | R-016 | 实施中；2026-09-30 实现完成：对端只认 root/root，调用记录与 `host.invocation.status` 取代回连 broker 和 systemd 退出观察，见 §14；Linux 原生门禁通过，实机审批门禁在 Ubuntu 26.04 与 Debian 13 上各 23/23 通过；anasd 重启时的结清尚未实现 |
 
 覆盖统计：17 项需求全部有且只有一个里程碑归属。

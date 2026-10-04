@@ -1715,6 +1715,56 @@ paths:
           $ref: "#/components/responses/ServiceUnavailableProblem"
         "504":
           $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/workspaces/{ws}/compute/leases:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+    get:
+      operationId: listWorkspaceComputeLeases
+      summary: Read the network view of every compute lease
+      description: |
+        Read-only lease network view (INCUS-R-128). For each compute lease in
+        the active deployment it returns the lease bridge, subnets and gateways
+        the Provider reported, the frozen egress and ingress tiers and switches,
+        HTTP publications, port bindings with their slot addresses, the lease's
+        instances and their addresses, and the directions the tiers allow or
+        deny. The instance list is read live with the lease's own project-scoped
+        certificate; when the daemon cannot be reached the lease carries
+        instances_error instead. No credential, key or certificate is returned,
+        and nothing here changes a lease.
+      tags: [Modules]
+      security:
+        - localSessionCookie: []
+        - proxySessionCookie: []
+      x-anas-permission: module.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct, trusted_proxy]
+      x-anas-state-access:
+        full: {authentication: owner, transports: [tls]}
+      responses:
+        "200":
+          description: Lease network view in active-deployment resource order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComputeLeaseNetworkResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/GetMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
   /api/v1/catalog/modules:
     get:
       operationId: listModuleCatalog
@@ -5341,6 +5391,117 @@ components:
             $ref: "#/components/schemas/ModuleState"
         next_cursor:
           $ref: "#/components/schemas/NextCursor"
+    ComputeLeaseNetworkResponse:
+      type: object
+      additionalProperties: false
+      required: [api_version, workspace_id, active_deployment, leases]
+      properties:
+        api_version:
+          $ref: "#/components/schemas/APIVersion"
+        workspace_id:
+          type: string
+          minLength: 1
+        active_deployment:
+          $ref: "#/components/schemas/NullableString"
+        leases:
+          type: array
+          items:
+            $ref: "#/components/schemas/ComputeLeaseNetwork"
+    ComputeLeaseNetwork:
+      type: object
+      additionalProperties: false
+      required: [consumer, resource, provider, interface, sandbox, status, egress, module_access, intra_lease, ingress, http_ports, http_publications, port_bindings, instances, directions]
+      properties:
+        consumer: {type: string}
+        resource: {type: string}
+        provider: {type: string}
+        interface:
+          type: string
+          enum: [incus_vm, incus_container]
+        sandbox: {type: string}
+        status:
+          type: string
+          description: Resource state, with the revocation outcome appended for a retained lease.
+        bridge: {type: string}
+        ipv4_subnet: {type: string}
+        ipv4_gateway: {type: string}
+        ipv6_subnet: {type: string}
+        ipv6_gateway: {type: string}
+        egress:
+          type: string
+          enum: [internet, internet_lan, internet_lan_host, modules_only]
+        module_access: {type: boolean}
+        intra_lease: {type: boolean}
+        ingress:
+          type: string
+          enum: [none, published]
+        http_ports:
+          type: array
+          items: {type: integer, minimum: 1, maximum: 65535}
+        http_publications:
+          type: array
+          items:
+            $ref: "#/components/schemas/ComputeHTTPPublication"
+        port_bindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ComputePortBinding"
+        instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/ComputeLeaseInstance"
+        instances_error: {type: string}
+        directions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ComputeNetworkDirection"
+    ComputeHTTPPublication:
+      type: object
+      additionalProperties: false
+      required: [host, instance, address, port]
+      properties:
+        host: {type: string}
+        instance: {type: string}
+        address: {type: string}
+        port: {type: integer, minimum: 1, maximum: 65535}
+    ComputePortBinding:
+      type: object
+      additionalProperties: false
+      required: [protocol, host_port, auto, slot, instance, guest_port]
+      properties:
+        protocol:
+          type: string
+          enum: [tcp, udp]
+        host_port: {type: integer, minimum: 1, maximum: 65535}
+        auto: {type: boolean}
+        slot: {type: string}
+        instance: {type: string}
+        ipv4: {type: string}
+        ipv6: {type: string}
+        guest_port: {type: integer, minimum: 1, maximum: 65535}
+    ComputeLeaseInstance:
+      type: object
+      additionalProperties: false
+      required: [name, status, addresses]
+      properties:
+        name: {type: string}
+        status: {type: string}
+        addresses:
+          type: array
+          items: {type: string}
+        slot: {type: string}
+    ComputeNetworkDirection:
+      type: object
+      additionalProperties: false
+      required: [flow, peer, allowed]
+      properties:
+        flow:
+          type: string
+          enum: [egress, ingress]
+        peer:
+          type: string
+          enum: [gateway_dns_dhcp, internet, lan, host, docker_published, docker_unpublished, modules, other_leases, link_local, same_lease, traefik, port_binding_clients, docker_containers]
+        allowed: {type: boolean}
     ModuleState:
       type: object
       additionalProperties: false

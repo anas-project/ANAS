@@ -5,18 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/netip"
 )
 
 const MaxRequestBytes = 4096
 
-// A request never supplies lease identity, target address, host, authentication,
-// middleware or entrypoint. Its directory binding supplies the authorization.
+// A request names the instance that serves it, that instance's lease address
+// and the guest port. Its directory binds it to one lease; the frozen
+// authorization of that lease supplies the domain, authentication, middleware
+// and entrypoint. A file present is a publication; removing it revokes it.
+//
+// Label is the named-mode label the consumer chose, or the random-mode label
+// the consumer derived from its naming key (32 lowercase hex characters); the
+// mediator holds no key and only checks its shape.
 type Request struct {
-	Action     string `json:"action"`
-	InstanceID string `json:"instance_id"`
-	WorkloadID string `json:"workload_id"`
-	GuestPort  uint16 `json:"guest_port"`
-	Label      string `json:"label,omitempty"`
+	Instance string `json:"instance"`
+	Address  string `json:"address"`
+	Port     uint16 `json:"port"`
+	Label    string `json:"label,omitempty"`
 }
 
 func ParseRequest(body []byte) (Request, error) {
@@ -31,11 +37,12 @@ func ParseRequest(body []byte) (Request, error) {
 }
 
 func (r Request) Validate() error {
-	if r.Action != "publish" && r.Action != "revoke" {
-		return fmt.Errorf("HTTP request action must be publish or revoke")
+	if !instanceName.MatchString(r.Instance) || r.Port == 0 {
+		return fmt.Errorf("invalid HTTP request instance or port")
 	}
-	if !instanceName.MatchString(r.InstanceID) || !workloadName.MatchString(r.WorkloadID) || r.GuestPort == 0 {
-		return fmt.Errorf("invalid HTTP request instance, workload or port")
+	addr, err := netip.ParseAddr(r.Address)
+	if err != nil || !addr.Is4() || addr.String() != r.Address {
+		return fmt.Errorf("HTTP request address must be the instance's IPv4 address")
 	}
 	if r.Label != "" && !dnsLabel.MatchString(r.Label) {
 		return fmt.Errorf("invalid HTTP request label")

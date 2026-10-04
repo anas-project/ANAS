@@ -172,6 +172,8 @@ func dispatch(command string, args []string, jsonMode bool) error {
 		return runStatus(args, jsonMode)
 	case "deployments":
 		return runDeployments(args, jsonMode)
+	case "issues":
+		return runIssues(args, jsonMode)
 	case "lock":
 		return runLock(args, jsonMode)
 	case "config":
@@ -202,7 +204,7 @@ func dispatch(command string, args []string, jsonMode bool) error {
 // what can be invoked rather than trying to render the same paragraphs.
 var commandNames = []string{
 	"init", "plan", "lock", "render", "build", "apply", "start", "restart",
-	"stop", "rollback", "status", "deployments", "snapshot", "backup", "config", "admin", "console", "module",
+	"stop", "rollback", "status", "deployments", "issues", "snapshot", "backup", "config", "admin", "console", "module",
 	"credential", "host", "version",
 }
 
@@ -257,6 +259,7 @@ Usage:
   anas rollback [DEPLOYMENT_ID] -w WORKSPACE
   anas status [-w WORKSPACE]
   anas deployments list|inspect [ID] [-w WORKSPACE]
+  anas issues  [-w WORKSPACE]
   anas snapshot list|show|create|pin|unpin|delete|prune|verify|path [-w WORKSPACE]
   anas snapshot restore ID -w WORKSPACE [--dry-run] [-y]
   anas backup capabilities [--to DEST] [-w WORKSPACE]

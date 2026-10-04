@@ -19,7 +19,10 @@ func ingressApp(t *testing.T, ingress map[string]map[string]any) *app {
 	a := computeApp(t, consumers)
 	for consumer, declaration := range ingress {
 		if declaration != nil {
-			a.reg[consumer].Resources[0].Spec["ingress"] = declaration
+			declareHTTPPublication(a.reg[consumer].Resources[0].Spec, declaration)
+			module := a.reg[consumer]
+			module.Resources[0].HTTPRequestOwner = "65532:65532"
+			a.reg[consumer] = module
 		}
 	}
 	a.env["BASE_DOMAIN"] = "example.test"
@@ -27,6 +30,13 @@ func ingressApp(t *testing.T, ingress map[string]map[string]any) *app {
 		t.Fatal(err)
 	}
 	return a
+}
+
+// declareHTTPPublication writes publish.http and the published ingress tier
+// it requires (INCUS-R-132).
+func declareHTTPPublication(spec map[string]any, declaration map[string]any) {
+	spec["network"] = map[string]any{"ingress": "published"}
+	spec["publish"] = map[string]any{"http": declaration}
 }
 
 func httpIngress(mode, prefix string, ports ...any) map[string]any {
@@ -76,9 +86,9 @@ func TestComputeIngressFreezesTheLeaseAuthorization(t *testing.T) {
 		"other consumer":   func(r *ResourceRequest) { r.ComputeIngress.Consumer = "other" },
 		"other naming key": func(r *ResourceRequest) { r.LeaseSecretKey = computeLeaseSecretKey("forgejo", "other") },
 		"other interface":  func(r *ResourceRequest) { r.ComputeIngress.Interface = "incus_container" },
-		"widened ports":    func(r *ResourceRequest) { r.Spec["ingress"] = httpIngress("random", "ci", 80, 8080, 9090) },
+		"widened ports":    func(r *ResourceRequest) { declareHTTPPublication(r.Spec, httpIngress("random", "ci", 80, 8080, 9090)) },
 		"moved project":    func(r *ResourceRequest) { r.Spec["sandbox"] = "anas-other-runners" },
-		"dropped decl":     func(r *ResourceRequest) { delete(r.Spec, "ingress") },
+		"dropped decl":     func(r *ResourceRequest) { delete(r.Spec, "publish") },
 		"auth added later": func(r *ResourceRequest) { r.ComputeIngress.Policy.Auth = "forward_auth" },
 		"unsorted ports":   func(r *ResourceRequest) { r.ComputeIngress.Policy.AllowedPorts = []uint16{8080, 80} },
 	} {
@@ -133,7 +143,8 @@ func TestComputeIngressRejectsInvalidDeclarations(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := computeApp(t, map[string]string{"forgejo": "anas-forgejo-runners"})
-			a.reg["forgejo"].Resources[0].Spec["ingress"] = declaration
+			declareHTTPPublication(a.reg["forgejo"].Resources[0].Spec, declaration)
+			a.reg["forgejo"].Resources[0].HTTPRequestOwner = "65532:65532"
 			a.env["BASE_DOMAIN"] = "example.test"
 			// Either the spec gate or the freeze must refuse it.
 			if err := a.materializeResourceSecrets(); err == nil {
@@ -221,20 +232,5 @@ func TestComputeIngressNamespacesCannotShadowDeploymentDomains(t *testing.T) {
 	disjoint.env["ANAS_TRAEFIK_ROUTE__GRAFANA__RULE"] = "Host(`ci-7f3a.example.test`)"
 	if err := disjoint.prepareComputeIngress("dep-1"); err != nil {
 		t.Fatal("disjoint fixed/random namespaces and literal routes were refused", err)
-	}
-}
-
-// Runtime publication stays closed until trusted mediation is accepted on a
-// real host: a selected consumer with ingress blocks activation.
-func TestIngressBearingLeasesStayBlockedAtActivation(t *testing.T) {
-	a := ingressApp(t, map[string]map[string]any{"forgejo": httpIngress("fixed", "ci", 80), "agent": nil})
-	if err := a.prepareComputeIngress("dep-1"); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.requireComputeIngressDisabled([]string{"forgejo"}); err == nil {
-		t.Fatal("activation of an ingress-bearing lease was not blocked")
-	}
-	if err := a.requireComputeIngressDisabled([]string{"agent"}); err != nil {
-		t.Fatal("a lease without ingress was blocked", err)
 	}
 }

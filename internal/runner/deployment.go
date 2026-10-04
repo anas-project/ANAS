@@ -468,6 +468,9 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 	if err := a.prepareComputeIngress(id); err != nil {
 		return "", preconditionErrorf("compute_ingress_invalid", "%s", err.Error())
 	}
+	if err := a.prepareComputeNetwork(); err != nil {
+		return "", preconditionErrorf("compute_network_invalid", "%s", err.Error())
+	}
 	if err := a.prepareDeploymentCredentials(); err != nil {
 		return "", preconditionErrorf("credential_inventory_invalid", "%s", err.Error())
 	}
@@ -716,11 +719,14 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 		if err := validateFrozenComputeIngress(request, id); err != nil {
 			return nil, fmt.Errorf("resource %s.%s: %w", request.Consumer, request.ID, err)
 		}
+		if err := validateFrozenComputeNetwork(request); err != nil {
+			return nil, fmt.Errorf("resource %s.%s: %w", request.Consumer, request.ID, err)
+		}
 		resource := deploymentResource{
 			Consumer: request.Consumer, ID: request.ID, Contract: request.Contract, ContractVersion: request.ContractVersion,
 			Provider: request.Provider, Interface: request.Interface,
 			Spec: cloneAnyMap(request.Spec), ComputeImages: request.ComputeImages.Clone(),
-			ComputeIngress: request.ComputeIngress.Clone(),
+			ComputeIngress: request.ComputeIngress.Clone(), ComputeNetwork: request.ComputeNetwork.Clone(),
 			LeaseSecretKey: request.LeaseSecretKey,
 		}
 		if request.Contract == "relational_database" {
@@ -1182,6 +1188,11 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	}
 	if err := retainRemovedResources(base, current, target, revocations); err != nil {
 		return activationFailure(base, id, "resource_state_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
+	}
+	// Routes of a lease whose HTTP authorization was removed or changed go
+	// now, whether or not the mediator in anasd is running (INCUS-R-147).
+	if err := pruneComputeHTTPRoutes(base, current, target); err != nil {
+		return activationFailure(base, id, "resource_routes_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -1800,9 +1811,12 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 			Provider: resource.Provider, Interface: resource.Interface,
 			Spec: resource.Spec, SecretKey: secretKey, Credential: credential, ComputeImages: resource.ComputeImages.Clone(),
 			LeaseSecretKey: resource.LeaseSecretKey, LeaseSecret: leaseSecret,
-			ComputeIngress: resource.ComputeIngress.Clone(),
+			ComputeIngress: resource.ComputeIngress.Clone(), ComputeNetwork: resource.ComputeNetwork.Clone(),
 		}
 		if err := validateFrozenComputeIngress(request, manifest.ID); err != nil {
+			return nil, "", nil, fmt.Errorf("resource %s.%s: %w", resource.Consumer, resource.ID, err)
+		}
+		if err := validateFrozenComputeNetwork(request); err != nil {
 			return nil, "", nil, fmt.Errorf("resource %s.%s: %w", resource.Consumer, resource.ID, err)
 		}
 		if g := request.ComputeIngress; g != nil && g.ForwardAuth != nil {

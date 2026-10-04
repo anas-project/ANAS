@@ -2,7 +2,7 @@
 
 > Status: **implemented** (`init` / `plan` / `lock` / `render` / `build` /
 > `apply` / `start` / `restart` / `stop` / `rollback` / `status` /
-> `deployments` / `config` / `admin` / `credential` / `module` / `host actions` /
+> `deployments` / `issues` / `config` / `admin` / `credential` / `module` / `host actions` /
 > `host incus-preflight` / `host job`; `host actions` is a local compiled inventory only).
 > The common conventions (stream separation, exit codes, enumerations, time and
 > size, paths, versioning, the minimal envelope) are in the
@@ -24,6 +24,7 @@ on a code exactly nothing.
 - [rollback](#rollback)
 - [status](#status)
 - [deployments](#deployments)
+- [issues](#issues)
 - [config](#config)
 - [credential](#credential)
 - [admin local](#admin-local)
@@ -448,6 +449,45 @@ hard-code their way around.
 | --- | --- | --- |
 | `deployment_missing` | 4 | No such id |
 | `state_unreadable` | 4 | The state directory cannot be read |
+
+## issues
+
+```
+anas issues [-w WORKSPACE] [--json]
+```
+
+Lists runtime issues: what is wrong right now, found while ANAS runs, such as a port binding conflict or a lost
+port hold (`ISSUE-R-006`). It reads the workspace record `.anas/state/runtime-issues.json` and the host record
+`/var/lib/anas-hostd/runtime-issues.json` directly, so it works with anasd stopped.
+
+```json
+{
+  "api_version": "anas.dev/cli/v1", "ok": false,
+  "workspace": "/data/ws",
+  "open_errors": 1,
+  "sources": [
+    {"scope": "workspace", "path": "/data/ws/.anas/state/runtime-issues.json", "issues": [{
+      "key": "incus.port-binding/forgejo.runners/tcp/30022", "source": "anasd", "level": "error",
+      "message": "applied port binding forgejo.runners/tcp/30022: hold_lost",
+      "first_seen": "2026-10-03T08:00:00Z", "last_seen": "2026-10-03T09:12:00Z", "count": 73
+    }]},
+    {"scope": "host", "path": "/var/lib/anas-hostd/runtime-issues.json", "issues": []}
+  ]
+}
+```
+
+One key is one record; finding it again only moves `last_seen` and `count`. Once the condition clears the record
+carries `resolved_at` and is kept for 30 days (provisional, to be settled with log retention). `source` is `apply` /
+`anasd` / `hostd` / `boot`, and `level` is `error` / `warning`. A record that cannot be read gives its source an
+`error` field and empty `issues`, never "no issues" (`ISSUE-R-008`); only root can read the host record.
+
+Like `backup verify` it is meant for scripts and cron: an open error-level issue, or any record that cannot be read,
+gives `ok: false` and exit code 1.
+
+| code | Exit code | When |
+| --- | --- | --- |
+| `issues_open` | 1 | An error-level issue is open |
+| `issues_unreadable` | 1 | A record cannot be read |
 
 ## config
 

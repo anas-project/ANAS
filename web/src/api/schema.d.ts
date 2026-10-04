@@ -784,6 +784,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{ws}/compute/leases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the network view of every compute lease
+         * @description Read-only lease network view (INCUS-R-128). For each compute lease in
+         *     the active deployment it returns the lease bridge, subnets and gateways
+         *     the Provider reported, the frozen egress and ingress tiers and switches,
+         *     HTTP publications, port bindings with their slot addresses, the lease's
+         *     instances and their addresses, and the directions the tiers allow or
+         *     deny. The instance list is read live with the lease's own project-scoped
+         *     certificate; when the daemon cannot be reached the lease carries
+         *     instances_error instead. No credential, key or certificate is returned,
+         *     and nothing here changes a lease.
+         */
+        get: operations["listWorkspaceComputeLeases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/modules": {
         parameters: {
             query?: never;
@@ -2217,6 +2248,69 @@ export interface components {
             active_deployment: components["schemas"]["NullableString"];
             modules: components["schemas"]["ModuleState"][];
             next_cursor: components["schemas"]["NextCursor"];
+        };
+        ComputeLeaseNetworkResponse: {
+            api_version: components["schemas"]["APIVersion"];
+            workspace_id: string;
+            active_deployment: components["schemas"]["NullableString"];
+            leases: components["schemas"]["ComputeLeaseNetwork"][];
+        };
+        ComputeLeaseNetwork: {
+            consumer: string;
+            resource: string;
+            provider: string;
+            /** @enum {string} */
+            interface: "incus_vm" | "incus_container";
+            sandbox: string;
+            /** @description Resource state, with the revocation outcome appended for a retained lease. */
+            status: string;
+            bridge?: string;
+            ipv4_subnet?: string;
+            ipv4_gateway?: string;
+            ipv6_subnet?: string;
+            ipv6_gateway?: string;
+            /** @enum {string} */
+            egress: "internet" | "internet_lan" | "internet_lan_host" | "modules_only";
+            module_access: boolean;
+            intra_lease: boolean;
+            /** @enum {string} */
+            ingress: "none" | "published";
+            http_ports: number[];
+            http_publications: components["schemas"]["ComputeHTTPPublication"][];
+            port_bindings: components["schemas"]["ComputePortBinding"][];
+            instances: components["schemas"]["ComputeLeaseInstance"][];
+            instances_error?: string;
+            directions: components["schemas"]["ComputeNetworkDirection"][];
+        };
+        ComputeHTTPPublication: {
+            host: string;
+            instance: string;
+            address: string;
+            port: number;
+        };
+        ComputePortBinding: {
+            /** @enum {string} */
+            protocol: "tcp" | "udp";
+            host_port: number;
+            auto: boolean;
+            slot: string;
+            instance: string;
+            ipv4?: string;
+            ipv6?: string;
+            guest_port: number;
+        };
+        ComputeLeaseInstance: {
+            name: string;
+            status: string;
+            addresses: string[];
+            slot?: string;
+        };
+        ComputeNetworkDirection: {
+            /** @enum {string} */
+            flow: "egress" | "ingress";
+            /** @enum {string} */
+            peer: "gateway_dns_dhcp" | "internet" | "lan" | "host" | "docker_published" | "docker_unpublished" | "modules" | "other_leases" | "link_local" | "same_lease" | "traefik" | "port_binding_clients" | "docker_containers";
+            allowed: boolean;
         };
         ModuleState: {
             name: string;
@@ -3798,6 +3892,38 @@ export interface operations {
             405: components["responses"]["GetMethodNotAllowedProblem"];
             408: components["responses"]["RequestCanceledProblem"];
             412: components["responses"]["PreconditionProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    listWorkspaceComputeLeases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lease network view in active-deployment resource order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputeLeaseNetworkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["GetMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
             500: components["responses"]["InternalProblem"];
             503: components["responses"]["ServiceUnavailableProblem"];
             504: components["responses"]["DeadlineProblem"];

@@ -278,7 +278,8 @@ set -eu
 [ -n "$ANAS_RESOURCE_CLIENT_CERT" ]
 [ -z "${ANAS_RESOURCE_CLIENT_KEY:-}" ]
 [ -z "${ANAS_COMPUTE_RESOURCE__FORGEJO__RUNNERS__LEASE_SECRET:-}" ]
-`
+[ "$ANAS_RESOURCE_NETWORK" = '{"egress":"internet","module_access":false,"intra_lease":false,"ingress":"none"}' ]
+` + fakeComputeEnsureEcho
 	if err := os.WriteFile(script, []byte(body), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -295,5 +296,9 @@ set -eu
 	}
 	if state.Actual.ComputeImages.Images[0].Fingerprint != strings.Repeat("a", 64) || state.Actual.ClientCertificateSecret != a.resourceRequests[0].SecretKey {
 		t.Fatal("resource state lost its frozen resolution or secret reference")
+	}
+	// INCUS-R-159: the bridge, subnet and gateway the Provider reported.
+	if n := state.Actual.ComputeNetwork; n == nil || n.Bridge != "lease120067207a" || n.IPv4Subnet != "10.101.0.0/24" || n.IPv4Gateway != "10.101.0.1" {
+		t.Fatalf("resource state network = %+v", state.Actual.ComputeNetwork)
 	}
 }

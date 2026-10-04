@@ -112,6 +112,8 @@ var newImagePruneBackend = func() imagePruneBackend {
 }
 
 type incusBackend interface {
+	SyncTraefik(context.Context) (incusprovision.TraefikSyncResult, error)
+	SyncPorts(context.Context) (incusprovision.PortSyncResult, error)
 	Inspect(context.Context, incusprovision.Request) (incusprovision.InspectResult, error)
 	Install(context.Context, incusprovision.Request, incusprovision.Binding) (incusprovision.ApplyResult, error)
 	Configure(context.Context, incusprovision.Request, incusprovision.Binding) (incusprovision.ApplyResult, error)
@@ -173,6 +175,18 @@ func executeIncusProvision(ctx context.Context, call *Invocation, journal AuditJ
 				value, runErr = buildProvisionPlanValue(ctx, backend, spec, params.Request, release)
 				changed = false
 			}
+		}
+	} else if spec.Sync {
+		// Approved once by incus.configure; the backend refuses without that
+		// approval and derives every address from Docker itself.
+		if string(call.request.Parameters) != "{}" {
+			runErr = ErrRequest
+		} else if call.request.Action == ActionTraefikSync {
+			value, runErr = backend.SyncTraefik(ctx)
+		} else if call.request.Action == ActionPortsSync {
+			value, runErr = backend.SyncPorts(ctx)
+		} else {
+			runErr = ErrRequest
 		}
 	} else if spec.Mutating {
 		if call.request.Action == ActionImagePrune {

@@ -21,12 +21,12 @@ func TestContainerNamespacesAreProviderOwnedAndHostFencesRemain(t *testing.T) {
 	if config["restricted.devices.nic"] != "managed" || config["restricted.networks.access"] != computeclient.NetworkName(l.Sandbox) {
 		t.Fatal("network fence changed")
 	}
-	profile := desiredLeaseProfile(l, computeclient.NetworkName(l.Sandbox))
+	profile := desiredLeaseProfile(l, computeclient.NetworkName(l.Sandbox), nil)
 	if profile.Config["security.nesting"] != "true" || profile.Config["security.privileged"] != "false" {
 		t.Fatal("namespace policy missing from provider-owned profile")
 	}
 	vm := testLease(t, "vm")
-	if projectConfig(vm)["restricted.containers.nesting"] != "block" || desiredLeaseProfile(vm, computeclient.NetworkName(vm.Sandbox)).Config["security.nesting"] != "" {
+	if projectConfig(vm)["restricted.containers.nesting"] != "block" || desiredLeaseProfile(vm, computeclient.NetworkName(vm.Sandbox), nil).Config["security.nesting"] != "" {
 		t.Fatal("VM tier changed")
 	}
 }
