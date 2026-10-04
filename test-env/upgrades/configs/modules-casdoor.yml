@@ -1,0 +1,12 @@
+modules:
+  casdoor: {}
+identity:
+  iam:
+    provider: casdoor
+global:
+  base_domain: nas.test
+  email: admin@nas.test
+  timezone: Asia/Shanghai
+  container_prefix: anas_upgrade_casdoor_
+  network_prefix: anas_upgrade_casdoor_
+  virtual_domain: true

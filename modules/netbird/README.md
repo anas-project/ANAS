@@ -5,6 +5,8 @@
 > [!WARNING]
 > 当前生命周期为 `developing`，仅用于开发和验证，不属于推荐生产部署。
 
+Casdoor r10 暂不接受 Netbird 注册：固定 0.76.1 把 OIDC sub 原值用于普通用户个人访问令牌 API 的 URL，违反 DIRKEY-R-013。须先修正 Consumer 投影；源码证据见技术文档。
+
 ## 快速信息
 
 <!-- generated:module-facts:start -->

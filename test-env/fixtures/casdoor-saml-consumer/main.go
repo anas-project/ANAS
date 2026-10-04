@@ -133,6 +133,7 @@ func verifyResponse(args []string) error {
 	responseFile := flags.String("response", "", "base64 SAMLResponse file")
 	requestID := flags.String("request-id", "", "matching AuthnRequest ID")
 	expectedNameID := flags.String("name-id", "", "expected NameID")
+	expectedNameIDFormat := flags.String("name-id-format", "", "expected NameID format")
 	var expectedAttributes stringList
 	flags.Var(&expectedAttributes, "attribute", "required name=value attribute; repeatable")
 	if err := flags.Parse(args); err != nil {
@@ -176,6 +177,9 @@ func verifyResponse(args []string) error {
 	}
 	if *expectedNameID != "" && nameID != *expectedNameID {
 		return fmt.Errorf("NameID %q does not match %q", nameID, *expectedNameID)
+	}
+	if *expectedNameIDFormat != "" && (assertion.Subject == nil || assertion.Subject.NameID == nil || assertion.Subject.NameID.Format != *expectedNameIDFormat) {
+		return errors.New("NameID format does not match the required persistent format")
 	}
 	attributes := map[string][]string{}
 	for _, statement := range assertion.AttributeStatements {

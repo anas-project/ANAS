@@ -196,7 +196,7 @@ Contract 声明虚假兼容性。
 | --- | --- | --- | --- |
 | [`ai_agent`](/reference/modules/ai_agent/) | `app` | `developing` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
 | [`authentik`](/reference/modules/authentik/) | `identity` | `developing` | Identity provider serving OIDC and SAML with per-application endpoints. |
-| [`casdoor`](/reference/modules/casdoor/) | `identity` | `release` | Release IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
+| [`casdoor`](/reference/modules/casdoor/) | `identity` | `developing` | IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
 | [`collabora`](/reference/modules/collabora/) | `app` | `release` | Online document editing backend for Nextcloud. |
 | [`ddns_go`](/reference/modules/ddns_go/) | `network` | `release` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
 | [`ddns_updater`](/reference/modules/ddns_updater/) | `network` | `release` | Dynamic DNS updater for the base domain and wildcard host. |

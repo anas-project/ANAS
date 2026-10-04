@@ -77,24 +77,14 @@ One-to-one with the README's *Directory attribute changes*.
   by design never pass through an interactive login, so no "converges at the next sign-in" mechanism
   applies to them.
 
-**`DIRKEY-R-013` projection verdict: a projection exists and must be re-checked before the M2 switch
-(`inferred`).** NetBird uses `sub` directly as the user id, the management API's user resources sit at
-paths of the form `/api/users/{userId}`, and the Dashboard's user-management view locates users by
-that same id. So once the subject identifier becomes the anchor, **UUIDs appear in management API URL
-paths and in administrator views**. Whether that counts as the "identifier in a URL" `DIRKEY-R-010`
-forbids depends on whether the path is a management view or an interface ordinary users see — a
-management view is permitted, a URL ordinary users see is not.
-
-This has not been re-checked and **must be verified before the M2 switch**. Both viable routes are
-already available:
-
-1. Keep `AuthUserIDClaim = "sub"` and verify that UUIDs appear only in the management API and
-   administrator views;
-2. Point `AuthUserIDClaim` at a stable claim unrelated to the anchor, letting the anchor arrive only
-   as an ordinary claim.
-
-Route 1 is preferred: it makes NetBird's user id a value that can be reconciled against the directory
-directly, which is exactly the effect `DIRKEY-R-008` is after.
+**`DIRKEY-R-013` projection verdict: ordinary-user URL projection (pinned source verified
+2026-10-03).** Version `0.76.1` copies `AuthUserIDClaim` into `UserAuth.UserId` in
+`shared/auth/jwt/extractor.go`. `management/server/http/handlers/users/pat_handler.go` registers
+`/users/{userId}/tokens`, and `GetAllPATs` in `management/server/user.go` permits a user to read
+their own personal access tokens. This cannot be exempted as an administrator-only view.
+The Casdoor r10 hook rejects Netbird registration until the consumer projection is corrected.
+Using a username, another stable claim or a derived id violates the unique-anchor binding rule.
+This is source call-path evidence, not Netbird UI E2E acceptance.
 
 ## Management surfaces and secret lifecycle
 

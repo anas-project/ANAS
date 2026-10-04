@@ -276,19 +276,20 @@ wait_for_user_state "$all_user" '(.groups | index("anas/APP_all")) != null' 'all
 wait_for_user_state "$admin_user" '(.groups | index("anas/Admins")) != null' 'administrator group'
 wait_for_user_state "$nested_user" '(.groups | index("anas/APP_nextcloud")) != null' 'recursive group'
 wait_for_user_state "$denied_user" '(.groups | length) == 0' 'no allowed group'
-direct_sub=$(casdoor_user "$direct_user" | jq -er '.id')
+direct_id=$(casdoor_user "$direct_user" | jq -er '.id')
+direct_sub=$(casdoor_user "$direct_user" | jq -er '.externalId')
 direct_anchor=$(casdoor_user "$direct_user" | jq -er '.externalId')
 printf 'Samba authorization matrix converged in Casdoor\n'
 
 section "Authorization Code, RS256 claims, and application permissions"
 login_allowed "$direct_user" APP_nextcloud user "$direct_sub" "$direct_anchor"
-all_sub=$(casdoor_user "$all_user" | jq -er '.id')
+all_sub=$(casdoor_user "$all_user" | jq -er '.externalId')
 all_anchor=$(casdoor_user "$all_user" | jq -er '.externalId')
 login_allowed "$all_user" APP_all user "$all_sub" "$all_anchor"
-admin_sub=$(casdoor_user "$admin_user" | jq -er '.id')
+admin_sub=$(casdoor_user "$admin_user" | jq -er '.externalId')
 admin_anchor=$(casdoor_user "$admin_user" | jq -er '.externalId')
 login_allowed "$admin_user" Admins app-admin "$admin_sub" "$admin_anchor"
-nested_sub=$(casdoor_user "$nested_user" | jq -er '.id')
+nested_sub=$(casdoor_user "$nested_user" | jq -er '.externalId')
 nested_anchor=$(casdoor_user "$nested_user" | jq -er '.externalId')
 login_allowed "$nested_user" APP_nextcloud user "$nested_sub" "$nested_anchor"
 expect_login_denied "$denied_user" application-group-policy
@@ -332,7 +333,7 @@ test "$(jq -r --arg anchor "$admin_anchor" '.[$anchor].permission' "$accounts")"
 section "rename reuses the Consumer identity"
 samba_tool user rename "$direct_user" --samaccountname="$renamed_user" >/dev/null
 wait_for_user_state "$renamed_user" \
-  '.id == "'"$direct_sub"'" and .externalId == "'"$direct_anchor"'" and (.groups | index("anas/APP_nextcloud")) != null' \
+  '.id == "'"$direct_id"'" and .externalId == "'"$direct_anchor"'" and (.groups | index("anas/APP_nextcloud")) != null' \
   'renamed with permanent identity'
 login_allowed "$renamed_user" APP_nextcloud user "$direct_sub" "$direct_anchor" "$direct_user"
 expect_login_denied "$direct_user" old-directory-name

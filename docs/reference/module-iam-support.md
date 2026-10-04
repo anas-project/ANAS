@@ -21,15 +21,15 @@ Module，都必须订阅 Samba 发布的持久目录事件，不能只等待定�
 `15.0.7` 虽有 LDAP 用户同步，却没有按不可变 ID 把 OIDC 身份绑定到 LDAP 账号的接口，双接入无法
 安全成立，缺失方向与兜底见 [Forgejo Module 设计](/architecture/forgejo-module-design) §2.2，
 升级复核触发点见同文 §2.3；`vikunja` 只接 OIDC，M1 盘点确认固定 `2.4.0` 没有 LDAP 用户同步，
-也没有可配置的身份 claim。准入丧失撤销当前无消费者验收：`casdoor` 的 exact-`sid` E2E 由
-管理员显式删 session 触发，不是目录事件驱动。
+也没有可配置的身份 claim。Casdoor r10 已接入目录事件驱动的 OIDC 撤权与持久重试，源码/helper
+测试通过，真实应用会话验收正在隔离环境进行；既有管理员删 session 的 E2E 不替代这项验收。
 
 **「匹配键」列**记录每个 Module 持久化目录用户时**实际使用的键**，由
 [目录身份键要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-identity-key.md)
 `DIRKEY-R-011` 要求。它是摘要，不是结论来源：逐行证据等级（`已验证` / `推断`）、改名与回收的
 后果，以及每条缺口的兜底动作，都写在各 Module README 的《目录属性变更说明》里。IAM Provider
 分「消费侧」（它自己怎么认目录里的人）与「签发侧」（它发给 Consumer 的主体标识符是什么）两项，
-因为两者当前并不一致——签发侧尚未满足 `DIRKEY-R-008`，整改归
+Casdoor r10 已统一取 anchor，其他 Provider 的签发侧仍待整改与验证；验收归
 [目录身份键实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md) M2。
 
 | Module | 是否可用 OIDC 登录 | 当前认证路径 | 结论 | 匹配键 |
@@ -43,7 +43,7 @@ Module，都必须订阅 Samba 发布的持久目录事件，不能只等待定�
 | `vikunja` | 是 | IAM/OIDC JIT 建号；`APP_vikunja`/`APP_all` 门禁；本地认证和注册关闭 | developing；Manifest、Provider 注册、Secret、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 | OIDC `(issuer, sub)`；不可配置，随 Provider 而稳定 |
 | `lam` | 否 | LDAPS 目录管理登录 | 不属于当前 IAM consumer | 无持久键；每次登录按 `sAMAccountName` 检索后 bind DN |
 | `authentik` | 不适用 | IAM provider；另有固定 `akadmin` break-glass | 提供 OIDC/SAML，不把自身当普通 consumer | 消费侧：身份锚点（`object_uniqueness_field`）。签发侧：内部用户 UUID，**非 anchor** |
-| `casdoor` | 不适用 | release IAM provider；使用默认模板 `admin_casdoor` break-glass | OIDC/SAML 登录、Samba 目录收敛、永久 anchor、`ALLOW_GROUPS` 门禁、OIDC exact-`sid` 会话撤销、空 workspace 恢复、多架构生命周期及受管凭据轮换已有真实 E2E；固定版本不发布 SAML SLO | 消费侧：身份锚点（`externalId`）。签发侧：OIDC `sub` 为不可变 User ID；**SAML `NameID` 是用户名，改名即变** |
+| `casdoor` | 不适用 | developing IAM provider；使用默认模板 `admin_casdoor` break-glass | OIDC/SAML 登录、Samba 目录收敛、永久 anchor、`ALLOW_GROUPS` 门禁、OIDC exact-`sid` 会话撤销、空 workspace 恢复、多架构生命周期及受管凭据轮换已有真实 E2E；固定版本不发布 SAML SLO | 消费侧：身份锚点（`externalId`）。r10 签发侧：OIDC `sub`、UserInfo、Logout Token 与 SAML `NameID` 统一取 anchor；源码通过，实机验收中 |
 | `llng` | 不适用 | IAM provider | 提供 OIDC/SAML，不把自身当普通 consumer | 消费侧：无副本。签发侧：`whatToTrace` = 小写 `sAMAccountName`，**`sub` 与 `NameID` 都是标签** |
 | `ddns_go` | 否 | ANAS 托管 local emergency account | 不支持 OIDC | 不适用（本地账号） |
 | `traefik` | 否 | ANAS 托管本地 BasicAuth emergency account | 不支持 OIDC | 不适用（本地账号） |

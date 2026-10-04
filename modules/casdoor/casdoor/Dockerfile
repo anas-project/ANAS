@@ -21,10 +21,14 @@ COPY patches/0001-saml-directory-attributes.patch /tmp/0001-saml-directory-attri
 COPY patches/0002-oidc-session-logout.patch /tmp/0002-oidc-session-logout.patch
 COPY patches/0003-oidc-logout-delivery-logging.patch /tmp/0003-oidc-logout-delivery-logging.patch
 COPY patches/0004-postgres-token-user-filter.patch /tmp/0004-postgres-token-user-filter.patch
+COPY patches/0005-directory-subject.patch /tmp/0005-directory-subject.patch
+COPY patches/0006-directory-revocation.patch /tmp/0006-directory-revocation.patch
 RUN patch -p1 < /tmp/0001-saml-directory-attributes.patch && \
     patch -p1 < /tmp/0002-oidc-session-logout.patch && \
     patch -p1 < /tmp/0003-oidc-logout-delivery-logging.patch && \
     patch -p1 < /tmp/0004-postgres-token-user-filter.patch && \
+    patch -p1 < /tmp/0005-directory-subject.patch && \
+    patch -p1 < /tmp/0006-directory-revocation.patch && \
     if [ -n "$GOPROXY_URL" ]; then go env -w GOPROXY="$GOPROXY_URL"; fi && \
     go mod download && \
     CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \

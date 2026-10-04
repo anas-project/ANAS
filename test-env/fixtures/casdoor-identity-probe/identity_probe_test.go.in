@@ -1,0 +1,84 @@
+package object
+
+import (
+	"testing"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/xorm-io/xorm"
+)
+
+// These tests exercise the pinned server's own functions. They describe its
+// current configuration boundary; they are not login or deployment E2E tests.
+func TestANASIdentityConfigurationProbe(t *testing.T) {
+	const anchor = "7b1af66a-76fb-4bea-967d-e0e4db15a574"
+	user := &User{Owner: "anas", Name: "directory-user", Id: "casdoor-internal-id", Email: "user@example.test", ExternalId: anchor}
+	attribute := &JwtItem{Name: "sub", Category: "Existing Field", Value: "ExternalId", Type: "String"}
+	claims := Claims{User: user, RegisteredClaims: jwt.RegisteredClaims{Subject: user.Id}}
+
+	t.Run("OIDCCustomSubjectCanUseExternalId", func(t *testing.T) {
+		actual := getClaimsCustom(claims, nil, []*JwtItem{attribute})
+		if actual["sub"] != anchor {
+			t.Fatalf("custom sub = %#v, want directory anchor", actual["sub"])
+		}
+		t.Log("oidc_custom_sub=anchor")
+	})
+	t.Run("OIDCCustomSubjectDoesNotRejectMissingAnchor", func(t *testing.T) {
+		missing := *user
+		missing.ExternalId = ""
+		actual := getClaimsCustom(Claims{User: &missing, RegisteredClaims: jwt.RegisteredClaims{Subject: missing.Id}}, nil, []*JwtItem{attribute})
+		if actual["sub"] != "" {
+			t.Fatalf("missing-anchor custom sub = %#v", actual["sub"])
+		}
+		t.Log("oidc_missing_anchor=empty_subject_without_error")
+	})
+	t.Run("UserInfoStillUsesInternalId", func(t *testing.T) {
+		engine, err := xorm.NewEngine("sqlite", "file:anas-identity-probe?mode=memory&cache=shared")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = engine.Close() })
+		if err := engine.Sync2(&Application{}); err != nil {
+			t.Fatal(err)
+		}
+		previous := ormer
+		ormer = &Ormer{Engine: engine}
+		t.Cleanup(func() { ormer = previous })
+		// The nonexistent audience deliberately avoids unrelated provider and
+		// organization setup. The real GetUserInfo path still performs its
+		// application lookup against the isolated in-memory database.
+		actual, err := GetUserInfo(user, "", "probe-no-application", "auth.example.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actual.Sub != user.Id || actual.Sub == anchor {
+			t.Fatalf("userinfo sub = %q", actual.Sub)
+		}
+		t.Log("userinfo_sub=internal_id")
+	})
+	t.Run("LogoutStillUsesInternalId", func(t *testing.T) {
+		actual := newLogoutTokenClaims(&Application{Owner: "admin", ClientId: "probe"}, user, "probe-sid", "https://auth.example.test", time.Unix(1800000000, 0))
+		if actual.Subject != user.Id || actual.Subject == anchor {
+			t.Fatalf("logout sub = %q", actual.Subject)
+		}
+		t.Log("logout_sub=internal_id")
+	})
+	for _, useEmail := range []bool{false, true} {
+		name, expected := "SAMLNameIdUsesUsername", user.Name
+		if useEmail {
+			name, expected = "SAMLNameIdUsesEmail", user.Email
+		}
+		t.Run(name, func(t *testing.T) {
+			application := &Application{DisableSamlAttributes: true, UseEmailAsSamlNameId: useEmail}
+			response, err := NewSamlResponse(application, user, "https://auth.example.test", "", "https://sp.example.test/acs", "sp.example.test", "probe-request", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nameId := response.FindElement("./Assertion/Subject/NameID")
+			if nameId == nil || nameId.Text() != expected {
+				t.Fatalf("SAML NameID does not equal %q: %#v", expected, nameId)
+			}
+			t.Logf("saml_nameid=%s", expected)
+		})
+	}
+}

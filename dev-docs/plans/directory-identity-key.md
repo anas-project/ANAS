@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-09-20
-updated: 2026-09-20
+updated: 2026-10-03
 ---
 
 # 目录身份键实施计划
@@ -20,7 +20,7 @@ updated: 2026-09-20
 | --- | --- | --- |
 | M0：把规则写进规范与文档标准 | R-001、R-002、R-004、R-005、R-010、R-011 | 已完成；2026-09-20 成文 |
 | M1：逐 Module 盘点与文档补全 | R-006 | 已完成；2026-09-20，12 个在范围内的 Module 的中英文 README 与技术文档补齐，`module-iam-support` 增加匹配键列 |
-| M2：主体标识符切换为 anchor | R-007—R-009、R-012、R-013 | 未开始；阻塞于三家 Provider 的能力核实，M1 新发现 `llng` 的 `sub`/`NameID` 与 `casdoor` 的 SAML `NameID` 都是标签 |
+| M2：主体标识符切换为 anchor | R-007—R-009、R-012、R-013 | 实施中；Casdoor r10 主体补丁已接入构建，Netbird 普通用户 URL 投影已验证并阻止组合；实机与另两家 Provider 核实待完成 |
 | M3：改名复用身份的真实 E2E | R-003 | 未开始 |
 
 ## 2. M0 检查表
@@ -91,13 +91,30 @@ updated: 2026-09-20
 
 ## 4. M2 切换主体标识符
 
+### Casdoor 进展（2026-10-03）
+
+- [x] 校验 Dockerfile 固定归档，在实际上游函数上验证六项配置边界：JWT-Custom 可覆盖 `sub`，
+      但 UserInfo 与 Logout Token 仍取内部 ID，SAML 只取用户名/邮箱，缺锚点不会拒绝自定义签发。
+- [x] 在测试夹具内验证统一主体标识符候选补丁：四种格式的签名 access/refresh token、UserInfo、
+      签名 Logout Token、SAML 2.0 模板一致；缺锚点拒绝，恢复管理员 OIDC 不受影响。
+- [x] Netbird 固定 0.76.1 已确认 `sub` 进入普通用户 PAT API URL；Casdoor 在发布 binding 和渲染应用前拒绝组合。
+- [x] 将统一主体补丁接入 Dockerfile（0005），刷新/sid/定向撤权补丁同时接入（0006）；复验完整固定归档通过。
+- [ ] 在同一候选部署完成真实 token/refresh grant、签名 assertion、改名账号归属和标签回收 E2E。
+
+入口为 `test-env/scripts/test-casdoor-identity-source.sh`，结论见
+[固定源码可行性核实](../../docs/research/casdoor-directory-subject.md)。两份生产补丁已接入 r10 Dockerfile；源码测试仍**不记为 `R-008` 的实机通过**。独立实机工作区已建立，验收进行中。
+产品尚未发版，无需迁移或兼容映射。
+
+### 跨 Provider 检查表
+
 - [ ] **核实 Provider 能力(阻塞项)**:三家都要跑,不只两家。authentik 的 `sub_mode` 能否取到
       anchor 所在的属性(当前 anchor 落在 LDAP source 写入的 `attributes.ldap_uniq`,而 `sub_mode`
       是固定枚举);Casdoor 的 OIDC `sub` 与 **SAML `NameID`** 能否配成 `ExternalId`(M1 已证实
       NameID 当前是用户名,且该 Module 已有一个改 SAML 模板的受控补丁,可能说明这里也要补丁);
       LLNG 的 per-RP `oidcRPMetaDataOptionsUserIDAttr` 能否取到 `anasIdentityAnchor` 这个 exported
       var,以及 SAML NameID 来源能否独立于 `whatToTrace` 配置。必须在真实固定版本上验证,不得凭
-      上游文档定稿。
+      上游文档定稿。Casdoor 的源码能力边界已按上节核实，配置无法覆盖完整链路，受控候选补丁
+      已通过源码测试，部署验证待完成；其余两家仍待核实。
 - [ ] 三家都可配时,按 `R-008` 把 `sub`/`NameID` 切成 anchor;任一家不可配时,按 `R-012` 在该
       Provider 的 Module 文档声明缺口,该部署下所有 Consumer 走 `R-004` 缺口路径。
 - [ ] 切换前按 `R-013` 逐个 OIDC/SAML Consumer 验证主体标识符没有进入用户名、URL 标识符或
@@ -205,7 +222,7 @@ LDAP Consumer。
 | 项 | 内容 |
 | --- | --- |
 | 级别 | 单元 |
-| 入口 | 待新增,与 Provider 的 Hook 单元测试共用 fixture |
+| 入口 | Casdoor 候选：`test-env/scripts/test-casdoor-identity-source.sh`；其他 Provider 待新增 |
 | 步骤 | 构造一个明确请求 anchor claim 的 Consumer,让 Provider 侧取不到 anchor(目录对象缺该属性) |
 | 断言 | 调和或登录**拒绝**,并给出可诊断错误;不得静默降级成 `sAMAccountName` 或邮箱 |
 
@@ -230,11 +247,11 @@ LDAP Consumer。
 
 ## 8. 当前阻塞
 
-- M2 阻塞于 **authentik、Casdoor 与 LLNG** 三家的主体标识符是否可配置,需要真实部署跑探针。
-  LLNG 是 M1 新增的阻塞项:它当前发出的 `sub` 与 `NameID` 都是 `sAMAccountName`;
-- M2 还阻塞于 `netbird` 的 `R-013` 投影验证——它是唯一一个把主体标识符直接当用户 id 的 Consumer,
-  切换后 UUID 会进入 `/api/users/{userId}`;
-- M1 已完成,但表里 `forgejo`、`netbird`、`vikunja` 的 `sub` 稳定性与 `llng` 的 `sub` 取值链路都是
-  `推断`。`forgejo` 的探针脚本已存在(`test-env/scripts/forgejo-agent-api-probe.sh`),`llng` 与
-  `netbird` 没有同类入口,应在 M2 的 Provider 探针中一并覆盖;
-- M3 需要可用的真实部署与目录,改名 E2E 还要求能安全地改回来。
+- M2 的 **authentik 与 LLNG** 配置能力仍待核实；Casdoor 固定源码已证明仅靠配置不足，r10 生产补丁
+  已在源码级通过，剩余条件是同一候选的真实协议和 Consumer 账号归属验证。LLNG 当前发出的 `sub` 与
+  `NameID` 都是 `sAMAccountName`；
+- `netbird` 固定源码已验证主体标识符进入普通用户 PAT API URL，违反 `R-013`；Casdoor 已拒绝该组合。
+  要恢复组合，需要先改变 Netbird 的用户 URL 设计，不能使用派生 claim 或身份映射绕过要求。
+- M1 已完成,但表里 `forgejo`、`vikunja` 的 `sub` 稳定性与 `llng` 的 `sub` 取值链路都是
+  `推断`。`forgejo` 的探针脚本已存在(`test-env/scripts/forgejo-agent-api-probe.sh`),`llng` 没有同类入口,应在 M2 的 Provider 探针中覆盖；Netbird 已完成固定源码核实。
+- M3 的隔离部署与目录已在 `whl@finance.hlong.wang` 建立；真实账号归属、改名和标签回收验收仍待完成。

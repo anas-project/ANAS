@@ -1,0 +1,107 @@
+--- a/object/anas_subject.go
++++ b/object/anas_subject.go
+@@ -0,0 +1,21 @@
++package object
++
++import (
++	"fmt"
++	"strings"
++)
++
++// ANAS directory users have one protocol subject, independent of login labels.
++// Recovery administrators belong to built-in and keep Casdoor's own identity.
++func getAnasSubject(user *User) (string, error) {
++	if user == nil {
++		return "", fmt.Errorf("cannot issue a subject without a user")
++	}
++	if user.Owner != "anas" {
++		return user.Id, nil
++	}
++	if user.ExternalId == "" || strings.TrimSpace(user.ExternalId) != user.ExternalId {
++		return "", fmt.Errorf("ANAS directory identity anchor is missing or invalid")
++	}
++	return user.ExternalId, nil
++}
+--- a/object/token_jwt.go
++++ b/object/token_jwt.go
+@@ -490,0 +491,4 @@
++	// Token attributes and selected properties must not replace the directory subject.
++	if claims.User.Owner == "anas" {
++		res["sub"] = claims.Subject
++	}
+@@ -520,0 +525,4 @@
++	subject, err := getAnasSubject(user)
++	if err != nil {
++		return "", "", "", err
++	}
+@@ -556 +564 @@
+-			Subject:   user.Id,
++			Subject:   subject,
+--- a/object/user.go
++++ b/object/user.go
+@@ -1213,0 +1214,4 @@
++	subject, err := getAnasSubject(user)
++	if err != nil {
++		return nil, err
++	}
+@@ -1217 +1221 @@
+-		Sub: user.Id,
++		Sub: subject,
+--- a/object/token_logout.go
++++ b/object/token_logout.go
+@@ -40 +40,4 @@
+-	claims := newLogoutTokenClaims(application, user, sessionId, originBackend, nowTime)
++	claims, err := newLogoutTokenClaims(application, user, sessionId, originBackend, nowTime)
++	if err != nil {
++		return "", err
++	}
+@@ -71 +74,5 @@
+-func newLogoutTokenClaims(application *Application, user *User, sessionId string, issuer string, nowTime time.Time) LogoutTokenClaims {
++func newLogoutTokenClaims(application *Application, user *User, sessionId string, issuer string, nowTime time.Time) (LogoutTokenClaims, error) {
++	subject, err := getAnasSubject(user)
++	if err != nil {
++		return LogoutTokenClaims{}, err
++	}
+@@ -81 +88 @@
+-			Subject:   user.Id,
++			Subject:   subject,
+@@ -92 +99 @@
+-	return claims
++	return claims, nil
+--- a/object/token_logout_test.go
++++ b/object/token_logout_test.go
+@@ -10 +10 @@
+-	claims := newLogoutTokenClaims(
++	claims, err := newLogoutTokenClaims(
+@@ -16,0 +17,3 @@
++	if err != nil {
++		t.Fatal(err)
++	}
+--- a/object/saml_idp.go
++++ b/object/saml_idp.go
+@@ -42,0 +43,4 @@
++	anchor, err := getAnasSubject(user)
++	if err != nil {
++		return nil, err
++	}
+@@ -82,0 +87,5 @@
++	if user.Owner == "anas" {
++		nameIDValue = anchor
++		nameId.RemoveAttr("Format")
++		nameId.CreateAttr("Format", "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent")
++	}
+@@ -453,0 +463,4 @@
++	anchor, err := getAnasSubject(user)
++	if err != nil {
++		return nil, err
++	}
+@@ -497 +510,3 @@
+-	if application.UseEmailAsSamlNameId {
++	if user.Owner == "anas" {
++		nameIdentifier.SetText(anchor)
++	} else if application.UseEmailAsSamlNameId {
+@@ -510 +525,3 @@
+-	if application.UseEmailAsSamlNameId {
++	if user.Owner == "anas" {
++		nameIdentifierInAttribute.SetText(anchor)
++	} else if application.UseEmailAsSamlNameId {

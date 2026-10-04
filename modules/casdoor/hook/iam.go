@@ -20,6 +20,9 @@ func appName(app string) string {
 }
 
 func publishIAMEndpoints(e map[string]string) error {
+	if err := validateSubjectConsumers(e); err != nil {
+		return err
+	}
 	consumers := append(splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]), splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])...)
 	if len(consumers) == 0 {
 		return nil
@@ -49,6 +52,9 @@ func publishIAMEndpoints(e map[string]string) error {
 }
 
 func renderInitData(e map[string]string) (string, error) {
+	if err := validateSubjectConsumers(e); err != nil {
+		return "", err
+	}
 	if err := requireKeys(e, []string{
 		"CASDOOR_DOMAIN_FULL", "CASDOOR_PORTAL_CLIENT_ID", "CASDOOR_PORTAL_CLIENT_SECRET",
 		"CASDOOR_LOCAL_ADMIN__BREAK_GLASS_USERNAME",
@@ -134,6 +140,18 @@ func renderInitData(e map[string]string) (string, error) {
 		return "", err
 	}
 	return string(b) + "\n", nil
+}
+
+// Netbird uses sub verbatim in ordinary users' /users/{userId}/tokens API.
+// An anchor subject cannot be issued to this consumer until that projection
+// is removed (DIRKEY-R-010 / DIRKEY-R-013).
+func validateSubjectConsumers(e map[string]string) error {
+	for _, app := range append(splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]), splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])...) {
+		if strings.EqualFold(app, "netbird") {
+			return fmt.Errorf("Casdoor cannot register netbird: it projects the directory identity anchor into user API URLs (DIRKEY-R-013)")
+		}
+	}
+	return nil
 }
 
 func organization(name, displayName string) map[string]any {
@@ -317,6 +335,17 @@ func managedIAMGroups(e map[string]string) []string {
 		}
 	}
 	return result
+}
+
+func directoryApplicationPolicies(e map[string]string) string {
+	policies := []map[string]any{}
+	for _, protocol := range []string{"oidc", "saml"} {
+		for _, app := range splitCSV(e["ANAS_IDENTITY_"+strings.ToUpper(protocol)+"_CLIENTS"]) {
+			policies = append(policies, map[string]any{"application": appName(app), "protocol": protocol, "groups": splitCSV(e[iamClientPrefix+envName(app)+"__ALLOW_GROUPS"])})
+		}
+	}
+	data, _ := json.Marshal(policies)
+	return string(data)
 }
 
 func managedIAMAccessObjects(e map[string]string) ([]any, []any, []any) {

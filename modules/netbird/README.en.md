@@ -5,6 +5,8 @@ Incomplete WireGuard overlay network module.
 > [!WARNING]
 > Lifecycle is `developing`; use it for development and validation only, not recommended production deployments.
 
+Casdoor r10 rejects Netbird registration: pinned 0.76.1 projects OIDC sub into ordinary users' personal-access-token API URLs, violating DIRKEY-R-013. Correct the consumer projection before enabling the combination; see the technical document for source evidence.
+
 ## Quick facts
 
 <!-- generated:module-facts:start -->

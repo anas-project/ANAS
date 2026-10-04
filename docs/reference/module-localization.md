@@ -8,7 +8,7 @@
 | --- | --- | --- | --- | --- | --- | --- | ---: |
 | [ai_agent](#ai_agent) | 0.1.0-r2 | configured | supported | deployment_default | applied | not_consumed | 2 |
 | [authentik](#authentik) | 2026.5.6-r14 | container | supported | browser | not_consumed | not_consumed | 17 |
-| [casdoor](#casdoor) | 3.143.0-r8 | container | supported | application | applied | not_consumed | 2 |
+| [casdoor](#casdoor) | 3.143.0-r10 | container | supported | application | applied | not_consumed | 2 |
 | [collabora](#collabora) | 26.4.2-r5 | container | supported | integration | not_consumed | not_consumed | 43 |
 | [ddns_go](#ddns_go) | 6.17.4-r6 | container | supported | application | not_consumed | not_consumed | 2 |
 | [ddns_updater](#ddns_updater) | 2.10.0-r4 | application | fixed | fixed | not_consumed | not_consumed | 1 |
@@ -55,7 +55,7 @@
 
 ## casdoor
 
-- **Version / 版本：** `3.143.0-r8`; reviewed 2026-08-27
+- **Version / 版本：** `3.143.0-r10`; reviewed 2026-08-27
 - **Timezone / 时区：** `container` — Casdoor receives TZ through the module environment; no separate application timezone is forced.
 - **Language / 语言：** `supported`, `application` — Casdoor Web UI default
 - **ANAS globals / 全局默认：** `default_language=applied`; `default_locale=not_consumed`

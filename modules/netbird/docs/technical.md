@@ -70,18 +70,13 @@
   back-channel logout endpoint，也没有"按目录状态批量禁用 peer"的接口。peer 凭据是 NetBird 自己
   签发的长期凭据，设计上就不经过交互登录，因此任何"下次登录时收敛"的机制对它们都不成立。
 
-**`DIRKEY-R-013` 投影结论：存在投影，需在 M2 切换前复核（`推断`）。** NetBird 把 `sub` 直接当作
-用户 id，而 management API 的用户资源路径形如 `/api/users/{userId}`，Dashboard 的用户管理视图也按
-这个 id 定位用户。因此主体标识符切成 anchor 之后，**UUID 会出现在管理 API 的 URL 路径与管理员
-视图里**。两者是否属于 `DIRKEY-R-010` 禁止的"URL 中的标识符"，取决于该路径是管理视图还是普通
-用户可见的界面——管理视图是允许的，普通用户可见的 URL 不是。
-
-这一点未经复核，**必须在 M2 切换前验证**，可行的两条出路都已具备条件：
-
-1. 维持 `AuthUserIDClaim = "sub"`，验证 UUID 只出现在管理 API 与管理员视图；
-2. 把 `AuthUserIDClaim` 指向一个与 anchor 无关的稳定 claim，让 anchor 只经普通 claim 到达。
-
-第 1 条是首选：它让 NetBird 的用户 id 直接成为可与目录对账的值，正是 `DIRKEY-R-008` 想要的效果。
+**`DIRKEY-R-013` 投影结论：存在普通用户 URL 投影（2026-10-03 固定源码已验证）。**
+固定 `0.76.1` 的 `shared/auth/jwt/extractor.go` 将 `AuthUserIDClaim` 原值写入 `UserAuth.UserId`。
+`management/server/http/handlers/users/pat_handler.go` 注册 `/users/{userId}/tokens`，
+`management/server/user.go` 的 `GetAllPATs` 允许用户读取自己的个人访问令牌，故不能只按管理员
+视图豁免。Casdoor r10 的 Hook 会拒绝注册 Netbird，避免 anchor 进入该普通用户 API URL。
+改成用户名、其他稳定 claim 或派生 id 不符合唯一锚点绑定要求；先修正 Consumer 投影，再开放组合。
+本结论是源码调用路径验证，未运行 Netbird 用户界面 E2E。
 
 ## 管理面与 Secret 生命周期
 

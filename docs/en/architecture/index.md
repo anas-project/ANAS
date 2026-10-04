@@ -1,5 +1,13 @@
 # Architecture
 
+## Directory events and Casdoor sessions
+
+The existing [directory event journal](/architecture/directory-event-journal) observes local Samba AD
+writes and feeds the Casdoor watcher. Revision r10 implements per-application OIDC session/token
+revocation, a durable pending-work file and bounded delivery retry in the existing watcher. Independent
+OIDC session identifiers preserve later grants when old notifications are retried. Source and helper
+tests pass; deployment acceptance is in progress. SAML SLO remains unavailable.
+
 Lease egress is being redesigned as a static per-lease policy (decided 2026-09-28, not yet implemented). A
 consumer Module declares one of four tiers for its compute lease: `internet` (the default), `internet_lan`,
 `internet_lan_host`, or `modules_only`. It can also enable two switches, `module_access` and `intra_lease`,

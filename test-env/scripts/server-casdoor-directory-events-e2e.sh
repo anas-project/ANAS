@@ -68,7 +68,7 @@ journal_since() {
 # reads its managed client credential from the container environment, so the
 # secret never enters this script's argv.
 casdoor_user_field() {
-  docker exec "$dirwatch" /opt/anas/bin/casdoor-helper directory-watch --get-user "anas/$1" 2>/dev/null \
+  docker exec "$casdoor" /opt/anas/bin/casdoor-helper directory-watch --get-user "anas/$1" 2>/dev/null \
     | jq -r --arg field "$2" '.[$field] // empty' || true
 }
 
@@ -153,11 +153,11 @@ test "$count_after" -gt "$count_before"
 test $(( count_after - count_before )) -le 1
 printf 'three creates caused %d synchronization\n' $(( count_after - count_before ))
 
-section "a restart preserves the cursor and does not replay"
+section "a restart preserves the cursor and performs one full reconciliation"
 docker restart "$dirwatch" >/dev/null
 sleep 20
 docker exec "$dirwatch" /opt/anas/bin/casdoor-helper directory-watch --healthcheck
-test "$(trigger_count)" = 0
-printf 'the persisted cursor suppressed replay after restart\n'
+test "$(trigger_count)" = 1
+printf 'the persisted cursor suppressed event replay; startup reconciled once\n'
 
 printf '\nCasdoor directory event subscription E2E tests passed\n'

@@ -11,7 +11,7 @@ This page is generated from the current Module manifests. The checked-in page an
 | --- | --- | --- | --- | --- |
 | [AI Agent orchestration](/en/reference/modules/ai_agent/) | `0.1.0-r2` | `developing` | `app` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
 | [authentik](/en/reference/modules/authentik/) | `2026.5.6-r14` | `developing` | `identity` | Identity provider serving OIDC and SAML with per-application endpoints. |
-| [Casdoor](/en/reference/modules/casdoor/) | `3.143.0-r8` | `release` | `identity` | Release IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
+| [Casdoor](/en/reference/modules/casdoor/) | `3.143.0-r10` | `developing` | `identity` | IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
 | [Collabora Online](/en/reference/modules/collabora/) | `26.4.2-r5` | `release` | `app` | Online document editing backend for Nextcloud. |
 | [DDNS-GO](/en/reference/modules/ddns_go/) | `6.17.4-r6` | `release` | `network` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
 | [DDNS Updater](/en/reference/modules/ddns_updater/) | `2.10.0-r4` | `release` | `network` | Dynamic DNS updater for the base domain and wildcard host. |

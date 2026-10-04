@@ -1,0 +1,515 @@
+--- a/object/token.go
++++ b/object/token.go
+@@ -33,0 +34,2 @@
++	UserId       string `xorm:"varchar(100)" json:"userId"`
++	SessionId    string `xorm:"varchar(100)" json:"sessionId"` // Parent Beego session; OIDC sid is per authorization.
+--- a/object/token_oauth.go
++++ b/object/token_oauth.go
+@@ -59,0 +60,5 @@
++	}
++
++	if application.Organization == "anas" && grantType == "authorization_code" {
++		anasDirectoryMutex.Lock()
++		defer anasDirectoryMutex.Unlock()
+@@ -194,0 +200,20 @@
++	}
++
++	if application.Organization == "anas" {
++		if token.Owner != application.Owner || token.Application != application.Name || token.Organization != "anas" || token.UserId == "" || token.ExpiresIn <= 0 {
++			return nil, &TokenError{Error: InvalidGrant, ErrorDescription: "directory authorization is invalid"}, nil
++		}
++		user, err := GetUserByUserId("anas", token.UserId)
++		if err != nil {
++			return nil, nil, err
++		}
++		if user == nil || user.IsForbidden || user.IsDeleted || user.Name != token.User || user.ExternalId != anasTokenSubject(token) {
++			return nil, &TokenError{Error: InvalidGrant, ErrorDescription: "directory authorization is no longer admitted"}, nil
++		}
++		allowed, err := CheckLoginPermission(user.GetId(), application)
++		if err != nil {
++			return nil, nil, err
++		}
++		if !allowed {
++			return nil, &TokenError{Error: InvalidGrant, ErrorDescription: "directory application access has been revoked"}, nil
++		}
+--- a/object/token_oauth_util.go
++++ b/object/token_oauth_util.go
+@@ -302,0 +303,4 @@
++	if strings.HasPrefix(userId, "anas/") {
++		anasDirectoryMutex.Lock()
++		defer anasDirectoryMutex.Unlock()
++	}
+@@ -314 +318 @@
+-	if user.IsForbidden {
++	if user.IsForbidden || user.IsDeleted {
+@@ -330,0 +335,10 @@
++	}
++
++	if user.Owner == "anas" {
++		allowed, permissionErr := CheckLoginPermission(user.GetId(), application)
++		if permissionErr != nil {
++			return nil, permissionErr
++		}
++		if !allowed {
++			return &Code{Message: "application access has been revoked"}, nil
++		}
+@@ -355 +369,5 @@
+-	accessToken, refreshToken, tokenName, err := generateJwtTokenWithSession(application, user, provider, signinMethod, nonce, scope, resource, host, sessionId)
++	oidcSessionId := sessionId
++	if user.Owner == "anas" && sessionId != "" {
++		oidcSessionId = util.GenerateId()
++	}
++	accessToken, refreshToken, tokenName, err := generateJwtTokenWithSession(application, user, provider, signinMethod, nonce, scope, resource, host, oidcSessionId)
+@@ -370,0 +389,2 @@
++		SessionId:     sessionId,
++		UserId:        user.Id,
+@@ -422,0 +443,5 @@
++	if application.Organization == "anas" {
++		anasDirectoryMutex.Lock()
++		defer anasDirectoryMutex.Unlock()
++	}
++
+@@ -431,0 +457,4 @@
++	if token.Owner != application.Owner || token.Application != application.Name || token.Organization != application.Organization {
++		return &TokenError{Error: InvalidGrant, ErrorDescription: "refresh token belongs to a different application"}, nil
++	}
++
+@@ -451 +480 @@
+-	var oldTokenScope string
++	var oldTokenScope, oldSessionId, oldSubject string
+@@ -460,0 +490,2 @@
++		oldSessionId = oldToken.Sid
++		oldSubject = oldToken.Subject
+@@ -469,0 +501,2 @@
++		oldSessionId = oldToken.Sid
++		oldSubject = oldToken.Subject
+@@ -477 +510,9 @@
+-	user, err := getUser(application.Organization, token.User)
++	var user *User
++	if application.Organization == "anas" {
++		if token.UserId == "" {
++			return &TokenError{Error: InvalidGrant, ErrorDescription: "directory token has no user id"}, nil
++		}
++		user, err = GetUserByUserId("anas", token.UserId)
++	} else {
++		user, err = getUser(application.Organization, token.User)
++	}
+@@ -485 +526 @@
+-	if user.IsForbidden {
++	if user.IsForbidden || user.IsDeleted {
+@@ -497 +538,14 @@
+-	newAccessToken, newRefreshToken, tokenName, err := generateJwtToken(application, user, "", "", "", scope, "", host)
++	if user.Owner == "anas" {
++		subject, subjectErr := getAnasSubject(user)
++		if subjectErr != nil || subject != oldSubject || oldSessionId == "" {
++			return &TokenError{Error: InvalidGrant, ErrorDescription: "directory identity or session is invalid"}, nil
++		}
++		allowed, permissionErr := CheckLoginPermission(user.GetId(), application)
++		if permissionErr != nil {
++			return nil, permissionErr
++		}
++		if !allowed {
++			return &TokenError{Error: InvalidGrant, ErrorDescription: "application access has been revoked"}, nil
++		}
++	}
++	newAccessToken, newRefreshToken, tokenName, err := generateJwtTokenWithSession(application, user, "", "", "", scope, "", host, oldSessionId)
+@@ -511,0 +566,3 @@
++		SessionId:    token.SessionId,
++		CodeIsUsed:   true,
++		UserId:       user.Id,
+--- a/object/token_logout.go
++++ b/object/token_logout.go
+@@ -17,0 +18,2 @@
++	"encoding/base64"
++	"encoding/json"
+@@ -105,0 +108,5 @@
++	defer func() {
++		if err := ExpireAnasParentTokens(organization, username, sessionId); err != nil {
++			log.Printf("OIDC logout: parent token invalidation failed")
++		}
++	}()
+@@ -116 +123 @@
+-	// Deduplicate applications
++	// Deduplicate the issued OIDC session ids within each application.
+@@ -120,4 +127,16 @@
+-		if seen[appId] {
+-			continue
+-		}
+-		seen[appId] = true
++		if sessionId != "" && token.SessionId != "" && token.SessionId != sessionId {
++			continue
++		}
++		oidcSessionId, parseErr := anasTokenSessionId(token)
++		if parseErr != nil {
++			log.Printf("OIDC back-channel logout: invalid stored session for %s", appId)
++			continue
++		}
++		if oidcSessionId == "" {
++			oidcSessionId = sessionId
++		}
++		key := appId + "/" + oidcSessionId
++		if seen[key] {
++			continue
++		}
++		seen[key] = true
+@@ -144 +163 @@
+-		logoutToken, err := generateLogoutToken(application, user, sessionId, host)
++		logoutToken, err := generateLogoutToken(application, user, oidcSessionId, host)
+@@ -151,0 +171,37 @@
++}
++
++// Only decode server-owned token records; this is not an authentication parser.
++func anasTokenSubject(token *Token) string {
++	parts := strings.Split(token.AccessToken, ".")
++	if len(parts) != 3 {
++		return ""
++	}
++	body, err := base64.RawURLEncoding.DecodeString(parts[1])
++	if err != nil {
++		return ""
++	}
++	var claims struct {
++		Sub string `json:"sub"`
++	}
++	if json.Unmarshal(body, &claims) != nil {
++		return ""
++	}
++	return claims.Sub
++}
++
++func anasTokenSessionId(token *Token) (string, error) {
++	parts := strings.Split(token.AccessToken, ".")
++	if len(parts) != 3 {
++		return "", fmt.Errorf("invalid stored JWT")
++	}
++	payload, err := jwt.NewParser().DecodeSegment(parts[1])
++	if err != nil {
++		return "", err
++	}
++	var claims struct {
++		Sid string `json:"sid"`
++	}
++	if err := json.Unmarshal(payload, &claims); err != nil {
++		return "", err
++	}
++	return claims.Sid, nil
+--- a/object/user.go
++++ b/object/user.go
+@@ -807,0 +808,4 @@
++	if strings.HasPrefix(id, "anas/") {
++		anasDirectoryMutex.Lock()
++		defer anasDirectoryMutex.Unlock()
++	}
+@@ -919,0 +924,4 @@
++	if strings.HasPrefix(id, "anas/") {
++		anasDirectoryMutex.Lock()
++		defer anasDirectoryMutex.Unlock()
++	}
+--- /dev/null
++++ b/object/anas_revocation.go
+@@ -0,0 +1,238 @@
++package object
++
++import (
++	"fmt"
++	"io"
++	"net/http"
++	"net/url"
++	"slices"
++	"strings"
++	"sync"
++	"time"
++
++	"github.com/casdoor/casdoor/util"
++	"github.com/xorm-io/core"
++)
++
++var anasDirectoryMutex sync.Mutex
++
++// This snapshot contains identifiers, never bearer tokens or caller supplied URLs.
++type AnasRevocation struct {
++	Owner        string             `json:"owner"`
++	UserId       string             `json:"userId"`
++	Name         string             `json:"name"`
++	Subject      string             `json:"subject"`
++	All          bool               `json:"all"`
++	Applications []string           `json:"applications"`
++	Tokens       []string           `json:"tokens"`
++	Targets      []AnasLogoutTarget `json:"targets"`
++	Sessions     []*Session         `json:"sessions"`
++}
++
++type AnasLogoutTarget struct {
++	Application string `json:"application"`
++	Sid         string `json:"sid"`
++	Subject     string `json:"subject,omitempty"`
++}
++
++func checkAnasRevocation(r *AnasRevocation) (*User, error) {
++	if r.Owner != "anas" || r.UserId == "" {
++		return nil, fmt.Errorf("directory revocation requires an anas user id")
++	}
++	u, err := GetUserByUserId("anas", r.UserId)
++	if err != nil {
++		return nil, err
++	}
++	if u == nil {
++		return nil, fmt.Errorf("directory user no longer exists")
++	}
++	for _, name := range r.Applications {
++		a, err := GetApplication(util.GetId("admin", name))
++		if err != nil {
++			return nil, err
++		}
++		if a == nil || a.Organization != "anas" {
++			return nil, fmt.Errorf("invalid directory application")
++		}
++	}
++	for _, target := range r.Targets {
++		if !slices.Contains(r.Applications, target.Application) || target.Sid == "" {
++			return nil, fmt.Errorf("invalid directory logout target")
++		}
++	}
++	return u, nil
++}
++
++func PrepareAnasRevocation(r *AnasRevocation) (*AnasRevocation, error) {
++	u, err := checkAnasRevocation(r)
++	if err != nil {
++		return nil, err
++	}
++	r.Name = u.Name
++	r.Subject = u.ExternalId
++	r.Tokens = nil
++	r.Targets = nil
++	r.Sessions = nil
++	var tokens []*Token
++	if err := ormer.Engine.Where(map[string]interface{}{"organization": "anas", "user_id": u.Id}).Find(&tokens); err != nil {
++		return nil, err
++	}
++	seen := map[string]bool{}
++	for _, token := range tokens {
++		if token.Owner != "admin" || !slices.Contains(r.Applications, token.Application) {
++			continue
++		}
++		r.Tokens = append(r.Tokens, token.Name)
++		// Unredeemed codes never established an RP session. Explicit logout
++		// already retired grants; retain their deletion without another notice.
++		if !token.CodeIsUsed || token.ExpiresIn <= 0 {
++			continue
++		}
++		sid, err := anasTokenSessionId(token)
++		if err != nil {
++			return nil, err
++		}
++		if sid == "" {
++			return nil, fmt.Errorf("directory token has no OIDC session id")
++		}
++		key := token.Application + "/" + sid
++		if !seen[key] {
++			r.Targets = append(r.Targets, AnasLogoutTarget{Application: token.Application, Sid: sid, Subject: anasTokenSubject(token)})
++			seen[key] = true
++		}
++	}
++	sessions, err := GetUserSessions("anas", u.Name)
++	if err != nil {
++		return nil, err
++	}
++	for _, session := range sessions {
++		if r.All || slices.Contains(r.Applications, session.Application) {
++			r.Sessions = append(r.Sessions, session)
++		}
++	}
++	return r, nil
++}
++
++// Delete exact issued sessions, including refresh rotations of the same sid.
++// A later authorization has a different sid and must survive replay.
++func RevokeAnasSessions(r *AnasRevocation) error {
++	anasDirectoryMutex.Lock()
++	defer anasDirectoryMutex.Unlock()
++	u, err := checkAnasRevocation(r)
++	if err != nil {
++		return err
++	}
++	var tokens []*Token
++	if err := ormer.Engine.Where(map[string]interface{}{"organization": "anas", "user_id": u.Id}).Find(&tokens); err != nil {
++		return err
++	}
++	liveParents := map[string]bool{}
++	liveAppParents := map[string]bool{}
++	for _, token := range tokens {
++		sid, err := anasTokenSessionId(token)
++		if err != nil {
++			return err
++		}
++		captured := token.Owner == "admin" && slices.Contains(r.Tokens, token.Name)
++		for _, target := range r.Targets {
++			if token.Owner == "admin" && target.Application == token.Application && target.Sid == sid {
++				captured = true
++			}
++		}
++		if captured {
++			if _, err := DeleteToken(token); err != nil {
++				return err
++			}
++		} else if token.SessionId != "" {
++			liveParents[token.SessionId] = true
++			liveAppParents[token.Application+"/"+token.SessionId] = true
++		}
++	}
++	for _, saved := range r.Sessions {
++		if saved.Owner != "anas" || saved.Name != r.Name || (!r.All && !slices.Contains(r.Applications, saved.Application)) {
++			return fmt.Errorf("invalid captured directory session")
++		}
++		current, err := GetSingleSession(saved.GetId())
++		if err != nil {
++			return err
++		}
++		if current == nil {
++			continue
++		}
++		for _, parent := range saved.SessionId {
++			if r.All && !liveParents[parent] {
++				DeleteBeegoSession([]string{parent})
++			}
++			if !liveAppParents[saved.Application+"/"+parent] {
++				current.SessionId = util.DeleteVal(current.SessionId, parent)
++			}
++		}
++		if len(current.SessionId) == 0 {
++			if _, err := ormer.Engine.ID(core.PK{current.Owner, current.Name, current.Application}).Delete(&Session{}); err != nil {
++				return err
++			}
++		} else {
++			if _, err := ormer.Engine.ID(core.PK{current.Owner, current.Name, current.Application}).Cols("session_id").Update(current); err != nil {
++				return err
++			}
++		}
++	}
++	return nil
++}
++
++func DeliverAnasLogout(r *AnasRevocation, target AnasLogoutTarget, host string) error {
++	if _, err := checkAnasRevocation(r); err != nil {
++		return err
++	}
++	if !slices.Contains(r.Targets, target) {
++		return fmt.Errorf("logout target was not captured")
++	}
++	app, err := GetApplication(util.GetId("admin", target.Application))
++	if err != nil {
++		return err
++	}
++	if app == nil || app.BackchannelLogoutUri == "" {
++		return fmt.Errorf("application has no OIDC back-channel logout endpoint")
++	}
++	if strings.TrimSpace(r.Subject) == "" || r.Subject != strings.TrimSpace(r.Subject) {
++		return fmt.Errorf("captured directory subject is invalid")
++	}
++	// Each captured token keeps its own subject, including an anchor repair.
++	subject := target.Subject
++	if subject == "" {
++		subject = r.Subject
++	}
++	token, err := generateLogoutToken(app, &User{Owner: "anas", ExternalId: subject}, target.Sid, host)
++	if err != nil {
++		return err
++	}
++	body := url.Values{"logout_token": {token}}
++	request, err := http.NewRequest(http.MethodPost, app.BackchannelLogoutUri, strings.NewReader(body.Encode()))
++	if err != nil {
++		return fmt.Errorf("invalid registered logout endpoint")
++	}
++	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
++	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
++	response, err := client.Do(request)
++	if err != nil {
++		return fmt.Errorf("OIDC logout delivery failed")
++	}
++	defer response.Body.Close()
++	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
++	if response.StatusCode < 200 || response.StatusCode >= 300 {
++		return fmt.Errorf("OIDC logout endpoint returned HTTP %d", response.StatusCode)
++	}
++	return nil
++}
++
++// Explicit logout destroys a central parent and invalidates only its grants.
++// Directory application revocation uses captured OIDC sid instead.
++func ExpireAnasParentTokens(organization, username, parent string) error {
++	anasDirectoryMutex.Lock()
++	defer anasDirectoryMutex.Unlock()
++	if organization != "anas" || parent == "" {
++		return nil
++	}
++	_, err := ormer.Engine.Where(map[string]interface{}{"organization": organization, "user": username, "session_id": parent}).Cols("expires_in").Update(&Token{ExpiresIn: 0})
++	return err
++}
+--- /dev/null
++++ b/controllers/anas_revocation.go
+@@ -0,0 +1,60 @@
++package controllers
++
++import (
++	"crypto/subtle"
++	"encoding/json"
++	"github.com/casdoor/casdoor/object"
++)
++
++// Only the module's built-in service client can snapshot or revoke directory
++// sessions. Ordinary OAuth clients and interactive administrators are excluded.
++func (c *ApiController) anasDirectoryClient() bool {
++	id, secret, ok := c.Ctx.Request.BasicAuth()
++	if !ok || id == "" || secret == "" {
++		return false
++	}
++	app, err := object.GetApplication("admin/app-built-in")
++	return err == nil && app != nil && app.Organization == "built-in" &&
++		subtle.ConstantTimeCompare([]byte(id), []byte(app.ClientId)) == 1 &&
++		subtle.ConstantTimeCompare([]byte(secret), []byte(app.ClientSecret)) == 1
++}
++
++func (c *ApiController) AnasDirectoryRevocation() {
++	if !c.anasDirectoryClient() {
++		c.Ctx.Output.SetStatus(403)
++		c.ResponseError("directory service client required")
++		return
++	}
++	var request struct {
++		Owner    string                  `json:"owner"`
++		Action   string                  `json:"action"`
++		Snapshot object.AnasRevocation   `json:"snapshot"`
++		Target   object.AnasLogoutTarget `json:"target"`
++	}
++	if err := json.Unmarshal(c.Ctx.Input.RequestBody, &request); err != nil || request.Owner != "anas" {
++		c.ResponseError("invalid directory revocation request")
++		return
++	}
++	var err error
++	switch request.Action {
++	case "prepare":
++		var snapshot *object.AnasRevocation
++		snapshot, err = object.PrepareAnasRevocation(&request.Snapshot)
++		if err == nil {
++			c.ResponseOk(snapshot)
++			return
++		}
++	case "revoke":
++		err = object.RevokeAnasSessions(&request.Snapshot)
++	case "deliver":
++		err = object.DeliverAnasLogout(&request.Snapshot, request.Target, c.Ctx.Request.Host)
++	default:
++		c.ResponseError("invalid directory revocation action")
++		return
++	}
++	if err != nil {
++		c.ResponseError(err.Error())
++		return
++	}
++	c.ResponseOk(true)
++}
+--- a/routers/router.go
++++ b/routers/router.go
+@@ -245,0 +246 @@
++	web.Router("/api/anas-directory-revocation", &controllers.ApiController{}, "post:AnasDirectoryRevocation")

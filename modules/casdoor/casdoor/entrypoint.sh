@@ -1,5 +1,13 @@
 #!/bin/sh
 set -eu
+umask 077
+
+# Deployment configuration is immutable and readable only by root. Keep that
+# bind read-only, and give the UID-1000 process its own private runtime copy.
+mkdir -p /conf
+cp /opt/anas/conf/app.conf /conf/app.conf
+chown 1000:1000 /conf/app.conf
+chmod 0600 /conf/app.conf
 
 # A container owns its process namespace, so Casdoor must not search for and
 # kill a same-port "old instance". In the bootstrap child that lookup resolves

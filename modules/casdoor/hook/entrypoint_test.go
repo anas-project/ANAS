@@ -12,6 +12,22 @@ func TestEntrypointBootstrapsBeforeStartingLDAPSynchronizer(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string(b)
+	stageConfigAt := strings.Index(script, "cp /opt/anas/conf/app.conf /conf/app.conf")
+	if stageConfigAt < 0 || stageConfigAt >= strings.Index(script, "/opt/anas/bin/casdoor-helper render-init") {
+		t.Fatal("immutable app configuration must be staged before bootstrap drops privileges")
+	}
+	for _, required := range []string{"umask 077", "chown 1000:1000 /conf/app.conf", "chmod 0600 /conf/app.conf"} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("private runtime configuration is missing %q", required)
+		}
+	}
+	compose, err := os.ReadFile("../docker-compose.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(compose), "./conf/app.conf:/opt/anas/conf/app.conf:ro") || strings.Contains(string(compose), "./conf/app.conf:/conf/app.conf:ro") {
+		t.Fatal("the UID-1000 process must not read the root-only immutable bind directly")
+	}
 	removeInit := "rm -f /tmp/init_data.json"
 	renderInit := "/opt/anas/bin/casdoor-helper render-init"
 	bootstrap := `/opt/anas/bin/casdoor-helper exec-as 1000 1000 "$@" &`

@@ -20,28 +20,31 @@ import (
 )
 
 type directoryWatchSettings struct {
-	eventFile        string
-	cursorFile       string
-	healthFile       string
-	endpoint         string
-	ldapID           string
-	clientID         string
-	clientSecret     string
-	ldapHost         string
-	ldapPort         string
-	ldapBindDN       string
-	ldapBindPassword string
-	ldapUserBaseDN   string
-	ldapGroupBaseDN  string
-	ldapUserFilter   string
-	ldapGroupFilter  string
-	identityAnchor   string
-	managedGroups    []string
-	operations       map[string]bool
-	attributes       map[string]bool
-	debounce         time.Duration
-	minimumInterval  time.Duration
-	pollInterval     time.Duration
+	eventFile         string
+	cursorFile        string
+	healthFile        string
+	endpoint          string
+	ldapID            string
+	clientID          string
+	clientSecret      string
+	ldapHost          string
+	ldapPort          string
+	ldapBindDN        string
+	ldapBindPassword  string
+	ldapUserBaseDN    string
+	ldapGroupBaseDN   string
+	ldapUserFilter    string
+	ldapGroupFilter   string
+	identityAnchor    string
+	managedGroups     []string
+	applications      []directoryApplication
+	pendingFile       string
+	reconcileInterval time.Duration
+	operations        map[string]bool
+	attributes        map[string]bool
+	debounce          time.Duration
+	minimumInterval   time.Duration
+	pollInterval      time.Duration
 }
 
 func directoryWatchSettingsFromEnv() (directoryWatchSettings, error) {
@@ -68,30 +71,41 @@ func directoryWatchSettingsFromEnv() (directoryWatchSettings, error) {
 	if err != nil {
 		return directoryWatchSettings{}, err
 	}
+	reconcileInterval, err := seconds("CASDOOR_DIRWATCH_RECONCILE_SECONDS", "300")
+	if err != nil {
+		return directoryWatchSettings{}, err
+	}
+	var applications []directoryApplication
+	if err := json.Unmarshal([]byte(defaultString(os.Getenv("CASDOOR_DIRWATCH_APPLICATIONS"), "[]")), &applications); err != nil {
+		return directoryWatchSettings{}, fmt.Errorf("invalid directory application policies: %w", err)
+	}
 
 	settings := directoryWatchSettings{
-		eventFile:        defaultString(os.Getenv("CASDOOR_DIRWATCH_EVENT_FILE"), "/var/lib/anas-directory-events/events.jsonl"),
-		cursorFile:       defaultString(os.Getenv("CASDOOR_DIRWATCH_CURSOR_FILE"), "/data/anas-dirwatch/cursor.json"),
-		healthFile:       defaultString(os.Getenv("CASDOOR_DIRWATCH_HEALTH_FILE"), "/data/anas-dirwatch/health.json"),
-		endpoint:         strings.TrimRight(strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_ENDPOINT")), "/"),
-		ldapID:           strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_ID")),
-		clientID:         os.Getenv("CASDOOR_DIRWATCH_CLIENT_ID"),
-		clientSecret:     os.Getenv("CASDOOR_DIRWATCH_CLIENT_SECRET"),
-		ldapHost:         strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_HOST")),
-		ldapPort:         strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_PORT")),
-		ldapBindDN:       strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_BIND_DN")),
-		ldapBindPassword: os.Getenv("CASDOOR_DIRWATCH_LDAP_BIND_PASSWORD"),
-		ldapUserBaseDN:   strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_USER_BASE_DN")),
-		ldapGroupBaseDN:  strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_GROUP_BASE_DN")),
-		ldapUserFilter:   strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_USER_FILTER")),
-		ldapGroupFilter:  defaultString(os.Getenv("CASDOOR_DIRWATCH_LDAP_GROUP_FILTER"), "(objectClass=group)"),
-		identityAnchor:   strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_IDENTITY_ANCHOR_ATTRIBUTE")),
-		managedGroups:    csvList(os.Getenv("CASDOOR_DIRWATCH_MANAGED_GROUPS")),
-		operations:       csvSet(defaultString(os.Getenv("CASDOOR_DIRWATCH_OPERATIONS"), "Add,Modify,Delete"), false),
-		attributes:       csvSet(os.Getenv("CASDOOR_DIRWATCH_ATTRIBUTES"), true),
-		debounce:         debounce,
-		minimumInterval:  minimumInterval,
-		pollInterval:     pollInterval,
+		eventFile:         defaultString(os.Getenv("CASDOOR_DIRWATCH_EVENT_FILE"), "/var/lib/anas-directory-events/events.jsonl"),
+		cursorFile:        defaultString(os.Getenv("CASDOOR_DIRWATCH_CURSOR_FILE"), "/data/anas-dirwatch/cursor.json"),
+		healthFile:        defaultString(os.Getenv("CASDOOR_DIRWATCH_HEALTH_FILE"), "/data/anas-dirwatch/health.json"),
+		endpoint:          strings.TrimRight(strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_ENDPOINT")), "/"),
+		ldapID:            strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_ID")),
+		clientID:          os.Getenv("CASDOOR_DIRWATCH_CLIENT_ID"),
+		clientSecret:      os.Getenv("CASDOOR_DIRWATCH_CLIENT_SECRET"),
+		ldapHost:          strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_HOST")),
+		ldapPort:          strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_PORT")),
+		ldapBindDN:        strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_BIND_DN")),
+		ldapBindPassword:  os.Getenv("CASDOOR_DIRWATCH_LDAP_BIND_PASSWORD"),
+		ldapUserBaseDN:    strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_USER_BASE_DN")),
+		ldapGroupBaseDN:   strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_GROUP_BASE_DN")),
+		ldapUserFilter:    strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_LDAP_USER_FILTER")),
+		ldapGroupFilter:   defaultString(os.Getenv("CASDOOR_DIRWATCH_LDAP_GROUP_FILTER"), "(objectClass=group)"),
+		identityAnchor:    strings.TrimSpace(os.Getenv("CASDOOR_DIRWATCH_IDENTITY_ANCHOR_ATTRIBUTE")),
+		managedGroups:     csvList(os.Getenv("CASDOOR_DIRWATCH_MANAGED_GROUPS")),
+		applications:      applications,
+		pendingFile:       defaultString(os.Getenv("CASDOOR_DIRWATCH_PENDING_FILE"), "/data/anas-dirwatch/pending-logouts.json"),
+		reconcileInterval: reconcileInterval,
+		operations:        csvSet(defaultString(os.Getenv("CASDOOR_DIRWATCH_OPERATIONS"), "Add,Modify,Delete"), false),
+		attributes:        csvSet(os.Getenv("CASDOOR_DIRWATCH_ATTRIBUTES"), true),
+		debounce:          debounce,
+		minimumInterval:   minimumInterval,
+		pollInterval:      pollInterval,
 	}
 	for key, value := range map[string]string{
 		"CASDOOR_DIRWATCH_ENDPOINT":                  settings.endpoint,
@@ -275,9 +289,12 @@ type directorySyncer interface {
 }
 
 type casdoorLDAPSyncer struct {
-	settings    directoryWatchSettings
-	client      *http.Client
-	memberships directoryMembershipResolver
+	settings         directoryWatchSettings
+	client           *http.Client
+	memberships      directoryMembershipResolver
+	pendingLogouts   []pendingDirectoryLogout
+	pendingLoaded    bool
+	identityConflict string
 }
 
 type casdoorAPIResponse struct {
@@ -389,6 +406,21 @@ func (syncer *casdoorLDAPSyncer) sync(events []directoryEvent) error {
 	if err != nil {
 		return err
 	}
+	users, syncer.identityConflict = filterDirectoryIdentityConflicts(users, managed, syncer.settings.identityAnchor)
+	directory.Users, err = json.Marshal(users)
+	if err != nil {
+		return err
+	}
+	var requests []directorySessionSnapshot
+	if len(syncer.settings.applications) > 0 {
+		requests, err = planDirectoryRevocations(users, managed, groupsByAnchor, syncer.settings)
+		if err != nil {
+			return err
+		}
+		if err := syncer.prepareLogouts(requests); err != nil {
+			return err
+		}
+	}
 	preSync, err := planPreSyncUserPatches(events, users, managed, syncer.settings)
 	if err != nil {
 		return err
@@ -420,7 +452,15 @@ func (syncer *casdoorLDAPSyncer) sync(events []directoryEvent) error {
 	if err != nil {
 		return err
 	}
-	return syncer.applyUserPatches(postSync)
+	if err := syncer.applyUserPatches(postSync); err != nil {
+		return err
+	}
+	// Capture authorizations issued before the admission update completed.
+	// Persist this second snapshot before deleting any provider grant.
+	if err := syncer.prepareLogouts(requests); err != nil {
+		return err
+	}
+	return syncer.revokePreparedLogouts()
 }
 
 func (syncer *casdoorLDAPSyncer) getManagedUsers() ([]casdoorManagedUser, error) {
@@ -556,6 +596,22 @@ func planPreSyncUserPatches(events []directoryEvent, directory []casdoorDirector
 			break
 		}
 	}
+	// Absence from the enabled, anchored LDAP result always removes admission.
+	// Mark deletion only when a Delete event has actually been observed below.
+	for _, user := range managed {
+		if slices.ContainsFunc(patches, func(p casdoorUserPatch) bool { return p.target == "anas/"+user.Name }) {
+			continue
+		}
+		if _, exists := directoryByAnchor[managedUserAnchor(user, settings.identityAnchor)]; !exists {
+			patch := newUserPatch(settings, user)
+			patch.setBool("isForbidden", user.IsForbidden, true)
+			patch.setGroups(user.Groups, []string{})
+			if patch.changed() {
+				patches = append(patches, patch.patch)
+			}
+		}
+	}
+
 	return patches, nil
 }
 
@@ -572,12 +628,14 @@ func planPostSyncUserPatches(events []directoryEvent, directory []casdoorDirecto
 	for _, user := range managed {
 		managedByName[strings.ToLower(user.Name)] = user
 	}
-	changedNames := directoryEventNames(events)
 	patches := []casdoorUserPatch{}
 	for anchor, directoryUser := range directoryByAnchor {
 		managedUser, exists := managedByAnchor[anchor]
 		if !exists {
 			managedUser, exists = managedByName[strings.ToLower(directoryUsername(directoryUser))]
+			if exists && managedUserAnchor(managedUser, settings.identityAnchor) != "" && managedUserAnchor(managedUser, settings.identityAnchor) != anchor {
+				return nil, fmt.Errorf("refusing directory identity reuse for %s", managedUser.Name)
+			}
 		}
 		if !exists {
 			return nil, fmt.Errorf("Casdoor did not create directory user %s", directoryUsername(directoryUser))
@@ -590,14 +648,12 @@ func planPostSyncUserPatches(events []directoryEvent, directory []casdoorDirecto
 		patch.setBool("isDeleted", managedUser.IsDeleted, false)
 		patch.setProperties(managedUser.Properties, directoryUser.Attributes)
 		patch.setGroups(managedUser.Groups, groupsByAnchor[anchor])
-		if changedNames[strings.ToLower(directoryUser.UID)] || changedNames[strings.ToLower(directoryUser.CN)] {
-			displayName := directoryUser.DisplayName
-			if displayName == "" {
-				displayName = directoryUser.CN
-			}
-			patch.setString("displayName", managedUser.DisplayName, displayName)
-			patch.setString("email", managedUser.Email, directoryUser.Email)
+		displayName := directoryUser.DisplayName
+		if displayName == "" {
+			displayName = directoryUser.CN
 		}
+		patch.setString("displayName", managedUser.DisplayName, displayName)
+		patch.setString("email", managedUser.Email, directoryUser.Email)
 		if patch.changed() {
 			patches = append(patches, patch.patch)
 		}
@@ -694,12 +750,14 @@ func directoryEventNames(events []directoryEvent) map[string]bool {
 }
 
 type directoryWatchHealth struct {
-	Ready         bool   `json:"ready"`
-	StartedAt     int64  `json:"started_at"`
-	Cursor        int64  `json:"cursor"`
-	LastTriggerAt int64  `json:"last_trigger_at"`
-	TriggerCount  int64  `json:"trigger_count"`
-	LastError     string `json:"last_error"`
+	Ready           bool   `json:"ready"`
+	StartedAt       int64  `json:"started_at"`
+	Cursor          int64  `json:"cursor"`
+	LastTriggerAt   int64  `json:"last_trigger_at"`
+	TriggerCount    int64  `json:"trigger_count"`
+	LastError       string `json:"last_error"`
+	PendingLogouts  int    `json:"pending_logouts"`
+	OldestPendingAt int64  `json:"oldest_pending_at"`
 }
 
 type directoryWatcher struct {
@@ -730,6 +788,11 @@ func (watcher *directoryWatcher) poll(now time.Time) (bool, error) {
 	events, err := watcher.reader.events()
 	if err != nil {
 		return false, err
+	}
+	// Startup and bounded periodic reconciliation repair cursor loss and journal
+	// retention gaps without depending on the event reader's retained window.
+	if watcher.settings.reconcileInterval > 0 && (watcher.lastTriggered.IsZero() || now.Sub(watcher.lastTriggered) >= watcher.settings.reconcileInterval) && watcher.pendingSince.IsZero() {
+		watcher.pendingSince = now.Add(-watcher.settings.debounce)
 	}
 	matched := false
 	for _, event := range events {
@@ -819,7 +882,15 @@ func writeJSONAtomic(path string, value any) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	return os.Rename(temporaryName, path)
+	if err := os.Rename(temporaryName, path); err != nil {
+		return err
+	}
+	directory, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 func runDirectoryWatch(args []string) error {
@@ -871,6 +942,21 @@ func runDirectoryWatch(args []string) error {
 		} else {
 			watcher.health.Ready = true
 			watcher.health.LastError = ""
+		}
+		if deliveryErr := syncer.deliverPendingLogouts(time.Now()); deliveryErr != nil {
+			watcher.health.Ready = false
+			watcher.health.LastError = deliveryErr.Error()
+		}
+		count, oldest, problem := syncer.logoutHealth(time.Now())
+		watcher.health.PendingLogouts = count
+		watcher.health.OldestPendingAt = oldest
+		if syncer.identityConflict != "" {
+			watcher.health.Ready = false
+			watcher.health.LastError = syncer.identityConflict
+		}
+		if problem != "" {
+			watcher.health.Ready = false
+			watcher.health.LastError = problem
 		}
 		if err := writeJSONAtomic(settings.healthFile, watcher.health); err != nil {
 			log.Printf("cannot write directory watcher health: %v", err)

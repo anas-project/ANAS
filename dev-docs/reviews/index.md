@@ -4,6 +4,7 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [Casdoor 发布就绪评估](2026-10-03-casdoor-release-readiness.md) | 2026-10-03—04，当前工作树 Casdoor `3.143.0-r10` | 身份锚点、定向撤权与持久重试已接入；本地验证通过；真实 Nextcloud 改名与撤权接收、多 client 和完整构建仍待闭环，保持 developing |
 | [Incus 租约网络、HTTP 发布与端口绑定实施记录](2026-10-03-incus-lease-network-implementation.md) | 2026-10-03，`c7891162` 加当前未提交工作树 | M10a/M10b/M11/M11b/M11c、HOSTACT M5 与运行问题记录 CLI 的实现与本机门禁；撤销停止实例等五项自行决定；实机 e2e 全部未运行 |
 | [Workspace 临时存储设计评审](2026-09-30-workspace-temp-storage-design-review.md) | 2026-09-30，`9a6921a1` 加当前未提交工作树 | 同日讨论后收窄为 Module 声明的临时目录；保存归应用负责，应用全面就绪不作为新增切换门槛，回滚复用配置切换；Docker 程序与连接固定方案待定，未改实现 |
 | [租约网络实机探测](2026-09-30-incus-lease-network-probe.md) | 2026-09-30，`7ad1876a` 加累积工作树；一次性 Debian 13 VM、Incus 7.0.1、docker.io 26 与 Docker CE 29 | M10a/M11b/M11c 待验证项与控制连接启动顺序：ACL 与 address set、默认拒绝入站、端口隔离、槽位固定地址、Docker 式端口表与占位；静态规则改窄规则、UDP 占位改常驻持有；据此 Incus 改为直接监听控制网关 |

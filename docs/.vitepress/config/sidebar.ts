@@ -148,6 +148,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
     {
       text: '功能与集成可行性',
       items: [
+        { text: 'Casdoor 目录主体标识符', link: '/research/casdoor-directory-subject' },
         { text: 'LLNG Passkey 与 Samba 边界', link: '/research/llng-passkey-webauthn-samba-sharing' },
         { text: 'IAM 登出与会话同步', link: '/research/iam-logout-application-session-sync' },
         { text: 'Super Productivity Nextcloud SSO', link: '/research/super-productivity-nextcloud-sso-sync-research' },
@@ -267,7 +268,8 @@ export const enSidebar: DefaultTheme.Sidebar = {
     {
       text: 'Research',
       items: [
-        { text: 'Overview', link: '/en/research/' }
+        { text: 'Overview', link: '/en/research/' },
+        { text: 'Casdoor directory subject feasibility (Chinese)', link: '/research/casdoor-directory-subject' },
       ]
     }
   ],

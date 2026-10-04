@@ -30,9 +30,9 @@ synchronize LDAP users but exposes no interface that binds an OIDC identity to a
 immutable id, so dual attachment cannot be made safe. The missing side and its fallback are in the
 [Forgejo Module design](/architecture/forgejo-module-design) §2.2, and the upgrade re-check trigger in
 §2.3 of the same document. `vikunja` uses OIDC only; the M1 inventory confirmed that the pinned `2.4.0`
-has no LDAP user synchronization and no configurable identity claim. Admission-loss revocation has no
-consumer acceptance yet: the `casdoor` exact-`sid` E2E is triggered by an administrator explicitly
-deleting a session, not by a directory event.
+has no LDAP user synchronization and no configurable identity claim. Casdoor r10 integrates
+directory-driven OIDC revocation and durable retry. Source/helper tests pass and real session acceptance
+is in progress; the earlier administrator-delete E2E does not establish directory-driven acceptance.
 
 **The “Matching key” column** records the key each Module **actually uses** when it persists a directory
 user, as required by `DIRKEY-R-011` of the
@@ -41,8 +41,8 @@ It is a summary, not the source of the conclusion: the per-row evidence level (`
 the consequences of a rename or a recycled identifier, and the fallback action for every gap are all in
 each Module README's *Directory attribute changes*. IAM Providers carry two entries — “consuming” (how it
 identifies people in the directory) and “issuing” (what subject identifier it hands Consumers) — because
-the two currently disagree: the issuing side does not yet satisfy `DIRKEY-R-008`, and remediation belongs
-to M2 of the
+Casdoor r10 now uses the anchor on both sides, while the other providers still need remediation and
+verification. Acceptance belongs to M2 of the
 [directory identity key plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md).
 
 | Module | OIDC login | Current authentication path | Status | Matching key |
@@ -56,7 +56,7 @@ to M2 of the
 | `vikunja` | Yes | IAM/OIDC JIT account creation; `APP_vikunja`/`APP_all` access gate; local authentication and registration disabled | Developing: manifest, provider registration, secrets, hook, and application configuration are implemented; real browser/database E2E remains pending | OIDC `(issuer, sub)`; not configurable, stability follows the Provider |
 | `lam` | No | LDAPS directory-management login | Not an IAM consumer | None; searches by `sAMAccountName` and binds the DN on each login |
 | `authentik` | N/A | IAM provider with fixed `akadmin` break-glass account | Provides OIDC/SAML | Consuming: identity anchor (`object_uniqueness_field`). Issuing: internal user UUID, **not the anchor** |
-| `casdoor` | N/A | Developing IAM provider with default-template `admin_casdoor` break-glass account | Real E2E covers OIDC/SAML login, Samba reconciliation, permanent anchors, `ALLOW_GROUPS`, and exact-`sid` OIDC revocation; the pinned version publishes no SAML SLO and M5 release acceptance remains incomplete | Consuming: identity anchor (`externalId`). Issuing: OIDC `sub` is the immutable User ID; **the SAML `NameID` is the username and changes on rename** |
+| `casdoor` | N/A | Developing IAM provider with default-template `admin_casdoor` break-glass account | Real E2E covers OIDC/SAML login, Samba reconciliation, permanent anchors, `ALLOW_GROUPS`, and exact-`sid` OIDC revocation; the pinned version publishes no SAML SLO and M5 release acceptance remains incomplete | Consuming: identity anchor (`externalId`). Revision r10 issues the anchor as OIDC sub, UserInfo/Logout Token subject and SAML NameID; source tests pass and deployment acceptance is in progress |
 | `llng` | N/A | IAM provider | Provides OIDC/SAML | Consuming: no replica. Issuing: `whatToTrace` = the lowercased `sAMAccountName`, so **both `sub` and `NameID` are labels** |
 | `ddns_go` | No | ANAS-managed local emergency account | No OIDC | N/A (local account) |
 | `traefik` | No | ANAS-managed local BasicAuth emergency account | No OIDC | N/A (local account) |

@@ -35,8 +35,9 @@ modules:
     transitions:
       - {id: authentik-r8-r14, from: 2026.5.6-r8, to: 2026.5.6-r14, suite: modules-authentik}
   - name: casdoor
-    current: 3.143.0-r8
-    baseline: {id: casdoor-first-release-r8, version: 3.143.0-r8, reason: no_prior_release}
+    current: 3.143.0-r10
+    transitions:
+      - {id: casdoor-r8-r10, from: 3.143.0-r8, to: 3.143.0-r10, suite: modules-casdoor}
   - name: collabora
     current: 26.4.2-r5
     transitions:
@@ -156,6 +157,15 @@ suites:
     verify: test-env/scripts/server-upgrade-verify-authentik.sh
     report: test-env/scripts/server-upgrade-write-report.sh
     modules: [authentik, eturnal, netbird]
+  - id: modules-casdoor
+    kind: module
+    runner: test-env/scripts/server-module-upgrade-e2e.sh
+    config: test-env/upgrades/configs/modules-casdoor.yml
+    targets: test-env/upgrades/configs/modules-casdoor.targets
+    seed: test-env/scripts/server-upgrade-seed-markers.sh
+    verify: test-env/scripts/server-upgrade-verify-casdoor.sh
+    report: test-env/scripts/server-upgrade-write-report.sh
+    modules: [casdoor]
   - id: modules-ddns
     kind: module
     runner: test-env/scripts/server-module-upgrade-e2e.sh

@@ -28,6 +28,7 @@
 
 | 文档 | 范围 | 创建 | 证据截至 |
 | --- | --- | --- | --- |
+| [Casdoor 目录主体标识符可行性](./casdoor-directory-subject.md) | 固定源码配置边界、统一锚点候选补丁与尚未完成的 Consumer/E2E 条件 | 2026-10-03 | 2026-10-03 |
 | [LLNG Passkey/WebAuthn 与 Samba 共享边界](./llng-passkey-webauthn-samba-sharing.md) | LLNG 分阶段启用、凭据存储与多 IAM 共享边界 | 2026-08-21 | 2026-08-21 |
 | [IAM 登出与应用会话同步](./iam-logout-application-session-sync.md) | OIDC/SAML 全局登出与应用会话撤销 | 2026-08-20 | 2026-08-20 |
 | [Super Productivity 与 Nextcloud 零配置同步](./super-productivity-nextcloud-sso-sync-research.md) | OIDC/SAML、Login Flow v2 与 BFF 方案 | 2026-08-20 | 2026-08-20 |

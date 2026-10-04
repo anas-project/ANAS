@@ -3,7 +3,7 @@
 This document records the protocol contract, security boundaries, and verification points for maintainers.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `3.143.0-r8` / `anas.module/v1`.
+> Status: current implementation; based on `3.143.0-r10` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose topology
@@ -11,8 +11,8 @@ This document records the protocol contract, security boundaries, and verificati
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r8` | `traefik, db, casdoor` | 5 |
-| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r8` | `casdoor` | 3 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r10` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r10` | `casdoor` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -26,9 +26,11 @@ This document records the protocol contract, security boundaries, and verificati
 
 ## Data and startup flow
 
+Revision r9 mounts frozen `app.conf`, owned by root with mode `0400`, read-only at `/opt/anas/conf/app.conf`. The root entrypoint uses `umask 077` to copy it into the container's writable `/conf/app.conf`, sets ownership to `1000:1000` and mode `0600`, and only then starts bootstrap and the long-running process. Copy or permission failures abort startup. Source artifacts and historical deployments keep their original content and permissions. The runtime copy is regenerated on every container start.
+
 The hook renders `app.conf` with an explicit PostgreSQL `dbname` and an init-data template. At startup the helper reads the projected recovery password and replaces it with bcrypt in `/tmp/init_data.json`. Because upstream initializes LDAP auto-synchronizers before importing init data, the entrypoint briefly starts Casdoor to commit tables and managed objects, then starts the long-running process as UID/GID 1000. The entrypoint removes the meaningless in-container `lsof` lookup and stale init file so the bootstrap cannot kill itself or fail on the prior UID-1000 file. After the long-running HTTP service is available, it projects and verifies the recovery password again and only then publishes the readiness marker; the normal health check requires that marker, making a direct Docker restart self-contained. Init data explicitly consents to the privileged built-in recovery administrator and creates a non-signup internal directory Application for the `anas` organization. PostgreSQL is the only supported database interface.
 
-Revision r8 builds Casdoor from the `3.143.0` source commit `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` after verifying archive SHA-256 `365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460`. Four controlled patches add the synchronized SAML `displayName/externalId` fields; bind OIDC ID Tokens to the Beego session `sid` and notify on user/admin session deletion with a two-minute Logout Token; log credential-free delivery failures; and use XORM field predicates so PostgreSQL does not parse an unquoted `user` column as the current database user. The final runtime remains the pinned official `3.143.0`; proxies do not change its source identity. Go build stages run on `BUILDPLATFORM` and cross-compile with BuildKit `TARGETOS/TARGETARCH`, while the final target stage executes no `RUN`; native amd64 deployment and fixed-source arm64 build/unprivileged target execution both passed.
+Revision r10 builds Casdoor from the `3.143.0` source commit `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` after verifying archive SHA-256 `365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460`. Six controlled patches add the synchronized SAML `displayName/externalId` fields; issue independent OIDC `sid` values while recording the parent Beego session and notify on user/admin session deletion with a two-minute Logout Token; log credential-free delivery failures; and use XORM field predicates so PostgreSQL does not parse an unquoted `user` column as the current database user. The final runtime remains the pinned official `3.143.0`; proxies do not change its source identity. Go build stages run on `BUILDPLATFORM` and cross-compile with BuildKit `TARGETOS/TARGETARCH`, while the final target stage executes no `RUN`; historical r8 amd64 deployment and arm64 build/unprivileged probes passed; r10 deployment and complete dual-architecture builds require separate acceptance.
 
 ## Managed credential lifecycle
 
@@ -48,15 +50,15 @@ restore the previous deployment, database value, and Store generation.
 
 ## LDAP, directory events, and authority boundary
 
-The LDAP connection uses trusted LDAPS and a filter that excludes disabled accounts and requires the Samba anchor attribute. `anas_casdoor_dirwatch` follows `ANAS_DIRECTORY_EVENTS_DIR` read-only with its own durable cursor, filtering and debouncing changes before it calls local Casdoor APIs with this module's managed Application credential. Each batch reads directory and shadow users, correlates renames by permanent anchor, runs the upstream LDAP import, and then reconciles `externalId/name/ldap/properties/groups/isForbidden/isDeleted`. `externalId` stores the permanent Samba anchor while Casdoor's immutable `id` is left untouched. Directory properties are merged without deleting manual properties; `displayName,email` remain limited to users named by the current event batch, and passwords or manual permissions are untouched.
+The LDAP connection uses trusted LDAPS and a filter that excludes disabled accounts and requires the Samba anchor attribute. `anas_casdoor_dirwatch` follows `ANAS_DIRECTORY_EVENTS_DIR` read-only with its own durable cursor, filtering and debouncing changes before it calls local Casdoor APIs with this module's managed Application credential. Each batch reads directory and shadow users, correlates renames by permanent anchor, runs the upstream LDAP import, and then reconciles `externalId/name/ldap/properties/groups/isForbidden/isDeleted`. `externalId` stores the permanent Samba anchor while Casdoor's immutable `id` is left untouched. Directory properties are merged without deleting manual properties; `displayName,email` refresh for every currently synchronized user, and passwords or manual permissions are untouched.
 
 Because upstream preserves existing groups, the subscriber queries the declared `ALLOW_GROUPS` with the same restricted bind over trusted LDAPS. It uses AD matching rule `1.2.840.113556.1.4.1941` for direct and recursive membership, then authoritatively replaces managed user groups. Missing groups, duplicate or missing anchors, or any failed Casdoor patch fail the batch and preserve the cursor for retry. Casdoor's default five-minute automatic sync remains enabled, so the subscriber is still a low-latency accelerator.
 
-The integration imports users and verifies passwords remotely but does not enable password writeback. Delete events forbid and soft-delete the shadow record, deactivation events forbid it, and both clear its groups; re-enable or a rename with the same anchor reuses and restores the record. This reconciliation has passed real directory and OIDC/SAML E2E.
+The integration imports users and verifies passwords remotely but does not enable password writeback. Delete events forbid and soft-delete the shadow record, deactivation events forbid it, and both clear its groups; re-enable or a rename with the same anchor reuses and restores the record. Historical directory and OIDC/SAML E2E passed; r10 subjects and revocation require separate acceptance.
 
 ## IAM boundaries
 
-Pinned `3.143.0` publishes OIDC issuer/discovery and registers per-consumer clients with a one-hour access-token and 30-day refresh-token lifetime. ID and Logout Tokens share the exact session `sid`; the RS256 Logout Token carries `iss/aud/sub/iat/exp/jti/events`, and removing the declaration or switching to SAML clears the old back-channel URI. SAML publishes metadata, SSO, and the signing certificate without inventing SLO. Each `ALLOW_GROUPS` entry becomes a same-name Group/Role in the `anas` organization and an Approved Application Permission for the consumer, which Casdoor checks before issuing credentials. OIDC uses `JWT-Custom`/RS256: the registered permanent-anchor claim comes from `ExternalId`, group claims use Role names, and the immutable Casdoor User ID remains the stable `sub`. SAML maps the registered display name and anchor to `$user.displayName` and `$user.externalId`, and groups to `$user.roles`; unknown sources are omitted. SAML NameID remains the username, so consumers must use the explicit anchor attribute for stable linking.
+Pinned `3.143.0` publishes OIDC issuer/discovery and registers per-consumer clients with a one-hour access-token and 30-day refresh-token lifetime. ID and Logout Tokens share the exact session `sid`; the RS256 Logout Token carries `iss/aud/sub/iat/exp/jti/events`, and removing the declaration or switching to SAML clears the old back-channel URI. SAML publishes metadata, SSO, and the signing certificate without inventing SLO. Each `ALLOW_GROUPS` entry becomes a same-name Group/Role in the `anas` organization and an Approved Application Permission for the consumer, which Casdoor checks before issuing credentials. OIDC uses `JWT-Custom`/RS256: the registered permanent-anchor claim comes from `ExternalId`, group claims use Role names, and OIDC sub, UserInfo and Logout Token use ExternalId. SAML maps the registered display name and anchor to `$user.displayName` and `$user.externalId`, and groups to `$user.roles`; unknown sources are omitted. SAML NameID uses ExternalId, so consumers must use the explicit anchor attribute for stable linking.
 
 ### Directory attribute changes — implementation
 
@@ -76,9 +78,8 @@ AD) and a Provider (to the applications).
   directory and the Casdoor shadow users, **correlates renamed users by the permanent anchor**, then
   runs the upstream LDAP import, and finally converges
   `externalId/name/ldap/properties/groups/isForbidden/isDeleted`.
-- **Refreshed at each sync batch**: `displayName` and `email` only for the users involved in that
-  batch; `properties` is merged without deleting manually set attributes; passwords and manually
-  granted permissions are never overwritten. `externalId` and `id` are not refreshed.
+- **Refreshed at each sync batch**: `displayName` and `email` for every currently synchronized user; `properties` is merged without deleting manually set attributes; passwords and manually
+  granted permissions are never overwritten. `id` remains unchanged; `externalId` is reconciled against the permanent anchor.
 - **Which interface performs revocation**: dirwatch calls the **local Casdoor API** with the Module's
   own managed Application credential to set `isForbidden`/`isDeleted` and clear groups. It follows
   `ANAS_DIRECTORY_EVENTS_DIR` read-only, resuming, filtering, and debouncing on its own cursor; the
@@ -89,22 +90,38 @@ AD) and a Provider (to the applications).
 
 **Provider side (Casdoor → the applications)**
 
-- **OIDC**: `JWT-Custom`/RS256. The registered anchor claim is sourced from the `ExistingField`
-  `ExternalId` (`oidcTokenAttributes` in `hook/iam.go`) and groups are emitted from Role names;
-  **`sub` is the immutable Casdoor User ID**, stable across a rename but not the anchor.
-- **SAML**: the anchor maps to `$user.externalId` and groups map to `$user.roles` (`samlAttributes` in
-  `hook/iam.go`); unknown sources are omitted rather than impersonating the permanent anchor. **The
-  NameID is still the username**, so a Consumer's stable correlation must use the explicit anchor
-  attribute.
-- **The `DIRKEY-R-008` gap and its technical obstacle**: whether the subject identifier (the OIDC
-  `sub` and the SAML `NameID`) can be configured to `ExternalId` **must be settled by a probe against
-  the pinned `3.143.0`**, not from upstream documentation. The SAML side deserves particular care: one
-  of the four controlled patches already extends the SAML `displayName/externalId` template, which
-  suggests changing the NameID may likewise need a patch rather than configuration. This is the other
-  half of the first blocking item of M2 in the
-  [directory identity key plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md).
-  Per `DIRKEY-R-012`, until it is resolved this Provider declares that Consumers receive a stable
-  internal id as the OIDC subject identifier and an **unstable label** as the SAML subject identifier.
+- **OIDC**: all four JWT formats, UserInfo and Logout Tokens take `sub` from `ExternalId`, exactly
+  matching the directory anchor. Custom subject overrides cannot bypass this check. Recovery OIDC
+  administrators retain their internal ID.
+- **SAML**: NameID in both versions uses `ExternalId`; 2.0 uses persistent format. Explicit anchor
+  attributes remain available.
+- **Build**: the Dockerfile applies six pinned-source patches. The source probe first reproduces
+  the historical configuration boundary, then checks the runtime subject and revocation patches.
+  Deployment acceptance is recorded separately.
+
+**Directory-event revocation (r10)** reuses the helper and state directory, with no new service,
+database or message broker. The hook derives `CASDOOR_DIRWATCH_APPLICATIONS` from `ALLOW_GROUPS`.
+Before shadow mutation, `prepare` on `/api/anas-directory-revocation` captures old user/token/session
+identifiers. After mutation, a second `prepare` durably captures authorizations issued during the update;
+`revoke` then deletes the captured authorizations. Only Basic Auth credentials
+of `admin/app-built-in` may call it, and its scope is `anas`; callers cannot supply receiver URLs or
+signing keys. Every authorization receives an independent OIDC sid. `Token.SessionId` stores its
+parent Beego session; `Token.UserId` links grants to the immutable internal user ID across renames
+and label reuse. User updates, code issuance/redemption, refresh and revocation share one process-local mutex.
+The Module runs one Casdoor instance; this does not provide multi-instance consistency. Explicit
+central user/admin logout expires the corresponding parent grants. Unredeemed codes and centrally retired grants are deleted without notifying an absent RP session.
+Repeated captures of the same application/sid/subject retain one notification. Refresh preserves the OIDC sid. Application-only revocation preserves
+shared central login; replay preserves later independent authorizations.
+
+`pending-logouts.json` uses the existing state directory, mode 0600, atomic replacement and file plus
+directory fsync. It holds identifiers, never bearer tokens or secrets. `deliver` uses the registered
+receiver, a fresh signed two-minute token, a five-second timeout and no redirects. Only 2xx responses
+acknowledge delivery; retries continue at 2/5/10/30/60 seconds independently of the directory cursor.
+Health records pending count, oldest timestamp and diagnostics; unsupported or overdue work is
+unhealthy after 60 seconds. SAML SLO remains unavailable and captured SAML sessions keep an explicit
+incomplete diagnostic. Startup and 300-second reconciliation repair journal gaps. Reused labels with
+different anchors are quarantined without restoring access by label.
+
 
 **`DIRKEY-R-013` projection verdict: not applicable (a Provider is not a Consumer).** This Module
 consumes nobody else's subject identifier; its role under `R-013` is to be the side that is verified
@@ -124,6 +141,8 @@ The module exports `ANAS_IAM_BINDING_*` and `ANAS_IAM_PORTAL_URL`, and explicitl
 
 ## Tests and implementation
 
+`test-env/upgrades/configs/modules-casdoor.yml` declares the r8-to-r9 upgrade suite. It reuses the isolated upgrade runner and persistent database/directory markers, and checks Casdoor readiness, UID 1000, configuration mode `0600`, and the actual OIDC issuer. Catalog registration does not claim successful upgrade acceptance for the new revision; the retained finance deployment and Workspace temporary-storage acceptance have separate records.
+
 - [`iam_test.go`](../hook/iam_test.go)
 - [`main_test.go`](../hook/main_test.go)
 - [`local_admin_test.go`](../hook/local_admin_test.go)
@@ -141,4 +160,4 @@ The module exports `ANAS_IAM_BINDING_*` and `ANAS_IAM_PORTAL_URL`, and explicitl
 
 ## Current limitations
 
-Lifecycle is `release`. The pinned version has no SAML LogoutRequest/LogoutResponse consumer, so no SLO endpoint or binding is published. Directory password writeback, silent database switching, and using the Casdoor local User ID as the Samba permanent anchor also remain unsupported. The requirement matrix and implementation plan define the accepted release scope.
+Lifecycle is `developing`; r10 release acceptance remains incomplete. The pinned version has no SAML LogoutRequest/LogoutResponse consumer, so no SLO endpoint or binding is published. Directory password writeback, silent database switching, and using the Casdoor local User ID as the Samba permanent anchor also remain unsupported. The requirement matrix and implementation plan define the accepted release scope.

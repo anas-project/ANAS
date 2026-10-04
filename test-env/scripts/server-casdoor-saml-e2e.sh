@@ -136,7 +136,8 @@ login_allowed() {
   chmod 0600 "$response_file"
   "$saml_consumer" verify --metadata "$metadata_file" --entity-id "$sp_entity_id" \
     --acs-url "$acs_url" --response "$response_file" --request-id "$request_id" \
-    --name-id "$username" --attribute "preferred_username=$username" \
+    --name-id "$expected_anchor" --name-id-format urn:oasis:names:tc:SAML:2.0:nameid-format:persistent \
+    --attribute "preferred_username=$username" \
     --attribute "name=IAM E2E $profile_username" \
     --attribute "email=$profile_username@$matrix_email_domain" \
     --attribute "$anchor_claim=$expected_anchor" --attribute "groups=$expected_group" \
@@ -157,13 +158,23 @@ if [ -z "${CASDOOR_SAML_CONSUMER_BIN:-}" ]; then
   command -v go >/dev/null
 fi
 container_env "$dirwatch" CASDOOR_DIRWATCH_MANAGED_GROUPS | grep -Eq '(^|,)APP_nextcloud(,|$)'
-test "$(container_env "$casdoor" ANAS_IAM_CLIENT__NEXTCLOUD__INTERFACE)" = saml
 issuer=$(container_env "$casdoor" CASDOOR_DOMAIN_FULL)
 application=app-anas-nextcloud
-sp_entity_id=$(container_env "$casdoor" ANAS_IAM_CLIENT__NEXTCLOUD__SP_ENTITY_ID)
-acs_url=$(container_env "$casdoor" ANAS_IAM_CLIENT__NEXTCLOUD__ACS_URL)
-metadata_url=$(container_env "$casdoor" ANAS_IAM_BINDING__NEXTCLOUD__SAML_METADATA_URL)
-sso_url=$(container_env "$casdoor" ANAS_IAM_BINDING__NEXTCLOUD__SAML_SSO_URL)
+if [ "${CASDOOR_SAML_PROTOCOL_FIXTURE:-0}" = 1 ]; then
+  # A temporary API registration validates the live signed assertion only.
+  # This mode does not certify the Nextcloud SAML application or its account binding.
+  sp_entity_id=${CASDOOR_SAML_FIXTURE_ENTITY_ID:?}
+  acs_url=${CASDOOR_SAML_FIXTURE_ACS_URL:?}
+  metadata_url="$issuer/api/saml/metadata?application=admin/$application"
+  sso_url="$issuer/api/saml/redirect"
+  printf 'acceptance_scope=signed_protocol_fixture nextcloud_saml_acceptance=false\n'
+else
+  test "$(container_env "$casdoor" ANAS_IAM_CLIENT__NEXTCLOUD__INTERFACE)" = saml
+  sp_entity_id=$(container_env "$casdoor" ANAS_IAM_CLIENT__NEXTCLOUD__SP_ENTITY_ID)
+  acs_url=$(container_env "$casdoor" ANAS_IAM_CLIENT__NEXTCLOUD__ACS_URL)
+  metadata_url=$(container_env "$casdoor" ANAS_IAM_BINDING__NEXTCLOUD__SAML_METADATA_URL)
+  sso_url=$(container_env "$casdoor" ANAS_IAM_BINDING__NEXTCLOUD__SAML_SSO_URL)
+fi
 anchor_claim=$(container_env "$casdoor" SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE)
 metadata_file="$workdir/idp-metadata.xml"
 consumer_curl "$metadata_url" >"$metadata_file"

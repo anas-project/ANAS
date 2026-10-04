@@ -58,10 +58,11 @@ func (transport *mappedTransport) RoundTrip(request *http.Request) (*http.Respon
 }
 
 type appSession struct {
-	ID     string `json:"id"`
-	Sub    string `json:"sub"`
-	SID    string `json:"sid"`
-	Active bool   `json:"active"`
+	ID           string `json:"id"`
+	Sub          string `json:"sub"`
+	SID          string `json:"sid"`
+	Active       bool   `json:"active"`
+	RefreshToken string `json:"-"`
 }
 
 type savedCookie struct {
@@ -99,6 +100,7 @@ type fixture struct {
 	seenJTI        map[string]struct{}
 	lastLogout     logoutEvidence
 	replayRejected int
+	rejectLogout   bool
 }
 
 func main() {
@@ -123,10 +125,20 @@ func main() {
 		err = verifyToken(config, os.Args[2:])
 	case "probe":
 		err = probe(config, os.Args[2:])
+	case "refresh":
+		err = refreshProbe(config, os.Args[2:])
+	case "receiver":
+		err = receiverControl(config, os.Args[2:])
+	case "revocation-auth":
+		err = revocationAuthBoundary(config, os.Args[2:])
 	case "user-logout":
 		err = userLogout(config, os.Args[2:])
 	case "configure":
 		err = configureApplication(config, os.Args[2:], false)
+	case "clone-application":
+		err = peerApplication(config, os.Args[2:], false)
+	case "delete-application":
+		err = peerApplication(config, os.Args[2:], true)
 	case "restore":
 		err = configureApplication(config, os.Args[2:], true)
 	case "admin-delete":
@@ -225,6 +237,8 @@ func serve(config config, args []string) error {
 	mux.HandleFunc("/backchannel", fixture.backchannel)
 	mux.HandleFunc("/control/evidence", fixture.logoutEvidence)
 	mux.HandleFunc("/control/replay", fixture.replayLogout)
+	mux.HandleFunc("/control/refresh", fixture.refreshSession)
+	mux.HandleFunc("/control/receiver", fixture.receiverControl)
 	server := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	return server.ListenAndServe()
 }
@@ -276,8 +290,9 @@ func (fixture *fixture) callback(writer http.ResponseWriter, request *http.Reque
 	}
 	defer response.Body.Close()
 	var tokenResponse struct {
-		IDToken string `json:"id_token"`
-		Error   string `json:"error"`
+		IDToken      string `json:"id_token"`
+		RefreshToken string `json:"refresh_token"`
+		Error        string `json:"error"`
 	}
 	if json.NewDecoder(response.Body).Decode(&tokenResponse) != nil || response.StatusCode != http.StatusOK || tokenResponse.Error != "" || tokenResponse.IDToken == "" {
 		http.Error(writer, "authorization code exchange failed", http.StatusBadGateway)
@@ -297,7 +312,7 @@ func (fixture *fixture) callback(writer http.ResponseWriter, request *http.Reque
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	session := &appSession{ID: sessionID, Sub: claimString(claims, "sub"), SID: claimString(claims, "sid"), Active: true}
+	session := &appSession{ID: sessionID, Sub: claimString(claims, "sub"), SID: claimString(claims, "sid"), Active: true, RefreshToken: tokenResponse.RefreshToken}
 	fixture.mu.Lock()
 	fixture.sessions[sessionID] = session
 	fixture.mu.Unlock()
@@ -323,6 +338,13 @@ func (fixture *fixture) session(writer http.ResponseWriter, request *http.Reques
 }
 
 func (fixture *fixture) backchannel(writer http.ResponseWriter, request *http.Request) {
+	fixture.mu.Lock()
+	reject := fixture.rejectLogout
+	fixture.mu.Unlock()
+	if reject {
+		http.Error(writer, "injected receiver failure", http.StatusServiceUnavailable)
+		return
+	}
 	if request.Method != http.MethodPost || request.ParseForm() != nil {
 		fmt.Fprintln(os.Stderr, "backchannel rejected: invalid request")
 		http.Error(writer, "invalid request", http.StatusBadRequest)
@@ -684,6 +706,8 @@ func userLogout(config config, args []string) error {
 func configureApplication(config config, args []string, restore bool) error {
 	flags := flag.NewFlagSet("configure", flag.ContinueOnError)
 	backup := flags.String("backup", "", "application backup file")
+	samlEntity := flags.String("saml-entity-id", "", "temporary protocol-fixture SP entity ID")
+	samlACS := flags.String("saml-acs-url", "", "temporary protocol-fixture ACS URL")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -722,6 +746,22 @@ func configureApplication(config config, args []string, restore bool) error {
 		}
 		application["redirectUris"] = redirects
 		application["backchannelLogoutUri"] = config.backchannelURI
+		if *samlEntity != "" || *samlACS != "" {
+			if *samlEntity == "" || *samlACS == "" {
+				return errors.New("both SAML registration fields are required")
+			}
+			application["type"] = "SAML"
+			application["redirectUris"] = []string{*samlEntity}
+			application["samlReplyUrl"] = *samlACS
+			application["enableSamlPostBinding"] = true
+			application["enableSamlAssertionSignature"] = true
+			application["samlHashAlgorithm"] = "SHA256"
+			attributes := []map[string]string{}
+			for _, field := range []struct{ name, value string }{{"preferred_username", "$user.name"}, {"name", "$user.displayName"}, {"email", "$user.email"}, {"groups", "$user.roles"}, {"anasIdentityAnchor", "$user.externalId"}} {
+				attributes = append(attributes, map[string]string{"name": field.name, "nameFormat": "Unspecified", "value": field.value})
+			}
+			application["samlAttributes"] = attributes
+		}
 	}
 	var result map[string]interface{}
 	response, err := doJSON(admin, http.MethodPost, updateURL, application, &result)
@@ -744,6 +784,8 @@ func configureApplication(config config, args []string, restore bool) error {
 	if restore {
 		expectedBackchannel = config.managedBackchannelURI
 		expectedRedirect = ""
+	} else if *samlEntity != "" {
+		expectedRedirect = *samlEntity
 	}
 	verifiedRedirects, _ := verifiedApplication["redirectUris"].([]interface{})
 	if verifiedApplication["backchannelLogoutUri"] != expectedBackchannel || (expectedRedirect != "" && !interfaceSliceContains(verifiedRedirects, expectedRedirect)) {
@@ -778,16 +820,6 @@ func adminDelete(config config, args []string) error {
 	if _, err := getJSON(admin, config.issuer+"/api/get-sessions?owner="+url.QueryEscape(config.organization), &sessionsResponse); err != nil {
 		return err
 	}
-	found := false
-	for _, session := range sessionsResponse.Data {
-		if session.Name == state.Username && session.Application == config.application && stringSliceContains(session.SessionID, state.SID) {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("Casdoor session %s for %s was not found", state.SID, state.Username)
-	}
 	var tokensResponse struct {
 		Status string `json:"status"`
 		Data   []struct {
@@ -795,23 +827,44 @@ func adminDelete(config config, args []string) error {
 			Organization string `json:"organization"`
 			User         string `json:"user"`
 			ExpiresIn    int    `json:"expiresIn"`
+			AccessToken  string `json:"accessToken"`
+			SessionID    string `json:"sessionId"`
 		} `json:"data"`
 	}
 	if _, err := getJSON(admin, config.issuer+"/api/get-tokens?owner=admin&organization="+url.QueryEscape(config.organization), &tokensResponse); err != nil {
 		return err
 	}
+	parentSessionID := ""
 	activeTokens := 0
 	for _, token := range tokensResponse.Data {
 		if token.Application == config.application && token.Organization == config.organization && token.User == state.Username && token.ExpiresIn > 0 {
+			parts := strings.Split(token.AccessToken, ".")
+			if len(parts) == 3 {
+				bytes, _ := base64.RawURLEncoding.DecodeString(parts[1])
+				var claims map[string]interface{}
+				if json.Unmarshal(bytes, &claims) == nil && claimString(claims, "sid") == state.SID {
+					parentSessionID = token.SessionID
+				}
+			}
 			activeTokens++
 		}
 	}
 	if activeTokens == 0 {
 		return errors.New("target session has no active OIDC token for back-channel routing")
 	}
+	found := false
+	for _, session := range sessionsResponse.Data {
+		if session.Name == state.Username && session.Application == config.application && stringSliceContains(session.SessionID, parentSessionID) {
+			found = true
+			break
+		}
+	}
+	if parentSessionID == "" || !found {
+		return fmt.Errorf("Casdoor session %s for %s was not found", state.SID, state.Username)
+	}
 	payload := map[string]string{"owner": config.organization, "name": state.Username, "application": config.application}
 	var result map[string]interface{}
-	endpoint := config.issuer + "/api/delete-session?sessionId=" + url.QueryEscape(state.SID)
+	endpoint := config.issuer + "/api/delete-session?sessionId=" + url.QueryEscape(parentSessionID)
 	response, err := doJSON(admin, http.MethodPost, endpoint, payload, &result)
 	if err != nil {
 		return err

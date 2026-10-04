@@ -1,0 +1,81 @@
+package object
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"testing"
+
+	"github.com/xorm-io/xorm"
+)
+
+func TestANASDirectoryRevocationIsolation(t *testing.T) {
+	engine,err:=xorm.NewEngine("sqlite","file:anas-revocation-test?mode=memory&cache=shared")
+	if err!=nil {t.Fatal(err)}
+	t.Cleanup(func(){_ =engine.Close()})
+	if err:=engine.Sync2(&User{},&Application{},&Token{},&Session{}, &Provider{}, &Cert{}, &Organization{});err!=nil {t.Fatal(err)}
+	previous:=ormer;ormer=&Ormer{Engine:engine};t.Cleanup(func(){ormer=previous})
+	user:=&User{Owner:"anas",Name:"alice",Id:"immutable-user",ExternalId:"anchor"}
+	app:=&Application{Owner:"admin",Name:"app-a",Organization:"anas"}
+	for _, row:=range []interface{}{user,app,&Application{Owner:"admin",Name:"app-b",Organization:"anas"},&Session{Owner:"anas",Name:"alice",Application:"app-a",SessionId:[]string{"central-parent"}}} {
+		if _,err:=engine.Insert(row);err!=nil {t.Fatal(err)}
+	}
+	makeToken:=func(name,app,sid string) *Token {
+		claims,_:=json.Marshal(map[string]string{"sid":sid,"sub":"anchor"})
+		return &Token{Owner:"admin",Name:name,Organization:"anas",User:"alice",UserId:user.Id,Application:app,SessionId:"central-parent",AccessToken:"e30."+base64.RawURLEncoding.EncodeToString(claims)+".signature",ExpiresIn:3600,CodeIsUsed:true}
+	}
+	old:=makeToken("old-token","app-a","old-oidc-sid")
+	other:=makeToken("other-client","app-b","other-oidc-sid")
+	for _, row:=range []*Token{old,other} {if _,err:=engine.Insert(row);err!=nil {t.Fatal(err)}}
+	snapshot,err:=PrepareAnasRevocation(&AnasRevocation{Owner:"anas",UserId:user.Id,Name:user.Name,Applications:[]string{"app-a"}})
+	if err!=nil || len(snapshot.Targets)!=1 || snapshot.Subject!="anchor" {t.Fatalf("snapshot=%#v err=%v",snapshot,err)}
+	// Refresh rotates the row but keeps sid. A regrant creates a distinct sid,
+	// while using the same central login cookie as the revoked authorization.
+	if _,err:=DeleteToken(old);err!=nil {t.Fatal(err)}
+	rotated:=makeToken("refresh-rotated","app-a","old-oidc-sid")
+	newLogin:=makeToken("new-authorization","app-a","new-oidc-sid")
+	for _,row:=range []*Token{rotated,newLogin} {if _,err:=engine.Insert(row);err!=nil {t.Fatal(err)}}
+	for attempt:=0;attempt<2;attempt++ {if err:=RevokeAnasSessions(snapshot);err!=nil {t.Fatal(err)}}
+	remaining,err:=GetTokens("admin","anas");if err!=nil {t.Fatal(err)}
+	if len(remaining)!=2 {t.Fatalf("remaining=%#v",remaining)}
+	for _,row:=range remaining {if row.Name==rotated.Name {t.Fatal("refresh rotation escaped revocation")}}
+	session,err:=GetSingleSession("anas/alice/app-a")
+	if err!=nil || session==nil || len(session.SessionId)!=1 {t.Fatal("replayed revocation removed the new authorization's registry")}
+
+    // Immutable user linkage survives rename and excludes a recycled label.
+    if _,err:=engine.Where("id = ?",user.Id).Cols("name").Update(&User{Name:"renamed"});err!=nil {t.Fatal(err)}
+    late:=makeToken("late-before-admission-update","app-a","late-sid")
+    late.User="renamed"
+    recycled:=makeToken("different-user-same-label","app-a","foreign-sid")
+    recycled.UserId="new-immutable-user"
+    for _,row:=range []*Token{late,recycled} {if _,err:=engine.Insert(row);err!=nil {t.Fatal(err)}}
+    second,err:=PrepareAnasRevocation(&AnasRevocation{Owner:"anas",UserId:user.Id,Name:"alice",Applications:[]string{"app-a"}})
+    if err!=nil || second.Name!="renamed" {t.Fatalf("rename snapshot=%#v err=%v",second,err)}
+    for _,target:=range second.Targets {if target.Subject!="anchor" {t.Fatal("lost captured token subject")}}
+    if err:=RevokeAnasSessions(second);err!=nil {t.Fatal(err)}
+    var survivor Token
+    exists,err:=engine.Where("name = ?",recycled.Name).Get(&survivor)
+    if err!=nil || !exists {t.Fatal("recycled label's grant was revoked")}
+
+    peer := makeToken("independent-parent", "app-a", "peer-sid")
+    peer.SessionId = "other-central-parent"
+    if _,err := engine.Insert(peer); err!=nil {t.Fatal(err)}
+    if err := ExpireAnasParentTokens("anas", "alice", "central-parent"); err!=nil {t.Fatal(err)}
+    grants,err := GetTokens("admin","anas"); if err!=nil {t.Fatal(err)}
+    for _,grant := range grants {
+        if grant.SessionId == "central-parent" && grant.ExpiresIn != 0 {t.Fatal("logout left the captured parent grant valid")}
+        if grant.SessionId == "other-central-parent" && grant.ExpiresIn == 0 {t.Fatal("logout expired an unrelated parent grant")}
+    }
+    retired,err:=PrepareAnasRevocation(&AnasRevocation{Owner:"anas",UserId:user.Id,Applications:[]string{"app-b"}})
+    if err!=nil || len(retired.Targets)!=0 {t.Fatal("explicitly retired grant produced another RP notification")}
+    unused:=makeToken("unused-code","app-a","unused-sid")
+    unused.CodeIsUsed=false
+    unused.Code="unused-code"
+    if _,err:=engine.Insert(unused);err!=nil {t.Fatal(err)}
+    neverEstablished,err:=PrepareAnasRevocation(&AnasRevocation{Owner:"anas",UserId:user.Id,Applications:[]string{"app-a"}})
+    if err!=nil {t.Fatal(err)}
+    for _,target:=range neverEstablished.Targets {if target.Sid=="unused-sid" {t.Fatal("unredeemed code produced an RP notification")}}
+    _,denied,err:=GetAuthorizationCodeToken(app,"","unused-code","","")
+    if err!=nil || denied==nil || denied.ErrorDescription!="directory authorization is no longer admitted" {t.Fatalf("stale renamed code accepted: denied=%#v err=%v",denied,err)}
+
+	if _,err:=PrepareAnasRevocation(&AnasRevocation{Owner:"built-in",UserId:user.Id,Name:user.Name,Applications:[]string{"app-a"}});err==nil {t.Fatal("cross-organization snapshot accepted")}
+}

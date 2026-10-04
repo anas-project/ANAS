@@ -3,9 +3,9 @@
 提供 OIDC 与 SAML 的 IAM Provider，并通过 LDAPS 从 Samba AD 导入目录用户。
 
 > [!NOTE]
-> 当前生命周期为 `release`。目录永久锚点、按应用 Group 授权、账号停用传播、OIDC 会话撤销、
-> 恢复管理员、空 workspace 备份恢复、多架构生命周期和受管凭据轮换均已完成真实 E2E。
-> 固定版本不支持 SAML SLO，因此不发布对应 endpoint/binding。
+> 当前生命周期为 `developing`。r10 已接入统一目录主体标识符和 OIDC 目录事件撤权，
+> 固定源码、helper 与 Hook 测试通过，实机验收仍在进行。
+> SAML 应用会话注销尚未实现；Netbird 因将 `sub` 投影到普通用户 API URL 而被拒绝注册。
 
 ## 快速信息
 
@@ -13,8 +13,8 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `casdoor` |
-| 版本 / revision | `3.143.0-r8` |
-| 状态 | `release` |
+| 版本 / revision | `3.143.0-r10` |
+| 状态 | `developing` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
 <!-- generated:module-facts:end -->
@@ -42,11 +42,11 @@ modules:
 
 ## 身份与协议行为
 
-Samba AD 仍是人员和目录账号的事实来源。Casdoor 使用受限只读 Bind 经 LDAPS 导入用户并远程校验密码。独立 `casdoor_dirwatch` 订阅 Samba 的持久目录事件日志，经过防抖后立即触发一次 LDAP 导入；它以 `anasIdentityAnchor` 关联影子用户，确定性收敛改名、停用、删除和 Group 撤权，并只对本批事件涉及的用户刷新 `displayName` 和邮件。订阅器还经受信任 LDAPS 直接计算声明的递归组成员，避免上游同步保留旧 Group。默认每 5 分钟的周期同步继续保留为兜底。本实现不启用 Casdoor 的 LDAP/AD 密码写回，也不把 Casdoor 本地用户记录当作目录权威。
+Samba AD 仍是人员和目录账号的事实来源。Casdoor 使用受限只读 Bind 经 LDAPS 导入用户并远程校验密码。独立 `casdoor_dirwatch` 订阅 Samba 的持久目录事件日志，经过防抖后立即触发一次 LDAP 导入；它以 `anasIdentityAnchor` 关联影子用户，确定性收敛改名、停用、删除和 Group 撤权，并对同步用户刷新 `displayName` 和邮件。订阅器还经受信任 LDAPS 直接计算声明的递归组成员，避免上游同步保留旧 Group。默认每 5 分钟的周期同步继续保留为兜底。本实现不启用 Casdoor 的 LDAP/AD 密码写回，也不把 Casdoor 本地用户记录当作目录权威。
 
-固定 Casdoor `3.143.0` 按通用 `ANAS_IAM_CLIENT__<APP>__*` 注册 OIDC/SAML Consumer。r8 从固定上游提交 `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` 和校验和为 `365d61c…f9460` 的源码包构建；四个受控补丁扩展 SAML `displayName/externalId` 模板、OIDC exact `sid` 用户/管理员 back-channel、两分钟 Logout Token、失败可观测性和 PostgreSQL 保留列安全查询，均位于 `casdoor/patches/`。OIDC access token 固定为 1 小时，refresh token 固定为 30 天。OIDC back-channel URI 仅在 Consumer 明确声明时登记，声明消失或协议切换会显式写空旧 URI；真实 Consumer E2E 已通过用户退出、管理员精确删 session、原 Cookie 撤销、多会话隔离、签名字段与重放拒绝。固定版本没有 SAML LogoutRequest/LogoutResponse 消费路径，因此不发布 SLO endpoint/binding，SAML Consumer 只能本地登出。
+固定 Casdoor `3.143.0` 按通用 `ANAS_IAM_CLIENT__<APP>__*` 注册 OIDC/SAML Consumer。r10 从固定上游提交 `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` 和校验和为 `365d61c…f9460` 的源码包构建；六个受控补丁扩展 SAML `displayName/externalId` 模板、OIDC exact `sid` 用户/管理员 back-channel、两分钟 Logout Token、失败可观测性和 PostgreSQL 保留列安全查询，均位于 `casdoor/patches/`。OIDC access token 固定为 1 小时，refresh token 固定为 30 天。OIDC back-channel URI 仅在 Consumer 明确声明时登记，声明消失或协议切换会显式写空旧 URI；历史 Consumer E2E 已通过用户退出、管理员精确删 session、原 Cookie 撤销、多会话隔离、签名字段与重放拒绝。固定版本没有 SAML LogoutRequest/LogoutResponse 消费路径，因此不发布 SLO endpoint/binding，SAML Consumer 只能本地登出。
 
-通用 `ALLOW_GROUPS` 被渲染为同名 Casdoor Group/Role 和按 Consumer 区分的 Application Permission；无命中组、禁用或已删除用户会在签发前被拒绝。订阅器把 Samba `anasIdentityAnchor` 写入 Casdoor `ExternalId`，OIDC 自定义 claim 与 SAML 显式锚点属性使用该值，Group claim 来自同名 Role；Casdoor 不可变 User ID 继续作为稳定 `sub`，同锚点改名会复用原记录。未知 SAML 来源会被省略，不会冒充永久锚点。真实 Consumer E2E 已覆盖签名、属性、Group 门禁、改名复用、应用建号、管理员映射和 OIDC 会话撤销；恢复、升级/回滚与凭据轮换证据见实施计划。
+通用 `ALLOW_GROUPS` 被渲染为同名 Casdoor Group/Role 和按 Consumer 区分的 Application Permission；无命中组、禁用或已删除用户会在签发前被拒绝。订阅器把 Samba `anasIdentityAnchor` 写入 Casdoor `ExternalId`，OIDC 自定义 claim 与 SAML 显式锚点属性使用该值，Group claim 来自同名 Role；OIDC token、UserInfo、Logout Token 的 `sub` 与 SAML `NameID` 均取同一 `ExternalId`，同锚点改名会复用原记录。未知 SAML 来源会被省略，不会冒充永久锚点。真实 Consumer E2E 已覆盖签名、属性、Group 门禁、改名复用、应用建号、管理员映射和 OIDC 会话撤销；恢复、升级/回滚与凭据轮换证据见实施计划。
 
 ### 目录属性变更说明
 
@@ -55,37 +55,28 @@ Samba AD 仍是人员和目录账号的事实来源。Casdoor 使用受限只读
 撤权都确定性地落在**同一条记录**上；Casdoor 自己不可变的 `id` 不被修改。LDAP 过滤器
 `(anasIdentityAnchor=*)` 保证没有 anchor 的对象不会被导入。
 
-**它发给 Consumer 的主体标识符还不是 anchor，且两种协议表现不同（当前缺口）：**
-
-- **OIDC `sub` = Casdoor 不可变 User ID**。跨改名稳定，但不是可以直接与目录对账的值；
-- **SAML `NameID` = 用户名**。**改名后 NameID 会变**——这是一个标签被当作主体标识符使用，直接
-  违反 `DIRKEY-R-001`。SAML Consumer 的稳定关联**必须**使用显式的锚点属性（映射到
-  `$user.externalId`），不能使用 NameID。`nextcloud` 的 SAML 模式正是这样配置的。
-
-两者都属于 `DIRKEY-R-008` 尚未满足的部分，整改归
-[目录身份键实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md)
-M2；主体标识符是否可配置必须在真实固定版本上跑探针确认。
+**r10 发给 Consumer 的主体标识符就是 anchor。** 受控补丁 `0005-directory-subject.patch`
+统一 JWT 的四种格式、UserInfo、Logout Token 与 SAML 1.1/2.0；SAML 2.0 NameID 使用 persistent
+格式。`anas` 组织的用户缺锚点或锚点带空白时拒绝签发，`built-in` 恢复管理员的 OIDC 保留内部 ID。
+`0006-directory-revocation.patch` 在刷新时重新检查身份和应用准入，并保留原 `sid`。
+产品尚未发版，无需旧账号迁移。源码测试不代替真实协议或 Consumer 账号归属验收。
 
 | 目录侧变更 | Casdoor 的行为 | 证据 |
 | --- | --- | --- |
-| `sAMAccountName` 改变 | 同一条记录：按 anchor 关联，`id` 与 `externalId` 都不变，`name`（用户名）刷新为新值，旧名不再解析。**OIDC `sub` 不变；SAML `NameID` 变成新用户名** | 改名复用不可变 `id` 与 anchor、旧名不保留：`已验证`，入口 `test-env/scripts/server-casdoor-directory-authority-e2e.sh`（"rename reuses the permanent identity"）；一个 anchor 只对应一个不可变 `sub`：`已验证`，入口 `server-casdoor-oidc-e2e.sh`；NameID 随改名变化：`已验证`，入口 `server-casdoor-saml-e2e.sh` |
-| `mail` 改变 | 只为本批事件涉及的用户刷新 `email`；不参与身份匹配 | `已验证`（改名/停用/删除矩阵中 email 随目录刷新），入口 `server-casdoor-saml-e2e.sh` 与 `server-casdoor-oidc-e2e.sh` 的属性断言 |
-| `displayName` 与其他 profile 属性 | `displayName` 同上只为相关用户刷新；其余目录属性合并进 `properties`，不删除人工属性 | `已验证`，入口同上（断言 `name`/`displayName` 与目录一致） |
-| 直接或递归组成员变更 | `casdoor_dirwatch` 订阅持久目录事件日志，防抖后立即触发一次同步，并经受信任 LDAPS 直接计算递归成员；默认每 5 分钟周期同步兜底。直接与递归撤权都权威生效 | `已验证`，入口 `server-casdoor-directory-authority-e2e.sh`（"group removals are authoritative"，直接与递归各一次）与 `server-casdoor-directory-events-e2e.sh` |
-| 账号停用 | 影子用户置 `isForbidden = true` 且**清空全部 Group**，签发前被拒；重新启用后恢复同一 `id`、同一 anchor 与原有 Group。**已签发的 access token（1 小时）与 refresh token（30 天）不会因此立即失效** | 停用清空 Group 与重新启用复用同一身份：`已验证`，入口同上（"disable and re-enable converge without replacing identity"）；已签发 token 的存活：`推断` |
-| 账号删除 | 置 `isForbidden = true` 且 `isDeleted = true`，清空 Group，影子身份不可用。这是软删除，记录保留。**Consumer 侧的应用账号与资产不受影响** | `已验证`，入口同上（"delete forbids, soft-deletes, and clears access"） |
-| 标识符回收再分配 | 新人的 anchor 不同，dirwatch 不会关联到旧影子用户，得到新的 Casdoor `id`（fail-closed）。但旧记录是软删除、仍占用用户名，用户名唯一约束下新记录的 `name` 会冲突——表现为同步失败而不是接错人 | anchor 关联而非按名关联：`已验证`，入口同上；回收用户名的冲突表现：`推断` |
+| `sAMAccountName` 改变 | 同 anchor 复用内部 id，刷新标签；OIDC sub 与 SAML NameID 保持 anchor，捕获旧会话撤权 | 主体与撤权范围源码测试通过；r10 实机进行中 |
+| `mail` 改变 | 刷新 email，不参与身份匹配，不触发注销 | 既有目录属性 E2E；r10 行为由 helper 单元验证 |
+| `displayName` 等 profile 改变 | 刷新显示属性，合并 properties，不覆盖人工属性 | helper 单元通过 |
+| 直接/递归组改变 | 重新计算成员；准入丧失只撤对应应用，refresh 重查准入 | helper 范围与源码重放测试通过；r10 真实 Cookie 验收进行中 |
+| 账号停用 | 禁止、清组、捕获已有会话并撤权；重新启用复用身份 | 既有影子状态 E2E；r10 会话验收进行中 |
+| 账号删除 | 软删除、禁止、清组、撤销捕获会话；Consumer 账号与资产保留 | 既有影子状态 E2E；r10 会话验收进行中 |
+| 标识符回收 | 不同 anchor 的同名对象隔离，不覆盖旧绑定或自动恢复准入；健康显示冲突 | helper 冲突测试通过；实机标签回收待验收 |
 
-**兜底路径**——上表每一行"无自动路径"对应的运维动作：
-
-1. 停用或删除目录账号后，**Consumer 侧不会跟着收敛**。必须按各 Consumer 自己的
-   《目录属性变更说明》执行撤权动作；Casdoor 只保证该用户拿不到新 token、且现有 OIDC session
-   可被精确撤销；
-2. 需要立即结束某人的会话时，在 Casdoor 管理界面删除其 session——对声明了 back-channel URI 的
-   Consumer 会按精确 `sid` 传播；**SAML Consumer 没有 SLO 消费路径，只能本地登出**；
-3. 已签发的 access/refresh token 在 TTL 内仍然有效，紧急撤权必须同时在 Consumer 侧动作；
-4. **Consumer 侧约束**：接入 Casdoor 的 SAML Consumer **不得**用 `NameID` 作为持久身份键，必须
-   请求并使用锚点属性。
+**撤权与兜底路径**：账号停用、删除、改名或锚点冲突撤销该用户的已捕获会话；组准入丧失只撤
+对应应用。OIDC 通过标准 back-channel 通知终止 Consumer 会话，通知失败独立持久化重试，不阻塞
+目录游标；缺失接收端、通知超时或 SAML 会话无法注销会在健康状态中显示。
+启动时和每 300 秒全量对账修复日志缺口，并清除不在有效 LDAP 结果中的用户准入。
+用户名回收且锚点不一致时，冲突对象不导入、旧身份禁止访问，其他用户仍可同步；恢复须人工处理。
+离线验证的 access token 仍需 Consumer 自行撤销。SAML Consumer 暂需执行其本地会话撤销路径。
 
 ## 管理员登录与 IAM 故障恢复
 
@@ -151,6 +142,8 @@ anas config plan -w /srv/anas
 
 ## 存储、备份与验证
 
+r9 将 deployment 中仅 root 可读的配置只读挂载到 `/opt/anas/conf/app.conf`。启动入口在容器内建立 UID/GID `1000`、权限 `0600` 的 `/conf/app.conf`，再启动 Casdoor；不会放宽不可变制品权限。每次启动重新复制配置，初始化失败会阻止服务就绪。
+
 Casdoor 持久状态位于绑定的 PostgreSQL Resource；目录订阅游标位于 `${DATA_PATH}/casdoor/dirwatch`。备份必须让数据库、订阅游标、workspace Secret Store 和本地管理员库存保持同一恢复点。
 
 ```bash
@@ -170,7 +163,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`3.143.0-r8`（reviewed 2026-08-27）
+- Module version / 版本：`3.143.0-r10`（reviewed 2026-08-27）
 - Timezone / 时区：`container` — Casdoor receives TZ through the module environment; no separate application timezone is forced.
 - Language scope / 语言范围：Casdoor Web UI default
 - Selection / 选择方式：`application`

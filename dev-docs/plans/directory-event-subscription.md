@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-27
-updated: 2026-09-13
+updated: 2026-10-03
 ---
 
 # Samba 目录事件订阅与实时同步实施计划
@@ -18,7 +18,7 @@ updated: 2026-09-13
 | M0：通用订阅契约与安全边界 | DIRSYNC-R-001—R-004、R-011、R-014 | 实施中；Authentik 与 Casdoor 已有实现，其余消费者待盘点 |
 | M1：可靠消费与全量兜底 | DIRSYNC-R-006—R-010 | 实施中；既有 watcher 覆盖部分场景，统一缺口恢复尚未验收 |
 | M2：全消费者实时同步 E2E | DIRSYNC-R-005、R-012 | 未开始 |
-| M3：准入丧失即时会话撤销 | DIRSYNC-R-013 | 未开始；仅 Casdoor 有管理员显式删 session 的 exact-`sid` E2E，目录事件驱动的撤销全部待实现 |
+| M3：准入丧失即时会话撤销 | DIRSYNC-R-013 | 实施中；Casdoor r10 OIDC 撤权与持久重试已接入，源码/helper 测试通过，实机验收进行中；SAML 与其他消费者仍待实现 |
 
 ## 2. M0 检查表
 
@@ -46,6 +46,20 @@ updated: 2026-09-13
 - [ ] 运行 `npm run docs:check-requirements` 与 `npm run docs:check-requirement-status`。
 
 ## 5. M3 检查表
+
+2026-10-03 已细化 Casdoor 的
+[定向撤权与持久重试方案](../../docs/architecture/directory-event-journal.md#casdoor-session-revocation-proposal)。
+实现复用现有 `anas_casdoor_dirwatch` 和状态目录：先持久化旧用户/client/`sid`/token 目标，再更新
+影子状态、定向撤销 Provider 会话与 token，通知失败独立重试。新增窄接口只接受 Module 自己的
+服务凭据。OIDC 授权使用独立 sid，Token 记录父 Beego 会话；refresh 保留 sid 并重查应用准入和
+身份。按应用撤权保留共享中央会话，重放保留后续独立授权。启动与每 300 秒全量对账覆盖日志缺口。
+
+**Casdoor OIDC 实现及本地验证已完成，实机验收仍在进行，M3 保持实施中。** 不计作 SAML SLO、
+直接 LDAP Consumer 会话终止或其他 Provider 已完成。没有新增服务、数据库或消息总线。
+
+- [x] Casdoor 生产补丁、helper 持久目标与重试接入；源码重放范围、helper 重启恢复及 Hook 护栏测试通过。
+- [ ] 执行 `CASDOOR_DIRECTORY_LOGOUT_E2E=1 server-casdoor-oidc-logout-e2e.sh`，核验旧 Cookie、真实刷新、
+      接收失败、watcher 重启和重新授权后的新会话隔离；覆盖两种 client 的实机范围仍需单独补齐。
 
 - [ ] 为每个 IAM Provider 实现“目录事件 -> 标准登出通知”的转换：停用、删除、改名、锚点变化和
       直接/递归组变更导致不满足 `ALLOW_GROUPS` 时，向受影响 Consumer 发出 OIDC Back-Channel

@@ -144,6 +144,7 @@ func handle(req hookRequest) (hookResponse, error) {
 		// phase. Publish their managed groups here, when the complete IAM
 		// registration set is available to both init-data and the env file.
 		env["CASDOOR_DIRWATCH_MANAGED_GROUPS"] = strings.Join(managedIAMGroups(env), ",")
+		env["CASDOOR_DIRWATCH_APPLICATIONS"] = directoryApplicationPolicies(env)
 		files, err := renderCasdoor(env)
 		return hookResponse{Env: changed(req.Env, env), Files: files}, err
 	default:
@@ -213,6 +214,8 @@ func calcDirectoryWatch(e map[string]string) {
 		defaultValue(e["ANAS_DIRECTORY_EVENTS_FILE_NAME"], "events.jsonl")
 	e["CASDOOR_DIRWATCH_CURSOR_FILE"] = "/data/anas-dirwatch/cursor.json"
 	e["CASDOOR_DIRWATCH_HEALTH_FILE"] = "/data/anas-dirwatch/health.json"
+	e["CASDOOR_DIRWATCH_PENDING_FILE"] = "/data/anas-dirwatch/pending-logouts.json"
+	e["CASDOOR_DIRWATCH_RECONCILE_SECONDS"] = defaultValue(e["CASDOOR_DIRWATCH_RECONCILE_SECONDS"], "300")
 	e["CASDOOR_DIRWATCH_ENDPOINT"] = "http://anas_casdoor:8000"
 	e["CASDOOR_DIRWATCH_LDAP_ID"] = "anas/anas-samba-ad"
 	e["CASDOOR_DIRWATCH_CLIENT_ID"] = e["CASDOOR_PORTAL_CLIENT_ID"]
@@ -227,6 +230,7 @@ func calcDirectoryWatch(e map[string]string) {
 	e["CASDOOR_DIRWATCH_LDAP_GROUP_FILTER"] = defaultValue(e["SAMBA_DC_GROUP_CLASS_FILTER"], "(objectClass=group)")
 	e["CASDOOR_DIRWATCH_IDENTITY_ANCHOR_ATTRIBUTE"] = e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"]
 	e["CASDOOR_DIRWATCH_MANAGED_GROUPS"] = strings.Join(managedIAMGroups(e), ",")
+	e["CASDOOR_DIRWATCH_APPLICATIONS"] = directoryApplicationPolicies(e)
 	e["CASDOOR_DIRWATCH_OPERATIONS"] = defaultValue(
 		e["CASDOOR_DIRWATCH_OPERATIONS"], "Add,Modify,Delete")
 	e["CASDOOR_DIRWATCH_ATTRIBUTES"] = defaultValue(

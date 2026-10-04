@@ -2,6 +2,8 @@
 
 This section contains external investigation, candidate comparison, and technical selection only. Requirements, architecture, implementation plans, dated reviews, operating procedures, and development standards live in their own sections.
 
+- [Casdoor directory subject feasibility](/research/casdoor-directory-subject) — Chinese original. Pinned-source tests show configuration cannot unify token, UserInfo, Logout Token and SAML subjects. Revision r10 integrates the common directory-anchor subject and rejects missing anchors. Consumer projection and deployment E2E remain required; no account migration is needed before initial release.
+
 Research pages use stable topic-based filenames. Their frontmatter records `created`, `updated`, and, when external facts are volatile, `evidence_as_of`; updating a report does not rename it.
 
 - [Incus network visualization](/research/incus-network-visualization-research) — Chinese original. No existing open-source project gives Incus an AWS VPC-style topology view (the Incus UI and LXConsole are form-based, Skydive is unmaintained, Horizon is tied to Neutron); the recommendation is a read-only per-lease network view in the ANAS console.

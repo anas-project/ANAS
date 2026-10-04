@@ -9,14 +9,14 @@ services:
         GOPROXY_URL: ${GOPROXY_URL:-}
         CHINESE_BUILD_SPEEDUP: ${CHINESE_BUILD_SPEEDUP:-false}
         BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX: ${BUILD_GITHUB_DOWNLOAD_PROXY_PREFIX:-}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r8
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r10
     restart: unless-stopped
     env_file:
       - .env
     environment:
       SSL_CERT_FILE: /certs/${ANAS_TLS_TRUST_BUNDLE_NAME}
     volumes:
-      - "./conf/app.conf:/conf/app.conf:ro"
+      - "./conf/app.conf:/opt/anas/conf/app.conf:ro"
       - "./conf/init_data.template.json:/opt/anas/conf/init_data.template.json:ro"
       - "${CASDOOR_LOCAL_ADMIN__BREAK_GLASS_PASSWORD_FILE}:/run/secrets/casdoor-break-glass-password:ro"
       - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
@@ -47,7 +47,7 @@ services:
   # auto-sync remains enabled as the source-of-truth fallback.
   anas_casdoor_dirwatch:
     container_name: ${CONTAINER_PREFIX}casdoor_dirwatch
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r8
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r10
     restart: unless-stopped
     user: "1000:1000"
     entrypoint: ["/opt/anas/bin/casdoor-helper", "directory-watch"]

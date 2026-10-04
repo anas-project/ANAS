@@ -1,0 +1,144 @@
+package object
+
+import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"testing"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/xorm-io/xorm"
+)
+
+// Candidate-only tests: signed source functions, not HTTP login or deployment E2E.
+func TestANASDirectorySubjectCandidate(t *testing.T) {
+	engine, err := xorm.NewEngine("sqlite", "file:anas-subject-candidate?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = engine.Close() })
+	if err := engine.Sync2(&Application{}, &Cert{}); err != nil {
+		t.Fatal(err)
+	}
+	previous := ormer
+	ormer = &Ormer{Engine: engine}
+	t.Cleanup(func() { ormer = previous })
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateKey := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	if _, err := engine.Insert(&Cert{Owner: "admin", Name: "probe-signing", PrivateKey: string(privateKey)}); err != nil {
+		t.Fatal(err)
+	}
+	const anchor = "7b1af66a-76fb-4bea-967d-e0e4db15a574"
+	user := User{Owner: "anas", Name: "directory-user", Id: "casdoor-internal-id", Email: "user@example.test", ExternalId: anchor}
+	application := &Application{
+		Owner: "admin", Name: "probe", Organization: "anas", ClientId: "probe", Cert: "probe-signing",
+		TokenSigningMethod: "RS256", ExpireInHours: 1, RefreshExpireInHours: 720,
+		TokenAttributes:       []*JwtItem{{Name: "sub", Category: "Existing Field", Value: "Name", Type: "String"}},
+		DisableSamlAttributes: true,
+	}
+	assertSubject := func(t *testing.T, raw, expected string) jwt.MapClaims {
+		t.Helper()
+		parsed, err := jwt.Parse(raw, func(token *jwt.Token) (interface{}, error) { return &key.PublicKey, nil }, jwt.WithValidMethods([]string{"RS256"}))
+		if err != nil || !parsed.Valid {
+			t.Fatalf("verify signature: %v", err)
+		}
+		claims := parsed.Claims.(jwt.MapClaims)
+		if claims["sub"] != expected {
+			t.Fatalf("sub = %#v, want %q", claims["sub"], expected)
+		}
+		return claims
+	}
+	for _, format := range []string{"JWT", "JWT-Empty", "JWT-Custom", "JWT-Standard"} {
+		t.Run("SignedTokens/"+format, func(t *testing.T) {
+			application.TokenFormat = format
+			candidate := user
+			access, refresh, _, err := generateJwtTokenWithSession(application, &candidate, "", "password", "nonce", "openid", "", "auth.example.test", "probe-sid")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, raw := range []string{access, refresh} {
+				if claims := assertSubject(t, raw, anchor); claims["sid"] != "probe-sid" {
+					t.Fatalf("sid = %#v", claims["sid"])
+				}
+			}
+		})
+	}
+	t.Run("UserInfoAndSignedLogout", func(t *testing.T) {
+		info, err := GetUserInfo(&user, "", "probe-no-application", "auth.example.test")
+		if err != nil || info.Sub != anchor {
+			t.Fatalf("userinfo = %#v, error = %v", info, err)
+		}
+		raw, err := generateLogoutToken(application, &user, "probe-sid", "auth.example.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		claims := assertSubject(t, raw, anchor)
+		if claims["sid"] != "probe-sid" || claims["events"] == nil {
+			t.Fatalf("logout claims = %#v", claims)
+		}
+	})
+	t.Run("RenameAndEmailChangeKeepSubject", func(t *testing.T) {
+		changed := user
+		changed.Name, changed.Email = "renamed-user", "renamed@example.test"
+		application.TokenFormat = "JWT-Custom"
+		access, _, _, err := generateJwtToken(application, &changed, "", "", "", "openid", "", "auth.example.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertSubject(t, access, anchor)
+		for _, useEmail := range []bool{false, true} {
+			application.UseEmailAsSamlNameId = useEmail
+			response, err := NewSamlResponse(application, &changed, "https://auth.example.test", "", "https://sp.example.test/acs", "sp.example.test", "request", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nameID := response.FindElement("./Assertion/Subject/NameID")
+			if nameID == nil || nameID.Text() != anchor || nameID.SelectAttrValue("Format", "") != "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" {
+				t.Fatalf("SAML NameID = %#v", nameID)
+			}
+		}
+	})
+	t.Run("MissingAnchorRejectsEveryIssuancePath", func(t *testing.T) {
+		for _, invalid := range []string{"", " ", " " + anchor} {
+			missing := user
+			missing.ExternalId = invalid
+			if _, _, _, err := generateJwtToken(application, &missing, "", "", "", "openid", "", "auth.example.test"); err == nil {
+				t.Fatal("JWT issuance accepted a missing/invalid anchor")
+			}
+			if _, err := GetUserInfo(&missing, "", "probe", "auth.example.test"); err == nil {
+				t.Fatal("UserInfo accepted a missing/invalid anchor")
+			}
+			if _, err := generateLogoutToken(application, &missing, "probe-sid", "auth.example.test"); err == nil {
+				t.Fatal("logout issuance accepted a missing/invalid anchor")
+			}
+			if _, err := NewSamlResponse(application, &missing, "https://auth.example.test", "", "", "", "request", nil); err == nil {
+				t.Fatal("SAML 2.0 issuance accepted a missing/invalid anchor")
+			}
+			if _, err := NewSamlResponse11(application, &missing, "request", "https://auth.example.test"); err == nil {
+				t.Fatal("SAML 1.1 issuance accepted a missing/invalid anchor")
+			}
+		}
+	})
+	t.Run("RecoveryAdministratorKeepsInternalSubject", func(t *testing.T) {
+		recovery := User{Owner: "built-in", Name: "recovery", Id: "recovery-internal-id"}
+		application.TokenAttributes = nil
+		access, _, _, err := generateJwtToken(application, &recovery, "", "", "", "openid", "", "auth.example.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertSubject(t, access, recovery.Id)
+		info, err := GetUserInfo(&recovery, "", "probe-no-application", "auth.example.test")
+		if err != nil || info.Sub != recovery.Id {
+			t.Fatalf("recovery UserInfo = %#v, error = %v", info, err)
+		}
+		raw, err := generateLogoutToken(application, &recovery, "probe-sid", "auth.example.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertSubject(t, raw, recovery.Id)
+	})
+}
