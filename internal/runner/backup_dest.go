@@ -316,26 +316,6 @@ func newBackupID() (string, error) { return newDeploymentID() }
 
 func nowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
 
-// cleanStaleBackupTemp removes the debris of an interrupted transfer at a
-// destination. Unlike the snapshot equivalent it cannot run under a lock — the
-// destination may be shared — so it only removes directories whose manifest is
-// absent or explicitly incomplete, and only the temporary ones.
-func cleanStaleBackupTemp(dest string) {
-	entries, err := os.ReadDir(dest)
-	if err != nil {
-		return
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), backupTempPrefix) {
-			continue
-		}
-		path := filepath.Join(dest, entry.Name())
-		if err := removeBackupTree(path); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not remove interrupted backup %s: %v\n", path, err)
-		}
-	}
-}
-
 // removeBackupTree deletes a backup directory, taking the data subvolume out
 // through btrfs first when there is one. A received subvolume is read-only, so
 // an ordinary recursive delete fails on every file inside it.

@@ -359,6 +359,12 @@ transfer runs. Downtime is therefore set by how long a snapshot takes — second
 — not by how much data there is. If a backup fails part way, the services are
 started again; that compensation also survives the process being killed.
 
+Several workspaces or hosts can back up to the same destination at once. When
+`create` starts it cleans up only interrupted products proven abandoned, and never
+touches a temporary directory someone else is still writing; hosts sharing a
+destination need roughly synchronised clocks. The rules are in the
+[backup contract](/en/reference/contracts/backup).
+
 ### Restoring onto a fresh machine
 
 ```bash
@@ -457,6 +463,17 @@ development, `ANAS_MODULE_ROOT` must name `modules` itself rather than its paren
 
 **`no backup mode can run against …`** — run `anas backup capabilities --to …`,
 which names the reason for each mode.
+
+**`left …/.tmp-… in place: it has no owner.yml`** — an interrupted product left
+by a release that predates ownership records, or one such release writing it right
+now. Once no backup is writing to that destination, remove it by hand; delete any
+received subvolume inside with `btrfs subvolume delete` first.
+
+**`… is no longer the directory this backup was writing`** (`backup_temp_lost`) —
+the temporary directory was taken away during the transfer: by an older release's
+`create`, by a cleanup on another host after 30 minutes without a heartbeat, or by
+hand. Nothing was published; run it again, and check the clocks of the hosts
+sharing the destination if it keeps happening.
 
 **`cannot delete Btrfs subvolume …: needs CAP_SYS_ADMIN`** — snapshot
 reclamation; see §8.

@@ -209,6 +209,8 @@ uses **one directory per backup** instead:
 ```text
 <dest>/
   .tmp-<backup-id>/     # in transfer; renamed as a whole on completion
+    owner.yml           # ownership record: who is writing, heartbeat; removed after publishing
+  .abandoned-<backup-id>-<random>/   # judged abandoned, being deleted
   <backup-id>/
     backup.yml          # manifest, 0600, complete written last
     data.stream         # send-file
@@ -230,6 +232,103 @@ become a second source of truth whose freshness nobody can guarantee. One
 handled on the source side. `chain_broken` is computed while listing, not stored —
 whether an ancestor still exists is a property of the destination right now, not
 of the moment of writing.
+
+### Interrupted products are cleaned up only once proven abandoned
+
+One destination is often written by several parties at once: several workspaces
+on one host, or several hosts mounting one shared directory (anasd offers
+its root-managed backup targets to every workspace it manages). The
+workspace runtime lock (`.anas/state/lock`) serialises operations inside one
+workspace only; it does not cover a destination. Earlier, `backup create` deleted
+**every** `.tmp-` directory at the destination when it started, so a backup that
+started second deleted the tree the first one was still writing. The first backup
+usually failed as a result; but when the deletion fell between two of its
+transfer steps, the later steps (writing the manifest included) recreated the
+missing directory, and it could publish a backup missing a channel yet marked
+`complete: true`.
+
+Now every temporary directory gets an ownership record,
+`.tmp-<backup-id>/owner.yml`, right after its exclusive `mkdir` and before any
+data is written:
+
+| Field | Purpose |
+| --- | --- |
+| `backup_id`, `token` | This claim; `token` is random per claim and confirms, before publishing, that the directory is still the one this writer filled |
+| `host` | Host name, for people reading warnings only; never used to decide |
+| `boot_id`, `pid_namespace` | The PID space of the writing process (on Linux, from `/proc/sys/kernel/random/boot_id` and `/proc/self/ns/pid`) |
+| `pid`, `process_start` | The writing process and its start time; the latter detects PID reuse |
+| `started_at`, `heartbeat_at` | Claim time and heartbeat; the heartbeat is rewritten in place every minute |
+
+The cleanup at the start of `create` removes only directories it can **prove**
+abandoned, and keeps everything else:
+
+| Case | Verdict |
+| --- | --- |
+| Same PID space as the writer (`boot_id` and `pid_namespace` both equal) | Ask about the process directly: exited, a zombie, or the PID now belongs to a process with a different start time → abandoned; still running or cannot tell → kept |
+| Otherwise (another host, another PID namespace, unknown `boot_id`) | `heartbeat_at` not refreshed for more than 30 minutes → abandoned; otherwise kept |
+| No `owner.yml` | Directories younger than 30 minutes are kept silently (possibly between `mkdir` and the record being written); older ones are removed if empty, otherwise kept with a warning |
+| `owner.yml` cannot be interpreted (corrupt, or from a newer release) | Kept with a warning |
+
+A non-empty directory without `owner.yml` is never removed automatically: nothing
+proves it abandoned, and releases that predate ownership records leave exactly
+such directories behind. Remove one by hand once no backup is writing to that
+destination; if its `data/` or `userdata/` is a received subvolume, delete that
+with `btrfs subvolume delete` first.
+
+`machine-id` deliberately plays no part in the verdict: cloned machines share it,
+and inferring "the same host has restarted" from it would delete a backup still
+running on another machine. For the same reason an equal `boot_id` alone is not
+enough — containers on one host share the `boot_id` but each has its own PID
+namespace, and looking a PID up across namespaces would report a live writer as
+exited.
+
+A directory judged abandoned is first `rename`d to
+`.abandoned-<backup-id>-<random>` and only then deleted. The rename is atomic:
+only one of the writer's publishing rename and the cleanup's rename can succeed,
+so a half-deleted tree is never published. A deletion cut short leaves the
+`.abandoned-` name — nothing that must survive is ever stored under it, and any
+later cleanup can finish it — rather than a `.tmp-` tree that may already have
+lost its `owner.yml` and can no longer be proven abandoned. A writer's own
+failure path takes the same route. Like `.tmp-`, `.abandoned-` starts with `.`
+and appears in no listing; each `owner.yml` describes only the tree it sits in,
+so the destination still has no index file.
+
+After writing `backup.yml` and before the rename, the writer checks once more
+that `owner.yml` is still there and carries its own `token`. If not, it fails with
+`backup_temp_lost` (exit code 1) and **publishes nothing**. The check comes after
+the manifest because writing the manifest recreates a missing directory, and only
+the record tells whether the manifest landed in the tree the writer filled or in
+an empty stand-in. The heartbeat only opens an existing `owner.yml` to rewrite it
+in place and never creates one, so a directory that was taken away and then
+recreated by the transfer never grows a record of its own.
+
+**There is no destination lock, deliberately.** The destination is exactly where
+flock is least trustworthy — NFS, SMB and FUSE mounts each emulate it in their own
+way, or not at all — and a lock directory would need its own "is the holder dead"
+judgement, which is this same problem again. The two steps that can race are
+settled by operations all those filesystems perform atomically: a claim is an
+exclusive `mkdir`, taking a directory away is a `rename`. The only window a lock
+could close is the few microseconds between `mkdir` and writing `owner.yml`, and
+per the table above a directory in that window is only ever kept, silently.
+
+Costs and preconditions:
+
+- Hosts sharing a destination need roughly synchronised clocks (off by far less
+  than 30 minutes). A host whose clock runs behind by more than that has its
+  backups in progress judged abandoned by the others; a clock running ahead only
+  keeps its directories around longer.
+- A writer suspended for more than 30 minutes (a laptop going to sleep, say) is
+  judged abandoned by a `create` on another host; when it resumes it fails with
+  `backup_temp_lost` and publishes no incomplete backup.
+- A dead tree that only another host wrote is reclaimed by the first `create`
+  after its heartbeat has expired.
+
+Warnings produced by the cleanup (JSON Lines on stderr under `--json`):
+
+| `code` | Meaning |
+| --- | --- |
+| `backup_temp_kept` | A temporary directory was kept for lack of usable proof of ownership; `message` names the path and the reason |
+| `backup_temp_removal_failed` | Removing a directory judged abandoned failed (typically a received subvolume that cannot be deleted without `CAP_SYS_ADMIN`); the next `create` retries |
 
 ### Every mode produces the same "snapshot shape"
 

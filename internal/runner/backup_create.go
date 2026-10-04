@@ -370,15 +370,13 @@ func createBackup(workspace string, plan *backupPlan, opts backupOptions) (*back
 		return nil, err
 	}
 
-	id, err := newBackupID()
+	// The claim records who is writing the temporary tree, so that a create
+	// starting elsewhere against the same destination leaves it alone.
+	claim, err := claimBackupTemp(plan.Dest)
 	if err != nil {
 		return nil, err
 	}
-	destRoot := backupTempRoot(plan.Dest, id)
-	if err := os.MkdirAll(destRoot, 0700); err != nil {
-		return nil, failuref("dest_unwritable", "create %s: %v", destRoot, err)
-	}
-	cleanup := func() { _ = removeBackupTree(destRoot) }
+	id, destRoot := claim.id, claim.root
 
 	req := transferRequest{
 		source: source, dest: plan.Dest, destRoot: destRoot, mode: plan.Mode,
@@ -389,7 +387,7 @@ func createBackup(workspace string, plan *backupPlan, opts backupOptions) (*back
 	}
 	result, err := transferBackup(req)
 	if err != nil {
-		cleanup()
+		claim.discard()
 		return nil, err
 	}
 
@@ -401,17 +399,12 @@ func createBackup(workspace string, plan *backupPlan, opts backupOptions) (*back
 		ConfigDigest: source.configDigest, Modules: source.modules,
 		Channels: result.channels, Complete: true,
 	}
-	if err := writeBackupManifest(destRoot, manifest); err != nil {
-		cleanup()
-		return nil, failuref("finalize_failed", "write the backup manifest: %v", err)
-	}
-	// The rename is what publishes the backup. Until it happens the directory
-	// carries the temporary prefix and no listing will show it, so an
-	// interrupted transfer is invisible rather than misleading.
-	final := backupRoot(plan.Dest, id)
-	if err := os.Rename(destRoot, final); err != nil {
-		cleanup()
-		return nil, failuref("finalize_failed", "publish the backup: %v", err)
+	// The rename inside publish is what makes this a backup. Until it happens
+	// the directory carries the temporary prefix and no listing will show it,
+	// so an interrupted transfer is invisible rather than misleading.
+	if err := claim.publish(manifest); err != nil {
+		claim.discard()
+		return nil, err
 	}
 
 	finished := time.Now().UTC()

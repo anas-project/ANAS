@@ -332,6 +332,10 @@ anas backup verify --to /mnt/backup        # 这个也挂 cron
 耗时决定（秒级），而不是由数据量决定。备份中途失败时服务会被重新启动，这个补偿
 在进程被强杀之后依然生效。
 
+多个 workspace 或多台主机可以同时备份到同一个目标。`create` 开始时只清理能证明已被
+放弃的中断产物，别人正在写的临时目录不会被动；共用目标的主机时钟需大致同步。判定
+规则见 [backup 契约](/reference/contracts/backup)。
+
 ### 恢复到一台新机器
 
 ```bash
@@ -423,6 +427,14 @@ workspace 还没有远程 Module 视图。已有远程 lock 时运行
 
 **`no backup mode can run against …`** —— 跑 `anas backup capabilities --to …`，
 它会逐个模式说明原因。
+
+**`left …/.tmp-… in place: it has no owner.yml`** —— 早于所有权记录的版本留下的中断
+产物，或者这样的版本此刻正在写它。确认没有备份在写这个目标之后手工删除；里面的
+received 子卷要先用 `btrfs subvolume delete` 删。
+
+**`… is no longer the directory this backup was writing`**（`backup_temp_lost`）——
+传输期间临时目录被别处拿走了：旧版本的 `create`、另一台主机在心跳停了 30 分钟之后的
+清理，或手工删除。什么都没有发布，重跑即可；反复出现时检查共用这个目标的主机时钟。
 
 **`cannot delete Btrfs subvolume …: needs CAP_SYS_ADMIN`** —— 快照回收，见第八节。
 

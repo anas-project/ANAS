@@ -321,7 +321,7 @@ func runBackupCreate(args []string, jsonMode bool) error {
 		return failuref("lock_failed", "%s", err.Error())
 	}
 	defer unlock()
-	cleanStaleBackupTemp(plan.Dest)
+	cleanStaleBackupTemp(plan.Dest, jsonMode)
 
 	outcome, err := createBackup(workspace, plan, opts)
 	if err != nil {

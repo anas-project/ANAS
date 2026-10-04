@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-09-28
-updated: 2026-09-28
+updated: 2026-10-04
 ---
 
 # 备份与恢复统一执行要求
@@ -22,7 +22,7 @@ updated: 2026-09-28
 | 存放位置 | CLI 以 `--to`/`--from` 接受任意路径；控制台只认 `/etc/anas/anasd.yml` 中由 root 登记的 `backup_targets`。写到未登记路径的备份，控制台列不出来 |
 | 同一工作区 | create 与 restore 全程持有工作区运行时锁 `.anas/state/lock`。CLI 与 anasd 共用这把锁，所以已经与部署、快照维护和另一次备份互斥 |
 | 重复发起 | 第二个请求会等锁释放后再执行一遍，而不会得知已经有同样的操作在跑 |
-| 同一目的地 | 不加锁，而备份契约说明目的地常被多台主机共用。每次 create 开始时，`cleanStaleBackupTemp` 会删除目的地上全部 `.tmp-*` 目录，不检查是否有另一次备份正在写入，因此会让并发的备份失败（读代码发现，修复另行进行） |
+| 同一目的地 | 不加锁，而备份契约说明目的地常被多台主机共用。每次 create 开始时，`cleanStaleBackupTemp` 会删除目的地上全部 `.tmp-*` 目录，不检查是否有另一次备份正在写入，因此会让并发的备份失败（读代码发现；2026-10-04 已按 `BACKUP-R-011` 改为归属记录与证明式清理，见[备份契约](../../docs/reference/contracts/backup.md)） |
 
 已有的相关结论：
 

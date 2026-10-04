@@ -130,7 +130,7 @@ func runBackupInteractive(args []string) error {
 		return failuref("lock_failed", "%s", err.Error())
 	}
 	defer unlock()
-	cleanStaleBackupTemp(plan.Dest)
+	cleanStaleBackupTemp(plan.Dest, false)
 	outcome, err := createBackup(workspace, plan, opts)
 	if err != nil {
 		return err
