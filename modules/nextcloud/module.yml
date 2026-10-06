@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: nextcloud
 version: 34.0.2
-revision: 9
+revision: 11
 app_version: 34.0.2
 abi:
   supports:
@@ -10,7 +10,7 @@ abi:
 title: Nextcloud
 description: File sync, sharing, office integration, memories, and Talk.
 category: app
-status: release
+status: developing
 runtime:
   type: compose
   compose_file: docker-compose.yml

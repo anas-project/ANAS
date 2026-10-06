@@ -3,9 +3,11 @@
 提供 OIDC 与 SAML 的 IAM Provider，并通过 LDAPS 从 Samba AD 导入目录用户。
 
 > [!NOTE]
-> 当前生命周期为 `developing`。r10 已接入统一目录主体标识符和 OIDC 目录事件撤权，
-> 固定源码、helper 与 Hook 测试通过，实机验收仍在进行。
-> SAML 应用会话注销尚未实现；Netbird 因将 `sub` 投影到普通用户 API URL 而被拒绝注册。
+> 当前生命周期为 `release`。r10 的正式双架构构建、OIDC 目录事件撤权、真实 Nextcloud
+> anchor UID/改名/文件归属、备份恢复、凭据轮换和生命周期验收已通过，见
+> [2026-10-06 发布验收](../../dev-docs/reviews/2026-10-06-casdoor-release-acceptance.md)。
+> OIDC 为主要支持协议；SAML 应用会话注销列为待实现，不作为当前 OIDC 发布阻塞项。
+> Netbird 因将 `sub` 投影到普通用户 API URL 而被拒绝注册。
 
 ## 快速信息
 
@@ -14,7 +16,7 @@
 | --- | --- |
 | Module | `casdoor` |
 | 版本 / revision | `3.143.0-r10` |
-| 状态 | `developing` |
+| 状态 | `release` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
 <!-- generated:module-facts:end -->
@@ -63,13 +65,13 @@ Samba AD 仍是人员和目录账号的事实来源。Casdoor 使用受限只读
 
 | 目录侧变更 | Casdoor 的行为 | 证据 |
 | --- | --- | --- |
-| `sAMAccountName` 改变 | 同 anchor 复用内部 id，刷新标签；OIDC sub 与 SAML NameID 保持 anchor，捕获旧会话撤权 | 主体与撤权范围源码测试通过；r10 实机进行中 |
+| `sAMAccountName` 改变 | 同 anchor 复用内部 id，刷新标签；OIDC sub 与 SAML NameID 保持 anchor，捕获旧会话撤权 | r10 OIDC 与签名 SAML 协议通过；真实 Nextcloud 原 uid/文件和旧 Cookie 撤权通过 |
 | `mail` 改变 | 刷新 email，不参与身份匹配，不触发注销 | 既有目录属性 E2E；r10 行为由 helper 单元验证 |
 | `displayName` 等 profile 改变 | 刷新显示属性，合并 properties，不覆盖人工属性 | helper 单元通过 |
-| 直接/递归组改变 | 重新计算成员；准入丧失只撤对应应用，refresh 重查准入 | helper 范围与源码重放测试通过；r10 真实 Cookie 验收进行中 |
-| 账号停用 | 禁止、清组、捕获已有会话并撤权；重新启用复用身份 | 既有影子状态 E2E；r10 会话验收进行中 |
-| 账号删除 | 软删除、禁止、清组、撤销捕获会话；Consumer 账号与资产保留 | 既有影子状态 E2E；r10 会话验收进行中 |
-| 标识符回收 | 不同 anchor 的同名对象隔离，不覆盖旧绑定或自动恢复准入；健康显示冲突 | helper 冲突测试通过；实机标签回收待验收 |
+| 直接/递归组改变 | 重新计算成员；准入丧失只撤对应应用，refresh 重查准入 | r10 Cookie/refresh 和两 client 隔离通过；Nextcloud 直接组撤权通过 |
+| 账号停用 | 禁止、清组、捕获已有会话并撤权；重新启用复用身份 | r10 标准 Consumer 原 Cookie/refresh 撤权通过 |
+| 账号删除 | 软删除、禁止、清组、撤销捕获会话；Consumer 账号与资产保留 | r10 标准 Consumer 原 Cookie 撤权通过；不替代应用资产转移验收 |
+| 标识符回收 | 不同 anchor 的同名对象隔离，不覆盖旧绑定或自动恢复准入；健康显示冲突 | r10 同名新 anchor 拒绝登录、旧身份保留与健康冲突诊断通过 |
 
 **撤权与兜底路径**：账号停用、删除、改名或锚点冲突撤销该用户的已捕获会话；组准入丧失只撤
 对应应用。OIDC 通过标准 back-channel 通知终止 Consumer 会话，通知失败独立持久化重试，不阻塞

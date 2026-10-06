@@ -8,8 +8,8 @@ SSO portal, application launcher, and OIDC/SAML identity provider.
 | Item | Value |
 | --- | --- |
 | Module | `llng` |
-| Version / revision | `2.23.2-r11` |
-| Status | `release` |
+| Version / revision | `2.23.2-r12` |
+| Status | `developing` |
 | Category | `identity` |
 | Runtime | `compose` |
 <!-- generated:module-facts:end -->
@@ -47,63 +47,39 @@ There is currently no generic `anas user/group/password` command. Directory-back
 
 ### Directory attribute changes
 
-**Matching key: the `sAMAccountName` (lowercased), not the anchor — this is a declared gap.**
+**OIDC identity key: `anasIdentityAnchor`.** r12 sets
+`oidcRPMetaDataOptionsUserIDAttr=anasIdentityAnchor` for every RP. ID Tokens, UserInfo,
+refreshed ID Tokens and Logout Tokens use the same source. Each RP rule requires a non-empty
+session anchor together with its application-group rule, without a username fallback.
+Portal login still uses `sAMAccountName`; `whatToTrace` remains a lower-case login label for
+logs and session searches. LLNG keeps no user replica. Session IDs are table primary keys;
+`_whatToTrace` is an indexed field.
 
-LLNG keeps no directory replica: on every login the Portal authenticates straight against Samba AD
-with `AuthLDAPFilter = (&<user class><enabled>(sAMAccountName=$user))`, and the session is its only
-persistent state. A session's primary key is `whatToTrace`, which this Module's `lmConf.json` defines
-as the macro `_whatToTrace`, evaluating under AD authentication to `lc($_user)` — the login name the
-person typed, lowercased.
+Netbird exposes `sub` in ordinary users' API URLs without an approved anchor-projection
+exception. Both calculate and render_env reject the LLNG + Netbird OIDC combination
+(`DIRKEY-R-013`). Fresh Nextcloud deployments have an explicitly approved exception for
+anchor UIDs and technical paths; human names still come from directory attributes.
 
-**Two consequences follow that do not satisfy `DIRKEY-R-001`**, declared explicitly here per
-`DIRKEY-R-004` rather than shrugged off as "the IAM handles it":
-
-1. **The OIDC `sub` is that login name.** This Module sets `oidcRPMetaDataOptionsUserIDAttr` for no
-   RP, and the pinned `2.23.2` falls back to `whatToTrace` when that field is empty. So after a
-   directory rename the same person presents a **new subject identifier** to every OIDC Consumer:
-   `forgejo` creates a second account, `vikunja` creates one just in time under the new
-   `(issuer, sub)`, `netbird` produces a second user, and all existing assets stay behind on the old
-   account.
-2. **The SAML `NameID` also comes from the login name.** Every `samlNameIDFormatMap*` line in
-   `llng-config.sh` is commented out, so the NameID is decided by LLNG's default format mapping and
-   still resolves to `$uid` (the `sAMAccountName`).
-
-**The anchor can be delivered; it just is not used as the subject identifier.** `ldapExportedVars`
-already contains `anasIdentityAnchor`, and a Consumer that requests it explicitly receives the correct
-value in its claim or attribute — which is exactly how `nextcloud` and `meshcentral` sidestep both
-points above, and both of their identity assertions already pass E2E against an LLNG deployment.
-
-**Technical obstacle**: `whatToTrace` is the session primary key and the logging key, so changing it
-changes the session store, the audit log, and every table indexed by it at once; and whether a per-RP
-`oidcRPMetaDataOptionsUserIDAttr` can reach the `anasIdentityAnchor` exported var, and whether the
-SAML NameID source can be configured independently, **must both be settled by a probe against the
-pinned `2.23.2`**. Remediation and the probe belong to M2 of the
-[directory identity key plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md);
-per `DIRKEY-R-005`, re-check the conclusion whenever the pinned version changes.
-
-| Directory change | What LLNG does | Evidence |
+| Directory change | LLNG behavior | Evidence |
 | --- | --- | --- |
-| `sAMAccountName` changes | **Equivalent to replacing the person**: the Portal authenticates the new name successfully, but `whatToTrace` has changed, the OIDC `sub` and SAML NameID change with it, and downstream Consumers treat them as a newcomer. Consumers that request the anchor claim (`nextcloud`, `meshcentral`) are unaffected | `sub`/NameID deriving from `whatToTrace`: `inferred` (from this Module's `lmConf.json`, the absence of the corresponding overrides in `llng-config.sh`, and the pinned version's fallback behaviour — **no probe has been run**); the anchor claim being delivered correctly: `verified`, entry `test-env/scripts/server-llng-oidc-login-e2e.sh` (asserts the MeshCentral account id equals `user//~oidc:<anchor>` and Nextcloud's `oc_ldap_user_mapping.directory_uuid` equals the anchor) |
-| `mail` changes | Re-read from `ldapExportedVars.mail` at every login; takes no part in identity matching and carries no uniqueness constraint | `inferred` |
-| `displayName` and other profile attributes | Re-read from `ldapExportedVars` at every login. LLNG caches no directory replica, so **there is no stale-attribute problem** | `inferred` |
-| Direct or recursive group membership changes | Recomputed at every login through `ldapGroupRecursive: 1`, so authorization takes effect at the **next login**; an established LLNG session is not recomputed when directory groups change | recursive groups taking effect: `verified`, entry `server-llng-login-matrix-e2e.sh` (the admitted/denied matrix); established sessions not being recomputed: `inferred` |
-| Account disabled | `AuthLDAPFilter` carries `(!(userAccountControl:...=2))`, so after a disable the person **cannot log in again**. **An established LLNG session does not expire on its own** and an administrator has to delete that session in the Manager | login refused: `verified`, entry `server-llng-login-matrix-e2e.sh`; survival of an existing session: `inferred` |
-| Account deleted | As above. LLNG holds no in-application assets; but downstream Consumers' accounts and assets are entirely unaffected and must be handled one by one | `inferred` |
-| Identifier recycled and reassigned | **Fail-open, and the most dangerous row in this deployment**: once a newcomer receives the recycled `sAMAccountName` their `whatToTrace` is identical to the previous holder's, so the OIDC `sub` and SAML NameID are identical too, and every Consumer that identifies people by the subject identifier **takes the newcomer for the old person** and hands over all their accounts and assets | `inferred` (resting on the same unprobed `sub` derivation as the row above) |
+| `sAMAccountName` renamed | Fresh authentication reads the new label while OIDC `sub` stays unchanged. Anchor consumers reuse their account. Stable SAML NameID remains pending | `verified`; see [host acceptance](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-05-llng-anchor-sub-acceptance.md) |
+| `mail` / UPN changed | Fresh directory authentication reads new attributes without changing OIDC `sub` | `inferred`; no dedicated change probe this round |
+| `displayName` / other profile fields changed | Fresh authentication reads directory values; existing sessions can retain older values | Read path `verified`; change-specific behavior `inferred` |
+| Direct / recursive groups changed | Fresh authentication recomputes membership; directory-event revocation of existing sessions is not implemented | Historical admission matrix `verified`; live revocation pending |
+| Account disabled | Enabled filter rejects fresh directory authentication; existing SSO sessions still require administrative removal | Historical admission matrix `verified`; not rerun this round |
+| Account deleted | Fresh directory authentication fails; existing SSO and consumer sessions require separate revocation | `inferred`; no deletion probe this round |
+| Login label recycled | A new directory object receives a different anchor; OIDC consumers must not reuse the old account | `verified`; see [host acceptance](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-05-llng-anchor-sub-acceptance.md) |
 
-**Fallback path** — what operations must do for every "no automatic path" row above:
+**Fallback:** after disabling, deleting or removing groups, delete all of the user's SSO
+sessions in LLNG Manager, checking old and new login labels, and revoke consumers according
+to their own documentation. Portal browser logout sends configured OIDC back-channel
+notifications; it is not a Samba AD event listener. Existing SSO directory attributes do not
+refresh automatically.
 
-1. After disabling or deleting a directory account, **delete that user's session in the LLNG Manager**
-   (look it up by `whatToTrace`, i.e. the lowercased login name); disabling in the directory alone
-   does not end an established session;
-2. After revoking, carry out each Consumer's own *Directory attribute changes* actions as well; all
-   LLNG can guarantee is that the person cannot sign in through the Portal again;
-3. **Directory-side process constraint (mandatory)**: with LLNG as the Provider, **`sAMAccountName`
-   must never, under any circumstances, be recycled**, and **renames must follow a manual
-   procedure**: transfer or clean up that person's assets in every Consumer first, then rename. Until
-   `DIRKEY-R-008` lands these are discipline, not a technical guarantee;
-4. A new Consumer that needs stability across renames **must request the `anasIdentityAnchor` claim
-   explicitly and use it as its persistent key**, never `sub` or `NameID`.
+**Pending:** anchor SAML NameID and real application-session acceptance; directory-event
+session revocation. SAML is not this round's primary supported protocol. SAML deployments
+still need manual rename and label-recycling procedures. OIDC's stable identity results must
+not be applied to SAML. The product is unreleased; no legacy-account migration is provided.
 
 ## Administrator login and IAM-outage recovery
 

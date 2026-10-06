@@ -3,9 +3,12 @@
 IAM provider for OIDC and SAML with directory users imported from Samba AD over LDAPS.
 
 > [!NOTE]
-> The lifecycle is `developing`. Revision r10 integrates anchor subjects and directory-driven
-> OIDC revocation. Pinned-source, helper and hook tests pass; deployment acceptance is in progress.
-> SAML application-session logout remains unavailable. Netbird registration is rejected because
+> The lifecycle is `release`. Formal builds for both architectures, directory-driven OIDC
+> revocation, real Nextcloud anchor UID/rename/file ownership, backup restoration, credential
+> rotation, and lifecycle acceptance pass. See the
+> [2026-10-06 release acceptance](../../dev-docs/reviews/2026-10-06-casdoor-release-acceptance.md).
+> OIDC is the primary supported protocol. SAML application-session logout is future work and does
+> not block the current OIDC release. Netbird registration is rejected because
 > it projects `sub` into ordinary users' API URLs.
 
 ## Quick facts
@@ -15,7 +18,7 @@ IAM provider for OIDC and SAML with directory users imported from Samba AD over 
 | --- | --- |
 | Module | `casdoor` |
 | Version / revision | `3.143.0-r10` |
-| Status | `developing` |
+| Status | `release` |
 | Category | `identity` |
 | Runtime | `compose` |
 <!-- generated:module-facts:end -->
@@ -64,13 +67,13 @@ Source tests do not replace protocol or consumer-account ownership acceptance.
 
 | Directory change | What Casdoor does | Evidence |
 | --- | --- | --- |
-| `sAMAccountName` changes | Reuse internal id by anchor, refresh labels, preserve anchor sub/NameID and revoke captured old sessions | Source subject/scope tests pass; r10 deployment acceptance in progress |
+| `sAMAccountName` changes | Reuse internal id by anchor, refresh labels, preserve anchor sub/NameID and revoke captured old sessions | r10 OIDC and signed SAML protocol pass; real Nextcloud retains uid/files and revokes old cookies |
 | `mail` changes | Refresh email without identity matching or logout | Historical profile E2E and current helper tests |
 | Profile attributes change | Refresh profiles and merge properties without deleting manual attributes | Helper tests pass |
-| Direct/recursive group changes | Recalculate membership; lost admission revokes only the affected application and refresh rechecks admission | Helper scope/source replay tests pass; r10 saved-cookie acceptance in progress |
-| Account disabled | Forbid, clear groups and revoke captured sessions; enable reuses identity | Historical shadow-state E2E; r10 session acceptance in progress |
-| Account deleted | Soft delete, forbid, clear groups and revoke captured sessions; consumer accounts/assets remain | Historical shadow-state E2E; r10 session acceptance in progress |
-| Identifier recycled | Quarantine a different anchor using the same name; never overwrite the old binding or restore access by label | Helper conflict tests pass; deployment reuse acceptance pending |
+| Direct/recursive group changes | Recalculate membership; lost admission revokes only the affected application and refresh rechecks admission | r10 cookie/refresh and two-client isolation pass; real Nextcloud direct-group revocation passes |
+| Account disabled | Forbid, clear groups and revoke captured sessions; enable reuses identity | r10 standards-consumer saved-cookie/refresh revocation passes |
+| Account deleted | Soft delete, forbid, clear groups and revoke captured sessions; consumer accounts/assets remain | r10 standards-consumer saved-cookie revocation passes; this does not certify application asset transfer |
+| Identifier recycled | Quarantine a different anchor using the same name; never overwrite the old binding or restore access by label | r10 rejects the new anchor's login, preserves the old identity and reports a health conflict |
 
 **Revocation and fallback**: disable, delete, rename and anchor conflicts revoke captured user
 sessions; group admission loss revokes only the affected application. Standard OIDC back-channel

@@ -10,8 +10,8 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `nextcloud` |
-| 版本 / revision | `34.0.2-r9` |
-| 状态 | `release` |
+| 版本 / revision | `34.0.2-r11` |
+| 状态 | `developing` |
 | 类别 | `app` |
 | 运行时 | `compose` |
 <!-- generated:module-facts:end -->
@@ -38,7 +38,7 @@ modules:
 ```yaml
 identity:
   iam:
-    provider: llng
+    provider: casdoor
 ```
 
 ## 回收站配置
@@ -62,9 +62,12 @@ php /var/www/html/occ config:system:set trashbin_retention_obligation --type=str
 
 ## 身份、用户与 Group
 
-LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍受支持。两条链路通过一致的目录用户名和 `anasIdentityAnchor` 关联。Samba `Admins` 动态映射 Nextcloud 管理员权限。普通目录密码修改通过受限 password bind 服务账号回写，而不是数据库管理员账号。
+LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍受支持。两条链路通过 `anasIdentityAnchor` 关联既有 LDAP 账号。Samba `Admins` 动态映射 Nextcloud 管理员权限。普通目录密码修改通过受限 password bind 服务账号回写，而不是数据库管理员账号。
 
-固定版本 `user_oidc 8.10.1` 声明 RP-Initiated Logout 与 session-required back-channel endpoint，并按 `sid` 撤销匹配的 Nextcloud 会话；只有 Provider 的管理员删 session/账号停用真实 E2E 产生通知时，才把对应 Provider 标为后台双向登出。`user_saml 8.2.0` 声明 HTTP-Redirect SLS：Authentik/LLNG 仅按浏览器 SLO 验收，Casdoor 不发布 SLO 时只执行本地登出。协议或域名切换会清掉相反协议和旧 endpoint。
+固定版本 `user_oidc 8.11.0` 声明 RP-Initiated Logout 与 session-required back-channel endpoint，并按 `sid` 撤销匹配的 Nextcloud 会话；只有 Provider 的管理员删 session/账号停用真实 E2E 产生通知时，才把对应 Provider 标为后台双向登出。`user_saml 8.2.0` 声明 HTTP-Redirect SLS：Authentik/LLNG 仅按浏览器 SLO 验收，Casdoor 不发布 SLO 时只执行本地登出。协议或域名切换会清掉相反协议和旧 endpoint。
+
+r11 使用原样官方 OIDC 插件，启动时检查应用完整性；不再修改插件控制器。模块仍处于
+`developing`，其他 Provider、客户端体验与完整镜像生命周期仍需验收。
 
 | 能力 | 当前声明 |
 | --- | --- |
@@ -79,33 +82,32 @@ Nextcloud 的账号密码策略不另建一套规则：界面预检的最小长�
 
 ### 目录属性变更说明
 
-**匹配键**：`anasIdentityAnchor`。LDAP 后端把它配置为 `ldapExpertUUIDUserAttr`/
-`ldapExpertUUIDGroupAttr`，账号映射表 `oc_ldap_user_mapping.directory_uuid` 里存的就是 anchor 值，
-改名后不变。**但应用内用户 id（`oc_users.uid`）是 `sAMAccountName`**，它由
-`ldapExpertUsernameAttr` 决定，只在首次映射时写一次，此后即使目录改名也不会重写——文件数据目录
-`data/<uid>/`、分享链接和 `/ocs/.../users/<uid>` 里出现的都是这个旧用户名。两者的分工是刻意的：
-认人用 anchor，显示与路径用用户名。
+**匹配键与内部 UID**：`anasIdentityAnchor`。LDAP 的 `ldapExpertUUIDUserAttr`、
+`ldapExpertUUIDGroupAttr` 和 `ldapExpertUsernameAttr` 均取 anchor 属性，OIDC 使用
+`--unique-uid=0 --mapping-uid=sub`，Provider 必须使 `sub` 等于同一 anchor。
+LDAP 搜索属性和登录过滤器同时允许 anchor 匹配，确保新用户首次登录能够导入。
+Casdoor 与 LLNG r12 的 anchor `sub` 组合均已实机验证；其他 Provider 的历史验收不覆盖本次配置。
 
-OIDC 模式下 `user_oidc` 的 `--mapping-uid=preferred_username`（即 `sAMAccountName`）把登录汇合到同一个
-`uid`；SAML 模式下 `general-uid_mapping` 与 `user_id_ldap_mapping` 都取 anchor，由 anchor 找回既有 LDAP
-账号。两条链路最终都落在同一条 LDAP 映射记录上。
+此配置面向无需迁移的全新部署；既有 LDAP 映射不会因修改属性配置而重写 UID。
+登录名仍使用 `sAMAccountName`，显示名称仍使用 `displayName`；内部 UID、WebDAV/API 路径和
+内部数据目录会包含 anchor。SAML 仍按显式 anchor 属性匹配 LDAP 账号，应用会话回归待完成。
 
 | 目录侧变更 | Nextcloud 的行为 | 证据 |
 | --- | --- | --- |
-| `sAMAccountName` 改变 | 同一账号：映射按 anchor 命中，不新建。应用内用户 id 与数据目录 `data/<uid>/` 冻结在旧用户名，URL 标识符不跟着变。**OIDC 模式下登录汇合键是 `preferred_username`**，改名后它与冻结的 `uid` 不再相等，能否仍汇合到原账号未经复核 | anchor 为映射键：`已验证`，入口 `test-env/scripts/server-authentik-oidc-login-e2e.sh`（断言 `oc_ldap_user_mapping.directory_uuid == anchor`）与 `server-llng-oidc-login-e2e.sh`；改名后的汇合行为：`推断` |
+| `sAMAccountName` 改变 | OIDC 按 `sub` 直接匹配 anchor UID；改名保持内部 UID 和文件归属 | Casdoor + Nextcloud 真实登录与文件：`已验证`，入口 `server-casdoor-nextcloud-identity-e2e.py`；其他 Provider 的 r11 回归待运行 |
 | `mail` 改变 | 下次同步或登录时从 `ldapEmailAttribute` 刷新。它不参与账号绑定；Nextcloud 的邮箱没有全局唯一约束，不会因此建号失败 | `推断` |
-| `displayName` 与其他 profile 属性 | 从 `ldapUserDisplayName` 刷新，时机是 LDAP 同步与登录；不是实时 | 显示名与目录一致：`已验证`，入口同上（断言 `user:info .display_name == 目录 displayName`）；刷新时机：`推断` |
+| `displayName` 与其他 profile 属性 | 从 `ldapUserDisplayName` 刷新，时机是 LDAP 同步与登录；不是实时 | Casdoor + 官方 8.11.0：HTML 与 OCS 显示姓名而非 anchor UID，`已验证`，入口同上；刷新时机：`推断` |
 | 直接或递归组成员变更 | `ldapNestedGroups=1`，授权在 LDAP 同步与登录时生效；`Admins` 经 `ldap:promote-group` 动态映射为应用管理员。订阅目录事件后可缩短到事件传播时间，但不是实时 | 组映射与管理员映射：`已验证`，入口同上；收敛时刻：`推断` |
 | 账号停用 | 登录被拒：`NEXTCLOUD_USER_LOGIN_FILTER` 含 `(!(userAccountControl:...=2))`。但**用户过滤器不含该条件**，账号在 Nextcloud 里继续存在；**已有 session、App 密码与 WebDAV/CalDAV 客户端凭据不经过登录过滤器，是否随之失效未经复核** | 登录过滤器含停用条件：`已验证`（Hook 渲染，见技术文档）；App 密码与已有 session 的结果：`推断` |
 | 账号删除 | 用户掉出用户过滤器，Nextcloud 按 `user_ldap` 的删除检测把它标为已删除并保留映射记录；**文件不会自动转交**，必须由管理员显式转移 | `推断` |
-| 标识符回收再分配 | 新人拿到回收的 `sAMAccountName` 时 anchor 不同，映射不会命中旧记录；但新人的 `uid` 会与旧账号已占用的 `uid` 相同，映射建立失败或落到旧数据目录 —— 结果未经复核，按 fail-open 对待 | `推断` |
+| 标识符回收再分配 | 新人复用用户名时 anchor 不同，内部 UID 也不同，按设计不会继承原账号文件；原样官方插件的用户名复用用例仍待实机验收 | `推断` |
 
 **兜底路径**——上表每一行"无自动路径"对应的运维动作：
 
 1. 停用目录账号后，必须在 Nextcloud 执行 `occ user:disable <uid>`，并在"设置 → 安全"里**删除该
    用户的全部 App 密码与设备 token**；只靠目录停用不足以断开已配对的桌面/移动客户端；
 2. 删除目录账号前，先用 `occ files:transfer-ownership <uid> <接手人>` 转移文件，再删除账号；
-3. 组撤权要立即生效时，除等待同步外还要结束该用户已有的 Nextcloud session（删除其 App 密码与
+3. OIDC 会话由 Provider 的 back-channel 通知终止；没有通知路径或使用设备凭据时，组撤权要立即生效，还要结束该用户的 session（删除其 App 密码与
    session token）；
 4. **目录侧流程约束**：`sAMAccountName` 不得回收再分配。anchor 能保证"改名还是同一个人"，但
    保证不了"回收的用户名不会撞上冻结在旧值的 `uid`"。
@@ -204,7 +206,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`34.0.2-r9`（reviewed 2026-08-21）
+- Module version / 版本：`34.0.2-r11`（reviewed 2026-08-21）
 - Timezone / 时区：`partial` — Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
 - Language scope / 语言范围：Nextcloud Web UI
 - Selection / 选择方式：`browser`

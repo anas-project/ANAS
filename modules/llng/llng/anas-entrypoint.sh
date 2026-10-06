@@ -32,6 +32,22 @@ real_ip_config=/etc/nginx/sites-enabled/00-anas-real-ip.conf
   fi
 } >"$real_ip_config"
 
+# Keep configuration reload on loopback. The upstream image has no reload
+# virtual host, so CLI saves otherwise hit the default vhost and workers can
+# continue serving an earlier RP registry.
+cat >/etc/nginx/sites-enabled/01-anas-reload.conf <<'NGINX'
+server {
+  listen 127.0.0.1:8089;
+  server_name localhost;
+  location = /reload {
+    include /etc/nginx/fastcgi_params;
+    fastcgi_pass unix:/var/run/llng-fastcgi-server/llng-fastcgi.sock;
+    fastcgi_param LLTYPE reload;
+  }
+  location / { return 404; }
+}
+NGINX
+
 for name in BASE_DOMAIN DB_HOST DB_PASSWORD DB_POST DB_USER LLNG_DB_NAME LLNG_DB_TYPE LLNG_DOMAIN LLNG_DOMAIN_FULL LLNG_LDAP_AUTH_FILTER LLNG_LDAP_MAIL_FILTER LLNG_MANAGER_DOMAIN LLNG_MANAGER_DOMAIN_FULL SAMBA_DC_ADMIN_GROUP_NAME SAMBA_DC_BASE_GROUPS_DN SAMBA_DC_BASE_GROUPS_ROLE_DN SAMBA_DC_BASE_USERS_DN SAMBA_DC_LDAPS_PORT SAMBA_DC_LDAPS_SERVER_URL SAMBA_DC_PASSWORD_BIND_DN SAMBA_DC_PASSWORD_BIND_PASSWORD SAMBA_DC_USER_COMPLEX_PASS SAMBA_DC_USER_MIN_PASS_LENGTH SAMBA_DC_USER_PASSWORD_HISTORY SERVER_NAME TRAEFIK_DOMAIN_FULL; do
   if [ -z "${!name:-}" ]; then
     echo "missing required environment variable: $name" >&2

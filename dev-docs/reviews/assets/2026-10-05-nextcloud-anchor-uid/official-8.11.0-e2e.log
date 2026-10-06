@@ -1,0 +1,8 @@
+No syntax errors detected in /var/www/html/custom_apps/user_oidc/lib/Controller/LoginController.php
+AH00558: apache2: Could not reliably determine the server's fully qualified domain name, using 172.31.3.5. Set the 'ServerName' directive globally to suppress this message
+ldap_internal_uid=anasIdentityAnchor oidc_mapping=sub identity_lookup_patch=false logout_patch=false plugin=official-8.11.0
+nextcloud_initial_login=passed ldap_anchor=verified uid_is_anchor=true identity_lookup_patch=false file=created
+nextcloud_rename=passed same_ldap_account=true original_file=preserved
+nextcloud_directory_logout=passed original_cookies=revoked unaffected_user=active
+AH00558: apache2: Could not reliably determine the server's fully qualified domain name, using 172.31.3.5. Set the 'ServerName' directive globally to suppress this message
+isolated_configuration_restored=true

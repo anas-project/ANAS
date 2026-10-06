@@ -442,8 +442,10 @@ case "$probe_level" in
     ;;
   contracts)
     section "existing IAM runtime-contract probe"
+    runtime_apps=nextcloud,meshcentral,netbird
+    [ "$iam_provider" != llng ] || runtime_apps=nextcloud,meshcentral
     ANAS_TEST_IAM_PROVIDER=$iam_provider \
-    ANAS_TEST_IAM_APPS=nextcloud,meshcentral,netbird \
+    ANAS_TEST_IAM_APPS=$runtime_apps \
     ANAS_TEST_CONTAINER_PREFIX=$prefix \
       "$script_dir/server-iam-runtime-contract-e2e.sh"
     printf 'LAM temporary-user and Nextcloud credential-rotation probes skipped (probe level: contracts).\n'

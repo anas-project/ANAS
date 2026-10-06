@@ -1,0 +1,6 @@
+{
+  "test-env/scripts/server-casdoor-lifecycle-e2e.sh": "5799f7d04c8f9a0655f6429e92067f46c40b36524f8c73b362fae767c551f702",
+  "test-env/scripts/server-casdoor-restore-e2e.sh": "d3f0cccb040982865dcec34c5d8b3734db46e869e6630bab3a5179c3e7451de4",
+  "test-env/scripts/server-casdoor-key-rotation-e2e.sh": "31e5f2a40d6fb1bdfb3c4c2b6212965c751c615caf97c3d9d8782e9410c48338",
+  "test-env/scripts/server-casdoor-local-admin-e2e.sh": "0dc7bdc97b16bef6118ba6759040ab342697e515ad1ac28368c87fabdad9685c"
+}

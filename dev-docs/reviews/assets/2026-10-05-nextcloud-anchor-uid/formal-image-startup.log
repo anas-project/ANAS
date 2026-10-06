@@ -1,0 +1,10 @@
+official_integrity=passed
+oidc_mapping=sub unique_uid=0
+8.11.0
+| ldapAttributesForUserSearch   | sAMAccountName;userPrincipalName;mail;anasIdentityAnchor                                                                                                                                                                                                                                                                                                                                                                                 |
+| ldapExpertUUIDUserAttr        | anasidentityanchor                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ldapExpertUsernameAttr        | anasidentityanchor                                                                                                                                                                                                                                                                                                                                                                                                                       |
+9504a13d1a6206b5cf6ec52e220608d67c7aa434876161f0959ade9923568cdf  /var/www/html/custom_apps/user_oidc/lib/Controller/LoginController.php
+ac733a932603079413617d756f7e8f37c82bd52bf74dc13499aabbba86c65d66  /usr/local/bin/task.sh
+ghcr.io/anas-project/anas-nextcloud:34.0.2-r11 sha256:89bb0c1f8f896444cedd386998971ed4ba952504e3ea3b568263583b9d3e4593
+formal_image_startup=passed

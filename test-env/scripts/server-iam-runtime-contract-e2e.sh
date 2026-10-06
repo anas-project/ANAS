@@ -7,7 +7,12 @@ source "$script_dir/server-require-isolated-docker.sh"
 docker_cmd=${DOCKER_CMD:-docker}
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_anchor_}
 provider=${ANAS_TEST_IAM_PROVIDER:?ANAS_TEST_IAM_PROVIDER must be authentik or llng}
-apps=${ANAS_TEST_IAM_APPS:-nextcloud,meshcentral,netbird}
+# LLNG r12 rejects Netbird's unapproved anchor projection.
+if [ "$provider" = llng ]; then
+  apps=${ANAS_TEST_IAM_APPS:-nextcloud,meshcentral}
+else
+  apps=${ANAS_TEST_IAM_APPS:-nextcloud,meshcentral,netbird}
+fi
 
 case "$provider" in
   authentik|llng) ;;
@@ -74,6 +79,9 @@ case "$provider" in
       "$docker_cmd" exec "$iam_container" sh -lc \
         'file=$(find /var/lib/lemonldap-ng/conf -maxdepth 1 -name "lmConf-*.json" | sort -V | tail -n 1); jq -r --arg app "$1" ".oidcRPMetaDataOptions[\$app].oidcRPMetaDataOptionsRule // empty" "$file"' \
         iam-contract "$app" | grep -Fq "inGroup('APP_$app')"
+      "$docker_cmd" exec "$iam_container" sh -lc \
+        'file=$(find /var/lib/lemonldap-ng/conf -maxdepth 1 -name "lmConf-*.json" | sort -V | tail -n 1); jq -e --arg app "$1" '\''(.oidcRPMetaDataOptions[$app].oidcRPMetaDataOptionsUserIDAttr == "anasIdentityAnchor") and (.oidcRPMetaDataOptions[$app].oidcRPMetaDataOptionsRule | contains("defined($anasIdentityAnchor)"))'\'' "$file"' \
+        iam-contract "$app" >/dev/null
     done
     "$docker_cmd" exec "$iam_container" sh -lc \
       'file=$(find /var/lib/lemonldap-ng/conf -maxdepth 1 -name "lmConf-*.json" | sort -V | tail -n 1); jq -e '\''(.oidcRPMetaDataOptions.nextcloud.oidcRPMetaDataOptionsLogoutType == "back") and (.oidcRPMetaDataOptions.nextcloud.oidcRPMetaDataOptionsLogoutSessionRequired == 1) and (.oidcRPMetaDataOptions.nextcloud.oidcRPMetaDataOptionsLogoutUrl | endswith("/index.php/apps/user_oidc/backchannel-logout/anas"))'\'' "$file"' \
@@ -87,7 +95,9 @@ test "$(container_env "${prefix}nextcloud" NEXTCLOUD_OIDC_DISCOVERY_URL)" = \
 test "$(container_env "${prefix}meshcentral" MESHCENTRAL_IAM_PROTOCOL)" = oidc
 test "$(container_env "${prefix}meshcentral" MESHCENTRAL_OIDC_DISCOVERY_URL)" = \
   "$(container_env "$iam_container" ANAS_IAM_BINDING__MESHCENTRAL__OIDC_DISCOVERY_URL)"
-test "$(container_env "${prefix}netbird_management" AUTH_CLIENT_ID)" = \
-  "$(container_env "$iam_container" ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID)"
+if csv_has "$apps" netbird; then
+  test "$(container_env "${prefix}netbird_management" AUTH_CLIENT_ID)" = \
+    "$(container_env "$iam_container" ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID)"
+fi
 
 printf 'PASS: provider=%s generic registrations, provider translation, and app runtime bindings match\n' "$provider"

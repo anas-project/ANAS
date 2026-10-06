@@ -5,7 +5,7 @@
 本文面向 Module 维护者，记录 `nextcloud` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `34.0.2-r9` / `anas.module/v1`.
+> 状态：当前实现；对应 `34.0.2-r11` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -24,8 +24,8 @@
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_imaginary` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-imaginary:2026.07.30-d5e7ffac6e1a` | `nextcloud` | 0 |
-| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r9` | `nextcloud, db, traefik` | 3 |
-| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r9` | `nextcloud, db` | 2 |
+| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r11` | `nextcloud, db, traefik` | 3 |
+| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r11` | `nextcloud, db` | 2 |
 | `anas_nextcloud-push` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-notify-push:2026.07.30-7c156254927e` | `nextcloud, db, traefik` | 1 |
 | `anas_nextcloud-redis` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-redis:8.10.0-alpine` | `nextcloud` | 1 |
 | `anas_talk` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-talk:2026.07.30-2b9a7d12d3e6` | `nextcloud, traefik` | 1 |
@@ -57,11 +57,11 @@
 
 ## 身份与授权数据流
 
-LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍受支持。两条链路通过一致的目录用户名和 `anasIdentityAnchor` 关联。Samba `Admins` 动态映射 Nextcloud 管理员权限。普通目录密码修改通过受限 password bind 服务账号回写，而不是数据库管理员账号。
+LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍受支持。两条链路通过 `anasIdentityAnchor` 关联既有 LDAP 账号。Samba `Admins` 动态映射 Nextcloud 管理员权限。普通目录密码修改通过受限 password bind 服务账号回写，而不是数据库管理员账号。
 
 ### IAM 发起登出
 
-固定 `user_oidc 8.10.1` 注册 `/index.php/apps/user_oidc/backchannel-logout/anas`、`backchannel` 与 session-required，并保存 ID Token/`sid` 以进行会话粒度撤销；Module 登出同时使用已注册 post-logout URI。管理员删除 IAM session/停用账号只有在 Provider 固定版本真实发送通知的 E2E 通过后才计为后台双向登出。固定 `user_saml 8.2.0` 注册 `/index.php/apps/user_saml/saml/sls` 的 Redirect binding；Redirect/POST 都是浏览器 SLO，不能推断为后台撤销。Provider 未发布 SLO（当前 Casdoor）时 Hook 清除旧端点并仅本地登出。每次 apply 会重建当前协议声明，清掉旧域名和相反协议字段。
+固定 `user_oidc 8.11.0` 注册 `/index.php/apps/user_oidc/backchannel-logout/anas`、`backchannel` 与 session-required，并保存 ID Token/`sid` 以进行会话粒度撤销；Module 登出同时使用已注册 post-logout URI。管理员删除 IAM session/停用账号只有在 Provider 固定版本真实发送通知的 E2E 通过后才计为后台双向登出。固定 `user_saml 8.2.0` 注册 `/index.php/apps/user_saml/saml/sls` 的 Redirect binding；Redirect/POST 都是浏览器 SLO，不能推断为后台撤销。Provider 未发布 SLO（当前 Casdoor）时 Hook 清除旧端点并仅本地登出。每次 apply 会重建当前协议声明，清掉旧域名和相反协议字段。
 
 Web 与 cron 容器都会在 ANAS 内部 CA 存在时安装它。`user_ldap` 会在 cron 后台任务中周期更新目录属性，因此 cron 不仅共享 Nextcloud 数据，也必须共享 `/certs` 信任材料；CA 安装或 trust store 更新失败会阻断 cron 启动，公有 CA 则直接使用系统 trust store。
 
@@ -80,18 +80,18 @@ Web 与 cron 容器都会在 ANAS 内部 CA 存在时安装它。`user_ldap` 会
 
 与 README 的《目录属性变更说明》一一对应。
 
-- **身份存在哪张表/哪个字段**：`oc_ldap_user_mapping`。`directory_uuid` 列保存 anchor（匹配键），
-  `owncloud_name` 列保存应用内 `uid`。`oc_users.uid` 与文件数据目录 `data/<uid>/` 用的都是
-  `owncloud_name`。`task.sh` 通过 `occ ldap:set-config` 写入：`ldapExpertUUIDUserAttr` 与
-  `ldapExpertUUIDGroupAttr` 取 `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE`，`ldapExpertUsernameAttr` 取
-  `SAMBA_DC_USER_NAME`（即 `sAMAccountName`）。
-- **匹配键**：anchor，两处配置都显式声明，不依赖上游默认。OIDC 模式下
-  `occ user_oidc:provider anas --unique-uid=0 --mapping-uid=preferred_username` 使登录按用户名汇合到
-  同一个 `uid`；SAML 模式下 `occ saml:config:set 1 --general-uid_mapping=<anchor>
-  --saml-attribute-mapping-user_id_ldap_mapping=<anchor>` 使断言按 anchor 找回 LDAP 账号。
+- **身份存在哪张表/哪个字段**：`oc_ldap_user_mapping.directory_uuid` 与 `owncloud_name`
+  对全新部署均为 anchor；后者是内部 UID，文件存储和 WebDAV/API 路径使用该值。
+  `task.sh` 将 `ldapExpertUUIDUserAttr`、`ldapExpertUUIDGroupAttr`、`ldapExpertUsernameAttr`
+  配置为 `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE`。修改配置不重写既有映射，不能直接用于旧 UID 迁移。
+- **匹配键**：OIDC 使用 `--unique-uid=0 --mapping-uid=sub` 直接查找 LDAP anchor UID；
+  Provider 的 `sub` 必须等于目录 anchor。LDAP 搜索属性与默认登录过滤器均加入 anchor，
+  供首次登录同步使用；自定义登录过滤器也必须包含 `(anasIdentityAnchor=%uid)` 或配置的实际属性。
+  登录名与显示名仍使用人类可读的目录属性。SAML 的 `general-uid_mapping` 和
+  `user_id_ldap_mapping` 仍取显式 anchor 属性。
 - **每次登录刷新什么**：`ldapUserDisplayName`（显示名）、`ldapEmailAttribute`（邮箱）与
   `ldapNestedGroups` 展开后的组成员。**不刷新** `owncloud_name`——上游映射表建立后不重写这一列，
-  这正是改名后 `uid` 冻结在旧值的原因。
+  改名后 anchor UID 保持不变。
 - **撤权经哪个接口**：登录方向经 `ldapLoginFilter`（`NEXTCLOUD_USER_LOGIN_FILTER` 含
   `(!(userAccountControl:1.2.840.113556.1.4.803:=2))`，停用账号无法登录）。**已有会话方向经
   `user_oidc` 的 back-channel logout receiver**
@@ -103,20 +103,17 @@ Web 与 cron 容器都会在 ANAS 内部 CA 存在时安装它。`user_ldap` 会
   用户过滤器 `NEXTCLOUD_USER_FILTER` 刻意不含停用条件——含了会让停用账号从 Nextcloud 消失，
   文件归属随之丢失——代价就是停用不会自动传播到设备凭据。
 
-**`DIRKEY-R-013` 投影结论：不受影响（`已验证`）。** Nextcloud 的应用内 `uid` 来自
-`ldapExpertUsernameAttr`（`sAMAccountName`）和 OIDC 的 `preferred_username`，**两条路径都不读
-`sub`/`NameID`**：OIDC 的 `--mapping-uid` 显式指向 `preferred_username`，SAML 的 `uid_mapping` 显式
-指向 anchor 属性而不是 NameID。因此 M2 把主体标识符切成 anchor 之后，`uid`、数据目录路径和分享
-URL 都不会变成 UUID。入口：`test-env/scripts/server-authentik-oidc-login-e2e.sh` 断言
-`oc_ldap_user_mapping` 的 `owncloud_name` 等于目录用户名、`directory_uuid` 等于 anchor，
-`occ user:info` 的 `user_id` 等于目录用户名；`server-llng-oidc-login-e2e.sh` 对第二个 Provider 断言
-同一组事实。
+**`DIRKEY-R-013` 投影结论：Nextcloud 全新部署采用已确认的例外。** 内部 UID、
+WebDAV/API 技术路径和内部数据目录使用 anchor；它不替代登录名和显示名称。
+Casdoor 隔离验收已证明 UID 与 anchor 相同，改名后同账号、原文件保留；其他 Provider 和
+客户端界面体验仍需回归，不能沿用旧用户名 UID 的历史结果。
 
-**但 SAML 模式另有一个 `DIRKEY-R-010` 观察点**：`general-uid_mapping` 取 anchor 表示断言里携带
-anchor 的那个属性被当作用户 id 候选。它随后经 `user_id_ldap_mapping` 解析回既有 LDAP 账号，因此
-落库的仍是 `sAMAccountName`；**但"没有匹配到 LDAP 账号时会不会直接用 anchor 建一个 SAML 后端账号"
-尚未复核**（`general-require_provisioned_account` 设为 `0`，即不要求预配账号）。M2 之前应在 SAML
-模式下跑一次"目录里没有对应 LDAP 账号的用户登录"用例，确认不会出现 `uid` 为 UUID 的账号。
+### r11 的 user_oidc 制品
+
+统一 anchor UID 配置不需要额外的 LDAP 身份查询代码。官方 8.11.0 已包含 issuer 校验和
+重复 back-channel logout 的上游修复；制品升级与原样插件实机验收的结果见本轮验收记录。
+新用户登录、改名与目录撤权使用 `server-casdoor-nextcloud-identity-e2e.py` 检查真实会话和文件。
+SAML 应用会话、其他 Provider、设备 token 撤销和完整发布生命周期仍是独立验收项。
 
 ## 管理面与 Secret 生命周期
 

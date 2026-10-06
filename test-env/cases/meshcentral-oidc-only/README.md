@@ -71,7 +71,7 @@ go test ./internal/runner -run TestServerIdentityFixturesUsePublicConfiguration
 - 级别：`e2e`
 - 覆盖需求：`MCO-R-002`、`MCO-R-003`、`MCO-R-005`
 - 需求复核摘要：`sha256:6c24c448188d47a57f8163acd4ad26e352a748e1a2e5c00fc6907b3c88355ab7`
-- 实现复核摘要：`sha256:103f898ec20476189bc7e3715b18a8b2973408aa7904038f39238f48a313a691`
+- 实现复核摘要：`sha256:585687917cf3c0d3ba932a837ec9afb35109e8a2cf44676b08c150e08235913d`
 - Fixture：finance 专用 Docker daemon 中的 Samba AD、PostgreSQL、Authentik、MeshCentral 与 Traefik
 - 目标能力：`docker`、`authentik`、`oidc`、`postgres`
 - Oracle 来源：`api`、`database`、`runtime`
@@ -121,7 +121,7 @@ bash test-env/scripts/server-authentik-oidc-login-e2e.sh
 - 级别：`e2e`
 - 覆盖需求：`MCO-R-002`、`MCO-R-004`、`MCO-R-005`
 - 需求复核摘要：`sha256:be4c2735a5f3b086fb7f248491063fad8e02057cc38e9717118271946b7bd5b2`
-- 实现复核摘要：`sha256:6e5542dcd0fbf05b0fff2502a860a27b1546267d419372c8922eb7ba27b4c336`
+- 实现复核摘要：`sha256:857e9dac7694ecaed2f2324bc45f1183b47553c4a8272e010b506b0e4edc59f0`
 - Fixture：finance 专用 Docker daemon 中的 Samba AD、PostgreSQL、LLNG、MeshCentral 与 Traefik
 - 目标能力：`docker`、`llng`、`oidc`、`postgres`
 - Oracle 来源：`api`、`database`、`runtime`

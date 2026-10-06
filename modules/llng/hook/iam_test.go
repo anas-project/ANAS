@@ -247,21 +247,21 @@ func TestIssuerActivationHappensAfterSigningKeysAreInstalled(t *testing.T) {
 
 func TestPublishIAMEndpointsRepeatsTheSingletonForEveryConsumer(t *testing.T) {
 	e := map[string]string{
-		"LLNG_DOMAIN_FULL":                       "https://auth.nas.test:9000",
-		"LLNG_SAML_SERVICE_PUBLIC_KEY":           `"cert"`,
-		"ANAS_IDENTITY_OIDC_CLIENTS":             "netbird",
-		"ANAS_IDENTITY_SAML_CLIENTS":             "nextcloud",
-		"ANAS_IAM_BINDING__NETBIRD__INTERFACE":   "oidc",
-		"ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE": "saml",
+		"LLNG_DOMAIN_FULL":                         "https://auth.nas.test:9000",
+		"LLNG_SAML_SERVICE_PUBLIC_KEY":             `"cert"`,
+		"ANAS_IDENTITY_OIDC_CLIENTS":               "meshcentral",
+		"ANAS_IDENTITY_SAML_CLIENTS":               "nextcloud",
+		"ANAS_IAM_BINDING__MESHCENTRAL__INTERFACE": "oidc",
+		"ANAS_IAM_BINDING__NEXTCLOUD__INTERFACE":   "saml",
 	}
 	if err := publishIAMEndpoints(e); err != nil {
 		t.Fatal(err)
 	}
-	if got := e["ANAS_IAM_BINDING__NETBIRD__OIDC_DISCOVERY_URL"]; got != "https://auth.nas.test:9000/.well-known/openid-configuration" {
-		t.Fatalf("netbird discovery = %q", got)
+	if got := e["ANAS_IAM_BINDING__MESHCENTRAL__OIDC_DISCOVERY_URL"]; got != "https://auth.nas.test:9000/.well-known/openid-configuration" {
+		t.Fatalf("meshcentral discovery = %q", got)
 	}
-	if got := e["ANAS_IAM_BINDING__NETBIRD__OIDC_ISSUER_URL"]; got != "https://auth.nas.test:9000/" {
-		t.Fatalf("netbird issuer = %q", got)
+	if got := e["ANAS_IAM_BINDING__MESHCENTRAL__OIDC_ISSUER_URL"]; got != "https://auth.nas.test:9000/" {
+		t.Fatalf("meshcentral issuer = %q", got)
 	}
 	if got := e["ANAS_IAM_BINDING__NEXTCLOUD__SAML_SSO_URL"]; got != "https://auth.nas.test:9000/saml/singleSignOn" {
 		t.Fatalf("nextcloud sso = %q", got)
@@ -274,34 +274,34 @@ func TestPublishIAMEndpointsRepeatsTheSingletonForEveryConsumer(t *testing.T) {
 
 func TestApplyClientRegistrationsTranslatesToPrivateNames(t *testing.T) {
 	e := map[string]string{
-		"ANAS_IDENTITY_OIDC_CLIENTS":                             "netbird",
-		"ANAS_IDENTITY_SAML_CLIENTS":                             "nextcloud",
-		"ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID":                    "netbird",
-		"ANAS_IAM_CLIENT__NETBIRD__CLIENT_SECRET":                "s3cret",
-		"ANAS_IAM_CLIENT__NETBIRD__REDIRECT_URIS":                "https://n.example/auth",
-		"ANAS_IAM_CLIENT__NETBIRD__OIDC_LOGOUT_URI":              "https://n.example/backchannel-logout",
-		"ANAS_IAM_CLIENT__NETBIRD__OIDC_LOGOUT_METHODS":          "backchannel",
-		"ANAS_IAM_CLIENT__NETBIRD__OIDC_LOGOUT_SESSION_REQUIRED": "true",
-		"ANAS_IAM_CLIENT__NETBIRD__ATTRIBUTES":                   "cn:cn:1,email:email:1",
-		"ANAS_IAM_CLIENT__NEXTCLOUD__SP_METADATA_URL":            "https://nc.example/metadata",
-		"ANAS_IAM_CLIENT__NEXTCLOUD__NAME_ID_FORMAT":             "windows",
-		"ANAS_IAM_CLIENT__NEXTCLOUD__ATTRIBUTES":                 "cn:cn:1",
+		"ANAS_IDENTITY_OIDC_CLIENTS":                                 "meshcentral",
+		"ANAS_IDENTITY_SAML_CLIENTS":                                 "nextcloud",
+		"ANAS_IAM_CLIENT__MESHCENTRAL__CLIENT_ID":                    "meshcentral",
+		"ANAS_IAM_CLIENT__MESHCENTRAL__CLIENT_SECRET":                "s3cret",
+		"ANAS_IAM_CLIENT__MESHCENTRAL__REDIRECT_URIS":                "https://n.example/auth",
+		"ANAS_IAM_CLIENT__MESHCENTRAL__OIDC_LOGOUT_URI":              "https://n.example/backchannel-logout",
+		"ANAS_IAM_CLIENT__MESHCENTRAL__OIDC_LOGOUT_METHODS":          "backchannel",
+		"ANAS_IAM_CLIENT__MESHCENTRAL__OIDC_LOGOUT_SESSION_REQUIRED": "true",
+		"ANAS_IAM_CLIENT__MESHCENTRAL__ATTRIBUTES":                   "cn:cn:1,email:email:1",
+		"ANAS_IAM_CLIENT__NEXTCLOUD__SP_METADATA_URL":                "https://nc.example/metadata",
+		"ANAS_IAM_CLIENT__NEXTCLOUD__NAME_ID_FORMAT":                 "windows",
+		"ANAS_IAM_CLIENT__NEXTCLOUD__ATTRIBUTES":                     "cn:cn:1",
 	}
 	if err := applyClientRegistrations(e); err != nil {
 		t.Fatal(err)
 	}
 	checks := map[string]string{
-		"OIDC_RP_APPS":                              "netbird",
-		"OIDC_RP__NETBIRD__CLIENT_ID":               "netbird",
-		"OIDC_RP__NETBIRD__CLIENT_SECRET":           "s3cret",
-		"OIDC_RP__NETBIRD__LOGOUT_URI":              "https://n.example/backchannel-logout",
-		"OIDC_RP__NETBIRD__LOGOUT_TYPE":             "back",
-		"OIDC_RP__NETBIRD__LOGOUT_SESSION_REQUIRED": "1",
-		"OIDC_RP__NETBIRD__ATTR01":                  "cn,cn,1",
-		"OIDC_RP__NETBIRD__ATTR02":                  "email,email,1",
-		"SAML_SP_APPS":                              "nextcloud",
-		"SAML_SP__NEXTCLOUD__METADATA_URL":          "https://nc.example/metadata",
-		"SAML_SP__NEXTCLOUD__NAMEID_FORMAT":         "windows",
+		"OIDC_RP_APPS":                                  "meshcentral",
+		"OIDC_RP__MESHCENTRAL__CLIENT_ID":               "meshcentral",
+		"OIDC_RP__MESHCENTRAL__CLIENT_SECRET":           "s3cret",
+		"OIDC_RP__MESHCENTRAL__LOGOUT_URI":              "https://n.example/backchannel-logout",
+		"OIDC_RP__MESHCENTRAL__LOGOUT_TYPE":             "back",
+		"OIDC_RP__MESHCENTRAL__LOGOUT_SESSION_REQUIRED": "1",
+		"OIDC_RP__MESHCENTRAL__ATTR01":                  "cn,cn,1",
+		"OIDC_RP__MESHCENTRAL__ATTR02":                  "email,email,1",
+		"SAML_SP_APPS":                                  "nextcloud",
+		"SAML_SP__NEXTCLOUD__METADATA_URL":              "https://nc.example/metadata",
+		"SAML_SP__NEXTCLOUD__NAMEID_FORMAT":             "windows",
 	}
 	for key, want := range checks {
 		if e[key] != want {
@@ -332,10 +332,23 @@ func TestOIDCBackChannelLogoutIsRendered(t *testing.T) {
 }
 
 func TestApplyClientRegistrationsRequiresMandatoryFields(t *testing.T) {
-	if err := applyClientRegistrations(map[string]string{"ANAS_IDENTITY_OIDC_CLIENTS": "netbird"}); err == nil {
+	if err := applyClientRegistrations(map[string]string{"ANAS_IDENTITY_OIDC_CLIENTS": "meshcentral"}); err == nil {
 		t.Fatal("expected a missing CLIENT_ID to be rejected")
 	}
 	if err := applyClientRegistrations(map[string]string{"ANAS_IDENTITY_SAML_CLIENTS": "nextcloud"}); err == nil {
 		t.Fatal("expected a missing SP_METADATA_URL to be rejected")
+	}
+}
+
+func TestAnchorSubjectRejectsNetbirdBeforePublishingOrRegistering(t *testing.T) {
+	for _, operation := range []func(map[string]string) error{publishIAMEndpoints, applyClientRegistrations} {
+		e := map[string]string{"ANAS_IDENTITY_OIDC_CLIENTS": "NeTbIrD"}
+		err := operation(e)
+		if err == nil || !strings.Contains(err.Error(), "DIRKEY-R-013") {
+			t.Fatalf("unsafe subject projection was not rejected: %v", err)
+		}
+		if e["OIDC_RP_APPS"] != "" || e["ANAS_IAM_PORTAL_URL"] != "" {
+			t.Fatal("unsafe registration must fail before publishing endpoints or clients")
+		}
 	}
 }

@@ -54,7 +54,7 @@ The LDAP connection uses trusted LDAPS and a filter that excludes disabled accou
 
 Because upstream preserves existing groups, the subscriber queries the declared `ALLOW_GROUPS` with the same restricted bind over trusted LDAPS. It uses AD matching rule `1.2.840.113556.1.4.1941` for direct and recursive membership, then authoritatively replaces managed user groups. Missing groups, duplicate or missing anchors, or any failed Casdoor patch fail the batch and preserve the cursor for retry. Casdoor's default five-minute automatic sync remains enabled, so the subscriber is still a low-latency accelerator.
 
-The integration imports users and verifies passwords remotely but does not enable password writeback. Delete events forbid and soft-delete the shadow record, deactivation events forbid it, and both clear its groups; re-enable or a rename with the same anchor reuses and restores the record. Historical directory and OIDC/SAML E2E passed; r10 subjects and revocation require separate acceptance.
+The integration imports users and verifies passwords remotely but does not enable password writeback. Delete events forbid and soft-delete the shadow record, deactivation events forbid it, and both clear its groups; re-enable or a rename with the same anchor reuses and restores the record. Formal r10 builds for both architectures, OIDC subjects and revocation, real Nextcloud integration, backup restoration, credential rotation, and lifecycle acceptance pass; see the [2026-10-06 acceptance](../../../dev-docs/reviews/2026-10-06-casdoor-release-acceptance.md). ARM64 validation runs the target helper under QEMU. SAML application sessions and SLO remain future work.
 
 ## IAM boundaries
 
@@ -122,6 +122,18 @@ unhealthy after 60 seconds. SAML SLO remains unavailable and captured SAML sessi
 incomplete diagnostic. Startup and 300-second reconciliation repair journal gaps. Reused labels with
 different anchors are quarantined without restoring access by label.
 
+Isolated real-host acceptance on 2026-10-04 passes the r10 standards-consumer OIDC fault matrix:
+saved cookies and real refresh grants, direct/nested group revocation, disable/delete, rename, label
+reuse quarantine, receiver 503, durable retry across watcher restart, and protection of later grants.
+A separate two-client run preserves the same user's other client and other users. Real Nextcloud r11
+also preserves uid, LDAP anchor mapping and the original DAV file, and revokes saved cookies after
+rename/direct-group removal. Signed SAML 2.0 SP protocol acceptance passes without certifying
+Nextcloud SAML sessions or SLO. Candidate hashes, scripts and release gaps are in the
+[acceptance review](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-04-casdoor-directory-identity-acceptance.md).
+Defaults are five-second debounce and a 60-second minimum sync interval. This run allows 420 seconds
+for shadow-state convergence followed by 120 seconds for session revocation; these are test timeouts,
+not a service guarantee during failure.
+
 
 **`DIRKEY-R-013` projection verdict: not applicable (a Provider is not a Consumer).** This Module
 consumes nobody else's subject identifier; its role under `R-013` is to be the side that is verified
@@ -134,6 +146,14 @@ NameID, so it is unaffected (see the section of the same name in that Module's t
 ## Local administrator lifecycle
 
 `admin_casdoor` is managed by the local-account inventory through the default `admin_{module}` template; Casdoor does not need `fixed_username`. Apply/rotate handlers stream the candidate through stdin, update bcrypt in PostgreSQL, verify the stored hash, and restore the old password if rotation fails.
+
+## Restore into an empty workspace
+
+After restoring, verify the database, Secret Store, administrator inventory, directory cursor, and deployment metadata.
+The imported deployment remains bound to its original workspace and cannot be started directly. Stop the original stack,
+then run `anas apply -w <restored-workspace> --module-root <modules-directory> --no-snapshot -y` to create a deployment
+bound to the restored workspace. Verify the original user's login, permanent anchor, and signature, and keep the original
+backup metadata as restoration evidence.
 
 ## Environment ownership
 
@@ -159,5 +179,11 @@ The module exports `ANAS_IAM_BINDING_*` and `ANAS_IAM_PORTAL_URL`, and explicitl
 - [`server-casdoor-key-rotation-e2e.sh`](../../../test-env/scripts/server-casdoor-key-rotation-e2e.sh) (passed 2026-08-27 for signing and Portal secret rotation, overlap trust, and failure recovery)
 
 ## Current limitations
+
+**Future work: SAML SLO and directory-driven termination of SAML application sessions.** OIDC is
+the primary supported protocol; this item does not block the current OIDC release. SAML retains
+optional SSO and verified signed-protocol behavior, with application-local logout. Future support
+requires signature, NameID/SessionIndex, saved-cookie revocation and isolation acceptance before
+publishing any SLO declaration.
 
 Lifecycle is `developing`; r10 release acceptance remains incomplete. The pinned version has no SAML LogoutRequest/LogoutResponse consumer, so no SLO endpoint or binding is published. Directory password writeback, silent database switching, and using the Casdoor local User ID as the Samba permanent anchor also remain unsupported. The requirement matrix and implementation plan define the accepted release scope.

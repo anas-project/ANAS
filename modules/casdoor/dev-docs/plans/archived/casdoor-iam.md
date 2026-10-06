@@ -2,10 +2,16 @@
 doc_type: plan
 status: done
 created: 2026-08-26
-updated: 2026-08-27
+updated: 2026-10-06
 ---
 
 # Casdoor IAM Provider 实施计划
+
+当前 r10 的正式双架构镜像、OIDC/Nextcloud、目录撤权、受管凭据轮换、空工作区恢复与
+生命周期验收已通过，Module 已标为 `release`，见
+[2026-10-06 发布验收](../../../../../dev-docs/reviews/2026-10-06-casdoor-release-acceptance.md)。
+ARM64 为 QEMU 目标 helper 执行，SAML 应用会话终止与 SLO 待实现；首次建号延迟保留观察。
+以下 M1—M5 的历史快照仍记录 2026-08-26—27 的实现，不用历史 r8 结果代替当前 r10 验收。
 
 验收依据是[Casdoor IAM Provider 集成要求](../../requirements/casdoor-iam.md)的需求矩阵。通用架构依据为
 [IAM Capability 设计](../../../../../docs/architecture/iam-capability-design.md)；没有另建 Casdoor 专属架构文档。

@@ -8,8 +8,8 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `llng` |
-| 版本 / revision | `2.23.2-r11` |
-| 状态 | `release` |
+| 版本 / revision | `2.23.2-r12` |
+| 状态 | `developing` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
 <!-- generated:module-facts:end -->
@@ -47,55 +47,33 @@ Samba AD 是用户和 Group 来源。Portal 使用目录认证，IAM 向 Consume
 
 ### 目录属性变更说明
 
-**匹配键：`sAMAccountName`（小写化），不是 anchor —— 这是一个已声明的缺口。**
+**OIDC 匹配键：`anasIdentityAnchor`。** r12 为每个 RP 设置
+`oidcRPMetaDataOptionsUserIDAttr=anasIdentityAnchor`；ID Token、UserInfo、刷新后的 ID Token
+与 Logout Token 使用同一来源。RP 准入规则要求会话包含非空 anchor，并与应用组规则取交集；
+不回退到用户名。Portal 仍按 `sAMAccountName` 登录，`whatToTrace` 保留小写登录名作为日志与会话查询标签。
+LLNG 不建立用户副本，会话表的主键是 session ID，`_whatToTrace` 是索引字段。
 
-LLNG 不保存目录副本：Portal 每次登录都按
-`AuthLDAPFilter = (&<user class><enabled>(sAMAccountName=$user))` 直接向 Samba AD 认证，会话是
-唯一的持久状态。会话的主键是 `whatToTrace`，本 Module 的 `lmConf.json` 把它定义为宏
-`_whatToTrace`，在 AD 认证下求值为 `lc($_user)`，即用户输入的登录名小写化。
+Netbird 会把 `sub` 放入普通用户 API URL，尚无 anchor 投影例外；calculate 和 render_env
+均拒绝 LLNG + Netbird OIDC 组合（`DIRKEY-R-013`）。Nextcloud 新部署已获内部 UID 和技术路径
+使用 anchor 的明确例外，仍用目录属性显示姓名。
 
-**由此产生两条不符合 `DIRKEY-R-001` 的后果**，按 `DIRKEY-R-004` 在此显式声明，不用"由 IAM 负责"
-打发：
-
-1. **OIDC `sub` 就是这个登录名。** 本 Module 没有为任何 RP 设置
-   `oidcRPMetaDataOptionsUserIDAttr`，固定 `2.23.2` 在该字段为空时回退到 `whatToTrace`。于是目录
-   改名之后，同一个人对所有 OIDC Consumer 呈现为**新的主体标识符**：`forgejo` 会建出第二个账号、
-   `vikunja` 会按新的 `(issuer, sub)` JIT 建号、`netbird` 会产生第二个用户，原有资产全部留在旧
-   账号下。
-2. **SAML `NameID` 同样取自登录名。** `llng-config.sh` 里的 `samlNameIDFormatMap*` 全部是注释，
-   因此 NameID 由 LLNG 的默认格式映射决定，仍然落到 `$uid`（= `sAMAccountName`）。
-
-**anchor 是可送达的，只是没有被用作主体标识符。** `ldapExportedVars` 已包含
-`anasIdentityAnchor`，明确请求它的 Consumer 会在 claim/attribute 里拿到正确的值——`nextcloud` 与
-`meshcentral` 正是这样绕开上面两条的，两者在 LLNG 部署下的身份断言都已通过 E2E。
-
-**技术阻碍**：`whatToTrace` 是会话主键与日志键，改动它会同时改变会话存储、审计日志与所有按它
-索引的表；而 per-RP 的 `oidcRPMetaDataOptionsUserIDAttr` 能否取到 `anasIdentityAnchor` 这个
-exported var、SAML 一侧能否独立配置 NameID 来源，**都必须在固定 `2.23.2` 上跑探针确认**。整改与
-探针归[目录身份键实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md)
-M2；按 `DIRKEY-R-005`，每次变更固定版本时复核结论。
-
-| 目录侧变更 | LLNG 的行为 | 证据 |
+| 目录变化 | LLNG 的动作 | 证据 |
 | --- | --- | --- |
-| `sAMAccountName` 改变 | **等同于换了一个人**：Portal 用新名认证成功，但 `whatToTrace` 变了，OIDC `sub` 与 SAML NameID 随之改变，下游 Consumer 把他当作新人。请求 anchor claim 的 Consumer（`nextcloud`、`meshcentral`）不受影响 | `sub`/NameID 取自 `whatToTrace`：`推断`（依据本 Module 的 `lmConf.json`、`llng-config.sh` 未设置对应覆盖项，以及固定版本的回退行为，**未跑探针**）；anchor claim 可正确送达：`已验证`，入口 `test-env/scripts/server-llng-oidc-login-e2e.sh`（断言 MeshCentral 账号 id 等于 `user//~oidc:<anchor>`、Nextcloud 的 `oc_ldap_user_mapping.directory_uuid` 等于 anchor） |
-| `mail` 改变 | 每次登录从 `ldapExportedVars.mail` 重新读取；不参与身份匹配，也没有唯一性约束 | `推断` |
-| `displayName` 与其他 profile 属性 | 每次登录从 `ldapExportedVars` 重新读取。LLNG 不缓存目录副本，因此**不存在"陈旧属性"问题** | `推断` |
-| 直接或递归组成员变更 | 每次登录经 `ldapGroupRecursive: 1` 重新计算，授权在**下次登录**生效；已建立的 LLNG 会话不会因目录组变更而重算 | 递归组生效：`已验证`，入口 `server-llng-login-matrix-e2e.sh`（准入与拒绝矩阵）；已有会话不重算：`推断` |
-| 账号停用 | `AuthLDAPFilter` 含 `(!(userAccountControl:...=2))`，停用后**无法再登录**。**已建立的 LLNG 会话不会自动失效**，必须由管理员在 Manager 里删除对应 session | 登录被拒：`已验证`，入口 `server-llng-login-matrix-e2e.sh`；已有会话的存活：`推断` |
-| 账号删除 | 同上。LLNG 没有应用内资产；但下游 Consumer 的账号与资产完全不受影响，必须逐个处理 | `推断` |
-| 标识符回收再分配 | **fail-open，且是本部署最危险的一条**：新人拿到回收的 `sAMAccountName` 后，`whatToTrace` 与旧人完全相同，因此 OIDC `sub` 与 SAML NameID 也相同，所有按主体标识符认人的 Consumer 会**直接把新人认成旧人**，继承其全部账号与资产 | `推断`（依据上一条同样未经探针的 `sub` 取值链路） |
+| `sAMAccountName` 改名 | 重新登录读取新标签，OIDC `sub` 不变；支持 anchor 的 Consumer 继续使用原账号。SAML NameID 稳定性待实现 | `已验证`；见[实机验收](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-05-llng-anchor-sub-acceptance.md) |
+| `mail` / UPN 改变 | 下次目录认证更新属性；不改变 OIDC `sub` | `推断`；本轮未跑邮箱/UPN 专项 |
+| `displayName` 等属性变化 | 下次目录认证重新读取；已建立会话可能保留旧值 | 读取链路 `已验证`；变更专项 `推断` |
+| 直接或递归组变化 | 下次目录认证重新计算组；没有目录事件驱动的既有会话撤权 | 历史准入矩阵 `已验证`；实时撤权尚未实现 |
+| 账号停用 | 新目录认证被 enabled filter 拒绝；管理员仍需删除已有 SSO 会话 | 历史准入矩阵 `已验证`；本轮未复验 |
+| 账号删除 | 不再通过目录认证；已有 SSO 与 Consumer 会话需另行撤销 | `推断`；本轮未跑删除专项 |
+| 登录名回收再分配 | 新目录对象取得不同 anchor，OIDC Consumer 不应复用旧账号 | `已验证`；见[实机验收](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-05-llng-anchor-sub-acceptance.md) |
 
-**兜底路径**——上表每一行"无自动路径"对应的运维动作：
+**兜底路径**：停用、删除或撤组后，在 LLNG Manager 删除该人的所有 SSO 会话，
+按旧/新登录名核对，并按各 Consumer 的文档完成撤权。Portal 浏览器登出会发送已注册的
+OIDC back-channel 通知，但这不等于监听 Samba AD 事件。旧 SSO 会话中的目录属性不会自动刷新。
 
-1. 停用或删除目录账号后，必须在 LLNG Manager 里**删除该用户的 session**（按 `whatToTrace` 检索，
-   即其登录名的小写形式）；仅目录停用不会结束已建立的会话；
-2. 撤权后还必须按各 Consumer 自己的《目录属性变更说明》逐个执行动作；LLNG 只能保证该人无法再次
-   通过 Portal 登录；
-3. **目录侧流程约束（强制）**：使用 LLNG 作为 Provider 时，**`sAMAccountName` 绝对不得回收再
-   分配**，且**改名必须走人工流程**：先在每个 Consumer 里转移或清理该人的资产，再改名。在
-   `DIRKEY-R-008` 落地之前，这两条是纪律而非技术保障；
-4. 需要跨改名稳定的新 Consumer，**必须显式请求 `anasIdentityAnchor` claim 并用它作为持久键**，
-   不得使用 `sub` 或 `NameID`。
+**待实现**：SAML NameID 统一 anchor 与真实应用会话验收；目录事件触发的会话撤销。
+SAML 不作为本轮主要支持协议。未完成前，SAML 使用者仍需人工处理改名与标签回收，
+不能把 OIDC 的稳定身份结论套用到 SAML。产品尚未发版，本轮不提供旧账号迁移。
 
 ## 管理员登录与 IAM 故障恢复
 
@@ -201,7 +179,7 @@ for the provider contract.
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2.23.2-r11`（reviewed 2026-08-21）
+- Module version / 版本：`2.23.2-r12`（reviewed 2026-08-21）
 - Timezone / 时区：`container` — LLNG receives TZ through the module .env; no deployment-wide application timezone is forced.
 - Language scope / 语言范围：LemonLDAP::NG Portal and language selector
 - Selection / 选择方式：`browser`

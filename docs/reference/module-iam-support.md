@@ -1,5 +1,7 @@
 # Module IAM / OIDC 支持清单
 
+Authentik 自 2026-10-05 标记为 `deprecated`（过时），不再推荐新部署。下文相关结果为历史能力记录，Authentik 整改不作为 Casdoor 发布前置条件。
+
 OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capability 且支持 OIDC 的 Module 生效。不支持 OIDC 的 Module 不会被强制改用 OIDC；它按 Manifest 支持范围回退或继续使用自己的认证方式。
 
 ## Samba 目录事件订阅规范
@@ -22,7 +24,13 @@ Module，都必须订阅 Samba 发布的持久目录事件，不能只等待定�
 安全成立，缺失方向与兜底见 [Forgejo Module 设计](/architecture/forgejo-module-design) §2.2，
 升级复核触发点见同文 §2.3；`vikunja` 只接 OIDC，M1 盘点确认固定 `2.4.0` 没有 LDAP 用户同步，
 也没有可配置的身份 claim。Casdoor r10 已接入目录事件驱动的 OIDC 撤权与持久重试，源码/helper
-测试通过，真实应用会话验收正在隔离环境进行；既有管理员删 session 的 E2E 不替代这项验收。
+测试通过，两 client 隔离与真实 Nextcloud 改名/组撤权 Cookie 验收已通过；最终故障矩阵结果见
+[2026-10-04 实机记录](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-04-casdoor-directory-identity-acceptance.md)。
+Nextcloud r11 改用 anchor 内部 UID、OIDC `sub` 和原样官方 `user_oidc 8.11.0`；不再修改控制器。
+其他 Provider 回归、客户端体验与完整镜像生命周期仍需验收，不计作发布完成。
+下文历史 Authentik/LLNG 矩阵属于旧插件/配置基线。2026-10-05 的 LLNG r12 独立验收
+已将 OIDC `sub` 切为 anchor，并验证官方 8.11.0 的改名账号/文件与 Portal 登出隔离；
+其他 Provider、客户端与完整发布矩阵仍待完成。
 
 **「匹配键」列**记录每个 Module 持久化目录用户时**实际使用的键**，由
 [目录身份键要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-identity-key.md)
@@ -34,17 +42,17 @@ Casdoor r10 已统一取 anchor，其他 Provider 的签发侧仍待整改与验
 
 | Module | 是否可用 OIDC 登录 | 当前认证路径 | 结论 | 匹配键 |
 | --- | --- | --- | --- | --- |
-| `netbird` | 是 | 直接消费 IAM/OIDC | 已实现 | OIDC `sub`（`AuthUserIDClaim` 可配置）；随 Provider 而稳定 |
+| `netbird` | 是 | 直接消费 IAM/OIDC | 已实现 OIDC；Casdoor/LLNG anchor-sub 组合拒绝当前投影 | OIDC `sub`（`AuthUserIDClaim` 可配置）；随 Provider 而稳定 |
 | `oauth2_proxy` | 是 | 直接消费 IAM/OIDC，并为 ForwardAuth consumer 提供门禁 | 已实现 | 无持久键；透传 `sub`，控制台取 `sha256(issuer‖sub)` |
 | `ddns_updater` | 间接 | 经 `oauth2_proxy` + Traefik ForwardAuth | 已实现 | 无持久键；跟随网关 |
-| `nextcloud` | 是 | 默认使用官方 `user_oidc`；LDAPS provision 用户/组；`user_saml` 保留为显式 fallback | 已实现；具体登出能力按下方固定版本/Provider 矩阵判定 | 身份锚点（LDAP UUID 属性）；应用内 `uid` 另取 `sAMAccountName` |
+| `nextcloud` | 是 | 官方 `user_oidc 8.11.0`；LDAPS provision 用户/组；`user_saml` 保留为显式 fallback | developing；Casdoor 真实改名、原文件与 OIDC Cookie 撤权通过，其他 Provider、客户端和完整发布生命周期待验收 | 身份锚点同时作为 LDAP UUID 和新账号 UID；OIDC 按 `sub` 直接匹配 |
 | `meshcentral` | 是 | IAM/OIDC 认证；LDAPS 同步用户/组；OIDC group 映射应用访问和 site-admin | 已实现 | 身份锚点，**直接作为用户 id**（OIDC `uuid` claim / `ldapUserKey`） |
 | `forgejo` | 是 | IAM/OIDC JIT 建号；`APP_forgejo`/`APP_all` 门禁；管理员组映射 site-admin；保留托管 break-glass | developing；Manifest、Provider 注册、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 | OIDC `sub`（存入 `login_name`）；随 Provider 而稳定 |
 | `vikunja` | 是 | IAM/OIDC JIT 建号；`APP_vikunja`/`APP_all` 门禁；本地认证和注册关闭 | developing；Manifest、Provider 注册、Secret、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 | OIDC `(issuer, sub)`；不可配置，随 Provider 而稳定 |
 | `lam` | 否 | LDAPS 目录管理登录 | 不属于当前 IAM consumer | 无持久键；每次登录按 `sAMAccountName` 检索后 bind DN |
 | `authentik` | 不适用 | IAM provider；另有固定 `akadmin` break-glass | 提供 OIDC/SAML，不把自身当普通 consumer | 消费侧：身份锚点（`object_uniqueness_field`）。签发侧：内部用户 UUID，**非 anchor** |
-| `casdoor` | 不适用 | developing IAM provider；使用默认模板 `admin_casdoor` break-glass | OIDC/SAML 登录、Samba 目录收敛、永久 anchor、`ALLOW_GROUPS` 门禁、OIDC exact-`sid` 会话撤销、空 workspace 恢复、多架构生命周期及受管凭据轮换已有真实 E2E；固定版本不发布 SAML SLO | 消费侧：身份锚点（`externalId`）。r10 签发侧：OIDC `sub`、UserInfo、Logout Token 与 SAML `NameID` 统一取 anchor；源码通过，实机验收中 |
-| `llng` | 不适用 | IAM provider | 提供 OIDC/SAML，不把自身当普通 consumer | 消费侧：无副本。签发侧：`whatToTrace` = 小写 `sAMAccountName`，**`sub` 与 `NameID` 都是标签** |
+| `casdoor` | 不适用 | release IAM provider；使用默认模板 `admin_casdoor` break-glass | OIDC/SAML 登录、Samba 目录收敛、永久 anchor、`ALLOW_GROUPS` 门禁、OIDC exact-`sid` 会话撤销、空 workspace 恢复、多架构生命周期及受管凭据轮换已有真实 E2E；固定版本不发布 SAML SLO | 消费侧：身份锚点（`externalId`）。r10 签发侧：OIDC `sub`、UserInfo、Logout Token 与 SAML `NameID` 统一取 anchor；签名协议、OIDC 故障矩阵和真实 Nextcloud 归属通过；2026-10-06 正式发布验收通过，已标 release |
+| `llng` | 不适用 | IAM provider | r12 developing；提供 OIDC/SAML，不把自身当普通 consumer | 消费侧：无用户副本，session 保存 anchor；签发侧：r12 OIDC `sub` = anchor；SAML NameID 待实现 |
 | `ddns_go` | 否 | ANAS 托管 local emergency account | 不支持 OIDC | 不适用（本地账号） |
 | `traefik` | 否 | ANAS 托管本地 BasicAuth emergency account | 不支持 OIDC | 不适用（本地账号） |
 | `collabora` | 间接 | 由 Nextcloud/WOPI 集成，不提供独立用户登录 | 跟随 Nextcloud 会话 | 不适用（无独立用户） |
@@ -58,7 +66,7 @@ Casdoor r10 已统一取 anchor，其他 Provider 的签发侧仍待整改与验
 
 | Consumer 固定版本 | endpoint / binding | Module→IAM | IAM→Module | session 粒度 | 浏览器 | 故障/降级结果 | 验收状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Nextcloud `user_oidc 8.10.1` | RP logout + `/index.php/apps/user_oidc/backchannel-logout/anas` | RP-Initiated Logout | `sid` back-channel | 单个 OIDC session；同用户多 session/client 属安全矩阵必测项 | RP logout 需要；back-channel 不需要 | IAM 不可用时本地 session 必须先失效；Provider 不通知时标受限 | Authentik 浏览器/管理员删 session 已有 E2E；LLNG 浏览器已有 E2E；Casdoor Provider 已通过真实标准 Consumer 的用户/管理员 exact-`sid`、多会话隔离和重放矩阵，固定 Nextcloud receiver 仍等待统一矩阵复验 |
+| Nextcloud `user_oidc 8.11.0` | RP logout + `/index.php/apps/user_oidc/backchannel-logout/anas` | RP-Initiated Logout | `sid` back-channel | 单个 OIDC session；同用户多 session/client 属安全矩阵必测项 | RP logout 需要；back-channel 不需要 | IAM 不可用时本地 session 必须先失效；Provider 不通知时标受限 | Authentik 浏览器/管理员删 session 已有 E2E；LLNG 浏览器已有 E2E；Casdoor Provider 已通过真实标准 Consumer 的用户/管理员 exact-`sid`、多会话隔离和重放矩阵，r11 真实 Nextcloud 改名/组撤权旧 Cookie 通过；完整统一浏览器矩阵仍待复验 |
 | Nextcloud `user_saml 8.2.0` | `/index.php/apps/user_saml/saml/sls`, Redirect | SP-Initiated SLO | IdP-Initiated SLO | NameID + SessionIndex | 必须 | 无 SLO 时只本地登出 | Authentik Redirect 已有 E2E；LLNG Redirect 入口已实现待隔离 fixture；Casdoor 明确无 SLO |
 | MeshCentral `1.2.4` | discovery/provider RP logout + post-logout URI | 上游支持 | 无标准 receiver | 应用 Cookie/session | 必须 | 本地 session 先失效；IAM 不可用不得卡住本地退出 | 统一 Playwright 矩阵已实现；`state`、中央 session 结果未在当前主机 fixture 验收，故为“上游支持、待接入” |
 | Forgejo `15.0.7` | `/user/logout` | 仅清应用 session | 无标准 receiver | Forgejo database session | 否 | 本地 session 清除；不声明 IAM session 同步失效 | Hook/容器 helper 单元测试与固定版本文档审查已完成；真实浏览器 E2E 待验收 |
@@ -99,7 +107,8 @@ OIDC/SAML Module 的本地登出、应用发起登出、浏览器双向登出和
 Nextcloud 的 IAM 发起登出由两套 OIDC matrix 保留原 Cookie 验证并阻止静默恢复：Authentik 覆盖浏览器
 登出和管理员删除 session，LLNG 覆盖浏览器登出；SAML fallback 的 Authentik E2E 覆盖
 Redirect SLO。Casdoor 的标准 Consumer fixture 另行覆盖用户退出、管理员删 session、同用户双 session、
-其他用户隔离和 Logout Token 重放；它证明 Provider 行为，不替代固定 Nextcloud receiver 的统一矩阵。
+其他用户隔离和 Logout Token 重放。2026-10-04 的真实 Nextcloud r11 HTTP 验收补充改名与直接组撤权
+后的原 Cookie 失效、其他用户隔离和原文件归属；完整统一浏览器矩阵仍需另行复验。
 现有 Redirect/POST SLS 都按浏览器 binding 处理；没有单独通过无浏览器 E2E 的正式服务端撤销能力时，
 SAML 后台撤销不属于支持范围。
 Provider 没有发布可选 `SAML_SLO_URL`（例如当前 Casdoor 集成）时，Nextcloud 只配置

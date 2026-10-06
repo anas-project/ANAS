@@ -235,6 +235,7 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) ([
 	}
 	if e["NEXTCLOUD_USER_LOGIN_FILTER"] == "" {
 		attrs := splitCSV(e["SAMBA_DC_USER_LOGIN_ATTRS"])
+		attrs = append(attrs, e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"])
 		parts := []string{}
 		for _, attr := range attrs {
 			parts = append(parts, "("+attr+"=%uid)")

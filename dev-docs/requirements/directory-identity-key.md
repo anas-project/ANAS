@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-09-20
-updated: 2026-09-20
+updated: 2026-10-05
 ---
 
 # 目录身份键要求
@@ -47,7 +47,10 @@ LDAP 直连的 Module 把 anchor 作为 LDAP 唯一性属性,走的是同一个�
 这也是"LDAP 预配 + OIDC 登录"双链路唯一可能安全成立的前提。
 
 代价只有一处,必须逐个 Consumer 检查:有些应用把主体标识符直接当成应用内用户 id,而那个 id 可能
-出现在 URL 或文件路径里。`DIRKEY-R-010` 禁止这种投影,`DIRKEY-R-013` 要求在切换前逐个验证。
+出现在 URL 或文件路径里。`DIRKEY-R-010` 默认禁止这种投影,`DIRKEY-R-013` 要求在切换前逐个验证。
+2026-10-05 用户确认 Nextcloud 全新部署的内部 UID 使用 anchor：允许它出现在该应用的
+WebDAV/API 技术路径和内部存储目录，但登录名与显示名继续使用目录的人类可读属性。
+此例外不扩大到其他 Consumer，也不允许未经验证地更换既有账号 UID。
 
 ## 3. Module 的义务
 
@@ -75,7 +78,7 @@ Module 必须显式声明缺口、写明后果,并在每次固定版本升级时
 | `DIRKEY-R-007` | IAM Provider 的 LDAP source 必须以 anchor 作为对象唯一性字段,不得使用 `sAMAccountName`、DN 或 `mail` | 单元 + e2e |
 | `DIRKEY-R-008` | IAM Provider 签发的 OIDC `sub` 与 SAML `NameID` 必须就是 anchor 值本身,不得是 Provider 内部 id、用户名或邮箱;不得改用"内部 id 加 `sub ↔ anchor` 映射"替代 | 单元 + e2e |
 | `DIRKEY-R-009` | Provider 必须能把 anchor 作为 claim/attribute 发给明确请求它的 Consumer;请求了而 Provider 无法提供时必须 fail closed,不得静默降级为标签 | 单元 |
-| `DIRKEY-R-010` | anchor 不得被投影为登录名、显示名、URL 中的标识符或文件路径;它只出现在应用的内部绑定字段与管理视图 | 审阅 |
+| `DIRKEY-R-010` | anchor 不得被投影为登录名、显示名、URL 中的标识符或文件路径;它只出现在应用的内部绑定字段与管理视图。Nextcloud 全新部署例外：允许内部 UID、WebDAV/API 技术路径及内部存储目录使用 anchor，登录名和显示名仍取人类可读属性 | 审阅 |
 | `DIRKEY-R-011` | 每个在范围内的 Module 必须在 README 的《目录属性变更说明》记录自己实际使用的匹配键及其证据等级(已验证/推断),不得留空或写"由 IAM 负责" | 审阅 |
 | `DIRKEY-R-012` | provider-neutral 的 IAM 契约必须声明主体标识符取自 anchor,使 Consumer 无需了解 Provider 私有配置即可依赖这一点;Provider 无法配置主体标识符来源时必须在其 Module 文档声明,该部署下所有 Consumer 按 `DIRKEY-R-004` 的缺口路径处理 | 契约 + 单元 |
-| `DIRKEY-R-013` | 把主体标识符切换为 anchor 之前,必须逐个 OIDC/SAML Consumer 验证它没有把该标识符投影成应用内用户名、URL 标识符或文件路径;任一 Consumer 存在此投影时必须先改掉该 Consumer,不得以"多数 Consumer 没问题"放行 | 审阅 + e2e |
+| `DIRKEY-R-013` | 把主体标识符切换为 anchor 之前,必须逐个 OIDC/SAML Consumer 验证应用内用户名、URL 标识符或文件路径的投影;存在未获 R-010 例外允许的投影时必须先改掉该 Consumer，不得以"多数 Consumer 没问题"放行。Nextcloud 必须验证 UID 等于 anchor、改名保持账号和文件归属，并区分技术路径与登录名/显示名 | 审阅 + e2e |

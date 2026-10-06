@@ -9,13 +9,18 @@ export ANAS_TEST_CONTAINER_PREFIX=${ANAS_TEST_CONTAINER_PREFIX:-anas_casdoor_}
 source "$script_dir/server-iam-matrix-common.sh"
 
 workspace=${ANAS_TEST_WORKSPACE:?ANAS_TEST_WORKSPACE is required}
+repo_root=${ANAS_TEST_REPO_ROOT:-$(cd "$script_dir/../.." && pwd)}
+consumer_module=${ANAS_TEST_OIDC_CONSUMER_MODULE:-oauth2_proxy}
+[[ "$consumer_module" =~ ^[a-z][a-z0-9_]*$ ]]
+consumer_key=${consumer_module^^}
+consumer_application="app-anas-${consumer_module//_/-}"
 anas_cmd=${ANAS_TEST_ANAS_CMD:-anas}
 restore_root=${ANAS_TEST_RESTORE_ROOT:?ANAS_TEST_RESTORE_ROOT is required}
 fixture_bin=${CASDOOR_LOGOUT_FIXTURE_BIN:-/home/whl/anas-casdoor-m3-e2e/casdoor-oidc-logout-consumer}
 report_dir=${ANAS_TEST_REPORT_DIR:-$workspace/test-env/reports}
 casdoor="${prefix}casdoor"
 dirwatch="${prefix}casdoor_dirwatch"
-consumer="${prefix}oauth2_proxy"
+consumer="${prefix}${consumer_module}"
 fixture_container="${prefix}casdoor_restore_consumer"
 timeout=${CASDOOR_PROTOCOL_E2E_TIMEOUT:-420}
 test_suffix=${ANAS_TEST_MATRIX_SUFFIX:-$(date +%H%M%S)}
@@ -90,7 +95,7 @@ start_fixture() {
     -v "$run_root:/state" \
     -e "CASDOOR_FIXTURE_ISSUER=$issuer" \
     -e CASDOOR_FIXTURE_INTERNAL_ORIGIN=http://127.0.0.1:8000 \
-    -e CASDOOR_FIXTURE_APPLICATION=app-anas-oauth2-proxy \
+    -e "CASDOOR_FIXTURE_APPLICATION=$consumer_application" \
     -e CASDOOR_FIXTURE_ORGANIZATION=anas \
     -e "CASDOOR_FIXTURE_CLIENT_ID=$client_id" \
     -e CASDOOR_FIXTURE_CLIENT_SECRET_FILE=/state/client-secret \
@@ -211,10 +216,10 @@ restore_workspace=$run_root/restored
 install -d -m 0700 "$backup_dir"
 
 issuer=$("$docker_cmd" exec "$casdoor" printenv CASDOOR_DOMAIN_FULL)
-client_id=$("$docker_cmd" exec "$casdoor" printenv ANAS_IAM_CLIENT__OAUTH2_PROXY__CLIENT_ID)
-managed_redirect_uris=$("$docker_cmd" exec "$casdoor" printenv ANAS_IAM_CLIENT__OAUTH2_PROXY__REDIRECT_URIS)
-managed_backchannel_uri=$("$docker_cmd" exec "$casdoor" printenv ANAS_IAM_CLIENT__OAUTH2_PROXY__OIDC_LOGOUT_URI 2>/dev/null || true)
-"$docker_cmd" exec "$casdoor" printenv ANAS_IAM_CLIENT__OAUTH2_PROXY__CLIENT_SECRET >"$run_root/client-secret"
+client_id=$("$docker_cmd" exec "$casdoor" printenv "ANAS_IAM_CLIENT__${consumer_key}__CLIENT_ID")
+managed_redirect_uris=$("$docker_cmd" exec "$casdoor" printenv "ANAS_IAM_CLIENT__${consumer_key}__REDIRECT_URIS")
+managed_backchannel_uri=$("$docker_cmd" exec "$casdoor" printenv "ANAS_IAM_CLIENT__${consumer_key}__OIDC_LOGOUT_URI" 2>/dev/null || true)
+"$docker_cmd" exec "$casdoor" printenv "ANAS_IAM_CLIENT__${consumer_key}__CLIENT_SECRET" >"$run_root/client-secret"
 printf '%s\n' "$test_password" >"$run_root/user-password"
 chmod 0600 "$run_root/client-secret" "$run_root/user-password"
 fixture_image=$("$docker_cmd" inspect --format '{{.Config.Image}}' "$casdoor")
@@ -236,6 +241,7 @@ test "$(jq -er '.externalId' "$run_root/source-user.json")" = "$directory_anchor
 fixture login --username "$test_user" --password-file /state/user-password \
   --state-file /state/source-login.json >"$run_root/source-login.out"
 source_sub=$(jq -er '.sub' "$run_root/source-login.json")
+test "$source_sub" = "$directory_anchor"
 printf 'restore_seed=ready username=%s anchor=%s sub=%s\n' "$test_user" "$directory_anchor" "$source_sub"
 
 section "consistent snapshot backup"
@@ -279,23 +285,34 @@ jq -e '.ok == true and .verify.ok == true and
   ([.restored[]] | index("active_deployment") != null)' \
   "$report_dir/casdoor-restore.json" >/dev/null
 
+# Verify the imported backup before activation can advance the directory cursor.
+# Current CLI requires a new deployment bound to the restored workspace.
+test "$(workspace_active "$restore_workspace")" = "$source_deployment"
+test "$(sha256sum "$restore_workspace/.anas/secrets.yml" | awk '{print $1}')" = "$source_store_digest"
+test "$(sha256sum "$restore_workspace/.anas/local-admins.yml" | awk '{print $1}')" = "$source_admin_digest"
+test "$(sha256sum "$restore_workspace/.anas/deployments/$source_deployment/deployment.yml" | awk '{print $1}')" = "$source_manifest_digest"
+test "$(sha256sum "$restore_workspace/data/casdoor/dirwatch/cursor.json" | awk '{print $1}')" = "$source_cursor_digest"
+
 remove_fixture
 "$anas_cmd" stop -w "$workspace" >"$report_dir/casdoor-restore-source-stop.log" 2>&1
 source_stopped=true
-"$anas_cmd" start -w "$restore_workspace" >"$report_dir/casdoor-restore-target-start.log" 2>&1
+# Mark the target before apply so partial activation is stopped during cleanup.
 target_started=true
+"$anas_cmd" apply -w "$restore_workspace" --module-root "$repo_root/modules" --no-snapshot -y --json \
+  >"$report_dir/casdoor-restore-target-apply.json" \
+  2>"$report_dir/casdoor-restore-target-start.log"
+jq -e '.ok == true' "$report_dir/casdoor-restore-target-apply.json" >/dev/null
 chmod 0600 "$report_dir"/casdoor-restore-*-start.log "$report_dir"/casdoor-restore-*-stop.log
 for container in "$dc" "$casdoor" "$dirwatch" "$consumer"; do
   wait_healthy "$container"
 done
 
 section "restored state and protocol validation"
-test "$(workspace_active "$restore_workspace")" = "$source_deployment"
+test "$(workspace_active "$restore_workspace")" != "$source_deployment"
 test "$(sha256sum "$restore_workspace/.anas/secrets.yml" | awk '{print $1}')" = "$source_store_digest"
 test "$(sha256sum "$restore_workspace/.anas/local-admins.yml" | awk '{print $1}')" = "$source_admin_digest"
 test "$(sha256sum "$restore_workspace/.anas/deployments/$source_deployment/deployment.yml" | awk '{print $1}')" = "$source_manifest_digest"
-test "$(sha256sum "$restore_workspace/data/casdoor/dirwatch/cursor.json" | awk '{print $1}')" = "$source_cursor_digest"
-"$docker_cmd" exec "$casdoor" printenv ANAS_IAM_CLIENT__OAUTH2_PROXY__CLIENT_SECRET \
+"$docker_cmd" exec "$casdoor" printenv "ANAS_IAM_CLIENT__${consumer_key}__CLIENT_SECRET" \
   >"$run_root/restored-client-secret"
 test "$(sha256sum "$run_root/restored-client-secret" | awk '{print $1}')" = "$source_client_digest"
 

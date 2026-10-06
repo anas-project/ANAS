@@ -77,6 +77,19 @@ wait_probe() {
   fixture probe --state-file "$state_file" --expect "$expected"
 }
 
+wait_directory_state() {
+  local path=$1 expression=$2 argument_name=${3:-sid} argument_value=${4:-} attempt
+  for attempt in $(seq 1 120); do
+    if "$docker_cmd" exec "$dirwatch" cat "/data/anas-dirwatch/$path" |
+      jq -e --arg "$argument_name" "$argument_value" "$expression" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  printf 'Directory state did not converge: %s\n' "$path" >&2
+  return 1
+}
+
 section "preflight"
 for container in "$dc" "$casdoor" "$dirwatch" "$consumer"; do
   test "$("$docker_cmd" inspect --format '{{.State.Status}}' "$container")" = running
@@ -201,7 +214,9 @@ if [ "${CASDOOR_DIRECTORY_LOGOUT_E2E:-0}" = 1 ]; then
   wait_for_user_state "$direct_user" '(.groups | index("anas/APP_nextcloud")) == null'
   fixture refresh --state-file /state/old-before-retry.json --expect rejected
   wait_probe /state/old-before-retry.json active
-  "$docker_cmd" exec "$dirwatch" cat /data/anas-dirwatch/pending-logouts.json | jq -e 'any(.[]; .revoked == true and (.snapshot.targets | length) > 0)' >/dev/null
+  # Profile publication precedes revoke acknowledgement and its durable write.
+  # Wait for this grant, rather than accepting another user's pending record.
+  wait_directory_state pending-logouts.json 'any(.[]; .revoked == true and any(.snapshot.targets[]?; .sid == $sid))' sid "$(jq -r '.sid' "$workdir/old-before-retry.json")"
   "$docker_cmd" restart "$dirwatch" >/dev/null
   samba_tool group addmembers APP_nextcloud "$direct_user" >/dev/null
   wait_for_user_state "$direct_user" '(.groups | index("anas/APP_nextcloud")) != null'
@@ -261,7 +276,7 @@ if [ "${CASDOOR_DIRECTORY_LOGOUT_E2E:-0}" = 1 ]; then
     if "$docker_cmd" exec "$dirwatch" cat /data/anas-dirwatch/health.json | jq -e '.last_error | contains("directory identity conflict")' >/dev/null; then break; fi
     sleep 2
   done
-  "$docker_cmd" exec "$dirwatch" cat /data/anas-dirwatch/health.json | jq -e '.ready == false and (.last_error | contains("directory identity conflict"))' >/dev/null
+  wait_directory_state health.json '.ready == false and (.last_error | contains("directory identity conflict"))'
   reused_profile=$(casdoor_user "$all_user")
   printf '%s' "$reused_profile" | jq -e --arg anchor "$old_anchor" --arg id "$old_id" '.externalId == $anchor and .id == $id and .isForbidden == true' >/dev/null
   if fixture login --username "$all_user" --password-file /state/user-password --state-file /state/reused.json >/dev/null 2>&1; then

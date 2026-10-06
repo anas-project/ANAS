@@ -226,6 +226,9 @@ func TestLDAPIdentityUsesPrintableAnchorFromFirstInstall(t *testing.T) {
 	if got := env["NEXTCLOUD_USER_LOGIN_FILTER"]; strings.Contains(got, "objectGUID") {
 		t.Fatalf("login filter must not accept the old identity attribute: %s", got)
 	}
+	if got := env["NEXTCLOUD_USER_LOGIN_FILTER"]; !strings.Contains(got, "(anasIdentityAnchor=%uid)") {
+		t.Fatalf("OIDC subject must resolve through the LDAP login filter: %s", got)
+	}
 	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__ATTRIBUTES"]; !strings.Contains(got, "anasIdentityAnchor:anasIdentityAnchor:1") {
 		t.Fatalf("IAM registration does not publish the printable identity anchor: %s", got)
 	}
@@ -294,8 +297,8 @@ func TestNextcloudOIDCIsDefaultAndPreservesLDAPProvisioning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(task), "--mapping-uid=preferred_username") {
-		t.Fatal("OIDC user ID must match the sAMAccountName-backed LDAP internal username")
+	if !strings.Contains(string(task), "--mapping-uid=sub") {
+		t.Fatal("OIDC user ID must use the immutable subject matching the LDAP anchor UID")
 	}
 	if !strings.Contains(string(task), "--send-id-token-hint=1") {
 		t.Fatal("OIDC logout must identify the session to the provider")

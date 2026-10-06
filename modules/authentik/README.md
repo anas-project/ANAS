@@ -3,7 +3,7 @@
 提供 OIDC 与 SAML 的身份提供方，并从 Samba AD 同步用户和组。
 
 > [!WARNING]
-> 当前生命周期为 `developing`，仅用于开发和验证，不属于推荐生产部署。
+> 当前生命周期为 `deprecated`（过时）。不再作为新部署推荐的身份提供方；现有代码与历史验收保留，后续不将 Authentik 整改作为 Casdoor 发布前置条件。
 
 ## 快速信息
 
@@ -12,7 +12,7 @@
 | --- | --- |
 | Module | `authentik` |
 | 版本 / revision | `2026.5.6-r14` |
-| 状态 | `developing` |
+| 状态 | `deprecated` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
 <!-- generated:module-facts:end -->

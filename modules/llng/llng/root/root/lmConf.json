@@ -45,7 +45,7 @@
     "_whatToTrace": "$_auth eq 'SAML' ? lc($_user.'@'.$_idpConfKey) : $_auth eq 'OpenIDConnect' ? lc($_user.'@'.$_oidc_OP) : lc($_user)"
   },
   "reloadUrls": {
-    "localhost": "http://reload.local/reload"
+    "localhost": "http://127.0.0.1:8089/reload"
   },
   "domain": "{{BASE_DOMAIN}}",
   "portal": "{{LLNG_DOMAIN_FULL}}/",

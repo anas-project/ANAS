@@ -44,7 +44,7 @@ lemonldap_ng_cli_delkey="$lemonldap_ng_cli -yes 1 -force 1 delKey"
 config_version=$( $lemonldap_ng_cli info | grep -oP 'Num\s+:\s+\K\d+' )
 
 cat /var/lib/lemonldap-ng/conf/lmConf-$config_version.json \
-  | jq 'del(.locationRules, .oidcRPMetaDataOptions, .oidcRPMetaDataExportedVars, .samlSPMetaDataXML, .samlSPMetaDataOptions, .samlSPMetaDataExportedAttributes, .applicationList."1apps")' \
+  | jq '.reloadUrls = {localhost: "http://127.0.0.1:8089/reload"} | del(.locationRules, .oidcRPMetaDataOptions, .oidcRPMetaDataExportedVars, .samlSPMetaDataXML, .samlSPMetaDataOptions, .samlSPMetaDataExportedAttributes, .applicationList."1apps")' \
   | jq --arg domain "$LLNG_MANAGER_DOMAIN" --arg group "$SAMBA_DC_ADMIN_GROUP_NAME" '. + {locationRules: {($domain): {default: "inGroup(\"\($group)\")"}}}' \
   > /tmp/config_new.json
 mv /tmp/config_new.json /var/lib/lemonldap-ng/conf/lmConf-$config_version.json
@@ -263,6 +263,7 @@ for app in $OIDC_RP_APPS; do
     $lemonldap_ng_cli_addkey \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsClientID "$client_id" \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsClientSecret "$client_secret" \
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsUserIDAttr anasIdentityAnchor \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsIDTokenSignAlg RS256 \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsIDTokenForceClaims 1 \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsRedirectUris "$redirect_uri_space" \
@@ -279,6 +280,10 @@ for app in $OIDC_RP_APPS; do
 
     allow_groups=$(oidc_get_var $app "ALLOW_GROUPS")
 
+    # Reject sessions without a directory anchor before issuing authorization
+    # codes. Keep whatToTrace as the human login/audit label; it is not sub.
+    anchor_rule='defined($anasIdentityAnchor) and $anasIdentityAnchor ne ""'
+    groups_filter="$anchor_rule"
     if [ -n "$allow_groups" ]; then
       groups=($(echo "$allow_groups" | tr ',' ' '))
       has_admin_group=false
@@ -293,9 +298,10 @@ for app in $OIDC_RP_APPS; do
       if [ "$has_admin_group" != true ]; then
         groups_filter="$groups_filter | inGroup('$SAMBA_DC_ADMIN_GROUP_NAME')"
       fi
-      $lemonldap_ng_cli_addkey \
-          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsRule "$groups_filter"
+      groups_filter="($anchor_rule) and ($groups_filter)"
     fi
+    $lemonldap_ng_cli_addkey \
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsRule "$groups_filter"
           
 
     index=1
@@ -341,4 +347,6 @@ for app in $OIDC_RP_APPS; do
 done
 
 /usr/share/lemonldap-ng/bin/lemonldap-ng-cli --user=www-data --group=www-data update-cache
+# Do not mark startup complete if workers cannot reload the final registry.
+curl -fsS http://127.0.0.1:8089/reload >/dev/null
 touch /run/llng-configured

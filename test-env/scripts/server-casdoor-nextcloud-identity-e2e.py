@@ -48,6 +48,7 @@ def main():
     tls = ssl._create_unverified_context()  # Independent test CA, never the business deployment.
     username = "nci" + time.strftime("%H%M%S")
     renamed = "ncr" + username[3:]
+    peer = "ncp" + username[3:]
     password = "Anas-Native-" + secrets.token_hex(12) + "!"
     asset = "casdoor-identity-e2e-" + username + ".txt"
     content = secrets.token_hex(24).encode()
@@ -84,8 +85,15 @@ def main():
             response = client.open(req, timeout=45)
         except urllib.error.HTTPError as error:
             response = error
-        with response:
-            return response.status, response.geturl(), response.read()
+        except (TimeoutError, urllib.error.URLError) as error:
+            target = urllib.parse.urlsplit(url)
+            raise RuntimeError(f"HTTP request failed: {method} {target.hostname}{target.path}: {type(error).__name__}") from error
+        try:
+            with response:
+                return response.status, response.geturl(), response.read()
+        except TimeoutError as error:
+            target = urllib.parse.urlsplit(url)
+            raise RuntimeError(f"HTTP response timed out: {method} {target.hostname}{target.path}") from error
 
     def login(name):
         client = new_client()
@@ -118,28 +126,59 @@ def main():
         uid = value.get("id") if isinstance(value, dict) else None
         if status != 200 or not uid:
             raise RuntimeError("original application cookies did not authenticate OCS")
+        display_name = value.get("display-name", value.get("displayname", ""))
+        expected_name = "Anchor Peer" if name == peer else "Anchor Acceptance"
+        assert display_name == expected_name and display_name != uid, "display name exposed the internal UID"
+        page_name = re.search(r'data-user-displayname=["\']([^"\']+)', text)
+        assert page_name and html.unescape(page_name.group(1)) == expected_name, "page display name differs from the directory"
         return client, uid, request_token
 
     def mapping(uid, anchor):
-        assert re.fullmatch(r"nc[ir][0-9]{6}", uid)
+        assert re.fullmatch(r"[A-Za-z0-9_-]+", uid)
         statement = f"SELECT owncloud_name, directory_uuid FROM oc_ldap_user_mapping WHERE owncloud_name='{uid}'"
         result = run("docker", "exec", prefix + "postgres", "psql", "-U", "postgres", "-d", "nextcloud", "-At", "-F", "|", "-c", statement)
         assert result == uid + "|" + anchor, "Nextcloud persisted a different identity binding"
 
+    def authenticated(client):
+        status, _, body = request(client, base + "/ocs/v2.php/cloud/user?format=json", headers={"OCS-APIRequest": "true"})
+        try:
+            value = json.loads(body).get("ocs", {}).get("data", {})
+        except (ValueError, AttributeError):
+            return None
+        return value.get("id") if status == 200 and isinstance(value, dict) else None
+
+    def wait_revoked(client):
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            if authenticated(client) is None:
+                return
+            time.sleep(2)
+        raise RuntimeError("original Nextcloud cookies remained authenticated")
+
+    fixture_uids = []
     try:
-        samba("user", "add", username, password, "--userou=OU=People", "--mail-address=" + username + "@" + domain.removeprefix("nc."))
+        samba("user", "add", username, password, "--userou=OU=People", "--given-name=Anchor", "--surname=Acceptance", "--mail-address=" + username + "@" + domain.removeprefix("nc."))
         samba("group", "addmembers", "APP_nextcloud", username)
         first = wait_profile(username)
+        fixture_uids.append(first["externalId"])
+        samba("user", "add", peer, password, "--userou=OU=People", "--given-name=Anchor", "--surname=Peer")
+        samba("group", "addmembers", "APP_nextcloud", peer)
+        peer_profile = wait_profile(peer)
+        fixture_uids.append(peer_profile["externalId"])
+        peer_client, peer_uid, _ = login(peer)
         client, uid, csrf = login(username)
-        assert uid == username and uid != first["externalId"]
+        assert uid == first["externalId"] and uid != username
         mapping(uid, first["externalId"])
         path = base + "/remote.php/dav/files/" + urllib.parse.quote(uid) + "/" + asset
         status, _, _ = request(client, path, "PUT", content, {"requesttoken": csrf})
         assert status in (201, 204), f"real file creation failed: HTTP {status}"
-        print("nextcloud_initial_login=passed ldap_anchor=verified uid_is_label=true file=created", flush=True)
+        print("nextcloud_initial_login=passed ldap_anchor=verified uid_is_anchor=true file=created", flush=True)
+        print("nextcloud_display_name=passed html_and_ocs=human_readable", flush=True)
         samba("user", "rename", username, "--samaccountname=" + renamed)
         current = wait_profile(renamed)
         assert current["id"] == first["id"] and current["externalId"] == first["externalId"]
+        wait_revoked(client)
+        assert authenticated(peer_client) == peer_uid, "rename revoked an unrelated Nextcloud user"
         client_after, uid_after, csrf_after = login(renamed)
         assert uid_after == uid, "rename created a second Nextcloud account"
         mapping(uid_after, first["externalId"])
@@ -148,12 +187,21 @@ def main():
         status, _, _ = request(client_after, path, "DELETE", headers={"requesttoken": csrf_after})
         assert status == 204
         print("nextcloud_rename=passed same_ldap_account=true original_file=preserved", flush=True)
+        samba("group", "removemembers", "APP_nextcloud", renamed)
+        wait_revoked(client_after)
+        assert authenticated(peer_client) == peer_uid, "group removal revoked an unrelated Nextcloud user"
+        print("nextcloud_directory_logout=passed original_cookies=revoked unaffected_user=active", flush=True)
     finally:
         samba("user", "delete", username, check=False)
         samba("user", "delete", renamed, check=False)
+        samba("user", "delete", peer, check=False)
+        # Delete LDAP objects first, then remove their original Nextcloud UIDs.
+        for fixture_uid in fixture_uids:
+            run("docker", "exec", nc, "php", "occ", "user:delete", fixture_uid, check=False)
         # This fixture owns the entire account and its single test file.
         run("docker", "exec", nc, "php", "occ", "user:delete", username, check=False)
         run("docker", "exec", nc, "php", "occ", "user:delete", renamed, check=False)
+        run("docker", "exec", nc, "php", "occ", "user:delete", peer, check=False)
 
 
 if __name__ == "__main__":

@@ -96,7 +96,9 @@ report_admin_app_membership() {
   all=$(dc_exec samba-tool group listmembers APP_all | grep -Fx "$admin" || true)
   printf 'bootstrap_admin user=%s APP_all=%s' "$admin" "$([ -n "$all" ] && printf member || printf absent)"
   test -z "$all"
-  for app in nextcloud meshcentral netbird; do
+  local identity_clients
+  identity_clients=$(dc_exec printenv ANAS_IDENTITY_APP_CLIENTS)
+  for app in ${identity_clients//,/ }; do
     direct=$(dc_exec samba-tool group listmembers "APP_$app" | grep -Fx "$admin" || true)
     printf ' APP_%s=%s' "$app" "$([ -n "$direct" ] && printf member || printf absent)"
     test -z "$direct"

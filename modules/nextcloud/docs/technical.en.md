@@ -5,7 +5,7 @@ The startup task writes two official Nextcloud system settings through `occ conf
 This page records the current implementation, security boundaries, and verification entry points for `nextcloud`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `34.0.2-r9` / `anas.module/v1`.
+> Status: current implementation; based on `34.0.2-r11` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -24,8 +24,8 @@ This page records the current implementation, security boundaries, and verificat
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
 | `anas_imaginary` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-imaginary:2026.07.30-d5e7ffac6e1a` | `nextcloud` | 0 |
-| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r9` | `nextcloud, db, traefik` | 3 |
-| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r9` | `nextcloud, db` | 2 |
+| `anas_nextcloud` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r11` | `nextcloud, db, traefik` | 3 |
+| `anas_nextcloud-cron` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-nextcloud:34.0.2-r11` | `nextcloud, db` | 2 |
 | `anas_nextcloud-push` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-notify-push:2026.07.30-7c156254927e` | `nextcloud, db, traefik` | 1 |
 | `anas_nextcloud-redis` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-redis:8.10.0-alpine` | `nextcloud` | 1 |
 | `anas_talk` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-nextcloud-talk:2026.07.30-2b9a7d12d3e6` | `nextcloud, traefik` | 1 |
@@ -57,11 +57,11 @@ When Collabora is enabled, `task.sh` points `wopi_url` and `public_wopi_url` at 
 
 ## Identity and authorization data flow
 
-LDAPS provisioning manages users and groups; OIDC is the preferred login protocol and SAML remains supported. Consistent directory usernames and `anasIdentityAnchor` link both paths. Samba `Admins` dynamically maps to Nextcloud administration. Ordinary directory password changes use the restricted password-bind identity, never a database administrator.
+LDAPS provisioning manages users and groups; OIDC is the preferred login protocol and SAML remains supported. `anasIdentityAnchor` links both paths to the existing LDAP account. Samba `Admins` dynamically maps to Nextcloud administration. Ordinary directory password changes use the restricted password-bind identity, never a database administrator.
 
 ### IAM-initiated logout
 
-Pinned `user_oidc 8.10.1` registers `/index.php/apps/user_oidc/backchannel-logout/anas`, `backchannel`, and session-required support, preserving the ID Token/`sid` for session-granular revocation; Module logout also uses the registered post-logout URI. Administrative session deletion or account disable counts as browserless bidirectional logout only after the pinned provider actually emits the notification in E2E. Pinned `user_saml 8.2.0` registers `/index.php/apps/user_saml/saml/sls` with Redirect binding. Redirect and POST are both browser SLO, never inferred to be headless revocation. When a provider publishes no SLO (current Casdoor), the hook removes stale endpoints and keeps logout local. Every apply rebuilds the current protocol declaration and removes old-domain and opposite-protocol fields.
+Pinned `user_oidc 8.11.0` registers `/index.php/apps/user_oidc/backchannel-logout/anas`, `backchannel`, and session-required support, preserving the ID Token/`sid` for session-granular revocation; Module logout also uses the registered post-logout URI. Administrative session deletion or account disable counts as browserless bidirectional logout only after the pinned provider actually emits the notification in E2E. Pinned `user_saml 8.2.0` registers `/index.php/apps/user_saml/saml/sls` with Redirect binding. Redirect and POST are both browser SLO, never inferred to be headless revocation. When a provider publishes no SLO (current Casdoor), the hook removes stale endpoints and keeps logout local. Every apply rebuilds the current protocol declaration and removes old-domain and opposite-protocol fields.
 
 Both the web and cron containers install the ANAS internal CA when it is
 present. Because `user_ldap` periodically refreshes directory attributes from
@@ -84,22 +84,18 @@ There is currently no generic `anas user/group/password` command. Directory-back
 
 One-to-one with the README's *Directory attribute changes*.
 
-- **Which table and field persist identity**: `oc_ldap_user_mapping`. The `directory_uuid` column
-  holds the anchor (the matching key) and `owncloud_name` holds the in-application `uid`. Both
-  `oc_users.uid` and the data directory `data/<uid>/` use `owncloud_name`. `task.sh` writes the
-  configuration through `occ ldap:set-config`: `ldapExpertUUIDUserAttr` and `ldapExpertUUIDGroupAttr`
-  take `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE`, while `ldapExpertUsernameAttr` takes `SAMBA_DC_USER_NAME`
-  (the `sAMAccountName`).
-- **Matching key**: the anchor, declared explicitly in both settings rather than left to an upstream
-  default. In OIDC mode `occ user_oidc:provider anas --unique-uid=0 --mapping-uid=preferred_username`
-  funnels the login onto that same `uid` by username; in SAML mode
-  `occ saml:config:set 1 --general-uid_mapping=<anchor>
-  --saml-attribute-mapping-user_id_ldap_mapping=<anchor>` makes the assertion resolve back to the LDAP
-  account by anchor.
+- **Persistent identity**: `oc_ldap_user_mapping.directory_uuid` and `owncloud_name` both contain
+  the anchor in fresh deployments. The latter is the internal UID used in storage and WebDAV/API paths.
+  `task.sh` sets `ldapExpertUUIDUserAttr`, `ldapExpertUUIDGroupAttr` and `ldapExpertUsernameAttr`
+  to `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE`. Configuration changes do not rewrite existing mappings.
+- **Matching key**: OIDC uses `--unique-uid=0 --mapping-uid=sub` to look up the LDAP anchor UID
+  directly. The provider must issue the directory anchor as `sub`. LDAP search attributes and the
+  default login filter include the anchor for first-login import. Custom login filters must also include
+  `(anasIdentityAnchor=%uid)` or the configured attribute. Login and display names remain readable
+  directory attributes. SAML's `general-uid_mapping` and `user_id_ldap_mapping` retain the explicit anchor.
 - **Refreshed at each login**: `ldapUserDisplayName` (display name), `ldapEmailAttribute` (email), and
   group membership after `ldapNestedGroups` expansion. `owncloud_name` is **not** refreshed — upstream
-  never rewrites that column once the mapping exists, which is exactly why the `uid` stays frozen at
-  the old value after a rename.
+  never rewrites that column once the mapping exists, so the anchor UID remains unchanged after a rename.
 - **Which interface performs revocation**: on the login side, `ldapLoginFilter`
   (`NEXTCLOUD_USER_LOGIN_FILTER` carries `(!(userAccountControl:1.2.840.113556.1.4.803:=2))`, so a
   disabled account cannot sign in). For existing sessions, `user_oidc`'s back-channel logout receiver
@@ -114,24 +110,19 @@ One-to-one with the README's *Directory attribute changes*.
   would make disabled accounts vanish from Nextcloud and take file ownership with them — and the price
   of that choice is that disabling does not propagate to device credentials on its own.
 
-**`DIRKEY-R-013` projection verdict: unaffected (`verified`).** Nextcloud's in-application `uid` comes
-from `ldapExpertUsernameAttr` (the `sAMAccountName`) and from OIDC's `preferred_username`; **neither
-path reads `sub` or `NameID`**: OIDC's `--mapping-uid` points explicitly at `preferred_username`, and
-SAML's `uid_mapping` points explicitly at the anchor attribute rather than the NameID. So once M2
-switches the subject identifier to the anchor, the `uid`, the data directory path, and share URLs do
-not turn into UUIDs. Entry point: `test-env/scripts/server-authentik-oidc-login-e2e.sh` asserts that
-`oc_ldap_user_mapping.owncloud_name` equals the directory username and `directory_uuid` equals the
-anchor, and that `occ user:info`'s `user_id` equals the directory username;
-`server-llng-oidc-login-e2e.sh` asserts the same facts against a second Provider.
+**`DIRKEY-R-013` projection verdict: an approved exception for fresh Nextcloud deployments.**
+The internal UID, technical WebDAV/API paths and internal storage directories use the anchor.
+Login and display names remain separate. Isolated Casdoor acceptance verifies matching UID and anchor,
+account continuity after rename and original-file access. Other-provider and client-interface regressions
+remain pending; historical username-UID results do not cover this configuration.
 
-**SAML mode carries one further `DIRKEY-R-010` observation point**: taking the anchor for
-`general-uid_mapping` means the assertion attribute carrying the anchor is the user-id candidate. It
-is then resolved back to the existing LDAP account through `user_id_ldap_mapping`, so what lands in
-the database is still the `sAMAccountName`; **but whether a login with no matching LDAP account would
-instead create a SAML-backend account keyed by the anchor has not been re-checked**
-(`general-require_provisioned_account` is set to `0`, i.e. a pre-provisioned account is not required).
-Before M2, run a SAML-mode case for a user with no corresponding LDAP account and confirm that no
-account with a UUID `uid` appears.
+### user_oidc artifact in r11
+
+Unified anchor UIDs need no additional LDAP identity lookup code. Official 8.11.0 includes upstream
+issuer validation and repeated back-channel logout fixes. The current acceptance record documents
+artifact upgrade and unmodified-plugin results. `server-casdoor-nextcloud-identity-e2e.py` checks
+real sessions and files for first login, rename and directory revocation. SAML application sessions,
+other providers, device-token revocation and the complete release lifecycle remain separate acceptance items.
 
 ## Management surfaces and secret lifecycle
 

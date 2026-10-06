@@ -276,19 +276,19 @@ if ! grep -Eq 'data-user="|logout|logoutURL' "$body"; then
   exit 1
 fi
 nextcloud_session_id=$(sed -n 's/.*data-user="\([^"]*\)".*/\1/p' "$body" | head -n 1)
-test "$nextcloud_session_id" = "$username"
+test "$nextcloud_session_id" = "$anchor"
 session_json=$(curl_auth -H 'OCS-APIRequest: true' \
   "$nextcloud_url/ocs/v2.php/cloud/user?format=json")
-test "$(printf '%s' "$session_json" | jq -r '.ocs.data.id // empty')" = "$username"
+test "$(printf '%s' "$session_json" | jq -r '.ocs.data.id // empty')" = "$anchor"
 printf 'nextcloud_session=established user=%s\n' "$nextcloud_session_id"
 
 ldap_mapping_anchor=$(docker -H "unix://$socket" exec "${prefix}postgres" sh -lc \
   'psql -U "$POSTGRES_USER" -d nextcloud -A -t -F "|" -c "select owncloud_name, directory_uuid from oc_ldap_user_mapping"' \
-  | grep -F "$username|" | head -n 1 | cut -d'|' -f2)
+  | grep -F "$anchor|" | head -n 1 | cut -d'|' -f2)
 test "$ldap_mapping_anchor" = "$anchor"
 user_json=$(docker -H "unix://$socket" exec -u www-data "${prefix}nextcloud" \
   php occ user:info "$nextcloud_session_id" --output=json)
-test "$(printf '%s' "$user_json" | jq -r '.user_id')" = "$username"
+test "$(printf '%s' "$user_json" | jq -r '.user_id')" = "$anchor"
 test "$(printf '%s' "$user_json" | jq -r '.display_name')" = "$ad_display_name"
 admin_probe_json=$(curl_auth -H 'OCS-APIRequest: true' \
   "$nextcloud_url/ocs/v1.php/cloud/users?format=json")

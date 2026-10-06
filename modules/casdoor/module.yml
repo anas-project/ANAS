@@ -10,7 +10,7 @@ abi:
 title: Casdoor
 description: IAM provider serving OIDC and SAML with Samba AD-backed sign-in.
 category: identity
-status: developing
+status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml

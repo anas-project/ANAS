@@ -195,8 +195,8 @@ Contract 声明虚假兼容性。
 | Name | 类别 | 状态 | 描述 |
 | --- | --- | --- | --- |
 | [`ai_agent`](/reference/modules/ai_agent/) | `app` | `developing` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
-| [`authentik`](/reference/modules/authentik/) | `identity` | `developing` | Identity provider serving OIDC and SAML with per-application endpoints. |
-| [`casdoor`](/reference/modules/casdoor/) | `identity` | `developing` | IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
+| [`authentik`](/reference/modules/authentik/) | `identity` | `deprecated` | Identity provider serving OIDC and SAML with per-application endpoints. |
+| [`casdoor`](/reference/modules/casdoor/) | `identity` | `release` | IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
 | [`collabora`](/reference/modules/collabora/) | `app` | `release` | Online document editing backend for Nextcloud. |
 | [`ddns_go`](/reference/modules/ddns_go/) | `network` | `release` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
 | [`ddns_updater`](/reference/modules/ddns_updater/) | `network` | `release` | Dynamic DNS updater for the base domain and wildcard host. |
@@ -206,11 +206,11 @@ Contract 声明虚假兼容性。
 | [`incus`](/reference/modules/incus/) | `compute` | `developing` | Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract. |
 | [`lam`](/reference/modules/lam/) | `identity` | `release` | Web UI for LDAP account administration. |
 | [`lego`](/reference/modules/lego/) | `certificate` | `release` | Issues and stores wildcard certificates used by Traefik and domain services. |
-| [`llng`](/reference/modules/llng/) | `identity` | `release` | SSO portal, SAML/OIDC identity provider, and app launcher. |
+| [`llng`](/reference/modules/llng/) | `identity` | `developing` | SSO portal, SAML/OIDC identity provider, and app launcher. |
 | [`mariadb`](/reference/modules/mariadb/) | `database` | `release` | MariaDB database service with optional Adminer UI. |
 | [`meshcentral`](/reference/modules/meshcentral/) | `app` | `release` | Remote device management with OIDC-only authentication and LDAP directory synchronization. |
 | [`netbird`](/reference/modules/netbird/) | `network` | `developing` | Incomplete WireGuard overlay network scaffold; excluded from recommended deployments. |
-| [`nextcloud`](/reference/modules/nextcloud/) | `app` | `release` | File sync, sharing, office integration, memories, and Talk. |
+| [`nextcloud`](/reference/modules/nextcloud/) | `app` | `developing` | File sync, sharing, office integration, memories, and Talk. |
 | [`oauth2_proxy`](/reference/modules/oauth2_proxy/) | `identity` | `release` | Authenticated gate in front of services that have no login of their own. |
 | [`postgres`](/reference/modules/postgres/) | `database` | `release` | PostgreSQL database service with optional Adminer UI. |
 | [`samba_dc`](/reference/modules/samba_dc/) | `identity` | `release` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |

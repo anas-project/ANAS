@@ -53,7 +53,7 @@ verify_nextcloud_logout() {
       "$nextcloud_url/ocs/v2.php/cloud/user?format=json" || true)
     session_after=$(jq -r '.ocs.data.id // empty' "$body" 2>/dev/null || true)
     meta_status=$(jq -r '.ocs.meta.statuscode // empty' "$body" 2>/dev/null || true)
-    if [ "$status" != 000 ] && [ -n "$meta_status" ] && [ "$session_after" != "$username" ]; then
+    if [ "$status" != 000 ] && [ -n "$meta_status" ] && [ "$session_after" != "$anchor" ]; then
       printf 'nextcloud_session=revoked mode=browser status=%s\n' "$status"
       final=$(curl_login -L -o "$body" -w '%{url_effective}' "$nextcloud_url/apps/user_oidc/login/1")
       case "$final" in
@@ -176,15 +176,15 @@ if [[ ",$apps," == *,nextcloud,* ]]; then
       exit 1
     fi
     nextcloud_session_id=$(sed -n 's/.*data-user="\([^"]*\)".*/\1/p' "$body" | head -n 1)
-    test "$nextcloud_session_id" = "$username"
+    test "$nextcloud_session_id" = "$anchor"
     session_json=$(curl_login -H 'OCS-APIRequest: true' "$nextcloud_url/ocs/v2.php/cloud/user?format=json")
-    test "$(printf '%s' "$session_json" | jq -r '.ocs.data.id // empty')" = "$username"
+    test "$(printf '%s' "$session_json" | jq -r '.ocs.data.id // empty')" = "$anchor"
     ldap_mapping_anchor=$("$docker_cmd" exec "${prefix}postgres" sh -lc \
       'psql -U "$POSTGRES_USER" -d nextcloud -A -t -F "|" -c "select owncloud_name, directory_uuid from oc_ldap_user_mapping"' \
-      | grep -F "$username|" | head -n 1 | cut -d'|' -f2)
+      | grep -F "$anchor|" | head -n 1 | cut -d'|' -f2)
     test "$ldap_mapping_anchor" = "$anchor"
-    user_json=$("$docker_cmd" exec -u www-data "${prefix}nextcloud" php occ user:info "$username" --output=json)
-    test "$(printf '%s' "$user_json" | jq -r '.user_id')" = "$username"
+    user_json=$("$docker_cmd" exec -u www-data "${prefix}nextcloud" php occ user:info "$anchor" --output=json)
+    test "$(printf '%s' "$user_json" | jq -r '.user_id')" = "$anchor"
     test "$(printf '%s' "$user_json" | jq -r '.display_name')" = "$ad_display_name"
     admin_probe_json=$(curl_login -H 'OCS-APIRequest: true' "$nextcloud_url/ocs/v1.php/cloud/users?format=json")
     if [ "$expect_app_admin" = true ]; then

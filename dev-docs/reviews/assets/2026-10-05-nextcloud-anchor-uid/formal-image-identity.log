@@ -1,0 +1,4 @@
+nextcloud_initial_login=passed ldap_anchor=verified uid_is_anchor=true file=created
+nextcloud_display_name=passed html_and_ocs=human_readable
+nextcloud_rename=passed same_ldap_account=true original_file=preserved
+nextcloud_directory_logout=passed original_cookies=revoked unaffected_user=active

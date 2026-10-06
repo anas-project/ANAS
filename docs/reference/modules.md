@@ -10,8 +10,8 @@ lastUpdated: false
 | Module | Version | Status | Category | Description |
 | --- | --- | --- | --- | --- |
 | [AI Agent orchestration](/reference/modules/ai_agent/) | `0.1.0-r2` | `developing` | `app` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
-| [authentik](/reference/modules/authentik/) | `2026.5.6-r14` | `developing` | `identity` | Identity provider serving OIDC and SAML with per-application endpoints. |
-| [Casdoor](/reference/modules/casdoor/) | `3.143.0-r10` | `developing` | `identity` | IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
+| [authentik](/reference/modules/authentik/) | `2026.5.6-r14` | `deprecated` | `identity` | Identity provider serving OIDC and SAML with per-application endpoints. |
+| [Casdoor](/reference/modules/casdoor/) | `3.143.0-r10` | `release` | `identity` | IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
 | [Collabora Online](/reference/modules/collabora/) | `26.4.2-r5` | `release` | `app` | Online document editing backend for Nextcloud. |
 | [DDNS-GO](/reference/modules/ddns_go/) | `6.17.4-r6` | `release` | `network` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
 | [DDNS Updater](/reference/modules/ddns_updater/) | `2.10.0-r4` | `release` | `network` | Dynamic DNS updater for the base domain and wildcard host. |
@@ -21,11 +21,11 @@ lastUpdated: false
 | [Incus compute provider](/reference/modules/incus/) | `7.3.0-r2` | `developing` | `compute` | Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract. |
 | [LDAP Account Manager](/reference/modules/lam/) | `9.6.0-r8` | `release` | `identity` | Web UI for LDAP account administration. |
 | [Lego ACME certificates](/reference/modules/lego/) | `5.3.1-r5` | `release` | `certificate` | Issues and stores wildcard certificates used by Traefik and domain services. |
-| [LemonLDAP::NG](/reference/modules/llng/) | `2.23.2-r11` | `release` | `identity` | SSO portal, SAML/OIDC identity provider, and app launcher. |
+| [LemonLDAP::NG](/reference/modules/llng/) | `2.23.2-r12` | `developing` | `identity` | SSO portal, SAML/OIDC identity provider, and app launcher. |
 | [MariaDB](/reference/modules/mariadb/) | `12.3.2-r4` | `release` | `database` | MariaDB database service with optional Adminer UI. |
 | [MeshCentral](/reference/modules/meshcentral/) | `1.2.4-r8` | `release` | `app` | Remote device management with OIDC-only authentication and LDAP directory synchronization. |
 | [NetBird](/reference/modules/netbird/) | `0.76.1-r5` | `developing` | `network` | Incomplete WireGuard overlay network scaffold; excluded from recommended deployments. |
-| [Nextcloud](/reference/modules/nextcloud/) | `34.0.2-r9` | `release` | `app` | File sync, sharing, office integration, memories, and Talk. |
+| [Nextcloud](/reference/modules/nextcloud/) | `34.0.2-r11` | `developing` | `app` | File sync, sharing, office integration, memories, and Talk. |
 | [OAuth2 Proxy](/reference/modules/oauth2_proxy/) | `7.15.3-r5` | `release` | `identity` | Authenticated gate in front of services that have no login of their own. |
 | [PostgreSQL](/reference/modules/postgres/) | `18.4.0-r4` | `release` | `database` | PostgreSQL database service with optional Adminer UI. |
 | [Samba domain controller and DNS](/reference/modules/samba_dc/) | `4.23.6-r11` | `release` | `identity` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |

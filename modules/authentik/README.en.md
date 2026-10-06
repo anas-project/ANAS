@@ -3,7 +3,7 @@
 IAM provider for OIDC and SAML with users and groups synchronized from Samba AD.
 
 > [!WARNING]
-> Lifecycle is `developing`; use it for development and validation only, not recommended production deployments.
+> Lifecycle is `deprecated`. This provider is no longer recommended for new deployments. Existing code and historical acceptance evidence are retained; Authentik remediation is not a prerequisite for releasing Casdoor.
 
 ## Quick facts
 
@@ -12,7 +12,7 @@ IAM provider for OIDC and SAML with users and groups synchronized from Samba AD.
 | --- | --- |
 | Module | `authentik` |
 | Version / revision | `2026.5.6-r14` |
-| Status | `developing` |
+| Status | `deprecated` |
 | Category | `identity` |
 | Runtime | `compose` |
 <!-- generated:module-facts:end -->

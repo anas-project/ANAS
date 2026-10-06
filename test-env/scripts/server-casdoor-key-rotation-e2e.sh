@@ -9,6 +9,10 @@ export ANAS_TEST_CONTAINER_PREFIX=${ANAS_TEST_CONTAINER_PREFIX:-anas_casdoor_}
 source "$script_dir/server-iam-matrix-common.sh"
 
 workspace=${ANAS_TEST_WORKSPACE:?ANAS_TEST_WORKSPACE is required}
+consumer_module=${ANAS_TEST_OIDC_CONSUMER_MODULE:-oauth2_proxy}
+[[ "$consumer_module" =~ ^[a-z][a-z0-9_]*$ ]]
+consumer_key=${consumer_module^^}
+consumer_application="app-anas-${consumer_module//_/-}"
 anas_cmd=${ANAS_TEST_ANAS_CMD:-anas}
 fixture_bin=${CASDOOR_LOGOUT_FIXTURE_BIN:-/home/whl/anas-casdoor-m3-e2e/casdoor-oidc-logout-consumer}
 report_dir=${ANAS_TEST_REPORT_DIR:-$workspace/test-env/reports}
@@ -72,10 +76,10 @@ wait_for_user() {
 
 refresh_oidc_material() {
   issuer=$("$real_docker" exec "$casdoor" printenv CASDOOR_DOMAIN_FULL)
-  oidc_client_id=$("$real_docker" exec "$casdoor" printenv ANAS_IAM_CLIENT__OAUTH2_PROXY__CLIENT_ID)
-  oidc_redirect_uri=$("$real_docker" exec "$casdoor" printenv ANAS_IAM_CLIENT__OAUTH2_PROXY__REDIRECT_URIS |
+  oidc_client_id=$("$real_docker" exec "$casdoor" printenv "ANAS_IAM_CLIENT__${consumer_key}__CLIENT_ID")
+  oidc_redirect_uri=$("$real_docker" exec "$casdoor" printenv "ANAS_IAM_CLIENT__${consumer_key}__REDIRECT_URIS" |
     awk -F, '{print $1}')
-  "$real_docker" exec "$casdoor" printenv ANAS_IAM_CLIENT__OAUTH2_PROXY__CLIENT_SECRET \
+  "$real_docker" exec "$casdoor" printenv "ANAS_IAM_CLIENT__${consumer_key}__CLIENT_SECRET" \
     >"$run_root/oidc-client-secret"
   chmod 0600 "$run_root/oidc-client-secret"
   fixture_image=$("$real_docker" inspect --format '{{.Config.Image}}' "$casdoor")
@@ -111,7 +115,7 @@ verify_saved_token() {
     -v "$run_root:/state" \
     -e "CASDOOR_FIXTURE_ISSUER=$issuer" \
     -e CASDOOR_FIXTURE_INTERNAL_ORIGIN=http://127.0.0.1:8000 \
-    -e CASDOOR_FIXTURE_APPLICATION=app-anas-oauth2-proxy \
+    -e "CASDOOR_FIXTURE_APPLICATION=$consumer_application" \
     -e CASDOOR_FIXTURE_ORGANIZATION=anas \
     -e "CASDOOR_FIXTURE_CLIENT_ID=$oidc_client_id" \
     -e CASDOOR_FIXTURE_CLIENT_SECRET_FILE=/state/oidc-client-secret \
@@ -171,9 +175,9 @@ samba_tool user rename "$test_user" --display-name="Casdoor key rotation E2E $te
 samba_tool group addmembers Admins "$test_user" >/dev/null
 wait_anchor "$test_user"
 wait_for_user >"$run_root/source-user.json"
-source_sub=$(jq -er '.id' "$run_root/source-user.json")
+source_sub=$(jq -er '.externalId' "$run_root/source-user.json")
 refresh_oidc_material
-fixture_token_login app-anas-oauth2-proxy anas "$oidc_client_id" oidc-client-secret \
+fixture_token_login "$consumer_application" anas "$oidc_client_id" oidc-client-secret \
   "$oidc_redirect_uri" "$test_user" user-password before-signing.json old-id-token
 old_kid=$(jq -er '.kid' "$run_root/before-signing.json")
 test "$(jq -er '.sub' "$run_root/before-signing.json")" = "$source_sub"
@@ -194,7 +198,7 @@ test "$(workspace_active)" != "$before_signing_deployment"
 test "$(store_digest)" != "$before_signing_store"
 wait_healthy
 refresh_oidc_material
-fixture_token_login app-anas-oauth2-proxy anas "$oidc_client_id" oidc-client-secret \
+fixture_token_login "$consumer_application" anas "$oidc_client_id" oidc-client-secret \
   "$oidc_redirect_uri" "$test_user" user-password after-signing.json new-id-token
 new_kid=$(jq -er '.kid' "$run_root/after-signing.json")
 test "$new_kid" != "$old_kid"

@@ -10,8 +10,8 @@ File sync, sharing, online office, Memories, and Talk platform.
 | Item | Value |
 | --- | --- |
 | Module | `nextcloud` |
-| Version / revision | `34.0.2-r9` |
-| Status | `release` |
+| Version / revision | `34.0.2-r11` |
+| Status | `developing` |
 | Category | `app` |
 | Runtime | `compose` |
 <!-- generated:module-facts:end -->
@@ -38,7 +38,7 @@ This module also requires a deployment-level IAM provider, for example:
 ```yaml
 identity:
   iam:
-    provider: llng
+    provider: casdoor
 ```
 
 ## Trash bin configuration
@@ -62,9 +62,12 @@ php /var/www/html/occ config:system:set trashbin_retention_obligation --type=str
 
 ## Identity, users, and groups
 
-LDAPS provisioning manages users and groups; OIDC is the preferred login protocol and SAML remains supported. Consistent directory usernames and `anasIdentityAnchor` link both paths. Samba `Admins` dynamically maps to Nextcloud administration. Ordinary directory password changes use the restricted password-bind identity, never a database administrator.
+LDAPS provisioning manages users and groups; OIDC is the preferred login protocol and SAML remains supported. `anasIdentityAnchor` links both paths to the existing LDAP account. Samba `Admins` dynamically maps to Nextcloud administration. Ordinary directory password changes use the restricted password-bind identity, never a database administrator.
 
-Pinned `user_oidc 8.10.1` registers RP-Initiated Logout and its session-required back-channel endpoint, revoking the matching Nextcloud session by `sid`. A provider is credited with browserless administrative revocation only after its session-deletion/account-disable E2E actually emits that notification. Pinned `user_saml 8.2.0` advertises an HTTP-Redirect SLS: Authentik and LLNG are browser-SLO cases, while Casdoor publishes no SLO and therefore leaves logout local. Protocol and domain switches remove opposite-protocol and old endpoints.
+Pinned `user_oidc 8.11.0` registers RP-Initiated Logout and its session-required back-channel endpoint, revoking the matching Nextcloud session by `sid`. A provider is credited with browserless administrative revocation only after its session-deletion/account-disable E2E actually emits that notification. Pinned `user_saml 8.2.0` advertises an HTTP-Redirect SLS: Authentik and LLNG are browser-SLO cases, while Casdoor publishes no SLO and therefore leaves logout local. Protocol and domain switches remove opposite-protocol and old endpoints.
+
+Revision r11 uses the unmodified official OIDC app and checks its integrity during startup. It remains
+`developing`; other-provider, client-experience and complete image-lifecycle acceptance remain pending.
 
 | Capability | Current declaration |
 | --- | --- |
@@ -79,27 +82,26 @@ Nextcloud does not maintain a second account-password policy. Its minimum-length
 
 ### Directory attribute changes
 
-**Matching key**: `anasIdentityAnchor`. The LDAP backend configures it as `ldapExpertUUIDUserAttr` /
-`ldapExpertUUIDGroupAttr`, and the account mapping table `oc_ldap_user_mapping.directory_uuid` holds
-the anchor value, unchanged by a rename. **The in-application user id (`oc_users.uid`) is, however,
-the `sAMAccountName`**: it comes from `ldapExpertUsernameAttr`, is written once when the mapping is
-first created, and is never rewritten afterwards — so the data directory `data/<uid>/`, share links,
-and `/ocs/.../users/<uid>` all carry that old username. The split is deliberate: the anchor
-identifies, the username displays and forms paths.
+**Matching key and internal UID**: `anasIdentityAnchor`. LDAP settings
+`ldapExpertUUIDUserAttr`, `ldapExpertUUIDGroupAttr` and `ldapExpertUsernameAttr` use the anchor attribute.
+OIDC uses `--unique-uid=0 --mapping-uid=sub`; the provider must issue the same anchor as `sub`.
+LDAP search attributes and the login filter also match the anchor so first login can import a new user.
+Casdoor and LLNG r12 combinations with anchor `sub` are verified. Historical results for other providers do not cover this configuration.
 
-In OIDC mode `user_oidc`'s `--mapping-uid=preferred_username` (the `sAMAccountName`) funnels the login
-onto that same `uid`; in SAML mode both `general-uid_mapping` and `user_id_ldap_mapping` take the
-anchor and use it to find the existing LDAP account. Both paths end on the same LDAP mapping row.
+This configuration targets fresh deployments without migration. Changing the attribute does not
+rewrite existing LDAP mappings. Login names remain `sAMAccountName`, and display names remain
+`displayName`; internal UIDs, WebDAV/API paths and internal data directories contain the anchor.
+SAML still matches LDAP accounts through the explicit anchor attribute; application-session regressions remain pending.
 
 | Directory change | What Nextcloud does | Evidence |
 | --- | --- | --- |
-| `sAMAccountName` changes | Same account: the mapping matches on the anchor and nothing is created. The in-application user id and the data directory `data/<uid>/` stay frozen at the old username, and the identifier in URLs does not follow. **In OIDC mode the login funnels on `preferred_username`**, which after a rename no longer equals the frozen `uid`; whether it still lands on the original account has not been re-checked | anchor as the mapping key: `verified`, entry `test-env/scripts/server-authentik-oidc-login-e2e.sh` (asserts `oc_ldap_user_mapping.directory_uuid == anchor`) and `server-llng-oidc-login-e2e.sh`; post-rename funnelling: `inferred` |
+| `sAMAccountName` changes | OIDC matches the anchor UID directly through `sub`; rename preserves the internal UID and file ownership | Real Casdoor + Nextcloud login and file: `verified`, entry `server-casdoor-nextcloud-identity-e2e.py`; r11 regressions with other providers remain pending |
 | `mail` changes | Refreshed from `ldapEmailAttribute` at the next sync or login. It takes no part in account binding, and Nextcloud puts no global uniqueness constraint on email, so account creation never fails over it | `inferred` |
-| `displayName` and other profile attributes | Refreshed from `ldapUserDisplayName` at LDAP sync and at login; not in real time | display name matching the directory: `verified`, same entry (asserts `user:info .display_name` equals the directory `displayName`); refresh timing: `inferred` |
+| `displayName` and other profile attributes | Refreshed from `ldapUserDisplayName` at LDAP sync and at login; not in real time | Casdoor + official 8.11.0: HTML and OCS display the human-readable name rather than the anchor UID, `verified`, same entry; refresh timing: `inferred` |
 | Direct or recursive group membership changes | `ldapNestedGroups=1`; authorization takes effect at LDAP sync and at login. `Admins` is mapped dynamically to application administration through `ldap:promote-group`. Directory-event subscription shortens this to the event propagation time but never makes it real-time | group and administrator mapping: `verified`, same entry; moment of convergence: `inferred` |
 | Account disabled | Login is refused: `NEXTCLOUD_USER_LOGIN_FILTER` carries `(!(userAccountControl:...=2))`. But **the user filter does not carry that condition**, so the account keeps existing in Nextcloud; **existing sessions, app passwords, and WebDAV/CalDAV client credentials do not pass through the login filter, and whether they stop working has not been re-checked** | login filter carrying the disabled condition: `verified` (Hook rendering, see the technical document); the outcome for app passwords and existing sessions: `inferred` |
 | Account deleted | The user drops out of the user filter and `user_ldap`'s deletion detection marks it deleted while keeping the mapping row; **files are never re-owned automatically** and an administrator has to transfer them explicitly | `inferred` |
-| Identifier recycled and reassigned | A newcomer given a recycled `sAMAccountName` carries a different anchor, so the mapping does not match the old row; but the newcomer's `uid` equals the one the old account already holds, so the mapping either fails to be created or lands on the old data directory — the outcome has not been re-checked and must be treated as fail-open | `inferred` |
+| Identifier recycled and reassigned | A newcomer reusing a username has a different anchor and internal UID, so the design keeps the original account files separate; username-reuse acceptance against the unmodified official app remains pending | `inferred` |
 
 **Fallback path** — what operations must do for every "no automatic path" row above:
 
@@ -108,8 +110,8 @@ anchor and use it to find the existing LDAP account. Both paths end on the same 
    directory alone does not disconnect already-paired desktop and mobile clients;
 2. Before deleting a directory account, transfer the files with
    `occ files:transfer-ownership <uid> <successor>`, then delete the account;
-3. When group revocation must take effect immediately, terminate the user's existing Nextcloud
-   sessions as well as waiting for the sync — delete their app passwords and session tokens;
+3. OIDC sessions terminate through the provider's back-channel notification. Without that path, or
+   for device credentials, immediate group revocation also requires deleting app passwords and session tokens;
 4. **Directory-side process constraint**: `sAMAccountName` must never be recycled. The anchor
    guarantees that a rename is still the same person; it cannot guarantee that a recycled username
    will not collide with a `uid` frozen at an old value.

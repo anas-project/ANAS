@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `llng` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `2.23.2-r11` / `anas.module/v1`.
+> 状态：当前实现；对应 `2.23.2-r12` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,7 +20,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r11` | `traefik, db` | 2 |
+| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r12` | `traefik, db` | 2 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -55,56 +55,44 @@ OIDC issuer 保留固定 `2.23.2` discovery 返回的尾斜杠，Consumer 必须
 
 当前没有通用的 `anas user/group/password` 子命令。目录型 Module 会按自身机制自动同步；用户、Group 和目录密码应在 Samba AD/LAM 或具备受限 LDAPS password-writeback 的应用中管理，不能用 `anas config set` 或 `env.<KEY>` 冒充目录操作。
 
+### 配置缓存刷新
+
+启动入口在恢复 Nginx runtime 后写入仅监听 `127.0.0.1:8089` 的 `/reload` 虚拟主机，
+转交现有 FastCGI server 的 `LLTYPE=reload`；不发布端口，也不添加外部路由。
+`lmConf.json` 和每次启动的持久配置重建都将 reload URL 指向该地址。最终 CLI cache update
+与 HTTP reload 成功后才写 `/run/llng-configured`，避免旧 RP 配置继续服务而健康检查提前通过。
+这一入口采用[上游配置刷新方式](https://www.lemonldap-ng.org/documentation/latest/configlocation.html)，
+用 loopback 监听限制访问，而不是开放 Manager API。
+
 ### 目录属性变更的实现侧
 
-与 README 的《目录属性变更说明》一一对应。本 Module 既是 Consumer（对 Samba AD）也是 Provider
-（对各应用）。
+LLNG 直接认证 Samba AD，不保存用户副本。`sessions`、`psessions`、`samlsessions`、
+`oidcsessions`、`cassessions` 的主键是 session ID；`_whatToTrace` 等字段只有查询索引。
+`lmConf.json` 的 `whatToTrace=_whatToTrace` 在 AD 认证下等于小写登录名，继续用于日志和
+Manager 查询。目录属性由 `ldapExportedVars` 在新认证时读取，已有会话可能保留旧属性。
 
-**Consumer 侧（LLNG ← Samba AD）**
+r12 的 `llng-config.sh` 在重建 RP 时明确设置
+`oidcRPMetaDataOptionsUserIDAttr=anasIdentityAnchor`。固定 `2.23.2-1` 的
+`Lib/OpenIDConnect.pm::getUserIDForRP` 只在配置项为空时回退 `whatToTrace`；指定了 anchor 后
+直接读取该会话变量。`Issuer/OpenIDConnect.pm` 的授权码签发、`_generateIDToken`、注销及
+`Lib/OpenIDConnect.pm::buildUserInfoResponse` 都调用它；在线 refresh session 另存
+`_oidc_logout_sub`，供其会话终止时发送同一主体的通知。Refresh token / access token 可为
+不透明的会话 ID，不能因为不是 JWT 就要求它们包含 `sub`。
 
-- **身份存在哪张表/哪个字段**：`sessions`、`psessions`、`samlsessions`、`oidcsessions` 与
-  `cassessions` 表，**没有用户表**——LLNG 不保存目录副本。会话主键是 `_whatToTrace`，
-  `sessions` 与 `psessions` 都为它建了索引（`postgre_init.sql` / `mysql_init.sql` 的
-  `i_s__whatToTrace`、`i_p__whatToTrace`）。
-- **匹配键怎么配出来的**：`lmConf.json` 的 `macros._whatToTrace` 定义为
-  `$_auth eq 'SAML' ? lc($_user.'@'.$_idpConfKey) : $_auth eq 'OpenIDConnect' ? lc($_user.'@'.$_oidc_OP) : lc($_user)`，
-  顶层 `whatToTrace` 指向它。部署固定 `authentication`/`userDB`/`passwordDB` 为 `AD`，因此实际取
-  `lc($_user)`；`hook/main.go` 渲染的
-  `AuthLDAPFilter = (&<user class><enabled>(sAMAccountName=$user))` 决定了 `$_user` 就是
-  `sAMAccountName`。**匹配键因此是一个目录标签，不符合 `DIRKEY-R-002`。**
-- **每次登录刷新什么**：全部——`ldapExportedVars` 声明的 `mail`、`cn`、`sn`、`givenName`、`uid`、
-  `sAMAccountName`、`displayName`、`userPrincipalName`、`memberOf`、`name` 与 `anasIdentityAnchor`
-  都在每次登录重新从目录读取，`ldapGroupRecursive: 1` 重新展开递归组。不缓存即不会陈旧。
-- **撤权经哪个接口**：`AuthLDAPFilter` 的 enabled 条件（停用者无法登录）。**没有目录事件 watcher**
-  ——LLNG 不保有目录副本，因此不落入目录事件订阅要求的范围；但这也意味着已建立会话只能由管理员
-  在 Manager 里删除。
-- **技术阻碍**：`whatToTrace` 同时是会话主键、日志键与多张表的索引列，改它牵动会话存储与审计
-  链路；这不是"缺接口"，是改动面大。
+每个 RP 的 Rule 都包含 `defined($anasIdentityAnchor) and $anasIdentityAnchor ne ""`，
+再与原应用组规则取交集；缺 anchor 的 SSO 会话不能取得授权码。`ldapExportedVars` 始终加载
+anchor，不依赖 Consumer 是否显式请求同名 claim。通用属性契约仍用于人类可读的用户名、
+姓名、邮箱与数组类型的组。Netbird 的 `sub` URL 投影在 `hook/iam.go` 的 calculate/render_env
+边界被拒绝；Nextcloud 的 anchor UID 遵守已确认的 `DIRKEY-R-010` 例外。
 
-**Provider 侧（LLNG → 各应用）**
+验收入口为 `test-env/scripts/server-llng-nextcloud-identity-e2e.py`，使用测试主机已有
+`cryptography` 验证 RS256 签名，不引入产品运行时依赖。它验证真实授权码、UserInfo、refresh、
+签名 Logout Token，以及 Nextcloud 原 Cookie、LDAP 映射、改名文件归属和标签回收隔离。
+协议夹具专用 RP 的 refresh 开关不代表所有生产 RP 都启用了 refresh。
 
-- **OIDC 主体标识符**：`llng-config.sh` 为每个 RP 写入 `oidcRPMetaDataOptions*` 时
-  **不设置 `oidcRPMetaDataOptionsUserIDAttr`**，固定 `2.23.2` 在该字段为空时回退到 `whatToTrace`。
-  `sub` 因此等于小写化的 `sAMAccountName`。**未跑探针复核**。
-- **SAML NameID**：`llng-config.sh` 的 `samlNameIDFormatMapEmail/X509/Kerberos/Windows` 四行均为
-  注释，因此不覆盖 LLNG 默认映射；SP 在 `NAME_ID_FORMAT` 里声明的格式（`nextcloud` 声明
-  `windows`）经默认映射落到 `$uid`。**未跑探针复核**。
-- **anchor 作为 claim/attribute**：`lmConf.json` 的 `ldapExportedVars` 预置
-  `anasIdentityAnchor: anasIdentityAnchor`；`hook/iam.go` 的 `applyClientAttributes` 把通用
-  `ATTRIBUTES` 展开成编号 `ATTRnn` 变量，`llng-config.sh` 再写入
-  `oidcRPMetaDataExportedVars`/`samlSPMetaDataExportedAttributes`，并对非 `groups` 的来源补登
-  `ldapExportedVars`。**这条链路已验证可用**（见 README 证据列）。
-- **`DIRKEY-R-004` / `R-008` 缺口声明**：本 Provider 发出的主体标识符是目录标签，不是 anchor，
-  也不是"另一个同样稳定的值"。本 Module **不以"按用户名回退匹配"冒充满足 `DIRKEY-R-002`**，
-  而是在此显式声明缺口与后果（见 README 的兜底路径）。M2 需要在固定版本上回答两个问题：
-  per-RP `oidcRPMetaDataOptionsUserIDAttr` 能否取到一个 exported var；SAML NameID 来源能否独立于
-  `whatToTrace` 配置。任一为否，按 `DIRKEY-R-012` 该部署下所有 Consumer 走 `DIRKEY-R-004` 缺口路径。
-
-**`DIRKEY-R-013` 投影结论：不适用（Provider 不是 Consumer）。** 本 Module 不消费别人的主体标识符。
-但它对 `R-013` 有一条**独有的影响**：由于当前 `sub` 就是用户名，任何把 `sub` 投影成应用内用户名的
-Consumer 在 LLNG 部署下"看起来正常"——UUID 问题被掩盖了。因此 M2 的 `R-013` 逐 Consumer 验证
-**不能只在 LLNG 部署上跑**，必须至少覆盖一个发出非标签主体标识符的 Provider（`authentik` 或
-`casdoor`），否则验证不出投影。
+SAML NameID 默认格式映射尚未切成 anchor，真实 SAML 应用验收列为待实现，不作为本轮主要协议。
+本模块仍无目录事件 watcher；目录停用/撤组不自动删除已建立会话，需要 Manager 删除与 Consumer
+撤权。不能把普通 Portal 登出记成目录事件实时撤权。
 
 ## 管理面与 Secret 生命周期
 

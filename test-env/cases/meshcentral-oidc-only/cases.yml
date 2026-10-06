@@ -55,7 +55,7 @@ cases:
     level: e2e
     requirements: [MCO-R-002, MCO-R-003, MCO-R-005]
     requirement_digest: sha256:6c24c448188d47a57f8163acd4ad26e352a748e1a2e5c00fc6907b3c88355ab7
-    implementation_digest: sha256:103f898ec20476189bc7e3715b18a8b2973408aa7904038f39238f48a313a691
+    implementation_digest: sha256:585687917cf3c0d3ba932a837ec9afb35109e8a2cf44676b08c150e08235913d
     fixture: finance 专用 Docker daemon 中的 Samba AD、PostgreSQL、Authentik、MeshCentral 与 Traefik
     capabilities: [docker, authentik, oidc, postgres]
     preconditions: [专用 network namespace、Docker socket、data root 和 workspace 已准备]
@@ -88,7 +88,7 @@ cases:
     level: e2e
     requirements: [MCO-R-002, MCO-R-004, MCO-R-005]
     requirement_digest: sha256:be4c2735a5f3b086fb7f248491063fad8e02057cc38e9717118271946b7bd5b2
-    implementation_digest: sha256:6e5542dcd0fbf05b0fff2502a860a27b1546267d419372c8922eb7ba27b4c336
+    implementation_digest: sha256:857e9dac7694ecaed2f2324bc45f1183b47553c4a8272e010b506b0e4edc59f0
     fixture: finance 专用 Docker daemon 中的 Samba AD、PostgreSQL、LLNG、MeshCentral 与 Traefik
     capabilities: [docker, llng, oidc, postgres]
     preconditions: [Authentik deployment 已停止且 LLNG 使用独立 workspace 和容器前缀]

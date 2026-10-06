@@ -77,9 +77,9 @@ modules:
     transitions:
       - {id: lego-r4-r5, from: 5.3.1-r4, to: 5.3.1-r5, suite: modules-ddns}
   - name: llng
-    current: 2.23.2-r11
+    current: 2.23.2-r12
     transitions:
-      - {id: llng-r9-r11, from: 2.23.2-r9, to: 2.23.2-r11, suite: modules-app}
+      - {id: llng-r9-r12, from: 2.23.2-r9, to: 2.23.2-r12, suite: modules-app}
   - name: mariadb
     current: 12.3.2-r4
     transitions:
@@ -93,9 +93,9 @@ modules:
     transitions:
       - {id: netbird-r4-r5, from: 0.76.1-r4, to: 0.76.1-r5, suite: modules-authentik}
   - name: nextcloud
-    current: 34.0.2-r9
+    current: 34.0.2-r11
     transitions:
-      - {id: nextcloud-r7-r9, from: 34.0.2-r7, to: 34.0.2-r9, suite: modules-app}
+      - {id: nextcloud-r7-r11, from: 34.0.2-r7, to: 34.0.2-r11, suite: modules-app}
   - name: oauth2_proxy
     current: 7.15.3-r5
     transitions:

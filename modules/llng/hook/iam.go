@@ -57,6 +57,9 @@ func addCSV(s, item string) string {
 // list and each consumer's protocol, so a provider that needed per-application
 // endpoints could derive them here too.
 func publishIAMEndpoints(e map[string]string) error {
+	if err := validateSubjectConsumers(e); err != nil {
+		return err
+	}
 	consumers := append(splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]), splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])...)
 	if len(consumers) == 0 {
 		return nil
@@ -95,6 +98,9 @@ func publishIAMEndpoints(e map[string]string) error {
 // applyClientRegistrations runs during render_env and translates the generic
 // registration requests into the private variables llng-config.sh consumes.
 func applyClientRegistrations(e map[string]string) error {
+	if err := validateSubjectConsumers(e); err != nil {
+		return err
+	}
 	for _, app := range splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]) {
 		src := iamClientPrefix + envName(app) + "__"
 		dst := "OIDC_RP__" + envName(app) + "__"
@@ -158,4 +164,15 @@ func applyClientAttributes(e map[string]string, src, dst string) {
 		}
 		e[fmt.Sprintf("%sATTR%02d", dst, i+1)] = strings.Join(parts[:3], ",")
 	}
+}
+
+// Netbird projects sub into ordinary users' API URLs. It has no approved
+// directory-anchor projection exception (DIRKEY-R-013).
+func validateSubjectConsumers(e map[string]string) error {
+	for _, app := range splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]) {
+		if strings.EqualFold(app, "netbird") {
+			return fmt.Errorf("LLNG cannot register netbird: it projects the directory identity anchor into user API URLs (DIRKEY-R-013)")
+		}
+	}
+	return nil
 }

@@ -75,7 +75,7 @@ app_version_pin() {
     notify_push) printf '%s' '1.3.5' ;;
     memories) printf '%s' '8.1.0' ;;
     user_saml) printf '%s' '8.2.0' ;;
-    user_oidc) printf '%s' '8.10.1' ;;
+    user_oidc) printf '%s' '8.11.0' ;;
   esac
 }
 
@@ -596,7 +596,7 @@ set_ldap_config() {
   occ ldap:set-config "$LDAP_CONFIG_NAME" "$1" "$2"
 }
 
-IFS=',' read -ra attrs_array <<< "$SAMBA_DC_USER_LOGIN_ATTRS"
+IFS=',' read -ra attrs_array <<< "$SAMBA_DC_USER_LOGIN_ATTRS,$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"
 attrs=""
 for attr in "${attrs_array[@]}"; do
   [ -z "${attr//[[:space:]]/}" ] && continue
@@ -616,7 +616,7 @@ set_ldap_config ldapGroupMemberAssocAttr "$SAMBA_DC_GROUP_MEMBER_ATTR"
 set_ldap_config ldapHost "$SAMBA_DC_LDAPS_SERVER_URL"
 set_ldap_config ldapLoginFilter "$NEXTCLOUD_USER_LOGIN_FILTER"
 set_ldap_config ldapUserFilter "$NEXTCLOUD_USER_FILTER"
-set_ldap_config ldapExpertUsernameAttr "$SAMBA_DC_USER_NAME"
+set_ldap_config ldapExpertUsernameAttr "$SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"
 set_ldap_config ldapUserFilterObjectclass "$SAMBA_DC_USER_CLASS_NAME"
 set_ldap_config ldapUserDisplayName "$SAMBA_DC_USER_DISPLAY_NAME"
 set_ldap_config ldapAttributesForUserSearch "$attrs"
@@ -679,6 +679,10 @@ case "$NEXTCLOUD_IAM_PROTOCOL" in
       occ app:disable user_saml || true
     fi
     install_and_enable_app user_oidc
+    if ! occ integrity:check-app user_oidc; then
+      echo "OIDC application integrity check failed"
+      exit 1
+    fi
     occ config:system:set user_oidc auto_provision --type=boolean --value=false
     occ config:system:set user_oidc use_pkce --type=boolean --value=true
     occ user_oidc:provider anas \
@@ -687,7 +691,7 @@ case "$NEXTCLOUD_IAM_PROTOCOL" in
       --discoveryuri="$NEXTCLOUD_OIDC_DISCOVERY_URL" \
       --scope="$NEXTCLOUD_OIDC_SCOPES" \
       --unique-uid=0 \
-      --mapping-uid=preferred_username \
+      --mapping-uid=sub \
       --mapping-display-name=name \
       --mapping-email=email \
       --mapping-groups=groups \

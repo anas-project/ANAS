@@ -18,11 +18,11 @@
 | [incus](#incus) | 7.3.0-r2 | not_applicable | not_applicable | none | not_consumed | not_consumed | 0 |
 | [lam](#lam) | 9.6.0-r8 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r5 | container | not_applicable | none | not_applicable | not_applicable | 0 |
-| [llng](#llng) | 2.23.2-r11 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [llng](#llng) | 2.23.2-r12 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [mariadb](#mariadb) | 12.3.2-r4 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [meshcentral](#meshcentral) | 1.2.4-r8 | container | supported | browser | not_consumed | not_consumed | 30 |
 | [netbird](#netbird) | 0.76.1-r5 | partial | fixed | fixed | not_consumed | not_consumed | 1 |
-| [nextcloud](#nextcloud) | 34.0.2-r9 | partial | supported | browser | fallback | fallback | 58 |
+| [nextcloud](#nextcloud) | 34.0.2-r11 | partial | supported | browser | fallback | fallback | 58 |
 | [oauth2_proxy](#oauth2_proxy) | 7.15.3-r5 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [postgres](#postgres) | 18.4.0-r4 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [samba_dc](#samba_dc) | 4.23.6-r11 | system | not_applicable | none | not_applicable | not_applicable | 0 |
@@ -160,7 +160,7 @@
 
 ## llng
 
-- **Version / 版本：** `2.23.2-r11`; reviewed 2026-08-21
+- **Version / 版本：** `2.23.2-r12`; reviewed 2026-08-21
 - **Timezone / 时区：** `container` — LLNG receives TZ through the module .env; no deployment-wide application timezone is forced.
 - **Language / 语言：** `supported`, `browser` — LemonLDAP::NG Portal and language selector
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -203,7 +203,7 @@
 
 ## nextcloud
 
-- **Version / 版本：** `34.0.2-r9`; reviewed 2026-08-21
+- **Version / 版本：** `34.0.2-r11`; reviewed 2026-08-21
 - **Timezone / 时区：** `partial` — Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
 - **Language / 语言：** `supported`, `browser` — Nextcloud Web UI
 - **ANAS globals / 全局默认：** `default_language=fallback`; `default_locale=fallback`

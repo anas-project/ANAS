@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-09-20
-updated: 2026-10-03
+updated: 2026-10-06
 ---
 
 # 目录身份键实施计划
@@ -20,8 +20,8 @@ updated: 2026-10-03
 | --- | --- | --- |
 | M0：把规则写进规范与文档标准 | R-001、R-002、R-004、R-005、R-010、R-011 | 已完成；2026-09-20 成文 |
 | M1：逐 Module 盘点与文档补全 | R-006 | 已完成；2026-09-20，12 个在范围内的 Module 的中英文 README 与技术文档补齐，`module-iam-support` 增加匹配键列 |
-| M2：主体标识符切换为 anchor | R-007—R-009、R-012、R-013 | 实施中；Casdoor r10 主体补丁已接入构建，Netbird 普通用户 URL 投影已验证并阻止组合；实机与另两家 Provider 核实待完成 |
-| M3：改名复用身份的真实 E2E | R-003 | 未开始 |
+| M2：主体标识符切换为 anchor | R-007—R-009、R-012、R-013 | 实施中；Casdoor r10 OIDC 与签名 SAML 协议、两 client 隔离已通过；LLNG r12 OIDC anchor 通过；Authentik 已过时，不纳入当前发布整改；LLNG SAML 待完成 |
+| M3：改名复用身份的真实 E2E | R-003 | 实施中；Casdoor/LLNG + Nextcloud r11 同账号与原文件通过，其他 Module 和协议仍待完成 |
 
 ## 2. M0 检查表
 
@@ -58,10 +58,13 @@ updated: 2026-10-03
 
 ### 盘点结论
 
+下表与四条发现记录 2026-09-20 的起点快照；Casdoor r10 和 Nextcloud r11 的当前变化见 M2/M3，
+不能把历史 NameID 来源或用户名回调当作当前实现。
+
 | Module | 实际匹配键 | 改名是否稳定 | 证据等级 |
 | --- | --- | --- | --- |
 | `meshcentral` | **anchor 直接作为用户 id**(`user//~oidc:<anchor>`);LDAP 侧 `ldapUserKey` 同取 anchor | 是 | `已验证`(`server-authentik-oidc-login-e2e.sh`、`server-llng-oidc-login-e2e.sh` 各断言一次) |
-| `nextcloud` | anchor(`oc_ldap_user_mapping.directory_uuid`);应用内 `uid` 另取 `sAMAccountName` 并冻结 | 是(归属);`uid` 冻结在旧名 | `已验证`(同上两个脚本断言 `directory_uuid == anchor`) |
+| `nextcloud` | anchor 同时作为 `directory_uuid` 和新账号内部 UID | 是；anchor UID 保持不变 | `已验证`(同上两个脚本断言 `directory_uuid == anchor`) |
 | `casdoor` | 消费侧 anchor(`externalId`);签发侧 OIDC `sub` = 不可变 User ID,**SAML `NameID` = 用户名** | 消费侧是;OIDC `sub` 是;**SAML NameID 否** | `已验证`(`server-casdoor-directory-authority-e2e.sh` 改名复用、`server-casdoor-oidc-e2e.sh` 一 anchor 一 `sub`、`server-casdoor-saml-e2e.sh` NameID 随改名变化) |
 | `authentik` | 消费侧 anchor(`object_uniqueness_field` → `UserSourceConnection.identifier`);签发侧内部用户 UUID | 是,但签发的不是 anchor | `已验证`(`server-authentik-oidc-login-e2e.sh` 断言 `identifier == anchor`) |
 | `samba_fs` | 对象 SID,经 `idmap backend = rid` 定成 UID/GID;NT ACL 存 SID | 是 | `已验证`(`smb.conf.envsubst` 的 idmap 与 `acl_xattr` 配置) |
@@ -91,7 +94,7 @@ updated: 2026-10-03
 
 ## 4. M2 切换主体标识符
 
-### Casdoor 进展（2026-10-03）
+### Casdoor 进展（2026-10-04）
 
 - [x] 校验 Dockerfile 固定归档，在实际上游函数上验证六项配置边界：JWT-Custom 可覆盖 `sub`，
       但 UserInfo 与 Logout Token 仍取内部 ID，SAML 只取用户名/邮箱，缺锚点不会拒绝自定义签发。
@@ -99,39 +102,64 @@ updated: 2026-10-03
       签名 Logout Token、SAML 2.0 模板一致；缺锚点拒绝，恢复管理员 OIDC 不受影响。
 - [x] Netbird 固定 0.76.1 已确认 `sub` 进入普通用户 PAT API URL；Casdoor 在发布 binding 和渲染应用前拒绝组合。
 - [x] 将统一主体补丁接入 Dockerfile（0005），刷新/sid/定向撤权补丁同时接入（0006）；复验完整固定归档通过。
-- [ ] 在同一候选部署完成真实 token/refresh grant、签名 assertion、改名账号归属和标签回收 E2E。
+- [x] 同一 r10 候选通过签名 SAML 2.0 SP 协议、OIDC 真实刷新与两 client 隔离；协议 fixture 不计作 Nextcloud SAML 会话通过。
+- [x] Nextcloud r11 统一 LDAP 内部 UID 与 OIDC `sub` 为 anchor，补齐 LDAP 搜索与登录过滤器，移除身份查询补丁；真实改名后同 UID、同 anchor 与原 DAV 文件通过。
+- [x] 官方原样 user_oidc 8.11.0、正式 Nextcloud Dockerfile 的 amd64 构建及 Web/cron 启动通过；HTML/OCS 显示名称与 anchor UID 分离，改名/文件/定向撤权回归通过。其他 Provider、客户端与 ARM64 发布验收不计入本项。
+- [x] 在同一候选部署完成真实 token/refresh grant、签名 assertion、Nextcloud 改名账号归属和 Casdoor 标签回收隔离 E2E；不计作 Nextcloud SAML 应用会话通过。
 
 入口为 `test-env/scripts/test-casdoor-identity-source.sh`，结论见
-[固定源码可行性核实](../../docs/research/casdoor-directory-subject.md)。两份生产补丁已接入 r10 Dockerfile；源码测试仍**不记为 `R-008` 的实机通过**。独立实机工作区已建立，验收进行中。
+[固定源码可行性核实](../../docs/research/casdoor-directory-subject.md)。两份生产补丁已接入 r10 Dockerfile；源码测试仍**不记为 `R-008` 的实机通过**。独立实机结果见
+[2026-10-04 验收记录](../reviews/2026-10-04-casdoor-directory-identity-acceptance.md)。
+2026-10-06：Casdoor r10 正式双架构构建、OIDC/真实 Nextcloud、轮换、恢复和生命周期验收通过，
+已标为 `release`，见 [发布验收](../reviews/2026-10-06-casdoor-release-acceptance.md)。
+SAML 应用会话/SLO 仍待实现；其他 Provider、Consumer 和客户端的待办不因此变为完成。
 产品尚未发版，无需迁移或兼容映射。
+
+### Provider 范围调整（2026-10-05）
+
+用户确认 Authentik 标记为过时。保留其历史核实记录，不要求继续实施 anchor 主体整改；现有实例不自动迁移或删除。当前发布整改聚焦 Casdoor，LLNG 已有验收结果继续保留。
+
+### LLNG 进展（2026-10-05）
+
+- [x] 在固定 `2.23.2-1` 源码核对 per-RP `oidcRPMetaDataOptionsUserIDAttr`；ID Token、UserInfo、refresh 与 Logout Token 使用同一主体来源，无需修改上游代码。
+- [x] r12 的所有 OIDC RP 取 `anasIdentityAnchor`，准入规则拒绝缺失或空 anchor；登录、日志标签与显示名称保留原有目录属性。
+- [x] 补齐仅监听 loopback 的配置 reload 入口；正式 Dockerfile amd64 构建和启动、跨容器访问拒绝通过。
+- [x] 真实 Nextcloud r11 / 官方 user_oidc 8.11.0 登录、同 UID 与原文件改名复用、Portal 原 Cookie 撤销与另一用户隔离通过；签名主体与 refresh 链路通过。
+- [x] 回收标签的新对象取得不同 anchor/UID/sub，原文件访问被拒；有效的缺 anchor SSO 反例及最终六项整体复验通过，退出码 0；原 Nextcloud Provider 已恢复。
+- [x] Netbird 未批准的 anchor URL 投影在 calculate/render_env 拒绝；同步移除 LLNG 正向测试 fixture 中的 Netbird。
+- [ ] SAML NameID 与真实应用会话验收列为待实现，不作为本轮主要协议。
+- [ ] Samba AD 事件触发的既有会话撤销仍未实现；不能把 Portal 登出当作目录事件撤权。
+
+证据见[LLNG r12 隔离实机验收](../reviews/2026-10-05-llng-anchor-sub-acceptance.md)。
+产品尚未发版，不实现旧账号迁移。M2/M3 仍是跨 Provider、跨 Consumer 的实施中里程碑。
 
 ### 跨 Provider 检查表
 
-- [ ] **核实 Provider 能力(阻塞项)**:三家都要跑,不只两家。authentik 的 `sub_mode` 能否取到
+- [ ] **核实 Provider 能力**：当前范围为 Casdoor 与 LLNG；Authentik 已过时，以下其配置问题仅作历史记录。authentik 的 `sub_mode` 能否取到
       anchor 所在的属性(当前 anchor 落在 LDAP source 写入的 `attributes.ldap_uniq`,而 `sub_mode`
       是固定枚举);Casdoor 的 OIDC `sub` 与 **SAML `NameID`** 能否配成 `ExternalId`(M1 已证实
       NameID 当前是用户名,且该 Module 已有一个改 SAML 模板的受控补丁,可能说明这里也要补丁);
       LLNG 的 per-RP `oidcRPMetaDataOptionsUserIDAttr` 能否取到 `anasIdentityAnchor` 这个 exported
       var,以及 SAML NameID 来源能否独立于 `whatToTrace` 配置。必须在真实固定版本上验证,不得凭
       上游文档定稿。Casdoor 的源码能力边界已按上节核实，配置无法覆盖完整链路，受控候选补丁
-      已通过源码测试，部署验证待完成；其余两家仍待核实。
-- [ ] 三家都可配时,按 `R-008` 把 `sub`/`NameID` 切成 anchor;任一家不可配时,按 `R-012` 在该
+      已通过源码与实机测试；LLNG OIDC 本轮也已核实，Authentik 不纳入当前整改，LLNG SAML 待实现。
+- [ ] 当前支持的 Provider 可配时,按 `R-008` 把 `sub`/`NameID` 切成 anchor;任一家不可配时,按 `R-012` 在该
       Provider 的 Module 文档声明缺口,该部署下所有 Consumer 走 `R-004` 缺口路径。
 - [ ] 切换前按 `R-013` 逐个 OIDC/SAML Consumer 验证主体标识符没有进入用户名、URL 标识符或
-      文件路径。**M1 已逐个给出结论并写进各 Module 技术文档,汇总如下**;只剩 `netbird` 一个
-      需要真实验证,其余可在 E2E 中顺带复断言:
+      文件路径，应用 R-010 的明确例外。**M1 已逐个给出结论并写进各 Module 技术文档,汇总如下**；
+      `netbird` 仍需整改，Nextcloud 新 UID 配置的显示名与客户端体验仍需真实验证：
 
       | Consumer | 主体标识符是否被投影 | 结论证据 |
       | --- | --- | --- |
       | `oauth2_proxy`(→ ANAS 控制台) | 否。principal id 取 `sha256(issuer‖sub)`,原值只进内部绑定字段与审计 | `已验证`,`internal/consoleauth/job_owner_test.go` |
-      | `nextcloud` | 否。OIDC 的 `--mapping-uid` 指向 `preferred_username`,SAML 的 `uid_mapping` 指向锚点属性,两条都不读 `sub`/`NameID` | `已验证`,`server-authentik-oidc-login-e2e.sh` |
+      | `nextcloud` | 是；用户已确认新部署内部 UID 和技术路径使用 anchor 的 R-010 例外。OIDC mapping 取 `sub`，LDAP 内部 UID 来源取 anchor | Casdoor / LLNG 新配置 `已验证`；Authentik 已过时；客户端待回归 |
       | `vikunja` | 否。用户名取 `preferred_username`,`sub` 只进内部 `subject` 列 | `已验证`,`server-vikunja-oidc-e2e.sh` 查库断言 `users.username` 等于目录用户名 |
       | `meshcentral` | 不适用。读显式 anchor claim,根本不读 `sub`;且已经是目标形态 | `已验证`,两个 Provider 的 OIDC E2E |
       | `forgejo` | 否。`sub` 进 `login_name`(内部字段),用户名取 `preferred_username` | `推断`,复核入口待加进 `forgejo-agent-api-probe.sh` |
       | `netbird` | **是,需先改或先确认**。`AuthUserIDClaim = "sub"` 使 `sub` 成为用户 id,出现在 `/api/users/{userId}` 与 Dashboard 用户管理视图 | `推断`,**M2 的唯一 `R-013` 待办** |
 
-      验证**不得只在 LLNG 部署上跑**:LLNG 当前的 `sub` 就是用户名,任何投影都会被掩盖成"看起来
-      正常",必须至少覆盖 authentik 或 Casdoor。
+      验证**不得只在 LLNG 部署上跑**:M1 中 LLNG 的 `sub` 曾是用户名,任何投影会被掩盖成"看起来
+      正常",必须至少覆盖 Casdoor。
 - [ ] provider-neutral 契约声明主体标识符取自 anchor(`R-012`),Consumer 不读 Provider 私有配置。
 
 **不做**:`sub ↔ anchor` 映射服务。它需要一个中立契约扩展、一条撤权时在线的查询路径和每个
@@ -142,6 +170,13 @@ Provider 各自的适配器,用更多零件换同一个结果;只有在 M2 第�
 
 M3 只验收一件事——**目录里改个名,应用里还是同一个人**,覆盖至少一个 OIDC Consumer 与一个
 LDAP Consumer。
+
+2026-10-05：全新部署统一 anchor UID 的 Casdoor + Nextcloud 隔离实机验收通过，
+不再需要身份查询补丁；官方 `user_oidc 8.11.0` 替代退出补丁的实机验收独立记录。
+用户确认允许 Nextcloud anchor UID 出现在技术路径，登录名与显示名继续使用人类可读属性。
+LLNG r12 的 OIDC/Nextcloud 组合也已通过改名复用与标签回收隔离；
+Authentik 已过时，不纳入当前发布整改；客户端体验、独立 LDAP 登录和全部 Module 的改名验收未完成，不把局部通过
+汇总为 `DIRKEY-R-003` 全局完成。
 
 ## 6. E2E 验收用例
 
@@ -175,7 +210,7 @@ LDAP Consumer。
 | --- | --- |
 | 级别 | e2e |
 | 脚本 | 待新增 `test-env/scripts/server-directory-identity-key-e2e.sh` |
-| 环境 | Samba AD + authentik、Samba AD + Casdoor 各一轮 |
+| 环境 | Samba AD + LLNG、Samba AD + Casdoor 各一轮 |
 | 步骤 | 读取 Provider 侧实际生效的 LDAP source 配置 → 比对 `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE` |
 | 断言 | 唯一性字段等于 anchor 属性名;**不是** `sAMAccountName`、DN 或 `mail` |
 | 反例 | 把唯一性字段改成 `sAMAccountName` 后重新调和,断言调和拒绝或告警,不得静默接受 |
@@ -199,7 +234,7 @@ LDAP Consumer。
 | 级别 | e2e |
 | 脚本 | 同 `DIRKEY-T-002`,逐 Consumer 循环 |
 | 步骤 | 每个 OIDC/SAML Consumer 各登录一次 → 抓取应用内用户名、个人主页 URL、API 路径、以及该应用为用户创建的文件/目录路径 |
-| 断言 | anchor 值**不出现**在上述任何位置 |
+| 断言 | 除 R-010 明确允许的 Nextcloud 内部 UID、技术路径和内部存储目录外，anchor 不得出现在登录名、显示名或其他未获例外允许的位置；Nextcloud 另验证 UID 等于 anchor、改名后文件保留 |
 | 反例 | 已知高风险形态:把主体标识符直接当成应用内用户 id 的应用。命中任何一个,该 Consumer 必须先整改,不得以"多数 Consumer 没问题"放行 |
 
 ### DIRKEY-T-005 标识符回收再分配必须 fail closed(`R-001`,同时覆盖 `R-002`)
@@ -247,11 +282,8 @@ LDAP Consumer。
 
 ## 8. 当前阻塞
 
-- M2 的 **authentik 与 LLNG** 配置能力仍待核实；Casdoor 固定源码已证明仅靠配置不足，r10 生产补丁
-  已在源码级通过，剩余条件是同一候选的真实协议和 Consumer 账号归属验证。LLNG 当前发出的 `sub` 与
-  `NameID` 都是 `sAMAccountName`；
-- `netbird` 固定源码已验证主体标识符进入普通用户 PAT API URL，违反 `R-013`；Casdoor 已拒绝该组合。
-  要恢复组合，需要先改变 Netbird 的用户 URL 设计，不能使用派生 claim 或身份映射绕过要求。
-- M1 已完成,但表里 `forgejo`、`vikunja` 的 `sub` 稳定性与 `llng` 的 `sub` 取值链路都是
-  `推断`。`forgejo` 的探针脚本已存在(`test-env/scripts/forgejo-agent-api-probe.sh`),`llng` 没有同类入口,应在 M2 的 Provider 探针中覆盖；Netbird 已完成固定源码核实。
-- M3 的隔离部署与目录已在 `whl@finance.hlong.wang` 建立；真实账号归属、改名和标签回收验收仍待完成。
+- Authentik 已标记为过时，不再作为当前发布整改的阻塞项；Casdoor r10 与 LLNG r12 的 OIDC anchor 已完成本轮真实协议及 Nextcloud 账号归属验证。LLNG SAML NameID 待实现。
+- `netbird` 固定源码已验证主体标识符进入普通用户 PAT API URL，违反 `R-013`；Casdoor 与 LLNG 均已拒绝该组合。恢复支持需要先改变 Netbird 的用户 URL 设计。
+- `forgejo`、`vikunja` 等其他 Consumer 的主体稳定性及账号归属仍需实机验证；LLNG 已有独立协议与 Nextcloud 探针，不再属于未核实链路。
+- M3 的 Casdoor / LLNG + Nextcloud 改名及标签回收已通过；其他 Provider、Consumer、桌面/移动客户端仍待完成。
+- LLNG 的 Samba AD 事件监听与实时会话撤销待实现；现有会话可能保留旧目录属性。

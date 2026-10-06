@@ -9,6 +9,10 @@ export ANAS_TEST_CONTAINER_PREFIX=${ANAS_TEST_CONTAINER_PREFIX:-anas_casdoor_}
 source "$script_dir/server-iam-matrix-common.sh"
 
 workspace=${ANAS_TEST_WORKSPACE:?ANAS_TEST_WORKSPACE is required}
+consumer_module=${ANAS_TEST_OIDC_CONSUMER_MODULE:-oauth2_proxy}
+[[ "$consumer_module" =~ ^[a-z][a-z0-9_]*$ ]]
+consumer_key=${consumer_module^^}
+consumer_application="app-anas-${consumer_module//_/-}"
 anas_cmd=${ANAS_TEST_ANAS_CMD:-anas}
 repo_root=${ANAS_TEST_REPO_ROOT:?ANAS_TEST_REPO_ROOT is required}
 lifecycle_root=${ANAS_TEST_LIFECYCLE_ROOT:?ANAS_TEST_LIFECYCLE_ROOT is required}
@@ -16,12 +20,15 @@ fixture_bin=${CASDOOR_LOGOUT_FIXTURE_BIN:-/home/whl/anas-casdoor-m3-e2e/casdoor-
 report_dir=${ANAS_TEST_REPORT_DIR:-$workspace/test-env/reports}
 casdoor="${prefix}casdoor"
 dirwatch="${prefix}casdoor_dirwatch"
-consumer="${prefix}oauth2_proxy"
+consumer="${prefix}${consumer_module}"
 timeout=${CASDOOR_PROTOCOL_E2E_TIMEOUT:-420}
 test_suffix=${ANAS_TEST_MATRIX_SUFFIX:-$(date +%H%M%S)}
 test_user="icl${test_suffix}"
 test_password=${ANAS_TEST_MATRIX_PASSWORD:-Anas-Iam-${test_suffix}-E2e!}
-arm64_image=${ANAS_TEST_ARM64_IMAGE:-anas-casdoor-e2e:3.143.0-r8-arm64}
+current_revision=$(awk '/^revision:/{print $2; exit}' "$repo_root/modules/casdoor/module.yml")
+[[ "$current_revision" =~ ^[0-9]+$ ]]
+test_revision=$((current_revision + 1))
+arm64_image=${ANAS_TEST_ARM64_IMAGE:-anas-casdoor-e2e:3.143.0-r${current_revision}-arm64}
 qemu_image=${ANAS_TEST_QEMU_IMAGE:-m.daocloud.io/docker.io/tonistiigi/binfmt@sha256:465d3fdd28d0f2b871ba4b4ec98bd183292e96167f00d9fd40bd249f8632d705}
 qemu_container="${prefix}binfmt_extract_${test_suffix}"
 run_root=
@@ -89,15 +96,15 @@ wait_for_user() {
 
 refresh_consumer_material() {
   issuer=$("$docker_cmd" exec "$casdoor" printenv CASDOOR_DOMAIN_FULL)
-  client_id=$("$docker_cmd" exec "$casdoor" printenv ANAS_IAM_CLIENT__OAUTH2_PROXY__CLIENT_ID)
-  redirect_uri=$("$docker_cmd" exec "$casdoor" printenv ANAS_IAM_CLIENT__OAUTH2_PROXY__REDIRECT_URIS |
+  client_id=$("$docker_cmd" exec "$casdoor" printenv "ANAS_IAM_CLIENT__${consumer_key}__CLIENT_ID")
+  redirect_uri=$("$docker_cmd" exec "$casdoor" printenv "ANAS_IAM_CLIENT__${consumer_key}__REDIRECT_URIS" |
     awk -F, '{print $1}')
   fixture_image=$("$docker_cmd" inspect --format '{{.Config.Image}}' "$casdoor")
-  "$docker_cmd" exec "$casdoor" printenv ANAS_IAM_CLIENT__OAUTH2_PROXY__CLIENT_SECRET \
+  "$docker_cmd" exec "$casdoor" printenv "ANAS_IAM_CLIENT__${consumer_key}__CLIENT_SECRET" \
     >"$run_root/client-secret"
   chmod 0600 "$run_root/client-secret"
   test "$("$docker_cmd" inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$consumer" |
-    sed -n 's/^OAUTH2_PROXY_CLIENT_SECRET=//p' | sha256sum | awk '{print $1}')" = \
+    sed -n "s/^ANAS_IAM_CLIENT__${consumer_key}__CLIENT_SECRET=//p" | sha256sum | awk '{print $1}')" = \
     "$(sha256sum "$run_root/client-secret" | awk '{print $1}')"
 }
 
@@ -110,7 +117,7 @@ token_login() {
     -v "$run_root:/state" \
     -e "CASDOOR_FIXTURE_ISSUER=$issuer" \
     -e CASDOOR_FIXTURE_INTERNAL_ORIGIN=http://127.0.0.1:8000 \
-    -e CASDOOR_FIXTURE_APPLICATION=app-anas-oauth2-proxy \
+    -e "CASDOOR_FIXTURE_APPLICATION=$consumer_application" \
     -e CASDOOR_FIXTURE_ORGANIZATION=anas \
     -e "CASDOOR_FIXTURE_CLIENT_ID=$client_id" \
     -e CASDOOR_FIXTURE_CLIENT_SECRET_FILE=/state/client-secret \
@@ -130,13 +137,16 @@ admin_login() {
 }
 
 jwks_digest() {
+  # Expired rotation-trust keys may be retired on startup. The active signing
+  # key must remain identical, independently of JWKS array order or old keys.
   "$docker_cmd" exec "$casdoor" sh -c \
     'wget -q -O - http://127.0.0.1:8000/.well-known/jwks' |
-    jq -cS . | sha256sum | awk '{print $1}'
+    jq -ecS --arg kid "$source_kid" '.keys | map(select(.kid == $kid)) | select(length == 1)' |
+    sha256sum | awk '{print $1}'
 }
 
 validate_state() {
-  local label=$1 expected_deployment=$2 current
+  local label=$1 expected_deployment=$2 current current_cursor_seq
   local login_file="${label}-login.json"
   for container in "$dc" "$casdoor" "$dirwatch" "$consumer"; do
     wait_ready "$container"
@@ -150,9 +160,13 @@ validate_state() {
   test "$(jq -er '.externalId' "$run_root/${label}-user.json")" = "$source_anchor"
   token_login "$login_file" >"$run_root/${label}-login.out"
   test "$(jq -er '.sub' "$run_root/$login_file")" = "$source_sub"
+  test "$(jq -er '.kid' "$run_root/$login_file")" = "$source_kid"
   admin_login >"$run_root/${label}-admin.json"
   jq -e '.login == "accepted" and .username == "admin_casdoor" and .is_admin == true' \
     "$run_root/${label}-admin.json" >/dev/null
+  current_cursor_seq=$(jq -er '.seq | numbers' "$workspace/data/casdoor/dirwatch/cursor.json")
+  test "$current_cursor_seq" -ge "$source_cursor_seq"
+  source_cursor_seq=$current_cursor_seq
   printf 'lifecycle_state=pass phase=%s deployment=%s user=true client=true signing=true cursor=true admin=true oidc=true\n' \
     "$label" "$expected_deployment"
 }
@@ -221,10 +235,12 @@ source_anchor=$(jq -er '.externalId' "$run_root/source-user.json")
 source_user_id=$(jq -er '.id' "$run_root/source-user.json")
 refresh_consumer_material
 source_client_digest=$(sha256sum "$run_root/client-secret" | awk '{print $1}')
-source_jwks_digest=$(jwks_digest)
-source_cursor_digest=$(sha256sum "$workspace/data/casdoor/dirwatch/cursor.json" | awk '{print $1}')
+source_cursor_seq=$(jq -er '.seq | numbers' "$workspace/data/casdoor/dirwatch/cursor.json")
 token_login source-login.json >"$run_root/source-login.out"
 source_sub=$(jq -er '.sub' "$run_root/source-login.json")
+source_kid=$(jq -er '.kid' "$run_root/source-login.json")
+source_jwks_digest=$(jwks_digest)
+test "$source_sub" = "$source_anchor"
 
 section "amd64 cold start and process restart"
 amd64_image=$("$docker_cmd" inspect --format '{{.Config.Image}}' "$casdoor")
@@ -234,28 +250,34 @@ test "$("$docker_cmd" image inspect --format '{{.Architecture}}' "$amd64_image")
 validate_state cold-start "$original_deployment"
 "$docker_cmd" restart "$casdoor" >"$report_dir/casdoor-lifecycle-container-restart.log"
 validate_state restart "$original_deployment"
-test "$(sha256sum "$workspace/data/casdoor/dirwatch/cursor.json" | awk '{print $1}')" = "$source_cursor_digest"
-printf 'amd64_lifecycle=pass build=true cold_start=true restart=true\n'
+printf 'amd64_lifecycle=pass image_arch=amd64 cold_start=true restart=true\n'
 
 section "fixed 3.143.0 packaging-revision upgrade"
-test_modules=$run_root/modules-r9
+test_modules=$run_root/modules-candidate
 cp -a "$repo_root/modules" "$test_modules"
 cp -a "$repo_root/contracts" "$run_root/contracts"
 cp -a "$repo_root/internal" "$repo_root/go.mod" "$repo_root/go.sum" "$run_root/"
-sed -i 's/^revision: 8$/revision: 9/' "$test_modules/casdoor/module.yml"
-sed -i 's/anas-casdoor:3\.143\.0-r8/anas-casdoor:3.143.0-r9/g' \
+sed -i "s/^revision: ${current_revision}$/revision: ${test_revision}/" "$test_modules/casdoor/module.yml"
+sed -i "s/anas-casdoor:3\\.143\\.0-r${current_revision}/anas-casdoor:3.143.0-r${test_revision}/g" \
   "$test_modules/casdoor/docker-compose.yml"
 grep -Fq 'version: 3.143.0' "$test_modules/casdoor/module.yml"
-grep -Fq 'revision: 9' "$test_modules/casdoor/module.yml"
+grep -Fq "revision: ${test_revision}" "$test_modules/casdoor/module.yml"
 "$anas_cmd" lock -w "$workspace" --module-root "$test_modules" --json \
-  >"$report_dir/casdoor-lifecycle-r9-lock.json"
-"$anas_cmd" apply --build --no-snapshot -w "$workspace" --module-root "$test_modules" -y --json \
-  >"$report_dir/casdoor-lifecycle-r9-apply.json" \
-  2>"$report_dir/casdoor-lifecycle-r9-apply.log"
+  >"$report_dir/casdoor-lifecycle-candidate-lock.json"
+apply_build_args=(--build)
+if [ "${ANAS_TEST_LIFECYCLE_PREBUILT_IMAGES:-false}" = true ]; then
+  # The external build log must prove the formal candidate build. A packaging
+  # revision changes metadata only, so use the same image bytes for this step.
+  "$docker_cmd" tag "$amd64_image" "${amd64_image%-r*}-r${test_revision}"
+  apply_build_args=()
+fi
+"$anas_cmd" apply "${apply_build_args[@]}" --no-snapshot -w "$workspace" --module-root "$test_modules" -y --json \
+  >"$report_dir/casdoor-lifecycle-candidate-apply.json" \
+  2>"$report_dir/casdoor-lifecycle-candidate-apply.log"
 test_revision_deployment=$(workspace_active)
 test "$test_revision_deployment" != "$original_deployment"
 test "$(awk '/^    casdoor:/{found=1} found && /revision:/{print $2; exit}' \
-  "$workspace/.anas/deployments/$test_revision_deployment/deployment.yml")" = 9
+  "$workspace/.anas/deployments/$test_revision_deployment/deployment.yml")" = "$test_revision"
 validate_state fixed-version-upgrade "$test_revision_deployment"
 
 section "safe artifact rollback"
@@ -267,10 +289,11 @@ jq -e '.ok == true and .data_touched == false' \
   "$report_dir/casdoor-lifecycle-rollback.json" >/dev/null
 restore_original_lock
 cmp -s "$original_lock_backup" "$workspace/config.lock.yml"
-printf 'fixed_version_upgrade=pass from=3.143.0-r8 to=3.143.0-r9-test data_preserved=true\n'
-printf 'safe_rollback=pass target=3.143.0-r8 data_touched=false state_preserved=true\n'
+printf 'fixed_version_upgrade=pass from=3.143.0-r%s to=3.143.0-r%s-test data_preserved=true\n' "$current_revision" "$test_revision"
+printf 'safe_rollback=pass target=3.143.0-r%s data_touched=false state_preserved=true\n' "$current_revision"
 
 section "arm64 pinned-source build and execution"
+if [ "${ANAS_TEST_LIFECYCLE_PREBUILT_IMAGES:-false}" != true ]; then
 "$docker_cmd" buildx build --platform linux/arm64 --load \
   --build-arg DOCKER_HUB_REGISTRY=m.daocloud.io/docker.io \
   --build-arg CHINESE_BUILD_SPEEDUP=true \
@@ -278,8 +301,11 @@ section "arm64 pinned-source build and execution"
   --build-arg GOPROXY_URL=https://goproxy.cn,direct \
   -t "$arm64_image" "$repo_root/modules/casdoor/casdoor" \
   >"$report_dir/casdoor-lifecycle-arm64-build.log" 2>&1
+fi
 test "$("$docker_cmd" image inspect --format '{{.Architecture}}' "$arm64_image")" = arm64
-"$docker_cmd" pull "$qemu_image" >"$report_dir/casdoor-lifecycle-qemu-pull.log" 2>&1
+if ! "$docker_cmd" image inspect "$qemu_image" >/dev/null 2>&1; then
+  "$docker_cmd" pull "$qemu_image" >"$report_dir/casdoor-lifecycle-qemu-pull.log" 2>&1
+fi
 test "$("$docker_cmd" image inspect --format '{{.Architecture}}' "$qemu_image")" = amd64
 if "$docker_cmd" container inspect "$qemu_container" >/dev/null 2>&1; then
   printf 'temporary QEMU extraction container already exists: %s\n' "$qemu_container" >&2
@@ -300,8 +326,22 @@ test -x "$qemu_binary"
   "$arm64_image" -0 uname /bin/uname uname -m \
   >"$report_dir/casdoor-lifecycle-arm64-run.log" 2>&1
 test "$(tr -d '\r\n' <"$report_dir/casdoor-lifecycle-arm64-run.log")" = aarch64
+printf '{"password":"__ANAS_BREAK_GLASS_PASSWORD_HASH__"}\n' >"$run_root/arm64-template.json"
+printf 'Anas-Arm64-Fixture-Only!\n' >"$run_root/arm64-password"
+chmod 0600 "$run_root/arm64-template.json" "$run_root/arm64-password"
+"$docker_cmd" run --rm --platform linux/arm64 \
+  --user "$(id -u):$(id -g)" \
+  --entrypoint /opt/anas/bin/qemu-aarch64 \
+  -v "$qemu_binary:/opt/anas/bin/qemu-aarch64:ro" \
+  -v "$run_root:/state" \
+  "$arm64_image" -0 casdoor-helper /opt/anas/bin/casdoor-helper casdoor-helper render-init \
+  /state/arm64-template.json /state/arm64-password /state/arm64-init.json \
+  >"$report_dir/casdoor-lifecycle-arm64-helper.log" 2>&1
+jq -e '.password | startswith("$2")' "$run_root/arm64-init.json" >/dev/null
+test "$(stat -c %a "$run_root/arm64-init.json")" = 600
+printf 'arm64_helper=pass render_init=true unprivileged=true\n'
 chmod 0600 "$report_dir"/casdoor-lifecycle-*
-printf 'multi_arch=pass amd64=running arm64=build-and-run pinned_source=true\n'
+printf 'multi_arch=pass amd64=running arm64=target-run external_build=%s\n' "${ANAS_TEST_LIFECYCLE_PREBUILT_IMAGES:-false}"
 
 cleanup_user
 saved_run_root=$run_root

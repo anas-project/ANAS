@@ -49,7 +49,7 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 
 由于上游会保留既有 Group，订阅器使用同一受限 Bind 经受信任 LDAPS 查询 `ALLOW_GROUPS`，以 AD matching rule `1.2.840.113556.1.4.1941` 计算直接和递归成员，再权威覆盖受管用户 Group。缺失组、重复/缺失锚点或任何 Casdoor 补丁失败都会使整批失败并保留游标重试。默认 5 分钟的上游自动同步不关闭，因此订阅器仍是低延迟加速器。
 
-当前仅导入和远程认证，不启用密码写回。删除事件把影子记录标为禁止和删除，停用事件标为禁止，两者都清空 Group；重新启用或同锚点改名会复用并恢复原记录。历史目录收敛与 OIDC/SAML E2E 通过；r10 新的主体标识符与撤权路径单独验收。
+当前仅导入和远程认证，不启用密码写回。删除事件把影子记录标为禁止和删除，停用事件标为禁止，两者都清空 Group；重新启用或同锚点改名会复用并恢复原记录。r10 正式双架构构建、OIDC 主体与撤权、真实 Nextcloud、备份恢复、密钥轮换及生命周期通过，见 [2026-10-06 发布验收](../../../dev-docs/reviews/2026-10-06-casdoor-release-acceptance.md)。ARM64 验证为 QEMU 下的目标 helper 执行；SAML 应用会话与 SLO 仍待实现。
 
 ## IAM 契约
 
@@ -108,6 +108,15 @@ token/会话记录。该接口只接受 `admin/app-built-in` 的 Basic Auth 服�
 或缺能力时不就绪；没有静默丢弃。SAML SLO 尚未实现，受影响的 SAML 会话保留显式未完成诊断。
 启动与每 300 秒全量 reconcile 修复日志缺口；身份标签冲突隔离、准入禁止，不按标签恢复权限。
 
+2026-10-04 隔离实机已通过 r10 的标准 Consumer OIDC 完整矩阵：保存 Cookie 与真实 refresh、
+直接/递归组撤权、停用、删除、改名、同名新 anchor 隔离，以及接收端 503、持久待办、watcher
+重启和重新授权后的旧通知重试。两 client 单独验收确认同用户另一 client 与其他用户会话不受影响。
+真实 Nextcloud r11 另行验证原 uid、LDAP anchor 映射、原 DAV 文件及改名/直接组撤权的旧 Cookie。
+签名 SAML 2.0 SP 协议通过，不包含 Nextcloud SAML 会话或 SLO。完整候选摘要、测试入口与
+发布缺口见[实机记录](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-04-casdoor-directory-identity-acceptance.md)。
+默认事件防抖 5 秒、最小同步间隔 60 秒；本轮脚本的影子状态等待上限 420 秒、其后会话撤销等待
+上限 120 秒，是测试超时边界，不是故障情况下的服务保证。
+
 
 **`DIRKEY-R-013` 投影结论：不适用（Provider 不是 Consumer）。** 本 Module 不消费别人的主体标识符。
 它在 `R-013` 里的角色是被验证的那一侧。需要注意的是，把 SAML NameID 切成 anchor 会让 anchor 进入
@@ -119,6 +128,13 @@ token/会话记录。该接口只接受 `admin/app-built-in` 的 Basic Auth 服�
 ## 管理面与 Secret 生命周期
 
 `admin_casdoor` 由本地账号 inventory 按默认 `admin_{module}` 模板管理；Casdoor 不需要 `fixed_username`。Apply/rotate Handler 通过 stdin 把候选密码送入容器 Helper，直接更新 bcrypt 值并回读验证；密码不进入 argv。轮换失败时恢复旧密码。
+
+## 空工作区恢复
+
+恢复到空工作区后，先核验备份中的数据库、Secret Store、管理员库存、目录游标和 deployment metadata。
+导入的 deployment 仍绑定原工作区，不能直接 `start`；停止原栈后，在恢复工作区执行
+`anas apply -w <恢复工作区> --module-root <模块目录> --no-snapshot -y`，生成本地绑定的部署，
+再验证原用户登录、永久锚点和签名。保留原备份 metadata 作为恢复证据。
 
 ## 环境变量所有权
 
@@ -145,6 +161,10 @@ token/会话记录。该接口只接受 `admin/app-built-in` 的 Basic Auth 服�
 - [`module.yml`](../module.yml)
 
 ## 当前限制
+
+**待实现：SAML SLO 与目录事件驱动的 SAML 应用会话终止。** OIDC 为当前主要支持协议；此项
+不作为当前 OIDC 发布阻塞项。SAML 保留可选 SSO 和已验证的签名协议能力，退出暂由应用本地执行。
+未来实现仍需签名、NameID/SessionIndex、原 Cookie 失效和会话隔离验收；不提前发布 SLO 声明。
 
 状态为 `developing`，r10 发布验收尚未完成。固定版本没有 SAML LogoutRequest/LogoutResponse 消费路径，因此 SLO endpoint/binding 保持不发布；不启用目录密码写回，不支持静默切换数据库，也不把 Casdoor 本地 User ID 当作 Samba 永久锚点。其余声明能力和发布验收范围见需求矩阵与实施计划。
 

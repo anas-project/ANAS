@@ -1,5 +1,7 @@
 # Module IAM and OIDC support
 
+Authentik is marked `deprecated` as of 2026-10-05 and is no longer recommended for new deployments. Its results below are historical evidence; Authentik remediation is not a prerequisite for releasing Casdoor.
+
 OIDC is the current ANAS default IAM integration protocol, but it applies only to modules that consume the `iam` capability and declare OIDC support. Modules without OIDC are never forced outside their manifests; they fall back to a supported protocol or retain their own authentication mechanism.
 
 ## Samba directory event subscription
@@ -31,8 +33,14 @@ immutable id, so dual attachment cannot be made safe. The missing side and its f
 [Forgejo Module design](/architecture/forgejo-module-design) §2.2, and the upgrade re-check trigger in
 §2.3 of the same document. `vikunja` uses OIDC only; the M1 inventory confirmed that the pinned `2.4.0`
 has no LDAP user synchronization and no configurable identity claim. Casdoor r10 integrates
-directory-driven OIDC revocation and durable retry. Source/helper tests pass and real session acceptance
-is in progress; the earlier administrator-delete E2E does not establish directory-driven acceptance.
+directory-driven OIDC revocation and durable retry. Source/helper tests, two-client isolation and real
+Nextcloud rename/group-revocation cookie acceptance pass. The final fault matrix is recorded in the
+[2026-10-04 acceptance review](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-04-casdoor-directory-identity-acceptance.md).
+Nextcloud r11 uses anchor internal UIDs, OIDC `sub` and unmodified official `user_oidc 8.11.0`.
+Other-provider, client-experience and full image-lifecycle acceptance remain pending before release.
+Historical Authentik/LLNG matrices below describe earlier baselines. Separate LLNG r12 acceptance
+on 2026-10-05 verifies anchor `sub`, official 8.11.0 rename/account/file ownership and isolated
+Portal logout. Other-provider, client and full release matrices remain pending.
 
 **The “Matching key” column** records the key each Module **actually uses** when it persists a directory
 user, as required by `DIRKEY-R-011` of the
@@ -47,17 +55,17 @@ verification. Acceptance belongs to M2 of the
 
 | Module | OIDC login | Current authentication path | Status | Matching key |
 | --- | --- | --- | --- | --- |
-| `netbird` | Yes | Direct IAM/OIDC consumer | Implemented | OIDC `sub` (`AuthUserIDClaim` is configurable); stability follows the Provider |
+| `netbird` | Yes | Direct IAM/OIDC consumer | OIDC implemented; current projection rejected for anchor-sub Casdoor/LLNG | OIDC `sub` (`AuthUserIDClaim` is configurable); stability follows the Provider |
 | `oauth2_proxy` | Yes | Direct IAM/OIDC consumer and ForwardAuth provider | Implemented | None; passes `sub` through, and the console takes `sha256(issuer‖sub)` |
 | `ddns_updater` | Indirect | `oauth2_proxy` through Traefik ForwardAuth | Implemented | None; follows the gateway |
-| `nextcloud` | Yes | Official `user_oidc` by default; LDAPS provisions users/groups; `user_saml` remains an explicit fallback | Implemented; exact logout capability is decided by the pinned provider/version matrix below | Identity anchor (the LDAP UUID attribute); the in-app `uid` is the `sAMAccountName` |
+| `nextcloud` | Yes | Official `user_oidc 8.11.0`; LDAPS provisions users/groups; explicit `user_saml` fallback | Developing; real Casdoor rename, original-file and OIDC cookie revocation acceptance pass; other-provider, client and full release-lifecycle acceptance pending | Identity anchor as LDAP UUID and new-account UID; OIDC matches directly through `sub` |
 | `meshcentral` | Yes | IAM/OIDC authentication, LDAPS user/group synchronization, and OIDC group-to-access/site-admin mapping | Implemented | Identity anchor, **used directly as the user id** (OIDC `uuid` claim / `ldapUserKey`) |
 | `forgejo` | Yes | IAM/OIDC JIT accounts; `APP_forgejo`/`APP_all` gate; administrator-group to site-admin mapping; managed break-glass retained | Developing: manifest, provider registration, hook, and application configuration are implemented; real browser/database E2E remains pending | OIDC `sub` (stored in `login_name`); stability follows the Provider |
 | `vikunja` | Yes | IAM/OIDC JIT account creation; `APP_vikunja`/`APP_all` access gate; local authentication and registration disabled | Developing: manifest, provider registration, secrets, hook, and application configuration are implemented; real browser/database E2E remains pending | OIDC `(issuer, sub)`; not configurable, stability follows the Provider |
 | `lam` | No | LDAPS directory-management login | Not an IAM consumer | None; searches by `sAMAccountName` and binds the DN on each login |
 | `authentik` | N/A | IAM provider with fixed `akadmin` break-glass account | Provides OIDC/SAML | Consuming: identity anchor (`object_uniqueness_field`). Issuing: internal user UUID, **not the anchor** |
-| `casdoor` | N/A | Developing IAM provider with default-template `admin_casdoor` break-glass account | Real E2E covers OIDC/SAML login, Samba reconciliation, permanent anchors, `ALLOW_GROUPS`, and exact-`sid` OIDC revocation; the pinned version publishes no SAML SLO and M5 release acceptance remains incomplete | Consuming: identity anchor (`externalId`). Revision r10 issues the anchor as OIDC sub, UserInfo/Logout Token subject and SAML NameID; source tests pass and deployment acceptance is in progress |
-| `llng` | N/A | IAM provider | Provides OIDC/SAML | Consuming: no replica. Issuing: `whatToTrace` = the lowercased `sAMAccountName`, so **both `sub` and `NameID` are labels** |
+| `casdoor` | N/A | Release IAM provider with default-template `admin_casdoor` break-glass account | Real E2E covers OIDC/SAML login, Samba reconciliation, permanent anchors, `ALLOW_GROUPS`, and exact-`sid` OIDC revocation; the pinned version publishes no SAML SLO and M5 formal release acceptance passed on 2026-10-06 | Consuming: identity anchor (`externalId`). Revision r10 issues the anchor as OIDC sub, UserInfo/Logout Token subject and SAML NameID; signed protocol, OIDC fault-matrix and real Nextcloud ownership acceptance pass; formal lifecycle acceptance passes and the module is marked release |
+| `llng` | N/A | IAM provider | r12 developing; provides OIDC/SAML | Consuming: no user replica, session stores anchor. Issuing: r12 OIDC `sub` = anchor; SAML NameID pending |
 | `ddns_go` | No | ANAS-managed local emergency account | No OIDC | N/A (local account) |
 | `traefik` | No | ANAS-managed local BasicAuth emergency account | No OIDC | N/A (local account) |
 | `collabora` | Indirect | Integrated through Nextcloud/WOPI without a standalone user login | Follows the Nextcloud session | N/A (no standalone user) |
@@ -71,7 +79,7 @@ verification. Acceptance belongs to M2 of the
 
 | Pinned consumer | Endpoint / binding | Module→IAM | IAM→Module | Session granularity | Browser | Failure/degradation result | Acceptance |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Nextcloud `user_oidc 8.10.1` | RP logout + `/index.php/apps/user_oidc/backchannel-logout/anas` | RP-Initiated Logout | `sid` back-channel | One OIDC session; multiple sessions/clients are mandatory security-matrix cases | RP logout yes; back-channel no | Local session must fail first while IAM is unavailable; missing provider notification is restricted | Existing Authentik browser/admin-delete and LLNG browser E2Es; Casdoor provider behavior passed user/admin exact-`sid`, multi-session isolation, and replay cases against a real standards consumer, while the pinned Nextcloud receiver still awaits unified-matrix revalidation |
+| Nextcloud `user_oidc 8.11.0` | RP logout + `/index.php/apps/user_oidc/backchannel-logout/anas` | RP-Initiated Logout | `sid` back-channel | One OIDC session; multiple sessions/clients are mandatory security-matrix cases | RP logout yes; back-channel no | Local session must fail first while IAM is unavailable; missing provider notification is restricted | Existing Authentik browser/admin-delete and LLNG browser E2Es; Casdoor provider behavior passed user/admin exact-`sid`, multi-session isolation, and replay cases against a real standards consumer, while real Nextcloud r11 saved cookies fail after rename/group revocation; the full unified browser matrix remains pending |
 | Nextcloud `user_saml 8.2.0` | `/index.php/apps/user_saml/saml/sls`, Redirect | SP-Initiated SLO | IdP-Initiated SLO | NameID + SessionIndex | Required | Local logout only when no SLO is published | Existing Authentik Redirect E2E; LLNG Redirect entry implemented pending isolated fixture; Casdoor explicitly has no SLO |
 | MeshCentral `1.2.4` | discovery/provider RP logout + post-logout URI | Upstream support | No standard receiver | Application cookie/session | Required | Local session first; IAM outage must not block local logout | Unified Playwright case implemented; `state` and central-session outcome are unaccepted on the current host, so status is “upstream support, integration pending” |
 | Forgejo `15.0.7` | `/user/logout` | Application session only | No standard receiver | Forgejo database session | No | Clears the local session; no claim that the IAM session is also cleared | Hook/container-helper unit tests and pinned documentation review complete; real browser E2E remains pending |
@@ -115,4 +123,4 @@ bidirectional logout or administrative revocation is implemented.
 
 Marking a module as OIDC-implemented requires a manifest interface, provider client registration, redirect URI/scope/claim/group mapping, Secret delivery, application-state verification, and a real browser or HTTP login E2E. `server-authentik-oidc-login-e2e.sh` covers the complete authorization-code login, application sessions, directory identity, and administrator-group mapping for Nextcloud and MeshCentral. `server-authentik-password-policy-e2e.sh` and `server-llng-password-policy-e2e.sh` separately cover provider preflight, Samba's final decision, writeback, safe error mapping, and credential transition. Upstream OIDC or password-change support alone is not implementation evidence for ANAS.
 
-The two OIDC matrices retain the original Nextcloud cookie, verify IAM-initiated logout, and reject silent recovery: Authentik covers browser logout and administrative session deletion, while LLNG covers browser logout. The Authentik SAML fallback E2E covers Redirect SLO. Casdoor's standards-consumer fixture separately covers user logout, administrative session deletion, two sessions for one user, another-user isolation, and Logout Token replay; it proves provider behavior without replacing the pinned Nextcloud receiver's unified matrix. SAML POST is also browser-mediated, so headless SAML revocation remains outside the support contract.
+The two OIDC matrices retain the original Nextcloud cookie, verify IAM-initiated logout, and reject silent recovery: Authentik covers browser logout and administrative session deletion, while LLNG covers browser logout. The Authentik SAML fallback E2E covers Redirect SLO. Casdoor's standards-consumer fixture separately covers user logout, administrative session deletion, two sessions for one user, another-user isolation, and Logout Token replay. Real Nextcloud r11 HTTP acceptance on 2026-10-04 adds saved-cookie revocation after rename and direct-group removal, another-user isolation and original-file ownership. The complete unified browser matrix still requires a separate rerun. SAML POST is also browser-mediated, so headless SAML revocation remains outside the support contract.
