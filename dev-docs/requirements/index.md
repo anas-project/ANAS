@@ -53,3 +53,5 @@
 - [Nextcloud 回收站配置验收要求](../../modules/nextcloud/dev-docs/requirements/nextcloud-trashbin.md)
 
 需求发生变化时原地更新稳定文件名，并同步 `updated`；实现方案进入 `docs/architecture/`，落地顺序进入 `dev-docs/plans/`。
+
+- [内部证书持久保存要求](../../modules/lego/dev-docs/requirements/internal-certificate.md)

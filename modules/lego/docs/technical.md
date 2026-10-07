@@ -70,13 +70,18 @@ Manifest 没有声明跨 Module 密码/Secret 消费或托管本地管理员。
 
 ## Hook、变更与回滚
 
+内部证书和私钥始终保存在 `ANAS_TLS_CERTS_DIR` 下的 `anas-internal.crt`、`anas-internal.key`，通过 `ANAS_TLS_INTERNAL_CERT_NAME`、`ANAS_TLS_INTERNAL_KEY_NAME` 导出文件名，内部根证书由 `ANAS_TLS_INTERNAL_CA_NAME` 指定。环境变量仅包含路径/文件名，不包含私钥内容。公网签发只替换当前服务证书，不覆盖保留的内部证书；启动和定时检查在服务证书缺失、过期、域名不符或私钥缺失/不匹配时发布内部证书。内部证书按 90 天阈值续签，信任包随内部 CA 发布更新；缺失或失效的内部 CA 会重建，客户端需要重新信任新根证书。
+
+`ca.sh bootstrap` 保留未过期且覆盖当前域名的既有证书；不能把内部证书的 90 天提前续签阈值用于公网证书启动判断，否则正常重启会替换仍有效的 ACME 证书。`ca.sh renew` 仍按 90 天阈值续签内部证书，公网续签由 Lego 负责。
+
 - Hook command: `go run ./hook`
 - `credential_rotate`、`data_migrate` 和 `immutable` 禁止普通编辑；声明的生命周期操作必须更新应用持久状态。
 - 本地管理员轮换只在 Module handler 成功后提交生成 Secret；失败会保留或恢复旧应用凭据。
 
 ## 测试与实现位置
 
-- 当前没有 Hook 单元测试文件。
+- `go test ./modules/lego/hook` 覆盖参数契约及真实 OpenSSL 证书启动/续签回归；证书回归需要宿主提供 OpenSSL。
+- 容器验证：`DOCKER_HOST=unix:///run/<anas-test-socket> python3 test-env/scripts/server-lego-certificate-e2e.py`。脚本先拒绝非隔离 daemon，再通过 Compose 同名的 `DOCKER_HUB_REGISTRY`、`CHINESE_BUILD_SPEEDUP`、`APK_MIRROR_URL`、`DOCKER_BUILD_NETWORK` 构建参数构建独立候选镜像并使用临时卷验证保留、ACME 发布、过期回退及共享信任包的 TLS 访问。ACME 输出由替代 CA 夹具提供，不等于真实公网签发；日志与源码/镜像摘要保存在 `ANAS_LEGO_EVIDENCE_DIR`（默认系统临时目录）。上游不可达时可显式设置 `ANAS_LEGO_BASE_IMAGE`，使用已有 Lego 运行镜像构建脚本候选；报告会记录基线 image ID，该模式不证明完整 Dockerfile 的上游重建成功。
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 

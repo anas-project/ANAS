@@ -70,13 +70,18 @@ The dependency closure does not grant every environment value. Sensitive values 
 
 ## Hooks, changes, and rollback
 
+The internal certificate and private key remain under `ANAS_TLS_CERTS_DIR` as `anas-internal.crt` and `anas-internal.key`, exported through `ANAS_TLS_INTERNAL_CERT_NAME` and `ANAS_TLS_INTERNAL_KEY_NAME`. `ANAS_TLS_INTERNAL_CA_NAME` identifies the internal root. Environment variables contain paths/names, never private key contents. Public issuance replaces only the serving certificate and preserves the internal pair. Startup and scheduled checks publish the internal pair when the serving certificate is missing, expired, covers the wrong domain, or has a missing/mismatched key. Internal leaves renew within 90 days of expiry. The trust bundle is refreshed with the internal CA; a missing or invalid CA is regenerated, requiring clients to trust the new root.
+
+`ca.sh bootstrap` preserves an existing certificate that has not expired and covers the configured domain. The internal 90-day renewal threshold must not govern public certificate reuse at startup, because a restart would otherwise replace a valid ACME leaf. `ca.sh renew` retains the 90-day threshold for internal leaves; Lego manages public renewal.
+
 - Hook command: `go run ./hook`
 - `credential_rotate`, `data_migrate`, and `immutable` are blocked from ordinary edits; the declared lifecycle operation must update persistent application state.
 - A local-administrator rotation commits the generated secret only after the module handler succeeds; failure keeps or restores the old application credential.
 
 ## Tests and implementation locations
 
-- There are currently no hook unit-test files.
+- `go test ./modules/lego/hook` covers the parameter contract and certificate bootstrap/renewal using real OpenSSL fixtures. Certificate tests require OpenSSL on the host.
+- Container validation: `DOCKER_HOST=unix:///run/<anas-test-socket> python3 test-env/scripts/server-lego-certificate-e2e.py`. The script requires an isolated daemon, supports the same `DOCKER_HUB_REGISTRY`, `CHINESE_BUILD_SPEEDUP`, `APK_MIRROR_URL`, and `DOCKER_BUILD_NETWORK` build inputs as Compose, builds a candidate image, and checks persistence, ACME adoption, expiry fallback, and TLS through the shared trust bundle using a temporary volume. A local alternate CA supplies ACME output; this does not validate public DNS-01 issuance. Logs and source/image digests go to `ANAS_LEGO_EVIDENCE_DIR` (a system temporary directory by default). When upstream is unavailable, explicitly set `ANAS_LEGO_BASE_IMAGE` to build a script candidate from an existing Lego runtime image. The report records its base image ID; this mode does not establish a successful rebuild of upstream layers with the full Dockerfile.
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 

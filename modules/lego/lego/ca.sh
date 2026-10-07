@@ -18,10 +18,13 @@ OUT=/certs/certificates
 CA_KEY="$CA_DIR/ca.key"
 CA_CRT="$CA_DIR/ca.crt"
 ISSUER_MARK="$OUT/.issuer"
+INTERNAL_CRT="$OUT/anas-internal.crt"
+INTERNAL_KEY="$OUT/anas-internal.key"
 
 # The CA outlives everything else: rotating it invalidates the copy every user
 # installed on their own devices, so it is deliberately long-lived and is only
-# reported on, never rotated automatically. Sixty years puts expiry past the
+# reported on while valid. Missing or invalid CA material must be rebuilt.
+# Sixty years puts expiry past the
 # lifetime of any deployment that installs it.
 CA_DAYS=21900
 LEAF_DAYS=730
@@ -30,7 +33,15 @@ RENEW_BEFORE_DAYS=90
 log() { echo "[ca] $*"; }
 
 ensure_ca() {
-  [ -s "$CA_KEY" ] && [ -s "$CA_CRT" ] && return 0
+  if openssl verify -CAfile "$CA_CRT" "$CA_CRT" >/dev/null 2>&1 \
+    && openssl x509 -in "$CA_CRT" -noout -checkend 0 >/dev/null 2>&1; then
+    ca_pub=$(openssl x509 -in "$CA_CRT" -noout -pubkey 2>/dev/null) || ca_pub=""
+    key_pub=$(openssl pkey -in "$CA_KEY" -pubout 2>/dev/null) || key_pub=""
+    if [ -n "$ca_pub" ] && [ "$ca_pub" = "$key_pub" ]; then
+      chmod 0600 "$CA_KEY"
+      return 0
+    fi
+  fi
   log "generating internal CA for $BASE_DOMAIN (valid ${CA_DAYS}d)"
   mkdir -p "$CA_DIR"
   chmod 0700 "$CA_DIR"
@@ -50,9 +61,18 @@ ensure_ca() {
 leaf_is_current() {
   crt="$1"
   [ -s "$crt" ] || return 1
-  openssl x509 -in "$crt" -noout -checkend $((RENEW_BEFORE_DAYS * 86400)) >/dev/null 2>&1 || return 1
-  openssl x509 -in "$crt" -noout -text 2>/dev/null \
-    | grep -q "DNS:\*\.${BASE_DOMAIN}\b" || return 1
+  openssl x509 -in "$crt" -noout -checkend "${2:-$((RENEW_BEFORE_DAYS * 86400))}" >/dev/null 2>&1 || return 1
+  openssl x509 -in "$crt" -noout -ext subjectAltName 2>/dev/null \
+    | tr ',' '\n' | sed 's/^[[:space:]]*//' | grep -Fx "DNS:*.${BASE_DOMAIN}" >/dev/null || return 1
+  openssl verify -partial_chain -trusted "$crt" "$crt" >/dev/null 2>&1 || return 1
+  if [ "$crt" = "$OUT/$LEGO_CERT_NAME" ] \
+    && [ "$(cat "$ISSUER_MARK" 2>/dev/null || echo unknown)" = internal ]; then
+    openssl verify -CAfile "$CA_CRT" "$crt" >/dev/null 2>&1 || return 1
+  fi
+  key="${3:-$OUT/$LEGO_KEY_NAME}"
+  cert_pub=$(openssl x509 -in "$crt" -noout -pubkey 2>/dev/null) || return 1
+  key_pub=$(openssl pkey -in "$key" -pubout 2>/dev/null) || return 1
+  [ "$cert_pub" = "$key_pub" ] || return 1
 }
 
 issue_internal_leaf() {
@@ -79,14 +99,24 @@ EOF
     -extfile "$tmp/csr.cnf" -extensions ext \
     -out "$tmp/leaf.crt" 2>/dev/null
 
-  install -m 0644 "$tmp/leaf.crt" "$OUT/$LEGO_CERT_NAME"
-  install -m 0600 "$tmp/leaf.key" "$OUT/$LEGO_KEY_NAME"
-  # Consumers trust whatever signed the serving certificate. Under ACME this
-  # file is the public intermediate; here it is our own root. Either way the
-  # contract is the same, so no module has to know which mode is active.
+  install -m 0644 "$tmp/leaf.crt" "$INTERNAL_CRT"
+  install -m 0600 "$tmp/leaf.key" "$INTERNAL_KEY"
+  rm -rf "$tmp"
+}
+
+publish_internal_leaf() {
+  install -m 0644 "$INTERNAL_CRT" "$OUT/$LEGO_CERT_NAME"
+  install -m 0600 "$INTERNAL_KEY" "$OUT/$LEGO_KEY_NAME"
   install -m 0644 "$CA_CRT" "$OUT/$LEGO_CA_CERT_NAME"
   echo internal > "$ISSUER_MARK"
-  rm -rf "$tmp"
+}
+
+ensure_internal_leaf() {
+  if ! leaf_is_current "$INTERNAL_CRT" "$((RENEW_BEFORE_DAYS * 86400))" "$INTERNAL_KEY" \
+    || ! openssl verify -CAfile "$CA_CRT" "$INTERNAL_CRT" >/dev/null 2>&1; then
+    issue_internal_leaf
+  fi
+  chmod 0600 "$INTERNAL_KEY"
 }
 
 publish_ca_only() {
@@ -106,28 +136,55 @@ harden_key() {
   [ ! -f "$OUT/$LEGO_KEY_NAME" ] || chmod 0600 "$OUT/$LEGO_KEY_NAME"
 }
 
+# One pinned path that is a complete trust anchor whichever issuer is serving.
+# The issuer chain alone is not: under ACME it stops at an intermediate whose
+# root is only in the system store, so a consumer pinning it fails with
+# "unable to get issuer certificate". The internal root alone is not either,
+# and a consumer that replaces the system store with it cannot verify the
+# public certificate. Rebuilt every start so a re-bootstrapped internal CA and
+# an updated system store both land here.
+publish_trust_bundle() {
+  bundle=/certs/certificates/anas-trust-bundle.crt
+  tmp="$bundle.tmp"
+  : >"$tmp"
+  [ -f /etc/ssl/certs/ca-certificates.crt ] && cat /etc/ssl/certs/ca-certificates.crt >>"$tmp"
+  [ -f /certs/certificates/anas-internal-ca.crt ] && cat /certs/certificates/anas-internal-ca.crt >>"$tmp"
+  if [ ! -s "$tmp" ]; then
+    echo "refusing to publish an empty trust bundle" >&2
+    rm -f "$tmp"
+    return 1
+  fi
+  chmod 0644 "$tmp"
+  mv "$tmp" "$bundle"
+  echo "Published anas-trust-bundle.crt ($(grep -c 'BEGIN CERTIFICATE' "$bundle") certificates)"
+}
+
 ensure_ca
 # The internal CA certificate is always published under a stable name so a
 # consumer can trust it even while ACME is serving the traffic: during renewal
 # or an ACME outage the serving certificate can fall back to this issuer.
 publish_ca_only
+publish_trust_bundle
+ensure_internal_leaf
 
 case "${1:-bootstrap}" in
   bootstrap)
     # Only fill in a serving certificate when there is not already a usable
     # one. This must never overwrite a live ACME certificate.
-    if leaf_is_current "$OUT/$LEGO_CERT_NAME"; then
+    # Public ACME leaves normally live for 90 days. The internal renewal
+    # threshold must not replace a still-valid public leaf at every restart.
+    if leaf_is_current "$OUT/$LEGO_CERT_NAME" 0; then
       log "existing certificate is current ($(cat "$ISSUER_MARK" 2>/dev/null || echo unknown)); leaving it in place"
     else
-      issue_internal_leaf
+      publish_internal_leaf
     fi
     ;;
   renew)
-    # Called from cron. Only re-issues what this CA owns; an ACME-issued
-    # certificate is lego's business, not ours.
-    if [ "$(cat "$ISSUER_MARK" 2>/dev/null || echo internal)" = internal ] \
-      && ! leaf_is_current "$OUT/$LEGO_CERT_NAME"; then
-      issue_internal_leaf
+    # Keep a valid public leaf; fall back even when its issuer marker says ACME.
+    if ! leaf_is_current "$OUT/$LEGO_CERT_NAME" 0 \
+      || { [ "$(cat "$ISSUER_MARK" 2>/dev/null || echo internal)" = internal ] \
+        && ! leaf_is_current "$OUT/$LEGO_CERT_NAME"; }; then
+      publish_internal_leaf
     fi
     if ! openssl x509 -in "$CA_CRT" -noout -checkend $((365 * 86400)) >/dev/null 2>&1; then
       log "WARNING: internal CA expires within a year; rotating it requires reinstalling the CA on every client device"

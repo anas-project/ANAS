@@ -59,3 +59,5 @@
 - [Nextcloud 回收站配置测试](../../modules/nextcloud/dev-docs/plans/nextcloud-trashbin.md)（部分实施；真实 E2E 待执行）
 
 计划使用稳定主题文件名。创建日期、更新时间、状态和目标里程碑写在文档内，不因日常更新重命名。
+
+- [内部证书持久保存](../../modules/lego/dev-docs/plans/archived/internal-certificate.md)

@@ -181,6 +181,8 @@ func calcLego(e map[string]string, _ string, _ *secretStore) error {
 	// The internal root is published under a stable name even while ACME
 	// serves traffic, because bootstrap and renewal failures fall back to it.
 	e["ANAS_TLS_INTERNAL_CA_NAME"] = "anas-internal-ca.crt"
+	e["ANAS_TLS_INTERNAL_CERT_NAME"] = "anas-internal.crt"
+	e["ANAS_TLS_INTERNAL_KEY_NAME"] = "anas-internal.key"
 	// What a consumer that *verifies* TLS should pin. Neither name above works
 	// for that on its own: the issuer chain ends at a public intermediate
 	// whose root lives in the system store, and the internal root cannot
