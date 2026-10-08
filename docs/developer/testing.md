@@ -8,9 +8,29 @@ go test ./...
 
 修改 Runner、配置解析、状态或 Hook 时，应运行覆盖对应包的单元测试。CLI 契约变更还必须更新契约测试和文档。
 
+正向夹具需要私有目录时，应显式将目录设为 `0700`，使它在不同宿主 umask 下仍符合生产校验。
+宽权限拒绝反例应显式设置被测权限，并在常规 `022` umask 下验证。容器内的真实进程组取消测试应启用
+Docker `--init`，由 init 回收已终止的孤儿子进程，随后继续断言进程组已不存在。
+检查全部目录祖先的安全文件测试还需要私有临时根：在容器内将 `TMPDIR` 指向独立私有 tmpfs 上的
+`0700` 目录，祖先也为 `0700`，并放在源码 Git 仓库之外，避免宿主 Btrfs 或父仓库改变普通夹具的行为。
+
+实时状态 endpoint 回归应对每次子进程核验五项 Docker 选择值、空值/未设置及受限环境。Linux 完成
+context（必要时）、daemon 身份和全量容器清单检查后再查询 Compose；非 Linux 的存储检查不支持该路径。
+测试必须为正常查询提供有效响应，并严格核验对应平台的调用顺序，不能用固定两次调用或宽泛放行掩盖差异。
+
 ## 集成测试
 
 `test-env/` 包含本地和远端验证脚本。只运行与改动相关的脚本，并为需要真实网络、Docker、DNS 或远端主机的测试明确准备隔离环境。
+
+### Workspace 临时存储真实编辑
+
+`TEMP-T-021` 使用 WebDAV 的文件 ID 经 `/f/<id>` 打开 ODT。[Nextcloud 34.0.2 文件路由](https://github.com/nextcloud/server/blob/v34.0.2/apps/files/lib/Controller/ViewController.php)将 ID 放入 Files 路径，并设置布尔开关 `openfile=true`；不能把 ID 填入 `openfile`。通过条件仍包括真实 Collabora 编辑框架、保存后的文件内容及生命周期操作后的重开，见仓库 `test-env/cases/workspace-temp-storage/EDITING-STACK.md`。
+
+输入前等待真实文档 canvas、初始化后的 map、`_docLoaded` 和编辑权限，以及已附加的可编辑 `div.clipboard#clipboard-area`，并确认忙碌遮罩消失。键盘输入、保存和复制定向该真实输入节点。固定 [CODE 上游测试入口](https://github.com/CollaboraOnline/online.mirror/blob/cp-26.04.2-4/cypress_test/integration_tests/common/helper.js)同样将文档输入发往 `div.clipboard`；框架或 map 可见不等于文档已经能够接收输入。测试继续从保存后的 ODT XML 和重开的编辑器核验内容。
+
+实际可见的已知欢迎窗口通过内层 iframe 的正常控件关闭：若第三页 Close 尚不可见，先点击 `#slide-3-indicator`，再点击真实按钮 `#slide-3-button`；已经在第三页时直接点击 Close。设置窗口使用父编辑框架中的 `#iframe-settings-cancel`，不保存设置。控件点击和窗口移除各最多等待 30 秒；固定镜像的 Escape 监听位于父窗口，不能把内层 `body.press(Escape)` 当作已验证的关闭路径。文档 canvas 每次正常点击最多等待 5 秒，最多尝试三次；只有真实 `TimeoutError` 且已知窗口可见时才关闭后重试，以处理窗口迟到的竞态。未知错误、没有已知窗口的超时、关闭失败或达到上限均保留原点击错误；不强制点击或修改 DOM/app 状态。点击成功后仍只读确认 `editorHasFocus()`。重开后真实 `Control+A` 须等待文档两端选区 handle attached，再发送 `Control+C`；仍独立要求原生剪贴板与 WebDAV XML 包含保存文本，不直接写 clipboard/app 状态。编辑浏览器预算为 1 GiB，依赖安装为 768 MiB，shm 为 256 MiB、tmpfs 为 512 MiB，pids 上限 256；在 finance 与其它门禁串行执行。没有 OOM 证据的浏览器崩溃保留未知原因，单次 tmpfs 对照成功也不证明崩溃首因。
+
+剪贴板读写权限仅授予本次独立 Playwright context，不指定单一 origin，以支持 Nextcloud 内嵌的跨源 Collabora 编辑器；固定 Chromium 的单 origin 授权同时约束请求源和嵌入源。其它浏览器 context 不受影响，原生复制和保存文件内容仍须分别通过验证。
 
 ### 需求、用例与 Agent 生成
 
@@ -26,6 +46,8 @@ go test ./...
 - **需求或测试实现一变，相关用例就进入待复核**。需求摘要跟踪需求正文与验证方式，实现摘要跟踪实现
   文件与命令；Agent 必须通过三层 review diff 提交补丁，不能静默覆盖已审阅断言。
 - **成功路径不足以证明安全、回滚、拒绝和故障降级类要求**，必须另有反例或故障注入。
+
+`implementation.files` 可列出带 `TEST_CASES:` 注释的 Go、JavaScript、TypeScript、Python、Shell 文件，以及 `.in` 配置模板和 `.txt` 固定输入清单。模板和镜像清单参与同一实现摘要，修改输入后也必须审阅并更新摘要；缺少反向标记仍会被拒绝。
 
 规范来源是[文档驱动测试生成与远程执行要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/document-driven-test-automation.md)，
 落地顺序见[实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/document-driven-test-automation.md)；两份都在仓库

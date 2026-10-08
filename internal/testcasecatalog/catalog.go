@@ -678,7 +678,7 @@ func scanImplementationMarkers(root string) (map[string]map[string]bool, error) 
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))
-		if ext != ".go" && ext != ".mjs" && ext != ".js" && ext != ".ts" && ext != ".py" && ext != ".sh" {
+		if ext != ".go" && ext != ".mjs" && ext != ".js" && ext != ".ts" && ext != ".py" && ext != ".sh" && ext != ".in" && ext != ".txt" {
 			return nil
 		}
 		data, err := os.ReadFile(path)
