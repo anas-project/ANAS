@@ -28,6 +28,8 @@
 
 ## Requirements and documentation
 
+- Keep detailed technical rules in the development standards; this file records
+  cross-cutting working principles rather than duplicating those rules.
 - Deliver research reports under docs/research/ as Markdown unless another
   format is explicitly requested. Put repository reviews and dated assessments
   under dev-docs/reviews/ using YYYY-MM-DD-topic.md filenames.
