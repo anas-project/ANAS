@@ -9,7 +9,6 @@
 | [LLNG anchor sub 与 Nextcloud 隔离实机验收](2026-10-05-llng-anchor-sub-acceptance.md) | 2026-10-05，LLNG 2.23.2-r12 正式 amd64 镜像、finance 独立 Docker | 签名主体、refresh、注销、改名与标签回收通过；缺 anchor 反例与最终六项整体复验通过，原 Nextcloud Provider 已恢复；SAML、事件撤权待实现 |
 | [Casdoor 发布就绪评估](2026-10-03-casdoor-release-readiness.md) | 2026-10-03—04，Casdoor `3.143.0-r10` | 初次评估；发布阻塞已由 2026-10-06 正式验收闭环，当前已标 release |
 | [Incus 租约网络、HTTP 发布与端口绑定实施记录](2026-10-03-incus-lease-network-implementation.md) | 2026-10-03，`c7891162` 加当前未提交工作树 | M10a/M10b/M11/M11b/M11c、HOSTACT M5 与运行问题记录 CLI 的实现与本机门禁；撤销停止实例等五项自行决定；实机 e2e 全部未运行 |
-| [Workspace 临时存储设计评审](2026-09-30-workspace-temp-storage-design-review.md) | 2026-09-30，`9a6921a1` 加当前未提交工作树 | 同日讨论后收窄为 Module 声明的临时目录；保存归应用负责，应用全面就绪不作为新增切换门槛，回滚复用配置切换；Docker 程序与连接固定方案待定，未改实现 |
 | [租约网络实机探测](2026-09-30-incus-lease-network-probe.md) | 2026-09-30，`7ad1876a` 加累积工作树；一次性 Debian 13 VM、Incus 7.0.1、docker.io 26 与 Docker CE 29 | M10a/M11b/M11c 待验证项与控制连接启动顺序：ACL 与 address set、默认拒绝入站、端口隔离、槽位固定地址、Docker 式端口表与占位；静态规则改窄规则、UDP 占位改常驻持有；据此 Incus 改为直接监听控制网关 |
 | [入站旧实现删除与宿主通道身份链简化](2026-09-30-incus-old-code-removal-and-hostd-simplification.md) | 2026-09-30，`7ad1876a` 加累积工作树 | 删除逐实例转发许可与逐发布 HTTP 入站运行时（225 个文件）；hostd 对端只认 root，调用记录取代回连 broker 与 systemd 退出观察（`HOSTACT-R-016`）；删除控制转发服务；服务安装必须带 `anas-helper`；宿主审批门禁实机结果见 §5 |
 | [Incus 国内软件源实机核验](2026-09-27-incus-chinese-speedup-native.md) | 2026-09-26—28，逐轮冻结工作树与二进制摘要 | 三档宿主国内源后端、guest 烘焙与不可变配方检查、脚本断言修正及物理 Docker 基线；逐轮终态与边界见正文 |
@@ -55,3 +54,5 @@
 | [Module 分类与访问边界分析](2026-08-19-module-classification.md) | 2026-08-19 工作树 | 分类和实现差距审查 |
 | [Module 官方镜像切换与版本升级评估](2026-07-29-module-image-upgrade.md) | 2026-07-29，后续实施更新至 2026-08-02 | 升级评估与实施记录 |
 | [ANAS 设计问题审查报告](2026-07-19-design-review.md) | 2026-07-19 代码基线 | 代码与架构审查 |
+
+临时存储设计与停止审阅的有效结论已合并到[归档验收计划](../plans/archived/workspace-temp-storage.md#历史设计与停止审阅的结论)，原始测试文件不进入 Git。
