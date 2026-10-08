@@ -29,7 +29,7 @@
 | [备份与恢复统一执行要求](backup-execution.md) | CLI 与控制台共用的执行入口、job 记录与目的地登记，工作区/目的地/宿主三层排他与离线恢复路径 | 0/16 已完成 |
 | [运行问题记录要求](runtime-issues.md) | 运行中出现的错误的记录格式、去重与解决、写入方，以及 CLI 与控制台查看 | 0/9 已完成 |
 | [版本升级 E2E 测试要求](upgrade-testing.md) | Core、Web 与全部内置 Module 的真实旧版升级、数据往返和发布门禁 | 13/30 已完成 |
-| [Workspace 临时存储要求](workspace-temp-storage.md) | Module 显式临时目录、全量停启切换与历史回滚、安全清理、恢复隔离及 Collabora 验收 | 0/40 已完成 |
+| [Workspace 临时存储要求](workspace-temp-storage.md) | Module 临时目录、切换、清理与恢复；各项验收基线见[归档计划](../plans/archived/workspace-temp-storage.md) | 40/40 已完成 |
 
 > [!IMPORTANT]
 > **「状态」列是生成的，不要手改。** 它由需求矩阵与配套计划的里程碑状态算出：

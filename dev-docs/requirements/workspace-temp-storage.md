@@ -1,13 +1,13 @@
 ---
 doc_type: requirement
-status: proposed
+status: current
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-08
 ---
 
 # Workspace 临时存储要求
 
-状态：提案，尚未实现。配套文件见[实施计划](../plans/workspace-temp-storage.md)。
+本文规定 Module 临时存储范围与回归验收标准；实现与验收绑定配套计划中的冻结候选，本次文档提交不包含产品实现。验收执行结果、各自源码/制品基线和历史失败统一记录在[归档实施计划](../plans/archived/workspace-temp-storage.md)，不由某一历史基线的通过推断其他源码或部署通过。
 
 ## 1. 背景与范围
 
@@ -17,11 +17,11 @@ updated: 2026-09-30
 
 本功能不统一 Runner、Hook 构建或配置校验的系统临时文件，不设置失败 job 的 24 小时保留策略，不接入远程测试产物管理。长期缓存、测试报告、镜像回滚材料和业务数据也不在自动清理范围。原子替换文件继续在目标文件旁创建中间文件。首版不要求硬配额或常驻 GC 服务。
 
-本次范围与责任划分来自[设计评审后的讨论](../reviews/2026-09-30-workspace-temp-storage-design-review.md)。现有执行顺序和锁作为复用基线，具体调用位置及尚未实现的工作见配套计划。
+本次范围与责任划分来自[设计讨论的保留结论](../plans/archived/workspace-temp-storage.md#历史设计与停止审阅的结论)。现有执行顺序和锁作为复用基线，具体调用位置与剩余验收工作见配套计划。
 
 ## 2. 路径与所有权
 
-默认根为 `<workspace>/tmp`；拟新增 `global.temp_path`，接受显式绝对路径，允许初始化后修改。Module 声明目录名称、容器内挂载目标、容器生命周期、UID/GID 与权限、空间下限和必要的文件系统条件。声明格式需能表达 Collabora 目标镜像的目录约束，不要求所有 Module 使用相同的容器内路径。
+默认根为 `<workspace>/tmp`；`global.temp_path` 接受显式绝对路径，允许初始化后修改。Module 声明目录名称、容器内挂载目标、容器生命周期、UID/GID 与权限、空间下限和必要的文件系统条件。声明格式需能表达 Collabora 目标镜像的目录约束，不要求所有 Module 使用相同的容器内路径。
 
 外部根下按稳定 workspace 身份隔离，再按 Module、容器实例与声明名称分配目录。Module 只获得自身声明的挂载。登记、租约与历史路径放在 workspace 的 `.anas/temp/`，目录内同时带可核验的所有权标记；这里的租约是记录“哪个容器仍占用哪个目录”，不引入 Runner job 调度或独立服务。克隆工作区须建立新的临时所有权身份，不能控制源工作区目录。
 
@@ -61,7 +61,7 @@ updated: 2026-09-30
 
 分配前检查实际文件系统的可用字节和 inode；运行检查显示存储问题，不能用进程探针成功掩盖已发现的空间故障，也不能通过不断重启恢复。运行问题可与[运行问题记录要求](runtime-issues.md)共用展示机制；存储预检不能依赖其全部交付。
 
-拟提供 `anas temp status`、`anas temp gc --dry-run` 和 `anas temp gc`，这些命令当前不可执行。状态及清理只面向当前根、历史根中已登记的 Module 目录，输出归属、占用、使用状态和回收阻碍，不暴露临时文件内容。
+CLI 提供 `anas temp status`、`anas temp gc --dry-run` 和 `anas temp gc`。状态及清理只面向当前根、历史根中已登记的 Module 目录，输出归属、占用、使用状态和回收阻碍，不暴露临时文件内容。
 
 Docker 查询、停启和补偿复用[Compose 执行边界要求](compose-execution-boundary.md)规定的同一次命令 endpoint 绑定。无法确认实际 Docker 使用者的目录按未知状态保留，不能把查询错误当作“无人使用”。
 
