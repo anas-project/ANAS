@@ -8,7 +8,7 @@ Online document editing backend for Nextcloud.
 | Item | Value |
 | --- | --- |
 | Module | `collabora` |
-| Version / revision | `26.4.2-r5` |
+| Version / revision | `26.4.2-r6` |
 | Status | `release` |
 | Category | `app` |
 | Runtime | `compose` |
@@ -94,12 +94,18 @@ anas config secret get COLLABORA_ADMIN_PASSWORD -w /srv/anas
 
 ## Storage, backup, and verification
 
+`temporary_directories.runtime` explicitly declares the document temporary tree at `/var/lib/anas-collabora`. The Runner allocates an instance directory beneath the workspace temporary root, which defaults to `<workspace>/tmp`; `global.temp_path` can select an external absolute path. Allocation requires at least 8 GiB free space, 20,000 free inodes, executable files, and hardlinks. These are startup checks, not a storage quota.
+
+Initialization copies the fixed image's systemplate and LibreOffice templates to the same managed filesystem, then starts Collabora as UID/GID `1001:1001`. Jails, caches, and temporary document contents use that tree and are excluded from workspace backups and snapshots. Changing the root stops and recreates every enabled Module and interrupts editing sessions. Normal shutdown allows 180 seconds for the application to save; old trees are reclaimable only after container references are released.
+
 Protect persistent state with the workspace snapshot/backup. Database consumers must also back up their bound database resource; generated secrets and local-administrator state must share the same recovery point.
 
 ```bash
 anas plan -c /srv/anas/config.yml
 anas config list collabora -w /srv/anas
 anas status -w /srv/anas
+anas temp status -w /srv/anas
+anas temp gc --dry-run -w /srv/anas
 ```
 
 ## Current limitations

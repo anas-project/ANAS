@@ -54,3 +54,18 @@ export async function executeModuleLifecycle(
   if (error || data === undefined || !("job" in data)) throw new APIProblemError(error ?? { code: "lifecycle_response_invalid" })
   return data
 }
+
+// A preview submits only a historical target; execution confirmation stays absent.
+export async function previewWorkspaceRollback(
+  workspace: string,
+  deployment: string,
+  csrf: string,
+): Promise<components["schemas"]["RollbackPreviewResponse"]> {
+  const { data, error } = await api.POST("/api/v1/workspaces/{ws}/actions/rollback", {
+    params: { path: { ws: workspace }, header: { Origin: origin() } },
+    headers: { "X-CSRF-Token": csrf },
+    body: { deployment_id: deployment },
+  })
+  if (error || data === undefined || !("preview" in data)) throw new APIProblemError(error ?? { code: "rollback_response_invalid" })
+  return data
+}

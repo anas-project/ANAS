@@ -17,25 +17,33 @@ func applicationCLIError(err error) error {
 	if !errors.As(err, &appErr) {
 		return failuref("internal", "%s", err.Error())
 	}
+	var result *CLIError
 	switch appErr.Kind {
 	case application.ErrorKindInvalidArgument:
-		return cliErrorf(exitUsage, appErr.Code, "%s", appErr.Message)
+		result = cliErrorf(exitUsage, appErr.Code, "%s", appErr.Message)
 	case application.ErrorKindPreconditionRequired:
-		return confirmationErrorf("%s", appErr.Message)
+		result = confirmationErrorf("%s", appErr.Message)
 	case application.ErrorKindNotFound, application.ErrorKindFailedPrecondition:
 		if appErr.Code == "module_command_confirmation_required" {
-			return confirmationErrorf("%s", appErr.Message)
+			result = confirmationErrorf("%s", appErr.Message)
+		} else {
+			result = preconditionErrorf(appErr.Code, "%s", appErr.Message)
 		}
-		return preconditionErrorf(appErr.Code, "%s", appErr.Message)
 	case application.ErrorKindInternal:
 		// An unreadable persisted state is an unmet machine precondition in the
 		// existing CLI contract, even though an HTTP server reports the same
 		// corrupt state as its own inability to serve the resource.
 		if appErr.Code == "state_unreadable" {
-			return preconditionErrorf(appErr.Code, "%s", appErr.Message)
+			result = preconditionErrorf(appErr.Code, "%s", appErr.Message)
+		} else {
+			result = failuref(appErr.Code, "%s", appErr.Message)
 		}
-		return failuref(appErr.Code, "%s", appErr.Message)
 	default:
-		return failuref("internal", "%s", appErr.Message)
+		result = failuref("internal", "%s", appErr.Message)
 	}
+	// The application service carries the primary failure and independent
+	// recovery outcomes through this boundary. Rebuilding only code/message
+	// makes the JSON command lose the details already persisted on disk.
+	result.Detail = cloneApplicationErrorDetail(appErr.Detail)
+	return result
 }

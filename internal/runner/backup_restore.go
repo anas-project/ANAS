@@ -195,10 +195,18 @@ func restoreBackup(workspace, dest string, manifest *backupManifest, all []backu
 		return nil, err
 	}
 	verify := verifyRestoredWorkspace(workspace, manifest)
+	nextStep := "anas start -w " + workspace
+	foreign, err := deploymentWorkspaceIsForeign(base, manifest.DeploymentID)
+	if err != nil {
+		return nil, failuref("restore_failed", "verify restored runtime workspace binding: %v", err)
+	}
+	if foreign {
+		nextStep = "anas apply -w " + workspace
+	}
 	return &backupRestoreOutcome{
 		Workspace: workspace, BackupID: manifest.BackupID, Mode: manifest.Mode,
 		Restored: restored, Verify: verify, DeploymentID: manifest.DeploymentID,
-		NextSteps: []string{"anas start -w " + workspace},
+		NextSteps: []string{nextStep},
 	}, nil
 }
 

@@ -33,6 +33,10 @@ config:
       constraints:
         format: dns_name
     email: string
+    temp_path:
+      kind: string
+      constraints:
+        pattern: "^/"
     timezone:
       kind: string
       constraints:
@@ -77,6 +81,10 @@ config:
       effect: immutable
       apply: migrate-service-domain
       description: Application URLs, SSO issuers, certificates, cookies, and public DNS depend on it; the Samba directory domain is configured separately.
+    temp_path:
+      effect: container_recreate
+      apply: switch-workspace-temp-storage
+      description: Changing the resolved temporary root stops and starts every enabled Module and interrupts active sessions.
     timezone:
       effect: container_recreate
       apply: recreate-affected-containers

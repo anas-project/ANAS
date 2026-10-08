@@ -700,12 +700,13 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 			ArtifactDeployment: id, RenderDigest: digest,
 			DataBreaking: cloneStringListPointer(mod.DataBreaking),
 			RuntimeType:  mod.RuntimeType, ComposeFile: mod.ComposeFile,
-			Hook:           mod.Hook,
-			ValidationPlan: cloneMap(a.modulePlans[name]),
-			EnvPrefix:      mod.EnvPrefix,
-			Consumes:       append([]string{}, mod.Consumes...),
-			Dependencies:   append([]string{}, a.deps[name]...),
-			UseHostLAN:     mod.UseHostLAN, Changes: mod.Changes,
+			TemporaryDirectories: cloneTemporaryDirectories(mod.TemporaryDirectories),
+			Hook:                 mod.Hook,
+			ValidationPlan:       cloneMap(a.modulePlans[name]),
+			EnvPrefix:            mod.EnvPrefix,
+			Consumes:             append([]string{}, mod.Consumes...),
+			Dependencies:         append([]string{}, a.deps[name]...),
+			UseHostLAN:           mod.UseHostLAN, Changes: mod.Changes,
 			Providers:           cloneContractProviders(mod.ContractProviders),
 			LocalAccounts:       append([]LocalAccount{}, mod.LocalAccounts...),
 			ManagementSurfaces:  managementSurfaces,
@@ -1005,8 +1006,19 @@ func runActive(action string, args []string, jsonMode bool) error {
 }
 
 func startDeployment(a *app, modulesRoot string, selection []string, jsonMode bool) error {
+	if err := a.requireTemporaryCleanupConfirmed(); err != nil {
+		return err
+	}
 	if err := a.validateComputeImagesFor(selection); err != nil {
 		return err
+	}
+	if err := a.preflightTemporaryStorage(selection); err != nil {
+		return fmt.Errorf("temporary storage preflight: %w", err)
+	}
+	for _, name := range selection {
+		if err := a.prepareModuleTemporaryStorage(a.reg[name]); err != nil {
+			return fmt.Errorf("module %s temporary storage: %w", name, err)
+		}
 	}
 	for _, name := range selection {
 		dir := filepath.Join(modulesRoot, name)
@@ -1039,6 +1051,9 @@ func startDeployment(a *app, modulesRoot string, selection []string, jsonMode bo
 		}
 		if err := a.startModuleContainers(run); err != nil {
 			return err
+		}
+		if err := a.verifyModuleTemporaryStorage(run.mod.Name); err != nil {
+			return fmt.Errorf("module %s temporary mounts: %w", run.mod.Name, err)
 		}
 		if err := a.coordinateModuleCredentials(run.mod, run.dir, run.env); err != nil {
 			return fmt.Errorf("deployment module %s credential barrier: %w", run.mod.Name, err)
@@ -1075,9 +1090,15 @@ type activateOptions struct {
 }
 
 func activateDeployment(base, id string, opts activateOptions) error {
+	if err := requireLocalDeploymentWorkspace(base, id); err != nil {
+		return err
+	}
 	cli, err := detectComposeForExecution(opts.ctx, opts.restrictedProcessEnvironment)
 	if err != nil {
 		return preconditionErrorf("compose_missing", "%s", err.Error())
+	}
+	if err := recoverTemporaryTransition(base, cli, opts); err != nil {
+		return preconditionErrorf("temp_recovery_failed", "%s", err.Error())
 	}
 	active, err := loadActiveState(base)
 	if err != nil {
@@ -1092,12 +1113,32 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	}
 	newApp.commandContext, newApp.events = opts.ctx, opts.events
 	newApp.restrictedProcessEnvironment = opts.restrictedProcessEnvironment
+	if exists(temporaryStatePath(base)) {
+		if err := newApp.reconcileTemporaryStorage(); err != nil {
+			return preconditionErrorf("temp_reconcile_failed", "%s", err.Error())
+		}
+	}
+	if err := newApp.preflightTemporaryStorage(newApp.order); err != nil {
+		return preconditionErrorf("temp_preflight_failed", "%s", err.Error())
+	}
+	desiredRoot, err := newApp.desiredTemporaryRoot()
+	if err != nil {
+		return preconditionErrorf("temp_path_invalid", "%s", err.Error())
+	}
+	tempPlan, err := temporarySwitchPlan(newApp.workspace, desiredRoot, target.ModuleOrder)
+	if err != nil {
+		return preconditionErrorf("temp_plan_failed", "%s", err.Error())
+	}
+	tempSwitch := tempPlan.Required
 	if err := credentialStoreConsistencyError(base, target); err != nil {
 		return err
 	}
 	if active.ActiveDeployment == id {
 		if err := startDeployment(newApp, newRoot, newApp.order, opts.json); err != nil {
 			return failuref("start_failed", "%s", err.Error())
+		}
+		if err := newApp.commitTemporaryStorage(); err != nil {
+			return failuref("temp_state_failed", "%s", err.Error())
 		}
 		active.RuntimeStatus = "running"
 		if err := saveActiveState(base, active); err != nil {
@@ -1116,6 +1157,7 @@ func activateDeployment(base, id string, opts activateOptions) error {
 		}
 		oldApp.commandContext, oldApp.events = opts.ctx, opts.events
 		oldApp.restrictedProcessEnvironment = opts.restrictedProcessEnvironment
+		oldApp.retainTemporaryLeases = true
 		if !opts.rollback {
 			changes := settingChangesWithEffect(current, target, "image_rebuild")
 			if len(changes) > 0 && !target.ImagesBuilt {
@@ -1149,9 +1191,21 @@ func activateDeployment(base, id string, opts activateOptions) error {
 				Exit:   exitPrecondition,
 			}
 		}
+		if tempSwitch {
+			if err := newApp.beginTemporaryTransition(id, desiredRoot); err != nil {
+				return preconditionErrorf("temp_transition_failed", "%s", err.Error())
+			}
+		}
 		if !opts.rollback {
 			quiesced, err = snapshotBeforeApply(base, opts, oldApp, oldRoot, current, target)
 			if err != nil {
+				if tempSwitch {
+					failure := recordActivationFailure(base, id, "temp_snapshot_failed", err, func() []map[string]any {
+						return []map[string]any{recoveryResult("previous_restore", restoreAfterConfirmedCleanup(err, func() error { return startDeployment(oldApp, oldRoot, oldApp.order, opts.json) }))}
+					})
+					recordTemporaryRecoveryPhase(oldApp, failure)
+					return failure
+				}
 				return err
 			}
 		}
@@ -1169,30 +1223,54 @@ func activateDeployment(base, id string, opts activateOptions) error {
 		runtimeStatus = "stopped"
 	}
 	selection := activationStartModules(current, target, runtimeStatus)
-	if oldApp != nil && runtimeStatus != "stopped" {
+	if tempSwitch {
+		selection = append([]string{}, target.ModuleOrder...)
+	}
+	if oldApp != nil && (runtimeStatus != "stopped" || tempSwitch) {
 		stopSelection := changedOrRemovedModules(current, target)
+		if tempSwitch {
+			stopSelection = append([]string{}, current.ModuleOrder...)
+			if err := newApp.recordTemporaryTransitionPhase("stopping"); err != nil {
+				return failuref("temp_state_failed", "%s", err.Error())
+			}
+		}
 		if err := oldApp.stopModules(oldRoot, stopSelection, opts.json); err != nil {
-			return recordStopFailure(base, id, err, func() error {
+			failure := recordStopFailure(base, id, err, func() error {
 				return startDeployment(oldApp, oldRoot, stopSelection, opts.json)
 			})
+			if tempSwitch {
+				recordTemporaryRecoveryPhase(oldApp, failure)
+			}
+			return failure
+		}
+	}
+	if tempSwitch {
+		if err := oldApp.confirmTemporaryStorageReleased(); err != nil {
+			return failTemporaryActivation(base, id, "temp_release_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
+		}
+		if err := newApp.recordTemporaryTransitionPhase("starting"); err != nil {
+			return failTemporaryActivation(base, id, "temp_state_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 		}
 	}
 	if len(selection) > 0 {
 		if err := startDeployment(newApp, newRoot, selection, opts.json); err != nil {
-			return activationFailure(base, id, "start_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
+			return failTemporaryActivation(base, id, "start_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 		}
+	}
+	if err := newApp.verifyDeploymentTemporaryStorage(); err != nil {
+		return failTemporaryActivation(base, id, "temp_mount_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 	}
 	revocations, err := revokeRemovedComputeLeases(oldApp, current, target, opts.allowRisky)
 	if err != nil {
-		return activationFailure(base, id, "resource_revoke_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
+		return failTemporaryActivation(base, id, "resource_revoke_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 	}
 	if err := retainRemovedResources(base, current, target, revocations); err != nil {
-		return activationFailure(base, id, "resource_state_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
+		return failTemporaryActivation(base, id, "resource_state_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 	}
 	// Routes of a lease whose HTTP authorization was removed or changed go
 	// now, whether or not the mediator in anasd is running (INCUS-R-147).
 	if err := pruneComputeHTTPRoutes(base, current, target); err != nil {
-		return activationFailure(base, id, "resource_routes_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
+		return failTemporaryActivation(base, id, "resource_routes_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -1211,7 +1289,7 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	}
 	if err := saveActiveState(base, active); err != nil {
 		if oldApp != nil {
-			return activationFailure(base, id, "write_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
+			return failTemporaryActivation(base, id, "write_failed", err, newApp, newRoot, oldApp, oldRoot, opts.json)
 		}
 		return failuref("write_failed", "%s", err.Error())
 	}
@@ -1226,6 +1304,16 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	}
 	if err := saveDeploymentState(base, state); err != nil {
 		return failuref("write_failed", "%s", err.Error())
+	}
+	if err := newApp.commitTemporaryStorage(); err != nil {
+		return failuref("temp_state_failed", "deployment is running; recording temporary storage failed: %s", err.Error())
+	}
+	previousID := ""
+	if oldApp != nil {
+		previousID = current.ID
+	}
+	if err := newApp.cleanupCommittedTemporaryStorage(previousID, opts.json); err != nil {
+		return failuref("temp_state_failed", "deployment is running; recording deferred temporary cleanup failed: %s", err.Error())
 	}
 	// Retention runs only after active is committed, so a failed apply never
 	// spends a keep_auto slot and never reclaims the snapshot that would have
@@ -1284,6 +1372,17 @@ func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot
 	}
 	// Quiescing first: a snapshot taken while services are mid-write captures a
 	// crash-consistent database rather than a clean one.
+	if exists(temporaryStatePath(base)) {
+		registry, err := oldApp.loadTemporaryRegistry(false)
+		if err != nil {
+			return false, err
+		}
+		if registry.Transition != nil && registry.Transition.TargetDeployment == target.ID && registry.Transition.Phase == "prepared" {
+			if err := oldApp.recordTemporaryTransitionPhase("stopping"); err != nil {
+				return false, err
+			}
+		}
+	}
 	if err := oldApp.stopRelease(oldRoot, opts.json); err != nil {
 		return false, failuref("quiesce_failed", "quiesce active deployment before data snapshot: %v", err)
 	}
@@ -1589,28 +1688,14 @@ func runStatus(args []string, jsonMode bool) error {
 	if err != nil {
 		return err
 	}
-	status, err := application.NewService(workspace).Status(context.Background())
+	status, err := NewWorkspaceQueryService(workspace).Status(context.Background())
 	if err != nil {
 		return applicationCLIError(err)
 	}
 	if jsonMode {
-		return emitOK(map[string]any{
-			"workspace":            workspace,
-			"active_deployment":    status.ActiveDeployment,
-			"activated_at":         status.ActivatedAt,
-			"verified_at":          status.VerifiedAt,
-			"previous_deployments": append([]string{}, status.PreviousDeployments...),
-		})
+		return emitOK(workspaceStatusDocument(status))
 	}
-	if status.ActiveDeployment == nil {
-		fmt.Println("active: none")
-		return nil
-	}
-	fmt.Printf("active: %s\nactivated_at: %s\nverified_at: %s\n",
-		*status.ActiveDeployment, optionalString(status.ActivatedAt), optionalString(status.VerifiedAt))
-	if len(status.PreviousDeployments) > 0 {
-		fmt.Println("previous: " + strings.Join(status.PreviousDeployments, ","))
-	}
+	fmt.Print(workspaceStatusSummary(status))
 	return nil
 }
 
@@ -1730,6 +1815,9 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 	if err := validateDeploymentID(id); err != nil {
 		return nil, "", nil, err
 	}
+	if err := requireLocalDeploymentWorkspace(base, id); err != nil {
+		return nil, "", nil, err
+	}
 	root := filepath.Join(base, "deployments", id)
 	manifest, err := loadDeploymentManifest(root)
 	if err != nil {
@@ -1752,12 +1840,13 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 			Consumes: append([]string{}, module.Consumes...), Changes: module.Changes,
 			UseHostLAN: module.UseHostLAN, Hook: module.Hook,
 			RuntimeType: module.RuntimeType, ComposeFile: module.ComposeFile,
-			ContractProviders:   cloneContractProviders(module.Providers),
-			LocalAccounts:       append([]LocalAccount{}, module.LocalAccounts...),
-			CredentialProviders: cloneCredentialProviders(module.CredentialProviders),
-			CredentialConsumers: cloneCredentialConsumers(module.CredentialConsumers),
-			CommandExecutor:     module.CommandExecutor,
-			Commands:            cloneModuleCommands(module.Commands),
+			TemporaryDirectories: cloneTemporaryDirectories(module.TemporaryDirectories),
+			ContractProviders:    cloneContractProviders(module.Providers),
+			LocalAccounts:        append([]LocalAccount{}, module.LocalAccounts...),
+			CredentialProviders:  cloneCredentialProviders(module.CredentialProviders),
+			CredentialConsumers:  cloneCredentialConsumers(module.CredentialConsumers),
+			CommandExecutor:      module.CommandExecutor,
+			Commands:             cloneModuleCommands(module.Commands),
 		}
 		deps[name] = append([]string{}, module.Dependencies...)
 		if len(module.ValidationPlan) > 0 {

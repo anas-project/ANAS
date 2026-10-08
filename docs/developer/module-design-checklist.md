@@ -94,6 +94,7 @@
 
 ## 9. IAM 与管理员恢复（条件项）
 
+- [ ] `[M]` 新应用 Module 的固定上游版本支持 OIDC 时，只接入 OIDC，不增加 SAML 实现、配置入口或 fallback；见[协议选择规范](/developer/module-development#新-module-的-iam-协议选择)。
 - [ ] `[A/M]` IAM Consumer 只读取自己的 `ANAS_IAM_BINDING__<APP>__*`，只发布自己的 `ANAS_IAM_CLIENT__<APP>__*`，不按 Provider 名称分支。
 - [ ] `[M/E]` client type、redirect URI、scope、claim、Group 门禁、JIT/同步方向和本地认证状态与固定上游版本一致。
 - [ ] `[M]` 分别记录 Module→IAM、IAM→Module 和管理员无浏览器撤销。`post_logout_redirect_uri` 没有被写成通知 endpoint。

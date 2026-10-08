@@ -42,6 +42,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	egressPattern := `^(?:[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?(?:,[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?)*)?$`
 	repositoryListPattern := `^(?:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100}(?:,[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100})*)?$`
 	wantConstraints := map[string]configschema.Constraints{
+		"global.temp_path": {Pattern: `^/`},
 		// Every one of these lists is empty by default and only has to be
 		// populated once ai_agent.enabled is on; the hook is what refuses to
 		// apply an enabled deployment with an empty list.

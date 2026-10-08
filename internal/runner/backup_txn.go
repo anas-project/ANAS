@@ -180,8 +180,14 @@ func startModules(a *app, modulesRoot string, modules []string) error {
 	var failures []string
 	for _, name := range modules {
 		dir := filepath.Join(modulesRoot, name)
+		if _, err := a.temporaryComposeEnvironment(name); err != nil {
+			failures = append(failures, fmt.Sprintf("%s temporary lease: %v", name, err))
+			continue
+		}
 		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "start"); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
+		} else if err := a.verifyModuleTemporaryStorage(name); err != nil {
+			failures = append(failures, fmt.Sprintf("%s temporary mounts: %v", name, err))
 		}
 	}
 	if len(failures) > 0 {

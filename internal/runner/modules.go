@@ -65,6 +65,7 @@ type Module struct {
 	Hook                   HookConfig
 	RuntimeType            string
 	ComposeFile            string
+	TemporaryDirectories   []TemporaryDirectory
 }
 
 // preHookRequirements preserves the original config.required check point while
@@ -111,6 +112,8 @@ type ContractDependency struct {
 // ContractProvider is a provider implementation shipped inside one module.
 // Operations are deliberately data: the runner dispatches runtimes such as
 // compose_run without knowing anything about PostgreSQL or MariaDB.
+type TemporaryDirectory = deployment.TemporaryDirectory
+
 type ContractProvider = deployment.ContractProvider
 type ProviderOperation = deployment.ProviderOperation
 

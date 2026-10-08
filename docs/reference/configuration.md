@@ -7,10 +7,10 @@
 
 <!-- generated:configuration-summary:start -->
 - 内置 Module：`24`
-- 已声明参数：共 `192` 个（全局 `17` 个、Module 所有 `175` 个；结构化 Module 参数 `171` 个、裸 `env.*` 参数 `4` 个）
+- 已声明参数：共 `193` 个（全局 `18` 个、Module 所有 `175` 个；结构化 Module 参数 `171` 个、裸 `env.*` 参数 `4` 个）
 - 解析阶段：`input_required` `2` 个、`must_resolve` `33` 个、未知类型 `0` 个
-- 类型分布：`bool` `27`、`enum` `27`、`int` `30`、`string` `108`
-- 默认值来源分布：`generated` `10`、`host` `8`、`inherited` `8`、`none` `8`、`runtime` `5`、`static` `153`
+- 类型分布：`bool` `27`、`enum` `27`、`int` `30`、`string` `109`
+- 默认值来源分布：`generated` `10`、`host` `8`、`inherited` `8`、`none` `9`、`runtime` `5`、`static` `153`
 <!-- generated:configuration-summary:end -->
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
@@ -109,6 +109,19 @@ Compose project name，同时以该前缀生成容器名；例如默认配置下
 的前缀会生成另一组 project、容器名和跨容器地址，属于静态部署变更，不是现有资源的原地
 重命名；修改前必须先完成显式迁移或清理旧部署。
 
+## 临时存储根
+
+`global.temp_path` 是可选绝对路径；省略时使用 `<workspace>/tmp`。它只影响 Module 显式
+声明的临时目录。可以在初始化后修改，Runner 不会复制旧临时内容；解析后的根变化时，
+计划会列出全部 Module 的停止和启动顺序，并提示当前编辑/应用会话中断。确认 apply 后才
+执行切换；历史回滚目标根不同也使用相同流程。设置相同的规范路径不会单独触发全量停启。
+
+不能将文件系统根、业务数据目录或其祖先设置为受管临时根。外部文件系统登记后，缺失或
+身份变化时会拒绝启动，不能回退到宿主 `/tmp`。不同 workspace 使用稳定身份隔离。
+存储空间不足会作为运行问题显示；释放空间后刷新状态，不通过反复重启恢复。
+配置必须使用 `global.temp_path`；裸 `env.TEMP_PATH` 和 `ANAS_TEMP_*` 是保留输入。
+受管临时内容排除在备份与快照之外，恢复/克隆会重新分配目录。
+
 ## 已声明参数
 
 表中参数都能被 `anas config list` 列出。普通可编辑参数可通过 `anas config set` 设置；
@@ -145,7 +158,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 `must_resolve: true`、`default_source: none`；只有 resolver 未能注入时才需要 Module 侧输入。
 
 <!-- generated:configuration-constraints:start -->
-当前显式可移植约束：`33` 项。
+当前显式可移植约束：`34` 项。
 
 | 参数路径 | 可移植约束 |
 | --- | --- |
@@ -168,6 +181,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `global.host_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.host_lan_bridge_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.host_lan_ip` | <code>format=&#34;ipv4&#34;</code> |
+| `global.temp_path` | <code>pattern=&#34;^/&#34;</code> |
 | `global.timezone` | <code>format=&#34;iana_timezone&#34;</code> |
 | `incus.endpoint` | <code>pattern=&#34;^https://[A-Za-z0-9.:_-]+$&#34;</code> |
 | `incus.lan_extra_subnets` | <code>pattern=&#34;^[0-9A-Fa-f:./, ]*$&#34;</code> |
@@ -187,7 +201,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 <!-- generated:configuration-owners:start -->
 | Owner | 参数数 | 参数路径 |
 | --- | ---: | --- |
-| `global` | 17 | `global.base_domain`<br>`global.chinese_build_speedup`<br>`global.chinese_speedup`<br>`global.container_prefix`<br>`global.default_language`<br>`global.default_locale`<br>`global.dns_server`<br>`global.email`<br>`global.host_ip`<br>`global.host_lan_arp_check`<br>`global.host_lan_bridge_ip`<br>`global.host_lan_ip`<br>`global.ipv4`<br>`global.ipv6`<br>`global.network_prefix`<br>`global.timezone`<br>`global.virtual_domain` |
+| `global` | 18 | `global.base_domain`<br>`global.chinese_build_speedup`<br>`global.chinese_speedup`<br>`global.container_prefix`<br>`global.default_language`<br>`global.default_locale`<br>`global.dns_server`<br>`global.email`<br>`global.host_ip`<br>`global.host_lan_arp_check`<br>`global.host_lan_bridge_ip`<br>`global.host_lan_ip`<br>`global.ipv4`<br>`global.ipv6`<br>`global.network_prefix`<br>`global.temp_path`<br>`global.timezone`<br>`global.virtual_domain` |
 | `ai_agent` | 14 | `ai_agent.agent_runtime_images`<br>`ai_agent.agent_runtimes`<br>`ai_agent.daily_budget_usd`<br>`ai_agent.db_name`<br>`ai_agent.db_type`<br>`ai_agent.domain_prefix`<br>`ai_agent.egress_allowlist`<br>`ai_agent.enabled`<br>`ai_agent.execution_isolation`<br>`ai_agent.job_wallclock_minutes`<br>`ai_agent.language`<br>`ai_agent.reconcile_interval_seconds`<br>`ai_agent.repository_allowlist`<br>`ai_agent.workspace_scope` |
 | `authentik` | 6 | `authentik.db_name`<br>`authentik.db_type`<br>`authentik.domain_prefix`<br>`authentik.ldap_enabled`<br>`authentik.ldap_password_writeback`<br>`authentik.log_level` |
 | `casdoor` | 4 | `casdoor.db_name`<br>`casdoor.db_type`<br>`casdoor.domain_prefix`<br>`casdoor.ldap_auto_sync_minutes` |

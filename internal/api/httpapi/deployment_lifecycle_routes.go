@@ -53,11 +53,12 @@ type rollbackPreviewResponse struct {
 }
 
 type rollbackPreviewDTO struct {
-	ActiveDeployment string   `json:"active_deployment"`
-	TargetDeployment string   `json:"target_deployment"`
-	GuardedChanges   []string `json:"guarded_changes"`
-	DataTouched      bool     `json:"data_touched"`
-	Digest           string   `json:"digest"`
+	TempSwitch       *application.TempSwitchPlan `json:"temp_switch,omitempty"`
+	ActiveDeployment string                      `json:"active_deployment"`
+	TargetDeployment string                      `json:"target_deployment"`
+	GuardedChanges   []string                    `json:"guarded_changes"`
+	DataTouched      bool                        `json:"data_touched"`
+	Digest           string                      `json:"digest"`
 }
 
 func (h *handler) moduleLifecycle(w http.ResponseWriter, r *http.Request, params map[string]string) {
@@ -317,5 +318,6 @@ func normalizeRollbackPreview(preview application.RollbackPreviewResult) rollbac
 	return rollbackPreviewDTO{
 		ActiveDeployment: preview.ActiveDeployment, TargetDeployment: preview.TargetDeployment,
 		GuardedChanges: nonNilStrings(preview.GuardedChanges), DataTouched: preview.DataTouched, Digest: preview.Digest,
+		TempSwitch: normalizeTempSwitch(preview.TempSwitch),
 	}
 }

@@ -4020,6 +4020,26 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/DeploymentModuleLifecycle"
+        temp_switch:
+          $ref: "#/components/schemas/TempSwitchPlan"
+    TempSwitchPlan:
+      type: object
+      additionalProperties: false
+      required: [required, stop_modules, start_modules, session_interruption]
+      properties:
+        required:
+          type: boolean
+        stop_modules:
+          type: array
+          items: {type: string}
+          description: All modules in reverse dependency order.
+        start_modules:
+          type: array
+          items: {type: string}
+          description: All target modules in dependency order.
+        session_interruption:
+          type: boolean
+          description: Existing application sessions are interrupted by the full workspace restart.
     DeploymentPlanIAM:
       type: object
       additionalProperties: false
@@ -4282,6 +4302,8 @@ components:
         data_touched:
           type: boolean
           const: false
+        temp_switch:
+          $ref: "#/components/schemas/TempSwitchPlan"
         digest:
           $ref: "#/components/schemas/PlanDigest"
     ControlPlaneState:
@@ -5153,13 +5175,44 @@ components:
           type: string
         runtime:
           type: string
-          enum: [running, stopped, degraded, not_applicable]
+          enum: [running, stopped, degraded, unknown, not_applicable]
         health:
           type: string
           enum: [healthy, unhealthy, starting, none, not_applicable]
+        temp_storage:
+          $ref: "#/components/schemas/ModuleTemporaryStorageStatus"
         containers:
           type: integer
           minimum: 0
+    ModuleTemporaryStorageStatus:
+      type: object
+      additionalProperties: false
+      required: [state, issues]
+      properties:
+        state:
+          type: string
+          enum: [ok, low_space, unavailable, unknown, not_applicable]
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModuleTemporaryStorageIssue"
+        free_bytes:
+          type: integer
+          minimum: 0
+        free_inodes:
+          type: integer
+          minimum: 0
+          description: Omitted when the filesystem has no fixed inode capacity.
+    ModuleTemporaryStorageIssue:
+      type: object
+      additionalProperties: false
+      required: [code, name]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+          description: Module declaration name; host paths and temporary file contents are never returned.
     DeploymentListResponse:
       type: object
       additionalProperties: false

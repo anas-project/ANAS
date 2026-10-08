@@ -53,6 +53,7 @@ directly, with the trade-offs in this table:
 | Active artifacts | `.anas/deployments/<active-id>/` | ✅ |
 | Historical artifacts | the remaining directories under `.anas/deployments/` | ❌ |
 | Caches | `.anas/go-build-cache/`, `.anas/hook-bin/`, `.anas/staging/` | ❌ never backed up |
+| Temporary contents and leases | `<workspace>/tmp`, external managed roots, `.anas/temp/` | ❌ Reallocated on restore |
 
 The active artifacts must be included, for three reasons, each sufficient on its
 own:
@@ -617,6 +618,7 @@ anas backup restore --from <src> -w <workspace> [--backup-id <id>] [--dry-run] [
 - `--dry-run` reports the list of paths that would be written or overwritten,
   without touching disk.
 - A non-empty target workspace requires `-y`.
+- The target must already be a workspace. Initialize a new target with `anas init <workspace> -y`; empty initialization does not start services.
 - On completion a structural check and a `snapshot verify` run automatically, and
   their results are merged into the output.
 - **Restore is all or nothing.** The secret store is append-only by generation,
@@ -640,6 +642,8 @@ anas backup restore --from <src> -w <workspace> [--backup-id <id>] [--dry-run] [
 
 `next_steps` is an array of suggested command strings for the web layer to
 present directly. Restore **does not start services automatically**.
+
+The example restores artifacts whose frozen binding still names this workspace. For another workspace, `next_steps` is `anas apply -w <workspace>`: the imported active record grants no authority over the source project or temporary leases. The first configuration apply retains diagnostic metadata, removes imported active authority, and creates a local deployment; its plan does not stop source Modules. Managed temporary artifacts with a missing or invalid frozen `DATA_PATH` binding cannot run. Direct lifecycle operations, `apply --deployment`, and historical rollback cannot bypass the check. Same-workspace snapshot restores and valid local leases retain their existing authority.
 
 ### Deviation 4 from the first draft: restoring a `send` backup copies rather than sending again (unspecified in the draft)
 

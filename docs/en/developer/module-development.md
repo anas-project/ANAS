@@ -18,6 +18,10 @@ Use a [Module-specific command](/en/reference/module-commands) only for an expli
 does not belong to generic lifecycle or Contract semantics. Commands must use typed parameters and a fixed executor;
 they must not expose shell, argv, Docker, systemd, or SSH pass-through behavior.
 
+## Upstream source patches
+
+Before adding or modifying a patch to a Module's upstream source code, ask the user and obtain explicit confirmation. Explain why the patch is needed, its scope, and its impact on future upstream upgrades and maintenance.
+
 ## Version and revision ownership
 
 `version` follows the normalized upstream application version. `revision`
@@ -84,6 +88,44 @@ and safely fast-forwards it back to `master` only after all artifacts succeed.
 
 Declare hard dependencies explicitly. Use capability providers for alternatives, ordering edges only for ordering, and resource/provider operations for persistent resources. Scope generated environments to the module, its dependency closure, and explicitly consumed keys. Never log secrets or inject unrelated credentials.
 
+## Module temporary directories
+
+Declare disposable container working directories explicitly at the top level of `module.yml`:
+
+```yaml
+temporary_directories:
+  - name: runtime
+    service: anas_example
+    target: /var/lib/example/runtime
+    lifecycle: container
+    uid: 1001
+    gid: 1001
+    mode: "0750"
+    min_free_bytes: 1073741824
+    min_free_inodes: 1000
+    required_features: [hardlink, exec]
+```
+
+`name` starts with a lowercase letter and contains lowercase letters, digits, and underscores.
+`service` accepts the Compose name or its existing short name without `anas_`; the runner freezes
+its actual service name. `target` must be a clean absolute container path and must not overlap
+another volume, tmpfs, or temporary target in that service. The service supports one replica only.
+Owner, mode, and both positive capacity floors are mandatory. Mode must allow owner read, write,
+and execute access and must not be writable by the group or others (`0700`, `0750`, and `0755`
+are allowed; `0770`, `0775`, and `0777` are rejected). Declaration validation and startup preflight
+use the same rule, including historical frozen declarations. Optional `filesystem: [ext4, btrfs]` limits filesystem types.
+`required_features` currently supports `hardlink` and `exec`; request only features the application
+needs. Btrfs has dynamic inode capacity, so its status does not report zero remaining inodes.
+
+The runner generates a long bind with `create_host_path: false` and a
+`${ANAS_TEMP_<UPPERCASE_NAME>}` source. Do not mount the target again or write `ANAS_TEMP_*` in
+configuration, secrets, Hook output, or `config.exports`. Instance paths are injected only when
+that module executes Compose, never into a frozen `.env` or deployment. Container recreation
+allocates a new directory; an automatic restart retains the instance directory.
+Contents are excluded from backups, snapshots, and rollback. The Module must start from an empty
+directory. Initialize templates through its own frozen Hook/start entry point; Core does not
+recognize application directories or manage editing sessions.
+
 ## Rotation scopes for ANAS-managed credentials
 
 Every password, shared secret, client secret, or signing/encryption key that ANAS generates, stores,
@@ -105,6 +147,18 @@ transaction, and `credential rotate --module/--all` excludes Resource credential
 and external API tokens. Until those scopes are implemented,
 Module documentation and release reviews must mark them manual/unsupported and must not claim that all ANAS
 secrets are rotatable.
+
+## IAM protocol selection for new Modules
+
+When the pinned upstream version of a newly integrated application Module supports OIDC, ANAS
+integrates only OIDC. Even if upstream also supports SAML, do not add a SAML implementation,
+configuration option, or fallback. Declare only `oidc` in the manifest's consumed IAM interfaces,
+and implement Hook registration, application configuration, and login/logout acceptance around
+OIDC. Consider SAML only when upstream does not support OIDC.
+
+This rule governs IAM login integration for new applications. It does not require removing SAML
+from existing Modules or restrict the protocols IAM providers expose. LDAP/LDAPS directory
+synchronization and managed emergency accounts continue to follow their respective standards.
 
 ## Bidirectional logout for OIDC/SAML Modules
 

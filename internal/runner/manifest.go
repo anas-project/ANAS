@@ -46,30 +46,31 @@ type manifestABI struct {
 }
 
 type moduleManifest struct {
-	APIVersion   string               `yaml:"api_version"`
-	Kind         string               `yaml:"kind"`
-	Name         string               `yaml:"name"`
-	Version      string               `yaml:"version"`
-	Revision     int                  `yaml:"revision"`
-	AppVersion   string               `yaml:"app_version"`
-	ABI          manifestABI          `yaml:"abi"`
-	Title        string               `yaml:"title"`
-	Description  string               `yaml:"description"`
-	Category     string               `yaml:"category"`
-	Runtime      manifestRuntime      `yaml:"runtime"`
-	Capabilities manifestCapabilities `yaml:"capabilities"`
-	Contracts    manifestContracts    `yaml:"contracts"`
-	Dependencies manifestDependencies `yaml:"dependencies"`
-	Resources    manifestResources    `yaml:"resources"`
-	Credentials  manifestCredentials  `yaml:"credentials"`
-	Upgrade      manifestUpgrade      `yaml:"upgrade"`
-	Config       manifestConfig       `yaml:"config"`
-	Features     manifestFeatures     `yaml:"features"`
-	Identity     manifestIdentity     `yaml:"identity"`
-	Management   manifestManagement   `yaml:"management"`
-	Services     manifestServices     `yaml:"services"`
-	Logic        manifestLogic        `yaml:"logic"`
-	Status       string               `yaml:"status"`
+	APIVersion           string               `yaml:"api_version"`
+	Kind                 string               `yaml:"kind"`
+	Name                 string               `yaml:"name"`
+	Version              string               `yaml:"version"`
+	Revision             int                  `yaml:"revision"`
+	AppVersion           string               `yaml:"app_version"`
+	ABI                  manifestABI          `yaml:"abi"`
+	Title                string               `yaml:"title"`
+	Description          string               `yaml:"description"`
+	Category             string               `yaml:"category"`
+	TemporaryDirectories []TemporaryDirectory `yaml:"temporary_directories"`
+	Runtime              manifestRuntime      `yaml:"runtime"`
+	Capabilities         manifestCapabilities `yaml:"capabilities"`
+	Contracts            manifestContracts    `yaml:"contracts"`
+	Dependencies         manifestDependencies `yaml:"dependencies"`
+	Resources            manifestResources    `yaml:"resources"`
+	Credentials          manifestCredentials  `yaml:"credentials"`
+	Upgrade              manifestUpgrade      `yaml:"upgrade"`
+	Config               manifestConfig       `yaml:"config"`
+	Features             manifestFeatures     `yaml:"features"`
+	Identity             manifestIdentity     `yaml:"identity"`
+	Management           manifestManagement   `yaml:"management"`
+	Services             manifestServices     `yaml:"services"`
+	Logic                manifestLogic        `yaml:"logic"`
+	Status               string               `yaml:"status"`
 }
 
 type manifestCredentials struct {
@@ -550,6 +551,9 @@ func validateRegistryParameterRuntimeKeys(reg map[string]Module) error {
 	for _, name := range names {
 		mod := reg[name]
 		for _, pattern := range mod.Exports {
+			if strings.HasPrefix(pattern, "ANAS_TEMP_") || matchEnvPattern([]string{pattern}, "ANAS_TEMP_RESERVED") {
+				return fmt.Errorf("module %q config.exports pattern %q overlaps runner-owned temporary storage", name, pattern)
+			}
 			for _, key := range registryProtectedExportKeys(reg) {
 				if matchEnvPattern([]string{pattern}, key) {
 					return fmt.Errorf("module %q config.exports pattern %q overlaps runner-owned runtime key %s", name, pattern, key)
@@ -754,6 +758,9 @@ func configDefaultOverrideRuntimeKeys() []string {
 
 func isRunnerOwnedRuntimeKey(key string, reg map[string]Module) bool {
 	key = config.EnvKey(key)
+	if strings.HasPrefix(key, "ANAS_TEMP_") || key == "TEMP_PATH" {
+		return true
+	}
 	owned := map[string]bool{}
 	for _, reserved := range registryReservedRuntimeKeys(reg) {
 		owned[reserved] = true
@@ -930,6 +937,10 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 			return Module{}, fmt.Errorf("module %q compose_file %q: %w", dirname, composeFile, err)
 		}
 	}
+	temporaryDirectories, err := normalizeTemporaryDirectories(dirname, manifest.Runtime.Type, dir, composeFile, manifest.TemporaryDirectories)
+	if err != nil {
+		return Module{}, err
+	}
 	if _, err := os.Stat(filepath.Join(dir, "runner.rb")); err == nil {
 		return Module{}, fmt.Errorf("module %q still contains unsupported runner.rb", dirname)
 	} else if !os.IsNotExist(err) {
@@ -1073,6 +1084,7 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		Hook:                   hook,
 		RuntimeType:            manifest.Runtime.Type,
 		ComposeFile:            composeFile,
+		TemporaryDirectories:   temporaryDirectories,
 	}
 	return mod, nil
 }

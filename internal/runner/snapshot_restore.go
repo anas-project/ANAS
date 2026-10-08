@@ -254,6 +254,9 @@ func stopActiveDeployment(base string) error {
 	if active.ActiveDeployment == "" {
 		return nil
 	}
+	if err := requireLocalDeploymentWorkspace(base, active.ActiveDeployment); err != nil {
+		return err
+	}
 	cli, err := compose.Detect()
 	if err != nil {
 		return err

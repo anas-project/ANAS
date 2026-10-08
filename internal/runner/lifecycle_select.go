@@ -157,6 +157,10 @@ func (a *app) stopModules(release string, names []string, jsonMode bool) error {
 		dir := filepath.Join(release, name)
 		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("stop %s: %w", name, err))
+		} else if !a.retainTemporaryLeases {
+			if err := a.releaseModuleTemporaryStorage(name); err != nil {
+				stopErrors = append(stopErrors, fmt.Errorf("release %s temporary storage: %w", name, err))
+			}
 		}
 	}
 	return errors.Join(stopErrors...)

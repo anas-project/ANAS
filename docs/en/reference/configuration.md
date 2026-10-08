@@ -6,10 +6,10 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 
 <!-- generated:configuration-summary:start -->
 - Built-in Modules: `24`
-- Declared parameters: `192` total (`17` global and `175` Module-owned; `171` structured Module parameters and `4` bare `env.*` parameters)
+- Declared parameters: `193` total (`18` global and `175` Module-owned; `171` structured Module parameters and `4` bare `env.*` parameters)
 - Resolution phases: `input_required` `2`, `must_resolve` `33`, unknown types `0`
-- Type distribution: `bool` `27`, `enum` `27`, `int` `30`, `string` `108`
-- Default-source distribution: `generated` `10`, `host` `8`, `inherited` `8`, `none` `8`, `runtime` `5`, `static` `153`
+- Type distribution: `bool` `27`, `enum` `27`, `int` `30`, `string` `109`
+- Default-source distribution: `generated` `10`, `host` `8`, `inherited` `8`, `none` `9`, `runtime` `5`, `static` `153`
 <!-- generated:configuration-summary:end -->
 - Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the parameter inventory.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
@@ -116,6 +116,22 @@ existing deployment creates a different set of projects, container names, and
 cross-container addresses. It is a static deployment change, not an in-place
 rename, so the old deployment must be explicitly migrated or removed first.
 
+## Temporary storage root
+
+`global.temp_path` is an optional absolute path. Omission resolves to `<workspace>/tmp`; only
+Module-declared temporary directories use it. It may change after initialization. The runner does
+not copy old temporary contents. When the resolved root changes, the plan lists every Module's
+stop/start order and warns that current editing/application sessions will be interrupted. Apply
+performs the switch after confirmation. Historical rollback uses the same process when its root
+differs. Equivalent normalized paths do not independently trigger a full restart.
+
+The filesystem root, business data directories, and their ancestors cannot become managed
+roots. A registered external filesystem that disappears or changes identity blocks startup,
+without falling back to host `/tmp`. Stable identities isolate workspaces. Insufficient capacity
+is displayed as a runtime problem; refresh after freeing space instead of repeatedly restarting.
+Use `global.temp_path`; raw `env.TEMP_PATH` and `ANAS_TEMP_*` are reserved inputs. Managed contents
+are excluded from backups and snapshots; restore/clone allocates new directories.
+
 ## Declared parameters
 
 Every entry below appears in `anas config list`. Ordinary editable parameters can be addressed by `anas config set`; `credential_rotate`, `data_migrate`, and `immutable` entries are inventory/explain-only and require their dedicated workflow. Global parameters use `global.<parameter>`; ordinary module parameters use `modules.<module>.config.<parameter>`.
@@ -162,7 +178,7 @@ configuration API, and Web forms must consume the same application-layer schema.
 only when that resolver cannot supply the value.
 
 <!-- generated:configuration-constraints:start -->
-Current explicit portable constraints: `33`.
+Current explicit portable constraints: `34`.
 
 | Parameter path | Portable constraints |
 | --- | --- |
@@ -185,6 +201,7 @@ Current explicit portable constraints: `33`.
 | `global.host_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.host_lan_bridge_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.host_lan_ip` | <code>format=&#34;ipv4&#34;</code> |
+| `global.temp_path` | <code>pattern=&#34;^/&#34;</code> |
 | `global.timezone` | <code>format=&#34;iana_timezone&#34;</code> |
 | `incus.endpoint` | <code>pattern=&#34;^https://[A-Za-z0-9.:_-]+$&#34;</code> |
 | `incus.lan_extra_subnets` | <code>pattern=&#34;^[0-9A-Fa-f:./, ]*$&#34;</code> |
@@ -204,7 +221,7 @@ Current explicit portable constraints: `33`.
 <!-- generated:configuration-owners:start -->
 | Owner | Parameters | Parameter paths |
 | --- | ---: | --- |
-| `global` | 17 | `global.base_domain`<br>`global.chinese_build_speedup`<br>`global.chinese_speedup`<br>`global.container_prefix`<br>`global.default_language`<br>`global.default_locale`<br>`global.dns_server`<br>`global.email`<br>`global.host_ip`<br>`global.host_lan_arp_check`<br>`global.host_lan_bridge_ip`<br>`global.host_lan_ip`<br>`global.ipv4`<br>`global.ipv6`<br>`global.network_prefix`<br>`global.timezone`<br>`global.virtual_domain` |
+| `global` | 18 | `global.base_domain`<br>`global.chinese_build_speedup`<br>`global.chinese_speedup`<br>`global.container_prefix`<br>`global.default_language`<br>`global.default_locale`<br>`global.dns_server`<br>`global.email`<br>`global.host_ip`<br>`global.host_lan_arp_check`<br>`global.host_lan_bridge_ip`<br>`global.host_lan_ip`<br>`global.ipv4`<br>`global.ipv6`<br>`global.network_prefix`<br>`global.temp_path`<br>`global.timezone`<br>`global.virtual_domain` |
 | `ai_agent` | 14 | `ai_agent.agent_runtime_images`<br>`ai_agent.agent_runtimes`<br>`ai_agent.daily_budget_usd`<br>`ai_agent.db_name`<br>`ai_agent.db_type`<br>`ai_agent.domain_prefix`<br>`ai_agent.egress_allowlist`<br>`ai_agent.enabled`<br>`ai_agent.execution_isolation`<br>`ai_agent.job_wallclock_minutes`<br>`ai_agent.language`<br>`ai_agent.reconcile_interval_seconds`<br>`ai_agent.repository_allowlist`<br>`ai_agent.workspace_scope` |
 | `authentik` | 6 | `authentik.db_name`<br>`authentik.db_type`<br>`authentik.domain_prefix`<br>`authentik.ldap_enabled`<br>`authentik.ldap_password_writeback`<br>`authentik.log_level` |
 | `casdoor` | 4 | `casdoor.db_name`<br>`casdoor.db_type`<br>`casdoor.domain_prefix`<br>`casdoor.ldap_auto_sync_minutes` |

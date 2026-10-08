@@ -250,6 +250,7 @@ func TestGlobalParametersHaveRuntimeConsumers(t *testing.T) {
 // before taking it. Neither reaches a container, and giving them one to keep
 // this test quiet would be inventing a reader.
 var runnerConsumedGlobals = map[string]bool{
+	"temp_path":          true,
 	"host_lan_bridge_ip": true,
 	"host_lan_arp_check": true,
 }

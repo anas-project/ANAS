@@ -195,6 +195,14 @@ func (service *workspaceDeploymentPlanApplication) planLocked(ctx context.Contex
 		return application.PlanResult{}, configServiceBoundaryError("config_state_invalid", err)
 	}
 	result := deploymentPlanResult(a)
+	desiredRoot, err := resolveTemporaryRoot(service.workspace, cfg.Global.TempPath)
+	if err != nil {
+		return application.PlanResult{}, deploymentApplicationError("temp_path_invalid", err)
+	}
+	result.TempSwitch, err = temporarySwitchPlan(service.workspace, desiredRoot, a.order)
+	if err != nil {
+		return application.PlanResult{}, deploymentApplicationError("temp_plan_failed", err)
+	}
 	result.Workspace = service.workspace
 	result.ConfigValidator = current.validator
 	result.ConfigPath = service.configPath
@@ -344,6 +352,9 @@ func (service *workspaceDeploymentPlanApplication) previewLifecycleLocked(ctx co
 	if active.ActiveDeployment == "" {
 		return application.LifecyclePreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("no_active_deployment", "no active deployment; run anas apply first"))
 	}
+	if err := requireLocalDeploymentWorkspace(base, active.ActiveDeployment); err != nil {
+		return application.LifecyclePreviewResult{}, deploymentApplicationErrorFromCLI(err)
+	}
 	cli, err := detectComposeForExecution(ctx, service.daemon)
 	if err != nil {
 		return application.LifecyclePreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("compose_missing", "%s", err.Error()))
@@ -406,6 +417,9 @@ func (service *workspaceDeploymentPlanApplication) ExecuteLifecycle(ctx context.
 	if err != nil {
 		return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("compose_missing", "%s", err.Error()))
 	}
+	if err := recoverTemporaryTransition(base, cli, activateOptions{ctx: ctx, events: service.events, json: service.jsonMode, restrictedProcessEnvironment: service.daemon}); err != nil {
+		return application.LifecycleResult{}, deploymentApplicationError("temp_recovery_failed", err)
+	}
 	active, err := loadActiveState(base)
 	if err != nil {
 		return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("state_unreadable", "%s", err.Error()))
@@ -416,6 +430,11 @@ func (service *workspaceDeploymentPlanApplication) ExecuteLifecycle(ctx context.
 	}
 	a.commandContext, a.events = ctx, service.events
 	a.restrictedProcessEnvironment = service.daemon
+	if request.Action != application.LifecycleStop && exists(temporaryStatePath(base)) {
+		if err := a.reconcileTemporaryStorage(); err != nil {
+			return application.LifecycleResult{}, deploymentApplicationError("temp_reconcile_failed", err)
+		}
+	}
 	partial := len(preview.RequestedModules) > 0
 	wholeDeployment := !partial || len(preview.AffectedModules) == len(a.order)
 	stop := func() error {
@@ -431,7 +450,9 @@ func (service *workspaceDeploymentPlanApplication) ExecuteLifecycle(ctx context.
 			err = failuref("start_failed", "%s", err.Error())
 		}
 	case application.LifecycleRestart:
-		if err = stop(); err != nil {
+		if err = a.preflightTemporaryStorage(preview.AffectedModules); err != nil {
+			err = preconditionErrorf("temp_preflight_failed", "%s", err.Error())
+		} else if err = stop(); err != nil {
 			err = failuref("stop_failed", "%s", err.Error())
 		} else if err = startDeployment(a, root, preview.AffectedModules, service.jsonMode); err != nil {
 			err = failuref("start_failed", "%s", err.Error())
@@ -443,6 +464,11 @@ func (service *workspaceDeploymentPlanApplication) ExecuteLifecycle(ctx context.
 	}
 	if err != nil {
 		return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(err)
+	}
+	if request.Action != application.LifecycleStop {
+		if err := a.commitTemporaryStorage(); err != nil {
+			return application.LifecycleResult{}, deploymentApplicationError("temp_state_failed", err)
+		}
 	}
 	if wholeDeployment {
 		if request.Action == application.LifecycleStop {
@@ -489,6 +515,9 @@ func (service *workspaceDeploymentPlanApplication) previewRollbackLocked(request
 	if err := validateDeploymentID(target); err != nil {
 		return application.RollbackPreviewResult{}, deploymentApplicationErrorFromCLI(usageErrorf("%s", err.Error()))
 	}
+	if err := requireLocalDeploymentWorkspace(base, target); err != nil {
+		return application.RollbackPreviewResult{}, deploymentApplicationErrorFromCLI(err)
+	}
 	if target == active.ActiveDeployment {
 		return application.RollbackPreviewResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("already_active", "deployment %s is already active", target))
 	}
@@ -507,6 +536,14 @@ func (service *workspaceDeploymentPlanApplication) previewRollbackLocked(request
 	result := application.RollbackPreviewResult{
 		Workspace: service.workspace, ActiveDeployment: active.ActiveDeployment, TargetDeployment: target,
 		GuardedChanges: guarded, DataTouched: false,
+	}
+	desiredRoot, err := frozenTemporaryRoot(service.workspace, base, target)
+	if err != nil {
+		return application.RollbackPreviewResult{}, deploymentApplicationError("temp_plan_failed", err)
+	}
+	result.TempSwitch, err = temporarySwitchPlan(service.workspace, desiredRoot, targetManifest.ModuleOrder)
+	if err != nil {
+		return application.RollbackPreviewResult{}, deploymentApplicationError("temp_plan_failed", err)
 	}
 	result.Digest, err = rollbackPreviewDigest(result)
 	if err != nil {
@@ -541,7 +578,14 @@ func (service *workspaceDeploymentPlanApplication) Rollback(ctx context.Context,
 			Message: "active deployment or rollback impact changed after confirmation",
 		}
 	}
-	if err := activateDeployment(base, preview.TargetDeployment, activateOptions{
+	targetID := preview.TargetDeployment
+	if preview.TempSwitch != nil && preview.TempSwitch.Required {
+		targetID, err = materializeTemporaryRollback(base, targetID)
+		if err != nil {
+			return application.RollbackResult{}, deploymentApplicationError("temp_rollback_prepare_failed", err)
+		}
+	}
+	if err := activateDeployment(base, targetID, activateOptions{
 		allowRisky: request.AllowRisky, rollback: true, yes: request.Confirmed, json: service.jsonMode,
 		ctx: ctx, events: service.events, restrictedProcessEnvironment: service.daemon,
 	}); err != nil {
@@ -552,7 +596,7 @@ func (service *workspaceDeploymentPlanApplication) Rollback(ctx context.Context,
 		return application.RollbackResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("state_unreadable", "%s", err.Error()))
 	}
 	return application.RollbackResult{
-		Workspace: service.workspace, DeploymentID: preview.TargetDeployment,
+		Workspace: service.workspace, DeploymentID: after.ActiveDeployment,
 		PreviousDeployment: applicationNullableString(preview.ActiveDeployment), ActivatedAt: after.ActivatedAt, DataTouched: false,
 	}, nil
 }
@@ -612,11 +656,12 @@ func lifecyclePreviewDigest(result application.LifecyclePreviewResult) (string, 
 
 func rollbackPreviewDigest(result application.RollbackPreviewResult) (string, error) {
 	return digestApplicationValue(struct {
-		ActiveDeployment string   `json:"active_deployment"`
-		TargetDeployment string   `json:"target_deployment"`
-		GuardedChanges   []string `json:"guarded_changes"`
-		DataTouched      bool     `json:"data_touched"`
-	}{result.ActiveDeployment, result.TargetDeployment, result.GuardedChanges, result.DataTouched})
+		ActiveDeployment string                      `json:"active_deployment"`
+		TargetDeployment string                      `json:"target_deployment"`
+		GuardedChanges   []string                    `json:"guarded_changes"`
+		DataTouched      bool                        `json:"data_touched"`
+		TempSwitch       *application.TempSwitchPlan `json:"temp_switch"`
+	}{result.ActiveDeployment, result.TargetDeployment, result.GuardedChanges, result.DataTouched, result.TempSwitch})
 }
 
 func digestApplicationValue(value any) (string, error) {
@@ -688,11 +733,13 @@ func deploymentPlanDigest(result application.PlanResult) (string, error) {
 		DNSCredentialCompatibility []application.PlanDNSCredentialCompatibility `json:"dns_credential_compatibility"`
 		DynamicDNS                 application.PlanDynamicDNS                   `json:"dynamic_dns"`
 		ModuleLifecycles           []application.PlanModuleLifecycle            `json:"module_lifecycles"`
+		TempSwitch                 *application.TempSwitchPlan                  `json:"temp_switch"`
 	}{
 		ConfigValidator: result.ConfigValidator, Modules: result.Modules, IAM: result.IAM,
 		ModulePlans: result.ModulePlans, CapabilityBindings: result.CapabilityBindings,
 		DNSPlatforms: result.DNSPlatforms, DNSCredentialCompatibility: result.DNSCredentialCompatibility,
 		DynamicDNS: result.DynamicDNS, ModuleLifecycles: result.ModuleLifecycles,
+		TempSwitch: result.TempSwitch,
 	})
 	if err != nil {
 		return "", err
@@ -748,6 +795,7 @@ func planResultCLIMap(result application.PlanResult) map[string]any {
 		"modules": result.Modules, "iam": result.IAM,
 		"module_plans": result.ModulePlans, "capability_bindings": result.CapabilityBindings,
 		"dns_platforms": result.DNSPlatforms,
+		"temp_switch":   result.TempSwitch,
 		"dynamic_dns": map[string]any{
 			"provider": result.DynamicDNS.Provider, "self_managed": result.DynamicDNS.SelfManaged,
 		},
@@ -834,6 +882,9 @@ func planResultCLIText(result application.PlanResult) string {
 	var out strings.Builder
 	out.WriteString(strings.Join(result.Modules, "\n"))
 	out.WriteByte('\n')
+	if result.TempSwitch != nil && result.TempSwitch.Required {
+		fmt.Fprintf(&out, "\ntemporary storage switch: stop %s; start %s\nactive sessions will be interrupted\n", strings.Join(result.TempSwitch.StopModules, ", "), strings.Join(result.TempSwitch.StartModules, ", "))
+	}
 	if result.IAM.Provider != nil && len(result.IAM.Consumers) != 0 {
 		fmt.Fprintf(&out, "\niam provider: %s\n", *result.IAM.Provider)
 		for _, consumer := range result.IAM.Consumers {

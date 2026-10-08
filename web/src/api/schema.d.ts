@@ -1653,6 +1653,16 @@ export interface components {
             dns_credential_compatibility: components["schemas"]["DeploymentDNSCredentialCompatibility"][];
             dynamic_dns: components["schemas"]["DeploymentDynamicDNS"];
             module_lifecycles: components["schemas"]["DeploymentModuleLifecycle"][];
+            temp_switch?: components["schemas"]["TempSwitchPlan"];
+        };
+        TempSwitchPlan: {
+            required: boolean;
+            /** @description All modules in reverse dependency order. */
+            stop_modules: string[];
+            /** @description All target modules in dependency order. */
+            start_modules: string[];
+            /** @description Existing application sessions are interrupted by the full workspace restart. */
+            session_interruption: boolean;
         };
         DeploymentPlanIAM: {
             provider: string | null;
@@ -1762,6 +1772,7 @@ export interface components {
             guarded_changes: string[];
             /** @constant */
             data_touched: false;
+            temp_switch?: components["schemas"]["TempSwitchPlan"];
             digest: components["schemas"]["PlanDigest"];
         };
         /** @enum {string} */
@@ -2152,10 +2163,24 @@ export interface components {
         ModuleRuntimeStatus: {
             module: string;
             /** @enum {string} */
-            runtime: "running" | "stopped" | "degraded" | "not_applicable";
+            runtime: "running" | "stopped" | "degraded" | "unknown" | "not_applicable";
             /** @enum {string} */
             health: "healthy" | "unhealthy" | "starting" | "none" | "not_applicable";
+            temp_storage?: components["schemas"]["ModuleTemporaryStorageStatus"];
             containers: number;
+        };
+        ModuleTemporaryStorageStatus: {
+            /** @enum {string} */
+            state: "ok" | "low_space" | "unavailable" | "unknown" | "not_applicable";
+            issues: components["schemas"]["ModuleTemporaryStorageIssue"][];
+            free_bytes?: number;
+            /** @description Omitted when the filesystem has no fixed inode capacity. */
+            free_inodes?: number;
+        };
+        ModuleTemporaryStorageIssue: {
+            code: string;
+            /** @description Module declaration name; host paths and temporary file contents are never returned. */
+            name: string;
         };
         DeploymentListResponse: {
             api_version: components["schemas"]["APIVersion"];

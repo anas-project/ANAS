@@ -65,10 +65,11 @@ type statusResponse struct {
 }
 
 type moduleRuntimeDTO struct {
-	Module     string `json:"module"`
-	Runtime    string `json:"runtime"`
-	Health     string `json:"health"`
-	Containers int    `json:"containers"`
+	TempStorage *application.ModuleTemporaryStorageStatus `json:"temp_storage,omitempty"`
+	Module      string                                    `json:"module"`
+	Runtime     string                                    `json:"runtime"`
+	Health      string                                    `json:"health"`
+	Containers  int                                       `json:"containers"`
 }
 
 type deploymentListResponse struct {
@@ -209,6 +210,7 @@ func newStatusResponse(workspaceID string, result application.StatusResult) stat
 	for _, module := range result.ModuleRuntime {
 		moduleRuntime = append(moduleRuntime, moduleRuntimeDTO{
 			Module: module.Module, Runtime: module.Runtime, Health: module.Health, Containers: module.Containers,
+			TempStorage: normalizeModuleTemporaryStorage(module.TempStorage),
 		})
 	}
 	return statusResponse{

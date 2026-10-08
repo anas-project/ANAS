@@ -41,6 +41,7 @@
 | active 制品 | `.anas/deployments/<active-id>/` | ✅ |
 | 历史制品 | `.anas/deployments/` 下其余目录 | ❌ |
 | 缓存 | `.anas/go-build-cache/`、`.anas/hook-bin/`、`.anas/staging/` | ❌ 永不备份 |
+| 临时内容与租约 | `<workspace>/tmp`、外部受管根、`.anas/temp/` | ❌ 每次恢复重新分配 |
 
 active 制品必须包含，理由有三条，每一条单独都足够：
 
@@ -518,6 +519,7 @@ anas backup restore --from <src> -w <workspace> [--backup-id <id>] [--dry-run] [
 ```
 
 - **必须显式 `-w`**，不接受 `ANAS_WORKSPACE`，不接受 cwd 推导。
+- 目标必须是已有 workspace；新目标先执行 `anas init <workspace> -y`，空初始化不启动服务。
 - `--dry-run` 输出将要写入/覆盖的路径清单，不落盘。
 - 目标 workspace 非空时需要 `-y`。
 - 完成后自动执行一次结构校验与 `snapshot verify`，结果并入输出。
@@ -538,6 +540,8 @@ anas backup restore --from <src> -w <workspace> [--backup-id <id>] [--dry-run] [
 ```
 
 `next_steps` 是建议执行的命令字符串数组，供 web 端直接呈现。恢复**不自动启动服务**。
+
+上例为冻结制品仍绑定本 workspace 的恢复。恢复到另一 workspace 时，`next_steps` 为 `anas apply -w <workspace>`：导入的 active 记录不授予源 project 或源临时租约的运行权限。首次配置 apply 保留诊断记录、解除外来 active 授权并生成目标新 deployment；相应 plan 不停止源 Module。受管临时制品缺少有效冻结 `DATA_PATH` 绑定时拒绝运行。直接生命周期操作、`apply --deployment` 和历史回滚不能绕过此检查；同 workspace 快照恢复及有效本地租约保持原授权。
 
 ### 与初稿的偏差四：恢复 `send` 备份走复制而非再 send 一次（初稿未指明）
 

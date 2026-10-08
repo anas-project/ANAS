@@ -109,6 +109,7 @@
     "global.ipv4",
     "global.ipv6",
     "global.network_prefix",
+    "global.temp_path",
     "global.timezone",
     "global.virtual_domain",
     "incus.admin_certificate_b64",

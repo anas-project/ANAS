@@ -284,6 +284,10 @@ func TestReadOnlyQueryPayloadsStayStable(t *testing.T) {
 				"activated_at":         nil,
 				"verified_at":          nil,
 				"previous_deployments": []any{},
+				"runtime_status":       "stopped",
+				"runtime_healthy":      nil,
+				"runtime_probe_error":  nil,
+				"module_runtime":       []any{},
 			},
 		},
 		{

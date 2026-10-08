@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `samba_dc`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `4.23.6-r11` / `anas.module/v1`.
+> Status: current implementation; based on `4.23.6-r12` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -17,8 +17,8 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r11` | `` | 3 |
-| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r11` | `` | 3 |
+| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r12` | `` | 3 |
+| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r12` | `` | 3 |
 | `anas_samba_dc_events_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
@@ -220,8 +220,11 @@ This module neither consumes nor provides a relational-database contract.
 - `LEGO_CERT_NAME`
 - `LEGO_KEY_NAME`
 - `ANAS_IDENTITY_APP_CLIENTS`
+- `ANAS_IDENTITY_CAPABILITY_GROUPS`
 
 The dependency closure does not grant every environment value. Sensitive values enter this module's hook/container scope only through ownership or an explicit `config.consumes` claim.
+
+`ANAS_IDENTITY_CAPABILITY_GROUPS` is an optional comma-separated list of capability codes published by enabled module hooks; the key may be absent when there is no publisher. The structure script treats an absent or empty list as empty, creates no capability OU/group, and continues directory and administrator initialization. A nonempty list creates the corresponding `CAP_*` groups only when `create_structure=true`; `set -u` still rejects missing required environment values.
 
 ## Hooks, changes, and rollback
 
@@ -232,6 +235,7 @@ The dependency closure does not grant every environment value. Sensitive values 
 ## Tests and implementation locations
 
 - [`main_test.go`](../hook/main_test.go)
+- [`structure_script_test.go`](../hook/structure_script_test.go): executes the production capability block in Bash with absent, empty, and nonempty lists, disabled structure creation, and missing required environment. Only directory writes are replaced; Samba data and `/run` are untouched.
 - [`zone_script_test.go`](../hook/zone_script_test.go)
 - [`domain_dns.go`](../hook/domain_dns.go)
 - [`module.yml`](../module.yml)

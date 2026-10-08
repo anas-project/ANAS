@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `samba_dc` |
-| 版本 / revision | `4.23.6-r11` |
+| 版本 / revision | `4.23.6-r12` |
 | 状态 | `release` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
@@ -214,7 +214,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`4.23.6-r11`（reviewed 2026-08-13）
+- Module version / 版本：`4.23.6-r12`（reviewed 2026-08-13）
 - Timezone / 时区：`system` — Startup validates TZ against /usr/share/zoneinfo and installs /etc/localtime and /etc/timezone.
 - Language scope / 语言范围：directory, Kerberos, and DNS protocol services
 - Selection / 选择方式：`none`

@@ -12,7 +12,7 @@ This page is generated from the current Module manifests. The checked-in page an
 | [AI Agent orchestration](/en/reference/modules/ai_agent/) | `0.1.0-r2` | `developing` | `app` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
 | [authentik](/en/reference/modules/authentik/) | `2026.5.6-r14` | `deprecated` | `identity` | Identity provider serving OIDC and SAML with per-application endpoints. |
 | [Casdoor](/en/reference/modules/casdoor/) | `3.143.0-r10` | `release` | `identity` | IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
-| [Collabora Online](/en/reference/modules/collabora/) | `26.4.2-r5` | `release` | `app` | Online document editing backend for Nextcloud. |
+| [Collabora Online](/en/reference/modules/collabora/) | `26.4.2-r6` | `release` | `app` | Online document editing backend for Nextcloud. |
 | [DDNS-GO](/en/reference/modules/ddns_go/) | `6.17.4-r6` | `release` | `network` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
 | [DDNS Updater](/en/reference/modules/ddns_updater/) | `2.10.0-r4` | `release` | `network` | Dynamic DNS updater for the base domain and wildcard host. |
 | [Eturnal TURN](/en/reference/modules/eturnal/) | `1.12.2-r6` | `release` | `communication` | TURN service used by realtime communication modules. |
@@ -28,7 +28,7 @@ This page is generated from the current Module manifests. The checked-in page an
 | [Nextcloud](/en/reference/modules/nextcloud/) | `34.0.2-r11` | `developing` | `app` | File sync, sharing, office integration, memories, and Talk. |
 | [OAuth2 Proxy](/en/reference/modules/oauth2_proxy/) | `7.15.3-r5` | `release` | `identity` | Authenticated gate in front of services that have no login of their own. |
 | [PostgreSQL](/en/reference/modules/postgres/) | `18.4.0-r4` | `release` | `database` | PostgreSQL database service with optional Adminer UI. |
-| [Samba domain controller and DNS](/en/reference/modules/samba_dc/) | `4.23.6-r11` | `release` | `identity` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |
+| [Samba domain controller and DNS](/en/reference/modules/samba_dc/) | `4.23.6-r12` | `release` | `identity` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |
 | [Samba file server](/en/reference/modules/samba_fs/) | `4.23.6-r6` | `release` | `storage` | File sharing service joined to the Samba domain. |
 | [Traefik reverse proxy](/en/reference/modules/traefik/) | `3.7.10-r6` | `release` | `network` | HTTPS reverse proxy and dashboard for all web-facing services. |
 | [VersityGW S3 gateway](/en/reference/modules/versitygw/) | `1.7.0-r3` | `developing` | `storage` | S3-compatible API backed by a dedicated POSIX directory. |

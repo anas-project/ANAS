@@ -3,6 +3,21 @@ services:
     image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-collabora:26.04.2.4.1
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     restart: unless-stopped
+    user: "0:0"
+    stop_grace_period: 180s
+    entrypoint: ["/usr/local/bin/anas-collabora-start", "--container-start"]
+    command:
+      - --use-env-vars
+      - --o:file_server_root_path=/usr/share/coolwsd
+      - --o:logging.color=false
+      - --o:stop_on_config_change=true
+    volumes:
+      - type: bind
+        source: ./.hook.bin
+        target: /usr/local/bin/anas-collabora-start
+        read_only: true
+        bind:
+          create_host_path: false
     cap_add:
       - MKNOD
     environment:
@@ -25,7 +40,7 @@ services:
     dns:
       - ${LOCAL_DNS_SERVER}
     healthcheck:
-      test: ["CMD", "/usr/bin/coolwsd", "--probe"]
+      test: ["CMD", "/usr/local/bin/anas-collabora-start", "--container-probe"]
       interval: 30s
       timeout: 10s
       retries: 5

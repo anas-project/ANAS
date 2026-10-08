@@ -45,6 +45,10 @@ func composeCommandMutates(args []string) bool {
 }
 
 func (a *app) runCompose(dir, module, composeFile string, env map[string]string, args ...string) error {
+	env, err := a.composeTemporaryEnvironment(module, env, len(args) == 0 || (args[0] != "up" && args[0] != "start" && args[0] != "restart" && args[0] != "run"))
+	if err != nil {
+		return err
+	}
 	project, err := composeProjectName(module, env)
 	if err != nil {
 		return err
@@ -72,6 +76,10 @@ func (a *app) runCompose(dir, module, composeFile string, env map[string]string,
 // result, such as a resource Provider operation: the same ownership check,
 // with stdout captured instead of forwarded.
 func (a *app) runComposeOutput(dir, module, composeFile string, env map[string]string, args ...string) (string, error) {
+	env, err := a.composeTemporaryEnvironment(module, env, false)
+	if err != nil {
+		return "", err
+	}
 	project, err := composeProjectName(module, env)
 	if err != nil {
 		return "", err
@@ -92,6 +100,10 @@ func (a *app) runComposeOutput(dir, module, composeFile string, env map[string]s
 }
 
 func (a *app) outputCompose(dir, module, composeFile string, env map[string]string, args ...string) (string, error) {
+	env, err := a.composeTemporaryEnvironment(module, env, true)
+	if err != nil {
+		return "", err
+	}
 	project, err := composeProjectName(module, env)
 	if err != nil {
 		return "", err

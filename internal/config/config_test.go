@@ -833,7 +833,7 @@ func contains(list []string, want string) bool {
 func TestGlobalBindingsProduceDeclaredKeys(t *testing.T) {
 	f := &File{Global: Global{
 		BaseDomain: "nas.example.com", Email: "a@example.com", Timezone: "Asia/Tokyo",
-		ContainerPrefix: "c_", NetworkPrefix: "n_",
+		ContainerPrefix: "c_", NetworkPrefix: "n_", TempPath: "/tmp/anas-temp",
 		HostIP: "10.0.0.2", DNSServer: "1.1.1.1", VirtualDomain: BoolTrue,
 		HostLANIP: "10.0.0.242", HostLANBridgeIP: "10.0.0.241", HostLANARPCheck: BoolFalse,
 		DefaultLanguage: "en", DefaultLocale: "en-SG",

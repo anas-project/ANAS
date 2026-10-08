@@ -72,6 +72,15 @@ type PlanModuleLifecycle struct {
 	Status string `json:"status"`
 }
 
+// TempSwitchPlan describes the full workspace stop/start required by a root change.
+// Host paths are deliberately absent so the same plan is safe to expose over HTTP.
+type TempSwitchPlan struct {
+	Required            bool     `json:"required"`
+	StopModules         []string `json:"stop_modules"`
+	StartModules        []string `json:"start_modules"`
+	SessionInterruption bool     `json:"session_interruption"`
+}
+
 type PlanResult struct {
 	Workspace                  string                           `json:"workspace"`
 	ConfigValidator            string                           `json:"config_validator"`
@@ -84,6 +93,7 @@ type PlanResult struct {
 	DNSCredentialCompatibility []PlanDNSCredentialCompatibility `json:"dns_credential_compatibility"`
 	DynamicDNS                 PlanDynamicDNS                   `json:"dynamic_dns"`
 	ModuleLifecycles           []PlanModuleLifecycle            `json:"module_lifecycles"`
+	TempSwitch                 *TempSwitchPlan                  `json:"temp_switch,omitempty"`
 
 	// ConfigPath and ModuleRoot preserve the existing CLI projection while
 	// HTTP DTOs deliberately omit host filesystem paths.
@@ -155,12 +165,13 @@ type RollbackPreviewRequest struct {
 }
 
 type RollbackPreviewResult struct {
-	Workspace        string   `json:"workspace"`
-	ActiveDeployment string   `json:"active_deployment"`
-	TargetDeployment string   `json:"target_deployment"`
-	GuardedChanges   []string `json:"guarded_changes"`
-	DataTouched      bool     `json:"data_touched"`
-	Digest           string   `json:"digest"`
+	TempSwitch       *TempSwitchPlan `json:"temp_switch,omitempty"`
+	Workspace        string          `json:"workspace"`
+	ActiveDeployment string          `json:"active_deployment"`
+	TargetDeployment string          `json:"target_deployment"`
+	GuardedChanges   []string        `json:"guarded_changes"`
+	DataTouched      bool            `json:"data_touched"`
+	Digest           string          `json:"digest"`
 }
 
 type RollbackRequest struct {
